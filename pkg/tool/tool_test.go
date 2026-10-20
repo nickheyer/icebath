@@ -197,3 +197,95 @@ func TestRunAllSharesIdempotentRepeats(t *testing.T) {
 		t.Fatalf("%+v", results)
 	}
 }
+
+func TestAddIsAtomicAndValidatesSchemas(t *testing.T) {
+	var r Registry
+	good := echo()
+	bad := Func{Name: "bad", Parameters: json.RawMessage(`{"type":"array"}`)}
+	if err := r.Add(good, bad); err == nil {
+		t.Fatal("array schema accepted")
+	}
+	if r.Len() != 0 {
+		t.Fatal("a failed add must register nothing")
+	}
+	if err := r.Add(echo(), echo()); err == nil || r.Len() != 0 {
+		t.Fatal("duplicates within one add must be rejected without registering")
+	}
+	if ValidSchema(json.RawMessage(`{"properties":{}}`)) != nil || ValidSchema(json.RawMessage(`[]`)) == nil || ValidSchema(json.RawMessage(`null`)) == nil {
+		t.Fatal("schema validation")
+	}
+	changes := 0
+	r.OnChange(func() { changes++ })
+	if err := r.Add(echo()); err != nil {
+		t.Fatal(err)
+	}
+	r.Remove("echo")
+	r.Remove("echo")
+	if changes != 2 {
+		t.Fatalf("%d change notifications", changes)
+	}
+}
+
+func TestRunCarriesDataTimingAndProgress(t *testing.T) {
+	var r Registry
+	var reports []Progress
+	slow := Func{Name: "slow", Parameters: json.RawMessage(`{}`), Fn: func(ctx context.Context, args json.RawMessage) (Result, error) {
+		Report(ctx, Progress{Stream: "stdout", Text: "half"})
+		if call, ok := CallFrom(ctx); !ok || call.Name != "slow" {
+			return Error("no call in context"), nil
+		}
+		select {
+		case <-time.After(30 * time.Millisecond):
+			return Text("done").With(map[string]int{"n": 1}), nil
+		case <-ctx.Done():
+			return Error(ctx.Err().Error()), nil
+		}
+	}}
+	if err := r.Add(slow); err != nil {
+		t.Fatal(err)
+	}
+	ctx := WithReporter(context.Background(), func(p Progress) { reports = append(reports, p) })
+	out := r.Run(ctx, protocol.ToolCall{ID: "c1", Name: "slow", Args: json.RawMessage(`{}`)})
+	if out.IsError || out.Data.(map[string]int)["n"] != 1 || out.Duration < 30*time.Millisecond || out.Started.IsZero() {
+		t.Fatalf("%+v", out)
+	}
+	if len(reports) != 1 || reports[0].CallID != "c1" || reports[0].Tool != "slow" || reports[0].Text != "half" {
+		t.Fatalf("%+v", reports)
+	}
+	r.Timeout = 5 * time.Millisecond
+	if out := r.Run(context.Background(), protocol.ToolCall{ID: "c2", Name: "slow"}); !out.IsError || !strings.Contains(out.Content[0].(protocol.Text).Text, "deadline") {
+		t.Fatalf("timeout %+v", out)
+	}
+	r.Timeout = 0
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	outs := r.RunAll(cancelled, []protocol.ToolCall{{ID: "x", Name: "slow"}})
+	if !outs[0].IsError || !strings.Contains(outs[0].Content[0].(protocol.Text).Text, "cancelled") {
+		t.Fatalf("%+v", outs[0])
+	}
+	Report(context.Background(), Progress{Text: "nowhere"})
+}
+
+func TestRunEachReportsAsCallsFinish(t *testing.T) {
+	var r Registry
+	slow := Func{Name: "slow", Parameters: json.RawMessage(`{}`), Hints: Annotations{ReadOnly: true}, Fn: func(ctx context.Context, args json.RawMessage) (Result, error) {
+		time.Sleep(40 * time.Millisecond)
+		return Text("slow"), nil
+	}}
+	fast := Func{Name: "fast", Parameters: json.RawMessage(`{}`), Hints: Annotations{ReadOnly: true, Idempotent: true}, Fn: func(ctx context.Context, args json.RawMessage) (Result, error) {
+		return Text("fast"), nil
+	}}
+	if err := r.Add(slow, fast); err != nil {
+		t.Fatal(err)
+	}
+	var order []int
+	outs := r.RunEach(context.Background(), []protocol.ToolCall{{ID: "a", Name: "slow"}, {ID: "b", Name: "fast"}, {ID: "c", Name: "fast"}}, func(i int, out Outcome) {
+		order = append(order, i)
+	})
+	if len(order) != 3 || order[0] != 1 || order[1] != 0 || order[2] != 2 {
+		t.Fatalf("completion order %v", order)
+	}
+	if outs[2].CallID != "c" || outs[2].Content[0].(protocol.Text).Text != "fast" {
+		t.Fatalf("%+v", outs[2])
+	}
+}

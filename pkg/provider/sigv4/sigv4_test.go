@@ -240,6 +240,9 @@ func (echoProtocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 func (echoProtocol) DecodeError(status int, body []byte) *protocol.Error {
 	return &protocol.Error{Status: status, Message: string(body)}
 }
+func (echoProtocol) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{}
+}
 
 func TestProviderSignsEveryRequest(t *testing.T) {
 	var auths []string

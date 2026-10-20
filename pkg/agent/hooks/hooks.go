@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
@@ -28,7 +29,15 @@ const (
 	PreToolUse       Event = "PreToolUse"
 	PostToolUse      Event = "PostToolUse"
 	Stop             Event = "Stop"
+	PreCompact       Event = "PreCompact"
+	SessionStart     Event = "SessionStart"
+	SessionEnd       Event = "SessionEnd"
+	SubagentStop     Event = "SubagentStop"
+	Notification     Event = "Notification"
 )
+
+// Every event a configuration may name
+var Events = []Event{UserPromptSubmit, PreToolUse, PostToolUse, Stop, PreCompact, SessionStart, SessionEnd, SubagentStop, Notification}
 
 // Seconds a hook may run when it names no timeout
 const DefaultTimeout = 60
@@ -79,12 +88,19 @@ func LoadFile(path string) (Config, error) {
 	return Load(f)
 }
 
+func known(event Event) bool {
+	for _, e := range Events {
+		if e == event {
+			return true
+		}
+	}
+	return false
+}
+
 // Checks event names, command kinds and matcher patterns, compiling the patterns
 func (c Config) Validate() error {
 	for event, groups := range c {
-		switch event {
-		case UserPromptSubmit, PreToolUse, PostToolUse, Stop:
-		default:
+		if !known(event) {
 			return fmt.Errorf("hooks: unknown event %q", event)
 		}
 		for i := range groups {
@@ -124,6 +140,18 @@ type Runner struct {
 	Log io.Writer
 }
 
+// What one hook execution produced, published as the data of a hook event
+type Execution struct {
+	Event    Event
+	Command  string
+	Tool     string
+	ExitCode int
+	Duration time.Duration
+	Stdout   string
+	Stderr   string
+	Blocked  bool
+}
+
 type payload struct {
 	Event          Event           `json:"hook_event_name"`
 	SessionID      string          `json:"session_id"`
@@ -134,6 +162,28 @@ type payload struct {
 	ToolResponse   json.RawMessage `json:"tool_response,omitempty"`
 	Prompt         string          `json:"prompt,omitempty"`
 	Response       string          `json:"response,omitempty"`
+	StopHookActive bool            `json:"stop_hook_active,omitempty"`
+	Extra          map[string]any  `json:"-"`
+}
+
+// Payload with the extra fields merged at the top level
+func (p payload) MarshalJSON() ([]byte, error) {
+	type plain payload
+	base, err := json.Marshal(plain(p))
+	if err != nil {
+		return nil, err
+	}
+	if len(p.Extra) == 0 {
+		return base, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(base, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range p.Extra {
+		m[k] = v
+	}
+	return json.Marshal(m)
 }
 
 // Tool result as PostToolUse hooks receive it, every part in its stored JSON form
@@ -190,20 +240,24 @@ func (r Runner) BeforeRun(ctx context.Context, input []protocol.Part) ([]protoco
 
 func (Runner) BeforeTurn(context.Context, *protocol.Request) error { return nil }
 
-func (r Runner) BeforeTool(ctx context.Context, call protocol.ToolCall) (protocol.ToolCall, policy.Decision, error) {
+func (Runner) AfterTurn(context.Context, protocol.Response) error { return nil }
+
+// Runs PreToolUse hooks, carrying their rewritten input, settled permission and context back as advice
+func (r Runner) BeforeTool(ctx context.Context, call protocol.ToolCall) (agent.Advice, error) {
 	v, err := r.run(ctx, PreToolUse, call.Name, payload{ToolName: call.Name, ToolInput: call.Args})
 	if err != nil {
-		return call, "", err
+		return agent.Advice{Call: call}, err
 	}
 	if v.block {
-		return call, "", &Blocked{Event: PreToolUse, Reason: v.reason}
+		return agent.Advice{Call: call}, &Blocked{Event: PreToolUse, Reason: v.reason}
 	}
 	if len(v.input) > 0 {
 		call.Args = v.input
 	}
-	return call, v.decision, nil
+	return agent.Advice{Call: call, Decision: v.decision, Context: v.context}, nil
 }
 
+// Runs PostToolUse hooks, a block keeping the real output and marking the result as failed with the reason
 func (r Runner) AfterTool(ctx context.Context, call protocol.ToolCall, res protocol.ToolResult) (protocol.ToolResult, error) {
 	content, err := session.MarshalParts(res.Content)
 	if err != nil {
@@ -218,7 +272,9 @@ func (r Runner) AfterTool(ctx context.Context, call protocol.ToolCall, res proto
 		return res, err
 	}
 	if v.block {
-		return res, &Blocked{Event: PostToolUse, Reason: v.reason}
+		res.Content = append(res.Content, protocol.Text{Text: "[hook " + string(PostToolUse) + " blocked: " + v.reason + "]"})
+		res.IsError = true
+		return res, nil
 	}
 	if v.context != "" {
 		res.Content = append(res.Content, protocol.Text{Text: v.context})
@@ -226,25 +282,43 @@ func (r Runner) AfterTool(ctx context.Context, call protocol.ToolCall, res proto
 	return res, nil
 }
 
-func (r Runner) OnStop(ctx context.Context, resp protocol.Response) ([]protocol.Part, error) {
-	v, err := r.run(ctx, Stop, "", payload{Response: text(resp.Content)})
+// Runs Stop hooks, a block continuing the run with the reason and any context as the next user message
+func (r Runner) OnStop(ctx context.Context, resp protocol.Response, again bool) ([]protocol.Part, error) {
+	v, err := r.run(ctx, Stop, "", payload{Response: text(resp.Content), StopHookActive: again})
 	if err != nil {
 		return nil, err
 	}
-	if v.block {
-		return []protocol.Part{protocol.Text{Text: v.reason}}, nil
+	if !v.block {
+		return nil, nil
 	}
-	return nil, nil
+	parts := []protocol.Part{protocol.Text{Text: v.reason}}
+	if v.context != "" {
+		parts = append(parts, protocol.Text{Text: v.context})
+	}
+	return parts, nil
+}
+
+// Runs the hooks of any event with extra top level fields, returning the context they added
+func (r Runner) Fire(ctx context.Context, event Event, fields map[string]any) (string, error) {
+	if !known(event) {
+		return "", fmt.Errorf("hooks: unknown event %q", event)
+	}
+	tool := ""
+	if name, ok := fields["tool_name"].(string); ok {
+		tool = name
+	}
+	v, err := r.run(ctx, event, tool, payload{Extra: fields})
+	if err != nil {
+		return "", err
+	}
+	if v.block {
+		return "", &Blocked{Event: event, Reason: v.reason}
+	}
+	return v.context, nil
 }
 
 func text(parts []protocol.Part) string {
-	var sb strings.Builder
-	for _, p := range parts {
-		if t, ok := p.(protocol.Text); ok {
-			sb.WriteString(t.Text)
-		}
-	}
-	return sb.String()
+	return protocol.Response{Content: parts}.Text()
 }
 
 // Runs every command attached to the event in order, stopping at the first block and keeping the strictest permission
@@ -274,7 +348,7 @@ func (r Runner) run(ctx context.Context, event Event, toolName string, p payload
 			if len(v.input) > 0 {
 				p.ToolInput = v.input
 			}
-			out, err := r.exec(ctx, event, cmd, p)
+			out, err := r.exec(ctx, event, toolName, cmd, p)
 			if err != nil {
 				return v, err
 			}
@@ -301,41 +375,67 @@ func (r Runner) dir() (string, error) {
 }
 
 // Executes one hook, reading its verdict from the exit code and any JSON it printed
-func (r Runner) exec(ctx context.Context, event Event, cmd Command, p payload) (verdict, error) {
+func (r Runner) exec(ctx context.Context, event Event, toolName string, cmd Command, p payload) (verdict, error) {
 	timeout := time.Duration(cmd.Timeout) * time.Second
 	if timeout <= 0 {
 		timeout = DefaultTimeout * time.Second
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	hctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	stdin, err := json.Marshal(p)
 	if err != nil {
 		return verdict{}, err
 	}
-	c := exec.CommandContext(ctx, "sh", "-c", cmd.Command)
+	c := proc.ShellCommand(hctx, cmd.Command)
 	c.Dir = r.Dir
 	c.Env = append(append(os.Environ(), "ICEBATH_SESSION_ID="+r.SessionID, "ICEBATH_HOOK_EVENT="+string(event)), r.Env...)
 	c.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	c.Stdout, c.Stderr = &stdout, &stderr
+	started := time.Now()
 	err = c.Run()
+	ex := Execution{Event: event, Command: cmd.Command, Tool: toolName, Duration: time.Since(started), Stdout: stdout.String(), Stderr: stderr.String()}
+	if c.ProcessState != nil {
+		ex.ExitCode = c.ProcessState.ExitCode()
+	}
 	if r.Log != nil && stderr.Len() > 0 {
 		fmt.Fprintf(r.Log, "[hook %s] %s\n", event, strings.TrimSpace(stderr.String()))
 	}
 	reason := strings.TrimSpace(stderr.String())
 	var exit *exec.ExitError
 	switch {
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+	case errors.Is(hctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
+		ex.ExitCode = -1
+		r.publish(ctx, ex, fmt.Sprintf("timed out after %s", timeout))
 		return verdict{}, fmt.Errorf("hook %s %q timed out after %s", event, cmd.Command, timeout)
 	case errors.As(err, &exit) && exit.ExitCode() == 2:
 		if reason == "" {
 			reason = "blocked by hook"
 		}
+		ex.Blocked = true
+		r.publish(ctx, ex, "blocked: "+reason)
 		return verdict{block: true, reason: reason}, nil
 	case err != nil:
+		r.publish(ctx, ex, "failed: "+err.Error())
 		return verdict{}, fmt.Errorf("hook %s %q failed: %w: %s", event, cmd.Command, err, reason)
 	}
-	return r.parse(event, cmd, bytes.TrimSpace(stdout.Bytes()))
+	v, perr := r.parse(event, cmd, bytes.TrimSpace(stdout.Bytes()))
+	if perr != nil {
+		r.publish(ctx, ex, "returned bad output")
+		return v, perr
+	}
+	if v.block {
+		ex.Blocked = true
+		r.publish(ctx, ex, "blocked: "+v.reason)
+		return v, nil
+	}
+	r.publish(ctx, ex, "ok")
+	return v, nil
+}
+
+// Reports one execution into the event stream of the run that triggered it
+func (r Runner) publish(ctx context.Context, ex Execution, summary string) {
+	agent.Observe(ctx, agent.Event{Type: agent.EventHook, Text: fmt.Sprintf("%s %q %s", ex.Event, ex.Command, summary), Data: ex, Duration: ex.Duration})
 }
 
 // Reads the JSON a hook printed, logging plain text output instead and rejecting fields the event does not take

@@ -87,9 +87,56 @@ type response struct {
 	Error          *apiError       `json:"error"`
 }
 
+// Candidate with the rating and scoring fields the decoder accepts without acting on
 type candidate struct {
-	Content      content `json:"content"`
-	FinishReason string  `json:"finishReason"`
+	Content           content            `json:"content"`
+	FinishReason      string             `json:"finishReason"`
+	FinishMessage     string             `json:"finishMessage"`
+	SafetyRatings     json.RawMessage    `json:"safetyRatings"`
+	AvgLogprobs       float64            `json:"avgLogprobs"`
+	CitationMetadata  *citationMetadata  `json:"citationMetadata"`
+	GroundingMetadata *groundingMetadata `json:"groundingMetadata"`
+}
+
+// Citation list under the Gemini API name and the Vertex name
+type citationMetadata struct {
+	CitationSources []citationSource `json:"citationSources"`
+	Citations       []citationSource `json:"citations"`
+}
+
+type citationSource struct {
+	StartIndex int    `json:"startIndex"`
+	EndIndex   int    `json:"endIndex"`
+	URI        string `json:"uri"`
+	Title      string `json:"title"`
+	License    string `json:"license"`
+}
+
+type groundingMetadata struct {
+	GroundingChunks   []groundingChunk   `json:"groundingChunks"`
+	GroundingSupports []groundingSupport `json:"groundingSupports"`
+}
+
+type groundingChunk struct {
+	Web              *groundingSource `json:"web"`
+	RetrievedContext *groundingSource `json:"retrievedContext"`
+}
+
+type groundingSource struct {
+	URI   string `json:"uri"`
+	Title string `json:"title"`
+	Text  string `json:"text"`
+}
+
+type groundingSupport struct {
+	Segment               *segment `json:"segment"`
+	GroundingChunkIndices []int    `json:"groundingChunkIndices"`
+}
+
+type segment struct {
+	StartIndex int    `json:"startIndex"`
+	EndIndex   int    `json:"endIndex"`
+	Text       string `json:"text"`
 }
 
 type promptFeedback struct {

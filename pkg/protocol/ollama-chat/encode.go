@@ -9,6 +9,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
 
+const errorPrefix = "[error] "
+
 // Builds POST /api/chat with a leading system message and sampling knobs under options
 func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 	if req.Model == "" {
@@ -90,7 +92,13 @@ func encodeUser(parts []protocol.Part) (message, error) {
 		case protocol.Text:
 			texts = append(texts, v.Text)
 		case protocol.Image:
-			msg.Images = append(msg.Images, base64.StdEncoding.EncodeToString(v.Data))
+			img, err := encodeImage(v)
+			if err != nil {
+				return message{}, err
+			}
+			msg.Images = append(msg.Images, img)
+		case protocol.Document:
+			return message{}, fmt.Errorf("the wire has no document part for %q", v.Name)
 		default:
 			return message{}, fmt.Errorf("user message cannot carry %T", p)
 		}
@@ -99,7 +107,7 @@ func encodeUser(parts []protocol.Part) (message, error) {
 	return msg, nil
 }
 
-// Replays text, thinking and tool calls, leaving out redacted thinking that has no text to send
+// Replays text, replayable thinking and tool calls, sending an empty turn when policy drops everything
 func encodeAssistant(parts []protocol.Part) (message, error) {
 	msg := message{Role: "assistant"}
 	var texts, thoughts []string
@@ -108,15 +116,17 @@ func encodeAssistant(parts []protocol.Part) (message, error) {
 		case protocol.Text:
 			texts = append(texts, v.Text)
 		case protocol.Thinking:
-			if !v.Redacted {
-				thoughts = append(thoughts, v.Text)
+			if v.Redacted || !protocol.Replayable(v.Origin, protocol.OllamaChat) {
+				continue
 			}
+			thoughts = append(thoughts, v.Text)
 		case protocol.ToolCall:
 			args, err := protocol.ParseArgs(string(v.Args))
 			if err != nil {
 				return message{}, fmt.Errorf("tool call %s: %w", v.Name, err)
 			}
 			msg.ToolCalls = append(msg.ToolCalls, toolCall{ID: v.ID, Function: toolCallFunction{Name: v.Name, Arguments: args}})
+		case protocol.ServerToolCall, protocol.ServerToolResult:
 		default:
 			return message{}, fmt.Errorf("assistant message cannot carry %T", p)
 		}
@@ -126,7 +136,7 @@ func encodeAssistant(parts []protocol.Part) (message, error) {
 	return msg, nil
 }
 
-// Emits one tool message per result, linked by tool_call_id and tool_name
+// Emits one tool message per result, linked by tool_call_id and tool_name and flagged on failure
 func encodeToolResults(parts []protocol.Part) ([]message, error) {
 	var out []message
 	for _, p := range parts {
@@ -144,13 +154,31 @@ func encodeToolResults(parts []protocol.Part) ([]message, error) {
 			case protocol.Text:
 				texts = append(texts, v.Text)
 			case protocol.Image:
-				msg.Images = append(msg.Images, base64.StdEncoding.EncodeToString(v.Data))
+				img, err := encodeImage(v)
+				if err != nil {
+					return nil, fmt.Errorf("tool result %s: %w", r.CallID, err)
+				}
+				msg.Images = append(msg.Images, img)
 			default:
 				return nil, fmt.Errorf("tool result %s cannot carry %T", r.CallID, c)
 			}
 		}
 		msg.Content = strings.Join(texts, "\n")
+		if r.IsError {
+			msg.Content = errorPrefix + msg.Content
+		}
 		out = append(out, msg)
 	}
 	return out, nil
+}
+
+// Checks the media type names an image before sending the bare base64 the wire expects
+func encodeImage(img protocol.Image) (string, error) {
+	if !strings.HasPrefix(img.MediaType, "image/") {
+		return "", fmt.Errorf("image media type %q is not an image type", img.MediaType)
+	}
+	if len(img.Data) == 0 {
+		return "", fmt.Errorf("image has no data")
+	}
+	return base64.StdEncoding.EncodeToString(img.Data), nil
 }

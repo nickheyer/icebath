@@ -3,6 +3,8 @@ package bedrockconversestream
 import (
 	"bytes"
 	"encoding/binary"
+	"hash/crc32"
+	"strings"
 	"testing"
 	"time"
 )
@@ -122,4 +124,26 @@ func flip(b []byte, i int) []byte {
 	out := append([]byte(nil), b...)
 	out[i] ^= 0x01
 	return out
+}
+
+func TestReadFramesRejectsOversizedLengths(t *testing.T) {
+	cases := map[string]struct {
+		total, headers uint32
+	}{
+		"frame too long":   {total: maxFrameLen + 1, headers: 0},
+		"headers too long": {total: maxFrameLen, headers: maxHeadersLen + 1},
+	}
+	for name, c := range cases {
+		var prelude [preludeLen]byte
+		binary.BigEndian.PutUint32(prelude[0:4], c.total)
+		binary.BigEndian.PutUint32(prelude[4:8], c.headers)
+		binary.BigEndian.PutUint32(prelude[8:12], crc32.Checksum(prelude[:8], crcTable))
+		var got error
+		for _, err := range ReadFrames(bytes.NewReader(prelude[:])) {
+			got = err
+		}
+		if got == nil || !strings.Contains(got.Error(), "limit") {
+			t.Fatalf("%s: %v", name, got)
+		}
+	}
 }

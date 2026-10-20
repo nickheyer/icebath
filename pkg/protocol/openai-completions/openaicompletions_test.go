@@ -2,6 +2,7 @@ package openaicompletions
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func sampleRequest(stream bool) protocol.Request {
 		Messages: []protocol.Message{
 			{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "What is the weather like in Boston today?"}}},
 			{Role: protocol.RoleAssistant, Content: []protocol.Part{
-				protocol.Thinking{Text: "dropped", Signature: "sig"},
+				protocol.Thinking{Text: "replayed", Signature: "sig"},
 				protocol.ToolCall{ID: "call_abc123", Name: "get_current_weather", Args: json.RawMessage(`{"location":"Boston, MA"}`)},
 			}},
 			{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "call_abc123", Name: "get_current_weather", Content: []protocol.Part{protocol.Text{Text: "72F and sunny"}}}}},
@@ -42,6 +43,22 @@ func decodeBody(t *testing.T, body []byte) map[string]any {
 		t.Fatalf("%v: %s", err, body)
 	}
 	return m
+}
+
+func encodeMessages(t *testing.T, msgs ...protocol.Message) []any {
+	t.Helper()
+	call, err := (Protocol{}).Encode(protocol.Request{Model: "m", Messages: msgs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decodeBody(t, call.Body)["messages"].([]any)
+}
+
+func TestCapabilities(t *testing.T) {
+	want := protocol.Capabilities{Thinking: true, Images: true, ToolChoiceNone: true, ToolChoiceNamed: true, StopSequences: true}
+	if got := (Protocol{}).Capabilities(); got != want {
+		t.Fatalf("%+v", got)
+	}
 }
 
 func TestEncodeRequest(t *testing.T) {
@@ -74,7 +91,7 @@ func TestEncodeRequest(t *testing.T) {
 		t.Fatalf("%v", u)
 	}
 	asst := msgs[2].(map[string]any)
-	if _, has := asst["content"]; has || asst["role"] != "assistant" {
+	if _, has := asst["content"]; has || asst["role"] != "assistant" || asst["reasoning_content"] != "replayed" {
 		t.Fatalf("%v", asst)
 	}
 	tc := asst["tool_calls"].([]any)[0].(map[string]any)
@@ -138,18 +155,77 @@ func TestEncodeToolChoiceAndExtra(t *testing.T) {
 	}
 }
 
+// Rule 3 replay policy for signed parts
+func TestEncodeOriginPolicy(t *testing.T) {
+	foreign := protocol.AnthropicMessages
+	msgs := encodeMessages(t, protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{
+		protocol.Thinking{Text: "foreign thought", Signature: "foreign-sig", Origin: foreign},
+		protocol.Thinking{Redacted: true, Signature: "redacted-sig"},
+		protocol.Thinking{Text: "same", Origin: protocol.OpenAICompletions},
+		protocol.Thinking{Text: "empty"},
+		protocol.ToolCall{ID: "c1", Name: "f", Args: json.RawMessage(`{"a": 1}`), Signature: "tool-sig", Origin: foreign},
+		protocol.ServerToolCall{ID: "s1", Name: "web_search", Args: json.RawMessage(`{"q":"x"}`), Origin: foreign},
+		protocol.ServerToolResult{CallID: "s1", Name: "web_search_tool_result", Content: json.RawMessage(`[]`), Origin: foreign},
+		protocol.Text{Text: "answer"},
+	}})
+	raw, _ := json.Marshal(msgs)
+	for _, leaked := range []string{"foreign thought", "foreign-sig", "redacted-sig", "tool-sig", "web_search"} {
+		if strings.Contains(string(raw), leaked) {
+			t.Fatalf("leaked %q in %s", leaked, raw)
+		}
+	}
+	asst := msgs[0].(map[string]any)
+	if asst["reasoning_content"] != "same\nempty" || asst["content"] != "answer" {
+		t.Fatalf("%v", asst)
+	}
+	if fn := asst["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any); fn["arguments"] != `{"a": 1}` {
+		t.Fatalf("%v", fn)
+	}
+	msgs = encodeMessages(t, protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.Thinking{Text: "gone", Origin: foreign}}})
+	if asst := msgs[0].(map[string]any); asst["content"] != "" || asst["reasoning_content"] != nil {
+		t.Fatalf("empty assistant turn %v", asst)
+	}
+}
+
+func TestEncodeToolResultErrorAndImage(t *testing.T) {
+	msgs := encodeMessages(t, protocol.Message{Role: protocol.RoleTool, Content: []protocol.Part{
+		protocol.ToolResult{CallID: "c1", IsError: true, Content: []protocol.Part{protocol.Text{Text: "boom"}}},
+		protocol.ToolResult{CallID: "c2", Content: []protocol.Part{protocol.Image{MediaType: "image/png", Data: []byte{1, 2, 3}}}},
+		protocol.ToolResult{CallID: "c3", IsError: true},
+		protocol.ToolResult{CallID: "c4", IsError: true, Content: []protocol.Part{protocol.Text{Text: "a"}, protocol.Text{Text: "b"}}},
+	}})
+	if msgs[0].(map[string]any)["content"] != "[error] boom" {
+		t.Fatalf("%v", msgs[0])
+	}
+	if msgs[1].(map[string]any)["content"] != "[image image/png, 3 bytes omitted]" {
+		t.Fatalf("%v", msgs[1])
+	}
+	if msgs[2].(map[string]any)["content"] != "[error] " {
+		t.Fatalf("%v", msgs[2])
+	}
+	parts := msgs[3].(map[string]any)["content"].([]any)
+	if parts[0].(map[string]any)["text"] != "[error] a" || parts[1].(map[string]any)["text"] != "b" {
+		t.Fatalf("%v", parts)
+	}
+}
+
 func TestEncodeErrors(t *testing.T) {
 	text := protocol.Text{Text: "x"}
 	result := protocol.ToolResult{CallID: "c", Content: []protocol.Part{text}}
 	cases := map[string]protocol.Request{
-		"image in tool result": {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "c", Content: []protocol.Part{protocol.Image{MediaType: "image/png"}}}}}}},
+		"document":             {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Document{MediaType: "application/pdf", Data: []byte{1}}}}}},
+		"image without type":   {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{text, protocol.Image{Data: []byte{1}}}}}},
+		"image without data":   {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{text, protocol.Image{MediaType: "image/png"}}}}},
+		"thinking in result":   {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "c", Content: []protocol.Part{protocol.Thinking{}}}}}}},
 		"tool result in user":  {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{result}}}},
 		"text in tool message": {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{text}}}},
 		"image in assistant":   {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.Image{}}}}},
-		"thinking only":        {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.Thinking{Text: "t"}}}}},
+		"bad args":             {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.ToolCall{ID: "c", Name: "f", Args: json.RawMessage(`[1]`)}}}}},
+		"null args":            {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.ToolCall{ID: "c", Name: "f", Args: json.RawMessage(`null`)}}}}},
 		"empty message":        {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser}}},
 		"unknown role":         {Model: "m", Messages: []protocol.Message{{Role: "system", Content: []protocol.Part{text}}}},
 		"tool without schema":  {Model: "m", Tools: []protocol.Tool{{Name: "f"}}},
+		"nameless tool choice": {Model: "m", ToolChoice: protocol.ToolChoice{Mode: protocol.ToolChoiceTool}},
 		"unknown tool choice":  {Model: "m", ToolChoice: protocol.ToolChoice{Mode: "sometimes"}},
 		"invalid extra":        {Model: "m", Extra: map[string]json.RawMessage{"x": json.RawMessage(`{`)}},
 	}
@@ -264,14 +340,6 @@ func TestDecode(t *testing.T) {
 	if resp.Usage != (protocol.Usage{Input: 19, Output: 10}) {
 		t.Fatalf("%+v", resp.Usage)
 	}
-	cached := `{"id":"x","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"length"}],"usage":{"prompt_tokens":5,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":3,"cache_write_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}}`
-	resp, err = (Protocol{}).Decode(strings.NewReader(cached))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StopReason != protocol.StopLength || resp.Usage != (protocol.Usage{Input: 5, Output: 1, CacheRead: 3, CacheWrite: 2, Reasoning: 4}) {
-		t.Fatalf("%+v", resp)
-	}
 	for name, body := range map[string]string{
 		"no choices":    `{"id":"x","model":"m","choices":[]}`,
 		"custom tool":   `{"id":"x","model":"m","choices":[{"index":0,"message":{"role":"assistant","tool_calls":[{"id":"c","type":"custom"}]},"finish_reason":"tool_calls"}]}`,
@@ -281,6 +349,44 @@ func TestDecode(t *testing.T) {
 		if _, err := (Protocol{}).Decode(strings.NewReader(body)); err == nil {
 			t.Fatalf("%s accepted", name)
 		}
+	}
+}
+
+// Usage with cached and reasoning tokens, Input excluding the cached share
+func TestDecodeUsageNormalization(t *testing.T) {
+	cached := `{"id":"x","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"length"}],"usage":{"prompt_tokens":5,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":3,"cache_write_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}}`
+	resp, err := (Protocol{}).Decode(strings.NewReader(cached))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StopReason != protocol.StopLength || resp.Usage != (protocol.Usage{Input: 2, Output: 1, CacheRead: 3, CacheWrite: 2, Reasoning: 4}) {
+		t.Fatalf("%+v", resp)
+	}
+	if resp.Usage.Context() != 7 {
+		t.Fatalf("context %d", resp.Usage.Context())
+	}
+}
+
+// Reasoning fields DeepSeek and OpenRouter style vendors add to the message, with a refusal kept separate
+func TestDecodeReasoningAndRefusal(t *testing.T) {
+	body := `{"id":"x","model":"m","choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"think","content":"answer","refusal":"nope"},"finish_reason":"stop"}]}`
+	resp, err := (Protocol{}).Decode(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Content) != 3 {
+		t.Fatalf("%+v", resp.Content)
+	}
+	if th := resp.Content[0].(protocol.Thinking); th.Text != "think" || th.Origin != protocol.OpenAICompletions {
+		t.Fatalf("%+v", th)
+	}
+	if resp.Content[1].(protocol.Text).Text != "answer" || resp.Content[2].(protocol.Text).Text != "nope" {
+		t.Fatalf("%+v", resp.Content)
+	}
+	alt := `{"id":"x","model":"m","choices":[{"index":0,"message":{"role":"assistant","reasoning":"alt","content":"a"},"finish_reason":""}]}`
+	resp, err = (Protocol{}).Decode(strings.NewReader(alt))
+	if err != nil || resp.Content[0].(protocol.Thinking).Text != "alt" || resp.StopReason != protocol.StopEnd {
+		t.Fatalf("%+v %v", resp, err)
 	}
 }
 
@@ -362,7 +468,7 @@ func TestStreamToolCalls(t *testing.T) {
 		protocol.EventToolCallStart, protocol.EventToolCallDelta, protocol.EventToolCallEnd,
 		protocol.EventDone,
 	})
-	if final.StopReason != protocol.StopToolUse || final.Usage != (protocol.Usage{Input: 40, Output: 20, CacheRead: 8, Reasoning: 2}) {
+	if final.StopReason != protocol.StopToolUse || final.Usage != (protocol.Usage{Input: 32, Output: 20, CacheRead: 8, Reasoning: 2}) {
 		t.Fatalf("%+v", final)
 	}
 	a := final.Content[0].(protocol.ToolCall)
@@ -390,6 +496,60 @@ data: {"id":"c","model":"m","choices":[{"index":0,"delta":{},"finish_reason":"to
 	}
 }
 
+// Reasoning deltas precede content and close when content starts, with refusal in its own block
+func TestStreamReasoningThenContentAndRefusal(t *testing.T) {
+	in := `data: {"id":"c","model":"m","choices":[{"index":0,"delta":{"reasoning_content":"Let me"},"finish_reason":null}]}
+
+data: {"id":"c","model":"m","choices":[{"index":0,"delta":{"reasoning":" think"},"finish_reason":null}]}
+
+data: {"id":"c","model":"m","choices":[{"index":0,"delta":{"content":"Sky","refusal":"no"},"finish_reason":null}]}
+
+data: {"id":"c","model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+`
+	types, final := collect(t, in)
+	assertTypes(t, types, []protocol.EventType{protocol.EventStart, protocol.EventThinkingStart, protocol.EventThinkingDelta, protocol.EventThinkingDelta, protocol.EventThinkingEnd, protocol.EventTextStart, protocol.EventTextDelta, protocol.EventTextStart, protocol.EventTextDelta, protocol.EventTextEnd, protocol.EventTextEnd, protocol.EventDone})
+	if th := final.Content[0].(protocol.Thinking); th.Text != "Let me think" || th.Origin != protocol.OpenAICompletions {
+		t.Fatalf("%+v", th)
+	}
+	if final.Content[1].(protocol.Text).Text != "Sky" || final.Content[2].(protocol.Text).Text != "no" {
+		t.Fatalf("%+v", final.Content)
+	}
+	withCall := `data: {"id":"c","model":"m","choices":[{"index":0,"delta":{"reasoning_content":"r"},"finish_reason":null}]}
+
+data: {"id":"c","model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":null}]}
+
+data: {"id":"c","model":"m","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+`
+	types, _ = collect(t, withCall)
+	assertTypes(t, types, []protocol.EventType{protocol.EventStart, protocol.EventThinkingStart, protocol.EventThinkingDelta, protocol.EventThinkingEnd, protocol.EventToolCallStart, protocol.EventToolCallDelta, protocol.EventToolCallEnd, protocol.EventDone})
+}
+
+// Vendors that never send finish_reason still terminate with [DONE]
+func TestStreamDoneWithoutFinishReason(t *testing.T) {
+	in := `data: {"id":"c","model":"m","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":""}]}
+
+data: [DONE]
+
+`
+	_, final := collect(t, in)
+	if final.StopReason != protocol.StopEnd || final.RawStopReason != "" || final.Content[0].(protocol.Text).Text != "Hi" {
+		t.Fatalf("%+v", final)
+	}
+	calls := `data: {"id":"c","model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":null}]}
+
+data: [DONE]
+
+`
+	_, final = collect(t, calls)
+	if final.StopReason != protocol.StopToolUse || len(final.Content) != 1 {
+		t.Fatalf("%+v", final)
+	}
+}
+
 func TestStreamIdentityArrivingLate(t *testing.T) {
 	in := `data: {"id":"c","model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"a\":"}}]},"finish_reason":null}]}
 
@@ -412,20 +572,27 @@ func TestStreamErrors(t *testing.T) {
 	cases := map[string]string{
 		"truncated":        "data: {\"id\":\"c\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"},\"finish_reason\":null}]}\n\n",
 		"error frame":      "data: {\"error\":{\"message\":\"boom\",\"type\":\"server_error\",\"param\":null,\"code\":null}}\n\n",
+		"plain error":      "data: {\"error\":{\"message\":\"bad\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":null}}\n\n",
 		"bad json":         "data: {nope}\n\n",
 		"second choice":    "data: {\"id\":\"c\",\"model\":\"m\",\"choices\":[{\"index\":1,\"delta\":{\"content\":\"Hi\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
 		"custom tool call": "data: {\"id\":\"c\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"x\",\"type\":\"custom\"}]},\"finish_reason\":null}]}\n\n",
 		"bad arguments":    "data: {\"id\":\"c\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"x\",\"type\":\"function\",\"function\":{\"name\":\"f\",\"arguments\":\"{\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+		"bad args at done": "data: {\"id\":\"c\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"x\",\"type\":\"function\",\"function\":{\"name\":\"f\",\"arguments\":\"[\"}}]},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n",
 	}
 	for name, in := range cases {
 		var failed bool
 		for _, err := range (Protocol{}).Stream(strings.NewReader(in)) {
 			if err != nil {
 				failed = true
-				if name == "error frame" {
-					pe, ok := err.(*protocol.Error)
-					if !ok || pe.Status != 200 || pe.Type != "server_error" || pe.Message != "boom" {
-						t.Fatalf("%v", err)
+				var pe *protocol.Error
+				switch name {
+				case "error frame":
+					if !errors.As(err, &pe) || pe.Status != 200 || pe.Type != "server_error" || pe.Message != "boom" || !pe.InStream || !pe.Transient || len(pe.Body) == 0 {
+						t.Fatalf("%+v", pe)
+					}
+				case "plain error":
+					if !errors.As(err, &pe) || !pe.InStream || pe.Transient {
+						t.Fatalf("%+v", pe)
 					}
 				}
 			}
@@ -440,16 +607,25 @@ func TestStreamErrors(t *testing.T) {
 func TestDecodeError(t *testing.T) {
 	body := []byte(`{"error": {"message": "Your request rate increased too quickly. Please reduce the request rate and gradually increase it again.", "type": "rate_limit_error", "param": null, "code": "slow_down"}}`)
 	e := (Protocol{}).DecodeError(429, body)
-	if e.Status != 429 || e.Type != "rate_limit_error" || !strings.HasPrefix(e.Message, "Your request rate") || string(e.Body) != string(body) {
+	if e.Status != 429 || e.Type != "rate_limit_error" || !strings.HasPrefix(e.Message, "Your request rate") || string(e.Body) != string(body) || !e.Transient || e.InStream {
 		t.Fatalf("%+v", e)
 	}
 	e = (Protocol{}).DecodeError(403, []byte("  forbidden\n"))
-	if e.Status != 403 || e.Type != "" || e.Message != "forbidden" {
+	if e.Status != 403 || e.Type != "" || e.Message != "forbidden" || e.Transient {
 		t.Fatalf("%+v", e)
 	}
 	e = (Protocol{}).DecodeError(400, []byte(`{"error":{"message":"m","type":"","param":null,"code":"only_code"}}`))
-	if e.Type != "only_code" || e.Error() != "protocol: http 400 only_code: m" {
+	if e.Type != "only_code" || e.Error() != "protocol: http 400 only_code: m" || e.Transient {
 		t.Fatalf("%+v", e)
+	}
+	e = (Protocol{}).DecodeError(400, []byte(`{"error":{"message":"m","type":"","code":"overloaded"}}`))
+	if !e.Transient {
+		t.Fatal("overloaded code must be transient")
+	}
+	for status, want := range map[int]bool{408: true, 409: true, 500: true, 502: true, 404: false} {
+		if got := (Protocol{}).DecodeError(status, []byte("x")).Transient; got != want {
+			t.Fatalf("%d transient %v", status, got)
+		}
 	}
 }
 

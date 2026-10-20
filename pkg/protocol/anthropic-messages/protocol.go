@@ -12,6 +12,21 @@ type Protocol struct{}
 
 func (Protocol) ID() protocol.ID { return protocol.AnthropicMessages }
 
+func (Protocol) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Thinking:         true,
+		RedactedThinking: true,
+		Images:           true,
+		ImagesInResults:  true,
+		Documents:        true,
+		ToolChoiceNone:   true,
+		ToolChoiceNamed:  true,
+		StopSequences:    true,
+		ServerTools:      true,
+		Citations:        true,
+	}
+}
+
 func init() { protocol.Register(Protocol{}) }
 
 var _ protocol.Protocol = Protocol{}

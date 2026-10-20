@@ -4,9 +4,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
+
+const errorPrefix = "[error] "
 
 // Builds POST /chat/completions with a leading system message and one tool message per result
 func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
@@ -59,6 +62,9 @@ func encodeToolChoice(tc protocol.ToolChoice) (any, error) {
 	case protocol.ToolChoiceAuto, protocol.ToolChoiceNone, protocol.ToolChoiceRequired:
 		return string(tc.Mode), nil
 	case protocol.ToolChoiceTool:
+		if tc.Name == "" {
+			return nil, fmt.Errorf("openai-completions: tool choice names no tool")
+		}
 		return namedToolChoice{Type: "function", Function: namedFunction{Name: tc.Name}}, nil
 	}
 	return nil, fmt.Errorf("openai-completions: unknown tool choice mode %q", tc.Mode)
@@ -91,7 +97,13 @@ func encodeUser(parts []protocol.Part) ([]message, error) {
 		case protocol.Text:
 			content = append(content, contentPart{Type: "text", Text: v.Text})
 		case protocol.Image:
-			content = append(content, contentPart{Type: "image_url", ImageURL: &imageURL{URL: dataURL(v)}})
+			url, err := dataURL(v)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, contentPart{Type: "image_url", ImageURL: &imageURL{URL: url}})
+		case protocol.Document:
+			return nil, fmt.Errorf("the wire has no document part for %q", v.Name)
 		default:
 			return nil, fmt.Errorf("user message cannot carry %T", p)
 		}
@@ -99,27 +111,36 @@ func encodeUser(parts []protocol.Part) ([]message, error) {
 	return []message{{Role: "user", Content: content}}, nil
 }
 
-// Encodes text and tool calls, the two assistant parts the message schema defines
+// Encodes text, replayable reasoning and tool calls, sending an empty turn when policy drops everything
 func encodeAssistant(parts []protocol.Part) ([]message, error) {
-	var texts []string
+	var texts, thoughts []string
 	var calls []toolCall
 	for _, p := range parts {
 		switch v := p.(type) {
 		case protocol.Text:
 			texts = append(texts, v.Text)
 		case protocol.Thinking:
+			if v.Redacted || !protocol.Replayable(v.Origin, protocol.OpenAICompletions) {
+				continue
+			}
+			thoughts = append(thoughts, v.Text)
 		case protocol.ToolCall:
-			calls = append(calls, toolCall{ID: v.ID, Type: "function", Function: toolCallFunction{Name: v.Name, Arguments: string(v.Args)}})
+			args, err := protocol.ParseArgs(string(v.Args))
+			if err != nil {
+				return nil, fmt.Errorf("tool call %s: %w", v.ID, err)
+			}
+			calls = append(calls, toolCall{ID: v.ID, Type: "function", Function: toolCallFunction{Name: v.Name, Arguments: string(args)}})
+		case protocol.ServerToolCall, protocol.ServerToolResult:
 		default:
 			return nil, fmt.Errorf("assistant message cannot carry %T", p)
 		}
 	}
-	if len(texts) == 0 && len(calls) == 0 {
-		return nil, fmt.Errorf("assistant message has no text or tool calls")
-	}
-	msg := message{Role: "assistant", ToolCalls: calls}
+	msg := message{Role: "assistant", ToolCalls: calls, ReasoningContent: strings.Join(thoughts, "\n")}
 	switch len(texts) {
 	case 0:
+		if len(calls) == 0 {
+			msg.Content = ""
+		}
 	case 1:
 		msg.Content = texts[0]
 	default:
@@ -132,7 +153,7 @@ func encodeAssistant(parts []protocol.Part) ([]message, error) {
 	return []message{msg}, nil
 }
 
-// Emits one tool message per result carrying the text content the schema defines
+// Emits one tool message per result, flagging failures and standing in for images with text
 func encodeToolResults(parts []protocol.Part) ([]message, error) {
 	var out []message
 	for _, p := range parts {
@@ -140,28 +161,47 @@ func encodeToolResults(parts []protocol.Part) ([]message, error) {
 		if !ok {
 			return nil, fmt.Errorf("tool message cannot carry %T", p)
 		}
-		var texts []contentPart
+		var texts []string
 		for _, c := range r.Content {
 			switch v := c.(type) {
 			case protocol.Text:
-				texts = append(texts, contentPart{Type: "text", Text: v.Text})
+				texts = append(texts, v.Text)
+			case protocol.Image:
+				texts = append(texts, omittedImage(v))
 			default:
-				return nil, fmt.Errorf("openai-completions tool message %s cannot carry %T", r.CallID, c)
+				return nil, fmt.Errorf("tool result %s cannot carry %T", r.CallID, c)
 			}
+		}
+		if r.IsError {
+			if len(texts) == 0 {
+				texts = []string{""}
+			}
+			texts[0] = errorPrefix + texts[0]
 		}
 		msg := message{Role: "tool", ToolCallID: r.CallID, Content: ""}
 		switch len(texts) {
 		case 0:
 		case 1:
-			msg.Content = texts[0].Text
+			msg.Content = texts[0]
 		default:
-			msg.Content = texts
+			content := make([]contentPart, len(texts))
+			for i, t := range texts {
+				content[i] = contentPart{Type: "text", Text: t}
+			}
+			msg.Content = content
 		}
 		out = append(out, msg)
 	}
 	return out, nil
 }
 
-func dataURL(img protocol.Image) string {
-	return "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
+func omittedImage(img protocol.Image) string {
+	return fmt.Sprintf("[image %s, %d bytes omitted]", img.MediaType, len(img.Data))
+}
+
+func dataURL(img protocol.Image) (string, error) {
+	if img.MediaType == "" || len(img.Data) == 0 {
+		return "", fmt.Errorf("image needs a media type and data")
+	}
+	return "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data), nil
 }

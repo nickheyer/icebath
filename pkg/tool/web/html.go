@@ -2,22 +2,29 @@ package web
 
 import (
 	"html"
+	"net/url"
 	"regexp"
 	"strings"
 )
 
 var (
-	blockTags   = map[string]bool{"p": true, "div": true, "br": true, "tr": true, "section": true, "article": true, "header": true, "footer": true, "nav": true, "ul": true, "ol": true, "table": true, "blockquote": true, "pre": true, "hr": true, "main": true, "aside": true, "form": true, "dd": true, "dt": true}
+	blockTags   = map[string]bool{"p": true, "div": true, "br": true, "tr": true, "section": true, "article": true, "header": true, "footer": true, "nav": true, "ul": true, "ol": true, "table": true, "blockquote": true, "hr": true, "main": true, "aside": true, "form": true, "dd": true, "dt": true}
 	skipTags    = map[string]bool{"script": true, "style": true, "noscript": true, "template": true, "svg": true}
 	multiSpace  = regexp.MustCompile(`[ \t\r\f\v]+`)
 	multiBreaks = regexp.MustCompile(`\n{3,}`)
 )
 
-// Converts an HTML document to plain text, keeping headings, list bullets and links
-func Text(doc string) string {
+const verbatim = "\x00"
+
+// Converts an HTML document to plain text, keeping headings, list bullets, code blocks and links
+func Text(doc string) string { return TextFrom(doc, nil) }
+
+// Converts HTML to plain text, resolving links against base and any base element in the document
+func TextFrom(doc string, base *url.URL) string {
 	var out strings.Builder
 	var title strings.Builder
 	inTitle := false
+	preDepth := 0
 	var link string
 	var linkText strings.Builder
 	i := 0
@@ -64,8 +71,30 @@ func Text(doc string) string {
 			} else {
 				i = len(doc)
 			}
+		case name == "base" && !closing:
+			if href := attr(attrs, "href"); href != "" {
+				if resolved := resolveLink(base, href); resolved != "" {
+					if u, err := url.Parse(resolved); err == nil {
+						base = u
+					}
+				}
+			}
 		case name == "title":
 			inTitle = !closing
+		case name == "pre":
+			if closing {
+				if preDepth > 0 {
+					preDepth--
+				}
+				if preDepth == 0 {
+					out.WriteString(verbatim + "\n")
+				}
+			} else {
+				if preDepth == 0 {
+					out.WriteString("\n" + verbatim)
+				}
+				preDepth++
+			}
 		case name == "a":
 			if closing {
 				text := strings.TrimSpace(multiSpace.ReplaceAllString(linkText.String(), " "))
@@ -86,7 +115,7 @@ func Text(doc string) string {
 			} else {
 				href := attr(attrs, "href")
 				if href != "" && !strings.HasPrefix(strings.ToLower(href), "javascript:") {
-					link = href
+					link = resolveLink(base, href)
 				}
 			}
 		case len(name) == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6':
@@ -115,16 +144,47 @@ func Text(doc string) string {
 			out.WriteString("\n")
 		}
 	}
-	text := out.String()
-	lines := strings.Split(text, "\n")
-	for i, l := range lines {
-		lines[i] = strings.TrimSpace(multiSpace.ReplaceAllString(l, " "))
+	if preDepth > 0 {
+		out.WriteString(verbatim)
 	}
-	text = strings.TrimSpace(multiBreaks.ReplaceAllString(strings.Join(lines, "\n"), "\n\n"))
+	text := normalize(out.String())
 	if t := strings.TrimSpace(multiSpace.ReplaceAllString(title.String(), " ")); t != "" {
 		return "# " + t + "\n\n" + text
 	}
 	return text
+}
+
+// Collapses whitespace in prose while fencing verbatim blocks untouched
+func normalize(text string) string {
+	parts := strings.Split(text, verbatim)
+	var sb strings.Builder
+	for i, part := range parts {
+		if i%2 == 1 {
+			code := strings.Trim(part, "\n")
+			sb.WriteString("\n```\n")
+			sb.WriteString(code)
+			sb.WriteString("\n```\n")
+			continue
+		}
+		lines := strings.Split(part, "\n")
+		for j, l := range lines {
+			lines[j] = strings.TrimSpace(multiSpace.ReplaceAllString(l, " "))
+		}
+		sb.WriteString(multiBreaks.ReplaceAllString(strings.Join(lines, "\n"), "\n\n"))
+	}
+	return strings.TrimSpace(multiBreaks.ReplaceAllString(sb.String(), "\n\n"))
+}
+
+// Makes href absolute against base, leaving it as written when there is no base or it does not parse
+func resolveLink(base *url.URL, href string) string {
+	if base == nil {
+		return href
+	}
+	ref, err := url.Parse(strings.TrimSpace(href))
+	if err != nil {
+		return href
+	}
+	return base.ResolveReference(ref).String()
 }
 
 // Finds the closing angle bracket of the tag starting at i, honouring quoted attribute values
@@ -204,4 +264,37 @@ func closeOf(doc string, from int, name string) int {
 		return -1
 	}
 	return from + k + end + 1
+}
+
+var metaCharset = regexp.MustCompile(`(?i)<meta[^>]+charset=["']?\s*([A-Za-z0-9_.:-]+)`)
+
+// Charset named by a meta element in the head of an HTML document
+func sniffCharset(doc []byte) string {
+	head := doc
+	if len(head) > 4096 {
+		head = head[:4096]
+	}
+	if m := metaCharset.FindSubmatch(head); m != nil {
+		return strings.ToLower(string(m[1]))
+	}
+	return ""
+}
+
+// Title of an HTML document as plain text
+func title(doc string) string {
+	lower := strings.ToLower(doc)
+	start := strings.Index(lower, "<title")
+	if start < 0 {
+		return ""
+	}
+	open := strings.IndexByte(doc[start:], '>')
+	if open < 0 {
+		return ""
+	}
+	rest := doc[start+open+1:]
+	end := strings.Index(strings.ToLower(rest), "</title")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(multiSpace.ReplaceAllString(html.UnescapeString(rest[:end]), " "))
 }

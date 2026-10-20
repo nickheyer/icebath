@@ -153,14 +153,14 @@ const historyResponse = `{
 }`
 
 // ASSEMBLED from the streaming with tools chunk and the final line of the same docs example
-const toolResponse = `{"model":"llama3.2","created_at":"2025-07-07T20:22:19.19314Z","message":{"role":"assistant","content":"","thinking":"Tokyo it is","tool_calls":[{"id":"call_abc","function":{"name":"get_weather","arguments":{"city": "Tokyo"}}}]},"done_reason":"stop","done":true,"prompt_eval_count":169,"eval_count":15,"prompt_eval_cached_count":100}`
+const toolResponse = `{"model":"llama3.2","created_at":"2025-07-07T20:22:19.19314Z","message":{"role":"assistant","content":"","thinking":"Tokyo it is","tool_calls":[{"id":"call_abc","function":{"name":"get_weather","arguments":{"city": "Tokyo"}}}]},"done_reason":"stop","done":true,"prompt_eval_count":169,"eval_count":15}`
 
 func TestDecode(t *testing.T) {
 	resp, err := p.Decode(strings.NewReader(historyResponse))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := protocol.Response{Model: "llama3.2", Content: []protocol.Part{protocol.Text{Text: "The current temperature in Toronto is 11°C."}}, StopReason: protocol.StopEnd, RawStopReason: "stop", Usage: protocol.Usage{Input: 94, Output: 11}}
+	want := protocol.Response{Model: "llama3.2", Content: []protocol.Part{protocol.Text{Text: "The current temperature in Toronto is 11°C."}}, StopReason: protocol.StopEnd, RawStopReason: "stop", Usage: protocol.Usage{Input: 94, Output: 11}, Metrics: protocol.Metrics{Latency: 890771750, Load: 707634750, Prompt: 91703208, Generate: 90282125}}
 	if !reflect.DeepEqual(resp, want) {
 		t.Fatalf("%+v", resp)
 	}
@@ -169,10 +169,10 @@ func TestDecode(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantParts := []protocol.Part{
-		protocol.Thinking{Text: "Tokyo it is"},
+		protocol.Thinking{Text: "Tokyo it is", Origin: protocol.OllamaChat},
 		protocol.ToolCall{ID: "call_abc", Name: "get_weather", Args: json.RawMessage(`{"city":"Tokyo"}`)},
 	}
-	if !reflect.DeepEqual(resp.Content, wantParts) || resp.StopReason != protocol.StopToolUse || resp.Usage != (protocol.Usage{Input: 169, Output: 15, CacheRead: 100}) {
+	if !reflect.DeepEqual(resp.Content, wantParts) || resp.StopReason != protocol.StopToolUse || resp.Usage != (protocol.Usage{Input: 169, Output: 15}) {
 		t.Fatalf("%+v", resp)
 	}
 	for name, in := range map[string]string{
@@ -273,7 +273,7 @@ func TestStreamThinkingThenText(t *testing.T) {
 	if !reflect.DeepEqual(types, want) {
 		t.Fatalf("%v", types)
 	}
-	wantParts := []protocol.Part{protocol.Thinking{Text: "Let me think"}, protocol.Text{Text: "Sky blue"}}
+	wantParts := []protocol.Part{protocol.Thinking{Text: "Let me think", Origin: protocol.OllamaChat}, protocol.Text{Text: "Sky blue"}}
 	if !reflect.DeepEqual(final.Content, wantParts) || final.Usage != (protocol.Usage{Input: 3, Output: 4}) {
 		t.Fatalf("%+v", final)
 	}
@@ -290,8 +290,17 @@ func TestStreamFailures(t *testing.T) {
 	}
 	_, err := protocol.Collect(p.Stream(strings.NewReader(`{"model":"m","message":{"role":"assistant","content":"a"},"done":false}` + "\n" + `{"error":"runner exited"}` + "\n")))
 	var perr *protocol.Error
-	if !errors.As(err, &perr) || perr.Status != 200 || perr.Message != "runner exited" {
-		t.Fatalf("error line: %v", err)
+	if !errors.As(err, &perr) || perr.Status != 200 || perr.Message != "runner exited" || !perr.InStream || perr.Transient || len(perr.Body) == 0 {
+		t.Fatalf("error line: %v %+v", err, perr)
+	}
+	_, err = protocol.Collect(p.Stream(strings.NewReader(`{"error":"server overloaded, try later"}` + "\n")))
+	if !errors.As(err, &perr) || !perr.Transient {
+		t.Fatalf("overload must be transient: %v", err)
+	}
+	mixed := `{"model":"m","message":{"role":"assistant","tool_calls":[{"function":{"index":0,"name":"f","arguments":"{\"a\":"}}]},"done":false}` + "\n" +
+		`{"model":"m","message":{"role":"assistant","tool_calls":[{"function":{"index":0,"arguments":{"b":1}}}]},"done":true}` + "\n"
+	if _, err := protocol.Collect(p.Stream(strings.NewReader(mixed))); err == nil || !strings.Contains(err.Error(), "mixes") {
+		t.Fatalf("mixed argument forms: %v", err)
 	}
 	for name, in := range map[string]string{
 		"not json": "nope\n",
@@ -305,12 +314,92 @@ func TestStreamFailures(t *testing.T) {
 
 func TestDecodeError(t *testing.T) {
 	e := p.DecodeError(404, []byte(`{"error":"model 'x' not found"}`))
-	if e.Status != 404 || e.Type != "" || e.Message != "model 'x' not found" {
+	if e.Status != 404 || e.Type != "" || e.Message != "model 'x' not found" || e.Transient {
 		t.Fatalf("%+v", e)
 	}
 	e = p.DecodeError(502, []byte(" bad gateway \n"))
-	if e.Status != 502 || e.Message != "bad gateway" || string(e.Body) != " bad gateway \n" {
+	if e.Status != 502 || e.Message != "bad gateway" || string(e.Body) != " bad gateway \n" || !e.Transient {
 		t.Fatalf("%+v", e)
+	}
+	if e = p.DecodeError(400, []byte(`{"error":"request timeout while loading"}`)); !e.Transient {
+		t.Fatalf("%+v", e)
+	}
+}
+
+// ASSEMBLED, string argument fragments for one call followed by a second call at the next index
+const fragmentStream = `{"model":"m","message":{"role":"assistant","tool_calls":[{"id":"c1","function":{"index":0,"name":"f","arguments":"{\"a\":"}}]},"done":false}
+{"model":"m","message":{"role":"assistant","tool_calls":[{"function":{"index":0,"arguments":"1}"}}]},"done":false}
+{"model":"m","message":{"role":"assistant","tool_calls":[{"function":{"index":1,"name":"g","arguments":{"x":1}}}]},"done":false}
+{"model":"m","message":{"role":"assistant","tool_calls":[{"function":{"index":1,"arguments":{"y":2}}}]},"done":false}
+{"model":"m","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":1,"eval_count":2,"total_duration":5000,"load_duration":1000,"prompt_eval_duration":2000,"eval_duration":3000}
+`
+
+func TestStreamAccumulatesToolArgumentsByIndex(t *testing.T) {
+	types, final := collect(t, fragmentStream)
+	want := []protocol.EventType{
+		protocol.EventStart,
+		protocol.EventToolCallStart, protocol.EventToolCallDelta, protocol.EventToolCallDelta, protocol.EventToolCallEnd,
+		protocol.EventToolCallStart, protocol.EventToolCallDelta, protocol.EventToolCallEnd,
+		protocol.EventDone,
+	}
+	if !reflect.DeepEqual(types, want) {
+		t.Fatalf("%v", types)
+	}
+	first := final.Content[0].(protocol.ToolCall)
+	second := final.Content[1].(protocol.ToolCall)
+	if first.ID != "c1" || first.Name != "f" || string(first.Args) != `{"a":1}` || second.Name != "g" {
+		t.Fatalf("%+v %+v", first, second)
+	}
+	var merged map[string]int
+	if json.Unmarshal(second.Args, &merged) != nil || merged["x"] != 1 || merged["y"] != 2 {
+		t.Fatalf("merged object fragments %s", second.Args)
+	}
+	if final.Metrics != (protocol.Metrics{Latency: 5000, Load: 1000, Prompt: 2000, Generate: 3000}) || final.StopReason != protocol.StopToolUse {
+		t.Fatalf("%+v", final)
+	}
+}
+
+func TestReplayPolicyResultsAndCapabilities(t *testing.T) {
+	same := protocol.Thinking{Text: "mine", Origin: protocol.OllamaChat}
+	blank := protocol.Thinking{Text: "blank"}
+	foreign := protocol.Thinking{Text: "theirs", Signature: "s", Origin: protocol.AnthropicMessages}
+	call, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{same, blank, foreign, protocol.ServerToolCall{ID: "s", Name: "web_search", Origin: protocol.AnthropicMessages}, protocol.Text{Text: "t"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asst := body(t, call)["messages"].([]any)[0].(map[string]any)
+	if asst["thinking"] != "mine\nblank" || asst["content"] != "t" || strings.Contains(string(call.Body), "web_search") {
+		t.Fatalf("%s", call.Body)
+	}
+	only, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{foreign}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asst := body(t, only)["messages"].([]any)[0].(map[string]any); asst["content"] != "" || asst["thinking"] != nil {
+		t.Fatalf("a turn emptied by policy must still be sent: %s", only.Body)
+	}
+	result, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "c", Name: "f", IsError: true, Content: []protocol.Part{protocol.Text{Text: "boom"}, protocol.Image{MediaType: "image/png", Data: []byte{1}}}}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := body(t, result)["messages"].([]any)[0].(map[string]any)
+	if msg["content"] != "[error] boom" || msg["images"].([]any)[0] != "AQ==" || msg["tool_call_id"] != "c" || msg["tool_name"] != "f" {
+		t.Fatalf("%v", msg)
+	}
+	for name, req := range map[string]protocol.Request{
+		"document":           {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Document{MediaType: "application/pdf", Data: []byte{1}}}}}},
+		"non image type":     {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Image{MediaType: "text/plain", Data: []byte{1}}}}}},
+		"image no data":      {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Image{MediaType: "image/png"}}}}},
+		"bad result image":   {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "c", Content: []protocol.Part{protocol.Image{MediaType: "image/png"}}}}}}},
+		"nil tool call args": {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.ToolCall{Name: "f", Args: json.RawMessage(`null`)}}}}},
+	} {
+		if _, err := p.Encode(req); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	caps := p.Capabilities()
+	if !caps.Thinking || caps.RedactedThinking || !caps.Images || !caps.ImagesInResults || caps.Documents || caps.ToolChoiceNone || caps.ToolChoiceNamed || !caps.StopSequences || caps.ServerTools || caps.Citations || caps.Caching {
+		t.Fatalf("%+v", caps)
 	}
 }
 

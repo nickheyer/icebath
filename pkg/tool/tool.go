@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
@@ -43,6 +44,14 @@ func Describe(t Tool) Annotations {
 type Result struct {
 	Content []protocol.Part
 	IsError bool
+	// Structured form of the outcome for callers that render rather than read, never sent to the model
+	Data any
+}
+
+// Copy of the result carrying structured data
+func (r Result) With(data any) Result {
+	r.Data = data
+	return r
 }
 
 // Builds a successful text result
@@ -113,33 +122,121 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // Reports whether name is acceptable to every supported protocol
 func ValidName(name string) bool { return namePattern.MatchString(name) }
 
-// Ordered set of tools keyed by name
-type Registry struct {
-	mu    sync.RWMutex
-	tools map[string]Tool
-	order []string
+// Checks that a parameter schema is a JSON object describing an object
+func ValidSchema(raw json.RawMessage) error {
+	var schema map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &schema); err != nil || schema == nil {
+		return fmt.Errorf("parameters are not a JSON schema object")
+	}
+	if kind, ok := schema["type"]; ok {
+		var t string
+		if err := json.Unmarshal(kind, &t); err != nil || t != "object" {
+			return fmt.Errorf("parameters schema type must be object")
+		}
+	}
+	return nil
 }
 
-// Adds tools in order, rejecting bad names, missing schemas and duplicates
+// Partial output or a progress mark a running tool reports while it works
+type Progress struct {
+	CallID string
+	Tool   string
+	// Name of the output stream the text belongs to, such as stdout or stderr
+	Stream string
+	Text   string
+	Done   int
+	Total  int
+}
+
+// Receives progress from running tools
+type Reporter func(Progress)
+
+type reporterKey struct{}
+type callKey struct{}
+
+// Carries a reporter so tools can stream output and progress to whoever runs them
+func WithReporter(ctx context.Context, r Reporter) context.Context {
+	return context.WithValue(ctx, reporterKey{}, r)
+}
+
+// Carries the call a tool is serving so progress reports name it
+func WithCall(ctx context.Context, call protocol.ToolCall) context.Context {
+	return context.WithValue(ctx, callKey{}, call)
+}
+
+// Call the context was opened for, if any
+func CallFrom(ctx context.Context) (protocol.ToolCall, bool) {
+	c, ok := ctx.Value(callKey{}).(protocol.ToolCall)
+	return c, ok
+}
+
+// Delivers progress to the reporter in the context, stamping the call identity
+func Report(ctx context.Context, p Progress) {
+	r, ok := ctx.Value(reporterKey{}).(Reporter)
+	if !ok || r == nil {
+		return
+	}
+	if c, ok := CallFrom(ctx); ok {
+		if p.CallID == "" {
+			p.CallID = c.ID
+		}
+		if p.Tool == "" {
+			p.Tool = c.Name
+		}
+	}
+	r(p)
+}
+
+// Completed run of one call with its structured data and timing
+type Outcome struct {
+	protocol.ToolResult
+	Data     any
+	Started  time.Time
+	Duration time.Duration
+}
+
+// Ordered set of tools keyed by name
+type Registry struct {
+	// Budget for one run, unlimited when zero
+	Timeout  time.Duration
+	mu       sync.RWMutex
+	tools    map[string]Tool
+	order    []string
+	onChange []func()
+}
+
+// Adds tools in order, rejecting bad names, missing schemas and duplicates without registering any
 func (r *Registry) Add(tools ...Tool) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.tools == nil {
 		r.tools = map[string]Tool{}
 	}
+	seen := map[string]bool{}
 	for _, t := range tools {
 		def := t.Definition()
 		if !namePattern.MatchString(def.Name) {
+			r.mu.Unlock()
 			return fmt.Errorf("tool: name %q does not match %s", def.Name, namePattern)
 		}
-		if !json.Valid(def.Parameters) {
-			return fmt.Errorf("tool %s: parameters are not a JSON schema", def.Name)
+		if err := ValidSchema(def.Parameters); err != nil {
+			r.mu.Unlock()
+			return fmt.Errorf("tool %s: %w", def.Name, err)
 		}
-		if _, dup := r.tools[def.Name]; dup {
+		if _, dup := r.tools[def.Name]; dup || seen[def.Name] {
+			r.mu.Unlock()
 			return fmt.Errorf("tool %s: already registered", def.Name)
 		}
-		r.tools[def.Name] = t
-		r.order = append(r.order, def.Name)
+		seen[def.Name] = true
+	}
+	for _, t := range tools {
+		name := t.Definition().Name
+		r.tools[name] = t
+		r.order = append(r.order, name)
+	}
+	fns := append([]func(){}, r.onChange...)
+	r.mu.Unlock()
+	for _, fn := range fns {
+		fn()
 	}
 	return nil
 }
@@ -147,8 +244,8 @@ func (r *Registry) Add(tools ...Tool) error {
 // Drops the named tool and reports whether it was registered
 func (r *Registry) Remove(name string) bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, ok := r.tools[name]; !ok {
+		r.mu.Unlock()
 		return false
 	}
 	delete(r.tools, name)
@@ -158,7 +255,19 @@ func (r *Registry) Remove(name string) bool {
 			break
 		}
 	}
+	fns := append([]func(){}, r.onChange...)
+	r.mu.Unlock()
+	for _, fn := range fns {
+		fn()
+	}
 	return true
+}
+
+// Registers a callback run after every change to the set of tools
+func (r *Registry) OnChange(fn func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.onChange = append(r.onChange, fn)
 }
 
 func (r *Registry) Lookup(name string) (Tool, bool) {
@@ -206,35 +315,61 @@ func (r *Registry) ReadOnly() []string {
 	return names
 }
 
-// Runs one call, turning unknown tools, errors and panics into error results
-func (r *Registry) Run(ctx context.Context, call protocol.ToolCall) (result protocol.ToolResult) {
-	result = protocol.ToolResult{CallID: call.ID, Name: call.Name}
+// Runs one call, turning unknown tools, errors, panics and cancellation into error results
+func (r *Registry) Run(ctx context.Context, call protocol.ToolCall) (out Outcome) {
+	out = Outcome{ToolResult: protocol.ToolResult{CallID: call.ID, Name: call.Name}, Started: time.Now()}
 	defer func() {
 		if p := recover(); p != nil {
-			result.Content = []protocol.Part{protocol.Text{Text: fmt.Sprintf("tool %s panicked: %v", call.Name, p)}}
-			result.IsError = true
+			out.Content = []protocol.Part{protocol.Text{Text: fmt.Sprintf("tool %s panicked: %v", call.Name, p)}}
+			out.IsError = true
 		}
+		out.Duration = time.Since(out.Started)
 	}()
+	if err := ctx.Err(); err != nil {
+		out.Content = []protocol.Part{protocol.Text{Text: "cancelled before " + call.Name + " ran"}}
+		out.IsError = true
+		return out
+	}
 	t, ok := r.Lookup(call.Name)
 	if !ok {
-		result.Content = []protocol.Part{protocol.Text{Text: "unknown tool " + call.Name}}
-		result.IsError = true
-		return result
+		out.Content = []protocol.Part{protocol.Text{Text: "unknown tool " + call.Name}}
+		out.IsError = true
+		return out
 	}
-	out, err := t.Run(ctx, call.Args)
+	ctx = WithCall(ctx, call)
+	if r.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.Timeout)
+		defer cancel()
+	}
+	res, err := t.Run(ctx, call.Args)
 	if err != nil {
-		result.Content = []protocol.Part{protocol.Text{Text: err.Error()}}
-		result.IsError = true
-		return result
+		out.Content = []protocol.Part{protocol.Text{Text: err.Error()}}
+		out.IsError = true
+		return out
 	}
-	result.Content, result.IsError = out.Content, out.IsError
-	return result
+	out.Content, out.IsError, out.Data = res.Content, res.IsError, res.Data
+	return out
 }
 
-// Runs read only calls concurrently and every other call alone in order, returning results in call order
-func (r *Registry) RunAll(ctx context.Context, calls []protocol.ToolCall) []protocol.ToolResult {
-	results := make([]protocol.ToolResult, len(calls))
+// Runs read only calls concurrently and every other call alone in order, returning outcomes in call order
+func (r *Registry) RunAll(ctx context.Context, calls []protocol.ToolCall) []Outcome {
+	return r.RunEach(ctx, calls, nil)
+}
+
+// Runs calls like RunAll, reporting each outcome through done as soon as it is known
+func (r *Registry) RunEach(ctx context.Context, calls []protocol.ToolCall, done func(i int, out Outcome)) []Outcome {
+	results := make([]Outcome, len(calls))
 	shared := r.repeats(calls)
+	var mu sync.Mutex
+	report := func(i int, out Outcome) {
+		if done == nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		done(i, out)
+	}
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		if shared[i] >= 0 {
@@ -243,17 +378,20 @@ func (r *Registry) RunAll(ctx context.Context, calls []protocol.ToolCall) []prot
 		if t, ok := r.Lookup(call.Name); ok && Describe(t).ReadOnly {
 			wg.Go(func() {
 				results[i] = r.Run(ctx, call)
+				report(i, results[i])
 			})
 			continue
 		}
 		wg.Wait()
 		results[i] = r.Run(ctx, call)
+		report(i, results[i])
 	}
 	wg.Wait()
 	for i, first := range shared {
 		if first >= 0 {
 			results[i] = results[first]
 			results[i].CallID = calls[i].ID
+			report(i, results[i])
 		}
 	}
 	return results

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
@@ -59,9 +60,9 @@ func TestPreToolUse(t *testing.T) {
 	dir := t.TempDir()
 	seen := filepath.Join(dir, "seen.json")
 	r := Runner{Config: cfg(t, `{"PreToolUse":[{"matcher":"^Bash$","hooks":[{"command":"cat > `+seen+`"}]},{"matcher":"Edit","hooks":[{"command":"exit 2"}]}]}`), Dir: dir, SessionID: "s-1", Transcript: "/var/sessions/s-1.jsonl"}
-	got, settled, err := r.BeforeTool(ctx, call)
-	if err != nil || settled != "" || string(got.Args) != string(call.Args) {
-		t.Fatalf("%v %+v", err, got)
+	adv, err := r.BeforeTool(ctx, call)
+	if err != nil || adv.Decision != "" || string(adv.Call.Args) != string(call.Args) {
+		t.Fatalf("%v %+v", err, adv)
 	}
 	data, _ := os.ReadFile(seen)
 	var p payload
@@ -69,29 +70,29 @@ func TestPreToolUse(t *testing.T) {
 	if p.Event != PreToolUse || p.SessionID != "s-1" || p.TranscriptPath != "/var/sessions/s-1.jsonl" || p.ToolName != "Bash" || string(p.ToolInput) != `{"command":"ls"}` || p.Cwd != dir {
 		t.Fatalf("%+v", p)
 	}
-	if _, _, err := r.BeforeTool(ctx, protocol.ToolCall{Name: "Read"}); err != nil {
+	if _, err := r.BeforeTool(ctx, protocol.ToolCall{Name: "Read"}); err != nil {
 		t.Fatal("unmatched tools must run no hooks")
 	}
 	var blocked *Blocked
-	if _, _, err := r.BeforeTool(ctx, protocol.ToolCall{Name: "Edit"}); !errors.As(err, &blocked) || blocked.Reason != "blocked by hook" {
+	if _, err := r.BeforeTool(ctx, protocol.ToolCall{Name: "Edit"}); !errors.As(err, &blocked) || blocked.Reason != "blocked by hook" {
 		t.Fatalf("%v", err)
 	}
 	r = Runner{Config: cfg(t, `{"PreToolUse":[{"hooks":[{"command":"echo nope >&2; exit 2"}]}]}`)}
-	if _, _, err := r.BeforeTool(ctx, call); !errors.As(err, &blocked) || blocked.Reason != "nope" || !strings.Contains(err.Error(), "PreToolUse blocked: nope") {
+	if _, err := r.BeforeTool(ctx, call); !errors.As(err, &blocked) || blocked.Reason != "nope" || !strings.Contains(err.Error(), "PreToolUse blocked: nope") {
 		t.Fatalf("%v", err)
 	}
 	r = Runner{Config: cfg(t, `{"PreToolUse":[{"hooks":[{"command":"cat >/dev/null; echo '{\"decision\":\"block\",\"reason\":\"json says no\"}'"}]}]}`)}
-	if _, _, err := r.BeforeTool(ctx, call); !errors.As(err, &blocked) || blocked.Reason != "json says no" {
+	if _, err := r.BeforeTool(ctx, call); !errors.As(err, &blocked) || blocked.Reason != "json says no" {
 		t.Fatalf("%v", err)
 	}
 	r = Runner{Config: cfg(t, `{"PreToolUse":[{"hooks":[{"command":"cat >/dev/null; echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"policy\"}}'"}]}]}`)}
-	if _, _, err := r.BeforeTool(ctx, call); !errors.As(err, &blocked) || blocked.Reason != "policy" {
+	if _, err := r.BeforeTool(ctx, call); !errors.As(err, &blocked) || blocked.Reason != "policy" {
 		t.Fatalf("%v", err)
 	}
-	r = Runner{Config: cfg(t, `{"PreToolUse":[{"hooks":[{"command":"cat >/dev/null; echo '{\"updatedInput\":{\"command\":\"ls -la\"}}'"},{"command":"cat > `+seen+`; echo '{\"hookSpecificOutput\":{\"updatedInput\":{\"command\":\"ls -lah\"}}}'"}]}]}`)}
-	got, _, err = r.BeforeTool(ctx, call)
-	if err != nil || string(got.Args) != `{"command":"ls -lah"}` {
-		t.Fatalf("%v %s", err, got.Args)
+	r = Runner{Config: cfg(t, `{"PreToolUse":[{"hooks":[{"command":"cat >/dev/null; echo '{\"updatedInput\":{\"command\":\"ls -la\"},\"additionalContext\":\"be careful\"}'"},{"command":"cat > `+seen+`; echo '{\"hookSpecificOutput\":{\"updatedInput\":{\"command\":\"ls -lah\"},\"additionalContext\":\"really\"}}'"}]}]}`)}
+	adv, err = r.BeforeTool(ctx, call)
+	if err != nil || string(adv.Call.Args) != `{"command":"ls -lah"}` || adv.Context != "be careful\nreally" {
+		t.Fatalf("%v %+v", err, adv)
 	}
 	data, _ = os.ReadFile(seen)
 	json.Unmarshal(data, &p)
@@ -109,8 +110,8 @@ func TestPreToolUse(t *testing.T) {
 		"silence settles nothing": {`{"PreToolUse":[{"hooks":[{"command":"cat >/dev/null"}]}]}`, ""},
 	} {
 		r = Runner{Config: cfg(t, want.doc)}
-		if _, settled, err := r.BeforeTool(ctx, call); err != nil || settled != want.decision {
-			t.Fatalf("%s: %v %q", name, err, settled)
+		if adv, err := r.BeforeTool(ctx, call); err != nil || adv.Decision != want.decision {
+			t.Fatalf("%s: %v %q", name, err, adv.Decision)
 		}
 	}
 	for name, doc := range map[string]string{
@@ -121,7 +122,7 @@ func TestPreToolUse(t *testing.T) {
 		"permission": `{"PreToolUse":[{"hooks":[{"command":"cat >/dev/null; echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"later\"}}'"}]}]}`,
 	} {
 		r = Runner{Config: cfg(t, doc)}
-		_, _, err := r.BeforeTool(ctx, call)
+		_, err := r.BeforeTool(ctx, call)
 		if err == nil || errors.As(err, &blocked) {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -131,18 +132,26 @@ func TestPreToolUse(t *testing.T) {
 	}
 	var log bytes.Buffer
 	r = Runner{Config: cfg(t, `{"PreToolUse":[{"hooks":[{"command":"cat >/dev/null; echo plain words; echo warn >&2"}]}]}`), Log: &log}
-	if _, _, err := r.BeforeTool(ctx, call); err != nil {
+	var hookEvents []agent.Event
+	observed := agent.WithObserver(ctx, func(e agent.Event) { hookEvents = append(hookEvents, e) })
+	if _, err := r.BeforeTool(observed, call); err != nil {
 		t.Fatal(err)
 	}
 	if log.String() != "[hook PreToolUse] warn\n[hook PreToolUse] plain words\n" {
 		t.Fatalf("%q", log.String())
 	}
+	if len(hookEvents) != 1 || hookEvents[0].Type != agent.EventHook || hookEvents[0].Data.(Execution).ExitCode != 0 || hookEvents[0].Data.(Execution).Stderr != "warn\n" || !strings.Contains(hookEvents[0].Text, "ok") {
+		t.Fatalf("%+v", hookEvents)
+	}
 	raw := Runner{Config: Config{PreToolUse: []Group{{Matcher: "B.*", Hooks: []Command{{Command: "exit 2"}}}}}}
-	if _, _, err := raw.BeforeTool(ctx, call); !errors.As(err, &blocked) {
+	if _, err := raw.BeforeTool(observed, call); !errors.As(err, &blocked) {
 		t.Fatalf("uncompiled matchers must still match: %v", err)
 	}
+	if ex := hookEvents[len(hookEvents)-1].Data.(Execution); !ex.Blocked || ex.ExitCode != 2 {
+		t.Fatalf("%+v", ex)
+	}
 	raw = Runner{Config: Config{PreToolUse: []Group{{Matcher: "(", Hooks: []Command{{Command: "exit 2"}}}}}}
-	if _, _, err := raw.BeforeTool(ctx, call); err == nil || errors.As(err, &blocked) {
+	if _, err := raw.BeforeTool(ctx, call); err == nil || errors.As(err, &blocked) {
 		t.Fatalf("%v", err)
 	}
 }
@@ -179,35 +188,76 @@ func TestOtherEvents(t *testing.T) {
 	if _, err := misplaced.AfterTool(ctx, call, protocol.ToolResult{}); err == nil || !strings.Contains(err.Error(), "only PreToolUse") {
 		t.Fatalf("%v", err)
 	}
-	if _, err := misplaced.OnStop(ctx, protocol.Response{}); err == nil || !strings.Contains(err.Error(), "only PreToolUse") {
+	if _, err := misplaced.OnStop(ctx, protocol.Response{}, false); err == nil || !strings.Contains(err.Error(), "only PreToolUse") {
 		t.Fatalf("%v", err)
 	}
 	if _, err := r.AfterTool(ctx, protocol.ToolCall{Name: "Read"}, protocol.ToolResult{}); err != nil {
 		t.Fatal(err)
 	}
-	cont, err := r.OnStop(ctx, protocol.Response{Content: []protocol.Part{protocol.Text{Text: "final"}}})
+	cont, err := r.OnStop(ctx, protocol.Response{Content: []protocol.Part{protocol.Text{Text: "final"}}}, true)
 	if err != nil || len(cont) != 1 || cont[0].(protocol.Text).Text != "keep going" {
 		t.Fatalf("%v %+v", err, cont)
 	}
 	data, _ = os.ReadFile(seen)
 	json.Unmarshal(data, &p)
-	if p.Event != Stop || p.Response != "final" {
+	if p.Event != Stop || p.Response != "final" || !p.StopHookActive {
 		t.Fatalf("%+v", p)
 	}
+	withContext := Runner{Config: cfg(t, `{"Stop":[{"hooks":[{"command":"cat >/dev/null; echo '{\"decision\":\"block\",\"reason\":\"more\",\"additionalContext\":\"see x\"}'"}]}]}`)}
+	if cont, err := withContext.OnStop(ctx, protocol.Response{}, false); err != nil || len(cont) != 2 || cont[1].(protocol.Text).Text != "see x" {
+		t.Fatalf("stop context must reach the model: %v %+v", err, cont)
+	}
 	quiet := Runner{Config: cfg(t, `{"Stop":[{"hooks":[{"command":"cat >/dev/null"}]}]}`)}
-	if cont, err := quiet.OnStop(ctx, protocol.Response{}); err != nil || cont != nil {
+	if cont, err := quiet.OnStop(ctx, protocol.Response{}, false); err != nil || cont != nil {
 		t.Fatalf("%v %+v", err, cont)
 	}
-	blocking := Runner{Config: cfg(t, `{"UserPromptSubmit":[{"hooks":[{"command":"echo denied >&2; exit 2"}]}],"PostToolUse":[{"hooks":[{"command":"exit 2"}]}]}`)}
+	blocking := Runner{Config: cfg(t, `{"UserPromptSubmit":[{"hooks":[{"command":"echo denied >&2; exit 2"}]}],"PostToolUse":[{"hooks":[{"command":"echo tainted >&2; exit 2"}]}]}`)}
 	var blocked *Blocked
 	if _, err := blocking.BeforeRun(ctx, nil); !errors.As(err, &blocked) || blocked.Reason != "denied" {
 		t.Fatalf("%v", err)
 	}
-	if _, err := blocking.AfterTool(ctx, call, protocol.ToolResult{}); !errors.As(err, &blocked) {
-		t.Fatalf("%v", err)
+	kept, err := blocking.AfterTool(ctx, call, protocol.ToolResult{Content: []protocol.Part{protocol.Text{Text: "real output"}}})
+	if err != nil || !kept.IsError || len(kept.Content) != 2 || kept.Content[0].(protocol.Text).Text != "real output" || kept.Content[1].(protocol.Text).Text != "[hook PostToolUse blocked: tainted]" {
+		t.Fatalf("a post tool block must keep the output and flag it: %v %+v", err, kept)
+	}
+	if err := r.AfterTurn(ctx, protocol.Response{}); err != nil {
+		t.Fatal(err)
 	}
 	env := Runner{Config: cfg(t, `{"Stop":[{"hooks":[{"command":"test \"$ICEBATH_SESSION_ID\" = s-9 && test \"$ICEBATH_HOOK_EVENT\" = Stop && test \"$EXTRA\" = yes || exit 1"}]}]}`), SessionID: "s-9", Env: []string{"EXTRA=yes"}}
-	if _, err := env.OnStop(ctx, protocol.Response{}); err != nil {
+	if _, err := env.OnStop(ctx, protocol.Response{}, false); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFireRunsTheOtherEvents(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	seen := filepath.Join(dir, "seen.json")
+	r := Runner{Config: cfg(t, `{"PreCompact":[{"hooks":[{"command":"cat > `+seen+`; echo '{\"additionalContext\":\"keep the hosts\"}'"}]}],"SessionStart":[{"hooks":[{"command":"cat >/dev/null"}]}],"SubagentStop":[{"matcher":"Agent","hooks":[{"command":"exit 2"}]}],"Notification":[{"hooks":[{"command":"cat >/dev/null"}]}],"SessionEnd":[{"hooks":[{"command":"cat >/dev/null"}]}]}`), Dir: dir, SessionID: "s-2"}
+	out, err := r.Fire(ctx, PreCompact, map[string]any{"trigger": "auto", "custom_instructions": "x"})
+	if err != nil || out != "keep the hosts" {
+		t.Fatalf("%v %q", err, out)
+	}
+	data, _ := os.ReadFile(seen)
+	var p map[string]any
+	json.Unmarshal(data, &p)
+	if p["hook_event_name"] != "PreCompact" || p["trigger"] != "auto" || p["session_id"] != "s-2" || p["cwd"] != dir {
+		t.Fatalf("%v", p)
+	}
+	if out, err := r.Fire(ctx, SessionStart, nil); err != nil || out != "" {
+		t.Fatalf("%v %q", err, out)
+	}
+	var blocked *Blocked
+	if _, err := r.Fire(ctx, SubagentStop, map[string]any{"tool_name": "Agent"}); !errors.As(err, &blocked) {
+		t.Fatalf("%v", err)
+	}
+	if _, err := r.Fire(ctx, SubagentStop, map[string]any{"tool_name": "Other"}); err != nil {
+		t.Fatal("matcher must apply to the tool name field")
+	}
+	if _, err := r.Fire(ctx, "Weird", nil); err == nil {
+		t.Fatal("unknown event fired")
+	}
+	if len(Events) != 9 {
+		t.Fatalf("%v", Events)
 	}
 }

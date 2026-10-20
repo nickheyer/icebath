@@ -1,6 +1,7 @@
 package files
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,11 +23,39 @@ var imageTypes = map[string]string{
 	".webp": "image/webp",
 }
 
+// Media type an image file announces in its first bytes, empty for anything else
+func sniffImage(head []byte) string {
+	switch {
+	case bytes.HasPrefix(head, []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}):
+		return "image/png"
+	case bytes.HasPrefix(head, []byte{0xFF, 0xD8, 0xFF}):
+		return "image/jpeg"
+	case bytes.HasPrefix(head, []byte("GIF87a")) || bytes.HasPrefix(head, []byte("GIF89a")):
+		return "image/gif"
+	case len(head) >= 12 && bytes.HasPrefix(head, []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	return ""
+}
+
 const readSchema = `{"type":"object","properties":{
 "file_path":{"type":"string","description":"Path of the file to read, relative paths resolve against the working directory"},
 "offset":{"type":"integer","minimum":1,"description":"First line to return, counted from 1"},
 "limit":{"type":"integer","minimum":1,"description":"Number of lines to return"}},
 "required":["file_path"],"additionalProperties":false}`
+
+// Structured outcome of Read
+type ReadData struct {
+	Path string
+	// First line number returned
+	Offset int
+	Lines  []string
+	// Lines in the whole file
+	Total int
+	// Media type when the file was returned as an image
+	MediaType string
+	Bytes     int64
+}
 
 type read struct{ Options }
 
@@ -46,6 +75,9 @@ func (read) Annotations() tool.Annotations {
 }
 
 func (r read) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Error(err.Error()), nil
+	}
 	var in struct {
 		FilePath string `json:"file_path"`
 		Offset   int    `json:"offset"`
@@ -68,27 +100,8 @@ func (r read) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if st.IsDir() {
 		return tool.Errorf("%s is a directory, use Glob to list it", p), nil
 	}
-	if media, ok := imageTypes[strings.ToLower(filepath.Ext(p))]; ok {
-		return r.image(p, media, st.Size())
-	}
-	return r.text(p, in.Offset, in.Limit, st.Size())
-}
-
-func (r read) image(p, media string, size int64) (tool.Result, error) {
-	if size > int64(r.maxFileBytes()) {
-		return tool.Errorf("%s is %d bytes, over the %d byte image limit", p, size, r.maxFileBytes()), nil
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return tool.Error(err.Error()), nil
-	}
-	return tool.Image(media, data), nil
-}
-
-// Streams the file once, collecting the requested window and counting every line
-func (r read) text(p string, offset, limit int, size int64) (tool.Result, error) {
-	if size == 0 {
-		return tool.Textf("%s is empty", p), nil
+	if st.Size() == 0 {
+		return tool.Textf("%s is empty", p).With(ReadData{Path: p, Offset: 1}), nil
 	}
 	f, err := os.Open(p)
 	if err != nil {
@@ -99,9 +112,31 @@ func (r read) text(p string, offset, limit int, size int64) (tool.Result, error)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}
+	if media := sniffImage(head); media != "" {
+		return r.image(p, media, st.Size())
+	}
+	if media, ok := imageTypes[strings.ToLower(filepath.Ext(p))]; ok && isBinary(head) {
+		return r.image(p, media, st.Size())
+	}
 	if isBinary(head) {
 		return tool.Errorf("%s is a binary file", p), nil
 	}
+	return r.text(f, p, in.Offset, in.Limit, st.Size())
+}
+
+func (r read) image(p, media string, size int64) (tool.Result, error) {
+	if size > int64(r.maxFileBytes()) {
+		return tool.Errorf("%s is %d bytes, over the %d byte image limit", p, size, r.maxFileBytes()), nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	return tool.Image(media, data).With(ReadData{Path: p, MediaType: media, Bytes: size}), nil
+}
+
+// Streams the file once, collecting the requested window and counting every line
+func (r read) text(f *os.File, p string, offset, limit int, size int64) (tool.Result, error) {
 	if offset <= 0 {
 		offset = 1
 	}
@@ -110,7 +145,7 @@ func (r read) text(p string, offset, limit int, size int64) (tool.Result, error)
 	}
 	var window []string
 	total := 0
-	err = lines(f, func(line string) bool {
+	err := lines(f, func(line string) bool {
 		total++
 		if total >= offset && len(window) < limit {
 			window = append(window, line)
@@ -128,5 +163,5 @@ func (r read) text(p string, offset, limit int, size int64) (tool.Result, error)
 	if last < total {
 		out += fmt.Sprintf("\n\n[lines %d-%d of %d, continue with offset=%d]", offset, last, total, last+1)
 	}
-	return tool.Text(out), nil
+	return tool.Text(out).With(ReadData{Path: p, Offset: offset, Lines: window, Total: total, Bytes: size}), nil
 }

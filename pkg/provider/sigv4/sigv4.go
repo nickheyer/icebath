@@ -175,7 +175,10 @@ func Sign(r *http.Request, creds Credentials, region, service string, now time.T
 	sort.Strings(names)
 	var canonicalHeaders strings.Builder
 	for _, k := range names {
-		canonicalHeaders.WriteString(k + ":" + headers[k] + "\n")
+		canonicalHeaders.WriteString(k)
+		canonicalHeaders.WriteString(":")
+		canonicalHeaders.WriteString(headers[k])
+		canonicalHeaders.WriteString("\n")
 	}
 	signed := strings.Join(names, ";")
 	canonical := strings.Join([]string{

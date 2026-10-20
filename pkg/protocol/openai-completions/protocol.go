@@ -12,3 +12,13 @@ func init() {
 }
 
 func (Protocol) ID() protocol.ID { return protocol.OpenAICompletions }
+
+func (Protocol) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Thinking:        true,
+		Images:          true,
+		ToolChoiceNone:  true,
+		ToolChoiceNamed: true,
+		StopSequences:   true,
+	}
+}

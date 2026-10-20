@@ -2,8 +2,10 @@
 package session
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -14,82 +16,206 @@ import (
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
 
+// One stored message with when it was added, who produced it and what it cost
+type Entry struct {
+	// Position on the shared timeline of entries and records
+	Seq   int
+	Time  time.Time
+	Agent string
+	Model string
+	Usage protocol.Usage
+	protocol.Message
+}
+
+// Event worth replaying on the timeline that is not a message, such as an approval or a compaction
+type Record struct {
+	Seq   int
+	Time  time.Time
+	Agent string
+	Kind  string
+	Data  json.RawMessage
+}
+
 // Ordered messages of a conversation and the token usage its responses have cost so far
 type Session struct {
 	mu      sync.RWMutex
-	ID      string
-	Created time.Time
-	Updated time.Time
-	Title   string
-	Model   string
-	// Id of the session this one was forked from
-	Parent   string
-	Labels   map[string]string
-	Messages []protocol.Message
-	Usage    protocol.Usage
-	// Usage of the most recent response, whose input side measures the current context
-	Last protocol.Usage
+	id      string
+	created time.Time
+	updated time.Time
+	title   string
+	model   string
+	parent  string
+	labels  map[string]string
+	entries []Entry
+	records []Record
+	usage   protocol.Usage
+	last    protocol.Usage
+	next    int
+	now     func() time.Time
 }
 
 // Starts an empty session with a random id
 func New() *Session {
 	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic("session: random id: " + err.Error())
-	}
+	rand.Read(b[:])
 	now := time.Now().UTC()
-	return &Session{ID: now.Format("20060102-150405") + "-" + hex.EncodeToString(b[:]), Created: now, Updated: now}
+	return &Session{id: now.Format("20060102-150405") + "-" + hex.EncodeToString(b[:]), created: now, updated: now, now: utcNow}
 }
 
-func (s *Session) touch() { s.Updated = time.Now().UTC() }
+func utcNow() time.Time { return time.Now().UTC() }
 
-func (s *Session) Append(m protocol.Message) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Messages = append(s.Messages, m)
-	s.touch()
-}
-
-// Appends the assistant turn of a response and adds its usage to the totals
-func (s *Session) AddResponse(r protocol.Response) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Messages = append(s.Messages, protocol.Message{Role: protocol.RoleAssistant, Content: append([]protocol.Part(nil), r.Content...)})
-	s.Usage.Input += r.Usage.Input
-	s.Usage.Output += r.Usage.Output
-	s.Usage.CacheRead += r.Usage.CacheRead
-	s.Usage.CacheWrite += r.Usage.CacheWrite
-	s.Usage.Reasoning += r.Usage.Reasoning
-	s.Last = r.Usage
-	if s.Model == "" && r.Model != "" {
-		s.Model = r.Model
+func (s *Session) clock() time.Time {
+	if s.now == nil {
+		s.now = utcNow
 	}
-	s.touch()
+	return s.now()
 }
 
-// Appends one tool message carrying every result of a tool round
-func (s *Session) AddResults(results []protocol.ToolResult) {
+func (s *Session) touch() { s.updated = s.clock() }
+
+func (s *Session) ID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.id
+}
+
+func (s *Session) Created() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.created
+}
+
+func (s *Session) Updated() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.updated
+}
+
+func (s *Session) Title() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.title
+}
+
+func (s *Session) Model() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.model
+}
+
+// Id of the session this one was forked from
+func (s *Session) Parent() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.parent
+}
+
+// Copy of the labels
+func (s *Session) Labels() map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return copyLabels(s.labels)
+}
+
+// Token usage summed over every response
+func (s *Session) Usage() protocol.Usage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.usage
+}
+
+// Usage of the most recent response, whose input side measures the current context
+func (s *Session) Last() protocol.Usage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.last
+}
+
+// Appends input from the user as an entry with no agent
+func (s *Session) Append(m protocol.Message) Entry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.add(Entry{Message: copyMessage(m)})
+}
+
+// Appends the assistant turn of a response produced by agent and adds its usage to the totals
+func (s *Session) AddResponse(agent string, r protocol.Response) Entry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.usage = s.usage.Add(r.Usage)
+	s.last = r.Usage
+	if s.model == "" && r.Model != "" {
+		s.model = r.Model
+	}
+	return s.add(Entry{Agent: agent, Model: r.Model, Usage: r.Usage, Message: protocol.Message{Role: protocol.RoleAssistant, Content: copyParts(r.Content)}})
+}
+
+// Appends one tool message carrying every result of a tool round run by agent
+func (s *Session) AddResults(agent string, results []protocol.ToolResult) Entry {
 	parts := make([]protocol.Part, len(results))
 	for i, r := range results {
 		parts[i] = r
 	}
-	s.Append(protocol.Message{Role: protocol.RoleTool, Content: parts})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.add(Entry{Agent: agent, Message: protocol.Message{Role: protocol.RoleTool, Content: copyParts(parts)}})
+}
+
+func (s *Session) add(e Entry) Entry {
+	e.Seq = s.next
+	s.next++
+	if e.Time.IsZero() {
+		e.Time = s.clock()
+	}
+	s.entries = append(s.entries, e)
+	s.touch()
+	return e
+}
+
+// Appends a timeline record of kind with data serialized as JSON
+func (s *Session) Log(agent, kind string, data any) (Record, error) {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return Record{}, fmt.Errorf("session: record %s: %w", kind, err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := Record{Seq: s.next, Time: s.clock(), Agent: agent, Kind: kind, Data: raw}
+	s.next++
+	s.records = append(s.records, r)
+	s.touch()
+	return r, nil
+}
+
+// Copy of every entry in order
+func (s *Session) Entries() []Entry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return copyEntries(s.entries)
+}
+
+// Copy of every record in order
+func (s *Session) Records() []Record {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Record, len(s.records))
+	for i, r := range s.records {
+		r.Data = append(json.RawMessage(nil), r.Data...)
+		out[i] = r
+	}
+	return out
 }
 
 // Copies the messages so callers can build a request without holding the lock
 func (s *Session) Snapshot() []protocol.Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return copyMessages(s.Messages)
-}
-
-func copyMessages(msgs []protocol.Message) []protocol.Message {
-	if len(msgs) == 0 {
+	if len(s.entries) == 0 {
 		return nil
 	}
-	out := make([]protocol.Message, len(msgs))
-	for i, m := range msgs {
-		out[i] = protocol.Message{Role: m.Role, Content: append([]protocol.Part(nil), m.Content...)}
+	out := make([]protocol.Message, len(s.entries))
+	for i, e := range s.entries {
+		out[i] = copyMessage(e.Message)
 	}
 	return out
 }
@@ -97,27 +223,27 @@ func copyMessages(msgs []protocol.Message) []protocol.Message {
 func (s *Session) Len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.Messages)
+	return len(s.entries)
 }
 
 // Tokens the next request will carry, as measured by the last response
 func (s *Session) Context() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.Last.Input + s.Last.CacheRead + s.Last.CacheWrite
+	return s.last.Context()
 }
 
 func (s *Session) SetTitle(title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Title = title
+	s.title = title
 	s.touch()
 }
 
 func (s *Session) SetModel(model string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Model = model
+	s.model = model
 	s.touch()
 }
 
@@ -126,12 +252,12 @@ func (s *Session) Label(key, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if value == "" {
-		delete(s.Labels, key)
+		delete(s.labels, key)
 	} else {
-		if s.Labels == nil {
-			s.Labels = map[string]string{}
+		if s.labels == nil {
+			s.labels = map[string]string{}
 		}
-		s.Labels[key] = value
+		s.labels[key] = value
 	}
 	s.touch()
 }
@@ -141,29 +267,45 @@ func (s *Session) Fork() *Session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	f := New()
-	f.Parent = s.ID
-	f.Title, f.Model, f.Last = s.Title, s.Model, s.Last
-	f.Messages = copyMessages(s.Messages)
-	if s.Labels != nil {
-		f.Labels = make(map[string]string, len(s.Labels))
-		for k, v := range s.Labels {
-			f.Labels[k] = v
-		}
-	}
+	f.parent = s.id
+	f.title, f.model, f.last = s.title, s.model, s.last
+	f.entries = copyEntries(s.entries)
+	f.records = s.copyRecords()
+	f.labels = copyLabels(s.labels)
+	f.next = s.next
 	return f
 }
 
-// Drops every message after the first n
+// Drops every entry after the first n and every record newer than the last kept entry
 func (s *Session) Truncate(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if n < 0 {
 		n = 0
 	}
-	if n < len(s.Messages) {
-		s.Messages = s.Messages[:n]
-		s.touch()
+	if n >= len(s.entries) {
+		return
 	}
+	s.entries = s.entries[:n]
+	limit := -1
+	if n > 0 {
+		limit = s.entries[n-1].Seq
+	}
+	kept := s.records[:0]
+	for _, r := range s.records {
+		if r.Seq < limit {
+			kept = append(kept, r)
+		}
+	}
+	s.records = kept
+	s.last = protocol.Usage{}
+	for i := len(s.entries) - 1; i >= 0; i-- {
+		if s.entries[i].Role == protocol.RoleAssistant {
+			s.last = s.entries[i].Usage
+			break
+		}
+	}
+	s.touch()
 }
 
 // Assistant turn written after a summary so the kept tail still follows an assistant message
@@ -176,19 +318,22 @@ func (s *Session) Compact(summary string, keep int) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cut := len(s.Messages) - max(keep, 0)
+	cut := len(s.entries) - max(keep, 0)
 	if cut < 0 {
 		cut = 0
 	}
-	for cut < len(s.Messages) && s.Messages[cut].Role != protocol.RoleUser {
+	for cut < len(s.entries) && s.entries[cut].Role != protocol.RoleUser {
 		cut++
 	}
-	head := []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: summary}}}}
-	if cut < len(s.Messages) {
-		head = append(head, protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.Text{Text: Ack}}})
+	now := s.clock()
+	head := []Entry{{Seq: s.next, Time: now, Message: protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: summary}}}}}
+	s.next++
+	if cut < len(s.entries) {
+		head = append(head, Entry{Seq: s.next, Time: now, Message: protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.Text{Text: Ack}}}})
+		s.next++
 	}
-	s.Messages = append(head, s.Messages[cut:]...)
-	s.Last = protocol.Usage{}
+	s.entries = append(head, s.entries[cut:]...)
+	s.last = protocol.Usage{}
 	s.touch()
 	return nil
 }
@@ -203,13 +348,16 @@ type Info struct {
 	Parent   string            `json:"parent,omitempty"`
 	Labels   map[string]string `json:"labels,omitempty"`
 	Messages int               `json:"messages"`
+	Records  int               `json:"records"`
 	Usage    protocol.Usage    `json:"usage"`
+	// Why a store could not read the session, empty when it loaded cleanly
+	Error string `json:"error,omitempty"`
 }
 
 func (s *Session) Info() Info {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return Info{ID: s.ID, Created: s.Created, Updated: s.Updated, Title: s.Title, Model: s.Model, Parent: s.Parent, Labels: s.Labels, Messages: len(s.Messages), Usage: s.Usage}
+	return Info{ID: s.id, Created: s.created, Updated: s.updated, Title: s.title, Model: s.model, Parent: s.parent, Labels: copyLabels(s.labels), Messages: len(s.entries), Records: len(s.records), Usage: s.usage}
 }
 
 // Orders newest first by update time, then by id
@@ -235,11 +383,17 @@ var ErrNotFound = errors.New("session: not found")
 
 // Persists sessions by id
 type Store interface {
-	Save(s *Session) error
-	Load(id string) (*Session, error)
-	// Lists stored sessions newest first
-	List() ([]Info, error)
-	Delete(id string) error
+	Save(ctx context.Context, s *Session) error
+	Load(ctx context.Context, id string) (*Session, error)
+	// Lists stored sessions newest first, unreadable ones carrying their error
+	List(ctx context.Context) ([]Info, error)
+	Exists(ctx context.Context, id string) (bool, error)
+	Delete(ctx context.Context, id string) error
+}
+
+// Store that can name the file a session lives in
+type Pather interface {
+	Path(id string) (string, error)
 }
 
 // Store holding sessions in memory
@@ -248,9 +402,12 @@ type Memory struct {
 	sessions map[string][]byte
 }
 
-func (m *Memory) Save(s *Session) error {
-	if !ValidID(s.ID) {
-		return InvalidID(s.ID)
+func (m *Memory) Save(ctx context.Context, s *Session) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !ValidID(s.ID()) {
+		return InvalidID(s.ID())
 	}
 	data, err := Marshal(s)
 	if err != nil {
@@ -261,11 +418,14 @@ func (m *Memory) Save(s *Session) error {
 	if m.sessions == nil {
 		m.sessions = map[string][]byte{}
 	}
-	m.sessions[s.ID] = data
+	m.sessions[s.ID()] = data
 	return nil
 }
 
-func (m *Memory) Load(id string) (*Session, error) {
+func (m *Memory) Load(ctx context.Context, id string) (*Session, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	data, ok := m.sessions[id]
 	m.mu.Unlock()
@@ -275,22 +435,39 @@ func (m *Memory) Load(id string) (*Session, error) {
 	return Unmarshal(data)
 }
 
-func (m *Memory) List() ([]Info, error) {
+func (m *Memory) List(ctx context.Context) ([]Info, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	infos := make([]Info, 0, len(m.sessions))
-	for _, data := range m.sessions {
-		s, err := Unmarshal(data)
+	for id, data := range m.sessions {
+		h, err := ReadHeader(data)
 		if err != nil {
-			return nil, err
+			infos = append(infos, Info{ID: id, Error: err.Error()})
+			continue
 		}
-		infos = append(infos, s.Info())
+		infos = append(infos, h.Info())
 	}
 	SortInfos(infos)
 	return infos, nil
 }
 
-func (m *Memory) Delete(id string) error {
+func (m *Memory) Exists(ctx context.Context, id string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.sessions[id]
+	return ok, nil
+}
+
+func (m *Memory) Delete(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.sessions[id]; !ok {
@@ -298,4 +475,76 @@ func (m *Memory) Delete(id string) error {
 	}
 	delete(m.sessions, id)
 	return nil
+}
+
+func (s *Session) copyRecords() []Record {
+	out := make([]Record, len(s.records))
+	for i, r := range s.records {
+		r.Data = append(json.RawMessage(nil), r.Data...)
+		out[i] = r
+	}
+	return out
+}
+
+func copyEntries(entries []Entry) []Entry {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]Entry, len(entries))
+	for i, e := range entries {
+		e.Message = copyMessage(e.Message)
+		out[i] = e
+	}
+	return out
+}
+
+func copyMessage(m protocol.Message) protocol.Message {
+	return protocol.Message{Role: m.Role, Content: copyParts(m.Content)}
+}
+
+// Copies parts deeply enough that byte slices and nested results never alias the source
+func copyParts(parts []protocol.Part) []protocol.Part {
+	if parts == nil {
+		return nil
+	}
+	out := make([]protocol.Part, len(parts))
+	for i, p := range parts {
+		switch v := p.(type) {
+		case protocol.Image:
+			v.Data = append([]byte(nil), v.Data...)
+			out[i] = v
+		case protocol.Document:
+			v.Data = append([]byte(nil), v.Data...)
+			out[i] = v
+		case protocol.Text:
+			v.Citations = append([]protocol.Citation(nil), v.Citations...)
+			out[i] = v
+		case protocol.ToolCall:
+			v.Args = append(json.RawMessage(nil), v.Args...)
+			out[i] = v
+		case protocol.ServerToolCall:
+			v.Args = append(json.RawMessage(nil), v.Args...)
+			out[i] = v
+		case protocol.ServerToolResult:
+			v.Content = append(json.RawMessage(nil), v.Content...)
+			out[i] = v
+		case protocol.ToolResult:
+			v.Content = copyParts(v.Content)
+			out[i] = v
+		default:
+			out[i] = p
+		}
+	}
+	return out
+}
+
+func copyLabels(labels map[string]string) map[string]string {
+	if labels == nil {
+		return nil
+	}
+	out := make(map[string]string, len(labels))
+	for k, v := range labels {
+		out[k] = v
+	}
+	return out
 }

@@ -78,7 +78,7 @@ func TestParseAndLoad(t *testing.T) {
 			t.Errorf("%q: %+v %v", in, got, err)
 		}
 	}
-	for _, bad := range []string{"", "Bash(", "(x)", "Bash)", "Bash x", "Bash(x) y"} {
+	for _, bad := range []string{"", "Bash(", "(x)", "Bash)", "Bash x", "Bash(x) y", "Bash x(y)"} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
@@ -283,5 +283,83 @@ func TestDomainAndPlainRules(t *testing.T) {
 	}
 	if texts(p.SubjectsOf(bash("a && b"))) != "a|b|=a && b" {
 		t.Fatal(texts(p.SubjectsOf(bash("a && b"))))
+	}
+}
+
+func TestExplainSaveRemoveAndChanges(t *testing.T) {
+	changes := 0
+	p, err := New(Set{Allow: []string{"Bash(git *)", "Read"}, Deny: []string{"Bash(rm *)"}, Ask: []string{"Write"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.OnChange = func() { changes++ }
+	if d, why := p.Explain(bash("git status")); d != policy.Allow || why != "rule Bash(git *)" {
+		t.Fatalf("%s %s", d, why)
+	}
+	if d, why := p.Explain(bash("rm -rf x")); d != policy.Deny || why != "rule Bash(rm *)" {
+		t.Fatalf("%s %s", d, why)
+	}
+	if d, why := p.Explain(call("Write", `{"file_path":"a"}`)); d != policy.Ask || why != "rule Write" {
+		t.Fatalf("%s %s", d, why)
+	}
+	if d, why := p.Explain(call("Read", `{"file_path":"a"}`)); d != policy.Allow || why != "rule Read" {
+		t.Fatalf("%s %s", d, why)
+	}
+	if d, why := p.Explain(bash("ls")); d != policy.Ask || why != "default" {
+		t.Fatalf("%s %s", d, why)
+	}
+	if d, why := p.Explain(bash("git status && git log")); d != policy.Allow || why != "rule Bash(git *)" {
+		t.Fatalf("%s %s", d, why)
+	}
+	deny, _ := New(Set{Deny: []string{"Bash"}, Ask: []string{"Grep"}})
+	if deny.Decide(bash("anything")) != policy.Deny || deny.Decide(call("Grep", `{"pattern":"x"}`)) != policy.Ask {
+		t.Fatal("tool wide deny and ask")
+	}
+	if err := p.Add(policy.Allow, "Bash(git *)"); err != nil || changes != 1 || len(p.Rules(policy.Allow)) != 2 {
+		t.Fatalf("duplicates must not be added twice: %v %d %v", err, changes, p.Rules(policy.Allow))
+	}
+	if !p.Remove(policy.Deny, "Bash(rm *)") || p.Remove(policy.Deny, "Bash(rm *)") || p.Remove(policy.Deny, "Bash(") || changes != 2 {
+		t.Fatalf("remove %d", changes)
+	}
+	if p.Decide(bash("rm -rf x")) != policy.Ask {
+		t.Fatal("removed rule must stop applying")
+	}
+	set := p.Set()
+	if strings.Join(set.Allow, ",") != "Bash(git *),Read" || len(set.Deny) != 0 || set.Ask[0] != "Write" {
+		t.Fatalf("%+v", set)
+	}
+	path := filepath.Join(t.TempDir(), "nested", "settings.json")
+	if err := set.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadFile(path)
+	if err != nil || strings.Join(loaded.Allow, ",") != "Bash(git *),Read" {
+		t.Fatalf("%+v %v", loaded, err)
+	}
+	p.Clear()
+	if len(p.Rules(policy.Allow)) != 0 || changes != 3 {
+		t.Fatal("clear")
+	}
+	if texts(p.SubjectsOf(call("BashOutput", `{"bash_id":"job-1"}`))) != "job-1" || p.Key(call("KillShell", `{"shell_id":"job-2"}`)) != "KillShell(job-2)" {
+		t.Fatal("shell job subjects")
+	}
+}
+
+func TestDirFuncFollowsAMovingDirectory(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	current := a
+	p, _ := New(Set{Allow: []string{"Read(" + a + "/**)"}})
+	p.DirFunc = func() string { return current }
+	if p.Decide(call("Read", `{"file_path":"f.txt"}`)) != policy.Allow {
+		t.Fatal("relative path must resolve against the current directory")
+	}
+	current = b
+	if p.Decide(call("Read", `{"file_path":"f.txt"}`)) != policy.Ask {
+		t.Fatal("moving the directory must move the resolution")
+	}
+	p.DirFunc = func() string { return "" }
+	p.Dir = a
+	if p.Decide(call("Read", `{"file_path":"f.txt"}`)) != policy.Allow {
+		t.Fatal("an empty DirFunc result falls back to Dir")
 	}
 }

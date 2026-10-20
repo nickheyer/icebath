@@ -11,15 +11,23 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/htmlindex"
+	"golang.org/x/text/transform"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/tool"
 )
 
 const FetchName = "WebFetch"
+
+// Entries the cache holds before the oldest is dropped
+const MaxCached = 64
 
 // Answers a prompt against fetched text, satisfied by a provider
 type Completer interface {
@@ -28,7 +36,7 @@ type Completer interface {
 
 // Settings of the fetch tool
 type Options struct {
-	// Built from Timeout and AllowPrivate when nil
+	// Used as given when set, with the private address guard applied before each request
 	Client *http.Client
 	// Body bytes read before the page is cut, one MiB when zero
 	MaxBytes int
@@ -50,6 +58,22 @@ type Options struct {
 	Model string
 	// Output budget of the summarizer, 1024 when zero
 	MaxSummaryTokens int
+}
+
+// Structured outcome of a fetch
+type Page struct {
+	URL         string
+	FinalURL    string
+	Status      int
+	ContentType string
+	Charset     string
+	Title       string
+	Text        string
+	Bytes       int
+	Cached      bool
+	Duration    time.Duration
+	// Answer the summarizer gave when a prompt was supplied
+	Answer string
 }
 
 func (o Options) maxBytes() int           { return orInt(o.MaxBytes, 1<<20) }
@@ -80,13 +104,14 @@ func orDur(v, def time.Duration) time.Duration {
 }
 
 type cached struct {
-	text string
+	page Page
 	at   time.Time
 }
 
 type fetch struct {
 	Options
 	client *http.Client
+	custom bool
 	mu     sync.Mutex
 	cache  map[string]cached
 }
@@ -97,10 +122,11 @@ func Fetch(o Options) (tool.Tool, error) {
 		return nil, errors.New("web: a summarizer needs a model id")
 	}
 	client := o.Client
+	custom := client != nil
 	if client == nil {
 		client = &http.Client{Timeout: o.timeout(), Transport: transport(o.AllowPrivate)}
 	}
-	f := &fetch{Options: o, client: client, cache: map[string]cached{}}
+	f := &fetch{Options: o, client: client, custom: custom, cache: map[string]cached{}}
 	return f, nil
 }
 
@@ -143,12 +169,26 @@ func isPrivate(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }
 
+// Refuses a host whose addresses fall in the private range, used ahead of requests through a supplied client
+func guard(ctx context.Context, host string) error {
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return err
+	}
+	for _, ip := range ips {
+		if isPrivate(ip.IP) {
+			return fmt.Errorf("%s resolves to the private address %s", host, ip.IP)
+		}
+	}
+	return nil
+}
+
 const fetchSchema = `{"type":"object","properties":{
 "url":{"type":"string","description":"Absolute http or https URL to fetch"}%s},
 "required":["url"%s],"additionalProperties":false}`
 
 func (f *fetch) Definition() protocol.Tool {
-	desc := fmt.Sprintf("Fetches a URL and returns its content as text, converting HTML to plain text with links kept as [text](url). Redirects to another host are reported instead of followed. Responses are read up to %d bytes and the text is cut at %d characters. Results are cached for %s.", f.maxBytes(), f.maxText(), f.cacheTTL())
+	desc := fmt.Sprintf("Fetches a URL and returns its content as text, converting HTML to plain text with links kept as [text](url) and code blocks fenced. Redirects to another site are reported instead of followed. Responses are read up to %d bytes and the text is cut at %d characters. Results are cached for %s.", f.maxBytes(), f.maxText(), f.cacheTTL())
 	props, req := "", ""
 	if f.Summarizer != nil {
 		desc += " With a prompt, the page is read by a model and only its answer to the prompt is returned."
@@ -163,7 +203,7 @@ func (*fetch) Annotations() tool.Annotations {
 	return tool.Annotations{ReadOnly: true, OpenWorld: true}
 }
 
-// Signals a redirect that leaves the host the model asked for
+// Signals a redirect that leaves the site the model asked for
 type crossHost struct{ to string }
 
 func (c crossHost) Error() string { return "redirected to " + c.to }
@@ -186,7 +226,7 @@ func (f *fetch) Run(ctx context.Context, args json.RawMessage) (tool.Result, err
 	if f.Summarizer != nil && (in.Prompt == nil || strings.TrimSpace(*in.Prompt) == "") {
 		return tool.Error("prompt is required"), nil
 	}
-	text, err := f.text(ctx, u)
+	page, err := f.page(ctx, u)
 	var redirect crossHost
 	switch {
 	case errors.As(err, &redirect):
@@ -195,38 +235,83 @@ func (f *fetch) Run(ctx context.Context, args json.RawMessage) (tool.Result, err
 		return tool.Error(err.Error()), nil
 	}
 	if f.Summarizer == nil {
-		return tool.Text(text), nil
+		return tool.Text(page.render()).With(page), nil
 	}
-	return f.answer(ctx, text, *in.Prompt)
+	return f.answer(ctx, page, *in.Prompt)
 }
 
-// Returns the page text from cache or from a fresh request
-func (f *fetch) text(ctx context.Context, u *url.URL) (string, error) {
+// Header lines and body the model receives
+func (p Page) render() string {
+	return fmt.Sprintf("URL: %s\nContent-Type: %s\n\n%s", p.FinalURL, p.ContentType, p.Text)
+}
+
+// Returns the page from cache or from a fresh request
+func (f *fetch) page(ctx context.Context, u *url.URL) (Page, error) {
 	key := u.String()
 	if !f.NoCache {
 		f.mu.Lock()
 		c, ok := f.cache[key]
 		f.mu.Unlock()
 		if ok && time.Since(c.at) < f.cacheTTL() {
-			return c.text, nil
+			c.page.Cached = true
+			return c.page, nil
 		}
 	}
-	text, err := f.request(ctx, u)
+	page, err := f.request(ctx, u)
 	if err != nil {
-		return "", err
+		return Page{}, err
 	}
 	if !f.NoCache {
-		f.mu.Lock()
-		f.cache[key] = cached{text: text, at: time.Now()}
-		f.mu.Unlock()
+		f.store(key, page)
 	}
-	return text, nil
+	return page, nil
 }
 
-func (f *fetch) request(ctx context.Context, u *url.URL) (string, error) {
+// Caches a page, dropping expired entries and then the oldest until the cache fits
+func (f *fetch) store(key string, page Page) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	now := time.Now()
+	for k, c := range f.cache {
+		if now.Sub(c.at) >= f.cacheTTL() {
+			delete(f.cache, k)
+		}
+	}
+	f.cache[key] = cached{page: page, at: now}
+	if len(f.cache) <= MaxCached {
+		return
+	}
+	keys := make([]string, 0, len(f.cache))
+	for k := range f.cache {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return f.cache[keys[i]].at.Before(f.cache[keys[j]].at) })
+	for _, k := range keys[:len(keys)-MaxCached] {
+		delete(f.cache, k)
+	}
+}
+
+// Reports whether a redirect stays on the same site, port and www prefix aside
+func sameSite(from, to *url.URL) bool {
+	a, b := strings.ToLower(from.Hostname()), strings.ToLower(to.Hostname())
+	return a == b || strings.TrimPrefix(a, "www.") == strings.TrimPrefix(b, "www.")
+}
+
+func (f *fetch) request(ctx context.Context, u *url.URL) (Page, error) {
+	if f.custom {
+		if !f.AllowPrivate {
+			if err := guard(ctx, u.Hostname()); err != nil {
+				return Page{}, err
+			}
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, f.timeout())
+		defer cancel()
+	}
+	started := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return "", err
+		return Page{}, err
 	}
 	req.Header.Set("User-Agent", f.userAgent())
 	req.Header.Set("Accept", "text/html, text/plain;q=0.9, application/json;q=0.9, */*;q=0.8")
@@ -235,8 +320,11 @@ func (f *fetch) request(ctx context.Context, u *url.URL) (string, error) {
 		if len(via) >= 10 {
 			return errors.New("stopped after 10 redirects")
 		}
-		if r.URL.Host != u.Host {
+		if !sameSite(u, r.URL) {
 			return crossHost{to: r.URL.String()}
+		}
+		if f.custom && !f.AllowPrivate {
+			return guard(r.Context(), r.URL.Hostname())
 		}
 		return nil
 	}
@@ -244,62 +332,87 @@ func (f *fetch) request(ctx context.Context, u *url.URL) (string, error) {
 	if err != nil {
 		var redirect crossHost
 		if errors.As(err, &redirect) {
-			return "", redirect
+			return Page{}, redirect
 		}
-		return "", err
+		return Page{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("%s returned HTTP %d", u, resp.StatusCode)
+		return Page{}, fmt.Errorf("%s returned HTTP %d", u, resp.StatusCode)
 	}
-	kind, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	kind, params, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(f.maxBytes())+1))
 	if err != nil {
-		return "", err
+		return Page{}, err
 	}
 	cut := len(body) > f.maxBytes()
 	if cut {
 		body = body[:f.maxBytes()]
 	}
-	var text string
+	isHTML := kind == "text/html" || kind == "application/xhtml+xml"
+	charset := strings.ToLower(params["charset"])
+	if charset == "" && isHTML {
+		charset = sniffCharset(body)
+	}
+	decoded, charset, err := decode(body, charset)
+	if err != nil {
+		return Page{}, err
+	}
+	page := Page{URL: u.String(), FinalURL: resp.Request.URL.String(), Status: resp.StatusCode, ContentType: kind, Charset: charset, Bytes: len(body)}
 	switch {
-	case kind == "text/html" || kind == "application/xhtml+xml":
-		text = Text(string(body))
+	case isHTML:
+		page.Title = title(decoded)
+		page.Text = TextFrom(decoded, resp.Request.URL)
 	case strings.HasPrefix(kind, "text/") || kind == "application/json" || kind == "application/xml" || strings.HasSuffix(kind, "+json") || strings.HasSuffix(kind, "+xml") || kind == "":
-		text = string(body)
+		page.Text = decoded
 	default:
-		return "", fmt.Errorf("%s has unsupported content type %s", u, kind)
+		return Page{}, fmt.Errorf("%s has unsupported content type %s", u, kind)
 	}
-	if len(text) > f.maxText() {
-		text = text[:f.maxText()] + fmt.Sprintf("\n[text cut at %d characters]", f.maxText())
+	if n := utf8.RuneCountInString(page.Text); n > f.maxText() {
+		runes := []rune(page.Text)
+		page.Text = string(runes[:f.maxText()]) + fmt.Sprintf("\n[text cut at %d characters]", f.maxText())
 	} else if cut {
-		text += fmt.Sprintf("\n[page cut at %d bytes]", f.maxBytes())
+		page.Text += fmt.Sprintf("\n[page cut at %d bytes]", f.maxBytes())
 	}
-	return fmt.Sprintf("URL: %s\nContent-Type: %s\n\n%s", resp.Request.URL, kind, text), nil
+	page.Duration = time.Since(started)
+	return page, nil
+}
+
+// Converts body to UTF-8 from the named charset, passing UTF-8 and unnamed content through
+func decode(body []byte, charset string) (string, string, error) {
+	switch charset {
+	case "", "utf-8", "utf8", "us-ascii", "ascii":
+		return string(body), "utf-8", nil
+	}
+	enc, err := htmlindex.Get(charset)
+	if err != nil {
+		return "", "", fmt.Errorf("unsupported charset %q", charset)
+	}
+	out, _, err := transform.Bytes(enc.NewDecoder(), body)
+	if err != nil {
+		return "", "", fmt.Errorf("decoding %s: %w", charset, err)
+	}
+	return string(out), charset, nil
 }
 
 // Asks the summarizer to answer the prompt using only the fetched text
-func (f *fetch) answer(ctx context.Context, text, prompt string) (tool.Result, error) {
+func (f *fetch) answer(ctx context.Context, page Page, prompt string) (tool.Result, error) {
 	req := protocol.Request{
 		Model:     f.Model,
 		System:    "You answer questions about a web page using only its content below. Quote exact wording where it matters and say plainly when the page does not contain the answer.",
 		MaxTokens: f.maxSummaryTokens(),
 		Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{
-			protocol.Text{Text: "<page>\n" + text + "\n</page>\n\nPrompt: " + prompt},
+			protocol.Text{Text: "<page>\n" + page.render() + "\n</page>\n\nPrompt: " + prompt},
 		}}},
 	}
 	resp, err := f.Summarizer.Complete(ctx, req)
 	if err != nil {
 		return tool.Errorf("summarizer failed: %v", err), nil
 	}
-	var sb strings.Builder
-	for _, p := range resp.Content {
-		if t, ok := p.(protocol.Text); ok {
-			sb.WriteString(t.Text)
-		}
-	}
-	if sb.Len() == 0 {
+	text := resp.Text()
+	if text == "" {
 		return tool.Error("summarizer returned no text"), nil
 	}
-	return tool.Text(sb.String()), nil
+	page.Answer = text
+	return tool.Text(text).With(page), nil
 }

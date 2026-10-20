@@ -12,3 +12,17 @@ func init() {
 }
 
 func (Protocol) ID() protocol.ID { return protocol.GoogleGenerativeAI }
+
+func (Protocol) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Thinking:        true,
+		Images:          true,
+		ImagesInResults: true,
+		Documents:       true,
+		ToolChoiceNone:  true,
+		ToolChoiceNamed: true,
+		StopSequences:   true,
+		ServerTools:     true,
+		Citations:       true,
+	}
+}

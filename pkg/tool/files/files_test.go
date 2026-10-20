@@ -119,7 +119,7 @@ func TestRead(t *testing.T) {
 	if out, isErr = run(t, r, `{"file_path":"bin"}`); !isErr || !strings.Contains(out, "binary") {
 		t.Fatalf("%v %q", isErr, out)
 	}
-	put(t, filepath.Join(dir, "pic.PNG"), "\x89PNG")
+	put(t, filepath.Join(dir, "pic.PNG"), "\x89PNG\r\n\x1a\n\x00\x00")
 	if out, isErr = run(t, r, `{"file_path":"pic.PNG"}`); isErr || out != "image/png" {
 		t.Fatalf("%v %q", isErr, out)
 	}

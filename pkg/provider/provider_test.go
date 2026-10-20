@@ -74,6 +74,10 @@ func (lineProtocol) DecodeError(status int, body []byte) *protocol.Error {
 	return &protocol.Error{Status: status, Type: "line", Message: strings.TrimSpace(string(body)), Body: body}
 }
 
+func (lineProtocol) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{}
+}
+
 func TestCompleteAppliesEndpointHeadersAndAuth(t *testing.T) {
 	var got *http.Request
 	var body string

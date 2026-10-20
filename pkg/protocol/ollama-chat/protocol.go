@@ -14,3 +14,12 @@ func init() {
 }
 
 func (Protocol) ID() protocol.ID { return protocol.OllamaChat }
+
+func (Protocol) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Thinking:        true,
+		Images:          true,
+		ImagesInResults: true,
+		StopSequences:   true,
+	}
+}

@@ -72,7 +72,7 @@ func TestEncodeFullConversation(t *testing.T) {
 	      {"type":"thinking","thinking":[{"type":"text","text":"example-reasoning"}],"signature":"example-signature"},
 	      {"type":"text","text":"Example content."}]},
 	    {"object":"entry","type":"function.call","tool_call_id":"example-tool-call-id","name":"example_function","arguments":"{\"example_arg\":\"example-value\"}"},
-	    {"object":"entry","type":"function.result","tool_call_id":"example-tool-call-id","result":"example-tool-result-text"}
+	    {"object":"entry","type":"function.result","tool_call_id":"example-tool-call-id","result":"[error] example-tool-result-text"}
 	  ],
 	  "tools": [{"type":"function","function":{"name":"example_function","description":"example description","parameters":{"type":"object","properties":{"example_arg":{"type":"string"}},"required":["example_arg"]}}}],
 	  "completion_args": {"temperature":0.5,"max_tokens":1024,"stop":["example-stop"],"tool_choice":"auto"},
@@ -156,7 +156,10 @@ func TestEncodeErrors(t *testing.T) {
 		"tool result in user":      {Model: "m", Messages: []protocol.Message{user(protocol.ToolResult{CallID: "c"})}},
 		"thinking in user":         {Model: "m", Messages: []protocol.Message{user(protocol.Thinking{Text: "t"})}},
 		"text in tool message":     {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{protocol.Text{Text: "t"}}}}},
-		"image in tool result":     {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "c", Content: []protocol.Part{protocol.Image{MediaType: "image/png", Data: []byte{1}}}}}}}},
+		"image without data":       {Model: "m", Messages: []protocol.Message{user(protocol.Image{MediaType: "image/png"})}},
+		"document in user":         {Model: "m", Messages: []protocol.Message{user(protocol.Document{MediaType: "application/pdf", Data: []byte{1}, Name: "d.pdf"})}},
+		"bad tool call args":       {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.ToolCall{ID: "c", Name: "f", Args: json.RawMessage(`[1]`)}}}}},
+		"thinking in tool result":  {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "c", Content: []protocol.Part{protocol.Thinking{}}}}}}},
 		"tool result in assistant": {Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.ToolResult{CallID: "c"}}}}},
 		"unknown role":             {Model: "m", Messages: []protocol.Message{{Role: "system"}}},
 		"bad extra":                {Model: "m", Extra: map[string]json.RawMessage{"x": json.RawMessage(`{`)}},
@@ -202,10 +205,54 @@ func TestDecodeFunctionCallResponse(t *testing.T) {
 	}
 }
 
-func TestDecodeRejectsServerToolEntries(t *testing.T) {
-	body := `{"conversation_id":"c","outputs":[{"object":"entry","type":"tool.execution","id":"t","name":"web_search","arguments":""}],"usage":{}}`
-	if _, err := p.Decode(strings.NewReader(body)); err == nil || !strings.Contains(err.Error(), "tool.execution") {
-		t.Fatalf("%v", err)
+func TestDecodeServerToolEntries(t *testing.T) {
+	body := `{"conversation_id":"c","outputs":[
+	  {"object":"entry","type":"tool.execution","id":"t","name":"web_search","arguments":"{\"q\":\"go\"}","confirmation_status":"confirmed","info":{"results":[{"url":"https://go.dev"}]}},
+	  {"object":"entry","type":"agent.handoff","id":"h","previous_agent_id":"a1","previous_agent_name":"planner","next_agent_id":"a2","next_agent_name":"coder"},
+	  {"object":"entry","type":"message.output","id":"m","model":"mm","role":"assistant","content":"done"}
+	],"usage":{}}`
+	resp, err := p.Decode(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Content) != 4 {
+		t.Fatalf("%+v", resp.Content)
+	}
+	call := resp.Content[0].(protocol.ServerToolCall)
+	if call.ID != "t" || call.Name != "web_search" || call.Origin != protocol.MistralConversations || !strings.Contains(string(call.Args), `"confirmation_status":"confirmed"`) || !strings.Contains(string(call.Args), `"arguments":"{\"q\":\"go\"}"`) {
+		t.Fatalf("%+v", call)
+	}
+	result := resp.Content[1].(protocol.ServerToolResult)
+	if result.CallID != "t" || result.Name != "web_search" || string(result.Content) != `{"results":[{"url":"https://go.dev"}]}` || result.Origin != protocol.MistralConversations {
+		t.Fatalf("%+v", result)
+	}
+	handoff := resp.Content[2].(protocol.ServerToolCall)
+	if handoff.Name != "handoff" || !strings.Contains(string(handoff.Args), `"next_agent_name":"coder"`) {
+		t.Fatalf("%+v", handoff)
+	}
+	if _, err := p.Decode(strings.NewReader(`{"conversation_id":"c","outputs":[{"object":"entry","type":"tool.execution","id":"t"}],"usage":{}}`)); err == nil {
+		t.Fatal("execution without a name accepted")
+	}
+	req := protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: resp.Content}}}
+	call2, err := p.Encode(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := decodeBody(t, call2.Body)["inputs"].([]any)
+	if len(inputs) != 3 {
+		t.Fatalf("%s", call2.Body)
+	}
+	exec := inputs[0].(map[string]any)
+	if exec["type"] != "tool.execution" || exec["name"] != "web_search" || exec["id"] != "t" || exec["confirmation_status"] != "confirmed" || exec["info"].(map[string]any)["results"] == nil {
+		t.Fatalf("replayed execution %v", exec)
+	}
+	if h := inputs[1].(map[string]any); h["type"] != "agent.handoff" || h["next_agent_name"] != "coder" {
+		t.Fatalf("replayed handoff %v", h)
+	}
+	foreign := protocol.ServerToolCall{ID: "x", Name: "web_search", Args: json.RawMessage(`{}`), Origin: protocol.AnthropicMessages}
+	call3, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{foreign, protocol.Text{Text: "t"}}}}})
+	if err != nil || strings.Contains(string(call3.Body), "web_search") {
+		t.Fatalf("foreign server tool must be omitted: %v %s", err, call3.Body)
 	}
 }
 
@@ -223,13 +270,21 @@ func TestDecodeTextThinkingAndObjectArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []protocol.Part{
-		protocol.Thinking{Text: "hmm", Signature: "sig"},
-		protocol.Text{Text: "Hello <Reference title=T>"},
+		protocol.Thinking{Text: "hmm", Signature: "sig", Origin: protocol.MistralConversations},
+		protocol.Text{Text: "Hello ", Citations: []protocol.Citation{{Title: "T", URL: "https://x", Start: 6, End: 6}}},
 		protocol.Text{Text: "plain"},
 		protocol.ToolCall{ID: "c1", Name: "g", Args: json.RawMessage(`{"a":1}`)},
 	}
 	if !reflect.DeepEqual(resp.Content, want) || resp.Model != "mm" {
 		t.Fatalf("%+v", resp.Content)
+	}
+	leading := `{"conversation_id":"c","outputs":[{"object":"entry","type":"message.output","id":"m","model":"mm","role":"assistant","content":[{"type":"tool_file","tool":"document_library","file_id":"f1","file_name":"spec.pdf"},{"type":"text","text":"see"}]}],"usage":{}}`
+	resp, err = p.Decode(strings.NewReader(leading))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx := resp.Content[0].(protocol.Text); tx.Text != "see" || len(tx.Citations) != 1 || tx.Citations[0].Document != "f1" || tx.Citations[0].Title != "spec.pdf" {
+		t.Fatalf("leading citation %+v", tx)
 	}
 	bad := []string{
 		`{"conversation_id":"c","outputs":[{"type":"mystery"}],"usage":{}}`,
@@ -300,7 +355,7 @@ func TestStreamTranscript(t *testing.T) {
 		t.Fatalf("%+v", final.Usage)
 	}
 	wantParts := []protocol.Part{
-		protocol.Thinking{Text: "example-reasoning", Signature: "example-signature"},
+		protocol.Thinking{Text: "example-reasoning", Signature: "example-signature", Origin: protocol.MistralConversations},
 		protocol.Text{Text: "Example content."},
 		protocol.ToolCall{ID: "example-tool-call-id", Name: "example_function", Args: json.RawMessage(`{"example_arg":"example-value"}`)},
 	}
@@ -321,12 +376,19 @@ func TestStreamFailures(t *testing.T) {
 	errStream := "event: conversation.response.error\ndata: {\"type\":\"conversation.response.error\",\"created_at\":\"2026-10-19T00:00:01Z\",\"message\":\"example-message\",\"code\":0}\n\n"
 	_, err := protocol.Collect(p.Stream(strings.NewReader(errStream)))
 	var perr *protocol.Error
-	if !errors.As(err, &perr) || perr.Status != 200 || perr.Type != "conversation.response.error" || !strings.Contains(perr.Message, "example-message") {
-		t.Fatalf("error event: %v", err)
+	if !errors.As(err, &perr) || perr.Status != 200 || perr.Type != "conversation.response.error" || !strings.Contains(perr.Message, "example-message") || !perr.InStream || perr.Transient || len(perr.Body) == 0 {
+		t.Fatalf("error event: %v %+v", err, perr)
+	}
+	throttled := "event: conversation.response.error\ndata: {\"type\":\"conversation.response.error\",\"message\":\"slow down\",\"code\":429}\n\n"
+	_, err = protocol.Collect(p.Stream(strings.NewReader(throttled)))
+	if !errors.As(err, &perr) || !perr.Transient {
+		t.Fatalf("throttle must be transient: %v", err)
 	}
 	for _, bad := range []string{
 		"event: mystery\ndata: {\"type\":\"mystery\"}\n\n",
-		"event: tool.execution.started\ndata: {\"type\":\"tool.execution.started\",\"output_index\":1,\"id\":\"tool_exec_1\",\"name\":\"web_search\"}\n\n",
+		"event: tool.execution.delta\ndata: {\"type\":\"tool.execution.delta\",\"id\":\"unknown\",\"arguments\":\"x\"}\n\n",
+		"event: tool.execution.done\ndata: {\"type\":\"tool.execution.done\",\"id\":\"unknown\"}\n\n",
+		"event: agent.handoff.done\ndata: {\"type\":\"agent.handoff.done\",\"id\":\"unknown\"}\n\n",
 		"event: message.output.delta\ndata: not json\n\n",
 		"event: message.output.delta\ndata: {\"type\":\"message.output.delta\",\"id\":\"m\",\"content\":{\"type\":\"image_url\",\"image_url\":\"https://x\"}}\n\n",
 		"event: function.call.delta\ndata: {\"type\":\"function.call.delta\",\"id\":\"f\",\"tool_call_id\":\"c\",\"name\":\"g\",\"arguments\":\"[\"}\n\nevent: conversation.response.done\ndata: {\"type\":\"conversation.response.done\",\"usage\":{}}\n\n",
@@ -348,15 +410,152 @@ func TestStreamFailures(t *testing.T) {
 func TestDecodeError(t *testing.T) {
 	body := []byte(`{"detail":[{"loc":["body","inputs"],"msg":"Field required","type":"missing","input":null}]}`)
 	e := p.DecodeError(422, body)
-	if e.Status != 422 || e.Type != "missing" || e.Message != "body.inputs: Field required" || string(e.Body) != string(body) {
+	if e.Status != 422 || e.Type != "missing" || e.Message != "body.inputs: Field required" || string(e.Body) != string(body) || e.Transient {
 		t.Fatalf("%+v", e)
 	}
 	if e.Error() != "protocol: http 422 missing: body.inputs: Field required" {
 		t.Fatal(e.Error())
 	}
 	raw := p.DecodeError(502, []byte(" bad gateway \n"))
-	if raw.Type != "" || raw.Message != "bad gateway" || raw.Status != 502 {
+	if raw.Type != "" || raw.Message != "bad gateway" || raw.Status != 502 || !raw.Transient {
 		t.Fatalf("%+v", raw)
+	}
+	obj := p.DecodeError(401, []byte(`{"object":"error","message":"Unauthorized","type":"invalid_request_error","code":"1000"}`))
+	if obj.Type != "invalid_request_error" || obj.Message != "Unauthorized" || obj.Transient {
+		t.Fatalf("%+v", obj)
+	}
+	coded := p.DecodeError(429, []byte(`{"object":"error","message":"Too many","code":429}`))
+	if coded.Type != "429" || !coded.Transient {
+		t.Fatalf("%+v", coded)
+	}
+	plain := p.DecodeError(404, []byte(`{"detail":"Not Found"}`))
+	if plain.Message != "Not Found" || plain.Type != "" {
+		t.Fatalf("%+v", plain)
+	}
+	empty := p.DecodeError(400, []byte(`{"detail":[]}`))
+	if empty.Message != `{"detail":[]}` {
+		t.Fatalf("%+v", empty)
+	}
+}
+
+func TestReplayPolicyAndResultShapes(t *testing.T) {
+	same := protocol.Thinking{Text: "mine", Signature: "s", Origin: protocol.MistralConversations}
+	blank := protocol.Thinking{Text: "blank", Signature: "s"}
+	foreign := protocol.Thinking{Text: "theirs", Signature: "s", Origin: protocol.AnthropicMessages}
+	redacted := protocol.Thinking{Redacted: true, Signature: "blob"}
+	call, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{same, blank, foreign, redacted, protocol.Text{Text: "t"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(call.Body)
+	if !strings.Contains(body, "mine") || !strings.Contains(body, "blank") || strings.Contains(body, "theirs") || strings.Contains(body, "blob") {
+		t.Fatalf("%s", body)
+	}
+	only, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{foreign}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inputs := decodeBody(t, only.Body)["inputs"].([]any); len(inputs) != 0 {
+		t.Fatalf("a turn left empty by policy must encode as no entries: %s", only.Body)
+	}
+	withImage, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "c", Content: []protocol.Part{protocol.Image{MediaType: "image/png", Data: []byte{1, 2}}, protocol.Text{Text: "ok"}}}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry := decodeBody(t, withImage.Body)["inputs"].([]any)[0].(map[string]any); entry["result"] != "[image image/png, 2 bytes omitted]\nok" {
+		t.Fatalf("%v", entry)
+	}
+	nilArgs, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.ToolCall{ID: "c", Name: "f"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry := decodeBody(t, nilArgs.Body)["inputs"].([]any)[0].(map[string]any); entry["arguments"] != "{}" {
+		t.Fatalf("%v", entry)
+	}
+	caps := p.Capabilities()
+	if !caps.Thinking || caps.RedactedThinking || !caps.Images || caps.ImagesInResults || caps.Documents || !caps.ToolChoiceNone || caps.ToolChoiceNamed || !caps.StopSequences || !caps.ServerTools || !caps.Citations || caps.Caching {
+		t.Fatalf("%+v", caps)
+	}
+}
+
+// Vendor tool run and handoff events assembled from the streaming schemas
+const executionStream = `event: conversation.response.started
+data: {"type":"conversation.response.started","conversation_id":"c1"}
+
+event: tool.execution.started
+data: {"type":"tool.execution.started","id":"ex1","name":"web_search","arguments":"{\"q\":","confirmation_status":"confirmed"}
+
+event: tool.execution.delta
+data: {"type":"tool.execution.delta","id":"ex1","arguments":"\"go\"}"}
+
+event: tool.execution.done
+data: {"type":"tool.execution.done","id":"ex1","info":{"results":[{"url":"https://go.dev"}]}}
+
+event: agent.handoff.started
+data: {"type":"agent.handoff.started","id":"h1","previous_agent_id":"a1","previous_agent_name":"planner"}
+
+event: agent.handoff.done
+data: {"type":"agent.handoff.done","id":"h1","next_agent_id":"a2","next_agent_name":"coder"}
+
+event: message.output.delta
+data: {"type":"message.output.delta","id":"m1","content_index":0,"model":"mm","content":{"type":"tool_reference","tool":"web_search","title":"Go","url":"https://go.dev"}}
+
+event: message.output.delta
+data: {"type":"message.output.delta","id":"m1","content_index":0,"model":"mm","content":"Go is fast"}
+
+event: message.output.delta
+data: {"type":"message.output.delta","id":"m1","content_index":0,"model":"mm","content":{"type":"tool_file","tool":"document_library","file_id":"f9","file_name":"notes.md"}}
+
+event: conversation.response.done
+data: {"type":"conversation.response.done","usage":{"prompt_tokens":5,"completion_tokens":6}}
+
+`
+
+func TestStreamServerToolsAndCitations(t *testing.T) {
+	var types []protocol.EventType
+	var citations []protocol.Citation
+	var final protocol.Response
+	for ev, err := range p.Stream(strings.NewReader(executionStream)) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		types = append(types, ev.Type)
+		if ev.Type == protocol.EventCitation {
+			citations = append(citations, ev.Citation)
+		}
+		if ev.Type == protocol.EventDone {
+			final = ev.Response
+		}
+	}
+	want := []protocol.EventType{
+		protocol.EventStart,
+		protocol.EventServerToolCallStart, protocol.EventServerToolCallDelta, protocol.EventServerToolCallEnd, protocol.EventServerToolResult,
+		protocol.EventServerToolCallStart, protocol.EventServerToolCallDelta, protocol.EventServerToolCallEnd,
+		protocol.EventTextStart, protocol.EventCitation, protocol.EventTextDelta, protocol.EventCitation, protocol.EventTextEnd,
+		protocol.EventDone,
+	}
+	if !reflect.DeepEqual(types, want) {
+		t.Fatalf("%v", types)
+	}
+	exec := final.Content[0].(protocol.ServerToolCall)
+	if exec.ID != "ex1" || exec.Name != "web_search" || exec.Origin != protocol.MistralConversations || !strings.Contains(string(exec.Args), `"arguments":"{\"q\":\"go\"}"`) || !strings.Contains(string(exec.Args), `"confirmation_status":"confirmed"`) {
+		t.Fatalf("%+v", exec)
+	}
+	if res := final.Content[1].(protocol.ServerToolResult); res.CallID != "ex1" || string(res.Content) != `{"results":[{"url":"https://go.dev"}]}` {
+		t.Fatalf("%+v", res)
+	}
+	if h := final.Content[2].(protocol.ServerToolCall); h.Name != "handoff" || !strings.Contains(string(h.Args), `"previous_agent_name":"planner"`) || !strings.Contains(string(h.Args), `"next_agent_name":"coder"`) {
+		t.Fatalf("%+v", h)
+	}
+	text := final.Content[3].(protocol.Text)
+	if text.Text != "Go is fast" || len(text.Citations) != 2 || text.Citations[0].URL != "https://go.dev" || text.Citations[0].Start != 0 || text.Citations[1].Document != "f9" || text.Citations[1].Start != 10 {
+		t.Fatalf("%+v", text)
+	}
+	if len(citations) != 2 || citations[1].Title != "notes.md" {
+		t.Fatalf("%+v", citations)
+	}
+	if final.Usage != (protocol.Usage{Input: 5, Output: 6}) || final.StopReason != protocol.StopEnd {
+		t.Fatalf("%+v", final)
 	}
 }
 

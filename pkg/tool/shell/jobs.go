@@ -17,13 +17,36 @@ import (
 // Snapshot of one background job
 type JobInfo struct {
 	ID          string
+	CallID      string
 	Line        string
 	Description string
+	Dir         string
 	Started     time.Time
+	Finished    time.Time
 	Running     bool
 	ExitCode    int
 	TimedOut    bool
+	// Why the job could not run at all, empty when the command started
+	Error string
+	// Bytes of output produced so far
+	Bytes int64
 }
+
+// What changed about a background job
+type JobEvent struct {
+	Kind JobEventKind
+	Job  JobInfo
+	// Output chunk on output events
+	Data []byte
+}
+
+type JobEventKind string
+
+const (
+	JobStarted  JobEventKind = "started"
+	JobOutput   JobEventKind = "output"
+	JobFinished JobEventKind = "finished"
+)
 
 type job struct {
 	JobInfo
@@ -40,17 +63,29 @@ type stream struct {
 	buf   []byte
 	start int64
 	max   int
+	tap   func([]byte)
 }
 
 func (s *stream) Write(p []byte) (int, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.buf = append(s.buf, p...)
 	if over := len(s.buf) - s.max; over > 0 {
 		s.start += int64(over)
 		s.buf = append([]byte(nil), s.buf[over:]...)
 	}
+	tap := s.tap
+	s.mu.Unlock()
+	if tap != nil {
+		tap(append([]byte(nil), p...))
+	}
 	return len(p), nil
+}
+
+// Total bytes written so far
+func (s *stream) size() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.start + int64(len(s.buf))
 }
 
 // Returns the bytes from an absolute offset, the next offset and how many bytes were lost before them
@@ -61,45 +96,96 @@ func (s *stream) since(from int64) (data []byte, next int64, dropped int64) {
 		dropped = s.start - from
 		from = s.start
 	}
+	end := s.start + int64(len(s.buf))
+	if from > end {
+		from = end
+	}
 	data = append([]byte(nil), s.buf[from-s.start:]...)
-	return data, s.start + int64(len(s.buf)), dropped
+	return data, end, dropped
 }
 
 // Table of background jobs keyed by id
 type Jobs struct {
-	mu   sync.Mutex
-	next int
-	jobs map[string]*job
-	max  int
+	mu      sync.Mutex
+	next    int
+	jobs    map[string]*job
+	order   []string
+	max     int
+	keep    int
+	onEvent func(JobEvent)
 }
 
-func newJobs(maxOutput int) *Jobs {
-	return &Jobs{jobs: map[string]*job{}, max: maxOutput}
+func newJobs(maxOutput, keep int, onEvent func(JobEvent)) *Jobs {
+	return &Jobs{jobs: map[string]*job{}, max: maxOutput, keep: keep, onEvent: onEvent}
+}
+
+func (j *Jobs) emit(kind JobEventKind, jb *job, data []byte) {
+	if j.onEvent == nil {
+		return
+	}
+	j.onEvent(JobEvent{Kind: kind, Job: j.info(jb), Data: data})
+}
+
+// Snapshot of a job with its live byte count
+func (j *Jobs) info(jb *job) JobInfo {
+	j.mu.Lock()
+	info := jb.JobInfo
+	j.mu.Unlock()
+	info.Bytes = jb.out.size()
+	return info
 }
 
 // Launches the command in its own goroutine and returns the job at once
-func (j *Jobs) start(runner Runner, cmd Command, description string) *job {
+func (j *Jobs) start(runner Runner, cmd Command) *job {
 	j.mu.Lock()
 	j.next++
 	id := fmt.Sprintf("job-%d", j.next)
 	ctx, cancel := context.WithCancel(context.Background())
 	out := &stream{max: j.max}
-	jb := &job{JobInfo: JobInfo{ID: id, Line: cmd.Line, Description: description, Started: time.Now(), Running: true}, out: out, cancel: cancel, done: make(chan struct{})}
+	jb := &job{JobInfo: JobInfo{ID: id, CallID: cmd.ID, Line: cmd.Line, Description: cmd.Description, Dir: cmd.Dir, Started: time.Now(), Running: true}, out: out, cancel: cancel, done: make(chan struct{})}
+	out.tap = func(p []byte) { j.emit(JobOutput, jb, p) }
 	j.jobs[id] = jb
+	j.order = append(j.order, id)
+	j.prune()
 	j.mu.Unlock()
+	j.emit(JobStarted, jb, nil)
+	cmd.ID = id
 	cmd.Stdout, cmd.Stderr = out, out
 	go func() {
 		res, err := runner.Run(ctx, cmd)
 		j.mu.Lock()
 		jb.Running = false
+		jb.Finished = time.Now()
 		jb.ExitCode, jb.TimedOut, jb.err = res.ExitCode, res.TimedOut, err
 		if err != nil {
 			jb.ExitCode = -1
+			jb.Error = err.Error()
 		}
 		j.mu.Unlock()
 		close(jb.done)
+		j.emit(JobFinished, jb, nil)
 	}()
 	return jb
+}
+
+// Forgets the oldest finished jobs beyond the retention count
+func (j *Jobs) prune() {
+	finished := 0
+	for _, id := range j.order {
+		if jb := j.jobs[id]; jb != nil && !jb.Running {
+			finished++
+		}
+	}
+	for i := 0; i < len(j.order) && finished > j.keep; {
+		id := j.order[i]
+		if jb := j.jobs[id]; jb != nil && !jb.Running {
+			delete(j.jobs, id)
+			j.order = append(j.order[:i], j.order[i+1:]...)
+			finished--
+			continue
+		}
+		i++
+	}
 }
 
 func (j *Jobs) get(id string) (*job, bool) {
@@ -111,12 +197,21 @@ func (j *Jobs) get(id string) (*job, bool) {
 
 func (j *Jobs) list() []JobInfo {
 	j.mu.Lock()
-	defer j.mu.Unlock()
-	out := make([]JobInfo, 0, len(j.jobs))
+	jobs := make([]*job, 0, len(j.jobs))
 	for _, jb := range j.jobs {
-		out = append(out, jb.JobInfo)
+		jobs = append(jobs, jb)
 	}
-	sort.Slice(out, func(a, b int) bool { return out[a].Started.Before(out[b].Started) })
+	j.mu.Unlock()
+	out := make([]JobInfo, 0, len(jobs))
+	for _, jb := range jobs {
+		out = append(out, j.info(jb))
+	}
+	sort.Slice(out, func(a, b int) bool {
+		if out[a].Started.Equal(out[b].Started) {
+			return out[a].ID < out[b].ID
+		}
+		return out[a].Started.Before(out[b].Started)
+	})
 	return out
 }
 
@@ -124,6 +219,7 @@ func (j *Jobs) close() {
 	j.mu.Lock()
 	jobs := j.jobs
 	j.jobs = map[string]*job{}
+	j.order = nil
 	j.mu.Unlock()
 	for _, jb := range jobs {
 		jb.cancel()
@@ -206,7 +302,7 @@ func (o output) Run(ctx context.Context, args json.RawMessage) (tool.Result, err
 	default:
 		fmt.Fprintf(&sb, "\n[finished with exit code %d]", info.ExitCode)
 	}
-	return tool.Text(sb.String()), nil
+	return tool.Text(sb.String()).With(o.jobs.info(jb)), nil
 }
 
 const killSchema = `{"type":"object","properties":{
@@ -243,14 +339,11 @@ func (k kill) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	}
 	select {
 	case <-jb.done:
-		return tool.Textf("%s had already finished", in.ID), nil
+		return tool.Textf("%s had already finished", in.ID).With(k.jobs.info(jb)), nil
 	default:
 	}
-	jb.cancel()
-	select {
-	case <-jb.done:
-	case <-ctx.Done():
-		return tool.Error(ctx.Err().Error()), nil
+	if err := k.KillJob(ctx, in.ID); err != nil {
+		return tool.Error(err.Error()), nil
 	}
-	return tool.Textf("Killed %s", in.ID), nil
+	return tool.Textf("Killed %s", in.ID).With(k.jobs.info(jb)), nil
 }

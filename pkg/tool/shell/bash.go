@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -53,12 +54,29 @@ func (b bash) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if in.Timeout > 0 {
 		timeout = min(time.Duration(in.Timeout)*time.Millisecond, b.opts.maxTimeout())
 	}
+	id := ""
+	if call, ok := tool.CallFrom(ctx); ok {
+		id = call.ID
+	}
 	if in.Background {
-		job := b.jobs.start(b.runner, Command{Line: in.Command, Dir: b.Dir(), Env: b.opts.Env, Timeout: b.opts.maxTimeout()}, in.Description)
-		return tool.Textf("Started background job %s, read it with BashOutput and stop it with KillShell", job.ID), nil
+		if in.Timeout == 0 {
+			timeout = b.opts.maxTimeout()
+		}
+		job := b.jobs.start(b.runner, Command{ID: id, Description: in.Description, Line: in.Command, Dir: b.Dir(), Env: b.opts.Env, Timeout: timeout})
+		return tool.Textf("Started background job %s, read it with BashOutput and stop it with KillShell", job.ID).With(b.jobs.info(job)), nil
 	}
 	stdout, stderr := newCapture(b.opts.maxOutput()), newCapture(b.opts.maxOutput())
-	out, err := b.runner.Run(ctx, Command{Line: in.Command, Dir: b.Dir(), Env: b.opts.Env, Timeout: timeout, Stdout: stdout, Stderr: stderr})
+	cmd := Command{
+		ID:          id,
+		Description: in.Description,
+		Line:        in.Command,
+		Dir:         b.Dir(),
+		Env:         b.opts.Env,
+		Timeout:     timeout,
+		Stdout:      io.MultiWriter(stdout, reporting{ctx, "stdout"}),
+		Stderr:      io.MultiWriter(stderr, reporting{ctx, "stderr"}),
+	}
+	out, err := b.runner.Run(ctx, cmd)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}
@@ -67,7 +85,8 @@ func (b bash) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 		b.dir = out.Dir
 		b.mu.Unlock()
 	}
-	return render(stdout.String(), stderr.String(), out, timeout), nil
+	res := render(stdout.String(), stderr.String(), out, timeout)
+	return res.With(Run{Command: in.Command, Description: in.Description, Dir: out.Dir, ExitCode: out.ExitCode, TimedOut: out.TimedOut, Duration: out.Duration, Stdout: stdout.String(), Stderr: stderr.String()}), nil
 }
 
 // Formats stdout, stderr and the outcome, marking failures as error results

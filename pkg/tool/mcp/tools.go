@@ -3,7 +3,9 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -52,11 +54,33 @@ type callResult struct {
 	IsError           bool            `json:"isError"`
 }
 
+// Structured outcome of a server tool call
+type CallData struct {
+	Server     string
+	Tool       string
+	Structured json.RawMessage
+}
+
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9_-]`)
+
+// Longest local name a protocol accepts
+const maxName = 64
 
 // Builds the local name of a server tool, mcp, the server label and the tool name joined by double underscores
 func ToolName(server, name string) string {
-	return "mcp__" + unsafeName.ReplaceAllString(server, "_") + "__" + unsafeName.ReplaceAllString(name, "_")
+	full := "mcp__" + unsafeName.ReplaceAllString(server, "_") + "__" + unsafeName.ReplaceAllString(name, "_")
+	if len(full) <= maxName {
+		return full
+	}
+	sum := sha256.Sum256([]byte(server + "\x00" + name))
+	tag := hex.EncodeToString(sum[:4])
+	return full[:maxName-len(tag)-1] + "_" + tag
+}
+
+// Sends tool calls to whichever client currently serves a server
+type caller interface {
+	Label() string
+	CallWithProgress(ctx context.Context, method string, params map[string]any) (json.RawMessage, error)
 }
 
 // Lists every tool of the server, following pagination, wrapped as local tools
@@ -64,7 +88,19 @@ func (c *Client) Tools(ctx context.Context) ([]tool.Tool, error) {
 	if !c.server.Tools {
 		return nil, fmt.Errorf("mcp: server %s offers no tools", c.name)
 	}
-	var out []tool.Tool
+	defs, err := c.listTools(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tool.Tool, len(defs))
+	for i, d := range defs {
+		out[i] = wrap(c, d)
+	}
+	return out, nil
+}
+
+func (c *Client) listTools(ctx context.Context) ([]toolDef, error) {
+	var out []toolDef
 	cursor := ""
 	for {
 		var params any
@@ -79,9 +115,7 @@ func (c *Client) Tools(ctx context.Context) ([]tool.Tool, error) {
 		if err := json.Unmarshal(raw, &page); err != nil {
 			return nil, fmt.Errorf("mcp: tools/list result: %w", err)
 		}
-		for _, d := range page.Tools {
-			out = append(out, c.wrap(d))
-		}
+		out = append(out, page.Tools...)
 		if page.NextCursor == "" || page.NextCursor == cursor {
 			return out, nil
 		}
@@ -89,18 +123,18 @@ func (c *Client) Tools(ctx context.Context) ([]tool.Tool, error) {
 	}
 }
 
-// Server tool callable through the client
+// Server tool callable through a client or a reconnecting server
 type remote struct {
-	c     *Client
+	c     caller
 	name  string
 	def   protocol.Tool
 	hints tool.Annotations
 }
 
 // Maps a server definition to a local tool, applying the MCP defaults for missing hints
-func (c *Client) wrap(d toolDef) tool.Tool {
+func wrap(c caller, d toolDef) remote {
 	schema := bytes.TrimSpace(d.InputSchema)
-	if !bytes.HasPrefix(schema, []byte("{")) || !json.Valid(schema) {
+	if tool.ValidSchema(schema) != nil {
 		schema = json.RawMessage(`{"type":"object"}`)
 	}
 	desc := d.Description
@@ -122,7 +156,7 @@ func (c *Client) wrap(d toolDef) tool.Tool {
 			hints.OpenWorld = *a.OpenWorldHint
 		}
 	}
-	return remote{c: c, name: d.Name, def: protocol.Tool{Name: ToolName(c.name, d.Name), Description: desc, Parameters: schema}, hints: hints}
+	return remote{c: c, name: d.Name, def: protocol.Tool{Name: ToolName(c.Label(), d.Name), Description: desc, Parameters: schema}, hints: hints}
 }
 
 func (r remote) Definition() protocol.Tool     { return r.def }
@@ -135,7 +169,7 @@ func (r remote) Run(ctx context.Context, args json.RawMessage) (tool.Result, err
 	if len(args) == 0 {
 		args = json.RawMessage(`{}`)
 	}
-	raw, err := r.c.Call(ctx, "tools/call", map[string]any{"name": r.name, "arguments": args})
+	raw, err := r.c.CallWithProgress(ctx, "tools/call", map[string]any{"name": r.name, "arguments": args})
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}
@@ -153,7 +187,7 @@ func (r remote) Run(ctx context.Context, args json.RawMessage) (tool.Result, err
 	if len(parts) == 0 {
 		parts = append(parts, protocol.Text{Text: "(no content)"})
 	}
-	return tool.Result{Content: parts, IsError: res.IsError}, nil
+	return tool.Result{Content: parts, IsError: res.IsError, Data: CallData{Server: r.c.Label(), Tool: r.name, Structured: res.StructuredContent}}, nil
 }
 
 // Maps every MCP content kind onto neutral parts, carrying binary data as base64 text when no part fits

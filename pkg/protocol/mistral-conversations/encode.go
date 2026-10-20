@@ -2,11 +2,20 @@ package mistralconversations
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
+)
+
+const (
+	errorPrefix       = "[error] "
+	typeToolExecution = "tool.execution"
+	typeHandoff       = "agent.handoff"
+	// Neutral name for agent.handoff entries, which carry no tool name of their own
+	nameHandoff = "handoff"
 )
 
 func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
@@ -87,6 +96,8 @@ func encodeUserContent(parts []protocol.Part) ([]any, error) {
 				return nil, err
 			}
 			content = append(content, c)
+		case protocol.Document:
+			return nil, fmt.Errorf("the wire has no document chunk for %q", p.Name)
 		default:
 			return nil, fmt.Errorf("%T is not user content", p)
 		}
@@ -94,10 +105,11 @@ func encodeUserContent(parts []protocol.Part) ([]any, error) {
 	return content, nil
 }
 
-// Emits a message.output entry per run of text and thinking parts and a function.call entry per tool call
+// Emits a message.output entry per run of text and thinking, a function.call per tool call and replays vendor entries
 func encodeAssistant(parts []protocol.Part) ([]any, error) {
 	var entries []any
 	var pending []any
+	executions := map[string]map[string]json.RawMessage{}
 	flush := func() {
 		if len(pending) > 0 {
 			entries = append(entries, messageEntry{Object: objectName, Type: "message.output", Role: "assistant", Content: pending})
@@ -115,10 +127,34 @@ func encodeAssistant(parts []protocol.Part) ([]any, error) {
 			}
 			pending = append(pending, c)
 		case protocol.Thinking:
+			if p.Redacted || !replayable(p.Origin) {
+				continue
+			}
 			pending = append(pending, thinkChunk{Type: "thinking", Thinking: []textChunk{{Type: "text", Text: p.Text}}, Signature: p.Signature})
 		case protocol.ToolCall:
+			args, err := protocol.ParseArgs(string(p.Args))
+			if err != nil {
+				return nil, fmt.Errorf("tool call %s: %w", p.ID, err)
+			}
 			flush()
-			entries = append(entries, functionCallEntry{Object: objectName, Type: "function.call", ToolCallID: p.ID, Name: p.Name, Arguments: string(p.Args)})
+			entries = append(entries, functionCallEntry{Object: objectName, Type: "function.call", ToolCallID: p.ID, Name: p.Name, Arguments: string(args)})
+		case protocol.ServerToolCall:
+			if !replayable(p.Origin) {
+				continue
+			}
+			entry, err := encodeServerToolCall(p)
+			if err != nil {
+				return nil, err
+			}
+			flush()
+			entries = append(entries, entry)
+			if p.Name != nameHandoff {
+				executions[p.ID] = entry
+			}
+		case protocol.ServerToolResult:
+			if entry, ok := executions[p.CallID]; ok && replayable(p.Origin) && len(p.Content) > 0 {
+				entry["info"] = p.Content
+			}
 		default:
 			return nil, fmt.Errorf("%T is not assistant content", p)
 		}
@@ -127,7 +163,42 @@ func encodeAssistant(parts []protocol.Part) ([]any, error) {
 	return entries, nil
 }
 
-// Joins text parts with newlines because function.result carries a single string
+func replayable(origin protocol.ID) bool {
+	return protocol.Replayable(origin, protocol.MistralConversations)
+}
+
+// Rebuilds a tool.execution or agent.handoff entry from the fields kept in Args
+func encodeServerToolCall(c protocol.ServerToolCall) (map[string]json.RawMessage, error) {
+	args, err := protocol.ParseArgs(string(c.Args))
+	if err != nil {
+		return nil, fmt.Errorf("server tool call %s: %w", c.ID, err)
+	}
+	entry := map[string]json.RawMessage{}
+	if err := json.Unmarshal(args, &entry); err != nil {
+		return nil, fmt.Errorf("server tool call %s: %w", c.ID, err)
+	}
+	entry["object"] = quote(objectName)
+	if c.ID != "" {
+		entry["id"] = quote(c.ID)
+	}
+	if c.Name == nameHandoff {
+		entry["type"] = quote(typeHandoff)
+		return entry, nil
+	}
+	if c.Name == "" {
+		return nil, fmt.Errorf("server tool call %s has no tool name", c.ID)
+	}
+	entry["type"] = quote(typeToolExecution)
+	entry["name"] = quote(c.Name)
+	return entry, nil
+}
+
+func quote(s string) json.RawMessage {
+	raw, _ := json.Marshal(s)
+	return raw
+}
+
+// Joins text parts with newlines because function.result carries a single string, flagging failures
 func encodeToolResults(parts []protocol.Part) ([]any, error) {
 	var entries []any
 	for _, p := range parts {
@@ -137,13 +208,20 @@ func encodeToolResults(parts []protocol.Part) ([]any, error) {
 		}
 		var texts []string
 		for _, c := range r.Content {
-			t, ok := c.(protocol.Text)
-			if !ok {
+			switch c := c.(type) {
+			case protocol.Text:
+				texts = append(texts, c.Text)
+			case protocol.Image:
+				texts = append(texts, fmt.Sprintf("[image %s, %d bytes omitted]", c.MediaType, len(c.Data)))
+			default:
 				return nil, fmt.Errorf("tool result %s: function.result carries only text, not %T", r.CallID, c)
 			}
-			texts = append(texts, t.Text)
 		}
-		entries = append(entries, functionResultEntry{Object: objectName, Type: "function.result", ToolCallID: r.CallID, Result: strings.Join(texts, "\n")})
+		result := strings.Join(texts, "\n")
+		if r.IsError {
+			result = errorPrefix + result
+		}
+		entries = append(entries, functionResultEntry{Object: objectName, Type: "function.result", ToolCallID: r.CallID, Result: result})
 	}
 	return entries, nil
 }
@@ -151,6 +229,9 @@ func encodeToolResults(parts []protocol.Part) ([]any, error) {
 func encodeImage(img protocol.Image) (imageChunk, error) {
 	if img.MediaType == "" {
 		return imageChunk{}, fmt.Errorf("image without media type")
+	}
+	if len(img.Data) == 0 {
+		return imageChunk{}, fmt.Errorf("image without data")
 	}
 	url := "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
 	return imageChunk{Type: "image_url", ImageURL: url}, nil

@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Why the model stopped, normalized across protocols with the wire value kept beside it
@@ -20,13 +22,38 @@ const (
 	StopOther StopReason = "other"
 )
 
-// Token counts as reported by the protocol, zero where it reports nothing
+// Token counts normalized so Input excludes cached tokens and Output includes reasoning
 type Usage struct {
-	Input      int
-	Output     int
-	CacheRead  int
-	CacheWrite int
-	Reasoning  int
+	Input      int `json:"input"`
+	Output     int `json:"output"`
+	CacheRead  int `json:"cache_read"`
+	CacheWrite int `json:"cache_write"`
+	Reasoning  int `json:"reasoning"`
+}
+
+// Tokens the request occupied on the input side, cached or not
+func (u Usage) Context() int { return u.Input + u.CacheRead + u.CacheWrite }
+
+// Every token the exchange consumed on either side
+func (u Usage) Total() int { return u.Context() + u.Output }
+
+// Sum of two usages field by field
+func (u Usage) Add(o Usage) Usage {
+	return Usage{
+		Input:      u.Input + o.Input,
+		Output:     u.Output + o.Output,
+		CacheRead:  u.CacheRead + o.CacheRead,
+		CacheWrite: u.CacheWrite + o.CacheWrite,
+		Reasoning:  u.Reasoning + o.Reasoning,
+	}
+}
+
+// Timings a protocol reports about the exchange, zero where it reports nothing
+type Metrics struct {
+	Latency  time.Duration `json:"latency"`
+	Load     time.Duration `json:"load"`
+	Prompt   time.Duration `json:"prompt"`
+	Generate time.Duration `json:"generate"`
 }
 
 // Completed assistant turn
@@ -37,22 +64,33 @@ type Response struct {
 	StopReason    StopReason
 	RawStopReason string
 	Usage         Usage
+	Metrics       Metrics
+	// Vendor request identifier taken from the response headers by the provider
+	RequestID string
+	// Response headers kept by the provider for rate limit and tracing fields
+	Header http.Header
 }
 
 type EventType string
 
 const (
-	EventStart         EventType = "start"
-	EventTextStart     EventType = "text_start"
-	EventTextDelta     EventType = "text_delta"
-	EventTextEnd       EventType = "text_end"
-	EventThinkingStart EventType = "thinking_start"
-	EventThinkingDelta EventType = "thinking_delta"
-	EventThinkingEnd   EventType = "thinking_end"
-	EventToolCallStart EventType = "tool_call_start"
-	EventToolCallDelta EventType = "tool_call_delta"
-	EventToolCallEnd   EventType = "tool_call_end"
-	EventDone          EventType = "done"
+	EventStart               EventType = "start"
+	EventTextStart           EventType = "text_start"
+	EventTextDelta           EventType = "text_delta"
+	EventTextEnd             EventType = "text_end"
+	EventThinkingStart       EventType = "thinking_start"
+	EventThinkingDelta       EventType = "thinking_delta"
+	EventThinkingEnd         EventType = "thinking_end"
+	EventToolCallStart       EventType = "tool_call_start"
+	EventToolCallDelta       EventType = "tool_call_delta"
+	EventToolCallEnd         EventType = "tool_call_end"
+	EventServerToolCallStart EventType = "server_tool_call_start"
+	EventServerToolCallDelta EventType = "server_tool_call_delta"
+	EventServerToolCallEnd   EventType = "server_tool_call_end"
+	EventServerToolResult    EventType = "server_tool_result"
+	EventCitation            EventType = "citation"
+	EventUsage               EventType = "usage"
+	EventDone                EventType = "done"
 )
 
 // Incremental update of an assistant turn with the response assembled so far
@@ -62,8 +100,12 @@ type Event struct {
 	Index int
 	// Text, thinking or tool argument fragment on delta events
 	Delta string
+	// Every argument fragment received so far on tool call delta events
+	Partial string
 	// Initial part on start events and the complete part on end events
-	Part     Part
+	Part Part
+	// Source attached to the text part at Index on citation events
+	Citation Citation
 	Response Response
 }
 
@@ -73,6 +115,7 @@ const (
 	blockText blockKind = iota
 	blockThinking
 	blockToolCall
+	blockServerToolCall
 )
 
 type block struct {
@@ -84,9 +127,11 @@ type block struct {
 // Assembles neutral events and the final Response from protocol specific stream fragments
 type Builder struct {
 	Response Response
-	started  bool
-	open     map[string]*block
-	queue    []Event
+	// Protocol stamped on signed parts so other protocols know not to replay them
+	Origin  ID
+	started bool
+	open    map[string]*block
+	queue   []Event
 }
 
 // Records the response identity and emits the start event once
@@ -116,13 +161,27 @@ func (b *Builder) OpenText(key string) {
 }
 
 func (b *Builder) OpenThinking(key string, redacted bool) {
-	i := b.add(key, blockThinking, Thinking{Redacted: redacted})
+	i := b.add(key, blockThinking, Thinking{Redacted: redacted, Origin: b.Origin})
 	b.emit(Event{Type: EventThinkingStart, Index: i, Part: b.Response.Content[i]})
 }
 
 func (b *Builder) OpenToolCall(key, id, name string) {
 	i := b.add(key, blockToolCall, ToolCall{ID: id, Name: name})
 	b.emit(Event{Type: EventToolCallStart, Index: i, Part: b.Response.Content[i]})
+}
+
+func (b *Builder) OpenServerToolCall(key, id, name string) {
+	i := b.add(key, blockServerToolCall, ServerToolCall{ID: id, Name: name, Origin: b.Origin})
+	b.emit(Event{Type: EventServerToolCallStart, Index: i, Part: b.Response.Content[i]})
+}
+
+// Appends a vendor side tool outcome as a complete part
+func (b *Builder) AddServerToolResult(p ServerToolResult) {
+	b.Start("", "")
+	p.Origin = b.Origin
+	i := len(b.Response.Content)
+	b.Response.Content = append(b.Response.Content, p)
+	b.emit(Event{Type: EventServerToolResult, Index: i, Part: p})
 }
 
 // Appends a text, thinking or tool argument fragment to the block under key
@@ -145,7 +204,10 @@ func (b *Builder) Delta(key, delta string) error {
 		b.emit(Event{Type: EventThinkingDelta, Index: i, Delta: delta})
 	case blockToolCall:
 		blk.args.WriteString(delta)
-		b.emit(Event{Type: EventToolCallDelta, Index: i, Delta: delta})
+		b.emit(Event{Type: EventToolCallDelta, Index: i, Delta: delta, Partial: blk.args.String()})
+	case blockServerToolCall:
+		blk.args.WriteString(delta)
+		b.emit(Event{Type: EventServerToolCallDelta, Index: i, Delta: delta, Partial: blk.args.String()})
 	}
 	return nil
 }
@@ -159,14 +221,44 @@ func (b *Builder) Signature(key, signature string) error {
 	switch p := b.Response.Content[blk.index].(type) {
 	case Thinking:
 		p.Signature += signature
+		p.Origin = b.Origin
 		b.Response.Content[blk.index] = p
 	case ToolCall:
 		p.Signature += signature
+		p.Origin = b.Origin
 		b.Response.Content[blk.index] = p
 	default:
 		return fmt.Errorf("protocol: signature on text block %q", key)
 	}
 	return nil
+}
+
+// Attaches a source citation to the text block under key
+func (b *Builder) Cite(key string, c Citation) error {
+	blk, ok := b.open[key]
+	if !ok {
+		return fmt.Errorf("protocol: citation for unopened block %q", key)
+	}
+	p, isText := b.Response.Content[blk.index].(Text)
+	if !isText {
+		return fmt.Errorf("protocol: citation on non text block %q", key)
+	}
+	p.Citations = append(p.Citations, c)
+	b.Response.Content[blk.index] = p
+	b.emit(Event{Type: EventCitation, Index: blk.index, Citation: c})
+	return nil
+}
+
+// Records usage known before the stream ends and emits a usage event
+func (b *Builder) Usage(u Usage) {
+	b.Start("", "")
+	b.Response.Usage = u
+	b.emit(Event{Type: EventUsage})
+}
+
+// Records timings the protocol reported about the exchange
+func (b *Builder) Metrics(m Metrics) {
+	b.Response.Metrics = m
 }
 
 // Finalizes the block under key, parsing tool arguments into a JSON object
@@ -191,12 +283,22 @@ func (b *Builder) Close(key string) error {
 		p.Args = args
 		b.Response.Content[i] = p
 		b.emit(Event{Type: EventToolCallEnd, Index: i, Part: p})
+	case blockServerToolCall:
+		p := b.Response.Content[i].(ServerToolCall)
+		args, err := ParseArgs(blk.args.String())
+		if err != nil {
+			return fmt.Errorf("protocol: server tool call %s: %w", p.Name, err)
+		}
+		p.Args = args
+		b.Response.Content[i] = p
+		b.emit(Event{Type: EventServerToolCallEnd, Index: i, Part: p})
 	}
 	return nil
 }
 
 // Closes every open block in order, records the outcome and emits the done event
 func (b *Builder) Finish(stop StopReason, raw string, usage Usage) error {
+	b.Start("", "")
 	keys := make([]string, 0, len(b.open))
 	for k := range b.open {
 		keys = append(keys, k)
@@ -222,6 +324,7 @@ func (b *Builder) Events() []Event {
 }
 
 func (b *Builder) add(key string, kind blockKind, p Part) int {
+	b.Start("", "")
 	if b.open == nil {
 		b.open = map[string]*block{}
 	}
@@ -247,6 +350,9 @@ func ParseArgs(raw string) (json.RawMessage, error) {
 	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
 		return nil, fmt.Errorf("arguments are not a JSON object: %w", err)
 	}
+	if obj == nil {
+		return nil, fmt.Errorf("arguments are not a JSON object: null")
+	}
 	return json.RawMessage(raw), nil
 }
 
@@ -261,4 +367,26 @@ func Collect(events iter.Seq2[Event, error]) (Response, error) {
 		}
 	}
 	return Response{}, fmt.Errorf("protocol: stream ended without a done event")
+}
+
+// Concatenated text parts of a response in order
+func (r Response) Text() string {
+	var sb strings.Builder
+	for _, p := range r.Content {
+		if t, ok := p.(Text); ok {
+			sb.WriteString(t.Text)
+		}
+	}
+	return sb.String()
+}
+
+// Tool calls the model asked for in order
+func (r Response) ToolCalls() []ToolCall {
+	var out []ToolCall
+	for _, p := range r.Content {
+		if c, ok := p.(ToolCall); ok {
+			out = append(out, c)
+		}
+	}
+	return out
 }

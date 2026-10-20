@@ -15,7 +15,22 @@ const (
 	path             = "/responses"
 	includeEncrypted = "reasoning.encrypted_content"
 	imageDetail      = "auto"
+	errorPrefix      = "[error] "
+	defaultFilename  = "document"
 )
+
+var documentExtensions = map[string]string{
+	"application/pdf":  ".pdf",
+	"text/plain":       ".txt",
+	"text/markdown":    ".md",
+	"text/csv":         ".csv",
+	"text/html":        ".html",
+	"application/json": ".json",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+	"application/msword":       ".doc",
+	"application/vnd.ms-excel": ".xls",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+}
 
 // Builds POST /responses with store off and encrypted reasoning requested for stateless replay
 func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
@@ -95,7 +110,7 @@ func appendUser(items []any, i int, msg protocol.Message) ([]any, error) {
 	return append(items, messageItem{Type: itemMessage, Role: "user", Content: content}), nil
 }
 
-// Converts user facing text and image parts into input_text and input_image parts
+// Converts user facing text, image and document parts into input_text, input_image and input_file parts
 func inputContent(parts []protocol.Part, where string) ([]any, error) {
 	content := make([]any, 0, len(parts))
 	for _, p := range parts {
@@ -103,11 +118,17 @@ func inputContent(parts []protocol.Part, where string) ([]any, error) {
 		case protocol.Text:
 			content = append(content, inputText{Type: partInputText, Text: v.Text})
 		case protocol.Image:
-			url, err := dataURL(v)
+			url, err := dataURL(v.MediaType, v.Data)
 			if err != nil {
-				return nil, fmt.Errorf("openai-responses: %s: %w", where, err)
+				return nil, fmt.Errorf("openai-responses: %s: image %w", where, err)
 			}
 			content = append(content, inputImage{Type: partInputImage, ImageURL: url, Detail: imageDetail})
+		case protocol.Document:
+			url, err := dataURL(v.MediaType, v.Data)
+			if err != nil {
+				return nil, fmt.Errorf("openai-responses: %s: document %w", where, err)
+			}
+			content = append(content, inputFile{Type: partInputFile, Filename: filename(v), FileData: url})
 		default:
 			return nil, fmt.Errorf("openai-responses: %s cannot carry a %T part", where, p)
 		}
@@ -115,33 +136,80 @@ func inputContent(parts []protocol.Part, where string) ([]any, error) {
 	return content, nil
 }
 
-// Replays an assistant turn as output messages, reasoning items and function calls
+// Uses the document name, otherwise derives one from the media type extension
+func filename(d protocol.Document) string {
+	if d.Name != "" {
+		return d.Name
+	}
+	return defaultFilename + documentExtensions[d.MediaType]
+}
+
+// Replays an assistant turn as one message item plus reasoning, function call and server tool items
 func appendAssistant(items []any, i int, msg protocol.Message) ([]any, error) {
-	for j, p := range msg.Content {
+	var text *messageItem
+	for _, p := range msg.Content {
 		switch v := p.(type) {
 		case protocol.Text:
-			items = append(items, messageItem{
-				Type:    itemMessage,
-				Role:    "assistant",
-				ID:      fmt.Sprintf("msg_%d_%d", i, j),
-				Status:  "completed",
-				Content: []any{outputText{Type: partOutputText, Text: v.Text, Annotations: []json.RawMessage{}, Logprobs: []json.RawMessage{}}},
-			})
+			part := outputText{Type: partOutputText, Text: v.Text, Annotations: []json.RawMessage{}, Logprobs: []json.RawMessage{}}
+			if text == nil {
+				text = &messageItem{Type: itemMessage, Role: "assistant", Status: "completed"}
+				items = append(items, text)
+			}
+			text.Content = append(text.Content, part)
 		case protocol.Thinking:
+			if v.Redacted || !protocol.Replayable(v.Origin, protocol.OpenAIResponses) {
+				continue
+			}
 			if item, ok := reasoningFromThinking(v); ok {
 				items = append(items, item)
 			}
 		case protocol.ToolCall:
-			args := string(v.Args)
-			if strings.TrimSpace(args) == "" {
-				args = "{}"
+			args, err := protocol.ParseArgs(string(v.Args))
+			if err != nil {
+				return nil, fmt.Errorf("openai-responses: message %d tool call %s: %w", i, v.ID, err)
 			}
-			items = append(items, functionCallItem{Type: itemFunctionCall, CallID: v.ID, Name: v.Name, Arguments: args})
+			items = append(items, functionCallItem{Type: itemFunctionCall, CallID: v.ID, Name: v.Name, Arguments: string(args)})
+		case protocol.ServerToolCall:
+			if !protocol.Replayable(v.Origin, protocol.OpenAIResponses) {
+				continue
+			}
+			item, err := serverToolItem(v)
+			if err != nil {
+				return nil, fmt.Errorf("openai-responses: message %d: %w", i, err)
+			}
+			items = append(items, item)
+		case protocol.ServerToolResult:
 		default:
 			return nil, fmt.Errorf("openai-responses: message %d cannot carry a %T part in an assistant turn", i, p)
 		}
 	}
 	return items, nil
+}
+
+// Rebuilds a vendor item from the raw fields kept in Args with its id and type restored
+func serverToolItem(c protocol.ServerToolCall) (map[string]json.RawMessage, error) {
+	if c.Name == "" {
+		return nil, fmt.Errorf("server tool call %s has no item type", c.ID)
+	}
+	fields := map[string]json.RawMessage{}
+	if len(c.Args) > 0 {
+		if err := json.Unmarshal(c.Args, &fields); err != nil {
+			return nil, fmt.Errorf("server tool call %s: %w", c.ID, err)
+		}
+	}
+	if fields == nil {
+		fields = map[string]json.RawMessage{}
+	}
+	fields["type"] = quote(c.Name)
+	if c.ID != "" {
+		fields["id"] = quote(c.ID)
+	}
+	return fields, nil
+}
+
+func quote(s string) json.RawMessage {
+	raw, _ := json.Marshal(s)
+	return raw
 }
 
 // Rebuilds a reasoning item from a signature this protocol issued, reporting false for any other
@@ -172,7 +240,7 @@ func appendToolResults(items []any, i int, msg protocol.Message) ([]any, error) 
 	return items, nil
 }
 
-// Sends text only results as a string and mixed results as a content list
+// Sends text only results as a string and mixed results as a content list, flagging failures
 func toolOutput(res protocol.ToolResult, where string) (any, error) {
 	texts := make([]string, 0, len(res.Content))
 	textOnly := true
@@ -180,23 +248,39 @@ func toolOutput(res protocol.ToolResult, where string) (any, error) {
 		switch v := p.(type) {
 		case protocol.Text:
 			texts = append(texts, v.Text)
-		case protocol.Image:
+		case protocol.Image, protocol.Document:
 			textOnly = false
 		default:
 			return nil, fmt.Errorf("openai-responses: %s: tool result cannot carry a %T part", where, p)
 		}
 	}
 	if textOnly {
-		return strings.Join(texts, "\n"), nil
+		joined := strings.Join(texts, "\n")
+		if res.IsError {
+			joined = errorPrefix + joined
+		}
+		return joined, nil
 	}
-	return inputContent(res.Content, where)
+	content, err := inputContent(res.Content, where)
+	if err != nil {
+		return nil, err
+	}
+	if !res.IsError {
+		return content, nil
+	}
+	if first, ok := content[0].(inputText); ok {
+		first.Text = errorPrefix + first.Text
+		content[0] = first
+		return content, nil
+	}
+	return append([]any{inputText{Type: partInputText, Text: errorPrefix}}, content...), nil
 }
 
-func dataURL(img protocol.Image) (string, error) {
-	if img.MediaType == "" || len(img.Data) == 0 {
-		return "", errors.New("image needs a media type and data")
+func dataURL(mediaType string, data []byte) (string, error) {
+	if mediaType == "" || len(data) == 0 {
+		return "", errors.New("needs a media type and data")
 	}
-	return "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data), nil
+	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
 
 func encodeTools(tools []protocol.Tool) ([]functionTool, error) {

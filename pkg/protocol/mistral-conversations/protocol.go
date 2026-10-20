@@ -17,3 +17,14 @@ func init() {
 }
 
 func (Protocol) ID() protocol.ID { return protocol.MistralConversations }
+
+func (Protocol) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Thinking:       true,
+		Images:         true,
+		ToolChoiceNone: true,
+		StopSequences:  true,
+		ServerTools:    true,
+		Citations:      true,
+	}
+}

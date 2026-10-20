@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
@@ -55,6 +57,22 @@ func decodeBody(t *testing.T, body []byte) map[string]any {
 		t.Fatalf("%v\n%s", err, body)
 	}
 	return m
+}
+
+func encodeMessages(t *testing.T, msgs ...protocol.Message) []any {
+	t.Helper()
+	call, err := p.Encode(protocol.Request{Model: "m", Messages: msgs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decodeBody(t, call.Body)["messages"].([]any)
+}
+
+func TestCapabilities(t *testing.T) {
+	want := protocol.Capabilities{Thinking: true, RedactedThinking: true, Images: true, ImagesInResults: true, Documents: true, ToolChoiceNamed: true, StopSequences: true, Citations: true, Caching: true}
+	if got := p.Capabilities(); got != want {
+		t.Fatalf("%+v", got)
+	}
 }
 
 func TestEncodeMatchesConverseStreamShape(t *testing.T) {
@@ -127,6 +145,9 @@ func TestEncodeMatchesConverseStreamShape(t *testing.T) {
 	if second["status"] != "error" || secondImage["format"] != "jpeg" {
 		t.Fatalf("second result %v", second)
 	}
+	if strings.Contains(string(call.Body), "cachePoint") {
+		t.Fatal("cache points must be off by default")
+	}
 }
 
 func TestEncodeNonStreamingPathEscapesArn(t *testing.T) {
@@ -178,6 +199,117 @@ func TestEncodeToolChoiceAndRedactedThinking(t *testing.T) {
 	}
 }
 
+// Rule 3 replay policy for signed parts
+func TestEncodeOriginPolicy(t *testing.T) {
+	foreign := protocol.AnthropicMessages
+	user := protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "q"}}}
+	msgs := encodeMessages(t, user, protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{
+		protocol.Thinking{Text: "foreign thought", Signature: "foreign-sig", Origin: foreign},
+		protocol.Thinking{Redacted: true, Signature: "foreign-redacted", Origin: foreign},
+		protocol.Thinking{Text: "same", Signature: "same-sig", Origin: protocol.BedrockConverseStream},
+		protocol.Thinking{Redacted: true, Signature: "QUJD"},
+		protocol.Thinking{Text: "empty", Signature: "empty-sig"},
+		protocol.ToolCall{ID: "c1", Name: "f", Args: json.RawMessage(`{}`), Signature: "tool-sig", Origin: foreign},
+		protocol.ServerToolCall{ID: "s1", Name: "web_search", Args: json.RawMessage(`{"q":"x"}`), Origin: foreign},
+		protocol.ServerToolResult{CallID: "s1", Name: "web_search_tool_result", Content: json.RawMessage(`[]`), Origin: foreign},
+	}})
+	raw, _ := json.Marshal(msgs)
+	for _, leaked := range []string{"foreign thought", "foreign-sig", "foreign-redacted", "tool-sig", "web_search"} {
+		if strings.Contains(string(raw), leaked) {
+			t.Fatalf("leaked %q in %s", leaked, raw)
+		}
+	}
+	content := msgs[1].(map[string]any)["content"].([]any)
+	if len(content) != 4 {
+		t.Fatalf("%v", content)
+	}
+	if content[0].(map[string]any)["reasoningContent"].(map[string]any)["reasoningText"].(map[string]any)["text"] != "same" || content[1].(map[string]any)["reasoningContent"].(map[string]any)["redactedContent"] != "QUJD" || content[2].(map[string]any)["reasoningContent"].(map[string]any)["reasoningText"].(map[string]any)["text"] != "empty" {
+		t.Fatalf("%v", content)
+	}
+	if _, has := content[3].(map[string]any)["toolUse"]; !has {
+		t.Fatalf("%v", content[3])
+	}
+	msgs = encodeMessages(t, user, protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.Thinking{Text: "gone", Signature: "s", Origin: foreign}}})
+	if len(msgs) != 1 {
+		t.Fatalf("empty assistant turn must be omitted: %v", msgs)
+	}
+}
+
+func TestEncodeDocuments(t *testing.T) {
+	msgs := encodeMessages(t,
+		protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{
+			protocol.Document{MediaType: "application/pdf", Data: []byte("%PDF"), Name: "report"},
+			protocol.Document{MediaType: "text/markdown", Data: []byte("# hi")},
+			protocol.Document{MediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Data: []byte{1}},
+		}},
+		protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.ToolCall{ID: "c1", Name: "f"}}},
+		protocol.Message{Role: protocol.RoleTool, Content: []protocol.Part{protocol.ToolResult{CallID: "c1", Content: []protocol.Part{protocol.Document{MediaType: "text/csv", Data: []byte("a,b"), Name: "t"}}}}},
+	)
+	content := msgs[0].(map[string]any)["content"].([]any)
+	first := content[0].(map[string]any)["document"].(map[string]any)
+	if first["format"] != "pdf" || first["name"] != "report" || first["source"].(map[string]any)["bytes"] != "JVBERg==" {
+		t.Fatalf("%v", first)
+	}
+	if second := content[1].(map[string]any)["document"].(map[string]any); second["format"] != "md" || second["name"] != "document-1" {
+		t.Fatalf("%v", second)
+	}
+	if third := content[2].(map[string]any)["document"].(map[string]any); third["format"] != "xlsx" || third["name"] != "document-2" {
+		t.Fatalf("%v", third)
+	}
+	result := msgs[2].(map[string]any)["content"].([]any)[0].(map[string]any)["toolResult"].(map[string]any)
+	if doc := result["content"].([]any)[0].(map[string]any)["document"].(map[string]any); doc["format"] != "csv" || doc["name"] != "t" {
+		t.Fatalf("%v", doc)
+	}
+	for name, doc := range map[string]protocol.Document{
+		"media type": {MediaType: "application/zip", Data: []byte{1}},
+		"no data":    {MediaType: "application/pdf", Name: "x"},
+	} {
+		if _, err := p.Encode(protocol.Request{Model: "m", Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{doc}}}}); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+}
+
+// Prompt caching guide, cache points after the system text and the tool list
+func TestEncodeCachePoints(t *testing.T) {
+	req := fixtureRequest()
+	req.Extra = map[string]json.RawMessage{"bedrock_cache": json.RawMessage(`true`), "additionalModelRequestFields": json.RawMessage(`{"top_k":5}`)}
+	call, err := p.Encode(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := decodeBody(t, call.Body)
+	if _, has := m["bedrock_cache"]; has {
+		t.Fatal("bedrock_cache must not reach the body")
+	}
+	if m["additionalModelRequestFields"].(map[string]any)["top_k"] != 5.0 {
+		t.Fatal("other extra fields must still merge")
+	}
+	system := m["system"].([]any)
+	if len(system) != 2 || system[1].(map[string]any)["cachePoint"].(map[string]any)["type"] != "default" {
+		t.Fatalf("system %v", system)
+	}
+	tools := m["toolConfig"].(map[string]any)["tools"].([]any)
+	if len(tools) != 2 || tools[1].(map[string]any)["cachePoint"].(map[string]any)["type"] != "default" {
+		t.Fatalf("tools %v", tools)
+	}
+	req.Extra = map[string]json.RawMessage{"bedrock_cache": json.RawMessage(`false`)}
+	call, _ = p.Encode(req)
+	if strings.Contains(string(call.Body), "cachePoint") || strings.Contains(string(call.Body), "bedrock_cache") {
+		t.Fatalf("%s", call.Body)
+	}
+	req.Extra = map[string]json.RawMessage{"bedrock_cache": json.RawMessage(`"yes"`)}
+	if _, err := p.Encode(req); err == nil {
+		t.Fatal("non boolean switch accepted")
+	}
+	req.Extra = map[string]json.RawMessage{"bedrock_cache": json.RawMessage(`true`)}
+	req.System, req.Tools, req.ToolChoice = "", nil, protocol.ToolChoice{}
+	call, _ = p.Encode(req)
+	if strings.Contains(string(call.Body), "cachePoint") {
+		t.Fatal("cache points need a system or tool list to follow")
+	}
+}
+
 func TestEncodeExtraMerges(t *testing.T) {
 	req := fixtureRequest()
 	req.Extra = map[string]json.RawMessage{
@@ -219,16 +351,29 @@ func TestEncodeErrors(t *testing.T) {
 		"image in assistant": func(r *protocol.Request) {
 			r.Messages[1].Content[1] = protocol.Image{MediaType: "image/png", Data: []byte{1}}
 		},
+		"document in assistant": func(r *protocol.Request) {
+			r.Messages[1].Content[1] = protocol.Document{MediaType: "application/pdf", Data: []byte{1}}
+		},
 		"text in tool message": func(r *protocol.Request) {
 			r.Messages[2].Content = append(r.Messages[2].Content, protocol.Text{Text: "stray"})
 		},
 		"tool call in result": func(r *protocol.Request) {
 			r.Messages[2].Content[0] = protocol.ToolResult{CallID: "x", Content: []protocol.Part{protocol.ToolCall{ID: "y"}}}
 		},
+		"result image no bytes": func(r *protocol.Request) {
+			r.Messages[2].Content[0] = protocol.ToolResult{CallID: "x", Content: []protocol.Part{protocol.Image{MediaType: "image/png"}}}
+		},
+		"result document type": func(r *protocol.Request) {
+			r.Messages[2].Content[0] = protocol.ToolResult{CallID: "x", Content: []protocol.Part{protocol.Document{MediaType: "x/y", Data: []byte{1}}}}
+		},
 		"bad tool call args": func(r *protocol.Request) {
 			r.Messages[1].Content[2] = protocol.ToolCall{ID: "x", Name: "f", Args: json.RawMessage(`[1]`)}
 		},
+		"null tool call args": func(r *protocol.Request) {
+			r.Messages[1].Content[2] = protocol.ToolCall{ID: "x", Name: "f", Args: json.RawMessage(`null`)}
+		},
 		"redacted without payload": func(r *protocol.Request) { r.Messages[1].Content[0] = protocol.Thinking{Redacted: true} },
+		"bad extra":                func(r *protocol.Request) { r.Extra = map[string]json.RawMessage{"x": json.RawMessage(`{`)} },
 	}
 	for name, mutate := range cases {
 		req := fixtureRequest()
@@ -278,6 +423,9 @@ func TestDecodeToolUseResponse(t *testing.T) {
 	if resp.Usage != (protocol.Usage{Input: 30, Output: 628}) {
 		t.Fatalf("usage %+v", resp.Usage)
 	}
+	if resp.Metrics != (protocol.Metrics{Latency: 1275 * time.Millisecond}) {
+		t.Fatalf("metrics %+v", resp.Metrics)
+	}
 	if resp.Content[0].(protocol.Text).Text != "<text generated by the model>" {
 		t.Fatal("text")
 	}
@@ -302,10 +450,10 @@ func TestDecodeStopSequenceAndReasoning(t *testing.T) {
 	if resp.StopReason != protocol.StopEnd || resp.RawStopReason != "stop_sequence" || resp.Usage.CacheRead != 7 || resp.Usage.CacheWrite != 3 {
 		t.Fatalf("%+v", resp)
 	}
-	if th := resp.Content[0].(protocol.Thinking); th.Text != "think" || th.Signature != "s1" || th.Redacted {
+	if th := resp.Content[0].(protocol.Thinking); th.Text != "think" || th.Signature != "s1" || th.Redacted || th.Origin != protocol.BedrockConverseStream {
 		t.Fatalf("%+v", th)
 	}
-	if th := resp.Content[1].(protocol.Thinking); !th.Redacted || th.Signature != "QUJD" {
+	if th := resp.Content[1].(protocol.Thinking); !th.Redacted || th.Signature != "QUJD" || th.Origin != protocol.BedrockConverseStream {
 		t.Fatalf("%+v", th)
 	}
 	for raw, want := range map[string]protocol.StopReason{
@@ -319,11 +467,54 @@ func TestDecodeStopSequenceAndReasoning(t *testing.T) {
 	}
 }
 
+// Citations guide response shape, with cited text following a plain text block
+func TestDecodeCitationsDocumentsAndMedia(t *testing.T) {
+	body := `{"output":{"message":{"role":"assistant","content":[
+		{"text":"Per the report, "},
+		{"citationsContent":{"content":[{"text":"inflation was 4.1%."}],"citations":[
+		  {"title":"CPI 2023","sourceContent":[{"text":"4.1 percent"}],"location":{"documentChar":{"documentIndex":0,"start":10,"end":21}}},
+		  {"title":"Pages","sourceContent":[],"location":{"documentPage":{"documentIndex":1,"start":2,"end":3}}},
+		  {"location":{"documentChunk":{"documentIndex":2,"start":5,"end":6}}}
+		]}},
+		{"document":{"format":"pdf","name":"summary","source":{"bytes":"JVBERg=="}}},
+		{"video":{"format":"mp4","source":{"bytes":"AQID"}}},
+		{"video":{"format":"three_gp","source":{"bytes":"AQID"}}},
+		{"image":{"format":"png","source":{"bytes":"AQID"}}},
+		{"citationsContent":{"content":[{"text":"Standalone."}],"citations":[]}}
+	]}},"stopReason":"end_turn","usage":{}}`
+	resp, err := p.Decode(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []protocol.Part{
+		protocol.Text{Text: "Per the report, inflation was 4.1%.", Citations: []protocol.Citation{
+			{Title: "CPI 2023", Document: "0", Start: 10, End: 21, Cited: "4.1 percent"},
+			{Title: "Pages", Document: "1", Start: 2, End: 3},
+			{Document: "2", Start: 5, End: 6},
+		}},
+		protocol.Document{MediaType: "application/pdf", Data: []byte("%PDF"), Name: "summary"},
+		protocol.Document{MediaType: "video/mp4", Data: []byte{1, 2, 3}},
+		protocol.Document{MediaType: "video/3gpp", Data: []byte{1, 2, 3}},
+		protocol.Image{MediaType: "image/png", Data: []byte{1, 2, 3}},
+		protocol.Text{Text: "Standalone.", Citations: []protocol.Citation{}},
+	}
+	if !reflect.DeepEqual(resp.Content, want) {
+		t.Fatalf("%+v", resp.Content)
+	}
+}
+
 func TestDecodeRejectsUnknownBlocks(t *testing.T) {
 	cases := []string{
-		`{"output":{"message":{"content":[{"citationsContent":{}}]}},"stopReason":"end_turn","usage":{}}`,
+		`{"output":{"message":{"content":[{"guardContent":{}}]}},"stopReason":"end_turn","usage":{}}`,
 		`{"output":{"message":{"content":[{"toolUse":{"toolUseId":"a","name":"f","input":[1]}}]}},"stopReason":"end_turn","usage":{}}`,
+		`{"output":{"message":{"content":[{"toolUse":{"toolUseId":"a","name":"f","input":{]}}]}},"stopReason":"end_turn","usage":{}}`,
 		`{"output":{"message":{"content":[{"reasoningContent":{}}]}},"stopReason":"end_turn","usage":{}}`,
+		`{"output":{"message":{"content":[{"reasoningContent":{"redactedContent":"!!!"}}]}},"stopReason":"end_turn","usage":{}}`,
+		`{"output":{"message":{"content":[{"document":{"format":"exe","name":"x","source":{"bytes":"AQ=="}}}]}},"stopReason":"end_turn","usage":{}}`,
+		`{"output":{"message":{"content":[{"document":{"format":"pdf","name":"x","source":{"s3Location":{"uri":"s3://b/k"}}}}]}},"stopReason":"end_turn","usage":{}}`,
+		`{"output":{"message":{"content":[{"video":{"format":"mp4","source":{}}}]}},"stopReason":"end_turn","usage":{}}`,
+		`{"output":{"message":{"content":[{"image":{"format":"bmp","source":{"bytes":"AQ=="}}}]}},"stopReason":"end_turn","usage":{}}`,
+		`{"output":{"message":{"content":[{"image":{"format":"png","source":{}}}]}},"stopReason":"end_turn","usage":{}}`,
 		`not json`,
 	}
 	for _, c := range cases {
@@ -392,7 +583,10 @@ func TestStreamToolUse(t *testing.T) {
 	if final.StopReason != protocol.StopToolUse || final.RawStopReason != "tool_use" || final.Usage != (protocol.Usage{Input: 30, Output: 628}) {
 		t.Fatalf("%+v", final)
 	}
-	if th := final.Content[0].(protocol.Thinking); th.Text != "<reasoning text>" || th.Signature != "<opaque signature>" {
+	if final.Metrics != (protocol.Metrics{Latency: 1275 * time.Millisecond}) {
+		t.Fatalf("metrics %+v", final.Metrics)
+	}
+	if th := final.Content[0].(protocol.Thinking); th.Text != "<reasoning text>" || th.Signature != "<opaque signature>" || th.Origin != protocol.BedrockConverseStream {
 		t.Fatalf("%+v", th)
 	}
 	if final.Content[1].(protocol.Text).Text != "<text generated by the model>" {
@@ -411,8 +605,8 @@ func TestStreamToolUse(t *testing.T) {
 func TestStreamRedactedReasoning(t *testing.T) {
 	frames := [][]byte{
 		eventFrame(t, "messageStart", `{"role":"assistant"}`),
-		eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"QUJD"}}}`),
-		eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"REVG"}}}`),
+		eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"QUJ"}}}`),
+		eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"DREVG"}}}`),
 		eventFrame(t, "contentBlockStop", `{"contentBlockIndex":0}`),
 		eventFrame(t, "messageStop", `{"stopReason":"end_turn"}`),
 		eventFrame(t, "metadata", `{"usage":{"inputTokens":1,"outputTokens":2,"totalTokens":3},"metrics":{"latencyMs":5}}`),
@@ -421,13 +615,59 @@ func TestStreamRedactedReasoning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th := resp.Content[0].(protocol.Thinking); !th.Redacted || th.Signature != "QUJDREVG" || th.Text != "" {
+	if th := resp.Content[0].(protocol.Thinking); !th.Redacted || th.Signature != "QUJDREVG" || th.Text != "" || th.Origin != protocol.BedrockConverseStream {
 		t.Fatalf("%+v", th)
+	}
+	unstopped := append(append([][]byte{}, frames[:3]...), frames[4], frames[5])
+	resp, err = protocol.Collect(p.Stream(bytes.NewReader(bytes.Join(unstopped, nil))))
+	if err != nil || resp.Content[0].(protocol.Thinking).Signature != "QUJDREVG" {
+		t.Fatalf("%+v %v", resp, err)
+	}
+	invalid := append(append([][]byte{}, frames[:2]...), eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"!"}}}`), frames[3])
+	if _, err := protocol.Collect(p.Stream(bytes.NewReader(bytes.Join(invalid, nil)))); err == nil || !strings.Contains(err.Error(), "base64") {
+		t.Fatalf("invalid base64 accepted: %v", err)
+	}
+}
+
+// Citation deltas from the ConverseStream CitationsDelta shape, alongside the cited text
+func TestStreamCitations(t *testing.T) {
+	frames := [][]byte{
+		eventFrame(t, "messageStart", `{"role":"assistant"}`),
+		eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{"citation":{"title":"CPI","sourceContent":[{"text":"4.1"}],"location":{"documentChar":{"documentIndex":0,"start":1,"end":4}}}}}`),
+		eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{"text":"4.1%"}}`),
+		eventFrame(t, "contentBlockStop", `{"contentBlockIndex":0}`),
+		eventFrame(t, "messageStop", `{"stopReason":"end_turn"}`),
+		eventFrame(t, "metadata", `{"usage":{"inputTokens":1,"outputTokens":2},"metrics":{"latencyMs":5}}`),
+	}
+	var types []protocol.EventType
+	var final protocol.Response
+	for ev, err := range p.Stream(bytes.NewReader(bytes.Join(frames, nil))) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		types = append(types, ev.Type)
+		final = ev.Response
+	}
+	want := []protocol.EventType{protocol.EventStart, protocol.EventTextStart, protocol.EventCitation, protocol.EventTextDelta, protocol.EventTextEnd, protocol.EventDone}
+	if !reflect.DeepEqual(types, want) {
+		t.Fatalf("%v", types)
+	}
+	cite := protocol.Citation{Title: "CPI", Document: "0", Start: 1, End: 4, Cited: "4.1"}
+	if text := final.Content[0].(protocol.Text); text.Text != "4.1%" || len(text.Citations) != 1 || text.Citations[0] != cite {
+		t.Fatalf("%+v", text)
+	}
+	onTool := [][]byte{frames[0], eventFrame(t, "contentBlockStart", `{"contentBlockIndex":0,"start":{"toolUse":{"toolUseId":"a","name":"f"}}}`), frames[1]}
+	if _, err := protocol.Collect(p.Stream(bytes.NewReader(bytes.Join(onTool, nil)))); err == nil {
+		t.Fatal("citation on a tool block accepted")
 	}
 }
 
 func TestStreamExceptionAndErrorFrames(t *testing.T) {
 	exception, err := Frame{Headers: map[string]any{":message-type": "exception", ":exception-type": "throttlingException", ":content-type": "application/json"}, Payload: []byte(`{"message":"Too many requests"}`)}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation, err := Frame{Headers: map[string]any{":message-type": "exception", ":exception-type": "validationException", ":content-type": "application/json"}, Payload: []byte(`{"message":"bad"}`)}.Encode()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,11 +677,13 @@ func TestStreamExceptionAndErrorFrames(t *testing.T) {
 	}
 	start := eventFrame(t, "messageStart", `{"role":"assistant"}`)
 	for _, c := range []struct {
-		data     []byte
-		typ, msg string
+		data      []byte
+		typ, msg  string
+		transient bool
 	}{
-		{append(append([]byte{}, start...), exception...), "throttlingException", "Too many requests"},
-		{errFrame, "InternalError", "boom"},
+		{append(append([]byte{}, start...), exception...), "throttlingException", "Too many requests", true},
+		{validation, "validationException", "bad", false},
+		{errFrame, "InternalError", "boom", false},
 	} {
 		var got *protocol.Error
 		for _, err := range p.Stream(bytes.NewReader(c.data)) {
@@ -449,7 +691,7 @@ func TestStreamExceptionAndErrorFrames(t *testing.T) {
 				t.Fatalf("unexpected %v", err)
 			}
 		}
-		if got == nil || got.Status != 200 || got.Type != c.typ || got.Message != c.msg {
+		if got == nil || got.Status != 200 || got.Type != c.typ || got.Message != c.msg || !got.InStream || got.Transient != c.transient {
 			t.Fatalf("%+v", got)
 		}
 	}
@@ -465,8 +707,16 @@ func TestStreamRejectsBrokenSequences(t *testing.T) {
 		"unknown event":         {full[0], eventFrame(t, "somethingElse", `{}`)},
 		"missing message type":  {mustEncode(t, Frame{Payload: []byte(`{}`)})},
 		"non toolUse start":     {full[0], eventFrame(t, "contentBlockStart", `{"contentBlockIndex":0,"start":{"image":{"format":"png"}}}`)},
+		"repeated start":        {full[0], full[7], full[7]},
 		"empty delta":           {full[0], eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{}}`)},
 		"redacted after text":   {full[0], full[1], eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":0,"delta":{"reasoningContent":{"redactedContent":"QUJD"}}}`)},
+		"bad start json":        {full[0], eventFrame(t, "contentBlockStart", `{`)},
+		"bad delta json":        {full[0], eventFrame(t, "contentBlockDelta", `{`)},
+		"bad stop json":         {full[0], eventFrame(t, "contentBlockStop", `{`)},
+		"bad message stop":      {full[0], eventFrame(t, "messageStop", `{`)},
+		"bad metadata":          {full[0], full[11], eventFrame(t, "metadata", `{`)},
+		"bad exception":         {mustEncode(t, Frame{Headers: map[string]any{":message-type": "exception"}, Payload: []byte(`{`)})},
+		"bad tool args":         {full[0], full[7], eventFrame(t, "contentBlockDelta", `{"contentBlockIndex":2,"delta":{"toolUse":{"input":"["}}}`), full[10]},
 		"truncated frame":       {full[0][:10]},
 	}
 	for name, frames := range cases {
@@ -493,19 +743,28 @@ func mustEncode(t *testing.T, f Frame) []byte {
 
 func TestDecodeError(t *testing.T) {
 	e := p.DecodeError(400, []byte(`{"__type":"ValidationException","message":"__Message__"}`))
-	if e.Status != 400 || e.Type != "ValidationException" || e.Message != "__Message__" {
+	if e.Status != 400 || e.Type != "ValidationException" || e.Message != "__Message__" || e.Transient || e.InStream {
 		t.Fatalf("%+v", e)
 	}
 	e = p.DecodeError(400, []byte(`{"__type":"com.amazon.coral.validate#ValidationException:http://internal/","message":"bad"}`))
 	if e.Type != "ValidationException" || e.Message != "bad" {
 		t.Fatalf("%+v", e)
 	}
+	e = p.DecodeError(400, []byte(`{"__type":"ThrottlingException","message":"slow down"}`))
+	if !e.Transient {
+		t.Fatal("ThrottlingException must be transient")
+	}
 	e = p.DecodeError(503, []byte("  Service Unavailable\n"))
-	if e.Type != "" || e.Message != "Service Unavailable" || string(e.Body) != "  Service Unavailable\n" {
+	if e.Type != "" || e.Message != "Service Unavailable" || string(e.Body) != "  Service Unavailable\n" || !e.Transient {
 		t.Fatalf("%+v", e)
 	}
 	if !strings.Contains(e.Error(), "503") {
 		t.Fatal(e.Error())
+	}
+	for status, want := range map[int]bool{408: true, 409: true, 429: true, 500: true, 404: false} {
+		if got := p.DecodeError(status, []byte("x")).Transient; got != want {
+			t.Fatalf("%d transient %v", status, got)
+		}
 	}
 }
 

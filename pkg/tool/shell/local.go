@@ -1,35 +1,22 @@
 package shell
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
-)
 
-// Script run by the shell so the final directory reaches fd 3 however the command ends
-const wrapper = `trap 'pwd -P >&3' EXIT
-eval "$1"`
+	"github.com/nickheyer/icebath/pkg/internal/proc"
+)
 
 // Runner using the local shell in its own process group with stdin closed
 type Local struct {
-	// bash when found on PATH, otherwise sh
+	// bash when found on PATH, otherwise the platform shell
 	Shell string
-}
-
-func (l Local) shell() string {
-	if l.Shell != "" {
-		return l.Shell
-	}
-	if p, err := exec.LookPath("bash"); err == nil {
-		return p
-	}
-	return "sh"
 }
 
 func (l Local) Run(ctx context.Context, cmd Command) (Output, error) {
@@ -38,43 +25,36 @@ func (l Local) Run(ctx context.Context, cmd Command) (Output, error) {
 		ctx, cancel = context.WithTimeout(ctx, cmd.Timeout)
 		defer cancel()
 	}
+	dirFile, err := os.CreateTemp("", "icebath-cwd-*")
+	if err != nil {
+		return Output{}, err
+	}
+	dirFile.Close()
+	defer os.Remove(dirFile.Name())
 	shell := l.shell()
-	c := exec.CommandContext(ctx, shell, "-c", wrapper, shell, cmd.Line)
+	c := exec.CommandContext(ctx, shell, l.args(shell, cmd.Line, dirFile.Name())...)
 	c.Dir = cmd.Dir
 	c.Env = append(os.Environ(), cmd.Env...)
 	c.Stdout = orDiscard(cmd.Stdout)
 	c.Stderr = orDiscard(cmd.Stderr)
-	r, w, err := os.Pipe()
-	if err != nil {
-		return Output{}, err
-	}
-	c.ExtraFiles = []*os.File{w}
-	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
+	proc.Group(c)
+	c.Cancel = func() error { return proc.Kill(c) }
 	c.WaitDelay = 2 * time.Second
 	start := time.Now()
 	if err := c.Start(); err != nil {
-		w.Close()
-		r.Close()
+		if ctx.Err() != nil {
+			return Output{Dir: cmd.Dir, ExitCode: 137, TimedOut: errors.Is(ctx.Err(), context.DeadlineExceeded)}, nil
+		}
 		return Output{}, err
 	}
-	w.Close()
-	dirCh := make(chan string, 1)
-	go func() {
-		defer r.Close()
-		line, _ := bufio.NewReader(r).ReadString('\n')
-		dirCh <- strings.TrimSuffix(line, "\n")
-	}()
 	waitErr := c.Wait()
 	out := Output{Dir: cmd.Dir, Duration: time.Since(start), TimedOut: errors.Is(ctx.Err(), context.DeadlineExceeded)}
-	select {
-	case dir := <-dirCh:
-		if dir != "" {
+	if data, err := os.ReadFile(dirFile.Name()); err == nil {
+		if dir := strings.TrimSpace(string(data)); dir != "" && filepath.IsAbs(dir) {
 			out.Dir = dir
 		}
-	case <-time.After(c.WaitDelay):
 	}
-	out.ExitCode = exitCode(c, waitErr)
+	out.ExitCode = exitCode(c, waitErr, ctx.Err() != nil)
 	if waitErr != nil && !isExit(waitErr) {
 		return out, waitErr
 	}
@@ -91,15 +71,4 @@ func orDiscard(w io.Writer) io.Writer {
 func isExit(err error) bool {
 	var ee *exec.ExitError
 	return errors.As(err, &ee)
-}
-
-// Shell style status, 128 plus the signal number when the process was killed
-func exitCode(c *exec.Cmd, err error) int {
-	if err == nil {
-		return 0
-	}
-	if ws, ok := c.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-		return 128 + int(ws.Signal())
-	}
-	return c.ProcessState.ExitCode()
 }

@@ -29,6 +29,8 @@ type Approver struct {
 	ModelID string
 	// Extra guidance such as the environment, the task and what counts as dangerous
 	Instructions string
+	// Per call context such as the working directory or the current task, appended to the prompt
+	Context func(ctx context.Context, req policy.Request) string
 	// Consulted when the model asks for a person, denying when nil
 	Escalate policy.Approver
 	// Review budget, thirty seconds when zero
@@ -43,25 +45,27 @@ type Verdict struct {
 	Reason   string          `json:"reason"`
 }
 
-func (a Approver) Approve(ctx context.Context, call protocol.ToolCall) (bool, error) {
-	v, err := a.Judge(ctx, call)
+// Decides from the model verdict, handing the request with the review attached to the escalation on ask
+func (a Approver) Approve(ctx context.Context, req policy.Request) (policy.Answer, error) {
+	v, err := a.Judge(ctx, req)
 	if err != nil {
-		return false, err
+		return policy.Answer{}, err
 	}
 	switch v.Decision {
 	case policy.Allow:
-		return true, nil
+		return policy.Answer{Allowed: true, By: "judge", Reason: v.Reason}, nil
 	case policy.Deny:
-		return false, &policy.Denied{Call: call, Reason: "judge: " + v.Reason}
+		return policy.Answer{By: "judge", Reason: v.Reason}, &policy.Denied{Call: req.Call, Reason: "judge: " + v.Reason}
 	}
 	if a.Escalate == nil {
-		return false, &policy.Denied{Call: call, Reason: "judge asked for a person and none is configured, " + v.Reason}
+		return policy.Answer{By: "judge", Reason: v.Reason}, &policy.Denied{Call: req.Call, Reason: "judge asked for a person and none is configured, " + v.Reason}
 	}
-	return a.Escalate.Approve(ctx, call)
+	req.Review = &policy.Review{By: "judge", Decision: policy.Ask, Reason: v.Reason}
+	return a.Escalate.Approve(ctx, req)
 }
 
 // Asks the model for its verdict on the call
-func (a Approver) Judge(ctx context.Context, call protocol.ToolCall) (Verdict, error) {
+func (a Approver) Judge(ctx context.Context, req policy.Request) (Verdict, error) {
 	if a.Model == nil || a.ModelID == "" {
 		return Verdict{}, errors.New("judge: model and model id are required")
 	}
@@ -79,32 +83,44 @@ func (a Approver) Judge(ctx context.Context, call protocol.ToolCall) (Verdict, e
 	if a.Instructions != "" {
 		prompt += "\n\n" + a.Instructions
 	}
+	text := describe(req)
+	if a.Context != nil {
+		if extra := a.Context(ctx, req); extra != "" {
+			text += "\n\nContext:\n" + extra
+		}
+	}
 	resp, err := a.Model.Complete(ctx, protocol.Request{
 		Model:     a.ModelID,
 		System:    prompt,
 		MaxTokens: maxTokens,
-		Messages:  []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: describe(call)}}}},
+		Messages:  []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: text}}}},
 	})
 	if err != nil {
 		return Verdict{}, fmt.Errorf("judge: %w", err)
 	}
-	var text strings.Builder
-	for _, p := range resp.Content {
-		if t, ok := p.(protocol.Text); ok {
-			text.WriteString(t.Text)
-		}
-	}
-	return parse(text.String())
+	return parse(resp.Text())
 }
 
-// Renders the call with its arguments pretty printed
-func describe(call protocol.ToolCall) string {
+// Renders the call with its arguments pretty printed and whatever the gate knew about it
+func describe(req policy.Request) string {
 	var args bytes.Buffer
-	if err := json.Indent(&args, call.Args, "", "  "); err != nil {
+	if err := json.Indent(&args, req.Call.Args, "", "  "); err != nil {
 		args.Reset()
-		args.Write(call.Args)
+		args.Write(req.Call.Args)
 	}
-	return fmt.Sprintf("Tool: %s\nArguments:\n%s", call.Name, args.String())
+	var sb strings.Builder
+	if req.Agent != "" {
+		fmt.Fprintf(&sb, "Agent: %s\n", req.Agent)
+	}
+	fmt.Fprintf(&sb, "Tool: %s\n", req.Call.Name)
+	if req.Tool != nil && req.Tool.Description != "" {
+		fmt.Fprintf(&sb, "Purpose: %s\n", req.Tool.Description)
+	}
+	if req.Reason != "" {
+		fmt.Fprintf(&sb, "Gate: %s\n", req.Reason)
+	}
+	fmt.Fprintf(&sb, "Arguments:\n%s", args.String())
+	return sb.String()
 }
 
 // Reads the verdict object out of the model text, rejecting anything but the three decisions

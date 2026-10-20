@@ -20,10 +20,11 @@ type streamOptions struct {
 
 // Request message whose content is a string, a part list, or absent beside tool calls
 type message struct {
-	Role       string     `json:"role"`
-	Content    any        `json:"content,omitempty"`
-	ToolCalls  []toolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role             string     `json:"role"`
+	Content          any        `json:"content,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []toolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
 type contentPart struct {
@@ -81,10 +82,13 @@ type choice struct {
 	FinishReason string          `json:"finish_reason"`
 }
 
+// Assistant message with the two reasoning field names compatible vendors use
 type responseMessage struct {
-	Content   *string    `json:"content"`
-	Refusal   *string    `json:"refusal"`
-	ToolCalls []toolCall `json:"tool_calls"`
+	Content          *string    `json:"content"`
+	Refusal          *string    `json:"refusal"`
+	ReasoningContent *string    `json:"reasoning_content"`
+	Reasoning        *string    `json:"reasoning"`
+	ToolCalls        []toolCall `json:"tool_calls"`
 }
 
 type usage struct {
@@ -119,9 +123,11 @@ type streamChoice struct {
 }
 
 type delta struct {
-	Content   *string         `json:"content"`
-	Refusal   *string         `json:"refusal"`
-	ToolCalls []toolCallChunk `json:"tool_calls"`
+	Content          *string         `json:"content"`
+	Refusal          *string         `json:"refusal"`
+	ReasoningContent *string         `json:"reasoning_content"`
+	Reasoning        *string         `json:"reasoning"`
+	ToolCalls        []toolCallChunk `json:"tool_calls"`
 }
 
 // Fragment of one tool call, keyed by index with every other field optional

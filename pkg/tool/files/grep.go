@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/glob"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/tool"
 )
@@ -25,8 +25,8 @@ const grepSchema = `{"type":"object","properties":{
 "-A":{"type":"integer","minimum":0,"description":"Lines of context after each match in content mode"},
 "-B":{"type":"integer","minimum":0,"description":"Lines of context before each match in content mode"},
 "-C":{"type":"integer","minimum":0,"description":"Lines of context around each match in content mode"},
-"head_limit":{"type":"integer","minimum":1,"description":"Stop after this many output lines or entries"},
-"multiline":{"type":"boolean","description":"Let the pattern span lines, matching the whole file at once"}},
+"head_limit":{"type":"integer","minimum":1,"description":"Stop after this many matches or entries, context lines not counted"},
+"multiline":{"type":"boolean","description":"Let the pattern span lines, matching the whole file at once with anchors still matching at line ends"}},
 "required":["pattern"],"additionalProperties":false}`
 
 type grepper struct{ Options }
@@ -60,16 +60,32 @@ type grepArgs struct {
 	Multiline   bool   `json:"multiline"`
 }
 
-type hit struct {
-	line int
-	text string
-	ctx  bool
+// One matching or context line
+type Hit struct {
+	Line    int
+	Text    string
+	Context bool
 }
 
-type fileHits struct {
-	found
-	hits  []hit
-	count int
+// Matches found in one file
+type FileHits struct {
+	Path    string
+	ModTime time.Time
+	Count   int
+	Hits    []Hit
+}
+
+// Structured outcome of Grep
+type GrepData struct {
+	Pattern string
+	Mode    string
+	Files   []FileHits
+	// Matches across every file in the requested mode
+	Total int
+	// Files skipped because they could not be read
+	Skipped int
+	// Files skipped because they were too large to match as a whole
+	Oversize int
 }
 
 func (g grepper) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
@@ -85,7 +101,7 @@ func (g grepper) Run(ctx context.Context, args json.RawMessage) (tool.Result, er
 		expr = "(?i)" + expr
 	}
 	if in.Multiline {
-		expr = "(?s)" + expr
+		expr = "(?ms)" + expr
 	}
 	re, err := regexp.Compile(expr)
 	if err != nil {
@@ -112,30 +128,34 @@ func (g grepper) Run(ctx context.Context, args json.RawMessage) (tool.Result, er
 	if err != nil {
 		return tool.Errorf("%s does not exist", target), nil
 	}
-	var files []fileHits
-	skipped := 0
+	data := GrepData{Pattern: in.Pattern, Mode: mode}
 	visit := func(p string, info fs.FileInfo) {
 		if in.Glob != "" && !matchGlob(in.Glob, target, p) {
 			return
 		}
 		fh, ok, err := g.scan(p, re, in, mode)
-		if err != nil {
-			skipped++
+		var tooBig oversize
+		switch {
+		case errorsAs(err, &tooBig):
+			data.Oversize++
+			return
+		case err != nil:
+			data.Skipped++
 			return
 		}
 		if ok {
-			fh.found = found{path: p, mod: info.ModTime()}
-			files = append(files, fh)
+			fh.Path, fh.ModTime = p, info.ModTime()
+			data.Files = append(data.Files, fh)
 		}
 	}
 	if st.IsDir() {
-		err = g.walk(target, func(p string, d fs.DirEntry) error {
+		err = g.walk(target, false, func(p string, d fs.DirEntry) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			info, err := d.Info()
 			if err != nil {
-				skipped++
+				data.Skipped++
 				return nil
 			}
 			visit(p, info)
@@ -147,52 +167,70 @@ func (g grepper) Run(ctx context.Context, args json.RawMessage) (tool.Result, er
 	} else {
 		visit(target, st)
 	}
-	return tool.Text(g.render(files, mode, in, skipped)), nil
+	byNewestHits(data.Files)
+	return tool.Text(g.render(&data, in)).With(data), nil
+}
+
+// Error for a file too large to match as a whole
+type oversize struct{ path string }
+
+func (o oversize) Error() string { return o.path + " exceeds the multiline size limit" }
+
+func errorsAs(err error, target *oversize) bool {
+	o, ok := err.(oversize)
+	if ok {
+		*target = o
+	}
+	return ok
 }
 
 // Matches a bare name pattern against the base name and a path pattern against the relative path
 func matchGlob(pattern, root, p string) bool {
+	patterns := expandBraces(pattern)
 	if !strings.Contains(pattern, "/") {
-		return glob.Match(pattern, filepath.Base(p))
+		return matchAny(patterns, filepath.Base(p))
 	}
 	rel, err := filepath.Rel(root, p)
 	if err != nil {
 		return false
 	}
-	return glob.Match(pattern, filepath.ToSlash(rel))
+	if rel == "." {
+		rel = filepath.Base(p)
+	}
+	return matchAny(patterns, filepath.ToSlash(rel))
 }
 
 // Searches one file, returning its hits and whether it matched at all
-func (g grepper) scan(p string, re *regexp.Regexp, in grepArgs, mode string) (fileHits, bool, error) {
+func (g grepper) scan(p string, re *regexp.Regexp, in grepArgs, mode string) (FileHits, bool, error) {
 	f, err := os.Open(p)
 	if err != nil {
-		return fileHits{}, false, err
+		return FileHits{}, false, err
 	}
 	defer f.Close()
 	head, err := peek(f)
 	if err != nil {
-		return fileHits{}, false, err
+		return FileHits{}, false, err
 	}
 	if isBinary(head) {
-		return fileHits{}, false, nil
+		return FileHits{}, false, nil
 	}
 	if in.Multiline {
 		return g.scanWhole(f, re, in, mode)
 	}
-	var fh fileHits
-	var before []hit
+	var fh FileHits
+	var before []Hit
 	pending := 0
 	n := 0
 	err = lines(f, func(line string) bool {
 		n++
 		if re.MatchString(line) {
-			fh.count++
+			fh.Count++
 			if mode != "content" {
 				return mode == "count"
 			}
-			fh.hits = append(fh.hits, before...)
+			fh.Hits = append(fh.Hits, before...)
 			before = before[:0]
-			fh.hits = append(fh.hits, hit{line: n, text: line})
+			fh.Hits = append(fh.Hits, Hit{Line: n, Text: line})
 			pending = in.After
 			return true
 		}
@@ -200,12 +238,12 @@ func (g grepper) scan(p string, re *regexp.Regexp, in grepArgs, mode string) (fi
 			return true
 		}
 		if pending > 0 {
-			fh.hits = append(fh.hits, hit{line: n, text: line, ctx: true})
+			fh.Hits = append(fh.Hits, Hit{Line: n, Text: line, Context: true})
 			pending--
 			return true
 		}
 		if in.Before > 0 {
-			before = append(before, hit{line: n, text: line, ctx: true})
+			before = append(before, Hit{Line: n, Text: line, Context: true})
 			if len(before) > in.Before {
 				before = before[1:]
 			}
@@ -213,87 +251,117 @@ func (g grepper) scan(p string, re *regexp.Regexp, in grepArgs, mode string) (fi
 		return true
 	})
 	if err != nil {
-		return fileHits{}, false, err
+		return FileHits{}, false, err
 	}
-	return fh, fh.count > 0, nil
+	return fh, fh.Count > 0, nil
 }
 
-// Matches the pattern across the whole file and reports the line where each match starts
-func (g grepper) scanWhole(f *os.File, re *regexp.Regexp, in grepArgs, mode string) (fileHits, bool, error) {
+// Matches the pattern across the whole file and reports the lines each match spans
+func (g grepper) scanWhole(f *os.File, re *regexp.Regexp, in grepArgs, mode string) (FileHits, bool, error) {
 	st, err := f.Stat()
 	if err != nil {
-		return fileHits{}, false, err
+		return FileHits{}, false, err
 	}
 	if st.Size() > int64(g.maxFileBytes()) {
-		return fileHits{}, false, fmt.Errorf("%s exceeds the multiline size limit", f.Name())
+		return FileHits{}, false, oversize{path: f.Name()}
 	}
 	data, err := os.ReadFile(f.Name())
 	if err != nil {
-		return fileHits{}, false, err
+		return FileHits{}, false, err
 	}
 	content := string(data)
 	locs := re.FindAllStringIndex(content, -1)
-	fh := fileHits{count: len(locs)}
+	fh := FileHits{Count: len(locs)}
 	if mode == "content" {
 		ls := strings.Split(content, "\n")
+		seen := map[int]bool{}
 		for _, loc := range locs {
 			start := strings.Count(content[:loc[0]], "\n")
 			end := start + strings.Count(content[loc[0]:loc[1]], "\n")
 			for i := max(start-in.Before, 0); i <= min(end+in.After, len(ls)-1); i++ {
-				fh.hits = append(fh.hits, hit{line: i + 1, text: ls[i], ctx: i < start || i > end})
+				if seen[i] {
+					continue
+				}
+				seen[i] = true
+				fh.Hits = append(fh.Hits, Hit{Line: i + 1, Text: ls[i], Context: i < start || i > end})
 			}
 		}
 	}
 	return fh, len(locs) > 0, nil
 }
 
-// Formats the hits in the requested mode, applying head_limit and the output byte budget
-func (g grepper) render(files []fileHits, mode string, in grepArgs, skipped int) string {
-	if len(files) == 0 {
-		return g.footer("No matches found", skipped)
+// Orders newest first, then by path for equal times
+func byNewestHits(files []FileHits) {
+	fs := make([]found, len(files))
+	byPath := make(map[string]FileHits, len(files))
+	for i, fh := range files {
+		fs[i] = found{path: fh.Path, mod: fh.ModTime}
+		byPath[fh.Path] = fh
 	}
-	var out []string
-	total := 0
-	switch mode {
+	byNewest(fs)
+	for i, f := range fs {
+		files[i] = byPath[f.path]
+	}
+}
+
+type outLine struct {
+	text  string
+	sep   bool
+	match bool
+}
+
+const separator = "--"
+
+// Formats the hits in the requested mode, applying head_limit to matches and the output byte budget
+func (g grepper) render(data *GrepData, in grepArgs) string {
+	if len(data.Files) == 0 {
+		return g.footer("No matches found", data)
+	}
+	var out []outLine
+	switch data.Mode {
 	case "files_with_matches":
-		fs := make([]found, len(files))
-		for i, fh := range files {
-			fs[i] = fh.found
+		for _, fh := range data.Files {
+			out = append(out, outLine{text: fh.Path, match: true})
 		}
-		byNewest(fs)
-		for _, f := range fs {
-			out = append(out, f.path)
-		}
-		total = len(out)
 	case "count":
-		for _, fh := range files {
-			out = append(out, fmt.Sprintf("%s:%d", fh.path, fh.count))
+		for _, fh := range data.Files {
+			out = append(out, outLine{text: fmt.Sprintf("%s:%d", fh.Path, fh.Count), match: true})
 		}
-		total = len(out)
 	case "content":
 		numbers := in.Numbers == nil || *in.Numbers
-		for _, fh := range files {
+		for _, fh := range data.Files {
 			last := 0
-			for _, h := range fh.hits {
-				if last != 0 && h.line > last+1 {
-					out = append(out, separator)
+			for _, h := range fh.Hits {
+				if last != 0 && h.Line > last+1 {
+					out = append(out, outLine{text: separator, sep: true})
 				}
-				last = h.line
-				out = append(out, g.formatHit(fh.path, h, numbers))
-				total++
+				last = h.Line
+				out = append(out, outLine{text: g.formatHit(fh.Path, h, numbers), match: !h.Context})
 			}
 		}
 	}
+	total := 0
+	for _, l := range out {
+		if l.match {
+			total++
+		}
+	}
+	data.Total = total
 	limit := g.maxResults()
 	if in.HeadLimit > 0 {
 		limit = in.HeadLimit
 	}
 	cut := ""
-	if kept, shown := headLimit(out, limit); shown < total {
+	kept, shown := headLimit(out, limit)
+	if shown < total {
 		out = kept
 		cut = fmt.Sprintf("[showing %d of %d, raise head_limit or narrow the search]", shown, total)
 	}
-	text := strings.Join(out, "\n")
+	texts := make([]string, len(out))
+	for i, l := range out {
+		texts[i] = l.text
+	}
+	text := strings.Join(texts, "\n")
 	if len(text) > g.maxOutput() {
 		text = text[:g.maxOutput()]
 		if i := strings.LastIndexByte(text, '\n'); i > 0 {
@@ -304,21 +372,19 @@ func (g grepper) render(files []fileHits, mode string, in grepArgs, skipped int)
 	if cut != "" {
 		text += "\n" + cut
 	}
-	return g.footer(text, skipped)
+	return g.footer(text, data)
 }
 
-const separator = "--"
-
-// Keeps the first limit entries, separators not counted, and reports how many entries remain
-func headLimit(out []string, limit int) ([]string, int) {
+// Keeps lines up to the limit of matches, context included, and reports how many matches were shown
+func headLimit(out []outLine, limit int) ([]outLine, int) {
 	shown := 0
 	for i, l := range out {
-		if l == separator {
+		if !l.match {
 			continue
 		}
 		if shown == limit {
 			kept := out[:i]
-			for len(kept) > 0 && kept[len(kept)-1] == separator {
+			for len(kept) > 0 && (kept[len(kept)-1].sep || !kept[len(kept)-1].match && trailingContext(kept)) {
 				kept = kept[:len(kept)-1]
 			}
 			return kept, shown
@@ -328,20 +394,36 @@ func headLimit(out []string, limit int) ([]string, int) {
 	return out, shown
 }
 
-func (g grepper) formatHit(path string, h hit, numbers bool) string {
+// Reports whether the kept lines end in context that follows no match within the same group
+func trailingContext(kept []outLine) bool {
+	for i := len(kept) - 1; i >= 0; i-- {
+		if kept[i].sep {
+			return true
+		}
+		if kept[i].match {
+			return false
+		}
+	}
+	return true
+}
+
+func (g grepper) formatHit(path string, h Hit, numbers bool) string {
 	sep := ":"
-	if h.ctx {
+	if h.Context {
 		sep = "-"
 	}
 	if numbers {
-		return fmt.Sprintf("%s%s%d%s%s", path, sep, h.line, sep, g.clip(h.text))
+		return fmt.Sprintf("%s%s%d%s%s", path, sep, h.Line, sep, g.clip(h.Text))
 	}
-	return path + sep + g.clip(h.text)
+	return path + sep + g.clip(h.Text)
 }
 
-func (g grepper) footer(text string, skipped int) string {
-	if skipped > 0 {
-		return fmt.Sprintf("%s\n[%d files could not be read]", text, skipped)
+func (g grepper) footer(text string, data *GrepData) string {
+	if data.Skipped > 0 {
+		text = fmt.Sprintf("%s\n[%d files could not be read]", text, data.Skipped)
+	}
+	if data.Oversize > 0 {
+		text = fmt.Sprintf("%s\n[%d files over the %d byte multiline limit were skipped]", text, data.Oversize, g.maxFileBytes())
 	}
 	return text
 }

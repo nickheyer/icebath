@@ -39,6 +39,9 @@ func (edit) Annotations() tool.Annotations {
 }
 
 func (e edit) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Error(err.Error()), nil
+	}
 	var in struct {
 		FilePath   string `json:"file_path"`
 		OldString  string `json:"old_string"`
@@ -94,15 +97,22 @@ func (e edit) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if _, err := writeFile(p, []byte(updated)); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	return tool.Textf("Replaced %d occurrence(s) in %s\n%s", count, p, e.snippet(updated, first, len(in.NewString))), nil
+	text := tool.Textf("Replaced %d occurrence(s) in %s\n%s", count, p, e.snippet(updated, first, len(in.NewString)))
+	return text.With(Change{Path: p, Old: content, New: updated, Replaced: count}), nil
 }
 
 // Numbered lines around the first replacement with a few lines of context on each side
 func (e edit) snippet(content string, at, length int) string {
 	ls := strings.Split(content, "\n")
+	if strings.HasSuffix(content, "\n") {
+		ls = ls[:len(ls)-1]
+	}
 	startLine := strings.Count(content[:at], "\n")
 	endLine := startLine + strings.Count(content[at:min(at+length, len(content))], "\n")
 	from := max(startLine-editContext, 0)
 	to := min(endLine+editContext, len(ls)-1)
+	if from > to {
+		return ""
+	}
 	return e.numbered(from+1, ls[from:to+1])
 }

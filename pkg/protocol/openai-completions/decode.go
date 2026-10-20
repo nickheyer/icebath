@@ -13,6 +13,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
 
+const (
+	keyContent   = "content"
+	keyRefusal   = "refusal"
+	keyReasoning = "reasoning"
+	doneSentinel = "[DONE]"
+)
+
+var transientTypes = map[string]bool{
+	"server_error":        true,
+	"rate_limit_exceeded": true,
+	"slow_down":           true,
+	"overloaded":          true,
+}
+
 // Reads a chat.completion object and maps its first choice to the neutral response
 func (Protocol) Decode(r io.Reader) (protocol.Response, error) {
 	body, err := io.ReadAll(r)
@@ -27,7 +41,10 @@ func (Protocol) Decode(r io.Reader) (protocol.Response, error) {
 		return protocol.Response{}, fmt.Errorf("openai-completions: response has no choices")
 	}
 	c := wire.Choices[0]
-	out := protocol.Response{ID: wire.ID, Model: wire.Model, RawStopReason: c.FinishReason, StopReason: stopReason(c.FinishReason)}
+	out := protocol.Response{ID: wire.ID, Model: wire.Model, RawStopReason: c.FinishReason, StopReason: stopReason(c.FinishReason, len(c.Message.ToolCalls) > 0)}
+	if thought := reasoningText(c.Message.ReasoningContent, c.Message.Reasoning); thought != "" {
+		out.Content = append(out.Content, protocol.Thinking{Text: thought, Origin: protocol.OpenAICompletions})
+	}
 	if c.Message.Content != nil && *c.Message.Content != "" {
 		out.Content = append(out.Content, protocol.Text{Text: *c.Message.Content})
 	}
@@ -50,7 +67,19 @@ func (Protocol) Decode(r io.Reader) (protocol.Response, error) {
 	return out, nil
 }
 
-func stopReason(finish string) protocol.StopReason {
+// Picks the reasoning text from whichever of the two vendor field names is populated
+func reasoningText(content, reasoning *string) string {
+	if content != nil && *content != "" {
+		return *content
+	}
+	if reasoning != nil {
+		return *reasoning
+	}
+	return ""
+}
+
+// Maps finish_reason onto the neutral set, inferring from tool calls when the wire sent none
+func stopReason(finish string, hasCalls bool) protocol.StopReason {
 	switch finish {
 	case "stop":
 		return protocol.StopEnd
@@ -60,15 +89,22 @@ func stopReason(finish string) protocol.StopReason {
 		return protocol.StopToolUse
 	case "content_filter":
 		return protocol.StopContentFilter
+	case "":
+		if hasCalls {
+			return protocol.StopToolUse
+		}
+		return protocol.StopEnd
 	}
 	return protocol.StopOther
 }
 
+// Takes cached tokens out of the prompt count so Input holds only the uncached share
 func mapUsage(u usage) protocol.Usage {
 	out := protocol.Usage{Input: u.PromptTokens, Output: u.CompletionTokens}
 	if u.PromptTokensDetails != nil {
 		out.CacheRead = u.PromptTokensDetails.CachedTokens
 		out.CacheWrite = u.PromptTokensDetails.CacheWriteTokens
+		out.Input -= out.CacheRead
 	}
 	if u.CompletionTokensDetails != nil {
 		out.Reasoning = u.CompletionTokensDetails.ReasoningTokens
@@ -88,10 +124,10 @@ type pendingCall struct {
 // Yields neutral events from chat.completion.chunk frames until [DONE] or EOF after finish_reason
 func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 	return func(yield func(protocol.Event, error) bool) {
-		var b protocol.Builder
+		b := protocol.Builder{Origin: protocol.OpenAICompletions}
 		var usage protocol.Usage
 		var finish string
-		finished := false
+		finished, hasCalls := false, false
 		calls := map[int]*pendingCall{}
 		current := -1
 		flush := func() bool {
@@ -107,7 +143,8 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 				yield(protocol.Event{}, err)
 				return
 			}
-			if ev.Data == "[DONE]" {
+			if ev.Data == doneSentinel {
+				finished = true
 				break
 			}
 			var c chunk
@@ -116,7 +153,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 				return
 			}
 			if c.Error != nil {
-				yield(protocol.Event{}, &protocol.Error{Status: 200, Type: errType(*c.Error), Message: c.Error.Message, Body: []byte(ev.Data)})
+				yield(protocol.Event{}, streamError(*c.Error, []byte(ev.Data)))
 				return
 			}
 			b.Start(c.ID, c.Model)
@@ -128,6 +165,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 					yield(protocol.Event{}, fmt.Errorf("openai-completions: unexpected choice index %d", ch.Index))
 					return
 				}
+				hasCalls = hasCalls || len(ch.Delta.ToolCalls) > 0
 				if err := applyDelta(&b, ch.Delta, calls, &current); err != nil {
 					yield(protocol.Event{}, err)
 					return
@@ -150,7 +188,11 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 			yield(protocol.Event{}, fmt.Errorf("openai-completions: stream ended before finish_reason"))
 			return
 		}
-		if err := b.Finish(stopReason(finish), finish, usage); err != nil {
+		if err := closeCall(&b, calls, current); err != nil {
+			yield(protocol.Event{}, err)
+			return
+		}
+		if err := b.Finish(stopReason(finish, hasCalls), finish, usage); err != nil {
 			yield(protocol.Event{}, err)
 			return
 		}
@@ -158,21 +200,37 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 	}
 }
 
-// Routes content, refusal and tool call fragments into builder blocks following accumulate_delta
+func streamError(e apiError, body []byte) *protocol.Error {
+	return &protocol.Error{Status: 200, Type: errType(e), Message: e.Message, Body: body, InStream: true, Transient: transientTypes[e.Type] || transientTypes[e.Code]}
+}
+
+// Routes reasoning, content, refusal and tool call fragments into builder blocks following accumulate_delta
 func applyDelta(b *protocol.Builder, d delta, calls map[int]*pendingCall, current *int) error {
-	if d.Content != nil && *d.Content != "" {
-		if !b.IsOpen("content") {
-			b.OpenText("content")
+	if thought := reasoningText(d.ReasoningContent, d.Reasoning); thought != "" {
+		if !b.IsOpen(keyReasoning) {
+			b.OpenThinking(keyReasoning, false)
 		}
-		if err := b.Delta("content", *d.Content); err != nil {
+		if err := b.Delta(keyReasoning, thought); err != nil {
 			return err
 		}
 	}
-	if d.Refusal != nil && *d.Refusal != "" {
-		if !b.IsOpen("refusal") {
-			b.OpenText("refusal")
+	for _, f := range []struct {
+		key  string
+		text *string
+	}{{keyContent, d.Content}, {keyRefusal, d.Refusal}} {
+		key, text := f.key, f.text
+		if text == nil || *text == "" {
+			continue
 		}
-		if err := b.Delta("refusal", *d.Refusal); err != nil {
+		if b.IsOpen(keyReasoning) {
+			if err := b.Close(keyReasoning); err != nil {
+				return err
+			}
+		}
+		if !b.IsOpen(key) {
+			b.OpenText(key)
+		}
+		if err := b.Delta(key, *text); err != nil {
 			return err
 		}
 	}
@@ -181,7 +239,7 @@ func applyDelta(b *protocol.Builder, d delta, calls map[int]*pendingCall, curren
 			return fmt.Errorf("openai-completions: tool call at index %d has type %q", tc.Index, tc.Type)
 		}
 		if *current != tc.Index {
-			for _, k := range []string{"content", "refusal"} {
+			for _, k := range []string{keyReasoning, keyContent, keyRefusal} {
 				if b.IsOpen(k) {
 					if err := b.Close(k); err != nil {
 						return err
@@ -244,11 +302,15 @@ func closeCall(b *protocol.Builder, calls map[int]*pendingCall, index int) error
 
 // Parses the error object envelope, otherwise reporting the trimmed body text
 func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
+	e := &protocol.Error{Status: status, Body: body, Transient: transientStatus(status)}
 	var wire errorResponse
 	if err := json.Unmarshal(body, &wire); err == nil && wire.Error != nil && wire.Error.Message != "" {
-		return &protocol.Error{Status: status, Type: errType(*wire.Error), Message: wire.Error.Message, Body: body}
+		e.Type, e.Message = errType(*wire.Error), wire.Error.Message
+		e.Transient = e.Transient || transientTypes[wire.Error.Type] || transientTypes[wire.Error.Code]
+		return e
 	}
-	return &protocol.Error{Status: status, Message: string(bytes.TrimSpace(body)), Body: body}
+	e.Message = string(bytes.TrimSpace(body))
+	return e
 }
 
 func errType(e apiError) string {
@@ -256,4 +318,9 @@ func errType(e apiError) string {
 		return e.Type
 	}
 	return e.Code
+}
+
+// Reports statuses that denote a timeout, conflict, throttle or server failure
+func transientStatus(status int) bool {
+	return status == 408 || status == 409 || status == 429 || status >= 500
 }

@@ -31,6 +31,9 @@ func (write) Annotations() tool.Annotations {
 }
 
 func (w write) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Error(err.Error()), nil
+	}
 	var in struct {
 		FilePath string `json:"file_path"`
 		Content  string `json:"content"`
@@ -42,6 +45,10 @@ func (w write) Run(ctx context.Context, args json.RawMessage) (tool.Result, erro
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}
+	old, err := current(p)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
 	created, err := writeFile(p, []byte(in.Content))
 	if err != nil {
 		return tool.Error(err.Error()), nil
@@ -50,5 +57,5 @@ func (w write) Run(ctx context.Context, args json.RawMessage) (tool.Result, erro
 	if created {
 		verb = "Created"
 	}
-	return tool.Textf("%s %s (%d bytes)", verb, p, len(in.Content)), nil
+	return tool.Textf("%s %s (%d bytes)", verb, p, len(in.Content)).With(Change{Path: p, Old: old, New: in.Content, Created: created, Replaced: 1}), nil
 }

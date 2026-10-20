@@ -76,12 +76,20 @@ type response struct {
 
 // Output entry of any type, with content and arguments kept raw for their two wire forms
 type wireEntry struct {
-	Type       string          `json:"type"`
-	Model      string          `json:"model"`
-	Content    json.RawMessage `json:"content"`
-	ToolCallID string          `json:"tool_call_id"`
-	Name       string          `json:"name"`
-	Arguments  json.RawMessage `json:"arguments"`
+	Type               string          `json:"type"`
+	ID                 string          `json:"id"`
+	Model              string          `json:"model"`
+	Content            json.RawMessage `json:"content"`
+	ToolCallID         string          `json:"tool_call_id"`
+	Name               string          `json:"name"`
+	Arguments          json.RawMessage `json:"arguments"`
+	ConfirmationStatus json.RawMessage `json:"confirmation_status"`
+	AgentID            json.RawMessage `json:"agent_id"`
+	Info               json.RawMessage `json:"info"`
+	PreviousAgentID    string          `json:"previous_agent_id"`
+	PreviousAgentName  string          `json:"previous_agent_name"`
+	NextAgentID        string          `json:"next_agent_id"`
+	NextAgentName      string          `json:"next_agent_name"`
 }
 
 type wireChunk struct {
@@ -89,7 +97,9 @@ type wireChunk struct {
 	Text      string      `json:"text"`
 	Thinking  []wireChunk `json:"thinking"`
 	Signature string      `json:"signature"`
+	Tool      string      `json:"tool"`
 	Title     string      `json:"title"`
+	URL       string      `json:"url"`
 	FileID    string      `json:"file_id"`
 	FileName  string      `json:"file_name"`
 }
@@ -101,24 +111,42 @@ type usage struct {
 
 // Data payload of any streaming event
 type event struct {
-	Type           string          `json:"type"`
-	ConversationID string          `json:"conversation_id"`
-	ID             string          `json:"id"`
-	ContentIndex   int             `json:"content_index"`
-	Model          string          `json:"model"`
-	Content        json.RawMessage `json:"content"`
-	Name           string          `json:"name"`
-	ToolCallID     string          `json:"tool_call_id"`
-	Arguments      string          `json:"arguments"`
-	Usage          *usage          `json:"usage"`
-	Message        string          `json:"message"`
-	Code           int             `json:"code"`
+	Type               string          `json:"type"`
+	ConversationID     string          `json:"conversation_id"`
+	ID                 string          `json:"id"`
+	ContentIndex       int             `json:"content_index"`
+	Model              string          `json:"model"`
+	Content            json.RawMessage `json:"content"`
+	Name               string          `json:"name"`
+	ToolCallID         string          `json:"tool_call_id"`
+	Arguments          string          `json:"arguments"`
+	ConfirmationStatus json.RawMessage `json:"confirmation_status"`
+	AgentID            json.RawMessage `json:"agent_id"`
+	Info               json.RawMessage `json:"info"`
+	PreviousAgentID    string          `json:"previous_agent_id"`
+	PreviousAgentName  string          `json:"previous_agent_name"`
+	NextAgentID        string          `json:"next_agent_id"`
+	NextAgentName      string          `json:"next_agent_name"`
+	Usage              *usage          `json:"usage"`
+	Message            string          `json:"message"`
+	Code               int             `json:"code"`
 }
 
-type validationError struct {
-	Detail []struct {
-		Loc  []any  `json:"loc"`
-		Msg  string `json:"msg"`
-		Type string `json:"type"`
-	} `json:"detail"`
+// Error body of the object error shape, code arriving as a number or a string
+type errorObject struct {
+	Object  string          `json:"object"`
+	Message string          `json:"message"`
+	Type    string          `json:"type"`
+	Code    json.RawMessage `json:"code"`
+}
+
+// Error body of the detail shape, a plain string or a validation list
+type detailError struct {
+	Detail json.RawMessage `json:"detail"`
+}
+
+type validationItem struct {
+	Loc  []any  `json:"loc"`
+	Msg  string `json:"msg"`
+	Type string `json:"type"`
 }

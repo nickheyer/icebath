@@ -194,9 +194,12 @@ func TestBackgroundJobs(t *testing.T) {
 	if len(jobs) != 2 || jobs[0].ID != "job-1" || jobs[0].Description != "counts" || jobs[0].Running || jobs[0].ExitCode != 4 || jobs[1].Running {
 		t.Fatalf("%+v", jobs)
 	}
-	for tl, args := range map[tool.Tool]string{o: `{"bash_id":"nope"}`, k: `{"shell_id":"nope"}`, o: `{"bash_id":"job-1","filter":"("}`} {
-		if out, isErr := run(t, tl, args); !isErr {
-			t.Fatalf("%s: %q", args, out)
+	for _, c := range []struct {
+		tl   tool.Tool
+		args string
+	}{{o, `{"bash_id":"nope"}`}, {k, `{"shell_id":"nope"}`}, {o, `{"bash_id":"job-1","filter":"("}`}, {o, `{"bash_id":1}`}, {k, `{"shell_id":1}`}} {
+		if out, isErr := run(t, c.tl, c.args); !isErr {
+			t.Fatalf("%s: %q", c.args, out)
 		}
 	}
 	run(t, b, `{"command":"sleep 30","run_in_background":true}`)

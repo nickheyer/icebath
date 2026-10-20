@@ -76,7 +76,7 @@ func TestFetchConvertsHTML(t *testing.T) {
 	if isErr {
 		t.Fatal(out)
 	}
-	want := "URL: " + srv.URL + "/page\nContent-Type: text/html\n\n# Hello & Welcome\n\n# Top\n\nSome text with a [link](/next).\n\n- one\n- two\n[image: logo]\nTail"
+	want := "URL: " + srv.URL + "/page\nContent-Type: text/html\n\n# Hello & Welcome\n\n# Top\n\nSome text with a [link](" + srv.URL + "/next).\n\n- one\n- two\n[image: logo]\nTail"
 	if out != want {
 		t.Fatalf("%q", out)
 	}

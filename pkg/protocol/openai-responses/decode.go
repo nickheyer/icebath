@@ -20,6 +20,16 @@ const (
 	doneSentinel     = "[DONE]"
 )
 
+var transientTypes = map[string]bool{
+	"server_error":        true,
+	"rate_limit_exceeded": true,
+	"slow_down":           true,
+	"overloaded":          true,
+}
+
+// Keys under which vendor tool items carry their outcome, checked in this order
+var resultKeys = []string{"results", "outputs", "output", "result", "tools"}
+
 // Parses a complete Response body
 func (Protocol) Decode(r io.Reader) (protocol.Response, error) {
 	raw, err := io.ReadAll(r)
@@ -30,16 +40,20 @@ func (Protocol) Decode(r io.Reader) (protocol.Response, error) {
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return protocol.Response{}, fmt.Errorf("openai-responses: response body: %w", err)
 	}
-	return convert(&resp)
+	return convert(&resp, raw)
 }
 
-func convert(resp *response) (protocol.Response, error) {
-	if err := terminal(resp); err != nil {
+func convert(resp *response, raw []byte) (protocol.Response, error) {
+	if err := terminal(resp, raw, false); err != nil {
 		return protocol.Response{}, err
 	}
 	out := protocol.Response{ID: resp.ID, Model: resp.Model, Usage: usageOf(resp.Usage)}
 	toolCall := false
-	for i, item := range resp.Output {
+	for i, rawItem := range resp.Output {
+		item, err := parseItem(rawItem)
+		if err != nil {
+			return protocol.Response{}, fmt.Errorf("openai-responses: output item %d: %w", i, err)
+		}
 		parts, err := itemParts(item)
 		if err != nil {
 			return protocol.Response{}, fmt.Errorf("openai-responses: output item %d: %w", i, err)
@@ -51,29 +65,42 @@ func convert(resp *response) (protocol.Response, error) {
 	return out, nil
 }
 
+func parseItem(raw json.RawMessage) (*outputItem, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("missing item")
+	}
+	var item outputItem
+	if err := json.Unmarshal(raw, &item); err != nil {
+		return nil, err
+	}
+	item.Raw = raw
+	return &item, nil
+}
+
 // Rejects statuses that cannot end a turn, surfacing a failed response as an error
-func terminal(resp *response) error {
+func terminal(resp *response, body []byte, inStream bool) error {
 	switch resp.Status {
 	case statusCompleted, statusIncomplete:
 		return nil
 	case statusFailed:
-		e := &protocol.Error{Status: 200, Message: "response failed"}
+		e := &protocol.Error{Status: 200, Message: "response failed", Body: body, InStream: inStream}
 		if resp.Error != nil {
 			e.Type, e.Message = resp.Error.Code, resp.Error.Message
+			e.Transient = transientTypes[resp.Error.Code]
 		}
 		return e
 	}
 	return fmt.Errorf("openai-responses: response status %q is not terminal", resp.Status)
 }
 
-func itemParts(item outputItem) ([]protocol.Part, error) {
+func itemParts(item *outputItem) ([]protocol.Part, error) {
 	switch item.Type {
 	case itemMessage:
 		parts := make([]protocol.Part, 0, len(item.Content))
 		for _, c := range item.Content {
 			switch c.Type {
 			case partOutputText:
-				parts = append(parts, protocol.Text{Text: c.Text})
+				parts = append(parts, protocol.Text{Text: c.Text, Citations: citationsOf(c.Annotations)})
 			case partRefusal:
 				parts = append(parts, protocol.Text{Text: c.Refusal})
 			default:
@@ -88,13 +115,77 @@ func itemParts(item outputItem) ([]protocol.Part, error) {
 		}
 		return []protocol.Part{protocol.ToolCall{ID: item.CallID, Name: item.Name, Args: args}}, nil
 	case itemReasoning:
-		return []protocol.Part{protocol.Thinking{Text: reasoningText(item), Signature: signatureOf(item)}}, nil
+		return []protocol.Part{protocol.Thinking{Text: reasoningText(item), Signature: signatureOf(item), Origin: protocol.OpenAIResponses}}, nil
+	case itemFunctionCallOutput, "":
+		return nil, fmt.Errorf("output item type %q has no neutral form", item.Type)
 	}
-	return nil, fmt.Errorf("output item type %q has no neutral form", item.Type)
+	args, err := serverToolArgs(item)
+	if err != nil {
+		return nil, err
+	}
+	parts := []protocol.Part{protocol.ServerToolCall{ID: item.ID, Name: item.Type, Args: args, Origin: protocol.OpenAIResponses}}
+	if result, ok := serverToolResult(item); ok {
+		parts = append(parts, protocol.ServerToolResult{CallID: item.ID, Name: item.Type, Content: result, Origin: protocol.OpenAIResponses})
+	}
+	return parts, nil
+}
+
+func citationsOf(annotations []annotation) []protocol.Citation {
+	var out []protocol.Citation
+	for _, a := range annotations {
+		if c, ok := mapAnnotation(a); ok {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// Maps url_citation and file_citation annotations, reporting false for every other kind
+func mapAnnotation(a annotation) (protocol.Citation, bool) {
+	switch a.Type {
+	case annotationURL:
+		return protocol.Citation{Title: a.Title, URL: a.URL, Start: a.StartIndex, End: a.EndIndex}, true
+	case annotationFile:
+		doc := a.Filename
+		if doc == "" {
+			doc = a.FileID
+		}
+		return protocol.Citation{Title: a.Filename, Document: doc, Start: a.Index, End: a.Index}, true
+	}
+	return protocol.Citation{}, false
+}
+
+// Keeps every field of a vendor tool item except its id and type as the call arguments
+func serverToolArgs(item *outputItem) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(item.Raw, &fields); err != nil {
+		return nil, fmt.Errorf("%s item: %w", item.Type, err)
+	}
+	delete(fields, "id")
+	delete(fields, "type")
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+// Finds the outcome a vendor tool item embeds under its result key
+func serverToolResult(item *outputItem) (json.RawMessage, bool) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(item.Raw, &fields); err != nil {
+		return nil, false
+	}
+	for _, key := range resultKeys {
+		if v, ok := fields[key]; ok && string(v) != "null" {
+			return v, true
+		}
+	}
+	return nil, false
 }
 
 // Joins summary and reasoning texts of a reasoning item with blank lines
-func reasoningText(item outputItem) string {
+func reasoningText(item *outputItem) string {
 	texts := make([]string, 0, len(item.Summary)+len(item.Content))
 	for _, s := range item.Summary {
 		texts = append(texts, s.Text)
@@ -105,7 +196,7 @@ func reasoningText(item outputItem) string {
 	return strings.Join(texts, partSeparator)
 }
 
-func signatureOf(item outputItem) string {
+func signatureOf(item *outputItem) string {
 	raw, _ := json.Marshal(reasoningSignature{ID: item.ID, EncryptedContent: item.EncryptedContent})
 	return string(raw)
 }
@@ -134,12 +225,13 @@ func stopReason(resp *response, toolCall bool) (protocol.StopReason, string) {
 	return protocol.StopOther, raw
 }
 
+// Takes cached tokens out of the input count so Input holds only the uncached share
 func usageOf(u *usage) protocol.Usage {
 	if u == nil {
 		return protocol.Usage{}
 	}
 	return protocol.Usage{
-		Input:      u.InputTokens,
+		Input:      u.InputTokens - u.InputTokensDetails.CachedTokens,
 		Output:     u.OutputTokens,
 		CacheRead:  u.InputTokensDetails.CachedTokens,
 		CacheWrite: u.InputTokensDetails.CacheWriteTokens,
@@ -149,7 +241,7 @@ func usageOf(u *usage) protocol.Usage {
 
 // Parses an error body, falling back to the raw text when it is not the wire error shape
 func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
-	e := &protocol.Error{Status: status, Body: body}
+	e := &protocol.Error{Status: status, Body: body, Transient: transientStatus(status)}
 	var wire errorBody
 	if err := json.Unmarshal(body, &wire); err == nil && wire.Error.Message != "" {
 		e.Type = wire.Error.Code
@@ -157,16 +249,22 @@ func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
 			e.Type = wire.Error.Type
 		}
 		e.Message = wire.Error.Message
+		e.Transient = e.Transient || transientTypes[wire.Error.Code] || transientTypes[wire.Error.Type]
 		return e
 	}
 	e.Message = strings.TrimSpace(string(body))
 	return e
 }
 
+// Reports statuses that denote a timeout, conflict, throttle or server failure
+func transientStatus(status int) bool {
+	return status == 408 || status == 409 || status == 429 || status >= 500
+}
+
 // Turns the SSE event stream into neutral events, ending at the terminal response event
 func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 	return func(yield func(protocol.Event, error) bool) {
-		st := streamState{acc: map[string]string{}, parts: map[string]int{}}
+		st := streamState{b: protocol.Builder{Origin: protocol.OpenAIResponses}, acc: map[string]string{}, parts: map[string]int{}}
 		for ev, err := range sse.Read(r) {
 			if err != nil {
 				yield(protocol.Event{}, err)
@@ -180,7 +278,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 				yield(protocol.Event{}, fmt.Errorf("openai-responses: event %q: %w", ev.Name, err))
 				return
 			}
-			done, err := st.apply(&e)
+			done, err := st.apply(&e, []byte(ev.Data))
 			if err != nil {
 				yield(protocol.Event{}, err)
 				return
@@ -210,7 +308,7 @@ func textKey(itemID string, index int) string {
 	return fmt.Sprintf("%s/%d", itemID, index)
 }
 
-func (st *streamState) apply(e *streamEvent) (bool, error) {
+func (st *streamState) apply(e *streamEvent, body []byte) (bool, error) {
 	switch e.Type {
 	case "response.created", "response.in_progress", "response.queued":
 		if e.Response != nil {
@@ -226,6 +324,8 @@ func (st *streamState) apply(e *streamEvent) (bool, error) {
 		return false, st.reconcile(textKey(e.ItemID, e.ContentIndex), e.Text)
 	case "response.refusal.done":
 		return false, st.reconcile(textKey(e.ItemID, e.ContentIndex), e.Refusal)
+	case "response.output_text.annotation.added":
+		return false, st.annotation(e)
 	case "response.content_part.done":
 		return false, st.partDone(e)
 	case "response.reasoning_summary_part.added":
@@ -252,20 +352,21 @@ func (st *streamState) apply(e *streamEvent) (bool, error) {
 	case "response.completed", "response.incomplete":
 		return true, st.finish(e.Response)
 	case "response.failed":
-		err := &protocol.Error{Status: 200, Message: "response failed"}
-		if e.Response != nil && e.Response.Error != nil {
-			err.Type, err.Message = e.Response.Error.Code, e.Response.Error.Message
+		if e.Response == nil {
+			return false, &protocol.Error{Status: 200, Message: "response failed", Body: body, InStream: true}
 		}
-		return false, err
+		e.Response.Status = statusFailed
+		return false, terminal(e.Response, body, true)
 	case "error":
-		return false, &protocol.Error{Status: 200, Type: e.Code, Message: e.Message}
+		return false, &protocol.Error{Status: 200, Type: e.Code, Message: e.Message, Body: body, InStream: true, Transient: transientTypes[e.Code]}
 	}
 	return false, nil
 }
 
-func (st *streamState) itemAdded(item *outputItem) error {
-	if item == nil {
-		return errors.New("openai-responses: output_item.added without an item")
+func (st *streamState) itemAdded(raw json.RawMessage) error {
+	item, err := parseItem(raw)
+	if err != nil {
+		return fmt.Errorf("openai-responses: output_item.added: %w", err)
 	}
 	switch item.Type {
 	case itemFunctionCall:
@@ -273,8 +374,10 @@ func (st *streamState) itemAdded(item *outputItem) error {
 	case itemReasoning:
 		st.b.OpenThinking(item.ID, false)
 	case itemMessage:
-	default:
+	case itemFunctionCallOutput, "":
 		return fmt.Errorf("openai-responses: output item type %q has no neutral form", item.Type)
+	default:
+		st.b.OpenServerToolCall(item.ID, item.ID, item.Type)
 	}
 	return nil
 }
@@ -291,6 +394,18 @@ func (st *streamState) partAdded(e *streamEvent) error {
 		return fmt.Errorf("openai-responses: content part type %q has no neutral form", e.Part.Type)
 	}
 	return nil
+}
+
+// Attaches a url or file citation to the text part it annotates, ignoring other annotation kinds
+func (st *streamState) annotation(e *streamEvent) error {
+	if e.Annotation == nil {
+		return nil
+	}
+	c, ok := mapAnnotation(*e.Annotation)
+	if !ok {
+		return nil
+	}
+	return st.b.Cite(textKey(e.ItemID, e.ContentIndex), c)
 }
 
 func (st *streamState) partDone(e *streamEvent) error {
@@ -383,9 +498,10 @@ func (st *streamState) partFinal(itemID, kind string, index int, full string) er
 	return st.partDelta(itemID, kind, index, full[len(cur):])
 }
 
-func (st *streamState) itemDone(item *outputItem) error {
-	if item == nil {
-		return errors.New("openai-responses: output_item.done without an item")
+func (st *streamState) itemDone(raw json.RawMessage) error {
+	item, err := parseItem(raw)
+	if err != nil {
+		return fmt.Errorf("openai-responses: output_item.done: %w", err)
 	}
 	switch item.Type {
 	case itemFunctionCall:
@@ -395,17 +511,37 @@ func (st *streamState) itemDone(item *outputItem) error {
 		}
 		return st.b.Close(item.ID)
 	case itemReasoning:
-		if err := st.reconcile(item.ID, reasoningText(*item)); err != nil {
+		if err := st.reconcile(item.ID, reasoningText(item)); err != nil {
 			return err
 		}
-		if err := st.b.Signature(item.ID, signatureOf(*item)); err != nil {
+		if err := st.b.Signature(item.ID, signatureOf(item)); err != nil {
 			return err
 		}
 		return st.b.Close(item.ID)
 	case itemMessage:
 		return nil
+	case itemFunctionCallOutput, "":
+		return fmt.Errorf("openai-responses: output item type %q has no neutral form", item.Type)
 	}
-	return fmt.Errorf("openai-responses: output item type %q has no neutral form", item.Type)
+	return st.serverToolDone(item)
+}
+
+// Delivers a finished vendor tool item as one arguments delta plus its embedded result
+func (st *streamState) serverToolDone(item *outputItem) error {
+	args, err := serverToolArgs(item)
+	if err != nil {
+		return fmt.Errorf("openai-responses: %w", err)
+	}
+	if err := st.b.Delta(item.ID, string(args)); err != nil {
+		return err
+	}
+	if err := st.b.Close(item.ID); err != nil {
+		return err
+	}
+	if result, ok := serverToolResult(item); ok {
+		st.b.AddServerToolResult(protocol.ServerToolResult{CallID: item.ID, Name: item.Type, Content: result})
+	}
+	return nil
 }
 
 func (st *streamState) finish(resp *response) error {
@@ -414,7 +550,11 @@ func (st *streamState) finish(resp *response) error {
 	}
 	st.b.Start(resp.ID, resp.Model)
 	toolCall := st.toolCall
-	for _, item := range resp.Output {
+	for _, raw := range resp.Output {
+		item, err := parseItem(raw)
+		if err != nil {
+			return fmt.Errorf("openai-responses: terminal output: %w", err)
+		}
 		toolCall = toolCall || item.Type == itemFunctionCall
 	}
 	stop, raw := stopReason(resp, toolCall)

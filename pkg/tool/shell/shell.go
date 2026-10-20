@@ -20,8 +20,12 @@ const (
 
 // One command line with where and how long it may run
 type Command struct {
-	Line string
-	Dir  string
+	// Call or job identifier the output belongs to
+	ID string
+	// Plain words the model gave for what the command does
+	Description string
+	Line        string
+	Dir         string
 	// KEY=VALUE pairs layered over the runner environment
 	Env     []string
 	Timeout time.Duration
@@ -42,6 +46,18 @@ type Runner interface {
 	Run(ctx context.Context, cmd Command) (Output, error)
 }
 
+// Structured outcome of a foreground Bash call
+type Run struct {
+	Command     string
+	Description string
+	Dir         string
+	ExitCode    int
+	TimedOut    bool
+	Duration    time.Duration
+	Stdout      string
+	Stderr      string
+}
+
 // Settings shared by the shell tools
 type Options struct {
 	// Local when nil
@@ -58,12 +74,17 @@ type Options struct {
 	MaxOutput int
 	// Bytes of output kept per background job, one MiB when zero
 	MaxJobOutput int
+	// Finished background jobs remembered before the oldest is forgotten, 32 when zero
+	MaxJobs int
+	// Receives every background job start, output chunk and finish
+	OnJob func(JobEvent)
 }
 
 func (o Options) timeout() time.Duration    { return orDur(o.Timeout, 2*time.Minute) }
 func (o Options) maxTimeout() time.Duration { return orDur(o.MaxTimeout, 10*time.Minute) }
 func (o Options) maxOutput() int            { return orInt(o.MaxOutput, 30000) }
 func (o Options) maxJobOutput() int         { return orInt(o.MaxJobOutput, 1<<20) }
+func (o Options) maxJobs() int              { return orInt(o.MaxJobs, 32) }
 
 func orDur(v, def time.Duration) time.Duration {
 	if v > 0 {
@@ -109,7 +130,7 @@ func New(o Options) (*Shell, error) {
 	if runner == nil {
 		runner = Local{}
 	}
-	return &Shell{opts: o, runner: runner, dir: dir, jobs: newJobs(o.maxJobOutput())}, nil
+	return &Shell{opts: o, runner: runner, dir: dir, jobs: newJobs(o.maxJobOutput(), o.maxJobs(), o.OnJob)}, nil
 }
 
 // Every shell tool sharing this state
@@ -141,6 +162,49 @@ func (s *Shell) SetDir(dir string) error {
 
 // Background jobs started so far, oldest first
 func (s *Shell) Jobs() []JobInfo { return s.jobs.list() }
+
+// Snapshot of one background job
+func (s *Shell) Job(id string) (JobInfo, bool) {
+	jb, ok := s.jobs.get(id)
+	if !ok {
+		return JobInfo{}, false
+	}
+	return s.jobs.info(jb), true
+}
+
+// Output of a job from an absolute offset without moving the cursor the model reads with
+func (s *Shell) Tail(id string, from int64) (data []byte, next int64, dropped int64, ok bool) {
+	jb, ok := s.jobs.get(id)
+	if !ok {
+		return nil, 0, 0, false
+	}
+	data, next, dropped = jb.out.since(from)
+	return data, next, dropped, true
+}
+
+// Channel closed when the job finishes
+func (s *Shell) Wait(id string) (<-chan struct{}, bool) {
+	jb, ok := s.jobs.get(id)
+	if !ok {
+		return nil, false
+	}
+	return jb.done, true
+}
+
+// Stops a running job and waits for it to end
+func (s *Shell) KillJob(ctx context.Context, id string) error {
+	jb, ok := s.jobs.get(id)
+	if !ok {
+		return fmt.Errorf("shell: no background job %q", id)
+	}
+	jb.cancel()
+	select {
+	case <-jb.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 // Stops every running background job and forgets all of them
 func (s *Shell) Close() { s.jobs.close() }
@@ -183,4 +247,15 @@ func (c *capture) String() string {
 		return string(c.head) + string(c.tail)
 	}
 	return fmt.Sprintf("%s\n[%d bytes omitted]\n%s", c.head, c.dropped, c.tail)
+}
+
+// Writer that forwards every chunk to a progress reporter under a stream name
+type reporting struct {
+	ctx    context.Context
+	stream string
+}
+
+func (r reporting) Write(p []byte) (int, error) {
+	tool.Report(r.ctx, tool.Progress{Stream: r.stream, Text: string(p)})
+	return len(p), nil
 }

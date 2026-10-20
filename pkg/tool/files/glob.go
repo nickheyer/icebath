@@ -15,19 +15,19 @@ import (
 )
 
 const globSchema = `{"type":"object","properties":{
-"pattern":{"type":"string","description":"Glob such as *.go or src/**/*.ts, double star spans directories"},
+"pattern":{"type":"string","description":"Glob such as *.go, src/**/*.ts or *.{js,ts}, double star spans directories and braces list alternatives"},
 "path":{"type":"string","description":"Directory to search, the working directory when omitted"}},
 "required":["pattern"],"additionalProperties":false}`
 
 type globber struct{ Options }
 
-// Tool that lists files matching a pattern, newest first
+// Tool that lists files and directories matching a pattern, newest first
 func Glob(o Options) tool.Tool { return globber{o} }
 
 func (g globber) Definition() protocol.Tool {
 	return protocol.Tool{
 		Name:        GlobName,
-		Description: fmt.Sprintf("Finds files whose path matches a glob pattern and lists them newest first, up to %d entries. Ignored directories: %s.", g.maxResults(), strings.Join(g.ignore(), ", ")),
+		Description: fmt.Sprintf("Finds files and directories whose path matches a glob pattern and lists them newest first, up to %d entries, directories ending in a slash. Ignored directories: %s.", g.maxResults(), strings.Join(g.ignore(), ", ")),
 		Parameters:  json.RawMessage(globSchema),
 	}
 }
@@ -58,43 +58,128 @@ func (g globber) Run(ctx context.Context, args json.RawMessage) (tool.Result, er
 	if err != nil || !st.IsDir() {
 		return tool.Errorf("%s is not a directory", dir), nil
 	}
-	var matches []found
-	err = g.walk(dir, func(p string, d fs.DirEntry) error {
+	patterns := expandBraces(in.Pattern)
+	absolute := filepath.IsAbs(in.Pattern)
+	var matches []Match
+	err = g.walk(dir, true, func(p string, d fs.DirEntry) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		subject := p
-		if !filepath.IsAbs(in.Pattern) {
+		if !absolute {
 			subject, _ = filepath.Rel(dir, p)
 		}
-		if !glob.Match(in.Pattern, filepath.ToSlash(subject)) {
+		if !matchAny(patterns, filepath.ToSlash(subject)) {
 			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
 			return nil
 		}
-		matches = append(matches, found{path: p, mod: info.ModTime()})
+		matches = append(matches, Match{Path: p, Dir: d.IsDir(), ModTime: info.ModTime()})
 		return nil
 	})
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}
+	data := GlobData{Dir: dir, Pattern: in.Pattern, Total: len(matches)}
 	if len(matches) == 0 {
-		return tool.Text("No files found"), nil
+		return tool.Text("No files found").With(data), nil
 	}
-	byNewest(matches)
+	sortMatches(matches)
 	shown := matches
 	if len(shown) > g.maxResults() {
 		shown = shown[:g.maxResults()]
 	}
+	data.Matches = shown
 	var sb strings.Builder
 	for _, m := range shown {
-		sb.WriteString(m.path)
+		sb.WriteString(m.Path)
+		if m.Dir {
+			sb.WriteString(string(filepath.Separator))
+		}
 		sb.WriteByte('\n')
 	}
 	if len(shown) < len(matches) {
 		fmt.Fprintf(&sb, "[showing %d of %d matches, narrow the pattern]", len(shown), len(matches))
 	}
-	return tool.Text(strings.TrimSuffix(sb.String(), "\n")), nil
+	return tool.Text(strings.TrimSuffix(sb.String(), "\n")).With(data), nil
+}
+
+func matchAny(patterns []string, subject string) bool {
+	for _, p := range patterns {
+		if glob.Match(p, subject) {
+			return true
+		}
+	}
+	return false
+}
+
+// Orders newest first, then by path for equal times
+func sortMatches(ms []Match) {
+	fs := make([]found, len(ms))
+	byPath := make(map[string]Match, len(ms))
+	for i, m := range ms {
+		fs[i] = found{path: m.Path, mod: m.ModTime}
+		byPath[m.Path] = m
+	}
+	byNewest(fs)
+	for i, f := range fs {
+		ms[i] = byPath[f.path]
+	}
+}
+
+// Expands every {a,b} group into the patterns it stands for, leaving unbalanced braces literal
+func expandBraces(pattern string) []string {
+	open := strings.IndexByte(pattern, '{')
+	if open < 0 {
+		return []string{pattern}
+	}
+	depth := 0
+	closeAt := -1
+	for i := open; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				closeAt = i
+			}
+		}
+		if closeAt >= 0 {
+			break
+		}
+	}
+	if closeAt < 0 {
+		return []string{pattern}
+	}
+	prefix, body, suffix := pattern[:open], pattern[open+1:closeAt], pattern[closeAt+1:]
+	var out []string
+	for _, alt := range splitTopLevel(body) {
+		for _, rest := range expandBraces(alt + suffix) {
+			out = append(out, prefix+rest)
+		}
+	}
+	return out
+}
+
+// Splits on commas that are not inside a nested brace group
+func splitTopLevel(body string) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i := 0; i < len(body); i++ {
+		switch body[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, body[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, body[start:])
 }

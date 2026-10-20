@@ -2,6 +2,7 @@ package compact
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"iter"
 	"strings"
@@ -33,7 +34,7 @@ func transcript(turns int, usage int) *session.Session {
 	s := session.New()
 	for i := 0; i < turns; i++ {
 		s.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "ask"}}})
-		s.AddResponse(protocol.Response{Content: []protocol.Part{protocol.Thinking{Text: "t"}, protocol.Text{Text: "answer"}}, Usage: protocol.Usage{Input: usage}})
+		s.AddResponse("", protocol.Response{Content: []protocol.Part{protocol.Thinking{Text: "t"}, protocol.Text{Text: "answer"}}, Usage: protocol.Usage{Input: usage}})
 	}
 	return s
 }
@@ -50,10 +51,24 @@ func TestSummarizerCompactsPastThreshold(t *testing.T) {
 	s = transcript(5, 1200)
 	h.Session = s
 	var notes []string
-	ctx = agent.WithObserver(ctx, func(e agent.Event) { notes = append(notes, e.Text) })
+	var kinds []agent.EventType
+	ctx = agent.WithObserver(ctx, func(e agent.Event) {
+		kinds = append(kinds, e.Type)
+		if e.Type == agent.EventNote {
+			notes = append(notes, e.Text)
+		}
+	})
+	befores := 0
+	h.Before = func(context.Context) error { befores++; return nil }
 	req = protocol.Request{Messages: s.Snapshot()}
 	if err := h.BeforeTurn(ctx, &req); err != nil {
 		t.Fatal(err)
+	}
+	if befores != 1 || len(kinds) != 3 || kinds[0] != agent.EventCompactStart || kinds[1] != agent.EventCompactEnd || kinds[2] != agent.EventNote {
+		t.Fatalf("%d %v", befores, kinds)
+	}
+	if recs := s.Records(); len(recs) != 1 || recs[0].Kind != "compact" || !strings.Contains(string(recs[0].Data), "Goal") {
+		t.Fatalf("%+v", recs)
 	}
 	if len(model.reqs) != 1 || model.reqs[0].Model != "sum" || model.reqs[0].MaxTokens != 2048 || !strings.Contains(model.reqs[0].System, "Mention hosts.") || !strings.Contains(model.reqs[0].Messages[0].Content[0].(protocol.Text).Text, "## Assistant") {
 		t.Fatalf("%+v", model.reqs)
@@ -74,6 +89,49 @@ func TestSummarizerCompactsPastThreshold(t *testing.T) {
 	h.Session, h.Keep = small, 6
 	if err := h.BeforeTurn(ctx, &req); err != nil || len(model.reqs) != 1 {
 		t.Fatal("nothing to compact when everything is kept")
+	}
+	grown := transcript(5, 900)
+	grown.AddResults("", []protocol.ToolResult{{CallID: "c", Content: []protocol.Part{protocol.Text{Text: strings.Repeat("x", 2000)}}}})
+	h.Session, h.Keep = grown, 2
+	req = protocol.Request{Messages: grown.Snapshot()}
+	if err := h.BeforeTurn(ctx, &req); err != nil || len(model.reqs) != 2 {
+		t.Fatalf("a large tool result added since the last response must count toward the threshold: %v %d", err, len(model.reqs))
+	}
+	if pending([]protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Image{Data: []byte{1}}, protocol.ToolCall{Args: json.RawMessage(`{"a":1}`)}}}}) != 1001 {
+		t.Fatal("pending estimate")
+	}
+	failing := &Summarizer{Model: model, ModelID: "sum", Session: transcript(5, 1200), Threshold: 1000, Keep: 2, Before: func(context.Context) error { return errors.New("pre compact hook refused") }}
+	if err := failing.BeforeTurn(ctx, &protocol.Request{}); err == nil || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestLongTranscriptsAreSummarizedInParts(t *testing.T) {
+	ctx := context.Background()
+	model := &fake{text: "part summary"}
+	s := transcript(6, 0)
+	h := &Summarizer{Model: model, ModelID: "sum", Session: s, Threshold: 1, ChunkChars: 120}
+	summary, err := h.Summarize(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(model.reqs) < 3 {
+		t.Fatalf("expected several part calls and one combine call, got %d", len(model.reqs))
+	}
+	last := model.reqs[len(model.reqs)-1]
+	if !strings.Contains(last.System, "merge partial") || !strings.Contains(last.Messages[0].Content[0].(protocol.Text).Text, "Part 1 of") {
+		t.Fatalf("%+v", last)
+	}
+	for _, r := range model.reqs[:len(model.reqs)-1] {
+		if !strings.Contains(r.Messages[0].Content[0].(protocol.Text).Text, "<transcript part=") {
+			t.Fatalf("%+v", r)
+		}
+	}
+	if !strings.HasPrefix(summary, "Summary of the earlier conversation:\n\npart summary") {
+		t.Fatalf("%q", summary)
+	}
+	if h.chunkChars() != 120 || (&Summarizer{}).chunkChars() != DefaultChunkChars {
+		t.Fatal("chunk default")
 	}
 }
 

@@ -47,6 +47,18 @@ type imageSource struct {
 	Data      string `json:"data"`
 }
 
+type documentBlock struct {
+	Type   string         `json:"type"`
+	Source documentSource `json:"source"`
+	Title  string         `json:"title,omitempty"`
+}
+
+type documentSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
 type thinkingBlock struct {
 	Type      string `json:"type"`
 	Thinking  string `json:"thinking"`
@@ -58,6 +70,7 @@ type redactedThinkingBlock struct {
 	Data string `json:"data"`
 }
 
+// Shared by tool_use and server_tool_use blocks
 type toolUseBlock struct {
 	Type  string          `json:"type"`
 	ID    string          `json:"id"`
@@ -72,6 +85,13 @@ type toolResultBlock struct {
 	IsError   bool   `json:"is_error,omitempty"`
 }
 
+// Replay form of web_search_tool_result and every other vendor side result block
+type serverToolResultBlock struct {
+	Type      string          `json:"type"`
+	ToolUseID string          `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"`
+}
+
 // Response content block of any type, read by switching on Type
 type contentBlock struct {
 	Type      string          `json:"type"`
@@ -82,6 +102,25 @@ type contentBlock struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
 	Input     json.RawMessage `json:"input"`
+	ToolUseID string          `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"`
+	Citations []citation      `json:"citations"`
+}
+
+// Citation of any location type, flattened over the char, page, block and web shapes
+type citation struct {
+	Type            string `json:"type"`
+	CitedText       string `json:"cited_text"`
+	DocumentIndex   *int   `json:"document_index"`
+	DocumentTitle   string `json:"document_title"`
+	Title           string `json:"title"`
+	URL             string `json:"url"`
+	StartCharIndex  *int   `json:"start_char_index"`
+	EndCharIndex    *int   `json:"end_char_index"`
+	StartPageNumber *int   `json:"start_page_number"`
+	EndPageNumber   *int   `json:"end_page_number"`
+	StartBlockIndex *int   `json:"start_block_index"`
+	EndBlockIndex   *int   `json:"end_block_index"`
 }
 
 type outputTokensDetails struct {
@@ -98,22 +137,25 @@ type usage struct {
 
 // Non streaming message body, also carried by message_start
 type response struct {
-	ID         string         `json:"id"`
-	Type       string         `json:"type"`
-	Model      string         `json:"model"`
-	Content    []contentBlock `json:"content"`
-	StopReason string         `json:"stop_reason"`
-	Usage      usage          `json:"usage"`
+	ID           string         `json:"id"`
+	Type         string         `json:"type"`
+	Model        string         `json:"model"`
+	Content      []contentBlock `json:"content"`
+	StopReason   string         `json:"stop_reason"`
+	StopSequence string         `json:"stop_sequence"`
+	Usage        usage          `json:"usage"`
 }
 
 // Delta of a content block or of the message, read by switching on the event
 type delta struct {
-	Type        string `json:"type"`
-	Text        string `json:"text"`
-	PartialJSON string `json:"partial_json"`
-	Thinking    string `json:"thinking"`
-	Signature   string `json:"signature"`
-	StopReason  string `json:"stop_reason"`
+	Type         string    `json:"type"`
+	Text         string    `json:"text"`
+	PartialJSON  string    `json:"partial_json"`
+	Thinking     string    `json:"thinking"`
+	Signature    string    `json:"signature"`
+	Citation     *citation `json:"citation"`
+	StopReason   string    `json:"stop_reason"`
+	StopSequence string    `json:"stop_sequence"`
 }
 
 type streamEvent struct {

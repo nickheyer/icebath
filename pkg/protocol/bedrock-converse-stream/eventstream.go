@@ -17,6 +17,8 @@ const (
 	minFrame   = preludeLen + msgCRCLen
 	// Variable length header values carry a two byte length prefix
 	maxHeaderValue = 1<<15 - 1
+	maxFrameLen    = 16 << 20
+	maxHeadersLen  = 128 << 10
 )
 
 const (
@@ -78,6 +80,12 @@ func readFrame(r io.Reader) (Frame, error) {
 	headersLen := binary.BigEndian.Uint32(prelude[4:8])
 	if crc32.Checksum(prelude[:8], crcTable) != binary.BigEndian.Uint32(prelude[8:12]) {
 		return Frame{}, errors.New("eventstream: prelude checksum mismatch")
+	}
+	if total > maxFrameLen {
+		return Frame{}, fmt.Errorf("eventstream: frame of %d bytes exceeds the %d byte limit", total, maxFrameLen)
+	}
+	if headersLen > maxHeadersLen {
+		return Frame{}, fmt.Errorf("eventstream: headers of %d bytes exceed the %d byte limit", headersLen, maxHeadersLen)
 	}
 	if total < minFrame || headersLen > total-minFrame {
 		return Frame{}, fmt.Errorf("eventstream: invalid lengths total=%d headers=%d", total, headersLen)

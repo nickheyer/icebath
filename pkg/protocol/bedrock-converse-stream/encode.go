@@ -1,12 +1,16 @@
 package bedrockconversestream
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
+
+// Extra key that turns on prompt caching, consumed rather than merged into the body
+const cacheKey = "bedrock_cache"
 
 var imageFormats = map[string]string{
 	"image/png":  "png",
@@ -15,31 +19,54 @@ var imageFormats = map[string]string{
 	"image/webp": "webp",
 }
 
+var documentFormats = map[string]string{
+	"application/pdf":  "pdf",
+	"text/plain":       "txt",
+	"text/markdown":    "md",
+	"text/csv":         "csv",
+	"text/html":        "html",
+	"application/json": "json",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+	"application/msword":       "doc",
+	"application/vnd.ms-excel": "xls",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+}
+
 // Builds the Converse or ConverseStream call with the model id escaped into the path
 func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 	if req.Model == "" {
 		return protocol.Call{}, fmt.Errorf("bedrock-converse-stream: model is required")
 	}
+	cache, extra, err := consumeCache(req.Extra)
+	if err != nil {
+		return protocol.Call{}, err
+	}
 	wire := request{}
 	if req.System != "" {
-		wire.System = []systemBlock{{Text: req.System}}
+		wire.System = []systemBlock{{Text: &req.System}}
+		if cache {
+			wire.System = append(wire.System, systemBlock{CachePoint: &cachePoint{Type: "default"}})
+		}
 	}
+	enc := &encoder{}
 	for i, m := range req.Messages {
-		msg, err := encodeMessage(m)
+		msg, keep, err := enc.message(m)
 		if err != nil {
 			return protocol.Call{}, fmt.Errorf("bedrock-converse-stream: message %d: %w", i, err)
 		}
-		wire.Messages = append(wire.Messages, msg)
+		if keep {
+			wire.Messages = append(wire.Messages, msg)
+		}
 	}
 	if req.MaxTokens > 0 || req.Temperature != nil || len(req.StopSequences) > 0 {
 		wire.InferenceConfig = &inferenceConfig{MaxTokens: req.MaxTokens, Temperature: req.Temperature, StopSequences: req.StopSequences}
 	}
-	cfg, err := encodeToolConfig(req.Tools, req.ToolChoice)
+	cfg, err := encodeToolConfig(req.Tools, req.ToolChoice, cache)
 	if err != nil {
 		return protocol.Call{}, err
 	}
 	wire.ToolConfig = cfg
-	body, err := protocol.MarshalBody(wire, req.Extra)
+	body, err := protocol.MarshalBody(wire, extra)
 	if err != nil {
 		return protocol.Call{}, err
 	}
@@ -57,73 +84,115 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 	}, nil
 }
 
-func encodeMessage(m protocol.Message) (message, error) {
+// Reads and removes the caching switch so the remaining extra fields merge into the body
+func consumeCache(extra map[string]json.RawMessage) (bool, map[string]json.RawMessage, error) {
+	raw, ok := extra[cacheKey]
+	if !ok {
+		return false, extra, nil
+	}
+	var on bool
+	if err := json.Unmarshal(raw, &on); err != nil {
+		return false, nil, fmt.Errorf("bedrock-converse-stream: %s must be a boolean: %w", cacheKey, err)
+	}
+	rest := make(map[string]json.RawMessage, len(extra)-1)
+	for k, v := range extra {
+		if k != cacheKey {
+			rest[k] = v
+		}
+	}
+	return on, rest, nil
+}
+
+// Numbers generated document names across one request
+type encoder struct {
+	docs int
+}
+
+// Maps one turn to a wire message, reporting false when the replay policy left no content
+func (e *encoder) message(m protocol.Message) (message, bool, error) {
 	if len(m.Content) == 0 {
-		return message{}, fmt.Errorf("empty content")
+		return message{}, false, fmt.Errorf("empty content")
 	}
 	switch m.Role {
 	case protocol.RoleUser:
-		return encodeParts("user", m.Content, encodeUserPart)
+		msg, err := e.parts("user", m.Content, e.userPart)
+		return msg, true, err
 	case protocol.RoleAssistant:
-		return encodeParts("assistant", m.Content, encodeAssistantPart)
+		msg, err := e.parts("assistant", m.Content, e.assistantPart)
+		return msg, len(msg.Content) > 0, err
 	case protocol.RoleTool:
-		return encodeParts("user", m.Content, encodeToolResultPart)
+		msg, err := e.parts("user", m.Content, e.toolResultPart)
+		return msg, true, err
 	}
-	return message{}, fmt.Errorf("unknown role %q", m.Role)
+	return message{}, false, fmt.Errorf("unknown role %q", m.Role)
 }
 
-func encodeParts(role string, parts []protocol.Part, encode func(protocol.Part) (contentBlock, error)) (message, error) {
+// Collects the blocks each part maps to, skipping parts the encoder reports as omitted
+func (e *encoder) parts(role string, parts []protocol.Part, encode func(protocol.Part) (*contentBlock, error)) (message, error) {
 	msg := message{Role: role}
 	for _, p := range parts {
 		block, err := encode(p)
 		if err != nil {
 			return message{}, err
 		}
-		msg.Content = append(msg.Content, block)
+		if block != nil {
+			msg.Content = append(msg.Content, *block)
+		}
 	}
 	return msg, nil
 }
 
-func encodeUserPart(p protocol.Part) (contentBlock, error) {
+func (e *encoder) userPart(p protocol.Part) (*contentBlock, error) {
 	switch v := p.(type) {
 	case protocol.Text:
-		return contentBlock{Text: &v.Text}, nil
+		return &contentBlock{Text: &v.Text}, nil
 	case protocol.Image:
 		img, err := encodeImage(v)
 		if err != nil {
-			return contentBlock{}, err
+			return nil, err
 		}
-		return contentBlock{Image: img}, nil
+		return &contentBlock{Image: img}, nil
+	case protocol.Document:
+		doc, err := e.document(v)
+		if err != nil {
+			return nil, err
+		}
+		return &contentBlock{Document: doc}, nil
 	}
-	return contentBlock{}, fmt.Errorf("%T is not allowed in a user message", p)
+	return nil, fmt.Errorf("%T is not allowed in a user message", p)
 }
 
-func encodeAssistantPart(p protocol.Part) (contentBlock, error) {
+func (e *encoder) assistantPart(p protocol.Part) (*contentBlock, error) {
 	switch v := p.(type) {
 	case protocol.Text:
-		return contentBlock{Text: &v.Text}, nil
+		return &contentBlock{Text: &v.Text}, nil
 	case protocol.Thinking:
+		if !protocol.Replayable(v.Origin, protocol.BedrockConverseStream) {
+			return nil, nil
+		}
 		if v.Redacted {
 			if v.Signature == "" {
-				return contentBlock{}, fmt.Errorf("redacted thinking has no redactedContent payload")
+				return nil, fmt.Errorf("redacted thinking has no redactedContent payload")
 			}
-			return contentBlock{ReasoningContent: &reasoningContent{RedactedContent: v.Signature}}, nil
+			return &contentBlock{ReasoningContent: &reasoningContent{RedactedContent: v.Signature}}, nil
 		}
-		return contentBlock{ReasoningContent: &reasoningContent{ReasoningText: &reasoningText{Text: v.Text, Signature: v.Signature}}}, nil
+		return &contentBlock{ReasoningContent: &reasoningContent{ReasoningText: &reasoningText{Text: v.Text, Signature: v.Signature}}}, nil
 	case protocol.ToolCall:
 		args, err := protocol.ParseArgs(string(v.Args))
 		if err != nil {
-			return contentBlock{}, fmt.Errorf("tool call %s: %w", v.Name, err)
+			return nil, fmt.Errorf("tool call %s: %w", v.Name, err)
 		}
-		return contentBlock{ToolUse: &toolUseBlock{ToolUseID: v.ID, Name: v.Name, Input: args}}, nil
+		return &contentBlock{ToolUse: &toolUseBlock{ToolUseID: v.ID, Name: v.Name, Input: args}}, nil
+	case protocol.ServerToolCall, protocol.ServerToolResult:
+		return nil, nil
 	}
-	return contentBlock{}, fmt.Errorf("%T is not allowed in an assistant message", p)
+	return nil, fmt.Errorf("%T is not allowed in an assistant message", p)
 }
 
-func encodeToolResultPart(p protocol.Part) (contentBlock, error) {
+func (e *encoder) toolResultPart(p protocol.Part) (*contentBlock, error) {
 	r, ok := p.(protocol.ToolResult)
 	if !ok {
-		return contentBlock{}, fmt.Errorf("%T is not allowed in a tool message", p)
+		return nil, fmt.Errorf("%T is not allowed in a tool message", p)
 	}
 	block := &toolResultBlock{ToolUseID: r.CallID, Content: []toolResultContent{}, Status: "success"}
 	if r.IsError {
@@ -136,14 +205,20 @@ func encodeToolResultPart(p protocol.Part) (contentBlock, error) {
 		case protocol.Image:
 			img, err := encodeImage(v)
 			if err != nil {
-				return contentBlock{}, err
+				return nil, err
 			}
 			block.Content = append(block.Content, toolResultContent{Image: img})
+		case protocol.Document:
+			doc, err := e.document(v)
+			if err != nil {
+				return nil, err
+			}
+			block.Content = append(block.Content, toolResultContent{Document: doc})
 		default:
-			return contentBlock{}, fmt.Errorf("%T is not allowed in a tool result", c)
+			return nil, fmt.Errorf("%T is not allowed in a tool result", c)
 		}
 	}
-	return contentBlock{ToolResult: block}, nil
+	return &contentBlock{ToolResult: block}, nil
 }
 
 func encodeImage(img protocol.Image) (*imageBlock, error) {
@@ -154,10 +229,27 @@ func encodeImage(img protocol.Image) (*imageBlock, error) {
 	if len(img.Data) == 0 {
 		return nil, fmt.Errorf("image has no bytes")
 	}
-	return &imageBlock{Format: format, Source: imageSource{Bytes: img.Data}}, nil
+	return &imageBlock{Format: format, Source: byteSource{Bytes: img.Data}}, nil
 }
 
-func encodeToolConfig(tools []protocol.Tool, choice protocol.ToolChoice) (*toolConfig, error) {
+// Maps the media type onto a DocumentFormat value and names unnamed documents by number
+func (e *encoder) document(d protocol.Document) (*documentBlock, error) {
+	format, ok := documentFormats[d.MediaType]
+	if !ok {
+		return nil, fmt.Errorf("document media type %q has no DocumentFormat value", d.MediaType)
+	}
+	if len(d.Data) == 0 {
+		return nil, fmt.Errorf("document %q has no bytes", d.Name)
+	}
+	name := d.Name
+	if name == "" {
+		e.docs++
+		name = fmt.Sprintf("document-%d", e.docs)
+	}
+	return &documentBlock{Format: format, Name: name, Source: byteSource{Bytes: d.Data}}, nil
+}
+
+func encodeToolConfig(tools []protocol.Tool, choice protocol.ToolChoice, cache bool) (*toolConfig, error) {
 	if len(tools) == 0 {
 		if choice.Mode != "" {
 			return nil, fmt.Errorf("bedrock-converse-stream: tool choice %q without tools", choice.Mode)
@@ -169,7 +261,10 @@ func encodeToolConfig(tools []protocol.Tool, choice protocol.ToolChoice) (*toolC
 		if len(t.Parameters) == 0 {
 			return nil, fmt.Errorf("bedrock-converse-stream: tool %q has no parameters schema", t.Name)
 		}
-		cfg.Tools = append(cfg.Tools, tool{ToolSpec: toolSpec{Name: t.Name, Description: t.Description, InputSchema: toolInputSchema{JSON: t.Parameters}}})
+		cfg.Tools = append(cfg.Tools, tool{ToolSpec: &toolSpec{Name: t.Name, Description: t.Description, InputSchema: toolInputSchema{JSON: t.Parameters}}})
+	}
+	if cache {
+		cfg.Tools = append(cfg.Tools, tool{CachePoint: &cachePoint{Type: "default"}})
 	}
 	switch choice.Mode {
 	case "":

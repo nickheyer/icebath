@@ -18,25 +18,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
 
-// What a pattern is matched against
-type Kind int
-
+// Kinds of subject a pattern is matched against
 const (
-	Plain Kind = iota
-	Command
-	Path
-	Domain
+	Plain   = "plain"
+	Command = "command"
+	Path    = "path"
+	Domain  = "domain"
 )
 
 // One thing a call operates on, drawn from its arguments
-type Subject struct {
-	Kind Kind
-	Text string
-	// Hides further commands behind substitution, so no allow pattern can vouch for it
-	Unsafe bool
-	// Whole command line that only a wildcard free pattern may match
-	Exact bool
-}
+type Subject = policy.Subject
 
 // Draws subjects from the arguments of one tool
 type Extractor func(args json.RawMessage) []Subject
@@ -130,13 +121,15 @@ func AllStrings(args json.RawMessage) []Subject {
 
 // Extractors for the tools icebath ships, used for tools a policy names no extractor for
 var DefaultSubjects = map[string]Extractor{
-	"Bash":     Shell("command"),
-	"Read":     Paths("file_path"),
-	"Write":    Paths("file_path"),
-	"Edit":     Paths("file_path"),
-	"Glob":     Paths("path"),
-	"Grep":     Paths("path"),
-	"WebFetch": URLs("url"),
+	"Bash":       Shell("command"),
+	"BashOutput": Strings("bash_id"),
+	"KillShell":  Strings("shell_id"),
+	"Read":       Paths("file_path"),
+	"Write":      Paths("file_path"),
+	"Edit":       Paths("file_path"),
+	"Glob":       Paths("path"),
+	"Grep":       Paths("path"),
+	"WebFetch":   URLs("url"),
 }
 
 // Splits a command line into its simple commands at the shell operators outside quotes
@@ -228,7 +221,7 @@ func Parse(s string) (Rule, error) {
 		}
 		return Rule{Tool: s}, nil
 	}
-	if !strings.HasSuffix(s, ")") || open == 0 {
+	if !strings.HasSuffix(s, ")") || open == 0 || strings.ContainsAny(s[:open], " \t") {
 		return Rule{}, fmt.Errorf("rules: malformed rule %q", s)
 	}
 	return Rule{Tool: s[:open], Pattern: s[open+1 : len(s)-1], HasPattern: true}, nil
@@ -272,6 +265,20 @@ func LoadFile(path string) (Set, error) {
 	return Load(f)
 }
 
+// Writes a permissions block nested under permissions as settings files expect
+func (s Set) Save(path string) error {
+	data, err := json.MarshalIndent(struct {
+		Permissions Set `json:"permissions"`
+	}{s}, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
 type compiled struct {
 	rule     Rule
 	decision policy.Decision
@@ -285,10 +292,14 @@ type Policy struct {
 	Subjects map[string]Extractor
 	// Base of relative path patterns and paths, the process working directory when empty
 	Dir string
+	// Current directory consulted ahead of Dir on every match so a moving shell is followed
+	DirFunc func() string
 	// Expansion of a leading tilde, the user home directory when empty
-	Home  string
-	mu    sync.RWMutex
-	rules []compiled
+	Home string
+	// Called after every added or removed rule
+	OnChange func()
+	mu       sync.RWMutex
+	rules    []compiled
 }
 
 // Compiles rule sets in order, failing on the first malformed rule
@@ -300,7 +311,7 @@ func New(sets ...Set) (*Policy, error) {
 			rules    []string
 		}{{policy.Allow, s.Allow}, {policy.Deny, s.Deny}, {policy.Ask, s.Ask}} {
 			for _, r := range group.rules {
-				if err := p.Add(group.decision, r); err != nil {
+				if err := p.add(group.decision, r); err != nil {
 					return nil, err
 				}
 			}
@@ -311,6 +322,14 @@ func New(sets ...Set) (*Policy, error) {
 
 // Adds one rule under a decision
 func (p *Policy) Add(decision policy.Decision, rule string) error {
+	if err := p.add(decision, rule); err != nil {
+		return err
+	}
+	p.changed()
+	return nil
+}
+
+func (p *Policy) add(decision policy.Decision, rule string) error {
 	if decision != policy.Allow && decision != policy.Deny && decision != policy.Ask {
 		return fmt.Errorf("rules: unknown decision %q", decision)
 	}
@@ -320,8 +339,51 @@ func (p *Policy) Add(decision policy.Decision, rule string) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	for _, c := range p.rules {
+		if c.decision == decision && c.rule == r {
+			return nil
+		}
+	}
 	p.rules = append(p.rules, compiled{rule: r, decision: decision})
 	return nil
+}
+
+// Drops one rule under a decision and reports whether it was present
+func (p *Policy) Remove(decision policy.Decision, rule string) bool {
+	r, err := Parse(rule)
+	if err != nil {
+		return false
+	}
+	p.mu.Lock()
+	kept := p.rules[:0]
+	removed := false
+	for _, c := range p.rules {
+		if c.decision == decision && c.rule == r {
+			removed = true
+			continue
+		}
+		kept = append(kept, c)
+	}
+	p.rules = kept
+	p.mu.Unlock()
+	if removed {
+		p.changed()
+	}
+	return removed
+}
+
+// Drops every rule
+func (p *Policy) Clear() {
+	p.mu.Lock()
+	p.rules = nil
+	p.mu.Unlock()
+	p.changed()
+}
+
+func (p *Policy) changed() {
+	if p.OnChange != nil {
+		p.OnChange()
+	}
 }
 
 // Rules recorded under a decision in the order added
@@ -337,6 +399,11 @@ func (p *Policy) Rules(decision policy.Decision) []string {
 	return out
 }
 
+// Every rule as a set ready to save
+func (p *Policy) Set() Set {
+	return Set{Allow: p.Rules(policy.Allow), Deny: p.Rules(policy.Deny), Ask: p.Rules(policy.Ask)}
+}
+
 // Subjects the policy would match for a call
 func (p *Policy) SubjectsOf(call protocol.ToolCall) []Subject {
 	subjects := p.Subjects
@@ -350,85 +417,108 @@ func (p *Policy) SubjectsOf(call protocol.ToolCall) []Subject {
 }
 
 func (p *Policy) Decide(call protocol.ToolCall) policy.Decision {
+	d, _ := p.Explain(call)
+	return d
+}
+
+// Decision with the rule text that settled it or the word default
+func (p *Policy) Explain(call protocol.ToolCall) (policy.Decision, string) {
 	subjects := p.SubjectsOf(call)
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	if p.any(policy.Deny, call, subjects) {
-		return policy.Deny
+	if r, ok := p.any(policy.Deny, call, subjects); ok {
+		return policy.Deny, "rule " + r
 	}
-	if p.any(policy.Ask, call, subjects) {
-		return policy.Ask
+	if r, ok := p.any(policy.Ask, call, subjects); ok {
+		return policy.Ask, "rule " + r
 	}
-	if p.allows(call, subjects) {
-		return policy.Allow
+	if r, ok := p.allows(call, subjects); ok {
+		return policy.Allow, "rule " + r
 	}
 	if p.Default == "" {
-		return policy.Ask
+		return policy.Ask, "default"
 	}
-	return p.Default
+	return p.Default, "default"
 }
 
-// Reports whether a rule of the decision covers the tool alone or any of its subjects
-func (p *Policy) any(decision policy.Decision, call protocol.ToolCall, subjects []Subject) bool {
+// Reports whether a rule of the decision covers the tool alone or any of its subjects, naming the rule
+func (p *Policy) any(decision policy.Decision, call protocol.ToolCall, subjects []Subject) (string, bool) {
 	for _, c := range p.rules {
 		if c.decision != decision || !glob.Wild(c.rule.Tool, call.Name) {
 			continue
 		}
 		if !c.rule.HasPattern {
-			return true
+			return c.rule.String(), true
 		}
 		for _, s := range subjects {
 			if p.match(c.rule.Pattern, s) {
-				return true
+				return c.rule.String(), true
 			}
 		}
 	}
-	return false
+	return "", false
 }
 
 // Allows on a tool wide rule, an exact whole line rule, or allow rules covering every subject
-func (p *Policy) allows(call protocol.ToolCall, subjects []Subject) bool {
-	var patterns []string
+func (p *Policy) allows(call protocol.ToolCall, subjects []Subject) (string, bool) {
+	var patterns []compiled
 	for _, c := range p.rules {
 		if c.decision != policy.Allow || !glob.Wild(c.rule.Tool, call.Name) {
 			continue
 		}
 		if !c.rule.HasPattern {
-			return true
+			return c.rule.String(), true
 		}
-		patterns = append(patterns, c.rule.Pattern)
+		patterns = append(patterns, c)
 	}
 	for _, s := range subjects {
 		if !s.Exact {
 			continue
 		}
-		for _, pat := range patterns {
-			if p.match(pat, s) {
-				return true
+		for _, c := range patterns {
+			if p.match(c.rule.Pattern, s) {
+				return c.rule.String(), true
 			}
 		}
 	}
 	required := 0
+	var used []string
 	for _, s := range subjects {
 		if s.Exact {
 			continue
 		}
 		required++
 		if s.Unsafe {
-			return false
+			return "", false
 		}
-		covered := false
-		for _, pat := range patterns {
-			if p.match(pat, s) {
-				covered = true
+		covered := ""
+		for _, c := range patterns {
+			if p.match(c.rule.Pattern, s) {
+				covered = c.rule.String()
 				break
 			}
 		}
-		if !covered {
-			return false
+		if covered == "" {
+			return "", false
+		}
+		used = append(used, covered)
+	}
+	if required == 0 {
+		return "", false
+	}
+	return strings.Join(dedupe(used), ", "), true
+}
+
+func dedupe(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
 		}
 	}
-	return required > 0
+	return out
 }
 
 // Matches a pattern against one subject by the rules of its kind
@@ -470,6 +560,18 @@ func (p *Policy) match(pattern string, s Subject) bool {
 	return glob.Wild(pattern, s.Text)
 }
 
+func (p *Policy) dir() (string, error) {
+	if p.DirFunc != nil {
+		if d := p.DirFunc(); d != "" {
+			return d, nil
+		}
+	}
+	if p.Dir != "" {
+		return p.Dir, nil
+	}
+	return os.Getwd()
+}
+
 // Turns a path or path pattern into an absolute slash separated form
 func (p *Policy) resolve(path string) (string, error) {
 	if path == "~" || strings.HasPrefix(path, "~/") {
@@ -484,13 +586,9 @@ func (p *Policy) resolve(path string) (string, error) {
 		path = filepath.Join(home, path[1:])
 	}
 	if !filepath.IsAbs(path) {
-		dir := p.Dir
-		if dir == "" {
-			wd, err := os.Getwd()
-			if err != nil {
-				return "", err
-			}
-			dir = wd
+		dir, err := p.dir()
+		if err != nil {
+			return "", err
 		}
 		path = filepath.Join(dir, path)
 	}

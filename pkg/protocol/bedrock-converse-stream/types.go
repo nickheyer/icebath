@@ -14,26 +14,46 @@ type message struct {
 	Content []contentBlock `json:"content"`
 }
 
+// Union with exactly one member set
 type systemBlock struct {
-	Text string `json:"text"`
+	Text       *string     `json:"text,omitempty"`
+	CachePoint *cachePoint `json:"cachePoint,omitempty"`
+}
+
+type cachePoint struct {
+	Type string `json:"type"`
 }
 
 // Union with exactly one member set
 type contentBlock struct {
 	Text             *string           `json:"text,omitempty"`
 	Image            *imageBlock       `json:"image,omitempty"`
+	Document         *documentBlock    `json:"document,omitempty"`
+	Video            *videoBlock       `json:"video,omitempty"`
 	ToolUse          *toolUseBlock     `json:"toolUse,omitempty"`
 	ToolResult       *toolResultBlock  `json:"toolResult,omitempty"`
 	ReasoningContent *reasoningContent `json:"reasoningContent,omitempty"`
+	CitationsContent *citationsContent `json:"citationsContent,omitempty"`
 }
 
 type imageBlock struct {
-	Format string      `json:"format"`
-	Source imageSource `json:"source"`
+	Format string     `json:"format"`
+	Source byteSource `json:"source"`
+}
+
+type documentBlock struct {
+	Format string     `json:"format"`
+	Name   string     `json:"name"`
+	Source byteSource `json:"source"`
+}
+
+type videoBlock struct {
+	Format string     `json:"format"`
+	Source byteSource `json:"source"`
 }
 
 // Bytes serialize as base64 per the restJson1 blob rule
-type imageSource struct {
+type byteSource struct {
 	Bytes []byte `json:"bytes"`
 }
 
@@ -50,8 +70,9 @@ type toolResultBlock struct {
 }
 
 type toolResultContent struct {
-	Text  *string     `json:"text,omitempty"`
-	Image *imageBlock `json:"image,omitempty"`
+	Text     *string        `json:"text,omitempty"`
+	Image    *imageBlock    `json:"image,omitempty"`
+	Document *documentBlock `json:"document,omitempty"`
 }
 
 type reasoningContent struct {
@@ -62,6 +83,35 @@ type reasoningContent struct {
 type reasoningText struct {
 	Text      string `json:"text"`
 	Signature string `json:"signature,omitempty"`
+}
+
+// Generated text with the citations backing it
+type citationsContent struct {
+	Content   []citationText `json:"content"`
+	Citations []citation     `json:"citations"`
+}
+
+type citationText struct {
+	Text string `json:"text"`
+}
+
+type citation struct {
+	Title         string           `json:"title"`
+	SourceContent []citationText   `json:"sourceContent"`
+	Location      citationLocation `json:"location"`
+}
+
+// Union over the char, page and chunk location shapes
+type citationLocation struct {
+	DocumentChar  *documentSpan `json:"documentChar"`
+	DocumentPage  *documentSpan `json:"documentPage"`
+	DocumentChunk *documentSpan `json:"documentChunk"`
+}
+
+type documentSpan struct {
+	DocumentIndex int `json:"documentIndex"`
+	Start         int `json:"start"`
+	End           int `json:"end"`
 }
 
 type inferenceConfig struct {
@@ -75,8 +125,10 @@ type toolConfig struct {
 	ToolChoice *toolChoice `json:"toolChoice,omitempty"`
 }
 
+// Union with exactly one member set
 type tool struct {
-	ToolSpec toolSpec `json:"toolSpec"`
+	ToolSpec   *toolSpec   `json:"toolSpec,omitempty"`
+	CachePoint *cachePoint `json:"cachePoint,omitempty"`
 }
 
 type toolSpec struct {
@@ -103,6 +155,7 @@ type response struct {
 	Output     converseOutput `json:"output"`
 	StopReason string         `json:"stopReason"`
 	Usage      tokenUsage     `json:"usage"`
+	Metrics    metrics        `json:"metrics"`
 }
 
 type converseOutput struct {
@@ -114,6 +167,10 @@ type tokenUsage struct {
 	OutputTokens          int `json:"outputTokens"`
 	CacheReadInputTokens  int `json:"cacheReadInputTokens"`
 	CacheWriteInputTokens int `json:"cacheWriteInputTokens"`
+}
+
+type metrics struct {
+	LatencyMs int64 `json:"latencyMs"`
 }
 
 type contentBlockStartEvent struct {
@@ -139,6 +196,7 @@ type contentBlockDelta struct {
 	Text             *string         `json:"text"`
 	ToolUse          *toolUseDelta   `json:"toolUse"`
 	ReasoningContent *reasoningDelta `json:"reasoningContent"`
+	Citation         *citation       `json:"citation"`
 }
 
 type toolUseDelta struct {
@@ -160,7 +218,8 @@ type messageStopEvent struct {
 }
 
 type metadataEvent struct {
-	Usage tokenUsage `json:"usage"`
+	Usage   tokenUsage `json:"usage"`
+	Metrics metrics    `json:"metrics"`
 }
 
 type exceptionBody struct {

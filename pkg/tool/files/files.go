@@ -26,14 +26,19 @@ const (
 	GrepName  = "Grep"
 )
 
+// Directory names skipped by Glob and Grep when Ignore is nil
+var DefaultIgnore = []string{".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".cache", ".next", ".turbo"}
+
 // Shared settings of every file tool
 type Options struct {
-	// Directory relative paths resolve against, the process working directory when empty
+	// Directory relative paths resolve against, Root when set and otherwise the process working directory
 	Dir string
 	// Directory every path must stay inside after symlink resolution, unrestricted when empty
 	Root string
-	// Directory names Glob and Grep skip, .git when nil
+	// Directory names Glob and Grep skip, DefaultIgnore when nil
 	Ignore []string
+	// Walks files that .gitignore rules would hide
+	NoGitIgnore bool
 	// Lines one Read returns, 2000 when zero
 	MaxLines int
 	// Bytes kept of one line before it is cut, 2000 when zero
@@ -51,6 +56,30 @@ func All(o Options) []tool.Tool {
 	return []tool.Tool{Read(o), Write(o), Edit(o), Glob(o), Grep(o)}
 }
 
+// Content replaced by Write or Edit, with the whole file before and after
+type Change struct {
+	Path     string
+	Old      string
+	New      string
+	Created  bool
+	Replaced int
+}
+
+// One path found by Glob
+type Match struct {
+	Path    string
+	Dir     bool
+	ModTime time.Time
+}
+
+// Structured outcome of Glob
+type GlobData struct {
+	Dir     string
+	Pattern string
+	Matches []Match
+	Total   int
+}
+
 func (o Options) maxLines() int     { return or(o.MaxLines, 2000) }
 func (o Options) maxLineBytes() int { return or(o.MaxLineBytes, 2000) }
 func (o Options) maxFileBytes() int { return or(o.MaxFileBytes, 8<<20) }
@@ -59,7 +88,7 @@ func (o Options) maxOutput() int    { return or(o.MaxOutput, 50000) }
 
 func (o Options) ignore() []string {
 	if o.Ignore == nil {
-		return []string{".git"}
+		return DefaultIgnore
 	}
 	return o.Ignore
 }
@@ -72,8 +101,11 @@ func or(v, def int) int {
 }
 
 func (o Options) dir() (string, error) {
-	if o.Dir != "" {
+	switch {
+	case o.Dir != "":
 		return filepath.Abs(o.Dir)
+	case o.Root != "":
+		return filepath.Abs(o.Root)
 	}
 	return os.Getwd()
 }
@@ -101,7 +133,11 @@ func (o Options) resolve(p string) (string, error) {
 	if o.Root == "" {
 		return p, nil
 	}
-	root, err := filepath.EvalSymlinks(o.Root)
+	rootAbs, err := filepath.Abs(o.Root)
+	if err != nil {
+		return "", fmt.Errorf("root %s: %w", o.Root, err)
+	}
+	root, err := filepath.EvalSymlinks(rootAbs)
 	if err != nil {
 		return "", fmt.Errorf("root %s: %w", o.Root, err)
 	}
@@ -110,7 +146,7 @@ func (o Options) resolve(p string) (string, error) {
 		return "", err
 	}
 	if real != root && !strings.HasPrefix(real, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("%s is outside %s", p, o.Root)
+		return "", fmt.Errorf("%s is outside %s", p, rootAbs)
 	}
 	return p, nil
 }
@@ -201,11 +237,25 @@ func (o Options) numbered(start int, ls []string) string {
 	return strings.TrimSuffix(sb.String(), "\n")
 }
 
-// Writes data to p through a temporary file, keeping the mode of an existing file
+// Writes data to p through a temporary file, following a symlink and keeping the mode of an existing file
 func writeFile(p string, data []byte) (created bool, err error) {
 	mode := fs.FileMode(0o644)
-	st, err := os.Stat(p)
+	st, err := os.Lstat(p)
 	switch {
+	case err == nil && st.Mode()&fs.ModeSymlink != 0:
+		target, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			return false, err
+		}
+		p = target
+		st, err = os.Stat(p)
+		if err != nil {
+			return false, err
+		}
+		if st.IsDir() {
+			return false, fmt.Errorf("%s is a directory", p)
+		}
+		mode = st.Mode().Perm()
 	case err == nil:
 		if st.IsDir() {
 			return false, fmt.Errorf("%s is a directory", p)
@@ -244,16 +294,32 @@ func writeFile(p string, data []byte) (created bool, err error) {
 	return created, nil
 }
 
+// Reads the current content of p for a change record, empty when it does not exist
+func current(p string) (string, error) {
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 type found struct {
 	path string
 	mod  time.Time
 }
 
-// Visits every file below dir in lexical order, skipping ignored directory names
-func (o Options) walk(dir string, visit func(path string, d fs.DirEntry) error) error {
+// Visits every entry below dir in lexical order, skipping ignored directory names and gitignored paths
+func (o Options) walk(dir string, dirs bool, visit func(path string, d fs.DirEntry) error) error {
 	ignored := map[string]bool{}
 	for _, name := range o.ignore() {
 		ignored[name] = true
+	}
+	var rules ignoreStack
+	if !o.NoGitIgnore {
+		rules = loadIgnoreStack(dir)
 	}
 	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -262,11 +328,26 @@ func (o Options) walk(dir string, visit func(path string, d fs.DirEntry) error) 
 			}
 			return nil
 		}
-		if d.IsDir() {
-			if p != dir && ignored[d.Name()] {
+		if p == dir {
+			return nil
+		}
+		isDir := d.IsDir()
+		if isDir && ignored[d.Name()] {
+			return fs.SkipDir
+		}
+		if !o.NoGitIgnore && rules.ignored(p, isDir) {
+			if isDir {
 				return fs.SkipDir
 			}
 			return nil
+		}
+		if isDir {
+			if !o.NoGitIgnore {
+				rules.push(p)
+			}
+			if !dirs {
+				return nil
+			}
 		}
 		return visit(p, d)
 	})

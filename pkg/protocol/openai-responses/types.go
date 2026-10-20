@@ -9,10 +9,13 @@ const (
 	itemReasoning          = "reasoning"
 	partInputText          = "input_text"
 	partInputImage         = "input_image"
+	partInputFile          = "input_file"
 	partOutputText         = "output_text"
 	partRefusal            = "refusal"
 	partReasoningText      = "reasoning_text"
 	partSummaryText        = "summary_text"
+	annotationURL          = "url_citation"
+	annotationFile         = "file_citation"
 )
 
 // CreateResponse body limited to the fields the neutral model drives
@@ -47,7 +50,6 @@ type messageItem struct {
 	Type    string `json:"type"`
 	Role    string `json:"role"`
 	Content []any  `json:"content"`
-	ID      string `json:"id,omitempty"`
 	Status  string `json:"status,omitempty"`
 }
 
@@ -60,6 +62,12 @@ type inputImage struct {
 	Type     string `json:"type"`
 	ImageURL string `json:"image_url"`
 	Detail   string `json:"detail"`
+}
+
+type inputFile struct {
+	Type     string `json:"type"`
+	Filename string `json:"filename"`
+	FileData string `json:"file_data"`
 }
 
 type outputText struct {
@@ -100,15 +108,15 @@ type reasoningSignature struct {
 	EncryptedContent string `json:"encrypted_content,omitempty"`
 }
 
-// Response object fields read by the decoder
+// Response object fields read by the decoder, output items kept raw for verbatim replay
 type response struct {
-	ID                string          `json:"id"`
-	Model             string          `json:"model"`
-	Status            string          `json:"status"`
-	Error             *responseError  `json:"error"`
-	IncompleteDetails *incompleteInfo `json:"incomplete_details"`
-	Output            []outputItem    `json:"output"`
-	Usage             *usage          `json:"usage"`
+	ID                string            `json:"id"`
+	Model             string            `json:"model"`
+	Status            string            `json:"status"`
+	Error             *responseError    `json:"error"`
+	IncompleteDetails *incompleteInfo   `json:"incomplete_details"`
+	Output            []json.RawMessage `json:"output"`
+	Usage             *usage            `json:"usage"`
 }
 
 type responseError struct {
@@ -122,20 +130,34 @@ type incompleteInfo struct {
 
 // Output item union flattened over message, function_call and reasoning fields
 type outputItem struct {
-	Type             string        `json:"type"`
-	ID               string        `json:"id"`
-	Content          []outputPart  `json:"content"`
-	CallID           string        `json:"call_id"`
-	Name             string        `json:"name"`
-	Arguments        string        `json:"arguments"`
-	Summary          []summaryPart `json:"summary"`
-	EncryptedContent string        `json:"encrypted_content"`
+	Type             string          `json:"type"`
+	ID               string          `json:"id"`
+	Content          []outputPart    `json:"content"`
+	CallID           string          `json:"call_id"`
+	Name             string          `json:"name"`
+	Arguments        string          `json:"arguments"`
+	Summary          []summaryPart   `json:"summary"`
+	EncryptedContent string          `json:"encrypted_content"`
+	Raw              json.RawMessage `json:"-"`
 }
 
 type outputPart struct {
-	Type    string `json:"type"`
-	Text    string `json:"text"`
-	Refusal string `json:"refusal"`
+	Type        string       `json:"type"`
+	Text        string       `json:"text"`
+	Refusal     string       `json:"refusal"`
+	Annotations []annotation `json:"annotations"`
+}
+
+// Annotation union flattened over the url_citation and file_citation shapes
+type annotation struct {
+	Type       string `json:"type"`
+	URL        string `json:"url"`
+	Title      string `json:"title"`
+	StartIndex int    `json:"start_index"`
+	EndIndex   int    `json:"end_index"`
+	FileID     string `json:"file_id"`
+	Filename   string `json:"filename"`
+	Index      int    `json:"index"`
 }
 
 type usage struct {
@@ -152,19 +174,20 @@ type usage struct {
 
 // ResponseStreamEvent union flattened over every field the decoder reads
 type streamEvent struct {
-	Type         string      `json:"type"`
-	Response     *response   `json:"response"`
-	Item         *outputItem `json:"item"`
-	ItemID       string      `json:"item_id"`
-	ContentIndex int         `json:"content_index"`
-	SummaryIndex int         `json:"summary_index"`
-	Part         *outputPart `json:"part"`
-	Delta        string      `json:"delta"`
-	Text         string      `json:"text"`
-	Refusal      string      `json:"refusal"`
-	Arguments    string      `json:"arguments"`
-	Code         string      `json:"code"`
-	Message      string      `json:"message"`
+	Type         string          `json:"type"`
+	Response     *response       `json:"response"`
+	Item         json.RawMessage `json:"item"`
+	ItemID       string          `json:"item_id"`
+	ContentIndex int             `json:"content_index"`
+	SummaryIndex int             `json:"summary_index"`
+	Part         *outputPart     `json:"part"`
+	Annotation   *annotation     `json:"annotation"`
+	Delta        string          `json:"delta"`
+	Text         string          `json:"text"`
+	Refusal      string          `json:"refusal"`
+	Arguments    string          `json:"arguments"`
+	Code         string          `json:"code"`
+	Message      string          `json:"message"`
 }
 
 type errorBody struct {

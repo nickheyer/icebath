@@ -12,3 +12,17 @@ func init() {
 }
 
 func (Protocol) ID() protocol.ID { return protocol.BedrockConverseStream }
+
+func (Protocol) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Thinking:         true,
+		RedactedThinking: true,
+		Images:           true,
+		ImagesInResults:  true,
+		Documents:        true,
+		ToolChoiceNamed:  true,
+		StopSequences:    true,
+		Citations:        true,
+		Caching:          true,
+	}
+}
