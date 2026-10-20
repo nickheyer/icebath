@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/sse"
 	"github.com/nickheyer/icebath/pkg/protocol"
-	"github.com/nickheyer/icebath/pkg/protocol/internal/sse"
 )
 
 // Reads a chat.completion object and maps its first choice to the neutral response

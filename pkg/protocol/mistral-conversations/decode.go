@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/sse"
 	"github.com/nickheyer/icebath/pkg/protocol"
-	"github.com/nickheyer/icebath/pkg/protocol/internal/sse"
 )
 
 func (Protocol) Decode(r io.Reader) (protocol.Response, error) {
