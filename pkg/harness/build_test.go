@@ -100,7 +100,7 @@ func TestBuildAssemblesTheApp(t *testing.T) {
 	}
 	s.wait(t, func(m any) bool { h, ok := m.(HookOutputMsg); return ok && strings.Contains(h.Text, "started") })
 	ag := app.NewAgent("root", app.Session)
-	if ag.MaxTokens != DefaultMaxTokens || len(ag.Hooks) != 4 || ag.ModelID != "m-fast" {
+	if ag.MaxTokens != DefaultMaxTokens || len(ag.Hooks) != 6 || ag.ModelID != "m-fast" {
 		t.Fatalf("hooks %d max %d", len(ag.Hooks), ag.MaxTokens)
 	}
 	m, _ := app.Missions.Create("say hello")
@@ -317,4 +317,39 @@ func TestBuildUsesTheDefaultNamedByTheUserFile(t *testing.T) {
 	if _, err := Build(ctx, cfg, newSink().send, BuildOptions{Dir: dir}); err == nil || !strings.Contains(err.Error(), user) || !strings.Contains(err.Error(), "PROTOCOL") {
 		t.Fatalf("a broken user file must be named with its field: %v", err)
 	}
+}
+
+func TestEndpointSwitchOpensThenAdopts(t *testing.T) {
+	srv, _ := fakeOpenAI(t)
+	cfg, dir := testConfig(t, srv.URL)
+	ctx := context.Background()
+	app, err := Build(ctx, cfg, newSink().send, BuildOptions{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.OpenEndpoint(ctx, "", ""); err == nil {
+		t.Fatal("a name is required")
+	}
+	if _, err := app.OpenEndpoint(ctx, "nope", ""); err == nil {
+		t.Fatal("unknown profile opens")
+	}
+	ep, err := app.OpenEndpoint(ctx, "fake", "m-slow")
+	if err != nil || ep.Model != "m-slow" || app.Primary.Model != "m-fast" || app.Session.Model() != "m-fast" {
+		t.Fatalf("%v %+v", err, ep)
+	}
+	if err := app.SetEndpoint("fake", ep); err != nil {
+		t.Fatal(err)
+	}
+	if app.Primary.Model != "m-slow" || app.Session.Model() != "m-slow" || app.Config.Model != "m-slow" || app.Config.Profile != "fake" || app.Meter.Snapshot().Model != "m-slow" {
+		t.Fatalf("%+v", app.Primary)
+	}
+	r, err := app.Run(ctx, "", []protocol.Part{protocol.Text{Text: "hi"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.SetEndpoint("fake", ep); err == nil {
+		t.Fatal("a running app refuses the switch")
+	}
+	<-r.done
+	app.Close(ctx)
 }

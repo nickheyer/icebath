@@ -4,12 +4,18 @@ package shell
 
 import (
 	"os/exec"
+	"path/filepath"
 	"syscall"
 )
 
 // Script run by the shell so the final directory reaches the directory file however the command ends
 const wrapper = `trap 'pwd -P > "$2"' EXIT
 eval "$1"`
+
+// Bash script that also writes the exit code of every pipeline stage on a second line
+const bashWrapper = `trap 'pwd -P > "$2"; printf "%s\n" "${__icebath_ps[*]}" >> "$2"' EXIT
+eval "$1"$'\n''__icebath_ps=("${PIPESTATUS[@]}")'
+exit "${__icebath_ps[${#__icebath_ps[@]}-1]}"`
 
 func (l Local) shell() string {
 	if l.Shell != "" {
@@ -23,7 +29,11 @@ func (l Local) shell() string {
 
 // Arguments that run line inside the wrapper and report the final directory into dirFile
 func (l Local) args(shell, line, dirFile string) []string {
-	return []string{"-c", wrapper, shell, line, dirFile}
+	script := wrapper
+	if filepath.Base(shell) == "bash" {
+		script = bashWrapper
+	}
+	return []string{"-c", script, shell, line, dirFile}
 }
 
 // Shell style status, 128 plus the signal number when the process was killed

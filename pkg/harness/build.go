@@ -428,10 +428,11 @@ func (a *App) buildPolicy(root string) error {
 // Builds an agent on the session with every configured hook, the primary model and the shared gate
 func (a *App) NewAgent(name string, sess *session.Session) *agent.Agent {
 	cfg := a.Config
-	ag := &agent.Agent{Name: name, Model: a.Model, ModelID: a.Primary.Model, System: a.System, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
+	ag := &agent.Agent{Name: name, Model: a.Model, ModelID: a.Primary.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
 	if ag.MaxTokens <= 0 {
 		ag.MaxTokens = DefaultMaxTokens
 	}
+	ag.Hooks = append(ag.Hooks, systemHook{app: a})
 	var runner *hooks.Runner
 	if len(cfg.Hooks) > 0 {
 		transcript := ""
@@ -442,7 +443,7 @@ func (a *App) NewAgent(name string, sess *session.Session) *agent.Agent {
 		runner = &r
 		ag.Hooks = append(ag.Hooks, r)
 	}
-	ag.Hooks = append(ag.Hooks, a.PreImage, compact.StripThinking{})
+	ag.Hooks = append(ag.Hooks, a.PreImage, compact.StripThinking{}, missionTools{})
 	if cfg.Compaction.Threshold > 0 {
 		s := &compact.Summarizer{Model: a.Model, ModelID: a.Primary.Model, Session: sess, Threshold: cfg.Compaction.Threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
 		if a.summary != nil {
@@ -582,14 +583,18 @@ func (a *App) SetModel(id string) {
 	a.Config.Model = id
 }
 
-// Switches the primary endpoint to another profile, keeping fallbacks, the session and the tools
-func (a *App) SetProfile(ctx context.Context, name, model string) error {
+// Opens a profile as an endpoint without changing the app, usable off the event loop
+func (a *App) OpenEndpoint(ctx context.Context, name, model string) (Endpoint, error) {
+	if name == "" {
+		return Endpoint{}, errors.New("harness: a profile name is required")
+	}
+	return a.open(ctx, Target{Profile: name, Model: model})
+}
+
+// Makes an opened endpoint the primary, keeping fallbacks, the session and the tools
+func (a *App) SetEndpoint(name string, ep Endpoint) error {
 	if a.Control.Busy() {
 		return errors.New("harness: a run is in progress")
-	}
-	ep, err := a.open(ctx, Target{Profile: name, Model: model})
-	if err != nil {
-		return err
 	}
 	a.Primary = ep
 	a.Model = a.chain(ep)
@@ -599,5 +604,40 @@ func (a *App) SetProfile(ctx context.Context, name, model string) error {
 	a.Meter.SetCatalog(ep.Catalog, ep.Profile.Name)
 	a.Session.SetModel(ep.Model)
 	a.Config.Profile, a.Config.Model = name, ep.Model
+	return nil
+}
+
+// System prompt for a run as the machine, directory, model and mission stand right now
+func (a *App) SystemPrompt(ctx context.Context) string {
+	return Prompt(GatherFacts(a.Shell.Dir(), a.Root, a.Primary.Model, mission.IDFrom(ctx) != ""), a.System)
+}
+
+// Hook that writes the live system prompt into every turn
+type systemHook struct {
+	agent.Hooks
+	app *App
+}
+
+func (h systemHook) BeforeTurn(ctx context.Context, req *protocol.Request) error {
+	req.System = h.app.SystemPrompt(ctx)
+	return nil
+}
+
+// Hook that withholds the Plan tool from runs with no mission attached
+type missionTools struct {
+	agent.Hooks
+}
+
+func (missionTools) BeforeTurn(ctx context.Context, req *protocol.Request) error {
+	if mission.IDFrom(ctx) != "" {
+		return nil
+	}
+	kept := req.Tools[:0]
+	for _, t := range req.Tools {
+		if t.Name != mission.ToolName {
+			kept = append(kept, t)
+		}
+	}
+	req.Tools = kept
 	return nil
 }

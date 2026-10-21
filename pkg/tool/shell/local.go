@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,8 +51,12 @@ func (l Local) Run(ctx context.Context, cmd Command) (Output, error) {
 	waitErr := c.Wait()
 	out := Output{Dir: cmd.Dir, Duration: time.Since(start), TimedOut: errors.Is(ctx.Err(), context.DeadlineExceeded)}
 	if data, err := os.ReadFile(dirFile.Name()); err == nil {
-		if dir := strings.TrimSpace(string(data)); dir != "" && filepath.IsAbs(dir) {
+		lines := strings.SplitN(strings.TrimRight(string(data), "\n"), "\n", 2)
+		if dir := strings.TrimSpace(lines[0]); dir != "" && filepath.IsAbs(dir) {
 			out.Dir = dir
+		}
+		if len(lines) > 1 {
+			out.Pipeline = parseCodes(lines[1])
 		}
 	}
 	out.ExitCode = exitCode(c, waitErr, ctx.Err() != nil)
@@ -71,4 +76,17 @@ func orDiscard(w io.Writer) io.Writer {
 func isExit(err error) bool {
 	var ee *exec.ExitError
 	return errors.As(err, &ee)
+}
+
+// Exit codes written as space separated integers, nothing for an unreadable line
+func parseCodes(line string) []int {
+	var out []int
+	for _, f := range strings.Fields(line) {
+		n, err := strconv.Atoi(f)
+		if err != nil {
+			return nil
+		}
+		out = append(out, n)
+	}
+	return out
 }

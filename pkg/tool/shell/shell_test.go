@@ -81,6 +81,15 @@ func TestBashOutputExitAndStderr(t *testing.T) {
 	if out, isErr = run(t, b, `{"command":"kill -9 $$"}`); !isErr || !strings.Contains(out, "[exit code 137]") {
 		t.Fatalf("%v %q", isErr, out)
 	}
+	if out, isErr = run(t, b, `{"command":"(echo FAIL; exit 1) | tail -1"}`); isErr || out != "FAIL\n[pipeline exit codes 1 0, an earlier command failed]" {
+		t.Fatalf("pipeline statuses %v %q", isErr, out)
+	}
+	if out, isErr = run(t, b, `{"command":"echo ok | cat"}`); isErr || out != "ok" {
+		t.Fatalf("clean pipeline %v %q", isErr, out)
+	}
+	if !strings.Contains(b.Definition().Description, "every stage is listed") {
+		t.Fatal("bash promises the stage codes it reads back")
+	}
 	for args, want := range map[string]string{`{}`: "required", `{"command":"   "}`: "required", `{"command":1}`: "cannot unmarshal"} {
 		if out, isErr := run(t, b, args); !isErr || !strings.Contains(out, want) {
 			t.Fatalf("%s: %v %q", args, isErr, out)

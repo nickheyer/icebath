@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -517,10 +519,292 @@ func TestThemeResolutionAndLayout(t *testing.T) {
 	}
 	r.Close()
 	r.Send("dropped")
-	if len(r.queue) != 1 {
+	if len(r.queue) != 0 {
 		t.Fatal("closed relay drops")
 	}
 	if StartMission("x").(cards.MissionMsg).Objective != "x" {
 		t.Fatal("start mission")
+	}
+}
+
+// Program options for an event loop with no terminal behind it
+func headlessProgram(ctx context.Context, m tea.Model, extra ...tea.ProgramOption) *tea.Program {
+	opts := append([]tea.ProgramOption{tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithoutSignals(), tea.WithoutSignalHandler(), tea.WithWindowSize(120, 40)}, extra...)
+	return tea.NewProgram(m, opts...)
+}
+
+// Model that sends through the relay from inside its own Update and quits once the message comes back
+type relayModel struct {
+	r    *relay
+	seen []string
+}
+
+func (m *relayModel) Init() tea.Cmd { return func() tea.Msg { return "kick" } }
+
+func (m *relayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	s, ok := msg.(string)
+	if !ok {
+		return m, nil
+	}
+	m.seen = append(m.seen, s)
+	switch s {
+	case "kick":
+		m.r.Send("first")
+		m.r.Send("second")
+	case "second":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m *relayModel) View() tea.View { return tea.NewView("") }
+
+func TestRelayNeverBlocksTheEventLoop(t *testing.T) {
+	r := &relay{}
+	r.Send("early")
+	m := &relayModel{r: r}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	p := headlessProgram(ctx, m)
+	r.Attach(p)
+	if _, err := p.Run(); err != nil {
+		t.Fatalf("a send from inside Update stalled the program: %v", err)
+	}
+	if got := strings.Join(m.seen, " "); got != "early kick first second" {
+		t.Fatalf("order %q", got)
+	}
+}
+
+func TestClearCommandOverALiveProgram(t *testing.T) {
+	m, _ := newModel(t, false)
+	first := m.app.Session.ID()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	p := headlessProgram(ctx, m, tea.WithFilter(m.Filter))
+	m.Attach(p)
+	idle := func() bool {
+		m.relay.mu.Lock()
+		defer m.relay.mu.Unlock()
+		return len(m.relay.queue) == 0 && !m.relay.pumping
+	}
+	settled := func() {
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) && !m.app.Control.Busy() {
+			time.Sleep(2 * time.Millisecond)
+		}
+		for time.Now().Before(deadline) && (m.app.Control.Busy() || !idle()) {
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+	go func() {
+		p.Send(StartPrompt("hello"))
+		settled()
+		p.Send(cards.CommandMsg{Name: "clear"})
+		p.Send(cards.CommandMsg{Name: "fork"})
+		p.Send(cards.ResumeMsg{Session: first})
+		p.Send(cards.CommandMsg{Name: "mission", Args: "scan the repo"})
+		settled()
+		p.Send(cards.CommandMsg{Name: "quit"})
+	}()
+	if _, err := p.Run(); err != nil {
+		t.Fatalf("the event loop stalled: %v", err)
+	}
+	if !m.quitting || m.app.Session.ID() != first || m.app.Session.Len() < 4 {
+		t.Fatalf("quitting %v session %s wanted %s with %d entries", m.quitting, m.app.Session.ID(), first, m.app.Session.Len())
+	}
+	if m.app.Missions.Len() != 1 || len(m.missions) != 1 {
+		t.Fatalf("missions %d cards %d", m.app.Missions.Len(), len(m.missions))
+	}
+}
+
+func TestCompactionBlocksSessionChanges(t *testing.T) {
+	m, _ := newModel(t, false)
+	drain(m.Init())
+	m.compacting = true
+	first := m.app.Session.ID()
+	for _, msg := range []tea.Msg{cards.SubmitMsg{Parts: []protocol.Part{protocol.Text{Text: "hi"}}, Text: "hi"}, cards.CommandMsg{Name: "clear"}, cards.CommandMsg{Name: "fork"}, cards.CommandMsg{Name: "compact"}, cards.CommandMsg{Name: "mission", Args: "x"}, cards.ResumeMsg{Session: first}, cards.ForkMsg{Session: first}, cards.ForkAtMsg{Entries: 0}} {
+		m.Update(msg)
+		if m.app.Session.ID() != first || m.app.Control.Busy() || m.app.Missions.Len() != 0 {
+			t.Fatalf("%T changed the session while compacting", msg)
+		}
+	}
+	m.Update(compactedMsg{Err: errors.New("summary failed")})
+	if m.compacting {
+		t.Fatal("a failed compaction releases the guard")
+	}
+	m.Update(cards.CommandMsg{Name: "compact"})
+	if !m.compacting {
+		t.Fatal("compact arms the guard")
+	}
+	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(compactedMsg); return ok })
+	if m.compacting {
+		t.Fatal("a finished compaction releases the guard")
+	}
+	m.Update(cards.CommandMsg{Name: "clear"})
+	if m.app.Session.ID() == first {
+		t.Fatal("clear works again")
+	}
+}
+
+// Runs a command with every batch member in parallel and returns the messages that arrive within the wait
+func collect(cmd tea.Cmd, wait time.Duration) []tea.Msg {
+	out := make(chan tea.Msg, 64)
+	var wg sync.WaitGroup
+	var walk func(c tea.Cmd)
+	walk = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			msg := c()
+			if batch, ok := msg.(tea.BatchMsg); ok {
+				for _, cc := range batch {
+					walk(cc)
+				}
+				return
+			}
+			if msg != nil {
+				out <- msg
+			}
+		}()
+	}
+	walk(cmd)
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	var msgs []tea.Msg
+	timer := time.After(wait)
+	for {
+		select {
+		case m := <-out:
+			msgs = append(msgs, m)
+		case <-done:
+			for {
+				select {
+				case m := <-out:
+					msgs = append(msgs, m)
+				default:
+					return msgs
+				}
+			}
+		case <-timer:
+			return msgs
+		}
+	}
+}
+
+func TestProfileSwitchOpensOffTheEventLoop(t *testing.T) {
+	m, _ := newModel(t, false)
+	if len(collect(m.switchProfile(" ", ""), time.Second)) == 0 {
+		t.Fatal("an empty name toasts")
+	}
+	_, cmd := m.Update(cards.SetProfileMsg{Profile: "fake", Model: "m-other"})
+	var opened profileMsg
+	found := false
+	for _, msg := range collect(cmd, 5*time.Second) {
+		if p, ok := msg.(profileMsg); ok {
+			opened, found = p, true
+		}
+	}
+	if !found || opened.Err != nil {
+		t.Fatalf("found %v err %v", found, opened.Err)
+	}
+	if m.app.Primary.Model != "m-fast" {
+		t.Fatal("nothing changes before the endpoint is adopted")
+	}
+	m.Update(opened)
+	if m.app.Primary.Model != "m-other" || m.app.Session.Model() != "m-other" || m.app.Config.Profile != "fake" || m.app.Config.Model != "m-other" {
+		t.Fatalf("%+v", m.app.Primary)
+	}
+	_, cmd = m.Update(cards.CommandMsg{Name: "profile", Args: "nope"})
+	for _, msg := range collect(cmd, 5*time.Second) {
+		if p, ok := msg.(profileMsg); ok {
+			if p.Err == nil {
+				t.Fatal("unknown profile opens")
+			}
+			m.Update(p)
+		}
+	}
+	if m.app.Primary.Model != "m-other" {
+		t.Fatal("a failed open leaves the endpoint alone")
+	}
+}
+
+func TestKillJobAndReconnectRunOffTheEventLoop(t *testing.T) {
+	m, _ := newModel(t, false)
+	res, err := m.app.Shell.Bash().Run(context.Background(), json.RawMessage(`{"command":"sleep 30","run_in_background":true}`))
+	if err != nil || res.IsError {
+		t.Fatalf("%v %+v", err, res)
+	}
+	jobs := m.app.Shell.Jobs()
+	if len(jobs) != 1 || !jobs[0].Running {
+		t.Fatalf("%+v", jobs)
+	}
+	id := jobs[0].ID
+	_, cmd := m.Update(cards.KillJobMsg{Job: id})
+	killed := false
+	for _, msg := range collect(cmd, 10*time.Second) {
+		if k, ok := msg.(jobKilledMsg); ok && k.Job == id {
+			killed = true
+			m.Update(k)
+		}
+	}
+	if !killed {
+		t.Fatal("the kill reports back")
+	}
+	if jb, ok := m.app.Shell.Job(id); !ok || jb.Running {
+		t.Fatalf("%+v", jb)
+	}
+	for _, msg := range []tea.Msg{cards.KillJobMsg{Job: "nope"}, cards.ReconnectMsg{Server: "nope"}} {
+		_, cmd := m.Update(msg)
+		failed := false
+		for _, got := range collect(cmd, 5*time.Second) {
+			if _, ok := got.(errMsg); ok {
+				failed = true
+			}
+		}
+		if !failed {
+			t.Fatalf("%T reports its error", msg)
+		}
+	}
+}
+
+func TestApprovalLeavesHistory(t *testing.T) {
+	m, _ := newModel(t, false)
+	drain(m.Init())
+	m.Update(StartPrompt("hello"))
+	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.RunDoneMsg); return ok })
+	m.Update(cards.CommandMsg{Name: "history"})
+	if !m.inHistory {
+		t.Fatal("history opens")
+	}
+	go m.app.Approver.Ask(context.Background(), policy.Request{Call: protocol.ToolCall{Name: "Bash"}})
+	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.ApprovalMsg); return ok })
+	if m.inHistory || m.history != nil || m.deck.Overlay() != m.approval {
+		t.Fatal("an approval leaves history and shows the overlay")
+	}
+	pending := m.app.Approver.Pending()
+	if len(pending) != 1 || !m.app.Approver.Answer(pending[0].ID, policy.No) {
+		t.Fatal("approval answered")
+	}
+}
+
+func TestSlashCommandsCoverPaletteActions(t *testing.T) {
+	m, _ := newModel(t, false)
+	seen := map[string]bool{}
+	for _, c := range m.slashCommands() {
+		if seen[c.Name] || strings.Contains(c.Name, " ") {
+			t.Fatalf("duplicate or spaced %q", c.Name)
+		}
+		seen[c.Name] = true
+	}
+	for _, want := range []string{"attach", "model", "jobs", "workspace", "daemons", "ice", "timeline", "compare", "palette", "clear", "quit"} {
+		if !seen[want] {
+			t.Fatalf("missing /%s", want)
+		}
 	}
 }

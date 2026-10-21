@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -36,6 +37,8 @@ type Command struct {
 // How a command ended, with the working directory it left behind
 type Output struct {
 	ExitCode int
+	// Exit code of every stage of the last pipeline, one entry for a plain command
+	Pipeline []int
 	Dir      string
 	TimedOut bool
 	Duration time.Duration
@@ -52,6 +55,7 @@ type Run struct {
 	Description string
 	Dir         string
 	ExitCode    int
+	Pipeline    []int
 	TimedOut    bool
 	Duration    time.Duration
 	Stdout      string
@@ -98,6 +102,12 @@ func orInt(v, def int) int {
 		return v
 	}
 	return def
+}
+
+// Reports whether the runner is a local bash, the one shell whose pipeline stage codes are read back
+func (s *Shell) pipelineCodes() bool {
+	l, ok := s.runner.(Local)
+	return ok && filepath.Base(l.shell()) == "bash"
 }
 
 // Shell state shared by Bash, BashOutput and KillShell

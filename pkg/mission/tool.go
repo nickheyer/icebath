@@ -29,7 +29,7 @@ type Tool struct {
 func (Tool) Definition() protocol.Tool {
 	return protocol.Tool{
 		Name:        ToolName,
-		Description: "Replaces the plan of the current mission with the full ordered list of steps and their statuses. Call it when starting work and whenever a step changes state, marking exactly one step active while you work on it.",
+		Description: "Replaces the plan of the attached mission with the full ordered list of steps and their statuses. Offered only while a mission is attached. Call it before work that takes more than a few tool calls and whenever a step changes state, keeping exactly one step active.",
 		Parameters:  json.RawMessage(schema),
 	}
 }

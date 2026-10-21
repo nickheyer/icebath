@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,10 +26,14 @@ type bash struct{ *Shell }
 func (s *Shell) Bash() tool.Tool { return bash{s} }
 
 func (b bash) Definition() protocol.Tool {
+	pipes := "A pipeline exits with the code of its last command."
+	if b.pipelineCodes() {
+		pipes = "A pipeline exits with the code of its last command, and the code of every stage is listed when an earlier stage failed."
+	}
 	return protocol.Tool{
 		Name: BashName,
-		Description: fmt.Sprintf("Runs a command line in a shell and returns its output, exit code and whether it timed out. The working directory persists between calls. Stdin is closed. Commands run for %s by default and at most %s. Output is cut to %d bytes keeping the start and the end. With run_in_background the call returns a job id for BashOutput and KillShell.",
-			b.opts.timeout(), b.opts.maxTimeout(), b.opts.maxOutput()),
+		Description: fmt.Sprintf("Runs a command line in a shell and returns its output, exit code and whether it timed out. The working directory persists between calls. Stdin is closed. %s Commands run for %s by default and at most %s. Output is cut to %d bytes keeping the start and the end. With run_in_background the call returns a job id for BashOutput and KillShell.",
+			pipes, b.opts.timeout(), b.opts.maxTimeout(), b.opts.maxOutput()),
 		Parameters: json.RawMessage(bashSchema),
 	}
 }
@@ -86,7 +91,7 @@ func (b bash) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 		b.mu.Unlock()
 	}
 	res := render(stdout.String(), stderr.String(), out, timeout)
-	return res.With(Run{Command: in.Command, Description: in.Description, Dir: out.Dir, ExitCode: out.ExitCode, TimedOut: out.TimedOut, Duration: out.Duration, Stdout: stdout.String(), Stderr: stderr.String()}), nil
+	return res.With(Run{Command: in.Command, Description: in.Description, Dir: out.Dir, ExitCode: out.ExitCode, Pipeline: out.Pipeline, TimedOut: out.TimedOut, Duration: out.Duration, Stdout: stdout.String(), Stderr: stderr.String()}), nil
 }
 
 // Formats stdout, stderr and the outcome, marking failures as error results
@@ -108,7 +113,28 @@ func render(stdout, stderr string, out Output, timeout time.Duration) tool.Resul
 	} else if out.ExitCode != 0 {
 		fmt.Fprintf(&sb, "\n[exit code %d]", out.ExitCode)
 	}
+	if earlierStageFailed(out.Pipeline) {
+		fmt.Fprintf(&sb, "\n[pipeline exit codes %s, an earlier command failed]", joinInts(out.Pipeline))
+	}
 	res := tool.Text(sb.String())
 	res.IsError = out.TimedOut || out.ExitCode != 0
 	return res
+}
+
+// Reports whether a stage before the last one exited nonzero
+func earlierStageFailed(codes []int) bool {
+	for i, c := range codes {
+		if i < len(codes)-1 && c != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func joinInts(ns []int) string {
+	parts := make([]string, len(ns))
+	for i, n := range ns {
+		parts[i] = strconv.Itoa(n)
+	}
+	return strings.Join(parts, " ")
 }

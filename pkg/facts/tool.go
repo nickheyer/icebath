@@ -44,7 +44,7 @@ func (t Tool) Definition() protocol.Tool {
 	}
 	return protocol.Tool{
 		Name:        ToolName,
-		Description: fmt.Sprintf("Records a finding so it is kept beside the transcript and shown to the user. Kinds are %s. Cite evidence with file paths and line numbers. Give an existing id to refine or resolve a fact.", strings.Join(kinds, ", ")),
+		Description: fmt.Sprintf("Keeps a conclusion the user wants after the session, such as a bug found, a risk, a decision or an open question, beside the transcript. Routine command output and progress belong in prose instead. Kinds are %s. Cite evidence with file paths and line numbers. Give an existing id to refine or resolve a fact.", strings.Join(kinds, ", ")),
 		Parameters:  json.RawMessage(schema),
 	}
 }

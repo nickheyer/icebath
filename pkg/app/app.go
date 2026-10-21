@@ -64,6 +64,7 @@ type Model struct {
 	started    time.Time
 	state      tea.ProgramState
 	inHistory  bool
+	compacting bool
 	mission    string
 	err        error
 	quitting   bool
@@ -172,6 +173,7 @@ func (m *Model) deckMotion() float64 {
 func (m *Model) buildCards() {
 	env := m.env
 	m.composer = cards.NewComposer(env, m.configDir())
+	m.composer.SetCommands(m.slashCommands())
 	m.composer.Busy = m.app.Control.Busy
 	m.composer.Model = func() string { return m.app.Primary.Model }
 	m.composer.ModeName = func() string { return m.app.Mode.Mode().Label() }
@@ -284,8 +286,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case compactedMsg:
+		m.compacting = false
+		if msg.Err != nil {
+			return m, m.deck.Toast(msg.Err.Error(), deck.Error, 0)
+		}
 		m.reloadTranscript()
 		return m, m.deck.Toast("compacted", deck.Success, 0)
+	case profileMsg:
+		return m, m.adoptProfile(msg)
+	case jobKilledMsg:
+		return m, m.deck.Toast("killed "+msg.Job, deck.Warn, 0)
 	}
 	if cmd, handled := m.harnessMsg(msg); handled {
 		_, deckCmd := m.active().Update(msg)
@@ -362,7 +372,7 @@ func (m *Model) harnessMsg(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case harness.ApprovalMsg:
 		m.state = tea.ProgramStateBlocked
-		var cmds []tea.Cmd
+		cmds := []tea.Cmd{m.leaveHistory()}
 		if m.deck.Overlay() != m.approval {
 			cmds = append(cmds, m.deck.ShowOverlay(m.approval))
 		}
@@ -458,10 +468,7 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return m.deck.Toast("stopping "+msg.Run, deck.Warn, 0), true
 	case cards.KillJobMsg:
-		if err := m.app.Shell.KillJob(m.ctx, msg.Job); err != nil {
-			return m.deck.Toast(err.Error(), deck.Error, 0), true
-		}
-		return m.deck.Toast("killed "+msg.Job, deck.Warn, 0), true
+		return m.killJob(msg.Job), true
 	case cards.ResumeMsg:
 		return m.switchSession(msg.Session), true
 	case cards.ForkMsg:
@@ -483,11 +490,7 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		m.app.Mode.Set(msg.Mode)
 		return m.deck.Toast("mode "+msg.Mode.Label(), deck.Success, 0), true
 	case cards.SetProfileMsg:
-		if err := m.app.SetProfile(m.ctx, msg.Profile, msg.Model); err != nil {
-			return m.deck.Toast(err.Error(), deck.Error, 0), true
-		}
-		m.retitle()
-		return tea.Batch(m.deck.Toast("profile "+msg.Profile+" · "+m.app.Primary.Model, deck.Success, 0), m.config.FetchModels()), true
+		return m.switchProfile(msg.Profile, msg.Model), true
 	case cards.RulesMsg:
 		path := filepath.Join(m.app.Root, harness.ProjectDir, harness.RulesFile)
 		if err := msg.Set.Save(path); err != nil {
@@ -495,10 +498,7 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return m.deck.Toast("rules saved to "+path, deck.Success, 0), true
 	case cards.ReconnectMsg:
-		if err := m.app.MCP.Reconnect(m.ctx, msg.Server); err != nil {
-			return m.deck.Toast(err.Error(), deck.Error, 0), true
-		}
-		return nil, true
+		return m.reconnect(msg.Server), true
 	case cards.ForkAtMsg:
 		return m.forkAt(msg.Entries), true
 	case cards.ExportMsg:
@@ -550,8 +550,19 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
+// Toast refusing a session change while compaction rewrites the transcript, nil when none runs
+func (m *Model) settling() tea.Cmd {
+	if m.compacting {
+		return m.deck.Toast("wait for compaction to finish", deck.Warn, 0)
+	}
+	return nil
+}
+
 // Sends composer input, steering the root run when one is going and starting one otherwise
 func (m *Model) submit(msg cards.SubmitMsg) tea.Cmd {
+	if cmd := m.settling(); cmd != nil {
+		return cmd
+	}
 	if m.app.Control.Busy() {
 		for _, r := range m.app.Control.Active() {
 			if r.Parent == "" {
@@ -574,6 +585,64 @@ func (m *Model) submit(msg cards.SubmitMsg) tea.Cmd {
 
 func (m *Model) retitle() {
 	m.deck.SetWindowTitle("icebath · " + m.app.Primary.Model)
+}
+
+// Endpoint a profile switch opened, or the error that stopped it
+type profileMsg struct {
+	Name     string
+	Endpoint harness.Endpoint
+	Err      error
+}
+
+// Opens the profile off the event loop, since a key source may run a command, then adopts the endpoint
+func (m *Model) switchProfile(name, model string) tea.Cmd {
+	if strings.TrimSpace(name) == "" {
+		return m.deck.Toast("give the profile a name", deck.Warn, 0)
+	}
+	if m.app.Control.Busy() {
+		return m.deck.Toast("wait for the run to finish", deck.Warn, 0)
+	}
+	ctx := m.ctx
+	return func() tea.Msg {
+		ep, err := m.app.OpenEndpoint(ctx, name, model)
+		return profileMsg{Name: name, Endpoint: ep, Err: err}
+	}
+}
+
+func (m *Model) adoptProfile(msg profileMsg) tea.Cmd {
+	if msg.Err != nil {
+		return m.deck.Toast(msg.Err.Error(), deck.Error, 0)
+	}
+	if err := m.app.SetEndpoint(msg.Name, msg.Endpoint); err != nil {
+		return m.deck.Toast(err.Error(), deck.Error, 0)
+	}
+	m.retitle()
+	return tea.Batch(m.deck.Toast("profile "+msg.Name+" · "+m.app.Primary.Model, deck.Success, 0), m.config.FetchModels())
+}
+
+// Background job that was stopped
+type jobKilledMsg struct{ Job string }
+
+// Stops the job off the event loop, since the kill waits for the process to end
+func (m *Model) killJob(id string) tea.Cmd {
+	ctx := m.ctx
+	return tea.Batch(m.deck.Toast("stopping "+id, deck.Warn, 0), func() tea.Msg {
+		if err := m.app.Shell.KillJob(ctx, id); err != nil {
+			return errMsg{err}
+		}
+		return jobKilledMsg{Job: id}
+	})
+}
+
+// Reconnects the server off the event loop, since closing it waits out a grace period, its state arriving as messages
+func (m *Model) reconnect(server string) tea.Cmd {
+	ctx := m.ctx
+	return func() tea.Msg {
+		if err := m.app.MCP.Reconnect(ctx, server); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
 }
 
 func (m *Model) setTheme(name string) tea.Cmd {
@@ -647,6 +716,9 @@ func (m *Model) reloadMissions() tea.Cmd {
 
 // Switches the live session to a stored one
 func (m *Model) switchSession(id string) tea.Cmd {
+	if cmd := m.settling(); cmd != nil {
+		return cmd
+	}
 	if err := m.app.Switch(m.ctx, id); err != nil {
 		return m.deck.Toast(err.Error(), deck.Error, 0)
 	}
@@ -655,6 +727,9 @@ func (m *Model) switchSession(id string) tea.Cmd {
 
 // Forks a stored session into a new one and switches to it
 func (m *Model) forkSession(id string) tea.Cmd {
+	if cmd := m.settling(); cmd != nil {
+		return cmd
+	}
 	src, err := m.app.Store.Load(m.ctx, id)
 	if err != nil {
 		return m.deck.Toast(err.Error(), deck.Error, 0)
@@ -668,6 +743,9 @@ func (m *Model) forkSession(id string) tea.Cmd {
 
 // Forks the live session at an entry count, leaving the history deck
 func (m *Model) forkAt(n int) tea.Cmd {
+	if cmd := m.settling(); cmd != nil {
+		return cmd
+	}
 	f, err := m.app.ForkAt(n)
 	if err != nil {
 		return m.deck.Toast(err.Error(), deck.Error, 0)
@@ -732,6 +810,9 @@ func (m *Model) compareMoments() tea.Cmd {
 }
 
 func (m *Model) startMission(objective string) tea.Cmd {
+	if cmd := m.settling(); cmd != nil {
+		return cmd
+	}
 	ms, err := m.app.Missions.Create(objective)
 	if err != nil {
 		return m.deck.Toast(err.Error(), deck.Error, 0)
@@ -779,6 +860,23 @@ func (m *Model) actions() []cards.Action {
 
 func (m *Model) palette() deck.Card { return cards.NewPalette(m.env, m.actions()) }
 
+// Slash commands the composer completes, the built in ones and every palette action that takes no argument
+func (m *Model) slashCommands() []cards.Command {
+	out := append([]cards.Command(nil), cards.DefaultCommands...)
+	seen := map[string]bool{}
+	for _, c := range out {
+		seen[c.Name] = true
+	}
+	for _, a := range m.actions() {
+		if seen[a.Name] || strings.Contains(a.Name, " ") {
+			continue
+		}
+		seen[a.Name] = true
+		out = append(out, cards.Command{Name: a.Name, Desc: a.Desc})
+	}
+	return out
+}
+
 func (m *Model) help() deck.Card {
 	return cards.NewHelp(m.env, []cards.HelpSection{
 		{Title: "deck", Keys: [][2]string{{"tab / j k", "next card"}, {"h l", "main / stack"}, {"enter", "promote or solo"}, {"esc", "back"}, {"1-9", "jump"}, {"t", "timeline"}, {"x", "close"}, {"L H", "resize"}, {"J K", "move"}, {"?", "hints"}, {"drag", "reorder"}}},
@@ -825,11 +923,7 @@ func (m *Model) command(name, args string) tea.Cmd {
 			return focus(m.config)
 		}
 		prof, model, _ := strings.Cut(args, " ")
-		if err := m.app.SetProfile(m.ctx, prof, strings.TrimSpace(model)); err != nil {
-			return m.deck.Toast(err.Error(), deck.Error, 0)
-		}
-		m.retitle()
-		return m.deck.Toast("profile "+prof+" · "+m.app.Primary.Model, deck.Success, 0)
+		return m.switchProfile(prof, strings.TrimSpace(model))
 	case "mission":
 		if strings.TrimSpace(args) == "" {
 			return m.deck.Toast("give the mission an objective", deck.Warn, 0)
@@ -838,6 +932,9 @@ func (m *Model) command(name, args string) tea.Cmd {
 	case "compact":
 		return m.compactNow()
 	case "clear":
+		if cmd := m.settling(); cmd != nil {
+			return cmd
+		}
 		if err := m.app.Fresh(); err != nil {
 			return m.deck.Toast(err.Error(), deck.Error, 0)
 		}
@@ -897,6 +994,9 @@ func (m *Model) compactNow() tea.Cmd {
 	if m.app.Control.Busy() {
 		return m.deck.Toast("wait for the run to finish", deck.Warn, 0)
 	}
+	if cmd := m.settling(); cmd != nil {
+		return cmd
+	}
 	cfg := m.app.Config
 	if cfg.Compaction.Threshold <= 0 {
 		cfg.Compaction.Threshold = 1
@@ -906,23 +1006,26 @@ func (m *Model) compactNow() tea.Cmd {
 	ag := m.app.NewAgent("", m.app.Session)
 	m.app.Config = saved
 	ag.MaxRounds = 1
+	m.compacting = true
+	sess := m.app.Session
 	m.bg.Add(1)
 	go func() {
 		defer m.bg.Done()
-		req := protocol.Request{Messages: m.app.Session.Snapshot()}
+		req := protocol.Request{Messages: sess.Snapshot()}
 		for _, h := range ag.Hooks {
 			if err := h.BeforeTurn(m.ctx, &req); err != nil {
-				m.relay.Send(errMsg{err})
+				m.relay.Send(compactedMsg{Err: err})
 				return
 			}
 		}
-		m.app.Saver.Flush(m.app.Session)
+		m.app.Saver.Flush(sess)
 		m.relay.Send(compactedMsg{})
 	}()
 	return m.deck.Toast("compacting", deck.Info, 0)
 }
 
-type compactedMsg struct{}
+// Compaction that ended, with the error that stopped it
+type compactedMsg struct{ Err error }
 
 func (m *Model) exportTranscript(path string) tea.Cmd {
 	if path == "" {
