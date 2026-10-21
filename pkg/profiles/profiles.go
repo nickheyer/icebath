@@ -8,8 +8,10 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
@@ -47,6 +49,8 @@ type Profile struct {
 	Query url.Values `json:"query,omitempty"`
 	// Model ids the endpoint is known to serve, the first being the default
 	Models []string `json:"models,omitempty"`
+	// Environment variable whose value replaces the base URL when set
+	BaseURLEnv string `json:"base_url_env,omitempty"`
 	// Request fields merged into every turn sent through the endpoint
 	Extra map[string]json.RawMessage `json:"extra,omitempty"`
 	// Settings read by registered auth builders and vendors
@@ -94,6 +98,46 @@ func (p Profile) needsKey() bool {
 	return p.Auth == AuthBearer || p.Auth == AuthHeader || p.Auth == AuthQuery
 }
 
+// Where a profile credential stands
+type CredentialState string
+
+const (
+	CredentialUnneeded CredentialState = "none needed"
+	CredentialSet      CredentialState = "set"
+	CredentialMissing  CredentialState = "missing"
+)
+
+// Checks that the profile can produce its credential without sending a request, naming the source rather than the key
+func (p Profile) Credential(ctx context.Context) (CredentialState, string, error) {
+	if p.Auth == AuthNone || p.Auth == "" {
+		return CredentialUnneeded, "", nil
+	}
+	source := p.Key.Describe()
+	key, err := p.Key.Resolve(ctx)
+	if err != nil {
+		return CredentialMissing, source, err
+	}
+	if p.needsKey() {
+		if key == "" {
+			return CredentialMissing, source, nil
+		}
+		return CredentialSet, source, nil
+	}
+	if key == "" {
+		source = string(p.Auth)
+	}
+	auth, err := p.auth(key)
+	if err != nil {
+		return CredentialMissing, source, err
+	}
+	if r, ok := auth.(provider.Refresher); ok {
+		if err := r.Refresh(ctx); err != nil {
+			return CredentialMissing, source, err
+		}
+	}
+	return CredentialSet, source, nil
+}
+
 // Builds the credential carrier for key
 func (p Profile) auth(key string) (provider.Auth, error) {
 	if p.needsKey() && key == "" {
@@ -132,8 +176,19 @@ func (p Profile) Build(key string) (*provider.Provider, error) {
 	return &provider.Provider{Name: p.Name, Protocol: proto, BaseURL: p.BaseURL, Auth: auth, Header: p.Header.Clone(), Query: cloneValues(p.Query), Extra: maps.Clone(p.Extra), Retry: provider.DefaultRetry}, nil
 }
 
-// Builds a provider with the credential read from the key source
+// Profile with the base URL override from the environment applied when the variable is set
+func (p Profile) Resolved() Profile {
+	if p.BaseURLEnv != "" {
+		if v := strings.TrimSpace(os.Getenv(p.BaseURLEnv)); v != "" {
+			p.BaseURL = strings.TrimRight(v, "/")
+		}
+	}
+	return p
+}
+
+// Builds a provider with the credential read from the key source and the base URL override applied
 func (p Profile) Open(ctx context.Context) (*provider.Provider, error) {
+	p = p.Resolved()
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -159,14 +214,25 @@ func (p Profile) ListModels(ctx context.Context, prov *provider.Provider) ([]Mod
 	return v.Models(ctx, prov)
 }
 
-// One model an endpoint serves, with zero for limits the endpoint does not report
+// One model an endpoint serves, with zero for limits the endpoint does not report and nil for metadata it does not know
 type Model struct {
 	ID        string `json:"id"`
 	Name      string `json:"name,omitempty"`
+	Vendor    string `json:"vendor,omitempty"`
 	Context   int    `json:"context,omitempty"`
 	MaxOutput int    `json:"max_output,omitempty"`
 	// Unix seconds when the endpoint reports a creation time
-	Created int64 `json:"created,omitempty"`
+	Created      int64         `json:"created,omitempty"`
+	Pricing      *Pricing      `json:"pricing,omitempty"`
+	Capabilities *Capabilities `json:"capabilities,omitempty"`
+}
+
+// Dollars the usage costs on this model, zero when no pricing is known
+func (m Model) Cost(u protocol.Usage) float64 {
+	if m.Pricing == nil {
+		return 0
+	}
+	return m.Pricing.Cost(u)
 }
 
 // Conventions of one endpoint family registered by its package
@@ -230,24 +296,48 @@ func lookupAuth(kind AuthKind) (AuthBuilder, bool) {
 	return b, ok
 }
 
-// Built in profiles sorted by name
+// Built in profiles sorted by name, each a copy that leaves the registry untouched
 func Defaults() []Profile {
 	mu.RLock()
 	defer mu.RUnlock()
 	out := make([]Profile, 0, len(profiles))
 	for _, p := range profiles {
-		out = append(out, p)
+		out = append(out, p.Clone())
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
-// Finds a built in profile by name
+// Finds a built in profile by name, returning a copy that leaves the registry untouched
 func Lookup(name string) (Profile, bool) {
 	mu.RLock()
 	defer mu.RUnlock()
 	p, ok := profiles[name]
-	return p, ok
+	if !ok {
+		return Profile{}, false
+	}
+	return p.Clone(), true
+}
+
+// Deep copy whose maps and slices share nothing with the original
+func (p Profile) Clone() Profile {
+	p.Header = p.Header.Clone()
+	p.Query = cloneValues(p.Query)
+	p.Models = append([]string(nil), p.Models...)
+	p.Extra = cloneExtra(p.Extra)
+	p.Options = maps.Clone(p.Options)
+	return p
+}
+
+func cloneExtra(extra map[string]json.RawMessage) map[string]json.RawMessage {
+	if extra == nil {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(extra))
+	for k, v := range extra {
+		out[k] = append(json.RawMessage(nil), v...)
+	}
+	return out
 }
 
 func LookupVendor(name string) (Vendor, bool) {

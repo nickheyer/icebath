@@ -295,3 +295,48 @@ func TestLoadMergeAndFind(t *testing.T) {
 		t.Fatal("ghost found")
 	}
 }
+
+func TestReadEarlierFormatAndDefault(t *testing.T) {
+	earlier := `{"live":"idk","profiles":{"idk":{"API_KEY":"k-1","BASE_URL":"http://192.168.1.27:8484","MODEL":"freddie"},"bare":{"BASE_URL":"http://host/v1/"}}}`
+	doc, err := Read(strings.NewReader(earlier))
+	if err != nil || doc.Default != "idk" || len(doc.Profiles) != 2 {
+		t.Fatalf("%v %+v", err, doc)
+	}
+	bare, idk := doc.Profiles[0], doc.Profiles[1]
+	if idk.Name != "idk" || idk.Vendor != "openai" || idk.Protocol != protocol.OpenAICompletions || idk.BaseURL != "http://192.168.1.27:8484/v1" || idk.Auth != AuthBearer || idk.Key != Static("k-1") || idk.Model() != "freddie" {
+		t.Fatalf("%+v", idk)
+	}
+	if bare.Name != "bare" || bare.BaseURL != "http://host/v1" || bare.Auth != AuthNone || bare.Key != (Source{}) || bare.Model() != "" {
+		t.Fatalf("%+v", bare)
+	}
+	prov, err := idk.Open(context.Background())
+	if err != nil || prov.BaseURL != "http://192.168.1.27:8484/v1" {
+		t.Fatalf("an earlier entry must open as is: %v %+v", err, prov)
+	}
+	if doc, err := Read(strings.NewReader(`{"default":"home","profiles":[{"name":"home","protocol":"ollama-chat","base_url":"http://home"}]}`)); err != nil || doc.Default != "home" || len(doc.Profiles) != 1 {
+		t.Fatalf("%v %+v", err, doc)
+	}
+	if doc, err := Read(strings.NewReader(`{"live":"home","profiles":[{"name":"home","protocol":"ollama-chat","base_url":"http://home"}]}`)); err != nil || doc.Default != "home" {
+		t.Fatalf("live must name the default beside a list too: %v %+v", err, doc)
+	}
+	if doc, err := Read(strings.NewReader(`{"default":"anthropic"}`)); err != nil || doc.Default != "anthropic" || len(doc.Profiles) != 0 {
+		t.Fatalf("a default alone must be accepted: %v %+v", err, doc)
+	}
+	if doc, err := Read(strings.NewReader(`[{"name":"only","protocol":"ollama-chat","base_url":"http://x"}]`)); err != nil || doc.Default != "" {
+		t.Fatalf("%v %+v", err, doc)
+	}
+	for name, bad := range map[string]string{
+		"unknown field": `{"profiles":{"x":{"API_KEY":"k","BASE_URL":"http://x","PROTOCOL":"p"}}}`,
+		"no url":        `{"profiles":{"x":{"API_KEY":"k"}}}`,
+		"bad name":      `{"profiles":{"bad name":{"BASE_URL":"http://x"}}}`,
+		"not object":    `{"profiles":{"x":"http://x"}}`,
+		"not json":      `{"profiles":{"x":{"BASE_URL":}}}`,
+	} {
+		if _, err := Read(strings.NewReader(bad)); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	if _, err := Read(strings.NewReader(`{"profiles":{"x":{"API_KEY":"k","BASE_URL":"http://x","PROTOCOL":"p"}}}`)); err == nil || !strings.Contains(err.Error(), "PROTOCOL") || !strings.Contains(err.Error(), "x") {
+		t.Fatalf("an unknown earlier field must be named with its profile: %v", err)
+	}
+}

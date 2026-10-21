@@ -64,8 +64,10 @@ type Cassette struct {
 	mode      Mode
 	mu        sync.Mutex
 	exchanges []Exchange
-	cursor    map[string]int
-	dirty     bool
+	// Slots whose response body is still being read
+	open   map[int]bool
+	cursor map[string]int
+	dirty  bool
 	// Extra header names stripped before writing
 	Redact []string
 	// Extra query parameter names whose values are replaced before writing or matching
@@ -112,11 +114,21 @@ func check(path string, exchanges []Exchange) error {
 
 func (c *Cassette) Mode() Mode { return c.mode }
 
-// Exchanges held so far in recorded order
+// Exchanges whose responses have arrived, in request order
 func (c *Cassette) Exchanges() []Exchange {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return append([]Exchange(nil), c.exchanges...)
+	return c.complete()
+}
+
+func (c *Cassette) complete() []Exchange {
+	out := make([]Exchange, 0, len(c.exchanges))
+	for i, ex := range c.exchanges {
+		if !c.open[i] {
+			out = append(out, ex)
+		}
+	}
+	return out
 }
 
 // Writes the cassette when anything was recorded
@@ -126,7 +138,7 @@ func (c *Cassette) Save() error {
 	if !c.dirty {
 		return nil
 	}
-	data, err := json.MarshalIndent(c.exchanges, "", "  ")
+	data, err := json.MarshalIndent(c.complete(), "", "  ")
 	if err != nil {
 		return err
 	}
@@ -176,21 +188,58 @@ func (t transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return nil, err
-	}
 	ex := Exchange{Method: r.Method, URL: t.c.scrubURL(r.URL.String()), Header: t.c.scrub(r.Header), Status: resp.StatusCode, ResponseHeader: t.c.scrub(resp.Header)}
 	ex.Body, ex.BodyBase64 = encodeBody(body)
-	ex.Response, ex.ResponseBase64 = encodeBody(data)
-	t.c.mu.Lock()
-	t.c.exchanges = append(t.c.exchanges, ex)
-	t.c.cursor[k]++
-	t.c.dirty = true
-	t.c.mu.Unlock()
-	resp.Body = io.NopCloser(bytes.NewReader(data))
+	resp.Body = &recording{ReadCloser: resp.Body, c: t.c, slot: t.c.reserve(k, ex)}
 	return resp, nil
+}
+
+// Takes the next slot for the exchange so concurrent requests keep request order whatever order their bodies drain
+func (c *Cassette) reserve(k string, ex Exchange) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.exchanges = append(c.exchanges, ex)
+	slot := len(c.exchanges) - 1
+	if c.open == nil {
+		c.open = map[int]bool{}
+	}
+	c.open[slot] = true
+	c.cursor[k]++
+	return slot
+}
+
+// Body that passes bytes through as they arrive and completes its slot once the body is drained or closed
+type recording struct {
+	io.ReadCloser
+	c    *Cassette
+	slot int
+	buf  bytes.Buffer
+	once sync.Once
+}
+
+func (b *recording) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.buf.Write(p[:n])
+	if err == io.EOF {
+		b.store()
+	}
+	return n, err
+}
+
+func (b *recording) Close() error {
+	b.store()
+	return b.ReadCloser.Close()
+}
+
+func (b *recording) store() {
+	b.once.Do(func() {
+		b.c.mu.Lock()
+		ex := &b.c.exchanges[b.slot]
+		ex.Response, ex.ResponseBase64 = encodeBody(b.buf.Bytes())
+		delete(b.c.open, b.slot)
+		b.c.dirty = true
+		b.c.mu.Unlock()
+	})
 }
 
 // Serves the next unused exchange matching the key
@@ -198,8 +247,8 @@ func (c *Cassette) replay(k string, r *http.Request) (*http.Response, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	seen := 0
-	for _, ex := range c.exchanges {
-		if c.exchangeKey(ex) != k {
+	for i, ex := range c.exchanges {
+		if c.open[i] || c.exchangeKey(ex) != k {
 			continue
 		}
 		if seen < c.cursor[k] {
@@ -304,7 +353,7 @@ func (c *Cassette) URLs() []string {
 	defer c.mu.Unlock()
 	seen := map[string]bool{}
 	var out []string
-	for _, ex := range c.exchanges {
+	for _, ex := range c.complete() {
 		if !seen[ex.URL] {
 			seen[ex.URL] = true
 			out = append(out, ex.URL)

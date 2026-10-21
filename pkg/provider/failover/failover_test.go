@@ -51,10 +51,14 @@ func TestCompleteFallsOverOnRetryableFailures(t *testing.T) {
 	down := &fake{err: &protocol.Error{Status: 503}}
 	up := &fake{text: "ok"}
 	var failed []int
-	c := Chain{Models: []Model{down, up}, OnFail: func(i int, err error) { failed = append(failed, i) }}
+	var served []int
+	c := Chain{Models: []Model{down, up}, OnFail: func(i int, err error) { failed = append(failed, i) }, OnServe: func(i int) { served = append(served, i) }}
 	resp, err := c.Complete(ctx, protocol.Request{})
 	if err != nil || resp.Content[0].(protocol.Text).Text != "ok" || len(failed) != 1 || failed[0] != 0 {
 		t.Fatalf("%v %+v %v", err, resp, failed)
+	}
+	if len(served) != 1 || served[0] != 1 {
+		t.Fatalf("the model that answered must be reported, got %v", served)
 	}
 	bad := &fake{err: &protocol.Error{Status: 400, Message: "bad request"}}
 	c = Chain{Models: []Model{bad, up}}
@@ -76,10 +80,14 @@ func TestStreamFallsOverOnlyBeforeEvents(t *testing.T) {
 	down := &fake{err: &protocol.Error{Status: 529}}
 	silent := &fake{}
 	up := &fake{text: "ok"}
-	c := Chain{Models: []Model{down, silent, up}}
+	var served []int
+	c := Chain{Models: []Model{down, silent, up}, OnServe: func(i int) { served = append(served, i) }}
 	resp, err := protocol.Collect(c.Stream(ctx, protocol.Request{}))
 	if err != nil || resp.Content[0].(protocol.Text).Text != "ok" || silent.calls != 1 {
 		t.Fatalf("%v %+v", err, resp)
+	}
+	if len(served) != 1 || served[0] != 2 {
+		t.Fatalf("stream must report the model whose events were served once, got %v", served)
 	}
 	midway := &fake{text: "partial", midway: true, err: errors.New("connection reset")}
 	up.calls = 0

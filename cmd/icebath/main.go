@@ -1,0 +1,214 @@
+// Netrunner terminal for agent runs, a deck of cards over the icebath harness
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/term"
+
+	"github.com/nickheyer/icebath/pkg/app"
+	"github.com/nickheyer/icebath/pkg/harness"
+	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/session"
+	"github.com/nickheyer/icebath/pkg/session/jsonl"
+	"github.com/nickheyer/icebath/pkg/ui/render"
+)
+
+var version = "dev"
+
+type knobs []string
+
+func (k *knobs) String() string     { return strings.Join(*k, ",") }
+func (k *knobs) Set(v string) error { *k = append(*k, v); return nil }
+
+func main() {
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	fs := flag.NewFlagSet("icebath", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	var (
+		profile  = fs.String("profile", "", "endpoint profile, built in ones are "+strings.Join(names(), ", "))
+		model    = fs.String("model", "", "model id the profile serves")
+		resume   = fs.String("resume", "", "session id to continue")
+		dir      = fs.String("dir", "", "working directory of the shell, the current directory when empty")
+		root     = fs.String("root", "", "directory every file path must stay inside, the working directory when empty")
+		mode     = fs.String("mode", "", "permission mode, default, acceptEdits, plan or bypassPermissions")
+		config   = fs.String("config", "", "extra configuration file read after the user and project ones")
+		print    = fs.Bool("print", false, "run without a terminal and write every event as a JSON line")
+		headless = fs.Bool("headless", false, "run without a terminal and write the answer as text")
+		yes      = fs.Bool("yes", false, "approve every tool call when running without a terminal")
+		mission  = fs.String("mission", "", "objective to start a mission with")
+		list     = fs.Bool("sessions", false, "list stored sessions and exit")
+		theme    = fs.String("theme", "", "palette, blackwall, light, contrast or plain")
+		motion   = fs.Float64("motion", -1, "animation scale from 0 to 1")
+		noHints  = fs.Bool("no-hints", false, "start with the hint bar hidden")
+		showVer  = fs.Bool("version", false, "print the version and exit")
+		kn       knobs
+	)
+	fs.Var(&kn, "k", "knob override such as max_tokens=4096, repeatable")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "usage: icebath [flags] [prompt]\n\n")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	if *showVer {
+		fmt.Println("icebath", version)
+		return 0
+	}
+	cwd := *dir
+	if cwd == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "icebath:", err)
+			return 2
+		}
+		cwd = wd
+	}
+	cfg, err := harness.Discover(cwd)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "icebath:", err)
+		return 2
+	}
+	if *config != "" {
+		extra, err := harness.ReadConfigFile(*config)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "icebath:", err)
+			return 2
+		}
+		cfg = harness.Merge(cfg, extra).WithEnv()
+	}
+	if *profile != "" {
+		cfg.Profile = *profile
+	}
+	if *model != "" {
+		cfg.Model = *model
+	}
+	if *mode != "" {
+		cfg.Mode = *mode
+	}
+	if *root != "" {
+		cfg.Root = *root
+	}
+	if *theme != "" {
+		cfg.UI.Theme = *theme
+	}
+	if *motion >= 0 {
+		m := *motion
+		cfg.UI.Motion = &m
+	}
+	if *noHints {
+		hints := false
+		cfg.UI.Hints = &hints
+	}
+	for _, k := range kn {
+		key, value, err := harness.ParseKnob(k)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "icebath:", err)
+			return 2
+		}
+		if err := cfg.SetKnob(key, value); err != nil {
+			fmt.Fprintln(os.Stderr, "icebath:", err)
+			return 2
+		}
+	}
+	if *list {
+		return listSessions(cfg)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	prompt := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	tty := term.IsTerminal(os.Stdout.Fd()) && term.IsTerminal(os.Stdin.Fd())
+	if *print || *headless || !tty {
+		var in *os.File
+		if !term.IsTerminal(os.Stdin.Fd()) {
+			in = os.Stdin
+		}
+		var input interface{ Read([]byte) (int, error) }
+		if in != nil {
+			input = in
+		}
+		return app.Headless(ctx, app.HeadlessOptions{Config: cfg, Resume: *resume, Dir: cwd, Prompt: prompt, Mission: *mission, Print: *print, Yes: *yes, Out: os.Stdout, Err: os.Stderr, In: input})
+	}
+	m, err := app.New(ctx, app.Options{Config: cfg, Resume: *resume, Dir: cwd, Version: version})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "icebath:", err)
+		return 2
+	}
+	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithFilter(m.Filter))
+	m.Attach(p)
+	if prompt != "" || *mission != "" {
+		go func() {
+			if *mission != "" {
+				p.Send(app.StartMission(*mission))
+				return
+			}
+			p.Send(app.StartPrompt(prompt))
+		}()
+	}
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "icebath:", err)
+		return 1
+	}
+	return 0
+}
+
+func names() []string {
+	var out []string
+	for _, p := range profiles.Defaults() {
+		out = append(out, p.Name)
+	}
+	return out
+}
+
+// Prints the stored sessions newest first
+func listSessions(cfg harness.Config) int {
+	dir, err := cfg.SessionsPath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "icebath:", err)
+		return 2
+	}
+	store := &jsonl.Store{Dir: dir}
+	infos, err := store.List(context.Background())
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("no sessions under", dir)
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, "icebath:", err)
+		return 2
+	}
+	if len(infos) == 0 {
+		fmt.Println("no sessions under", dir)
+		return 0
+	}
+	for _, info := range infos {
+		printInfo(info)
+	}
+	return 0
+}
+
+func printInfo(info session.Info) {
+	title := info.Title
+	if title == "" {
+		title = "untitled"
+	}
+	if info.Error != "" {
+		fmt.Printf("%s  %s\n", info.ID, "unreadable: "+info.Error)
+		return
+	}
+	fmt.Printf("%s  %s  %-28s  %s  %d msgs  %s\n", info.ID, info.Updated.Local().Format("2006-01-02 15:04"), render.Truncate(title, 28), info.Model, info.Messages, render.Tokens(info.Usage.Total()))
+}

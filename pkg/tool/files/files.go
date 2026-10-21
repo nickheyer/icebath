@@ -111,7 +111,7 @@ func (o Options) dir() (string, error) {
 }
 
 // Turns a user path into a clean absolute path that lies inside the root
-func (o Options) resolve(p string) (string, error) {
+func (o Options) Resolve(p string) (string, error) {
 	if p == "" {
 		return "", errors.New("path is required")
 	}

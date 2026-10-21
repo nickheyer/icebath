@@ -328,3 +328,107 @@ func TestProviderExtrasMergeBeneathTheRequest(t *testing.T) {
 		t.Fatal("provider extras must not be mutated by a request")
 	}
 }
+
+func TestObserverSeesEveryAttemptAndRateLimits(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("request-id", fmt.Sprintf("req-%d", calls))
+		w.Header().Set("anthropic-ratelimit-tokens-limit", "1000")
+		w.Header().Set("anthropic-ratelimit-tokens-remaining", "900")
+		w.Header().Set("anthropic-ratelimit-tokens-reset", "2026-01-01T00:00:00Z")
+		if calls == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error":"slow down"}`))
+			return
+		}
+		w.Write([]byte("ok\n"))
+	}))
+	defer srv.Close()
+	var seen []Attempt
+	p := &Provider{Name: "t", Protocol: lineProtocol{}, BaseURL: srv.URL, Retry: Retry{Attempts: 3, Base: time.Millisecond, Max: time.Millisecond}, Observer: ObserverFunc(func(a Attempt) { seen = append(seen, a) })}
+	resp, err := p.Complete(context.Background(), protocol.Request{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.RequestID != "req-2" || resp.Header.Get("request-id") != "req-2" {
+		t.Fatalf("response must carry the request id and headers, got %q %v", resp.RequestID, resp.Header)
+	}
+	if len(seen) != 2 || seen[0].Status != 429 || seen[0].Err == nil || seen[0].Wait == 0 || seen[0].RequestID != "req-1" || seen[0].OK() {
+		t.Fatalf("first attempt %+v", seen[0])
+	}
+	if !seen[1].OK() || seen[1].Attempt != 2 || seen[1].Wait != 0 || seen[1].RateLimit.Tokens != 1000 || seen[1].RateLimit.TokensRemaining != 900 {
+		t.Fatalf("second attempt %+v", seen[1])
+	}
+	if seen[1].Duration <= 0 || seen[1].Method != http.MethodPost || seen[1].URL == "" {
+		t.Fatalf("attempt timing and target %+v", seen[1])
+	}
+}
+
+func TestStreamStampsHeadersOnDone(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("x-request-id", "abc")
+		w.Write([]byte("a\nb\n"))
+	}))
+	defer srv.Close()
+	p := &Provider{Name: "t", Protocol: lineProtocol{}, BaseURL: srv.URL}
+	resp, err := protocol.Collect(p.Stream(context.Background(), protocol.Request{Model: "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.RequestID != "abc" || resp.Header.Get("x-request-id") != "abc" {
+		t.Fatalf("%+v", resp)
+	}
+}
+
+func TestZeroBaseDoesNotSpinAndRetryAfterIsCapped(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Retry-After", "3600")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	var waits []time.Duration
+	p := &Provider{Name: "t", Protocol: lineProtocol{}, BaseURL: srv.URL, Retry: Retry{Attempts: 2}, Observer: ObserverFunc(func(a Attempt) { waits = append(waits, a.Wait) })}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+	_, err := p.Complete(ctx, protocol.Request{Model: "m"})
+	if err == nil || !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("cancellation during backoff must report both the cancel and the last failure: %v", err)
+	}
+	if len(waits) != 1 || waits[0] != time.Minute || waits[0] > maxWait(Retry{}) {
+		t.Fatalf("retry after must be capped, waits %v", waits)
+	}
+	if backoff(Retry{Base: time.Millisecond, Attempts: 3}, 2) <= 0 {
+		t.Fatal("backoff with a base must be positive")
+	}
+	if calls != 1 {
+		t.Fatalf("%d calls", calls)
+	}
+}
+
+func TestRateLimitParsing(t *testing.T) {
+	h := http.Header{}
+	h.Set("x-ratelimit-limit-requests", "50")
+	h.Set("x-ratelimit-remaining-requests", "49")
+	h.Set("x-ratelimit-reset-requests", "6m0s")
+	r := ParseRateLimit(h)
+	if r.Requests != 50 || r.RequestsRemaining != 49 || r.Reset != 6*time.Minute || !r.Known() {
+		t.Fatalf("%+v", r)
+	}
+	h = http.Header{"X-Ratelimit-Reset": {"1.5"}}
+	if ParseRateLimit(h).Reset != 1500*time.Millisecond {
+		t.Fatalf("%+v", ParseRateLimit(h))
+	}
+	if ParseRateLimit(http.Header{}).Known() || parseReset("junk") != 0 || RequestID(http.Header{}) != "" {
+		t.Fatal("empty headers must stay unknown")
+	}
+	if RequestID(http.Header{"Cf-Ray": {"ray"}}) != "ray" {
+		t.Fatal("cf-ray")
+	}
+}

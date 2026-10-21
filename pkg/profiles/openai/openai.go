@@ -21,16 +21,20 @@ const (
 	ChatName = "openai-chat"
 	BaseURL  = "https://api.openai.com/v1"
 	KeyEnv   = "OPENAI_API_KEY"
+	// Environment variable overriding the base URL
+	BaseURLEnv = "OPENAI_BASE_URL"
+	// Model used when none is chosen
+	DefaultModel = "gpt-5"
 )
 
 // Profile for the Responses API
 func Profile() profiles.Profile {
-	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.OpenAIResponses, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv)}
+	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.OpenAIResponses, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
 }
 
 // Profile for the Chat Completions API
 func ChatProfile() profiles.Profile {
-	return profiles.Profile{Name: ChatName, Vendor: Vendor, Protocol: protocol.OpenAICompletions, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv)}
+	return profiles.Profile{Name: ChatName, Vendor: Vendor, Protocol: protocol.OpenAICompletions, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
 }
 
 func init() {

@@ -1,0 +1,20 @@
+[36;40m+-[39m [36m1 [33m◈ [37;1mTRACE[39;22m [36m------------------------------------+[90m:+-[39m [90m2 ◈ ICE[39m [90m-----------------+[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:+------------------- 3 run -+[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:+-[39m [90m3 ◈ UPLINK[39m [90m--------------+[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:+---------------------------+[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:+-[39m [90m4 ◈ DAEMONS[39m [90m-------------+[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx[36m|[90m:|[37mxxxxxxxxxxxxxxxxxxxxxxxxxxx[90m|[m
+[36;40m+----------------------------------------- live -+[90m:+-------------------- idle -+[m
+[40m [33m◈ [37;1mTRACE[90;22m 1/4[39m    [36menter[90m solo[39m  [36ml[90m stack[39m  [36mtab[90m next[39m  [36mx[90m close[39m  [36mq[90m quit[39m  [36m1-9[90m jump[39m        [m

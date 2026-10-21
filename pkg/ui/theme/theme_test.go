@@ -45,3 +45,41 @@ func abs(v int) int {
 	}
 	return v
 }
+
+func TestVariantsAndStyles(t *testing.T) {
+	names := Names()
+	if len(names) != 4 || names[0] != "blackwall" || names[3] != "plain" {
+		t.Fatalf("%v", names)
+	}
+	for _, n := range names {
+		th, ok := Named(n)
+		if !ok || th.Name != n || th.Bg == nil || th.Text == nil || len(th.Glow) == 0 {
+			t.Fatalf("%s %+v", n, th)
+		}
+	}
+	if _, ok := Named("nope"); ok {
+		t.Fatal("unknown theme named")
+	}
+	if !Plain().Plain || Light().Plain || Contrast().Shadow != 0 {
+		t.Fatal("variant traits")
+	}
+	th, err := (Style{Palette: "light", Border: "double", Motion: 0.5, Density: "compact"}).Resolve()
+	if err != nil || th.Name != "light" || th.Border.TopLeft != "╔" || th.Density != Compact {
+		t.Fatalf("%v %+v", err, th)
+	}
+	th, err = (Style{}).Resolve()
+	if err != nil || th.Name != "blackwall" || th.Density != Comfortable {
+		t.Fatalf("%v %+v", err, th)
+	}
+	if th, err = (Style{Density: "comfortable"}).Resolve(); err != nil || th.Density != Comfortable {
+		t.Fatal(err)
+	}
+	for _, bad := range []Style{{Palette: "x"}, {Border: "x"}, {Density: "x"}, {Motion: 2}} {
+		if _, err := bad.Resolve(); err == nil {
+			t.Fatalf("%+v accepted", bad)
+		}
+	}
+	if len(Borders()) != 7 {
+		t.Fatalf("%v", Borders())
+	}
+}

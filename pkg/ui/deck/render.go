@@ -45,6 +45,13 @@ func (m *Model) View() tea.View {
 	for _, l := range layers {
 		m.paintCard(buf, l.e, l.ord)
 	}
+	m.paintOverflow(buf)
+	m.paintSelection(buf)
+	if m.overlay != nil {
+		m.paintBackdrop(buf)
+		m.paintCard(buf, m.overlay, -1)
+	}
+	m.paintToasts(buf)
 	m.paintHints(buf)
 	v := tea.NewView(buf.Render())
 	v.AltScreen = true
@@ -52,6 +59,10 @@ func (m *Model) View() tea.View {
 	v.BackgroundColor = m.theme.Bg
 	v.WindowTitle = m.title
 	v.Cursor = m.cursor()
+	v.ReportFocus = true
+	v.KeyboardEnhancements.ReportEventTypes = true
+	v.ProgramStatus = m.status
+	v.ProgressBar = m.progress
 	return v
 }
 
@@ -70,17 +81,26 @@ func (m *Model) layers() []layer {
 }
 
 func (m *Model) paintGutter(buf screen) {
-	if m.mode != Split || len(m.cards) < 2 || len(m.boxes) == 0 {
+	if m.mode != Split || len(m.cards) < 2 || len(m.boxes) == 0 || m.width < narrowWidth {
 		return
 	}
 	t := m.theme
 	x := m.boxes[0].x + m.boxes[0].w
 	ch, fg := "┆", t.Steel
+	if t.Plain {
+		ch = ":"
+	}
 	switch {
 	case m.dragging:
 		ch, fg = "┃", t.Ice
+		if t.Plain {
+			ch = "|"
+		}
 	case m.gutterHot:
 		ch, fg = "┃", t.SteelBright
+		if t.Plain {
+			ch = "|"
+		}
 	}
 	for y := 0; y < m.stageHeight(); y++ {
 		m.put(buf, x, y, ch, uv.Style{Fg: fg, Bg: t.Bg})
@@ -117,7 +137,7 @@ func (m *Model) paintCard(buf screen, e *entry, ord int) {
 	glow, hover, lift := e.glow.Pos, e.hover.Pos, e.lift.Pos
 	m.paintShadow(buf, x, y, w, h, lift)
 	buf.FillArea(&uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: t.Surface}}, uv.Rect(x, y, w, h))
-	rim := m.rim(w, h, glow, hover)
+	rim := m.rim(e, w, h, glow, hover)
 	switch {
 	case h < 3 && w >= minTitleW:
 		m.paintStrip(buf, e, ord, x, y, w, h, glow, rim)
@@ -136,15 +156,23 @@ func (m *Model) paintCard(buf screen, e *entry, ord int) {
 		m.paintGlyph(buf, e, x+1, y+1, iw, ih, glow)
 		return
 	}
-	m.content(e, iw, ih, (1-glow)*contentDim).Draw(buf, uv.Rect(x+1, y+1, iw, ih))
+	dim := math.Max((1-glow)*contentDim, e.fade)
+	m.content(e, iw, ih, dim).Draw(buf, uv.Rect(x+1, y+1, iw, ih))
 	m.paintTitle(buf, e, ord, x, y, w, glow)
 	m.paintStatus(buf, e, x, y+h-1, w, w-4, glow)
 }
 
-// Border color at clockwise perimeter index k, flowing the focus ring in over the steel edge
-func (m *Model) rim(w, h int, glow, hover float64) func(k int) color.Color {
+// Border color at clockwise perimeter index k, flowing the focus ring in over the steel edge and pulsing with any urgency
+func (m *Model) rim(e *entry, w, h int, glow, hover float64) func(k int) color.Color {
 	t := m.theme
 	edge := theme.Mix(t.Steel, t.SteelBright, hover)
+	if e.urgency != Calm && e.pulse.Pos > 0 {
+		beat := 0.55 + 0.45*math.Sin(m.phase*pulseSpeed)
+		if m.motion == 0 {
+			beat = 1
+		}
+		edge = theme.Mix(edge, m.urgencyColor(e.urgency), e.pulse.Pos*beat)
+	}
 	if glow <= 0 {
 		return func(int) color.Color { return edge }
 	}
@@ -157,6 +185,13 @@ func (m *Model) rim(w, h int, glow, hover float64) func(k int) color.Color {
 		}
 		return theme.Mix(edge, c, glow)
 	}
+}
+
+func (m *Model) urgencyColor(u Urgency) color.Color {
+	if u == Alarm {
+		return m.theme.Alarm
+	}
+	return m.theme.Pulse
 }
 
 // Draws a folded card as a title and status edge, adding the bottom edge when two rows tall
@@ -184,6 +219,9 @@ func (m *Model) paintStrip(buf screen, e *entry, ord, x, y, w, h int, glow float
 
 // Darkens whatever lies below and to the right of a card, reaching further while it is lifted
 func (m *Model) paintShadow(buf screen, x, y, w, h int, lift float64) {
+	if m.theme.Shadow <= 0 {
+		return
+	}
 	dx := 1 + int(math.Round(lift))
 	amount := m.theme.Shadow * (0.6 + 0.4*lift)
 	shade := m.memo(func(c color.Color) color.Color { return theme.Shade(c, amount) })
@@ -212,7 +250,9 @@ func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
 		} else {
 			e.raw.Resize(w, h)
 		}
+		e.raw.Clear()
 		uv.NewStyledString(e.card.View(w, h)).Draw(e.raw, e.raw.Bounds())
+		e.cw, e.ch = w, h
 		e.dirty, e.dim = false, -1
 	}
 	if e.dim != dim {
@@ -230,7 +270,7 @@ func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
 	return e.tinted.Buffer
 }
 
-// Gives content the surface background and fades it toward the surface by dim
+// Gives content the surface background and fades it toward the surface by dim, keeping links intact
 func (m *Model) tint(s screen, dim float64) {
 	t := m.theme
 	fade := m.memo(func(c color.Color) color.Color { return theme.Mix(c, t.Surface, dim) })
@@ -239,7 +279,7 @@ func (m *Model) tint(s screen, dim float64) {
 			c := &line[i]
 			c.Style.Fg = or(c.Style.Fg, t.Text)
 			c.Style.Bg = or(c.Style.Bg, t.Surface)
-			if dim <= 0 {
+			if dim <= 0 || t.Plain {
 				continue
 			}
 			c.Style.Fg = fade(c.Style.Fg)
@@ -300,6 +340,126 @@ func (m *Model) paintStatus(buf screen, e *entry, x, y, w, limit int, glow float
 	return lw
 }
 
+// Marks how many stack strips scrolled off the top or bottom of the stage
+func (m *Model) paintOverflow(buf screen) {
+	if m.mode != Split || len(m.cards) < 2 || len(m.boxes) < 2 {
+		return
+	}
+	above, below := 0, 0
+	stage := m.stageHeight()
+	start := 1
+	if m.width < narrowWidth {
+		start = 0
+	}
+	for i := start; i < len(m.cards); i++ {
+		_, y, _, h := m.cards[i].rect.Target()
+		switch {
+		case y+h <= 0:
+			above++
+		case y >= stage:
+			below++
+		}
+	}
+	if above == 0 && below == 0 {
+		return
+	}
+	t := m.theme
+	st := lipgloss.NewStyle().Background(t.Bg).Foreground(t.Accent)
+	bx, bw := m.boxes[start].x, m.boxes[start].w
+	draw := func(text string, y int) {
+		label := st.Render(" " + text + " ")
+		lw := ansi.StringWidth(label)
+		if lw > bw {
+			return
+		}
+		uv.NewStyledString(label).Draw(buf, uv.Rect(bx+bw-lw, y, lw, 1))
+	}
+	up, down := "▲", "▼"
+	if t.Plain {
+		up, down = "^", "v"
+	}
+	if above > 0 {
+		draw(up+" "+strconv.Itoa(above)+" above", 0)
+	}
+	if below > 0 && stage > 1 {
+		draw(down+" "+strconv.Itoa(below)+" below", stage-1)
+	}
+}
+
+// Inverts the cells under the current text sweep
+func (m *Model) paintSelection(buf screen) {
+	s := m.sel
+	if s == nil || !s.moved {
+		return
+	}
+	cx, cy, cw, ch := s.e.rect.Cells()
+	t := m.theme
+	for y := 0; y < ch-2; y++ {
+		for x := 0; x < cw-2; x++ {
+			if !s.covers(x, y) {
+				continue
+			}
+			c := buf.CellAt(cx+1+x, cy+1+y)
+			if c == nil {
+				continue
+			}
+			c.Style.Bg = t.Ice
+			c.Style.Fg = t.Bg
+		}
+	}
+}
+
+// Darkens the whole stage so the overlay stands out
+func (m *Model) paintBackdrop(buf screen) {
+	if m.theme.Plain {
+		return
+	}
+	shade := m.memo(func(c color.Color) color.Color { return theme.Shade(c, backdropDim) })
+	for y := 0; y < m.stageHeight(); y++ {
+		for x := 0; x < m.width; x++ {
+			c := buf.CellAt(x, y)
+			if c == nil {
+				continue
+			}
+			c.Style.Bg = shade(or(c.Style.Bg, m.theme.Bg))
+			if c.Style.Fg != nil {
+				c.Style.Fg = shade(c.Style.Fg)
+			}
+		}
+	}
+}
+
+// Draws toasts stacked at the top right, sliding in from the edge
+func (m *Model) paintToasts(buf screen) {
+	if len(m.toasts) == 0 || m.width < 12 {
+		return
+	}
+	t := m.theme
+	limit := max(10, m.width/2)
+	for i, tt := range m.toasts {
+		if i >= m.stageHeight() {
+			break
+		}
+		glyph, fg := "◆", t.Ice
+		switch tt.level {
+		case Success:
+			glyph, fg = "✓", t.Alive
+		case Warn:
+			glyph, fg = "▲", t.Accent
+		case Error:
+			glyph, fg = "✗", t.Alarm
+		}
+		if t.Plain {
+			glyph = "*"
+		}
+		text := ansi.Truncate(tt.text, limit-4, "…")
+		label := lipgloss.NewStyle().Background(t.Surface).Foreground(fg).Bold(true).Render(" "+glyph+" ") + lipgloss.NewStyle().Background(t.Surface).Foreground(t.Text).Render(text+" ")
+		lw := ansi.StringWidth(label)
+		x := m.width - 1 - lw + int(math.Round(tt.x.Pos*float64(lw+1)))
+		uv.NewStyledString(label).Draw(buf, uv.Rect(x, i, lw, 1))
+	}
+}
+
 // Visits every border cell clockwise from the top left corner with its box drawing character
 func (m *Model) perimeter(x, y, w, h int, fn func(px, py int, ch string)) {
 	b := m.theme.Border
@@ -335,7 +495,12 @@ func (m *Model) ring(n int) []color.Color {
 	if r, ok := m.rings[n]; ok {
 		return r
 	}
-	r := theme.Ring(n, m.theme.Glow...)
+	var r []color.Color
+	if m.theme.Plain {
+		r = []color.Color{m.theme.Ice}
+	} else {
+		r = theme.Ring(n, m.theme.Glow...)
+	}
 	if len(r) == 0 {
 		r = []color.Color{m.theme.Ice}
 	}
@@ -343,12 +508,15 @@ func (m *Model) ring(n int) []color.Color {
 	return r
 }
 
-// Terminal cursor of the focused card translated into screen space, or nil when hidden
+// Terminal cursor of the overlay or the focused card translated into screen space, or nil when hidden
 func (m *Model) cursor() *tea.Cursor {
-	if len(m.cards) == 0 {
-		return nil
+	e := m.overlay
+	if e == nil {
+		if len(m.cards) == 0 {
+			return nil
+		}
+		e = m.cards[m.focus]
 	}
-	e := m.cards[m.focus]
 	cz, ok := e.card.(Cursorer)
 	if !ok {
 		return nil

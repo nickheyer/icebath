@@ -86,7 +86,7 @@ func (r read) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if err := decode(args, &in); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	p, err := r.resolve(in.FilePath)
+	p, err := r.Resolve(in.FilePath)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}

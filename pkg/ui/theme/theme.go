@@ -2,13 +2,25 @@
 package theme
 
 import (
+	"fmt"
 	"image/color"
+	"sort"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 )
 
+// How much room chrome and cards leave around their content
+type Density int
+
+const (
+	Comfortable Density = iota
+	Compact
+)
+
 // Palette and border set that a deck paints with
 type Theme struct {
+	Name        string
 	Bg          color.Color
 	Surface     color.Color
 	Text        color.Color
@@ -24,11 +36,15 @@ type Theme struct {
 	Glow        []color.Color
 	Shadow      float64
 	Border      lipgloss.Border
+	Density     Density
+	// Palette limited to the sixteen ANSI colors with no blending, for terminals without true color
+	Plain bool
 }
 
 // Deep night palette with an ice and magenta focus ring
 func Blackwall() Theme {
 	return Theme{
+		Name:        "blackwall",
 		Bg:          Hex(0x070a12),
 		Surface:     Hex(0x0c1120),
 		Text:        Hex(0xd6def7),
@@ -45,6 +61,146 @@ func Blackwall() Theme {
 		Shadow:      0.45,
 		Border:      lipgloss.RoundedBorder(),
 	}
+}
+
+// Paper palette for bright rooms with a cobalt and violet focus ring
+func Light() Theme {
+	return Theme{
+		Name:        "light",
+		Bg:          Hex(0xeef1f7),
+		Surface:     Hex(0xfafbfe),
+		Text:        Hex(0x1b2238),
+		TextDim:     Hex(0x6b7390),
+		Steel:       Hex(0xc3cadb),
+		SteelBright: Hex(0x9aa5c2),
+		Ghost:       Hex(0xd7dcea),
+		Accent:      Hex(0xb8600a),
+		Ice:         Hex(0x0a6fb3),
+		Pulse:       Hex(0xb5179e),
+		Alive:       Hex(0x1f8a4c),
+		Alarm:       Hex(0xc9303e),
+		Glow:        []color.Color{Hex(0x0a6fb3), Hex(0x5b3fd6), Hex(0xb5179e), Hex(0x0a6fb3)},
+		Shadow:      0.12,
+		Border:      lipgloss.RoundedBorder(),
+	}
+}
+
+// Black and white palette with saturated signal colors and a thick border for low vision
+func Contrast() Theme {
+	return Theme{
+		Name:        "contrast",
+		Bg:          Hex(0x000000),
+		Surface:     Hex(0x000000),
+		Text:        Hex(0xffffff),
+		TextDim:     Hex(0xbfbfbf),
+		Steel:       Hex(0xffffff),
+		SteelBright: Hex(0xffffff),
+		Ghost:       Hex(0x808080),
+		Accent:      Hex(0xffff00),
+		Ice:         Hex(0x00ffff),
+		Pulse:       Hex(0xff00ff),
+		Alive:       Hex(0x00ff00),
+		Alarm:       Hex(0xff0000),
+		Glow:        []color.Color{Hex(0x00ffff), Hex(0xffff00)},
+		Shadow:      0,
+		Border:      lipgloss.ThickBorder(),
+	}
+}
+
+// Sixteen color palette with an ASCII border for terminals without true color or box drawing
+func Plain() Theme {
+	return Theme{
+		Name:        "plain",
+		Bg:          lipgloss.Black,
+		Surface:     lipgloss.Black,
+		Text:        lipgloss.White,
+		TextDim:     lipgloss.BrightBlack,
+		Steel:       lipgloss.BrightBlack,
+		SteelBright: lipgloss.White,
+		Ghost:       lipgloss.BrightBlack,
+		Accent:      lipgloss.Yellow,
+		Ice:         lipgloss.Cyan,
+		Pulse:       lipgloss.Magenta,
+		Alive:       lipgloss.Green,
+		Alarm:       lipgloss.Red,
+		Glow:        []color.Color{lipgloss.Cyan},
+		Shadow:      0,
+		Border:      lipgloss.ASCIIBorder(),
+		Plain:       true,
+	}
+}
+
+var themes = map[string]func() Theme{"blackwall": Blackwall, "light": Light, "contrast": Contrast, "plain": Plain}
+
+// Theme by name, false for an unknown name
+func Named(name string) (Theme, bool) {
+	fn, ok := themes[strings.ToLower(strings.TrimSpace(name))]
+	if !ok {
+		return Theme{}, false
+	}
+	return fn(), true
+}
+
+// Theme names sorted
+func Names() []string {
+	out := make([]string, 0, len(themes))
+	for n := range themes {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
+var borders = map[string]func() lipgloss.Border{"rounded": lipgloss.RoundedBorder, "normal": lipgloss.NormalBorder, "thick": lipgloss.ThickBorder, "double": lipgloss.DoubleBorder, "block": lipgloss.BlockBorder, "hidden": lipgloss.HiddenBorder, "ascii": lipgloss.ASCIIBorder}
+
+// Border set names sorted
+func Borders() []string {
+	out := make([]string, 0, len(borders))
+	for n := range borders {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// What a person chooses to look at, resolved into a theme
+type Style struct {
+	Palette string  `json:"palette,omitempty"`
+	Border  string  `json:"border,omitempty"`
+	Motion  float64 `json:"motion"`
+	Density string  `json:"density,omitempty"`
+}
+
+// Theme the style names, the Blackwall palette, its border and comfortable density where the style says nothing
+func (s Style) Resolve() (Theme, error) {
+	t := Blackwall()
+	if s.Palette != "" {
+		named, ok := Named(s.Palette)
+		if !ok {
+			return Theme{}, fmt.Errorf("theme: unknown palette %q, choose from %s", s.Palette, strings.Join(Names(), ", "))
+		}
+		t = named
+	}
+	if s.Border != "" {
+		fn, ok := borders[strings.ToLower(s.Border)]
+		if !ok {
+			return Theme{}, fmt.Errorf("theme: unknown border %q, choose from %s", s.Border, strings.Join(Borders(), ", "))
+		}
+		t.Border = fn()
+	}
+	switch strings.ToLower(s.Density) {
+	case "":
+	case "compact":
+		t.Density = Compact
+	case "comfortable":
+		t.Density = Comfortable
+	default:
+		return Theme{}, fmt.Errorf("theme: unknown density %q, choose compact or comfortable", s.Density)
+	}
+	if s.Motion < 0 || s.Motion > 1 {
+		return Theme{}, fmt.Errorf("theme: motion %v is outside 0 to 1", s.Motion)
+	}
+	return t, nil
 }
 
 // Opaque color from a 24 bit RGB value

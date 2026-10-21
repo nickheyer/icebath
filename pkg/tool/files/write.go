@@ -41,7 +41,7 @@ func (w write) Run(ctx context.Context, args json.RawMessage) (tool.Result, erro
 	if err := decode(args, &in); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	p, err := w.resolve(in.FilePath)
+	p, err := w.Resolve(in.FilePath)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}

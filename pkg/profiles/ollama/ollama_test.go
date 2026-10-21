@@ -43,3 +43,15 @@ func TestProfileModelsAndKnobs(t *testing.T) {
 		t.Fatal("http failure swallowed")
 	}
 }
+
+func TestProfileFromEnvironmentFallsBackOnBadHost(t *testing.T) {
+	if p := fromEnv(""); p.BaseURL != BaseURL {
+		t.Fatalf("%+v", p)
+	}
+	if p := fromEnv("gpu-box:11434"); p.BaseURL != "http://gpu-box:11434" {
+		t.Fatalf("%+v", p)
+	}
+	if p := fromEnv("http://bad host/"); p.BaseURL != BaseURL {
+		t.Fatalf("an unusable host must fall back instead of panicking: %+v", p)
+	}
+}

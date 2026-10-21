@@ -64,29 +64,29 @@ func TestResolveAndRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := Options{Dir: dir, Root: dir}
-	if p, err := o.resolve("a/b.txt"); err != nil || p != filepath.Join(dir, "a", "b.txt") {
+	if p, err := o.Resolve("a/b.txt"); err != nil || p != filepath.Join(dir, "a", "b.txt") {
 		t.Fatalf("%v %s", err, p)
 	}
-	if _, err := o.resolve("link/secret"); err == nil || !strings.Contains(err.Error(), "outside") {
+	if _, err := o.Resolve("link/secret"); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("symlink escape accepted: %v", err)
 	}
-	if _, err := o.resolve("../escape"); err == nil {
+	if _, err := o.Resolve("../escape"); err == nil {
 		t.Fatal("dotdot escape accepted")
 	}
-	if _, err := o.resolve(filepath.Join(outside, "secret")); err == nil {
+	if _, err := o.Resolve(filepath.Join(outside, "secret")); err == nil {
 		t.Fatal("absolute escape accepted")
 	}
-	if _, err := o.resolve("link/missing/deeper"); err == nil {
+	if _, err := o.Resolve("link/missing/deeper"); err == nil {
 		t.Fatal("escape through a missing tail accepted")
 	}
-	if _, err := o.resolve(""); err == nil {
+	if _, err := o.Resolve(""); err == nil {
 		t.Fatal("empty path accepted")
 	}
 	home, _ := os.UserHomeDir()
-	if p, err := (Options{}).resolve("~/x"); err != nil || p != filepath.Join(home, "x") {
+	if p, err := (Options{}).Resolve("~/x"); err != nil || p != filepath.Join(home, "x") {
 		t.Fatalf("%v %s", err, p)
 	}
-	if _, err := (Options{Root: filepath.Join(dir, "nope")}).resolve("a"); err == nil {
+	if _, err := (Options{Root: filepath.Join(dir, "nope")}).Resolve("a"); err == nil {
 		t.Fatal("missing root accepted")
 	}
 }

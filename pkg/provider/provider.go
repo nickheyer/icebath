@@ -83,6 +83,8 @@ type Provider struct {
 	Extra  map[string]json.RawMessage
 	Client *http.Client
 	Retry  Retry
+	// Receives every attempt with its status, headers and backoff
+	Observer Observer
 }
 
 // Sends one turn without streaming and decodes the complete response
@@ -93,7 +95,18 @@ func (p *Provider) Complete(ctx context.Context, req protocol.Request) (protocol
 		return protocol.Response{}, err
 	}
 	defer resp.Body.Close()
-	return p.Protocol.Decode(resp.Body)
+	out, err := p.Protocol.Decode(resp.Body)
+	if err != nil {
+		return protocol.Response{}, err
+	}
+	stamp(&out, resp.Header)
+	return out, nil
+}
+
+// Keeps the response headers and request id on a decoded response
+func stamp(r *protocol.Response, h http.Header) {
+	r.Header = h.Clone()
+	r.RequestID = RequestID(h)
 }
 
 // Sends one turn and yields the protocol events of its streamed response
@@ -107,6 +120,9 @@ func (p *Provider) Stream(ctx context.Context, req protocol.Request) iter.Seq2[p
 		}
 		defer resp.Body.Close()
 		for ev, err := range p.Protocol.Stream(resp.Body) {
+			if err == nil && ev.Type == protocol.EventDone {
+				stamp(&ev.Response, resp.Header)
+			}
 			if !yield(ev, err) || err != nil {
 				return
 			}
@@ -142,6 +158,12 @@ func (p *Provider) Do(ctx context.Context, call protocol.Call) (*http.Response, 
 	if retry.Attempts <= 0 {
 		retry = DefaultRetry
 	}
+	if retry.Base <= 0 {
+		retry.Base = DefaultRetry.Base
+	}
+	if retry.Max <= 0 {
+		retry.Max = DefaultRetry.Max
+	}
 	client := p.Client
 	if client == nil {
 		client = http.DefaultClient
@@ -157,35 +179,61 @@ func (p *Provider) Do(ctx context.Context, call protocol.Call) (*http.Response, 
 			return nil, err
 		}
 		p.decorate(hr, call.Header)
+		at := Attempt{Provider: p.Name, Attempt: attempt, Method: call.Method, URL: target, Started: time.Now()}
 		resp, err := client.Do(hr)
+		at.Duration = time.Since(at.Started)
+		if err == nil {
+			at.Status = resp.StatusCode
+			at.Header = resp.Header.Clone()
+			at.RequestID = RequestID(resp.Header)
+			at.RateLimit = ParseRateLimit(resp.Header)
+		}
 		if err == nil && resp.StatusCode/100 == 2 {
+			p.observe(at)
 			return resp, nil
 		}
 		var failure error
-		var wait time.Duration
 		if err != nil {
 			failure = fmt.Errorf("provider %s: %w", p.Name, err)
 		} else {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			failure = p.Protocol.DecodeError(resp.StatusCode, body)
-			if !retryable(resp.StatusCode) {
-				return nil, failure
-			}
-			wait = retryAfter(resp.Header.Get("Retry-After"))
+			at.RetryAfter = retryAfter(resp.Header.Get("Retry-After"))
 		}
-		if ctx.Err() != nil || attempt >= retry.Attempts {
+		at.Err = failure
+		if err == nil && !retryable(resp.StatusCode) {
+			p.observe(at)
 			return nil, failure
 		}
+		if ctx.Err() != nil || attempt >= retry.Attempts {
+			p.observe(at)
+			return nil, failure
+		}
+		wait := at.RetryAfter
 		if wait == 0 {
 			wait = backoff(retry, attempt)
 		}
+		wait = min(wait, maxWait(retry))
+		at.Wait = wait
+		p.observe(at)
 		select {
 		case <-ctx.Done():
-			return nil, failure
+			return nil, fmt.Errorf("provider %s: %w after %d attempts, last failure: %v", p.Name, ctx.Err(), attempt, failure)
 		case <-time.After(wait):
 		}
 	}
+}
+
+func (p *Provider) observe(a Attempt) {
+	if p.Observer != nil {
+		p.Observer.Observe(a)
+	}
+}
+
+// Longest pause honored between attempts, at least a minute so Retry-After may stretch past a shorter retry maximum
+func maxWait(r Retry) time.Duration {
+	return max(r.Max, time.Minute)
 }
 
 // Lays request extras over provider extras, merging nested objects and replacing everything else

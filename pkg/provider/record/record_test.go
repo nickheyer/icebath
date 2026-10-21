@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func server(t *testing.T) (*httptest.Server, *atomic.Int32) {
@@ -244,4 +245,65 @@ func must(r *http.Request, err error) *http.Request {
 		panic(err)
 	}
 	return r
+}
+
+func TestRecordingDeliversStreamedChunksBeforeTheBodyEnds(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("first\n"))
+		w.(http.Flusher).Flush()
+		<-release
+		w.Write([]byte("second\n"))
+	}))
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), "stream.json")
+	c, err := Open(path, Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Client(nil).Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 64)
+	done := make(chan string, 1)
+	go func() {
+		n, _ := resp.Body.Read(buf)
+		done <- string(buf[:n])
+	}()
+	select {
+	case got := <-done:
+		if got != "first\n" {
+			t.Fatalf("%q", got)
+		}
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("first chunk was held until the body ended")
+	}
+	close(release)
+	rest, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(rest) != "second\n" {
+		t.Fatalf("%q", rest)
+	}
+	if ex := c.Exchanges(); len(ex) != 1 || ex[0].Response != "first\nsecond\n" {
+		t.Fatalf("%+v", ex)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := Open(path, Replay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := replay.Client(nil).Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := io.ReadAll(again.Body)
+	if string(data) != "first\nsecond\n" {
+		t.Fatalf("%q", data)
+	}
 }

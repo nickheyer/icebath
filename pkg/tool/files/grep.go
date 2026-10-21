@@ -120,7 +120,7 @@ func (g grepper) Run(ctx context.Context, args json.RawMessage) (tool.Result, er
 	if in.Path == "" {
 		in.Path = "."
 	}
-	target, err := g.resolve(in.Path)
+	target, err := g.Resolve(in.Path)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}

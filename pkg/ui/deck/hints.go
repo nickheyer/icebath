@@ -44,7 +44,8 @@ func (m *Model) toggleHints() tea.Cmd {
 	m.hints = !m.hints
 	m.hintHot = -1
 	m.retarget()
-	return m.clock.Wake()
+	m.placeOverlay()
+	return m.wake()
 }
 
 // Index of the clickable hint under the point, or -1
@@ -77,6 +78,13 @@ func (m *Model) hintsFor() []hint {
 	}
 	next := func() tea.Cmd { return m.cycle(1) }
 	quit := func() tea.Cmd { return tea.Quit }
+	if m.overlay != nil {
+		if !m.Capturing() {
+			add(k.Back, "dismiss", m.Dismiss)
+		}
+		hs = append(hs, hint{"ctrl+c", "quit", quit})
+		return hs
+	}
 	switch {
 	case n == 0:
 		add(k.Help, "hide", m.toggleHints)
@@ -88,6 +96,10 @@ func (m *Model) hintsFor() []hint {
 	case m.mode == Solo:
 		add(k.Back, "split", m.back)
 		add(k.Next, "next", next)
+	case m.mode == Timeline:
+		pair(k.ToMain, k.ToStack, "scrub", func() tea.Cmd { return m.toStack() })
+		add(k.Enter, "solo", m.dive)
+		add(k.Back, "split", m.back)
 	case n == 1:
 		add(k.Enter, "solo", m.dive)
 	case m.focus == 0:
@@ -99,13 +111,18 @@ func (m *Model) hintsFor() []hint {
 		add(k.ToMain, "main", m.toMain)
 		add(k.Next, "next", next)
 	}
-	add(k.Close, "close", func() tea.Cmd { return m.Remove(m.focus) })
+	if !isPinned(m.cards[m.focus].card) {
+		add(k.Close, "close", func() tea.Cmd { return m.Remove(m.focus) })
+	}
 	add(k.Quit, "quit", quit)
 	if n > 1 {
 		add(k.Jump, "jump", nil)
+		if m.mode != Timeline {
+			add(k.Timeline, "timeline", m.toggleTimeline)
+		}
 	}
 	switch {
-	case m.mode == Solo || n == 1:
+	case m.mode != Split || n == 1 || m.width < narrowWidth:
 	case m.focus == 0:
 		pair(k.Grow, k.Shrink, "resize", func() tea.Cmd { return m.resize(ratioStep) })
 	default:
@@ -115,17 +132,23 @@ func (m *Model) hintsFor() []hint {
 	return hs
 }
 
-// Keys the focused card advertises, shown without click actions since the card owns them
+// Keys the focused card or the overlay advertises, shown without click actions since the card owns them
 func (m *Model) cardHints() []hint {
-	if len(m.cards) == 0 {
+	var c Card
+	switch {
+	case m.overlay != nil:
+		c = m.overlay.card
+	case len(m.cards) > 0:
+		c = m.cards[m.focus].card
+	default:
 		return nil
 	}
-	c, ok := m.cards[m.focus].card.(Hinter)
+	h, ok := c.(Hinter)
 	if !ok {
 		return nil
 	}
 	var hs []hint
-	for _, b := range c.Hints() {
+	for _, b := range h.Hints() {
 		if l := keyLabel(b); l != "" && b.Enabled() {
 			hs = append(hs, hint{l, b.Help().Desc, nil})
 		}
@@ -148,6 +171,9 @@ func keyLabel(b key.Binding) string {
 func (m *Model) stageLabel() string {
 	t := m.theme
 	bg := lipgloss.NewStyle().Background(t.Bg)
+	if m.overlay != nil {
+		return bg.Foreground(t.Accent).Render(m.overlay.card.Glyph()+" ") + bg.Foreground(t.Text).Bold(true).Render(m.overlay.card.Title()) + bg.Foreground(t.Pulse).Render(" modal")
+	}
 	n := len(m.cards)
 	if n == 0 {
 		return bg.Foreground(t.TextDim).Render(emptyLabel)
@@ -166,6 +192,8 @@ func (m *Model) stageLabel() string {
 		s += bg.Foreground(t.Pulse).Render(" capturing")
 	case m.mode == Solo:
 		s += bg.Foreground(t.Ice).Render(" solo")
+	case m.mode == Timeline:
+		s += bg.Foreground(t.Ice).Render(" timeline")
 	}
 	return s
 }

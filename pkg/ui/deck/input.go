@@ -9,11 +9,32 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// Reports whether the card claims the key ahead of the deck bindings
+func claims(c Card, k string) bool {
+	cl, ok := c.(Claimer)
+	if !ok {
+		return false
+	}
+	for _, want := range cl.Claims() {
+		if want == k {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
+	m.sel = nil
 	if msg.String() == "ctrl+c" {
 		return tea.Quit
 	}
 	k := m.Keys
+	if m.overlay != nil {
+		if msg.String() == "esc" && !m.Capturing() && !claims(m.overlay.card, "esc") {
+			return m.Dismiss()
+		}
+		return m.send(m.overlay, msg)
+	}
 	if len(m.cards) == 0 {
 		switch {
 		case key.Matches(msg, k.Quit):
@@ -24,6 +45,9 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	e := m.cards[m.focus]
+	if claims(e.card, msg.String()) {
+		return m.send(e, msg)
+	}
 	if m.Capturing() {
 		switch msg.String() {
 		case "tab":
@@ -57,9 +81,14 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	case key.Matches(msg, k.MoveUp):
 		return m.shift(-1)
 	case key.Matches(msg, k.Close):
+		if isPinned(e.card) {
+			return m.nudge()
+		}
 		return m.Remove(m.focus)
 	case key.Matches(msg, k.Jump):
 		return m.jump(msg)
+	case key.Matches(msg, k.Timeline):
+		return m.toggleTimeline()
 	case key.Matches(msg, k.Help):
 		return m.toggleHints()
 	}
@@ -67,27 +96,80 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	if m.overlay != nil {
+		return m.overlayMouse(msg)
+	}
 	switch msg := msg.(type) {
 	case tea.MouseMotionMsg:
-		return m.motion(tea.Mouse(msg))
+		return m.motion_(tea.Mouse(msg))
 	case tea.MouseClickMsg:
 		return m.press(msg)
 	case tea.MouseReleaseMsg:
 		return m.release(msg)
 	case tea.MouseWheelMsg:
+		if m.mode == Timeline && m.hit(msg.X, msg.Y) < 0 {
+			return m.scrub(msg)
+		}
 		if hit := m.hit(msg.X, msg.Y); hit >= 0 {
+			if m.mode == Timeline && hit != m.focus {
+				return m.scrub(msg)
+			}
 			return m.forwardMouse(hit, msg)
 		}
 	}
 	return nil
 }
 
-// Tracks the pointer for hover, splitter drags, and card drags
-func (m *Model) motion(mo tea.Mouse) tea.Cmd {
+// Routes mouse input to the overlay only, everything outside it ignored
+func (m *Model) overlayMouse(msg tea.MouseMsg) tea.Cmd {
+	mo := msg.Mouse()
+	if !m.inOverlay(mo.X, mo.Y) {
+		if _, click := msg.(tea.MouseClickMsg); click && m.hintAt(mo.X, mo.Y) >= 0 && mo.Button == tea.MouseLeft {
+			return m.zones[m.hintAt(mo.X, mo.Y)].act()
+		}
+		return nil
+	}
+	x, y, _, _ := m.overlay.rect.Cells()
+	mo.X -= x + 1
+	mo.Y -= y + 1
+	return m.send(m.overlay, relocate(msg, mo))
+}
+
+// Moves focus along the timeline by wheel direction
+func (m *Model) scrub(msg tea.MouseWheelMsg) tea.Cmd {
+	switch msg.Button {
+	case tea.MouseWheelDown, tea.MouseWheelRight:
+		return m.Focus(min(m.focus+1, len(m.cards)-1))
+	case tea.MouseWheelUp, tea.MouseWheelLeft:
+		return m.Focus(max(m.focus-1, 0))
+	}
+	return nil
+}
+
+// Tracks the pointer for hover, splitter drags, card drags, timeline scrubs and text sweeps
+func (m *Model) motion_(mo tea.Mouse) tea.Cmd {
 	if m.dragging {
 		m.SetRatio(float64(mo.X) / float64(max(m.width, 1)))
 		m.snap()
-		return m.clock.Wake()
+		return m.wake()
+	}
+	if m.scrubbing {
+		if mo.Button != tea.MouseLeft {
+			m.scrubbing = false
+			return nil
+		}
+		steps := (mo.X - m.scrubX) / timelineStep
+		if steps == 0 {
+			return nil
+		}
+		m.scrubX += steps * timelineStep
+		return m.Focus(min(max(m.focus-steps, 0), len(m.cards)-1))
+	}
+	if m.sel != nil && mo.Button == tea.MouseLeft {
+		if m.extendSelection(mo.X, mo.Y) {
+			return m.wake()
+		}
+		return nil
 	}
 	if m.grab != nil {
 		if mo.Button == tea.MouseLeft {
@@ -105,13 +187,14 @@ func (m *Model) motion(mo tea.Mouse) tea.Cmd {
 		return nil
 	}
 	m.hover, m.gutterHot, m.hintHot = hit, hot, hint
-	return m.clock.Wake()
+	return m.wake()
 }
 
-// Focuses the pressed card, starts splitter or frame drags, runs hint clicks, and closes on middle click
+// Focuses the pressed card, starts splitter, frame or sweep drags, runs hint clicks, and closes on middle click
 func (m *Model) press(msg tea.MouseClickMsg) tea.Cmd {
 	mo := tea.Mouse(msg)
 	m.letGo()
+	m.sel = nil
 	if z := m.hintAt(mo.X, mo.Y); z >= 0 {
 		if mo.Button == tea.MouseLeft {
 			return m.zones[z].act()
@@ -120,13 +203,19 @@ func (m *Model) press(msg tea.MouseClickMsg) tea.Cmd {
 	}
 	if mo.Button == tea.MouseLeft && m.onGutter(mo.X, mo.Y) {
 		m.dragging = true
-		return m.clock.Wake()
+		return m.wake()
 	}
 	hit := m.hit(mo.X, mo.Y)
 	if hit < 0 {
+		if m.mode == Timeline && mo.Button == tea.MouseLeft && mo.Y < m.stageHeight() {
+			m.scrubbing, m.scrubX = true, mo.X
+		}
 		return nil
 	}
 	if mo.Button == tea.MouseMiddle {
+		if isPinned(m.cards[hit].card) {
+			return m.nudge()
+		}
 		return m.Remove(hit)
 	}
 	var cmds []tea.Cmd
@@ -145,18 +234,33 @@ func (m *Model) press(msg tea.MouseClickMsg) tea.Cmd {
 		m.lastClick = time.Time{}
 		return tea.Batch(append(cmds, m.dive())...)
 	}
-	if !content && m.mode == Split && len(m.cards) > 1 {
+	switch {
+	case content && hit == m.focus:
+		m.beginSelection(hit, mo.X, mo.Y)
+	case !content && m.mode == Split && len(m.cards) > 1:
 		x, y, _, _ := e.rect.Cells()
 		m.grab = &grab{e: e, dx: mo.X - x, dy: mo.Y - y, x: mo.X, y: mo.Y}
+	case !content && m.mode == Timeline && hit != m.focus:
 	}
 	return tea.Batch(append(cmds, m.Focus(hit))...)
 }
 
-// Ends splitter and card drags, trading a card dropped on the other column with the main slot
+// Ends splitter, card and sweep drags, trading a card dropped on the other column with the main slot
 func (m *Model) release(msg tea.MouseReleaseMsg) tea.Cmd {
 	if m.dragging {
 		m.dragging = false
-		return m.clock.Wake()
+		return m.wake()
+	}
+	if m.scrubbing {
+		m.scrubbing = false
+		return nil
+	}
+	if m.sel != nil {
+		cmd := m.endSelection()
+		if hit := m.hit(msg.X, msg.Y); hit >= 0 && m.inContent(hit, msg.X, msg.Y) {
+			return tea.Batch(cmd, m.forwardMouse(hit, msg))
+		}
+		return cmd
 	}
 	if g := m.grab; g != nil {
 		drop, moved := m.drop, g.moved
@@ -171,7 +275,7 @@ func (m *Model) release(msg tea.MouseReleaseMsg) tea.Cmd {
 				}
 				return m.Promote(stack)
 			}
-			return m.clock.Wake()
+			return m.wake()
 		}
 	}
 	if hit := m.hit(msg.X, msg.Y); hit >= 0 && m.inContent(hit, msg.X, msg.Y) {
@@ -197,11 +301,15 @@ func (m *Model) drag(mo tea.Mouse) tea.Cmd {
 	switch {
 	case from < 0 || slot < 0 || slot == from:
 	case from > 0 && slot > 0:
-		m.swap(from, slot)
+		if !isPinned(m.cards[slot].card) {
+			m.swap(from, slot)
+		}
 	default:
-		m.drop, m.hover = slot, slot
+		if !isPinned(g.e.card) && !isPinned(m.cards[slot].card) {
+			m.drop, m.hover = slot, slot
+		}
 	}
-	return m.clock.Wake()
+	return m.wake()
 }
 
 // Moves focus d steps through the deck order, wrapping at both ends
@@ -213,16 +321,28 @@ func (m *Model) cycle(d int) tea.Cmd {
 	return m.Focus(((m.focus+d)%n + n) % n)
 }
 
-// Focuses the main card, or nudges when it already has focus
+// Focuses the main card, or steps left along the timeline, or nudges when already there
 func (m *Model) toMain() tea.Cmd {
+	if m.mode == Timeline {
+		if m.focus == 0 {
+			return m.nudge()
+		}
+		return m.Focus(m.focus - 1)
+	}
 	if m.focus == 0 {
 		return m.nudge()
 	}
 	return m.Focus(0)
 }
 
-// Focuses the remembered stack card, or nudges when focus is already in the stack
+// Focuses the remembered stack card, or steps right along the timeline, or nudges when focus is already in the stack
 func (m *Model) toStack() tea.Cmd {
+	if m.mode == Timeline {
+		if m.focus >= len(m.cards)-1 {
+			return m.nudge()
+		}
+		return m.Focus(m.focus + 1)
+	}
 	if m.focus != 0 || len(m.cards) < 2 {
 		return m.nudge()
 	}
@@ -234,15 +354,26 @@ func (m *Model) dive() tea.Cmd {
 	if m.mode == Solo {
 		return m.nudge()
 	}
+	if m.mode == Timeline {
+		return m.SetMode(Solo)
+	}
 	return m.Promote(m.focus)
 }
 
-// Leaves solo mode, or nudges when the deck is already split
+// Leaves solo or timeline mode, or nudges when the deck is already split
 func (m *Model) back() tea.Cmd {
 	if m.mode == Split {
 		return m.nudge()
 	}
 	return m.SetMode(Split)
+}
+
+// Switches the timeline fan on or off
+func (m *Model) toggleTimeline() tea.Cmd {
+	if m.mode == Timeline {
+		return m.SetMode(Split)
+	}
+	return m.SetMode(Timeline)
 }
 
 // Focuses the card whose on screen ordinal matches the pressed digit
@@ -259,7 +390,7 @@ func (m *Model) jump(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *Model) resize(d float64) tea.Cmd {
-	if m.mode == Solo || len(m.cards) < 2 {
+	if m.mode != Split || len(m.cards) < 2 {
 		return m.nudge()
 	}
 	if cmd := m.SetRatio(m.ratio + d); cmd != nil {
@@ -274,18 +405,21 @@ func (m *Model) shift(d int) tea.Cmd {
 	if m.focus == 0 || j < 1 || j >= len(m.cards) {
 		return m.nudge()
 	}
+	if isPinned(m.cards[m.focus].card) || isPinned(m.cards[j].card) {
+		return m.nudge()
+	}
 	m.swap(m.focus, j)
 	m.hover = -1
-	return m.clock.Wake()
+	return m.wake()
 }
 
 // Shakes the focused card sideways to show that a key had nothing to do
 func (m *Model) nudge() tea.Cmd {
-	if len(m.cards) == 0 {
+	if len(m.cards) == 0 || m.motion == 0 {
 		return nil
 	}
-	m.cards[m.focus].rect.X.Kick(nudgeImpulse)
-	return m.clock.Wake()
+	m.cards[m.focus].rect.X.Kick(nudgeImpulse * m.motion)
+	return m.wake()
 }
 
 // Index of the topmost card under the point, or -1
@@ -323,6 +457,9 @@ func (m *Model) inContent(i, x, y int) bool {
 // Stacking rank with cards in flight raised above everything at rest
 func (m *Model) z(e *entry, i, n int) int {
 	z := depth(i, n, m.focus)
+	if m.mode == Timeline {
+		z = timelineDepth(i, n, m.focus)
+	}
 	if e.lift.Pos > 0.3 {
 		z += n + 4
 	}
@@ -331,7 +468,7 @@ func (m *Model) z(e *entry, i, n int) int {
 
 // Reports whether the point is on the splitter or the border column either side of it
 func (m *Model) onGutter(x, y int) bool {
-	if m.mode != Split || len(m.cards) < 2 || len(m.boxes) == 0 {
+	if m.mode != Split || len(m.cards) < 2 || len(m.boxes) == 0 || m.width < narrowWidth {
 		return false
 	}
 	gx := m.boxes[0].x + m.boxes[0].w
@@ -345,16 +482,20 @@ func (m *Model) forwardMouse(i int, msg tea.MouseMsg) tea.Cmd {
 	mo := msg.Mouse()
 	mo.X -= x + 1
 	mo.Y -= y + 1
-	var out tea.Msg = msg
+	return m.send(e, relocate(msg, mo))
+}
+
+// Same kind of mouse event carrying new coordinates
+func relocate(msg tea.MouseMsg, mo tea.Mouse) tea.Msg {
 	switch msg.(type) {
 	case tea.MouseClickMsg:
-		out = tea.MouseClickMsg(mo)
+		return tea.MouseClickMsg(mo)
 	case tea.MouseReleaseMsg:
-		out = tea.MouseReleaseMsg(mo)
+		return tea.MouseReleaseMsg(mo)
 	case tea.MouseWheelMsg:
-		out = tea.MouseWheelMsg(mo)
+		return tea.MouseWheelMsg(mo)
 	case tea.MouseMotionMsg:
-		out = tea.MouseMotionMsg(mo)
+		return tea.MouseMotionMsg(mo)
 	}
-	return m.send(e, out)
+	return msg
 }

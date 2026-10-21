@@ -16,6 +16,7 @@ type KeyMap struct {
 	MoveUp   key.Binding
 	Close    key.Binding
 	Jump     key.Binding
+	Timeline key.Binding
 	Help     key.Binding
 	Quit     key.Binding
 }
@@ -35,6 +36,7 @@ func DefaultKeyMap() KeyMap {
 		MoveUp:   key.NewBinding(key.WithKeys("K", "shift+k", "shift+up"), key.WithHelp("K", "move up")),
 		Close:    key.NewBinding(key.WithKeys("x", "delete", "backspace"), key.WithHelp("x", "close")),
 		Jump:     key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"), key.WithHelp("1-9", "jump")),
+		Timeline: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "timeline")),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "hints")),
 		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	}

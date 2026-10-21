@@ -50,7 +50,7 @@ func (g globber) Run(ctx context.Context, args json.RawMessage) (tool.Result, er
 	if in.Path == "" {
 		in.Path = "."
 	}
-	dir, err := g.resolve(in.Path)
+	dir, err := g.Resolve(in.Path)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}

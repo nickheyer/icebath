@@ -17,16 +17,24 @@ type Model interface {
 	Stream(ctx context.Context, req protocol.Request) iter.Seq2[protocol.Event, error]
 }
 
-// Ordered models with an optional observer of each failure that moved on
+// Ordered models with optional observers of each failure that moved on and of the model that answered
 type Chain struct {
 	Models []Model
 	// Called with the index of the model that failed and why before the next one is tried
 	OnFail func(i int, err error)
+	// Called with the index of the model that produced the response or the first streamed event
+	OnServe func(i int)
 }
 
 func (c Chain) fail(i int, err error) {
 	if c.OnFail != nil {
 		c.OnFail(i, err)
+	}
+}
+
+func (c Chain) serve(i int) {
+	if c.OnServe != nil {
+		c.OnServe(i)
 	}
 }
 
@@ -39,6 +47,7 @@ func (c Chain) Complete(ctx context.Context, req protocol.Request) (protocol.Res
 	for i, m := range c.Models {
 		resp, err := m.Complete(ctx, req)
 		if err == nil {
+			c.serve(i)
 			return resp, nil
 		}
 		errs = append(errs, fmt.Errorf("model %d: %w", i, err))
@@ -65,6 +74,9 @@ func (c Chain) Stream(ctx context.Context, req protocol.Request) iter.Seq2[proto
 				if err != nil && !started {
 					failed = err
 					break
+				}
+				if !started {
+					c.serve(i)
 				}
 				started = true
 				if !yield(ev, err) || err != nil {

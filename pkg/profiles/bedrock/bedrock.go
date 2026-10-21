@@ -20,6 +20,10 @@ const (
 	Vendor        = "bedrock"
 	Name          = "bedrock"
 	DefaultRegion = "us-east-1"
+	// Environment variable overriding the base URL
+	BaseURLEnv = "BEDROCK_BASE_URL"
+	// Model used when none is chosen
+	DefaultModel = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 	// Auth kind signing requests with AWS credentials
 	AuthSigV4 profiles.AuthKind = "aws-sigv4"
 )
@@ -36,17 +40,25 @@ func Control(region string) string {
 
 // Profile for the runtime API in a region, signing with the AWS default credential chain
 func Profile(region string) profiles.Profile {
-	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.BedrockConverseStream, BaseURL: Runtime(region), Auth: AuthSigV4, Options: map[string]string{"region": region}}
+	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.BedrockConverseStream, BaseURL: Runtime(region), Auth: AuthSigV4, Options: map[string]string{"region": region}, Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
 }
 
 func init() {
-	region := sigv4.Region()
-	if region == "" {
-		region = DefaultRegion
-	}
 	profiles.RegisterAuth(AuthSigV4, Auth)
-	profiles.Register(Profile(region))
+	profiles.Register(fromEnv(sigv4.Region()))
 	profiles.RegisterVendor(profiles.Vendor{Name: Vendor, Models: Models})
+}
+
+// Profile for the region named by the environment, falling back to the default region when the value does not form a usable host
+func fromEnv(region string) profiles.Profile {
+	if region == "" {
+		return Profile(DefaultRegion)
+	}
+	p := Profile(region)
+	if err := p.Validate(); err != nil || regionOf(p.BaseURL) != region {
+		return Profile(DefaultRegion)
+	}
+	return p
 }
 
 // Builds the signer from the profile options, the base URL and a key holding access, secret and optional token joined by colons
@@ -129,8 +141,18 @@ type summaries struct {
 	} `json:"modelSummaries"`
 }
 
-// Lists streaming text models from the control plane of the signing region on AWS hosts, same host elsewhere
-func Models(ctx context.Context, p *provider.Provider) ([]profiles.Model, error) {
+type inferenceProfiles struct {
+	Summaries []struct {
+		ID     string `json:"inferenceProfileId"`
+		Name   string `json:"inferenceProfileName"`
+		Status string `json:"status"`
+		Type   string `json:"type"`
+	} `json:"inferenceProfileSummaries"`
+	NextToken string `json:"nextToken"`
+}
+
+// Control plane provider for the signing region on AWS hosts, the same host elsewhere
+func controlPlane(p *provider.Provider) (*provider.Provider, error) {
 	if p == nil || p.Protocol == nil {
 		return nil, errors.New("bedrock: provider is required")
 	}
@@ -142,8 +164,47 @@ func Models(ctx context.Context, p *provider.Provider) ([]profiles.Model, error)
 		}
 		control.BaseURL = Control(region)
 	}
+	return &control, nil
+}
+
+// Lists the active cross region inference profiles, whose ids route a model id through several regions
+func InferenceProfiles(ctx context.Context, p *provider.Provider) ([]profiles.Model, error) {
+	control, err := controlPlane(p)
+	if err != nil {
+		return nil, err
+	}
+	var out []profiles.Model
+	token := ""
+	for {
+		q := url.Values{"maxResults": {"1000"}}
+		if token != "" {
+			q.Set("nextToken", token)
+		}
+		var page inferenceProfiles
+		if err := profiles.GetJSON(ctx, control, "/inference-profiles", q, &page); err != nil {
+			return nil, err
+		}
+		for _, s := range page.Summaries {
+			if s.Status != "" && s.Status != "ACTIVE" {
+				continue
+			}
+			out = append(out, profiles.Model{ID: s.ID, Name: strings.TrimSpace(s.Name)})
+		}
+		if page.NextToken == "" || page.NextToken == token {
+			return out, nil
+		}
+		token = page.NextToken
+	}
+}
+
+// Lists streaming text models and inference profiles from the control plane of the signing region on AWS hosts, same host elsewhere
+func Models(ctx context.Context, p *provider.Provider) ([]profiles.Model, error) {
+	control, err := controlPlane(p)
+	if err != nil {
+		return nil, err
+	}
 	var list summaries
-	if err := profiles.GetJSON(ctx, &control, "/foundation-models", nil, &list); err != nil {
+	if err := profiles.GetJSON(ctx, control, "/foundation-models", nil, &list); err != nil {
 		return nil, err
 	}
 	var out []profiles.Model
@@ -153,7 +214,11 @@ func Models(ctx context.Context, p *provider.Provider) ([]profiles.Model, error)
 		}
 		out = append(out, profiles.Model{ID: m.ModelID, Name: strings.TrimSpace(m.ProviderName + " " + m.ModelName)})
 	}
-	return out, nil
+	inference, err := InferenceProfiles(ctx, control)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, inference...), nil
 }
 
 func contains(list []string, want string) bool {

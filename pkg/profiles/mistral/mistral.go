@@ -16,11 +16,15 @@ const (
 	Name    = "mistral"
 	BaseURL = "https://api.mistral.ai"
 	KeyEnv  = "MISTRAL_API_KEY"
+	// Environment variable overriding the base URL
+	BaseURLEnv = "MISTRAL_BASE_URL"
+	// Model used when none is chosen
+	DefaultModel = "mistral-large-latest"
 )
 
 // Profile for the public API authenticated with a bearer token
 func Profile() profiles.Profile {
-	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.MistralConversations, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv)}
+	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.MistralConversations, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
 }
 
 func init() {

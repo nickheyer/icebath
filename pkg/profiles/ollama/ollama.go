@@ -21,11 +21,13 @@ const (
 	Name    = "ollama"
 	BaseURL = "http://localhost:11434"
 	HostEnv = "OLLAMA_HOST"
+	// Model used when none is chosen
+	DefaultModel = "llama3.2"
 )
 
 // Profile for a server at the given base URL, which may omit the scheme
 func Profile(baseURL string) profiles.Profile {
-	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.OllamaChat, BaseURL: Host(baseURL), Auth: profiles.AuthNone}
+	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.OllamaChat, BaseURL: Host(baseURL), Auth: profiles.AuthNone, Models: []string{DefaultModel}}
 }
 
 // Normalizes an OLLAMA_HOST style value into a base URL
@@ -41,8 +43,17 @@ func Host(value string) string {
 }
 
 func init() {
-	profiles.Register(Profile(os.Getenv(HostEnv)))
+	profiles.Register(fromEnv(os.Getenv(HostEnv)))
 	profiles.RegisterVendor(profiles.Vendor{Name: Vendor, Models: Models})
+}
+
+// Profile for the host named by the environment, falling back to the default host when the value is not a usable URL
+func fromEnv(value string) profiles.Profile {
+	p := Profile(value)
+	if err := p.Validate(); err != nil {
+		return Profile("")
+	}
+	return p
 }
 
 type tagList struct {

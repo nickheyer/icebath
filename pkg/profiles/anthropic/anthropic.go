@@ -22,12 +22,16 @@ const (
 	Name    = "anthropic"
 	BaseURL = "https://api.anthropic.com"
 	KeyEnv  = "ANTHROPIC_API_KEY"
-	version = "2023-06-01"
+	// Environment variable overriding the base URL
+	BaseURLEnv = "ANTHROPIC_BASE_URL"
+	// Model used when none is chosen
+	DefaultModel = "claude-opus-5"
+	version      = "2023-06-01"
 )
 
 // Profile for the public API authenticated with an API key header
 func Profile() profiles.Profile {
-	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.AnthropicMessages, BaseURL: BaseURL, Auth: profiles.AuthHeader, AuthName: "x-api-key", Key: profiles.Env(KeyEnv)}
+	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.AnthropicMessages, BaseURL: BaseURL, Auth: profiles.AuthHeader, AuthName: "x-api-key", Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
 }
 
 func init() {

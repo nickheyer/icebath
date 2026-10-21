@@ -57,7 +57,7 @@ func (e edit) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if in.OldString == in.NewString {
 		return tool.Error("old_string and new_string are identical"), nil
 	}
-	p, err := e.resolve(in.FilePath)
+	p, err := e.Resolve(in.FilePath)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}

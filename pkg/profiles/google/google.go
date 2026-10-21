@@ -20,11 +20,15 @@ const (
 	Name    = "google"
 	BaseURL = "https://generativelanguage.googleapis.com"
 	KeyEnv  = "GEMINI_API_KEY"
+	// Environment variable overriding the base URL
+	BaseURLEnv = "GEMINI_BASE_URL"
+	// Model used when none is chosen
+	DefaultModel = "gemini-2.5-pro"
 )
 
 // Profile for the Gemini API authenticated with an API key header
 func Profile() profiles.Profile {
-	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.GoogleGenerativeAI, BaseURL: BaseURL, Auth: profiles.AuthHeader, AuthName: "x-goog-api-key", Key: profiles.Env(KeyEnv)}
+	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.GoogleGenerativeAI, BaseURL: BaseURL, Auth: profiles.AuthHeader, AuthName: "x-goog-api-key", Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
 }
 
 func init() {
