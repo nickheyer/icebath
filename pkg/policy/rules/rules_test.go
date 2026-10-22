@@ -363,3 +363,18 @@ func TestDirFuncFollowsAMovingDirectory(t *testing.T) {
 		t.Fatal("an empty DirFunc result falls back to Dir")
 	}
 }
+
+func TestResetSwapsEveryRule(t *testing.T) {
+	p, _ := New(Set{Allow: []string{"Read"}})
+	calls := 0
+	p.OnChange = func() { calls++ }
+	if err := p.Reset(Set{Deny: []string{"Bash(rm *)"}}, Set{Ask: []string{"Write"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Rules(policy.Allow)) != 0 || len(p.Rules(policy.Deny)) != 1 || len(p.Rules(policy.Ask)) != 1 || calls != 1 {
+		t.Fatalf("the sets replace every rule at once %+v %d", p.Set(), calls)
+	}
+	if err := p.Reset(Set{Allow: []string{"Read("}}); err == nil || len(p.Rules(policy.Deny)) != 1 || calls != 1 {
+		t.Fatal("a malformed set leaves the rules as they were")
+	}
+}

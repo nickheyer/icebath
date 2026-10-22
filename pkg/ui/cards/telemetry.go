@@ -10,8 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
-	"github.com/nickheyer/icebath/pkg/ui/deck"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Samples of throughput kept for the graph
@@ -39,10 +40,12 @@ func NewTelemetry(env *Env) *Telemetry {
 	return t
 }
 
-func (c *Telemetry) Title() string { return "ICE" }
+func (c *Telemetry) Title() string { return "METRICS" }
 func (c *Telemetry) Glyph() string { return "◈" }
-func (c *Telemetry) Key() string   { return "ice" }
+func (c *Telemetry) Key() string   { return "metrics" }
 func (c *Telemetry) Init() tea.Cmd { return nil }
+
+func (c *Telemetry) Contexts() []string { return []string{keys.Panel} }
 
 // Telemetry as last seen
 func (c *Telemetry) Snapshot() harness.Telemetry { return c.snap }
@@ -62,7 +65,7 @@ func (c *Telemetry) note(s string) {
 	}
 }
 
-func (c *Telemetry) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
+func (c *Telemetry) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
 	case harness.AttemptMsg:
 		c.snap = msg.Telemetry
@@ -77,7 +80,7 @@ func (c *Telemetry) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
 		}
 	case harness.FailoverMsg:
 		c.note(render.Bad(fmt.Sprintf("failover past model %d: %s", msg.From, render.Truncate(msg.Err.Error(), 40)), c.env.Theme))
-		return c, deck.Notify("failover: trying the next model", deck.Warn)
+		return c, wm.Notify("failover: trying the next model", wm.Warn)
 	case harness.ServedMsg:
 		if msg.Index > 0 {
 			c.note(render.Warm(fmt.Sprintf("served by fallback model %d", msg.Index), c.env.Theme))

@@ -24,6 +24,8 @@ const (
 	SourceFile SourceKind = "file"
 	// Value is a shell command whose trimmed output is the credential
 	SourceExec SourceKind = "exec"
+	// No credential, kept over the source of a template
+	SourceNone SourceKind = "none"
 )
 
 // Budget for an exec source
@@ -42,7 +44,7 @@ func Exec(command string) Source { return Source{Kind: SourceExec, Value: comman
 
 func (s Source) validate(profile string) error {
 	switch s.Kind {
-	case "":
+	case "", SourceNone:
 		return nil
 	case SourceEnv, SourceStatic, SourceFile, SourceExec:
 		if s.Value == "" {
@@ -56,7 +58,7 @@ func (s Source) validate(profile string) error {
 // Names the source without revealing a static credential
 func (s Source) Describe() string {
 	switch s.Kind {
-	case "":
+	case "", SourceNone:
 		return "no key source"
 	case SourceStatic:
 		return "static key"
@@ -67,7 +69,7 @@ func (s Source) Describe() string {
 // Produces the credential, empty with no error for the zero source
 func (s Source) Resolve(ctx context.Context) (string, error) {
 	switch s.Kind {
-	case "":
+	case "", SourceNone:
 		return "", nil
 	case SourceEnv:
 		return os.Getenv(s.Value), nil

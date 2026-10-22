@@ -1,4 +1,4 @@
-// Netrunner terminal for agent runs, a deck of cards over the icebath harness
+// Netrunner terminal for agent runs, a tiling desk of cards over the icebath harness
 package main
 
 import (
@@ -50,7 +50,6 @@ func run(args []string) int {
 		list     = fs.Bool("sessions", false, "list stored sessions and exit")
 		theme    = fs.String("theme", "", "palette, blackwall, light, contrast or plain")
 		motion   = fs.Float64("motion", -1, "animation scale from 0 to 1")
-		noHints  = fs.Bool("no-hints", false, "start with the hint bar hidden")
 		showVer  = fs.Bool("version", false, "print the version and exit")
 		kn       knobs
 	)
@@ -109,10 +108,6 @@ func run(args []string) int {
 	if *motion >= 0 {
 		m := *motion
 		cfg.UI.Motion = &m
-	}
-	if *noHints {
-		hints := false
-		cfg.UI.Hints = &hints
 	}
 	for _, k := range kn {
 		key, value, err := harness.ParseKnob(k)

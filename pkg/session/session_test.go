@@ -357,3 +357,31 @@ func normalize(entries []Entry) []Entry {
 	}
 	return out
 }
+
+func TestRenameHoldsAgainstDerivedTitles(t *testing.T) {
+	s := New()
+	s.SetTitle("derived")
+	if s.Title() != "derived" || s.Named() {
+		t.Fatal("a derived title is not a name")
+	}
+	s.Rename("chosen")
+	s.SetTitle("derived again")
+	if s.Title() != "chosen" || !s.Named() {
+		t.Fatal("a chosen name holds against derivation")
+	}
+	f := s.Fork()
+	f.SetTitle("fork derived")
+	if f.Title() != "chosen" || !f.Named() {
+		t.Fatal("a fork keeps the name")
+	}
+	h := s.Header()
+	back := FromHeader(h, nil, nil)
+	if !h.Named || !back.Named() || back.Title() != "chosen" {
+		t.Fatal("the name survives the store")
+	}
+	s.Rename("")
+	s.SetTitle("derived at last")
+	if s.Named() || s.Title() != "derived at last" {
+		t.Fatal("an empty name hands the title back to derivation")
+	}
+}

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -116,11 +115,20 @@ func Rename(t Tool, name string) Tool {
 	return renamed{Tool: t, name: name}
 }
 
-// Name pattern every supported protocol accepts
-var namePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-
-// Reports whether name is acceptable to every supported protocol
-func ValidName(name string) bool { return namePattern.MatchString(name) }
+// Reports whether name is acceptable to every supported protocol, letters, digits, underscores and dashes up to 64 bytes
+func ValidName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
 
 // Checks that a parameter schema is a JSON object describing an object
 func ValidSchema(raw json.RawMessage) error {
@@ -202,6 +210,7 @@ type Registry struct {
 	mu       sync.RWMutex
 	tools    map[string]Tool
 	order    []string
+	off      map[string]bool
 	onChange []func()
 }
 
@@ -214,9 +223,9 @@ func (r *Registry) Add(tools ...Tool) error {
 	seen := map[string]bool{}
 	for _, t := range tools {
 		def := t.Definition()
-		if !namePattern.MatchString(def.Name) {
+		if !ValidName(def.Name) {
 			r.mu.Unlock()
-			return fmt.Errorf("tool: name %q does not match %s", def.Name, namePattern)
+			return fmt.Errorf("tool: name %q must be letters, digits, underscores and dashes up to 64 bytes", def.Name)
 		}
 		if err := ValidSchema(def.Parameters); err != nil {
 			r.mu.Unlock()
@@ -290,15 +299,54 @@ func (r *Registry) Len() int {
 	return len(r.order)
 }
 
-// Lists definitions in registration order for a protocol request
+// Lists definitions of enabled tools in registration order for a protocol request
 func (r *Registry) Definitions() []protocol.Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	defs := make([]protocol.Tool, 0, len(r.order))
 	for _, name := range r.order {
-		defs = append(defs, r.tools[name].Definition())
+		if !r.off[name] {
+			defs = append(defs, r.tools[name].Definition())
+		}
 	}
 	return defs
+}
+
+// Turns a tool on or off by name, an off tool withheld from requests and refused when called
+func (r *Registry) SetEnabled(name string, on bool) {
+	r.mu.Lock()
+	if r.off == nil {
+		r.off = map[string]bool{}
+	}
+	if on {
+		delete(r.off, name)
+	} else {
+		r.off[name] = true
+	}
+	fns := append([]func(){}, r.onChange...)
+	r.mu.Unlock()
+	for _, fn := range fns {
+		fn()
+	}
+}
+
+// Reports whether the tool is on, true for names never turned off
+func (r *Registry) Enabled(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return !r.off[name]
+}
+
+// Names turned off, sorted, registered or not
+func (r *Registry) Disabled() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.off))
+	for name := range r.off {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Lists the names of registered tools annotated read only, sorted
@@ -333,6 +381,11 @@ func (r *Registry) Run(ctx context.Context, call protocol.ToolCall) (out Outcome
 	t, ok := r.Lookup(call.Name)
 	if !ok {
 		out.Content = []protocol.Part{protocol.Text{Text: "unknown tool " + call.Name}}
+		out.IsError = true
+		return out
+	}
+	if !r.Enabled(call.Name) {
+		out.Content = []protocol.Part{protocol.Text{Text: "tool " + call.Name + " is turned off"}}
 		out.IsError = true
 		return out
 	}

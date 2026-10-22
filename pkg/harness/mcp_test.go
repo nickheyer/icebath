@@ -133,8 +133,8 @@ func TestServerConfigDialers(t *testing.T) {
 func TestMCPManagerRegistersToolsOffTheCallback(t *testing.T) {
 	s := newSink()
 	reg := &tool.Registry{}
-	m := NewMCP(s.send, reg)
-	m.MaxLog = 1
+	j := NewJournal()
+	m := NewMCP(j.Tap(s.send), reg)
 	ctx := context.Background()
 	if err := m.Add(ctx, ServerConfig{Name: ""}); err == nil {
 		t.Fatal("unnamed server accepted")
@@ -182,21 +182,20 @@ func TestMCPManagerRegistersToolsOffTheCallback(t *testing.T) {
 	if reg.Len() != 2 {
 		t.Fatalf("registry holds %d tools", reg.Len())
 	}
+	logged := func() bool {
+		for _, line := range j.Lines() {
+			if line.Source == "mcp fake" && line.Text == "tools changed" && line.Level == LevelInfo {
+				return true
+			}
+		}
+		return false
+	}
 	deadline := time.Now().Add(5 * time.Second)
-	for len(m.Log()) == 0 && time.Now().Before(deadline) {
+	for !logged() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if lines := m.Log(); len(lines) != 1 || lines[0].Text != "tools changed" || lines[0].Level != "info" {
-		t.Fatalf("%+v", lines)
-	}
-	logged := false
-	for _, msg := range s.all() {
-		if _, ok := msg.(MCPLogMsg); ok {
-			logged = true
-		}
-	}
-	if !logged {
-		t.Fatal("log line must be published as a message")
+	if !logged() {
+		t.Fatalf("server log missing from the journal %+v", j.Lines())
 	}
 	srv.change("sum")
 	s.wait(t, func(a any) bool {

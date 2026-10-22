@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -34,10 +33,14 @@ type AuthBuilder func(p Profile, key string) (provider.Auth, error)
 // Declarative description of one endpoint and where its credential comes from
 type Profile struct {
 	Name string `json:"name"`
+	// Built in profile this one starts from, filling every field left empty
+	Template string `json:"template,omitempty"`
+	// Kept out of pickers and refused when chosen
+	Disabled bool `json:"disabled,omitempty"`
 	// Family of the endpoint, naming the registered vendor whose conventions apply
 	Vendor   string      `json:"vendor,omitempty"`
-	Protocol protocol.ID `json:"protocol"`
-	BaseURL  string      `json:"base_url"`
+	Protocol protocol.ID `json:"protocol,omitempty"`
+	BaseURL  string      `json:"base_url,omitempty"`
 	Auth     AuthKind    `json:"auth,omitempty"`
 	// Header or query parameter name carrying the credential
 	AuthName string `json:"auth_name,omitempty"`
@@ -57,6 +60,52 @@ type Profile struct {
 	Options map[string]string `json:"options,omitempty"`
 }
 
+// Profile with every empty field taken from its template, unchanged without one
+func (p Profile) Expand() (Profile, error) {
+	if p.Template == "" {
+		return p, nil
+	}
+	t, ok := Lookup(p.Template)
+	if !ok {
+		return Profile{}, fmt.Errorf("profile %s: no built in profile %q to start from", p.Name, p.Template)
+	}
+	out := p.Clone()
+	if out.Vendor == "" {
+		out.Vendor = t.Vendor
+	}
+	if out.Protocol == "" {
+		out.Protocol = t.Protocol
+	}
+	if out.BaseURL == "" {
+		out.BaseURL = t.BaseURL
+	}
+	if out.Auth == "" {
+		out.Auth, out.AuthName = t.Auth, t.AuthName
+	}
+	if out.Key.Kind == "" {
+		out.Key = t.Key
+	}
+	if out.Header == nil {
+		out.Header = t.Header
+	}
+	if out.Query == nil {
+		out.Query = t.Query
+	}
+	if len(out.Models) == 0 {
+		out.Models = t.Models
+	}
+	if out.BaseURLEnv == "" {
+		out.BaseURLEnv = t.BaseURLEnv
+	}
+	if out.Extra == nil {
+		out.Extra = t.Extra
+	}
+	if out.Options == nil {
+		out.Options = t.Options
+	}
+	return out, nil
+}
+
 // Default model id, the first listed, or empty
 func (p Profile) Model() string {
 	if len(p.Models) > 0 {
@@ -65,11 +114,25 @@ func (p Profile) Model() string {
 	return ""
 }
 
-var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+// Reports whether a name starts with a letter or digit followed by letters, digits, underscores, dots or dashes
+func ValidName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		alnum := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+		if alnum || (i > 0 && (c == '_' || c == '.' || c == '-')) {
+			continue
+		}
+		return false
+	}
+	return true
+}
 
 // Checks that the profile names everything a build will need
 func (p Profile) Validate() error {
-	if !namePattern.MatchString(p.Name) {
+	if !ValidName(p.Name) {
 		return fmt.Errorf("profile %q: invalid name", p.Name)
 	}
 	if p.Protocol == "" {
@@ -197,7 +260,7 @@ func (p Profile) Open(ctx context.Context) (*provider.Provider, error) {
 		return nil, fmt.Errorf("profile %s: %w", p.Name, err)
 	}
 	if p.needsKey() && key == "" {
-		if p.Key.Kind == "" {
+		if p.Key.Kind == "" || p.Key.Kind == SourceNone {
 			return nil, fmt.Errorf("profile %s: credential is required and no key source is set", p.Name)
 		}
 		return nil, fmt.Errorf("profile %s: %s yielded no credential", p.Name, p.Key.Describe())
@@ -287,6 +350,18 @@ func RegisterAuth(kind AuthKind, b AuthBuilder) {
 		panic("profiles: duplicate auth kind " + string(kind))
 	}
 	auths[kind] = b
+}
+
+// Every auth kind a profile may name, the generic ones first and registered ones sorted after
+func AuthKinds() []AuthKind {
+	mu.RLock()
+	defer mu.RUnlock()
+	extra := make([]AuthKind, 0, len(auths))
+	for k := range auths {
+		extra = append(extra, k)
+	}
+	sort.Slice(extra, func(i, j int) bool { return extra[i] < extra[j] })
+	return append([]AuthKind{AuthNone, AuthBearer, AuthHeader, AuthQuery}, extra...)
 }
 
 func lookupAuth(kind AuthKind) (AuthBuilder, bool) {

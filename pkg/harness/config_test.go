@@ -13,8 +13,8 @@ import (
 )
 
 func TestReadConfigRejectsBadInput(t *testing.T) {
-	if _, err := ReadConfig(strings.NewReader(`{"profile":"x","nope":1}`)); err == nil {
-		t.Fatal("unknown field accepted")
+	if c, err := ReadConfig(strings.NewReader(`{"profile":"x","nope":1}`)); err != nil || c.Profile != "x" {
+		t.Fatalf("unknown keys must be ignored: %v %+v", err, c)
 	}
 	if _, err := ReadConfig(strings.NewReader(`{"mode":"weird"}`)); err == nil {
 		t.Fatal("unknown mode accepted")
@@ -34,9 +34,9 @@ func TestReadConfigRejectsBadInput(t *testing.T) {
 func TestMergeLayersConfigurations(t *testing.T) {
 	temp := 0.3
 	motion := 0.5
-	hints := false
+	cascade := true
 	base := Config{Profile: "a", Model: "m1", MaxTokens: 1, Permissions: rules.Set{Allow: []string{"Read"}}, Hooks: hooks.Config{hooks.Stop: []hooks.Group{{Hooks: []hooks.Command{{Command: "a"}}}}}, MCP: []ServerConfig{{Name: "x", Command: "old"}, {Name: "y", Command: "y"}}, Shell: ShellConfig{Env: []string{"A=1"}}, Sources: []string{"base"}}
-	over := Config{Model: "m2", MaxRounds: 3, Temperature: &temp, Permissions: rules.Set{Deny: []string{"Bash"}}, Hooks: hooks.Config{hooks.Stop: []hooks.Group{{Hooks: []hooks.Command{{Command: "b"}}}}, hooks.PreToolUse: []hooks.Group{{Hooks: []hooks.Command{{Command: "c"}}}}}, MCP: []ServerConfig{{Name: "x", Command: "new"}, {Name: "z", URL: "http://z"}}, Subagents: Subagents{Parallel: true, MaxDepth: 2, Timeout: 9, Model: &Target{Profile: "p"}}, Shell: ShellConfig{Timeout: 5, MaxTimeout: 6, Env: []string{"B=2"}}, Web: WebConfig{AllowPrivate: true, Disabled: true}, UI: UIConfig{Theme: "light", Motion: &motion, Hints: &hints, Ratio: 0.5}, Record: &RecordConfig{Path: "c.json"}, Root: "/r", SessionsDir: "/s", Compaction: Compaction{Threshold: 100, Keep: 2, Model: &Target{Profile: "q"}, Instructions: "i"}, Judge: &Judge{Target: Target{Profile: "j"}}, Fallbacks: []Target{{Profile: "f"}}, System: "sys", SystemFile: "f.md", Mode: "plan", Extra: map[string]json.RawMessage{"k": json.RawMessage(`1`)}, ProfileFiles: []string{"p.json"}, CatalogFiles: []string{"c.json"}, Sources: []string{"over"}}
+	over := Config{Model: "m2", MaxRounds: 3, Temperature: &temp, Permissions: rules.Set{Deny: []string{"Bash"}}, Hooks: hooks.Config{hooks.Stop: []hooks.Group{{Hooks: []hooks.Command{{Command: "b"}}}}, hooks.PreToolUse: []hooks.Group{{Hooks: []hooks.Command{{Command: "c"}}}}}, MCP: []ServerConfig{{Name: "x", Command: "new"}, {Name: "z", URL: "http://z"}}, Subagents: Subagents{Parallel: true, MaxDepth: 2, Timeout: 9, Model: &Target{Profile: "p"}}, Shell: ShellConfig{Timeout: 5, MaxTimeout: 6, Env: []string{"B=2"}}, Web: WebConfig{AllowPrivate: true, Disabled: true}, UI: UIConfig{Theme: "light", Motion: &motion, Ratio: 0.5, Cascade: &cascade}, Record: &RecordConfig{Path: "c.json"}, Root: "/r", SessionsDir: "/s", Compaction: Compaction{Threshold: 100, Keep: 2, Model: &Target{Profile: "q"}, Instructions: "i"}, Judge: &Judge{Target: Target{Profile: "j"}}, Fallbacks: []Target{{Profile: "f"}}, System: "sys", SystemFile: "f.md", Mode: "plan", Extra: map[string]json.RawMessage{"k": json.RawMessage(`1`)}, ProfileFiles: []string{"p.json"}, CatalogFiles: []string{"c.json"}, Sources: []string{"over"}}
 	out := Merge(base, over)
 	if out.Profile != "a" || out.Model != "m2" || out.MaxTokens != 1 || out.MaxRounds != 3 || *out.Temperature != 0.3 || out.Mode != "plan" || out.System != "sys" || out.SystemFile != "f.md" {
 		t.Fatalf("%+v", out)
@@ -56,7 +56,7 @@ func TestMergeLayersConfigurations(t *testing.T) {
 	if out.Shell.Timeout != 5 || out.Shell.MaxTimeout != 6 || len(out.Shell.Env) != 2 || !out.Web.AllowPrivate || !out.Web.Disabled {
 		t.Fatalf("%+v %+v", out.Shell, out.Web)
 	}
-	if out.UI.Theme != "light" || *out.UI.Motion != 0.5 || *out.UI.Hints || out.UI.Ratio != 0.5 || out.Record.Path != "c.json" || out.Root != "/r" || out.SessionsDir != "/s" {
+	if out.UI.Theme != "light" || *out.UI.Motion != 0.5 || out.UI.Ratio != 0.5 || out.UI.Cascade == nil || *out.UI.Cascade != true || out.Record.Path != "c.json" || out.Root != "/r" || out.SessionsDir != "/s" {
 		t.Fatalf("%+v", out)
 	}
 	if out.Compaction.Threshold != 100 || out.Compaction.Keep != 2 || out.Compaction.Model.Profile != "q" || out.Compaction.Instructions != "i" || out.Judge.Profile != "j" || len(out.Fallbacks) != 1 {
@@ -145,7 +145,7 @@ func TestDiscoverLayersFilesAndEnvironment(t *testing.T) {
 
 func TestKnobsAndKeyValues(t *testing.T) {
 	var c Config
-	for _, ok := range []string{"max_tokens=100", "max_rounds=3", "temperature=0.5", "compact_threshold=0", "mode=plan", "theme=light", "motion=0.2", "extra.thinking={\"type\":\"adaptive\"}", "extra.note=plain"} {
+	for _, ok := range []string{"max_tokens=100", "max_rounds=3", "temperature=0.5", "compact_threshold=0", "mode=plan", "theme=light", "motion=0.2", "cascade=true", "extra.thinking={\"type\":\"adaptive\"}", "extra.note=plain"} {
 		k, v, err := ParseKnob(ok)
 		if err != nil {
 			t.Fatal(err)
@@ -154,10 +154,10 @@ func TestKnobsAndKeyValues(t *testing.T) {
 			t.Fatalf("%s: %v", ok, err)
 		}
 	}
-	if c.MaxTokens != 100 || c.MaxRounds != 3 || *c.Temperature != 0.5 || c.Mode != "plan" || c.UI.Theme != "light" || *c.UI.Motion != 0.2 || string(c.Extra["thinking"]) != `{"type":"adaptive"}` || string(c.Extra["note"]) != `"plain"` {
+	if c.MaxTokens != 100 || c.MaxRounds != 3 || *c.Temperature != 0.5 || c.Mode != "plan" || c.UI.Theme != "light" || *c.UI.Motion != 0.2 || c.UI.Cascade == nil || !*c.UI.Cascade || string(c.Extra["thinking"]) != `{"type":"adaptive"}` || string(c.Extra["note"]) != `"plain"` {
 		t.Fatalf("%+v", c)
 	}
-	for _, bad := range []string{"max_tokens=x", "max_tokens=0", "max_rounds=-1", "temperature=9", "compact_threshold=-1", "mode=weird", "motion=2", "unknown=1"} {
+	for _, bad := range []string{"max_tokens=x", "max_tokens=0", "max_rounds=-1", "temperature=9", "compact_threshold=-1", "mode=weird", "motion=2", "cascade=maybe", "unknown=1"} {
 		k, v, _ := ParseKnob(bad)
 		if err := c.SetKnob(k, v); err == nil {
 			t.Fatalf("%s accepted", bad)
@@ -165,5 +165,12 @@ func TestKnobsAndKeyValues(t *testing.T) {
 	}
 	if _, _, err := ParseKnob("novalue"); err == nil {
 		t.Fatal("knob without value accepted")
+	}
+}
+
+func TestNewlineIsNoKnob(t *testing.T) {
+	var c Config
+	if err := c.SetKnob("newline", "shift+enter"); err == nil {
+		t.Fatal("a backslash before enter is the one newline, there is no knob for it")
 	}
 }

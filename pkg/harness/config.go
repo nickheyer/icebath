@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -84,16 +86,22 @@ type WebConfig struct {
 	Disabled bool `json:"disabled,omitempty"`
 }
 
+// Tool settings
+type ToolsConfig struct {
+	// Tool names withheld from the model and refused when called
+	Disabled []string `json:"disabled,omitempty"`
+}
+
 // Appearance settings
 type UIConfig struct {
 	// Theme name such as blackwall, light, contrast or plain
 	Theme string `json:"theme,omitempty"`
 	// Motion scale from zero for snapping to one for full springs
 	Motion *float64 `json:"motion,omitempty"`
-	// Hint bar shown at startup
-	Hints *bool `json:"hints,omitempty"`
 	// Main slot share of the width
 	Ratio float64 `json:"ratio,omitempty"`
+	// Cascade lights the focused card's border with a flowing energy comet
+	Cascade *bool `json:"cascade,omitempty"`
 }
 
 // Cassette settings for recording and replaying model traffic
@@ -125,6 +133,7 @@ type Config struct {
 	Subagents   Subagents                  `json:"subagents,omitempty"`
 	Shell       ShellConfig                `json:"shell,omitempty"`
 	Web         WebConfig                  `json:"web,omitempty"`
+	Tools       ToolsConfig                `json:"tools,omitempty"`
 	UI          UIConfig                   `json:"ui,omitempty"`
 	Record      *RecordConfig              `json:"record,omitempty"`
 	// Directory every file path must stay inside, the working directory when empty
@@ -139,12 +148,10 @@ type Config struct {
 	Sources []string `json:"-"`
 }
 
-// Reads one configuration file
+// Reads one configuration file, ignoring keys it does not know
 func ReadConfig(r io.Reader) (Config, error) {
 	var c Config
-	dec := json.NewDecoder(r)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
+	if err := json.NewDecoder(r).Decode(&c); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	if c.Mode != "" {
@@ -285,17 +292,20 @@ func Merge(base, over Config) Config {
 	if over.Web.Disabled {
 		out.Web.Disabled = true
 	}
+	if len(over.Tools.Disabled) > 0 {
+		out.Tools.Disabled = slices.Compact(slices.Sorted(slices.Values(append(append([]string(nil), base.Tools.Disabled...), over.Tools.Disabled...))))
+	}
 	if over.UI.Theme != "" {
 		out.UI.Theme = over.UI.Theme
 	}
 	if over.UI.Motion != nil {
 		out.UI.Motion = over.UI.Motion
 	}
-	if over.UI.Hints != nil {
-		out.UI.Hints = over.UI.Hints
-	}
 	if over.UI.Ratio != 0 {
 		out.UI.Ratio = over.UI.Ratio
+	}
+	if over.UI.Cascade != nil {
+		out.UI.Cascade = over.UI.Cascade
 	}
 	if over.Record != nil {
 		out.Record = over.Record
@@ -312,6 +322,19 @@ func Merge(base, over Config) Config {
 	return out
 }
 
+// Configuration files a start under dir reads, the user one first
+func configLayers(dir string) ([]string, error) {
+	userDir, err := profiles.ConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	layers := []string{filepath.Join(userDir, ConfigFile)}
+	if dir != "" {
+		layers = append(layers, filepath.Join(dir, ProjectDir, ConfigFile))
+	}
+	return layers, nil
+}
+
 // Reads the user configuration, then the project configuration under dir, then the environment, later layers winning
 func Discover(dir string) (Config, error) {
 	var out Config
@@ -319,9 +342,9 @@ func Discover(dir string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	layers := []string{filepath.Join(userDir, ConfigFile)}
-	if dir != "" {
-		layers = append(layers, filepath.Join(dir, ProjectDir, ConfigFile))
+	layers, err := configLayers(dir)
+	if err != nil {
+		return Config{}, err
 	}
 	for _, path := range layers {
 		c, err := ReadConfigFile(path)
@@ -407,59 +430,127 @@ func ParseKnob(s string) (string, string, error) {
 	return k, v, nil
 }
 
-// Applies a KNOB=VALUE override to the configuration
+// Applies a KNOB=VALUE override to the configuration, an empty value unsetting the knob
 func (c *Config) SetKnob(key, value string) error {
+	_, err := c.setKnob(key, value)
+	return err
+}
+
+// Applies a knob and returns the field it fills in a configuration file, an empty value removing the field
+func (c *Config) setKnob(key, value string) (Field, error) {
+	path, err := knobPath(key)
+	if err != nil {
+		return Field{}, err
+	}
+	if value == "" {
+		c.unset(key)
+		return Field{Path: path, Unset: true}, nil
+	}
 	switch key {
 	case "max_tokens":
 		n, err := strconv.Atoi(value)
 		if err != nil || n <= 0 {
-			return fmt.Errorf("max_tokens must be a positive integer, got %q", value)
+			return Field{}, fmt.Errorf("max_tokens must be a positive integer, got %q", value)
 		}
 		c.MaxTokens = n
+		return Field{Path: path, Value: n}, nil
 	case "max_rounds":
 		n, err := strconv.Atoi(value)
 		if err != nil || n <= 0 {
-			return fmt.Errorf("max_rounds must be a positive integer, got %q", value)
+			return Field{}, fmt.Errorf("max_rounds must be a positive integer, got %q", value)
 		}
 		c.MaxRounds = n
+		return Field{Path: path, Value: n}, nil
 	case "temperature":
 		f, err := strconv.ParseFloat(value, 64)
 		if err != nil || f < 0 || f > 2 {
-			return fmt.Errorf("temperature must be between 0 and 2, got %q", value)
+			return Field{}, fmt.Errorf("temperature must be between 0 and 2, got %q", value)
 		}
 		c.Temperature = &f
+		return Field{Path: path, Value: f}, nil
 	case "compact_threshold":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
-			return fmt.Errorf("compact_threshold must be a non negative integer, got %q", value)
+			return Field{}, fmt.Errorf("compact_threshold must be a non negative integer, got %q", value)
 		}
 		c.Compaction.Threshold = n
+		return Field{Path: path, Value: n}, nil
 	case "mode":
 		if _, err := parseMode(value); err != nil {
-			return err
+			return Field{}, err
 		}
 		c.Mode = value
+		return Field{Path: path, Value: value}, nil
 	case "theme":
 		c.UI.Theme = value
+		return Field{Path: path, Value: value}, nil
 	case "motion":
 		f, err := strconv.ParseFloat(value, 64)
 		if err != nil || f < 0 || f > 1 {
-			return fmt.Errorf("motion must be between 0 and 1, got %q", value)
+			return Field{}, fmt.Errorf("motion must be between 0 and 1, got %q", value)
 		}
 		c.UI.Motion = &f
-	default:
-		if strings.HasPrefix(key, "extra.") {
-			if c.Extra == nil {
-				c.Extra = map[string]json.RawMessage{}
-			}
-			raw := json.RawMessage(value)
-			if !json.Valid(raw) {
-				raw, _ = json.Marshal(value)
-			}
-			c.Extra[strings.TrimPrefix(key, "extra.")] = raw
-			return nil
+		return Field{Path: path, Value: f}, nil
+	case "cascade":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return Field{}, fmt.Errorf("cascade must be true or false, got %q", value)
 		}
-		return fmt.Errorf("unknown knob %q", key)
+		c.UI.Cascade = &b
+		return Field{Path: path, Value: b}, nil
 	}
-	return nil
+	name := strings.TrimPrefix(key, "extra.")
+	extra := maps.Clone(c.Extra)
+	if extra == nil {
+		extra = map[string]json.RawMessage{}
+	}
+	raw := json.RawMessage(value)
+	if !json.Valid(raw) {
+		raw, _ = json.Marshal(value)
+	}
+	extra[name] = raw
+	c.Extra = extra
+	return Field{Path: path, Value: raw}, nil
+}
+
+// Path of the field a knob fills in a configuration file
+func knobPath(key string) ([]string, error) {
+	switch key {
+	case "max_tokens", "max_rounds", "temperature", "mode":
+		return []string{key}, nil
+	case "compact_threshold":
+		return []string{"compaction", "threshold"}, nil
+	case "theme", "motion", "cascade":
+		return []string{"ui", key}, nil
+	}
+	if name, ok := strings.CutPrefix(key, "extra."); ok && name != "" {
+		return []string{"extra", name}, nil
+	}
+	return nil, fmt.Errorf("unknown knob %q", key)
+}
+
+// Clears the value a knob holds so its default applies
+func (c *Config) unset(key string) {
+	switch key {
+	case "max_tokens":
+		c.MaxTokens = 0
+	case "max_rounds":
+		c.MaxRounds = 0
+	case "temperature":
+		c.Temperature = nil
+	case "compact_threshold":
+		c.Compaction.Threshold = 0
+	case "mode":
+		c.Mode = ""
+	case "theme":
+		c.UI.Theme = ""
+	case "motion":
+		c.UI.Motion = nil
+	case "cascade":
+		c.UI.Cascade = nil
+	default:
+		extra := maps.Clone(c.Extra)
+		delete(extra, strings.TrimPrefix(key, "extra."))
+		c.Extra = extra
+	}
 }

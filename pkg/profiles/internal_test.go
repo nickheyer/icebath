@@ -326,17 +326,105 @@ func TestReadEarlierFormatAndDefault(t *testing.T) {
 		t.Fatalf("%v %+v", err, doc)
 	}
 	for name, bad := range map[string]string{
-		"unknown field": `{"profiles":{"x":{"API_KEY":"k","BASE_URL":"http://x","PROTOCOL":"p"}}}`,
-		"no url":        `{"profiles":{"x":{"API_KEY":"k"}}}`,
-		"bad name":      `{"profiles":{"bad name":{"BASE_URL":"http://x"}}}`,
-		"not object":    `{"profiles":{"x":"http://x"}}`,
-		"not json":      `{"profiles":{"x":{"BASE_URL":}}}`,
+		"no url":     `{"profiles":{"x":{"API_KEY":"k"}}}`,
+		"bad name":   `{"profiles":{"bad name":{"BASE_URL":"http://x"}}}`,
+		"not object": `{"profiles":{"x":"http://x"}}`,
+		"not json":   `{"profiles":{"x":{"BASE_URL":}}}`,
 	} {
 		if _, err := Read(strings.NewReader(bad)); err == nil {
 			t.Fatalf("%s accepted", name)
 		}
 	}
-	if _, err := Read(strings.NewReader(`{"profiles":{"x":{"API_KEY":"k","BASE_URL":"http://x","PROTOCOL":"p"}}}`)); err == nil || !strings.Contains(err.Error(), "PROTOCOL") || !strings.Contains(err.Error(), "x") {
-		t.Fatalf("an unknown earlier field must be named with its profile: %v", err)
+	if doc, err := Read(strings.NewReader(`{"profiles":{"x":{"API_KEY":"k","BASE_URL":"http://x","PROTOCOL":"p"}}}`)); err != nil || len(doc.Profiles) != 1 || doc.Profiles[0].Name != "x" {
+		t.Fatalf("an unknown earlier field must be ignored: %v %+v", err, doc)
+	}
+}
+
+func TestTemplatesFillWhatAProfileLeavesEmpty(t *testing.T) {
+	Register(Profile{Name: "tpl-test", Vendor: "v", Protocol: "p", BaseURL: "http://tpl", Auth: AuthHeader, AuthName: "x-key", Key: Env("TPL_KEY"), Models: []string{"m1"}, BaseURLEnv: "TPL_URL", Options: map[string]string{"o": "1"}})
+	p, err := Profile{Name: "mine", Template: "tpl-test", Models: []string{"m2"}}.Expand()
+	if err != nil || p.Vendor != "v" || p.Protocol != "p" || p.BaseURL != "http://tpl" || p.Auth != AuthHeader || p.AuthName != "x-key" || p.Key.Value != "TPL_KEY" || p.Model() != "m2" || p.BaseURLEnv != "TPL_URL" || p.Options["o"] != "1" || p.Template != "tpl-test" {
+		t.Fatalf("%+v %v", p, err)
+	}
+	own, _ := Profile{Name: "own", Template: "tpl-test", Auth: AuthBearer, Key: Static("k")}.Expand()
+	if own.Auth != AuthBearer || own.AuthName != "" || own.Key.Value != "k" {
+		t.Fatalf("a profile keeps the auth and key it names %+v", own)
+	}
+	if _, err := (Profile{Name: "x", Template: "nowhere"}).Expand(); err == nil {
+		t.Fatal("an unknown template accepted")
+	}
+	bare, _ := Profile{Name: "bare", Template: "tpl-test", Key: Source{Kind: SourceNone}}.Expand()
+	if bare.Key.Kind != SourceNone || bare.Key.Describe() != "no key source" || bare.Validate() != nil {
+		t.Fatalf("an explicit none keeps the template key out %+v", bare.Key)
+	}
+	if k, err := bare.Key.Resolve(context.Background()); k != "" || err != nil {
+		t.Fatal("none yields no credential")
+	}
+	if _, err := bare.Open(context.Background()); err == nil || !strings.Contains(err.Error(), "no key source is set") {
+		t.Fatalf("a profile that needs a key says none is set %v", err)
+	}
+	if p, _ := (Profile{Name: "plain"}).Expand(); p.Name != "plain" || p.BaseURL != "" {
+		t.Fatal("a profile without a template stays as it is")
+	}
+	doc, err := Read(strings.NewReader(`{"default":"mine","profiles":[{"name":"mine","template":"tpl-test"},{"name":"off","template":"tpl-test","disabled":true}]}`))
+	if err != nil || doc.Profiles[0].BaseURL != "" || !doc.Profiles[1].Disabled {
+		t.Fatalf("a document keeps profiles as written %+v %v", doc, err)
+	}
+	list, _ := doc.Expanded()
+	if list[0].BaseURL != "http://tpl" {
+		t.Fatal("expanded profiles carry the template")
+	}
+	if _, err := Read(strings.NewReader(`[{"name":"x","template":"nowhere"}]`)); err == nil {
+		t.Fatal("reading checks templates")
+	}
+	if !ValidName("a.b-c_1") || ValidName("-a") || ValidName("") {
+		t.Fatal("names")
+	}
+	kinds := AuthKinds()
+	if len(kinds) < 4 || kinds[0] != AuthNone || kinds[3] != AuthQuery {
+		t.Fatalf("generic auth kinds lead %v", kinds)
+	}
+}
+
+func TestDocumentsEditAndWrite(t *testing.T) {
+	var d Document
+	if err := d.Put("", Profile{Name: "a", Protocol: "p", BaseURL: "http://a"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Put("", Profile{Name: "b", Protocol: "p", BaseURL: "http://b"})
+	d.Put("", Profile{Name: "c", Protocol: "p", BaseURL: "http://c"})
+	d.Default = "a"
+	if d.Put("", Profile{Name: "b"}) == nil || d.Put("ghost", Profile{Name: "g"}) == nil {
+		t.Fatal("duplicates and missing names are refused")
+	}
+	if err := d.Put("a", Profile{Name: "z", Protocol: "p", BaseURL: "http://z"}); err != nil || d.Profiles[0].Name != "z" || d.Default != "z" {
+		t.Fatalf("a rename keeps its place and the default follows %+v", d)
+	}
+	d.Move("c", -5)
+	d.Move("z", 1)
+	if d.Profiles[0].Name != "c" || d.Profiles[1].Name != "b" || d.Profiles[2].Name != "z" {
+		t.Fatalf("moves hold at the ends %+v", d.Profiles)
+	}
+	if d.Move("ghost", 1) == nil || d.Remove("ghost") == nil {
+		t.Fatal("missing profiles are reported")
+	}
+	d.Remove("z")
+	if d.Default != "" || len(d.Profiles) != 2 || d.Index("b") != 1 {
+		t.Fatal("removing the default clears it")
+	}
+	path := filepath.Join(t.TempDir(), "deep", "profiles.json")
+	if err := WriteFile(path, d); err != nil {
+		t.Fatal(err)
+	}
+	back, err := ReadFile(path)
+	if err != nil || len(back.Profiles) != 2 || back.Profiles[0].Name != "c" {
+		t.Fatalf("written documents read back %+v %v", back, err)
+	}
+	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+		t.Fatal("profile files are readable by their owner alone")
+	}
+	d.Profiles = append(d.Profiles, Profile{Name: "c", Protocol: "p", BaseURL: "http://c"})
+	if WriteFile(path, d) == nil {
+		t.Fatal("an invalid document is not written")
 	}
 }

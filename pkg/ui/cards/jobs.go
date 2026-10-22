@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/tool/shell"
-	"github.com/nickheyer/icebath/pkg/ui/deck"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Bytes of job output kept per job for the tail
@@ -25,6 +25,8 @@ type Jobs struct {
 	tails  map[string]*tail
 	vp     viewport.Model
 	follow bool
+	start  int
+	listH  int
 	w, h   int
 }
 
@@ -32,8 +34,6 @@ type tail struct {
 	buf  []byte
 	next int64
 }
-
-var jKill = key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "kill"))
 
 func NewJobs(env *Env) *Jobs {
 	vp := viewport.New()
@@ -43,13 +43,13 @@ func NewJobs(env *Env) *Jobs {
 	return j
 }
 
-func (j *Jobs) Title() string        { return "JOBS" }
-func (j *Jobs) Glyph() string        { return "⇣" }
-func (j *Jobs) Key() string          { return "jobs" }
-func (j *Jobs) Init() tea.Cmd        { return nil }
-func (j *Jobs) Selectable() bool     { return true }
-func (j *Jobs) Hints() []key.Binding { return []key.Binding{moveHint, jKill, tFollow} }
-func (j *Jobs) Claims() []string     { return []string{"j", "k", "J", "K", "g", "G", "f"} }
+func (j *Jobs) Title() string    { return "JOBS" }
+func (j *Jobs) Glyph() string    { return "⇣" }
+func (j *Jobs) Key() string      { return "jobs" }
+func (j *Jobs) Init() tea.Cmd    { return nil }
+func (j *Jobs) Selectable() bool { return true }
+
+func (j *Jobs) Contexts() []string { return []string{keys.Jobs, keys.List, keys.Panel} }
 
 // Jobs known, oldest first
 func (j *Jobs) List() []shell.JobInfo { return j.jobs }
@@ -86,7 +86,7 @@ func (j *Jobs) pull() {
 	}
 }
 
-func (j *Jobs) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
+func (j *Jobs) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
 	case harness.JobMsg:
 		j.refresh()
@@ -97,30 +97,27 @@ func (j *Jobs) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
 				}
 			}
 			j.pull()
-			return j, deck.RequestAttention(j, deck.Pulse)
+			return j, wm.RequestAttention(j, wm.Pulse)
 		}
 		return j, nil
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "j", "down":
-			j.sel = min(j.sel+1, max(0, len(j.jobs)-1))
-			j.pull()
-		case "k", "up":
-			j.sel = max(0, j.sel-1)
-			j.pull()
-		case "g":
-			j.vp.GotoTop()
-			j.follow = false
-		case "G":
-			j.vp.GotoBottom()
-			j.follow = true
-		case "J":
-			j.vp.ScrollDown(1)
-			j.follow = j.vp.AtBottom()
-		case "K":
+	case wm.ActionMsg:
+		switch msg.ID {
+		case "jobs.stop":
 			return j, j.kill()
-		case "f":
+		case "jobs.follow":
 			j.follow = !j.follow
+		case "jobs.scroll.down":
+			j.vp.PageDown()
+			j.follow = j.vp.AtBottom()
+		case "jobs.scroll.up":
+			j.vp.PageUp()
+			j.follow = false
+		default:
+			if next := listMove(msg.ID, j.sel, len(j.jobs), j.listH-render.TableHead); next != j.sel {
+				j.sel = next
+				j.follow = true
+				j.pull()
+			}
 		}
 	case tea.MouseWheelMsg:
 		var cmd tea.Cmd
@@ -128,8 +125,26 @@ func (j *Jobs) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
 		j.follow = j.vp.AtBottom()
 		return j, cmd
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft && msg.Y >= 1 && msg.Y-1 < len(j.jobs) {
-			j.sel = msg.Y - 1
+		if msg.Button != tea.MouseLeft {
+			return j, nil
+		}
+		if y := msg.Y - j.listH - 1; y >= 0 && msg.X == j.w-1 && j.w >= minGutterWidth {
+			switch hit, line := j.tailGutter().hit(y); hit {
+			case hitPageUp:
+				j.vp.PageUp()
+				j.follow = false
+			case hitPageDown:
+				j.vp.PageDown()
+				j.follow = j.vp.AtBottom()
+			case hitJump:
+				j.vp.SetYOffset(line)
+				j.follow = j.vp.AtBottom()
+			}
+			return j, nil
+		}
+		if row := msg.Y - render.TableHead + j.start; msg.Y >= render.TableHead && msg.Y < j.listH && row < len(j.jobs) {
+			j.sel = row
+			j.follow = true
 			j.pull()
 		}
 	}
@@ -142,7 +157,7 @@ func (j *Jobs) kill() tea.Cmd {
 	}
 	jb := j.jobs[j.sel]
 	if !jb.Running {
-		return deck.Notify("job already finished", deck.Info)
+		return wm.Notify("job already finished", wm.Info)
 	}
 	return func() tea.Msg { return KillJobMsg{Job: jb.ID} }
 }
@@ -178,20 +193,18 @@ func (j *Jobs) View(w, h int) string {
 		}
 		rows = append(rows, []string{jb.ID, label, state, render.Elapsed(elapsed), render.Bytes(jb.Bytes)})
 	}
-	listH := min(len(j.jobs)+1, max(h/3, 2))
-	table := strings.Split(render.Table(cols, rows, w, j.sel, t), "\n")
-	if len(table) > listH {
-		start := 0
-		if j.sel+1 >= listH {
-			start = j.sel + 2 - listH
-		}
-		table = append(table[:1], table[1+start:min(len(table), 1+start+listH-1)]...)
-	}
+	listH := min(len(j.jobs)+render.TableHead, max(h/3, render.TableHead+1), max(h, 1))
+	table, start := window(strings.Split(render.Table(cols, rows, w, j.sel, t), "\n"), j.sel, listH)
+	j.start, j.listH = start, len(table)
 	body := h - len(table) - 1
 	if body < 1 {
-		return strings.Join(table, "\n")
+		return strings.Join(table[:min(len(table), h)], "\n")
 	}
-	j.vp.SetWidth(w)
+	tw := w
+	if w >= minGutterWidth {
+		tw = w - 2
+	}
+	j.vp.SetWidth(tw)
 	j.vp.SetHeight(body)
 	text := ""
 	if j.sel < len(j.jobs) {
@@ -204,7 +217,16 @@ func (j *Jobs) View(w, h int) string {
 		j.vp.GotoBottom()
 	}
 	sep := render.Dim(strings.Repeat("┄", min(w, 40)), t)
-	return strings.Join(append(append(table, sep), j.vp.View()), "\n")
+	tail := j.vp.View()
+	if tw < w {
+		tail = j.tailGutter().beside(tail, w, t)
+	}
+	return strings.Join(append(append(table, sep), tail), "\n")
+}
+
+// Scrollbar of the tail capped with the keys that page it
+func (j *Jobs) tailGutter() gutter {
+	return gutter{h: j.vp.Height(), total: j.vp.TotalLineCount(), offset: j.vp.YOffset(), visible: j.vp.Height(), up: j.env.Keys.First("jobs.scroll.up"), down: j.env.Keys.First("jobs.scroll.down")}
 }
 
 func (j *Jobs) Status() string {
@@ -218,4 +240,9 @@ func (j *Jobs) Status() string {
 		return ""
 	}
 	return fmt.Sprintf("%d running", n)
+}
+
+// Actions the job list answers
+func (j *Jobs) Hints() []wm.Hint {
+	return []wm.Hint{{Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "jobs.stop"}, {Action: "jobs.follow"}, {Action: "jobs.scroll.down", Pair: "jobs.scroll.up", Label: "tail"}}
 }

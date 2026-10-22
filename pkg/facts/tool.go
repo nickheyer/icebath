@@ -33,6 +33,8 @@ const schema = `{"type":"object","properties":{
 // Tool that lets an agent record, refine and resolve facts in the store
 type Tool struct {
 	Store *Store
+	// Store of the calling run, used ahead of Store when set
+	Resolve func(context.Context) *Store
 	// Kinds accepted, DefaultKinds when empty
 	Kinds []string
 }
@@ -54,7 +56,8 @@ func (Tool) Annotations() tool.Annotations {
 }
 
 func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
-	if t.Store == nil {
+	store := t.store(ctx)
+	if store == nil {
 		return tool.Error("facts: no store configured"), nil
 	}
 	var in struct {
@@ -86,7 +89,7 @@ func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	var err error
 	verb := "Recorded"
 	if in.ID != "" {
-		if old, ok := t.Store.Get(in.ID); ok {
+		if old, ok := store.Get(in.ID); ok {
 			if in.Confidence == nil {
 				f.Confidence = old.Confidence
 			}
@@ -108,18 +111,18 @@ func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 			if in.Parent == "" {
 				f.Parent = old.Parent
 			}
-			out, err = t.Store.Update(f)
+			out, err = store.Update(f)
 			verb = "Updated"
 		} else {
-			out, err = t.Store.Add(f)
+			out, err = store.Add(f)
 		}
 	} else {
-		out, err = t.Store.Add(f)
+		out, err = store.Add(f)
 	}
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	return tool.Textf("%s %s %s: %s (%d facts on record)", verb, out.Kind, out.ID, out.Title, t.Store.Len()).With(out), nil
+	return tool.Textf("%s %s %s: %s (%d facts on record)", verb, out.Kind, out.ID, out.Title, store.Len()).With(out), nil
 }
 
 func allowed(kinds []string, kind string) bool {
@@ -132,3 +135,13 @@ func allowed(kinds []string, kind string) bool {
 }
 
 var _ tool.Tool = Tool{}
+
+// Store the call records into, resolved from the context when a resolver is set
+func (t Tool) store(ctx context.Context) *Store {
+	if t.Resolve != nil {
+		if s := t.Resolve(ctx); s != nil {
+			return s
+		}
+	}
+	return t.Store
+}

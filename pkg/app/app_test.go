@@ -6,18 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"image/color"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/facts"
@@ -29,11 +30,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/tool"
 	"github.com/nickheyer/icebath/pkg/tool/shell"
+	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
-	"github.com/nickheyer/icebath/pkg/ui/deck"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Chat completions server that answers with text, or with a tool call on the first request when asked
@@ -168,8 +171,8 @@ func TestEncodeCoversEveryMessage(t *testing.T) {
 		harness.AttemptMsg{Attempt: provider.Attempt{Status: 500, Err: errors.New("e"), Started: now}},
 		harness.FailoverMsg{From: 0, Err: errors.New("e")},
 		harness.SavedMsg{Session: "s", Path: "p", Err: errors.New("e")},
-		harness.FactMsg{Change: facts.Change{Op: facts.OpAdd, Fact: facts.Fact{ID: "f1"}}},
-		harness.MissionMsg{Mission: mission.Mission{ID: "m1"}},
+		harness.FactMsg{Session: "s", Change: facts.Change{Op: facts.OpAdd, Fact: facts.Fact{ID: "f1"}}},
+		harness.MissionMsg{Session: "s", Mission: mission.Mission{ID: "m1"}},
 		harness.JobMsg{Event: shell.JobEvent{Kind: shell.JobOutput, Data: []byte("x")}},
 		harness.MCPMsg{Server: "s", Err: errors.New("e")},
 		harness.HookOutputMsg{Run: "r", Text: "t"},
@@ -201,12 +204,19 @@ func TestEncodeCoversEveryMessage(t *testing.T) {
 	}
 }
 
-// Runs a command and collects the messages it produces
+// Runs a command and collects the messages it produces, dropping commands that sleep longer than a beat
 func drain(cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {
 		return nil
 	}
-	msg := cmd()
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	var msg tea.Msg
+	select {
+	case msg = <-done:
+	case <-time.After(120 * time.Millisecond):
+		return nil
+	}
 	if batch, ok := msg.(tea.BatchMsg); ok {
 		var out []tea.Msg
 		for _, c := range batch {
@@ -220,6 +230,57 @@ func drain(cmd tea.Cmd) []tea.Msg {
 	return []tea.Msg{msg}
 }
 
+// Drains a command and hands every message it produced back to the model, frames excepted
+func feed(m *Model, cmd tea.Cmd) []tea.Msg {
+	var seen []tea.Msg
+	queue := drain(cmd)
+	for depth := 0; len(queue) > 0 && depth < 6; depth++ {
+		var next []tea.Msg
+		for _, msg := range queue {
+			seen = append(seen, msg)
+			switch msg.(type) {
+			case anim.FrameMsg, tea.QuitMsg:
+				continue
+			}
+			_, c := m.Update(msg)
+			next = append(next, drain(c)...)
+		}
+		queue = next
+	}
+	return seen
+}
+
+// Delivers a message the way the runtime does, rendering after every update before the next message runs
+func live(m *Model, msg tea.Msg) {
+	_, cmd := m.Update(msg)
+	m.View()
+	for _, next := range drain(cmd) {
+		switch next.(type) {
+		case anim.FrameMsg, tea.QuitMsg:
+			continue
+		}
+		live(m, next)
+	}
+}
+
+func has[T any](msgs []tea.Msg) bool {
+	for _, m := range msgs {
+		if _, ok := m.(T); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func toasted(m *Model, text string) bool {
+	for _, t := range m.wm.Toasts() {
+		if strings.Contains(t, text) {
+			return true
+		}
+	}
+	return false
+}
+
 func newModel(t *testing.T, toolFirst bool) (*Model, *httptest.Server) {
 	t.Helper()
 	srv, _ := fakeServer(t, toolFirst)
@@ -228,6 +289,7 @@ func newModel(t *testing.T, toolFirst bool) (*Model, *httptest.Server) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	drain(m.Init())
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	return m, srv
 }
@@ -242,7 +304,8 @@ func pump(t *testing.T, m *Model, until func(tea.Msg) bool) {
 		m.relay.queue = nil
 		m.relay.mu.Unlock()
 		for _, msg := range queued {
-			m.Update(msg)
+			_, cmd := m.Update(msg)
+			feed(m, cmd)
 			if until(msg) {
 				return
 			}
@@ -252,559 +315,859 @@ func pump(t *testing.T, m *Model, until func(tea.Msg) bool) {
 	t.Fatal("message never arrived")
 }
 
-func TestModelRunsPromptsAndRoutesMessages(t *testing.T) {
-	m, _ := newModel(t, false)
-	if m.deck.Len() < 6 || m.app == nil || m.state != tea.ProgramStateIdle {
-		t.Fatal("deck seeded")
+func runDone(msg tea.Msg) bool { _, ok := msg.(harness.RunDoneMsg); return ok }
+
+func key(code rune, mod tea.KeyMod) tea.KeyPressMsg {
+	k := tea.KeyPressMsg{Code: code, Mod: mod}
+	if mod == 0 {
+		k.Text = string(code)
 	}
-	drain(m.Init())
+	return k
+}
+
+func typeInto(m *Model, text string) {
+	for _, r := range text {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+}
+
+func submit(m *Model, d *desk, text string) tea.Cmd {
+	_, cmd := m.Update(cards.SubmitMsg{Session: d.live.Session.ID(), Parts: []protocol.Part{protocol.Text{Text: text}}, Text: text})
+	return cmd
+}
+
+func TestModelRunsPromptAndRoutes(t *testing.T) {
+	m, _ := newModel(t, false)
+	if len(m.desks) != 1 || m.desks[0].live != m.app.Current() || m.current() != m.desks[0] || m.state != tea.ProgramStateIdle {
+		t.Fatal("one desk bound to the current session")
+	}
 	v := m.View()
 	if !v.AltScreen || v.ProgramStatus == nil || v.ProgramStatus.State != tea.ProgramStateIdle {
 		t.Fatal("view status")
 	}
+	d := m.desks[0]
 	_, cmd := m.Update(StartPrompt("hello"))
-	drain(cmd)
-	if m.state != tea.ProgramStateWorking || m.app.Session.Title() != "hello" {
-		t.Fatalf("state %v title %q", m.state, m.app.Session.Title())
+	if m.state != tea.ProgramStateWorking || d.live.Session.Title() != "hello" || !d.ws.Busy() {
+		t.Fatalf("state %v title %q busy %v", m.state, d.live.Session.Title(), d.ws.Busy())
 	}
 	if m.View().ProgressBar == nil {
 		t.Fatal("busy app shows an indeterminate bar")
 	}
-	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.RunDoneMsg); return ok })
-	if m.state != tea.ProgramStateDone || m.app.Session.Len() != 2 {
-		t.Fatalf("state %v len %d", m.state, m.app.Session.Len())
+	feed(m, cmd)
+	pump(t, m, runDone)
+	if m.state != tea.ProgramStateDone || d.live.Session.Len() != 2 {
+		t.Fatalf("state %v len %d", m.state, d.live.Session.Len())
 	}
-	if len(m.deck.Toasts()) == 0 {
-		t.Fatal("finished run toasts")
+	if m.sync(); d.ws.Busy() {
+		t.Fatal("chip settles after the run")
 	}
-	_, cmd = m.Update(cards.SubmitMsg{Parts: []protocol.Part{protocol.Text{Text: "second"}}, Text: "second"})
-	drain(cmd)
-	_, cmd = m.Update(cards.SubmitMsg{Parts: []protocol.Part{protocol.Text{Text: "steer"}}, Text: "steer"})
-	drain(cmd)
-	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.RunDoneMsg); return ok })
-	if m.app.Session.Len() < 4 {
-		t.Fatalf("len %d", m.app.Session.Len())
+	feed(m, submit(m, d, "second"))
+	wasBusy := m.app.Busy(d.live)
+	feed(m, submit(m, d, "steer"))
+	if wasBusy && !toasted(m, "queued") {
+		t.Fatal("input during a run steers it")
 	}
-	_, cmd = m.Update(cards.CommandMsg{Name: "mode"})
-	drain(cmd)
+	pump(t, m, runDone)
+	deadline := time.Now().Add(5 * time.Second)
+	for m.app.Busy(d.live) && time.Now().Before(deadline) {
+		pump(t, m, func(tea.Msg) bool { return true })
+	}
+	if d.live.Session.Len() < 4 {
+		t.Fatalf("len %d", d.live.Session.Len())
+	}
+}
+
+func TestWorkspaces(t *testing.T) {
+	m, _ := newModel(t, false)
+	first := m.desks[0]
+	feed(m, m.newWorkspace())
+	if len(m.desks) != 2 || m.wm.ActiveIndex() != 1 {
+		t.Fatalf("desks %d active %d", len(m.desks), m.wm.ActiveIndex())
+	}
+	second := m.desks[1]
+	m.sync()
+	if m.app.Session != second.live.Session {
+		t.Fatal("switching selects the new session")
+	}
+	cmd := submit(m, second, "work")
+	if !m.app.Busy(second.live) || m.app.Busy(first.live) {
+		t.Fatal("prompt runs in its own workspace")
+	}
+	if feed(m, m.closeWorkspace()); len(m.desks) != 2 || !toasted(m, "wait for the run") {
+		t.Fatal("busy workspace stays open")
+	}
+	feed(m, cmd)
+	pump(t, m, runDone)
+	m.Update(key('1', tea.ModAlt))
+	if m.wm.ActiveIndex() != 0 || m.app.Session != first.live.Session {
+		t.Fatal("alt+1 switches back and selects the first session")
+	}
+	m.Update(key('2', tea.ModAlt))
+	if m.wm.ActiveIndex() != 1 {
+		t.Fatal("alt+2 switches forward")
+	}
+	released := second.live.Session.ID()
+	feed(m, m.closeWorkspace())
+	if len(m.desks) != 1 || len(m.wm.Workspaces()) != 1 || m.app.LiveByID(released) != nil {
+		t.Fatal("idle workspace closes and releases its session")
+	}
+	feed(m, m.closeWorkspace())
+	if len(m.desks) != 1 || !toasted(m, "last workspace") {
+		t.Fatal("the last workspace stays")
+	}
+	feed(m, m.openStored(released))
+	if len(m.desks) != 2 || m.current().live.Session.ID() != released {
+		t.Fatal("stored session reopens as a desk")
+	}
+	feed(m, m.openStored(released))
+	if len(m.desks) != 2 {
+		t.Fatal("opening an open session only switches to it")
+	}
+	feed(m, m.forkStored(first.live.Session.ID()))
+	if len(m.desks) != 3 || m.current().live.Session.Parent() != first.live.Session.ID() {
+		t.Fatal("fork makes a new desk with the parent set")
+	}
+	feed(m, m.wm.Switch(0))
+	feed(m, submit(m, first, "turn"))
+	pump(t, m, runDone)
+	feed(m, m.pickTurn())
+	p, ok := m.wm.Overlay().(*wm.Palette)
+	if !ok || len(p.Matches()) < 2 {
+		t.Fatal("turn picker lists turns and the end")
+	}
+	n := len(m.desks)
+	feed(m, p.Matches()[0].Run())
+	feed(m, m.wm.Dismiss())
+	if len(m.desks) != n+1 || m.current().live.Session.Len() != 0 || m.current().live.Session.Parent() != first.live.Session.ID() {
+		t.Fatalf("fork before the first turn keeps nothing, len %d", m.current().live.Session.Len())
+	}
+}
+
+func TestCommandsAndPickers(t *testing.T) {
+	m, _ := newModel(t, false)
+	d := m.desks[0]
+	feed(m, submit(m, d, "hello"))
+	pump(t, m, runDone)
+	feed(m, m.command(nil, "mode", ""))
 	if m.app.Mode.Mode() != mode.AcceptEdits {
 		t.Fatal("mode cycles")
 	}
-	m.Update(cards.CommandMsg{Name: "mode", Args: "plan"})
+	feed(m, m.command(nil, "mode", "plan"))
 	if m.app.Mode.Mode() != mode.Plan {
 		t.Fatal("mode set")
 	}
-	m.Update(cards.CommandMsg{Name: "mode", Args: "weird"})
-	m.Update(cards.SetModeMsg{Mode: mode.Default})
-	if m.app.Mode.Mode() != mode.Default {
-		t.Fatal("set mode message")
+	feed(m, m.command(nil, "mode", "weird"))
+	if m.app.Mode.Mode() != mode.Plan {
+		t.Fatal("bad mode keeps the old one")
 	}
-	m.Update(cards.CommandMsg{Name: "model", Args: "m-other"})
+	feed(m, m.command(nil, "model", "m-other"))
 	if m.app.Primary.Model != "m-other" {
 		t.Fatal("model command")
 	}
-	m.Update(cards.SetModelMsg{Model: "m-fast"})
-	if m.app.Primary.Model != "m-fast" {
-		t.Fatal("model message")
-	}
-	m.Update(cards.CommandMsg{Name: "theme", Args: "light"})
-	if m.theme.Name != "light" || m.deck.Theme().Name != "light" {
+	feed(m, m.command(nil, "theme", "light"))
+	if m.theme.Name != "light" || m.wm.Theme().Name != "light" {
 		t.Fatal("theme command")
 	}
-	m.Update(cards.CommandMsg{Name: "theme", Args: "nope"})
+	feed(m, m.command(nil, "theme", "nope"))
+	if !toasted(m, "themes are") {
+		t.Fatal("bad theme toasts")
+	}
+	feed(m, m.command(nil, "rename", "named"))
+	if d.live.Session.Title() != "named" {
+		t.Fatal("rename")
+	}
+	feed(m, m.command(nil, "export", ""))
+	if _, err := os.Stat(m.exportPath(d)); err != nil {
+		t.Fatal("export writes the transcript")
+	}
+	feed(m, m.command(nil, "compact", ""))
+	if !d.compacting {
+		t.Fatal("compact starts")
+	}
+	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(compactedMsg); return ok })
+	if d.compacting {
+		t.Fatal("compaction ends")
+	}
+	feed(m, m.command(nil, "cancel", ""))
+	feed(m, m.command(nil, "interrupt", ""))
+	if !toasted(m, "nothing is running") {
+		t.Fatal("cancel and interrupt with nothing running toast")
+	}
+	feed(m, m.command(nil, "nope", ""))
+	if !toasted(m, "unknown command") {
+		t.Fatal("unknown command toasts")
+	}
+	feed(m, m.command(nil, "attach", "/nowhere/at/all.png"))
+	if len(m.wm.Toasts()) == 0 {
+		t.Fatal("missing attachment toasts")
+	}
+	feed(m, m.command(nil, "new", ""))
+	if len(m.desks) != 2 {
+		t.Fatal("new opens a workspace")
+	}
+	feed(m, m.command(nil, "close", ""))
+	if len(m.desks) != 1 {
+		t.Fatal("close drops it")
+	}
+	for name, k := range map[string]string{"metrics": "metrics", "files": "files", "jobs": "jobs", "sessions": "sessions", "config": "config", "agents": "agents", "findings": "findings:" + d.live.Session.ID()} {
+		feed(m, m.command(nil, name, ""))
+		if !m.wm.Has(k) {
+			t.Fatalf("%s opens %s", name, k)
+		}
+		n := len(m.wm.Active().Cards())
+		feed(m, m.command(nil, name, ""))
+		if len(m.wm.Active().Cards()) != n {
+			t.Fatalf("%s opens once", name)
+		}
+	}
+	for name, open := range map[string]func() tea.Cmd{"mode": m.pickMode, "theme": m.pickTheme, "motion": m.pickMotion, "profile": m.pickProfile, "session": m.pickSession, "turn": m.pickTurn} {
+		feed(m, open())
+		if m.wm.Overlay() == nil {
+			t.Fatalf("%s picker opens", name)
+		}
+		feed(m, m.wm.Dismiss())
+	}
+	feed(m, m.promptRename())
+	if _, ok := m.wm.Overlay().(*wm.Palette); !ok {
+		t.Fatal("rename prompt opens")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+	typeInto(m, "zed")
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	feed(m, cmd)
+	if d.live.Session.Title() != "zed" || m.wm.Overlay() != nil {
+		t.Fatalf("prompt submits through the overlay, title %q", d.live.Session.Title())
+	}
+	os.Remove(m.exportPath(d))
+	feed(m, m.promptExport())
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	feed(m, cmd)
+	if _, err := os.Stat(m.exportPath(d)); err != nil {
+		t.Fatal("export prompt writes the default path")
+	}
+	feed(m, m.promptMission())
+	typeInto(m, "scan")
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	feed(m, cmd)
+	if d.mission == "" {
+		t.Fatal("mission prompt starts a mission")
+	}
+	pump(t, m, runDone)
+	m.Update(modelsMsg{err: errors.New("listing broke")})
+	if !toasted(m, "listing broke") {
+		t.Fatal("model listing error toasts")
+	}
+	_, cmd = m.Update(modelsMsg{list: []profiles.Model{{ID: "m-fast", Context: 1000}, {ID: "m-other"}}})
+	feed(m, cmd)
+	p, ok := m.wm.Overlay().(*wm.Palette)
+	if !ok || len(p.Matches()) != 2 {
+		t.Fatal("model picker opens")
+	}
+	feed(m, m.wm.Dismiss())
+	_, cmd = m.Update(key(tea.KeySpace, tea.ModAlt))
+	feed(m, cmd)
+	p, ok = m.wm.Overlay().(*wm.Palette)
+	if !ok {
+		t.Fatal("alt+space opens the palette")
+	}
+	typeInto(m, "theme")
+	if ms := p.Matches(); len(ms) == 0 || ms[0].Title != "Theme…" {
+		t.Fatalf("palette finds the app commands, %v", ms)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.wm.Overlay() != nil {
+		t.Fatal("esc closes the palette")
+	}
+}
+
+func TestCardMessages(t *testing.T) {
+	m, _ := newModel(t, false)
+	d := m.desks[0]
+	feed(m, submit(m, d, "hello"))
+	pump(t, m, runDone)
+	m.Update(cards.AnswerMsg{ID: 99})
+	if !toasted(m, "approval is gone") {
+		t.Fatal("stale answer toasts")
+	}
+	m.Update(cards.KillRunMsg{Run: "nope"})
+	if !toasted(m, "no run nope") {
+		t.Fatal("bad run kill toasts")
+	}
+	_, cmd := m.Update(cards.KillJobMsg{Job: "nope"})
+	if !has[errMsg](drain(cmd)) {
+		t.Fatal("bad job kill yields an error")
+	}
+	feed(m, m.command(nil, "metrics", ""))
+	feed(m, m.wm.Focus(m.metrics))
+	_, cmd = m.Update(cards.OpenRunMsg{Run: m.app.Control.Runs()[0].ID})
+	feed(m, cmd)
+	if m.wm.Focused() != d.session {
+		t.Fatal("opening the root run focuses the session card")
+	}
+	m.Update(cards.OpenSessionMsg{Sessions: []string{"nope"}})
+	if len(m.wm.Toasts()) == 0 {
+		t.Fatal("bad session open toasts")
+	}
+	m.Update(cards.DeleteMsg{Sessions: []string{d.live.Session.ID()}})
+	if !toasted(m, "close the workspace of "+d.live.Session.ID()) {
+		t.Fatal("open sessions cannot be deleted")
+	}
+	stored := func(text string) string {
+		feed(m, m.newWorkspace())
+		other := m.current()
+		feed(m, submit(m, other, text))
+		pump(t, m, runDone)
+		id := other.live.Session.ID()
+		feed(m, m.closeWorkspace())
+		return id
+	}
+	gone := stored("second")
+	m.Update(cards.DeleteMsg{Sessions: []string{gone}})
+	if ok, _ := m.app.Store.Exists(context.Background(), gone); ok || !toasted(m, "deleted "+gone) {
+		t.Fatal("closed session deletes")
+	}
+	a, b := stored("third"), stored("fourth")
+	_, cmd = m.Update(cards.OpenSessionMsg{Sessions: []string{a, b}})
+	feed(m, cmd)
+	if len(m.desks) != 3 || m.current().live.Session.ID() != b || !toasted(m, "resumed 2 sessions") {
+		t.Fatalf("resuming many opens a workspace for each, the last shown, %d desks", len(m.desks))
+	}
+	_, cmd = m.Update(cards.OpenSessionMsg{Sessions: []string{a}})
+	feed(m, cmd)
+	if len(m.desks) != 3 || m.current().live.Session.ID() != a || !toasted(m, "resumed third") {
+		t.Fatal("resuming an open one switches to it and names it")
+	}
+	_, cmd = m.Update(cards.ForkMsg{Sessions: []string{a, b}})
+	feed(m, cmd)
+	if len(m.desks) != 5 || m.current().live.Session.Parent() != b || !toasted(m, "forked 2 sessions into new workspaces") {
+		t.Fatalf("forking many makes a copy of each, %d desks", len(m.desks))
+	}
+	_, cmd = m.Update(cards.ForkMsg{Sessions: []string{a, "nope"}})
+	feed(m, cmd)
+	if len(m.desks) != 6 || !toasted(m, "forked third into ") {
+		t.Fatal("one good fork names its source among the failures")
+	}
+	for len(m.desks) > 1 {
+		feed(m, m.closeWorkspace())
+	}
+	_, cmd = m.Update(cards.DeleteMsg{Sessions: []string{a, b}})
+	feed(m, cmd)
+	if ok, _ := m.app.Store.Exists(context.Background(), a); ok || !toasted(m, "deleted 2 sessions") {
+		t.Fatal("deleting many deletes each")
+	}
+	m.Update(cards.SetModelMsg{Model: "m-two"})
+	if m.app.Primary.Model != "m-two" {
+		t.Fatal("set model message")
+	}
+	m.Update(cards.SetModeMsg{Mode: mode.Plan})
+	if m.app.Mode.Mode() != mode.Plan {
+		t.Fatal("set mode message")
+	}
+	_, cmd = m.Update(cards.SetProfileMsg{Profile: "nope"})
+	msgs := feed(m, cmd)
+	if !has[profileMsg](msgs) || len(m.wm.Toasts()) == 0 {
+		t.Fatal("bad profile reports its error")
+	}
+	_, cmd = m.Update(cards.ReconnectMsg{Server: "nope"})
+	if !has[errMsg](drain(cmd)) {
+		t.Fatal("bad reconnect yields an error")
+	}
+	m.Update(cards.ExportMsg{Path: "p"})
+	if !toasted(m, "wrote p") {
+		t.Fatal("export result toasts")
+	}
+	m.Update(cards.ExportMsg{Err: errors.New("disk full")})
+	if !toasted(m, "disk full") {
+		t.Fatal("export error toasts")
+	}
 	m.Update(cards.KnobMsg{Key: "theme", Value: "plain"})
 	if m.theme.Name != "plain" {
 		t.Fatal("theme knob")
 	}
 	m.Update(cards.KnobMsg{Key: "motion", Value: "0"})
-	if m.deck.Motion() != 0 {
+	if m.wm.Motion() != 0 {
 		t.Fatal("motion knob")
+	}
+	m.Update(cards.KnobMsg{Key: "cascade", Value: "true"})
+	if !m.wm.Cascade() || m.knobs()["cascade"] != "true" {
+		t.Fatal("cascade knob")
+	}
+	m.Update(cards.KnobMsg{Key: "cascade", Value: "maybe"})
+	if !toasted(m, "cascade must be") || !m.wm.Cascade() {
+		t.Fatal("bad cascade knob toasts and keeps the comet")
+	}
+	feed(m, m.wm.Run("cascade.toggle"))
+	if m.wm.Cascade() || !toasted(m, "cascade = false") {
+		t.Fatal("the palette toggles the comet off")
+	}
+	feed(m, m.wm.Run("cascade.toggle"))
+	if !m.wm.Cascade() {
+		t.Fatal("the palette toggles the comet back on")
 	}
 	m.Update(cards.KnobMsg{Key: "compact_threshold", Value: "500"})
 	if m.app.Meter.Snapshot().Threshold != 500 {
 		t.Fatal("threshold knob")
 	}
-	m.Update(cards.KnobMsg{Key: "mode", Value: "plan"})
+	m.Update(cards.KnobMsg{Key: "mode", Value: "acceptEdits"})
+	if m.app.Mode.Mode() != mode.AcceptEdits {
+		t.Fatal("mode knob")
+	}
 	m.Update(cards.KnobMsg{Key: "max_tokens", Value: "bad"})
+	if !toasted(m, "max_tokens must be") {
+		t.Fatal("bad knob toasts")
+	}
 	m.Update(cards.KnobMsg{Key: "max_tokens", Value: "2048"})
-	if m.knobs()["max_tokens"] != "2048" || m.knobs()["temperature"] != "model default" {
-		t.Fatalf("%v", m.knobs())
+	if m.knobs()["max_tokens"] != "2048" || m.knobs()["temperature"] != "" || m.knobs()["max_rounds"] != "" {
+		t.Fatalf("unset knobs read empty %v", m.knobs())
 	}
-	for _, name := range []string{"sessions", "findings", "config", "jobs", "workspace", "daemons", "ice", "help", "palette", "timeline", "export", "nope", "cancel", "interrupt", "compare", "mission"} {
-		m.Update(cards.CommandMsg{Name: name})
+	m.Update(cards.KnobMsg{Key: "max_tokens", Value: ""})
+	if m.app.Config.MaxTokens != 0 || m.knobs()["max_tokens"] != "" || !toasted(m, "max_tokens unset") {
+		t.Fatalf("an empty value unsets the knob %v", m.knobs())
 	}
-	if m.deck.Mode() != deck.Timeline {
-		t.Fatal("timeline command")
+	m.Update(cards.KnobMsg{Key: "max_rounds", Value: "9", Quiet: true})
+	if m.app.Config.MaxRounds != 9 || toasted(m, "max_rounds = 9") {
+		t.Fatal("a quiet knob applies without a toast")
 	}
-	if _, err := os.Stat(filepath.Join(m.app.Root, "transcript-"+m.app.Session.ID()+".md")); err != nil {
-		t.Fatal("export writes the transcript")
-	}
-	m.Update(cards.PaletteMsg{Command: "theme contrast"})
-	if m.theme.Name != "contrast" {
-		t.Fatal("palette command")
-	}
-	m.Update(cards.ExportMsg{Path: "p"})
-	m.Update(cards.ExportMsg{Err: errors.New("x")})
-	m.Update(cards.AnswerMsg{ID: 99})
-	m.Update(cards.KillRunMsg{Run: "nope"})
-	m.Update(cards.KillJobMsg{Job: "nope"})
-	m.Update(cards.OpenRunMsg{Run: "nope"})
-	m.Update(cards.OpenRunMsg{Run: "run-1"})
-	m.Update(cards.ReconnectMsg{Server: "nope"})
-	m.Update(cards.MissionStateMsg{ID: "nope", Status: mission.StatusDone})
-	m.Update(cards.ResumeMsg{Session: "nope"})
-	m.Update(cards.ForkMsg{Session: "nope"})
-	m.Update(cards.DeleteMsg{Session: m.app.Session.ID()})
-	m.Update(cards.SetProfileMsg{Profile: "nope"})
-	m.Update(harness.SavedMsg{Err: errors.New("disk")})
-	m.Update(harness.MCPMsg{Server: "s", Err: errors.New("x")})
-	m.Update(harness.MCPMsg{Server: "s", Tools: []string{"a"}})
-	m.Update(harness.MCPMsg{Server: "s"})
-	m.Update(harness.HookOutputMsg{Text: "hook"})
-	m.Update(harness.FactMsg{Change: facts.Change{Op: facts.OpAdd, Fact: facts.Fact{Title: "t"}}})
-	m.Update(harness.ProgressMsg{})
-	m.Update(errMsg{errors.New("e")})
-	m.Update(errMsg{})
-	m.Update(compactedMsg{})
-	first := m.app.Session.ID()
-	m.Update(cards.CommandMsg{Name: "fork"})
-	if m.app.Session.ID() == first || m.app.Session.Parent() != first {
-		t.Fatal("fork command")
-	}
-	m.Update(cards.ResumeMsg{Session: first})
-	if m.app.Session.ID() != first {
-		t.Fatal("resume")
-	}
-	m.Update(cards.ForkMsg{Session: first})
-	if m.app.Session.Parent() != first {
-		t.Fatal("fork message")
-	}
-	forked := m.app.Session.ID()
-	m.Update(cards.ResumeMsg{Session: first})
-	m.Update(cards.DeleteMsg{Session: forked})
-	if ok, _ := m.app.Store.Exists(context.Background(), forked); ok {
-		t.Fatal("delete")
-	}
-	m.Update(cards.CommandMsg{Name: "clear"})
-	if m.app.Session.Len() != 0 {
-		t.Fatal("clear")
-	}
-	m.Update(cards.RulesMsg{Set: rules.Set{Allow: []string{"Glob"}}})
-	if _, err := os.Stat(filepath.Join(m.app.Root, harness.ProjectDir, harness.RulesFile)); err != nil {
-		t.Fatal("rules saved")
-	}
-	m.Update(cards.MissionMsg{Objective: "scan"})
-	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.RunDoneMsg); return ok })
-	if len(m.missions) != 1 || m.mission == "" {
+	feed(m, m.startMission(d, "scan the net"))
+	pump(t, m, runDone)
+	if len(d.missions) != 1 || d.mission == "" {
 		t.Fatal("mission card")
 	}
-	for id := range m.missions {
-		m.Update(cards.MissionStateMsg{ID: id, Status: mission.StatusDone})
-		m.Update(cards.MissionStateMsg{ID: id, Status: mission.StatusActive})
+	id := d.mission
+	if !m.wm.Has("mission:" + d.live.Session.ID() + ":" + id) {
+		t.Fatal("mission card opens")
 	}
-	m.View()
-	m.Update(cards.CommandMsg{Name: "history"})
-	if !m.inHistory || m.history == nil || m.history.Mode() != deck.Timeline {
-		t.Fatal("history deck")
+	m.Update(cards.MissionStateMsg{Session: d.live.Session.ID(), ID: id, Status: mission.StatusDone})
+	if ms, _ := d.live.Missions.Get(id); ms.Status != mission.StatusDone {
+		t.Fatal("mission finishes")
 	}
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	m.View()
-	m.Update(cards.CommandMsg{Name: "compare"})
-	for _, c := range m.history.Cards() {
-		if mc, ok := c.(*cards.MomentCard); ok {
-			mc.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-		}
+	m.Update(cards.MissionStateMsg{Session: d.live.Session.ID(), ID: id, Status: mission.StatusActive})
+	if ms, _ := d.live.Missions.Get(id); ms.Status != mission.StatusActive || d.mission != id {
+		t.Fatal("mission resumes")
 	}
-	m.Update(cards.CommandMsg{Name: "compare"})
-	if m.history.Mode() != deck.Split {
-		t.Fatal("compare splits the history deck")
+	m.Update(cards.MissionStateMsg{Session: d.live.Session.ID(), ID: "nope", Status: mission.StatusDone})
+	m.Update(cards.MissionRemoveMsg{Session: d.live.Session.ID(), ID: "nope"})
+	if !toasted(m, "no mission nope") {
+		t.Fatal("bad mission remove toasts")
 	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if m.inHistory {
-		t.Fatal("esc leaves history")
-	}
-	m.Update(cards.CommandMsg{Name: "history"})
-	n := m.app.Session.Len()
-	m.Update(cards.ForkAtMsg{Entries: 1})
-	if m.inHistory || m.app.Session.Len() != 1 || n < 1 {
-		t.Fatal("fork at")
-	}
-	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
-	if m.deck.Overlay() == nil {
-		t.Fatal("palette key")
-	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	m.Update(tea.KeyPressMsg{Code: tea.KeyF1})
-	if m.deck.Overlay() == nil {
-		t.Fatal("help key")
-	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	m.Update(cards.CommandMsg{Name: "compact"})
-	_, cmd = m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	if _, ok := drain(cmd)[0].(tea.QuitMsg); !ok || !m.quitting {
-		t.Fatal("ctrl+c quits when idle")
-	}
-	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	if _, err := os.Stat(m.layoutPath()); err != nil {
-		t.Fatal("layout saved on quit")
+	m.Update(cards.MissionRemoveMsg{Session: d.live.Session.ID(), ID: id})
+	pump(t, m, func(msg tea.Msg) bool { mm, ok := msg.(harness.MissionMsg); return ok && mm.Op == mission.OpRemove })
+	if len(d.missions) != 0 || m.wm.Has("mission:"+d.live.Session.ID()+":"+id) || !toasted(m, "forgot mission") {
+		t.Fatal("removed mission closes its card")
 	}
 }
 
-func TestModelApprovalsChildrenAndCancel(t *testing.T) {
+func TestApprovalFlow(t *testing.T) {
 	m, _ := newModel(t, true)
-	drain(m.Init())
-	m.Update(StartPrompt("run it"))
+	d := m.desks[0]
+	_, cmd := m.Update(StartPrompt("run it"))
+	feed(m, cmd)
 	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.ApprovalMsg); return ok })
-	if m.deck.Overlay() != m.approval || m.state != tea.ProgramStateBlocked || m.View().ProgramStatus.Kind != tea.ProgramStatusKindPermission {
-		t.Fatal("approval overlay")
+	if !m.wm.Has("approval:"+d.live.Session.ID()) || m.state != tea.ProgramStateBlocked || len(d.approval.Pending()) != 1 {
+		t.Fatal("approval dialog opens in the workspace")
 	}
-	pending := m.app.Approver.Pending()
-	if len(pending) != 1 {
-		t.Fatalf("%d pending", len(pending))
+	if left, _ := m.bar(); !strings.Contains(fmt.Sprint(left), "awaiting approval") {
+		t.Fatalf("bar shows the wait, %v", left)
 	}
-	m.Update(cards.AnswerMsg{ID: pending[0].ID, Verdict: policy.Yes})
-	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.RunDoneMsg); return ok })
-	if m.state != tea.ProgramStateDone {
-		t.Fatalf("%v", m.state)
+	feed(m, m.answer(policy.Yes)())
+	pump(t, m, runDone)
+	if m.state != tea.ProgramStateDone || len(d.approval.Pending()) != 0 || m.wm.Has("approval:"+d.live.Session.ID()) {
+		t.Fatalf("answered approval lets the run finish, state %v", m.state)
 	}
-	if len(m.app.Workspace.Files()) != 0 || m.app.Shell.Dir() == "" {
-		t.Fatal("workspace")
-	}
-	m.Update(StartPrompt("again"))
-	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	drain(cmd)
-	if m.quitting {
-		t.Fatal("ctrl+c during a run cancels instead of quitting")
-	}
-	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.RunDoneMsg); return ok })
-	if m.state != tea.ProgramStateError && m.state != tea.ProgramStateDone {
-		t.Fatalf("%v", m.state)
-	}
-	m.Update(harness.EventMsg{Run: "r", Event: agent.Event{Type: agent.EventSubagentStart, Call: protocol.ToolCall{Name: "kid"}}})
-	drain(m.deck.Focus(1))
-	m.Update(harness.RunDoneMsg{Run: "r", Err: errors.New("boom")})
-	if m.state != tea.ProgramStateError || m.deck.UrgencyOf(m.deck.IndexOf(m.transcript)) != deck.Alarm {
-		t.Fatal("failed run alarms the transcript")
-	}
-	m.Update(harness.RunDoneMsg{Run: "r", Err: agent.ErrInterrupted})
-	m.Update(harness.ApprovalDoneMsg{})
-	child := &agent.Agent{Name: "kid", Session: session.New()}
-	m.app.Control = harness.NewController(m.relay.Send, m.app.Pump)
-	m.env.Control = m.app.Control
-	_ = child
-	if _, ok := m.Filter(m, tea.QuitMsg{}).(tea.QuitMsg); !ok || !m.quitting {
-		t.Fatal("quit message shuts down")
+	if m.answer(policy.No)() != nil {
+		t.Fatal("answering with nothing pending does nothing")
 	}
 }
 
-func TestThemeResolutionAndLayout(t *testing.T) {
-	t.Setenv("TERM", "dumb")
-	th, err := resolveTheme(harness.Config{}, "")
-	if err != nil || th.Name != "plain" {
-		t.Fatalf("%v %s", err, th.Name)
-	}
-	t.Setenv("TERM", "xterm-256color")
-	t.Setenv("NO_COLOR", "")
-	th, _ = resolveTheme(harness.Config{}, "")
-	if th.Name != "blackwall" {
-		t.Fatal(th.Name)
-	}
-	if _, err := resolveTheme(harness.Config{UI: harness.UIConfig{Theme: "nope"}}, ""); err == nil {
-		t.Fatal("bad theme")
-	}
-	r := &relay{}
-	r.Send("queued")
-	if len(r.queue) != 1 {
-		t.Fatal("queue before attach")
-	}
-	r.Close()
-	r.Send("dropped")
-	if len(r.queue) != 0 {
-		t.Fatal("closed relay drops")
-	}
-	if StartMission("x").(cards.MissionMsg).Objective != "x" {
-		t.Fatal("start mission")
-	}
-}
-
-// Program options for an event loop with no terminal behind it
-func headlessProgram(ctx context.Context, m tea.Model, extra ...tea.ProgramOption) *tea.Program {
-	opts := append([]tea.ProgramOption{tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithoutSignals(), tea.WithoutSignalHandler(), tea.WithWindowSize(120, 40)}, extra...)
-	return tea.NewProgram(m, opts...)
-}
-
-// Model that sends through the relay from inside its own Update and quits once the message comes back
-type relayModel struct {
-	r    *relay
-	seen []string
-}
-
-func (m *relayModel) Init() tea.Cmd { return func() tea.Msg { return "kick" } }
-
-func (m *relayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	s, ok := msg.(string)
-	if !ok {
-		return m, nil
-	}
-	m.seen = append(m.seen, s)
-	switch s {
-	case "kick":
-		m.r.Send("first")
-		m.r.Send("second")
-	case "second":
-		return m, tea.Quit
-	}
-	return m, nil
-}
-
-func (m *relayModel) View() tea.View { return tea.NewView("") }
-
-func TestRelayNeverBlocksTheEventLoop(t *testing.T) {
-	r := &relay{}
-	r.Send("early")
-	m := &relayModel{r: r}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	p := headlessProgram(ctx, m)
-	r.Attach(p)
-	if _, err := p.Run(); err != nil {
-		t.Fatalf("a send from inside Update stalled the program: %v", err)
-	}
-	if got := strings.Join(m.seen, " "); got != "early kick first second" {
-		t.Fatalf("order %q", got)
-	}
-}
-
-func TestClearCommandOverALiveProgram(t *testing.T) {
+func TestSubagentCardsOpenAndRetire(t *testing.T) {
 	m, _ := newModel(t, false)
-	first := m.app.Session.ID()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	p := headlessProgram(ctx, m, tea.WithFilter(m.Filter))
-	m.Attach(p)
-	idle := func() bool {
-		m.relay.mu.Lock()
-		defer m.relay.mu.Unlock()
-		return len(m.relay.queue) == 0 && !m.relay.pumping
+	if m.openAgent("run-9/kid") != nil {
+		t.Fatal("unknown child run opens nothing")
 	}
-	settled := func() {
-		deadline := time.Now().Add(10 * time.Second)
-		for time.Now().Before(deadline) && !m.app.Control.Busy() {
-			time.Sleep(2 * time.Millisecond)
-		}
-		for time.Now().Before(deadline) && (m.app.Control.Busy() || !idle()) {
-			time.Sleep(2 * time.Millisecond)
-		}
+	if m.retireAgent("run-9/kid") != nil {
+		t.Fatal("unknown child run retires nothing")
 	}
-	go func() {
-		p.Send(StartPrompt("hello"))
-		settled()
-		p.Send(cards.CommandMsg{Name: "clear"})
-		p.Send(cards.CommandMsg{Name: "fork"})
-		p.Send(cards.ResumeMsg{Session: first})
-		p.Send(cards.CommandMsg{Name: "mission", Args: "scan the repo"})
-		settled()
-		p.Send(cards.CommandMsg{Name: "quit"})
-	}()
-	if _, err := p.Run(); err != nil {
-		t.Fatalf("the event loop stalled: %v", err)
-	}
-	if !m.quitting || m.app.Session.ID() != first || m.app.Session.Len() < 4 {
-		t.Fatalf("quitting %v session %s wanted %s with %d entries", m.quitting, m.app.Session.ID(), first, m.app.Session.Len())
-	}
-	if m.app.Missions.Len() != 1 || len(m.missions) != 1 {
-		t.Fatalf("missions %d cards %d", m.app.Missions.Len(), len(m.missions))
+	feed(m, m.openRun("run-9"))
+	if !toasted(m, "no run run-9") {
+		t.Fatal("unknown run toasts")
 	}
 }
 
-func TestCompactionBlocksSessionChanges(t *testing.T) {
-	m, _ := newModel(t, false)
+func TestThemeAndLayoutPersistence(t *testing.T) {
+	srv, _ := fakeServer(t, false)
+	cfg, dir := testConfig(t, srv.URL)
+	m, err := New(context.Background(), Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	drain(m.Init())
-	m.compacting = true
-	first := m.app.Session.ID()
-	for _, msg := range []tea.Msg{cards.SubmitMsg{Parts: []protocol.Part{protocol.Text{Text: "hi"}}, Text: "hi"}, cards.CommandMsg{Name: "clear"}, cards.CommandMsg{Name: "fork"}, cards.CommandMsg{Name: "compact"}, cards.CommandMsg{Name: "mission", Args: "x"}, cards.ResumeMsg{Session: first}, cards.ForkMsg{Session: first}, cards.ForkAtMsg{Entries: 0}} {
-		m.Update(msg)
-		if m.app.Session.ID() != first || m.app.Control.Busy() || m.app.Missions.Len() != 0 {
-			t.Fatalf("%T changed the session while compacting", msg)
-		}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	feed(m, m.setKnob("theme", "light", false))
+	if m.theme.Name != "light" || m.env.Theme.Name != "light" || m.wm.Theme().Name != "light" {
+		t.Fatal("theme reaches the manager and the cards")
 	}
-	m.Update(compactedMsg{Err: errors.New("summary failed")})
-	if m.compacting {
-		t.Fatal("a failed compaction releases the guard")
+	feed(m, m.command(nil, "metrics", ""))
+	m.saveLayout()
+	l, ok := loadLayout(layoutPath(m.app.Config))
+	if !ok || l.Theme != "light" || len(l.Open) != 1 || l.Open[0] != "metrics" {
+		t.Fatalf("layout %+v", l)
 	}
-	m.Update(cards.CommandMsg{Name: "compact"})
-	if !m.compacting {
-		t.Fatal("compact arms the guard")
+	again, err := New(context.Background(), Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(compactedMsg); return ok })
-	if m.compacting {
-		t.Fatal("a finished compaction releases the guard")
+	drain(again.Init())
+	again.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if again.theme.Name != "light" || !again.wm.Has("metrics") {
+		t.Fatal("saved layout reopens the metrics card with the theme")
 	}
-	m.Update(cards.CommandMsg{Name: "clear"})
-	if m.app.Session.ID() == first {
-		t.Fatal("clear works again")
-	}
+	again.shutdown()
+	m.shutdown()
 }
 
-// Runs a command with every batch member in parallel and returns the messages that arrive within the wait
-func collect(cmd tea.Cmd, wait time.Duration) []tea.Msg {
-	out := make(chan tea.Msg, 64)
-	var wg sync.WaitGroup
-	var walk func(c tea.Cmd)
-	walk = func(c tea.Cmd) {
-		if c == nil {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			msg := c()
-			if batch, ok := msg.(tea.BatchMsg); ok {
-				for _, cc := range batch {
-					walk(cc)
-				}
-				return
-			}
-			if msg != nil {
-				out <- msg
-			}
-		}()
+func TestSettingsSurviveARestart(t *testing.T) {
+	srv, _ := fakeServer(t, false)
+	cfg, dir := testConfig(t, srv.URL)
+	project := filepath.Join(dir, harness.ProjectDir, harness.ConfigFile)
+	os.MkdirAll(filepath.Dir(project), 0o755)
+	os.WriteFile(project, []byte(`{"ui":{"theme":"contrast"}}`), 0o644)
+	m, err := New(context.Background(), Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	walk(cmd)
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	var msgs []tea.Msg
-	timer := time.After(wait)
-	for {
-		select {
-		case m := <-out:
-			msgs = append(msgs, m)
-		case <-done:
-			for {
-				select {
-				case m := <-out:
-					msgs = append(msgs, m)
-				default:
-					return msgs
-				}
-			}
-		case <-timer:
-			return msgs
-		}
+	drain(m.Init())
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	for _, k := range [][2]string{{"cascade", "true"}, {"motion", "0.5"}, {"max_tokens", "2048"}, {"max_rounds", "7"}, {"temperature", "0.3"}, {"compact_threshold", "500"}} {
+		m.Update(cards.KnobMsg{Key: k[0], Value: k[1]})
 	}
-}
-
-func TestProfileSwitchOpensOffTheEventLoop(t *testing.T) {
-	m, _ := newModel(t, false)
-	if len(collect(m.switchProfile(" ", ""), time.Second)) == 0 {
-		t.Fatal("an empty name toasts")
+	feed(m, m.command(nil, "theme", "light"))
+	m.Update(cards.SetModeMsg{Mode: mode.Plan})
+	_, cmd := m.Update(cards.SetProfileMsg{Profile: "fake", Model: "m-fast"})
+	feed(m, cmd)
+	feed(m, m.command(nil, "model", "m-other"))
+	got, err := harness.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, cmd := m.Update(cards.SetProfileMsg{Profile: "fake", Model: "m-other"})
-	var opened profileMsg
-	found := false
-	for _, msg := range collect(cmd, 5*time.Second) {
-		if p, ok := msg.(profileMsg); ok {
-			opened, found = p, true
-		}
+	if got.UI.Cascade == nil || !*got.UI.Cascade || *got.UI.Motion != 0.5 || got.MaxTokens != 2048 || got.MaxRounds != 7 || *got.Temperature != 0.3 || got.Compaction.Threshold != 500 {
+		t.Fatalf("knobs are saved %+v", got)
 	}
-	if !found || opened.Err != nil {
-		t.Fatalf("found %v err %v", found, opened.Err)
+	if got.UI.Theme != "light" || got.Mode != "plan" || got.Profile != "fake" || got.Model != "m-other" {
+		t.Fatalf("theme, mode, profile and model are saved %+v", got)
 	}
-	if m.app.Primary.Model != "m-fast" {
-		t.Fatal("nothing changes before the endpoint is adopted")
+	if user, _ := harness.ReadConfigFile(filepath.Join(dir, "cfg", harness.ConfigFile)); user.UI.Theme != "" {
+		t.Fatal("the theme lands in the project file that already set it")
 	}
-	m.Update(opened)
-	if m.app.Primary.Model != "m-other" || m.app.Session.Model() != "m-other" || m.app.Config.Profile != "fake" || m.app.Config.Model != "m-other" {
-		t.Fatalf("%+v", m.app.Primary)
+	again, err := New(context.Background(), Options{Config: harness.Merge(cfg, got), Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, cmd = m.Update(cards.CommandMsg{Name: "profile", Args: "nope"})
-	for _, msg := range collect(cmd, 5*time.Second) {
-		if p, ok := msg.(profileMsg); ok {
-			if p.Err == nil {
-				t.Fatal("unknown profile opens")
-			}
-			m.Update(p)
-		}
+	drain(again.Init())
+	if !again.wm.Cascade() || again.wm.Motion() != 0.5 || again.theme.Name != "light" || again.app.Mode.Mode() != mode.Plan || again.app.Primary.Model != "m-other" {
+		t.Fatal("a restart comes back with every setting")
 	}
+	os.WriteFile(filepath.Join(dir, "cfg", harness.ConfigFile), []byte(`{bad`), 0o644)
+	m.Update(cards.KnobMsg{Key: "cascade", Value: "false"})
+	if !m.wm.Cascade() || !toasted(m, harness.ConfigFile) {
+		t.Fatal("a knob that cannot be saved toasts and stays as it was")
+	}
+	feed(m, m.command(nil, "model", "m-third"))
 	if m.app.Primary.Model != "m-other" {
-		t.Fatal("a failed open leaves the endpoint alone")
+		t.Fatal("a model that cannot be saved stays as it was")
+	}
+	again.shutdown()
+	m.shutdown()
+}
+
+func TestConfigSettingsApplyTheMomentTheyChange(t *testing.T) {
+	m, _ := newModel(t, false)
+	m.wm.SetMotion(0)
+	feed(m, m.command(nil, "config", ""))
+	feed(m, m.config.Select(3))
+	feed(m, m.wm.Focus(m.config))
+	shows := func(row, value string) bool {
+		return regexp.MustCompile(`\b` + row + `\s+` + regexp.QuoteMeta(value) + `[\s▏]`).MatchString(ansi.Strip(m.View().Content))
+	}
+	press := func(code rune, times int) {
+		for range times {
+			live(m, tea.KeyPressMsg{Code: code})
+		}
+	}
+	if !shows("max_rounds", "-") || !shows("temperature", "-") || !shows("compact_threshold", "-") {
+		t.Fatal("unset numbers show a muted dash")
+	}
+	press(tea.KeyDown, 7)
+	press(tea.KeyLeft, 1)
+	if !m.wm.Cascade() || toasted(m, "cascade = true") {
+		t.Fatal("a choice applies quietly the moment it moves")
+	}
+	press(tea.KeyUp, 6)
+	for _, r := range "4096" {
+		live(m, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if !shows("max_tokens", "4096") {
+		t.Fatal("the value being typed shows in its box")
+	}
+	press(tea.KeyEnter, 1)
+	if m.app.Config.MaxTokens != 4096 || !shows("max_tokens", "4096") {
+		t.Fatal("an applied value shows at once")
+	}
+	press(tea.KeyDown, 1)
+	press(tea.KeyRight, 1)
+	if m.app.Config.MaxRounds != 50 || !shows("max_rounds", "50") {
+		t.Fatalf("the slider steps an unset number from its start %d", m.app.Config.MaxRounds)
+	}
+	press(tea.KeyRight, 2)
+	if m.app.Config.MaxRounds != 52 {
+		t.Fatalf("the slider steps on %d", m.app.Config.MaxRounds)
+	}
+	press(tea.KeyBackspace, 1)
+	if m.app.Config.MaxRounds != 0 || !shows("max_rounds", "-") {
+		t.Fatal("backspace unsets the number")
+	}
+	live(m, cards.CommandMsg{Session: m.desks[0].live.Session.ID(), Name: "mode"})
+	if m.app.Mode.Mode() != mode.AcceptEdits || !shows("mode", "default") {
+		t.Fatal("a mode cycled from the session applies with every choice still in view")
+	}
+	live(m, key(tea.KeySpace, tea.ModAlt))
+	for _, r := range "cascade" {
+		live(m, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	press(tea.KeyEnter, 1)
+	if m.wm.Cascade() {
+		t.Fatal("a setting changed from the palette applies")
 	}
 }
 
-func TestKillJobAndReconnectRunOffTheEventLoop(t *testing.T) {
+func TestCtrlC(t *testing.T) {
 	m, _ := newModel(t, false)
-	res, err := m.app.Shell.Bash().Run(context.Background(), json.RawMessage(`{"command":"sleep 30","run_in_background":true}`))
-	if err != nil || res.IsError {
-		t.Fatalf("%v %+v", err, res)
+	d := m.desks[0]
+	submit(m, d, "hello")
+	if !m.app.Busy(d.live) {
+		t.Fatal("run goes")
 	}
-	jobs := m.app.Shell.Jobs()
-	if len(jobs) != 1 || !jobs[0].Running {
-		t.Fatalf("%+v", jobs)
+	_, cmd := m.Update(key('c', tea.ModCtrl))
+	if m.quitting || !toasted(m, "run cancelled") || has[tea.QuitMsg](drain(cmd)) {
+		t.Fatal("first ctrl+c cancels")
 	}
-	id := jobs[0].ID
-	_, cmd := m.Update(cards.KillJobMsg{Job: id})
-	killed := false
-	for _, msg := range collect(cmd, 10*time.Second) {
-		if k, ok := msg.(jobKilledMsg); ok && k.Job == id {
-			killed = true
-			m.Update(k)
+	_, cmd = m.Update(key('c', tea.ModCtrl))
+	if !m.quitting || !has[tea.QuitMsg](drain(cmd)) {
+		t.Fatal("second ctrl+c inside the window quits")
+	}
+	idle, _ := newModel(t, false)
+	_, cmd = idle.Update(key('c', tea.ModCtrl))
+	if !idle.quitting || !has[tea.QuitMsg](drain(cmd)) {
+		t.Fatal("ctrl+c while idle quits")
+	}
+	if _, ok := idle.Filter(idle, tea.QuitMsg{}).(tea.QuitMsg); !ok {
+		t.Fatal("filter passes quit through")
+	}
+}
+
+func TestBar(t *testing.T) {
+	m, _ := newModel(t, false)
+	d := m.desks[0]
+	left, right := m.bar()
+	if len(left) == 0 || left[0].Text != "m-fast" || len(right) != 0 {
+		t.Fatalf("idle bar %v %v", left, right)
+	}
+	cmd := submit(m, d, "hello")
+	left, right = m.bar()
+	if !strings.Contains(fmt.Sprint(left), "working") || len(right) != 1 {
+		t.Fatalf("busy bar %v %v", left, right)
+	}
+	feed(m, cmd)
+	pump(t, m, runDone)
+}
+
+func TestPanelPickerAndModeCycle(t *testing.T) {
+	m, _ := newModel(t, false)
+	d := m.current()
+	feed(m, m.wm.Focus(d.session))
+	_, cmd := m.Update(key('a', tea.ModAlt))
+	feed(m, cmd)
+	p, ok := m.wm.Overlay().(*wm.Palette)
+	if !ok || len(p.Matches()) != len(panels) {
+		t.Fatalf("alt+a lists every panel, %v", m.wm.Overlay())
+	}
+	for _, it := range p.Matches() {
+		if it.Keys != "" {
+			t.Fatalf("unbound and closed panels carry no keys %+v", it)
 		}
 	}
-	if !killed {
-		t.Fatal("the kill reports back")
+	feed(m, m.wm.Dismiss())
+	m.keys.Rebind("open.metrics", "alt+i")
+	feed(m, m.command(nil, "sessions", ""))
+	feed(m, m.wm.Focus(d.session))
+	_, cmd = m.Update(key('a', tea.ModAlt))
+	feed(m, cmd)
+	p = m.wm.Overlay().(*wm.Palette)
+	keyed := map[string]string{}
+	for _, it := range p.Matches() {
+		keyed[it.ID] = it.Keys
 	}
-	if jb, ok := m.app.Shell.Job(id); !ok || jb.Running {
-		t.Fatalf("%+v", jb)
+	if keyed["metrics"] != "alt+i" || keyed["sessions"] != "open" {
+		t.Fatalf("the window menu shows the keymap key and what is open %v", keyed)
 	}
-	for _, msg := range []tea.Msg{cards.KillJobMsg{Job: "nope"}, cards.ReconnectMsg{Server: "nope"}} {
-		_, cmd := m.Update(msg)
-		failed := false
-		for _, got := range collect(cmd, 5*time.Second) {
-			if _, ok := got.(errMsg); ok {
-				failed = true
+	feed(m, m.wm.Close(m.sessions))
+	typeInto(m, "metr")
+	ms := p.Matches()
+	if len(ms) == 0 || ms[0].Title != "Metrics" {
+		t.Fatalf("the picker filters %v", ms)
+	}
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	feed(m, cmd)
+	if !m.wm.Has("metrics") || m.wm.Overlay() != nil {
+		t.Fatal("picking opens the panel")
+	}
+	feed(m, m.wm.Focus(d.session))
+	before := m.app.Mode.Mode()
+	_, cmd = m.Update(key(tea.KeyTab, tea.ModShift))
+	feed(m, cmd)
+	if m.app.Mode.Mode() != before.Next() {
+		t.Fatalf("shift+tab cycles the mode, %v", m.app.Mode.Mode())
+	}
+	feed(m, m.wm.Focus(m.metrics))
+	_, cmd = m.Update(key(tea.KeyTab, tea.ModShift))
+	feed(m, cmd)
+	if m.app.Mode.Mode() != before.Next() {
+		t.Fatal("shift+tab away from the session leaves the mode alone")
+	}
+	if _, ok := m.knobs()["newline"]; ok {
+		t.Fatal("there is no newline knob")
+	}
+	feed(m, m.newWorkspace())
+	_, cmd = m.Update(key('W', tea.ModAlt))
+	feed(m, cmd)
+	if len(m.desks) != 1 {
+		t.Fatalf("alt+W closes the workspace on legacy terminals, %d left", len(m.desks))
+	}
+}
+
+func TestKeybindFileDrivesTheApp(t *testing.T) {
+	m, _ := newModel(t, false)
+	path := m.keys.Path()
+	dir, _ := profiles.ConfigDir()
+	if path != filepath.Join(dir, keys.FileName) || m.env.Keys != m.keys || m.wm.Keys() != m.keys {
+		t.Fatalf("one keymap read from the config dir %q", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), `"open": ["alt+a"]`) {
+		t.Fatalf("defaults written on first start %v", err)
+	}
+	for _, a := range m.keys.Actions() {
+		if a.Context != keys.Global {
+			continue
+		}
+		found := false
+		for _, c := range m.wm.Commands() {
+			if c.ID == a.ID {
+				found = true
 			}
 		}
-		if !failed {
-			t.Fatalf("%T reports its error", msg)
+		if !found {
+			t.Fatalf("global action %s has no command behind it", a.ID)
 		}
 	}
+	os.WriteFile(path, []byte(`{"global": {"open": "alt+o", "workspace.new": "alt+a"}}`), 0o644)
+	future := time.Now().Add(time.Minute)
+	os.Chtimes(path, future, future)
+	_, cmd := m.Update(keysTickMsg{})
+	msgs := drain(cmd)
+	if !has[keys.ChangedMsg](msgs) || m.keys.First("open") != "alt+o" || !toasted(m, "keybinds reloaded") {
+		t.Fatalf("an outside edit reloads the keybinds, open on %q", m.keys.First("open"))
+	}
+	if _, cmd := m.Update(keysTickMsg{}); has[keys.ChangedMsg](drain(cmd)) {
+		t.Fatal("an unchanged file is left alone")
+	}
+	_, cmd = m.Update(key('o', tea.ModAlt))
+	feed(m, cmd)
+	if _, ok := m.wm.Overlay().(*wm.Palette); !ok {
+		t.Fatal("the reloaded chord opens the panel picker")
+	}
+	feed(m, m.wm.Dismiss())
+	_, cmd = m.Update(key('a', tea.ModAlt))
+	feed(m, cmd)
+	if len(m.desks) != 2 {
+		t.Fatal("a traded chord fires its new action")
+	}
+	os.WriteFile(path, []byte(`{"global": {"nope": "x"}}`), 0o644)
+	later := future.Add(time.Minute)
+	os.Chtimes(path, later, later)
+	feed(m, func() tea.Msg { return keysTickMsg{} })
+	if !toasted(m, "unknown action") {
+		t.Fatal("a bad edit says what it rejected")
+	}
+	feed(m, m.editKeys())
+	tab, _ := m.config.Active()
+	if m.wm.Focused() != m.config || tab.Title() != "keys" {
+		t.Fatal("keys.edit opens the configuration on its keys tab")
+	}
+	feed(m, m.command(nil, "keys", ""))
+	if m.wm.Focused() != m.config {
+		t.Fatal("the keys slash command opens the editor")
+	}
+	_, cmd = m.Update(keys.ChangedMsg{})
+	feed(m, cmd)
+	os.WriteFile(path, []byte(`not json`), 0o644)
+	again, err := New(context.Background(), m.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(again.Init())
+	if again.keysErr == nil || !toasted(again, "keybinds: ") || again.keys.First("palette") != "alt+space" {
+		t.Fatal("a broken file is reported at start and the defaults hold")
+	}
+	again.shutdown()
 }
 
-func TestApprovalLeavesHistory(t *testing.T) {
+func TestThemePickedInThePaletteRepaintsEverything(t *testing.T) {
 	m, _ := newModel(t, false)
-	drain(m.Init())
-	m.Update(StartPrompt("hello"))
-	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.RunDoneMsg); return ok })
-	m.Update(cards.CommandMsg{Name: "history"})
-	if !m.inHistory {
-		t.Fatal("history opens")
+	m.wm.SetMotion(0)
+	d := m.desks[0]
+	feed(m, submit(m, d, "paint me"))
+	pump(t, m, runDone)
+	feed(m, m.command(nil, "files", ""))
+	feed(m, m.wm.Focus(d.session))
+	before := m.View().Content
+	fg := func(c color.Color) string {
+		r, g, b, _ := c.RGBA()
+		return fmt.Sprintf("38;2;%d;%d;%d", r>>8, g>>8, b>>8)
 	}
-	go m.app.Approver.Ask(context.Background(), policy.Request{Call: protocol.ToolCall{Name: "Bash"}})
-	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.ApprovalMsg); return ok })
-	if m.inHistory || m.history != nil || m.deck.Overlay() != m.approval {
-		t.Fatal("an approval leaves history and shows the overlay")
+	dark := theme.Blackwall()
+	if trace := d.session.Transcript.View(100, 12); !strings.Contains(trace, fg(dark.Ice)) {
+		t.Fatal("the transcript paints in the dark palette before the switch")
 	}
-	pending := m.app.Approver.Pending()
-	if len(pending) != 1 || !m.app.Approver.Answer(pending[0].ID, policy.No) {
-		t.Fatal("approval answered")
+	_, cmd := m.Update(key(tea.KeySpace, tea.ModAlt))
+	feed(m, cmd)
+	typeInto(m, "theme")
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	feed(m, cmd)
+	p, ok := m.wm.Overlay().(*wm.Palette)
+	if !ok || len(p.Matches()) != 4 {
+		t.Fatalf("the theme picker opens %v", m.wm.Overlay())
 	}
-}
-
-func TestSlashCommandsCoverPaletteActions(t *testing.T) {
-	m, _ := newModel(t, false)
-	seen := map[string]bool{}
-	for _, c := range m.slashCommands() {
-		if seen[c.Name] || strings.Contains(c.Name, " ") {
-			t.Fatalf("duplicate or spaced %q", c.Name)
+	typeInto(m, "light")
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	feed(m, cmd)
+	if m.theme.Name != "light" || m.wm.Theme().Name != "light" || m.env.Theme.Name != "light" || m.wm.Overlay() != nil {
+		t.Fatalf("picking light switches the theme, %q %q", m.theme.Name, m.wm.Theme().Name)
+	}
+	v := m.View()
+	if v.Content == before || v.BackgroundColor != theme.Light().Bg {
+		t.Fatal("the screen repaints in the new palette")
+	}
+	r, g, b, _ := theme.Light().Surface.RGBA()
+	if !strings.Contains(v.Content, fmt.Sprintf("48;2;%d;%d;%d", r>>8, g>>8, b>>8)) {
+		t.Fatal("card surfaces take the light surface color")
+	}
+	trace := d.session.Transcript.View(100, 12)
+	for _, stale := range []color.Color{dark.Text, dark.Ice, dark.TextDim, dark.Accent} {
+		if strings.Contains(trace, fg(stale)) {
+			t.Fatalf("the transcript kept a dark color %s from its cache", fg(stale))
 		}
-		seen[c.Name] = true
 	}
-	for _, want := range []string{"attach", "model", "jobs", "workspace", "daemons", "ice", "timeline", "compare", "palette", "clear", "quit"} {
-		if !seen[want] {
-			t.Fatalf("missing /%s", want)
-		}
+	if !strings.Contains(trace, fg(theme.Light().Ice)) {
+		t.Fatal("the transcript paints in the light palette")
 	}
 }

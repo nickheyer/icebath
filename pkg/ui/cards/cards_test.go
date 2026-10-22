@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"iter"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/agent/hooks"
 	"github.com/nickheyer/icebath/pkg/agent/subagent"
 	"github.com/nickheyer/icebath/pkg/facts"
 	"github.com/nickheyer/icebath/pkg/harness"
@@ -30,8 +33,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool"
 	"github.com/nickheyer/icebath/pkg/tool/files"
 	"github.com/nickheyer/icebath/pkg/tool/shell"
-	"github.com/nickheyer/icebath/pkg/ui/deck"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 var at = time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
@@ -53,6 +58,7 @@ func (s *sink) all() []any {
 	return append([]any(nil), s.msgs...)
 }
 
+// Runs a command and collects every message it produces, batches flattened
 func run(cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {
 		return nil
@@ -81,1161 +87,1880 @@ func find[T any](msgs []tea.Msg) (T, bool) {
 	return zero, false
 }
 
-func keyp(s string) tea.KeyPressMsg {
-	switch s {
-	case "enter":
-		return tea.KeyPressMsg{Code: tea.KeyEnter}
-	case "esc":
-		return tea.KeyPressMsg{Code: tea.KeyEscape}
-	case "tab":
-		return tea.KeyPressMsg{Code: tea.KeyTab}
-	case "backspace":
-		return tea.KeyPressMsg{Code: tea.KeyBackspace}
-	case "up":
-		return tea.KeyPressMsg{Code: tea.KeyUp}
-	case "down":
-		return tea.KeyPressMsg{Code: tea.KeyDown}
+// Key press a terminal reports for the chord
+func keyp(chord string) tea.KeyPressMsg { return keys.Press(chord) }
+
+// Delivers the chord the way the manager does, as the action the keymap binds it to in the card's contexts, else as typed text
+func (te *testEnv) press(c wm.Card, chord string) (wm.Card, tea.Cmd) {
+	msg := keyp(chord)
+	var ctxs []string
+	if k, ok := c.(wm.Contexter); ok {
+		ctxs = k.Contexts()
 	}
-	r := []rune(s)
-	return tea.KeyPressMsg{Code: r[0], Text: s}
+	raw := false
+	if r, ok := c.(wm.Raw); ok {
+		raw = r.Raw()
+	}
+	for _, id := range te.env.Keys.Lookup(ctxs, msg) {
+		a, _ := te.env.Keys.Action(id)
+		if slices.Contains(ctxs, a.Context) {
+			return c.Update(wm.ActionMsg{ID: id, Key: msg})
+		}
+		if !raw {
+			return c, nil
+		}
+	}
+	return c.Update(msg)
 }
 
-func typeText(c deck.Card, text string) deck.Card {
+// Messages produced by pressing the chord on the card
+func (te *testEnv) pressed(c wm.Card, chord string) []tea.Msg {
+	_, cmd := te.press(c, chord)
+	return run(cmd)
+}
+
+// Delivers the chord to a bare composer as the session card would
+func (te *testEnv) compose(c *Composer, chord string) tea.Cmd {
+	msg := keyp(chord)
+	ctxs := []string{keys.Session}
+	if c.Completing() {
+		ctxs = []string{keys.Complete, keys.Session}
+	}
+	for _, id := range te.env.Keys.Lookup(ctxs, msg) {
+		if a, _ := te.env.Keys.Action(id); slices.Contains(ctxs, a.Context) {
+			return c.Action(id)
+		}
+	}
+	return c.Update(msg)
+}
+
+func typeText(c wm.Card, text string) wm.Card {
 	for _, r := range text {
 		c, _ = c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 	return c
 }
 
-func newEnv(t *testing.T) (*Env, *sink) {
+func plain(s string) string { return ansi.Strip(s) }
+
+// Model that streams one text answer, holding the stream open while hold is unclosed
+type stubModel struct {
+	text string
+	hold chan struct{}
+}
+
+func (m stubModel) Stream(ctx context.Context, req protocol.Request) iter.Seq2[protocol.Event, error] {
+	return func(yield func(protocol.Event, error) bool) {
+		if m.hold != nil {
+			select {
+			case <-m.hold:
+			case <-ctx.Done():
+				yield(protocol.Event{}, ctx.Err())
+				return
+			}
+		}
+		resp := protocol.Response{Model: "m-test", Content: []protocol.Part{protocol.Text{Text: m.text}}, StopReason: protocol.StopEnd, Usage: protocol.Usage{Input: 3, Output: 2}}
+		if !yield(protocol.Event{Type: protocol.EventTextDelta, Delta: m.text, Response: resp}, nil) {
+			return
+		}
+		yield(protocol.Event{Type: protocol.EventDone, Response: resp}, nil)
+	}
+}
+
+type testEnv struct {
+	env   *Env
+	sink  *sink
+	live  *harness.Live
+	dir   string
+	sh    *shell.Shell
+	app   *harness.App
+	knobs map[string]string
+}
+
+// Builds an environment over a shell, file tools, a rules policy and one open session with its stores attached
+func newEnv(t *testing.T) *testEnv {
 	t.Helper()
 	s := &sink{}
 	dir := t.TempDir()
-	sh, err := shell.New(shell.Options{Dir: dir})
+	sh, err := shell.New(shell.Options{Dir: dir, OnJob: func(ev shell.JobEvent) { s.send(harness.JobMsg{Event: ev}) }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(sh.Close)
+	t.Setenv(profiles.ConfigDirEnv, filepath.Join(dir, "user"))
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
 	reg := &tool.Registry{}
 	reg.Add(files.All(files.Options{Root: dir})...)
-	pol, _ := rules.New(rules.Set{Allow: []string{"Read"}, Deny: []string{"Bash(rm *)"}})
+	pol, _ := rules.New()
 	sess := session.New()
 	fs := facts.New()
 	fs.Attach(sess)
 	ms := mission.New()
 	ms.Attach(sess)
+	live := &harness.Live{Session: sess, Facts: fs, Missions: ms}
 	pump := harness.NewPump(s.send)
 	ctl := harness.NewController(s.send, pump)
 	ctl.Missions = ms
 	meter := harness.NewMeter(s.send)
 	opus, _ := profiles.Describe("claude-opus-5")
 	meter.SetCatalog(opus, "anthropic")
-	env := &Env{
-		Theme: theme.Blackwall(), Control: ctl, Meter: meter, Work: harness.NewWorkspace(dir), Facts: fs, Missions: ms,
-		Approver: harness.NewApprover(s.send), MCP: harness.NewMCP(s.send, reg), Shell: sh, Tools: reg, Rules: pol,
-		Mode: mode.Compose(mode.Default, pol, reg), Store: &session.Memory{},
-		Session:  func() *session.Session { return sess },
-		Profiles: func() []profiles.Profile { return profiles.Defaults() },
-		Primary: func() harness.Endpoint {
-			p, _ := profiles.Lookup("anthropic")
-			return harness.Endpoint{Profile: p, Model: "claude-opus-5"}
-		},
+	journal := harness.NewJournal()
+	mcpm := harness.NewMCP(journal.Tap(s.send), reg)
+	anthropic, _ := profiles.Lookup("anthropic")
+	app := &harness.App{Dir: dir, Rules: pol, Tools: reg, MCP: mcpm, Journal: journal, Primary: harness.Endpoint{Profile: anthropic, Model: "claude-opus-5", Catalog: opus}}
+	te := &testEnv{sink: s, live: live, dir: dir, sh: sh, app: app, knobs: map[string]string{"max_tokens": "16000", "theme": "blackwall", "motion": "1.00", "cascade": "false"}}
+	te.env = &Env{
+		Theme: theme.Blackwall(), Keys: keys.Default(), Control: ctl, Meter: meter, Work: harness.NewWorkspace(dir),
+		Approver: harness.NewApprover(s.send), MCP: mcpm, Shell: sh, Tools: reg,
+		Mode: mode.Compose(mode.Default, pol, reg), Store: &session.Memory{}, Files: files.Options{Dir: dir, Root: dir},
+		Journal: journal, Editor: app, Ctx: context.Background(),
+		Lives:   func() []*harness.Live { return []*harness.Live{live} },
+		Primary: func() harness.Endpoint { return app.Primary },
 		Models: func(ctx context.Context, p profiles.Profile) ([]profiles.Model, error) {
 			return []profiles.Model{{ID: "claude-opus-5"}, {ID: "other"}}, nil
 		},
-		Knobs:     func() map[string]string { return map[string]string{"max_tokens": "16000"} },
-		ConfigDir: dir, ProjectDir: dir,
-		Now: func() time.Time { return at },
+		Knobs:      func() map[string]string { return maps.Clone(te.knobs) },
+		ProjectDir: dir,
+		Now:        func() time.Time { return at },
 	}
-	return env, s
+	return te
 }
 
-func TestComposerTypesSubmitsAndRemembers(t *testing.T) {
-	env, _ := newEnv(t)
-	dir := t.TempDir()
-	c := NewComposer(env, dir)
-	c.Busy = func() bool { return false }
-	c.Model = func() string { return "claude-opus-5" }
-	c.ModeName = func() string { return "default" }
-	if c.Title() != "UPLINK" || !c.Pinned() || c.Capturing() || c.Key() != "uplink" {
-		t.Fatal("identity")
-	}
-	c.Update(deck.FocusMsg{Focused: true})
-	if !c.Capturing() || len(c.Hints()) != 4 {
-		t.Fatal("focus arms the composer")
-	}
-	typeText(c, "hello world")
-	if c.Value() != "hello world" {
-		t.Fatalf("%q", c.Value())
-	}
-	if data, _ := os.ReadFile(filepath.Join(dir, "draft.txt")); string(data) != "hello world" {
-		t.Fatalf("draft must persist: %q", data)
-	}
-	_, cmd := c.Update(keyp("enter"))
-	msg, ok := find[SubmitMsg](run(cmd))
-	if !ok || msg.Text != "hello world" || len(msg.Parts) != 1 {
-		t.Fatalf("%+v", msg)
-	}
-	if c.Value() != "" || len(c.History()) != 1 {
-		t.Fatal("submit resets and remembers")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "draft.txt")); err == nil {
-		t.Fatal("draft removed after send")
-	}
-	c.Update(keyp("up"))
-	if c.Value() != "hello world" {
-		t.Fatalf("history recall %q", c.Value())
-	}
-	c.Update(keyp("down"))
-	if c.Value() != "" {
-		t.Fatalf("history forward restores the draft %q", c.Value())
-	}
-	typeText(c, "/mo")
-	c.Update(keyp("tab"))
-	if c.comp == nil || len(c.comp.items) < 2 {
-		t.Fatalf("slash completion %+v", c.comp)
-	}
-	c.Update(keyp("enter"))
-	if !strings.HasPrefix(c.Value(), "/mod") {
-		t.Fatalf("%q", c.Value())
-	}
-	typeText(c, "x")
-	_, cmd = c.Update(keyp("enter"))
-	cm, ok := find[CommandMsg](run(cmd))
-	if !ok || !strings.HasPrefix(cm.Name, "mod") || cm.Args != "x" {
-		t.Fatalf("%+v", cm)
-	}
-	os.WriteFile(filepath.Join(dir, "pic.png"), []byte("png"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "sub"), 0o755)
-	typeText(c, "/attach "+filepath.Join(dir, "pic.png"))
-	_, cmd = c.Update(keyp("enter"))
-	run(cmd)
-	if len(c.Attachments()) != 1 {
-		t.Fatal("attachment")
-	}
-	typeText(c, "look")
-	_, cmd = c.Update(keyp("enter"))
-	msg, _ = find[SubmitMsg](run(cmd))
-	if len(msg.Parts) != 2 {
-		t.Fatalf("image part must precede the text: %+v", msg.Parts)
-	}
-	if _, ok := msg.Parts[0].(protocol.Image); !ok {
-		t.Fatal("image part")
-	}
-	typeText(c, "/attach nope.txt")
-	_, cmd = c.Update(keyp("enter"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("bad attachment must toast")
-	}
-	typeText(c, "/attach")
-	_, cmd = c.Update(keyp("enter"))
-	run(cmd)
-	env.Shell.SetDir(dir)
-	typeText(c, "see su")
-	c.Update(keyp("tab"))
-	if !strings.HasSuffix(c.Value(), "sub/") {
-		t.Fatalf("path completion %q", c.Value())
-	}
-	c.Update(keyp("esc"))
-	if c.Capturing() {
-		t.Fatal("esc releases")
-	}
-	c.Update(keyp("i"))
-	if !c.Capturing() {
-		t.Fatal("i arms again")
-	}
-	c.Update(tea.PasteMsg{Content: "pasted"})
-	if !strings.Contains(c.Value(), "pasted") {
-		t.Fatalf("%q", c.Value())
-	}
-	c.Update(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
-	if c.Value() != "" {
-		t.Fatal("ctrl+u clears")
-	}
-	c.Busy = func() bool { return true }
-	if c.Status() != "steering" || !strings.Contains(ansi.Strip(c.View(40, 5)), "steer") {
-		t.Fatalf("%q", c.Status())
-	}
-	if c.Cursor() == nil {
-		t.Fatal("cursor while armed")
-	}
-	c.Update(deck.FocusMsg{})
-	if c.Capturing() || c.Cursor() != nil {
-		t.Fatal("blur releases")
-	}
-	again := NewComposer(env, dir)
-	if len(again.History()) != 6 {
-		t.Fatalf("history must persist, got %d", len(again.History()))
-	}
-	again.Update(deck.FocusMsg{Focused: true})
-	again.Update(tea.MouseClickMsg{Button: tea.MouseLeft})
-	again.Update(keyp("esc"))
-	again.Update(tea.MouseClickMsg{Button: tea.MouseLeft})
-	if !again.Capturing() {
-		t.Fatal("click arms")
-	}
-	typeText(again, "a")
-	again.Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
-	if _, cmd := again.Update(keyp("enter")); cmd == nil {
-		t.Fatal("submit")
-	}
-	if _, cmd := again.Update(keyp("enter")); cmd != nil {
-		t.Fatal("empty submit does nothing")
-	}
-	again.SetCommands([]Command{{Name: "zzz", Desc: "d"}})
-	typeText(again, "/z")
-	again.Update(keyp("tab"))
-	if !strings.HasPrefix(again.Value(), "/zzz") {
-		t.Fatalf("%q", again.Value())
-	}
-}
-
-func event(typ agent.EventType, round int) agent.Event {
-	return agent.Event{Type: typ, Agent: "root", Round: round, Time: at}
-}
-
-func model(round, index int, typ protocol.EventType, parts ...protocol.Part) agent.Event {
-	ev := event(agent.EventModel, round)
-	ev.Model = protocol.Event{Type: typ, Index: index, Response: protocol.Response{Model: "m", Content: parts}}
-	return ev
-}
-
-func TestTranscriptStreamsToolsAndSearches(t *testing.T) {
-	env, _ := newEnv(t)
-	tr := NewTranscript(env)
-	if tr.Title() != "TRACE" || !tr.Selectable() || len(tr.Claims()) < 10 || len(tr.Hints()) != 6 {
-		t.Fatal("identity")
-	}
-	feed := func(ev agent.Event) { tr.Update(harness.EventMsg{Run: "run-1", Event: ev}) }
-	start := event(agent.EventRunStart, 0)
-	start.Parts = []protocol.Part{protocol.Text{Text: "scan the host"}, protocol.Image{MediaType: "image/png", Data: []byte("x")}}
-	feed(start)
-	feed(event(agent.EventTurnStart, 1))
-	feed(model(1, 0, protocol.EventThinkingDelta, protocol.Thinking{Text: "hmm"}))
-	feed(model(1, 1, protocol.EventTextDelta, protocol.Thinking{Text: "hmm"}, protocol.Text{Text: "I will **read** it"}))
-	call := protocol.ToolCall{ID: "c1", Name: "Read", Args: json.RawMessage(`{"file_path":"/tmp/x.go"}`)}
-	feed(model(1, 2, protocol.EventToolCallStart, protocol.Thinking{Text: "hmm"}, protocol.Text{Text: "I will **read** it"}, protocol.ToolCall{ID: "c1", Name: "Read"}))
-	delta := model(1, 2, protocol.EventToolCallDelta, protocol.Thinking{Text: "hmm"}, protocol.Text{Text: "I will **read** it"}, protocol.ToolCall{ID: "c1", Name: "Read"})
-	delta.Model.Partial = `{"file_p`
-	feed(delta)
-	feed(model(1, 2, protocol.EventToolCallEnd, protocol.Thinking{Text: "hmm"}, protocol.Text{Text: "I will **read** it"}, call))
-	end := event(agent.EventTurnEnd, 1)
-	end.Response = &protocol.Response{Model: "claude-opus-5"}
-	feed(end)
-	ts := event(agent.EventToolStart, 1)
-	ts.Call = call
-	feed(ts)
-	view := ansi.Strip(tr.View(60, 20))
-	for _, want := range []string{"you", "scan the host", "image", "thinking", "root", "read", "Read", "/tmp/x.go"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("view lacks %q:\n%s", want, view)
-		}
-	}
-	if !strings.Contains(tr.Status(), "1 tools") {
-		t.Fatalf("%q", tr.Status())
-	}
-	te := event(agent.EventToolEnd, 1)
-	te.Call = call
-	te.Result = protocol.ToolResult{CallID: "c1", Name: "Read", Content: []protocol.Part{protocol.Text{Text: "1 package main"}}}
-	te.Data = files.ReadData{Path: "/tmp/x.go", Offset: 1, Lines: []string{"package main", "func main() {}"}, Total: 2}
-	te.Duration = 1500 * time.Millisecond
-	feed(te)
-	view = ansi.Strip(tr.View(60, 20))
-	if !strings.Contains(view, "ok") || !strings.Contains(view, "1.5s") || !strings.Contains(view, "2 of 2 lines") {
-		t.Fatalf("%s", view)
-	}
-	tr.Update(keyp("."))
-	for i := 0; i < 5; i++ {
-		tr.Update(keyp("."))
-	}
-	tr.Update(keyp("o"))
-	view = ansi.Strip(tr.View(60, 30))
-	if !strings.Contains(view, "func main") {
-		t.Fatalf("expanded read must show numbered lines:\n%s", view)
-	}
-	edit := protocol.ToolCall{ID: "c2", Name: "Edit", Args: json.RawMessage(`{"file_path":"/tmp/x.go","old_string":"a","new_string":"b"}`)}
-	ts.Call = edit
-	feed(ts)
-	te.Call = edit
-	te.Result = protocol.ToolResult{CallID: "c2", Name: "Edit"}
-	te.Data = files.Change{Path: "/tmp/x.go", Old: "a\nb\n", New: "a\nc\n", Replaced: 1}
-	feed(te)
-	tr.Update(keyp("e"))
-	view = ansi.Strip(tr.View(60, 40))
-	if !strings.Contains(view, "+1 -1") || !strings.Contains(view, "- b") || !strings.Contains(view, "+ c") {
-		t.Fatalf("diff:\n%s", view)
-	}
-	pre := &harness.PreImage{}
-	env.PreImage = pre
-	target := filepath.Join(t.TempDir(), "pre.txt")
-	os.WriteFile(target, []byte("line one\nline two\n"), 0o644)
-	failing := protocol.ToolCall{ID: "c9", Name: "Edit", Args: json.RawMessage(`{"file_path":"` + target + `","old_string":"zzz","new_string":"y"}`)}
-	pre.BeforeTool(context.Background(), failing)
-	ts.Call = failing
-	feed(ts)
-	te.Call = failing
-	te.Result = protocol.ToolResult{CallID: "c9", Name: "Edit", Content: []protocol.Part{protocol.Text{Text: "old_string not found"}}, IsError: true}
-	te.Data = nil
-	feed(te)
-	tr.Update(keyp("e"))
-	view = ansi.Strip(tr.View(60, 60))
-	if !strings.Contains(view, "file before the call") || !strings.Contains(view, "line two") {
-		t.Fatalf("failed edits must show the pre-image:\n%s", view)
-	}
-	missing := protocol.ToolCall{ID: "c10", Name: "Write", Args: json.RawMessage(`{"file_path":"/nope/none.txt","content":"x"}`)}
-	pre.BeforeTool(context.Background(), missing)
-	ts.Call = missing
-	feed(ts)
-	te.Call = missing
-	te.Result = protocol.ToolResult{CallID: "c10", Name: "Write", Content: []protocol.Part{protocol.Text{Text: "permission denied"}}, IsError: true}
-	feed(te)
-	tr.Update(keyp("e"))
-	if !strings.Contains(ansi.Strip(tr.View(60, 80)), "did not exist") {
-		t.Fatal("missing pre-image must be labeled")
-	}
-	bash := protocol.ToolCall{ID: "c3", Name: "Bash", Args: json.RawMessage(`{"command":"ls -la","description":"list"}`)}
-	ts.Call = bash
-	feed(ts)
-	tr.Update(harness.ProgressMsg{Run: "run-1", Progress: tool.Progress{CallID: "c3", Stream: "stdout", Text: "partial out\n"}})
-	view = ansi.Strip(tr.View(60, 40))
-	if !strings.Contains(view, "partial out") {
-		t.Fatalf("streamed output:\n%s", view)
-	}
-	te.Call = bash
-	te.Result = protocol.ToolResult{CallID: "c3", Name: "Bash", Content: []protocol.Part{protocol.Text{Text: "x"}}, IsError: true}
-	te.Data = shell.Run{Command: "ls -la", ExitCode: 2, Stdout: "out", Stderr: "boom"}
-	feed(te)
-	refused := event(agent.EventToolEnd, 1)
-	refused.Call = protocol.ToolCall{ID: "c4", Name: "Bash", Args: json.RawMessage(`{"command":"rm -rf /"}`)}
-	refused.Err = errors.New("policy: Bash denied, denied by rule")
-	refused.Result = protocol.ToolResult{CallID: "c4", IsError: true}
-	feed(refused)
-	ap := event(agent.EventApproval, 1)
-	ap.Approval = &agent.Approval{Request: policy.Request{Call: bash, Key: "Bash(ls *)"}, Pending: true}
-	feed(ap)
-	ap.Approval = &agent.Approval{Request: policy.Request{Call: bash, Key: "Bash(ls *)"}, Answer: policy.Answer{Allowed: true, By: "person", Verdict: policy.Always}}
-	feed(ap)
-	steer := event(agent.EventSteer, 1)
-	steer.Parts = []protocol.Part{protocol.Text{Text: "also check ports"}}
-	feed(steer)
-	feed(event(agent.EventCompactStart, 2))
-	ce := event(agent.EventCompactEnd, 2)
-	ce.Text = "summary"
-	ce.Data = map[string]int{"before": 10, "after": 4}
-	feed(ce)
-	hk := event(agent.EventHook, 2)
-	hk.Text = "Stop \"echo\" ok"
-	feed(hk)
-	note := event(agent.EventNote, 2)
-	note.Text = "a note"
-	feed(note)
-	cs := event(agent.EventSubagentStart, 2)
-	cs.Call = protocol.ToolCall{ID: "c5", Name: "scout-1"}
-	cs.Text = "look around"
-	cs.Data = subagent.Child{Name: "scout-1"}
-	feed(cs)
-	cend := event(agent.EventSubagentEnd, 2)
-	cend.Call = cs.Call
-	cend.Response = &protocol.Response{Content: []protocol.Part{protocol.Text{Text: "found it"}}}
-	feed(cend)
-	feed(event(agent.EventInterrupt, 2))
-	re := event(agent.EventRunEnd, 2)
-	re.Err = errors.New("agent: interrupted")
-	feed(re)
-	tr.Update(keyp("e"))
-	view = ansi.Strip(tr.View(70, 80))
-	for _, want := range []string{"error", "exit 2", "boom", "refused", "denied by rule", "allowed Bash", "always", "Bash(ls *)", "steer", "also check ports", "compacted 10 messages into 4", "Stop", "a note", "scout-1", "found it", "interrupted", "agent: interrupted"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("view lacks %q:\n%s", want, view)
-		}
-	}
-	tr.Update(keyp("/"))
-	if !tr.Capturing() {
-		t.Fatal("search captures")
-	}
-	typeText(tr, "boom")
-	tr.Update(keyp("enter"))
-	tr.View(70, 20)
-	if tr.matches != 1 || !strings.Contains(tr.Status(), "1 matches") {
-		t.Fatalf("matches %d status %q", tr.matches, tr.Status())
-	}
-	tr.Update(keyp("n"))
-	tr.Update(keyp("N"))
-	tr.Update(keyp("/"))
-	typeText(tr, "zz")
-	tr.Update(keyp("backspace"))
-	tr.Update(keyp("esc"))
-	if tr.query != "" {
-		t.Fatal("esc clears the search")
-	}
-	for _, k := range []string{"j", "k", "g", "G", "[", "]", ",", "E", "T", "f", "f", "ctrl+d", "ctrl+u"} {
-		tr.Update(keyp(k))
-	}
-	tr.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
-	tr.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
-	tr.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 0})
-	tr.Update(deck.FocusMsg{})
-	tr.Update(transcriptTick{})
-	if tr.Blocks() < 15 {
-		t.Fatalf("%d blocks", tr.Blocks())
-	}
-	child := NewChildTranscript(env, "run-1", "scout-1")
-	child.Update(harness.EventMsg{Run: "run-1", Event: event(agent.EventRunStart, 0)})
-	if child.Blocks() != 0 {
-		t.Fatal("child ignores root events")
-	}
-	ev := event(agent.EventRunStart, 0)
-	ev.Agent, ev.Depth = "scout-1", 1
-	child.Update(harness.EventMsg{Run: "run-1", Event: ev})
-	child.Update(harness.EventMsg{Run: "run-2", Event: ev})
-	if child.Blocks() != 1 || child.Title() != "TRACE scout-1" {
-		t.Fatal("child follows its agent in its run")
-	}
-	tr.Update(harness.EventMsg{Run: "run-1", Event: ev})
-	if tr.Blocks() != 15+0 && tr.Blocks() < 15 {
-		t.Fatal("root ignores child depth events")
-	}
-}
-
-func TestTranscriptLoadsSessions(t *testing.T) {
-	env, _ := newEnv(t)
-	sess := session.New()
-	sess.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "hi"}}})
-	sess.AddResponse("root", protocol.Response{Model: "m", Content: []protocol.Part{protocol.Thinking{Redacted: true}, protocol.Text{Text: "calling"}, protocol.ToolCall{ID: "c1", Name: "Glob", Args: json.RawMessage(`{"pattern":"*.go"}`)}}})
-	sess.Log("root", "approval", map[string]any{"tool": "Glob", "call_id": "c1", "allowed": true, "by": "person", "verdict": "yes", "key": "Glob"})
-	sess.AddResults("root", []protocol.ToolResult{{CallID: "c1", Name: "Glob", Content: []protocol.Part{protocol.Text{Text: "a.go"}}}, {CallID: "orphan", Name: "Read", Content: []protocol.Part{protocol.Image{MediaType: "image/png"}}}})
-	sess.Log("root", "compact", map[string]any{"before": 4, "after": 2, "summary": "s"})
-	sess.Compact("Summary of the earlier conversation:\n\nstuff", 1)
-	sess.Log("root", "interrupt", nil)
-	sess.Log("root", "run_end", map[string]any{"error": "boom"})
-	sess.Log("root", facts.RecordKind, facts.Change{Op: facts.OpAdd, Fact: facts.Fact{ID: "f1", Kind: "finding", Title: "open port"}})
-	sess.Log("root", "approval", json.RawMessage(`{bad`))
-	tr := NewTranscript(env)
-	tr.Load(sess.Entries(), sess.Records())
-	tr.Update(keyp("e"))
-	view := ansi.Strip(tr.View(60, 60))
-	for _, want := range []string{"compaction summary", "allowed Glob", "(yes)", "compacted 4 messages into 2", "interrupted", "boom", "open port"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("view lacks %q:\n%s", want, view)
-		}
-	}
-	if strings.Contains(view, session.Ack) {
-		t.Fatal("ack must be hidden")
-	}
-	if tr.turns != 0 {
-		t.Fatalf("compaction removed the user turn, turns %d", tr.turns)
-	}
-	lines := tr.Lines(40)
-	if len(lines) == 0 || len(tr.lineBlock) != len(lines) {
-		t.Fatal("lines map to blocks")
-	}
-	if callSummary(protocol.ToolCall{Name: "Read", Args: json.RawMessage(`{"file_path":"f","offset":3}`)}, "") != "f from 3" {
-		t.Fatal("read summary")
-	}
-	if callSummary(protocol.ToolCall{Name: "Grep", Args: json.RawMessage(`{"pattern":"p","path":"d"}`)}, "") != "p in d" {
-		t.Fatal("grep summary")
-	}
-	if callSummary(protocol.ToolCall{Name: "Agent", Args: json.RawMessage(`{"prompt":"do things"}`)}, "") != "do things" {
-		t.Fatal("agent summary")
-	}
-	if callSummary(protocol.ToolCall{Name: "Plan", Args: json.RawMessage(`{"steps":[{},{}]}`)}, "") != "2 steps" {
-		t.Fatal("plan summary")
-	}
-	if callSummary(protocol.ToolCall{Name: "X", Args: json.RawMessage(`{"b":"2","a":"1"}`)}, "") != "1 2" {
-		t.Fatal("generic summary")
-	}
-	if callSummary(protocol.ToolCall{Name: "X"}, "{part") != "{part" || callSummary(protocol.ToolCall{Name: "X", Args: json.RawMessage(`bad`)}, "") != "" {
-		t.Fatal("partial summary")
-	}
-	if callSummary(protocol.ToolCall{Name: "WebFetch", Args: json.RawMessage(`{"url":"u"}`)}, "") != "u" || callSummary(protocol.ToolCall{Name: "Record", Args: json.RawMessage(`{"title":"t"}`)}, "") != "t" {
-		t.Fatal("other summaries")
-	}
-}
-
-func TestApprovalCard(t *testing.T) {
-	env, s := newEnv(t)
-	a := NewApproval(env)
-	if a.Title() != "APPROVAL" || a.Capturing() || a.Status() != "" || len(a.Hints()) != 5 {
-		t.Fatal("empty")
-	}
-	if !strings.Contains(ansi.Strip(a.View(40, 10)), "nothing waiting") {
-		t.Fatal("empty view")
-	}
-	ctx := context.Background()
-	req := policy.Request{Call: protocol.ToolCall{ID: "c1", Name: "Bash", Args: json.RawMessage(`{"command":"git status"}`)}, Agent: "root", Reason: "rule 1", Key: "Bash(git *)", Subjects: []policy.Subject{{Kind: "command", Text: "git status"}, {Kind: "command", Text: "$(x)", Unsafe: true, Exact: true}}, Tool: &protocol.Tool{Name: "Bash", Description: "runs commands"}, Hints: tool.Annotations{Destructive: true, OpenWorld: true, ReadOnly: true, Idempotent: true}, Review: &policy.Review{By: "judge", Decision: policy.Ask, Reason: "unsure"}}
-	go env.Approver.Ask(ctx, req)
-	deadline := time.Now().Add(2 * time.Second)
-	for env.Approver.Len() < 1 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	go env.Approver.Ask(ctx, policy.Request{Call: protocol.ToolCall{ID: "c2", Name: "Read"}})
-	for env.Approver.Len() < 2 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	a.Update(harness.ApprovalMsg{})
-	if !a.Capturing() || a.Status() != "2 waiting" || !strings.Contains(a.Title(), "Bash") {
-		t.Fatalf("%q", a.Status())
-	}
-	view := ansi.Strip(a.View(100, 30))
-	for _, want := range []string{"Bash", "rule 1", "judge", "git status", "unsafe", "exact", "Bash(git *)", "runs commands", "destructive", "queued", "Read"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("view lacks %q:\n%s", want, view)
-		}
-	}
-	a.Update(keyp("j"))
-	a.Update(keyp("k"))
-	a.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
-	a.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
-	a.Update(keyp("g"))
-	a.View(60, 5)
-	_, cmd := a.Update(keyp("a"))
-	ans, ok := find[AnswerMsg](run(cmd))
-	if !ok || ans.Verdict != policy.Always || ans.ID != a.Pending()[0].ID {
-		t.Fatalf("%+v", ans)
-	}
-	if !env.Approver.Answer(ans.ID, ans.Verdict) {
-		t.Fatalf("answer %d refused, pending %v", ans.ID, env.Approver.Pending())
-	}
-	deadline = time.Now().Add(2 * time.Second)
-	for env.Approver.Len() > 1 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	a.Update(harness.ApprovalDoneMsg{})
-	if a.Status() != "1 waiting" {
-		t.Fatalf("%q", a.Status())
-	}
-	for _, k := range []string{"y", "n", "v"} {
-		_, cmd := a.Update(keyp(k))
-		if _, ok := find[AnswerMsg](run(cmd)); !ok {
-			t.Fatalf("%s must answer", k)
-		}
-	}
-	env.Approver.DenyAll()
-	for env.Approver.Len() > 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	_, cmd = a.Update(harness.ApprovalDoneMsg{})
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("an empty queue dismisses the overlay")
-	}
-	_ = s
-	if prettyArgs(json.RawMessage(`bad`)) != "bad" {
-		t.Fatal("pretty args")
-	}
-}
-
-type scriptModel struct{ parts []protocol.Part }
-
-func (s scriptModel) Stream(ctx context.Context, req protocol.Request) iter.Seq2[protocol.Event, error] {
-	return func(yield func(protocol.Event, error) bool) {
-		resp := protocol.Response{Content: s.parts, StopReason: protocol.StopEnd, Usage: protocol.Usage{Input: 3, Output: 4}}
-		yield(protocol.Event{Type: protocol.EventDone, Response: resp}, nil)
-	}
-}
-
-func TestDaemonsCard(t *testing.T) {
-	env, s := newEnv(t)
-	d := NewDaemons(env)
-	if d.Title() != "DAEMONS" || !strings.Contains(ansi.Strip(d.View(40, 5)), "no daemons") || d.Status() != "idle" {
-		t.Fatal("empty")
-	}
-	a := &agent.Agent{Name: "root", Model: scriptModel{parts: []protocol.Part{protocol.Text{Text: "done"}}}, ModelID: "m", Gate: policy.Gate{Policy: policy.AllowAll}, Session: session.New()}
-	r, err := env.Control.Start(context.Background(), a, "", []protocol.Part{protocol.Text{Text: "go"}})
+// Starts a root run on the live session and waits for it unless hold keeps it open
+func (te *testEnv) startRun(t *testing.T, hold chan struct{}, text string) *harness.Run {
+	t.Helper()
+	ag := &agent.Agent{Name: "root", Model: stubModel{text: text, hold: hold}, ModelID: "m-test", Session: te.live.Session}
+	r, err := te.env.Control.Start(context.Background(), ag, "", []protocol.Part{protocol.Text{Text: "hi"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc, _ := env.Control.Done(r.ID)
-	<-dc
-	d.Update(harness.RunDoneMsg{Run: r.ID})
-	for _, m := range s.all() {
-		if ev, ok := m.(harness.EventMsg); ok {
-			d.Update(ev)
-		}
+	if hold == nil {
+		te.waitRun(t, r)
 	}
-	env.Shell.Bash().Run(context.Background(), json.RawMessage(`{"command":"echo hi","run_in_background":true}`))
-	d.Update(harness.JobMsg{})
-	d.Update(daemonTick{})
-	view := ansi.Strip(d.View(80, 10))
-	if !strings.Contains(view, "root") || !strings.Contains(view, "done") || !strings.Contains(view, "job-1") {
-		t.Fatalf("%s", view)
-	}
-	d.Update(keyp("g"))
-	_, cmd := d.Update(keyp("enter"))
-	if open, ok := find[OpenRunMsg](run(cmd)); !ok || open.Run != r.ID {
-		t.Fatal("enter opens the run")
-	}
-	_, cmd = d.Update(keyp("K"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("killing a finished run toasts")
-	}
-	d.Update(keyp("G"))
-	d.Update(keyp("k"))
-	d.Update(keyp("j"))
-	_, cmd = d.Update(keyp("enter"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("opening a job toasts")
-	}
-	wait, _ := env.Shell.Wait("job-1")
-	<-wait
-	d.Update(harness.JobMsg{})
-	_, cmd = d.Update(keyp("K"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("killing a finished job toasts")
-	}
-	d.Update(tea.MouseClickMsg{Button: tea.MouseLeft, Y: 1})
-	if d.sel != 0 {
-		t.Fatal("click selects")
-	}
-	if d.Init() != nil {
-		t.Fatal("no tick when idle")
-	}
-	env.Shell.Bash().Run(context.Background(), json.RawMessage(`{"command":"sleep 5","run_in_background":true}`))
-	d.Update(harness.JobMsg{})
-	if d.Status() != "1 run" || d.Init() == nil {
-		t.Fatalf("%q", d.Status())
-	}
-	d.Update(keyp("G"))
-	_, cmd = d.Update(keyp("K"))
-	if kill, ok := find[KillJobMsg](run(cmd)); !ok || kill.Job != "job-2" {
-		t.Fatal("kill job")
-	}
-	env.Shell.KillJob(context.Background(), "job-2")
+	return r
 }
 
-func TestMissionFindingsTelemetryWorkspaceJobs(t *testing.T) {
-	env, _ := newEnv(t)
-	m, _ := env.Missions.Create("map the lan")
-	env.Missions.SetPlan(m.ID, []mission.Step{{Text: "scan", Status: mission.StepDone}, {Text: "probe", Status: mission.StepActive}, {Text: "report"}, {Text: "skip", Status: mission.StepSkipped}})
-	env.Missions.Assign(m.ID, "root")
-	m, _ = env.Missions.Get(m.ID)
-	mc := NewMission(env, m)
-	env.Facts.Add(facts.Fact{Title: "open ssh", Kind: "finding", Agent: "root", Confidence: 0.9, Tags: []string{"net"}, Evidence: []facts.Evidence{{Kind: "file", Ref: "/tmp/a", Line: 3, Quote: "22"}, {Kind: "url", Ref: "http://x"}}, Body: "port 22 answers"})
-	env.Facts.Add(facts.Fact{Title: "weak tls", Kind: "risk", Agent: "other", Parent: "f1", Confidence: 0.3})
-	view := ansi.Strip(mc.View(60, 12))
-	for _, want := range []string{"map the lan", "active", "50%", "root", "findings 1", "☑ 1. scan", "▶ 2. probe", "☐ 3. report", "⊘ 4. skip"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("mission view lacks %q:\n%s", want, view)
-		}
-	}
-	if mc.Status() != "50%" || mc.Key() != "mission:"+m.ID || mc.ID() != m.ID || len(mc.Hints()) != 2 {
-		t.Fatalf("%q", mc.Status())
-	}
-	_, cmd := mc.Update(keyp("d"))
-	if st, ok := find[MissionStateMsg](run(cmd)); !ok || st.Status != mission.StatusDone {
-		t.Fatal("d finishes")
-	}
-	done, _ := env.Missions.Finish(m.ID, mission.StatusFailed, "timeout")
-	mc.Update(harness.MissionMsg{Mission: done})
-	if mc.Status() != "failed" || !strings.Contains(ansi.Strip(mc.View(60, 12)), "timeout") || len(mc.Hints()) != 2 {
-		t.Fatal("failed view")
-	}
-	_, cmd = mc.Update(keyp("D"))
-	if rm, ok := find[MissionRemoveMsg](run(cmd)); !ok || rm.ID != m.ID {
-		t.Fatal("D forgets an ended mission")
-	}
-	_, cmd = mc.Update(keyp("r"))
-	if _, ok := find[MissionStateMsg](run(cmd)); !ok {
-		t.Fatal("r resumes")
-	}
-	mc.Update(keyp("x"))
-	empty := NewMission(env, mission.Mission{ID: "m9", Objective: "o", Status: mission.StatusActive})
-	if !strings.Contains(ansi.Strip(empty.View(40, 8)), "no plan yet") || empty.findings() != 2 {
-		t.Fatal("empty plan")
-	}
-
-	f := NewFindings(env)
-	view = ansi.Strip(f.View(70, 20))
-	if !strings.Contains(view, "open ssh") || !strings.Contains(view, "weak tls") || f.Status() != "2 open" || len(f.Rows()) != 2 {
-		t.Fatalf("%s", view)
-	}
-	f.Update(keyp("t"))
-	if !f.tree || f.depth["f2"] != 1 {
-		t.Fatal("tree depth")
-	}
-	f.Update(keyp("enter"))
-	view = ansi.Strip(f.View(70, 20))
-	if !strings.Contains(view, "port 22 answers") || !strings.Contains(view, "/tmp/a:3") || !strings.Contains(view, "net") {
-		t.Fatalf("%s", view)
-	}
-	f.Update(keyp("c"))
-	if f.kind != "finding" || len(f.Rows()) != 1 {
-		t.Fatalf("kind filter %q %d", f.kind, len(f.Rows()))
-	}
-	for i := 0; i < len(f.env.Facts.Kinds()); i++ {
-		f.Update(keyp("c"))
-	}
-	if f.kind != "" {
-		t.Fatalf("kind cycle must return to every kind, got %q", f.kind)
-	}
-	f.Update(keyp("/"))
-	typeText(f, "tls")
-	f.Update(keyp("backspace"))
-	typeText(f, "s")
-	f.Update(keyp("enter"))
-	if len(f.Rows()) != 1 || f.Rows()[0].ID != "f2" {
-		t.Fatalf("text filter %+v", f.Rows())
-	}
-	f.Update(keyp("/"))
-	f.Update(keyp("esc"))
-	f.Update(keyp("s"))
-	if f.status != facts.StatusOpen || len(f.Rows()) != 2 {
-		t.Fatal("status filter")
-	}
-	f.Update(keyp("s"))
-	f.Update(keyp("s"))
-	f.Update(keyp("s"))
-	f.Update(keyp("j"))
-	_, cmd = f.Update(keyp("x"))
-	run(cmd)
-	if got, _ := env.Facts.Get("f2"); got.Status != facts.StatusResolved {
-		t.Fatal("x resolves")
-	}
-	f.Update(keyp("x"))
-	f.Update(keyp("k"))
-	f.Update(keyp("G"))
-	f.Update(keyp("g"))
-	f.Update(tea.MouseClickMsg{Button: tea.MouseLeft, Y: 2})
-	_, cmd = f.Update(harness.FactMsg{Change: facts.Change{Op: facts.OpAdd}})
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("new facts ask for attention")
-	}
-	f.ExportDir = t.TempDir()
-	_, cmd = f.Update(keyp("e"))
-	ex, ok := find[ExportMsg](run(cmd))
-	if !ok || ex.Err != nil {
-		t.Fatalf("%+v", ex)
-	}
-	if data, _ := os.ReadFile(ex.Path); !strings.Contains(string(data), "open ssh") {
-		t.Fatal("export content")
-	}
-	noFacts := NewFindings(&Env{Theme: theme.Blackwall()})
-	if noFacts.Status() != "" || !strings.Contains(ansi.Strip(noFacts.View(40, 5)), "nothing recorded") || noFacts.resolve() != nil || noFacts.export(false) != nil {
-		t.Fatal("no store")
-	}
-
-	ice := NewTelemetry(env)
-	if ice.Title() != "ICE" || ice.Status() != "0" {
-		t.Fatalf("%q", ice.Status())
-	}
-	env.Meter.SetThreshold(150000)
-	env.Meter.Observe(provider.Attempt{Status: 429, Err: errors.New("slow"), Wait: time.Second, Duration: time.Millisecond})
-	env.Meter.Observe(provider.Attempt{Status: 500, Err: errors.New("down"), Duration: time.Millisecond})
-	env.Meter.Observe(provider.Attempt{Status: 200, Duration: time.Millisecond, RateLimit: provider.RateLimit{Requests: 10, RequestsRemaining: 5, Tokens: 100, TokensRemaining: 50, InputTokens: 7, InputRemaining: 1, OutputTokens: 9, OutputRemaining: 2, Reset: time.Minute}})
-	for _, a := range env.Meter.Attempts() {
-		ice.Update(harness.AttemptMsg{Attempt: a, Telemetry: env.Meter.Snapshot()})
-	}
-	env.Meter.Failover(0, errors.New("x"))
-	ice.Update(harness.FailoverMsg{From: 0, Err: errors.New("x")})
-	env.Meter.Served(1)
-	ice.Update(harness.ServedMsg{Index: 1})
-	env.Meter.Apply("run-1", agent.Event{Type: agent.EventTurnStart, Time: at})
-	ice.Update(harness.EventMsg{Event: agent.Event{Type: agent.EventTurnStart}})
-	env.Meter.Apply("run-1", agent.Event{Type: agent.EventModel, Time: at.Add(time.Second), Model: protocol.Event{Type: protocol.EventTextDelta, Delta: "12345678"}})
-	ice.Update(telemetryTick{})
-	env.Meter.Apply("run-1", agent.Event{Type: agent.EventTurnEnd, Time: at.Add(2 * time.Second), Usage: protocol.Usage{Input: 100, Output: 50, CacheRead: 100}})
-	ice.Update(harness.EventMsg{Event: agent.Event{Type: agent.EventCompactEnd}})
-	ice.Update(telemetryTick{})
-	view = ansi.Strip(ice.View(80, 20))
-	for _, want := range []string{"claude-opus-5", "anthropic", "fallback 1", "compacts", "tok/s", "cache", "cost", "retries", "failed", "failovers", "limits", "req 5/10", "reset", "retry in", "compacted", "served by fallback"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("ice lacks %q:\n%s", want, view)
-		}
-	}
-	if ice.Status() == "0" {
-		t.Fatalf("%q", ice.Status())
-	}
-	ice.View(80, 3)
-	plain := NewTelemetry(&Env{Theme: theme.Plain(), Now: func() time.Time { return at }})
-	plain.samples = []float64{1, 2}
-	plain.View(20, 6)
-	none := NewTelemetry(&Env{Theme: theme.Blackwall(), Now: func() time.Time { return at }})
-	if !strings.Contains(ansi.Strip(none.View(40, 6)), "no model") {
-		t.Fatal("no model")
-	}
-
-	ws := NewWorkspace(env)
-	if !strings.Contains(ansi.Strip(ws.View(60, 10)), "no files touched") || ws.Status() != "0 files" {
-		t.Fatal("empty workspace")
-	}
-	env.Work.Apply(agent.Event{Type: agent.EventToolEnd, Agent: "root", Time: at, Call: protocol.ToolCall{ID: "w1", Name: "Write"}, Data: files.Change{Path: "/p/a.txt", Old: "", New: "one\n", Created: true}})
-	env.Work.Apply(agent.Event{Type: agent.EventToolEnd, Agent: "root", Time: at.Add(time.Second), Call: protocol.ToolCall{ID: "e1", Name: "Edit"}, Data: files.Change{Path: "/p/a.txt", Old: "one\n", New: "two\n", Replaced: 1}})
-	env.Work.Apply(agent.Event{Type: agent.EventToolEnd, Agent: "root", Time: at, Data: files.ReadData{Path: "/p/b.txt"}})
-	ws.Update(harness.EventMsg{Event: agent.Event{Type: agent.EventToolEnd}})
-	ws.Update(keyp("enter"))
-	view = ansi.Strip(ws.View(60, 20))
-	if !strings.Contains(view, "/p/a.txt") || !strings.Contains(view, "- one") || !strings.Contains(view, "+ two") || ws.Status() != "1 changed" {
-		t.Fatalf("%s", view)
-	}
-	ws.Update(keyp("a"))
-	view = ansi.Strip(ws.View(60, 20))
-	if !strings.Contains(view, "since the session started") || strings.Contains(view, "- one") {
-		t.Fatalf("whole diff:\n%s", view)
-	}
-	ws.Update(keyp("j"))
-	ws.Update(keyp("enter"))
-	ws.Update(keyp("enter"))
-	if !strings.Contains(ansi.Strip(ws.View(60, 20)), "read only") {
-		t.Fatal("read only detail")
-	}
-	for _, k := range []string{"k", "g", "G", "J", "K"} {
-		ws.Update(keyp(k))
-	}
-	ws.Update(tea.MouseClickMsg{Button: tea.MouseLeft, Y: 2})
-	ws.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
-	ws.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
-	if len(ws.Files()) != 2 {
-		t.Fatal("files")
-	}
-
-	jobs := NewJobs(env)
-	if !strings.Contains(ansi.Strip(jobs.View(40, 5)), "no background jobs") || jobs.Status() != "" {
-		t.Fatal("empty jobs")
-	}
-	env.Shell.Bash().Run(context.Background(), json.RawMessage(`{"command":"echo tail-text; echo more","run_in_background":true}`))
-	wait, _ := env.Shell.Wait("job-1")
-	<-wait
-	_, cmd = jobs.Update(harness.JobMsg{Event: shell.JobEvent{Kind: shell.JobStarted, Job: shell.JobInfo{ID: "job-1"}}})
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("new job asks for attention")
-	}
-	jobs.Update(harness.JobMsg{Event: shell.JobEvent{Kind: shell.JobFinished}})
-	view = ansi.Strip(jobs.View(60, 12))
-	if !strings.Contains(view, "job-1") || !strings.Contains(view, "tail-text") || !strings.Contains(view, "done") {
-		t.Fatalf("%s", view)
-	}
-	for _, k := range []string{"j", "k", "g", "G", "J", "f", "f"} {
-		jobs.Update(keyp(k))
-	}
-	_, cmd = jobs.Update(keyp("K"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("killing a finished job toasts")
-	}
-	jobs.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
-	jobs.Update(tea.MouseClickMsg{Button: tea.MouseLeft, Y: 1})
-	jobs.View(60, 2)
-	if len(jobs.List()) != 1 {
-		t.Fatal("list")
+func (te *testEnv) waitRun(t *testing.T, r *harness.Run) {
+	t.Helper()
+	done, _ := te.env.Control.Done(r.ID)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run never finished")
 	}
 }
 
-func TestSessionsPaletteHelpHistory(t *testing.T) {
-	env, _ := newEnv(t)
-	ctx := context.Background()
-	a := session.New()
-	a.SetTitle("alpha")
-	a.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "x"}}})
-	b := a.Fork()
-	b.SetTitle("beta")
-	env.Store.Save(ctx, a)
-	env.Store.Save(ctx, b)
-	s := NewSessions(env)
-	if len(s.Rows()) != 2 || s.Status() != "2" {
-		t.Fatalf("%d", len(s.Rows()))
+func TestComposerSendsCommandsAndKeepsHistory(t *testing.T) {
+	te := newEnv(t)
+	dir := filepath.Join(te.dir, "cfg")
+	c := NewComposer(te.env.Theme, te.env.Keys, dir, func() string { return te.dir })
+	c.SessionID = "s1"
+	c.SetCommands([]Command{{Name: "model", Desc: "switch the model", Arg: "id"}, {Name: "mode", Desc: "mode"}})
+	if c.Cursor() != nil {
+		t.Fatal("unfocused composer must hide the cursor")
 	}
-	view := ansi.Strip(s.View(80, 10))
-	if !strings.Contains(view, "alpha") || !strings.Contains(view, "beta") || !strings.Contains(view, "⑂") {
-		t.Fatalf("%s", view)
+	run(c.SetFocus(true))
+	if c.Cursor() == nil {
+		t.Fatal("focused composer shows a cursor")
 	}
-	s.Update(keyp("/"))
-	typeText(s, "beta")
-	s.Update(keyp("enter"))
-	if len(s.Rows()) != 1 || s.Rows()[0].Title != "beta" {
-		t.Fatal("search")
+	for _, r := range "hello" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	_, cmd := s.Update(keyp("enter"))
-	if r, ok := find[ResumeMsg](run(cmd)); !ok || r.Session != b.ID() {
-		t.Fatal("resume")
+	if c.Height() != 2 {
+		t.Fatalf("one line of text keeps the two row prompt, height %d", c.Height())
 	}
-	_, cmd = s.Update(keyp("f"))
-	if _, ok := find[ForkMsg](run(cmd)); !ok {
-		t.Fatal("fork")
+	te.compose(c, "shift+enter")
+	if c.Value() != "hello" {
+		t.Fatalf("shift+enter is no newline %q", c.Value())
 	}
-	s.Update(keyp("d"))
-	if !s.Capturing() || !strings.Contains(ansi.Strip(s.View(80, 10)), "delete") {
-		t.Fatal("delete confirms")
+	c.Update(tea.KeyPressMsg{Code: '\\', Text: "\\"})
+	if run(te.compose(c, "enter")) != nil {
+		t.Fatal("enter after a backslash sends nothing")
 	}
-	s.Update(keyp("n"))
-	s.Update(keyp("d"))
-	_, cmd = s.Update(keyp("y"))
-	if d, ok := find[DeleteMsg](run(cmd)); !ok || d.Session != b.ID() {
-		t.Fatal("delete")
+	for _, r := range "two" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	s.Update(keyp("/"))
-	typeText(s, "zz")
-	s.Update(keyp("backspace"))
-	s.Update(keyp("esc"))
-	for _, k := range []string{"j", "k", "g", "G", "r"} {
-		s.Update(keyp(k))
+	if c.Height() != 2 || c.ta.LineCount() != 2 || c.Value() != "hello\ntwo" {
+		t.Fatalf("backslash newline height %d lines %d %q", c.Height(), c.ta.LineCount(), c.Value())
 	}
-	s.Update(harness.SavedMsg{})
-	s.Update(deck.FocusMsg{Focused: true})
-	s.Update(tea.MouseClickMsg{Button: tea.MouseLeft, Y: 2})
-	s.View(80, 3)
-	empty := NewSessions(&Env{Theme: theme.Blackwall(), Store: &session.Memory{}})
-	if !strings.Contains(ansi.Strip(empty.View(40, 5)), "nothing stored") {
-		t.Fatal("empty")
+	msgs := run(te.compose(c, "enter"))
+	sub, ok := find[SubmitMsg](msgs)
+	if !ok || sub.Session != "s1" || sub.Text != "hello\ntwo" || len(sub.Parts) != 1 {
+		t.Fatalf("submit %+v", sub)
 	}
+	if c.Value() != "" || len(c.History()) != 1 {
+		t.Fatalf("value %q history %v", c.Value(), c.History())
+	}
+	for _, r := range "/mode plan" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	cmd, ok := find[CommandMsg](run(te.compose(c, "enter")))
+	if !ok || cmd.Session != "s1" || cmd.Name != "mode" || cmd.Args != "plan" {
+		t.Fatalf("command %+v", cmd)
+	}
+	te.compose(c, "up")
+	if c.Value() != "/mode plan" {
+		t.Fatalf("recall newest %q", c.Value())
+	}
+	te.compose(c, "up")
+	if c.Value() != "hello\ntwo" {
+		t.Fatalf("recall older %q", c.Value())
+	}
+	if !strings.Contains(c.Status(), "history 1/2") {
+		t.Fatalf("status %q", c.Status())
+	}
+	te.compose(c, "down")
+	te.compose(c, "down")
+	te.compose(c, "down")
+	if c.Value() != "" {
+		t.Fatalf("draft back %q", c.Value())
+	}
+	for _, r := range "/mo" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if c.comp == nil || len(c.comp.items) != 2 || !c.Completing() {
+		t.Fatalf("slash completion opens as the command is typed %+v", c.comp)
+	}
+	if c.Height() != 4 {
+		t.Fatalf("popup height %d", c.Height())
+	}
+	if cur := c.Cursor(); cur == nil || cur.Y != 2 {
+		t.Fatalf("cursor below the popup %+v", cur)
+	}
+	if !strings.Contains(plain(c.View(40, 4)), "/model") {
+		t.Fatal("popup lists the commands")
+	}
+	te.compose(c, "tab")
+	if c.comp.items[c.comp.idx] != "/mode" {
+		t.Fatalf("tab moves to the second command, at %q", c.comp.items[c.comp.idx])
+	}
+	ran, ok := find[CommandMsg](run(te.compose(c, "enter")))
+	if !ok || ran.Name != "mode" || c.Value() != "" {
+		t.Fatalf("enter runs a command without an argument at once, %+v %q", ran, c.Value())
+	}
+	for _, r := range "/mo" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	te.compose(c, "esc")
+	if c.Completing() || c.Value() != "/mo" {
+		t.Fatalf("esc closes the popup and keeps the text %q", c.Value())
+	}
+	c.ta.Reset()
+	os.MkdirAll(filepath.Join(te.dir, "sub"), 0o755)
+	os.WriteFile(filepath.Join(te.dir, "sub", "file.txt"), []byte("x"), 0o644)
+	for _, r := range "see su" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	te.compose(c, "tab")
+	if c.Value() != "see sub/file.txt " {
+		t.Fatalf("path completion %q", c.Value())
+	}
+	c.ta.Reset()
+	c.comp = nil
+	for _, r := range "draft kept" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	te.compose(c, "ctrl+a")
+	te.compose(c, "ctrl+k")
+	if c.Value() != "" {
+		t.Fatalf("line start then delete to the end through the keymap %q", c.Value())
+	}
+	for _, r := range "draft kept" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	te.compose(c, "ctrl+w")
+	if c.Value() != "draft " {
+		t.Fatalf("delete word back %q", c.Value())
+	}
+	if run(c.Action("composer.word.left")) != nil || c.ta.Column() != 0 {
+		t.Fatalf("an action fired without a key presses its first chord, column %d", c.ta.Column())
+	}
+	c.Update(tea.KeyPressMsg{Code: tea.KeyF5})
+	if c.Value() != "draft " {
+		t.Fatal("an unbound key without text types nothing")
+	}
+	c.ta.MoveToEnd()
+	for _, r := range "kept" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	again := NewComposer(te.env.Theme, te.env.Keys, dir, func() string { return te.dir })
+	if again.Value() != "draft kept" || len(again.History()) != 3 {
+		t.Fatalf("persisted draft %q history %v", again.Value(), again.History())
+	}
+	if again.Empty() {
+		t.Fatal("draft is not empty")
+	}
+}
 
-	p := NewPalette(env, []Action{{Name: "quit", Desc: "leave", Keys: "ctrl+c"}, {Name: "theme light", Desc: "palette"}, {Name: "mode", Desc: "cycle"}})
-	if !p.Capturing() || len(p.Matches()) != 3 || p.Cursor() == nil {
-		t.Fatal("palette")
+func TestComposerPlaceholderAndSymbolButton(t *testing.T) {
+	te := newEnv(t)
+	c := NewComposer(te.env.Theme, te.env.Keys, "", func() string { return te.dir })
+	run(c.SetFocus(true))
+	view := plain(c.View(140, 2))
+	rows := strings.Split(view, "\n")
+	if !strings.HasPrefix(rows[0], "› Type / for available commands") || strings.Contains(view, "“") {
+		t.Fatalf("the empty prompt shows the muted command hint alone\n%s", view)
 	}
-	typeText(p, "thl")
-	if m := p.Matches(); len(m) != 1 || m[0].Name != "theme light" {
-		t.Fatalf("%+v", m)
+	if !strings.HasSuffix(strings.TrimRight(rows[0], " "), "➤") || strings.Contains(view, "send") {
+		t.Fatalf("the send button is a symbol floating on the first row\n%s", view)
 	}
-	p.Update(keyp("backspace"))
-	p.Update(keyp("backspace"))
-	p.Update(keyp("backspace"))
-	p.Update(keyp("down"))
-	p.Update(keyp("up"))
-	p.Update(keyp("tab"))
-	_, cmd = p.Update(keyp("enter"))
-	msgs := run(cmd)
-	if pm, ok := find[PaletteMsg](msgs); !ok || pm.Command == "" {
-		t.Fatal("palette enter")
+	if c.button.w != 5 {
+		t.Fatalf("the button takes five columns %d", c.button.w)
 	}
-	if _, ok := find[deck.Intent](msgs); !ok {
-		t.Fatal("palette dismisses")
+	if c.Height() != 2 || len(rows) != 2 {
+		t.Fatalf("the empty prompt stands two rows tall %d", c.Height())
 	}
-	typeText(p, "zzzz")
-	if !strings.Contains(ansi.Strip(p.View(50, 8)), "no matching") {
-		t.Fatal("no matches")
+	c.SetBusy(true)
+	if !strings.Contains(plain(c.View(60, 2)), "↪") {
+		t.Fatal("the button turns into the steering hook during a run")
 	}
-	_, cmd = p.Update(keyp("esc"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("esc dismisses")
+	c.SetBusy(false)
+	if _, ok := c.Click(0, 0); ok {
+		t.Fatal("a click off the button sends nothing")
 	}
-	p.query = ""
-	p.filter()
-	_, cmd = p.Update(tea.MouseClickMsg{Button: tea.MouseLeft, Y: 2})
-	if _, ok := find[PaletteMsg](run(cmd)); !ok {
-		t.Fatal("click runs")
+	for _, r := range "via button" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	if fuzzy("", "x") != 0 || fuzzy("b", "a") != -1 || fuzzy("ab", "a b") <= fuzzy("ab", "axxxb") {
-		t.Fatal("fuzzy")
+	c.View(60, 2)
+	cmd, ok := c.Click(c.button.x+2, c.button.y)
+	if sub, found := find[SubmitMsg](run(cmd)); !ok || !found || sub.Text != "via button" {
+		t.Fatalf("clicking the button sends %v %+v", ok, sub)
 	}
-	p.View(50, 8)
-	p.Status()
+	if err := te.env.Keys.Rebind("composer.left", "ctrl+b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := te.env.Keys.Rebind("composer.send", "ctrl+s"); err != nil {
+		t.Fatal(err)
+	}
+	c.Rebind()
+	for _, r := range "ab" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	te.compose(c, "ctrl+b")
+	c.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if c.Value() != "axb" {
+		t.Fatalf("a rebound key moves the cursor %q", c.Value())
+	}
+	if sub, ok := find[SubmitMsg](run(te.compose(c, "ctrl+s"))); !ok || sub.Text != "axb" {
+		t.Fatalf("the rebound send key sends %+v", sub)
+	}
+	plainEnv := newEnv(t)
+	plainEnv.env.Theme = theme.Plain()
+	pc := NewComposer(plainEnv.env.Theme, plainEnv.env.Keys, "", func() string { return te.dir })
+	if !strings.Contains(plain(pc.View(60, 2)), "[ > ]") {
+		t.Fatalf("plain button %q", plain(pc.View(60, 2)))
+	}
+}
 
-	h := NewHelp(env, []HelpSection{{Title: "deck", Keys: [][2]string{{"tab", "next"}, {"q", "quit"}, {"?", "help"}}}})
-	view = ansi.Strip(h.View(80, 10))
-	if !strings.Contains(view, "deck") || !strings.Contains(view, "quit") {
-		t.Fatal("help view")
+func TestComposerAttachesImages(t *testing.T) {
+	te := newEnv(t)
+	c := NewComposer(te.env.Theme, te.env.Keys, "", func() string { return te.dir })
+	c.SessionID = "s1"
+	run(c.SetFocus(true))
+	png := filepath.Join(te.dir, "shot.png")
+	os.WriteFile(png, []byte("\x89PNG"), 0o644)
+	if _, ok := find[wm.Intent](run(c.Attach("nope.txt"))); !ok {
+		t.Fatal("bad attach notifies")
 	}
-	h.Update(keyp("j"))
-	h.Update(keyp("k"))
-	h.View(40, 2)
-	_, cmd = h.Update(keyp("esc"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok || h.Status() != "" || h.Title() != "HELP" {
-		t.Fatal("help dismiss")
+	for _, r := range "/attach shot.png" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
+	c.comp = nil
+	run(te.compose(c, "enter"))
+	if got := c.Attachments(); len(got) != 1 || got[0] != png {
+		t.Fatalf("attachments %v", got)
+	}
+	if !strings.Contains(c.Status(), "1 attached") || c.Empty() {
+		t.Fatalf("status %q", c.Status())
+	}
+	for _, r := range "look" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	sub, ok := find[SubmitMsg](run(te.compose(c, "enter")))
+	if !ok || len(sub.Parts) != 2 {
+		t.Fatalf("submit with image %+v", sub)
+	}
+	if _, ok := sub.Parts[0].(protocol.Image); !ok {
+		t.Fatal("image part first")
+	}
+	if len(c.Attachments()) != 0 {
+		t.Fatal("attachments cleared after sending")
+	}
+	run(c.Attach("shot.png"))
+	msgs := run(te.compose(c, "ctrl+x"))
+	if _, ok := find[wm.Intent](msgs); !ok || len(c.Attachments()) != 0 {
+		t.Fatal("ctrl+x clears attachments and notifies")
+	}
+}
 
+func toolEnd(name, id string, data any) agent.Event {
+	return agent.Event{Type: agent.EventToolEnd, Time: at, Call: protocol.ToolCall{ID: id, Name: name}, Result: protocol.ToolResult{CallID: id, Name: name, Content: []protocol.Part{protocol.Text{Text: "ok"}}}, Data: data, Duration: 1200 * time.Millisecond}
+}
+
+func TestTranscriptAppliesEventsAndSearches(t *testing.T) {
+	te := newEnv(t)
+	tr := NewTranscript(te.env)
+	tr.Apply(agent.Event{Type: agent.EventRunStart, Time: at, Parts: []protocol.Part{protocol.Text{Text: "check disk"}}})
+	tr.Apply(agent.Event{Type: agent.EventTurnStart, Time: at, Round: 1})
+	resp := protocol.Response{Model: "m-test", Content: []protocol.Part{protocol.Text{Text: "looking"}, protocol.Thinking{Text: "hmm"}}}
+	tr.Apply(agent.Event{Type: agent.EventModel, Time: at, Round: 1, Model: protocol.Event{Type: protocol.EventTextDelta, Index: 0, Delta: "looking", Response: resp}})
+	tr.Apply(agent.Event{Type: agent.EventModel, Time: at, Round: 1, Model: protocol.Event{Type: protocol.EventThinkingDelta, Index: 1, Delta: "hmm", Response: resp}})
+	if !tr.Busy() {
+		t.Fatal("streaming turn is busy")
+	}
+	tr.Apply(agent.Event{Type: agent.EventTurnEnd, Time: at, Response: &resp})
+	call := protocol.ToolCall{ID: "c1", Name: files.ReadName, Args: json.RawMessage(`{"file_path":"a.go"}`)}
+	tr.Apply(agent.Event{Type: agent.EventToolStart, Time: at, Round: 1, Call: call})
+	_, cmd := tr.Update(harness.ProgressMsg{Progress: tool.Progress{CallID: "c1", Text: "partial out"}})
+	_ = cmd
+	if !strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "partial out") {
+		t.Fatal("progress text shows while the tool runs")
+	}
+	tr.Apply(toolEnd(files.ReadName, "c1", files.ReadData{Path: "a.go", Offset: 1, Lines: []string{"package a", "func f() {}"}, Total: 2}))
+	tr.Apply(agent.Event{Type: agent.EventToolStart, Time: at, Round: 1, Call: protocol.ToolCall{ID: "c2", Name: files.EditName, Args: json.RawMessage(`{"file_path":"b.go"}`)}})
+	tr.Apply(toolEnd(files.EditName, "c2", files.Change{Path: "b.go", Old: "a\nb\n", New: "a\nc\n"}))
+	tr.Apply(agent.Event{Type: agent.EventApproval, Time: at, Approval: &agent.Approval{Request: policy.Request{Call: protocol.ToolCall{ID: "c3", Name: "Bash"}}, Pending: true}})
+	tr.Apply(agent.Event{Type: agent.EventApproval, Time: at, Approval: &agent.Approval{Request: policy.Request{Call: protocol.ToolCall{ID: "c3", Name: "Bash"}}, Answer: policy.Answer{Allowed: true, By: "person", Verdict: policy.Yes}}})
+	tr.Apply(agent.Event{Type: agent.EventSteer, Time: at, Parts: []protocol.Part{protocol.Text{Text: "also check memory"}}})
+	tr.Apply(agent.Event{Type: agent.EventCompactStart, Time: at})
+	tr.Apply(agent.Event{Type: agent.EventCompactEnd, Time: at, Text: "summary here", Data: map[string]int{"before": 10, "after": 2}})
+	tr.Apply(agent.Event{Type: agent.EventHook, Time: at, Text: "PreToolUse ran", Data: hooks.Execution{Stdout: "hook said hi\n"}})
+	tr.Apply(agent.Event{Type: agent.EventNote, Time: at, Text: "a note"})
+	tr.Apply(agent.Event{Type: agent.EventSubagentStart, Time: at, Call: protocol.ToolCall{Name: "scout"}, Text: "scan ports", Data: subagent.Child{Name: "scout"}})
+	child := protocol.Response{Content: []protocol.Part{protocol.Text{Text: "22 open"}}}
+	tr.Apply(agent.Event{Type: agent.EventSubagentEnd, Time: at, Call: protocol.ToolCall{Name: "scout"}, Response: &child})
+	tr.Apply(agent.Event{Type: agent.EventInterrupt, Time: at})
+	tr.Apply(agent.Event{Type: agent.EventRunEnd, Time: at, Err: errors.New("boom")})
+	if tr.Blocks() != 13 {
+		t.Fatalf("blocks %d", tr.Blocks())
+	}
+	first := strings.Join(tr.Lines(80), "\n")
+	if first != strings.Join(tr.Lines(80), "\n") {
+		t.Fatal("lines are deterministic")
+	}
+	text := plain(first)
+	for _, want := range []string{"check disk", "looking", "Read", "a.go", "2 of 2 lines", "Edit", "+1 -1", "allowed Bash", "also check memory", "compacted 10 messages into 2", "PreToolUse ran", "hook said hi", "a note", "scout", "22 open", "interrupted", "boom", "ok 1.2s"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("lines lack %q in\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "package a") {
+		t.Fatal("collapsed tool hides its body")
+	}
+	tr.ExpandAll(true)
+	text = plain(strings.Join(tr.Lines(80), "\n"))
+	if !strings.Contains(text, "package a") || !strings.Contains(text, "+ c") {
+		t.Fatalf("expanded bodies\n%s", text)
+	}
+	tr.ExpandAll(false)
+	if strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "package a") {
+		t.Fatal("folded again")
+	}
+	if strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "hmm") {
+		t.Fatal("thinking hidden by default")
+	}
+	tr.ShowThinking(true)
+	if !tr.Thinking() || !strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "hmm") {
+		t.Fatal("thinking shown")
+	}
+	view := strings.Split(plain(tr.View(80, 10)), "\n")
+	if len(view) != 10 || !strings.HasSuffix(view[0], "⇞") || !strings.HasSuffix(view[9], "⇟") {
+		t.Fatalf("the scrollbar runs down the right edge\n%s", strings.Join(view, "\n"))
+	}
+	tall := strings.Split(plain(tr.View(80, 20)), "\n")
+	if !strings.HasSuffix(tall[0], " ⇞") || !strings.HasSuffix(tall[19], " ⇟") || strings.Contains(strings.Join(tall, ""), "pgup") {
+		t.Fatalf("the caps are the page key symbols, nothing spelled out\n%s", strings.Join(tall, "\n"))
+	}
+	for _, row := range tall[1:19] {
+		if r := []rune(row); !strings.ContainsRune("│┃┼╋◆", r[len(r)-1]) {
+			t.Fatalf("the track is a thin line with ticks and the thumb %q", row)
+		}
+	}
+	fits := gutter{h: 8, total: 5, visible: 8, marks: []int{0, 3}, up: "pgup", down: "pgdown"}
+	if col := plain(strings.Join(fits.column(te.env.Theme), "")); col != "⇞┼│┼│││⇟" {
+		t.Fatalf("content that fits draws the track and its ticks with no thumb %q", col)
+	}
+	runs := gutter{h: 8, total: 60, offset: 60 - 8, visible: 8, marks: []int{0, 55}, hits: []int{30}, up: "pgup", down: "pgdown"}
+	if col := plain(strings.Join(runs.column(te.env.Theme), "")); col != "⇞┼││◆│╋⇟" {
+		t.Fatalf("a scrolled view shows the thumb at the end, a tick on it and the match %q", col)
+	}
+	te.env.Keys.Rebind("session.scroll.up", "ctrl+b")
+	if top := plain(strings.Split(tr.View(80, 20), "\n")[0]); !strings.HasSuffix(top, " ctrl+b ▲") {
+		t.Fatalf("a chord without a symbol sits beside an arrow cap %q", top)
+	}
+	te.env.Keys.Reset("session.scroll.up")
+	tr.View(80, 10)
+	tr.Top()
+	if tr.Following() {
+		t.Fatal("scrolling to the top stops following")
+	}
+	tr.Follow()
+	if !tr.Following() {
+		t.Fatal("end follows again")
+	}
+	tr.ScrollBy(-1)
+	tr.ScrollBy(1)
+	tr.Search()
+	if !tr.Searching() {
+		t.Fatal("Search opens the bar")
+	}
+	tr.SearchType("scout")
+	if len(tr.found) != 1 || tr.current != 0 {
+		t.Fatalf("matches as it is typed %d", len(tr.found))
+	}
+	if !strings.Contains(tr.vp.View(), "scout") {
+		t.Fatal("the match is shown")
+	}
+	tr.SearchAction("search.accept")
+	tr.View(80, 10)
+	if tr.Searching() || len(tr.found) != 1 {
+		t.Fatalf("matches %d", len(tr.found))
+	}
+	if !strings.Contains(tr.Status(), "1 turn · ") || !strings.HasSuffix(tr.Status(), "1 match") {
+		t.Fatalf("status %q", tr.Status())
+	}
+	if g := tr.gutter(); len(g.hits) != 1 || len(g.marks) != 1 {
+		t.Fatalf("the scrollbar marks the turn and the match %+v", g)
+	}
+	if !strings.Contains(plain(tr.SearchView(40, "find")), "1/1") {
+		t.Fatalf("bar counts the matches %q", plain(tr.SearchView(40, "find")))
+	}
+	tr.Search()
+	if !tr.Searching() || tr.search.Query() != "scout" {
+		t.Fatal("Search reopens the bar with the last query")
+	}
+	tr.SearchAction("search.delete.word")
+	tr.SearchType("o")
+	tr.SearchAction("search.next")
+	tr.SearchAction("search.prev")
+	if len(tr.found) < 2 {
+		t.Fatalf("a shorter query matches more %d", len(tr.found))
+	}
+	tr.SearchAction("search.close")
+	if tr.Searching() || tr.search.Query() != "" || len(tr.found) != 0 || tr.SearchShown() {
+		t.Fatal("close clears the search")
+	}
+	tr.Top()
+	tr.Follow()
+	if !tr.Following() {
+		t.Fatal("Follow jumps to the end")
+	}
+	tr.MoveCursor(1)
+	tr.Toggle()
+	if tr.cursor < 0 {
+		t.Fatal("cursor placed")
+	}
+	tr.JumpTurn(-1)
+	tr.Page(-1)
+	tr.Page(1)
+	tr.Follow()
+	tr.ToggleFollow()
+	if tr.Following() {
+		t.Fatal("toggling follow holds still")
+	}
+	tr.ToggleFollow()
+	if !tr.Following() {
+		t.Fatal("toggling again follows")
+	}
+	if !strings.HasPrefix(tr.Status(), "1 turn") {
+		t.Fatalf("status %q", tr.Status())
+	}
+	tr.View(80, 10)
+	tr.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: 0})
+	if tr.Following() {
+		t.Fatal("clicking the top cap pages up")
+	}
+	tr.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: 9})
+	te.env.Theme = theme.Light()
+	tr.View(80, 10)
+	if tr.themed != "light" {
+		t.Fatal("a new theme repaints the cached blocks")
+	}
+}
+
+func TestTranscriptFiltersRunsAndLoadsSessions(t *testing.T) {
+	te := newEnv(t)
+	child := NewChildTranscript(te.env, "run-1", "scout")
+	if child.Key() != "trace:run-1/scout" || child.Title() != "TRACE scout" {
+		t.Fatalf("child identity %q %q", child.Key(), child.Title())
+	}
+	child.Update(harness.EventMsg{Run: "run-2", Event: agent.Event{Type: agent.EventNote, Agent: "scout", Text: "wrong run"}})
+	child.Update(harness.EventMsg{Run: "run-1", Event: agent.Event{Type: agent.EventNote, Agent: "root", Text: "wrong agent"}})
+	child.Update(harness.EventMsg{Run: "run-1", Event: agent.Event{Type: agent.EventNote, Agent: "scout", Text: "mine"}})
+	if child.Blocks() != 1 {
+		t.Fatalf("child blocks %d", child.Blocks())
+	}
+	root := NewTranscript(te.env)
+	root.Update(harness.EventMsg{Run: "run-1", Event: agent.Event{Type: agent.EventNote, Depth: 1, Text: "nested"}})
+	root.Update(harness.EventMsg{Run: "run-1", Event: agent.Event{Type: agent.EventNote, Text: "top"}})
+	if root.Blocks() != 1 {
+		t.Fatalf("root blocks %d", root.Blocks())
+	}
 	sess := session.New()
-	sess.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "first"}}})
-	sess.AddResponse("root", protocol.Response{Content: []protocol.Part{protocol.ToolCall{ID: "c", Name: "Read"}}})
-	sess.Log("root", "approval", map[string]any{"tool": "Read"})
-	sess.AddResults("root", []protocol.ToolResult{{CallID: "c"}})
-	sess.AddResponse("root", protocol.Response{Content: []protocol.Part{protocol.Text{Text: "answer"}}})
-	sess.Log("root", "compact", map[string]any{"before": 1, "after": 1})
-	sess.Log("root", "mission", map[string]any{"id": "m1"})
-	fork := sess.Fork()
-	moments := Moments(fork)
-	kinds := []string{}
-	for _, m := range moments {
-		kinds = append(kinds, m.Kind)
+	sess.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "stored prompt"}}})
+	sess.AddResponse("root", protocol.Response{Model: "m", Content: []protocol.Part{protocol.Text{Text: "stored answer"}, protocol.ToolCall{ID: "t1", Name: "Bash", Args: json.RawMessage(`{"command":"ls"}`)}}})
+	sess.AddResults("root", []protocol.ToolResult{{CallID: "t1", Name: "Bash", Content: []protocol.Part{protocol.Text{Text: "a.go"}}}})
+	sess.Log("root", "approval", map[string]any{"tool": "Bash", "call_id": "t1", "allowed": true, "by": "person", "verdict": "yes"})
+	sess.Log("root", "compact", map[string]any{"before": 4, "after": 1, "summary": "short"})
+	sess.Log("root", "interrupt", nil)
+	sess.Log("root", "run_end", map[string]any{"error": "ended badly"})
+	sess.Log("root", facts.RecordKind, facts.Change{Op: facts.OpAdd, Fact: facts.Fact{ID: "f1", Kind: "finding", Title: "a fact"}})
+	sess.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "Summary of the earlier conversation: things"}}})
+	tr := NewTranscript(te.env)
+	tr.Load(sess.Entries(), sess.Records())
+	text := plain(strings.Join(tr.Lines(100), "\n"))
+	for _, want := range []string{"stored prompt", "stored answer", "Bash", "ls", "allowed Bash", "compacted 4 messages into 1", "interrupted", "ended badly", "recorded finding f1", "compaction summary"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("loaded lines lack %q in\n%s", want, text)
+		}
 	}
-	if strings.Join(kinds, ",") != "fork,user,assistant,approval,assistant,compact,mission" {
-		t.Fatalf("%v", kinds)
+	if tr.Blocks() != 9 || tr.turns != 1 {
+		t.Fatalf("blocks %d turns %d", tr.Blocks(), tr.turns)
 	}
-	if moments[2].Title != "root: 1 tool calls" || moments[4].Title != "root: answer" {
-		t.Fatalf("%+v", moments)
-	}
-	card := NewMomentCard(env, fork, moments[4], 4)
-	view = ansi.Strip(card.View(60, 20))
-	if !strings.Contains(view, "first") || !strings.Contains(view, "answer") || !strings.Contains(card.Title(), "5 root: answer") || card.Glyph() != "≋" {
-		t.Fatalf("%s", view)
-	}
-	early := NewMomentCard(env, fork, moments[1], 1)
-	if strings.Contains(ansi.Strip(early.View(60, 20)), "answer") {
-		t.Fatal("earlier moments must stop before later entries")
-	}
-	_, cmd = card.Update(keyp("enter"))
-	if f, ok := find[ForkAtMsg](run(cmd)); !ok || f.Entries != 4 {
-		t.Fatalf("%+v", f)
-	}
-	card.Update(keyp("c"))
-	if !card.Marked() || card.Status() != "compare" || !strings.Contains(ansi.Strip(card.View(60, 20)), "marked") {
-		t.Fatal("mark")
-	}
-	card.Update(keyp("j"))
-	card.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
-	card.View(60, 1)
-	if card.Key() != "moment:4" || len(card.Hints()) != 3 || len(card.Claims()) != 9 || card.Moment().Kind != "assistant" {
-		t.Fatal("identity")
+	tr.View(100, 8)
+	tr.Top()
+	tr.View(100, 8)
+	tr.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 2, Y: 0})
+	if tr.cursor != 0 {
+		t.Fatalf("click selects the block under it, got %d", tr.cursor)
 	}
 }
 
-func TestConfigCard(t *testing.T) {
-	env, _ := newEnv(t)
-	env.Hooks = nil
-	c := NewConfig(env)
-	if c.Key() != "config" || c.Group.Len() != 8 {
-		t.Fatal("tabs")
+func TestSessionRoutesKeysAndOwnsRuns(t *testing.T) {
+	te := newEnv(t)
+	te.live.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "earlier"}}})
+	s := NewSession(te.env, te.live, "")
+	if s.Title() != "NEW" || s.Key() != "session:"+te.live.Session.ID() || s.Closable() || !s.Selectable() {
+		t.Fatalf("identity %q %q", s.Title(), s.Key())
 	}
-	for _, msg := range run(c.Init()) {
-		c.Update(msg)
+	if s.Live() != te.live || s.Session() != te.live.Session || s.Transcript.Blocks() != 1 {
+		t.Fatal("session loads the live transcript")
 	}
-	for _, card := range c.Group.Cards() {
-		card.View(100, 20)
+	number := 3
+	s.Number = func() int { return number }
+	if s.Title() != "3 · NEW" {
+		t.Fatalf("the title leads with the workspace number %q", s.Title())
 	}
-	profilesTab := c.Group.Cards()[0].(*lister)
-	view := ansi.Strip(profilesTab.View(120, 20))
-	if !strings.Contains(view, "anthropic") || !strings.Contains(view, "api.anthropic.com") || !strings.Contains(view, "missing") && !strings.Contains(view, "set") {
-		t.Fatalf("%s", view)
+	te.live.Session.SetTitle("disk usage on the box, and more words here than fit in a title")
+	if !strings.HasPrefix(s.Title(), "3 · disk usage") || len([]rune(s.Title())) > 44 {
+		t.Fatalf("title %q", s.Title())
 	}
-	profilesTab.Update(keyp("o"))
-	profilesTab.View(120, 20)
-	_, cmd := profilesTab.Update(keyp("enter"))
-	if sp, ok := find[SetProfileMsg](run(cmd)); !ok || sp.Profile == "" {
-		t.Fatal("profile select")
+	te.live.Session.Rename("probe")
+	te.live.Session.SetTitle("derived again")
+	if s.Title() != "3 · probe" {
+		t.Fatalf("a chosen label holds against derivation %q", s.Title())
 	}
-	c.Update(SetProfileMsg{Profile: "x"})
-	_, cmd = c.models.Update(keyp("r"))
-	msgs := run(cmd)
-	loaded, ok := find[modelsLoadedMsg](msgs)
-	if !ok || len(loaded.models) != 2 {
-		t.Fatalf("%+v", loaded)
+	number = 1
+	te.env.Theme = theme.Plain()
+	if s.Title() != "1 - probe" {
+		t.Fatalf("the number follows the workspace and plain themes divide in ascii %q", s.Title())
 	}
-	c.Update(loaded)
-	if len(c.ModelList()) != 2 || !strings.Contains(ansi.Strip(c.models.View(100, 10)), "claude-opus-5") {
-		t.Fatal("models listed")
+	te.env.Theme = theme.Blackwall()
+	te.live.Session.Rename("")
+	te.live.Session.SetTitle("disk usage")
+	run2, _ := s.Update(wm.FocusMsg{Focused: true})
+	_ = run2
+	if !s.Composer.focused || s.Cursor() == nil {
+		t.Fatal("focus reaches the composer")
 	}
-	_, cmd = c.models.Update(keyp("enter"))
-	if sm, ok := find[SetModelMsg](run(cmd)); !ok || sm.Model != "claude-opus-5" {
-		t.Fatal("model select")
+	typeText(s, "hello there")
+	sub, ok := find[SubmitMsg](te.pressed(s, "enter"))
+	if !ok || sub.Text != "hello there" || sub.Session != te.live.Session.ID() {
+		t.Fatalf("submit %+v", sub)
 	}
-	c.Update(modelsLoadedMsg{err: errors.New("offline")})
-	if !strings.Contains(ansi.Strip(c.models.View(100, 10)), "offline") {
-		t.Fatal("error note")
+	te.press(s, "ctrl+f")
+	if s.Transcript.Searching() {
+		t.Fatal("ctrl+f stays with the terminal")
 	}
-	if c.FetchModels() == nil {
-		t.Fatal("fetch")
+	te.press(s, "alt+/")
+	if !s.Transcript.Searching() || !slices.Equal(s.Contexts(), []string{keys.Search}) {
+		t.Fatal("alt+/ opens the search bar")
 	}
-	knobs := c.Group.Cards()[2].(*lister)
-	knobs.Init()
-	if !strings.Contains(ansi.Strip(knobs.View(60, 10)), "16000") {
-		t.Fatal("knob values")
+	typeText(s, "earl")
+	if s.Transcript.search.Query() != "earl" || s.Composer.Value() != "" {
+		t.Fatalf("search typing goes to the transcript, query %q composer %q", s.Transcript.search.Query(), s.Composer.Value())
 	}
-	_, cmd = knobs.Update(keyp("m"))
-	if sm, ok := find[SetModeMsg](run(cmd)); !ok || sm.Mode != mode.AcceptEdits {
-		t.Fatal("mode cycle")
+	s.Update(tea.PasteMsg{Content: "y"})
+	te.press(s, "backspace")
+	view := plain(s.View(60, 12))
+	if !strings.Contains(strings.Split(view, "\n")[s.split], "⌕ earl") || !strings.Contains(view, "1/1") {
+		t.Fatalf("search bar takes the place of the rule\n%s", view)
 	}
-	knobs.Update(keyp("enter"))
-	if !knobs.Capturing() || knobs.Cursor() == nil {
-		t.Fatal("mode prompt")
+	if cur := s.Cursor(); cur == nil || cur.Y != s.split || cur.X != s.Transcript.SearchCursor() {
+		t.Fatalf("search cursor in the bar %+v", cur)
 	}
-	typeText(knobs, "plan")
-	_, cmd = knobs.Update(keyp("enter"))
-	if sm, ok := find[SetModeMsg](run(cmd)); !ok || sm.Mode != mode.Plan {
-		t.Fatal("mode prompt answer")
+	if h := s.Hints(); len(h) != 3 || h[0].Action != "search.accept" {
+		t.Fatalf("search hints %+v", h)
 	}
-	knobs.Update(keyp("enter"))
-	typeText(knobs, "weird")
-	_, cmd = knobs.Update(keyp("enter"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("bad mode toasts")
+	te.press(s, "enter")
+	if s.Transcript.Searching() || len(s.Transcript.found) != 1 {
+		t.Fatalf("search applied, matches %d", len(s.Transcript.found))
 	}
-	knobs.Update(keyp("j"))
-	knobs.Update(keyp("enter"))
-	typeText(knobs, "4096")
-	knobs.Update(keyp("backspace"))
-	_, cmd = knobs.Update(keyp("enter"))
-	if km, ok := find[KnobMsg](run(cmd)); !ok || km.Key != "max_tokens" || km.Value != "409" {
-		t.Fatalf("%+v", km)
+	te.press(s, "alt+/")
+	te.press(s, "esc")
+	if s.Transcript.SearchShown() {
+		t.Fatal("esc clears the search")
 	}
-	knobs.Update(keyp("enter"))
-	knobs.Update(keyp("esc"))
-	if knobs.Capturing() {
-		t.Fatal("esc leaves the prompt")
+	for i := 0; i < 30; i++ {
+		s.Transcript.Apply(agent.Event{Type: agent.EventNote, Time: at, Text: "filler line"})
 	}
-	rulesTab := c.Group.Cards()[3].(*lister)
-	rulesTab.Init()
-	if !strings.Contains(ansi.Strip(rulesTab.View(60, 10)), "Bash(rm *)") {
-		t.Fatal("rules listed")
+	s.View(60, 12)
+	te.press(s, "pgup")
+	if s.Transcript.Following() {
+		t.Fatal("pgup scrolls the transcript away from the end")
 	}
-	rulesTab.Update(keyp("a"))
-	typeText(rulesTab, "allow Glob")
-	_, cmd = rulesTab.Update(keyp("enter"))
-	if rm, ok := find[RulesMsg](run(cmd)); !ok || len(rm.Set.Allow) != 2 {
-		t.Fatalf("%+v", rm)
+	te.press(s, "pgdown")
+	te.press(s, "ctrl+home")
+	if s.Transcript.vp.YOffset() != 0 {
+		t.Fatal("ctrl+home reaches the top")
 	}
-	rulesTab.Update(keyp("a"))
-	typeText(rulesTab, "nonsense")
-	_, cmd = rulesTab.Update(keyp("enter"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("bad rule toasts")
+	te.press(s, "alt+g")
+	if !s.Transcript.Following() {
+		t.Fatal("alt+g follows again")
 	}
-	rulesTab.Update(keyp("a"))
-	typeText(rulesTab, "maybe Glob")
-	_, cmd = rulesTab.Update(keyp("enter"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("bad decision toasts")
+	te.press(s, "alt+e")
+	te.press(s, "alt+E")
+	te.press(s, "alt+t")
+	if !s.Transcript.Thinking() {
+		t.Fatal("alt+t shows thinking")
 	}
-	rulesTab.Update(keyp("a"))
-	typeText(rulesTab, "allow Bash((")
-	_, cmd = rulesTab.Update(keyp("enter"))
-	if _, ok := find[deck.Intent](run(cmd)); !ok {
-		t.Fatal("malformed rule toasts")
+	if cmd, ok := find[CommandMsg](te.pressed(s, "shift+tab")); !ok || cmd.Name != "mode" || cmd.Session != te.live.Session.ID() {
+		t.Fatalf("shift+tab cycles the mode %+v", cmd)
 	}
-	rulesTab.Update(keyp("g"))
-	_, cmd = rulesTab.Update(keyp("d"))
-	if rm, ok := find[RulesMsg](run(cmd)); !ok || len(rm.Set.Deny) != 0 {
-		t.Fatalf("delete rule %+v", rm)
+	view = plain(s.View(60, 12))
+	lines := strings.Split(view, "\n")
+	if len(lines) != 12 || !strings.Contains(lines[s.split], "───") || !strings.Contains(lines[s.split+1], "›") || strings.TrimSpace(lines[len(lines)-1]) != "" {
+		t.Fatalf("rule between transcript and a two row prompt whose spare row stays blank\n%s", view)
 	}
-	rulesTab.Update(keyp("G"))
-	rulesTab.Update(keyp("k"))
-	rulesTab.Update(tea.MouseClickMsg{Button: tea.MouseLeft, Y: 1})
-	rulesTab.Update(deck.FocusMsg{Focused: true})
-	mcpTab := c.Group.Cards()[5].(*lister)
-	env.MCP.Add(context.Background(), harness.ServerConfig{Name: "srv", Command: "x", Disabled: true})
-	mcpTab.Init()
-	if !strings.Contains(ansi.Strip(mcpTab.View(80, 10)), "srv") {
-		t.Fatal("mcp listed")
+	if !strings.HasSuffix(lines[0], "⇞") || !strings.HasSuffix(lines[s.split-1], "⇟") || !strings.Contains(lines[s.split+1], "➤") {
+		t.Fatalf("scrollbar beside the transcript and the button on the prompt\n%s", view)
 	}
-	mcpTab.Update(keyp("o"))
-	mcpTab.View(80, 10)
-	_, cmd = mcpTab.Update(keyp("R"))
-	if rc, ok := find[ReconnectMsg](run(cmd)); !ok || rc.Server != "srv" {
-		t.Fatal("reconnect")
+	if h := s.Hints(); len(h) != 2 || h[0].Action != "session.search" || h[1].Action != "mode.cycle" {
+		t.Fatalf("the legend names search and mode only %+v", h)
 	}
-	c.Update(harness.MCPMsg{Server: "srv"})
-	toolsTab := c.Group.Cards()[6].(*lister)
-	toolsTab.Init()
-	if !strings.Contains(ansi.Strip(toolsTab.View(100, 20)), "Read") {
-		t.Fatal("tools listed")
+	if cur := s.Cursor(); cur == nil || cur.Y != s.split+1 {
+		t.Fatalf("cursor below the rule %+v", cur)
 	}
-	toolsTab.Update(keyp("o"))
-	toolsTab.View(100, 30)
-	logTab := c.Group.Cards()[7].(*lister)
-	logTab.Init()
-	logTab.View(60, 5)
-	c.Update(keyp("]"))
-	if _, i := c.Group.Active(); i != 1 {
-		t.Fatal("group keys reach the tabs")
+	s.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 3, Y: s.split})
+	if s.Transcript.Searching() || s.Transcript.SearchShown() {
+		t.Fatal("clicking the rule above the prompt leaves the search alone")
 	}
-	bare := &lister{env: env, title: "t", glyph: "g", id: "i"}
-	if bare.Status() != "0" || !strings.Contains(ansi.Strip(bare.View(20, 3)), "nothing here") || bare.Cursor() != nil || len(bare.Claims()) != 5 {
-		t.Fatal("bare lister")
+	typeText(s, "/mo")
+	s.Composer.SetCommands([]Command{{Name: "model"}, {Name: "mode"}})
+	typeText(s, "d")
+	if !s.Composer.Completing() || s.Contexts()[0] != keys.Complete {
+		t.Fatalf("an open popup puts the completion keys first %v", s.Contexts())
 	}
-	if credential(profiles.Profile{Auth: profiles.AuthNone}) != "none needed" {
-		t.Fatal("credential none")
+	if h := s.Hints(); h[0].Action != "complete.accept" {
+		t.Fatalf("completion hints %+v", h)
 	}
-	t.Setenv("ICEBATH_TEST_KEY", "k")
-	if got := credential(profiles.Profile{Auth: profiles.AuthBearer, Key: profiles.Env("ICEBATH_TEST_KEY")}); !strings.HasPrefix(got, "set") {
-		t.Fatalf("%q", got)
+	te.press(s, "esc")
+	s.Composer.ta.Reset()
+	s.Update(keys.ChangedMsg{})
+	run(func() tea.Cmd { _, c := s.Update(wm.FocusMsg{}); return c }())
+	if s.Cursor() != nil {
+		t.Fatal("blurred session hides the cursor")
 	}
-	if got := credential(profiles.Profile{Auth: profiles.AuthBearer, Key: profiles.File("/nope/none")}); !strings.HasPrefix(got, "error") {
-		t.Fatalf("%q", got)
+	r := te.startRun(t, nil, "answer")
+	before := s.Transcript.Blocks()
+	s.Update(harness.EventMsg{Run: "nope", Event: agent.Event{Type: agent.EventNote, Text: "foreign"}})
+	if s.Transcript.Blocks() != before {
+		t.Fatal("events of unknown runs are dropped")
+	}
+	s.Update(harness.EventMsg{Run: r.ID, Event: agent.Event{Type: agent.EventNote, Text: "owned"}})
+	if s.Transcript.Blocks() != before+1 {
+		t.Fatal("events of the owned run reach the transcript")
+	}
+	s.Update(harness.ProgressMsg{Run: "nope", Progress: tool.Progress{CallID: "x"}})
+	if s.Status() != "1 turn" {
+		t.Fatalf("status %q", s.Status())
+	}
+	s.Transcript.Top()
+	s.Composer.recall(-1)
+	if s.Status() != "1 turn · paused · history 1/1" {
+		t.Fatalf("status joins the transcript and the prompt %q", s.Status())
+	}
+	s.SetTheme(theme.Light())
+}
+
+func TestAgentCardFollowsAChildRun(t *testing.T) {
+	te := newEnv(t)
+	hold := make(chan struct{})
+	r := te.startRun(t, hold, "found it")
+	a := NewAgent(te.env, r)
+	if a.Key() != "agent:"+r.ID || a.Title() != "root" || a.Run() != r || !a.Selectable() {
+		t.Fatalf("identity %q %q", a.Key(), a.Title())
+	}
+	head := plain(a.View(60, 1))
+	if strings.Count(head, "\n") != 0 || a.Status() != "running" {
+		t.Fatalf("running header %q status %q", head, a.Status())
+	}
+	if _, ok := find[agentTick](run(a.Init())); !ok {
+		t.Fatal("running card ticks")
+	}
+	close(hold)
+	te.waitRun(t, r)
+	a.Update(agentTick{})
+	head = plain(a.View(60, 2))
+	if !strings.Contains(head, "done") || a.Status() != "done" {
+		t.Fatalf("finished header %q", head)
+	}
+	if run(a.Init()) != nil {
+		t.Fatal("finished card stops ticking")
+	}
+	child := &harness.Run{ID: r.ID + "/scout", Name: "scout", Parent: r.ID, Session: session.New(), Description: "scan ports", Depth: 1, Started: at}
+	child.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "scan the ports"}}})
+	c := NewAgent(te.env, child)
+	if c.Key() != "agent:"+child.ID || c.Title() != "scout" {
+		t.Fatalf("child identity %q", c.Key())
+	}
+	view := plain(c.View(60, 6))
+	if !strings.Contains(view, "scan ports") || !strings.Contains(view, "done") || !strings.Contains(view, "scan the ports") {
+		t.Fatalf("child view\n%s", view)
+	}
+	c.Update(harness.EventMsg{Run: r.ID, Event: agent.Event{Type: agent.EventNote, Agent: "scout", Text: "child note"}})
+	c.Update(harness.EventMsg{Run: r.ID, Event: agent.Event{Type: agent.EventNote, Agent: "root", Text: "parent note"}})
+	if !strings.Contains(plain(c.View(60, 8)), "child note") || strings.Contains(plain(c.View(60, 8)), "parent note") {
+		t.Fatal("child card shows only its agent")
+	}
+	te.press(c, "/")
+	if !c.tr.Searching() || !slices.Equal(c.Contexts(), []string{keys.Search}) {
+		t.Fatal("slash opens the search bar")
+	}
+	typeText(c, "child")
+	c.Update(tea.PasteMsg{Content: " note"})
+	view = plain(c.View(60, 8))
+	if !strings.Contains(strings.Split(view, "\n")[7], "⌕ child note") || c.Cursor() == nil {
+		t.Fatalf("the search bar sits under the transcript\n%s", view)
+	}
+	if h := c.Hints(); h[0].Action != "search.accept" {
+		t.Fatalf("search hints %+v", h)
+	}
+	te.press(c, "enter")
+	if c.Cursor() != nil || c.Hints()[0].Action != "transcript.down" {
+		t.Fatal("accepting leaves the bar")
+	}
+	c.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 3, Y: 7})
+	if !c.tr.Searching() {
+		t.Fatal("clicking the bar reopens it")
+	}
+	te.press(c, "esc")
+	for _, chord := range []string{"j", "k", "pgdown", "pgup", "g", "G", "n", "N", "[", "]", ".", ",", "enter", "e", "E", "T", "f"} {
+		te.press(c, chord)
+	}
+	if !slices.Equal(c.Contexts(), []string{keys.Transcript, keys.Panel}) {
+		t.Fatalf("contexts %v", c.Contexts())
+	}
+	c.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 0})
+	c.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 1})
+	if c.tr.cursor != 0 {
+		t.Fatalf("click below the header reaches the transcript, cursor %d", c.tr.cursor)
+	}
+	c.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown, X: 1, Y: 2})
+}
+
+// Asks the approver for a run and reports the pending entry once it is queued
+func ask(t *testing.T, te *testEnv, runID, toolName string) *harness.Pending {
+	t.Helper()
+	ctx, cancel := context.WithCancel(harness.WithRun(context.Background(), runID))
+	t.Cleanup(cancel)
+	req := policy.Request{Call: protocol.ToolCall{ID: "c-" + toolName, Name: toolName, Args: json.RawMessage(`{"command":"rm -rf /tmp/x"}`)}, Agent: "root", Reason: "deny rule", Key: "Bash(rm *)", Subjects: []policy.Subject{{Kind: "command", Text: "rm -rf /tmp/x", Exact: true}, {Kind: "command", Text: "$(evil)", Unsafe: true}}, Tool: &protocol.Tool{Name: toolName, Description: "Runs a command"}, Hints: tool.Annotations{Destructive: true, OpenWorld: true}}
+	go te.env.Approver.Ask(ctx, req)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, p := range te.env.Approver.Pending() {
+			if p.Run == runID && p.Request.Call.Name == toolName {
+				return p
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("approval never queued")
+	return nil
+}
+
+func TestApprovalDialogAnswersItsSession(t *testing.T) {
+	te := newEnv(t)
+	a := NewApproval(te.env, "s1", func(run string) bool { return run == "run-1" })
+	if !a.Floating() || !a.Closable() || a.Title() != "APPROVAL" || a.Key() != "approval:s1" {
+		t.Fatalf("identity %q %q", a.Title(), a.Key())
+	}
+	if w, h := a.MinSize(); w != approvalWidth || h != approvalMinRows || a.Hints() != nil {
+		t.Fatalf("empty size %d %d hints %v", w, h, a.Hints())
+	}
+	if !strings.Contains(plain(a.View(60, 10)), "nothing waiting") {
+		t.Fatal("empty dialog says so")
+	}
+	ask(t, te, "run-9", "Bash")
+	p := ask(t, te, "run-1", "Bash")
+	a.Update(harness.ApprovalMsg{Pending: p})
+	if len(a.Pending()) != 1 || a.Pending()[0].ID != p.ID || a.Closable() {
+		t.Fatalf("filtered pending %d", len(a.Pending()))
+	}
+	if a.Title() != "APPROVAL" || a.Status() != "" {
+		t.Fatalf("title %q status %q", a.Title(), a.Status())
+	}
+	if _, h := a.MinSize(); h != len(a.body(approvalWidth))+2 {
+		t.Fatalf("the dialog opens at the height of its request, %d", h)
+	}
+	view := plain(a.View(70, 24))
+	for _, want := range []string{"⌘ Bash", "by       root", "because  deny rule", "command  rm -rf /tmp/x", "! $(evil)  unsafe", "• rm -rf /tmp/x  exact", "rule     Bash(rm *)  kept by always and never", "destructive  open world", "allow", "deny", "always", "never", p.Asked.Local().Format("15:04:05")} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q\n%s", want, view)
+		}
+	}
+	for _, noise := range []string{"Runs a command", "hints", "subjects", "approval 1 of", "{", "}"} {
+		if strings.Contains(view, noise) {
+			t.Fatalf("view carries %q\n%s", noise, view)
+		}
+	}
+	if a.Hints() != nil {
+		t.Fatalf("a request that fits offers no scroll hint %v", a.Hints())
+	}
+	short := strings.Split(plain(a.View(70, 8)), "\n")
+	if hs := a.Hints(); len(hs) != 1 || hs[0].Action != "approval.down" || hs[0].Pair != "approval.up" {
+		t.Fatalf("a request that runs past the dialog offers scrolling %v", hs)
+	}
+	if !strings.HasSuffix(short[0], "⇞") || !strings.HasSuffix(short[5], "⇟") {
+		t.Fatalf("an overflowing request gets a scrollbar\n%s", strings.Join(short, "\n"))
+	}
+	a.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 69, Y: 5})
+	if a.scroll == 0 {
+		t.Fatal("clicking the bottom cap pages down")
+	}
+	a.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 69, Y: 0})
+	if a.scroll != 0 {
+		t.Fatal("clicking the top cap pages up")
+	}
+	root := *p
+	root.Request.Agent = root.Run
+	root.Request.Reason = "default"
+	desc := plain(strings.Join(Describe(&root, 70, te.env.Theme), "\n"))
+	if strings.Contains(desc, "\nby") || strings.Contains(desc, "because") {
+		t.Fatalf("the root agent and the default reason say nothing\n%s", desc)
+	}
+	nested := *p
+	nested.Request.Call.Args = json.RawMessage(`{"file_path":"a.go","old_string":"one\ntwo","edits":[{"n":1}]}`)
+	desc = plain(strings.Join(Describe(&nested, 40, te.env.Theme), "\n"))
+	for _, want := range []string{"file_path   a.go", "old_string  one", "            two", "edits       [{\"n\":1}]"} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("arguments lack %q\n%s", want, desc)
+		}
+	}
+	bare := *p
+	bare.Request.Call.Args = json.RawMessage(`"just text"`)
+	if desc = plain(strings.Join(Describe(&bare, 40, te.env.Theme), "\n")); !strings.Contains(desc, `"just text"`) {
+		t.Fatalf("arguments that are not an object show as they are\n%s", desc)
+	}
+	te.press(a, "j")
+	te.press(a, "pgdown")
+	if a.scroll == 0 {
+		t.Fatal("scroll keys move")
+	}
+	te.press(a, "k")
+	te.press(a, "pgup")
+	te.press(a, "g")
+	if a.scroll != 0 {
+		t.Fatal("g returns to the top")
+	}
+	for _, tc := range []struct {
+		key  string
+		want policy.Verdict
+	}{{"y", policy.Yes}, {"n", policy.No}, {"a", policy.Always}, {"v", policy.Never}} {
+		ans, ok := find[AnswerMsg](te.pressed(a, tc.key))
+		if !ok || ans.ID != p.ID || ans.Verdict != tc.want {
+			t.Fatalf("%s gave %+v", tc.key, ans)
+		}
+	}
+	a.View(70, 24)
+	if len(a.buttons) != 4 {
+		t.Fatalf("buttons %d", len(a.buttons))
+	}
+	te.env.Keys.Rebind("approval.allow", "ctrl+y")
+	if foot := plain(a.footer(70)); !strings.HasPrefix(foot, " ctrl+y  allow") || !strings.Contains(foot, " n  deny") {
+		t.Fatalf("buttons carry the keys of the keymap %q", foot)
+	}
+	te.env.Keys.Unbind("approval.never")
+	if foot := plain(a.footer(70)); !strings.HasSuffix(foot, " never ") || strings.Contains(foot, " v ") {
+		t.Fatalf("an unbound verdict shows its word alone %q", foot)
+	}
+	te.env.Keys = keys.Default()
+	ans, ok := find[AnswerMsg](run(func() tea.Cmd {
+		_, c := a.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: a.buttons[1].x, Y: a.h - 1})
+		return c
+	}()))
+	if !ok || ans.Verdict != policy.No {
+		t.Fatalf("click on deny gave %+v", ans)
+	}
+	te.env.Approver.Answer(p.ID, policy.Yes)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(te.env.Approver.Pending()) > 1 {
+		time.Sleep(time.Millisecond)
+	}
+	msgs := run(func() tea.Cmd { _, c := a.Update(harness.ApprovalDoneMsg{ID: p.ID}); return c }())
+	if _, ok := find[wm.Intent](msgs); !ok || len(a.Pending()) != 0 {
+		t.Fatal("an empty queue closes the dialog")
+	}
+}
+
+func TestAgentsRosterListsRuns(t *testing.T) {
+	te := newEnv(t)
+	d := NewAgents(te.env)
+	if d.Title() != "AGENTS" || d.Key() != "agents" || d.Status() != "idle" {
+		t.Fatalf("identity %q %q %q", d.Title(), d.Key(), d.Status())
+	}
+	if !strings.Contains(plain(d.View(60, 5)), "no agents yet") {
+		t.Fatal("empty roster")
+	}
+	te.live.Session.SetTitle("probe the box")
+	hold := make(chan struct{})
+	r := te.startRun(t, hold, "done")
+	d.Update(harness.EventMsg{Run: r.ID, Event: agent.Event{Type: agent.EventRunStart}})
+	if len(d.Rows()) != 1 || d.Status() != "1 running" {
+		t.Fatalf("rows %d status %q", len(d.Rows()), d.Status())
+	}
+	if _, ok := find[agentsTick](run(d.Init())); !ok {
+		t.Fatal("roster ticks while a run goes")
+	}
+	view := plain(d.View(90, 6))
+	if !strings.Contains(view, "root") || !strings.Contains(view, "probe the box") || !strings.Contains(view, "running") {
+		t.Fatalf("view\n%s", view)
+	}
+	if got := d.sessionOf(r); got != "probe the box" {
+		t.Fatalf("sessionOf %q", got)
+	}
+	open, ok := find[OpenRunMsg](te.pressed(d, "enter"))
+	if !ok || open.Run != r.ID {
+		t.Fatalf("open %+v", open)
+	}
+	kill, ok := find[KillRunMsg](te.pressed(d, "x"))
+	if !ok || kill.Run != r.ID {
+		t.Fatalf("kill %+v", kill)
+	}
+	close(hold)
+	te.waitRun(t, r)
+	d.Update(harness.RunDoneMsg{Run: r.ID})
+	d.Update(harness.EventMsg{Run: r.ID, Event: agent.Event{Type: agent.EventTurnEnd, Agent: "root", Usage: protocol.Usage{Input: 3, Output: 2}}})
+	if d.Status() != "idle" || d.tokens[r.ID+"/root"] != 5 {
+		t.Fatalf("status %q tokens %v", d.Status(), d.tokens)
+	}
+	if _, ok := find[wm.Intent](te.pressed(d, "x")); !ok {
+		t.Fatal("killing a finished run notifies")
+	}
+	d.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 2, Y: 1})
+	if _, ok := find[OpenRunMsg](run(second(d.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 2, Y: render.TableHead})))); !ok {
+		t.Fatal("clicking the selected row opens its transcript")
+	}
+	te.press(d, "j")
+	te.press(d, "k")
+	te.press(d, "G")
+	te.press(d, "g")
+	te.press(d, "pgdown")
+	te.press(d, "pgup")
+	if d.sel != 0 {
+		t.Fatal("selection keys")
+	}
+	if h := d.Hints(); len(h) != 3 || h[0].Label != "move" || h[2].Action != "agents.stop" {
+		t.Fatalf("hints %+v", h)
+	}
+	d.Update(agentsTick{})
+}
+
+func TestSessionsListsStoredOnes(t *testing.T) {
+	te := newEnv(t)
+	store := te.env.Store
+	ctx := context.Background()
+	one := session.New()
+	one.SetTitle("alpha run")
+	one.SetModel("m-a")
+	one.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "a"}}})
+	two := session.New()
+	two.SetTitle("beta run")
+	store.Save(ctx, one)
+	store.Save(ctx, two)
+	store.Save(ctx, te.live.Session)
+	s := NewSessions(te.env)
+	if s.Title() != "SESSIONS" || s.Key() != "sessions" || len(s.Rows()) != 3 || s.Status() != "" {
+		t.Fatalf("rows %d status %q", len(s.Rows()), s.Status())
+	}
+	view := plain(s.View(90, 10))
+	if !strings.Contains(view, "alpha run") || !strings.Contains(view, "beta run") || !strings.Contains(view, "●") || !strings.Contains(view, "m-a") {
+		t.Fatalf("view\n%s", view)
+	}
+	if strings.Contains(view, "⌕") || strings.Contains(view, "3 sessions") || !strings.HasPrefix(strings.TrimSpace(strings.Split(view, "\n")[0]), "UPDATED") {
+		t.Fatalf("the table starts at the top with no bar while none is open\n%s", view)
+	}
+	if !slices.Equal(s.Contexts(), []string{keys.Sessions, keys.Filter, keys.List, keys.Panel}) || s.Cursor() != nil {
+		t.Fatalf("contexts %v", s.Contexts())
+	}
+	if h := s.Hints(); h[0].Action != "filter.toggle" {
+		t.Fatalf("the filter leads the legend %+v", h)
+	}
+	te.press(s, "/")
+	bottom := func() string { return plain(strings.Split(s.View(90, 10), "\n")[9]) }
+	if !slices.Equal(s.Contexts(), []string{keys.Search, keys.Filter}) || s.Cursor() == nil || s.Cursor().Y != 9 || !strings.Contains(bottom(), "⌕ filter by title") || !strings.Contains(bottom(), "3 sessions") {
+		t.Fatalf("slash opens the filter bar along the bottom with the count %q", bottom())
+	}
+	te.press(s, "/")
+	if s.bar.Shown() || strings.Contains(plain(s.View(90, 10)), "⌕") {
+		t.Fatal("slash again before typing collapses the bar")
+	}
+	te.press(s, "/")
+	typeText(s, "beta")
+	if len(s.Rows()) != 1 || s.Rows()[0].ID != two.ID() || !slices.Equal(s.Contexts(), []string{keys.Search}) {
+		t.Fatalf("filters as it is typed %v", s.Rows())
+	}
+	te.press(s, "/")
+	if s.bar.Query() != "beta/" {
+		t.Fatalf("once typing began slash is text %q", s.bar.Query())
+	}
+	te.press(s, "backspace")
+	if b := bottom(); !strings.Contains(b, "⌕ beta") || !strings.Contains(b, "1 of 3") {
+		t.Fatalf("bar with the query and the count %q", b)
+	}
+	if h := s.Hints(); h[0].Action != "search.accept" {
+		t.Fatalf("search hints %+v", h)
+	}
+	te.press(s, "enter")
+	if len(s.Rows()) != 1 || s.bar.Active() || !strings.Contains(bottom(), "⌕ beta") {
+		t.Fatal("enter keeps the filter showing and leaves the bar")
+	}
+	open, ok := find[OpenSessionMsg](te.pressed(s, "enter"))
+	if !ok || !slices.Equal(open.Sessions, []string{two.ID()}) {
+		t.Fatalf("resume %+v", open)
+	}
+	fork, ok := find[ForkMsg](te.pressed(s, "f"))
+	if !ok || !slices.Equal(fork.Sessions, []string{two.ID()}) {
+		t.Fatalf("fork %+v", fork)
+	}
+	te.press(s, "d")
+	if !strings.Contains(bottom(), "delete "+two.ID()+"? y yes · n no") || !slices.Equal(s.Contexts(), []string{keys.Confirm}) {
+		t.Fatal("delete asks along the bottom first")
+	}
+	if h := s.Hints(); len(h) != 2 || h[0].Label != "delete" || h[1].Label != "keep" {
+		t.Fatalf("confirm hints %+v", h)
+	}
+	te.press(s, "n")
+	te.press(s, "d")
+	del, ok := find[DeleteMsg](te.pressed(s, "y"))
+	if !ok || !slices.Equal(del.Sessions, []string{two.ID()}) {
+		t.Fatalf("delete %+v", del)
+	}
+	if sel := s.Selected(); len(sel) != 1 || sel[0].ID != two.ID() {
+		t.Fatal("selected")
+	}
+	te.press(s, "/")
+	if len(s.Rows()) != 3 || s.bar.Shown() {
+		t.Fatal("slash on a kept filter collapses the bar and shows every row")
+	}
+	te.press(s, "/")
+	typeText(s, "zz")
+	te.press(s, "esc")
+	if len(s.Rows()) != 3 || s.bar.Shown() {
+		t.Fatal("esc clears the filter")
+	}
+	saved := one.Info()
+	saved.Title = "alpha renamed"
+	s.Update(harness.SavedMsg{Info: saved})
+	if s.Rows()[0].ID != one.ID() || s.Rows()[0].Title != "alpha renamed" || len(s.Rows()) != 3 {
+		t.Fatalf("saved first %v", s.Rows())
+	}
+	te.press(s, "g")
+	te.press(s, "shift+down")
+	te.press(s, "J")
+	if len(s.Selected()) != 3 || s.Status() != "3 selected" {
+		t.Fatalf("shift with a move extends the selection, %d %q", len(s.Selected()), s.Status())
+	}
+	view = plain(s.View(90, 10))
+	if strings.Count(view, "▪") != 2 || strings.Count(view, "▸") != 1 {
+		t.Fatalf("selected rows are marked\n%s", view)
+	}
+	every := []string{s.Rows()[0].ID, s.Rows()[1].ID, s.Rows()[2].ID}
+	if open, _ := find[OpenSessionMsg](te.pressed(s, "enter")); !slices.Equal(open.Sessions, every) {
+		t.Fatalf("enter resumes every selected session %v", open.Sessions)
+	}
+	if fork, _ := find[ForkMsg](te.pressed(s, "f")); !slices.Equal(fork.Sessions, every) {
+		t.Fatalf("f forks every selected session %v", fork.Sessions)
+	}
+	te.press(s, "d")
+	if !strings.Contains(plain(s.View(90, 10)), "delete 3 sessions?") {
+		t.Fatal("deleting many asks for all of them")
+	}
+	te.press(s, "esc")
+	if len(s.confirm) != 0 || len(s.Selected()) != 3 {
+		t.Fatal("esc keeps them")
+	}
+	te.press(s, "shift+up")
+	if len(s.Selected()) != 2 {
+		t.Fatalf("shift with a move back shrinks the selection %d", len(s.Selected()))
+	}
+	te.press(s, "k")
+	if len(s.Selected()) != 1 || s.sel != 0 {
+		t.Fatal("a plain move collapses the selection")
+	}
+	s.View(90, 10)
+	row := func(i int, mod tea.KeyMod) tea.MouseClickMsg {
+		return tea.MouseClickMsg{Button: tea.MouseLeft, X: 3, Y: s.top + render.TableHead + i, Mod: mod}
+	}
+	s.Update(row(2, 0))
+	if s.sel != 2 || len(s.Selected()) != 1 {
+		t.Fatalf("click selects, got %d", s.sel)
+	}
+	s.Update(row(0, tea.ModShift))
+	if len(s.Selected()) != 3 {
+		t.Fatal("shift click selects the range")
+	}
+	s.Update(row(1, 0))
+	if len(s.Selected()) != 1 || s.sel != 1 {
+		t.Fatal("a plain click collapses the range")
+	}
+	te.press(s, "/")
+	typeText(s, "run")
+	te.press(s, "enter")
+	s.View(90, 10)
+	s.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 3, Y: 9})
+	if !s.bar.Active() {
+		t.Fatal("clicking the bar takes typing again")
+	}
+	te.press(s, "down")
+	te.press(s, "up")
+	if !s.bar.Active() || s.sel != 0 {
+		t.Fatalf("arrows move the rows while the bar takes typing, at %d", s.sel)
+	}
+	s.Update(tea.PasteMsg{Content: "!"})
+	te.press(s, "backspace")
+	te.press(s, "ctrl+u")
+	if s.bar.Query() != "" || len(s.Rows()) != 3 {
+		t.Fatal("bar edits refilter")
+	}
+	te.press(s, "esc")
+	te.press(s, "pgdown")
+	te.press(s, "pgup")
+	s.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	s.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	if h := s.Hints(); len(h) != 6 || h[0].Action != "filter.toggle" || h[1].Label != "move" || h[2].Action != "sessions.select.down" || h[3].Action != "sessions.resume" {
+		t.Fatalf("hints %+v", h)
+	}
+	s.Update(wm.FocusMsg{Focused: true})
+	if _, ok := find[wm.Intent](te.pressed(s, "r")); !ok || len(s.Rows()) != 3 {
+		t.Fatal("refresh reads the store and says how many there are")
+	}
+	te.press(s, "d")
+	s.Update(wm.FocusMsg{})
+	if len(s.confirm) != 0 {
+		t.Fatal("losing focus drops the question")
+	}
+}
+
+func TestFindingsFilterResolveAndExport(t *testing.T) {
+	te := newEnv(t)
+	fs := te.live.Facts
+	parent, _ := fs.Add(facts.Fact{Kind: "finding", Title: "open port 22", Tags: []string{"net"}, Confidence: 0.9, Agent: "root", Body: "ssh listens", Evidence: []facts.Evidence{{Kind: "file", Ref: "a.go", Line: 3}, {Kind: "url", Ref: "https://x"}}})
+	fs.Add(facts.Fact{Kind: "risk", Title: "weak cipher", Tags: []string{"crypto"}, Confidence: 0.5, Parent: parent.ID})
+	f := NewFindings(te.env, fs, te.live.Session.ID())
+	if f.Key() != "findings:"+te.live.Session.ID() || f.Title() != "FINDINGS" || !f.Selectable() {
+		t.Fatalf("identity %q", f.Key())
+	}
+	if len(f.Rows()) != 2 || f.Status() != "2 open" {
+		t.Fatalf("rows %d status %q", len(f.Rows()), f.Status())
+	}
+	view := plain(f.View(80, 12))
+	if !strings.Contains(view, "open port 22") || !strings.Contains(view, "weak cipher") || strings.Contains(view, "⌕") {
+		t.Fatalf("view\n%s", view)
+	}
+	te.press(f, "c")
+	if f.kind != "finding" || len(f.Rows()) != 1 {
+		t.Fatalf("kind filter %q rows %d", f.kind, len(f.Rows()))
+	}
+	te.press(f, "c")
+	te.press(f, "c")
+	if f.kind != "" {
+		t.Fatalf("kind cycles back, got %q", f.kind)
+	}
+	te.press(f, "T")
+	if f.tag != "crypto" || len(f.Rows()) != 1 || f.Rows()[0].Title != "weak cipher" {
+		t.Fatalf("tag filter %q", f.tag)
+	}
+	te.press(f, "T")
+	te.press(f, "T")
+	te.press(f, "t")
+	if !f.tree || f.depth[f.Rows()[1].ID] != 1 {
+		t.Fatalf("tree depth %v", f.depth)
+	}
+	te.press(f, "/")
+	if !slices.Equal(f.Contexts(), []string{keys.Search, keys.Filter}) || f.Cursor() == nil {
+		t.Fatal("slash opens the filter bar")
+	}
+	typeText(f, "port")
+	if h := f.Hints(); h[0].Action != "search.accept" {
+		t.Fatalf("search hints %+v", h)
+	}
+	te.press(f, "down")
+	te.press(f, "up")
+	f.Update(tea.PasteMsg{Content: "x"})
+	te.press(f, "backspace")
+	te.press(f, "enter")
+	if len(f.Rows()) != 1 || f.Cursor() != nil {
+		t.Fatalf("search rows %d", len(f.Rows()))
+	}
+	if foot := plain(strings.Split(f.View(80, 12), "\n")[11]); !strings.Contains(foot, "⌕ port") || !strings.Contains(foot, "1 fact") || f.Status() != "2 open · tree" {
+		t.Fatalf("filter bar along the bottom %q, status %q", foot, f.Status())
+	}
+	te.press(f, "/")
+	if f.bar.Shown() || len(f.Rows()) != 2 {
+		t.Fatal("slash collapses the bar and the filter")
+	}
+	te.press(f, "t")
+	te.press(f, "enter")
+	view = plain(f.View(80, 20))
+	if !strings.Contains(view, "ssh listens") || !strings.Contains(view, "net") || !strings.Contains(view, "a.go") {
+		t.Fatalf("expanded view\n%s", view)
+	}
+	msgs := te.pressed(f, "x")
+	if _, ok := find[wm.Intent](msgs); !ok || f.Rows()[0].Status != facts.StatusResolved || f.Status() != "1 open" {
+		t.Fatalf("resolve status %q", f.Status())
+	}
+	te.press(f, "s")
+	if f.status != facts.StatusOpen || len(f.Rows()) != 1 {
+		t.Fatalf("status filter %q rows %d", f.status, len(f.Rows()))
+	}
+	te.press(f, "s")
+	te.press(f, "s")
+	te.press(f, "s")
+	exp, ok := find[ExportMsg](te.pressed(f, "e"))
+	if !ok || exp.Err != nil || !strings.HasSuffix(exp.Path, ".md") || filepath.Dir(exp.Path) != te.dir {
+		t.Fatalf("markdown export %+v", exp)
+	}
+	data, _ := os.ReadFile(exp.Path)
+	if !strings.Contains(string(data), "open port 22") {
+		t.Fatal("markdown content")
+	}
+	exp, ok = find[ExportMsg](te.pressed(f, "E"))
+	if !ok || exp.Err != nil || !strings.HasSuffix(exp.Path, ".json") {
+		t.Fatalf("json export %+v", exp)
+	}
+	data, _ = os.ReadFile(exp.Path)
+	if !json.Valid(data) {
+		t.Fatal("json content")
+	}
+	before := len(f.Rows())
+	fs.Add(facts.Fact{Title: "late one"})
+	f.Update(harness.FactMsg{Session: "other", Change: facts.Change{Op: facts.OpAdd}})
+	if len(f.Rows()) != before {
+		t.Fatal("other session changes are ignored")
+	}
+	msgs = run(func() tea.Cmd {
+		_, c := f.Update(harness.FactMsg{Session: te.live.Session.ID(), Change: facts.Change{Op: facts.OpAdd}})
+		return c
+	}())
+	if _, ok := find[wm.Intent](msgs); !ok || len(f.Rows()) != before+1 {
+		t.Fatal("own session changes refresh and ask for attention")
+	}
+	te.press(f, "G")
+	te.press(f, "g")
+	te.press(f, "j")
+	te.press(f, "k")
+	f.View(80, 12)
+	f.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: f.top + render.TableHead + 1})
+	if f.sel != 1 {
+		t.Fatalf("click selects, got %d", f.sel)
+	}
+	expanded := f.expanded
+	f.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: f.top + render.TableHead + 1})
+	if f.expanded == expanded {
+		t.Fatal("clicking the selected row toggles its detail")
+	}
+	te.press(f, "/")
+	typeText(f, "o")
+	te.press(f, "enter")
+	f.View(80, 12)
+	f.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 11})
+	if !f.bar.Active() || f.Cursor().Y != 11 {
+		t.Fatal("clicking the bar takes typing again")
+	}
+	f.Update(wm.FocusMsg{})
+	if f.bar.Active() {
+		t.Fatal("losing focus leaves the bar")
+	}
+	te.press(f, "esc")
+	if h := f.Hints(); len(h) != 10 || h[0].Action != "filter.toggle" || h[2].Action != "findings.detail" {
+		t.Fatalf("hints %+v", h)
+	}
+}
+
+func TestMissionCardTracksItsMission(t *testing.T) {
+	te := newEnv(t)
+	ms := te.live.Missions
+	m, err := ms.Create("map the subnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := te.live.Session.ID()
+	c := NewMission(te.env, ms, te.live.Facts, id, m)
+	if c.Key() != "mission:"+id+":"+m.ID || c.ID() != m.ID || c.Title() != "PROBE "+m.ID || c.Status() != "0%" {
+		t.Fatalf("identity %q status %q", c.Key(), c.Status())
+	}
+	planned, _ := ms.SetPlan(m.ID, []mission.Step{{Text: "ping sweep", Status: mission.StepDone}, {Text: "port scan", Status: mission.StepActive}, {Text: "report"}})
+	c.Update(harness.MissionMsg{Session: "other", Mission: planned})
+	if len(c.Mission().Plan) != 0 {
+		t.Fatal("other session updates are ignored")
+	}
+	c.Update(harness.MissionMsg{Session: id, Mission: planned})
+	if len(c.Mission().Plan) != 3 || c.Status() != "33%" {
+		t.Fatalf("plan %d status %q", len(c.Mission().Plan), c.Status())
+	}
+	if h := c.Hints(); len(h) != 2 || h[0].Action != "mission.done" || !slices.Equal(c.Contexts(), []string{keys.Mission, keys.Panel}) {
+		t.Fatalf("active hints %+v", h)
+	}
+	view := plain(c.View(60, 12))
+	for _, want := range []string{"map the subnet", "active", "33%", "ping sweep", "port scan", "report", "findings 0"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q\n%s", want, view)
+		}
+	}
+	st, ok := find[MissionStateMsg](te.pressed(c, "d"))
+	if !ok || st.Session != id || st.ID != m.ID || st.Status != mission.StatusDone {
+		t.Fatalf("done %+v", st)
+	}
+	st, ok = find[MissionStateMsg](te.pressed(c, "x"))
+	if !ok || st.Status != mission.StatusFailed {
+		t.Fatalf("failed %+v", st)
+	}
+	if _, ok := find[MissionRemoveMsg](te.pressed(c, "D")); ok {
+		t.Fatal("an active mission is not removable")
+	}
+	ended, _ := ms.Finish(m.ID, mission.StatusDone, "")
+	c.Update(harness.MissionMsg{Session: id, Mission: ended})
+	if c.Status() != mission.StatusDone || !strings.Contains(plain(c.View(60, 12)), "done") {
+		t.Fatalf("ended status %q", c.Status())
+	}
+	if h := c.Hints(); len(h) != 2 || h[0].Action != "mission.resume" || h[1].Action != "mission.forget" {
+		t.Fatalf("ended hints %+v", h)
+	}
+	st, ok = find[MissionStateMsg](te.pressed(c, "r"))
+	if !ok || st.Status != mission.StatusActive {
+		t.Fatalf("resume %+v", st)
+	}
+	rm, ok := find[MissionRemoveMsg](te.pressed(c, "D"))
+	if !ok || rm.Session != id || rm.ID != m.ID {
+		t.Fatalf("remove %+v", rm)
+	}
+}
+
+func TestTelemetryShowsAttemptsAndFailovers(t *testing.T) {
+	te := newEnv(t)
+	c := NewTelemetry(te.env)
+	if c.Title() != "METRICS" || c.Key() != "metrics" || !slices.Equal(c.Contexts(), []string{keys.Panel}) {
+		t.Fatalf("identity %q %q", c.Title(), c.Key())
+	}
+	if c.Snapshot().Model != "claude-opus-5" {
+		t.Fatalf("snapshot %+v", c.Snapshot())
+	}
+	snap := te.env.Meter.Snapshot()
+	snap.Usage = protocol.Usage{Input: 1200, Output: 300}
+	snap.Cost = 0.42
+	snap.Context = 5000
+	snap.Requests = 2
+	snap.Retries = 1
+	snap.LastLatency = 800 * time.Millisecond
+	snap.RateLimit = provider.RateLimit{Requests: 50, RequestsRemaining: 49}
+	c.Update(harness.AttemptMsg{Attempt: provider.Attempt{Status: 200, Duration: 800 * time.Millisecond}, Telemetry: snap})
+	c.Update(harness.AttemptMsg{Attempt: provider.Attempt{Status: 429, Err: errors.New("slow down"), Wait: 2 * time.Second}, Telemetry: snap})
+	c.Update(harness.AttemptMsg{Attempt: provider.Attempt{Status: 500, Err: errors.New("broken")}, Telemetry: snap})
+	c.Update(harness.ServedMsg{Index: 1})
+	msgs := run(func() tea.Cmd { _, cmd := c.Update(harness.FailoverMsg{From: 0, Err: errors.New("dead")}); return cmd }())
+	if _, ok := find[wm.Intent](msgs); !ok {
+		t.Fatal("failover notifies")
+	}
+	view := plain(c.View(100, 20))
+	for _, want := range []string{"claude-opus-5", "via anthropic", "$0.42", "1.2k", "requests 2", "1 retries", "200 in", "retry in 2.0s after 429", "broken", "served by fallback model 1", "failover past model 0", "req 49/50", "latency 800ms"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q\n%s", want, view)
+		}
+	}
+	if c.Status() != "$0.42" {
+		t.Fatalf("status %q", c.Status())
+	}
+	small := plain(c.View(30, 3))
+	if strings.Count(small, "\n") > 2 {
+		t.Fatalf("small view keeps to its height\n%s", small)
+	}
+	if _, ok := find[telemetryTick](run(func() tea.Cmd {
+		_, cmd := c.Update(harness.EventMsg{Event: agent.Event{Type: agent.EventTurnStart}})
+		return cmd
+	}())); !ok {
+		t.Fatal("turn start begins sampling")
+	}
+	c.Update(telemetryTick{})
+	if len(c.samples) != 1 || c.ticking {
+		t.Fatalf("samples %d ticking %v", len(c.samples), c.ticking)
+	}
+	c.Update(harness.EventMsg{Event: agent.Event{Type: agent.EventCompactEnd}})
+	if !strings.Contains(plain(c.View(100, 20)), "compacted") {
+		t.Fatal("compaction noted")
+	}
+	c.Reload()
+	if len(c.samples) != 0 {
+		t.Fatal("reload drops samples")
+	}
+}
+
+func TestFilesShowsTouchesAndDiffs(t *testing.T) {
+	te := newEnv(t)
+	c := NewFiles(te.env)
+	if c.Title() != "FILES" || c.Key() != "files" || !c.Selectable() {
+		t.Fatalf("identity %q %q", c.Title(), c.Key())
+	}
+	if !strings.Contains(plain(c.View(60, 5)), "no files touched yet") || c.Status() != "0 files" {
+		t.Fatalf("empty status %q", c.Status())
+	}
+	read := agent.Event{Type: agent.EventToolEnd, Time: at, Agent: "root", Call: protocol.ToolCall{ID: "r1", Name: files.ReadName}, Data: files.ReadData{Path: "a.go", Lines: []string{"x"}, Total: 1}}
+	edit := agent.Event{Type: agent.EventToolEnd, Time: at.Add(time.Second), Agent: "root", Call: protocol.ToolCall{ID: "e1", Name: files.EditName}, Data: files.Change{Path: "b.go", Old: "one\ntwo\n", New: "one\nthree\n"}}
+	te.env.Work.Apply(read)
+	te.env.Work.Apply(edit)
+	te.env.Work.Apply(agent.Event{Type: agent.EventToolEnd, Data: files.GlobData{Total: 3}})
+	c.Update(harness.EventMsg{Event: read})
+	c.Update(harness.EventMsg{Event: edit})
+	if len(c.Files()) != 2 || c.Status() != "1 changed" {
+		t.Fatalf("files %d status %q", len(c.Files()), c.Status())
+	}
+	view := plain(c.View(80, 12))
+	for _, want := range []string{"cwd", "searches 1", "a.go", "b.go", "+1", "-1", "root"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q\n%s", want, view)
+		}
+	}
+	if h := c.Hints(); len(h) != 2 || h[1].Action != "files.diff" {
+		t.Fatalf("hints before a diff %+v", h)
+	}
+	te.press(c, "enter")
+	view = plain(c.View(80, 14))
+	if !strings.Contains(view, "last change") || !strings.Contains(view, "three") {
+		t.Fatalf("diff view\n%s", view)
+	}
+	if h := c.Hints(); len(h) != 4 || h[3].Pair != "files.scroll.up" {
+		t.Fatalf("hints with a diff %+v", h)
+	}
+	te.press(c, "a")
+	if !strings.Contains(plain(c.View(80, 14)), "since the session started") {
+		t.Fatal("whole diff label")
+	}
+	dark := c.View(80, 14)
+	te.env.Theme = theme.Light()
+	if c.View(80, 14) == dark || c.shown.theme != "light" {
+		t.Fatal("a new theme repaints the cached diff")
+	}
+	te.env.Theme = theme.Blackwall()
+	long := agent.Event{Type: agent.EventToolEnd, Time: at.Add(2 * time.Second), Agent: "root", Call: protocol.ToolCall{ID: "e2", Name: files.EditName}, Data: files.Change{Path: "c.go", Old: "", New: strings.Repeat("added line\n", 40)}}
+	te.env.Work.Apply(long)
+	c.Update(harness.EventMsg{Event: long})
+	te.press(c, "g")
+	lines := strings.Split(plain(c.View(80, 20)), "\n")
+	if c.Files()[0].Path != "c.go" || !strings.HasSuffix(lines[c.diffTop], "⇞") || !strings.HasSuffix(lines[len(lines)-1], "⇟") {
+		t.Fatalf("a long diff gets a scrollbar\n%s", strings.Join(lines, "\n"))
+	}
+	te.press(c, "pgdown")
+	if c.scroll == 0 {
+		t.Fatal("pgdown pages the diff")
+	}
+	te.press(c, "pgup")
+	if c.scroll != 0 {
+		t.Fatal("pgup pages back")
+	}
+	c.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: len(lines) - 1})
+	if c.scroll == 0 {
+		t.Fatal("clicking the bottom cap pages the diff")
+	}
+	c.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	c.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: c.diffTop + c.diffRows/2})
+	jumped := c.scroll
+	c.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: c.diffTop})
+	if jumped == 0 || c.scroll >= jumped {
+		t.Fatalf("a click on the track jumps and the top cap pages back, %d then %d", jumped, c.scroll)
+	}
+	c.scroll = 0
+	c.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	c.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	if c.scroll != 0 {
+		t.Fatal("wheel scroll")
+	}
+	te.press(c, "j")
+	te.press(c, "j")
+	if c.sel != 2 || !strings.Contains(plain(c.View(80, 14)), "read only") {
+		t.Fatalf("read only file sel %d", c.sel)
+	}
+	te.press(c, "k")
+	te.press(c, "G")
+	te.press(c, "g")
+	c.View(80, 14)
+	c.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 1 + render.TableHead + 1})
+	if c.sel != 1 || !c.expanded {
+		t.Fatalf("click selects, got %d", c.sel)
+	}
+	c.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 1 + render.TableHead + 1})
+	if c.expanded {
+		t.Fatal("clicking the selected row folds its diff")
+	}
+	if !slices.Equal(c.Contexts(), []string{keys.Files, keys.List, keys.Panel}) {
+		t.Fatalf("contexts %v", c.Contexts())
+	}
+}
+
+func TestJobsTailsBackgroundJobs(t *testing.T) {
+	te := newEnv(t)
+	j := NewJobs(te.env)
+	if j.Title() != "JOBS" || j.Key() != "jobs" || !j.Selectable() || j.Status() != "" {
+		t.Fatalf("identity %q %q", j.Title(), j.Key())
+	}
+	if !strings.Contains(plain(j.View(60, 5)), "no background jobs") {
+		t.Fatal("empty view")
+	}
+	res, err := te.sh.Bash().Run(context.Background(), json.RawMessage(`{"command":"echo hello; sleep 0.2; echo bye","run_in_background":true,"description":"greets"}`))
+	if err != nil || res.IsError {
+		t.Fatalf("job start %v %+v", err, res)
+	}
+	jobs := te.sh.Jobs()
+	if len(jobs) != 1 {
+		t.Fatalf("jobs %d", len(jobs))
+	}
+	msgs := run(func() tea.Cmd {
+		_, c := j.Update(harness.JobMsg{Event: shell.JobEvent{Kind: shell.JobStarted, Job: jobs[0]}})
+		return c
+	}())
+	if _, ok := find[wm.Intent](msgs); !ok || len(j.List()) != 1 || j.Status() != "1 running" {
+		t.Fatalf("started job list %d status %q", len(j.List()), j.Status())
+	}
+	kill, ok := find[KillJobMsg](te.pressed(j, "x"))
+	if !ok || kill.Job != jobs[0].ID {
+		t.Fatalf("kill %+v", kill)
+	}
+	done, _ := te.sh.Wait(jobs[0].ID)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("job never finished")
+	}
+	j.Update(harness.JobMsg{Event: shell.JobEvent{Kind: shell.JobFinished, Job: jobs[0]}})
+	view := plain(j.View(80, 12))
+	for _, want := range []string{"greets", "done", "hello", "bye"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q\n%s", want, view)
+		}
+	}
+	if j.Status() != "" {
+		t.Fatalf("status %q", j.Status())
+	}
+	if _, ok := find[wm.Intent](te.pressed(j, "x")); !ok {
+		t.Fatal("killing a finished job notifies")
+	}
+	lines := strings.Split(plain(j.View(80, 12)), "\n")
+	if !strings.HasSuffix(lines[j.listH+1], "⇞") || !strings.HasSuffix(lines[11], "⇟") {
+		t.Fatalf("the tail gets a scrollbar\n%s", strings.Join(lines, "\n"))
+	}
+	te.press(j, "pgup")
+	if j.follow {
+		t.Fatal("pgup holds the tail still")
+	}
+	te.press(j, "f")
+	if !j.follow {
+		t.Fatal("f follows again")
+	}
+	te.press(j, "f")
+	te.press(j, "pgdown")
+	if !j.follow {
+		t.Fatal("paging to the end follows")
+	}
+	j.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: j.listH + 1})
+	if j.follow {
+		t.Fatal("clicking the top cap pages the tail up")
+	}
+	j.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: 11})
+	j.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 79, Y: j.listH + 4})
+	te.press(j, "j")
+	te.press(j, "k")
+	te.press(j, "G")
+	te.press(j, "g")
+	if j.sel != 0 {
+		t.Fatal("list keys move the job selection")
+	}
+	j.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: render.TableHead})
+	j.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	if h := j.Hints(); len(h) != 4 || h[1].Action != "jobs.stop" || h[3].Label != "tail" {
+		t.Fatalf("hints %+v", h)
+	}
+	short := plain(j.View(40, 2))
+	if strings.Count(short, "\n") > 1 {
+		t.Fatalf("short view keeps to its height\n%s", short)
+	}
+}
+
+func TestComposerSuggestsArgumentsAndCardsShowHints(t *testing.T) {
+	te := newEnv(t)
+	c := NewComposer(te.env.Theme, te.env.Keys, "", func() string { return te.dir })
+	c.SessionID = "s1"
+	c.SetCommands([]Command{{Name: "mode", Desc: "mode", Arg: "name", Suggest: func(string) []string { return []string{"default", "plan", "bypassPermissions"} }, Action: "mode.cycle"}, {Name: "compact", Desc: "now", Action: "session.compact"}})
+	c.SetFocus(true)
+	for _, r := range "/" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	popup := strings.Split(plain(c.View(60, 4)), "\n")
+	if !strings.HasSuffix(popup[0], "shift+tab ") || strings.Contains(popup[1], "+") {
+		t.Fatalf("each command shows the key of its action when it has one\n%s", strings.Join(popup, "\n"))
+	}
+	te.env.Keys.Rebind("session.compact", "alt+c")
+	if !strings.HasSuffix(strings.Split(plain(c.View(60, 4)), "\n")[1], "alt+c ") {
+		t.Fatal("the popup follows the keymap")
+	}
+	te.env.Keys.Reset("session.compact")
+	c.ta.Reset()
+	c.comp = nil
+	for _, r := range "/mode" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if got := c.Completions(); len(got) != 1 || got[0] != "/mode" {
+		t.Fatalf("command list while typing %v", got)
+	}
+	te.compose(c, "enter")
+	if c.Value() != "/mode " {
+		t.Fatalf("enter fills a command that takes an argument %q", c.Value())
+	}
+	if got := c.Completions(); len(got) != 3 {
+		t.Fatalf("argument values offered at once %v", got)
+	}
+	for _, r := range "pl" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if got := c.Completions(); len(got) != 1 || got[0] != "plan" {
+		t.Fatalf("typed prefix filters the values %v", got)
+	}
+	if c.Height() != 3 {
+		t.Fatalf("popup adds rows %d", c.Height())
+	}
+	ran, ok := find[CommandMsg](run(te.compose(c, "enter")))
+	if !ok || ran.Name != "mode" || ran.Args != "plan" || ran.Session != "s1" || c.Value() != "" {
+		t.Fatalf("picking a value sends the command %+v %q", ran, c.Value())
+	}
+	for _, r := range "/x" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if c.Completions() != nil {
+		t.Fatal("no match closes the popup")
+	}
+	c.ta.Reset()
+	for _, r := range "/c" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	te.compose(c, "esc")
+	if c.Completions() != nil {
+		t.Fatal("esc closes the popup")
+	}
+	c.Update(tea.KeyPressMsg{Code: 'o', Text: "o"})
+	if got := c.Completions(); len(got) != 1 || got[0] != "/compact" {
+		t.Fatalf("typing on reopens the popup %v", got)
+	}
+	s := NewSession(te.env, te.live, "")
+	if hs := s.Hints(); len(hs) != 2 || hs[0].Action != "session.search" {
+		t.Fatalf("session hints %v", hs)
+	}
+	s.Transcript.Search()
+	if hs := s.Hints(); len(hs) != 3 || hs[2].Action != "search.close" {
+		t.Fatalf("search hints %v", hs)
+	}
+	if !strings.Contains(plain(s.Transcript.View(60, 8)), "awaiting a prompt") {
+		t.Fatal("an empty transcript names the model as waiting")
+	}
+	for _, h := range []wm.Hinter{NewAgents(te.env), NewSessions(te.env), NewFindings(te.env, te.live.Facts, "s1"), NewFiles(te.env), NewJobs(te.env), NewConfig(te.env)} {
+		if len(h.Hints()) == 0 {
+			t.Fatalf("%T has no hints", h)
+		}
+	}
+}
+
+func TestComposerBreaksLinesWithABackslash(t *testing.T) {
+	te := newEnv(t)
+	c := NewComposer(te.env.Theme, te.env.Keys, "", func() string { return te.dir })
+	c.SetFocus(true)
+	for _, r := range `one\` {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if msgs := run(te.compose(c, "enter")); len(msgs) != 0 || c.Value() != "one\n" || c.Height() != 2 {
+		t.Fatalf("a backslash before enter becomes a newline %q %v", c.Value(), msgs)
+	}
+	for _, r := range "two" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if sent, ok := find[SubmitMsg](run(te.compose(c, "enter"))); !ok || sent.Text != "one\ntwo" {
+		t.Fatalf("enter without a backslash sends %+v", sent)
+	}
+	for _, r := range `ab\cd` {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	te.compose(c, "left")
+	te.compose(c, "left")
+	te.compose(c, "enter")
+	c.Update(tea.KeyPressMsg{Code: 'X', Text: "X"})
+	if c.Value() != "ab\nXcd" {
+		t.Fatalf("a break mid line leaves the cursor at the start of the new line %q", c.Value())
+	}
+	te.compose(c, "shift+enter")
+	te.compose(c, "alt+enter")
+	if c.Value() != "ab\nXcd" {
+		t.Fatalf("no other chord breaks a line %q", c.Value())
+	}
+	s := NewSession(te.env, te.live, "")
+	if !strings.Contains(plain(s.View(120, 12)), "Type / for available commands") {
+		t.Fatal("the session prompt carries the command hint")
+	}
+}
+
+func TestComposerKeepsTheFirstLineInViewAcrossBreaks(t *testing.T) {
+	te := newEnv(t)
+	c := NewComposer(te.env.Theme, te.env.Keys, "", func() string { return te.dir })
+	c.SetFocus(true)
+	c.View(60, 2)
+	for i, word := range []string{"first", "second", "third"} {
+		for _, r := range word + `\` {
+			c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		te.compose(c, "enter")
+		rows := strings.Split(plain(c.View(60, c.Height())), "\n")
+		if c.Height() != max(i+2, 2) || len(rows) != c.Height() || !strings.Contains(rows[0], "first") {
+			t.Fatalf("after %d breaks the first line stays on top in %d rows\n%s", i+1, c.Height(), strings.Join(rows, "\n"))
+		}
+		if cur := c.Cursor(); cur == nil || cur.Y != i+1 {
+			t.Fatalf("the cursor sits on the new line %+v", cur)
+		}
+	}
+}
+
+// Command half of a card update
+func second(_ wm.Card, cmd tea.Cmd) tea.Cmd { return cmd }
+
+func TestKeyedHintsDropUnboundKeys(t *testing.T) {
+	te := newEnv(t)
+	if te.env.keyed("confirm.yes", "yes") != "y yes" {
+		t.Fatal("a bound action leads with its key")
+	}
+	te.env.Keys.Unbind("confirm.no")
+	if te.env.keyed("confirm.no", "no") != "no" {
+		t.Fatal("an unbound action reads as the text alone")
+	}
+	te.env.Store.Save(context.Background(), session.New())
+	s := NewSessions(te.env)
+	te.press(s, "d")
+	if foot := plain(strings.Split(s.View(80, 5), "\n")[4]); !strings.HasSuffix(strings.TrimSpace(foot), "y yes · no") {
+		t.Fatalf("the question drops the missing key %q", foot)
+	}
+}
+
+func TestComposerMeasuresAWrappedDraftAtTheCardWidth(t *testing.T) {
+	te := newEnv(t)
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "draft.txt"), []byte(strings.Repeat("word ", 30)), 0o600)
+	s := NewSession(te.env, te.live, dir)
+	view := strings.Split(plain(s.View(60, 14)), "\n")
+	h := s.Composer.Height()
+	if h < 3 || strings.TrimSpace(view[len(view)-1]) == "" || !strings.Contains(view[len(view)-h], "word") {
+		t.Fatalf("a long draft fills the rows it wraps to on the first paint, %d rows\n%s", h, strings.Join(view, "\n"))
 	}
 }

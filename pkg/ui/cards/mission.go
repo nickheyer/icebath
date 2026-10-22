@@ -4,87 +4,71 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/nickheyer/icebath/pkg/facts"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/mission"
-	"github.com/nickheyer/icebath/pkg/ui/deck"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// One mission with its objective, plan, agents, findings and cost
+// One mission of a session with its objective, plan, agents, findings and cost
 type Mission struct {
-	env *Env
-	id  string
-	m   mission.Mission
-	w   int
-	h   int
+	env     *Env
+	store   *mission.Store
+	facts   *facts.Store
+	session string
+	id      string
+	m       mission.Mission
+	w       int
+	h       int
 }
 
-var (
-	doneHint   = key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "done"))
-	failHint   = key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "fail"))
-	resumeHint = key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "resume"))
-	forgetHint = key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "forget"))
-)
-
-func NewMission(env *Env, m mission.Mission) *Mission {
-	return &Mission{env: env, id: m.ID, m: m}
+// Builds the mission card over the stores of the session the mission belongs to
+func NewMission(env *Env, store *mission.Store, facts *facts.Store, sessionID string, m mission.Mission) *Mission {
+	return &Mission{env: env, store: store, facts: facts, session: sessionID, id: m.ID, m: m}
 }
 
 func (c *Mission) Title() string { return "PROBE " + c.id }
 func (c *Mission) Glyph() string { return "◎" }
-func (c *Mission) Key() string   { return "mission:" + c.id }
+func (c *Mission) Key() string   { return "mission:" + c.session + ":" + c.id }
 func (c *Mission) Init() tea.Cmd { return nil }
 func (c *Mission) ID() string    { return c.id }
+
+func (c *Mission) Contexts() []string { return []string{keys.Mission, keys.Panel} }
 
 // Mission as last reported
 func (c *Mission) Mission() mission.Mission { return c.m }
 
-func (c *Mission) Hints() []key.Binding {
-	if c.m.Ended() {
-		return []key.Binding{resumeHint, forgetHint}
-	}
-	return []key.Binding{doneHint, failHint}
-}
-
-// Keys taken ahead of the deck, matching the hints for the current state
-func (c *Mission) Claims() []string {
-	if c.m.Ended() {
-		return []string{"r", "D"}
-	}
-	return []string{"d", "x"}
-}
-
-func (c *Mission) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
+func (c *Mission) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
 	case harness.MissionMsg:
-		if msg.Mission.ID == c.id {
+		if msg.Session == c.session && msg.Mission.ID == c.id {
 			c.m = msg.Mission
 		}
 	case harness.FactMsg, harness.EventMsg, harness.AttemptMsg:
 		return c, nil
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "d":
+	case wm.ActionMsg:
+		switch msg.ID {
+		case "mission.done":
 			if !c.m.Ended() {
 				return c, c.state(mission.StatusDone)
 			}
-		case "x":
+		case "mission.failed":
 			if !c.m.Ended() {
 				return c, c.state(mission.StatusFailed)
 			}
-		case "r":
+		case "mission.resume":
 			if c.m.Ended() {
 				return c, c.state(mission.StatusActive)
 			}
-		case "D":
+		case "mission.forget":
 			if c.m.Ended() {
-				id := c.id
-				return c, func() tea.Msg { return MissionRemoveMsg{ID: id} }
+				id, sess := c.id, c.session
+				return c, func() tea.Msg { return MissionRemoveMsg{Session: sess, ID: id} }
 			}
 		}
 	}
@@ -92,21 +76,21 @@ func (c *Mission) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
 }
 
 func (c *Mission) state(status string) tea.Cmd {
-	id := c.id
-	return func() tea.Msg { return MissionStateMsg{ID: id, Status: status} }
+	id, sess := c.id, c.session
+	return func() tea.Msg { return MissionStateMsg{Session: sess, ID: id, Status: status} }
 }
 
 // Findings recorded by the agents of this mission
 func (c *Mission) findings() int {
-	if c.env.Facts == nil {
+	if c.facts == nil {
 		return 0
 	}
 	if len(c.m.Agents) == 0 {
-		return c.env.Facts.Len()
+		return c.facts.Len()
 	}
 	n := 0
 	for _, a := range c.m.Agents {
-		n += len(c.env.Facts.List(facts.Query{Agent: a}))
+		n += len(c.facts.List(facts.Query{Agent: a}))
 	}
 	return n
 }
@@ -183,4 +167,12 @@ func (c *Mission) Status() string {
 		return c.m.Status
 	}
 	return render.Percent(c.m.Progress())
+}
+
+// Actions the mission answers in its current state
+func (c *Mission) Hints() []wm.Hint {
+	if c.m.Ended() {
+		return []wm.Hint{{Action: "mission.resume"}, {Action: "mission.forget"}}
+	}
+	return []wm.Hint{{Action: "mission.done"}, {Action: "mission.failed"}}
 }

@@ -34,6 +34,29 @@ func Wrap(s string, width int) string {
 	return ansi.Hardwrap(ansi.Wordwrap(s, width, ""), width, true)
 }
 
+// Count with its noun, pluralized past one
+func Count(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	suffix := "s"
+	if strings.HasSuffix(noun, "ch") || strings.HasSuffix(noun, "s") || strings.HasSuffix(noun, "x") {
+		suffix = "es"
+	}
+	return fmt.Sprintf("%d %s%s", n, noun, suffix)
+}
+
+// Renders text in the style, restarting the style after every reset inside the text so its background runs unbroken
+func Paint(st lipgloss.Style, text string) string {
+	probe := st.Render("x")
+	at := strings.IndexByte(probe, 'x')
+	if at <= 0 {
+		return st.Render(text)
+	}
+	text = strings.ReplaceAll(text, "\x1b[0m", "\x1b[m")
+	return st.Render(strings.ReplaceAll(text, "\x1b[m", "\x1b[m"+probe[:at]))
+}
+
 // Pads or cuts a string to exactly width columns
 func Fit(s string, width int) string {
 	s = Truncate(s, width)

@@ -16,6 +16,7 @@ type Header struct {
 	Created  time.Time         `json:"created"`
 	Updated  time.Time         `json:"updated"`
 	Title    string            `json:"title,omitempty"`
+	Named    bool              `json:"named,omitempty"`
 	Model    string            `json:"model,omitempty"`
 	Parent   string            `json:"parent,omitempty"`
 	Labels   map[string]string `json:"labels,omitempty"`
@@ -92,12 +93,12 @@ func (s *Session) Header() Header {
 }
 
 func (s *Session) header() Header {
-	return Header{ID: s.id, Created: s.created, Updated: s.updated, Title: s.title, Model: s.model, Parent: s.parent, Labels: copyLabels(s.labels), Usage: s.usage, Last: s.last, Messages: len(s.entries), Records: len(s.records)}
+	return Header{ID: s.id, Created: s.created, Updated: s.updated, Title: s.title, Named: s.named, Model: s.model, Parent: s.parent, Labels: copyLabels(s.labels), Usage: s.usage, Last: s.last, Messages: len(s.entries), Records: len(s.records)}
 }
 
 // Session rebuilt from a header, its entries and its records
 func FromHeader(h Header, entries []Entry, records []Record) *Session {
-	s := &Session{id: h.ID, created: h.Created, updated: h.Updated, title: h.Title, model: h.Model, parent: h.Parent, labels: copyLabels(h.Labels), usage: h.Usage, last: h.Last, now: utcNow}
+	s := &Session{id: h.ID, created: h.Created, updated: h.Updated, title: h.Title, named: h.Named, model: h.Model, parent: h.Parent, labels: copyLabels(h.Labels), usage: h.Usage, last: h.Last, now: utcNow}
 	s.entries = copyEntries(entries)
 	s.records = make([]Record, len(records))
 	copy(s.records, records)

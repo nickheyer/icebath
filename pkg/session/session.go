@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -43,6 +42,7 @@ type Session struct {
 	created time.Time
 	updated time.Time
 	title   string
+	named   bool
 	model   string
 	parent  string
 	labels  map[string]string
@@ -233,11 +233,31 @@ func (s *Session) Context() int {
 	return s.last.Context()
 }
 
+// Sets a derived title, left alone once a person named the session
 func (s *Session) SetTitle(title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.named {
+		return
+	}
 	s.title = title
 	s.touch()
+}
+
+// Names the session as a person chose, an empty name handing the title back to derivation
+func (s *Session) Rename(title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.title = title
+	s.named = title != ""
+	s.touch()
+}
+
+// Reports whether a person named the session
+func (s *Session) Named() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.named
 }
 
 func (s *Session) SetModel(model string) {
@@ -268,7 +288,7 @@ func (s *Session) Fork() *Session {
 	defer s.mu.RUnlock()
 	f := New()
 	f.parent = s.id
-	f.title, f.model, f.last = s.title, s.model, s.last
+	f.title, f.named, f.model, f.last = s.title, s.named, s.model, s.last
 	f.entries = copyEntries(s.entries)
 	f.records = s.copyRecords()
 	f.labels = copyLabels(s.labels)
@@ -370,10 +390,23 @@ func SortInfos(infos []Info) {
 	})
 }
 
-var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-
 // Reports whether an id is safe to use as a file name
-func ValidID(id string) bool { return idPattern.MatchString(id) }
+func ValidID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		if !wordByte(id[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// Reports whether the byte is a letter, digit, underscore or dash
+func wordByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-'
+}
 
 // Error for an id a store cannot use
 func InvalidID(id string) error { return fmt.Errorf("session: invalid id %q", id) }

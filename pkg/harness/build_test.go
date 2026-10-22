@@ -257,7 +257,7 @@ func TestBuildFailures(t *testing.T) {
 	}
 	hold := make(chan struct{})
 	app.Control.mu.Lock()
-	app.Control.runs["fake-run"] = &Run{ID: "fake-run", running: true, done: hold, cancel: func() {}}
+	app.Control.runs["fake-run"] = &Run{ID: "fake-run", Session: app.Session, running: true, done: hold, cancel: func() {}}
 	app.Control.order = append(app.Control.order, "fake-run")
 	app.Control.mu.Unlock()
 	if err := app.Fresh(); err == nil {
@@ -313,9 +313,9 @@ func TestBuildUsesTheDefaultNamedByTheUserFile(t *testing.T) {
 	if _, err := Build(ctx, cfg, newSink().send, BuildOptions{Dir: dir}); err == nil || !strings.Contains(err.Error(), `"ghost"`) {
 		t.Fatalf("an unknown default must be reported: %v", err)
 	}
-	os.WriteFile(user, []byte(`{"profiles":{"idk":{"API_KEY":"k","BASE_URL":"http://x","PROTOCOL":"p"}}}`), 0o600)
-	if _, err := Build(ctx, cfg, newSink().send, BuildOptions{Dir: dir}); err == nil || !strings.Contains(err.Error(), user) || !strings.Contains(err.Error(), "PROTOCOL") {
-		t.Fatalf("a broken user file must be named with its field: %v", err)
+	os.WriteFile(user, []byte(`{"profiles":{"idk":{"BASE_URL":}}}`), 0o600)
+	if _, err := Build(ctx, cfg, newSink().send, BuildOptions{Dir: dir}); err == nil || !strings.Contains(err.Error(), user) {
+		t.Fatalf("a broken user file must be named: %v", err)
 	}
 }
 

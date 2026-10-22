@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
-	"github.com/nickheyer/icebath/pkg/ui/deck"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Files the run touched with their diffs and the directory the shell sits in
-type Workspace struct {
+// Files the runs touched with their diffs and the directory the shell sits in
+type Files struct {
 	env      *Env
 	files    []harness.Touch
 	stats    map[string]diffStat
@@ -23,6 +23,11 @@ type Workspace struct {
 	expanded bool
 	whole    bool
 	scroll   int
+	start    int
+	tableEnd int
+	diffTop  int
+	diffRows int
+	diffLen  int
 	w, h     int
 }
 
@@ -32,33 +37,29 @@ type diffStat struct {
 	adds, dels int
 }
 
-// Rendered diff of the expanded file, kept until its inputs differ
+// Rendered diff of the expanded file, kept until its inputs or the theme differ
 type diffView struct {
 	path, old, new string
+	theme          string
 	w              int
 	lines          []string
 }
 
-var (
-	wDiff  = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "diff"))
-	wWhole = key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "since start"))
-)
-
-func NewWorkspace(env *Env) *Workspace {
-	w := &Workspace{env: env, stats: map[string]diffStat{}}
+func NewFiles(env *Env) *Files {
+	w := &Files{env: env, stats: map[string]diffStat{}}
 	w.refresh()
 	return w
 }
 
-func (c *Workspace) Title() string        { return "WORKSPACE" }
-func (c *Workspace) Glyph() string        { return "▣" }
-func (c *Workspace) Key() string          { return "workspace" }
-func (c *Workspace) Init() tea.Cmd        { return nil }
-func (c *Workspace) Selectable() bool     { return true }
-func (c *Workspace) Hints() []key.Binding { return []key.Binding{moveHint, wDiff, wWhole} }
-func (c *Workspace) Claims() []string     { return []string{"j", "k", "g", "G", "enter", "a", "J", "K"} }
+func (c *Files) Title() string    { return "FILES" }
+func (c *Files) Glyph() string    { return "▣" }
+func (c *Files) Key() string      { return "files" }
+func (c *Files) Init() tea.Cmd    { return nil }
+func (c *Files) Selectable() bool { return true }
 
-func (c *Workspace) refresh() {
+func (c *Files) Contexts() []string { return []string{keys.Files, keys.List, keys.Panel} }
+
+func (c *Files) refresh() {
 	if c.env.Work != nil {
 		c.files = c.env.Work.Files()
 	}
@@ -77,7 +78,7 @@ func (c *Workspace) refresh() {
 }
 
 // Line counts of the change, diffed only when the texts differ from the last call for the path
-func (c *Workspace) stat(path, old, new string) (int, int) {
+func (c *Files) stat(path, old, new string) (int, int) {
 	if st, ok := c.stats[path]; ok && st.old == old && st.new == new {
 		return st.adds, st.dels
 	}
@@ -86,65 +87,88 @@ func (c *Workspace) stat(path, old, new string) (int, int) {
 	return adds, dels
 }
 
-// Formatted diff lines, rendered only when the path, texts or width differ from the last call
-func (c *Workspace) diff(path, old, new string, w int) []string {
+// Formatted diff lines, rendered only when the path, texts, width or theme differ from the last call
+func (c *Files) diff(path, old, new string, w int) []string {
 	v := c.shown
-	if v.path == path && v.old == old && v.new == new && v.w == w {
+	if v.path == path && v.old == old && v.new == new && v.w == w && v.theme == c.env.Theme.Name {
 		return v.lines
 	}
 	lines := strings.Split(render.FormatDiff(render.Diff(old, new), w, c.env.Theme), "\n")
-	c.shown = diffView{path: path, old: old, new: new, w: w, lines: lines}
+	c.shown = diffView{path: path, old: old, new: new, theme: c.env.Theme.Name, w: w, lines: lines}
 	return lines
 }
 
 // Files touched, most recent first
-func (c *Workspace) Files() []harness.Touch { return c.files }
+func (c *Files) Files() []harness.Touch { return c.files }
 
-func (c *Workspace) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
+func (c *Files) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
 	case harness.EventMsg:
 		if msg.Event.Type == agent.EventToolEnd {
 			c.refresh()
 		}
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "j", "down":
-			c.sel = min(c.sel+1, max(0, len(c.files)-1))
-			c.scroll = 0
-		case "k", "up":
-			c.sel = max(0, c.sel-1)
-			c.scroll = 0
-		case "g":
-			c.sel = 0
-		case "G":
-			c.sel = max(0, len(c.files)-1)
-		case "enter":
+	case wm.ActionMsg:
+		switch msg.ID {
+		case "files.diff":
 			c.expanded = !c.expanded
 			c.scroll = 0
-		case "a":
+		case "files.whole":
 			c.whole = !c.whole
-		case "J":
-			c.scroll++
-		case "K":
-			c.scroll = max(0, c.scroll-1)
+			c.scroll = 0
+		case "files.scroll.down":
+			c.scrollBy(max(c.diffRows-1, 1))
+		case "files.scroll.up":
+			c.scrollBy(-max(c.diffRows-1, 1))
+		default:
+			if next := listMove(msg.ID, c.sel, len(c.files), c.h-2-render.TableHead); next != c.sel {
+				c.sel = next
+				c.scroll = 0
+			}
 		}
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft && msg.Y >= 2 && msg.Y-2 < len(c.files) {
-			c.sel = msg.Y - 2
-			c.expanded = !c.expanded
+		if msg.Button != tea.MouseLeft {
+			return c, nil
+		}
+		if y := msg.Y - c.diffTop; c.expanded && c.diffRows > 0 && y >= 0 && y < c.diffRows && msg.X == c.w-1 && c.w >= minGutterWidth {
+			switch hit, line := c.diffGutter().hit(y); hit {
+			case hitPageUp:
+				c.scrollBy(-max(c.diffRows-1, 1))
+			case hitPageDown:
+				c.scrollBy(max(c.diffRows-1, 1))
+			case hitJump:
+				c.scroll = line
+			}
+			return c, nil
+		}
+		if row := msg.Y - 1 - render.TableHead + c.start; msg.Y >= 1+render.TableHead && row < len(c.files) && msg.Y < c.tableEnd {
+			if row == c.sel {
+				c.expanded = !c.expanded
+			}
+			c.sel = row
+			c.scroll = 0
 		}
 	case tea.MouseWheelMsg:
 		switch msg.Button {
 		case tea.MouseWheelDown:
-			c.scroll++
+			c.scrollBy(1)
 		case tea.MouseWheelUp:
-			c.scroll = max(0, c.scroll-1)
+			c.scrollBy(-1)
 		}
 	}
 	return c, nil
 }
 
-func (c *Workspace) View(w, h int) string {
+// Moves the diff by n lines, kept inside the diff
+func (c *Files) scrollBy(n int) {
+	c.scroll = min(max(c.scroll+n, 0), max(c.diffLen-c.diffRows, 0))
+}
+
+// Scrollbar of the diff capped with the keys that page it
+func (c *Files) diffGutter() gutter {
+	return gutter{h: c.diffRows, total: c.diffLen, offset: c.scroll, visible: c.diffRows, up: c.env.Keys.First("files.scroll.up"), down: c.env.Keys.First("files.scroll.down")}
+}
+
+func (c *Files) View(w, h int) string {
 	c.w, c.h = w, h
 	t := c.env.Theme
 	head := render.KV("cwd", "", t)
@@ -168,7 +192,15 @@ func (c *Workspace) View(w, h int) string {
 		}
 		rows = append(rows, []string{f.Path, fmt.Sprint(f.Reads), fmt.Sprint(f.Writes), fmt.Sprint(f.Edits), change, f.Agent})
 	}
-	lines = append(lines, strings.Split(render.Table(cols, rows, w, c.sel, t), "\n")...)
+	room := h - 1
+	if c.expanded {
+		room = max(room/3, render.TableHead+2)
+	}
+	table, start := window(strings.Split(render.Table(cols, rows, w, c.sel, t), "\n"), c.sel, room)
+	c.start = start
+	lines = append(lines, table...)
+	c.tableEnd = len(lines)
+	c.diffRows, c.diffLen = 0, 0
 	if c.expanded && c.sel < len(c.files) {
 		f := c.files[c.sel]
 		lines = append(lines, "")
@@ -183,11 +215,20 @@ func (c *Workspace) View(w, h int) string {
 				label = "since the session started"
 			}
 			lines = append(lines, render.Heading(f.Path, t)+" "+render.Dim(label, t))
-			diff := c.diff(f.Path, old, f.Change.New, w)
-			if c.scroll > 0 && c.scroll < len(diff) {
-				diff = diff[c.scroll:]
+			dw := w
+			if w >= minGutterWidth {
+				dw = w - 2
 			}
-			lines = append(lines, diff...)
+			diff := c.diff(f.Path, old, f.Change.New, dw)
+			c.diffTop, c.diffRows, c.diffLen = len(lines), max(h-len(lines), 0), len(diff)
+			c.scrollBy(0)
+			shown := diff[min(c.scroll, len(diff)):]
+			shown = shown[:min(len(shown), c.diffRows)]
+			body := strings.Join(shown, "\n")
+			if dw < w && c.diffRows > 0 {
+				body = c.diffGutter().beside(body, w, t)
+			}
+			lines = append(lines, body)
 		}
 	}
 	if len(lines) > h {
@@ -196,7 +237,7 @@ func (c *Workspace) View(w, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (c *Workspace) Status() string {
+func (c *Files) Status() string {
 	changed := 0
 	for _, f := range c.files {
 		if f.Change != nil {
@@ -204,7 +245,16 @@ func (c *Workspace) Status() string {
 		}
 	}
 	if changed == 0 {
-		return fmt.Sprintf("%d files", len(c.files))
+		return render.Count(len(c.files), "file")
 	}
 	return fmt.Sprintf("%d changed", changed)
+}
+
+// Actions the file list answers, the diff ones once a diff shows
+func (c *Files) Hints() []wm.Hint {
+	out := []wm.Hint{{Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "files.diff"}}
+	if c.expanded {
+		out = append(out, wm.Hint{Action: "files.whole"}, wm.Hint{Action: "files.scroll.down", Pair: "files.scroll.up", Label: "scroll"})
+	}
+	return out
 }

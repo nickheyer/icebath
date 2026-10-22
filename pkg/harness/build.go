@@ -80,10 +80,15 @@ type App struct {
 	Saver     *Saver
 	PreImage  *PreImage
 	Cassette  *record.Cassette
+	Journal   *Journal
 	System    string
-	// Profiles known after loading every list
-	Profiles []profiles.Profile
+	// Profiles the profile files hold, in file order
+	Profiles []Instance
+	// Working directory the configuration was discovered under
+	Dir      string
 	send     Sender
+	lives    []*Live
+	mu       sync.Mutex
 	children Endpoint
 	judge    *Endpoint
 	summary  *Endpoint
@@ -124,22 +129,22 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	if root, err = filepath.Abs(root); err != nil {
 		return nil, err
 	}
-	app := &App{Config: cfg, Root: root, send: send}
+	journal := NewJournal()
+	send = journal.Tap(send)
+	app := &App{Config: cfg, Root: root, Dir: dir, send: send, Journal: journal}
 	for _, path := range cfg.CatalogFiles {
 		if _, err := profiles.LoadCatalogFile(path); err != nil {
 			return nil, fmt.Errorf("catalog %s: %w", path, err)
 		}
 	}
 	var fileDefault string
-	if app.Profiles, fileDefault, err = loadProfiles(cfg); err != nil {
+	if app.Profiles, fileDefault, err = loadInstances(cfg); err != nil {
 		return nil, err
 	}
 	app.Pump = NewPump(send)
 	app.Meter = NewMeter(send)
 	app.Approver = NewApprover(send)
 	app.Workspace = NewWorkspace(dir)
-	app.Facts = facts.New()
-	app.Missions = mission.New()
 	if cfg.Record != nil && cfg.Record.Path != "" {
 		m, err := recordMode(cfg.Record.Mode)
 		if err != nil {
@@ -200,24 +205,20 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 		return nil, err
 	}
 	app.Store = &jsonl.Store{Dir: sessions}
+	var sess *session.Session
 	if opts.Resume != "" {
-		if app.Session, err = app.Store.Load(ctx, opts.Resume); err != nil {
+		if sess, err = app.Store.Load(ctx, opts.Resume); err != nil {
 			return nil, fmt.Errorf("resume %s: %w", opts.Resume, err)
 		}
-		if err := app.Facts.Restore(app.Session); err != nil {
-			return nil, err
-		}
-		if err := app.Missions.Restore(app.Session); err != nil {
-			return nil, err
-		}
 	} else {
-		app.Session = session.New()
-		app.Session.SetModel(app.Primary.Model)
+		sess = session.New()
+		sess.SetModel(app.Primary.Model)
 	}
-	app.Facts.Attach(app.Session)
-	app.Missions.Attach(app.Session)
-	app.Facts.OnChange(func(c facts.Change) { send(FactMsg{Change: c}) })
-	app.Missions.OnChange(func(c mission.Change) { send(MissionMsg{Mission: c.Mission, Op: c.Op}) })
+	first, err := app.live(sess)
+	if err != nil {
+		return nil, err
+	}
+	app.Session, app.Facts, app.Missions = first.Session, first.Facts, first.Missions
 	app.Saver = NewSaver(app.Store, send)
 	if err := app.buildTools(ctx, dir, root); err != nil {
 		return nil, err
@@ -228,6 +229,12 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	app.PreImage = &PreImage{Files: app.Files}
 	app.Control = NewController(send, app.Pump)
 	app.Control.Saver, app.Control.Meter, app.Control.Workspace, app.Control.Missions, app.Control.Subagents = app.Saver, app.Meter, app.Workspace, app.Missions, app.Subagents
+	app.Control.MissionsOf = func(sess *session.Session) *mission.Store {
+		if l := app.LiveOf(sess); l != nil {
+			return l.Missions
+		}
+		return nil
+	}
 	app.MCP = NewMCP(send, app.Tools)
 	app.MCP.Options.Roots = []mcp.Root{{URI: "file://" + filepath.ToSlash(root), Name: filepath.Base(root)}}
 	for _, s := range cfg.MCP {
@@ -246,9 +253,12 @@ func (a *App) open(ctx context.Context, t Target) (Endpoint, error) {
 			t.Profile = DefaultProfile
 		}
 	}
-	prof, ok := profiles.Find(t.Profile, a.Profiles)
+	prof, ok := a.FindProfile(t.Profile)
 	if !ok {
 		return Endpoint{}, fmt.Errorf("profile %q is not known, built in ones are %s", t.Profile, strings.Join(profileNames(), ", "))
+	}
+	if prof.Disabled {
+		return Endpoint{}, fmt.Errorf("profile %s is turned off", prof.Name)
 	}
 	prov, err := prof.Open(ctx)
 	if err != nil {
@@ -285,30 +295,6 @@ func profileNames() []string {
 		out = append(out, p.Name)
 	}
 	return out
-}
-
-// Loads extra profile lists and the user list over the built in ones, the last default any file names winning
-func loadProfiles(cfg Config) ([]profiles.Profile, string, error) {
-	var out []profiles.Profile
-	var def string
-	for _, path := range cfg.ProfileFiles {
-		f, err := profiles.ReadFile(path)
-		if err != nil {
-			return nil, "", err
-		}
-		out = profiles.Merge(out, f.Profiles)
-		if f.Default != "" {
-			def = f.Default
-		}
-	}
-	user, err := profiles.ReadUser()
-	if err != nil {
-		return nil, "", err
-	}
-	if user.Default != "" {
-		def = user.Default
-	}
-	return profiles.Merge(out, user.Profiles), def, nil
 }
 
 func recordMode(s string) (record.Mode, error) {
@@ -382,13 +368,20 @@ func (a *App) buildTools(_ context.Context, dir, root string) error {
 		}
 	}
 	a.Subagents = &subagent.Tool{MaxDepth: cfg.Subagents.MaxDepth, Parallel: cfg.Subagents.Parallel, Timeout: seconds(cfg.Subagents.Timeout), Factory: a.childFactory}
-	return a.Tools.Add(facts.Tool{Store: a.Facts}, mission.Tool{Store: a.Missions}, a.Subagents)
+	for _, name := range cfg.Tools.Disabled {
+		a.Tools.SetEnabled(name, false)
+	}
+	return a.Tools.Add(facts.Tool{Resolve: a.factsFor}, mission.Tool{Resolve: a.missionsFor}, a.Subagents)
 }
 
 // Builds a child agent on a fresh session labeled with its parent, on the subagent endpoint ahead of the fallbacks
 func (a *App) childFactory(ctx context.Context) (*agent.Agent, error) {
 	sess := session.New()
-	sess.Label("parent", a.Session.ID())
+	parent := a.Session.ID()
+	if l := a.LiveOfRun(RunFrom(ctx)); l != nil {
+		parent = l.Session.ID()
+	}
+	sess.Label("parent", parent)
 	sess.Label("agent", policy.AgentFrom(ctx))
 	child := a.NewAgent("", sess)
 	child.Model = a.chain(a.children)
@@ -495,7 +488,9 @@ func (a *App) Close(ctx context.Context) error {
 		a.Approver.Close()
 		a.MCP.Close()
 		a.Shell.Close()
-		a.Saver.Flush(a.Session)
+		for _, l := range a.Lives() {
+			a.Saver.Flush(l.Session)
+		}
 		a.Saver.Wait()
 		if a.Cassette != nil {
 			err = a.Cassette.Save()
@@ -510,32 +505,24 @@ func (a *App) Close(ctx context.Context) error {
 	return err
 }
 
-// Makes sess the live session, rebuilding facts, missions, their tools and the meter from its records
+// Replaces the selected session with sess, releasing the old one
 func (a *App) adopt(sess *session.Session) error {
-	a.Saver.Flush(a.Session)
-	a.Session = sess
-	a.Facts = facts.New()
-	a.Missions = mission.New()
-	if err := a.Facts.Restore(sess); err != nil {
+	old := a.Current()
+	l, err := a.live(sess)
+	if err != nil {
 		return err
 	}
-	if err := a.Missions.Restore(sess); err != nil {
-		return err
-	}
-	a.Facts.Attach(sess)
-	a.Missions.Attach(sess)
-	a.Facts.OnChange(func(c facts.Change) { a.send(FactMsg{Change: c}) })
-	a.Missions.OnChange(func(c mission.Change) { a.send(MissionMsg{Mission: c.Mission, Op: c.Op}) })
-	a.Control.Missions = a.Missions
+	a.Select(l)
 	a.Meter.Reset()
-	a.Tools.Remove(facts.ToolName)
-	a.Tools.Remove(mission.ToolName)
-	return a.Tools.Add(facts.Tool{Store: a.Facts}, mission.Tool{Store: a.Missions})
+	if old != nil {
+		return a.Release(old)
+	}
+	return nil
 }
 
-// Switches the session to a stored one, restoring its facts and missions
+// Switches the selected session to a stored one, restoring its facts and missions
 func (a *App) Switch(ctx context.Context, id string) error {
-	if a.Control.Busy() {
+	if cur := a.Current(); cur != nil && a.Busy(cur) {
 		return errors.New("harness: a run is in progress")
 	}
 	sess, err := a.Store.Load(ctx, id)
@@ -545,9 +532,9 @@ func (a *App) Switch(ctx context.Context, id string) error {
 	return a.adopt(sess)
 }
 
-// Starts a new empty session, keeping the stores of the old one on disk
+// Starts a new empty session in place of the selected one, which stays on disk
 func (a *App) Fresh() error {
-	if a.Control.Busy() {
+	if cur := a.Current(); cur != nil && a.Busy(cur) {
 		return errors.New("harness: a run is in progress")
 	}
 	sess := session.New()
@@ -555,9 +542,9 @@ func (a *App) Fresh() error {
 	return a.adopt(sess)
 }
 
-// Forks the current session at an entry count and switches to the fork with the facts and missions it kept
+// Forks the selected session at an entry count and selects the fork with the facts and missions it kept
 func (a *App) ForkAt(n int) (*session.Session, error) {
-	if a.Control.Busy() {
+	if cur := a.Current(); cur != nil && a.Busy(cur) {
 		return nil, errors.New("harness: a run is in progress")
 	}
 	f := a.Session.Fork()

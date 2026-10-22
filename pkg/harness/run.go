@@ -186,14 +186,16 @@ type Controller struct {
 	Missions  *mission.Store
 	// Subagent tool whose children the controller can cancel and steer
 	Subagents *subagent.Tool
-	send      Sender
-	mu        sync.Mutex
-	runs      map[string]*Run
-	order     []string
-	active    map[*agent.Agent]bool
-	next      int
-	Clock     func() time.Time
-	wg        sync.WaitGroup
+	// Mission store of a session, the shared one when nil or when it answers nil
+	MissionsOf func(*session.Session) *mission.Store
+	send       Sender
+	mu         sync.Mutex
+	runs       map[string]*Run
+	order      []string
+	active     map[*agent.Agent]bool
+	next       int
+	Clock      func() time.Time
+	wg         sync.WaitGroup
 }
 
 func NewController(send Sender, pump *Pump) *Controller {
@@ -221,8 +223,8 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 	c.runs[id] = r
 	c.order = append(c.order, id)
 	c.mu.Unlock()
-	if missionID != "" && c.Missions != nil {
-		c.Missions.Assign(missionID, a.Name)
+	if store := c.missionsOf(a.Session); missionID != "" && store != nil {
+		store.Assign(missionID, a.Name)
 	}
 	rctx = WithRun(rctx, id)
 	rctx = mission.WithID(rctx, missionID)
@@ -465,4 +467,14 @@ func (c *Controller) Busy() bool {
 		}
 	}
 	return false
+}
+
+// Mission store runs on the session plan into
+func (c *Controller) missionsOf(sess *session.Session) *mission.Store {
+	if c.MissionsOf != nil {
+		if store := c.MissionsOf(sess); store != nil {
+			return store
+		}
+	}
+	return c.Missions
 }

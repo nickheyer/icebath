@@ -566,3 +566,16 @@ func TestParallelToolEndsArriveAsTheyFinish(t *testing.T) {
 		t.Fatalf("%v", ends)
 	}
 }
+
+func TestRunTakesEveryRoundUnlessALimitIsSet(t *testing.T) {
+	var turns []protocol.Response
+	for i := range 80 {
+		turns = append(turns, callTurn(string(rune('a'+i%26))+string(rune('0'+i/26)), "add", `{"a":1,"b":1}`))
+	}
+	turns = append(turns, textTurn("done"))
+	a := &Agent{Model: &script{responses: turns}, ModelID: "m", Tools: registry(t), Session: session.New(), Gate: policy.Gate{Policy: policy.AllowAll}}
+	resp, err := a.Run(context.Background(), nil, nil)
+	if err != nil || resp.Text() != "done" {
+		t.Fatalf("eighty tool rounds run to the end without a limit %v %q", err, resp.Text())
+	}
+}

@@ -3,15 +3,12 @@ package web
 import (
 	"html"
 	"net/url"
-	"regexp"
 	"strings"
 )
 
 var (
-	blockTags   = map[string]bool{"p": true, "div": true, "br": true, "tr": true, "section": true, "article": true, "header": true, "footer": true, "nav": true, "ul": true, "ol": true, "table": true, "blockquote": true, "hr": true, "main": true, "aside": true, "form": true, "dd": true, "dt": true}
-	skipTags    = map[string]bool{"script": true, "style": true, "noscript": true, "template": true, "svg": true}
-	multiSpace  = regexp.MustCompile(`[ \t\r\f\v]+`)
-	multiBreaks = regexp.MustCompile(`\n{3,}`)
+	blockTags = map[string]bool{"p": true, "div": true, "br": true, "tr": true, "section": true, "article": true, "header": true, "footer": true, "nav": true, "ul": true, "ol": true, "table": true, "blockquote": true, "hr": true, "main": true, "aside": true, "form": true, "dd": true, "dt": true}
+	skipTags  = map[string]bool{"script": true, "style": true, "noscript": true, "template": true, "svg": true}
 )
 
 const verbatim = "\x00"
@@ -97,7 +94,7 @@ func TextFrom(doc string, base *url.URL) string {
 			}
 		case name == "a":
 			if closing {
-				text := strings.TrimSpace(multiSpace.ReplaceAllString(linkText.String(), " "))
+				text := strings.TrimSpace(collapseSpace(linkText.String()))
 				switch {
 				case link == "":
 					out.WriteString(text)
@@ -148,7 +145,7 @@ func TextFrom(doc string, base *url.URL) string {
 		out.WriteString(verbatim)
 	}
 	text := normalize(out.String())
-	if t := strings.TrimSpace(multiSpace.ReplaceAllString(title.String(), " ")); t != "" {
+	if t := strings.TrimSpace(collapseSpace(title.String())); t != "" {
 		return "# " + t + "\n\n" + text
 	}
 	return text
@@ -168,11 +165,11 @@ func normalize(text string) string {
 		}
 		lines := strings.Split(part, "\n")
 		for j, l := range lines {
-			lines[j] = strings.TrimSpace(multiSpace.ReplaceAllString(l, " "))
+			lines[j] = strings.TrimSpace(collapseSpace(l))
 		}
-		sb.WriteString(multiBreaks.ReplaceAllString(strings.Join(lines, "\n"), "\n\n"))
+		sb.WriteString(collapseBreaks(strings.Join(lines, "\n")))
 	}
-	return strings.TrimSpace(multiBreaks.ReplaceAllString(sb.String(), "\n\n"))
+	return strings.TrimSpace(collapseBreaks(sb.String()))
 }
 
 // Makes href absolute against base, leaving it as written when there is no base or it does not parse
@@ -266,18 +263,13 @@ func closeOf(doc string, from int, name string) int {
 	return from + k + end + 1
 }
 
-var metaCharset = regexp.MustCompile(`(?i)<meta[^>]+charset=["']?\s*([A-Za-z0-9_.:-]+)`)
-
 // Charset named by a meta element in the head of an HTML document
 func sniffCharset(doc []byte) string {
 	head := doc
 	if len(head) > 4096 {
 		head = head[:4096]
 	}
-	if m := metaCharset.FindSubmatch(head); m != nil {
-		return strings.ToLower(string(m[1]))
-	}
-	return ""
+	return strings.ToLower(metaCharset(string(head)))
 }
 
 // Title of an HTML document as plain text
@@ -296,5 +288,80 @@ func title(doc string) string {
 	if end < 0 {
 		return ""
 	}
-	return strings.TrimSpace(multiSpace.ReplaceAllString(html.UnescapeString(rest[:end]), " "))
+	return strings.TrimSpace(collapseSpace(html.UnescapeString(rest[:end])))
+}
+
+// Squeezes every run of blanks and tabs into one space
+func collapseSpace(s string) string {
+	var sb strings.Builder
+	sb.Grow(len(s))
+	inRun := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v' {
+			if !inRun {
+				sb.WriteByte(' ')
+				inRun = true
+			}
+			continue
+		}
+		inRun = false
+		sb.WriteByte(c)
+	}
+	return sb.String()
+}
+
+// Squeezes every run of three or more line breaks into two
+func collapseBreaks(s string) string {
+	var sb strings.Builder
+	sb.Grow(len(s))
+	breaks := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\n' {
+			breaks++
+			if breaks <= 2 {
+				sb.WriteByte(c)
+			}
+			continue
+		}
+		breaks = 0
+		sb.WriteByte(c)
+	}
+	return sb.String()
+}
+
+// Charset value of the first meta element that names one, empty when none does
+func metaCharset(doc string) string {
+	lower := strings.ToLower(doc)
+	for from := 0; from < len(lower); {
+		at := strings.Index(lower[from:], "<meta")
+		if at < 0 {
+			return ""
+		}
+		at += from
+		end := strings.IndexByte(lower[at:], '>')
+		if end < 0 {
+			end = len(lower) - at
+		}
+		tag := lower[at : at+end]
+		if i := strings.Index(tag, "charset="); i >= 0 {
+			value := tag[i+len("charset="):]
+			value = strings.TrimLeft(value, `"' `+"\t\r\n")
+			j := 0
+			for j < len(value) {
+				c := value[j]
+				if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '.' || c == ':' || c == '-' {
+					j++
+					continue
+				}
+				break
+			}
+			if j > 0 {
+				return value[:j]
+			}
+		}
+		from = at + end
+	}
+	return ""
 }

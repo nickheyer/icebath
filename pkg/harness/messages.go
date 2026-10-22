@@ -97,13 +97,15 @@ type SavedMsg struct {
 	Err  error
 }
 
-// Fact store change
+// Fact store change of one session
 type FactMsg struct {
-	Change facts.Change
+	Session string
+	Change  facts.Change
 }
 
-// Mission store change
+// Mission store change of one session
 type MissionMsg struct {
+	Session string
 	Mission mission.Mission
 	Op      mission.Op
 }

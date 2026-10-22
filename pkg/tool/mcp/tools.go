@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
@@ -61,14 +60,22 @@ type CallData struct {
 	Structured json.RawMessage
 }
 
-var unsafeName = regexp.MustCompile(`[^A-Za-z0-9_-]`)
+// Replaces every character outside letters, digits, underscores and dashes with an underscore
+func safeName(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			return r
+		}
+		return '_'
+	}, s)
+}
 
 // Longest local name a protocol accepts
 const maxName = 64
 
 // Builds the local name of a server tool, mcp, the server label and the tool name joined by double underscores
 func ToolName(server, name string) string {
-	full := "mcp__" + unsafeName.ReplaceAllString(server, "_") + "__" + unsafeName.ReplaceAllString(name, "_")
+	full := "mcp__" + safeName(server) + "__" + safeName(name)
 	if len(full) <= maxName {
 		return full
 	}

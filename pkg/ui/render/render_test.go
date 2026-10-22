@@ -1,10 +1,13 @@
 package render
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -192,7 +195,7 @@ func TestTableFitsWidth(t *testing.T) {
 	rows := [][]string{{"alpha", "1", "running"}, {"beta-longer-name", "22", "idle"}, {"short"}}
 	out := Table(cols, rows, 40, 1, th)
 	lines := strings.Split(ansi.Strip(out), "\n")
-	if len(lines) != 4 {
+	if len(lines) != 3+TableHead {
 		t.Fatalf("%v", lines)
 	}
 	for _, l := range lines {
@@ -200,7 +203,7 @@ func TestTableFitsWidth(t *testing.T) {
 			t.Fatalf("line too wide: %q", l)
 		}
 	}
-	if !strings.Contains(lines[0], "NAME") || !strings.HasSuffix(strings.TrimRight(lines[1], " "), "run…") || !strings.Contains(lines[2], "22") {
+	if !strings.Contains(lines[0], "NAME") || !strings.HasPrefix(lines[1], "──") || !strings.HasSuffix(strings.TrimRight(lines[2], " "), "run…") || !strings.HasPrefix(lines[3], "▸") || !strings.Contains(lines[3], "22") {
 		t.Fatalf("%v", lines)
 	}
 	tight := strings.Split(ansi.Strip(Table(cols, rows, 12, -1, th)), "\n")
@@ -215,5 +218,42 @@ func TestTableFitsWidth(t *testing.T) {
 	noFlex := Table([]Column{{Title: "A"}, {Title: "B"}}, [][]string{{"1", "2"}}, 4, 0, th)
 	if ansi.StringWidth(strings.Split(ansi.Strip(noFlex), "\n")[0]) > 4 {
 		t.Fatal("fixed columns cut from the end")
+	}
+	marked := strings.Split(ansi.Strip(TableMarked(cols, rows, 40, 1, func(i int) bool { return i != 2 }, nil, th)), "\n")
+	if !strings.HasPrefix(marked[2], "▪") || !strings.HasPrefix(marked[3], "▸") || strings.HasPrefix(marked[4], "▪") {
+		t.Fatalf("marked rows carry a tick, the cursor its arrow %v", marked)
+	}
+}
+
+func TestSelectedRowKeepsItsBackgroundPastStyledCells(t *testing.T) {
+	th := theme.Blackwall()
+	cols := []Column{{Title: "NAME"}, {Title: "STATE"}}
+	out := Table(cols, [][]string{{"idk", Good("on", th)}}, 30, 0, th)
+	buf := uv.NewScreenBuffer(30, 3)
+	uv.NewStyledString(out).Draw(buf, buf.Bounds())
+	same := func(a, b color.Color) bool {
+		if a == nil || b == nil {
+			return false
+		}
+		ar, ag, ab, _ := a.RGBA()
+		br, bg, bb, _ := b.RGBA()
+		return ar == br && ag == bg && ab == bb
+	}
+	for x := range 30 {
+		if c := buf.CellAt(x, 2); c == nil || !same(c.Style.Bg, th.Steel) {
+			t.Fatalf("cell %d of the selected row lost the row background %+v", x, c)
+		}
+	}
+	xs, _ := Columns(cols, [][]string{{"idk", "on"}}, 30)
+	if c := buf.CellAt(xs[1], 2); c == nil || c.Content != "o" || !same(c.Style.Fg, th.Alive) {
+		t.Fatalf("a styled cell keeps its own color %+v", c)
+	}
+	painted := Paint(lipgloss.NewStyle().Background(th.Steel), "a\x1b[0mb\x1b[mc")
+	buf = uv.NewScreenBuffer(3, 1)
+	uv.NewStyledString(painted).Draw(buf, buf.Bounds())
+	for x := range 3 {
+		if c := buf.CellAt(x, 0); c == nil || !same(c.Style.Bg, th.Steel) {
+			t.Fatalf("paint restarts the style after either reset, cell %d %+v", x, c)
+		}
 	}
 }

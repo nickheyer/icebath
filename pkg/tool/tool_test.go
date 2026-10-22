@@ -289,3 +289,26 @@ func TestRunEachReportsAsCallsFinish(t *testing.T) {
 		t.Fatalf("%+v", outs[2])
 	}
 }
+
+func TestToolsTurnOffAndOn(t *testing.T) {
+	var r Registry
+	changed := 0
+	r.OnChange(func() { changed++ })
+	r.Add(Func{Name: "a", Parameters: []byte(`{"type":"object"}`), Fn: func(context.Context, json.RawMessage) (Result, error) { return Text("ran"), nil }})
+	r.SetEnabled("a", false)
+	r.SetEnabled("later", false)
+	if r.Enabled("a") || !r.Enabled("b") || len(r.Definitions()) != 0 || len(r.Names()) != 1 || changed != 3 {
+		t.Fatalf("an off tool leaves the definitions but stays registered %v %d", r.Names(), changed)
+	}
+	if got := r.Disabled(); len(got) != 2 || got[0] != "a" || got[1] != "later" {
+		t.Fatalf("off names sorted, registered or not %v", got)
+	}
+	out := r.Run(context.Background(), protocol.ToolCall{ID: "1", Name: "a"})
+	if !out.IsError || !strings.Contains(protocol.Response{Content: out.Content}.Text(), "turned off") {
+		t.Fatalf("a call to an off tool is refused %+v", out)
+	}
+	r.SetEnabled("a", true)
+	if out := r.Run(context.Background(), protocol.ToolCall{ID: "2", Name: "a"}); out.IsError || len(r.Definitions()) != 1 {
+		t.Fatal("a tool turned back on runs")
+	}
+}

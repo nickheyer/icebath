@@ -43,8 +43,11 @@ func ReadUser() (Document, error) {
 	return f, err
 }
 
-// Profiles from the user file, none when the file does not exist
+// Profiles from the user file with templates applied, none when the file does not exist
 func LoadUser() ([]Profile, error) {
 	f, err := ReadUser()
-	return f.Profiles, err
+	if err != nil {
+		return nil, err
+	}
+	return f.Expanded()
 }

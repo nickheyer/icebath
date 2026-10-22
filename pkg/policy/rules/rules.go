@@ -236,9 +236,9 @@ func (r Rule) String() string {
 
 // Lists of rules by decision, the shape of a permissions block
 type Set struct {
-	Allow []string `json:"allow"`
-	Deny  []string `json:"deny"`
-	Ask   []string `json:"ask"`
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
+	Ask   []string `json:"ask,omitempty"`
 }
 
 // Reads a permissions block from JSON, nested under permissions or at the top level
@@ -370,6 +370,19 @@ func (p *Policy) Remove(decision policy.Decision, rule string) bool {
 		p.changed()
 	}
 	return removed
+}
+
+// Swaps every rule for the sets compiled in order, keeping the old rules when one is malformed
+func (p *Policy) Reset(sets ...Set) error {
+	fresh, err := New(sets...)
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	p.rules = fresh.rules
+	p.mu.Unlock()
+	p.changed()
+	return nil
 }
 
 // Drops every rule

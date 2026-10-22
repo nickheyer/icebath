@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -123,20 +122,18 @@ func LoadCatalogFile(path string) ([]Model, error) {
 }
 
 var (
-	datedSuffix = regexp.MustCompile(`-(20\d{6})(-v\d+(:\d+)?)?$`)
-	versionTail = regexp.MustCompile(`(@\d{8}|-v\d+:\d+|-latest|-preview)$`)
-	routePrefix = regexp.MustCompile(`^(us|eu|apac|global|jp|au|ca)\.`)
-	vendorHead  = regexp.MustCompile(`^(anthropic|openai|google|mistralai|mistral|meta|amazon|bedrock|vertex)[./]`)
+	routePrefixes = []string{"us", "eu", "apac", "global", "jp", "au", "ca"}
+	vendorHeads   = []string{"anthropic", "openai", "google", "mistralai", "mistral", "meta", "amazon", "bedrock", "vertex"}
 )
 
 // Reduces a vendor or router specific model id to the bare id the catalog keys on
 func Normalize(id string) string {
 	id = strings.TrimSpace(strings.ToLower(id))
-	id = routePrefix.ReplaceAllString(id, "")
-	id = vendorHead.ReplaceAllString(id, "")
+	id = trimRoute(id)
+	id = trimVendor(id)
 	id = strings.TrimPrefix(id, "models/")
-	id = versionTail.ReplaceAllString(id, "")
-	id = datedSuffix.ReplaceAllString(id, "")
+	id = trimVersion(id)
+	id = trimDate(id)
 	id = strings.ReplaceAll(id, ".", "-")
 	id = strings.TrimSuffix(id, "-0")
 	return id
@@ -188,4 +185,88 @@ func Enrich(models []Model) []Model {
 		out[i] = m
 	}
 	return out
+}
+
+// Drops a leading region route such as us. or global.
+func trimRoute(id string) string {
+	for _, p := range routePrefixes {
+		if strings.HasPrefix(id, p+".") {
+			return id[len(p)+1:]
+		}
+	}
+	return id
+}
+
+// Drops a leading vendor name followed by a dot or slash
+func trimVendor(id string) string {
+	for _, v := range vendorHeads {
+		if strings.HasPrefix(id, v+".") || strings.HasPrefix(id, v+"/") {
+			return id[len(v)+1:]
+		}
+	}
+	return id
+}
+
+// Drops one trailing snapshot marker, an @ date, a -vN:M version, -latest or -preview
+func trimVersion(id string) string {
+	for _, tail := range []string{"-latest", "-preview"} {
+		if strings.HasSuffix(id, tail) {
+			return id[:len(id)-len(tail)]
+		}
+	}
+	if at := strings.LastIndexByte(id, '@'); at >= 0 && allDigits(id[at+1:]) && len(id)-at-1 == 8 {
+		return id[:at]
+	}
+	if v := strings.LastIndex(id, "-v"); v >= 0 && versionPair(id[v+2:]) {
+		return id[:v]
+	}
+	return id
+}
+
+// Drops a trailing -20YYMMDD date, with any -vN or -vN:M after it
+func trimDate(id string) string {
+	for i := 0; i < len(id); i++ {
+		if id[i] == '-' && datedTail(id[i+1:]) {
+			return id[:i]
+		}
+	}
+	return id
+}
+
+// Reports whether s is a 20YYMMDD date alone or followed by -vN or -vN:M
+func datedTail(s string) bool {
+	if len(s) < 8 || !strings.HasPrefix(s, "20") || !allDigits(s[:8]) {
+		return false
+	}
+	rest := s[8:]
+	if rest == "" {
+		return true
+	}
+	if !strings.HasPrefix(rest, "-v") {
+		return false
+	}
+	rest = rest[2:]
+	n, m, hasColon := strings.Cut(rest, ":")
+	if !allDigits(n) {
+		return false
+	}
+	return !hasColon || allDigits(m)
+}
+
+// Reports whether s is digits, a colon and digits
+func versionPair(s string) bool {
+	n, m, ok := strings.Cut(s, ":")
+	return ok && allDigits(n) && allDigits(m)
+}
+
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

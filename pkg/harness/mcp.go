@@ -15,9 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool/mcp"
 )
 
-// Log lines kept per manager
-const DefaultMCPLog = 500
-
 // One MCP server as configuration names it, over stdio when a command is given and streamable HTTP when a URL is
 type ServerConfig struct {
 	Name    string            `json:"name"`
@@ -93,8 +90,6 @@ type MCP struct {
 	mu       sync.Mutex
 	servers  map[string]*managed
 	order    []string
-	log      []LogLine
-	MaxLog   int
 	Clock    func() time.Time
 	wg       sync.WaitGroup
 }
@@ -218,18 +213,7 @@ func (m *MCP) logLine(server, level, logger string, data json.RawMessage) {
 	if json.Unmarshal(data, &s) == nil {
 		text = s
 	}
-	line := LogLine{Time: m.Clock(), Server: server, Level: level, Logger: logger, Text: text}
-	m.mu.Lock()
-	limit := m.MaxLog
-	if limit <= 0 {
-		limit = DefaultMCPLog
-	}
-	m.log = append(m.log, line)
-	if len(m.log) > limit {
-		m.log = m.log[len(m.log)-limit:]
-	}
-	m.mu.Unlock()
-	m.send(MCPLogMsg{Line: line})
+	m.send(MCPLogMsg{Line: LogLine{Time: m.Clock(), Server: server, Level: level, Logger: logger, Text: text}})
 }
 
 // Closes the server and opens it again
@@ -296,13 +280,6 @@ func (m *MCP) Status() []ServerStatus {
 		out = append(out, st)
 	}
 	return out
-}
-
-// Recent log lines, oldest first
-func (m *MCP) Log() []LogLine {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]LogLine(nil), m.log...)
 }
 
 // Closes every server and waits for background work to finish

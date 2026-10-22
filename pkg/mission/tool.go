@@ -24,6 +24,8 @@ const schema = `{"type":"object","properties":{
 // Tool that replaces the plan of the mission the calling run serves
 type Tool struct {
 	Store *Store
+	// Store of the calling run, used ahead of Store when set
+	Resolve func(context.Context) *Store
 }
 
 func (Tool) Definition() protocol.Tool {
@@ -39,7 +41,8 @@ func (Tool) Annotations() tool.Annotations {
 }
 
 func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
-	if t.Store == nil {
+	store := t.store(ctx)
+	if store == nil {
 		return tool.Error("mission: no store configured"), nil
 	}
 	id := IDFrom(ctx)
@@ -65,12 +68,12 @@ func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if active > 1 {
 		return tool.Error("only one step may be active"), nil
 	}
-	m, err := t.Store.SetPlan(id, in.Steps)
+	m, err := store.SetPlan(id, in.Steps)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}
 	if in.Note != "" {
-		if m, err = t.Store.SetNote(id, in.Note); err != nil {
+		if m, err = store.SetNote(id, in.Note); err != nil {
 			return tool.Error(err.Error()), nil
 		}
 	}
@@ -83,3 +86,13 @@ func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 }
 
 var _ tool.Tool = Tool{}
+
+// Store the call plans into, resolved from the context when a resolver is set
+func (t Tool) store(ctx context.Context) *Store {
+	if t.Resolve != nil {
+		if s := t.Resolve(ctx); s != nil {
+			return s
+		}
+	}
+	return t.Store
+}

@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"hash/fnv"
 	"image/color"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -27,8 +25,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool/files"
 	"github.com/nickheyer/icebath/pkg/tool/shell"
 	"github.com/nickheyer/icebath/pkg/tool/web"
-	"github.com/nickheyer/icebath/pkg/ui/deck"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Lines a collapsed tool result or read shows before it is cut
@@ -103,9 +101,11 @@ type Transcript struct {
 	lineBlock []int
 	blockLine []int
 	cursor    int
-	searching bool
-	query     string
-	matches   int
+	search    searchBar
+	found     []match
+	current   int
+	seek      bool
+	themed    string
 	tick      int
 	ticking   bool
 	streaming bool
@@ -119,26 +119,23 @@ type Transcript struct {
 	Agent string
 	// Accepts only root events when no agent is named
 	rootOnly bool
-	colors   map[string]color.Color
+	// Actions whose keys cap the scrollbar
+	pages [2]string
+	// Whether the last view had room for the scrollbar
+	bar bool
 }
 
-var (
-	tScroll = key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "scroll"))
-	tTurns  = key.NewBinding(key.WithKeys("[", "]"), key.WithHelp("[/]", "turns"))
-	tOpen   = key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "expand"))
-	tSearch = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search"))
-	tFollow = key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "follow"))
-	tThink  = key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "thinking"))
-)
+// One search match on a transcript line, in cells
+type match struct {
+	line, start, end int
+}
 
 // Builds the transcript of the root lineage
 func NewTranscript(env *Env) *Transcript {
 	vp := viewport.New()
 	vp.MouseWheelEnabled = true
 	vp.SoftWrap = false
-	vp.HighlightStyle = lipgloss.NewStyle().Background(env.Theme.Accent).Foreground(env.Theme.Bg)
-	vp.SelectedHighlightStyle = lipgloss.NewStyle().Background(env.Theme.Pulse).Foreground(env.Theme.Bg)
-	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, vp: vp, follow: true, cursor: -1, rootOnly: true, colors: map[string]color.Color{}}
+	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, vp: vp, follow: true, cursor: -1, current: -1, rootOnly: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}}
 }
 
 // Builds a transcript that follows one child agent of a run
@@ -147,6 +144,7 @@ func NewChildTranscript(env *Env, run, agentName string) *Transcript {
 	tr.name = "TRACE " + agentName
 	tr.key = "trace:" + run + "/" + agentName
 	tr.Run, tr.Agent, tr.rootOnly = run, agentName, false
+	tr.pages = [2]string{"transcript.page.up", "transcript.page.down"}
 	return tr
 }
 
@@ -155,16 +153,7 @@ func (tr *Transcript) Glyph() string       { return "≋" }
 func (tr *Transcript) Key() string         { return tr.key }
 func (tr *Transcript) Init() tea.Cmd       { return nil }
 func (tr *Transcript) Selectable() bool    { return true }
-func (tr *Transcript) Capturing() bool     { return tr.searching }
 func (tr *Transcript) MinSize() (int, int) { return 24, 4 }
-
-func (tr *Transcript) Hints() []key.Binding {
-	return []key.Binding{tScroll, tTurns, tOpen, tSearch, tFollow, tThink}
-}
-
-func (tr *Transcript) Claims() []string {
-	return []string{"j", "k", "g", "G", "/", "n", "N", "[", "]", "o", ".", ",", "e", "E", "T", "f", "space", "pgup", "pgdown", "ctrl+d", "ctrl+u", "home", "end"}
-}
 
 // Every block in order
 func (tr *Transcript) Blocks() int { return len(tr.blocks) }
@@ -184,7 +173,7 @@ func (tr *Transcript) accepts(msg harness.EventMsg) bool {
 	return true
 }
 
-func (tr *Transcript) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
+func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
 	case harness.EventMsg:
 		if !tr.accepts(msg) {
@@ -207,25 +196,28 @@ func (tr *Transcript) Update(msg tea.Msg) (deck.Card, tea.Cmd) {
 		}
 		tr.ticking = false
 		return tr, nil
-	case deck.FocusMsg:
+	case wm.FocusMsg:
 		if !msg.Focused {
-			tr.searching = false
+			tr.search.Accept()
 		}
 		return tr, nil
-	case tea.KeyPressMsg:
-		return tr, tr.keyPress(msg)
 	case tea.MouseWheelMsg:
 		var cmd tea.Cmd
 		tr.vp, cmd = tr.vp.Update(msg)
 		tr.follow = tr.vp.AtBottom()
 		return tr, cmd
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft {
-			line := tr.vp.YOffset() + msg.Y
-			if line >= 0 && line < len(tr.lineBlock) {
-				tr.cursor = tr.lineBlock[line]
-				tr.toggle(tr.cursor)
-			}
+		if msg.Button != tea.MouseLeft {
+			return tr, nil
+		}
+		if tr.gutterShown() && msg.X > tr.w {
+			tr.clickGutter(msg.Y)
+			return tr, nil
+		}
+		line := tr.vp.YOffset() + msg.Y
+		if line >= 0 && line < len(tr.lineBlock) {
+			tr.cursor = tr.lineBlock[line]
+			tr.toggle(tr.cursor)
 		}
 		return tr, nil
 	}
@@ -244,107 +236,165 @@ func (tr *Transcript) tickCmd() tea.Cmd {
 	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return transcriptTick{} })
 }
 
-func (tr *Transcript) keyPress(msg tea.KeyPressMsg) tea.Cmd {
-	if tr.searching {
-		switch msg.String() {
-		case "enter":
-			tr.searching = false
-			tr.applySearch()
-		case "esc":
-			tr.searching = false
-			tr.query = ""
-			tr.vp.ClearHighlights()
-			tr.matches = 0
-		case "backspace":
-			if len(tr.query) > 0 {
-				tr.query = tr.query[:len(tr.query)-1]
-			}
-		default:
-			if msg.Text != "" {
-				tr.query += msg.Text
-			}
-		}
-		return nil
-	}
-	switch msg.String() {
-	case "j", "down":
-		tr.vp.ScrollDown(1)
-	case "k", "up":
-		tr.vp.ScrollUp(1)
-	case "ctrl+d", "pgdown", "space":
-		tr.vp.HalfPageDown()
-	case "ctrl+u", "pgup":
-		tr.vp.HalfPageUp()
-	case "g", "home":
-		tr.vp.GotoTop()
-	case "G", "end":
-		tr.vp.GotoBottom()
-	case "/":
-		tr.searching = true
-		tr.query = ""
-	case "n":
-		tr.vp.HighlightNext()
-	case "N":
-		tr.vp.HighlightPrevious()
-	case "[":
-		tr.jumpTurn(-1)
-	case "]":
-		tr.jumpTurn(1)
-	case ".":
-		tr.moveCursor(1)
-	case ",":
-		tr.moveCursor(-1)
-	case "o", "enter":
-		if tr.cursor < 0 {
-			tr.cursor = tr.nearest()
-		}
-		tr.toggle(tr.cursor)
-	case "e":
-		tr.expandAll(true)
-	case "E":
-		tr.expandAll(false)
-	case "T":
-		tr.thinking = !tr.thinking
-		tr.invalidate(bThinking)
-	case "f":
-		tr.follow = !tr.follow
-		if tr.follow {
-			tr.vp.GotoBottom()
-		}
-	default:
-		return nil
+// Scrolls by n lines, down when positive
+func (tr *Transcript) ScrollBy(n int) {
+	if n > 0 {
+		tr.vp.ScrollDown(n)
+	} else {
+		tr.vp.ScrollUp(-n)
 	}
 	tr.follow = tr.vp.AtBottom()
-	return nil
 }
 
+// Scrolls a page down when d is positive and up otherwise
+func (tr *Transcript) Page(d int) {
+	if d > 0 {
+		tr.vp.PageDown()
+	} else {
+		tr.vp.PageUp()
+	}
+	tr.follow = tr.vp.AtBottom()
+}
+
+// Scrolls to the first line
+func (tr *Transcript) Top() {
+	tr.vp.GotoTop()
+	tr.follow = tr.vp.AtBottom()
+}
+
+// Follows new lines or holds the view still
+func (tr *Transcript) ToggleFollow() {
+	if tr.follow {
+		tr.follow = false
+		return
+	}
+	tr.Follow()
+}
+
+// Carries out a search bar action, live matching as the query changes
+func (tr *Transcript) SearchAction(id string) {
+	switch id {
+	case "search.accept":
+		tr.search.Accept()
+	case "search.close":
+		tr.search.Close()
+		tr.applySearch()
+	case "search.next":
+		tr.NextMatch(1)
+	case "search.prev":
+		tr.NextMatch(-1)
+	default:
+		if tr.search.Action(id) {
+			tr.applySearch()
+		}
+	}
+}
+
+// Types text into the search bar and matches it at once
+func (tr *Transcript) SearchType(text string) {
+	tr.search.Type(text)
+	tr.applySearch()
+}
+
+// Searches again from the top of the view, now when the lines are laid out and else on the next view
 func (tr *Transcript) applySearch() {
-	tr.vp.ClearHighlights()
-	tr.matches = 0
-	if tr.query == "" {
+	tr.current = -1
+	tr.seek = true
+	if !tr.dirty {
+		tr.settle()
+	}
+}
+
+// Finds the matches, picks one at or below the view top when none is current and shows it after a search
+func (tr *Transcript) settle() {
+	tr.find()
+	if tr.current < 0 {
+		top := tr.vp.YOffset()
+		for i, m := range tr.found {
+			if m.line >= top {
+				tr.current = i
+				break
+			}
+		}
+		if tr.current < 0 && len(tr.found) > 0 {
+			tr.current = 0
+		}
+	}
+	tr.paint()
+	if tr.seek {
+		tr.seek = false
+		tr.showMatch()
+	}
+}
+
+// Matches of the query on the plain text of every line
+func (tr *Transcript) find() {
+	tr.found = tr.found[:0]
+	q := tr.search.Query()
+	if q == "" {
 		return
 	}
-	re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(tr.query))
-	if err != nil {
-		return
-	}
-	content := ansi.Strip(strings.Join(tr.lines, "\n"))
-	found := re.FindAllStringIndex(content, -1)
-	tr.matches = len(found)
-	if len(found) == 0 {
-		return
-	}
-	plain := make([]string, len(tr.lines))
 	for i, l := range tr.lines {
-		plain[i] = ansi.Strip(l)
+		plain := ansi.Strip(l)
+		for _, r := range findAll(plain, q) {
+			tr.found = append(tr.found, match{line: i, start: ansi.StringWidth(plain[:r[0]]), end: ansi.StringWidth(plain[:r[1]])})
+		}
 	}
-	tr.vp.SetContentLines(plain)
-	tr.vp.SetHighlights(found)
-	tr.follow = false
+	if tr.current >= len(tr.found) {
+		tr.current = len(tr.found) - 1
+	}
+}
+
+// Hands the viewport the lines with every match lit and the current one lit brighter, keeping their colors
+func (tr *Transcript) paint() {
+	t := tr.env.Theme
+	if len(tr.found) == 0 {
+		tr.vp.SetContentLines(tr.lines)
+		return
+	}
+	lit := lipgloss.NewStyle().Background(t.Accent).Foreground(t.Bg)
+	hot := lipgloss.NewStyle().Background(t.Pulse).Foreground(t.Bg).Bold(true)
+	out := append([]string(nil), tr.lines...)
+	for i := 0; i < len(tr.found); {
+		line := tr.found[i].line
+		var ranges []lipgloss.Range
+		for ; i < len(tr.found) && tr.found[i].line == line; i++ {
+			st := lit
+			if i == tr.current {
+				st = hot
+			}
+			ranges = append(ranges, lipgloss.NewRange(tr.found[i].start, tr.found[i].end, st))
+		}
+		out[line] = lipgloss.StyleRanges(tr.lines[line], ranges...)
+	}
+	tr.vp.SetContentLines(out)
+}
+
+// Brings the current match into view
+func (tr *Transcript) showMatch() {
+	if tr.current < 0 || tr.current >= len(tr.found) {
+		return
+	}
+	line := tr.found[tr.current].line
+	if line < tr.vp.YOffset() || line >= tr.vp.YOffset()+tr.vp.Height() {
+		tr.vp.SetYOffset(max(line-tr.vp.Height()/3, 0))
+	}
+	tr.follow = tr.vp.AtBottom()
+}
+
+// Moves to the next match when d is positive and the previous otherwise, wrapping
+func (tr *Transcript) NextMatch(d int) {
+	n := len(tr.found)
+	if n == 0 {
+		return
+	}
+	tr.current = ((tr.current+d)%n + n) % n
+	tr.paint()
+	tr.showMatch()
 }
 
 // Block cursor moved by d, scrolled into view
-func (tr *Transcript) moveCursor(d int) {
+func (tr *Transcript) MoveCursor(d int) {
 	if len(tr.blocks) == 0 {
 		return
 	}
@@ -375,7 +425,7 @@ func (tr *Transcript) reveal(i int) {
 }
 
 // Moves to the previous or next user or assistant turn boundary
-func (tr *Transcript) jumpTurn(d int) {
+func (tr *Transcript) JumpTurn(d int) {
 	if len(tr.blocks) == 0 {
 		return
 	}
@@ -392,6 +442,14 @@ func (tr *Transcript) jumpTurn(d int) {
 	} else {
 		tr.vp.GotoBottom()
 	}
+}
+
+// Expands or folds the block under the cursor, picking the block nearest the top when none is
+func (tr *Transcript) Toggle() {
+	if tr.cursor < 0 {
+		tr.cursor = tr.nearest()
+	}
+	tr.toggle(tr.cursor)
 }
 
 func (tr *Transcript) toggle(i int) {
@@ -464,6 +522,7 @@ func (tr *Transcript) Apply(ev agent.Event) {
 	case agent.EventToolStart:
 		b := tr.toolBlock(ev.Call, ev.Agent, ev.Round, at)
 		b.started = at
+		b.partial = ""
 		b.cacheKey = ""
 		tr.running++
 		tr.dirty = true
@@ -587,6 +646,9 @@ func (tr *Transcript) model(ev agent.Event) {
 	case protocol.EventTextEnd, protocol.EventThinkingEnd, protocol.EventToolCallEnd:
 		if b, ok := tr.turn[ev.Model.Index]; ok {
 			b.done = true
+			if ev.Model.Type == protocol.EventToolCallEnd {
+				b.partial = ""
+			}
 			b.cacheKey = ""
 		}
 	}
@@ -792,15 +854,10 @@ func (tr *Transcript) agentColor(name string) color.Color {
 	if name == "" {
 		return t.Ice
 	}
-	if c, ok := tr.colors[name]; ok {
-		return c
-	}
 	palette := []color.Color{t.Ice, t.Pulse, t.Alive, t.Accent}
 	h := fnv.New32a()
 	h.Write([]byte(name))
-	c := palette[int(h.Sum32())%len(palette)]
-	tr.colors[name] = c
-	return c
+	return palette[int(h.Sum32())%len(palette)]
 }
 
 // Lines of the whole transcript at width, deterministic for the same blocks and state
@@ -880,7 +937,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 		text, extras := partsText(b.parts)
 		shown := wrap(text)
 		if !b.full && len(shown) > previewLines {
-			shown = append(shown[:previewLines], "  "+render.Dim(fmt.Sprintf("… %d more lines, o to show", len(shown)-previewLines), t))
+			shown = append(shown[:previewLines], "  "+render.Dim(fmt.Sprintf("… %d more lines, click to show", len(shown)-previewLines), t))
 		}
 		lines = append(lines, shown...)
 		for _, e := range extras {
@@ -905,8 +962,10 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 			lines = append(lines, "  "+l)
 		}
 	case bThinking:
-		n := len([]rune(b.text))
-		head := render.Dim(fmt.Sprintf("· thinking %s", render.Tokens(n/4)), t)
+		head := render.Dim("· thinking", t)
+		if n := len([]rune(b.text)) / 4; n > 0 {
+			head += render.Dim(" · ~"+render.Tokens(n)+" tokens", t)
+		}
 		if !b.done {
 			head += " " + render.Dim(render.Spinner(tr.tick, t), t)
 		}
@@ -1121,10 +1180,6 @@ func (tr *Transcript) toolLines(mark string, b *block, width, body int) []string
 		lines = append(lines, "  "+render.Hot("✗ "+render.Truncate(b.err.Error(), body-2), t))
 		return lines
 	}
-	if b.result == nil && b.partial != "" && !b.done {
-		lines = append(lines, "  "+render.Dim(render.Truncate(b.partial, body-2), t))
-		return lines
-	}
 	if b.result == nil && b.partial != "" {
 		tail := render.Lines(b.partial)
 		if len(tail) > 6 {
@@ -1165,7 +1220,7 @@ func (tr *Transcript) toolLines(mark string, b *block, width, body int) []string
 		limit = len(bodyLines)
 	}
 	if len(bodyLines) > limit {
-		bodyLines = append(bodyLines[:limit], render.Dim(fmt.Sprintf("… %d more lines, o to show all", len(bodyLines)-limit), t))
+		bodyLines = append(bodyLines[:limit], render.Dim(fmt.Sprintf("… %d more lines, click to show all", len(bodyLines)-limit), t))
 	}
 	for _, l := range bodyLines {
 		lines = append(lines, "  "+l)
@@ -1184,9 +1239,9 @@ func (tr *Transcript) resultStat(b *block) string {
 			return fmt.Sprintf("%d of %d lines", len(d.Lines), d.Total)
 		}
 	case files.GlobData:
-		return fmt.Sprintf("%d matches", d.Total)
+		return render.Count(d.Total, "match")
 	case files.GrepData:
-		return fmt.Sprintf("%d hits in %d files", d.Total, len(d.Files))
+		return render.Count(d.Total, "hit") + " in " + render.Count(len(d.Files), "file")
 	case shell.Run:
 		return fmt.Sprintf("exit %d", d.ExitCode)
 	case web.Page:
@@ -1275,55 +1330,177 @@ func (tr *Transcript) resultLines(b *block, width int) []string {
 }
 
 func (tr *Transcript) View(w, h int) string {
-	if w != tr.w || h != tr.h {
-		tr.w, tr.h = w, h
-		tr.vp.SetWidth(w)
+	t := tr.env.Theme
+	gw := 0
+	if w >= minGutterWidth {
+		gw = 2
+	}
+	tr.bar = gw > 0
+	cw := w - gw
+	if cw != tr.w || h != tr.h || t.Name != tr.themed {
+		tr.w, tr.h, tr.themed = cw, h, t.Name
+		tr.vp.SetWidth(cw)
 		tr.vp.SetHeight(h)
 		tr.dirty = true
 		for _, b := range tr.blocks {
 			b.cacheKey = ""
 		}
 	}
+	if len(tr.blocks) == 0 {
+		return tr.idle(w, h)
+	}
 	if tr.dirty {
-		tr.lines = tr.Lines(w)
-		tr.vp.SetContentLines(tr.lines)
-		if tr.query != "" && !tr.searching {
-			tr.applySearch()
-		}
+		tr.lines = tr.Lines(cw)
+		tr.dirty = false
+		tr.settle()
 		if tr.follow {
 			tr.vp.GotoBottom()
 		}
-		tr.dirty = false
 	}
-	if tr.searching {
-		t := tr.env.Theme
-		prompt := lipgloss.NewStyle().Foreground(t.Accent).Render("/") + lipgloss.NewStyle().Foreground(t.Text).Render(tr.query)
-		if h <= 1 {
-			return prompt
+	body := tr.vp.View()
+	if gw == 0 {
+		return body
+	}
+	return tr.gutter().beside(body, w, t)
+}
+
+// Narrowest transcript that still gets a scrollbar
+const minGutterWidth = 12
+
+// Reports whether the last view drew the scrollbar
+func (tr *Transcript) gutterShown() bool { return tr.bar && len(tr.blocks) > 0 }
+
+// Scrollbar for the view, capped with the page keys and ticked at turn starts and matches
+func (tr *Transcript) gutter() gutter {
+	g := gutter{h: tr.h, total: len(tr.lines), offset: tr.vp.YOffset(), visible: tr.h, up: tr.env.Keys.First(tr.pages[0]), down: tr.env.Keys.First(tr.pages[1])}
+	for i, b := range tr.blocks {
+		if b.kind == bUser && i < len(tr.blockLine) {
+			g.marks = append(g.marks, tr.blockLine[i])
 		}
-		tr.vp.SetHeight(h - 1)
-		out := tr.vp.View() + "\n" + render.Fit(prompt, w)
-		tr.vp.SetHeight(h)
-		return out
 	}
-	return tr.vp.View()
+	for _, m := range tr.found {
+		g.hits = append(g.hits, m.line)
+	}
+	return g
+}
+
+// Pages or jumps for a click on row y of the scrollbar
+func (tr *Transcript) clickGutter(y int) {
+	switch hit, line := tr.gutter().hit(y); hit {
+	case hitPageUp:
+		tr.Page(-1)
+	case hitPageDown:
+		tr.Page(1)
+	case hitJump:
+		tr.vp.SetYOffset(line)
+		tr.follow = tr.vp.AtBottom()
+	}
 }
 
 func (tr *Transcript) Status() string {
 	var parts []string
 	if tr.turns > 0 {
-		parts = append(parts, fmt.Sprintf("%d turns", tr.turns))
+		parts = append(parts, render.Count(tr.turns, "turn"))
 	}
 	switch {
 	case tr.streaming:
 		parts = append(parts, "streaming")
 	case tr.running > 0:
-		parts = append(parts, fmt.Sprintf("%d tools", tr.running))
+		parts = append(parts, render.Count(tr.running, "tool"))
 	case !tr.follow:
 		parts = append(parts, "paused")
 	}
-	if tr.query != "" && !tr.searching {
-		parts = append(parts, fmt.Sprintf("%d matches", tr.matches))
+	if tr.search.Query() != "" {
+		parts = append(parts, render.Count(len(tr.found), "match"))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// Reports whether typed text goes to the search line
+func (tr *Transcript) Searching() bool { return tr.search.Active() }
+
+// Opens the search bar, keeping the last query
+func (tr *Transcript) Search() {
+	tr.search.Open()
+	tr.applySearch()
+}
+
+// Search bar row at width with the place of the current match among all of them
+func (tr *Transcript) SearchView(w int, placeholder string) string {
+	count := ""
+	if q := tr.search.Query(); q != "" {
+		count = "no match"
+		if len(tr.found) > 0 {
+			count = fmt.Sprintf("%d/%d", tr.current+1, len(tr.found))
+		}
+	}
+	return tr.search.View(w, count, placeholder, tr.env.Theme)
+}
+
+// Reports whether the search bar shows, while it takes typing or holds a query
+func (tr *Transcript) SearchShown() bool { return tr.search.Active() || tr.search.Query() != "" }
+
+// Column of the terminal cursor inside the search bar
+func (tr *Transcript) SearchCursor() int { return tr.search.CursorX() }
+
+// Reports whether the viewport follows new lines
+func (tr *Transcript) Following() bool { return tr.follow }
+
+// Reports whether a turn is streaming or a tool is running
+func (tr *Transcript) Busy() bool { return tr.streaming || tr.running > 0 }
+
+// Shows or hides thinking blocks
+func (tr *Transcript) ShowThinking(on bool) {
+	tr.thinking = on
+	tr.invalidate(bThinking)
+}
+
+// Reports whether thinking blocks are shown
+func (tr *Transcript) Thinking() bool { return tr.thinking }
+
+// Expands or folds every tool result
+func (tr *Transcript) ExpandAll(on bool) { tr.expandAll(on) }
+
+// Scrolls to the newest line and follows from there
+func (tr *Transcript) Follow() {
+	tr.follow = true
+	tr.vp.GotoBottom()
+}
+
+// Byte ranges of every case insensitive occurrence of query in content
+func findAll(content, query string) [][]int {
+	if query == "" {
+		return nil
+	}
+	hay, needle := strings.ToLower(content), strings.ToLower(query)
+	if len(hay) != len(content) {
+		hay, needle = content, query
+	}
+	var out [][]int
+	for from := 0; from <= len(hay)-len(needle); {
+		i := strings.Index(hay[from:], needle)
+		if i < 0 {
+			break
+		}
+		start := from + i
+		out = append(out, []int{start, start + len(needle)})
+		from = start + len(needle)
+	}
+	return out
+}
+
+// Model named as waiting while the transcript is empty
+func (tr *Transcript) idle(w, h int) string {
+	t := tr.env.Theme
+	if !tr.rootOnly {
+		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, render.Dim("waiting for the agent", t))
+	}
+	model := "model"
+	if tr.env.Primary != nil {
+		if id := tr.env.Primary().Model; id != "" {
+			model = id
+		}
+	}
+	line := lipgloss.NewStyle().Foreground(t.TextDim).Render("◌ ") + lipgloss.NewStyle().Foreground(t.Ice).Render(model) + lipgloss.NewStyle().Foreground(t.TextDim).Render(" awaiting a prompt")
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, line)
 }

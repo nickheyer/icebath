@@ -80,9 +80,6 @@ type Event struct {
 	Usage protocol.Usage
 }
 
-// Rounds of tool calls one Run may make before giving up
-const DefaultMaxRounds = 50
-
 // Output budget sent when the agent names none
 const DefaultMaxTokens = 8192
 
@@ -215,6 +212,7 @@ type Agent struct {
 	MaxTokens   int
 	Temperature *float64
 	Extra       map[string]json.RawMessage
+	// Model turns one Run may take, unlimited when zero
 	MaxRounds   int
 	Hooks       []Hook
 	mu          sync.Mutex
@@ -328,9 +326,6 @@ func (a *Agent) Run(ctx context.Context, input []protocol.Part, observe func(Eve
 	ctx = WithObserver(ctx, observe)
 	ctx = policy.WithAgent(ctx, a.Name)
 	rounds := a.MaxRounds
-	if rounds <= 0 {
-		rounds = DefaultMaxRounds
-	}
 	if a.Session.Model() == "" {
 		a.Session.SetModel(a.ModelID)
 	}
@@ -396,7 +391,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 			if cont == nil {
 				return resp, nil
 			}
-			if *round >= rounds {
+			if rounds > 0 && *round >= rounds {
 				return resp, fmt.Errorf("agent: %d rounds reached", rounds)
 			}
 			continued = true
@@ -408,7 +403,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 		if len(calls) == 0 {
 			return resp, errors.New("agent: stop reason tool_use with no tool calls")
 		}
-		if *round >= rounds {
+		if rounds > 0 && *round >= rounds {
 			limit := fmt.Errorf("agent: %d tool rounds reached", rounds)
 			results := make([]protocol.ToolResult, len(calls))
 			for i, call := range calls {
