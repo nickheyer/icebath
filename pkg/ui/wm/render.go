@@ -176,13 +176,19 @@ func (m *Model) paintWorkspace(ws *Workspace, dx int, shown bool) {
 	}
 }
 
-// Dim invitation in the middle of a stage holding no cards
+// Dim invitation in the middle of a stage holding no cards, naming the key of every bound hint action
 func (m *Model) paintEmpty(dx int, veil float64) {
 	t := m.theme
-	text := "nothing open"
-	if k := keys.Format(m.keys.First("palette")); k != "" {
-		text += " " + t.Glyphs.Sep + " " + k + " for commands"
+	parts := []string{"nothing open"}
+	for _, id := range m.empty {
+		a, ok := m.keys.Action(id)
+		k := keys.Format(m.keys.First(id))
+		if !ok || k == "" {
+			continue
+		}
+		parts = append(parts, k+" "+a.Label)
 	}
+	text := strings.Join(parts, " "+t.Glyphs.Sep+" ")
 	st := m.stage()
 	tw := ansi.StringWidth(text)
 	if st.W < tw+2 || st.H < 1 {
@@ -308,15 +314,25 @@ func (m *Model) paintRing(face screen, e *entry, p placed) {
 
 // Content cells of a card at the given size and dim, rebuilt only when the card, size, or dim changed
 func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
-	if e.dirty || e.raw.Buffer == nil || e.raw.Width() != w || e.raw.Height() != h {
-		if e.raw.Buffer == nil {
+	fresh := e.raw.Buffer == nil
+	resized := !fresh && (e.raw.Width() != w || e.raw.Height() != h)
+	switch {
+	case resized && m.holding(e):
+		e.raw.Resize(w, h)
+		e.dirty, e.dim, e.view = true, -1, ""
+	case fresh || resized || e.dirty:
+		if fresh {
 			e.raw = screen{uv.NewBuffer(w, h)}
 		} else {
 			e.raw.Resize(w, h)
 		}
-		e.raw.Clear()
-		uv.NewStyledString(e.card.View(w, h)).Draw(e.raw, e.raw.Bounds())
-		e.dirty, e.dim = false, -1
+		view := e.card.View(w, h)
+		if fresh || resized || view != e.view {
+			e.raw.Clear()
+			uv.NewStyledString(view).Draw(e.raw, e.raw.Bounds())
+			e.view, e.dim = view, -1
+		}
+		e.dirty = false
 	}
 	if e.dim != dim {
 		if e.tinted.Buffer == nil {
@@ -331,6 +347,11 @@ func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
 		e.dim = dim
 	}
 	return e.tinted.Buffer
+}
+
+// Reports whether a card keeps its last drawing clipped to its frame while its size moves or the screen just resized
+func (m *Model) holding(e *entry) bool {
+	return m.settling() || m.motion > 0 && !(e.rect.W.Settled() && e.rect.H.Settled())
 }
 
 // Gives content the surface background and fades it toward the surface by dim, keeping links intact
@@ -452,21 +473,27 @@ func (m *Model) paintSelection(buf screen) {
 	}
 }
 
-// Darkens every stage cell by the share of the veil drawn so the overlay stands out
+// Darkens every cell but the field a palette types into by the veil share so the overlay stands out
 func (m *Model) paintBackdrop(amount float64) {
 	if m.theme.Plain {
 		return
 	}
 	dim := backdropDim * amount
 	shade := m.memo(func(c color.Color) color.Color { return theme.Shade(c, dim) })
-	for y := barHeight; y < m.height; y++ {
+	fx, fw := m.fieldBox()
+	open := m.docked() != nil
+	for y := 0; y < m.height; y++ {
 		for x := 0; x < m.width; x++ {
+			field := open && y < barHeight && x >= fx-1 && x <= fx+fw
+			if field && x >= fx && x < fx+fw {
+				continue
+			}
 			c := m.buf.CellAt(x, y)
 			if c == nil || c.Width == 0 {
 				continue
 			}
 			c.Style.Bg = shade(or(c.Style.Bg, m.theme.Bg))
-			if c.Style.Fg != nil {
+			if c.Style.Fg != nil && !field {
 				c.Style.Fg = shade(c.Style.Fg)
 			}
 		}
@@ -677,8 +704,14 @@ func (m *Model) ring(n int) []color.Color {
 	return r
 }
 
-// Terminal cursor of the overlay or the focused card translated into screen space, or nil when hidden
+// Terminal cursor of the palette input, else of the overlay or focused card in screen space, nil when hidden
 func (m *Model) cursor() *tea.Cursor {
+	if m.docked() != nil {
+		if m.caret < 0 {
+			return nil
+		}
+		return tea.NewCursor(m.caret, 0)
+	}
 	e := m.overlay
 	if e == nil {
 		e = m.focused()

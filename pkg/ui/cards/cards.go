@@ -107,6 +107,11 @@ type SubmitMsg struct {
 	Text    string
 }
 
+// Session card the manager closed, its session to be stored and released
+type SessionClosedMsg struct {
+	Session string
+}
+
 // Slash command a session composer parsed
 type CommandMsg struct {
 	Session string

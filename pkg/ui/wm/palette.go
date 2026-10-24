@@ -1,8 +1,10 @@
 package wm
 
 import (
+	"image/color"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -32,18 +34,20 @@ type scored struct {
 	hits  []int
 }
 
-// Fuzzy picker shown as the overlay, listing commands, choices, or taking a line of text when it has no items
+// Fuzzy picker typed into from the bar field with its matches hanging below, a line of text without items
 type Palette struct {
-	theme    theme.Theme
-	items    []Item
-	query    string
-	cursor   int
-	matches  []scored
-	sel      int
+	theme   theme.Theme
+	items   []Item
+	query   string
+	cursor  int
+	matches []scored
+	sel     int
+	// First match row shown, kept so the list scrolls only when the selection leaves it or the wheel turns
+	top      int
 	commands bool
 	w        int
 	rows     int
-	// Row of the highlight below the input line, gliding after the selection
+	// Row of the highlight, gliding after the selection
 	hl          anim.Value
 	glide       bool
 	Placeholder string
@@ -66,7 +70,7 @@ func NewPrompt(t theme.Theme, placeholder, value string, submit func(text string
 
 // Glides the highlight toward the selected row, jumping there when motion is off
 func (p *Palette) Animate(dt float64) bool {
-	p.hl.Set(float64(p.sel - p.from()))
+	p.hl.Set(float64(p.sel - p.top))
 	if dt <= 0 {
 		changed := p.glide || p.hl.Pos != p.hl.Target
 		p.hl.Snap()
@@ -77,10 +81,10 @@ func (p *Palette) Animate(dt float64) bool {
 	return p.hl.Step(dt)
 }
 
-// Row below the input line the highlight is painted on
+// Row the highlight is painted on
 func (p *Palette) highlightRow() int {
 	if !p.glide {
-		return p.sel - p.from()
+		return p.sel - p.top
 	}
 	return int(math.Round(p.hl.Pos))
 }
@@ -103,12 +107,35 @@ func (p *Palette) Matches() []Item {
 	return out
 }
 
-// Rows the palette wants below its input line
+// Rows the sheet under the field wants, none for a prompt that lives in the field alone
 func (p *Palette) Rows() int {
 	if len(p.items) == 0 {
-		return 1
+		return 0
 	}
-	return max(len(p.matches), 1) + 1
+	return max(len(p.matches), 1)
+}
+
+// Matches out of the items
+func (p *Palette) Tally() string {
+	return strconv.Itoa(len(p.matches)) + "/" + strconv.Itoa(len(p.items))
+}
+
+// Query in w columns scrolled to keep the caret in view, the placeholder while empty, with the caret column
+func (p *Palette) Input(w int, bg color.Color) (string, int) {
+	t := p.theme
+	base := lipgloss.NewStyle().Background(bg)
+	if w <= 0 {
+		return "", 0
+	}
+	if p.query == "" {
+		return base.Foreground(t.TextDim).Render(ansi.Truncate(p.Placeholder, w, t.Glyphs.Ellipsis)), 0
+	}
+	runes := []rune(p.query)
+	from := 0
+	for from < p.cursor && ansi.StringWidth(string(runes[from:p.cursor])) >= w {
+		from++
+	}
+	return base.Foreground(t.Text).Render(ansi.Truncate(string(runes[from:]), w, "")), ansi.StringWidth(string(runes[from:p.cursor]))
 }
 
 // Score of a fuzzy subsequence match with the matched positions, negative for none
@@ -163,6 +190,7 @@ func (p *Palette) filter() {
 	if p.sel >= len(p.matches) {
 		p.sel = max(0, len(p.matches)-1)
 	}
+	p.reveal()
 }
 
 func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
@@ -178,20 +206,20 @@ func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
 		p.insert(msg.Content)
 		return p, nil
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft && msg.Y >= 1 && msg.Y-1+p.from() < len(p.matches) {
-			p.sel = msg.Y - 1 + p.from()
+		if msg.Button == tea.MouseLeft && p.onRow(msg.Y) {
+			p.sel = p.top + msg.Y
 			return p, p.pick()
 		}
 	case tea.MouseMotionMsg:
-		if msg.Button == tea.MouseNone && msg.Y >= 1 && msg.X >= 0 && msg.X < p.w && msg.Y-1+p.from() < len(p.matches) {
-			p.sel = msg.Y - 1 + p.from()
+		if msg.Button == tea.MouseNone && msg.X >= 0 && msg.X < p.w && p.onRow(msg.Y) {
+			p.sel = p.top + msg.Y
 		}
 	case tea.MouseWheelMsg:
 		switch msg.Button {
 		case tea.MouseWheelDown:
-			p.move(1)
+			p.scroll(1, msg.Y)
 		case tea.MouseWheelUp:
-			p.move(-1)
+			p.scroll(-1, msg.Y)
 		}
 	}
 	return p, nil
@@ -266,6 +294,38 @@ func (p *Palette) move(d int) {
 		return
 	}
 	p.sel = min(max(p.sel+d, 0), len(p.matches)-1)
+	p.reveal()
+}
+
+// Reports whether content row y shows a match
+func (p *Palette) onRow(y int) bool {
+	return y >= 0 && y < p.limit() && p.top+y < len(p.matches)
+}
+
+// Scrolls the list by d rows under a still pointer at row y, the highlight staying on the row under it
+func (p *Palette) scroll(d, y int) {
+	if len(p.matches) == 0 {
+		return
+	}
+	limit := p.limit()
+	p.top = min(max(p.top+d, 0), max(len(p.matches)-limit, 0))
+	if p.onRow(y) {
+		p.sel = p.top + y
+		return
+	}
+	p.sel = min(max(p.sel, p.top), min(p.top+limit, len(p.matches))-1)
+}
+
+// Scrolls the least that keeps the selection in view within the rows the matches fill
+func (p *Palette) reveal() {
+	limit := p.limit()
+	if p.sel < p.top {
+		p.top = p.sel
+	}
+	if p.sel >= p.top+limit {
+		p.top = p.sel - limit + 1
+	}
+	p.top = min(max(p.top, 0), max(len(p.matches)-limit, 0))
 }
 
 // Runs the selected item, or hands the text over on a prompt, dismissing itself unless the item showed another overlay
@@ -287,40 +347,23 @@ func (p *Palette) pick() tea.Cmd {
 	return tea.Batch(RequestDismissOf(p), run())
 }
 
-// First match row shown so the selection stays in view
-func (p *Palette) from() int {
-	limit := p.limit()
-	if p.sel >= limit {
-		return p.sel - limit + 1
-	}
-	return 0
-}
+func (p *Palette) limit() int { return max(p.rows, 1) }
 
-func (p *Palette) limit() int { return max(p.rows-1, 1) }
-
+// Match rows of the sheet, the input itself painted in the field
 func (p *Palette) View(w, h int) string {
 	p.w = w
 	p.rows = h
+	p.reveal()
 	t := p.theme
-	base := lipgloss.NewStyle().Background(t.Surface)
-	prompt := base.Foreground(t.Accent).Render(t.Glyphs.Prompt + " ")
-	text := p.query
-	if text == "" && p.Placeholder != "" {
-		text = base.Foreground(t.TextDim).Render(p.Placeholder)
-	} else {
-		text = base.Foreground(t.Text).Render(text)
-	}
-	lines := []string{ansi.Truncate(prompt+text, w, "")}
 	if len(p.items) == 0 {
-		return strings.Join(lines, "\n")
+		return ""
 	}
 	if len(p.matches) == 0 {
-		lines = append(lines, base.Foreground(t.TextDim).Render("  no match"))
-		return strings.Join(lines, "\n")
+		return lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim).Render("  no match")
 	}
-	from := p.from()
-	lit := from + p.highlightRow()
-	for i := from; i < len(p.matches) && i < from+p.limit(); i++ {
+	var lines []string
+	lit := p.top + p.highlightRow()
+	for i := p.top; i < len(p.matches) && i < p.top+p.limit(); i++ {
 		m := p.matches[i]
 		lines = append(lines, p.row(m, i == lit, w))
 	}
@@ -368,10 +411,6 @@ func (p *Palette) row(m scored, selected bool, w int) string {
 	pad := max(w-2-ansi.StringWidth(left)-rw, 1)
 	line := base.Render(" ") + left + base.Render(strings.Repeat(" ", pad)) + right + base.Render(" ")
 	return ansi.Truncate(line, w, "")
-}
-
-func (p *Palette) Cursor() *tea.Cursor {
-	return tea.NewCursor(2+p.cursor, 0)
 }
 
 // Actions the palette answers

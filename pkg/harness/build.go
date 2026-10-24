@@ -571,9 +571,7 @@ func (a *App) SetModel(id string) {
 		a.SetModelOn(cur, id)
 		return
 	}
-	a.Primary = withModel(a.Primary, id)
-	a.Model = a.chain(a.Primary)
-	a.Config.Model = id
+	a.SetDefaultModel(id)
 	a.Meter.SetCatalog(a.Primary.Catalog, a.Primary.Profile.Name)
 }
 
@@ -590,9 +588,7 @@ func (a *App) SetEndpoint(name string, ep Endpoint) error {
 	if cur := a.Current(); cur != nil {
 		return a.SetEndpointOn(cur, name, ep)
 	}
-	a.Primary = ep
-	a.Model = a.chain(ep)
-	a.Config.Profile, a.Config.Model = name, ep.Model
+	a.SetDefaultEndpoint(name, ep)
 	a.Meter.SetCatalog(ep.Catalog, ep.Profile.Name)
 	return nil
 }

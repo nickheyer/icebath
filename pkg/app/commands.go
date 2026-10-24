@@ -37,8 +37,10 @@ func (m *Model) commands() []wm.Command {
 	}
 	more := m.theme.Glyphs.Ellipsis
 	return []wm.Command{
+		{ID: "session.new", Title: "Session: new", Run: m.newSession},
+		{ID: "session.close", Title: "Session: close", When: idle, Run: func() tea.Cmd { return m.closeSession(m.current()) }},
 		{ID: "workspace.new", Title: "Workspace: new", Run: m.newWorkspace},
-		{ID: "workspace.close", Title: "Workspace: close", When: func() bool { return len(m.desks) > 1 }, Run: m.closeWorkspace},
+		{ID: "workspace.close", Title: "Workspace: close", When: func() bool { return len(m.wm.Workspaces()) > 1 }, Run: m.closeWorkspace},
 		{ID: "open", Title: "Open panel" + more, Run: m.pickPanel},
 		{ID: "keys.edit", Title: "Keybinds", Run: m.editKeys},
 		{ID: "session.open", Title: "Session: resume" + more, Run: m.pickSession},
@@ -52,6 +54,7 @@ func (m *Model) commands() []wm.Command {
 		{ID: "run.interrupt", Title: "Run: stop after tool", When: busy, Run: run("interrupt", "")},
 		{ID: "mission.start", Title: "Mission: start" + more, When: idle, Run: m.promptMission},
 		{ID: "mission.open", Title: "Mission: open" + more, When: func() bool { d := m.current(); return d != nil && d.live.Missions.Len() > 0 }, Run: m.pickMission},
+		{ID: "attention.next", Title: "Attention: next", When: func() bool { return len(m.queue(m.deskStates())) > 0 }, Run: m.dispatch},
 		{ID: "answer.allow", Title: "Approval: allow", When: pending, Run: m.answer(policy.Yes)},
 		{ID: "answer.deny", Title: "Approval: deny", When: pending, Run: m.answer(policy.No)},
 		{ID: "answer.always", Title: "Approval: always", When: pending, Run: m.answer(policy.Always)},
@@ -113,9 +116,10 @@ func (m *Model) slashCommands() []cards.Command {
 		{Name: "rename", Desc: "rename the session", Arg: "title", Action: "session.rename"},
 		{Name: "compact", Desc: "compact the transcript", Action: "session.compact"},
 		{Name: "clear", Desc: "fresh session here", Action: "session.clear"},
-		{Name: "fork", Desc: "fork the session", Action: "session.fork"},
-		{Name: "new", Desc: "new session", Action: "workspace.new"},
-		{Name: "close", Desc: "close the workspace", Action: "workspace.close"},
+		{Name: "fork", Desc: "fork the session beside it", Action: "session.fork"},
+		{Name: "new", Desc: "new session here", Action: "session.new"},
+		{Name: "close", Desc: "close this session", Action: "session.close"},
+		{Name: "workspace", Desc: "new workspace", Action: "workspace.new"},
 		{Name: "sessions", Desc: "stored sessions", Action: "open.sessions"},
 		{Name: "agents", Desc: "agents", Action: "open.agents"},
 		{Name: "findings", Desc: "findings", Action: "open.findings"},
@@ -183,9 +187,11 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 		}
 		return m.forkAt(d, d.live, d.live.Session.Len())
 	case "new":
-		return m.newWorkspace()
+		return m.newSession()
 	case "close":
-		return m.closeWorkspace()
+		return m.closeSession(d)
+	case "workspace":
+		return m.newWorkspace()
 	case "sessions":
 		return open(m.sessions)
 	case "agents":
@@ -527,15 +533,16 @@ func (m *Model) promptExport() tea.Cmd {
 	return m.prompt("path", m.exportPath(d), func(text string) tea.Cmd { return m.exportTranscript(d, strings.TrimSpace(text)) })
 }
 
-// Panels a workspace can open, by slash command name, each opened by the keymap action open.<name>
-var panels = []struct{ name, title, detail string }{
-	{"agents", "Agents", "runs"},
-	{"metrics", "Metrics", "tokens, cost, latency"},
-	{"files", "Files", "reads and edits"},
-	{"jobs", "Jobs", "shell jobs"},
-	{"findings", "Findings", "recorded facts"},
-	{"sessions", "Sessions", "stored sessions"},
-	{"config", "Config", "profiles, models, rules, hooks, mcp, tools, keys"},
+// Windows a workspace can open, by slash command name, each opened by the keymap action named
+var panels = []struct{ name, title, detail, action string }{
+	{"new", "Session", "fresh session", "session.new"},
+	{"agents", "Agents", "runs", "open.agents"},
+	{"metrics", "Metrics", "tokens, cost, latency", "open.metrics"},
+	{"files", "Files", "reads and edits", "open.files"},
+	{"jobs", "Jobs", "shell jobs", "open.jobs"},
+	{"findings", "Findings", "recorded facts", "open.findings"},
+	{"sessions", "Sessions", "stored sessions", "open.sessions"},
+	{"config", "Config", "profiles, models, rules, hooks, mcp, tools, keys", "open.config"},
 }
 
 func (m *Model) pickPanel() tea.Cmd {
@@ -544,7 +551,7 @@ func (m *Model) pickPanel() tea.Cmd {
 	for _, p := range panels {
 		name := p.name
 		var marks []string
-		if k := m.keys.Display("open." + name); k != "" {
+		if k := m.keys.Display(p.action); k != "" {
 			marks = append(marks, k)
 		}
 		open := m.panel(name) != nil && m.wm.Has(name)

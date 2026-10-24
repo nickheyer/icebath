@@ -26,7 +26,7 @@ func (m *Model) builtin() []Command {
 	hasTiles := func() bool { return m.Active() != nil && len(m.Active().tiles) > 1 }
 	hasFocus := func() bool { return m.focused() != nil }
 	out := []Command{
-		{ID: "palette", Title: "Palette", Run: m.OpenPalette},
+		{ID: "palette", Run: m.OpenPalette},
 		{ID: "workspace.next", Title: "Workspace: next", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active + 1) % len(m.spaces)) }},
 		{ID: "workspace.prev", Title: "Workspace: previous", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active - 1 + len(m.spaces)) % len(m.spaces)) }},
 		{ID: "window.focus.left", Title: "Window: focus left", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Left) }},

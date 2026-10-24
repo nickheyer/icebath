@@ -614,7 +614,7 @@ func TestTranscriptAppliesEventsAndSearches(t *testing.T) {
 	if len(tr.found) != 1 || tr.current != 0 {
 		t.Fatalf("matches as it is typed %d", len(tr.found))
 	}
-	if !strings.Contains(tr.vp.View(), "scout") {
+	if !strings.Contains(tr.View(80, 10), "scout") {
 		t.Fatal("the match is shown")
 	}
 	tr.SearchAction("search.accept")
@@ -735,33 +735,39 @@ func TestTranscriptFiltersRunsAndLoadsSessions(t *testing.T) {
 func TestSessionRoutesKeysAndOwnsRuns(t *testing.T) {
 	te := newEnv(t)
 	te.live.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "earlier"}}})
+	te.live.Endpoint = te.app.Primary
 	s := NewSession(te.env, te.live, "")
-	if s.Title() != "NEW" || s.Key() != "session:"+te.live.Session.ID() || s.Closable() || !s.Selectable() {
+	if s.Title() != "NEW" || s.Key() != "session:"+te.live.Session.ID() || !s.Closable() || !s.Selectable() {
 		t.Fatalf("identity %q %q", s.Title(), s.Key())
 	}
 	if s.Live() != te.live || s.Session() != te.live.Session || s.Transcript.Blocks() != 1 {
 		t.Fatal("session loads the live transcript")
 	}
-	number := 3
-	s.Number = func() int { return number }
-	if s.Title() != "3 ∷ NEW" {
-		t.Fatalf("the title leads with the workspace number %q", s.Title())
+	if !strings.HasSuffix(s.Status(), "claude-opus-5") {
+		t.Fatalf("the status trails with the model %q", s.Status())
+	}
+	locked := true
+	s.Locked = func() bool { return locked }
+	if s.Closable() {
+		t.Fatal("a session the app holds does not close")
+	}
+	locked = false
+	if !s.Closable() {
+		t.Fatal("an idle session closes")
+	}
+	closed, ok := find[SessionClosedMsg](run(second(s.Update(wm.ClosedMsg{}))))
+	if !ok || closed.Session != te.live.Session.ID() {
+		t.Fatalf("a closed card asks the app to store its session %+v", closed)
 	}
 	te.live.Session.SetTitle("disk usage on the box, and more words here than fit in a title")
-	if !strings.HasPrefix(s.Title(), "3 ∷ disk usage") || len([]rune(s.Title())) > 44 {
+	if !strings.HasPrefix(s.Title(), "disk usage") || len([]rune(s.Title())) > 40 {
 		t.Fatalf("title %q", s.Title())
 	}
 	te.live.Session.Rename("probe")
 	te.live.Session.SetTitle("derived again")
-	if s.Title() != "3 ∷ probe" {
+	if s.Title() != "probe" {
 		t.Fatalf("a chosen label holds against derivation %q", s.Title())
 	}
-	number = 1
-	te.env.Theme = theme.Plain()
-	if s.Title() != "1 - probe" {
-		t.Fatalf("the number follows the workspace and plain themes divide in ascii %q", s.Title())
-	}
-	te.env.Theme = theme.Blackwall()
 	te.live.Session.Rename("")
 	te.live.Session.SetTitle("disk usage")
 	run2, _ := s.Update(wm.FocusMsg{Focused: true})
@@ -878,12 +884,12 @@ func TestSessionRoutesKeysAndOwnsRuns(t *testing.T) {
 		t.Fatal("events of the owned run reach the transcript")
 	}
 	s.Update(harness.ProgressMsg{Run: "nope", Progress: tool.Progress{CallID: "x"}})
-	if s.Status() != "1 turn" {
+	if s.Status() != "1 turn ∷ claude-opus-5" {
 		t.Fatalf("status %q", s.Status())
 	}
 	s.Transcript.Top()
 	s.Composer.recall(-1)
-	if s.Status() != "1 turn ∷ paused ∷ history 1/1" {
+	if s.Status() != "1 turn ∷ paused ∷ history 1/1 ∷ claude-opus-5" {
 		t.Fatalf("status joins the transcript and the prompt %q", s.Status())
 	}
 	s.SetTheme(theme.Light())
@@ -901,12 +907,13 @@ func TestAgentCardFollowsAChildRun(t *testing.T) {
 	if strings.Count(head, "\n") != 0 || a.Status() != "running" {
 		t.Fatalf("running header %q status %q", head, a.Status())
 	}
-	if _, ok := find[agentTick](run(a.Init())); !ok {
+	tick, ok := find[tickMsg](run(a.Init()))
+	if !ok || tick.owner != &a.timer {
 		t.Fatal("running card ticks")
 	}
 	close(hold)
 	te.waitRun(t, r)
-	a.Update(agentTick{})
+	a.Update(tick)
 	head = plain(a.View(60, 2))
 	if !strings.Contains(head, "done") || a.Status() != "done" {
 		t.Fatalf("finished header %q", head)
@@ -1125,7 +1132,8 @@ func TestAgentsRosterListsRuns(t *testing.T) {
 	if len(d.Rows()) != 1 || d.Status() != "1 running" {
 		t.Fatalf("rows %d status %q", len(d.Rows()), d.Status())
 	}
-	if _, ok := find[agentsTick](run(d.Init())); !ok {
+	tick, ok := find[tickMsg](run(d.Init()))
+	if !ok || tick.owner != &d.timer {
 		t.Fatal("the agents panel ticks while a run goes")
 	}
 	view := plain(d.View(90, 6))
@@ -1169,7 +1177,9 @@ func TestAgentsRosterListsRuns(t *testing.T) {
 	if h := d.Hints(); len(h) != 3 || h[2].Label != "move" || h[1].Action != "agents.stop" {
 		t.Fatalf("hints %+v", h)
 	}
-	d.Update(agentsTick{})
+	if _, cmd := d.Update(tick); cmd != nil || d.timer.armed {
+		t.Fatal("the agents panel stops ticking once every run ended")
+	}
 }
 
 func TestSessionsListsStoredOnes(t *testing.T) {
@@ -1591,15 +1601,16 @@ func TestTelemetryShowsAttemptsAndFailovers(t *testing.T) {
 	if strings.Count(small, "\n") > 2 {
 		t.Fatalf("small view keeps to its height\n%s", small)
 	}
-	if _, ok := find[telemetryTick](run(func() tea.Cmd {
+	tick, ok := find[tickMsg](run(func() tea.Cmd {
 		_, cmd := c.Update(harness.EventMsg{Event: agent.Event{Type: agent.EventTurnStart}})
 		return cmd
-	}())); !ok {
+	}()))
+	if !ok || tick.owner != &c.timer {
 		t.Fatal("turn start begins sampling")
 	}
-	c.Update(telemetryTick{})
-	if len(c.samples) != 1 || c.ticking {
-		t.Fatalf("samples %d ticking %v", len(c.samples), c.ticking)
+	c.Update(tick)
+	if len(c.samples) != 1 || c.timer.armed {
+		t.Fatalf("samples %d armed %v", len(c.samples), c.timer.armed)
 	}
 	c.Update(harness.EventMsg{Event: agent.Event{Type: agent.EventCompactEnd}})
 	if !strings.Contains(plain(c.View(100, 20)), "compacted") {
@@ -2126,5 +2137,171 @@ func TestThoughtsMaterializeAsTheyStream(t *testing.T) {
 	late := &block{kind: bThinking, text: "stale", grown: at.Add(time.Hour), settled: 0}
 	if late.resolved(at) != 5 || (&block{kind: bThinking, text: "old"}).resolved(at) != 3 {
 		t.Fatal("thoughts timed from the future or never timed read settled")
+	}
+}
+
+// Cache keys of every block, empty for one not rendered
+func blockKeys(tr *Transcript) []string {
+	var out []string
+	for _, b := range tr.blocks {
+		out = append(out, b.cacheKey)
+	}
+	return out
+}
+
+func TestTranscriptKeepsBlocksAcrossHeightChangesAndMemoizesItsView(t *testing.T) {
+	tr := benchTranscript(3)
+	tr.View(80, 20)
+	keys := blockKeys(tr)
+	tr.View(80, 25)
+	if !slices.Equal(blockKeys(tr), keys) {
+		t.Fatal("a height change keeps every rendered block")
+	}
+	tr.View(81, 25)
+	for i, k := range blockKeys(tr) {
+		if k == keys[i] {
+			t.Fatal("a width change renders every block again")
+		}
+	}
+	first := tr.View(81, 25)
+	gen := tr.gen
+	if tr.View(81, 25) != first || tr.gen != gen {
+		t.Fatal("an unchanged transcript hands back the same view without painting again")
+	}
+	tr.ScrollBy(-3)
+	if tr.View(81, 25) == first {
+		t.Fatal("scrolling changes the view")
+	}
+	tr.Follow()
+	if tr.View(81, 25) != first {
+		t.Fatal("back at the end the view is the same again")
+	}
+}
+
+// Pending tick of a ticker, the message its last start scheduled
+func pendingTick(k *ticker) tickMsg { return tickMsg{owner: k, gen: k.gen} }
+
+func TestTicksDriveOnlyTheirOwnCard(t *testing.T) {
+	te := newEnv(t)
+	streaming := func() *Transcript {
+		tr := NewTranscript(te.env)
+		if _, cmd := tr.Update(harness.EventMsg{Event: agent.Event{Type: agent.EventTurnStart, Time: at}}); cmd == nil {
+			t.Fatal("a streaming transcript ticks")
+		}
+		return tr
+	}
+	a, b := streaming(), streaming()
+	pending := []tickMsg{pendingTick(&a.timer), pendingTick(&b.timer)}
+	for round := 0; round < 6; round++ {
+		var next []tickMsg
+		for _, tick := range pending {
+			for _, tr := range []*Transcript{a, b} {
+				if _, cmd := tr.Update(tick); cmd != nil {
+					next = append(next, pendingTick(&tr.timer))
+				}
+			}
+		}
+		if len(next) != 2 {
+			t.Fatalf("round %d leaves %d ticks pending where each streaming transcript keeps one", round, len(next))
+		}
+		pending = next
+	}
+	if a.tick != 6 || b.tick != 6 {
+		t.Fatalf("spinners advanced %d and %d times in six rounds", a.tick, b.tick)
+	}
+	lost := pendingTick(&a.timer)
+	if a.Init() == nil {
+		t.Fatal("a reopened streaming transcript starts a fresh loop")
+	}
+	if _, cmd := a.Update(lost); cmd != nil || a.tick != 6 {
+		t.Fatal("the tick of the abandoned loop is ignored")
+	}
+	if _, cmd := a.Update(pendingTick(&a.timer)); cmd == nil || a.tick != 7 {
+		t.Fatal("the fresh loop goes on")
+	}
+	hold := make(chan struct{})
+	r := te.startRun(t, hold, "done")
+	x, y := NewAgent(te.env, r), NewAgent(te.env, r)
+	if x.Init() == nil || y.Init() == nil {
+		t.Fatal("running agent cards tick")
+	}
+	if _, cmd := y.Update(pendingTick(&x.timer)); cmd != nil || y.tick != 0 {
+		t.Fatal("an agent card ignores the clock of another")
+	}
+	if _, cmd := x.Update(pendingTick(&x.timer)); cmd == nil || x.tick != 1 {
+		t.Fatal("an agent card follows its own clock")
+	}
+	close(hold)
+	te.waitRun(t, r)
+}
+
+func TestStreamingMarkdownKeepsSettledParagraphs(t *testing.T) {
+	env := &Env{Theme: theme.Blackwall(), Keys: keys.Default(), Now: time.Now}
+	tr := NewTranscript(env)
+	tr.Apply(agent.Event{Type: agent.EventRunStart, Time: at, Parts: []protocol.Part{protocol.Text{Text: "go"}}})
+	tr.Apply(agent.Event{Type: agent.EventTurnStart, Time: at})
+	stream := func(text string) {
+		resp := protocol.Response{Model: "m", Content: []protocol.Part{protocol.Text{Text: text}}}
+		tr.Apply(agent.Event{Type: agent.EventModel, Time: at, Model: protocol.Event{Type: protocol.EventTextDelta, Response: resp}})
+		tr.View(80, 30)
+	}
+	stream("First paragraph here.\n\n- one\n- two\n\nSecond paragraph that is still")
+	b := tr.blocks[len(tr.blocks)-1]
+	if b.headKey == "" || !strings.Contains(b.head, "two") || strings.Contains(b.head, "Second") {
+		t.Fatalf("the settled paragraphs ahead of the open one are rendered on their own %q", plain(b.head))
+	}
+	head := b.headKey
+	stream("First paragraph here.\n\n- one\n- two\n\nSecond paragraph that is still growing")
+	if b.headKey != head || !strings.Contains(plain(strings.Join(tr.lines, "\n")), "still growing") {
+		t.Fatal("more of the open paragraph leaves the settled render alone and shows")
+	}
+	stream("First paragraph here.\n\n- one\n- two\n\nSecond paragraph that is still growing\n\nThird opens")
+	if b.headKey == head || !strings.Contains(b.head, "growing") {
+		t.Fatal("a finished paragraph joins the settled render")
+	}
+	final := "First paragraph here.\n\n- one\n- two\n\nSecond paragraph that is still growing\n\nThird opens and closes."
+	stream(final)
+	resp := protocol.Response{Model: "m", Content: []protocol.Part{protocol.Text{Text: final}}}
+	tr.Apply(agent.Event{Type: agent.EventTurnEnd, Time: at, Response: &resp})
+	tr.View(80, 30)
+	whole := NewTranscript(env)
+	whole.Apply(agent.Event{Type: agent.EventRunStart, Time: at, Parts: []protocol.Part{protocol.Text{Text: "go"}}})
+	whole.Apply(agent.Event{Type: agent.EventTurnStart, Time: at})
+	whole.Apply(agent.Event{Type: agent.EventModel, Time: at, Model: protocol.Event{Type: protocol.EventTextDelta, Response: resp}})
+	whole.Apply(agent.Event{Type: agent.EventTurnEnd, Time: at, Response: &resp})
+	if tr.View(80, 30) != whole.View(80, 30) {
+		t.Fatal("a finished block renders as one piece, the same as one that never streamed")
+	}
+}
+
+func TestSettledCutFindsTheLastProseParagraph(t *testing.T) {
+	cases := []struct {
+		text string
+		want string
+	}{
+		{"", ""},
+		{"one paragraph only", ""},
+		{"a\n\nb", "b"},
+		{"a\n\nb\n\nc", "c"},
+		{"a\n\n- item", ""},
+		{"a\n\n* item", ""},
+		{"a\n\n1. item", ""},
+		{"a\n\n> quote", ""},
+		{"a\n\n# heading", ""},
+		{"a\n\n  indented", ""},
+		{"a\n\n*emphasis* leads", "*emphasis* leads"},
+		{"a\n\n```\ncode\n\nmore\n```\n\nafter", "after"},
+		{"a\n\n```\ncode\n\nmore", ""},
+		{"a\n\nb\n\n~~~\nx\n\ny", "b\n\n~~~\nx\n\ny"},
+	}
+	for _, c := range cases {
+		got := settledCut(c.text)
+		want := 0
+		if c.want != "" {
+			want = strings.LastIndex(c.text, c.want)
+		}
+		if got != want {
+			t.Fatalf("%q cuts at %d, want %d", c.text, got, want)
+		}
 	}
 }

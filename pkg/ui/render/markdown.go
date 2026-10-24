@@ -115,7 +115,83 @@ func (m *Markdown) Render(src string, width int, t theme.Theme) string {
 	if err != nil {
 		return src
 	}
-	return strings.TrimRight(out, "\n")
+	return compact(strings.TrimRight(out, "\n"))
+}
+
+// Drops the padding glamour puts after every line, keeping spaces that carry a background color
+func compact(out string) string {
+	lines := strings.Split(out, "\n")
+	for i, l := range lines {
+		if cut, ok := paddingStart(l); ok {
+			lines[i] = l[:cut] + "\x1b[m"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// Start of the trailing spaces and style sequences that paint nothing, false when a line has no such spaces
+func paddingStart(l string) (int, bool) {
+	end, spaces := len(l), 0
+	for end > 0 && (l[end-1] == ' ' || l[end-1] == 'm') {
+		if l[end-1] == ' ' {
+			end--
+			spaces++
+			continue
+		}
+		start := strings.LastIndex(l[:end-1], "\x1b[")
+		if start < 0 || strings.Trim(l[start+2:end-1], "0123456789;") != "" {
+			return 0, false
+		}
+		end = start
+	}
+	if spaces == 0 {
+		return 0, false
+	}
+	return max(end, lastPainted(l, end)), true
+}
+
+// Offset past the last space at or after from under a background or reverse video, zero when none is
+func lastPainted(l string, from int) int {
+	bg, last := false, 0
+	for i := 0; i < len(l); {
+		if strings.HasPrefix(l[i:], "\x1b[") {
+			if j := strings.IndexByte(l[i:], 'm'); j > 0 && strings.Trim(l[i+2:i+j], "0123456789;") == "" {
+				bg = background(bg, l[i+2:i+j])
+				i += j + 1
+				continue
+			}
+		}
+		if i >= from && l[i] == ' ' && bg {
+			last = i + 1
+		}
+		i++
+	}
+	return last
+}
+
+// Background or reverse video state after a style sequence with the parameters is applied to the state before it
+func background(bg bool, params string) bool {
+	if params == "" {
+		return false
+	}
+	parts := strings.Split(params, ";")
+	for i := 0; i < len(parts); i++ {
+		p := parts[i]
+		switch {
+		case p == "0" || p == "49" || p == "27":
+			bg = false
+		case p == "7" || p == "48" || len(p) == 2 && p[0] == '4' || len(p) == 3 && p[0] == '1' && p[1] == '0':
+			bg = true
+		}
+		if p == "38" || p == "48" || p == "58" {
+			if i+1 < len(parts) && parts[i+1] == "2" {
+				i += 4
+			} else {
+				i += 2
+			}
+		}
+	}
+	return bg
 }
 
 // Hyperlink text that opens url in terminals that follow OSC 8

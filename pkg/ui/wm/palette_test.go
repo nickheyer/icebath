@@ -1,6 +1,7 @@
 package wm
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -44,7 +45,7 @@ func TestPaletteFiltersMovesAndPicks(t *testing.T) {
 		return Item{ID: title, Title: title, Run: func() tea.Cmd { ran = append(ran, title); return nil }}
 	}
 	p := NewPalette(theme.Blackwall(), []Item{item("Window: zoom"), item("Window: float"), item("Theme"), {ID: "detail", Title: "Quiet", Detail: "mission"}})
-	if p.Rows() != 5 || len(p.Matches()) != 4 {
+	if p.Rows() != 4 || len(p.Matches()) != 4 {
 		t.Fatalf("rows %d matches %d", p.Rows(), len(p.Matches()))
 	}
 	p.Update(key('f'))
@@ -90,7 +91,7 @@ func TestPaletteFiltersMovesAndPicks(t *testing.T) {
 		t.Fatal("enter dismisses")
 	}
 	p.View(40, 10)
-	_, cmd = p.Update(tea.MouseClickMsg{X: 3, Y: 3, Button: tea.MouseLeft})
+	_, cmd = p.Update(tea.MouseClickMsg{X: 3, Y: 2, Button: tea.MouseLeft})
 	collect(cmd, 50*time.Millisecond)
 	if len(ran) != 2 || ran[1] != "Theme" {
 		t.Fatalf("click picks a row %v", ran)
@@ -117,25 +118,26 @@ func TestPaletteFiltersMovesAndPicks(t *testing.T) {
 	}
 	p.Update(key('q'))
 	p.Update(key('q'))
-	if len(p.Matches()) != 0 || p.Rows() != 2 {
+	if len(p.Matches()) != 0 || p.Rows() != 1 || p.Tally() != "0/4" {
 		t.Fatal("no match")
 	}
-	if p.Cursor() == nil || p.Cursor().X != 4 {
-		t.Fatal("cursor follows the query")
+	if _, caret := p.Input(20, theme.Blackwall().Surface); caret != 2 {
+		t.Fatalf("caret follows the query %d", caret)
 	}
 }
 
 func TestPaletteViewLightsHitsAndKeys(t *testing.T) {
 	p := NewPalette(theme.Blackwall(), []Item{{ID: "a", Title: "Window: zoom", Keys: "alt+f"}, {ID: "b", Title: "Theme", Detail: "pick a palette"}})
 	p.Placeholder = "type"
+	bg := theme.Blackwall().Surface
 	view := ansi.Strip(p.View(40, 10))
 	lines := strings.Split(view, "\n")
-	if len(lines) != 3 || !strings.Contains(lines[0], "type") || !strings.Contains(lines[1], "alt+f") || !strings.Contains(lines[2], "pick a palette") {
+	if input, _ := p.Input(20, bg); len(lines) != 2 || ansi.Strip(input) != "type" || !strings.Contains(lines[0], "alt+f") || !strings.Contains(lines[1], "pick a palette") {
 		t.Fatalf("%q", view)
 	}
 	p.Update(key('z'))
 	view = ansi.Strip(p.View(40, 10))
-	if !strings.Contains(view, "z") || strings.Contains(view, "type") {
+	if input, _ := p.Input(20, bg); ansi.Strip(input) != "z" || !strings.Contains(view, "z") || strings.Contains(view, "type") {
 		t.Fatalf("%q", view)
 	}
 	for _, line := range strings.Split(view, "\n") {
@@ -144,15 +146,68 @@ func TestPaletteViewLightsHitsAndKeys(t *testing.T) {
 		}
 	}
 	empty := NewPalette(theme.Blackwall(), nil)
-	if lines := strings.Split(empty.View(20, 5), "\n"); len(lines) != 1 {
-		t.Fatal("a prompt shows only its line")
+	if empty.View(20, 5) != "" || empty.Rows() != 0 {
+		t.Fatal("a prompt keeps no sheet")
+	}
+}
+
+func TestPaletteWheelScrollsUnderAStillPointer(t *testing.T) {
+	items := make([]Item, 40)
+	for i := range items {
+		items[i] = Item{ID: strconv.Itoa(i), Title: "item " + strconv.Itoa(i)}
+	}
+	p := NewPalette(theme.Blackwall(), items)
+	p.View(40, 10)
+	p.Update(tea.MouseMotionMsg{X: 3, Y: 3})
+	for range 15 {
+		p.Update(tea.MouseWheelMsg{X: 3, Y: 3, Button: tea.MouseWheelDown})
+	}
+	if p.top != 15 || p.sel != 18 || p.highlightRow() != 3 {
+		t.Fatalf("the list scrolls under a highlight that stays with the pointer, top %d sel %d", p.top, p.sel)
+	}
+	p.Update(tea.MouseMotionMsg{X: 4, Y: 3})
+	lines := strings.Split(ansi.Strip(p.View(40, 10)), "\n")
+	if p.top != 15 || p.sel != 18 || !strings.Contains(lines[0], "item 15") || !strings.Contains(lines[3], "item 18") {
+		t.Fatalf("a nudge of the pointer after scrolling leaves the list where it is, top %d sel %d", p.top, p.sel)
+	}
+	p.Update(ActionMsg{ID: "palette.up"})
+	if p.top != 15 || p.sel != 17 {
+		t.Fatal("moving inside the view leaves the list still")
+	}
+	for range 3 {
+		p.Update(ActionMsg{ID: "palette.up"})
+	}
+	if p.top != 14 || p.sel != 14 {
+		t.Fatalf("moving past the top scrolls one row, top %d sel %d", p.top, p.sel)
+	}
+	for range 40 {
+		p.Update(tea.MouseWheelMsg{X: 3, Y: 3, Button: tea.MouseWheelDown})
+	}
+	if p.top != 30 || p.sel != 33 {
+		t.Fatalf("the wheel stops at the last page, top %d sel %d", p.top, p.sel)
+	}
+	for range 40 {
+		p.Update(tea.MouseWheelMsg{X: 3, Y: -1, Button: tea.MouseWheelUp})
+	}
+	if p.top != 0 || p.sel != 9 {
+		t.Fatalf("off the rows the wheel keeps the selection in view, top %d sel %d", p.top, p.sel)
+	}
+	p.Update(key('3'))
+	if p.top != 0 || len(p.Matches()) != 13 {
+		t.Fatalf("filtering keeps the list inside its matches, top %d", p.top)
+	}
+	for range 5 {
+		p.Update(tea.MouseWheelMsg{X: 3, Y: 0, Button: tea.MouseWheelDown})
+	}
+	if p.top != 3 || p.sel != 3 {
+		t.Fatalf("a short list scrolls only as far as its last page, top %d sel %d", p.top, p.sel)
 	}
 }
 
 func TestPromptHandsTextOver(t *testing.T) {
 	var got string
 	p := NewPrompt(theme.Blackwall(), "name", "init", func(text string) tea.Cmd { got = text; return nil })
-	if p.Rows() != 1 || p.Query() != "init" || p.cursor != 4 {
+	if p.Rows() != 0 || p.Query() != "init" || p.cursor != 4 {
 		t.Fatal("prompt setup")
 	}
 	p.Update(key('!'))

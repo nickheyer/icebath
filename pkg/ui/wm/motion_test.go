@@ -50,6 +50,7 @@ func TestDismissedOverlayFadesOutBeforeItGoes(t *testing.T) {
 	if m.veil.Pos != 1 {
 		t.Fatalf("veil %v", m.veil.Pos)
 	}
+	first := m.Overlay().(*Palette).Matches()[0].Title
 	m.Dismiss()
 	if m.Overlay() != nil || m.Capturing() || m.parting == nil || !m.parting.closing || m.veil.Target != 0 {
 		t.Fatal("dismissal drops the overlay at once and keeps the sheet fading")
@@ -59,8 +60,8 @@ func TestDismissedOverlayFadesOutBeforeItGoes(t *testing.T) {
 		t.Fatal("keys reach the stage while the sheet fades")
 	}
 	rows := strings.Split(m.View().Content, "\n")
-	if !strings.Contains(ansi.Strip(strings.Join(rows, "\n")), "❯ command") {
-		t.Fatal("the parting sheet still paints")
+	if !strings.Contains(ansi.Strip(strings.Join(rows, "\n")), first) {
+		t.Fatalf("the parting sheet still paints its rows, %q", first)
 	}
 	settle(t, m)
 	if m.parting != nil || m.veil.Pos != 0 {
@@ -312,8 +313,9 @@ func TestRingSitsOnTheSurfaceWithNothingOutside(t *testing.T) {
 	o := m.overlay
 	og, _, lineBg := glyphAt(m, o.box.X+o.box.W/2, o.box.Y+barHeight)
 	_, _, aboveBg := glyphAt(m, o.box.X+o.box.W/2, o.box.Y+barHeight-1)
-	if og != "━" || lineBg != m.theme.Surface || aboveBg == m.theme.Bg || !darker(aboveBg, m.theme.Bg) {
-		t.Fatalf("the overlay ring sits on its surface over a dimmed stage, got %q %v %v", og, lineBg, aboveBg)
+	_, _, besideBg := glyphAt(m, o.box.X+o.box.W/2, o.box.Y+barHeight+o.box.H)
+	if og != "━" || lineBg != m.theme.Surface || aboveBg != m.theme.Surface || besideBg == m.theme.Bg || !darker(besideBg, m.theme.Bg) {
+		t.Fatalf("the sheet ring sits on its surface under the field over a dimmed stage, got %q %v %v %v", og, lineBg, aboveBg, besideBg)
 	}
 }
 
@@ -469,8 +471,12 @@ func TestEmptyStageInvitesThePalette(t *testing.T) {
 	if len(ws.entries()) != 0 {
 		t.Fatal("closed")
 	}
-	if text := ansi.Strip(m.View().Content); !strings.Contains(text, "nothing open ∷ alt+space for commands") {
+	if text := ansi.Strip(m.View().Content); !strings.Contains(text, "nothing open ∷ alt+space commands") {
 		t.Fatal("an empty stage names the palette key")
+	}
+	m.SetEmptyHints("window.zoom", "session.fork", "nope", "palette")
+	if text := ansi.Strip(m.View().Content); !strings.Contains(text, "nothing open ∷ alt+f fullscreen ∷ alt+space commands") {
+		t.Fatalf("the hints name every bound action with its key, unbound and unknown ones left out\n%s", text)
 	}
 }
 
@@ -496,11 +502,11 @@ func TestPaletteHighlightGlidesAndFollowsThePointer(t *testing.T) {
 		t.Fatalf("the highlight lands on the selection, row %d", p.highlightRow())
 	}
 	rows := strings.Split(p.View(60, 10), "\n")
-	if ansi.Strip(rows[2]) == rows[2] || strings.Contains(rows[1], "\x1b[") && rows[1] == rows[2] {
+	if ansi.Strip(rows[1]) == rows[1] || strings.Contains(rows[0], "\x1b[") && rows[0] == rows[1] {
 		t.Fatal("the lit row is styled")
 	}
 	c := m.contentRect(m.overlay.frame())
-	m.Update(tea.MouseMotionMsg{X: c.X + 4, Y: c.Y + barHeight + 4, Button: tea.MouseNone})
+	m.Update(tea.MouseMotionMsg{X: c.X + 4, Y: c.Y + barHeight + 3, Button: tea.MouseNone})
 	if p.sel != 3 {
 		t.Fatalf("the pointer picks the row under it, got %d", p.sel)
 	}
@@ -508,5 +514,56 @@ func TestPaletteHighlightGlidesAndFollowsThePointer(t *testing.T) {
 	m.Advance(1.0 / 60)
 	if p.glide || p.highlightRow() != 3 {
 		t.Fatal("motion off snaps the highlight")
+	}
+}
+
+func TestResizeHoldsDrawingsUntilTheSizeSettles(t *testing.T) {
+	m := New(WithMotion(1))
+	m.SetSize(100, 30)
+	a := newStub("a")
+	m.AddWorkspace("1", a)
+	settle(t, m)
+	m.View()
+	was := a.lastSize
+	m.SetSize(120, 40)
+	m.View()
+	if a.lastSize != was || !m.settling() {
+		t.Fatalf("a card keeps its drawing right after a resize, drawn at %v", a.lastSize)
+	}
+	settle(t, m)
+	m.View()
+	if a.lastSize == was || m.settling() {
+		t.Fatal("the card draws at its new size once the frames settle")
+	}
+	snap := still(t, 100, 30)
+	b := newStub("b")
+	snap.AddWorkspace("1", b)
+	snap.View()
+	before := b.lastSize
+	snap.SetSize(120, 40)
+	snap.View()
+	if b.lastSize == before || snap.settling() {
+		t.Fatal("with motion off a card draws at its new size at once")
+	}
+}
+
+func TestCardsHoldTheirDrawingWhileTheirFrameMoves(t *testing.T) {
+	m := New(WithMotion(1))
+	m.SetSize(100, 30)
+	a := newStub("a")
+	m.AddWorkspace("1", a)
+	settle(t, m)
+	m.View()
+	was := a.lastSize
+	m.OpenHere(newStub("b"))
+	m.Advance(1.0 / 60)
+	m.View()
+	if a.lastSize != was {
+		t.Fatal("a card whose frame is still moving keeps its drawing")
+	}
+	settle(t, m)
+	m.View()
+	if a.lastSize == was {
+		t.Fatal("the card draws at its resting size")
 	}
 }

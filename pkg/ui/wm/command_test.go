@@ -267,6 +267,9 @@ func TestPaletteListsRecentFirst(t *testing.T) {
 		if it.ID == "workspace.next" {
 			t.Fatal("commands that are not ready are left out")
 		}
+		if it.ID == "palette" {
+			t.Fatal("the palette does not offer to open itself")
+		}
 	}
 	m.OpenPalette()
 	if m.Overlay() != nil {

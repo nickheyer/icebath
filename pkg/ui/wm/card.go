@@ -88,6 +88,9 @@ type FocusMsg struct {
 	Focused bool
 }
 
+// Sent to a card once it is closed, before its frame has left the stage
+type ClosedMsg struct{}
+
 // Identity used to find a card again, its key or else its title
 func keyOf(c Card) string {
 	if k, ok := c.(Keyed); ok {

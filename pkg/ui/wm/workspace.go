@@ -33,6 +33,7 @@ type entry struct {
 	dim      float64
 	raw      screen
 	tinted   screen
+	view     string
 	hints    []hintSpan
 }
 
@@ -56,7 +57,6 @@ type Workspace struct {
 	main   int
 	tree   *node
 	urgent bool
-	busy   bool
 	shift  anim.Value
 	placed bool
 }
@@ -69,12 +69,6 @@ func (w *Workspace) MainCount() int { return max(w.main, 1) }
 
 // Reports whether the workspace asked for attention while not shown
 func (w *Workspace) Urgent() bool { return w.urgent }
-
-// Reports whether the workspace was marked busy
-func (w *Workspace) Busy() bool { return w.busy }
-
-// Marks the workspace busy, shown as a dot on its chip
-func (w *Workspace) SetBusy(on bool) { w.busy = on }
 
 // Cards in the workspace, tiles first then floats
 func (w *Workspace) Cards() []Card {

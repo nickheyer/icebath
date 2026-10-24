@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -56,10 +57,9 @@ type Options struct {
 	Version string
 }
 
-// Workspace bound to one open session with the cards built for it
+// Open session with the cards built for it, seated in whichever workspace holds its session card
 type desk struct {
 	live       *harness.Live
-	ws         *wm.Workspace
 	session    *cards.Session
 	approval   *cards.Approval
 	agents     map[string]*cards.Agent
@@ -67,19 +67,25 @@ type desk struct {
 	findings   *cards.Findings
 	mission    string
 	compacting bool
+	// Last moment its workspace was on the stage, runs ending later wait in the field
+	seen time.Time
 }
 
 // Bubble Tea model running the harness behind the window manager
 type Model struct {
-	opts     Options
-	app      *harness.App
-	relay    *relay
-	wm       *wm.Model
-	env      *cards.Env
-	keys     *keys.Map
-	keysErr  error
-	theme    theme.Theme
-	desks    []*desk
+	opts    Options
+	app     *harness.App
+	relay   *relay
+	wm      *wm.Model
+	env     *cards.Env
+	keys    *keys.Map
+	keysErr error
+	theme   theme.Theme
+	desks   []*desk
+	// Desk last focused in each workspace, which session bound commands act on while a panel holds the focus
+	recent map[*wm.Workspace]*desk
+	// Workspaces opened so far, numbering the next id
+	spaces   int
 	metrics  *cards.Telemetry
 	files    *cards.Files
 	jobs     *cards.Jobs
@@ -120,14 +126,14 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 		cancel()
 		return nil, err
 	}
-	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw}
+	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw, recent: map[*wm.Workspace]*desk{}}
 	m.keys, m.keysErr = keys.Open(filepath.Join(m.configDir(), keys.FileName))
 	m.env = m.environment()
 	m.buildManager(layout.Layout, saved)
 	m.buildCards()
 	m.restoreDesks(layout)
 	m.wm.SetCommands(m.commands())
-	m.wm.SetBar(m.bar)
+	m.wm.SetBar(m.status)
 	m.retitle()
 	return m, nil
 }
@@ -223,6 +229,7 @@ func (m *Model) buildManager(layout wm.Layout, saved bool) {
 	m.wm.OnToast(func(text string, level wm.Level) {
 		m.app.Journal.Add(journalLevel(level), "notice", text)
 	})
+	m.wm.SetEmptyHints("session.new", "open", "palette")
 	if saved {
 		m.wm.Restore(layout)
 	}
@@ -268,72 +275,106 @@ func (m *Model) panel(key string) wm.Card {
 	return nil
 }
 
-// Card a saved workspace key names for the desk, nil for one bound to a run of the last process
-func (m *Model) cardFor(d *desk, key string) wm.Card {
+// Card a saved key names, nil for one of a closed session or a run of the last process
+func (m *Model) cardFor(key string) wm.Card {
 	if c := m.panel(key); c != nil {
 		return c
 	}
 	kind, rest, _ := strings.Cut(key, ":")
 	switch kind {
+	case "session":
+		if d := m.deskOfSession(rest); d != nil {
+			return d.session
+		}
 	case "findings":
-		if rest == d.live.Session.ID() {
+		if d := m.deskOfSession(rest); d != nil {
 			return m.findingsOf(d)
 		}
 	case "mission":
 		sess, id, ok := strings.Cut(rest, ":")
-		if !ok || sess != d.live.Session.ID() {
+		if !ok {
 			return nil
 		}
-		if card, ok := m.missionOf(d, id); ok {
-			return card
+		if d := m.deskOfSession(sess); d != nil {
+			if card, ok := m.missionOf(d, id); ok {
+				return card
+			}
 		}
 	}
 	return nil
 }
 
-// Reopens the workspaces of the last run, the resumed or a fresh session standing in when none return
+// Ids of the sessions a saved workspace holds cards of, tiles before floats
+func sessionKeys(wl wm.WorkspaceLayout) []string {
+	var out []string
+	add := func(key string) {
+		if id, ok := strings.CutPrefix(key, "session:"); ok && id != "" && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	for _, t := range wl.Tiles {
+		add(t.Key)
+	}
+	for _, f := range wl.Floats {
+		add(f.Key)
+	}
+	return out
+}
+
+// Reopens the workspaces of the last run with their sessions, the resumed or a fresh one standing in when none return
 func (m *Model) restoreDesks(l layoutState) {
 	first := m.app.Current()
 	for _, wl := range l.Workspaces {
-		if wl.ID == "" || m.deskOfSession(wl.ID) != nil {
-			continue
-		}
-		live, err := m.app.Open(m.ctx, wl.ID)
-		if errors.Is(err, session.ErrNotFound) {
-			live, err = m.app.Revive(wl.ID)
-		}
-		if err != nil {
-			m.notices = append(m.notices, "workspace "+wl.ID+": "+err.Error())
-			continue
-		}
-		d, cmd := m.addDesk(live)
-		m.startup = append(m.startup, cmd, m.wm.RestoreWorkspace(d.ws, wl, func(key string) wm.Card { return m.cardFor(d, key) }))
-		if id := l.Missions[wl.ID]; id != "" {
-			if ms, ok := live.Missions.Get(id); ok && !ms.Ended() {
-				d.mission = id
+		ws, cmd := m.wm.AddWorkspace(m.workspaceID())
+		m.startup = append(m.startup, cmd)
+		for _, id := range sessionKeys(wl) {
+			if m.deskOfSession(id) != nil {
+				continue
+			}
+			live, err := m.app.Open(m.ctx, id)
+			if errors.Is(err, session.ErrNotFound) {
+				live, err = m.app.Revive(id)
+			}
+			if err != nil {
+				m.notices = append(m.notices, "session "+id+": "+err.Error())
+				continue
+			}
+			d := m.addDesk(live)
+			if mid := l.Missions[id]; mid != "" {
+				if ms, ok := live.Missions.Get(mid); ok && !ms.Ended() {
+					d.mission = mid
+				}
 			}
 		}
+		m.startup = append(m.startup, m.wm.RestoreWorkspace(ws, wl, m.cardFor))
 	}
 	resumed := m.opts.Resume != ""
-	if resumed || len(m.desks) == 0 {
-		if m.deskOfLive(first) == nil {
-			_, cmd := m.addDesk(first)
-			m.startup = append(m.startup, cmd)
+	switch {
+	case len(m.wm.Workspaces()) == 0 || (resumed && m.deskOfLive(first) == nil):
+		d := m.deskOfLive(first)
+		if d == nil {
+			d = m.addDesk(first)
 		}
-	} else if err := m.app.Release(first); err != nil {
-		m.notices = append(m.notices, err.Error())
+		_, cmd := m.wm.AddWorkspace(m.workspaceID(), d.session)
+		m.startup = append(m.startup, cmd)
+	case m.deskOfLive(first) == nil:
+		if err := m.app.Release(first); err != nil {
+			m.notices = append(m.notices, err.Error())
+		}
 	}
 	active := 0
-	if l.Active >= 0 && l.Active < len(l.Workspaces) {
-		if d := m.deskOfSession(l.Workspaces[l.Active].ID); d != nil {
-			active = m.wm.IndexOf(d.ws)
-		}
+	if l.Active >= 0 && l.Active < len(m.wm.Workspaces()) {
+		active = l.Active
 	}
 	if resumed {
-		active = m.wm.IndexOf(m.deskOfLive(first).ws)
+		d := m.deskOfLive(first)
+		active = m.wm.IndexOf(m.workspaceOf(d))
+		m.startup = append(m.startup, m.wm.Focus(d.session))
 	}
 	m.startup = append(m.startup, m.wm.Switch(active))
-	m.app.Select(m.desks[active].live)
+	if d := m.current(); d != nil {
+		m.app.Select(d.live)
+	}
 }
 
 // Layout file beside the session directory, empty when the configuration cannot place one
@@ -464,10 +505,14 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case startMsg:
-		d := m.current()
-		return m, m.submit(cards.SubmitMsg{Session: d.live.Session.ID(), Parts: []protocol.Part{protocol.Text{Text: msg.text}}, Text: msg.text})
+		d, opened := m.ensureDesk()
+		if d == nil {
+			return m, opened
+		}
+		return m, tea.Batch(opened, m.submit(cards.SubmitMsg{Session: d.live.Session.ID(), Parts: []protocol.Part{protocol.Text{Text: msg.text}}, Text: msg.text}))
 	case startMissionMsg:
-		return m, m.startMission(m.current(), msg.objective)
+		d, opened := m.ensureDesk()
+		return m, tea.Batch(opened, m.startMission(d, msg.objective))
 	case compactedMsg:
 		msg.desk.compacting = false
 		if msg.err != nil {
@@ -503,17 +548,17 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// Keeps the harness selection, title, model list and busy dots in step with the workspace on the stage
+// Keeps the harness selection, title, model list and what has been seen in step with the session on the stage
 func (m *Model) sync() tea.Cmd {
-	ws := m.wm.Active()
-	if ws == nil {
+	if m.wm.Active() == nil {
 		return nil
 	}
-	for _, d := range m.desks {
-		d.ws.SetBusy(m.app.Busy(d.live))
-		if d.ws == ws && m.app.Session != d.live.Session {
-			m.app.Select(d.live)
-		}
+	now := time.Now()
+	for _, d := range m.desksIn(m.wm.Active()) {
+		d.seen = now
+	}
+	if d := m.current(); d != nil && m.app.Session != d.live.Session {
+		m.app.Select(d.live)
 	}
 	m.retitle()
 	if m.endpoint().Profile.Name != m.listed {
@@ -571,12 +616,7 @@ func (m *Model) harnessMsg(msg tea.Msg) (tea.Cmd, bool) {
 		if d == nil {
 			return nil, true
 		}
-		cmds := []tea.Cmd{m.openFrom(d, d.approval)}
-		if d.ws != m.wm.Active() {
-			m.wm.SetUrgent(d.ws, true)
-			cmds = append(cmds, m.wm.Toast(fmt.Sprintf("approval in workspace %d", m.wm.IndexOf(d.ws)+1), wm.Warn, 0))
-		}
-		return tea.Batch(cmds...), true
+		return m.openAside(d, d.approval), true
 	case harness.ApprovalDoneMsg:
 		if m.app.Control.Busy() {
 			m.state = tea.ProgramStateWorking
@@ -584,28 +624,26 @@ func (m *Model) harnessMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	case harness.RunDoneMsg:
 		m.state = tea.ProgramStateDone
-		d := m.deskOfRun(msg.Run)
 		if msg.Err != nil {
 			m.state = tea.ProgramStateError
-			if !errors.Is(msg.Err, agent.ErrInterrupted) && !errors.Is(msg.Err, context.Canceled) {
-				cmds := []tea.Cmd{m.wm.Toast(render.Truncate(msg.Err.Error(), 80, m.theme), wm.Error, 6*time.Second)}
-				if d != nil {
-					cmds = append(cmds, m.wm.Attention(d.session, wm.Alarm))
-				}
-				return tea.Batch(cmds...), true
-			}
+		}
+		if !failed(msg.Err) {
 			return nil, true
 		}
-		if d != nil && d.ws != m.wm.Active() {
-			m.wm.SetUrgent(d.ws, true)
+		cmds := []tea.Cmd{m.wm.Toast(render.Truncate(msg.Err.Error(), 80, m.theme), wm.Error, 6*time.Second)}
+		if d := m.deskOfRun(msg.Run); d != nil {
+			cmds = append(cmds, m.wm.Attention(d.session, wm.Alarm))
 		}
-		return nil, true
+		return tea.Batch(cmds...), true
 	case harness.EventMsg:
 		switch msg.Event.Type {
 		case agent.EventRunStart:
 			m.state = tea.ProgramStateWorking
 		case agent.EventSubagentStart:
-			return m.openAgent(msg.Run + "/" + msg.Event.Call.Name), true
+			if d, card := m.agentCard(msg.Run + "/" + msg.Event.Call.Name); card != nil {
+				return m.openAside(d, card), true
+			}
+			return nil, true
 		case agent.EventSubagentEnd:
 			id := msg.Run + "/" + msg.Event.Call.Name
 			return tea.Tick(agentLinger, func(time.Time) tea.Msg { return agentDoneMsg{run: id} }), true
@@ -655,6 +693,8 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return m.submit(msg), true
 	case cards.CommandMsg:
 		return m.command(m.deskOfSession(msg.Session), msg.Name, msg.Args), true
+	case cards.SessionClosedMsg:
+		return m.sessionClosed(msg.Session), true
 	case cards.AnswerMsg:
 		if !m.app.Approver.Answer(msg.ID, msg.Verdict) {
 			return m.wm.Toast("approval gone", wm.Warn, 0), true
@@ -772,14 +812,14 @@ func (m *Model) setSetting(key, value string, quiet bool) tea.Cmd {
 	return m.wm.Toast(key+" = "+value, wm.Success, 0)
 }
 
-// Switches the model of the session on the stage, saving the default the next start reads when it moved
+// Switches the model of the session on the stage, or the default, saving the default when it moved
 func (m *Model) setModel(id string) tea.Cmd {
-	d := m.current()
-	if d == nil {
-		return nil
-	}
 	before := m.app.Config.Model
-	m.app.SetModelOn(d.live, id)
+	if d := m.current(); d != nil {
+		m.app.SetModelOn(d.live, id)
+	} else {
+		m.app.SetDefaultModel(id)
+	}
 	m.retitle()
 	m.wm.Repaint()
 	if m.app.Config.Model != before {
@@ -802,19 +842,19 @@ type profileMsg struct {
 	err      error
 }
 
-// Opens the profile off the event loop and moves the session on the stage to it
+// Opens the profile off the event loop and moves the session on the stage, or the default, to it
 func (m *Model) switchProfile(name, model string) tea.Cmd {
-	d := m.current()
-	if d == nil {
-		return nil
-	}
 	if strings.TrimSpace(name) == "" {
 		return m.wm.Toast("no profile named", wm.Warn, 0)
 	}
-	if m.app.Busy(d.live) {
-		return m.wm.Toast("agent still working", wm.Warn, 0)
+	var live *harness.Live
+	if d := m.current(); d != nil {
+		if m.app.Busy(d.live) {
+			return m.wm.Toast("agent still working", wm.Warn, 0)
+		}
+		live = d.live
 	}
-	ctx, live := m.ctx, d.live
+	ctx := m.ctx
 	return func() tea.Msg {
 		ep, err := m.app.OpenEndpoint(ctx, name, model)
 		return profileMsg{live: live, name: name, endpoint: ep, err: err}
@@ -825,7 +865,9 @@ func (m *Model) adoptProfile(msg profileMsg) tea.Cmd {
 	if msg.err != nil {
 		return m.wm.Toast(msg.err.Error(), wm.Error, 0)
 	}
-	if err := m.app.SetEndpointOn(msg.live, msg.name, msg.endpoint); err != nil {
+	if msg.live == nil {
+		m.app.SetDefaultEndpoint(msg.name, msg.endpoint)
+	} else if err := m.app.SetEndpointOn(msg.live, msg.name, msg.endpoint); err != nil {
 		return m.wm.Toast(err.Error(), wm.Error, 0)
 	}
 	m.retitle()
@@ -932,52 +974,6 @@ func (m *Model) exportTranscript(d *desk, path string) tea.Cmd {
 
 func (m *Model) exportPath(d *desk) string {
 	return filepath.Join(m.app.Root, "transcript-"+d.live.Session.ID()+".md")
-}
-
-// Segments the bar shows beside the workspace chips
-func (m *Model) bar() (left, right []wm.Segment) {
-	d := m.current()
-	ep := m.endpoint()
-	left = append(left, wm.Segment{Text: ep.Model, Style: wm.Cool})
-	if md := m.app.Mode.Mode(); md != mode.Default {
-		left = append(left, wm.Segment{Text: md.Label(), Style: wm.Warm})
-	}
-	snap := m.app.Meter.Snapshot()
-	if d != nil && ep.Catalog.Context > 0 {
-		share := float64(d.live.Session.Context()) / float64(ep.Catalog.Context)
-		st := wm.Dim
-		switch {
-		case share >= 0.9:
-			st = wm.Bad
-		case share >= 0.7:
-			st = wm.Warm
-		}
-		left = append(left, wm.Segment{Text: "ctx " + render.Percent(share), Style: st})
-	}
-	if snap.Cost > 0 {
-		left = append(left, wm.Segment{Text: render.Money(snap.Cost), Style: wm.Dim})
-	}
-	if d != nil {
-		if n := len(d.approval.Pending()); n > 0 {
-			left = append(left, wm.Segment{Text: m.theme.Glyphs.Flag + " " + render.Count(n, "approval"), Style: wm.Hot})
-		} else if m.app.Busy(d.live) {
-			tools := 0
-			var elapsed time.Duration
-			for _, r := range m.app.Control.Active() {
-				if r.Session == d.live.Session && r.Parent == "" {
-					_, tools = r.LastTool()
-					elapsed = r.Elapsed(time.Now())
-				}
-			}
-			text := render.Spinner(int(time.Since(m.started)/(120*time.Millisecond)), m.theme) + " working"
-			if tools > 0 {
-				text += fmt.Sprintf(" %s %d tools", m.theme.Glyphs.Sep, tools)
-			}
-			left = append(left, wm.Segment{Text: text, Style: wm.Good})
-			right = append(right, wm.Segment{Text: render.Elapsed(elapsed), Style: wm.Dim})
-		}
-	}
-	return left, right
 }
 
 func (m *Model) View() tea.View {

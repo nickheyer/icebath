@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -34,6 +34,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
+
+// Lines one notch of the mouse wheel scrolls
+const wheelLines = 3
 
 // Pages the painted offset may trail the viewport by before it skips ahead, so long jumps stay short
 const glideReach = 3.0
@@ -94,6 +97,9 @@ type block struct {
 	grown    time.Time
 	cache    []string
 	cacheKey string
+	// Markdown of the settled paragraphs of a streaming block, keyed by their length, width and theme
+	head    string
+	headKey string
 }
 
 // Thinking blocks churn their newest runes this long before they settle
@@ -122,7 +128,8 @@ func (b *block) churning(now time.Time) bool {
 	return b.kind == bThinking && b.resolved(now) < len([]rune(b.text))
 }
 
-type transcriptTick struct{}
+// Interval between repaints of spinners, elapsed times and churning thoughts
+const transcriptTickEvery = 120 * time.Millisecond
 
 // Streaming transcript of one agent lineage with tool rows, diffs, approvals, markers, search and turn jumps
 type Transcript struct {
@@ -132,13 +139,19 @@ type Transcript struct {
 	blocks []*block
 	turn   map[int]*block
 	tools  map[string]*block
-	vp     viewport.Model
+	vp     scroll
 	follow bool
 	// Line painted at the top, gliding after the viewport offset
-	shown     anim.Value
-	glide     bool
-	w, h      int
-	lines     []string
+	shown anim.Value
+	glide bool
+	w, h  int
+	lines []string
+	// Lines handed to the view, the lines with every match lit while a search is on
+	painted []string
+	// Count of times the painted lines changed, keying the view cache
+	gen       int
+	view      string
+	viewKey   viewKey
 	lineBlock []int
 	blockLine []int
 	cursor    int
@@ -148,7 +161,7 @@ type Transcript struct {
 	seek      bool
 	themed    string
 	tick      int
-	ticking   bool
+	timer     ticker
 	streaming bool
 	running   int
 	dirty     bool
@@ -166,6 +179,12 @@ type Transcript struct {
 	bar bool
 }
 
+// Everything the rendered view depends on beyond the painted lines
+type viewKey struct {
+	w, h, offset, gen int
+	theme, up, down   string
+}
+
 // One search match on a transcript line, in cells
 type match struct {
 	line, start, end int
@@ -173,10 +192,7 @@ type match struct {
 
 // Builds the transcript of the root lineage
 func NewTranscript(env *Env) *Transcript {
-	vp := viewport.New()
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = false
-	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, vp: vp, follow: true, cursor: -1, current: -1, rootOnly: true, thinking: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}, shown: anim.NewValueWith(0, anim.Snappy)}
+	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, follow: true, cursor: -1, current: -1, rootOnly: true, thinking: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}, shown: anim.NewValueWith(0, anim.Snappy), timer: ticker{every: transcriptTickEvery}}
 }
 
 // Builds a transcript that follows one child agent of a run
@@ -192,9 +208,14 @@ func NewChildTranscript(env *Env, run, agentName string) *Transcript {
 func (tr *Transcript) Title() string       { return tr.name }
 func (tr *Transcript) Glyph() string       { return tr.env.Theme.Glyphs.Trace }
 func (tr *Transcript) Key() string         { return tr.key }
-func (tr *Transcript) Init() tea.Cmd       { return nil }
 func (tr *Transcript) Selectable() bool    { return true }
 func (tr *Transcript) MinSize() (int, int) { return 24, 4 }
+
+// Starts a fresh repaint loop in place of one whose tick was lost while the card was closed
+func (tr *Transcript) Init() tea.Cmd {
+	tr.timer.reset()
+	return tr.ensureTick()
+}
 
 // Every block in order
 func (tr *Transcript) Blocks() int { return len(tr.blocks) }
@@ -229,24 +250,28 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			tr.dirty = true
 		}
 		return tr, nil
-	case transcriptTick:
-		tr.tick++
-		if tr.streaming || tr.running > 0 || tr.settling() {
-			tr.dirty = true
-			return tr, tr.tickCmd()
+	case tickMsg:
+		if !tr.timer.owns(msg) {
+			return tr, nil
 		}
-		tr.ticking = false
-		return tr, nil
+		tr.tick++
+		if tr.animating() {
+			tr.dirty = true
+		}
+		return tr, tr.ensureTick()
 	case wm.FocusMsg:
 		if !msg.Focused {
 			tr.search.Accept()
 		}
 		return tr, nil
 	case tea.MouseWheelMsg:
-		var cmd tea.Cmd
-		tr.vp, cmd = tr.vp.Update(msg)
-		tr.follow = tr.vp.AtBottom()
-		return tr, cmd
+		switch msg.Button {
+		case tea.MouseWheelDown:
+			tr.ScrollBy(wheelLines)
+		case tea.MouseWheelUp:
+			tr.ScrollBy(-wheelLines)
+		}
+		return tr, nil
 	case tea.MouseClickMsg:
 		if msg.Button != tea.MouseLeft {
 			return tr, nil
@@ -276,16 +301,17 @@ func (tr *Transcript) settling() bool {
 	return false
 }
 
-func (tr *Transcript) ensureTick() tea.Cmd {
-	if tr.ticking || (!tr.streaming && tr.running == 0 && !tr.settling()) {
-		return nil
-	}
-	tr.ticking = true
-	return tr.tickCmd()
+// Reports whether something on screen changes with every tick, a stream, a running tool or a churning thought
+func (tr *Transcript) animating() bool {
+	return tr.streaming || tr.running > 0 || tr.settling()
 }
 
-func (tr *Transcript) tickCmd() tea.Cmd {
-	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return transcriptTick{} })
+// Schedules the next repaint while anything animates and none is pending
+func (tr *Transcript) ensureTick() tea.Cmd {
+	if !tr.animating() {
+		return nil
+	}
+	return tr.timer.start()
 }
 
 // Glides the painted offset after the viewport, jumping there when motion is off, and reports whether the view moved
@@ -314,7 +340,7 @@ func (tr *Transcript) paintedOffset() int {
 	if !tr.glide {
 		return tr.vp.YOffset()
 	}
-	return int(math.Round(tr.shown.Pos))
+	return min(max(int(math.Round(tr.shown.Pos)), 0), tr.vp.maxOffset())
 }
 
 // Scrolls by n lines, down when positive
@@ -429,8 +455,10 @@ func (tr *Transcript) find() {
 // Hands the viewport the lines with every match lit and the current one lit brighter, keeping their colors
 func (tr *Transcript) paint() {
 	t := tr.env.Theme
+	tr.gen++
+	tr.vp.SetTotal(len(tr.lines))
 	if len(tr.found) == 0 {
-		tr.vp.SetContentLines(tr.lines)
+		tr.painted = tr.lines
 		return
 	}
 	lit := lipgloss.NewStyle().Background(t.Accent).Foreground(t.Bg)
@@ -448,7 +476,7 @@ func (tr *Transcript) paint() {
 		}
 		out[line] = lipgloss.StyleRanges(tr.lines[line], ranges...)
 	}
-	tr.vp.SetContentLines(out)
+	tr.painted = out
 }
 
 // Brings the current match into view
@@ -1064,7 +1092,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 			head += " " + render.Cool(render.Spinner(tr.tick, t), t)
 		}
 		lines = append(lines, mark+head)
-		for _, l := range strings.Split(render.MarkdownText(b.text, body, t), "\n") {
+		for _, l := range strings.Split(tr.markdown(b, body), "\n") {
 			lines = append(lines, "  "+l)
 		}
 	case bThinking:
@@ -1156,6 +1184,53 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 	return lines
 }
 
+// Markdown of a text block, its settled paragraphs kept from last time ahead of the open tail while it streams
+func (tr *Transcript) markdown(b *block, width int) string {
+	t := tr.env.Theme
+	cut := 0
+	if !b.done {
+		cut = settledCut(b.text)
+	}
+	if cut <= 0 {
+		return render.MarkdownText(b.text, width, t)
+	}
+	key := fmt.Sprintf("%d:%d:%s", cut, width, t.Name)
+	if b.headKey != key {
+		b.head, b.headKey = render.MarkdownText(b.text[:cut], width, t), key
+	}
+	tail := render.MarkdownText(b.text[cut:], width, t)
+	if strings.TrimSpace(tail) == "" {
+		return b.head
+	}
+	return b.head + "\n\n" + strings.TrimLeft(tail, "\n")
+}
+
+// Offset of the last prose paragraph after a blank line outside a code fence, zero when there is none
+func settledCut(text string) int {
+	cut, at, fenced, blank := 0, 0, false, false
+	for _, line := range strings.SplitAfter(text, "\n") {
+		trimmed := strings.TrimRight(line, "\n")
+		switch {
+		case strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~"):
+			fenced = !fenced
+		case !fenced && blank && trimmed != "" && startsProse(trimmed):
+			cut = at
+		}
+		blank = !fenced && strings.TrimSpace(trimmed) == ""
+		at += len(line)
+	}
+	return cut
+}
+
+// Reports whether a line opens plain prose rather than a list item, quote, heading, rule, table or indented block
+func startsProse(line string) bool {
+	r, _ := utf8.DecodeRuneInString(line)
+	if unicode.IsLetter(r) || r == '"' || r == '(' || r == '`' {
+		return true
+	}
+	return (r == '*' || r == '_') && len(line) > 1 && line[1] != ' '
+}
+
 // Text of input parts with a label for every attachment
 func partsText(parts []protocol.Part, t theme.Theme) (string, []string) {
 	var sb strings.Builder
@@ -1209,7 +1284,7 @@ func visible(runes []rune) int {
 }
 
 // Short description of a call from its arguments
-func callSummary(call protocol.ToolCall, partial string, t theme.Theme) string {
+func CallSummary(call protocol.ToolCall, partial string, t theme.Theme) string {
 	raw := call.Args
 	if len(raw) == 0 && partial != "" {
 		return render.Truncate(strings.TrimSpace(partial), 60, t)
@@ -1281,7 +1356,7 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 	if name == "" {
 		name = "tool"
 	}
-	head := lipgloss.NewStyle().Foreground(tr.speakerColor(b)).Bold(true).Render(glyph+" "+name) + " " + lipgloss.NewStyle().Foreground(t.Text).Render(render.Truncate(callSummary(b.call, b.partial, t), body/2, t))
+	head := lipgloss.NewStyle().Foreground(tr.speakerColor(b)).Bold(true).Render(glyph+" "+name) + " " + lipgloss.NewStyle().Foreground(t.Text).Render(render.Truncate(CallSummary(b.call, b.partial, t), body/2, t))
 	var status string
 	switch {
 	case b.result == nil && !b.started.IsZero():
@@ -1466,15 +1541,19 @@ func (tr *Transcript) View(w, h int) string {
 	}
 	tr.bar = gw > 0
 	cw := w - gw
-	if cw != tr.w || h != tr.h || t.Name != tr.themed {
-		tr.w, tr.h, tr.themed = cw, h, t.Name
-		tr.vp.SetWidth(cw)
-		tr.vp.SetHeight(h)
+	if cw != tr.w || t.Name != tr.themed {
 		tr.dirty = true
 		for _, b := range tr.blocks {
 			b.cacheKey = ""
 		}
 	}
+	if h != tr.h {
+		tr.vp.SetHeight(h)
+		if tr.follow {
+			tr.vp.GotoBottom()
+		}
+	}
+	tr.w, tr.h, tr.themed = cw, h, t.Name
 	if len(tr.blocks) == 0 {
 		return tr.idle(w, h)
 	}
@@ -1486,17 +1565,24 @@ func (tr *Transcript) View(w, h int) string {
 			tr.vp.GotoBottom()
 		}
 	}
-	logical := tr.vp.YOffset()
-	tr.vp.SetYOffset(tr.paintedOffset())
-	body := tr.vp.View()
-	painted := tr.vp.YOffset()
-	tr.vp.SetYOffset(logical)
-	if gw == 0 {
-		return body
+	painted := tr.paintedOffset()
+	key := viewKey{w: w, h: h, offset: painted, gen: tr.gen, theme: t.Name, up: tr.env.Keys.First(tr.pages[0]), down: tr.env.Keys.First(tr.pages[1])}
+	if key == tr.viewKey && tr.view != "" {
+		return tr.view
 	}
-	g := tr.gutter()
-	g.offset = painted
-	return g.beside(body, w, t)
+	rows := make([]string, 0, h)
+	rows = append(rows, tr.painted[min(painted, len(tr.painted)):min(painted+h, len(tr.painted))]...)
+	for len(rows) < h {
+		rows = append(rows, "")
+	}
+	body := strings.Join(rows, "\n")
+	if gw > 0 {
+		g := tr.gutter()
+		g.offset = painted
+		body = g.beside(body, w, t)
+	}
+	tr.view, tr.viewKey = body, key
+	return body
 }
 
 // Narrowest transcript that still gets a scrollbar

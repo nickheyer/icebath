@@ -267,3 +267,38 @@ func TestSelectedRowKeepsItsBackgroundPastStyledCells(t *testing.T) {
 		}
 	}
 }
+
+func TestCompactDropsGlamourPaddingButKeepsBackgrounds(t *testing.T) {
+	fg := "\x1b[38;2;1;2;3m"
+	cases := map[string]string{
+		fg + "hello\x1b[m" + fg + " \x1b[m" + fg + " \x1b[m": fg + "hello\x1b[m",
+		"abc   ":                        "abc\x1b[m",
+		fg + " \x1b[m" + fg + " \x1b[m": "\x1b[m",
+		"\x1b[48;2;9;9;9mcode\x1b[m\x1b[48;2;9;9;9m   \x1b[m": "\x1b[48;2;9;9;9mcode\x1b[m\x1b[48;2;9;9;9m   \x1b[m",
+		"\x1b[7mcode   \x1b[m":                                "\x1b[7mcode   \x1b[m",
+		"\x1b[7mcode\x1b[m   ":                                "\x1b[7mcode\x1b[m",
+		"\x1b[44mx\x1b[49m  ":                                 "\x1b[44mx\x1b[m",
+		"\x1b[1;7mx  \x1b[27m  ":                              "\x1b[1;7mx  \x1b[m",
+		"\x1b[38;2;47;47;47mtext\x1b[m \x1b[m":                "\x1b[38;2;47;47;47mtext\x1b[m",
+		"plain":                                               "plain",
+		"":                                                    "",
+	}
+	for in, want := range cases {
+		if got := compact(in); got != want {
+			t.Fatalf("compact(%q) = %q, want %q", in, got, want)
+		}
+	}
+	th := theme.Blackwall()
+	out := MarkdownText("A paragraph of prose that wraps around.\n\n```go\nx := 1\n```\n\nMore prose.", 24, th)
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasSuffix(ansi.Strip(l), " ") {
+			t.Fatalf("no line carries trailing padding %q", l)
+		}
+	}
+	if !strings.Contains(ansi.Strip(out), "  x := 1") {
+		t.Fatal("the code block keeps its indent")
+	}
+	if len(out) > 20*len(ansi.Strip(out)) {
+		t.Fatalf("the render is not many times its text, %d bytes for %d", len(out), len(ansi.Strip(out)))
+	}
+}

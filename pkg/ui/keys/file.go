@@ -138,6 +138,7 @@ func (m *Map) Read(data []byte) error {
 			wanted[id] = chords
 		}
 	}
+	m.yield(wanted)
 	previous := map[string][]string{}
 	for id := range wanted {
 		previous[id] = m.binds[id]
@@ -157,6 +158,19 @@ func (m *Map) Read(data []byte) error {
 	}
 	m.byChord = nil
 	return errors.Join(errs...)
+}
+
+// Takes the chords the file names away from actions it leaves unnamed, so new actions never keep a key it gave another
+func (m *Map) yield(wanted map[string][]string) {
+	for id, chords := range wanted {
+		a, _ := m.Action(id)
+		for _, other := range m.actions {
+			if _, named := wanted[other.ID]; named || other.ID == id || other.Context != a.Context {
+				continue
+			}
+			m.binds[other.ID] = slices.DeleteFunc(m.binds[other.ID], func(c string) bool { return slices.Contains(chords, c) })
+		}
+	}
 }
 
 // Canonical forms of chords written by a person, failing on the first that does not parse

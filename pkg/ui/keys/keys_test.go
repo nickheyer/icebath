@@ -276,6 +276,18 @@ func TestFileFromAnOlderRegistryIsWrittenAgain(t *testing.T) {
 	if data, _ := os.ReadFile(path); string(data) != bad {
 		t.Fatal("a file with a mistake the registry cannot fix is left for the person")
 	}
+	os.WriteFile(path, []byte(`{"global": {"workspace.new": "alt+n"}, "session": {"session.search": "alt+t"}}`), 0o644)
+	m, err = Open(path)
+	if err != nil || m.First("workspace.new") != "alt+n" || m.First("session.new") != "" || m.First("session.search") != "alt+t" || m.First("session.thinking") != "" {
+		t.Fatalf("a key the file gives one action is taken from the default of an action it leaves unnamed %v %q %q", err, m.First("session.new"), m.First("session.thinking"))
+	}
+	if data, _ := os.ReadFile(path); !strings.Contains(string(data), `"session.new": []`) {
+		t.Fatal("the action that gave way is written unbound")
+	}
+	os.WriteFile(path, []byte(`{"global": {"workspace.new": "alt+n", "session.new": "alt+n"}}`), 0o644)
+	if m, err = Open(path); err == nil || m.First("session.new") != "alt+n" || m.First("workspace.new") != "alt+shift+n" {
+		t.Fatalf("two named actions on one key still clash, the later one falling back to its default %v %q", err, m.First("workspace.new"))
+	}
 }
 
 func TestFileSwapsKeysAndReloadsOutsideEdits(t *testing.T) {

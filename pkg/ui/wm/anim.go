@@ -31,7 +31,11 @@ func (m *Model) Advance(dt float64) bool {
 		moving = m.veil.Step(dt/m.motion) || moving
 	}
 	moving = m.stepToasts(dt) || moving
-	moving = m.stepChips(dt) || moving
+	moving = m.stepBar(dt) || moving
+	if m.hold > 0 {
+		m.hold--
+		moving = true
+	}
 	m.phase += dt * flowSpeed * m.motion
 	m.tick++
 	return moving

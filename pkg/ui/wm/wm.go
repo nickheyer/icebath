@@ -24,7 +24,6 @@ const (
 	doubleClick   = 350 * time.Millisecond
 	fastSpring    = 18.0
 	pulseSpeed    = 0.35
-	breathSpeed   = 0.25
 	contentDim    = 0.3
 	backdropDim   = 0.45
 	slideFade     = 0.55
@@ -74,11 +73,15 @@ type Model struct {
 	hoverX    int
 	hoverY    int
 	hintHot   string
-	barHot    int
+	hot       barSpot
 	commands  []Command
 	keys      *keys.Map
 	recent    []string
-	bar       func() (left, right []Segment)
+	empty     []string
+	hold      int
+	report    func() Status
+	notice    Notice
+	dials     []dial
 	motion    float64
 	cascade   bool
 	gap       int
@@ -92,11 +95,7 @@ type Model struct {
 	ratioSet  bool
 	motionSet bool
 	modeSet   bool
-	menuX     int
-	menuW     int
-	menuHot   bool
 	hoverGrip bool
-	chipHot   int
 	width     int
 	height    int
 	blurred   bool
@@ -113,6 +112,9 @@ type Model struct {
 	chipX     anim.Value
 	chipW     anim.Value
 	chips     []chip
+	fieldX    anim.Value
+	fieldW    anim.Value
+	caret     int
 	rings     map[int][]color.Color
 	glyphs    map[string]uv.Cell
 	memoed    map[color.Color]color.Color
@@ -188,12 +190,14 @@ func New(opts ...Option) *Model {
 		gapOutY: 1,
 		ratio:   defaultRatio,
 		main:    1,
-		barHot:  -1,
-		chipHot: -1,
 		now:     time.Now,
 		keys:    keys.Default(),
+		empty:   []string{"palette"},
 		chipX:   fast(0),
 		chipW:   fast(0),
+		fieldX:  fast(0),
+		fieldW:  fast(0),
+		caret:   -1,
 		veil:    anim.NewValueWith(0, anim.Gentle),
 		rings:   map[int][]color.Color{},
 		glyphs:  map[string]uv.Cell{},
@@ -311,20 +315,30 @@ func (m *Model) WorkspaceByID(id string) *Workspace {
 // Index of the workspace, -1 when it is not held
 func (m *Model) IndexOf(ws *Workspace) int { return slices.Index(m.spaces, ws) }
 
-// Adds a workspace holding the card as its master, showing it when it is the first
-func (m *Model) AddWorkspace(id string, master Card) (*Workspace, tea.Cmd) {
+// Adds a workspace tiling the cards in order with the first focused, showing it when it is the first workspace
+func (m *Model) AddWorkspace(id string, cards ...Card) (*Workspace, tea.Cmd) {
 	ws := &Workspace{ID: id, ratio: m.ratio, mode: m.mode, main: m.main, shift: fast(0)}
 	m.spaces = append(m.spaces, ws)
-	e := m.newEntry(master, ws)
-	ws.addTile(e)
-	ws.focus = e
-	cmds := []tea.Cmd{master.Init()}
+	var cmds []tea.Cmd
+	for _, c := range cards {
+		if c == nil {
+			continue
+		}
+		e := m.newEntry(c, ws)
+		ws.addTile(e)
+		if ws.focus == nil {
+			ws.focus = e
+		}
+		cmds = append(cmds, c.Init())
+	}
 	if len(m.spaces) == 1 {
 		m.active = 0
-		cmds = append(cmds, m.send(e, FocusMsg{Focused: true}))
+		if ws.focus != nil {
+			cmds = append(cmds, m.send(ws.focus, FocusMsg{Focused: true}))
+		}
 	}
 	m.retarget(ws)
-	m.retargetChips()
+	m.layoutBar()
 	return ws, tea.Batch(append(cmds, m.wake())...)
 }
 
@@ -366,7 +380,7 @@ func (m *Model) Switch(i int) tea.Cmd {
 		cmds = append(cmds, m.send(ws.focus, FocusMsg{Focused: true}))
 	}
 	m.retarget(ws)
-	m.retargetChips()
+	m.layoutBar()
 	return tea.Batch(append(cmds, m.wake())...)
 }
 
@@ -385,7 +399,7 @@ func (m *Model) RemoveWorkspace(i int) tea.Cmd {
 		cmds = append(cmds, m.Switch(next))
 	}
 	for _, e := range ws.entries() {
-		cmds = append(cmds, m.send(e, FocusMsg{}))
+		cmds = append(cmds, m.send(e, FocusMsg{}), m.send(e, ClosedMsg{}))
 	}
 	m.spaces = slices.Delete(m.spaces, i, i+1)
 	if m.leaving == ws {
@@ -394,16 +408,8 @@ func (m *Model) RemoveWorkspace(i int) tea.Cmd {
 	if m.active > i {
 		m.active--
 	}
-	m.retargetChips()
+	m.layoutBar()
 	return tea.Batch(append(cmds, m.wake())...)
-}
-
-// Lights the chip of a workspace that is not shown until it is
-func (m *Model) SetUrgent(ws *Workspace, on bool) {
-	if ws == nil || (on && ws == m.Active()) {
-		return
-	}
-	ws.urgent = on
 }
 
 // Opens the card in the workspace, tiled or floating as it asks, or focuses the one with its key already open
@@ -422,22 +428,60 @@ func (m *Model) OpenFrom(ws *Workspace, c Card, origin Box) tea.Cmd {
 			return m.relocate(have, ws)
 		}
 	}
-	e := m.newEntry(c, ws)
-	e.origin = origin
-	if floats(c) {
-		e.floating = true
-		e.layer = 0
-		e.fbox = m.floatBox(c, Box{})
-		ws.addFloat(e)
-		if len(ws.floats) > maxFloatPile {
-			ws.floats = ws.floats[len(ws.floats)-maxFloatPile:]
-		}
-	} else {
-		ws.addTile(e)
-	}
+	e := m.adopt(ws, c, origin)
 	cmds := []tea.Cmd{c.Init(), m.focusEntry(e)}
 	m.retarget(ws)
 	return tea.Batch(append(cmds, m.wake())...)
+}
+
+// Opens the card in a hidden workspace without switching to it, the card waiting there as its focus
+func (m *Model) OpenAside(ws *Workspace, c Card, origin Box) tea.Cmd {
+	if ws == nil || c == nil || ws == m.Active() {
+		return m.OpenFrom(ws, c, origin)
+	}
+	var cmds []tea.Cmd
+	e := ws.find(keyOf(c))
+	for _, other := range m.spaces {
+		if have := other.find(keyOf(c)); e == nil && have != nil {
+			e = have
+			wasFocus := other.focus == have
+			cmds = m.carry(have, ws)
+			if wasFocus && other == m.Active() && other.focus != nil {
+				other.focus.decode = 0
+				cmds = append(cmds, m.send(other.focus, FocusMsg{Focused: true}))
+			}
+		}
+	}
+	if e == nil {
+		e = m.adopt(ws, c, origin)
+		cmds = append(cmds, c.Init())
+	}
+	ws.focus = e
+	if e.floating {
+		ws.raise(e)
+	} else if ws.zoom != nil && ws.zoom != e {
+		ws.zoom = nil
+	}
+	m.retarget(ws)
+	return tea.Batch(append(cmds, m.wake())...)
+}
+
+// Places a new card in the workspace, floating or tiled as it asks, grown from the origin box
+func (m *Model) adopt(ws *Workspace, c Card, origin Box) *entry {
+	e := m.newEntry(c, ws)
+	e.origin = origin
+	if !floats(c) {
+		ws.addTile(e)
+		return e
+	}
+	e.floating = true
+	e.layer = 0
+	e.fbox = m.floatBox(c, Box{})
+	ws.addFloat(e)
+	if len(ws.floats) > maxFloatPile {
+		ws.floats = ws.floats[len(ws.floats)-maxFloatPile:]
+	}
+	return e
 }
 
 // Opens the card in the workspace on the stage
@@ -864,11 +908,20 @@ func (m *Model) SetProgress(pb *tea.ProgressBar) { m.progress = pb }
 // Sets the terminal window title
 func (m *Model) SetWindowTitle(title string) { m.title = title }
 
-// Supplies the segments the bar shows beside the workspace chips
-func (m *Model) SetBar(fn func() (left, right []Segment)) { m.bar = fn }
+// Supplies what the bar shows each frame, the lane of every workspace, the waiting item and the dials
+func (m *Model) SetBar(fn func() Status) { m.report = fn }
 
-// Resizes the stage, snapping placed cards to their new boxes
+// Actions an empty stage invites with, each shown with its key and label while bound
+func (m *Model) SetEmptyHints(ids ...string) { m.empty = ids }
+
+// Frames a size change has to settle for before cards draw themselves at their new size
+const resizeHold = 6
+
+// Resizes the stage, snapping placed cards to their new boxes, which keep their drawing while more sizes may follow
 func (m *Model) SetSize(w, h int) {
+	if (w != m.width || h != m.height) && m.motion > 0 {
+		m.hold = resizeHold
+	}
 	m.width, m.height = max(w, 0), max(h, 0)
 	for _, ws := range m.spaces {
 		m.retarget(ws)
@@ -886,13 +939,18 @@ func (m *Model) SetSize(w, h int) {
 	if m.overlay != nil {
 		m.overlay.rect.Snap()
 	}
-	m.retargetChips()
+	m.layoutBar()
 	m.chipX.Snap()
 	m.chipW.Snap()
+	m.fieldX.Snap()
+	m.fieldW.Snap()
 }
 
 // Screen size the manager was last given
 func (m *Model) Size() (int, int) { return m.width, m.height }
+
+// Reports whether the screen changed size a few frames ago, while more size changes may follow
+func (m *Model) settling() bool { return m.hold > 0 }
 
 func (m *Model) stageHeight() int { return max(m.height-barHeight, 0) }
 
@@ -975,7 +1033,7 @@ func (m *Model) closeEntry(e *entry) tea.Cmd {
 	e.held = false
 	e.open.Set(0)
 	ws.removeLeaf(e)
-	cmds := []tea.Cmd{m.send(e, FocusMsg{})}
+	cmds := []tea.Cmd{m.send(e, FocusMsg{}), m.send(e, ClosedMsg{})}
 	wasFocus := ws.focus == e
 	if ws.zoom == e {
 		ws.zoom = nil
@@ -1169,6 +1227,8 @@ func (m *Model) snap() {
 	}
 	m.chipX.Snap()
 	m.chipW.Snap()
+	m.fieldX.Snap()
+	m.fieldW.Snap()
 }
 
 // Rattles the overlay or the focused frame sideways so an impossible action is felt
@@ -1240,8 +1300,14 @@ func flag(b bool) float64 {
 	return 0
 }
 
-// Moves an open card into another workspace, popping it in there
+// Moves an open card into another workspace, popping it in there with the focus
 func (m *Model) relocate(e *entry, ws *Workspace) tea.Cmd {
+	cmds := append(m.carry(e, ws), m.focusEntry(e))
+	return tea.Batch(append(cmds, m.wake())...)
+}
+
+// Takes an open card out of its workspace and pops it into another, handing the old focus on
+func (m *Model) carry(e *entry, ws *Workspace) []tea.Cmd {
 	old := e.ws
 	var cmds []tea.Cmd
 	if old.focus == e {
@@ -1260,8 +1326,7 @@ func (m *Model) relocate(e *entry, ws *Workspace) tea.Cmd {
 		ws.addTile(e)
 	}
 	m.retarget(ws)
-	cmds = append(cmds, m.focusEntry(e))
-	return tea.Batch(append(cmds, m.wake())...)
+	return cmds
 }
 
 // Opens a workspace the way the app's workspace.new command does, nudging when none is registered

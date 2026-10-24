@@ -6,8 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
 // Stub that names its keys and refuses to close
@@ -37,7 +35,8 @@ func cellAt(row string, x int) rune {
 func TestChipPartsOpenAndCloseWorkspaces(t *testing.T) {
 	m := still(t, 100, 30)
 	m.AddWorkspace("1", newStub("a"))
-	if m.chipsEnd() != 5 || m.chipPartAt(5) != chipNew || m.chipPartAt(7) != chipNew || m.chipPartAt(8) != chipNone || m.chipPartAt(3) != chipNone {
+	newAt := func(x int) bool { return m.barAt(x).kind == barNew }
+	if m.chipsEnd() != 5 || !newAt(5) || !newAt(7) || newAt(8) || m.barAt(3) != (barSpot{kind: barChip}) {
 		t.Fatalf("the new chip follows the only chip, which has no close mark %d", m.chipsEnd())
 	}
 	m.Update(click(6, 0, tea.MouseLeft))
@@ -59,20 +58,20 @@ func TestChipPartsOpenAndCloseWorkspaces(t *testing.T) {
 	}
 	m.AddWorkspace("2", newStub("b"))
 	m.Switch(1)
-	if m.chipPartAt(8) != chipClose || m.chipPartAt(6) != chipNone || m.chipPartAt(10) != chipNew || m.chipPartAt(9) != chipNone {
+	if m.barAt(8) != (barSpot{kind: barClose, i: 1}) || m.barAt(6) != (barSpot{kind: barChip, i: 1}) || !newAt(10) || m.barAt(9) != (barSpot{kind: barChip, i: 1}) {
 		t.Fatalf("the active chip carries the close mark %v", m.chips)
 	}
 	m.Update(move(8, 0, tea.MouseNone))
-	if m.chipHot != chipClose || m.barHot != 1 {
-		t.Fatalf("hover on the close mark %d %d", m.chipHot, m.barHot)
+	if m.hot != (barSpot{kind: barClose, i: 1}) {
+		t.Fatalf("hover on the close mark %v", m.hot)
 	}
 	m.Update(move(11, 0, tea.MouseNone))
-	if m.chipHot != chipNew || m.barHot != -1 {
-		t.Fatalf("hover on the new chip %d %d", m.chipHot, m.barHot)
+	if m.hot.kind != barNew {
+		t.Fatalf("hover on the new chip %v", m.hot)
 	}
 	m.Update(move(6, 0, tea.MouseNone))
-	if m.chipHot != chipNone || m.barHot != 1 {
-		t.Fatalf("hover on the chip body %d %d", m.chipHot, m.barHot)
+	if m.hot != (barSpot{kind: barChip, i: 1}) {
+		t.Fatalf("hover on the chip body %v", m.hot)
 	}
 	m.View()
 	m.Update(click(8, 0, tea.MouseLeft))
@@ -89,31 +88,6 @@ func TestChipPartsOpenAndCloseWorkspaces(t *testing.T) {
 	}
 	if bare.CloseWorkspace() != nil || len(bare.Workspaces()) != 1 {
 		t.Fatal("the last workspace stays")
-	}
-}
-
-func TestBarButtonAndSegmentsAfterTheChips(t *testing.T) {
-	m := still(t, 100, 30)
-	m.AddWorkspace("1", newStub("a"))
-	m.SetBar(func() ([]Segment, []Segment) { return []Segment{{Text: "model", Style: Cool}}, nil })
-	row := screenRow(m, 0)
-	plus, model, menu := ansi.StringWidth(row[:strings.Index(row, "▌+ ")]), strings.Index(row, "model"), strings.Index(row, "≣ commands")
-	if plus != m.chipsEnd() || model != menu-statusGap-1-len("model") || !strings.HasSuffix(strings.TrimRight(row, " "), "≣ commands") || !strings.HasSuffix(row, "  ") {
-		t.Fatalf("%q", row)
-	}
-	wide := make([]Segment, 0, 20)
-	for i := 0; i < 20; i++ {
-		wide = append(wide, Segment{Text: "segment", Style: Plain})
-	}
-	m.SetBar(func() ([]Segment, []Segment) { return wide, nil })
-	row = screenRow(m, 0)
-	cut := strings.Index(row, "⋯")
-	if cut < m.chipsEnd()+len(newChip)+statusGap || !strings.Contains(row, "segment   ≣ commands") {
-		t.Fatalf("a crowded status is cut from the left %q", row)
-	}
-	m.SetTheme(theme.Plain())
-	if row := screenRow(m, 0); !strings.HasSuffix(strings.TrimRight(row, " "), "= commands") {
-		t.Fatalf("plain button %q", row)
 	}
 }
 

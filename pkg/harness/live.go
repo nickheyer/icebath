@@ -129,13 +129,18 @@ func (a *App) SetModelOn(l *Live, id string) {
 	l.Endpoint = withModel(l.Endpoint, id)
 	l.Session.SetModel(id)
 	if l.Endpoint.Profile.Name == a.Primary.Profile.Name {
-		a.Primary = withModel(a.Primary, id)
-		a.Model = a.chain(a.Primary)
-		a.Config.Model = id
+		a.SetDefaultModel(id)
 	}
 	if l.Session == a.Session {
 		a.Meter.SetCatalog(l.Endpoint.Catalog, l.Endpoint.Profile.Name)
 	}
+}
+
+// Changes the model new sessions start on
+func (a *App) SetDefaultModel(id string) {
+	a.Primary = withModel(a.Primary, id)
+	a.Model = a.chain(a.Primary)
+	a.Config.Model = id
 }
 
 // Moves an open session to an opened endpoint, which becomes the default for new sessions
@@ -146,13 +151,18 @@ func (a *App) SetEndpointOn(l *Live, name string, ep Endpoint) error {
 	l.Endpoint = ep
 	l.Session.SetModel(ep.Model)
 	l.Session.Label(profileLabel, ep.Profile.Name)
-	a.Primary = ep
-	a.Model = a.chain(ep)
-	a.Config.Profile, a.Config.Model = name, ep.Model
+	a.SetDefaultEndpoint(name, ep)
 	if l.Session == a.Session {
 		a.Meter.SetCatalog(ep.Catalog, ep.Profile.Name)
 	}
 	return nil
+}
+
+// Moves new sessions to an opened endpoint
+func (a *App) SetDefaultEndpoint(name string, ep Endpoint) {
+	a.Primary = ep
+	a.Model = a.chain(ep)
+	a.Config.Profile, a.Config.Model = name, ep.Model
 }
 
 // Reports whether the profile is the default or any open session runs on it

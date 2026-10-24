@@ -351,7 +351,7 @@ func (a *Approval) body(w int) []string {
 	if len(a.pending) > 1 {
 		lines = append(lines, "", render.Dim("then", t))
 		for _, p := range a.pending[1:] {
-			row := render.ToolGlyph(p.Request.Call.Name, t) + " " + p.Request.Call.Name + "  " + callSummary(p.Request.Call, "", t)
+			row := render.ToolGlyph(p.Request.Call.Name, t) + " " + p.Request.Call.Name + "  " + CallSummary(p.Request.Call, "", t)
 			lines = append(lines, render.Truncate(render.Dim("  "+row, t), w, t))
 		}
 	}

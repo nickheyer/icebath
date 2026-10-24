@@ -39,6 +39,36 @@ func TestAddWorkspaceFocusesOnlyTheFirstMaster(t *testing.T) {
 	}
 }
 
+func TestAddWorkspaceTilesEveryCardOrNone(t *testing.T) {
+	m := still(t, 100, 30)
+	a, b := newStub("alpha"), newStub("beta")
+	ws, _ := m.AddWorkspace("ws1", a, nil, b)
+	if len(ws.tiles) != 2 || ws.Master() != a || ws.Focused() != a || !a.focused || b.focused || b.inits != 1 {
+		t.Fatal("every card tiles with the first as the focused master")
+	}
+	bare, _ := m.AddWorkspace("ws2")
+	m.Switch(1)
+	if len(bare.entries()) != 0 || m.Focused() != nil || !strings.Contains(ansi.Strip(m.View().Content), "nothing open") {
+		t.Fatal("a workspace without cards shows the empty stage")
+	}
+	m.OpenHere(newStub("gamma"))
+	if len(bare.tiles) != 1 || bare.Focused() == nil {
+		t.Fatal("a card opens into the empty workspace")
+	}
+}
+
+func TestCloseTellsTheCard(t *testing.T) {
+	m, a, b, _ := threeTiles(t)
+	m.Close(b)
+	if len(received[ClosedMsg](b)) != 1 || len(received[ClosedMsg](a)) != 0 || b.focused {
+		t.Fatal("a closed card hears it once, the others not at all")
+	}
+	m.Close(b)
+	if len(received[ClosedMsg](b)) != 1 {
+		t.Fatal("closing again says nothing more")
+	}
+}
+
 func TestOpenIsIdempotentByKey(t *testing.T) {
 	m, a, b, _ := threeTiles(t)
 	ws := m.Active()
@@ -134,11 +164,12 @@ func TestSwitchSlidesAndClearsUrgency(t *testing.T) {
 	ws1, _ := m.AddWorkspace("ws1", a)
 	ws2, _ := m.AddWorkspace("ws2", b)
 	settle(t, m)
-	m.SetUrgent(ws2, true)
-	m.SetUrgent(ws1, true)
+	m.Attention(b, Pulse)
+	m.Attention(a, Pulse)
 	if !ws2.Urgent() || ws1.Urgent() {
 		t.Fatal("urgent marks only hidden workspaces")
 	}
+	m.Attention(b, Calm)
 	m.Switch(1)
 	if m.leaving != ws1 || ws2.shift.Pos <= 0 || ws2.Urgent() {
 		t.Fatal("switch starts the slide and clears urgency")
@@ -154,7 +185,6 @@ func TestSwitchSlidesAndClearsUrgency(t *testing.T) {
 	if m.Active() != ws1 || !a.focused || b.focused {
 		t.Fatal("switch back")
 	}
-	m.SetUrgent(nil, true)
 }
 
 func TestRemoveWorkspaceKeepsTheLastAndShiftsActive(t *testing.T) {
@@ -165,8 +195,8 @@ func TestRemoveWorkspaceKeepsTheLastAndShiftsActive(t *testing.T) {
 	m.AddWorkspace("3", c)
 	m.Switch(2)
 	m.RemoveWorkspace(2)
-	if len(m.spaces) != 2 || m.ActiveIndex() != 1 || m.Active().ID != "2" || c.focused {
-		t.Fatalf("remove the shown one %d", m.ActiveIndex())
+	if len(m.spaces) != 2 || m.ActiveIndex() != 1 || m.Active().ID != "2" || c.focused || len(received[ClosedMsg](c)) != 1 {
+		t.Fatalf("remove the shown one, its cards told they closed %d", m.ActiveIndex())
 	}
 	m.RemoveWorkspace(0)
 	if len(m.spaces) != 1 || m.ActiveIndex() != 0 || m.Active().ID != "2" {
@@ -598,11 +628,11 @@ func TestBarChipClickAndWheelSwitch(t *testing.T) {
 		t.Fatal("wheel up stops at the first")
 	}
 	m.Update(move(8, 0, tea.MouseNone))
-	if m.barHot != 1 {
+	if m.hot != (barSpot{kind: barChip, i: 1}) {
 		t.Fatal("hover on a chip")
 	}
 	m.Update(move(70, 5, tea.MouseNone))
-	if m.barHot != -1 || m.hover == nil || m.hover.key() != "a" || m.hoverEdge != rContent {
+	if m.hot != (barSpot{}) || m.hover == nil || m.hover.key() != "a" || m.hoverEdge != rContent {
 		t.Fatal("hover leaves the bar for the master")
 	}
 	m.OpenHere(newStub("d"))
@@ -618,16 +648,17 @@ func TestBarChipClickAndWheelSwitch(t *testing.T) {
 		t.Fatal("an unchanged hover is quiet")
 	}
 	m.View()
-	m.Update(move(96, 0, tea.MouseNone))
-	if !m.menuHot || !m.onMenu(96) || m.onMenu(85) || m.onMenu(98) {
-		t.Fatalf("hover on the palette button inside the margin %d %d", m.menuX, m.menuW)
+	fx, fw := m.fieldBox()
+	m.Update(move(fx-1, 0, tea.MouseNone))
+	if m.hot.kind != barField || m.barAt(fx+fw).kind != barField || m.barAt(fx-2).kind == barField || m.barAt(fx+fw+1).kind == barField {
+		t.Fatalf("hover on the field and its caps %d %d", fx, fw)
 	}
-	m.Update(click(96, 0, tea.MouseLeft))
+	m.Update(click(fx+fw/2, 0, tea.MouseLeft))
 	if _, ok := m.Overlay().(*Palette); !ok {
-		t.Fatal("the palette button opens the palette")
+		t.Fatal("the field opens the palette")
 	}
 	m.Dismiss()
-	m.Update(click(96, 0, tea.MouseRight))
+	m.Update(click(fx+fw/2, 0, tea.MouseRight))
 	if m.Overlay() != nil {
 		t.Fatal("only the left button opens it")
 	}
@@ -1327,5 +1358,46 @@ func TestRestoreSortsFloatsByLayer(t *testing.T) {
 	}
 	if strings.Join(got, " ") != "mid low high top" || ws.floats[1].layer != 0 || ws.floats[3].layer != maxLayer || ws.at(20, 15).key() != "top" || ws.Focused().Title() != "low" {
 		t.Fatalf("floats come back by layer with layers clamped and the focus raised within its own, %v", got)
+	}
+}
+
+func TestOpenAsideLeavesTheStage(t *testing.T) {
+	m := still(t, 100, 30)
+	a, b := newStub("a"), newStub("b")
+	ws1, _ := m.AddWorkspace("1", a)
+	ws2, _ := m.AddWorkspace("2", b)
+	d := sized{newStub("dialog"), 30, 6}
+	d.float = true
+	m.OpenAside(ws2, d, Box{})
+	if m.Active() != ws1 || ws2.Focused() != d || len(received[FocusMsg](d.stub)) != 0 || d.inits != 1 {
+		t.Fatal("a card opened aside waits as the focus of its hidden workspace")
+	}
+	m.Switch(1)
+	if got := received[FocusMsg](d.stub); len(got) != 1 || !got[0].Focused {
+		t.Fatal("it takes the focus on the next visit")
+	}
+	c := newStub("c")
+	m.OpenAside(ws2, c, Box{})
+	if ws2.Focused() != c || !c.focused {
+		t.Fatal("on the stage it opens as OpenFrom does")
+	}
+	m.Switch(0)
+	e := newStub("e")
+	m.OpenHere(e)
+	m.OpenAside(ws2, e, Box{})
+	if m.Active() != ws1 || ws2.find("e") == nil || ws1.find("e") != nil || ws1.Focused() != a || !a.focused || ws2.Focused() != e {
+		t.Fatal("a focused card on the stage is carried aside and the stage focuses the next card")
+	}
+	m.OpenAside(ws2, d, Box{})
+	if m.Active() != ws1 || ws2.Focused() != d {
+		t.Fatal("a card already in the hidden workspace becomes its focus")
+	}
+	ws2.zoom = ws2.find("b")
+	m.OpenAside(ws2, newStub("f"), Box{})
+	if ws2.Zoomed() != nil || m.Active() != ws1 {
+		t.Fatal("a tile opened aside gives the stage of its workspace back")
+	}
+	if m.OpenAside(nil, newStub("g"), Box{}) != nil {
+		t.Fatal("no workspace opens nothing")
 	}
 }

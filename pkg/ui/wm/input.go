@@ -99,8 +99,11 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
-// Routes mouse input to the overlay only, a click outside it dismissing it
+// Routes mouse input to the overlay only, a click outside it and the field it types into dismissing it
 func (m *Model) overlayMouse(msg tea.MouseMsg, sx, sy int) tea.Cmd {
+	if m.docked() != nil && msg.Mouse().Y < barHeight && m.barAt(msg.Mouse().X).kind == barField {
+		return nil
+	}
 	f := m.overlay.frame()
 	if !f.contains(sx, sy) {
 		if _, click := msg.(tea.MouseClickMsg); click {
@@ -160,11 +163,9 @@ func (m *Model) motion_(mo tea.Mouse, sx, sy int) tea.Cmd {
 		}
 		return nil
 	}
-	hot := -1
-	menu := false
+	hot := barSpot{}
 	if mo.Y < barHeight {
-		hot = m.chipAt(mo.X)
-		menu = m.onMenu(mo.X)
+		hot = m.barAt(mo.X)
 	}
 	var hit *entry
 	reg := rNone
@@ -186,20 +187,16 @@ func (m *Model) motion_(mo tea.Mouse, sx, sy int) tea.Cmd {
 			grip = closable(hit.card)
 		}
 	}
-	chipHot := -1
-	if mo.Y < barHeight {
-		chipHot = m.chipPartAt(mo.X)
-	}
 	hintHot := ""
 	if hit != nil && reg == rBottom {
 		hintHot = m.hintAt(hit, sx)
 	}
 	slid := grip && (reg == rLeft || reg == rRight || reg == rBottom) && (sx != m.hoverX || sy != m.hoverY)
 	m.hoverX, m.hoverY = sx, sy
-	if hit == m.hover && reg == m.hoverEdge && hot == m.barHot && menu == m.menuHot && grip == m.hoverGrip && chipHot == m.chipHot && hintHot == m.hintHot && !slid {
+	if hit == m.hover && reg == m.hoverEdge && hot == m.hot && grip == m.hoverGrip && hintHot == m.hintHot && !slid {
 		return nil
 	}
-	m.hover, m.hoverEdge, m.barHot, m.menuHot, m.hoverGrip, m.chipHot, m.hintHot = hit, reg, hot, menu, grip, chipHot, hintHot
+	m.hover, m.hoverEdge, m.hot, m.hoverGrip, m.hintHot = hit, reg, hot, grip, hintHot
 	return m.wake()
 }
 
@@ -212,19 +209,7 @@ func (m *Model) press(msg tea.MouseClickMsg, sx, sy int) tea.Cmd {
 		if mo.Button != tea.MouseLeft {
 			return nil
 		}
-		if m.onMenu(mo.X) {
-			return m.OpenPalette()
-		}
-		switch m.chipPartAt(mo.X) {
-		case chipNew:
-			return m.NewWorkspace()
-		case chipClose:
-			return m.CloseWorkspace()
-		}
-		if i := m.chipAt(mo.X); i >= 0 {
-			return m.Switch(i)
-		}
-		return nil
+		return m.pressBar(m.barAt(mo.X))
 	}
 	ws := m.Active()
 	if ws == nil {
@@ -270,6 +255,28 @@ func (m *Model) press(msg tea.MouseClickMsg, sx, sy int) tea.Cmd {
 		m.beginSelection(e, sx, sy)
 	}
 	return tea.Batch(append(cmds, m.focusEntry(e))...)
+}
+
+// Carries out a bar click, the field serving its waiting item or opening the commands, a dial firing its action
+func (m *Model) pressBar(at barSpot) tea.Cmd {
+	switch at.kind {
+	case barField:
+		if a := m.notice.Action; m.notice.Text != "" && a != "" {
+			return m.Fire(a)
+		}
+		return m.OpenPalette()
+	case barDial:
+		if a := m.dials[at.i].seg.Action; a != "" {
+			return m.Fire(a)
+		}
+	case barNew:
+		return m.NewWorkspace()
+	case barClose:
+		return m.CloseWorkspace()
+	case barChip:
+		return m.Switch(at.i)
+	}
+	return nil
 }
 
 // Resize a drag on the edge of the entry performs, nil when that edge is fixed
@@ -470,23 +477,18 @@ func (m *Model) Overlay() Card {
 	return m.overlay.card
 }
 
-// Rows a palette sits below the top of the stage, clear of the title row of the cards under it
-const paletteDrop = 2
-
-// Sizes the overlay from its card and centers it, palettes sitting near the top
+// Sizes the overlay from its card and centers it, a palette hanging its sheet from the field it types into
 func (m *Model) placeOverlay() {
 	e := m.overlay
 	if e == nil || m.width == 0 {
 		return
 	}
 	sw, sh := m.width, m.stageHeight()
-	w, h := minSize(e.card)
-	y := -1
 	if p, ok := e.card.(*Palette); ok {
-		w = min(max(sw*3/5, 44), sw) - 2 - 2*m.padX
-		h = min(max(p.Rows(), 1), max(sh-2-paletteDrop-2*m.padY, 1), 14)
-		y = paletteDrop
+		m.placeSheet(e, p)
+		return
 	}
+	w, h := minSize(e.card)
 	if w <= 0 {
 		w = sw * 7 / 10
 	}
@@ -494,10 +496,20 @@ func (m *Model) placeOverlay() {
 		h = sh * 7 / 10
 	}
 	w, h = min(max(w+2+2*m.padX, 12), sw), min(max(h+2+2*m.padY, 4), sh)
-	if y < 0 {
-		y = (sh - h) / 2
+	e.box = clampBox(Box{(sw - w) / 2, (sh - h) / 2, w, h}, sw, sh)
+	m.aim(e)
+}
+
+// Hangs the palette matches below the open field as a sheet as wide as its caps, a prompt keeping none
+func (m *Model) placeSheet(e *entry, p *Palette) {
+	fx, fw := m.openField()
+	rows := min(p.Rows(), max(m.stageHeight()-2-2*m.padY, 0), sheetRows)
+	if rows <= 0 {
+		e.box = Box{X: fx, Y: 0}
+		m.aim(e)
+		return
 	}
-	e.box = clampBox(Box{(sw - w) / 2, y, w, h}, sw, sh)
+	e.box = clampBox(Box{fx - 1, 0, fw + 2, rows + 2 + 2*m.padY}, m.width, m.stageHeight())
 	m.aim(e)
 }
 

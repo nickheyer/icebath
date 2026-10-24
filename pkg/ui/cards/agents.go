@@ -15,21 +15,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-type agentsTick struct{}
-
 // Roster of every agent across the open sessions with state, time, tokens and tools called, each openable or killable
 type Agents struct {
-	env     *Env
-	rows    []*harness.Run
-	sel     int
-	tokens  map[string]int
-	start   int
-	w, h    int
-	ticking bool
+	env    *Env
+	rows   []*harness.Run
+	sel    int
+	tokens map[string]int
+	start  int
+	w, h   int
+	timer  ticker
 }
 
 func NewAgents(env *Env) *Agents {
-	d := &Agents{env: env, tokens: map[string]int{}}
+	d := &Agents{env: env, tokens: map[string]int{}, timer: ticker{every: time.Second}}
 	d.refresh()
 	return d
 }
@@ -38,17 +36,20 @@ func (d *Agents) Title() string { return "AGENTS" }
 func (d *Agents) Glyph() string { return d.env.Theme.Glyphs.Agent }
 func (d *Agents) Key() string   { return "agents" }
 
-func (d *Agents) Init() tea.Cmd { return d.tick() }
+// Restarts the refresh loop the card may have missed a tick of while closed
+func (d *Agents) Init() tea.Cmd {
+	d.timer.reset()
+	return d.tick()
+}
 
 func (d *Agents) Contexts() []string { return []string{keys.Agents, keys.List, keys.Panel} }
 
+// Schedules the next refresh while any run goes and none is pending
 func (d *Agents) tick() tea.Cmd {
 	if !d.running() {
-		d.ticking = false
 		return nil
 	}
-	d.ticking = true
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return agentsTick{} })
+	return d.timer.start()
 }
 
 func (d *Agents) running() bool {
@@ -105,17 +106,14 @@ func (d *Agents) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		case agent.EventRunStart, agent.EventRunEnd, agent.EventSubagentStart, agent.EventSubagentEnd, agent.EventToolStart:
 			d.refresh()
 		}
-		if !d.ticking && d.running() {
-			return d, d.tick()
-		}
-		return d, nil
+		return d, d.tick()
 	case harness.RunDoneMsg:
 		d.refresh()
-		if !d.ticking && d.running() {
-			return d, d.tick()
+		return d, d.tick()
+	case tickMsg:
+		if !d.timer.owns(msg) {
+			return d, nil
 		}
-		return d, nil
-	case agentsTick:
 		d.refresh()
 		return d, d.tick()
 	case wm.ActionMsg:

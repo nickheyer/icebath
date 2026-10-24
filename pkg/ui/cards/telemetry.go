@@ -18,20 +18,18 @@ import (
 // Samples of throughput kept for the graph
 const sampleLimit = 120
 
-type telemetryTick struct{}
-
 // Model layer gauges, context fill, throughput, cache, cost, latency, retries and rate limits
 type Telemetry struct {
 	env     *Env
 	snap    harness.Telemetry
 	samples []float64
 	events  []string
-	ticking bool
+	timer   ticker
 	w, h    int
 }
 
 func NewTelemetry(env *Env) *Telemetry {
-	t := &Telemetry{env: env}
+	t := &Telemetry{env: env, timer: ticker{every: 250 * time.Millisecond}}
 	if env.Meter != nil {
 		t.snap = env.Meter.Snapshot()
 	}
@@ -41,7 +39,15 @@ func NewTelemetry(env *Env) *Telemetry {
 func (c *Telemetry) Title() string { return "METRICS" }
 func (c *Telemetry) Glyph() string { return c.env.Theme.Glyphs.Metrics }
 func (c *Telemetry) Key() string   { return "metrics" }
-func (c *Telemetry) Init() tea.Cmd { return nil }
+
+// Restarts sampling a stream that went on while the card was closed and missed its tick
+func (c *Telemetry) Init() tea.Cmd {
+	c.timer.reset()
+	if c.env.Meter != nil && c.env.Meter.Snapshot().Streaming {
+		return c.timer.start()
+	}
+	return nil
+}
 
 func (c *Telemetry) Contexts() []string { return []string{keys.Panel} }
 
@@ -89,14 +95,14 @@ func (c *Telemetry) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		switch msg.Event.Type {
 		case agent.EventTurnStart:
-			if !c.ticking {
-				c.ticking = true
-				return c, c.tick()
-			}
+			return c, c.timer.start()
 		case agent.EventCompactEnd:
 			c.note(render.Warm("compacted", c.env.Theme))
 		}
-	case telemetryTick:
+	case tickMsg:
+		if !c.timer.owns(msg) {
+			return c, nil
+		}
 		if c.env.Meter != nil {
 			c.snap = c.env.Meter.Snapshot()
 		}
@@ -105,15 +111,10 @@ func (c *Telemetry) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			c.samples = c.samples[len(c.samples)-sampleLimit:]
 		}
 		if c.snap.Streaming {
-			return c, c.tick()
+			return c, c.timer.start()
 		}
-		c.ticking = false
 	}
 	return c, nil
-}
-
-func (c *Telemetry) tick() tea.Cmd {
-	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return telemetryTick{} })
 }
 
 // Bars of the throughput history scaled to the tallest sample

@@ -92,8 +92,7 @@ func TestWorkspaceAccessors(t *testing.T) {
 	if ws.Focused() != a || ws.Master() != a || ws.Zoomed() != nil || ws.Ratio() != defaultRatio {
 		t.Fatal("accessors")
 	}
-	ws.SetBusy(true)
-	if !ws.Busy() || ws.Urgent() {
+	if ws.Urgent() {
 		t.Fatal("flags")
 	}
 	m.Focus(b)

@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -41,7 +43,7 @@ import (
 )
 
 // Chat completions server that answers with text, or with a tool call on the first request when asked
-func fakeServer(t *testing.T, toolFirst bool) (*httptest.Server, *atomic.Int32) {
+func fakeServer(t testing.TB, toolFirst bool) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +76,7 @@ func fakeServer(t *testing.T, toolFirst bool) (*httptest.Server, *atomic.Int32) 
 	return srv, &hits
 }
 
-func testConfig(t *testing.T, base string) (harness.Config, string) {
+func testConfig(t testing.TB, base string) (harness.Config, string) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv(profiles.ConfigDirEnv, filepath.Join(dir, "cfg"))
@@ -326,6 +328,18 @@ func key(code rune, mod tea.KeyMod) tea.KeyPressMsg {
 	return k
 }
 
+// Every dial on the bar, joined by spaces
+func dialText(m *Model) string {
+	var parts []string
+	for _, s := range m.status().Dials {
+		parts = append(parts, s.Text)
+	}
+	return strings.Join(parts, " ")
+}
+
+// Lane the bar shows for a workspace
+func laneOf(m *Model, ws *wm.Workspace) wm.Lane { return m.status().Lanes[ws] }
+
 func typeInto(m *Model, text string) {
 	for _, r := range text {
 		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
@@ -348,8 +362,8 @@ func TestModelRunsPromptAndRoutes(t *testing.T) {
 	}
 	d := m.desks[0]
 	_, cmd := m.Update(StartPrompt("hello"))
-	if m.state != tea.ProgramStateWorking || d.live.Session.Title() != "hello" || !d.ws.Busy() {
-		t.Fatalf("state %v title %q busy %v", m.state, d.live.Session.Title(), d.ws.Busy())
+	if l := laneOf(m, m.workspaceOf(d)); m.state != tea.ProgramStateWorking || d.live.Session.Title() != "hello" || l.Signal != wm.Working || l.Name != "hello" {
+		t.Fatalf("state %v title %q lane %+v", m.state, d.live.Session.Title(), l)
 	}
 	if m.View().ProgressBar == nil {
 		t.Fatal("busy app shows an indeterminate bar")
@@ -359,8 +373,8 @@ func TestModelRunsPromptAndRoutes(t *testing.T) {
 	if m.state != tea.ProgramStateDone || d.live.Session.Len() != 2 {
 		t.Fatalf("state %v len %d", m.state, d.live.Session.Len())
 	}
-	if m.sync(); d.ws.Busy() {
-		t.Fatal("chip settles after the run")
+	if m.sync(); laneOf(m, m.workspaceOf(d)).Signal != wm.Idle {
+		t.Fatal("chip settles after the run, seen since its workspace is on the stage")
 	}
 	feed(m, submit(m, d, "second"))
 	wasBusy := m.app.Busy(d.live)
@@ -382,13 +396,13 @@ func TestWorkspaces(t *testing.T) {
 	m, _ := newModel(t, false)
 	first := m.desks[0]
 	feed(m, m.newWorkspace())
-	if len(m.desks) != 2 || m.wm.ActiveIndex() != 1 {
+	if len(m.desks) != 2 || len(m.wm.Workspaces()) != 2 || m.wm.ActiveIndex() != 1 {
 		t.Fatalf("desks %d active %d", len(m.desks), m.wm.ActiveIndex())
 	}
 	second := m.desks[1]
 	m.sync()
-	if m.app.Session != second.live.Session {
-		t.Fatal("switching selects the new session")
+	if m.app.Session != second.live.Session || m.current() != second {
+		t.Fatal("a new workspace opens with a fresh session selected")
 	}
 	cmd := submit(m, second, "work")
 	if !m.app.Busy(second.live) || m.app.Busy(first.live) {
@@ -409,26 +423,29 @@ func TestWorkspaces(t *testing.T) {
 	}
 	released := second.live.Session.ID()
 	feed(m, m.closeWorkspace())
-	if len(m.desks) != 1 || len(m.wm.Workspaces()) != 1 || m.app.LiveByID(released) != nil {
-		t.Fatal("idle workspace closes and releases its session")
+	if len(m.desks) != 1 || len(m.wm.Workspaces()) != 1 || m.app.LiveByID(released) != nil || !toasted(m, "stored work") {
+		t.Fatal("idle workspace closes and stores its session")
 	}
 	feed(m, m.closeWorkspace())
 	if len(m.desks) != 1 || !toasted(m, "last workspace") {
 		t.Fatal("the last workspace stays")
 	}
 	feed(m, m.openStored(released))
-	if len(m.desks) != 2 || m.current().live.Session.ID() != released {
-		t.Fatal("stored session reopens as a desk")
+	if len(m.desks) != 2 || len(m.wm.Workspaces()) != 1 || m.current().live.Session.ID() != released || m.wm.Focused() != m.current().session {
+		t.Fatal("a stored session reopens as a card in the workspace on the stage with the focus")
 	}
+	resumed := m.current()
+	feed(m, m.wm.Focus(first.session))
 	feed(m, m.openStored(released))
-	if len(m.desks) != 2 {
-		t.Fatal("opening an open session only switches to it")
+	if len(m.desks) != 2 || m.wm.Focused() != resumed.session {
+		t.Fatal("opening an open session only focuses it")
 	}
+	feed(m, m.wm.Focus(first.session))
 	feed(m, m.forkStored(first.live.Session.ID()))
-	if len(m.desks) != 3 || m.current().live.Session.Parent() != first.live.Session.ID() {
-		t.Fatal("fork makes a new desk with the parent set")
+	if len(m.desks) != 3 || len(m.wm.Workspaces()) != 1 || m.current().live.Session.Parent() != first.live.Session.ID() {
+		t.Fatal("fork makes a new card beside the source with the parent set")
 	}
-	feed(m, m.wm.Switch(0))
+	feed(m, m.wm.Focus(first.session))
 	feed(m, submit(m, first, "turn"))
 	pump(t, m, runDone)
 	feed(m, m.pickTurn())
@@ -503,13 +520,18 @@ func TestCommandsAndPickers(t *testing.T) {
 		t.Fatal("missing attachment toasts")
 	}
 	feed(m, m.command(nil, "new", ""))
-	if len(m.desks) != 2 {
-		t.Fatal("new opens a workspace")
+	if len(m.desks) != 2 || len(m.wm.Workspaces()) != 1 || m.current() == d {
+		t.Fatal("new opens a session beside this one and focuses it")
 	}
 	feed(m, m.command(nil, "close", ""))
-	if len(m.desks) != 1 {
+	if len(m.desks) != 1 || m.current() != d {
 		t.Fatal("close drops it")
 	}
+	feed(m, m.command(nil, "workspace", ""))
+	if len(m.desks) != 2 || len(m.wm.Workspaces()) != 2 || m.wm.ActiveIndex() != 1 {
+		t.Fatal("workspace opens a new one holding a fresh session")
+	}
+	feed(m, m.closeWorkspace())
 	for name, k := range map[string]string{"metrics": "metrics", "files": "files", "jobs": "jobs", "sessions": "sessions", "config": "config", "agents": "agents", "findings": "findings:" + d.live.Session.ID()} {
 		feed(m, m.command(nil, name, ""))
 		if !m.wm.Has(k) {
@@ -630,13 +652,13 @@ func TestCardMessages(t *testing.T) {
 	a, b := stored("third"), stored("fourth")
 	_, cmd = m.Update(cards.OpenSessionMsg{Sessions: []string{a, b}})
 	feed(m, cmd)
-	if len(m.desks) != 3 || m.current().live.Session.ID() != b || !toasted(m, "resumed 2 sessions") {
-		t.Fatalf("resuming many opens a workspace for each, the last shown, %d desks", len(m.desks))
+	if len(m.desks) != 3 || len(m.wm.Workspaces()) != 1 || m.current().live.Session.ID() != b || !toasted(m, "resumed 2 sessions") {
+		t.Fatalf("resuming many opens a card for each in this workspace, the last focused, %d desks", len(m.desks))
 	}
 	_, cmd = m.Update(cards.OpenSessionMsg{Sessions: []string{a}})
 	feed(m, cmd)
 	if len(m.desks) != 3 || m.current().live.Session.ID() != a || !toasted(m, "resumed third") {
-		t.Fatal("resuming an open one switches to it and names it")
+		t.Fatal("resuming an open one focuses it and names it")
 	}
 	_, cmd = m.Update(cards.ForkMsg{Sessions: []string{a, b}})
 	feed(m, cmd)
@@ -648,8 +670,13 @@ func TestCardMessages(t *testing.T) {
 	if len(m.desks) != 6 || !toasted(m, "forked third into ") {
 		t.Fatal("one good fork names its source among the failures")
 	}
-	for len(m.desks) > 1 {
-		feed(m, m.closeWorkspace())
+	for _, other := range slices.Clone(m.desks) {
+		if other != d {
+			feed(m, m.closeSession(other))
+		}
+	}
+	if len(m.desks) != 1 || m.desks[0] != d {
+		t.Fatalf("closing every other session card leaves the first, %d desks", len(m.desks))
 	}
 	_, cmd = m.Update(cards.DeleteMsg{Sessions: []string{a, b}})
 	feed(m, cmd)
@@ -767,8 +794,16 @@ func TestApprovalFlow(t *testing.T) {
 	if !m.wm.Has("approval:"+d.live.Session.ID()) || m.state != tea.ProgramStateBlocked || len(d.approval.Pending()) != 1 {
 		t.Fatal("approval dialog opens in the workspace")
 	}
-	if left, _ := m.bar(); !strings.Contains(fmt.Sprint(left), "approval") {
-		t.Fatalf("bar shows the wait, %v", left)
+	if l := laneOf(m, m.wm.Active()); l.Signal != wm.Blocked || l.Detail != "Bash" || m.status().Notice.Text != "" {
+		t.Fatalf("the lane shows the wait while the dialog holds the focus, %+v %+v", l, m.status().Notice)
+	}
+	feed(m, m.wm.Focus(d.session))
+	if n := m.status().Notice; n.Text != "approve Bash echo hi ∷ 1 run it" || n.Signal != wm.Blocked || n.Action != "attention.next" || n.More != 0 {
+		t.Fatalf("an approval off the focus waits in the field, %+v", n)
+	}
+	feed(m, m.wm.Run("attention.next"))
+	if m.wm.Focused() != wm.Card(d.approval) {
+		t.Fatal("the field serves the approval by focusing its dialog")
 	}
 	feed(m, m.answer(policy.Yes)())
 	pump(t, m, runDone)
@@ -965,20 +1000,52 @@ func TestCtrlC(t *testing.T) {
 	}
 }
 
-func TestBar(t *testing.T) {
+func TestBarDials(t *testing.T) {
 	m, _ := newModel(t, false)
 	d := m.desks[0]
-	left, right := m.bar()
-	if len(left) == 0 || left[0].Text != "m-fast" || len(right) != 0 {
-		t.Fatalf("idle bar %v %v", left, right)
+	dials := m.status().Dials
+	if len(dials) != 3 || dials[0] != (wm.Segment{Text: "ctx 0", Style: wm.Dim, Action: "open.metrics"}) || dials[1] != (wm.Segment{Text: m.theme.Glyphs.Models + " m-fast", Style: wm.Cool, Action: "model.switch"}) || dials[2] != (wm.Segment{Text: "default", Style: wm.Dim, Action: "mode.set"}) {
+		t.Fatalf("idle dials, the context counted in tokens while the window is unknown %+v", dials)
 	}
 	cmd := submit(m, d, "hello")
-	left, right = m.bar()
-	if !strings.Contains(fmt.Sprint(left), "working") || len(right) != 1 {
-		t.Fatalf("busy bar %v %v", left, right)
+	if l := laneOf(m, m.wm.Active()); l.Signal != wm.Working || !strings.HasSuffix(l.Detail, "s") {
+		t.Fatalf("a working lane counts the time %+v", l)
 	}
 	feed(m, cmd)
 	pump(t, m, runDone)
+	d.live.Endpoint.Catalog.Context = d.live.Session.Context() * 4
+	if dials := m.status().Dials; dials[0] != (wm.Segment{Text: "ctx ▰▰▱▱▱▱ 25%", Style: wm.Dim, Action: "open.metrics"}) {
+		t.Fatalf("the gauge fills with the context %+v", dials[0])
+	}
+	d.live.Endpoint.Catalog.Context = d.live.Session.Context() * 10 / 8
+	if dials := m.status().Dials; dials[0].Style != wm.Warm {
+		t.Fatalf("a filling context warms the gauge %+v", dials[0])
+	}
+	d.live.Endpoint.Catalog.Context = d.live.Session.Context()
+	if dials := m.status().Dials; dials[0] != (wm.Segment{Text: "ctx ▰▰▰▰▰▰ 100%", Style: wm.Bad, Action: "open.metrics"}) {
+		t.Fatalf("a full context alarms %+v", dials[0])
+	}
+	if _, err := m.app.Shell.Bash().Run(context.Background(), json.RawMessage(`{"command":"sleep 30","run_in_background":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dialText(m), m.theme.Glyphs.Jobs+" 1") || m.status().Dials[0].Action != "open.jobs" {
+		t.Fatalf("running jobs get a dial %q", dialText(m))
+	}
+	for _, j := range m.app.Shell.Jobs() {
+		m.app.Shell.KillJob(context.Background(), j.ID)
+	}
+	if strings.Contains(dialText(m), m.theme.Glyphs.Jobs) {
+		t.Fatal("the jobs dial leaves with the jobs")
+	}
+	for md, st := range map[mode.Mode]wm.SegmentStyle{mode.Default: wm.Dim, mode.AcceptEdits: wm.Warm, mode.Plan: wm.Cool, mode.Bypass: wm.Bad} {
+		m.app.Mode.Set(md)
+		if last := m.status().Dials[len(m.status().Dials)-1]; last.Text != md.Label() || last.Style != st {
+			t.Fatalf("mode dial %+v for %s", last, md)
+		}
+	}
+	if failed(nil) || failed(context.Canceled) || failed(fmt.Errorf("wrapped %w", agent.ErrInterrupted)) || !failed(errors.New("rate limited")) {
+		t.Fatal("only errors the person did not cause count as failures")
+	}
 }
 
 func TestPanelPickerAndModeCycle(t *testing.T) {
@@ -992,12 +1059,12 @@ func TestPanelPickerAndModeCycle(t *testing.T) {
 		t.Fatalf("alt+a lists every panel, %v", m.wm.Overlay())
 	}
 	for _, it := range p.Matches() {
-		if it.Keys != "" {
+		if it.Keys != "" && it.ID != "new" {
 			t.Fatalf("unbound and closed panels carry no keys %+v", it)
 		}
 	}
 	feed(m, m.wm.Dismiss())
-	m.keys.Rebind("open.metrics", "alt+i")
+	m.keys.Rebind("open.metrics", "alt+o")
 	feed(m, m.command(nil, "sessions", ""))
 	feed(m, m.wm.Focus(d.session))
 	_, cmd = m.Update(key('a', tea.ModAlt))
@@ -1007,7 +1074,7 @@ func TestPanelPickerAndModeCycle(t *testing.T) {
 	for _, it := range p.Matches() {
 		keyed[it.ID] = it.Keys
 	}
-	if keyed["metrics"] != "alt+i" || keyed["sessions"] != "open" {
+	if keyed["metrics"] != "alt+o" || keyed["sessions"] != "open" || keyed["new"] != "alt+n" {
 		t.Fatalf("the window menu shows the keymap key and what is open %v", keyed)
 	}
 	feed(m, m.wm.Close(m.sessions))
@@ -1186,7 +1253,7 @@ func TestClearStartsAFreshSessionInPlace(t *testing.T) {
 	feed(m, m.command(nil, "findings", ""))
 	old := d.live
 	feed(m, m.command(nil, "clear", ""))
-	if d.live == old || d.live.Session.Len() != 0 || len(m.desks) != 1 || len(m.wm.Workspaces()) != 1 || d.ws.ID != d.live.Session.ID() || m.app.LiveByID(old.Session.ID()) != nil || m.app.Session != d.live.Session {
+	if d.live == old || d.live.Session.Len() != 0 || len(m.desks) != 1 || len(m.wm.Workspaces()) != 1 || m.app.LiveByID(old.Session.ID()) != nil || m.app.Session != d.live.Session {
 		t.Fatal("clear swaps in a fresh session and releases the old one")
 	}
 	if ok, _ := m.app.Store.Exists(context.Background(), old.Session.ID()); !ok || !toasted(m, old.Session.ID()+" stored") {
@@ -1223,11 +1290,11 @@ func TestWorkspacesRunOnTheirOwnEndpoints(t *testing.T) {
 	if first.live.Endpoint.Model != "m-a" || second.live.Endpoint.Model != "m-b" || m.app.Primary.Model != "m-b" {
 		t.Fatalf("each workspace keeps its model, %s and %s", first.live.Endpoint.Model, second.live.Endpoint.Model)
 	}
-	if left, _ := m.bar(); !strings.Contains(fmt.Sprint(left), "m-b") || !strings.Contains(m.View().WindowTitle, "m-b") {
+	if !strings.Contains(dialText(m), "m-b") || !strings.Contains(m.View().WindowTitle, "m-b") {
 		t.Fatal("the bar and title name the model of the workspace on the stage")
 	}
 	m.Update(key('1', tea.ModAlt))
-	if left, _ := m.bar(); !strings.Contains(fmt.Sprint(left), "m-a") || !strings.Contains(m.View().WindowTitle, "m-a") {
+	if !strings.Contains(dialText(m), "m-a") || !strings.Contains(m.View().WindowTitle, "m-a") {
 		t.Fatal("switching workspaces switches the model shown")
 	}
 	one := submit(m, first, "one")
@@ -1267,7 +1334,7 @@ func TestWorkspacesRunOnTheirOwnEndpoints(t *testing.T) {
 	if d := m.current(); d.live.Session.ID() != stored || d.live.Endpoint.Profile.Name != "other" || d.live.Endpoint.Model != "m-x" || !toasted(m, "on m-x") {
 		t.Fatalf("a resumed session comes back on its own endpoint, %+v", d.live.Endpoint.Profile.Name)
 	}
-	feed(m, m.closeWorkspace())
+	feed(m, m.closeSession(m.current()))
 	if err := m.app.RemoveProfile("other"); err != nil {
 		t.Fatal(err)
 	}
@@ -1316,14 +1383,14 @@ func TestWorkspacesSurviveARestart(t *testing.T) {
 	if !ok || len(l.Workspaces) != 2 || l.Active != 1 || l.Missions[firstID] != ms.ID {
 		t.Fatalf("the layout is written as it changes %+v", l)
 	}
-	if w := l.Workspaces[0]; w.ID != firstID || w.Mode != "dwindle" || len(w.Tiles) != 2 || w.Tiles[1].Key != "findings:"+firstID || w.Tree == nil {
+	if w := l.Workspaces[0]; w.ID != "w1" || w.Mode != "dwindle" || len(w.Tiles) != 2 || w.Tiles[0].Key != "session:"+firstID || w.Tiles[1].Key != "findings:"+firstID || w.Tree == nil {
 		t.Fatalf("first workspace %+v", w)
 	}
 	var view struct {
 		Hidden bool `json:"thinking_hidden"`
 	}
 	json.Unmarshal(l.Workspaces[1].Cards["session:"+secondID], &view)
-	if w := l.Workspaces[1]; w.ID != secondID || len(w.Tiles) != 2 || w.Tiles[1].Key != "metrics" || len(w.Floats) != 1 || w.Floats[0].Key != "config" || w.Focus != "config" || !view.Hidden {
+	if w := l.Workspaces[1]; w.ID != "w2" || len(w.Tiles) != 2 || w.Tiles[0].Key != "session:"+secondID || w.Tiles[1].Key != "metrics" || len(w.Floats) != 1 || w.Floats[0].Key != "config" || w.Focus != "config" || !view.Hidden {
 		t.Fatalf("second workspace %+v", w)
 	}
 	m.shutdown()
@@ -1340,7 +1407,7 @@ func TestWorkspacesSurviveARestart(t *testing.T) {
 		t.Fatalf("both workspaces come back with the second shown, %d desks active %d lives %d", len(again.desks), again.wm.ActiveIndex(), len(again.app.Lives()))
 	}
 	one, two := again.desks[0], again.desks[1]
-	if one.live.Session.ID() != firstID || one.live.Session.Len() != 1 || one.ws.Mode() != wm.Dwindle || !again.wm.Has("findings:"+firstID) || one.mission != ms.ID {
+	if one.live.Session.ID() != firstID || one.live.Session.Len() != 1 || again.workspaceOf(one).Mode() != wm.Dwindle || !again.wm.Has("findings:"+firstID) || one.mission != ms.ID {
 		t.Fatal("the first workspace comes back with its transcript, layout, findings card and mission")
 	}
 	if two.live.Session.ID() != secondID || two.live.Session.Len() != 0 || !again.wm.Has("metrics") || !again.wm.Has("config") {
@@ -1379,4 +1446,312 @@ func TestWorkspacesSurviveARestart(t *testing.T) {
 		t.Fatal("without a layout a fresh session opens alone")
 	}
 	fourth.shutdown()
+}
+
+func TestSessionsShareAWorkspace(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.wm.SetMotion(0)
+	approval := func(msg tea.Msg) bool { _, ok := msg.(harness.ApprovalMsg); return ok }
+	first := m.desks[0]
+	_, cmd := m.Update(key('n', tea.ModAlt))
+	feed(m, cmd)
+	if len(m.desks) != 2 || len(m.wm.Workspaces()) != 1 {
+		t.Fatalf("alt+n opens a second session in the same workspace, %d desks %d workspaces", len(m.desks), len(m.wm.Workspaces()))
+	}
+	second := m.desks[1]
+	if m.wm.WorkspaceOf(second.session) != m.wm.Active() || m.wm.Focused() != second.session || m.current() != second || m.app.Session != second.live.Session {
+		t.Fatal("the new session card takes the focus and the selection")
+	}
+	feed(m, m.command(nil, "model", "m-b"))
+	if second.live.Endpoint.Model != "m-b" || first.live.Endpoint.Model != "m-fast" {
+		t.Fatal("the model switch lands on the focused session")
+	}
+	if !strings.Contains(dialText(m), "m-b") || !strings.HasSuffix(second.session.Status(), "m-b") {
+		t.Fatalf("the bar and the card status name its model %q %q", dialText(m), second.session.Status())
+	}
+	feed(m, m.wm.Focus(first.session))
+	m.sync()
+	if m.current() != first || m.app.Session != first.live.Session {
+		t.Fatal("focusing the other card moves the selection")
+	}
+	if !strings.Contains(dialText(m), "m-fast") {
+		t.Fatal("the bar follows the focused session")
+	}
+	feed(m, m.command(nil, "metrics", ""))
+	if m.wm.Focused() != m.metrics || m.current() != first {
+		t.Fatal("a focused panel leaves the last focused session current")
+	}
+	feed(m, m.command(nil, "rename", "mine"))
+	if first.live.Session.Title() != "mine" || second.live.Session.Title() != "" {
+		t.Fatal("session commands from a panel act on that session")
+	}
+	cmd = submit(m, second, "go")
+	m.sync()
+	if l := laneOf(m, m.wm.Active()); l.Signal != wm.Working || l.Name != "go" {
+		t.Fatalf("the lane shows a busy session anywhere in it under the name of the last focused %+v", l)
+	}
+	feed(m, m.wm.Focus(second.session))
+	if feed(m, m.wm.CloseFocused()); !m.wm.Has(second.session.Key()) || len(m.desks) != 2 || second.session.Closable() {
+		t.Fatal("a busy session card refuses to close")
+	}
+	if feed(m, m.closeSession(second)); len(m.desks) != 2 || !toasted(m, "agent still working") {
+		t.Fatal("the close command refuses a busy session too")
+	}
+	feed(m, cmd)
+	pump(t, m, approval)
+	if m.current() != second || m.wm.WorkspaceOf(second.approval) != m.wm.Active() {
+		t.Fatal("the approval dialog opens beside its session and counts as it")
+	}
+	feed(m, m.answer(policy.Yes)())
+	pump(t, m, runDone)
+	m.sync()
+	if laneOf(m, m.wm.Active()).Signal != wm.Idle {
+		t.Fatal("the chip settles")
+	}
+	id := second.live.Session.ID()
+	feed(m, m.wm.Focus(second.session))
+	feed(m, m.wm.CloseFocused())
+	if len(m.desks) != 1 || m.app.LiveByID(id) != nil || m.wm.Has("session:"+id) || !toasted(m, "stored go") {
+		t.Fatal("closing the card stores and releases the session")
+	}
+	if ok, _ := m.app.Store.Exists(context.Background(), id); !ok {
+		t.Fatal("the closed session is on disk")
+	}
+	if m.current() != first || m.app.Session != first.live.Session {
+		t.Fatal("the remaining session is current")
+	}
+	feed(m, m.wm.Close(m.metrics))
+	feed(m, m.wm.Close(first.session))
+	if len(m.desks) != 0 || m.current() != nil || len(m.wm.Workspaces()) != 1 || toasted(m, "stored mine") {
+		t.Fatal("the last session card closes too without a toast for a session that holds nothing, leaving the workspace")
+	}
+	if dials := m.status().Dials; len(dials) != 2 || !strings.HasSuffix(dials[0].Text, " "+m.app.Primary.Model) || laneOf(m, m.wm.Active()) != (wm.Lane{}) {
+		t.Fatalf("the bar falls back to the default endpoint %+v", dials)
+	}
+	if text := ansi.Strip(m.View().Content); !strings.Contains(text, "alt+n new session") || !strings.Contains(text, "alt+a open panel") {
+		t.Fatal("an empty workspace invites a session or a panel")
+	}
+	m.Update(cards.SetModelMsg{Model: "m-z"})
+	if m.app.Primary.Model != "m-z" || !toasted(m, "model m-z") {
+		t.Fatal("with no session the model pick sets the default")
+	}
+	_, cmd = m.Update(StartPrompt("hello"))
+	feed(m, cmd)
+	if len(m.desks) != 1 || m.desks[0].live.Endpoint.Model != "m-z" || !m.app.Busy(m.desks[0].live) || m.wm.Focused() != m.desks[0].session {
+		t.Fatal("a prompt with no session opens one on the default")
+	}
+	pump(t, m, approval)
+	feed(m, m.answer(policy.Yes)())
+	pump(t, m, runDone)
+	feed(m, m.wm.Focus(m.desks[0].session))
+	feed(m, m.command(nil, "fork", ""))
+	if len(m.desks) != 2 || len(m.wm.Workspaces()) != 1 || m.current().live.Session.Parent() != m.desks[0].live.Session.ID() {
+		t.Fatal("fork opens the copy beside its source")
+	}
+}
+
+func TestSharedWorkspaceSurvivesARestart(t *testing.T) {
+	srv, _ := fakeServer(t, false)
+	cfg, dir := testConfig(t, srv.URL)
+	ctx := context.Background()
+	m, err := New(ctx, Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(m.Init())
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	first := m.desks[0]
+	feed(m, m.newSession())
+	second := m.desks[1]
+	firstID, secondID := first.live.Session.ID(), second.live.Session.ID()
+	first.live.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "one"}}})
+	second.live.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "two"}}})
+	feed(m, m.command(second, "findings", ""))
+	feed(m, m.wm.Focus(second.session))
+	m.Update(keysTickMsg{})
+	l, _, ok := loadLayout(layoutPath(m.app.Config))
+	if !ok || len(l.Workspaces) != 1 || len(l.Workspaces[0].Tiles) != 3 || l.Workspaces[0].Focus != "session:"+secondID {
+		t.Fatalf("one workspace holds both sessions and the findings %+v", l)
+	}
+	m.shutdown()
+	again, err := New(ctx, Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(again.Init())
+	again.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if len(again.desks) != 2 || len(again.wm.Workspaces()) != 1 || again.current().live.Session.ID() != secondID || again.app.Current().Session.ID() != secondID {
+		t.Fatalf("both sessions come back in one workspace with the focused one selected, %d desks %d workspaces", len(again.desks), len(again.wm.Workspaces()))
+	}
+	if !again.wm.Has("session:"+firstID) || !again.wm.Has("findings:"+secondID) || again.desks[0].live.Session.Len() != 1 || again.desks[1].live.Session.Len() != 1 {
+		t.Fatal("every card comes back with its transcript")
+	}
+	again.shutdown()
+	third, err := New(ctx, Options{Config: cfg, Dir: dir, Resume: firstID, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(third.Init())
+	if len(third.desks) != 2 || len(third.wm.Workspaces()) != 1 || third.current().live.Session.ID() != firstID || third.wm.Focused() != third.current().session {
+		t.Fatal("resuming a session already in the layout focuses its card")
+	}
+	third.shutdown()
+	legacy := fmt.Sprintf(`{"active":1,"workspaces":[{"id":%q,"tiles":[{"key":"session:%s"},{"key":"metrics"}]},{"id":%q,"tiles":[{"key":"session:%s"}]}]}`, firstID, firstID, secondID, secondID)
+	os.WriteFile(layoutPath(cfg), []byte(legacy), 0o644)
+	fourth, err := New(ctx, Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(fourth.Init())
+	if len(fourth.desks) != 2 || len(fourth.wm.Workspaces()) != 2 || fourth.wm.ActiveIndex() != 1 || fourth.current().live.Session.ID() != secondID || !fourth.wm.Has("metrics") {
+		t.Fatal("a layout from before sessions shared workspaces comes back by its session keys")
+	}
+	fourth.shutdown()
+	os.WriteFile(layoutPath(cfg), []byte(`{"workspaces":[{"id":"w1","tiles":[{"key":"metrics"}]}]}`), 0o644)
+	fifth, err := New(ctx, Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(fifth.Init())
+	if len(fifth.desks) != 0 || len(fifth.wm.Workspaces()) != 1 || fifth.current() != nil || len(fifth.app.Lives()) != 0 || !fifth.wm.Has("metrics") {
+		t.Fatalf("a workspace saved without sessions comes back without one, %d desks %d lives", len(fifth.desks), len(fifth.app.Lives()))
+	}
+	fifth.shutdown()
+}
+
+func TestBackgroundWorkWaitsInTheField(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.wm.SetMotion(0)
+	first := m.desks[0]
+	cmd := submit(m, first, "run it")
+	feed(m, m.newWorkspace())
+	ws1, ws2 := m.wm.Workspaces()[0], m.wm.Workspaces()[1]
+	feed(m, cmd)
+	pump(t, m, func(msg tea.Msg) bool { _, ok := msg.(harness.ApprovalMsg); return ok })
+	if m.wm.Active() != ws2 || m.wm.WorkspaceOf(first.approval) != ws1 || ws1.Focused() != wm.Card(first.approval) {
+		t.Fatal("an approval in a hidden workspace leaves the stage alone and waits as the focus of its own")
+	}
+	if l := laneOf(m, ws1); l != (wm.Lane{Name: "run it", Signal: wm.Blocked, Detail: "Bash"}) {
+		t.Fatalf("blocked lane %+v", l)
+	}
+	if n := m.status().Notice; n != (wm.Notice{Text: "approve Bash echo hi ∷ 1 run it", Signal: wm.Blocked, Action: "attention.next"}) {
+		t.Fatalf("the field raises the approval %+v", n)
+	}
+	m.app.Approver.Answer(first.approval.Pending()[0].ID, policy.Yes)
+	pump(t, m, runDone)
+	if l := laneOf(m, ws1); m.wm.Active() != ws2 || l.Signal != wm.Fresh || l.Detail != "" {
+		t.Fatalf("a run ending out of view leaves a fresh lane %+v", l)
+	}
+	n := m.status().Notice
+	if n.Signal != wm.Fresh || !strings.HasPrefix(n.Text, "done in ") || !strings.HasSuffix(n.Text, " with 1 tool ∷ 1 run it") {
+		t.Fatalf("the field raises the finished run %+v", n)
+	}
+	feed(m, m.wm.Run("attention.next"))
+	if m.wm.Active() != ws1 || m.wm.Focused() != wm.Card(first.session) {
+		t.Fatal("serving the notice shows the session")
+	}
+	if laneOf(m, ws1).Signal != wm.Idle || m.status().Notice.Text != "" || m.wm.Run("attention.next") != nil {
+		t.Fatal("visiting the workspace marks the run seen and empties the queue")
+	}
+}
+
+func TestFailedRunWaitsInTheField(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"message":"bad request"}}`, http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+	cfg, dir := testConfig(t, srv.URL)
+	m, err := New(context.Background(), Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(m.Init())
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m.wm.SetMotion(0)
+	first := m.desks[0]
+	cmd := submit(m, first, "doomed")
+	feed(m, m.newWorkspace())
+	feed(m, cmd)
+	pump(t, m, runDone)
+	ws1 := m.wm.Workspaces()[0]
+	if l := laneOf(m, ws1); l.Signal != wm.Failed || l.Name != "doomed" {
+		t.Fatalf("a run failing out of view leaves a failed lane %+v", l)
+	}
+	if n := m.status().Notice; n.Signal != wm.Failed || !strings.HasPrefix(n.Text, "failed ") || !strings.HasSuffix(n.Text, "∷ 1 doomed") {
+		t.Fatalf("the field raises the failure %+v", n)
+	}
+	feed(m, m.wm.Run("attention.next"))
+	if m.wm.Active() != ws1 || laneOf(m, ws1).Signal != wm.Idle {
+		t.Fatal("serving the failure shows its session and marks it seen")
+	}
+}
+
+func TestSubagentsOpenAsideAndCountOnTheBar(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Role string `json:"role"`
+			} `json:"messages"`
+		}
+		json.Unmarshal(body, &req)
+		tooled := slices.ContainsFunc(req.Messages, func(m struct {
+			Role string `json:"role"`
+		}) bool {
+			return m.Role == "tool"
+		})
+		w.Header().Set("Content-Type", "text/event-stream")
+		if !tooled && strings.Contains(string(body), "spawn") {
+			fmt.Fprintf(w, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"model\":%q,\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"Agent\",\"arguments\":\"{\\\"prompt\\\":\\\"greet\\\",\\\"description\\\":\\\"greeting\\\"}\"}}]},\"finish_reason\":null}]}\n\n", req.Model)
+			fmt.Fprintf(w, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"model\":%q,\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n", req.Model)
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			return
+		}
+		if !tooled {
+			<-release
+		}
+		fmt.Fprintf(w, "data: {\"id\":\"c2\",\"object\":\"chat.completion.chunk\",\"model\":%q,\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"done\"},\"finish_reason\":null}]}\n\n", req.Model)
+		fmt.Fprintf(w, "data: {\"id\":\"c2\",\"object\":\"chat.completion.chunk\",\"model\":%q,\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3,\"total_tokens\":10}}\n\n", req.Model)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	cfg, dir := testConfig(t, srv.URL)
+	cfg.Permissions.Allow = append(cfg.Permissions.Allow, "Agent")
+	m, err := New(context.Background(), Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(m.Init())
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m.wm.SetMotion(0)
+	first := m.desks[0]
+	cmd := submit(m, first, "spawn")
+	feed(m, m.newWorkspace())
+	ws1, ws2 := m.wm.Workspaces()[0], m.wm.Workspaces()[1]
+	feed(m, cmd)
+	pump(t, m, func(msg tea.Msg) bool {
+		e, ok := msg.(harness.EventMsg)
+		return ok && e.Event.Type == agent.EventSubagentStart
+	})
+	if len(first.agents) != 1 {
+		close(release)
+		t.Fatalf("one agent card, got %d", len(first.agents))
+	}
+	for _, card := range first.agents {
+		if m.wm.Active() != ws2 || m.wm.WorkspaceOf(card) != ws1 || ws1.Focused() != wm.Card(card) {
+			close(release)
+			t.Fatal("the card of a sub-agent of a hidden session opens aside")
+		}
+	}
+	if d := m.status().Dials[0]; d != (wm.Segment{Text: m.theme.Glyphs.Agent + " 1", Style: wm.Cool, Action: "open.agents"}) {
+		close(release)
+		t.Fatalf("a running sub-agent gets a dial %+v", d)
+	}
+	close(release)
+	pump(t, m, runDone)
+	if strings.Contains(dialText(m), m.theme.Glyphs.Agent) {
+		t.Fatal("the agents dial leaves when the sub-agents end")
+	}
 }

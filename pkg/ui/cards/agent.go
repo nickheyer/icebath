@@ -13,16 +13,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-type agentTick struct{}
-
 // Live transcript of one child run under a header with its task, state and elapsed time
 type Agent struct {
-	env     *Env
-	run     *harness.Run
-	tr      *Transcript
-	tick    int
-	ticking bool
-	w, h    int
+	env   *Env
+	run   *harness.Run
+	tr    *Transcript
+	tick  int
+	timer ticker
+	w, h  int
 }
 
 // Builds the card for a child run, loading what it has said so far
@@ -35,7 +33,7 @@ func NewAgent(env *Env, run *harness.Run) *Agent {
 	if run.Session != nil {
 		tr.Load(run.Session.Entries(), run.Session.Records())
 	}
-	return &Agent{env: env, run: run, tr: tr}
+	return &Agent{env: env, run: run, tr: tr, timer: ticker{every: time.Second}}
 }
 
 // Run the card follows
@@ -50,14 +48,17 @@ func (a *Agent) Key() string         { return "agent:" + a.run.ID }
 func (a *Agent) Selectable() bool    { return true }
 func (a *Agent) MinSize() (int, int) { return 24, 4 }
 
-func (a *Agent) Init() tea.Cmd { return a.schedule() }
+// Restarts the header clock and the transcript repaint loop, either of which may have missed a tick while closed
+func (a *Agent) Init() tea.Cmd {
+	a.timer.reset()
+	return tea.Batch(a.schedule(), a.tr.Init())
+}
 
 func (a *Agent) schedule() tea.Cmd {
-	if a.ticking || !a.run.Running() {
+	if !a.run.Running() {
 		return nil
 	}
-	a.ticking = true
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return agentTick{} })
+	return a.timer.start()
 }
 
 // Keymap contexts in force, the search bar while it takes typing
@@ -70,8 +71,11 @@ func (a *Agent) Contexts() []string {
 
 func (a *Agent) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
-	case agentTick:
-		a.ticking = false
+	case tickMsg:
+		if !a.timer.owns(msg) {
+			_, cmd := a.tr.Update(msg)
+			return a, cmd
+		}
 		a.tick++
 		return a, a.schedule()
 	case harness.EventMsg:

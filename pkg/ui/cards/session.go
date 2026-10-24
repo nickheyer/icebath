@@ -2,7 +2,6 @@ package cards
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -16,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Master card of a workspace, the transcript of one session above the prompt that steers it
+// Window of one session, its transcript above the prompt that steers it, closable while nothing runs on it
 type Session struct {
 	env        *Env
 	live       *harness.Live
@@ -25,8 +24,8 @@ type Session struct {
 	focused    bool
 	w, h       int
 	split      int
-	// Number of the workspace holding the card, zero while it has none
-	Number func() int
+	// Reports whether the app holds the session beyond its runs, such as while compacting it
+	Locked func() bool
 }
 
 // Builds the session card over an open session, keeping the prompt draft under dir
@@ -72,28 +71,24 @@ func (s *Session) Animate(dt float64) bool { return s.Transcript.Animate(dt) }
 // Session the card shows
 func (s *Session) Session() *session.Session { return s.live.Session }
 
-// Label of the session after its workspace number, the derived or chosen title and NEW before either
+// Derived or chosen title of the session, NEW before either
 func (s *Session) Title() string {
-	label := "NEW"
 	if t := s.live.Session.Title(); t != "" {
-		label = render.Truncate(t, 40, s.env.Theme)
+		return render.Truncate(t, 40, s.env.Theme)
 	}
-	n := 0
-	if s.Number != nil {
-		n = s.Number()
-	}
-	if n <= 0 {
-		return label
-	}
-	return strconv.Itoa(n) + " " + s.env.Theme.Glyphs.Sep + " " + label
+	return "NEW"
 }
 
 func (s *Session) Glyph() string       { return s.env.Theme.Glyphs.Session }
 func (s *Session) Key() string         { return "session:" + s.live.Session.ID() }
-func (s *Session) Init() tea.Cmd       { return nil }
-func (s *Session) Closable() bool      { return false }
 func (s *Session) Selectable() bool    { return true }
 func (s *Session) MinSize() (int, int) { return 30, 8 }
+
+// Restarts the transcript repaint loop the card may have missed a tick of while closed
+func (s *Session) Init() tea.Cmd { return s.Transcript.Init() }
+
+// Reports whether the card may close, which it may while no run goes and the app lets go of the session
+func (s *Session) Closable() bool { return !s.busy() && (s.Locked == nil || !s.Locked()) }
 
 // Rebuilds the transcript from the session after compaction or a fork
 func (s *Session) Reload() {
@@ -170,6 +165,9 @@ func (s *Session) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		s.focused = msg.Focused
 		_, cmd := s.Transcript.Update(msg)
 		return s, tea.Batch(cmd, s.Composer.SetFocus(msg.Focused))
+	case wm.ClosedMsg:
+		id := s.live.Session.ID()
+		return s, func() tea.Msg { return SessionClosedMsg{Session: id} }
 	case wm.ActionMsg:
 		return s, s.act(msg.ID)
 	case keys.ChangedMsg:
@@ -202,7 +200,7 @@ func (s *Session) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			return s, cmd
 		}
 		return s, nil
-	case transcriptTick:
+	case tickMsg:
 		_, cmd := s.Transcript.Update(msg)
 		return s, cmd
 	}
@@ -279,6 +277,7 @@ func (s *Session) Cursor() *tea.Cursor {
 	return cur
 }
 
+// Transcript and prompt state, then the model the session runs on
 func (s *Session) Status() string {
 	parts := []string{}
 	if st := s.Transcript.Status(); st != "" {
@@ -286,6 +285,9 @@ func (s *Session) Status() string {
 	}
 	if st := s.Composer.Status(); st != "" {
 		parts = append(parts, st)
+	}
+	if model := s.live.Endpoint.Model; model != "" {
+		parts = append(parts, model)
 	}
 	return strings.Join(parts, " "+s.env.Theme.Glyphs.Sep+" ")
 }
