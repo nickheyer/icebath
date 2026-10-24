@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -40,12 +41,33 @@ func NewSession(env *Env, live *harness.Live, dir string) *Session {
 		return env.ProjectDir
 	}
 	s.Composer = NewComposer(env.Theme, env.Keys, dir, base)
-	s.Composer.SessionID = live.Session.ID()
+	s.Composer.Bind(live.Session.ID())
 	return s
+}
+
+// View choices of the card kept between launches
+type sessionState struct {
+	Hidden bool `json:"thinking_hidden,omitempty"`
+}
+
+// Whether thinking blocks are hidden, for the next launch
+func (s *Session) State() any { return sessionState{Hidden: !s.Transcript.Thinking()} }
+
+// Shows thinking blocks as the saved state did
+func (s *Session) SetState(raw json.RawMessage) error {
+	var st sessionState
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return err
+	}
+	s.Transcript.ShowThinking(!st.Hidden)
+	return nil
 }
 
 // Open session the card shows
 func (s *Session) Live() *harness.Live { return s.live }
+
+// Glides the transcript between frames
+func (s *Session) Animate(dt float64) bool { return s.Transcript.Animate(dt) }
 
 // Session the card shows
 func (s *Session) Session() *session.Session { return s.live.Session }
@@ -54,7 +76,7 @@ func (s *Session) Session() *session.Session { return s.live.Session }
 func (s *Session) Title() string {
 	label := "NEW"
 	if t := s.live.Session.Title(); t != "" {
-		label = render.Truncate(t, 40)
+		label = render.Truncate(t, 40, s.env.Theme)
 	}
 	n := 0
 	if s.Number != nil {
@@ -63,14 +85,10 @@ func (s *Session) Title() string {
 	if n <= 0 {
 		return label
 	}
-	dot := "·"
-	if s.env.Theme.Plain {
-		dot = "-"
-	}
-	return strconv.Itoa(n) + " " + dot + " " + label
+	return strconv.Itoa(n) + " " + s.env.Theme.Glyphs.Sep + " " + label
 }
 
-func (s *Session) Glyph() string       { return "≋" }
+func (s *Session) Glyph() string       { return s.env.Theme.Glyphs.Session }
 func (s *Session) Key() string         { return "session:" + s.live.Session.ID() }
 func (s *Session) Init() tea.Cmd       { return nil }
 func (s *Session) Closable() bool      { return false }
@@ -80,6 +98,13 @@ func (s *Session) MinSize() (int, int) { return 30, 8 }
 // Rebuilds the transcript from the session after compaction or a fork
 func (s *Session) Reload() {
 	s.Transcript.Load(s.live.Session.Entries(), s.live.Session.Records())
+}
+
+// Points the card at another open session, the prompt carrying its draft over
+func (s *Session) Rebind(live *harness.Live) {
+	s.live = live
+	s.Composer.Bind(live.Session.ID())
+	s.Reload()
 }
 
 // Repaints the prompt with a theme
@@ -231,9 +256,9 @@ func (s *Session) View(w, h int) string {
 		sb.WriteString(s.Transcript.View(w, th))
 		sb.WriteString("\n")
 	}
-	rule := lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat("─", w))
+	rule := lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, w))
 	if s.Transcript.SearchShown() {
-		rule = s.Transcript.SearchView(w, "search the transcript")
+		rule = s.Transcript.SearchView(w, "search")
 	}
 	sb.WriteString(rule)
 	sb.WriteString("\n")
@@ -262,7 +287,7 @@ func (s *Session) Status() string {
 	if st := s.Composer.Status(); st != "" {
 		parts = append(parts, st)
 	}
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, " "+s.env.Theme.Glyphs.Sep+" ")
 }
 
 // Actions worth a reminder, sending and paging having their own button and scrollbar

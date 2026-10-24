@@ -46,8 +46,6 @@ const (
 
 const (
 	newChip   = " + "
-	closeMark = "×"
-	busyMark  = "●"
 	statusGap = 2
 )
 
@@ -71,10 +69,10 @@ type chipPart struct {
 func (m *Model) chipParts(i int, ws *Workspace) []chipPart {
 	parts := []chipPart{{" " + strconv.Itoa(i+1), chipNumber}}
 	if ws.busy {
-		parts = append(parts, chipPart{" " + busyMark, chipBusy})
+		parts = append(parts, chipPart{" " + m.theme.Glyphs.Live, chipBusy})
 	}
 	if i == m.active && len(m.spaces) > 1 {
-		parts = append(parts, chipPart{" " + closeMark, chipClosing})
+		parts = append(parts, chipPart{" " + m.theme.Glyphs.Close, chipClosing})
 	}
 	return append(parts, chipPart{" ", chipPad})
 }
@@ -173,7 +171,7 @@ func (m *Model) segmentColor(s SegmentStyle) (fg lipgloss.Style) {
 	return st.Foreground(t.Text)
 }
 
-// Style of one piece of a chip, lit on the highlight, pulsing when urgent and brightened under the pointer
+// Style of one chip piece, lit on the highlight, pulsing when urgent, breathing when busy and raised under the pointer
 func (m *Model) chipStyle(i int, ws *Workspace, role chipRole, lit bool) uv.Style {
 	t := m.theme
 	st := uv.Style{Fg: t.TextDim, Bg: t.Bg}
@@ -188,6 +186,9 @@ func (m *Model) chipStyle(i int, ws *Workspace, role chipRole, lit bool) uv.Styl
 		st = uv.Style{Fg: theme.Mix(t.TextDim, t.Pulse, beat), Bg: t.Bg, Attrs: uv.AttrBold}
 	case i == m.barHot:
 		st.Fg = t.Text
+		if !t.Plain {
+			st.Bg = theme.Mix(t.Bg, t.Steel, 0.4)
+		}
 	}
 	switch role {
 	case chipNumber:
@@ -196,7 +197,11 @@ func (m *Model) chipStyle(i int, ws *Workspace, role chipRole, lit bool) uv.Styl
 			st.Fg = t.Text
 		}
 	case chipBusy:
-		st.Fg = t.Alive
+		breath := 0.55 + 0.45*math.Sin(m.phase*breathSpeed)
+		if m.motion == 0 || t.Plain {
+			breath = 1
+		}
+		st.Fg = theme.Mix(t.TextDim, t.Alive, breath)
 		if lit {
 			st.Fg = t.Bg
 		}
@@ -245,10 +250,7 @@ func (m *Model) paintBar(buf screen) {
 	for i, r := range []rune(newChip) {
 		m.put(buf, m.chipsEnd()+i, 0, string(r), uv.Style{Fg: newFg, Bg: newBg, Attrs: uv.AttrBold})
 	}
-	menu := " ≡ commands "
-	if t.Plain {
-		menu = " = commands "
-	}
+	menu := " " + t.Glyphs.Menu + " commands "
 	m.menuW = ansi.StringWidth(menu)
 	m.menuX = max(m.width-m.gapOutX-m.menuW, 0)
 	menuFg, menuBg := t.Accent, t.Bg
@@ -259,6 +261,27 @@ func (m *Model) paintBar(buf screen) {
 		m.put(buf, m.menuX+i, 0, string(r), uv.Style{Fg: menuFg, Bg: menuBg, Attrs: uv.AttrBold})
 	}
 	m.paintStatusSegments(buf)
+	m.paintPillCaps(buf, hx, hw)
+}
+
+// Rounds the ends of the highlight with half cells where the bar is blank beside it
+func (m *Model) paintPillCaps(buf screen, hx, hw int) {
+	t := m.theme
+	if t.Plain || hw <= 0 {
+		return
+	}
+	for _, cap := range []struct {
+		x  int
+		ch string
+	}{{hx - 1, t.Glyphs.CapLeft}, {hx + hw, t.Glyphs.CapRight}} {
+		if cap.x < 0 || cap.x >= m.width {
+			continue
+		}
+		if c := buf.CellAt(cap.x, 0); c == nil || c.Content != " " || c.Style.Bg != t.Bg {
+			continue
+		}
+		m.put(buf, cap.x, 0, cap.ch, uv.Style{Fg: t.Ice, Bg: t.Bg})
+	}
 }
 
 // Draws the app segments right aligned before the palette button, cut from the left when chips crowd them
@@ -268,7 +291,7 @@ func (m *Model) paintStatusSegments(buf screen) {
 	}
 	t := m.theme
 	left, right := m.bar()
-	sep := lipgloss.NewStyle().Background(t.Bg).Foreground(t.Steel).Render(" · ")
+	sep := lipgloss.NewStyle().Background(t.Bg).Foreground(t.Steel).Render(" " + t.Glyphs.Sep + " ")
 	parts := make([]string, 0, len(left)+len(right))
 	for _, s := range append(append([]Segment(nil), left...), right...) {
 		if s.Text == "" {
@@ -284,7 +307,7 @@ func (m *Model) paintStatusSegments(buf screen) {
 		return
 	}
 	if sw > avail {
-		status = ansi.TruncateLeft(status, sw-avail+1, "…")
+		status = ansi.TruncateLeft(status, sw-avail+ansi.StringWidth(t.Glyphs.Ellipsis), t.Glyphs.Ellipsis)
 		sw = ansi.StringWidth(status)
 	}
 	uv.NewStyledString(status).Draw(buf, uv.Rect(m.menuX-statusGap-sw, 0, sw, 1))

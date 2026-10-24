@@ -1,6 +1,7 @@
 package wm
 
 import (
+	"math"
 	"sort"
 	"strings"
 
@@ -8,9 +9,13 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
+
+// Spring the selection highlight glides between rows with, quick enough to keep up with a held key
+var highlightSpring = anim.Spring{Frequency: 26, Damping: 1}
 
 // One row the palette offers
 type Item struct {
@@ -29,15 +34,18 @@ type scored struct {
 
 // Fuzzy picker shown as the overlay, listing commands, choices, or taking a line of text when it has no items
 type Palette struct {
-	theme       theme.Theme
-	items       []Item
-	query       string
-	cursor      int
-	matches     []scored
-	sel         int
-	commands    bool
-	w           int
-	rows        int
+	theme    theme.Theme
+	items    []Item
+	query    string
+	cursor   int
+	matches  []scored
+	sel      int
+	commands bool
+	w        int
+	rows     int
+	// Row of the highlight below the input line, gliding after the selection
+	hl          anim.Value
+	glide       bool
 	Placeholder string
 	// Called with the text when enter is pressed on a palette without items
 	OnText func(text string) tea.Cmd
@@ -45,19 +53,40 @@ type Palette struct {
 
 // Builds a palette over the items
 func NewPalette(t theme.Theme, items []Item) *Palette {
-	p := &Palette{theme: t, items: items}
+	p := &Palette{theme: t, items: items, hl: anim.NewValueWith(0, highlightSpring)}
 	p.filter()
 	return p
 }
 
 // Builds a palette that takes a line of text, prefilled with value
 func NewPrompt(t theme.Theme, placeholder, value string, submit func(text string) tea.Cmd) *Palette {
-	p := &Palette{theme: t, Placeholder: placeholder, query: value, cursor: len([]rune(value)), OnText: submit}
+	p := &Palette{theme: t, Placeholder: placeholder, query: value, cursor: len([]rune(value)), OnText: submit, hl: anim.NewValueWith(0, highlightSpring)}
 	return p
 }
 
+// Glides the highlight toward the selected row, jumping there when motion is off
+func (p *Palette) Animate(dt float64) bool {
+	p.hl.Set(float64(p.sel - p.from()))
+	if dt <= 0 {
+		changed := p.glide || p.hl.Pos != p.hl.Target
+		p.hl.Snap()
+		p.glide = false
+		return changed
+	}
+	p.glide = true
+	return p.hl.Step(dt)
+}
+
+// Row below the input line the highlight is painted on
+func (p *Palette) highlightRow() int {
+	if !p.glide {
+		return p.sel - p.from()
+	}
+	return int(math.Round(p.hl.Pos))
+}
+
 func (p *Palette) Title() string      { return "" }
-func (p *Palette) Glyph() string      { return "›" }
+func (p *Palette) Glyph() string      { return p.theme.Glyphs.Palette }
 func (p *Palette) Key() string        { return "palette" }
 func (p *Palette) Init() tea.Cmd      { return nil }
 func (p *Palette) Contexts() []string { return []string{keys.Palette} }
@@ -152,6 +181,10 @@ func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
 		if msg.Button == tea.MouseLeft && msg.Y >= 1 && msg.Y-1+p.from() < len(p.matches) {
 			p.sel = msg.Y - 1 + p.from()
 			return p, p.pick()
+		}
+	case tea.MouseMotionMsg:
+		if msg.Button == tea.MouseNone && msg.Y >= 1 && msg.X >= 0 && msg.X < p.w && msg.Y-1+p.from() < len(p.matches) {
+			p.sel = msg.Y - 1 + p.from()
 		}
 	case tea.MouseWheelMsg:
 		switch msg.Button {
@@ -270,7 +303,7 @@ func (p *Palette) View(w, h int) string {
 	p.rows = h
 	t := p.theme
 	base := lipgloss.NewStyle().Background(t.Surface)
-	prompt := base.Foreground(t.Accent).Render("› ")
+	prompt := base.Foreground(t.Accent).Render(t.Glyphs.Prompt + " ")
 	text := p.query
 	if text == "" && p.Placeholder != "" {
 		text = base.Foreground(t.TextDim).Render(p.Placeholder)
@@ -286,9 +319,10 @@ func (p *Palette) View(w, h int) string {
 		return strings.Join(lines, "\n")
 	}
 	from := p.from()
+	lit := from + p.highlightRow()
 	for i := from; i < len(p.matches) && i < from+p.limit(); i++ {
 		m := p.matches[i]
-		lines = append(lines, p.row(m, i == p.sel, w))
+		lines = append(lines, p.row(m, i == lit, w))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -330,7 +364,7 @@ func (p *Palette) row(m scored, selected bool, w int) string {
 	if rw > 0 {
 		avail -= 2
 	}
-	left := ansi.Truncate(title+detail, max(avail, 1), "…")
+	left := ansi.Truncate(title+detail, max(avail, 1), t.Glyphs.Ellipsis)
 	pad := max(w-2-ansi.StringWidth(left)-rw, 1)
 	line := base.Render(" ") + left + base.Render(strings.Repeat(" ", pad)) + right + base.Render(" ")
 	return ansi.Truncate(line, w, "")

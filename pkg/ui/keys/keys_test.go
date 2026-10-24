@@ -102,18 +102,6 @@ func TestPressRoundTripsEveryChord(t *testing.T) {
 	}
 }
 
-func TestSymbolsOfNavigationKeys(t *testing.T) {
-	if s, ok := Symbol("pgup"); !ok || s != "⇞" {
-		t.Fatal("page up has its key symbol")
-	}
-	if s, ok := Symbol("pgdown"); !ok || s != "⇟" {
-		t.Fatal("page down has its key symbol")
-	}
-	if _, ok := Symbol("ctrl+u"); ok {
-		t.Fatal("a chord with modifiers has no symbol")
-	}
-}
-
 func TestFormatAndPairSpellTypedNames(t *testing.T) {
 	for chord, want := range map[string]string{"shift+g": "G", "alt+shift+l": "alt+shift+l", "down": "down", "pgdown": "pgdown", "pgdn": "pgdown", "backspace": "backspace", "ctrl+Return": "ctrl+enter", "": ""} {
 		if got := Format(chord); got != want {
@@ -349,7 +337,7 @@ func TestNoContextHandsOneDefaultKeyToTwoActions(t *testing.T) {
 			seen[k] = a.ID
 		}
 	}
-	for _, id := range []string{"form.submit", "config.profile.add", "config.profile.toggle", "config.provider.new", "config.hook.add", "config.mcp.add", "config.tool.toggle", "config.log.clear", "config.key.type", "config.app.unset"} {
+	for _, id := range []string{"form.submit", "config.profile.add", "config.profile.toggle", "config.hook.add", "config.mcp.add", "config.tool.toggle", "config.log.clear", "config.key.type", "config.app.unset"} {
 		if m.First(id) == "" {
 			t.Fatalf("%s has a default key", id)
 		}

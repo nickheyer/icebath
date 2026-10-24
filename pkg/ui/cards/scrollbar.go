@@ -64,31 +64,32 @@ func (g gutter) rowOf(line int) int {
 	return ts + line*tl/g.total
 }
 
-// Cap of a paging chord, the key's own symbol when it has one and the arrow with the chord as text beside it otherwise
-func capOf(chord, arrow string, plain bool) (glyph, label string) {
-	if sym, ok := keys.Symbol(chord); ok && !plain {
+// Cap of a paging chord, the theme symbol of its key or an arrow with the chord spelled beside it
+func capOf(chord, arrow string, t theme.Theme) (glyph, label string) {
+	if sym, ok := t.Glyphs.Chords[chord]; ok {
 		return sym, ""
 	}
 	return arrow, keys.Format(chord)
 }
 
-// Column of h cells, one per row
+// Column of h cells, one per row, blank while everything fits in view
 func (g gutter) column(t theme.Theme) []string {
 	if g.h <= 0 {
 		return nil
 	}
-	upArrow, downArrow, line, heavy, tick, heavyTick, hit := "▲", "▼", "│", "┃", "┼", "╋", "◆"
-	if t.Plain {
-		upArrow, downArrow, line, heavy, tick, heavyTick, hit = "^", "v", "|", "#", "+", "+", "*"
+	if !g.scrolls() {
+		out := make([]string, g.h)
+		for i := range out {
+			out[i] = " "
+		}
+		return out
 	}
-	capFg := t.TextDim
-	if g.scrolls() {
-		capFg = t.Ice
-	}
-	capStyle := lipgloss.NewStyle().Foreground(capFg).Bold(true)
+	gl := t.Glyphs
+	upArrow, downArrow, line, heavy, tick, heavyTick, hit := gl.Up, gl.Down, gl.Track, gl.Heavy, gl.Tick, gl.HeavyTick, gl.Hit
+	capStyle := lipgloss.NewStyle().Foreground(t.Ice).Bold(true)
 	out := make([]string, g.h)
-	up, _ := capOf(g.up, upArrow, t.Plain)
-	down, _ := capOf(g.down, downArrow, t.Plain)
+	up, _ := capOf(g.up, upArrow, t)
+	down, _ := capOf(g.down, downArrow, t)
 	out[0] = capStyle.Render(up)
 	if g.h == 1 {
 		return out
@@ -133,7 +134,7 @@ func (g gutter) column(t theme.Theme) []string {
 
 // Meaning of a click on row y, the line to show first for a jump
 func (g gutter) hit(y int) (gutterHit, int) {
-	if y < 0 || y >= g.h {
+	if y < 0 || y >= g.h || !g.scrolls() {
 		return hitNone, 0
 	}
 	ts, tl := g.track()
@@ -142,7 +143,7 @@ func (g gutter) hit(y int) (gutterHit, int) {
 		return hitPageUp, 0
 	case y == g.h-1:
 		return hitPageDown, 0
-	case tl <= 0 || !g.scrolls():
+	case tl <= 0:
 		return hitNone, 0
 	}
 	line := (y - ts) * g.total / tl
@@ -156,8 +157,11 @@ func (g gutter) beside(body string, w int, t theme.Theme) string {
 	for len(rows) < g.h {
 		rows = append(rows, "")
 	}
-	_, upLabel := capOf(g.up, "", t.Plain)
-	_, downLabel := capOf(g.down, "", t.Plain)
+	upLabel, downLabel := "", ""
+	if g.scrolls() {
+		_, upLabel = capOf(g.up, "", t)
+		_, downLabel = capOf(g.down, "", t)
+	}
 	label := lipgloss.NewStyle().Foreground(t.TextDim)
 	for i := range rows[:g.h] {
 		text := ""
@@ -168,11 +172,11 @@ func (g gutter) beside(body string, w int, t theme.Theme) string {
 			text = downLabel
 		}
 		if text == "" || ansi.StringWidth(text)+4 > w {
-			rows[i] = render.Fit(rows[i], w-2) + " " + col[i]
+			rows[i] = render.Fit(rows[i], w-2, t) + " " + col[i]
 			continue
 		}
 		lw := ansi.StringWidth(text)
-		rows[i] = render.Fit(rows[i], w-3-lw) + " " + label.Render(text) + " " + col[i]
+		rows[i] = render.Fit(rows[i], w-3-lw, t) + " " + label.Render(text) + " " + col[i]
 	}
 	return strings.Join(rows[:g.h], "\n")
 }

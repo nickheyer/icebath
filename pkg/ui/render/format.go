@@ -12,18 +12,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
-// Cuts a styled string to width, marking the cut with an ellipsis
-func Truncate(s string, width int) string {
+// Cuts a styled string to width, marking the cut with the theme ellipsis
+func Truncate(s string, width int, t theme.Theme) string {
 	if width <= 0 {
 		return ""
 	}
 	if ansi.StringWidth(s) <= width {
 		return s
 	}
-	if width == 1 {
-		return "…"
+	tail := t.Glyphs.Ellipsis
+	if width <= ansi.StringWidth(tail) {
+		return ansi.Truncate(tail, width, "")
 	}
-	return ansi.Truncate(s, width, "…")
+	return ansi.Truncate(s, width, tail)
 }
 
 // Wraps a string at width, breaking long words
@@ -58,8 +59,8 @@ func Paint(st lipgloss.Style, text string) string {
 }
 
 // Pads or cuts a string to exactly width columns
-func Fit(s string, width int) string {
-	s = Truncate(s, width)
+func Fit(s string, width int, t theme.Theme) string {
+	s = Truncate(s, width, t)
 	if w := ansi.StringWidth(s); w < width {
 		s += strings.Repeat(" ", width-w)
 	}
@@ -147,16 +148,17 @@ func Bar(fraction float64, width int, t theme.Theme) string {
 	}
 	fraction = min(max(fraction, 0), 1)
 	filled := int(math.Round(fraction * float64(width)))
+	g := t.Glyphs
 	if t.Plain {
-		return lipgloss.NewStyle().Foreground(t.Ice).Render(strings.Repeat("#", filled)) + lipgloss.NewStyle().Foreground(t.TextDim).Render(strings.Repeat("-", width-filled))
+		return lipgloss.NewStyle().Foreground(t.Ice).Render(strings.Repeat(g.Full, filled)) + lipgloss.NewStyle().Foreground(t.TextDim).Render(strings.Repeat(g.Empty, width-filled))
 	}
 	shades := lipgloss.Blend1D(max(width, 2), t.Pulse, t.Ice)
 	var sb strings.Builder
 	for i := 0; i < width; i++ {
 		if i < filled {
-			sb.WriteString(lipgloss.NewStyle().Foreground(shades[i]).Render("█"))
+			sb.WriteString(lipgloss.NewStyle().Foreground(shades[i]).Render(g.Full))
 		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render("░"))
+			sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(g.Empty))
 		}
 	}
 	return sb.String()
@@ -176,55 +178,64 @@ func Gauge(fraction float64, width int, t theme.Theme) string {
 	case fraction >= 0.7:
 		c = t.Accent
 	}
-	full, empty := "█", "░"
-	if t.Plain {
-		full, empty = "#", "-"
-	}
-	return lipgloss.NewStyle().Foreground(c).Render(strings.Repeat(full, filled)) + lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(empty, width-filled))
+	return lipgloss.NewStyle().Foreground(c).Render(strings.Repeat(t.Glyphs.Full, filled)) + lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Empty, width-filled))
 }
 
-// Frames of the working spinner
-var spinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
-// Spinner frame for a tick, an ASCII one on plain themes
+// Spinner frame for a tick from the theme frames
 func Spinner(tick int, t theme.Theme) string {
-	if t.Plain {
-		return string("|/-\\"[tick%4])
+	frames := t.Glyphs.Spinner
+	if len(frames) == 0 {
+		return ""
 	}
-	return spinner[tick%len(spinner)]
+	return frames[tick%len(frames)]
+}
+
+// Dashed rule of width with the theme info mark at its middle, dashes alone when too narrow for one
+func Divider(width int, t theme.Theme) string {
+	if width <= 0 {
+		return ""
+	}
+	st := lipgloss.NewStyle().Foreground(t.Steel)
+	if width < 7 {
+		return st.Render(strings.Repeat(t.Glyphs.Dashed, width))
+	}
+	left := (width - 3) / 2
+	right := width - 3 - left
+	return st.Render(strings.Repeat(t.Glyphs.Dashed, left)+" ") + lipgloss.NewStyle().Foreground(t.SteelBright).Render(t.Glyphs.Info) + st.Render(" "+strings.Repeat(t.Glyphs.Dashed, right))
 }
 
 // Glyph that stands for a tool by name
-func ToolGlyph(name string) string {
+func ToolGlyph(name string, t theme.Theme) string {
+	g := t.Glyphs
 	switch {
 	case name == "Read":
-		return "◇"
+		return g.Read
 	case name == "Write":
-		return "◆"
+		return g.Write
 	case name == "Edit":
-		return "✎"
+		return g.Edit
 	case name == "Glob":
-		return "✱"
+		return g.Glob
 	case name == "Grep":
-		return "⌕"
+		return g.Grep
 	case name == "Bash":
-		return "⌘"
+		return g.Bash
 	case name == "BashOutput":
-		return "⇣"
+		return g.Output
 	case name == "KillShell":
-		return "⊘"
+		return g.Kill
 	case name == "WebFetch":
-		return "⇄"
+		return g.Fetch
 	case name == "Agent":
-		return "☍"
+		return g.Spawn
 	case name == "Record":
-		return "✎"
+		return g.Record
 	case name == "Plan":
-		return "☑"
+		return g.Plan
 	case strings.HasPrefix(name, "mcp__"):
-		return "⚙"
+		return g.Server
 	}
-	return "▸"
+	return g.Tool
 }
 
 // Styled key and value pair on one line
@@ -284,11 +295,11 @@ func Tail(s string, n int) string {
 	return strings.Join(lines[len(lines)-n:], "\n")
 }
 
-// First line of a string cut to width
-func Summary(s string, width int) string {
+// First line of a string cut to width, the theme ellipsis marking lines left out
+func Summary(s string, width int, t theme.Theme) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i] + " …"
+		s = s[:i] + " " + t.Glyphs.Ellipsis
 	}
-	return Truncate(s, width)
+	return Truncate(s, width, t)
 }

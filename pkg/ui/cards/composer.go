@@ -63,15 +63,12 @@ type completion struct {
 	arg   bool
 }
 
-// Words the empty prompt shows
-const placeholderText = "Type / for available commands"
-
 // Clickable send button on the first input row, in composer coordinates
 type sendButton struct {
 	x, y, w int
 }
 
-// Multi line prompt with history, slash commands listed as typed, path completion, attachments and a saved draft
+// Multi line prompt with history, slash commands listed as typed, path completion, attachments and a draft kept per session
 type Composer struct {
 	ta          textarea.Model
 	focused     bool
@@ -81,6 +78,7 @@ type Composer struct {
 	comp        *completion
 	quiet       string
 	attachments []attachment
+	dir         string
 	draftPath   string
 	historyPath string
 	commands    []Command
@@ -92,14 +90,18 @@ type Composer struct {
 	button      sendButton
 	cut         int
 	w, h        int
-	// Session the input belongs to, stamped on every message sent
-	SessionID string
+	SessionID   string
 }
 
-// Builds a composer bound to the keymap that keeps its draft and history under dir and completes paths against base
+// File the draft of a session is kept in under dir
+func DraftPath(dir, sessionID string) string {
+	return filepath.Join(dir, "drafts", sessionID+".txt")
+}
+
+// Builds a composer on the keymap keeping history and bound drafts under dir, completing paths against base
 func NewComposer(t theme.Theme, km *keys.Map, dir string, base func() string) *Composer {
 	ta := textarea.New()
-	ta.Prompt = "› "
+	ta.Prompt = t.Glyphs.Prompt + " "
 	ta.Placeholder = ""
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
@@ -108,15 +110,11 @@ func NewComposer(t theme.Theme, km *keys.Map, dir string, base func() string) *C
 	ta.MaxHeight = maxInputRows
 	ta.SetHeight(minInputRows)
 	ta.SetVirtualCursor(false)
-	c := &Composer{ta: ta, baseDir: base, keys: km}
+	c := &Composer{ta: ta, baseDir: base, keys: km, dir: dir}
 	c.Rebind()
 	c.SetTheme(t)
 	if dir != "" {
-		c.draftPath = filepath.Join(dir, "draft.txt")
 		c.historyPath = filepath.Join(dir, "history.txt")
-		if data, err := os.ReadFile(c.draftPath); err == nil {
-			c.ta.SetValue(string(data))
-		}
 		if data, err := os.ReadFile(c.historyPath); err == nil {
 			for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n\x1e\n") {
 				if line != "" {
@@ -128,6 +126,33 @@ func NewComposer(t theme.Theme, km *keys.Map, dir string, base func() string) *C
 	c.cursor = len(c.history)
 	c.last = c.ta.Value()
 	return c
+}
+
+// Binds the prompt to a session, text already typed moving to it and otherwise its kept draft coming back
+func (c *Composer) Bind(sessionID string) {
+	c.SessionID = sessionID
+	if c.dir == "" {
+		return
+	}
+	old := c.draftPath
+	c.draftPath = DraftPath(c.dir, sessionID)
+	if old == c.draftPath {
+		return
+	}
+	if c.ta.Value() != "" {
+		if old != "" {
+			os.Remove(old)
+		}
+		c.last = ""
+		c.persist()
+		return
+	}
+	data, err := os.ReadFile(c.draftPath)
+	if err != nil {
+		return
+	}
+	c.ta.SetValue(string(data))
+	c.last = c.ta.Value()
 }
 
 // Rebuilds the editing bindings of the input from the keymap, every other key only typing text
@@ -342,7 +367,7 @@ func (c *Composer) breakLine() {
 	c.ta.CursorStart()
 }
 
-// Writes the draft to disk when the text changed
+// Writes the draft of the bound session to disk when the text changed
 func (c *Composer) persist() tea.Cmd {
 	v := c.ta.Value()
 	if v == c.last {
@@ -437,7 +462,7 @@ var imageTypes = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".
 func (c *Composer) attach(path string) tea.Cmd {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return wm.Notify("attach needs a path", wm.Warn)
+		return wm.Notify("no path", wm.Warn)
 	}
 	if strings.HasPrefix(path, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -449,7 +474,7 @@ func (c *Composer) attach(path string) tea.Cmd {
 	}
 	media, ok := imageTypes[strings.ToLower(filepath.Ext(path))]
 	if !ok {
-		return wm.Notify("only png, jpeg, gif and webp images attach", wm.Warn)
+		return wm.Notify("not a png, jpeg, gif or webp", wm.Warn)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -679,15 +704,11 @@ func (c *Composer) accept() {
 // Send button as a symbol alone, an arrow that sends or a hook that steers a run, dim while empty
 func (c *Composer) buttonLabel() string {
 	t := c.theme
-	glyph := "➤"
+	glyph := t.Glyphs.Send
 	if c.busy {
-		glyph = "↪"
+		glyph = t.Glyphs.Steer
 	}
 	if t.Plain {
-		glyph = ">"
-		if c.busy {
-			glyph = "~"
-		}
 		return "[ " + glyph + " ]"
 	}
 	text := "  " + glyph + "  "
@@ -701,14 +722,19 @@ func (c *Composer) buttonLabel() string {
 	return lipgloss.NewStyle().Foreground(t.Bg).Background(lit).Bold(true).Render(text)
 }
 
-// Prompt line shown while the input is empty, the prompt mark before the muted placeholder
+// Empty prompt line, the mark then how to reach commands and the palette, all muted
 func (c *Composer) placeholder(w int) string {
 	t := c.theme
 	prompt := t.TextDim
 	if c.focused {
 		prompt = t.Accent
 	}
-	return render.Fit(lipgloss.NewStyle().Foreground(prompt).Render(c.ta.Prompt)+lipgloss.NewStyle().Foreground(t.TextDim).Render(placeholderText), w)
+	hint := lipgloss.NewStyle().Foreground(t.TextDim).Render(`type `) + "/" + lipgloss.NewStyle().Foreground(t.TextDim).Render(` for commands`)
+	if chord := c.keys.Display("palette"); chord != "" {
+		hint += lipgloss.NewStyle().Foreground(t.TextDim).Render(` or `) + chord + lipgloss.NewStyle().Foreground(t.TextDim).Render(` for palette`)
+	}
+	line := lipgloss.NewStyle().Foreground(prompt).Render(c.ta.Prompt) + lipgloss.NewStyle().Foreground(t.TextDim).Render(hint)
+	return render.Fit(line, w, t)
 }
 
 // Fits the input beside the send button at width w, wrapping the text there so the height reads true
@@ -750,7 +776,7 @@ func (c *Composer) View(w, h int) string {
 		input[0] = c.placeholder(iw)
 	}
 	for i := range input {
-		input[i] = render.Fit(input[i], iw)
+		input[i] = render.Fit(input[i], iw, c.theme)
 	}
 	if c.button.w > 0 && len(input) > 0 {
 		input[0] += " " + button
@@ -789,7 +815,7 @@ func (c *Composer) popup(w int) []string {
 		item := c.comp.items[i]
 		label := item
 		if i < len(c.comp.descs) && c.comp.descs[i] != "" {
-			label = render.Fit(item, 14) + " " + render.Dim(c.comp.descs[i], t)
+			label = render.Fit(item, 14, t) + " " + render.Dim(c.comp.descs[i], t)
 		}
 		bound := ""
 		if i < len(c.comp.acts) && c.comp.acts[i] != "" {
@@ -804,10 +830,10 @@ func (c *Composer) popup(w int) []string {
 		}
 		kw := ansi.StringWidth(bound)
 		if bound == "" || kw+16 > w {
-			rows = append(rows, st.Render(render.Fit(" "+label, w)))
+			rows = append(rows, st.Render(render.Fit(" "+label, w, t)))
 			continue
 		}
-		rows = append(rows, st.Render(render.Fit(" "+label, w-kw-1))+key.Render(bound)+st.Render(" "))
+		rows = append(rows, st.Render(render.Fit(" "+label, w-kw-1, t))+key.Render(bound)+st.Render(" "))
 	}
 	return rows
 }
@@ -837,7 +863,7 @@ func (c *Composer) Status() string {
 	if c.cursor < len(c.history) {
 		parts = append(parts, "history "+itoa(c.cursor+1)+"/"+itoa(len(c.history)))
 	}
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, " "+c.theme.Glyphs.Sep+" ")
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

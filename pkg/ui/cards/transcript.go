@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"hash/fnv"
 	"image/color"
+	"math"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -25,9 +27,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool/files"
 	"github.com/nickheyer/icebath/pkg/tool/shell"
 	"github.com/nickheyer/icebath/pkg/tool/web"
+	"github.com/nickheyer/icebath/pkg/ui/anim"
+	"github.com/nickheyer/icebath/pkg/ui/art"
+	"github.com/nickheyer/icebath/pkg/ui/fx"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
+
+// Pages the painted offset may trail the viewport by before it skips ahead, so long jumps stay short
+const glideReach = 3.0
 
 // Lines a collapsed tool result or read shows before it is cut
 const previewLines = 40
@@ -80,22 +89,54 @@ type block struct {
 	approval *approvalInfo
 	expanded bool
 	full     bool
+	// Runes of a thought settled before its newest arrived, and when they arrived
+	settled  int
+	grown    time.Time
 	cache    []string
 	cacheKey string
+}
+
+// Thinking blocks churn their newest runes this long before they settle
+const settleTime = 400 * time.Millisecond
+
+// Most runes a thinking block keeps churning at once
+const churnRunes = 48
+
+// Runes of the text settled by now, the newest still churning, all of them when no arrival was timed
+func (b *block) resolved(now time.Time) int {
+	n := len([]rune(b.text))
+	if b.grown.IsZero() || now.IsZero() {
+		return n
+	}
+	age := now.Sub(b.grown)
+	if age < 0 {
+		return n
+	}
+	pending := max(n-b.settled, 0)
+	done := int(float64(pending) * min(float64(age)/float64(settleTime), 1))
+	return min(n, max(b.settled+done, n-churnRunes, 0))
+}
+
+// Reports whether the newest runes of a thought are still churning
+func (b *block) churning(now time.Time) bool {
+	return b.kind == bThinking && b.resolved(now) < len([]rune(b.text))
 }
 
 type transcriptTick struct{}
 
 // Streaming transcript of one agent lineage with tool rows, diffs, approvals, markers, search and turn jumps
 type Transcript struct {
-	env       *Env
-	name      string
-	key       string
-	blocks    []*block
-	turn      map[int]*block
-	tools     map[string]*block
-	vp        viewport.Model
-	follow    bool
+	env    *Env
+	name   string
+	key    string
+	blocks []*block
+	turn   map[int]*block
+	tools  map[string]*block
+	vp     viewport.Model
+	follow bool
+	// Line painted at the top, gliding after the viewport offset
+	shown     anim.Value
+	glide     bool
 	w, h      int
 	lines     []string
 	lineBlock []int
@@ -135,7 +176,7 @@ func NewTranscript(env *Env) *Transcript {
 	vp := viewport.New()
 	vp.MouseWheelEnabled = true
 	vp.SoftWrap = false
-	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, vp: vp, follow: true, cursor: -1, current: -1, rootOnly: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}}
+	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, vp: vp, follow: true, cursor: -1, current: -1, rootOnly: true, thinking: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}, shown: anim.NewValueWith(0, anim.Snappy)}
 }
 
 // Builds a transcript that follows one child agent of a run
@@ -149,7 +190,7 @@ func NewChildTranscript(env *Env, run, agentName string) *Transcript {
 }
 
 func (tr *Transcript) Title() string       { return tr.name }
-func (tr *Transcript) Glyph() string       { return "≋" }
+func (tr *Transcript) Glyph() string       { return tr.env.Theme.Glyphs.Trace }
 func (tr *Transcript) Key() string         { return tr.key }
 func (tr *Transcript) Init() tea.Cmd       { return nil }
 func (tr *Transcript) Selectable() bool    { return true }
@@ -190,7 +231,7 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		return tr, nil
 	case transcriptTick:
 		tr.tick++
-		if tr.streaming || tr.running > 0 {
+		if tr.streaming || tr.running > 0 || tr.settling() {
 			tr.dirty = true
 			return tr, tr.tickCmd()
 		}
@@ -224,8 +265,19 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	return tr, nil
 }
 
+// Reports whether a recent thought still has runes churning
+func (tr *Transcript) settling() bool {
+	now := tr.env.now()
+	for i := len(tr.blocks) - 1; i >= 0 && i >= len(tr.blocks)-8; i-- {
+		if tr.blocks[i].churning(now) {
+			return true
+		}
+	}
+	return false
+}
+
 func (tr *Transcript) ensureTick() tea.Cmd {
-	if tr.ticking || (!tr.streaming && tr.running == 0) {
+	if tr.ticking || (!tr.streaming && tr.running == 0 && !tr.settling()) {
 		return nil
 	}
 	tr.ticking = true
@@ -234,6 +286,35 @@ func (tr *Transcript) ensureTick() tea.Cmd {
 
 func (tr *Transcript) tickCmd() tea.Cmd {
 	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return transcriptTick{} })
+}
+
+// Glides the painted offset after the viewport, jumping there when motion is off, and reports whether the view moved
+func (tr *Transcript) Animate(dt float64) bool {
+	target := float64(tr.vp.YOffset())
+	tr.shown.Set(target)
+	if dt <= 0 {
+		changed := tr.shown.Pos != target
+		tr.shown.Snap()
+		tr.glide = false
+		return changed
+	}
+	if !tr.glide {
+		tr.glide = true
+		tr.shown.Snap()
+		return false
+	}
+	if reach := float64(max(tr.h, 1)) * glideReach; math.Abs(tr.shown.Pos-target) > reach {
+		tr.shown.Pos = target + math.Copysign(reach, tr.shown.Pos-target)
+	}
+	return tr.shown.Step(dt)
+}
+
+// Line painted at the top, the viewport offset while the view is not gliding
+func (tr *Transcript) paintedOffset() int {
+	if !tr.glide {
+		return tr.vp.YOffset()
+	}
+	return int(math.Round(tr.shown.Pos))
 }
 
 // Scrolls by n lines, down when positive
@@ -608,7 +689,7 @@ func (tr *Transcript) model(ev agent.Event) {
 			}
 		case protocol.Thinking:
 			if !ok {
-				b = tr.add(&block{kind: bThinking, agent: ev.Agent, round: ev.Round, at: ev.Time})
+				b = tr.add(&block{kind: bThinking, agent: ev.Agent, round: ev.Round, at: ev.Time, started: ev.Time})
 				tr.turn[i] = b
 			}
 			text := v.Text
@@ -616,6 +697,8 @@ func (tr *Transcript) model(ev agent.Event) {
 				text = "[redacted]"
 			}
 			if b.text != text {
+				b.settled = b.resolved(ev.Time)
+				b.grown = ev.Time
 				b.text = text
 				b.cacheKey = ""
 				tr.dirty = true
@@ -649,9 +732,20 @@ func (tr *Transcript) model(ev agent.Event) {
 			if ev.Model.Type == protocol.EventToolCallEnd {
 				b.partial = ""
 			}
+			if ev.Model.Type == protocol.EventThinkingEnd && !b.started.IsZero() && !ev.Time.IsZero() {
+				b.duration = ev.Time.Sub(b.started)
+			}
 			b.cacheKey = ""
 		}
 	}
+}
+
+// Time a thinking block took, or has taken so far while it streams
+func (tr *Transcript) thought(b *block) time.Duration {
+	if b.duration > 0 || b.started.IsZero() || b.done {
+		return b.duration
+	}
+	return tr.env.now().Sub(b.started)
 }
 
 // Tool block for a call id, created when the model events did not announce it
@@ -848,6 +942,14 @@ func (tr *Transcript) loadRecord(r session.Record) {
 	}
 }
 
+// Color of the agent speaking in a block, the primary color across the root lineage
+func (tr *Transcript) speakerColor(b *block) color.Color {
+	if tr.rootOnly {
+		return tr.env.Theme.Ice
+	}
+	return tr.agentColor(b.agent)
+}
+
 // Color that stands for an agent, stable across renders
 func (tr *Transcript) agentColor(name string) color.Color {
 	t := tr.env.Theme
@@ -876,21 +978,22 @@ func (tr *Transcript) Lines(width int) []string {
 	return out
 }
 
-// Reports whether the block paints a spinner or elapsed time and so changes with every tick
-func (b *block) animated() bool {
+// Reports whether the block paints a spinner, elapsed time or churning text and so changes with every tick
+func (b *block) animated(now time.Time) bool {
 	if b.kind == bTool {
 		return b.result == nil && (!b.started.IsZero() || !b.done)
 	}
-	return !b.done
+	return !b.done || b.churning(now)
 }
 
 func (tr *Transcript) stateKey(i int, b *block, width int) string {
+	now := tr.env.now()
 	k := fmt.Sprintf("%d:%d:%t:%t:%t:%t:%d", width, len(b.text), b.done, b.expanded, b.full, tr.cursor == i, len(b.partial))
-	if b.animated() {
+	if b.animated(now) {
 		k += fmt.Sprintf(":%d", tr.tick)
 	}
 	if b.kind == bThinking {
-		k += fmt.Sprintf(":%t", tr.thinking)
+		k += fmt.Sprintf(":%t:%d", tr.thinking, b.resolved(now))
 	}
 	if b.result != nil {
 		k += ":r"
@@ -910,7 +1013,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 	var lines []string
 	mark := "  "
 	if tr.cursor == i {
-		mark = lipgloss.NewStyle().Foreground(t.Accent).Render("▸ ")
+		mark = lipgloss.NewStyle().Foreground(t.Accent).Render(t.Glyphs.Cursor + " ")
 	}
 	stamp := render.Dim(b.at.Local().Format("15:04:05"), t)
 	body := max(width-2, 10)
@@ -924,33 +1027,36 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 	switch b.kind {
 	case bUser, bSteer:
 		label := "you"
-		glyph := "▌"
+		glyph := t.Glyphs.Speaker
 		c := t.Accent
 		if b.kind == bSteer {
-			label, glyph = "steer", "↪"
+			label, glyph = "steer", t.Glyphs.Steer
 			if b.text != "" {
 				label = b.text
 			}
 			c = t.Pulse
 		}
 		lines = append(lines, mark+lipgloss.NewStyle().Foreground(c).Bold(true).Render(glyph+" "+label)+" "+stamp)
-		text, extras := partsText(b.parts)
+		text, extras := partsText(b.parts, t)
 		shown := wrap(text)
 		if !b.full && len(shown) > previewLines {
-			shown = append(shown[:previewLines], "  "+render.Dim(fmt.Sprintf("… %d more lines, click to show", len(shown)-previewLines), t))
+			shown = append(shown[:previewLines], "  "+render.Dim(fmt.Sprintf("%s %d more lines, click to show", t.Glyphs.Ellipsis, len(shown)-previewLines), t))
 		}
 		lines = append(lines, shown...)
 		for _, e := range extras {
 			lines = append(lines, "  "+render.Warm(e, t))
 		}
 	case bText:
-		c := tr.agentColor(b.agent)
+		c := tr.speakerColor(b)
 		name := b.agent
+		if (tr.rootOnly || name == "") && b.model != "" {
+			name = b.model
+		}
 		if name == "" {
 			name = "agent"
 		}
-		head := lipgloss.NewStyle().Foreground(c).Bold(true).Render("▌ " + name)
-		if b.model != "" {
+		head := lipgloss.NewStyle().Foreground(c).Bold(true).Render(t.Glyphs.Speaker + " " + name)
+		if b.model != "" && b.model != name {
 			head += " " + render.Dim(b.model, t)
 		}
 		head += " " + stamp
@@ -962,38 +1068,26 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 			lines = append(lines, "  "+l)
 		}
 	case bThinking:
-		head := render.Dim("· thinking", t)
-		if n := len([]rune(b.text)) / 4; n > 0 {
-			head += render.Dim(" · ~"+render.Tokens(n)+" tokens", t)
+		head := render.Dim(t.Glyphs.Thinking+" thinking", t)
+		if d := tr.thought(b); d > 0 {
+			head += render.Dim(" "+t.Glyphs.Sep+" "+render.Elapsed(d), t)
 		}
 		if !b.done {
 			head += " " + render.Dim(render.Spinner(tr.tick, t), t)
 		}
 		lines = append(lines, mark+head)
-		show := tr.thinking || b.expanded
-		switch {
-		case show:
-			for _, l := range strings.Split(render.Wrap(b.text, body), "\n") {
-				lines = append(lines, "  "+render.Dim(l, t))
-			}
-		case !b.done:
-			tail := render.Lines(render.Wrap(b.text, body))
-			if len(tail) > 3 {
-				tail = tail[len(tail)-3:]
-			}
-			for _, l := range tail {
-				lines = append(lines, "  "+render.Dim(l, t))
-			}
+		if tr.thinking || b.expanded || !b.done {
+			lines = append(lines, tr.thoughtLines(b, body)...)
 		}
 	case bTool:
-		lines = append(lines, tr.toolLines(mark, b, width, body)...)
+		lines = append(lines, tr.toolLines(mark, b, body)...)
 	case bApproval:
 		a := b.approval
-		glyph := lipgloss.NewStyle().Foreground(t.Pulse).Bold(true).Render("⚑")
+		glyph := lipgloss.NewStyle().Foreground(t.Pulse).Bold(true).Render(t.Glyphs.Flag)
 		var text string
 		switch {
 		case a.Pending:
-			text = render.Hot("awaiting approval for "+a.Tool, t) + " " + render.Dim(render.Spinner(tr.tick, t), t)
+			text = render.Hot("approve "+a.Tool+"?", t) + " " + render.Dim(render.Spinner(tr.tick, t), t)
 		case a.Allowed:
 			text = render.Good("allowed "+a.Tool, t) + " " + render.Dim("by "+a.By, t)
 		default:
@@ -1006,19 +1100,19 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 			text += " " + render.Cool(a.Key, t)
 		}
 		if a.Reason != "" && !a.Allowed && !a.Pending {
-			text += " " + render.Dim(render.Truncate(a.Reason, body/2), t)
+			text += " " + render.Dim(render.Truncate(a.Reason, body/2, t), t)
 		}
 		lines = append(lines, mark+glyph+" "+text+" "+stamp)
 	case bCompact:
-		head := render.Warm("≡ compacting", t)
+		head := render.Warm(t.Glyphs.Compact+" compacting", t)
 		if b.done {
 			switch d := b.data.(type) {
 			case map[string]int:
-				head = render.Warm(fmt.Sprintf("≡ compacted %d messages into %d", d["before"], d["after"]), t)
+				head = render.Warm(fmt.Sprintf("%s compacted %d messages into %d", t.Glyphs.Compact, d["before"], d["after"]), t)
 			case string:
-				head = render.Warm("≡ "+d, t)
+				head = render.Warm(t.Glyphs.Compact+" "+d, t)
 			default:
-				head = render.Warm("≡ compacted", t)
+				head = render.Warm(t.Glyphs.Compact+" compacted", t)
 			}
 		} else {
 			head += " " + render.Dim(render.Spinner(tr.tick, t), t)
@@ -1028,31 +1122,31 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 			lines = append(lines, wrap(render.Dim(b.text, t))...)
 		}
 	case bHook:
-		lines = append(lines, mark+render.Dim("⚙ "+render.Truncate(b.text, body), t))
+		lines = append(lines, mark+render.Dim(t.Glyphs.Hook+" "+render.Truncate(b.text, body, t), t))
 		if ex, ok := b.data.(hooks.Execution); ok && strings.TrimSpace(ex.Stdout) != "" {
 			for _, l := range render.Lines(render.Tail(strings.TrimSpace(ex.Stdout), 5)) {
-				lines = append(lines, "    "+render.Dim(render.Truncate(l, body-2), t))
+				lines = append(lines, "    "+render.Dim(render.Truncate(l, body-2, t), t))
 			}
 		}
 	case bNote:
-		lines = append(lines, mark+render.Dim("· "+render.Truncate(b.text, body), t))
+		lines = append(lines, mark+render.Dim(t.Glyphs.Note+" "+render.Truncate(b.text, body, t), t))
 	case bError:
-		lines = append(lines, mark+render.Bad("✗ "+render.Truncate(b.err.Error(), body), t)+" "+stamp)
+		lines = append(lines, mark+render.Bad(t.Glyphs.Error+" "+render.Truncate(b.err.Error(), body, t), t)+" "+stamp)
 	case bChild:
 		name := b.call.Name
-		head := lipgloss.NewStyle().Foreground(tr.agentColor(name)).Bold(true).Render("☍ " + name)
+		head := lipgloss.NewStyle().Foreground(tr.agentColor(name)).Bold(true).Render(t.Glyphs.Child + " " + name)
 		if b.text != "" && !b.done {
-			head += " " + render.Dim(render.Truncate(b.text, body/2), t)
+			head += " " + render.Dim(render.Truncate(b.text, body/2, t), t)
 		}
 		switch {
 		case !b.done:
 			head += " " + render.Cool(render.Spinner(tr.tick, t)+" working", t)
 		case b.err != nil:
-			head += " " + render.Bad(render.Truncate(b.err.Error(), body/2), t)
+			head += " " + render.Bad(render.Truncate(b.err.Error(), body/2, t), t)
 		default:
 			head += " " + render.Good("done", t)
 			if b.text != "" {
-				head += " " + render.Dim(render.Summary(b.text, body/2), t)
+				head += " " + render.Dim(render.Summary(b.text, body/2, t), t)
 			}
 		}
 		lines = append(lines, mark+head+" "+stamp)
@@ -1063,7 +1157,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 }
 
 // Text of input parts with a label for every attachment
-func partsText(parts []protocol.Part) (string, []string) {
+func partsText(parts []protocol.Part, t theme.Theme) (string, []string) {
 	var sb strings.Builder
 	var extras []string
 	for _, p := range parts {
@@ -1071,19 +1165,54 @@ func partsText(parts []protocol.Part) (string, []string) {
 		case protocol.Text:
 			sb.WriteString(v.Text)
 		case protocol.Image:
-			extras = append(extras, fmt.Sprintf("⌦ image %s %s", v.MediaType, render.Bytes(int64(len(v.Data)))))
+			extras = append(extras, fmt.Sprintf("%s image %s %s", t.Glyphs.Attach, v.MediaType, render.Bytes(int64(len(v.Data)))))
 		case protocol.Document:
-			extras = append(extras, fmt.Sprintf("⌦ %s %s", v.Name, render.Bytes(int64(len(v.Data)))))
+			extras = append(extras, fmt.Sprintf("%s %s %s", t.Glyphs.Attach, v.Name, render.Bytes(int64(len(v.Data)))))
 		}
 	}
 	return sb.String(), extras
 }
 
+// Wrapped thought in dim text, its newest runes boiling in ice until they settle
+func (tr *Transcript) thoughtLines(b *block, body int) []string {
+	t := tr.env.Theme
+	runes := []rune(b.text)
+	keep := visible(runes[:min(b.resolved(tr.env.now()), len(runes))])
+	var out []string
+	for i, l := range strings.Split(render.Wrap(b.text, body), "\n") {
+		lr := []rune(l)
+		cut := 0
+		for cut < len(lr) && keep > 0 {
+			if !unicode.IsSpace(lr[cut]) {
+				keep--
+			}
+			cut++
+		}
+		line := render.Dim(string(lr[:cut]), t)
+		if cut < len(lr) {
+			line += render.Cool(fx.Churn(string(lr[cut:]), tr.tick+i*7, t.Glyphs.Churn), t)
+		}
+		out = append(out, "  "+line)
+	}
+	return out
+}
+
+// Count of runes that are not blank
+func visible(runes []rune) int {
+	n := 0
+	for _, r := range runes {
+		if !unicode.IsSpace(r) {
+			n++
+		}
+	}
+	return n
+}
+
 // Short description of a call from its arguments
-func callSummary(call protocol.ToolCall, partial string) string {
+func callSummary(call protocol.ToolCall, partial string, t theme.Theme) string {
 	raw := call.Args
 	if len(raw) == 0 && partial != "" {
-		return render.Truncate(strings.TrimSpace(partial), 60)
+		return render.Truncate(strings.TrimSpace(partial), 60, t)
 	}
 	var args map[string]any
 	if json.Unmarshal(raw, &args) != nil {
@@ -1123,7 +1252,7 @@ func callSummary(call protocol.ToolCall, partial string) string {
 		if d := str("description"); d != "" {
 			return d
 		}
-		return render.Summary(str("prompt"), 60)
+		return render.Summary(str("prompt"), 60, t)
 	case facts.ToolName:
 		return str("title")
 	case mission.ToolName:
@@ -1145,14 +1274,14 @@ func callSummary(call protocol.ToolCall, partial string) string {
 	return strings.Join(parts, " ")
 }
 
-func (tr *Transcript) toolLines(mark string, b *block, width, body int) []string {
+func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 	t := tr.env.Theme
-	glyph := render.ToolGlyph(b.call.Name)
+	glyph := render.ToolGlyph(b.call.Name, t)
 	name := b.call.Name
 	if name == "" {
 		name = "tool"
 	}
-	head := lipgloss.NewStyle().Foreground(tr.agentColor(b.agent)).Bold(true).Render(glyph+" "+name) + " " + lipgloss.NewStyle().Foreground(t.Text).Render(render.Truncate(callSummary(b.call, b.partial), body/2))
+	head := lipgloss.NewStyle().Foreground(tr.speakerColor(b)).Bold(true).Render(glyph+" "+name) + " " + lipgloss.NewStyle().Foreground(t.Text).Render(render.Truncate(callSummary(b.call, b.partial, t), body/2, t))
 	var status string
 	switch {
 	case b.result == nil && !b.started.IsZero():
@@ -1177,7 +1306,7 @@ func (tr *Transcript) toolLines(mark string, b *block, width, body int) []string
 	}
 	lines := []string{mark + head + " " + status}
 	if b.err != nil {
-		lines = append(lines, "  "+render.Hot("✗ "+render.Truncate(b.err.Error(), body-2), t))
+		lines = append(lines, "  "+render.Hot(t.Glyphs.Error+" "+render.Truncate(b.err.Error(), body-2, t), t))
 		return lines
 	}
 	if b.result == nil && b.partial != "" {
@@ -1186,7 +1315,7 @@ func (tr *Transcript) toolLines(mark string, b *block, width, body int) []string
 			tail = tail[len(tail)-6:]
 		}
 		for _, l := range tail {
-			lines = append(lines, "  "+render.Dim(render.Truncate(l, body-2), t))
+			lines = append(lines, "  "+render.Dim(render.Truncate(l, body-2, t), t))
 		}
 		return lines
 	}
@@ -1207,10 +1336,10 @@ func (tr *Transcript) toolLines(mark string, b *block, width, body int) []string
 					shown = shown[:20]
 				}
 				for i, l := range shown {
-					bodyLines = append(bodyLines, render.Dim(fmt.Sprintf("%3d ", i+1), t)+render.Truncate(l, body-6))
+					bodyLines = append(bodyLines, render.Dim(fmt.Sprintf("%3d ", i+1), t)+render.Truncate(l, body-6, t))
 				}
 				if len(before) > 20 {
-					bodyLines = append(bodyLines, render.Dim(fmt.Sprintf("… %d more lines", len(before)-20), t))
+					bodyLines = append(bodyLines, render.Dim(fmt.Sprintf("%s %d more lines", t.Glyphs.Ellipsis, len(before)-20), t))
 				}
 			}
 		}
@@ -1220,7 +1349,7 @@ func (tr *Transcript) toolLines(mark string, b *block, width, body int) []string
 		limit = len(bodyLines)
 	}
 	if len(bodyLines) > limit {
-		bodyLines = append(bodyLines[:limit], render.Dim(fmt.Sprintf("… %d more lines, click to show all", len(bodyLines)-limit), t))
+		bodyLines = append(bodyLines[:limit], render.Dim(fmt.Sprintf("%s %d more lines, click to show all", t.Glyphs.Ellipsis, len(bodyLines)-limit), t))
 	}
 	for _, l := range bodyLines {
 		lines = append(lines, "  "+l)
@@ -1271,31 +1400,31 @@ func (tr *Transcript) resultLines(b *block, width int) []string {
 			if i < len(code) {
 				text = code[i]
 			}
-			out = append(out, render.Dim(fmt.Sprintf("%*d ", digits, d.Offset+i), t)+render.Truncate(text, width-digits-1))
+			out = append(out, render.Dim(fmt.Sprintf("%*d ", digits, d.Offset+i), t)+render.Truncate(text, width-digits-1, t))
 		}
 		return out
 	case files.GlobData:
 		var out []string
 		for _, m := range d.Matches {
-			out = append(out, render.Truncate(m.Path, width))
+			out = append(out, render.Truncate(m.Path, width, t))
 		}
 		return out
 	case files.GrepData:
 		var out []string
 		for _, f := range d.Files {
-			out = append(out, render.Cool(render.Truncate(f.Path, width), t))
+			out = append(out, render.Cool(render.Truncate(f.Path, width, t), t))
 			for _, h := range f.Hits {
-				out = append(out, render.Dim(fmt.Sprintf("  %d ", h.Line), t)+render.Truncate(h.Text, width-8))
+				out = append(out, render.Dim(fmt.Sprintf("  %d ", h.Line), t)+render.Truncate(h.Text, width-8, t))
 			}
 		}
 		return out
 	case shell.Run:
 		var out []string
 		for _, l := range render.Lines(strings.TrimRight(d.Stdout, "\n")) {
-			out = append(out, render.Truncate(l, width))
+			out = append(out, render.Truncate(l, width, t))
 		}
 		for _, l := range render.Lines(strings.TrimRight(d.Stderr, "\n")) {
-			out = append(out, render.Bad(render.Truncate(l, width), t))
+			out = append(out, render.Bad(render.Truncate(l, width, t), t))
 		}
 		if d.TimedOut {
 			out = append(out, render.Bad("timed out", t))
@@ -1304,7 +1433,7 @@ func (tr *Transcript) resultLines(b *block, width int) []string {
 	case web.Page:
 		out := []string{render.KV("title", d.Title, t), render.KV("url", d.FinalURL, t)}
 		for _, l := range render.Lines(d.Text) {
-			out = append(out, render.Truncate(l, width))
+			out = append(out, render.Truncate(l, width, t))
 		}
 		if d.Answer != "" {
 			out = append(out, "", render.Warm("answer", t))
@@ -1357,11 +1486,17 @@ func (tr *Transcript) View(w, h int) string {
 			tr.vp.GotoBottom()
 		}
 	}
+	logical := tr.vp.YOffset()
+	tr.vp.SetYOffset(tr.paintedOffset())
 	body := tr.vp.View()
+	painted := tr.vp.YOffset()
+	tr.vp.SetYOffset(logical)
 	if gw == 0 {
 		return body
 	}
-	return tr.gutter().beside(body, w, t)
+	g := tr.gutter()
+	g.offset = painted
+	return g.beside(body, w, t)
 }
 
 // Narrowest transcript that still gets a scrollbar
@@ -1413,7 +1548,7 @@ func (tr *Transcript) Status() string {
 	if tr.search.Query() != "" {
 		parts = append(parts, render.Count(len(tr.found), "match"))
 	}
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, " "+tr.env.Theme.Glyphs.Sep+" ")
 }
 
 // Reports whether typed text goes to the search line
@@ -1489,11 +1624,11 @@ func findAll(content, query string) [][]int {
 	return out
 }
 
-// Model named as waiting while the transcript is empty
+// Model named as idle while the transcript is empty
 func (tr *Transcript) idle(w, h int) string {
 	t := tr.env.Theme
 	if !tr.rootOnly {
-		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, render.Dim("waiting for the agent", t))
+		return emptyView(w, h, "waiting", t)
 	}
 	model := "model"
 	if tr.env.Primary != nil {
@@ -1501,6 +1636,11 @@ func (tr *Transcript) idle(w, h int) string {
 			model = id
 		}
 	}
-	line := lipgloss.NewStyle().Foreground(t.TextDim).Render("◌ ") + lipgloss.NewStyle().Foreground(t.Ice).Render(model) + lipgloss.NewStyle().Foreground(t.TextDim).Render(" awaiting a prompt")
+	line := lipgloss.NewStyle().Foreground(t.TextDim).Render(t.Glyphs.Idle+" ") + lipgloss.NewStyle().Foreground(t.Ice).Render(model) + lipgloss.NewStyle().Foreground(t.TextDim).Render(" "+t.Glyphs.Sep+" idle")
+	mark := art.Mark(t.Plain)
+	if mw := art.Width(mark); w >= mw+4 && h >= len(mark)+3 {
+		rows := art.Paint(mark, theme.Ring(mw, t.Ring...))
+		line = strings.Join(append(rows, "", line), "\n")
+	}
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, line)
 }

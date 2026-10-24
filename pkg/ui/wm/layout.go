@@ -4,7 +4,10 @@ import "math"
 
 // Rectangle of whole cells
 type Box struct {
-	X, Y, W, H int
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
 }
 
 func (b Box) contains(x, y int) bool {
@@ -179,6 +182,15 @@ func shrunk(b Box, share float64) (x, y, w, h float64) {
 	h = float64(b.H) * (1 - share)
 	x = float64(b.X) + (float64(b.W)-w)/2
 	y = float64(b.Y) + (float64(b.H)-h)/2
+	return x, y, w, h
+}
+
+// Box of a share of the target size centered on the origin a card opened from another grows out of
+func grown(origin, target Box, share float64) (x, y, w, h float64) {
+	w = float64(target.W) * share
+	h = float64(target.H) * share
+	x = float64(origin.X) + (float64(origin.W)-w)/2
+	y = float64(origin.Y) + (float64(origin.H)-h)/2
 	return x, y, w, h
 }
 

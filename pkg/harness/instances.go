@@ -138,7 +138,7 @@ func (a *App) SaveProfile(old string, p profiles.Profile) error {
 			return fmt.Errorf("%s names a built in provider, pick another name", p.Name)
 		}
 	}
-	if old != "" && p.Disabled && a.Primary.Profile.Name == old {
+	if old != "" && p.Disabled && a.ProfileInUse(old) {
 		return fmt.Errorf("switch away from %s before turning it off", old)
 	}
 	e, err := p.Expand()
@@ -151,9 +151,9 @@ func (a *App) SaveProfile(old string, p profiles.Profile) error {
 	return a.editProfiles(old, func(d *profiles.Document) error { return d.Put(old, p) })
 }
 
-// Deletes a written profile, refusing the one in use
+// Deletes a written profile, refusing one in use
 func (a *App) RemoveProfile(name string) error {
-	if a.Primary.Profile.Name == name {
+	if a.ProfileInUse(name) {
 		return fmt.Errorf("switch away from %s before deleting it", name)
 	}
 	if !a.Shadowed(name) {
@@ -170,13 +170,13 @@ func (a *App) MoveProfile(name string, delta int) error {
 	return a.editProfiles(name, func(d *profiles.Document) error { return d.Move(name, delta) })
 }
 
-// Turns a written profile on or off, refusing to turn off the one in use
+// Turns a written profile on or off, refusing to turn off one in use
 func (a *App) SetProfileEnabled(name string, on bool) error {
 	i := indexOf(a.Profiles, name)
 	if i < 0 {
 		return fmt.Errorf("no written profile %s", name)
 	}
-	if !on && a.Primary.Profile.Name == name {
+	if !on && a.ProfileInUse(name) {
 		return fmt.Errorf("switch away from %s before turning it off", name)
 	}
 	w := a.Profiles[i].Written

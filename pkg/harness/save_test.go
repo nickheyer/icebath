@@ -18,10 +18,10 @@ func TestSaveWritesWhereTheNextStartReads(t *testing.T) {
 	t.Setenv(ProfileEnv, "")
 	t.Setenv(ModelEnv, "")
 	var c Config
-	if err := c.SaveKnob(project, "cascade", "true"); err != nil {
+	if err := c.SaveSetting(project, "cascade", "true"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SaveKnob(project, "compact_threshold", "0"); err != nil {
+	if err := c.SaveSetting(project, "compact_threshold", "0"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(user, ConfigFile))
@@ -34,10 +34,10 @@ func TestSaveWritesWhereTheNextStartReads(t *testing.T) {
 	extra := filepath.Join(t.TempDir(), "extra.json")
 	os.WriteFile(extra, []byte(`{"max_tokens":20}`), 0o644)
 	c = Config{Sources: []string{extra}}
-	if err := c.SaveKnob(project, "theme", "plain"); err != nil {
+	if err := c.SaveSetting(project, "theme", "plain"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SaveKnob(project, "max_tokens", "4096"); err != nil {
+	if err := c.SaveSetting(project, "max_tokens", "4096"); err != nil {
 		t.Fatal(err)
 	}
 	if err := Save(project, c.Sources, Field{Path: []string{"profile"}, Value: "openai"}, Field{Path: []string{"model"}, Value: "gpt-5"}); err != nil {
@@ -68,7 +68,7 @@ func TestSaveWritesWhereTheNextStartReads(t *testing.T) {
 			t.Fatalf("keys keep their file order and new ones follow %s", data)
 		}
 	}
-	if err := c.SaveKnob(project, "cascade", "true"); err != nil {
+	if err := c.SaveSetting(project, "cascade", "true"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(filepath.Join(user, ConfigFile))
@@ -76,36 +76,36 @@ func TestSaveWritesWhereTheNextStartReads(t *testing.T) {
 		t.Fatalf("nested keys keep their order too %s", data)
 	}
 	os.WriteFile(filepath.Join(user, ConfigFile), []byte(`[1]`), 0o644)
-	if err := c.SaveKnob(project, "cascade", "false"); err == nil {
+	if err := c.SaveSetting(project, "cascade", "false"); err == nil {
 		t.Fatal("a file that is not an object fails")
 	}
 	os.WriteFile(filepath.Join(user, ConfigFile), nil, 0o644)
-	if err := c.SaveKnob(project, "cascade", "false"); err == nil {
+	if err := c.SaveSetting(project, "cascade", "false"); err == nil {
 		t.Fatal("an empty file fails")
 	}
-	if err := c.SaveKnob(project, "motion", "9"); err == nil {
+	if err := c.SaveSetting(project, "motion", "9"); err == nil {
 		t.Fatal("a bad value is refused before anything is written")
 	}
 	os.WriteFile(filepath.Join(user, ConfigFile), []byte(`{"ui":"flat"}`), 0o644)
-	if err := c.SaveKnob(project, "cascade", "false"); err == nil {
+	if err := c.SaveSetting(project, "cascade", "false"); err == nil {
 		t.Fatal("a field under a non object fails")
 	}
 	os.WriteFile(filepath.Join(user, ConfigFile), []byte(`{bad`), 0o644)
-	if err := c.SaveKnob(project, "cascade", "false"); err == nil {
+	if err := c.SaveSetting(project, "cascade", "false"); err == nil {
 		t.Fatal("an unreadable file fails")
 	}
 	os.WriteFile(filepath.Join(user, ConfigFile), []byte(`{"ui":null}`), 0o644)
-	if err := c.SaveKnob(project, "cascade", "false"); err != nil {
+	if err := c.SaveSetting(project, "cascade", "false"); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := ReadConfigFile(filepath.Join(user, ConfigFile)); got.UI.Cascade == nil || *got.UI.Cascade {
 		t.Fatal("a null object is replaced")
 	}
-	if err := c.SaveKnob(project, "extra.thinking", `{"type":"adaptive"}`); err != nil {
+	if err := c.SaveSetting(project, "extra.thinking", `{"type":"adaptive"}`); err != nil {
 		t.Fatal(err)
 	}
 	os.Chmod(filepath.Join(user, ConfigFile), 0o400)
-	if err := c.SaveKnob(project, "cascade", "true"); err == nil {
+	if err := c.SaveSetting(project, "cascade", "true"); err == nil {
 		t.Fatal("a file that cannot be written fails")
 	}
 	got, _ = ReadConfigFile(filepath.Join(user, ConfigFile))
@@ -115,7 +115,7 @@ func TestSaveWritesWhereTheNextStartReads(t *testing.T) {
 	}
 }
 
-func TestUnsetKnobsLeaveEveryFile(t *testing.T) {
+func TestUnsetSettingsLeaveEveryFile(t *testing.T) {
 	user := t.TempDir()
 	project := t.TempDir()
 	t.Setenv(profiles.ConfigDirEnv, user)
@@ -127,12 +127,12 @@ func TestUnsetKnobsLeaveEveryFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"max_rounds", "temperature", "compact_threshold", "motion", "max_tokens", "mode", "theme", "cascade", "extra.thinking"} {
-		if err := c.SaveKnob(project, key, ""); err != nil {
+		if err := c.SaveSetting(project, key, ""); err != nil {
 			t.Fatalf("%s: %v", key, err)
 		}
 	}
 	if c.MaxRounds != 0 || c.Temperature != nil || c.Compaction.Threshold != 0 || c.UI.Motion != nil {
-		t.Fatalf("unset knobs clear the configuration %+v", c)
+		t.Fatalf("unset settings clear the configuration %+v", c)
 	}
 	got, err := Discover(project)
 	if err != nil {
@@ -145,11 +145,11 @@ func TestUnsetKnobsLeaveEveryFile(t *testing.T) {
 	if strings.Contains(string(data), "ui") || strings.Contains(string(data), "max_rounds") || !strings.Contains(string(data), `"keep": 2`) {
 		t.Fatalf("objects left empty go too\n%s", data)
 	}
-	if err := c.SetKnob("nonsense", ""); err == nil {
-		t.Fatal("unknown knobs are refused even when unset")
+	if err := c.Set("nonsense", ""); err == nil {
+		t.Fatal("unknown settings are refused even when unset")
 	}
-	c.SetKnob("extra.note", "x")
-	c.SetKnob("extra.note", "")
+	c.Set("extra.note", "x")
+	c.Set("extra.note", "")
 	if _, ok := c.Extra["note"]; ok {
 		t.Fatal("an extra field unsets")
 	}

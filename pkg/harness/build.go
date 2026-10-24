@@ -89,7 +89,7 @@ type App struct {
 	send     Sender
 	lives    []*Live
 	mu       sync.Mutex
-	children Endpoint
+	children *Endpoint
 	judge    *Endpoint
 	summary  *Endpoint
 	closed   sync.Once
@@ -174,11 +174,12 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 		app.Fallbacks = append(app.Fallbacks, ep)
 	}
 	app.Model = app.chain(app.Primary)
-	app.children = app.Primary
 	if cfg.Subagents.Model != nil {
-		if app.children, err = app.open(ctx, *cfg.Subagents.Model); err != nil {
+		ep, err := app.open(ctx, *cfg.Subagents.Model)
+		if err != nil {
 			return nil, fmt.Errorf("subagents: %w", err)
 		}
+		app.children = &ep
 	}
 	if cfg.Compaction.Model != nil {
 		ep, err := app.open(ctx, *cfg.Compaction.Model)
@@ -205,16 +206,16 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 		return nil, err
 	}
 	app.Store = &jsonl.Store{Dir: sessions}
-	var sess *session.Session
+	sess, ep := session.New(), app.Primary
 	if opts.Resume != "" {
 		if sess, err = app.Store.Load(ctx, opts.Resume); err != nil {
 			return nil, fmt.Errorf("resume %s: %w", opts.Resume, err)
 		}
-	} else {
-		sess = session.New()
-		sess.SetModel(app.Primary.Model)
+		if ep, err = app.endpointFor(ctx, sess); err != nil {
+			return nil, fmt.Errorf("resume %s: %w", opts.Resume, err)
+		}
 	}
-	first, err := app.live(sess)
+	first, err := app.live(sess, ep)
 	if err != nil {
 		return nil, err
 	}
@@ -374,19 +375,19 @@ func (a *App) buildTools(_ context.Context, dir, root string) error {
 	return a.Tools.Add(facts.Tool{Resolve: a.factsFor}, mission.Tool{Resolve: a.missionsFor}, a.Subagents)
 }
 
-// Builds a child agent on a fresh session labeled with its parent, on the subagent endpoint ahead of the fallbacks
+// Builds a child agent on a fresh session labeled with its parent, on the subagent endpoint or the parent one
 func (a *App) childFactory(ctx context.Context) (*agent.Agent, error) {
 	sess := session.New()
-	parent := a.Session.ID()
+	parent, ep := a.Session.ID(), a.endpointOf(a.Session)
 	if l := a.LiveOfRun(RunFrom(ctx)); l != nil {
-		parent = l.Session.ID()
+		parent, ep = l.Session.ID(), l.Endpoint
+	}
+	if a.children != nil {
+		ep = *a.children
 	}
 	sess.Label("parent", parent)
 	sess.Label("agent", policy.AgentFrom(ctx))
-	child := a.NewAgent("", sess)
-	child.Model = a.chain(a.children)
-	child.ModelID = a.children.Model
-	return child, nil
+	return a.newAgent("", sess, ep), nil
 }
 
 func (a *App) buildPolicy(root string) error {
@@ -418,14 +419,19 @@ func (a *App) buildPolicy(root string) error {
 	return nil
 }
 
-// Builds an agent on the session with every configured hook, the primary model and the shared gate
+// Builds an agent on the session with every configured hook, the endpoint of the session and the shared gate
 func (a *App) NewAgent(name string, sess *session.Session) *agent.Agent {
+	return a.newAgent(name, sess, a.endpointOf(sess))
+}
+
+// Builds an agent on the session that runs on the endpoint ahead of the fallbacks
+func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) *agent.Agent {
 	cfg := a.Config
-	ag := &agent.Agent{Name: name, Model: a.Model, ModelID: a.Primary.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
+	ag := &agent.Agent{Name: name, Model: a.chain(ep), ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
 	if ag.MaxTokens <= 0 {
 		ag.MaxTokens = DefaultMaxTokens
 	}
-	ag.Hooks = append(ag.Hooks, systemHook{app: a})
+	ag.Hooks = append(ag.Hooks, systemHook{app: a, model: ep.Model})
 	var runner *hooks.Runner
 	if len(cfg.Hooks) > 0 {
 		transcript := ""
@@ -438,7 +444,7 @@ func (a *App) NewAgent(name string, sess *session.Session) *agent.Agent {
 	}
 	ag.Hooks = append(ag.Hooks, a.PreImage, compact.StripThinking{}, missionTools{})
 	if cfg.Compaction.Threshold > 0 {
-		s := &compact.Summarizer{Model: a.Model, ModelID: a.Primary.Model, Session: sess, Threshold: cfg.Compaction.Threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
+		s := &compact.Summarizer{Model: ag.Model, ModelID: ep.Model, Session: sess, Threshold: cfg.Compaction.Threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
 		if a.summary != nil {
 			s.Model, s.ModelID = a.summary.Provider, a.summary.Model
 		}
@@ -506,9 +512,9 @@ func (a *App) Close(ctx context.Context) error {
 }
 
 // Replaces the selected session with sess, releasing the old one
-func (a *App) adopt(sess *session.Session) error {
+func (a *App) adopt(sess *session.Session, ep Endpoint) error {
 	old := a.Current()
-	l, err := a.live(sess)
+	l, err := a.live(sess, ep)
 	if err != nil {
 		return err
 	}
@@ -523,51 +529,52 @@ func (a *App) adopt(sess *session.Session) error {
 // Switches the selected session to a stored one, restoring its facts and missions
 func (a *App) Switch(ctx context.Context, id string) error {
 	if cur := a.Current(); cur != nil && a.Busy(cur) {
-		return errors.New("harness: a run is in progress")
+		return errors.New("harness: an agent is still working")
 	}
 	sess, err := a.Store.Load(ctx, id)
 	if err != nil {
 		return err
 	}
-	return a.adopt(sess)
+	ep, err := a.endpointFor(ctx, sess)
+	if err != nil {
+		return err
+	}
+	return a.adopt(sess, ep)
 }
 
-// Starts a new empty session in place of the selected one, which stays on disk
+// Starts a new empty session on the default endpoint in place of the selected one, which stays on disk
 func (a *App) Fresh() error {
 	if cur := a.Current(); cur != nil && a.Busy(cur) {
-		return errors.New("harness: a run is in progress")
+		return errors.New("harness: an agent is still working")
 	}
-	sess := session.New()
-	sess.SetModel(a.Primary.Model)
-	return a.adopt(sess)
+	return a.adopt(session.New(), a.Primary)
 }
 
-// Forks the selected session at an entry count and selects the fork with the facts and missions it kept
+// Forks the selected session at an entry count and selects the fork with its facts, missions and endpoint
 func (a *App) ForkAt(n int) (*session.Session, error) {
-	if cur := a.Current(); cur != nil && a.Busy(cur) {
-		return nil, errors.New("harness: a run is in progress")
+	cur := a.Current()
+	if cur != nil && a.Busy(cur) {
+		return nil, errors.New("harness: an agent is still working")
 	}
 	f := a.Session.Fork()
 	f.Truncate(n)
-	if err := a.adopt(f); err != nil {
+	if err := a.adopt(f, a.endpointOf(a.Session)); err != nil {
 		return nil, err
 	}
 	a.Saver.Flush(f)
 	return f, nil
 }
 
-// Changes the model every later agent uses, looking the catalog up again
+// Changes the model of the selected session, and the default along with it
 func (a *App) SetModel(id string) {
-	a.Primary.Model = id
-	if known, ok := profiles.Describe(id); ok {
-		a.Primary.Catalog = known
-	} else {
-		a.Primary.Catalog = profiles.Model{ID: id, Vendor: a.Primary.Profile.Vendor}
+	if cur := a.Current(); cur != nil {
+		a.SetModelOn(cur, id)
+		return
 	}
-	a.Primary.Catalog.ID = id
-	a.Meter.SetCatalog(a.Primary.Catalog, a.Primary.Profile.Name)
-	a.Session.SetModel(id)
+	a.Primary = withModel(a.Primary, id)
+	a.Model = a.chain(a.Primary)
 	a.Config.Model = id
+	a.Meter.SetCatalog(a.Primary.Catalog, a.Primary.Profile.Name)
 }
 
 // Opens a profile as an endpoint without changing the app, usable off the event loop
@@ -578,35 +585,32 @@ func (a *App) OpenEndpoint(ctx context.Context, name, model string) (Endpoint, e
 	return a.open(ctx, Target{Profile: name, Model: model})
 }
 
-// Makes an opened endpoint the primary, keeping fallbacks, the session and the tools
+// Moves the selected session to an opened endpoint, which becomes the default, keeping fallbacks and the tools
 func (a *App) SetEndpoint(name string, ep Endpoint) error {
-	if a.Control.Busy() {
-		return errors.New("harness: a run is in progress")
+	if cur := a.Current(); cur != nil {
+		return a.SetEndpointOn(cur, name, ep)
 	}
 	a.Primary = ep
 	a.Model = a.chain(ep)
-	if a.Config.Subagents.Model == nil {
-		a.children = ep
-	}
-	a.Meter.SetCatalog(ep.Catalog, ep.Profile.Name)
-	a.Session.SetModel(ep.Model)
 	a.Config.Profile, a.Config.Model = name, ep.Model
+	a.Meter.SetCatalog(ep.Catalog, ep.Profile.Name)
 	return nil
 }
 
 // System prompt for a run as the machine, directory, model and mission stand right now
-func (a *App) SystemPrompt(ctx context.Context) string {
-	return Prompt(GatherFacts(a.Shell.Dir(), a.Root, a.Primary.Model, mission.IDFrom(ctx) != ""), a.System)
+func (a *App) SystemPrompt(ctx context.Context, model string) string {
+	return Prompt(GatherFacts(a.Shell.Dir(), a.Root, model, mission.IDFrom(ctx) != ""), a.System)
 }
 
-// Hook that writes the live system prompt into every turn
+// Hook that writes the live system prompt into every turn, naming the model the agent runs on
 type systemHook struct {
 	agent.Hooks
-	app *App
+	app   *App
+	model string
 }
 
 func (h systemHook) BeforeTurn(ctx context.Context, req *protocol.Request) error {
-	req.System = h.app.SystemPrompt(ctx)
+	req.System = h.app.SystemPrompt(ctx, h.model)
 	return nil
 }
 

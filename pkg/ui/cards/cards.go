@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/policy/mode"
@@ -47,8 +49,8 @@ type Env struct {
 	Primary func() harness.Endpoint
 	// Lists models of a profile, hitting the endpoint
 	Models func(ctx context.Context, p profiles.Profile) ([]profiles.Model, error)
-	// Knob values as the app holds them keyed by knob name, empty while unset
-	Knobs func() map[string]string
+	// Setting values as the app holds them keyed by name, empty while unset
+	Settings func() map[string]string
 	// Directory exports and the shell fallback use
 	ProjectDir string
 	Now        func() time.Time
@@ -175,8 +177,8 @@ type ExportMsg struct {
 	Err  error
 }
 
-// Knob changed in the configuration card, an empty value unsetting it
-type KnobMsg struct {
+// Setting changed in the settings tab, an empty value unsetting it
+type SettingMsg struct {
 	Key   string
 	Value string
 	// Applies without a toast unless it fails
@@ -228,6 +230,15 @@ func window(table []string, sel, room int) ([]string, int) {
 	}
 	end := min(len(table), render.TableHead+start+body)
 	return append(append([]string(nil), table[:render.TableHead]...), table[render.TableHead+start:end]...), start
+}
+
+// Dim text under the brand mark centered in w by h, for a card with nothing to show
+func emptyView(w, h int, text string, t theme.Theme) string {
+	body := render.Dim(text, t)
+	if h >= 3 {
+		body = lipgloss.NewStyle().Foreground(t.Steel).Render(t.Glyphs.Brand) + "\n" + body
+	}
+	return lipgloss.Place(w, max(h, 1), lipgloss.Center, lipgloss.Center, body)
 }
 
 // Lines cut or padded to h rows with the foot on the last row, as they are when there is no foot

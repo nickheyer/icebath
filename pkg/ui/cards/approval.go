@@ -68,7 +68,7 @@ func (a *Approval) refresh() {
 }
 
 func (a *Approval) Title() string  { return "APPROVAL" }
-func (a *Approval) Glyph() string  { return "⚑" }
+func (a *Approval) Glyph() string  { return a.env.Theme.Glyphs.Approval }
 func (a *Approval) Key() string    { return "approval:" + a.session }
 func (a *Approval) Init() tea.Cmd  { return nil }
 func (a *Approval) Floating() bool { return true }
@@ -167,24 +167,24 @@ func (a *Approval) Status() string {
 // Lines describing one pending request at width, the tool and its arguments first and the policy facts after
 func Describe(p *harness.Pending, width int, t theme.Theme) []string {
 	req := p.Request
-	head := lipgloss.NewStyle().Foreground(t.Pulse).Bold(true).Render(render.ToolGlyph(req.Call.Name) + " " + req.Call.Name)
+	head := lipgloss.NewStyle().Foreground(t.Pulse).Bold(true).Render(render.ToolGlyph(req.Call.Name, t) + " " + req.Call.Name)
 	for _, tag := range tags(req.Hints, t) {
 		head += "  " + tag
 	}
-	lines := []string{spread(head, render.Dim(p.Asked.Local().Format("15:04:05"), t), width), ""}
+	lines := []string{spread(head, render.Dim(p.Asked.Local().Format("15:04:05"), t), width, t), ""}
 	lines = append(lines, argLines(req.Call.Args, width, t)...)
 	var facts [][2]string
 	if req.Agent != "" && req.Agent != p.Run {
 		facts = append(facts, [2]string{"by", req.Agent})
 	}
 	if req.Reason != "" && req.Reason != "default" {
-		facts = append(facts, [2]string{"because", req.Reason})
+		facts = append(facts, [2]string{"reason", req.Reason})
 	}
 	if req.Review != nil {
 		facts = append(facts, [2]string{"judge", string(req.Review.Decision) + ", " + req.Review.Reason})
 	}
 	if req.Key != "" {
-		facts = append(facts, [2]string{"rule", render.Cool(req.Key, t) + render.Dim("  kept by always and never", t)})
+		facts = append(facts, [2]string{"rule", render.Cool(req.Key, t)})
 	}
 	if len(facts) > 0 {
 		lines = append(append(lines, ""), table(facts, width, t)...)
@@ -211,10 +211,10 @@ func tags(h tool.Annotations, t theme.Theme) []string {
 }
 
 // Left and right text on one line of width, the right dropped when both do not fit
-func spread(left, right string, width int) string {
+func spread(left, right string, width int, t theme.Theme) string {
 	lw, rw := ansi.StringWidth(left), ansi.StringWidth(right)
 	if lw+rw+2 > width {
-		return render.Truncate(left, width)
+		return render.Truncate(left, width, t)
 	}
 	return left + strings.Repeat(" ", width-lw-rw) + right
 }
@@ -266,7 +266,7 @@ func argLines(raw json.RawMessage, width int, t theme.Theme) []string {
 	if !ok || len(fields) == 0 {
 		var out []string
 		for _, l := range strings.Split(prettyArgs(raw), "\n") {
-			out = append(out, render.Truncate(lipgloss.NewStyle().Foreground(t.Text).Render(l), width))
+			out = append(out, render.Truncate(lipgloss.NewStyle().Foreground(t.Text).Render(l), width, t))
 		}
 		return out
 	}
@@ -297,7 +297,7 @@ func table(rows [][2]string, width int, t theme.Theme) []string {
 	for _, r := range rows {
 		for i, v := range wrapLines(r[1], vw) {
 			if i == 0 {
-				out = append(out, render.Dim(render.Fit(r[0], kw), t)+"  "+v)
+				out = append(out, render.Dim(render.Fit(r[0], kw, t), t)+"  "+v)
 				continue
 			}
 			out = append(out, strings.Repeat(" ", kw+2)+v)
@@ -326,11 +326,11 @@ func subjectLines(subjects []policy.Subject, width int, t theme.Theme) []string 
 	}
 	rows := make([][2]string, 0, len(subjects))
 	for i, s := range subjects {
-		mark := render.Good("•", t)
+		mark := render.Good(t.Glyphs.Bullet, t)
 		note := ""
 		if s.Unsafe {
 			mark = render.Bad("!", t)
-			note = render.Bad("  unsafe, hides commands behind substitution", t)
+			note = render.Bad("  unsafe", t)
 		}
 		if s.Exact {
 			note += render.Dim("  exact", t)
@@ -351,8 +351,8 @@ func (a *Approval) body(w int) []string {
 	if len(a.pending) > 1 {
 		lines = append(lines, "", render.Dim("then", t))
 		for _, p := range a.pending[1:] {
-			row := render.ToolGlyph(p.Request.Call.Name) + " " + p.Request.Call.Name + "  " + callSummary(p.Request.Call, "")
-			lines = append(lines, render.Truncate(render.Dim("  "+row, t), w))
+			row := render.ToolGlyph(p.Request.Call.Name, t) + " " + p.Request.Call.Name + "  " + callSummary(p.Request.Call, "", t)
+			lines = append(lines, render.Truncate(render.Dim("  "+row, t), w, t))
 		}
 	}
 	return lines
@@ -413,7 +413,7 @@ func (a *Approval) View(w, h int) string {
 	a.w, a.h = w, h
 	t := a.env.Theme
 	if len(a.pending) == 0 {
-		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, render.Dim("nothing waiting", t))
+		return emptyView(w, h, "no approvals", t)
 	}
 	body := max(h-2, 1)
 	lines := a.body(w)

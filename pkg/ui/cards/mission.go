@@ -32,8 +32,8 @@ func NewMission(env *Env, store *mission.Store, facts *facts.Store, sessionID st
 	return &Mission{env: env, store: store, facts: facts, session: sessionID, id: m.ID, m: m}
 }
 
-func (c *Mission) Title() string { return "PROBE " + c.id }
-func (c *Mission) Glyph() string { return "◎" }
+func (c *Mission) Title() string { return "MISSION " + c.id }
+func (c *Mission) Glyph() string { return c.env.Theme.Glyphs.Mission }
 func (c *Mission) Key() string   { return "mission:" + c.session + ":" + c.id }
 func (c *Mission) Init() tea.Cmd { return nil }
 func (c *Mission) ID() string    { return c.id }
@@ -122,7 +122,7 @@ func (c *Mission) View(w, h int) string {
 	case mission.StatusFailed, mission.StatusCancelled:
 		status = render.Bad(m.Status, t)
 	}
-	lines = append(lines, render.Heading(render.Truncate(m.Objective, w-10), t)+" "+status)
+	lines = append(lines, render.Heading(render.Truncate(m.Objective, w-10, t), t)+" "+status)
 	bar := max(w-6, 4)
 	lines = append(lines, render.Bar(m.Progress(), bar, t)+" "+render.Warm(render.Percent(m.Progress()), t))
 	if len(m.Agents) > 0 {
@@ -136,25 +136,25 @@ func (c *Mission) View(w, h int) string {
 	if m.Error != "" {
 		meta = append(meta, render.Bad(m.Error, t))
 	}
-	lines = append(lines, render.Truncate(strings.Join(meta, "  "), w))
+	lines = append(lines, render.Truncate(strings.Join(meta, "  "), w, t))
 	if m.Note != "" {
-		lines = append(lines, render.Dim(render.Truncate(m.Note, w), t))
+		lines = append(lines, render.Dim(render.Truncate(m.Note, w, t), t))
 	}
 	lines = append(lines, "")
 	if len(m.Plan) == 0 {
-		lines = append(lines, render.Dim("no plan yet", t))
+		lines = append(lines, render.Dim("no plan", t))
 	}
 	for i, s := range m.Plan {
-		mark, st := "☐", lipgloss.NewStyle().Foreground(t.Text)
+		mark, st := t.Glyphs.Todo, lipgloss.NewStyle().Foreground(t.Text)
 		switch s.Status {
 		case mission.StepDone:
-			mark, st = "☑", lipgloss.NewStyle().Foreground(t.TextDim)
+			mark, st = t.Glyphs.Done, lipgloss.NewStyle().Foreground(t.TextDim)
 		case mission.StepActive:
-			mark, st = "▶", lipgloss.NewStyle().Foreground(t.Ice).Bold(true)
+			mark, st = t.Glyphs.Active, lipgloss.NewStyle().Foreground(t.Ice).Bold(true)
 		case mission.StepSkipped:
-			mark, st = "⊘", lipgloss.NewStyle().Foreground(t.TextDim).Strikethrough(true)
+			mark, st = t.Glyphs.Skip, lipgloss.NewStyle().Foreground(t.TextDim).Strikethrough(true)
 		}
-		lines = append(lines, render.Truncate(st.Render(fmt.Sprintf("%s %d. %s", mark, i+1, s.Text)), w))
+		lines = append(lines, render.Truncate(st.Render(fmt.Sprintf("%s %d. %s", mark, i+1, s.Text)), w, t))
 	}
 	if len(lines) > h {
 		lines = lines[:h]

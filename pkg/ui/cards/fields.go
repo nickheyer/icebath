@@ -385,11 +385,7 @@ func (f *field) box(w int, lk look, t theme.Theme) (string, int) {
 	base := lk.well(t)
 	runes := []rune(f.value)
 	if f.kind == secretField {
-		mask := "•"
-		if t.Plain {
-			mask = "*"
-		}
-		runes = []rune(strings.Repeat(mask, len(runes)))
+		runes = []rune(strings.Repeat(t.Glyphs.Mask, len(runes)))
 	}
 	if len(runes) == 0 {
 		hint := f.placeholder
@@ -400,7 +396,7 @@ func (f *field) box(w int, lk look, t theme.Theme) (string, int) {
 		if lk.typing {
 			x = 1
 		}
-		return base.Render(" ") + base.Foreground(t.TextDim).Render(render.Fit(hint, max(w-1, 0))), x
+		return base.Render(" ") + base.Foreground(t.TextDim).Render(render.Fit(hint, max(w-1, 0), t)), x
 	}
 	room := max(w-2, 1)
 	start := 0
@@ -412,7 +408,7 @@ func (f *field) box(w int, lk look, t theme.Theme) (string, int) {
 	if lk.typing {
 		x = 1 + f.cursor - start
 	}
-	return base.Render(" ") + base.Foreground(t.Text).Render(render.Fit(shown, room)) + base.Render(" "), x
+	return base.Render(" ") + base.Foreground(t.Text).Render(render.Fit(shown, room, t)) + base.Render(" "), x
 }
 
 // Number well, range ends and slider on one row in shared columns, with their hits and the cursor column
@@ -422,9 +418,9 @@ func (f *field) slider(w int, lk look, cols sliderCols, t theme.Theme) (string, 
 	loW, hiW := max(cols.lo, ansi.StringWidth(lo)), max(cols.hi, ansi.StringWidth(hi))
 	bw := inner + 2
 	base := lk.well(t)
-	text := base.Foreground(t.Text).Render(render.Fit(f.value, inner))
+	text := base.Foreground(t.Text).Render(render.Fit(f.value, inner, t))
 	if f.value == "" {
-		text = base.Foreground(t.TextDim).Render(render.Fit("-", inner))
+		text = base.Foreground(t.TextDim).Render(render.Fit("-", inner, t))
 	}
 	box := base.Render(" ") + text + base.Render(" ")
 	x := -1
@@ -436,10 +432,7 @@ func (f *field) slider(w int, lk look, cols sliderCols, t theme.Theme) (string, 
 	if tw < 6 || f.hi <= f.lo {
 		return box, hits, x
 	}
-	fill, knob, rest := "━", "●", "─"
-	if t.Plain {
-		fill, knob, rest = "=", "O", "-"
-	}
+	fill, thumb, rest := t.Glyphs.Fill, t.Glyphs.Thumb, t.Glyphs.Slide
 	lit := t.SteelBright
 	if lk.focused {
 		lit = t.Ice
@@ -454,7 +447,7 @@ func (f *field) slider(w int, lk look, cols sliderCols, t theme.Theme) (string, 
 		case i < at:
 			sb.WriteString(lipgloss.NewStyle().Foreground(lit).Render(fill))
 		case i == at:
-			sb.WriteString(lipgloss.NewStyle().Foreground(lit).Bold(true).Render(knob))
+			sb.WriteString(lipgloss.NewStyle().Foreground(lit).Bold(true).Render(thumb))
 		default:
 			sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(rest))
 		}
@@ -462,7 +455,7 @@ func (f *field) slider(w int, lk look, cols sliderCols, t theme.Theme) (string, 
 	tx := bw + 2 + loW + 1
 	hits = append(hits, hit{row: 0, x0: tx, x1: tx + tw, choice: hitTrack})
 	dim := lipgloss.NewStyle().Foreground(t.TextDim)
-	return box + "  " + dim.Render(strings.Repeat(" ", loW-ansi.StringWidth(lo))+lo) + " " + sb.String() + " " + dim.Render(render.Fit(hi, hiW)), hits, x
+	return box + "  " + dim.Render(strings.Repeat(" ", loW-ansi.StringWidth(lo))+lo) + " " + sb.String() + " " + dim.Render(render.Fit(hi, hiW, t)), hits, x
 }
 
 // Applies a click on a hit at column x, picking a choice, placing the slider or the cursor

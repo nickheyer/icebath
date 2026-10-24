@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/policy/rules"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
+	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/tool/mcp"
 )
 
@@ -352,4 +354,104 @@ func TestEndpointSwitchOpensThenAdopts(t *testing.T) {
 	}
 	<-r.done
 	app.Close(ctx)
+}
+
+func TestLivesCarryTheirEndpoints(t *testing.T) {
+	srv, _ := fakeOpenAI(t)
+	cfg, dir := testConfig(t, srv.URL)
+	ctx := context.Background()
+	app, err := Build(ctx, cfg, newSink().send, BuildOptions{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := app.Current()
+	if first.Endpoint.Model != "m-fast" || first.Session.Labels()["profile"] != "fake" || first.Session.Model() != "m-fast" {
+		t.Fatal("a new session is labeled with the default profile and model")
+	}
+	second, err := app.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.SetModelOn(second, "m-slow")
+	if first.Endpoint.Model != "m-fast" || second.Endpoint.Model != "m-slow" || second.Session.Model() != "m-slow" || app.Primary.Model != "m-slow" || app.Config.Model != "m-slow" {
+		t.Fatal("a session moves alone and the default follows")
+	}
+	if app.NewAgent("", second.Session).ModelID != "m-slow" || app.NewAgent("", first.Session).ModelID != "m-fast" {
+		t.Fatal("agents run on the endpoint of their session")
+	}
+	f, err := app.Fork(second, 0)
+	if err != nil || f.Endpoint.Model != "m-slow" || f.Session.Labels()["profile"] != "fake" {
+		t.Fatal("a fork keeps the endpoint")
+	}
+	if err := app.SaveProfile("", profiles.Profile{Name: "other", Vendor: "openai", Protocol: "openai-completions", BaseURL: srv.URL, Models: []string{"m-x"}}); err != nil {
+		t.Fatal(err)
+	}
+	ep, err := app.OpenEndpoint(ctx, "other", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.SetEndpointOn(second, "other", ep); err != nil {
+		t.Fatal(err)
+	}
+	if second.Endpoint.Profile.Name != "other" || first.Endpoint.Profile.Name != "fake" || app.Primary.Profile.Name != "other" || !app.ProfileInUse("fake") || !app.ProfileInUse("other") {
+		t.Fatal("a session moves to a profile alone, both profiles in use")
+	}
+	if err := app.RemoveProfile("other"); err == nil {
+		t.Fatal("a profile in use may not be deleted")
+	}
+	id := second.Session.ID()
+	second.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "kept"}}})
+	if err := app.Release(second); err != nil {
+		t.Fatal(err)
+	}
+	back, err := app.Open(ctx, id)
+	if err != nil || back.Endpoint.Profile.Name != "other" || back.Endpoint.Model != "m-x" {
+		t.Fatalf("a resumed session comes back on its own endpoint %v", err)
+	}
+	app.Release(back)
+	fake, err := app.OpenEndpoint(ctx, "fake", "m-fast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.SetEndpointOn(first, "fake", fake); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RemoveProfile("other"); err != nil {
+		t.Fatal(err)
+	}
+	gone, err := app.Open(ctx, id)
+	if err != nil || gone.Endpoint.Profile.Name != "fake" || gone.Session.Labels()["profile"] != "fake" {
+		t.Fatalf("a session whose profile is gone resumes on the default %v", err)
+	}
+	app.Close(ctx)
+}
+
+func TestReviveOpensAnEmptySessionUnderItsId(t *testing.T) {
+	srv, _ := fakeOpenAI(t)
+	cfg, dir := testConfig(t, srv.URL)
+	ctx := context.Background()
+	app, err := Build(ctx, cfg, newSink().send, BuildOptions{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone := session.New().ID()
+	if _, err := app.Open(ctx, gone); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("a session never written is not found, %v", err)
+	}
+	l, err := app.Revive(gone)
+	if err != nil || l.Session.ID() != gone || l.Session.Len() != 0 || l.Endpoint.Profile.Name != app.Primary.Profile.Name || app.LiveByID(gone) != l {
+		t.Fatalf("revive opens an empty session under the id on the default endpoint, %v", err)
+	}
+	if same, err := app.Revive(gone); err != nil || same != l {
+		t.Fatal("reviving an open session returns it")
+	}
+	if _, err := app.Revive("bad id!"); err == nil {
+		t.Fatal("an invalid id is refused")
+	}
+	if err := app.Release(l); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Open(ctx, gone); !errors.Is(err, session.ErrNotFound) {
+		t.Fatal("releasing a revived empty session writes nothing")
+	}
 }

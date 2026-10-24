@@ -52,7 +52,7 @@ func NewFiles(env *Env) *Files {
 }
 
 func (c *Files) Title() string    { return "FILES" }
-func (c *Files) Glyph() string    { return "▣" }
+func (c *Files) Glyph() string    { return c.env.Theme.Glyphs.Files }
 func (c *Files) Key() string      { return "files" }
 func (c *Files) Init() tea.Cmd    { return nil }
 func (c *Files) Selectable() bool { return true }
@@ -178,9 +178,9 @@ func (c *Files) View(w, h int) string {
 			head += "  " + render.KV("searches", fmt.Sprint(n), t)
 		}
 	}
-	lines := []string{render.Truncate(head, w)}
+	lines := []string{render.Truncate(head, w, t)}
 	if len(c.files) == 0 {
-		return strings.Join(append(lines, "", render.Dim("no files touched yet", t)), "\n")
+		return strings.Join(append(lines, emptyView(w, h-1, "no files touched", t)), "\n")
 	}
 	cols := []render.Column{{Title: "FILE", Flex: 1}, {Title: "R", Right: true}, {Title: "W", Right: true}, {Title: "E", Right: true}, {Title: "CHANGE", Right: true}, {Title: "BY"}}
 	rows := make([][]string, 0, len(c.files))
@@ -206,13 +206,13 @@ func (c *Files) View(w, h int) string {
 		lines = append(lines, "")
 		switch {
 		case f.Change == nil:
-			lines = append(lines, render.Dim("read only, nothing to diff", t))
+			lines = append(lines, render.Dim("read only", t))
 		default:
 			old := f.Change.Old
 			label := "last change"
 			if c.whole && f.Original != nil {
 				old = *f.Original
-				label = "since the session started"
+				label = "since start"
 			}
 			lines = append(lines, render.Heading(f.Path, t)+" "+render.Dim(label, t))
 			dw := w
@@ -252,9 +252,9 @@ func (c *Files) Status() string {
 
 // Actions the file list answers, the diff ones once a diff shows
 func (c *Files) Hints() []wm.Hint {
-	out := []wm.Hint{{Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "files.diff"}}
+	out := []wm.Hint{{Action: "files.diff"}}
 	if c.expanded {
 		out = append(out, wm.Hint{Action: "files.whole"}, wm.Hint{Action: "files.scroll.down", Pair: "files.scroll.up", Label: "scroll"})
 	}
-	return out
+	return append(out, wm.Hint{Action: "list.down", Pair: "list.up", Label: "move"})
 }

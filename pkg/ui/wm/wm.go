@@ -15,20 +15,26 @@ import (
 
 const (
 	barHeight     = 1
-	popShare      = 0.3
+	popShare      = 0.08
+	closeShare    = 0.06
+	originShare   = 0.4
 	decodeTime    = 0.35
 	flowSpeed     = 16.0
-	liftDistance  = 2.0
-	nudgeImpulse  = 22.0
+	nudgeImpulse  = 90.0
 	doubleClick   = 350 * time.Millisecond
 	fastSpring    = 18.0
 	pulseSpeed    = 0.35
+	breathSpeed   = 0.25
 	contentDim    = 0.3
 	backdropDim   = 0.45
+	slideFade     = 0.55
 	maxFloatPile  = 8
+	maxToasts     = 5
+	toastGap      = 2
 	cascadeSpeed  = 6.0
 	cascadeTail   = 6.0
 	cascadeBreath = 0.85
+	gripReach     = 5.0
 )
 
 // Card picked up by its title, with the pointer offset inside it and whether it has moved yet
@@ -55,6 +61,8 @@ type Model struct {
 	active    int
 	leaving   *Workspace
 	overlay   *entry
+	parting   *entry
+	veil      anim.Value
 	toasts    []*toast
 	onToast   func(text string, level Level)
 	sel       *selection
@@ -62,6 +70,9 @@ type Model struct {
 	resizer   *resizer
 	hover     *entry
 	hoverEdge region
+	hoverX    int
+	hoverY    int
+	hintHot   string
 	barHot    int
 	commands  []Command
 	keys      *keys.Map
@@ -102,8 +113,9 @@ type Model struct {
 	chipW     anim.Value
 	chips     []chip
 	rings     map[int][]color.Color
-	cells     map[string]uv.Cell
-	fade      map[color.Color]color.Color
+	glyphs    map[string]uv.Cell
+	memoed    map[color.Color]color.Color
+	card      screen
 	buf       screen
 }
 
@@ -165,10 +177,10 @@ func WithKeys(km *keys.Map) Option {
 	return func(m *Model) { m.SetKeys(km) }
 }
 
-// Builds a manager with the Blackwall theme, one cell gaps, a two column stage margin and 60 over 20 frame rates
+// Builds a manager with the Blackwall theme, one cell gaps, a two column stage margin and 60 over 30 frames
 func New(opts ...Option) *Model {
 	m := &Model{
-		clock:   anim.NewClock(60, 20),
+		clock:   anim.NewClock(60, 30),
 		motion:  1,
 		gap:     1,
 		gapOutX: 2,
@@ -181,9 +193,10 @@ func New(opts ...Option) *Model {
 		keys:    keys.Default(),
 		chipX:   fast(0),
 		chipW:   fast(0),
+		veil:    anim.NewValueWith(0, anim.Gentle),
 		rings:   map[int][]color.Color{},
-		cells:   map[string]uv.Cell{},
-		fade:    map[color.Color]color.Color{},
+		glyphs:  map[string]uv.Cell{},
+		memoed:  map[color.Color]color.Color{},
 	}
 	m.SetTheme(theme.Blackwall())
 	for _, o := range opts {
@@ -393,7 +406,10 @@ func (m *Model) SetUrgent(ws *Workspace, on bool) {
 }
 
 // Opens the card in the workspace, tiled or floating as it asks, or focuses the one with its key already open
-func (m *Model) Open(ws *Workspace, c Card) tea.Cmd {
+func (m *Model) Open(ws *Workspace, c Card) tea.Cmd { return m.OpenFrom(ws, c, Box{}) }
+
+// Opens the card the way Open does, growing it out of the origin box when one is given
+func (m *Model) OpenFrom(ws *Workspace, c Card, origin Box) tea.Cmd {
 	if ws == nil || c == nil {
 		return nil
 	}
@@ -406,6 +422,7 @@ func (m *Model) Open(ws *Workspace, c Card) tea.Cmd {
 		}
 	}
 	e := m.newEntry(c, ws)
+	e.origin = origin
 	if floats(c) {
 		e.floating = true
 		e.fbox = m.floatBox(c, Box{})
@@ -458,6 +475,15 @@ func (m *Model) Focus(c Card) tea.Cmd {
 		return nil
 	}
 	return m.focusEntry(e)
+}
+
+// Box the frame of the card is painted in on its stage right now, false when it is not open
+func (m *Model) FrameOf(c Card) (Box, bool) {
+	e := m.entryOf(c)
+	if e == nil || !e.placed {
+		return Box{}, false
+	}
+	return e.frame(), true
 }
 
 // Card with the key and the workspace holding it
@@ -758,10 +784,13 @@ func (m *Model) SetTheme(t theme.Theme) {
 	m.theme = t
 	m.padX, m.padY = padding(t.Density)
 	m.rings = map[int][]color.Color{}
-	m.fade = map[color.Color]color.Color{}
+	m.memoed = map[color.Color]color.Color{}
 	m.Repaint()
-	if m.overlay != nil {
-		if p, ok := m.overlay.card.(*Palette); ok {
+	for _, e := range []*entry{m.overlay, m.parting} {
+		if e == nil {
+			continue
+		}
+		if p, ok := e.card.(*Palette); ok {
 			p.theme = t
 		}
 	}
@@ -776,6 +805,9 @@ func (m *Model) Repaint() {
 	}
 	if m.overlay != nil {
 		m.overlay.dirty = true
+	}
+	if m.parting != nil {
+		m.parting.dirty = true
 	}
 }
 
@@ -823,6 +855,8 @@ func (m *Model) SetSize(w, h int) {
 		ws.shift.Snap()
 	}
 	m.leaving = nil
+	m.parting = nil
+	m.veil.Snap()
 	m.placeOverlay()
 	if m.overlay != nil {
 		m.overlay.rect.Snap()
@@ -861,7 +895,7 @@ func (m *Model) entryOf(c Card) *entry {
 }
 
 func (m *Model) newEntry(c Card, ws *Workspace) *entry {
-	e := &entry{id: m.nextID, card: c, ws: ws, rect: anim.NewRect(0, 0, 0, 0), open: fast(0), glow: fast(0), hover: fast(0), lift: fast(0), pulse: fast(0), weight: 1, dim: -1, dirty: true}
+	e := &entry{id: m.nextID, card: c, ws: ws, rect: anim.NewRect(0, 0, 0, 0), open: fast(0), lit: fast(0), hover: fast(0), pulse: fast(0), hide: fast(0), shake: anim.NewValueWith(0, anim.Rattle), weight: 1, dim: -1, dirty: true}
 	m.nextID++
 	e.open.Set(1)
 	return e
@@ -1061,16 +1095,19 @@ func (m *Model) retarget(ws *Workspace) {
 	ws.placed = true
 }
 
-// Points the frame of an entry at its box, popping it in when new and out when closing
+// Points the frame of an entry at its box, grown from its origin when new and shrunk when closing
 func (m *Model) aim(e *entry) {
 	b := e.box
 	if !e.placed {
 		x, y, w, h := shrunk(b, popShare)
+		if !e.origin.empty() {
+			x, y, w, h = grown(e.origin, b, originShare)
+		}
 		e.rect = anim.NewRect(x, y, w, h)
 		e.placed = true
 	}
 	if e.closing {
-		cx, cy, cw, ch := shrunk(e.box, popShare)
+		cx, cy, cw, ch := shrunk(e.box, closeShare)
 		e.rect.Set(cx, cy, cw, ch)
 	} else if !e.held {
 		e.rect.Set(float64(b.X), float64(b.Y), float64(b.W), float64(b.H))
@@ -1091,25 +1128,32 @@ func (m *Model) snap() {
 				e.open.Snap()
 				e.decode = 1
 			}
+			e.shake.Snap()
 		}
 		ws.shift.Snap()
 	}
 	m.leaving = nil
+	m.parting = nil
+	m.veil.Snap()
 	if m.overlay != nil {
 		m.overlay.rect.Snap()
 		m.overlay.open.Snap()
+		m.overlay.shake.Snap()
 	}
 	m.chipX.Snap()
 	m.chipW.Snap()
 }
 
-// Kicks the focused frame sideways so an impossible action is felt
+// Rattles the overlay or the focused frame sideways so an impossible action is felt
 func (m *Model) nudge() tea.Cmd {
-	e := m.focused()
+	e := m.overlay
+	if e == nil {
+		e = m.focused()
+	}
 	if e == nil || m.motion == 0 {
 		return nil
 	}
-	e.rect.X.Kick(nudgeImpulse * m.motion)
+	e.shake.Kick(nudgeImpulse * m.motion)
 	return m.wake()
 }
 

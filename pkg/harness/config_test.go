@@ -143,14 +143,14 @@ func TestDiscoverLayersFilesAndEnvironment(t *testing.T) {
 	}
 }
 
-func TestKnobsAndKeyValues(t *testing.T) {
+func TestSettingsAndKeyValues(t *testing.T) {
 	var c Config
 	for _, ok := range []string{"max_tokens=100", "max_rounds=3", "temperature=0.5", "compact_threshold=0", "mode=plan", "theme=light", "motion=0.2", "cascade=true", "extra.thinking={\"type\":\"adaptive\"}", "extra.note=plain"} {
-		k, v, err := ParseKnob(ok)
+		k, v, err := ParseSetting(ok)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := c.SetKnob(k, v); err != nil {
+		if err := c.Set(k, v); err != nil {
 			t.Fatalf("%s: %v", ok, err)
 		}
 	}
@@ -158,19 +158,19 @@ func TestKnobsAndKeyValues(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 	for _, bad := range []string{"max_tokens=x", "max_tokens=0", "max_rounds=-1", "temperature=9", "compact_threshold=-1", "mode=weird", "motion=2", "cascade=maybe", "unknown=1"} {
-		k, v, _ := ParseKnob(bad)
-		if err := c.SetKnob(k, v); err == nil {
+		k, v, _ := ParseSetting(bad)
+		if err := c.Set(k, v); err == nil {
 			t.Fatalf("%s accepted", bad)
 		}
 	}
-	if _, _, err := ParseKnob("novalue"); err == nil {
-		t.Fatal("knob without value accepted")
+	if _, _, err := ParseSetting("novalue"); err == nil {
+		t.Fatal("setting without value accepted")
 	}
 }
 
-func TestNewlineIsNoKnob(t *testing.T) {
+func TestNewlineIsNoSetting(t *testing.T) {
 	var c Config
-	if err := c.SetKnob("newline", "shift+enter"); err == nil {
-		t.Fatal("a backslash before enter is the one newline, there is no knob for it")
+	if err := c.Set("newline", "shift+enter"); err == nil {
+		t.Fatal("a backslash before enter is the one newline, there is no setting for it")
 	}
 }

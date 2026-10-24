@@ -468,14 +468,6 @@ func Format(chord string) string {
 	return canon(p.mods, p.name, p.r)
 }
 
-// One cell symbol of a chord that is a bare navigation key, such as the page up key
-func Symbol(chord string) (string, bool) {
-	sym, ok := symbols[chord]
-	return sym, ok
-}
-
-var symbols = map[string]string{"pgup": "⇞", "pgdown": "⇟", "home": "⇱", "end": "⇲", "up": "↑", "down": "↓"}
-
 // Two chords as a pair such as j/k, arrows in reading order, either alone when the other is unbound
 func Pair(a, b string) string {
 	fa, fb := Format(a), Format(b)

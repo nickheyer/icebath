@@ -23,28 +23,27 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Configuration surfaces behind tabs, profiles, providers, models, app settings, rules, hooks, servers, tools, the log and the keybinds
+// Configuration surfaces behind tabs, profiles, models, app settings, rules, hooks, servers, tools, the log and the keybinds
 type Config struct {
 	*wm.Tabs
-	env       *Env
-	profiles  *lister
-	providers *lister
-	models    *lister
-	app       *settings
-	rules     *lister
-	hooks     *lister
-	servers   *lister
-	tools     *lister
-	log       *lister
-	keys      *lister
-	list      []profiles.Model
-	loaded    string
-	loading   string
-	modelErr  error
-	creds     map[string]string
-	ruleList  []harness.RuleEntry
-	hookList  []harness.HookEntry
-	scopes    map[string]string
+	env      *Env
+	profiles *lister
+	models   *lister
+	app      *settings
+	rules    *lister
+	hooks    *lister
+	servers  *lister
+	tools    *lister
+	log      *lister
+	keys     *lister
+	list     []profiles.Model
+	loaded   string
+	loading  string
+	modelErr error
+	creds    map[string]string
+	ruleList []harness.RuleEntry
+	hookList []harness.HookEntry
+	scopes   map[string]string
 }
 
 type modelsLoadedMsg struct {
@@ -53,7 +52,7 @@ type modelsLoadedMsg struct {
 	err     error
 }
 
-// Credential texts by profile and provider from one background check
+// Credential texts by profile from one background check
 type credentialsMsg struct {
 	texts map[string]string
 }
@@ -75,7 +74,7 @@ func credential(p profiles.Profile) string {
 func NewConfig(env *Env) *Config {
 	c := &Config{env: env, creds: map[string]string{}, scopes: map[string]string{}}
 	c.app = newSettings(env)
-	c.Tabs = wm.NewTabs(env.Theme, "CONFIG", "⚙", c.profilesTab(), c.providersTab(), c.modelsTab(), c.app, c.rulesTab(), c.hooksTab(), c.mcpTab(), c.toolsTab(), c.logTab(), c.keysTab())
+	c.Tabs = wm.NewTabs(env.Theme, "CONFIG", env.Theme.Glyphs.Config, c.profilesTab(), c.modelsTab(), c.app, c.rulesTab(), c.hooksTab(), c.mcpTab(), c.toolsTab(), c.logTab(), c.keysTab())
 	return c
 }
 
@@ -128,30 +127,23 @@ func background(work func() error) tea.Cmd {
 	}
 }
 
-// Checks every profile and provider credential off the UI thread, since key sources may run commands or reach the network
+// Checks every profile credential off the UI thread, since key sources may run commands or reach the network
 func (c *Config) checkCredentials() tea.Cmd {
-	type item struct {
-		key string
-		p   profiles.Profile
-	}
-	var items []item
+	var list []profiles.Profile
 	for _, in := range c.instances() {
-		items = append(items, item{"profile:" + in.Profile.Name, in.Profile})
-	}
-	for _, p := range profiles.Defaults() {
-		items = append(items, item{"provider:" + p.Name, p})
+		list = append(list, in.Profile)
 	}
 	return func() tea.Msg {
-		texts := make(map[string]string, len(items))
+		texts := make(map[string]string, len(list))
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		for _, it := range items {
+		for _, p := range list {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				text := credential(it.p)
+				text := credential(p)
 				mu.Lock()
-				texts[it.key] = text
+				texts[p.Name] = text
 				mu.Unlock()
 			}()
 		}
@@ -160,9 +152,9 @@ func (c *Config) checkCredentials() tea.Cmd {
 	}
 }
 
-// Credential text last checked for the key, or that the check is still running
-func (c *Config) credentialText(key string) string {
-	if text, ok := c.creds[key]; ok {
+// Credential text last checked for the profile, or that the check is still running
+func (c *Config) credentialText(name string) string {
+	if text, ok := c.creds[name]; ok {
 		return text
 	}
 	return render.Dim("checking", c.env.Theme)
@@ -173,10 +165,7 @@ func (c *Config) inUse(on bool) string {
 	if !on {
 		return " "
 	}
-	if c.env.Theme.Plain {
-		return "*"
-	}
-	return render.Cool("●", c.env.Theme)
+	return render.Cool(c.env.Theme.Glyphs.Live, c.env.Theme)
 }
 
 // Names of the headers, the values left out since they may carry credentials
@@ -184,7 +173,7 @@ func headerNames(h map[string][]string) string {
 	return strings.Join(slices.Sorted(maps.Keys(h)), ", ")
 }
 
-// Detail lines every profile and provider shares
+// Detail lines of the endpoint a profile resolves to
 func (c *Config) endpointDetail(p profiles.Profile) []string {
 	t := c.env.Theme
 	out := []string{
@@ -213,7 +202,7 @@ func (c *Config) endpointDetail(p profiles.Profile) []string {
 // Written profiles with their provider, model, endpoint, credential and switch, each kept in the file that holds it
 func (c *Config) profilesTab() *lister {
 	t := c.env.Theme
-	l := &lister{env: c.env, title: "profiles", glyph: "◉", id: "config:profiles", ctx: keys.Profiles, primary: "config.profile.use", cols: []render.Column{{Title: ""}, {Title: "NAME"}, {Title: "PROVIDER"}, {Title: "MODEL"}, {Title: "ENDPOINT", Flex: 1}, {Title: "CREDENTIAL", Flex: 1}, {Title: "STATE"}}}
+	l := &lister{env: c.env, title: "profiles", glyph: c.env.Theme.Glyphs.Profiles, id: "config:profiles", ctx: keys.Profiles, primary: "config.profile.use", cols: []render.Column{{Title: ""}, {Title: "NAME"}, {Title: "PROVIDER"}, {Title: "MODEL"}, {Title: "ENDPOINT", Flex: 1}, {Title: "CREDENTIAL", Flex: 1}, {Title: "STATE"}}}
 	c.profiles = l
 	var list []harness.Instance
 	l.rows = func() [][]string {
@@ -230,7 +219,7 @@ func (c *Config) profilesTab() *lister {
 			if p.Disabled {
 				state, name = render.Dim("off", t), render.Dim(p.Name, t)
 			}
-			rows = append(rows, []string{c.inUse(p.Name == c.current()), name, provider, p.Model(), p.Resolved().BaseURL, c.credentialText("profile:" + p.Name), state})
+			rows = append(rows, []string{c.inUse(p.Name == c.current()), name, provider, p.Model(), p.Resolved().BaseURL, c.credentialText(p.Name), state})
 		}
 		return rows
 	}
@@ -245,10 +234,10 @@ func (c *Config) profilesTab() *lister {
 		if !ok {
 			return nil
 		}
-		return append([]string{render.KV("file", homed(in.Path), t), render.KV("credential", c.credentialText("profile:"+in.Profile.Name), t)}, c.endpointDetail(in.Profile)...)
+		return append([]string{render.KV("file", homed(in.Path), t), render.KV("credential", c.credentialText(in.Profile.Name), t)}, c.endpointDetail(in.Profile)...)
 	}
 	l.empty = func() string {
-		return "no profiles yet, " + c.env.keyed("config.profile.add", "adds one starting from a provider such as anthropic or openai")
+		return "no profiles " + c.env.Theme.Glyphs.Sep + " " + c.env.keyed("config.profile.add", "new")
 	}
 	l.status = func() string {
 		path, err := profiles.UserPath()
@@ -283,7 +272,7 @@ func (c *Config) profilesTab() *lister {
 				return nil
 			}
 			if in.Profile.Disabled {
-				return wm.Notify("turn "+in.Profile.Name+" on before using it", wm.Warn)
+				return wm.Notify(in.Profile.Name+" is off", wm.Warn)
 			}
 			name := in.Profile.Name
 			return func() tea.Msg { return SetProfileMsg{Profile: name} }
@@ -334,56 +323,10 @@ func (c *Config) profilesTab() *lister {
 	return l
 }
 
-// Built in providers a profile starts from, each usable as is with its own credential source
-func (c *Config) providersTab() *lister {
-	t := c.env.Theme
-	l := &lister{env: c.env, title: "providers", glyph: "⬡", id: "config:providers", ctx: keys.Providers, primary: "config.provider.new", cols: []render.Column{{Title: ""}, {Title: "NAME"}, {Title: "VENDOR"}, {Title: "PROTOCOL"}, {Title: "ENDPOINT", Flex: 1}, {Title: "KEY", Flex: 1}}}
-	c.providers = l
-	list := profiles.Defaults()
-	shadowed := func(name string) bool { return c.env.Editor != nil && c.env.Editor.Shadowed(name) }
-	l.rows = func() [][]string {
-		var rows [][]string
-		for _, p := range list {
-			rows = append(rows, []string{c.inUse(p.Name == c.current() && !shadowed(p.Name)), p.Name, p.Vendor, string(p.Protocol), p.Resolved().BaseURL, c.credentialText("provider:" + p.Name)})
-		}
-		return rows
-	}
-	l.detail = func(i int) []string {
-		if i < 0 || i >= len(list) {
-			return nil
-		}
-		out := append([]string{render.KV("credential", c.credentialText("provider:"+list[i].Name), t)}, c.endpointDetail(list[i])...)
-		if shadowed(list[i].Name) {
-			out = append(out, render.Warm("a profile named "+list[i].Name+" takes its place", t))
-		}
-		return out
-	}
-	l.actions = map[string]func(*lister, int) tea.Cmd{
-		"config.provider.new": func(l *lister, i int) tea.Cmd {
-			if i < 0 || i >= len(list) {
-				return nil
-			}
-			return wm.RequestOverlay(c.profileForm(nil, list[i].Name))
-		},
-		"config.provider.use": func(l *lister, i int) tea.Cmd {
-			if i < 0 || i >= len(list) {
-				return nil
-			}
-			name := list[i].Name
-			if shadowed(name) {
-				return wm.Notify("the profile named "+name+" takes the place of this provider, use it from profiles", wm.Warn)
-			}
-			return func() tea.Msg { return SetProfileMsg{Profile: name} }
-		},
-		"config.provider.detail": toggleDetail,
-	}
-	return l
-}
-
 // Models the endpoint in use serves with limits and prices, fetched when the tab shows a list of another profile
 func (c *Config) modelsTab() *lister {
 	t := c.env.Theme
-	l := &lister{env: c.env, title: "models", glyph: "◇", id: "config:models", ctx: keys.Models, primary: "config.model.use", cols: []render.Column{{Title: ""}, {Title: "ID", Flex: 2}, {Title: "NAME", Flex: 1}, {Title: "CONTEXT", Right: true}, {Title: "OUT", Right: true}, {Title: "IN $/M", Right: true}, {Title: "OUT $/M", Right: true}}}
+	l := &lister{env: c.env, title: "models", glyph: c.env.Theme.Glyphs.Models, id: "config:models", ctx: keys.Models, primary: "config.model.use", cols: []render.Column{{Title: ""}, {Title: "ID", Flex: 2}, {Title: "NAME", Flex: 1}, {Title: "CONTEXT", Right: true}, {Title: "OUT", Right: true}, {Title: "IN $/M", Right: true}, {Title: "OUT $/M", Right: true}}}
 	c.models = l
 	l.rows = func() [][]string {
 		var rows [][]string
@@ -416,11 +359,11 @@ func (c *Config) modelsTab() *lister {
 	l.empty = func() string {
 		switch {
 		case c.loading != "":
-			return "loading the models " + c.loading + " serves"
+			return "loading models"
 		case c.modelErr != nil:
 			return render.Bad(c.modelErr.Error(), t)
 		}
-		return "the endpoint lists no models"
+		return "no models"
 	}
 	l.onFocus = func(l *lister) tea.Cmd {
 		if c.current() != c.loaded && c.current() != c.loading {
@@ -507,7 +450,7 @@ func (c *Config) loadRules() tea.Cmd {
 // Permission rules of every file with the scope each lives in, edited through a dialog
 func (c *Config) rulesTab() *lister {
 	t := c.env.Theme
-	l := &lister{env: c.env, title: "rules", glyph: "⚖", id: "config:rules", ctx: keys.Rules, primary: "config.rule.edit", cols: []render.Column{{Title: "DECISION"}, {Title: "TOOL"}, {Title: "PATTERN", Flex: 1}, {Title: "SCOPE"}}}
+	l := &lister{env: c.env, title: "rules", glyph: c.env.Theme.Glyphs.Rules, id: "config:rules", ctx: keys.Rules, primary: "config.rule.edit", cols: []render.Column{{Title: "DECISION"}, {Title: "TOOL"}, {Title: "PATTERN", Flex: 1}, {Title: "SCOPE"}}}
 	c.rules = l
 	l.rows = func() [][]string {
 		var rows [][]string
@@ -535,7 +478,9 @@ func (c *Config) rulesTab() *lister {
 		}
 		return c.ruleList[i], true
 	}
-	l.empty = func() string { return "no rules, " + c.env.keyed("config.rule.add", "adds one") }
+	l.empty = func() string {
+		return "no rules " + c.env.Theme.Glyphs.Sep + " " + c.env.keyed("config.rule.add", "new")
+	}
 	l.onFocus = func(l *lister) tea.Cmd { return c.loadRules() }
 	l.free = map[string]bool{"config.rule.add": true}
 	l.actions = map[string]func(*lister, int) tea.Cmd{
@@ -577,7 +522,7 @@ func (c *Config) loadHooks() tea.Cmd {
 // Hook commands of every file with their event, matcher, timeout and scope, edited through a dialog
 func (c *Config) hooksTab() *lister {
 	t := c.env.Theme
-	l := &lister{env: c.env, title: "hooks", glyph: "↯", id: "config:hooks", ctx: keys.Hooks, primary: "config.hook.edit", cols: []render.Column{{Title: "EVENT"}, {Title: "MATCHER"}, {Title: "COMMAND", Flex: 1}, {Title: "TIMEOUT", Right: true}, {Title: "SCOPE"}}}
+	l := &lister{env: c.env, title: "hooks", glyph: c.env.Theme.Glyphs.Hooks, id: "config:hooks", ctx: keys.Hooks, primary: "config.hook.edit", cols: []render.Column{{Title: "EVENT"}, {Title: "MATCHER"}, {Title: "COMMAND", Flex: 1}, {Title: "TIMEOUT", Right: true}, {Title: "SCOPE"}}}
 	c.hooks = l
 	l.rows = func() [][]string {
 		var rows [][]string
@@ -600,7 +545,9 @@ func (c *Config) hooksTab() *lister {
 		}
 		return c.hookList[i], true
 	}
-	l.empty = func() string { return "no hooks, " + c.env.keyed("config.hook.add", "adds one") }
+	l.empty = func() string {
+		return "no hooks " + c.env.Theme.Glyphs.Sep + " " + c.env.keyed("config.hook.add", "new")
+	}
 	l.onFocus = func(l *lister) tea.Cmd { return c.loadHooks() }
 	l.free = map[string]bool{"config.hook.add": true}
 	l.actions = map[string]func(*lister, int) tea.Cmd{
@@ -616,7 +563,7 @@ func (c *Config) hooksTab() *lister {
 			if !ok {
 				return nil
 			}
-			l.confirm("delete the "+string(e.Event)+" hook "+render.Truncate(e.Command, 40)+"?", func() tea.Cmd {
+			l.confirm("delete the "+string(e.Event)+" hook "+render.Truncate(e.Command, 40, t)+"?", func() tea.Cmd {
 				err := c.env.Editor.RemoveHook(e)
 				return tea.Batch(c.loadHooks(), outcome(err, "deleted the "+string(e.Event)+" hook"))
 			})
@@ -645,7 +592,7 @@ func (c *Config) loadServers() tea.Cmd {
 // Servers with their transport, connection state, tools and scope, added, edited, switched and reconnected in place
 func (c *Config) mcpTab() *lister {
 	t := c.env.Theme
-	l := &lister{env: c.env, title: "mcp", glyph: "⇄", id: "config:mcp", ctx: keys.MCP, primary: "config.mcp.detail", cols: []render.Column{{Title: ""}, {Title: "SERVER"}, {Title: "TRANSPORT"}, {Title: "TARGET", Flex: 1}, {Title: "STATE"}, {Title: "TOOLS", Right: true}, {Title: "SCOPE"}}}
+	l := &lister{env: c.env, title: "mcp", glyph: c.env.Theme.Glyphs.MCP, id: "config:mcp", ctx: keys.MCP, primary: "config.mcp.detail", cols: []render.Column{{Title: ""}, {Title: "SERVER"}, {Title: "TRANSPORT"}, {Title: "TARGET", Flex: 1}, {Title: "STATE"}, {Title: "TOOLS", Right: true}, {Title: "SCOPE"}}}
 	c.servers = l
 	var list []harness.ServerStatus
 	l.rows = func() [][]string {
@@ -655,20 +602,16 @@ func (c *Config) mcpTab() *lister {
 		}
 		var rows [][]string
 		for _, s := range list {
-			dot := "●"
-			if t.Plain {
-				dot = "*"
-			}
-			glyph, state := render.Dim(dot, t), string(s.State)
+			glyph, state := render.Dim(t.Glyphs.Live, t), string(s.State)
 			switch {
 			case s.Config.Disabled:
 				state = render.Dim("off", t)
 			case s.State == mcp.StateConnected:
-				glyph = render.Good(dot, t)
+				glyph = render.Good(t.Glyphs.Live, t)
 			case s.State == mcp.StateConnecting:
-				glyph = render.Warm(dot, t)
+				glyph = render.Warm(t.Glyphs.Live, t)
 			case s.State == mcp.StateDisconnected:
-				glyph = render.Bad(dot, t)
+				glyph = render.Bad(t.Glyphs.Live, t)
 			}
 			transport, target := "stdio", strings.TrimSpace(s.Config.Command+" "+joinArgs(s.Config.Args))
 			if s.Config.URL != "" {
@@ -691,7 +634,9 @@ func (c *Config) mcpTab() *lister {
 		}
 		return c.serverDetail(s)
 	}
-	l.empty = func() string { return "no mcp servers, " + c.env.keyed("config.mcp.add", "adds one") }
+	l.empty = func() string {
+		return "no servers " + c.env.Theme.Glyphs.Sep + " " + c.env.keyed("config.mcp.add", "new")
+	}
 	l.onFocus = func(l *lister) tea.Cmd { return c.loadServers() }
 	l.free = map[string]bool{"config.mcp.add": true}
 	l.actions = map[string]func(*lister, int) tea.Cmd{
@@ -738,7 +683,7 @@ func (c *Config) mcpTab() *lister {
 				return nil
 			}
 			if s.Config.Disabled {
-				return wm.Notify("turn "+s.Name+" on before reconnecting it", wm.Warn)
+				return wm.Notify(s.Name+" is off", wm.Warn)
 			}
 			name := s.Name
 			return func() tea.Msg { return ReconnectMsg{Server: name} }
@@ -788,7 +733,7 @@ func (c *Config) serverDetail(s harness.ServerStatus) []string {
 // Every tool with whether the model gets it, where it comes from, its traits and its schema
 func (c *Config) toolsTab() *lister {
 	t := c.env.Theme
-	l := &lister{env: c.env, title: "tools", glyph: "⚒", id: "config:tools", ctx: keys.Tools, primary: "config.tool.toggle", cols: []render.Column{{Title: "STATE"}, {Title: "TOOL"}, {Title: "SOURCE"}, {Title: "TRAITS"}, {Title: "DESCRIPTION", Flex: 1}}}
+	l := &lister{env: c.env, title: "tools", glyph: c.env.Theme.Glyphs.Tools, id: "config:tools", ctx: keys.Tools, primary: "config.tool.toggle", cols: []render.Column{{Title: "STATE"}, {Title: "TOOL"}, {Title: "SOURCE"}, {Title: "TRAITS"}, {Title: "DESCRIPTION", Flex: 1}}}
 	c.tools = l
 	var defs []tool.Tool
 	l.rows = func() [][]string {
@@ -835,7 +780,7 @@ func (c *Config) toolsTab() *lister {
 			if from == "" {
 				from = "built in"
 			}
-			rows = append(rows, []string{state, n, from, strings.Join(hs, ", "), render.Summary(tl.Definition().Description, 80)})
+			rows = append(rows, []string{state, n, from, strings.Join(hs, ", "), render.Summary(tl.Definition().Description, 80, t)})
 		}
 		return rows
 	}
@@ -870,7 +815,7 @@ func (c *Config) toolsTab() *lister {
 // Application log of runs, tools, approvals, endpoints, servers, hooks, jobs and notices, newest last
 func (c *Config) logTab() *lister {
 	t := c.env.Theme
-	l := &lister{env: c.env, title: "log", glyph: "≣", id: "config:log", ctx: keys.Log, primary: "config.log.detail", follow: true, cols: []render.Column{{Title: "TIME"}, {Title: "LEVEL"}, {Title: "SOURCE", Max: 24}, {Title: "MESSAGE", Flex: 1}}}
+	l := &lister{env: c.env, title: "log", glyph: c.env.Theme.Glyphs.Log, id: "config:log", ctx: keys.Log, primary: "config.log.detail", follow: true, cols: []render.Column{{Title: "TIME"}, {Title: "LEVEL"}, {Title: "SOURCE", Max: 24}, {Title: "MESSAGE", Flex: 1}}}
 	c.log = l
 	var lines []harness.JournalLine
 	l.rows = func() [][]string {
@@ -902,7 +847,7 @@ func (c *Config) logTab() *lister {
 		line := lines[i]
 		return append([]string{render.KV("at", line.Time.Local().Format("2006-01-02 15:04:05.000"), t), render.KV("from", line.Source, t), render.KV("level", line.Level, t)}, strings.Split(line.Text, "\n")...)
 	}
-	l.empty = func() string { return "nothing logged yet" }
+	l.empty = func() string { return "nothing logged" }
 	l.actions = map[string]func(*lister, int) tea.Cmd{
 		"config.log.detail": toggleDetail,
 		"config.log.clear": func(l *lister, i int) tea.Cmd {
@@ -920,7 +865,7 @@ func (c *Config) logTab() *lister {
 func (c *Config) keysTab() *lister {
 	km := c.env.Keys
 	t := c.env.Theme
-	l := &lister{env: c.env, title: "keys", glyph: "⌨", id: "config:keys", ctx: keys.Keybinds, primary: "config.key.rebind", cols: []render.Column{{Title: ""}, {Title: "ACTION", Max: 26}, {Title: "KEYS", Max: 24}, {Title: "WHERE", Max: 16}, {Title: "DOES", Flex: 1}}}
+	l := &lister{env: c.env, title: "keys", glyph: c.env.Theme.Glyphs.Keys, id: "config:keys", ctx: keys.Keybinds, primary: "config.key.rebind", cols: []render.Column{{Title: ""}, {Title: "ACTION", Max: 26}, {Title: "KEYS", Max: 24}, {Title: "WHERE", Max: 16}, {Title: "DOES", Flex: 1}}}
 	c.keys = l
 	var ids []string
 	l.rows = func() [][]string {
@@ -968,7 +913,7 @@ func (c *Config) keysTab() *lister {
 	l.actions = map[string]func(*lister, int) tea.Cmd{
 		"config.key.rebind": func(l *lister, i int) tea.Cmd {
 			if id, ok := pick(i); ok {
-				l.wait(id, func(l *lister, chord string) tea.Cmd {
+				l.wait("press a key for "+id, func(l *lister, chord string) tea.Cmd {
 					return c.rebound(id, func() error { return km.Rebind(id, chord) })
 				})
 			}
@@ -976,7 +921,7 @@ func (c *Config) keysTab() *lister {
 		},
 		"config.key.add": func(l *lister, i int) tea.Cmd {
 			if id, ok := pick(i); ok {
-				l.wait(id+", added to its keys", func(l *lister, chord string) tea.Cmd { return c.rebound(id, func() error { return km.Add(id, chord) }) })
+				l.wait("press a key to add to "+id, func(l *lister, chord string) tea.Cmd { return c.rebound(id, func() error { return km.Add(id, chord) }) })
 			}
 			return nil
 		},
@@ -1025,11 +970,11 @@ func (c *Config) rebound(id string, change func() error) tea.Cmd {
 	c.keys.refresh()
 	changed := func() tea.Msg { return keys.ChangedMsg{} }
 	if err := km.Save(); err != nil {
-		return tea.Batch(changed, wm.Notify("keybinds not written, "+err.Error(), wm.Error))
+		return tea.Batch(changed, wm.Notify("keybinds: "+err.Error(), wm.Error))
 	}
 	text := id + " unbound"
 	if bound := km.DisplayAll(id); bound != "" {
-		text = id + " on " + bound
+		text = id + " = " + bound
 	}
 	return tea.Batch(changed, wm.Notify(text, wm.Success))
 }
@@ -1039,7 +984,6 @@ func (c *Config) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case credentialsMsg:
 		c.creds = msg.texts
 		c.profiles.refresh()
-		c.providers.refresh()
 		return c, nil
 	case wm.FocusMsg:
 		_, cmd := c.Tabs.Update(msg)

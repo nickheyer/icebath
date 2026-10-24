@@ -1,4 +1,4 @@
-// Anthropic endpoint profile with model listing, token counting and thinking knobs
+// Anthropic endpoint profile with model listing, token counting and thinking options
 package anthropic
 
 import (

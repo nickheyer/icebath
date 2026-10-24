@@ -50,7 +50,7 @@ func TestProfileAndModels(t *testing.T) {
 	}
 }
 
-func TestKnobsAndCountTokens(t *testing.T) {
+func TestOptionsAndCountTokens(t *testing.T) {
 	if string(Thinking(2048)["thinking"]) != `{"type":"enabled","budget_tokens":2048}` {
 		t.Fatal(Thinking(2048))
 	}

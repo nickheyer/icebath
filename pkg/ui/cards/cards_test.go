@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"iter"
 	"maps"
 	"os"
@@ -33,6 +34,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool"
 	"github.com/nickheyer/icebath/pkg/tool/files"
 	"github.com/nickheyer/icebath/pkg/tool/shell"
+	"github.com/nickheyer/icebath/pkg/ui/art"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -50,12 +52,6 @@ func (s *sink) send(m any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.msgs = append(s.msgs, m)
-}
-
-func (s *sink) all() []any {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]any(nil), s.msgs...)
 }
 
 // Runs a command and collects every message it produces, batches flattened
@@ -168,13 +164,13 @@ func (m stubModel) Stream(ctx context.Context, req protocol.Request) iter.Seq2[p
 }
 
 type testEnv struct {
-	env   *Env
-	sink  *sink
-	live  *harness.Live
-	dir   string
-	sh    *shell.Shell
-	app   *harness.App
-	knobs map[string]string
+	env      *Env
+	sink     *sink
+	live     *harness.Live
+	dir      string
+	sh       *shell.Shell
+	app      *harness.App
+	settings map[string]string
 }
 
 // Builds an environment over a shell, file tools, a rules policy and one open session with its stores attached
@@ -208,7 +204,7 @@ func newEnv(t *testing.T) *testEnv {
 	mcpm := harness.NewMCP(journal.Tap(s.send), reg)
 	anthropic, _ := profiles.Lookup("anthropic")
 	app := &harness.App{Dir: dir, Rules: pol, Tools: reg, MCP: mcpm, Journal: journal, Primary: harness.Endpoint{Profile: anthropic, Model: "claude-opus-5", Catalog: opus}}
-	te := &testEnv{sink: s, live: live, dir: dir, sh: sh, app: app, knobs: map[string]string{"max_tokens": "16000", "theme": "blackwall", "motion": "1.00", "cascade": "false"}}
+	te := &testEnv{sink: s, live: live, dir: dir, sh: sh, app: app, settings: map[string]string{"max_tokens": "16000", "theme": "blackwall", "motion": "1.00", "cascade": "false"}}
 	te.env = &Env{
 		Theme: theme.Blackwall(), Keys: keys.Default(), Control: ctl, Meter: meter, Work: harness.NewWorkspace(dir),
 		Approver: harness.NewApprover(s.send), MCP: mcpm, Shell: sh, Tools: reg,
@@ -219,7 +215,7 @@ func newEnv(t *testing.T) *testEnv {
 		Models: func(ctx context.Context, p profiles.Profile) ([]profiles.Model, error) {
 			return []profiles.Model{{ID: "claude-opus-5"}, {ID: "other"}}, nil
 		},
-		Knobs:      func() map[string]string { return maps.Clone(te.knobs) },
+		Settings:   func() map[string]string { return maps.Clone(te.settings) },
 		ProjectDir: dir,
 		Now:        func() time.Time { return at },
 	}
@@ -254,7 +250,7 @@ func TestComposerSendsCommandsAndKeepsHistory(t *testing.T) {
 	te := newEnv(t)
 	dir := filepath.Join(te.dir, "cfg")
 	c := NewComposer(te.env.Theme, te.env.Keys, dir, func() string { return te.dir })
-	c.SessionID = "s1"
+	c.Bind("s1")
 	c.SetCommands([]Command{{Name: "model", Desc: "switch the model", Arg: "id"}, {Name: "mode", Desc: "mode"}})
 	if c.Cursor() != nil {
 		t.Fatal("unfocused composer must hide the cursor")
@@ -384,11 +380,12 @@ func TestComposerSendsCommandsAndKeepsHistory(t *testing.T) {
 		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 	again := NewComposer(te.env.Theme, te.env.Keys, dir, func() string { return te.dir })
-	if again.Value() != "draft kept" || len(again.History()) != 3 {
-		t.Fatalf("persisted draft %q history %v", again.Value(), again.History())
+	if again.Value() != "" || len(again.History()) != 3 {
+		t.Fatalf("history comes back before a session is bound, draft %q history %v", again.Value(), again.History())
 	}
-	if again.Empty() {
-		t.Fatal("draft is not empty")
+	again.Bind("s1")
+	if again.Value() != "draft kept" || again.Empty() {
+		t.Fatalf("binding the session brings its draft back %q", again.Value())
 	}
 }
 
@@ -398,12 +395,13 @@ func TestComposerPlaceholderAndSymbolButton(t *testing.T) {
 	run(c.SetFocus(true))
 	view := plain(c.View(140, 2))
 	rows := strings.Split(view, "\n")
-	if !strings.HasPrefix(rows[0], "› Type / for available commands") || strings.Contains(view, "“") {
-		t.Fatalf("the empty prompt shows the muted command hint alone\n%s", view)
-	}
-	if !strings.HasSuffix(strings.TrimRight(rows[0], " "), "➤") || strings.Contains(view, "send") {
+	if !strings.HasSuffix(strings.TrimRight(rows[0], " "), te.env.Theme.Glyphs.Send) || strings.Contains(view, "send") {
 		t.Fatalf("the send button is a symbol floating on the first row\n%s", view)
 	}
+	if err := te.env.Keys.Unbind("palette"); err != nil {
+		t.Fatal(err)
+	}
+
 	if c.button.w != 5 {
 		t.Fatalf("the button takes five columns %d", c.button.w)
 	}
@@ -411,7 +409,7 @@ func TestComposerPlaceholderAndSymbolButton(t *testing.T) {
 		t.Fatalf("the empty prompt stands two rows tall %d", c.Height())
 	}
 	c.SetBusy(true)
-	if !strings.Contains(plain(c.View(60, 2)), "↪") {
+	if !strings.Contains(plain(c.View(60, 2)), te.env.Theme.Glyphs.Steer) {
 		t.Fatal("the button turns into the steering hook during a run")
 	}
 	c.SetBusy(false)
@@ -455,7 +453,7 @@ func TestComposerPlaceholderAndSymbolButton(t *testing.T) {
 func TestComposerAttachesImages(t *testing.T) {
 	te := newEnv(t)
 	c := NewComposer(te.env.Theme, te.env.Keys, "", func() string { return te.dir })
-	c.SessionID = "s1"
+	c.Bind("s1")
 	run(c.SetFocus(true))
 	png := filepath.Join(te.dir, "shot.png")
 	os.WriteFile(png, []byte("\x89PNG"), 0o644)
@@ -556,13 +554,18 @@ func TestTranscriptAppliesEventsAndSearches(t *testing.T) {
 	if strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "package a") {
 		t.Fatal("folded again")
 	}
-	if strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "hmm") {
-		t.Fatal("thinking hidden by default")
+	if boiling := plain(strings.Join(tr.Lines(80), "\n")); strings.Contains(boiling, "hmm") || !strings.Contains(boiling, "thinking") {
+		t.Fatalf("a thought still boils the instant it lands\n%s", boiling)
+	}
+	te.env.Now = func() time.Time { return at.Add(time.Second) }
+	if !tr.Thinking() || !strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "hmm") {
+		t.Fatal("thinking shows by default once settled")
+	}
+	tr.ShowThinking(false)
+	if tr.Thinking() || strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "hmm") {
+		t.Fatal("hiding folds a finished thought")
 	}
 	tr.ShowThinking(true)
-	if !tr.Thinking() || !strings.Contains(plain(strings.Join(tr.Lines(80), "\n")), "hmm") {
-		t.Fatal("thinking shown")
-	}
 	view := strings.Split(plain(tr.View(80, 10)), "\n")
 	if len(view) != 10 || !strings.HasSuffix(view[0], "⇞") || !strings.HasSuffix(view[9], "⇟") {
 		t.Fatalf("the scrollbar runs down the right edge\n%s", strings.Join(view, "\n"))
@@ -572,20 +575,23 @@ func TestTranscriptAppliesEventsAndSearches(t *testing.T) {
 		t.Fatalf("the caps are the page key symbols, nothing spelled out\n%s", strings.Join(tall, "\n"))
 	}
 	for _, row := range tall[1:19] {
-		if r := []rune(row); !strings.ContainsRune("│┃┼╋◆", r[len(r)-1]) {
+		if r := []rune(row); !strings.ContainsRune("┊┃╂╋◈", r[len(r)-1]) {
 			t.Fatalf("the track is a thin line with ticks and the thumb %q", row)
 		}
 	}
 	fits := gutter{h: 8, total: 5, visible: 8, marks: []int{0, 3}, up: "pgup", down: "pgdown"}
-	if col := plain(strings.Join(fits.column(te.env.Theme), "")); col != "⇞┼│┼│││⇟" {
-		t.Fatalf("content that fits draws the track and its ticks with no thumb %q", col)
+	if col := plain(strings.Join(fits.column(te.env.Theme), "")); col != "        " {
+		t.Fatalf("content that fits draws no scrollbar %q", col)
+	}
+	if hit, _ := fits.hit(0); hit != hitNone {
+		t.Fatal("caps of a hidden scrollbar page nothing")
 	}
 	runs := gutter{h: 8, total: 60, offset: 60 - 8, visible: 8, marks: []int{0, 55}, hits: []int{30}, up: "pgup", down: "pgdown"}
-	if col := plain(strings.Join(runs.column(te.env.Theme), "")); col != "⇞┼││◆│╋⇟" {
+	if col := plain(strings.Join(runs.column(te.env.Theme), "")); col != "⇞╂┊┊◈┊╋⇟" {
 		t.Fatalf("a scrolled view shows the thumb at the end, a tick on it and the match %q", col)
 	}
 	te.env.Keys.Rebind("session.scroll.up", "ctrl+b")
-	if top := plain(strings.Split(tr.View(80, 20), "\n")[0]); !strings.HasSuffix(top, " ctrl+b ▲") {
+	if top := plain(strings.Split(tr.View(80, 20), "\n")[0]); !strings.HasSuffix(top, " ctrl+b ⌃") {
 		t.Fatalf("a chord without a symbol sits beside an arrow cap %q", top)
 	}
 	te.env.Keys.Reset("session.scroll.up")
@@ -616,7 +622,7 @@ func TestTranscriptAppliesEventsAndSearches(t *testing.T) {
 	if tr.Searching() || len(tr.found) != 1 {
 		t.Fatalf("matches %d", len(tr.found))
 	}
-	if !strings.Contains(tr.Status(), "1 turn · ") || !strings.HasSuffix(tr.Status(), "1 match") {
+	if !strings.Contains(tr.Status(), "1 turn ∷ ") || !strings.HasSuffix(tr.Status(), "1 match") {
 		t.Fatalf("status %q", tr.Status())
 	}
 	if g := tr.gutter(); len(g.hits) != 1 || len(g.marks) != 1 {
@@ -738,16 +744,16 @@ func TestSessionRoutesKeysAndOwnsRuns(t *testing.T) {
 	}
 	number := 3
 	s.Number = func() int { return number }
-	if s.Title() != "3 · NEW" {
+	if s.Title() != "3 ∷ NEW" {
 		t.Fatalf("the title leads with the workspace number %q", s.Title())
 	}
 	te.live.Session.SetTitle("disk usage on the box, and more words here than fit in a title")
-	if !strings.HasPrefix(s.Title(), "3 · disk usage") || len([]rune(s.Title())) > 44 {
+	if !strings.HasPrefix(s.Title(), "3 ∷ disk usage") || len([]rune(s.Title())) > 44 {
 		t.Fatalf("title %q", s.Title())
 	}
 	te.live.Session.Rename("probe")
 	te.live.Session.SetTitle("derived again")
-	if s.Title() != "3 · probe" {
+	if s.Title() != "3 ∷ probe" {
 		t.Fatalf("a chosen label holds against derivation %q", s.Title())
 	}
 	number = 1
@@ -783,7 +789,7 @@ func TestSessionRoutesKeysAndOwnsRuns(t *testing.T) {
 	s.Update(tea.PasteMsg{Content: "y"})
 	te.press(s, "backspace")
 	view := plain(s.View(60, 12))
-	if !strings.Contains(strings.Split(view, "\n")[s.split], "⌕ earl") || !strings.Contains(view, "1/1") {
+	if !strings.Contains(strings.Split(view, "\n")[s.split], "⚲ earl") || !strings.Contains(view, "1/1") {
 		t.Fatalf("search bar takes the place of the rule\n%s", view)
 	}
 	if cur := s.Cursor(); cur == nil || cur.Y != s.split || cur.X != s.Transcript.SearchCursor() {
@@ -821,18 +827,18 @@ func TestSessionRoutesKeysAndOwnsRuns(t *testing.T) {
 	te.press(s, "alt+e")
 	te.press(s, "alt+E")
 	te.press(s, "alt+t")
-	if !s.Transcript.Thinking() {
-		t.Fatal("alt+t shows thinking")
+	if s.Transcript.Thinking() {
+		t.Fatal("alt+t hides thinking")
 	}
 	if cmd, ok := find[CommandMsg](te.pressed(s, "shift+tab")); !ok || cmd.Name != "mode" || cmd.Session != te.live.Session.ID() {
 		t.Fatalf("shift+tab cycles the mode %+v", cmd)
 	}
 	view = plain(s.View(60, 12))
 	lines := strings.Split(view, "\n")
-	if len(lines) != 12 || !strings.Contains(lines[s.split], "───") || !strings.Contains(lines[s.split+1], "›") || strings.TrimSpace(lines[len(lines)-1]) != "" {
+	if len(lines) != 12 || !strings.Contains(lines[s.split], "───") || !strings.Contains(lines[s.split+1], "❯") || strings.TrimSpace(lines[len(lines)-1]) != "" {
 		t.Fatalf("rule between transcript and a two row prompt whose spare row stays blank\n%s", view)
 	}
-	if !strings.HasSuffix(lines[0], "⇞") || !strings.HasSuffix(lines[s.split-1], "⇟") || !strings.Contains(lines[s.split+1], "➤") {
+	if !strings.HasSuffix(lines[0], "⇞") || !strings.HasSuffix(lines[s.split-1], "⇟") || !strings.Contains(lines[s.split+1], "➜") {
 		t.Fatalf("scrollbar beside the transcript and the button on the prompt\n%s", view)
 	}
 	if h := s.Hints(); len(h) != 2 || h[0].Action != "session.search" || h[1].Action != "mode.cycle" {
@@ -877,7 +883,7 @@ func TestSessionRoutesKeysAndOwnsRuns(t *testing.T) {
 	}
 	s.Transcript.Top()
 	s.Composer.recall(-1)
-	if s.Status() != "1 turn · paused · history 1/1" {
+	if s.Status() != "1 turn ∷ paused ∷ history 1/1" {
 		t.Fatalf("status joins the transcript and the prompt %q", s.Status())
 	}
 	s.SetTheme(theme.Light())
@@ -930,7 +936,7 @@ func TestAgentCardFollowsAChildRun(t *testing.T) {
 	typeText(c, "child")
 	c.Update(tea.PasteMsg{Content: " note"})
 	view = plain(c.View(60, 8))
-	if !strings.Contains(strings.Split(view, "\n")[7], "⌕ child note") || c.Cursor() == nil {
+	if !strings.Contains(strings.Split(view, "\n")[7], "⚲ child note") || c.Cursor() == nil {
 		t.Fatalf("the search bar sits under the transcript\n%s", view)
 	}
 	if h := c.Hints(); h[0].Action != "search.accept" {
@@ -988,7 +994,7 @@ func TestApprovalDialogAnswersItsSession(t *testing.T) {
 	if w, h := a.MinSize(); w != approvalWidth || h != approvalMinRows || a.Hints() != nil {
 		t.Fatalf("empty size %d %d hints %v", w, h, a.Hints())
 	}
-	if !strings.Contains(plain(a.View(60, 10)), "nothing waiting") {
+	if !strings.Contains(plain(a.View(60, 10)), "no approvals") {
 		t.Fatal("empty dialog says so")
 	}
 	ask(t, te, "run-9", "Bash")
@@ -1004,7 +1010,7 @@ func TestApprovalDialogAnswersItsSession(t *testing.T) {
 		t.Fatalf("the dialog opens at the height of its request, %d", h)
 	}
 	view := plain(a.View(70, 24))
-	for _, want := range []string{"⌘ Bash", "by       root", "because  deny rule", "command  rm -rf /tmp/x", "! $(evil)  unsafe", "• rm -rf /tmp/x  exact", "rule     Bash(rm *)  kept by always and never", "destructive  open world", "allow", "deny", "always", "never", p.Asked.Local().Format("15:04:05")} {
+	for _, want := range []string{"⌁ Bash", "by      root", "reason  deny rule", "command  rm -rf /tmp/x", "! $(evil)  unsafe", "▹ rm -rf /tmp/x  exact", "rule    Bash(rm *)", "destructive  open world", "allow", "deny", "always", "never", p.Asked.Local().Format("15:04:05")} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view lacks %q\n%s", want, view)
 		}
@@ -1066,7 +1072,7 @@ func TestApprovalDialogAnswersItsSession(t *testing.T) {
 	for _, tc := range []struct {
 		key  string
 		want policy.Verdict
-	}{{"y", policy.Yes}, {"n", policy.No}, {"a", policy.Always}, {"v", policy.Never}} {
+	}{{"y", policy.Yes}, {"n", policy.No}, {"Y", policy.Always}, {"a", policy.Always}, {"N", policy.Never}} {
 		ans, ok := find[AnswerMsg](te.pressed(a, tc.key))
 		if !ok || ans.ID != p.ID || ans.Verdict != tc.want {
 			t.Fatalf("%s gave %+v", tc.key, ans)
@@ -1109,8 +1115,8 @@ func TestAgentsRosterListsRuns(t *testing.T) {
 	if d.Title() != "AGENTS" || d.Key() != "agents" || d.Status() != "idle" {
 		t.Fatalf("identity %q %q %q", d.Title(), d.Key(), d.Status())
 	}
-	if !strings.Contains(plain(d.View(60, 5)), "no agents yet") {
-		t.Fatal("empty roster")
+	if !strings.Contains(plain(d.View(60, 5)), "no agents") {
+		t.Fatal("empty agents panel")
 	}
 	te.live.Session.SetTitle("probe the box")
 	hold := make(chan struct{})
@@ -1120,7 +1126,7 @@ func TestAgentsRosterListsRuns(t *testing.T) {
 		t.Fatalf("rows %d status %q", len(d.Rows()), d.Status())
 	}
 	if _, ok := find[agentsTick](run(d.Init())); !ok {
-		t.Fatal("roster ticks while a run goes")
+		t.Fatal("the agents panel ticks while a run goes")
 	}
 	view := plain(d.View(90, 6))
 	if !strings.Contains(view, "root") || !strings.Contains(view, "probe the box") || !strings.Contains(view, "running") {
@@ -1160,7 +1166,7 @@ func TestAgentsRosterListsRuns(t *testing.T) {
 	if d.sel != 0 {
 		t.Fatal("selection keys")
 	}
-	if h := d.Hints(); len(h) != 3 || h[0].Label != "move" || h[2].Action != "agents.stop" {
+	if h := d.Hints(); len(h) != 3 || h[2].Label != "move" || h[1].Action != "agents.stop" {
 		t.Fatalf("hints %+v", h)
 	}
 	d.Update(agentsTick{})
@@ -1184,7 +1190,7 @@ func TestSessionsListsStoredOnes(t *testing.T) {
 		t.Fatalf("rows %d status %q", len(s.Rows()), s.Status())
 	}
 	view := plain(s.View(90, 10))
-	if !strings.Contains(view, "alpha run") || !strings.Contains(view, "beta run") || !strings.Contains(view, "●") || !strings.Contains(view, "m-a") {
+	if !strings.Contains(view, "alpha run") || !strings.Contains(view, "beta run") || !strings.Contains(view, "◉") || !strings.Contains(view, "m-a") {
 		t.Fatalf("view\n%s", view)
 	}
 	if strings.Contains(view, "⌕") || strings.Contains(view, "3 sessions") || !strings.HasPrefix(strings.TrimSpace(strings.Split(view, "\n")[0]), "UPDATED") {
@@ -1193,12 +1199,12 @@ func TestSessionsListsStoredOnes(t *testing.T) {
 	if !slices.Equal(s.Contexts(), []string{keys.Sessions, keys.Filter, keys.List, keys.Panel}) || s.Cursor() != nil {
 		t.Fatalf("contexts %v", s.Contexts())
 	}
-	if h := s.Hints(); h[0].Action != "filter.toggle" {
-		t.Fatalf("the filter leads the legend %+v", h)
+	if h := s.Hints(); h[0].Action != "sessions.resume" {
+		t.Fatalf("resume leads the legend %+v", h)
 	}
 	te.press(s, "/")
 	bottom := func() string { return plain(strings.Split(s.View(90, 10), "\n")[9]) }
-	if !slices.Equal(s.Contexts(), []string{keys.Search, keys.Filter}) || s.Cursor() == nil || s.Cursor().Y != 9 || !strings.Contains(bottom(), "⌕ filter by title") || !strings.Contains(bottom(), "3 sessions") {
+	if !slices.Equal(s.Contexts(), []string{keys.Search, keys.Filter}) || s.Cursor() == nil || s.Cursor().Y != 9 || !strings.Contains(bottom(), "⚲ filter") || !strings.Contains(bottom(), "3 sessions") {
 		t.Fatalf("slash opens the filter bar along the bottom with the count %q", bottom())
 	}
 	te.press(s, "/")
@@ -1215,14 +1221,14 @@ func TestSessionsListsStoredOnes(t *testing.T) {
 		t.Fatalf("once typing began slash is text %q", s.bar.Query())
 	}
 	te.press(s, "backspace")
-	if b := bottom(); !strings.Contains(b, "⌕ beta") || !strings.Contains(b, "1 of 3") {
+	if b := bottom(); !strings.Contains(b, "⚲ beta") || !strings.Contains(b, "1 of 3") {
 		t.Fatalf("bar with the query and the count %q", b)
 	}
 	if h := s.Hints(); h[0].Action != "search.accept" {
 		t.Fatalf("search hints %+v", h)
 	}
 	te.press(s, "enter")
-	if len(s.Rows()) != 1 || s.bar.Active() || !strings.Contains(bottom(), "⌕ beta") {
+	if len(s.Rows()) != 1 || s.bar.Active() || !strings.Contains(bottom(), "⚲ beta") {
 		t.Fatal("enter keeps the filter showing and leaves the bar")
 	}
 	open, ok := find[OpenSessionMsg](te.pressed(s, "enter"))
@@ -1234,7 +1240,7 @@ func TestSessionsListsStoredOnes(t *testing.T) {
 		t.Fatalf("fork %+v", fork)
 	}
 	te.press(s, "d")
-	if !strings.Contains(bottom(), "delete "+two.ID()+"? y yes · n no") || !slices.Equal(s.Contexts(), []string{keys.Confirm}) {
+	if !strings.Contains(bottom(), "delete "+two.ID()+"? y yes ∷ n no") || !slices.Equal(s.Contexts(), []string{keys.Confirm}) {
 		t.Fatal("delete asks along the bottom first")
 	}
 	if h := s.Hints(); len(h) != 2 || h[0].Label != "delete" || h[1].Label != "keep" {
@@ -1272,7 +1278,7 @@ func TestSessionsListsStoredOnes(t *testing.T) {
 		t.Fatalf("shift with a move extends the selection, %d %q", len(s.Selected()), s.Status())
 	}
 	view = plain(s.View(90, 10))
-	if strings.Count(view, "▪") != 2 || strings.Count(view, "▸") != 1 {
+	if strings.Count(view, "▮") != 2 || strings.Count(view, "►") != 1 {
 		t.Fatalf("selected rows are marked\n%s", view)
 	}
 	every := []string{s.Rows()[0].ID, s.Rows()[1].ID, s.Rows()[2].ID}
@@ -1338,12 +1344,12 @@ func TestSessionsListsStoredOnes(t *testing.T) {
 	te.press(s, "pgup")
 	s.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	s.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
-	if h := s.Hints(); len(h) != 6 || h[0].Action != "filter.toggle" || h[1].Label != "move" || h[2].Action != "sessions.select.down" || h[3].Action != "sessions.resume" {
+	if h := s.Hints(); len(h) != 6 || h[0].Action != "sessions.resume" || h[3].Action != "filter.toggle" || h[4].Label != "move" || h[5].Action != "sessions.select.down" {
 		t.Fatalf("hints %+v", h)
 	}
 	s.Update(wm.FocusMsg{Focused: true})
-	if _, ok := find[wm.Intent](te.pressed(s, "r")); !ok || len(s.Rows()) != 3 {
-		t.Fatal("refresh reads the store and says how many there are")
+	if _, ok := find[wm.Intent](te.pressed(s, "r")); ok || len(s.Rows()) != 3 {
+		t.Fatal("focus reads the store again and r is bound to nothing")
 	}
 	te.press(s, "d")
 	s.Update(wm.FocusMsg{})
@@ -1403,7 +1409,7 @@ func TestFindingsFilterResolveAndExport(t *testing.T) {
 	if len(f.Rows()) != 1 || f.Cursor() != nil {
 		t.Fatalf("search rows %d", len(f.Rows()))
 	}
-	if foot := plain(strings.Split(f.View(80, 12), "\n")[11]); !strings.Contains(foot, "⌕ port") || !strings.Contains(foot, "1 fact") || f.Status() != "2 open · tree" {
+	if foot := plain(strings.Split(f.View(80, 12), "\n")[11]); !strings.Contains(foot, "⚲ port") || !strings.Contains(foot, "1 fact") || f.Status() != "2 open ∷ tree" {
 		t.Fatalf("filter bar along the bottom %q, status %q", foot, f.Status())
 	}
 	te.press(f, "/")
@@ -1483,7 +1489,7 @@ func TestFindingsFilterResolveAndExport(t *testing.T) {
 		t.Fatal("losing focus leaves the bar")
 	}
 	te.press(f, "esc")
-	if h := f.Hints(); len(h) != 10 || h[0].Action != "filter.toggle" || h[2].Action != "findings.detail" {
+	if h := f.Hints(); len(h) != 10 || h[0].Action != "findings.detail" || h[8].Action != "filter.toggle" {
 		t.Fatalf("hints %+v", h)
 	}
 }
@@ -1497,7 +1503,7 @@ func TestMissionCardTracksItsMission(t *testing.T) {
 	}
 	id := te.live.Session.ID()
 	c := NewMission(te.env, ms, te.live.Facts, id, m)
-	if c.Key() != "mission:"+id+":"+m.ID || c.ID() != m.ID || c.Title() != "PROBE "+m.ID || c.Status() != "0%" {
+	if c.Key() != "mission:"+id+":"+m.ID || c.ID() != m.ID || c.Title() != "MISSION "+m.ID || c.Status() != "0%" {
 		t.Fatalf("identity %q status %q", c.Key(), c.Status())
 	}
 	planned, _ := ms.SetPlan(m.ID, []mission.Step{{Text: "ping sweep", Status: mission.StepDone}, {Text: "port scan", Status: mission.StepActive}, {Text: "report"}})
@@ -1611,7 +1617,7 @@ func TestFilesShowsTouchesAndDiffs(t *testing.T) {
 	if c.Title() != "FILES" || c.Key() != "files" || !c.Selectable() {
 		t.Fatalf("identity %q %q", c.Title(), c.Key())
 	}
-	if !strings.Contains(plain(c.View(60, 5)), "no files touched yet") || c.Status() != "0 files" {
+	if !strings.Contains(plain(c.View(60, 5)), "no files touched") || c.Status() != "0 files" {
 		t.Fatalf("empty status %q", c.Status())
 	}
 	read := agent.Event{Type: agent.EventToolEnd, Time: at, Agent: "root", Call: protocol.ToolCall{ID: "r1", Name: files.ReadName}, Data: files.ReadData{Path: "a.go", Lines: []string{"x"}, Total: 1}}
@@ -1630,7 +1636,7 @@ func TestFilesShowsTouchesAndDiffs(t *testing.T) {
 			t.Fatalf("view lacks %q\n%s", want, view)
 		}
 	}
-	if h := c.Hints(); len(h) != 2 || h[1].Action != "files.diff" {
+	if h := c.Hints(); len(h) != 2 || h[0].Action != "files.diff" {
 		t.Fatalf("hints before a diff %+v", h)
 	}
 	te.press(c, "enter")
@@ -1638,11 +1644,11 @@ func TestFilesShowsTouchesAndDiffs(t *testing.T) {
 	if !strings.Contains(view, "last change") || !strings.Contains(view, "three") {
 		t.Fatalf("diff view\n%s", view)
 	}
-	if h := c.Hints(); len(h) != 4 || h[3].Pair != "files.scroll.up" {
+	if h := c.Hints(); len(h) != 4 || h[2].Pair != "files.scroll.up" {
 		t.Fatalf("hints with a diff %+v", h)
 	}
 	te.press(c, "a")
-	if !strings.Contains(plain(c.View(80, 14)), "since the session started") {
+	if !strings.Contains(plain(c.View(80, 14)), "since start") {
 		t.Fatal("whole diff label")
 	}
 	dark := c.View(80, 14)
@@ -1712,7 +1718,7 @@ func TestJobsTailsBackgroundJobs(t *testing.T) {
 	if j.Title() != "JOBS" || j.Key() != "jobs" || !j.Selectable() || j.Status() != "" {
 		t.Fatalf("identity %q %q", j.Title(), j.Key())
 	}
-	if !strings.Contains(plain(j.View(60, 5)), "no background jobs") {
+	if !strings.Contains(plain(j.View(60, 5)), "no jobs") {
 		t.Fatal("empty view")
 	}
 	res, err := te.sh.Bash().Run(context.Background(), json.RawMessage(`{"command":"echo hello; sleep 0.2; echo bye","run_in_background":true,"description":"greets"}`))
@@ -1754,8 +1760,13 @@ func TestJobsTailsBackgroundJobs(t *testing.T) {
 		t.Fatal("killing a finished job notifies")
 	}
 	lines := strings.Split(plain(j.View(80, 12)), "\n")
+	if strings.HasSuffix(lines[j.listH+1], "⇞") || strings.HasSuffix(lines[11], "⇟") {
+		t.Fatalf("a tail that fits gets no scrollbar\n%s", strings.Join(lines, "\n"))
+	}
+	j.tails[jobs[0].ID].buf = append(j.tails[jobs[0].ID].buf, []byte(strings.Repeat("more\n", 20))...)
+	lines = strings.Split(plain(j.View(80, 12)), "\n")
 	if !strings.HasSuffix(lines[j.listH+1], "⇞") || !strings.HasSuffix(lines[11], "⇟") {
-		t.Fatalf("the tail gets a scrollbar\n%s", strings.Join(lines, "\n"))
+		t.Fatalf("a tail that scrolls gets a scrollbar\n%s", strings.Join(lines, "\n"))
 	}
 	te.press(j, "pgup")
 	if j.follow {
@@ -1785,7 +1796,7 @@ func TestJobsTailsBackgroundJobs(t *testing.T) {
 	}
 	j.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: render.TableHead})
 	j.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
-	if h := j.Hints(); len(h) != 4 || h[1].Action != "jobs.stop" || h[3].Label != "tail" {
+	if h := j.Hints(); len(h) != 4 || h[0].Action != "jobs.stop" || h[2].Label != "tail" {
 		t.Fatalf("hints %+v", h)
 	}
 	short := plain(j.View(40, 2))
@@ -1797,7 +1808,7 @@ func TestJobsTailsBackgroundJobs(t *testing.T) {
 func TestComposerSuggestsArgumentsAndCardsShowHints(t *testing.T) {
 	te := newEnv(t)
 	c := NewComposer(te.env.Theme, te.env.Keys, "", func() string { return te.dir })
-	c.SessionID = "s1"
+	c.Bind("s1")
 	c.SetCommands([]Command{{Name: "mode", Desc: "mode", Arg: "name", Suggest: func(string) []string { return []string{"default", "plan", "bypassPermissions"} }, Action: "mode.cycle"}, {Name: "compact", Desc: "now", Action: "session.compact"}})
 	c.SetFocus(true)
 	for _, r := range "/" {
@@ -1866,7 +1877,13 @@ func TestComposerSuggestsArgumentsAndCardsShowHints(t *testing.T) {
 	if hs := s.Hints(); len(hs) != 3 || hs[2].Action != "search.close" {
 		t.Fatalf("search hints %v", hs)
 	}
-	if !strings.Contains(plain(s.Transcript.View(60, 8)), "awaiting a prompt") {
+	if wide := plain(s.Transcript.View(60, 8)); !strings.Contains(wide, "idle") || !strings.Contains(wide, art.Wordmark[0]) || !strings.Contains(wide, te.env.Theme.Glyphs.Idle) {
+		t.Fatalf("an empty session shows the wordmark over the idle line\n%s", wide)
+	}
+	if small := plain(s.Transcript.View(30, 3)); strings.Contains(small, art.Wordmark[0]) || !strings.Contains(small, "idle") {
+		t.Fatalf("a small empty session keeps the idle line alone\n%s", small)
+	}
+	if !strings.Contains(plain(s.Transcript.View(60, 8)), "idle") {
 		t.Fatal("an empty transcript names the model as waiting")
 	}
 	for _, h := range []wm.Hinter{NewAgents(te.env), NewSessions(te.env), NewFindings(te.env, te.live.Facts, "s1"), NewFiles(te.env), NewJobs(te.env), NewConfig(te.env)} {
@@ -1907,10 +1924,6 @@ func TestComposerBreaksLinesWithABackslash(t *testing.T) {
 	if c.Value() != "ab\nXcd" {
 		t.Fatalf("no other chord breaks a line %q", c.Value())
 	}
-	s := NewSession(te.env, te.live, "")
-	if !strings.Contains(plain(s.View(120, 12)), "Type / for available commands") {
-		t.Fatal("the session prompt carries the command hint")
-	}
 }
 
 func TestComposerKeepsTheFirstLineInViewAcrossBreaks(t *testing.T) {
@@ -1948,7 +1961,7 @@ func TestKeyedHintsDropUnboundKeys(t *testing.T) {
 	te.env.Store.Save(context.Background(), session.New())
 	s := NewSessions(te.env)
 	te.press(s, "d")
-	if foot := plain(strings.Split(s.View(80, 5), "\n")[4]); !strings.HasSuffix(strings.TrimSpace(foot), "y yes · no") {
+	if foot := plain(strings.Split(s.View(80, 5), "\n")[4]); !strings.HasSuffix(strings.TrimSpace(foot), "y yes ∷ no") {
 		t.Fatalf("the question drops the missing key %q", foot)
 	}
 }
@@ -1956,11 +1969,162 @@ func TestKeyedHintsDropUnboundKeys(t *testing.T) {
 func TestComposerMeasuresAWrappedDraftAtTheCardWidth(t *testing.T) {
 	te := newEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "draft.txt"), []byte(strings.Repeat("word ", 30)), 0o600)
+	os.MkdirAll(filepath.Dir(DraftPath(dir, te.live.Session.ID())), 0o755)
+	os.WriteFile(DraftPath(dir, te.live.Session.ID()), []byte(strings.Repeat("word ", 30)), 0o600)
 	s := NewSession(te.env, te.live, dir)
 	view := strings.Split(plain(s.View(60, 14)), "\n")
 	h := s.Composer.Height()
 	if h < 3 || strings.TrimSpace(view[len(view)-1]) == "" || !strings.Contains(view[len(view)-h], "word") {
 		t.Fatalf("a long draft fills the rows it wraps to on the first paint, %d rows\n%s", h, strings.Join(view, "\n"))
+	}
+}
+
+func TestComposerKeepsADraftPerSession(t *testing.T) {
+	te := newEnv(t)
+	dir := filepath.Join(te.dir, "cfg")
+	c := NewComposer(te.env.Theme, te.env.Keys, dir, func() string { return te.dir })
+	c.Bind("s1")
+	run(c.SetFocus(true))
+	for _, r := range "for one" {
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if data, err := os.ReadFile(DraftPath(dir, "s1")); err != nil || string(data) != "for one" {
+		t.Fatalf("the draft lands in the file of its session %q %v", data, err)
+	}
+	c.Bind("s2")
+	if _, err := os.Stat(DraftPath(dir, "s1")); !os.IsNotExist(err) {
+		t.Fatal("typed text moves to the session bound next and leaves the old one")
+	}
+	if data, err := os.ReadFile(DraftPath(dir, "s2")); err != nil || string(data) != "for one" || c.SessionID != "s2" {
+		t.Fatalf("the moved draft %q %v", data, err)
+	}
+	c.Bind("s2")
+	c.ta.Reset()
+	c.persist()
+	if _, err := os.Stat(DraftPath(dir, "s2")); !os.IsNotExist(err) {
+		t.Fatal("clearing the prompt removes the draft file")
+	}
+	os.WriteFile(DraftPath(dir, "s3"), []byte("third"), 0o600)
+	c.Bind("s3")
+	if c.Value() != "third" || c.SessionID != "s3" {
+		t.Fatalf("binding an empty prompt reads the draft of the session %q", c.Value())
+	}
+	other := NewComposer(te.env.Theme, te.env.Keys, dir, func() string { return te.dir })
+	other.Bind("s1")
+	if other.Value() != "" {
+		t.Fatalf("another session starts clean %q", other.Value())
+	}
+	bare := NewComposer(te.env.Theme, te.env.Keys, "", func() string { return te.dir })
+	bare.Bind("s3")
+	if bare.Value() != "" || bare.SessionID != "s3" {
+		t.Fatal("a composer without a directory binds without reading anything")
+	}
+}
+
+func TestSessionKeepsItsViewStateBetweenRuns(t *testing.T) {
+	te := newEnv(t)
+	s := NewSession(te.env, te.live, "")
+	if !s.Transcript.Thinking() {
+		t.Fatal("thinking starts shown")
+	}
+	s.Transcript.ShowThinking(false)
+	raw, err := json.Marshal(s.State())
+	if err != nil || string(raw) != `{"thinking_hidden":true}` {
+		t.Fatalf("state %s %v", raw, err)
+	}
+	again := NewSession(te.env, te.live, "")
+	if err := again.SetState(raw); err != nil || again.Transcript.Thinking() {
+		t.Fatalf("the saved state shows thinking again %v", err)
+	}
+	if again.SetState(json.RawMessage(`{`)) == nil {
+		t.Fatal("a broken state is an error")
+	}
+	if _, ok := wm.Card(again).(wm.Stateful); !ok {
+		t.Fatal("the session card is a stateful card")
+	}
+}
+
+func TestTranscriptGlidesAfterItsOffset(t *testing.T) {
+	te := newEnv(t)
+	tr := NewTranscript(te.env)
+	for i := 0; i < 40; i++ {
+		tr.Apply(agent.Event{Type: agent.EventNote, Time: at, Text: fmt.Sprintf("line %02d", i)})
+	}
+	tr.View(60, 8)
+	if tr.paintedOffset() != tr.vp.YOffset() || tr.vp.YOffset() == 0 {
+		t.Fatal("before any frame the painted offset is the viewport's, at the end while following")
+	}
+	if tr.Animate(1.0 / 60) {
+		t.Fatal("the first frame settles the glide where the viewport is")
+	}
+	tr.Top()
+	if tr.paintedOffset() == 0 {
+		t.Fatal("the painted offset trails the viewport")
+	}
+	if !tr.Animate(1.0 / 60) {
+		t.Fatal("the glide moves")
+	}
+	if tr.paintedOffset() > 3*8 {
+		t.Fatalf("a long jump trails by three pages at most, %d", tr.paintedOffset())
+	}
+	first := plain(strings.Split(tr.View(60, 8), "\n")[0])
+	if strings.Contains(first, "line 00") {
+		t.Fatalf("the view paints the gliding offset %q", first)
+	}
+	for i := 0; i < 400 && tr.Animate(1.0/60); i++ {
+	}
+	if tr.paintedOffset() != 0 || !strings.Contains(plain(strings.Split(tr.View(60, 8), "\n")[0]), "line 00") {
+		t.Fatal("the glide lands on the viewport offset")
+	}
+	tr.Follow()
+	if tr.Animate(0) != true || tr.glide || tr.paintedOffset() != tr.vp.YOffset() {
+		t.Fatal("a zero frame snaps the painted offset")
+	}
+	if tr.Animate(0) {
+		t.Fatal("a second zero frame changes nothing")
+	}
+	s := NewSession(te.env, te.live, t.TempDir())
+	if s.Animate(1.0/60) || !s.Transcript.glide {
+		t.Fatal("the session hands frames to its transcript")
+	}
+}
+
+func TestThoughtsMaterializeAsTheyStream(t *testing.T) {
+	te := newEnv(t)
+	tr := NewTranscript(te.env)
+	tr.Apply(agent.Event{Type: agent.EventRunStart, Time: at, Parts: []protocol.Part{protocol.Text{Text: "go"}}})
+	tr.Apply(agent.Event{Type: agent.EventTurnStart, Time: at, Round: 1})
+	resp := protocol.Response{Content: []protocol.Part{protocol.Thinking{Text: "weigh the options"}}}
+	tr.Apply(agent.Event{Type: agent.EventModel, Time: at, Round: 1, Model: protocol.Event{Type: protocol.EventThinkingDelta, Index: 0, Delta: "weigh the options", Response: resp}})
+	text := func() string { return plain(strings.Join(tr.Lines(80), "\n")) }
+	if fresh := text(); strings.Contains(fresh, "options") || !strings.ContainsAny(fresh, string(te.env.Theme.Glyphs.Churn)) {
+		t.Fatalf("a fresh thought boils\n%s", fresh)
+	}
+	if !tr.settling() || tr.ensureTick() == nil {
+		t.Fatal("a boiling thought keeps the ticks coming")
+	}
+	te.env.Now = func() time.Time { return at.Add(settleTime / 2) }
+	if half := text(); !strings.Contains(half, "weigh") || strings.Contains(half, "options") {
+		t.Fatalf("a thought settles left to right\n%s", half)
+	}
+	te.env.Now = func() time.Time { return at.Add(settleTime) }
+	if full := text(); !strings.Contains(full, "weigh the options") || tr.settling() {
+		t.Fatalf("a settled thought reads whole\n%s", full)
+	}
+	tr.ShowThinking(false)
+	if streaming := text(); !strings.Contains(streaming, "weigh the options") {
+		t.Fatalf("a streaming thought shows whole even while hidden\n%s", streaming)
+	}
+	tr.Apply(agent.Event{Type: agent.EventModel, Time: at.Add(time.Second), Round: 1, Model: protocol.Event{Type: protocol.EventThinkingEnd, Index: 0, Response: resp}})
+	if done := text(); strings.Contains(done, "weigh") || !strings.Contains(done, "thinking "+te.env.Theme.Glyphs.Sep+" 1.0s") {
+		t.Fatalf("a finished thought folds when hidden and shows how long it took\n%s", done)
+	}
+	tr.ShowThinking(true)
+	if shown := text(); !strings.Contains(shown, "weigh the options") {
+		t.Fatalf("showing brings a finished thought back\n%s", shown)
+	}
+	late := &block{kind: bThinking, text: "stale", grown: at.Add(time.Hour), settled: 0}
+	if late.resolved(at) != 5 || (&block{kind: bThinking, text: "old"}).resolved(at) != 3 {
+		t.Fatal("thoughts timed from the future or never timed read settled")
 	}
 }

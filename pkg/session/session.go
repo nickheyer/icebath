@@ -226,6 +226,13 @@ func (s *Session) Len() int {
 	return len(s.entries)
 }
 
+// Reports whether the session holds no messages, records or title
+func (s *Session) Empty() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.entries) == 0 && len(s.records) == 0 && s.title == ""
+}
+
 // Tokens the next request will carry, as measured by the last response
 func (s *Session) Context() int {
 	s.mu.RLock()

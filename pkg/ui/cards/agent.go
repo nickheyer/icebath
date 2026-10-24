@@ -41,8 +41,11 @@ func NewAgent(env *Env, run *harness.Run) *Agent {
 // Run the card follows
 func (a *Agent) Run() *harness.Run { return a.run }
 
+// Glides the transcript between frames
+func (a *Agent) Animate(dt float64) bool { return a.tr.Animate(dt) }
+
 func (a *Agent) Title() string       { return a.run.Name }
-func (a *Agent) Glyph() string       { return "☍" }
+func (a *Agent) Glyph() string       { return a.env.Theme.Glyphs.Agent }
 func (a *Agent) Key() string         { return "agent:" + a.run.ID }
 func (a *Agent) Selectable() bool    { return true }
 func (a *Agent) MinSize() (int, int) { return 24, 4 }
@@ -168,19 +171,19 @@ func (a *Agent) header(w int) string {
 			state += " " + render.Dim(itoa(n)+" tools", t)
 		}
 		if last != "" {
-			state += " " + render.Dim(render.ToolGlyph(last)+" "+last, t)
+			state += " " + render.Dim(render.ToolGlyph(last, t)+" "+last, t)
 		}
 	case r.Err() != nil:
-		state = render.Bad("failed "+render.Truncate(r.Err().Error(), w/2), t)
+		state = render.Bad("failed "+render.Truncate(r.Err().Error(), w/2, t), t)
 	default:
 		state = render.Good("done", t) + " " + render.Dim(render.Elapsed(r.Elapsed(a.env.now())), t)
 	}
 	desc := render.Dim(r.Description, t)
 	line := state
 	if r.Description != "" {
-		line = desc + lipgloss.NewStyle().Foreground(t.Steel).Render(" · ") + state
+		line = desc + lipgloss.NewStyle().Foreground(t.Steel).Render(" "+t.Glyphs.Sep+" ") + state
 	}
-	return render.Truncate(line, w)
+	return render.Truncate(line, w, t)
 }
 
 func (a *Agent) View(w, h int) string {
@@ -189,7 +192,7 @@ func (a *Agent) View(w, h int) string {
 		return a.header(w)
 	}
 	if a.tr.SearchShown() && h > 2 {
-		return a.header(w) + "\n" + a.tr.View(w, h-2) + "\n" + a.tr.SearchView(w, "search this transcript")
+		return a.header(w) + "\n" + a.tr.View(w, h-2) + "\n" + a.tr.SearchView(w, "search")
 	}
 	return a.header(w) + "\n" + a.tr.View(w, h-1)
 }
@@ -210,7 +213,7 @@ func (a *Agent) Status() string {
 	case r.Err() != nil:
 		return "failed"
 	}
-	return strings.TrimSpace("done")
+	return "done"
 }
 
 // Actions the agent transcript answers

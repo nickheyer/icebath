@@ -19,14 +19,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/session/jsonl"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
 var version = "dev"
 
-type knobs []string
+type settings []string
 
-func (k *knobs) String() string     { return strings.Join(*k, ",") }
-func (k *knobs) Set(v string) error { *k = append(*k, v); return nil }
+func (k *settings) String() string     { return strings.Join(*k, ",") }
+func (k *settings) Set(v string) error { *k = append(*k, v); return nil }
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -51,9 +52,9 @@ func run(args []string) int {
 		theme    = fs.String("theme", "", "palette, blackwall, light, contrast or plain")
 		motion   = fs.Float64("motion", -1, "animation scale from 0 to 1")
 		showVer  = fs.Bool("version", false, "print the version and exit")
-		kn       knobs
+		set      settings
 	)
-	fs.Var(&kn, "k", "knob override such as max_tokens=4096, repeatable")
+	fs.Var(&set, "k", "setting override such as max_tokens=4096, repeatable")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: icebath [flags] [prompt]\n\n")
 		fs.PrintDefaults()
@@ -109,13 +110,13 @@ func run(args []string) int {
 		m := *motion
 		cfg.UI.Motion = &m
 	}
-	for _, k := range kn {
-		key, value, err := harness.ParseKnob(k)
+	for _, k := range set {
+		key, value, err := harness.ParseSetting(k)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "icebath:", err)
 			return 2
 		}
-		if err := cfg.SetKnob(key, value); err != nil {
+		if err := cfg.Set(key, value); err != nil {
 			fmt.Fprintln(os.Stderr, "icebath:", err)
 			return 2
 		}
@@ -205,5 +206,5 @@ func printInfo(info session.Info) {
 		fmt.Printf("%s  %s\n", info.ID, "unreadable: "+info.Error)
 		return
 	}
-	fmt.Printf("%s  %s  %-28s  %s  %d msgs  %s\n", info.ID, info.Updated.Local().Format("2006-01-02 15:04"), render.Truncate(title, 28), info.Model, info.Messages, render.Tokens(info.Usage.Total()))
+	fmt.Printf("%s  %s  %-28s  %s  %d msgs  %s\n", info.ID, info.Updated.Local().Format("2006-01-02 15:04"), render.Truncate(title, 28, theme.Blackwall()), info.Model, info.Messages, render.Tokens(info.Usage.Total()))
 }

@@ -18,9 +18,9 @@ type Field struct {
 	Unset bool
 }
 
-// Applies a knob and saves it so the next start under dir reads the same value
-func (c *Config) SaveKnob(dir, key, value string) error {
-	f, err := c.setKnob(key, value)
+// Applies a setting and saves it so the next start under dir reads the same value
+func (c *Config) SaveSetting(dir, key, value string) error {
+	f, err := c.settingField(key, value)
 	if err != nil {
 		return err
 	}

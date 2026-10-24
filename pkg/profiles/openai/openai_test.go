@@ -37,7 +37,7 @@ func TestProfilesAndModels(t *testing.T) {
 	}
 }
 
-func TestKnobs(t *testing.T) {
+func TestOptions(t *testing.T) {
 	if string(Reasoning("high")["reasoning"]) != `{"effort":"high"}` || string(ChatReasoning("low")["reasoning_effort"]) != `"low"` {
 		t.Fatal(Reasoning("high"), ChatReasoning("low"))
 	}

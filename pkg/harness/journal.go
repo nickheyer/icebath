@@ -89,9 +89,9 @@ func (j *Journal) Record(msg any) {
 	case RunDoneMsg:
 		switch {
 		case m.Err != nil:
-			j.Add(LevelError, "run "+m.Run, "ended with "+m.Err.Error())
+			j.Add(LevelError, "agent "+m.Run, "ended with "+m.Err.Error())
 		default:
-			j.Add(LevelInfo, "run "+m.Run, "finished in "+m.Duration.Round(time.Millisecond).String())
+			j.Add(LevelInfo, "agent "+m.Run, "finished in "+m.Duration.Round(time.Millisecond).String())
 		}
 	case ApprovalMsg:
 		p := m.Pending
@@ -157,10 +157,10 @@ func (j *Journal) Record(msg any) {
 	}
 }
 
-// Line of an agent event, runs, tools, steering, compaction and subagents
+// Line of an agent event, starts, tools, steering, compaction and subagents
 func (j *Journal) event(m EventMsg) {
 	ev := m.Event
-	src := "run " + m.Run
+	src := "agent " + m.Run
 	switch ev.Type {
 	case agent.EventRunStart:
 		j.Add(LevelInfo, src, agentName(ev.Agent)+" started "+clip(protocol.Response{Content: ev.Parts}.Text(), 160))

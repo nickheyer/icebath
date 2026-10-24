@@ -11,7 +11,7 @@ import (
 
 const errorPrefix = "[error] "
 
-// Builds POST /api/chat with a leading system message and sampling knobs under options
+// Builds POST /api/chat with a leading system message and sampling options under options
 func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 	if req.Model == "" {
 		return protocol.Call{}, fmt.Errorf("ollama-chat: model is required")

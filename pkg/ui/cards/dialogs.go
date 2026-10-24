@@ -31,7 +31,7 @@ func scopeField(what string) *field {
 	for _, s := range harness.Scopes {
 		choices = append(choices, string(s))
 	}
-	return &field{key: "scope", label: "scope", kind: choiceField, choices: choices, value: choices[0], help: "project writes .icebath/" + what + " in the working directory, user writes " + what + " in the configuration directory for every project"}
+	return &field{key: "scope", label: "scope", kind: choiceField, choices: choices, value: choices[0], help: "project writes .icebath/" + what + " here, user writes " + what + " in the config directory"}
 }
 
 // Value of a choice field, empty for the none choice
@@ -79,24 +79,24 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 	}
 	sources := []string{string(profiles.SourceEnv), string(profiles.SourceStatic), string(profiles.SourceFile), string(profiles.SourceExec), string(profiles.SourceNone)}
 
-	pick := &field{key: "provider", label: "provider", kind: choiceField, choices: names, value: provider, help: "Built in provider the profile starts from, its endpoint, protocol and credential filling every field you leave as it is, custom for any other endpoint"}
-	name := &field{key: "name", label: "name", kind: textField, value: written.Name, help: "Name the profile is picked by, letters, digits, dots, dashes and underscores", check: func(v string) error {
+	pick := &field{key: "provider", label: "provider", kind: choiceField, choices: names, value: provider, help: "Provider that fills every field left as it is, custom for any other endpoint"}
+	name := &field{key: "name", label: "name", kind: textField, value: written.Name, help: "Letters, digits, dots, dashes and underscores", check: func(v string) error {
 		if !profiles.ValidName(v) {
 			return errors.New("name must start with a letter or digit and hold only letters, digits, dots, dashes and underscores")
 		}
 		return nil
 	}}
-	model := &field{key: "model", label: "model", kind: textField, value: written.Model(), help: "Model the profile serves when none is named, empty takes the default of the provider"}
-	endpoint := &field{key: "endpoint", label: "endpoint", kind: textField, help: "Base URL of the endpoint such as https://api.example.com/v1"}
-	vendor := &field{key: "vendor", label: "vendor", kind: choiceField, help: "Family whose conventions apply, used to list the models the endpoint serves"}
-	proto := &field{key: "protocol", label: "protocol", kind: choiceField, choices: protocols, help: "Wire format the endpoint speaks"}
-	auth := &field{key: "auth", label: "auth", kind: choiceField, choices: auths, help: "How the credential travels, none for an endpoint that takes no credential"}
-	authName := &field{key: "auth_name", label: "auth name", kind: textField, help: "Header or query parameter the credential travels in, such as x-api-key", show: func() bool {
+	model := &field{key: "model", label: "model", kind: textField, value: written.Model(), help: "Default model, empty takes the provider default"}
+	endpoint := &field{key: "endpoint", label: "endpoint", kind: textField, help: "Base URL such as https://api.example.com/v1"}
+	vendor := &field{key: "vendor", label: "vendor", kind: choiceField, help: "Model family, used to list models"}
+	proto := &field{key: "protocol", label: "protocol", kind: choiceField, choices: protocols, help: "Wire format of the endpoint"}
+	auth := &field{key: "auth", label: "auth", kind: choiceField, choices: auths, help: "How the credential is sent, none for no credential"}
+	authName := &field{key: "auth_name", label: "auth name", kind: textField, help: "Header or query parameter such as x-api-key", show: func() bool {
 		return auth.value == string(profiles.AuthHeader) || auth.value == string(profiles.AuthQuery)
 	}}
-	keyFrom := &field{key: "key_from", label: "key from", kind: choiceField, choices: sources, help: "Where the credential comes from, read each time the profile opens"}
+	keyFrom := &field{key: "key_from", label: "key from", kind: choiceField, choices: sources, help: "Credential source, read each time the profile opens"}
 	key := &field{key: "key", label: "key", kind: textField, show: func() bool { return keyFrom.value != string(profiles.SourceNone) }}
-	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.Disabled), help: "A profile turned off stays out of pickers and refuses to open"}
+	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.Disabled), help: "Off profiles stay out of pickers"}
 	describeKey := func() {
 		key.kind = textField
 		switch profiles.SourceKind(keyFrom.value) {
@@ -104,11 +104,11 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 			key.label, key.help = "variable", "Environment variable holding the credential"
 		case profiles.SourceStatic:
 			key.kind = secretField
-			key.label, key.help = "key", "The credential itself, kept in the profile file which only you can read"
+			key.label, key.help = "key", "The credential itself, kept in the profile file"
 		case profiles.SourceFile:
-			key.label, key.help = "path", "File whose contents are the credential"
+			key.label, key.help = "path", "File holding the credential"
 		case profiles.SourceExec:
-			key.label, key.help = "command", "Shell command that prints the credential"
+			key.label, key.help = "command", "Command that prints the credential"
 		}
 	}
 	keyFrom.onChange = describeKey
@@ -153,7 +153,7 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 	if old != nil {
 		title, oldName = "EDIT "+old.Profile.Name, old.Profile.Name
 	}
-	return newForm(c.env, title, "◉", fields, func() (tea.Cmd, error) {
+	return newForm(c.env, title, c.env.Theme.Glyphs.Profiles, fields, func() (tea.Cmd, error) {
 		b := base()
 		p := written.Clone()
 		p.Name = strings.TrimSpace(name.value)
@@ -210,15 +210,15 @@ func splitRule(text string) (string, string) {
 func patternHelp(tool string) string {
 	switch tool {
 	case "Bash":
-		return "Command glob such as git * or a command prefix such as npm run:*, empty matches every command"
+		return "Command glob such as git * or prefix such as npm run:*, empty matches every command"
 	case "Read", "Write", "Edit", "Glob", "Grep":
-		return "Path glob such as src/** or ~/.ssh/**, relative paths resolved against the working directory, empty matches every path"
+		return "Path glob such as src/** or ~/.ssh/**, empty matches every path"
 	case "WebFetch":
-		return "URL glob such as https://docs.example.com/* or a domain such as domain:example.com, empty matches every url"
+		return "URL glob such as https://docs.example.com/* or domain:example.com, empty matches every url"
 	case "BashOutput", "KillShell":
 		return "Job id glob, empty matches every job"
 	}
-	return "Glob matched against every string argument of the call, empty matches every call"
+	return "Glob over every string argument, empty matches every call"
 }
 
 // Dialog that writes a permission rule, new into a scope or over one in the file holding it
@@ -240,9 +240,9 @@ func (c *Config) ruleForm(old *harness.RuleEntry) *Form {
 	if !slices.Contains(tools, tl) {
 		tl, glob = other, tl
 	}
-	decision := &field{key: "decision", label: "decision", kind: choiceField, choices: []string{string(policy.Allow), string(policy.Ask), string(policy.Deny)}, value: d, help: "allow runs a matching call without asking, ask always asks, deny refuses it, deny winning over ask and ask over allow"}
+	decision := &field{key: "decision", label: "decision", kind: choiceField, choices: []string{string(policy.Allow), string(policy.Ask), string(policy.Deny)}, value: d, help: "deny wins over ask, ask over allow"}
 	pat := &field{key: "pattern", label: "pattern", kind: textField, optional: true, placeholder: "every call", value: pattern, cursor: len([]rune(pattern))}
-	toolField := &field{key: "tool", label: "tool", kind: choiceField, choices: tools, value: tl, help: "Tool the rule covers, * for every tool, other for a name glob such as mcp__github__*"}
+	toolField := &field{key: "tool", label: "tool", kind: choiceField, choices: tools, value: tl, help: "* for every tool, other for a name glob such as mcp__github__*"}
 	globField := &field{key: "glob", label: "tool glob", kind: textField, value: glob, cursor: len([]rune(glob)), help: "Glob over tool names such as mcp__github__*", show: func() bool { return toolField.value == other }}
 	toolField.onChange = func() { pat.help = patternHelp(toolField.value) }
 	toolField.onChange()
@@ -254,7 +254,7 @@ func (c *Config) ruleForm(old *harness.RuleEntry) *Form {
 	} else {
 		title = "EDIT RULE"
 	}
-	return newForm(c.env, title, "⚖", fields, func() (tea.Cmd, error) {
+	return newForm(c.env, title, c.env.Theme.Glyphs.Rules, fields, func() (tea.Cmd, error) {
 		name := toolField.value
 		if name == other {
 			name = strings.TrimSpace(globField.value)
@@ -290,14 +290,14 @@ func (c *Config) hookForm(old *harness.HookEntry) *Form {
 	if e.Timeout > 0 {
 		timeout = strconv.Itoa(e.Timeout)
 	}
-	event := &field{key: "event", label: "event", kind: choiceField, choices: events, value: string(e.Event), help: "Moment the hook runs at, PreToolUse can block a call and UserPromptSubmit can block a prompt"}
+	event := &field{key: "event", label: "event", kind: choiceField, choices: events, value: string(e.Event), help: "PreToolUse can block a call, UserPromptSubmit can block a prompt"}
 	tooled := func() bool {
 		return event.value == string(hooks.PreToolUse) || event.value == string(hooks.PostToolUse)
 	}
-	matcher := &field{key: "matcher", label: "matcher", kind: textField, optional: true, placeholder: "every tool", value: e.Matcher, cursor: len([]rune(e.Matcher)), show: tooled, help: "Regular expression over the tool name such as Bash or Edit|Write, empty runs for every tool", check: func(v string) error {
+	matcher := &field{key: "matcher", label: "matcher", kind: textField, optional: true, placeholder: "every tool", value: e.Matcher, cursor: len([]rune(e.Matcher)), show: tooled, help: "Regular expression over the tool name such as Edit|Write", check: func(v string) error {
 		return harness.CheckMatcher(v)
 	}}
-	command := &field{key: "command", label: "command", kind: textField, value: e.Command, cursor: len([]rune(e.Command)), help: "Shell command run with the event as JSON on standard input, exit 2 blocks with standard error as the reason"}
+	command := &field{key: "command", label: "command", kind: textField, value: e.Command, cursor: len([]rune(e.Command)), help: "Shell command given the event as JSON on stdin, exit 2 blocks with stderr as the reason"}
 	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, hi: 600, step: 5, start: hooks.DefaultTimeout, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds the command may run, unset allows " + strconv.Itoa(hooks.DefaultTimeout)}
 	fields := []*field{event, matcher, command, secs}
 	scope := scopeField(harness.HooksFile)
@@ -307,7 +307,7 @@ func (c *Config) hookForm(old *harness.HookEntry) *Form {
 	} else {
 		title = "EDIT HOOK"
 	}
-	return newForm(c.env, title, "↯", fields, func() (tea.Cmd, error) {
+	return newForm(c.env, title, c.env.Theme.Glyphs.Hooks, fields, func() (tea.Cmd, error) {
 		next := harness.HookEntry{Event: hooks.Event(event.value), Command: strings.TrimSpace(command.value)}
 		if tooled() {
 			next.Matcher = strings.TrimSpace(matcher.value)
@@ -443,25 +443,25 @@ func (c *Config) serverForm(old *harness.ServerConfig) *Form {
 	text := func(key, label, value, help string, optional bool, show func() bool) *field {
 		return &field{key: key, label: label, kind: textField, value: value, cursor: len([]rune(value)), help: help, optional: optional, show: show}
 	}
-	transport := &field{key: "transport", label: "transport", kind: choiceField, choices: []string{"stdio", "http"}, value: kind, help: "stdio runs a program and speaks over its standard input and output, http talks to a streamable HTTP endpoint"}
+	transport := &field{key: "transport", label: "transport", kind: choiceField, choices: []string{"stdio", "http"}, value: kind, help: "stdio runs a program, http talks to a streamable HTTP endpoint"}
 	stdio := func() bool { return transport.value == "stdio" }
 	web := func() bool { return transport.value == "http" }
 	timeout := ""
 	if cfg.Timeout > 0 {
 		timeout = strconv.Itoa(cfg.Timeout)
 	}
-	name := text("name", "name", cfg.Name, "Name the server goes by, its tools named mcp__name__tool", false, nil)
+	name := text("name", "name", cfg.Name, "Tools are named mcp__name__tool", false, nil)
 	command := text("command", "command", cfg.Command, "Program that speaks MCP such as npx or uvx", false, stdio)
-	args := text("args", "args", joinArgs(cfg.Args), "Arguments of the program, quotes keeping one that holds spaces", true, stdio)
+	args := text("args", "args", joinArgs(cfg.Args), "Program arguments, quotes keep spaces", true, stdio)
 	args.check = func(v string) error { _, err := splitArgs(v); return err }
-	env := text("env", "env", joinEnv(cfg.Env), "Environment the program gets as KEY=VALUE words such as TOKEN=abc DEBUG=1", true, stdio)
+	env := text("env", "env", joinEnv(cfg.Env), "KEY=VALUE words such as TOKEN=abc DEBUG=1", true, stdio)
 	env.check = func(v string) error { _, err := splitEnv(v); return err }
-	dir := text("dir", "dir", cfg.Dir, "Working directory of the program, the directory icebath runs in when empty", true, stdio)
-	url := text("url", "url", cfg.URL, "Endpoint of the server such as https://mcp.example.com/mcp", false, web)
-	headers := text("headers", "headers", joinHeaders(cfg.Headers), "Headers sent with every request as Name: value pairs separated by semicolons", true, web)
+	dir := text("dir", "dir", cfg.Dir, "Working directory, empty for the icebath directory", true, stdio)
+	url := text("url", "url", cfg.URL, "Endpoint such as https://mcp.example.com/mcp", false, web)
+	headers := text("headers", "headers", joinHeaders(cfg.Headers), "Name: value pairs separated by semicolons", true, web)
 	headers.check = func(v string) error { _, err := splitHeaders(v); return err }
-	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, hi: 300, step: 5, start: 30, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds each handshake and listing may take, unset leaves the client default"}
-	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!cfg.Disabled), help: "A server turned off stays configured without connecting"}
+	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, hi: 300, step: 5, start: 30, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds per handshake and listing, unset leaves the client default"}
+	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!cfg.Disabled), help: "Off servers stay configured without connecting"}
 	fields := []*field{name, transport, command, args, env, dir, url, headers, secs, enabled}
 	scope := scopeField(harness.ConfigFile)
 	title, oldName := "NEW MCP SERVER", ""
@@ -470,7 +470,7 @@ func (c *Config) serverForm(old *harness.ServerConfig) *Form {
 	} else {
 		title, oldName = "EDIT "+old.Name, old.Name
 	}
-	return newForm(c.env, title, "⇄", fields, func() (tea.Cmd, error) {
+	return newForm(c.env, title, c.env.Theme.Glyphs.MCP, fields, func() (tea.Cmd, error) {
 		next := harness.ServerConfig{Name: strings.TrimSpace(name.value), Disabled: enabled.value == "false"}
 		if v, ok := secs.number(); ok {
 			next.Timeout = int(v)

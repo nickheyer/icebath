@@ -113,17 +113,17 @@ func TestControllerRunsAgentsAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.ID != "run-1" || r.Name != "root" || r.Mission != m.ID || !r.Running() {
+	if r.ID != "1" || r.Name != "root" || r.Mission != m.ID || !r.Running() {
 		t.Fatalf("%+v", r)
 	}
 	if _, err := c.Start(context.Background(), a, "", nil); err == nil {
 		t.Fatal("running agent started twice")
 	}
 	done := s.wait(t, func(a any) bool { _, ok := a.(RunDoneMsg); return ok }).(RunDoneMsg)
-	if done.Err != nil || done.Response.Text() != "done" || done.Run != "run-1" || done.Duration < 0 {
+	if done.Err != nil || done.Response.Text() != "done" || done.Run != "1" || done.Duration < 0 {
 		t.Fatalf("%+v", done)
 	}
-	dc, _ := c.Done("run-1")
+	dc, _ := c.Done("1")
 	<-dc
 	last, n := r.LastTool()
 	if r.Running() || r.Finished().IsZero() || r.Elapsed(time.Now()) < 0 || last != "Echo" || n != 1 || r.Err() != nil || r.Response().Text() != "done" {
@@ -134,7 +134,7 @@ func TestControllerRunsAgentsAndPersists(t *testing.T) {
 		switch v := msg.(type) {
 		case ProgressMsg:
 			progress++
-			if v.Run != "run-1" || v.Progress.CallID != "c1" || v.Progress.Text != "working" {
+			if v.Run != "1" || v.Progress.CallID != "c1" || v.Progress.Text != "working" {
 				t.Fatalf("%+v", v)
 			}
 		case EventMsg:
@@ -160,7 +160,7 @@ func TestControllerRunsAgentsAndPersists(t *testing.T) {
 	}
 	steer := func(id string) error { return c.Steer(id, text("x")) }
 	for _, fn := range []func(string) error{steer, c.Interrupt, c.Cancel} {
-		if err := fn("run-1"); err == nil || !strings.Contains(err.Error(), "finished") {
+		if err := fn("1"); err == nil || !strings.Contains(err.Error(), "finished") {
 			t.Fatalf("%v", err)
 		}
 		if err := fn("nope"); err == nil {
@@ -257,6 +257,13 @@ func TestSaverCoalescesAndFlushes(t *testing.T) {
 	sv.Delay = 20 * time.Millisecond
 	sess := session.New()
 	sv.Touch(sess)
+	sv.Flush(sess)
+	sv.Wait()
+	if n := len(s.all()); n != 0 {
+		t.Fatalf("a session with nothing in it is never written, got %d", n)
+	}
+	sess.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "hi"}}})
+	sv.Touch(sess)
 	sv.Touch(sess)
 	sv.Touch(nil)
 	(*Saver)(nil).Touch(sess)
@@ -276,6 +283,7 @@ func TestSaverCoalescesAndFlushes(t *testing.T) {
 	broken := NewSaver(bad, s.send)
 	broken.Delay = time.Millisecond
 	invalid := session.FromHeader(session.Header{ID: "bad id!"}, nil, nil)
+	invalid.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "hi"}}})
 	broken.Touch(invalid)
 	broken.Wait()
 	last := s.all()[len(s.all())-1].(SavedMsg)

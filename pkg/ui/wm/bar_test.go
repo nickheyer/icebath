@@ -12,11 +12,11 @@ func TestChipsShowNumbersAlone(t *testing.T) {
 	m := still(t, 100, 30)
 	ws1, _ := m.AddWorkspace("1", newStub("alpha"))
 	ws2, _ := m.AddWorkspace("2", newStub("beta"))
-	if m.chipLabel(0, ws1) != " 1 × " || m.chipLabel(1, ws2) != " 2 " {
+	if m.chipLabel(0, ws1) != " 1 ✕ " || m.chipLabel(1, ws2) != " 2 " {
 		t.Fatalf("%q %q", m.chipLabel(0, ws1), m.chipLabel(1, ws2))
 	}
 	ws2.SetBusy(true)
-	if m.chipLabel(1, ws2) != " 2 ● " {
+	if m.chipLabel(1, ws2) != " 2 ◉ " {
 		t.Fatalf("%q", m.chipLabel(1, ws2))
 	}
 	m.retargetChips()
@@ -34,7 +34,7 @@ func TestChipsShowNumbersAlone(t *testing.T) {
 		return []Segment{{Text: "model", Style: Cool}, {Text: "", Style: Dim}, {Text: "ctx 12%", Style: Warm}}, []Segment{{Text: "1m02s", Style: Dim}}
 	})
 	row := ansi.Strip(strings.Split(m.View().Content, "\n")[0])
-	if !strings.HasPrefix(row, "   1  2 ● ×  + ") || strings.Contains(row, "alpha") || !strings.Contains(row, "model · ctx 12% · 1m02s   ≡ commands  ") || strings.Contains(row, "alt+") {
+	if !strings.HasPrefix(row, "   1▐ 2 ◉ ✕ ▌+ ") || strings.Contains(row, "alpha") || !strings.Contains(row, "model ∷ ctx 12% ∷ 1m02s   ≣ commands  ") || strings.Contains(row, "alt+") {
 		t.Fatalf("%q", row)
 	}
 	for _, s := range []SegmentStyle{Plain, Dim, Cool, Warm, Hot, Good, Bad} {
@@ -90,8 +90,12 @@ func TestLayoutPersistence(t *testing.T) {
 	f.float = true
 	m.OpenHere(f)
 	l := m.Layout()
-	if len(l.Open) != 2 || l.Open[0] != "beta" || l.Open[1] != "gamma" || l.Ratio != defaultRatio || l.Theme != "blackwall" || l.Motion == nil || *l.Motion != 0 {
+	if len(l.Workspaces) != 1 || l.Ratio != defaultRatio || l.Theme != "blackwall" || l.Motion == nil || *l.Motion != 0 {
 		t.Fatalf("%+v", l)
+	}
+	ws := l.Workspaces[0]
+	if ws.ID != "ws1" || len(ws.Tiles) != 3 || ws.Tiles[1].Key != "beta" || ws.Tiles[2].Key != "gamma" || len(ws.Floats) != 1 || ws.Floats[0].Key != "dialog" || ws.Focus != "dialog" {
+		t.Fatalf("%+v", ws)
 	}
 	half := 0.5
 	m.Restore(Layout{Ratio: 0.4, Motion: &half})

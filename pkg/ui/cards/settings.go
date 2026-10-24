@@ -42,20 +42,20 @@ func newSettings(env *Env) *settings {
 	}
 	s := &settings{env: env}
 	s.fields = []*field{
-		{key: "mode", label: "mode", kind: choiceField, choices: modes, help: "How tool calls are approved, default asks, acceptEdits allows file edits, plan only reads and bypassPermissions allows everything"},
-		{key: "max_tokens", label: "max_tokens", kind: numberField, integer: true, optional: true, lo: 1024, step: 1024, start: harness.DefaultMaxTokens, unit: tokens, help: "Output tokens one model turn may produce, unset sends " + render.Tokens(harness.DefaultMaxTokens)},
-		{key: "max_rounds", label: "max_rounds", kind: numberField, integer: true, optional: true, lo: 1, hi: 500, step: 1, start: 50, help: "Model turns one run may take before it stops, unset for no limit"},
-		{key: "temperature", label: "temperature", kind: numberField, optional: true, lo: 0, hi: 2, step: 0.05, start: 1, help: "Sampling temperature sent with every turn, unset leaves it to the model"},
+		{key: "mode", label: "mode", kind: choiceField, choices: modes, help: "default asks, acceptEdits allows file edits, plan only reads, bypassPermissions allows everything"},
+		{key: "max_tokens", label: "max_tokens", kind: numberField, integer: true, optional: true, lo: 1024, step: 1024, start: harness.DefaultMaxTokens, unit: tokens, help: "Output tokens per model turn, unset sends " + render.Tokens(harness.DefaultMaxTokens)},
+		{key: "max_rounds", label: "max_rounds", kind: numberField, integer: true, optional: true, lo: 1, hi: 500, step: 1, start: 50, help: "Model turns one prompt may take, unset for no limit"},
+		{key: "temperature", label: "temperature", kind: numberField, optional: true, lo: 0, hi: 2, step: 0.05, start: 1, help: "Sampling temperature, unset leaves it to the model"},
 		{key: "compact_threshold", label: "compact_threshold", kind: numberField, integer: true, optional: true, lo: 1000, step: 1000, unit: tokens, help: "Context tokens at which old turns are summarized, unset never compacts"},
-		{key: "theme", label: "theme", kind: choiceField, choices: theme.Names(), help: "Palette of the whole desk"},
-		{key: "motion", label: "motion", kind: numberField, lo: 0, hi: 1, step: 0.05, start: 1, help: "Animation scale, 0 snaps every move into place and 1 springs fully"},
-		{key: "cascade", label: "cascade", kind: choiceField, choices: []string{"true", "false"}, help: "Flowing comet along the border of the focused card"},
+		{key: "theme", label: "theme", kind: choiceField, choices: theme.Names(), help: "Color palette"},
+		{key: "motion", label: "motion", kind: numberField, lo: 0, hi: 1, step: 0.05, start: 1, help: "Animation scale, 0 snaps and 1 springs"},
+		{key: "cascade", label: "cascade", kind: choiceField, choices: []string{"true", "false"}, help: "Light sweep along the focused border"},
 	}
 	return s
 }
 
 func (s *settings) Title() string    { return "app" }
-func (s *settings) Glyph() string    { return "◐" }
+func (s *settings) Glyph() string    { return s.env.Theme.Glyphs.Settings }
 func (s *settings) Key() string      { return "config:app" }
 func (s *settings) Init() tea.Cmd    { return nil }
 func (s *settings) Selectable() bool { return true }
@@ -71,8 +71,8 @@ func (s *settings) Contexts() []string {
 // Values and ranges as the app and the model on the endpoint stand, the one being typed left alone
 func (s *settings) sync() {
 	values := map[string]string{}
-	if s.env.Knobs != nil {
-		values = s.env.Knobs()
+	if s.env.Settings != nil {
+		values = s.env.Settings()
 	}
 	if s.env.Mode != nil {
 		values["mode"] = string(s.env.Mode.Mode())
@@ -108,7 +108,7 @@ func (s *settings) current() *field { return s.fields[min(max(s.sel, 0), len(s.f
 // Saves the value of a setting quietly, the row itself showing the change
 func (s *settings) apply(f *field) tea.Cmd {
 	key, value := f.key, strings.TrimSpace(f.value)
-	return func() tea.Msg { return KnobMsg{Key: key, Value: value, Quiet: true} }
+	return func() tea.Msg { return SettingMsg{Key: key, Value: value, Quiet: true} }
 }
 
 // Steps the setting under the cursor and saves it
@@ -339,10 +339,7 @@ func (s *settings) rows(w, h int) []string {
 		}
 		gutter, st := "   ", lipgloss.NewStyle().Foreground(t.TextDim)
 		if i == s.sel {
-			gutter = lipgloss.NewStyle().Foreground(t.Ice).Render(" ▸ ")
-			if t.Plain {
-				gutter = " > "
-			}
+			gutter = lipgloss.NewStyle().Foreground(t.Ice).Render(" " + t.Glyphs.Cursor + " ")
 			st = lipgloss.NewStyle().Foreground(t.Ice).Bold(true)
 		}
 		top := len(lines)
@@ -352,7 +349,7 @@ func (s *settings) rows(w, h int) []string {
 			if r == 0 {
 				label = gutter + st.Render(f.label)
 			}
-			lines = append(lines, render.Fit(label, lw)+row)
+			lines = append(lines, render.Fit(label, lw, t)+row)
 		}
 		for _, hh := range marks[i] {
 			s.hits = append(s.hits, formHit{y: top + hh.row, x0: lw + hh.x0, x1: lw + hh.x1, field: f, hit: hh})

@@ -295,7 +295,7 @@ func TestRetryAfterAndBackoff(t *testing.T) {
 type extraProtocol struct{ lineProtocol }
 
 func (extraProtocol) Encode(req protocol.Request) (protocol.Call, error) {
-	body, err := protocol.MarshalBody(map[string]any{"model": req.Model, "knobs": map[string]any{"a": 1}}, req.Extra)
+	body, err := protocol.MarshalBody(map[string]any{"model": req.Model, "options": map[string]any{"a": 1}}, req.Extra)
 	if err != nil {
 		return protocol.Call{}, err
 	}
@@ -310,21 +310,21 @@ func TestProviderExtrasMergeBeneathTheRequest(t *testing.T) {
 		io.WriteString(w, "ok")
 	}))
 	defer srv.Close()
-	extra := map[string]json.RawMessage{"knobs": json.RawMessage(`{"b":2,"c":3}`), "temperature": json.RawMessage(`0.1`)}
+	extra := map[string]json.RawMessage{"options": json.RawMessage(`{"b":2,"c":3}`), "temperature": json.RawMessage(`0.1`)}
 	p := &Provider{Name: "x", Protocol: extraProtocol{}, BaseURL: srv.URL, Extra: extra}
 	if _, err := p.Complete(context.Background(), protocol.Request{Model: "m"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Complete(context.Background(), protocol.Request{Model: "m", Extra: map[string]json.RawMessage{"knobs": json.RawMessage(`{"c":9}`), "top_p": json.RawMessage(`1`)}}); err != nil {
+	if _, err := p.Complete(context.Background(), protocol.Request{Model: "m", Extra: map[string]json.RawMessage{"options": json.RawMessage(`{"c":9}`), "top_p": json.RawMessage(`1`)}}); err != nil {
 		t.Fatal(err)
 	}
-	if bodies[0] != `{"knobs":{"a":1,"b":2,"c":3},"model":"m","temperature":0.1}` {
+	if bodies[0] != `{"model":"m","options":{"a":1,"b":2,"c":3},"temperature":0.1}` {
 		t.Fatalf("%s", bodies[0])
 	}
-	if bodies[1] != `{"knobs":{"a":1,"b":2,"c":9},"model":"m","temperature":0.1,"top_p":1}` {
+	if bodies[1] != `{"model":"m","options":{"a":1,"b":2,"c":9},"temperature":0.1,"top_p":1}` {
 		t.Fatalf("request extras must win over provider extras: %s", bodies[1])
 	}
-	if string(extra["knobs"]) != `{"b":2,"c":3}` {
+	if string(extra["options"]) != `{"b":2,"c":3}` {
 		t.Fatal("provider extras must not be mutated by a request")
 	}
 }

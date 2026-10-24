@@ -30,8 +30,6 @@ type Telemetry struct {
 	w, h    int
 }
 
-var blocks = []rune("▁▂▃▄▅▆▇█")
-
 func NewTelemetry(env *Env) *Telemetry {
 	t := &Telemetry{env: env}
 	if env.Meter != nil {
@@ -41,7 +39,7 @@ func NewTelemetry(env *Env) *Telemetry {
 }
 
 func (c *Telemetry) Title() string { return "METRICS" }
-func (c *Telemetry) Glyph() string { return "◈" }
+func (c *Telemetry) Glyph() string { return c.env.Theme.Glyphs.Metrics }
 func (c *Telemetry) Key() string   { return "metrics" }
 func (c *Telemetry) Init() tea.Cmd { return nil }
 
@@ -74,13 +72,13 @@ func (c *Telemetry) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		case a.Err != nil && a.Wait > 0:
 			c.note(render.Warm(fmt.Sprintf("retry in %s after %d", render.Elapsed(a.Wait), a.Status), c.env.Theme))
 		case a.Err != nil:
-			c.note(render.Bad(render.Truncate(a.Err.Error(), 60), c.env.Theme))
+			c.note(render.Bad(render.Truncate(a.Err.Error(), 60, c.env.Theme), c.env.Theme))
 		default:
 			c.note(render.Dim(fmt.Sprintf("%d in %s", a.Status, render.Elapsed(a.Duration)), c.env.Theme))
 		}
 	case harness.FailoverMsg:
-		c.note(render.Bad(fmt.Sprintf("failover past model %d: %s", msg.From, render.Truncate(msg.Err.Error(), 40)), c.env.Theme))
-		return c, wm.Notify("failover: trying the next model", wm.Warn)
+		c.note(render.Bad(fmt.Sprintf("failover past model %d: %s", msg.From, render.Truncate(msg.Err.Error(), 40, c.env.Theme)), c.env.Theme))
+		return c, wm.Notify("failover", wm.Warn)
 	case harness.ServedMsg:
 		if msg.Index > 0 {
 			c.note(render.Warm(fmt.Sprintf("served by fallback model %d", msg.Index), c.env.Theme))
@@ -134,14 +132,11 @@ func (c *Telemetry) graph(w int) string {
 	for i := 0; i < w; i++ {
 		j := from + i
 		if j >= len(c.samples) {
-			sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render("·"))
+			sb.WriteString(" ")
 			continue
 		}
-		level := int(c.samples[j] / peak * float64(len(blocks)-1))
-		ch := string(blocks[min(max(level, 0), len(blocks)-1)])
-		if t.Plain {
-			ch = "|"
-		}
+		level := int(c.samples[j] / peak * float64(len(t.Glyphs.Ramp)-1))
+		ch := string(t.Glyphs.Ramp[min(max(level, 0), len(t.Glyphs.Ramp)-1)])
 		sb.WriteString(lipgloss.NewStyle().Foreground(shades[i]).Render(ch))
 	}
 	return sb.String()
@@ -166,7 +161,7 @@ func (c *Telemetry) View(w, h int) string {
 	if s.Streaming {
 		head += " " + render.Cool("streaming", t)
 	}
-	lines = append(lines, render.Truncate(head, w))
+	lines = append(lines, render.Truncate(head, w, t))
 	limit := s.ContextLimit
 	if s.Threshold > 0 && (limit == 0 || s.Threshold < limit) {
 		limit = s.Threshold
@@ -181,17 +176,20 @@ func (c *Telemetry) View(w, h int) string {
 	} else {
 		lines = append(lines, render.KV("context", render.Tokens(s.Context), t))
 	}
-	tps := "—"
+	tps := t.Glyphs.None
 	if s.TokensPerSecond > 0 {
 		tps = fmt.Sprintf("%.0f tok/s", s.TokensPerSecond)
 	}
-	row := []string{render.KV("rate", tps, t), render.KV("cache", render.Percent(s.CacheRatio), t), render.KV("cost", render.Money(s.Cost), t)}
-	lines = append(lines, render.Truncate(strings.Join(row, "  "), w))
+	row := []string{render.KV("rate", tps, t), render.KV("cache", render.Percent(s.CacheRatio), t)}
+	if s.Priced || s.Cost > 0 {
+		row = append(row, render.KV("cost", render.Money(s.Cost), t))
+	}
+	lines = append(lines, render.Truncate(strings.Join(row, "  "), w, t))
 	if h > 4 {
 		lines = append(lines, c.graph(w))
 	}
 	u := s.Usage
-	lines = append(lines, render.Truncate(render.KV("in", render.Tokens(u.Input), t)+"  "+render.KV("out", render.Tokens(u.Output), t)+"  "+render.KV("cached", render.Tokens(u.CacheRead), t)+"  "+render.KV("written", render.Tokens(u.CacheWrite), t), w))
+	lines = append(lines, render.Truncate(render.KV("in", render.Tokens(u.Input), t)+"  "+render.KV("out", render.Tokens(u.Output), t)+"  "+render.KV("cached", render.Tokens(u.CacheRead), t)+"  "+render.KV("written", render.Tokens(u.CacheWrite), t), w, t))
 	lat := render.KV("latency", render.Elapsed(s.LastLatency), t)
 	if s.AvgLatency > 0 {
 		lat += render.Dim(" avg "+render.Elapsed(s.AvgLatency), t)
@@ -199,7 +197,7 @@ func (c *Telemetry) View(w, h int) string {
 	if s.FirstToken > 0 {
 		lat += render.Dim(" first "+render.Elapsed(s.FirstToken), t)
 	}
-	lines = append(lines, render.Truncate(lat, w))
+	lines = append(lines, render.Truncate(lat, w, t))
 	reqs := render.KV("requests", fmt.Sprint(s.Requests), t)
 	if s.Retries > 0 {
 		reqs += "  " + render.Warm(fmt.Sprintf("%d retries", s.Retries), t)
@@ -211,9 +209,9 @@ func (c *Telemetry) View(w, h int) string {
 		reqs += "  " + render.Bad(fmt.Sprintf("%d failovers", s.Failovers), t)
 	}
 	if s.LastRequestID != "" {
-		reqs += "  " + render.Dim(render.Truncate(s.LastRequestID, 24), t)
+		reqs += "  " + render.Dim(render.Truncate(s.LastRequestID, 24, t), t)
 	}
-	lines = append(lines, render.Truncate(reqs, w))
+	lines = append(lines, render.Truncate(reqs, w, t))
 	if s.RateLimit.Known() {
 		rl := s.RateLimit
 		var parts []string
@@ -232,14 +230,14 @@ func (c *Telemetry) View(w, h int) string {
 		if rl.Reset > 0 {
 			parts = append(parts, "reset "+render.Elapsed(rl.Reset))
 		}
-		lines = append(lines, render.Truncate(render.KV("limits", strings.Join(parts, " "), t), w))
+		lines = append(lines, render.Truncate(render.KV("limits", strings.Join(parts, " "), t), w, t))
 	}
 	room := h - len(lines)
 	if room > 1 && len(c.events) > 0 {
-		lines = append(lines, render.Dim(strings.Repeat("┄", min(w, 30)), t))
+		lines = append(lines, render.Divider(min(w, 30), t))
 		from := max(0, len(c.events)-(room-1))
 		for _, e := range c.events[from:] {
-			lines = append(lines, render.Truncate(e, w))
+			lines = append(lines, render.Truncate(e, w, t))
 		}
 	}
 	if len(lines) > h {

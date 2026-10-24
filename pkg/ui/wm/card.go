@@ -1,7 +1,13 @@
 // Tiling window manager for terminal cards with workspaces, floating dialogs, a command palette and spring motion
 package wm
 
-import tea "charm.land/bubbletea/v2"
+import (
+	"encoding/json"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/ui/theme"
+)
 
 // Panel the manager places, frames and feeds messages
 type Card interface {
@@ -66,6 +72,17 @@ type Holder interface {
 	Holds(Card) bool
 }
 
+// Card that moves on its own, given scaled seconds or zero to jump to rest, answering whether its view changed
+type Animator interface {
+	Animate(dt float64) bool
+}
+
+// Card that keeps state between runs, handed back on the next start what it reported
+type Stateful interface {
+	State() any
+	SetState(json.RawMessage) error
+}
+
 // Sent to a card when it gains or loses the input focus
 type FocusMsg struct {
 	Focused bool
@@ -79,11 +96,12 @@ func keyOf(c Card) string {
 	return c.Title()
 }
 
-func glyphOf(c Card) string {
+// Glyph a card names for itself, the theme card mark when it names none
+func glyphOf(c Card, t theme.Theme) string {
 	if g, ok := c.(Glypher); ok {
 		return g.Glyph()
 	}
-	return "▪"
+	return t.Glyphs.Card
 }
 
 func closable(c Card) bool {

@@ -421,24 +421,24 @@ func (c Config) SystemPrompt() (string, error) {
 // Reads a duration given in seconds
 func seconds(n int) time.Duration { return time.Duration(n) * time.Second }
 
-// Parses a numeric or bare value for a knob override such as max_tokens=4096
-func ParseKnob(s string) (string, string, error) {
+// Parses a numeric or bare value for a setting override such as max_tokens=4096
+func ParseSetting(s string) (string, string, error) {
 	k, v, ok := strings.Cut(s, "=")
 	if !ok || k == "" || v == "" {
-		return "", "", fmt.Errorf("expected KNOB=VALUE, got %q", s)
+		return "", "", fmt.Errorf("expected KEY=VALUE, got %q", s)
 	}
 	return k, v, nil
 }
 
-// Applies a KNOB=VALUE override to the configuration, an empty value unsetting the knob
-func (c *Config) SetKnob(key, value string) error {
-	_, err := c.setKnob(key, value)
+// Applies a KEY=VALUE override to the configuration, an empty value unsetting the setting
+func (c *Config) Set(key, value string) error {
+	_, err := c.settingField(key, value)
 	return err
 }
 
-// Applies a knob and returns the field it fills in a configuration file, an empty value removing the field
-func (c *Config) setKnob(key, value string) (Field, error) {
-	path, err := knobPath(key)
+// Applies a setting and returns the field it fills in a configuration file, an empty value removing the field
+func (c *Config) settingField(key, value string) (Field, error) {
+	path, err := settingPath(key)
 	if err != nil {
 		return Field{}, err
 	}
@@ -513,8 +513,8 @@ func (c *Config) setKnob(key, value string) (Field, error) {
 	return Field{Path: path, Value: raw}, nil
 }
 
-// Path of the field a knob fills in a configuration file
-func knobPath(key string) ([]string, error) {
+// Path of the field a setting fills in a configuration file
+func settingPath(key string) ([]string, error) {
 	switch key {
 	case "max_tokens", "max_rounds", "temperature", "mode":
 		return []string{key}, nil
@@ -526,10 +526,10 @@ func knobPath(key string) ([]string, error) {
 	if name, ok := strings.CutPrefix(key, "extra."); ok && name != "" {
 		return []string{"extra", name}, nil
 	}
-	return nil, fmt.Errorf("unknown knob %q", key)
+	return nil, fmt.Errorf("unknown setting %q", key)
 }
 
-// Clears the value a knob holds so its default applies
+// Clears the value a setting holds so its default applies
 func (c *Config) unset(key string) {
 	switch key {
 	case "max_tokens":

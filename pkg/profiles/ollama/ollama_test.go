@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-func TestProfileModelsAndKnobs(t *testing.T) {
+func TestProfileModelsAndOptions(t *testing.T) {
 	p, ok := profiles.Lookup(Name)
 	if !ok || p.Vendor != Vendor || p.Auth != profiles.AuthNone || p.BaseURL != Host(p.BaseURL) {
 		t.Fatalf("%+v %v", p, ok)

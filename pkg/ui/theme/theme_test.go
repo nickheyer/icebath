@@ -2,7 +2,10 @@ package theme
 
 import (
 	"image/color"
+	"reflect"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func rgb(c color.Color) (uint8, uint8, uint8) {
@@ -53,14 +56,14 @@ func TestVariantsAndStyles(t *testing.T) {
 	}
 	for _, n := range names {
 		th, ok := Named(n)
-		if !ok || th.Name != n || th.Bg == nil || th.Text == nil || len(th.Glow) == 0 {
+		if !ok || th.Name != n || th.Bg == nil || th.Text == nil || len(th.Ring) == 0 {
 			t.Fatalf("%s %+v", n, th)
 		}
 	}
 	if _, ok := Named("nope"); ok {
 		t.Fatal("unknown theme named")
 	}
-	if !Plain().Plain || Light().Plain || Contrast().Shadow != 0 {
+	if !Plain().Plain || Light().Plain || Contrast().Plain {
 		t.Fatal("variant traits")
 	}
 	th, err := (Style{Palette: "light", Border: "double", Motion: 0.5, Density: "compact"}).Resolve()
@@ -79,7 +82,49 @@ func TestVariantsAndStyles(t *testing.T) {
 			t.Fatalf("%+v accepted", bad)
 		}
 	}
-	if len(Borders()) != 7 {
+	if len(Borders()) != 8 || Borders()[4] != "icebath" {
 		t.Fatalf("%v", Borders())
+	}
+}
+
+func TestGlyphSetsAreCompleteAndSingleCell(t *testing.T) {
+	for _, g := range []Glyphs{IcebathGlyphs(), ASCIIGlyphs()} {
+		v := reflect.ValueOf(g)
+		for i := range v.NumField() {
+			f := v.Field(i)
+			name := v.Type().Field(i).Name
+			switch f.Kind() {
+			case reflect.String:
+				if f.String() == "" {
+					t.Fatalf("%s is empty", name)
+				}
+				if name != "Ellipsis" && ansi.StringWidth(f.String()) != 1 {
+					t.Fatalf("%s %q is not one cell", name, f.String())
+				}
+			case reflect.Slice:
+				if f.Len() == 0 {
+					t.Fatalf("%s is empty", name)
+				}
+			}
+		}
+	}
+	if len(IcebathGlyphs().Ramp) != 8 || len(ASCIIGlyphs().Ramp) != 8 {
+		t.Fatal("ramps hold eight levels")
+	}
+	for chord, sym := range IcebathGlyphs().Chords {
+		if ansi.StringWidth(sym) != 1 {
+			t.Fatalf("chord %s symbol %q is not one cell", chord, sym)
+		}
+	}
+	if len(ASCIIGlyphs().Chords) != 0 {
+		t.Fatal("the ascii set spells chords out")
+	}
+	for _, r := range ASCIIGlyphs().Churn {
+		if r > 0x7f {
+			t.Fatalf("ascii churn holds %q", r)
+		}
+	}
+	if Blackwall().Glyphs.Session != "❆" || Plain().Glyphs.Session != "~" || Blackwall().Border.TopLeft != "┍" {
+		t.Fatal("themes carry their glyph set and border")
 	}
 }

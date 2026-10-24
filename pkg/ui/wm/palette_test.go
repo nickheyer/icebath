@@ -218,7 +218,7 @@ func TestTabsCycleClickAndShift(t *testing.T) {
 	}
 	g.Select(3)
 	narrow := ansi.Strip(strings.Split(g.View(14, 5), "\n")[0])
-	if !strings.HasPrefix(narrow, "‹ ") || strings.HasPrefix(narrow, "‹  ") || !strings.Contains(narrow, "cur") || g.first == 0 {
+	if !strings.HasPrefix(narrow, "❮ ") || strings.HasPrefix(narrow, "❮  ") || !strings.Contains(narrow, "cur") || g.first == 0 {
 		t.Fatalf("a narrow strip scrolls to keep the active tab in view %q", narrow)
 	}
 	g.Update(tea.MouseClickMsg{X: g.spans[0] + 1, Y: 0, Button: tea.MouseLeft})
@@ -231,7 +231,7 @@ func TestTabsCycleClickAndShift(t *testing.T) {
 	}
 	g.SetTheme(theme.Blackwall())
 	g.Select(0)
-	if wide := ansi.Strip(strings.Split(g.View(60, 5), "\n")[0]); strings.HasPrefix(wide, "‹") || g.first != 0 {
+	if wide := ansi.Strip(strings.Split(g.View(60, 5), "\n")[0]); strings.HasPrefix(wide, "❮") || g.first != 0 {
 		t.Fatalf("the strip scrolls back once the active tab is at the left %q", wide)
 	}
 	g.Select(2)

@@ -97,8 +97,8 @@ func TestBarButtonAndSegmentsAfterTheChips(t *testing.T) {
 	m.AddWorkspace("1", newStub("a"))
 	m.SetBar(func() ([]Segment, []Segment) { return []Segment{{Text: "model", Style: Cool}}, nil })
 	row := screenRow(m, 0)
-	plus, model, menu := strings.Index(row, " + "), strings.Index(row, "model"), strings.Index(row, "≡ commands")
-	if plus != m.chipsEnd() || model != menu-statusGap-1-len("model") || !strings.HasSuffix(strings.TrimRight(row, " "), "≡ commands") || !strings.HasSuffix(row, "  ") {
+	plus, model, menu := ansi.StringWidth(row[:strings.Index(row, "▌+ ")]), strings.Index(row, "model"), strings.Index(row, "≣ commands")
+	if plus != m.chipsEnd() || model != menu-statusGap-1-len("model") || !strings.HasSuffix(strings.TrimRight(row, " "), "≣ commands") || !strings.HasSuffix(row, "  ") {
 		t.Fatalf("%q", row)
 	}
 	wide := make([]Segment, 0, 20)
@@ -107,8 +107,8 @@ func TestBarButtonAndSegmentsAfterTheChips(t *testing.T) {
 	}
 	m.SetBar(func() ([]Segment, []Segment) { return wide, nil })
 	row = screenRow(m, 0)
-	cut := strings.Index(row, "…")
-	if cut < m.chipsEnd()+len(newChip)+statusGap || !strings.Contains(row, "segment   ≡ commands") {
+	cut := strings.Index(row, "⋯")
+	if cut < m.chipsEnd()+len(newChip)+statusGap || !strings.Contains(row, "segment   ≣ commands") {
 		t.Fatalf("a crowded status is cut from the left %q", row)
 	}
 	m.SetTheme(theme.Plain())
@@ -122,7 +122,7 @@ func TestCloseMarksOnFrames(t *testing.T) {
 	ws := m.Active()
 	ea, eb := ws.holds(a), ws.holds(b)
 	top := ea.box.Y + barHeight
-	if cellAt(screenRow(m, top), closeX(ea.box)) != '×' || cellAt(screenRow(m, eb.box.Y+barHeight), closeX(eb.box)) != '×' {
+	if cellAt(screenRow(m, top), closeX(ea.box)) != '✕' || cellAt(screenRow(m, eb.box.Y+barHeight), closeX(eb.box)) != '✕' {
 		t.Fatal("closable frames carry a close mark")
 	}
 	if regionOf(eb.box, closeX(eb.box), eb.box.Y) != rClose || regionOf(eb.box, closeX(eb.box)-1, eb.box.Y) != rTitle {
@@ -136,7 +136,7 @@ func TestCloseMarksOnFrames(t *testing.T) {
 	p := pinned{newStub("pin")}
 	held.AddWorkspace("1", p)
 	ep := held.Active().holds(p)
-	if cellAt(screenRow(held, ep.box.Y+barHeight), closeX(ep.box)) == '×' {
+	if cellAt(screenRow(held, ep.box.Y+barHeight), closeX(ep.box)) == '✕' {
 		t.Fatal("a card that cannot close has no mark")
 	}
 	held.Update(click(closeX(ep.box), ep.box.Y+barHeight, tea.MouseLeft))
@@ -151,15 +151,15 @@ func TestHoverGripShowsWhatCanBeDragged(t *testing.T) {
 	ea := ws.holds(a)
 	top := ea.box.Y + barHeight
 	m.Update(move(closeX(ea.box), top, tea.MouseNone))
-	if m.hoverEdge != rClose || !m.hoverGrip || !strings.Contains(screenRow(m, top), "✥") {
+	if m.hoverEdge != rClose || !m.hoverGrip || !strings.Contains(screenRow(m, top), "⊹") {
 		t.Fatalf("hover on the mark %d %v", m.hoverEdge, m.hoverGrip)
 	}
 	m.Update(move(ea.box.X+5, top, tea.MouseNone))
-	if m.hoverEdge != rTitle || !m.hoverGrip || !strings.Contains(screenRow(m, top), "✥") {
+	if m.hoverEdge != rTitle || !m.hoverGrip || !strings.Contains(screenRow(m, top), "⊹") {
 		t.Fatalf("hover on the title %d %v", m.hoverEdge, m.hoverGrip)
 	}
 	m.Update(move(ea.box.X, top+5, tea.MouseNone))
-	if m.hoverEdge != rLeft || m.hoverGrip || strings.Contains(screenRow(m, top), "✥") {
+	if m.hoverEdge != rLeft || m.hoverGrip || strings.Contains(screenRow(m, top), "⊹") {
 		t.Fatalf("the stage edge cannot be dragged %d %v", m.hoverEdge, m.hoverGrip)
 	}
 	m.Update(move(ea.box.X+ea.box.W-1, top+5, tea.MouseNone))
@@ -201,5 +201,22 @@ func TestLegacyShiftedMoveKeys(t *testing.T) {
 	m.Update(key('H', tea.ModAlt))
 	if ws.Master() != a {
 		t.Fatal("alt+H moves it back left")
+	}
+}
+
+func TestLongTitlesEndInAnEllipsisBeforeTheLine(t *testing.T) {
+	m := still(t, 60, 24)
+	long := newStub(strings.Repeat("abcdefghij", 8))
+	m.AddWorkspace("1", long)
+	m.OpenHere(newStub("b"))
+	e := m.Active().holds(long)
+	row := screenRow(m, e.box.Y+barHeight)
+	edge := []rune(row)[e.box.X : e.box.X+e.box.W]
+	text := string(edge)
+	if !strings.Contains(text, "⋯ ━") || strings.Contains(text, strings.Repeat("abcdefghij", 8)) {
+		t.Fatalf("a title wider than its edge is cut with an ellipsis and a space before the line, got %q", text)
+	}
+	if !strings.HasSuffix(text, "✕━┑") {
+		t.Fatalf("the close mark keeps its place after a cut title, got %q", text)
 	}
 }

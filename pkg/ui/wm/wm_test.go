@@ -1,6 +1,7 @@
 package wm
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -8,6 +9,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
 func TestAddWorkspaceFocusesOnlyTheFirstMaster(t *testing.T) {
@@ -299,8 +302,8 @@ func TestAttentionAndUrgency(t *testing.T) {
 	m, a, b, _ := threeTiles(t, WithMotion(1))
 	settle(t, m)
 	m.Attention(a, Pulse)
-	if m.UrgencyOf(a) != Calm || m.Active().holds(a).rect.X.Vel == 0 {
-		t.Fatal("attention on the focused card nudges it")
+	if m.UrgencyOf(a) != Calm || m.Active().holds(a).shake.Vel == 0 {
+		t.Fatal("attention on the focused card rattles it")
 	}
 	m.Attention(b, Alarm)
 	if m.UrgencyOf(b) != Alarm {
@@ -1090,7 +1093,7 @@ func TestLongTrailersKeepTheirEnd(t *testing.T) {
 	m.AddWorkspace("1", pathed{newStub("cfg")})
 	e := m.Active().tiles[0]
 	top := ansi.Strip(strings.Split(m.View().Content, "\n")[e.box.Y+barHeight])
-	if !strings.Contains(top, "…") || !strings.Contains(top, "icebath/keybinds.json ") || !strings.Contains(top, "cfg") {
+	if !strings.Contains(top, "⋯") || !strings.Contains(top, "icebath/keybinds.json ") || !strings.Contains(top, "cfg") {
 		t.Fatalf("a long trailer is cut from the left beside the title %q", top)
 	}
 	if w := ansi.StringWidth(top); w != 60 {
@@ -1109,5 +1112,146 @@ func TestRepaintRedrawsCardsWhoseStateChangedOutsideThem(t *testing.T) {
 	m.Repaint()
 	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "alpha changed") || !strings.Contains(view, "beta changed") {
 		t.Fatal("repaint draws every card again")
+	}
+}
+
+// Stub that keeps a note between runs
+type noted struct {
+	*stub
+	note string
+}
+
+type noteState struct {
+	Note string `json:"note"`
+}
+
+func (n *noted) State() any { return noteState{Note: n.note} }
+
+func (n *noted) SetState(raw json.RawMessage) error {
+	var st noteState
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return err
+	}
+	n.note = st.Note
+	return nil
+}
+
+func (n *noted) Update(msg tea.Msg) (Card, tea.Cmd) {
+	n.stub.Update(msg)
+	return n, nil
+}
+
+func TestWorkspaceLayoutRoundTrip(t *testing.T) {
+	m := still(t, 120, 40)
+	a, b, c := newStub("alpha"), newStub("beta"), newStub("gamma")
+	notes := &noted{stub: newStub("notes"), note: "kept"}
+	f := newStub("dialog")
+	f.float = true
+	m.AddWorkspace("ws1", a)
+	m.OpenHere(b)
+	m.OpenHere(c)
+	m.OpenHere(notes)
+	m.SetLayout(Dwindle)
+	m.Focus(b)
+	m.Resize(0.1)
+	m.FlipSplit()
+	m.OpenHere(f)
+	m.Move(Right)
+	m.Focus(c)
+	m.ToggleZoom()
+	m.remember("window.zoom")
+	l := m.Layout()
+	ws := l.Workspaces[0]
+	if len(l.Workspaces) != 1 || l.Active != 0 || l.Mode != "dwindle" || len(l.Recent) != 1 || ws.Tree == nil || ws.Zoom != "gamma" || ws.Focus != "gamma" || len(ws.Tiles) != 4 || len(ws.Floats) != 1 || string(ws.Cards["notes"]) != `{"note":"kept"}` {
+		t.Fatalf("%+v", l)
+	}
+	fresh := still(t, 120, 40)
+	a2 := newStub("alpha")
+	ws2, _ := fresh.AddWorkspace("ws1", a2)
+	fresh.Restore(l)
+	made := map[string]Card{}
+	resolve := func(key string) Card {
+		var c Card
+		switch key {
+		case "beta", "gamma":
+			c = newStub(key)
+		case "dialog":
+			s := newStub(key)
+			s.float = true
+			c = s
+		case "notes":
+			c = &noted{stub: newStub("notes")}
+		default:
+			return nil
+		}
+		made[key] = c
+		return c
+	}
+	fresh.RestoreWorkspace(ws2, ws, resolve)
+	fresh.SetSize(120, 40)
+	before, _ := json.Marshal(l)
+	after, _ := json.Marshal(fresh.Layout())
+	if string(before) != string(after) {
+		t.Fatalf("the layout comes back as saved\n%s\n%s", before, after)
+	}
+	if ws2.Zoomed() != made["gamma"] || ws2.Focused() != made["gamma"] || ws2.Mode() != Dwindle || made["notes"].(*noted).note != "kept" || len(ws2.floats) != 1 || ws2.floats[0].card != made["dialog"] {
+		t.Fatal("zoom, focus, mode, float and card state come back")
+	}
+	if ws2.tree == nil || len(ws2.tree.leaves(nil)) != 4 || ws2.tree.find(ws2.holds(made["beta"])).parent.ratio == 0.5 {
+		t.Fatal("the split tree comes back with its ratios")
+	}
+	part := still(t, 120, 40)
+	a3 := newStub("alpha")
+	ws3, _ := part.AddWorkspace("ws1", a3)
+	part.AddWorkspace("ws2", newStub("beta"))
+	part.Switch(0)
+	part.RestoreWorkspace(ws3, ws, func(key string) Card {
+		if key == "gamma" {
+			return nil
+		}
+		return resolve(key)
+	})
+	if len(ws3.tiles) != 2 || ws3.Zoomed() != nil || ws3.Focused() != a3 || len(ws3.tree.leaves(nil)) != 2 || part.WorkspaceOf(part.spaces[1].tiles[0].card) != part.spaces[1] {
+		t.Fatalf("a missing card and one open elsewhere are left out, %d tiles", len(ws3.tiles))
+	}
+	if part.RestoreWorkspace(nil, ws, resolve) != nil || part.RestoreWorkspace(&Workspace{}, ws, resolve) != nil {
+		t.Fatal("a workspace the manager does not hold restores nothing")
+	}
+	bad := ws
+	bad.Cards = map[string]json.RawMessage{"notes": json.RawMessage(`{`)}
+	warn := still(t, 120, 40)
+	ws4, _ := warn.AddWorkspace("ws1", newStub("alpha"))
+	warn.RestoreWorkspace(ws4, bad, resolve)
+	if len(warn.Toasts()) != 1 {
+		t.Fatal("a card state that cannot be read toasts")
+	}
+}
+
+func TestTabsKeepTheActiveTab(t *testing.T) {
+	tabs := NewTabs(theme.Blackwall(), "CFG", "*", newStub("one"), newStub("two"), newStub("three"))
+	tabs.Select(2)
+	raw, err := json.Marshal(tabs.State())
+	if err != nil || string(raw) != `{"tab":"three"}` {
+		t.Fatalf("%s %v", raw, err)
+	}
+	again := NewTabs(theme.Blackwall(), "CFG", "*", newStub("one"), newStub("two"), newStub("three"))
+	if err := again.SetState(raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, i := again.Active(); i != 2 {
+		t.Fatalf("active %d", i)
+	}
+	if again.SetState(json.RawMessage(`{"tab":"nine"}`)) != nil {
+		t.Fatal("an unknown tab is no error")
+	}
+	if _, i := again.Active(); i != 2 {
+		t.Fatal("an unknown tab changes nothing")
+	}
+	if again.SetState(json.RawMessage(`{`)) == nil {
+		t.Fatal("a broken state is an error")
+	}
+	empty := NewTabs(theme.Blackwall(), "CFG", "*")
+	if raw, _ := json.Marshal(empty.State()); string(raw) != `{}` {
+		t.Fatalf("%s", raw)
 	}
 }

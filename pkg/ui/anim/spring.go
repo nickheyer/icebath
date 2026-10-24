@@ -16,6 +16,23 @@ const (
 	restVel        = 0.6
 )
 
+// Response and bounce of a spring, named for the motion it gives
+type Spring struct {
+	Frequency float64
+	Damping   float64
+}
+
+var (
+	// Chrome that keeps up with the hand, settled in a quarter second without overshoot
+	Snappy = Spring{Frequency: 18, Damping: 1}
+	// Layout moves that land with a hint of overshoot
+	Smooth = Spring{Frequency: DefaultFrequency, Damping: DefaultDamping}
+	// Fades and veils that ease in without a bounce
+	Gentle = Spring{Frequency: 10, Damping: 1}
+	// Refusals that swing a few times before resting
+	Rattle = Spring{Frequency: 36, Damping: 0.2}
+)
+
 // Scalar that eases toward its target with damped spring motion
 type Value struct {
 	Pos       float64
@@ -29,6 +46,16 @@ type Value struct {
 func NewValue(v float64) Value {
 	return Value{Pos: v, Target: v, Frequency: DefaultFrequency, Damping: DefaultDamping}
 }
+
+// Builds a resting scalar that moves with the spring
+func NewValueWith(v float64, s Spring) Value {
+	out := NewValue(v)
+	out.Use(s)
+	return out
+}
+
+// Switches the motion to the spring without disturbing the position
+func (v *Value) Use(s Spring) { v.Frequency, v.Damping = s.Frequency, s.Damping }
 
 // Retargets the motion while keeping the current position and velocity
 func (v *Value) Set(target float64) { v.Target = target }
@@ -96,14 +123,14 @@ func (r *Rect) Step(dt float64) bool {
 	return x || y || w || h
 }
 
-// Current box rounded to whole cells
+// Current box rounded to whole cells, the far edges rounded on their own so neither side jitters
 func (r Rect) Cells() (x, y, w, h int) {
-	return round(r.X.Pos), round(r.Y.Pos), max(0, round(r.W.Pos)), max(0, round(r.H.Pos))
+	return cells(r.X.Pos, r.Y.Pos, r.W.Pos, r.H.Pos)
 }
 
 // Destination box rounded to whole cells
 func (r Rect) Target() (x, y, w, h int) {
-	return round(r.X.Target), round(r.Y.Target), max(0, round(r.W.Target)), max(0, round(r.H.Target))
+	return cells(r.X.Target, r.Y.Target, r.W.Target, r.H.Target)
 }
 
 // Largest remaining gap between any edge and its target
@@ -112,6 +139,11 @@ func (r Rect) Distance() float64 {
 	d = math.Max(d, math.Abs(r.Y.Pos-r.Y.Target))
 	d = math.Max(d, math.Abs(r.W.Pos-r.W.Target))
 	return math.Max(d, math.Abs(r.H.Pos-r.H.Target))
+}
+
+func cells(x, y, w, h float64) (int, int, int, int) {
+	x0, y0 := round(x), round(y)
+	return x0, y0, max(0, round(x+w)-x0), max(0, round(y+h)-y0)
 }
 
 func round(f float64) int { return int(math.Round(f)) }

@@ -37,7 +37,7 @@ func NewSessions(env *Env) *Sessions {
 }
 
 func (s *Sessions) Title() string { return "SESSIONS" }
-func (s *Sessions) Glyph() string { return "⧉" }
+func (s *Sessions) Glyph() string { return s.env.Theme.Glyphs.Sessions }
 func (s *Sessions) Key() string   { return "sessions" }
 func (s *Sessions) Init() tea.Cmd { return nil }
 
@@ -240,9 +240,6 @@ func (s *Sessions) act(id string) tea.Cmd {
 		}
 	case "sessions.delete":
 		s.confirm = s.ids()
-	case "sessions.refresh":
-		s.Reload()
-		return wm.Notify(render.Count(len(s.all), "stored session"), wm.Info)
 	case "list.down", "list.up", "list.top", "list.bottom", "list.page.down", "list.page.up":
 		s.moveTo(listMove(id, s.sel, len(s.rows), page), false)
 	default:
@@ -261,7 +258,7 @@ func (s *Sessions) foot(w int) string {
 		if len(s.confirm) > 1 {
 			what = render.Count(len(s.confirm), "session")
 		}
-		return render.Fit(" "+render.Bad("delete "+what+"?", t)+" "+render.Dim(s.env.keyed("confirm.yes", "yes")+" · "+s.env.keyed("confirm.no", "no"), t), w)
+		return render.Fit(" "+render.Bad("delete "+what+"?", t)+" "+render.Dim(s.env.keyed("confirm.yes", "yes")+" "+t.Glyphs.Sep+" "+s.env.keyed("confirm.no", "no"), t), w, t)
 	}
 	if !s.bar.Shown() {
 		return ""
@@ -270,7 +267,7 @@ func (s *Sessions) foot(w int) string {
 	if s.bar.Query() != "" {
 		count = fmt.Sprintf("%d of %d", len(s.rows), len(s.all))
 	}
-	return s.bar.View(w, count, "filter by title, model or id", t)
+	return s.bar.View(w, count, "filter", t)
 }
 
 func (s *Sessions) View(w, h int) string {
@@ -278,7 +275,7 @@ func (s *Sessions) View(w, h int) string {
 	t := s.env.Theme
 	var lines []string
 	if s.err != nil {
-		lines = append(lines, render.Truncate(render.Bad(s.err.Error(), t), w))
+		lines = append(lines, render.Truncate(render.Bad(s.err.Error(), t), w, t))
 	}
 	s.top = len(lines)
 	foot := s.foot(w)
@@ -287,12 +284,11 @@ func (s *Sessions) View(w, h int) string {
 		room--
 	}
 	if len(s.rows) == 0 {
-		empty := "nothing stored"
+		empty := "no stored sessions"
 		if s.bar.Query() != "" {
-			empty = "no session matches"
+			empty = "no match"
 		}
-		lines = append(lines, "", render.Dim("  "+empty, t))
-		return footed(lines, foot, h)
+		return footed(append(lines, strings.Split(emptyView(w, room, empty, t), "\n")...), foot, h)
 	}
 	open := s.open()
 	cols := []render.Column{{Title: ""}, {Title: "UPDATED"}, {Title: "TITLE", Flex: 1}, {Title: "MODEL", Max: 24}, {Title: "MSGS", Right: true}, {Title: "TOKENS", Right: true}}
@@ -300,14 +296,14 @@ func (s *Sessions) View(w, h int) string {
 	for _, info := range s.rows {
 		mark := " "
 		if open[info.ID] {
-			mark = render.Cool("●", t)
+			mark = render.Cool(t.Glyphs.Live, t)
 		}
 		title := info.Title
 		if title == "" {
 			title = info.ID
 		}
 		if info.Parent != "" {
-			title += render.Dim(" ⑂", t)
+			title += render.Dim(" "+t.Glyphs.Fork, t)
 		}
 		if info.Error != "" {
 			title = render.Bad(info.ID+" "+info.Error, t)
@@ -342,5 +338,5 @@ func (s *Sessions) Hints() []wm.Hint {
 	case s.bar.Active():
 		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "move"}, {Action: "search.close"}}
 	}
-	return []wm.Hint{{Action: "filter.toggle"}, {Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "sessions.select.down", Pair: "sessions.select.up", Label: "select"}, {Action: "sessions.resume"}, {Action: "sessions.fork"}, {Action: "sessions.delete"}}
+	return []wm.Hint{{Action: "sessions.resume"}, {Action: "sessions.fork"}, {Action: "sessions.delete"}, {Action: "filter.toggle"}, {Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "sessions.select.down", Pair: "sessions.select.up", Label: "select"}}
 }

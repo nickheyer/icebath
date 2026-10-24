@@ -190,10 +190,16 @@ func (m *Model) motion_(mo tea.Mouse, sx, sy int) tea.Cmd {
 	if mo.Y < barHeight {
 		chipHot = m.chipPartAt(mo.X)
 	}
-	if hit == m.hover && reg == m.hoverEdge && hot == m.barHot && menu == m.menuHot && grip == m.hoverGrip && chipHot == m.chipHot {
+	hintHot := ""
+	if hit != nil && reg == rBottom {
+		hintHot = m.hintAt(hit, sx)
+	}
+	slid := grip && (reg == rLeft || reg == rRight || reg == rBottom) && (sx != m.hoverX || sy != m.hoverY)
+	m.hoverX, m.hoverY = sx, sy
+	if hit == m.hover && reg == m.hoverEdge && hot == m.barHot && menu == m.menuHot && grip == m.hoverGrip && chipHot == m.chipHot && hintHot == m.hintHot && !slid {
 		return nil
 	}
-	m.hover, m.hoverEdge, m.barHot, m.menuHot, m.hoverGrip, m.chipHot = hit, reg, hot, menu, grip, chipHot
+	m.hover, m.hoverEdge, m.barHot, m.menuHot, m.hoverGrip, m.chipHot, m.hintHot = hit, reg, hot, menu, grip, chipHot, hintHot
 	return m.wake()
 }
 
@@ -414,24 +420,46 @@ func (m *Model) ShowOverlay(c Card) tea.Cmd {
 	var cmds []tea.Cmd
 	if m.overlay != nil {
 		cmds = append(cmds, m.send(m.overlay, FocusMsg{}))
+		m.part(m.overlay)
 	}
 	m.letGo()
 	m.sel = nil
 	e := m.newEntry(c, nil)
 	m.overlay = e
+	m.veil.Set(1)
+	if m.motion == 0 {
+		m.veil.Snap()
+	}
 	m.placeOverlay()
 	cmds = append(cmds, c.Init(), m.send(e, FocusMsg{Focused: true}), m.wake())
 	return tea.Batch(cmds...)
 }
 
-// Drops the overlay and hands input back to the focused card
+// Drops the overlay and hands input back to the focused card, the sheet fading out behind the veil
 func (m *Model) Dismiss() tea.Cmd {
 	if m.overlay == nil {
 		return nil
 	}
 	e := m.overlay
 	m.overlay = nil
+	m.part(e)
+	m.veil.Set(0)
+	if m.motion == 0 {
+		m.veil.Snap()
+	}
 	return tea.Batch(m.send(e, FocusMsg{}), m.wake())
+}
+
+// Keeps a dropped overlay on screen while it shrinks away, no longer taking input
+func (m *Model) part(e *entry) {
+	if m.motion == 0 {
+		m.parting = nil
+		return
+	}
+	e.closing = true
+	e.open.Set(0)
+	m.aim(e)
+	m.parting = e
 }
 
 // Card shown above everything, nil when none is
@@ -441,6 +469,9 @@ func (m *Model) Overlay() Card {
 	}
 	return m.overlay.card
 }
+
+// Rows a palette sits below the top of the stage, clear of the title row of the cards under it
+const paletteDrop = 2
 
 // Sizes the overlay from its card and centers it, palettes sitting near the top
 func (m *Model) placeOverlay() {
@@ -453,8 +484,8 @@ func (m *Model) placeOverlay() {
 	y := -1
 	if p, ok := e.card.(*Palette); ok {
 		w = min(max(sw*3/5, 44), sw) - 2 - 2*m.padX
-		h = min(max(p.Rows(), 1), max(sh-4-2*m.padY, 1), 14)
-		y = 1
+		h = min(max(p.Rows(), 1), max(sh-2-paletteDrop-2*m.padY, 1), 14)
+		y = paletteDrop
 	}
 	if w <= 0 {
 		w = sw * 7 / 10

@@ -136,7 +136,7 @@ func (m *Model) handleIntent(in Intent) tea.Cmd {
 		if in.card == nil {
 			return nil
 		}
-		return m.Open(e.ws, in.card)
+		return m.OpenFrom(e.ws, in.card, e.frame())
 	case intentFloat:
 		return m.setFloat(e, in.on)
 	case intentZoom:

@@ -40,24 +40,29 @@ func (m *Model) contentRect(f Box) Box {
 	return Box{f.X + 1 + px, f.Y + 1 + py, f.W - 2 - 2*px, f.H - 2 - 2*py}
 }
 
-// Composites the bar, the stage and the overlay into a full screen view with mouse tracking
+// Composites the bar, the stage, the veil, the overlay and the toasts into a full screen view with mouse tracking
 func (m *Model) View() tea.View {
 	buf := m.frame()
 	buf.Fill(&uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: m.theme.Bg}})
 	m.paintBar(buf)
 	if m.leaving != nil {
-		m.paintWorkspace(buf, m.leaving, int(math.Round(m.leaving.shift.Pos)), false)
+		m.paintWorkspace(m.leaving, int(math.Round(m.leaving.shift.Pos)), false)
 	}
 	if ws := m.Active(); ws != nil {
-		m.paintWorkspace(buf, ws, int(math.Round(ws.shift.Pos)), true)
+		m.paintWorkspace(ws, int(math.Round(ws.shift.Pos)), true)
 	}
-	m.paintSelection(buf)
+	if m.veil.Pos > 0.005 {
+		m.paintBackdrop(m.veil.Pos)
+	}
+	if m.parting != nil {
+		m.paintBody(m.parting, 0, false, 0)
+	}
 	if m.overlay != nil {
 		m.placeOverlay()
-		m.paintBackdrop(buf)
-		m.paintEntry(buf, m.overlay, 0, true)
+		m.paintBody(m.overlay, 0, true, 0)
 	}
-	m.paintToasts(buf)
+	m.paintToasts()
+	m.paintSelection(buf)
 	v := tea.NewView(buf.Render())
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeAllMotion
@@ -71,196 +76,236 @@ func (m *Model) View() tea.View {
 	return v
 }
 
-// Draws the tiles then the floats of a workspace shifted by dx, the held card last
-func (m *Model) paintWorkspace(buf screen, ws *Workspace, dx int, shown bool) {
+// Writes a cell onto the stage blended over what is there by alpha, text beneath fading out under a blank
+func (m *Model) ink(x, y int, c uv.Cell, alpha float64) {
+	if x < 0 || y < barHeight || x >= m.width || y >= m.height {
+		return
+	}
+	if alpha >= 1 || m.theme.Plain {
+		m.buf.SetCell(x, y, &c)
+		return
+	}
+	t := m.theme
+	old := m.buf.CellAt(x, y)
+	oldBg, oldFg, keep := color.Color(t.Bg), color.Color(t.Text), false
+	if old != nil {
+		oldBg, oldFg = or(old.Style.Bg, t.Bg), or(old.Style.Fg, t.Text)
+		keep = old.Width > 0 && old.Content != " " && old.Content != ""
+	}
+	bg := theme.Mix(oldBg, or(c.Style.Bg, t.Bg), alpha)
+	if c.Content == " " || c.Content == "" {
+		if keep {
+			out := *old
+			out.Style.Bg, out.Style.Fg = bg, theme.Mix(oldFg, bg, alpha)
+			m.buf.SetCell(x, y, &out)
+			return
+		}
+		m.buf.SetCell(x, y, &uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: bg}})
+		return
+	}
+	c.Style.Bg, c.Style.Fg = bg, theme.Mix(bg, or(c.Style.Fg, t.Text), alpha)
+	m.buf.SetCell(x, y, &c)
+}
+
+// Scratch buffer at least w by h filled with the surface, where one card is composed before it is stamped
+func (m *Model) face(w, h int) screen {
+	if m.card.Buffer == nil || m.card.Width() < w || m.card.Height() < h {
+		cw, ch := w, h
+		if m.card.Buffer != nil {
+			cw, ch = max(cw, m.card.Width()), max(ch, m.card.Height())
+		}
+		m.card = screen{uv.NewBuffer(cw, ch)}
+	}
+	m.card.FillArea(&uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: m.theme.Surface}}, uv.Rect(0, 0, w, h))
+	return m.card
+}
+
+// Lays the composed face of a card onto the stage at its frame, every cell blended once by its alpha
+func (m *Model) stamp(face screen, p placed) {
+	if p.alpha >= 1 || m.theme.Plain {
+		face.Draw(m.buf, uv.Rect(p.x, p.y, p.w, p.h))
+		return
+	}
+	for y := 0; y < p.h; y++ {
+		for x := 0; x < p.w; {
+			c := face.CellAt(x, y)
+			if c == nil || c.Width == 0 {
+				x++
+				continue
+			}
+			m.ink(p.x+x, p.y+y, *c, p.alpha)
+			x += c.Width
+		}
+	}
+}
+
+// Draws the tiles, the zoomed tile, then the floats of a workspace shifted by dx, the held card last
+func (m *Model) paintWorkspace(ws *Workspace, dx int, shown bool) {
 	if dx <= -m.width || dx >= m.width {
 		return
 	}
-	var held *entry
+	veil := 0.0
+	if m.width > 0 {
+		veil = min(math.Abs(ws.shift.Pos)/float64(m.width), 1) * slideFade
+	}
+	if len(ws.tiles)+len(ws.floats) == 0 {
+		m.paintEmpty(dx, veil)
+		return
+	}
+	var held, top *entry
 	for _, e := range ws.tiles {
-		if ws.zoom != nil && e != ws.zoom && !e.closing {
-			continue
-		}
-		if e.held {
+		switch {
+		case e.held:
 			held = e
-			continue
+		case e == ws.zoom:
+			top = e
+		default:
+			m.paintBody(e, dx, shown, veil)
 		}
-		m.paintEntry(buf, e, dx, shown)
+	}
+	if top != nil {
+		m.paintBody(top, dx, shown, veil)
 	}
 	for _, e := range ws.floats {
 		if e.held {
 			held = e
 			continue
 		}
-		m.paintEntry(buf, e, dx, shown)
+		m.paintBody(e, dx, shown, veil)
 	}
 	if held != nil {
-		m.paintGhost(buf, held, dx)
-		m.paintEntry(buf, held, dx, shown)
+		m.paintGhost(held, dx)
+		m.paintBody(held, dx, shown, veil)
 	}
 }
 
-// Faint outline where a carried card will land
-func (m *Model) paintGhost(buf screen, e *entry, dx int) {
+// Dim invitation in the middle of a stage holding no cards
+func (m *Model) paintEmpty(dx int, veil float64) {
+	t := m.theme
+	text := "nothing open"
+	if k := keys.Format(m.keys.First("palette")); k != "" {
+		text += " " + t.Glyphs.Sep + " " + k + " for commands"
+	}
+	st := m.stage()
+	tw := ansi.StringWidth(text)
+	if st.W < tw+2 || st.H < 1 {
+		return
+	}
+	x, y := st.X+(st.W-tw)/2+dx, st.Y+st.H/2+barHeight
+	label := lipgloss.NewStyle().Background(t.Bg).Foreground(theme.Mix(t.TextDim, t.Bg, veil)).Render(text)
+	uv.NewStyledString(label).Draw(m.buf, uv.Rect(x, y, tw, 1))
+}
+
+// Faintly lit box with a ghost ring where a carried card will land
+func (m *Model) paintGhost(e *entry, dx int) {
 	b := e.box
 	if b.W < 2 || b.H < 2 {
 		return
 	}
-	st := uv.Style{Fg: m.theme.Ghost, Bg: m.theme.Bg}
-	m.perimeter(b.X+dx, b.Y+barHeight, b.W, b.H, func(px, py int, ch string) { m.put(buf, px, py, ch, st) })
+	t := m.theme
+	f := Box{b.X + dx, b.Y + barHeight, b.W, b.H}
+	bg := t.Bg
+	if !t.Plain {
+		bg = theme.Mix(t.Bg, t.Ice, 0.1)
+		m.fillBox(f, uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: bg}})
+	}
+	st := uv.Style{Fg: t.Ghost, Bg: bg}
+	m.perimeter(f.X, f.Y, f.W, f.H, func(px, py int, ch string) {
+		m.put(m.buf, px, py, ch, st)
+	})
 }
 
-// Draws one card as a framed box, or as a glyph chip when too small for a frame
-func (m *Model) paintEntry(buf screen, e *entry, dx int, shown bool) {
+// Writes one cell over every stage cell of a box
+func (m *Model) fillBox(b Box, c uv.Cell) {
+	for y := max(b.Y, barHeight); y < min(b.Y+b.H, m.height); y++ {
+		for x := max(b.X, 0); x < min(b.X+b.W, m.width); x++ {
+			m.buf.SetCell(x, y, &c)
+		}
+	}
+}
+
+// Screen frame of a card this frame with how lit its ring is, its hover and its opacity
+type placed struct {
+	x, y, w, h int
+	lit, hover float64
+	alpha      float64
+}
+
+// Places a card on screen for this frame, false when nothing of it would show
+func (m *Model) place(e *entry, dx int, shown bool, veil float64) (placed, bool) {
 	x, y, w, h := e.rect.Cells()
-	x += dx
+	x += dx + int(math.Round(e.shake.Pos))
 	y += barHeight
-	if w < 1 || h < 1 || x >= m.width || x+w <= 0 {
+	if w < 1 || h < 1 || x >= m.width || x+w <= 0 || y >= m.height {
+		return placed{}, false
+	}
+	lit, hover := e.lit.Pos, e.hover.Pos
+	if !shown {
+		lit = 0
+	}
+	alpha := 1 - math.Max(math.Max(1-e.open.Pos, e.hide.Pos), veil)
+	if alpha <= 0.01 {
+		return placed{}, false
+	}
+	if m.theme.Plain {
+		alpha = 1
+	}
+	return placed{x, y, w, h, lit, hover, alpha}, true
+}
+
+// Composes a card as a surface with ring, content and edge text, a glyph chip when too small
+func (m *Model) paintBody(e *entry, dx int, shown bool, veil float64) {
+	p, ok := m.place(e, dx, shown, veil)
+	if !ok {
 		return
 	}
 	t := m.theme
-	glow, hover := e.glow.Pos, e.hover.Pos
-	if !shown {
-		glow = 0
-	}
-	fade := 1 - e.open.Pos
-	m.paintShadow(buf, x, y, w, h, e.lift.Pos)
-	buf.FillArea(&uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: t.Surface}}, uv.Rect(x, y, w, h))
-	rim := m.rim(e, w, h, glow, hover, fade)
+	w, h := p.w, p.h
+	face := m.face(w, h)
 	if w < 3 || h < 3 {
-		m.paintGlyph(buf, e, x, y, w, h, glow)
+		m.paintGlyph(face, e, 0, 0, w, h, p.lit)
+		m.stamp(face, p)
 		return
 	}
-	k := 0
-	m.perimeter(x, y, w, h, func(px, py int, ch string) {
-		m.put(buf, px, py, ch, uv.Style{Fg: rim(k), Bg: t.Surface})
-		k++
-	})
-	c := m.contentRect(Box{x, y, w, h})
+	m.paintRing(face, e, p)
+	f := Box{0, 0, w, h}
+	c := m.contentRect(f)
 	if c.W < minContentW {
-		m.paintGlyph(buf, e, x+1, y+1, w-2, h-2, glow)
+		m.paintGlyph(face, e, 1, 1, w-2, h-2, p.lit)
+		m.stamp(face, p)
 		return
 	}
-	dim := math.Max((1-glow)*contentDim, fade)
-	m.content(e, c.W, c.H, dim).Draw(buf, uv.Rect(c.X, c.Y, c.W, c.H))
+	m.content(e, c.W, c.H, (1-p.lit)*contentDim).Draw(face, uv.Rect(c.X, c.Y, c.W, c.H))
 	right := 0
 	if closable(e.card) && w >= minTitleW && e.ws != nil {
 		right = 2
-		fg := theme.Mix(t.TextDim, t.Text, glow)
+		fg := theme.Mix(t.TextDim, t.Text, p.lit)
 		if m.hover == e && m.hoverEdge == rClose {
 			fg = t.Alarm
 		}
-		m.put(buf, closeX(Box{x, y, w, h}), y, "×", uv.Style{Fg: fg, Bg: t.Surface, Attrs: uv.AttrBold})
+		m.put(face, closeX(f), 0, t.Glyphs.Close, uv.Style{Fg: fg, Bg: t.Surface, Attrs: uv.AttrBold})
 	}
-	sw := m.paintStatus(buf, e, x, y, w-right, w-6-right-max(ansi.StringWidth(" "+glyphOf(e.card)+" "+e.card.Title()+" "), minTitleW), glow)
+	sw := m.paintStatus(face, e, w-right, w-6-right-max(ansi.StringWidth(" "+glyphOf(e.card, t)+" "+e.card.Title()+" "), minTitleW), p.lit)
 	avail := w - 4 - right
 	if sw > 0 {
 		avail -= sw + 2
 	}
-	m.paintTitle(buf, e, x, y, avail, glow)
+	m.paintTitle(face, e, avail, p.lit)
 	focused := e.ws == nil || (shown && e.ws.focus == e && m.overlay == nil)
 	if focused && !e.closing {
-		m.paintHints(buf, e, x, y+h-1, w)
+		m.paintHints(face, e, p.x, w, h)
 	}
+	m.stamp(face, p)
 }
 
-// Border color at clockwise perimeter index k, flowing the focus ring in over the steel edge and pulsing with any urgency
-func (m *Model) rim(e *entry, w, h int, glow, hover, fade float64) func(k int) color.Color {
-	t := m.theme
-	edge := theme.Mix(t.Steel, t.SteelBright, hover)
-	if e.urgency != Calm && e.pulse.Pos > 0 {
-		beat := 0.55 + 0.45*math.Sin(m.phase*pulseSpeed)
-		if m.motion == 0 {
-			beat = 1
-		}
-		edge = theme.Mix(edge, m.urgencyColor(e.urgency), e.pulse.Pos*beat)
-	}
-	if fade > 0 && !t.Plain {
-		edge = theme.Mix(edge, t.Surface, fade)
-	}
-	grip := rNone
-	if m.hover == e && m.hoverGrip {
-		grip = m.hoverEdge
-		if grip == rClose {
-			grip = rTitle
-		}
-	}
-	lit := func(k int, c color.Color) color.Color {
-		if grip != rNone && sideOf(k, w, h) == grip {
-			return theme.Mix(c, t.Ice, 0.5+0.5*hover)
-		}
-		return c
-	}
-	// The cascade only lights the focused card, and only where the theme can show it
-	cascade := m.cascade && e == m.focused() && !t.Plain && m.motion > 0
-	cascadeHead := int(m.phase * cascadeSpeed)
-	blend := func(k int, c color.Color) color.Color {
-		c = lit(k, c)
-		if !cascade {
-			return c
-		}
-		return theme.Mix(c, t.Ice, cascadeIntensity(2*(w+h)-4, k, cascadeHead)*cascadeBreath)
-	}
-	if glow <= 0 {
-		return func(k int) color.Color { return blend(k, edge) }
-	}
-	ring := m.ring(2*(w+h) - 4)
-	offset := int(m.phase)
-	return func(k int) color.Color {
-		c := ring[(k+offset)%len(ring)]
-		if fade > 0 && !t.Plain {
-			c = theme.Mix(c, t.Surface, fade)
-		}
-		if glow < 1 {
-			c = theme.Mix(edge, c, glow)
-		}
-		return blend(k, c)
-	}
-}
-
-// Cascade intensity at perimeter index k as a comet sweeps the ring, brightest at the head and fading along its tail
-func cascadeIntensity(perim, k, head int) float64 {
-	if perim <= 0 {
-		return 0
-	}
-	d := k - head
-	d = ((d % perim) + perim) % perim
-	if d > perim/2 {
-		d = perim - d
-	}
-	return math.Exp(-float64(d) / cascadeTail)
-}
-
-func (m *Model) urgencyColor(u Urgency) color.Color {
-	if u == Alarm {
-		return m.theme.Alarm
-	}
-	return m.theme.Pulse
-}
-
-// Darkens what lies below and right of a lifted card, reaching further as it rises
-func (m *Model) paintShadow(buf screen, x, y, w, h int, lift float64) {
-	if m.theme.Shadow <= 0 || lift <= 0 {
-		return
-	}
-	dx := 1 + int(math.Round(lift))
-	amount := m.theme.Shadow * (0.6 + 0.4*lift)
-	shade := m.memo(func(c color.Color) color.Color { return theme.Shade(c, amount) })
-	for py := y + 1; py < y+h+1 && py < m.height; py++ {
-		for px := x + dx; px < x+w+dx && px < m.width; px++ {
-			if px < 0 || py < barHeight || (px >= x && px < x+w && py < y+h) {
-				continue
-			}
-			c := buf.CellAt(px, py)
-			if c == nil {
-				continue
-			}
-			c.Style.Bg = shade(or(c.Style.Bg, m.theme.Bg))
-			if c.Style.Fg != nil {
-				c.Style.Fg = shade(c.Style.Fg)
-			}
-		}
-	}
+// Draws the ring line through the border cells of a face over its surface
+func (m *Model) paintRing(face screen, e *entry, p placed) {
+	rim := m.rim(e, p.w, p.h, p.lit, p.hover)
+	k := 0
+	m.perimeter(0, 0, p.w, p.h, func(px, py int, ch string) {
+		m.put(face, px, py, ch, uv.Style{Fg: rim(k), Bg: m.theme.Surface})
+		k++
+	})
 }
 
 // Content cells of a card at the given size and dim, rebuilt only when the card, size, or dim changed
@@ -273,7 +318,6 @@ func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
 		}
 		e.raw.Clear()
 		uv.NewStyledString(e.card.View(w, h)).Draw(e.raw, e.raw.Bounds())
-		e.cw, e.ch = w, h
 		e.dirty, e.dim = false, -1
 	}
 	if e.dim != dim {
@@ -311,16 +355,17 @@ func (m *Model) tint(s screen, dim float64) {
 	}
 }
 
-func (m *Model) paintGlyph(buf screen, e *entry, x, y, w, h int, glow float64) {
+// Writes the card's glyph in the middle of a box of the face too small for content
+func (m *Model) paintGlyph(face screen, e *entry, x, y, w, h int, lit float64) {
 	if w < 1 || h < 1 {
 		return
 	}
-	fg := theme.Mix(m.theme.TextDim, m.theme.Accent, math.Max(glow, 0.35))
-	m.put(buf, x+w/2, y+h/2, glyphOf(e.card), uv.Style{Fg: fg, Bg: m.theme.Surface})
+	fg := theme.Mix(m.theme.TextDim, m.theme.Accent, math.Max(lit, 0.35))
+	m.put(face, x+w/2, y+h/2, glyphOf(e.card, m.theme), uv.Style{Fg: fg, Bg: m.theme.Surface})
 }
 
-// Writes the glyph and decoding title into the top edge within avail columns
-func (m *Model) paintTitle(buf screen, e *entry, x, y, avail int, glow float64) {
+// Writes the glyph and decoding title into the top edge of the face within avail columns
+func (m *Model) paintTitle(face screen, e *entry, avail int, lit float64) {
 	if avail < minTitleW {
 		return
 	}
@@ -329,24 +374,26 @@ func (m *Model) paintTitle(buf screen, e *entry, x, y, avail int, glow float64) 
 	if title == "" {
 		return
 	}
-	shown := []rune(fx.Decode(title, e.decode, m.tick))
+	shown := []rune(fx.Decode(title, e.decode, m.tick, t.Glyphs.Churn))
 	reveal := min(fx.Revealed(title, e.decode), len(shown))
 	base := lipgloss.NewStyle().Background(t.Surface)
-	glyph := glyphOf(e.card)
-	if m.hover == e && m.hoverGrip && (m.hoverEdge == rTitle || m.hoverEdge == rClose) && !t.Plain {
-		glyph = "✥"
+	glyph := glyphOf(e.card, t)
+	if m.hover == e && m.hoverGrip && (m.hoverEdge == rTitle || m.hoverEdge == rClose) {
+		glyph = t.Glyphs.Grip
 	}
 	label := base.Render(" ") +
-		base.Foreground(theme.Mix(t.TextDim, t.Accent, glow)).Render(glyph+" ") +
-		base.Foreground(theme.Mix(t.TextDim, t.Text, glow)).Bold(glow > 0.5).Render(string(shown[:reveal])) +
-		base.Foreground(theme.Mix(t.TextDim, t.Ice, glow)).Render(string(shown[reveal:])) +
+		base.Foreground(theme.Mix(t.TextDim, t.Accent, lit)).Render(glyph+" ") +
+		base.Foreground(theme.Mix(t.TextDim, t.Text, lit)).Bold(lit > 0.5).Render(string(shown[:reveal])) +
+		base.Foreground(theme.Mix(t.TextDim, t.Ice, lit)).Render(string(shown[reveal:])) +
 		base.Render(" ")
-	label = ansi.Truncate(label, avail, "")
-	uv.NewStyledString(label).Draw(buf, uv.Rect(x+2, y, ansi.StringWidth(label), 1))
+	if ansi.StringWidth(label) > avail {
+		label = ansi.Truncate(label, avail-1, t.Glyphs.Ellipsis) + base.Render(" ")
+	}
+	uv.NewStyledString(label).Draw(face, uv.Rect(2, 0, ansi.StringWidth(label), 1))
 }
 
-// Writes the status trailer into edge row y when no wider than limit and reports the width used
-func (m *Model) paintStatus(buf screen, e *entry, x, y, w, limit int, glow float64) int {
+// Writes the status trailer into the top edge when no wider than limit and reports the width used
+func (m *Model) paintStatus(face screen, e *entry, w, limit int, lit float64) int {
 	s, ok := e.card.(Statuser)
 	if !ok {
 		return 0
@@ -360,11 +407,12 @@ func (m *Model) paintStatus(buf screen, e *entry, x, y, w, limit int, glow float
 		if limit < minTitleW {
 			return 0
 		}
-		text = "…" + ansi.TruncateLeft(text, tw-(limit-3), "")
+		ew := ansi.StringWidth(t.Glyphs.Ellipsis)
+		text = t.Glyphs.Ellipsis + ansi.TruncateLeft(text, tw-(limit-2-ew), "")
 	}
-	label := lipgloss.NewStyle().Background(t.Surface).Foreground(theme.Mix(t.TextDim, t.Ice, glow)).Render(" " + text + " ")
+	label := lipgloss.NewStyle().Background(t.Surface).Foreground(theme.Mix(t.TextDim, t.Ice, lit)).Render(" " + text + " ")
 	lw := ansi.StringWidth(label)
-	uv.NewStyledString(label).Draw(buf, uv.Rect(x+w-2-lw, y, lw, 1))
+	uv.NewStyledString(label).Draw(face, uv.Rect(w-2-lw, 0, lw, 1))
 	return lw
 }
 
@@ -391,16 +439,17 @@ func (m *Model) paintSelection(buf screen) {
 	}
 }
 
-// Darkens the whole stage so the overlay stands out
-func (m *Model) paintBackdrop(buf screen) {
+// Darkens every stage cell by the share of the veil drawn so the overlay stands out
+func (m *Model) paintBackdrop(amount float64) {
 	if m.theme.Plain {
 		return
 	}
-	shade := m.memo(func(c color.Color) color.Color { return theme.Shade(c, backdropDim) })
+	dim := backdropDim * amount
+	shade := m.memo(func(c color.Color) color.Color { return theme.Shade(c, dim) })
 	for y := barHeight; y < m.height; y++ {
 		for x := 0; x < m.width; x++ {
-			c := buf.CellAt(x, y)
-			if c == nil {
+			c := m.buf.CellAt(x, y)
+			if c == nil || c.Width == 0 {
 				continue
 			}
 			c.Style.Bg = shade(or(c.Style.Bg, m.theme.Bg))
@@ -411,35 +460,60 @@ func (m *Model) paintBackdrop(buf screen) {
 	}
 }
 
-// Draws toasts stacked under the bar at the right, sliding in from the edge
-func (m *Model) paintToasts(buf screen) {
+// Draws toasts as pills stacked under the bar at the right, sliding and fading in and out at the edge
+func (m *Model) paintToasts() {
 	if len(m.toasts) == 0 || m.width < 12 {
 		return
 	}
 	t := m.theme
 	limit := max(10, m.width/2)
+	base := lipgloss.NewStyle().Background(t.Surface)
 	for i, tt := range m.toasts {
-		y := barHeight + i
+		y := barHeight + i*toastGap
 		if y >= m.height {
 			break
 		}
-		glyph, fg := "◆", t.Ice
+		glyph, fg := t.Glyphs.Info, t.Ice
 		switch tt.level {
 		case Success:
-			glyph, fg = "✓", t.Alive
+			glyph, fg = t.Glyphs.Success, t.Alive
 		case Warn:
-			glyph, fg = "▲", t.Accent
+			glyph, fg = t.Glyphs.Warn, t.Accent
 		case Error:
-			glyph, fg = "✗", t.Alarm
+			glyph, fg = t.Glyphs.Fail, t.Alarm
 		}
-		if t.Plain {
-			glyph = "*"
-		}
-		text := ansi.Truncate(tt.text, limit-4, "…")
-		label := lipgloss.NewStyle().Background(t.Surface).Foreground(fg).Bold(true).Render(" "+glyph+" ") + lipgloss.NewStyle().Background(t.Surface).Foreground(t.Text).Render(text+" ")
+		text := ansi.Truncate(tt.text, limit-4, t.Glyphs.Ellipsis)
+		label := base.Render(" ") + base.Foreground(fg).Bold(true).Render(glyph) + base.Render(" ") + base.Foreground(t.Text).Render(text) + base.Render(" ")
 		lw := ansi.StringWidth(label)
+		slide := min(max(tt.x.Pos, 0), 1)
 		x := m.width - m.gapOutX - lw + int(math.Round(tt.x.Pos*float64(lw+m.gapOutX)))
-		uv.NewStyledString(label).Draw(buf, uv.Rect(x, y, lw, 1))
+		alpha := 1 - slide
+		m.pill(x-1, y, lw+2, alpha)
+		face := m.face(lw, 1)
+		uv.NewStyledString(label).Draw(face, uv.Rect(0, 0, lw, 1))
+		m.stamp(face, placed{x: x, y: y, w: lw, h: 1, alpha: alpha})
+	}
+}
+
+// Caps a one row surface with half blocks that keep the cell behind each cap
+func (m *Model) pill(x, y, w int, alpha float64) {
+	t := m.theme
+	if t.Plain {
+		m.fillBox(Box{x, y, w, 1}, uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: t.Surface}})
+		return
+	}
+	for _, cap := range []struct {
+		x  int
+		ch string
+	}{{x, t.Glyphs.CapLeft}, {x + w - 1, t.Glyphs.CapRight}} {
+		if cap.x < 0 || cap.x >= m.width || y < barHeight || y >= m.height {
+			continue
+		}
+		bg := t.Bg
+		if c := m.buf.CellAt(cap.x, y); c != nil && c.Style.Bg != nil {
+			bg = c.Style.Bg
+		}
+		m.ink(cap.x, y, uv.Cell{Content: cap.ch, Width: 1, Style: uv.Style{Fg: t.Surface, Bg: bg}}, alpha)
 	}
 }
 
@@ -474,6 +548,103 @@ func (m *Model) perimeter(x, y, w, h int, fn func(px, py int, ch string)) {
 	}
 }
 
+// Border color at perimeter index k, focus ring flowing in, urgency pulsing and the pointer lighting a grip
+func (m *Model) rim(e *entry, w, h int, lit, hover float64) func(k int) color.Color {
+	t := m.theme
+	edge := theme.Mix(t.Steel, t.SteelBright, hover)
+	if e.urgency != Calm && e.pulse.Pos > 0 {
+		edge = theme.Mix(edge, m.urgencyColor(e.urgency), e.pulse.Pos*m.beat())
+	}
+	grip := rNone
+	if m.hover == e && m.hoverGrip {
+		grip = m.hoverEdge
+		if grip == rClose {
+			grip = rTitle
+		}
+	}
+	kp := -1
+	if grip == rLeft || grip == rRight || grip == rBottom {
+		f := e.frame()
+		kp = perimIndex(w, h, m.hoverX-f.X, m.hoverY-f.Y)
+	}
+	hot := func(k int, c color.Color) color.Color {
+		if grip == rNone || sideOf(k, w, h) != grip {
+			return c
+		}
+		amount := 0.5 + 0.5*hover
+		if kp >= 0 {
+			amount *= 0.25 + 0.75*math.Exp(-math.Abs(float64(k-kp))/gripReach)
+		}
+		return theme.Mix(c, t.Ice, amount)
+	}
+	// The cascade only lights the focused card, and only where the theme can show it
+	cascade := m.cascade && e == m.focused() && !t.Plain && m.motion > 0
+	cascadeHead := int(m.phase * cascadeSpeed)
+	blend := func(k int, c color.Color) color.Color {
+		c = hot(k, c)
+		if !cascade {
+			return c
+		}
+		return theme.Mix(c, t.Ice, cascadeIntensity(2*(w+h)-4, k, cascadeHead)*cascadeBreath)
+	}
+	if lit <= 0 {
+		return func(k int) color.Color { return blend(k, edge) }
+	}
+	ring := m.ring(2*(w+h) - 4)
+	offset := int(m.phase)
+	return func(k int) color.Color {
+		c := ring[(k+offset)%len(ring)]
+		if lit < 1 {
+			c = theme.Mix(edge, c, lit)
+		}
+		return blend(k, c)
+	}
+}
+
+// Share of an urgency pulse lit right now, full when motion is off
+func (m *Model) beat() float64 {
+	if m.motion == 0 {
+		return 1
+	}
+	return 0.55 + 0.45*math.Sin(m.phase*pulseSpeed)
+}
+
+// Cascade intensity at perimeter index k, brightest at the comet head and fading along its tail
+func cascadeIntensity(perim, k, head int) float64 {
+	if perim <= 0 {
+		return 0
+	}
+	d := k - head
+	d = ((d % perim) + perim) % perim
+	if d > perim/2 {
+		d = perim - d
+	}
+	return math.Exp(-float64(d) / cascadeTail)
+}
+
+// Clockwise perimeter index of the border cell nearest a point in frame coordinates
+func perimIndex(w, h, px, py int) int {
+	perim := max(2*(w+h)-4, 1)
+	px, py = min(max(px, 0), w-1), min(max(py, 0), h-1)
+	top, bottom, left, right := py, h-1-py, px, w-1-px
+	switch nearest := min(top, bottom, left, right); {
+	case nearest == top:
+		return px % perim
+	case nearest == right:
+		return (w - 1 + py) % perim
+	case nearest == bottom:
+		return (2*w + h - 3 - px) % perim
+	}
+	return (2*w + 2*h - 4 - py) % perim
+}
+
+func (m *Model) urgencyColor(u Urgency) color.Color {
+	if u == Alarm {
+		return m.theme.Alarm
+	}
+	return m.theme.Pulse
+}
+
 // Gradient ring of n colors for a border of that perimeter, cached per size
 func (m *Model) ring(n int) []color.Color {
 	n = max(n, 1)
@@ -484,7 +655,7 @@ func (m *Model) ring(n int) []color.Color {
 	if m.theme.Plain {
 		r = []color.Color{m.theme.Ice}
 	} else {
-		r = theme.Ring(n, m.theme.Glow...)
+		r = theme.Ring(n, m.theme.Ring...)
 	}
 	if len(r) == 0 {
 		r = []color.Color{m.theme.Ice}
@@ -527,14 +698,14 @@ func (m *Model) put(buf screen, x, y int, s string, st uv.Style) {
 	if x < 0 || y < 0 {
 		return
 	}
-	c, ok := m.cells[s]
+	c, ok := m.glyphs[s]
 	if !ok {
 		nc := uv.NewCell(buf.WidthMethod(), s)
 		if nc == nil {
 			return
 		}
 		c = *nc
-		m.cells[s] = c
+		m.glyphs[s] = c
 	}
 	c.Style = st
 	buf.SetCell(x, y, &c)
@@ -542,13 +713,13 @@ func (m *Model) put(buf screen, x, y int, s string, st uv.Style) {
 
 // Wraps a color transform so each distinct input is computed once per paint pass
 func (m *Model) memo(fn func(color.Color) color.Color) func(color.Color) color.Color {
-	clear(m.fade)
+	clear(m.memoed)
 	return func(c color.Color) color.Color {
-		if out, ok := m.fade[c]; ok {
+		if out, ok := m.memoed[c]; ok {
 			return out
 		}
 		out := fn(c)
-		m.fade[c] = out
+		m.memoed[c] = out
 		return out
 	}
 }
@@ -575,14 +746,15 @@ func (m *Model) frame() screen {
 
 func (screen) WidthMethod() uv.WidthMethod { return uv.WidthMethod(ansi.GraphemeWidth) }
 
-// Writes the keys of the actions the card answers into its bottom edge, as many as fit, remembering where each sits for clicks
-func (m *Model) paintHints(buf screen, e *entry, x, y, w int) {
+// Writes the card's bound keys into the bottom edge, skipping those that do not fit, lighting the hovered one
+func (m *Model) paintHints(face screen, e *entry, sx, w, h int) {
 	e.hints = e.hints[:0]
 	hints := append([]Hint(nil), hintsOf(e.card)...)
-	if e.ws != nil && closable(e.card) {
-		if slices.Contains(contextsOf(e.card), keys.Panel) {
+	if ctxs := contextsOf(e.card); e.ws != nil && closable(e.card) {
+		switch {
+		case slices.Contains(ctxs, keys.Panel):
 			hints = append(hints, Hint{Action: "panel.close"})
-		} else {
+		case ctxs == nil:
 			hints = append(hints, Hint{Action: "window.close"})
 		}
 	}
@@ -594,7 +766,7 @@ func (m *Model) paintHints(buf screen, e *entry, x, y, w int) {
 	base := lipgloss.NewStyle().Background(t.Surface)
 	var sb strings.Builder
 	sb.WriteString(base.Render(" "))
-	col := x + 2 + 1
+	col := sx + 2 + 1
 	used := 1
 	for _, h := range hints {
 		key, label := m.hintText(h)
@@ -603,15 +775,20 @@ func (m *Model) paintHints(buf screen, e *entry, x, y, w int) {
 		}
 		sep := ""
 		if len(e.hints) > 0 {
-			sep = base.Foreground(t.Steel).Render(" · ")
+			sep = base.Foreground(t.Steel).Render(" " + t.Glyphs.Sep + " ")
 		}
-		text := base.Foreground(t.Ice).Render(key)
+		hot := m.hover == e && m.hintHot == h.Action && h.Action != ""
+		text := base.Foreground(t.Ice).Bold(hot).Render(key)
 		if label != "" {
-			text += base.Foreground(t.TextDim).Render(" " + label)
+			labelFg := t.TextDim
+			if hot {
+				labelFg = t.Text
+			}
+			text += base.Foreground(labelFg).Render(" " + label)
 		}
 		width := ansi.StringWidth(text)
 		if used+ansi.StringWidth(sep)+width+1 > avail {
-			break
+			continue
 		}
 		sb.WriteString(sep)
 		col += ansi.StringWidth(sep)
@@ -624,7 +801,7 @@ func (m *Model) paintHints(buf screen, e *entry, x, y, w int) {
 		return
 	}
 	sb.WriteString(base.Render(" "))
-	uv.NewStyledString(sb.String()).Draw(buf, uv.Rect(x+2, y, used+1, 1))
+	uv.NewStyledString(sb.String()).Draw(face, uv.Rect(2, h-1, used+1, 1))
 }
 
 // Key and label a hint paints, the key empty when its action is unbound

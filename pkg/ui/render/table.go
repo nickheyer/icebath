@@ -36,7 +36,10 @@ const (
 // Rows the table spends above its first row, the header and the rule under it
 const TableHead = 2
 
-// Left edge and width of every column at the table width
+// Narrowest a flex column shrinks to before columns are dropped from the right
+const minFlex = 8
+
+// Left edge and width of every column, zero for columns dropped from the right to fit
 func Columns(cols []Column, rows [][]string, width int) (xs, widths []int) {
 	widths = make([]int, len(cols))
 	for i, c := range cols {
@@ -51,48 +54,63 @@ func Columns(cols []Column, rows [][]string, width int) (xs, widths []int) {
 		}
 	}
 	avail := width - tableGutter - 1
-	total := tableGap * (len(cols) - 1)
-	flex := 0
-	for i, c := range cols {
-		total += widths[i]
-		flex += c.Flex
+	kept := len(cols)
+	for ; kept > 1; kept-- {
+		if fit(cols[:kept], widths[:kept], avail) {
+			break
+		}
 	}
-	if total > avail {
-		over := total - avail
-		for i := range cols {
-			if over <= 0 {
-				break
-			}
-			if cols[i].Flex > 0 || i == len(cols)-1 {
-				cut := min(over, widths[i]-3)
-				if cut > 0 {
-					widths[i] -= cut
-					over -= cut
-				}
-			}
-		}
-		for i := len(cols) - 1; i >= 0 && over > 0; i-- {
-			cut := min(over, widths[i]-1)
-			if cut > 0 {
-				widths[i] -= cut
-				over -= cut
-			}
-		}
-	} else if flex > 0 {
-		spare := avail - total
-		for i, c := range cols {
-			if c.Flex > 0 {
-				widths[i] += spare * c.Flex / flex
-			}
-		}
+	if kept == 1 && !fit(cols[:1], widths[:1], avail) {
+		widths[0] = max(avail, 1)
+	}
+	for i := kept; i < len(cols); i++ {
+		widths[i] = 0
 	}
 	xs = make([]int, len(cols))
 	x := tableGutter
 	for i := range cols {
 		xs[i] = x
-		x += widths[i] + tableGap
+		if i < kept {
+			x += widths[i] + tableGap
+		}
 	}
 	return xs, widths
+}
+
+// Fits the columns into avail by growing or shrinking flex columns, reporting whether they fit
+func fit(cols []Column, widths []int, avail int) bool {
+	total := tableGap * (len(cols) - 1)
+	flex, shrinkable := 0, 0
+	for i, c := range cols {
+		total += widths[i]
+		if c.Flex > 0 {
+			flex += c.Flex
+			shrinkable += max(widths[i]-minFlex, 0)
+		}
+	}
+	if total <= avail {
+		if spare := avail - total; flex > 0 {
+			for i, c := range cols {
+				if c.Flex > 0 {
+					widths[i] += spare * c.Flex / flex
+				}
+			}
+		}
+		return true
+	}
+	over := total - avail
+	if shrinkable < over {
+		return false
+	}
+	for i, c := range cols {
+		if c.Flex == 0 || over <= 0 {
+			continue
+		}
+		cut := min(over, max(widths[i]-minFlex, 0))
+		widths[i] -= cut
+		over -= cut
+	}
+	return true
 }
 
 // Renders rows under headers at width, cutting cells to their column and marking the selected row
@@ -120,10 +138,19 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 	tinted := lipgloss.NewStyle().Foreground(t.Text).Background(t.Ghost)
 	tick := lipgloss.NewStyle().Foreground(t.Ice).Background(t.Ghost).Bold(true)
 	gap := strings.Repeat(" ", tableGap)
+	last := 0
+	for i := range cols {
+		if widths[i] > 0 {
+			last = i
+		}
+	}
 	line := func(cells []string, st lipgloss.Style, gutter string, ed *Edit) string {
 		var sb strings.Builder
 		sb.WriteString(gutter)
 		for i, c := range cols {
+			if widths[i] == 0 {
+				continue
+			}
 			cell := ""
 			if i < len(cells) {
 				cell = cells[i]
@@ -139,9 +166,9 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 				} else {
 					sb.WriteString(field.Render(text))
 				}
-				sb.WriteString(field.Render("▏" + strings.Repeat(" ", max(pad, 0))))
+				sb.WriteString(field.Render(t.Glyphs.Caret + strings.Repeat(" ", max(pad, 0))))
 			} else {
-				cell = Truncate(cell, widths[i])
+				cell = Truncate(cell, widths[i], t)
 				pad := widths[i] - ansi.StringWidth(cell)
 				if c.Right {
 					cell = strings.Repeat(" ", pad) + cell
@@ -150,7 +177,7 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 				}
 				sb.WriteString(Paint(st, cell))
 			}
-			if i < len(cols)-1 {
+			if i < last {
 				sb.WriteString(st.Render(gap))
 			}
 		}
@@ -167,18 +194,18 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 	var sb strings.Builder
 	sb.WriteString(line(titles, head, head.Render(strings.Repeat(" ", tableGutter)), nil))
 	sb.WriteString("\n")
-	sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat("─", width)))
+	sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, width)))
 	for i, r := range rows {
 		sb.WriteString("\n")
 		if i != selected && marked != nil && marked(i) {
-			sb.WriteString(line(r, tinted, tick.Render("▪")+tinted.Render(strings.Repeat(" ", tableGutter-1)), nil))
+			sb.WriteString(line(r, tinted, tick.Render(t.Glyphs.Marked)+tinted.Render(strings.Repeat(" ", tableGutter-1)), nil))
 			continue
 		}
 		if i != selected {
 			sb.WriteString(line(r, body, body.Render(strings.Repeat(" ", tableGutter)), nil))
 			continue
 		}
-		sb.WriteString(line(r, sel, mark.Render("▸")+sel.Render(strings.Repeat(" ", tableGutter-1)), edit))
+		sb.WriteString(line(r, sel, mark.Render(t.Glyphs.Cursor)+sel.Render(strings.Repeat(" ", tableGutter-1)), edit))
 	}
 	return sb.String()
 }

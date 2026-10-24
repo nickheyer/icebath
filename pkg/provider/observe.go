@@ -51,6 +51,11 @@ type Observer interface {
 	Observe(Attempt)
 }
 
+// Observer that also hears each attempt as it starts, before anything comes back
+type Starter interface {
+	Begin(Attempt)
+}
+
 type ObserverFunc func(Attempt)
 
 func (f ObserverFunc) Observe(a Attempt) { f(a) }

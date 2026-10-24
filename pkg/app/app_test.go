@@ -30,6 +30,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/tool"
 	"github.com/nickheyer/icebath/pkg/tool/shell"
 	"github.com/nickheyer/icebath/pkg/ui/anim"
@@ -393,7 +394,7 @@ func TestWorkspaces(t *testing.T) {
 	if !m.app.Busy(second.live) || m.app.Busy(first.live) {
 		t.Fatal("prompt runs in its own workspace")
 	}
-	if feed(m, m.closeWorkspace()); len(m.desks) != 2 || !toasted(m, "wait for the run") {
+	if feed(m, m.closeWorkspace()); len(m.desks) != 2 || !toasted(m, "agent still working") {
 		t.Fatal("busy workspace stays open")
 	}
 	feed(m, cmd)
@@ -469,7 +470,7 @@ func TestCommandsAndPickers(t *testing.T) {
 		t.Fatal("theme command")
 	}
 	feed(m, m.command(nil, "theme", "nope"))
-	if !toasted(m, "themes are") {
+	if !toasted(m, "themes:") {
 		t.Fatal("bad theme toasts")
 	}
 	feed(m, m.command(nil, "rename", "named"))
@@ -490,7 +491,7 @@ func TestCommandsAndPickers(t *testing.T) {
 	}
 	feed(m, m.command(nil, "cancel", ""))
 	feed(m, m.command(nil, "interrupt", ""))
-	if !toasted(m, "nothing is running") {
+	if !toasted(m, "nothing running") {
 		t.Fatal("cancel and interrupt with nothing running toast")
 	}
 	feed(m, m.command(nil, "nope", ""))
@@ -571,7 +572,7 @@ func TestCommandsAndPickers(t *testing.T) {
 		t.Fatal("alt+space opens the palette")
 	}
 	typeInto(m, "theme")
-	if ms := p.Matches(); len(ms) == 0 || ms[0].Title != "Theme…" {
+	if ms := p.Matches(); len(ms) == 0 || ms[0].Title != "Theme"+m.theme.Glyphs.Ellipsis {
 		t.Fatalf("palette finds the app commands, %v", ms)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -586,11 +587,11 @@ func TestCardMessages(t *testing.T) {
 	feed(m, submit(m, d, "hello"))
 	pump(t, m, runDone)
 	m.Update(cards.AnswerMsg{ID: 99})
-	if !toasted(m, "approval is gone") {
+	if !toasted(m, "approval gone") {
 		t.Fatal("stale answer toasts")
 	}
 	m.Update(cards.KillRunMsg{Run: "nope"})
-	if !toasted(m, "no run nope") {
+	if !toasted(m, "no agent nope") {
 		t.Fatal("bad run kill toasts")
 	}
 	_, cmd := m.Update(cards.KillJobMsg{Job: "nope"})
@@ -609,7 +610,7 @@ func TestCardMessages(t *testing.T) {
 		t.Fatal("bad session open toasts")
 	}
 	m.Update(cards.DeleteMsg{Sessions: []string{d.live.Session.ID()}})
-	if !toasted(m, "close the workspace of "+d.live.Session.ID()) {
+	if !toasted(m, d.live.Session.ID()+" is open") {
 		t.Fatal("open sessions cannot be deleted")
 	}
 	stored := func(text string) string {
@@ -639,7 +640,7 @@ func TestCardMessages(t *testing.T) {
 	}
 	_, cmd = m.Update(cards.ForkMsg{Sessions: []string{a, b}})
 	feed(m, cmd)
-	if len(m.desks) != 5 || m.current().live.Session.Parent() != b || !toasted(m, "forked 2 sessions into new workspaces") {
+	if len(m.desks) != 5 || m.current().live.Session.Parent() != b || !toasted(m, "forked 2 sessions") {
 		t.Fatalf("forking many makes a copy of each, %d desks", len(m.desks))
 	}
 	_, cmd = m.Update(cards.ForkMsg{Sessions: []string{a, "nope"}})
@@ -680,21 +681,21 @@ func TestCardMessages(t *testing.T) {
 	if !toasted(m, "disk full") {
 		t.Fatal("export error toasts")
 	}
-	m.Update(cards.KnobMsg{Key: "theme", Value: "plain"})
+	m.Update(cards.SettingMsg{Key: "theme", Value: "plain"})
 	if m.theme.Name != "plain" {
-		t.Fatal("theme knob")
+		t.Fatal("theme setting")
 	}
-	m.Update(cards.KnobMsg{Key: "motion", Value: "0"})
+	m.Update(cards.SettingMsg{Key: "motion", Value: "0"})
 	if m.wm.Motion() != 0 {
-		t.Fatal("motion knob")
+		t.Fatal("motion setting")
 	}
-	m.Update(cards.KnobMsg{Key: "cascade", Value: "true"})
-	if !m.wm.Cascade() || m.knobs()["cascade"] != "true" {
-		t.Fatal("cascade knob")
+	m.Update(cards.SettingMsg{Key: "cascade", Value: "true"})
+	if !m.wm.Cascade() || m.settings()["cascade"] != "true" {
+		t.Fatal("cascade setting")
 	}
-	m.Update(cards.KnobMsg{Key: "cascade", Value: "maybe"})
+	m.Update(cards.SettingMsg{Key: "cascade", Value: "maybe"})
 	if !toasted(m, "cascade must be") || !m.wm.Cascade() {
-		t.Fatal("bad cascade knob toasts and keeps the comet")
+		t.Fatal("bad cascade setting toasts and keeps the old value")
 	}
 	feed(m, m.wm.Run("cascade.toggle"))
 	if m.wm.Cascade() || !toasted(m, "cascade = false") {
@@ -704,29 +705,29 @@ func TestCardMessages(t *testing.T) {
 	if !m.wm.Cascade() {
 		t.Fatal("the palette toggles the comet back on")
 	}
-	m.Update(cards.KnobMsg{Key: "compact_threshold", Value: "500"})
+	m.Update(cards.SettingMsg{Key: "compact_threshold", Value: "500"})
 	if m.app.Meter.Snapshot().Threshold != 500 {
-		t.Fatal("threshold knob")
+		t.Fatal("threshold setting")
 	}
-	m.Update(cards.KnobMsg{Key: "mode", Value: "acceptEdits"})
+	m.Update(cards.SettingMsg{Key: "mode", Value: "acceptEdits"})
 	if m.app.Mode.Mode() != mode.AcceptEdits {
-		t.Fatal("mode knob")
+		t.Fatal("mode setting")
 	}
-	m.Update(cards.KnobMsg{Key: "max_tokens", Value: "bad"})
+	m.Update(cards.SettingMsg{Key: "max_tokens", Value: "bad"})
 	if !toasted(m, "max_tokens must be") {
-		t.Fatal("bad knob toasts")
+		t.Fatal("bad setting toasts")
 	}
-	m.Update(cards.KnobMsg{Key: "max_tokens", Value: "2048"})
-	if m.knobs()["max_tokens"] != "2048" || m.knobs()["temperature"] != "" || m.knobs()["max_rounds"] != "" {
-		t.Fatalf("unset knobs read empty %v", m.knobs())
+	m.Update(cards.SettingMsg{Key: "max_tokens", Value: "2048"})
+	if m.settings()["max_tokens"] != "2048" || m.settings()["temperature"] != "" || m.settings()["max_rounds"] != "" {
+		t.Fatalf("unset settings read empty %v", m.settings())
 	}
-	m.Update(cards.KnobMsg{Key: "max_tokens", Value: ""})
-	if m.app.Config.MaxTokens != 0 || m.knobs()["max_tokens"] != "" || !toasted(m, "max_tokens unset") {
-		t.Fatalf("an empty value unsets the knob %v", m.knobs())
+	m.Update(cards.SettingMsg{Key: "max_tokens", Value: ""})
+	if m.app.Config.MaxTokens != 0 || m.settings()["max_tokens"] != "" || !toasted(m, "max_tokens unset") {
+		t.Fatalf("an empty value unsets the setting %v", m.settings())
 	}
-	m.Update(cards.KnobMsg{Key: "max_rounds", Value: "9", Quiet: true})
+	m.Update(cards.SettingMsg{Key: "max_rounds", Value: "9", Quiet: true})
 	if m.app.Config.MaxRounds != 9 || toasted(m, "max_rounds = 9") {
-		t.Fatal("a quiet knob applies without a toast")
+		t.Fatal("a quiet setting applies without a toast")
 	}
 	feed(m, m.startMission(d, "scan the net"))
 	pump(t, m, runDone)
@@ -766,7 +767,7 @@ func TestApprovalFlow(t *testing.T) {
 	if !m.wm.Has("approval:"+d.live.Session.ID()) || m.state != tea.ProgramStateBlocked || len(d.approval.Pending()) != 1 {
 		t.Fatal("approval dialog opens in the workspace")
 	}
-	if left, _ := m.bar(); !strings.Contains(fmt.Sprint(left), "awaiting approval") {
+	if left, _ := m.bar(); !strings.Contains(fmt.Sprint(left), "approval") {
 		t.Fatalf("bar shows the wait, %v", left)
 	}
 	feed(m, m.answer(policy.Yes)())
@@ -788,7 +789,7 @@ func TestSubagentCardsOpenAndRetire(t *testing.T) {
 		t.Fatal("unknown child run retires nothing")
 	}
 	feed(m, m.openRun("run-9"))
-	if !toasted(m, "no run run-9") {
+	if !toasted(m, "no agent run-9") {
 		t.Fatal("unknown run toasts")
 	}
 }
@@ -802,14 +803,14 @@ func TestThemeAndLayoutPersistence(t *testing.T) {
 	}
 	drain(m.Init())
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	feed(m, m.setKnob("theme", "light", false))
+	feed(m, m.setSetting("theme", "light", false))
 	if m.theme.Name != "light" || m.env.Theme.Name != "light" || m.wm.Theme().Name != "light" {
 		t.Fatal("theme reaches the manager and the cards")
 	}
 	feed(m, m.command(nil, "metrics", ""))
 	m.saveLayout()
-	l, ok := loadLayout(layoutPath(m.app.Config))
-	if !ok || l.Theme != "light" || len(l.Open) != 1 || l.Open[0] != "metrics" {
+	l, _, ok := loadLayout(layoutPath(m.app.Config))
+	if !ok || l.Theme != "light" || len(l.Workspaces) != 1 || len(l.Workspaces[0].Tiles) != 2 || l.Workspaces[0].Tiles[1].Key != "metrics" {
 		t.Fatalf("layout %+v", l)
 	}
 	again, err := New(context.Background(), Options{Config: cfg, Dir: dir, Version: "test"})
@@ -838,7 +839,7 @@ func TestSettingsSurviveARestart(t *testing.T) {
 	drain(m.Init())
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	for _, k := range [][2]string{{"cascade", "true"}, {"motion", "0.5"}, {"max_tokens", "2048"}, {"max_rounds", "7"}, {"temperature", "0.3"}, {"compact_threshold", "500"}} {
-		m.Update(cards.KnobMsg{Key: k[0], Value: k[1]})
+		m.Update(cards.SettingMsg{Key: k[0], Value: k[1]})
 	}
 	feed(m, m.command(nil, "theme", "light"))
 	m.Update(cards.SetModeMsg{Mode: mode.Plan})
@@ -850,7 +851,7 @@ func TestSettingsSurviveARestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.UI.Cascade == nil || !*got.UI.Cascade || *got.UI.Motion != 0.5 || got.MaxTokens != 2048 || got.MaxRounds != 7 || *got.Temperature != 0.3 || got.Compaction.Threshold != 500 {
-		t.Fatalf("knobs are saved %+v", got)
+		t.Fatalf("settings are saved %+v", got)
 	}
 	if got.UI.Theme != "light" || got.Mode != "plan" || got.Profile != "fake" || got.Model != "m-other" {
 		t.Fatalf("theme, mode, profile and model are saved %+v", got)
@@ -867,13 +868,13 @@ func TestSettingsSurviveARestart(t *testing.T) {
 		t.Fatal("a restart comes back with every setting")
 	}
 	os.WriteFile(filepath.Join(dir, "cfg", harness.ConfigFile), []byte(`{bad`), 0o644)
-	m.Update(cards.KnobMsg{Key: "cascade", Value: "false"})
-	if !m.wm.Cascade() || !toasted(m, harness.ConfigFile) {
-		t.Fatal("a knob that cannot be saved toasts and stays as it was")
+	m.Update(cards.SettingMsg{Key: "cascade", Value: "false"})
+	if m.wm.Cascade() || !toasted(m, harness.ConfigFile) {
+		t.Fatal("a setting that cannot be saved applies and toasts")
 	}
 	feed(m, m.command(nil, "model", "m-third"))
-	if m.app.Primary.Model != "m-other" {
-		t.Fatal("a model that cannot be saved stays as it was")
+	if m.app.Primary.Model != "m-third" || !toasted(m, harness.ConfigFile) {
+		t.Fatal("a model that cannot be saved applies and toasts")
 	}
 	again.shutdown()
 	m.shutdown()
@@ -883,7 +884,7 @@ func TestConfigSettingsApplyTheMomentTheyChange(t *testing.T) {
 	m, _ := newModel(t, false)
 	m.wm.SetMotion(0)
 	feed(m, m.command(nil, "config", ""))
-	feed(m, m.config.Select(3))
+	feed(m, m.config.Select(2))
 	feed(m, m.wm.Focus(m.config))
 	shows := func(row, value string) bool {
 		return regexp.MustCompile(`\b` + row + `\s+` + regexp.QuoteMeta(value) + `[\s▏]`).MatchString(ansi.Strip(m.View().Content))
@@ -947,7 +948,7 @@ func TestCtrlC(t *testing.T) {
 		t.Fatal("run goes")
 	}
 	_, cmd := m.Update(key('c', tea.ModCtrl))
-	if m.quitting || !toasted(m, "run cancelled") || has[tea.QuitMsg](drain(cmd)) {
+	if m.quitting || !toasted(m, "cancelled") || has[tea.QuitMsg](drain(cmd)) {
 		t.Fatal("first ctrl+c cancels")
 	}
 	_, cmd = m.Update(key('c', tea.ModCtrl))
@@ -1033,8 +1034,8 @@ func TestPanelPickerAndModeCycle(t *testing.T) {
 	if m.app.Mode.Mode() != before.Next() {
 		t.Fatal("shift+tab away from the session leaves the mode alone")
 	}
-	if _, ok := m.knobs()["newline"]; ok {
-		t.Fatal("there is no newline knob")
+	if _, ok := m.settings()["newline"]; ok {
+		t.Fatal("there is no newline setting")
 	}
 	feed(m, m.newWorkspace())
 	_, cmd = m.Update(key('W', tea.ModAlt))
@@ -1170,4 +1171,212 @@ func TestThemePickedInThePaletteRepaintsEverything(t *testing.T) {
 	if !strings.Contains(trace, fg(theme.Light().Ice)) {
 		t.Fatal("the transcript paints in the light palette")
 	}
+}
+
+func TestClearStartsAFreshSessionInPlace(t *testing.T) {
+	m, _ := newModel(t, false)
+	d := m.desks[0]
+	before := d.live
+	cmd := submit(m, d, "hello")
+	if feed(m, m.command(nil, "clear", "")); d.live != before || !toasted(m, "agent still working") {
+		t.Fatal("a busy session does not clear")
+	}
+	feed(m, cmd)
+	pump(t, m, runDone)
+	feed(m, m.command(nil, "findings", ""))
+	old := d.live
+	feed(m, m.command(nil, "clear", ""))
+	if d.live == old || d.live.Session.Len() != 0 || len(m.desks) != 1 || len(m.wm.Workspaces()) != 1 || d.ws.ID != d.live.Session.ID() || m.app.LiveByID(old.Session.ID()) != nil || m.app.Session != d.live.Session {
+		t.Fatal("clear swaps in a fresh session and releases the old one")
+	}
+	if ok, _ := m.app.Store.Exists(context.Background(), old.Session.ID()); !ok || !toasted(m, old.Session.ID()+" stored") {
+		t.Fatal("the old session stays stored")
+	}
+	if d.session.Session() != d.live.Session || d.session.Composer.SessionID != d.live.Session.ID() || d.session.Transcript.Blocks() != 0 || d.findings != nil || m.wm.Has("findings:"+old.Session.ID()) {
+		t.Fatal("the session card follows the new session and the old findings close")
+	}
+	feed(m, submit(m, d, "again"))
+	pump(t, m, runDone)
+	if d.live.Session.Len() != 2 || d.session.Transcript.Blocks() == 0 {
+		t.Fatal("the fresh session runs in the same workspace")
+	}
+}
+
+// Last assistant entry of a session
+func lastAnswer(s *session.Session) session.Entry {
+	entries := s.Entries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Role == protocol.RoleAssistant {
+			return entries[i]
+		}
+	}
+	return session.Entry{}
+}
+
+func TestWorkspacesRunOnTheirOwnEndpoints(t *testing.T) {
+	m, srv := newModel(t, false)
+	first := m.desks[0]
+	feed(m, m.command(nil, "model", "m-a"))
+	feed(m, m.newWorkspace())
+	second := m.desks[1]
+	feed(m, m.command(nil, "model", "m-b"))
+	if first.live.Endpoint.Model != "m-a" || second.live.Endpoint.Model != "m-b" || m.app.Primary.Model != "m-b" {
+		t.Fatalf("each workspace keeps its model, %s and %s", first.live.Endpoint.Model, second.live.Endpoint.Model)
+	}
+	if left, _ := m.bar(); !strings.Contains(fmt.Sprint(left), "m-b") || !strings.Contains(m.View().WindowTitle, "m-b") {
+		t.Fatal("the bar and title name the model of the workspace on the stage")
+	}
+	m.Update(key('1', tea.ModAlt))
+	if left, _ := m.bar(); !strings.Contains(fmt.Sprint(left), "m-a") || !strings.Contains(m.View().WindowTitle, "m-a") {
+		t.Fatal("switching workspaces switches the model shown")
+	}
+	one := submit(m, first, "one")
+	m.Update(key('2', tea.ModAlt))
+	two := submit(m, second, "two")
+	feed(m, one)
+	feed(m, two)
+	done := 0
+	pump(t, m, func(msg tea.Msg) bool {
+		if runDone(msg) {
+			done++
+		}
+		return done == 2
+	})
+	if lastAnswer(first.live.Session).Model != "m-a" || lastAnswer(second.live.Session).Model != "m-b" {
+		t.Fatalf("runs go to the model of their workspace, %q and %q", lastAnswer(first.live.Session).Model, lastAnswer(second.live.Session).Model)
+	}
+	if err := m.app.SaveProfile("", profiles.Profile{Name: "other", Vendor: "openai", Protocol: "openai-completions", BaseURL: srv.URL, Models: []string{"m-x"}}); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(key('1', tea.ModAlt))
+	busy := submit(m, first, "long")
+	m.Update(key('2', tea.ModAlt))
+	feed(m, m.switchProfile("other", ""))
+	if second.live.Endpoint.Profile.Name != "other" || second.live.Endpoint.Model != "m-x" || first.live.Endpoint.Profile.Name != "fake" || m.app.Primary.Profile.Name != "other" {
+		t.Fatalf("a workspace switches profile while another runs, %+v", second.live.Endpoint.Profile.Name)
+	}
+	feed(m, busy)
+	pump(t, m, runDone)
+	stored := second.live.Session.ID()
+	feed(m, m.closeWorkspace())
+	feed(m, m.switchProfile("fake", ""))
+	if m.app.Primary.Profile.Name != "fake" {
+		t.Fatal("the default moves back with the workspace on the stage")
+	}
+	feed(m, m.openStored(stored))
+	if d := m.current(); d.live.Session.ID() != stored || d.live.Endpoint.Profile.Name != "other" || d.live.Endpoint.Model != "m-x" || !toasted(m, "on m-x") {
+		t.Fatalf("a resumed session comes back on its own endpoint, %+v", d.live.Endpoint.Profile.Name)
+	}
+	feed(m, m.closeWorkspace())
+	if err := m.app.RemoveProfile("other"); err != nil {
+		t.Fatal(err)
+	}
+	feed(m, m.openStored(stored))
+	if d := m.current(); d.live.Endpoint.Profile.Name != "fake" || d.live.Session.Labels()["profile"] != "fake" {
+		t.Fatal("a session whose profile is gone resumes on the default and is relabeled")
+	}
+}
+
+func TestWorkspacesSurviveARestart(t *testing.T) {
+	srv, _ := fakeServer(t, false)
+	cfg, dir := testConfig(t, srv.URL)
+	ctx := context.Background()
+	m, err := New(ctx, Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(m.Init())
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	first := m.desks[0]
+	firstID := first.live.Session.ID()
+	first.live.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "one"}}})
+	ms, err := first.live.Missions.Create("map the ports")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.mission = ms.ID
+	feed(m, m.command(first, "findings", ""))
+	feed(m, m.wm.SetLayout(wm.Dwindle))
+	feed(m, m.newWorkspace())
+	second := m.current()
+	secondID := second.live.Session.ID()
+	feed(m, m.command(second, "metrics", ""))
+	feed(m, m.command(second, "config", ""))
+	feed(m, m.wm.ToggleFloat())
+	feed(m, m.config.ShowKeys())
+	_, keysTab := m.config.Active()
+	second.session.Transcript.ShowThinking(false)
+	run := second.session.Composer
+	drain(run.SetFocus(true))
+	for _, r := range "half typed" {
+		run.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m.Update(keysTickMsg{})
+	l, _, ok := loadLayout(layoutPath(m.app.Config))
+	if !ok || len(l.Workspaces) != 2 || l.Active != 1 || l.Missions[firstID] != ms.ID {
+		t.Fatalf("the layout is written as it changes %+v", l)
+	}
+	if w := l.Workspaces[0]; w.ID != firstID || w.Mode != "dwindle" || len(w.Tiles) != 2 || w.Tiles[1].Key != "findings:"+firstID || w.Tree == nil {
+		t.Fatalf("first workspace %+v", w)
+	}
+	var view struct {
+		Hidden bool `json:"thinking_hidden"`
+	}
+	json.Unmarshal(l.Workspaces[1].Cards["session:"+secondID], &view)
+	if w := l.Workspaces[1]; w.ID != secondID || len(w.Tiles) != 2 || w.Tiles[1].Key != "metrics" || len(w.Floats) != 1 || w.Floats[0].Key != "config" || w.Focus != "config" || !view.Hidden {
+		t.Fatalf("second workspace %+v", w)
+	}
+	m.shutdown()
+	if _, err := m.app.Store.Load(ctx, secondID); !errors.Is(err, session.ErrNotFound) {
+		t.Fatalf("a session nothing was sent on is not written, %v", err)
+	}
+	again, err := New(ctx, Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(again.Init())
+	again.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if len(again.desks) != 2 || again.wm.ActiveIndex() != 1 || len(again.app.Lives()) != 2 || again.app.Current() != again.desks[1].live {
+		t.Fatalf("both workspaces come back with the second shown, %d desks active %d lives %d", len(again.desks), again.wm.ActiveIndex(), len(again.app.Lives()))
+	}
+	one, two := again.desks[0], again.desks[1]
+	if one.live.Session.ID() != firstID || one.live.Session.Len() != 1 || one.ws.Mode() != wm.Dwindle || !again.wm.Has("findings:"+firstID) || one.mission != ms.ID {
+		t.Fatal("the first workspace comes back with its transcript, layout, findings card and mission")
+	}
+	if two.live.Session.ID() != secondID || two.live.Session.Len() != 0 || !again.wm.Has("metrics") || !again.wm.Has("config") {
+		t.Fatal("the second workspace comes back empty under its id with its panels")
+	}
+	back := again.wm.Layout().Workspaces[1]
+	if len(back.Floats) != 1 || back.Floats[0].Key != "config" || back.Focus != "config" {
+		t.Fatalf("the config card floats with the focus %+v", back)
+	}
+	if _, tab := again.config.Active(); tab != keysTab {
+		t.Fatalf("the config card shows the keys tab again, %d", tab)
+	}
+	if two.session.Transcript.Thinking() || two.session.Composer.Value() != "half typed" || two.session.Composer.SessionID != secondID {
+		t.Fatalf("thinking and the draft come back %q", two.session.Composer.Value())
+	}
+	again.shutdown()
+	if _, err := again.app.Store.Load(ctx, secondID); !errors.Is(err, session.ErrNotFound) {
+		t.Fatal("a revived session nothing was sent on is still not written")
+	}
+	third, err := New(ctx, Options{Config: cfg, Dir: dir, Resume: firstID, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(third.Init())
+	if len(third.desks) != 2 || third.wm.ActiveIndex() != 0 || third.current().live.Session.ID() != firstID {
+		t.Fatalf("resuming a session shows its workspace among the restored ones, %d desks active %d", len(third.desks), third.wm.ActiveIndex())
+	}
+	third.shutdown()
+	os.Remove(layoutPath(cfg))
+	fourth, err := New(ctx, Options{Config: cfg, Dir: dir, Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(fourth.Init())
+	if len(fourth.desks) != 1 || fourth.current().live.Session.Len() != 0 {
+		t.Fatal("without a layout a fresh session opens alone")
+	}
+	fourth.shutdown()
 }

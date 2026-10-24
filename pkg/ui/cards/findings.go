@@ -47,7 +47,7 @@ func NewFindings(env *Env, store *facts.Store, sessionID string) *Findings {
 }
 
 func (f *Findings) Title() string    { return "FINDINGS" }
-func (f *Findings) Glyph() string    { return "✎" }
+func (f *Findings) Glyph() string    { return f.env.Theme.Glyphs.Findings }
 func (f *Findings) Key() string      { return "findings:" + f.session }
 func (f *Findings) Init() tea.Cmd    { return nil }
 func (f *Findings) Selectable() bool { return true }
@@ -315,12 +315,12 @@ func (f *Findings) View(w, h int) string {
 		filters = append(filters, "status="+f.status)
 	}
 	if len(filters) > 0 {
-		lines = append(lines, render.Truncate(" "+render.Warm(strings.Join(filters, " "), t), w))
+		lines = append(lines, render.Truncate(" "+render.Warm(strings.Join(filters, " "), t), w, t))
 	}
 	f.top = len(lines)
 	foot := ""
 	if f.bar.Shown() {
-		foot = f.bar.View(w, render.Count(len(f.rows), "fact"), "filter by title, body or tag", t)
+		foot = f.bar.View(w, render.Count(len(f.rows), "fact"), "filter", t)
 	}
 	body := h - len(lines)
 	if foot != "" {
@@ -328,11 +328,11 @@ func (f *Findings) View(w, h int) string {
 	}
 	if len(f.rows) == 0 {
 		f.pane.hide()
-		empty := "nothing recorded yet"
+		empty := "no findings"
 		if f.bar.Query() != "" || len(filters) > 0 {
-			empty = "no fact matches"
+			empty = "no match"
 		}
-		return footed(append(lines, "", render.Dim("  "+empty, t)), foot, h)
+		return footed(append(lines, strings.Split(emptyView(w, body, empty, t), "\n")...), foot, h)
 	}
 	cols := []render.Column{{Title: "ID"}, {Title: "KIND"}, {Title: "TITLE", Flex: 1}, {Title: "CONF", Right: true}, {Title: "BY"}}
 	rows := make([][]string, 0, len(f.rows))
@@ -341,9 +341,9 @@ func (f *Findings) View(w, h int) string {
 		mark := ""
 		switch fact.Status {
 		case facts.StatusResolved:
-			mark = render.Good("✓ ", t)
+			mark = render.Good(t.Glyphs.Check+" ", t)
 		case facts.StatusRetracted:
-			mark = render.Dim("⊘ ", t)
+			mark = render.Dim(t.Glyphs.Skip+" ", t)
 		}
 		rows = append(rows, []string{fact.ID, fact.Kind, mark + title, render.Percent(fact.Confidence), fact.Agent})
 	}
@@ -358,7 +358,7 @@ func (f *Findings) View(w, h int) string {
 		f.pane.hide()
 		return footed(lines, foot, h)
 	}
-	lines = append(lines, render.Dim(strings.Repeat("┄", w), t))
+	lines = append(lines, render.Divider(w, t))
 	rest := body - (len(lines) - f.top)
 	if pane := f.pane.view(f.detail(f.rows[f.sel]), f.sel, len(lines), rest, w, f.env); rest > 0 {
 		lines = append(lines, pane)
@@ -410,7 +410,7 @@ func (f *Findings) Status() string {
 	}
 	open := fmt.Sprintf("%d open", len(f.store.List(facts.Query{Status: facts.StatusOpen})))
 	if f.tree {
-		return open + " · tree"
+		return open + " " + f.env.Theme.Glyphs.Sep + " tree"
 	}
 	return open
 }
@@ -420,7 +420,7 @@ func (f *Findings) Hints() []wm.Hint {
 	if f.bar.Active() {
 		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "move"}, {Action: "search.close"}}
 	}
-	out := []wm.Hint{{Action: "filter.toggle"}, {Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "findings.detail"}, {Action: "findings.resolve"}, {Action: "findings.tree"}, {Action: "findings.kind"}, {Action: "findings.tag"}, {Action: "findings.status"}, {Action: "findings.export.md"}, {Action: "findings.export.json"}}
+	out := []wm.Hint{{Action: "findings.detail"}, {Action: "findings.resolve"}, {Action: "findings.tree"}, {Action: "findings.kind"}, {Action: "findings.tag"}, {Action: "findings.status"}, {Action: "findings.export.md"}, {Action: "findings.export.json"}, {Action: "filter.toggle"}, {Action: "list.down", Pair: "list.up", Label: "move"}}
 	if f.detailShown() && f.pane.overflows() {
 		out = append(out, wm.Hint{Action: "detail.scroll.down", Pair: "detail.scroll.up", Label: "scroll detail"})
 	}

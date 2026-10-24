@@ -95,10 +95,7 @@ func (b *searchBar) CursorX() int { return 3 + ansi.StringWidth(b.query) }
 
 // Row at width with the count at the right, lit as a field while it takes typing
 func (b *searchBar) View(w int, count string, placeholder string, t theme.Theme) string {
-	glyph := "⌕"
-	if t.Plain {
-		glyph = "/"
-	}
+	glyph := t.Glyphs.Search
 	base := lipgloss.NewStyle()
 	if b.active {
 		base = base.Background(t.Ghost)
@@ -118,7 +115,7 @@ func (b *searchBar) View(w int, count string, placeholder string, t theme.Theme)
 	}
 	lw, rw := ansi.StringWidth(left), ansi.StringWidth(right)
 	if lw+rw+1 > w {
-		return render.Fit(left, w)
+		return render.Fit(left, w, t)
 	}
 	return left + base.Render(strings.Repeat(" ", w-lw-rw)) + right
 }

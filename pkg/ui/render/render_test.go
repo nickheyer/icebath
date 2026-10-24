@@ -116,7 +116,7 @@ func TestDiffFindsChanges(t *testing.T) {
 	}
 	th := theme.Blackwall()
 	out := ansi.Strip(DiffText(before, after, 40, th))
-	for _, want := range []string{"- c", "+ C", "+ h", "┄"} {
+	for _, want := range []string{"- c", "+ C", "+ h", "┈", th.Glyphs.Info} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("lacks %q:\n%s", want, out)
 		}
@@ -132,11 +132,18 @@ func TestDiffFindsChanges(t *testing.T) {
 
 func TestFormatters(t *testing.T) {
 	th := theme.Blackwall()
-	if Truncate("hello", 0) != "" || Truncate("hello", 1) != "…" || Truncate("hello", 3) != "he…" || Truncate("hi", 5) != "hi" {
+	if Truncate("hello", 0, th) != "" || Truncate("hello", 1, th) != "⋯" || Truncate("hello", 3, th) != "he⋯" || Truncate("hi", 5, th) != "hi" {
 		t.Fatal("truncate")
 	}
-	if ansi.StringWidth(Fit("hi", 5)) != 5 || ansi.StringWidth(Fit("hello world", 5)) != 5 {
+	plain := theme.Plain()
+	if Truncate("hello", 2, plain) != ".." || Truncate("hello world", 6, plain) != "hel..." || Truncate("hi", 5, plain) != "hi" {
+		t.Fatalf("plain truncate %q %q", Truncate("hello", 2, plain), Truncate("hello world", 6, plain))
+	}
+	if ansi.StringWidth(Fit("hi", 5, th)) != 5 || ansi.StringWidth(Fit("hello world", 5, th)) != 5 {
 		t.Fatal("fit")
+	}
+	if ansi.StringWidth(Divider(20, th)) != 20 || !strings.Contains(Divider(20, th), th.Glyphs.Info) || strings.Contains(Divider(5, th), th.Glyphs.Info) || Divider(0, th) != "" {
+		t.Fatalf("divider %q", Divider(20, th))
 	}
 	if Wrap("aaaa bbbb", 4) != "aaaa\nbbbb" || Wrap("x", 0) != "x" {
 		t.Fatalf("%q", Wrap("aaaa bbbb", 4))
@@ -168,13 +175,16 @@ func TestFormatters(t *testing.T) {
 	if Gauge(0.5, 0, th) != "" || ansi.StringWidth(Gauge(0.95, 10, th)) != 10 || ansi.StringWidth(Gauge(0.75, 10, theme.Plain())) != 10 {
 		t.Fatal("gauge")
 	}
-	if Spinner(3, th) != spinner[3] || Spinner(1, theme.Plain()) != "/" {
+	if Spinner(3, th) != th.Glyphs.Spinner[3] || Spinner(1, theme.Plain()) != "/" || Spinner(2, theme.Theme{}) != "" {
 		t.Fatal("spinner")
 	}
-	for name, want := range map[string]string{"Read": "◇", "Bash": "⌘", "mcp__x__y": "⚙", "Other": "▸", "Agent": "☍"} {
-		if ToolGlyph(name) != want {
-			t.Fatalf("%s %s", name, ToolGlyph(name))
+	for name, want := range map[string]string{"Read": th.Glyphs.Read, "Bash": th.Glyphs.Bash, "mcp__x__y": th.Glyphs.Server, "Other": th.Glyphs.Tool, "Agent": th.Glyphs.Spawn} {
+		if ToolGlyph(name, th) != want {
+			t.Fatalf("%s %s", name, ToolGlyph(name, th))
 		}
+	}
+	if ToolGlyph("Bash", theme.Plain()) != "$" {
+		t.Fatal("plain tool glyph")
 	}
 	for _, s := range []string{KV("k", "v", th), Heading("h", th), Dim("d", th), Bad("b", th), Good("g", th), Warm("w", th), Cool("c", th), Hot("h", th)} {
 		if ansi.Strip(s) == "" {
@@ -184,8 +194,8 @@ func TestFormatters(t *testing.T) {
 	if len(Lines("")) != 0 || len(Lines("a\nb\n")) != 2 || Tail("a\nb\nc", 2) != "b\nc" || Tail("a", 5) != "a" {
 		t.Fatal("lines")
 	}
-	if Summary("  first line\nsecond", 20) != "first line …" || Summary("x", 1) != "x" {
-		t.Fatalf("%q", Summary("  first line\nsecond", 20))
+	if Summary("  first line\nsecond", 20, th) != "first line ⋯" || Summary("x", 1, th) != "x" {
+		t.Fatalf("%q", Summary("  first line\nsecond", 20, th))
 	}
 }
 
@@ -203,7 +213,7 @@ func TestTableFitsWidth(t *testing.T) {
 			t.Fatalf("line too wide: %q", l)
 		}
 	}
-	if !strings.Contains(lines[0], "NAME") || !strings.HasPrefix(lines[1], "──") || !strings.HasSuffix(strings.TrimRight(lines[2], " "), "run…") || !strings.HasPrefix(lines[3], "▸") || !strings.Contains(lines[3], "22") {
+	if !strings.Contains(lines[0], "NAME") || !strings.HasPrefix(lines[1], "──") || !strings.HasSuffix(strings.TrimRight(lines[2], " "), "run⋯") || !strings.HasPrefix(lines[3], "►") || !strings.Contains(lines[3], "22") {
 		t.Fatalf("%v", lines)
 	}
 	tight := strings.Split(ansi.Strip(Table(cols, rows, 12, -1, th)), "\n")
@@ -220,7 +230,7 @@ func TestTableFitsWidth(t *testing.T) {
 		t.Fatal("fixed columns cut from the end")
 	}
 	marked := strings.Split(ansi.Strip(TableMarked(cols, rows, 40, 1, func(i int) bool { return i != 2 }, nil, th)), "\n")
-	if !strings.HasPrefix(marked[2], "▪") || !strings.HasPrefix(marked[3], "▸") || strings.HasPrefix(marked[4], "▪") {
+	if !strings.HasPrefix(marked[2], "▮") || !strings.HasPrefix(marked[3], "►") || strings.HasPrefix(marked[4], "▮") {
 		t.Fatalf("marked rows carry a tick, the cursor its arrow %v", marked)
 	}
 }

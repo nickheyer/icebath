@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
@@ -180,6 +181,7 @@ func (p *Provider) Do(ctx context.Context, call protocol.Call) (*http.Response, 
 		}
 		p.decorate(hr, call.Header)
 		at := Attempt{Provider: p.Name, Attempt: attempt, Method: call.Method, URL: target, Started: time.Now()}
+		p.begin(at)
 		resp, err := client.Do(hr)
 		at.Duration = time.Since(at.Started)
 		if err == nil {
@@ -189,7 +191,7 @@ func (p *Provider) Do(ctx context.Context, call protocol.Call) (*http.Response, 
 			at.RateLimit = ParseRateLimit(resp.Header)
 		}
 		if err == nil && resp.StatusCode/100 == 2 {
-			p.observe(at)
+			resp.Body = &timed{ReadCloser: resp.Body, at: at, p: p}
 			return resp, nil
 		}
 		var failure error
@@ -229,6 +231,40 @@ func (p *Provider) observe(a Attempt) {
 	if p.Observer != nil {
 		p.Observer.Observe(a)
 	}
+}
+
+func (p *Provider) begin(a Attempt) {
+	if s, ok := p.Observer.(Starter); ok {
+		s.Begin(a)
+	}
+}
+
+// Response body that reports the attempt with its whole duration once read to the end or closed
+type timed struct {
+	io.ReadCloser
+	at   Attempt
+	p    *Provider
+	once sync.Once
+}
+
+func (b *timed) Read(buf []byte) (int, error) {
+	n, err := b.ReadCloser.Read(buf)
+	if err == io.EOF {
+		b.finish()
+	}
+	return n, err
+}
+
+func (b *timed) Close() error {
+	b.finish()
+	return b.ReadCloser.Close()
+}
+
+func (b *timed) finish() {
+	b.once.Do(func() {
+		b.at.Duration = time.Since(b.at.Started)
+		b.p.observe(b.at)
+	})
 }
 
 // Longest pause honored between attempts, at least a minute so Retry-After may stretch past a shorter retry maximum

@@ -302,9 +302,9 @@ func (l *lister) foot(w int) string {
 	t := l.env.Theme
 	switch {
 	case l.capture != nil:
-		return render.Fit(" "+render.Warm("press a key for "+l.asking, t)+"  "+render.Dim(l.env.keyed("capture.cancel", "cancels"), t), w)
+		return render.Fit(" "+render.Warm(l.asking, t)+"  "+render.Dim(l.env.keyed("capture.cancel", "cancel"), t), w, t)
 	case l.ask != nil:
-		return render.Fit(" "+render.Bad(l.ask.text, t)+"  "+render.Dim(l.env.keyed("confirm.yes", "yes")+" · "+l.env.keyed("confirm.no", "no"), t), w)
+		return render.Fit(" "+render.Bad(l.ask.text, t)+"  "+render.Dim(l.env.keyed("confirm.yes", "yes")+" "+t.Glyphs.Sep+" "+l.env.keyed("confirm.no", "no"), t), w, t)
 	case l.bar.Shown():
 		count := render.Count(len(l.data), "row")
 		if l.bar.Query() != "" {
@@ -332,18 +332,14 @@ func (l *lister) View(w, h int) string {
 	}
 	if len(rows) == 0 {
 		l.pane.hide()
-		empty := "nothing here"
+		empty := "empty"
 		switch {
 		case l.bar.Query() != "":
-			empty = "no row matches"
+			empty = "no match"
 		case l.empty != nil:
 			empty = l.empty()
 		}
-		var lines []string
-		for _, line := range strings.Split(render.Wrap(empty, max(w-2, 1)), "\n") {
-			lines = append(lines, "  "+render.Dim(line, t))
-		}
-		return footed(lines, foot, h)
+		return footed(strings.Split(emptyView(w, body, render.Wrap(empty, max(w-2, 1)), t), "\n"), foot, h)
 	}
 	l.xs, l.widths = render.Columns(l.cols, rows, w)
 	table := strings.Split(render.TableEdit(l.cols, rows, w, l.sel, l.edit, t), "\n")
@@ -357,7 +353,7 @@ func (l *lister) View(w, h int) string {
 		l.pane.hide()
 		return footed(lines, foot, h)
 	}
-	lines = append(lines, render.Dim(strings.Repeat("┄", w), t))
+	lines = append(lines, render.Divider(w, t))
 	rest := body - len(lines)
 	i := l.index()
 	if pane := l.pane.view(l.detail(i), i, len(lines), rest, w, l.env); rest > 0 {
@@ -379,7 +375,7 @@ func (l *lister) Cursor() *tea.Cursor {
 	if l.bar.Active() && l.edit == nil && l.capture == nil && l.ask == nil {
 		return tea.NewCursor(l.bar.CursorX(), l.h-1)
 	}
-	if l.edit == nil || l.edit.Col >= len(l.xs) {
+	if l.edit == nil || l.edit.Col >= len(l.xs) || l.widths[l.edit.Col] == 0 {
 		return nil
 	}
 	y := render.TableHead + l.sel - l.start
@@ -388,7 +384,7 @@ func (l *lister) Cursor() *tea.Cursor {
 	return tea.NewCursor(x, y)
 }
 
-// Actions the table answers in its current state, the filter first and then the actions of its tab that apply
+// Actions the table answers now, those of its tab first and then the filter and cursor
 func (l *lister) Hints() []wm.Hint {
 	switch {
 	case l.capture != nil:
@@ -401,13 +397,13 @@ func (l *lister) Hints() []wm.Hint {
 		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "move"}, {Action: "search.close"}}
 	}
 	var out []wm.Hint
-	if len(l.data) > 0 {
-		out = append(out, wm.Hint{Action: "filter.toggle"}, wm.Hint{Action: "list.down", Pair: "list.up", Label: "move"})
-	}
 	for _, a := range l.env.Keys.InContexts([]string{l.ctx}) {
 		if _, ok := l.actions[a.ID]; ok && a.Context == l.ctx && (l.free[a.ID] || l.index() >= 0) {
 			out = append(out, wm.Hint{Action: a.ID})
 		}
+	}
+	if len(l.data) > 0 {
+		out = append(out, wm.Hint{Action: "filter.toggle"}, wm.Hint{Action: "list.down", Pair: "list.up", Label: "move"})
 	}
 	if l.detailShown() && l.pane.overflows() {
 		out = append(out, wm.Hint{Action: "detail.scroll.down", Pair: "detail.scroll.up", Label: "scroll detail"})

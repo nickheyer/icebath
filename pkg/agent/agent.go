@@ -208,7 +208,7 @@ type Agent struct {
 	Tools   *tool.Registry
 	Gate    policy.Gate
 	Session *session.Session
-	// Request knobs copied onto every turn
+	// Request options copied onto every turn
 	MaxTokens   int
 	Temperature *float64
 	Extra       map[string]json.RawMessage

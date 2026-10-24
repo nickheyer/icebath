@@ -162,13 +162,12 @@ func FormatDiff(lines []Line, width int, t theme.Theme) string {
 	add := lipgloss.NewStyle().Foreground(t.Alive)
 	rem := lipgloss.NewStyle().Foreground(t.Alarm)
 	same := lipgloss.NewStyle().Foreground(t.Text)
-	sep := lipgloss.NewStyle().Foreground(t.Steel)
 	digits := len(fmt.Sprint(max(len(lines), 1)))
 	body := max(width-2*digits-4, 8)
 	var sb strings.Builder
 	for h, hunk := range hunks {
 		if h > 0 {
-			sb.WriteString(sep.Render(strings.Repeat("┄", min(width, 40))) + "\n")
+			sb.WriteString(Divider(min(width, 40), t) + "\n")
 		}
 		for _, l := range hunk {
 			oldN, newN, mark := " ", " ", " "
@@ -181,7 +180,7 @@ func FormatDiff(lines []Line, width int, t theme.Theme) string {
 			default:
 				oldN, newN = fmt.Sprint(l.Old), fmt.Sprint(l.New)
 			}
-			text := Truncate(expandTabs(l.Text), body)
+			text := Truncate(expandTabs(l.Text), body, t)
 			sb.WriteString(num.Render(fmt.Sprintf("%*s %*s ", digits, oldN, digits, newN)) + st.Render(mark+" "+text) + "\n")
 		}
 	}

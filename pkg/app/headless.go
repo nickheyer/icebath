@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
 // What a scripted run needs beside the configuration
@@ -162,7 +163,11 @@ type textWriter struct {
 	open bool
 }
 
+// Theme whose marks the text output borrows
+var printTheme = theme.Blackwall()
+
 func (w *textWriter) write(msg any) {
+	t := printTheme
 	switch v := msg.(type) {
 	case harness.EventMsg:
 		ev := v.Event
@@ -177,28 +182,28 @@ func (w *textWriter) write(msg any) {
 			}
 		case agent.EventToolStart:
 			w.newline()
-			fmt.Fprintf(w.err, "▸ %s %s\n", ev.Call.Name, render.Truncate(strings.Join(strings.Fields(string(ev.Call.Args)), " "), 100))
+			fmt.Fprintf(w.err, "%s %s %s\n", t.Glyphs.Cursor, ev.Call.Name, render.Truncate(strings.Join(strings.Fields(string(ev.Call.Args)), " "), 100, t))
 		case agent.EventToolEnd:
 			if ev.Err != nil {
-				fmt.Fprintf(w.err, "✗ %s refused: %v\n", ev.Call.Name, ev.Err)
+				fmt.Fprintf(w.err, "%s %s refused: %v\n", t.Glyphs.Error, ev.Call.Name, ev.Err)
 			} else if ev.Result.IsError {
-				fmt.Fprintf(w.err, "✗ %s failed: %s\n", ev.Call.Name, render.Truncate(protocol.Response{Content: ev.Result.Content}.Text(), 200))
+				fmt.Fprintf(w.err, "%s %s failed: %s\n", t.Glyphs.Error, ev.Call.Name, render.Truncate(protocol.Response{Content: ev.Result.Content}.Text(), 200, t))
 			}
 		case agent.EventSubagentStart:
 			w.newline()
-			fmt.Fprintf(w.err, "☍ %s started\n", ev.Call.Name)
+			fmt.Fprintf(w.err, "%s %s started\n", t.Glyphs.Child, ev.Call.Name)
 		case agent.EventNote, agent.EventHook:
 			w.newline()
-			fmt.Fprintf(w.err, "· %s\n", ev.Text)
+			fmt.Fprintf(w.err, "%s %s\n", t.Glyphs.Note, ev.Text)
 		case agent.EventTurnEnd:
 			w.newline()
 		}
 	case harness.ApprovalMsg:
 		w.newline()
-		fmt.Fprintf(w.err, "⚑ approval for %s %s\n", v.Pending.Request.Call.Name, render.Truncate(string(v.Pending.Request.Call.Args), 120))
+		fmt.Fprintf(w.err, "%s approval for %s %s\n", t.Glyphs.Flag, v.Pending.Request.Call.Name, render.Truncate(string(v.Pending.Request.Call.Args), 120, t))
 	case harness.FactMsg:
 		w.newline()
-		fmt.Fprintf(w.err, "✎ %s %s: %s\n", v.Change.Op, v.Change.Fact.ID, v.Change.Fact.Title)
+		fmt.Fprintf(w.err, "%s %s %s: %s\n", t.Glyphs.Record, v.Change.Op, v.Change.Fact.ID, v.Change.Fact.Title)
 	}
 }
 
@@ -211,7 +216,7 @@ func (w *textWriter) newline() {
 
 // Runs one prompt or mission to completion without a terminal and returns the exit code
 func Headless(ctx context.Context, opts HeadlessOptions) int {
-	out, errw := opts.Out, opts.Err
+	out, errw, t := opts.Out, opts.Err, printTheme
 	enc := json.NewEncoder(out)
 	tw := &textWriter{out: out, err: errw}
 	var app *harness.App
@@ -272,7 +277,7 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 		return 2
 	}
 	if app.Session.Title() == "" {
-		app.Session.SetTitle(render.Summary(prompt, 60))
+		app.Session.SetTitle(render.Summary(prompt, 60, t))
 	}
 	run, err := app.Run(ctx, missionID, []protocol.Part{protocol.Text{Text: prompt}})
 	if err != nil {
@@ -293,13 +298,13 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 			fmt.Fprintln(errw, "icebath:", run.Err())
 		}
 		usage := run.Response().Usage
-		fmt.Fprintf(errw, "session %s · %s in %s out · %s\n", app.Session.ID(), render.Tokens(usage.Input), render.Tokens(usage.Output), render.Elapsed(run.Elapsed(run.Finished())))
+		fmt.Fprintf(errw, "session %s %s %s in %s out %s %s\n", app.Session.ID(), t.Glyphs.Sep, render.Tokens(usage.Input), render.Tokens(usage.Output), t.Glyphs.Sep, render.Elapsed(run.Elapsed(run.Finished())))
 		if changed := app.Workspace.Changed(); len(changed) > 0 {
 			paths := make([]string, 0, len(changed))
 			for _, c := range changed {
 				paths = append(paths, shortPath(app.Workspace.Dir(), c.Path))
 			}
-			fmt.Fprintf(errw, "▣ %d changed: %s\n", len(paths), strings.Join(paths, ", "))
+			fmt.Fprintf(errw, "%s %d changed: %s\n", t.Glyphs.Changed, len(paths), strings.Join(paths, ", "))
 		}
 	}
 	if run.Err() != nil {

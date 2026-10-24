@@ -54,12 +54,6 @@ func (te *testEnv) config(t *testing.T, i int) (*Config, []tea.Msg) {
 	return c, run(c.Select(i))
 }
 
-// Tab under the strip as a table
-func active(c *Config) *lister {
-	card, _ := c.Active()
-	return card.(*lister)
-}
-
 func TestConfigTabsCarryDistinctGlyphsUnderAPaddedStrip(t *testing.T) {
 	te := newEnv(t)
 	c, _ := te.config(t, 0)
@@ -68,7 +62,7 @@ func TestConfigTabsCarryDistinctGlyphsUnderAPaddedStrip(t *testing.T) {
 		titles = append(titles, card.Title())
 		glyphs = append(glyphs, card.(wm.Glypher).Glyph())
 	}
-	if strings.Join(titles, " ") != "profiles providers models app rules hooks mcp tools log keys" {
+	if strings.Join(titles, " ") != "profiles models app rules hooks mcp tools log keys" {
 		t.Fatalf("tabs %v", titles)
 	}
 	for i, g := range glyphs {
@@ -76,8 +70,9 @@ func TestConfigTabsCarryDistinctGlyphsUnderAPaddedStrip(t *testing.T) {
 			t.Fatalf("glyph %s of %s is shared %v", g, titles[i], glyphs)
 		}
 	}
-	lines := strings.Split(plain(c.View(120, 12)), "\n")
-	if !strings.Contains(lines[0], "profiles") || strings.TrimSpace(lines[1]) != "" || !strings.Contains(lines[2], "no profiles yet") {
+	view := plain(c.View(120, 12))
+	lines := strings.Split(view, "\n")
+	if !strings.Contains(lines[0], "profiles") || strings.TrimSpace(lines[1]) != "" || !strings.Contains(view, "no profiles") {
 		t.Fatalf("a blank row pads the content from the strip\n%s", strings.Join(lines, "\n"))
 	}
 }
@@ -85,7 +80,7 @@ func TestConfigTabsCarryDistinctGlyphsUnderAPaddedStrip(t *testing.T) {
 func TestProfilesStartFromProvidersAndAreEditedSwitchedMovedAndDeleted(t *testing.T) {
 	te := newEnv(t)
 	c, _ := te.config(t, 0)
-	if h := c.Hints(); len(h) != 2 || h[1].Action != "config.profile.add" {
+	if h := c.Hints(); len(h) != 2 || h[0].Action != "config.profile.add" {
 		t.Fatalf("an empty table offers to add and nothing that needs a row %+v", h)
 	}
 	form, ok := overlaid(te.pressed(c, "a")).(*Form)
@@ -96,7 +91,7 @@ func TestProfilesStartFromProvidersAndAreEditedSwitchedMovedAndDeleted(t *testin
 		t.Fatalf("the dialog starts on the provider %+v", fd)
 	}
 	view := plain(form.View(formWidth, 30))
-	for _, want := range []string{"provider", "anthropic", "openai", "custom", "https://api.anthropic.com", "x-api-key", "ANTHROPIC_API_KEY", "save", "cancel", "Built in provider the profile starts from"} {
+	for _, want := range []string{"provider", "anthropic", "openai", "custom", "https://api.anthropic.com", "x-api-key", "ANTHROPIC_API_KEY", "save", "cancel", "Provider that fills every field"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("the dialog shows %q with every choice and the help of the focus\n%s", want, view)
 		}
@@ -122,7 +117,7 @@ func TestProfilesStartFromProvidersAndAreEditedSwitchedMovedAndDeleted(t *testin
 	if len(list) != 1 || list[0].Written.Template != "anthropic" || list[0].Written.BaseURL != "" || list[0].Written.Key.Value != "WORK_KEY" || list[0].Profile.BaseURL != "https://api.anthropic.com" {
 		t.Fatalf("the profile keeps only what differs from its provider %+v", list)
 	}
-	c.Update(credentialsMsg{texts: map[string]string{"profile:work": "set, env WORK_KEY"}})
+	c.Update(credentialsMsg{texts: map[string]string{"work": "set, env WORK_KEY"}})
 	view = plain(c.View(140, 12))
 	if !strings.Contains(view, "work") || !strings.Contains(view, "anthropic") || !strings.Contains(view, "set, env WORK_KEY") || !strings.Contains(view, "on") {
 		t.Fatalf("the row shows the provider, the credential and the state\n%s", view)
@@ -218,44 +213,11 @@ func TestProfilesStartFromProvidersAndAreEditedSwitchedMovedAndDeleted(t *testin
 	}
 }
 
-func TestProvidersAreTemplatesUsableAsTheyAre(t *testing.T) {
-	te := newEnv(t)
-	c, _ := te.config(t, 1)
-	view := plain(c.View(140, 14))
-	if !strings.Contains(view, "openai-chat") || !strings.Contains(view, "anthropic-messages") {
-		t.Fatalf("every built in provider is listed\n%s", view)
-	}
-	form, ok := overlaid(te.pressed(c, "enter")).(*Form)
-	if !ok || form.field("provider").value != "anthropic" {
-		t.Fatal("enter starts a profile from the provider")
-	}
-	openai := c.profileForm(nil, "openai")
-	if openai.field("endpoint").value != "https://api.openai.com/v1" || openai.field("key").value != "OPENAI_API_KEY" {
-		t.Fatal("a provider fills the dialog")
-	}
-	openai.field("provider").set("mistral")
-	if openai.field("endpoint").value != "https://api.mistral.ai" {
-		t.Fatal("picking another provider fills its values")
-	}
-	if p, ok := find[SetProfileMsg](te.pressed(c, "u")); !ok || p.Profile != "anthropic" {
-		t.Fatal("u uses the provider as it is")
-	}
-	te.app.SaveProfile("", profiles.Profile{Name: "own", Template: "anthropic"})
-	te.app.Profiles[0].Profile.Name, te.app.Profiles[0].Written.Name = "anthropic", "anthropic"
-	if !intent(te.pressed(c, "u")) {
-		t.Fatal("a provider shadowed by a profile of its name points at that profile")
-	}
-	te.press(c, "o")
-	if !strings.Contains(plain(c.View(140, 40)), "takes its place") {
-		t.Fatal("the detail names the shadow")
-	}
-}
-
 func TestModelsLoadWhenTheTabShowsAndDetailEachRow(t *testing.T) {
 	te := newEnv(t)
-	c, msgs := te.config(t, 2)
+	c, msgs := te.config(t, 1)
 	loaded, ok := find[modelsLoadedMsg](msgs)
-	if !ok || !strings.Contains(plain(c.View(120, 10)), "loading the models anthropic serves") {
+	if !ok || !strings.Contains(plain(c.View(120, 10)), "loading models") {
 		t.Fatal("showing the tab fetches the models at once")
 	}
 	c.Update(loaded)
@@ -304,7 +266,7 @@ func TestModelsLoadWhenTheTabShowsAndDetailEachRow(t *testing.T) {
 
 func TestSettingsShowEveryChoiceAndSlideNumbers(t *testing.T) {
 	te := newEnv(t)
-	c, _ := te.config(t, 3)
+	c, _ := te.config(t, 2)
 	s := c.app
 	view := plain(c.View(120, 16))
 	for _, want := range []string{"default", "acceptEdits", "plan", "bypassPermissions", "blackwall", "contrast", "light", "plain", "true", "false", "━", "128k"} {
@@ -319,12 +281,12 @@ func TestSettingsShowEveryChoiceAndSlideNumbers(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(view, "How tool calls are approved") {
+	if !strings.Contains(view, "default asks") {
 		t.Fatal("the help of the selected setting shows")
 	}
-	knob, ok := find[KnobMsg](te.pressed(c, "l"))
-	if !ok || knob.Key != "mode" || knob.Value != "acceptEdits" || !knob.Quiet {
-		t.Fatalf("right picks the next choice and saves it quietly %+v", knob)
+	msg, ok := find[SettingMsg](te.pressed(c, "l"))
+	if !ok || msg.Key != "mode" || msg.Value != "acceptEdits" || !msg.Quiet {
+		t.Fatalf("right picks the next choice and saves it quietly %+v", msg)
 	}
 	te.press(c, "j")
 	if h := s.Hints(); !slices.ContainsFunc(h, func(x wm.Hint) bool { return x.Action == "config.app.edit" }) {
@@ -335,11 +297,11 @@ func TestSettingsShowEveryChoiceAndSlideNumbers(t *testing.T) {
 	if !s.editing || !slices.Equal(s.Contexts(), []string{keys.Edit}) || s.Cursor() == nil {
 		t.Fatal("a digit starts typing the number")
 	}
-	knob, ok = find[KnobMsg](te.pressed(c, "enter"))
-	if !ok || knob.Key != "max_tokens" || knob.Value != "2048" || s.editing {
-		t.Fatalf("enter saves the typed number %+v", knob)
+	msg, ok = find[SettingMsg](te.pressed(c, "enter"))
+	if !ok || msg.Key != "max_tokens" || msg.Value != "2048" || s.editing {
+		t.Fatalf("enter saves the typed number %+v", msg)
 	}
-	te.knobs["max_tokens"] = "2048"
+	te.settings["max_tokens"] = "2048"
 	te.press(c, "enter")
 	te.press(c, "ctrl+u")
 	typeText(c, "5")
@@ -352,23 +314,23 @@ func TestSettingsShowEveryChoiceAndSlideNumbers(t *testing.T) {
 		t.Fatal("esc restores the number")
 	}
 	te.press(c, "j")
-	knob, _ = find[KnobMsg](te.pressed(c, "right"))
-	if knob.Key != "max_rounds" || knob.Value != "50" {
-		t.Fatalf("stepping an unset number starts from its start %+v", knob)
+	msg, _ = find[SettingMsg](te.pressed(c, "right"))
+	if msg.Key != "max_rounds" || msg.Value != "50" {
+		t.Fatalf("stepping an unset number starts from its start %+v", msg)
 	}
-	te.knobs["max_rounds"] = "50"
+	te.settings["max_rounds"] = "50"
 	c.View(120, 16)
 	if h := s.Hints(); !slices.ContainsFunc(h, func(x wm.Hint) bool { return x.Action == "config.app.unset" }) {
 		t.Fatal("a set optional number offers unset")
 	}
-	knob, _ = find[KnobMsg](te.pressed(c, "backspace"))
-	if knob.Key != "max_rounds" || knob.Value != "" {
-		t.Fatalf("backspace unsets %+v", knob)
+	msg, _ = find[SettingMsg](te.pressed(c, "backspace"))
+	if msg.Key != "max_rounds" || msg.Value != "" {
+		t.Fatalf("backspace unsets %+v", msg)
 	}
 	te.press(c, "j")
-	knob, _ = find[KnobMsg](te.pressed(c, "l"))
-	if knob.Key != "temperature" || knob.Value != "1.00" {
-		t.Fatalf("temperature steps in hundredths %+v", knob)
+	msg, _ = find[SettingMsg](te.pressed(c, "l"))
+	if msg.Key != "temperature" || msg.Value != "1.00" {
+		t.Fatalf("temperature steps in hundredths %+v", msg)
 	}
 	var track, light formHit
 	for _, h := range s.hits {
@@ -379,18 +341,18 @@ func TestSettingsShowEveryChoiceAndSlideNumbers(t *testing.T) {
 			light = h
 		}
 	}
-	knob, _ = find[KnobMsg](run(second(s.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: track.x0, Y: track.y}))))
-	if knob.Key != "motion" || knob.Value != "0.00" || s.current().key != "motion" {
-		t.Fatalf("a click on the left end of the track sets the low end %+v", knob)
+	msg, _ = find[SettingMsg](run(second(s.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: track.x0, Y: track.y}))))
+	if msg.Key != "motion" || msg.Value != "0.00" || s.current().key != "motion" {
+		t.Fatalf("a click on the left end of the track sets the low end %+v", msg)
 	}
-	knob, _ = find[KnobMsg](run(second(s.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: light.x0 + 1, Y: light.y}))))
-	if knob.Key != "theme" || knob.Value != "light" {
-		t.Fatalf("a click on a choice picks it %+v", knob)
+	msg, _ = find[SettingMsg](run(second(s.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: light.x0 + 1, Y: light.y}))))
+	if msg.Key != "theme" || msg.Value != "light" {
+		t.Fatalf("a click on a choice picks it %+v", msg)
 	}
 	s.sel = 7
-	knob, _ = find[KnobMsg](te.pressed(c, "h"))
-	if knob.Key != "cascade" || knob.Value != "true" {
-		t.Fatalf("booleans are a choice of true and false %+v", knob)
+	msg, _ = find[SettingMsg](te.pressed(c, "h"))
+	if msg.Key != "cascade" || msg.Value != "true" {
+		t.Fatalf("booleans are a choice of true and false %+v", msg)
 	}
 	s.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 	if s.sel != 6 {
@@ -404,8 +366,8 @@ func TestSettingsShowEveryChoiceAndSlideNumbers(t *testing.T) {
 
 func TestRulesAreWrittenThroughADialog(t *testing.T) {
 	te := newEnv(t)
-	c, _ := te.config(t, 4)
-	if !strings.Contains(plain(c.View(120, 10)), "no rules, a adds one") {
+	c, _ := te.config(t, 3)
+	if !strings.Contains(plain(c.View(120, 10)), "no rules ∷ a new") {
 		t.Fatal("the empty tab says how to add")
 	}
 	form, ok := overlaid(te.pressed(c, "a")).(*Form)
@@ -472,7 +434,7 @@ func TestRulesAreWrittenThroughADialog(t *testing.T) {
 
 func TestHooksAreWrittenThroughADialog(t *testing.T) {
 	te := newEnv(t)
-	c, _ := te.config(t, 5)
+	c, _ := te.config(t, 4)
 	form, _ := overlaid(te.pressed(c, "a")).(*Form)
 	if form == nil || form.field("event").value != string(hooks.PreToolUse) || !form.field("matcher").visible() {
 		t.Fatal("a opens the hook dialog on PreToolUse with a matcher")
@@ -518,8 +480,8 @@ func TestHooksAreWrittenThroughADialog(t *testing.T) {
 
 func TestServersAreWrittenSwitchedAndReconnectedFromTheTab(t *testing.T) {
 	te := newEnv(t)
-	c, _ := te.config(t, 6)
-	if h := c.Hints(); len(h) != 2 || h[1].Action != "config.mcp.add" {
+	c, _ := te.config(t, 5)
+	if h := c.Hints(); len(h) != 2 || h[0].Action != "config.mcp.add" {
 		t.Fatalf("no server, nothing to reconnect %+v", h)
 	}
 	form, _ := overlaid(te.pressed(c, "a")).(*Form)
@@ -618,7 +580,7 @@ func TestArgumentWordsSplitAndJoin(t *testing.T) {
 
 func TestToolsTurnOnAndOffFromTheTab(t *testing.T) {
 	te := newEnv(t)
-	c, _ := te.config(t, 7)
+	c, _ := te.config(t, 6)
 	before := len(te.env.Tools.Definitions())
 	te.press(c, "space")
 	if len(te.env.Tools.Definitions()) != before-1 || !strings.Contains(plain(c.View(140, 12)), "off") {
@@ -639,8 +601,8 @@ func TestToolsTurnOnAndOffFromTheTab(t *testing.T) {
 
 func TestLogShowsTheJournalNewestLast(t *testing.T) {
 	te := newEnv(t)
-	c, _ := te.config(t, 8)
-	if !strings.Contains(plain(c.View(120, 10)), "nothing logged yet") {
+	c, _ := te.config(t, 7)
+	if !strings.Contains(plain(c.View(120, 10)), "nothing logged") {
 		t.Fatal("an empty log says so")
 	}
 	te.env.Journal.Add(harness.LevelInfo, "run r1", "started")
@@ -672,9 +634,9 @@ func TestKeysTabRebindsTypesAndSaves(t *testing.T) {
 		t.Fatal(err)
 	}
 	te.env.Keys = km
-	c, _ := te.config(t, 9)
+	c, _ := te.config(t, 8)
 	run(c.ShowKeys())
-	if tab, i := c.Active(); i != 9 || tab.Title() != "keys" {
+	if tab, i := c.Active(); i != 8 || tab.Title() != "keys" {
 		t.Fatal("ShowKeys selects the keys tab")
 	}
 	view := plain(c.View(140, 20))
@@ -760,7 +722,7 @@ func TestKeysTabRebindsTypesAndSaves(t *testing.T) {
 
 func TestDetailWrapsWholeAndScrolls(t *testing.T) {
 	te := newEnv(t)
-	c, _ := te.config(t, 7)
+	c, _ := te.config(t, 6)
 	l := c.tools
 	te.press(c, "o")
 	if !l.detailShown() || !slices.Contains(l.Contexts(), keys.Detail) {
@@ -895,7 +857,7 @@ func TestFieldsChooseStepTypeAndCheck(t *testing.T) {
 		t.Fatal("checks run on the value")
 	}
 	secret := &field{kind: secretField, value: "abc", cursor: 3}
-	if row, _ := secret.box(20, look{}, th); strings.Contains(plain(row), "abc") || !strings.Contains(plain(row), "•••") {
+	if row, _ := secret.box(20, look{}, th); strings.Contains(plain(row), "abc") || !strings.Contains(plain(row), "∙∙∙") {
 		t.Fatal("secrets are masked")
 	}
 	long := &field{kind: textField, value: strings.Repeat("a", 30) + "END", cursor: 33}
@@ -995,7 +957,7 @@ func TestDialogsSpaceFieldsToTheirRoomAndKeepWellsApart(t *testing.T) {
 	f := newForm(te.env, "SPACED", "▪", []*field{a, b, c}, func() (tea.Cmd, error) { saved++; return nil, nil })
 	_, h := f.MinSize()
 	tall := strings.Split(plain(f.View(60, h)), "\n")
-	if !strings.Contains(tall[0], "alpha") || strings.TrimSpace(tall[1]) != "" || !strings.Contains(tall[2], "beta") || strings.Contains(tall[2], "-") || !strings.HasPrefix(tall[0], "┃") {
+	if !strings.Contains(tall[0], "alpha") || strings.TrimSpace(tall[1]) != "" || !strings.Contains(tall[2], "beta") || strings.Contains(tall[2], "-") || !strings.HasPrefix(tall[0], "▎") {
 		t.Fatalf("with room each field stands apart, the focus barred and empty inputs in faint wells\n%s", strings.Join(tall, "\n"))
 	}
 	var save formHit
@@ -1020,15 +982,15 @@ func TestDialogsSpaceFieldsToTheirRoomAndKeepWellsApart(t *testing.T) {
 
 func TestSlidersShareColumns(t *testing.T) {
 	te := newEnv(t)
-	c, _ := te.config(t, 3)
+	c, _ := te.config(t, 2)
 	view := plain(c.View(120, 40))
 	starts, ends := map[int]bool{}, map[int]bool{}
 	for _, row := range strings.Split(view, "\n") {
-		i := strings.IndexAny(row, "━─●")
+		i := strings.IndexAny(row, "━┈◆")
 		if i < 0 || strings.Contains(row, "profiles") {
 			continue
 		}
-		j := strings.LastIndexAny(row, "━─●")
+		j := strings.LastIndexAny(row, "━┈◆")
 		starts[ansi.StringWidth(row[:i])] = true
 		ends[ansi.StringWidth(row[:j])] = true
 	}

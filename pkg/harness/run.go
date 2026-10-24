@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -104,7 +105,7 @@ func (r *Run) called(tool string) {
 	r.tools++
 }
 
-// Writes sessions to a store after a short quiet period so a burst of events costs one write
+// Writes sessions to a store after a short quiet period so a burst costs one write, skipping empty sessions
 type Saver struct {
 	Store  session.Store
 	Delay  time.Duration
@@ -159,6 +160,9 @@ func (s *Saver) Flush(sess *session.Session) {
 }
 
 func (s *Saver) write(sess *session.Session) {
+	if sess.Empty() {
+		return
+	}
 	err := s.Store.Save(context.Background(), sess)
 	msg := SavedMsg{Session: sess.ID(), Info: sess.Info(), Err: err}
 	if p, ok := s.Store.(session.Pather); ok && err == nil {
@@ -214,9 +218,12 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 	}
 	c.active[a] = true
 	c.next++
-	id := fmt.Sprintf("run-%d", c.next)
+	id := strconv.Itoa(c.next)
 	if a.Name == "" {
-		a.Name = id
+		a.Name = a.ModelID
+	}
+	if a.Name == "" {
+		a.Name = "root"
 	}
 	rctx, cancel := context.WithCancel(ctx)
 	r := &Run{ID: id, Name: a.Name, Mission: missionID, Agent: a, Session: a.Session, Started: c.Clock(), running: true, cancel: cancel, done: make(chan struct{})}
@@ -398,14 +405,14 @@ func (c *Controller) Done(id string) (<-chan struct{}, bool) {
 	return r.done, true
 }
 
-// Queues input the run sees at its next turn
+// Queues input the agent sees at its next turn
 func (c *Controller) Steer(id string, parts ...protocol.Part) error {
 	r, ok := c.Get(id)
 	if !ok {
-		return fmt.Errorf("harness: no run %s", id)
+		return fmt.Errorf("harness: no agent %s", id)
 	}
 	if !r.Running() {
-		return fmt.Errorf("harness: run %s has finished", id)
+		return fmt.Errorf("harness: agent %s has finished", id)
 	}
 	if r.Parent != "" && c.Subagents != nil {
 		return c.Subagents.Steer(r.Name, parts...)
@@ -414,31 +421,31 @@ func (c *Controller) Steer(id string, parts ...protocol.Part) error {
 	return nil
 }
 
-// Asks the run to stop after the current turn or tool round
+// Asks the agent to stop after the current turn or tool round
 func (c *Controller) Interrupt(id string) error {
 	r, ok := c.Get(id)
 	if !ok {
-		return fmt.Errorf("harness: no run %s", id)
+		return fmt.Errorf("harness: no agent %s", id)
 	}
 	if !r.Running() {
-		return fmt.Errorf("harness: run %s has finished", id)
+		return fmt.Errorf("harness: agent %s has finished", id)
 	}
 	r.Agent.Interrupt()
 	return nil
 }
 
-// Stops the run at once
+// Stops the agent at once
 func (c *Controller) Cancel(id string) error {
 	r, ok := c.Get(id)
 	if !ok {
-		return fmt.Errorf("harness: no run %s", id)
+		return fmt.Errorf("harness: no agent %s", id)
 	}
 	if !r.Running() {
-		return fmt.Errorf("harness: run %s has finished", id)
+		return fmt.Errorf("harness: agent %s has finished", id)
 	}
 	if r.Parent != "" {
 		if c.Subagents == nil {
-			return fmt.Errorf("harness: child run %s cannot be cancelled without the subagent tool", id)
+			return fmt.Errorf("harness: child agent %s cannot be cancelled without the subagent tool", id)
 		}
 		return c.Subagents.Cancel(r.Name)
 	}

@@ -13,22 +13,23 @@ type entry struct {
 	ws       *Workspace
 	rect     anim.Rect
 	open     anim.Value
-	glow     anim.Value
+	lit      anim.Value
 	hover    anim.Value
-	lift     anim.Value
 	pulse    anim.Value
+	shake    anim.Value
+	hide     anim.Value
 	urgency  Urgency
 	decode   float64
 	weight   float64
 	floating bool
 	box      Box
 	fbox     Box
+	origin   Box
 	placed   bool
 	held     bool
 	closing  bool
 	dirty    bool
 	dim      float64
-	cw, ch   int
 	raw      screen
 	tinted   screen
 	hints    []hintSpan

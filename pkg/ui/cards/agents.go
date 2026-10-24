@@ -17,7 +17,7 @@ import (
 
 type agentsTick struct{}
 
-// Roster of every run across the open sessions with state, time, tokens and the last tool, each openable or killable
+// Roster of every agent across the open sessions with state, time, tokens and tools called, each openable or killable
 type Agents struct {
 	env     *Env
 	rows    []*harness.Run
@@ -35,7 +35,7 @@ func NewAgents(env *Env) *Agents {
 }
 
 func (d *Agents) Title() string { return "AGENTS" }
-func (d *Agents) Glyph() string { return "☍" }
+func (d *Agents) Glyph() string { return d.env.Theme.Glyphs.Agent }
 func (d *Agents) Key() string   { return "agents" }
 
 func (d *Agents) Init() tea.Cmd { return d.tick() }
@@ -159,7 +159,7 @@ func (d *Agents) kill() tea.Cmd {
 	}
 	r := d.rows[d.sel]
 	if !r.Running() {
-		return wm.Notify("run already finished", wm.Info)
+		return wm.Notify("already finished", wm.Info)
 	}
 	id := r.ID
 	return func() tea.Msg { return KillRunMsg{Run: id} }
@@ -187,19 +187,23 @@ func (d *Agents) View(w, h int) string {
 	d.w, d.h = w, h
 	t := d.env.Theme
 	if len(d.rows) == 0 {
-		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, render.Dim("no agents yet", t))
+		return emptyView(w, h, "no agents", t)
 	}
 	now := d.env.now()
-	cols := []render.Column{{Title: ""}, {Title: "NAME", Flex: 2}, {Title: "SESSION", Flex: 2}, {Title: "STATE"}, {Title: "TIME", Right: true}, {Title: "TOKENS", Right: true}, {Title: "LAST", Flex: 1}}
+	cols := []render.Column{{Title: ""}, {Title: "NAME", Flex: 2}, {Title: "SESSION", Flex: 2}, {Title: "STATE"}, {Title: "TIME", Right: true}, {Title: "TOKENS", Right: true}, {Title: "TOOLS", Flex: 1}}
 	rows := make([][]string, 0, len(d.rows))
 	for _, r := range d.rows {
 		glyph, state := d.runState(r)
 		name := strings.Repeat("  ", r.Depth) + r.Name
 		if r.Parent != "" && r.Description != "" {
-			name += " " + render.Dim(render.Truncate(r.Description, 20), t)
+			name += " " + render.Dim(render.Truncate(r.Description, 20, t), t)
 		}
-		last, _ := r.LastTool()
-		rows = append(rows, []string{glyph, name, render.Truncate(d.sessionOf(r), 24), state, render.Elapsed(r.Elapsed(now)), render.Tokens(d.tokens[d.tokenKey(r)]), last})
+		last, calls := r.LastTool()
+		tools := itoa(calls)
+		if last != "" {
+			tools += " " + last
+		}
+		rows = append(rows, []string{glyph, name, render.Truncate(d.sessionOf(r), 24, t), state, render.Elapsed(r.Elapsed(now)), render.Tokens(d.tokens[d.tokenKey(r)]), tools})
 	}
 	table, start := window(strings.Split(render.Table(cols, rows, w, d.sel, t), "\n"), d.sel, h)
 	d.start = start
@@ -218,11 +222,11 @@ func (d *Agents) runState(r *harness.Run) (string, string) {
 	t := d.env.Theme
 	switch {
 	case r.Running():
-		return lipgloss.NewStyle().Foreground(t.Alive).Render("●"), "running"
+		return lipgloss.NewStyle().Foreground(t.Alive).Render(t.Glyphs.Live), "running"
 	case r.Err() != nil:
-		return lipgloss.NewStyle().Foreground(t.Alarm).Render("●"), "failed"
+		return lipgloss.NewStyle().Foreground(t.Alarm).Render(t.Glyphs.Live), "failed"
 	}
-	return lipgloss.NewStyle().Foreground(t.TextDim).Render("●"), "done"
+	return lipgloss.NewStyle().Foreground(t.TextDim).Render(t.Glyphs.Hollow), "done"
 }
 
 func (d *Agents) Status() string {
@@ -240,5 +244,5 @@ func (d *Agents) Status() string {
 
 // Actions the roster answers
 func (d *Agents) Hints() []wm.Hint {
-	return []wm.Hint{{Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "agents.open"}, {Action: "agents.stop"}}
+	return []wm.Hint{{Action: "agents.open"}, {Action: "agents.stop"}, {Action: "list.down", Pair: "list.up", Label: "move"}}
 }

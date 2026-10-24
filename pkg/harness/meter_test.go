@@ -65,13 +65,13 @@ func TestMeterTracksUsageCostAndThroughput(t *testing.T) {
 		t.Fatalf("%+v", snap)
 	}
 	m.Apply("run-1", agent.Event{Type: agent.EventModel, Time: base.Add(time.Second), Model: protocol.Event{Type: protocol.EventThinkingDelta, Delta: "12345678"}})
-	if snap = m.Snapshot(); snap.TokensPerSecond < 3.9 || snap.TokensPerSecond > 4.1 {
+	if snap = m.Snapshot(); snap.TokensPerSecond < 4.9 || snap.TokensPerSecond > 5.1 {
 		t.Fatalf("estimated rate %v", snap.TokensPerSecond)
 	}
 	usage := protocol.Usage{Input: 1000, Output: 200, CacheRead: 3000, CacheWrite: 0}
 	m.Apply("run-1", agent.Event{Type: agent.EventTurnEnd, Time: base.Add(2 * time.Second), Usage: usage})
 	snap = m.Snapshot()
-	if snap.Streaming || snap.Usage != usage || snap.Context != 4000 || snap.TokensPerSecond != 100 || snap.ContextLimit != 1000000 || snap.Threshold != 150000 {
+	if snap.Streaming || snap.Usage != usage || snap.Context != 4000 || snap.TokensPerSecond < 111.1 || snap.TokensPerSecond > 111.2 || snap.ContextLimit != 1000000 || snap.Threshold != 150000 {
 		t.Fatalf("%+v", snap)
 	}
 	if snap.CacheRatio != 0.75 {

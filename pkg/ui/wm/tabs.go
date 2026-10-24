@@ -1,6 +1,7 @@
 package wm
 
 import (
+	"encoding/json"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -47,6 +48,35 @@ func (g *Tabs) Init() tea.Cmd {
 
 // Cards held, in tab order
 func (g *Tabs) Cards() []Card { return append([]Card(nil), g.cards...) }
+
+// Tab shown, kept between runs by the key of its card
+type tabsState struct {
+	Tab string `json:"tab,omitempty"`
+}
+
+// Key of the active tab for the next run
+func (g *Tabs) State() any {
+	c, _ := g.Active()
+	if c == nil {
+		return tabsState{}
+	}
+	return tabsState{Tab: keyOf(c)}
+}
+
+// Shows the tab a saved state names, keeping the current one when no card has its key
+func (g *Tabs) SetState(raw json.RawMessage) error {
+	var st tabsState
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return err
+	}
+	for i, c := range g.cards {
+		if keyOf(c) == st.Tab {
+			g.active = i
+			return nil
+		}
+	}
+	return nil
+}
 
 // Card under the active tab and its index
 func (g *Tabs) Active() (Card, int) {
@@ -213,7 +243,9 @@ func (g *Tabs) tabAt(x int) int {
 }
 
 // Label of tab i on the strip
-func (g *Tabs) label(i int) string { return " " + glyphOf(g.cards[i]) + " " + g.cards[i].Title() + " " }
+func (g *Tabs) label(i int) string {
+	return " " + glyphOf(g.cards[i], g.theme) + " " + g.cards[i].Title() + " "
+}
 
 // Lowest first tab the strip can draw with the active one still inside w, a marker standing for those scrolled off
 func (g *Tabs) scrollFor(w int) int {
@@ -243,11 +275,7 @@ func (g *Tabs) View(w, h int) string {
 		g.first = g.scrollFor(w)
 	}
 	if g.first > 0 {
-		marker := "‹"
-		if t.Plain {
-			marker = "<"
-		}
-		sb.WriteString(lipgloss.NewStyle().Foreground(t.TextDim).Render(marker))
+		sb.WriteString(lipgloss.NewStyle().Foreground(t.TextDim).Render(t.Glyphs.Back))
 		x = 1
 	}
 	for i := g.first; i < len(g.cards); i++ {
@@ -266,7 +294,7 @@ func (g *Tabs) View(w, h int) string {
 	}
 	g.spans = append(g.spans, x)
 	if x < w {
-		sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat("─", w-x)))
+		sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, w-x)))
 	}
 	if h <= tabHead || len(g.cards) == 0 {
 		return sb.String()
@@ -274,8 +302,22 @@ func (g *Tabs) View(w, h int) string {
 	return sb.String() + "\n\n" + g.cards[g.active].View(w, h-tabHead)
 }
 
-// Actions of the active tab after the tab switching one
+// Keeps every tab's own motion in step, reporting whether the shown one moved
+func (g *Tabs) Animate(dt float64) bool {
+	moved := false
+	for i, c := range g.cards {
+		a, ok := c.(Animator)
+		if !ok {
+			continue
+		}
+		if a.Animate(dt) && i == g.active {
+			moved = true
+		}
+	}
+	return moved
+}
+
+// Actions of the active tab, then the tab switching one
 func (g *Tabs) Hints() []Hint {
-	out := []Hint{{Action: "tabs.next", Label: "next tab"}}
-	return append(out, hintsOf(g.current())...)
+	return append(append([]Hint(nil), hintsOf(g.current())...), Hint{Action: "tabs.next", Label: "next tab"})
 }

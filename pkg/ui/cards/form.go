@@ -238,13 +238,13 @@ func (f *Form) layout(w, h int) formLayout {
 		for r, row := range rows {
 			label := ""
 			if r == 0 {
-				label = st.Render(render.Truncate(fd.label, lw-2))
+				label = st.Render(render.Truncate(fd.label, lw-2, t))
 			}
-			lines = append(lines, render.Fit(label, lw)+row)
+			lines = append(lines, render.Fit(label, lw, t)+row)
 		}
 		if p := f.bad[fd]; p != "" {
 			for _, line := range strings.Split(render.Wrap(p, vw), "\n") {
-				lines = append(lines, render.Fit("", lw)+render.Bad(line, t))
+				lines = append(lines, render.Fit("", lw, t)+render.Bad(line, t))
 			}
 		}
 		return part{i: i, fd: fd, lines: lines, hits: hits, cx: cx}
@@ -278,10 +278,7 @@ func (f *Form) layout(w, h int) formLayout {
 			}
 		}
 	}
-	bar := "┃"
-	if t.Plain {
-		bar = "|"
-	}
+	bar := t.Glyphs.Bar
 	bar = lipgloss.NewStyle().Foreground(t.Ice).Bold(true).Render(bar) + strings.Repeat(" ", formGutter-1)
 	out := formLayout{spans: make([][2]int, len(f.fields)), foot: foot}
 	for i := range out.spans {
@@ -314,7 +311,7 @@ func (f *Form) layout(w, h int) formLayout {
 // Rule, help of the focus in room for the longest help, any save error, and buttons with their clicks
 func (f *Form) footer(w int) ([]string, []formHit) {
 	t := f.env.Theme
-	foot := []string{lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat("─", w))}
+	foot := []string{lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, w))}
 	hw := max(w-formGutter, 1)
 	indent := strings.Repeat(" ", formGutter)
 	room := 0

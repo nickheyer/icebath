@@ -33,10 +33,11 @@ type Theme struct {
 	Pulse       color.Color
 	Alive       color.Color
 	Alarm       color.Color
-	Glow        []color.Color
-	Shadow      float64
-	Border      lipgloss.Border
-	Density     Density
+	// Gradient stops the focus ring runs through around the focused card
+	Ring    []color.Color
+	Border  lipgloss.Border
+	Glyphs  Glyphs
+	Density Density
 	// Palette limited to the sixteen ANSI colors with no blending, for terminals without true color
 	Plain bool
 }
@@ -57,9 +58,9 @@ func Blackwall() Theme {
 		Pulse:       Hex(0xff4fd8),
 		Alive:       Hex(0x7cff9e),
 		Alarm:       Hex(0xff5f6d),
-		Glow:        []color.Color{Hex(0x5ff1ff), Hex(0x8a7dff), Hex(0xff4fd8), Hex(0x5ff1ff)},
-		Shadow:      0.45,
-		Border:      lipgloss.RoundedBorder(),
+		Ring:        []color.Color{Hex(0x5ff1ff), Hex(0x8a7dff), Hex(0xff4fd8), Hex(0x5ff1ff)},
+		Border:      IcebathBorder(),
+		Glyphs:      IcebathGlyphs(),
 	}
 }
 
@@ -79,9 +80,9 @@ func Light() Theme {
 		Pulse:       Hex(0xb5179e),
 		Alive:       Hex(0x1f8a4c),
 		Alarm:       Hex(0xc9303e),
-		Glow:        []color.Color{Hex(0x0a6fb3), Hex(0x5b3fd6), Hex(0xb5179e), Hex(0x0a6fb3)},
-		Shadow:      0.12,
-		Border:      lipgloss.RoundedBorder(),
+		Ring:        []color.Color{Hex(0x0a6fb3), Hex(0x5b3fd6), Hex(0xb5179e), Hex(0x0a6fb3)},
+		Border:      IcebathBorder(),
+		Glyphs:      IcebathGlyphs(),
 	}
 }
 
@@ -101,9 +102,9 @@ func Contrast() Theme {
 		Pulse:       Hex(0xff00ff),
 		Alive:       Hex(0x00ff00),
 		Alarm:       Hex(0xff0000),
-		Glow:        []color.Color{Hex(0x00ffff), Hex(0xffff00)},
-		Shadow:      0,
+		Ring:        []color.Color{Hex(0x00ffff), Hex(0xffff00)},
 		Border:      lipgloss.ThickBorder(),
+		Glyphs:      IcebathGlyphs(),
 	}
 }
 
@@ -123,9 +124,9 @@ func Plain() Theme {
 		Pulse:       lipgloss.Magenta,
 		Alive:       lipgloss.Green,
 		Alarm:       lipgloss.Red,
-		Glow:        []color.Color{lipgloss.Cyan},
-		Shadow:      0,
+		Ring:        []color.Color{lipgloss.Cyan},
 		Border:      lipgloss.ASCIIBorder(),
+		Glyphs:      ASCIIGlyphs(),
 		Plain:       true,
 	}
 }
@@ -151,7 +152,7 @@ func Names() []string {
 	return out
 }
 
-var borders = map[string]func() lipgloss.Border{"rounded": lipgloss.RoundedBorder, "normal": lipgloss.NormalBorder, "thick": lipgloss.ThickBorder, "double": lipgloss.DoubleBorder, "block": lipgloss.BlockBorder, "hidden": lipgloss.HiddenBorder, "ascii": lipgloss.ASCIIBorder}
+var borders = map[string]func() lipgloss.Border{"icebath": IcebathBorder, "rounded": lipgloss.RoundedBorder, "normal": lipgloss.NormalBorder, "thick": lipgloss.ThickBorder, "double": lipgloss.DoubleBorder, "block": lipgloss.BlockBorder, "hidden": lipgloss.HiddenBorder, "ascii": lipgloss.ASCIIBorder}
 
 // Border set names sorted
 func Borders() []string {

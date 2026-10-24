@@ -3,24 +3,29 @@ package fx
 
 import "math"
 
-// Characters that churn in the unresolved part of a decoding label
-var Glyphs = []rune("░▒▓█▚▞▙▟╳01")
-
-// Reveals text left to right by progress while the tail churns through glyphs that change with tick
-func Decode(text string, progress float64, tick int) string {
+// Reveals text left to right by progress while the rest churns through the glyphs, changing with tick
+func Decode(text string, progress float64, tick int, glyphs []rune) string {
 	runes := []rune(text)
 	reveal := Revealed(text, progress)
 	if reveal >= len(runes) {
 		return text
 	}
+	return string(runes[:reveal]) + Churn(string(runes[reveal:]), tick+reveal, glyphs)
+}
+
+// Replaces every rune but blanks with a glyph picked by position and tick, so text boils until it is revealed
+func Churn(text string, tick int, glyphs []rune) string {
+	if len(glyphs) == 0 {
+		return text
+	}
+	runes := []rune(text)
 	out := make([]rune, len(runes))
-	copy(out, runes[:reveal])
-	for i := reveal; i < len(runes); i++ {
-		if runes[i] == ' ' {
-			out[i] = ' '
+	for i, r := range runes {
+		if r == ' ' || r == '\n' || r == '\t' {
+			out[i] = r
 			continue
 		}
-		out[i] = Glyphs[scramble(i, tick)%uint32(len(Glyphs))]
+		out[i] = glyphs[scramble(i, tick)%uint32(len(glyphs))]
 	}
 	return string(out)
 }

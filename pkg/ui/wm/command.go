@@ -26,7 +26,7 @@ func (m *Model) builtin() []Command {
 	hasTiles := func() bool { return m.Active() != nil && len(m.Active().tiles) > 1 }
 	hasFocus := func() bool { return m.focused() != nil }
 	out := []Command{
-		{ID: "palette", Title: "Command palette", Run: m.OpenPalette},
+		{ID: "palette", Title: "Palette", Run: m.OpenPalette},
 		{ID: "workspace.next", Title: "Workspace: next", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active + 1) % len(m.spaces)) }},
 		{ID: "workspace.prev", Title: "Workspace: previous", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active - 1 + len(m.spaces)) % len(m.spaces)) }},
 		{ID: "window.focus.left", Title: "Window: focus left", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Left) }},
@@ -39,23 +39,23 @@ func (m *Model) builtin() []Command {
 		{ID: "window.move.right", Title: "Window: move right", When: hasFocus, Run: func() tea.Cmd { return m.Move(Right) }},
 		{ID: "window.move.up", Title: "Window: move up", When: hasFocus, Run: func() tea.Cmd { return m.Move(Up) }},
 		{ID: "window.move.down", Title: "Window: move down", When: hasFocus, Run: func() tea.Cmd { return m.Move(Down) }},
-		{ID: "window.master", Title: "Window: swap with master", When: hasTiles, Run: m.SwapMaster},
-		{ID: "window.zoom", Title: "Window: toggle fullscreen", When: hasFocus, Run: m.ToggleZoom},
-		{ID: "window.float", Title: "Window: toggle floating", When: hasFocus, Run: m.ToggleFloat},
+		{ID: "window.master", Title: "Window: swap master", When: hasTiles, Run: m.SwapMaster},
+		{ID: "window.zoom", Title: "Window: fullscreen", When: hasFocus, Run: m.ToggleZoom},
+		{ID: "window.float", Title: "Window: float", When: hasFocus, Run: m.ToggleFloat},
 		{ID: "window.close", Title: "Window: close", When: func() bool { e := m.focused(); return e != nil && closable(e.card) }, Run: m.CloseFocused},
-		{ID: "panel.close", Title: "Window: close this panel", When: func() bool {
+		{ID: "panel.close", When: func() bool {
 			e := m.focused()
 			return e != nil && closable(e.card) && slices.Contains(contextsOf(e.card), keys.Panel)
 		}, Run: m.CloseFocused},
-		{ID: "window.grow", Title: "Window: grow master", When: hasTiles, Run: func() tea.Cmd { return m.Resize(0.05) }},
-		{ID: "window.shrink", Title: "Window: shrink master", When: hasTiles, Run: func() tea.Cmd { return m.Resize(-0.05) }},
-		{ID: "layout.reset", Title: "Layout: reset sizes", When: func() bool { return m.Active() != nil }, Run: m.ResetLayout},
-		{ID: "layout.toggle", Title: "Layout: toggle dwindle and master", When: func() bool { return m.Active() != nil }, Run: m.ToggleLayout},
-		{ID: "layout.dwindle", Title: "Layout: dwindle, spiral splits", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Dwindle }, Run: func() tea.Cmd { return m.SetLayout(Dwindle) }},
-		{ID: "layout.main.more", Title: "Layout: one more main window", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master }, Run: func() tea.Cmd { return m.SetMainCount(1) }},
-		{ID: "layout.main.fewer", Title: "Layout: one fewer main window", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master && ws.MainCount() > 1 }, Run: func() tea.Cmd { return m.SetMainCount(-1) }},
-		{ID: "layout.split", Title: "Layout: flip the split of the focused card", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Dwindle }, Run: m.FlipSplit},
-		{ID: "layout.master", Title: "Layout: master beside a stack", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Master }, Run: func() tea.Cmd { return m.SetLayout(Master) }},
+		{ID: "window.grow", Title: "Window: grow", When: hasTiles, Run: func() tea.Cmd { return m.Resize(0.05) }},
+		{ID: "window.shrink", Title: "Window: shrink", When: hasTiles, Run: func() tea.Cmd { return m.Resize(-0.05) }},
+		{ID: "layout.reset", Title: "Layout: reset", When: func() bool { return m.Active() != nil }, Run: m.ResetLayout},
+		{ID: "layout.toggle", Title: "Layout: toggle", When: func() bool { return m.Active() != nil }, Run: m.ToggleLayout},
+		{ID: "layout.dwindle", Title: "Layout: dwindle", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Dwindle }, Run: func() tea.Cmd { return m.SetLayout(Dwindle) }},
+		{ID: "layout.main.more", Title: "Layout: more main", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master }, Run: func() tea.Cmd { return m.SetMainCount(1) }},
+		{ID: "layout.main.fewer", Title: "Layout: fewer main", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master && ws.MainCount() > 1 }, Run: func() tea.Cmd { return m.SetMainCount(-1) }},
+		{ID: "layout.split", Title: "Layout: flip split", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Dwindle }, Run: m.FlipSplit},
+		{ID: "layout.master", Title: "Layout: master", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Master }, Run: func() tea.Cmd { return m.SetLayout(Master) }},
 	}
 	for i := 1; i <= 9; i++ {
 		n := i
@@ -156,18 +156,21 @@ func (m *Model) Fire(id string) tea.Cmd {
 	return m.send(target, ActionMsg{ID: id})
 }
 
+// Command ids the palette remembers at most
+const maxRecent = 12
+
 // Moves the id to the front of the recently used list
 func (m *Model) remember(id string) {
 	if i := slices.Index(m.recent, id); i >= 0 {
 		m.recent = slices.Delete(m.recent, i, i+1)
 	}
 	m.recent = append([]string{id}, m.recent...)
-	if len(m.recent) > 12 {
-		m.recent = m.recent[:12]
+	if len(m.recent) > maxRecent {
+		m.recent = m.recent[:maxRecent]
 	}
 }
 
-// Opens the palette over ready commands and the focused card's actions, recent first, closing any overlay up
+// Opens the palette over titled ready commands and the focused card actions, recent first
 func (m *Model) OpenPalette() tea.Cmd {
 	if m.overlay != nil {
 		return m.Dismiss()
@@ -175,7 +178,7 @@ func (m *Model) OpenPalette() tea.Cmd {
 	var items []Item
 	listed := map[string]bool{}
 	for _, c := range m.Commands() {
-		if !c.Ready() || listed[c.ID] {
+		if !c.Ready() || listed[c.ID] || c.Title == "" {
 			continue
 		}
 		listed[c.ID] = true
@@ -200,6 +203,6 @@ func (m *Model) OpenPalette() tea.Cmd {
 	slices.SortStableFunc(items, func(a, b Item) int { return rank[b.ID] - rank[a.ID] })
 	p := NewPalette(m.theme, items)
 	p.commands = true
-	p.Placeholder = "type a command"
+	p.Placeholder = "command"
 	return m.ShowOverlay(p)
 }

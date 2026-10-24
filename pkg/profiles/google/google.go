@@ -1,4 +1,4 @@
-// Gemini endpoint profile with model listing and thinking knobs
+// Gemini endpoint profile with model listing and thinking options
 package google
 
 import (

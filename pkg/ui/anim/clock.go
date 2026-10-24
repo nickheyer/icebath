@@ -26,13 +26,13 @@ type Clock struct {
 
 var clockIDs atomic.Uint64
 
-// Builds a clock with the given active and idle frame rates, defaulting to 60 and 20
+// Builds a clock with the given active and idle frame rates, defaulting to 60 and 30
 func NewClock(active, idle int) Clock {
 	if active < 1 {
 		active = 60
 	}
 	if idle < 1 {
-		idle = 20
+		idle = 30
 	}
 	return Clock{Active: active, Idle: idle, id: clockIDs.Add(1)}
 }

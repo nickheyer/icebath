@@ -86,3 +86,42 @@ func TestClockClampsDelta(t *testing.T) {
 		t.Fatalf("ok %v dt %v", ok, frame.DT)
 	}
 }
+
+func TestPresetsAndSteadyEdges(t *testing.T) {
+	v := NewValueWith(2, Rattle)
+	if v.Pos != 2 || v.Frequency != Rattle.Frequency || v.Damping != Rattle.Damping {
+		t.Fatalf("%+v", v)
+	}
+	v.Use(Snappy)
+	if v.Frequency != 18 || v.Damping != 1 {
+		t.Fatalf("%+v", v)
+	}
+	v.Kick(90)
+	swings, last := 0, 0.0
+	v.Use(Rattle)
+	settle(t, func(dt float64) bool {
+		moving := v.Step(dt)
+		if (v.Pos > 2.5 && last <= 2.5) || (v.Pos < 1.5 && last >= 1.5) {
+			swings++
+		}
+		last = v.Pos
+		return moving
+	})
+	if swings < 3 {
+		t.Fatalf("a rattle swings a few times, got %d", swings)
+	}
+	r := NewRect(0, 0, 10, 10)
+	r.X.Pos, r.W.Pos = 2.4, 10.3
+	x, _, w, _ := r.Cells()
+	if x != 2 || x+w != 13 {
+		t.Fatalf("far edge rounds on its own, %d %d", x, w)
+	}
+	r.X.Pos, r.W.Pos = 2.6, 10.1
+	x, _, w, _ = r.Cells()
+	if x != 3 || x+w != 13 {
+		t.Fatalf("the far edge holds still while the near edge crosses a cell, %d %d", x, w)
+	}
+	if c := NewClock(0, 0); c.Active != 60 || c.Idle != 30 {
+		t.Fatalf("%+v", c)
+	}
+}

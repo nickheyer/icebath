@@ -44,7 +44,7 @@ func NewJobs(env *Env) *Jobs {
 }
 
 func (j *Jobs) Title() string    { return "JOBS" }
-func (j *Jobs) Glyph() string    { return "⇣" }
+func (j *Jobs) Glyph() string    { return j.env.Theme.Glyphs.Jobs }
 func (j *Jobs) Key() string      { return "jobs" }
 func (j *Jobs) Init() tea.Cmd    { return nil }
 func (j *Jobs) Selectable() bool { return true }
@@ -157,7 +157,7 @@ func (j *Jobs) kill() tea.Cmd {
 	}
 	jb := j.jobs[j.sel]
 	if !jb.Running {
-		return wm.Notify("job already finished", wm.Info)
+		return wm.Notify("already finished", wm.Info)
 	}
 	return func() tea.Msg { return KillJobMsg{Job: jb.ID} }
 }
@@ -166,7 +166,7 @@ func (j *Jobs) View(w, h int) string {
 	j.w, j.h = w, h
 	t := j.env.Theme
 	if len(j.jobs) == 0 {
-		return render.Dim("no background jobs", t)
+		return emptyView(w, h, "no jobs", t)
 	}
 	now := j.env.now()
 	cols := []render.Column{{Title: "JOB"}, {Title: "COMMAND", Flex: 1}, {Title: "STATE"}, {Title: "TIME", Right: true}, {Title: "OUT", Right: true}}
@@ -216,7 +216,7 @@ func (j *Jobs) View(w, h int) string {
 	if j.follow {
 		j.vp.GotoBottom()
 	}
-	sep := render.Dim(strings.Repeat("┄", min(w, 40)), t)
+	sep := render.Divider(min(w, 40), t)
 	tail := j.vp.View()
 	if tw < w {
 		tail = j.tailGutter().beside(tail, w, t)
@@ -244,5 +244,5 @@ func (j *Jobs) Status() string {
 
 // Actions the job list answers
 func (j *Jobs) Hints() []wm.Hint {
-	return []wm.Hint{{Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "jobs.stop"}, {Action: "jobs.follow"}, {Action: "jobs.scroll.down", Pair: "jobs.scroll.up", Label: "tail"}}
+	return []wm.Hint{{Action: "jobs.stop"}, {Action: "jobs.follow"}, {Action: "jobs.scroll.down", Pair: "jobs.scroll.up", Label: "tail"}, {Action: "list.down", Pair: "list.up", Label: "move"}}
 }

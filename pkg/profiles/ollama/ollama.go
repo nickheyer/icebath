@@ -1,4 +1,4 @@
-// Ollama endpoint profile with model listing and runtime knobs
+// Ollama endpoint profile with model listing and runtime options
 package ollama
 
 import (

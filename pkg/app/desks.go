@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -11,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -100,7 +102,13 @@ func (m *Model) openAgent(id string) tea.Cmd {
 		card = cards.NewAgent(m.env, r)
 		d.agents[id] = card
 	}
-	return m.wm.Open(d.ws, card)
+	return m.openFrom(d, card)
+}
+
+// Opens a card of the desk growing out of its session card, so what a session spawns comes from it
+func (m *Model) openFrom(d *desk, c wm.Card) tea.Cmd {
+	origin, _ := m.wm.FrameOf(d.session)
+	return m.wm.OpenFrom(d.ws, c, origin)
 }
 
 // Closes the card of a finished child run unless it holds the focus
@@ -120,7 +128,7 @@ func (m *Model) retireAgent(id string) tea.Cmd {
 func (m *Model) openRun(id string) tea.Cmd {
 	r, ok := m.app.Control.Get(id)
 	if !ok {
-		return m.wm.Toast("no run "+id, wm.Warn, 0)
+		return m.wm.Toast("no agent "+id, wm.Warn, 0)
 	}
 	if r.Parent != "" {
 		return m.openAgent(id)
@@ -136,10 +144,10 @@ func (m *Model) openRun(id string) tea.Cmd {
 func (m *Model) submit(msg cards.SubmitMsg) tea.Cmd {
 	d := m.deskOfSession(msg.Session)
 	if d == nil {
-		return m.wm.Toast("that session is closed", wm.Warn, 0)
+		return m.wm.Toast("session closed", wm.Warn, 0)
 	}
 	if d.compacting {
-		return m.wm.Toast("wait for compaction to finish", wm.Warn, 0)
+		return m.wm.Toast("compacting", wm.Warn, 0)
 	}
 	if m.app.Busy(d.live) {
 		for _, r := range m.app.Control.Active() {
@@ -147,12 +155,12 @@ func (m *Model) submit(msg cards.SubmitMsg) tea.Cmd {
 				if err := m.app.Control.Steer(r.ID, msg.Parts...); err != nil {
 					return m.wm.Toast(err.Error(), wm.Error, 0)
 				}
-				return m.wm.Toast("queued for the next turn", wm.Info, 0)
+				return m.wm.Toast("queued", wm.Info, 0)
 			}
 		}
 	}
 	if d.live.Session.Title() == "" && msg.Text != "" {
-		d.live.Session.SetTitle(render.Summary(msg.Text, 60))
+		d.live.Session.SetTitle(render.Summary(msg.Text, 60, m.theme))
 	}
 	if _, err := m.app.RunOn(m.ctx, d.live, d.mission, msg.Parts); err != nil {
 		return m.wm.Toast(err.Error(), wm.Error, 0)
@@ -167,10 +175,10 @@ func (m *Model) startMission(d *desk, objective string) tea.Cmd {
 		return nil
 	}
 	if strings.TrimSpace(objective) == "" {
-		return m.wm.Toast("give the mission an objective", wm.Warn, 0)
+		return m.wm.Toast("no objective", wm.Warn, 0)
 	}
 	if d.compacting {
-		return m.wm.Toast("wait for compaction to finish", wm.Warn, 0)
+		return m.wm.Toast("compacting", wm.Warn, 0)
 	}
 	ms, err := d.live.Missions.Create(objective)
 	if err != nil {
@@ -178,7 +186,7 @@ func (m *Model) startMission(d *desk, objective string) tea.Cmd {
 	}
 	d.mission = ms.ID
 	if d.live.Session.Title() == "" {
-		d.live.Session.SetTitle(render.Summary(objective, 60))
+		d.live.Session.SetTitle(render.Summary(objective, 60, m.theme))
 	}
 	if _, err := m.app.RunOn(m.ctx, d.live, ms.ID, []protocol.Part{protocol.Text{Text: objective}}); err != nil {
 		return m.wm.Toast(err.Error(), wm.Error, 0)
@@ -187,9 +195,51 @@ func (m *Model) startMission(d *desk, objective string) tea.Cmd {
 	d.ws.SetBusy(true)
 	cmds := []tea.Cmd{m.wm.Toast("mission "+ms.ID+" started", wm.Success, 0)}
 	if card, ok := m.missionOf(d, ms.ID); ok {
-		cmds = append(cmds, m.wm.Open(d.ws, card))
+		cmds = append(cmds, m.openFrom(d, card))
 	}
 	return tea.Batch(cmds...)
+}
+
+// Starts a fresh session in the workspace of the desk, storing the one it had
+func (m *Model) clearDesk(d *desk) tea.Cmd {
+	if d == nil {
+		return nil
+	}
+	if m.app.Busy(d.live) {
+		return m.wm.Toast("agent still working", wm.Warn, 0)
+	}
+	if d.compacting {
+		return m.wm.Toast("compacting", wm.Warn, 0)
+	}
+	live, err := m.app.Create()
+	if err != nil {
+		return m.wm.Toast(err.Error(), wm.Error, 0)
+	}
+	old := d.live
+	var cmds []tea.Cmd
+	for _, c := range d.agents {
+		cmds = append(cmds, m.wm.Close(c))
+	}
+	for _, c := range d.missions {
+		cmds = append(cmds, m.wm.Close(c))
+	}
+	if d.findings != nil {
+		cmds = append(cmds, m.wm.Close(d.findings))
+	}
+	cmds = append(cmds, m.wm.Close(d.approval))
+	d.live = live
+	d.ws.ID = live.Session.ID()
+	d.session.Rebind(live)
+	d.approval = cards.NewApproval(m.env, live.Session.ID(), func(run string) bool { return m.app.LiveOfRun(run) == live })
+	d.agents, d.missions, d.findings, d.mission = map[string]*cards.Agent{}, map[string]*cards.Mission{}, nil, ""
+	if err := m.app.Release(old); err != nil {
+		cmds = append(cmds, m.wm.Toast(err.Error(), wm.Error, 0))
+	}
+	if d == m.current() {
+		m.app.Select(live)
+	}
+	m.wm.Repaint()
+	return tea.Batch(append(cmds, m.wm.Toast("cleared, "+old.Session.ID()+" stored", wm.Success, 0))...)
 }
 
 // Opens a fresh session in a new workspace and shows it
@@ -221,7 +271,7 @@ func (m *Model) openStored(ids ...string) tea.Cmd {
 			continue
 		}
 		cmds = append(cmds, m.showDesk(live))
-		titles = append(titles, sessionName(live))
+		titles = append(titles, sessionName(live, m.theme)+" on "+live.Endpoint.Model)
 	}
 	switch len(titles) {
 	case 0:
@@ -234,9 +284,9 @@ func (m *Model) openStored(ids ...string) tea.Cmd {
 }
 
 // Title of a session, its id while it has none
-func sessionName(l *harness.Live) string {
-	if t := l.Session.Title(); t != "" {
-		return render.Summary(t, 40)
+func sessionName(l *harness.Live, t theme.Theme) string {
+	if title := l.Session.Title(); title != "" {
+		return render.Summary(title, 40, t)
 	}
 	return l.Session.ID()
 }
@@ -257,14 +307,14 @@ func (m *Model) forkStored(ids ...string) tea.Cmd {
 			continue
 		}
 		cmds = append(cmds, m.showDesk(f))
-		made = append(made, sessionName(src)+" into "+f.Session.ID())
+		made = append(made, sessionName(src, m.theme)+" into "+f.Session.ID())
 	}
 	switch len(made) {
 	case 0:
 	case 1:
 		cmds = append(cmds, m.wm.Toast("forked "+made[0], wm.Success, 0))
 	default:
-		cmds = append(cmds, m.wm.Toast(fmt.Sprintf("forked %d sessions into new workspaces", len(made)), wm.Success, 0))
+		cmds = append(cmds, m.wm.Toast(fmt.Sprintf("forked %d sessions", len(made)), wm.Success, 0))
 	}
 	return tea.Batch(cmds...)
 }
@@ -275,13 +325,13 @@ func (m *Model) forkAt(d *desk, src *harness.Live, n int) tea.Cmd {
 	if err != nil {
 		return m.wm.Toast(err.Error(), wm.Warn, 0)
 	}
-	return tea.Batch(m.showDesk(f), m.wm.Toast(fmt.Sprintf("forked at %d entries into %s", n, f.Session.ID()), wm.Success, 0))
+	return tea.Batch(m.showDesk(f), m.wm.Toast(fmt.Sprintf("forked into %s at %d entries", f.Session.ID(), n), wm.Success, 0))
 }
 
 // Fork of an open session cut at n entries, releasing a source that was opened only to be forked
 func (m *Model) forkLive(d *desk, src *harness.Live, n int) (*harness.Live, error) {
 	if d != nil && d.compacting {
-		return nil, errors.New("wait for compaction to finish")
+		return nil, errors.New("compacting")
 	}
 	f, err := m.app.Fork(src, n)
 	if err != nil {
@@ -293,18 +343,21 @@ func (m *Model) forkLive(d *desk, src *harness.Live, n int) (*harness.Live, erro
 	return f, nil
 }
 
-// Deletes stored sessions that have no workspace open
+// Deletes stored sessions that have no workspace open, with the prompt drafts kept for them
 func (m *Model) deleteStored(ids ...string) tea.Cmd {
 	var cmds []tea.Cmd
 	var gone []string
 	for _, id := range ids {
 		if m.app.LiveByID(id) != nil {
-			cmds = append(cmds, m.wm.Toast("close the workspace of "+id+" before deleting it", wm.Warn, 0))
+			cmds = append(cmds, m.wm.Toast(id+" is open", wm.Warn, 0))
 			continue
 		}
 		if err := m.app.Store.Delete(m.ctx, id); err != nil {
 			cmds = append(cmds, m.wm.Toast(err.Error(), wm.Error, 0))
 			continue
+		}
+		if err := os.Remove(cards.DraftPath(m.configDir(), id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			cmds = append(cmds, m.wm.Toast(err.Error(), wm.Error, 0))
 		}
 		gone = append(gone, id)
 	}
@@ -326,10 +379,10 @@ func (m *Model) closeWorkspace() tea.Cmd {
 		return nil
 	}
 	if len(m.desks) == 1 {
-		return m.wm.Toast("the last workspace stays open", wm.Warn, 0)
+		return m.wm.Toast("last workspace", wm.Warn, 0)
 	}
 	if m.app.Busy(d.live) {
-		return m.wm.Toast("wait for the run to finish", wm.Warn, 0)
+		return m.wm.Toast("agent still working", wm.Warn, 0)
 	}
 	if err := m.app.Release(d.live); err != nil {
 		return m.wm.Toast(err.Error(), wm.Error, 0)
