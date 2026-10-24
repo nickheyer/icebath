@@ -29,6 +29,7 @@ const (
 	backdropDim   = 0.45
 	slideFade     = 0.55
 	maxFloatPile  = 8
+	maxLayer      = 9
 	maxToasts     = 5
 	toastGap      = 2
 	cascadeSpeed  = 6.0
@@ -425,8 +426,9 @@ func (m *Model) OpenFrom(ws *Workspace, c Card, origin Box) tea.Cmd {
 	e.origin = origin
 	if floats(c) {
 		e.floating = true
+		e.layer = 0
 		e.fbox = m.floatBox(c, Box{})
-		ws.floats = append(ws.floats, e)
+		ws.addFloat(e)
 		if len(ws.floats) > maxFloatPile {
 			ws.floats = ws.floats[len(ws.floats)-maxFloatPile:]
 		}
@@ -621,6 +623,29 @@ func (m *Model) ToggleFloat() tea.Cmd {
 		return nil
 	}
 	return m.setFloat(e, !e.floating)
+}
+
+// Moves the focused float up or down a layer, every float on a higher layer staying above those below
+func (m *Model) ShiftLayer(delta int) tea.Cmd {
+	ws := m.Active()
+	e := m.focused()
+	if ws == nil || e == nil || !e.floating || e.closing {
+		return m.nudge()
+	}
+	next := min(max(e.layer+delta, 0), maxLayer)
+	if next == e.layer {
+		return m.nudge()
+	}
+	ws.setLayer(e, next)
+	return m.wake()
+}
+
+// Layer the card is stacked on, zero and up for floats and minus one for tiles and cards not open
+func (m *Model) LayerOf(c Card) int {
+	if e := m.entryOf(c); e != nil {
+		return e.layer
+	}
+	return -1
 }
 
 // Changes the master share of the stage by delta, or the split the focused tile was cut off by
@@ -895,7 +920,7 @@ func (m *Model) entryOf(c Card) *entry {
 }
 
 func (m *Model) newEntry(c Card, ws *Workspace) *entry {
-	e := &entry{id: m.nextID, card: c, ws: ws, rect: anim.NewRect(0, 0, 0, 0), open: fast(0), lit: fast(0), hover: fast(0), pulse: fast(0), hide: fast(0), shake: anim.NewValueWith(0, anim.Rattle), weight: 1, dim: -1, dirty: true}
+	e := &entry{id: m.nextID, card: c, ws: ws, rect: anim.NewRect(0, 0, 0, 0), open: fast(0), lit: fast(0), hover: fast(0), pulse: fast(0), hide: fast(0), shake: anim.NewValueWith(0, anim.Rattle), weight: 1, layer: -1, dim: -1, dirty: true}
 	m.nextID++
 	e.open.Set(1)
 	return e
@@ -1021,9 +1046,11 @@ func (m *Model) setFloat(e *entry, on bool) tea.Cmd {
 	ws.remove(e)
 	e.floating = on
 	if on {
+		e.layer = 0
 		e.fbox = m.floatBox(e.card, e.frame())
-		ws.floats = append(ws.floats, e)
+		ws.addFloat(e)
 	} else {
+		e.layer = -1
 		ws.addTile(e)
 	}
 	ws.focus = e
@@ -1228,7 +1255,7 @@ func (m *Model) relocate(e *entry, ws *Workspace) tea.Cmd {
 	e.held = false
 	if e.floating {
 		e.fbox = m.floatBox(e.card, Box{})
-		ws.floats = append(ws.floats, e)
+		ws.addFloat(e)
 	} else {
 		ws.addTile(e)
 	}

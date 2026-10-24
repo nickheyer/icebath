@@ -112,6 +112,8 @@ var registry = func() []Action {
 		act("window.master", Global, "swap with master", "swap the focused window with the master window", "alt+m"),
 		act("window.zoom", Global, "fullscreen", "toggle fullscreen for the focused window", "alt+f"),
 		act("window.float", Global, "float", "switch the focused window between floating and tiled", "alt+v"),
+		act("window.layer.up", Global, "layer up", "raise the floating window a layer, above every float on the layers below", "alt+}"),
+		act("window.layer.down", Global, "layer down", "lower the floating window a layer", "alt+{"),
 		act("window.close", Global, "close", "close the focused window", "alt+w"),
 		act("window.grow", Global, "grow", "expand the master area", "alt+="),
 		act("window.shrink", Global, "shrink", "shrink the master area", "alt+-"),

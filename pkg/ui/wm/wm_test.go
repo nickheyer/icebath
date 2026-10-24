@@ -1156,13 +1156,14 @@ func TestWorkspaceLayoutRoundTrip(t *testing.T) {
 	m.Resize(0.1)
 	m.FlipSplit()
 	m.OpenHere(f)
+	m.ShiftLayer(1)
 	m.Move(Right)
 	m.Focus(c)
 	m.ToggleZoom()
 	m.remember("window.zoom")
 	l := m.Layout()
 	ws := l.Workspaces[0]
-	if len(l.Workspaces) != 1 || l.Active != 0 || l.Mode != "dwindle" || len(l.Recent) != 1 || ws.Tree == nil || ws.Zoom != "gamma" || ws.Focus != "gamma" || len(ws.Tiles) != 4 || len(ws.Floats) != 1 || string(ws.Cards["notes"]) != `{"note":"kept"}` {
+	if len(l.Workspaces) != 1 || l.Active != 0 || l.Mode != "dwindle" || len(l.Recent) != 1 || ws.Tree == nil || ws.Zoom != "gamma" || ws.Focus != "gamma" || len(ws.Tiles) != 4 || len(ws.Floats) != 1 || ws.Floats[0].Layer != 1 || string(ws.Cards["notes"]) != `{"note":"kept"}` {
 		t.Fatalf("%+v", l)
 	}
 	fresh := still(t, 120, 40)
@@ -1194,8 +1195,8 @@ func TestWorkspaceLayoutRoundTrip(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatalf("the layout comes back as saved\n%s\n%s", before, after)
 	}
-	if ws2.Zoomed() != made["gamma"] || ws2.Focused() != made["gamma"] || ws2.Mode() != Dwindle || made["notes"].(*noted).note != "kept" || len(ws2.floats) != 1 || ws2.floats[0].card != made["dialog"] {
-		t.Fatal("zoom, focus, mode, float and card state come back")
+	if ws2.Zoomed() != made["gamma"] || ws2.Focused() != made["gamma"] || ws2.Mode() != Dwindle || made["notes"].(*noted).note != "kept" || len(ws2.floats) != 1 || ws2.floats[0].card != made["dialog"] || ws2.floats[0].layer != 1 {
+		t.Fatal("zoom, focus, mode, float, layer and card state come back")
 	}
 	if ws2.tree == nil || len(ws2.tree.leaves(nil)) != 4 || ws2.tree.find(ws2.holds(made["beta"])).parent.ratio == 0.5 {
 		t.Fatal("the split tree comes back with its ratios")
@@ -1253,5 +1254,78 @@ func TestTabsKeepTheActiveTab(t *testing.T) {
 	empty := NewTabs(theme.Blackwall(), "CFG", "*")
 	if raw, _ := json.Marshal(empty.State()); string(raw) != `{}` {
 		t.Fatalf("%s", raw)
+	}
+}
+
+func TestLayersStackFloats(t *testing.T) {
+	m, a, b, _ := threeTiles(t)
+	ws := m.Active()
+	ready := func(id string) bool { c, _ := m.command(id); return c.Ready() }
+	if m.LayerOf(a) != -1 || m.LayerOf(newStub("ghost")) != -1 || m.ShiftLayer(1) != nil || m.LayerOf(a) != -1 || ready("window.layer.up") {
+		t.Fatal("tiles sit on minus one and have no layer to move")
+	}
+	d, e := newStub("delta"), newStub("echo")
+	d.float, e.float = true, true
+	m.OpenHere(d)
+	m.OpenHere(e)
+	ed, ee := ws.holds(d), ws.holds(e)
+	x, y := ee.box.X+ee.box.W/2, ee.box.Y+ee.box.H/2
+	if ed.layer != 0 || ee.layer != 0 || ws.floats[1] != ee || ws.at(x, y) != ee || !ed.box.contains(x, y) {
+		t.Fatal("floats spawn on layer zero over each other with the newest on top")
+	}
+	m.Update(key('}', tea.ModAlt))
+	if m.LayerOf(e) != 1 || ws.floats[1] != ee {
+		t.Fatal("alt+} raises a layer")
+	}
+	m.Focus(d)
+	if ws.focus != ed || ws.floats[1] != ee || ws.at(x, y) != ee {
+		t.Fatal("focus raises a float only within its layer")
+	}
+	if m.ShiftLayer(-1) != nil || ed.layer != 0 || ready("window.layer.down") || !ready("window.layer.up") {
+		t.Fatal("layer zero is the floor")
+	}
+	for range 2 * maxLayer {
+		m.ShiftLayer(1)
+	}
+	if ed.layer != maxLayer || ws.floats[1] != ed || ws.at(x, y) != ed || ready("window.layer.up") || !ready("window.layer.down") {
+		t.Fatalf("layers stop at %d, not %d", maxLayer, ed.layer)
+	}
+	m.Focus(e)
+	m.Update(key('{', tea.ModAlt))
+	if ee.layer != 0 || ws.floats[0] != ee || ws.at(x, y) != ed {
+		t.Fatal("alt+{ lowers a layer")
+	}
+	m.Focus(b)
+	m.ToggleFloat()
+	eb := ws.holds(b)
+	if eb.layer != 0 || ws.floats[1] != eb || ws.floats[2] != ed {
+		t.Fatal("a floated tile lands on top of layer zero, under the layers above")
+	}
+	m.Close(b)
+	if ws.focus != ed {
+		t.Fatal("the top of the pile takes focus, not the newest float")
+	}
+	m.ToggleFloat()
+	if m.LayerOf(d) != -1 || ed.floating {
+		t.Fatal("a tile forgets its layer")
+	}
+	m.ToggleFloat()
+	if m.LayerOf(d) != 0 || ws.floats[1] != ed {
+		t.Fatal("floating again starts on layer zero")
+	}
+}
+
+func TestRestoreSortsFloatsByLayer(t *testing.T) {
+	m := still(t, 120, 40)
+	ws, _ := m.AddWorkspace("ws1", newStub("alpha"))
+	box := Box{10, 10, 30, 10}
+	l := WorkspaceLayout{ID: "ws1", Focus: "low", Floats: []FloatLayout{{Key: "high", Box: box, Layer: 2}, {Key: "low", Box: box, Layer: -3}, {Key: "mid", Box: box}, {Key: "top", Box: box, Layer: 99}}}
+	m.RestoreWorkspace(ws, l, func(key string) Card { s := newStub(key); s.float = true; return s })
+	var got []string
+	for _, e := range ws.floats {
+		got = append(got, e.key())
+	}
+	if strings.Join(got, " ") != "mid low high top" || ws.floats[1].layer != 0 || ws.floats[3].layer != maxLayer || ws.at(20, 15).key() != "top" || ws.Focused().Title() != "low" {
+		t.Fatalf("floats come back by layer with layers clamped and the focus raised within its own, %v", got)
 	}
 }

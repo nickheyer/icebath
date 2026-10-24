@@ -42,10 +42,11 @@ type TileLayout struct {
 	Weight float64 `json:"weight,omitempty"`
 }
 
-// Float by key with the box it rests in
+// Float by key with the box it rests in and the layer it is stacked on
 type FloatLayout struct {
-	Key string `json:"key"`
-	Box Box    `json:"box"`
+	Key   string `json:"key"`
+	Box   Box    `json:"box"`
+	Layer int    `json:"layer,omitempty"`
 }
 
 // Node of the dwindle tree, a tile key at a leaf or a cut between two subtrees
@@ -81,7 +82,7 @@ func (m *Model) layoutOf(ws *Workspace) WorkspaceLayout {
 	}
 	for _, e := range ws.floats {
 		if !e.closing {
-			l.Floats = append(l.Floats, FloatLayout{Key: e.key(), Box: e.fbox})
+			l.Floats = append(l.Floats, FloatLayout{Key: e.key(), Box: e.fbox, Layer: e.layer})
 		}
 	}
 	if ws.mode == Dwindle {
@@ -225,6 +226,7 @@ func (m *Model) RestoreWorkspace(ws *Workspace, l WorkspaceLayout, resolve func(
 		if t.Weight > 0 {
 			e.weight = t.Weight
 		}
+		e.floating, e.layer = false, -1
 		if !slices.Contains(tiles, e) {
 			tiles = append(tiles, e)
 		}
@@ -238,15 +240,17 @@ func (m *Model) RestoreWorkspace(ws *Workspace, l WorkspaceLayout, resolve func(
 			tiles = slices.Delete(tiles, i, i+1)
 		}
 		e.floating = true
+		e.layer = min(max(f.Layer, 0), maxLayer)
 		e.fbox = f.Box
 		floats = append(floats, e)
 	}
 	for _, e := range ws.entries() {
 		if !slices.Contains(tiles, e) && !slices.Contains(floats, e) {
-			e.floating = false
+			e.floating, e.layer = false, -1
 			tiles = append([]*entry{e}, tiles...)
 		}
 	}
+	slices.SortStableFunc(floats, func(a, b *entry) int { return a.layer - b.layer })
 	ws.tiles, ws.floats, ws.tree, ws.zoom = tiles, floats, nil, nil
 	if ws.mode == Dwindle {
 		byKey := map[string]*entry{}

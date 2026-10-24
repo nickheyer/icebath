@@ -42,6 +42,8 @@ func (m *Model) builtin() []Command {
 		{ID: "window.master", Title: "Window: swap master", When: hasTiles, Run: m.SwapMaster},
 		{ID: "window.zoom", Title: "Window: fullscreen", When: hasFocus, Run: m.ToggleZoom},
 		{ID: "window.float", Title: "Window: float", When: hasFocus, Run: m.ToggleFloat},
+		{ID: "window.layer.up", Title: "Window: layer up", When: func() bool { e := m.focused(); return e != nil && e.floating && e.layer < maxLayer }, Run: func() tea.Cmd { return m.ShiftLayer(1) }},
+		{ID: "window.layer.down", Title: "Window: layer down", When: func() bool { e := m.focused(); return e != nil && e.floating && e.layer > 0 }, Run: func() tea.Cmd { return m.ShiftLayer(-1) }},
 		{ID: "window.close", Title: "Window: close", When: func() bool { e := m.focused(); return e != nil && closable(e.card) }, Run: m.CloseFocused},
 		{ID: "panel.close", When: func() bool {
 			e := m.focused()

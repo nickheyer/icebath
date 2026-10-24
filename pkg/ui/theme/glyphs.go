@@ -72,6 +72,7 @@ type Glyphs struct {
 	Prompt    string
 	Send      string
 	Grip      string
+	Layer     string
 	Back      string
 	CapLeft   string
 	CapRight  string
@@ -115,7 +116,7 @@ func IcebathGlyphs() Glyphs {
 		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Bash: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
 		Speaker: "┃", Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "⍰", Child: "⟁", Attach: "⎘", Idle: "⊙", Cursor: "►", Marked: "▮",
 		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔", Changed: "◫",
-		Sep: "∷", Ellipsis: "⋯", Close: "✕", Menu: "≣", Prompt: "❯", Send: "➜", Grip: "⊹", Back: "❮", CapLeft: "▐", CapRight: "▌", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
+		Sep: "∷", Ellipsis: "⋯", Close: "✕", Menu: "≣", Prompt: "❯", Send: "➜", Grip: "⊹", Layer: "⧉", Back: "❮", CapLeft: "▐", CapRight: "▌", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
 		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "▰", Empty: "▱",
 		Ramp:    []rune("▁▂▃▄▅▆▇█"),
 		Spinner: []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"},
@@ -132,7 +133,7 @@ func ASCIIGlyphs() Glyphs {
 		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Bash: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
 		Speaker: "|", Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "?", Child: "&", Attach: "+", Idle: "o", Cursor: ">", Marked: "#",
 		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y", Changed: "#",
-		Sep: "-", Ellipsis: "...", Close: "x", Menu: "=", Prompt: ">", Send: ">", Grip: "+", Back: "<", CapLeft: " ", CapRight: " ", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
+		Sep: "-", Ellipsis: "...", Close: "x", Menu: "=", Prompt: ">", Send: ">", Grip: "+", Layer: "^", Back: "<", CapLeft: " ", CapRight: " ", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
 		Rule: "-", Dashed: "-", Bar: "|", Fill: "=", Slide: "-", Thumb: "O", Caret: "|", Up: "^", Down: "v", Track: "|", Heavy: "#", Tick: "+", HeavyTick: "+", Hit: "*", Full: "#", Empty: "-",
 		Ramp:    []rune(".:-=+*#%"),
 		Spinner: []string{"|", "/", "-", "\\"},

@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -139,7 +140,7 @@ func (m *Model) stamp(face screen, p placed) {
 	}
 }
 
-// Draws the tiles, the zoomed tile, then the floats of a workspace shifted by dx, the held card last
+// Draws the tiles, the zoomed and carried tiles over them, then the floats by layer, all shifted by dx
 func (m *Model) paintWorkspace(ws *Workspace, dx int, shown bool) {
 	if dx <= -m.width || dx >= m.width {
 		return
@@ -166,16 +167,12 @@ func (m *Model) paintWorkspace(ws *Workspace, dx int, shown bool) {
 	if top != nil {
 		m.paintBody(top, dx, shown, veil)
 	}
-	for _, e := range ws.floats {
-		if e.held {
-			held = e
-			continue
-		}
-		m.paintBody(e, dx, shown, veil)
-	}
 	if held != nil {
 		m.paintGhost(held, dx)
 		m.paintBody(held, dx, shown, veil)
+	}
+	for _, e := range ws.floats {
+		m.paintBody(e, dx, shown, veil)
 	}
 }
 
@@ -285,10 +282,11 @@ func (m *Model) paintBody(e *entry, dx int, shown bool, veil float64) {
 		}
 		m.put(face, closeX(f), 0, t.Glyphs.Close, uv.Style{Fg: fg, Bg: t.Surface, Attrs: uv.AttrBold})
 	}
-	sw := m.paintStatus(face, e, w-right, w-6-right-max(ansi.StringWidth(" "+glyphOf(e.card, t)+" "+e.card.Title()+" "), minTitleW), p.lit)
+	lw := m.paintLayer(face, e, w-right, p.lit)
+	sw := m.paintStatus(face, e, w-right-lw, w-6-right-lw-max(ansi.StringWidth(" "+glyphOf(e.card, t)+" "+e.card.Title()+" "), minTitleW), p.lit)
 	avail := w - 4 - right
-	if sw > 0 {
-		avail -= sw + 2
+	if lw+sw > 0 {
+		avail -= lw + sw + 2
 	}
 	m.paintTitle(face, e, avail, p.lit)
 	focused := e.ws == nil || (shown && e.ws.focus == e && m.overlay == nil)
@@ -390,6 +388,21 @@ func (m *Model) paintTitle(face screen, e *entry, avail int, lit float64) {
 		label = ansi.Truncate(label, avail-1, t.Glyphs.Ellipsis) + base.Render(" ")
 	}
 	uv.NewStyledString(label).Draw(face, uv.Rect(2, 0, ansi.StringWidth(label), 1))
+}
+
+// Writes the layer badge of a float raised above layer zero into the top edge and reports the width used
+func (m *Model) paintLayer(face screen, e *entry, w int, lit float64) int {
+	if !e.floating || e.layer <= 0 {
+		return 0
+	}
+	t := m.theme
+	label := lipgloss.NewStyle().Background(t.Surface).Foreground(theme.Mix(t.TextDim, t.Accent, lit)).Render(" " + t.Glyphs.Layer + strconv.Itoa(e.layer) + " ")
+	lw := ansi.StringWidth(label)
+	if w-4-lw < minTitleW {
+		return 0
+	}
+	uv.NewStyledString(label).Draw(face, uv.Rect(w-2-lw, 0, lw, 1))
+	return lw
 }
 
 // Writes the status trailer into the top edge when no wider than limit and reports the width used

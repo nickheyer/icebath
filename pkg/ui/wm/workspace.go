@@ -22,6 +22,7 @@ type entry struct {
 	decode   float64
 	weight   float64
 	floating bool
+	layer    int
 	box      Box
 	fbox     Box
 	origin   Box
@@ -155,12 +156,27 @@ func (w *Workspace) remove(e *entry) {
 	}
 }
 
-// Raises a float to the top of the pile
-func (w *Workspace) raise(e *entry) {
-	if i := slices.Index(w.floats, e); i >= 0 && i != len(w.floats)-1 {
-		w.floats = slices.Delete(w.floats, i, i+1)
-		w.floats = append(w.floats, e)
+// Puts a float at the top of its layer, under every float on a higher layer
+func (w *Workspace) addFloat(e *entry) {
+	at := len(w.floats)
+	for at > 0 && w.floats[at-1].layer > e.layer {
+		at--
 	}
+	w.floats = slices.Insert(w.floats, at, e)
+}
+
+// Raises a float to the top of its layer
+func (w *Workspace) raise(e *entry) {
+	if i := slices.Index(w.floats, e); i >= 0 {
+		w.floats = slices.Delete(w.floats, i, i+1)
+		w.addFloat(e)
+	}
+}
+
+// Moves a float to the top of another layer
+func (w *Workspace) setLayer(e *entry, layer int) {
+	e.layer = layer
+	w.raise(e)
 }
 
 // Trades two tiles while focus stays on the same card

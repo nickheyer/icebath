@@ -91,3 +91,22 @@ func TestGoldenDwindleWithHints(t *testing.T) {
 	m.Advance(1.0 / 60)
 	golden.RequireEqual(t, m.View().Content)
 }
+
+func TestGoldenLayeredFloats(t *testing.T) {
+	m, _, _ := scene(t)
+	pinned := sized{newStub("PINNED"), 40, 6}
+	pinned.float = true
+	pinned.body = "stays above the focused dialog"
+	m.OpenHere(pinned)
+	m.ShiftLayer(1)
+	dialog := sized{newStub("DIALOG"), 40, 6}
+	dialog.float = true
+	dialog.body = "focused, yet painted under"
+	m.OpenHere(dialog)
+	for range 3 {
+		m.Move(Up)
+	}
+	m.Move(Right)
+	m.Advance(1.0 / 60)
+	golden.RequireEqual(t, m.View().Content)
+}
