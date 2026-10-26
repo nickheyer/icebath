@@ -48,6 +48,17 @@ type Env struct {
 	Settings func() map[string]string
 	// Directory exports and the shell fallback use
 	ProjectDir string
+	// Extensions linked into the binary with what each provides
+	Extensions func() []Extension
+}
+
+// Loaded extension as the config tab lists it
+type Extension struct {
+	Name        string
+	Version     string
+	Description string
+	// What it provides, each as the point, the name and a detail
+	Provides [][3]string
 }
 
 // First key of the action as a legend shows it

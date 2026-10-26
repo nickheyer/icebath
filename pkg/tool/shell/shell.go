@@ -70,9 +70,9 @@ type Options struct {
 	Dir string
 	// KEY=VALUE pairs every command sees
 	Env []string
-	// Default per command, two minutes when zero
+	// Run allowed a command the model names no timeout for, unlimited when zero
 	Timeout time.Duration
-	// Largest timeout the model may ask for, ten minutes when zero
+	// Largest timeout the model may ask for, any when zero
 	MaxTimeout time.Duration
 	// Receives every background job start, output chunk and finish
 	OnJob func(JobEvent)
@@ -87,20 +87,25 @@ const (
 	maxJobs = 32
 )
 
-// Seconds a command may run when the model names none
-func (o Options) timeout() time.Duration {
-	if o.Timeout > 0 {
-		return o.Timeout
+// Sentence on the time a command may take, from the configured run and cap
+func (o Options) limits() string {
+	switch {
+	case o.Timeout > 0 && o.MaxTimeout > 0:
+		return fmt.Sprintf("Commands run for %s unless a timeout is given and for at most %s.", o.Timeout, o.MaxTimeout)
+	case o.Timeout > 0:
+		return fmt.Sprintf("Commands run for %s unless a timeout is given.", o.Timeout)
+	case o.MaxTimeout > 0:
+		return fmt.Sprintf("Commands run until they end unless a timeout is given and for at most %s.", o.MaxTimeout)
 	}
-	return 2 * time.Minute
+	return "Commands run until they end unless a timeout is given."
 }
 
-// Longest run the model may ask for
-func (o Options) maxTimeout() time.Duration {
+// Timeout the model asked for, held under the largest allowed when one is set
+func (o Options) cap(asked time.Duration) time.Duration {
 	if o.MaxTimeout > 0 {
-		return o.MaxTimeout
+		return min(asked, o.MaxTimeout)
 	}
-	return 10 * time.Minute
+	return asked
 }
 
 // Reports whether the local shell is bash, the one shell whose pipeline stage codes are read back
@@ -282,8 +287,8 @@ func (b bash) Definition() protocol.Tool {
 	}
 	return protocol.Tool{
 		Name: BashName,
-		Description: fmt.Sprintf("Runs a command line in a shell and returns its output, exit code and whether it timed out. The working directory persists between calls. Stdin is closed. %s Commands run for %s by default and at most %s. Output is cut to %d bytes keeping the start and the end. With run_in_background the call returns a job id for BashOutput and KillShell.",
-			pipes, b.opts.timeout(), b.opts.maxTimeout(), maxOutput),
+		Description: fmt.Sprintf("Runs a command line in a shell and returns its output, exit code and whether it timed out. The working directory persists between calls. Stdin is closed. %s %s Output is cut to %d bytes keeping the start and the end. With run_in_background the call returns a job id for BashOutput and KillShell.",
+			pipes, b.opts.limits(), maxOutput),
 		Parameters: json.RawMessage(bashSchema),
 	}
 }
@@ -305,9 +310,9 @@ func (b bash) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if strings.TrimSpace(in.Command) == "" {
 		return tool.Error("command is required"), nil
 	}
-	timeout := b.opts.timeout()
+	timeout := b.opts.Timeout
 	if in.Timeout > 0 {
-		timeout = min(time.Duration(in.Timeout)*time.Millisecond, b.opts.maxTimeout())
+		timeout = b.opts.cap(time.Duration(in.Timeout) * time.Millisecond)
 	}
 	id := ""
 	if call, ok := tool.CallFrom(ctx); ok {
@@ -315,7 +320,7 @@ func (b bash) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	}
 	if in.Background {
 		if in.Timeout == 0 {
-			timeout = b.opts.maxTimeout()
+			timeout = b.opts.MaxTimeout
 		}
 		job := b.jobs.start(Command{ID: id, Description: in.Description, Line: in.Command, Dir: b.Dir(), Env: b.opts.Env, Timeout: timeout})
 		return tool.Textf("Started background job %s, read it with BashOutput and stop it with KillShell", job.ID).With(b.jobs.info(job)), nil

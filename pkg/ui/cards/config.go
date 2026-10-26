@@ -36,6 +36,7 @@ type Config struct {
 	servers  *lister
 	tools    *lister
 	keys     *lister
+	exts     *lister
 	list     []profiles.Model
 	loaded   string
 	loading  string
@@ -74,7 +75,7 @@ func credential(p profiles.Profile) string {
 func NewConfig(env *Env) *Config {
 	c := &Config{env: env, creds: map[string]string{}, scopes: map[string]string{}}
 	c.app = newSettings(env)
-	c.Tabs = wm.NewTabs(env.Theme, "CONFIG", env.Theme.Glyphs.Config, c.profilesTab(), c.modelsTab(), c.app, c.rulesTab(), c.hooksTab(), c.mcpTab(), c.toolsTab(), c.keysTab())
+	c.Tabs = wm.NewTabs(env.Theme, "CONFIG", env.Theme.Glyphs.Config, c.profilesTab(), c.modelsTab(), c.app, c.rulesTab(), c.hooksTab(), c.mcpTab(), c.toolsTab(), c.keysTab(), c.extTab())
 	return c
 }
 
@@ -844,6 +845,38 @@ func (c *Config) toolsTab() *lister {
 }
 
 // Every action with its keys by typed name, rebound by a key press or typing and saved at once
+// Tab listing the extensions linked into the binary and what each provides
+func (c *Config) extTab() *lister {
+	t := c.env.Theme
+	l := &lister{env: c.env, title: "ext", glyph: t.Glyphs.Ext, id: "config:ext", ctx: keys.Extensions, primary: "config.ext.detail", cols: []render.Column{{Title: "EXTENSION", Max: 24}, {Title: "VERSION", Max: 12}, {Title: "PROVIDES", Max: 10}, {Title: "DESCRIPTION", Flex: 1}}}
+	c.exts = l
+	var list []Extension
+	l.rows = func() [][]string {
+		list = list[:0]
+		if c.env.Extensions != nil {
+			list = c.env.Extensions()
+		}
+		var rows [][]string
+		for _, e := range list {
+			rows = append(rows, []string{e.Name, e.Version, render.Count(len(e.Provides), "item"), render.Summary(e.Description, 80, t)})
+		}
+		return rows
+	}
+	l.detail = func(i int) []string {
+		if i < 0 || i >= len(list) {
+			return nil
+		}
+		var out []string
+		for _, p := range list[i].Provides {
+			out = append(out, render.KV(p[0]+" "+p[1], p[2], t))
+		}
+		return out
+	}
+	l.actions = map[string]func(*lister, int) tea.Cmd{"config.ext.detail": toggleDetail}
+	l.empty = func() string { return "no extensions linked, add imports to cmd/icebath/extensions.go" }
+	return l
+}
+
 func (c *Config) keysTab() *lister {
 	km := c.env.Keys
 	t := c.env.Theme

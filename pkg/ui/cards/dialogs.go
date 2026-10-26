@@ -350,7 +350,7 @@ func (c *Config) hookForm(old *harness.HookEntry) *Form {
 		return harness.CheckMatcher(v)
 	}}
 	command := &field{key: "command", label: "command", kind: textField, value: e.Command, cursor: len([]rune(e.Command)), help: "Shell command given the event as JSON on stdin, exit 2 blocks with stderr as the reason"}
-	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, hi: 600, step: 5, start: agent.DefaultHookTimeout, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds the command may run, unset allows " + strconv.Itoa(agent.DefaultHookTimeout)}
+	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, step: 5, start: 60, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds the command may run, unset means forever."}
 	fields := []*field{event, matcher, command, secs}
 	scope := scopeField(harness.HooksFile)
 	title := "NEW HOOK"
@@ -512,7 +512,7 @@ func (c *Config) serverForm(old *harness.ServerConfig) *Form {
 	url := text("url", "url", cfg.URL, "Endpoint such as https://mcp.example.com/mcp", false, web)
 	headers := text("headers", "headers", joinHeaders(cfg.Headers), "Name: value pairs separated by semicolons", true, web)
 	headers.check = func(v string) error { _, err := splitHeaders(v); return err }
-	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, hi: 300, step: 5, start: 30, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds per handshake and listing, unset leaves the client default"}
+	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, step: 5, start: 30, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds per handshake and listing, unset means forever"}
 	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!cfg.Disabled), help: "Off servers stay configured without connecting"}
 	fields := []*field{name, transport, command, args, env, dir, url, headers, secs, enabled}
 	scope := scopeField(harness.ConfigFile)

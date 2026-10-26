@@ -29,9 +29,6 @@ import (
 // Profile used when neither the configuration nor a profile file names one
 const DefaultProfile = "anthropic"
 
-// Output budget when the configuration names none
-const DefaultMaxTokens = 16000
-
 const (
 	// Session label naming the profile the session runs on
 	profileLabel = "profile"
@@ -87,11 +84,13 @@ type App struct {
 	Session   *session.Session
 	Control   *Controller
 	Saver     *Saver
+	Flows     *Flows
 	System    string
 	// Profiles the profile files hold, in file order
 	Profiles []Instance
 	// Working directory the configuration was discovered under
 	Dir      string
+	kinds    []Kind
 	send     Sender
 	lives    []*Live
 	mu       sync.Mutex
@@ -140,6 +139,9 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	}
 	var fileDefault string
 	if app.Profiles, fileDefault, err = loadInstances(cfg); err != nil {
+		return nil, err
+	}
+	if app.kinds, err = loadKinds(dir); err != nil {
 		return nil, err
 	}
 	app.Pump = NewPump(send)
@@ -217,6 +219,16 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 			return l.ShowsThinking()
 		}
 		return true
+	}
+	app.Flows = NewFlows(app, send)
+	for _, build := range toolsRegistered() {
+		tools, err := build(app)
+		if err != nil {
+			return nil, err
+		}
+		if err := app.Tools.Add(tools...); err != nil {
+			return nil, err
+		}
 	}
 	app.MCP = NewMCP(send, app.Tools)
 	app.MCP.Options.Roots = []mcp.Root{{URI: "file://" + filepath.ToSlash(root), Name: filepath.Base(root)}}
@@ -312,15 +324,15 @@ func (a *App) buildTools(dir, root string) error {
 			return err
 		}
 	}
-	a.Subagents = &agent.Subagents{MaxDepth: cfg.Subagents.MaxDepth, Parallel: cfg.Subagents.Parallel, Timeout: seconds(cfg.Subagents.Timeout), Factory: a.childFactory}
+	a.Subagents = &agent.Subagents{MaxDepth: cfg.Subagents.MaxDepth, Parallel: cfg.Subagents.Parallel, Timeout: seconds(cfg.Subagents.Timeout), Factory: a.childFactory, Kinds: a.agentKinds}
 	for _, name := range cfg.Tools.Disabled {
 		a.Tools.SetEnabled(name, false)
 	}
-	return a.Tools.Add(facts.Tool{Resolve: a.factsFor}, mission.Tool{Resolve: a.missionsFor}, a.Subagents)
+	return a.Tools.Add(facts.Tool{Resolve: a.FactsFor}, mission.Tool{Resolve: a.MissionsFor}, a.Subagents)
 }
 
-// Builds a child agent on a fresh session labeled with its parent, on the subagent endpoint or the parent one
-func (a *App) childFactory(ctx context.Context) (*agent.Agent, error) {
+// Builds a child agent on a fresh session labeled with its parent, on the kind endpoint, the subagent one or the parent one
+func (a *App) childFactory(ctx context.Context, kind string) (*agent.Agent, error) {
 	sess := session.New()
 	parent, ep := a.Session.ID(), a.endpointOf(a.Session)
 	if l := a.LiveOfRun(RunFrom(ctx)); l != nil {
@@ -328,6 +340,19 @@ func (a *App) childFactory(ctx context.Context) (*agent.Agent, error) {
 	}
 	if a.children != nil {
 		ep = *a.children
+	}
+	if kind != "" {
+		k, ok := a.Kind(kind)
+		if !ok {
+			return nil, fmt.Errorf("no kind %q", kind)
+		}
+		if k.Model != nil {
+			var err error
+			if ep, err = a.open(ctx, *k.Model); err != nil {
+				return nil, fmt.Errorf("kind %s: %w", kind, err)
+			}
+		}
+		sess.Label(kindLabel, kind)
 	}
 	sess.Label(parentLabel, parent)
 	sess.Label("agent", policy.AgentFrom(ctx))
@@ -360,14 +385,18 @@ func (a *App) NewAgent(name string, sess *session.Session) *agent.Agent {
 	return a.newAgent(name, sess, a.endpointOf(sess))
 }
 
-// Builds an agent on the session that runs on the endpoint
+// Builds an agent on the session that runs on the endpoint, as the kind of the session when it has one
 func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) *agent.Agent {
 	cfg := a.Config
+	kind, _ := a.KindOf(sess)
 	ag := &agent.Agent{Name: name, Model: ep.Provider, ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
-	if ag.MaxTokens <= 0 {
-		ag.MaxTokens = DefaultMaxTokens
+	if ag.MaxTokens == 0 && protocol.RequiresMaxTokens(ep.Provider.Protocol) {
+		ag.MaxTokens = ep.Catalog.MaxOutput
 	}
-	ag.Hooks = append(ag.Hooks, systemHook{app: a, ep: ep})
+	if kind.MaxRounds > 0 {
+		ag.MaxRounds = kind.MaxRounds
+	}
+	ag.Hooks = append(ag.Hooks, systemHook{app: a, ep: ep, kind: kind})
 	var runner *agent.HookRunner
 	if len(cfg.Hooks) > 0 {
 		transcript, _ := a.Store.Path(sess.ID())
@@ -376,6 +405,16 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) *agent.A
 		ag.Hooks = append(ag.Hooks, r)
 	}
 	ag.Hooks = append(ag.Hooks, agent.StripThinking{}, missionTools{})
+	if kind.Name != "" {
+		ag.Hooks = append(ag.Hooks, kindTools{kind: kind})
+	}
+	info := AgentInfo{Name: name, Session: sess, Endpoint: ep, Kind: kind, App: a}
+	for _, build := range hooksRegistered() {
+		if h := build(info); h != nil {
+			ag.Hooks = append(ag.Hooks, h)
+		}
+	}
+	ag.Hooks = append(ag.Hooks, kind.Hooks...)
 	if cfg.Compaction.Threshold > 0 {
 		s := &agent.Summarizer{Model: ep.Provider, ModelID: ep.Model, Session: sess, Threshold: cfg.Compaction.Threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
 		if a.summary != nil {
@@ -427,6 +466,7 @@ func (a *App) SessionStart(ctx context.Context, source string) error {
 func (a *App) Close(ctx context.Context) error {
 	var err error
 	a.closed.Do(func() {
+		a.Flows.Shutdown()
 		a.Control.Shutdown()
 		a.Approver.Close()
 		a.MCP.Close()
@@ -443,15 +483,16 @@ func (a *App) Close(ctx context.Context) error {
 	return err
 }
 
-// Hook that writes the system prompt of the endpoint into every turn, keeping an empty one while bare
+// Hook that writes the system prompt of the endpoint and kind into every turn, keeping an empty one while bare
 type systemHook struct {
 	agent.Hooks
-	app *App
-	ep  Endpoint
+	app  *App
+	ep   Endpoint
+	kind Kind
 }
 
 func (h systemHook) BeforeTurn(ctx context.Context, req *protocol.Request) error {
-	req.System = h.app.PromptFor(ctx, h.ep)
+	req.System = h.app.PromptFor(ctx, h.ep, h.kind)
 	req.KeepSystem = h.ep.Profile.Bare
 	return nil
 }
@@ -764,7 +805,7 @@ func (a *App) LiveOfRun(id string) *Live {
 }
 
 // Facts store the calling run records into, the selected one outside a run
-func (a *App) factsFor(ctx context.Context) *facts.Store {
+func (a *App) FactsFor(ctx context.Context) *facts.Store {
 	if l := a.LiveOfRun(RunFrom(ctx)); l != nil {
 		return l.Facts
 	}
@@ -772,7 +813,7 @@ func (a *App) factsFor(ctx context.Context) *facts.Store {
 }
 
 // Mission store the calling run plans into, the selected one outside a run
-func (a *App) missionsFor(ctx context.Context) *mission.Store {
+func (a *App) MissionsFor(ctx context.Context) *mission.Store {
 	if l := a.LiveOfRun(RunFrom(ctx)); l != nil {
 		return l.Missions
 	}

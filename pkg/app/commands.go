@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/ext"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -35,7 +36,7 @@ func (m *Model) commands() []wm.Command {
 		return func() tea.Cmd { return m.command(m.current(), name, args) }
 	}
 	more := m.theme.Glyphs.Ellipsis
-	return []wm.Command{
+	out := []wm.Command{
 		{ID: "session.new", Title: "Session: new", Run: m.newSession},
 		{ID: "session.close", Title: "Session: close", When: idle, Run: func() tea.Cmd { return m.closeSession(m.current()) }},
 		{ID: "workspace.new", Title: "Workspace: new", Run: m.newWorkspace},
@@ -74,6 +75,7 @@ func (m *Model) commands() []wm.Command {
 		{ID: "interrupt", Title: "Interrupt", Run: m.interrupt},
 		{ID: "quit", Title: "Quit", Run: m.shutdown},
 	}
+	return append(out, m.extensionCommands()...)
 }
 
 // Opens the configuration on its keybind tab
@@ -81,8 +83,13 @@ func (m *Model) editKeys() tea.Cmd {
 	return tea.Batch(m.wm.OpenHere(m.config), m.config.ShowKeys())
 }
 
-// Slash commands the composer lists as they are typed, with the values their arguments may take
+// Slash commands the composer lists as they are typed, the built in ones then those of extensions
 func (m *Model) slashCommands() []cards.Command {
+	return append(m.builtinSlash(), m.extensionSlash()...)
+}
+
+// Built in slash commands with the values their arguments may take
+func (m *Model) builtinSlash() []cards.Command {
 	models := func(string) []string {
 		out := make([]string, 0, len(m.models))
 		for _, md := range m.models {
@@ -248,6 +255,9 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 		return d.session.Composer.Attach(args)
 	case "quit":
 		return m.shutdown()
+	}
+	if cmd, ok := m.extensionCommand(d, name, args); ok {
+		return cmd
 	}
 	return m.wm.Toast("unknown command /"+name, wm.Warn, 0)
 }
@@ -529,7 +539,10 @@ func (m *Model) promptExport() tea.Cmd {
 }
 
 // Windows a workspace can open, by slash command name, each opened by the keymap action named
-var panels = []struct{ name, title, detail, action string }{
+type panelChoice struct{ name, title, detail, action string }
+
+// Panels the app builds itself
+var builtinPanels = []panelChoice{
 	{"new", "Session", "fresh session", "session.new"},
 	{"agents", "Agents", "runs", "open.agents"},
 	{"metrics", "Metrics", "tokens, cost, latency", "open.metrics"},
@@ -539,8 +552,18 @@ var panels = []struct{ name, title, detail, action string }{
 	{"config", "Config", "profiles, models, rules, hooks, mcp, tools, keys", "open.config"},
 }
 
+// Panels a workspace can open, the built in ones then those of extensions
+func (m *Model) panels() []panelChoice {
+	out := append([]panelChoice(nil), builtinPanels...)
+	for _, p := range ext.Panels() {
+		out = append(out, panelChoice{p.Key, p.Title, p.Detail, "open." + p.Key})
+	}
+	return out
+}
+
 func (m *Model) pickPanel() tea.Cmd {
 	d := m.current()
+	panels := m.panels()
 	items := make([]wm.Item, 0, len(panels))
 	for _, p := range panels {
 		name := p.name

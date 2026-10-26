@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/term"
 
 	"github.com/nickheyer/icebath/pkg/app"
+	"github.com/nickheyer/icebath/pkg/ext"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/session"
@@ -33,6 +34,10 @@ func main() {
 }
 
 func run(args []string) int {
+	if err := ext.Load(); err != nil {
+		fmt.Fprintln(os.Stderr, "icebath:", err)
+		return 2
+	}
 	fs := flag.NewFlagSet("icebath", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
@@ -47,6 +52,8 @@ func run(args []string) int {
 		headless = fs.Bool("headless", false, "run without a terminal and write the answer as text")
 		yes      = fs.Bool("yes", false, "approve every tool call when running without a terminal")
 		mission  = fs.String("mission", "", "objective to start a mission with")
+		kind     = fs.String("kind", "", "kind the session runs as, linked ones are "+strings.Join(kindNames(), ", "))
+		workflow = fs.String("workflow", "", "workflow to run with the prompt as its argument, linked ones are "+strings.Join(workflowNames(), ", "))
 		list     = fs.Bool("sessions", false, "list stored sessions and exit")
 		theme    = fs.String("theme", "", "palette, blackwall, light, contrast or plain")
 		motion   = fs.Float64("motion", -1, "animation scale from 0 to 1")
@@ -136,22 +143,25 @@ func run(args []string) int {
 		if in != nil {
 			input = in
 		}
-		return app.Headless(ctx, app.HeadlessOptions{Config: cfg, Resume: *resume, Dir: cwd, Prompt: prompt, Mission: *mission, Print: *print, Yes: *yes, Out: os.Stdout, Err: os.Stderr, In: input})
+		return app.Headless(ctx, app.HeadlessOptions{Config: cfg, Resume: *resume, Dir: cwd, Prompt: prompt, Mission: *mission, Kind: *kind, Workflow: *workflow, Print: *print, Yes: *yes, Out: os.Stdout, Err: os.Stderr, In: input})
 	}
-	m, err := app.New(ctx, app.Options{Config: cfg, Resume: *resume, Dir: cwd, Version: version})
+	m, err := app.New(ctx, app.Options{Config: cfg, Resume: *resume, Dir: cwd, Version: version, Kind: *kind})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "icebath:", err)
 		return 2
 	}
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithFilter(m.Filter))
 	m.Attach(p)
-	if prompt != "" || *mission != "" {
+	if prompt != "" || *mission != "" || *workflow != "" {
 		go func() {
-			if *mission != "" {
+			switch {
+			case *workflow != "":
+				p.Send(app.StartWorkflow(*workflow, prompt))
+			case *mission != "":
 				p.Send(app.StartMission(*mission))
-				return
+			default:
+				p.Send(app.StartPrompt(prompt))
 			}
-			p.Send(app.StartPrompt(prompt))
 		}()
 	}
 	if _, err := p.Run(); err != nil {
@@ -165,6 +175,26 @@ func names() []string {
 	var out []string
 	for _, p := range profiles.Defaults() {
 		out = append(out, p.Name)
+	}
+	return out
+}
+
+// Names of the kinds extensions linked in, the ones kind files add known only once a directory is chosen
+func kindNames() []string {
+	out := []string{harness.NoKind}
+	for _, k := range harness.RegisteredKinds() {
+		out = append(out, k.Name)
+	}
+	return out
+}
+
+func workflowNames() []string {
+	var out []string
+	for _, w := range harness.Workflows() {
+		out = append(out, w.Name)
+	}
+	if len(out) == 0 {
+		return []string{"none"}
 	}
 	return out
 }

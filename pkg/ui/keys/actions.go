@@ -35,6 +35,7 @@ const (
 	MCP        = "config.mcp"
 	Tools      = "config.tools"
 	Keybinds   = "config.keys"
+	Extensions = "config.ext"
 )
 
 // ContextDocs describes each context in the keybind editor.
@@ -69,6 +70,7 @@ var ContextDocs = map[string]string{
 	MCP:        "MCP tab",
 	Tools:      "tools tab",
 	Keybinds:   "keys tab",
+	Extensions: "extensions tab",
 }
 
 func act(id, ctx, label, doc string, keys ...string) Action {
@@ -354,6 +356,9 @@ var registry = func() []Action {
 		act("config.key.unbind", Keybinds, "unbind", "remove all keybindings for this action", "d"),
 		act("config.key.reset", Keybinds, "reset", "restore the default keybindings for this action", "r"),
 		act("config.key.detail", Keybinds, "detail", "show or hides the action details", "o"),
+		act("config.ext.detail", Extensions, "detail", "show or hides what the extension contributes", "enter", "o"),
+		act("kind.set", Global, "kind", "choose the kind the session runs as"),
+		act("workflow.stop", Global, "stop workflow", "choose a running workflow to stop"),
 	)
 	return out
 }()

@@ -118,6 +118,8 @@ type Config struct {
 	Web         WebConfig                  `json:"web,omitempty"`
 	Tools       ToolsConfig                `json:"tools,omitempty"`
 	UI          UIConfig                   `json:"ui,omitempty"`
+	// Values of the settings extensions register, by key
+	Settings map[string]string `json:"settings,omitempty"`
 	// Directory every file path must stay inside, the working directory when empty
 	Root string `json:"root,omitempty"`
 	// Directory sessions are written to, sessions under the configuration directory when empty
@@ -143,6 +145,13 @@ func ReadConfig(r io.Reader) (Config, error) {
 	}
 	if err := c.Hooks.Validate(); err != nil {
 		return Config{}, err
+	}
+	for key, value := range c.Settings {
+		if s, ok := LookupSetting(key); ok {
+			if err := s.Validate(value); err != nil {
+				return Config{}, fmt.Errorf("config: settings: %w", err)
+			}
+		}
 	}
 	return c, nil
 }
@@ -283,6 +292,12 @@ func Merge(base, over Config) Config {
 	if over.UI.Cascade != nil {
 		out.UI.Cascade = over.UI.Cascade
 	}
+	if len(over.Settings) > 0 {
+		merged := make(map[string]string, len(base.Settings)+len(over.Settings))
+		maps.Copy(merged, base.Settings)
+		maps.Copy(merged, over.Settings)
+		out.Settings = merged
+	}
 	if over.Root != "" {
 		out.Root = over.Root
 	}
@@ -391,6 +406,9 @@ func (c Config) SystemPrompt() (string, error) {
 	return c.System, nil
 }
 
+// Value of an extension setting, empty while unset
+func (c Config) Setting(key string) string { return c.Settings[key] }
+
 // Reads a duration given in seconds
 func seconds(n int) time.Duration { return time.Duration(n) * time.Second }
 
@@ -436,8 +454,8 @@ func (c *Config) settingField(key, value string) (Field, error) {
 		return Field{Path: path, Value: n}, nil
 	case "temperature":
 		f, err := strconv.ParseFloat(value, 64)
-		if err != nil || f < 0 || f > 2 {
-			return Field{}, fmt.Errorf("temperature must be between 0 and 2, got %q", value)
+		if err != nil || f < 0 {
+			return Field{}, fmt.Errorf("temperature must be a non negative number, got %q", value)
 		}
 		c.Temperature = &f
 		return Field{Path: path, Value: f}, nil
@@ -472,6 +490,18 @@ func (c *Config) settingField(key, value string) (Field, error) {
 		c.UI.Cascade = &b
 		return Field{Path: path, Value: b}, nil
 	}
+	if s, ok := LookupSetting(key); ok {
+		if err := s.Validate(value); err != nil {
+			return Field{}, err
+		}
+		values := maps.Clone(c.Settings)
+		if values == nil {
+			values = map[string]string{}
+		}
+		values[key] = value
+		c.Settings = values
+		return Field{Path: path, Value: value}, nil
+	}
 	name := strings.TrimPrefix(key, "extra.")
 	extra := maps.Clone(c.Extra)
 	if extra == nil {
@@ -499,6 +529,9 @@ func settingPath(key string) ([]string, error) {
 	if name, ok := strings.CutPrefix(key, "extra."); ok && name != "" {
 		return []string{"extra", name}, nil
 	}
+	if _, ok := LookupSetting(key); ok {
+		return []string{"settings", key}, nil
+	}
 	return nil, fmt.Errorf("unknown setting %q", key)
 }
 
@@ -522,6 +555,12 @@ func (c *Config) unset(key string) {
 	case "cascade":
 		c.UI.Cascade = nil
 	default:
+		if _, ok := LookupSetting(key); ok {
+			values := maps.Clone(c.Settings)
+			delete(values, key)
+			c.Settings = values
+			return
+		}
 		extra := maps.Clone(c.Extra)
 		delete(extra, strings.TrimPrefix(key, "extra."))
 		c.Extra = extra

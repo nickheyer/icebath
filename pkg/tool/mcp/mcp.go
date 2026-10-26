@@ -458,7 +458,7 @@ type Server struct {
 	Name    string
 	Dialer  Dialer
 	Options Options
-	// Budget for each handshake and tool listing, thirty seconds when zero
+	// Budget for each handshake and tool listing, unlimited when zero
 	Timeout time.Duration
 
 	mu       sync.Mutex
@@ -474,11 +474,12 @@ type Server struct {
 	attempts int
 }
 
-func (s *Server) timeout() time.Duration {
+// Context for one handshake or listing, ending after the server timeout when one is set
+func (s *Server) within(ctx context.Context) (context.Context, context.CancelFunc) {
 	if s.Timeout > 0 {
-		return s.Timeout
+		return context.WithTimeout(ctx, s.Timeout)
 	}
-	return 30 * time.Second
+	return context.WithCancel(ctx)
 }
 
 // Connects, lists the tools and starts watching the connection, failing when the first connect fails
@@ -513,7 +514,7 @@ func (s *Server) Open(ctx context.Context) error {
 
 // Dials, handshakes and lists tools under the server timeout
 func (s *Server) connect(ctx context.Context) (*Client, error) {
-	cctx, cancel := context.WithTimeout(ctx, s.timeout())
+	cctx, cancel := s.within(ctx)
 	defer cancel()
 	c, err := Connect(cctx, s.Name, s.Dialer, s.Options)
 	if err != nil {
@@ -540,7 +541,7 @@ func (s *Server) adopt(c *Client) {
 
 // Lists the tools of a client and publishes them when the set changed
 func (s *Server) refresh(c *Client) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.timeout())
+	ctx, cancel := s.within(context.Background())
 	defer cancel()
 	var tools []tool.Tool
 	if c.Server().Tools {

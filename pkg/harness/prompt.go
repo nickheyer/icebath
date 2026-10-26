@@ -87,12 +87,12 @@ func Environment(f Facts) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-// System prompt of a base and an environment block, an empty one left out
-func Compose(base, env string) string {
+// System prompt of blocks separated by blank lines, empty ones left out
+func Compose(blocks ...string) string {
 	var parts []string
-	for _, part := range []string{strings.TrimSpace(base), env} {
-		if part != "" {
-			parts = append(parts, part)
+	for _, block := range blocks {
+		if block = strings.TrimSpace(block); block != "" {
+			parts = append(parts, block)
 		}
 	}
 	return strings.Join(parts, "\n\n")
@@ -106,16 +106,23 @@ func (a *App) EnvironmentFor(ctx context.Context, model string) string {
 	return Environment(GatherFacts(a.Shell.Dir(), a.Root, model, mission.IDFrom(ctx) != ""))
 }
 
-// Prompt of a run on the endpoint, the profile base or the built in one plus the environment unless left out
-func (a *App) PromptFor(ctx context.Context, ep Endpoint) string {
+// Prompt of a run on the endpoint as the kind, the kind, profile or built in base, the environment unless left out, then every registered fragment
+func (a *App) PromptFor(ctx context.Context, ep Endpoint, kind Kind) string {
 	base, env := a.DefaultBase(), ""
 	if ep.Profile.System.Kind != "" {
 		base = ep.System
 	}
+	if kind.System != "" {
+		base = kind.System
+	}
 	if !ep.Profile.NoContext {
 		env = a.EnvironmentFor(ctx, ep.Model)
 	}
-	return Compose(base, env)
+	blocks := []string{base, kind.Append, env}
+	for _, fragment := range fragmentsRegistered() {
+		blocks = append(blocks, fragment(ctx, a, ep))
+	}
+	return Compose(blocks...)
 }
 
 // Facts about the machine as it stands, the working directory and root given by the caller

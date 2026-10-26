@@ -80,9 +80,6 @@ type Event struct {
 	Usage protocol.Usage
 }
 
-// Output budget sent when the agent names none
-const DefaultMaxTokens = 8192
-
 // Error a run ends with after Interrupt was called
 var ErrInterrupted = errors.New("agent: interrupted")
 
@@ -208,11 +205,11 @@ type Agent struct {
 	Tools   *tool.Registry
 	Gate    policy.Gate
 	Session *session.Session
-	// Request options copied onto every turn
+	// Request options copied onto every turn, the output budget left to the model when zero
 	MaxTokens   int
 	Temperature *float64
 	Extra       map[string]json.RawMessage
-	// Model turns one Run may take, unlimited when zero
+	// Tool rounds one Run may take before the model must answer, unlimited when zero
 	MaxRounds   int
 	Hooks       []Hook
 	mu          sync.Mutex
@@ -272,13 +269,6 @@ func (a *Agent) drain() []protocol.Part {
 	parts := a.inbox
 	a.inbox = nil
 	return parts
-}
-
-func (a *Agent) maxTokens() int {
-	if a.MaxTokens > 0 {
-		return a.MaxTokens
-	}
-	return DefaultMaxTokens
 }
 
 // Observer that stamps every event with order, time and lineage and never runs concurrently
@@ -391,7 +381,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 			if cont == nil {
 				return resp, nil
 			}
-			if rounds > 0 && *round >= rounds {
+			if rounds > 0 && *round > rounds {
 				return resp, fmt.Errorf("agent: %d rounds reached", rounds)
 			}
 			continued = true
@@ -403,7 +393,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 		if len(calls) == 0 {
 			return resp, errors.New("agent: stop reason tool_use with no tool calls")
 		}
-		if rounds > 0 && *round >= rounds {
+		if rounds > 0 && *round > rounds {
 			limit := fmt.Errorf("agent: %d tool rounds reached", rounds)
 			results := make([]protocol.ToolResult, len(calls))
 			for i, call := range calls {
@@ -465,7 +455,7 @@ func (a *Agent) turn(ctx context.Context, observe func(Event)) (protocol.Respons
 		Model:       a.ModelID,
 		System:      a.System,
 		Messages:    a.Session.Snapshot(),
-		MaxTokens:   a.maxTokens(),
+		MaxTokens:   a.MaxTokens,
 		Temperature: a.Temperature,
 		Extra:       extra,
 		Stream:      true,

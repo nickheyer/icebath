@@ -2,6 +2,8 @@
 package theme
 
 import (
+	"errors"
+	"fmt"
 	"image/color"
 	"sort"
 	"strings"
@@ -123,6 +125,22 @@ func Plain() Theme {
 
 var themes = map[string]func() Theme{"blackwall": Blackwall, "light": Light, "contrast": Contrast, "plain": Plain}
 
+// Makes a theme available to Named under its name, refusing a taken or empty name
+func Register(fn func() Theme) error {
+	if fn == nil {
+		return errors.New("theme: a constructor is required")
+	}
+	name := strings.ToLower(strings.TrimSpace(fn().Name))
+	if name == "" {
+		return errors.New("theme: a name is required")
+	}
+	if _, dup := themes[name]; dup {
+		return fmt.Errorf("theme: %s is already registered", name)
+	}
+	themes[name] = fn
+	return nil
+}
+
 // Theme by name, false for an unknown name
 func Named(name string) (Theme, bool) {
 	fn, ok := themes[strings.ToLower(strings.TrimSpace(name))]
@@ -217,6 +235,8 @@ type Glyphs struct {
 	MCP       string
 	Tools     string
 	Keys      string
+	Ext       string
+	Flow      string
 	Read      string
 	Write     string
 	Edit      string
@@ -299,7 +319,7 @@ type Glyphs struct {
 func IcebathGlyphs() Glyphs {
 	return Glyphs{
 		Brand: "❆", Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "⍰", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "❯", Card: "▰",
-		Profiles: "⍟", Models: "⟡", Rules: "§", Hooks: "↯", MCP: "⇆", Tools: "⌗", Keys: "⌥",
+		Profiles: "⍟", Models: "⟡", Rules: "§", Hooks: "↯", MCP: "⇆", Tools: "⌗", Keys: "⌥", Ext: "⧉", Flow: "⟳",
 		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Bash: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
 		Speaker: "┃", Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "⍰", Child: "⟁", Attach: "⎘", Idle: "⊙", Cursor: "►", Marked: "▮",
 		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔",
@@ -316,7 +336,7 @@ func IcebathGlyphs() Glyphs {
 func ASCIIGlyphs() Glyphs {
 	return Glyphs{
 		Brand: "*", Session: "~", Trace: "&", Agent: "&", Approval: "?", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: ">", Card: "*",
-		Profiles: "@", Models: "o", Rules: "S", Hooks: "!", MCP: "=", Tools: "+", Keys: "k",
+		Profiles: "@", Models: "o", Rules: "S", Hooks: "!", MCP: "=", Tools: "+", Keys: "k", Ext: "x", Flow: "@",
 		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Bash: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
 		Speaker: "|", Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "?", Child: "&", Attach: "+", Idle: "o", Cursor: ">", Marked: "#",
 		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y",

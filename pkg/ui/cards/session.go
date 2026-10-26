@@ -278,6 +278,9 @@ func (s *Session) Status() string {
 	if st := s.Composer.Status(); st != "" {
 		parts = append(parts, st)
 	}
+	if kind := s.live.Kind(); kind != "" {
+		parts = append(parts, "kind "+kind)
+	}
 	p := s.live.Endpoint.Profile
 	if p.Ghost {
 		parts = append(parts, "ghost")

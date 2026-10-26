@@ -16,6 +16,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/ext"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/mission"
 	"github.com/nickheyer/icebath/pkg/policy"
@@ -55,6 +56,8 @@ type Options struct {
 	Resume  string
 	Dir     string
 	Version string
+	// Kind the first session runs as, none when empty
+	Kind string
 }
 
 // Open session with the cards built for it, seated in whichever workspace holds its session card
@@ -91,17 +94,19 @@ type Model struct {
 	sessions *cards.Sessions
 	config   *cards.Config
 	roster   *cards.Agents
-	ctx      context.Context
-	cancel   context.CancelFunc
-	started  time.Time
-	state    tea.ProgramState
-	cancelAt time.Time
-	models   []profiles.Model
-	listed   string
-	quitting bool
-	width    int
-	height   int
-	bg       sync.WaitGroup
+	// Extension panels built so far, by key
+	extPanels map[string]wm.Card
+	ctx       context.Context
+	cancel    context.CancelFunc
+	started   time.Time
+	state     tea.ProgramState
+	cancelAt  time.Time
+	models    []profiles.Model
+	listed    string
+	quitting  bool
+	width     int
+	height    int
+	bg        sync.WaitGroup
 	// Layout as last written, so only a change costs a write
 	layoutSaved []byte
 	// Commands the restored cards asked for, run when the program starts
@@ -114,10 +119,17 @@ type Model struct {
 func New(ctx context.Context, opts Options) (*Model, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	r := &relay{}
-	app, err := harness.Build(ctx, opts.Config, r.Send, harness.BuildOptions{Resume: opts.Resume, Dir: opts.Dir})
+	app, err := harness.Build(ctx, opts.Config, observed(r.Send), harness.BuildOptions{Resume: opts.Resume, Dir: opts.Dir})
 	if err != nil {
 		cancel()
 		return nil, err
+	}
+	if opts.Kind != "" {
+		if err := app.SetKindOn(app.Current(), opts.Kind); err != nil {
+			cancel()
+			app.Close(context.Background())
+			return nil, err
+		}
 	}
 	layout, raw, saved := loadLayout(layoutPath(app.Config))
 	th, err := resolveTheme(opts.Config, layout.Theme)
@@ -125,7 +137,12 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 		cancel()
 		return nil, err
 	}
-	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw, recent: map[*wm.Workspace]*desk{}}
+	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}}
+	if err := m.checkExtensions(); err != nil {
+		cancel()
+		app.Close(context.Background())
+		return nil, err
+	}
 	m.keys, m.keysErr = keys.Open(filepath.Join(m.configDir(), keys.FileName))
 	m.env = m.environment()
 	m.buildManager(layout.Layout, saved)
@@ -172,6 +189,17 @@ func (m *Model) environment() *cards.Env {
 		},
 		Settings:   m.settings,
 		ProjectDir: filepath.Join(a.Root, harness.ProjectDir),
+		Extensions: extensionRows,
+	}
+}
+
+// Sender that hands every message to the extension observers before the program
+func observed(send harness.Sender) harness.Sender {
+	return func(msg any) {
+		for _, fn := range ext.Observers() {
+			fn(msg)
+		}
+		send(msg)
 	}
 }
 
@@ -207,6 +235,7 @@ func (m *Model) settings() map[string]string {
 	if cfg.Temperature != nil {
 		out["temperature"] = fmt.Sprintf("%.2f", *cfg.Temperature)
 	}
+	extensionSettings(cfg, out)
 	return out
 }
 
@@ -254,7 +283,7 @@ func (m *Model) panel(key string) wm.Card {
 	case "agents":
 		return m.roster
 	}
-	return nil
+	return m.extPanel(key)
 }
 
 // Card a saved key names, nil for one of a closed session or a run of the last process
@@ -519,7 +548,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.retireAgent(msg.run)
 	}
 	var cmds []tea.Cmd
-	if cmd, handled := m.harnessMsg(msg); handled {
+	if cmd, handled := m.extensionMsg(msg); handled {
+		cmds = append(cmds, cmd)
+	} else if cmd, handled := m.harnessMsg(msg); handled {
 		cmds = append(cmds, cmd)
 	} else if cmd, handled := m.cardMsg(msg); handled {
 		m.wm.Repaint()
@@ -958,7 +989,6 @@ func (m *Model) compactNow(d *desk) tea.Cmd {
 	m.app.Config = cfg
 	ag := m.app.NewAgent("", d.live.Session)
 	m.app.Config = saved
-	ag.MaxRounds = 1
 	d.compacting = true
 	sess := d.live.Session
 	m.bg.Add(1)

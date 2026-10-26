@@ -25,6 +25,8 @@ type Protocol struct{}
 
 func (Protocol) ID() protocol.ID { return protocol.AnthropicMessages }
 
+func (Protocol) MaxTokensRequired() bool { return true }
+
 func init() { protocol.Register(Protocol{}) }
 
 var _ protocol.Protocol = Protocol{}
@@ -219,7 +221,7 @@ const (
 
 func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 	if req.MaxTokens <= 0 {
-		return protocol.Call{}, fmt.Errorf("anthropic-messages: max_tokens is required")
+		return protocol.Call{}, fmt.Errorf("anthropic-messages: the API requires max_tokens and the output limit of %s is unknown, set max_tokens", req.Model)
 	}
 	body := request{
 		Model:         req.Model,

@@ -37,9 +37,6 @@ const (
 // Every event a configuration may name
 var HookEvents = []HookEvent{UserPromptSubmit, PreToolUse, PostToolUse, Stop, PreCompact, SessionStart, SessionEnd, SubagentStop, Notification}
 
-// Seconds a hook may run when it names no timeout
-const DefaultHookTimeout = 60
-
 // One command to run
 type HookCommand struct {
 	Type    string `json:"type,omitempty"`
@@ -368,13 +365,18 @@ func (r HookRunner) dir() (string, error) {
 	return os.Getwd()
 }
 
+// Context that ends after the timeout, or with the parent alone when the timeout is zero
+func deadline(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout > 0 {
+		return context.WithTimeout(ctx, timeout)
+	}
+	return context.WithCancel(ctx)
+}
+
 // Executes one hook, reading its hookVerdict from the exit code and any JSON it printed
 func (r HookRunner) exec(ctx context.Context, event HookEvent, toolName string, cmd HookCommand, p hookPayload) (hookVerdict, error) {
 	timeout := time.Duration(cmd.Timeout) * time.Second
-	if timeout <= 0 {
-		timeout = DefaultHookTimeout * time.Second
-	}
-	hctx, cancel := context.WithTimeout(ctx, timeout)
+	hctx, cancel := deadline(ctx, timeout)
 	defer cancel()
 	stdin, err := json.Marshal(p)
 	if err != nil {

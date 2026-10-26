@@ -55,6 +55,43 @@ func Default() *Map {
 	return m
 }
 
+// Adds an action every later map starts with, refusing a taken id, an unknown context or a chord that does not parse
+func Add(a Action) error {
+	if a.ID == "" {
+		return errors.New("keys: an action needs an id")
+	}
+	if a.Context == "" {
+		a.Context = Global
+	}
+	if ContextDocs[a.Context] == "" {
+		return fmt.Errorf("keys: action %s names unknown context %q", a.ID, a.Context)
+	}
+	for _, have := range registry {
+		if have.ID == a.ID {
+			return fmt.Errorf("keys: action %s is already registered", a.ID)
+		}
+	}
+	for _, d := range a.Default {
+		if _, err := Parse(d); err != nil {
+			return fmt.Errorf("keys: default of %s: %w", a.ID, err)
+		}
+	}
+	registry = append(registry, a)
+	return nil
+}
+
+// Adds a keymap context the file and the editor know, refusing a taken name
+func AddContext(name, doc string) error {
+	if name == "" || doc == "" {
+		return errors.New("keys: a context needs a name and a description")
+	}
+	if ContextDocs[name] != "" {
+		return fmt.Errorf("keys: context %s is already registered", name)
+	}
+	ContextDocs[name] = doc
+	return nil
+}
+
 // Adds an action to the registry at its default keys, replacing one with the same id
 func (m *Map) Register(a Action) {
 	if a.Context == "" {

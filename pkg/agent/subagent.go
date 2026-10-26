@@ -15,11 +15,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool"
 )
 
-// Builds a fresh child agent for one task
-type Factory func(ctx context.Context) (*Agent, error)
+// Builds a fresh child agent for one task, of the named kind or the default one when the name is empty
+type Factory func(ctx context.Context, kind string) (*Agent, error)
 
-// Nesting allowed when a tool names none
-const DefaultMaxDepth = 3
+// Kind of agent the tool may spawn, as the model hears it
+type Kind struct {
+	Name        string
+	Description string
+}
 
 // Finished children remembered before the oldest is forgotten
 const maxChildren = 64
@@ -27,10 +30,28 @@ const maxChildren = 64
 // Name the parent model calls to delegate
 const SubagentTool = "Agent"
 
-const subagentSchema = `{"type":"object","properties":{
-"prompt":{"type":"string","description":"Complete task for the child agent, with every detail it needs since it starts with an empty transcript"},
-"description":{"type":"string","description":"Short label for the task shown to the user"}},
-"required":["prompt"],"additionalProperties":false}`
+// Argument schema of the tool, with the kinds offered when any are
+func subagentSchema(kinds []Kind) json.RawMessage {
+	props := map[string]any{
+		"prompt":      map[string]any{"type": "string", "description": "Complete task for the child agent, with every detail it needs since it starts with an empty transcript"},
+		"description": map[string]any{"type": "string", "description": "Short label for the task shown to the user"},
+	}
+	if len(kinds) > 0 {
+		names := make([]string, 0, len(kinds))
+		var sb strings.Builder
+		sb.WriteString("Kind of agent to spawn, the default one when left out. ")
+		for i, k := range kinds {
+			names = append(names, k.Name)
+			if i > 0 {
+				sb.WriteString(" ")
+			}
+			sb.WriteString(k.Name + ": " + k.Description + ".")
+		}
+		props["kind"] = map[string]any{"type": "string", "enum": names, "description": strings.TrimSpace(sb.String())}
+	}
+	raw, _ := json.Marshal(map[string]any{"type": "object", "properties": props, "required": []string{"prompt"}, "additionalProperties": false})
+	return raw
+}
 
 // One child the tool spawned, live or finished
 type Child struct {
@@ -51,12 +72,14 @@ type Child struct {
 // Tool that runs a child agent to completion and returns its final text
 type Subagents struct {
 	Factory Factory
-	// Levels of children allowed below the root, DefaultMaxDepth when zero
+	// Levels of children allowed below the root, unlimited when zero
 	MaxDepth int
 	// Budget for one child run, unlimited when zero
 	Timeout time.Duration
 	// Lets several children of one round run at the same time
 	Parallel bool
+	// Kinds the model may name, none when nil
+	Kinds    func() []Kind
 	mu       sync.Mutex
 	spawned  int
 	children map[string]*Child
@@ -65,7 +88,11 @@ type Subagents struct {
 }
 
 func (t *Subagents) Definition() protocol.Tool {
-	return protocol.Tool{Name: SubagentTool, Description: "Delegates a self contained task to a child agent that works with its own tools and transcript and returns only its final answer.", Parameters: json.RawMessage(subagentSchema)}
+	var kinds []Kind
+	if t.Kinds != nil {
+		kinds = t.Kinds()
+	}
+	return protocol.Tool{Name: SubagentTool, Description: "Delegates a self contained task to a child agent that works with its own tools and transcript and returns only its final answer.", Parameters: subagentSchema(kinds)}
 }
 
 // Destructive and open world always, and read only when children may run side by side
@@ -190,6 +217,7 @@ func (t *Subagents) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 	var in struct {
 		Prompt      string `json:"prompt"`
 		Description string `json:"description"`
+		Kind        string `json:"kind"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return tool.Error(err.Error()), nil
@@ -197,15 +225,14 @@ func (t *Subagents) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 	if strings.TrimSpace(in.Prompt) == "" {
 		return tool.Error("prompt is required"), nil
 	}
-	limit := t.MaxDepth
-	if limit <= 0 {
-		limit = DefaultMaxDepth
+	if in.Kind != "" && !t.knows(in.Kind) {
+		return tool.Errorf("subagent: no kind %q", in.Kind), nil
 	}
 	depth := depthOf(ctx) + 1
-	if depth > limit {
-		return tool.Errorf("subagent: nesting deeper than %d is not allowed", limit), nil
+	if t.MaxDepth > 0 && depth > t.MaxDepth {
+		return tool.Errorf("subagent: nesting deeper than %d is not allowed", t.MaxDepth), nil
 	}
-	child, err := t.Factory(ctx)
+	child, err := t.Factory(ctx, in.Kind)
 	if err != nil {
 		return tool.Errorf("subagent: %v", err), nil
 	}
@@ -248,6 +275,19 @@ func (t *Subagents) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 		return tool.Error(err.Error()).With(t.snapshot(c)), nil
 	}
 	return tool.Text(text).With(t.snapshot(c)), nil
+}
+
+// Reports whether the kind is one the tool offers
+func (t *Subagents) knows(kind string) bool {
+	if t.Kinds == nil {
+		return false
+	}
+	for _, k := range t.Kinds() {
+		if k.Name == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *Subagents) snapshot(c *Child) Child {

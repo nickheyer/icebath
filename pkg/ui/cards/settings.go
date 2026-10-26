@@ -15,11 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Ceiling of the output and context sliders when the catalog knows nothing of the model
-const (
-	fallbackOutput  = 128000
-	fallbackContext = 1000000
-)
+// Context window the compaction start is taken from when the catalog knows nothing of the model
+const fallbackContext = 1000000
 
 // App settings applied and saved the moment they change, choices shown whole and numbers on sliders
 type settings struct {
@@ -43,15 +40,36 @@ func newSettings(env *Env) *settings {
 	s := &settings{env: env}
 	s.fields = []*field{
 		{key: "mode", label: "mode", kind: choiceField, choices: modes, help: "default asks, acceptEdits allows file edits, plan only reads, bypassPermissions allows everything"},
-		{key: "max_tokens", label: "max_tokens", kind: numberField, integer: true, optional: true, lo: 1024, step: 1024, start: harness.DefaultMaxTokens, unit: tokens, help: "Output tokens per model turn, unset sends " + render.Tokens(harness.DefaultMaxTokens)},
-		{key: "max_rounds", label: "max_rounds", kind: numberField, integer: true, optional: true, lo: 1, hi: 500, step: 1, start: 50, help: "Model turns one prompt may take, unset for no limit"},
-		{key: "temperature", label: "temperature", kind: numberField, optional: true, lo: 0, hi: 2, step: 0.05, start: 1, help: "Sampling temperature, unset leaves it to the model"},
-		{key: "compact_threshold", label: "compact_threshold", kind: numberField, integer: true, optional: true, lo: 1000, step: 1000, unit: tokens, help: "Context tokens at which old turns are summarized, unset never compacts"},
+		{key: "max_tokens", label: "max_tokens", kind: numberField, integer: true, optional: true, lo: 1, step: 1024, unit: tokens, help: "Output tokens per model turn, unset lets the model run to its limit"},
+		{key: "max_rounds", label: "max_rounds", kind: numberField, integer: true, optional: true, lo: 1, step: 1, start: 50, help: "Tool rounds one prompt may take before the model must answer, unset for no limit"},
+		{key: "temperature", label: "temperature", kind: numberField, optional: true, lo: 0, step: 0.05, start: 1, help: "Sampling temperature, unset leaves it to the model"},
+		{key: "compact_threshold", label: "compact_threshold", kind: numberField, integer: true, optional: true, lo: 1, step: 1000, unit: tokens, help: "Context tokens at which old turns are summarized, unset never compacts"},
 		{key: "theme", label: "theme", kind: choiceField, choices: theme.Names(), help: "Color palette"},
 		{key: "motion", label: "motion", kind: numberField, lo: 0, hi: 1, step: 0.05, start: 1, help: "Animation scale, 0 snaps and 1 springs"},
 		{key: "cascade", label: "cascade", kind: choiceField, choices: []string{"true", "false"}, help: "Light sweep along the focused border"},
 	}
+	for _, sp := range harness.Settings() {
+		s.fields = append(s.fields, extensionField(sp))
+	}
 	return s
+}
+
+// Field of a setting an extension registered, a choice, a slider or a text well
+func extensionField(sp harness.Setting) *field {
+	help := sp.Help
+	if sp.Source != "" {
+		help = strings.TrimSpace(help + " (" + sp.Source + ")")
+	}
+	f := &field{key: sp.Key, label: sp.Key, help: help, optional: true, check: sp.Check}
+	switch {
+	case len(sp.Choices) > 0:
+		f.kind, f.choices = choiceField, sp.Choices
+	case sp.Number():
+		f.kind, f.lo, f.hi, f.step, f.integer, f.start = numberField, sp.Lo, sp.Hi, sp.Step, sp.Integer, sp.Lo
+	default:
+		f.kind = textField
+	}
+	return f
 }
 
 func (s *settings) Title() string    { return "app" }
@@ -68,7 +86,7 @@ func (s *settings) Contexts() []string {
 	return []string{keys.App, keys.List, keys.Panel}
 }
 
-// Values and ranges as the app and the model on the endpoint stand, the one being typed left alone
+// Values as the app stands and slider starts from the model on the endpoint, the typed one left alone
 func (s *settings) sync() {
 	values := map[string]string{}
 	if s.env.Settings != nil {
@@ -77,21 +95,22 @@ func (s *settings) sync() {
 	if s.env.Mode != nil {
 		values["mode"] = string(s.env.Mode.Mode())
 	}
-	output, window := fallbackOutput, fallbackContext
+	output, window := 0, fallbackContext
 	if s.env.Primary != nil {
-		if c := s.env.Primary().Catalog; c.MaxOutput > 0 {
-			output = c.MaxOutput
-		}
-		if c := s.env.Primary().Catalog; c.Context > 0 {
+		c := s.env.Primary().Catalog
+		output = c.MaxOutput
+		if c.Context > 0 {
 			window = c.Context
 		}
 	}
 	for i, f := range s.fields {
 		switch f.key {
 		case "max_tokens":
-			f.hi = float64(output)
+			f.start = float64(output)
+			if output == 0 {
+				f.start = f.step
+			}
 		case "compact_threshold":
-			f.hi = float64(window)
 			f.start = float64(window * 8 / 10)
 		}
 		if s.editing && i == s.sel {
@@ -183,7 +202,7 @@ func (s *settings) typed(text string) tea.Cmd {
 	switch {
 	case s.editing:
 		f.typeText(text)
-	case f.kind == numberField && strings.ContainsAny(text[:1], "0123456789.-"):
+	case f.kind == numberField && strings.ContainsAny(text[:1], "0123456789.-"), f.kind == textField:
 		s.begin(f)
 		f.value, f.cursor = "", 0
 		f.typeText(text)
@@ -223,7 +242,7 @@ func (s *settings) act(id string) tea.Cmd {
 	case "config.app.right":
 		return s.nudge(1)
 	case "config.app.edit":
-		if f.kind == numberField {
+		if f.kind == numberField || f.kind == textField {
 			s.begin(f)
 		}
 	case "config.app.unset":
@@ -371,7 +390,7 @@ func (s *settings) Hints() []wm.Hint {
 	}
 	f := s.current()
 	out := []wm.Hint{{Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "config.app.left", Pair: "config.app.right", Label: "change"}}
-	if f.kind == numberField {
+	if f.kind == numberField || f.kind == textField {
 		out = append(out, wm.Hint{Action: "config.app.edit"})
 	}
 	if f.optional && f.value != "" {

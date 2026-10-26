@@ -33,19 +33,12 @@ type Summarizer struct {
 	Session *session.Session
 	// Context tokens, as measured by the last response plus what was added since, at which a summary is made
 	Threshold int
-	// Messages kept verbatim after the summary, six when zero
+	// Messages kept verbatim after the summary, none when zero
 	Keep int
 	// Extra guidance appended to the summary instructions
 	Instructions string
 	// Runs before a summary is made, such as external PreCompact hooks
 	Before func(ctx context.Context) error
-}
-
-func (s *Summarizer) keep() int {
-	if s.Keep > 0 {
-		return s.Keep
-	}
-	return 6
 }
 
 // Tokens the pending request carries beyond the last measured response, estimated from the text added since
@@ -79,7 +72,7 @@ func (s *Summarizer) BeforeTurn(ctx context.Context, req *protocol.Request) erro
 	if s.Model == nil || s.ModelID == "" || s.Session == nil || s.Threshold <= 0 {
 		return errors.New("compact: model, model id, session and threshold are required")
 	}
-	if s.Session.Context()+pendingTokens(req.Messages) < s.Threshold || s.Session.Len() <= s.keep() {
+	if s.Session.Context()+pendingTokens(req.Messages) < s.Threshold || s.Session.Len() <= s.Keep {
 		return nil
 	}
 	if s.Before != nil {
@@ -93,7 +86,7 @@ func (s *Summarizer) BeforeTurn(ctx context.Context, req *protocol.Request) erro
 	if err != nil {
 		return err
 	}
-	if err := s.Session.Compact(summary, s.keep()); err != nil {
+	if err := s.Session.Compact(summary, s.Keep); err != nil {
 		return err
 	}
 	req.Messages = s.Session.Snapshot()

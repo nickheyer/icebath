@@ -208,6 +208,9 @@ func (m *Model) dials() []wm.Segment {
 	if jobs := m.runningJobs(); jobs > 0 {
 		out = append(out, wm.Segment{Text: g.Jobs + " " + strconv.Itoa(jobs), Style: wm.Cool, Action: "open.jobs"})
 	}
+	if flows := len(m.app.Flows.Active()); flows > 0 {
+		out = append(out, wm.Segment{Text: g.Flow + " " + strconv.Itoa(flows), Style: wm.Cool, Action: "workflow.stop"})
+	}
 	ep := m.endpoint()
 	if d := m.current(); d != nil {
 		out = append(out, m.contextDial(d.live.Session.Context(), ep.Catalog.Context))

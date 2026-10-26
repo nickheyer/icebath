@@ -673,12 +673,19 @@ func (f *field) mark(v float64) string {
 	return f.format(v)
 }
 
-// Holds the multiple of the step nearest v, kept inside the range
+// Reports whether the number has a ceiling, one below or at the floor meaning none
+func (f *field) bounded() bool { return f.hi > f.lo }
+
+// Holds the multiple of the step nearest v, kept at or above the floor and under any ceiling
 func (f *field) setNumber(v float64) {
 	if f.step > 0 {
 		v = math.Round(v/f.step) * f.step
 	}
-	f.set(f.format(min(max(v, f.lo), f.hi)))
+	v = max(v, f.lo)
+	if f.bounded() {
+		v = min(v, f.hi)
+	}
+	f.set(f.format(v))
 }
 
 // Replaces the value with the cursor at its end and tells the listener
@@ -813,8 +820,11 @@ func (f *field) problem() string {
 		if !ok {
 			return f.label + " must be a number"
 		}
-		if n < f.lo || n > f.hi {
+		if f.bounded() && (n < f.lo || n > f.hi) {
 			return f.label + " must lie between " + f.format(f.lo) + " and " + f.format(f.hi)
+		}
+		if n < f.lo {
+			return f.label + " must be at least " + f.format(f.lo)
 		}
 		if f.integer && n != math.Trunc(n) {
 			return f.label + " must be a whole number"
@@ -835,11 +845,23 @@ func sliderColumns(fields []*field) sliderCols {
 		if f.kind != numberField {
 			continue
 		}
-		c.box = max(c.box, ansi.StringWidth(f.format(f.hi)), ansi.StringWidth(f.format(f.lo)))
+		c.box = max(c.box, f.boxWidth())
+		if !f.bounded() {
+			continue
+		}
 		c.lo = max(c.lo, ansi.StringWidth(f.mark(f.lo)))
 		c.hi = max(c.hi, ansi.StringWidth(f.mark(f.hi)))
 	}
 	return c
+}
+
+// Columns the well needs for the floor, the value and any ceiling
+func (f *field) boxWidth() int {
+	w := max(ansi.StringWidth(f.format(f.lo)), ansi.StringWidth(f.value))
+	if f.bounded() {
+		w = max(w, ansi.StringWidth(f.format(f.hi)))
+	}
+	return w
 }
 
 // Reports whether an unfocused value shows in a faint well, which a theme that cannot blend never does
@@ -1001,11 +1023,9 @@ func oneLine(r rune) rune {
 	return r
 }
 
-// Number well, range ends and slider on one row in shared columns, with their hits and the cursor column
+// Number well with its hits and cursor column, range ends and slider following when the number has a ceiling
 func (f *field) slider(w int, lk look, cols sliderCols, t theme.Theme) (string, []hit, int) {
-	lo, hi := f.mark(f.lo), f.mark(f.hi)
-	inner := max(cols.box, ansi.StringWidth(f.format(f.hi)), ansi.StringWidth(f.format(f.lo)))
-	loW, hiW := max(cols.lo, ansi.StringWidth(lo)), max(cols.hi, ansi.StringWidth(hi))
+	inner := max(cols.box, f.boxWidth())
 	bw := inner + 2
 	base := lk.well(t)
 	text := base.Foreground(t.Text).Render(render.Fit(f.value, inner, t))
@@ -1018,8 +1038,13 @@ func (f *field) slider(w int, lk look, cols sliderCols, t theme.Theme) (string, 
 		x = 1 + min(f.cursor, inner)
 	}
 	hits := []hit{{row: 0, x0: 0, x1: bw, choice: hitBox}}
+	if !f.bounded() {
+		return box, hits, x
+	}
+	lo, hi := f.mark(f.lo), f.mark(f.hi)
+	loW, hiW := max(cols.lo, ansi.StringWidth(lo)), max(cols.hi, ansi.StringWidth(hi))
 	tw := w - bw - 2 - loW - hiW - 2
-	if tw < 6 || f.hi <= f.lo {
+	if tw < 6 {
 		return box, hits, x
 	}
 	fill, thumb, rest := t.Glyphs.Fill, t.Glyphs.Thumb, t.Glyphs.Slide

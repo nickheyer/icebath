@@ -39,6 +39,17 @@ type Protocol interface {
 	DecodeError(status int, body []byte) *Error
 }
 
+// Protocol whose API refuses a request that names no output budget
+type MaxTokensRequired interface {
+	MaxTokensRequired() bool
+}
+
+// Reports whether the protocol must be sent an output budget
+func RequiresMaxTokens(p Protocol) bool {
+	r, ok := p.(MaxTokensRequired)
+	return ok && r.MaxTokensRequired()
+}
+
 // HTTP request parts a provider completes with a base URL and credentials
 type Call struct {
 	Method string

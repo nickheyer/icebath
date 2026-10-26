@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/ext"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/mission"
 	"github.com/nickheyer/icebath/pkg/policy"
@@ -27,6 +28,10 @@ type HeadlessOptions struct {
 	Prompt string
 	// Objective a mission is started with instead of a plain prompt
 	Mission string
+	// Kind the session runs as, none when empty
+	Kind string
+	// Workflow run with the prompt as its argument instead of a plain run
+	Workflow string
 	// Writes every bridge message as one JSON object per line instead of text
 	Print bool
 	// Answers every approval yes, every approval is denied otherwise
@@ -149,8 +154,31 @@ func encode(msg any) (Line, bool) {
 		return l, true
 	case harness.HookOutputMsg:
 		return Line{Type: "hook", Time: time.Now(), Run: v.Run, Text: v.Text}, true
+	case harness.NoticeMsg:
+		return Line{Type: "notice", Time: time.Now(), Kind: levelName(v.Level), Text: v.Text, Agent: v.Flow}, true
+	case harness.OpenedMsg:
+		return Line{Type: "session_opened", Time: time.Now(), Text: v.Live.Session.ID(), Agent: v.Flow}, true
+	case harness.FlowDoneMsg:
+		l := Line{Type: "workflow_done", Time: time.Now(), Text: v.Name, Agent: v.ID, Duration: float64(v.Duration) / float64(time.Millisecond)}
+		if v.Err != nil {
+			l.Error = v.Err.Error()
+		}
+		return l, true
 	}
 	return Line{}, false
+}
+
+// Name of a notice level as the print lines carry it
+func levelName(l harness.Level) string {
+	switch l {
+	case harness.Success:
+		return "success"
+	case harness.Warn:
+		return "warn"
+	case harness.Error:
+		return "error"
+	}
+	return "info"
 }
 
 // Writer of the text stream, assistant text as it arrives and one line per tool
@@ -201,6 +229,16 @@ func (w *textWriter) write(msg any) {
 	case harness.FactMsg:
 		w.newline()
 		fmt.Fprintf(w.err, "%s %s %s: %s\n", t.Glyphs.Record, v.Change.Op, v.Change.Fact.ID, v.Change.Fact.Title)
+	case harness.NoticeMsg:
+		w.newline()
+		fmt.Fprintf(w.err, "%s %s\n", t.Glyphs.Note, v.Text)
+	case harness.FlowDoneMsg:
+		w.newline()
+		if v.Err != nil {
+			fmt.Fprintf(w.err, "%s workflow %s failed: %v\n", t.Glyphs.Error, v.ID, v.Err)
+			return
+		}
+		fmt.Fprintf(w.err, "%s workflow %s done in %s\n", t.Glyphs.Success, v.ID, render.Elapsed(v.Duration))
 	}
 }
 
@@ -211,7 +249,39 @@ func (w *textWriter) newline() {
 	}
 }
 
-// Runs one prompt or mission to completion without a terminal and returns the exit code
+// Runs a workflow to its end with the prompt as its argument and returns the exit code
+func runWorkflow(ctx context.Context, app *harness.App, name, arg string, errw io.Writer, print bool) int {
+	w, ok := harness.LookupWorkflow(name)
+	if !ok {
+		var names []string
+		for _, have := range harness.Workflows() {
+			names = append(names, have.Name)
+		}
+		fmt.Fprintf(errw, "icebath: no workflow %q, linked ones are %s\n", name, strings.Join(names, ", "))
+		return 2
+	}
+	f, err := app.Flows.Start(ctx, w, app.Current(), arg)
+	if err != nil {
+		fmt.Fprintln(errw, "icebath:", err)
+		return 2
+	}
+	select {
+	case <-f.Done():
+	case <-ctx.Done():
+		app.Flows.Shutdown()
+		fmt.Fprintln(errw, "icebath: cancelled")
+		return 130
+	}
+	if f.Err() != nil {
+		if !print {
+			fmt.Fprintln(errw, "icebath:", f.Err())
+		}
+		return 1
+	}
+	return 0
+}
+
+// Runs one prompt, mission or workflow to completion without a terminal and returns the exit code
 func Headless(ctx context.Context, opts HeadlessOptions) int {
 	out, errw, t := opts.Out, opts.Err, printTheme
 	enc := json.NewEncoder(out)
@@ -238,12 +308,22 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 		tw.write(msg)
 	}
 	var err error
+	for _, fn := range ext.Observers() {
+		inner := send
+		send = func(msg any) { fn(msg); inner(msg) }
+	}
 	app, err = harness.Build(ctx, opts.Config, send, harness.BuildOptions{Resume: opts.Resume, Dir: opts.Dir})
 	if err != nil {
 		fmt.Fprintln(errw, "icebath:", err)
 		return 2
 	}
 	defer app.Close(context.Background())
+	if opts.Kind != "" {
+		if err := app.SetKindOn(app.Current(), opts.Kind); err != nil {
+			fmt.Fprintln(errw, "icebath:", err)
+			return 2
+		}
+	}
 	if err := app.SessionStart(ctx, "headless"); err != nil {
 		fmt.Fprintln(errw, "icebath:", err)
 		return 2
@@ -256,6 +336,9 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 			return 2
 		}
 		prompt = strings.TrimSpace(string(data))
+	}
+	if opts.Workflow != "" {
+		return runWorkflow(ctx, app, opts.Workflow, prompt, errw, opts.Print)
 	}
 	missionID := ""
 	if opts.Mission != "" {
