@@ -250,7 +250,7 @@ func (a *App) LiveByID(id string) *Live {
 // Starts a run on an open session
 func (a *App) RunOn(ctx context.Context, l *Live, missionID string, input []protocol.Part) (*Run, error) {
 	ag := a.NewAgent("", l.Session)
-	return a.Control.Start(ctx, ag, missionID, input)
+	return a.Control.Start(a.Directed(ctx, l.Session), ag, missionID, input)
 }
 
 // Reports whether a root run goes on the open session

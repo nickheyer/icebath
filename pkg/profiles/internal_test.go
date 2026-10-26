@@ -428,3 +428,32 @@ func TestDocumentsEditAndWrite(t *testing.T) {
 		t.Fatal("an invalid document is not written")
 	}
 }
+
+func TestTemplatesLendTheirDirectivesUntilAProfileNamesItsOwn(t *testing.T) {
+	ghost := provider.Directive{Header: http.Header{"X-Ghost": {"1"}}}
+	Register(Profile{Name: "tpl-directives", Protocol: protocol.OllamaChat, BaseURL: "http://tpl", Ghost: &ghost, Bare: &provider.Directive{Header: http.Header{"X-Bare": {"1"}}}})
+	p, err := Profile{Name: "mine", Template: "tpl-directives"}.Expand()
+	if err != nil || p.Ghost.Header.Get("X-Ghost") != "1" || p.Bare.Header.Get("X-Bare") != "1" {
+		t.Fatalf("the template lends both %+v %v", p, err)
+	}
+	p.Ghost.Header.Set("X-Ghost", "0")
+	if again, _ := Lookup("tpl-directives"); again.Ghost.Header.Get("X-Ghost") != "1" {
+		t.Fatal("an expanded copy shares nothing with the registry")
+	}
+	own, _ := Profile{Name: "own", Template: "tpl-directives", Ghost: &provider.Directive{Extra: map[string]json.RawMessage{"store": json.RawMessage("false")}}}.Expand()
+	if own.Ghost.Header != nil || string(own.Ghost.Extra["store"]) != "false" || own.Bare.Header.Get("X-Bare") != "1" {
+		t.Fatalf("a profile keeps the directive it names %+v", own.Ghost)
+	}
+	doc, err := Read(strings.NewReader(`[{"name":"gw","protocol":"p","base_url":"http://gw","ghost":{"header":{"X-Gw-Ghost":["1"]}},"bare":{"header":{"X-Gw-Bare":["1"]}}}]`))
+	if err != nil || doc.Profiles[0].Ghost.Header.Get("X-Gw-Ghost") != "1" || doc.Profiles[0].Bare.Header.Get("X-Gw-Bare") != "1" {
+		t.Fatalf("a profile file names directives %+v %v", doc, err)
+	}
+	prov, err := own.Build("")
+	if err != nil || string(prov.Ghost.Extra["store"]) != "false" || prov.Bare.Header.Get("X-Bare") != "1" {
+		t.Fatal("the provider hears what the profile names")
+	}
+	none, _ := Profile{Name: "none", Template: "tpl-directives", Ghost: &provider.Directive{}}.Expand()
+	if none.Ghost == nil || len(none.Ghost.Header) != 0 || len(none.Ghost.Extra) != 0 || Heard(nil).Header != nil || Heard(none.Bare).Header.Get("X-Bare") != "1" {
+		t.Fatal("a profile naming an empty directive keeps it over the template's")
+	}
+}

@@ -86,10 +86,12 @@ func (e *Error) Error() string {
 
 // Protocol neutral turn request
 type Request struct {
-	Model    string
-	System   string
-	Messages []Message
-	Tools    []Tool
+	Model  string
+	System string
+	// Sends the system slot even when empty so the endpoint puts no default prompt of its own in place
+	KeepSystem bool
+	Messages   []Message
+	Tools      []Tool
 	// Zero value means the model decides
 	ToolChoice    ToolChoice
 	MaxTokens     int

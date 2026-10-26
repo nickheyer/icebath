@@ -81,7 +81,11 @@ type Provider struct {
 	// Static query parameters every request carries
 	Query url.Values
 	// Request fields merged into every turn beneath the fields the request itself carries
-	Extra  map[string]json.RawMessage
+	Extra map[string]json.RawMessage
+	// How the endpoint hears a turn asking it to keep nothing
+	Ghost Directive
+	// How the endpoint hears a turn asking it to add no prompt or tools of its own
+	Bare   Directive
 	Client *http.Client
 	Retry  Retry
 	// Receives every attempt with its status, headers and backoff
@@ -131,7 +135,7 @@ func (p *Provider) Stream(ctx context.Context, req protocol.Request) iter.Seq2[p
 	}
 }
 
-// Encodes the request with the protocol and the provider extras and issues it
+// Encodes the request with provider extras and the directives the context asks for, then issues it
 func (p *Provider) do(ctx context.Context, req protocol.Request) (*http.Response, error) {
 	if p.Protocol == nil {
 		return nil, errors.New("provider: no protocol")
@@ -139,15 +143,44 @@ func (p *Provider) do(ctx context.Context, req protocol.Request) (*http.Response
 	if len(p.Extra) > 0 {
 		req.Extra = mergeExtra(p.Extra, req.Extra)
 	}
+	var over http.Header
+	for _, d := range p.asked(protocol.DirectivesFrom(ctx)) {
+		if len(d.Extra) > 0 {
+			req.Extra = mergeExtra(req.Extra, d.Extra)
+		}
+		for k, vs := range d.Header {
+			if over == nil {
+				over = http.Header{}
+			}
+			over[k] = append([]string(nil), vs...)
+		}
+	}
 	call, err := p.Protocol.Encode(req)
 	if err != nil {
 		return nil, err
 	}
-	return p.Do(ctx, call)
+	return p.send(ctx, call, over)
+}
+
+// How the endpoint hears each directive asked for
+func (p *Provider) asked(d protocol.Directives) []Directive {
+	var out []Directive
+	if d.Ghost {
+		out = append(out, p.Ghost)
+	}
+	if d.Bare {
+		out = append(out, p.Bare)
+	}
+	return out
 }
 
 // Issues any call against the endpoint with auth and retries, returning the 2xx response unread
 func (p *Provider) Do(ctx context.Context, call protocol.Call) (*http.Response, error) {
+	return p.send(ctx, call, nil)
+}
+
+// Issues the call with the headers in over laid above the static ones
+func (p *Provider) send(ctx context.Context, call protocol.Call, over http.Header) (*http.Response, error) {
 	if p.Protocol == nil {
 		return nil, errors.New("provider: no protocol")
 	}
@@ -179,7 +212,7 @@ func (p *Provider) Do(ctx context.Context, call protocol.Call) (*http.Response, 
 		if err != nil {
 			return nil, err
 		}
-		p.decorate(hr, call.Header)
+		p.decorate(hr, call.Header, over)
 		at := Attempt{Provider: p.Name, Attempt: attempt, Method: call.Method, URL: target, Started: time.Now()}
 		p.begin(at)
 		resp, err := client.Do(hr)
@@ -275,6 +308,9 @@ func maxWait(r Retry) time.Duration {
 // Lays request extras over provider extras, merging nested objects and replacing everything else
 func mergeExtra(base, over map[string]json.RawMessage) map[string]json.RawMessage {
 	out := maps.Clone(base)
+	if out == nil {
+		out = make(map[string]json.RawMessage, len(over))
+	}
 	for k, v := range over {
 		var bo, vo map[string]json.RawMessage
 		if b, ok := out[k]; ok && json.Unmarshal(b, &bo) == nil && bo != nil && json.Unmarshal(v, &vo) == nil && vo != nil {
@@ -305,13 +341,12 @@ func (p *Provider) target(call protocol.Call) (string, error) {
 	return base.String(), nil
 }
 
-// Layers protocol headers, static provider headers and the credential onto the request
-func (p *Provider) decorate(r *http.Request, protocolHeader http.Header) {
-	for k, vs := range protocolHeader {
-		r.Header[k] = append([]string(nil), vs...)
-	}
-	for k, vs := range p.Header {
-		r.Header[k] = append([]string(nil), vs...)
+// Layers protocol headers, static provider headers, directive headers and the credential onto the request
+func (p *Provider) decorate(r *http.Request, protocolHeader, over http.Header) {
+	for _, h := range []http.Header{protocolHeader, p.Header, over} {
+		for k, vs := range h {
+			r.Header[k] = append([]string(nil), vs...)
+		}
 	}
 	if r.Header.Get("User-Agent") == "" {
 		r.Header.Set("User-Agent", UserAgent)

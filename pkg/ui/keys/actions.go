@@ -26,6 +26,7 @@ const (
 	Transcript = "transcript"
 	Approval   = "approval"
 	Mission    = "mission"
+	System     = "system"
 	Form       = "form"
 	Profiles   = "config.profiles"
 	Models     = "config.models"
@@ -61,6 +62,7 @@ var ContextDocs = map[string]string{
 	Transcript: "agent transcripts",
 	Approval:   "approval dialog",
 	Mission:    "mission panels",
+	System:     "system prompt editor",
 	Form:       "dialogs",
 	Profiles:   "profiles tab",
 	Models:     "models tab",
@@ -133,6 +135,7 @@ var registry = func() []Action {
 		act("session.compact", Global, "compact", "summarize the transcript"),
 		act("session.clear", Global, "clear", "save the current session and start a new one in this workspace"),
 		act("session.export", Global, "export", "export the transcript as Markdown"),
+		act("session.system", Global, "system prompt", "edit the session's system prompt and choose its context, bare and ghost settings"),
 		act("run.cancel", Global, "cancel run", "stop the run immediately"),
 		act("run.interrupt", Global, "interrupt run", "stop the run after the current tool finishes"),
 		act("mission.start", Global, "start mission", "start a mission from an objective"),
@@ -309,6 +312,14 @@ var registry = func() []Action {
 		act("mission.failed", Mission, "failed", "mark the mission as failed", "x"),
 		act("mission.resume", Mission, "resume", "resume a finished mission", "r"),
 		act("mission.forget", Mission, "forget", "forget a finished mission", "D"),
+
+		act("system.save", System, "save", "send the edited prompt from the next turn on", "ctrl+s"),
+		act("system.reset", System, "default", "go back to the default prompt", "ctrl+r"),
+		act("system.clear", System, "clear", "empty the editor prompt", "ctrl+l"),
+		act("system.next", System, "next", "move to the next control", "tab"),
+		act("system.prev", System, "previous", "move to the previous control", "shift+tab"),
+		act("system.toggle", System, "switch", "turn the focused setting on or off", "space"),
+		act("system.close", System, "close", "close the editor, keeping unsaved text for the next time it opens", "esc"),
 
 		act("form.next", Form, "next field", "move to the next field", "tab", "down"),
 		act("form.prev", Form, "previous field", "move to the previous field", "shift+tab", "up"),

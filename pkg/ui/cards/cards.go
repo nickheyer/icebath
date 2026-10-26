@@ -51,6 +51,10 @@ type Env struct {
 	Models func(ctx context.Context, p profiles.Profile) ([]profiles.Model, error)
 	// Setting values as the app holds them keyed by name, empty while unset
 	Settings func() map[string]string
+	// Base prompt every session starts from
+	DefaultBase func() string
+	// Environment block the client adds for a run on the model
+	Environment func(model string) string
 	// Directory exports and the shell fallback use
 	ProjectDir string
 	Now        func() time.Time
@@ -158,6 +162,12 @@ type DeleteMsg struct {
 // Request to switch the model
 type SetModelMsg struct {
 	Model string
+}
+
+// Request to apply new tuning to a session
+type TuneMsg struct {
+	Session string
+	Tuning  harness.Tuning
 }
 
 // Request to switch the permission mode

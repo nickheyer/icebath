@@ -221,6 +221,7 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	}
 	app.Session, app.Facts, app.Missions = first.Session, first.Facts, first.Missions
 	app.Saver = NewSaver(app.Store, send)
+	app.Saver.Off = app.Ghosted
 	if err := app.buildTools(ctx, dir, root); err != nil {
 		return nil, err
 	}
@@ -385,7 +386,7 @@ func (a *App) childFactory(ctx context.Context) (*agent.Agent, error) {
 	if a.children != nil {
 		ep = *a.children
 	}
-	sess.Label("parent", parent)
+	sess.Label(parentLabel, parent)
 	sess.Label("agent", policy.AgentFrom(ctx))
 	return a.newAgent("", sess, ep), nil
 }
@@ -431,7 +432,7 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) *agent.A
 	if ag.MaxTokens <= 0 {
 		ag.MaxTokens = DefaultMaxTokens
 	}
-	ag.Hooks = append(ag.Hooks, systemHook{app: a, model: ep.Model})
+	ag.Hooks = append(ag.Hooks, systemHook{app: a, sess: sess, model: ep.Model})
 	var runner *hooks.Runner
 	if len(cfg.Hooks) > 0 {
 		transcript := ""
@@ -473,7 +474,7 @@ func (h hookLog) Write(p []byte) (int, error) {
 // Starts a run of a fresh root agent on the app session
 func (a *App) Run(ctx context.Context, missionID string, input []protocol.Part) (*Run, error) {
 	ag := a.NewAgent("", a.Session)
-	return a.Control.Start(ctx, ag, missionID, input)
+	return a.Control.Start(a.Directed(ctx, a.Session), ag, missionID, input)
 }
 
 // Fires the SessionStart hooks
@@ -593,20 +594,17 @@ func (a *App) SetEndpoint(name string, ep Endpoint) error {
 	return nil
 }
 
-// System prompt for a run as the machine, directory, model and mission stand right now
-func (a *App) SystemPrompt(ctx context.Context, model string) string {
-	return Prompt(GatherFacts(a.Shell.Dir(), a.Root, model, mission.IDFrom(ctx) != ""), a.System)
-}
-
-// Hook that writes the live system prompt into every turn, naming the model the agent runs on
+// Hook that writes the live system prompt of the session into every turn, keeping an empty one while bare
 type systemHook struct {
 	agent.Hooks
 	app   *App
+	sess  *session.Session
 	model string
 }
 
 func (h systemHook) BeforeTurn(ctx context.Context, req *protocol.Request) error {
-	req.System = h.app.SystemPrompt(ctx, h.model)
+	req.System = h.app.PromptFor(ctx, h.sess, h.model)
+	req.KeepSystem = protocol.DirectivesFrom(ctx).Bare
 	return nil
 }
 

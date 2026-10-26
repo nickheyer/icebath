@@ -107,8 +107,10 @@ func (r *Run) called(tool string) {
 
 // Writes sessions to a store after a short quiet period so a burst costs one write, skipping empty sessions
 type Saver struct {
-	Store  session.Store
-	Delay  time.Duration
+	Store session.Store
+	Delay time.Duration
+	// Reports whether a session stays off disk, nothing of it written while it does
+	Off    func(*session.Session) bool
 	send   Sender
 	mu     sync.Mutex
 	timers map[*session.Session]*time.Timer
@@ -160,7 +162,7 @@ func (s *Saver) Flush(sess *session.Session) {
 }
 
 func (s *Saver) write(sess *session.Session) {
-	if sess.Empty() {
+	if sess.Empty() || s.Off != nil && s.Off(sess) {
 		return
 	}
 	err := s.Store.Save(context.Background(), sess)

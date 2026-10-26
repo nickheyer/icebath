@@ -11,7 +11,7 @@ go install github.com/nickheyer/icebath/cmd/icebath@latest
 
 ```
 icebath [flags] [prompt]
-  -profile name      endpoint profile: anthropic, openai, openai-chat, google, mistral, openrouter, ollama, bedrock
+  -profile name      endpoint profile: anthropic, openai, openai-chat, google, mistral, openrouter, ollama, bedrock, nebu
   -model id          model the profile serves
   -mode name         default, acceptEdits, plan or bypassPermissions
   -resume id         continue a stored session
@@ -32,7 +32,7 @@ echo "summarize go.mod" | icebath -print -yes
 icebath -mission "map the open ports on 10.0.0.0/24"
 ```
 
-Configuration is read from `~/.config/icebath/config.json`, then `.icebath/config.json` in the working directory, with `rules.json` and `hooks.json` beside each. Extra endpoint profiles go in `~/.config/icebath/profiles.json`, a list or `{"default": "name", "profiles": [...]}` where `default` picks the profile used when none is given and a profile naming a built in provider as `template` takes every field it leaves empty from it. Keybinds live in `~/.config/icebath/keybinds.json`, grouped by context, written with the defaults on first start, reloaded on save and edited live under config keys or `/keys`. A workspace holds any number of sessions beside the panels, each opened and closed like any other window. Open workspaces with their cards, splits, floats and focus are written to `layout.json` beside `sessions/` as they change and come back on the next start, prompt drafts with them under `drafts/`.
+Configuration is read from `~/.config/icebath/config.json`, then `.icebath/config.json` in the working directory, with `rules.json` and `hooks.json` beside each. Extra endpoint profiles go in `~/.config/icebath/profiles.json`, a list or `{"default": "name", "profiles": [...]}` where `default` picks the profile used when none is given and a profile naming a built in provider as `template` takes every field it leaves empty from it. A profile tells its endpoint what a session's `/system` settings ask through `"ghost"` and `"bare"`, each `{"header": {...}, "extra": {...}}`. Keybinds live in `~/.config/icebath/keybinds.json`, grouped by context, written with the defaults on first start, reloaded on save and edited live under config keys or `/keys`. A workspace holds any number of sessions beside the panels, each opened and closed like any other window. Open workspaces with their cards, splits, floats and focus are written to `layout.json` beside `sessions/` as they change and come back on the next start, prompt drafts with them under `drafts/`.
 
 ```json
 {"global": {"palette": ["alt+space"], "window.close": "alt+w"}, "sessions": {"sessions.fork": "f"}}

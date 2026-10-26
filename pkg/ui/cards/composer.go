@@ -91,6 +91,8 @@ type Composer struct {
 	cut         int
 	w, h        int
 	SessionID   string
+	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
+	Volatile func() bool
 }
 
 // File the draft of a session is kept in under dir
@@ -156,10 +158,13 @@ func (c *Composer) Bind(sessionID string) {
 }
 
 // Rebuilds the editing bindings of the input from the keymap, every other key only typing text
-func (c *Composer) Rebind() {
+func (c *Composer) Rebind() { c.ta.KeyMap = editingKeys(c.keys) }
+
+// Text editing bindings every multi line input takes from the composer actions of the keymap
+func editingKeys(km *keys.Map) textarea.KeyMap {
 	bind := func(id string) key.Binding {
 		var spelled []string
-		for _, chord := range c.keys.Keys(id) {
+		for _, chord := range km.Keys(id) {
 			spelled = append(spelled, keys.Press(chord).String())
 		}
 		if len(spelled) == 0 {
@@ -167,7 +172,7 @@ func (c *Composer) Rebind() {
 		}
 		return key.NewBinding(key.WithKeys(spelled...))
 	}
-	c.ta.KeyMap = textarea.KeyMap{
+	return textarea.KeyMap{
 		CharacterBackward:       bind("composer.left"),
 		CharacterForward:        bind("composer.right"),
 		WordBackward:            bind("composer.word.left"),
@@ -196,6 +201,12 @@ func (c *Composer) Rebind() {
 
 // Paints the input with the theme
 func (c *Composer) SetTheme(t theme.Theme) {
+	c.ta.SetStyles(editorStyles(t))
+	c.theme = t
+}
+
+// Styles of a multi line input in the theme, the cursor line left plain
+func editorStyles(t theme.Theme) textarea.Styles {
 	st := textarea.DefaultDarkStyles()
 	if t.Name == "light" {
 		st = textarea.DefaultLightStyles()
@@ -209,8 +220,7 @@ func (c *Composer) SetTheme(t theme.Theme) {
 	st.Blurred.Text = st.Blurred.Text.Foreground(t.Text)
 	st.Blurred.Base = lipgloss.NewStyle()
 	st.Blurred.EndOfBuffer = lipgloss.NewStyle().Foreground(t.Surface)
-	c.ta.SetStyles(st)
-	c.theme = t
+	return st
 }
 
 // Replaces the slash commands offered as they are typed
@@ -367,6 +377,9 @@ func (c *Composer) breakLine() {
 	c.ta.CursorStart()
 }
 
+// Reports whether the bound session keeps nothing typed on disk
+func (c *Composer) ghost() bool { return c.Volatile != nil && c.Volatile() }
+
 // Writes the draft of the bound session to disk when the text changed
 func (c *Composer) persist() tea.Cmd {
 	v := c.ta.Value()
@@ -374,7 +387,7 @@ func (c *Composer) persist() tea.Cmd {
 		return nil
 	}
 	c.last = v
-	if c.draftPath == "" {
+	if c.draftPath == "" || c.ghost() {
 		return nil
 	}
 	if v == "" {
@@ -386,9 +399,13 @@ func (c *Composer) persist() tea.Cmd {
 	return nil
 }
 
+// Adds a sent prompt to the history and writes it out, keeping nothing while the session is ghost
 func (c *Composer) remember(text string) {
+	c.cursor = len(c.history)
+	if c.ghost() {
+		return
+	}
 	if n := len(c.history); n > 0 && c.history[n-1] == text {
-		c.cursor = len(c.history)
 		return
 	}
 	c.history = append(c.history, text)

@@ -56,6 +56,10 @@ type Profile struct {
 	BaseURLEnv string `json:"base_url_env,omitempty"`
 	// Request fields merged into every turn sent through the endpoint
 	Extra map[string]json.RawMessage `json:"extra,omitempty"`
+	// How the endpoint hears a session asking it to keep nothing, nil taking the template's
+	Ghost *provider.Directive `json:"ghost,omitempty"`
+	// How the endpoint hears a session asking it to add nothing of its own, nil taking the template's
+	Bare *provider.Directive `json:"bare,omitempty"`
 	// Settings read by registered auth builders and vendors
 	Options map[string]string `json:"options,omitempty"`
 }
@@ -99,6 +103,12 @@ func (p Profile) Expand() (Profile, error) {
 	}
 	if out.Extra == nil {
 		out.Extra = t.Extra
+	}
+	if out.Ghost == nil {
+		out.Ghost = cloneDirective(t.Ghost)
+	}
+	if out.Bare == nil {
+		out.Bare = cloneDirective(t.Bare)
 	}
 	if out.Options == nil {
 		out.Options = t.Options
@@ -236,7 +246,7 @@ func (p Profile) Build(key string) (*provider.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &provider.Provider{Name: p.Name, Protocol: proto, BaseURL: p.BaseURL, Auth: auth, Header: p.Header.Clone(), Query: cloneValues(p.Query), Extra: maps.Clone(p.Extra), Retry: provider.DefaultRetry}, nil
+	return &provider.Provider{Name: p.Name, Protocol: proto, BaseURL: p.BaseURL, Auth: auth, Header: p.Header.Clone(), Query: cloneValues(p.Query), Extra: maps.Clone(p.Extra), Ghost: Heard(p.Ghost), Bare: Heard(p.Bare), Retry: provider.DefaultRetry}, nil
 }
 
 // Profile with the base URL override from the environment applied when the variable is set
@@ -400,8 +410,26 @@ func (p Profile) Clone() Profile {
 	p.Query = cloneValues(p.Query)
 	p.Models = append([]string(nil), p.Models...)
 	p.Extra = cloneExtra(p.Extra)
+	p.Ghost = cloneDirective(p.Ghost)
+	p.Bare = cloneDirective(p.Bare)
 	p.Options = maps.Clone(p.Options)
 	return p
+}
+
+// How the endpoint hears a directive a profile names, nothing while it names none
+func Heard(d *provider.Directive) provider.Directive {
+	if d == nil {
+		return provider.Directive{}
+	}
+	return d.Clone()
+}
+
+func cloneDirective(d *provider.Directive) *provider.Directive {
+	if d == nil {
+		return nil
+	}
+	c := d.Clone()
+	return &c
 }
 
 func cloneExtra(extra map[string]json.RawMessage) map[string]json.RawMessage {

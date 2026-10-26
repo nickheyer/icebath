@@ -29,12 +29,17 @@ const (
 
 // Profile for the Responses API
 func Profile() profiles.Profile {
-	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.OpenAIResponses, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
+	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.OpenAIResponses, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv, Ghost: Unstored()}
 }
 
 // Profile for the Chat Completions API
 func ChatProfile() profiles.Profile {
-	return profiles.Profile{Name: ChatName, Vendor: Vendor, Protocol: protocol.OpenAICompletions, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
+	return profiles.Profile{Name: ChatName, Vendor: Vendor, Protocol: protocol.OpenAICompletions, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv, Ghost: Unstored()}
+}
+
+// Body field asking OpenAI to keep no stored copy of the response
+func Unstored() *provider.Directive {
+	return &provider.Directive{Extra: map[string]json.RawMessage{"store": json.RawMessage("false")}}
 }
 
 func init() {

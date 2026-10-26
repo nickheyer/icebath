@@ -28,7 +28,12 @@ const (
 
 // Profile for the Chat Completions compatible API
 func Profile() profiles.Profile {
-	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.OpenAICompletions, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv}
+	return profiles.Profile{Name: Name, Vendor: Vendor, Protocol: protocol.OpenAICompletions, BaseURL: BaseURL, Auth: profiles.AuthBearer, Key: profiles.Env(KeyEnv), Models: []string{DefaultModel}, BaseURLEnv: BaseURLEnv, Ghost: Unretained()}
+}
+
+// Provider routing that only reaches endpoints keeping no prompts and training on nothing
+func Unretained() *provider.Directive {
+	return &provider.Directive{Extra: map[string]json.RawMessage{"provider": json.RawMessage(`{"zdr":true,"data_collection":"deny"}`)}}
 }
 
 func init() {

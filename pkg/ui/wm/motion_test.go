@@ -29,16 +29,6 @@ func (v *mover) Update(msg tea.Msg) (Card, tea.Cmd) {
 	return v, nil
 }
 
-// Background color of a screen cell after a render
-func bgAt(m *Model, x, y int) color.Color {
-	m.View()
-	c := m.buf.CellAt(x, y)
-	if c == nil {
-		return nil
-	}
-	return c.Style.Bg
-}
-
 func TestDismissedOverlayFadesOutBeforeItGoes(t *testing.T) {
 	m, a, _, _ := threeTiles(t, WithMotion(1))
 	settle(t, m)

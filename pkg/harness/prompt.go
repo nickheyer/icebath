@@ -51,11 +51,18 @@ The user may not see your tool calls or their results. Only your prose reaches t
 - No headers in a message under about five hundred words.
 - Stop when the content stops. No closing offer, no restating what you did.`
 
-// Default system prompt with the environment and any configured instructions appended
-func Prompt(f Facts, configured string) string {
+// Conduct followed by any configured instructions, the base every session starts from
+func Base(configured string) string {
+	if configured = strings.TrimSpace(configured); configured != "" {
+		return conduct + "\n\n# Instructions from the configuration\n" + configured
+	}
+	return conduct
+}
+
+// Facts about the machine and session the client adds after the base
+func Environment(f Facts) string {
 	var sb strings.Builder
-	sb.WriteString(conduct)
-	sb.WriteString("\n\n# Environment\n")
+	sb.WriteString("# Environment\n")
 	fmt.Fprintf(&sb, "- Working directory: %s\n", f.Dir)
 	if f.Root != "" && f.Root != f.Dir {
 		fmt.Fprintf(&sb, "- File tools stay inside: %s\n", f.Root)
@@ -80,12 +87,23 @@ func Prompt(f Facts, configured string) string {
 		sb.WriteString("- No mission is attached, so " + mission.ToolName + " is not offered\n")
 	}
 	sb.WriteString("- " + facts.ToolName + " is available for findings worth keeping\n")
-	if configured = strings.TrimSpace(configured); configured != "" {
-		sb.WriteString("\n# Instructions from the configuration\n")
-		sb.WriteString(configured)
-		sb.WriteString("\n")
-	}
 	return strings.TrimRight(sb.String(), "\n")
+}
+
+// System prompt of a base and an environment block, an empty one left out
+func Compose(base, env string) string {
+	var parts []string
+	for _, part := range []string{strings.TrimSpace(base), env} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// Default system prompt, the base with the environment after it
+func Prompt(f Facts, configured string) string {
+	return Compose(Base(configured), Environment(f))
 }
 
 // Facts about the machine as it stands, the working directory and root given by the caller

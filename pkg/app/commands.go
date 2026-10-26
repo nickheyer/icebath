@@ -50,6 +50,7 @@ func (m *Model) commands() []wm.Command {
 		{ID: "session.compact", Title: "Session: compact", When: idle, Run: run("compact", "")},
 		{ID: "session.clear", Title: "Session: clear", When: idle, Run: run("clear", "")},
 		{ID: "session.export", Title: "Session: export" + more, When: has, Run: m.promptExport},
+		{ID: "session.system", Title: "Session: system prompt" + more, When: has, Run: run("system", "")},
 		{ID: "run.cancel", Title: "Run: cancel", When: busy, Run: run("cancel", "")},
 		{ID: "run.interrupt", Title: "Run: stop after tool", When: busy, Run: run("interrupt", "")},
 		{ID: "mission.start", Title: "Mission: start" + more, When: idle, Run: m.promptMission},
@@ -114,6 +115,7 @@ func (m *Model) slashCommands() []cards.Command {
 		{Name: "attach", Desc: "attach an image", Arg: "path"},
 		{Name: "mission", Desc: "start a mission", Arg: "objective", Action: "mission.start"},
 		{Name: "rename", Desc: "rename the session", Arg: "title", Action: "session.rename"},
+		{Name: "system", Desc: "system prompt, context, bare and ghost", Action: "session.system"},
 		{Name: "compact", Desc: "compact the transcript", Action: "session.compact"},
 		{Name: "clear", Desc: "fresh session here", Action: "session.clear"},
 		{Name: "fork", Desc: "fork the session beside it", Action: "session.fork"},
@@ -179,6 +181,11 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 		return m.wm.Toast("renamed to "+strings.TrimSpace(args), wm.Success, 0)
 	case "compact":
 		return m.compactNow(d)
+	case "system":
+		if d == nil {
+			return nil
+		}
+		return m.openFrom(d, m.systemOf(d))
 	case "clear":
 		return m.clearDesk(d)
 	case "fork":

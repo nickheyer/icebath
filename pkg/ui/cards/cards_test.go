@@ -2305,3 +2305,157 @@ func TestSettledCutFindsTheLastProseParagraph(t *testing.T) {
 		}
 	}
 }
+
+// Tuning a card command asks for, applied to the session the way the app does
+func applyTune(t *testing.T, te *testEnv, cmd tea.Cmd) harness.Tuning {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("no tuning asked for")
+	}
+	msg, ok := cmd().(TuneMsg)
+	if !ok || msg.Session != te.live.Session.ID() {
+		t.Fatalf("expected a tune request, got %T", msg)
+	}
+	if err := te.app.Tune(context.Background(), te.live, msg.Tuning); err != nil {
+		t.Fatal(err)
+	}
+	return msg.Tuning
+}
+
+func TestSystemEditsThePromptAndSwitchesSettings(t *testing.T) {
+	te := newEnv(t)
+	te.env.DefaultBase = func() string { return "base prompt" }
+	te.env.Environment = func(model string) string { return "# Environment\n- a\n- b" }
+	nebu, _ := profiles.Lookup("nebu")
+	te.live.Endpoint = harness.Endpoint{Profile: nebu, Model: "freddie"}
+	s := NewSystem(te.env, te.live)
+	if s.Title() != "SYSTEM" || s.Key() != "system:"+te.live.Session.ID() || !s.Floating() || s.Contexts()[0] != keys.System || s.editor.Value() != "base prompt" || s.Status() != "" {
+		t.Fatal("identity and the default base")
+	}
+	view := plain(s.View(90, 16))
+	lines := strings.Split(view, "\n")
+	if len(lines) != 16 || !strings.HasPrefix(lines[0], "prompt") || !strings.HasSuffix(lines[0], "default") || !strings.Contains(lines[1], "base prompt") {
+		t.Fatalf("header and prompt %q", view)
+	}
+	for i, want := range []string{"context   on   off   environment block, 3 lines", "bare      on   off   nebu sends X-Nebu-Bare", "ghost     on   off   nothing on disk, nebu sends X-Nebu-Ghost"} {
+		if got := strings.TrimRight(lines[13+i], " "); got != want {
+			t.Fatalf("setting row %d %q", i, got)
+		}
+	}
+	s.Update(wm.FocusMsg{Focused: true})
+	if cur := s.Cursor(); cur == nil || cur.Y != 1 || cur.X != 2+len("base prompt") {
+		t.Fatalf("the cursor sits after the text beside the gutter %v", cur)
+	}
+	s.Update(tea.KeyPressMsg{Code: '!', Text: "!"})
+	s.Update(wm.ActionMsg{ID: "system.toggle", Key: tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}})
+	if s.editor.Value() != "base prompt! " || !s.edited() || s.Status() != "edited" || te.live.Session.Labels()["tuning"] != "" {
+		t.Fatalf("keys and the space type into the prompt %q", s.editor.Value())
+	}
+	if !strings.Contains(plain(s.View(90, 16)), "edited") {
+		t.Fatal("the header marks unsaved text")
+	}
+	_, cmd := s.Update(wm.ActionMsg{ID: "system.save"})
+	if tu := applyTune(t, te, cmd); tu != (harness.Tuning{System: "base prompt! ", Custom: true}) || s.edited() {
+		t.Fatalf("save sends the text as the session's own %+v", tu)
+	}
+	if !strings.HasSuffix(strings.Split(plain(s.View(90, 16)), "\n")[0], "custom") {
+		t.Fatal("the header names a custom prompt")
+	}
+	s.Update(wm.ActionMsg{ID: "system.next"})
+	if s.Cursor() != nil || s.editor.Focused() {
+		t.Fatal("a setting takes the keys from the prompt")
+	}
+	_, cmd = s.Update(wm.ActionMsg{ID: "system.toggle"})
+	if tu := applyTune(t, te, cmd); !tu.NoContext || !tu.Custom {
+		t.Fatalf("space switches the focused setting, keeping the rest %+v", tu)
+	}
+	_, cmd = s.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	if tu := applyTune(t, te, cmd); tu.NoContext {
+		t.Fatal("left picks on")
+	}
+	s.Update(wm.ActionMsg{ID: "system.next"})
+	_, cmd = s.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if tu := applyTune(t, te, cmd); !tu.Bare {
+		t.Fatal("enter switches bare")
+	}
+	_, cmd = s.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	if tu := applyTune(t, te, cmd); tu.Bare {
+		t.Fatal("right picks off")
+	}
+	s.View(90, 16)
+	var ghostOn systemHit
+	for _, h := range s.hits {
+		if h.setting == settingGhost && h.on {
+			ghostOn = h
+		}
+	}
+	_, cmd = s.Update(tea.MouseClickMsg{X: ghostOn.x0, Y: ghostOn.y, Button: tea.MouseLeft})
+	if tu := applyTune(t, te, cmd); !tu.Ghost || s.focus != settingGhost+1 {
+		t.Fatal("a click on a chip switches its setting and focuses its row")
+	}
+	if !strings.Contains(plain(s.View(90, 16)), "ghost     on ") || s.Hints()[0].Action != "system.toggle" {
+		t.Fatal("the row shows the setting and the hints offer the switch")
+	}
+	s.Update(tea.MouseClickMsg{X: 4, Y: 3, Button: tea.MouseLeft})
+	if s.focus != 0 || !s.editor.Focused() || s.Hints()[0].Action != "system.save" {
+		t.Fatal("a click in the prompt gives it the keys")
+	}
+	s.Update(wm.ActionMsg{ID: "system.prev"})
+	if s.focus != settingGhost+1 {
+		t.Fatal("moving back from the prompt wraps to the last setting")
+	}
+	_, cmd = s.Update(wm.ActionMsg{ID: "system.reset"})
+	if tu := applyTune(t, te, cmd); tu.Custom || tu.System != "" || !tu.Ghost || s.editor.Value() != "base prompt" {
+		t.Fatalf("reset puts the default back and keeps the settings %+v", tu)
+	}
+	te.app.Tune(context.Background(), te.live, harness.Tuning{System: "elsewhere", Custom: true})
+	s.Update(wm.FocusMsg{})
+	s.Update(wm.FocusMsg{Focused: true})
+	if s.editor.Value() != "elsewhere" {
+		t.Fatal("focus reloads an unedited prompt")
+	}
+	s.Update(tea.PasteMsg{Content: " pasted"})
+	s.Update(wm.FocusMsg{})
+	s.Update(wm.FocusMsg{Focused: true})
+	if s.editor.Value() != "elsewhere pasted" || s.focus != 0 {
+		t.Fatalf("focus keeps unsaved text %q", s.editor.Value())
+	}
+	if _, cmd := s.Update(wm.ActionMsg{ID: "system.close"}); cmd == nil {
+		t.Fatal("close asks the manager")
+	}
+	if sends("anthropic", nil) != "anthropic sends nothing" || sends("oa", &provider.Directive{Extra: map[string]json.RawMessage{"store": json.RawMessage("false")}}) != "oa sends store" {
+		t.Fatal("profiles naming nothing and those naming fields")
+	}
+}
+
+func TestComposerKeepsGhostTypingOffDisk(t *testing.T) {
+	te := newEnv(t)
+	dir := filepath.Join(te.dir, "cfg")
+	ghost := true
+	c := NewComposer(te.env.Theme, te.env.Keys, dir, func() string { return te.dir })
+	c.Volatile = func() bool { return ghost }
+	c.Bind("s1")
+	run(c.SetFocus(true))
+	send := func(text string) {
+		for _, r := range text {
+			c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		if _, err := os.Stat(DraftPath(dir, "s1")); ghost && !os.IsNotExist(err) {
+			t.Fatal("a ghost draft is never written")
+		}
+		run(te.compose(c, "enter"))
+	}
+	history := func() string {
+		data, _ := os.ReadFile(filepath.Join(dir, "history.txt"))
+		return string(data)
+	}
+	send("secret")
+	if len(c.History()) != 0 || history() != "" {
+		t.Fatalf("a ghost prompt is kept nowhere %v %q", c.History(), history())
+	}
+	ghost = false
+	send("open")
+	if len(c.History()) != 1 || !strings.Contains(history(), "open") || strings.Contains(history(), "secret") {
+		t.Fatalf("leaving ghost writes only what came after %q", history())
+	}
+}

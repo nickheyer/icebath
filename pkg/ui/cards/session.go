@@ -277,7 +277,7 @@ func (s *Session) Cursor() *tea.Cursor {
 	return cur
 }
 
-// Transcript and prompt state, then the model the session runs on
+// Transcript and prompt state, whether the session is ghost or bare, then the model it runs on
 func (s *Session) Status() string {
 	parts := []string{}
 	if st := s.Transcript.Status(); st != "" {
@@ -285,6 +285,13 @@ func (s *Session) Status() string {
 	}
 	if st := s.Composer.Status(); st != "" {
 		parts = append(parts, st)
+	}
+	t := harness.TuningOf(s.live.Session)
+	if t.Ghost {
+		parts = append(parts, "ghost")
+	}
+	if t.Bare {
+		parts = append(parts, "bare")
 	}
 	if model := s.live.Endpoint.Model; model != "" {
 		parts = append(parts, model)

@@ -17,7 +17,7 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 		return protocol.Call{}, fmt.Errorf("ollama-chat: model is required")
 	}
 	wire := request{Model: req.Model, Messages: []message{}, Stream: req.Stream}
-	if req.System != "" {
+	if req.System != "" || req.KeepSystem {
 		wire.Messages = append(wire.Messages, message{Role: "system", Content: req.System})
 	}
 	for i, m := range req.Messages {

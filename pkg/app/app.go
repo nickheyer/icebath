@@ -65,6 +65,7 @@ type desk struct {
 	agents     map[string]*cards.Agent
 	missions   map[string]*cards.Mission
 	findings   *cards.Findings
+	system     *cards.System
 	mission    string
 	compacting bool
 	// Last moment its workspace was on the stage, runs ending later wait in the field
@@ -170,9 +171,11 @@ func (m *Model) environment() *cards.Env {
 			}
 			return p.ListModels(ctx, prov)
 		},
-		Settings:   m.settings,
-		ProjectDir: filepath.Join(a.Root, harness.ProjectDir),
-		Now:        time.Now,
+		Settings:    m.settings,
+		DefaultBase: a.DefaultBase,
+		Environment: func(model string) string { return a.EnvironmentFor(m.ctx, model) },
+		ProjectDir:  filepath.Join(a.Root, harness.ProjectDir),
+		Now:         time.Now,
 	}
 }
 
@@ -289,6 +292,10 @@ func (m *Model) cardFor(key string) wm.Card {
 	case "findings":
 		if d := m.deskOfSession(rest); d != nil {
 			return m.findingsOf(d)
+		}
+	case "system":
+		if d := m.deskOfSession(rest); d != nil {
+			return m.systemOf(d)
 		}
 	case "mission":
 		sess, id, ok := strings.Cut(rest, ":")
@@ -730,6 +737,8 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return m.wm.Toast("wrote "+msg.Path, wm.Success, 0), true
 	case cards.SettingMsg:
 		return m.setSetting(msg.Key, msg.Value, msg.Quiet), true
+	case cards.TuneMsg:
+		return m.tune(msg), true
 	case cards.MissionStateMsg:
 		d := m.deskOfSession(msg.Session)
 		if d == nil {
@@ -832,6 +841,31 @@ func (m *Model) setModel(id string) tea.Cmd {
 
 func (m *Model) retitle() {
 	m.wm.SetWindowTitle("icebath " + m.theme.Glyphs.Sep + " " + m.endpoint().Model)
+}
+
+// Applies new tuning to a session, dropping the draft of one turning ghost
+func (m *Model) tune(msg cards.TuneMsg) tea.Cmd {
+	d := m.deskOfSession(msg.Session)
+	if d == nil {
+		return m.wm.Toast("session closed", wm.Warn, 0)
+	}
+	was := harness.TuningOf(d.live.Session).Ghost
+	if err := m.app.Tune(m.ctx, d.live, msg.Tuning); err != nil {
+		return m.wm.Toast(err.Error(), wm.Error, 0)
+	}
+	m.wm.Repaint()
+	name := sessionName(d.live, m.theme)
+	switch {
+	case msg.Tuning.Ghost && !was:
+		if err := os.Remove(cards.DraftPath(m.configDir(), msg.Session)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return m.wm.Toast(err.Error(), wm.Error, 0)
+		}
+		m.sessions.Reload()
+		return m.wm.Toast("ghost on, "+name+" kept off disk", wm.Success, 0)
+	case !msg.Tuning.Ghost && was:
+		return m.wm.Toast("ghost off, "+name+" saved to disk", wm.Success, 0)
+	}
+	return nil
 }
 
 // Endpoint a profile switch opened for a session, or the error that stopped it
@@ -941,8 +975,9 @@ func (m *Model) compactNow(d *desk) tea.Cmd {
 	go func() {
 		defer m.bg.Done()
 		req := protocol.Request{Messages: sess.Snapshot()}
+		ctx := m.app.Directed(m.ctx, sess)
 		for _, h := range ag.Hooks {
-			if err := h.BeforeTurn(m.ctx, &req); err != nil {
+			if err := h.BeforeTurn(ctx, &req); err != nil {
 				m.relay.Send(compactedMsg{desk: d, err: err})
 				return
 			}

@@ -1755,3 +1755,56 @@ func TestSubagentsOpenAsideAndCountOnTheBar(t *testing.T) {
 		t.Fatal("the agents dial leaves when the sub-agents end")
 	}
 }
+
+func TestSystemCardTunesTheSessionAndGhostStaysOffDisk(t *testing.T) {
+	m, _ := newModel(t, false)
+	m.wm.SetMotion(0)
+	d := m.desks[0]
+	feed(m, submit(m, d, "hello"))
+	pump(t, m, runDone)
+	m.app.Saver.Wait()
+	id := d.live.Session.ID()
+	if ok, _ := m.app.Store.Exists(context.Background(), id); !ok {
+		t.Fatal("the session is stored before ghost")
+	}
+	feed(m, m.command(nil, "system", ""))
+	if m.wm.Focused() != wm.Card(d.system) || m.wm.WorkspaceOf(d.system) != m.wm.Active() || m.deskOfCard(d.system) != d {
+		t.Fatal("/system opens the editor of the session beside it")
+	}
+	if c, _ := m.wm.Find("system:" + id); c != wm.Card(d.system) || m.cardFor("system:"+id) != wm.Card(d.system) {
+		t.Fatal("the editor is found by its key")
+	}
+	os.WriteFile(cards.DraftPath(m.configDir(), id), []byte("unsent"), 0o600)
+	feed(m, func() tea.Msg { return cards.TuneMsg{Session: id, Tuning: harness.Tuning{Ghost: true, Bare: true}} })
+	if ok, _ := m.app.Store.Exists(context.Background(), id); ok {
+		t.Fatal("turning ghost removes the stored copy")
+	}
+	if _, err := os.Stat(cards.DraftPath(m.configDir(), id)); !os.IsNotExist(err) {
+		t.Fatal("turning ghost removes the draft")
+	}
+	if !toasted(m, "ghost on, hello kept off disk") || !strings.Contains(d.session.Status(), "ghost "+m.theme.Glyphs.Sep+" bare") {
+		t.Fatalf("the change is named and the card shows it %q", d.session.Status())
+	}
+	feed(m, submit(m, d, "again"))
+	pump(t, m, runDone)
+	m.app.Saver.Wait()
+	if ok, _ := m.app.Store.Exists(context.Background(), id); ok {
+		t.Fatal("a ghost session stays off disk after its turns")
+	}
+	feed(m, func() tea.Msg { return cards.TuneMsg{Session: id, Tuning: harness.Tuning{}} })
+	m.app.Saver.Wait()
+	if ok, _ := m.app.Store.Exists(context.Background(), id); !ok || !toasted(m, "ghost off, hello saved to disk") {
+		t.Fatal("leaving ghost writes the session again")
+	}
+	feed(m, func() tea.Msg { return cards.TuneMsg{Session: id, Tuning: harness.Tuning{Ghost: true}} })
+	feed(m, m.closeSession(d))
+	if m.app.LiveByID(id) != nil {
+		t.Fatal("closing a ghost session discards it")
+	}
+	if ok, _ := m.app.Store.Exists(context.Background(), id); ok {
+		t.Fatal("a discarded ghost session leaves nothing behind")
+	}
+	if feed(m, func() tea.Msg { return cards.TuneMsg{Session: id} }); !toasted(m, "session closed") {
+		t.Fatal("tuning a closed session says so")
+	}
+}
