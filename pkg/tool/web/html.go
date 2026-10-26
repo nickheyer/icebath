@@ -13,9 +13,6 @@ var (
 
 const verbatim = "\x00"
 
-// Converts an HTML document to plain text, keeping headings, list bullets, code blocks and links
-func Text(doc string) string { return TextFrom(doc, nil) }
-
 // Converts HTML to plain text, resolving links against base and any base element in the document
 func TextFrom(doc string, base *url.URL) string {
 	var out strings.Builder

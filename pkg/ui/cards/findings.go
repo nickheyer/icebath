@@ -35,8 +35,6 @@ type Findings struct {
 	top      int
 	start    int
 	w, h     int
-	// Directory exports are written to
-	ExportDir string
 }
 
 // Builds the findings card over the facts store of the session
@@ -260,14 +258,11 @@ func (f *Findings) export(asJSON bool) tea.Cmd {
 	if f.store == nil {
 		return nil
 	}
-	dir := f.ExportDir
-	if dir == "" {
-		dir = f.env.ProjectDir
-	}
+	dir := f.env.ProjectDir
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
-	stamp := f.env.now().Format("20060102-150405")
+	stamp := time.Now().Format("20060102-150405")
 	path := filepath.Join(dir, "findings-"+stamp+".md")
 	data := []byte(f.store.Markdown())
 	if asJSON {
@@ -279,25 +274,6 @@ func (f *Findings) export(asJSON bool) tea.Cmd {
 	}
 	err := os.WriteFile(path, data, 0o644)
 	return func() tea.Msg { return ExportMsg{Path: path, Err: err} }
-}
-
-// Marks a file reference the run read or changed, found through the workspace by its resolved path
-func (f *Findings) touched(ref string) string {
-	if f.env.Work == nil {
-		return ""
-	}
-	path, err := f.env.Files.Resolve(ref)
-	if err != nil {
-		return ""
-	}
-	touch, ok := f.env.Work.Get(path)
-	switch {
-	case !ok:
-		return ""
-	case touch.Change != nil:
-		return render.Warm("changed", f.env.Theme)
-	}
-	return render.Dim("read", f.env.Theme)
 }
 
 func (f *Findings) View(w, h int) string {
@@ -381,9 +357,6 @@ func (f *Findings) detail(fact facts.Fact) []string {
 		switch e.Kind {
 		case "file":
 			ref = render.FileLink(e.Ref, e.Line, t)
-			if mark := f.touched(e.Ref); mark != "" {
-				ref += " " + mark
-			}
 		case "url":
 			ref = render.Link(e.Ref, e.Ref, t)
 		}

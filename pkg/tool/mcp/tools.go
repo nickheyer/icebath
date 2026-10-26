@@ -90,22 +90,6 @@ type caller interface {
 	CallWithProgress(ctx context.Context, method string, params map[string]any) (json.RawMessage, error)
 }
 
-// Lists every tool of the server, following pagination, wrapped as local tools
-func (c *Client) Tools(ctx context.Context) ([]tool.Tool, error) {
-	if !c.server.Tools {
-		return nil, fmt.Errorf("mcp: server %s offers no tools", c.name)
-	}
-	defs, err := c.listTools(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]tool.Tool, len(defs))
-	for i, d := range defs {
-		out[i] = wrap(c, d)
-	}
-	return out, nil
-}
-
 func (c *Client) listTools(ctx context.Context) ([]toolDef, error) {
 	var out []toolDef
 	cursor := ""

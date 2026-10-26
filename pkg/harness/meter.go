@@ -11,7 +11,7 @@ import (
 )
 
 // Attempts remembered for the telemetry log
-const DefaultAttempts = 64
+const maxAttempts = 64
 
 // What the model layer has done so far, as a card can show it
 type Telemetry struct {
@@ -36,17 +36,12 @@ type Telemetry struct {
 	Requests        int
 	Retries         int
 	Failures        int
-	Failovers       int
-	LastStatus      int
 	LastRequestID   string
 	LastLatency     time.Duration
 	AvgLatency      time.Duration
 	// Time from the request start to the first token of the current or last turn
-	FirstToken  time.Duration
-	RateLimit   provider.RateLimit
-	RateLimitAt time.Time
-	// Index of the chain model currently answering, zero when none has
-	Serving int
+	FirstToken time.Duration
+	RateLimit  provider.RateLimit
 	// Dollars per run id
 	Costs map[string]float64
 }
@@ -65,12 +60,10 @@ type Meter struct {
 	deltas   int
 	outChars int
 	pricing  *profiles.Pricing
-	Clock    func() time.Time
-	Max      int
 }
 
 func NewMeter(send Sender) *Meter {
-	return &Meter{send: send, Clock: time.Now, t: Telemetry{Costs: map[string]float64{}}}
+	return &Meter{send: send, t: Telemetry{Costs: map[string]float64{}}}
 }
 
 // Uses an explicit catalog entry, for endpoints that report their own pricing
@@ -117,7 +110,6 @@ func (m *Meter) Observe(a provider.Attempt) {
 	if a.Err != nil {
 		m.t.Failures++
 	}
-	m.t.LastStatus = a.Status
 	if a.RequestID != "" {
 		m.t.LastRequestID = a.RequestID
 	}
@@ -126,35 +118,14 @@ func (m *Meter) Observe(a provider.Attempt) {
 	m.t.AvgLatency = m.latencies / time.Duration(m.t.Requests)
 	if a.RateLimit.Known() {
 		m.t.RateLimit = a.RateLimit
-		m.t.RateLimitAt = m.Clock()
-	}
-	limit := m.Max
-	if limit <= 0 {
-		limit = DefaultAttempts
 	}
 	m.attempts = append(m.attempts, a)
-	if len(m.attempts) > limit {
-		m.attempts = m.attempts[len(m.attempts)-limit:]
+	if len(m.attempts) > maxAttempts {
+		m.attempts = m.attempts[len(m.attempts)-maxAttempts:]
 	}
 	snap := m.snapshot()
 	m.mu.Unlock()
 	m.send(AttemptMsg{Attempt: a, Telemetry: snap})
-}
-
-// Records that the model chain moved past a failing model
-func (m *Meter) Failover(from int, err error) {
-	m.mu.Lock()
-	m.t.Failovers++
-	m.mu.Unlock()
-	m.send(FailoverMsg{From: from, Err: err})
-}
-
-// Records which chain model answered
-func (m *Meter) Served(i int) {
-	m.mu.Lock()
-	m.t.Serving = i
-	m.mu.Unlock()
-	m.send(ServedMsg{Index: i})
 }
 
 // Updates usage, cost, context fill and throughput from an agent event
@@ -163,7 +134,7 @@ func (m *Meter) Apply(run string, ev agent.Event) {
 	defer m.mu.Unlock()
 	now := ev.Time
 	if now.IsZero() {
-		now = m.Clock()
+		now = time.Now()
 	}
 	switch ev.Type {
 	case agent.EventTurnStart:

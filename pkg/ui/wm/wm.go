@@ -7,7 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
-
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -28,7 +27,6 @@ const (
 	backdropDim   = 0.45
 	slideFade     = 0.55
 	maxFloatPile  = 8
-	maxLayer      = 9
 	maxToasts     = 5
 	toastGap      = 2
 	cascadeSpeed  = 6.0
@@ -135,11 +133,6 @@ func WithMotion(scale float64) Option {
 	return func(m *Model) { m.SetMotion(scale); m.motionSet = true }
 }
 
-// Sets the frame rates used while animating and while at rest
-func WithFPS(active, idle int) Option {
-	return func(m *Model) { m.clock = anim.NewClock(active, idle) }
-}
-
 // Lights the focused card's border with a flowing energy comet
 func WithCascade(on bool) Option {
 	return func(m *Model) { m.SetCascade(on) }
@@ -150,29 +143,9 @@ func WithWindowTitle(title string) Option {
 	return func(m *Model) { m.title = title }
 }
 
-// Sets the cells of background left between tiles
-func WithGap(n int) Option {
-	return func(m *Model) { m.gap = max(n, 0) }
-}
-
-// Sets the columns and rows of background left around the tiles at the stage edge
-func WithOuterGap(x, y int) Option {
-	return func(m *Model) { m.gapOutX, m.gapOutY = max(x, 0), max(y, 0) }
-}
-
-// Sets the arrangement new workspaces start with and keeps a restored layout from changing it
-func WithLayout(mode Mode) Option {
-	return func(m *Model) { m.mode, m.modeSet = mode, true }
-}
-
 // Sets the share of the stage new workspaces give the master area and keeps a restored layout from changing it
 func WithRatio(r float64) Option {
 	return func(m *Model) { m.ratio, m.ratioSet = clampRatio(r), true }
-}
-
-// Replaces the clock the manager reads for double clicks and toasts
-func WithClock(now func() time.Time) Option {
-	return func(m *Model) { m.now = now }
 }
 
 // Replaces the keymap keys are dispatched and legends painted from
@@ -208,14 +181,6 @@ func New(opts ...Option) *Model {
 		o(m)
 	}
 	return m
-}
-
-// Columns and rows of padding between the border of a card and its content at a density
-func padding(d theme.Density) (x, y int) {
-	if d == theme.Compact {
-		return 1, 0
-	}
-	return 2, 1
 }
 
 // Starts the frame clock
@@ -475,7 +440,6 @@ func (m *Model) adopt(ws *Workspace, c Card, origin Box) *entry {
 		return e
 	}
 	e.floating = true
-	e.layer = 0
 	e.fbox = m.floatBox(c, Box{})
 	ws.addFloat(e)
 	if len(ws.floats) > maxFloatPile {
@@ -669,29 +633,6 @@ func (m *Model) ToggleFloat() tea.Cmd {
 	return m.setFloat(e, !e.floating)
 }
 
-// Moves the focused float up or down a layer, every float on a higher layer staying above those below
-func (m *Model) ShiftLayer(delta int) tea.Cmd {
-	ws := m.Active()
-	e := m.focused()
-	if ws == nil || e == nil || !e.floating || e.closing {
-		return m.nudge()
-	}
-	next := min(max(e.layer+delta, 0), maxLayer)
-	if next == e.layer {
-		return m.nudge()
-	}
-	ws.setLayer(e, next)
-	return m.wake()
-}
-
-// Layer the card is stacked on, zero and up for floats and minus one for tiles and cards not open
-func (m *Model) LayerOf(c Card) int {
-	if e := m.entryOf(c); e != nil {
-		return e.layer
-	}
-	return -1
-}
-
 // Changes the master share of the stage by delta, or the split the focused tile was cut off by
 func (m *Model) Resize(delta float64) tea.Cmd {
 	ws := m.Active()
@@ -851,7 +792,7 @@ func (m *Model) UrgencyOf(c Card) Urgency {
 // Replaces the palette, border set and padding, repainting every card
 func (m *Model) SetTheme(t theme.Theme) {
 	m.theme = t
-	m.padX, m.padY = padding(t.Density)
+	m.padX, m.padY = 2, 1
 	m.rings = map[int][]color.Color{}
 	m.memoed = map[color.Color]color.Color{}
 	m.Repaint()
@@ -978,7 +919,7 @@ func (m *Model) entryOf(c Card) *entry {
 }
 
 func (m *Model) newEntry(c Card, ws *Workspace) *entry {
-	e := &entry{id: m.nextID, card: c, ws: ws, rect: anim.NewRect(0, 0, 0, 0), open: fast(0), lit: fast(0), hover: fast(0), pulse: fast(0), hide: fast(0), shake: anim.NewValueWith(0, anim.Rattle), weight: 1, layer: -1, dim: -1, dirty: true}
+	e := &entry{id: m.nextID, card: c, ws: ws, rect: anim.NewRect(0, 0, 0, 0), open: fast(0), lit: fast(0), hover: fast(0), pulse: fast(0), hide: fast(0), shake: anim.NewValueWith(0, anim.Rattle), weight: 1, dim: -1, dirty: true}
 	m.nextID++
 	e.open.Set(1)
 	return e
@@ -1104,11 +1045,9 @@ func (m *Model) setFloat(e *entry, on bool) tea.Cmd {
 	ws.remove(e)
 	e.floating = on
 	if on {
-		e.layer = 0
 		e.fbox = m.floatBox(e.card, e.frame())
 		ws.addFloat(e)
 	} else {
-		e.layer = -1
 		ws.addTile(e)
 	}
 	ws.focus = e
@@ -1349,4 +1288,144 @@ func (m *Model) CloseWorkspace() tea.Cmd {
 		}
 	}
 	return m.RemoveWorkspace(m.active)
+}
+
+// Advances every animation by dt seconds and reports whether anything is still moving
+func (m *Model) Advance(dt float64) bool {
+	moving := false
+	for i, ws := range m.spaces {
+		shown := i == m.active
+		if shown || ws == m.leaving {
+			if m.stepWorkspace(ws, dt, shown) {
+				moving = true
+			} else if ws == m.leaving {
+				m.leaving = nil
+			}
+			continue
+		}
+		moving = m.animateCards(ws, dt) || moving
+	}
+	if m.overlay != nil {
+		moving = m.step(m.overlay, dt, true, false) || moving
+	}
+	if m.parting != nil {
+		moving = m.step(m.parting, dt, false, false) || moving
+		if m.motion == 0 || (m.parting.open.Settled() && m.parting.open.Pos < 0.01) {
+			m.parting = nil
+		}
+	}
+	m.veil.Set(flag(m.overlay != nil))
+	if m.motion == 0 {
+		m.veil.Snap()
+	} else {
+		moving = m.veil.Step(dt/m.motion) || moving
+	}
+	moving = m.stepToasts(dt) || moving
+	moving = m.stepBar(dt) || moving
+	if m.hold > 0 {
+		m.hold--
+		moving = true
+	}
+	m.phase += dt * flowSpeed * m.motion
+	m.tick++
+	return moving
+}
+
+// Steps the slide and every card of a workspace, dropping cards whose pop out settled
+func (m *Model) stepWorkspace(ws *Workspace, dt float64, shown bool) bool {
+	moving := false
+	if m.motion == 0 {
+		ws.shift.Snap()
+	} else {
+		moving = ws.shift.Step(dt/m.motion) || moving
+	}
+	for _, e := range ws.entries() {
+		focused := shown && ws.focus == e && m.overlay == nil
+		hovered := shown && m.hover == e
+		moving = m.step(e, dt, focused, hovered) || moving
+		if e.closing && e.open.Settled() && e.open.Pos < 0.01 {
+			m.drop(e)
+		}
+	}
+	return moving
+}
+
+// Keeps the cards of a workspace off the stage in step so they are at rest when shown again
+func (m *Model) animateCards(ws *Workspace, dt float64) bool {
+	moving := false
+	for _, e := range ws.entries() {
+		moving = m.animate(e, dt) || moving
+	}
+	return moving
+}
+
+// Steps the card's own motion when it has any, repainting it when its view changed
+func (m *Model) animate(e *entry, dt float64) bool {
+	a, ok := e.card.(Animator)
+	if !ok {
+		return false
+	}
+	if m.motion == 0 {
+		dt = 0
+	} else {
+		dt /= m.motion
+	}
+	if !a.Animate(dt) {
+		return false
+	}
+	e.dirty = true
+	return dt > 0
+}
+
+// Reports whether the entry is a tile covered by another card filling its stage
+func hidden(e *entry) bool {
+	return e.ws != nil && e.ws.zoom != nil && e.ws.zoom != e && !e.floating
+}
+
+func (m *Model) step(e *entry, dt float64, focused, hovered bool) bool {
+	if m.motion == 0 {
+		if !e.held {
+			e.rect.Snap()
+		}
+		e.open.Snap()
+		e.lit.Set(flag(focused))
+		e.lit.Snap()
+		e.hover.Set(flag(hovered))
+		e.hover.Snap()
+		e.pulse.Set(flag(e.urgency != Calm))
+		e.pulse.Snap()
+		e.hide.Set(flag(hidden(e)))
+		e.hide.Snap()
+		e.shake.Snap()
+		e.decode = 1
+		m.animate(e, dt)
+		return false
+	}
+	dt /= m.motion
+	moving := false
+	if !e.held {
+		moving = e.rect.Step(dt)
+	}
+	moving = e.open.Step(dt) || moving
+	e.lit.Set(flag(focused))
+	moving = e.lit.Step(dt) || moving
+	e.hover.Set(flag(hovered))
+	moving = e.hover.Step(dt) || moving
+	e.pulse.Set(flag(e.urgency != Calm))
+	moving = e.pulse.Step(dt) || moving
+	e.hide.Set(flag(hidden(e)))
+	moving = e.hide.Step(dt) || moving
+	moving = e.shake.Step(dt) || moving
+	if e.urgency != Calm {
+		moving = true
+	}
+	if e.decode < 1 {
+		e.decode = min(1, e.decode+dt/decodeTime)
+		moving = true
+	}
+	if a, ok := e.card.(Animator); ok && a.Animate(dt) {
+		e.dirty = true
+		moving = true
+	}
+	return moving
 }

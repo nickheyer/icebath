@@ -60,12 +60,6 @@ func loadCatalog() {
 	})
 }
 
-// Date the built in catalog rates were last checked
-func CatalogUpdated() string {
-	loadCatalog()
-	return catalog.Updated
-}
-
 // Every model the built in catalog and any added lists describe, added entries first
 func Catalog() []Model {
 	loadCatalog()

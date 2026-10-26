@@ -10,10 +10,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/nickheyer/icebath/pkg/agent/hooks"
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/policy"
-	"github.com/nickheyer/icebath/pkg/policy/rules"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -24,6 +23,9 @@ const customProvider = "custom"
 
 // Choice standing for no vendor on a custom endpoint
 const noneChoice = "none"
+
+// Choice standing for the built in base prompt
+const builtInChoice = "built in"
 
 // Choice of where a dialog writes a new entry, with what each place writes
 func scopeField(what string) *field {
@@ -96,6 +98,13 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 	}}
 	keyFrom := &field{key: "key_from", label: "key from", kind: choiceField, choices: sources, help: "Credential source, read each time the profile opens"}
 	key := &field{key: "key", label: "key", kind: textField, show: func() bool { return keyFrom.value != string(profiles.SourceNone) }}
+	promptFrom := &field{key: "system_from", label: "prompt", kind: choiceField, choices: append([]string{builtInChoice}, sources...), help: "Base prompt sent in place of the built in one, none sending no prompt at all"}
+	system := &field{key: "system", label: "text", kind: textField, show: func() bool {
+		return promptFrom.value != builtInChoice && promptFrom.value != string(profiles.SourceNone)
+	}}
+	environment := &field{key: "context", label: "context", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.NoContext), help: "Sends the environment block about the machine and session after the prompt"}
+	bare := &field{key: "bare", label: "bare", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Bare), help: "Asks the endpoint to add no prompt or tools of its own"}
+	ghost := &field{key: "ghost", label: "ghost", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Ghost), help: "Keeps sessions off disk and asks the endpoint to keep nothing of them"}
 	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.Disabled), help: "Off profiles stay out of pickers"}
 	describeKey := func() {
 		key.kind = textField
@@ -112,6 +121,21 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		}
 	}
 	keyFrom.onChange = describeKey
+	describePrompt := func() {
+		system.kind = textField
+		switch profiles.SourceKind(promptFrom.value) {
+		case profiles.SourceEnv:
+			system.label, system.help = "variable", "Environment variable holding the prompt"
+		case profiles.SourceStatic:
+			system.kind = areaField
+			system.label, system.help = "text", "The prompt itself, kept in the profile file"
+		case profiles.SourceFile:
+			system.label, system.help = "path", "File holding the prompt"
+		case profiles.SourceExec:
+			system.label, system.help = "command", "Command that prints the prompt"
+		}
+	}
+	promptFrom.onChange = describePrompt
 	fill := func(b profiles.Profile, from profiles.Profile) {
 		endpoint.value = or(from.BaseURL, b.BaseURL)
 		endpoint.optional = provider != customProvider
@@ -137,17 +161,23 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 			k = from.Key
 		}
 		keyFrom.value, key.value = or(string(k.Kind), string(profiles.SourceNone)), k.Value
-		for _, f := range []*field{endpoint, model, authName, key} {
+		s := b.System
+		if from.System.Kind != "" {
+			s = from.System
+		}
+		promptFrom.value, system.value = or(string(s.Kind), builtInChoice), s.Value
+		for _, f := range []*field{endpoint, model, authName, key, system} {
 			f.cursor = len([]rune(f.value))
 		}
 		describeKey()
+		describePrompt()
 	}
 	fill(base(), written)
 	pick.onChange = func() {
 		provider = pick.value
 		fill(base(), profiles.Profile{})
 	}
-	fields := []*field{pick, name, model, endpoint, vendor, proto, auth, authName, keyFrom, key, enabled}
+	fields := []*field{pick, name, model, endpoint, vendor, proto, auth, authName, keyFrom, key, promptFrom, system, environment, bare, ghost, enabled}
 	title := "NEW PROFILE"
 	oldName := ""
 	if old != nil {
@@ -185,6 +215,19 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		if p.Key == b.Key || (p.Key.Kind == profiles.SourceNone && b.Key.Kind == "") {
 			p.Key = profiles.Source{}
 		}
+		p.System = profiles.Source{}
+		if promptFrom.value != builtInChoice {
+			p.System = profiles.Source{Kind: profiles.SourceKind(promptFrom.value), Value: strings.TrimSpace(system.value)}
+		}
+		if p.System.Kind == profiles.SourceNone {
+			p.System.Value = ""
+		}
+		if p.System == b.System {
+			p.System = profiles.Source{}
+		}
+		p.NoContext = environment.value == "false"
+		p.Bare = bare.value == "true"
+		p.Ghost = ghost.value == "true"
 		if err := c.env.Editor.SaveProfile(oldName, p); err != nil {
 			return nil, err
 		}
@@ -199,7 +242,7 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 
 // Tool and pattern of a rule, the pattern empty when the rule names none
 func splitRule(text string) (string, string) {
-	r, err := rules.Parse(text)
+	r, err := policy.ParseRule(text)
 	if err != nil {
 		return text, ""
 	}
@@ -279,10 +322,10 @@ func (c *Config) ruleForm(old *harness.RuleEntry) *Form {
 // Dialog that writes a hook, new into a scope or over one in the file holding it
 func (c *Config) hookForm(old *harness.HookEntry) *Form {
 	var events []string
-	for _, ev := range hooks.Events {
+	for _, ev := range agent.HookEvents {
 		events = append(events, string(ev))
 	}
-	e := harness.HookEntry{Event: hooks.PreToolUse}
+	e := harness.HookEntry{Event: agent.PreToolUse}
 	if old != nil {
 		e = *old
 	}
@@ -292,13 +335,13 @@ func (c *Config) hookForm(old *harness.HookEntry) *Form {
 	}
 	event := &field{key: "event", label: "event", kind: choiceField, choices: events, value: string(e.Event), help: "PreToolUse can block a call, UserPromptSubmit can block a prompt"}
 	tooled := func() bool {
-		return event.value == string(hooks.PreToolUse) || event.value == string(hooks.PostToolUse)
+		return event.value == string(agent.PreToolUse) || event.value == string(agent.PostToolUse)
 	}
 	matcher := &field{key: "matcher", label: "matcher", kind: textField, optional: true, placeholder: "every tool", value: e.Matcher, cursor: len([]rune(e.Matcher)), show: tooled, help: "Regular expression over the tool name such as Edit|Write", check: func(v string) error {
 		return harness.CheckMatcher(v)
 	}}
 	command := &field{key: "command", label: "command", kind: textField, value: e.Command, cursor: len([]rune(e.Command)), help: "Shell command given the event as JSON on stdin, exit 2 blocks with stderr as the reason"}
-	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, hi: 600, step: 5, start: hooks.DefaultTimeout, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds the command may run, unset allows " + strconv.Itoa(hooks.DefaultTimeout)}
+	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, hi: 600, step: 5, start: agent.DefaultHookTimeout, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds the command may run, unset allows " + strconv.Itoa(agent.DefaultHookTimeout)}
 	fields := []*field{event, matcher, command, secs}
 	scope := scopeField(harness.HooksFile)
 	title := "NEW HOOK"
@@ -308,7 +351,7 @@ func (c *Config) hookForm(old *harness.HookEntry) *Form {
 		title = "EDIT HOOK"
 	}
 	return newForm(c.env, title, c.env.Theme.Glyphs.Hooks, fields, func() (tea.Cmd, error) {
-		next := harness.HookEntry{Event: hooks.Event(event.value), Command: strings.TrimSpace(command.value)}
+		next := harness.HookEntry{Event: agent.HookEvent(event.value), Command: strings.TrimSpace(command.value)}
 		if tooled() {
 			next.Matcher = strings.TrimSpace(matcher.value)
 		}

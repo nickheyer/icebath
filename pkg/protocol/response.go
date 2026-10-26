@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
-	"net/http"
 	"sort"
 	"strings"
-	"time"
 )
 
 // Why the model stopped, normalized across protocols with the wire value kept beside it
@@ -48,14 +46,6 @@ func (u Usage) Add(o Usage) Usage {
 	}
 }
 
-// Timings a protocol reports about the exchange, zero where it reports nothing
-type Metrics struct {
-	Latency  time.Duration `json:"latency"`
-	Load     time.Duration `json:"load"`
-	Prompt   time.Duration `json:"prompt"`
-	Generate time.Duration `json:"generate"`
-}
-
 // Completed assistant turn
 type Response struct {
 	ID            string
@@ -64,11 +54,6 @@ type Response struct {
 	StopReason    StopReason
 	RawStopReason string
 	Usage         Usage
-	Metrics       Metrics
-	// Vendor request identifier taken from the response headers by the provider
-	RequestID string
-	// Response headers kept by the provider for rate limit and tracing fields
-	Header http.Header
 }
 
 type EventType string
@@ -254,11 +239,6 @@ func (b *Builder) Usage(u Usage) {
 	b.Start("", "")
 	b.Response.Usage = u
 	b.emit(Event{Type: EventUsage})
-}
-
-// Records timings the protocol reported about the exchange
-func (b *Builder) Metrics(m Metrics) {
-	b.Response.Metrics = m
 }
 
 // Finalizes the block under key, parsing tool arguments into a JSON object

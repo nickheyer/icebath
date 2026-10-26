@@ -2,7 +2,6 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -64,15 +63,6 @@ type ServerStatus struct {
 	Since    time.Time
 }
 
-// One line a server logged
-type LogLine struct {
-	Time   time.Time
-	Server string
-	Level  string
-	Logger string
-	Text   string
-}
-
 type managed struct {
 	cfg    ServerConfig
 	server *mcp.Server
@@ -90,12 +80,11 @@ type MCP struct {
 	mu       sync.Mutex
 	servers  map[string]*managed
 	order    []string
-	Clock    func() time.Time
 	wg       sync.WaitGroup
 }
 
 func NewMCP(send Sender, registry *tool.Registry) *MCP {
-	return &MCP{send: send, registry: registry, servers: map[string]*managed{}, Clock: time.Now}
+	return &MCP{send: send, registry: registry, servers: map[string]*managed{}}
 }
 
 // Adds a server and connects it in the background unless it starts disabled
@@ -111,7 +100,7 @@ func (m *MCP) Add(ctx context.Context, cfg ServerConfig) error {
 		m.mu.Unlock()
 		return fmt.Errorf("mcp server %s already added", cfg.Name)
 	}
-	ms := &managed{cfg: cfg, state: mcp.StateDisconnected, since: m.Clock()}
+	ms := &managed{cfg: cfg, state: mcp.StateDisconnected, since: time.Now()}
 	m.servers[cfg.Name] = ms
 	m.order = append(m.order, cfg.Name)
 	m.mu.Unlock()
@@ -141,11 +130,11 @@ func (m *MCP) Connect(ctx context.Context, name string) error {
 	srv := &mcp.Server{Name: name, Dialer: dialer, Options: m.Options, Timeout: time.Duration(ms.cfg.Timeout) * time.Second}
 	ms.server = srv
 	ms.state = mcp.StateConnecting
-	ms.since = m.Clock()
+	ms.since = time.Now()
 	m.mu.Unlock()
 	srv.OnState(func(st mcp.State, err error) {
 		m.mu.Lock()
-		ms.state, ms.err, ms.since = st, err, m.Clock()
+		ms.state, ms.err, ms.since = st, err, time.Now()
 		tools := append([]string(nil), ms.tools...)
 		m.mu.Unlock()
 		m.send(MCPMsg{Server: name, State: st, Err: err, Tools: tools})
@@ -157,16 +146,13 @@ func (m *MCP) Connect(ctx context.Context, name string) error {
 			m.swap(name, tools)
 		}()
 	})
-	srv.OnLog(func(level, logger string, data json.RawMessage) {
-		m.logLine(name, level, logger, data)
-	})
 	m.send(MCPMsg{Server: name, State: mcp.StateConnecting})
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
 		if err := srv.Open(ctx); err != nil {
 			m.mu.Lock()
-			ms.state, ms.err, ms.server, ms.since = mcp.StateDisconnected, err, nil, m.Clock()
+			ms.state, ms.err, ms.server, ms.since = mcp.StateDisconnected, err, nil, time.Now()
 			m.mu.Unlock()
 			m.send(MCPMsg{Server: name, State: mcp.StateDisconnected, Err: err})
 		}
@@ -207,15 +193,6 @@ func (m *MCP) swap(name string, tools []tool.Tool) {
 	m.send(MCPMsg{Server: name, State: st, Err: err, Tools: append([]string(nil), names...)})
 }
 
-func (m *MCP) logLine(server, level, logger string, data json.RawMessage) {
-	text := string(data)
-	var s string
-	if json.Unmarshal(data, &s) == nil {
-		text = s
-	}
-	m.send(MCPLogMsg{Line: LogLine{Time: m.Clock(), Server: server, Level: level, Logger: logger, Text: text}})
-}
-
 // Closes the server and opens it again
 func (m *MCP) Reconnect(ctx context.Context, name string) error {
 	if err := m.Disconnect(name); err != nil {
@@ -236,7 +213,7 @@ func (m *MCP) Disconnect(name string) error {
 	ms.server = nil
 	old := ms.tools
 	ms.tools = nil
-	ms.state, ms.err, ms.since = mcp.StateClosed, nil, m.Clock()
+	ms.state, ms.err, ms.since = mcp.StateClosed, nil, time.Now()
 	m.mu.Unlock()
 	for _, n := range old {
 		m.registry.Remove(n)

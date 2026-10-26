@@ -17,8 +17,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/agent/hooks"
-	"github.com/nickheyer/icebath/pkg/agent/subagent"
 	"github.com/nickheyer/icebath/pkg/facts"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/mission"
@@ -28,8 +26,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool/shell"
 	"github.com/nickheyer/icebath/pkg/tool/web"
 	"github.com/nickheyer/icebath/pkg/ui/anim"
-	"github.com/nickheyer/icebath/pkg/ui/art"
-	"github.com/nickheyer/icebath/pkg/ui/fx"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -292,7 +288,7 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 
 // Reports whether a recent thought still has runes churning
 func (tr *Transcript) settling() bool {
-	now := tr.env.now()
+	now := time.Now()
 	for i := len(tr.blocks) - 1; i >= 0 && i >= len(tr.blocks)-8; i-- {
 		if tr.blocks[i].churning(now) {
 			return true
@@ -773,7 +769,7 @@ func (tr *Transcript) thought(b *block) time.Duration {
 	if b.duration > 0 || b.started.IsZero() || b.done {
 		return b.duration
 	}
-	return tr.env.now().Sub(b.started)
+	return time.Since(b.started)
 }
 
 // Tool block for a call id, created when the model events did not announce it
@@ -1015,7 +1011,7 @@ func (b *block) animated(now time.Time) bool {
 }
 
 func (tr *Transcript) stateKey(i int, b *block, width int) string {
-	now := tr.env.now()
+	now := time.Now()
 	k := fmt.Sprintf("%d:%d:%t:%t:%t:%t:%d", width, len(b.text), b.done, b.expanded, b.full, tr.cursor == i, len(b.partial))
 	if b.animated(now) {
 		k += fmt.Sprintf(":%d", tr.tick)
@@ -1151,7 +1147,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 		}
 	case bHook:
 		lines = append(lines, mark+render.Dim(t.Glyphs.Hook+" "+render.Truncate(b.text, body, t), t))
-		if ex, ok := b.data.(hooks.Execution); ok && strings.TrimSpace(ex.Stdout) != "" {
+		if ex, ok := b.data.(agent.HookExecution); ok && strings.TrimSpace(ex.Stdout) != "" {
 			for _, l := range render.Lines(render.Tail(strings.TrimSpace(ex.Stdout), 5)) {
 				lines = append(lines, "    "+render.Dim(render.Truncate(l, body-2, t), t))
 			}
@@ -1252,7 +1248,7 @@ func partsText(parts []protocol.Part, t theme.Theme) (string, []string) {
 func (tr *Transcript) thoughtLines(b *block, body int) []string {
 	t := tr.env.Theme
 	runes := []rune(b.text)
-	keep := visible(runes[:min(b.resolved(tr.env.now()), len(runes))])
+	keep := visible(runes[:min(b.resolved(time.Now()), len(runes))])
 	var out []string
 	for i, l := range strings.Split(render.Wrap(b.text, body), "\n") {
 		lr := []rune(l)
@@ -1265,7 +1261,7 @@ func (tr *Transcript) thoughtLines(b *block, body int) []string {
 		}
 		line := render.Dim(string(lr[:cut]), t)
 		if cut < len(lr) {
-			line += render.Cool(fx.Churn(string(lr[cut:]), tr.tick+i*7, t.Glyphs.Churn), t)
+			line += render.Cool(anim.Churn(string(lr[cut:]), tr.tick+i*7, t.Glyphs.Churn), t)
 		}
 		out = append(out, "  "+line)
 	}
@@ -1360,7 +1356,7 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 	var status string
 	switch {
 	case b.result == nil && !b.started.IsZero():
-		status = render.Cool(render.Spinner(tr.tick, t)+" "+render.Elapsed(tr.env.now().Sub(b.started)), t)
+		status = render.Cool(render.Spinner(tr.tick, t)+" "+render.Elapsed(time.Since(b.started)), t)
 	case b.result == nil:
 		status = render.Dim("pending", t)
 		if !b.done {
@@ -1398,27 +1394,6 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 		return lines
 	}
 	bodyLines := tr.resultLines(b, body-2)
-	if b.result.IsError && (b.call.Name == files.WriteName || b.call.Name == files.EditName) && tr.env.PreImage != nil {
-		if img, ok := tr.env.PreImage.Get(b.call.ID); ok {
-			bodyLines = append(bodyLines, "", render.Warm("file before the call", t))
-			switch {
-			case img.Missing:
-				bodyLines = append(bodyLines, render.Dim("did not exist", t))
-			default:
-				before := render.Lines(img.Content)
-				shown := before
-				if len(shown) > 20 {
-					shown = shown[:20]
-				}
-				for i, l := range shown {
-					bodyLines = append(bodyLines, render.Dim(fmt.Sprintf("%3d ", i+1), t)+render.Truncate(l, body-6, t))
-				}
-				if len(before) > 20 {
-					bodyLines = append(bodyLines, render.Dim(fmt.Sprintf("%s %d more lines", t.Glyphs.Ellipsis, len(before)-20), t))
-				}
-			}
-		}
-	}
 	limit := previewLines
 	if b.full {
 		limit = len(bodyLines)
@@ -1450,7 +1425,7 @@ func (tr *Transcript) resultStat(b *block) string {
 		return fmt.Sprintf("exit %d", d.ExitCode)
 	case web.Page:
 		return fmt.Sprintf("%d %s", d.Status, render.Bytes(int64(d.Bytes)))
-	case subagent.Child:
+	case agent.Child:
 		return "child " + d.Name
 	}
 	return ""
@@ -1723,10 +1698,52 @@ func (tr *Transcript) idle(w, h int) string {
 		}
 	}
 	line := lipgloss.NewStyle().Foreground(t.TextDim).Render(t.Glyphs.Idle+" ") + lipgloss.NewStyle().Foreground(t.Ice).Render(model) + lipgloss.NewStyle().Foreground(t.TextDim).Render(" "+t.Glyphs.Sep+" idle")
-	mark := art.Mark(t.Plain)
-	if mw := art.Width(mark); w >= mw+4 && h >= len(mark)+3 {
-		rows := art.Paint(mark, theme.Ring(mw, t.Ring...))
-		line = strings.Join(append(rows, "", line), "\n")
+	mark := wordmark
+	if t.Plain {
+		mark = wordmarkASCII
+	}
+	mw := 0
+	for _, l := range mark {
+		mw = max(mw, ansi.StringWidth(l))
+	}
+	if w >= mw+4 && h >= len(mark)+3 {
+		line = strings.Join(append(paintMark(mark, theme.Ring(mw, t.Ring...)), "", line), "\n")
 	}
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, line)
+}
+
+// Wordmark in half blocks, three rows
+var wordmark = []string{
+	"▀█▀ █▀▀ █▀▀ █▀▄ █▀█ ▀█▀ █ █",
+	" █  █   █▀▀ █▀▄ █▀█  █  █▀█",
+	"▄█▄ ▀▀▀ ▀▀▀ ▀▀  ▀ ▀  ▀  ▀ ▀",
+}
+
+// Wordmark for terminals without block characters
+var wordmarkASCII = []string{
+	" _ ___ ___ ___  _ _____ _ _ ",
+	"| |/ __| __| _ )/_\\_   _| || |",
+	"| | (__| _|| _ \\/ _ \\| | | __ |",
+	"|_|\\___|___|___/_/ \\_\\_| |_||_|",
+}
+
+// Lines with every column painted in the color at its share of the sweep
+func paintMark(lines []string, sweep []color.Color) []string {
+	width := 1
+	for _, l := range lines {
+		width = max(width, ansi.StringWidth(l))
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		var sb strings.Builder
+		for x, r := range []rune(l) {
+			if r == ' ' || len(sweep) == 0 {
+				sb.WriteRune(r)
+				continue
+			}
+			sb.WriteString(lipgloss.NewStyle().Foreground(sweep[min(x*len(sweep)/width, len(sweep)-1)]).Render(string(r)))
+		}
+		out[i] = sb.String()
+	}
+	return out
 }

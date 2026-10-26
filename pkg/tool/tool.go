@@ -78,43 +78,6 @@ func Image(mediaType string, data []byte) Result {
 	return Result{Content: []protocol.Part{protocol.Image{MediaType: mediaType, Data: data}}}
 }
 
-// Tool made from a closure
-type Func struct {
-	Name        string
-	Description string
-	Parameters  json.RawMessage
-	Hints       Annotations
-	Fn          func(ctx context.Context, args json.RawMessage) (Result, error)
-}
-
-func (f Func) Definition() protocol.Tool {
-	return protocol.Tool{Name: f.Name, Description: f.Description, Parameters: f.Parameters}
-}
-
-func (f Func) Annotations() Annotations { return f.Hints }
-
-func (f Func) Run(ctx context.Context, args json.RawMessage) (Result, error) {
-	return f.Fn(ctx, args)
-}
-
-type renamed struct {
-	Tool
-	name string
-}
-
-func (r renamed) Definition() protocol.Tool {
-	def := r.Tool.Definition()
-	def.Name = r.name
-	return def
-}
-
-func (r renamed) Annotations() Annotations { return Describe(r.Tool) }
-
-// Exposes t to the model under another name
-func Rename(t Tool, name string) Tool {
-	return renamed{Tool: t, name: name}
-}
-
 // Reports whether name is acceptable to every supported protocol, letters, digits, underscores and dashes up to 64 bytes
 func ValidName(name string) bool {
 	if name == "" || len(name) > 64 {
@@ -405,12 +368,7 @@ func (r *Registry) Run(ctx context.Context, call protocol.ToolCall) (out Outcome
 	return out
 }
 
-// Runs read only calls concurrently and every other call alone in order, returning outcomes in call order
-func (r *Registry) RunAll(ctx context.Context, calls []protocol.ToolCall) []Outcome {
-	return r.RunEach(ctx, calls, nil)
-}
-
-// Runs calls like RunAll, reporting each outcome through done as soon as it is known
+// Runs read only calls concurrently and every other call alone in order, reporting each outcome through done as soon as it is known
 func (r *Registry) RunEach(ctx context.Context, calls []protocol.ToolCall, done func(i int, out Outcome)) []Outcome {
 	results := make([]Outcome, len(calls))
 	shared := r.repeats(calls)

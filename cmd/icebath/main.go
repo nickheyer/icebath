@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/session"
-	"github.com/nickheyer/icebath/pkg/session/jsonl"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
@@ -177,7 +176,7 @@ func listSessions(cfg harness.Config) int {
 		fmt.Fprintln(os.Stderr, "icebath:", err)
 		return 2
 	}
-	store := &jsonl.Store{Dir: dir}
+	store := &session.Store{Dir: dir}
 	infos, err := store.List(context.Background())
 	if err != nil {
 		if os.IsNotExist(err) {

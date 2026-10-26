@@ -26,7 +26,7 @@ func (m *Model) addDesk(live *harness.Live) *desk {
 	d := &desk{live: live, agents: map[string]*cards.Agent{}, missions: map[string]*cards.Mission{}}
 	d.session = cards.NewSession(m.env, live, m.configDir())
 	d.session.Composer.SetCommands(m.slashCommands())
-	d.session.Composer.Volatile = func() bool { return harness.TuningOf(d.live.Session).Ghost }
+	d.session.Composer.Volatile = func() bool { return d.live.Endpoint.Profile.Ghost }
 	d.session.Locked = func() bool { return d.compacting }
 	d.approval = cards.NewApproval(m.env, live.Session.ID(), func(run string) bool { return m.app.LiveOfRun(run) == live })
 	m.desks = append(m.desks, d)
@@ -85,7 +85,7 @@ func (m *Model) deskOfCard(c wm.Card) *desk {
 		return nil
 	}
 	for _, d := range m.desks {
-		if c == wm.Card(d.session) || c == wm.Card(d.approval) || (d.findings != nil && c == wm.Card(d.findings)) || (d.system != nil && c == wm.Card(d.system)) {
+		if c == wm.Card(d.session) || c == wm.Card(d.approval) || (d.findings != nil && c == wm.Card(d.findings)) {
 			return d
 		}
 		for _, a := range d.agents {
@@ -130,14 +130,6 @@ func (m *Model) findingsOf(d *desk) *cards.Findings {
 		d.findings = cards.NewFindings(m.env, d.live.Facts, d.live.Session.ID())
 	}
 	return d.findings
-}
-
-// System prompt editor of a desk, built on first use
-func (m *Model) systemOf(d *desk) *cards.System {
-	if d.system == nil {
-		d.system = cards.NewSystem(m.env, d.live)
-	}
-	return d.system
 }
 
 // Mission card of a desk, built on first use
@@ -306,7 +298,7 @@ func (m *Model) clearDesk(d *desk) tea.Cmd {
 	d.live = live
 	d.session.Rebind(live)
 	d.approval = cards.NewApproval(m.env, live.Session.ID(), func(run string) bool { return m.app.LiveOfRun(run) == live })
-	d.agents, d.missions, d.findings, d.system, d.mission = map[string]*cards.Agent{}, map[string]*cards.Mission{}, nil, nil, ""
+	d.agents, d.missions, d.findings, d.mission = map[string]*cards.Agent{}, map[string]*cards.Mission{}, nil, ""
 	if err := m.app.Release(old); err != nil {
 		cmds = append(cmds, m.wm.Toast(err.Error(), wm.Error, 0))
 	}
@@ -566,9 +558,6 @@ func (m *Model) closeGrown(d *desk) []tea.Cmd {
 	}
 	if d.findings != nil {
 		cmds = append(cmds, m.wm.Close(d.findings))
-	}
-	if d.system != nil {
-		cmds = append(cmds, m.wm.Close(d.system))
 	}
 	return append(cmds, m.wm.Close(d.approval))
 }

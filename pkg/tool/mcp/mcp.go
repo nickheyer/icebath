@@ -49,42 +49,20 @@ type Root struct {
 	Name string `json:"name,omitempty"`
 }
 
-// Answers a sampling or elicitation request from the server with the raw result
-type Handler func(ctx context.Context, params json.RawMessage) (json.RawMessage, error)
-
-// Progress a server reports for one request
-type Progress struct {
-	Token    string
-	Progress float64
-	Total    float64
-	Message  string
-}
-
-// What the client declares and answers for a server
+// What the client declares to a server
 type Options struct {
-	Info Info
 	// Roots served to the server, declaring the roots capability when non empty
 	Roots []Root
-	// Answers sampling/createMessage requests, declaring the sampling capability when set
-	Sampler Handler
-	// Answers elicitation/create requests, declaring the elicitation capability when set
-	Elicitor Handler
 }
 
 // What the server said about itself during initialization
 type ServerInfo struct {
-	Name               string
-	Version            string
-	ProtocolVersion    string
-	Instructions       string
-	Tools              bool
-	ToolsChange        bool
-	Resources          bool
-	ResourcesChange    bool
-	ResourcesSubscribe bool
-	Prompts            bool
-	PromptsChange      bool
-	Logging            bool
+	Name            string
+	Version         string
+	ProtocolVersion string
+	Instructions    string
+	// Offers tools
+	Tools bool
 }
 
 type rpcMessage struct {
@@ -114,17 +92,7 @@ type initializeParams struct {
 type initializeResult struct {
 	ProtocolVersion string `json:"protocolVersion"`
 	Capabilities    struct {
-		Tools *struct {
-			ListChanged bool `json:"listChanged"`
-		} `json:"tools"`
-		Resources *struct {
-			ListChanged bool `json:"listChanged"`
-			Subscribe   bool `json:"subscribe"`
-		} `json:"resources"`
-		Prompts *struct {
-			ListChanged bool `json:"listChanged"`
-		} `json:"prompts"`
-		Logging *struct{} `json:"logging"`
+		Tools *struct{} `json:"tools"`
 	} `json:"capabilities"`
 	ServerInfo   Info   `json:"serverInfo"`
 	Instructions string `json:"instructions"`
@@ -132,25 +100,20 @@ type initializeResult struct {
 
 // Connected server with its request multiplexer
 type Client struct {
-	name       string
-	t          Transport
-	opts       Options
-	mu         sync.Mutex
-	next       int64
-	pending    map[string]chan rpcMessage
-	progress   map[string]context.Context
-	closed     chan struct{}
-	closeOnce  sync.Once
-	err        error
-	server     ServerInfo
-	notes      chan rpcMessage
-	notesDone  chan struct{}
-	onTools    func()
-	onLog      func(level, logger string, data json.RawMessage)
-	onRes      func()
-	onResUpd   func(uri string)
-	onPrompts  func()
-	onProgress func(Progress)
+	name      string
+	t         Transport
+	opts      Options
+	mu        sync.Mutex
+	next      int64
+	pending   map[string]chan rpcMessage
+	progress  map[string]context.Context
+	closed    chan struct{}
+	closeOnce sync.Once
+	err       error
+	server    ServerInfo
+	notes     chan rpcMessage
+	notesDone chan struct{}
+	onTools   func()
 }
 
 // Dials the server, performs the initialize handshake and starts reading
@@ -172,7 +135,7 @@ func Attach(ctx context.Context, name string, t Transport, o Options) (*Client, 
 	c := &Client{name: name, t: t, opts: o, pending: map[string]chan rpcMessage{}, progress: map[string]context.Context{}, closed: make(chan struct{}), notes: make(chan rpcMessage, 64), notesDone: make(chan struct{})}
 	go c.read()
 	go c.notify()
-	raw, err := c.Call(ctx, "initialize", initializeParams{ProtocolVersion: Version, Capabilities: c.capabilities(), ClientInfo: o.Info})
+	raw, err := c.Call(ctx, "initialize", initializeParams{ProtocolVersion: Version, Capabilities: c.capabilities(), ClientInfo: Info{Name: "icebath"}})
 	if err != nil {
 		c.Close()
 		return nil, err
@@ -186,17 +149,7 @@ func Attach(ctx context.Context, name string, t Transport, o Options) (*Client, 
 		c.Close()
 		return nil, fmt.Errorf("mcp: server speaks protocol %q, this client accepts %v", res.ProtocolVersion, SupportedVersions)
 	}
-	c.server = ServerInfo{Name: res.ServerInfo.Name, Version: res.ServerInfo.Version, ProtocolVersion: res.ProtocolVersion, Instructions: res.Instructions}
-	if res.Capabilities.Tools != nil {
-		c.server.Tools, c.server.ToolsChange = true, res.Capabilities.Tools.ListChanged
-	}
-	if res.Capabilities.Resources != nil {
-		c.server.Resources, c.server.ResourcesChange, c.server.ResourcesSubscribe = true, res.Capabilities.Resources.ListChanged, res.Capabilities.Resources.Subscribe
-	}
-	if res.Capabilities.Prompts != nil {
-		c.server.Prompts, c.server.PromptsChange = true, res.Capabilities.Prompts.ListChanged
-	}
-	c.server.Logging = res.Capabilities.Logging != nil
+	c.server = ServerInfo{Name: res.ServerInfo.Name, Version: res.ServerInfo.Version, ProtocolVersion: res.ProtocolVersion, Instructions: res.Instructions, Tools: res.Capabilities.Tools != nil}
 	if err := c.Notify(ctx, "notifications/initialized", nil); err != nil {
 		c.Close()
 		return nil, err
@@ -213,23 +166,14 @@ func supported(version string) bool {
 	return false
 }
 
-// Capabilities declared to the server from the handlers the options carry
+// Capabilities declared to the server, the roots when any are offered
 func (c *Client) capabilities() map[string]any {
 	caps := map[string]any{}
 	if len(c.opts.Roots) > 0 {
 		caps["roots"] = map[string]any{"listChanged": false}
 	}
-	if c.opts.Sampler != nil {
-		caps["sampling"] = map[string]any{}
-	}
-	if c.opts.Elicitor != nil {
-		caps["elicitation"] = map[string]any{}
-	}
 	return caps
 }
-
-// Label used in tool names
-func (c *Client) Name() string { return c.name }
 
 // Label used in tool names, shared with managed servers
 func (c *Client) Label() string { return c.name }
@@ -251,41 +195,6 @@ func (c *Client) OnToolsChanged(fn func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.onTools = fn
-}
-
-// Registers the callback run for every log notification from the server
-func (c *Client) OnLog(fn func(level, logger string, data json.RawMessage)) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.onLog = fn
-}
-
-// Registers the callback run when the server announces a changed resource list
-func (c *Client) OnResourcesChanged(fn func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.onRes = fn
-}
-
-// Registers the callback run when a subscribed resource changes
-func (c *Client) OnResourceUpdated(fn func(uri string)) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.onResUpd = fn
-}
-
-// Registers the callback run when the server announces a changed prompt list
-func (c *Client) OnPromptsChanged(fn func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.onPrompts = fn
-}
-
-// Registers the callback run for every progress notification
-func (c *Client) OnProgress(fn func(Progress)) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.onProgress = fn
 }
 
 // Sends a request and waits for its result, failing on an error response or a closed transport
@@ -367,18 +276,6 @@ func (c *Client) Notify(ctx context.Context, method string, params any) error {
 		return err
 	}
 	return c.t.Send(ctx, msg)
-}
-
-// Checks the server is alive
-func (c *Client) Ping(ctx context.Context) error {
-	_, err := c.Call(ctx, "ping", nil)
-	return err
-}
-
-// Asks the server to send log notifications at level and above
-func (c *Client) SetLogLevel(ctx context.Context, level string) error {
-	_, err := c.Call(ctx, "logging/setLevel", map[string]string{"level": level})
-	return err
 }
 
 // Stops reading and closes the transport
@@ -465,11 +362,9 @@ func (c *Client) dispatch(msg rpcMessage) {
 	}
 }
 
-// Answers the requests a server may send using the configured handlers
+// Answers the requests a server may send, pings and the roots listing
 func (c *Client) answer(req rpcMessage) {
 	reply := rpcMessage{ID: req.ID}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
 	switch req.Method {
 	case "ping":
 		reply.Result = json.RawMessage(`{}`)
@@ -480,10 +375,6 @@ func (c *Client) answer(req rpcMessage) {
 		}
 		raw, _ := json.Marshal(map[string]any{"roots": c.opts.Roots})
 		reply.Result = raw
-	case "sampling/createMessage":
-		reply = c.handle(reply, c.opts.Sampler, ctx, req)
-	case "elicitation/create":
-		reply = c.handle(reply, c.opts.Elicitor, ctx, req)
 	default:
 		reply.Error = &Error{Code: -32601, Message: "method not found: " + req.Method}
 	}
@@ -492,29 +383,6 @@ func (c *Client) answer(req rpcMessage) {
 		return
 	}
 	c.t.Send(context.Background(), msg)
-}
-
-// Runs a handler for a server request, mapping a missing handler or a failure to a JSON-RPC error
-func (c *Client) handle(reply rpcMessage, h Handler, ctx context.Context, req rpcMessage) rpcMessage {
-	if h == nil {
-		reply.Error = &Error{Code: -32601, Message: "method not found: " + req.Method}
-		return reply
-	}
-	res, err := h(ctx, req.Params)
-	if err != nil {
-		var rpcErr *Error
-		if errors.As(err, &rpcErr) {
-			reply.Error = rpcErr
-		} else {
-			reply.Error = &Error{Code: -32603, Message: err.Error()}
-		}
-		return reply
-	}
-	if len(res) == 0 {
-		res = json.RawMessage(`{}`)
-	}
-	reply.Result = res
-	return reply
 }
 
 // Delivers queued notifications on their own goroutine so callbacks may call back into the client
@@ -532,27 +400,12 @@ func (c *Client) notify() {
 
 func (c *Client) notified(msg rpcMessage) {
 	c.mu.Lock()
-	onTools, onLog, onRes, onResUpd, onPrompts, onProgress := c.onTools, c.onLog, c.onRes, c.onResUpd, c.onPrompts, c.onProgress
+	onTools := c.onTools
 	c.mu.Unlock()
 	switch msg.Method {
 	case "notifications/tools/list_changed":
 		if onTools != nil {
 			onTools()
-		}
-	case "notifications/resources/list_changed":
-		if onRes != nil {
-			onRes()
-		}
-	case "notifications/prompts/list_changed":
-		if onPrompts != nil {
-			onPrompts()
-		}
-	case "notifications/resources/updated":
-		var p struct {
-			URI string `json:"uri"`
-		}
-		if onResUpd != nil && json.Unmarshal(msg.Params, &p) == nil {
-			onResUpd(p.URI)
 		}
 	case "notifications/progress":
 		var p struct {
@@ -568,27 +421,11 @@ func (c *Client) notified(msg rpcMessage) {
 		if json.Unmarshal(p.Token, &token) != nil {
 			token = string(p.Token)
 		}
-		prog := Progress{Token: token, Progress: p.Progress, Total: p.Total, Message: p.Message}
 		c.mu.Lock()
 		ctx := c.progress[token]
 		c.mu.Unlock()
 		if ctx != nil {
 			tool.Report(ctx, tool.Progress{Text: p.Message, Done: int(p.Progress), Total: int(p.Total)})
-		}
-		if onProgress != nil {
-			onProgress(prog)
-		}
-	case "notifications/message":
-		if onLog == nil {
-			return
-		}
-		var p struct {
-			Level  string          `json:"level"`
-			Logger string          `json:"logger"`
-			Data   json.RawMessage `json:"data"`
-		}
-		if json.Unmarshal(msg.Params, &p) == nil {
-			onLog(p.Level, p.Logger, p.Data)
 		}
 	}
 }
@@ -604,4 +441,312 @@ func encode(msg rpcMessage, params any) ([]byte, error) {
 		msg.Params = raw
 	}
 	return json.Marshal(msg)
+}
+
+// Connection state of a managed server
+type State string
+
+const (
+	StateConnecting   State = "connecting"
+	StateConnected    State = "connected"
+	StateDisconnected State = "disconnected"
+	StateClosed       State = "closed"
+)
+
+// Server kept connected across failures, with tools that follow the live client
+type Server struct {
+	Name    string
+	Dialer  Dialer
+	Options Options
+	// Budget for each handshake and tool listing, thirty seconds when zero
+	Timeout time.Duration
+
+	mu       sync.Mutex
+	client   *Client
+	state    State
+	err      error
+	tools    []tool.Tool
+	info     ServerInfo
+	onState  []func(State, error)
+	onTools  []func([]tool.Tool)
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	attempts int
+}
+
+func (s *Server) timeout() time.Duration {
+	if s.Timeout > 0 {
+		return s.Timeout
+	}
+	return 30 * time.Second
+}
+
+// Connects, lists the tools and starts watching the connection, failing when the first connect fails
+func (s *Server) Open(ctx context.Context) error {
+	if s.Dialer == nil {
+		return errors.New("mcp: server dialer is required")
+	}
+	s.mu.Lock()
+	if s.cancel != nil {
+		s.mu.Unlock()
+		return errors.New("mcp: server already open")
+	}
+	sctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	s.state = StateConnecting
+	s.mu.Unlock()
+	c, err := s.connect(ctx)
+	if err != nil {
+		s.mu.Lock()
+		s.cancel = nil
+		s.state = StateDisconnected
+		s.err = err
+		s.mu.Unlock()
+		cancel()
+		return err
+	}
+	s.adopt(c)
+	s.wg.Add(1)
+	go s.supervise(sctx)
+	return nil
+}
+
+// Dials, handshakes and lists tools under the server timeout
+func (s *Server) connect(ctx context.Context) (*Client, error) {
+	cctx, cancel := context.WithTimeout(ctx, s.timeout())
+	defer cancel()
+	c, err := Connect(cctx, s.Name, s.Dialer, s.Options)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Takes a fresh client into service, wiring callbacks and publishing its tools
+func (s *Server) adopt(c *Client) {
+	c.OnToolsChanged(func() {
+		go s.refresh(c)
+	})
+	s.mu.Lock()
+	s.client = c
+	s.info = c.Server()
+	s.state = StateConnected
+	s.err = nil
+	s.attempts = 0
+	s.mu.Unlock()
+	s.refresh(c)
+	s.announce(StateConnected, nil)
+}
+
+// Lists the tools of a client and publishes them when the set changed
+func (s *Server) refresh(c *Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout())
+	defer cancel()
+	var tools []tool.Tool
+	if c.Server().Tools {
+		defs, err := c.listTools(ctx)
+		if err != nil {
+			return
+		}
+		tools = make([]tool.Tool, len(defs))
+		for i, d := range defs {
+			tools[i] = wrap(s, d)
+		}
+	}
+	s.mu.Lock()
+	if s.client != c {
+		s.mu.Unlock()
+		return
+	}
+	changed := !sameTools(s.tools, tools)
+	s.tools = tools
+	fns := append([]func([]tool.Tool){}, s.onTools...)
+	s.mu.Unlock()
+	if !changed {
+		return
+	}
+	for _, fn := range fns {
+		fn(tools)
+	}
+}
+
+func sameTools(a, b []tool.Tool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		da, db := a[i].Definition(), b[i].Definition()
+		if da.Name != db.Name || da.Description != db.Description || string(da.Parameters) != string(db.Parameters) || tool.Describe(a[i]) != tool.Describe(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// Watches the live client and reconnects with backoff whenever it fails
+func (s *Server) supervise(ctx context.Context) {
+	defer s.wg.Done()
+	for {
+		s.mu.Lock()
+		c := s.client
+		s.mu.Unlock()
+		if c == nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.Done():
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		s.mu.Lock()
+		s.state = StateDisconnected
+		s.err = c.Err()
+		s.mu.Unlock()
+		s.announce(StateDisconnected, c.Err())
+		if !s.reconnect(ctx) {
+			return
+		}
+	}
+}
+
+// Tries to connect again until it works or the server is closed
+func (s *Server) reconnect(ctx context.Context) bool {
+	delay := time.Second
+	for {
+		s.mu.Lock()
+		s.state = StateConnecting
+		s.attempts++
+		s.mu.Unlock()
+		s.announce(StateConnecting, nil)
+		c, err := s.connect(ctx)
+		if err == nil {
+			s.adopt(c)
+			return true
+		}
+		s.mu.Lock()
+		s.state = StateDisconnected
+		s.err = err
+		s.mu.Unlock()
+		s.announce(StateDisconnected, err)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return false
+		}
+		delay = min(delay*2, 30*time.Second)
+	}
+}
+
+func (s *Server) announce(state State, err error) {
+	s.mu.Lock()
+	fns := append([]func(State, error){}, s.onState...)
+	s.mu.Unlock()
+	for _, fn := range fns {
+		fn(state, err)
+	}
+}
+
+// Registers a callback run on every connection state change
+func (s *Server) OnState(fn func(State, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onState = append(s.onState, fn)
+}
+
+// Registers a callback run with the new tool set whenever it changes
+func (s *Server) OnTools(fn func([]tool.Tool)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onTools = append(s.onTools, fn)
+}
+
+// Current state with the error behind a disconnect
+func (s *Server) State() (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state, s.err
+}
+
+// Reconnect attempts made since the last successful connection
+func (s *Server) Attempts() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.attempts
+}
+
+// Live client, nil while disconnected
+func (s *Server) Client() *Client {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != StateConnected {
+		return nil
+	}
+	return s.client
+}
+
+// What the server said about itself at the last handshake
+func (s *Server) Info() ServerInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.info
+}
+
+// Tools as last listed, each routed through whichever client is live when it runs
+func (s *Server) Tools() []tool.Tool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]tool.Tool(nil), s.tools...)
+}
+
+// Label used in tool names
+func (s *Server) Label() string { return s.Name }
+
+// Sends a request through the live client, failing while disconnected
+func (s *Server) CallWithProgress(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
+	c := s.Client()
+	if c == nil {
+		_, err := s.State()
+		if err == nil {
+			err = errors.New("mcp: server " + s.Name + " is not connected")
+		}
+		return nil, err
+	}
+	return c.CallWithProgress(ctx, method, params)
+}
+
+// Sends a plain request through the live client
+func (s *Server) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	c := s.Client()
+	if c == nil {
+		_, err := s.State()
+		if err == nil {
+			err = errors.New("mcp: server " + s.Name + " is not connected")
+		}
+		return nil, err
+	}
+	return c.Call(ctx, method, params)
+}
+
+// Stops supervising and closes the live client
+func (s *Server) Close() error {
+	s.mu.Lock()
+	cancel := s.cancel
+	c := s.client
+	s.cancel = nil
+	s.client = nil
+	s.state = StateClosed
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	var err error
+	if c != nil {
+		err = c.Close()
+	}
+	s.wg.Wait()
+	s.announce(StateClosed, nil)
+	return err
 }

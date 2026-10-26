@@ -2,16 +2,22 @@
 package profiles
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -45,7 +51,7 @@ type Profile struct {
 	// Header or query parameter name carrying the credential
 	AuthName string `json:"auth_name,omitempty"`
 	// Where the credential comes from
-	Key Source `json:"key,omitempty"`
+	Key Source `json:"key,omitzero"`
 	// Static headers the endpoint expects on every request
 	Header http.Header `json:"header,omitempty"`
 	// Static query parameters the endpoint expects on every request
@@ -56,10 +62,18 @@ type Profile struct {
 	BaseURLEnv string `json:"base_url_env,omitempty"`
 	// Request fields merged into every turn sent through the endpoint
 	Extra map[string]json.RawMessage `json:"extra,omitempty"`
-	// How the endpoint hears a session asking it to keep nothing, nil taking the template's
-	Ghost *provider.Directive `json:"ghost,omitempty"`
-	// How the endpoint hears a session asking it to add nothing of its own, nil taking the template's
-	Bare *provider.Directive `json:"bare,omitempty"`
+	// Base prompt sent in place of the built in one, none sending no prompt at all
+	System Source `json:"system,omitzero"`
+	// Leaves the environment block about the machine and session out of the system prompt
+	NoContext bool `json:"no_context,omitempty"`
+	// Asks the endpoint to add no prompt or tools of its own
+	Bare bool `json:"bare,omitempty"`
+	// Keeps sessions off disk and asks the endpoint to keep nothing of them
+	Ghost bool `json:"ghost,omitempty"`
+	// Headers and body fields that ask the endpoint to keep nothing, nil taking the template's
+	GhostDirective *provider.Directive `json:"ghost_directive,omitempty"`
+	// Headers and body fields that ask the endpoint to add nothing of its own, nil taking the template's
+	BareDirective *provider.Directive `json:"bare_directive,omitempty"`
 	// Settings read by registered auth builders and vendors
 	Options map[string]string `json:"options,omitempty"`
 }
@@ -104,11 +118,14 @@ func (p Profile) Expand() (Profile, error) {
 	if out.Extra == nil {
 		out.Extra = t.Extra
 	}
-	if out.Ghost == nil {
-		out.Ghost = cloneDirective(t.Ghost)
+	if out.System.Kind == "" {
+		out.System = t.System
 	}
-	if out.Bare == nil {
-		out.Bare = cloneDirective(t.Bare)
+	if out.GhostDirective == nil {
+		out.GhostDirective = cloneDirective(t.GhostDirective)
+	}
+	if out.BareDirective == nil {
+		out.BareDirective = cloneDirective(t.BareDirective)
 	}
 	if out.Options == nil {
 		out.Options = t.Options
@@ -163,7 +180,10 @@ func (p Profile) Validate() error {
 			return fmt.Errorf("profile %s: unknown auth kind %q", p.Name, p.Auth)
 		}
 	}
-	return p.Key.validate(p.Name)
+	if err := p.Key.validate(p.Name, "key"); err != nil {
+		return err
+	}
+	return p.System.validate(p.Name, "system")
 }
 
 // Reports whether the generic auth kinds need a credential value
@@ -246,7 +266,19 @@ func (p Profile) Build(key string) (*provider.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &provider.Provider{Name: p.Name, Protocol: proto, BaseURL: p.BaseURL, Auth: auth, Header: p.Header.Clone(), Query: cloneValues(p.Query), Extra: maps.Clone(p.Extra), Ghost: Heard(p.Ghost), Bare: Heard(p.Bare), Retry: provider.DefaultRetry}, nil
+	return &provider.Provider{Name: p.Name, Protocol: proto, BaseURL: p.BaseURL, Auth: auth, Header: p.Header.Clone(), Query: cloneValues(p.Query), Extra: maps.Clone(p.Extra), Directives: p.asked()}, nil
+}
+
+// Directives the profile asks of the endpoint, each as the endpoint hears it
+func (p Profile) asked() []provider.Directive {
+	var out []provider.Directive
+	if p.Ghost && p.GhostDirective != nil {
+		out = append(out, p.GhostDirective.Clone())
+	}
+	if p.Bare && p.BareDirective != nil {
+		out = append(out, p.BareDirective.Clone())
+	}
+	return out
 }
 
 // Profile with the base URL override from the environment applied when the variable is set
@@ -298,14 +330,6 @@ type Model struct {
 	Created      int64         `json:"created,omitempty"`
 	Pricing      *Pricing      `json:"pricing,omitempty"`
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
-}
-
-// Dollars the usage costs on this model, zero when no pricing is known
-func (m Model) Cost(u protocol.Usage) float64 {
-	if m.Pricing == nil {
-		return 0
-	}
-	return m.Pricing.Cost(u)
 }
 
 // Conventions of one endpoint family registered by its package
@@ -410,18 +434,10 @@ func (p Profile) Clone() Profile {
 	p.Query = cloneValues(p.Query)
 	p.Models = append([]string(nil), p.Models...)
 	p.Extra = cloneExtra(p.Extra)
-	p.Ghost = cloneDirective(p.Ghost)
-	p.Bare = cloneDirective(p.Bare)
+	p.GhostDirective = cloneDirective(p.GhostDirective)
+	p.BareDirective = cloneDirective(p.BareDirective)
 	p.Options = maps.Clone(p.Options)
 	return p
-}
-
-// How the endpoint hears a directive a profile names, nothing while it names none
-func Heard(d *provider.Directive) provider.Directive {
-	if d == nil {
-		return provider.Directive{}
-	}
-	return d.Clone()
 }
 
 func cloneDirective(d *provider.Directive) *provider.Directive {
@@ -471,4 +487,153 @@ func cloneValues(v url.Values) url.Values {
 		out[k] = append([]string(nil), vs...)
 	}
 	return out
+}
+
+// Environment variable naming the directory every icebath configuration file lives in
+const ConfigDirEnv = "ICEBATH_CONFIG_DIR"
+
+// Directory holding icebath configuration, the environment override, else icebath under the user configuration directory
+func ConfigDir() (string, error) {
+	if dir := os.Getenv(ConfigDirEnv); dir != "" {
+		return filepath.Abs(dir)
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "icebath"), nil
+}
+
+// Path of the user profile list inside the configuration directory
+func UserPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "profiles.json"), nil
+}
+
+// Issues a GET through the provider and decodes the JSON body into v
+func GetJSON(ctx context.Context, p *provider.Provider, path string, query url.Values, v any) error {
+	return DoJSON(ctx, p, protocol.Call{Method: http.MethodGet, Path: path, Query: query, Header: http.Header{"Accept": {"application/json"}}}, v)
+}
+
+// Issues any call through the provider and decodes the JSON body into v
+func DoJSON(ctx context.Context, p *provider.Provider, call protocol.Call, v any) error {
+	resp, err := p.Do(ctx, call)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("%s %s: %w", call.Method, call.Path, err)
+	}
+	return nil
+}
+
+// Where a text such as a credential or a prompt comes from
+type SourceKind string
+
+const (
+	// Value names an environment variable
+	SourceEnv SourceKind = "env"
+	// Value is the text itself
+	SourceStatic SourceKind = "static"
+	// Value is a path whose trimmed contents are the text
+	SourceFile SourceKind = "file"
+	// Value is a shell command whose trimmed output is the text
+	SourceExec SourceKind = "exec"
+	// No text, kept over the source of a template
+	SourceNone SourceKind = "none"
+)
+
+// Budget for an exec source
+const ExecTimeout = 15 * time.Second
+
+// One source of text, the zero value yielding none
+type Source struct {
+	Kind  SourceKind `json:"kind,omitempty"`
+	Value string     `json:"value,omitempty"`
+}
+
+func Env(name string) Source { return Source{Kind: SourceEnv, Value: name} }
+
+// Checks that a kind taking a value has one, naming what the source feeds in any error
+func (s Source) validate(profile, what string) error {
+	switch s.Kind {
+	case "", SourceNone:
+		return nil
+	case SourceEnv, SourceStatic, SourceFile, SourceExec:
+		if s.Value == "" {
+			return fmt.Errorf("profile %s: %s %s source needs a value", profile, what, s.Kind)
+		}
+		return nil
+	}
+	return fmt.Errorf("profile %s: unknown %s source %q", profile, what, s.Kind)
+}
+
+// Names the source without revealing static text
+func (s Source) Describe() string {
+	switch s.Kind {
+	case "", SourceNone:
+		return "none"
+	case SourceStatic:
+		return "static"
+	}
+	return string(s.Kind) + " " + s.Value
+}
+
+// Produces the text, empty with no error for the zero source
+func (s Source) Resolve(ctx context.Context) (string, error) {
+	switch s.Kind {
+	case "", SourceNone:
+		return "", nil
+	case SourceEnv:
+		return os.Getenv(s.Value), nil
+	case SourceStatic:
+		return s.Value, nil
+	case SourceFile:
+		data, err := os.ReadFile(s.Value)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(data)), nil
+	case SourceExec:
+		ctx, cancel := context.WithTimeout(ctx, ExecTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "sh", "-c", s.Value)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("exec source: %w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		return strings.TrimSpace(stdout.String()), nil
+	}
+	return "", fmt.Errorf("unknown key source %q", s.Kind)
+}
+
+// Accepts the object form or a string joining kind and value with a colon
+func (s *Source) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		kind, value, ok := strings.Cut(text, ":")
+		if !ok {
+			return errors.New("source string must look like kind:value")
+		}
+		*s = Source{Kind: SourceKind(kind), Value: value}
+		return nil
+	}
+	var obj struct {
+		Kind  SourceKind `json:"kind"`
+		Value string     `json:"value"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+	*s = Source(obj)
+	return nil
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -127,8 +126,6 @@ func encode(msg any) (Line, bool) {
 			l.Error = v.Attempt.Err.Error()
 		}
 		return l, true
-	case harness.FailoverMsg:
-		return Line{Type: "failover", Time: time.Now(), Index: v.From, Error: v.Err.Error()}, true
 	case harness.SavedMsg:
 		l := Line{Type: "saved", Time: time.Now(), Text: v.Session, Path: v.Path}
 		if v.Err != nil {
@@ -299,25 +296,9 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 		}
 		usage := run.Response().Usage
 		fmt.Fprintf(errw, "session %s %s %s in %s out %s %s\n", app.Session.ID(), t.Glyphs.Sep, render.Tokens(usage.Input), render.Tokens(usage.Output), t.Glyphs.Sep, render.Elapsed(run.Elapsed(run.Finished())))
-		if changed := app.Workspace.Changed(); len(changed) > 0 {
-			paths := make([]string, 0, len(changed))
-			for _, c := range changed {
-				paths = append(paths, shortPath(app.Workspace.Dir(), c.Path))
-			}
-			fmt.Fprintf(errw, "%s %d changed: %s\n", t.Glyphs.Changed, len(paths), strings.Join(paths, ", "))
-		}
 	}
 	if run.Err() != nil {
 		return 1
 	}
 	return 0
-}
-
-// Path relative to the working directory when it lies inside it
-func shortPath(dir, path string) string {
-	rel, err := filepath.Rel(dir, path)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return path
-	}
-	return rel
 }

@@ -145,12 +145,6 @@ func Hunks(lines []Line, context int) [][]Line {
 	return hunks
 }
 
-// Renders a diff with line numbers, colors and hunk separators at width
-func DiffText(before, after string, width int, t theme.Theme) string {
-	lines := Diff(before, after)
-	return FormatDiff(lines, width, t)
-}
-
 // Renders already computed diff lines
 func FormatDiff(lines []Line, width int, t theme.Theme) string {
 	added, removed := Stat(lines)

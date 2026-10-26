@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tool"
 	"github.com/nickheyer/icebath/pkg/tool/mcp"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -23,7 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Configuration surfaces behind tabs, profiles, models, app settings, rules, hooks, servers, tools, the log and the keybinds
+// Configuration surfaces behind tabs, profiles, models, app settings, rules, hooks, servers, tools and the keybinds
 type Config struct {
 	*wm.Tabs
 	env      *Env
@@ -34,7 +35,6 @@ type Config struct {
 	hooks    *lister
 	servers  *lister
 	tools    *lister
-	log      *lister
 	keys     *lister
 	list     []profiles.Model
 	loaded   string
@@ -74,7 +74,7 @@ func credential(p profiles.Profile) string {
 func NewConfig(env *Env) *Config {
 	c := &Config{env: env, creds: map[string]string{}, scopes: map[string]string{}}
 	c.app = newSettings(env)
-	c.Tabs = wm.NewTabs(env.Theme, "CONFIG", env.Theme.Glyphs.Config, c.profilesTab(), c.modelsTab(), c.app, c.rulesTab(), c.hooksTab(), c.mcpTab(), c.toolsTab(), c.logTab(), c.keysTab())
+	c.Tabs = wm.NewTabs(env.Theme, "CONFIG", env.Theme.Glyphs.Config, c.profilesTab(), c.modelsTab(), c.app, c.rulesTab(), c.hooksTab(), c.mcpTab(), c.toolsTab(), c.keysTab())
 	return c
 }
 
@@ -173,6 +173,18 @@ func headerNames(h map[string][]string) string {
 	return strings.Join(slices.Sorted(maps.Keys(h)), ", ")
 }
 
+// Headers and body fields a directive sends, nothing while the profile names none
+func heard(d *provider.Directive) string {
+	if d == nil {
+		return "nothing"
+	}
+	names := append(slices.Sorted(maps.Keys(d.Header)), slices.Sorted(maps.Keys(d.Extra))...)
+	if len(names) == 0 {
+		return "nothing"
+	}
+	return strings.Join(names, ", ")
+}
+
 // Detail lines of the endpoint a profile resolves to
 func (c *Config) endpointDetail(p profiles.Profile) []string {
 	t := c.env.Theme
@@ -195,6 +207,22 @@ func (c *Config) endpointDetail(p profiles.Profile) []string {
 	}
 	for _, k := range slices.Sorted(maps.Keys(p.Options)) {
 		out = append(out, render.KV(k, p.Options[k], t))
+	}
+	if p.System.Kind != "" {
+		system := p.System.Describe()
+		if p.System.Kind == profiles.SourceStatic {
+			system = render.Summary(p.System.Value, 60, t)
+		}
+		out = append(out, render.KV("system", system, t))
+	}
+	if p.NoContext {
+		out = append(out, render.KV("context", "left out", t))
+	}
+	if p.Bare {
+		out = append(out, render.KV("bare", "sends "+heard(p.BareDirective), t))
+	}
+	if p.Ghost {
+		out = append(out, render.KV("ghost", "off disk, sends "+heard(p.GhostDirective), t))
 	}
 	return out
 }
@@ -807,55 +835,6 @@ func (c *Config) toolsTab() *lister {
 			err := c.env.Editor.SetToolEnabled(name, on)
 			l.refresh()
 			return outcome(err, name+" turned "+word)
-		},
-	}
-	return l
-}
-
-// Application log of runs, tools, approvals, endpoints, servers, hooks, jobs and notices, newest last
-func (c *Config) logTab() *lister {
-	t := c.env.Theme
-	l := &lister{env: c.env, title: "log", glyph: c.env.Theme.Glyphs.Log, id: "config:log", ctx: keys.Log, primary: "config.log.detail", follow: true, cols: []render.Column{{Title: "TIME"}, {Title: "LEVEL"}, {Title: "SOURCE", Max: 24}, {Title: "MESSAGE", Flex: 1}}}
-	c.log = l
-	var lines []harness.JournalLine
-	l.rows = func() [][]string {
-		lines = nil
-		if c.env.Journal != nil {
-			lines = c.env.Journal.Lines()
-		}
-		rows := make([][]string, 0, len(lines))
-		for _, line := range lines {
-			level := line.Level
-			switch level {
-			case harness.LevelError:
-				level = render.Bad(level, t)
-			case harness.LevelWarn:
-				level = render.Warm(level, t)
-			case harness.LevelDebug:
-				level = render.Dim(level, t)
-			default:
-				level = render.Cool(level, t)
-			}
-			rows = append(rows, []string{line.Time.Local().Format("15:04:05"), level, line.Source, line.Text})
-		}
-		return rows
-	}
-	l.detail = func(i int) []string {
-		if i < 0 || i >= len(lines) {
-			return nil
-		}
-		line := lines[i]
-		return append([]string{render.KV("at", line.Time.Local().Format("2006-01-02 15:04:05.000"), t), render.KV("from", line.Source, t), render.KV("level", line.Level, t)}, strings.Split(line.Text, "\n")...)
-	}
-	l.empty = func() string { return "nothing logged" }
-	l.actions = map[string]func(*lister, int) tea.Cmd{
-		"config.log.detail": toggleDetail,
-		"config.log.clear": func(l *lister, i int) tea.Cmd {
-			if c.env.Journal != nil {
-				c.env.Journal.Clear()
-			}
-			l.refresh()
-			return nil
 		},
 	}
 	return l

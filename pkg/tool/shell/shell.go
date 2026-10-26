@@ -3,13 +3,20 @@ package shell
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/tool"
 )
 
@@ -44,11 +51,6 @@ type Output struct {
 	Duration time.Duration
 }
 
-// Executes command lines somewhere, locally by default and over any transport by substitution
-type Runner interface {
-	Run(ctx context.Context, cmd Command) (Output, error)
-}
-
 // Structured outcome of a foreground Bash call
 type Run struct {
 	Command     string
@@ -64,8 +66,6 @@ type Run struct {
 
 // Settings shared by the shell tools
 type Options struct {
-	// Local when nil
-	Runner Runner
 	// Starting directory, the process working directory when empty
 	Dir string
 	// KEY=VALUE pairs every command sees
@@ -74,49 +74,46 @@ type Options struct {
 	Timeout time.Duration
 	// Largest timeout the model may ask for, ten minutes when zero
 	MaxTimeout time.Duration
-	// Bytes of output kept per foreground command, 30000 when zero
-	MaxOutput int
-	// Bytes of output kept per background job, one MiB when zero
-	MaxJobOutput int
-	// Finished background jobs remembered before the oldest is forgotten, 32 when zero
-	MaxJobs int
 	// Receives every background job start, output chunk and finish
 	OnJob func(JobEvent)
 }
 
-func (o Options) timeout() time.Duration    { return orDur(o.Timeout, 2*time.Minute) }
-func (o Options) maxTimeout() time.Duration { return orDur(o.MaxTimeout, 10*time.Minute) }
-func (o Options) maxOutput() int            { return orInt(o.MaxOutput, 30000) }
-func (o Options) maxJobOutput() int         { return orInt(o.MaxJobOutput, 1<<20) }
-func (o Options) maxJobs() int              { return orInt(o.MaxJobs, 32) }
+const (
+	// Bytes of output kept per foreground command
+	maxOutput = 30000
+	// Bytes of output kept per background job
+	maxJobOutput = 1 << 20
+	// Finished background jobs remembered before the oldest is forgotten
+	maxJobs = 32
+)
 
-func orDur(v, def time.Duration) time.Duration {
-	if v > 0 {
-		return v
+// Seconds a command may run when the model names none
+func (o Options) timeout() time.Duration {
+	if o.Timeout > 0 {
+		return o.Timeout
 	}
-	return def
+	return 2 * time.Minute
 }
 
-func orInt(v, def int) int {
-	if v > 0 {
-		return v
+// Longest run the model may ask for
+func (o Options) maxTimeout() time.Duration {
+	if o.MaxTimeout > 0 {
+		return o.MaxTimeout
 	}
-	return def
+	return 10 * time.Minute
 }
 
-// Reports whether the runner is a local bash, the one shell whose pipeline stage codes are read back
-func (s *Shell) pipelineCodes() bool {
-	l, ok := s.runner.(Local)
-	return ok && filepath.Base(l.shell()) == "bash"
+// Reports whether the local shell is bash, the one shell whose pipeline stage codes are read back
+func pipelineCodes() bool {
+	return filepath.Base(Local{}.shell()) == "bash"
 }
 
 // Shell state shared by Bash, BashOutput and KillShell
 type Shell struct {
-	opts   Options
-	runner Runner
-	mu     sync.Mutex
-	dir    string
-	jobs   *Jobs
+	opts Options
+	mu   sync.Mutex
+	dir  string
+	jobs *Jobs
 }
 
 // Builds a shell whose commands start in the configured directory
@@ -136,11 +133,7 @@ func New(o Options) (*Shell, error) {
 	if !st.IsDir() {
 		return nil, fmt.Errorf("shell: %s is not a directory", dir)
 	}
-	runner := o.Runner
-	if runner == nil {
-		runner = Local{}
-	}
-	return &Shell{opts: o, runner: runner, dir: dir, jobs: newJobs(o.maxJobOutput(), o.maxJobs(), o.OnJob)}, nil
+	return &Shell{opts: o, dir: dir, jobs: newJobs(o.OnJob)}, nil
 }
 
 // Every shell tool sharing this state
@@ -268,4 +261,204 @@ type reporting struct {
 func (r reporting) Write(p []byte) (int, error) {
 	tool.Report(r.ctx, tool.Progress{Stream: r.stream, Text: string(p)})
 	return len(p), nil
+}
+
+const bashSchema = `{"type":"object","properties":{
+"command":{"type":"string","description":"Command line to run"},
+"timeout":{"type":"integer","minimum":1,"description":"Milliseconds the command may run before it is killed"},
+"description":{"type":"string","description":"Short plain words saying what the command does, shown to the user"},
+"run_in_background":{"type":"boolean","description":"Start the command as a background job and return its id at once"}},
+"required":["command"],"additionalProperties":false}`
+
+type bash struct{ *Shell }
+
+// Tool that runs a command line in the shell, foreground or as a background job
+func (s *Shell) Bash() tool.Tool { return bash{s} }
+
+func (b bash) Definition() protocol.Tool {
+	pipes := "A pipeline exits with the code of its last command."
+	if pipelineCodes() {
+		pipes = "A pipeline exits with the code of its last command, and the code of every stage is listed when an earlier stage failed."
+	}
+	return protocol.Tool{
+		Name: BashName,
+		Description: fmt.Sprintf("Runs a command line in a shell and returns its output, exit code and whether it timed out. The working directory persists between calls. Stdin is closed. %s Commands run for %s by default and at most %s. Output is cut to %d bytes keeping the start and the end. With run_in_background the call returns a job id for BashOutput and KillShell.",
+			pipes, b.opts.timeout(), b.opts.maxTimeout(), maxOutput),
+		Parameters: json.RawMessage(bashSchema),
+	}
+}
+
+func (bash) Annotations() tool.Annotations {
+	return tool.Annotations{Destructive: true, OpenWorld: true}
+}
+
+func (b bash) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	var in struct {
+		Command     string `json:"command"`
+		Timeout     int    `json:"timeout"`
+		Description string `json:"description"`
+		Background  bool   `json:"run_in_background"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if strings.TrimSpace(in.Command) == "" {
+		return tool.Error("command is required"), nil
+	}
+	timeout := b.opts.timeout()
+	if in.Timeout > 0 {
+		timeout = min(time.Duration(in.Timeout)*time.Millisecond, b.opts.maxTimeout())
+	}
+	id := ""
+	if call, ok := tool.CallFrom(ctx); ok {
+		id = call.ID
+	}
+	if in.Background {
+		if in.Timeout == 0 {
+			timeout = b.opts.maxTimeout()
+		}
+		job := b.jobs.start(Command{ID: id, Description: in.Description, Line: in.Command, Dir: b.Dir(), Env: b.opts.Env, Timeout: timeout})
+		return tool.Textf("Started background job %s, read it with BashOutput and stop it with KillShell", job.ID).With(b.jobs.info(job)), nil
+	}
+	stdout, stderr := newCapture(maxOutput), newCapture(maxOutput)
+	cmd := Command{
+		ID:          id,
+		Description: in.Description,
+		Line:        in.Command,
+		Dir:         b.Dir(),
+		Env:         b.opts.Env,
+		Timeout:     timeout,
+		Stdout:      io.MultiWriter(stdout, reporting{ctx, "stdout"}),
+		Stderr:      io.MultiWriter(stderr, reporting{ctx, "stderr"}),
+	}
+	out, err := Local{}.Run(ctx, cmd)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if out.Dir != "" {
+		b.mu.Lock()
+		b.dir = out.Dir
+		b.mu.Unlock()
+	}
+	res := render(stdout.String(), stderr.String(), out, timeout)
+	return res.With(Run{Command: in.Command, Description: in.Description, Dir: out.Dir, ExitCode: out.ExitCode, Pipeline: out.Pipeline, TimedOut: out.TimedOut, Duration: out.Duration, Stdout: stdout.String(), Stderr: stderr.String()}), nil
+}
+
+// Formats stdout, stderr and the outcome, marking failures as error results
+func render(stdout, stderr string, out Output, timeout time.Duration) tool.Result {
+	var sb strings.Builder
+	sb.WriteString(strings.TrimRight(stdout, "\n"))
+	if stderr = strings.TrimRight(stderr, "\n"); stderr != "" {
+		if sb.Len() > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString("[stderr]\n")
+		sb.WriteString(stderr)
+	}
+	if sb.Len() == 0 {
+		sb.WriteString("(no output)")
+	}
+	if out.TimedOut {
+		fmt.Fprintf(&sb, "\n[timed out after %s]", timeout)
+	} else if out.ExitCode != 0 {
+		fmt.Fprintf(&sb, "\n[exit code %d]", out.ExitCode)
+	}
+	if earlierStageFailed(out.Pipeline) {
+		fmt.Fprintf(&sb, "\n[pipeline exit codes %s, an earlier command failed]", joinInts(out.Pipeline))
+	}
+	res := tool.Text(sb.String())
+	res.IsError = out.TimedOut || out.ExitCode != 0
+	return res
+}
+
+// Reports whether a stage before the last one exited nonzero
+func earlierStageFailed(codes []int) bool {
+	for i, c := range codes {
+		if i < len(codes)-1 && c != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func joinInts(ns []int) string {
+	parts := make([]string, len(ns))
+	for i, n := range ns {
+		parts[i] = strconv.Itoa(n)
+	}
+	return strings.Join(parts, " ")
+}
+
+// Runs command lines through the local shell in its own process group with stdin closed, bash when found on PATH
+type Local struct{}
+
+func (l Local) Run(ctx context.Context, cmd Command) (Output, error) {
+	if cmd.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cmd.Timeout)
+		defer cancel()
+	}
+	dirFile, err := os.CreateTemp("", "icebath-cwd-*")
+	if err != nil {
+		return Output{}, err
+	}
+	dirFile.Close()
+	defer os.Remove(dirFile.Name())
+	shell := l.shell()
+	c := exec.CommandContext(ctx, shell, l.args(shell, cmd.Line, dirFile.Name())...)
+	c.Dir = cmd.Dir
+	c.Env = append(os.Environ(), cmd.Env...)
+	c.Stdout = orDiscard(cmd.Stdout)
+	c.Stderr = orDiscard(cmd.Stderr)
+	proc.Group(c)
+	c.Cancel = func() error { return proc.Kill(c) }
+	c.WaitDelay = 2 * time.Second
+	start := time.Now()
+	if err := c.Start(); err != nil {
+		if ctx.Err() != nil {
+			return Output{Dir: cmd.Dir, ExitCode: 137, TimedOut: errors.Is(ctx.Err(), context.DeadlineExceeded)}, nil
+		}
+		return Output{}, err
+	}
+	waitErr := c.Wait()
+	out := Output{Dir: cmd.Dir, Duration: time.Since(start), TimedOut: errors.Is(ctx.Err(), context.DeadlineExceeded)}
+	if data, err := os.ReadFile(dirFile.Name()); err == nil {
+		lines := strings.SplitN(strings.TrimRight(string(data), "\n"), "\n", 2)
+		if dir := strings.TrimSpace(lines[0]); dir != "" && filepath.IsAbs(dir) {
+			out.Dir = dir
+		}
+		if len(lines) > 1 {
+			out.Pipeline = parseCodes(lines[1])
+		}
+	}
+	out.ExitCode = exitCode(c, waitErr, ctx.Err() != nil)
+	if waitErr != nil && !isExit(waitErr) {
+		return out, waitErr
+	}
+	return out, nil
+}
+
+func orDiscard(w io.Writer) io.Writer {
+	if w == nil {
+		return io.Discard
+	}
+	return w
+}
+
+func isExit(err error) bool {
+	var ee *exec.ExitError
+	return errors.As(err, &ee)
+}
+
+// Exit codes written as space separated integers, nothing for an unreadable line
+func parseCodes(line string) []int {
+	var out []int
+	for _, f := range strings.Fields(line) {
+		n, err := strconv.Atoi(f)
+		if err != nil {
+			return nil
+		}
+		out = append(out, n)
+	}
+	return out
 }

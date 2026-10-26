@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/agent/subagent"
 	"github.com/nickheyer/icebath/pkg/mission"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
@@ -18,7 +17,7 @@ import (
 )
 
 // Delay saves wait for more changes before writing
-const DefaultSaveDelay = 400 * time.Millisecond
+const saveDelay = 400 * time.Millisecond
 
 // One agent run the controller started or discovered as a child of one it started
 type Run struct {
@@ -107,8 +106,7 @@ func (r *Run) called(tool string) {
 
 // Writes sessions to a store after a short quiet period so a burst costs one write, skipping empty sessions
 type Saver struct {
-	Store session.Store
-	Delay time.Duration
+	Store *session.Store
 	// Reports whether a session stays off disk, nothing of it written while it does
 	Off    func(*session.Session) bool
 	send   Sender
@@ -117,8 +115,8 @@ type Saver struct {
 	wg     sync.WaitGroup
 }
 
-func NewSaver(store session.Store, send Sender) *Saver {
-	return &Saver{Store: store, Delay: DefaultSaveDelay, send: send, timers: map[*session.Session]*time.Timer{}}
+func NewSaver(store *session.Store, send Sender) *Saver {
+	return &Saver{Store: store, send: send, timers: map[*session.Session]*time.Timer{}}
 }
 
 // Schedules a save of the session once changes go quiet
@@ -131,12 +129,8 @@ func (s *Saver) Touch(sess *session.Session) {
 	if _, armed := s.timers[sess]; armed {
 		return
 	}
-	delay := s.Delay
-	if delay <= 0 {
-		delay = DefaultSaveDelay
-	}
 	s.wg.Add(1)
-	s.timers[sess] = time.AfterFunc(delay, func() {
+	s.timers[sess] = time.AfterFunc(saveDelay, func() {
 		defer s.wg.Done()
 		s.mu.Lock()
 		delete(s.timers, sess)
@@ -167,8 +161,8 @@ func (s *Saver) write(sess *session.Session) {
 	}
 	err := s.Store.Save(context.Background(), sess)
 	msg := SavedMsg{Session: sess.ID(), Info: sess.Info(), Err: err}
-	if p, ok := s.Store.(session.Pather); ok && err == nil {
-		msg.Path, _ = p.Path(sess.ID())
+	if err == nil {
+		msg.Path, _ = s.Store.Path(sess.ID())
 	}
 	if s.send != nil {
 		s.send(msg)
@@ -185,13 +179,12 @@ func (s *Saver) Wait() {
 
 // Starts, steers, interrupts and cancels runs and keeps a registry of them and their children
 type Controller struct {
-	Pump      *Pump
-	Saver     *Saver
-	Meter     *Meter
-	Workspace *Workspace
-	Missions  *mission.Store
+	Pump     *Pump
+	Saver    *Saver
+	Meter    *Meter
+	Missions *mission.Store
 	// Subagent tool whose children the controller can cancel and steer
-	Subagents *subagent.Tool
+	Subagents *agent.Subagents
 	// Mission store of a session, the shared one when nil or when it answers nil
 	MissionsOf func(*session.Session) *mission.Store
 	send       Sender
@@ -200,12 +193,11 @@ type Controller struct {
 	order      []string
 	active     map[*agent.Agent]bool
 	next       int
-	Clock      func() time.Time
 	wg         sync.WaitGroup
 }
 
 func NewController(send Sender, pump *Pump) *Controller {
-	return &Controller{Pump: pump, send: send, runs: map[string]*Run{}, active: map[*agent.Agent]bool{}, Clock: time.Now}
+	return &Controller{Pump: pump, send: send, runs: map[string]*Run{}, active: map[*agent.Agent]bool{}}
 }
 
 // Starts a run of the agent with the input, assigning it to a mission when one is named
@@ -228,7 +220,7 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 		a.Name = "root"
 	}
 	rctx, cancel := context.WithCancel(ctx)
-	r := &Run{ID: id, Name: a.Name, Mission: missionID, Agent: a, Session: a.Session, Started: c.Clock(), running: true, cancel: cancel, done: make(chan struct{})}
+	r := &Run{ID: id, Name: a.Name, Mission: missionID, Agent: a, Session: a.Session, Started: time.Now(), running: true, cancel: cancel, done: make(chan struct{})}
 	c.runs[id] = r
 	c.order = append(c.order, id)
 	c.mu.Unlock()
@@ -243,7 +235,7 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 	go func() {
 		defer c.wg.Done()
 		resp, err := a.Run(rctx, input, observe)
-		finished := c.Clock()
+		finished := time.Now()
 		r.finish(finished, resp, err)
 		c.mu.Lock()
 		delete(c.active, a)
@@ -258,7 +250,7 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 	return r, nil
 }
 
-// Observer that tracks children, schedules saves and feeds the meter and workspace before the pump
+// Observer that tracks children, schedules saves and feeds the meter before the pump
 func (c *Controller) observer(r *Run) func(agent.Event) {
 	forward := c.Pump.Observer(r.ID)
 	return func(ev agent.Event) {
@@ -289,9 +281,6 @@ func (c *Controller) observer(r *Run) func(agent.Event) {
 		if c.Meter != nil {
 			c.Meter.Apply(r.ID, ev)
 		}
-		if c.Workspace != nil {
-			c.Workspace.Apply(ev)
-		}
 		forward(ev)
 	}
 }
@@ -308,7 +297,7 @@ func (c *Controller) owner(root *Run, agentName string) *Run {
 }
 
 func (c *Controller) childStarted(parent *Run, ev agent.Event) {
-	child, ok := ev.Data.(subagent.Child)
+	child, ok := ev.Data.(agent.Child)
 	if !ok || child.Agent == nil {
 		return
 	}
@@ -320,14 +309,14 @@ func (c *Controller) childStarted(parent *Run, ev agent.Event) {
 	}
 	r := &Run{ID: id, Name: child.Name, Mission: parent.Mission, Agent: child.Agent, Session: child.Agent.Session, Parent: parent.ID, Depth: child.Depth, CallID: child.CallID, Description: child.Description, Started: child.Started, running: true, done: make(chan struct{})}
 	if r.Started.IsZero() {
-		r.Started = c.Clock()
+		r.Started = time.Now()
 	}
 	c.runs[id] = r
 	c.order = append(c.order, id)
 }
 
 func (c *Controller) childEnded(parent *Run, ev agent.Event) {
-	child, ok := ev.Data.(subagent.Child)
+	child, ok := ev.Data.(agent.Child)
 	if !ok {
 		return
 	}
@@ -339,7 +328,7 @@ func (c *Controller) childEnded(parent *Run, ev agent.Event) {
 	}
 	at := child.Finished
 	if at.IsZero() {
-		at = c.Clock()
+		at = time.Now()
 	}
 	var resp protocol.Response
 	if ev.Response != nil {

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent/hooks"
-	"github.com/nickheyer/icebath/pkg/policy/rules"
+	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -33,7 +33,7 @@ const (
 	ModelEnv   = "ICEBATH_MODEL"
 )
 
-// Profile and model pair for fallbacks and the judge
+// Profile and model pair naming where compaction and child agents run
 type Target struct {
 	Profile string `json:"profile"`
 	Model   string `json:"model,omitempty"`
@@ -49,14 +49,6 @@ type Compaction struct {
 	Model *Target `json:"model,omitempty"`
 	// Extra guidance appended to the summary instructions
 	Instructions string `json:"instructions,omitempty"`
-}
-
-// Judge settings
-type Judge struct {
-	Target
-	Instructions string `json:"instructions,omitempty"`
-	// Seconds one review may take
-	Timeout int `json:"timeout,omitempty"`
 }
 
 // Subagent settings
@@ -104,18 +96,10 @@ type UIConfig struct {
 	Cascade *bool `json:"cascade,omitempty"`
 }
 
-// Cassette settings for recording and replaying model traffic
-type RecordConfig struct {
-	Path string `json:"path,omitempty"`
-	// record, replay or auto
-	Mode string `json:"mode,omitempty"`
-}
-
 // Everything the shell app and the headless runner need, read from files, environment and flags
 type Config struct {
-	Profile   string   `json:"profile,omitempty"`
-	Model     string   `json:"model,omitempty"`
-	Fallbacks []Target `json:"fallbacks,omitempty"`
+	Profile string `json:"profile,omitempty"`
+	Model   string `json:"model,omitempty"`
 	// System prompt text, or the file it is read from
 	System     string `json:"system,omitempty"`
 	SystemFile string `json:"system_file,omitempty"`
@@ -126,16 +110,14 @@ type Config struct {
 	Temperature *float64                   `json:"temperature,omitempty"`
 	Extra       map[string]json.RawMessage `json:"extra,omitempty"`
 	Compaction  Compaction                 `json:"compaction,omitempty"`
-	Judge       *Judge                     `json:"judge,omitempty"`
-	Permissions rules.Set                  `json:"permissions,omitempty"`
-	Hooks       hooks.Config               `json:"hooks,omitempty"`
+	Permissions policy.RuleSet             `json:"permissions,omitempty"`
+	Hooks       agent.HookConfig           `json:"hooks,omitempty"`
 	MCP         []ServerConfig             `json:"mcp,omitempty"`
 	Subagents   Subagents                  `json:"subagents,omitempty"`
 	Shell       ShellConfig                `json:"shell,omitempty"`
 	Web         WebConfig                  `json:"web,omitempty"`
 	Tools       ToolsConfig                `json:"tools,omitempty"`
 	UI          UIConfig                   `json:"ui,omitempty"`
-	Record      *RecordConfig              `json:"record,omitempty"`
 	// Directory every file path must stay inside, the working directory when empty
 	Root string `json:"root,omitempty"`
 	// Directory sessions are written to, sessions under the configuration directory when empty
@@ -155,7 +137,7 @@ func ReadConfig(r io.Reader) (Config, error) {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	if c.Mode != "" {
-		if _, err := parseMode(c.Mode); err != nil {
+		if _, err := policy.ParseMode(c.Mode); err != nil {
 			return Config{}, err
 		}
 	}
@@ -187,9 +169,6 @@ func Merge(base, over Config) Config {
 	}
 	if over.Model != "" {
 		out.Model = over.Model
-	}
-	if len(over.Fallbacks) > 0 {
-		out.Fallbacks = over.Fallbacks
 	}
 	if over.System != "" {
 		out.System = over.System
@@ -231,16 +210,13 @@ func Merge(base, over Config) Config {
 	if over.Compaction.Instructions != "" {
 		out.Compaction.Instructions = over.Compaction.Instructions
 	}
-	if over.Judge != nil {
-		out.Judge = over.Judge
-	}
-	out.Permissions = rules.Set{
+	out.Permissions = policy.RuleSet{
 		Allow: append(append([]string(nil), base.Permissions.Allow...), over.Permissions.Allow...),
 		Deny:  append(append([]string(nil), base.Permissions.Deny...), over.Permissions.Deny...),
 		Ask:   append(append([]string(nil), base.Permissions.Ask...), over.Permissions.Ask...),
 	}
 	if len(base.Hooks) > 0 || len(over.Hooks) > 0 {
-		out.Hooks = hooks.Config{}
+		out.Hooks = agent.HookConfig{}
 		for ev, groups := range base.Hooks {
 			out.Hooks[ev] = append(out.Hooks[ev], groups...)
 		}
@@ -307,9 +283,6 @@ func Merge(base, over Config) Config {
 	if over.UI.Cascade != nil {
 		out.UI.Cascade = over.UI.Cascade
 	}
-	if over.Record != nil {
-		out.Record = over.Record
-	}
 	if over.Root != "" {
 		out.Root = over.Root
 	}
@@ -362,7 +335,7 @@ func Discover(dir string) (Config, error) {
 	}
 	for _, base := range side {
 		rulesPath := filepath.Join(base, RulesFile)
-		set, err := rules.LoadFile(rulesPath)
+		set, err := policy.LoadRulesFile(rulesPath)
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 		case err != nil:
@@ -371,7 +344,7 @@ func Discover(dir string) (Config, error) {
 			out = Merge(out, Config{Permissions: set, Sources: []string{rulesPath}})
 		}
 		hooksPath := filepath.Join(base, HooksFile)
-		cfg, err := hooks.LoadFile(hooksPath)
+		cfg, err := agent.LoadHooksFile(hooksPath)
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 		case err != nil:
@@ -476,7 +449,7 @@ func (c *Config) settingField(key, value string) (Field, error) {
 		c.Compaction.Threshold = n
 		return Field{Path: path, Value: n}, nil
 	case "mode":
-		if _, err := parseMode(value); err != nil {
+		if _, err := policy.ParseMode(value); err != nil {
 			return Field{}, err
 		}
 		c.Mode = value

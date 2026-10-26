@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/policy"
-	"github.com/nickheyer/icebath/pkg/policy/mode"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
@@ -50,7 +49,6 @@ func (m *Model) commands() []wm.Command {
 		{ID: "session.compact", Title: "Session: compact", When: idle, Run: run("compact", "")},
 		{ID: "session.clear", Title: "Session: clear", When: idle, Run: run("clear", "")},
 		{ID: "session.export", Title: "Session: export" + more, When: has, Run: m.promptExport},
-		{ID: "session.system", Title: "Session: system prompt" + more, When: has, Run: run("system", "")},
 		{ID: "run.cancel", Title: "Run: cancel", When: busy, Run: run("cancel", "")},
 		{ID: "run.interrupt", Title: "Run: stop after tool", When: busy, Run: run("interrupt", "")},
 		{ID: "mission.start", Title: "Mission: start" + more, When: idle, Run: m.promptMission},
@@ -68,7 +66,6 @@ func (m *Model) commands() []wm.Command {
 		{ID: "cascade.toggle", Title: "Cascade: toggle", Run: func() tea.Cmd { return m.setSetting("cascade", strconv.FormatBool(!m.wm.Cascade()), false) }},
 		{ID: "open.agents", Title: "Open: agents", Run: run("agents", "")},
 		{ID: "open.metrics", Title: "Open: metrics", Run: run("metrics", "")},
-		{ID: "open.files", Title: "Open: files", Run: run("files", "")},
 		{ID: "open.jobs", Title: "Open: jobs", Run: run("jobs", "")},
 		{ID: "open.sessions", Title: "Open: sessions", Run: run("sessions", "")},
 		{ID: "open.config", Title: "Open: config", Run: run("config", "")},
@@ -95,7 +92,7 @@ func (m *Model) slashCommands() []cards.Command {
 	}
 	modes := func(string) []string {
 		var out []string
-		for _, md := range mode.All() {
+		for _, md := range policy.Modes() {
 			out = append(out, string(md))
 		}
 		return out
@@ -115,7 +112,6 @@ func (m *Model) slashCommands() []cards.Command {
 		{Name: "attach", Desc: "attach an image", Arg: "path"},
 		{Name: "mission", Desc: "start a mission", Arg: "objective", Action: "mission.start"},
 		{Name: "rename", Desc: "rename the session", Arg: "title", Action: "session.rename"},
-		{Name: "system", Desc: "system prompt, context, bare and ghost", Action: "session.system"},
 		{Name: "compact", Desc: "compact the transcript", Action: "session.compact"},
 		{Name: "clear", Desc: "fresh session here", Action: "session.clear"},
 		{Name: "fork", Desc: "fork the session beside it", Action: "session.fork"},
@@ -128,7 +124,6 @@ func (m *Model) slashCommands() []cards.Command {
 		{Name: "config", Desc: "config", Action: "open.config"},
 		{Name: "keys", Desc: "keybinds", Action: "keys.edit"},
 		{Name: "metrics", Desc: "metrics", Action: "open.metrics"},
-		{Name: "files", Desc: "files touched", Action: "open.files"},
 		{Name: "jobs", Desc: "shell jobs", Action: "open.jobs"},
 		{Name: "theme", Desc: "theme", Arg: "name", Suggest: themes, Action: "theme.set"},
 		{Name: "cancel", Desc: "cancel the agent", Action: "run.cancel"},
@@ -181,11 +176,6 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 		return m.wm.Toast("renamed to "+strings.TrimSpace(args), wm.Success, 0)
 	case "compact":
 		return m.compactNow(d)
-	case "system":
-		if d == nil {
-			return nil
-		}
-		return m.openFrom(d, m.systemOf(d))
 	case "clear":
 		return m.clearDesk(d)
 	case "fork":
@@ -214,8 +204,6 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 		return m.editKeys()
 	case "metrics":
 		return open(m.metrics)
-	case "files":
-		return open(m.files)
 	case "jobs":
 		return open(m.jobs)
 	case "theme":
@@ -369,7 +357,7 @@ func (m *Model) pickProfile() tea.Cmd {
 
 func (m *Model) pickMode() tea.Cmd {
 	var items []wm.Item
-	for _, md := range mode.All() {
+	for _, md := range policy.Modes() {
 		md := md
 		items = append(items, wm.Item{ID: string(md), Title: md.Label(), Keys: m.mark(md == m.app.Mode.Mode()), Run: func() tea.Cmd {
 			cmd, _ := m.cardMsg(cards.SetModeMsg{Mode: md})
@@ -545,7 +533,6 @@ var panels = []struct{ name, title, detail, action string }{
 	{"new", "Session", "fresh session", "session.new"},
 	{"agents", "Agents", "runs", "open.agents"},
 	{"metrics", "Metrics", "tokens, cost, latency", "open.metrics"},
-	{"files", "Files", "reads and edits", "open.files"},
 	{"jobs", "Jobs", "shell jobs", "open.jobs"},
 	{"findings", "Findings", "recorded facts", "open.findings"},
 	{"sessions", "Sessions", "stored sessions", "open.sessions"},

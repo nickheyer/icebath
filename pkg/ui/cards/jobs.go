@@ -3,6 +3,7 @@ package cards
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -168,7 +169,7 @@ func (j *Jobs) View(w, h int) string {
 	if len(j.jobs) == 0 {
 		return emptyView(w, h, "no jobs", t)
 	}
-	now := j.env.now()
+	now := time.Now()
 	cols := []render.Column{{Title: "JOB"}, {Title: "COMMAND", Flex: 1}, {Title: "STATE"}, {Title: "TIME", Right: true}, {Title: "OUT", Right: true}}
 	rows := make([][]string, 0, len(j.jobs))
 	for _, jb := range j.jobs {

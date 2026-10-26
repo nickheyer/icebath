@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/harness"
-	"github.com/nickheyer/icebath/pkg/policy/mode"
+	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -37,7 +37,7 @@ type settings struct {
 func newSettings(env *Env) *settings {
 	tokens := func(v float64) string { return render.Tokens(int(v)) }
 	var modes []string
-	for _, m := range mode.All() {
+	for _, m := range policy.Modes() {
 		modes = append(modes, string(m))
 	}
 	s := &settings{env: env}
@@ -315,19 +315,19 @@ func (s *settings) rows(w, h int) []string {
 	used := 0
 	s.cur = nil
 	for i, f := range s.fields {
-		rows, hits, cx := f.render(vw, lookOf(i, true), cols, t)
+		rows, hits, cx, cy := f.render(vw, lookOf(i, true), cols, t)
 		painted[i], marks[i] = rows, hits
 		blocks[i] = stack{rows: len(rows), well: f.welled()}
 		used += len(rows)
 		if i == s.sel && cx >= 0 {
-			s.cur = tea.NewCursor(lw+cx, 0)
+			s.cur = tea.NewCursor(lw+cx, cy)
 		}
 	}
 	gaps := spaceOut(blocks, h-used)
 	if touching(blocks, gaps) {
 		for i, f := range s.fields {
 			if f.welled() && i != s.sel {
-				painted[i], _, _ = f.render(vw, lookOf(i, false), cols, t)
+				painted[i], _, _, _ = f.render(vw, lookOf(i, false), cols, t)
 			}
 		}
 	}

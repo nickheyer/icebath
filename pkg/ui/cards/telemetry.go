@@ -63,7 +63,7 @@ func (c *Telemetry) Reload() {
 }
 
 func (c *Telemetry) note(s string) {
-	c.events = append(c.events, c.env.now().Format("15:04:05")+" "+s)
+	c.events = append(c.events, time.Now().Format("15:04:05")+" "+s)
 	if len(c.events) > 50 {
 		c.events = c.events[len(c.events)-50:]
 	}
@@ -81,13 +81,6 @@ func (c *Telemetry) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			c.note(render.Bad(render.Truncate(a.Err.Error(), 60, c.env.Theme), c.env.Theme))
 		default:
 			c.note(render.Dim(fmt.Sprintf("%d in %s", a.Status, render.Elapsed(a.Duration)), c.env.Theme))
-		}
-	case harness.FailoverMsg:
-		c.note(render.Bad(fmt.Sprintf("failover past model %d: %s", msg.From, render.Truncate(msg.Err.Error(), 40, c.env.Theme)), c.env.Theme))
-		return c, wm.Notify("failover", wm.Warn)
-	case harness.ServedMsg:
-		if msg.Index > 0 {
-			c.note(render.Warm(fmt.Sprintf("served by fallback model %d", msg.Index), c.env.Theme))
 		}
 	case harness.EventMsg:
 		if c.env.Meter != nil {
@@ -156,9 +149,6 @@ func (c *Telemetry) View(w, h int) string {
 	if s.Provider != "" {
 		head += " " + render.Dim("via "+s.Provider, t)
 	}
-	if s.Serving > 0 {
-		head += " " + render.Warm(fmt.Sprintf("fallback %d", s.Serving), t)
-	}
 	if s.Streaming {
 		head += " " + render.Cool("streaming", t)
 	}
@@ -205,9 +195,6 @@ func (c *Telemetry) View(w, h int) string {
 	}
 	if s.Failures > 0 {
 		reqs += "  " + render.Bad(fmt.Sprintf("%d failed", s.Failures), t)
-	}
-	if s.Failovers > 0 {
-		reqs += "  " + render.Bad(fmt.Sprintf("%d failovers", s.Failovers), t)
 	}
 	if s.LastRequestID != "" {
 		reqs += "  " + render.Dim(render.Truncate(s.LastRequestID, 24, t), t)

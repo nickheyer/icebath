@@ -2,20 +2,11 @@
 package theme
 
 import (
-	"fmt"
 	"image/color"
 	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
-)
-
-// How much room chrome and cards leave around their content
-type Density int
-
-const (
-	Comfortable Density = iota
-	Compact
 )
 
 // Palette and border set that a deck paints with
@@ -34,10 +25,9 @@ type Theme struct {
 	Alive       color.Color
 	Alarm       color.Color
 	// Gradient stops the focus ring runs through around the focused card
-	Ring    []color.Color
-	Border  lipgloss.Border
-	Glyphs  Glyphs
-	Density Density
+	Ring   []color.Color
+	Border lipgloss.Border
+	Glyphs Glyphs
 	// Palette limited to the sixteen ANSI colors with no blending, for terminals without true color
 	Plain bool
 }
@@ -152,58 +142,6 @@ func Names() []string {
 	return out
 }
 
-var borders = map[string]func() lipgloss.Border{"icebath": IcebathBorder, "rounded": lipgloss.RoundedBorder, "normal": lipgloss.NormalBorder, "thick": lipgloss.ThickBorder, "double": lipgloss.DoubleBorder, "block": lipgloss.BlockBorder, "hidden": lipgloss.HiddenBorder, "ascii": lipgloss.ASCIIBorder}
-
-// Border set names sorted
-func Borders() []string {
-	out := make([]string, 0, len(borders))
-	for n := range borders {
-		out = append(out, n)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// What a person chooses to look at, resolved into a theme
-type Style struct {
-	Palette string  `json:"palette,omitempty"`
-	Border  string  `json:"border,omitempty"`
-	Motion  float64 `json:"motion"`
-	Density string  `json:"density,omitempty"`
-}
-
-// Theme the style names, the Blackwall palette, its border and comfortable density where the style says nothing
-func (s Style) Resolve() (Theme, error) {
-	t := Blackwall()
-	if s.Palette != "" {
-		named, ok := Named(s.Palette)
-		if !ok {
-			return Theme{}, fmt.Errorf("theme: unknown palette %q, choose from %s", s.Palette, strings.Join(Names(), ", "))
-		}
-		t = named
-	}
-	if s.Border != "" {
-		fn, ok := borders[strings.ToLower(s.Border)]
-		if !ok {
-			return Theme{}, fmt.Errorf("theme: unknown border %q, choose from %s", s.Border, strings.Join(Borders(), ", "))
-		}
-		t.Border = fn()
-	}
-	switch strings.ToLower(s.Density) {
-	case "":
-	case "compact":
-		t.Density = Compact
-	case "comfortable":
-		t.Density = Comfortable
-	default:
-		return Theme{}, fmt.Errorf("theme: unknown density %q, choose compact or comfortable", s.Density)
-	}
-	if s.Motion < 0 || s.Motion > 1 {
-		return Theme{}, fmt.Errorf("theme: motion %v is outside 0 to 1", s.Motion)
-	}
-	return t, nil
-}
-
 // Opaque color from a 24 bit RGB value
 func Hex(v uint32) color.Color {
 	return color.RGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 0xff}
@@ -254,4 +192,144 @@ func Ring(n int, stops ...color.Color) []color.Color {
 func lerp8(a, b uint32, t float64) uint8 {
 	fa, fb := float64(a>>8), float64(b>>8)
 	return uint8(fa + (fb-fa)*t + 0.5)
+}
+
+// Every mark the interface draws, swapped as one set so the whole surface keeps one look
+type Glyphs struct {
+	Brand     string
+	Session   string
+	Trace     string
+	Agent     string
+	Approval  string
+	Metrics   string
+	Findings  string
+	Jobs      string
+	Mission   string
+	Sessions  string
+	Settings  string
+	Config    string
+	Palette   string
+	Card      string
+	Profiles  string
+	Models    string
+	Rules     string
+	Hooks     string
+	MCP       string
+	Tools     string
+	Keys      string
+	Read      string
+	Write     string
+	Edit      string
+	Glob      string
+	Grep      string
+	Bash      string
+	Output    string
+	Kill      string
+	Fetch     string
+	Spawn     string
+	Record    string
+	Plan      string
+	Server    string
+	Tool      string
+	Speaker   string
+	Steer     string
+	Thinking  string
+	Compact   string
+	Hook      string
+	Note      string
+	Error     string
+	Flag      string
+	Child     string
+	Attach    string
+	Idle      string
+	Cursor    string
+	Marked    string
+	Live      string
+	Hollow    string
+	Check     string
+	Skip      string
+	Todo      string
+	Done      string
+	Active    string
+	Bullet    string
+	Mask      string
+	Fork      string
+	Sep       string
+	Ellipsis  string
+	Close     string
+	Prompt    string
+	Send      string
+	Grip      string
+	Back      string
+	CapLeft   string
+	CapRight  string
+	Info      string
+	Success   string
+	Warn      string
+	Fail      string
+	Search    string
+	None      string
+	Rule      string
+	Dashed    string
+	Bar       string
+	Fill      string
+	Slide     string
+	Thumb     string
+	Caret     string
+	Up        string
+	Down      string
+	Track     string
+	Heavy     string
+	Tick      string
+	HeavyTick string
+	Hit       string
+	Full      string
+	Empty     string
+	// Eight levels of a bar graph from lowest to highest
+	Ramp []rune
+	// Frames of the working spinner
+	Spinner []string
+	// Characters text boils through while it materializes
+	Churn []rune
+	// One cell symbols of bare navigation chords such as pgup, text labels stand in for chords missing here
+	Chords map[string]string
+}
+
+// Frost, signal and hazard marks in single cells, the icebath set
+func IcebathGlyphs() Glyphs {
+	return Glyphs{
+		Brand: "❆", Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "⍰", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "❯", Card: "▰",
+		Profiles: "⍟", Models: "⟡", Rules: "§", Hooks: "↯", MCP: "⇆", Tools: "⌗", Keys: "⌥",
+		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Bash: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
+		Speaker: "┃", Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "⍰", Child: "⟁", Attach: "⎘", Idle: "⊙", Cursor: "►", Marked: "▮",
+		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔",
+		Sep: "∷", Ellipsis: "⋯", Close: "✕", Prompt: "❯", Send: "➜", Grip: "⊹", Back: "❮", CapLeft: "▐", CapRight: "▌", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
+		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "▰", Empty: "▱",
+		Ramp:    []rune("▁▂▃▄▅▆▇█"),
+		Spinner: []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"},
+		Churn:   []rune("░▒▓█▙▚▛▜▝▞▟╳╱╲01"),
+		Chords:  map[string]string{"pgup": "⇞", "pgdown": "⇟", "home": "⇱", "end": "⇲", "up": "⇡", "down": "⇣"},
+	}
+}
+
+// The same marks in printable ASCII for terminals without box drawing or symbol fonts
+func ASCIIGlyphs() Glyphs {
+	return Glyphs{
+		Brand: "*", Session: "~", Trace: "&", Agent: "&", Approval: "?", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: ">", Card: "*",
+		Profiles: "@", Models: "o", Rules: "S", Hooks: "!", MCP: "=", Tools: "+", Keys: "k",
+		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Bash: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
+		Speaker: "|", Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "?", Child: "&", Attach: "+", Idle: "o", Cursor: ">", Marked: "#",
+		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y",
+		Sep: "-", Ellipsis: "...", Close: "x", Prompt: ">", Send: ">", Grip: "+", Back: "<", CapLeft: " ", CapRight: " ", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
+		Rule: "-", Dashed: "-", Bar: "|", Fill: "=", Slide: "-", Thumb: "O", Caret: "|", Up: "^", Down: "v", Track: "|", Heavy: "#", Tick: "+", HeavyTick: "+", Hit: "*", Full: "#", Empty: "-",
+		Ramp:    []rune(".:-=+*#%"),
+		Spinner: []string{"|", "/", "-", "\\"},
+		Churn:   []rune("#%&*+-=01"),
+		Chords:  map[string]string{},
+	}
+}
+
+// Frame with heavy top and bottom rails on light sides, the icebath border
+func IcebathBorder() lipgloss.Border {
+	return lipgloss.Border{Top: "━", Bottom: "━", Left: "│", Right: "│", TopLeft: "┍", TopRight: "┑", BottomLeft: "┕", BottomRight: "┙", MiddleLeft: "┝", MiddleRight: "┥", Middle: "┿", MiddleTop: "┯", MiddleBottom: "┷"}
 }

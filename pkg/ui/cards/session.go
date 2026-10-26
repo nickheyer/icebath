@@ -286,11 +286,11 @@ func (s *Session) Status() string {
 	if st := s.Composer.Status(); st != "" {
 		parts = append(parts, st)
 	}
-	t := harness.TuningOf(s.live.Session)
-	if t.Ghost {
+	p := s.live.Endpoint.Profile
+	if p.Ghost {
 		parts = append(parts, "ghost")
 	}
-	if t.Bare {
+	if p.Bare {
 		parts = append(parts, "bare")
 	}
 	if model := s.live.Endpoint.Model; model != "" {

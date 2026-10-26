@@ -61,14 +61,31 @@ type None struct{}
 
 func (None) Apply(*http.Request) {}
 
-// Attempt count and exponential backoff bounds for retryable failures
-type Retry struct {
-	Attempts int
-	Base     time.Duration
-	Max      time.Duration
+// Attempts one call gets and the exponential backoff bounds between them
+const (
+	retryAttempts = 3
+	retryBase     = 500 * time.Millisecond
+	retryMax      = 8 * time.Second
+)
+
+// Headers and body fields sent with a turn that asks for one directive
+type Directive struct {
+	Header http.Header                `json:"header,omitempty"`
+	Extra  map[string]json.RawMessage `json:"extra,omitempty"`
 }
 
-var DefaultRetry = Retry{Attempts: 3, Base: 500 * time.Millisecond, Max: 8 * time.Second}
+// Deep copy sharing nothing with the original
+func (d Directive) Clone() Directive {
+	d.Header = d.Header.Clone()
+	if d.Extra != nil {
+		extra := make(map[string]json.RawMessage, len(d.Extra))
+		for k, v := range d.Extra {
+			extra[k] = append(json.RawMessage(nil), v...)
+		}
+		d.Extra = extra
+	}
+	return d
+}
 
 // Protocol plus everything the protocol leaves to the endpoint
 type Provider struct {
@@ -82,12 +99,8 @@ type Provider struct {
 	Query url.Values
 	// Request fields merged into every turn beneath the fields the request itself carries
 	Extra map[string]json.RawMessage
-	// How the endpoint hears a turn asking it to keep nothing
-	Ghost Directive
-	// How the endpoint hears a turn asking it to add no prompt or tools of its own
-	Bare   Directive
-	Client *http.Client
-	Retry  Retry
+	// Headers and body fields laid over every turn, how the endpoint hears what the profile asks of it
+	Directives []Directive
 	// Receives every attempt with its status, headers and backoff
 	Observer Observer
 }
@@ -100,18 +113,7 @@ func (p *Provider) Complete(ctx context.Context, req protocol.Request) (protocol
 		return protocol.Response{}, err
 	}
 	defer resp.Body.Close()
-	out, err := p.Protocol.Decode(resp.Body)
-	if err != nil {
-		return protocol.Response{}, err
-	}
-	stamp(&out, resp.Header)
-	return out, nil
-}
-
-// Keeps the response headers and request id on a decoded response
-func stamp(r *protocol.Response, h http.Header) {
-	r.Header = h.Clone()
-	r.RequestID = RequestID(h)
+	return p.Protocol.Decode(resp.Body)
 }
 
 // Sends one turn and yields the protocol events of its streamed response
@@ -125,9 +127,6 @@ func (p *Provider) Stream(ctx context.Context, req protocol.Request) iter.Seq2[p
 		}
 		defer resp.Body.Close()
 		for ev, err := range p.Protocol.Stream(resp.Body) {
-			if err == nil && ev.Type == protocol.EventDone {
-				stamp(&ev.Response, resp.Header)
-			}
 			if !yield(ev, err) || err != nil {
 				return
 			}
@@ -135,7 +134,7 @@ func (p *Provider) Stream(ctx context.Context, req protocol.Request) iter.Seq2[p
 	}
 }
 
-// Encodes the request with provider extras and the directives the context asks for, then issues it
+// Encodes the request with provider extras beneath it and directives over it, then issues it
 func (p *Provider) do(ctx context.Context, req protocol.Request) (*http.Response, error) {
 	if p.Protocol == nil {
 		return nil, errors.New("provider: no protocol")
@@ -144,7 +143,7 @@ func (p *Provider) do(ctx context.Context, req protocol.Request) (*http.Response
 		req.Extra = mergeExtra(p.Extra, req.Extra)
 	}
 	var over http.Header
-	for _, d := range p.asked(protocol.DirectivesFrom(ctx)) {
+	for _, d := range p.Directives {
 		if len(d.Extra) > 0 {
 			req.Extra = mergeExtra(req.Extra, d.Extra)
 		}
@@ -162,24 +161,12 @@ func (p *Provider) do(ctx context.Context, req protocol.Request) (*http.Response
 	return p.send(ctx, call, over)
 }
 
-// How the endpoint hears each directive asked for
-func (p *Provider) asked(d protocol.Directives) []Directive {
-	var out []Directive
-	if d.Ghost {
-		out = append(out, p.Ghost)
-	}
-	if d.Bare {
-		out = append(out, p.Bare)
-	}
-	return out
-}
-
 // Issues any call against the endpoint with auth and retries, returning the 2xx response unread
 func (p *Provider) Do(ctx context.Context, call protocol.Call) (*http.Response, error) {
 	return p.send(ctx, call, nil)
 }
 
-// Issues the call with the headers in over laid above the static ones
+// Issues the call with the headers in over laid above the static ones, with auth and retries, returning the 2xx response unread
 func (p *Provider) send(ctx context.Context, call protocol.Call, over http.Header) (*http.Response, error) {
 	if p.Protocol == nil {
 		return nil, errors.New("provider: no protocol")
@@ -187,20 +174,6 @@ func (p *Provider) send(ctx context.Context, call protocol.Call, over http.Heade
 	target, err := p.target(call)
 	if err != nil {
 		return nil, err
-	}
-	retry := p.Retry
-	if retry.Attempts <= 0 {
-		retry = DefaultRetry
-	}
-	if retry.Base <= 0 {
-		retry.Base = DefaultRetry.Base
-	}
-	if retry.Max <= 0 {
-		retry.Max = DefaultRetry.Max
-	}
-	client := p.Client
-	if client == nil {
-		client = http.DefaultClient
 	}
 	for attempt := 1; ; attempt++ {
 		if r, ok := p.Auth.(Refresher); ok {
@@ -213,13 +186,12 @@ func (p *Provider) send(ctx context.Context, call protocol.Call, over http.Heade
 			return nil, err
 		}
 		p.decorate(hr, call.Header, over)
-		at := Attempt{Provider: p.Name, Attempt: attempt, Method: call.Method, URL: target, Started: time.Now()}
+		at := Attempt{URL: target, Started: time.Now()}
 		p.begin(at)
-		resp, err := client.Do(hr)
+		resp, err := http.DefaultClient.Do(hr)
 		at.Duration = time.Since(at.Started)
 		if err == nil {
 			at.Status = resp.StatusCode
-			at.Header = resp.Header.Clone()
 			at.RequestID = RequestID(resp.Header)
 			at.RateLimit = ParseRateLimit(resp.Header)
 		}
@@ -233,23 +205,25 @@ func (p *Provider) send(ctx context.Context, call protocol.Call, over http.Heade
 		} else {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			failure = p.Protocol.DecodeError(resp.StatusCode, body)
+			perr := p.Protocol.DecodeError(resp.StatusCode, body)
+			failure = perr
 			at.RetryAfter = retryAfter(resp.Header.Get("Retry-After"))
+			if !retryable(resp.StatusCode) && !perr.Transient {
+				at.Err = failure
+				p.observe(at)
+				return nil, failure
+			}
 		}
 		at.Err = failure
-		if err == nil && !retryable(resp.StatusCode) {
-			p.observe(at)
-			return nil, failure
-		}
-		if ctx.Err() != nil || attempt >= retry.Attempts {
+		if ctx.Err() != nil || attempt >= retryAttempts {
 			p.observe(at)
 			return nil, failure
 		}
 		wait := at.RetryAfter
 		if wait == 0 {
-			wait = backoff(retry, attempt)
+			wait = backoff(attempt)
 		}
-		wait = min(wait, maxWait(retry))
+		wait = min(wait, max(retryMax, time.Minute))
 		at.Wait = wait
 		p.observe(at)
 		select {
@@ -298,11 +272,6 @@ func (b *timed) finish() {
 		b.at.Duration = time.Since(b.at.Started)
 		b.p.observe(b.at)
 	})
-}
-
-// Longest pause honored between attempts, at least a minute so Retry-After may stretch past a shorter retry maximum
-func maxWait(r Retry) time.Duration {
-	return max(r.Max, time.Minute)
 }
 
 // Lays request extras over provider extras, merging nested objects and replacing everything else
@@ -359,18 +328,6 @@ func (p *Provider) decorate(r *http.Request, protocolHeader, over http.Header) {
 // Sent when neither the protocol nor the provider names a user agent
 const UserAgent = "icebath"
 
-// Reports whether an error is worth retrying, a transport failure or a retryable status
-func Retryable(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	var perr *protocol.Error
-	if errors.As(err, &perr) {
-		return retryable(perr.Status)
-	}
-	return true
-}
-
 // Reports whether a status is worth retrying, matching the official SDK retry set
 func retryable(status int) bool {
 	return status == http.StatusRequestTimeout || status == http.StatusConflict || status == http.StatusTooManyRequests || status >= 500
@@ -391,10 +348,113 @@ func retryAfter(value string) time.Duration {
 }
 
 // Doubles the base per attempt, caps at the maximum and keeps between half and the full value
-func backoff(r Retry, attempt int) time.Duration {
-	d := r.Base << (attempt - 1)
-	if r.Max > 0 && d > r.Max {
-		d = r.Max
-	}
+func backoff(attempt int) time.Duration {
+	d := min(retryBase<<(attempt-1), retryMax)
 	return time.Duration(float64(d) * (0.5 + rand.Float64()/2))
+}
+
+// What the endpoint reported about its quota on one response, zero where it said nothing
+type RateLimit struct {
+	Requests          int
+	RequestsRemaining int
+	Tokens            int
+	TokensRemaining   int
+	InputTokens       int
+	InputRemaining    int
+	OutputTokens      int
+	OutputRemaining   int
+	Reset             time.Duration
+}
+
+// Reports whether any field was filled in
+func (r RateLimit) Known() bool { return r != RateLimit{} }
+
+// One HTTP attempt of a call with what came back and how long the provider will wait before the next
+type Attempt struct {
+	URL      string
+	Started  time.Time
+	Duration time.Duration
+	Status   int
+	// Transport or decoded wire failure, nil on a 2xx
+	Err error
+	// Pause before the next attempt, zero when this one was the last
+	Wait time.Duration
+	// Pause the endpoint asked for through Retry-After
+	RetryAfter time.Duration
+	RequestID  string
+	RateLimit  RateLimit
+}
+
+// Reports whether the attempt returned a usable response
+func (a Attempt) OK() bool { return a.Err == nil && a.Status/100 == 2 }
+
+// Receives every attempt a provider makes
+type Observer interface {
+	Observe(Attempt)
+}
+
+// Observer that also hears each attempt as it starts, before anything comes back
+type Starter interface {
+	Begin(Attempt)
+}
+
+// Header names vendors use for the request identifier, in lookup order
+var requestIDHeaders = []string{"request-id", "x-request-id", "x-amzn-requestid", "x-amz-request-id", "cf-ray", "x-goog-request-id"}
+
+// Request identifier named by any of the known headers
+func RequestID(h http.Header) string {
+	for _, name := range requestIDHeaders {
+		if v := h.Get(name); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// Reads the rate limit headers of every supported vendor into one view
+func ParseRateLimit(h http.Header) RateLimit {
+	var r RateLimit
+	get := func(names ...string) int {
+		for _, n := range names {
+			if v := h.Get(n); v != "" {
+				if i, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+					return i
+				}
+			}
+		}
+		return 0
+	}
+	r.Requests = get("x-ratelimit-limit-requests", "anthropic-ratelimit-requests-limit", "x-ratelimit-limit")
+	r.RequestsRemaining = get("x-ratelimit-remaining-requests", "anthropic-ratelimit-requests-remaining", "x-ratelimit-remaining")
+	r.Tokens = get("x-ratelimit-limit-tokens", "anthropic-ratelimit-tokens-limit")
+	r.TokensRemaining = get("x-ratelimit-remaining-tokens", "anthropic-ratelimit-tokens-remaining")
+	r.InputTokens = get("anthropic-ratelimit-input-tokens-limit")
+	r.InputRemaining = get("anthropic-ratelimit-input-tokens-remaining")
+	r.OutputTokens = get("anthropic-ratelimit-output-tokens-limit")
+	r.OutputRemaining = get("anthropic-ratelimit-output-tokens-remaining")
+	for _, n := range []string{"x-ratelimit-reset-requests", "x-ratelimit-reset-tokens", "anthropic-ratelimit-requests-reset", "anthropic-ratelimit-tokens-reset", "x-ratelimit-reset"} {
+		if d := parseReset(h.Get(n)); d > 0 {
+			r.Reset = d
+			break
+		}
+	}
+	return r
+}
+
+// Reads a reset given as seconds, a duration such as 6m0s, or an RFC 3339 time
+func parseReset(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+		return time.Duration(f * float64(time.Second))
+	}
+	if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+		return d
+	}
+	if at, err := time.Parse(time.RFC3339, v); err == nil {
+		return max(time.Until(at), 0)
+	}
+	return 0
 }

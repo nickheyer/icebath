@@ -4,6 +4,7 @@ package files
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,10 +12,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/tool"
 )
 
@@ -26,8 +29,21 @@ const (
 	GrepName  = "Grep"
 )
 
-// Directory names skipped by Glob and Grep when Ignore is nil
-var DefaultIgnore = []string{".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".cache", ".next", ".turbo"}
+// Directory names skipped by Glob and Grep
+var ignored = []string{".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".cache", ".next", ".turbo"}
+
+const (
+	// Lines one Read returns
+	maxLines = 2000
+	// Bytes kept of one line before it is cut
+	maxLineBytes = 2000
+	// Largest file Read loads whole and Edit rewrites
+	maxFileBytes = 8 << 20
+	// Entries Glob and Grep list
+	maxResults = 1000
+	// Bytes of Grep output
+	maxOutput = 50000
+)
 
 // Shared settings of every file tool
 type Options struct {
@@ -35,20 +51,6 @@ type Options struct {
 	Dir string
 	// Directory every path must stay inside after symlink resolution, unrestricted when empty
 	Root string
-	// Directory names Glob and Grep skip, DefaultIgnore when nil
-	Ignore []string
-	// Walks files that .gitignore rules would hide
-	NoGitIgnore bool
-	// Lines one Read returns, 2000 when zero
-	MaxLines int
-	// Bytes kept of one line before it is cut, 2000 when zero
-	MaxLineBytes int
-	// Largest file Read loads whole and Edit rewrites, 8 MiB when zero
-	MaxFileBytes int
-	// Entries Glob and Grep list, 1000 when zero
-	MaxResults int
-	// Bytes of Grep output, 50000 when zero
-	MaxOutput int
 }
 
 // Every file tool sharing one set of options
@@ -78,26 +80,6 @@ type GlobData struct {
 	Pattern string
 	Matches []Match
 	Total   int
-}
-
-func (o Options) maxLines() int     { return or(o.MaxLines, 2000) }
-func (o Options) maxLineBytes() int { return or(o.MaxLineBytes, 2000) }
-func (o Options) maxFileBytes() int { return or(o.MaxFileBytes, 8<<20) }
-func (o Options) maxResults() int   { return or(o.MaxResults, 1000) }
-func (o Options) maxOutput() int    { return or(o.MaxOutput, 50000) }
-
-func (o Options) ignore() []string {
-	if o.Ignore == nil {
-		return DefaultIgnore
-	}
-	return o.Ignore
-}
-
-func or(v, def int) int {
-	if v > 0 {
-		return v
-	}
-	return def
 }
 
 func (o Options) dir() (string, error) {
@@ -216,7 +198,7 @@ func lines(r io.Reader, fn func(line string) bool) error {
 
 // Cuts a line at the byte budget on a rune boundary and marks how much was dropped
 func (o Options) clip(line string) string {
-	limit := o.maxLineBytes()
+	limit := maxLineBytes
 	if len(line) <= limit {
 		return line
 	}
@@ -313,14 +295,7 @@ type found struct {
 
 // Visits every entry below dir in lexical order, skipping ignored directory names and gitignored paths
 func (o Options) walk(dir string, dirs bool, visit func(path string, d fs.DirEntry) error) error {
-	ignored := map[string]bool{}
-	for _, name := range o.ignore() {
-		ignored[name] = true
-	}
-	var rules ignoreStack
-	if !o.NoGitIgnore {
-		rules = loadIgnoreStack(dir)
-	}
+	rules := loadIgnoreStack(dir)
 	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if p == dir {
@@ -332,19 +307,17 @@ func (o Options) walk(dir string, dirs bool, visit func(path string, d fs.DirEnt
 			return nil
 		}
 		isDir := d.IsDir()
-		if isDir && ignored[d.Name()] {
+		if isDir && slices.Contains(ignored, d.Name()) {
 			return fs.SkipDir
 		}
-		if !o.NoGitIgnore && rules.ignored(p, isDir) {
+		if rules.ignored(p, isDir) {
 			if isDir {
 				return fs.SkipDir
 			}
 			return nil
 		}
 		if isDir {
-			if !o.NoGitIgnore {
-				rules.push(p)
-			}
+			rules.push(p)
 			if !dirs {
 				return nil
 			}
@@ -361,4 +334,312 @@ func byNewest(fs []found) {
 		}
 		return fs[i].path < fs[j].path
 	})
+}
+
+var imageTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+}
+
+// Media type an image file announces in its first bytes, empty for anything else
+func sniffImage(head []byte) string {
+	switch {
+	case bytes.HasPrefix(head, []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}):
+		return "image/png"
+	case bytes.HasPrefix(head, []byte{0xFF, 0xD8, 0xFF}):
+		return "image/jpeg"
+	case bytes.HasPrefix(head, []byte("GIF87a")) || bytes.HasPrefix(head, []byte("GIF89a")):
+		return "image/gif"
+	case len(head) >= 12 && bytes.HasPrefix(head, []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	return ""
+}
+
+const readSchema = `{"type":"object","properties":{
+"file_path":{"type":"string","description":"Path of the file to read, relative paths resolve against the working directory"},
+"offset":{"type":"integer","minimum":1,"description":"First line to return, counted from 1"},
+"limit":{"type":"integer","minimum":1,"description":"Number of lines to return"}},
+"required":["file_path"],"additionalProperties":false}`
+
+// Structured outcome of Read
+type ReadData struct {
+	Path string
+	// First line number returned
+	Offset int
+	Lines  []string
+	// Lines in the whole file
+	Total int
+	// Media type when the file was returned as an image
+	MediaType string
+	Bytes     int64
+}
+
+type read struct{ Options }
+
+// Tool that returns numbered lines of a text file or the bytes of an image
+func Read(o Options) tool.Tool { return read{o} }
+
+func (r read) Definition() protocol.Tool {
+	return protocol.Tool{
+		Name:        ReadName,
+		Description: fmt.Sprintf("Reads a file and returns its lines numbered in cat -n form, up to %d lines per call with offset and limit to page through longer files. Lines over %d bytes are cut. PNG, JPEG, GIF and WebP files come back as images.", maxLines, maxLineBytes),
+		Parameters:  json.RawMessage(readSchema),
+	}
+}
+
+func (read) Annotations() tool.Annotations {
+	return tool.Annotations{ReadOnly: true, Idempotent: true}
+}
+
+func (r read) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	var in struct {
+		FilePath string `json:"file_path"`
+		Offset   int    `json:"offset"`
+		Limit    int    `json:"limit"`
+	}
+	if err := decode(args, &in); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	p, err := r.Resolve(in.FilePath)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	st, err := os.Stat(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return tool.Errorf("%s does not exist", p), nil
+	}
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if st.IsDir() {
+		return tool.Errorf("%s is a directory, use Glob to list it", p), nil
+	}
+	if st.Size() == 0 {
+		return tool.Textf("%s is empty", p).With(ReadData{Path: p, Offset: 1}), nil
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	defer f.Close()
+	head, err := peek(f)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if media := sniffImage(head); media != "" {
+		return r.image(p, media, st.Size())
+	}
+	if media, ok := imageTypes[strings.ToLower(filepath.Ext(p))]; ok && isBinary(head) {
+		return r.image(p, media, st.Size())
+	}
+	if isBinary(head) {
+		return tool.Errorf("%s is a binary file", p), nil
+	}
+	return r.text(f, p, in.Offset, in.Limit, st.Size())
+}
+
+func (r read) image(p, media string, size int64) (tool.Result, error) {
+	if size > int64(maxFileBytes) {
+		return tool.Errorf("%s is %d bytes, over the %d byte image limit", p, size, maxFileBytes), nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	return tool.Image(media, data).With(ReadData{Path: p, MediaType: media, Bytes: size}), nil
+}
+
+// Streams the file once, collecting the requested window and counting every line
+func (r read) text(f *os.File, p string, offset, limit int, size int64) (tool.Result, error) {
+	if offset <= 0 {
+		offset = 1
+	}
+	if limit <= 0 || limit > maxLines {
+		limit = maxLines
+	}
+	var window []string
+	total := 0
+	err := lines(f, func(line string) bool {
+		total++
+		if total >= offset && len(window) < limit {
+			window = append(window, line)
+		}
+		return true
+	})
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if len(window) == 0 {
+		return tool.Errorf("%s has %d lines, offset %d is past the end", p, total, offset), nil
+	}
+	out := r.numbered(offset, window)
+	last := offset + len(window) - 1
+	if last < total {
+		out += fmt.Sprintf("\n\n[lines %d-%d of %d, continue with offset=%d]", offset, last, total, last+1)
+	}
+	return tool.Text(out).With(ReadData{Path: p, Offset: offset, Lines: window, Total: total, Bytes: size}), nil
+}
+
+const writeSchema = `{"type":"object","properties":{
+"file_path":{"type":"string","description":"Path of the file to write, parent directories are created"},
+"content":{"type":"string","description":"Complete new content of the file"}},
+"required":["file_path","content"],"additionalProperties":false}`
+
+type write struct{ Options }
+
+// Tool that replaces a whole file atomically, creating parents and keeping the mode
+func Write(o Options) tool.Tool { return write{o} }
+
+func (write) Definition() protocol.Tool {
+	return protocol.Tool{
+		Name:        WriteName,
+		Description: "Writes the complete content of a file, creating it and any missing parent directories or replacing what is there. Prefer Edit for changing part of an existing file.",
+		Parameters:  json.RawMessage(writeSchema),
+	}
+}
+
+func (write) Annotations() tool.Annotations {
+	return tool.Annotations{Destructive: true, Idempotent: true}
+}
+
+func (w write) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	var in struct {
+		FilePath string `json:"file_path"`
+		Content  string `json:"content"`
+	}
+	if err := decode(args, &in); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	p, err := w.Resolve(in.FilePath)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	old, err := current(p)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	created, err := writeFile(p, []byte(in.Content))
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	verb := "Updated"
+	if created {
+		verb = "Created"
+	}
+	return tool.Textf("%s %s (%d bytes)", verb, p, len(in.Content)).With(Change{Path: p, Old: old, New: in.Content, Created: created, Replaced: 1}), nil
+}
+
+const editSchema = `{"type":"object","properties":{
+"file_path":{"type":"string","description":"Path of the file to edit"},
+"old_string":{"type":"string","description":"Exact text to replace, it must occur once unless replace_all is set"},
+"new_string":{"type":"string","description":"Replacement text, must differ from old_string"},
+"replace_all":{"type":"boolean","description":"Replace every occurrence instead of requiring a unique one"}},
+"required":["file_path","old_string","new_string"],"additionalProperties":false}`
+
+const editContext = 3
+
+type edit struct{ Options }
+
+// Tool that replaces exact text in a file and shows the edited region back
+func Edit(o Options) tool.Tool { return edit{o} }
+
+func (edit) Definition() protocol.Tool {
+	return protocol.Tool{
+		Name:        EditName,
+		Description: "Replaces exact text in a file. old_string must match the file byte for byte including whitespace and must be unique unless replace_all is true. Returns the edited region with line numbers.",
+		Parameters:  json.RawMessage(editSchema),
+	}
+}
+
+func (edit) Annotations() tool.Annotations {
+	return tool.Annotations{Destructive: true}
+}
+
+func (e edit) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	var in struct {
+		FilePath   string `json:"file_path"`
+		OldString  string `json:"old_string"`
+		NewString  string `json:"new_string"`
+		ReplaceAll bool   `json:"replace_all"`
+	}
+	if err := decode(args, &in); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if in.OldString == "" {
+		return tool.Error("old_string is empty, use Write to create content"), nil
+	}
+	if in.OldString == in.NewString {
+		return tool.Error("old_string and new_string are identical"), nil
+	}
+	p, err := e.Resolve(in.FilePath)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	st, err := os.Stat(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return tool.Errorf("%s does not exist", p), nil
+	}
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if st.IsDir() {
+		return tool.Errorf("%s is a directory", p), nil
+	}
+	if st.Size() > int64(maxFileBytes) {
+		return tool.Errorf("%s is %d bytes, over the %d byte edit limit", p, st.Size(), maxFileBytes), nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if isBinary(data[:min(len(data), 8192)]) {
+		return tool.Errorf("%s is a binary file", p), nil
+	}
+	content := string(data)
+	count := strings.Count(content, in.OldString)
+	switch {
+	case count == 0:
+		return tool.Errorf("old_string not found in %s", p), nil
+	case count > 1 && !in.ReplaceAll:
+		return tool.Errorf("old_string occurs %d times in %s, add surrounding context to make it unique or set replace_all", count, p), nil
+	}
+	first := strings.Index(content, in.OldString)
+	if !in.ReplaceAll {
+		count = 1
+	}
+	updated := strings.Replace(content, in.OldString, in.NewString, count)
+	if _, err := writeFile(p, []byte(updated)); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	text := tool.Textf("Replaced %d occurrence(s) in %s\n%s", count, p, e.snippet(updated, first, len(in.NewString)))
+	return text.With(Change{Path: p, Old: content, New: updated, Replaced: count}), nil
+}
+
+// Numbered lines around the first replacement with a few lines of context on each side
+func (e edit) snippet(content string, at, length int) string {
+	ls := strings.Split(content, "\n")
+	if strings.HasSuffix(content, "\n") {
+		ls = ls[:len(ls)-1]
+	}
+	startLine := strings.Count(content[:at], "\n")
+	endLine := startLine + strings.Count(content[at:min(at+length, len(content))], "\n")
+	from := max(startLine-editContext, 0)
+	to := min(endLine+editContext, len(ls)-1)
+	if from > to {
+		return ""
+	}
+	return e.numbered(from+1, ls[from:to+1])
 }

@@ -1,5 +1,5 @@
 # icebath
-The netrunner toolkit for a deep dive beyond the blackwall, an agent harness behind a tiling desk of animated cards over any model endpoint.
+A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
 
 ## Install
 
@@ -32,13 +32,5 @@ echo "summarize go.mod" | icebath -print -yes
 icebath -mission "map the open ports on 10.0.0.0/24"
 ```
 
-Configuration is read from `~/.config/icebath/config.json`, then `.icebath/config.json` in the working directory, with `rules.json` and `hooks.json` beside each. Extra endpoint profiles go in `~/.config/icebath/profiles.json`, a list or `{"default": "name", "profiles": [...]}` where `default` picks the profile used when none is given and a profile naming a built in provider as `template` takes every field it leaves empty from it. A profile tells its endpoint what a session's `/system` settings ask through `"ghost"` and `"bare"`, each `{"header": {...}, "extra": {...}}`. Keybinds live in `~/.config/icebath/keybinds.json`, grouped by context, written with the defaults on first start, reloaded on save and edited live under config keys or `/keys`. A workspace holds any number of sessions beside the panels, each opened and closed like any other window. Open workspaces with their cards, splits, floats and focus are written to `layout.json` beside `sessions/` as they change and come back on the next start, prompt drafts with them under `drafts/`.
+Configuration Files: `~/.config/icebath/config.json` or `.icebath/config.json`, `rules.json`,`hooks.json`, `~/.config/icebath/profiles.json`, `~/.config/icebath/keybinds.json`, `~/.config/icebath/layout.json`
 
-```json
-{"global": {"palette": ["alt+space"], "window.close": "alt+w"}, "sessions": {"sessions.fork": "f"}}
-```
-
-```go
-app, err := harness.Build(ctx, cfg, send, harness.BuildOptions{})
-run, err := app.Run(ctx, "", []protocol.Part{protocol.Text{Text: "check disk usage"}})
-```

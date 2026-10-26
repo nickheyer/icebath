@@ -4,6 +4,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,11 +15,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/mission"
-	"github.com/nickheyer/icebath/pkg/policy/mode"
+	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
@@ -65,7 +65,6 @@ type desk struct {
 	agents     map[string]*cards.Agent
 	missions   map[string]*cards.Mission
 	findings   *cards.Findings
-	system     *cards.System
 	mission    string
 	compacting bool
 	// Last moment its workspace was on the stage, runs ending later wait in the field
@@ -88,7 +87,6 @@ type Model struct {
 	// Workspaces opened so far, numbering the next id
 	spaces   int
 	metrics  *cards.Telemetry
-	files    *cards.Files
 	jobs     *cards.Jobs
 	sessions *cards.Sessions
 	config   *cards.Config
@@ -141,18 +139,19 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 
 // Theme the configuration names, else the one saved with the layout, else a default fit for the terminal
 func resolveTheme(cfg harness.Config, saved string) (theme.Theme, error) {
-	st := theme.Style{Palette: cfg.UI.Theme}
-	if _, ok := theme.Named(saved); ok && st.Palette == "" {
-		st.Palette = saved
+	name := cfg.UI.Theme
+	if _, ok := theme.Named(saved); ok && name == "" {
+		name = saved
 	}
-	th, err := st.Resolve()
-	if err != nil {
-		return theme.Theme{}, err
-	}
-	if st.Palette == "" {
+	if name == "" {
 		if term := strings.ToLower(os.Getenv("TERM")); term == "dumb" || term == "linux" || os.Getenv("NO_COLOR") != "" {
-			th = theme.Plain()
+			return theme.Plain(), nil
 		}
+		return theme.Blackwall(), nil
+	}
+	th, ok := theme.Named(name)
+	if !ok {
+		return theme.Theme{}, fmt.Errorf("theme: unknown palette %q, choose from %s", name, strings.Join(theme.Names(), ", "))
 	}
 	return th, nil
 }
@@ -160,8 +159,8 @@ func resolveTheme(cfg harness.Config, saved string) (theme.Theme, error) {
 func (m *Model) environment() *cards.Env {
 	a := m.app
 	return &cards.Env{
-		Theme: m.theme, Keys: m.keys, Control: a.Control, Meter: a.Meter, Work: a.Workspace, Approver: a.Approver, PreImage: a.PreImage, MCP: a.MCP, Shell: a.Shell, Tools: a.Tools, Mode: a.Mode, Store: a.Store, Files: a.Files,
-		Journal: a.Journal, Editor: a, Ctx: m.ctx,
+		Theme: m.theme, Keys: m.keys, Control: a.Control, Meter: a.Meter, Approver: a.Approver, MCP: a.MCP, Shell: a.Shell, Tools: a.Tools, Mode: a.Mode, Store: a.Store, Files: a.Files,
+		Editor: a, Ctx: m.ctx,
 		Lives:   a.Lives,
 		Primary: m.endpoint,
 		Models: func(ctx context.Context, p profiles.Profile) ([]profiles.Model, error) {
@@ -171,11 +170,8 @@ func (m *Model) environment() *cards.Env {
 			}
 			return p.ListModels(ctx, prov)
 		},
-		Settings:    m.settings,
-		DefaultBase: a.DefaultBase,
-		Environment: func(model string) string { return a.EnvironmentFor(m.ctx, model) },
-		ProjectDir:  filepath.Join(a.Root, harness.ProjectDir),
-		Now:         time.Now,
+		Settings:   m.settings,
+		ProjectDir: filepath.Join(a.Root, harness.ProjectDir),
 	}
 }
 
@@ -229,30 +225,15 @@ func (m *Model) buildManager(layout wm.Layout, saved bool) {
 		opts = append(opts, wm.WithCascade(*cfg.UI.Cascade))
 	}
 	m.wm = wm.New(opts...)
-	m.wm.OnToast(func(text string, level wm.Level) {
-		m.app.Journal.Add(journalLevel(level), "notice", text)
-	})
 	m.wm.SetEmptyHints("session.new", "open", "palette")
 	if saved {
 		m.wm.Restore(layout)
 	}
 }
 
-// Severity in the log for a toast of the level
-func journalLevel(l wm.Level) string {
-	switch l {
-	case wm.Warn:
-		return harness.LevelWarn
-	case wm.Error:
-		return harness.LevelError
-	}
-	return harness.LevelInfo
-}
-
 func (m *Model) buildCards() {
 	env := m.env
 	m.metrics = cards.NewTelemetry(env)
-	m.files = cards.NewFiles(env)
 	m.jobs = cards.NewJobs(env)
 	m.sessions = cards.NewSessions(env)
 	m.config = cards.NewConfig(env)
@@ -264,8 +245,6 @@ func (m *Model) panel(key string) wm.Card {
 	switch key {
 	case "metrics":
 		return m.metrics
-	case "files":
-		return m.files
 	case "jobs":
 		return m.jobs
 	case "sessions":
@@ -292,10 +271,6 @@ func (m *Model) cardFor(key string) wm.Card {
 	case "findings":
 		if d := m.deskOfSession(rest); d != nil {
 			return m.findingsOf(d)
-		}
-	case "system":
-		if d := m.deskOfSession(rest); d != nil {
-			return m.systemOf(d)
 		}
 	case "mission":
 		sess, id, ok := strings.Cut(rest, ":")
@@ -400,7 +375,7 @@ func loadLayout(path string) (layoutState, []byte, bool) {
 		return l, nil, false
 	}
 	data, err := os.ReadFile(path)
-	if err != nil || unmarshal(data, &l) != nil {
+	if err != nil || json.Unmarshal(data, &l) != nil {
 		return layoutState{}, nil, false
 	}
 	return l, data, true
@@ -421,29 +396,27 @@ func (m *Model) layoutState() layoutState {
 	return l
 }
 
-// Writes the layout when it differs from the one last written, logging a write that fails
-func (m *Model) saveLayout() {
+// Writes the layout when it differs from the one last written
+func (m *Model) saveLayout() error {
 	path := layoutPath(m.app.Config)
 	if path == "" {
-		return
+		return nil
 	}
-	data, err := marshal(m.layoutState())
+	data, err := json.MarshalIndent(m.layoutState(), "", "  ")
 	if err != nil {
-		m.app.Journal.Add(harness.LevelError, "layout", err.Error())
-		return
+		return err
 	}
 	if bytes.Equal(data, m.layoutSaved) {
-		return
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		m.app.Journal.Add(harness.LevelError, "layout", err.Error())
-		return
+		return err
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		m.app.Journal.Add(harness.LevelError, "layout", err.Error())
-		return
+		return err
 	}
 	m.layoutSaved = data
+	return nil
 }
 
 // Starts the manager and restored cards, lists models, watches the keybind file and fires the session start hooks
@@ -495,7 +468,9 @@ type errMsg struct{ err error }
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
 	if _, frame := msg.(anim.FrameMsg); !frame && !m.quitting {
-		m.saveLayout()
+		if err := m.saveLayout(); err != nil {
+			cmd = tea.Batch(cmd, m.wm.Toast("layout: "+err.Error(), wm.Error, 0))
+		}
 	}
 	return model, cmd
 }
@@ -587,7 +562,9 @@ func (m *Model) shutdown() tea.Cmd {
 		return tea.Quit
 	}
 	m.quitting = true
-	m.saveLayout()
+	if err := m.saveLayout(); err != nil {
+		fmt.Fprintln(os.Stderr, "icebath: layout:", err)
+	}
 	m.cancel()
 	m.relay.Close()
 	m.bg.Wait()
@@ -687,7 +664,7 @@ func (m *Model) harnessMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	case harness.HookOutputMsg:
 		return m.wm.Toast(render.Truncate(msg.Text, 80, m.theme), wm.Info, 0), true
-	case harness.FactMsg, harness.ProgressMsg, harness.JobMsg, harness.AttemptMsg, harness.FailoverMsg, harness.ServedMsg, harness.MCPLogMsg:
+	case harness.FactMsg, harness.ProgressMsg, harness.JobMsg, harness.AttemptMsg:
 		return nil, true
 	}
 	return nil, false
@@ -737,8 +714,6 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return m.wm.Toast("wrote "+msg.Path, wm.Success, 0), true
 	case cards.SettingMsg:
 		return m.setSetting(msg.Key, msg.Value, msg.Quiet), true
-	case cards.TuneMsg:
-		return m.tune(msg), true
 	case cards.MissionStateMsg:
 		d := m.deskOfSession(msg.Session)
 		if d == nil {
@@ -802,9 +777,9 @@ func (m *Model) setSetting(key, value string, quiet bool) tea.Cmd {
 	case "compact_threshold":
 		m.app.Meter.SetThreshold(cfg.Compaction.Threshold)
 	case "mode":
-		md := mode.Default
+		md := policy.ModeDefault
 		if value != "" {
-			md, _ = mode.Parse(value)
+			md, _ = policy.ParseMode(value)
 		}
 		m.app.Mode.Set(md)
 	}
@@ -843,26 +818,17 @@ func (m *Model) retitle() {
 	m.wm.SetWindowTitle("icebath " + m.theme.Glyphs.Sep + " " + m.endpoint().Model)
 }
 
-// Applies new tuning to a session, dropping the draft of one turning ghost
-func (m *Model) tune(msg cards.TuneMsg) tea.Cmd {
-	d := m.deskOfSession(msg.Session)
-	if d == nil {
-		return m.wm.Toast("session closed", wm.Warn, 0)
-	}
-	was := harness.TuningOf(d.live.Session).Ghost
-	if err := m.app.Tune(m.ctx, d.live, msg.Tuning); err != nil {
-		return m.wm.Toast(err.Error(), wm.Error, 0)
-	}
-	m.wm.Repaint()
-	name := sessionName(d.live, m.theme)
-	switch {
-	case msg.Tuning.Ghost && !was:
-		if err := os.Remove(cards.DraftPath(m.configDir(), msg.Session)); err != nil && !errors.Is(err, os.ErrNotExist) {
+// Toast for a session whose ghost changed with its profile, dropping the draft of one turning ghost
+func (m *Model) ghosted(l *harness.Live, was bool) tea.Cmd {
+	name := sessionName(l, m.theme)
+	switch now := l.Endpoint.Profile.Ghost; {
+	case now && !was:
+		if err := os.Remove(cards.DraftPath(m.configDir(), l.Session.ID())); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return m.wm.Toast(err.Error(), wm.Error, 0)
 		}
 		m.sessions.Reload()
 		return m.wm.Toast("ghost on, "+name+" kept off disk", wm.Success, 0)
-	case !msg.Tuning.Ghost && was:
+	case was && !now:
 		return m.wm.Toast("ghost off, "+name+" saved to disk", wm.Success, 0)
 	}
 	return nil
@@ -899,13 +865,18 @@ func (m *Model) adoptProfile(msg profileMsg) tea.Cmd {
 	if msg.err != nil {
 		return m.wm.Toast(msg.err.Error(), wm.Error, 0)
 	}
+	var ghost tea.Cmd
 	if msg.live == nil {
 		m.app.SetDefaultEndpoint(msg.name, msg.endpoint)
-	} else if err := m.app.SetEndpointOn(msg.live, msg.name, msg.endpoint); err != nil {
-		return m.wm.Toast(err.Error(), wm.Error, 0)
+	} else {
+		was := msg.live.Endpoint.Profile.Ghost
+		if err := m.app.SetEndpointOn(m.ctx, msg.live, msg.name, msg.endpoint); err != nil {
+			return m.wm.Toast(err.Error(), wm.Error, 0)
+		}
+		ghost = m.ghosted(msg.live, was)
 	}
 	m.retitle()
-	refresh := []tea.Cmd{m.config.FetchModels(), m.listModels(true)}
+	refresh := []tea.Cmd{m.config.FetchModels(), m.listModels(true), ghost}
 	m.wm.Repaint()
 	if err := harness.Save(m.opts.Dir, m.app.Config.Sources, harness.Field{Path: []string{"profile"}, Value: msg.name}, harness.Field{Path: []string{"model"}, Value: msg.endpoint.Model}); err != nil {
 		return tea.Batch(append(refresh, m.wm.Toast(err.Error(), wm.Error, 0))...)
@@ -975,7 +946,7 @@ func (m *Model) compactNow(d *desk) tea.Cmd {
 	go func() {
 		defer m.bg.Done()
 		req := protocol.Request{Messages: sess.Snapshot()}
-		ctx := m.app.Directed(m.ctx, sess)
+		ctx := m.ctx
 		for _, h := range ag.Hooks {
 			if err := h.BeforeTurn(ctx, &req); err != nil {
 				m.relay.Send(compactedMsg{desk: d, err: err})
@@ -1051,3 +1022,65 @@ func StartPrompt(text string) tea.Msg { return startMsg{text: text} }
 
 // Message that starts a mission handed on the command line once the program is up
 func StartMission(objective string) tea.Msg { return startMissionMsg{objective: objective} }
+
+// Sender whose own goroutine hands queued messages to the program so a send from the event loop never blocks
+type relay struct {
+	mu      sync.Mutex
+	program *tea.Program
+	queue   []tea.Msg
+	closed  bool
+	pumping bool
+}
+
+func (r *relay) Send(msg any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
+	r.queue = append(r.queue, msg)
+	r.drain()
+}
+
+// Attaches the program, queued messages reaching it once its event loop runs
+func (r *relay) Attach(p *tea.Program) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.program = p
+	r.drain()
+}
+
+// Drops every queued and later message, for shutdown
+func (r *relay) Close() {
+	r.mu.Lock()
+	r.closed = true
+	r.program = nil
+	r.queue = nil
+	r.mu.Unlock()
+}
+
+// Starts the delivery goroutine under the lock when a program is attached and none is running
+func (r *relay) drain() {
+	if r.program == nil || r.pumping || len(r.queue) == 0 {
+		return
+	}
+	r.pumping = true
+	go r.pump()
+}
+
+// Hands queued messages to the program in order until the queue empties, the relay closes or the program detaches
+func (r *relay) pump() {
+	for {
+		r.mu.Lock()
+		if r.closed || r.program == nil || len(r.queue) == 0 {
+			r.pumping = false
+			r.mu.Unlock()
+			return
+		}
+		msg, p := r.queue[0], r.program
+		r.queue[0] = nil
+		r.queue = r.queue[1:]
+		r.mu.Unlock()
+		p.Send(msg)
+	}
+}

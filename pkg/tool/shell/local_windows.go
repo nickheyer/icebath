@@ -15,9 +15,6 @@ const wrapper = `trap 'pwd -P > "$2"' EXIT
 eval "$1"`
 
 func (l Local) shell() string {
-	if l.Shell != "" {
-		return l.Shell
-	}
 	if p, err := exec.LookPath("bash"); err == nil {
 		return p
 	}

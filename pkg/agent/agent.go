@@ -604,8 +604,3 @@ func errorResult(call protocol.ToolCall, err error) protocol.ToolResult {
 func protocolText(parts []protocol.Part) string {
 	return protocol.Response{Content: parts}.Text()
 }
-
-// Joins the text parts of a response
-func Text(resp protocol.Response) string {
-	return resp.Text()
-}

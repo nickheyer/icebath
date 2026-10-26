@@ -13,7 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
-	"github.com/nickheyer/icebath/pkg/policy/mode"
+	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -239,13 +239,13 @@ func (m *Model) contextDial(used, window int) wm.Segment {
 }
 
 // Dial color of a permission mode, bypass painted as the hazard it is
-func modeStyle(md mode.Mode) wm.SegmentStyle {
+func modeStyle(md policy.Mode) wm.SegmentStyle {
 	switch md {
-	case mode.AcceptEdits:
+	case policy.ModeAcceptEdits:
 		return wm.Warm
-	case mode.Plan:
+	case policy.ModePlan:
 		return wm.Cool
-	case mode.Bypass:
+	case policy.ModeBypass:
 		return wm.Bad
 	}
 	return wm.Dim

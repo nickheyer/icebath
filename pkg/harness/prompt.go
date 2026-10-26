@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,7 +20,6 @@ type Facts struct {
 	Git      bool
 	Platform string
 	Shell    string
-	OS       string
 	Date     time.Time
 	Model    string
 	Mission  bool
@@ -72,9 +72,6 @@ func Environment(f Facts) string {
 	if f.Shell != "" {
 		fmt.Fprintf(&sb, "- Shell: %s\n", f.Shell)
 	}
-	if f.OS != "" {
-		fmt.Fprintf(&sb, "- OS version: %s\n", f.OS)
-	}
 	if !f.Date.IsZero() {
 		fmt.Fprintf(&sb, "- Today's date: %s\n", f.Date.Format("2006-01-02"))
 	}
@@ -101,9 +98,24 @@ func Compose(base, env string) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// Default system prompt, the base with the environment after it
-func Prompt(f Facts, configured string) string {
-	return Compose(Base(configured), Environment(f))
+// Base prompt every session starts from, the conduct and the configured instructions
+func (a *App) DefaultBase() string { return Base(a.System) }
+
+// Environment block the client adds for a run on the model as the machine stands now
+func (a *App) EnvironmentFor(ctx context.Context, model string) string {
+	return Environment(GatherFacts(a.Shell.Dir(), a.Root, model, mission.IDFrom(ctx) != ""))
+}
+
+// Prompt of a run on the endpoint, the profile base or the built in one plus the environment unless left out
+func (a *App) PromptFor(ctx context.Context, ep Endpoint) string {
+	base, env := a.DefaultBase(), ""
+	if ep.Profile.System.Kind != "" {
+		base = ep.System
+	}
+	if !ep.Profile.NoContext {
+		env = a.EnvironmentFor(ctx, ep.Model)
+	}
+	return Compose(base, env)
 }
 
 // Facts about the machine as it stands, the working directory and root given by the caller
@@ -112,9 +124,8 @@ func GatherFacts(dir, root, model string, missionAttached bool) Facts {
 		Dir:      dir,
 		Root:     root,
 		Git:      inGitRepo(dir),
-		Platform: runtime.GOOS,
+		Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		Shell:    filepath.Base(os.Getenv("SHELL")),
-		OS:       osVersion(),
 		Date:     time.Now(),
 		Model:    model,
 		Mission:  missionAttached,

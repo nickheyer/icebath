@@ -2,6 +2,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,8 +29,6 @@ const (
 // Encodes neutral requests to one wire format and decodes its responses back
 type Protocol interface {
 	ID() ID
-	// Reports what the wire format can carry so callers adapt a request before encoding
-	Capabilities() Capabilities
 	// Builds the HTTP call for req, with every protocol level header but no auth
 	Encode(req Request) (Call, error)
 	// Parses a complete non streaming response body
@@ -38,21 +37,6 @@ type Protocol interface {
 	Stream(r io.Reader) iter.Seq2[Event, error]
 	// Parses a non 2xx response body into an Error carrying the wire message
 	DecodeError(status int, body []byte) *Error
-}
-
-// Features a wire format carries, false where the encoder drops or rejects the feature
-type Capabilities struct {
-	Thinking         bool
-	RedactedThinking bool
-	Images           bool
-	ImagesInResults  bool
-	Documents        bool
-	ToolChoiceNone   bool
-	ToolChoiceNamed  bool
-	StopSequences    bool
-	ServerTools      bool
-	Citations        bool
-	Caching          bool
 }
 
 // HTTP request parts a provider completes with a base URL and credentials
@@ -70,11 +54,8 @@ type Error struct {
 	Status  int
 	Type    string
 	Message string
-	Body    []byte
-	// Overload or throttling the wire reports by type rather than status
+	// Overload or throttling the wire reports by type rather than status, worth a retry like a 429 or 5xx
 	Transient bool
-	// Arrived inside a 2xx streaming body rather than as an HTTP status
-	InStream bool
 }
 
 func (e *Error) Error() string {
@@ -267,4 +248,62 @@ func IDs() []ID {
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
+}
+
+// Serializes a wire request without HTML escaping and deep merges extra fields over it
+func MarshalBody(v any, extra map[string]json.RawMessage) ([]byte, error) {
+	body, err := marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if len(extra) == 0 {
+		return body, nil
+	}
+	base, err := decodeObject(body)
+	if err != nil {
+		return nil, fmt.Errorf("protocol: body is not a JSON object: %w", err)
+	}
+	for k, raw := range extra {
+		var val any
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
+		if err := dec.Decode(&val); err != nil {
+			return nil, fmt.Errorf("protocol: extra field %q: %w", k, err)
+		}
+		base[k] = merge(base[k], val)
+	}
+	return marshal(base)
+}
+
+func marshal(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
+func decodeObject(body []byte) (map[string]any, error) {
+	var m map[string]any
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// Overlays src on dst, recursing into objects and replacing everything else
+func merge(dst, src any) any {
+	dm, dok := dst.(map[string]any)
+	sm, sok := src.(map[string]any)
+	if !dok || !sok {
+		return src
+	}
+	for k, v := range sm {
+		dm[k] = merge(dm[k], v)
+	}
+	return dm
 }

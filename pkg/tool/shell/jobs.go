@@ -110,13 +110,11 @@ type Jobs struct {
 	next    int
 	jobs    map[string]*job
 	order   []string
-	max     int
-	keep    int
 	onEvent func(JobEvent)
 }
 
-func newJobs(maxOutput, keep int, onEvent func(JobEvent)) *Jobs {
-	return &Jobs{jobs: map[string]*job{}, max: maxOutput, keep: keep, onEvent: onEvent}
+func newJobs(onEvent func(JobEvent)) *Jobs {
+	return &Jobs{jobs: map[string]*job{}, onEvent: onEvent}
 }
 
 func (j *Jobs) emit(kind JobEventKind, jb *job, data []byte) {
@@ -136,12 +134,12 @@ func (j *Jobs) info(jb *job) JobInfo {
 }
 
 // Launches the command in its own goroutine and returns the job at once
-func (j *Jobs) start(runner Runner, cmd Command) *job {
+func (j *Jobs) start(cmd Command) *job {
 	j.mu.Lock()
 	j.next++
 	id := fmt.Sprintf("job-%d", j.next)
 	ctx, cancel := context.WithCancel(context.Background())
-	out := &stream{max: j.max}
+	out := &stream{max: maxJobOutput}
 	jb := &job{JobInfo: JobInfo{ID: id, CallID: cmd.ID, Line: cmd.Line, Description: cmd.Description, Dir: cmd.Dir, Started: time.Now(), Running: true}, out: out, cancel: cancel, done: make(chan struct{})}
 	out.tap = func(p []byte) { j.emit(JobOutput, jb, p) }
 	j.jobs[id] = jb
@@ -152,7 +150,7 @@ func (j *Jobs) start(runner Runner, cmd Command) *job {
 	cmd.ID = id
 	cmd.Stdout, cmd.Stderr = out, out
 	go func() {
-		res, err := runner.Run(ctx, cmd)
+		res, err := Local{}.Run(ctx, cmd)
 		j.mu.Lock()
 		jb.Running = false
 		jb.Finished = time.Now()
@@ -176,7 +174,7 @@ func (j *Jobs) prune() {
 			finished++
 		}
 	}
-	for i := 0; i < len(j.order) && finished > j.keep; {
+	for i := 0; i < len(j.order) && finished > maxJobs; {
 		id := j.order[i]
 		if jb := j.jobs[id]; jb != nil && !jb.Running {
 			delete(j.jobs, id)

@@ -4,13 +4,11 @@ package cards
 import (
 	"context"
 	"strings"
-	"time"
 
 	"charm.land/lipgloss/v2"
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/policy"
-	"github.com/nickheyer/icebath/pkg/policy/mode"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
@@ -28,17 +26,14 @@ type Env struct {
 	Keys     *keys.Map
 	Control  *harness.Controller
 	Meter    *harness.Meter
-	Work     *harness.Workspace
 	Approver *harness.Approver
-	PreImage *harness.PreImage
 	MCP      *harness.MCP
 	Shell    *shell.Shell
 	Tools    *tool.Registry
-	Mode     *mode.Switch
-	Store    session.Store
-	Journal  *harness.Journal
+	Mode     *policy.ModeSwitch
+	Store    *session.Store
 	// Writes profiles, rules, hooks, servers and tool switches to the files holding them
-	Editor Editor
+	Editor *harness.App
 	// Lifetime of the app, the context servers connect under
 	Ctx context.Context
 	// Resolves file references the way the file tools do, against their directory and root
@@ -51,39 +46,8 @@ type Env struct {
 	Models func(ctx context.Context, p profiles.Profile) ([]profiles.Model, error)
 	// Setting values as the app holds them keyed by name, empty while unset
 	Settings func() map[string]string
-	// Base prompt every session starts from
-	DefaultBase func() string
-	// Environment block the client adds for a run on the model
-	Environment func(model string) string
 	// Directory exports and the shell fallback use
 	ProjectDir string
-	Now        func() time.Time
-}
-
-// Configuration the editor tabs read and write, each change saved to the file holding the entry
-type Editor interface {
-	Instances() []harness.Instance
-	Shadowed(name string) bool
-	SaveProfile(old string, p profiles.Profile) error
-	RemoveProfile(name string) error
-	MoveProfile(name string, delta int) error
-	SetProfileEnabled(name string, on bool) error
-	RuleEntries() ([]harness.RuleEntry, error)
-	AddRule(scope harness.Scope, d policy.Decision, rule string) error
-	ReplaceRule(old harness.RuleEntry, d policy.Decision, rule string) error
-	RemoveRule(e harness.RuleEntry) error
-	HookEntries() ([]harness.HookEntry, error)
-	AddHook(scope harness.Scope, e harness.HookEntry) error
-	ReplaceHook(old, e harness.HookEntry) error
-	RemoveHook(e harness.HookEntry) error
-	ServerEntries() ([]harness.ServerEntry, error)
-	SaveServer(scope harness.Scope, old string, cfg harness.ServerConfig) error
-	RemoveServer(name string) error
-	SetServerEnabled(name string, on bool) (harness.ServerConfig, error)
-	RestartServer(ctx context.Context, old string, cfg harness.ServerConfig) error
-	CloseServer(name string) error
-	SetToolEnabled(name string, on bool) error
-	ScopeOf(path string) string
 }
 
 // First key of the action as a legend shows it
@@ -95,13 +59,6 @@ func (e *Env) keyed(id, text string) string {
 		return k + " " + text
 	}
 	return text
-}
-
-func (e *Env) now() time.Time {
-	if e.Now != nil {
-		return e.Now()
-	}
-	return time.Now()
 }
 
 // Input a session card sends to its agent, steering a run in progress when one is going
@@ -164,15 +121,9 @@ type SetModelMsg struct {
 	Model string
 }
 
-// Request to apply new tuning to a session
-type TuneMsg struct {
-	Session string
-	Tuning  harness.Tuning
-}
-
 // Request to switch the permission mode
 type SetModeMsg struct {
-	Mode mode.Mode
+	Mode policy.Mode
 }
 
 // Request to switch the profile

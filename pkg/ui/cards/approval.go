@@ -180,9 +180,6 @@ func Describe(p *harness.Pending, width int, t theme.Theme) []string {
 	if req.Reason != "" && req.Reason != "default" {
 		facts = append(facts, [2]string{"reason", req.Reason})
 	}
-	if req.Review != nil {
-		facts = append(facts, [2]string{"judge", string(req.Review.Decision) + ", " + req.Review.Reason})
-	}
 	if req.Key != "" {
 		facts = append(facts, [2]string{"rule", render.Cool(req.Key, t)})
 	}

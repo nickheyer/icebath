@@ -20,14 +20,13 @@ const (
 	Detail     = "detail"
 	Sessions   = "sessions"
 	Agents     = "agents"
-	Files      = "files"
 	Findings   = "findings"
 	Jobs       = "jobs"
 	Transcript = "transcript"
 	Approval   = "approval"
 	Mission    = "mission"
-	System     = "system"
 	Form       = "form"
+	Area       = "area"
 	Profiles   = "config.profiles"
 	Models     = "config.models"
 	App        = "config.app"
@@ -35,7 +34,6 @@ const (
 	Hooks      = "config.hooks"
 	MCP        = "config.mcp"
 	Tools      = "config.tools"
-	Log        = "config.log"
 	Keybinds   = "config.keys"
 )
 
@@ -56,14 +54,13 @@ var ContextDocs = map[string]string{
 	Detail:     "open detail panes",
 	Sessions:   "sessions panel",
 	Agents:     "agents panel",
-	Files:      "files panel",
 	Findings:   "findings panel",
 	Jobs:       "jobs panel",
 	Transcript: "agent transcripts",
 	Approval:   "approval dialog",
 	Mission:    "mission panels",
-	System:     "system prompt editor",
 	Form:       "dialogs",
+	Area:       "multi line fields in dialogs",
 	Profiles:   "profiles tab",
 	Models:     "models tab",
 	App:        "app tab",
@@ -71,7 +68,6 @@ var ContextDocs = map[string]string{
 	Hooks:      "hooks tab",
 	MCP:        "MCP tab",
 	Tools:      "tools tab",
-	Log:        "log tab",
 	Keybinds:   "keys tab",
 }
 
@@ -116,8 +112,6 @@ var registry = func() []Action {
 		act("window.master", Global, "swap with master", "swap the focused window with the master window", "alt+m"),
 		act("window.zoom", Global, "fullscreen", "toggle fullscreen for the focused window", "alt+f"),
 		act("window.float", Global, "float", "switch the focused window between floating and tiled", "alt+v"),
-		act("window.layer.up", Global, "layer up", "raise the floating window a layer, above every float on the layers below", "alt+}"),
-		act("window.layer.down", Global, "layer down", "lower the floating window a layer", "alt+{"),
 		act("window.close", Global, "close", "close the focused window", "alt+w"),
 		act("window.grow", Global, "grow", "expand the master area", "alt+="),
 		act("window.shrink", Global, "shrink", "shrink the master area", "alt+-"),
@@ -135,7 +129,6 @@ var registry = func() []Action {
 		act("session.compact", Global, "compact", "summarize the transcript"),
 		act("session.clear", Global, "clear", "save the current session and start a new one in this workspace"),
 		act("session.export", Global, "export", "export the transcript as Markdown"),
-		act("session.system", Global, "system prompt", "edit the session's system prompt and choose its context, bare and ghost settings"),
 		act("run.cancel", Global, "cancel run", "stop the run immediately"),
 		act("run.interrupt", Global, "interrupt run", "stop the run after the current tool finishes"),
 		act("mission.start", Global, "start mission", "start a mission from an objective"),
@@ -152,7 +145,6 @@ var registry = func() []Action {
 		act("motion.set", Global, "motion", "adjust how much windows animate"),
 		act("open.agents", Global, "agents", "open the agents panel"),
 		act("open.metrics", Global, "metrics", "open the metrics panel"),
-		act("open.files", Global, "files", "show files changed during the session"),
 		act("open.jobs", Global, "jobs", "open the background jobs panel"),
 		act("open.sessions", Global, "sessions", "browse saved sessions"),
 		act("open.config", Global, "config", "open settings"),
@@ -260,11 +252,6 @@ var registry = func() []Action {
 		act("agents.open", Agents, "transcript", "open the agent's transcript", "enter"),
 		act("agents.stop", Agents, "stop", "stop the agent", "x"),
 
-		act("files.diff", Files, "diff", "show or hide the file's diff", "enter"),
-		act("files.whole", Files, "since start", "compare the file with its contents at the start of the session", "a"),
-		act("files.scroll.up", Files, "diff up", "scroll the diff up a page", "pgup"),
-		act("files.scroll.down", Files, "diff down", "scroll the diff down a page", "pgdown"),
-
 		act("findings.detail", Findings, "detail", "show or hide the finding and its evidence", "enter"),
 		act("findings.resolve", Findings, "resolve", "mark the finding as resolved or reopen it", "x"),
 		act("findings.tree", Findings, "tree", "switch between table and tree views", "t"),
@@ -313,14 +300,6 @@ var registry = func() []Action {
 		act("mission.resume", Mission, "resume", "resume a finished mission", "r"),
 		act("mission.forget", Mission, "forget", "forget a finished mission", "D"),
 
-		act("system.save", System, "save", "send the edited prompt from the next turn on", "ctrl+s"),
-		act("system.reset", System, "default", "go back to the default prompt", "ctrl+r"),
-		act("system.clear", System, "clear", "empty the editor prompt", "ctrl+l"),
-		act("system.next", System, "next", "move to the next control", "tab"),
-		act("system.prev", System, "previous", "move to the previous control", "shift+tab"),
-		act("system.toggle", System, "switch", "turn the focused setting on or off", "space"),
-		act("system.close", System, "close", "close the editor, keeping unsaved text for the next time it opens", "esc"),
-
 		act("form.next", Form, "next field", "move to the next field", "tab", "down"),
 		act("form.prev", Form, "previous field", "move to the previous field", "shift+tab", "up"),
 		quiet(act("form.left", Form, "left", "select the previous option, decrease the value, or move the cursor left", "left")),
@@ -333,6 +312,11 @@ var registry = func() []Action {
 		quiet(act("form.unset", Form, "unset", "clear the value of an optional field", "delete")),
 		quiet(act("form.home", Form, "start", "move the cursor to the start of the field", "home", "ctrl+a")),
 		quiet(act("form.end", Form, "end", "move the cursor to the end of the field", "end", "ctrl+e")),
+
+		act("area.newline", Area, "new line", "start a new line", "enter"),
+		act("area.save", Area, "save", "save changes in the dialog", "ctrl+s"),
+		quiet(act("area.up", Area, "up", "move up a line; on the first line, move to the previous field", "up")),
+		quiet(act("area.down", Area, "down", "move down a line; on the last line, move to the next field", "down")),
 
 		act("config.profile.use", Profiles, "use", "switch to the selected profile", "enter"),
 		act("config.profile.add", Profiles, "new", "add a profile for a provider", "a"),
@@ -364,8 +348,6 @@ var registry = func() []Action {
 		act("config.mcp.reconnect", MCP, "reconnect", "reconnect to the server", "R"),
 		act("config.tool.toggle", Tools, "on/off", "turn the tool on or off for the model", "space"),
 		act("config.tool.detail", Tools, "detail", "show or hides the tool schema", "enter", "o"),
-		act("config.log.detail", Log, "detail", "show or hide the full log entry", "enter", "o"),
-		act("config.log.clear", Log, "clear", "clear all log entries", "c"),
 		act("config.key.rebind", Keybinds, "rebind", "record a key and replace the existing bindings with it", "enter"),
 		act("config.key.add", Keybinds, "add key", "record an additional key for this action", "a"),
 		act("config.key.type", Keybinds, "type keys", "enter key names for this action", "t"),
