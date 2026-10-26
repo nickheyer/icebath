@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -54,7 +55,14 @@ type Live struct {
 	Facts    *facts.Store
 	Missions *mission.Store
 	Endpoint Endpoint
+	thinking atomic.Bool
 }
+
+// Reports whether the thinking of its runs reaches the transcript
+func (l *Live) ShowsThinking() bool { return l.thinking.Load() }
+
+// Hands the thinking of its runs to the transcript or keeps every thinking event out of it
+func (l *Live) SetThinking(on bool) { l.thinking.Store(on) }
 
 // Everything built from a configuration, shared by the terminal app and the headless runner
 type App struct {
@@ -203,6 +211,12 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 			return l.Missions
 		}
 		return nil
+	}
+	app.Control.Thinking = func(sess *session.Session) bool {
+		if l := app.LiveOf(sess); l != nil {
+			return l.ShowsThinking()
+		}
+		return true
 	}
 	app.MCP = NewMCP(send, app.Tools)
 	app.MCP.Options.Roots = []mcp.Root{{URI: "file://" + filepath.ToSlash(root), Name: filepath.Base(root)}}
@@ -464,6 +478,7 @@ func (missionTools) BeforeTurn(ctx context.Context, req *protocol.Request) error
 // Wraps a session in stores restored from its records, binds it to the endpoint and registers it
 func (a *App) live(sess *session.Session, ep Endpoint) (*Live, error) {
 	l := &Live{Session: sess, Facts: facts.New(), Missions: mission.New(), Endpoint: ep}
+	l.SetThinking(ep.Profile.ShowsThinking())
 	if err := l.Facts.Restore(sess); err != nil {
 		return nil, err
 	}
@@ -581,6 +596,7 @@ func (a *App) SetEndpointOn(ctx context.Context, l *Live, name string, ep Endpoi
 	}
 	was := l.Endpoint.Profile.Ghost
 	l.Endpoint = ep
+	l.SetThinking(ep.Profile.ShowsThinking())
 	l.Session.SetModel(ep.Model)
 	l.Session.Label(profileLabel, ep.Profile.Name)
 	a.SetDefaultEndpoint(name, ep)

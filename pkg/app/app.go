@@ -738,8 +738,24 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 			return m.wm.Toast("no mission "+msg.ID, wm.Warn, 0), true
 		}
 		return m.wm.Toast("forgot mission "+msg.ID, wm.Success, 0), true
+	case cards.ThinkingMsg:
+		return m.toggleThinking(m.deskOfSession(msg.Session)), true
 	}
 	return nil, false
+}
+
+// Shows the thinking of the session of the desk when hidden and hides it when shown, its transcripts loading again
+func (m *Model) toggleThinking(d *desk) tea.Cmd {
+	if d == nil {
+		return m.wm.Toast("session closed", wm.Warn, 0)
+	}
+	on := !d.live.ShowsThinking()
+	d.live.SetThinking(on)
+	m.rethink(d)
+	if on {
+		return m.wm.Toast("thinking shown", wm.Success, 0)
+	}
+	return m.wm.Toast("thinking hidden", wm.Success, 0)
 }
 
 // Applies a setting, then saves it for the next start, an empty value unsetting it and quiet skipping the toast
@@ -874,6 +890,9 @@ func (m *Model) adoptProfile(msg profileMsg) tea.Cmd {
 			return m.wm.Toast(err.Error(), wm.Error, 0)
 		}
 		ghost = m.ghosted(msg.live, was)
+		if d := m.deskOfLive(msg.live); d != nil {
+			m.rethink(d)
+		}
 	}
 	m.retitle()
 	refresh := []tea.Cmd{m.config.FetchModels(), m.listModels(true), ghost}

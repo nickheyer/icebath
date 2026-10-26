@@ -98,6 +98,8 @@ type Model struct {
 	height    int
 	blurred   bool
 	resting   bool
+	// Frames in a row nothing moved, the clock resting on the second so a view drawn after one gets a frame
+	idle      int
 	phase     float64
 	tick      int
 	nextID    int
@@ -198,7 +200,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		moving := m.Advance(frame.DT)
-		if !moving && m.canRest() {
+		m.idle++
+		if moving {
+			m.idle = 0
+		}
+		if m.idle > 1 && m.canRest() {
 			m.resting = true
 			return m, nil
 		}
@@ -250,6 +256,7 @@ func (m *Model) Resting() bool { return m.resting }
 // Schedules a frame now and leaves the rest state
 func (m *Model) wake() tea.Cmd {
 	m.resting = false
+	m.idle = 0
 	return m.clock.Wake()
 }
 
@@ -1359,7 +1366,7 @@ func (m *Model) animateCards(ws *Workspace, dt float64) bool {
 	return moving
 }
 
-// Steps the card's own motion when it has any, repainting it when its view changed
+// Steps the card's own motion when it has any, repainting it and keeping the clock going when its view changed
 func (m *Model) animate(e *entry, dt float64) bool {
 	a, ok := e.card.(Animator)
 	if !ok {
@@ -1374,7 +1381,7 @@ func (m *Model) animate(e *entry, dt float64) bool {
 		return false
 	}
 	e.dirty = true
-	return dt > 0
+	return true
 }
 
 // Reports whether the entry is a tile covered by another card filling its stage
@@ -1398,8 +1405,7 @@ func (m *Model) step(e *entry, dt float64, focused, hovered bool) bool {
 		e.hide.Snap()
 		e.shake.Snap()
 		e.decode = 1
-		m.animate(e, dt)
-		return false
+		return m.animate(e, dt)
 	}
 	dt /= m.motion
 	moving := false

@@ -1,7 +1,6 @@
 package cards
 
 import (
-	"encoding/json"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -32,6 +31,7 @@ type Session struct {
 func NewSession(env *Env, live *harness.Live, dir string) *Session {
 	s := &Session{env: env, live: live}
 	s.Transcript = NewTranscript(env)
+	s.Transcript.ShowThinking(live.ShowsThinking())
 	s.Transcript.Load(live.Session.Entries(), live.Session.Records())
 	base := func() string {
 		if env.Shell != nil {
@@ -42,24 +42,6 @@ func NewSession(env *Env, live *harness.Live, dir string) *Session {
 	s.Composer = NewComposer(env.Theme, env.Keys, dir, base)
 	s.Composer.Bind(live.Session.ID())
 	return s
-}
-
-// View choices of the card kept between launches
-type sessionState struct {
-	Hidden bool `json:"thinking_hidden,omitempty"`
-}
-
-// Whether thinking blocks are hidden, for the next launch
-func (s *Session) State() any { return sessionState{Hidden: !s.Transcript.Thinking()} }
-
-// Shows thinking blocks as the saved state did
-func (s *Session) SetState(raw json.RawMessage) error {
-	var st sessionState
-	if err := json.Unmarshal(raw, &st); err != nil {
-		return err
-	}
-	s.Transcript.ShowThinking(!st.Hidden)
-	return nil
 }
 
 // Open session the card shows
@@ -95,10 +77,19 @@ func (s *Session) Reload() {
 	s.Transcript.Load(s.live.Session.Entries(), s.live.Session.Records())
 }
 
+// Loads the transcript again with or without thinking when the session changed its mind
+func (s *Session) Rethink() {
+	if on := s.live.ShowsThinking(); on != s.Transcript.Thinking() {
+		s.Transcript.ShowThinking(on)
+		s.Reload()
+	}
+}
+
 // Points the card at another open session, the prompt carrying its draft over
 func (s *Session) Rebind(live *harness.Live) {
 	s.live = live
 	s.Composer.Bind(live.Session.ID())
+	s.Transcript.ShowThinking(live.ShowsThinking())
 	s.Reload()
 }
 
@@ -231,7 +222,8 @@ func (s *Session) act(id string) tea.Cmd {
 	case "session.collapse":
 		tr.ExpandAll(false)
 	case "session.thinking":
-		tr.ShowThinking(!tr.Thinking())
+		session := s.live.Session.ID()
+		return func() tea.Msg { return ThinkingMsg{Session: session} }
 	case "mode.cycle":
 		session := s.live.Session.ID()
 		return func() tea.Msg { return CommandMsg{Session: session, Name: "mode"} }

@@ -164,6 +164,11 @@ type MissionRemoveMsg struct {
 	ID      string
 }
 
+// Request to show the thinking of a session when it is hidden and hide it when shown
+type ThinkingMsg struct {
+	Session string
+}
+
 // Row a list movement action leaves the cursor on, among n rows with page rows in view
 func listMove(id string, sel, n, page int) int {
 	last := max(n-1, 0)

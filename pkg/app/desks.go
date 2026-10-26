@@ -166,10 +166,19 @@ func (m *Model) agentCard(id string) (*desk, *cards.Agent) {
 	}
 	card, ok := d.agents[id]
 	if !ok {
-		card = cards.NewAgent(m.env, r)
+		card = cards.NewAgent(m.env, r, d.live.ShowsThinking())
 		d.agents[id] = card
 	}
 	return d, card
+}
+
+// Loads every transcript of the desk again as its session now shows or hides thinking
+func (m *Model) rethink(d *desk) {
+	d.session.Rethink()
+	for _, a := range d.agents {
+		a.Rethink(d.live.ShowsThinking())
+	}
+	m.wm.Repaint()
 }
 
 // Opens a card of the desk beside its session card and growing out of it, switching to its workspace

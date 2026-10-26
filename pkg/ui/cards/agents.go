@@ -254,13 +254,14 @@ type Agent struct {
 	w, h  int
 }
 
-// Builds the card for a child run, loading what it has said so far
-func NewAgent(env *Env, run *harness.Run) *Agent {
+// Builds the card for a child run with what it said so far, thinking included when the session shows it
+func NewAgent(env *Env, run *harness.Run, thinking bool) *Agent {
 	root := run.Parent
 	if root == "" {
 		root = run.ID
 	}
 	tr := NewChildTranscript(env, root, run.Name)
+	tr.ShowThinking(thinking)
 	if run.Session != nil {
 		tr.Load(run.Session.Entries(), run.Session.Records())
 	}
@@ -269,6 +270,33 @@ func NewAgent(env *Env, run *harness.Run) *Agent {
 
 // Run the card follows
 func (a *Agent) Run() *harness.Run { return a.run }
+
+// Loads the transcript again with or without thinking when the session it serves changed its mind
+func (a *Agent) Rethink(on bool) {
+	if on == a.tr.Thinking() {
+		return
+	}
+	a.tr.ShowThinking(on)
+	if a.run.Session != nil {
+		a.tr.Load(a.run.Session.Entries(), a.run.Session.Records())
+	}
+}
+
+// Id of the session the run serves, through the root of a child run
+func (a *Agent) session() string {
+	r := a.run
+	for r != nil && r.Parent != "" && a.env.Control != nil {
+		parent, ok := a.env.Control.Get(r.Parent)
+		if !ok {
+			break
+		}
+		r = parent
+	}
+	if r == nil || r.Session == nil {
+		return ""
+	}
+	return r.Session.ID()
+}
 
 // Glides the transcript between frames
 func (a *Agent) Animate(dt float64) bool { return a.tr.Animate(dt) }
@@ -313,8 +341,7 @@ func (a *Agent) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		_, cmd := a.tr.Update(msg)
 		return a, tea.Batch(cmd, a.schedule())
 	case wm.ActionMsg:
-		a.act(msg.ID)
-		return a, nil
+		return a, a.act(msg.ID)
 	case tea.KeyPressMsg:
 		if a.tr.Searching() && msg.Text != "" {
 			a.tr.SearchType(msg.Text)
@@ -346,12 +373,12 @@ func (a *Agent) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	return a, cmd
 }
 
-// Carries out a keymap action on the transcript or its search bar
-func (a *Agent) act(id string) {
+// Carries out a keymap action on the transcript or its search bar, the thinking toggle going to its session
+func (a *Agent) act(id string) tea.Cmd {
 	tr := a.tr
 	if strings.HasPrefix(id, "search.") {
 		tr.SearchAction(id)
-		return
+		return nil
 	}
 	switch id {
 	case "transcript.down":
@@ -387,10 +414,15 @@ func (a *Agent) act(id string) {
 	case "transcript.collapse":
 		tr.ExpandAll(false)
 	case "transcript.thinking":
-		tr.ShowThinking(!tr.Thinking())
+		session := a.session()
+		if session == "" {
+			return wm.Notify("that session is closed", wm.Warn)
+		}
+		return func() tea.Msg { return ThinkingMsg{Session: session} }
 	case "transcript.follow":
 		tr.ToggleFollow()
 	}
+	return nil
 }
 
 // Header line naming the task and the state of the run

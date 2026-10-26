@@ -226,6 +226,46 @@ func (a *Approver) Close() {
 
 var _ policy.Asker = (*Approver)(nil)
 
+// Event without its thinking parts, the index of the rest moved up, false for one that was only thinking
+func hideThinking(ev agent.Event) (agent.Event, bool) {
+	if ev.Type == agent.EventModel {
+		switch ev.Model.Type {
+		case protocol.EventThinkingStart, protocol.EventThinkingDelta, protocol.EventThinkingEnd:
+			return ev, false
+		}
+		ev.Model.Index -= thinkingBefore(ev.Model.Response.Content, ev.Model.Index)
+		ev.Model.Response.Content = withoutThinking(ev.Model.Response.Content)
+	}
+	if ev.Response != nil {
+		r := *ev.Response
+		r.Content = withoutThinking(r.Content)
+		ev.Response = &r
+	}
+	return ev, true
+}
+
+// Parts with the thinking ones left out, a new slice so the one the session keeps stays whole
+func withoutThinking(parts []protocol.Part) []protocol.Part {
+	out := make([]protocol.Part, 0, len(parts))
+	for _, p := range parts {
+		if _, thinking := p.(protocol.Thinking); !thinking {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Count of thinking parts ahead of the index
+func thinkingBefore(parts []protocol.Part, index int) int {
+	n := 0
+	for _, p := range parts[:min(max(index, 0), len(parts))] {
+		if _, thinking := p.(protocol.Thinking); thinking {
+			n++
+		}
+	}
+	return n
+}
+
 // Frame budget deltas are held for before they are delivered together
 const pumpInterval = 16 * time.Millisecond
 

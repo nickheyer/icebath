@@ -205,12 +205,21 @@ func (m *Map) rebuild() {
 	}
 }
 
-// Actions bound to the key press, the contexts in order and then the global context
+// Actions bound to the key press by context, a shifted key no chord names looked up as the key alone
 func (m *Map) Lookup(contexts []string, msg tea.KeyPressMsg) []string {
+	out := m.lookup(contexts, Chords(msg))
+	if len(out) == 0 {
+		if plain, ok := Unshifted(msg); ok {
+			out = m.lookup(contexts, Chords(plain))
+		}
+	}
+	return out
+}
+
+func (m *Map) lookup(contexts []string, chords []string) []string {
 	if m.byChord == nil {
 		m.rebuild()
 	}
-	chords := Chords(msg)
 	if len(chords) == 0 {
 		return nil
 	}
@@ -417,6 +426,23 @@ func Chords(msg tea.KeyPressMsg) []string {
 		add(mods, msg.BaseCode)
 	}
 	return out
+}
+
+// Press of a named key such as backspace without its shift, false for a printable key or one without shift
+func Unshifted(msg tea.KeyPressMsg) (tea.KeyPressMsg, bool) {
+	if msg.Mod&tea.ModShift == 0 {
+		return msg, false
+	}
+	code := msg.Code
+	if k, ok := keypad[code]; ok {
+		code = k
+	}
+	if _, named := specialNames[code]; !named {
+		return msg, false
+	}
+	msg.Code = code
+	msg.Mod &^= tea.ModShift
+	return msg, true
 }
 
 // Chord a key press is stored as when captured, the shifted symbol over the base key

@@ -187,13 +187,15 @@ type Controller struct {
 	Subagents *agent.Subagents
 	// Mission store of a session, the shared one when nil or when it answers nil
 	MissionsOf func(*session.Session) *mission.Store
-	send       Sender
-	mu         sync.Mutex
-	runs       map[string]*Run
-	order      []string
-	active     map[*agent.Agent]bool
-	next       int
-	wg         sync.WaitGroup
+	// Reports whether a session shows thinking, runs on one that does not losing every thinking event before the pump
+	Thinking func(*session.Session) bool
+	send     Sender
+	mu       sync.Mutex
+	runs     map[string]*Run
+	order    []string
+	active   map[*agent.Agent]bool
+	next     int
+	wg       sync.WaitGroup
 }
 
 func NewController(send Sender, pump *Pump) *Controller {
@@ -245,9 +247,18 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 			c.Saver.Flush(r.Session)
 		}
 		close(r.done)
-		c.send(RunDoneMsg{Run: id, Response: resp, Err: err, Duration: finished.Sub(r.Started)})
+		shown := resp
+		if c.hidesThinking(r.Session) {
+			shown.Content = withoutThinking(shown.Content)
+		}
+		c.send(RunDoneMsg{Run: id, Response: shown, Err: err, Duration: finished.Sub(r.Started)})
 	}()
 	return r, nil
+}
+
+// Reports whether the thinking of runs on the session stays out of every message
+func (c *Controller) hidesThinking(sess *session.Session) bool {
+	return c.Thinking != nil && !c.Thinking(sess)
 }
 
 // Observer that tracks children, schedules saves and feeds the meter before the pump
@@ -280,6 +291,12 @@ func (c *Controller) observer(r *Run) func(agent.Event) {
 		}
 		if c.Meter != nil {
 			c.Meter.Apply(r.ID, ev)
+		}
+		if c.hidesThinking(r.Session) {
+			var kept bool
+			if ev, kept = hideThinking(ev); !kept {
+				return
+			}
 		}
 		forward(ev)
 	}

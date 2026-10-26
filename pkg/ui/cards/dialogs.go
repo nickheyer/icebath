@@ -105,6 +105,7 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 	environment := &field{key: "context", label: "context", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.NoContext), help: "Sends the environment block about the machine and session after the prompt"}
 	bare := &field{key: "bare", label: "bare", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Bare), help: "Asks the endpoint to add no prompt or tools of its own"}
 	ghost := &field{key: "ghost", label: "ghost", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Ghost), help: "Keeps sessions off disk and asks the endpoint to keep nothing of them"}
+	thinking := &field{key: "thinking", label: "thinking", kind: choiceField, choices: []string{"true", "false"}, help: "Shows the model's thinking in the transcript, false keeps every thinking event out of the window"}
 	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.Disabled), help: "Off profiles stay out of pickers"}
 	describeKey := func() {
 		key.kind = textField
@@ -166,6 +167,10 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 			s = from.System
 		}
 		promptFrom.value, system.value = or(string(s.Kind), builtInChoice), s.Value
+		thinking.value = strconv.FormatBool(b.ShowsThinking())
+		if from.Thinking != nil {
+			thinking.value = strconv.FormatBool(*from.Thinking)
+		}
 		for _, f := range []*field{endpoint, model, authName, key, system} {
 			f.cursor = len([]rune(f.value))
 		}
@@ -177,7 +182,7 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		provider = pick.value
 		fill(base(), profiles.Profile{})
 	}
-	fields := []*field{pick, name, model, endpoint, vendor, proto, auth, authName, keyFrom, key, promptFrom, system, environment, bare, ghost, enabled}
+	fields := []*field{pick, name, model, endpoint, vendor, proto, auth, authName, keyFrom, key, promptFrom, system, environment, bare, ghost, thinking, enabled}
 	title := "NEW PROFILE"
 	oldName := ""
 	if old != nil {
@@ -228,6 +233,10 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		p.NoContext = environment.value == "false"
 		p.Bare = bare.value == "true"
 		p.Ghost = ghost.value == "true"
+		p.Thinking = nil
+		if shown := thinking.value == "true"; shown != b.ShowsThinking() {
+			p.Thinking = &shown
+		}
 		if err := c.env.Editor.SaveProfile(oldName, p); err != nil {
 			return nil, err
 		}

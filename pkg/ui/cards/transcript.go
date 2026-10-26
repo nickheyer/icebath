@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"hash/fnv"
 	"image/color"
+	"iter"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -89,13 +91,20 @@ type block struct {
 	expanded bool
 	full     bool
 	// Runes of a thought settled before its newest arrived, and when they arrived
-	settled  int
-	grown    time.Time
+	settled int
+	grown   time.Time
+	// Lines last rendered and the state they were rendered in, standing in while the state has moved on
 	cache    []string
-	cacheKey string
+	cacheKey renderKey
 	// Markdown of the settled paragraphs of a streaming block, keyed by their length, width and theme
 	head    string
 	headKey string
+}
+
+// Everything the lines of a block depend on beyond the theme, the zero key matching no rendered block
+type renderKey struct {
+	width, text, partial, tick, settled           int
+	done, expanded, full, cursor, result, pending bool
 }
 
 // Thinking blocks churn their newest runes this long before they settle
@@ -106,7 +115,7 @@ const churnRunes = 48
 
 // Runes of the text settled by now, the newest still churning, all of them when no arrival was timed
 func (b *block) resolved(now time.Time) int {
-	n := len([]rune(b.text))
+	n := utf8.RuneCountInString(b.text)
 	if b.grown.IsZero() || now.IsZero() {
 		return n
 	}
@@ -121,7 +130,7 @@ func (b *block) resolved(now time.Time) int {
 
 // Reports whether the newest runes of a thought are still churning
 func (b *block) churning(now time.Time) bool {
-	return b.kind == bThinking && b.resolved(now) < len([]rune(b.text))
+	return b.kind == bThinking && b.resolved(now) < utf8.RuneCountInString(b.text)
 }
 
 // Interval between repaints of spinners, elapsed times and churning thoughts
@@ -161,8 +170,13 @@ type Transcript struct {
 	streaming bool
 	running   int
 	dirty     bool
-	thinking  bool
-	turns     int
+	// Loads thinking from the session, every thinking block left out while off
+	thinking bool
+	turns    int
+	// Blocks the last layout left with lines from an earlier state, rendered a few per frame
+	stale int
+	// Whether the view was drawn since the last frame, so only a card on the stage asks for the next
+	viewed bool
 	// Run id followed, every run when empty
 	Run string
 	// Agent name followed, the root lineage when empty
@@ -242,7 +256,7 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case harness.ProgressMsg:
 		if b, ok := tr.tools[msg.Progress.CallID]; ok && b.result == nil {
 			b.partial += msg.Progress.Text
-			b.cacheKey = ""
+			b.cacheKey = renderKey{}
 			tr.dirty = true
 		}
 		return tr, nil
@@ -318,17 +332,26 @@ func (tr *Transcript) Animate(dt float64) bool {
 		changed := tr.shown.Pos != target
 		tr.shown.Snap()
 		tr.glide = false
-		return changed
+		return changed || tr.wantsFrame()
 	}
 	if !tr.glide {
 		tr.glide = true
 		tr.shown.Snap()
-		return false
+		return tr.wantsFrame()
 	}
 	if reach := float64(max(tr.h, 1)) * glideReach; math.Abs(tr.shown.Pos-target) > reach {
 		tr.shown.Pos = target + math.Copysign(reach, tr.shown.Pos-target)
 	}
-	return tr.shown.Step(dt)
+	return tr.shown.Step(dt) || tr.wantsFrame()
+}
+
+// Reports whether blocks wait to be rendered, once per view so a card off the stage asks for no frames
+func (tr *Transcript) wantsFrame() bool {
+	if tr.stale == 0 || !tr.viewed {
+		return false
+	}
+	tr.viewed = false
+	return true
 }
 
 // Line painted at the top, the viewport offset while the view is not gliding
@@ -399,10 +422,13 @@ func (tr *Transcript) SearchType(text string) {
 	tr.applySearch()
 }
 
-// Searches again from the top of the view, now when the lines are laid out and else on the next view
+// Searches again from the top of the view, every block rendered first so no match hides in stale lines
 func (tr *Transcript) applySearch() {
 	tr.current = -1
 	tr.seek = true
+	if tr.stale > 0 && tr.w > 0 {
+		tr.relayout(tr.w, 0)
+	}
 	if !tr.dirty {
 		tr.settle()
 	}
@@ -563,14 +589,18 @@ func (tr *Transcript) toggle(i int) {
 	}
 	b := tr.blocks[i]
 	switch b.kind {
-	case bTool, bThinking, bCompact, bUser, bSteer:
+	case bThinking:
+		b.expanded = !b.expanded
+		b.cacheKey = renderKey{}
+		tr.dirty = true
+	case bTool, bCompact, bUser, bSteer:
 		if b.expanded && !b.full {
 			b.full = true
 		} else {
 			b.expanded = !b.expanded
 			b.full = false
 		}
-		b.cacheKey = ""
+		b.cacheKey = renderKey{}
 		tr.dirty = true
 	}
 }
@@ -579,16 +609,7 @@ func (tr *Transcript) expandAll(on bool) {
 	for _, b := range tr.blocks {
 		if b.kind == bTool {
 			b.expanded, b.full = on, false
-			b.cacheKey = ""
-		}
-	}
-	tr.dirty = true
-}
-
-func (tr *Transcript) invalidate(kind blockKind) {
-	for _, b := range tr.blocks {
-		if b.kind == kind {
-			b.cacheKey = ""
+			b.cacheKey = renderKey{}
 		}
 	}
 	tr.dirty = true
@@ -616,7 +637,7 @@ func (tr *Transcript) Apply(ev agent.Event) {
 		tr.streaming = false
 		for _, b := range tr.turn {
 			b.done = true
-			b.cacheKey = ""
+			b.cacheKey = renderKey{}
 		}
 		if ev.Response != nil {
 			for _, b := range tr.turn {
@@ -628,7 +649,7 @@ func (tr *Transcript) Apply(ev agent.Event) {
 		b := tr.toolBlock(ev.Call, ev.Agent, ev.Round, at)
 		b.started = at
 		b.partial = ""
-		b.cacheKey = ""
+		b.cacheKey = renderKey{}
 		tr.running++
 		tr.dirty = true
 	case agent.EventToolEnd:
@@ -642,7 +663,7 @@ func (tr *Transcript) Apply(ev agent.Event) {
 		if b.duration == 0 && !b.started.IsZero() && !at.IsZero() {
 			b.duration = at.Sub(b.started)
 		}
-		b.cacheKey = ""
+		b.cacheKey = renderKey{}
 		if tr.running > 0 {
 			tr.running--
 		}
@@ -662,7 +683,7 @@ func (tr *Transcript) Apply(ev agent.Event) {
 		b.text = ev.Text
 		b.data = ev.Data
 		b.done = true
-		b.cacheKey = ""
+		b.cacheKey = renderKey{}
 		tr.dirty = true
 	case agent.EventHook:
 		tr.add(&block{kind: bHook, agent: ev.Agent, at: at, text: ev.Text, data: ev.Data, done: true})
@@ -681,7 +702,7 @@ func (tr *Transcript) Apply(ev agent.Event) {
 		if ev.Response != nil {
 			b.text = ev.Response.Text()
 		}
-		b.cacheKey = ""
+		b.cacheKey = renderKey{}
 		tr.dirty = true
 	case agent.EventInterrupt:
 		tr.add(&block{kind: bNote, agent: ev.Agent, at: at, text: "interrupted", done: true})
@@ -695,26 +716,37 @@ func (tr *Transcript) Apply(ev agent.Event) {
 	}
 }
 
-// Rebuilds the blocks of the streaming turn from the response assembled so far
+// Rebuilds the streaming turn from the response so far, its blocks keyed by position among the parts shown
 func (tr *Transcript) model(ev agent.Event) {
 	resp := ev.Model.Response
+	rebuilt := tr.misaligned(resp.Content)
+	if rebuilt {
+		tr.dropTurn()
+	}
+	at, j := -1, 0
 	for i, p := range resp.Content {
-		b, ok := tr.turn[i]
+		if !tr.keeps(p) {
+			continue
+		}
+		if i == ev.Model.Index {
+			at = j
+		}
+		b, ok := tr.turn[j]
 		switch v := p.(type) {
 		case protocol.Text:
 			if !ok {
 				b = tr.add(&block{kind: bText, agent: ev.Agent, round: ev.Round, at: ev.Time, model: resp.Model})
-				tr.turn[i] = b
+				tr.turn[j] = b
 			}
 			if b.text != v.Text {
 				b.text = v.Text
-				b.cacheKey = ""
+				b.cacheKey = renderKey{}
 				tr.dirty = true
 			}
 		case protocol.Thinking:
 			if !ok {
-				b = tr.add(&block{kind: bThinking, agent: ev.Agent, round: ev.Round, at: ev.Time, started: ev.Time})
-				tr.turn[i] = b
+				b = tr.add(&block{kind: bThinking, agent: ev.Agent, round: ev.Round, at: ev.Time, started: ev.Time, expanded: true})
+				tr.turn[j] = b
 			}
 			text := v.Text
 			if v.Redacted && text == "" {
@@ -724,13 +756,13 @@ func (tr *Transcript) model(ev agent.Event) {
 				b.settled = b.resolved(ev.Time)
 				b.grown = ev.Time
 				b.text = text
-				b.cacheKey = ""
+				b.cacheKey = renderKey{}
 				tr.dirty = true
 			}
 		case protocol.ToolCall:
 			if !ok {
 				b = tr.toolBlock(v, ev.Agent, ev.Round, ev.Time)
-				tr.turn[i] = b
+				tr.turn[j] = b
 			}
 			if v.ID != "" && b.call.ID == "" {
 				b.call = v
@@ -745,13 +777,22 @@ func (tr *Transcript) model(ev agent.Event) {
 			if ev.Model.Type == protocol.EventToolCallDelta && ev.Model.Index == i {
 				b.partial = ev.Model.Partial
 			}
-			b.cacheKey = ""
+			b.cacheKey = renderKey{}
 			tr.dirty = true
+		}
+		j++
+	}
+	if rebuilt {
+		for pos, b := range tr.turn {
+			if pos < j-1 {
+				b.done = true
+				b.cacheKey = renderKey{}
+			}
 		}
 	}
 	switch ev.Model.Type {
 	case protocol.EventTextEnd, protocol.EventThinkingEnd, protocol.EventToolCallEnd:
-		if b, ok := tr.turn[ev.Model.Index]; ok {
+		if b, ok := tr.turn[at]; ok {
 			b.done = true
 			if ev.Model.Type == protocol.EventToolCallEnd {
 				b.partial = ""
@@ -759,9 +800,60 @@ func (tr *Transcript) model(ev agent.Event) {
 			if ev.Model.Type == protocol.EventThinkingEnd && !b.started.IsZero() && !ev.Time.IsZero() {
 				b.duration = ev.Time.Sub(b.started)
 			}
-			b.cacheKey = ""
+			b.cacheKey = renderKey{}
 		}
 	}
+}
+
+// Reports whether a part of a streaming turn gets a block, thinking only while it is shown
+func (tr *Transcript) keeps(p protocol.Part) bool {
+	_, thinking := p.(protocol.Thinking)
+	return tr.thinking || !thinking
+}
+
+// Kind of block a part of a streaming turn gets, negative for a part that gets none
+func kindOf(p protocol.Part) blockKind {
+	switch p.(type) {
+	case protocol.Text:
+		return bText
+	case protocol.Thinking:
+		return bThinking
+	case protocol.ToolCall:
+		return bTool
+	}
+	return -1
+}
+
+// Reports whether a block of the streaming turn is of another kind than the part now at its position
+func (tr *Transcript) misaligned(parts []protocol.Part) bool {
+	j := 0
+	for _, p := range parts {
+		if !tr.keeps(p) {
+			continue
+		}
+		if b, ok := tr.turn[j]; ok && b.kind != kindOf(p) {
+			return true
+		}
+		j++
+	}
+	return false
+}
+
+// Drops every block of the streaming turn so the next event builds them again from its response
+func (tr *Transcript) dropTurn() {
+	gone := map[*block]bool{}
+	for _, b := range tr.turn {
+		gone[b] = true
+	}
+	tr.blocks = slices.DeleteFunc(tr.blocks, func(b *block) bool { return gone[b] })
+	for id, b := range tr.tools {
+		if gone[b] {
+			delete(tr.tools, id)
+		}
+	}
+	tr.turn = map[int]*block{}
+	tr.cursor = min(tr.cursor, len(tr.blocks)-1)
+	tr.dirty = true
 }
 
 // Time a thinking block took, or has taken so far while it streams
@@ -825,7 +917,7 @@ func (tr *Transcript) approval(ev agent.Event) {
 		if b.kind == bApproval && b.approval.CallID == info.CallID && b.approval.Pending {
 			b.approval = info
 			b.done = !info.Pending
-			b.cacheKey = ""
+			b.cacheKey = renderKey{}
 			tr.dirty = true
 			return
 		}
@@ -833,12 +925,13 @@ func (tr *Transcript) approval(ev agent.Event) {
 	tr.add(&block{kind: bApproval, agent: ev.Agent, at: ev.Time, approval: info, done: !info.Pending})
 }
 
-// Rebuilds the blocks from stored entries and records, merged by sequence
+// Rebuilds the blocks from stored entries and records, merged by sequence, a run in progress keeping its streaming state
 func (tr *Transcript) Load(entries []session.Entry, records []session.Record) {
 	tr.blocks = nil
 	tr.turn = map[int]*block{}
 	tr.tools = map[string]*block{}
 	tr.turns = 0
+	tr.lineBlock, tr.blockLine = nil, nil
 	type item struct {
 		seq int
 		e   *session.Entry
@@ -859,7 +952,6 @@ func (tr *Transcript) Load(entries []session.Entry, records []session.Record) {
 			tr.loadRecord(*it.r)
 		}
 	}
-	tr.streaming, tr.running = false, 0
 	tr.dirty = true
 }
 
@@ -883,11 +975,14 @@ func (tr *Transcript) loadEntry(e session.Entry) {
 				}
 				tr.add(&block{kind: bText, agent: e.Agent, model: e.Model, at: e.Time, text: v.Text, done: true})
 			case protocol.Thinking:
+				if !tr.thinking {
+					continue
+				}
 				text := v.Text
 				if v.Redacted && text == "" {
 					text = "[redacted]"
 				}
-				tr.add(&block{kind: bThinking, agent: e.Agent, at: e.Time, text: text, done: true})
+				tr.add(&block{kind: bThinking, agent: e.Agent, at: e.Time, text: text, done: true, expanded: true})
 			case protocol.ToolCall:
 				b := tr.add(&block{kind: bTool, agent: e.Agent, at: e.Time, call: v, started: e.Time})
 				if v.ID != "" {
@@ -986,20 +1081,131 @@ func (tr *Transcript) agentColor(name string) color.Color {
 	return palette[int(h.Sum32())%len(palette)]
 }
 
-// Lines of the whole transcript at width, deterministic for the same blocks and state
-func (tr *Transcript) Lines(width int) []string {
-	var out []string
+// Time one layout pass spends rendering blocks out of view, their last lines standing in past it
+const layoutBudget = 5 * time.Millisecond
+
+// Empty rows standing in for a block not yet rendered
+var blank = make([]string, 64)
+
+// Lays the blocks out at width, those in view rendered now and the rest within the limit, zero meaning all
+func (tr *Transcript) relayout(width int, limit time.Duration) {
+	first, last := tr.inView()
+	anchor := -1
+	if first < len(tr.blockLine) {
+		anchor = tr.blockLine[first]
+	}
+	now := time.Now()
+	deadline := now.Add(limit)
+	tr.stale = 0
+	for i := range outward(first, last, len(tr.blocks)) {
+		b := tr.blocks[i]
+		key := tr.stateKey(i, b, width, now)
+		if b.cache != nil && b.cacheKey == key {
+			continue
+		}
+		if (i < first || i > last) && limit > 0 && !time.Now().Before(deadline) {
+			tr.stale++
+			continue
+		}
+		tr.renderBlock(i, b, width, key)
+	}
+	tr.lines = tr.lines[:0]
 	tr.lineBlock = tr.lineBlock[:0]
 	tr.blockLine = tr.blockLine[:0]
 	for i, b := range tr.blocks {
-		lines := tr.renderBlock(i, b, width)
-		tr.blockLine = append(tr.blockLine, len(out))
-		for range lines {
+		tr.blockLine = append(tr.blockLine, len(tr.lines))
+		rows := tr.height(b)
+		for range rows {
 			tr.lineBlock = append(tr.lineBlock, i)
 		}
-		out = append(out, lines...)
+		if b.cache != nil {
+			tr.lines = append(tr.lines, b.cache...)
+			continue
+		}
+		for rows > 0 {
+			n := min(rows, len(blank))
+			tr.lines = append(tr.lines, blank[:n]...)
+			rows -= n
+		}
 	}
-	return out
+	tr.dirty = false
+	tr.vp.SetTotal(len(tr.lines))
+	if tr.follow || anchor < 0 || first >= len(tr.blockLine) {
+		return
+	}
+	if shift := tr.blockLine[first] - anchor; shift != 0 {
+		tr.vp.SetYOffset(tr.vp.YOffset() + shift)
+		tr.shown.Pos += float64(shift)
+	}
+}
+
+// Blocks in view by the last layout, the newest that fill the view while following or before any layout
+func (tr *Transcript) inView() (first, last int) {
+	n := len(tr.blocks)
+	h := max(tr.vp.Height(), 1)
+	if tr.follow || len(tr.lineBlock) == 0 {
+		rows := 0
+		first = n
+		for first > 0 && rows < h {
+			first--
+			rows += tr.height(tr.blocks[first])
+		}
+		return first, n - 1
+	}
+	top := min(tr.vp.YOffset(), len(tr.lineBlock)-1)
+	bottom := min(top+h-1, len(tr.lineBlock)-1)
+	return min(tr.lineBlock[top], n-1), min(tr.lineBlock[bottom], n-1)
+}
+
+// Block indexes from first through last, then alternating below and above them until every one of n is visited
+func outward(first, last, n int) iter.Seq[int] {
+	return func(yield func(int) bool) {
+		for i := max(first, 0); i <= last && i < n; i++ {
+			if !yield(i) {
+				return
+			}
+		}
+		lo, hi := min(first, n)-1, max(last, -1)+1
+		for lo >= 0 || hi < n {
+			if hi < n {
+				if !yield(hi) {
+					return
+				}
+				hi++
+			}
+			if lo >= 0 {
+				if !yield(lo) {
+					return
+				}
+				lo--
+			}
+		}
+	}
+}
+
+// Rows a block takes, its last lines or an estimate before it is rendered
+func (tr *Transcript) height(b *block) int {
+	if b.cache != nil {
+		return len(b.cache)
+	}
+	return estimate(b)
+}
+
+// Rows a block is likely to take, standing in until it is rendered
+func estimate(b *block) int {
+	switch b.kind {
+	case bText, bThinking, bCompact:
+		return strings.Count(b.text, "\n") + 3
+	case bUser, bSteer:
+		rows := 2
+		for _, p := range b.parts {
+			if t, ok := p.(protocol.Text); ok {
+				rows += strings.Count(t.Text, "\n") + 1
+			}
+		}
+		return rows
+	}
+	return 2
 }
 
 // Reports whether the block paints a spinner, elapsed time or churning text and so changes with every tick
@@ -1010,29 +1216,22 @@ func (b *block) animated(now time.Time) bool {
 	return !b.done || b.churning(now)
 }
 
-func (tr *Transcript) stateKey(i int, b *block, width int) string {
-	now := time.Now()
-	k := fmt.Sprintf("%d:%d:%t:%t:%t:%t:%d", width, len(b.text), b.done, b.expanded, b.full, tr.cursor == i, len(b.partial))
+func (tr *Transcript) stateKey(i int, b *block, width int, now time.Time) renderKey {
+	k := renderKey{width: width, text: len(b.text), partial: len(b.partial), done: b.done, expanded: b.expanded, full: b.full, cursor: tr.cursor == i, result: b.result != nil}
 	if b.animated(now) {
-		k += fmt.Sprintf(":%d", tr.tick)
+		k.tick = tr.tick
 	}
 	if b.kind == bThinking {
-		k += fmt.Sprintf(":%t:%d", tr.thinking, b.resolved(now))
-	}
-	if b.result != nil {
-		k += ":r"
+		k.settled = b.resolved(now)
 	}
 	if b.approval != nil {
-		k += fmt.Sprintf(":%t", b.approval.Pending)
+		k.pending = b.approval.Pending
 	}
 	return k
 }
 
-func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
-	key := tr.stateKey(i, b, width)
-	if b.cacheKey == key && b.cache != nil {
-		return b.cache
-	}
+// Renders the block at width and keeps the lines under the key
+func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 	t := tr.env.Theme
 	var lines []string
 	mark := "  "
@@ -1100,7 +1299,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 			head += " " + render.Dim(render.Spinner(tr.tick, t), t)
 		}
 		lines = append(lines, mark+head)
-		if tr.thinking || b.expanded || !b.done {
+		if b.expanded || !b.done {
 			lines = append(lines, tr.thoughtLines(b, body)...)
 		}
 	case bTool:
@@ -1177,7 +1376,6 @@ func (tr *Transcript) renderBlock(i int, b *block, width int) []string {
 	}
 	lines = append(lines, "")
 	b.cache, b.cacheKey = lines, key
-	return lines
 }
 
 // Markdown of a text block, its settled paragraphs kept from last time ahead of the open tail while it streams
@@ -1519,7 +1717,7 @@ func (tr *Transcript) View(w, h int) string {
 	if cw != tr.w || t.Name != tr.themed {
 		tr.dirty = true
 		for _, b := range tr.blocks {
-			b.cacheKey = ""
+			b.cacheKey = renderKey{}
 		}
 	}
 	if h != tr.h {
@@ -1532,9 +1730,9 @@ func (tr *Transcript) View(w, h int) string {
 	if len(tr.blocks) == 0 {
 		return tr.idle(w, h)
 	}
-	if tr.dirty {
-		tr.lines = tr.Lines(cw)
-		tr.dirty = false
+	tr.viewed = true
+	if tr.dirty || tr.stale > 0 {
+		tr.relayout(cw, layoutBudget)
 		tr.settle()
 		if tr.follow {
 			tr.vp.GotoBottom()
@@ -1645,13 +1843,10 @@ func (tr *Transcript) Following() bool { return tr.follow }
 // Reports whether a turn is streaming or a tool is running
 func (tr *Transcript) Busy() bool { return tr.streaming || tr.running > 0 }
 
-// Shows or hides thinking blocks
-func (tr *Transcript) ShowThinking(on bool) {
-	tr.thinking = on
-	tr.invalidate(bThinking)
-}
+// Loads thinking from the session from now on or leaves it out, in force from the next load
+func (tr *Transcript) ShowThinking(on bool) { tr.thinking = on }
 
-// Reports whether thinking blocks are shown
+// Reports whether thinking is loaded from the session
 func (tr *Transcript) Thinking() bool { return tr.thinking }
 
 // Expands or folds every tool result
