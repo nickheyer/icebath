@@ -156,6 +156,7 @@ var registry = func() []Action {
 		act("panel.close", Panel, "close", "close the panel", "q"),
 
 		act("composer.send", Session, "send", "send the prompt, or steer the working agent", "enter"),
+		act("session.stop", Session, "stop", "stop the run", "esc"),
 		act("composer.complete", Session, "complete", "complete the path or command under the cursor", "tab"),
 		quiet(act("composer.up", Session, "up", "move up a line; on the first line, show the previous prompt", "up")),
 		quiet(act("composer.down", Session, "down", "move down a line; on the last line, show the next prompt", "down")),

@@ -125,17 +125,31 @@ func (s *Session) owns(run string) bool {
 	return false
 }
 
-// Reports whether a root run of this session is going
-func (s *Session) busy() bool {
+// Root runs of this session still going
+func (s *Session) roots() []*harness.Run {
 	if s.env.Control == nil {
-		return false
+		return nil
 	}
+	var out []*harness.Run
 	for _, r := range s.env.Control.Active() {
 		if r.Parent == "" && r.Session == s.live.Session {
-			return true
+			out = append(out, r)
 		}
 	}
-	return false
+	return out
+}
+
+// Reports whether a root run of this session is going
+func (s *Session) busy() bool { return len(s.roots()) > 0 }
+
+// Asks the app to stop every root run of the session, as stop in the agents panel does
+func (s *Session) stop() tea.Cmd {
+	var cmds []tea.Cmd
+	for _, r := range s.roots() {
+		id := r.ID
+		cmds = append(cmds, func() tea.Msg { return KillRunMsg{Run: id} })
+	}
+	return tea.Batch(cmds...)
 }
 
 func (s *Session) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
@@ -209,6 +223,8 @@ func (s *Session) act(id string) tea.Cmd {
 	switch id {
 	case "session.search":
 		tr.Search()
+	case "session.stop":
+		return s.stop()
 	case "session.scroll.up":
 		tr.Page(-1)
 	case "session.scroll.down":
@@ -302,5 +318,9 @@ func (s *Session) Hints() []wm.Hint {
 	case s.Composer.Completing():
 		return []wm.Hint{{Action: "complete.accept"}, {Action: "complete.next", Pair: "complete.prev", Label: "choose"}, {Action: "complete.close"}}
 	}
-	return []wm.Hint{{Action: "session.search"}, {Action: "mode.cycle"}}
+	hints := []wm.Hint{{Action: "session.search"}, {Action: "mode.cycle"}}
+	if s.busy() {
+		hints = append([]wm.Hint{{Action: "session.stop"}}, hints...)
+	}
+	return hints
 }
