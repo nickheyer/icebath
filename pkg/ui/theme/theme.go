@@ -295,6 +295,8 @@ type Glyphs struct {
 	Fill      string
 	Slide     string
 	Thumb     string
+	SwitchOn  string
+	SwitchOff string
 	Caret     string
 	Up        string
 	Down      string
@@ -324,7 +326,7 @@ func IcebathGlyphs() Glyphs {
 		Speaker: "┃", Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "⍰", Child: "⟁", Attach: "⎘", Idle: "⊙", Cursor: "►", Marked: "▮",
 		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔",
 		Sep: "∷", Ellipsis: "⋯", Close: "✕", Prompt: "❯", Send: "➜", Grip: "⊹", Back: "❮", CapLeft: "▐", CapRight: "▌", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
-		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "▰", Empty: "▱",
+		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", SwitchOn: "━━●", SwitchOff: "●┈┈", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "▰", Empty: "▱",
 		Ramp:    []rune("▁▂▃▄▅▆▇█"),
 		Spinner: []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"},
 		Churn:   []rune("░▒▓█▙▚▛▜▝▞▟╳╱╲01"),
@@ -341,7 +343,7 @@ func ASCIIGlyphs() Glyphs {
 		Speaker: "|", Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "?", Child: "&", Attach: "+", Idle: "o", Cursor: ">", Marked: "#",
 		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y",
 		Sep: "-", Ellipsis: "...", Close: "x", Prompt: ">", Send: ">", Grip: "+", Back: "<", CapLeft: " ", CapRight: " ", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
-		Rule: "-", Dashed: "-", Bar: "|", Fill: "=", Slide: "-", Thumb: "O", Caret: "|", Up: "^", Down: "v", Track: "|", Heavy: "#", Tick: "+", HeavyTick: "+", Hit: "*", Full: "#", Empty: "-",
+		Rule: "-", Dashed: "-", Bar: "|", Fill: "=", Slide: "-", Thumb: "O", SwitchOn: "==O", SwitchOff: "O--", Caret: "|", Up: "^", Down: "v", Track: "|", Heavy: "#", Tick: "+", HeavyTick: "+", Hit: "*", Full: "#", Empty: "-",
 		Ramp:    []rune(".:-=+*#%"),
 		Spinner: []string{"|", "/", "-", "\\"},
 		Churn:   []rune("#%&*+-=01"),

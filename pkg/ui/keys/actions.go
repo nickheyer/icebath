@@ -334,7 +334,7 @@ var registry = func() []Action {
 		act("config.model.refresh", Models, "refresh", "refresh the model list from the endpoint", "r"),
 		act("config.app.left", App, "less", "select the previous option or decrease the value", "left", "h"),
 		act("config.app.right", App, "more", "select the next option or increase the value", "right", "l"),
-		act("config.app.edit", App, "type", "enter a number", "enter"),
+		act("config.app.edit", App, "type", "type a number or text, or flip a switch", "enter"),
 		act("config.app.unset", App, "unset", "reset the setting to its default", "delete", "backspace"),
 		act("config.rule.add", Rules, "new", "add a rule", "a"),
 		act("config.rule.edit", Rules, "edit", "edit the rule", "enter", "e"),

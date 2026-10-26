@@ -81,32 +81,32 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 	}
 	sources := []string{string(profiles.SourceEnv), string(profiles.SourceStatic), string(profiles.SourceFile), string(profiles.SourceExec), string(profiles.SourceNone)}
 
-	pick := &field{key: "provider", label: "provider", kind: choiceField, choices: names, value: provider, help: "Provider that fills every field left as it is, custom for any other endpoint"}
-	name := &field{key: "name", label: "name", kind: textField, value: written.Name, help: "Letters, digits, dots, dashes and underscores", check: func(v string) error {
+	pick := &field{key: "provider", label: "provider", group: "profile", kind: choiceField, choices: names, value: provider, help: "Provider that fills every field left as it is, custom for any other endpoint"}
+	name := &field{key: "name", label: "name", group: "profile", kind: textField, value: written.Name, help: "Letters, digits, dots, dashes and underscores", check: func(v string) error {
 		if !profiles.ValidName(v) {
 			return errors.New("name must start with a letter or digit and hold only letters, digits, dots, dashes and underscores")
 		}
 		return nil
 	}}
-	model := &field{key: "model", label: "model", kind: textField, value: written.Model(), help: "Default model, empty takes the provider default"}
-	endpoint := &field{key: "endpoint", label: "endpoint", kind: textField, help: "Base URL such as https://api.example.com/v1"}
-	vendor := &field{key: "vendor", label: "vendor", kind: choiceField, help: "Model family, used to list models"}
-	proto := &field{key: "protocol", label: "protocol", kind: choiceField, choices: protocols, help: "Wire format of the endpoint"}
-	auth := &field{key: "auth", label: "auth", kind: choiceField, choices: auths, help: "How the credential is sent, none for no credential"}
-	authName := &field{key: "auth_name", label: "auth name", kind: textField, help: "Header or query parameter such as x-api-key", show: func() bool {
+	model := &field{key: "model", label: "model", group: "profile", kind: textField, value: written.Model(), help: "Default model, empty takes the provider default"}
+	endpoint := &field{key: "endpoint", label: "endpoint", group: "endpoint", kind: textField, help: "Base URL such as https://api.example.com/v1"}
+	vendor := &field{key: "vendor", label: "vendor", group: "endpoint", kind: choiceField, help: "Model family, used to list models"}
+	proto := &field{key: "protocol", label: "protocol", group: "endpoint", kind: choiceField, choices: protocols, help: "Wire format of the endpoint"}
+	auth := &field{key: "auth", label: "auth", group: "credential", kind: choiceField, choices: auths, help: "How the credential is sent, none for no credential"}
+	authName := &field{key: "auth_name", label: "auth name", group: "credential", kind: textField, help: "Header or query parameter such as x-api-key", show: func() bool {
 		return auth.value == string(profiles.AuthHeader) || auth.value == string(profiles.AuthQuery)
 	}}
-	keyFrom := &field{key: "key_from", label: "key from", kind: choiceField, choices: sources, help: "Credential source, read each time the profile opens"}
-	key := &field{key: "key", label: "key", kind: textField, show: func() bool { return keyFrom.value != string(profiles.SourceNone) }}
-	promptFrom := &field{key: "system_from", label: "prompt", kind: choiceField, choices: append([]string{builtInChoice}, sources...), help: "Base prompt sent in place of the built in one, none sending no prompt at all"}
-	system := &field{key: "system", label: "text", kind: textField, show: func() bool {
+	keyFrom := &field{key: "key_from", label: "key from", group: "credential", kind: choiceField, choices: sources, help: "Credential source, read each time the profile opens"}
+	key := &field{key: "key", label: "key", group: "credential", kind: textField, show: func() bool { return keyFrom.value != string(profiles.SourceNone) }}
+	promptFrom := &field{key: "system_from", label: "prompt", group: "prompt", kind: choiceField, choices: append([]string{builtInChoice}, sources...), help: "Base prompt sent in place of the built in one, none sending no prompt at all"}
+	system := &field{key: "system", label: "text", group: "prompt", kind: textField, show: func() bool {
 		return promptFrom.value != builtInChoice && promptFrom.value != string(profiles.SourceNone)
 	}}
-	environment := &field{key: "context", label: "context", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.NoContext), help: "Sends the environment block about the machine and session after the prompt"}
-	bare := &field{key: "bare", label: "bare", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Bare), help: "Asks the endpoint to add no prompt or tools of its own"}
-	ghost := &field{key: "ghost", label: "ghost", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Ghost), help: "Keeps sessions off disk and asks the endpoint to keep nothing of them"}
-	thinking := &field{key: "thinking", label: "thinking", kind: choiceField, choices: []string{"true", "false"}, help: "Shows the model's thinking in the transcript, false keeps every thinking event out of the window"}
-	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.Disabled), help: "Off profiles stay out of pickers"}
+	environment := &field{key: "context", label: "context", group: "prompt", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.NoContext), help: "Sends the environment block about the machine and session after the prompt"}
+	bare := &field{key: "bare", label: "bare", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Bare), help: "Asks the endpoint to add no prompt or tools of its own"}
+	ghost := &field{key: "ghost", label: "ghost", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Ghost), help: "Keeps sessions off disk and asks the endpoint to keep nothing of them"}
+	thinking := &field{key: "thinking", label: "thinking", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, help: "Shows the model's thinking in the transcript, false keeps every thinking event out of the window"}
+	enabled := &field{key: "enabled", label: "enabled", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.Disabled), help: "Off profiles stay out of pickers"}
 	describeKey := func() {
 		key.kind = textField
 		switch profiles.SourceKind(keyFrom.value) {
@@ -350,7 +350,7 @@ func (c *Config) hookForm(old *harness.HookEntry) *Form {
 		return harness.CheckMatcher(v)
 	}}
 	command := &field{key: "command", label: "command", kind: textField, value: e.Command, cursor: len([]rune(e.Command)), help: "Shell command given the event as JSON on stdin, exit 2 blocks with stderr as the reason"}
-	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, step: 5, start: 60, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds the command may run, unset means forever."}
+	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, step: 5, start: 60, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds the command may run, unset means forever"}
 	fields := []*field{event, matcher, command, secs}
 	scope := scopeField(harness.HooksFile)
 	title := "NEW HOOK"
@@ -492,30 +492,31 @@ func (c *Config) serverForm(old *harness.ServerConfig) *Form {
 	if cfg.URL != "" {
 		kind = "http"
 	}
-	text := func(key, label, value, help string, optional bool, show func() bool) *field {
-		return &field{key: key, label: label, kind: textField, value: value, cursor: len([]rune(value)), help: help, optional: optional, show: show}
+	text := func(key, label, group, value, help string, optional bool, show func() bool) *field {
+		return &field{key: key, label: label, group: group, kind: textField, value: value, cursor: len([]rune(value)), help: help, optional: optional, show: show}
 	}
-	transport := &field{key: "transport", label: "transport", kind: choiceField, choices: []string{"stdio", "http"}, value: kind, help: "stdio runs a program, http talks to a streamable HTTP endpoint"}
+	transport := &field{key: "transport", label: "transport", group: "server", kind: choiceField, choices: []string{"stdio", "http"}, value: kind, help: "stdio runs a program, http talks to a streamable HTTP endpoint"}
 	stdio := func() bool { return transport.value == "stdio" }
 	web := func() bool { return transport.value == "http" }
 	timeout := ""
 	if cfg.Timeout > 0 {
 		timeout = strconv.Itoa(cfg.Timeout)
 	}
-	name := text("name", "name", cfg.Name, "Tools are named mcp__name__tool", false, nil)
-	command := text("command", "command", cfg.Command, "Program that speaks MCP such as npx or uvx", false, stdio)
-	args := text("args", "args", joinArgs(cfg.Args), "Program arguments, quotes keep spaces", true, stdio)
+	name := text("name", "name", "server", cfg.Name, "Tools are named mcp__name__tool", false, nil)
+	command := text("command", "command", "process", cfg.Command, "Program that speaks MCP such as npx or uvx", false, stdio)
+	args := text("args", "args", "process", joinArgs(cfg.Args), "Program arguments, quotes keep spaces", true, stdio)
 	args.check = func(v string) error { _, err := splitArgs(v); return err }
-	env := text("env", "env", joinEnv(cfg.Env), "KEY=VALUE words such as TOKEN=abc DEBUG=1", true, stdio)
+	env := text("env", "env", "process", joinEnv(cfg.Env), "KEY=VALUE words such as TOKEN=abc DEBUG=1", true, stdio)
 	env.check = func(v string) error { _, err := splitEnv(v); return err }
-	dir := text("dir", "dir", cfg.Dir, "Working directory, empty for the icebath directory", true, stdio)
-	url := text("url", "url", cfg.URL, "Endpoint such as https://mcp.example.com/mcp", false, web)
-	headers := text("headers", "headers", joinHeaders(cfg.Headers), "Name: value pairs separated by semicolons", true, web)
+	dir := text("dir", "dir", "process", cfg.Dir, "Working directory, empty for the icebath directory", true, stdio)
+	url := text("url", "url", "endpoint", cfg.URL, "Endpoint such as https://mcp.example.com/mcp", false, web)
+	headers := text("headers", "headers", "endpoint", joinHeaders(cfg.Headers), "Name: value pairs separated by semicolons", true, web)
 	headers.check = func(v string) error { _, err := splitHeaders(v); return err }
-	secs := &field{key: "timeout", label: "timeout", kind: numberField, integer: true, optional: true, lo: 1, step: 5, start: 30, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds per handshake and listing, unset means forever"}
-	enabled := &field{key: "enabled", label: "enabled", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!cfg.Disabled), help: "Off servers stay configured without connecting"}
+	secs := &field{key: "timeout", label: "timeout", group: "options", kind: numberField, integer: true, optional: true, lo: 1, step: 5, start: 30, value: timeout, unit: func(v float64) string { return strconv.Itoa(int(v)) + "s" }, help: "Seconds per handshake and listing, unset means forever"}
+	enabled := &field{key: "enabled", label: "enabled", group: "options", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!cfg.Disabled), help: "Off servers stay configured without connecting"}
 	fields := []*field{name, transport, command, args, env, dir, url, headers, secs, enabled}
 	scope := scopeField(harness.ConfigFile)
+	scope.group = "options"
 	title, oldName := "NEW MCP SERVER", ""
 	if old == nil {
 		fields = append(fields, scope)
