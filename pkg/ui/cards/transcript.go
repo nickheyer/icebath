@@ -42,6 +42,23 @@ const glideReach = 3.0
 // Lines a collapsed tool result or read shows before it is cut
 const previewLines = 40
 
+// Lines above the bottom the view may sit and still follow new lines
+const followSlack = 2
+
+// Cells a floating button covered in the last view, none while it was hidden
+type hotspot struct{ x, y, w int }
+
+func (h hotspot) hit(x, y int) bool { return h.w > 0 && y == h.y && x >= h.x && x < h.x+h.w }
+
+// Longest press that still counts as a click rather than a hold
+const clickHold = 400 * time.Millisecond
+
+// Left press on a block, its cell and time, toggling the block when released on the same cell within clickHold
+type press struct {
+	block, x, y int
+	at          time.Time
+}
+
 type blockKind int
 
 const (
@@ -187,12 +204,17 @@ type Transcript struct {
 	pages [2]string
 	// Whether the last view had room for the scrollbar
 	bar bool
+	// Scroll to latest button as last drawn
+	latest hotspot
+	// Press awaiting its release, nil between clicks
+	pressed *press
 }
 
 // Everything the rendered view depends on beyond the painted lines
 type viewKey struct {
 	w, h, offset, gen int
 	theme, up, down   string
+	follow            bool
 }
 
 // One search match on a transcript line, in cells
@@ -283,7 +305,12 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		return tr, nil
 	case tea.MouseClickMsg:
+		tr.pressed = nil
 		if msg.Button != tea.MouseLeft {
+			return tr, nil
+		}
+		if tr.latest.hit(msg.X, msg.Y) {
+			tr.Follow()
 			return tr, nil
 		}
 		if tr.gutterShown() && msg.X > tr.w {
@@ -293,7 +320,19 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		line := tr.vp.YOffset() + msg.Y
 		if line >= 0 && line < len(tr.lineBlock) {
 			tr.cursor = tr.lineBlock[line]
-			tr.toggle(tr.cursor)
+			tr.dirty = true
+			tr.pressed = &press{block: tr.cursor, x: msg.X, y: msg.Y, at: time.Now()}
+		}
+		return tr, nil
+	case tea.MouseReleaseMsg:
+		p := tr.pressed
+		tr.pressed = nil
+		if p == nil || msg.X != p.x || msg.Y != p.y || time.Since(p.at) > clickHold {
+			return tr, nil
+		}
+		line := tr.vp.YOffset() + msg.Y
+		if line >= 0 && line < len(tr.lineBlock) && tr.lineBlock[line] == p.block {
+			tr.toggle(p.block)
 		}
 		return tr, nil
 	}
@@ -369,7 +408,7 @@ func (tr *Transcript) ScrollBy(n int) {
 	} else {
 		tr.vp.ScrollUp(-n)
 	}
-	tr.follow = tr.vp.AtBottom()
+	tr.follow = tr.vp.NearBottom(followSlack)
 }
 
 // Scrolls a page down when d is positive and up otherwise
@@ -379,13 +418,13 @@ func (tr *Transcript) Page(d int) {
 	} else {
 		tr.vp.PageUp()
 	}
-	tr.follow = tr.vp.AtBottom()
+	tr.follow = tr.vp.NearBottom(followSlack)
 }
 
 // Scrolls to the first line
 func (tr *Transcript) Top() {
 	tr.vp.GotoTop()
-	tr.follow = tr.vp.AtBottom()
+	tr.follow = tr.vp.NearBottom(followSlack)
 }
 
 // Follows new lines or holds the view still
@@ -510,7 +549,7 @@ func (tr *Transcript) showMatch() {
 	if line < tr.vp.YOffset() || line >= tr.vp.YOffset()+tr.vp.Height() {
 		tr.vp.SetYOffset(max(line-tr.vp.Height()/3, 0))
 	}
-	tr.follow = tr.vp.AtBottom()
+	tr.follow = tr.vp.NearBottom(followSlack)
 }
 
 // Moves to the next match when d is positive and the previous otherwise, wrapping
@@ -552,7 +591,7 @@ func (tr *Transcript) reveal(i int) {
 		return
 	}
 	tr.vp.SetYOffset(tr.blockLine[i])
-	tr.follow = tr.vp.AtBottom()
+	tr.follow = tr.vp.NearBottom(followSlack)
 }
 
 // Moves to the previous or next user or assistant turn boundary
@@ -589,20 +628,21 @@ func (tr *Transcript) toggle(i int) {
 	}
 	b := tr.blocks[i]
 	switch b.kind {
-	case bThinking:
+	case bThinking, bCompact:
 		b.expanded = !b.expanded
-		b.cacheKey = renderKey{}
-		tr.dirty = true
-	case bTool, bCompact, bUser, bSteer:
+	case bUser, bSteer:
+		b.full = !b.full
+	case bTool:
 		if b.expanded && !b.full {
 			b.full = true
 		} else {
-			b.expanded = !b.expanded
-			b.full = false
+			b.expanded, b.full = !b.expanded, false
 		}
-		b.cacheKey = renderKey{}
-		tr.dirty = true
+	default:
+		return
 	}
+	b.cacheKey = renderKey{}
+	tr.dirty = true
 }
 
 func (tr *Transcript) expandAll(on bool) {
@@ -1263,7 +1303,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 		text, extras := partsText(b.parts, t)
 		shown := wrap(text)
 		if !b.full && len(shown) > previewLines {
-			shown = append(shown[:previewLines], "  "+render.Dim(fmt.Sprintf("%s %d more lines, click to show", t.Glyphs.Ellipsis, len(shown)-previewLines), t))
+			shown = append(shown[:previewLines], "  "+render.Dim(tr.more(len(shown)-previewLines), t))
 		}
 		lines = append(lines, shown...)
 		for _, e := range extras {
@@ -1595,12 +1635,17 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 		limit = len(bodyLines)
 	}
 	if len(bodyLines) > limit {
-		bodyLines = append(bodyLines[:limit], render.Dim(fmt.Sprintf("%s %d more lines, click to show all", t.Glyphs.Ellipsis, len(bodyLines)-limit), t))
+		bodyLines = append(bodyLines[:limit], render.Dim(tr.more(len(bodyLines)-limit), t))
 	}
 	for _, l := range bodyLines {
 		lines = append(lines, "  "+l)
 	}
 	return lines
+}
+
+// Cut marker naming the lines left out
+func (tr *Transcript) more(n int) string {
+	return fmt.Sprintf("%s %d more lines, click to show all", tr.env.Theme.Glyphs.Ellipsis, n)
 }
 
 // Short count shown beside a finished tool
@@ -1728,6 +1773,7 @@ func (tr *Transcript) View(w, h int) string {
 		}
 	}
 	tr.w, tr.h, tr.themed = cw, h, t.Name
+	tr.latest = hotspot{}
 	if len(tr.blocks) == 0 {
 		return tr.idle(w, h)
 	}
@@ -1740,7 +1786,13 @@ func (tr *Transcript) View(w, h int) string {
 		}
 	}
 	painted := tr.paintedOffset()
-	key := viewKey{w: w, h: h, offset: painted, gen: tr.gen, theme: t.Name, up: tr.env.Keys.First(tr.pages[0]), down: tr.env.Keys.First(tr.pages[1])}
+	key := viewKey{w: w, h: h, offset: painted, gen: tr.gen, theme: t.Name, up: tr.env.Keys.First(tr.pages[0]), down: tr.env.Keys.First(tr.pages[1]), follow: tr.follow}
+	label := ""
+	if !tr.follow && h > 0 {
+		label = lipgloss.NewStyle().Foreground(t.Bg).Background(t.Accent).Bold(true).Render(" " + t.Glyphs.Down + " scroll to latest ")
+		lw := ansi.StringWidth(label)
+		tr.latest = hotspot{x: max(cw-lw-1, 0), y: max(h-2, 0), w: lw}
+	}
 	if key == tr.viewKey && tr.view != "" {
 		return tr.view
 	}
@@ -1748,6 +1800,9 @@ func (tr *Transcript) View(w, h int) string {
 	rows = append(rows, tr.painted[min(painted, len(tr.painted)):min(painted+h, len(tr.painted))]...)
 	for len(rows) < h {
 		rows = append(rows, "")
+	}
+	if label != "" {
+		rows[tr.latest.y] = render.Fit(rows[tr.latest.y], tr.latest.x, t) + label
 	}
 	body := strings.Join(rows, "\n")
 	if gw > 0 {
@@ -1788,7 +1843,7 @@ func (tr *Transcript) clickGutter(y int) {
 		tr.Page(1)
 	case hitJump:
 		tr.vp.SetYOffset(line)
-		tr.follow = tr.vp.AtBottom()
+		tr.follow = tr.vp.NearBottom(followSlack)
 	}
 }
 

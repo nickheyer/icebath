@@ -352,7 +352,7 @@ func (a *Agent) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			a.tr.SearchType(msg.Content)
 		}
 		return a, nil
-	case tea.MouseClickMsg, tea.MouseWheelMsg:
+	case tea.MouseClickMsg, tea.MouseWheelMsg, tea.MouseReleaseMsg:
 		mo := msg.(tea.MouseMsg).Mouse()
 		if mo.Y < 1 {
 			return a, nil
@@ -363,8 +363,11 @@ func (a *Agent) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		mo.Y--
 		var shifted tea.Msg = tea.MouseWheelMsg(mo)
-		if _, click := msg.(tea.MouseClickMsg); click {
+		switch msg.(type) {
+		case tea.MouseClickMsg:
 			shifted = tea.MouseClickMsg(mo)
+		case tea.MouseReleaseMsg:
+			shifted = tea.MouseReleaseMsg(mo)
 		}
 		_, cmd := a.tr.Update(shifted)
 		return a, cmd

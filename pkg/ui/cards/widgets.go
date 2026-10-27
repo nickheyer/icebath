@@ -47,6 +47,9 @@ func (s *scroll) ScrollUp(n int)   { s.SetYOffset(s.offset - n) }
 func (s *scroll) PageDown()        { s.ScrollDown(s.height) }
 func (s *scroll) PageUp()          { s.ScrollUp(s.height) }
 
+// Reports whether the offset sits within slack lines of the bottom
+func (s *scroll) NearBottom(slack int) bool { return s.offset+slack >= s.maxOffset() }
+
 // Scrollbar beside scrolling content, its caps showing the paging keys and its track a timeline of turns and matches
 type gutter struct {
 	h       int

@@ -52,10 +52,8 @@ type Completer interface {
 type Options struct {
 	// Permits loopback, private and link local targets
 	AllowPrivate bool
-	// Model that answers the prompt argument when set
+	// Model that answers the prompt argument when set, naming its own model id
 	Summarizer Completer
-	// Model id the summarizer is called with
-	Model string
 }
 
 // Structured outcome of a fetch
@@ -88,9 +86,6 @@ type fetch struct {
 
 // Tool that fetches a URL, converts HTML to text and optionally answers a prompt about it
 func Fetch(o Options) (tool.Tool, error) {
-	if o.Summarizer != nil && o.Model == "" {
-		return nil, errors.New("web: a summarizer needs a model id")
-	}
 	client := &http.Client{Timeout: fetchTimeout, Transport: transport(o.AllowPrivate)}
 	return &fetch{Options: o, client: client, cache: map[string]cached{}}, nil
 }
@@ -332,7 +327,6 @@ func decode(body []byte, charset string) (string, string, error) {
 // Asks the summarizer to answer the prompt using only the fetched text
 func (f *fetch) answer(ctx context.Context, page Page, prompt string) (tool.Result, error) {
 	req := protocol.Request{
-		Model:     f.Model,
 		System:    "You answer questions about a web page using only its content below. Quote exact wording where it matters and say plainly when the page does not contain the answer.",
 		MaxTokens: maxSummaryTokens,
 		Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{

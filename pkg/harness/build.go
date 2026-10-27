@@ -26,8 +26,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool/web"
 )
 
-// Profile used when neither the configuration nor a profile file names one
-const DefaultProfile = "anthropic"
+// Error of a run or an open while nothing names a profile
+var ErrNoProfile = errors.New("harness: no profile is open, pick one in config or pass -profile")
 
 const (
 	// Session label naming the profile the session runs on
@@ -151,11 +151,10 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	if name == "" {
 		name = fileDefault
 	}
-	if name == "" {
-		name = DefaultProfile
-	}
-	if app.Primary, err = app.open(ctx, Target{Profile: name, Model: cfg.Model}); err != nil {
-		return nil, err
+	if name != "" {
+		if app.Primary, err = app.open(ctx, Target{Profile: name, Model: cfg.Model}); err != nil {
+			return nil, err
+		}
 	}
 	app.Meter.SetCatalog(app.Primary.Catalog, app.Primary.Profile.Name)
 	app.Meter.SetThreshold(cfg.Compaction.Threshold)
@@ -245,7 +244,7 @@ func (a *App) open(ctx context.Context, t Target) (Endpoint, error) {
 	if t.Profile == "" {
 		t.Profile = a.Primary.Profile.Name
 		if t.Profile == "" {
-			t.Profile = DefaultProfile
+			return Endpoint{}, ErrNoProfile
 		}
 	}
 	prof, ok := a.FindProfile(t.Profile)
@@ -296,6 +295,9 @@ func profileNames() []string {
 type primary struct{ a *App }
 
 func (p primary) Complete(ctx context.Context, req protocol.Request) (protocol.Response, error) {
+	if p.a.Primary.Provider == nil {
+		return protocol.Response{}, ErrNoProfile
+	}
 	req.Model = p.a.Primary.Model
 	return p.a.Primary.Provider.Complete(ctx, req)
 }
@@ -316,7 +318,7 @@ func (a *App) buildTools(dir, root string) error {
 		return err
 	}
 	if !cfg.Web.Disabled {
-		fetch, err := web.Fetch(web.Options{AllowPrivate: cfg.Web.AllowPrivate, Summarizer: primary{a}, Model: a.Primary.Model})
+		fetch, err := web.Fetch(web.Options{AllowPrivate: cfg.Web.AllowPrivate, Summarizer: primary{a}})
 		if err != nil {
 			return err
 		}
@@ -356,7 +358,7 @@ func (a *App) childFactory(ctx context.Context, kind string) (*agent.Agent, erro
 	}
 	sess.Label(parentLabel, parent)
 	sess.Label("agent", policy.AgentFrom(ctx))
-	return a.newAgent("", sess, ep), nil
+	return a.newAgent("", sess, ep)
 }
 
 func (a *App) buildPolicy(root string) error {
@@ -381,12 +383,15 @@ func (a *App) buildPolicy(root string) error {
 }
 
 // Builds an agent on the session with every configured hook, the endpoint of the session and the shared gate
-func (a *App) NewAgent(name string, sess *session.Session) *agent.Agent {
+func (a *App) NewAgent(name string, sess *session.Session) (*agent.Agent, error) {
 	return a.newAgent(name, sess, a.endpointOf(sess))
 }
 
 // Builds an agent on the session that runs on the endpoint, as the kind of the session when it has one
-func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) *agent.Agent {
+func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.Agent, error) {
+	if ep.Provider == nil {
+		return nil, ErrNoProfile
+	}
 	cfg := a.Config
 	kind, _ := a.KindOf(sess)
 	ag := &agent.Agent{Name: name, Model: ep.Provider, ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
@@ -428,7 +433,7 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) *agent.A
 		}
 		ag.Hooks = append(ag.Hooks, s)
 	}
-	return ag
+	return ag, nil
 }
 
 // Writer that turns hook output into messages
@@ -444,12 +449,20 @@ func (h hookLog) Write(p []byte) (int, error) {
 
 // Starts a run of a fresh root agent on the app session
 func (a *App) Run(ctx context.Context, missionID string, input []protocol.Part) (*Run, error) {
-	return a.Control.Start(ctx, a.NewAgent("", a.Session), missionID, input)
+	return a.start(ctx, a.Session, missionID, input)
 }
 
 // Starts a run on an open session
 func (a *App) RunOn(ctx context.Context, l *Live, missionID string, input []protocol.Part) (*Run, error) {
-	return a.Control.Start(ctx, a.NewAgent("", l.Session), missionID, input)
+	return a.start(ctx, l.Session, missionID, input)
+}
+
+func (a *App) start(ctx context.Context, sess *session.Session, missionID string, input []protocol.Part) (*Run, error) {
+	ag, err := a.NewAgent("", sess)
+	if err != nil {
+		return nil, err
+	}
+	return a.Control.Start(ctx, ag, missionID, input)
 }
 
 // Fires the SessionStart hooks

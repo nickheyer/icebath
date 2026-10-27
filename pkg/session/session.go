@@ -801,7 +801,8 @@ func heading(role protocol.Role) string {
 func writePart(sb *strings.Builder, p protocol.Part) {
 	switch v := p.(type) {
 	case protocol.Text:
-		sb.WriteString(strings.TrimRight(v.Text, "\n") + "\n\n")
+		sb.WriteString(strings.TrimRight(v.Text, "\n"))
+		sb.WriteString("\n\n")
 		for _, c := range v.Citations {
 			label := c.Title
 			if label == "" {
@@ -832,8 +833,10 @@ func writePart(sb *strings.Builder, p protocol.Part) {
 			sb.WriteString("> [redacted thinking]\n\n")
 			return
 		}
-		for _, line := range strings.Split(strings.TrimRight(v.Text, "\n"), "\n") {
-			sb.WriteString("> " + line + "\n")
+		for line := range strings.SplitSeq(strings.TrimRight(v.Text, "\n"), "\n") {
+			sb.WriteString("> ")
+			sb.WriteString(line)
+			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")
 	case protocol.ToolCall:

@@ -205,6 +205,12 @@ func (s *Session) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			return s, cmd
 		}
 		return s, nil
+	case tea.MouseReleaseMsg:
+		if msg.Y < s.split {
+			_, cmd := s.Transcript.Update(msg)
+			return s, cmd
+		}
+		return s, nil
 	case tickMsg:
 		_, cmd := s.Transcript.Update(msg)
 		return s, cmd

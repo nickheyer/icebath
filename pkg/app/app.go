@@ -987,8 +987,11 @@ func (m *Model) compactNow(d *desk) tea.Cmd {
 	}
 	saved := m.app.Config
 	m.app.Config = cfg
-	ag := m.app.NewAgent("", d.live.Session)
+	ag, err := m.app.NewAgent("", d.live.Session)
 	m.app.Config = saved
+	if err != nil {
+		return m.wm.Toast(err.Error(), wm.Error, 0)
+	}
 	d.compacting = true
 	sess := d.live.Session
 	m.bg.Add(1)
