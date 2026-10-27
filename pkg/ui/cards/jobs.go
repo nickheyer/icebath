@@ -178,8 +178,6 @@ func (j *Jobs) View(w, h int) string {
 		if !jb.Running {
 			elapsed = jb.Finished.Sub(jb.Started)
 			switch {
-			case jb.Error != "":
-				state = render.Bad("failed", t)
 			case jb.TimedOut:
 				state = render.Warm("timeout", t)
 			case jb.ExitCode != 0:

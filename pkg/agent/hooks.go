@@ -8,15 +8,14 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
+	"github.com/nickheyer/icebath/pkg/shell"
 )
 
 // Moment in a run a hook can attach to
@@ -382,29 +381,24 @@ func (r HookRunner) exec(ctx context.Context, event HookEvent, toolName string, 
 	if err != nil {
 		return hookVerdict{}, err
 	}
-	c := proc.ShellCommand(hctx, cmd.Command)
-	c.Dir = r.Dir
-	c.Env = append(append(os.Environ(), "ICEBATH_SESSION_ID="+r.SessionID, "ICEBATH_HOOK_EVENT="+string(event)), r.Env...)
-	c.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
-	c.Stdout, c.Stderr = &stdout, &stderr
+	env := append([]string{"ICEBATH_SESSION_ID=" + r.SessionID, "ICEBATH_HOOK_EVENT=" + string(event)}, r.Env...)
 	started := time.Now()
-	err = c.Run()
-	ex := HookExecution{HookEvent: event, Command: cmd.Command, Tool: toolName, Duration: time.Since(started), Stdout: stdout.String(), Stderr: stderr.String()}
-	if c.ProcessState != nil {
-		ex.ExitCode = c.ProcessState.ExitCode()
-	}
+	code, err := shell.Cmd{Line: cmd.Command, Dir: r.Dir, Env: env, Stdin: bytes.NewReader(stdin), Stdout: &stdout, Stderr: &stderr}.Run(hctx)
+	ex := HookExecution{HookEvent: event, Command: cmd.Command, Tool: toolName, ExitCode: code, Duration: time.Since(started), Stdout: stdout.String(), Stderr: stderr.String()}
 	if r.Log != nil && stderr.Len() > 0 {
 		fmt.Fprintf(r.Log, "[hook %s] %s\n", event, strings.TrimSpace(stderr.String()))
 	}
 	reason := strings.TrimSpace(stderr.String())
-	var exit *exec.ExitError
+	if err == nil && code != 0 && code != 2 {
+		err = fmt.Errorf("exit status %d", code)
+	}
 	switch {
 	case errors.Is(hctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
 		ex.ExitCode = -1
 		r.publish(ctx, ex, fmt.Sprintf("timed out after %s", timeout))
 		return hookVerdict{}, fmt.Errorf("hook %s %q timed out after %s", event, cmd.Command, timeout)
-	case errors.As(err, &exit) && exit.ExitCode() == 2:
+	case err == nil && code == 2:
 		if reason == "" {
 			reason = "blocked by hook"
 		}

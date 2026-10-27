@@ -26,8 +26,6 @@ type JobInfo struct {
 	Running     bool
 	ExitCode    int
 	TimedOut    bool
-	// Why the job could not run at all, empty when the command started
-	Error string
 	// Bytes of output produced so far
 	Bytes int64
 }
@@ -53,7 +51,6 @@ type job struct {
 	out    *stream
 	cancel context.CancelFunc
 	done   chan struct{}
-	err    error
 	read   int64
 }
 
@@ -106,6 +103,7 @@ func (s *stream) since(from int64) (data []byte, next int64, dropped int64) {
 
 // Table of background jobs keyed by id
 type Jobs struct {
+	shell   *Shell
 	mu      sync.Mutex
 	next    int
 	jobs    map[string]*job
@@ -113,8 +111,8 @@ type Jobs struct {
 	onEvent func(JobEvent)
 }
 
-func newJobs(onEvent func(JobEvent)) *Jobs {
-	return &Jobs{jobs: map[string]*job{}, onEvent: onEvent}
+func newJobs(s *Shell, onEvent func(JobEvent)) *Jobs {
+	return &Jobs{shell: s, jobs: map[string]*job{}, onEvent: onEvent}
 }
 
 func (j *Jobs) emit(kind JobEventKind, jb *job, data []byte) {
@@ -133,37 +131,35 @@ func (j *Jobs) info(jb *job) JobInfo {
 	return info
 }
 
-// Launches the command in its own goroutine and returns the job at once
-func (j *Jobs) start(cmd Command) *job {
+// Registers the job on a copy of the shell as it stands and runs it in its own goroutine
+func (j *Jobs) start(callID, description, line string, timeout time.Duration) (*job, error) {
+	fork, err := j.shell.sh.Fork()
+	if err != nil {
+		return nil, err
+	}
 	j.mu.Lock()
 	j.next++
 	id := fmt.Sprintf("job-%d", j.next)
 	ctx, cancel := context.WithCancel(context.Background())
 	out := &stream{max: maxJobOutput}
-	jb := &job{JobInfo: JobInfo{ID: id, CallID: cmd.ID, Line: cmd.Line, Description: cmd.Description, Dir: cmd.Dir, Started: time.Now(), Running: true}, out: out, cancel: cancel, done: make(chan struct{})}
+	jb := &job{JobInfo: JobInfo{ID: id, CallID: callID, Line: line, Description: description, Dir: fork.Dir(), Started: time.Now(), Running: true}, out: out, cancel: cancel, done: make(chan struct{})}
 	out.tap = func(p []byte) { j.emit(JobOutput, jb, p) }
 	j.jobs[id] = jb
 	j.order = append(j.order, id)
 	j.prune()
 	j.mu.Unlock()
 	j.emit(JobStarted, jb, nil)
-	cmd.ID = id
-	cmd.Stdout, cmd.Stderr = out, out
 	go func() {
-		res, err := Local{}.Run(ctx, cmd)
+		res := execute(ctx, fork, line, jb.out, jb.out, timeout)
 		j.mu.Lock()
 		jb.Running = false
 		jb.Finished = time.Now()
-		jb.ExitCode, jb.TimedOut, jb.err = res.ExitCode, res.TimedOut, err
-		if err != nil {
-			jb.ExitCode = -1
-			jb.Error = err.Error()
-		}
+		jb.ExitCode, jb.TimedOut = res.ExitCode, res.TimedOut
 		j.mu.Unlock()
 		close(jb.done)
 		j.emit(JobFinished, jb, nil)
 	}()
-	return jb
+	return jb, nil
 }
 
 // Forgets the oldest finished jobs beyond the retention count
@@ -226,9 +222,9 @@ func (j *Jobs) close() {
 }
 
 const outputSchema = `{"type":"object","properties":{
-"bash_id":{"type":"string","description":"Id returned when the job was started"},
+"job_id":{"type":"string","description":"Id returned when the job was started"},
 "filter":{"type":"string","description":"Regular expression, only lines matching it are returned"}},
-"required":["bash_id"],"additionalProperties":false}`
+"required":["job_id"],"additionalProperties":false}`
 
 type output struct{ *Shell }
 
@@ -238,7 +234,7 @@ func (s *Shell) Output() tool.Tool { return output{s} }
 func (output) Definition() protocol.Tool {
 	return protocol.Tool{
 		Name:        OutputName,
-		Description: "Returns new output from a background job started by Bash along with whether it is still running and its exit code once finished. Each call returns only what arrived since the previous call.",
+		Description: "Returns new output from a background job started by Shell along with whether it is still running and its exit code once finished. Each call returns only what arrived since the previous call.",
 		Parameters:  json.RawMessage(outputSchema),
 	}
 }
@@ -249,7 +245,7 @@ func (output) Annotations() tool.Annotations {
 
 func (o output) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
 	var in struct {
-		ID     string `json:"bash_id"`
+		ID     string `json:"job_id"`
 		Filter string `json:"filter"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
@@ -270,7 +266,7 @@ func (o output) Run(ctx context.Context, args json.RawMessage) (tool.Result, err
 	o.jobs.mu.Lock()
 	data, next, dropped := jb.out.since(jb.read)
 	jb.read = next
-	info, err := jb.JobInfo, jb.err
+	info := jb.JobInfo
 	o.jobs.mu.Unlock()
 	text := string(data)
 	if filter != nil {
@@ -293,8 +289,6 @@ func (o output) Run(ctx context.Context, args json.RawMessage) (tool.Result, err
 	switch {
 	case info.Running:
 		sb.WriteString("\n[running]")
-	case err != nil:
-		fmt.Fprintf(&sb, "\n[failed to run: %v]", err)
 	case info.TimedOut:
 		sb.WriteString("\n[killed by timeout]")
 	default:
@@ -304,8 +298,8 @@ func (o output) Run(ctx context.Context, args json.RawMessage) (tool.Result, err
 }
 
 const killSchema = `{"type":"object","properties":{
-"shell_id":{"type":"string","description":"Id of the background job to stop"}},
-"required":["shell_id"],"additionalProperties":false}`
+"job_id":{"type":"string","description":"Id of the background job to stop"}},
+"required":["job_id"],"additionalProperties":false}`
 
 type kill struct{ *Shell }
 
@@ -315,7 +309,7 @@ func (s *Shell) Kill() tool.Tool { return kill{s} }
 func (kill) Definition() protocol.Tool {
 	return protocol.Tool{
 		Name:        KillName,
-		Description: "Stops a background job started by Bash, killing its whole process group.",
+		Description: "Stops a background job started by Shell, killing every process it started.",
 		Parameters:  json.RawMessage(killSchema),
 	}
 }
@@ -326,7 +320,7 @@ func (kill) Annotations() tool.Annotations {
 
 func (k kill) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
 	var in struct {
-		ID string `json:"shell_id"`
+		ID string `json:"job_id"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return tool.Error(err.Error()), nil

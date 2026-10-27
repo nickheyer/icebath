@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/glob"
 	"github.com/nickheyer/icebath/pkg/protocol"
+	"github.com/nickheyer/icebath/pkg/shell"
 )
 
 // Kinds of subject a pattern is matched against
@@ -116,83 +117,27 @@ func AllStrings(args json.RawMessage) []Subject {
 
 // Extractors for the tools icebath ships, every other tool matched over its string arguments
 var DefaultSubjects = map[string]Extractor{
-	"Bash":       Shell("command"),
-	"BashOutput": Strings("bash_id"),
-	"KillShell":  Strings("shell_id"),
-	"Read":       Paths("file_path"),
-	"Write":      Paths("file_path"),
-	"Edit":       Paths("file_path"),
-	"Glob":       Paths("path"),
-	"Grep":       Paths("path"),
-	"WebFetch":   URLs("url"),
+	"Shell":       Shell("command"),
+	"ShellOutput": Strings("job_id"),
+	"KillShell":   Strings("job_id"),
+	"Read":        Paths("file_path"),
+	"Write":       Paths("file_path"),
+	"Edit":        Paths("file_path"),
+	"Glob":        Paths("path"),
+	"Grep":        Paths("path"),
+	"WebFetch":    URLs("url"),
 }
 
-// Splits a command line into its simple commands at the shell operators outside quotes
+// Subjects for the simple commands of a line as the shell parses it, one unsafe subject for a line that does not parse
 func SplitCommand(line string) []Subject {
-	var out []Subject
-	var cur strings.Builder
-	quote := byte(0)
-	unsafe := false
-	flush := func() {
-		s := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(cur.String()), "({ "))
-		for (strings.HasSuffix(s, ")") && strings.Count(s, "(") < strings.Count(s, ")")) || (strings.HasSuffix(s, "}") && strings.Count(s, "{") < strings.Count(s, "}")) {
-			s = strings.TrimSpace(s[:len(s)-1])
-		}
-		if s != "" {
-			out = append(out, Subject{Kind: KindCommand, Text: s, Unsafe: unsafe})
-		}
-		cur.Reset()
-		unsafe = false
+	cmds, err := shell.Commands(line)
+	if err != nil {
+		return []Subject{{Kind: KindCommand, Text: strings.TrimSpace(line), Unsafe: true}}
 	}
-	for i := 0; i < len(line); i++ {
-		c := line[i]
-		next := byte(0)
-		if i+1 < len(line) {
-			next = line[i+1]
-		}
-		switch {
-		case quote == '\'':
-			if c == '\'' {
-				quote = 0
-			}
-			cur.WriteByte(c)
-		case quote == '"':
-			switch {
-			case c == '\\' && next != 0:
-				cur.WriteByte(c)
-				i++
-				cur.WriteByte(next)
-				continue
-			case c == '"':
-				quote = 0
-			case c == '`' || (c == '$' && next == '('):
-				unsafe = true
-			}
-			cur.WriteByte(c)
-		case c == '\\' && next != 0:
-			cur.WriteByte(c)
-			i++
-			cur.WriteByte(next)
-		case c == '\'' || c == '"':
-			quote = c
-			cur.WriteByte(c)
-		case c == '`', c == '$' && next == '(', (c == '<' || c == '>') && next == '(':
-			unsafe = true
-			cur.WriteByte(c)
-		case c == '\n' || c == ';':
-			flush()
-		case c == '&' && (next == '>' || (i > 0 && (line[i-1] == '>' || line[i-1] == '<'))):
-			cur.WriteByte(c)
-		case c == '&' || c == '|':
-			if next == c || (c == '|' && next == '&') {
-				i++
-			}
-			flush()
-		default:
-			cur.WriteByte(c)
-		}
+	out := make([]Subject, 0, len(cmds))
+	for _, c := range cmds {
+		out = append(out, Subject{Kind: KindCommand, Text: c.Text, Unsafe: c.Hidden})
 	}
-	flush()
 	return out
 }
 

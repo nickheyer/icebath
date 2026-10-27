@@ -3,10 +3,12 @@
 package proc
 
 import (
-	"context"
 	"os/exec"
 	"strconv"
 	"syscall"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func group(cmd *exec.Cmd) {
@@ -24,13 +26,33 @@ func kill(cmd *exec.Cmd) error {
 	return nil
 }
 
-func shellCommand(ctx context.Context, line string) *exec.Cmd {
-	if p, err := exec.LookPath("bash"); err == nil {
-		return exec.CommandContext(ctx, p, "-c", line)
+func killPID(pid int) error {
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		return err
 	}
-	shell := "powershell"
-	if p, err := exec.LookPath("pwsh"); err == nil {
-		shell = p
+	defer windows.CloseHandle(h)
+	return windows.TerminateProcess(h, 137)
+}
+
+// Process table read from a toolhelp snapshot
+func snapshot() (Table, error) {
+	h, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, err
 	}
-	return exec.CommandContext(ctx, shell, "-NoProfile", "-NonInteractive", "-Command", line)
+	defer windows.CloseHandle(h)
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	if err := windows.Process32First(h, &e); err != nil {
+		return nil, err
+	}
+	var t Table
+	for {
+		t = append(t, Process{PID: int(e.ProcessID), PPID: int(e.ParentProcessID)})
+		if err := windows.Process32Next(h, &e); err != nil {
+			break
+		}
+	}
+	return t, nil
 }

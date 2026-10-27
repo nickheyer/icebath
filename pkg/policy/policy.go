@@ -54,6 +54,11 @@ type Explainer interface {
 	Explain(call protocol.ToolCall) (Decision, string)
 }
 
+// Policy that can be switched off, every call then running with nothing consulted
+type Bypasser interface {
+	Bypassing() bool
+}
+
 // Decision of p with its reason, which is the word policy for policies that cannot explain
 func Explain(p Policy, call protocol.ToolCall) (Decision, string) {
 	if e, ok := p.(Explainer); ok {
@@ -78,7 +83,7 @@ type Subject struct {
 	// What the text is, such as command, path, domain or plain
 	Kind string
 	Text string
-	// Hides further commands behind substitution, so no allow pattern can vouch for it
+	// Runs commands the line does not spell out, through substitution, eval or source, so no allow pattern can vouch for it
 	Unsafe bool
 	// Whole command line that only a wildcard free pattern may match
 	Exact bool
@@ -259,8 +264,11 @@ type Gate struct {
 	OnAnswer func(Request, Answer, error)
 }
 
-// Checks the call with a decision settled ahead of the policy, replacing its allow or ask but never its deny
+// Checks the call with a decision settled ahead of the policy, replacing its allow or ask but never its deny, nothing checked while the policy is bypassed
 func (g Gate) Resolve(ctx context.Context, call protocol.ToolCall, settled Decision) error {
+	if b, ok := g.Policy.(Bypasser); ok && b.Bypassing() {
+		return nil
+	}
 	decision, by := Ask, "policy"
 	if g.Policy != nil {
 		decision, by = Explain(g.Policy, call)

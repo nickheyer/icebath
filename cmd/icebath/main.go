@@ -1,4 +1,3 @@
-// Netrunner terminal for agent runs, a tiling desk of cards over the icebath harness
 package main
 
 import (

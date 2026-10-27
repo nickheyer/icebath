@@ -218,9 +218,9 @@ func ToolGlyph(name string, t theme.Theme) string {
 		return g.Glob
 	case name == "Grep":
 		return g.Grep
-	case name == "Bash":
-		return g.Bash
-	case name == "BashOutput":
+	case name == "Shell":
+		return g.Shell
+	case name == "ShellOutput":
 		return g.Output
 	case name == "KillShell":
 		return g.Kill

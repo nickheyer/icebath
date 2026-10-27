@@ -242,7 +242,7 @@ type Glyphs struct {
 	Edit      string
 	Glob      string
 	Grep      string
-	Bash      string
+	Shell     string
 	Output    string
 	Kill      string
 	Fetch     string
@@ -322,7 +322,7 @@ func IcebathGlyphs() Glyphs {
 	return Glyphs{
 		Brand: "❆", Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "⍰", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "❯", Card: "▰",
 		Profiles: "⍟", Models: "⟡", Rules: "§", Hooks: "↯", MCP: "⇆", Tools: "⌗", Keys: "⌥", Ext: "⧉", Flow: "⟳",
-		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Bash: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
+		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Shell: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
 		Speaker: "┃", Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "⍰", Child: "⟁", Attach: "⎘", Idle: "⊙", Cursor: "►", Marked: "▮",
 		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔",
 		Sep: "∷", Ellipsis: "⋯", Close: "✕", Prompt: "❯", Send: "➜", Grip: "⊹", Back: "❮", CapLeft: "▐", CapRight: "▌", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
@@ -339,7 +339,7 @@ func ASCIIGlyphs() Glyphs {
 	return Glyphs{
 		Brand: "*", Session: "~", Trace: "&", Agent: "&", Approval: "?", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: ">", Card: "*",
 		Profiles: "@", Models: "o", Rules: "S", Hooks: "!", MCP: "=", Tools: "+", Keys: "k", Ext: "x", Flow: "@",
-		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Bash: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
+		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Shell: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
 		Speaker: "|", Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "?", Child: "&", Attach: "+", Idle: "o", Cursor: ">", Marked: "#",
 		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y",
 		Sep: "-", Ellipsis: "...", Close: "x", Prompt: ">", Send: ">", Grip: "+", Back: "<", CapLeft: " ", CapRight: " ", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",

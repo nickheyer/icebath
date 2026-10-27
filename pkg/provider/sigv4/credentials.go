@@ -13,11 +13,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/shell"
 )
 
 // Credentials from a named profile in the shared config and credentials files
@@ -280,10 +281,12 @@ type processOutput struct {
 func runProcess(ctx context.Context, command string) (Credentials, error) {
 	ctx, cancel := context.WithTimeout(ctx, ProcessTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	code, err := shell.Cmd{Line: command, Stdout: &stdout, Stderr: &stderr}.Run(ctx)
+	if err == nil && code != 0 {
+		err = fmt.Errorf("exit status %d", code)
+	}
+	if err != nil {
 		return Credentials{}, fmt.Errorf("sigv4: credential_process: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	var out processOutput

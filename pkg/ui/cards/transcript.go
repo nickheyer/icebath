@@ -1506,15 +1506,13 @@ func CallSummary(call protocol.ToolCall, partial string, t theme.Theme) string {
 			s += " in " + p
 		}
 		return s
-	case shell.BashName:
+	case shell.ShellName:
 		if d := str("description"); d != "" {
 			return d
 		}
 		return strings.Join(strings.Fields(str("command")), " ")
-	case shell.OutputName:
-		return str("bash_id")
-	case shell.KillName:
-		return str("shell_id")
+	case shell.OutputName, shell.KillName:
+		return str("job_id")
 	case "WebFetch":
 		return str("url")
 	case "Agent":
@@ -1676,6 +1674,9 @@ func (tr *Transcript) resultLines(b *block, width int) []string {
 		}
 		if d.TimedOut {
 			out = append(out, render.Bad("timed out", t))
+		}
+		if d.Exited {
+			out = append(out, render.Bad("shell exited", t))
 		}
 		return out
 	case web.Page:

@@ -3,7 +3,6 @@
 package proc
 
 import (
-	"context"
 	"os/exec"
 	"syscall"
 )
@@ -19,10 +18,6 @@ func kill(cmd *exec.Cmd) error {
 	return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 }
 
-func shellCommand(ctx context.Context, line string) *exec.Cmd {
-	shell := "sh"
-	if p, err := exec.LookPath("bash"); err == nil {
-		shell = p
-	}
-	return exec.CommandContext(ctx, shell, "-c", line)
+func killPID(pid int) error {
+	return syscall.Kill(pid, syscall.SIGKILL)
 }

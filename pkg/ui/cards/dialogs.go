@@ -15,6 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
+	"github.com/nickheyer/icebath/pkg/shell"
+	toolshell "github.com/nickheyer/icebath/pkg/tool/shell"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -261,13 +263,13 @@ func splitRule(text string) (string, string) {
 // What a pattern matches for the tool, by the subjects the policy draws from its arguments
 func patternHelp(tool string) string {
 	switch tool {
-	case "Bash":
+	case toolshell.ShellName:
 		return "Command glob such as git * or prefix such as npm run:*, empty matches every command"
 	case "Read", "Write", "Edit", "Glob", "Grep":
 		return "Path glob such as src/** or ~/.ssh/**, empty matches every path"
 	case "WebFetch":
 		return "URL glob such as https://docs.example.com/* or domain:example.com, empty matches every url"
-	case "BashOutput", "KillShell":
+	case toolshell.OutputName, toolshell.KillName:
 		return "Job id glob, empty matches every job"
 	}
 	return "Glob over every string argument, empty matches every call"
@@ -380,69 +382,18 @@ func (c *Config) hookForm(old *harness.HookEntry) *Form {
 	})
 }
 
-// Words of a command line, double or single quotes keeping spaces and a backslash escaping the next character
-func splitArgs(line string) ([]string, error) {
-	var out []string
-	var cur strings.Builder
-	quote := rune(0)
-	started, escaped := false, false
-	for _, r := range line {
-		switch {
-		case escaped:
-			cur.WriteRune(r)
-			escaped = false
-		case r == '\\' && quote != '\'':
-			escaped, started = true, true
-		case quote != 0 && r == quote:
-			quote = 0
-		case quote != 0:
-			cur.WriteRune(r)
-		case r == '"' || r == '\'':
-			quote, started = r, true
-		case r == ' ' || r == '\t':
-			if started {
-				out = append(out, cur.String())
-				cur.Reset()
-				started = false
-			}
-		default:
-			cur.WriteRune(r)
-			started = true
-		}
-	}
-	if quote != 0 {
-		return nil, fmt.Errorf("unclosed %c quote", quote)
-	}
-	if started {
-		out = append(out, cur.String())
-	}
-	return out, nil
-}
-
-// Command line of words, quoting any that holds a space, a quote or a backslash
-func joinArgs(args []string) string {
-	out := make([]string, 0, len(args))
-	for _, a := range args {
-		if a == "" || strings.ContainsAny(a, " \t\"'\\") {
-			a = `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(a) + `"`
-		}
-		out = append(out, a)
-	}
-	return strings.Join(out, " ")
-}
-
 // KEY=VALUE words of an environment, sorted by key
-func joinEnv(env map[string]string) string {
+func joinEnv(env map[string]string) (string, error) {
 	var words []string
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		words = append(words, k+"="+env[k])
 	}
-	return joinArgs(words)
+	return shell.Join(words)
 }
 
 // Environment from KEY=VALUE words
 func splitEnv(line string) (map[string]string, error) {
-	words, err := splitArgs(line)
+	words, err := shell.Words(line)
 	if err != nil {
 		return nil, err
 	}
@@ -483,10 +434,18 @@ func splitHeaders(line string) (map[string]string, error) {
 }
 
 // Dialog that writes an MCP server, new into a scope or over one in the file configuring it
-func (c *Config) serverForm(old *harness.ServerConfig) *Form {
+func (c *Config) serverForm(old *harness.ServerConfig) (*Form, error) {
 	var cfg harness.ServerConfig
 	if old != nil {
 		cfg = *old
+	}
+	argsText, err := shell.Join(cfg.Args)
+	if err != nil {
+		return nil, fmt.Errorf("args: %w", err)
+	}
+	envText, err := joinEnv(cfg.Env)
+	if err != nil {
+		return nil, fmt.Errorf("env: %w", err)
 	}
 	kind := "stdio"
 	if cfg.URL != "" {
@@ -504,9 +463,9 @@ func (c *Config) serverForm(old *harness.ServerConfig) *Form {
 	}
 	name := text("name", "name", "server", cfg.Name, "Tools are named mcp__name__tool", false, nil)
 	command := text("command", "command", "process", cfg.Command, "Program that speaks MCP such as npx or uvx", false, stdio)
-	args := text("args", "args", "process", joinArgs(cfg.Args), "Program arguments, quotes keep spaces", true, stdio)
-	args.check = func(v string) error { _, err := splitArgs(v); return err }
-	env := text("env", "env", "process", joinEnv(cfg.Env), "KEY=VALUE words such as TOKEN=abc DEBUG=1", true, stdio)
+	args := text("args", "args", "process", argsText, "Program arguments, quoted as for the shell", true, stdio)
+	args.check = func(v string) error { _, err := shell.Words(v); return err }
+	env := text("env", "env", "process", envText, "KEY=VALUE words such as TOKEN=abc DEBUG=1", true, stdio)
 	env.check = func(v string) error { _, err := splitEnv(v); return err }
 	dir := text("dir", "dir", "process", cfg.Dir, "Working directory, empty for the icebath directory", true, stdio)
 	url := text("url", "url", "endpoint", cfg.URL, "Endpoint such as https://mcp.example.com/mcp", false, web)
@@ -530,7 +489,7 @@ func (c *Config) serverForm(old *harness.ServerConfig) *Form {
 		}
 		if stdio() {
 			next.Command = strings.TrimSpace(command.value)
-			next.Args, _ = splitArgs(args.value)
+			next.Args, _ = shell.Words(args.value)
 			next.Dir = strings.TrimSpace(dir.value)
 			if vars, _ := splitEnv(env.value); len(vars) > 0 {
 				next.Env = vars
@@ -546,5 +505,5 @@ func (c *Config) serverForm(old *harness.ServerConfig) *Form {
 		}
 		restart := background(func() error { return c.env.Editor.RestartServer(c.env.Ctx, oldName, next) })
 		return tea.Batch(c.loadServers(), restart, wm.Notify("saved mcp server "+next.Name, wm.Success)), nil
-	})
+	}), nil
 }

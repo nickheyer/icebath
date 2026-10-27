@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/shell"
 )
 
 // How a credential travels on the request
@@ -624,10 +624,12 @@ func (s Source) Resolve(ctx context.Context) (string, error) {
 	case SourceExec:
 		ctx, cancel := context.WithTimeout(ctx, ExecTimeout)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "sh", "-c", s.Value)
 		var stdout, stderr bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-		if err := cmd.Run(); err != nil {
+		code, err := shell.Cmd{Line: s.Value, Stdout: &stdout, Stderr: &stderr}.Run(ctx)
+		if err == nil && code != 0 {
+			err = fmt.Errorf("exit status %d", code)
+		}
+		if err != nil {
 			return "", fmt.Errorf("exec source: %w: %s", err, strings.TrimSpace(stderr.String()))
 		}
 		return strings.TrimSpace(stdout.String()), nil

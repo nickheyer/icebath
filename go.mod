@@ -12,8 +12,9 @@ require (
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.43.0
+	mvdan.cc/sh/v3 v3.14.1
 )
 
 require (
@@ -35,6 +36,7 @@ require (
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
-	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/term v0.46.0 // indirect
 )

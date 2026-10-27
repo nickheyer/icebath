@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/shell"
 	"github.com/nickheyer/icebath/pkg/tool"
 	"github.com/nickheyer/icebath/pkg/tool/mcp"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -645,7 +646,7 @@ func (c *Config) mcpTab() *lister {
 			case s.State == mcp.StateDisconnected:
 				glyph = render.Bad(t.Glyphs.Live, t)
 			}
-			transport, target := "stdio", strings.TrimSpace(s.Config.Command+" "+joinArgs(s.Config.Args))
+			transport, target := "stdio", commandLine(s.Config)
 			if s.Config.URL != "" {
 				transport, target = "http", s.Config.URL
 			}
@@ -673,10 +674,10 @@ func (c *Config) mcpTab() *lister {
 	l.free = map[string]bool{"config.mcp.add": true}
 	l.actions = map[string]func(*lister, int) tea.Cmd{
 		"config.mcp.detail": toggleDetail,
-		"config.mcp.add":    func(l *lister, i int) tea.Cmd { return wm.RequestOverlay(c.serverForm(nil)) },
+		"config.mcp.add":    func(l *lister, i int) tea.Cmd { return c.openServerForm(nil) },
 		"config.mcp.edit": func(l *lister, i int) tea.Cmd {
 			if s, ok := pick(i); ok {
-				return wm.RequestOverlay(c.serverForm(&s.Config))
+				return c.openServerForm(&s.Config)
 			}
 			return nil
 		},
@@ -735,7 +736,7 @@ func (c *Config) serverDetail(s harness.ServerStatus) []string {
 			out = append(out, render.KV("headers", strings.Join(slices.Sorted(maps.Keys(cfg.Headers)), ", "), t))
 		}
 	} else {
-		out = append(out, render.KV("command", strings.TrimSpace(cfg.Command+" "+joinArgs(cfg.Args)), t))
+		out = append(out, render.KV("command", commandLine(cfg), t))
 		if cfg.Dir != "" {
 			out = append(out, render.KV("dir", cfg.Dir, t))
 		}
@@ -1035,4 +1036,22 @@ func homed(path string) string {
 		return path
 	}
 	return "~" + strings.TrimPrefix(path, home)
+}
+
+// Opens the server dialog, or reports why the stored server cannot be shown in it
+func (c *Config) openServerForm(old *harness.ServerConfig) tea.Cmd {
+	form, err := c.serverForm(old)
+	if err != nil {
+		return wm.Notify(err.Error(), wm.Error)
+	}
+	return wm.RequestOverlay(form)
+}
+
+// Program and arguments of a stdio server as one shell line, the quoting error standing in for arguments it cannot show
+func commandLine(cfg harness.ServerConfig) string {
+	args, err := shell.Join(cfg.Args)
+	if err != nil {
+		args = err.Error()
+	}
+	return strings.TrimSpace(cfg.Command + " " + args)
 }

@@ -17,7 +17,7 @@ const (
 	ModePlan Mode = "plan"
 	// File editing tools run without asking unless the base policy denies them
 	ModeAcceptEdits Mode = "acceptEdits"
-	// Everything the base policy does not deny runs
+	// Every call runs with no rule, guard, memory or hook permission consulted
 	ModeBypass Mode = "bypassPermissions"
 )
 
@@ -93,9 +93,6 @@ func (p moded) Decide(call protocol.ToolCall) Decision {
 func (p moded) Explain(call protocol.ToolCall) (Decision, string) {
 	switch p.Mode {
 	case ModeBypass:
-		if d, why := p.base(call); d == Deny {
-			return Deny, why
-		}
 		return Allow, "bypass mode"
 	case ModePlan:
 		if p.ReadOnly != nil && p.ReadOnly(call.Name) {
@@ -134,6 +131,9 @@ func (s *ModeSwitch) Mode() Mode {
 
 // Changes the mode for every later decision
 func (s *ModeSwitch) Set(m Mode) { s.mode.Store(&m) }
+
+// Reports whether every call runs with nothing consulted
+func (s *ModeSwitch) Bypassing() bool { return s.Mode() == ModeBypass }
 
 func (s *ModeSwitch) policy() moded {
 	return moded{Mode: s.Mode(), Base: s.Base, ReadOnly: s.ReadOnly}

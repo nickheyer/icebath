@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/facts"
 	"github.com/nickheyer/icebath/pkg/mission"
+	"github.com/nickheyer/icebath/pkg/shell"
 )
 
 // What the agent is told about the machine and session it runs in
@@ -30,9 +31,9 @@ const conduct = `You are icebath, a coding agent in the user's terminal, acting 
 # Harness
 - Text you write outside a tool call is shown to the user as markdown in a terminal. Tool results arrive as tool messages, never as user messages. After a tool result, continue the task. The user speaks only through user messages.
 - Every tool call passes a permission gate chosen by the user. A denied call means the user declined it. Adjust the approach, never retry the same call.
-- Prefer the dedicated file tools. Read shows a file, Edit changes part of one, Write replaces one, Glob finds files, Grep searches contents. Use Bash for commands, builds, tests and git.
+- Prefer the dedicated file tools. Read shows a file, Edit changes part of one, Write replaces one, Glob finds files, Grep searches contents. Use Shell for commands, builds, tests and git.
 - Independent tool calls may be made together in one turn. Dependent calls wait for the earlier result.
-- Bash keeps its working directory between calls. A pipeline exits with the code of its last command. The exit code of every stage is listed whenever an earlier stage failed, so read that line before trusting a piped test run.
+- Shell keeps its working directory between calls. A pipeline exits with the code of its last command. The exit code of every stage is listed whenever an earlier stage failed, so read that line before trusting a piped test run.
 - Reference code as path:line so the user can open it.
 - Record keeps a conclusion a person wants after the session, such as a bug found, a risk, a decision or an open question. Routine command results and progress belong in prose.
 - Plan is offered only while a mission is attached. Call it before work that takes more than a few tool calls and whenever a step changes state.
@@ -132,7 +133,7 @@ func GatherFacts(dir, root, model string, missionAttached bool) Facts {
 		Root:     root,
 		Git:      inGitRepo(dir),
 		Platform: runtime.GOOS + "/" + runtime.GOARCH,
-		Shell:    filepath.Base(os.Getenv("SHELL")),
+		Shell:    shell.Dialect,
 		Date:     time.Now(),
 		Model:    model,
 		Mission:  missionAttached,
