@@ -21,7 +21,7 @@ icebath [flags] [prompt]
   -k setting=value   max_tokens, max_rounds, temperature, compact_threshold, theme, motion, cascade, extra.<field>
   -config path       extra configuration file
   -dir path          working directory of the shell
-  -root path         directory every file path must stay inside
+  -root path         project root for hooks, rules and servers
   -theme name        blackwall, light, contrast or plain
   -print             no terminal, every event as a JSON line
   -headless          no terminal, the answer as text

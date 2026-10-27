@@ -50,8 +50,6 @@ type Completer interface {
 
 // Settings of the fetch tool
 type Options struct {
-	// Permits loopback, private and link local targets
-	AllowPrivate bool
 	// Model that answers the prompt argument when set, naming its own model id
 	Summarizer Completer
 }
@@ -86,47 +84,14 @@ type fetch struct {
 
 // Tool that fetches a URL, converts HTML to text and optionally answers a prompt about it
 func Fetch(o Options) (tool.Tool, error) {
-	client := &http.Client{Timeout: fetchTimeout, Transport: transport(o.AllowPrivate)}
+	client := &http.Client{Timeout: fetchTimeout, Transport: transport()}
 	return &fetch{Options: o, client: client, cache: map[string]cached{}}, nil
 }
 
-// Transport that resolves each host itself and refuses addresses outside the public range
-func transport(allowPrivate bool) *http.Transport {
+// Transport honoring proxy variables with a dial and handshake timeout
+func transport() *http.Transport {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	return &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			if !allowPrivate {
-				for _, ip := range ips {
-					if isPrivate(ip.IP) {
-						return nil, fmt.Errorf("%s resolves to the private address %s", host, ip.IP)
-					}
-				}
-			}
-			var last error
-			for _, ip := range ips {
-				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
-				if err == nil {
-					return conn, nil
-				}
-				last = err
-			}
-			return nil, last
-		},
-		TLSHandshakeTimeout: 10 * time.Second,
-	}
-}
-
-func isPrivate(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	return &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: dialer.DialContext, TLSHandshakeTimeout: 10 * time.Second}
 }
 
 const fetchSchema = `{"type":"object","properties":{

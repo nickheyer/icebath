@@ -73,7 +73,6 @@ type ShellConfig struct {
 
 // Web fetch settings
 type WebConfig struct {
-	AllowPrivate bool `json:"allow_private,omitempty"`
 	// Disables the fetch tool
 	Disabled bool `json:"disabled,omitempty"`
 }
@@ -120,7 +119,7 @@ type Config struct {
 	UI          UIConfig                   `json:"ui,omitempty"`
 	// Values of the settings extensions register, by key
 	Settings map[string]string `json:"settings,omitempty"`
-	// Directory every file path must stay inside, the working directory when empty
+	// Project root for hooks, rules and servers, the working directory when empty
 	Root string `json:"root,omitempty"`
 	// Directory sessions are written to, sessions under the configuration directory when empty
 	SessionsDir string `json:"sessions_dir,omitempty"`
@@ -270,9 +269,6 @@ func Merge(base, over Config) Config {
 	}
 	if len(over.Shell.Env) > 0 {
 		out.Shell.Env = append(append([]string(nil), base.Shell.Env...), over.Shell.Env...)
-	}
-	if over.Web.AllowPrivate {
-		out.Web.AllowPrivate = true
 	}
 	if over.Web.Disabled {
 		out.Web.Disabled = true

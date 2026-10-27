@@ -47,10 +47,8 @@ const (
 
 // Shared settings of every file tool
 type Options struct {
-	// Directory relative paths resolve against, Root when set and otherwise the process working directory
+	// Directory relative paths resolve against, the process working directory when empty
 	Dir string
-	// Directory every path must stay inside after symlink resolution, unrestricted when empty
-	Root string
 }
 
 // Every file tool sharing one set of options
@@ -83,16 +81,13 @@ type GlobData struct {
 }
 
 func (o Options) dir() (string, error) {
-	switch {
-	case o.Dir != "":
+	if o.Dir != "" {
 		return filepath.Abs(o.Dir)
-	case o.Root != "":
-		return filepath.Abs(o.Root)
 	}
 	return os.Getwd()
 }
 
-// Turns a user path into a clean absolute path that lies inside the root
+// Turns a user path into a clean absolute path
 func (o Options) Resolve(p string) (string, error) {
 	if p == "" {
 		return "", errors.New("path is required")
@@ -111,46 +106,7 @@ func (o Options) Resolve(p string) (string, error) {
 		}
 		p = filepath.Join(base, p)
 	}
-	p = filepath.Clean(p)
-	if o.Root == "" {
-		return p, nil
-	}
-	rootAbs, err := filepath.Abs(o.Root)
-	if err != nil {
-		return "", fmt.Errorf("root %s: %w", o.Root, err)
-	}
-	root, err := filepath.EvalSymlinks(rootAbs)
-	if err != nil {
-		return "", fmt.Errorf("root %s: %w", o.Root, err)
-	}
-	real, err := realPath(p)
-	if err != nil {
-		return "", err
-	}
-	if real != root && !strings.HasPrefix(real, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("%s is outside %s", p, rootAbs)
-	}
-	return p, nil
-}
-
-// Resolves symlinks in the existing part of p and keeps the missing tail as given
-func realPath(p string) (string, error) {
-	rest := ""
-	for {
-		real, err := filepath.EvalSymlinks(p)
-		if err == nil {
-			return filepath.Join(real, rest), nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", err
-		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return "", err
-		}
-		rest = filepath.Join(filepath.Base(p), rest)
-		p = parent
-	}
+	return filepath.Clean(p), nil
 }
 
 func decode(args json.RawMessage, v any) error {

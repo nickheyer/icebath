@@ -17,7 +17,6 @@ import (
 // What the agent is told about the machine and session it runs in
 type Facts struct {
 	Dir      string
-	Root     string
 	Git      bool
 	Platform string
 	Shell    string
@@ -65,9 +64,6 @@ func Environment(f Facts) string {
 	var sb strings.Builder
 	sb.WriteString("# Environment\n")
 	fmt.Fprintf(&sb, "- Working directory: %s\n", f.Dir)
-	if f.Root != "" && f.Root != f.Dir {
-		fmt.Fprintf(&sb, "- File tools stay inside: %s\n", f.Root)
-	}
 	fmt.Fprintf(&sb, "- Git repository: %t\n", f.Git)
 	fmt.Fprintf(&sb, "- Platform: %s\n", f.Platform)
 	if f.Shell != "" {
@@ -104,7 +100,7 @@ func (a *App) DefaultBase() string { return Base(a.System) }
 
 // Environment block the client adds for a run on the model as the machine stands now
 func (a *App) EnvironmentFor(ctx context.Context, model string) string {
-	return Environment(GatherFacts(a.Shell.Dir(), a.Root, model, mission.IDFrom(ctx) != ""))
+	return Environment(GatherFacts(a.Shell.Dir(), model, mission.IDFrom(ctx) != ""))
 }
 
 // Prompt of a run on the endpoint as the kind, the kind, profile or built in base, the environment unless left out, then every registered fragment
@@ -126,11 +122,10 @@ func (a *App) PromptFor(ctx context.Context, ep Endpoint, kind Kind) string {
 	return Compose(blocks...)
 }
 
-// Facts about the machine as it stands, the working directory and root given by the caller
-func GatherFacts(dir, root, model string, missionAttached bool) Facts {
+// Facts about the machine as it stands, the working directory given by the caller
+func GatherFacts(dir, model string, missionAttached bool) Facts {
 	return Facts{
 		Dir:      dir,
-		Root:     root,
 		Git:      inGitRepo(dir),
 		Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		Shell:    shell.Dialect,

@@ -305,7 +305,7 @@ func (p primary) Complete(ctx context.Context, req protocol.Request) (protocol.R
 func (a *App) buildTools(dir, root string) error {
 	cfg := a.Config
 	a.Tools = &tool.Registry{}
-	a.Files = files.Options{Dir: dir, Root: root}
+	a.Files = files.Options{Dir: dir}
 	sh, err := shell.New(shell.Options{Dir: dir, Env: cfg.Shell.Env, Timeout: seconds(cfg.Shell.Timeout), MaxTimeout: seconds(cfg.Shell.MaxTimeout), OnJob: func(ev shell.JobEvent) { a.send(JobMsg{Event: ev}) }})
 	if err != nil {
 		return err
@@ -318,7 +318,7 @@ func (a *App) buildTools(dir, root string) error {
 		return err
 	}
 	if !cfg.Web.Disabled {
-		fetch, err := web.Fetch(web.Options{AllowPrivate: cfg.Web.AllowPrivate, Summarizer: primary{a}})
+		fetch, err := web.Fetch(web.Options{Summarizer: primary{a}})
 		if err != nil {
 			return err
 		}

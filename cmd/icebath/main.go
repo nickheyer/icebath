@@ -44,7 +44,7 @@ func run(args []string) int {
 		model    = fs.String("model", "", "model id the profile serves")
 		resume   = fs.String("resume", "", "session id to continue")
 		dir      = fs.String("dir", "", "working directory of the shell, the current directory when empty")
-		root     = fs.String("root", "", "directory every file path must stay inside, the working directory when empty")
+		root     = fs.String("root", "", "project root for hooks, rules and servers, the working directory when empty")
 		mode     = fs.String("mode", "", "permission mode, default, acceptEdits, plan or bypassPermissions")
 		config   = fs.String("config", "", "extra configuration file read after the user and project ones")
 		print    = fs.Bool("print", false, "run without a terminal and write every event as a JSON line")
