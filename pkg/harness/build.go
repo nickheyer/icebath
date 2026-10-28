@@ -198,7 +198,7 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	app.Session, app.Facts, app.Missions = first.Session, first.Facts, first.Missions
 	app.Saver = NewSaver(app.Store, send)
 	app.Saver.Off = app.Ghosted
-	if err := app.buildTools(dir, root); err != nil {
+	if err := app.buildTools(dir); err != nil {
 		return nil, err
 	}
 	if err := app.buildPolicy(root); err != nil {
@@ -301,7 +301,7 @@ func (p primary) Complete(ctx context.Context, req protocol.Request) (protocol.R
 	return p.a.Primary.Provider.Complete(ctx, req)
 }
 
-func (a *App) buildTools(dir, root string) error {
+func (a *App) buildTools(dir string) error {
 	cfg := a.Config
 	a.Tools = &tool.Registry{}
 	a.Files = files.Options{Dir: dir}

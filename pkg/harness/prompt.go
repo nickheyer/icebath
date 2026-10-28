@@ -153,7 +153,7 @@ func (a *App) EnvironmentFor(ctx context.Context, model string) (string, error) 
 
 // Directory under the system temp directory a session may fill with working notes and temporary files
 func ScratchDir(sessionID string) string {
-	return filepath.Join(os.TempDir(), "icebath", sessionID)
+	return filepath.Join(os.TempDir(), "icebath-scratch", sessionID)
 }
 
 // Scratch directory of the calling run's session, created when missing, empty with no session
