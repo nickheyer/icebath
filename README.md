@@ -1,18 +1,52 @@
-# icebath
-A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
+<div align="center">
 
-## Install
+<img src="./assets/ICE_BATH_BANNER_ART.png" alt="icebath" width="100%" />
 
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/ICE_BATH_BANNER_TEXT_WHITE.png" />
+  <source media="(prefers-color-scheme: light)" srcset="./assets/ICE_BATH_BANNER_TEXT_BLACK.png" />
+  <img src="./assets/ICE_BATH_BANNER_TEXT_WHITE.png" alt="icebath" width="520" />
+</picture>
+
+<br />
+
+<img src="https://img.shields.io/badge/go-1.27-0b0f14?style=for-the-badge&logo=go&logoColor=dfe9f2&labelColor=0b0f14&color=1c2733" alt="go 1.27" />
+<img src="https://img.shields.io/badge/linux-amd64-0b0f14?style=for-the-badge&logo=linux&logoColor=dfe9f2&labelColor=0b0f14&color=1c2733" alt="linux amd64" />
+
+<br />
+<br />
+
+<samp>A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.</samp>
+
+<br />
+<br />
+
+<kbd>&nbsp;<a href="#-install">INSTALL</a>&nbsp;</kbd>&nbsp;&nbsp;<kbd>&nbsp;<a href="#-usage">USAGE</a>&nbsp;</kbd>&nbsp;&nbsp;<kbd>&nbsp;<a href="#-configuration">CONFIG</a>&nbsp;</kbd>
+
+</div>
+
+<br />
+
+<p align="center">
+<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>
+</p>
+
+## ▍ Install
+
+```sh
 go install github.com/nickheyer/icebath/cmd/icebath@latest
 ```
 
-## Usage
+<br />
 
-```
+## ▍ Usage
+
+```sh
 # Just run it and set things up in the TUI
 icebath
+```
 
+```
 # All the flags and modes of operation
 icebath [flags] [prompt]
   -profile name      endpoint profile: anthropic, openai, openai-chat, google, mistral, openrouter, ollama, bedrock, nebu
@@ -33,7 +67,9 @@ icebath [flags] [prompt]
   -yes               approve every tool call without a terminal
   -sessions          list the stored sessions of this project
   -all               with -sessions, list the sessions of every project
+```
 
+```sh
 # Use icebath as a cli tool if need be
 export ANTHROPIC_API_KEY=...
 icebath "check disk usage"
@@ -43,4 +79,40 @@ icebath -workflow loop "make every test pass"
 icebath -kind critic "review pkg/agent"
 ```
 
-Configuration Files: `~/.config/icebath/config.json` or `.icebath/config.json`, `rules.json`,`hooks.json`, `kinds/*.json`, `~/.config/icebath/profiles.json`, `~/.config/icebath/keybinds.json`
+<br />
+
+## ▍ Configuration
+
+<table align="center">
+  <tr>
+    <th align="left">Configuration Files</th>
+  </tr>
+  <tr>
+    <td><code>~/.config/icebath/config.json</code> or <code>.icebath/config.json</code></td>
+  </tr>
+  <tr>
+    <td><code>rules.json</code></td>
+  </tr>
+  <tr>
+    <td><code>hooks.json</code></td>
+  </tr>
+  <tr>
+    <td><code>kinds/*.json</code></td>
+  </tr>
+  <tr>
+    <td><code>~/.config/icebath/profiles.json</code></td>
+  </tr>
+  <tr>
+    <td><code>~/.config/icebath/keybinds.json</code></td>
+  </tr>
+</table>
+
+<br />
+
+<p align="center">
+<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>
+</p>
+
+<div align="center">
+<sub><samp>▍ Need a runtime manager and gateway? See <a href="https://github.com/nickheyer/nebu">nebu</a> ▍</samp></sub>
+</div>
