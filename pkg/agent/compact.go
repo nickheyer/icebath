@@ -3,8 +3,12 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash"
+	"io"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/protocol"
@@ -160,41 +164,170 @@ func (s *Summarizer) ask(ctx context.Context, prompt, text string) (string, erro
 	return out, nil
 }
 
-// Hook that drops thinking from every assistant turn but the last so stale reasoning is not resent
+// Hook that keeps thinking only on the newest turn of the run and only while the request before it is unchanged
 type StripThinking struct {
 	Hooks
+	// Digest of the request the newest turn of the run answered, empty before the run has a turn
+	bound string
+	// Digest of the request last sent
+	sent string
 }
 
 // Text left where an assistant turn held nothing but thinking
 const Omitted = "(reasoning omitted)"
 
-func (StripThinking) BeforeTurn(ctx context.Context, req *protocol.Request) error {
+func (s *StripThinking) BeforeRun(ctx context.Context, input []protocol.Part) ([]protocol.Part, error) {
+	s.bound, s.sent = "", ""
+	return input, nil
+}
+
+func (s *StripThinking) AfterTurn(ctx context.Context, resp protocol.Response) error {
+	s.bound = s.sent
+	return nil
+}
+
+func (s *StripThinking) BeforeTurn(ctx context.Context, req *protocol.Request) error {
 	last := -1
-	for i, m := range req.Messages {
-		if m.Role == protocol.RoleAssistant {
-			last = i
+	if s.bound != "" {
+		for i, m := range req.Messages {
+			if m.Role == protocol.RoleAssistant {
+				last = i
+			}
 		}
 	}
 	for i := range req.Messages {
-		m := &req.Messages[i]
-		if m.Role != protocol.RoleAssistant || i == last {
-			continue
+		if i != last {
+			dropThinking(&req.Messages[i])
 		}
-		kept := make([]protocol.Part, 0, len(m.Content))
-		for _, p := range m.Content {
-			if _, thinking := p.(protocol.Thinking); !thinking {
-				kept = append(kept, p)
-			}
-		}
-		if len(kept) == 0 {
-			kept = append(kept, protocol.Text{Text: Omitted})
-		}
-		m.Content = kept
 	}
+	if last >= 0 && binding(req, req.Messages[:last]) != s.bound {
+		dropThinking(&req.Messages[last])
+	}
+	s.sent = binding(req, req.Messages)
 	return nil
+}
+
+// Takes the thinking out of an assistant turn, leaving the placeholder when nothing else was in it
+func dropThinking(m *protocol.Message) {
+	if m.Role != protocol.RoleAssistant {
+		return
+	}
+	kept := make([]protocol.Part, 0, len(m.Content))
+	for _, p := range m.Content {
+		if _, thinking := p.(protocol.Thinking); !thinking {
+			kept = append(kept, p)
+		}
+	}
+	if len(kept) == 0 {
+		kept = append(kept, protocol.Text{Text: Omitted})
+	}
+	m.Content = kept
+}
+
+// Digest of the model, system prompt, tools and messages with thinking left out, what a signature is bound to
+func binding(req *protocol.Request, msgs []protocol.Message) string {
+	d := digest{sha256.New()}
+	d.str(req.Model)
+	d.str(req.System)
+	d.flag(req.KeepSystem)
+	d.num(len(req.Tools))
+	for _, t := range req.Tools {
+		d.str(t.Name)
+		d.str(t.Description)
+		d.bytes(t.Parameters)
+	}
+	d.num(len(msgs))
+	for _, m := range msgs {
+		d.str(string(m.Role))
+		d.parts(m.Content)
+	}
+	return string(d.Sum(nil))
+}
+
+// Hash writer that length prefixes every field so two different requests never write the same bytes
+type digest struct{ hash.Hash }
+
+func (d digest) num(n int) {
+	d.Write(binary.AppendVarint(nil, int64(n)))
+}
+
+func (d digest) str(s string) {
+	d.num(len(s))
+	io.WriteString(d, s)
+}
+
+func (d digest) bytes(b []byte) {
+	d.num(len(b))
+	d.Write(b)
+}
+
+func (d digest) flag(b bool) {
+	if b {
+		d.num(1)
+	} else {
+		d.num(0)
+	}
+}
+
+// Writes every part but thinking under its type, nested tool result parts included
+func (d digest) parts(ps []protocol.Part) {
+	for _, p := range ps {
+		switch v := p.(type) {
+		case protocol.Thinking:
+		case protocol.Text:
+			d.str("text")
+			d.str(v.Text)
+			d.num(len(v.Citations))
+			for _, c := range v.Citations {
+				d.str(c.Title)
+				d.str(c.URL)
+				d.str(c.Document)
+				d.num(c.Start)
+				d.num(c.End)
+				d.str(c.Cited)
+			}
+		case protocol.Image:
+			d.str("image")
+			d.str(v.MediaType)
+			d.bytes(v.Data)
+		case protocol.Document:
+			d.str("document")
+			d.str(v.MediaType)
+			d.bytes(v.Data)
+			d.str(v.Name)
+		case protocol.ToolCall:
+			d.str("tool_call")
+			d.str(v.ID)
+			d.str(v.Name)
+			d.bytes(v.Args)
+			d.str(v.Signature)
+			d.str(string(v.Origin))
+		case protocol.ToolResult:
+			d.str("tool_result")
+			d.str(v.CallID)
+			d.str(v.Name)
+			d.flag(v.IsError)
+			d.parts(v.Content)
+		case protocol.ServerToolCall:
+			d.str("server_tool_call")
+			d.str(v.ID)
+			d.str(v.Name)
+			d.bytes(v.Args)
+			d.str(string(v.Origin))
+		case protocol.ServerToolResult:
+			d.str("server_tool_result")
+			d.str(v.CallID)
+			d.str(v.Name)
+			d.bytes(v.Content)
+			d.str(string(v.Origin))
+		default:
+			d.str(fmt.Sprintf("%T%#v", v, v))
+		}
+	}
+	d.str("end")
 }
 
 var (
 	_ Hook = (*Summarizer)(nil)
-	_ Hook = StripThinking{}
+	_ Hook = (*StripThinking)(nil)
 )

@@ -629,12 +629,12 @@ func (tr *Transcript) toggle(i int) {
 	}
 	b := tr.blocks[i]
 	switch b.kind {
-	case bThinking, bCompact:
+	case bThinking, bCompact, bError:
 		b.expanded = !b.expanded
 	case bUser, bSteer:
 		b.full = !b.full
 	case bTool:
-		if b.expanded && !b.full {
+		if b.err == nil && b.expanded && !b.full {
 			b.full = true
 		} else {
 			b.expanded, b.full = !b.expanded, false
@@ -1422,7 +1422,14 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 	case bNote:
 		lines = append(lines, mark+render.Dim(t.Glyphs.Note+" "+render.Truncate(b.text, body, t), t))
 	case bError:
-		lines = append(lines, mark+render.Bad(t.Glyphs.Error+" "+render.Truncate(b.err.Error(), body, t), t)+" "+stamp)
+		shown, cut := tr.errorLines(b.err, body, b.expanded)
+		lines = append(lines, mark+render.Bad(shown[0], t)+" "+stamp)
+		for _, l := range shown[1:] {
+			lines = append(lines, "  "+render.Bad(l, t))
+		}
+		if cut != "" {
+			lines = append(lines, "  "+render.Dim(cut, t))
+		}
 	case bChild:
 		name := b.call.Name
 		head := lipgloss.NewStyle().Foreground(tr.agentColor(name)).Bold(true).Render(t.Glyphs.Child + " " + name)
@@ -1653,7 +1660,13 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 	}
 	lines := []string{mark + head + " " + status}
 	if b.err != nil {
-		lines = append(lines, "  "+render.Hot(t.Glyphs.Error+" "+render.Truncate(b.err.Error(), body-2, t), t))
+		shown, cut := tr.errorLines(b.err, body-2, b.expanded)
+		for _, l := range shown {
+			lines = append(lines, "  "+render.Hot(l, t))
+		}
+		if cut != "" {
+			lines = append(lines, "  "+render.Dim(cut, t))
+		}
 		return lines
 	}
 	if b.result == nil && b.partial != "" {
@@ -1681,6 +1694,18 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 		lines = append(lines, "  "+l)
 	}
 	return lines
+}
+
+// Every wrapped line of the error once expanded, else its first line cut to width with the marker for the rest
+func (tr *Transcript) errorLines(err error, width int, expanded bool) ([]string, string) {
+	t := tr.env.Theme
+	text := t.Glyphs.Error + " " + err.Error()
+	full := strings.Split(render.Wrap(text, width), "\n")
+	if expanded || len(full) == 1 {
+		return full, ""
+	}
+	first, _, _ := strings.Cut(text, "\n")
+	return []string{render.Truncate(first, width, t)}, tr.more(len(full) - 1)
 }
 
 // Cut marker naming the lines left out

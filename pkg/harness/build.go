@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/facts"
@@ -407,7 +406,7 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 	if kind.MaxRounds > 0 {
 		ag.MaxRounds = kind.MaxRounds
 	}
-	ag.Hooks = append(ag.Hooks, systemHook{app: a, ep: ep, kind: kind})
+	ag.Hooks = append(ag.Hooks, &systemHook{app: a, ep: ep, kind: kind})
 	var runner *agent.HookRunner
 	if len(cfg.Hooks) > 0 {
 		transcript, _ := a.Store.Path(sess.ID())
@@ -415,7 +414,6 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		runner = &r
 		ag.Hooks = append(ag.Hooks, r)
 	}
-	ag.Hooks = append(ag.Hooks, agent.StripThinking{})
 	if kind.Name != "" {
 		ag.Hooks = append(ag.Hooks, kindTools{kind: kind})
 	}
@@ -443,6 +441,8 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		ag.Hooks = append(ag.Hooks, &agent.Pruner{Session: sess, After: after})
 	}
 	ag.Hooks = append(ag.Hooks, &agent.Dedup{Session: sess, Tools: ag.Tools})
+	// Last so it strips and digests the request exactly as every other hook leaves it
+	ag.Hooks = append(ag.Hooks, &agent.StripThinking{})
 	return ag, nil
 }
 
@@ -513,20 +513,26 @@ func (a *App) track(ep Endpoint) {
 	a.Meter.SetThreshold(a.Config.CompactThreshold(ep.Catalog.Context))
 }
 
-// Hook that writes the system prompt of the endpoint and kind into every turn, keeping an empty one while bare
+// Hook that writes the system prompt built once per run into every turn, keeping an empty one while bare
 type systemHook struct {
 	agent.Hooks
-	app  *App
-	ep   Endpoint
-	kind Kind
+	app    *App
+	ep     Endpoint
+	kind   Kind
+	system string
 }
 
-func (h systemHook) BeforeTurn(ctx context.Context, req *protocol.Request) error {
+func (h *systemHook) BeforeRun(ctx context.Context, input []protocol.Part) ([]protocol.Part, error) {
 	system, err := h.app.PromptFor(ctx, h.ep, h.kind)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	req.System = system
+	h.system = system
+	return input, nil
+}
+
+func (h *systemHook) BeforeTurn(ctx context.Context, req *protocol.Request) error {
+	req.System = h.system
 	req.KeepSystem = h.ep.Profile.Bare
 	return nil
 }
@@ -631,6 +637,20 @@ func (a *App) Open(ctx context.Context, id string) (*Live, error) {
 		return nil, err
 	}
 	return a.live(sess, ep)
+}
+
+// Id of the newest stored session of the project that no other icebath has open, sub-agent sessions left out
+func NewestSession(ctx context.Context, store *session.Store, root string) (string, error) {
+	infos, err := store.ListProject(ctx, root)
+	if err != nil {
+		return "", err
+	}
+	for _, in := range infos {
+		if !in.Busy && in.Labels[parentLabel] == "" {
+			return in.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no session of %s to continue", root)
 }
 
 // Opens a fresh session on the default endpoint beside the ones already open
@@ -896,16 +916,4 @@ func (a *App) MissionsFor(ctx context.Context) *mission.Store {
 		return l.Missions
 	}
 	return a.Missions
-}
-
-// Opens an empty session under a stored id whose file is gone, on the default endpoint
-func (a *App) Revive(id string) (*Live, error) {
-	if !session.ValidID(id) {
-		return nil, fmt.Errorf("harness: %q is not a session id", id)
-	}
-	if l := a.LiveByID(id); l != nil {
-		return l, nil
-	}
-	now := time.Now().UTC()
-	return a.live(session.FromHeader(session.Header{ID: id, Created: now, Updated: now}, nil, nil), a.Primary)
 }

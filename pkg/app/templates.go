@@ -226,11 +226,27 @@ func (m *Model) applyTemplate(name string) tea.Cmd {
 }
 
 // Adds the workspaces of the template after the open ones and shows the one it marks active
+func (m *Model) placeTemplate(t template, eps map[string]harness.Endpoint) []tea.Cmd {
+	cmds, placed, active := m.placeWorkspaces(t, eps, nil, false)
+	if placed == 0 {
+		return append(cmds, m.wm.Toast("template "+t.Name+" placed nothing", wm.Warn, 0))
+	}
+	cmds = append(cmds, m.wm.Switch(active))
+	ws := m.wm.Workspaces()[active]
+	if d := m.deskOfCard(ws.Focused()); d != nil {
+		m.app.Select(d.live)
+	} else if seated := m.desksIn(ws); len(seated) > 0 {
+		m.app.Select(seated[0].live)
+	}
+	return append(cmds, m.wm.Toast(fmt.Sprintf("template %s, %d workspaces", t.Name, placed), wm.Success, 0))
+}
+
+// Adds the workspaces of the template after the open ones, returning how many it placed and the index of the active one
 //
-// A fresh session is opened for every mark on the endpoint resolved for it, the first taking over the session spare
-// when one is handed in and runs on the same endpoint. Cards no session or panel answers to are left out, as is a
-// workspace nothing is left in
-func (m *Model) placeTemplate(t template, eps map[string]harness.Endpoint, spare *harness.Live) []tea.Cmd {
+// A fresh session is opened for every mark on the endpoint resolved for it. The session spare when handed in takes the
+// first mark met when claim is set, else the first mark on its own endpoint. Cards no session or panel answers to are
+// left out, as is a workspace nothing is left in
+func (m *Model) placeWorkspaces(t template, eps map[string]harness.Endpoint, spare *harness.Live, claim bool) ([]tea.Cmd, int, int) {
 	var cmds []tea.Cmd
 	base := len(m.wm.Workspaces())
 	made := map[string]string{}
@@ -244,9 +260,9 @@ func (m *Model) placeTemplate(t template, eps map[string]harness.Endpoint, spare
 			ep = m.app.Primary
 		}
 		var live *harness.Live
-		if spare != nil && m.deskOfLive(spare) == nil && ep.Profile.Name == spare.Endpoint.Profile.Name && ep.Model == spare.Endpoint.Model {
+		if spare != nil && m.deskOfLive(spare) == nil && (claim || ep.Profile.Name == spare.Endpoint.Profile.Name && ep.Model == spare.Endpoint.Model) {
 			live = spare
-			if spec.Kind != "" && live.Kind() == "" {
+			if !claim && spec.Kind != "" && live.Kind() == "" {
 				_ = m.app.SetKindOn(live, spec.Kind)
 			}
 		} else {
@@ -277,8 +293,8 @@ func (m *Model) placeTemplate(t template, eps map[string]harness.Endpoint, spare
 		}
 		return key
 	}
-	placed := 0
-	for _, wl := range t.Workspaces {
+	placed, active := 0, base
+	for i, wl := range t.Workspaces {
 		wl = wl.Rekeyed("", rename)
 		if len(wl.Tiles) == 0 && len(wl.Floats) == 0 {
 			continue
@@ -287,19 +303,11 @@ func (m *Model) placeTemplate(t template, eps map[string]harness.Endpoint, spare
 		ws, cmd := m.wm.AddWorkspace(wl.ID)
 		cmds = append(cmds, cmd, m.wm.RestoreWorkspace(ws, wl, m.cardFor))
 		placed++
+		if i <= t.Active {
+			active = base + placed - 1
+		}
 	}
-	if placed == 0 {
-		return append(cmds, m.wm.Toast("template "+t.Name+" placed nothing", wm.Warn, 0))
-	}
-	active := base + min(max(t.Active, 0), placed-1)
-	cmds = append(cmds, m.wm.Switch(active))
-	ws := m.wm.Workspaces()[active]
-	if d := m.deskOfCard(ws.Focused()); d != nil {
-		m.app.Select(d.live)
-	} else if seated := m.desksIn(ws); len(seated) > 0 {
-		m.app.Select(seated[0].live)
-	}
-	return append(cmds, m.wm.Toast(fmt.Sprintf("template %s, %d workspaces", t.Name, placed), wm.Success, 0))
+	return cmds, placed, active
 }
 
 // Lists the templates for a picker, each running choose with its name

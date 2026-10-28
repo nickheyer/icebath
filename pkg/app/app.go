@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,17 +37,11 @@ const (
 	instanceFile = "instance.lock"
 )
 
-// What the app keeps between runs, the manager layout and the mission each session works on
+// What the app keeps between runs, the manager layout with session cards under template marks and never a session id
 type layoutState struct {
 	wm.Layout
-	// Mission the runs of a session attach to, by session id
-	Missions map[string]string `json:"missions,omitempty"`
-}
-
-// Layout with only the preferences kept, the workspaces and their sessions left behind
-func (l layoutState) preferences() layoutState {
-	l.Workspaces, l.Missions, l.Active = nil, nil, 0
-	return l
+	// Profile and model each mark opens a fresh session on, by mark
+	Sessions map[string]templateSession `json:"sessions,omitempty"`
 }
 
 // Seconds a finished agent card stays open before it leaves on its own
@@ -146,10 +139,7 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 		}
 	}
 	stateDir, instance, notice := claimProject(app.Root)
-	layout, raw, saved := loadLayout(stateDir, app.Root, app.Store)
-	if instance == nil {
-		layout, raw = layout.preferences(), nil
-	}
+	layout, raw, saved := loadLayout(stateDir)
 	th, err := resolveTheme(opts.Config, layout.Theme)
 	if err != nil {
 		cancel()
@@ -315,7 +305,7 @@ func (m *Model) panel(key string) wm.Card {
 	return m.extPanel(key)
 }
 
-// Card a saved key names, nil for one of a closed session or a run of the last process
+// Card a key names, a shared panel or a card of an open session, nil for anything else
 func (m *Model) cardFor(key string) wm.Card {
 	if c := m.panel(key); c != nil {
 		return c
@@ -330,72 +320,23 @@ func (m *Model) cardFor(key string) wm.Card {
 		if d := m.deskOfSession(rest); d != nil {
 			return m.findingsOf(d)
 		}
-	case "mission":
-		sess, id, ok := strings.Cut(rest, ":")
-		if !ok {
-			return nil
-		}
-		if d := m.deskOfSession(sess); d != nil {
-			if card, ok := m.missionOf(d, id); ok {
-				return card
-			}
-		}
 	}
 	return nil
 }
 
-// Ids of the sessions a saved workspace holds cards of, tiles before floats
-func sessionKeys(wl wm.WorkspaceLayout) []string {
-	var out []string
-	add := func(key string) {
-		if id, ok := strings.CutPrefix(key, "session:"); ok && id != "" && !slices.Contains(out, id) {
-			out = append(out, id)
-		}
-	}
-	for _, t := range wl.Tiles {
-		add(t.Key)
-	}
-	for _, f := range wl.Floats {
-		add(f.Key)
-	}
-	return out
-}
-
-// Reopens the workspaces of the last run with their sessions, the default template laid out when there were none,
-// the resumed or a fresh session standing in when nothing else comes up
+// Lays out the saved layout, else the default template, with a fresh session per mark and the resumed one taking the first
 func (m *Model) restoreDesks(l layoutState) {
 	first := m.app.Current()
-	for _, wl := range l.Workspaces {
-		ws, cmd := m.wm.AddWorkspace(m.workspaceID())
-		m.startup = append(m.startup, cmd)
-		for _, id := range sessionKeys(wl) {
-			if m.deskOfSession(id) != nil {
-				continue
-			}
-			live, err := m.app.Open(m.ctx, id)
-			if errors.Is(err, session.ErrNotFound) {
-				live, err = m.app.Revive(id)
-			}
-			if err != nil {
-				m.notices = append(m.notices, "session "+id+" left closed: "+err.Error())
-				continue
-			}
-			d := m.addDesk(live)
-			if mid := l.Missions[id]; mid != "" {
-				if ms, ok := live.Missions.Get(mid); ok && !ms.Ended() {
-					d.mission = mid
-				}
-			}
-		}
-		m.startup = append(m.startup, m.wm.RestoreWorkspace(ws, wl, m.cardFor))
-	}
 	resumed := m.opts.Resume != ""
-	templated := false
-	if len(m.wm.Workspaces()) == 0 && !resumed {
-		if t, ok := m.loadTemplates().defaultTemplate(); ok {
-			m.startup = append(m.startup, m.placeTemplate(t, m.resolveTemplate(t), first)...)
-			templated = len(m.wm.Workspaces()) > 0
-		}
+	t, ok := template{Active: l.Active, Workspaces: l.Workspaces, Sessions: l.Sessions}, len(l.Workspaces) > 0
+	if !ok {
+		t, ok = m.loadTemplates().defaultTemplate()
+	}
+	active := 0
+	if ok {
+		var cmds []tea.Cmd
+		cmds, _, active = m.placeWorkspaces(t, m.resolveTemplate(t), first, resumed)
+		m.startup = append(m.startup, cmds...)
 	}
 	switch {
 	case len(m.wm.Workspaces()) == 0 || (resumed && m.deskOfLive(first) == nil):
@@ -409,13 +350,6 @@ func (m *Model) restoreDesks(l layoutState) {
 		if err := m.app.Release(first); err != nil {
 			m.notices = append(m.notices, err.Error())
 		}
-	}
-	active := 0
-	switch {
-	case templated:
-		active = m.wm.ActiveIndex()
-	case l.Active >= 0 && l.Active < len(m.wm.Workspaces()):
-		active = l.Active
 	}
 	if resumed {
 		d := m.deskOfLive(first)
@@ -440,7 +374,7 @@ func claimProject(root string) (string, *lockfile.Lock, string) {
 	}
 	l, err := lockfile.Try(filepath.Join(dir, instanceFile))
 	if errors.Is(err, lockfile.ErrHeld) {
-		return dir, nil, "another icebath is open on " + filepath.Base(root) + ", this one starts empty and keeps no layout"
+		return dir, nil, "another icebath is open on " + filepath.Base(root) + ", this one keeps no layout"
 	}
 	if err != nil {
 		return dir, nil, "layout not kept: " + err.Error()
@@ -465,85 +399,31 @@ func (m *Model) layoutPath() string {
 }
 
 // Layout of the project read from its state directory with its bytes, reporting whether a readable one was there
-//
-// A project that has none yet takes the layout earlier versions kept beside the sessions for every project together,
-// its workspaces narrowed to the sessions this project may claim, so the first start after the move comes up as before
-func loadLayout(stateDir, root string, store *session.Store) (layoutState, []byte, bool) {
+func loadLayout(stateDir string) (layoutState, []byte, bool) {
 	if stateDir == "" {
 		return layoutState{}, nil, false
 	}
-	if l, data, ok := readLayout(filepath.Join(stateDir, layoutFile)); ok {
-		return l, data, true
-	}
-	if legacy, _, ok := readLayout(filepath.Join(filepath.Dir(filepath.Dir(stateDir)), layoutFile)); ok {
-		return claimable(legacy, root, store), nil, true
-	}
-	return layoutState{}, nil, false
-}
-
-// Layout with the session cards of other projects taken out of its workspaces, workspaces emptied by that dropped
-func claimable(l layoutState, root string, store *session.Store) layoutState {
-	infos, err := store.List(context.Background())
-	if err != nil {
-		return l.preferences()
-	}
-	foreign := map[string]bool{}
-	for _, in := range infos {
-		if p := in.Labels[session.ProjectLabel]; p != "" && p != root {
-			foreign[in.ID] = true
-		}
-	}
-	keep := func(key string) bool {
-		id, ok := strings.CutPrefix(key, "session:")
-		return !ok || !foreign[id]
-	}
-	kept := l.Workspaces[:0]
-	for _, wl := range l.Workspaces {
-		wl.Tiles = slices.DeleteFunc(slices.Clone(wl.Tiles), func(t wm.TileLayout) bool { return !keep(t.Key) })
-		wl.Floats = slices.DeleteFunc(slices.Clone(wl.Floats), func(f wm.FloatLayout) bool { return !keep(f.Key) })
-		if !keep(wl.Focus) {
-			wl.Focus = ""
-		}
-		if !keep(wl.Zoom) {
-			wl.Zoom = ""
-		}
-		wl.Tree = nil
-		if len(sessionKeys(wl)) > 0 {
-			kept = append(kept, wl)
-		}
-	}
-	l.Workspaces = kept
-	l.Active = 0
-	for id := range l.Missions {
-		if foreign[id] {
-			delete(l.Missions, id)
-		}
-	}
-	return l
-}
-
-func readLayout(path string) (layoutState, []byte, bool) {
 	var l layoutState
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Join(stateDir, layoutFile))
 	if err != nil || json.Unmarshal(data, &l) != nil {
 		return layoutState{}, nil, false
 	}
 	return l, data, true
 }
 
-// Layout as it stands with the mission of every desk
+// Layout as it stands with every session swapped for a mark naming the profile and model it ran on
 func (m *Model) layoutState() layoutState {
-	l := layoutState{Layout: m.wm.Layout()}
+	l := m.wm.Layout()
 	l.Theme = m.theme.Name
-	for _, d := range m.desks {
-		if d.mission != "" {
-			if l.Missions == nil {
-				l.Missions = map[string]string{}
-			}
-			l.Missions[d.live.Session.ID()] = d.mission
+	t := templateFrom("", l, func(id string) (templateSession, bool) {
+		d := m.deskOfSession(id)
+		if d == nil {
+			return templateSession{}, false
 		}
-	}
-	return l
+		return templateSession{Profile: d.live.Endpoint.Profile.Name, Model: d.live.Endpoint.Model}, true
+	})
+	l.Workspaces, l.Active = t.Workspaces, t.Active
+	return layoutState{Layout: l, Sessions: t.Sessions}
 }
 
 // Writes the layout when it differs from the one last written, only from the instance holding the project
@@ -656,7 +536,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case profileMsg:
 		return m, m.adoptProfile(msg)
 	case templateMsg:
-		cmds := m.placeTemplate(msg.t, msg.eps, nil)
+		cmds := m.placeTemplate(msg.t, msg.eps)
 		return m, tea.Batch(append(cmds, m.sync())...)
 	case jobKilledMsg:
 		return m, m.wm.Toast("killed "+msg.job, wm.Warn, 0)

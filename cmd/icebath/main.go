@@ -44,6 +44,7 @@ func run(args []string) int {
 		profile  = fs.String("profile", "", "endpoint profile, built in ones are "+strings.Join(names(), ", "))
 		model    = fs.String("model", "", "model id the profile serves")
 		resume   = fs.String("resume", "", "session id to continue")
+		last     = fs.Bool("continue", false, "continue the last session of this project")
 		dir      = fs.String("dir", "", "working directory of the shell, the current directory when empty")
 		root     = fs.String("root", "", "project root for hooks, rules and servers, the working directory when empty")
 		mode     = fs.String("mode", "", "permission mode, default, acceptEdits, plan or bypassPermissions")
@@ -61,6 +62,7 @@ func run(args []string) int {
 		showVer  = fs.Bool("version", false, "print the version and exit")
 		set      settings
 	)
+	fs.BoolVar(last, "c", false, "short for -continue")
 	fs.Var(&set, "k", "setting override such as max_tokens=4096, repeatable")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: icebath [flags] [prompt]\n\n")
@@ -128,16 +130,26 @@ func run(args []string) int {
 			return 2
 		}
 	}
+	project := cfg.Root
+	if project == "" {
+		project = cwd
+	}
+	if project, err = filepath.Abs(project); err != nil {
+		fmt.Fprintln(os.Stderr, "icebath:", err)
+		return 2
+	}
 	if *list {
-		root := cfg.Root
-		if root == "" {
-			root = cwd
+		return listSessions(cfg, project, *every)
+	}
+	if *last {
+		if *resume != "" {
+			fmt.Fprintln(os.Stderr, "icebath: -continue and -resume each pick a session, pass one")
+			return 2
 		}
-		if root, err = filepath.Abs(root); err != nil {
+		if *resume, err = newestSession(cfg, project); err != nil {
 			fmt.Fprintln(os.Stderr, "icebath:", err)
 			return 2
 		}
-		return listSessions(cfg, root, *every)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -206,6 +218,15 @@ func workflowNames() []string {
 		return []string{"none"}
 	}
 	return out
+}
+
+// Id of the newest session of the project to continue
+func newestSession(cfg harness.Config, root string) (string, error) {
+	dir, err := cfg.SessionsPath()
+	if err != nil {
+		return "", err
+	}
+	return harness.NewestSession(context.Background(), &session.Store{Dir: dir}, root)
 }
 
 // Prints the stored sessions of the project newest first, or of every project, naming the project of each when every

@@ -19,6 +19,7 @@ icebath [flags] [prompt]
   -model id          model the profile serves
   -mode name         default, acceptEdits, plan or bypassPermissions
   -resume id         continue a stored session
+  -c, -continue      continue the latest session of this project
   -mission text      start a mission with an objective
   -kind name         kind the session runs as, from extensions or kind files
   -workflow name     run a workflow with the prompt as its argument

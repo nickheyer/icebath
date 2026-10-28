@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/harness"
@@ -43,52 +45,135 @@ func TestClaimProjectLocksOneInstance(t *testing.T) {
 	third.Release()
 }
 
-func TestLoadLayoutMigratesOnlyOwnSessions(t *testing.T) {
-	cfg := t.TempDir()
-	t.Setenv(profiles.ConfigDirEnv, cfg)
-	st := &session.Store{Dir: filepath.Join(cfg, harness.SessionsDir)}
-	mine := stored(t, st, "/p/a")
-	theirs := stored(t, st, "/p/b")
-	orphan := stored(t, st, "")
-	legacy := layoutState{Layout: wm.Layout{Theme: "light", Workspaces: []wm.WorkspaceLayout{
-		{ID: "w1", Tiles: []wm.TileLayout{{Key: "session:" + theirs}, {Key: "metrics"}}, Focus: "session:" + theirs},
-		{ID: "w2", Tiles: []wm.TileLayout{{Key: "session:" + mine}, {Key: "session:" + theirs}}, Floats: []wm.FloatLayout{{Key: "session:" + orphan}}},
-	}, Active: 1}, Missions: map[string]string{mine: "m1", theirs: "m2"}}
-	data, _ := json.Marshal(legacy)
-	if err := os.WriteFile(filepath.Join(cfg, layoutFile), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	stateDir, err := harness.StatePath("/p/a")
+// Starts the app on the project the way the shell does, shut down when the test ends
+func started(t *testing.T, project, resume string) *Model {
+	t.Helper()
+	cfg, err := harness.Discover(project)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, raw, ok := loadLayout(stateDir, "/p/a", st)
-	if !ok || raw != nil {
-		t.Fatalf("legacy layout not taken up: %v %v", ok, raw)
+	m, err := New(context.Background(), Options{Config: cfg, Dir: project, Resume: resume})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if l.Theme != "light" {
-		t.Fatalf("preferences lost: %+v", l.Layout)
+	t.Cleanup(func() { m.shutdown() })
+	return m
+}
+
+// Writes a layout into the state directory of the project, with one stored session id and one mark on an unknown profile
+func oldLayout(t *testing.T, project, id string) {
+	t.Helper()
+	dir, err := harness.StatePath(project)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(l.Workspaces) != 1 {
-		t.Fatalf("workspaces: %+v", l.Workspaces)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	keys := sessionKeys(l.Workspaces[0])
-	if len(keys) != 2 || keys[0] != mine || keys[1] != orphan {
-		t.Fatalf("sessions of the kept workspace: %v", keys)
+	l := layoutState{Layout: wm.Layout{Workspaces: []wm.WorkspaceLayout{
+		{ID: "w1", Tiles: []wm.TileLayout{{Key: "session:" + id}, {Key: "session:@2"}, {Key: "mission:" + id + ":m1"}, {Key: "metrics"}}},
+	}}, Sessions: map[string]templateSession{"@2": {Profile: "missing", Model: "gone"}}}
+	data, _ := json.Marshal(l)
+	if err := os.WriteFile(filepath.Join(dir, layoutFile), data, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := l.Missions[theirs]; ok || l.Missions[mine] != "m1" {
-		t.Fatalf("missions: %v", l.Missions)
+}
+
+func deskIDs(m *Model) []string {
+	var out []string
+	for _, d := range m.desks {
+		out = append(out, d.live.Session.ID())
 	}
-	if err := os.WriteFile(filepath.Join(stateDir, layoutFile), []byte(`{"theme":"contrast"}`), 0o644); err != nil {
-		if err := os.MkdirAll(stateDir, 0o755); err != nil {
-			t.Fatal(err)
+	return out
+}
+
+// Fails when the saved form of the layout names any session id or lays out other than two marks and the metrics panel
+func checkSaved(t *testing.T, m *Model, ids ...string) {
+	t.Helper()
+	l := m.layoutState()
+	data, err := json.Marshal(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range append(ids, deskIDs(m)...) {
+		if strings.Contains(string(data), id) {
+			t.Fatalf("saved layout names session %s: %s", id, data)
 		}
-		if err := os.WriteFile(filepath.Join(stateDir, layoutFile), []byte(`{"theme":"contrast"}`), 0o644); err != nil {
-			t.Fatal(err)
+	}
+	if len(l.Workspaces) != 1 || len(l.Sessions) != 2 {
+		t.Fatalf("saved layout: %s", data)
+	}
+	var keys []string
+	for _, tile := range l.Workspaces[0].Tiles {
+		keys = append(keys, tile.Key)
+	}
+	if strings.Join(keys, " ") != "session:@1 session:@2 metrics" {
+		t.Fatalf("saved tiles: %v", keys)
+	}
+}
+
+func TestLayoutOpensFreshSessions(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv(profiles.ConfigDirEnv, cfg)
+	project := t.TempDir()
+	st := &session.Store{Dir: filepath.Join(cfg, harness.SessionsDir)}
+	old := stored(t, st, project)
+	oldLayout(t, project, old)
+	m := started(t, project, "")
+	if m.instance == nil {
+		t.Fatal("first instance should hold the project")
+	}
+	ids := deskIDs(m)
+	if len(ids) != 2 || len(m.wm.Workspaces()) != 1 {
+		t.Fatalf("desks %v in %d workspaces", ids, len(m.wm.Workspaces()))
+	}
+	for _, d := range m.desks {
+		if d.live.Session.ID() == old || d.live.Session.Len() != 0 {
+			t.Fatalf("desk on a stored session %s", d.live.Session.ID())
 		}
 	}
-	l, raw, ok = loadLayout(stateDir, "/p/a", st)
-	if !ok || raw == nil || l.Theme != "contrast" {
-		t.Fatalf("own layout not preferred: %v %+v", ok, l.Layout)
+	if m.app.Store.Leased(old) {
+		t.Fatal("stored session leased by a fresh start")
+	}
+	checkSaved(t, m, old)
+}
+
+func TestResumedSessionTakesFirstMark(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv(profiles.ConfigDirEnv, cfg)
+	project := t.TempDir()
+	st := &session.Store{Dir: filepath.Join(cfg, harness.SessionsDir)}
+	old := stored(t, st, project)
+	oldLayout(t, project, old)
+	m := started(t, project, old)
+	ids := deskIDs(m)
+	if len(ids) != 2 || ids[0] != old || len(m.wm.Workspaces()) != 1 {
+		t.Fatalf("desks %v in %d workspaces", ids, len(m.wm.Workspaces()))
+	}
+	if d := m.current(); d == nil || d.live.Session.ID() != old {
+		t.Fatal("resumed session not on the stage")
+	}
+	checkSaved(t, m, old)
+}
+
+func TestSecondInstanceLaysOutLayout(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv(profiles.ConfigDirEnv, cfg)
+	project := t.TempDir()
+	st := &session.Store{Dir: filepath.Join(cfg, harness.SessionsDir)}
+	oldLayout(t, project, stored(t, st, project))
+	first := started(t, project, "")
+	second := started(t, project, "")
+	if second.instance != nil {
+		t.Fatal("second instance took the project lock")
+	}
+	a, b := deskIDs(first), deskIDs(second)
+	if len(b) != 2 || len(second.wm.Workspaces()) != 1 {
+		t.Fatalf("second instance desks %v", b)
+	}
+	for _, id := range b {
+		if slices.Contains(a, id) {
+			t.Fatalf("both instances opened %s", id)
+		}
 	}
 }
