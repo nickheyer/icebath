@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -38,7 +39,8 @@ func newSettings(env *Env) *settings {
 		{key: "max_tokens", label: "max tokens", group: "model", kind: numberField, integer: true, optional: true, lo: 1, step: 1024, unit: tokens, help: "Output tokens per model turn, unset lets the model run to its limit"},
 		{key: "max_rounds", label: "max rounds", group: "model", kind: numberField, integer: true, optional: true, lo: 1, step: 1, start: 50, help: "Tool rounds one prompt may take before the model must answer, unset for no limit"},
 		{key: "temperature", label: "temperature", group: "model", kind: numberField, optional: true, lo: 0, step: 0.05, start: 1, help: "Sampling temperature, unset leaves it to the model"},
-		{key: "compact_threshold", label: "compact threshold", group: "model", kind: numberField, integer: true, optional: true, lo: 1, step: 1000, unit: tokens, help: "Context tokens at which old turns are summarized, unset never compacts"},
+		{key: "compact_threshold", label: "compact threshold", group: "model", kind: numberField, integer: true, optional: true, lo: 1, step: 1000, unit: tokens, help: fmt.Sprintf("Context tokens at which old turns are summarized, unset compacts at %d%% of the model window, 0 never compacts", int(harness.DefaultCompactShare*100))},
+		{key: "prune_after", label: "prune after", group: "model", kind: numberField, integer: true, optional: true, lo: 0, step: 1, start: harness.DefaultPruneAfter, help: fmt.Sprintf("Turns a tool result stays in context before a stub replaces it, unset prunes after %d, 0 never prunes", harness.DefaultPruneAfter)},
 		{key: "theme", label: "theme", group: "interface", kind: choiceField, choices: theme.Names()},
 		{key: "motion", label: "motion", group: "interface", kind: numberField, lo: 0, hi: 1, step: 0.05, start: 1, help: "Animation scale, 0 snaps and 1 springs"},
 		{key: "cascade", label: "cascade", group: "interface", kind: choiceField, choices: []string{"true", "false"}, help: "Light sweep along the focused border"},
@@ -111,7 +113,7 @@ func (s *settings) sync() {
 				f.start = f.step
 			}
 		case "compact_threshold":
-			f.start = float64(window * 8 / 10)
+			f.start = float64(window) * harness.DefaultCompactShare
 		}
 		if s.editing && i == s.sheet.at {
 			continue

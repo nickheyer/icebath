@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/lockfile"
 )
 
 // Header lines appended between rewrites before the log is compacted into a fresh file
@@ -58,10 +60,16 @@ func prefixOf(written [][32]byte, encoded [][]byte) bool {
 }
 
 // Store appending one JSON line per message to a log per session under a directory, so a crash loses at most the last line
+//
+// Several processes may share the directory. Each write and read holds the lock of the session for its duration, and
+// a process that works on a session holds its lease for as long as it has the session open, so another process sees
+// the session as busy rather than silently writing a diverging copy of it
 type Store struct {
 	Dir   string
 	mu    sync.Mutex
 	marks map[string]*mark
+	// Leases this process holds, by id
+	leases map[string]*lockfile.Lock
 }
 
 // Path of the log for an id
@@ -72,7 +80,75 @@ func (st *Store) Path(id string) (string, error) {
 	return filepath.Join(st.Dir, id+".jsonl"), nil
 }
 
-func (st *Store) lockPath(id string) string { return filepath.Join(st.Dir, id+".lock") }
+func (st *Store) lockPath(id string) string  { return filepath.Join(st.Dir, id+".lock") }
+func (st *Store) leasePath(id string) string { return filepath.Join(st.Dir, id+".lease") }
+
+// Error of Lease when another process has the session open
+var ErrBusy = errors.New("session: open in another icebath")
+
+// Takes the lease of a session for this process, a no-op when it already holds it and ErrBusy when another process does
+func (st *Store) Lease(id string) error {
+	if !ValidID(id) {
+		return InvalidID(id)
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if _, held := st.leases[id]; held {
+		return nil
+	}
+	if err := os.MkdirAll(st.Dir, 0o755); err != nil {
+		return err
+	}
+	l, err := lockfile.Try(st.leasePath(id))
+	if errors.Is(err, lockfile.ErrHeld) {
+		return ErrBusy
+	}
+	if err != nil {
+		return err
+	}
+	if st.leases == nil {
+		st.leases = map[string]*lockfile.Lock{}
+	}
+	st.leases[id] = l
+	return nil
+}
+
+// Gives the lease of a session back so another process may open it, dropping the lease file of a session never written
+func (st *Store) Unlease(id string) error {
+	st.mu.Lock()
+	l, held := st.leases[id]
+	delete(st.leases, id)
+	st.mu.Unlock()
+	if !held {
+		return nil
+	}
+	if target, err := st.Path(id); err == nil {
+		if _, err := os.Stat(target); errors.Is(err, fs.ErrNotExist) {
+			os.Remove(st.leasePath(id))
+		}
+	}
+	return l.Release()
+}
+
+// Reports whether this process holds the lease of the session
+func (st *Store) Leased(id string) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	_, held := st.leases[id]
+	return held
+}
+
+// Reports whether another process holds the lease of the session
+func (st *Store) Busy(id string) bool {
+	if !ValidID(id) || st.Leased(id) {
+		return false
+	}
+	held, _ := lockfile.Held(st.leasePath(id))
+	return held
+}
+
+// Opens or creates the lock of a session and takes it, blocking until it is granted
+func acquireLock(path string) (*lockfile.Lock, error) { return lockfile.Acquire(path) }
 
 // Appends the new lines and a header when it changed, rewriting the log when history was altered
 func (st *Store) Save(ctx context.Context, s *Session) error {
@@ -103,7 +179,7 @@ func (st *Store) Save(ctx context.Context, s *Session) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Unlock()
+	defer lock.Release()
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.marks == nil {
@@ -268,7 +344,7 @@ func (st *Store) Load(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer lock.Unlock()
+	defer lock.Release()
 	h, entries, records, good, err := read(target)
 	if err != nil {
 		return nil, err
@@ -356,7 +432,7 @@ func read(target string) (Header, []Entry, []Record, int64, error) {
 	return *header, entries, records, good, nil
 }
 
-// Lists stored sessions newest first from the last complete header line of each log
+// Lists stored sessions newest first from the last complete header line of each log, marking those another process has open
 func (st *Store) List(ctx context.Context) ([]Info, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -382,10 +458,32 @@ func (st *Store) List(ctx context.Context) ([]Info, error) {
 			infos = append(infos, Info{ID: id, Error: err.Error()})
 			continue
 		}
-		infos = append(infos, h.Info())
+		info := h.Info()
+		info.Busy = st.Busy(id)
+		infos = append(infos, info)
 	}
 	SortInfos(infos)
 	return infos, nil
+}
+
+// Lists the sessions that belong to a project, by the label stores and apps set at creation
+func (st *Store) ListProject(ctx context.Context, root string) ([]Info, error) {
+	infos, err := st.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return OfProject(infos, root), nil
+}
+
+// Narrows a listing to the sessions of a project, keeping unreadable ones out
+func OfProject(infos []Info, root string) []Info {
+	var out []Info
+	for _, in := range infos {
+		if in.Error == "" && in.Labels[ProjectLabel] == root {
+			out = append(out, in)
+		}
+	}
+	return out
 }
 
 const tailChunk = 64 << 10
@@ -471,46 +569,33 @@ func (st *Store) Delete(ctx context.Context, id string) error {
 	if _, err := os.Stat(target); errors.Is(err, fs.ErrNotExist) {
 		return ErrNotFound
 	}
+	if st.Busy(id) {
+		return ErrBusy
+	}
 	lock, err := acquireLock(st.lockPath(id))
 	if err != nil {
 		return err
 	}
 	err = os.Remove(target)
-	lock.Unlock()
+	lock.Release()
+	st.Unlease(id)
 	os.Remove(st.lockPath(id))
+	os.Remove(st.leasePath(id))
 	if errors.Is(err, fs.ErrNotExist) {
 		return ErrNotFound
 	}
 	return err
 }
 
-// Advisory exclusive lock on a file held until Unlock, so several processes can share a session directory
-type fileLock struct {
-	f *os.File
-}
-
-// Opens or creates path and takes an exclusive lock, blocking until it is granted
-func acquireLock(path string) (*fileLock, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
+// Releases every lease this process holds
+func (st *Store) Close() error {
+	st.mu.Lock()
+	leases := st.leases
+	st.leases = nil
+	st.mu.Unlock()
+	var errs []error
+	for _, l := range leases {
+		errs = append(errs, l.Release())
 	}
-	if err := lock(f); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return &fileLock{f: f}, nil
-}
-
-// Releases the lock and closes the file
-func (l *fileLock) Unlock() error {
-	if l == nil || l.f == nil {
-		return nil
-	}
-	err := unlock(l.f)
-	if cerr := l.f.Close(); err == nil {
-		err = cerr
-	}
-	l.f = nil
-	return err
+	return errors.Join(errs...)
 }

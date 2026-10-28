@@ -403,18 +403,17 @@ func (m *Model) forkStored(ids ...string) tea.Cmd {
 	var cmds []tea.Cmd
 	var made []string
 	for _, id := range ids {
-		src, err := m.app.Open(m.ctx, id)
-		if err != nil {
-			cmds = append(cmds, m.wm.Toast(err.Error(), wm.Error, 0))
+		if d := m.deskOfSession(id); d != nil && d.compacting {
+			cmds = append(cmds, m.wm.Toast("compacting", wm.Warn, 0))
 			continue
 		}
-		f, err := m.forkLive(m.deskOfLive(src), src, src.Session.Len())
+		f, err := m.app.ForkStored(m.ctx, id)
 		if err != nil {
 			cmds = append(cmds, m.wm.Toast(err.Error(), wm.Warn, 0))
 			continue
 		}
 		cmds = append(cmds, m.openDesk(nil, f))
-		made = append(made, sessionName(src, m.theme)+" into "+f.Session.ID())
+		made = append(made, sessionName(f, m.theme)+" into "+f.Session.ID())
 	}
 	switch len(made) {
 	case 0:
@@ -435,19 +434,12 @@ func (m *Model) forkAt(d *desk, src *harness.Live, n int) tea.Cmd {
 	return tea.Batch(m.openDesk(m.workspaceOf(d), f), m.wm.Toast(fmt.Sprintf("forked into %s at %d entries", f.Session.ID(), n), wm.Success, 0))
 }
 
-// Fork of an open session cut at n entries, releasing a source that was opened only to be forked
+// Fork of an open session cut at n entries
 func (m *Model) forkLive(d *desk, src *harness.Live, n int) (*harness.Live, error) {
 	if d != nil && d.compacting {
 		return nil, errors.New("compacting")
 	}
-	f, err := m.app.Fork(src, n)
-	if err != nil {
-		return nil, err
-	}
-	if d == nil {
-		m.app.Release(src)
-	}
-	return f, nil
+	return m.app.Fork(src, n)
 }
 
 // Deletes stored sessions that have no card open, with the prompt drafts kept for them

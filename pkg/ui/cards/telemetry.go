@@ -2,6 +2,8 @@ package cards
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -181,6 +183,9 @@ func (c *Telemetry) View(w, h int) string {
 	}
 	u := s.Usage
 	lines = append(lines, render.Truncate(render.KV("in", render.Tokens(u.Input), t)+"  "+render.KV("out", render.Tokens(u.Output), t)+"  "+render.KV("cached", render.Tokens(u.CacheRead), t)+"  "+render.KV("written", render.Tokens(u.CacheWrite), t), w, t))
+	if len(s.Tools) > 0 {
+		lines = append(lines, render.Truncate(render.KV("tools", toolShares(s), t), w, t))
+	}
 	lat := render.KV("latency", render.Elapsed(s.LastLatency), t)
 	if s.AvgLatency > 0 {
 		lat += render.Dim(" avg "+render.Elapsed(s.AvgLatency), t)
@@ -232,6 +237,23 @@ func (c *Telemetry) View(w, h int) string {
 		lines = lines[:h]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// Tools by estimated result tokens, largest first, each with its call count
+func toolShares(s harness.Telemetry) string {
+	names := slices.SortedFunc(maps.Keys(s.Tools), func(a, b string) int {
+		if d := s.Tools[b].Tokens - s.Tools[a].Tokens; d != 0 {
+			return d
+		}
+		return strings.Compare(a, b)
+	})
+	parts := make([]string, 0, len(names)+1)
+	parts = append(parts, render.Tokens(s.ToolTokens)+" total")
+	for _, name := range names {
+		st := s.Tools[name]
+		parts = append(parts, fmt.Sprintf("%s %s (%d)", name, render.Tokens(st.Tokens), st.Calls))
+	}
+	return strings.Join(parts, "  ")
 }
 
 func (c *Telemetry) Status() string {

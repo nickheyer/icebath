@@ -50,6 +50,7 @@ type cachePoint struct {
 
 // Union with exactly one member set
 type contentBlock struct {
+	CachePoint       *cachePoint       `json:"cachePoint,omitempty"`
 	Text             *string           `json:"text,omitempty"`
 	Image            *imageBlock       `json:"image,omitempty"`
 	Document         *documentBlock    `json:"document,omitempty"`
@@ -284,7 +285,7 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 	if req.Model == "" {
 		return protocol.Call{}, fmt.Errorf("bedrock-converse-stream: model is required")
 	}
-	cache, extra, err := consumeCache(req.Extra)
+	cache, extra, err := consumeCache(req.Model, req.Extra)
 	if err != nil {
 		return protocol.Call{}, err
 	}
@@ -304,6 +305,9 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 		if keep {
 			wire.Messages = append(wire.Messages, msg)
 		}
+	}
+	if n := len(wire.Messages); cache && n > 0 {
+		wire.Messages[n-1].Content = append(wire.Messages[n-1].Content, contentBlock{CachePoint: &cachePoint{Type: "default"}})
 	}
 	if req.MaxTokens > 0 || req.Temperature != nil || len(req.StopSequences) > 0 {
 		wire.InferenceConfig = &inferenceConfig{MaxTokens: req.MaxTokens, Temperature: req.Temperature, StopSequences: req.StopSequences}
@@ -331,11 +335,17 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 	}, nil
 }
 
-// Reads and removes the caching switch so the remaining extra fields merge into the body
-func consumeCache(extra map[string]json.RawMessage) (bool, map[string]json.RawMessage, error) {
+// Reports whether the model family on Bedrock accepts cache points
+func cachesByDefault(model string) bool {
+	id := strings.ToLower(model)
+	return strings.Contains(id, "anthropic.") || strings.Contains(id, "claude") || strings.Contains(id, "nova")
+}
+
+// Reads and removes the caching switch, on for Claude and Nova unless the extra turns it off
+func consumeCache(model string, extra map[string]json.RawMessage) (bool, map[string]json.RawMessage, error) {
 	raw, ok := extra[cacheKey]
 	if !ok {
-		return false, extra, nil
+		return cachesByDefault(model), extra, nil
 	}
 	var on bool
 	if err := json.Unmarshal(raw, &on); err != nil {

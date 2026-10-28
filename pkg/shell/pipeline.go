@@ -21,12 +21,14 @@ type stagesKey struct{}
 type stages struct {
 	mu     sync.Mutex
 	codes  [][]int
+	names  [][]string
 	latest int
 }
 
 // Registers a pipeline and returns its id
 func (st *stages) add() int {
 	st.codes = append(st.codes, nil)
+	st.names = append(st.names, nil)
 	return len(st.codes) - 1
 }
 
@@ -37,6 +39,7 @@ func (st *stages) size(id, n int) {
 		codes[i] = -1
 	}
 	st.codes[id] = codes
+	st.names[id] = make([]string, n)
 }
 
 // Stores the exit code of one stage and remembers the pipeline as the latest to finish one
@@ -50,20 +53,29 @@ func (st *stages) record(id, idx, code int) {
 	st.latest = id
 }
 
-// Codes of every stage of the latest pipeline, nothing before one ran or while a stage never reported
-func (st *stages) last() []int {
+// Codes and command names of every stage of the latest pipeline, nothing before one ran or while a stage never reported
+func (st *stages) last() ([]int, []string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.latest < 0 {
-		return nil
+		return nil, nil
 	}
 	codes := st.codes[st.latest]
 	for _, c := range codes {
 		if c < 0 {
-			return nil
+			return nil, nil
 		}
 	}
-	return append([]int(nil), codes...)
+	return append([]int(nil), codes...), append([]string(nil), st.names[st.latest]...)
+}
+
+// First word of a stage that is a plain call with a literal name, empty otherwise
+func commandName(s *syntax.Stmt) string {
+	call, ok := s.Cmd.(*syntax.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return ""
+	}
+	return call.Args[0].Lit()
 }
 
 // Reports the stage a hidden call names and ends with the stage's own exit code
@@ -101,6 +113,7 @@ func rewrite(prog *syntax.File) *stages {
 		id := st.add()
 		st.size(id, len(slots))
 		for idx, slot := range slots {
+			st.names[id][idx] = commandName(*slot)
 			*slot = wrap(*slot, id, idx)
 		}
 		return true

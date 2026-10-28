@@ -34,7 +34,13 @@ var ignored = []string{".git", ".hg", ".svn", "node_modules", ".venv", "venv", "
 
 const (
 	// Lines one Read returns
-	maxLines = 2000
+	maxLines = 1000
+	// Bytes one Read returns before the window stops and the marker says where to continue
+	maxReadBytes = 32000
+	// Files one Read takes through file_paths
+	maxBatch = 10
+	// Bytes a batched Read returns across its files before the rest are skipped
+	maxBatchBytes = 64000
 	// Bytes kept of one line before it is cut
 	maxLineBytes = 2000
 	// Largest file Read loads whole and Edit rewrites
@@ -42,7 +48,7 @@ const (
 	// Entries Glob and Grep list
 	maxResults = 1000
 	// Bytes of Grep output
-	maxOutput = 50000
+	maxOutput = 20000
 )
 
 // Shared settings of every file tool
@@ -53,7 +59,7 @@ type Options struct {
 
 // Every file tool sharing one set of options
 func All(o Options) []tool.Tool {
-	return []tool.Tool{Read(o), Write(o), Edit(o), Glob(o), Grep(o)}
+	return []tool.Tool{Read(o), Write(o), Edit(o), Glob(o), Grep(o), Outline(o)}
 }
 
 // Content replaced by Write or Edit, with the whole file before and after
@@ -317,9 +323,17 @@ func sniffImage(head []byte) string {
 
 const readSchema = `{"type":"object","properties":{
 "file_path":{"type":"string","description":"Path of the file to read, relative paths resolve against the working directory"},
+"file_paths":{"type":"array","items":{"type":"string"},"description":"Several files to read whole in one call instead of file_path, up to 10"},
 "offset":{"type":"integer","minimum":1,"description":"First line to return, counted from 1"},
 "limit":{"type":"integer","minimum":1,"description":"Number of lines to return"}},
-"required":["file_path"],"additionalProperties":false}`
+"additionalProperties":false}`
+
+// Structured outcome of a Read over several files
+type ReadMany struct {
+	Files []ReadData
+	// Paths left unread once the batch budget was spent
+	Skipped []string
+}
 
 // Structured outcome of Read
 type ReadData struct {
@@ -342,7 +356,7 @@ func Read(o Options) tool.Tool { return read{o} }
 func (r read) Definition() protocol.Tool {
 	return protocol.Tool{
 		Name:        ReadName,
-		Description: fmt.Sprintf("Reads a file and returns its lines numbered in cat -n form, up to %d lines per call with offset and limit to page through longer files. Lines over %d bytes are cut. PNG, JPEG, GIF and WebP files come back as images.", maxLines, maxLineBytes),
+		Description: fmt.Sprintf("Reads a file and returns its lines numbered in cat -n form, up to %d lines or %d bytes per call with offset and limit to page through longer files. Lines over %d bytes are cut. PNG, JPEG, GIF and WebP files come back as images. With file_paths several files come back in one call under a header each, %d bytes in all.", maxLines, maxReadBytes, maxLineBytes, maxBatchBytes),
 		Parameters:  json.RawMessage(readSchema),
 	}
 }
@@ -356,14 +370,70 @@ func (r read) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 		return tool.Error(err.Error()), nil
 	}
 	var in struct {
-		FilePath string `json:"file_path"`
-		Offset   int    `json:"offset"`
-		Limit    int    `json:"limit"`
+		FilePath  string   `json:"file_path"`
+		FilePaths []string `json:"file_paths"`
+		Offset    int      `json:"offset"`
+		Limit     int      `json:"limit"`
 	}
 	if err := decode(args, &in); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	p, err := r.Resolve(in.FilePath)
+	switch {
+	case len(in.FilePaths) > 0 && in.FilePath != "":
+		return tool.Error("give file_path or file_paths, not both"), nil
+	case len(in.FilePaths) > 0 && (in.Offset > 0 || in.Limit > 0):
+		return tool.Error("offset and limit page one file, use file_path"), nil
+	case len(in.FilePaths) > 0:
+		return r.many(ctx, in.FilePaths)
+	case in.FilePath == "":
+		return tool.Error("file_path is required"), nil
+	}
+	return r.one(in.FilePath, in.Offset, in.Limit)
+}
+
+// Reads every file whole into one result under a header each, skipping the rest once the batch budget is spent
+func (r read) many(ctx context.Context, paths []string) (tool.Result, error) {
+	if len(paths) > maxBatch {
+		return tool.Errorf("file_paths names %d files, the limit is %d", len(paths), maxBatch), nil
+	}
+	var sb strings.Builder
+	data := ReadMany{}
+	spent := 0
+	for i, p := range paths {
+		if err := ctx.Err(); err != nil {
+			return tool.Error(err.Error()), nil
+		}
+		if i > 0 {
+			sb.WriteString("\n\n")
+		}
+		fmt.Fprintf(&sb, "==> %s <==\n", p)
+		if spent >= maxBatchBytes {
+			fmt.Fprintf(&sb, "[skipped, the %d byte batch budget is spent, read it alone]", maxBatchBytes)
+			data.Skipped = append(data.Skipped, p)
+			continue
+		}
+		res, err := r.one(p, 0, 0)
+		if err != nil {
+			return tool.Result{}, err
+		}
+		if rd, ok := res.Data.(ReadData); ok && rd.MediaType != "" {
+			sb.WriteString("[image, read it alone]")
+			data.Skipped = append(data.Skipped, p)
+			continue
+		}
+		text := protocol.Response{Content: res.Content}.Text()
+		sb.WriteString(text)
+		spent += len(text)
+		if rd, ok := res.Data.(ReadData); ok && !res.IsError {
+			data.Files = append(data.Files, rd)
+		}
+	}
+	return tool.Text(sb.String()).With(data), nil
+}
+
+// Reads one file, as numbered lines or as an image
+func (r read) one(path string, offset, limit int) (tool.Result, error) {
+	p, err := r.Resolve(path)
 	if err != nil {
 		return tool.Error(err.Error()), nil
 	}
@@ -398,7 +468,7 @@ func (r read) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if isBinary(head) {
 		return tool.Errorf("%s is a binary file", p), nil
 	}
-	return r.text(f, p, in.Offset, in.Limit, st.Size())
+	return r.text(f, p, offset, limit, st.Size())
 }
 
 func (r read) image(p, media string, size int64) (tool.Result, error) {
@@ -421,12 +491,18 @@ func (r read) text(f *os.File, p string, offset, limit int, size int64) (tool.Re
 		limit = maxLines
 	}
 	var window []string
-	total := 0
+	total, bytes, cut := 0, 0, false
 	err := lines(f, func(line string) bool {
 		total++
-		if total >= offset && len(window) < limit {
-			window = append(window, line)
+		if total < offset || len(window) >= limit || cut {
+			return true
 		}
+		bytes += len(line) + 1
+		if bytes > maxReadBytes && len(window) > 0 {
+			cut = true
+			return true
+		}
+		window = append(window, line)
 		return true
 	})
 	if err != nil {
@@ -437,7 +513,10 @@ func (r read) text(f *os.File, p string, offset, limit int, size int64) (tool.Re
 	}
 	out := r.numbered(offset, window)
 	last := offset + len(window) - 1
-	if last < total {
+	switch {
+	case cut:
+		out += fmt.Sprintf("\n\n[lines %d-%d of %d, cut at %d bytes, continue with offset=%d]", offset, last, total, maxReadBytes, last+1)
+	case last < total:
 		out += fmt.Sprintf("\n\n[lines %d-%d of %d, continue with offset=%d]", offset, last, total, last+1)
 	}
 	return tool.Text(out).With(ReadData{Path: p, Offset: offset, Lines: window, Total: total, Bytes: size}), nil
@@ -499,8 +578,31 @@ const editSchema = `{"type":"object","properties":{
 "file_path":{"type":"string","description":"Path of the file to edit"},
 "old_string":{"type":"string","description":"Exact text to replace, it must occur once unless replace_all is set"},
 "new_string":{"type":"string","description":"Replacement text, must differ from old_string"},
-"replace_all":{"type":"boolean","description":"Replace every occurrence instead of requiring a unique one"}},
-"required":["file_path","old_string","new_string"],"additionalProperties":false}`
+"replace_all":{"type":"boolean","description":"Replace every occurrence instead of requiring a unique one"},
+"edits":{"type":"array","items":{"type":"object","properties":{
+ "old_string":{"type":"string","description":"Exact text to replace, as it stands after the earlier edits"},
+ "new_string":{"type":"string","description":"Replacement text"},
+ "replace_all":{"type":"boolean","description":"Replace every occurrence"}},"required":["old_string","new_string"],"additionalProperties":false},
+ "description":"Several replacements applied in order in one call, all or none, instead of old_string and new_string"}},
+"required":["file_path"],"additionalProperties":false}`
+
+// One replacement of an Edit
+type editOp struct {
+	OldString  string `json:"old_string"`
+	NewString  string `json:"new_string"`
+	ReplaceAll bool   `json:"replace_all"`
+}
+
+// Checks one replacement is well formed, naming its position when several were given
+func (op editOp) check(label string) error {
+	if op.OldString == "" {
+		return errors.New(label + "old_string is empty, use Write to create content")
+	}
+	if op.OldString == op.NewString {
+		return errors.New(label + "old_string and new_string are identical")
+	}
+	return nil
+}
 
 const editContext = 3
 
@@ -512,7 +614,7 @@ func Edit(o Options) tool.Tool { return edit{o} }
 func (edit) Definition() protocol.Tool {
 	return protocol.Tool{
 		Name:        EditName,
-		Description: "Replaces exact text in a file. old_string must match the file byte for byte including whitespace and must be unique unless replace_all is true. Returns the edited region with line numbers.",
+		Description: "Replaces exact text in a file. old_string must match the file byte for byte including whitespace and must be unique unless replace_all is true. Returns the edited region with line numbers. With edits, several replacements land in one call in order, all or none.",
 		Parameters:  json.RawMessage(editSchema),
 	}
 }
@@ -526,19 +628,26 @@ func (e edit) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 		return tool.Error(err.Error()), nil
 	}
 	var in struct {
-		FilePath   string `json:"file_path"`
-		OldString  string `json:"old_string"`
-		NewString  string `json:"new_string"`
-		ReplaceAll bool   `json:"replace_all"`
+		FilePath   string   `json:"file_path"`
+		OldString  string   `json:"old_string"`
+		NewString  string   `json:"new_string"`
+		ReplaceAll bool     `json:"replace_all"`
+		Edits      []editOp `json:"edits"`
 	}
 	if err := decode(args, &in); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	if in.OldString == "" {
-		return tool.Error("old_string is empty, use Write to create content"), nil
+	ops := in.Edits
+	switch {
+	case len(ops) > 0 && (in.OldString != "" || in.NewString != ""):
+		return tool.Error("give edits or old_string and new_string, not both"), nil
+	case len(ops) == 0:
+		ops = []editOp{{OldString: in.OldString, NewString: in.NewString, ReplaceAll: in.ReplaceAll}}
 	}
-	if in.OldString == in.NewString {
-		return tool.Error("old_string and new_string are identical"), nil
+	for i, op := range ops {
+		if err := op.check(editLabel(i, len(ops))); err != nil {
+			return tool.Error(err.Error()), nil
+		}
 	}
 	p, err := e.Resolve(in.FilePath)
 	if err != nil {
@@ -565,23 +674,52 @@ func (e edit) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 		return tool.Errorf("%s is a binary file", p), nil
 	}
 	content := string(data)
-	count := strings.Count(content, in.OldString)
-	switch {
-	case count == 0:
-		return tool.Errorf("old_string not found in %s", p), nil
-	case count > 1 && !in.ReplaceAll:
-		return tool.Errorf("old_string occurs %d times in %s, add surrounding context to make it unique or set replace_all", count, p), nil
+	updated := content
+	total := 0
+	type mark struct{ at, n int }
+	var marks []mark
+	for i, op := range ops {
+		label := editLabel(i, len(ops))
+		count := strings.Count(updated, op.OldString)
+		switch {
+		case count == 0:
+			return tool.Errorf("%sold_string not found in %s, nothing was written", label, p), nil
+		case count > 1 && !op.ReplaceAll:
+			return tool.Errorf("%sold_string occurs %d times in %s, add surrounding context to make it unique or set replace_all, nothing was written", label, count, p), nil
+		}
+		first := strings.Index(updated, op.OldString)
+		if !op.ReplaceAll {
+			count = 1
+		}
+		before := updated
+		updated = strings.Replace(before, op.OldString, op.NewString, count)
+		total += count
+		shift := len(op.NewString) - len(op.OldString)
+		for k := range marks {
+			marks[k].at += shift * strings.Count(before[:marks[k].at], op.OldString)
+		}
+		if count == 1 {
+			marks = append(marks, mark{first, len(op.NewString)})
+		}
 	}
-	first := strings.Index(content, in.OldString)
-	if !in.ReplaceAll {
-		count = 1
-	}
-	updated := strings.Replace(content, in.OldString, in.NewString, count)
 	if _, err := writeFile(p, []byte(updated)); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	text := tool.Textf("Replaced %d occurrence(s) in %s\n%s", count, p, e.snippet(updated, first, len(in.NewString)))
-	return text.With(Change{Path: p, Old: content, New: updated, Replaced: count}), nil
+	sort.Slice(marks, func(i, j int) bool { return marks[i].at < marks[j].at })
+	snippets := make([]string, 0, len(marks))
+	for _, m := range marks {
+		snippets = append(snippets, e.snippet(updated, m.at, m.n))
+	}
+	text := tool.Textf("Replaced %d occurrence(s) in %s\n%s", total, p, strings.Join(snippets, "\n...\n"))
+	return text.With(Change{Path: p, Old: content, New: updated, Replaced: total}), nil
+}
+
+// Prefix naming the edit at index i when several were given
+func editLabel(i, n int) string {
+	if n <= 1 {
+		return ""
+	}
+	return fmt.Sprintf("edit %d: ", i+1)
 }
 
 // Numbered lines around the first replacement with a few lines of context on each side

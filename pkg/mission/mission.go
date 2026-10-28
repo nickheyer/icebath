@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/tool"
@@ -17,6 +18,15 @@ import (
 
 // Kind of record a session keeps for every mission change
 const RecordKind = "mission"
+
+// Kind of record holding the working plan of a session with no mission attached
+const SessionPlanKind = "session_plan"
+
+// Working plan a run keeps on its session while no mission is attached
+type SessionPlan struct {
+	Steps []Step `json:"steps"`
+	Note  string `json:"note,omitempty"`
+}
 
 const (
 	StepPending = "pending"
@@ -256,18 +266,8 @@ func (s *Store) modify(id string, fn func(m *Mission) error) (Mission, error) {
 
 // Replaces the plan, every step pending unless given a status
 func (s *Store) SetPlan(id string, steps []Step) (Mission, error) {
-	for i := range steps {
-		steps[i].Text = strings.TrimSpace(steps[i].Text)
-		if steps[i].Text == "" {
-			return Mission{}, fmt.Errorf("mission: step %d has no text", i+1)
-		}
-		switch steps[i].Status {
-		case "":
-			steps[i].Status = StepPending
-		case StepPending, StepActive, StepDone, StepSkipped:
-		default:
-			return Mission{}, fmt.Errorf("mission: step %d has unknown status %q", i+1, steps[i].Status)
-		}
+	if err := NormalizeSteps(steps); err != nil {
+		return Mission{}, err
 	}
 	return s.modify(id, func(m *Mission) error {
 		m.Plan = append([]Step(nil), steps...)
@@ -411,16 +411,76 @@ const schema = `{"type":"object","properties":{
 "note":{"type":"string","description":"Short status note shown beside the plan"}},
 "required":["steps"],"additionalProperties":false}`
 
-// Tool that replaces the plan of the mission the calling run serves
+// Trims step text, fills empty statuses with pending and rejects unknown statuses
+func NormalizeSteps(steps []Step) error {
+	for i := range steps {
+		steps[i].Text = strings.TrimSpace(steps[i].Text)
+		if steps[i].Text == "" {
+			return fmt.Errorf("mission: step %d has no text", i+1)
+		}
+		switch steps[i].Status {
+		case "":
+			steps[i].Status = StepPending
+		case StepPending, StepActive, StepDone, StepSkipped:
+		default:
+			return fmt.Errorf("mission: step %d has unknown status %q", i+1, steps[i].Status)
+		}
+	}
+	return nil
+}
+
+// Share of steps done or skipped
+func stepsProgress(steps []Step) float64 {
+	if len(steps) == 0 {
+		return 0
+	}
+	done := 0
+	for _, s := range steps {
+		if s.Status == StepDone || s.Status == StepSkipped {
+			done++
+		}
+	}
+	return float64(done) / float64(len(steps))
+}
+
+// Numbered plan with the share done on top
+func formatPlan(steps []Step, progress float64) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Plan updated, %d%% done\n", int(progress*100+0.5))
+	for i, s := range steps {
+		fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, s.Status, s.Text)
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// Working plan last kept on the session, false when none was
+func CurrentSessionPlan(sess *session.Session) (SessionPlan, bool) {
+	records := sess.Records()
+	for i := len(records) - 1; i >= 0; i-- {
+		if records[i].Kind != SessionPlanKind {
+			continue
+		}
+		var p SessionPlan
+		if err := json.Unmarshal(records[i].Data, &p); err != nil {
+			return SessionPlan{}, false
+		}
+		return p, true
+	}
+	return SessionPlan{}, false
+}
+
+// Tool that replaces the plan of the mission the calling run serves, or of its session when no mission is attached
 type Tool struct {
 	// Store of the calling run
 	Resolve func(context.Context) *Store
+	// Session of the calling run, holding the plan while no mission is attached
+	Session func(context.Context) *session.Session
 }
 
 func (Tool) Definition() protocol.Tool {
 	return protocol.Tool{
 		Name:        ToolName,
-		Description: "Replaces the plan of the attached mission with the full ordered list of steps and their statuses. Offered only while a mission is attached. Call it before work that takes more than a few tool calls and whenever a step changes state, keeping exactly one step active.",
+		Description: "Replaces the plan with the full ordered list of steps and their statuses, on the attached mission or on this session when none is attached. Call it before work that takes more than a few tool calls and whenever a step changes state, keeping exactly one step active.",
 		Parameters:  json.RawMessage(schema),
 	}
 }
@@ -432,9 +492,6 @@ func (Tool) Annotations() tool.Annotations {
 func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
 	store := t.Resolve(ctx)
 	id := IDFrom(ctx)
-	if id == "" {
-		return tool.Error("no mission is attached to this run"), nil
-	}
 	var in struct {
 		Steps []Step `json:"steps"`
 		Note  string `json:"note"`
@@ -454,6 +511,23 @@ func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 	if active > 1 {
 		return tool.Error("only one step may be active"), nil
 	}
+	if id == "" {
+		var sess *session.Session
+		if t.Session != nil {
+			sess = t.Session(ctx)
+		}
+		if sess == nil {
+			return tool.Error("no mission is attached and no session holds a plan"), nil
+		}
+		if err := NormalizeSteps(in.Steps); err != nil {
+			return tool.Error(err.Error()), nil
+		}
+		plan := SessionPlan{Steps: in.Steps, Note: in.Note}
+		if _, err := sess.Log(policy.AgentFrom(ctx), SessionPlanKind, plan); err != nil {
+			return tool.Error(err.Error()), nil
+		}
+		return tool.Text(formatPlan(in.Steps, stepsProgress(in.Steps))).With(plan), nil
+	}
 	m, err := store.SetPlan(id, in.Steps)
 	if err != nil {
 		return tool.Error(err.Error()), nil
@@ -463,12 +537,7 @@ func (t Tool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error
 			return tool.Error(err.Error()), nil
 		}
 	}
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Plan updated, %d%% done\n", int(m.Progress()*100+0.5))
-	for i, s := range m.Plan {
-		fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, s.Status, s.Text)
-	}
-	return tool.Text(strings.TrimRight(sb.String(), "\n")).With(m), nil
+	return tool.Text(formatPlan(m.Plan, m.Progress())).With(m), nil
 }
 
 var _ tool.Tool = Tool{}

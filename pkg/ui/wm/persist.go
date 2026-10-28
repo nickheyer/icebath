@@ -110,6 +110,65 @@ func (m *Model) layoutOf(ws *Workspace) WorkspaceLayout {
 	return l
 }
 
+// Workspace with every card key passed through rename, keys it returns empty for left out along with their tree leaves,
+// focus, zoom and saved state
+func (l WorkspaceLayout) Rekeyed(id string, rename func(key string) string) WorkspaceLayout {
+	out := WorkspaceLayout{ID: id, Mode: l.Mode, Ratio: l.Ratio, Main: l.Main}
+	seen := map[string]bool{}
+	for _, t := range l.Tiles {
+		if key := rename(t.Key); key != "" && !seen[key] {
+			seen[key] = true
+			out.Tiles = append(out.Tiles, TileLayout{Key: key, Weight: t.Weight})
+		}
+	}
+	for _, f := range l.Floats {
+		if key := rename(f.Key); key != "" && !seen[key] {
+			seen[key] = true
+			out.Floats = append(out.Floats, FloatLayout{Key: key, Box: f.Box})
+		}
+	}
+	out.Tree = l.Tree.rekeyed(rename)
+	if l.Focus != "" {
+		out.Focus = rename(l.Focus)
+	}
+	if l.Zoom != "" {
+		out.Zoom = rename(l.Zoom)
+	}
+	for key, raw := range l.Cards {
+		renamed := rename(key)
+		if renamed == "" {
+			continue
+		}
+		if out.Cards == nil {
+			out.Cards = map[string]json.RawMessage{}
+		}
+		out.Cards[renamed] = raw
+	}
+	return out
+}
+
+// Tree with every leaf key passed through rename, leaves it returns empty for dropped and their cuts collapsed
+func (n *SplitLayout) rekeyed(rename func(key string) string) *SplitLayout {
+	if n == nil {
+		return nil
+	}
+	if n.A == nil && n.B == nil {
+		key := rename(n.Key)
+		if key == "" {
+			return nil
+		}
+		return &SplitLayout{Key: key}
+	}
+	a, b := n.A.rekeyed(rename), n.B.rekeyed(rename)
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	return &SplitLayout{Vertical: n.Vertical, Ratio: n.Ratio, A: a, B: b}
+}
+
 // Saved form of a split tree, nil for an empty one
 func splitOf(n *node) *SplitLayout {
 	if n == nil {

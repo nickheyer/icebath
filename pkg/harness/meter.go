@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"maps"
 	"sync"
 	"time"
 
@@ -44,6 +45,16 @@ type Telemetry struct {
 	RateLimit  provider.RateLimit
 	// Dollars per run id
 	Costs map[string]float64
+	// Calls and estimated result tokens per tool name
+	Tools map[string]ToolStat
+	// Estimated result tokens over every tool call
+	ToolTokens int
+}
+
+// Calls a tool took and the estimated tokens its results put into context
+type ToolStat struct {
+	Calls  int
+	Tokens int
 }
 
 // Provider observer and agent event consumer that keeps the telemetry current
@@ -63,7 +74,7 @@ type Meter struct {
 }
 
 func NewMeter(send Sender) *Meter {
-	return &Meter{send: send, t: Telemetry{Costs: map[string]float64{}}}
+	return &Meter{send: send, t: Telemetry{Costs: map[string]float64{}, Tools: map[string]ToolStat{}}}
 }
 
 // Uses an explicit catalog entry, for endpoints that report their own pricing
@@ -80,7 +91,7 @@ func (m *Meter) SetCatalog(model profiles.Model, providerName string) {
 func (m *Meter) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.t = Telemetry{Model: m.t.Model, Provider: m.t.Provider, Priced: m.t.Priced, ContextLimit: m.t.ContextLimit, Threshold: m.t.Threshold, Costs: map[string]float64{}}
+	m.t = Telemetry{Model: m.t.Model, Provider: m.t.Provider, Priced: m.t.Priced, ContextLimit: m.t.ContextLimit, Threshold: m.t.Threshold, Costs: map[string]float64{}, Tools: map[string]ToolStat{}}
 	m.attempts = nil
 	m.latencies = 0
 	m.turnStart, m.reqStart, m.firstAt, m.deltas, m.outChars = time.Time{}, time.Time{}, time.Time{}, 0, 0
@@ -168,6 +179,13 @@ func (m *Meter) Apply(run string, ev agent.Event) {
 			m.t.Cost += c
 			m.t.Costs[run] += c
 		}
+	case agent.EventToolEnd:
+		tokens := protocol.EstimateTokens(ev.Result.Content)
+		st := m.t.Tools[ev.Call.Name]
+		st.Calls++
+		st.Tokens += tokens
+		m.t.Tools[ev.Call.Name] = st
+		m.t.ToolTokens += tokens
 	case agent.EventCompactEnd:
 		m.t.Context = 0
 	case agent.EventRunEnd, agent.EventInterrupt:
@@ -211,9 +229,9 @@ func (m *Meter) Snapshot() Telemetry {
 func (m *Meter) snapshot() Telemetry {
 	t := m.t
 	t.Costs = make(map[string]float64, len(m.t.Costs))
-	for k, v := range m.t.Costs {
-		t.Costs[k] = v
-	}
+	maps.Copy(t.Costs, m.t.Costs)
+	t.Tools = make(map[string]ToolStat, len(m.t.Tools))
+	maps.Copy(t.Tools, m.t.Tools)
 	return t
 }
 

@@ -422,6 +422,16 @@ func (a *App) CreateKind(ctx context.Context, name string) (*Live, error) {
 	return a.live(sess, ep)
 }
 
+// Opens a fresh session on an opened endpoint beside the ones already open, running as the kind when the app knows
+// it and as none otherwise
+func (a *App) CreateOn(ep Endpoint, kind string) (*Live, error) {
+	sess := session.New()
+	if _, ok := a.Kind(kind); ok && kind != NoKind {
+		sess.Label(kindLabel, kind)
+	}
+	return a.live(sess, ep)
+}
+
 // Makes an open session run as the kind from its next run, an empty name or none returning it to the plain agent
 func (a *App) SetKindOn(l *Live, name string) error {
 	if name == NoKind {

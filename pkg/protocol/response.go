@@ -360,6 +360,30 @@ func (r Response) Text() string {
 	return sb.String()
 }
 
+// Tokens an image or document is taken to cost in an estimate
+const attachmentTokens = 1000
+
+// Rough tokens the parts carry, text and arguments at four bytes a token and attachments at a flat figure
+func EstimateTokens(parts []Part) int {
+	chars := 0
+	tokens := 0
+	for _, p := range parts {
+		switch v := p.(type) {
+		case Text:
+			chars += len(v.Text)
+		case Thinking:
+			chars += len(v.Text)
+		case ToolCall:
+			chars += len(v.Name) + len(v.Args)
+		case ToolResult:
+			tokens += EstimateTokens(v.Content)
+		case Image, Document:
+			tokens += attachmentTokens
+		}
+	}
+	return tokens + chars/4
+}
+
 // Tool calls the model asked for in order
 func (r Response) ToolCalls() []ToolCall {
 	var out []ToolCall

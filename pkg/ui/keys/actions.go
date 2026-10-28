@@ -93,6 +93,10 @@ var registry = func() []Action {
 		act("session.close", Global, "close session", "close the session, storing it"),
 		act("workspace.new", Global, "new workspace", "open a workspace holding a fresh session", "alt+shift+n"),
 		act("workspace.close", Global, "close workspace", "close the workspace, storing every session in it", "alt+shift+w"),
+		act("template.save", Global, "save template", "save every workspace as a layout template under a name"),
+		act("template.apply", Global, "apply template", "choose a layout template to add its workspaces"),
+		act("template.default", Global, "default template", "choose the layout template a fresh project starts with"),
+		act("template.delete", Global, "delete template", "choose a layout template to forget"),
 		act("workspace.next", Global, "next workspace", "switch to the next workspace", "alt+]"),
 		act("workspace.prev", Global, "previous workspace", "switch to the previous workspace", "alt+["),
 	}
@@ -249,6 +253,7 @@ var registry = func() []Action {
 		act("sessions.resume", Sessions, "resume", "open the selected sessions in this workspace", "enter"),
 		act("sessions.fork", Sessions, "fork", "fork the selected sessions into this workspace", "f"),
 		act("sessions.delete", Sessions, "delete", "ask for confirmation, then delete the selected sessions", "d"),
+		act("sessions.every", Sessions, "scope", "switch between the sessions of this project and those of every project", "p"),
 		quiet(act("sessions.select.up", Sessions, "select up", "extend the selection to the row above", "shift+up", "K")),
 		quiet(act("sessions.select.down", Sessions, "select down", "extend the selection to the row below", "shift+down", "J")),
 

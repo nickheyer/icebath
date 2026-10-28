@@ -35,7 +35,7 @@ var _ protocol.Protocol = Protocol{}
 type request struct {
 	Model         string      `json:"model"`
 	MaxTokens     int         `json:"max_tokens"`
-	System        string      `json:"system,omitempty"`
+	System        []textBlock `json:"system,omitempty"`
 	Messages      []message   `json:"messages"`
 	Tools         []tool      `json:"tools,omitempty"`
 	ToolChoice    *toolChoice `json:"tool_choice,omitempty"`
@@ -50,9 +50,15 @@ type message struct {
 }
 
 type tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description,omitempty"`
+	InputSchema  json.RawMessage `json:"input_schema"`
+	CacheControl *cacheControl   `json:"cache_control,omitempty"`
+}
+
+// Prompt cache breakpoint covering everything up to and including its block
+type cacheControl struct {
+	Type string `json:"type"`
 }
 
 type toolChoice struct {
@@ -61,13 +67,15 @@ type toolChoice struct {
 }
 
 type textBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type         string        `json:"type"`
+	Text         string        `json:"text"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 type imageBlock struct {
-	Type   string      `json:"type"`
-	Source imageSource `json:"source"`
+	Type         string        `json:"type"`
+	Source       imageSource   `json:"source"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 type imageSource struct {
@@ -77,9 +85,10 @@ type imageSource struct {
 }
 
 type documentBlock struct {
-	Type   string         `json:"type"`
-	Source documentSource `json:"source"`
-	Title  string         `json:"title,omitempty"`
+	Type         string         `json:"type"`
+	Source       documentSource `json:"source"`
+	Title        string         `json:"title,omitempty"`
+	CacheControl *cacheControl  `json:"cache_control,omitempty"`
 }
 
 type documentSource struct {
@@ -101,17 +110,19 @@ type redactedThinkingBlock struct {
 
 // Shared by tool_use and server_tool_use blocks
 type toolUseBlock struct {
-	Type  string          `json:"type"`
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Type         string          `json:"type"`
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Input        json.RawMessage `json:"input"`
+	CacheControl *cacheControl   `json:"cache_control,omitempty"`
 }
 
 type toolResultBlock struct {
-	Type      string `json:"type"`
-	ToolUseID string `json:"tool_use_id"`
-	Content   []any  `json:"content,omitempty"`
-	IsError   bool   `json:"is_error,omitempty"`
+	Type         string        `json:"type"`
+	ToolUseID    string        `json:"tool_use_id"`
+	Content      []any         `json:"content,omitempty"`
+	IsError      bool          `json:"is_error,omitempty"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 // Replay form of web_search_tool_result and every other vendor side result block
@@ -226,16 +237,21 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 	body := request{
 		Model:         req.Model,
 		MaxTokens:     req.MaxTokens,
-		System:        req.System,
 		Temperature:   req.Temperature,
 		StopSequences: req.StopSequences,
 		Stream:        req.Stream,
+	}
+	if req.System != "" {
+		body.System = []textBlock{{Type: "text", Text: req.System, CacheControl: ephemeral()}}
 	}
 	for _, t := range req.Tools {
 		if len(t.Parameters) == 0 {
 			return protocol.Call{}, fmt.Errorf("anthropic-messages: tool %q has no input schema", t.Name)
 		}
 		body.Tools = append(body.Tools, tool{Name: t.Name, Description: t.Description, InputSchema: t.Parameters})
+	}
+	if n := len(body.Tools); n > 0 {
+		body.Tools[n-1].CacheControl = ephemeral()
 	}
 	choice, err := encodeToolChoice(req.ToolChoice)
 	if err != nil {
@@ -252,6 +268,7 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 			body.Messages = append(body.Messages, wire)
 		}
 	}
+	markTail(body.Messages)
 	raw, err := protocol.MarshalBody(body, req.Extra)
 	if err != nil {
 		return protocol.Call{}, err
@@ -265,6 +282,36 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 		h.Set("Accept", "application/json")
 	}
 	return protocol.Call{Method: http.MethodPost, Path: path, Header: h, Body: raw}, nil
+}
+
+func ephemeral() *cacheControl { return &cacheControl{Type: "ephemeral"} }
+
+// Puts the conversation breakpoint on the newest block that may carry one, skipping thinking blocks
+func markTail(msgs []message) {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		for j := len(msgs[i].Content) - 1; j >= 0; j-- {
+			switch b := msgs[i].Content[j].(type) {
+			case textBlock:
+				b.CacheControl = ephemeral()
+				msgs[i].Content[j] = b
+			case imageBlock:
+				b.CacheControl = ephemeral()
+				msgs[i].Content[j] = b
+			case documentBlock:
+				b.CacheControl = ephemeral()
+				msgs[i].Content[j] = b
+			case toolUseBlock:
+				b.CacheControl = ephemeral()
+				msgs[i].Content[j] = b
+			case toolResultBlock:
+				b.CacheControl = ephemeral()
+				msgs[i].Content[j] = b
+			default:
+				continue
+			}
+			return
+		}
+	}
 }
 
 func encodeToolChoice(tc protocol.ToolChoice) (*toolChoice, error) {

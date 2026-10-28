@@ -49,22 +49,11 @@ func pendingTokens(messages []protocol.Message) int {
 			last = i
 		}
 	}
-	chars := 0
+	tokens := 0
 	for _, m := range messages[last+1:] {
-		for _, p := range m.Content {
-			switch v := p.(type) {
-			case protocol.Text:
-				chars += len(v.Text)
-			case protocol.ToolResult:
-				chars += len(protocol.Response{Content: v.Content}.Text())
-			case protocol.ToolCall:
-				chars += len(v.Args)
-			case protocol.Image, protocol.Document:
-				chars += 4000
-			}
-		}
+		tokens += protocol.EstimateTokens(m.Content)
 	}
-	return chars / 4
+	return tokens
 }
 
 // Summarizes and compacts the session when the pending request would grow past the threshold
@@ -97,12 +86,16 @@ func (s *Summarizer) BeforeTurn(ctx context.Context, req *protocol.Request) erro
 	return nil
 }
 
-// Asks the model for a summary of the whole transcript, in parts when it is too long for one call
+// Asks the model for a summary of the turns compaction drops, in parts when they are too long for one call
 func (s *Summarizer) Summarize(ctx context.Context) (string, error) {
 	if s.Model == nil || s.ModelID == "" || s.Session == nil {
 		return "", errors.New("compact: model, model id and session are required")
 	}
-	transcript := s.Session.Markdown()
+	head := s.Session.Head(s.Keep)
+	if len(head) == 0 {
+		return "", errors.New("compact: nothing to summarize")
+	}
+	transcript := session.FromHeader(session.Header{ID: s.Session.ID()}, head, nil).Markdown()
 	if len(transcript) <= chunkChars {
 		text, err := s.ask(ctx, summarySystem, "<transcript>\n"+transcript+"\n</transcript>\n\nWrite the handoff summary of this transcript.")
 		if err != nil {
@@ -110,7 +103,7 @@ func (s *Summarizer) Summarize(ctx context.Context) (string, error) {
 		}
 		return "Summary of the earlier conversation:\n\n" + text, nil
 	}
-	chunks := s.chunks()
+	chunks := s.chunks(head)
 	partials := make([]string, 0, len(chunks))
 	for i, chunk := range chunks {
 		text, err := s.ask(ctx, summarySystem, fmt.Sprintf("<transcript part=\"%d of %d\">\n%s\n</transcript>\n\nWrite the handoff summary of this part of the transcript.", i+1, len(chunks), chunk))
@@ -126,11 +119,11 @@ func (s *Summarizer) Summarize(ctx context.Context) (string, error) {
 	return "Summary of the earlier conversation:\n\n" + text, nil
 }
 
-// Splits the transcript into markdown chunks of at most the chunk budget, never splitting a message
-func (s *Summarizer) chunks() []string {
+// Splits the entries into markdown chunks of at most the chunk budget, never splitting a message
+func (s *Summarizer) chunks(entries []session.Entry) []string {
 	var chunks []string
 	var cur strings.Builder
-	for _, e := range s.Session.Entries() {
+	for _, e := range entries {
 		one := session.FromHeader(session.Header{ID: s.Session.ID()}, []session.Entry{e}, nil).MarkdownWith(session.MarkdownOptions{Timestamps: true})
 		body := one[strings.Index(one, "\n## "):]
 		if cur.Len() > 0 && cur.Len()+len(body) > chunkChars {

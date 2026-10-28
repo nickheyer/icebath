@@ -23,6 +23,20 @@ const Name = "icebath"
 // Sentence telling a model what runs its command lines
 const Dialect = "icebath's own shell, interpreting every command line in process with no other shell underneath"
 
+// Names the interpreter handles itself, every other command starting the program of that name on PATH
+var Builtins = builtins()
+
+func builtins() []string {
+	candidates := strings.Fields(": . [ alias bg bind break builtin caller cd command compgen complete compopt continue declare dirs disown echo enable eval exec exit export false fc fg getopts hash help history jobs kill let local logout mapfile newgrp popd printf pushd pwd read readarray readonly return set shift shopt source suspend test times trap true type typeset ulimit umask unalias unset wait")
+	out := candidates[:0]
+	for _, name := range candidates {
+		if interp.IsBuiltin(name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 const (
 	// Time a killed process gets to release its output pipes before they are abandoned
 	killGrace = 2 * time.Second
@@ -45,6 +59,8 @@ type Result struct {
 	ExitCode int
 	// Exit code of every stage of the last pipeline the line ran, empty when it ran none
 	Pipeline []int
+	// Command name of every stage of that pipeline, empty for a stage that was not a plain call
+	Commands []string
 	Dir      string
 	// The line ended the shell with exit, so the next line starts a fresh one in the same directory
 	Exited bool
@@ -186,7 +202,8 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader, stdout, s
 	stop := context.AfterFunc(ctx, cancel)
 	err = s.runner.Run(runCtx, prog)
 	stop()
-	res := Result{Dir: s.runner.Dir, Pipeline: st.last()}
+	res := Result{Dir: s.runner.Dir}
+	res.Pipeline, res.Commands = st.last()
 	res.ExitCode, res.Killed = s.status(err, runCtx)
 	if s.runner.Exited() && !res.Killed {
 		res.Exited = true

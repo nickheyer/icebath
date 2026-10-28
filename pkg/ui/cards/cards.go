@@ -48,6 +48,8 @@ type Env struct {
 	Settings func() map[string]string
 	// Directory exports and the shell fallback use
 	ProjectDir string
+	// Project root the sessions of this instance belong to
+	Root string
 	// Extensions linked into the binary with what each provides
 	Extensions func() []Extension
 }

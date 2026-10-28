@@ -41,6 +41,10 @@ func (m *Model) commands() []wm.Command {
 		{ID: "session.close", Title: "Session: close", When: idle, Run: func() tea.Cmd { return m.closeSession(m.current()) }},
 		{ID: "workspace.new", Title: "Workspace: new", Run: m.newWorkspace},
 		{ID: "workspace.close", Title: "Workspace: close", When: func() bool { return len(m.wm.Workspaces()) > 1 }, Run: m.closeWorkspace},
+		{ID: "template.save", Title: "Template: save layout" + more, Run: m.promptTemplate},
+		{ID: "template.apply", Title: "Template: apply" + more, Run: m.pickApplyTemplate},
+		{ID: "template.default", Title: "Template: set default" + more, Run: m.pickDefaultTemplate},
+		{ID: "template.delete", Title: "Template: delete" + more, Run: m.pickDeleteTemplate},
 		{ID: "open", Title: "Open panel" + more, Run: m.pickPanel},
 		{ID: "keys.edit", Title: "Keybinds", Run: m.editKeys},
 		{ID: "session.open", Title: "Session: resume" + more, Run: m.pickSession},
@@ -125,6 +129,7 @@ func (m *Model) builtinSlash() []cards.Command {
 		{Name: "new", Desc: "new session here", Action: "session.new"},
 		{Name: "close", Desc: "close this session", Action: "session.close"},
 		{Name: "workspace", Desc: "new workspace", Action: "workspace.new"},
+		{Name: "template", Desc: "layout templates", Arg: "save|apply|default|delete [name]", Suggest: m.templateSuggest, Action: "template.apply"},
 		{Name: "sessions", Desc: "stored sessions", Action: "open.sessions"},
 		{Name: "agents", Desc: "agents", Action: "open.agents"},
 		{Name: "findings", Desc: "findings", Action: "open.findings"},
@@ -196,6 +201,8 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 		return m.closeSession(d)
 	case "workspace":
 		return m.newWorkspace()
+	case "template":
+		return m.templateCommand(args)
 	case "sessions":
 		return open(m.sessions)
 	case "agents":
@@ -414,8 +421,11 @@ func (m *Model) pickSession() tea.Cmd {
 			title = id
 		}
 		keys := info.Updated.Local().Format("01-02 15:04")
-		if open[id] {
+		switch {
+		case open[id]:
 			keys = "open"
+		case info.Busy:
+			keys = "elsewhere"
 		}
 		items = append(items, wm.Item{ID: id, Title: title, Detail: fmt.Sprintf("%s %s %d msgs", info.Model, m.theme.Glyphs.Sep, info.Messages), Keys: keys, Run: func() tea.Cmd { return m.openStored(id) }})
 	}

@@ -534,12 +534,12 @@ func (g grepper) render(data *GrepData, in grepArgs) string {
 		texts[i] = l.text
 	}
 	text := strings.Join(texts, "\n")
-	if len(text) > maxOutput {
+	if total := len(text); total > maxOutput {
 		text = text[:maxOutput]
 		if i := strings.LastIndexByte(text, '\n'); i > 0 {
 			text = text[:i]
 		}
-		cut = fmt.Sprintf("[output cut at %d bytes, narrow the search]", maxOutput)
+		cut = fmt.Sprintf("[output cut at %d of %d bytes, narrow the search]", maxOutput, total)
 	}
 	if cut != "" {
 		text += "\n" + cut

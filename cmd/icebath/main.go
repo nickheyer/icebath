@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -53,7 +54,8 @@ func run(args []string) int {
 		mission  = fs.String("mission", "", "objective to start a mission with")
 		kind     = fs.String("kind", "", "kind the session runs as, linked ones are "+strings.Join(kindNames(), ", "))
 		workflow = fs.String("workflow", "", "workflow to run with the prompt as its argument, linked ones are "+strings.Join(workflowNames(), ", "))
-		list     = fs.Bool("sessions", false, "list stored sessions and exit")
+		list     = fs.Bool("sessions", false, "list the stored sessions of this project and exit")
+		every    = fs.Bool("all", false, "with -sessions, list the sessions of every project")
 		theme    = fs.String("theme", "", "palette, blackwall, light, contrast or plain")
 		motion   = fs.Float64("motion", -1, "animation scale from 0 to 1")
 		showVer  = fs.Bool("version", false, "print the version and exit")
@@ -127,7 +129,15 @@ func run(args []string) int {
 		}
 	}
 	if *list {
-		return listSessions(cfg)
+		root := cfg.Root
+		if root == "" {
+			root = cwd
+		}
+		if root, err = filepath.Abs(root); err != nil {
+			fmt.Fprintln(os.Stderr, "icebath:", err)
+			return 2
+		}
+		return listSessions(cfg, root, *every)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -198,8 +208,8 @@ func workflowNames() []string {
 	return out
 }
 
-// Prints the stored sessions newest first
-func listSessions(cfg harness.Config) int {
+// Prints the stored sessions of the project newest first, or of every project, naming the project of each when every
+func listSessions(cfg harness.Config, root string, every bool) int {
 	dir, err := cfg.SessionsPath()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "icebath:", err)
@@ -215,17 +225,30 @@ func listSessions(cfg harness.Config) int {
 		fmt.Fprintln(os.Stderr, "icebath:", err)
 		return 2
 	}
+	if !every {
+		kept := infos[:0]
+		for _, info := range infos {
+			if p := info.Labels[session.ProjectLabel]; p == "" || p == root {
+				kept = append(kept, info)
+			}
+		}
+		infos = kept
+	}
 	if len(infos) == 0 {
-		fmt.Println("no sessions under", dir)
+		if every {
+			fmt.Println("no sessions under", dir)
+		} else {
+			fmt.Println("no sessions of", root, "under", dir, "(pass -all for every project)")
+		}
 		return 0
 	}
 	for _, info := range infos {
-		printInfo(info)
+		printInfo(info, every)
 	}
 	return 0
 }
 
-func printInfo(info session.Info) {
+func printInfo(info session.Info, every bool) {
 	title := info.Title
 	if title == "" {
 		title = "untitled"
@@ -234,5 +257,17 @@ func printInfo(info session.Info) {
 		fmt.Printf("%s  %s\n", info.ID, "unreadable: "+info.Error)
 		return
 	}
-	fmt.Printf("%s  %s  %-28s  %s  %d msgs  %s\n", info.ID, info.Updated.Local().Format("2006-01-02 15:04"), render.Truncate(title, 28, theme.Blackwall()), info.Model, info.Messages, render.Tokens(info.Usage.Total()))
+	state := "      "
+	if info.Busy {
+		state = "open  "
+	}
+	fmt.Printf("%s  %s  %s%-28s  ", info.ID, info.Updated.Local().Format("2006-01-02 15:04"), state, render.Truncate(title, 28, theme.Blackwall()))
+	if every {
+		project := info.Labels[session.ProjectLabel]
+		if project == "" {
+			project = "-"
+		}
+		fmt.Printf("%-20s  ", render.Truncate(filepath.Base(project), 20, theme.Blackwall()))
+	}
+	fmt.Printf("%s  %d msgs  %s\n", info.Model, info.Messages, render.Tokens(info.Usage.Total()))
 }

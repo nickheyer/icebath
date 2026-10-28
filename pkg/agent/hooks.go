@@ -191,10 +191,12 @@ type hookOutput struct {
 	Reason            string          `json:"reason"`
 	AdditionalContext string          `json:"additionalContext"`
 	UpdatedInput      json.RawMessage `json:"updatedInput"`
+	UpdatedResponse   string          `json:"updatedResponse"`
 	HookSpecific      *struct {
 		PermissionDecision string          `json:"permissionDecision"`
 		Reason             string          `json:"permissionDecisionReason"`
 		UpdatedInput       json.RawMessage `json:"updatedInput"`
+		UpdatedResponse    string          `json:"updatedResponse"`
 		AdditionalContext  string          `json:"additionalContext"`
 	} `json:"hookSpecificOutput"`
 }
@@ -206,6 +208,8 @@ type hookVerdict struct {
 	context  string
 	input    json.RawMessage
 	decision policy.Decision
+	// Text standing in for the whole tool result, from PostToolUse hooks that trim it
+	response string
 }
 
 // Refusal raised by a hook
@@ -251,7 +255,7 @@ func (r HookRunner) BeforeTool(ctx context.Context, call protocol.ToolCall) (Adv
 	return Advice{Call: call, Decision: v.decision, Context: v.context}, nil
 }
 
-// Runs PostToolUse hooks, a block keeping the real hookOutput and marking the result as failed with the reason
+// Runs PostToolUse hooks, an updated response replacing the result and a block marking it as failed with the reason
 func (r HookRunner) AfterTool(ctx context.Context, call protocol.ToolCall, res protocol.ToolResult) (protocol.ToolResult, error) {
 	content, err := session.MarshalParts(res.Content)
 	if err != nil {
@@ -269,6 +273,9 @@ func (r HookRunner) AfterTool(ctx context.Context, call protocol.ToolCall, res p
 		res.Content = append(res.Content, protocol.Text{Text: "[hook " + string(PostToolUse) + " blocked: " + v.reason + "]"})
 		res.IsError = true
 		return res, nil
+	}
+	if v.response != "" {
+		res.Content = []protocol.Part{protocol.Text{Text: v.response}}
 	}
 	if v.context != "" {
 		res.Content = append(res.Content, protocol.Text{Text: v.context})
@@ -452,6 +459,7 @@ func (r HookRunner) parse(event HookEvent, cmd HookCommand, stdout []byte) (hook
 	}
 	v.context = out.AdditionalContext
 	v.input = out.UpdatedInput
+	v.response = out.UpdatedResponse
 	if hs := out.HookSpecific; hs != nil {
 		switch hs.PermissionDecision {
 		case "":
@@ -470,9 +478,15 @@ func (r HookRunner) parse(event HookEvent, cmd HookCommand, stdout []byte) (hook
 		if len(hs.UpdatedInput) > 0 {
 			v.input = hs.UpdatedInput
 		}
+		if hs.UpdatedResponse != "" {
+			v.response = hs.UpdatedResponse
+		}
 	}
 	if (v.decision != "" || len(v.input) > 0) && event != PreToolUse {
 		return hookVerdict{}, fmt.Errorf("hook %s %q returned a permission or updated input, which only PreToolUse takes", event, cmd.Command)
+	}
+	if v.response != "" && event != PostToolUse {
+		return hookVerdict{}, fmt.Errorf("hook %s %q returned an updated response, which only PostToolUse takes", event, cmd.Command)
 	}
 	if v.block && v.reason == "" {
 		v.reason = "blocked by hook"

@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +27,8 @@ const (
 	RulesFile   = "rules.json"
 	HooksFile   = "hooks.json"
 	SessionsDir = "sessions"
+	// Directory under the user configuration directory holding the state each project keeps between runs
+	ProjectsDir = "projects"
 )
 
 // Environment variables that override the chosen profile and model
@@ -39,16 +43,28 @@ type Target struct {
 	Model   string `json:"model,omitempty"`
 }
 
+// Share of the model context window at which compaction runs when compact_threshold is unset
+const DefaultCompactShare = 0.7
+
 // Compaction settings
 type Compaction struct {
-	// Context tokens at which old turns are summarized, zero disables compaction
-	Threshold int `json:"threshold,omitempty"`
+	// Context tokens at which old turns are summarized, unset for the default share of the window and zero to never compact
+	Threshold *int `json:"threshold,omitempty"`
 	// Messages kept verbatim after the summary
 	Keep int `json:"keep,omitempty"`
 	// Profile and model writing summaries, the main model when empty
 	Model *Target `json:"model,omitempty"`
 	// Extra guidance appended to the summary instructions
 	Instructions string `json:"instructions,omitempty"`
+}
+
+// Assistant turns a tool result stays in requests when prune_after is unset
+const DefaultPruneAfter = 10
+
+// Tool result pruning settings
+type Pruning struct {
+	// Assistant turns a tool result stays in requests before a stub replaces it, unset for the default and zero to never prune
+	After *int `json:"after,omitempty"`
 }
 
 // Subagent settings
@@ -109,6 +125,7 @@ type Config struct {
 	Temperature *float64                   `json:"temperature,omitempty"`
 	Extra       map[string]json.RawMessage `json:"extra,omitempty"`
 	Compaction  Compaction                 `json:"compaction,omitempty"`
+	Pruning     Pruning                    `json:"pruning,omitempty"`
 	Permissions policy.RuleSet             `json:"permissions,omitempty"`
 	Hooks       agent.HookConfig           `json:"hooks,omitempty"`
 	MCP         []ServerConfig             `json:"mcp,omitempty"`
@@ -206,7 +223,7 @@ func Merge(base, over Config) Config {
 		}
 		out.Extra = merged
 	}
-	if over.Compaction.Threshold != 0 {
+	if over.Compaction.Threshold != nil {
 		out.Compaction.Threshold = over.Compaction.Threshold
 	}
 	if over.Compaction.Keep != 0 {
@@ -217,6 +234,9 @@ func Merge(base, over Config) Config {
 	}
 	if over.Compaction.Instructions != "" {
 		out.Compaction.Instructions = over.Compaction.Instructions
+	}
+	if over.Pruning.After != nil {
+		out.Pruning.After = over.Pruning.After
 	}
 	out.Permissions = policy.RuleSet{
 		Allow: append(append([]string(nil), base.Permissions.Allow...), over.Permissions.Allow...),
@@ -390,6 +410,33 @@ func (c Config) SessionsPath() (string, error) {
 	return filepath.Join(dir, SessionsDir), nil
 }
 
+// Directory a project keeps its state in between runs, named after the root with a digest of the full path so two
+// projects sharing a base name stay apart
+func StatePath(root string) (string, error) {
+	dir, err := profiles.ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(root))
+	base := filepath.Base(root)
+	if base == "" || base == "." || base == string(filepath.Separator) {
+		base = "root"
+	}
+	var b strings.Builder
+	for _, r := range base {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return filepath.Join(dir, ProjectsDir, b.String()+"-"+hex.EncodeToString(sum[:4])), nil
+}
+
 // System prompt from the inline text or the named file
 func (c Config) SystemPrompt() (string, error) {
 	if c.SystemFile != "" {
@@ -404,6 +451,22 @@ func (c Config) SystemPrompt() (string, error) {
 
 // Value of an extension setting, empty while unset
 func (c Config) Setting(key string) string { return c.Settings[key] }
+
+// Context tokens at which compaction runs for a model with that window, the default share when unset
+func (c Config) CompactThreshold(window int) int {
+	if c.Compaction.Threshold != nil {
+		return *c.Compaction.Threshold
+	}
+	return int(float64(window) * DefaultCompactShare)
+}
+
+// Assistant turns a tool result stays in requests, the default when unset
+func (c Config) PruneAfter() int {
+	if c.Pruning.After != nil {
+		return *c.Pruning.After
+	}
+	return DefaultPruneAfter
+}
 
 // Reads a duration given in seconds
 func seconds(n int) time.Duration { return time.Duration(n) * time.Second }
@@ -460,7 +523,14 @@ func (c *Config) settingField(key, value string) (Field, error) {
 		if err != nil || n < 0 {
 			return Field{}, fmt.Errorf("compact_threshold must be a non negative integer, got %q", value)
 		}
-		c.Compaction.Threshold = n
+		c.Compaction.Threshold = &n
+		return Field{Path: path, Value: n}, nil
+	case "prune_after":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return Field{}, fmt.Errorf("prune_after must be a non negative integer, got %q", value)
+		}
+		c.Pruning.After = &n
 		return Field{Path: path, Value: n}, nil
 	case "mode":
 		if _, err := policy.ParseMode(value); err != nil {
@@ -519,6 +589,8 @@ func settingPath(key string) ([]string, error) {
 		return []string{key}, nil
 	case "compact_threshold":
 		return []string{"compaction", "threshold"}, nil
+	case "prune_after":
+		return []string{"pruning", "after"}, nil
 	case "theme", "motion", "cascade":
 		return []string{"ui", key}, nil
 	}
@@ -541,7 +613,9 @@ func (c *Config) unset(key string) {
 	case "temperature":
 		c.Temperature = nil
 	case "compact_threshold":
-		c.Compaction.Threshold = 0
+		c.Compaction.Threshold = nil
+	case "prune_after":
+		c.Pruning.After = nil
 	case "mode":
 		c.Mode = ""
 	case "theme":

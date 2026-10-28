@@ -51,6 +51,8 @@ type Session struct {
 	usage   protocol.Usage
 	last    protocol.Usage
 	next    int
+	// Stubs standing in for tool results in requests, by call id
+	pruned map[string]string
 }
 
 // Starts an empty session with a random id
@@ -289,8 +291,27 @@ func (s *Session) Fork() *Session {
 	f.entries = copyEntries(s.entries)
 	f.records = s.copyRecords()
 	f.labels = copyLabels(s.labels)
+	f.pruned = copyLabels(s.pruned)
 	f.next = s.next
 	return f
+}
+
+// Remembers the stub that stands in for the tool result in requests from now on
+func (s *Session) Prune(callID, stub string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pruned == nil {
+		s.pruned = map[string]string{}
+	}
+	s.pruned[callID] = stub
+}
+
+// Stub standing in for the tool result, false while the result still goes out whole
+func (s *Session) Pruned(callID string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	stub, ok := s.pruned[callID]
+	return stub, ok
 }
 
 // Drops every entry after the first n and every record newer than the last kept entry
@@ -325,6 +346,25 @@ func (s *Session) Truncate(n int) {
 	s.touch()
 }
 
+// Index of the first entry kept verbatim, the first user message at or past the keep boundary
+func (s *Session) cut(keep int) int {
+	cut := len(s.entries) - max(keep, 0)
+	if cut < 0 {
+		cut = 0
+	}
+	for cut < len(s.entries) && s.entries[cut].Role != protocol.RoleUser {
+		cut++
+	}
+	return cut
+}
+
+// Entries a compaction keeping that many messages replaces with its summary
+func (s *Session) Head(keep int) []Entry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return copyEntries(s.entries[:s.cut(keep)])
+}
+
 // Assistant turn written after a summary so the kept tail still follows an assistant message
 const Ack = "Understood. I have the summary of the earlier conversation and will continue from here."
 
@@ -335,13 +375,7 @@ func (s *Session) Compact(summary string, keep int) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cut := len(s.entries) - max(keep, 0)
-	if cut < 0 {
-		cut = 0
-	}
-	for cut < len(s.entries) && s.entries[cut].Role != protocol.RoleUser {
-		cut++
-	}
+	cut := s.cut(keep)
 	now := time.Now().UTC()
 	head := []Entry{{Seq: s.next, Time: now, Message: protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: summary}}}}}
 	s.next++
@@ -367,8 +401,20 @@ type Info struct {
 	Messages int               `json:"messages"`
 	Records  int               `json:"records"`
 	Usage    protocol.Usage    `json:"usage"`
+	// Whether another process has the session open right now
+	Busy bool `json:"busy,omitempty"`
 	// Why a store could not read the session, empty when it loaded cleanly
 	Error string `json:"error,omitempty"`
+}
+
+// Label naming the project root a session was started under, by which stores list the sessions of a project
+const ProjectLabel = "project"
+
+// Project root the session was started under, empty for one started before projects were recorded
+func (s *Session) Project() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.labels[ProjectLabel]
 }
 
 func (s *Session) Info() Info {

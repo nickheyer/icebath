@@ -16,7 +16,7 @@ import (
 )
 
 // Builds a fresh child agent for one task, of the named kind or the default one when the name is empty
-type Factory func(ctx context.Context, kind string) (*Agent, error)
+type Factory func(ctx context.Context, kind, model string) (*Agent, error)
 
 // Kind of agent the tool may spawn, as the model hears it
 type Kind struct {
@@ -35,6 +35,7 @@ func subagentSchema(kinds []Kind) json.RawMessage {
 	props := map[string]any{
 		"prompt":      map[string]any{"type": "string", "description": "Complete task for the child agent, with every detail it needs since it starts with an empty transcript"},
 		"description": map[string]any{"type": "string", "description": "Short label for the task shown to the user"},
+		"model":       map[string]any{"type": "string", "description": "Model id the child runs on, on the same profile, such as a cheaper model for exploration or a stronger one for review, the kind or parent model when left out"},
 	}
 	if len(kinds) > 0 {
 		names := make([]string, 0, len(kinds))
@@ -218,6 +219,7 @@ func (t *Subagents) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 		Prompt      string `json:"prompt"`
 		Description string `json:"description"`
 		Kind        string `json:"kind"`
+		Model       string `json:"model"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return tool.Error(err.Error()), nil
@@ -232,7 +234,7 @@ func (t *Subagents) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 	if t.MaxDepth > 0 && depth > t.MaxDepth {
 		return tool.Errorf("subagent: nesting deeper than %d is not allowed", t.MaxDepth), nil
 	}
-	child, err := t.Factory(ctx, in.Kind)
+	child, err := t.Factory(ctx, in.Kind, in.Model)
 	if err != nil {
 		return tool.Errorf("subagent: %v", err), nil
 	}

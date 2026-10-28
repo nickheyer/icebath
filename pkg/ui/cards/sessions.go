@@ -3,6 +3,7 @@ package cards
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +17,9 @@ import (
 )
 
 // Stored sessions to resume, fork or delete one or many at a time, narrowed by a filter bar along the bottom
+//
+// The listing shows the sessions of this project unless widened to every project, and marks the sessions another
+// icebath has open since those cannot be resumed here
 type Sessions struct {
 	env     *Env
 	all     []session.Info
@@ -28,6 +32,8 @@ type Sessions struct {
 	top     int
 	start   int
 	w, h    int
+	// Whether sessions of every project are shown rather than those of this one
+	every bool
 }
 
 func NewSessions(env *Env) *Sessions {
@@ -35,6 +41,15 @@ func NewSessions(env *Env) *Sessions {
 	s.Reload()
 	return s
 }
+
+// Shows sessions of every project or of this one alone
+func (s *Sessions) SetEvery(on bool) {
+	s.every = on
+	s.filter()
+}
+
+// Reports whether sessions of every project are shown
+func (s *Sessions) Every() bool { return s.every }
 
 func (s *Sessions) Title() string { return "SESSIONS" }
 func (s *Sessions) Glyph() string { return s.env.Theme.Glyphs.Sessions }
@@ -66,11 +81,21 @@ func (s *Sessions) Reload() {
 	s.filter()
 }
 
+// Reports whether a session belongs to this project, those of no project and those open here counting as ours
+func (s *Sessions) ours(info session.Info, open map[string]bool) bool {
+	project := info.Labels[session.ProjectLabel]
+	return project == "" || s.env.Root == "" || project == s.env.Root || open[info.ID]
+}
+
 func (s *Sessions) filter() {
 	s.rows = s.rows[:0]
 	q := strings.ToLower(s.bar.Query())
+	open := s.open()
 	for _, info := range s.all {
-		if q == "" || strings.Contains(strings.ToLower(info.ID+" "+info.Title+" "+info.Model), q) {
+		if !s.every && !s.ours(info, open) {
+			continue
+		}
+		if q == "" || strings.Contains(strings.ToLower(info.ID+" "+info.Title+" "+info.Model+" "+info.Labels[session.ProjectLabel]), q) {
 			s.rows = append(s.rows, info)
 		}
 	}
@@ -240,6 +265,8 @@ func (s *Sessions) act(id string) tea.Cmd {
 		}
 	case "sessions.delete":
 		s.confirm = s.ids()
+	case "sessions.every":
+		s.SetEvery(!s.every)
 	case "list.down", "list.up", "list.top", "list.bottom", "list.page.down", "list.page.up":
 		s.moveTo(listMove(id, s.sel, len(s.rows), page), false)
 	default:
@@ -263,11 +290,21 @@ func (s *Sessions) foot(w int) string {
 	if !s.bar.Shown() {
 		return ""
 	}
-	count := render.Count(len(s.all), "session")
+	count := render.Count(len(s.rows), "session")
 	if s.bar.Query() != "" {
 		count = fmt.Sprintf("%d of %d", len(s.rows), len(s.all))
 	}
 	return s.bar.View(w, count, "filter", t)
+}
+
+// Line above the table naming the scope of the listing
+func (s *Sessions) head(w int) string {
+	t := s.env.Theme
+	scope := "this project"
+	if s.every {
+		scope = "every project"
+	}
+	return render.Fit(" "+render.Dim(scope+" "+t.Glyphs.Sep+" "+s.env.keyed("sessions.every", "scope"), t), w, t)
 }
 
 func (s *Sessions) View(w, h int) string {
@@ -277,6 +314,7 @@ func (s *Sessions) View(w, h int) string {
 	if s.err != nil {
 		lines = append(lines, render.Truncate(render.Bad(s.err.Error(), t), w, t))
 	}
+	lines = append(lines, s.head(w))
 	s.top = len(lines)
 	foot := s.foot(w)
 	room := h - len(lines)
@@ -285,18 +323,28 @@ func (s *Sessions) View(w, h int) string {
 	}
 	if len(s.rows) == 0 {
 		empty := "no stored sessions"
-		if s.bar.Query() != "" {
+		switch {
+		case s.bar.Query() != "":
 			empty = "no match"
+		case !s.every && len(s.all) > 0:
+			empty = "no sessions of this project"
 		}
 		return footed(append(lines, strings.Split(emptyView(w, room, empty, t), "\n")...), foot, h)
 	}
 	open := s.open()
-	cols := []render.Column{{Title: ""}, {Title: "UPDATED"}, {Title: "TITLE", Flex: 1}, {Title: "MODEL", Max: 24}, {Title: "MSGS", Right: true}, {Title: "TOKENS", Right: true}}
+	cols := []render.Column{{Title: ""}, {Title: "UPDATED"}, {Title: "TITLE", Flex: 1}}
+	if s.every {
+		cols = append(cols, render.Column{Title: "PROJECT", Max: 20})
+	}
+	cols = append(cols, render.Column{Title: "MODEL", Max: 24}, render.Column{Title: "MSGS", Right: true}, render.Column{Title: "TOKENS", Right: true})
 	rows := make([][]string, 0, len(s.rows))
 	for _, info := range s.rows {
 		mark := " "
-		if open[info.ID] {
+		switch {
+		case open[info.ID]:
 			mark = render.Cool(t.Glyphs.Live, t)
+		case info.Busy:
+			mark = render.Warm(t.Glyphs.Hollow, t)
 		}
 		title := info.Title
 		if title == "" {
@@ -305,10 +353,17 @@ func (s *Sessions) View(w, h int) string {
 		if info.Parent != "" {
 			title += render.Dim(" "+t.Glyphs.Fork, t)
 		}
+		if info.Busy {
+			title += render.Dim(" elsewhere", t)
+		}
 		if info.Error != "" {
 			title = render.Bad(info.ID+" "+info.Error, t)
 		}
-		rows = append(rows, []string{mark, info.Updated.Local().Format("01-02 15:04"), title, info.Model, fmt.Sprint(info.Messages), render.Tokens(info.Usage.Total())})
+		row := []string{mark, info.Updated.Local().Format("01-02 15:04"), title}
+		if s.every {
+			row = append(row, projectName(info.Labels[session.ProjectLabel]))
+		}
+		rows = append(rows, append(row, info.Model, fmt.Sprint(info.Messages), render.Tokens(info.Usage.Total())))
 	}
 	table := strings.Split(render.TableMarked(cols, rows, w, s.sel, s.marked, nil, t), "\n")
 	table, s.start = window(table, s.sel, room)
@@ -338,5 +393,13 @@ func (s *Sessions) Hints() []wm.Hint {
 	case s.bar.Active():
 		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "move"}, {Action: "search.close"}}
 	}
-	return []wm.Hint{{Action: "sessions.resume"}, {Action: "sessions.fork"}, {Action: "sessions.delete"}, {Action: "filter.toggle"}, {Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "sessions.select.down", Pair: "sessions.select.up", Label: "select"}}
+	return []wm.Hint{{Action: "sessions.resume"}, {Action: "sessions.fork"}, {Action: "sessions.delete"}, {Action: "sessions.every"}, {Action: "filter.toggle"}, {Action: "list.down", Pair: "list.up", Label: "move"}, {Action: "sessions.select.down", Pair: "sessions.select.up", Label: "select"}}
+}
+
+// Base name of a project root, a dash for a session of no project
+func projectName(root string) string {
+	if root == "" {
+		return "-"
+	}
+	return filepath.Base(root)
 }

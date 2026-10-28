@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/ext"
 	"github.com/nickheyer/icebath/pkg/harness"
+	"github.com/nickheyer/icebath/pkg/lockfile"
 	"github.com/nickheyer/icebath/pkg/mission"
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -31,14 +32,23 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Layout file written beside the sessions
-const layoutFile = "layout.json"
+// Layout file written in the state directory of the project, and the lock the instance holding that layout keeps
+const (
+	layoutFile   = "layout.json"
+	instanceFile = "instance.lock"
+)
 
 // What the app keeps between runs, the manager layout and the mission each session works on
 type layoutState struct {
 	wm.Layout
 	// Mission the runs of a session attach to, by session id
 	Missions map[string]string `json:"missions,omitempty"`
+}
+
+// Layout with only the preferences kept, the workspaces and their sessions left behind
+func (l layoutState) preferences() layoutState {
+	l.Workspaces, l.Missions, l.Active = nil, nil, 0
+	return l
 }
 
 // Seconds a finished agent card stays open before it leaves on its own
@@ -109,6 +119,10 @@ type Model struct {
 	bg        sync.WaitGroup
 	// Layout as last written, so only a change costs a write
 	layoutSaved []byte
+	// Directory the project keeps its layout in, empty when the configuration cannot place one
+	stateDir string
+	// Lock on the project state held by the instance that restores and writes the layout, nil for a second instance
+	instance *lockfile.Lock
 	// Commands the restored cards asked for, run when the program starts
 	startup []tea.Cmd
 	// Workspaces of the last run that could not come back, shown when the program starts
@@ -131,16 +145,27 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 			return nil, err
 		}
 	}
-	layout, raw, saved := loadLayout(layoutPath(app.Config))
+	stateDir, instance, notice := claimProject(app.Root)
+	layout, raw, saved := loadLayout(stateDir, app.Root, app.Store)
+	if instance == nil {
+		layout, raw = layout.preferences(), nil
+	}
 	th, err := resolveTheme(opts.Config, layout.Theme)
 	if err != nil {
 		cancel()
+		if instance != nil {
+			instance.Release()
+		}
 		return nil, err
 	}
-	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}}
+	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw, stateDir: stateDir, instance: instance, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}}
+	if notice != "" {
+		m.notices = append(m.notices, notice)
+	}
 	if err := m.checkExtensions(); err != nil {
 		cancel()
 		app.Close(context.Background())
+		m.releaseProject()
 		return nil, err
 	}
 	m.keys, m.keysErr = keys.Open(filepath.Join(m.configDir(), keys.FileName))
@@ -189,6 +214,7 @@ func (m *Model) environment() *cards.Env {
 		},
 		Settings:   m.settings,
 		ProjectDir: filepath.Join(a.Root, harness.ProjectDir),
+		Root:       a.Root,
 		Extensions: extensionRows,
 	}
 }
@@ -229,8 +255,11 @@ func (m *Model) settings() map[string]string {
 	if cfg.MaxRounds > 0 {
 		out["max_rounds"] = fmt.Sprint(cfg.MaxRounds)
 	}
-	if cfg.Compaction.Threshold > 0 {
-		out["compact_threshold"] = fmt.Sprint(cfg.Compaction.Threshold)
+	if cfg.Compaction.Threshold != nil {
+		out["compact_threshold"] = fmt.Sprint(*cfg.Compaction.Threshold)
+	}
+	if cfg.Pruning.After != nil {
+		out["prune_after"] = fmt.Sprint(*cfg.Pruning.After)
 	}
 	if cfg.Temperature != nil {
 		out["temperature"] = fmt.Sprintf("%.2f", *cfg.Temperature)
@@ -332,7 +361,8 @@ func sessionKeys(wl wm.WorkspaceLayout) []string {
 	return out
 }
 
-// Reopens the workspaces of the last run with their sessions, the resumed or a fresh one standing in when none return
+// Reopens the workspaces of the last run with their sessions, the default template laid out when there were none,
+// the resumed or a fresh session standing in when nothing else comes up
 func (m *Model) restoreDesks(l layoutState) {
 	first := m.app.Current()
 	for _, wl := range l.Workspaces {
@@ -347,7 +377,7 @@ func (m *Model) restoreDesks(l layoutState) {
 				live, err = m.app.Revive(id)
 			}
 			if err != nil {
-				m.notices = append(m.notices, "session "+id+": "+err.Error())
+				m.notices = append(m.notices, "session "+id+" left closed: "+err.Error())
 				continue
 			}
 			d := m.addDesk(live)
@@ -360,6 +390,13 @@ func (m *Model) restoreDesks(l layoutState) {
 		m.startup = append(m.startup, m.wm.RestoreWorkspace(ws, wl, m.cardFor))
 	}
 	resumed := m.opts.Resume != ""
+	templated := false
+	if len(m.wm.Workspaces()) == 0 && !resumed {
+		if t, ok := m.loadTemplates().defaultTemplate(); ok {
+			m.startup = append(m.startup, m.placeTemplate(t, m.resolveTemplate(t), first)...)
+			templated = len(m.wm.Workspaces()) > 0
+		}
+	}
 	switch {
 	case len(m.wm.Workspaces()) == 0 || (resumed && m.deskOfLive(first) == nil):
 		d := m.deskOfLive(first)
@@ -374,7 +411,10 @@ func (m *Model) restoreDesks(l layoutState) {
 		}
 	}
 	active := 0
-	if l.Active >= 0 && l.Active < len(m.wm.Workspaces()) {
+	switch {
+	case templated:
+		active = m.wm.ActiveIndex()
+	case l.Active >= 0 && l.Active < len(m.wm.Workspaces()):
 		active = l.Active
 	}
 	if resumed {
@@ -388,21 +428,102 @@ func (m *Model) restoreDesks(l layoutState) {
 	}
 }
 
-// Layout file beside the session directory, empty when the configuration cannot place one
-func layoutPath(cfg harness.Config) string {
-	dir, err := cfg.SessionsPath()
+// Finds the state directory of the project and takes its instance lock, returning no lock with a notice when another
+// instance of the same project holds it, and no directory with a notice when none can be placed
+func claimProject(root string) (string, *lockfile.Lock, string) {
+	dir, err := harness.StatePath(root)
 	if err != nil {
-		return ""
+		return "", nil, "layout not kept: " + err.Error()
 	}
-	return filepath.Join(filepath.Dir(dir), layoutFile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", nil, "layout not kept: " + err.Error()
+	}
+	l, err := lockfile.Try(filepath.Join(dir, instanceFile))
+	if errors.Is(err, lockfile.ErrHeld) {
+		return dir, nil, "another icebath is open on " + filepath.Base(root) + ", this one starts empty and keeps no layout"
+	}
+	if err != nil {
+		return dir, nil, "layout not kept: " + err.Error()
+	}
+	return dir, l, ""
 }
 
-// Layout read from the path with its bytes, reporting whether a readable one was there
-func loadLayout(path string) (layoutState, []byte, bool) {
-	var l layoutState
-	if path == "" {
-		return l, nil, false
+// Gives the instance lock back
+func (m *Model) releaseProject() {
+	if m.instance != nil {
+		m.instance.Release()
+		m.instance = nil
 	}
+}
+
+// Layout file of the project, empty when it keeps none
+func (m *Model) layoutPath() string {
+	if m.stateDir == "" {
+		return ""
+	}
+	return filepath.Join(m.stateDir, layoutFile)
+}
+
+// Layout of the project read from its state directory with its bytes, reporting whether a readable one was there
+//
+// A project that has none yet takes the layout earlier versions kept beside the sessions for every project together,
+// its workspaces narrowed to the sessions this project may claim, so the first start after the move comes up as before
+func loadLayout(stateDir, root string, store *session.Store) (layoutState, []byte, bool) {
+	if stateDir == "" {
+		return layoutState{}, nil, false
+	}
+	if l, data, ok := readLayout(filepath.Join(stateDir, layoutFile)); ok {
+		return l, data, true
+	}
+	if legacy, _, ok := readLayout(filepath.Join(filepath.Dir(filepath.Dir(stateDir)), layoutFile)); ok {
+		return claimable(legacy, root, store), nil, true
+	}
+	return layoutState{}, nil, false
+}
+
+// Layout with the session cards of other projects taken out of its workspaces, workspaces emptied by that dropped
+func claimable(l layoutState, root string, store *session.Store) layoutState {
+	infos, err := store.List(context.Background())
+	if err != nil {
+		return l.preferences()
+	}
+	foreign := map[string]bool{}
+	for _, in := range infos {
+		if p := in.Labels[session.ProjectLabel]; p != "" && p != root {
+			foreign[in.ID] = true
+		}
+	}
+	keep := func(key string) bool {
+		id, ok := strings.CutPrefix(key, "session:")
+		return !ok || !foreign[id]
+	}
+	kept := l.Workspaces[:0]
+	for _, wl := range l.Workspaces {
+		wl.Tiles = slices.DeleteFunc(slices.Clone(wl.Tiles), func(t wm.TileLayout) bool { return !keep(t.Key) })
+		wl.Floats = slices.DeleteFunc(slices.Clone(wl.Floats), func(f wm.FloatLayout) bool { return !keep(f.Key) })
+		if !keep(wl.Focus) {
+			wl.Focus = ""
+		}
+		if !keep(wl.Zoom) {
+			wl.Zoom = ""
+		}
+		wl.Tree = nil
+		if len(sessionKeys(wl)) > 0 {
+			kept = append(kept, wl)
+		}
+	}
+	l.Workspaces = kept
+	l.Active = 0
+	for id := range l.Missions {
+		if foreign[id] {
+			delete(l.Missions, id)
+		}
+	}
+	return l
+}
+
+func readLayout(path string) (layoutState, []byte, bool) {
+	var l layoutState
 	data, err := os.ReadFile(path)
 	if err != nil || json.Unmarshal(data, &l) != nil {
 		return layoutState{}, nil, false
@@ -425,10 +546,10 @@ func (m *Model) layoutState() layoutState {
 	return l
 }
 
-// Writes the layout when it differs from the one last written
+// Writes the layout when it differs from the one last written, only from the instance holding the project
 func (m *Model) saveLayout() error {
-	path := layoutPath(m.app.Config)
-	if path == "" {
+	path := m.layoutPath()
+	if path == "" || m.instance == nil {
 		return nil
 	}
 	data, err := json.MarshalIndent(m.layoutState(), "", "  ")
@@ -534,6 +655,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.wm.Toast("compacted", wm.Success, 0)
 	case profileMsg:
 		return m, m.adoptProfile(msg)
+	case templateMsg:
+		cmds := m.placeTemplate(msg.t, msg.eps, nil)
+		return m, tea.Batch(append(cmds, m.sync())...)
 	case jobKilledMsg:
 		return m, m.wm.Toast("killed "+msg.job, wm.Warn, 0)
 	case modelsMsg:
@@ -600,6 +724,7 @@ func (m *Model) shutdown() tea.Cmd {
 	m.relay.Close()
 	m.bg.Wait()
 	m.app.Close(context.Background())
+	m.releaseProject()
 	return tea.Quit
 }
 
@@ -822,7 +947,7 @@ func (m *Model) setSetting(key, value string, quiet bool) tea.Cmd {
 	case "cascade":
 		m.wm.SetCascade(cfg.UI.Cascade != nil && *cfg.UI.Cascade)
 	case "compact_threshold":
-		m.app.Meter.SetThreshold(cfg.Compaction.Threshold)
+		m.app.Meter.SetThreshold(cfg.CompactThreshold(m.endpoint().Catalog.Context))
 	case "mode":
 		md := policy.ModeDefault
 		if value != "" {
@@ -982,8 +1107,9 @@ func (m *Model) compactNow(d *desk) tea.Cmd {
 		return m.wm.Toast("already compacting", wm.Warn, 0)
 	}
 	cfg := m.app.Config
-	if cfg.Compaction.Threshold <= 0 {
-		cfg.Compaction.Threshold = 1
+	if cfg.CompactThreshold(d.live.Endpoint.Catalog.Context) <= 0 {
+		one := 1
+		cfg.Compaction.Threshold = &one
 	}
 	saved := m.app.Config
 	m.app.Config = cfg

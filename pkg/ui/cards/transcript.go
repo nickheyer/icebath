@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/facts"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/mission"
+	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/tool/files"
@@ -679,10 +680,15 @@ func (tr *Transcript) Apply(ev agent.Event) {
 			b.done = true
 			b.cacheKey = renderKey{}
 		}
+		model := ""
 		if ev.Response != nil {
+			model = ev.Response.Model
 			for _, b := range tr.turn {
-				b.model = ev.Response.Model
+				b.model = model
 			}
+		}
+		if text := usageNote(model, ev.Usage); text != "" {
+			tr.add(&block{kind: bNote, agent: ev.Agent, at: at, text: text, done: true})
 		}
 		tr.dirty = true
 	case agent.EventToolStart:
@@ -1030,6 +1036,9 @@ func (tr *Transcript) loadEntry(e session.Entry) {
 				}
 			}
 		}
+		if text := usageNote(e.Model, e.Usage); text != "" {
+			tr.add(&block{kind: bNote, agent: e.Agent, at: e.Time, text: text, done: true})
+		}
 	case protocol.RoleTool:
 		for _, p := range e.Content {
 			r, ok := p.(protocol.ToolResult)
@@ -1229,6 +1238,25 @@ func (tr *Transcript) height(b *block) int {
 		return len(b.cache)
 	}
 	return estimate(b)
+}
+
+// Tokens one model call carried and what it cost when the model is priced, empty for a call without usage
+func usageNote(model string, u protocol.Usage) string {
+	if u.Context() == 0 && u.Output == 0 {
+		return ""
+	}
+	parts := []string{"tokens in " + render.Tokens(u.Input)}
+	if u.CacheRead > 0 {
+		parts = append(parts, "cached "+render.Tokens(u.CacheRead))
+	}
+	if u.CacheWrite > 0 {
+		parts = append(parts, "written "+render.Tokens(u.CacheWrite))
+	}
+	parts = append(parts, "out "+render.Tokens(u.Output))
+	if known, ok := profiles.Describe(model); ok && known.Pricing != nil && known.Pricing.Known() {
+		parts = append(parts, render.Money(known.Pricing.Cost(u)))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // Rows a block is likely to take, standing in until it is rendered
@@ -1533,6 +1561,9 @@ func CallSummary(call protocol.ToolCall, partial string, t theme.Theme) string {
 	}
 	switch call.Name {
 	case files.ReadName:
+		if ps, ok := args["file_paths"].([]any); ok && len(ps) > 0 {
+			return render.Count(len(ps), "file")
+		}
 		s := str("file_path")
 		if off, ok := args["offset"].(float64); ok && off > 0 {
 			s += fmt.Sprintf(" from %d", int(off))
@@ -1544,6 +1575,12 @@ func CallSummary(call protocol.ToolCall, partial string, t theme.Theme) string {
 		s := str("pattern")
 		if p := str("path"); p != "" {
 			s += " in " + p
+		}
+		return s
+	case files.OutlineName:
+		s := str("path")
+		if p := str("pattern"); p != "" {
+			s += " matching " + p
 		}
 		return s
 	case shell.ShellName:
@@ -1611,6 +1648,9 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 	if stat := tr.resultStat(b); stat != "" {
 		status += " " + render.Dim(stat, t)
 	}
+	if b.result != nil {
+		status += " " + render.Dim(render.Tokens(protocol.EstimateTokens(b.result.Content))+" tok", t)
+	}
 	lines := []string{mark + head + " " + status}
 	if b.err != nil {
 		lines = append(lines, "  "+render.Hot(t.Glyphs.Error+" "+render.Truncate(b.err.Error(), body-2, t), t))
@@ -1658,6 +1698,22 @@ func (tr *Transcript) resultStat(b *block) string {
 		if d.Total > 0 {
 			return fmt.Sprintf("%d of %d lines", len(d.Lines), d.Total)
 		}
+	case files.ReadMany:
+		lines := 0
+		for _, f := range d.Files {
+			lines += len(f.Lines)
+		}
+		stat := render.Count(len(d.Files), "file") + ", " + render.Count(lines, "line")
+		if len(d.Skipped) > 0 {
+			stat += ", " + render.Count(len(d.Skipped), "skipped")
+		}
+		return stat
+	case files.OutlineData:
+		stat := render.Count(d.Symbols, "symbol") + " in " + render.Count(d.Files, "file")
+		if d.Skipped > 0 {
+			stat += ", " + render.Count(d.Skipped, "skipped")
+		}
+		return stat
 	case files.GlobData:
 		return render.Count(d.Total, "match")
 	case files.GrepData:

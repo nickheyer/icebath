@@ -156,8 +156,7 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 			return nil, err
 		}
 	}
-	app.Meter.SetCatalog(app.Primary.Catalog, app.Primary.Profile.Name)
-	app.Meter.SetThreshold(cfg.Compaction.Threshold)
+	app.track(app.Primary)
 	if cfg.Subagents.Model != nil {
 		ep, err := app.open(ctx, *cfg.Subagents.Model)
 		if err != nil {
@@ -330,11 +329,11 @@ func (a *App) buildTools(dir, root string) error {
 	for _, name := range cfg.Tools.Disabled {
 		a.Tools.SetEnabled(name, false)
 	}
-	return a.Tools.Add(facts.Tool{Resolve: a.FactsFor}, mission.Tool{Resolve: a.MissionsFor}, a.Subagents)
+	return a.Tools.Add(facts.Tool{Resolve: a.FactsFor}, mission.Tool{Resolve: a.MissionsFor, Session: a.SessionFor}, a.Subagents)
 }
 
 // Builds a child agent on a fresh session labeled with its parent, on the kind endpoint, the subagent one or the parent one
-func (a *App) childFactory(ctx context.Context, kind string) (*agent.Agent, error) {
+func (a *App) childFactory(ctx context.Context, kind, model string) (*agent.Agent, error) {
 	sess := session.New()
 	parent, ep := a.Session.ID(), a.endpointOf(a.Session)
 	if l := a.LiveOfRun(RunFrom(ctx)); l != nil {
@@ -356,8 +355,15 @@ func (a *App) childFactory(ctx context.Context, kind string) (*agent.Agent, erro
 		}
 		sess.Label(kindLabel, kind)
 	}
+	if model != "" {
+		var err error
+		if ep, err = a.open(ctx, Target{Profile: ep.Profile.Name, Model: model}); err != nil {
+			return nil, fmt.Errorf("model %s: %w", model, err)
+		}
+	}
 	sess.Label(parentLabel, parent)
 	sess.Label("agent", policy.AgentFrom(ctx))
+	sess.Label(session.ProjectLabel, a.Root)
 	return a.newAgent("", sess, ep)
 }
 
@@ -409,7 +415,7 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		runner = &r
 		ag.Hooks = append(ag.Hooks, r)
 	}
-	ag.Hooks = append(ag.Hooks, agent.StripThinking{}, missionTools{})
+	ag.Hooks = append(ag.Hooks, agent.StripThinking{})
 	if kind.Name != "" {
 		ag.Hooks = append(ag.Hooks, kindTools{kind: kind})
 	}
@@ -420,8 +426,8 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		}
 	}
 	ag.Hooks = append(ag.Hooks, kind.Hooks...)
-	if cfg.Compaction.Threshold > 0 {
-		s := &agent.Summarizer{Model: ep.Provider, ModelID: ep.Model, Session: sess, Threshold: cfg.Compaction.Threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
+	if threshold := cfg.CompactThreshold(ep.Catalog.Context); threshold > 0 {
+		s := &agent.Summarizer{Model: ep.Provider, ModelID: ep.Model, Session: sess, Threshold: threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
 		if a.summary != nil {
 			s.Model, s.ModelID = a.summary.Provider, a.summary.Model
 		}
@@ -433,6 +439,10 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		}
 		ag.Hooks = append(ag.Hooks, s)
 	}
+	if after := cfg.PruneAfter(); after > 0 {
+		ag.Hooks = append(ag.Hooks, &agent.Pruner{Session: sess, After: after})
+	}
+	ag.Hooks = append(ag.Hooks, &agent.Dedup{Session: sess, Tools: ag.Tools})
 	return ag, nil
 }
 
@@ -488,12 +498,19 @@ func (a *App) Close(ctx context.Context) error {
 			a.Saver.Flush(l.Session)
 		}
 		a.Saver.Wait()
+		a.Store.Close()
 		if len(a.Config.Hooks) > 0 {
 			r := agent.HookRunner{Config: a.Config.Hooks, Dir: a.Root, SessionID: a.Session.ID(), Log: hookLog{send: a.send}}
 			_, err = r.Fire(ctx, agent.SessionEnd, map[string]any{"reason": "exit"})
 		}
 	})
 	return err
+}
+
+// Points the meter at the endpoint, its window and the compaction threshold that window gives
+func (a *App) track(ep Endpoint) {
+	a.Meter.SetCatalog(ep.Catalog, ep.Profile.Name)
+	a.Meter.SetThreshold(a.Config.CompactThreshold(ep.Catalog.Context))
 }
 
 // Hook that writes the system prompt of the endpoint and kind into every turn, keeping an empty one while bare
@@ -505,38 +522,31 @@ type systemHook struct {
 }
 
 func (h systemHook) BeforeTurn(ctx context.Context, req *protocol.Request) error {
-	req.System = h.app.PromptFor(ctx, h.ep, h.kind)
+	system, err := h.app.PromptFor(ctx, h.ep, h.kind)
+	if err != nil {
+		return err
+	}
+	req.System = system
 	req.KeepSystem = h.ep.Profile.Bare
 	return nil
 }
 
-// Hook that withholds the Plan tool from runs with no mission attached
-type missionTools struct {
-	agent.Hooks
-}
-
-func (missionTools) BeforeTurn(ctx context.Context, req *protocol.Request) error {
-	if mission.IDFrom(ctx) != "" {
-		return nil
-	}
-	kept := req.Tools[:0]
-	for _, t := range req.Tools {
-		if t.Name != mission.ToolName {
-			kept = append(kept, t)
+// Wraps a session in stores restored from its records, binds it to the endpoint and registers it, holding its lease so no
+// other process works on it at the same time, and claiming it for this project when no project started it
+func (a *App) live(sess *session.Session, ep Endpoint) (*Live, error) {
+	if !ep.Profile.Ghost {
+		if err := a.Store.Lease(sess.ID()); err != nil {
+			return nil, err
 		}
 	}
-	req.Tools = kept
-	return nil
-}
-
-// Wraps a session in stores restored from its records, binds it to the endpoint and registers it
-func (a *App) live(sess *session.Session, ep Endpoint) (*Live, error) {
 	l := &Live{Session: sess, Facts: facts.New(), Missions: mission.New(), Endpoint: ep}
 	l.SetThinking(ep.Profile.ShowsThinking())
 	if err := l.Facts.Restore(sess); err != nil {
+		a.Store.Unlease(sess.ID())
 		return nil, err
 	}
 	if err := l.Missions.Restore(sess); err != nil {
+		a.Store.Unlease(sess.ID())
 		return nil, err
 	}
 	l.Facts.Attach(sess)
@@ -546,6 +556,9 @@ func (a *App) live(sess *session.Session, ep Endpoint) (*Live, error) {
 	}
 	if sess.Labels()[profileLabel] != ep.Profile.Name {
 		sess.Label(profileLabel, ep.Profile.Name)
+	}
+	if sess.Project() == "" {
+		sess.Label(session.ProjectLabel, a.Root)
 	}
 	id := sess.ID()
 	l.Facts.OnChange(func(c facts.Change) { a.send(FactMsg{Session: id, Change: c}) })
@@ -569,6 +582,21 @@ func (a *App) endpointFor(ctx context.Context, sess *session.Session) (Endpoint,
 		return a.Primary, nil
 	}
 	return a.open(ctx, Target{Profile: name, Model: sess.Model()})
+}
+
+// Endpoint of a profile by name with the model, the default for an empty or unknown name and the default with its
+// model swapped for the name of the default profile
+func (a *App) EndpointNamed(ctx context.Context, profile, model string) (Endpoint, error) {
+	if profile == "" {
+		return a.Primary, nil
+	}
+	if profile == a.Primary.Profile.Name {
+		return withModel(a.Primary, model), nil
+	}
+	if _, ok := a.FindProfile(profile); !ok {
+		return a.Primary, nil
+	}
+	return a.open(ctx, Target{Profile: profile, Model: model})
 }
 
 // Endpoint with the model swapped for another the same profile serves, looked up in the catalog
@@ -615,9 +643,31 @@ func (a *App) Fork(l *Live, n int) (*Live, error) {
 	if a.Busy(l) {
 		return nil, errors.New("harness: an agent is still working")
 	}
-	f := l.Session.Fork()
+	return a.fork(l.Session, l.Endpoint, n)
+}
+
+// Opens a full fork of a stored session, the open one when it is open here, without taking the source from another process
+func (a *App) ForkStored(ctx context.Context, id string) (*Live, error) {
+	if l := a.LiveByID(id); l != nil {
+		return a.Fork(l, l.Session.Len())
+	}
+	sess, err := a.Store.Load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	ep, err := a.endpointFor(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
+	return a.fork(sess, ep, sess.Len())
+}
+
+// Opens a copy of the session cut at n entries as a session of this project and writes it to the store
+func (a *App) fork(sess *session.Session, ep Endpoint, n int) (*Live, error) {
+	f := sess.Fork()
 	f.Truncate(n)
-	nl, err := a.live(f, l.Endpoint)
+	f.Label(session.ProjectLabel, a.Root)
+	nl, err := a.live(f, ep)
 	if err != nil {
 		return nil, err
 	}
@@ -633,7 +683,7 @@ func (a *App) SetModelOn(l *Live, id string) {
 		a.SetDefaultModel(id)
 	}
 	if l.Session == a.Session {
-		a.Meter.SetCatalog(l.Endpoint.Catalog, l.Endpoint.Profile.Name)
+		a.track(l.Endpoint)
 	}
 }
 
@@ -649,13 +699,18 @@ func (a *App) SetEndpointOn(ctx context.Context, l *Live, name string, ep Endpoi
 		return errors.New("harness: an agent is still working")
 	}
 	was := l.Endpoint.Profile.Ghost
+	if was && !ep.Profile.Ghost {
+		if err := a.Store.Lease(l.Session.ID()); err != nil {
+			return err
+		}
+	}
 	l.Endpoint = ep
 	l.SetThinking(ep.Profile.ShowsThinking())
 	l.Session.SetModel(ep.Model)
 	l.Session.Label(profileLabel, ep.Profile.Name)
 	a.SetDefaultEndpoint(name, ep)
 	if l.Session == a.Session {
-		a.Meter.SetCatalog(ep.Catalog, ep.Profile.Name)
+		a.track(ep)
 	}
 	switch {
 	case ep.Profile.Ghost && !was:
@@ -678,6 +733,7 @@ func (a *App) forget(ctx context.Context, s *session.Session) error {
 			errs = append(errs, a.Store.Delete(ctx, in.ID))
 		}
 	}
+	a.Store.Unlease(s.ID())
 	return errors.Join(errs...)
 }
 
@@ -724,12 +780,13 @@ func (a *App) ProfileInUse(name string) bool {
 	return false
 }
 
-// Writes an open session that holds anything and forgets it, selecting another when it was the selected one
+// Writes an open session that holds anything, gives its lease back and forgets it, selecting another when it was the selected one
 func (a *App) Release(l *Live) error {
 	if a.Busy(l) {
 		return errors.New("harness: an agent is still working")
 	}
 	a.Saver.Flush(l.Session)
+	a.Store.Unlease(l.Session.ID())
 	a.mu.Lock()
 	kept := a.lives[:0]
 	for _, have := range a.lives {
@@ -753,7 +810,7 @@ func (a *App) Release(l *Live) error {
 func (a *App) Select(l *Live) {
 	a.Session, a.Facts, a.Missions = l.Session, l.Facts, l.Missions
 	a.Control.Missions = l.Missions
-	a.Meter.SetCatalog(l.Endpoint.Catalog, l.Endpoint.Profile.Name)
+	a.track(l.Endpoint)
 }
 
 // Open sessions in open order
@@ -823,6 +880,14 @@ func (a *App) FactsFor(ctx context.Context) *facts.Store {
 		return l.Facts
 	}
 	return a.Facts
+}
+
+// Session of the calling run, the selected one outside a run
+func (a *App) SessionFor(ctx context.Context) *session.Session {
+	if l := a.LiveOfRun(RunFrom(ctx)); l != nil {
+		return l.Session
+	}
+	return a.Session
 }
 
 // Mission store the calling run plans into, the selected one outside a run

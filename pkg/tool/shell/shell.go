@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,7 +56,7 @@ type Options struct {
 
 const (
 	// Bytes of output kept per foreground command
-	maxOutput = 30000
+	maxOutput = 20000
 	// Bytes of output kept per background job
 	maxJobOutput = 1 << 20
 	// Finished background jobs remembered before the oldest is forgotten
@@ -88,6 +89,8 @@ type Output struct {
 	ExitCode int
 	// Exit code of every stage of the last pipeline the command ran, empty when it ran none
 	Pipeline []int
+	// Command name of every stage of that pipeline
+	Commands []string
 	Dir      string
 	TimedOut bool
 	// The command ended the shell with exit
@@ -165,7 +168,7 @@ func execute(ctx context.Context, sh *shell.Shell, line string, stdout, stderr i
 	start := time.Now()
 	res := sh.Run(rctx, line, stdout, stderr)
 	timedOut := res.Killed && errors.Is(rctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
-	return Output{ExitCode: res.ExitCode, Pipeline: res.Pipeline, Dir: res.Dir, TimedOut: timedOut, Exited: res.Exited, Duration: time.Since(start)}
+	return Output{ExitCode: res.ExitCode, Pipeline: res.Pipeline, Commands: res.Commands, Dir: res.Dir, TimedOut: timedOut, Exited: res.Exited, Duration: time.Since(start)}
 }
 
 // Background jobs started so far, oldest first
@@ -257,7 +260,7 @@ func (c *capture) String() string {
 	if c.dropped == 0 {
 		return string(c.head) + string(c.tail)
 	}
-	return fmt.Sprintf("%s\n[%d bytes omitted]\n%s", c.head, c.dropped, c.tail)
+	return fmt.Sprintf("%s\n[%d of %d bytes omitted from the middle, narrow the command to see them]\n%s", c.head, c.dropped, len(c.head)+c.dropped+len(c.tail), c.tail)
 }
 
 // Writer that forwards every chunk to a progress reporter under a stream name
@@ -286,8 +289,8 @@ func (s *Shell) Command() tool.Tool { return command{s} }
 func (b command) Definition() protocol.Tool {
 	return protocol.Tool{
 		Name: ShellName,
-		Description: fmt.Sprintf("Runs a command line in %s, one persistent shell shared by every call, so variables, functions, aliases and the working directory carry over between calls. Builtins run inside the harness and only the programs a line names are started. Stdin is closed. A pipeline exits with the code of its last command, and the code of every stage is listed when an earlier stage failed. %s Output is cut to %d bytes keeping the start and the end. A timeout kills every process the command started. With run_in_background the call returns a job id for ShellOutput and KillShell, the job running on a copy of the shell state at that moment.",
-			shell.Dialect, b.opts.limits(), maxOutput),
+		Description: fmt.Sprintf("Runs a command line in %s, one persistent shell shared by every call, so variables, functions, aliases and the working directory carry over between calls. The builtins %s run inside the harness and every other command starts the program of that name found on PATH. Stdin is closed. A pipeline exits with the code of its last command, and the code of every stage is listed when an earlier stage failed, exit 1 from grep, diff and their kin counting as no match rather than failure. A glob that matches nothing reaches the program as written. %s Output is cut to %d bytes keeping the start and the end. A timeout kills every process the command started. With run_in_background the call returns a job id for ShellOutput and KillShell, the job running on a copy of the shell state at that moment.",
+			shell.Dialect, strings.Join(shell.Builtins, " "), b.opts.limits(), maxOutput),
 		Parameters: json.RawMessage(commandSchema),
 	}
 }
@@ -355,7 +358,7 @@ func render(stdout, stderr string, out Output, timeout time.Duration) tool.Resul
 	case out.ExitCode != 0:
 		fmt.Fprintf(&sb, "\n[exit code %d]", out.ExitCode)
 	}
-	if earlierStageFailed(out.Pipeline) {
+	if earlierStageFailed(out.Pipeline, out.Commands) {
 		fmt.Fprintf(&sb, "\n[pipeline exit codes %s, an earlier command failed]", joinInts(out.Pipeline))
 	}
 	res := tool.Text(sb.String())
@@ -364,11 +367,19 @@ func render(stdout, stderr string, out Output, timeout time.Duration) tool.Resul
 }
 
 // Reports whether a stage before the last one exited nonzero
-func earlierStageFailed(codes []int) bool {
+// Programs whose exit code 1 answers no match or no difference rather than reporting a failure
+var informational = map[string]bool{"grep": true, "egrep": true, "fgrep": true, "rg": true, "ag": true, "ack": true, "diff": true, "cmp": true, "test": true, "[": true}
+
+// Reports a stage before the last that failed, exit 1 from a search or compare being a plain answer
+func earlierStageFailed(codes []int, names []string) bool {
 	for i, c := range codes {
-		if i < len(codes)-1 && c != 0 {
-			return true
+		if i == len(codes)-1 || c == 0 {
+			continue
 		}
+		if c == 1 && i < len(names) && informational[filepath.Base(names[i])] {
+			continue
+		}
+		return true
 	}
 	return false
 }
