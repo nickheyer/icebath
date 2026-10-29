@@ -1,0 +1,63 @@
+name: winget
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to submit, the latest release when empty
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  submit:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - name: Require the winget token
+        run: if (-not $env:WINGET_TOKEN) { Write-Host "::error::repository secret WINGET_TOKEN is not set"; exit 1 }
+      - name: Require a green release run for the tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          $tag = $env:INPUT_TAG
+          if (-not $tag) { $tag = gh release view -R $env:GITHUB_REPOSITORY --json tagName -q .tagName; if ($LASTEXITCODE -ne 0) { exit 1 } }
+          if ($tag -notmatch '^v\d') { throw "'$tag' is not a release tag" }
+          $green = gh run list -R $env:GITHUB_REPOSITORY -w release.yml -b $tag --json conclusion -q '[.[] | select(.conclusion == "success")] | length'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ([int]$green -lt 1) { throw "no release workflow run for $tag has succeeded, rerun its failed jobs first" }
+          "TAG=$tag" >> $env:GITHUB_ENV
+          "VERSION=$($tag.TrimStart('v'))" >> $env:GITHUB_ENV
+      - name: Download the manifests from the release
+        run: gh release download $env:TAG -R $env:GITHUB_REPOSITORY -p 'nickheyer.icebath*.yaml' -D "$env:RUNNER_TEMP/manifests"
+      - name: Open the pull request
+        run: |
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile "$env:RUNNER_TEMP/wingetcreate.exe"
+          $kind = 'New version'
+          try { Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:GH_TOKEN" } https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/n/nickheyer/icebath | Out-Null }
+          catch { if ($_.Exception.Response.StatusCode -ne 404) { throw }; $kind = 'New package' }
+          $out = & "$env:RUNNER_TEMP/wingetcreate.exe" submit --no-open --token $env:WINGET_TOKEN --prtitle "${kind}: nickheyer.icebath version $env:VERSION" "$env:RUNNER_TEMP/manifests" 2>&1 | ForEach-Object { "$_" }
+          $out | Write-Host
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $url = [regex]::Matches(($out -join "`n"), 'https://github\.com/microsoft/winget-pkgs/pull/\d+') | Select-Object -Last 1 -ExpandProperty Value
+          if (-not $url) { throw 'wingetcreate did not report a pull request URL' }
+          "PR_URL=$url" >> $env:GITHUB_ENV
+          Write-Host "::notice::$url"
+      - name: Close the pull requests this one supersedes
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          $number = ($env:PR_URL -split '/')[-1]
+          $open = gh pr list -R microsoft/winget-pkgs --author '@me' --state open --search 'nickheyer.icebath in:title' --json number | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          foreach ($pr in $open | Where-Object { "$($_.number)" -ne $number }) {
+            gh pr close $pr.number -R microsoft/winget-pkgs -c "Superseded by #$number"
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }

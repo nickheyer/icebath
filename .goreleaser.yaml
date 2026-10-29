@@ -39,6 +39,8 @@ release:
   github:
     owner: nickheyer
     name: icebath
+  extra_files:
+    - glob: dist/winget/manifests/**/*.yaml
 
 nfpms:
   - id: packages
@@ -148,21 +150,10 @@ winget:
     copyright: Copyright (c) 2026 Nicholas W. Heyer
     release_notes_url: https://github.com/nickheyer/icebath/releases/tag/{{ .Tag }}
     tags: [cli, tui, agent, ai, llm]
-    commit_author:
-      name: nickheyer
-      email: nick@heyer.app
+    skip_upload: true
     repository:
       owner: nickheyer
       name: winget-pkgs
-      branch: "icebath-{{ .Version }}"
-      token: "{{ .Env.WINGET_TOKEN }}"
-      pull_request:
-        enabled: true
-        token: "{{ .Env.WINGET_TOKEN }}"
-        base:
-          owner: microsoft
-          name: winget-pkgs
-          branch: master
 
 aurs:
   - name: icebath-bin
