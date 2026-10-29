@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
@@ -23,6 +24,12 @@ import (
 )
 
 var version = "dev"
+
+func init() {
+	if info, ok := debug.ReadBuildInfo(); ok && version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		version = info.Main.Version
+	}
+}
 
 type settings []string
 

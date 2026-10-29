@@ -1,0 +1,62 @@
+name: site
+
+on:
+  push:
+    branches: [main]
+    paths: [site/**]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download the release packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          tag=${TAG:-$(gh release view --json tagName -q .tagName)}
+          gh release download "$tag" -D "$RUNNER_TEMP/packages" -p '*.deb' -p '*.rpm' -p '*.apk'
+          echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
+      - name: Build the signed repositories
+        env:
+          REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
+          APK_RSA_KEY: ${{ secrets.APK_RSA_KEY }}
+        run: |
+          printf '%s\n' "$REPO_GPG_KEY" > "$RUNNER_TEMP/repo-gpg.key"
+          printf '%s\n' "$APK_RSA_KEY" > "$RUNNER_TEMP/icebath.rsa"
+          REPO_GPG_KEY_FILE="$RUNNER_TEMP/repo-gpg.key" APK_RSA_KEY_FILE="$RUNNER_TEMP/icebath.rsa" \
+            site/build.sh "$RUNNER_TEMP/packages" dist/site
+      - uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: 4.155.0
+          workingDirectory: site
+          command: deploy --var VERSION:${{ env.VERSION }}
+      - name: Check the live site
+        run: |
+          curl -fsS -A Mozilla/5.0 -o page.html https://icebath.app/
+          grep -F "v$VERSION" page.html
+          curl -fsS -o script.sh https://icebath.app/
+          head -1 script.sh | grep -Fx '#!/bin/sh'
+          curl -fsS https://icebath.app/apt/dists/stable/main/binary-amd64/Packages | grep -Fx "Version: $VERSION"
+          curl -fsSIL "https://icebath.app/apt/pool/icebath_${VERSION}_amd64.deb" | grep -E '^HTTP/[0-9.]+ 200'
+          curl -fsS https://icebath.app/rpm/repodata/repomd.xml.asc | grep -F 'BEGIN PGP SIGNATURE'
+          curl -fsSIL "https://icebath.app/apk/x86_64/icebath-${VERSION}.apk" | grep -E '^HTTP/[0-9.]+ 200'

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>icebath</id>
+    <version>@VERSION@</version>
+    <title>icebath</title>
+    <authors>Nicholas W. Heyer</authors>
+    <owners>nickheyer</owners>
+    <projectUrl>https://icebath.app</projectUrl>
+    <projectSourceUrl>https://github.com/nickheyer/icebath</projectSourceUrl>
+    <packageSourceUrl>https://github.com/nickheyer/icebath/tree/main/packaging/chocolatey</packageSourceUrl>
+    <bugTrackerUrl>https://github.com/nickheyer/icebath/issues</bugTrackerUrl>
+    <licenseUrl>https://github.com/nickheyer/icebath/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <iconUrl>https://icebath.app/icon.png</iconUrl>
+    <tags>icebath cli tui agent ai llm terminal</tags>
+    <summary>Tiling agentic harness and netrunner toolkit</summary>
+    <description>A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.</description>
+    <releaseNotes>https://github.com/nickheyer/icebath/releases/tag/v@VERSION@</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

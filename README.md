@@ -34,8 +34,22 @@
 ## ▍ Install
 
 ```sh
+curl -fsSL icebath.app | sh
+irm icebath.app | iex
+brew install nickheyer/tap/icebath
+yay -S icebath-bin
+winget install nickheyer.icebath
+scoop bucket add nickheyer https://github.com/nickheyer/scoop-bucket && scoop install nickheyer/icebath
+choco install icebath
+sudo snap install icebath --classic
+pipx install icebath-cli
+nix profile add github:nickheyer/nixpkg#icebath
+mise use -g github:nickheyer/icebath
+docker run -it --rm -v "$PWD:/work" ghcr.io/nickheyer/icebath
 go install github.com/nickheyer/icebath/cmd/icebath@latest
 ```
+
+apt, dnf and apk at [icebath.app](https://icebath.app)
 
 <br />
 

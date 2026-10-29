@@ -1,0 +1,13 @@
+{
+  "name": "icebath",
+  "main": "worker.js",
+  "account_id": "c55165de3f6779b09770686ed067f5a3",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "../dist/site",
+    "binding": "ASSETS",
+    "run_worker_first": ["/"]
+  },
+  "routes": [{ "pattern": "icebath.app", "custom_domain": true }],
+  "vars": { "RELEASES": "https://github.com/nickheyer/icebath/releases/download" }
+}

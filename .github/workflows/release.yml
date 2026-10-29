@@ -1,23 +1,312 @@
 name: release
+
 on:
   push:
     tags: ["v*"]
+
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  release:
+  preflight:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: |
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
-            os=${target%/*} arch=${target#*/} ext=
-            [ "$os" = windows ] && ext=.exe
-            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" -o "dist/icebath-$os-$arch$ext" ./cmd/icebath
-          done
-      - run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
+      - name: Require every publishing secret
         env:
-          GH_TOKEN: ${{ github.token }}
+          AUR_KEY: ${{ secrets.AUR_KEY }}
+          HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
+          SCOOP_BUCKET_KEY: ${{ secrets.SCOOP_BUCKET_KEY }}
+          NIXPKG_KEY: ${{ secrets.NIXPKG_KEY }}
+          REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
+          APK_RSA_KEY: ${{ secrets.APK_RSA_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          missing=0
+          for name in AUR_KEY HOMEBREW_TAP_KEY SCOOP_BUCKET_KEY NIXPKG_KEY REPO_GPG_KEY APK_RSA_KEY \
+            CLOUDFLARE_API_TOKEN WINGET_TOKEN SNAPCRAFT_STORE_CREDENTIALS CHOCOLATEY_API_KEY PYPI_API_TOKEN; do
+            [ -n "${!name}" ] || { echo "::error::repository secret $name is not set"; missing=1; }
+          done
+          exit $missing
+      - name: Require icebath in the nixpkg package set
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/nickheyer/nixpkg/contents/default.nix -q .content | base64 -d | grep -F 'pkgs/icebath' \
+            || { echo "::error::nickheyer/nixpkg default.nix does not call ./pkgs/icebath"; exit 1; }
+      - run: go vet ./...
+      - run: go test ./...
+
+  goreleaser:
+    needs: preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: sudo snap install snapcraft --classic
+      - name: Write package signing keys
+        env:
+          REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
+          APK_RSA_KEY: ${{ secrets.APK_RSA_KEY }}
+        run: |
+          printf '%s\n' "$REPO_GPG_KEY" > "$RUNNER_TEMP/repo-gpg.key"
+          printf '%s\n' "$APK_RSA_KEY" > "$RUNNER_TEMP/icebath.rsa"
+          echo "REPO_GPG_KEY_FILE=$RUNNER_TEMP/repo-gpg.key" >> "$GITHUB_ENV"
+          echo "APK_RSA_KEY_FILE=$RUNNER_TEMP/icebath.rsa" >> "$GITHUB_ENV"
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: v2.19.0
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUR_KEY: ${{ secrets.AUR_KEY }}
+          HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
+          SCOOP_BUCKET_KEY: ${{ secrets.SCOOP_BUCKET_KEY }}
+          NIXPKG_KEY: ${{ secrets.NIXPKG_KEY }}
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+      - name: Require the winget pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count=$(gh pr list -R microsoft/winget-pkgs --head "icebath-${GITHUB_REF_NAME#v}" --state all \
+            --json author -q '[.[] | select(.author.login == "nickheyer")] | length')
+          [ "$count" -gt 0 ] || { echo "::error::no winget-pkgs pull request for nickheyer.icebath ${GITHUB_REF_NAME#v}"; exit 1; }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snaps
+          path: dist/*.snap
+          if-no-files-found: error
+
+  snap:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: snaps
+          path: snaps
+      - run: sudo snap install snapcraft --classic
+      - name: Upload to the stable channel
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: for s in snaps/*.snap; do snapcraft upload --release=stable "$s"; done
+
+  chocolatey:
+    needs: goreleaser
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - run: gh release download $env:GITHUB_REF_NAME -p checksums.txt -D $env:RUNNER_TEMP
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: ./packaging/chocolatey/pack.ps1 -Tag $env:GITHUB_REF_NAME -Checksums "$env:RUNNER_TEMP/checksums.txt" -Out "$env:RUNNER_TEMP/nupkg"
+      - name: Install the package before pushing it
+        run: |
+          choco install icebath --source "$env:RUNNER_TEMP/nupkg" -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $got = & C:\ProgramData\chocolatey\bin\icebath.exe -version
+          if ($got -ne "icebath $env:GITHUB_REF_NAME") { throw "chocolatey installed '$got'" }
+      - name: Push to the community repository
+        env:
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        run: |
+          $nupkg = (Get-ChildItem "$env:RUNNER_TEMP/nupkg/*.nupkg").FullName
+          choco push $nupkg --source https://push.chocolatey.org/ --api-key $env:CHOCOLATEY_API_KEY
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+  pypi:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          gh release download "$GITHUB_REF_NAME" -D "$RUNNER_TEMP/bin" \
+            -p icebath-linux-amd64 -p icebath-linux-arm64 \
+            -p icebath-darwin-amd64 -p icebath-darwin-arm64 \
+            -p icebath-windows-amd64.exe -p icebath-windows-arm64.exe
+          python3 -I packaging/pypi/wheels.py "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/bin" "$RUNNER_TEMP/wheels" LICENSE
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: pypa/gh-action-pypi-publish@v1.14.3
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: ${{ runner.temp }}/wheels
+
+  site:
+    needs: goreleaser
+    uses: ./.github/workflows/site.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
+
+  verify-snap:
+    needs: snap
+    runs-on: ubuntu-latest
+    steps:
+      - name: snap
+        run: |
+          for _ in $(seq 20); do sudo snap install icebath --classic && break; sleep 15; done
+          /snap/bin/icebath -version | grep -Fx "icebath $GITHUB_REF_NAME"
+
+  verify-docker:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    env:
+      WANT: icebath ${{ github.ref_name }}
+    steps:
+      - name: docker
+        run: |
+          docker run --rm "ghcr.io/nickheyer/icebath:${GITHUB_REF_NAME#v}" -version | grep -Fx "$WANT"
+          docker run --rm ghcr.io/nickheyer/icebath:latest -version | grep -Fx "$WANT"
+
+  verify-linux:
+    needs: [goreleaser, pypi, site]
+    runs-on: ubuntu-latest
+    env:
+      WANT: icebath ${{ github.ref_name }}
+    steps:
+      - name: apt
+        run: |
+          docker run --rm debian:trixie bash -ec '
+            apt-get update -qq && apt-get install -qq -y curl ca-certificates > /dev/null
+            install -dm755 /etc/apt/keyrings
+            curl -fsSL https://icebath.app/keys/icebath.gpg -o /etc/apt/keyrings/icebath.gpg
+            echo "deb [signed-by=/etc/apt/keyrings/icebath.gpg] https://icebath.app/apt stable main" > /etc/apt/sources.list.d/icebath.list
+            apt-get update -qq && apt-get install -qq -y icebath > /dev/null
+            icebath -version' | tail -1 | grep -Fx "$WANT"
+      - name: dnf
+        run: |
+          docker run --rm fedora:latest bash -ec '
+            curl -fsSL https://icebath.app/rpm/icebath.repo -o /etc/yum.repos.d/icebath.repo
+            dnf -y -q install icebath > /dev/null
+            icebath -version' | tail -1 | grep -Fx "$WANT"
+      - name: apk
+        run: |
+          docker run --rm alpine:latest sh -ec '
+            wget -qO /etc/apk/keys/icebath.rsa.pub https://icebath.app/keys/icebath.rsa.pub
+            echo https://icebath.app/apk >> /etc/apk/repositories
+            apk add -q icebath
+            icebath -version' | tail -1 | grep -Fx "$WANT"
+      - name: install.sh
+        run: docker run --rm debian:trixie bash -ec 'apt-get update -qq && apt-get install -qq -y curl ca-certificates > /dev/null; curl -fsSL icebath.app | sh > /dev/null; ~/.local/bin/icebath -version' | tail -1 | grep -Fx "$WANT"
+      - name: homebrew
+        run: docker run --rm homebrew/brew:latest bash -ec 'brew update -q > /dev/null; brew install -q nickheyer/tap/icebath > /dev/null; icebath -version' | tail -1 | grep -Fx "$WANT"
+      - name: aur
+        run: |
+          for pkg in icebath-bin icebath; do
+            docker run --rm archlinux:latest bash -ec "
+              pacman -Syu --noconfirm --needed -q base-devel git go > /dev/null
+              useradd -m builder
+              su builder -c 'cd ~ && git clone -q https://aur.archlinux.org/$pkg.git && cd $pkg && makepkg --noconfirm > /dev/null'
+              pacman -U --noconfirm /home/builder/$pkg/*.pkg.tar.zst > /dev/null
+              icebath -version" | tail -1 | grep -Fx "$WANT"
+          done
+      - uses: cachix/install-nix-action@v31
+      - name: nix
+        run: nix run --refresh github:nickheyer/nixpkg#icebath -- -version | grep -Fx "$WANT"
+      - name: pipx
+        run: |
+          for _ in $(seq 20); do pipx install "icebath-cli==${GITHUB_REF_NAME#v}" && break; sleep 15; done
+          "$(pipx environment --value PIPX_BIN_DIR)/icebath" -version | grep -Fx "$WANT"
+          pipx uninstall icebath-cli
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: go install
+        run: |
+          GOBIN="$RUNNER_TEMP/gobin" go install "github.com/nickheyer/icebath/cmd/icebath@$GITHUB_REF_NAME"
+          "$RUNNER_TEMP/gobin/icebath" -version | grep -Fx "$WANT"
+      - name: mise
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsSL https://mise.run | sh
+          ~/.local/bin/mise exec "github:nickheyer/icebath@${GITHUB_REF_NAME#v}" -- icebath -version | tail -1 | grep -Fx "$WANT"
+
+  verify-macos:
+    needs: [goreleaser, pypi, site]
+    runs-on: macos-latest
+    env:
+      WANT: icebath ${{ github.ref_name }}
+    steps:
+      - name: homebrew
+        run: |
+          brew install nickheyer/tap/icebath
+          "$(brew --prefix)/bin/icebath" -version | grep -Fx "$WANT"
+          if xattr "$(brew --prefix)/Caskroom/icebath/${GITHUB_REF_NAME#v}/icebath" | grep -q com.apple.quarantine; then
+            echo "::error::the cask left com.apple.quarantine on icebath"
+            exit 1
+          fi
+          brew uninstall --cask icebath
+      - name: install.sh
+        run: |
+          curl -fsSL icebath.app | sh
+          ~/.local/bin/icebath -version | grep -Fx "$WANT"
+      - name: pipx
+        run: |
+          for _ in $(seq 20); do pipx install --force "icebath-cli==${GITHUB_REF_NAME#v}" && break; sleep 15; done
+          "$(pipx environment --value PIPX_BIN_DIR)/icebath" -version | grep -Fx "$WANT"
+
+  verify-windows:
+    needs: [goreleaser, pypi, site]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      WANT: icebath ${{ github.ref_name }}
+    steps:
+      - name: scoop
+        run: |
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          $env:Path = "$env:USERPROFILE\scoop\shims;$env:Path"
+          scoop bucket add nickheyer https://github.com/nickheyer/scoop-bucket
+          scoop install nickheyer/icebath
+          $got = & "$env:USERPROFILE\scoop\shims\icebath.exe" -version
+          if ($got -ne $env:WANT) { throw "scoop installed '$got'" }
+      - name: install.ps1
+        run: |
+          irm https://icebath.app/install.ps1 | iex
+          $got = & "$env:LOCALAPPDATA\Programs\icebath\icebath.exe" -version
+          if ($got -ne $env:WANT) { throw "install.ps1 installed '$got'" }
+      - name: powershell user agent
+        run: |
+          $script = Invoke-RestMethod https://icebath.app
+          if ($script -notmatch 'Installs the icebath release binary') { throw 'icebath.app did not serve install.ps1 to PowerShell' }
+      - name: pipx
+        run: |
+          foreach ($i in 1..20) { pipx install --force "icebath-cli==$($env:GITHUB_REF_NAME.TrimStart('v'))"; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep 15 }
+          $got = & "$(pipx environment --value PIPX_BIN_DIR)\icebath.exe" -version
+          if ($got -ne $env:WANT) { throw "pipx installed '$got'" }
