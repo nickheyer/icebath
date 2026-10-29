@@ -33,13 +33,13 @@ jobs:
           APK_RSA_KEY: ${{ secrets.APK_RSA_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+          # SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           missing=0
           for name in AUR_KEY HOMEBREW_TAP_KEY SCOOP_BUCKET_KEY NIXPKG_KEY REPO_GPG_KEY APK_RSA_KEY \
-            CLOUDFLARE_API_TOKEN WINGET_TOKEN SNAPCRAFT_STORE_CREDENTIALS CHOCOLATEY_API_KEY PYPI_API_TOKEN; do
+            CLOUDFLARE_API_TOKEN WINGET_TOKEN CHOCOLATEY_API_KEY PYPI_API_TOKEN; do
             [ -n "${!name}" ] || { echo "::error::repository secret $name is not set"; missing=1; }
           done
           exit $missing
@@ -72,7 +72,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - run: sudo snap install snapcraft --classic
+      # - run: sudo snap install snapcraft --classic
       - name: Write package signing keys
         env:
           REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
@@ -100,25 +100,25 @@ jobs:
           count=$(gh pr list -R microsoft/winget-pkgs --head "icebath-${GITHUB_REF_NAME#v}" --state all \
             --json author -q '[.[] | select(.author.login == "nickheyer")] | length')
           [ "$count" -gt 0 ] || { echo "::error::no winget-pkgs pull request for nickheyer.icebath ${GITHUB_REF_NAME#v}"; exit 1; }
-      - uses: actions/upload-artifact@v7
-        with:
-          name: snaps
-          path: dist/*.snap
-          if-no-files-found: error
+      # - uses: actions/upload-artifact@v7
+      #   with:
+      #     name: snaps
+      #     path: dist/*.snap
+      #     if-no-files-found: error
 
-  snap:
-    needs: goreleaser
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: snaps
-          path: snaps
-      - run: sudo snap install snapcraft --classic
-      - name: Upload to the stable channel
-        env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        run: for s in snaps/*.snap; do snapcraft upload --release=stable "$s"; done
+  # snap:
+  #   needs: goreleaser
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/download-artifact@v8
+  #       with:
+  #         name: snaps
+  #         path: snaps
+  #     - run: sudo snap install snapcraft --classic
+  #     - name: Upload to the stable channel
+  #       env:
+  #         SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+  #       run: for s in snaps/*.snap; do snapcraft upload --release=stable "$s"; done
 
   chocolatey:
     needs: goreleaser
@@ -171,14 +171,14 @@ jobs:
       tag: ${{ github.ref_name }}
     secrets: inherit
 
-  verify-snap:
-    needs: snap
-    runs-on: ubuntu-latest
-    steps:
-      - name: snap
-        run: |
-          for _ in $(seq 20); do sudo snap install icebath --classic && break; sleep 15; done
-          /snap/bin/icebath -version | grep -Fx "icebath $GITHUB_REF_NAME"
+  # verify-snap:
+  #   needs: snap
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: snap
+  #       run: |
+  #         for _ in $(seq 20); do sudo snap install icebath --classic && break; sleep 15; done
+  #         /snap/bin/icebath -version | grep -Fx "icebath $GITHUB_REF_NAME"
 
   verify-docker:
     needs: goreleaser

@@ -75,20 +75,20 @@ dockers_v2:
       org.opencontainers.image.licenses: MIT
       org.opencontainers.image.version: "{{ .Version }}"
 
-snapcrafts:
-  - ids: [icebath]
-    name: icebath
-    title: icebath
-    summary: Tiling agentic harness and netrunner toolkit
-    description: A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
-    license: MIT
-    base: core24
-    grade: stable
-    confinement: classic
-    publish: false
-    apps:
-      icebath:
-        command: icebath
+# snapcrafts:
+#   - ids: [icebath]
+#     name: icebath
+#     title: icebath
+#     summary: Tiling agentic harness and netrunner toolkit
+#     description: A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
+#     license: MIT
+#     base: core24
+#     grade: stable
+#     confinement: classic
+#     publish: false
+#     apps:
+#       icebath:
+#         command: icebath
 
 homebrew_casks:
   - name: icebath

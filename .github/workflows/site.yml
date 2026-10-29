@@ -52,6 +52,7 @@ jobs:
           command: deploy --var VERSION:${{ env.VERSION }}
       - name: Check the live site
         run: |
+          for _ in $(seq 20); do curl -fsS -A Mozilla/5.0 -o page.html https://icebath.app/ && grep -Fq "v$VERSION" page.html && break; sleep 15; done
           curl -fsS -A Mozilla/5.0 -o page.html https://icebath.app/
           grep -F "v$VERSION" page.html
           curl -fsS -o script.sh https://icebath.app/
