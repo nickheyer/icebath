@@ -277,6 +277,7 @@ func (m *Model) placeWorkspaces(t template, eps map[string]harness.Endpoint, spa
 		made[mark] = live.Session.ID()
 		return made[mark]
 	}
+	terms := map[string]string{}
 	rename := func(key string) string {
 		kind, rest, _ := strings.Cut(key, ":")
 		switch kind {
@@ -287,6 +288,12 @@ func (m *Model) placeWorkspaces(t template, eps map[string]harness.Endpoint, spa
 			return ""
 		case "mission", "agent", "approval":
 			return ""
+		case "terminal":
+			if fresh, ok := terms[rest]; ok {
+				return fresh
+			}
+			terms[rest] = m.terminalKey()
+			return terms[rest]
 		}
 		if m.panel(key) == nil || m.wm.Has(key) {
 			return ""

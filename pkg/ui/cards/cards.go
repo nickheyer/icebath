@@ -52,6 +52,8 @@ type Env struct {
 	Root string
 	// Extensions linked into the binary with what each provides
 	Extensions func() []Extension
+	// Version of the program, handed to the shells of terminal windows
+	Version string
 }
 
 // Loaded extension as the config tab lists it
@@ -180,6 +182,18 @@ type MissionRemoveMsg struct {
 // Request to show the thinking of a session when it is hidden and hide it when shown
 type ThinkingMsg struct {
 	Session string
+}
+
+// Shell line typed with a leading bang, to run in the terminal window beside the session
+type RunMsg struct {
+	Session string
+	Line    string
+}
+
+// Setting the app applied, sent to every card so those showing it follow
+type SettingChangedMsg struct {
+	Key   string
+	Value string
 }
 
 // Row a list movement action leaves the cursor on, among n rows with page rows in view

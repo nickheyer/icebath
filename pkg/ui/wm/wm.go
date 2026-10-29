@@ -217,15 +217,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.after(m.handleMouse(msg))
 	case tea.FocusMsg:
 		m.blurred = false
-		return m, m.wake()
+		return m, tea.Batch(m.sendFocused(msg), m.wake())
 	case tea.BlurMsg:
 		m.blurred = true
-		return m, nil
+		return m, m.sendFocused(msg)
 	case Intent:
 		return m, m.after(m.handleIntent(msg))
 	case toastTickMsg:
 		m.pruneToasts()
 		return m, m.wake()
+	case Addressed:
+		if e := m.entryOf(msg.Addressee()); e != nil {
+			return m, m.after(m.send(e, msg))
+		}
+		if c := msg.Addressee(); c != nil {
+			c.Update(msg)
+		}
+		return m, nil
 	}
 	return m, m.after(m.broadcast(msg))
 }

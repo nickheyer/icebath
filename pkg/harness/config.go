@@ -99,6 +99,25 @@ type ToolsConfig struct {
 	Disabled []string `json:"disabled,omitempty"`
 }
 
+// Terminal window settings
+type TerminalConfig struct {
+	// Command line the shell of a terminal window runs, the login shell of the user when empty
+	Shell string `json:"shell,omitempty"`
+	// Rows a terminal window keeps above its screen, nil for the default
+	Scrollback *int `json:"scrollback,omitempty"`
+}
+
+// Rows a terminal window keeps above its screen unless configured
+const DefaultScrollback = 10000
+
+// Rows the terminal keeps, the default while unset
+func (t TerminalConfig) Rows() int {
+	if t.Scrollback != nil {
+		return *t.Scrollback
+	}
+	return DefaultScrollback
+}
+
 // Appearance settings
 type UIConfig struct {
 	// Theme name such as blackwall, light, contrast or plain
@@ -134,6 +153,7 @@ type Config struct {
 	Web         WebConfig                  `json:"web,omitempty"`
 	Tools       ToolsConfig                `json:"tools,omitempty"`
 	UI          UIConfig                   `json:"ui,omitempty"`
+	Terminal    TerminalConfig             `json:"terminal,omitempty"`
 	// Values of the settings extensions register, by key
 	Settings map[string]string `json:"settings,omitempty"`
 	// Project root for hooks, rules and servers, the working directory when empty
@@ -307,6 +327,12 @@ func Merge(base, over Config) Config {
 	}
 	if over.UI.Cascade != nil {
 		out.UI.Cascade = over.UI.Cascade
+	}
+	if over.Terminal.Shell != "" {
+		out.Terminal.Shell = over.Terminal.Shell
+	}
+	if over.Terminal.Scrollback != nil {
+		out.Terminal.Scrollback = over.Terminal.Scrollback
 	}
 	if len(over.Settings) > 0 {
 		merged := make(map[string]string, len(base.Settings)+len(over.Settings))
@@ -555,6 +581,16 @@ func (c *Config) settingField(key, value string) (Field, error) {
 		}
 		c.UI.Cascade = &b
 		return Field{Path: path, Value: b}, nil
+	case "terminal_shell":
+		c.Terminal.Shell = value
+		return Field{Path: path, Value: value}, nil
+	case "terminal_scrollback":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return Field{}, fmt.Errorf("terminal_scrollback must be a non negative integer, got %q", value)
+		}
+		c.Terminal.Scrollback = &n
+		return Field{Path: path, Value: n}, nil
 	}
 	if s, ok := LookupSetting(key); ok {
 		if err := s.Validate(value); err != nil {
@@ -593,6 +629,10 @@ func settingPath(key string) ([]string, error) {
 		return []string{"pruning", "after"}, nil
 	case "theme", "motion", "cascade":
 		return []string{"ui", key}, nil
+	case "terminal_shell":
+		return []string{"terminal", "shell"}, nil
+	case "terminal_scrollback":
+		return []string{"terminal", "scrollback"}, nil
 	}
 	if name, ok := strings.CutPrefix(key, "extra."); ok && name != "" {
 		return []string{"extra", name}, nil
@@ -624,6 +664,10 @@ func (c *Config) unset(key string) {
 		c.UI.Motion = nil
 	case "cascade":
 		c.UI.Cascade = nil
+	case "terminal_shell":
+		c.Terminal.Shell = ""
+	case "terminal_scrollback":
+		c.Terminal.Scrollback = nil
 	default:
 		if _, ok := LookupSetting(key); ok {
 			values := maps.Clone(c.Settings)

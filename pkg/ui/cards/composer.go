@@ -451,6 +451,10 @@ func (c *Composer) submit() tea.Cmd {
 	c.comp = nil
 	c.quiet = ""
 	cmd := c.persist()
+	if line, ok := strings.CutPrefix(text, "!"); ok && strings.TrimSpace(line) != "" {
+		id := c.SessionID
+		return tea.Batch(cmd, func() tea.Msg { return RunMsg{Session: id, Line: strings.TrimSpace(line)} })
+	}
 	if strings.HasPrefix(text, "/") {
 		name, args, _ := strings.Cut(strings.TrimPrefix(text, "/"), " ")
 		name = strings.ToLower(strings.TrimSpace(name))

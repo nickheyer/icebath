@@ -30,6 +30,17 @@ type Theme struct {
 	Border      lipgloss.Border
 	Glyphs      Glyphs
 	Plain       bool
+	// Sixteen ANSI colors programs in a terminal paint with, a nil entry leaving the host terminal color
+	Terminal [16]color.Color
+}
+
+// Sixteen colors from their 24 bit values, dark then bright
+func palette(v ...uint32) [16]color.Color {
+	var out [16]color.Color
+	for i := 0; i < len(v) && i < 16; i++ {
+		out[i] = Hex(v[i])
+	}
+	return out
 }
 
 // Near black palette of icebath.app
@@ -51,6 +62,7 @@ func Blackwall() Theme {
 		Ring:        []color.Color{Hex(0x3b5169)},
 		Border:      IcebathBorder(),
 		Glyphs:      IcebathGlyphs(),
+		Terminal:    palette(0x18222d, 0xe3122b, 0x7fc7a5, 0xe0b35a, 0x5b8fd6, 0xb07cd8, 0x9cc7e8, 0xdfe9f2, 0x3b5169, 0xff4757, 0x9fe3c1, 0xf0cc7a, 0x7fb0f0, 0xcf9cf0, 0xbfe0f8, 0xffffff),
 	}
 }
 
@@ -72,6 +84,7 @@ func Taro() Theme {
 		Ring:        []color.Color{Hex(0x5ff1ff), Hex(0x8a7dff), Hex(0xff4fd8), Hex(0x5ff1ff)},
 		Border:      IcebathBorder(),
 		Glyphs:      IcebathGlyphs(),
+		Terminal:    palette(0x2a3654, 0xff5f6d, 0x7cff9e, 0xffc857, 0x8a7dff, 0xff4fd8, 0x5ff1ff, 0xd6def7, 0x4b5d8c, 0xff8a94, 0xa6ffbd, 0xffd98a, 0xa9a0ff, 0xff85e4, 0x9ff6ff, 0xffffff),
 	}
 }
 
@@ -94,6 +107,7 @@ func Light() Theme {
 		Ring:        []color.Color{Hex(0x7d93a9)},
 		Border:      IcebathBorder(),
 		Glyphs:      IcebathGlyphs(),
+		Terminal:    palette(0x141c26, 0xc8102e, 0x2e8b63, 0x9a6b00, 0x2f6f9f, 0x7a3fa0, 0x1d7f8f, 0x5c6b7d, 0x8a95a3, 0xd12f3f, 0x3aa077, 0xb8860b, 0x3f86bf, 0x9150c0, 0x2697ab, 0x2b3542),
 	}
 }
 
@@ -116,6 +130,7 @@ func Contrast() Theme {
 		Ring:        []color.Color{Hex(0x00ffff)},
 		Border:      lipgloss.ThickBorder(),
 		Glyphs:      IcebathGlyphs(),
+		Terminal:    palette(0x000000, 0xff0000, 0x00ff00, 0xffff00, 0x5c5cff, 0xff00ff, 0x00ffff, 0xffffff, 0x808080, 0xff5555, 0x55ff55, 0xffff55, 0x8080ff, 0xff55ff, 0x55ffff, 0xffffff),
 	}
 }
 
@@ -245,6 +260,7 @@ type Glyphs struct {
 	Settings  string
 	Config    string
 	Palette   string
+	Terminal  string
 	Card      string
 	Profiles  string
 	Models    string
@@ -334,7 +350,7 @@ type Glyphs struct {
 // Frost, signal and hazard marks in single cells, the icebath set
 func IcebathGlyphs() Glyphs {
 	return Glyphs{
-		Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "⍰", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "$", Card: "▰",
+		Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "⍰", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "$", Terminal: "❯", Card: "▰",
 		Profiles: "⍟", Models: "⟡", Rules: "§", Hooks: "↯", MCP: "⇆", Tools: "⌗", Keys: "⌥", Ext: "⧉", Flow: "⟳",
 		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Shell: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
 		Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "⍰", Child: "⟁", Attach: "⎘", Cursor: "▍", Marked: "▮",
@@ -351,7 +367,7 @@ func IcebathGlyphs() Glyphs {
 // The same marks in printable ASCII for terminals without box drawing or symbol fonts
 func ASCIIGlyphs() Glyphs {
 	return Glyphs{
-		Session: "~", Trace: "&", Agent: "&", Approval: "?", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: "$", Card: "*",
+		Session: "~", Trace: "&", Agent: "&", Approval: "?", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: "$", Terminal: ">", Card: "*",
 		Profiles: "@", Models: "o", Rules: "S", Hooks: "!", MCP: "=", Tools: "+", Keys: "k", Ext: "x", Flow: "@",
 		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Shell: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
 		Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "?", Child: "&", Attach: "+", Cursor: ">", Marked: "#",

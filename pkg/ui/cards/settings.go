@@ -44,6 +44,8 @@ func newSettings(env *Env) *settings {
 		{key: "theme", label: "theme", group: "interface", kind: choiceField, choices: theme.Names()},
 		{key: "motion", label: "motion", group: "interface", kind: numberField, lo: 0, hi: 1, step: 0.05, start: 1, help: "Animation scale, 0 snaps and 1 springs"},
 		{key: "cascade", label: "cascade", group: "interface", kind: choiceField, choices: []string{"true", "false"}, help: "Light sweep along the focused border"},
+		{key: "terminal_shell", label: "shell", group: "terminal", kind: textField, optional: true, placeholder: "$SHELL", help: "Command line a terminal window runs, the login shell when empty"},
+		{key: "terminal_scrollback", label: "scrollback", group: "terminal", kind: numberField, integer: true, optional: true, lo: 0, step: 1000, start: harness.DefaultScrollback, help: fmt.Sprintf("Rows a terminal window keeps above its screen, unset keeps %d", harness.DefaultScrollback)},
 	}
 	for _, sp := range harness.Settings() {
 		fields = append(fields, extensionField(sp))

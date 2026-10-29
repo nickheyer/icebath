@@ -36,6 +36,7 @@ const (
 	Tools      = "config.tools"
 	Keybinds   = "config.keys"
 	Extensions = "config.ext"
+	Terminal   = "terminal"
 )
 
 // ContextDocs describes each context in the keybind editor.
@@ -71,6 +72,7 @@ var ContextDocs = map[string]string{
 	Tools:      "tools tab",
 	Keybinds:   "keys tab",
 	Extensions: "extensions tab",
+	Terminal:   "terminal windows, every other key going to the shell",
 }
 
 func act(id, ctx, label, doc string, keys ...string) Action {
@@ -90,6 +92,7 @@ var registry = func() []Action {
 		overlay(act("quit", Global, "quit", "quit icebath", "ctrl+q")),
 		overlay(act("interrupt", Global, "cancel", "cancel the agent; quit if idle or pressed twice", "ctrl+c")),
 		act("session.new", Global, "new session", "open a fresh session in this workspace", "alt+n"),
+		act("terminal.new", Global, "new terminal", "open a terminal running the shell in this workspace", "alt+enter"),
 		act("session.close", Global, "close session", "close the session, storing it"),
 		act("workspace.new", Global, "new workspace", "open a workspace holding a fresh session", "alt+shift+n"),
 		act("workspace.close", Global, "close workspace", "close the workspace, storing every session in it", "alt+shift+w"),
@@ -363,6 +366,20 @@ var registry = func() []Action {
 		act("config.key.reset", Keybinds, "reset", "restore the default keybindings for this action", "r"),
 		act("config.key.detail", Keybinds, "detail", "show or hides the action details", "o"),
 		act("config.ext.detail", Extensions, "detail", "show or hides what the extension contributes", "enter", "o"),
+
+		act("terminal.copy", Terminal, "copy", "copy the selection, or the whole screen when nothing is selected", "ctrl+shift+c"),
+		act("terminal.paste", Terminal, "paste", "paste the clipboard into the shell", "ctrl+shift+v"),
+		act("terminal.search", Terminal, "search", "search the screen and the scrollback", "ctrl+shift+f"),
+		act("terminal.scroll.up", Terminal, "page up", "scroll back a page", "shift+pgup"),
+		act("terminal.scroll.down", Terminal, "page down", "scroll forward a page", "shift+pgdown"),
+		quiet(act("terminal.scroll.top", Terminal, "top", "scroll to the oldest row kept", "shift+home")),
+		quiet(act("terminal.scroll.bottom", Terminal, "bottom", "scroll back to the live screen", "shift+end")),
+		act("terminal.prompt.prev", Terminal, "previous prompt", "scroll to the previous shell prompt, for shells that mark them", "ctrl+shift+z"),
+		act("terminal.prompt.next", Terminal, "next prompt", "scroll to the next shell prompt, for shells that mark them", "ctrl+shift+x"),
+		quiet(act("terminal.select.all", Terminal, "select all", "select the screen and the scrollback", "ctrl+shift+a")),
+		act("terminal.lock", Terminal, "lock keys", "send every key to the shell, the window keys included, until pressed again", "ctrl+shift+l"),
+		act("terminal.clear", Terminal, "clear", "forget the scrollback", "ctrl+shift+k"),
+		act("terminal.restart", Terminal, "restart", "end the shell and start it again in the same directory", "ctrl+shift+r"),
 		act("kind.set", Global, "kind", "choose the kind the session runs as"),
 		act("workflow.stop", Global, "stop workflow", "choose a running workflow to stop"),
 	)

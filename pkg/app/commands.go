@@ -38,6 +38,7 @@ func (m *Model) commands() []wm.Command {
 	more := m.theme.Glyphs.Ellipsis
 	out := []wm.Command{
 		{ID: "session.new", Title: "Session: new", Run: m.newSession},
+		{ID: "terminal.new", Title: "Terminal: new", Run: func() tea.Cmd { return m.openTerminal("") }},
 		{ID: "session.close", Title: "Session: close", When: idle, Run: func() tea.Cmd { return m.closeSession(m.current()) }},
 		{ID: "workspace.new", Title: "Workspace: new", Run: m.newWorkspace},
 		{ID: "workspace.close", Title: "Workspace: close", When: func() bool { return len(m.wm.Workspaces()) > 1 }, Run: m.closeWorkspace},
@@ -127,6 +128,7 @@ func (m *Model) builtinSlash() []cards.Command {
 		{Name: "clear", Desc: "fresh session here", Action: "session.clear"},
 		{Name: "fork", Desc: "fork the session beside it", Action: "session.fork"},
 		{Name: "new", Desc: "new session here", Action: "session.new"},
+		{Name: "terminal", Desc: "terminal here, running the command when given", Arg: "command", Action: "terminal.new"},
 		{Name: "close", Desc: "close this session", Action: "session.close"},
 		{Name: "workspace", Desc: "new workspace", Action: "workspace.new"},
 		{Name: "template", Desc: "layout templates", Arg: "save|apply|default|delete [name]", Suggest: m.templateSuggest, Action: "template.apply"},
@@ -197,6 +199,8 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 		return m.forkAt(d, d.live, d.live.Session.Len())
 	case "new":
 		return m.newSession()
+	case "terminal":
+		return m.openTerminal(args)
 	case "close":
 		return m.closeSession(d)
 	case "workspace":
@@ -554,6 +558,7 @@ type panelChoice struct{ name, title, detail, action string }
 // Panels the app builds itself
 var builtinPanels = []panelChoice{
 	{"new", "Session", "fresh session", "session.new"},
+	{"terminal", "Terminal", "shell on a pseudo terminal", "terminal.new"},
 	{"agents", "Agents", "runs", "open.agents"},
 	{"metrics", "Metrics", "tokens, cost, latency", "open.metrics"},
 	{"jobs", "Jobs", "shell jobs", "open.jobs"},

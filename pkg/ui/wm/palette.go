@@ -531,7 +531,7 @@ func (m *Model) dispatch(target *entry, msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	grab := raw(target.card)
 	for _, id := range m.keys.Lookup(ctxs, msg) {
 		a, _ := m.keys.Action(id)
-		if grab && !slices.Contains(ctxs, a.Context) {
+		if grab && !slices.Contains(ctxs, a.Context) && !passes(target.card, msg) {
 			continue
 		}
 		if m.overlay != nil && a.Context == keys.Global && !a.Overlay {

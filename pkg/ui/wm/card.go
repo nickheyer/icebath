@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	tea "charm.land/bubbletea/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
@@ -70,6 +71,36 @@ func raw(c Card) bool {
 // Card that wraps others and can say whether it holds one
 type Holder interface {
 	Holds(Card) bool
+}
+
+// Card that paints its content into cells itself, the buffer sized to its content and cleared beforehand
+type Painter interface {
+	Paint(buf *uv.Buffer)
+}
+
+// Raw card that still lets some keys fire the actions of other contexts, such as the window keys of a terminal
+type Passer interface {
+	Passes(tea.KeyPressMsg) bool
+}
+
+func passes(c Card, msg tea.KeyPressMsg) bool {
+	p, ok := c.(Passer)
+	return ok && p.Passes(msg)
+}
+
+// Card handed every pointer motion over its content, in content coordinates
+type Tracker interface {
+	Tracks() bool
+}
+
+func tracks(c Card) bool {
+	t, ok := c.(Tracker)
+	return ok && t.Tracks()
+}
+
+// Message meant for one card alone, delivered to it instead of every card, even once it has closed
+type Addressed interface {
+	Addressee() Card
 }
 
 // Card that moves on its own, given scaled seconds or zero to jump to rest, answering whether its view changed

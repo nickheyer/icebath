@@ -196,11 +196,15 @@ func (m *Model) motion_(mo tea.Mouse, sx, sy int) tea.Cmd {
 	}
 	slid := grip && (reg == rLeft || reg == rRight || reg == rBottom) && (sx != m.hoverX || sy != m.hoverY)
 	m.hoverX, m.hoverY = sx, sy
+	var tracked tea.Cmd
+	if hit != nil && reg == rContent && !hit.closing && tracks(hit.card) {
+		tracked = m.forward(hit, tea.MouseMotionMsg(mo))
+	}
 	if hit == m.hover && reg == m.hoverEdge && hot == m.hot && grip == m.hoverGrip && hintHot == m.hintHot && !slid {
-		return nil
+		return tracked
 	}
 	m.hover, m.hoverEdge, m.hot, m.hoverGrip, m.hintHot = hit, reg, hot, grip, hintHot
-	return m.wake()
+	return tea.Batch(tracked, m.wake())
 }
 
 // Focuses the pressed card, starts title drags, edge resizes and text sweeps, and closes on middle click

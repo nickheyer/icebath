@@ -324,6 +324,13 @@ func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
 		} else {
 			e.raw.Resize(w, h)
 		}
+		if p, ok := e.card.(Painter); ok {
+			e.raw.Clear()
+			p.Paint(e.raw.Buffer)
+			e.view, e.dim = "", -1
+			e.dirty = false
+			break
+		}
 		view := e.card.View(w, h)
 		if fresh || resized || view != e.view {
 			e.raw.Clear()

@@ -70,7 +70,7 @@ icebath [flags] [prompt]
   -mission text      start a mission with an objective
   -kind name         kind the session runs as, from extensions or kind files
   -workflow name     run a workflow with the prompt as its argument
-  -k setting=value   max_tokens, max_rounds, temperature, compact_threshold, prune_after, theme, motion, cascade, extra.<field>
+  -k setting=value   max_tokens, max_rounds, temperature, compact_threshold, prune_after, theme, motion, cascade, terminal_shell, terminal_scrollback, extra.<field>
   -config path       extra configuration file
   -dir path          working directory of the shell
   -root path         project root for hooks, rules and servers

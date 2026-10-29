@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -99,17 +100,20 @@ type Model struct {
 	roster   *cards.Agents
 	// Extension panels built so far, by key
 	extPanels map[string]wm.Card
-	ctx       context.Context
-	cancel    context.CancelFunc
-	started   time.Time
-	state     tea.ProgramState
-	cancelAt  time.Time
-	models    []profiles.Model
-	listed    string
-	quitting  bool
-	width     int
-	height    int
-	bg        sync.WaitGroup
+	// Terminal windows built so far, by id, and the id the next one takes
+	terms    map[int]*cards.Terminal
+	termSeq  int
+	ctx      context.Context
+	cancel   context.CancelFunc
+	started  time.Time
+	state    tea.ProgramState
+	cancelAt time.Time
+	models   []profiles.Model
+	listed   string
+	quitting bool
+	width    int
+	height   int
+	bg       sync.WaitGroup
 	// Layout as last written, so only a change costs a write
 	layoutSaved []byte
 	// Directory the project keeps its layout in, empty when the configuration cannot place one
@@ -148,7 +152,7 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 		}
 		return nil, err
 	}
-	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw, stateDir: stateDir, instance: instance, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}}
+	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw, stateDir: stateDir, instance: instance, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}, terms: map[int]*cards.Terminal{}}
 	if notice != "" {
 		m.notices = append(m.notices, notice)
 	}
@@ -206,6 +210,7 @@ func (m *Model) environment() *cards.Env {
 		ProjectDir: filepath.Join(a.Root, harness.ProjectDir),
 		Root:       a.Root,
 		Extensions: extensionRows,
+		Version:    m.opts.Version,
 	}
 }
 
@@ -253,6 +258,12 @@ func (m *Model) settings() map[string]string {
 	}
 	if cfg.Temperature != nil {
 		out["temperature"] = fmt.Sprintf("%.2f", *cfg.Temperature)
+	}
+	if cfg.Terminal.Shell != "" {
+		out["terminal_shell"] = cfg.Terminal.Shell
+	}
+	if cfg.Terminal.Scrollback != nil {
+		out["terminal_scrollback"] = fmt.Sprint(*cfg.Terminal.Scrollback)
 	}
 	extensionSettings(cfg, out)
 	return out
@@ -319,6 +330,10 @@ func (m *Model) cardFor(key string) wm.Card {
 	case "findings":
 		if d := m.deskOfSession(rest); d != nil {
 			return m.findingsOf(d)
+		}
+	case "terminal":
+		if id, err := strconv.Atoi(rest); err == nil && id > 0 {
+			return m.terminal(id)
 		}
 	}
 	return nil
@@ -602,6 +617,7 @@ func (m *Model) shutdown() tea.Cmd {
 	}
 	m.cancel()
 	m.relay.Close()
+	m.closeTerminals()
 	m.bg.Wait()
 	m.app.Close(context.Background())
 	m.releaseProject()
@@ -776,6 +792,8 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return m.wm.Toast("forgot mission "+msg.ID, wm.Success, 0), true
 	case cards.ThinkingMsg:
 		return m.toggleThinking(m.deskOfSession(msg.Session)), true
+	case cards.RunMsg:
+		return m.runLine(m.deskOfSession(msg.Session), msg.Line), true
 	}
 	return nil, false
 }
@@ -836,16 +854,17 @@ func (m *Model) setSetting(key, value string, quiet bool) tea.Cmd {
 		m.app.Mode.Set(md)
 	}
 	m.wm.Repaint()
+	changed := func() tea.Msg { return cards.SettingChangedMsg{Key: key, Value: value} }
 	if err := cfg.SaveSetting(m.opts.Dir, key, value); err != nil {
-		return m.wm.Toast(err.Error(), wm.Error, 0)
+		return tea.Batch(changed, m.wm.Toast(err.Error(), wm.Error, 0))
 	}
 	if quiet {
-		return nil
+		return changed
 	}
 	if value == "" {
-		return m.wm.Toast(key+" unset", wm.Success, 0)
+		return tea.Batch(changed, m.wm.Toast(key+" unset", wm.Success, 0))
 	}
-	return m.wm.Toast(key+" = "+value, wm.Success, 0)
+	return tea.Batch(changed, m.wm.Toast(key+" = "+value, wm.Success, 0))
 }
 
 // Switches the model of the session on the stage, or the default, saving the default when it moved
