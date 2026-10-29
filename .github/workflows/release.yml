@@ -138,13 +138,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $got = & C:\ProgramData\chocolatey\bin\icebath.exe -version
           if ($got -ne "icebath $env:GITHUB_REF_NAME") { throw "chocolatey installed '$got'" }
-      - name: Push to the community repository
+      - name: Push to the community repository or log why the publish was skipped
         env:
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
         run: |
-          $nupkg = (Get-ChildItem "$env:RUNNER_TEMP/nupkg/*.nupkg").FullName
-          choco push $nupkg --source https://push.chocolatey.org/ --api-key $env:CHOCOLATEY_API_KEY
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $ErrorActionPreference = 'Continue'
+          $nupkg = Get-ChildItem "$env:RUNNER_TEMP/nupkg/*.nupkg"
+          $out = (choco push $nupkg.FullName --source https://push.chocolatey.org/ --api-key $env:CHOCOLATEY_API_KEY 2>&1 | ForEach-Object { $_.ToString() } | Out-String).Trim()
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -eq 0) { exit 0 }
+          $status = [regex]::Match($out, '\b\d{3} \([A-Za-z ]+\)').Value
+          $reason = switch -Regex ($status) {
+            '^403' { "push.chocolatey.org answered $status, which it does while an earlier icebath version is in moderation or when the key has no rights to the package" }
+            '^409' { "push.chocolatey.org answered $status, $($nupkg.Name) is already on the community repository" }
+            default { "choco push exited $code" + $(if ($status) { " after $status" }) }
+          }
+          Write-Host "::warning title=Chocolatey publish skipped::$($nupkg.Name) was not pushed, $reason"
+          @("### Chocolatey publish skipped", "", "$($nupkg.Name) was not pushed, $reason", "", '```text', $out, '```') | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+          exit 0
 
   pypi:
     needs: goreleaser

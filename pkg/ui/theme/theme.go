@@ -26,18 +26,37 @@ type Theme struct {
 	Pulse       color.Color
 	Alive       color.Color
 	Alarm       color.Color
-	// Gradient stops the focus ring runs through around the focused card
-	Ring   []color.Color
-	Border lipgloss.Border
-	Glyphs Glyphs
-	// Palette limited to the sixteen ANSI colors with no blending, for terminals without true color
-	Plain bool
+	Ring        []color.Color
+	Border      lipgloss.Border
+	Glyphs      Glyphs
+	Plain       bool
 }
 
-// Deep night palette with an ice and magenta focus ring
+// Near black palette of icebath.app
 func Blackwall() Theme {
 	return Theme{
 		Name:        "blackwall",
+		Bg:          Hex(0x05070a),
+		Surface:     Hex(0x0a0e13),
+		Text:        Hex(0xdfe9f2),
+		TextDim:     Hex(0x6c7f92),
+		Steel:       Hex(0x18222d),
+		SteelBright: Hex(0x2a3a4b),
+		Ghost:       Hex(0x131b25),
+		Accent:      Hex(0xe3122b),
+		Ice:         Hex(0x9cc7e8),
+		Pulse:       Hex(0xe3122b),
+		Alive:       Hex(0x7fc7a5),
+		Alarm:       Hex(0xff4757),
+		Ring:        []color.Color{Hex(0x3b5169)},
+		Border:      IcebathBorder(),
+		Glyphs:      IcebathGlyphs(),
+	}
+}
+
+func Taro() Theme {
+	return Theme{
+		Name:        "taro",
 		Bg:          Hex(0x070a12),
 		Surface:     Hex(0x0c1120),
 		Text:        Hex(0xd6def7),
@@ -56,23 +75,23 @@ func Blackwall() Theme {
 	}
 }
 
-// Paper palette for bright rooms with a cobalt and violet focus ring
+// Paper palette for bright rooms with the same red accent
 func Light() Theme {
 	return Theme{
 		Name:        "light",
-		Bg:          Hex(0xeef1f7),
-		Surface:     Hex(0xfafbfe),
-		Text:        Hex(0x1b2238),
-		TextDim:     Hex(0x6b7390),
-		Steel:       Hex(0xc3cadb),
-		SteelBright: Hex(0x9aa5c2),
-		Ghost:       Hex(0xd7dcea),
-		Accent:      Hex(0xb8600a),
-		Ice:         Hex(0x0a6fb3),
-		Pulse:       Hex(0xb5179e),
-		Alive:       Hex(0x1f8a4c),
-		Alarm:       Hex(0xc9303e),
-		Ring:        []color.Color{Hex(0x0a6fb3), Hex(0x5b3fd6), Hex(0xb5179e), Hex(0x0a6fb3)},
+		Bg:          Hex(0xeef1f5),
+		Surface:     Hex(0xfafbfd),
+		Text:        Hex(0x141c26),
+		TextDim:     Hex(0x647081),
+		Steel:       Hex(0xd3dae3),
+		SteelBright: Hex(0xb3bfcc),
+		Ghost:       Hex(0xe3e8ee),
+		Accent:      Hex(0xc8102e),
+		Ice:         Hex(0x2f6f9f),
+		Pulse:       Hex(0xc8102e),
+		Alive:       Hex(0x2e8b63),
+		Alarm:       Hex(0xd12f3f),
+		Ring:        []color.Color{Hex(0x7d93a9)},
 		Border:      IcebathBorder(),
 		Glyphs:      IcebathGlyphs(),
 	}
@@ -94,7 +113,7 @@ func Contrast() Theme {
 		Pulse:       Hex(0xff00ff),
 		Alive:       Hex(0x00ff00),
 		Alarm:       Hex(0xff0000),
-		Ring:        []color.Color{Hex(0x00ffff), Hex(0xffff00)},
+		Ring:        []color.Color{Hex(0x00ffff)},
 		Border:      lipgloss.ThickBorder(),
 		Glyphs:      IcebathGlyphs(),
 	}
@@ -123,7 +142,7 @@ func Plain() Theme {
 	}
 }
 
-var themes = map[string]func() Theme{"blackwall": Blackwall, "light": Light, "contrast": Contrast, "plain": Plain}
+var themes = map[string]func() Theme{"blackwall": Blackwall, "taro": Taro, "light": Light, "contrast": Contrast, "plain": Plain}
 
 // Makes a theme available to Named under its name, refusing a taken or empty name
 func Register(fn func() Theme) error {
@@ -214,7 +233,6 @@ func lerp8(a, b uint32, t float64) uint8 {
 
 // Every mark the interface draws, swapped as one set so the whole surface keeps one look
 type Glyphs struct {
-	Brand     string
 	Session   string
 	Trace     string
 	Agent     string
@@ -251,7 +269,6 @@ type Glyphs struct {
 	Plan      string
 	Server    string
 	Tool      string
-	Speaker   string
 	Steer     string
 	Thinking  string
 	Compact   string
@@ -261,7 +278,6 @@ type Glyphs struct {
 	Flag      string
 	Child     string
 	Attach    string
-	Idle      string
 	Cursor    string
 	Marked    string
 	Live      string
@@ -278,11 +294,9 @@ type Glyphs struct {
 	Ellipsis  string
 	Close     string
 	Prompt    string
-	Send      string
+	Notch     string
 	Grip      string
 	Back      string
-	CapLeft   string
-	CapRight  string
 	Info      string
 	Success   string
 	Warn      string
@@ -320,13 +334,13 @@ type Glyphs struct {
 // Frost, signal and hazard marks in single cells, the icebath set
 func IcebathGlyphs() Glyphs {
 	return Glyphs{
-		Brand: "❆", Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "⍰", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "❯", Card: "▰",
+		Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "⍰", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "$", Card: "▰",
 		Profiles: "⍟", Models: "⟡", Rules: "§", Hooks: "↯", MCP: "⇆", Tools: "⌗", Keys: "⌥", Ext: "⧉", Flow: "⟳",
 		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Shell: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
-		Speaker: "┃", Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "⍰", Child: "⟁", Attach: "⎘", Idle: "⊙", Cursor: "►", Marked: "▮",
+		Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "⍰", Child: "⟁", Attach: "⎘", Cursor: "▍", Marked: "▮",
 		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔",
-		Sep: "∷", Ellipsis: "⋯", Close: "✕", Prompt: "❯", Send: "➜", Grip: "⊹", Back: "❮", CapLeft: "▐", CapRight: "▌", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
-		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", SwitchOn: "━━●", SwitchOff: "●┈┈", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "▰", Empty: "▱",
+		Sep: "│", Ellipsis: "⋯", Close: "✕", Prompt: "$", Notch: "▍", Grip: "⊹", Back: "❮", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
+		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", SwitchOn: "━━●", SwitchOff: "●┈┈", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "━", Empty: "─",
 		Ramp:    []rune("▁▂▃▄▅▆▇█"),
 		Spinner: []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"},
 		Churn:   []rune("░▒▓█▙▚▛▜▝▞▟╳╱╲01"),
@@ -337,12 +351,12 @@ func IcebathGlyphs() Glyphs {
 // The same marks in printable ASCII for terminals without box drawing or symbol fonts
 func ASCIIGlyphs() Glyphs {
 	return Glyphs{
-		Brand: "*", Session: "~", Trace: "&", Agent: "&", Approval: "?", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: ">", Card: "*",
+		Session: "~", Trace: "&", Agent: "&", Approval: "?", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: "$", Card: "*",
 		Profiles: "@", Models: "o", Rules: "S", Hooks: "!", MCP: "=", Tools: "+", Keys: "k", Ext: "x", Flow: "@",
 		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Shell: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
-		Speaker: "|", Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "?", Child: "&", Attach: "+", Idle: "o", Cursor: ">", Marked: "#",
+		Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "?", Child: "&", Attach: "+", Cursor: ">", Marked: "#",
 		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y",
-		Sep: "-", Ellipsis: "...", Close: "x", Prompt: ">", Send: ">", Grip: "+", Back: "<", CapLeft: " ", CapRight: " ", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
+		Sep: "|", Ellipsis: "...", Close: "x", Prompt: "$", Notch: "|", Grip: "+", Back: "<", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
 		Rule: "-", Dashed: "-", Bar: "|", Fill: "=", Slide: "-", Thumb: "O", SwitchOn: "==O", SwitchOff: "O--", Caret: "|", Up: "^", Down: "v", Track: "|", Heavy: "#", Tick: "+", HeavyTick: "+", Hit: "*", Full: "#", Empty: "-",
 		Ramp:    []rune(".:-=+*#%"),
 		Spinner: []string{"|", "/", "-", "\\"},
@@ -351,7 +365,7 @@ func ASCIIGlyphs() Glyphs {
 	}
 }
 
-// Frame with heavy top and bottom rails on light sides, the icebath border
+// Single line frame with square corners, the icebath border
 func IcebathBorder() lipgloss.Border {
-	return lipgloss.Border{Top: "━", Bottom: "━", Left: "│", Right: "│", TopLeft: "┍", TopRight: "┑", BottomLeft: "┕", BottomRight: "┙", MiddleLeft: "┝", MiddleRight: "┥", Middle: "┿", MiddleTop: "┯", MiddleBottom: "┷"}
+	return lipgloss.NormalBorder()
 }

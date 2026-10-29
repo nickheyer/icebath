@@ -718,17 +718,17 @@ func (c *Composer) accept() {
 	}
 }
 
-// Send button as a symbol alone, an arrow that sends or a hook that steers a run, dim while empty
+// Send or steer button in capitals, dim while the input is empty and lit once there is something to send
 func (c *Composer) buttonLabel() string {
 	t := c.theme
-	glyph := t.Glyphs.Send
+	word := "send"
 	if c.busy {
-		glyph = t.Glyphs.Steer
+		word = "steer"
 	}
 	if t.Plain {
-		return "[ " + glyph + " ]"
+		return "[ " + word + " ]"
 	}
-	text := "  " + glyph + "  "
+	text := " " + strings.ToUpper(word) + " "
 	lit := t.Ice
 	if c.busy {
 		lit = t.Accent

@@ -216,13 +216,9 @@ func window(table []string, sel, room int) ([]string, int) {
 	return append(append([]string(nil), table[:render.TableHead]...), table[render.TableHead+start:end]...), start
 }
 
-// Dim text under the brand mark centered in w by h, for a card with nothing to show
+// Dim text centered in w by h, for a card with nothing to show
 func emptyView(w, h int, text string, t theme.Theme) string {
-	body := render.Dim(text, t)
-	if h >= 3 {
-		body = lipgloss.NewStyle().Foreground(t.Steel).Render(t.Glyphs.Brand) + "\n" + body
-	}
-	return lipgloss.Place(w, max(h, 1), lipgloss.Center, lipgloss.Center, body)
+	return lipgloss.Place(w, max(h, 1), lipgloss.Center, lipgloss.Center, render.Dim(text, t))
 }
 
 // Lines cut or padded to h rows with the foot on the last row, as they are when there is no foot

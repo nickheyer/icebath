@@ -141,7 +141,7 @@ func trimZero(s string) string {
 	return s
 }
 
-// Horizontal bar of width filled to the fraction, lit in a gradient and dim past the fill
+// Horizontal bar of width filled to the fraction in ice and dim past the fill
 func Bar(fraction float64, width int, t theme.Theme) string {
 	if width <= 0 {
 		return ""
@@ -149,33 +149,22 @@ func Bar(fraction float64, width int, t theme.Theme) string {
 	fraction = min(max(fraction, 0), 1)
 	filled := int(math.Round(fraction * float64(width)))
 	g := t.Glyphs
+	rest := t.Steel
 	if t.Plain {
-		return lipgloss.NewStyle().Foreground(t.Ice).Render(strings.Repeat(g.Full, filled)) + lipgloss.NewStyle().Foreground(t.TextDim).Render(strings.Repeat(g.Empty, width-filled))
+		rest = t.TextDim
 	}
-	shades := lipgloss.Blend1D(max(width, 2), t.Pulse, t.Ice)
-	var sb strings.Builder
-	for i := 0; i < width; i++ {
-		if i < filled {
-			sb.WriteString(lipgloss.NewStyle().Foreground(shades[i]).Render(g.Full))
-		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(g.Empty))
-		}
-	}
-	return sb.String()
+	return lipgloss.NewStyle().Foreground(t.Ice).Render(strings.Repeat(g.Full, filled)) + lipgloss.NewStyle().Foreground(rest).Render(strings.Repeat(g.Empty, width-filled))
 }
 
-// Bar colored by how close the fraction sits to a danger threshold of one
+// Bar in ice that turns to the accent once the fraction passes three quarters
 func Gauge(fraction float64, width int, t theme.Theme) string {
 	if width <= 0 {
 		return ""
 	}
 	fraction = min(max(fraction, 0), 1)
 	filled := int(math.Round(fraction * float64(width)))
-	c := t.Alive
-	switch {
-	case fraction >= 0.9:
-		c = t.Alarm
-	case fraction >= 0.7:
+	c := t.Ice
+	if fraction >= 0.75 {
 		c = t.Accent
 	}
 	return lipgloss.NewStyle().Foreground(c).Render(strings.Repeat(t.Glyphs.Full, filled)) + lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Empty, width-filled))
@@ -243,9 +232,9 @@ func KV(key, value string, t theme.Theme) string {
 	return lipgloss.NewStyle().Foreground(t.TextDim).Render(key+" ") + lipgloss.NewStyle().Foreground(t.Text).Render(value)
 }
 
-// Section heading in the accent color
+// Section heading in bold text
 func Heading(text string, t theme.Theme) string {
-	return lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(text)
+	return lipgloss.NewStyle().Foreground(t.Text).Bold(true).Render(text)
 }
 
 // Dim text for secondary information

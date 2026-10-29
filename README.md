@@ -10,6 +10,7 @@
 
 <br />
 
+<a href="https://icebath.app"><img src="https://img.shields.io/badge/site-icebath.app-0b0f14?style=for-the-badge&labelColor=0b0f14&color=1c2733" alt="icebath.app" /></a>
 <img src="https://img.shields.io/badge/go-1.27-0b0f14?style=for-the-badge&logo=go&logoColor=dfe9f2&labelColor=0b0f14&color=1c2733" alt="go 1.27" />
 <img src="https://img.shields.io/badge/linux-amd64-0b0f14?style=for-the-badge&logo=linux&logoColor=dfe9f2&labelColor=0b0f14&color=1c2733" alt="linux amd64" />
 
@@ -46,9 +47,8 @@ nix profile add github:nickheyer/nixpkg#icebath
 mise use -g github:nickheyer/icebath
 docker run -it --rm -v "$PWD:/work" ghcr.io/nickheyer/icebath
 go install github.com/nickheyer/icebath/cmd/icebath@latest
+# apt, dnf and apk https://icebath.app
 ```
-
-apt, dnf and apk at [icebath.app](https://icebath.app)
 
 <br />
 

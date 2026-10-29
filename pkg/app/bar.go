@@ -220,7 +220,7 @@ func (m *Model) dials() []wm.Segment {
 		out = append(out, m.contextDial(d.live.Session.Context(), ep.Catalog.Context))
 	}
 	if ep.Model != "" {
-		out = append(out, wm.Segment{Text: g.Models + " " + ep.Model, Style: wm.Cool, Action: "model.switch"})
+		out = append(out, wm.Segment{Text: ep.Model, Style: wm.Cool, Action: "model.switch"})
 	}
 	md := m.app.Mode.Mode()
 	return append(out, wm.Segment{Text: md.Label(), Style: modeStyle(md), Action: "mode.set"})

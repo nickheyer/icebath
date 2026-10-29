@@ -68,11 +68,12 @@ func (lk look) empty(placeholder string, t theme.Theme) string {
 	return placeholder
 }
 
-// Section title in capitals with a rule running to width
+// Section title in capitals behind the accent notch with a rule running to width
 func heading(title string, w int, t theme.Theme) string {
+	notch := lipgloss.NewStyle().Foreground(t.Accent).Render(t.Glyphs.Notch)
 	label := lipgloss.NewStyle().Foreground(t.TextDim).Bold(true).Render(strings.ToUpper(title))
-	rest := w - ansi.StringWidth(label) - 1
-	return label + " " + lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, max(rest, 0)))
+	rest := w - ansi.StringWidth(label) - 3
+	return notch + " " + label + " " + lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, max(rest, 0)))
 }
 
 // Number well widths over every number field, shown or hidden, so the columns hold still as fields come and go

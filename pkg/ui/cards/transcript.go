@@ -1318,16 +1318,15 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 	switch b.kind {
 	case bUser, bSteer:
 		label := "you"
-		glyph := t.Glyphs.Speaker
 		c := t.Accent
 		if b.kind == bSteer {
-			label, glyph = "steer", t.Glyphs.Steer
+			label = t.Glyphs.Steer + " steer"
 			if b.text != "" {
-				label = b.text
+				label = t.Glyphs.Steer + " " + b.text
 			}
 			c = t.Pulse
 		}
-		lines = append(lines, mark+lipgloss.NewStyle().Foreground(c).Bold(true).Render(glyph+" "+label)+" "+stamp)
+		lines = append(lines, tr.turnHead(mark, c, lipgloss.NewStyle().Foreground(c).Bold(true).Render(label), stamp, body))
 		text, extras := partsText(b.parts, t)
 		shown := wrap(text)
 		if !b.full && len(shown) > previewLines {
@@ -1346,15 +1345,14 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 		if name == "" {
 			name = "agent"
 		}
-		head := lipgloss.NewStyle().Foreground(c).Bold(true).Render(t.Glyphs.Speaker + " " + name)
+		head := lipgloss.NewStyle().Foreground(c).Bold(true).Render(name)
 		if b.model != "" && b.model != name {
 			head += " " + render.Dim(b.model, t)
 		}
-		head += " " + stamp
 		if !b.done {
 			head += " " + render.Cool(render.Spinner(tr.tick, t), t)
 		}
-		lines = append(lines, mark+head)
+		lines = append(lines, tr.turnHead(mark, c, head, stamp, body))
 		for _, l := range strings.Split(tr.markdown(b, body), "\n") {
 			lines = append(lines, "  "+l)
 		}
@@ -1451,6 +1449,16 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 	}
 	lines = append(lines, "")
 	b.cache, b.cacheKey = lines, key
+}
+
+// Turn header with the notch and label, a rule across the middle and the stamp at the right
+func (tr *Transcript) turnHead(mark string, c color.Color, label, stamp string, body int) string {
+	t := tr.env.Theme
+	head := lipgloss.NewStyle().Foreground(c).Bold(true).Render(t.Glyphs.Notch) + " " + label
+	if fill := body - ansi.StringWidth(head) - ansi.StringWidth(stamp) - 2; fill >= 2 {
+		head += " " + lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, fill))
+	}
+	return mark + head + " " + stamp
 }
 
 // Markdown of a text block, its settled paragraphs kept from last time ahead of the open tail while it streams
@@ -2029,26 +2037,26 @@ func (tr *Transcript) idle(w, h int) string {
 			model = id
 		}
 	}
-	line := lipgloss.NewStyle().Foreground(t.TextDim).Render(t.Glyphs.Idle+" ") + lipgloss.NewStyle().Foreground(t.Ice).Render(model) + lipgloss.NewStyle().Foreground(t.TextDim).Render(" "+t.Glyphs.Sep+" idle")
-	mark := wordmark
+	line := lipgloss.NewStyle().Foreground(t.Ice).Render(model) + lipgloss.NewStyle().Foreground(t.TextDim).Render(" "+t.Glyphs.Sep+" idle")
+	mark, bar := wordmark, t.Accent
 	if t.Plain {
-		mark = wordmarkASCII
+		mark, bar = wordmarkASCII, t.Text
 	}
 	mw := 0
 	for _, l := range mark {
 		mw = max(mw, ansi.StringWidth(l))
 	}
 	if w >= mw+4 && h >= len(mark)+3 {
-		line = strings.Join(append(paintMark(mark, theme.Ring(mw, t.Ring...)), "", line), "\n")
+		line = strings.Join(append(paintMark(mark, t.Text, bar), "", line), "\n")
 	}
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, line)
 }
 
-// Wordmark in half blocks, three rows
+// Wordmark in half blocks, three rows, with the bar of the logo between the words
 var wordmark = []string{
-	"▀█▀ █▀▀ █▀▀ █▀▄ █▀█ ▀█▀ █ █",
-	" █  █   █▀▀ █▀▄ █▀█  █  █▀█",
-	"▄█▄ ▀▀▀ ▀▀▀ ▀▀  ▀ ▀  ▀  ▀ ▀",
+	"▀█▀ █▀▀ █▀▀ │ █▀▄ █▀█ ▀█▀ █ █",
+	" █  █   █▀▀ │ █▀▄ █▀█  █  █▀█",
+	"▄█▄ ▀▀▀ ▀▀▀ │ ▀▀  ▀ ▀  ▀  ▀ ▀",
 }
 
 // Wordmark for terminals without block characters
@@ -2059,21 +2067,22 @@ var wordmarkASCII = []string{
 	"|_|\\___|___|___/_/ \\_\\_| |_||_|",
 }
 
-// Lines with every column painted in the color at its share of the sweep
-func paintMark(lines []string, sweep []color.Color) []string {
-	width := 1
-	for _, l := range lines {
-		width = max(width, ansi.StringWidth(l))
-	}
+// Lines with the letters painted in fg and the bar between the words in bar
+func paintMark(lines []string, fg, bar color.Color) []string {
+	letters := lipgloss.NewStyle().Foreground(fg)
+	divider := lipgloss.NewStyle().Foreground(bar)
 	out := make([]string, len(lines))
 	for i, l := range lines {
 		var sb strings.Builder
-		for x, r := range []rune(l) {
-			if r == ' ' || len(sweep) == 0 {
+		for _, r := range l {
+			switch r {
+			case ' ':
 				sb.WriteRune(r)
-				continue
+			case '│':
+				sb.WriteString(divider.Render(string(r)))
+			default:
+				sb.WriteString(letters.Render(string(r)))
 			}
-			sb.WriteString(lipgloss.NewStyle().Foreground(sweep[min(x*len(sweep)/width, len(sweep)-1)]).Render(string(r)))
 		}
 		out[i] = sb.String()
 	}

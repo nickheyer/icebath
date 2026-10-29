@@ -374,12 +374,18 @@ func (p *Palette) View(w, h int) string {
 func (p *Palette) row(m scored, selected bool, w int) string {
 	t := p.theme
 	bg := t.Surface
-	fg, hit, dim, key := t.Text, t.Ice, t.TextDim, t.Accent
 	if selected {
-		bg = t.Ice
-		fg, hit, dim, key = t.Bg, t.Bg, t.Bg, t.Bg
+		bg = t.Steel
+		if !t.Plain {
+			bg = theme.Mix(t.Surface, t.Ice, 0.1)
+		}
 	}
+	fg, hit, dim, key := t.Text, t.Ice, t.TextDim, t.Ice
 	base := lipgloss.NewStyle().Background(bg)
+	lead := base.Render(" ")
+	if selected {
+		lead = base.Foreground(t.Accent).Render(t.Glyphs.Notch)
+	}
 	var sb strings.Builder
 	runes := []rune(m.item.Title)
 	hits := map[int]bool{}
@@ -409,7 +415,7 @@ func (p *Palette) row(m scored, selected bool, w int) string {
 	}
 	left := ansi.Truncate(title+detail, max(avail, 1), t.Glyphs.Ellipsis)
 	pad := max(w-2-ansi.StringWidth(left)-rw, 1)
-	line := base.Render(" ") + left + base.Render(strings.Repeat(" ", pad)) + right + base.Render(" ")
+	line := lead + left + base.Render(strings.Repeat(" ", pad)) + right + base.Render(" ")
 	return ansi.Truncate(line, w, "")
 }
 

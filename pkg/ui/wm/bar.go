@@ -132,6 +132,7 @@ const (
 	chipDetail
 	chipClosing
 	chipPad
+	chipNotch
 )
 
 // Piece of a chip label with its role
@@ -140,10 +141,14 @@ type chipPart struct {
 	role chipRole
 }
 
-// Number, name, signal mark and detail of a lane at a level, the active of several adding a close mark
+// Lane chip pieces at a level, the notch leading the active one and a close mark when several are open
 func (m *Model) chipParts(i int, l Lane, level int) []chipPart {
 	g := m.theme.Glyphs
-	parts := []chipPart{{" " + strconv.Itoa(i+1), chipNumber}}
+	lead := chipPart{" ", chipPad}
+	if i == m.active {
+		lead = chipPart{g.Notch, chipNotch}
+	}
+	parts := []chipPart{lead, {strconv.Itoa(i + 1), chipNumber}}
 	if name := strings.Join(strings.Fields(l.Name), " "); nameCols[level] > 0 && name != "" {
 		parts = append(parts, chipPart{" " + ansi.Truncate(name, nameCols[level], g.Ellipsis), chipName})
 	}
@@ -378,7 +383,7 @@ func (m *Model) closedField() fieldText {
 	if k := m.keys.Display("palette"); k != "" {
 		words += " (" + k + ")"
 	}
-	return fieldText{mark: t.Glyphs.Prompt, tint: t.TextDim, words: words}
+	return fieldText{mark: t.Glyphs.Prompt, tint: t.Accent, words: words}
 }
 
 // Columns the closed field wants for its text and key, within its bounds
@@ -468,7 +473,7 @@ func (m *Model) chipStyle(i int, c chip, role chipRole, lit bool) uv.Style {
 	st := uv.Style{Fg: t.TextDim, Bg: t.Bg}
 	switch {
 	case lit:
-		st = uv.Style{Fg: t.Bg, Bg: t.Ice}
+		st = uv.Style{Fg: t.Text, Bg: m.chipTint()}
 	case ws.urgent:
 		st = uv.Style{Fg: theme.Mix(t.TextDim, t.Pulse, m.beat()), Bg: t.Bg, Attrs: uv.AttrBold}
 	case hot:
@@ -478,9 +483,11 @@ func (m *Model) chipStyle(i int, c chip, role chipRole, lit bool) uv.Style {
 		}
 	}
 	switch role {
+	case chipNotch:
+		st.Fg = t.Accent
 	case chipNumber:
 		st.Attrs |= uv.AttrBold
-		if !lit && !ws.urgent {
+		if !ws.urgent {
 			st.Fg = t.Text
 		}
 	case chipName:
@@ -490,23 +497,27 @@ func (m *Model) chipStyle(i int, c chip, role chipRole, lit bool) uv.Style {
 	case chipMark:
 		st.Attrs |= uv.AttrBold
 		st.Fg = m.signalColor(c.lane.Signal)
-		if lit {
-			st.Fg = t.Bg
-		}
 	case chipDetail:
 		st.Attrs &^= uv.AttrBold
-		if lit {
-			st.Fg = theme.Mix(t.Bg, t.Ice, 0.35)
-		}
+		st.Fg = t.TextDim
 	case chipClosing:
 		if lit {
-			st.Fg = theme.Mix(t.Bg, t.Alarm, 0.6)
+			st.Fg = theme.Mix(t.TextDim, t.Alarm, 0.5)
 			if m.hot.kind == barClose {
 				st.Fg = t.Alarm
 			}
 		}
 	}
 	return st
+}
+
+// Background of the active chip, a faint ice wash or the steel of a palette that cannot blend
+func (m *Model) chipTint() color.Color {
+	t := m.theme
+	if t.Plain {
+		return t.Steel
+	}
+	return theme.Mix(t.Bg, t.Ice, 0.12)
 }
 
 // Writes text one grapheme per cell from column x styled by column and returns the column after it
@@ -540,7 +551,7 @@ func (m *Model) paintBar(buf screen) {
 	hx := int(math.Round(m.chipX.Pos))
 	hw := int(math.Round(m.chipW.Pos))
 	for x := max(hx, 0); x < hx+hw && x < m.width; x++ {
-		m.put(buf, x, 0, " ", uv.Style{Bg: t.Ice})
+		m.put(buf, x, 0, " ", uv.Style{Bg: m.chipTint()})
 	}
 	for i, c := range m.chips {
 		x := c.x
@@ -554,7 +565,6 @@ func (m *Model) paintBar(buf screen) {
 	}
 	m.write(buf, m.chipsEnd(), 0, newChip, flat(uv.Style{Fg: newFg, Bg: newBg, Attrs: uv.AttrBold}))
 	m.paintDials(buf)
-	m.paintPillCaps(buf, hx, hw)
 	m.paintField(buf)
 }
 
@@ -578,26 +588,6 @@ func (m *Model) paintDials(buf screen) {
 	}
 }
 
-// Rounds the ends of the highlight with half cells where the bar is blank beside it
-func (m *Model) paintPillCaps(buf screen, hx, hw int) {
-	t := m.theme
-	if t.Plain || hw <= 0 {
-		return
-	}
-	for _, cap := range []struct {
-		x  int
-		ch string
-	}{{hx - 1, t.Glyphs.CapLeft}, {hx + hw, t.Glyphs.CapRight}} {
-		if cap.x < 0 || cap.x >= m.width {
-			continue
-		}
-		if c := buf.CellAt(cap.x, 0); c == nil || c.Content != " " || c.Style.Bg != t.Bg {
-			continue
-		}
-		m.put(buf, cap.x, 0, cap.ch, uv.Style{Fg: t.Ice, Bg: t.Bg})
-	}
-}
-
 // Surface of the field, tinted by a waiting item and raised under the pointer while closed
 func (m *Model) fieldBg() color.Color {
 	t := m.theme
@@ -618,7 +608,7 @@ func (m *Model) fieldBg() color.Color {
 	return bg
 }
 
-// Draws the field as a capped pill holding the palette input, a waiting item or the way into the commands
+// Draws the field holding the palette input, a waiting item or the way into the commands
 func (m *Model) paintField(buf screen) {
 	m.caret = -1
 	fx, fw := m.fieldBox()
@@ -629,12 +619,6 @@ func (m *Model) paintField(buf screen) {
 	bg := m.fieldBg()
 	for x := max(fx, 0); x < fx+fw && x < m.width; x++ {
 		m.put(buf, x, 0, " ", uv.Style{Bg: bg})
-	}
-	if !t.Plain {
-		m.put(buf, fx-1, 0, t.Glyphs.CapLeft, uv.Style{Fg: bg, Bg: t.Bg})
-		if fx+fw < m.width {
-			m.put(buf, fx+fw, 0, t.Glyphs.CapRight, uv.Style{Fg: bg, Bg: t.Bg})
-		}
 	}
 	left, right := fx+1, min(fx+fw-1, m.width)
 	if p := m.docked(); p != nil {

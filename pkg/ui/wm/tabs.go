@@ -244,7 +244,7 @@ func (g *Tabs) tabAt(x int) int {
 
 // Label of tab i on the strip
 func (g *Tabs) label(i int) string {
-	return " " + glyphOf(g.cards[i], g.theme) + " " + g.cards[i].Title() + " "
+	return " " + g.cards[i].Title() + " "
 }
 
 // Lowest first tab the strip can draw with the active one still inside w, a marker standing for those scrolled off
@@ -279,11 +279,15 @@ func (g *Tabs) View(w, h int) string {
 		x = 1
 	}
 	for i := g.first; i < len(g.cards); i++ {
-		st := lipgloss.NewStyle().Foreground(t.TextDim)
+		seg := lipgloss.NewStyle().Foreground(t.TextDim).Render(g.label(i))
 		if i == g.active {
-			st = lipgloss.NewStyle().Foreground(t.Text).Background(t.Steel).Bold(true)
+			tint := t.Steel
+			if !t.Plain {
+				tint = theme.Mix(t.Surface, t.Ice, 0.1)
+			}
+			base := lipgloss.NewStyle().Background(tint)
+			seg = base.Foreground(t.Accent).Render(t.Glyphs.Notch) + base.Foreground(t.Text).Bold(true).Render(g.label(i)[1:])
 		}
-		seg := st.Render(g.label(i))
 		sw := ansi.StringWidth(seg)
 		if x+sw > w {
 			break

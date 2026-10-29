@@ -287,7 +287,7 @@ func (m *Model) paintBody(e *entry, dx int, shown bool, veil float64) {
 		}
 		m.put(face, closeX(f), 0, t.Glyphs.Close, uv.Style{Fg: fg, Bg: t.Surface, Attrs: uv.AttrBold})
 	}
-	sw := m.paintStatus(face, e, w-right, w-6-right-max(ansi.StringWidth(" "+glyphOf(e.card, t)+" "+e.card.Title()+" "), minTitleW), p.lit)
+	sw := m.paintStatus(face, e, w-right, w-6-right-max(ansi.StringWidth(" "+t.Glyphs.Notch+" "+e.card.Title()+" "), minTitleW), p.lit)
 	avail := w - 4 - right
 	if sw > 0 {
 		avail -= sw + 2
@@ -381,7 +381,7 @@ func (m *Model) paintGlyph(face screen, e *entry, x, y, w, h int, lit float64) {
 	m.put(face, x+w/2, y+h/2, glyphOf(e.card, m.theme), uv.Style{Fg: fg, Bg: m.theme.Surface})
 }
 
-// Writes the glyph and decoding title into the top edge of the face within avail columns
+// Writes the notch and decoding title into the top edge of the face within avail columns
 func (m *Model) paintTitle(face screen, e *entry, avail int, lit float64) {
 	if avail < minTitleW {
 		return
@@ -394,12 +394,12 @@ func (m *Model) paintTitle(face screen, e *entry, avail int, lit float64) {
 	shown := []rune(anim.Decode(title, e.decode, m.tick, t.Glyphs.Churn))
 	reveal := min(anim.Revealed(title, e.decode), len(shown))
 	base := lipgloss.NewStyle().Background(t.Surface)
-	glyph := glyphOf(e.card, t)
+	notch := t.Glyphs.Notch
 	if m.hover == e && m.hoverGrip && (m.hoverEdge == rTitle || m.hoverEdge == rClose) {
-		glyph = t.Glyphs.Grip
+		notch = t.Glyphs.Grip
 	}
 	label := base.Render(" ") +
-		base.Foreground(theme.Mix(t.TextDim, t.Accent, lit)).Render(glyph+" ") +
+		base.Foreground(theme.Mix(t.TextDim, t.Accent, lit)).Render(notch+" ") +
 		base.Foreground(theme.Mix(t.TextDim, t.Text, lit)).Bold(lit > 0.5).Render(string(shown[:reveal])) +
 		base.Foreground(theme.Mix(t.TextDim, t.Ice, lit)).Render(string(shown[reveal:])) +
 		base.Render(" ")
@@ -483,7 +483,7 @@ func (m *Model) paintBackdrop(amount float64) {
 	}
 }
 
-// Draws toasts as pills stacked under the bar at the right, sliding and fading in and out at the edge
+// Draws toasts stacked under the bar at the right, sliding and fading in and out at the edge
 func (m *Model) paintToasts() {
 	if len(m.toasts) == 0 || m.width < 12 {
 		return
@@ -511,32 +511,20 @@ func (m *Model) paintToasts() {
 		slide := min(max(tt.x.Pos, 0), 1)
 		x := m.width - m.gapOutX - lw + int(math.Round(tt.x.Pos*float64(lw+m.gapOutX)))
 		alpha := 1 - slide
-		m.pill(x-1, y, lw+2, alpha)
+		m.pad(x-1, y, lw+2, alpha)
 		face := m.face(lw, 1)
 		uv.NewStyledString(label).Draw(face, uv.Rect(0, 0, lw, 1))
 		m.stamp(face, placed{x: x, y: y, w: lw, h: 1, alpha: alpha})
 	}
 }
 
-// Caps a one row surface with half blocks that keep the cell behind each cap
-func (m *Model) pill(x, y, w int, alpha float64) {
-	t := m.theme
-	if t.Plain {
-		m.fillBox(Box{x, y, w, 1}, uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: t.Surface}})
-		return
-	}
-	for _, cap := range []struct {
-		x  int
-		ch string
-	}{{x, t.Glyphs.CapLeft}, {x + w - 1, t.Glyphs.CapRight}} {
-		if cap.x < 0 || cap.x >= m.width || y < barHeight || y >= m.height {
+// Pads a one row surface with a blank surface cell at each end
+func (m *Model) pad(x, y, w int, alpha float64) {
+	for _, cx := range []int{x, x + w - 1} {
+		if cx < 0 || cx >= m.width || y < barHeight || y >= m.height {
 			continue
 		}
-		bg := t.Bg
-		if c := m.buf.CellAt(cap.x, y); c != nil && c.Style.Bg != nil {
-			bg = c.Style.Bg
-		}
-		m.ink(cap.x, y, uv.Cell{Content: cap.ch, Width: 1, Style: uv.Style{Fg: t.Surface, Bg: bg}}, alpha)
+		m.ink(cx, y, uv.Cell{Content: " ", Width: 1, Style: uv.Style{Bg: m.theme.Surface}}, alpha)
 	}
 }
 
@@ -571,7 +559,7 @@ func (m *Model) perimeter(x, y, w, h int, fn func(px, py int, ch string)) {
 	}
 }
 
-// Border color at perimeter index k, focus ring flowing in, urgency pulsing and the pointer lighting a grip
+// Border color at perimeter index k, lit by focus with corner brackets, an urgency pulse and a hovered grip
 func (m *Model) rim(e *entry, w, h int, lit, hover float64) func(k int) color.Color {
 	t := m.theme
 	edge := theme.Mix(t.Steel, t.SteelBright, hover)
@@ -620,8 +608,25 @@ func (m *Model) rim(e *entry, w, h int, lit, hover float64) func(k int) color.Co
 		if lit < 1 {
 			c = theme.Mix(edge, c, lit)
 		}
+		if bracket(k, w, h) {
+			c = theme.Mix(c, t.Accent, lit)
+		}
 		return blend(k, c)
 	}
+}
+
+// Reports whether perimeter index k lies on the top left or bottom right corner bracket of the frame
+func bracket(k, w, h int) bool {
+	perim := 2*(w+h) - 4
+	arm := min(3, w-1)
+	corner := w + h - 2
+	switch {
+	case k < arm, k >= corner && k < corner+arm:
+		return true
+	case h > 2 && (k == perim-1 || k == corner-1):
+		return true
+	}
+	return false
 }
 
 // Share of an urgency pulse lit right now, full when motion is off
