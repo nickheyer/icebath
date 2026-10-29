@@ -249,6 +249,8 @@ jobs:
       - name: nix
         run: nix run --refresh github:nickheyer/nixpkg#icebath -- -version | grep -Fx "$WANT"
       - name: pipx
+        env:
+          PIP_NO_CACHE_DIR: "1"
         run: |
           for _ in $(seq 20); do pipx install "icebath-cli==${GITHUB_REF_NAME#v}" && break; sleep 15; done
           "$(pipx environment --value PIPX_BIN_DIR)/icebath" -version | grep -Fx "$WANT"
@@ -287,6 +289,8 @@ jobs:
           curl -fsSL icebath.app | sh
           ~/.local/bin/icebath -version | grep -Fx "$WANT"
       - name: pipx
+        env:
+          PIP_NO_CACHE_DIR: "1"
         run: |
           for _ in $(seq 20); do pipx install --force "icebath-cli==${GITHUB_REF_NAME#v}" && break; sleep 15; done
           "$(pipx environment --value PIPX_BIN_DIR)/icebath" -version | grep -Fx "$WANT"
@@ -318,6 +322,8 @@ jobs:
           $script = Invoke-RestMethod https://icebath.app
           if ($script -notmatch 'Installs the icebath release binary') { throw 'icebath.app did not serve install.ps1 to PowerShell' }
       - name: pipx
+        env:
+          PIP_NO_CACHE_DIR: "1"
         run: |
           foreach ($i in 1..20) { pipx install --force "icebath-cli==$($env:GITHUB_REF_NAME.TrimStart('v'))"; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep 15 }
           $got = & "$(pipx environment --value PIPX_BIN_DIR)\icebath.exe" -version

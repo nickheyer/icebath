@@ -291,11 +291,12 @@ func (m *Map) InContexts(contexts []string) []Action {
 	return out
 }
 
-var modOrder = []string{"ctrl", "alt", "shift", "super", "meta", "hyper"}
+var modOrder = []string{"ctrl", "alt", "shift", "super", "hyper"}
 
-var modBits = map[string]tea.KeyMod{"ctrl": tea.ModCtrl, "alt": tea.ModAlt, "shift": tea.ModShift, "super": tea.ModSuper, "meta": tea.ModMeta, "hyper": tea.ModHyper}
+var modBits = map[string]tea.KeyMod{"ctrl": tea.ModCtrl, "alt": tea.ModAlt, "shift": tea.ModShift, "super": tea.ModSuper, "hyper": tea.ModHyper}
 
-var modAliases = map[string]string{"control": "ctrl", "c": "ctrl", "option": "alt", "opt": "alt", "a": "alt", "s": "shift", "cmd": "super", "win": "super", "logo": "super", "mod": "alt"}
+// Spellings folded onto the modifiers, meta among them since terminals report the same key as either alt or meta
+var modAliases = map[string]string{"control": "ctrl", "c": "ctrl", "option": "alt", "opt": "alt", "a": "alt", "s": "shift", "cmd": "super", "win": "super", "logo": "super", "mod": "alt", "meta": "alt", "m": "alt"}
 
 var special = map[string]rune{
 	"enter": tea.KeyEnter, "tab": tea.KeyTab, "backspace": tea.KeyBackspace, "esc": tea.KeyEscape, "space": tea.KeySpace,
@@ -329,9 +330,12 @@ type parts struct {
 	r    rune
 }
 
-// Canonical chord of the parts, letters lower case under shift and US symbols folded onto their shifted form
+// Canonical chord, meta folded onto alt, letters lower case under shift and US symbols onto their shifted form
 func canon(mods tea.KeyMod, name string, r rune) string {
-	mods &= tea.ModCtrl | tea.ModAlt | tea.ModShift | tea.ModSuper | tea.ModMeta | tea.ModHyper
+	if mods&tea.ModMeta != 0 {
+		mods = mods&^tea.ModMeta | tea.ModAlt
+	}
+	mods &= tea.ModCtrl | tea.ModAlt | tea.ModShift | tea.ModSuper | tea.ModHyper
 	if name == "" {
 		switch {
 		case unicode.IsUpper(r):
