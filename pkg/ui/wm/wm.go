@@ -66,6 +66,7 @@ type Model struct {
 	sel       *selection
 	grab      *grab
 	resizer   *resizer
+	held      *entry
 	hover     *entry
 	hoverEdge region
 	hoverX    int
@@ -1204,6 +1205,7 @@ func (m *Model) letGo() {
 		m.grab = nil
 	}
 	m.resizer = nil
+	m.held = nil
 }
 
 func (m *Model) send(e *entry, msg tea.Msg) tea.Cmd {

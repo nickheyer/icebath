@@ -644,10 +644,10 @@ func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
 	if err := json.Unmarshal(body, &env); err == nil && env.Error != nil {
 		e.Type, e.Message = env.Error.Status, env.Error.Message
 		e.Transient = e.Transient || transientStatuses[e.Type]
-		return e
+		return protocol.Classify(e)
 	}
 	e.Message = strings.TrimSpace(string(body))
-	return e
+	return protocol.Classify(e)
 }
 
 // Reports statuses that denote a timeout, conflict, throttle or server failure
@@ -657,7 +657,7 @@ func transientStatus(status int) bool {
 
 func wireError(e *apiError) *protocol.Error {
 	transient := e.Code == 429 || e.Code == 500 || e.Code == 503 || e.Code == 504 || transientStatuses[e.Status]
-	return &protocol.Error{Status: e.Code, Type: e.Status, Message: e.Message, Transient: transient}
+	return protocol.Classify(&protocol.Error{Status: e.Code, Type: e.Status, Message: e.Message, Transient: transient})
 }
 
 // Parses a bare JSON body in place of a stream the way the official SDKs do

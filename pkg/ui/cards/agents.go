@@ -352,9 +352,9 @@ func (a *Agent) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			a.tr.SearchType(msg.Content)
 		}
 		return a, nil
-	case tea.MouseClickMsg, tea.MouseWheelMsg, tea.MouseReleaseMsg:
+	case tea.MouseClickMsg, tea.MouseWheelMsg, tea.MouseReleaseMsg, tea.MouseMotionMsg:
 		mo := msg.(tea.MouseMsg).Mouse()
-		if mo.Y < 1 {
+		if _, motion := msg.(tea.MouseMotionMsg); mo.Y < 1 && !motion {
 			return a, nil
 		}
 		if _, click := msg.(tea.MouseClickMsg); click && a.tr.SearchShown() && mo.Y == a.h-1 {
@@ -368,6 +368,8 @@ func (a *Agent) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			shifted = tea.MouseClickMsg(mo)
 		case tea.MouseReleaseMsg:
 			shifted = tea.MouseReleaseMsg(mo)
+		case tea.MouseMotionMsg:
+			shifted = tea.MouseMotionMsg(mo)
 		}
 		_, cmd := a.tr.Update(shifted)
 		return a, cmd

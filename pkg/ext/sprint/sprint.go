@@ -3,6 +3,7 @@ package sprint
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -34,6 +35,7 @@ func (extension) Attach(h *ext.Host) error {
 	h.Context(Context, "sprint board")
 	h.Action(keys.Action{ID: ActionOpen, Context: Context, Label: "open", Doc: "open the session of the member, or the detail of the sprint or ticket", Default: []string{"enter", "o"}})
 	h.Action(keys.Action{ID: ActionStop, Context: Context, Label: "stop", Doc: "stop the sprint", Default: []string{"x"}})
+	h.Action(keys.Action{ID: ActionResume, Context: Context, Label: "go on", Doc: "tell a sprint waiting for you to go on", Default: []string{"r"}})
 	h.Action(keys.Action{ID: ActionSettings, Context: Context, Label: "settings", Doc: "open the sprint settings", Default: []string{"s"}})
 	h.Panel(ext.Panel{Key: BoardKey, Title: "Sprints", Detail: "every sprint with its team and tickets", New: newBoard})
 	h.Panel(ext.Panel{Key: SettingsKey, Title: "Sprint settings", Detail: "models, team size and time limits of the sprint workflow", New: newSettingsCard, Settings: true})
@@ -49,6 +51,9 @@ func roleOfKind(kind string) (string, bool) {
 	return role, true
 }
 
+// Error that ends a run once a role has spent its token budget
+var errBudget = errors.New("sprint budget")
+
 // Hook that ends a run once a sprint role has spent its token budget on the session, nil for other agents
 func budgetHook(info harness.AgentInfo) agent.Hook {
 	role, ok := roleOfKind(info.Kind.Name)
@@ -63,7 +68,7 @@ func budgetHook(info harness.AgentInfo) agent.Hook {
 	sess := info.Session
 	return agent.Hooks{AfterTurnFn: func(ctx context.Context, resp protocol.Response) error {
 		if spent := sess.Usage().Total(); spent > budget {
-			return fmt.Errorf("sprint %s spent %d tokens, past its budget of %d", role, spent, budget)
+			return fmt.Errorf("%w: %s spent %d tokens, past its budget of %d", errBudget, role, spent, budget)
 		}
 		return nil
 	}}

@@ -3,6 +3,7 @@ package sprint
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // One line on each role for the kind picker and the agent tool
@@ -87,6 +88,55 @@ func pmOpening(prompt string, interactive bool) string {
 // Reminder sent when a role ended its turn without the call the stage waits on
 func nudge(toolName string) string {
 	return "The sprint cannot go on until you call " + toolName + ". Call it now with what you have."
+}
+
+// Steer sent to a role whose stage ran past its limit
+func wrapUp(toolName string, limit time.Duration) string {
+	return fmt.Sprintf("Your time limit of %s has passed. Stop exploring, finish with what you know and call %s now.", span(limit), toolName)
+}
+
+// Message that starts a role again after the person told a waiting sprint to go on
+func goOn(toolName string) string {
+	return "Go on from where you were and call " + toolName + " when you are ready."
+}
+
+// Steer sent to an engineer whose build round ran past its limit
+func wrapUpReport(limit time.Duration) string {
+	return fmt.Sprintf("The build limit of %s has passed. Finish what is in progress, leave the tree building, and end with your report now.", span(limit))
+}
+
+// Story with every ticket in full, as the plan reads in a transcript
+func planText(s Story, tickets []Ticket) string {
+	var sb strings.Builder
+	sb.WriteString(storyText(s, tickets))
+	for _, t := range tickets {
+		sb.WriteString("\n")
+		sb.WriteString(ticketText(t))
+		if len(t.DependsOn) > 0 {
+			sb.WriteString("Depends on: ")
+			sb.WriteString(strings.Join(t.DependsOn, ", "))
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+// Verdicts and summary of a review, as it reads in a transcript
+func reviewText(in reviewInput) string {
+	var sb strings.Builder
+	sb.WriteString("## Verdicts\n")
+	for _, v := range in.Verdicts {
+		fmt.Fprintf(&sb, "- %s %s", v.Ticket, v.Status)
+		if v.Notes != "" {
+			sb.WriteString(": ")
+			sb.WriteString(v.Notes)
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n## Summary\n")
+	sb.WriteString(strings.TrimSpace(in.Summary))
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 // Objective as every later role reads it
@@ -210,12 +260,21 @@ func leadOpening(o Objective, s Story, tickets []Ticket, round int) string {
 	return sb.String()
 }
 
-// Message that tells the project manager how the sprint ended
-func pmClosing(summary string, accepted, unresolved []Ticket) string {
+// Message that tells the project manager how the sprint ended, with the failure that ended it when one did
+func pmClosing(summary string, accepted, unresolved []Ticket, failure error) string {
 	var sb strings.Builder
-	sb.WriteString("The sprint has ended. Report the outcome to the person.\n\n## Lead summary\n")
-	sb.WriteString(strings.TrimSpace(summary))
-	sb.WriteString("\n")
+	if failure != nil {
+		sb.WriteString("The sprint stopped before it was done: ")
+		sb.WriteString(failure.Error())
+		sb.WriteString(". Report to the person what was done, what was left and what they can do next, in a few lines.\n")
+	} else {
+		sb.WriteString("The sprint has ended. Report the outcome to the person.\n")
+	}
+	if strings.TrimSpace(summary) != "" {
+		sb.WriteString("\n## Lead summary\n")
+		sb.WriteString(strings.TrimSpace(summary))
+		sb.WriteString("\n")
+	}
 	if len(accepted) > 0 {
 		sb.WriteString("\n## Accepted tickets\n")
 		for _, t := range accepted {

@@ -758,10 +758,10 @@ func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
 		}
 		e.Message = wire.Error.Message
 		e.Transient = e.Transient || transientTypes[wire.Error.Code] || transientTypes[wire.Error.Type]
-		return e
+		return protocol.Classify(e)
 	}
 	e.Message = strings.TrimSpace(string(body))
-	return e
+	return protocol.Classify(e)
 }
 
 // Reports statuses that denote a timeout, conflict, throttle or server failure
@@ -866,7 +866,7 @@ func (st *streamState) apply(e *streamEvent) (bool, error) {
 		e.Response.Status = statusFailed
 		return false, terminal(e.Response)
 	case "error":
-		return false, &protocol.Error{Status: 200, Type: e.Code, Message: e.Message, Transient: transientTypes[e.Code]}
+		return false, protocol.Classify(&protocol.Error{Status: 200, Type: e.Code, Message: e.Message, Transient: transientTypes[e.Code]})
 	}
 	return false, nil
 }

@@ -1,17 +1,42 @@
 package sprint
 
 import (
+	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/harness"
 )
 
+// List of names that also reads one string, split on newlines and commas, as models often send it
+type Strings []string
+
+func (l *Strings) UnmarshalJSON(data []byte) error {
+	var one string
+	if err := json.Unmarshal(data, &one); err == nil {
+		*l = nil
+		for _, part := range strings.FieldsFunc(one, func(r rune) bool { return r == '\n' || r == ',' }) {
+			if part = strings.TrimSpace(part); part != "" {
+				*l = append(*l, part)
+			}
+		}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(data, &many); err != nil {
+		return err
+	}
+	*l = many
+	return nil
+}
+
 // Keymap context of the board and the actions it answers
 const (
 	Context        = "sprint"
 	ActionOpen     = "sprint.open"
 	ActionStop     = "sprint.stop"
+	ActionResume   = "sprint.resume"
 	ActionSettings = "sprint.settings"
 	// Keys of the board panel and the settings panel
 	BoardKey    = "sprints"
@@ -44,10 +69,10 @@ const (
 
 // What the project manager settled with the person
 type Objective struct {
-	Objective   string   `json:"objective"`
-	Acceptance  []string `json:"acceptance,omitempty"`
-	Constraints []string `json:"constraints,omitempty"`
-	Notes       string   `json:"notes,omitempty"`
+	Objective   string  `json:"objective"`
+	Acceptance  Strings `json:"acceptance,omitempty"`
+	Constraints Strings `json:"constraints,omitempty"`
+	Notes       string  `json:"notes,omitempty"`
 }
 
 // Sized unit of work the planner cut the objective into
@@ -60,12 +85,12 @@ type Story struct {
 
 // One piece of the story an engineer takes
 type Ticket struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Files       []string `json:"files,omitempty"`
-	DependsOn   []string `json:"depends_on,omitempty"`
-	Estimate    string   `json:"estimate,omitempty"`
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Files       Strings `json:"files,omitempty"`
+	DependsOn   Strings `json:"depends_on,omitempty"`
+	Estimate    string  `json:"estimate,omitempty"`
 	Status      TicketStatus
 	// Member working or last at work on it
 	Engineer string
@@ -106,6 +131,12 @@ type Sprint struct {
 	Round int
 	// What the lead reported at the end
 	Summary string
+	// Member whose session the sprint waits on the person to drive, empty while it waits on none
+	Waiting string
+	// Why the sprint waits for the person to tell it to go on, empty while it runs on its own
+	Paused string
+	// Signal the person gave a paused sprint to go on
+	resume chan struct{}
 }
 
 // Copy of a sprint safe to read while the workflow goes on
@@ -123,6 +154,8 @@ type Snapshot struct {
 	Members   []Member
 	Round     int
 	Summary   string
+	Waiting   string
+	Paused    string
 }
 
 // Reports whether the sprint still goes
@@ -149,12 +182,12 @@ func (s Snapshot) Progress() (done, total int) {
 func (s *Sprint) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := Snapshot{ID: s.ID, Prompt: s.Prompt, Started: s.Started, Finished: s.Finished, Stage: s.Stage, Status: s.Status, Err: s.Err, Objective: s.Objective, Story: s.Story, Round: s.Round, Summary: s.Summary}
+	out := Snapshot{ID: s.ID, Prompt: s.Prompt, Started: s.Started, Finished: s.Finished, Stage: s.Stage, Status: s.Status, Err: s.Err, Objective: s.Objective, Story: s.Story, Round: s.Round, Summary: s.Summary, Waiting: s.Waiting, Paused: s.Paused}
 	out.Tickets = make([]Ticket, 0, len(s.Tickets))
 	for _, t := range s.Tickets {
 		c := *t
-		c.Files = append([]string(nil), t.Files...)
-		c.DependsOn = append([]string(nil), t.DependsOn...)
+		c.Files = append(Strings(nil), t.Files...)
+		c.DependsOn = append(Strings(nil), t.DependsOn...)
 		c.Notes = append([]string(nil), t.Notes...)
 		out.Tickets = append(out.Tickets, c)
 	}
@@ -173,6 +206,56 @@ func (s *Sprint) setStatus(status string) {
 	s.mu.Lock()
 	s.Status = status
 	s.mu.Unlock()
+}
+
+// Names the member the sprint waits on the person to drive, empty once it waits on none
+func (s *Sprint) setWaiting(name string) {
+	s.mu.Lock()
+	s.Waiting = name
+	s.mu.Unlock()
+}
+
+// Records why the sprint waits for the person to tell it to go on
+func (s *Sprint) pause(why string) {
+	s.mu.Lock()
+	s.Paused = why
+	s.mu.Unlock()
+}
+
+// Clears the pause and the member waited on once the sprint goes on
+func (s *Sprint) unpause() {
+	s.mu.Lock()
+	s.Paused, s.Waiting = "", ""
+	s.mu.Unlock()
+}
+
+// Channel a go on signal arrives on
+func (s *Sprint) resumed() <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.resume == nil {
+		s.resume = make(chan struct{}, 1)
+	}
+	return s.resume
+}
+
+// Tells a waiting sprint to go on, false when it is not waiting for the person
+func (s *Sprint) Resume() bool {
+	s.mu.Lock()
+	waiting := s.Finished.IsZero() && (s.Paused != "" || s.Waiting != "")
+	if s.resume == nil {
+		s.resume = make(chan struct{}, 1)
+	}
+	ch := s.resume
+	s.mu.Unlock()
+	if !waiting {
+		return false
+	}
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
+	return true
 }
 
 func (s *Sprint) setObjective(o Objective) {
@@ -236,6 +319,34 @@ func register(s *Sprint) {
 	regMu.Lock()
 	sprints = append(sprints, s)
 	regMu.Unlock()
+}
+
+// Sprint by id, nil for one this process never started
+func sprintByID(id string) *Sprint {
+	regMu.Lock()
+	defer regMu.Unlock()
+	for _, s := range sprints {
+		if s.ID == id {
+			return s
+		}
+	}
+	return nil
+}
+
+// Sprint a session belongs to as a member, false for a session of no sprint
+func sprintOfSession(id string) (Snapshot, bool) {
+	regMu.Lock()
+	list := append([]*Sprint(nil), sprints...)
+	regMu.Unlock()
+	for i := len(list) - 1; i >= 0; i-- {
+		snap := list[i].Snapshot()
+		for _, m := range snap.Members {
+			if m.Live != nil && m.Live.Session != nil && m.Live.Session.ID() == id {
+				return snap, true
+			}
+		}
+	}
+	return Snapshot{}, false
 }
 
 // Every sprint started in this process, newest first

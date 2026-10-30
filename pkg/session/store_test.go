@@ -158,3 +158,24 @@ func TestProjectSurvivesStore(t *testing.T) {
 		t.Fatalf("Project after fork: %q", f.Project())
 	}
 }
+
+func TestTruncateKeepsEarlierRecords(t *testing.T) {
+	s := New()
+	s.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "hi"}}})
+	s.AddResponse("a", protocol.Response{Content: []protocol.Part{protocol.Text{Text: "hello"}}})
+	s.Log("a", "run_end", map[string]any{"error": "context deadline exceeded"})
+	s.Log("a", "run_start", map[string]any{"input": "again"})
+	s.Append(protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: "again"}}})
+	s.Truncate(s.Len() - 1)
+	if s.Len() != 2 {
+		t.Fatalf("%d entries kept", s.Len())
+	}
+	records := s.Records()
+	if len(records) != 2 || records[0].Kind != "run_end" || records[1].Kind != "run_start" {
+		t.Fatalf("records kept: %+v", records)
+	}
+	s.Truncate(1)
+	if len(s.Records()) != 0 {
+		t.Fatalf("records newer than the dropped entry kept: %+v", s.Records())
+	}
+}

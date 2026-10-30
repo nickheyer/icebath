@@ -1,10 +1,14 @@
 package sprint
 
 import (
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/harness"
+	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 )
 
@@ -138,7 +142,11 @@ func TestPrompts(t *testing.T) {
 		"planner":  plannerOpening(o, 12),
 		"engineer": engineerOpening(o, s, tickets, tickets[1], tickets[:1]),
 		"lead":     leadOpening(o, s, tickets, 1),
-		"closing":  pmClosing("built", tickets[:1], tickets[1:]),
+		"closing":  pmClosing("built", tickets[:1], tickets[1:], nil),
+		"stopped":  pmClosing("", nil, tickets, errors.New("plan stage: the run ended without calling SprintPlan")),
+		"plan":     planText(s, tickets),
+		"review":   reviewText(reviewInput{Verdicts: []verdict{{Ticket: "T1", Status: "accepted"}, {Ticket: "T2", Status: "rework", Notes: "fix the name"}}, Summary: "nearly there"}),
+		"wrap":     wrapUp(ToolPlan, 30*time.Minute),
 	} {
 		if strings.TrimSpace(text) == "" {
 			t.Fatalf("%s prompt is empty", name)
@@ -152,5 +160,68 @@ func TestPrompts(t *testing.T) {
 	}
 	if !strings.Contains(leadOpening(o, s, tickets, 1), "round 2") {
 		t.Fatal("lead prompt lacks the round")
+	}
+	plan := planText(s, tickets)
+	for _, want := range []string{"# Story: Ship", "T1 one", "T2 two", "do two", "Depends on: T1", "a.go"} {
+		if !strings.Contains(plan, want) {
+			t.Fatalf("plan text lacks %q", want)
+		}
+	}
+	review := reviewText(reviewInput{Verdicts: []verdict{{Ticket: "T2", Status: "rework", Notes: "fix the name"}}, Summary: "nearly there"})
+	for _, want := range []string{"T2 rework: fix the name", "nearly there"} {
+		if !strings.Contains(review, want) {
+			t.Fatalf("review text lacks %q", want)
+		}
+	}
+	if !strings.Contains(pmClosing("", nil, tickets, errors.New("boom")), "boom") {
+		t.Fatal("closing prompt lacks the failure")
+	}
+}
+
+func TestLenientLists(t *testing.T) {
+	var o Objective
+	if err := json.Unmarshal([]byte(`{"objective":"x","acceptance":"tests pass\nbuild is green, no new deps","constraints":["a","b"]}`), &o); err != nil {
+		t.Fatal(err)
+	}
+	if len(o.Acceptance) != 3 || o.Acceptance[1] != "build is green" || len(o.Constraints) != 2 {
+		t.Fatalf("lists %+v", o)
+	}
+	var in planInput
+	if err := json.Unmarshal([]byte(`{"story":{"title":"t","summary":"s"},"tickets":[{"title":"a","description":"d","files":"a.go, b.go","depends_on":""}]}`), &in); err != nil {
+		t.Fatal(err)
+	}
+	if len(in.Tickets[0].Files) != 2 || len(in.Tickets[0].DependsOn) != 0 {
+		t.Fatalf("ticket lists %+v", in.Tickets[0])
+	}
+	if err := json.Unmarshal([]byte(`{"objective":"x","acceptance":7}`), &o); err == nil {
+		t.Fatal("number taken as a list")
+	}
+}
+
+func TestUnwaited(t *testing.T) {
+	if got := unwaited("nobody", ToolPlan); !strings.Contains(got, "not part of a sprint") || !strings.Contains(got, "/"+Name) {
+		t.Fatalf("stranger: %s", got)
+	}
+	live := &harness.Live{Session: session.New()}
+	s := &Sprint{ID: "sprint-9", Started: time.Now(), Stage: StagePlan}
+	s.addMember(Member{Role: RolePlanner, Name: RolePlanner, Live: live})
+	register(s)
+	if got := unwaited(live.Session.ID(), ToolPlan); !strings.Contains(got, "sprint-9 is in its plan stage") {
+		t.Fatalf("running: %s", got)
+	}
+	s.finish(errors.New("plan stage: the run ended without calling SprintPlan"), "")
+	got := unwaited(live.Session.ID(), ToolPlan)
+	for _, want := range []string{"sprint-9 ended", "failed: plan stage", "/" + Name} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("ended: %s", got)
+		}
+	}
+	if err := deliver(live.Session.ID(), ToolPlan, planInput{}); err == nil || !strings.Contains(err.Error(), "sprint-9 ended") {
+		t.Fatalf("deliver after the end: %v", err)
+	}
+	w := await("s", ToolReview)
+	defer w.release("s")
+	if err := deliver("s", ToolPlan, planInput{}); err == nil || !strings.Contains(err.Error(), "waits for SprintReview, not SprintPlan") {
+		t.Fatalf("wrong tool: %v", err)
 	}
 }

@@ -555,7 +555,7 @@ func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
 		e.Message = strings.TrimSpace(string(body))
 	}
 	e.Transient = e.Transient || transientMessage(e.Message)
-	return e
+	return protocol.Classify(e)
 }
 
 // Reports statuses that denote a timeout, conflict, throttle or server failure

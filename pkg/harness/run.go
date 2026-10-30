@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/mission"
 	"github.com/nickheyer/icebath/pkg/protocol"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/tool"
 )
@@ -189,13 +190,15 @@ type Controller struct {
 	MissionsOf func(*session.Session) *mission.Store
 	// Reports whether a session shows thinking, runs on one that does not losing every thinking event before the pump
 	Thinking func(*session.Session) bool
-	send     Sender
-	mu       sync.Mutex
-	runs     map[string]*Run
-	order    []string
-	active   map[*agent.Agent]bool
-	next     int
-	wg       sync.WaitGroup
+	// Hears every root run as it ends, before the program does
+	OnEnd  func(*Run)
+	send   Sender
+	mu     sync.Mutex
+	runs   map[string]*Run
+	order  []string
+	active map[*agent.Agent]bool
+	next   int
+	wg     sync.WaitGroup
 }
 
 func NewController(send Sender, pump *Pump) *Controller {
@@ -230,6 +233,7 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 		store.Assign(missionID, a.Name)
 	}
 	rctx = WithRun(rctx, id)
+	rctx = provider.WithLabel(rctx, id)
 	rctx = mission.WithID(rctx, missionID)
 	rctx = tool.WithReporter(rctx, func(p tool.Progress) { c.send(ProgressMsg{Run: id, Progress: p}) })
 	observe := c.observer(r)
@@ -243,6 +247,9 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 		delete(c.active, a)
 		c.mu.Unlock()
 		cancel()
+		if c.OnEnd != nil {
+			c.OnEnd(r)
+		}
 		if c.Saver != nil {
 			c.Saver.Flush(r.Session)
 		}

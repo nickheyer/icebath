@@ -80,12 +80,12 @@ func settingRows(env *cards.Env) []cards.Field {
 		cards.Field{Key: "team.parallel", Label: "parallel", Group: "team", Kind: cards.FieldChoice, Choices: []string{"true", "false"}, Help: "Engineers work at the same time rather than one after another"},
 		cards.Field{Key: "team.max_rework", Label: "max rework", Group: "team", Kind: cards.FieldNumber, Integer: true, Lo: 0, Step: 1, Start: float64(d.Team.MaxRework), Help: "Review rounds that may send tickets back to their engineer"},
 		cards.Field{Key: "team.max_tickets", Label: "max tickets", Group: "team", Kind: cards.FieldNumber, Integer: true, Lo: 1, Step: 1, Start: float64(d.Team.MaxTickets), Help: "Tickets the planner may cut a story into"},
-		cards.Field{Key: "limits.total", Label: "total", Group: "limits", Kind: cards.FieldText, Placeholder: "3h", Check: durationCheck("total"), Help: "Time the whole sprint may take, every stage included"},
-		cards.Field{Key: "limits.refine", Label: "refine", Group: "limits", Kind: cards.FieldText, Placeholder: "1h", Check: durationCheck("refine"), Help: "Time the project manager has to settle the objective, and again to report back"},
-		cards.Field{Key: "limits.plan", Label: "plan", Group: "limits", Kind: cards.FieldText, Placeholder: "15m", Check: durationCheck("plan"), Help: "Time the planner has to size the story and cut it into tickets"},
-		cards.Field{Key: "limits.build", Label: "build", Group: "limits", Kind: cards.FieldText, Placeholder: "90m", Check: durationCheck("build"), Help: "Time the engineers have for each build round"},
-		cards.Field{Key: "limits.review", Label: "review", Group: "limits", Kind: cards.FieldText, Placeholder: "30m", Check: durationCheck("review"), Help: "Time the lead has for each review round"},
-		cards.Field{Key: "interactive", Label: "interactive", Group: "general", Kind: cards.FieldChoice, Choices: []string{"true", "false"}, Help: "The project manager talks with the person before handing off, resolving the prompt alone when off"},
+		cards.Field{Key: "limits.total", Label: "total", Group: "limits", Kind: cards.FieldText, Placeholder: "3h", Check: durationCheck("total"), Help: "Time the whole sprint may take before every run is stopped after its current turn and the sprint fails"},
+		cards.Field{Key: "limits.refine", Label: "refine", Group: "limits", Kind: cards.FieldText, Placeholder: "1h", Check: durationCheck("refine"), Help: "Time the project manager works on a run before it is told to wrap up, and the time it has to report at the end"},
+		cards.Field{Key: "limits.plan", Label: "plan", Group: "limits", Kind: cards.FieldText, Placeholder: "30m", Check: durationCheck("plan"), Help: "Time the planner works before it is told to wrap up and submit the tickets it has"},
+		cards.Field{Key: "limits.build", Label: "build", Group: "limits", Kind: cards.FieldText, Placeholder: "90m", Check: durationCheck("build"), Help: "Time the engineers work in a build round before they are told to finish and report"},
+		cards.Field{Key: "limits.review", Label: "review", Group: "limits", Kind: cards.FieldText, Placeholder: "30m", Check: durationCheck("review"), Help: "Time the lead works in a review round before it is told to wrap up and give its verdicts"},
+		cards.Field{Key: "interactive", Label: "interactive", Group: "general", Kind: cards.FieldChoice, Choices: []string{"true", "false"}, Help: "The project manager talks with the person, and a stalled stage waits for the person instead of failing the sprint"},
 	)
 	return out
 }

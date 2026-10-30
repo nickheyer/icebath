@@ -232,6 +232,11 @@ func shiftMouse(msg tea.MouseMsg) tea.Msg {
 	return relocate(msg, mo)
 }
 
+// Hands a press below the strip to the card shown, which may take hold of the pointer
+func (g *Tabs) Grabs(x, y int) bool {
+	return y >= tabHead && grabs(g.current(), x, y-tabHead)
+}
+
 // Index of the tab under column x on the strip, or -1
 func (g *Tabs) tabAt(x int) int {
 	for i := 0; i+1 < len(g.spans); i++ {

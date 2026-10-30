@@ -29,6 +29,7 @@ type Jobs struct {
 	start  int
 	listH  int
 	w      int
+	held   int // row of scrollbar held
 }
 
 type tail struct {
@@ -39,7 +40,7 @@ type tail struct {
 func NewJobs(env *Env) *Jobs {
 	vp := viewport.New()
 	vp.MouseWheelEnabled = true
-	j := &Jobs{env: env, tails: map[string]*tail{}, vp: vp, follow: true}
+	j := &Jobs{env: env, tails: map[string]*tail{}, vp: vp, follow: true, held: -1}
 	j.refresh()
 	return j
 }
@@ -129,8 +130,9 @@ func (j *Jobs) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		if msg.Button != tea.MouseLeft {
 			return j, nil
 		}
-		if y := msg.Y - j.listH - 1; y >= 0 && msg.X == j.w-1 && j.w >= minGutterWidth {
-			switch hit, line := j.tailGutter().hit(y); hit {
+		if y := msg.Y - j.listH - 1; j.onBar(msg.X, msg.Y) {
+			g := j.tailGutter()
+			switch hit, _ := g.hit(y); hit {
 			case hitPageUp:
 				j.vp.PageUp()
 				j.follow = false
@@ -138,7 +140,8 @@ func (j *Jobs) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 				j.vp.PageDown()
 				j.follow = j.vp.AtBottom()
 			case hitJump:
-				j.vp.SetYOffset(line)
+				j.held = g.grab(y)
+				j.vp.SetYOffset(g.dragTo(y, j.held))
 				j.follow = j.vp.AtBottom()
 			}
 			return j, nil
@@ -223,7 +226,8 @@ func (j *Jobs) View(w, h int) string {
 	return strings.Join(append(append(table, sep), tail), "\n")
 }
 
-// Scrollbar of the tail capped with the keys that page it
+func (j *Jobs) onBar(x, y int) bool { return y-j.listH-1 >= 0 && x >= j.w-2 && j.w >= minGutterWidth }
+func (j *Jobs) Grabs(x, y int) bool { return j.onBar(x, y) && j.tailGutter().onTrack(y-j.listH-1) }
 func (j *Jobs) tailGutter() gutter {
 	return gutter{h: j.vp.Height(), total: j.vp.TotalLineCount(), offset: j.vp.YOffset(), visible: j.vp.Height(), up: j.env.Keys.First("jobs.scroll.up"), down: j.env.Keys.First("jobs.scroll.down")}
 }

@@ -59,9 +59,9 @@ func newBoard(env *cards.Env) wm.Card {
 		Columns: []render.Column{{Title: "KIND", Max: 10}, {Title: "NAME", Max: 28}, {Title: "STATE", Max: 14}, {Title: "DETAIL", Flex: 1}},
 		Rows:    b.rows,
 		Detail:  b.detail,
-		Actions: map[string]func(*cards.List, int) tea.Cmd{ActionOpen: b.open, ActionStop: b.stop, ActionSettings: b.settings},
+		Actions: map[string]func(*cards.List, int) tea.Cmd{ActionOpen: b.open, ActionStop: b.stop, ActionResume: b.resume, ActionSettings: b.settings},
 		Free:    map[string]bool{ActionSettings: true},
-		Empty:   func() string { return "no sprint yet, run /sprint <request> to start one" },
+		Empty:   func() string { return "no sprint yet, run /" + Name + " <request> to start one" },
 	})
 	return b
 }
@@ -136,12 +136,19 @@ func (b *board) rows() [][]string {
 		if s.Status != "" {
 			detail = s.Status + sep + detail
 		}
-		out = append(out, []string{"sprint", s.ID, b.stage(s.Stage), detail})
+		state := b.stage(s.Stage)
+		if s.Running() && s.Paused != "" {
+			state = render.Warm("paused", t)
+		}
+		out = append(out, []string{"sprint", s.ID, state, detail})
 		b.refs = append(b.refs, rowRef{kind: rowSprint, snap: si})
 		for mi, m := range s.Members {
 			state := render.Dim("idle", t)
-			if m.Live != nil && busy[m.Live.Session] {
+			switch {
+			case m.Live != nil && busy[m.Live.Session]:
 				state = render.Cool("running", t)
+			case s.Running() && s.Waiting == m.Name:
+				state = render.Warm("waiting for you", t)
 			}
 			out = append(out, []string{m.Role, m.Name, state, sessionName(m.Live)})
 			b.refs = append(b.refs, rowRef{kind: rowMember, snap: si, index: mi})
@@ -243,6 +250,13 @@ func (b *board) detail(i int) []string {
 		add("size", s.Story.Size)
 		add("review round", strconv.Itoa(s.Round))
 		add("summary", s.Summary)
+		if s.Running() && s.Paused != "" {
+			add("paused", s.Paused)
+			add("go on", "press r once it is fixed, or x to stop the sprint")
+		}
+		if s.Running() && s.Waiting != "" {
+			add("waiting", "open the session of "+s.Waiting+" and tell it to go on, or press r to send it on")
+		}
 		if s.Err != nil {
 			add("error", s.Err.Error())
 		}
@@ -307,6 +321,20 @@ func (b *board) stop(l *cards.List, i int) tea.Cmd {
 	}
 	l.Refresh()
 	return wm.Notify("stopping sprint "+s.ID, wm.Success)
+}
+
+// Tells the sprint of the row to go on, refusing one that is not waiting for the person
+func (b *board) resume(l *cards.List, i int) tea.Cmd {
+	_, snap, ok := b.ref(i)
+	if !ok {
+		return nil
+	}
+	s := sprintByID(snap.ID)
+	if s == nil || !s.Resume() {
+		return wm.Notify("sprint "+snap.ID+" is not waiting for you", wm.Info)
+	}
+	l.Refresh()
+	return wm.Notify("sprint "+snap.ID+" told to go on", wm.Success)
 }
 
 // Opens the settings panel of the extension

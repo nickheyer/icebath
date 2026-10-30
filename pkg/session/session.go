@@ -316,7 +316,7 @@ func (s *Session) Pruned(callID string) (string, bool) {
 	return stub, ok
 }
 
-// Drops every entry after the first n and every record newer than the last kept entry
+// Drops every entry after the first n and every record newer than the first dropped entry
 func (s *Session) Truncate(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -326,11 +326,8 @@ func (s *Session) Truncate(n int) {
 	if n >= len(s.entries) {
 		return
 	}
+	limit := s.entries[n].Seq
 	s.entries = s.entries[:n]
-	limit := -1
-	if n > 0 {
-		limit = s.entries[n-1].Seq
-	}
 	kept := s.records[:0]
 	for _, r := range s.records {
 		if r.Seq < limit {

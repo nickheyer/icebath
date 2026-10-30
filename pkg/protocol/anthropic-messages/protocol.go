@@ -714,7 +714,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 				if e.Error != nil {
 					msg = *e.Error
 				}
-				yield(protocol.Event{}, &protocol.Error{Status: 200, Type: msg.Type, Message: msg.Message, Transient: transientTypes[msg.Type]})
+				yield(protocol.Event{}, protocol.Classify(&protocol.Error{Status: 200, Type: msg.Type, Message: msg.Message, Transient: transientTypes[msg.Type]}))
 				return
 			}
 			if err != nil {
@@ -795,7 +795,7 @@ func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
 		e.Type, e.Message = er.Error.Type, er.Error.Message
 	}
 	e.Transient = transientStatus(status) || transientTypes[e.Type]
-	return e
+	return protocol.Classify(e)
 }
 
 // Reports statuses that denote a timeout, conflict, throttle or server failure

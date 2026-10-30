@@ -125,7 +125,7 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 func Default() Config {
 	return Config{
 		Team:        Team{MaxEngineers: 4, TicketsPerEngineer: 1, Parallel: true, MaxRework: 1, MaxTickets: 12},
-		Limits:      Limits{Total: Duration(3 * time.Hour), Refine: Duration(time.Hour), Plan: Duration(15 * time.Minute), Build: Duration(90 * time.Minute), Review: Duration(30 * time.Minute)},
+		Limits:      Limits{Total: Duration(3 * time.Hour), Refine: Duration(time.Hour), Plan: Duration(30 * time.Minute), Build: Duration(90 * time.Minute), Review: Duration(30 * time.Minute)},
 		Interactive: true,
 	}
 }

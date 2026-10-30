@@ -528,6 +528,29 @@ type OpenedMsg struct {
 	Flow string
 }
 
+// Record kind of a note a workflow wrote into a session for the person
+const NoteKind = "note"
+
+// Text a workflow wrote into the transcript of a session for the person, kept with the session
+type NoteMsg struct {
+	Session string
+	Text    string
+	Level   Level
+	Flow    string
+}
+
+// Note as the session record stores it
+type NoteData struct {
+	Text  string `json:"text"`
+	Level Level  `json:"level"`
+}
+
+// Panel a workflow asks the terminal to open beside its sessions
+type PanelMsg struct {
+	Key  string
+	Flow string
+}
+
 // Workflow that reached its end
 type FlowDoneMsg struct {
 	ID       string
@@ -616,6 +639,26 @@ func (f *Flow) Open(ctx context.Context, kind string) (*Live, error) {
 	}
 	f.send(OpenedMsg{Live: l, Flow: f.ID})
 	return l, nil
+}
+
+// Writes a note for the person into the transcript of the session, stored with it and shown at once
+func (f *Flow) Note(l *Live, level Level, text string) {
+	if l == nil || strings.TrimSpace(text) == "" {
+		return
+	}
+	l.Session.Log(f.Name, NoteKind, NoteData{Text: text, Level: level})
+	f.App.Saver.Touch(l.Session)
+	f.send(NoteMsg{Session: l.Session.ID(), Text: text, Level: level, Flow: f.ID})
+}
+
+// Asks the terminal to open the panel beside the sessions of the workflow
+func (f *Flow) Panel(key string) {
+	f.send(PanelMsg{Key: key, Flow: f.ID})
+}
+
+// Asks the run to stop after the turn or tool round it is in
+func (f *Flow) Interrupt(r *Run) error {
+	return f.App.Control.Interrupt(r.ID)
 }
 
 // Starts a run on the session with the input, assigning it to a mission when one is named, refusing a session with a run going

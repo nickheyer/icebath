@@ -2,6 +2,7 @@ package cards
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"image/color"
@@ -113,6 +114,9 @@ type block struct {
 	approval      *approvalInfo
 	expanded      bool
 	full          bool
+	// Note a workflow wrote for the person, rendered as markdown with the weight of its level
+	rich  bool
+	level harness.Level
 	// Runes of a thought settled before its newest arrived, and when they arrived
 	settled int
 	grown   time.Time
@@ -208,12 +212,16 @@ type Transcript struct {
 	rootOnly bool
 	// Actions whose keys cap the scrollbar
 	pages [2]string
+	// Action that expands the block under the cursor, named in the cut marker
+	toggleKey string
 	// Whether the last view had room for the scrollbar
 	bar bool
 	// Scroll to latest button as last drawn
 	latest hotspot
 	// Press awaiting its release, nil between clicks
 	pressed *press
+	// Row of the scrollbar thumb held through a drag, below zero between drags
+	held int
 }
 
 // Everything the rendered view depends on beyond the painted lines
@@ -230,7 +238,7 @@ type match struct {
 
 // Builds the transcript of the root lineage
 func NewTranscript(env *Env) *Transcript {
-	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, follow: true, cursor: -1, current: -1, rootOnly: true, thinking: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}, shown: anim.NewValueWith(0, anim.Snappy), timer: ticker{every: transcriptTickEvery}}
+	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, follow: true, cursor: -1, current: -1, held: -1, rootOnly: true, thinking: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}, toggleKey: "session.toggle", shown: anim.NewValueWith(0, anim.Snappy), timer: ticker{every: transcriptTickEvery}}
 }
 
 // Builds a transcript that follows one child agent of a run
@@ -240,6 +248,7 @@ func NewChildTranscript(env *Env, run, agentName string) *Transcript {
 	tr.key = "trace:" + run + "/" + agentName
 	tr.Run, tr.Agent, tr.rootOnly = run, agentName, false
 	tr.pages = [2]string{"transcript.page.up", "transcript.page.down"}
+	tr.toggleKey = "transcript.toggle"
 	return tr
 }
 
@@ -322,7 +331,7 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			tr.Follow()
 			return tr, nil
 		}
-		if tr.gutterShown() && msg.X > tr.w {
+		if tr.onBar(msg.X) {
 			tr.clickGutter(msg.Y)
 			return tr, nil
 		}
@@ -333,7 +342,13 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			tr.pressed = &press{block: tr.cursor, x: msg.X, y: msg.Y, at: time.Now()}
 		}
 		return tr, nil
+	case tea.MouseMotionMsg:
+		if tr.held >= 0 {
+			tr.dragBar(msg.Y)
+		}
+		return tr, nil
 	case tea.MouseReleaseMsg:
+		tr.held = -1
 		p := tr.pressed
 		tr.pressed = nil
 		if p == nil || msg.X != p.x || msg.Y != p.y || time.Since(p.at) > clickHold {
@@ -637,7 +652,7 @@ func (tr *Transcript) toggle(i int) tea.Cmd {
 	}
 	b := tr.blocks[i]
 	switch b.kind {
-	case bThinking, bCompact, bError:
+	case bThinking, bCompact, bError, bNote, bHook, bApproval:
 		b.expanded = !b.expanded
 	case bUser, bSteer:
 		b.full = !b.full
@@ -648,6 +663,10 @@ func (tr *Transcript) toggle(i int) tea.Cmd {
 			b.expanded, b.full = !b.expanded, false
 		}
 	case bChild:
+		if b.err != nil {
+			b.expanded = !b.expanded
+			break
+		}
 		id := b.call.ID
 		if id == "" {
 			return nil
@@ -675,6 +694,14 @@ func (tr *Transcript) add(b *block) *block {
 	tr.blocks = append(tr.blocks, b)
 	tr.dirty = true
 	return b
+}
+
+// Adds a note a workflow wrote for the person, shown in full until folded
+func (tr *Transcript) Note(at time.Time, text string, level harness.Level) {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	tr.add(&block{kind: bNote, at: at, text: text, level: level, rich: true, expanded: true, done: true})
 }
 
 // Folds one agent event into the blocks
@@ -1117,10 +1144,23 @@ func (tr *Transcript) loadRecord(r session.Record) {
 		tr.add(&block{kind: bNote, agent: r.Agent, at: r.Time, text: "interrupted", done: true})
 	case "run_end":
 		var d struct {
-			Error string `json:"error"`
+			Error   string `json:"error"`
+			Dropped string `json:"dropped"`
 		}
-		if json.Unmarshal(r.Data, &d) == nil && d.Error != "" {
+		if json.Unmarshal(r.Data, &d) != nil {
+			return
+		}
+		if d.Dropped != "" {
+			tr.add(&block{kind: bUser, agent: r.Agent, at: r.Time, parts: []protocol.Part{protocol.Text{Text: d.Dropped}}, done: true})
+			tr.turns++
+		}
+		if d.Error != "" {
 			tr.add(&block{kind: bError, agent: r.Agent, at: r.Time, err: fmt.Errorf("%s", d.Error), done: true})
+		}
+	case harness.NoteKind:
+		var d harness.NoteData
+		if json.Unmarshal(r.Data, &d) == nil && d.Text != "" {
+			tr.add(&block{kind: bNote, agent: r.Agent, at: r.Time, text: d.Text, level: d.Level, rich: true, expanded: true, done: true})
 		}
 	case facts.RecordKind:
 		var c facts.Change
@@ -1284,6 +1324,10 @@ func estimate(b *block) int {
 	switch b.kind {
 	case bText, bThinking, bCompact:
 		return strings.Count(b.text, "\n") + 3
+	case bNote:
+		if b.rich && b.expanded {
+			return strings.Count(b.text, "\n") + 3
+		}
 	case bUser, bSteer:
 		rows := 2
 		for _, p := range b.parts {
@@ -1411,10 +1455,16 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 		if a.Key != "" && (a.Verdict == "always" || a.Verdict == "never") {
 			text += " " + render.Cool(a.Key, t)
 		}
-		if a.Reason != "" && !a.Allowed && !a.Pending {
+		reason := a.Reason != "" && !a.Allowed && !a.Pending
+		if reason && !b.expanded {
 			text += " " + render.Dim(render.Truncate(a.Reason, body/2, t), t)
 		}
 		lines = append(lines, mark+glyph+" "+text+" "+stamp)
+		if reason && b.expanded {
+			lines = append(lines, wrap(render.Dim(a.Reason, t))...)
+		} else if reason && ansi.StringWidth(a.Reason) > body/2 {
+			lines = append(lines, "  "+render.Dim(tr.more(0), t))
+		}
 	case bCompact:
 		head := render.Warm(t.Glyphs.Compact+" compacting", t)
 		if b.done {
@@ -1434,14 +1484,9 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 			lines = append(lines, wrap(render.Dim(b.text, t))...)
 		}
 	case bHook:
-		lines = append(lines, mark+render.Dim(t.Glyphs.Hook+" "+render.Truncate(b.text, body, t), t))
-		if ex, ok := b.data.(agent.HookExecution); ok && strings.TrimSpace(ex.Stdout) != "" {
-			for _, l := range render.Lines(render.Tail(strings.TrimSpace(ex.Stdout), 5)) {
-				lines = append(lines, "    "+render.Dim(render.Truncate(l, body-2, t), t))
-			}
-		}
+		lines = append(lines, tr.hookLines(mark, b, body)...)
 	case bNote:
-		lines = append(lines, mark+render.Dim(t.Glyphs.Note+" "+render.Truncate(b.text, body, t), t))
+		lines = append(lines, tr.noteLines(mark, b, body, stamp)...)
 	case bError:
 		shown, cut := tr.errorLines(b.err, body, b.expanded)
 		lines = append(lines, mark+render.Bad(shown[0], t)+" "+stamp)
@@ -1461,7 +1506,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 		case !b.done:
 			head += " " + render.Cool(render.Spinner(tr.tick, t)+" working", t)
 		case b.err != nil:
-			head += " " + render.Bad(render.Truncate(b.err.Error(), body/2, t), t)
+			head += " " + render.Bad("failed", t)
 		default:
 			head += " " + render.Good("done", t)
 			if b.text != "" {
@@ -1469,6 +1514,15 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 			}
 		}
 		lines = append(lines, mark+head+" "+stamp)
+		if b.done && b.err != nil {
+			shown, cut := tr.errorLines(b.err, body-2, b.expanded)
+			for _, l := range shown {
+				lines = append(lines, "  "+render.Bad(l, t))
+			}
+			if cut != "" {
+				lines = append(lines, "  "+render.Dim(cut, t))
+			}
+		}
 	}
 	lines = append(lines, "")
 	b.cache, b.cacheKey = lines, key
@@ -1713,6 +1767,16 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 		}
 		return lines
 	}
+	if b.result != nil && b.result.IsError && !b.expanded {
+		shown, cut := tr.errorLines(errors.New(protocol.Response{Content: b.result.Content}.Text()), body-2, false)
+		for _, l := range shown {
+			lines = append(lines, "  "+render.Bad(l, t))
+		}
+		if cut != "" {
+			lines = append(lines, "  "+render.Dim(cut, t))
+		}
+		return lines
+	}
 	if b.result == nil || !b.expanded {
 		return lines
 	}
@@ -1742,9 +1806,92 @@ func (tr *Transcript) errorLines(err error, width int, expanded bool) ([]string,
 	return []string{render.Truncate(first, width, t)}, tr.more(len(full) - 1)
 }
 
-// Cut marker naming the lines left out
+// Cut marker naming the lines left out and how to show them, the count left off when it is unknown
 func (tr *Transcript) more(n int) string {
-	return fmt.Sprintf("%s %d more lines, click to show all", tr.env.Theme.Glyphs.Ellipsis, n)
+	how := tr.env.keyed(tr.toggleKey, "or click to show all")
+	if n <= 0 {
+		return fmt.Sprintf("%s %s", tr.env.Theme.Glyphs.Ellipsis, how)
+	}
+	return fmt.Sprintf("%s %d more lines, %s", tr.env.Theme.Glyphs.Ellipsis, n, how)
+}
+
+// Glyph and color of a note by its level, a plain note dim
+func (tr *Transcript) noteStyle(b *block) (string, func(string, theme.Theme) string) {
+	g := tr.env.Theme.Glyphs
+	if !b.rich {
+		return g.Note, render.Dim
+	}
+	switch b.level {
+	case harness.Success:
+		return g.Success, render.Good
+	case harness.Warn:
+		return g.Warn, render.Warm
+	case harness.Error:
+		return g.Fail, render.Bad
+	}
+	return g.Info, render.Cool
+}
+
+// Note in full as markdown when expanded, else its first line with the marker for the rest
+func (tr *Transcript) noteLines(mark string, b *block, body int, stamp string) []string {
+	t := tr.env.Theme
+	glyph, paint := tr.noteStyle(b)
+	text := strings.TrimSpace(b.text)
+	first, _, multi := strings.Cut(text, "\n")
+	wrapped := strings.Split(render.Wrap(text, body-2), "\n")
+	if !b.expanded || (!multi && len(wrapped) == 1) {
+		lines := []string{mark + paint(glyph+" "+render.Truncate(first, body-2, t), t)}
+		if b.rich {
+			lines[0] += " " + stamp
+		}
+		if !b.expanded && (multi || len(wrapped) > 1) {
+			lines = append(lines, "  "+render.Dim(tr.more(len(wrapped)-1), t))
+		}
+		return lines
+	}
+	lines := []string{mark + paint(glyph, t) + " " + stamp}
+	if !b.rich {
+		for _, l := range wrapped {
+			lines = append(lines, "  "+render.Dim(l, t))
+		}
+		return lines
+	}
+	for _, l := range strings.Split(render.MarkdownText(text, body-2, t), "\n") {
+		lines = append(lines, "  "+l)
+	}
+	return lines
+}
+
+// Hook line with the tail of its output, every line of both once expanded
+func (tr *Transcript) hookLines(mark string, b *block, body int) []string {
+	t := tr.env.Theme
+	ex, ran := b.data.(agent.HookExecution)
+	out := ""
+	if ran {
+		out = strings.TrimSpace(ex.Stdout)
+	}
+	if b.expanded {
+		lines := []string{mark + render.Dim(t.Glyphs.Hook, t)}
+		for _, l := range strings.Split(render.Wrap(b.text, body-2), "\n") {
+			lines = append(lines, "  "+render.Dim(l, t))
+		}
+		for _, l := range strings.Split(render.Wrap(out, body-4), "\n") {
+			if l != "" {
+				lines = append(lines, "    "+render.Dim(l, t))
+			}
+		}
+		return lines
+	}
+	lines := []string{mark + render.Dim(t.Glyphs.Hook+" "+render.Truncate(b.text, body, t), t)}
+	tail := render.Lines(render.Tail(out, 5))
+	for _, l := range tail {
+		lines = append(lines, "    "+render.Dim(render.Truncate(l, body-2, t), t))
+	}
+	hidden := len(render.Lines(out)) - len(tail)
+	if ansi.StringWidth(b.text) > body || hidden > 0 {
+		lines = append(lines, "  "+render.Dim(tr.more(hidden), t))
+	}
+	return lines
 }
 
 // Short count shown beside a finished tool
@@ -1949,17 +2096,35 @@ func (tr *Transcript) gutter() gutter {
 	return g
 }
 
-// Pages or jumps for a click on row y of the scrollbar
+// Reports whether column x lies on the scrollbar, the bar and the blank column before it
+func (tr *Transcript) onBar(x int) bool { return tr.gutterShown() && x >= tr.w }
+
+// Reports whether a press at the cell takes hold of the scrollbar thumb
+func (tr *Transcript) Grabs(x, y int) bool { return tr.onBar(x) && tr.gutter().onTrack(y) }
+
+// Pages for a click on a cap, takes hold of the thumb for one on the track and moves it there
 func (tr *Transcript) clickGutter(y int) {
-	switch hit, line := tr.gutter().hit(y); hit {
+	g := tr.gutter()
+	switch hit, _ := g.hit(y); hit {
 	case hitPageUp:
 		tr.Page(-1)
 	case hitPageDown:
 		tr.Page(1)
 	case hitJump:
-		tr.vp.SetYOffset(line)
-		tr.follow = tr.vp.NearBottom(followSlack)
+		tr.held = g.grab(y)
+		tr.jumpTo(g.dragTo(y, tr.held))
 	}
+}
+
+// Follows a drag of the thumb to row y
+func (tr *Transcript) dragBar(y int) {
+	tr.jumpTo(tr.gutter().dragTo(y, tr.held))
+}
+
+// Shows the content from the offset, following new lines again only when that is the bottom
+func (tr *Transcript) jumpTo(offset int) {
+	tr.vp.SetYOffset(offset)
+	tr.follow = tr.vp.NearBottom(followSlack)
 }
 
 func (tr *Transcript) Status() string {

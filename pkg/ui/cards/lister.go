@@ -204,6 +204,10 @@ func (l *lister) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			return l, l.act(l.primary)
 		}
 		l.sel = row
+	case tea.MouseMotionMsg:
+		l.pane.drag(msg.Y, l.env)
+	case tea.MouseReleaseMsg:
+		l.pane.release()
 	case tea.MouseWheelMsg:
 		step := 1
 		if msg.Button == tea.MouseWheelUp {
@@ -215,6 +219,11 @@ func (l *lister) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		l.sel = min(max(l.sel+step, 0), max(0, len(l.shown)-1))
 	}
 	return l, nil
+}
+
+// Reports whether a press at the cell takes hold of the scrollbar of the detail pane
+func (l *lister) Grabs(x, y int) bool {
+	return l.detailShown() && l.edit == nil && l.capture == nil && l.ask == nil && l.pane.grabs(x, y, l.w, l.env)
 }
 
 // Carries out a keymap action on the capture, question, edit, filter bar, detail, cursor or tab

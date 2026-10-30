@@ -94,6 +94,33 @@ func (g gutter) thumb() (start, length int) {
 	return start, length
 }
 
+// Reports whether row y lies on the track between the caps while the content scrolls
+func (g gutter) onTrack(y int) bool {
+	ts, tl := g.track()
+	return g.scrolls() && y >= ts && y < ts+tl
+}
+
+// Row of the thumb a press on row y took hold of, its middle for a press on the track beside it
+func (g gutter) grab(y int) int {
+	th, thl := g.thumb()
+	if y >= th && y < th+thl {
+		return y - th
+	}
+	return thl / 2
+}
+
+// Offset that puts the held row of the thumb under row y of the track
+func (g gutter) dragTo(y, held int) int {
+	ts, tl := g.track()
+	_, thl := g.thumb()
+	room := tl - thl
+	if room <= 0 || !g.scrolls() {
+		return g.offset
+	}
+	start := min(max(y-held-ts, 0), room)
+	return start * (g.total - g.visible) / room
+}
+
 // Track row a content line falls on, beside the line itself while nothing scrolls
 func (g gutter) rowOf(line int) int {
 	ts, tl := g.track()
@@ -227,6 +254,8 @@ type detailPane struct {
 	top    int
 	rows   int
 	total  int
+	// One past the row of the thumb held through a drag, zero between drags
+	held int
 }
 
 // Moves the pane by n lines, kept inside its lines
@@ -284,24 +313,49 @@ func (d *detailPane) act(id string) bool {
 	return true
 }
 
-// Pages or jumps for a click on the scrollbar, reporting whether the click landed in the pane
+// Reports whether the cell lies on the scrollbar of the pane
+func (d *detailPane) onBar(x, y, w int) bool {
+	row := y - d.top
+	return d.rows > 0 && row >= 0 && row < d.rows && w >= minGutterWidth && x >= w-2
+}
+
+// Reports whether a press at the cell takes hold of the scrollbar
+func (d *detailPane) grabs(x, y, w int, env *Env) bool {
+	return d.onBar(x, y, w) && d.gutter(env).onTrack(y-d.top)
+}
+
+// Pages for a click on a cap, takes hold of the thumb for one on the track, reporting whether the click landed in the pane
 func (d *detailPane) click(x, y, w int, env *Env) bool {
 	row := y - d.top
 	if d.rows <= 0 || row < 0 || row >= d.rows {
 		return false
 	}
-	if x == w-1 && w >= minGutterWidth {
-		switch hit, line := d.gutter(env).hit(row); hit {
+	if d.onBar(x, y, w) {
+		g := d.gutter(env)
+		switch hit, _ := g.hit(row); hit {
 		case hitPageUp:
 			d.by(-max(d.rows-1, 1))
 		case hitPageDown:
 			d.by(max(d.rows-1, 1))
 		case hitJump:
-			d.scroll = line
+			d.held = g.grab(row) + 1
+			d.scroll = g.dragTo(row, d.held-1)
 		}
 	}
 	return true
 }
+
+// Follows a drag of the thumb to row y, reporting whether one is going
+func (d *detailPane) drag(y int, env *Env) bool {
+	if d.held <= 0 {
+		return false
+	}
+	d.scroll = d.gutter(env).dragTo(y-d.top, d.held-1)
+	return true
+}
+
+// Lets go of the thumb
+func (d *detailPane) release() { d.held = 0 }
 
 // Scrolls by n for a wheel at row y, reporting whether the wheel was over the pane
 func (d *detailPane) wheel(y, n int) bool {

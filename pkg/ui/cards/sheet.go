@@ -38,6 +38,7 @@ type sheetLayout struct {
 type sheet struct {
 	env    *Env
 	fields []*field
+	held   int
 	at     int
 	lastAt int
 	typing bool
@@ -55,7 +56,7 @@ type sheet struct {
 
 // Builds a sheet over the fields, focused on the first that shows
 func newSheet(env *Env, fields []*field) *sheet {
-	s := &sheet{env: env, fields: fields, lastAt: -1, bad: map[*field]string{}}
+	s := &sheet{env: env, fields: fields, lastAt: -1, held: -1, bad: map[*field]string{}}
 	s.at = s.step(-1, 1)
 	return s
 }
@@ -273,20 +274,34 @@ func (s *sheet) view(w, h int, t theme.Theme) string {
 	return body + "\n" + strings.Join(lines, "\n")
 }
 
-// Pages or jumps for a click on the scrollbar, reporting whether the click landed there
+func (s *sheet) onBar(x, y int) bool { return s.narrow && x >= s.w-2 && y >= 0 && y < s.body }
+func (s *sheet) gutter() gutter {
+	return gutter{h: s.body, total: s.total, offset: s.scroll, visible: s.body}
+}
+func (s *sheet) grabs(x, y int) bool { return s.onBar(x, y) && s.gutter().onTrack(y) }
 func (s *sheet) page(x, y int) bool {
-	if !s.narrow || x != s.w-1 || y < 0 || y >= s.body {
+	if !s.onBar(x, y) {
 		return false
 	}
-	g := gutter{h: s.body, total: s.total, offset: s.scroll, visible: s.body}
-	switch kind, line := g.hit(y); kind {
+	g := s.gutter()
+	switch kind, _ := g.hit(y); kind {
 	case hitPageUp:
 		s.scroll -= max(s.body-1, 1)
 	case hitPageDown:
 		s.scroll += max(s.body-1, 1)
 	case hitJump:
-		s.scroll = line
+		s.held = g.grab(y)
+		s.scroll = g.dragTo(y, s.held)
 	}
+	return true
+}
+
+// Follows a drag of the thumb to row y, reporting whether one is going
+func (s *sheet) drag(y int) bool {
+	if s.held < 0 {
+		return false
+	}
+	s.scroll = s.gutter().dragTo(y, s.held)
 	return true
 }
 

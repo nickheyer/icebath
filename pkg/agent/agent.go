@@ -321,7 +321,7 @@ func (a *Agent) Run(ctx context.Context, input []protocol.Part, observe func(Eve
 	}
 	observe(Event{Type: EventRunStart, Parts: input})
 	a.Session.Log(a.Name, "run_start", map[string]any{"model": a.ModelID, "input": protocolText(input)})
-	resp, err := a.run(ctx, input, observe, rounds, &round)
+	resp, dropped, err := a.run(ctx, input, observe, rounds, &round)
 	end := Event{Type: EventRunEnd, Err: err, Usage: a.Session.Usage()}
 	if err == nil || resp.Content != nil {
 		r := resp
@@ -332,15 +332,19 @@ func (a *Agent) Run(ctx context.Context, input []protocol.Part, observe func(Eve
 	if err != nil {
 		record["error"] = err.Error()
 	}
+	if len(dropped) > 0 {
+		record["dropped"] = protocolText(dropped)
+	}
 	a.Session.Log(a.Name, "run_end", record)
 	return resp, err
 }
 
-func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Event), rounds int, round *int) (protocol.Response, error) {
+// Runs the turns, handing back the input it took out of the session again when the first turn failed
+func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Event), rounds int, round *int) (protocol.Response, []protocol.Part, error) {
 	var err error
 	for _, h := range a.Hooks {
 		if input, err = h.BeforeRun(ctx, input); err != nil {
-			return protocol.Response{}, err
+			return protocol.Response{}, nil, err
 		}
 	}
 	appended := false
@@ -351,7 +355,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 	continued := false
 	for *round = 1; ; *round++ {
 		if a.stopRequested() {
-			return protocol.Response{}, a.interrupt(ctx, observe)
+			return protocol.Response{}, nil, a.interrupt(ctx, observe)
 		}
 		a.steer(observe)
 		observe(Event{Type: EventTurnStart})
@@ -359,8 +363,9 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 		if err != nil {
 			if *round == 1 && appended {
 				a.Session.Truncate(a.Session.Len() - 1)
+				return protocol.Response{}, input, err
 			}
-			return protocol.Response{}, err
+			return protocol.Response{}, nil, err
 		}
 		if a.MaxTokens > 0 && resp.StopReason == protocol.StopEnd && resp.Usage.Output >= a.MaxTokens {
 			resp.StopReason = protocol.StopLength
@@ -368,7 +373,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 		a.Session.AddResponse(a.Name, resp)
 		for _, h := range a.Hooks {
 			if err := h.AfterTurn(ctx, resp); err != nil {
-				return resp, err
+				return resp, nil, err
 			}
 		}
 		turn := resp
@@ -376,13 +381,13 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 		if resp.StopReason != protocol.StopToolUse {
 			cont, err := a.stopped(ctx, resp, continued)
 			if err != nil {
-				return resp, err
+				return resp, nil, err
 			}
 			if cont == nil {
-				return resp, nil
+				return resp, nil, nil
 			}
 			if rounds > 0 && *round > rounds {
-				return resp, fmt.Errorf("agent: %d rounds reached", rounds)
+				return resp, nil, fmt.Errorf("agent: %d rounds reached", rounds)
 			}
 			continued = true
 			a.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: cont})
@@ -391,7 +396,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 		}
 		calls := resp.ToolCalls()
 		if len(calls) == 0 {
-			return resp, errors.New("agent: stop reason tool_use with no tool calls")
+			return resp, nil, errors.New("agent: stop reason tool_use with no tool calls")
 		}
 		if rounds > 0 && *round > rounds {
 			limit := fmt.Errorf("agent: %d tool rounds reached", rounds)
@@ -402,11 +407,11 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 				observe(Event{Type: EventToolEnd, Call: call, Result: results[i], Err: limit})
 			}
 			a.Session.AddResults(a.Name, results)
-			return resp, limit
+			return resp, nil, limit
 		}
 		a.Session.AddResults(a.Name, a.round(ctx, calls, observe))
 		if a.stopRequested() {
-			return resp, a.interrupt(ctx, observe)
+			return resp, nil, a.interrupt(ctx, observe)
 		}
 	}
 }

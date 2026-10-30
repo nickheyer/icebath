@@ -160,6 +160,13 @@ func (m *Model) motion_(mo tea.Mouse, sx, sy int) tea.Cmd {
 		}
 		m.letGo()
 	}
+	if h := m.held; h != nil {
+		if mo.Button == tea.MouseLeft {
+			return tea.Batch(m.forward(h, tea.MouseMotionMsg(mo)), m.wake())
+		}
+		m.held = nil
+		return tea.Batch(m.forward(h, tea.MouseReleaseMsg(mo)), m.wake())
+	}
 	if m.sel != nil && mo.Button == tea.MouseLeft {
 		if m.extendSelection(sx, sy) {
 			return m.wake()
@@ -259,7 +266,11 @@ func (m *Model) press(msg tea.MouseClickMsg, sx, sy int) tea.Cmd {
 	case rLeft, rRight, rBottom:
 		m.resizer = m.resizerFor(ws, e, reg)
 	case rContent:
-		m.beginSelection(e, sx, sy)
+		if c := m.contentRect(f); grabs(e.card, sx-c.X, sy-c.Y) {
+			m.held = e
+		} else {
+			m.beginSelection(e, sx, sy)
+		}
 	}
 	return tea.Batch(append(cmds, m.focusEntry(e))...)
 }
@@ -399,6 +410,10 @@ func (m *Model) release(msg tea.MouseReleaseMsg, sx, sy int) tea.Cmd {
 	if m.resizer != nil {
 		m.resizer = nil
 		return m.wake()
+	}
+	if h := m.held; h != nil {
+		m.held = nil
+		return tea.Batch(m.forward(h, msg), m.wake())
 	}
 	if m.sel != nil {
 		cmd := m.endSelection()

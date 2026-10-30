@@ -173,6 +173,8 @@ func encode(msg any) (Line, bool) {
 		return Line{Type: "notice", Time: time.Now(), Kind: levelName(v.Level), Text: v.Text, Agent: v.Flow}, true
 	case harness.OpenedMsg:
 		return Line{Type: "session_opened", Time: time.Now(), Text: v.Live.Session.ID(), Agent: v.Flow}, true
+	case harness.NoteMsg:
+		return Line{Type: "note", Time: time.Now(), Kind: levelName(v.Level), Text: v.Text, Agent: v.Flow, Run: v.Session}, true
 	case harness.FlowDoneMsg:
 		l := Line{Type: "workflow_done", Time: time.Now(), Text: v.Name, Agent: v.ID, Duration: float64(v.Duration) / float64(time.Millisecond)}
 		if v.Err != nil {
@@ -250,6 +252,9 @@ func (w *textWriter) write(msg any) {
 		w.newline()
 		fmt.Fprintf(w.err, "%s %s %s: %s\n", t.Glyphs.Record, v.Change.Op, v.Change.Fact.ID, v.Change.Fact.Title)
 	case harness.NoticeMsg:
+		w.newline()
+		fmt.Fprintf(w.err, "%s %s\n", t.Glyphs.Note, v.Text)
+	case harness.NoteMsg:
 		w.newline()
 		fmt.Fprintf(w.err, "%s %s\n", t.Glyphs.Note, v.Text)
 	case harness.FlowDoneMsg:

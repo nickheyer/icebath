@@ -197,6 +197,9 @@ var registry = func() []Action {
 		act("session.expand", Session, "expand all", "expand all tool results", "alt+e"),
 		act("session.collapse", Session, "collapse all", "collapse all tool results", "alt+shift+e"),
 		act("session.thinking", Session, "thinking", "show or hide thinking output", "alt+t"),
+		act("session.toggle", Session, "expand", "expand or collapse the transcript block under the cursor", "alt+o"),
+		quiet(act("session.block.next", Session, "next block", "move the transcript cursor to the next block", "alt+>")),
+		quiet(act("session.block.prev", Session, "previous block", "move the transcript cursor to the previous block", "alt+<")),
 		act("mode.cycle", Session, "mode", "switch to the next permission mode", "shift+tab"),
 
 		quiet(act("complete.next", Complete, "next", "select the next suggestion", "down", "tab", "ctrl+n")),

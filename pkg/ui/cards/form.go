@@ -101,6 +101,10 @@ func (f *Form) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			return f, nil
 		}
 		return f, f.click(msg.X, msg.Y)
+	case tea.MouseMotionMsg:
+		f.sheet.drag(msg.Y)
+	case tea.MouseReleaseMsg:
+		f.sheet.held = -1
 	case tea.MouseWheelMsg:
 		if msg.Button == tea.MouseWheelUp {
 			f.sheet.wheel(-1)
@@ -110,6 +114,9 @@ func (f *Form) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	}
 	return f, nil
 }
+
+// Reports whether a press at the cell takes hold of the scrollbar thumb of the sheet
+func (f *Form) Grabs(x, y int) bool { return f.sheet.grabs(x, y) }
 
 // Presses a button, pages the sheet, or focuses the field under the click and applies the hit on its control
 func (f *Form) click(x, y int) tea.Cmd {

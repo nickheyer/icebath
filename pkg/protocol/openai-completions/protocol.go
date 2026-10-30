@@ -557,7 +557,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 }
 
 func streamError(e apiError) *protocol.Error {
-	return &protocol.Error{Status: 200, Type: errType(e), Message: e.Message, Transient: transientTypes[e.Type] || transientTypes[e.Code]}
+	return protocol.Classify(&protocol.Error{Status: 200, Type: errType(e), Message: e.Message, Transient: transientTypes[e.Type] || transientTypes[e.Code]})
 }
 
 // Routes reasoning, content, refusal and tool call fragments into builder blocks following accumulate_delta
@@ -663,10 +663,10 @@ func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
 	if err := json.Unmarshal(body, &wire); err == nil && wire.Error != nil && wire.Error.Message != "" {
 		e.Type, e.Message = errType(*wire.Error), wire.Error.Message
 		e.Transient = e.Transient || transientTypes[wire.Error.Type] || transientTypes[wire.Error.Code]
-		return e
+		return protocol.Classify(e)
 	}
 	e.Message = string(bytes.TrimSpace(body))
-	return e
+	return protocol.Classify(e)
 }
 
 func errType(e apiError) string {

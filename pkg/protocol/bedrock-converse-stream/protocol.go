@@ -805,10 +805,10 @@ func (st *streamState) handle(f Frame) error {
 			return fmt.Errorf("bedrock-converse-stream: exception payload: %w", err)
 		}
 		typ := f.String(":exception-type")
-		return &protocol.Error{Status: 200, Type: typ, Message: body.Message, Transient: transientTypes[typ]}
+		return protocol.Classify(&protocol.Error{Status: 200, Type: typ, Message: body.Message, Transient: transientTypes[typ]})
 	case "error":
 		code := f.String(":error-code")
-		return &protocol.Error{Status: 200, Type: code, Message: f.String(":error-message"), Transient: transientTypes[code]}
+		return protocol.Classify(&protocol.Error{Status: 200, Type: code, Message: f.String(":error-message"), Transient: transientTypes[code]})
 	}
 	return fmt.Errorf("bedrock-converse-stream: frame has no event, exception or error message type")
 }
@@ -984,7 +984,7 @@ func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
 	e.Type = sanitizeErrorCode(code)
 	e.Message = wire.Message
 	e.Transient = e.Transient || transientTypes[lowerFirst(e.Type)]
-	return e
+	return protocol.Classify(e)
 }
 
 // Reports statuses that denote a timeout, conflict, throttle or server failure

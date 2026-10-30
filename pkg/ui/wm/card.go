@@ -48,6 +48,16 @@ type Selectable interface {
 	Selectable() bool
 }
 
+// Card with controls a press takes hold of, such as a scrollbar, the drag then following the pointer instead of sweeping text
+type Grabber interface {
+	Grabs(x, y int) bool
+}
+
+func grabs(c Card, x, y int) bool {
+	g, ok := c.(Grabber)
+	return ok && g.Grabs(x, y)
+}
+
 // Card that opens as a floating dialog over the tiles
 type Floater interface {
 	Floating() bool

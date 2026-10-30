@@ -37,6 +37,7 @@ type Approval struct {
 	buttons []button
 	// Reports whether a run belongs to the session the dialog serves
 	Owns func(run string) bool
+	held int
 }
 
 // Clickable verdict on the bottom row
@@ -47,7 +48,7 @@ type button struct {
 
 // Builds the dialog for the approvals of one session
 func NewApproval(env *Env, sessionID string, owns func(run string) bool) *Approval {
-	a := &Approval{env: env, session: sessionID, Owns: owns}
+	a := &Approval{env: env, session: sessionID, Owns: owns, held: -1}
 	a.refresh()
 	return a
 }
@@ -130,16 +131,24 @@ func (a *Approval) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 				}
 			}
 		}
-		if a.overflows() && msg.X == a.w-1 && msg.Y < a.h-2 {
-			switch hit, line := a.gutter().hit(msg.Y); hit {
+		if a.onBar(msg.X, msg.Y) {
+			g := a.gutter()
+			switch hit, _ := g.hit(msg.Y); hit {
 			case hitPageUp:
 				a.scroll = max(0, a.scroll-max(a.h-3, 1))
 			case hitPageDown:
 				a.scroll += max(a.h-3, 1)
 			case hitJump:
-				a.scroll = line
+				a.held = g.grab(msg.Y)
+				a.scroll = g.dragTo(msg.Y, a.held)
 			}
 		}
+	case tea.MouseMotionMsg:
+		if a.held >= 0 {
+			a.scroll = a.gutter().dragTo(msg.Y, a.held)
+		}
+	case tea.MouseReleaseMsg:
+		a.held = -1
 	case tea.MouseWheelMsg:
 		switch msg.Button {
 		case tea.MouseWheelDown:
@@ -401,7 +410,9 @@ func (a *Approval) footer(w int) string {
 }
 
 // Reports whether the request runs past the rows above the buttons
-func (a *Approval) overflows() bool { return a.rows > max(a.h-2, 1) }
+func (a *Approval) overflows() bool     { return a.rows > max(a.h-2, 1) }
+func (a *Approval) onBar(x, y int) bool { return a.overflows() && x >= a.w-2 && y < a.h-2 }
+func (a *Approval) Grabs(x, y int) bool { return a.onBar(x, y) && a.gutter().onTrack(y) }
 
 // Scrollbar of the request capped with the keys that page it
 func (a *Approval) gutter() gutter {

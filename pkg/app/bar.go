@@ -168,6 +168,9 @@ func (m *Model) queue(states map[*desk]deskState) []attention {
 			out = append(out, attention{desk: d, signal: wm.Fresh, at: s.run.Finished(), text: text + where})
 		}
 	}
+	for _, st := range m.app.Stuck() {
+		out = append(out, attention{signal: wm.Failed, at: st.Since, text: st.Text() + ", every run on it fails until you fix it or switch profile"})
+	}
 	slices.SortStableFunc(out, func(a, b attention) int {
 		if a.signal != b.signal {
 			return int(b.signal) - int(a.signal)
@@ -177,16 +180,21 @@ func (m *Model) queue(states map[*desk]deskState) []attention {
 	return out
 }
 
-// Serves the first session in the queue, focusing its approval or its session card in its workspace
+// Serves the first session in the queue, focusing its approval or its session card in its workspace, and the config
+// panel for a stuck profile
 func (m *Model) dispatch() tea.Cmd {
 	q := m.queue(m.deskStates())
 	if len(q) == 0 {
 		return nil
 	}
-	if d := q[0].desk; q[0].signal == wm.Blocked {
+	d := q[0].desk
+	switch {
+	case d == nil:
+		return m.wm.OpenHere(m.panel("config"))
+	case q[0].signal == wm.Blocked:
 		return m.openFrom(d, d.approval)
 	}
-	return m.wm.Focus(q[0].desk.session)
+	return m.wm.Focus(d.session)
 }
 
 // Controls at the right of the bar, least important first since the bar drops them from the left

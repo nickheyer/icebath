@@ -3,9 +3,11 @@ package sprint
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/protocol"
@@ -56,8 +58,11 @@ func deliver(sessionID, toolName string, v any) error {
 	waits.mu.Lock()
 	w := waits.m[sessionID]
 	waits.mu.Unlock()
-	if w == nil || w.tool != toolName {
-		return fmt.Errorf("no sprint stage is waiting for %s on this session", toolName)
+	if w == nil {
+		return errors.New(unwaited(sessionID, toolName))
+	}
+	if w.tool != toolName {
+		return fmt.Errorf("this stage of the sprint waits for %s, not %s", w.tool, toolName)
 	}
 	select {
 	case w.ch <- v:
@@ -65,6 +70,22 @@ func deliver(sessionID, toolName string, v any) error {
 	default:
 		return fmt.Errorf("%s was already called for this stage", toolName)
 	}
+}
+
+// Why no stage waits for the tool on the session, by what became of the sprint the session served
+func unwaited(sessionID, toolName string) string {
+	snap, ok := sprintOfSession(sessionID)
+	if !ok {
+		return fmt.Sprintf("this session is not part of a sprint, so nothing waits for %s; the person starts one with /%s <request>", toolName, Name)
+	}
+	if snap.Running() {
+		return fmt.Sprintf("sprint %s is in its %s stage and is not waiting for %s on this session", snap.ID, snap.Stage, toolName)
+	}
+	why := "done"
+	if snap.Err != nil {
+		why = "failed: " + snap.Err.Error()
+	}
+	return fmt.Sprintf("sprint %s ended %s ago (%s), so nothing waits for %s on this session; the person can start another with /%s <request>", snap.ID, span(time.Since(snap.Finished)), why, toolName, Name)
 }
 
 // Tools of the sprint roles, each handing its call to the stage waiting on the session of the calling run
@@ -109,7 +130,7 @@ func (t resolveTool) Run(ctx context.Context, args json.RawMessage) (tool.Result
 	if err := deliver(id, ToolResolve, o); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	return tool.Text("Objective handed to the planner. Tell the person the sprint is under way, then wait to be told the outcome.").With(o), nil
+	return tool.Text("Objective handed to the planner. Tell the person the sprint is under way, then wait to be told the outcome.\n\n" + objectiveText(o)).With(o), nil
 }
 
 // Story and tickets as the planner submits them
@@ -155,7 +176,7 @@ func (t planTool) Run(ctx context.Context, args json.RawMessage) (tool.Result, e
 	if err := deliver(id, ToolPlan, in); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	return tool.Textf("Story %q with %d tickets handed to the team.", in.Story.Title, len(in.Tickets)).With(in), nil
+	return tool.Text(fmt.Sprintf("Story %q with %d tickets handed to the team.\n\n", in.Story.Title, len(in.Tickets)) + planText(in.Story, in.Tickets)).With(in), nil
 }
 
 // Fills in missing ids, then refuses an empty plan, too many tickets, duplicate ids, unknown dependencies or a cycle
@@ -250,6 +271,17 @@ type reviewInput struct {
 	Summary  string    `json:"summary"`
 }
 
+// Count of tickets the review sent back
+func (in reviewInput) rework() int {
+	n := 0
+	for _, v := range in.Verdicts {
+		if v.Status == "rework" {
+			n++
+		}
+	}
+	return n
+}
+
 type reviewTool struct{ app *harness.App }
 
 func (reviewTool) Definition() protocol.Tool {
@@ -288,11 +320,5 @@ func (t reviewTool) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 	if err := deliver(id, ToolReview, in); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	rework := 0
-	for _, v := range in.Verdicts {
-		if v.Status == "rework" {
-			rework++
-		}
-	}
-	return tool.Textf("Review recorded, %d ticket(s) sent back.", rework).With(in), nil
+	return tool.Text(fmt.Sprintf("Review recorded, %d sent back.\n\n", in.rework()) + reviewText(in)).With(in), nil
 }

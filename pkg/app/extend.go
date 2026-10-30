@@ -294,7 +294,19 @@ func (m *Model) extensionMsg(msg tea.Msg) (tea.Cmd, bool) {
 	case harness.NoticeMsg:
 		return m.wm.Toast(render.Truncate(msg.Text, 100, m.theme), toastLevel(msg.Level), 0), true
 	case harness.OpenedMsg:
-		return m.openDesk(nil, msg.Live), true
+		return m.openFlowDesk(msg.Flow, msg.Live), true
+	case harness.PanelMsg:
+		c := m.extPanel(msg.Key)
+		if c == nil {
+			return nil, true
+		}
+		ws := m.wm.WorkspaceByID(msg.Flow)
+		if ws == nil {
+			ws = m.wm.Active()
+		}
+		return m.wm.OpenAside(ws, c, wm.Box{}), true
+	case harness.NoteMsg:
+		return nil, true
 	case harness.FlowDoneMsg:
 		switch {
 		case msg.Err == nil:
@@ -308,6 +320,23 @@ func (m *Model) extensionMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return tea.Batch(opened, m.startWorkflow(msg.name, msg.arg)), true
 	}
 	return nil, false
+}
+
+// Opens the session of a workflow in the workspace named after it, made and shown when its first session opens
+func (m *Model) openFlowDesk(flow string, live *harness.Live) tea.Cmd {
+	if flow == "" {
+		return m.openDesk(nil, live)
+	}
+	if d := m.deskOfLive(live); d != nil {
+		return m.wm.Focus(d.session)
+	}
+	d := m.addDesk(live)
+	ws := m.wm.WorkspaceByID(flow)
+	if ws == nil {
+		ws, cmd := m.wm.AddWorkspace(flow, d.session)
+		return tea.Batch(cmd, m.wm.Switch(m.wm.IndexOf(ws)))
+	}
+	return m.wm.OpenAside(ws, d.session, wm.Box{})
 }
 
 // Extensions as the config tab lists them

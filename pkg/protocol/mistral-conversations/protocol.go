@@ -729,7 +729,7 @@ func (st *streamState) apply(data event) (bool, error) {
 		return true, st.b.Finish(st.stop, "", u)
 	case "conversation.response.error":
 		transient := data.Code == 429 || data.Code >= 500 && data.Code < 600
-		return false, &protocol.Error{Status: 200, Type: data.Type, Message: fmt.Sprintf("%s (code %d)", data.Message, data.Code), Transient: transient}
+		return false, protocol.Classify(&protocol.Error{Status: 200, Type: data.Type, Message: fmt.Sprintf("%s (code %d)", data.Message, data.Code), Transient: transient})
 	default:
 		return false, fmt.Errorf("mistral-conversations: cannot carry %q events", data.Type)
 	}
@@ -850,6 +850,11 @@ func (st *streamState) cite(key string, c protocol.Citation) error {
 
 // Parses the object error, string detail and validation list shapes, otherwise the trimmed body
 func (Protocol) DecodeError(status int, body []byte) *protocol.Error {
+	return protocol.Classify(decodeError(status, body))
+}
+
+// Reads the message, type and code out of the error body shapes the endpoint uses
+func decodeError(status int, body []byte) *protocol.Error {
 	e := &protocol.Error{Status: status, Message: strings.TrimSpace(string(body)), Transient: transientStatus(status)}
 	var obj errorObject
 	if err := json.Unmarshal(body, &obj); err == nil && obj.Message != "" {

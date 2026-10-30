@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/facts"
@@ -97,6 +100,70 @@ type App struct {
 	children *Endpoint
 	summary  *Endpoint
 	closed   sync.Once
+	// Profiles whose endpoint refuses every call until the person acts, by name
+	stuck   map[string]Stuck
+	stuckMu sync.Mutex
+}
+
+// Profile whose endpoint refuses every call until the person acts, with the refusal and when it was first heard
+type Stuck struct {
+	Profile string
+	Err     *protocol.Error
+	Since   time.Time
+}
+
+// Why the profile is stuck and since when, for the person
+func (s Stuck) Text() string {
+	return fmt.Sprintf("%s %s since %s: %s", s.Profile, s.Err.Why(), s.Since.Local().Format("15:04"), s.Err.Message)
+}
+
+// Profiles stuck right now, in name order
+func (a *App) Stuck() []Stuck {
+	a.stuckMu.Lock()
+	defer a.stuckMu.Unlock()
+	out := make([]Stuck, 0, len(a.stuck))
+	for _, s := range a.stuck {
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Profile < out[j].Profile })
+	return out
+}
+
+// Stuck state of a profile, false while its endpoint answers
+func (a *App) StuckOf(profile string) (Stuck, bool) {
+	a.stuckMu.Lock()
+	defer a.stuckMu.Unlock()
+	s, ok := a.stuck[profile]
+	return s, ok
+}
+
+// Marks the profile of a run stuck when it ended on a refusal of the account, and clears it when a run passed
+func (a *App) heard(r *Run) {
+	profile := a.endpointOf(r.Session).Profile.Name
+	if profile == "" {
+		return
+	}
+	err := r.Err()
+	a.stuckMu.Lock()
+	defer a.stuckMu.Unlock()
+	if e := protocol.StuckError(err); e != nil {
+		if _, already := a.stuck[profile]; already {
+			return
+		}
+		if a.stuck == nil {
+			a.stuck = map[string]Stuck{}
+		}
+		s := Stuck{Profile: profile, Err: e, Since: time.Now()}
+		a.stuck[profile] = s
+		a.send(NoticeMsg{Level: Error, Text: s.Text()})
+		return
+	}
+	if err == nil {
+		if _, was := a.stuck[profile]; was {
+			delete(a.stuck, profile)
+			a.send(NoticeMsg{Level: Success, Text: profile + " answers again"})
+		}
+	}
 }
 
 // Options a caller passes beside the configuration
@@ -206,6 +273,7 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	}
 	app.Control = NewController(send, app.Pump)
 	app.Control.Saver, app.Control.Meter, app.Control.Missions, app.Control.Subagents = app.Saver, app.Meter, app.Missions, app.Subagents
+	app.Control.OnEnd = app.heard
 	app.Control.MissionsOf = func(sess *session.Session) *mission.Store {
 		if l := app.LiveOf(sess); l != nil {
 			return l.Missions
@@ -400,7 +468,7 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 	}
 	cfg := a.Config
 	kind, _ := a.KindOf(sess)
-	ag := &agent.Agent{Name: name, Model: ep.Provider, ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
+	ag := &agent.Agent{Name: name, Model: named{Model: ep.Provider, profile: ep.Profile.Name}, ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
 	if ag.MaxTokens == 0 && protocol.RequiresMaxTokens(ep.Provider.Protocol) {
 		ag.MaxTokens = ep.Catalog.MaxOutput
 	}
@@ -448,6 +516,26 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 	// Last so it strips and digests the request exactly as every other hook leaves it
 	ag.Hooks = append(ag.Hooks, &agent.StripThinking{})
 	return ag, nil
+}
+
+// Model whose failures name the profile they came from, so a transcript says which endpoint refused
+type named struct {
+	agent.Model
+	profile string
+}
+
+func (n named) Stream(ctx context.Context, req protocol.Request) iter.Seq2[protocol.Event, error] {
+	return func(yield func(protocol.Event, error) bool) {
+		for ev, err := range n.Model.Stream(ctx, req) {
+			if err != nil {
+				yield(ev, fmt.Errorf("profile %s: %w", n.profile, err))
+				return
+			}
+			if !yield(ev, nil) {
+				return
+			}
+		}
+	}
 }
 
 // Writer that turns hook output into messages

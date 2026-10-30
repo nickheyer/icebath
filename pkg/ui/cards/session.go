@@ -1,7 +1,9 @@
 package cards
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -63,12 +65,9 @@ func (s *Session) Glyph() string       { return s.env.Theme.Glyphs.Session }
 func (s *Session) Key() string         { return "session:" + s.live.Session.ID() }
 func (s *Session) Selectable() bool    { return true }
 func (s *Session) MinSize() (int, int) { return 30, 8 }
-
-// Restarts the transcript repaint loop the card may have missed a tick of while closed
-func (s *Session) Init() tea.Cmd { return s.Transcript.Init() }
-
-// Reports whether the card may close, which it may while no run goes and the app lets go of the session
-func (s *Session) Closable() bool { return !s.busy() && (s.Locked == nil || !s.Locked()) }
+func (s *Session) Init() tea.Cmd       { return s.Transcript.Init() }
+func (s *Session) Closable() bool      { return !s.busy() && (s.Locked == nil || !s.Locked()) }
+func (s *Session) Grabs(x, y int) bool { return y < s.split && s.Transcript.Grabs(x, y) }
 
 // Rebuilds the transcript from the session after compaction or a fork
 func (s *Session) Reload() {
@@ -164,6 +163,19 @@ func (s *Session) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		_, cmd := s.Transcript.Update(msg)
 		return s, cmd
+	case harness.NoteMsg:
+		if msg.Session != s.live.Session.ID() {
+			return s, nil
+		}
+		s.Transcript.Note(time.Now(), msg.Text, msg.Level)
+		return s, s.Transcript.Init()
+	case harness.AttemptMsg:
+		a := msg.Attempt
+		if a.Wait <= 0 || a.Label == "" || !s.owns(a.Label) {
+			return s, nil
+		}
+		s.Transcript.Note(time.Now(), fmt.Sprintf("retrying in %s: %s", render.Elapsed(a.Wait), a.Err), harness.Warn)
+		return s, s.Transcript.Init()
 	case wm.FocusMsg:
 		_, cmd := s.Transcript.Update(msg)
 		return s, tea.Batch(cmd, s.Composer.SetFocus(msg.Focused))
@@ -202,12 +214,9 @@ func (s *Session) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			return s, cmd
 		}
 		return s, nil
-	case tea.MouseReleaseMsg:
-		if msg.Y < s.split {
-			_, cmd := s.Transcript.Update(msg)
-			return s, cmd
-		}
-		return s, nil
+	case tea.MouseReleaseMsg, tea.MouseMotionMsg:
+		_, cmd := s.Transcript.Update(msg)
+		return s, cmd
 	case tickMsg:
 		_, cmd := s.Transcript.Update(msg)
 		return s, cmd
@@ -240,6 +249,12 @@ func (s *Session) act(id string) tea.Cmd {
 		tr.ExpandAll(true)
 	case "session.collapse":
 		tr.ExpandAll(false)
+	case "session.toggle":
+		return tr.Toggle()
+	case "session.block.next":
+		tr.MoveCursor(1)
+	case "session.block.prev":
+		tr.MoveCursor(-1)
 	case "session.thinking":
 		session := s.live.Session.ID()
 		return func() tea.Msg { return ThinkingMsg{Session: session} }

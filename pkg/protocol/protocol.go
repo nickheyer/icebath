@@ -4,12 +4,14 @@ package protocol
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -67,6 +69,10 @@ type Error struct {
 	Message string
 	// Overload or throttling the wire reports by type rather than status, worth a retry like a 429 or 5xx
 	Transient bool
+	// The account is out of funds or past its spending limit, so every call fails until the person pays
+	Billing bool
+	// The credential was rejected, so every call fails until the person fixes the key
+	Auth bool
 }
 
 func (e *Error) Error() string {
@@ -74,6 +80,84 @@ func (e *Error) Error() string {
 		return fmt.Sprintf("protocol: http %d: %s", e.Status, e.Message)
 	}
 	return fmt.Sprintf("protocol: http %d %s: %s", e.Status, e.Type, e.Message)
+}
+
+// Reports whether the endpoint refuses every call until the person acts, so no retry or new run can pass
+func (e *Error) Stuck() bool { return e.Billing || e.Auth }
+
+// Why the endpoint is stuck, in words for the person
+func (e *Error) Why() string {
+	switch {
+	case e.Billing:
+		return "out of credit"
+	case e.Auth:
+		return "credential rejected"
+	}
+	return ""
+}
+
+// Error types every protocol family uses for a rejected credential
+var authTypes = map[string]bool{
+	"authentication_error":   true,
+	"invalid_api_key":        true,
+	"invalid_authentication": true,
+	"UNAUTHENTICATED":        true,
+	"unauthorized":           true,
+}
+
+// Error types every protocol family uses for an account out of funds
+var billingTypes = map[string]bool{
+	"billing_error":              true,
+	"insufficient_quota":         true,
+	"billing_hard_limit_reached": true,
+	"billing_not_active":         true,
+	"payment_required":           true,
+}
+
+// Phrases endpoints use when the account, not the request, is the problem
+var billingPhrases = []string{
+	"credit balance",
+	"purchase credits",
+	"insufficient credit",
+	"insufficient funds",
+	"insufficient_quota",
+	"insufficient quota",
+	"exceeded your current quota",
+	"billing",
+	"spend limit",
+	"spending limit",
+	"payment required",
+	"payment method",
+}
+
+// Reports whether an error message says the account is out of funds or past its spending limit
+func BillingMessage(msg string) bool {
+	lower := strings.ToLower(msg)
+	for _, phrase := range billingPhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// Marks an error as billing or auth from its status, type and message, which also makes it final rather than transient
+func Classify(e *Error) *Error {
+	e.Billing = e.Status == http.StatusPaymentRequired || billingTypes[e.Type] || BillingMessage(e.Message)
+	e.Auth = e.Status == http.StatusUnauthorized || authTypes[e.Type]
+	if e.Billing || e.Auth {
+		e.Transient = false
+	}
+	return e
+}
+
+// Error of the stuck kind inside err, nil when the chain holds none or one the endpoint may yet answer
+func StuckError(err error) *Error {
+	var e *Error
+	if errors.As(err, &e) && e.Stuck() {
+		return e
+	}
+	return nil
 }
 
 // Protocol neutral turn request

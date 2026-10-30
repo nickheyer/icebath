@@ -11,6 +11,7 @@ import (
 	"iter"
 	"maps"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -68,6 +69,52 @@ const (
 	retryMax      = 8 * time.Second
 )
 
+// Bounds on a call the endpoint can otherwise hold open forever, connection setup, the wait for the response headers
+// and the longest silence a body may fall into between bytes
+const (
+	DialTimeout   = 10 * time.Second
+	HeaderTimeout = 10 * time.Minute
+	StallTimeout  = 10 * time.Minute
+)
+
+// Client every provider sends through, its transport bounding connection setup and keeping idle connections warm
+var client = &http.Client{Transport: &http.Transport{
+	Proxy:               http.ProxyFromEnvironment,
+	DialContext:         (&net.Dialer{Timeout: DialTimeout, KeepAlive: 30 * time.Second}).DialContext,
+	TLSHandshakeTimeout: DialTimeout,
+	ForceAttemptHTTP2:   true,
+	MaxIdleConns:        16,
+	IdleConnTimeout:     90 * time.Second,
+}}
+
+type labelKey struct{}
+
+// Carries a label, such as a run id, that every attempt made under the context reports
+func WithLabel(ctx context.Context, label string) context.Context {
+	return context.WithValue(ctx, labelKey{}, label)
+}
+
+// Label carried by the context, empty when none was set
+func LabelFrom(ctx context.Context) string {
+	label, _ := ctx.Value(labelKey{}).(string)
+	return label
+}
+
+// Error of a call the endpoint left silent for longer than the bound
+type StallError struct {
+	Provider string
+	// Whether the silence fell before the headers or inside the body
+	Headers bool
+	After   time.Duration
+}
+
+func (e *StallError) Error() string {
+	if e.Headers {
+		return fmt.Sprintf("provider %s: no response headers after %s", e.Provider, e.After)
+	}
+	return fmt.Sprintf("provider %s: no data for %s, the stream stalled", e.Provider, e.After)
+}
+
 // Headers and body fields sent with a turn that asks for one directive
 type Directive struct {
 	Header http.Header                `json:"header,omitempty"`
@@ -103,6 +150,25 @@ type Provider struct {
 	Directives []Directive
 	// Receives every attempt with its status, headers and backoff
 	Observer Observer
+	// Bounds on the wait for the headers and on silence inside the body, the package defaults when zero
+	HeaderTimeout time.Duration
+	StallTimeout  time.Duration
+}
+
+// Bound on the wait for the response headers
+func (p *Provider) headerTimeout() time.Duration {
+	if p.HeaderTimeout > 0 {
+		return p.HeaderTimeout
+	}
+	return HeaderTimeout
+}
+
+// Bound on the silence between bytes of a body
+func (p *Provider) stallTimeout() time.Duration {
+	if p.StallTimeout > 0 {
+		return p.StallTimeout
+	}
+	return StallTimeout
 }
 
 // Sends one turn without streaming and decodes the complete response
@@ -175,20 +241,16 @@ func (p *Provider) send(ctx context.Context, call protocol.Call, over http.Heade
 	if err != nil {
 		return nil, err
 	}
+	label := LabelFrom(ctx)
 	for attempt := 1; ; attempt++ {
 		if r, ok := p.Auth.(Refresher); ok {
 			if err := r.Refresh(ctx); err != nil {
 				return nil, fmt.Errorf("provider %s: %w", p.Name, err)
 			}
 		}
-		hr, err := http.NewRequestWithContext(ctx, call.Method, target, bytes.NewReader(call.Body))
-		if err != nil {
-			return nil, err
-		}
-		p.decorate(hr, call.Header, over)
-		at := Attempt{URL: target, Started: time.Now()}
+		at := Attempt{URL: target, Label: label, Started: time.Now()}
 		p.begin(at)
-		resp, err := http.DefaultClient.Do(hr)
+		resp, err := p.issue(ctx, call, over, at)
 		at.Duration = time.Since(at.Started)
 		if err == nil {
 			at.Status = resp.StatusCode
@@ -196,26 +258,26 @@ func (p *Provider) send(ctx context.Context, call protocol.Call, over http.Heade
 			at.RateLimit = ParseRateLimit(resp.Header)
 		}
 		if err == nil && resp.StatusCode/100 == 2 {
-			resp.Body = &timed{ReadCloser: resp.Body, at: at, p: p}
 			return resp, nil
 		}
 		var failure error
 		if err != nil {
-			failure = fmt.Errorf("provider %s: %w", p.Name, err)
+			failure = err
 		} else {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			perr := p.Protocol.DecodeError(resp.StatusCode, body)
 			failure = perr
 			at.RetryAfter = retryAfter(resp.Header.Get("Retry-After"))
-			if !retryable(resp.StatusCode) && !perr.Transient {
+			if perr.Stuck() || !retryable(resp.StatusCode) && !perr.Transient {
 				at.Err = failure
 				p.observe(at)
 				return nil, failure
 			}
 		}
 		at.Err = failure
-		if ctx.Err() != nil || attempt >= retryAttempts {
+		var stall *StallError
+		if ctx.Err() != nil || attempt >= retryAttempts || errors.As(failure, &stall) {
 			p.observe(at)
 			return nil, failure
 		}
@@ -234,44 +296,120 @@ func (p *Provider) send(ctx context.Context, call protocol.Call, over http.Heade
 	}
 }
 
+// Sends the call once, giving up when the headers do not come in time, and bounds the silence of a body it hands back,
+// which reports the attempt once it is read to the end or closed
+func (p *Provider) issue(ctx context.Context, call protocol.Call, over http.Header, at Attempt) (*http.Response, error) {
+	rctx, cancel := context.WithCancelCause(ctx)
+	hr, err := http.NewRequestWithContext(rctx, call.Method, at.URL, bytes.NewReader(call.Body))
+	if err != nil {
+		cancel(nil)
+		return nil, err
+	}
+	p.decorate(hr, call.Header, over)
+	wait := p.headerTimeout()
+	headers := time.AfterFunc(wait, func() { cancel(&StallError{Provider: p.Name, Headers: true, After: wait}) })
+	resp, err := client.Do(hr)
+	headers.Stop()
+	if err != nil {
+		var stall *StallError
+		if errors.As(context.Cause(rctx), &stall) {
+			cancel(nil)
+			return nil, stall
+		}
+		cancel(nil)
+		return nil, fmt.Errorf("provider %s: %w", p.Name, err)
+	}
+	if resp.StatusCode/100 != 2 {
+		resp.Body = &released{ReadCloser: resp.Body, cancel: cancel}
+		return resp, nil
+	}
+	at.Status, at.RequestID, at.RateLimit = resp.StatusCode, RequestID(resp.Header), ParseRateLimit(resp.Header)
+	b := &bounded{ReadCloser: resp.Body, p: p, ctx: rctx, cancel: cancel, stall: p.stallTimeout(), at: at}
+	b.arm()
+	resp.Body = b
+	return resp, nil
+}
+
 func (p *Provider) observe(a Attempt) {
 	if p.Observer != nil {
 		p.Observer.Observe(a)
 	}
 }
 
-func (p *Provider) begin(a Attempt) {
-	if s, ok := p.Observer.(Starter); ok {
-		s.Begin(a)
-	}
-}
-
-// Response body that reports the attempt with its whole duration once read to the end or closed
-type timed struct {
+// Body of a failed response that releases the request context once closed
+type released struct {
 	io.ReadCloser
-	at   Attempt
-	p    *Provider
-	once sync.Once
+	cancel context.CancelCauseFunc
 }
 
-func (b *timed) Read(buf []byte) (int, error) {
+func (r *released) Close() error {
+	r.cancel(nil)
+	return r.ReadCloser.Close()
+}
+
+// Body that cancels its request once no byte arrived within the stall bound and reports the attempt when it ends
+type bounded struct {
+	io.ReadCloser
+	p      *Provider
+	ctx    context.Context
+	cancel context.CancelCauseFunc
+	stall  time.Duration
+	at     Attempt
+	mu     sync.Mutex
+	timer  *time.Timer
+	once   sync.Once
+}
+
+// Starts the silence clock afresh
+func (b *bounded) arm() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.timer != nil {
+		b.timer.Stop()
+	}
+	b.timer = time.AfterFunc(b.stall, func() { b.cancel(&StallError{Provider: b.p.Name, After: b.stall}) })
+}
+
+func (b *bounded) Read(buf []byte) (int, error) {
 	n, err := b.ReadCloser.Read(buf)
+	if n > 0 {
+		b.arm()
+	}
 	if err == io.EOF {
-		b.finish()
+		b.finish(nil)
+	} else if err != nil {
+		if cause := context.Cause(b.ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+			err = cause
+		}
+		b.finish(err)
 	}
 	return n, err
 }
 
-func (b *timed) Close() error {
-	b.finish()
+func (b *bounded) Close() error {
+	b.finish(nil)
 	return b.ReadCloser.Close()
 }
 
-func (b *timed) finish() {
+// Reports the attempt with its whole duration once, then releases the request
+func (b *bounded) finish(err error) {
 	b.once.Do(func() {
+		b.mu.Lock()
+		if b.timer != nil {
+			b.timer.Stop()
+		}
+		b.mu.Unlock()
 		b.at.Duration = time.Since(b.at.Started)
+		b.at.Err = err
 		b.p.observe(b.at)
+		b.cancel(nil)
 	})
+}
+
+func (p *Provider) begin(a Attempt) {
+	if s, ok := p.Observer.(Starter); ok {
+		s.Begin(a)
+	}
 }
 
 // Lays request extras over provider extras, merging nested objects and replacing everything else
@@ -371,7 +509,9 @@ func (r RateLimit) Known() bool { return r != RateLimit{} }
 
 // One HTTP attempt of a call with what came back and how long the provider will wait before the next
 type Attempt struct {
-	URL      string
+	URL string
+	// Label the caller set on the context, such as the run the call serves
+	Label    string
 	Started  time.Time
 	Duration time.Duration
 	Status   int
