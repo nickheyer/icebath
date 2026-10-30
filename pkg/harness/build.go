@@ -549,6 +549,9 @@ func (h hookLog) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Posts a message into the program for an extension that mirrors the live sessions
+func (a *App) Announce(msg any) { a.send(msg) }
+
 // Starts a run of a fresh root agent on the app session
 func (a *App) Run(ctx context.Context, missionID string, input []protocol.Part) (*Run, error) {
 	return a.start(ctx, a.Session, missionID, input)
