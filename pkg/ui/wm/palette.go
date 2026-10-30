@@ -43,10 +43,9 @@ type Palette struct {
 	matches []scored
 	sel     int
 	// First match row shown, kept so the list scrolls only when the selection leaves it or the wheel turns
-	top      int
-	commands bool
-	w        int
-	rows     int
+	top  int
+	w    int
+	rows int
 	// Row of the highlight, gliding after the selection
 	hl          anim.Value
 	glide       bool
@@ -550,7 +549,7 @@ func (m *Model) dispatch(target *entry, msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if !slices.Contains(ctxs, a.Context) {
 			continue
 		}
-		return m.send(target, ActionMsg{ID: id, Key: msg}), true
+		return m.send(target, ActionMsg{ID: id}), true
 	}
 	return nil, false
 }
@@ -620,7 +619,6 @@ func (m *Model) OpenPalette() tea.Cmd {
 	}
 	slices.SortStableFunc(items, func(a, b Item) int { return rank[b.ID] - rank[a.ID] })
 	p := NewPalette(m.theme, items)
-	p.commands = true
 	p.Placeholder = "command"
 	return m.ShowOverlay(p)
 }

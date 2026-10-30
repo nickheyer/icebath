@@ -3,6 +3,7 @@ package term
 import (
 	"bytes"
 	"image/color"
+	"os"
 	"strings"
 	"testing"
 
@@ -249,9 +250,18 @@ func TestReplies(t *testing.T) {
 
 func TestOSC(t *testing.T) {
 	e, _ := emu(20, 3)
-	e.WriteString("\x1b]2;hello\x07\x1b]7;file://host/tmp/x%20y\x1b\\\x1b]8;;https://a.b\x1b\\link\x1b]8;;\x1b\\\x1b]52;c;aGk=\x1b\\\x1b]133;A\x1b\\$ \x1b]133;D;3\x1b\\")
+	host, _ := os.Hostname()
+	e.WriteString("\x1b]2;hello\x07\x1b]7;file://" + host + "/tmp/x%20y\x1b\\\x1b]8;;https://a.b\x1b\\link\x1b]8;;\x1b\\\x1b]52;c;aGk=\x1b\\\x1b]133;A\x1b\\$ \x1b]133;D;3\x1b\\")
 	if e.Title() != "hello" || e.Cwd() != "/tmp/x y" {
 		t.Fatalf("title %q cwd %q", e.Title(), e.Cwd())
+	}
+	e.WriteString("\x1b]7;file://elsewhere/srv\x1b\\")
+	if e.Cwd() != "" {
+		t.Fatalf("cwd %q announced by another host", e.Cwd())
+	}
+	e.WriteString("\x1b]7;file://localhost/tmp\x1b\\")
+	if e.Cwd() != "/tmp" {
+		t.Fatalf("cwd %q after localhost", e.Cwd())
 	}
 	buf := uv.NewBuffer(20, 3)
 	e.Draw(buf, View{})

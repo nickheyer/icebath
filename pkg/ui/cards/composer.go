@@ -89,7 +89,6 @@ type Composer struct {
 	busy        bool
 	button      sendButton
 	cut         int
-	w, h        int
 	SessionID   string
 	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
 	Volatile func() bool
@@ -772,7 +771,6 @@ func (c *Composer) Fit(w int) int {
 }
 
 func (c *Composer) View(w, h int) string {
-	c.w, c.h = w, h
 	popup := c.popup(w)
 	rows := max(h-len(popup), 1)
 	button := c.buttonLabel()
@@ -875,11 +873,15 @@ func (c *Composer) Cursor() *tea.Cursor {
 	return cur
 }
 
-// Short trailer naming the history position and attachments
+// Short trailer naming the attachments with their size and the history position
 func (c *Composer) Status() string {
 	var parts []string
 	if n := len(c.attachments); n > 0 {
-		parts = append(parts, itoa(n)+" attached")
+		size := 0
+		for _, a := range c.attachments {
+			size += a.Size
+		}
+		parts = append(parts, itoa(n)+" attached "+render.Bytes(int64(size)))
 	}
 	if c.cursor < len(c.history) {
 		parts = append(parts, "history "+itoa(c.cursor+1)+"/"+itoa(len(c.history)))

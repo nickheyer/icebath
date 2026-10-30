@@ -344,11 +344,11 @@ func kittyEncode(k Key, st keyState) []byte {
 	text := k.Text
 	textKey := code <= unicode.MaxRune && unicode.IsPrint(code) && !modifierKey(code)
 	if n, ok := kittyCodes[code]; ok && (text == "" || all || plainMods != 0) {
-		return kittyCSI(n, 0, 0, 'u', mod, event, "", flags)
+		return kittyCSI(n, 0, 0, 'u', mod, event, "")
 	}
 	if textKey && !all && plainMods == 0 {
 		if event == 3 {
-			return kittyCSI(int(kittyKey(k)), 0, 0, 'u', mod, event, "", flags)
+			return kittyCSI(int(kittyKey(k)), 0, 0, 'u', mod, event, "")
 		}
 		if text == "" {
 			text = string(code)
@@ -361,25 +361,25 @@ func kittyEncode(k Key, st keyState) []byte {
 			return legacyEncode(k, st)
 		}
 		if code == uv.KeyBackspace {
-			return kittyCSI(127, 0, 0, 'u', mod, event, "", flags)
+			return kittyCSI(127, 0, 0, 'u', mod, event, "")
 		}
-		return kittyCSI(int(code), 0, 0, 'u', mod, event, "", flags)
+		return kittyCSI(int(code), 0, 0, 'u', mod, event, "")
 	case uv.KeyEscape:
-		return kittyCSI(27, 0, 0, 'u', mod, event, "", flags)
+		return kittyCSI(27, 0, 0, 'u', mod, event, "")
 	case uv.KeyF3:
-		return kittyCSI(13, 0, 0, '~', mod, event, "", flags)
+		return kittyCSI(13, 0, 0, '~', mod, event, "")
 	}
 	if letter, ok := cursorKeys[code]; ok {
-		return kittyCSI(1, 0, 0, letter, mod, event, "", flags)
+		return kittyCSI(1, 0, 0, letter, mod, event, "")
 	}
 	if n, ok := tildeKeys[code]; ok && code < uv.KeyF13 {
-		return kittyCSI(n, 0, 0, '~', mod, event, "", flags)
+		return kittyCSI(n, 0, 0, '~', mod, event, "")
 	}
 	if letter, ok := fnKeys[code]; ok {
-		return kittyCSI(1, 0, 0, letter, mod, event, "", flags)
+		return kittyCSI(1, 0, 0, letter, mod, event, "")
 	}
 	if n, ok := kittyCodes[code]; ok {
-		return kittyCSI(n, 0, 0, 'u', mod, event, "", flags)
+		return kittyCSI(n, 0, 0, 'u', mod, event, "")
 	}
 	if !textKey {
 		return nil
@@ -401,7 +401,7 @@ func kittyEncode(k Key, st keyState) []byte {
 			assoc = string(key)
 		}
 	}
-	return kittyCSI(int(key), shifted, base, 'u', mod, event, assoc, flags)
+	return kittyCSI(int(key), shifted, base, 'u', mod, event, assoc)
 }
 
 // Unicode key code the kitty protocol names a text key by, letters lower case
@@ -416,7 +416,7 @@ func kittyKey(k Key) rune {
 }
 
 // Kitty sequence with the key and alternates, the modifiers with the event type, the text and the final byte
-func kittyCSI(code int, shifted, base rune, final byte, mod uv.KeyMod, event int, text string, flags int) []byte {
+func kittyCSI(code int, shifted, base rune, final byte, mod uv.KeyMod, event int, text string) []byte {
 	var sb strings.Builder
 	sb.WriteString("\x1b[")
 	km := kittyMod(mod)

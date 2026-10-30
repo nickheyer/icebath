@@ -66,6 +66,18 @@ type Line struct {
 	Verdict  string             `json:"verdict,omitempty"`
 	Status   int                `json:"status,omitempty"`
 	Path     string             `json:"path,omitempty"`
+	// Number of the approval an approval line asks for and an approval_done line answers
+	Approval int `json:"approval,omitempty"`
+	// Endpoint an attempt line hit
+	URL string `json:"url,omitempty"`
+	// Id the provider gave the response of a turn_end, run_end or run_done line
+	ResponseID string `json:"response_id,omitempty"`
+	// Neutral stop reason of that response and the wire value it came from
+	Stop    string `json:"stop,omitempty"`
+	RawStop string `json:"raw_stop,omitempty"`
+	// Count a progress line reports done and the count it works toward
+	Done  int `json:"done,omitempty"`
+	Total int `json:"total,omitempty"`
 }
 
 // Turns a bridge message into a print line, false for messages that are not written
@@ -94,6 +106,9 @@ func encode(msg any) (Line, bool) {
 			u := ev.Usage
 			l.Usage = &u
 		}
+		if ev.Response != nil {
+			l.ResponseID, l.Stop, l.RawStop = ev.Response.ID, string(ev.Response.StopReason), ev.Response.RawStopReason
+		}
 		if ev.Duration > 0 {
 			l.Duration = float64(ev.Duration) / float64(time.Millisecond)
 		}
@@ -107,18 +122,18 @@ func encode(msg any) (Line, bool) {
 		}
 		return l, true
 	case harness.ProgressMsg:
-		return Line{Type: "progress", Time: time.Now(), Run: v.Run, Kind: v.Progress.Stream, Delta: v.Progress.Text, Call: &protocol.ToolCall{ID: v.Progress.CallID, Name: v.Progress.Tool}}, true
+		return Line{Type: "progress", Time: time.Now(), Run: v.Run, Kind: v.Progress.Stream, Delta: v.Progress.Text, Done: v.Progress.Done, Total: v.Progress.Total, Call: &protocol.ToolCall{ID: v.Progress.CallID, Name: v.Progress.Tool}}, true
 	case harness.ApprovalMsg:
 		c := v.Pending.Request.Call
-		return Line{Type: "approval", Time: v.Pending.Asked, Run: v.Pending.Run, Agent: v.Pending.Agent, Call: &c, Text: v.Pending.Request.Reason, Kind: v.Pending.Request.Key}, true
+		return Line{Type: "approval", Time: v.Pending.Asked, Run: v.Pending.Run, Agent: v.Pending.Agent, Approval: v.Pending.ID, Call: &c, Text: v.Pending.Request.Reason, Kind: v.Pending.Request.Key}, true
 	case harness.ApprovalDoneMsg:
-		l := Line{Type: "approval_done", Time: time.Now(), Run: v.Run, Verdict: v.Verdict.String()}
+		l := Line{Type: "approval_done", Time: time.Now(), Run: v.Run, Approval: v.ID, Verdict: v.Verdict.String()}
 		if v.Err != nil {
 			l.Error = v.Err.Error()
 		}
 		return l, true
 	case harness.RunDoneMsg:
-		l := Line{Type: "run_done", Time: time.Now(), Run: v.Run, Text: v.Response.Text(), Duration: float64(v.Duration) / float64(time.Millisecond)}
+		l := Line{Type: "run_done", Time: time.Now(), Run: v.Run, Text: v.Response.Text(), Duration: float64(v.Duration) / float64(time.Millisecond), ResponseID: v.Response.ID, Stop: string(v.Response.StopReason), RawStop: v.Response.RawStopReason}
 		if v.Err != nil {
 			l.Error = v.Err.Error()
 		}
@@ -126,7 +141,7 @@ func encode(msg any) (Line, bool) {
 		l.Usage = &u
 		return l, true
 	case harness.AttemptMsg:
-		l := Line{Type: "attempt", Time: v.Attempt.Started, Status: v.Attempt.Status, Duration: float64(v.Attempt.Duration) / float64(time.Millisecond), Text: v.Attempt.RequestID}
+		l := Line{Type: "attempt", Time: v.Attempt.Started, Status: v.Attempt.Status, Duration: float64(v.Attempt.Duration) / float64(time.Millisecond), Text: v.Attempt.RequestID, URL: v.Attempt.URL}
 		if v.Attempt.Err != nil {
 			l.Error = v.Attempt.Err.Error()
 		}
@@ -222,6 +237,11 @@ func (w *textWriter) write(msg any) {
 			fmt.Fprintf(w.err, "%s %s\n", t.Glyphs.Note, ev.Text)
 		case agent.EventTurnEnd:
 			w.newline()
+			if ev.Response != nil {
+				if text := ev.Response.StopText(); text != "" {
+					fmt.Fprintf(w.err, "%s %s\n", t.Glyphs.Note, text)
+				}
+			}
 		}
 	case harness.ApprovalMsg:
 		w.newline()

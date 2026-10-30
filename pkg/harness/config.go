@@ -110,14 +110,6 @@ type TerminalConfig struct {
 // Rows a terminal window keeps above its screen unless configured
 const DefaultScrollback = 10000
 
-// Rows the terminal keeps, the default while unset
-func (t TerminalConfig) Rows() int {
-	if t.Scrollback != nil {
-		return *t.Scrollback
-	}
-	return DefaultScrollback
-}
-
 // Appearance settings
 type UIConfig struct {
 	// Theme name such as blackwall, light, contrast or plain

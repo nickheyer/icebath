@@ -22,7 +22,9 @@ type Entry struct {
 	Time  time.Time
 	Agent string
 	Model string
-	Usage protocol.Usage
+	// Id the provider gave the response an assistant turn came from
+	Response string
+	Usage    protocol.Usage
 	protocol.Message
 }
 
@@ -139,7 +141,7 @@ func (s *Session) AddResponse(agent string, r protocol.Response) Entry {
 	if s.model == "" && r.Model != "" {
 		s.model = r.Model
 	}
-	return s.add(Entry{Agent: agent, Model: r.Model, Usage: r.Usage, Message: protocol.Message{Role: protocol.RoleAssistant, Content: copyParts(r.Content)}})
+	return s.add(Entry{Agent: agent, Model: r.Model, Response: r.ID, Usage: r.Usage, Message: protocol.Message{Role: protocol.RoleAssistant, Content: copyParts(r.Content)}})
 }
 
 // Appends one tool message carrying every result of a tool round run by agent
@@ -551,13 +553,14 @@ func (h Header) Info() Info {
 }
 
 type entry struct {
-	Seq     int            `json:"seq"`
-	Time    time.Time      `json:"time"`
-	Agent   string         `json:"agent,omitempty"`
-	Model   string         `json:"model,omitempty"`
-	Usage   protocol.Usage `json:"usage"`
-	Role    protocol.Role  `json:"role"`
-	Content []part         `json:"content"`
+	Seq      int            `json:"seq"`
+	Time     time.Time      `json:"time"`
+	Agent    string         `json:"agent,omitempty"`
+	Model    string         `json:"model,omitempty"`
+	Response string         `json:"response_id,omitempty"`
+	Usage    protocol.Usage `json:"usage"`
+	Role     protocol.Role  `json:"role"`
+	Content  []part         `json:"content"`
 }
 
 type record struct {
@@ -676,7 +679,7 @@ func encodeEntry(e Entry) (entry, error) {
 	if err != nil {
 		return entry{}, err
 	}
-	return entry{Seq: e.Seq, Time: e.Time, Agent: e.Agent, Model: e.Model, Usage: e.Usage, Role: e.Role, Content: parts}, nil
+	return entry{Seq: e.Seq, Time: e.Time, Agent: e.Agent, Model: e.Model, Response: e.Response, Usage: e.Usage, Role: e.Role, Content: parts}, nil
 }
 
 func encodeParts(parts []protocol.Part) ([]part, error) {
@@ -737,7 +740,7 @@ func decodeEntry(e entry) (Entry, error) {
 	if err != nil {
 		return Entry{}, err
 	}
-	return Entry{Seq: e.Seq, Time: e.Time, Agent: e.Agent, Model: e.Model, Usage: e.Usage, Message: protocol.Message{Role: e.Role, Content: parts}}, nil
+	return Entry{Seq: e.Seq, Time: e.Time, Agent: e.Agent, Model: e.Model, Response: e.Response, Usage: e.Usage, Message: protocol.Message{Role: e.Role, Content: parts}}, nil
 }
 
 func decodeParts(parts []part) ([]protocol.Part, error) {
@@ -809,6 +812,9 @@ func (s *Session) MarkdownWith(o MarkdownOptions) string {
 			}
 			if e.Model != "" {
 				meta += " on " + e.Model
+			}
+			if e.Response != "" {
+				meta += " as " + e.Response
 			}
 			fmt.Fprintf(&sb, "_%s_\n\n", meta)
 		}

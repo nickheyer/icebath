@@ -25,6 +25,8 @@ type Facts struct {
 	Mission  bool
 	// Directory created for the session to hold working notes and temporary files
 	Scratch string
+	// Working plan the session keeps while no mission is attached, as the plan tool reports it
+	Plan string
 }
 
 const conduct = `You are icebath, a coding agent in the user's terminal, acting through the tools offered. The user's own instructions arrive in the conversation.
@@ -121,6 +123,12 @@ func Environment(f Facts) string {
 	if f.Mission {
 		sb.WriteString("- A mission is attached, so " + mission.ToolName + " updates its plan\n")
 	}
+	if f.Plan != "" {
+		sb.WriteString("- Plan kept on this session, which " + mission.ToolName + " replaces:\n")
+		for _, line := range strings.Split(f.Plan, "\n") {
+			sb.WriteString("  " + line + "\n")
+		}
+	}
 	if f.Scratch != "" {
 		fmt.Fprintf(&sb, "- Scratch directory: %s, created for this session, for working notes and temporary files that do not belong in the project\n", f.Scratch)
 	}
@@ -148,7 +156,13 @@ func (a *App) EnvironmentFor(ctx context.Context, model string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return Environment(GatherFacts(a.Shell.Dir(), model, mission.IDFrom(ctx) != "", scratch)), nil
+	f := GatherFacts(a.Shell.Dir(), model, mission.IDFrom(ctx) != "", scratch)
+	if sess := a.SessionFor(ctx); sess != nil && !f.Mission {
+		if plan, ok := mission.CurrentSessionPlan(sess); ok {
+			f.Plan = plan.Format()
+		}
+	}
+	return Environment(f), nil
 }
 
 // Directory under the system temp directory a session may fill with working notes and temporary files

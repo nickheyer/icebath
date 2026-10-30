@@ -319,7 +319,6 @@ type Workspace struct {
 	tree   *node
 	urgent bool
 	shift  anim.Value
-	placed bool
 }
 
 // Arrangement the tiles follow

@@ -31,7 +31,7 @@ type Sessions struct {
 	err     error
 	top     int
 	start   int
-	w, h    int
+	h       int
 	// Whether sessions of every project are shown rather than those of this one
 	every bool
 }
@@ -308,7 +308,7 @@ func (s *Sessions) head(w int) string {
 }
 
 func (s *Sessions) View(w, h int) string {
-	s.w, s.h = w, h
+	s.h = h
 	t := s.env.Theme
 	var lines []string
 	if s.err != nil {

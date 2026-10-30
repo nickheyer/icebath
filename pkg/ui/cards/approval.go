@@ -183,6 +183,9 @@ func Describe(p *harness.Pending, width int, t theme.Theme) []string {
 	if req.Key != "" {
 		facts = append(facts, [2]string{"rule", render.Cool(req.Key, t)})
 	}
+	if req.Tool != nil && req.Tool.Description != "" {
+		facts = append(facts, [2]string{"tool", render.Truncate(req.Tool.Description, max(width-8, 10), t)})
+	}
 	if len(facts) > 0 {
 		lines = append(append(lines, ""), table(facts, width, t)...)
 	}

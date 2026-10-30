@@ -32,8 +32,8 @@ func (m *Model) commands() []wm.Command {
 	idle := func() bool { d := m.current(); return d != nil && !m.app.Busy(d.live) }
 	has := func() bool { return m.current() != nil }
 	pending := func() bool { d := m.current(); return d != nil && len(d.approval.Pending()) > 0 }
-	run := func(name, args string) func() tea.Cmd {
-		return func() tea.Cmd { return m.command(m.current(), name, args) }
+	run := func(name string) func() tea.Cmd {
+		return func() tea.Cmd { return m.command(m.current(), name, "") }
 	}
 	more := m.theme.Glyphs.Ellipsis
 	out := []wm.Command{
@@ -49,14 +49,14 @@ func (m *Model) commands() []wm.Command {
 		{ID: "open", Title: "Open panel" + more, Run: m.pickPanel},
 		{ID: "keys.edit", Title: "Keybinds", Run: m.editKeys},
 		{ID: "session.open", Title: "Session: resume" + more, Run: m.pickSession},
-		{ID: "session.fork", Title: "Session: fork", When: idle, Run: run("fork", "")},
+		{ID: "session.fork", Title: "Session: fork", When: idle, Run: run("fork")},
 		{ID: "session.fork.at", Title: "Session: fork at turn" + more, When: idle, Run: m.pickTurn},
 		{ID: "session.rename", Title: "Session: rename" + more, When: has, Run: m.promptRename},
-		{ID: "session.compact", Title: "Session: compact", When: idle, Run: run("compact", "")},
-		{ID: "session.clear", Title: "Session: clear", When: idle, Run: run("clear", "")},
+		{ID: "session.compact", Title: "Session: compact", When: idle, Run: run("compact")},
+		{ID: "session.clear", Title: "Session: clear", When: idle, Run: run("clear")},
 		{ID: "session.export", Title: "Session: export" + more, When: has, Run: m.promptExport},
-		{ID: "run.cancel", Title: "Run: cancel", When: busy, Run: run("cancel", "")},
-		{ID: "run.interrupt", Title: "Run: stop after tool", When: busy, Run: run("interrupt", "")},
+		{ID: "run.cancel", Title: "Run: cancel", When: busy, Run: run("cancel")},
+		{ID: "run.interrupt", Title: "Run: stop after tool", When: busy, Run: run("interrupt")},
 		{ID: "mission.start", Title: "Mission: start" + more, When: idle, Run: m.promptMission},
 		{ID: "mission.open", Title: "Mission: open" + more, When: func() bool { d := m.current(); return d != nil && d.live.Missions.Len() > 0 }, Run: m.pickMission},
 		{ID: "attention.next", Title: "Attention: next", When: func() bool { return len(m.queue(m.deskStates())) > 0 }, Run: m.dispatch},
@@ -70,12 +70,12 @@ func (m *Model) commands() []wm.Command {
 		{ID: "theme.set", Title: "Theme" + more, Run: m.pickTheme},
 		{ID: "motion.set", Title: "Motion" + more, Run: m.pickMotion},
 		{ID: "cascade.toggle", Title: "Cascade: toggle", Run: func() tea.Cmd { return m.setSetting("cascade", strconv.FormatBool(!m.wm.Cascade()), false) }},
-		{ID: "open.agents", Title: "Open: agents", Run: run("agents", "")},
-		{ID: "open.metrics", Title: "Open: metrics", Run: run("metrics", "")},
-		{ID: "open.jobs", Title: "Open: jobs", Run: run("jobs", "")},
-		{ID: "open.sessions", Title: "Open: sessions", Run: run("sessions", "")},
-		{ID: "open.config", Title: "Open: config", Run: run("config", "")},
-		{ID: "open.findings", Title: "Open: findings", When: has, Run: run("findings", "")},
+		{ID: "open.agents", Title: "Open: agents", Run: run("agents")},
+		{ID: "open.metrics", Title: "Open: metrics", Run: run("metrics")},
+		{ID: "open.jobs", Title: "Open: jobs", Run: run("jobs")},
+		{ID: "open.sessions", Title: "Open: sessions", Run: run("sessions")},
+		{ID: "open.config", Title: "Open: config", Run: run("config")},
+		{ID: "open.findings", Title: "Open: findings", When: has, Run: run("findings")},
 		{ID: "agent.open", Title: "Agent: open" + more, When: func() bool { d := m.current(); return d != nil && len(m.childRuns(d)) > 0 }, Run: m.pickAgent},
 		{ID: "interrupt", Title: "Interrupt", Run: m.interrupt},
 		{ID: "quit", Title: "Quit", Run: m.shutdown},

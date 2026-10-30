@@ -188,8 +188,7 @@ func contextsOf(c Card) []string {
 	return nil
 }
 
-// Keymap action fired at the focused card by the key that was pressed
+// Keymap action fired at the focused card
 type ActionMsg struct {
-	ID  string
-	Key tea.KeyPressMsg
+	ID string
 }

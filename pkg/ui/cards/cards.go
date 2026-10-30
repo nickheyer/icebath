@@ -106,6 +106,11 @@ type OpenRunMsg struct {
 	Run string
 }
 
+// Request to open the transcript of the child run a tool call spawned
+type OpenCallMsg struct {
+	CallID string
+}
+
 // Request to stop a run
 type KillRunMsg struct {
 	Run string

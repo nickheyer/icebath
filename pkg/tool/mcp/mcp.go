@@ -199,7 +199,7 @@ func (c *Client) OnToolsChanged(fn func()) {
 
 // Sends a request and waits for its result, failing on an error response or a closed transport
 func (c *Client) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	return c.call(ctx, method, params, "")
+	return c.call(ctx, method, params)
 }
 
 // Sends a request carrying a progress token so server progress reaches the context reporter
@@ -218,10 +218,10 @@ func (c *Client) CallWithProgress(ctx context.Context, method string, params map
 		params = map[string]any{}
 	}
 	params["_meta"] = map[string]any{"progressToken": token}
-	return c.call(ctx, method, params, token)
+	return c.call(ctx, method, params)
 }
 
-func (c *Client) call(ctx context.Context, method string, params any, token string) (json.RawMessage, error) {
+func (c *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

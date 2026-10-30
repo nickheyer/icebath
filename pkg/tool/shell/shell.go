@@ -333,7 +333,7 @@ func (b command) Run(ctx context.Context, args json.RawMessage) (tool.Result, er
 	stdout, stderr := newCapture(maxOutput), newCapture(maxOutput)
 	out := b.run(ctx, in.Command, io.MultiWriter(stdout, reporting{ctx, "stdout"}), io.MultiWriter(stderr, reporting{ctx, "stderr"}), timeout)
 	res := render(stdout.String(), stderr.String(), out, timeout)
-	return res.With(Run{Command: in.Command, Description: in.Description, Dir: b.Dir(), ExitCode: out.ExitCode, Pipeline: out.Pipeline, TimedOut: out.TimedOut, Exited: out.Exited, Duration: out.Duration, Stdout: stdout.String(), Stderr: stderr.String()}), nil
+	return res.With(Run{Command: in.Command, Description: in.Description, Dir: out.Dir, ExitCode: out.ExitCode, Pipeline: out.Pipeline, TimedOut: out.TimedOut, Exited: out.Exited, Duration: out.Duration, Stdout: stdout.String(), Stderr: stderr.String()}), nil
 }
 
 // Formats stdout, stderr and the outcome, marking failures as error results

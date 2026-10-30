@@ -509,7 +509,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 				return
 			}
 			if c.Error != nil {
-				yield(protocol.Event{}, streamError(*c.Error, []byte(ev.Data)))
+				yield(protocol.Event{}, streamError(*c.Error))
 				return
 			}
 			b.Start(c.ID, c.Model)
@@ -556,7 +556,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 	}
 }
 
-func streamError(e apiError, body []byte) *protocol.Error {
+func streamError(e apiError) *protocol.Error {
 	return &protocol.Error{Status: 200, Type: errType(e), Message: e.Message, Transient: transientTypes[e.Type] || transientTypes[e.Code]}
 }
 

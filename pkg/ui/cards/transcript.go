@@ -90,24 +90,29 @@ type approvalInfo struct {
 
 // One rendered unit of the transcript
 type block struct {
-	kind     blockKind
-	agent    string
-	model    string
-	round    int
-	at       time.Time
-	text     string
-	parts    []protocol.Part
-	done     bool
-	call     protocol.ToolCall
-	partial  string
-	result   *protocol.ToolResult
-	data     any
-	started  time.Time
-	duration time.Duration
-	err      error
-	approval *approvalInfo
-	expanded bool
-	full     bool
+	kind  blockKind
+	agent string
+	model string
+	round int
+	at    time.Time
+	text  string
+	// Sources the model attached to the text
+	cites   []protocol.Citation
+	parts   []protocol.Part
+	done    bool
+	call    protocol.ToolCall
+	partial string
+	result  *protocol.ToolResult
+	data    any
+	// Count a running tool reported done and the count it works toward, zero while it reported none
+	progressDone  int
+	progressTotal int
+	started       time.Time
+	duration      time.Duration
+	err           error
+	approval      *approvalInfo
+	expanded      bool
+	full          bool
 	// Runes of a thought settled before its newest arrived, and when they arrived
 	settled int
 	grown   time.Time
@@ -279,6 +284,9 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case harness.ProgressMsg:
 		if b, ok := tr.tools[msg.Progress.CallID]; ok && b.result == nil {
 			b.partial += msg.Progress.Text
+			if msg.Progress.Done > 0 || msg.Progress.Total > 0 {
+				b.progressDone, b.progressTotal = msg.Progress.Done, msg.Progress.Total
+			}
 			b.cacheKey = renderKey{}
 			tr.dirty = true
 		}
@@ -333,7 +341,7 @@ func (tr *Transcript) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		line := tr.vp.YOffset() + msg.Y
 		if line >= 0 && line < len(tr.lineBlock) && tr.lineBlock[line] == p.block {
-			tr.toggle(p.block)
+			return tr, tr.toggle(p.block)
 		}
 		return tr, nil
 	}
@@ -615,17 +623,17 @@ func (tr *Transcript) JumpTurn(d int) {
 	}
 }
 
-// Expands or folds the block under the cursor, picking the block nearest the top when none is
-func (tr *Transcript) Toggle() {
+// Expands or folds the block under the cursor, or opens the child agent the block stands for
+func (tr *Transcript) Toggle() tea.Cmd {
 	if tr.cursor < 0 {
 		tr.cursor = tr.nearest()
 	}
-	tr.toggle(tr.cursor)
+	return tr.toggle(tr.cursor)
 }
 
-func (tr *Transcript) toggle(i int) {
+func (tr *Transcript) toggle(i int) tea.Cmd {
 	if i < 0 || i >= len(tr.blocks) {
-		return
+		return nil
 	}
 	b := tr.blocks[i]
 	switch b.kind {
@@ -639,11 +647,18 @@ func (tr *Transcript) toggle(i int) {
 		} else {
 			b.expanded, b.full = !b.expanded, false
 		}
+	case bChild:
+		id := b.call.ID
+		if id == "" {
+			return nil
+		}
+		return func() tea.Msg { return OpenCallMsg{CallID: id} }
 	default:
-		return
+		return nil
 	}
 	b.cacheKey = renderKey{}
 	tr.dirty = true
+	return nil
 }
 
 func (tr *Transcript) expandAll(on bool) {
@@ -689,6 +704,11 @@ func (tr *Transcript) Apply(ev agent.Event) {
 		}
 		if text := usageNote(model, ev.Usage); text != "" {
 			tr.add(&block{kind: bNote, agent: ev.Agent, at: at, text: text, done: true})
+		}
+		if ev.Response != nil {
+			if text := ev.Response.StopText(); text != "" {
+				tr.add(&block{kind: bNote, agent: ev.Agent, at: at, text: text, done: true})
+			}
 		}
 		tr.dirty = true
 	case agent.EventToolStart:
@@ -784,8 +804,8 @@ func (tr *Transcript) model(ev agent.Event) {
 				b = tr.add(&block{kind: bText, agent: ev.Agent, round: ev.Round, at: ev.Time, model: resp.Model})
 				tr.turn[j] = b
 			}
-			if b.text != v.Text {
-				b.text = v.Text
+			if b.text != v.Text || len(b.cites) != len(v.Citations) {
+				b.text, b.cites = v.Text, v.Citations
 				b.cacheKey = renderKey{}
 				tr.dirty = true
 			}
@@ -1019,7 +1039,7 @@ func (tr *Transcript) loadEntry(e session.Entry) {
 				if v.Text == session.Ack {
 					continue
 				}
-				tr.add(&block{kind: bText, agent: e.Agent, model: e.Model, at: e.Time, text: v.Text, done: true})
+				tr.add(&block{kind: bText, agent: e.Agent, model: e.Model, at: e.Time, text: v.Text, cites: v.Citations, done: true})
 			case protocol.Thinking:
 				if !tr.thinking {
 					continue
@@ -1356,6 +1376,9 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 		for _, l := range strings.Split(tr.markdown(b, body), "\n") {
 			lines = append(lines, "  "+l)
 		}
+		for _, l := range citationLines(b.cites, body-2, t) {
+			lines = append(lines, "  "+l)
+		}
 	case bThinking:
 		head := render.Dim(t.Glyphs.Thinking+" thinking", t)
 		if d := tr.thought(b); d > 0 {
@@ -1645,6 +1668,9 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 	switch {
 	case b.result == nil && !b.started.IsZero():
 		status = render.Cool(render.Spinner(tr.tick, t)+" "+render.Elapsed(time.Since(b.started)), t)
+		if p := progressText(b.progressDone, b.progressTotal); p != "" {
+			status += " " + render.Dim(p, t)
+		}
 	case b.result == nil:
 		status = render.Dim("pending", t)
 		if !b.done {
@@ -2085,6 +2111,45 @@ func paintMark(lines []string, fg, bar color.Color) []string {
 			}
 		}
 		out[i] = sb.String()
+	}
+	return out
+}
+
+// Count done out of the total, the share when both are known and the count alone otherwise
+func progressText(done, total int) string {
+	switch {
+	case total > 0:
+		return fmt.Sprintf("%d/%d %d%%", done, total, min(done*100/total, 100))
+	case done > 0:
+		return fmt.Sprint(done)
+	}
+	return ""
+}
+
+// One dimmed line per distinct source, titled where the model gave a title and linked where it gave a URL
+func citationLines(cites []protocol.Citation, width int, t theme.Theme) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, c := range cites {
+		label := c.Title
+		if label == "" {
+			label = c.URL
+		}
+		if label == "" {
+			label = c.Document
+		}
+		key := label + "\x00" + c.URL
+		if label == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		text := render.Truncate(label, max(width-2, 8), t)
+		if c.URL != "" {
+			text = render.Link(text, c.URL, t)
+		} else {
+			text = render.Dim(text, t)
+		}
+		out = append(out, render.Dim(t.Glyphs.Record, t)+" "+text)
 	}
 	return out
 }

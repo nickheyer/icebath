@@ -18,18 +18,15 @@ import (
 // One mission of a session with its objective, plan, agents, findings and cost
 type Mission struct {
 	env     *Env
-	store   *mission.Store
 	facts   *facts.Store
 	session string
 	id      string
 	m       mission.Mission
-	w       int
-	h       int
 }
 
-// Builds the mission card over the stores of the session the mission belongs to
-func NewMission(env *Env, store *mission.Store, facts *facts.Store, sessionID string, m mission.Mission) *Mission {
-	return &Mission{env: env, store: store, facts: facts, session: sessionID, id: m.ID, m: m}
+// Builds the mission card over the fact store of the session the mission belongs to
+func NewMission(env *Env, facts *facts.Store, sessionID string, m mission.Mission) *Mission {
+	return &Mission{env: env, facts: facts, session: sessionID, id: m.ID, m: m}
 }
 
 func (c *Mission) Title() string { return "MISSION " + c.id }
@@ -111,7 +108,6 @@ func (c *Mission) cost() float64 {
 }
 
 func (c *Mission) View(w, h int) string {
-	c.w, c.h = w, h
 	t := c.env.Theme
 	m := c.m
 	var lines []string

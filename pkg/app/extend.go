@@ -158,17 +158,25 @@ func (m *Model) extensionSlash() []cards.Command {
 	}
 	out := []cards.Command{{Name: "kind", Desc: "run the session as a kind", Arg: "name", Suggest: kindNames, Action: "kind.set"}}
 	for _, w := range harness.Workflows() {
-		out = append(out, cards.Command{Name: w.Name, Desc: w.Description, Arg: w.Arg, Action: "workflow." + w.Name})
+		out = append(out, cards.Command{Name: w.Name, Desc: m.sourced(w.Description, w.Source), Arg: w.Arg, Action: "workflow." + w.Name})
 	}
 	for _, c := range ext.Commands() {
 		if c.Slash != "" {
-			out = append(out, cards.Command{Name: c.Slash, Desc: c.Desc, Arg: c.Arg, Action: c.ID})
+			out = append(out, cards.Command{Name: c.Slash, Desc: m.sourced(c.Desc, c.Source), Arg: c.Arg, Action: c.ID})
 		}
 	}
 	for _, p := range ext.Panels() {
-		out = append(out, cards.Command{Name: p.Key, Desc: p.Detail, Action: "open." + p.Key})
+		out = append(out, cards.Command{Name: p.Key, Desc: m.sourced(p.Detail, p.Source), Action: "open." + p.Key})
 	}
 	return out
+}
+
+// Description followed by the extension or file it came from, the description alone when it came from none
+func (m *Model) sourced(desc, source string) string {
+	if source == "" {
+		return desc
+	}
+	return strings.TrimSpace(desc + " " + m.theme.Glyphs.Sep + " " + render.Truncate(source, 40, m.theme))
 }
 
 // Carries out a slash command an extension, workflow, kind or panel answers, false for one none of them knows
@@ -220,11 +228,7 @@ func (m *Model) pickKind() tea.Cmd {
 	items := []wm.Item{{ID: harness.NoKind, Title: harness.NoKind, Detail: "the plain agent", Keys: m.mark(current == ""), Run: func() tea.Cmd { return m.setKind(d, "") }}}
 	for _, k := range m.app.Kinds() {
 		name := k.Name
-		detail := k.Description
-		if k.Source != "" {
-			detail = strings.TrimSpace(detail + " " + m.theme.Glyphs.Sep + " " + render.Truncate(k.Source, 40, m.theme))
-		}
-		items = append(items, wm.Item{ID: name, Title: name, Detail: detail, Keys: m.mark(current == name), Run: func() tea.Cmd { return m.setKind(d, name) }})
+		items = append(items, wm.Item{ID: name, Title: name, Detail: m.sourced(k.Description, k.Source), Keys: m.mark(current == name), Run: func() tea.Cmd { return m.setKind(d, name) }})
 	}
 	return m.pick("kind", items)
 }

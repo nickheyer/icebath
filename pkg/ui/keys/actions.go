@@ -265,6 +265,7 @@ var registry = func() []Action {
 
 		act("findings.detail", Findings, "detail", "show or hide the finding and its evidence", "enter"),
 		act("findings.resolve", Findings, "resolve", "mark the finding as resolved or reopen it", "x"),
+		act("findings.remove", Findings, "forget", "forget the finding for good", "D"),
 		act("findings.tree", Findings, "tree", "switch between table and tree views", "t"),
 		act("findings.kind", Findings, "kind", "cycle through kind filters", "c"),
 		act("findings.tag", Findings, "tag", "cycle through tag filters", "T"),

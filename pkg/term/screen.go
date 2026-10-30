@@ -82,8 +82,6 @@ func (s *screen) width() int {
 	return len(s.lines[0].Cells)
 }
 
-func (s *screen) height() int { return len(s.lines) }
-
 // Row y, the last row for anything past the end
 func (s *screen) line(y int) *Line {
 	return &s.lines[min(max(y, 0), len(s.lines)-1)]

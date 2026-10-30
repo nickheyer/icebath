@@ -141,7 +141,7 @@ func (m *Model) missionOf(d *desk, id string) (*cards.Mission, bool) {
 	if !ok {
 		return nil, false
 	}
-	card := cards.NewMission(m.env, d.live.Missions, d.live.Facts, d.live.Session.ID(), ms)
+	card := cards.NewMission(m.env, d.live.Facts, d.live.Session.ID(), ms)
 	d.missions[id] = card
 	return card, true
 }

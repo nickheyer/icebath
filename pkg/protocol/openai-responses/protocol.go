@@ -548,10 +548,10 @@ func (Protocol) Decode(r io.Reader) (protocol.Response, error) {
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return protocol.Response{}, fmt.Errorf("openai-responses: response body: %w", err)
 	}
-	return convert(&resp, raw)
+	return convert(&resp)
 }
 
-func convert(resp *response, raw []byte) (protocol.Response, error) {
+func convert(resp *response) (protocol.Response, error) {
 	if err := terminal(resp); err != nil {
 		return protocol.Response{}, err
 	}
@@ -786,7 +786,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 				yield(protocol.Event{}, fmt.Errorf("openai-responses: event %q: %w", ev.Name, err))
 				return
 			}
-			done, err := st.apply(&e, []byte(ev.Data))
+			done, err := st.apply(&e)
 			if err != nil {
 				yield(protocol.Event{}, err)
 				return
@@ -816,7 +816,7 @@ func textKey(itemID string, index int) string {
 	return fmt.Sprintf("%s/%d", itemID, index)
 }
 
-func (st *streamState) apply(e *streamEvent, body []byte) (bool, error) {
+func (st *streamState) apply(e *streamEvent) (bool, error) {
 	switch e.Type {
 	case "response.created", "response.in_progress", "response.queued":
 		if e.Response != nil {

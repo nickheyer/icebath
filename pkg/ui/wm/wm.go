@@ -1131,7 +1131,6 @@ func (m *Model) retarget(ws *Workspace) {
 	for _, e := range ws.entries() {
 		m.aim(e)
 	}
-	ws.placed = true
 }
 
 // Points the frame of an entry at its box, grown from its origin when new and shrunk when closing

@@ -3,6 +3,7 @@ package cards
 import (
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -27,7 +28,6 @@ type Telemetry struct {
 	samples []float64
 	events  []string
 	timer   ticker
-	w, h    int
 }
 
 func NewTelemetry(env *Env) *Telemetry {
@@ -78,9 +78,9 @@ func (c *Telemetry) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		a := msg.Attempt
 		switch {
 		case a.Err != nil && a.Wait > 0:
-			c.note(render.Warm(fmt.Sprintf("retry in %s after %d", render.Elapsed(a.Wait), a.Status), c.env.Theme))
+			c.note(render.Warm(fmt.Sprintf("retry in %s after %d from %s", render.Elapsed(a.Wait), a.Status, urlHost(a.URL)), c.env.Theme))
 		case a.Err != nil:
-			c.note(render.Bad(render.Truncate(a.Err.Error(), 60, c.env.Theme), c.env.Theme))
+			c.note(render.Bad(render.Truncate(a.Err.Error(), 60, c.env.Theme)+" from "+urlHost(a.URL), c.env.Theme))
 		default:
 			c.note(render.Dim(fmt.Sprintf("%d in %s", a.Status, render.Elapsed(a.Duration)), c.env.Theme))
 		}
@@ -139,7 +139,6 @@ func (c *Telemetry) graph(w int) string {
 }
 
 func (c *Telemetry) View(w, h int) string {
-	c.w, c.h = w, h
 	t := c.env.Theme
 	s := c.snap
 	var lines []string
@@ -265,4 +264,12 @@ func (c *Telemetry) Status() string {
 		return render.Money(s.Cost)
 	}
 	return render.Tokens(s.Usage.Total())
+}
+
+// Host of an endpoint URL, the text itself when it does not parse
+func urlHost(s string) string {
+	if u, err := url.Parse(s); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return s
 }

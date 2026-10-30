@@ -56,6 +56,25 @@ type Response struct {
 	Usage         Usage
 }
 
+// Words for a turn that ended before the model was done, empty for a natural end or a tool round
+func (r Response) StopText() string {
+	var text string
+	switch r.StopReason {
+	case StopEnd, StopToolUse, "":
+		return ""
+	case StopLength:
+		text = "stopped at the output limit"
+	case StopContentFilter:
+		text = "stopped by the content filter"
+	default:
+		text = "stopped early"
+	}
+	if r.RawStopReason != "" && r.RawStopReason != string(r.StopReason) {
+		text += " (" + r.RawStopReason + ")"
+	}
+	return text
+}
+
 type EventType string
 
 const (
@@ -86,11 +105,7 @@ type Event struct {
 	// Text, thinking or tool argument fragment on delta events
 	Delta string
 	// Every argument fragment received so far on tool call delta events
-	Partial string
-	// Initial part on start events and the complete part on end events
-	Part Part
-	// Source attached to the text part at Index on citation events
-	Citation Citation
+	Partial  string
 	Response Response
 }
 
@@ -142,22 +157,22 @@ func (b *Builder) IsOpen(key string) bool {
 
 func (b *Builder) OpenText(key string) {
 	i := b.add(key, blockText, Text{})
-	b.emit(Event{Type: EventTextStart, Index: i, Part: b.Response.Content[i]})
+	b.emit(Event{Type: EventTextStart, Index: i})
 }
 
 func (b *Builder) OpenThinking(key string, redacted bool) {
 	i := b.add(key, blockThinking, Thinking{Redacted: redacted, Origin: b.Origin})
-	b.emit(Event{Type: EventThinkingStart, Index: i, Part: b.Response.Content[i]})
+	b.emit(Event{Type: EventThinkingStart, Index: i})
 }
 
 func (b *Builder) OpenToolCall(key, id, name string) {
 	i := b.add(key, blockToolCall, ToolCall{ID: id, Name: name})
-	b.emit(Event{Type: EventToolCallStart, Index: i, Part: b.Response.Content[i]})
+	b.emit(Event{Type: EventToolCallStart, Index: i})
 }
 
 func (b *Builder) OpenServerToolCall(key, id, name string) {
 	i := b.add(key, blockServerToolCall, ServerToolCall{ID: id, Name: name, Origin: b.Origin})
-	b.emit(Event{Type: EventServerToolCallStart, Index: i, Part: b.Response.Content[i]})
+	b.emit(Event{Type: EventServerToolCallStart, Index: i})
 }
 
 // Appends a vendor side tool outcome as a complete part
@@ -166,7 +181,7 @@ func (b *Builder) AddServerToolResult(p ServerToolResult) {
 	p.Origin = b.Origin
 	i := len(b.Response.Content)
 	b.Response.Content = append(b.Response.Content, p)
-	b.emit(Event{Type: EventServerToolResult, Index: i, Part: p})
+	b.emit(Event{Type: EventServerToolResult, Index: i})
 }
 
 // Appends a text, thinking or tool argument fragment to the block under key
@@ -230,7 +245,7 @@ func (b *Builder) Cite(key string, c Citation) error {
 	}
 	p.Citations = append(p.Citations, c)
 	b.Response.Content[blk.index] = p
-	b.emit(Event{Type: EventCitation, Index: blk.index, Citation: c})
+	b.emit(Event{Type: EventCitation, Index: blk.index})
 	return nil
 }
 
@@ -251,9 +266,9 @@ func (b *Builder) Close(key string) error {
 	i := blk.index
 	switch blk.kind {
 	case blockText:
-		b.emit(Event{Type: EventTextEnd, Index: i, Part: b.Response.Content[i]})
+		b.emit(Event{Type: EventTextEnd, Index: i})
 	case blockThinking:
-		b.emit(Event{Type: EventThinkingEnd, Index: i, Part: b.Response.Content[i]})
+		b.emit(Event{Type: EventThinkingEnd, Index: i})
 	case blockToolCall:
 		p := b.Response.Content[i].(ToolCall)
 		args, err := ParseArgs(blk.args.String())
@@ -262,7 +277,7 @@ func (b *Builder) Close(key string) error {
 		}
 		p.Args = args
 		b.Response.Content[i] = p
-		b.emit(Event{Type: EventToolCallEnd, Index: i, Part: p})
+		b.emit(Event{Type: EventToolCallEnd, Index: i})
 	case blockServerToolCall:
 		p := b.Response.Content[i].(ServerToolCall)
 		args, err := ParseArgs(blk.args.String())
@@ -271,7 +286,7 @@ func (b *Builder) Close(key string) error {
 		}
 		p.Args = args
 		b.Response.Content[i] = p
-		b.emit(Event{Type: EventServerToolCallEnd, Index: i, Part: p})
+		b.emit(Event{Type: EventServerToolCallEnd, Index: i})
 	}
 	return nil
 }

@@ -21,7 +21,7 @@ type Agents struct {
 	sel    int
 	tokens map[string]int
 	start  int
-	w, h   int
+	h      int
 	timer  ticker
 }
 
@@ -181,7 +181,7 @@ func (d *Agents) sessionOf(r *harness.Run) string {
 }
 
 func (d *Agents) View(w, h int) string {
-	d.w, d.h = w, h
+	d.h = h
 	t := d.env.Theme
 	if len(d.rows) == 0 {
 		return emptyView(w, h, "no agents", t)
@@ -251,7 +251,7 @@ type Agent struct {
 	tr    *Transcript
 	tick  int
 	timer ticker
-	w, h  int
+	h     int
 }
 
 // Builds the card for a child run with what it said so far, thinking included when the session shows it
@@ -411,7 +411,7 @@ func (a *Agent) act(id string) tea.Cmd {
 	case "transcript.block.prev":
 		tr.MoveCursor(-1)
 	case "transcript.toggle":
-		tr.Toggle()
+		return tr.Toggle()
 	case "transcript.expand":
 		tr.ExpandAll(true)
 	case "transcript.collapse":
@@ -457,7 +457,7 @@ func (a *Agent) header(w int) string {
 }
 
 func (a *Agent) View(w, h int) string {
-	a.w, a.h = w, h
+	a.h = h
 	if h <= 1 {
 		return a.header(w)
 	}

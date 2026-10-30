@@ -3,6 +3,8 @@ package term
 import (
 	"image/color"
 	"io"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,10 +38,6 @@ type Event struct {
 	Kind EventKind
 	Text string
 	Body string
-	// Progress state, 0 off, 1 normal, 2 error, 3 indeterminate, 4 warning
-	State int
-	// Progress percent
-	Value int
 }
 
 // Settings an emulator starts with
@@ -256,11 +254,28 @@ func (e *Emulator) Title() string {
 	return e.title
 }
 
-// Working directory the program reported through OSC 7, empty when it reported none
+// Working directory the program reported through OSC 7, empty when it reported none or one on another host
 func (e *Emulator) Cwd() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if !localHost(e.host) {
+		return ""
+	}
 	return e.cwd
+}
+
+// Reports whether a file URL host names this machine, an empty host counting as local
+func localHost(host string) bool {
+	switch host {
+	case "", "localhost", "127.0.0.1", "[::1]":
+		return true
+	}
+	name, err := os.Hostname()
+	if err != nil {
+		return false
+	}
+	short, _, _ := strings.Cut(name, ".")
+	return strings.EqualFold(host, name) || strings.EqualFold(host, short)
 }
 
 // Reports whether the alternate screen is shown

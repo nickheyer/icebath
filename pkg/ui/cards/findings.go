@@ -224,6 +224,8 @@ func (f *Findings) act(id string) tea.Cmd {
 		return f.export(true)
 	case "findings.resolve":
 		return f.resolve()
+	case "findings.remove":
+		return f.remove()
 	default:
 		if f.pane.act(id) {
 			return nil
@@ -251,6 +253,19 @@ func (f *Findings) resolve() tea.Cmd {
 	}
 	f.refresh()
 	return wm.Notify(fact.ID+" "+status, wm.Success)
+}
+
+// Forgets the selected fact
+func (f *Findings) remove() tea.Cmd {
+	if f.sel >= len(f.rows) || f.store == nil {
+		return nil
+	}
+	fact := f.rows[f.sel]
+	if !f.store.Remove(fact.ID) {
+		return wm.Notify(fact.ID+" is already gone", wm.Warn)
+	}
+	f.refresh()
+	return wm.Notify("forgot "+fact.ID, wm.Success)
 }
 
 // Writes every fact as markdown, or as JSON, next to the project and reports where
@@ -393,7 +408,7 @@ func (f *Findings) Hints() []wm.Hint {
 	if f.bar.Active() {
 		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "move"}, {Action: "search.close"}}
 	}
-	out := []wm.Hint{{Action: "findings.detail"}, {Action: "findings.resolve"}, {Action: "findings.tree"}, {Action: "findings.kind"}, {Action: "findings.tag"}, {Action: "findings.status"}, {Action: "findings.export.md"}, {Action: "findings.export.json"}, {Action: "filter.toggle"}, {Action: "list.down", Pair: "list.up", Label: "move"}}
+	out := []wm.Hint{{Action: "findings.detail"}, {Action: "findings.resolve"}, {Action: "findings.remove"}, {Action: "findings.tree"}, {Action: "findings.kind"}, {Action: "findings.tag"}, {Action: "findings.status"}, {Action: "findings.export.md"}, {Action: "findings.export.json"}, {Action: "filter.toggle"}, {Action: "list.down", Pair: "list.up", Label: "move"}}
 	if f.detailShown() && f.pane.overflows() {
 		out = append(out, wm.Hint{Action: "detail.scroll.down", Pair: "detail.scroll.up", Label: "scroll detail"})
 	}

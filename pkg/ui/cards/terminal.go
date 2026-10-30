@@ -916,6 +916,8 @@ func (t *Terminal) exitText() string {
 	switch {
 	case t.err != nil:
 		state = base.Foreground(th.Alarm).Render(" " + th.Glyphs.Fail + " " + t.err.Error() + " ")
+	case t.exit.Err != nil:
+		state = base.Foreground(th.Alarm).Render(" " + th.Glyphs.Fail + " " + t.exit.Err.Error() + " ")
 	case t.exit.Signal != "":
 		state = base.Foreground(th.Alarm).Render(" " + th.Glyphs.Fail + " " + t.exit.Signal + " ")
 	case t.exit.Code != 0:
@@ -1037,7 +1039,7 @@ func (t *Terminal) Status() string {
 		parts = append(parts, "locked")
 	}
 	switch {
-	case t.err != nil:
+	case t.err != nil, t.exit != nil && t.exit.Err != nil:
 		parts = append(parts, "failed")
 	case t.exit != nil:
 		parts = append(parts, "exit "+strconv.Itoa(t.exit.Code))

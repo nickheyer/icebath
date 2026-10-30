@@ -148,7 +148,7 @@ func (e *Emulator) notifyOp(text string) {
 		st, _ := strconv.Atoi(state)
 		v, _ := strconv.Atoi(value)
 		e.progress.state, e.progress.value = min(max(st, 0), 4), min(max(v, 0), 100)
-		e.emit(Event{Kind: EventProgress, State: e.progress.state, Value: e.progress.value})
+		e.emit(Event{Kind: EventProgress})
 		return
 	}
 	if strings.TrimSpace(text) != "" {

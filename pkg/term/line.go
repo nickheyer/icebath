@@ -2,8 +2,6 @@
 package term
 
 import (
-	"image/color"
-
 	uv "github.com/charmbracelet/ultraviolet"
 )
 
@@ -112,14 +110,4 @@ func (l Line) move(to, from, n int) {
 	if l.guard != nil {
 		copy(l.guard[to:to+n], l.guard[from:from+n])
 	}
-}
-
-// Reports whether the two colors are the same
-func sameColor(a, b color.Color) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	ar, ag, ab, aa := a.RGBA()
-	br, bg, bb, ba := b.RGBA()
-	return ar == br && ag == bg && ab == bb && aa == ba
 }

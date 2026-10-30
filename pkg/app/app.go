@@ -105,14 +105,11 @@ type Model struct {
 	termSeq  int
 	ctx      context.Context
 	cancel   context.CancelFunc
-	started  time.Time
 	state    tea.ProgramState
 	cancelAt time.Time
 	models   []profiles.Model
 	listed   string
 	quitting bool
-	width    int
-	height   int
 	bg       sync.WaitGroup
 	// Layout as last written, so only a change costs a write
 	layoutSaved []byte
@@ -152,7 +149,7 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 		}
 		return nil, err
 	}
-	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, started: time.Now(), state: tea.ProgramStateIdle, layoutSaved: raw, stateDir: stateDir, instance: instance, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}, terms: map[int]*cards.Terminal{}}
+	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, state: tea.ProgramStateIdle, layoutSaved: raw, stateDir: stateDir, instance: instance, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}, terms: map[int]*cards.Terminal{}}
 	if notice != "" {
 		m.notices = append(m.notices, notice)
 	}
@@ -522,8 +519,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
 	case keysTickMsg:
 		return m, tea.Batch(m.reloadKeys(), m.watchKeys())
 	case errMsg:
@@ -738,6 +733,13 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	case cards.OpenRunMsg:
 		return m.openRun(msg.Run), true
+	case cards.OpenCallMsg:
+		for _, r := range m.app.Control.Runs() {
+			if r.Parent != "" && r.CallID == msg.CallID {
+				return m.openAgent(r.ID), true
+			}
+		}
+		return m.wm.Toast("no agent ran for that call", wm.Warn, 0), true
 	case cards.KillRunMsg:
 		if err := m.app.Control.Cancel(msg.Run); err != nil {
 			return m.wm.Toast(err.Error(), wm.Error, 0), true

@@ -32,12 +32,7 @@ type Config struct {
 	profiles *lister
 	models   *lister
 	app      *settings
-	rules    *lister
-	hooks    *lister
-	servers  *lister
-	tools    *lister
 	keys     *lister
-	exts     *lister
 	list     []profiles.Model
 	loaded   string
 	loading  string
@@ -484,7 +479,6 @@ func (c *Config) loadRules() tea.Cmd {
 func (c *Config) rulesTab() *lister {
 	t := c.env.Theme
 	l := &lister{env: c.env, title: "rules", glyph: c.env.Theme.Glyphs.Rules, id: "config:rules", ctx: keys.Rules, primary: "config.rule.edit", cols: []render.Column{{Title: "DECISION"}, {Title: "TOOL"}, {Title: "PATTERN", Flex: 1}, {Title: "SCOPE"}}}
-	c.rules = l
 	l.rows = func() [][]string {
 		var rows [][]string
 		for _, e := range c.ruleList {
@@ -556,7 +550,6 @@ func (c *Config) loadHooks() tea.Cmd {
 func (c *Config) hooksTab() *lister {
 	t := c.env.Theme
 	l := &lister{env: c.env, title: "hooks", glyph: c.env.Theme.Glyphs.Hooks, id: "config:hooks", ctx: keys.Hooks, primary: "config.hook.edit", cols: []render.Column{{Title: "EVENT"}, {Title: "MATCHER"}, {Title: "COMMAND", Flex: 1}, {Title: "TIMEOUT", Right: true}, {Title: "SCOPE"}}}
-	c.hooks = l
 	l.rows = func() [][]string {
 		var rows [][]string
 		for _, e := range c.hookList {
@@ -626,7 +619,6 @@ func (c *Config) loadServers() tea.Cmd {
 func (c *Config) mcpTab() *lister {
 	t := c.env.Theme
 	l := &lister{env: c.env, title: "mcp", glyph: c.env.Theme.Glyphs.MCP, id: "config:mcp", ctx: keys.MCP, primary: "config.mcp.detail", cols: []render.Column{{Title: ""}, {Title: "SERVER"}, {Title: "TRANSPORT"}, {Title: "TARGET", Flex: 1}, {Title: "STATE"}, {Title: "TOOLS", Right: true}, {Title: "SCOPE"}}}
-	c.servers = l
 	var list []harness.ServerStatus
 	l.rows = func() [][]string {
 		list = nil
@@ -751,6 +743,9 @@ func (c *Config) serverDetail(s harness.ServerStatus) []string {
 	if s.Info.Name != "" {
 		out = append(out, render.KV("server", strings.TrimSpace(s.Info.Name+" "+s.Info.Version), t))
 	}
+	if s.Info.ProtocolVersion != "" {
+		out = append(out, render.KV("protocol", s.Info.ProtocolVersion, t))
+	}
 	if s.Err != nil {
 		out = append(out, render.Bad(s.Err.Error(), t))
 	}
@@ -767,7 +762,6 @@ func (c *Config) serverDetail(s harness.ServerStatus) []string {
 func (c *Config) toolsTab() *lister {
 	t := c.env.Theme
 	l := &lister{env: c.env, title: "tools", glyph: c.env.Theme.Glyphs.Tools, id: "config:tools", ctx: keys.Tools, primary: "config.tool.toggle", cols: []render.Column{{Title: "STATE"}, {Title: "TOOL"}, {Title: "SOURCE"}, {Title: "TRAITS"}, {Title: "DESCRIPTION", Flex: 1}}}
-	c.tools = l
 	var defs []tool.Tool
 	l.rows = func() [][]string {
 		defs = defs[:0]
@@ -850,7 +844,6 @@ func (c *Config) toolsTab() *lister {
 func (c *Config) extTab() *lister {
 	t := c.env.Theme
 	l := &lister{env: c.env, title: "ext", glyph: t.Glyphs.Ext, id: "config:ext", ctx: keys.Extensions, primary: "config.ext.detail", cols: []render.Column{{Title: "EXTENSION", Max: 24}, {Title: "VERSION", Max: 12}, {Title: "PROVIDES", Max: 10}, {Title: "DESCRIPTION", Flex: 1}}}
-	c.exts = l
 	var list []Extension
 	l.rows = func() [][]string {
 		list = list[:0]

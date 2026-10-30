@@ -67,17 +67,6 @@ func Explain(p Policy, call protocol.ToolCall) (Decision, string) {
 	return p.Decide(call), "policy"
 }
 
-// Policy that answers the same decision for every call
-type Static Decision
-
-func (s Static) Decide(protocol.ToolCall) Decision { return Decision(s) }
-
-var (
-	AllowAll Policy = Static(Allow)
-	DenyAll  Policy = Static(Deny)
-	AskAll   Policy = Static(Ask)
-)
-
 // One thing a call operates on, drawn from its arguments
 type Subject struct {
 	// What the text is, such as command, path, domain or plain

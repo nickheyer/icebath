@@ -155,6 +155,9 @@ func decodeValue(r *bytes.Reader, typ uint8) (any, error) {
 		if err := binary.Read(r, binary.BigEndian, &n); err != nil {
 			return nil, err
 		}
+		if int(n) > maxHeaderValue {
+			return nil, fmt.Errorf("value of %d bytes exceeds the %d byte limit", n, maxHeaderValue)
+		}
 		v := make([]byte, n)
 		if _, err := io.ReadFull(r, v); err != nil {
 			return nil, err

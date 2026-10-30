@@ -20,8 +20,6 @@ type Session struct {
 	live       *harness.Live
 	Transcript *Transcript
 	Composer   *Composer
-	focused    bool
-	w, h       int
 	split      int
 	// Reports whether the app holds the session beyond its runs, such as while compacting it
 	Locked func() bool
@@ -34,8 +32,8 @@ func NewSession(env *Env, live *harness.Live, dir string) *Session {
 	s.Transcript.ShowThinking(live.ShowsThinking())
 	s.Transcript.Load(live.Session.Entries(), live.Session.Records())
 	base := func() string {
-		if env.Shell != nil {
-			return env.Shell.Dir()
+		if dir, err := env.Files.Resolve("."); err == nil {
+			return dir
 		}
 		return env.ProjectDir
 	}
@@ -167,7 +165,6 @@ func (s *Session) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		_, cmd := s.Transcript.Update(msg)
 		return s, cmd
 	case wm.FocusMsg:
-		s.focused = msg.Focused
 		_, cmd := s.Transcript.Update(msg)
 		return s, tea.Batch(cmd, s.Composer.SetFocus(msg.Focused))
 	case wm.ClosedMsg:
@@ -256,7 +253,6 @@ func (s *Session) act(id string) tea.Cmd {
 }
 
 func (s *Session) View(w, h int) string {
-	s.w, s.h = w, h
 	t := s.env.Theme
 	s.Composer.SetBusy(s.busy())
 	s.Composer.Fit(w)

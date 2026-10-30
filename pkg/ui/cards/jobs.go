@@ -28,7 +28,7 @@ type Jobs struct {
 	follow bool
 	start  int
 	listH  int
-	w, h   int
+	w      int
 }
 
 type tail struct {
@@ -164,7 +164,7 @@ func (j *Jobs) kill() tea.Cmd {
 }
 
 func (j *Jobs) View(w, h int) string {
-	j.w, j.h = w, h
+	j.w = w
 	t := j.env.Theme
 	if len(j.jobs) == 0 {
 		return emptyView(w, h, "no jobs", t)

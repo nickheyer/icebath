@@ -27,13 +27,13 @@ type Process struct {
 // Processes running at one instant
 type Table []Process
 
-// Reads the process table
-func Snapshot() (Table, error) { return snapshot() }
-
-// Every descendant of pid, parents before their children
+// Every live descendant of pid, parents before their children, zombies left for their parent to reap
 func (t Table) Descendants(pid int) []int {
 	kids := map[int][]int{}
 	for _, p := range t {
+		if p.Zombie {
+			continue
+		}
 		kids[p.PPID] = append(kids[p.PPID], p.PID)
 	}
 	seen := map[int]bool{pid: true}
@@ -54,19 +54,6 @@ func (t Table) Descendants(pid int) []int {
 	return out
 }
 
-// Reports whether pid is in the table and still running
-func (t Table) Alive(pid int) bool {
-	for _, p := range t {
-		if p.PID == pid {
-			return !p.Zombie
-		}
-	}
-	return false
-}
-
-// Kills one process by id without touching its group
-func KillPID(pid int) error { return killPID(pid) }
-
 // Kills pid and every descendant, sweeping twice so children forked during the first pass die too
 func KillTree(pid int) {
 	for range 2 {
@@ -78,21 +65,6 @@ func KillTree(pid int) {
 		pids := append([]int{pid}, t.Descendants(pid)...)
 		for _, id := range pids {
 			killPID(id)
-		}
-	}
-}
-
-// Kills every descendant of pid that is not in keep, sweeping twice to catch late forks
-func KillNewDescendants(pid int, keep map[int]bool) {
-	for range 2 {
-		t, err := snapshot()
-		if err != nil {
-			return
-		}
-		for _, id := range t.Descendants(pid) {
-			if !keep[id] {
-				killPID(id)
-			}
 		}
 	}
 }

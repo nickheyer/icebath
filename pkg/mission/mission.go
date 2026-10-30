@@ -453,6 +453,9 @@ func formatPlan(steps []Step, progress float64) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
+// Numbered steps of the plan with the share done on top, as the tool reports them
+func (p SessionPlan) Format() string { return formatPlan(p.Steps, stepsProgress(p.Steps)) }
+
 // Working plan last kept on the session, false when none was
 func CurrentSessionPlan(sess *session.Session) (SessionPlan, bool) {
 	records := sess.Records()

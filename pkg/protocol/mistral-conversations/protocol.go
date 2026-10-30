@@ -642,7 +642,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 			if data.Type == "" {
 				data.Type = ev.Name
 			}
-			done, err := st.apply(data, []byte(ev.Data))
+			done, err := st.apply(data)
 			if err != nil {
 				yield(protocol.Event{}, err)
 				return
@@ -660,7 +660,7 @@ func (Protocol) Stream(r io.Reader) iter.Seq2[protocol.Event, error] {
 	}
 }
 
-func (st *streamState) apply(data event, body []byte) (bool, error) {
+func (st *streamState) apply(data event) (bool, error) {
 	switch data.Type {
 	case "conversation.response.started":
 		st.b.Start(data.ConversationID, "")
