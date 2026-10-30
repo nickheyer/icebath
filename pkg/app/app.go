@@ -733,6 +733,11 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	case cards.OpenRunMsg:
 		return m.openRun(msg.Run), true
+	case cards.OpenPanelMsg:
+		if c := m.extPanel(msg.Key); c != nil {
+			return m.wm.OpenHere(c), true
+		}
+		return m.wm.Toast("no panel "+msg.Key, wm.Warn, 0), true
 	case cards.OpenCallMsg:
 		for _, r := range m.app.Control.Runs() {
 			if r.Parent != "" && r.CallID == msg.CallID {

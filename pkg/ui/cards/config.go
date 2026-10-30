@@ -31,7 +31,7 @@ type Config struct {
 	env      *Env
 	profiles *lister
 	models   *lister
-	app      *settings
+	app      *Settings
 	keys     *lister
 	list     []profiles.Model
 	loaded   string
@@ -866,7 +866,19 @@ func (c *Config) extTab() *lister {
 		}
 		return out
 	}
-	l.actions = map[string]func(*lister, int) tea.Cmd{"config.ext.detail": toggleDetail}
+	l.actions = map[string]func(*lister, int) tea.Cmd{
+		"config.ext.detail": toggleDetail,
+		"config.ext.settings": func(l *lister, i int) tea.Cmd {
+			if i < 0 || i >= len(list) {
+				return nil
+			}
+			if list[i].Settings == "" {
+				return wm.Notify(list[i].Name+" has no settings", wm.Info)
+			}
+			key := list[i].Settings
+			return func() tea.Msg { return OpenPanelMsg{Key: key} }
+		},
+	}
 	l.empty = func() string { return "no extensions linked, add imports to cmd/icebath/extensions.go" }
 	return l
 }

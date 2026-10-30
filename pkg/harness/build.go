@@ -90,6 +90,7 @@ type App struct {
 	// Working directory the configuration was discovered under
 	Dir      string
 	kinds    []Kind
+	kindMu   sync.RWMutex
 	send     Sender
 	lives    []*Live
 	mu       sync.Mutex
@@ -405,6 +406,9 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 	}
 	if kind.MaxRounds > 0 {
 		ag.MaxRounds = kind.MaxRounds
+	}
+	if kind.MaxTokens > 0 {
+		ag.MaxTokens = kind.MaxTokens
 	}
 	ag.Hooks = append(ag.Hooks, &systemHook{app: a, ep: ep, kind: kind})
 	var runner *agent.HookRunner

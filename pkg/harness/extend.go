@@ -43,6 +43,8 @@ type Kind struct {
 	Model *Target `json:"model,omitempty"`
 	// Tool rounds one run may take, the configured limit when zero
 	MaxRounds int `json:"max_rounds,omitempty"`
+	// Output tokens one model turn may produce, the configured limit when zero
+	MaxTokens int `json:"max_tokens,omitempty"`
 	// Hooks every agent of the kind runs with
 	Hooks []agent.Hook `json:"-"`
 	// Extension or file the kind came from
@@ -68,6 +70,9 @@ func (k Kind) Validate() error {
 	if k.MaxRounds < 0 {
 		return fmt.Errorf("kind %s: max_rounds must not be negative", k.Name)
 	}
+	if k.MaxTokens < 0 {
+		return fmt.Errorf("kind %s: max_tokens must not be negative", k.Name)
+	}
 	return nil
 }
 
@@ -90,6 +95,8 @@ type Setting struct {
 	Integer      bool
 	// Further check of a value after the choice or range one
 	Check func(value string) error
+	// Shown masked wherever it is edited, for a key or token
+	Secret bool
 	// Extension the setting came from
 	Source string
 }
@@ -371,16 +378,38 @@ func loadKinds(dir string) ([]Kind, error) {
 }
 
 // Kinds the app knows, sorted by name
-func (a *App) Kinds() []Kind { return append([]Kind(nil), a.kinds...) }
+func (a *App) Kinds() []Kind {
+	a.kindMu.RLock()
+	defer a.kindMu.RUnlock()
+	return append([]Kind(nil), a.kinds...)
+}
 
 // Kind by name
 func (a *App) Kind(name string) (Kind, bool) {
+	a.kindMu.RLock()
+	defer a.kindMu.RUnlock()
 	for _, k := range a.kinds {
 		if k.Name == name {
 			return k, true
 		}
 	}
 	return Kind{}, false
+}
+
+// Replaces the kind of the same name or adds it, so runs started from now on follow it, refusing an invalid one
+func (a *App) PutKind(k Kind) error {
+	if err := k.Validate(); err != nil {
+		return err
+	}
+	a.kindMu.Lock()
+	defer a.kindMu.Unlock()
+	if i := slices.IndexFunc(a.kinds, func(have Kind) bool { return have.Name == k.Name }); i >= 0 {
+		a.kinds[i] = k
+		return nil
+	}
+	a.kinds = append(a.kinds, k)
+	sort.Slice(a.kinds, func(i, j int) bool { return a.kinds[i].Name < a.kinds[j].Name })
+	return nil
 }
 
 // Kind the session runs as, false while it runs as none or as one the app no longer knows
@@ -394,8 +423,9 @@ func (a *App) KindOf(sess *session.Session) (Kind, bool) {
 
 // Kinds as the subagent tool offers them
 func (a *App) agentKinds() []agent.Kind {
-	out := make([]agent.Kind, 0, len(a.kinds))
-	for _, k := range a.kinds {
+	kinds := a.Kinds()
+	out := make([]agent.Kind, 0, len(kinds))
+	for _, k := range kinds {
 		out = append(out, agent.Kind{Name: k.Name, Description: k.Description})
 	}
 	return out

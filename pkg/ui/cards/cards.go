@@ -63,6 +63,13 @@ type Extension struct {
 	Description string
 	// What it provides, each as the point, the name and a detail
 	Provides [][3]string
+	// Key of the panel editing its configuration, empty when it has none
+	Settings string
+}
+
+// Request to open the panel of an extension by its key
+type OpenPanelMsg struct {
+	Key string
 }
 
 // First key of the action as a legend shows it

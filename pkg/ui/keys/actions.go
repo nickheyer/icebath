@@ -367,6 +367,7 @@ var registry = func() []Action {
 		act("config.key.reset", Keybinds, "reset", "restore the default keybindings for this action", "r"),
 		act("config.key.detail", Keybinds, "detail", "show or hides the action details", "o"),
 		act("config.ext.detail", Extensions, "detail", "show or hides what the extension contributes", "enter", "o"),
+		act("config.ext.settings", Extensions, "settings", "open the settings of the extension", "s"),
 
 		act("terminal.copy", Terminal, "copy", "copy the selection, or the whole screen when nothing is selected", "ctrl+shift+c"),
 		act("terminal.paste", Terminal, "paste", "paste the clipboard into the shell", "ctrl+shift+v"),

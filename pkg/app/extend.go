@@ -318,6 +318,11 @@ func extensionRows() []cards.Extension {
 		for _, c := range e.Contributions {
 			row.Provides = append(row.Provides, [3]string{c.Point, c.Name, c.Detail})
 		}
+		for _, p := range ext.Panels() {
+			if p.Settings && p.Source == e.Name {
+				row.Settings = p.Key
+			}
+		}
 		out = append(out, row)
 	}
 	return out

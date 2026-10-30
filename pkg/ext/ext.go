@@ -107,6 +107,8 @@ type Panel struct {
 	// Default chords of the open action
 	Keys []string
 	New  func(env *cards.Env) wm.Card
+	// Edits the configuration of the extension, so the extensions tab offers it as the settings of the extension
+	Settings bool
 	// Extension the panel came from
 	Source string
 }
