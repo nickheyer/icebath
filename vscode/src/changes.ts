@@ -2,17 +2,26 @@ import * as vscode from 'vscode';
 import { allChanges, closeChange, refresh, showChange } from './diffs';
 import { Connection, UpdateEvent, connections, onDidConnect } from './sessions';
 
+// Update listeners of the connections open now, each dropped when its connection closes
+const watching = new Set<vscode.Disposable>();
+
 // Opens the file changes of every TUI as diffs, the ones connected now and the ones to come
 export function activateChanges(context: vscode.ExtensionContext): void {
-  for (const conn of connections) watch(conn, context);
-  context.subscriptions.push(onDidConnect((conn) => watch(conn, context)));
+  for (const conn of connections) watch(conn);
+  context.subscriptions.push(onDidConnect(watch), {
+    dispose: () => {
+      for (const sub of watching) sub.dispose();
+      watching.clear();
+    },
+  });
 }
 
-function watch(conn: Connection, context: vscode.ExtensionContext): void {
+function watch(conn: Connection): void {
   const sub = conn.onUpdate((ev) => void updated(ev));
-  context.subscriptions.push(sub);
+  watching.add(sub);
   conn.onDidClose(() => {
     sub.dispose();
+    watching.delete(sub);
     void closed(conn);
   });
 }
@@ -28,6 +37,7 @@ async function updated(ev: UpdateEvent): Promise<void> {
   const diff = update.content?.find((c) => c.type === 'diff');
   if (!diff) return;
   await ev.connection.whenReady;
+  if (!ev.connection.ready) return;
   await showChange({ id, connection: ev.connection, path: diff.path, oldText: diff.oldText, newText: diff.newText, done: update.status === 'completed' });
 }
 

@@ -91,27 +91,3 @@ func TestInsideVSCode(t *testing.T) {
 		t.Fatal("vscode not recognised")
 	}
 }
-
-func TestRegistered(t *testing.T) {
-	root := t.TempDir()
-	ext := filepath.Join(root, "heyerapp.icebath-0.1.0")
-	if err := os.MkdirAll(ext, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	w := Window{ExtensionPath: ext}
-	if !w.registered("HeyerApp.icebath") {
-		t.Fatal("no registry file should count as registered")
-	}
-	registry := filepath.Join(root, "extensions.json")
-	os.WriteFile(registry, []byte(`[{"identifier":{"id":"golang.go"}}]`), 0o600)
-	if w.registered("HeyerApp.icebath") {
-		t.Fatal("registry without the extension counted as registered")
-	}
-	os.WriteFile(registry, []byte(`[{"identifier":{"id":"golang.go"}},{"identifier":{"id":"heyerapp.icebath"}}]`), 0o600)
-	if !w.registered("HeyerApp.icebath") {
-		t.Fatal("registry with the extension in another case not recognised")
-	}
-	if !(Window{}).registered("HeyerApp.icebath") {
-		t.Fatal("window without an extension path should count as registered")
-	}
-}

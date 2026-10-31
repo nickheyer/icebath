@@ -2,7 +2,7 @@
   "name": "icebath",
   "displayName": "icebath",
   "description": "The file changes of the icebath TUI as diffs in the editor, with the session and mode in the status bar",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "HeyerApp",
   "license": "MIT",
   "icon": "icon.png",
@@ -63,6 +63,10 @@
         "title": "icebath: install binary"
       },
       {
+        "command": "icebath.optionAsMeta",
+        "title": "icebath: send Option as Alt"
+      },
+      {
         "command": "icebath.revert",
         "title": "Revert",
         "icon": "$(discard)"
@@ -80,6 +84,10 @@
         {
           "command": "icebath.revert",
           "when": "false"
+        },
+        {
+          "command": "icebath.optionAsMeta",
+          "when": "isMac"
         }
       ]
     },
@@ -95,6 +103,12 @@
           "type": "boolean",
           "default": false,
           "description": "Send the active file path and selection with prompts submitted from VS Code"
+        },
+        "icebath.openDiffs": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "description": "Most change diffs kept open at once, the oldest written one closing as new changes arrive"
         }
       }
     }

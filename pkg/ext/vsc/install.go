@@ -15,9 +15,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-// Extension id and, in builds made with make vsix, the extension package the binary installs into the editor
+// Extension package the binary installs, present in builds made with make vsix, beside the id file anchoring the directory
 //
 //go:embed bundle
 var bundle embed.FS
@@ -25,13 +27,36 @@ var bundle embed.FS
 // Longest the editor command line gets to install the extension
 const installTimeout = 2 * time.Minute
 
-// Id of the extension as the bundle names it, publisher dot name
-func extensionID() string {
-	data, err := bundle.ReadFile("bundle/extension")
+// File under the configuration directory naming the extension version this machine installed last
+const InstalledFile = "ext/vsc.installed"
+
+// Version of the extension this machine installed last, empty when it never did
+func InstalledVersion() (string, error) {
+	dir, err := profiles.ConfigDir()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(string(data))
+	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(InstalledFile)))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// Records the extension version just installed so no later process installs it again
+func markInstalled(version string) error {
+	dir, err := profiles.ConfigDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, filepath.FromSlash(InstalledFile))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(version+"\n"), 0o600)
 }
 
 // Extension package built into the binary with its version, false when the build carried none
@@ -166,12 +191,8 @@ func cliIn(dir string, names []string) (string, bool) {
 	return "", false
 }
 
-// Installs the extension built into the binary through the editor command line
-func installExtension(ctx context.Context) (string, error) {
-	data, _, ok := bundledVSIX()
-	if !ok {
-		return "", errors.New("this build carries no VS Code extension, build it with make vsix")
-	}
+// Installs the extension package through the editor command line, answering with the command used
+func installExtension(ctx context.Context, data []byte) (string, error) {
 	cli, ok := editorCLI()
 	if !ok {
 		return "", errors.New("no code command line found beside the editor or on the PATH")

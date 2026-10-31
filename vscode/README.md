@@ -4,10 +4,16 @@ Opens the file changes of the icebath TUI running in a VS Code terminal as diffs
 
 ## Install
 
-Run `icebath` in an terminal to install this extension idempotently. Without the binary, run the palette command below, it starts the site's installer in a terminal.
+Run `/vsc-install` in the TUI, it installs the extension built into the binary. Auto install in the VS Code panel of the TUI does the same on its own when the TUI starts in a VS Code terminal without it. Without the binary, run the palette command below, it starts the site's installer in a terminal.
 
 ```
 icebath: install binary
+```
+
+On macOS the shortcuts of the TUI need Option sent as Alt. The extension offers to turn `terminal.integrated.macOptionIsMeta` on when a TUI connects, the command below does it at any time.
+
+```
+icebath: send Option as Alt
 ```
 
 ## Usage
@@ -22,4 +28,5 @@ icebath: show log        protocol traffic
 
 icebath.path             binary when it is not on PATH
 icebath.editorContext    send the active file and selection with prompts
+icebath.openDiffs        most diffs kept open at once, 8 unless set
 ```

@@ -16,6 +16,7 @@ export interface Change {
 const beforeScheme = 'icebath-before';
 const afterScheme = 'icebath-after';
 
+// Changes with a diff open, oldest first
 const changes = new Map<string, Change>();
 
 // Serves the before and after text of every change under its two schemes
@@ -53,17 +54,44 @@ export function refresh(): void {
   void vscode.commands.executeCommand('setContext', 'icebath.revertable', activeChange()?.done === true);
 }
 
-// Opens the diff of a change or refreshes the one open
+// Most diffs the setting keeps open at once, one at the least
+function openLimit(): number {
+  const set = vscode.workspace.getConfiguration('icebath').get<number>('openDiffs', 8);
+  return Number.isFinite(set) && set >= 1 ? Math.floor(set) : 1;
+}
+
+// Opens a new change as a diff, trimming old written ones past the limit, or refreshes the open diff
 export async function showChange(next: Change): Promise<void> {
   const have = changes.get(next.id);
   changes.set(next.id, next);
   if (!have) {
     await open(next);
+    await trim(next.id);
     return;
   }
   provider.changed.fire(uriOf(next, beforeScheme));
   provider.changed.fire(uriOf(next, afterScheme));
   refresh();
+}
+
+// Closes written changes oldest first until the open ones fit the limit, proposals still being decided and the newest staying
+async function trim(keep: string): Promise<void> {
+  const limit = openLimit();
+  for (const change of [...changes.values()]) {
+    if (changes.size <= limit) return;
+    if (change.done && change.id !== keep) await closeChange(change.id);
+  }
+}
+
+// Forgets the changes whose diff tabs closed, by the limit, the person or the connection
+function tabsClosed(ev: vscode.TabChangeEvent): void {
+  let gone = false;
+  for (const tab of ev.closed) {
+    if (tab.input instanceof vscode.TabInputTextDiff && tab.input.modified.scheme === afterScheme) {
+      gone = changes.delete(tab.input.modified.query) || gone;
+    }
+  }
+  if (gone) refresh();
 }
 
 // Opens the diff, revealing the editor area even behind a maximized panel, then gives the keyboard back to the TUI
@@ -113,12 +141,13 @@ async function revert(change: Change): Promise<void> {
   flash(`reverted ${vscode.workspace.asRelativePath(change.path)}`);
 }
 
-// Registers the content provider, the Revert command and the context key tracking
+// Registers the content provider, the Revert command, the context key tracking and the tab watch
 export function activateDiffs(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(beforeScheme, provider),
     vscode.workspace.registerTextDocumentContentProvider(afterScheme, provider),
     vscode.window.onDidChangeActiveTextEditor(() => refresh()),
+    vscode.window.tabGroups.onDidChangeTabs(tabsClosed),
     vscode.commands.registerCommand('icebath.revert', async () => {
       const change = activeChange();
       if (change?.done) await revert(change);

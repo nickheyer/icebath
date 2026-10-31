@@ -18,19 +18,19 @@ func resetConfig() {
 
 func TestConfigRoundTrip(t *testing.T) {
 	c := Default()
-	if !c.Enabled || !c.AutoInstall || c.Log != "" {
+	if !c.Enabled || c.AutoInstall || c.Log != "" {
 		t.Fatalf("defaults %+v", c)
 	}
-	for _, kv := range [][2]string{{"enabled", "false"}, {"auto_install", "false"}, {"log", "/tmp/acp.log"}} {
+	for _, kv := range [][2]string{{"enabled", "false"}, {"auto_install", "true"}, {"log", "/tmp/acp.log"}} {
 		if err := c.Set(kv[0], kv[1]); err != nil {
 			t.Fatalf("set %s: %v", kv[0], err)
 		}
 	}
 	v := c.Values()
-	if v["enabled"] != "false" || v["auto_install"] != "false" || v["log"] != "/tmp/acp.log" {
+	if v["enabled"] != "false" || v["auto_install"] != "true" || v["log"] != "/tmp/acp.log" {
 		t.Fatalf("values %+v", v)
 	}
-	if err := c.Set("auto_install", ""); err != nil || !c.AutoInstall {
+	if err := c.Set("auto_install", ""); err != nil || c.AutoInstall {
 		t.Fatalf("unset auto_install: %v %v", err, c.AutoInstall)
 	}
 	if err := c.Set("enabled", ""); err != nil || !c.Enabled {
@@ -48,7 +48,7 @@ func TestConfigFile(t *testing.T) {
 	t.Setenv(profiles.ConfigDirEnv, dir)
 	resetConfig()
 	defer resetConfig()
-	if c := Current(); !c.Enabled || !c.AutoInstall {
+	if c := Current(); !c.Enabled || c.AutoInstall {
 		t.Fatalf("no file gives %+v", c)
 	}
 	if err := LoadError(); err != nil {
@@ -71,8 +71,15 @@ func TestConfigFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	resetConfig()
+	if got := Current(); got.AutoInstall {
+		t.Fatalf("file without auto_install should keep it off, got %+v", got)
+	}
+	if err := os.WriteFile(path, []byte(`{"enabled": true, "auto_install": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resetConfig()
 	if got := Current(); !got.AutoInstall {
-		t.Fatalf("file without auto_install should keep it on, got %+v", got)
+		t.Fatalf("file turning auto_install on should be read, got %+v", got)
 	}
 	if err := os.WriteFile(path, []byte(`{"enabled": `), 0o600); err != nil {
 		t.Fatal(err)

@@ -21,7 +21,7 @@ func (extension) Manifest() ext.Manifest {
 	return ext.Manifest{Name: Name, Version: "1", Description: "VS Code window onto the TUI, file changes as diffs with revert, mode and session state"}
 }
 
-// Declares the app capture, the message listener and the settings panel of the bridge
+// Declares the app capture, the message listener, the install command and the settings panel of the bridge
 func (extension) Attach(h *ext.Host) error {
 	if err := LoadError(); err != nil {
 		return err
@@ -31,6 +31,7 @@ func (extension) Attach(h *ext.Host) error {
 		return nil, nil
 	})
 	h.Observe(observe)
+	h.Command(installCommand())
 	h.Panel(ext.Panel{Key: SettingsKey, Title: "VS Code", Detail: "bridge to the VS Code extension, on or off and its traffic log", New: newSettingsCard, Settings: true})
 	return nil
 }

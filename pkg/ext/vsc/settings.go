@@ -24,7 +24,7 @@ func newSettingsCard(env *cards.Env) wm.Card {
 		Status: settingsFile,
 		Fields: []cards.Field{
 			{Key: "enabled", Label: "enabled", Group: "bridge", Kind: cards.FieldChoice, Choices: []string{"true", "false"}, Help: "Open the file changes of this TUI as diffs in the VS Code window it runs in"},
-			{Key: "auto_install", Label: "auto install", Group: "bridge", Kind: cards.FieldChoice, Choices: []string{"true", "false"}, Help: "Install the icebath extension into the editor when the TUI starts in a VS Code terminal that has none"},
+			{Key: "auto_install", Label: "auto install", Group: "bridge", Kind: cards.FieldChoice, Choices: []string{"true", "false"}, Help: "Install or update the icebath extension when a VS Code terminal runs the TUI without it, once per version, /vsc-install does it by hand"},
 			{Key: "log", Label: "log", Group: "bridge", Kind: cards.FieldText, Optional: true, Placeholder: "~/icebath-vsc.log", Help: "File every protocol line in and out is appended to, no traffic log when empty"},
 		},
 		Values: func() map[string]string { return Current().Values() },

@@ -1,6 +1,6 @@
 import * as net from 'node:net';
 import * as vscode from 'vscode';
-import { log } from './log';
+import { brief, log } from './log';
 
 type RpcId = number | string;
 
@@ -71,17 +71,19 @@ export class Peer {
 
   private send(msg: RpcMessage): void {
     if (this.closed) return;
-    const line = JSON.stringify(msg);
-    log('out', line);
-    this.socket.write(line + '\n');
+    log('out', brief(msg));
+    this.socket.write(JSON.stringify(msg) + '\n');
   }
 
+  // Fails every open request, tells the listeners once and frees them
   private end(): void {
     if (this.closed) return;
     this.closed = true;
     for (const waiting of this.pending.values()) waiting.reject(new Error('connection closed'));
     this.pending.clear();
+    this.notifications.clear();
     this.closeEmitter.fire();
+    this.closeEmitter.dispose();
   }
 
   private receive(chunk: string): void {
@@ -97,14 +99,14 @@ export class Peer {
 
   // Routes one line to a notification handler or the waiting caller
   private dispatch(line: string): void {
-    log('in', line);
     let msg: RpcMessage;
     try {
       msg = JSON.parse(line) as RpcMessage;
     } catch (err) {
-      log('info', `unparseable line, ${err instanceof Error ? err.message : String(err)}`);
+      log('info', `unparseable line of ${line.length} chars, ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
+    log('in', brief(msg));
     if (typeof msg.method === 'string') {
       if (msg.id === undefined || msg.id === null) {
         this.notifications.get(msg.method)?.(msg.params);

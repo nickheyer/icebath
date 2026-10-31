@@ -31,7 +31,7 @@ export class Connection {
   availableModes: Mode[] = [];
   terminal: vscode.Terminal | undefined;
   readonly sessions = new Map<string, SessionInfo>();
-  // Settles once the handshake bound the TUI to its terminal
+  // Settles once the handshake bound the TUI to its terminal, or the connection closed before that
   readonly whenReady: Promise<void>;
   private markReady!: () => void;
   private readonly updateEmitter = new vscode.EventEmitter<UpdateEvent>();
@@ -122,9 +122,13 @@ export class Connection {
     changed.fire();
   }
 
+  // Tells the listeners, frees them and lets anything waiting on the handshake go
   private closed(): void {
     this.closeEmitter.fire();
     remove(this);
+    this.markReady();
+    this.updateEmitter.dispose();
+    this.closeEmitter.dispose();
   }
 }
 

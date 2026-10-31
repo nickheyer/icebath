@@ -23,9 +23,7 @@ type Window struct {
 	Version    string    `json:"version"`
 	Workspaces []string  `json:"workspaceFolders"`
 	Created    time.Time `json:"created"`
-	// Folder the editor installed the extension into, beside the registry of installed extensions
-	ExtensionPath string `json:"extensionPath"`
-	path          string
+	path       string
 }
 
 // Reports whether the process runs in the integrated terminal of VS Code or one of its forks
@@ -111,29 +109,4 @@ func (w Window) forget() {
 	if w.path != "" {
 		os.Remove(w.path)
 	}
-}
-
-// Reports whether the editor of the window still lists the extension as installed, true when that cannot be read
-func (w Window) registered(id string) bool {
-	if w.ExtensionPath == "" {
-		return true
-	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(w.ExtensionPath), "extensions.json"))
-	if err != nil {
-		return true
-	}
-	var entries []struct {
-		Identifier struct {
-			ID string `json:"id"`
-		} `json:"identifier"`
-	}
-	if json.Unmarshal(data, &entries) != nil {
-		return true
-	}
-	for _, e := range entries {
-		if strings.EqualFold(e.Identifier.ID, id) {
-			return true
-		}
-	}
-	return false
 }

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
 // Zip holding a package manifest with the version, the way vsce lays an extension out
@@ -44,12 +46,6 @@ func TestNewerVersion(t *testing.T) {
 		if got := newerVersion(c.a, c.b); got != c.want {
 			t.Fatalf("newer(%q, %q) = %v", c.a, c.b, got)
 		}
-	}
-}
-
-func TestExtensionID(t *testing.T) {
-	if id := extensionID(); id != "HeyerApp.icebath" {
-		t.Fatalf("bundle names %q", id)
 	}
 }
 
@@ -139,9 +135,43 @@ func TestInstallExtensionLive(t *testing.T) {
 	if os.Getenv("ICEBATH_LIVE_INSTALL") == "" {
 		t.Skip("set ICEBATH_LIVE_INSTALL=1 to install the bundled extension into the editor of this terminal")
 	}
-	cli, err := installExtension(t.Context())
+	data, _, ok := bundledVSIX()
+	if !ok {
+		t.Fatal("this build carries no VS Code extension, build it with make vsix")
+	}
+	cli, err := installExtension(t.Context(), data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("installed with %s", cli)
+}
+
+func TestInstalledVersion(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(profiles.ConfigDirEnv, dir)
+	if v, err := InstalledVersion(); err != nil || v != "" {
+		t.Fatalf("fresh machine reports %q %v", v, err)
+	}
+	if err := markInstalled("0.1.2"); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := InstalledVersion(); err != nil || v != "0.1.2" {
+		t.Fatalf("after marking %q %v", v, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ext", "vsc.installed")); err != nil {
+		t.Fatal(err)
+	}
+	if err := markInstalled("0.2.0"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := InstalledVersion(); v != "0.2.0" {
+		t.Fatalf("second mark left %q", v)
+	}
+}
+
+func TestInstallCommand(t *testing.T) {
+	c := installCommand()
+	if c.ID != "vsc.install" || c.Slash != "vsc-install" || c.Title == "" || c.Run == nil {
+		t.Fatalf("command %+v", c)
+	}
 }

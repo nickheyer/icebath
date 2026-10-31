@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { InitializeResponse, Peer } from './acp';
 import { log } from './log';
+import { offerOptionAsMeta } from './mac';
 import { Connection, add } from './sessions';
 
 const envVar = 'ICEBATH_ACP';
@@ -22,7 +23,7 @@ export function activateServer(context: vscode.ExtensionContext): void {
   server.listen(where, () => {
     if (unix) fs.chmodSync(where, 0o600);
     log('info', `listening on ${where}`);
-    advertised = advertise(where, version, context.extensionPath);
+    advertised = advertise(where, version);
   });
   const env = context.environmentVariableCollection;
   env.persistent = false;
@@ -39,7 +40,7 @@ export function activateServer(context: vscode.ExtensionContext): void {
 }
 
 // Advertises the listening socket under the icebath configuration directory so a TUI already running in a terminal finds this window
-function advertise(where: string, version: string, extensionPath: string): vscode.Disposable {
+function advertise(where: string, version: string): vscode.Disposable {
   const file = path.join(configDir(), 'ide', `${process.pid}.json`);
   const created = new Date().toISOString();
   const write = (): void => {
@@ -51,7 +52,6 @@ function advertise(where: string, version: string, extensionPath: string): vscod
         version,
         workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
         created,
-        extensionPath,
       };
       fs.writeFileSync(file, JSON.stringify(body), { mode: 0o600 });
     } catch (err) {
@@ -102,7 +102,7 @@ function accept(socket: net.Socket): void {
   });
 }
 
-// Initializes, takes the session and modes of the TUI and binds it to the terminal it runs in
+// Initializes, binds the TUI to its terminal with its session and modes, then sees to Option on macOS
 async function handshake(conn: Connection): Promise<void> {
   const init = await conn.peer.request<InitializeResponse>('initialize', { protocolVersion: 1 });
   conn.sessionId = init.sessionId;
@@ -111,6 +111,7 @@ async function handshake(conn: Connection): Promise<void> {
   conn.terminal = await terminalOf(init.pid);
   conn.finishHandshake();
   log('info', `${conn.id} icebath ${init.version} pid ${init.pid} session ${init.sessionId}`);
+  if (conn.terminal) await offerOptionAsMeta();
 }
 
 // Integrated terminal whose shell is an ancestor of the TUI process, none when the TUI runs outside this window

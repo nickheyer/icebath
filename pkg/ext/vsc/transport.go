@@ -14,10 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/harness"
 )
 
-// Shortest and longest waits between attempts to reach the editor
+// Waits between attempts to reach the editor, and how long a window gets to advertise before installing
 const (
-	dialMin = time.Second
-	dialMax = 10 * time.Second
+	dialMin      = time.Second
+	dialMax      = 10 * time.Second
+	installGrace = 20 * time.Second
 )
 
 // Target standing for the window the terminal belongs to, found through its advertisement instead of the variable
@@ -32,6 +33,7 @@ type bridge struct {
 	target    string
 	cancel    context.CancelFunc
 	done      chan struct{}
+	since     time.Time
 	installed bool
 }
 
@@ -55,7 +57,7 @@ func (b *bridge) start(target string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	b.mu.Lock()
-	b.target, b.cancel, b.done = target, cancel, done
+	b.target, b.cancel, b.done, b.since = target, cancel, done, time.Now()
 	b.mu.Unlock()
 	go b.loop(ctx, target, done)
 }
@@ -108,7 +110,7 @@ func (b *bridge) connect(ctx context.Context, target string) (io.ReadWriteCloser
 	return b.discover(ctx)
 }
 
-// Dials the advertised window of this terminal, forgetting dead advertisements and installing the extension when none is left
+// Dials the advertised window of this terminal, forgetting dead advertisements and installing the extension once the grace period passes with none
 func (b *bridge) discover(ctx context.Context) (io.ReadWriteCloser, error) {
 	windows, err := Windows()
 	if err != nil {
@@ -120,34 +122,51 @@ func (b *bridge) discover(ctx context.Context) (io.ReadWriteCloser, error) {
 			w.forget()
 			continue
 		}
-		switch _, version, ok := bundledVSIX(); {
-		case !w.registered(extensionID()):
-			b.install(ctx, "the editor no longer lists the VS Code extension, installing it again")
-		case ok && newerVersion(version, w.Version):
+		if _, version, ok := bundledVSIX(); ok && newerVersion(version, w.Version) {
 			b.install(ctx, fmt.Sprintf("updating the VS Code extension from %s to %s", w.Version, version))
 		}
 		return conn, nil
 	}
-	b.install(ctx, "installing the VS Code extension")
+	b.mu.Lock()
+	since := b.since
+	b.mu.Unlock()
+	if time.Since(since) >= installGrace {
+		b.install(ctx, "installing the VS Code extension")
+	}
 	return nil, errors.New("no editor window advertises a listener")
 }
 
-// Installs the extension once per process through the editor command line, telling the person as it goes
+// Installs the bundled extension when auto install is on, once per process and once per version on this machine
 func (b *bridge) install(ctx context.Context, why string) {
+	if !Current().AutoInstall {
+		return
+	}
 	b.mu.Lock()
 	first := !b.installed
 	b.installed = true
 	b.mu.Unlock()
-	if !first || !Current().AutoInstall {
+	if !first {
+		return
+	}
+	data, version, ok := bundledVSIX()
+	if !ok {
+		b.notify(harness.Error, "VS Code extension: this build carries no VS Code extension, build it with make vsix")
+		return
+	}
+	if installed, err := InstalledVersion(); err == nil && installed == version {
+		b.log.infof("VS Code extension %s installed on this machine already, leaving the editor alone", version)
 		return
 	}
 	b.notify(harness.Info, why)
-	cli, err := installExtension(ctx)
+	cli, err := installExtension(ctx, data)
 	if err != nil {
 		b.notify(harness.Error, "VS Code extension: "+err.Error())
 		return
 	}
-	b.notify(harness.Success, "VS Code extension installed with "+filepath.Base(cli)+", connecting once it starts")
+	if err := markInstalled(version); err != nil {
+		b.notify(harness.Warn, "VS Code extension: "+err.Error())
+	}
+	b.notify(harness.Success, "VS Code extension "+version+" installed with "+filepath.Base(cli)+", connecting once it starts")
 }
 
 // Shows the person a notice in the TUI and writes it to the log

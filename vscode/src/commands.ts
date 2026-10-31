@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { TextBlock } from './acp';
 import { configuredPath, installIcebath } from './install';
+import { enableOptionAsMeta } from './mac';
 import { Connection, active, shortId } from './sessions';
 import { flash } from './status';
 
@@ -9,6 +10,7 @@ export function registerCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('icebath.open', open),
     vscode.commands.registerCommand('icebath.install', installIcebath),
+    vscode.commands.registerCommand('icebath.optionAsMeta', enableOptionAsMeta),
     vscode.commands.registerCommand('icebath.mode', () => withConnection(pickMode)),
     vscode.commands.registerCommand('icebath.sessions', () => withConnection(pickSession)),
     vscode.commands.registerCommand('icebath.prompt', () => withConnection(prompt)),

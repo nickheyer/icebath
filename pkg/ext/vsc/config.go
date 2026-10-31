@@ -26,12 +26,12 @@ type Config struct {
 	Enabled bool `json:"enabled"`
 	// File every protocol line is appended to, no traffic log when empty
 	Log string `json:"log,omitempty"`
-	// Install the editor extension when the TUI starts in a VS Code terminal that has none
+	// Install or update the editor extension through the code command when a VS Code terminal lacks it
 	AutoInstall bool `json:"auto_install"`
 }
 
-// Settings a fresh file starts from
-func Default() Config { return Config{Enabled: true, AutoInstall: true} }
+// Settings a fresh file starts from, the bridge on and auto install off
+func Default() Config { return Config{Enabled: true} }
 
 // Every setting as text keyed by name
 func (c Config) Values() map[string]string {
