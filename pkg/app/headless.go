@@ -67,6 +67,8 @@ type Line struct {
 	Path     string             `json:"path,omitempty"`
 	// Number of the approval an approval line asks for and an approval_done line answers
 	Approval int `json:"approval,omitempty"`
+	// Number of the ask a question line puts and a question_done line answers
+	Question int `json:"question,omitempty"`
 	// Endpoint an attempt line hit
 	URL string `json:"url,omitempty"`
 	// Id the provider gave the response of a turn_end, run_end or run_done line
@@ -127,6 +129,16 @@ func encode(msg any) (Line, bool) {
 		return Line{Type: "approval", Time: v.Pending.Asked, Run: v.Pending.Run, Agent: v.Pending.Agent, Approval: v.Pending.ID, Call: &c, Text: v.Pending.Request.Reason, Kind: v.Pending.Request.Key}, true
 	case harness.ApprovalDoneMsg:
 		l := Line{Type: "approval_done", Time: time.Now(), Run: v.Run, Approval: v.ID, Verdict: v.Verdict.String()}
+		if v.Err != nil {
+			l.Error = v.Err.Error()
+		}
+		return l, true
+	case harness.QuestionMsg:
+		raw, _ := json.Marshal(v.Asking.Questions)
+		return Line{Type: "question", Time: v.Asking.Asked, Run: v.Asking.Run, Question: v.Asking.ID, Data: raw, Text: v.Asking.Questions[0].Text}, true
+	case harness.QuestionDoneMsg:
+		raw, _ := json.Marshal(v.Answers)
+		l := Line{Type: "question_done", Time: time.Now(), Run: v.Run, Question: v.ID, Data: raw}
 		if v.Err != nil {
 			l.Error = v.Err.Error()
 		}
@@ -247,6 +259,11 @@ func (w *textWriter) write(msg any) {
 	case harness.ApprovalMsg:
 		w.newline()
 		fmt.Fprintf(w.err, "%s approval for %s %s\n", t.Glyphs.Flag, v.Pending.Request.Call.Name, render.Truncate(string(v.Pending.Request.Call.Args), 120, t))
+	case harness.QuestionMsg:
+		w.newline()
+		for _, q := range v.Asking.Questions {
+			fmt.Fprintf(w.err, "%s question with nobody to answer it: %s\n", t.Glyphs.Flag, render.Truncate(q.Text, 120, t))
+		}
 	case harness.FactMsg:
 		w.newline()
 		fmt.Fprintf(w.err, "%s %s %s: %s\n", t.Glyphs.Record, v.Change.Op, v.Change.Fact.ID, v.Change.Fact.Title)
@@ -320,6 +337,13 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 			defer func() {
 				if app != nil {
 					app.Approver.Answer(v.Pending.ID, verdict)
+				}
+			}()
+		}
+		if v, ok := msg.(harness.QuestionMsg); ok {
+			defer func() {
+				if app != nil {
+					app.Questions.Decline(v.Asking.ID)
 				}
 			}()
 		}

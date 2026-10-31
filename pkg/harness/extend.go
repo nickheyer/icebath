@@ -742,16 +742,44 @@ func (fs *Flows) Start(ctx context.Context, w Workflow, live *Live, arg string) 
 	fs.flows[id] = f
 	fs.order = append(fs.order, id)
 	fs.mu.Unlock()
+	fs.launch(fctx, f, w)
+	return f, nil
+}
+
+// Starts the workflow again under the id of an ended flow, so it carries on in the workspaces of the first run
+func (fs *Flows) Restart(ctx context.Context, id string, w Workflow, live *Live, arg string) (*Flow, error) {
+	if err := w.Validate(); err != nil {
+		return nil, err
+	}
+	fs.mu.Lock()
+	old, ok := fs.flows[id]
+	if !ok {
+		fs.mu.Unlock()
+		return nil, fmt.Errorf("harness: no workflow %s to restart", id)
+	}
+	if old.Running() {
+		fs.mu.Unlock()
+		return nil, fmt.Errorf("harness: workflow %s is still running", id)
+	}
+	fctx, cancel := context.WithCancel(ctx)
+	f := &Flow{ID: id, Name: w.Name, Arg: strings.TrimSpace(arg), App: fs.app, Live: live, Started: time.Now(), send: fs.send, running: true, cancel: cancel, done: make(chan struct{})}
+	fs.flows[id] = f
+	fs.mu.Unlock()
+	fs.launch(fctx, f, w)
+	return f, nil
+}
+
+// Runs the workflow of the flow in the background, reporting its end as a message
+func (fs *Flows) launch(ctx context.Context, f *Flow, w Workflow) {
 	fs.wg.Add(1)
 	go func() {
 		defer fs.wg.Done()
-		defer cancel()
-		err := w.Run(fctx, f, arg)
+		defer f.cancel()
+		err := w.Run(ctx, f, f.Arg)
 		f.finish(err)
 		close(f.done)
-		fs.send(FlowDoneMsg{ID: id, Name: w.Name, Err: err, Duration: time.Since(f.Started)})
+		fs.send(FlowDoneMsg{ID: f.ID, Name: w.Name, Err: err, Duration: time.Since(f.Started)})
 	}()
-	return f, nil
 }
 
 func (fs *Flows) Get(id string) (*Flow, bool) {

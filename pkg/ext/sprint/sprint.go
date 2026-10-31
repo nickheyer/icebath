@@ -1,4 +1,4 @@
-// Sprint extension, a project manager, a planner, a lead and engineers tackling one request as a team
+// Sprint extension, a project manager, a planner, then a lead directing engineers as they build one request as a team
 package sprint
 
 import (
@@ -18,7 +18,7 @@ import (
 type extension struct{}
 
 func (extension) Manifest() ext.Manifest {
-	return ext.Manifest{Name: Name, Version: "1", Description: "sprint team workflow, a project manager settles the request, a planner cuts it into tickets and a lead with engineers builds it"}
+	return ext.Manifest{Name: Name, Version: "1", Description: "sprint team workflow, a project manager settles the request, a planner cuts it into tickets, a lead briefs engineers and directs them as they build and report"}
 }
 
 // Declares the kinds, tools, budget hook, workflow, board and settings of the sprint team
@@ -33,9 +33,9 @@ func (extension) Attach(h *ext.Host) error {
 	h.Hook(budgetHook)
 	h.Workflow(workflow())
 	h.Context(Context, "sprint board")
-	h.Action(keys.Action{ID: ActionOpen, Context: Context, Label: "open", Doc: "open the session of the member, or the detail of the sprint or ticket", Default: []string{"enter", "o"}})
-	h.Action(keys.Action{ID: ActionStop, Context: Context, Label: "stop", Doc: "stop the sprint", Default: []string{"x"}})
-	h.Action(keys.Action{ID: ActionResume, Context: Context, Label: "go on", Doc: "tell a sprint waiting for you to go on", Default: []string{"r"}})
+	h.Action(keys.Action{ID: ActionOpen, Context: Context, Label: "open", Doc: "open the session of the member under the cursor, or the details of the sprint or ticket", Default: []string{"enter", "o"}})
+	h.Action(keys.Action{ID: ActionStop, Context: Context, Label: "stop", Doc: "stop the sprint under the cursor, it can be restarted from the stage it was in", Default: []string{"x"}})
+	h.Action(keys.Action{ID: ActionResume, Context: Context, Label: "resume", Doc: "resume a paused sprint, or restart one that stopped or failed from the stage it was in", Default: []string{"r"}})
 	h.Action(keys.Action{ID: ActionSettings, Context: Context, Label: "settings", Doc: "open the sprint settings", Default: []string{"s"}})
 	h.Panel(ext.Panel{Key: BoardKey, Title: "Sprints", Detail: "every sprint with its team and tickets", New: newBoard})
 	h.Panel(ext.Panel{Key: SettingsKey, Title: "Sprint settings", Detail: "models, team size and time limits of the sprint workflow", New: newSettingsCard, Settings: true})

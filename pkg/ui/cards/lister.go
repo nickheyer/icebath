@@ -38,6 +38,8 @@ type lister struct {
 	empty func() string
 	// Runs each time the tab gains the focus
 	onFocus func(l *lister) tea.Cmd
+	// Legend of the row under the cursor in place of every action of the context, nil for the actions as bound
+	hints func(l *lister, i int) []wm.Hint
 	// Keeps the cursor on the newest row while it sits there
 	follow   bool
 	data     [][]string
@@ -406,8 +408,11 @@ func (l *lister) Hints() []wm.Hint {
 		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "move"}, {Action: "search.close"}}
 	}
 	var out []wm.Hint
+	if l.hints != nil {
+		out = append(out, l.hints(l, l.index())...)
+	}
 	for _, a := range l.env.Keys.InContexts([]string{l.ctx}) {
-		if _, ok := l.actions[a.ID]; ok && a.Context == l.ctx && (l.free[a.ID] || l.index() >= 0) {
+		if _, ok := l.actions[a.ID]; ok && l.hints == nil && a.Context == l.ctx && (l.free[a.ID] || l.index() >= 0) {
 			out = append(out, wm.Hint{Action: a.ID})
 		}
 	}

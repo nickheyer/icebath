@@ -27,6 +27,7 @@ type deskState struct {
 	ws      *wm.Workspace
 	run     *harness.Run
 	pending []*harness.Pending
+	asked   *harness.Asking
 	signal  wm.Signal
 }
 
@@ -56,6 +57,7 @@ func (m *Model) status() wm.Status {
 func (m *Model) deskStates() map[*desk]deskState {
 	runs := m.app.Control.Runs()
 	asked := m.app.Approver.Pending()
+	questions := m.app.Questions.Pending()
 	active := m.wm.Active()
 	out := make(map[*desk]deskState, len(m.desks))
 	for _, d := range m.desks {
@@ -74,17 +76,22 @@ func (m *Model) deskStates() map[*desk]deskState {
 				s.pending = append(s.pending, p)
 			}
 		}
+		for _, q := range questions {
+			if q.Session == d.live.Session.ID() && s.asked == nil {
+				s.asked = q
+			}
+		}
 		s.signal = m.signalOf(d, s, ws == active)
 		out[d] = s
 	}
 	return out
 }
 
-// Signal of a session, approvals first, then work going on, then a run ending while out of view
+// Signal of a session, approvals and questions first, then work going on, then a run ending while out of view
 func (m *Model) signalOf(d *desk, s deskState, shown bool) wm.Signal {
 	r := s.run
 	switch {
-	case len(s.pending) > 0:
+	case len(s.pending) > 0 || s.asked != nil:
 		return wm.Blocked
 	case d.compacting || (r != nil && r.Running()):
 		return wm.Working
@@ -124,10 +131,13 @@ func (m *Model) lane(ws *wm.Workspace, states map[*desk]deskState, now time.Time
 	return l
 }
 
-// Words after a lane mark, the tool awaiting approval or the tool running with the time the run has taken
+// Words after a lane mark, the tool awaiting approval, the question waiting or the tool running and its time
 func (m *Model) laneDetail(d *desk, s deskState, now time.Time) string {
 	switch s.signal {
 	case wm.Blocked:
+		if len(s.pending) == 0 {
+			return "question"
+		}
 		return s.pending[0].Request.Call.Name
 	case wm.Working:
 		if d.compacting {
@@ -139,7 +149,7 @@ func (m *Model) laneDetail(d *desk, s deskState, now time.Time) string {
 	return ""
 }
 
-// Sessions waiting on the person, approvals off screen first, then failures, then finished runs, oldest first within each
+// Sessions waiting on the person, approvals and questions off screen first, then failures, then finished runs
 func (m *Model) queue(states map[*desk]deskState) []attention {
 	focused := m.wm.Focused()
 	sep := " " + m.theme.Glyphs.Sep + " "
@@ -152,6 +162,13 @@ func (m *Model) queue(states map[*desk]deskState) []attention {
 		where := sep + strconv.Itoa(m.wm.IndexOf(s.ws)+1) + " " + sessionName(d.live, m.theme)
 		switch s.signal {
 		case wm.Blocked:
+			if len(s.pending) == 0 {
+				if focused == wm.Card(d.session) {
+					continue
+				}
+				out = append(out, attention{desk: d, signal: wm.Blocked, at: s.asked.Asked, text: "answer " + render.Summary(s.asked.Questions[0].Text, 60, m.theme) + where})
+				continue
+			}
 			if focused == wm.Card(d.approval) {
 				continue
 			}
@@ -180,10 +197,10 @@ func (m *Model) queue(states map[*desk]deskState) []attention {
 	return out
 }
 
-// Serves the first session in the queue, focusing its approval or its session card in its workspace, and the config
-// panel for a stuck profile
+// Serves the first session in the queue, its approval, its session card for a question or a run, or the config panel
 func (m *Model) dispatch() tea.Cmd {
-	q := m.queue(m.deskStates())
+	states := m.deskStates()
+	q := m.queue(states)
 	if len(q) == 0 {
 		return nil
 	}
@@ -191,7 +208,7 @@ func (m *Model) dispatch() tea.Cmd {
 	switch {
 	case d == nil:
 		return m.wm.OpenHere(m.panel("config"))
-	case q[0].signal == wm.Blocked:
+	case q[0].signal == wm.Blocked && len(states[d].pending) > 0:
 		return m.openFrom(d, d.approval)
 	}
 	return m.wm.Focus(d.session)

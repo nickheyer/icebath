@@ -89,6 +89,7 @@ type Composer struct {
 	busy        bool
 	button      sendButton
 	cut         int
+	ask         *asking
 	SessionID   string
 	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
 	Volatile func() bool
@@ -254,11 +255,14 @@ func (c *Composer) Completions() []string {
 // Reports whether the completion popup is open
 func (c *Composer) Completing() bool { return c.comp != nil }
 
-// Rows the composer wants, two at least, growing with the wrapped text and the completion popup
+// Rows the composer wants, two at least, growing with the wrapped text, the question waiting and the completion popup
 func (c *Composer) Height() int {
 	rows := max(c.ta.Height(), minInputRows)
 	if c.comp != nil {
 		rows += min(len(c.comp.items), popupRows)
+	}
+	if c.ask != nil {
+		rows += c.ask.rows()
 	}
 	return rows
 }
@@ -291,17 +295,26 @@ func (c *Composer) Update(msg tea.Msg) tea.Cmd {
 		if msg.Text == "" {
 			return nil
 		}
+		if cmd, ok := c.questionDigit(msg.Text); ok {
+			return cmd
+		}
 		c.comp = nil
 		var cmd tea.Cmd
 		c.ta, cmd = c.ta.Update(msg)
 		c.autoComplete()
+		if c.ask != nil && strings.TrimSpace(c.ta.Value()) != "" {
+			c.ask.idx = c.ask.other()
+		}
 		return tea.Batch(cmd, c.persist())
 	}
 	return nil
 }
 
-// Carries out a keymap action of the prompt or its completion popup
+// Carries out a keymap action of the prompt, the question waiting in it or its completion popup
 func (c *Composer) Action(id string) tea.Cmd {
+	if cmd, ok := c.questionAction(id); ok {
+		return cmd
+	}
 	if c.comp != nil {
 		switch id {
 		case "complete.next":
@@ -771,7 +784,7 @@ func (c *Composer) Fit(w int) int {
 }
 
 func (c *Composer) View(w, h int) string {
-	popup := c.popup(w)
+	popup := append(c.questionRows(w), c.popup(w)...)
 	rows := max(h-len(popup), 1)
 	button := c.buttonLabel()
 	iw := c.Fit(w)
@@ -793,6 +806,9 @@ func (c *Composer) View(w, h int) string {
 	}
 	if c.ta.Value() == "" && len(input) > 0 {
 		input[0] = c.placeholder(iw)
+		if c.ask != nil {
+			input[0] = c.questionPlaceholder(iw)
+		}
 	}
 	for i := range input {
 		input[i] = render.Fit(input[i], iw, c.theme)
@@ -811,6 +827,9 @@ func (c *Composer) View(w, h int) string {
 
 // Sends when the click lands on the send button, reporting whether it did
 func (c *Composer) Click(x, y int) (tea.Cmd, bool) {
+	if cmd, ok := c.questionClick(y); ok {
+		return cmd, true
+	}
 	b := c.button
 	if b.w == 0 || y != b.y || x < b.x || x >= b.x+b.w {
 		return nil, false
@@ -869,6 +888,9 @@ func (c *Composer) Cursor() *tea.Cursor {
 	cur.Y -= c.cut
 	if c.comp != nil {
 		cur.Y += min(len(c.comp.items), popupRows)
+	}
+	if c.ask != nil {
+		cur.Y += c.ask.rows()
 	}
 	return cur
 }

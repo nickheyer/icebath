@@ -27,11 +27,13 @@ type Env struct {
 	Control  *harness.Controller
 	Meter    *harness.Meter
 	Approver *harness.Approver
-	MCP      *harness.MCP
-	Shell    *shell.Shell
-	Tools    *tool.Registry
-	Mode     *policy.ModeSwitch
-	Store    *session.Store
+	// Questions agents put to the person, answered from the session prompt
+	Questions *harness.Questioner
+	MCP       *harness.MCP
+	Shell     *shell.Shell
+	Tools     *tool.Registry
+	Mode      *policy.ModeSwitch
+	Store     *session.Store
 	// Writes profiles, rules, hooks, servers and tool switches to the files holding them
 	Editor *harness.App
 	// Lifetime of the app, the context servers connect under
@@ -106,6 +108,12 @@ type CommandMsg struct {
 type AnswerMsg struct {
 	ID      int
 	Verdict policy.Verdict
+}
+
+// Answers a person gave the questions of a pending ask, one per question
+type ReplyMsg struct {
+	ID      int
+	Answers []harness.Answer
 }
 
 // Request to open the transcript of a run

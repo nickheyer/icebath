@@ -19,7 +19,9 @@ type ListSpec struct {
 	Detail  func(i int) []string
 	Actions map[string]func(l *List, i int) tea.Cmd
 	// Actions that apply with no row under the cursor
-	Free    map[string]bool
+	Free map[string]bool
+	// Legend of the row under the cursor in place of every action of the context, -1 for none
+	Hints   func(l *List, i int) []wm.Hint
 	Empty   func() string
 	OnFocus func(l *List) tea.Cmd
 	// Keeps the cursor on the newest row while it sits there
@@ -51,6 +53,9 @@ func NewList(env *Env, spec ListSpec) *List {
 	}
 	if spec.OnFocus != nil {
 		l.onFocus = func(*lister) tea.Cmd { return spec.OnFocus(l) }
+	}
+	if spec.Hints != nil {
+		l.hints = func(_ *lister, i int) []wm.Hint { return spec.Hints(l, i) }
 	}
 	return l
 }

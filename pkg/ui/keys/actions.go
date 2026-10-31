@@ -9,6 +9,7 @@ const (
 	Panel      = "panel"
 	Session    = "session"
 	Complete   = "complete"
+	Question   = "question"
 	Search     = "search"
 	Confirm    = "confirm"
 	Edit       = "edit"
@@ -45,6 +46,7 @@ var ContextDocs = map[string]string{
 	Panel:      "all panels except the session",
 	Session:    "session prompt and transcript",
 	Complete:   "completion popup",
+	Question:   "question waiting in the session prompt",
 	Search:     "search bars",
 	Confirm:    "yes/no prompts",
 	Edit:       "table cells while editing",
@@ -162,6 +164,11 @@ var registry = func() []Action {
 
 		act("panel.close", Panel, "close", "close the panel", "q"),
 
+		act("question.pick", Question, "answer", "answer with the highlighted choice, or with the text typed", "enter"),
+		quiet(act("question.down", Question, "down", "highlight the next choice", "down")),
+		quiet(act("question.up", Question, "up", "highlight the previous choice", "up")),
+		act("question.toggle", Question, "mark", "mark or unmark the highlighted choice of a multiple choice question", "tab"),
+		act("question.skip", Question, "skip", "leave the question unanswered", "esc"),
 		act("composer.send", Session, "send", "send the prompt, or steer the working agent", "enter"),
 		act("session.stop", Session, "stop", "stop the run", "esc"),
 		act("composer.complete", Session, "complete", "complete the path or command under the cursor", "tab"),

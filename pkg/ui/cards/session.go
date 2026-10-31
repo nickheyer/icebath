@@ -41,8 +41,20 @@ func NewSession(env *Env, live *harness.Live, dir string) *Session {
 	}
 	s.Composer = NewComposer(env.Theme, env.Keys, dir, base)
 	s.Composer.Bind(live.Session.ID())
+	s.Composer.SetQuestion(s.question())
 	return s
 }
+
+// Oldest ask waiting on the session, nil while none is or the app answers no questions
+func (s *Session) question() *harness.Asking {
+	if s.env.Questions == nil {
+		return nil
+	}
+	return s.env.Questions.ForSession(s.live.Session.ID())
+}
+
+// Reports whether a question waits on the session for the person
+func (s *Session) Asking() bool { return s.Composer.Asking() }
 
 // Open session the card shows
 func (s *Session) Live() *harness.Live { return s.live }
@@ -86,6 +98,7 @@ func (s *Session) Rethink() {
 func (s *Session) Rebind(live *harness.Live) {
 	s.live = live
 	s.Composer.Bind(live.Session.ID())
+	s.Composer.SetQuestion(s.question())
 	s.Transcript.ShowThinking(live.ShowsThinking())
 	s.Reload()
 }
@@ -100,6 +113,8 @@ func (s *Session) Contexts() []string {
 		return []string{keys.Search}
 	case s.Composer.Completing():
 		return []string{keys.Complete, keys.Session}
+	case s.Composer.Asking():
+		return []string{keys.Question, keys.Session}
 	}
 	return []string{keys.Session}
 }
@@ -169,6 +184,9 @@ func (s *Session) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		s.Transcript.Note(time.Now(), msg.Text, msg.Level)
 		return s, s.Transcript.Init()
+	case harness.QuestionMsg, harness.QuestionDoneMsg:
+		s.Composer.SetQuestion(s.question())
+		return s, nil
 	case harness.AttemptMsg:
 		a := msg.Attempt
 		if a.Wait <= 0 || a.Label == "" || !s.owns(a.Label) {
@@ -334,6 +352,10 @@ func (s *Session) Hints() []wm.Hint {
 		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "matches"}, {Action: "search.close"}}
 	case s.Composer.Completing():
 		return []wm.Hint{{Action: "complete.accept"}, {Action: "complete.next", Pair: "complete.prev", Label: "choose"}, {Action: "complete.close"}}
+	case s.Composer.AskingMulti():
+		return []wm.Hint{{Action: "question.toggle"}, {Action: "question.pick"}, {Action: "question.down", Pair: "question.up", Label: "choose"}, {Action: "question.skip"}}
+	case s.Composer.Asking():
+		return []wm.Hint{{Action: "question.pick"}, {Action: "question.down", Pair: "question.up", Label: "choose"}, {Action: "question.skip"}}
 	}
 	hints := []wm.Hint{{Action: "session.search"}, {Action: "mode.cycle"}}
 	if s.busy() {

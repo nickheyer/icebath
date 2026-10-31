@@ -68,7 +68,7 @@ type Team struct {
 	TicketsPerEngineer float64 `json:"tickets_per_engineer"`
 	// Engineers work at the same time rather than one after another
 	Parallel bool `json:"parallel"`
-	// Review rounds that may send tickets back to their engineer
+	// Times a ticket may be sent back to its engineer, by the direction of the lead or its review
 	MaxRework int `json:"max_rework"`
 	// Tickets the planner may cut a story into
 	MaxTickets int `json:"max_tickets"`
@@ -135,7 +135,7 @@ func DefaultTools(role string) []string {
 	readOnly := []string{files.ReadName, files.GrepName, files.GlobName, files.OutlineName}
 	switch role {
 	case RolePM:
-		return append(readOnly, ToolResolve)
+		return append(readOnly, ToolResolve, ToolAsk)
 	case RolePlanner:
 		return append(readOnly, ToolPlan)
 	}
@@ -146,13 +146,20 @@ func DefaultTools(role string) []string {
 func deniedTools(role string) []string {
 	switch role {
 	case RoleLead:
-		return []string{ToolResolve, ToolPlan, agent.SubagentTool}
+		return []string{ToolResolve, ToolPlan, ToolAsk, ToolReport, files.WriteName, files.EditName, agent.SubagentTool}
 	case RoleEngineer:
-		return []string{ToolResolve, ToolPlan, ToolReview, agent.SubagentTool, mission.ToolName}
-	case RolePM, RolePlanner:
-		return []string{files.WriteName, files.EditName, shell.ShellName, shell.OutputName, shell.KillName, web.FetchName, facts.ToolName, mission.ToolName, agent.SubagentTool}
+		return []string{ToolResolve, ToolPlan, ToolAsk, ToolDirect, ToolReview, agent.SubagentTool, mission.ToolName}
+	case RolePM:
+		return append([]string{ToolReport, ToolDirect, ToolReview}, quietTools()...)
+	case RolePlanner:
+		return append([]string{ToolAsk, ToolReport, ToolDirect, ToolReview}, quietTools()...)
 	}
 	return nil
+}
+
+// Tools that change the repository or reach outside it, kept from the roles that only read and decide
+func quietTools() []string {
+	return []string{files.WriteName, files.EditName, shell.ShellName, shell.OutputName, shell.KillName, web.FetchName, facts.ToolName, mission.ToolName, agent.SubagentTool}
 }
 
 // Role settings by name

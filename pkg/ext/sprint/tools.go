@@ -18,7 +18,16 @@ import (
 const (
 	ToolResolve = "SprintResolve"
 	ToolPlan    = "SprintPlan"
+	ToolAsk     = "SprintAsk"
+	ToolReport  = "SprintReport"
+	ToolDirect  = "SprintDirect"
 	ToolReview  = "SprintReview"
+)
+
+// Most questions one ask puts and most choices one question offers
+const (
+	maxQuestions = 4
+	maxChoices   = 4
 )
 
 // Stage waiting for one tool call on one session
@@ -74,10 +83,11 @@ func deliver(sessionID, toolName string, v any) error {
 
 // Why no stage waits for the tool on the session, by what became of the sprint the session served
 func unwaited(sessionID, toolName string) string {
-	snap, ok := sprintOfSession(sessionID)
+	s, _, ok := sprintOfSession(sessionID)
 	if !ok {
 		return fmt.Sprintf("this session is not part of a sprint, so nothing waits for %s; the person starts one with /%s <request>", toolName, Name)
 	}
+	snap := s.Snapshot()
 	if snap.Running() {
 		return fmt.Sprintf("sprint %s is in its %s stage and is not waiting for %s on this session", snap.ID, snap.Stage, toolName)
 	}
@@ -88,9 +98,9 @@ func unwaited(sessionID, toolName string) string {
 	return fmt.Sprintf("sprint %s ended %s ago (%s), so nothing waits for %s on this session; the person can start another with /%s <request>", snap.ID, span(time.Since(snap.Finished)), why, toolName, Name)
 }
 
-// Tools of the sprint roles, each handing its call to the stage waiting on the session of the calling run
+// Tools of the sprint roles, each handing its call to the sprint the session of the calling run serves
 func sprintTools(app *harness.App) []tool.Tool {
-	return []tool.Tool{resolveTool{app: app}, planTool{app: app}, reviewTool{app: app}}
+	return []tool.Tool{resolveTool{app: app}, planTool{app: app}, askTool{app: app}, reportTool{app: app}, directTool{app: app}, reviewTool{app: app}}
 }
 
 // Session the calling run goes on, so the stage waiting on it receives the call
@@ -100,6 +110,36 @@ func sessionOf(app *harness.App, ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no session is running this call")
 	}
 	return sess.ID(), nil
+}
+
+// Running sprint the calling run serves in the role, with the member, refusing another role or no sprint
+func memberOf(app *harness.App, ctx context.Context, role string) (*Sprint, Member, error) {
+	id, err := sessionOf(app, ctx)
+	if err != nil {
+		return nil, Member{}, err
+	}
+	s, m, ok := sprintOfSession(id)
+	if !ok {
+		return nil, Member{}, fmt.Errorf("this session is not part of a sprint; the person starts one with /%s <request>", Name)
+	}
+	if !s.Snapshot().Running() {
+		return nil, Member{}, errors.New(unwaited(id, roleTool(role)))
+	}
+	if m.Role != role {
+		return nil, Member{}, fmt.Errorf("%s is for the %s of the sprint, this session is its %s", roleTool(role), role, m.Name)
+	}
+	return s, m, nil
+}
+
+// Tool a role hands its work on with
+func roleTool(role string) string {
+	switch role {
+	case RoleEngineer:
+		return ToolReport
+	case RoleLead:
+		return ToolDirect
+	}
+	return ""
 }
 
 type resolveTool struct{ app *harness.App }
@@ -258,41 +298,210 @@ func dependencyCycle(tickets []Ticket) string {
 	return ""
 }
 
-// Verdict of the lead on one ticket
-type verdict struct {
+// Questions as the project manager puts them
+type askInput struct {
+	Questions []harness.Question `json:"questions"`
+}
+
+type askTool struct{ app *harness.App }
+
+func (askTool) Definition() protocol.Tool {
+	return protocol.Tool{Name: ToolAsk, Description: "Asks the person one to four multiple choice questions in their session prompt and waits for the answers. Each question offers two to four concrete options, and the person may always type an answer of their own instead. Ask only what you cannot settle from the request and the repository.", Parameters: json.RawMessage(`{"type":"object","properties":{
+"questions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","properties":{
+  "question":{"type":"string","description":"The question, in plain words"},
+  "header":{"type":"string","description":"Short tag such as scope or storage, a few words at most"},
+  "options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{
+    "label":{"type":"string","description":"The option in a few words"},
+    "description":{"type":"string","description":"What picking it means"}},
+    "required":["label"],"additionalProperties":false}},
+  "multi_select":{"type":"boolean","description":"The person may pick several options"}},
+  "required":["question","options"],"additionalProperties":false}}},
+"required":["questions"],"additionalProperties":false}`)}
+}
+
+func (t askTool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	var in askInput
+	if err := json.Unmarshal(args, &in); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if err := checkQuestions(in.Questions); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	id, err := sessionOf(t.app, ctx)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if s, _, ok := sprintOfSession(id); ok && !s.Snapshot().Running() {
+		return tool.Error(unwaited(id, ToolAsk)), nil
+	}
+	if !Current().Interactive {
+		return tool.Error("the sprint is not interactive, nobody answers questions; settle this yourself from the request and the repository and note the choice"), nil
+	}
+	answers, err := t.app.Questions.Ask(ctx, harness.RunFrom(ctx), id, in.Questions)
+	if err != nil {
+		return tool.Error("the questions were not answered: " + err.Error()), nil
+	}
+	return tool.Text(answersText(in.Questions, answers)).With(answers), nil
+}
+
+// Refuses no questions, too many, one without text, or options too few, too many, blank or repeated
+func checkQuestions(qs []harness.Question) error {
+	if len(qs) == 0 {
+		return errors.New("at least one question is required")
+	}
+	if len(qs) > maxQuestions {
+		return fmt.Errorf("%d questions is more than the %d one call may ask", len(qs), maxQuestions)
+	}
+	for i := range qs {
+		q := &qs[i]
+		q.Text = strings.TrimSpace(q.Text)
+		if q.Text == "" {
+			return fmt.Errorf("question %d has no text", i+1)
+		}
+		if len(q.Choices) < 2 || len(q.Choices) > maxChoices {
+			return fmt.Errorf("question %d needs two to %d options, it has %d", i+1, maxChoices, len(q.Choices))
+		}
+		seen := map[string]bool{}
+		for j := range q.Choices {
+			label := strings.TrimSpace(q.Choices[j].Label)
+			q.Choices[j].Label = label
+			if label == "" {
+				return fmt.Errorf("question %d option %d has no label", i+1, j+1)
+			}
+			if seen[strings.ToLower(label)] {
+				return fmt.Errorf("question %d offers %q twice", i+1, label)
+			}
+			seen[strings.ToLower(label)] = true
+		}
+	}
+	return nil
+}
+
+// Report an engineer makes on its ticket
+type reportInput struct {
 	Ticket string `json:"ticket"`
 	Status string `json:"status"`
-	Notes  string `json:"notes,omitempty"`
+	Report string `json:"report"`
+}
+
+type reportTool struct{ app *harness.App }
+
+func (reportTool) Definition() protocol.Tool {
+	return protocol.Tool{Name: ToolReport, Description: "Reports to the lead on your ticket and waits for direction. Report done when the ticket is built and verified, blocked when you cannot go on, question when a choice is not yours to make. The answer is the direction of the lead: follow it, and end your turn once the lead accepts or fails the ticket.", Parameters: json.RawMessage(`{"type":"object","properties":{
+"ticket":{"type":"string","description":"Id of your ticket"},
+"status":{"type":"string","enum":["done","blocked","question"]},
+"report":{"type":"string","description":"For done, what changed file by file and how it was verified; for blocked or question, exactly what stands in the way or needs deciding"}},
+"required":["ticket","status","report"],"additionalProperties":false}`)}
+}
+
+func (t reportTool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	var in reportInput
+	if err := json.Unmarshal(args, &in); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	in.Ticket, in.Status, in.Report = strings.TrimSpace(in.Ticket), strings.TrimSpace(in.Status), strings.TrimSpace(in.Report)
+	if !contains(reportStatuses, in.Status) {
+		return tool.Errorf("status must be one of %s, got %q", strings.Join(reportStatuses, ", "), in.Status), nil
+	}
+	if in.Report == "" {
+		return tool.Error("report is required"), nil
+	}
+	s, m, err := memberOf(t.app, ctx, RoleEngineer)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	r := &report{Ticket: in.Ticket, Engineer: m.Name, Status: in.Status, Text: in.Report, Filed: time.Now(), reply: make(chan direction, 1)}
+	if err := s.file(ctx, r); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	select {
+	case d := <-r.reply:
+		return tool.Text(directionText(in.Ticket, d)).With(d), nil
+	case <-ctx.Done():
+		s.withdraw(r)
+		return tool.Error("the run ended before the lead directed you: " + ctx.Err().Error()), nil
+	}
+}
+
+// Direction the lead gives on a report
+type directInput struct {
+	Ticket  string `json:"ticket"`
+	Verdict string `json:"verdict"`
+	Notes   string `json:"notes"`
+}
+
+type directTool struct{ app *harness.App }
+
+func (directTool) Definition() protocol.Tool {
+	return protocol.Tool{Name: ToolDirect, Description: "Answers the report an engineer is waiting on. Accepted closes the ticket as done, rework sends it back with what must change, guidance answers a blocked or questioning engineer who then goes on, failed closes the ticket as not done.", Parameters: json.RawMessage(`{"type":"object","properties":{
+"ticket":{"type":"string","description":"Id of the ticket reported on"},
+"verdict":{"type":"string","enum":["accepted","rework","guidance","failed"]},
+"notes":{"type":"string","description":"For rework, exactly what is wrong and what done looks like; for guidance, the decision or the way past the block; for failed, why"}},
+"required":["ticket","verdict"],"additionalProperties":false}`)}
+}
+
+func (t directTool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	var in directInput
+	if err := json.Unmarshal(args, &in); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	in.Ticket, in.Verdict, in.Notes = strings.TrimSpace(in.Ticket), strings.TrimSpace(in.Verdict), strings.TrimSpace(in.Notes)
+	if !contains(verdicts, in.Verdict) {
+		return tool.Errorf("verdict must be one of %s, got %q", strings.Join(verdicts, ", "), in.Verdict), nil
+	}
+	if in.Verdict != VerdictAccepted && in.Notes == "" {
+		return tool.Errorf("%s needs notes", in.Verdict), nil
+	}
+	s, _, err := memberOf(t.app, ctx, RoleLead)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	d := direction{Verdict: in.Verdict, Notes: in.Notes}
+	r, err := s.direct(in.Ticket, d, Current().Team.MaxRework)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	left := s.openReports()
+	text := fmt.Sprintf("%s told %s on ticket %s.", r.Engineer, in.Verdict, in.Ticket)
+	if len(left) > 0 {
+		text += fmt.Sprintf(" %d reports still wait for you: %s.", len(left), strings.Join(reportIDs(left), ", "))
+	} else {
+		text += " No report waits for you now, end your turn."
+	}
+	return tool.Text(text).With(d), nil
+}
+
+// Ticket ids of the reports, in filing order
+func reportIDs(reports []*report) []string {
+	out := make([]string, 0, len(reports))
+	for _, r := range reports {
+		out = append(out, r.Ticket)
+	}
+	return out
+}
+
+// Ticket the review sends back with what must change
+type sendBack struct {
+	Ticket string `json:"ticket"`
+	Notes  string `json:"notes"`
 }
 
 // Review as the lead submits it
 type reviewInput struct {
-	Verdicts []verdict `json:"verdicts"`
-	Summary  string    `json:"summary"`
-}
-
-// Count of tickets the review sent back
-func (in reviewInput) rework() int {
-	n := 0
-	for _, v := range in.Verdicts {
-		if v.Status == "rework" {
-			n++
-		}
-	}
-	return n
+	Summary string     `json:"summary"`
+	Rework  []sendBack `json:"rework,omitempty"`
 }
 
 type reviewTool struct{ app *harness.App }
 
 func (reviewTool) Definition() protocol.Tool {
-	return protocol.Tool{Name: ToolReview, Description: "Closes a review round with a verdict for every ticket and a summary of the work. Rework sends the ticket back to its engineer with the notes.", Parameters: json.RawMessage(`{"type":"object","properties":{
-"verdicts":{"type":"array","items":{"type":"object","properties":{
+	return protocol.Tool{Name: ToolReview, Description: "Closes the review of a build round with a summary of the work as a whole and the tickets to send back, if any. A ticket sent back goes to its engineer with the notes for another round.", Parameters: json.RawMessage(`{"type":"object","properties":{
+"summary":{"type":"string","description":"State of the work as a whole, what was built, how it was verified and what the person should know"},
+"rework":{"type":"array","items":{"type":"object","properties":{
   "ticket":{"type":"string","description":"Ticket id"},
-  "status":{"type":"string","enum":["accepted","rework"]},
-  "notes":{"type":"string","description":"For rework, exactly what is wrong and what done looks like"}},
-  "required":["ticket","status"],"additionalProperties":false}},
-"summary":{"type":"string","description":"State of the work as a whole, what was built, how it was verified and what the person should know"}},
-"required":["verdicts","summary"],"additionalProperties":false}`)}
+  "notes":{"type":"string","description":"Exactly what is wrong and what done looks like"}},
+  "required":["ticket","notes"],"additionalProperties":false}}},
+"required":["summary"],"additionalProperties":false}`)}
 }
 
 func (reviewTool) Annotations() tool.Annotations { return tool.Annotations{Idempotent: true} }
@@ -305,13 +514,12 @@ func (t reviewTool) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 	if strings.TrimSpace(in.Summary) == "" {
 		return tool.Error("summary is required"), nil
 	}
-	for _, v := range in.Verdicts {
-		if v.Status != "accepted" && v.Status != "rework" {
-			return tool.Errorf("ticket %s: status must be accepted or rework, got %q", v.Ticket, v.Status), nil
-		}
-		if v.Status == "rework" && strings.TrimSpace(v.Notes) == "" {
-			return tool.Errorf("ticket %s: rework needs notes", v.Ticket), nil
-		}
+	s, _, err := memberOf(t.app, ctx, RoleLead)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if err := checkReview(in, s.Snapshot(), Current().Team.MaxRework); err != nil {
+		return tool.Error(err.Error()), nil
 	}
 	id, err := sessionOf(t.app, ctx)
 	if err != nil {
@@ -320,5 +528,27 @@ func (t reviewTool) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 	if err := deliver(id, ToolReview, in); err != nil {
 		return tool.Error(err.Error()), nil
 	}
-	return tool.Text(fmt.Sprintf("Review recorded, %d sent back.\n\n", in.rework()) + reviewText(in)).With(in), nil
+	return tool.Text(fmt.Sprintf("Review recorded, %d sent back.\n\n", len(in.Rework)) + reviewText(in)).With(in), nil
+}
+
+// Refuses a review sending back an unknown ticket, one twice, one without notes or one past the rework allowed
+func checkReview(in reviewInput, snap Snapshot, maxRework int) error {
+	seen := map[string]bool{}
+	for _, back := range in.Rework {
+		t, ok := snap.Ticket(back.Ticket)
+		if !ok {
+			return fmt.Errorf("no ticket %s to send back", back.Ticket)
+		}
+		if seen[back.Ticket] {
+			return fmt.Errorf("ticket %s is sent back twice", back.Ticket)
+		}
+		seen[back.Ticket] = true
+		if strings.TrimSpace(back.Notes) == "" {
+			return fmt.Errorf("ticket %s: sending it back needs notes", back.Ticket)
+		}
+		if t.Round >= maxRework {
+			return fmt.Errorf("ticket %s was sent back %d times, the most the sprint allows, leave it and say so in the summary", back.Ticket, t.Round)
+		}
+	}
+	return nil
 }

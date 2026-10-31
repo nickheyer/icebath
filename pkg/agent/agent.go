@@ -83,6 +83,9 @@ type Event struct {
 // Error a run ends with after Interrupt was called
 var ErrInterrupted = errors.New("agent: interrupted")
 
+// Error of a run that used every round it was allowed
+var ErrRounds = errors.New("rounds reached")
+
 // What a hook asks for a tool call before it runs
 type Advice struct {
 	Call     protocol.ToolCall
@@ -387,7 +390,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 				return resp, nil, nil
 			}
 			if rounds > 0 && *round > rounds {
-				return resp, nil, fmt.Errorf("agent: %d rounds reached", rounds)
+				return resp, nil, fmt.Errorf("agent: %d %w", rounds, ErrRounds)
 			}
 			continued = true
 			a.Session.Append(protocol.Message{Role: protocol.RoleUser, Content: cont})
@@ -399,7 +402,7 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 			return resp, nil, errors.New("agent: stop reason tool_use with no tool calls")
 		}
 		if rounds > 0 && *round > rounds {
-			limit := fmt.Errorf("agent: %d tool rounds reached", rounds)
+			limit := fmt.Errorf("agent: %d tool %w", rounds, ErrRounds)
 			results := make([]protocol.ToolResult, len(calls))
 			for i, call := range calls {
 				observe(Event{Type: EventToolStart, Call: call})

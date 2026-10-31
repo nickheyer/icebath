@@ -300,11 +300,10 @@ func (m *Model) extensionMsg(msg tea.Msg) (tea.Cmd, bool) {
 		if c == nil {
 			return nil, true
 		}
-		ws := m.wm.WorkspaceByID(msg.Flow)
-		if ws == nil {
-			ws = m.wm.Active()
+		if msg.Flow == "" {
+			return m.wm.OpenAside(m.wm.Active(), c, wm.Box{}), true
 		}
-		return m.wm.OpenAside(ws, c, wm.Box{}), true
+		return m.openInFlow(msg.Flow, c), true
 	case harness.NoteMsg:
 		return nil, true
 	case harness.FlowDoneMsg:
@@ -322,7 +321,7 @@ func (m *Model) extensionMsg(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// Opens the session of a workflow in the workspace named after it, made and shown when its first session opens
+// Opens the session of a workflow in the first workspace of the flow with room, overflow workspaces added as needed
 func (m *Model) openFlowDesk(flow string, live *harness.Live) tea.Cmd {
 	if flow == "" {
 		return m.openDesk(nil, live)
@@ -330,13 +329,7 @@ func (m *Model) openFlowDesk(flow string, live *harness.Live) tea.Cmd {
 	if d := m.deskOfLive(live); d != nil {
 		return m.wm.Focus(d.session)
 	}
-	d := m.addDesk(live)
-	ws := m.wm.WorkspaceByID(flow)
-	if ws == nil {
-		ws, cmd := m.wm.AddWorkspace(flow, d.session)
-		return tea.Batch(cmd, m.wm.Switch(m.wm.IndexOf(ws)))
-	}
-	return m.wm.OpenAside(ws, d.session, wm.Box{})
+	return m.openInFlow(flow, m.addDesk(live).session)
 }
 
 // Extensions as the config tab lists them

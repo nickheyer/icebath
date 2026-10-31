@@ -76,6 +76,7 @@ type App struct {
 	Memory    *policy.Memory
 	Gate      policy.Gate
 	Approver  *Approver
+	Questions *Questioner
 	Pump      *Pump
 	Meter     *Meter
 	MCP       *MCP
@@ -214,6 +215,7 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	app.Pump = NewPump(send)
 	app.Meter = NewMeter(send)
 	app.Approver = NewApprover(send)
+	app.Questions = NewQuestioner(send)
 	name := cfg.Profile
 	if name == "" {
 		name = fileDefault
@@ -587,6 +589,7 @@ func (a *App) Close(ctx context.Context) error {
 		a.Flows.Shutdown()
 		a.Control.Shutdown()
 		a.Approver.Close()
+		a.Questions.Close()
 		a.MCP.Close()
 		a.Shell.Close()
 		for _, l := range a.Lives() {

@@ -61,6 +61,7 @@ func newBoard(env *cards.Env) wm.Card {
 		Detail:  b.detail,
 		Actions: map[string]func(*cards.List, int) tea.Cmd{ActionOpen: b.open, ActionStop: b.stop, ActionResume: b.resume, ActionSettings: b.settings},
 		Free:    map[string]bool{ActionSettings: true},
+		Hints:   b.hints,
 		Empty:   func() string { return "no sprint yet, run /" + Name + " <request> to start one" },
 	})
 	return b
@@ -137,8 +138,11 @@ func (b *board) rows() [][]string {
 			detail = s.Status + sep + detail
 		}
 		state := b.stage(s.Stage)
-		if s.Running() && s.Paused != "" {
+		switch {
+		case s.Running() && s.Paused != "":
 			state = render.Warm("paused", t)
+		case s.Stopped():
+			state = render.Warm("stopped", t)
 		}
 		out = append(out, []string{"sprint", s.ID, state, detail})
 		b.refs = append(b.refs, rowRef{kind: rowSprint, snap: si})
@@ -201,7 +205,7 @@ func (b *board) ticketState(s TicketStatus) string {
 		return render.Cool(string(s), t)
 	case TicketDone:
 		return render.Good(string(s), t)
-	case TicketRework:
+	case TicketRework, TicketReported:
 		return render.Warm(string(s), t)
 	case TicketFailed:
 		return render.Bad(string(s), t)
@@ -248,17 +252,21 @@ func (b *board) detail(i int) []string {
 		add("story", s.Story.Title)
 		add("story summary", s.Story.Summary)
 		add("size", s.Story.Size)
+		add("briefing", s.Briefing)
 		add("review round", strconv.Itoa(s.Round))
 		add("summary", s.Summary)
 		if s.Running() && s.Paused != "" {
 			add("paused", s.Paused)
-			add("go on", "press r once it is fixed, or x to stop the sprint")
+			add("resume", "press r to resume, or x to stop the sprint")
 		}
 		if s.Running() && s.Waiting != "" {
-			add("waiting", "open the session of "+s.Waiting+" and tell it to go on, or press r to send it on")
+			add("waiting", "answer "+s.Waiting+" in its session, or press r to resume")
 		}
-		if s.Err != nil {
+		if s.Err != nil && !s.Stopped() {
 			add("error", s.Err.Error())
+		}
+		if s.Restartable() {
+			add("restart", fmt.Sprintf("press r to restart at the %s stage", restartStage(s)))
 		}
 	case rowMember:
 		m := s.Members[r.index]
@@ -276,10 +284,10 @@ func (b *board) detail(i int) []string {
 		add("depends on", strings.Join(tk.DependsOn, ", "))
 		add("engineer", tk.Engineer)
 		if tk.Round > 0 {
-			add("review rounds", strconv.Itoa(tk.Round))
+			add("sent back", strconv.Itoa(tk.Round))
 		}
 		for n, note := range tk.Notes {
-			add("review note "+strconv.Itoa(n+1), note)
+			add("lead note "+strconv.Itoa(n+1), note)
 		}
 		add("report", tk.Report)
 		add("error", tk.Err)
@@ -297,44 +305,81 @@ func (b *board) open(l *cards.List, i int) tea.Cmd {
 		return l.ToggleDetail()
 	}
 	m := s.Members[r.index]
-	if m.Live == nil {
-		return wm.Notify(m.Name+" has no session", wm.Warn)
+	if m.Live == nil || b.env.Editor == nil || b.env.Editor.LiveOf(m.Live.Session) == nil {
+		return wm.Notify("the session of "+m.Name+" is closed, a fresh one opens when the sprint needs it", wm.Info)
 	}
 	live, flow := m.Live, s.ID
 	return func() tea.Msg { return harness.OpenedMsg{Live: live, Flow: flow} }
 }
 
-// Cancels the workflow of the sprint the row belongs to, refusing one that has ended
+// Cancels the workflow of the sprint the row belongs to, saying so when it has ended already
 func (b *board) stop(l *cards.List, i int) tea.Cmd {
 	_, s, ok := b.ref(i)
 	if !ok {
 		return nil
 	}
 	if !s.Running() {
-		return wm.Notify("sprint "+s.ID+" is not running", wm.Info)
+		return wm.Notify(s.ID+" already ended, press r to restart it", wm.Info)
 	}
 	if b.env.Editor == nil || b.env.Editor.Flows == nil {
-		return wm.Notify("cannot stop sprint "+s.ID+", the app runs no workflows", wm.Error)
+		return wm.Notify("cannot stop "+s.ID+", the app runs no workflows", wm.Error)
 	}
 	if err := b.env.Editor.Flows.Cancel(s.ID); err != nil {
 		return wm.Notify(err.Error(), wm.Error)
 	}
 	l.Refresh()
-	return wm.Notify("stopping sprint "+s.ID, wm.Success)
+	return wm.Notify("stopping "+s.ID+", press r to restart it later", wm.Warn)
 }
 
-// Tells the sprint of the row to go on, refusing one that is not waiting for the person
+// Resumes a paused sprint, or restarts one that ended short of done at the stage it was in
 func (b *board) resume(l *cards.List, i int) tea.Cmd {
 	_, snap, ok := b.ref(i)
 	if !ok {
 		return nil
 	}
 	s := sprintByID(snap.ID)
-	if s == nil || !s.Resume() {
-		return wm.Notify("sprint "+snap.ID+" is not waiting for you", wm.Info)
+	if s == nil {
+		return wm.Notify(snap.ID+" was started by another process and cannot be driven from here", wm.Warn)
+	}
+	switch {
+	case snap.Running() && s.Resume():
+		l.Refresh()
+		return wm.Notify(snap.ID+" resumes", wm.Success)
+	case snap.Running():
+		return wm.Notify(snap.ID+" is running, nothing to resume", wm.Info)
+	case !snap.Restartable():
+		return wm.Notify(snap.ID+" is done, start another with /"+Name+" <request>", wm.Info)
+	case b.env.Editor == nil || b.env.Editor.Flows == nil:
+		return wm.Notify("cannot restart "+snap.ID+", the app runs no workflows", wm.Error)
+	}
+	if err := restart(b.env.Ctx, b.env.Editor, s); err != nil {
+		return wm.Notify(err.Error(), wm.Error)
 	}
 	l.Refresh()
-	return wm.Notify("sprint "+snap.ID+" told to go on", wm.Success)
+	return wm.Notify(fmt.Sprintf("%s restarts at the %s stage", snap.ID, restartStage(snap)), wm.Success)
+}
+
+// Legend of the row under the cursor, the keys that apply to the sprint in its state
+func (b *board) hints(_ *cards.List, i int) []wm.Hint {
+	out := []wm.Hint{{Action: ActionSettings}}
+	r, s, ok := b.ref(i)
+	if !ok {
+		return out
+	}
+	open := wm.Hint{Action: ActionOpen, Label: "details"}
+	if r.kind == rowMember {
+		open.Label = "open session"
+	}
+	out = append([]wm.Hint{open}, out...)
+	switch {
+	case s.Running() && (s.Paused != "" || s.Waiting != ""):
+		out = append(out, wm.Hint{Action: ActionResume, Label: "resume"}, wm.Hint{Action: ActionStop})
+	case s.Running():
+		out = append(out, wm.Hint{Action: ActionStop})
+	case s.Restartable():
+		out = append(out, wm.Hint{Action: ActionResume, Label: "restart"})
+	}
+	return out
 }
 
 // Opens the settings panel of the extension

@@ -191,7 +191,7 @@ func resolveTheme(cfg harness.Config, saved string) (theme.Theme, error) {
 func (m *Model) environment() *cards.Env {
 	a := m.app
 	return &cards.Env{
-		Theme: m.theme, Keys: m.keys, Control: a.Control, Meter: a.Meter, Approver: a.Approver, MCP: a.MCP, Shell: a.Shell, Tools: a.Tools, Mode: a.Mode, Store: a.Store, Files: a.Files,
+		Theme: m.theme, Keys: m.keys, Control: a.Control, Meter: a.Meter, Approver: a.Approver, Questions: a.Questions, MCP: a.MCP, Shell: a.Shell, Tools: a.Tools, Mode: a.Mode, Store: a.Store, Files: a.Files,
 		Editor: a, Ctx: m.ctx,
 		Lives:   a.Lives,
 		Primary: m.endpoint,
@@ -412,10 +412,21 @@ func loadLayout(stateDir string) (layoutState, []byte, bool) {
 	return l, data, true
 }
 
-// Layout as it stands with every session swapped for a mark naming the profile and model it ran on
+// Layout as it stands with sessions swapped for marks naming their profile and model, workflow workspaces left out
 func (m *Model) layoutState() layoutState {
 	l := m.wm.Layout()
 	l.Theme = m.theme.Name
+	kept, active := l.Workspaces[:0], 0
+	for i, ws := range m.wm.Workspaces() {
+		if flow, _ := m.flowOf(ws.ID); flow != "" {
+			continue
+		}
+		if i <= l.Active {
+			active = len(kept)
+		}
+		kept = append(kept, l.Workspaces[i])
+	}
+	l.Workspaces, l.Active = kept, active
 	t := templateFrom("", l, func(id string) (templateSession, bool) {
 		d := m.deskOfSession(id)
 		if d == nil {
@@ -499,6 +510,7 @@ type errMsg struct{ err error }
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
 	if _, frame := msg.(anim.FrameMsg); !frame && !m.quitting {
+		cmd = tea.Batch(cmd, m.pruneOverflow())
 		if err := m.saveLayout(); err != nil {
 			cmd = tea.Batch(cmd, m.wm.Toast("layout: "+err.Error(), wm.Error, 0))
 		}
@@ -642,6 +654,18 @@ func (m *Model) harnessMsg(msg tea.Msg) (tea.Cmd, bool) {
 			m.state = tea.ProgramStateWorking
 		}
 		return nil, true
+	case harness.QuestionMsg:
+		m.state = tea.ProgramStateBlocked
+		d := m.deskOfSession(msg.Asking.Session)
+		if d == nil || m.wm.Focused() == wm.Card(d.session) {
+			return nil, true
+		}
+		return m.wm.Attention(d.session, wm.Pulse), true
+	case harness.QuestionDoneMsg:
+		if m.app.Control.Busy() {
+			m.state = tea.ProgramStateWorking
+		}
+		return nil, true
 	case harness.RunDoneMsg:
 		m.state = tea.ProgramStateDone
 		if msg.Err != nil {
@@ -718,6 +742,11 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 	case cards.AnswerMsg:
 		if !m.app.Approver.Answer(msg.ID, msg.Verdict) {
 			return m.wm.Toast("approval gone", wm.Warn, 0), true
+		}
+		return nil, true
+	case cards.ReplyMsg:
+		if !m.app.Questions.Answer(msg.ID, msg.Answers) {
+			return m.wm.Toast("question gone", wm.Warn, 0), true
 		}
 		return nil, true
 	case cards.OpenRunMsg:
@@ -1061,7 +1090,12 @@ func (m *Model) View() tea.View {
 		title += " " + m.theme.Glyphs.Sep + " " + model
 	}
 	if m.state == tea.ProgramStateBlocked {
-		title += " " + m.theme.Glyphs.Sep + " " + render.Count(m.app.Approver.Len(), "approval")
+		if n := m.app.Approver.Len(); n > 0 {
+			title += " " + m.theme.Glyphs.Sep + " " + render.Count(n, "approval")
+		}
+		if n := m.app.Questions.Len(); n > 0 {
+			title += " " + m.theme.Glyphs.Sep + " " + render.Count(n, "question")
+		}
 	}
 	status := &tea.ProgramStatus{State: m.state, App: "icebath", Title: title}
 	if m.state == tea.ProgramStateBlocked {
