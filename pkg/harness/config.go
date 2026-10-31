@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -120,6 +121,8 @@ type UIConfig struct {
 	Ratio float64 `json:"ratio,omitempty"`
 	// Cascade lights the focused card's border with a flowing energy comet
 	Cascade *bool `json:"cascade,omitempty"`
+	// Characters a Mac Option key types read as alt chords, nil for on under macOS only
+	OptionAsAlt *bool `json:"option_as_alt,omitempty"`
 }
 
 // Everything the shell app and the headless runner need, read from files, environment and flags
@@ -320,6 +323,9 @@ func Merge(base, over Config) Config {
 	if over.UI.Cascade != nil {
 		out.UI.Cascade = over.UI.Cascade
 	}
+	if over.UI.OptionAsAlt != nil {
+		out.UI.OptionAsAlt = over.UI.OptionAsAlt
+	}
 	if over.Terminal.Shell != "" {
 		out.Terminal.Shell = over.Terminal.Shell
 	}
@@ -478,6 +484,14 @@ func (c Config) CompactThreshold(window int) int {
 	return int(float64(window) * DefaultCompactShare)
 }
 
+// Reports whether characters a Mac Option key types are read as alt chords, on under macOS unless set
+func (c Config) OptionAsAlt() bool {
+	if c.UI.OptionAsAlt != nil {
+		return *c.UI.OptionAsAlt
+	}
+	return runtime.GOOS == "darwin"
+}
+
 // Assistant turns a tool result stays in requests, the default when unset
 func (c Config) PruneAfter() int {
 	if c.Pruning.After != nil {
@@ -573,6 +587,13 @@ func (c *Config) settingField(key, value string) (Field, error) {
 		}
 		c.UI.Cascade = &b
 		return Field{Path: path, Value: b}, nil
+	case "option_as_alt":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return Field{}, fmt.Errorf("option_as_alt must be true or false, got %q", value)
+		}
+		c.UI.OptionAsAlt = &b
+		return Field{Path: path, Value: b}, nil
 	case "terminal_shell":
 		c.Terminal.Shell = value
 		return Field{Path: path, Value: value}, nil
@@ -619,7 +640,7 @@ func settingPath(key string) ([]string, error) {
 		return []string{"compaction", "threshold"}, nil
 	case "prune_after":
 		return []string{"pruning", "after"}, nil
-	case "theme", "motion", "cascade":
+	case "theme", "motion", "cascade", "option_as_alt":
 		return []string{"ui", key}, nil
 	case "terminal_shell":
 		return []string{"terminal", "shell"}, nil
@@ -656,6 +677,8 @@ func (c *Config) unset(key string) {
 		c.UI.Motion = nil
 	case "cascade":
 		c.UI.Cascade = nil
+	case "option_as_alt":
+		c.UI.OptionAsAlt = nil
 	case "terminal_shell":
 		c.Terminal.Shell = ""
 	case "terminal_scrollback":

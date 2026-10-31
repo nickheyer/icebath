@@ -159,6 +159,7 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 		return nil, err
 	}
 	m.keys, m.keysErr = keys.Open(filepath.Join(m.configDir(), keys.FileName))
+	keys.SetOption(m.app.Config.OptionAsAlt())
 	m.env = m.environment()
 	m.buildManager(layout.Layout, saved)
 	m.buildCards()
@@ -229,7 +230,7 @@ func (m *Model) configDir() string {
 // Setting values as they stand, empty for those left unset
 func (m *Model) settings() map[string]string {
 	cfg := m.app.Config
-	out := map[string]string{"theme": m.theme.Name, "motion": fmt.Sprintf("%.2f", m.wm.Motion()), "cascade": fmt.Sprintf("%t", m.wm.Cascade())}
+	out := map[string]string{"theme": m.theme.Name, "motion": fmt.Sprintf("%.2f", m.wm.Motion()), "cascade": fmt.Sprintf("%t", m.wm.Cascade()), "option_as_alt": fmt.Sprintf("%t", cfg.OptionAsAlt())}
 	if cfg.MaxTokens > 0 {
 		out["max_tokens"] = fmt.Sprint(cfg.MaxTokens)
 	}
@@ -869,6 +870,8 @@ func (m *Model) setSetting(key, value string, quiet bool) tea.Cmd {
 		m.wm.SetMotion(motion)
 	case "cascade":
 		m.wm.SetCascade(cfg.UI.Cascade != nil && *cfg.UI.Cascade)
+	case "option_as_alt":
+		keys.SetOption(cfg.OptionAsAlt())
 	case "compact_threshold":
 		m.app.Meter.SetThreshold(cfg.CompactThreshold(m.endpoint().Catalog.Context))
 	case "mode":

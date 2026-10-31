@@ -466,6 +466,11 @@ func Chords(msg tea.KeyPressMsg) []string {
 	if msg.BaseCode != 0 {
 		add(mods, msg.BaseCode)
 	}
+	for _, c := range optionChords(msg) {
+		if !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
 	return out
 }
 
@@ -486,7 +491,7 @@ func Unshifted(msg tea.KeyPressMsg) (tea.KeyPressMsg, bool) {
 	return msg, true
 }
 
-// Chord a key press is stored as when captured, the shifted symbol over the base key
+// Chord a key press is stored as when captured, an Option typed character as its alt chord and the shifted symbol over the base key
 func Captured(msg tea.KeyPressMsg) (string, bool) {
 	switch msg.Code {
 	case tea.KeyLeftShift, tea.KeyRightShift, tea.KeyLeftAlt, tea.KeyRightAlt, tea.KeyLeftCtrl, tea.KeyRightCtrl, tea.KeyLeftSuper, tea.KeyRightSuper, tea.KeyLeftMeta, tea.KeyRightMeta, tea.KeyLeftHyper, tea.KeyRightHyper, tea.KeyIsoLevel3Shift, tea.KeyIsoLevel5Shift, tea.KeyCapsLock, tea.KeyNumLock, tea.KeyScrollLock:
@@ -495,6 +500,9 @@ func Captured(msg tea.KeyPressMsg) (string, bool) {
 	chords := Chords(msg)
 	if len(chords) == 0 {
 		return "", false
+	}
+	if alt := optionChords(msg); len(alt) > 0 {
+		return alt[0], true
 	}
 	return chords[0], true
 }

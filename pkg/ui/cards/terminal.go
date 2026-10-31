@@ -120,9 +120,9 @@ func (t *Terminal) Tracks() bool        { return true }
 // Takes every key as typed while the shell runs and no search bar is open
 func (t *Terminal) Raw() bool { return t.live() && !t.searching }
 
-// Lets keys with the alt, super, hyper or meta modifier reach the window manager unless the keys are locked
+// Lets alt, super, hyper, meta and Option typed keys reach the window manager unless the keys are locked
 func (t *Terminal) Passes(k tea.KeyPressMsg) bool {
-	return !t.locked && k.Mod&(tea.ModAlt|tea.ModSuper|tea.ModHyper|tea.ModMeta) != 0
+	return !t.locked && (k.Mod&(tea.ModAlt|tea.ModSuper|tea.ModHyper|tea.ModMeta) != 0 || keys.OptionAlt(k))
 }
 
 // Keymap contexts, the search bar ahead of the terminal keys while it is open

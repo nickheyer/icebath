@@ -106,6 +106,7 @@ func newSettings(env *Env) *Settings {
 		{Key: "theme", Label: "theme", Group: "interface", Kind: FieldChoice, Choices: theme.Names()},
 		{Key: "motion", Label: "motion", Group: "interface", Kind: FieldNumber, Lo: 0, Hi: 1, Step: 0.05, Start: 1, Help: "Animation scale, 0 snaps and 1 springs"},
 		{Key: "cascade", Label: "cascade", Group: "interface", Kind: FieldChoice, Choices: []string{"true", "false"}, Help: "Light sweep along the focused border"},
+		{Key: "option_as_alt", Label: "option as alt", Group: "keys", Kind: FieldChoice, Choices: []string{"true", "false"}, Help: "Reads the characters the Option key of a US Mac keyboard types, such as the å of option+a, as alt chords, on under macOS unless set"},
 		{Key: "terminal_shell", Label: "shell", Group: "terminal", Kind: FieldText, Optional: true, Placeholder: "$SHELL", Help: "Command line a terminal window runs, the login shell when empty"},
 		{Key: "terminal_scrollback", Label: "scrollback", Group: "terminal", Kind: FieldNumber, Integer: true, Optional: true, Lo: 0, Step: 1000, Start: harness.DefaultScrollback, Help: fmt.Sprintf("Rows a terminal window keeps above its screen, unset keeps %d", harness.DefaultScrollback)},
 	}
