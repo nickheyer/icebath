@@ -16,7 +16,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/ext"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/lockfile"
 	"github.com/nickheyer/icebath/pkg/mission"
@@ -127,7 +126,7 @@ type Model struct {
 func New(ctx context.Context, opts Options) (*Model, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	r := &relay{}
-	app, err := harness.Build(ctx, opts.Config, observed(r.Send), harness.BuildOptions{Resume: opts.Resume, Dir: opts.Dir})
+	app, err := harness.Build(ctx, opts.Config, r.Send, harness.BuildOptions{Resume: opts.Resume, Dir: opts.Dir})
 	if err != nil {
 		cancel()
 		return nil, err
@@ -208,16 +207,6 @@ func (m *Model) environment() *cards.Env {
 		Root:       a.Root,
 		Extensions: extensionRows,
 		Version:    m.opts.Version,
-	}
-}
-
-// Sender that hands every message to the extension observers before the program
-func observed(send harness.Sender) harness.Sender {
-	return func(msg any) {
-		for _, fn := range ext.Observers() {
-			fn(msg)
-		}
-		send(msg)
 	}
 }
 

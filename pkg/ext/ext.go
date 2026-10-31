@@ -395,25 +395,12 @@ func (h *Host) Action(a keys.Action) {
 	h.gave("action", a.ID, a.Doc)
 }
 
-// Adds a listener for every message the harness sends the program
-func (h *Host) Observe(fn func(msg any)) {
-	if fn == nil {
-		h.fail(errors.New("observe: nil listener"))
-		return
-	}
-	mu.Lock()
-	observers = append(observers, fn)
-	mu.Unlock()
-	h.gave("observer", h.name, "hears every harness message")
-}
-
 var (
 	mu         sync.RWMutex
 	registered []Extension
 	loaded     []Loaded
 	commands   []Command
 	panels     []Panel
-	observers  []func(any)
 	once       sync.Once
 	loadErr    error
 )
@@ -483,13 +470,4 @@ func Panels() []Panel {
 	mu.RLock()
 	defer mu.RUnlock()
 	return append([]Panel(nil), panels...)
-}
-
-// Listeners extensions added
-func Observers() []func(any) {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]func(any), len(observers))
-	copy(out, observers)
-	return out
 }

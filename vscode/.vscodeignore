@@ -1,9 +1,0 @@
-src/**
-node_modules/**
-.vscodeignore
-esbuild.mjs
-tsconfig.json
-eslint.config.mjs
-**/*.map
-*.vsix
-go.mod

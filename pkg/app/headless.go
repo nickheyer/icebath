@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/ext"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/mission"
 	"github.com/nickheyer/icebath/pkg/policy"
@@ -333,10 +332,6 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 		tw.write(msg)
 	}
 	var err error
-	for _, fn := range ext.Observers() {
-		inner := send
-		send = func(msg any) { fn(msg); inner(msg) }
-	}
 	app, err = harness.Build(ctx, opts.Config, send, harness.BuildOptions{Resume: opts.Resume, Dir: opts.Dir})
 	if err != nil {
 		fmt.Fprintln(errw, "icebath:", err)
