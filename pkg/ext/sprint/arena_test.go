@@ -1,9 +1,6 @@
 package sprint
 
 import (
-	"image"
-	"image/color"
-	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
+	"github.com/nickheyer/icebath/pkg/vxl"
 )
 
 // Environment with a theme and keymap and nothing of the harness, as the arena sees it outside the app
@@ -41,8 +39,8 @@ func registerProbeSprint(t *testing.T) *Sprint {
 		tickets = append(tickets, &tk)
 	}
 	s.setPlan(Plan{Title: "Probe", Summary: "a plan"}, tickets)
-	s.say(MsgHandoff, "Linus", "Reviewer", "T2", "done: built two")
-	s.say(MsgVerdict, "Reviewer", "Linus", "T2", "accepted: fine")
+	s.say(MsgHandoff, "Linus", "Overwatch", "T2", "done: built two")
+	s.say(MsgVerdict, "Overwatch", "Linus", "T2", "accepted: fine")
 	register(s)
 	t.Cleanup(func() {
 		regMu.Lock()
@@ -80,6 +78,15 @@ func TestArenaPaint(t *testing.T) {
 		paintInto(a, size[0], size[1])
 		a.moveCamera(1.0 / 30)
 	}
+	for _, mode := range PixelModes {
+		a.cfg.Arena.Pixels = mode
+		paintInto(a, 120, 30)
+		paintInto(a, 120, 30)
+		if !a.staticOK || a.static.W != 120*cellWidth(mode) {
+			t.Fatalf("static layer not kept in %s mode: ok %v width %d", mode, a.staticOK, a.static.W)
+		}
+	}
+	a.cfg.Arena.Pixels = "quadrant"
 	if _, cmd := a.Update(wm.ActionMsg{ID: ActNext}); cmd != nil {
 		cmd()
 	}
@@ -156,6 +163,12 @@ func TestArenaEmpty(t *testing.T) {
 	}
 }
 
+// Pixels across one cell in a mode
+func cellWidth(mode string) int {
+	px, _ := vxl.CellModeOf(mode).Pixels()
+	return px
+}
+
 // Second return of Update, for tests that only read the command
 func (a *arena) Update2(msg tea.Msg) tea.Cmd {
 	_, cmd := a.Update(msg)
@@ -203,63 +216,12 @@ func TestArenaMouse(t *testing.T) {
 	}
 }
 
-// Writes the cells as a PNG, four pixels per cell, under the directory SPRINT_PROBE_DIR names
+// Writes the cells as a PNG under the directory SPRINT_PROBE_DIR names
 func writeCells(t *testing.T, buf *uv.Buffer, name string) {
 	t.Helper()
 	dir := os.Getenv("SPRINT_PROBE_DIR")
 	if dir == "" {
 		return
 	}
-	cols, rows := buf.Width(), buf.Height()
-	img := image.NewRGBA(image.Rect(0, 0, cols*8, rows*16))
-	for cy := 0; cy < rows; cy++ {
-		for cx := 0; cx < cols; cx++ {
-			c := buf.CellAt(cx, cy)
-			if c == nil {
-				continue
-			}
-			mask := -1
-			for i, g := range quadrants {
-				if g == c.Content {
-					mask = i
-				}
-			}
-			bg, fg := c.Style.Bg, c.Style.Fg
-			if bg == nil {
-				bg = color.Black
-			}
-			if fg == nil {
-				fg = color.White
-			}
-			for dy := 0; dy < 16; dy++ {
-				for dx := 0; dx < 8; dx++ {
-					col := color.Color(bg)
-					switch {
-					case mask >= 0:
-						bit := 1
-						if dx >= 4 {
-							bit = 2
-						}
-						if dy >= 8 {
-							bit *= 4
-						}
-						if mask&bit != 0 {
-							col = fg
-						}
-					case c.Content != " " && dx >= 2 && dx < 6 && dy >= 3 && dy < 13 && (dx+dy)%2 == 0:
-						col = fg
-					}
-					img.Set(cx*8+dx, cy*16+dy, col)
-				}
-			}
-		}
-	}
-	f, err := os.Create(filepath.Join(dir, name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	if err := png.Encode(f, img); err != nil {
-		t.Fatal(err)
-	}
+	writeCellsPNG(t, buf, vxl.ModeQuadrant, filepath.Join(dir, name))
 }

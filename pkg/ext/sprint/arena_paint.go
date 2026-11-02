@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"fmt"
 	"image/color"
-	"math"
 	"slices"
 	"strings"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
+	"github.com/nickheyer/icebath/pkg/vxl"
 )
 
 // Rows the inspector spends above the transcript of a member
@@ -76,52 +76,63 @@ func (a *arena) arrange(w, h int) layout {
 	return l
 }
 
-// Renders the floor into pixels, encodes them into the cells of the world box and places the labels
+// Renders the platform into pixels, the static layer kept between frames, encodes the cells of the world box and places the labels
 func (a *arena) paintWorld(p *painter) {
 	t := a.env.Theme
 	wb := a.lay.world
 	fr := &a.fr
-	half := a.cfg.Arena.Pixels == "half"
-	if half {
-		fr.Resize(wb.w, 2*wb.h)
-	} else {
-		fr.Resize(2*wb.w, 2*wb.h)
-	}
+	mode := vxl.CellModeOf(a.cfg.Arena.Pixels)
+	px, py := mode.Pixels()
+	fr.PixelAspect = mode.PixelAspect()
+	fr.Resize(wb.w*px, wb.h*py)
 	sc := a.sc
-	now := sc.t
-	fr.Clear(func(x, y int) RGB {
-		share := float64(y) / float64(max(fr.H, 1))
-		c := sc.sky(share)
-		if share < 0.62 && hash2(x, y*7+1) > 0.9975 {
-			tw := 0.45 + 0.55*math.Abs(math.Sin(now*1.7+float64(x)*0.37+float64(y)*0.11))
-			c = c.Mix(hexRGB(0xbfe0f8), tw*(0.62-share)/0.62)
-		}
-		return c
-	})
 	r := &a.r
-	r.FogColor, r.FogNear, r.FogFar = sc.horizon, a.cam.Dist*0.95, a.cam.Dist*2.8
+	r.FogColor, r.FogNear, r.FogFar = sc.horizon, a.cam.Dist*0.95, a.cam.Dist*3
+	if !a.staticOK || a.staticCam != a.cam || a.static.W != fr.W || a.static.H != fr.H || sc.dirty {
+		st := &a.static
+		st.PixelAspect = fr.PixelAspect
+		st.Resize(fr.W, fr.H)
+		st.Clear(func(x, y int) vxl.RGB {
+			share := float64(y) / float64(max(st.H, 1))
+			c := sc.sky(share)
+			if share < 0.62 && vxl.Hash2(x, y*7+1) > 0.9975 {
+				c = c.Mix(vxl.Hex(0xbfe0f8), (0.2+0.3*vxl.Hash2(y, x))*(0.62-share)/0.62)
+			}
+			return c
+		})
+		r.Begin(st, a.cam)
+		sc.drawStatic(r)
+		r.Flush()
+		a.staticCam, a.staticOK = a.cam, true
+	}
+	fr.CopyFrom(&a.static)
 	r.Begin(fr, a.cam)
-	sc.emit(r)
+	sc.drawDynamic(r)
 	if act := a.selectedActor(); act != nil {
-		sc.ring(r, act, fromColor(t.Ice), 0.85)
+		sc.ring(r, act, vxl.FromColor(t.Ice), 0.85)
 	}
 	if a.hover != "" && a.hover != a.sel {
-		sc.ring(r, sc.byName[a.hover], fromColor(t.TextDim), 0.5)
+		sc.ring(r, sc.byName[a.hover], vxl.FromColor(t.TextDim), 0.5)
 	}
-	var quantize func(RGB) color.Color
+	r.Flush()
+	if !t.Plain {
+		fr.Bloom(&a.post, 0.62, 0.8)
+		fr.Vignette(0.3)
+	}
+	var quantize func(vxl.RGB) color.Color
 	if t.Plain {
-		quantize = ansiQuantizer(t.Terminal)
+		quantize = vxl.ANSIQuantizer(t.Terminal)
 	}
-	fr.Encode(p.buf.Buffer, wb.x, wb.y, wb.w, wb.h, half, quantize)
+	fr.Encode(p.buf.Buffer, wb.x, wb.y, wb.w, wb.h, mode, quantize)
 	cell := func(sx, sy float64) (int, int) {
-		if half {
-			return wb.x + int(sx), wb.y + int(sy/2)
-		}
-		return wb.x + int(sx/2), wb.y + int(sy/2)
+		return wb.x + int(sx)/px, wb.y + int(sy)/py
 	}
 	for _, act := range sc.actors {
-		fx, fy, depth, ok := r.Project(act.pos)
-		hx, hy, _, ok2 := r.Project(act.headPos().Add(Vec3{0, 0.6, 0}))
+		if act.gone {
+			continue
+		}
+		fx, fy, depth, ok := r.Project(act.stand())
+		hx, hy, _, ok2 := r.Project(act.headPos().Add(vxl.V(0, 0.5, 0)))
 		if !ok || !ok2 {
 			continue
 		}
@@ -151,30 +162,41 @@ func (a *arena) paintWorld(p *painter) {
 		}
 	}
 	if a.labels {
-		for i, name := range []string{"TODO", "DONE", "FAILED"} {
-			sx, sy, _, ok := r.Project(Vec3{columnsX[i] + 0.5, 6.4, columnZ - 1.5})
+		for _, id := range sc.order {
+			n := sc.nodes[id]
+			if n.rise < 1 {
+				continue
+			}
+			sx, sy, _, ok := r.Project(n.core(sc.t).Add(vxl.V(0, 1.6, 0)))
 			if !ok {
 				continue
 			}
 			cx, cy := cell(sx, sy)
-			if x := cx - len(name)/2; cy >= wb.y+stripRows && space.claim(x, cy, len(name)) {
-				p.text(x, cy, name, t.TextDim, false)
+			fg := theme.Mix(t.TextDim, t.Text, 0.4)
+			if n.status == TicketReview || n.glow > 0.3 {
+				fg = t.Text
+			}
+			if x := cx - len(id)/2; cy >= wb.y+stripRows && space.claim(x, cy, len(id)) {
+				p.text(x, cy, id, fg, n.status == TicketReview)
 			}
 		}
-		for _, id := range sc.order {
-			c := sc.crates[id]
-			sx, sy, _, ok := r.Project(c.pos.Add(Vec3{0, crateSize * 0.7, 0}))
-			if !ok {
-				continue
-			}
-			cx, cy := cell(sx, sy)
-			if x := cx - len(id)/2; cy >= wb.y+stripRows && space.claim(x, cy, len(id)) {
-				p.text(x, cy, id, theme.Mix(t.TextDim, t.Text, 0.4), false)
+	}
+	if banner := stageBanner(sc, t); banner != "" && wb.h > stripRows+4 {
+		p.label(wb.x+(wb.w-ansi.StringWidth(banner))/2, wb.y+stripRows+1, " "+banner+" ", t.Ice, theme.Mix(t.Bg, t.Surface, 0.5), true)
+	}
+	if a.snap != nil {
+		name := a.hover
+		if name == "" {
+			name = a.sel
+		}
+		if act := sc.byName[name]; act != nil && !act.gone && !a.showBoard && !a.showLog && !a.showHelp {
+			if sp, ok := a.spots[name]; ok {
+				a.paintTelemetry(p, act, sp, a.liveStates()[name])
 			}
 		}
 	}
 	if a.snap == nil {
-		msg := "no sprint yet, run /" + Name + " <request> to put a team on the floor"
+		msg := "no dive yet, run /" + Name + " <request> to send a crew beyond the blackwall"
 		p.label(wb.x+(wb.w-ansi.StringWidth(msg))/2, wb.y+wb.h-2, msg, t.TextDim, t.Surface, false)
 	}
 }
@@ -216,6 +238,8 @@ func emoteColor(e string, t theme.Theme) color.Color {
 		return t.Ice
 	case "!":
 		return t.Accent
+	case "✓":
+		return t.Alive
 	}
 	return t.Alarm
 }
@@ -229,7 +253,7 @@ func (a *arena) paintStrip(p *painter) {
 	x, right := wb.x+2, wb.x+wb.w-2
 	if s == nil {
 		p.text(x, wb.y, t.Glyphs.Mission+" arena", t.TextDim, true)
-		p.text(x, wb.y+1, "the floor is empty", t.TextDim, false)
+		p.text(x, wb.y+1, "the platform is empty, nobody has jacked in", t.TextDim, false)
 		if a.cfgErr != nil {
 			p.text(x, wb.y+2, ansi.Truncate("settings: "+a.cfgErr.Error(), right-x, t.Glyphs.Ellipsis), t.Alarm, false)
 		}
@@ -544,7 +568,7 @@ func (a *arena) paintHelp(p *painter) {
 		}
 		lines = append(lines, lipgloss.NewStyle().Foreground(t.Ice).Render(fmt.Sprintf("%-14s", key))+" "+act.Doc)
 	}
-	lines = append(lines, "", render.Dim("drag the floor to turn the camera, wheel to zoom, click a member to select", t))
+	lines = append(lines, "", render.Dim("drag the platform to turn the camera, wheel to zoom, click a member to select", t))
 	w := min(84, wb.w-4)
 	h := min(len(lines)+2, wb.h-2)
 	x, y := wb.x+(wb.w-w)/2, wb.y+(wb.h-h)/2

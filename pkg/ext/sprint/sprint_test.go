@@ -4,18 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"image/color"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
+	"github.com/nickheyer/icebath/pkg/vxl"
 )
 
 func TestConfigLoad(t *testing.T) {
@@ -37,10 +35,10 @@ func TestConfigLoad(t *testing.T) {
 	if c.Arena.Pixels != "half" || c.Arena.FPS != 20 {
 		t.Fatalf("arena %+v", c.Arena)
 	}
-	if c.NameOf(RoleBuilder, 1) != "Bob" || c.NameOf(RoleBuilder, 2) != defaultBuilderNames[2] || c.NameOf(RoleDirector, 0) != "Director" {
+	if c.NameOf(RoleBuilder, 1) != "Bob" || c.NameOf(RoleBuilder, 2) != defaultBuilderNames[2] || c.NameOf(RoleDirector, 0) != "Fixer" {
 		t.Fatalf("names %q %q %q", c.NameOf(RoleBuilder, 1), c.NameOf(RoleBuilder, 2), c.NameOf(RoleDirector, 0))
 	}
-	if c.LookOf(RoleBuilder, 1) != (Look{"rose", "crown"}) || c.LookOf(RoleBuilder, 4) != defaultBuilderLooks[4] || c.LookOf(RoleDirector, 0) != (Look{"gold", "fedora"}) {
+	if c.LookOf(RoleBuilder, 1) != (Look{"rose", "halo"}) || c.LookOf(RoleBuilder, 0) != (Look{"teal", "crest"}) || c.LookOf(RoleBuilder, 4) != defaultBuilderLooks[4] || c.LookOf(RoleDirector, 0) != (Look{"gold", "hood"}) {
 		t.Fatalf("looks %+v", c.Looks)
 	}
 	for _, bad := range []map[string]string{
@@ -393,7 +391,7 @@ func TestCheckTeamFailsBeforeTheBrief(t *testing.T) {
 	cfg.Roles[RoleReviewer] = RoleConfig{Profile: "gone", Model: "m"}
 	r := &runner{cfg: cfg, f: &harness.Flow{ID: "sprint-1", Name: Name, App: app}, s: newSprint("sprint-1", "x", time.Now(), nil)}
 	err = r.checkTeam(ctx)
-	if err == nil || !strings.Contains(err.Error(), "Reviewer") || !strings.Contains(err.Error(), "gone") {
+	if err == nil || !strings.Contains(err.Error(), "Overwatch") || !strings.Contains(err.Error(), "gone") {
 		t.Fatalf("unknown reviewer profile passed: %v", err)
 	}
 	msgs := r.s.Snapshot().Messages
@@ -562,102 +560,140 @@ func TestLenientLists(t *testing.T) {
 	}
 }
 
-func TestRouteAndHolders(t *testing.T) {
-	if r := route(Vec3{4, 0, 9}, Vec3{7, 0, 11}); len(r) != 1 {
-		t.Fatalf("short route %v", r)
+// Platform cut from a plan puts every node on a level after its dependencies, with walkable spots and conduits between them
+func TestDiveLayout(t *testing.T) {
+	plan := []planNode{{id: "T1"}, {id: "T2"}, {id: "T3", deps: []string{"T1", "T2"}}, {id: "T4", deps: []string{"T3"}}, {id: "T5", deps: []string{"T9"}}}
+	lay := buildDive(plan, 8)
+	if lay.levels["T1"] != 0 || lay.levels["T3"] != 1 || lay.levels["T4"] != 2 || lay.levels["T5"] != 0 {
+		t.Fatalf("levels %v", lay.levels)
 	}
-	if r := route(builderSpot(0), approach(holder{kind: holdColumn})); len(r) != 3 || r[0].Z != corridorZ || r[1].Z != corridorZ {
-		t.Fatalf("crossing route %v", r)
+	if lay.nodes["T4"].Z >= lay.nodes["T3"].Z || lay.nodes["T3"].Z >= lay.nodes["T1"].Z {
+		t.Fatal("deeper levels do not lie further north")
 	}
-	for i := range 8 {
-		d := deskAt(i)
-		if d.X < 0 || d.X >= floorW || d.Z < 0 || d.Z >= floorD {
-			t.Fatalf("desk %d off the floor at %v", i, d)
+	for id, p := range lay.nodes {
+		if !lay.tiles[cellOf(p)] || lay.walkable(int(p.X), int(p.Z)) {
+			t.Fatalf("node %s pedestal at %v is not on a blocked tile", id, p)
+		}
+		at, _ := lay.jackSpot(id)
+		if !lay.walkable(int(at.X), int(at.Z)) {
+			t.Fatalf("jack spot of %s at %v is not walkable", id, at)
 		}
 	}
-	a := holder{kind: holdColumn, column: 1, slot: 7}.spot()
-	b := holder{kind: holdColumn, column: 1, slot: 2}.spot()
-	if a == b || a.X == b.X && a.Z == b.Z {
-		t.Fatalf("column slots %v %v", a, b)
+	if len(lay.conduits[[2]string{"T3", "T1"}]) == 0 || len(lay.conduits[[2]string{"T5", "T9"}]) != 0 {
+		t.Fatalf("conduits %v", lay.conduits)
+	}
+	if len(lay.cradles) != 8 || len(lay.perches) == 0 {
+		t.Fatalf("%d cradles %d perches", len(lay.cradles), len(lay.perches))
+	}
+	for i, c := range lay.cradles {
+		if !lay.tiles[cellOf(c)] {
+			t.Fatalf("cradle %d at %v hangs over the void", i, c)
+		}
+	}
+	from, to := lay.cradle(0), lay.spireFoot()
+	path := lay.path(from, to)
+	if len(path) == 0 || path[len(path)-1] != to {
+		t.Fatalf("path %v", path)
+	}
+	prev := from
+	for _, p := range path {
+		for _, c := range vxl.LineCells(int(prev.X), int(prev.Z), int(p.X), int(p.Z)) {
+			if !lay.walkable(c[0], c[1]) {
+				t.Fatalf("path crosses blocked tile %v between %v and %v", c, prev, p)
+			}
+		}
+		prev = p
+	}
+	empty := buildDive(nil, 1)
+	if len(empty.nodes) != 0 || empty.w <= 0 || empty.d <= landingDepth {
+		t.Fatalf("empty dive %+v", empty)
+	}
+	if rig, ok := hatRigs["fedora"]; !ok || rig != "hood" {
+		t.Fatal("old hats do not map to rigs")
 	}
 }
 
-func TestRenderer(t *testing.T) {
-	fr := &Frame{}
-	fr.Resize(64, 32)
-	fr.Clear(func(x, y int) RGB { return RGB{} })
-	r := &Raster{}
-	cam := Camera{Target: Vec3{0, 0, 0}, Yaw: 0, Pitch: 0.5, Dist: 12, FOV: 0.9}
-	r.Begin(fr, cam)
-	sx, sy, depth, ok := r.Project(Vec3{})
-	if !ok || int(sx) != 32 || int(sy) != 16 || depth < 11.9 || depth > 12.1 {
-		t.Fatalf("target projects to %v %v depth %v ok %v", sx, sy, depth, ok)
+// Crew dropped on the platform settle into their duties and leave it together at the end
+func TestSceneChoreography(t *testing.T) {
+	sc := newScene(3)
+	snap := probeSnapshot()
+	cfg := Default()
+	live := probeLive()
+	for i := range 240 {
+		if i%12 == 0 {
+			sc.sync(&snap, live, cfg)
+		}
+		sc.update(1.0 / 30)
 	}
-	if _, _, _, ok := r.Project(cam.Eye().Add(Vec3{0, 0, 5})); ok {
-		t.Fatal("a point behind the camera projected")
+	if ow := sc.byName["Overwatch"]; ow.pos.Y < spireHeight-0.1 || ow.state != stateReview {
+		t.Fatalf("the overwatch is at %v in state %v, not reviewing from the spire", ow.pos, ow.state)
 	}
-	near := boxQuads(Vec3{-0.5, -0.5, 1}, Vec3{1, 1, 1}, RGB{1, 0, 0}, sideLights(sunDir), nil)
-	far := boxQuads(Vec3{-2, -2, -3}, Vec3{4, 4, 1}, RGB{0, 0, 1}, sideLights(sunDir), nil)
-	for _, q := range far {
-		r.Quad(q)
+	if linus := sc.byName["Linus"]; linus.duty.kind != dutyWaitNode || linus.state != stateWait {
+		t.Fatalf("Linus duty %v state %v, not waiting at his node", linus.duty.kind, linus.state)
 	}
-	for _, q := range near {
-		r.Quad(q)
+	snap.Messages = append(snap.Messages, Message{Seq: 3, At: time.Now(), Kind: MsgVerdict, From: "Overwatch", To: "Linus", Ticket: "T2", Text: "accepted: fine"})
+	snap.Tickets[1].Status = TicketDone
+	sc.sync(&snap, live, cfg)
+	if len(sc.packets) != 1 {
+		t.Fatalf("%d packets after a verdict", len(sc.packets))
 	}
-	c := fr.Color[16*fr.W+32]
-	if c.R <= c.B {
-		t.Fatalf("near red box lost to the far blue one at the center: %+v", c)
+	for range 60 {
+		sc.update(1.0 / 30)
 	}
-	drawn := 0
-	for _, d := range fr.Depth {
-		if d > 0 {
-			drawn++
+	if linus := sc.byName["Linus"]; len(sc.packets) != 0 || linus.emote != "✓" {
+		t.Fatalf("Linus did not take the accepted verdict: emote %q state %v", linus.emote, linus.state)
+	}
+	if n := sc.nodes["T2"]; n.status != TicketDone || n.shell > 0.5 {
+		t.Fatalf("T2 node %v shell %v after acceptance", n.status, n.shell)
+	}
+	snap.Finished = time.Now()
+	snap.Stage = StageDone
+	sc.sync(&snap, map[string]liveState{}, cfg)
+	if !sc.ended || sc.endMode != endCheer || len(sc.queue) != len(sc.actors) {
+		t.Fatalf("ended %v mode %v queue %d", sc.ended, sc.endMode, len(sc.queue))
+	}
+	for i := range 3600 {
+		sc.update(1.0 / 30)
+		if i%30 == 0 {
+			sc.sync(&snap, map[string]liveState{}, cfg)
 		}
 	}
-	if drawn == 0 || drawn == len(fr.Depth) {
-		t.Fatalf("%d pixels drawn", drawn)
-	}
-	solid := [4]RGB{{1, 0, 0}, {1, 0, 0}, {1, 0, 0}, {1, 0, 0}}
-	if mask, _, bg := partition(solid); mask != 0 || bg != solid[0] {
-		t.Fatalf("solid cell %d %v", mask, bg)
-	}
-	halves := [4]RGB{{1, 1, 1}, {1, 1, 1}, {0, 0, 0}, {0, 0, 0}}
-	mask, fg, bg := partition(halves)
-	if (mask != 3 || fg != halves[0] || bg != halves[2]) && (mask != 12 || fg != halves[2] || bg != halves[0]) {
-		t.Fatalf("half cell %d %v %v", mask, fg, bg)
-	}
-	corner := [4]RGB{{0, 1, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}}
-	if mask, fg, _ := partition(corner); mask != 1 && !(mask == 14 && fg == corner[1]) {
-		t.Fatalf("corner cell %d %v", mask, fg)
-	}
-	poly := clipNear([]vertex{{p: Vec3{0, 0, 1}}, {p: Vec3{1, 0, 1}}, {p: Vec3{1, 0, -1}}, {p: Vec3{0, 0, -1}}})
-	if len(poly) != 4 {
-		t.Fatalf("clipped polygon has %d corners", len(poly))
-	}
-	for _, v := range poly {
-		if v.p.Z < nearPlane-1e-9 {
-			t.Fatalf("corner behind the near plane %v", v.p)
+	gone := 0
+	for _, a := range sc.actors {
+		if a.gone {
+			gone++
 		}
 	}
-	g := grid{}
-	g.box(0, 0, 0, 3, 1, 3, RGB{1, 1, 1})
-	g.set(1, 1, 1, RGB{1, 1, 1})
-	mesh := g.mesh()
-	if len(mesh) == 0 {
-		t.Fatal("empty mesh")
-	}
-	for _, q := range mesh {
-		for _, l := range q.Light {
-			if l <= 0 || l > 2 {
-				t.Fatalf("light %v", q.Light)
+	if gone != len(sc.actors) {
+		for _, a := range sc.actors {
+			if !a.gone {
+				t.Logf("%s state=%d duty=%d at=%v pos=%v steps=%d exit=%.2f landed=%v partner=%v ambient=%q cool=%.1f leap=%.2f queueHead=%v", a.name, a.state, a.duty.kind, a.duty.at, a.pos, len(a.steps), a.exit, a.landed, a.partner != nil, a.ambient, a.cool, a.leapT, len(sc.queue) > 0 && sc.queue[0] == a)
+				for _, st := range a.steps {
+					t.Logf("   step kind=%d to=%v dur=%.1f state=%d", st.kind, st.to, st.dur, st.state)
+				}
 			}
 		}
+		t.Fatalf("%d of %d jacked out after the sprint was done", gone, len(sc.actors))
 	}
-	if g.occlusion(0, 0, 0, 0, 2) == 0 {
-		t.Fatal("the corner of the floor beside the pillar is not occluded")
+	snap.Finished = time.Time{}
+	snap.Stage = StageBuild
+	sc.sync(&snap, live, cfg)
+	for range 90 {
+		sc.update(1.0 / 30)
 	}
-	q := ansiQuantizer([16]color.Color{})
-	if c := q(RGB{1, 1, 1}); c != ansi.IndexedColor(15) {
-		t.Fatalf("white quantized to %v", c)
+	for _, a := range sc.actors {
+		if a.gone || !a.landed {
+			t.Fatalf("%s did not come back for the restart", a.name)
+		}
+	}
+	sc.sync(nil, nil, cfg)
+	if sc.lobby == nil || len(sc.nodes) != 0 {
+		t.Fatalf("lobby %v nodes %d", sc.lobby, len(sc.nodes))
+	}
+	for range 600 {
+		sc.update(1.0 / 30)
+	}
+	if !sc.lay.onPlatform(sc.lobby.pos) {
+		t.Fatalf("the lobby fixer wandered off at %v", sc.lobby.pos)
 	}
 }

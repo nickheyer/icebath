@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
+	"github.com/nickheyer/icebath/pkg/vxl"
 )
 
 // Seconds without a paint after which the arena takes itself for hidden and stops moving
@@ -61,6 +62,14 @@ type layout struct {
 	full  bool
 }
 
+// Shot the cinematic camera holds, a point of interest and how long it stays on it
+type cinema struct {
+	target vxl.Vec3
+	dist   float64
+	left   float64
+	yaw    float64
+}
+
 // Press on the floor that may become a drag of the camera
 type drag struct {
 	x, y  int
@@ -69,14 +78,22 @@ type drag struct {
 
 // Voxel world showing the newest sprint, its team moving as they work, each member openable and steerable from it
 type arena struct {
-	env       *cards.Env
-	cfg       Config
-	cfgErr    error
-	sc        *scene
-	fr        Frame
-	r         Raster
-	cam       Camera
+	env    *cards.Env
+	cfg    Config
+	cfgErr error
+	sc     *scene
+	fr     vxl.Frame
+	r      vxl.Raster
+	cam    vxl.Camera
+	// Platform and sky drawn once per camera position, copied under every frame
+	static    vxl.Frame
+	staticCam vxl.Camera
+	staticOK  bool
+	post      vxl.Post
 	rig       camRig
+	cine      cinema
+	// Tool starts of every member by session id
+	tally     map[string]*toolTally
 	sprintID  string
 	snap      *Snapshot
 	sel       string
@@ -113,14 +130,16 @@ type arena struct {
 
 // Builds the arena over the newest sprint
 func newArena(env *cards.Env) wm.Card {
-	a := &arena{env: env, sessions: map[string]*cards.Session{}, approvals: map[string]*cards.Approval{}, toolSeen: map[string]time.Time{}, spots: map[string]spot{}, seen: map[string]bool{}, labels: true}
+	a := &arena{env: env, sessions: map[string]*cards.Session{}, approvals: map[string]*cards.Approval{}, toolSeen: map[string]time.Time{}, tally: map[string]*toolTally{}, spots: map[string]spot{}, seen: map[string]bool{}, labels: true}
 	a.reloadConfig()
 	a.sc = newScene(a.cfg.Team.Builders)
-	a.sc.zenith, a.sc.horizon = fromColor(env.Theme.Bg), fromColor(env.Theme.Bg).Mix(hexRGB(0x1c2a3f), 0.6)
+	a.sc.zenith, a.sc.horizon = vxl.FromColor(env.Theme.Bg), vxl.FromColor(env.Theme.Bg).Mix(vxl.Hex(0x1c2a3f), 0.6)
+	a.r.Sun, a.r.SunColor, a.r.Ambient = sunDir, vxl.Hex(0xdfe9f2).Scale(0.72), vxl.Hex(0x3a4c66)
 	if dir, err := profiles.ConfigDir(); err == nil {
 		a.draftDir = dir
 	}
-	a.rig = camRig{preset: a.cfg.Arena.Camera, zoom: 1, tx: anim.NewValueWith(22, anim.Gentle), ty: anim.NewValueWith(1.5, anim.Gentle), tz: anim.NewValueWith(14, anim.Gentle), yaw: anim.NewValueWith(0.55, anim.Gentle), pitch: anim.NewValueWith(0.58, anim.Gentle), dist: anim.NewValueWith(40, anim.Gentle)}
+	c := a.sc.lay.center()
+	a.rig = camRig{preset: a.cfg.Arena.Camera, zoom: 1, tx: anim.NewValueWith(c.X, anim.Gentle), ty: anim.NewValueWith(c.Y, anim.Gentle), tz: anim.NewValueWith(c.Z, anim.Gentle), yaw: anim.NewValueWith(0.55, anim.Gentle), pitch: anim.NewValueWith(0.58, anim.Gentle), dist: anim.NewValueWith(50, anim.Gentle)}
 	a.labels = a.cfg.Arena.Labels
 	a.refresh()
 	return a
@@ -361,7 +380,7 @@ func (a *arena) refresh() {
 	a.synced, a.needSync = time.Now(), false
 }
 
-// What the harness says every member of the sprint shown is doing
+// What the harness says every member of the sprint shown is doing, with what it has spent and how long it has
 func (a *arena) liveStates() map[string]liveState {
 	out := map[string]liveState{}
 	if a.snap == nil {
@@ -373,6 +392,11 @@ func (a *arena) liveStates() map[string]liveState {
 	}
 	for _, m := range a.snap.Members {
 		var st liveState
+		st.heat = heatOf(a.snap.Spent[m.Name], a.cfg.Roles[m.Role].Budget)
+		st.since, st.limit = exchangeStart(a.snap, m), stageLimit(a.cfg, m.Role)
+		if t := a.tally[m.SessionID()]; t != nil {
+			st.tally = *t
+		}
 		if m.Live != nil {
 			for _, r := range runs {
 				if r.Parent != "" || r.Session != m.Live.Session {
@@ -518,6 +542,12 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		if msg.Event.Type == agent.EventToolStart {
 			if id := a.sessionOfRun(msg.Run); id != "" {
 				a.toolSeen[id] = time.Now()
+				t := a.tally[id]
+				if t == nil {
+					t = &toolTally{}
+					a.tally[id] = t
+				}
+				t.add(msg.Event.Call.Name)
 			}
 		}
 		switch msg.Event.Type {
@@ -641,19 +671,23 @@ func (a *arena) step() bool {
 	return true
 }
 
-// Eases the camera toward its preset, the selected member when following, with the turns and zoom of the person
+// Eases the camera toward its preset, the selected member when following, the shots of the cinematic, with the turns and zoom of the person
 func (a *arena) moveCamera(dt float64) {
 	rig := &a.rig
-	target, yaw, pitch := Vec3{floorW / 2, 1.5, floorD / 2}, 0.55, 0.58
+	target, yaw, pitch := a.sc.lay.center(), 0.55, 0.58
 	if rig.preset == "orbit" {
 		rig.orbitT += dt
 		yaw += rig.orbitT * 0.07
 	}
 	dist := a.fitDistance(yaw+rig.yawOff, min(max(pitch+rig.pitchOff, 0.12), 1.45))
-	if rig.preset == "follow" {
+	switch rig.preset {
+	case "follow":
 		if act := a.selectedActor(); act != nil {
-			target, pitch, dist = act.pos.Add(Vec3{0, 2, 0}), 0.42, 17
+			target, pitch, dist = act.stand().Add(vxl.V(0, 2, 0)), 0.42, 17
 		}
+	case "cinematic":
+		a.frame(dt)
+		target, pitch, dist, yaw = a.cine.target, 0.4, a.cine.dist, a.cine.yaw
 	}
 	rig.tx.Set(target.X)
 	rig.ty.Set(target.Y)
@@ -664,26 +698,70 @@ func (a *arena) moveCamera(dt float64) {
 	for _, v := range []*anim.Value{&rig.tx, &rig.ty, &rig.tz, &rig.yaw, &rig.pitch, &rig.dist} {
 		v.Step(dt)
 	}
-	a.cam = Camera{Target: Vec3{rig.tx.Pos, rig.ty.Pos, rig.tz.Pos}, Yaw: rig.yaw.Pos, Pitch: rig.pitch.Pos, Dist: rig.dist.Pos, FOV: 0.85}
+	a.cam = vxl.Camera{Target: vxl.V(rig.tx.Pos, rig.ty.Pos, rig.tz.Pos), Yaw: rig.yaw.Pos, Pitch: rig.pitch.Pos, Dist: rig.dist.Pos, FOV: 0.85}
 }
 
-// Distance at which the whole floor fits the world box at the yaw and pitch, found by projecting its corners
+// Picks the next shot of the cinematic once the last ran out, the busiest point of the platform drifting slowly by
+func (a *arena) frame(dt float64) {
+	c := &a.cine
+	c.left -= dt
+	c.yaw += dt * 0.04
+	if c.left > 0 {
+		return
+	}
+	c.left = 7 + a.sc.rnd.Next()*4
+	sc := a.sc
+	var spots []vxl.Vec3
+	for _, act := range sc.actors {
+		if act.gone {
+			continue
+		}
+		switch {
+		case act.beacon > 0.5, act.frozen > 0.5, act.state == stateJack, act.state == stateBrief, act.state == stateChart, act.state == stateReview && sc.beamLock != "":
+			spots = append(spots, act.stand().Add(vxl.V(0, 2.5, 0)))
+		}
+	}
+	for _, id := range sc.order {
+		if n := sc.nodes[id]; n.status == TicketReview || n.glow > 0.5 {
+			spots = append(spots, n.core(sc.t))
+		}
+	}
+	if len(spots) == 0 || a.sc.rnd.Next() < 0.2 {
+		c.target, c.dist = sc.lay.center(), a.fitDistance(c.yaw, 0.4)*1.05
+		return
+	}
+	c.target, c.dist = spots[a.sc.rnd.Intn(len(spots))], 20
+}
+
+// Distance at which the whole platform fits the world box at the yaw and pitch, found by projecting its corners
 func (a *arena) fitDistance(yaw, pitch float64) float64 {
 	ww, wh := max(a.lay.world.w, 20), max(a.lay.world.h, 8)
-	fr := &Frame{W: 2 * ww, H: 2 * wh}
-	r := &Raster{}
-	cam := Camera{Target: Vec3{floorW / 2, 1.5, floorD / 2}, Yaw: yaw, Pitch: pitch, Dist: 60, FOV: 0.85}
-	corners := []Vec3{{0, -2, 0}, {floorW, -2, 0}, {0, -2, floorD}, {floorW, -2, floorD}, {0, 4.5, 0}, {floorW, 4.5, 0}, {0, 4.5, floorD}, {floorW, 4.5, floorD}}
-	for range 5 {
+	mode := vxl.CellModeOf(a.cfg.Arena.Pixels)
+	px, py := mode.Pixels()
+	fr := &vxl.Frame{W: ww * px, H: wh * py, PixelAspect: mode.PixelAspect()}
+	r := &vxl.Raster{}
+	lo, hi := a.sc.lay.bounds()
+	cam := vxl.Camera{Target: a.sc.lay.center(), Yaw: yaw, Pitch: pitch, Dist: 60, FOV: 0.85}
+	for range 6 {
 		r.Begin(fr, cam)
 		spread := 0.0
-		for _, c := range corners {
+		for i := range 8 {
+			c := lo
+			if i&1 != 0 {
+				c.X = hi.X
+			}
+			if i&2 != 0 {
+				c.Y = hi.Y
+			}
+			if i&4 != 0 {
+				c.Z = hi.Z
+			}
 			sx, sy, _, ok := r.Project(c)
 			if !ok {
 				spread = 2
 				break
 			}
-			spread = max(spread, math.Abs(sx/float64(fr.W)-0.5)/0.49, math.Abs(sy/float64(fr.H)-0.5)/0.47)
+			spread = max(spread, math.Abs(sx/float64(fr.W)-0.5)/0.48, math.Abs(sy/float64(fr.H)-0.5)/0.46)
 		}
 		cam.Dist *= spread
 	}
@@ -710,7 +788,7 @@ func (a *arena) roster() []Member {
 func (a *arena) selectBy(d int) tea.Cmd {
 	members := a.roster()
 	if len(members) == 0 {
-		return wm.Notify("nobody is on the floor yet", wm.Info)
+		return wm.Notify("nobody has jacked in yet", wm.Info)
 	}
 	i := slices.IndexFunc(members, func(m Member) bool { return m.Name == a.sel })
 	if i < 0 {
@@ -998,14 +1076,14 @@ func (a *arena) customize() tea.Cmd {
 	}
 	t := a.env.Theme
 	look := a.cfg.LookOf(m.Role, m.Index)
-	items := []wm.Item{{ID: "name", Title: "Rename " + m.Name, Detail: "the name shows on the floor and in every prompt from now on", Run: func() tea.Cmd { return a.renamePrompt(m) }}}
+	items := []wm.Item{{ID: "name", Title: "Rename " + m.Name, Detail: "the handle shows on the platform and in every prompt from now on", Run: func() tea.Cmd { return a.renamePrompt(m) }}}
 	for _, c := range ColorNames {
 		c := c
-		items = append(items, wm.Item{ID: "color:" + c, Title: "Color " + c, Detail: "dye the outfit of " + m.Name, Keys: mark(c == look.Color, t), Run: func() tea.Cmd { return a.setLook(m, Look{Color: c, Hat: look.Hat}) }})
+		items = append(items, wm.Item{ID: "color:" + c, Title: "Color " + c, Detail: "dye the suit and trace lines of " + m.Name, Keys: mark(c == look.Color, t), Run: func() tea.Cmd { return a.setLook(m, Look{Color: c, Hat: look.Hat}) }})
 	}
-	for _, h := range HatNames {
+	for _, h := range RigNames {
 		h := h
-		items = append(items, wm.Item{ID: "hat:" + h, Title: "Hat " + h, Detail: "what " + m.Name + " wears", Keys: mark(h == look.Hat, t), Run: func() tea.Cmd { return a.setLook(m, Look{Color: look.Color, Hat: h}) }})
+		items = append(items, wm.Item{ID: "rig:" + h, Title: "Rig " + h, Detail: "what " + m.Name + " wears on its head", Keys: mark(h == look.Hat, t), Run: func() tea.Cmd { return a.setLook(m, Look{Color: look.Color, Hat: h}) }})
 	}
 	return wm.RequestOverlay(wm.NewPalette(t, items))
 }

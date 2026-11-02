@@ -62,7 +62,7 @@ type Arena struct {
 	Camera string
 }
 
-// Outfit of one member
+// Outfit of one member, a color for the suit and a rig worn on the head
 type Look struct {
 	Color string
 	Hat   string
@@ -80,22 +80,19 @@ type Config struct {
 }
 
 // Pixel modes the arena encodes cells with
-var PixelModes = []string{"quadrant", "half"}
+var PixelModes = []string{"quadrant", "half", "sextant", "octant"}
 
 // Camera presets the arena starts on
-var Cameras = []string{"overview", "follow", "orbit"}
+var Cameras = []string{"overview", "follow", "orbit", "cinematic"}
 
 // Colors an outfit may be dyed, by name
 var ColorNames = []string{"teal", "amber", "violet", "lime", "coral", "sky", "rose", "mint", "crimson", "gold", "indigo", "slate"}
 
-// Hats a member may wear
-var HatNames = []string{"cap", "beanie", "fedora", "hardhat", "visor", "headphones", "bandana", "crown", "none"}
+// Handles runners go by when the settings name none
+var defaultBuilderNames = []string{"Rook", "Vex", "Nyx", "Sable", "Halide", "Kestrel", "Orrin", "Lumen"}
 
-// Names builders take when the settings name none
-var defaultBuilderNames = []string{"Ada", "Linus", "Grace", "Dennis", "Margaret", "Ken", "Barbara", "Alan"}
-
-// Outfits builders wear when the settings dress none
-var defaultBuilderLooks = []Look{{"teal", "cap"}, {"amber", "beanie"}, {"violet", "headphones"}, {"lime", "bandana"}, {"coral", "cap"}, {"sky", "beanie"}, {"rose", "headphones"}, {"mint", "bandana"}}
+// Outfits runners wear when the settings dress none
+var defaultBuilderLooks = []Look{{"teal", "visor"}, {"amber", "crest"}, {"violet", "plugs"}, {"lime", "antenna"}, {"coral", "visor"}, {"sky", "horns"}, {"rose", "halo"}, {"mint", "crest"}}
 
 // Configuration every unset setting falls back to
 func Default() Config {
@@ -105,8 +102,8 @@ func Default() Config {
 		Limits:      Limits{Total: 3 * time.Hour, Brief: 45 * time.Minute, Plan: 30 * time.Minute, Build: 90 * time.Minute, Review: 20 * time.Minute},
 		Interactive: true,
 		Arena:       Arena{Pixels: "quadrant", FPS: 30, Labels: true, Camera: "overview"},
-		Looks:       map[Role][]Look{RoleDirector: {{"crimson", "fedora"}}, RoleArchitect: {{"gold", "hardhat"}}, RoleReviewer: {{"indigo", "visor"}}, RoleBuilder: slices.Clone(defaultBuilderLooks)},
-		Names:       map[Role][]string{RoleDirector: {"Director"}, RoleArchitect: {"Architect"}, RoleReviewer: {"Reviewer"}, RoleBuilder: slices.Clone(defaultBuilderNames)},
+		Looks:       map[Role][]Look{RoleDirector: {{"crimson", "hood"}}, RoleArchitect: {{"gold", "halo"}}, RoleReviewer: {{"indigo", "mask"}}, RoleBuilder: slices.Clone(defaultBuilderLooks)},
+		Names:       map[Role][]string{RoleDirector: {"Fixer"}, RoleArchitect: {"Navigator"}, RoleReviewer: {"Overwatch"}, RoleBuilder: slices.Clone(defaultBuilderNames)},
 	}
 }
 
@@ -142,19 +139,19 @@ func Settings() []harness.Setting {
 		harness.Setting{Key: Name + ".limits.build", Help: "Time a builder has on one ticket before it is told to hand off", Check: checkDuration("build")},
 		harness.Setting{Key: Name + ".limits.review", Help: "Time the reviewer has on one handoff before it is told to decide", Check: checkDuration("review")},
 		harness.Setting{Key: Name + ".interactive", Help: "The director may ask the person questions, and a stalled stage waits for the person instead of failing the sprint", Choices: []string{"true", "false"}},
-		harness.Setting{Key: Name + ".arena.pixels", Help: "How the arena turns pixels into cells, quadrant doubles the width, half keeps every color exact", Choices: PixelModes},
+		harness.Setting{Key: Name + ".arena.pixels", Help: "Pixels the arena packs into each cell, half keeps every color exact, quadrant doubles the width, sextant and octant triple and quadruple the height with the legacy computing glyphs newer fonts carry", Choices: PixelModes},
 		harness.Setting{Key: Name + ".arena.fps", Help: "Frames per second the arena redraws at while anything moves", Lo: 5, Hi: 60, Step: 5, Integer: true},
 		harness.Setting{Key: Name + ".arena.labels", Help: "Names float above every member in the arena", Choices: []string{"true", "false"}},
-		harness.Setting{Key: Name + ".arena.camera", Help: "Camera the arena opens with, the whole floor, the selected member or a slow orbit", Choices: Cameras},
+		harness.Setting{Key: Name + ".arena.camera", Help: "Camera the arena opens with, the whole platform, the selected member, a slow orbit or cinematic shots of whatever is busiest", Choices: Cameras},
 	)
 	for _, role := range Roles {
 		r := string(role)
 		many := role == RoleBuilder
-		lookHelp := "Outfit of the " + r + " as a color and a hat, such as crimson fedora, colors are " + strings.Join(ColorNames, ", ") + " and hats are " + strings.Join(HatNames, ", ")
-		nameHelp := "Name the " + r + " goes by"
+		lookHelp := "Outfit of the " + r + " as a color and a rig, such as crimson hood, colors are " + strings.Join(ColorNames, ", ") + " and rigs are " + strings.Join(RigNames, ", ")
+		nameHelp := "Handle the " + r + " goes by"
 		if many {
-			lookHelp = "Outfits of the builders in order, comma separated, each a color and a hat such as teal cap"
-			nameHelp = "Names of the builders in order, comma separated"
+			lookHelp = "Outfits of the runners in order, comma separated, each a color and a rig such as teal visor"
+			nameHelp = "Handles of the runners in order, comma separated"
 		}
 		out = append(out,
 			harness.Setting{Key: Name + ".look." + r, Help: lookHelp, Check: checkLooks(many)},
@@ -218,22 +215,25 @@ func checkNames(many bool) func(string) error {
 	}
 }
 
-// Outfits from a comma separated list of color and hat pairs
+// Outfits from a comma separated list of color and rig pairs, the hat names of the first arena taken as rigs
 func parseLooks(v string) ([]Look, error) {
 	var out []Look
 	for _, item := range splitList(v) {
 		fields := strings.Fields(item)
 		if len(fields) != 2 {
-			return nil, fmt.Errorf("outfit %q must be a color and a hat such as teal cap", item)
+			return nil, fmt.Errorf("outfit %q must be a color and a rig such as teal visor", item)
 		}
-		color, hat := strings.ToLower(fields[0]), strings.ToLower(fields[1])
+		color, rig := strings.ToLower(fields[0]), strings.ToLower(fields[1])
 		if !slices.Contains(ColorNames, color) {
 			return nil, fmt.Errorf("unknown color %q, colors are %s", color, strings.Join(ColorNames, ", "))
 		}
-		if !slices.Contains(HatNames, hat) {
-			return nil, fmt.Errorf("unknown hat %q, hats are %s", hat, strings.Join(HatNames, ", "))
+		if old, ok := hatRigs[rig]; ok {
+			rig = old
 		}
-		out = append(out, Look{Color: color, Hat: hat})
+		if !slices.Contains(RigNames, rig) {
+			return nil, fmt.Errorf("unknown rig %q, rigs are %s", rig, strings.Join(RigNames, ", "))
+		}
+		out = append(out, Look{Color: color, Hat: rig})
 	}
 	return out, nil
 }
@@ -387,9 +387,10 @@ func (c Config) NameOf(role Role, index int) string {
 		if index < len(defaultBuilderNames) {
 			return defaultBuilderNames[index]
 		}
-		return "Builder " + strconv.Itoa(index+1)
+		return "Runner " + strconv.Itoa(index+1)
 	}
-	return strings.ToUpper(string(role[:1])) + string(role[1:])
+	title := crewTitle(role)
+	return strings.ToUpper(title[:1]) + title[1:]
 }
 
 // Outfit the member at an index of a role wears, the defaults filling in past the outfits set
@@ -470,11 +471,11 @@ func (c Config) Kinds(primary string) []harness.Kind {
 func roleDescription(role Role) string {
 	switch role {
 	case RoleDirector:
-		return "sprint director, settles the brief with the person and reports at the end"
+		return "sprint director, the fixer of the crew, settles the brief with the person and reports at the end"
 	case RoleArchitect:
-		return "sprint architect, cuts the brief into tickets a team can build side by side"
+		return "sprint architect, the navigator of the crew, cuts the brief into nodes a crew can crack side by side"
 	case RoleBuilder:
-		return "sprint builder, builds one ticket at a time and hands it off"
+		return "sprint builder, a runner of the crew, cracks one node at a time and hands it off"
 	}
-	return "sprint reviewer, checks every handoff and directs the builders"
+	return "sprint reviewer, the overwatch of the crew, checks every handoff and directs the runners"
 }
