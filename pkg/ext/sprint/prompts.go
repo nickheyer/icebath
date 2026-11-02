@@ -6,392 +6,235 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/harness"
+	"github.com/nickheyer/icebath/pkg/prompt"
 )
 
-// One line on each role for the kind picker and the agent tool
-func roleDescription(role string) string {
-	switch role {
-	case RolePM:
-		return "sprint project manager, settles the objective with the person and hands it to the planner"
-	case RolePlanner:
-		return "sprint planner, sizes the story and cuts it into tickets"
-	case RoleLead:
-		return "sprint lead engineer, briefs the engineers, directs them as they report and reviews the whole"
-	case RoleEngineer:
-		return "sprint engineer, builds one ticket at a time and reports to the lead"
-	}
-	return ""
+// Harness section every member shares, the tools it may call, the tool that ends its stage and further rules
+func team(tools []string, must string, extra ...string) *prompt.Harness {
+	return &prompt.Harness{Reader: "the person watching the arena", Speaker: "the sprint", Gatekeeper: "the person", Tools: tools, SharedTree: true, Must: must, Extra: extra}
 }
 
-// Base instructions of a role, replacing the built in prompt
-func roleSystem(role string) string {
-	switch role {
-	case RolePM:
-		return pmSystem
-	case RolePlanner:
-		return plannerSystem
-	case RoleLead:
-		return leadSystem
-	case RoleEngineer:
-		return engineerSystem
+// Base prompt of a role, sent in place of the built in one, naming the tools the role is offered
+func roleSystem(role Role, t Team) string {
+	offered, denied := roleTools(role)
+	if offered == nil {
+		offered = prompt.Without(prompt.Builtins(), denied)
 	}
-	return ""
+	switch role {
+	case RoleDirector:
+		return prompt.System{
+			Identity: []string{"You are the director of a sprint team.", "You turn the request into a brief, then report the result.", "The architect plans, builders do all the work, the reviewer checks it.", "You do not review or write code."},
+			Rules: []string{
+				"Confirm that what the request names exists with Glob or Grep, in at most five calls. Leave reading the code to the team.",
+				"The brief states what to deliver, how to check it and what to leave alone. Findings, diagnoses and designs are the team's work, keep them out.",
+				"Choices settled with the person or on their behalf go in the notes of " + ToolBrief + ".",
+			},
+			Harness: team(offered, "", "The brief stage ends only when you call "+ToolBrief+". A turn that ends without it earns a reminder, nothing more."),
+			Writing: &prompt.Writing{Reader: "the person who asked for the sprint"},
+			Closing: []string{"Call " + ToolBrief + " once with the brief. The report at the end is written from the handoffs and verdicts alone, without tool calls."},
+		}.String()
+	case RoleArchitect:
+		return prompt.System{
+			Identity: []string{"You are the architect of a sprint team.", "You cut the brief into tickets and call " + ToolPlan + ".", "That is the whole job. Builders do everything else, including investigating, reviewing, measuring, testing and fixing."},
+			Rules: []string{
+				"Outline the tree first, then Grep for the symbols the brief names. Read a file only when those leave a ticket boundary unclear, several at once through file_paths.",
+				"Do not work out the changes. When the brief asks to find problems, cut tickets by area, each telling its builder to find and fix them in the files it owns.",
+				"A ticket states what to deliver and lists every file its builder will touch. No two tickets list the same file, and a file in no ticket is off limits to everyone. Add a dependency only when a ticket cannot start without another.",
+			},
+			Harness: team(offered, ToolPlan),
+			Closing: []string{"Call " + ToolPlan + " within 15 tool calls."},
+		}.String()
+	case RoleBuilder:
+		return prompt.System{
+			Identity: []string{"You are a builder on a sprint team.", "You build one ticket, as the ticket and the brief say."},
+			Rules: []string{
+				"Orient with Outline and Grep, Read the files you own once, then change them with Edit, or Write for a new file.",
+				"Build with Shell and run only the tests covering the packages the ticket touches, do not re-run tests. The commands and what they showed go in the tested field of " + ToolHandoff + ".",
+				"Call " + ToolHandoff + " when the ticket is done, when you are blocked, or with a question only the reviewer can settle. The verdict arrives as your next message.",
+			},
+			Harness:  team(offered, ToolHandoff),
+			Delivery: &prompt.Delivery{Asked: "the reviewer through " + ToolHandoff, Extra: []string{"Change only the files the ticket owns. A build broken by a file you do not own goes in the handoff, not under your hands."}},
+		}.String()
+	}
+	rework := "Rework is not allowed, so accept or fail every handoff."
+	if t.MaxRework > 0 {
+		rework = fmt.Sprintf("A ticket sent back %d times is accepted or failed on its next handoff.", t.MaxRework)
+	}
+	return prompt.System{
+		Identity: []string{"You are the reviewer of a sprint team.", "You judge each handoff against its ticket and the brief.", "You do not write code."},
+		Rules: []string{
+			"Done: Read the files the handoff names, not the git diff of the tree, which holds the work of other builders. Build with Shell and run the tests covering them. Accept when the ticket is met and the checks pass. Otherwise send rework naming the file, the gap and what done looks like. Fail only when it cannot be built as planned.",
+			"Blocked or question: decide and answer with guidance. Fail only when the block cannot be cleared.",
+			rework,
+		},
+		Harness: team(offered, ToolVerdict),
+		Closing: []string{"Call " + ToolVerdict + " once for the ticket named."},
+	}.String()
 }
 
-const pmSystem = `You are the project manager of a sprint team working in the user's repository. A person brought a request. Your one job is to turn it into an objective the team can build without coming back with questions.
-
-Work like this:
-- Read the request. Look at the repository with the file tools when that answers a question better than asking.
-- Ask the person about anything that would change what gets built: scope, behavior at the edges, what done looks like, what must not change. Ask with ` + ToolAsk + `: every question offers two to four concrete options the person picks from, and they may type their own answer instead. Put related questions in one call, up to four. Do not ask what you can find out yourself, and do not ask in plain text.
-- When an answer comes back as no answer, decide yourself and record the choice in the notes.
-- When the objective is clear, call ` + ToolResolve + ` once with the objective, the acceptance criteria and the constraints. That hands the work to the planner. Do not call it while anything that matters is still open.
-- After the sprint ends you will be told what the team built. Report it to the person in a few lines, what was done, what was left, and anything they must check.
-
-You do not write code and you do not plan the work. Keep every message short.`
-
-const plannerSystem = `You are the planner of a sprint team working in the user's repository. You receive an objective the project manager settled with the person. Your job is to size it and cut it into tickets engineers can take in parallel.
-
-Work like this:
-- Study the repository with the file tools until you know where the change lands and what it touches.
-- The person is not available to you. Where the objective leaves a choice open, settle it from the objective and the code, and state the choice in the ticket it affects.
-- Write one story: a title, a summary of the change as a whole, and a size.
-- Cut it into tickets. Each ticket is one coherent change one engineer can finish alone, naming the files it owns. Two tickets must not edit the same file; when they would, merge them or make one depend on the other. Keep the count as low as the work allows.
-- Name dependencies only where one ticket cannot start before another is done.
-- Call ` + ToolPlan + ` once with the story and the tickets. That is your whole output. Do not write code.`
-
-const leadSystem = `You are the lead engineer of a sprint team working in the user's repository. Engineers build the tickets of a story; you oversee them. You read, build and test, and you decide. You do not edit files: when something must change, an engineer changes it on your direction.
-
-Work like this:
-- Before the build you get the story and the tickets. Study the repository where they land and write a briefing for the engineers: how the pieces fit, the interfaces between tickets, the order that matters, the mistakes to avoid. End your turn with the briefing as your answer.
-- During the build engineers report to you with ` + ToolReport + `. Each report reaches you as a message naming the ticket. Look at the change in the working tree, build and run the tests when the report says done, then answer with ` + ToolDirect + `: accepted when the ticket meets the objective and its report holds up, rework with exactly what is wrong and what done looks like, guidance when the engineer is blocked or asks a question, failed when the ticket cannot be finished. Answer every report before you end your turn.
-- After the build you review the whole: build the project, run its tests, check that the tickets fit together and meet the acceptance criteria. Then call ` + ToolReview + ` with a summary and the tickets to send back, if any. When nothing goes back, the summary is what the person reads, so say what was built, how it was verified and what they should know.`
-
-const engineerSystem = `You are an engineer on a sprint team working in the user's repository. You take one ticket at a time from a story other engineers are also building, each in their own files, and you report to the lead.
-
-Work like this:
-- Read the story, the briefing of the lead and your ticket. Study the files it names and what they touch before changing anything.
-- Build exactly the ticket, in the files it owns. Do not change files that belong to another ticket; when you must, report it as a question instead.
-- Run the build and the tests that cover your change before you report.
-- Report with ` + ToolReport + `: status question when a choice is not yours to make, blocked when you cannot go on, done when the ticket is built and verified, with what you changed file by file and how you verified it. The call returns the direction of the lead: follow it. Rework means change what the notes say and report done again.
-- Your ticket is over when the lead answers accepted or failed. Then end your turn with one line. Never end your turn before that.`
-
-// First message of the project manager, the request and how the handoff works
-func pmOpening(prompt string, interactive bool) string {
-	var sb strings.Builder
-	sb.WriteString("A person brought this request for the sprint team:\n\n")
-	sb.WriteString(strings.TrimSpace(prompt))
-	sb.WriteString("\n\n")
+// First message of the director, the request to settle and whether the person can be asked
+func directorOpening(request string, interactive bool) string {
+	ask := "Nobody can be asked, settle open choices yourself and put them in the notes."
 	if interactive {
-		sb.WriteString("Ask them what you need to know with " + ToolAsk + ", then call " + ToolResolve + " when the objective is settled.")
-	} else {
-		sb.WriteString("Nobody is available to answer questions. Settle the objective from the request and the repository alone, make reasonable choices where it is silent and note them, then call " + ToolResolve + ".")
+		ask = "Ask the person with " + ToolAsk + " only when a choice would change the work."
 	}
-	return sb.String()
+	return prompt.New().Para("Request:").Raw(request).Para(ask + " Then call " + ToolBrief + ".").String()
 }
 
-// Reminder sent when a role ended its turn without the call the stage waits on
-func nudge(toolName string) string {
-	return "The sprint cannot go on until you call " + toolName + ". Call it now with what you have."
+// Brief as the team reads it
+func briefDoc(b Brief) *prompt.Doc {
+	return prompt.New().Heading(1, "Brief").Raw(b.Objective).Titled("Acceptance", b.Acceptance...).Titled("Constraints", b.Constraints...).Titled("Leave alone", b.Untouched...).Para("Notes", strings.TrimSpace(b.Notes))
 }
 
-// Steer sent to a role whose stage ran past its limit
-func wrapUp(toolName string, limit time.Duration) string {
-	return fmt.Sprintf("Your time limit of %s has passed. Stop exploring, finish with what you know and call %s now.", span(limit), toolName)
+func briefText(b Brief) string { return briefDoc(b).String() }
+
+// First message of the architect, the brief and the ticket limit
+func architectOpening(b Brief, maxTickets, builders int) string {
+	return briefDoc(b).Paraf("Cut this into at most %d tickets for %d builders working in parallel, then call %s.", maxTickets, builders, ToolPlan).String()
 }
 
-// Steer sent to the lead whose briefing ran past its limit
-func wrapUpBriefing(limit time.Duration) string {
-	return fmt.Sprintf("Your time limit of %s has passed. Stop exploring and end your turn with the briefing now.", span(limit))
+// Plan title, summary and approach as a member reads them
+func planHead(p Plan) *prompt.Doc {
+	return prompt.New().Heading(1, "Plan: "+p.Title).Raw(p.Summary).Raw(p.Approach)
 }
 
-// Message that starts a role again after the person told a waiting sprint to go on
-func goOn(toolName string) string {
-	return "Go on from where you were and call " + toolName + " when you are ready."
-}
-
-// Steer sent to an engineer whose build round ran past its limit
-func wrapUpReport(limit time.Duration) string {
-	return fmt.Sprintf("The build limit of %s has passed. Finish what is in progress, leave the tree building, and report done with %s now.", span(limit), ToolReport)
-}
-
-// Steer sent to the lead once the build round ran past its limit
-func wrapUpDirect(limit time.Duration) string {
-	return fmt.Sprintf("The build limit of %s has passed. Engineers are reporting what they have. Answer every report with %s as accepted or failed, rework is closed for this round.", span(limit), ToolDirect)
-}
-
-// Story with every ticket in full, as the plan reads in a transcript
-func planText(s Story, tickets []Ticket) string {
-	var sb strings.Builder
-	sb.WriteString(storyText(s, tickets))
+// Plan as the team reads it, with every ticket
+func planText(p Plan, tickets []Ticket) string {
+	d := planHead(p).Titled("Risks", p.Risks...).Heading(2, "Tickets")
 	for _, t := range tickets {
-		sb.WriteString("\n")
-		sb.WriteString(ticketText(t))
-		if len(t.DependsOn) > 0 {
-			sb.WriteString("Depends on: ")
-			sb.WriteString(strings.Join(t.DependsOn, ", "))
-			sb.WriteString("\n")
-		}
+		d.Para(prompt.H(3, t.ID+" "+t.Title), strings.TrimSpace(t.Description), prompt.KV("Files", strings.Join(t.Files, ", ")), prompt.KV("Depends on", strings.Join(t.DependsOn, ", ")), prompt.KV("Size", t.Size))
 	}
-	return sb.String()
+	return d.String()
 }
 
-// Summary and tickets sent back of a review, as it reads in a transcript
-func reviewText(in reviewInput) string {
-	var sb strings.Builder
-	if len(in.Rework) > 0 {
-		sb.WriteString("## Sent back\n")
-		for _, back := range in.Rework {
-			fmt.Fprintf(&sb, "- %s: %s\n", back.Ticket, back.Notes)
+// Tickets already done with the first line of their last handoff
+func builtDoc(tickets []Ticket) *prompt.Doc {
+	var items []string
+	for _, t := range tickets {
+		if t.Status == TicketDone {
+			items = append(items, t.ID+" "+t.Title+": "+firstLine(t.Report))
 		}
-		sb.WriteString("\n")
 	}
-	sb.WriteString("## Summary\n")
-	sb.WriteString(strings.TrimSpace(in.Summary))
-	sb.WriteString("\n")
-	return sb.String()
+	return prompt.New().Titled(prompt.H(2, "Already built"), items...)
 }
 
-// Questions with the answers the person gave, as the asking role reads them
+// Ticket as its builder reads it, with the closing instruction
+func ticketDoc(t Ticket) *prompt.Doc {
+	return prompt.New().
+		Para(prompt.H(1, "Your ticket "+t.ID+" "+t.Title), strings.TrimSpace(t.Description), prompt.KV("Files you own", strings.Join(t.Files, ", ")), prompt.KV("Built before yours", strings.Join(t.DependsOn, ", "))).
+		Titled("Notes from the reviewer", t.Notes...).
+		Para("Build it, run its tests, then call " + ToolHandoff + " with what you ran.")
+}
+
+// First message of a builder on a ticket, the brief, the plan, what is already built and its ticket
+func builderOpening(b Brief, p Plan, tickets []Ticket, t Ticket) string {
+	return briefDoc(b).Add(planHead(p)).Add(builtDoc(tickets)).Add(ticketDoc(t)).String()
+}
+
+// Message a builder gets when its next ticket comes in the same session
+func builderNext(t Ticket, tickets []Ticket) string {
+	return builtDoc(tickets).Add(ticketDoc(t)).String()
+}
+
+// Message the reviewer gets with a handoff to judge, the brief and the plan ahead of the first
+func reviewOpening(b Brief, p Plan, t Ticket, h Handoff, from string, first bool) string {
+	d := prompt.New()
+	if first {
+		d.Add(briefDoc(b)).Add(planHead(p))
+	}
+	back := ""
+	if t.Round > 0 {
+		back = fmt.Sprintf("Sent back %d time(s) before.", t.Round)
+	}
+	d.Para(prompt.H(1, "Handoff on "+t.ID+" "+t.Title+" from "+from), prompt.KV("Ticket", strings.TrimSpace(t.Description)), prompt.KV("Files owned", strings.Join(t.Files, ", ")), back)
+	d.Para(prompt.KV("Status", string(h.Status)), strings.TrimSpace(h.Summary), prompt.KV("Files changed", strings.Join(h.Files, ", ")), prompt.KV("Tested", strings.TrimSpace(h.Tested)))
+	if h.Status == HandoffDone {
+		return d.Para("Call " + ToolVerdict + " with accepted, rework or failed.").String()
+	}
+	return d.Para("Call " + ToolVerdict + " with guidance or failed.").String()
+}
+
+// Message a builder gets with the verdict on its handoff
+func verdictText(d Decision) string {
+	switch d.Verdict {
+	case VerdictAccepted:
+		return d.Ticket + " accepted, the ticket is complete. End your turn with one line."
+	case VerdictRework:
+		return prompt.New().Para(d.Ticket + " sent back:").Raw(d.Notes).Para("Fix it, check it, then call " + ToolHandoff + " with done again.").String()
+	case VerdictGuidance:
+		return prompt.New().Para("Reviewer on " + d.Ticket + ":").Raw(d.Notes).Para("Go on with the ticket and call " + ToolHandoff + " when it is done.").String()
+	}
+	return prompt.New().Para(d.Ticket + " failed: " + d.Notes).Para("Stop work on it and end your turn with one line.").String()
+}
+
+// Message the director gets to write the report
+func reportOpening(b Brief, p Plan, tickets []Ticket, err error) string {
+	d := prompt.New()
+	if err != nil {
+		d.Para("The sprint stopped short: " + err.Error())
+	}
+	d.Para(prompt.KV("Brief", firstLine(b.Objective)), prompt.KV("Plan", p.Title)).Heading(2, "Tickets")
+	for _, t := range tickets {
+		head := prompt.H(3, t.ID+" "+t.Title+" is "+string(t.Status))
+		if t.Builder != "" {
+			head += " by " + t.Builder
+		}
+		lines := []string{head, prompt.KV("Last handoff", strings.TrimSpace(t.Report))}
+		for _, n := range t.Notes {
+			lines = append(lines, "Reviewer: "+n)
+		}
+		d.Para(append(lines, prompt.KV("Ended", t.Err))...)
+	}
+	return d.Para("Write the report for the person in Markdown with these sections: Shipped, Not shipped, How to verify, Left to do. Use only what the handoffs and verdicts say, without tool calls.").String()
+}
+
+// Steer that tells a member to wrap up after its time ran out
+func wrapUp(toolName string, limit time.Duration) string {
+	return fmt.Sprintf("Time is up after %s. Call %s now with what you have.", limit.Round(time.Minute), toolName)
+}
+
+// Steer that tells a member that ended its turn without calling its tool to call it
+func reminder(toolName string) string {
+	return "Call " + toolName + " now with what you have. Nothing moves until you do."
+}
+
+// Result the director reads once the brief is handed over
+func briefTaken(b Brief) string {
+	return prompt.New().Para("Brief handed to the team. End your turn with one line on what was settled.").Add(briefDoc(b)).String()
+}
+
+// Result the architect reads once the plan is handed over
+func planTaken(in planInput) string {
+	return prompt.New().Paraf("Plan %q with %d tickets handed to the team. End your turn with one line on the approach.", in.Title, len(in.Tickets)).Raw(planText(in.Plan, in.Tickets)).String()
+}
+
+// Result a builder reads once its handoff is taken
+func handoffTaken() string {
+	return "Handed off to the reviewer. End your turn now with one line on where the ticket stands, the verdict arrives as your next message."
+}
+
+// Result the reviewer reads once its verdict is recorded
+func verdictTaken(d Decision) string {
+	return "Verdict " + string(d.Verdict) + " recorded on " + d.Ticket + ". End your turn with one line on why."
+}
+
+// Answers as the director reads them, one block per question
 func answersText(qs []harness.Question, answers []harness.Answer) string {
-	var sb strings.Builder
-	sb.WriteString("Answers from the person:\n")
+	d := prompt.New()
 	for i, q := range qs {
-		fmt.Fprintf(&sb, "%d. %s\n", i+1, q.Text)
+		head := fmt.Sprintf("Q%d: %s", i+1, q.Text)
 		if i >= len(answers) || !answers[i].Given() {
-			sb.WriteString("   No answer. Decide this yourself and record the choice in your notes.\n")
+			d.Para(head, "No answer, decide it yourself and say what you chose.")
 			continue
 		}
 		a := answers[i]
-		for _, label := range a.Picked {
-			sb.WriteString("   Picked: " + label)
-			for _, c := range q.Choices {
-				if c.Label == label && c.Description != "" {
-					sb.WriteString(", " + c.Description)
-				}
-			}
-			sb.WriteString("\n")
-		}
-		if t := strings.TrimSpace(a.Text); t != "" {
-			sb.WriteString("   In their own words: " + t + "\n")
-		}
+		d.Para(head, prompt.KV("Picked", strings.Join(a.Picked, ", ")), prompt.KV("In their own words", strings.TrimSpace(a.Text)))
 	}
-	return sb.String()
+	return d.String()
 }
 
-// Objective as every later role reads it
-func objectiveText(o Objective) string {
-	var sb strings.Builder
-	sb.WriteString("# Objective\n\n")
-	sb.WriteString(strings.TrimSpace(o.Objective))
-	sb.WriteString("\n")
-	if len(o.Acceptance) > 0 {
-		sb.WriteString("\n## Acceptance\n")
-		for _, a := range o.Acceptance {
-			sb.WriteString("- ")
-			sb.WriteString(a)
-			sb.WriteString("\n")
-		}
-	}
-	if len(o.Constraints) > 0 {
-		sb.WriteString("\n## Constraints\n")
-		for _, c := range o.Constraints {
-			sb.WriteString("- ")
-			sb.WriteString(c)
-			sb.WriteString("\n")
-		}
-	}
-	if o.Notes != "" {
-		sb.WriteString("\n## Notes from the project manager\n")
-		sb.WriteString(strings.TrimSpace(o.Notes))
-		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
-// Opening message of the planner
-func plannerOpening(o Objective, maxTickets int) string {
-	return objectiveText(o) + fmt.Sprintf("\nSize this and cut it into at most %d tickets, then call %s. Settle every open choice yourself and state it in the ticket it affects.", maxTickets, ToolPlan)
-}
-
-// Story as the engineers and the lead read it
-func storyText(s Story, tickets []Ticket) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "# Story: %s\n\n%s\n", s.Title, strings.TrimSpace(s.Summary))
-	if s.Size != "" {
-		fmt.Fprintf(&sb, "\nSize: %s\n", s.Size)
-	}
-	sb.WriteString("\n## Tickets\n")
-	for _, t := range tickets {
-		fmt.Fprintf(&sb, "- %s %s", t.ID, t.Title)
-		if len(t.Files) > 0 {
-			fmt.Fprintf(&sb, " (%s)", strings.Join(t.Files, ", "))
-		}
-		if len(t.DependsOn) > 0 {
-			fmt.Fprintf(&sb, " after %s", strings.Join(t.DependsOn, ", "))
-		}
-		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
-// Full text of one ticket
-func ticketText(t Ticket) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "# Ticket %s: %s\n\n%s\n", t.ID, t.Title, strings.TrimSpace(t.Description))
-	if len(t.Files) > 0 {
-		sb.WriteString("\nFiles: ")
-		sb.WriteString(strings.Join(t.Files, ", "))
-		sb.WriteString("\n")
-	}
-	if t.Estimate != "" {
-		sb.WriteString("Estimate: ")
-		sb.WriteString(t.Estimate)
-		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
-// Message that hands the plan to the lead before the build and asks for the briefing
-func leadBriefOpening(o Objective, s Story, tickets []Ticket, engineers int) string {
-	var sb strings.Builder
-	sb.WriteString(objectiveText(o))
-	sb.WriteString("\n")
-	sb.WriteString(planText(s, tickets))
-	fmt.Fprintf(&sb, "\n%d engineers start on these tickets once you have briefed them. Study the repository where the tickets land, then end your turn with the briefing: how the pieces fit, the interfaces between tickets, the order that matters and the mistakes to avoid. Write nothing but the briefing in your answer.", engineers)
-	return sb.String()
-}
-
-// Message handing a ticket to an engineer with the briefing, the reports it builds on and the notes of the lead
-func engineerOpening(o Objective, s Story, briefing string, all []Ticket, t Ticket, deps []Ticket) string {
-	var sb strings.Builder
-	sb.WriteString(objectiveText(o))
-	sb.WriteString("\n")
-	sb.WriteString(storyText(s, all))
-	if strings.TrimSpace(briefing) != "" {
-		sb.WriteString("\n## Briefing from the lead\n")
-		sb.WriteString(strings.TrimSpace(briefing))
-		sb.WriteString("\n")
-	}
-	sb.WriteString("\n")
-	sb.WriteString(ticketText(t))
-	for _, d := range deps {
-		fmt.Fprintf(&sb, "\n## Report on %s %s, which this ticket builds on\n%s\n", d.ID, d.Title, strings.TrimSpace(d.Report))
-	}
-	if len(t.Notes) > 0 {
-		sb.WriteString("\n## Notes from the lead\n")
-		for _, n := range t.Notes {
-			sb.WriteString("- ")
-			sb.WriteString(n)
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\nAddress every note.\n")
-	}
-	fmt.Fprintf(&sb, "\nBuild this ticket now. Report to the lead with %s and follow the direction it returns.", ToolReport)
-	return sb.String()
-}
-
-// Plan as a lead going on in a fresh session reads it ahead of the reports
-func leadContext(snap Snapshot) string {
-	var sb strings.Builder
-	sb.WriteString("You are the lead of this sprint and go on in a fresh session. Here is the plan you oversee.\n\n")
-	sb.WriteString(objectiveText(snap.Objective))
-	sb.WriteString("\n")
-	sb.WriteString(storyText(snap.Story, snap.Tickets))
-	if strings.TrimSpace(snap.Briefing) != "" {
-		sb.WriteString("\n## Your briefing to the engineers\n")
-		sb.WriteString(strings.TrimSpace(snap.Briefing))
-		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
-// Message that brings the reports of engineers to the lead
-func reportsText(reports []*report) string {
-	var sb strings.Builder
-	for _, r := range reports {
-		fmt.Fprintf(&sb, "## Report from %s on ticket %s, %s\n%s\n\n", r.Engineer, r.Ticket, r.Status, strings.TrimSpace(r.Text))
-	}
-	if len(reports) == 1 {
-		fmt.Fprintf(&sb, "%s waits for your direction. Check the work, then answer with %s.", reports[0].Engineer, ToolDirect)
-	} else {
-		fmt.Fprintf(&sb, "These engineers wait for your direction. Check the work, then answer each report with %s.", ToolDirect)
-	}
-	return sb.String()
-}
-
-// Reminder sent to a lead that ended its turn with reports still waiting
-func nudgeDirect(reports []*report) string {
-	return fmt.Sprintf("Engineers still wait for your direction on %s. Answer each with %s before you end your turn.", strings.Join(reportIDs(reports), ", "), ToolDirect)
-}
-
-// Direction of the lead as the engineer reads it from its report call
-func directionText(ticket string, d direction) string {
-	switch d.Verdict {
-	case VerdictAccepted:
-		return fmt.Sprintf("The lead accepted ticket %s. Your work on it is complete, end your turn with one line.", ticket)
-	case VerdictFailed:
-		return fmt.Sprintf("The lead failed ticket %s: %s\nStop work on it and end your turn with one line.", ticket, d.Notes)
-	case VerdictRework:
-		return fmt.Sprintf("The lead sent ticket %s back for rework: %s\nChange what the notes say, verify it, then report done again with %s.", ticket, d.Notes, ToolReport)
-	}
-	return fmt.Sprintf("Guidance from the lead on ticket %s: %s\nGo on with the ticket and report done with %s when it is built and verified.", ticket, d.Notes, ToolReport)
-}
-
-// Message that asks the lead to review a build round as a whole
-func reviewOpening(o Objective, s Story, tickets []Ticket, round int) string {
-	var sb strings.Builder
-	sb.WriteString(objectiveText(o))
-	sb.WriteString("\n")
-	sb.WriteString(storyText(s, tickets))
-	fmt.Fprintf(&sb, "\nBuild round %d is over. Where every ticket stands:\n", round+1)
-	for _, t := range tickets {
-		fmt.Fprintf(&sb, "\n### %s %s, by %s, %s\n", t.ID, t.Title, t.Engineer, t.Status)
-		if t.Err != "" {
-			fmt.Fprintf(&sb, "The attempt failed: %s\n", t.Err)
-		}
-		if strings.TrimSpace(t.Report) != "" {
-			sb.WriteString(strings.TrimSpace(t.Report))
-			sb.WriteString("\n")
-		}
-	}
-	sb.WriteString("\nReview the whole: build the project, run its tests and check the tickets fit together and meet the acceptance criteria. Then call " + ToolReview + " with the summary and the tickets to send back, if any.")
-	return sb.String()
-}
-
-// Message that tells the project manager how the sprint ended, with the failure that ended it when one did
-func pmClosing(summary string, accepted, unresolved []Ticket, failure error) string {
-	var sb strings.Builder
-	if failure != nil {
-		sb.WriteString("The sprint stopped before it was done: ")
-		sb.WriteString(failure.Error())
-		sb.WriteString(". Report to the person what was done, what was left and what they can do next, in a few lines.\n")
-	} else {
-		sb.WriteString("The sprint has ended. Report the outcome to the person.\n")
-	}
-	if strings.TrimSpace(summary) != "" {
-		sb.WriteString("\n## Lead summary\n")
-		sb.WriteString(strings.TrimSpace(summary))
-		sb.WriteString("\n")
-	}
-	if len(accepted) > 0 {
-		sb.WriteString("\n## Accepted tickets\n")
-		for _, t := range accepted {
-			fmt.Fprintf(&sb, "- %s %s\n", t.ID, t.Title)
-		}
-	}
-	if len(unresolved) > 0 {
-		sb.WriteString("\n## Tickets not accepted\n")
-		for _, t := range unresolved {
-			fmt.Fprintf(&sb, "- %s %s, %s", t.ID, t.Title, t.Status)
-			if t.Err != "" {
-				sb.WriteString(": ")
-				sb.WriteString(t.Err)
-			} else if len(t.Notes) > 0 {
-				sb.WriteString(": ")
-				sb.WriteString(t.Notes[len(t.Notes)-1])
-			}
-			sb.WriteString("\n")
-		}
-	}
-	return sb.String()
+// First line of text, trimmed
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	return strings.TrimSpace(line)
 }

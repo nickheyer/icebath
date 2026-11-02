@@ -46,7 +46,10 @@ func subagentSchema(kinds []Kind) json.RawMessage {
 			if i > 0 {
 				sb.WriteString(" ")
 			}
-			sb.WriteString(k.Name + ": " + k.Description + ".")
+			sb.WriteString(k.Name)
+			sb.WriteString(": ")
+			sb.WriteString(k.Description)
+			sb.WriteString(".")
 		}
 		props["kind"] = map[string]any{"type": "string", "enum": names, "description": strings.TrimSpace(sb.String())}
 	}

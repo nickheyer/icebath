@@ -1,11 +1,7 @@
 package sprint
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -14,84 +10,116 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Sheet of every sprint setting, each saved to the settings file and put in force the moment it changes
+// Sheet of every sprint setting under its section, each saved through the app the moment it changes
 func newSettingsCard(env *cards.Env) wm.Card {
-	warned := false
 	return cards.NewSettings(env, cards.SettingsSpec{
 		Title:  "SPRINT SETTINGS",
-		Key:    "ext:sprint:settings",
+		Key:    SettingsKey,
 		Glyph:  env.Theme.Glyphs.Settings,
-		Status: settingsFile,
+		Status: func() string { return "saved to the app configuration" },
 		Fields: settingRows(env),
-		Values: func() map[string]string { return Current().Values() },
+		Values: func() map[string]string {
+			if env.Settings == nil {
+				return map[string]string{}
+			}
+			return env.Settings()
+		},
 		Choices: func() map[string][]string {
-			c := Current()
 			out := map[string][]string{}
 			for _, role := range Roles {
-				out[role+".profile"] = profileChoices(env, c.Role(role).Profile)
+				out[roleKey(role, "profile")] = profileChoices(env)
 			}
 			return out
 		},
 		Apply: func(key, value string) tea.Cmd {
-			c := Current()
-			if err := c.Set(key, value); err != nil {
-				return wm.Notify(err.Error(), wm.Warn)
-			}
-			if err := Apply(env.Editor, c); err != nil {
-				return wm.Notify(err.Error(), wm.Error)
-			}
-			return nil
-		},
-		Init: func() tea.Cmd {
-			err := LoadError()
-			if err == nil || warned {
-				return nil
-			}
-			warned = true
-			return wm.Notify(err.Error(), wm.Warn)
+			return func() tea.Msg { return cards.SettingMsg{Key: key, Value: value, Quiet: true} }
 		},
 	})
 }
 
-// Fields of every role, then the team, the time limits and the general switches
+// Rows of the sheet, every registered setting under the group its key names, with labels and kinds fit for editing
 func settingRows(env *cards.Env) []cards.Field {
 	tokens := func(v float64) string { return render.Tokens(int(v)) }
-	c, d := Current(), Default()
 	var out []cards.Field
-	for _, role := range Roles {
-		defaults := "every tool"
-		if tools := DefaultTools(role); tools != nil {
-			defaults = strings.Join(tools, ", ")
+	for _, s := range Settings() {
+		rest := strings.TrimPrefix(s.Key, Name+".")
+		group, field, _ := strings.Cut(rest, ".")
+		if field == "" {
+			group, field = "general", group
 		}
-		out = append(out,
-			cards.Field{Key: role + ".profile", Label: "profile", Group: role, Kind: cards.FieldChoice, Choices: profileChoices(env, c.Role(role).Profile), Optional: true, Help: "Endpoint profile the role runs on, the default endpoint when empty"},
-			cards.Field{Key: role + ".model", Label: "model", Group: role, Kind: cards.FieldText, Optional: true, Placeholder: "profile default", Help: "Model on that profile, its default when empty"},
-			cards.Field{Key: role + ".max_tokens", Label: "max tokens", Group: role, Kind: cards.FieldNumber, Integer: true, Optional: true, Lo: 1, Step: 1024, Start: 8192, Unit: tokens, Help: "Output tokens one turn may produce, the app setting when unset"},
-			cards.Field{Key: role + ".max_rounds", Label: "max rounds", Group: role, Kind: cards.FieldNumber, Integer: true, Optional: true, Lo: 1, Step: 1, Start: 50, Help: "Tool rounds one run may take, the app setting when unset"},
-			cards.Field{Key: role + ".budget", Label: "budget", Group: role, Kind: cards.FieldNumber, Integer: true, Optional: true, Lo: 1000, Step: 10000, Start: 200000, Unit: tokens, Help: "Tokens the role may spend over one sprint across every turn, unlimited when unset"},
-			cards.Field{Key: role + ".append", Label: "append", Group: role, Kind: cards.FieldArea, Optional: true, Help: "Text added to the instructions of the role"},
-			cards.Field{Key: role + ".tools", Label: "tools", Group: role, Kind: cards.FieldText, Optional: true, Help: "Comma separated tools the role is offered, when empty it gets " + defaults},
-			cards.Field{Key: role + ".deny", Label: "deny", Group: role, Kind: cards.FieldText, Optional: true, Help: "Comma separated tools withheld beyond the defaults of the role"},
-		)
+		f := cards.Field{Key: s.Key, Label: strings.ReplaceAll(field, "_", " "), Group: group, Help: s.Help, Optional: true, Check: s.Check}
+		switch {
+		case len(s.Choices) > 0:
+			f.Kind, f.Choices = cards.FieldChoice, s.Choices
+		case s.Number():
+			f.Kind, f.Lo, f.Hi, f.Step, f.Integer = cards.FieldNumber, s.Lo, s.Hi, s.Step, s.Integer
+			f.Start = numberStart(s.Key)
+			if strings.HasSuffix(s.Key, "tokens") || strings.HasSuffix(s.Key, "budget") {
+				f.Unit = tokens
+			}
+		case strings.HasSuffix(field, "profile"):
+			f.Kind, f.Choices = cards.FieldChoice, profileChoices(env)
+		default:
+			f.Kind = cards.FieldText
+			f.Placeholder = placeholder(s.Key)
+		}
+		out = append(out, f)
 	}
-	out = append(out,
-		cards.Field{Key: "team.max_engineers", Label: "max engineers", Group: "team", Kind: cards.FieldNumber, Integer: true, Lo: 1, Step: 1, Start: float64(d.Team.MaxEngineers), Help: "Most engineers the team brings in, however many tickets there are"},
-		cards.Field{Key: "team.tickets_per_engineer", Label: "tickets per engineer", Group: "team", Kind: cards.FieldNumber, Lo: 0.25, Step: 0.25, Start: d.Team.TicketsPerEngineer, Help: "Tickets one engineer takes, the count of engineers following from it until the maximum"},
-		cards.Field{Key: "team.parallel", Label: "parallel", Group: "team", Kind: cards.FieldChoice, Choices: []string{"true", "false"}, Help: "Engineers work at the same time rather than one after another"},
-		cards.Field{Key: "team.max_rework", Label: "max rework", Group: "team", Kind: cards.FieldNumber, Integer: true, Lo: 0, Step: 1, Start: float64(d.Team.MaxRework), Help: "Times a ticket may be sent back to its engineer, by the direction of the lead or its review"},
-		cards.Field{Key: "team.max_tickets", Label: "max tickets", Group: "team", Kind: cards.FieldNumber, Integer: true, Lo: 1, Step: 1, Start: float64(d.Team.MaxTickets), Help: "Tickets the planner may cut a story into"},
-		cards.Field{Key: "limits.total", Label: "total", Group: "limits", Kind: cards.FieldText, Placeholder: "3h", Check: durationCheck("total"), Help: "Time the whole sprint may take before every run is stopped after its current turn and the sprint fails"},
-		cards.Field{Key: "limits.refine", Label: "refine", Group: "limits", Kind: cards.FieldText, Placeholder: "1h", Check: durationCheck("refine"), Help: "Time the project manager works on a run before it is told to wrap up, and the time it has to report at the end"},
-		cards.Field{Key: "limits.plan", Label: "plan", Group: "limits", Kind: cards.FieldText, Placeholder: "30m", Check: durationCheck("plan"), Help: "Time the planner works before it is told to wrap up and submit the tickets it has"},
-		cards.Field{Key: "limits.build", Label: "build", Group: "limits", Kind: cards.FieldText, Placeholder: "90m", Check: durationCheck("build"), Help: "Time the engineers work in a build round before they are told to finish and report"},
-		cards.Field{Key: "limits.review", Label: "review", Group: "limits", Kind: cards.FieldText, Placeholder: "30m", Check: durationCheck("review"), Help: "Time the lead works on one turn, the briefing, a direction or the review, before it is told to wrap up"},
-		cards.Field{Key: "interactive", Label: "interactive", Group: "general", Kind: cards.FieldChoice, Choices: []string{"true", "false"}, Help: "The project manager talks with the person, and a stalled stage waits for the person instead of failing the sprint"},
-	)
 	return out
 }
 
-// Default first, then every profile switched on, then the one set when it is neither
-func profileChoices(env *cards.Env, set string) []string {
+// Value a number slider starts at while unset
+func numberStart(key string) float64 {
+	d := Default()
+	switch {
+	case strings.HasSuffix(key, "max_tokens"):
+		return 8192
+	case strings.HasSuffix(key, "max_rounds"):
+		return 50
+	case strings.HasSuffix(key, "budget"):
+		return 200000
+	case strings.HasSuffix(key, "team.builders"):
+		return float64(d.Team.Builders)
+	case strings.HasSuffix(key, "team.max_rework"):
+		return float64(d.Team.MaxRework)
+	case strings.HasSuffix(key, "team.max_tickets"):
+		return float64(d.Team.MaxTickets)
+	case strings.HasSuffix(key, "arena.fps"):
+		return float64(d.Arena.FPS)
+	}
+	return 1
+}
+
+// Default shown in a text field while it is unset
+func placeholder(key string) string {
+	d := Default()
+	switch {
+	case strings.HasSuffix(key, "limits.total"):
+		return durationText(d.Limits.Total)
+	case strings.HasSuffix(key, "limits.brief"):
+		return durationText(d.Limits.Brief)
+	case strings.HasSuffix(key, "limits.plan"):
+		return durationText(d.Limits.Plan)
+	case strings.HasSuffix(key, "limits.build"):
+		return durationText(d.Limits.Build)
+	case strings.HasSuffix(key, "limits.review"):
+		return durationText(d.Limits.Review)
+	case strings.HasSuffix(key, ".model"):
+		return "profile default"
+	}
+	for _, role := range Roles {
+		switch key {
+		case Name + ".look." + string(role):
+			return looksText(d.Looks[role])
+		case Name + ".name." + string(role):
+			return strings.Join(d.Names[role], ", ")
+		}
+	}
+	return ""
+}
+
+// Default first, then every profile switched on
+func profileChoices(env *cards.Env) []string {
 	out := []string{""}
 	if env.Editor != nil {
 		for _, in := range env.Editor.Instances() {
@@ -100,36 +128,5 @@ func profileChoices(env *cards.Env, set string) []string {
 			}
 		}
 	}
-	if !contains(out, set) {
-		out = append(out, set)
-	}
 	return out
-}
-
-// Refuses text that is not a duration above 0, naming the limit in the reason
-func durationCheck(name string) func(string) error {
-	return func(v string) error {
-		if d, err := time.ParseDuration(v); err != nil || d <= 0 {
-			return fmt.Errorf("%s must be a duration above 0 such as 30m, got %q", name, v)
-		}
-		return nil
-	}
-}
-
-// Where the settings live with the home directory as a tilde, or why that cannot be found
-func settingsFile() string {
-	path, err := Path()
-	if err != nil {
-		return err.Error()
-	}
-	return tildeHome(path)
-}
-
-// Path with the home directory written as a tilde when it lies under it
-func tildeHome(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" || !strings.HasPrefix(path, home+string(filepath.Separator)) {
-		return path
-	}
-	return "~" + strings.TrimPrefix(path, home)
 }

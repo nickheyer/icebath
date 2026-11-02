@@ -203,7 +203,7 @@ var registry = func() []Action {
 		act("session.scroll.end", Session, "follow", "scroll to the end of the transcript and follow new output", "alt+g", "ctrl+end"),
 		act("session.expand", Session, "expand all", "expand all tool results", "alt+e"),
 		act("session.collapse", Session, "collapse all", "collapse all tool results", "alt+shift+e"),
-		act("session.thinking", Session, "thinking", "show or hide thinking output", "alt+t"),
+		act("session.thinking", Session, "auto-expand thinking", "open thinking blocks as they arrive, or leave them folded until opened", "alt+t"),
 		act("session.toggle", Session, "expand", "expand or collapse the transcript block under the cursor", "alt+o"),
 		quiet(act("session.block.next", Session, "next block", "move the transcript cursor to the next block", "alt+>")),
 		quiet(act("session.block.prev", Session, "previous block", "move the transcript cursor to the previous block", "alt+<")),
@@ -304,7 +304,7 @@ var registry = func() []Action {
 		act("transcript.toggle", Transcript, "expand", "expand or collapse the block under the cursor", "enter", "o"),
 		act("transcript.expand", Transcript, "expand all", "expand all tool results", "e"),
 		act("transcript.collapse", Transcript, "collapse all", "collapse all tool results", "E"),
-		act("transcript.thinking", Transcript, "thinking", "show or hide thinking output", "T"),
+		act("transcript.thinking", Transcript, "auto-expand thinking", "open thinking blocks as they arrive, or leave them folded until opened", "T"),
 		act("transcript.follow", Transcript, "follow", "pause or resume scrolling with new output", "f"),
 
 		act("approval.allow", Approval, "allow", "approve the request", "y"),

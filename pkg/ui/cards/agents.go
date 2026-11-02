@@ -254,14 +254,14 @@ type Agent struct {
 	h     int
 }
 
-// Builds the card for a child run with what it said so far, thinking included when the session shows it
-func NewAgent(env *Env, run *harness.Run, thinking bool) *Agent {
+// Builds the card for a child run with what it said so far, thinking opened when the session opens it
+func NewAgent(env *Env, run *harness.Run, expand bool) *Agent {
 	root := run.Parent
 	if root == "" {
 		root = run.ID
 	}
 	tr := NewChildTranscript(env, root, run.Name)
-	tr.ShowThinking(thinking)
+	tr.ExpandThinking(expand)
 	if run.Session != nil {
 		tr.Load(run.Session.Entries(), run.Session.Records())
 	}
@@ -271,12 +271,12 @@ func NewAgent(env *Env, run *harness.Run, thinking bool) *Agent {
 // Run the card follows
 func (a *Agent) Run() *harness.Run { return a.run }
 
-// Loads the transcript again with or without thinking when the session it serves changed its mind
+// Loads the transcript again with thinking opened or folded when the session it serves changed its mind
 func (a *Agent) Rethink(on bool) {
-	if on == a.tr.Thinking() {
+	if on == a.tr.ExpandsThinking() {
 		return
 	}
-	a.tr.ShowThinking(on)
+	a.tr.ExpandThinking(on)
 	if a.run.Session != nil {
 		a.tr.Load(a.run.Session.Entries(), a.run.Session.Records())
 	}

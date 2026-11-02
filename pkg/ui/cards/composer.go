@@ -90,6 +90,7 @@ type Composer struct {
 	button      sendButton
 	cut         int
 	ask         *asking
+	width       int
 	SessionID   string
 	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
 	Volatile func() bool
@@ -262,7 +263,7 @@ func (c *Composer) Height() int {
 		rows += min(len(c.comp.items), popupRows)
 	}
 	if c.ask != nil {
-		rows += c.ask.rows()
+		rows += len(c.ask.layout(c.width, c.theme))
 	}
 	return rows
 }
@@ -772,6 +773,7 @@ func (c *Composer) placeholder(w int) string {
 
 // Fits the input beside the send button at width w, wrapping the text there so the height reads true
 func (c *Composer) Fit(w int) int {
+	c.width = w
 	bw := ansi.StringWidth(c.buttonLabel())
 	iw := w
 	c.button = sendButton{}
@@ -784,7 +786,8 @@ func (c *Composer) Fit(w int) int {
 }
 
 func (c *Composer) View(w, h int) string {
-	popup := append(c.questionRows(w), c.popup(w)...)
+	pop := c.popup(w)
+	popup := append(c.askRows(w, max(h-minInputRows-len(pop), 1)), pop...)
 	rows := max(h-len(popup), 1)
 	button := c.buttonLabel()
 	iw := c.Fit(w)
@@ -890,7 +893,7 @@ func (c *Composer) Cursor() *tea.Cursor {
 		cur.Y += min(len(c.comp.items), popupRows)
 	}
 	if c.ask != nil {
-		cur.Y += c.ask.rows()
+		cur.Y += len(c.ask.shown)
 	}
 	return cur
 }

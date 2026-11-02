@@ -1,6 +1,8 @@
 package cards
 
 import (
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -10,7 +12,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
+
+// Narrowest width the question block wraps at
+const askMinWidth = 24
+
+// Columns the question text and the choices stand in from the left edge
+const askIndent = 3
 
 // Questions of one ask as the prompt walks the person through them, one at a time
 type asking struct {
@@ -20,6 +29,18 @@ type asking struct {
 	idx     int
 	marked  []bool
 	answers []harness.Answer
+	// First row of the block in view, moved only as far as keeps the highlighted choice in view
+	top int
+	// Rows in view since the last paint, each naming the choice it belongs to
+	shown []askRow
+}
+
+// One row of the question block, the choice it belongs to or -1 for the question and the padding
+type askRow struct {
+	text   string
+	choice int
+	// Row carrying the label of its choice rather than its description
+	label bool
 }
 
 // Question the person is on
@@ -28,14 +49,11 @@ func (a *asking) q() harness.Question { return a.qs[a.at] }
 // Index of the row standing for an answer typed instead of picked
 func (a *asking) other() int { return len(a.q().Choices) }
 
-// Rows the question block takes, the question line, one per choice and the typed answer row
-func (a *asking) rows() int { return 2 + len(a.q().Choices) }
-
 // Moves to the next question, false once every question is answered
 func (a *asking) advance(ans harness.Answer) bool {
 	a.answers = append(a.answers, ans)
 	a.at++
-	a.idx = 0
+	a.idx, a.top = 0, 0
 	if a.at >= len(a.qs) {
 		return false
 	}
@@ -56,6 +74,71 @@ func (a *asking) picked() []string {
 		out = append(out, q.Choices[a.idx].Label)
 	}
 	return out
+}
+
+// Rows of the question on show at width w, its text wrapped, then every choice with its description beneath
+func (a *asking) layout(w int, t theme.Theme) []askRow {
+	w = max(w, askMinWidth)
+	q := a.q()
+	plain := lipgloss.NewStyle().Foreground(t.Text)
+	lead := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	count := ""
+	if len(a.qs) > 1 {
+		count = strconv.Itoa(a.at+1) + " of " + strconv.Itoa(len(a.qs))
+	}
+	room := w - askIndent
+	if count != "" {
+		room -= ansi.StringWidth(count) + 2
+	}
+	text := wrapLines(strings.TrimSpace(q.Text), max(room, 8))
+	head := " " + lead.Render(t.Glyphs.Ask) + " "
+	if h := strings.TrimSpace(q.Header); h != "" {
+		head += lead.Render(h)
+	} else {
+		head += plain.Render(text[0])
+		text = text[1:]
+	}
+	if count != "" {
+		head = render.Fit(head, w-ansi.StringWidth(count)-1, t) + render.Dim(count, t)
+	}
+	pad := strings.Repeat(" ", askIndent)
+	rows := []askRow{{choice: -1}, {text: head, choice: -1}}
+	for _, l := range text {
+		rows = append(rows, askRow{text: pad + plain.Render(l), choice: -1})
+	}
+	rows = append(rows, askRow{choice: -1})
+	n := a.other() + 1
+	numW := len(strconv.Itoa(n))
+	markW := 0
+	if q.Multi {
+		markW = 2
+	}
+	indent := askIndent + markW + numW + 1
+	body := strings.Repeat(" ", indent)
+	for i := range n {
+		label, desc := "Other", "type your answer below"
+		if i < a.other() {
+			label, desc = q.Choices[i].Label, q.Choices[i].Description
+		}
+		mark := strings.Repeat(" ", markW)
+		if q.Multi && i < a.other() {
+			mark = t.Glyphs.Todo + " "
+			if a.marked[i] {
+				mark = t.Glyphs.Done + " "
+			}
+		}
+		lines := wrapLines(strings.TrimSpace(label), max(w-indent-1, 8))
+		rows = append(rows, askRow{text: pad + mark + render.Dim(fmt.Sprintf("%*d", numW, i+1), t) + " " + plain.Render(lines[0]), choice: i, label: true})
+		for _, l := range lines[1:] {
+			rows = append(rows, askRow{text: body + plain.Render(l), choice: i, label: true})
+		}
+		for _, l := range wrapLines(strings.TrimSpace(desc), max(w-indent-1, 8)) {
+			if l != "" {
+				rows = append(rows, askRow{text: body + render.Dim(l, t), choice: i})
+			}
+		}
+	}
+	return append(rows, askRow{choice: -1})
 }
 
 // Shows the questions of an ask in the prompt, nil clearing them, the ask already shown left as it stands
@@ -150,13 +233,13 @@ func (c *Composer) settle(ans harness.Answer) tea.Cmd {
 	return tea.Batch(cmd, func() tea.Msg { return ReplyMsg{ID: id, Answers: answers} })
 }
 
-// Takes a click on a question row, picking or marking the choice there, reporting whether a row was hit
+// Takes a click on a row in view, picking or marking the choice there, reporting whether one was hit
 func (c *Composer) questionClick(y int) (tea.Cmd, bool) {
 	a := c.ask
-	if a == nil || y < 1 || y >= a.rows() {
+	if a == nil || y < 0 || y >= len(a.shown) || a.shown[y].choice < 0 {
 		return nil, false
 	}
-	a.idx = y - 1
+	a.idx = a.shown[y].choice
 	if a.idx >= a.other() {
 		return nil, true
 	}
@@ -167,52 +250,49 @@ func (c *Composer) questionClick(y int) (tea.Cmd, bool) {
 	return c.answerQuestion(), true
 }
 
-// Question block above the input, the question then every choice with the highlighted one lit
-func (c *Composer) questionRows(w int) []string {
+// Rows of the question block in view at width w within room rows, the highlighted choice kept in view
+func (c *Composer) askRows(w, room int) []string {
 	a := c.ask
 	if a == nil {
 		return nil
 	}
 	t := c.theme
-	q := a.q()
-	head := lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(t.Glyphs.Flag + " ")
-	if q.Header != "" {
-		head += lipgloss.NewStyle().Foreground(t.TextDim).Render(q.Header+" "+t.Glyphs.Sep) + " "
-	}
-	count := ""
-	if len(a.qs) > 1 {
-		count = render.Dim(strconv.Itoa(a.at+1)+"/"+strconv.Itoa(len(a.qs)), t)
-	}
-	room := max(w-ansi.StringWidth(count)-1, 1)
-	first := render.Fit(head+lipgloss.NewStyle().Foreground(t.Text).Render(q.Text), room, t)
-	if count != "" {
-		first += " " + count
-	}
-	rows := []string{first}
-	for i := 0; i <= a.other(); i++ {
-		label, desc := "Other", "type your own answer below"
-		if i < a.other() {
-			label, desc = q.Choices[i].Label, q.Choices[i].Description
+	rows := a.layout(w, t)
+	cur := 0
+	for i, r := range rows {
+		if r.choice == a.idx && r.label {
+			cur = i
+			break
 		}
-		mark := "  "
-		if q.Multi && i < a.other() {
-			mark = t.Glyphs.Todo + " "
-			if a.marked[i] {
-				mark = t.Glyphs.Done + " "
-			}
-		}
-		line := " " + mark + strconv.Itoa(i+1) + " " + label
-		if desc != "" {
-			line = render.Fit(line, min(max(ansi.StringWidth(line)+1, 18), w), t) + render.Dim(desc, t)
-		}
-		st := lipgloss.NewStyle().Foreground(t.Text)
-		if i == a.idx {
-			st = lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
-			line = ansi.Strip(line)
-		}
-		rows = append(rows, st.Render(render.Fit(line, w, t)))
 	}
-	return rows
+	top := 0
+	shown := rows
+	if len(rows) > room {
+		top = cur
+		if room > 2 {
+			top = min(max(a.top, cur-room+2), cur-1)
+			top = max(0, min(top, len(rows)-room))
+		}
+		shown = slices.Clone(rows[top:min(top+room, len(rows))])
+		more := askRow{text: strings.Repeat(" ", askIndent) + render.Dim(t.Glyphs.Ellipsis, t), choice: -1}
+		if top > 0 && room > 2 {
+			shown[0] = more
+		}
+		if top+room < len(rows) && room > 2 {
+			shown[len(shown)-1] = more
+		}
+	}
+	a.top, a.shown = top, shown
+	lit := lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
+	out := make([]string, len(shown))
+	for i, r := range shown {
+		if r.choice == a.idx && r.label {
+			out[i] = lit.Render(render.Fit(ansi.Strip(r.text), w, t))
+			continue
+		}
+		out[i] = render.Fit(r.text, w, t)
+	}
+	return out
 }
 
 // Dim invitation shown in the empty input while a question waits
@@ -222,9 +302,9 @@ func (c *Composer) questionPlaceholder(w int) string {
 	if c.focused {
 		prompt = t.Accent
 	}
-	hint := "pick with " + c.keys.Display("question.up") + " " + c.keys.Display("question.down") + " and " + c.keys.Display("question.pick") + ", or type your own answer"
+	hint := c.keys.Display("question.pick") + " answers, or type your own"
 	if c.AskingMulti() {
-		hint = "mark with " + c.keys.Display("question.toggle") + ", answer with " + c.keys.Display("question.pick") + ", or type your own answer"
+		hint = c.keys.Display("question.toggle") + " marks, " + hint
 	}
 	line := lipgloss.NewStyle().Foreground(prompt).Render(c.ta.Prompt) + lipgloss.NewStyle().Foreground(t.TextDim).Render(hint)
 	return render.Fit(line, w, t)

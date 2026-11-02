@@ -204,6 +204,11 @@ type ThinkingMsg struct {
 	Session string
 }
 
+// Session whose thinking was just shown or hidden, so every card holding it loads its transcript again
+type ThinkingChangedMsg struct {
+	Session string
+}
+
 // Shell line typed with a leading bang, to run in the terminal window beside the session
 type RunMsg struct {
 	Session string

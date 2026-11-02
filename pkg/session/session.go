@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/prompt"
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
 
@@ -364,9 +365,6 @@ func (s *Session) Head(keep int) []Entry {
 	return copyEntries(s.entries[:s.cut(keep)])
 }
 
-// Assistant turn written after a summary so the kept tail still follows an assistant message
-const Ack = "Understood. I have the summary of the earlier conversation and will continue from here."
-
 // Replaces everything before the last keep messages with a summary ahead of a user turn and resets Last
 func (s *Session) Compact(summary string, keep int) error {
 	if summary == "" {
@@ -379,7 +377,7 @@ func (s *Session) Compact(summary string, keep int) error {
 	head := []Entry{{Seq: s.next, Time: now, Message: protocol.Message{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: summary}}}}}
 	s.next++
 	if cut < len(s.entries) {
-		head = append(head, Entry{Seq: s.next, Time: now, Message: protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.Text{Text: Ack}}}})
+		head = append(head, Entry{Seq: s.next, Time: now, Message: protocol.Message{Role: protocol.RoleAssistant, Content: []protocol.Part{protocol.Text{Text: prompt.Ack}}}})
 		s.next++
 	}
 	s.entries = append(head, s.entries[cut:]...)

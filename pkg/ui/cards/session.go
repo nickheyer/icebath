@@ -31,7 +31,7 @@ type Session struct {
 func NewSession(env *Env, live *harness.Live, dir string) *Session {
 	s := &Session{env: env, live: live}
 	s.Transcript = NewTranscript(env)
-	s.Transcript.ShowThinking(live.ShowsThinking())
+	s.Transcript.ExpandThinking(live.ExpandsThinking())
 	s.Transcript.Load(live.Session.Entries(), live.Session.Records())
 	base := func() string {
 		if dir, err := env.Files.Resolve("."); err == nil {
@@ -86,10 +86,10 @@ func (s *Session) Reload() {
 	s.Transcript.Load(s.live.Session.Entries(), s.live.Session.Records())
 }
 
-// Loads the transcript again with or without thinking when the session changed its mind
+// Loads the transcript again with thinking opened or folded when the session changed its mind
 func (s *Session) Rethink() {
-	if on := s.live.ShowsThinking(); on != s.Transcript.Thinking() {
-		s.Transcript.ShowThinking(on)
+	if on := s.live.ExpandsThinking(); on != s.Transcript.ExpandsThinking() {
+		s.Transcript.ExpandThinking(on)
 		s.Reload()
 	}
 }
@@ -99,7 +99,7 @@ func (s *Session) Rebind(live *harness.Live) {
 	s.live = live
 	s.Composer.Bind(live.Session.ID())
 	s.Composer.SetQuestion(s.question())
-	s.Transcript.ShowThinking(live.ShowsThinking())
+	s.Transcript.ExpandThinking(live.ExpandsThinking())
 	s.Reload()
 }
 
@@ -290,6 +290,9 @@ func (s *Session) View(w, h int) string {
 	s.Composer.SetBusy(s.busy())
 	s.Composer.Fit(w)
 	ch := min(s.Composer.Height(), max(h-3, 1))
+	if s.Composer.Asking() {
+		ch = min(ch, max(h*2/3, 6))
+	}
 	th := max(h-ch-1, 0)
 	s.split = th
 	var sb strings.Builder

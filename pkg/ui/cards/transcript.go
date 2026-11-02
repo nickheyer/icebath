@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/mission"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/prompt"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/tool/files"
@@ -197,9 +198,9 @@ type Transcript struct {
 	streaming bool
 	running   int
 	dirty     bool
-	// Loads thinking from the session, every thinking block left out while off
-	thinking bool
-	turns    int
+	// Opens each thinking block as it arrives, every block folded until opened while off
+	expand bool
+	turns  int
 	// Blocks the last layout left with lines from an earlier state, rendered a few per frame
 	stale int
 	// Whether the view was drawn since the last frame, so only a card on the stage asks for the next
@@ -238,7 +239,7 @@ type match struct {
 
 // Builds the transcript of the root lineage
 func NewTranscript(env *Env) *Transcript {
-	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, follow: true, cursor: -1, current: -1, held: -1, rootOnly: true, thinking: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}, toggleKey: "session.toggle", shown: anim.NewValueWith(0, anim.Snappy), timer: ticker{every: transcriptTickEvery}}
+	return &Transcript{env: env, name: "TRACE", key: "trace", turn: map[int]*block{}, tools: map[string]*block{}, follow: true, cursor: -1, current: -1, held: -1, rootOnly: true, pages: [2]string{"session.scroll.up", "session.scroll.down"}, toggleKey: "session.toggle", shown: anim.NewValueWith(0, anim.Snappy), timer: ticker{every: transcriptTickEvery}}
 }
 
 // Builds a transcript that follows one child agent of a run
@@ -818,9 +819,6 @@ func (tr *Transcript) model(ev agent.Event) {
 	}
 	at, j := -1, 0
 	for i, p := range resp.Content {
-		if !tr.keeps(p) {
-			continue
-		}
 		if i == ev.Model.Index {
 			at = j
 		}
@@ -838,7 +836,7 @@ func (tr *Transcript) model(ev agent.Event) {
 			}
 		case protocol.Thinking:
 			if !ok {
-				b = tr.add(&block{kind: bThinking, agent: ev.Agent, round: ev.Round, at: ev.Time, started: ev.Time, expanded: true})
+				b = tr.add(&block{kind: bThinking, agent: ev.Agent, round: ev.Round, at: ev.Time, started: ev.Time, expanded: tr.expand})
 				tr.turn[j] = b
 			}
 			text := v.Text
@@ -898,12 +896,6 @@ func (tr *Transcript) model(ev agent.Event) {
 	}
 }
 
-// Reports whether a part of a streaming turn gets a block, thinking only while it is shown
-func (tr *Transcript) keeps(p protocol.Part) bool {
-	_, thinking := p.(protocol.Thinking)
-	return tr.thinking || !thinking
-}
-
 // Kind of block a part of a streaming turn gets, negative for a part that gets none
 func kindOf(p protocol.Part) blockKind {
 	switch p.(type) {
@@ -921,9 +913,6 @@ func kindOf(p protocol.Part) blockKind {
 func (tr *Transcript) misaligned(parts []protocol.Part) bool {
 	j := 0
 	for _, p := range parts {
-		if !tr.keeps(p) {
-			continue
-		}
 		if b, ok := tr.turn[j]; ok && b.kind != kindOf(p) {
 			return true
 		}
@@ -1063,19 +1052,16 @@ func (tr *Transcript) loadEntry(e session.Entry) {
 		for _, p := range e.Content {
 			switch v := p.(type) {
 			case protocol.Text:
-				if v.Text == session.Ack {
+				if v.Text == prompt.Ack {
 					continue
 				}
 				tr.add(&block{kind: bText, agent: e.Agent, model: e.Model, at: e.Time, text: v.Text, cites: v.Citations, done: true})
 			case protocol.Thinking:
-				if !tr.thinking {
-					continue
-				}
 				text := v.Text
 				if v.Redacted && text == "" {
 					text = "[redacted]"
 				}
-				tr.add(&block{kind: bThinking, agent: e.Agent, at: e.Time, text: text, done: true, expanded: true})
+				tr.add(&block{kind: bThinking, agent: e.Agent, at: e.Time, text: text, done: true, expanded: tr.expand})
 			case protocol.ToolCall:
 				b := tr.add(&block{kind: bTool, agent: e.Agent, at: e.Time, call: v, started: e.Time})
 				if v.ID != "" {
@@ -1432,7 +1418,7 @@ func (tr *Transcript) renderBlock(i int, b *block, width int, key renderKey) {
 			head += " " + render.Dim(render.Spinner(tr.tick, t), t)
 		}
 		lines = append(lines, mark+head)
-		if b.expanded || !b.done {
+		if b.expanded {
 			lines = append(lines, tr.thoughtLines(b, body)...)
 		}
 	case bTool:
@@ -2179,11 +2165,11 @@ func (tr *Transcript) Following() bool { return tr.follow }
 // Reports whether a turn is streaming or a tool is running
 func (tr *Transcript) Busy() bool { return tr.streaming || tr.running > 0 }
 
-// Loads thinking from the session from now on or leaves it out, in force from the next load
-func (tr *Transcript) ShowThinking(on bool) { tr.thinking = on }
+// Opens every thinking block as it arrives from now on or leaves each folded, in force from the next load
+func (tr *Transcript) ExpandThinking(on bool) { tr.expand = on }
 
-// Reports whether thinking is loaded from the session
-func (tr *Transcript) Thinking() bool { return tr.thinking }
+// Reports whether thinking blocks open as they arrive
+func (tr *Transcript) ExpandsThinking() bool { return tr.expand }
 
 // Expands or folds every tool result
 func (tr *Transcript) ExpandAll(on bool) { tr.expandAll(on) }

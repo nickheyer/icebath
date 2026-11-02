@@ -51,16 +51,16 @@ type board struct {
 func newBoard(env *cards.Env) wm.Card {
 	b := &board{env: env}
 	b.List = cards.NewList(env, cards.ListSpec{
-		Title:   "SPRINT",
+		Title:   "SPRINTS",
 		Glyph:   env.Theme.Glyphs.Plan,
-		Key:     "ext:sprint:board",
-		Context: Context,
-		Primary: ActionOpen,
-		Columns: []render.Column{{Title: "KIND", Max: 10}, {Title: "NAME", Max: 28}, {Title: "STATE", Max: 14}, {Title: "DETAIL", Flex: 1}},
+		Key:     BoardKey,
+		Context: ContextBoard,
+		Primary: BoardOpen,
+		Columns: []render.Column{{Title: "KIND", Max: 10}, {Title: "NAME", Max: 30}, {Title: "STATE", Max: 16}, {Title: "DETAIL", Flex: 1}},
 		Rows:    b.rows,
 		Detail:  b.detail,
-		Actions: map[string]func(*cards.List, int) tea.Cmd{ActionOpen: b.open, ActionStop: b.stop, ActionResume: b.resume, ActionSettings: b.settings},
-		Free:    map[string]bool{ActionSettings: true},
+		Actions: map[string]func(*cards.List, int) tea.Cmd{BoardOpen: b.open, BoardArena: b.arena, BoardStop: b.stop, BoardPause: b.pause, BoardResume: b.resume, BoardForget: b.forget, BoardSettings: b.settings},
+		Free:    map[string]bool{BoardSettings: true, BoardArena: true},
 		Hints:   b.hints,
 		Empty:   func() string { return "no sprint yet, run /" + Name + " <request> to start one" },
 	})
@@ -74,10 +74,10 @@ func (b *board) Init() tea.Cmd {
 	return b.tick()
 }
 
-// Refreshes on harness traffic and ticks, handing everything else to the table
+// Refreshes on sprint changes, harness traffic and ticks, handing everything else to the table
 func (b *board) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
-	case harness.EventMsg, harness.FlowDoneMsg, harness.NoticeMsg, harness.OpenedMsg:
+	case ChangedMsg, harness.FlowDoneMsg, harness.NoticeMsg, harness.RunDoneMsg:
 		b.Refresh()
 		return b, b.tick()
 	case boardTickMsg:
@@ -129,13 +129,12 @@ func (b *board) rows() [][]string {
 	b.snaps = Sprints()
 	b.refs = b.refs[:0]
 	busy := b.busy()
-	total := time.Duration(Current().Limits.Total)
 	var out [][]string
 	for si, s := range b.snaps {
 		done, n := s.Progress()
-		detail := span(s.Elapsed()) + " of " + span(total) + sep + fmt.Sprintf("%d/%d tickets", done, n)
+		detail := render.Elapsed(s.Elapsed()) + sep + fmt.Sprintf("%d/%d tickets", done, n)
 		if s.Status != "" {
-			detail = s.Status + sep + detail
+			detail = render.Truncate(s.Status, 60, t) + sep + detail
 		}
 		state := b.stage(s.Stage)
 		switch {
@@ -154,17 +153,24 @@ func (b *board) rows() [][]string {
 			case s.Running() && s.Waiting == m.Name:
 				state = render.Warm("waiting for you", t)
 			}
-			out = append(out, []string{m.Role, m.Name, state, sessionName(m.Live)})
+			detail := m.Task
+			if detail == "" {
+				detail = sessionName(m.Live)
+			}
+			out = append(out, []string{string(m.Role), m.Name, state, detail})
 			b.refs = append(b.refs, rowRef{kind: rowMember, snap: si, index: mi})
 		}
 		for ti, tk := range s.Tickets {
 			var parts []string
-			for _, p := range []string{tk.Engineer, tk.Estimate} {
+			for _, p := range []string{tk.Builder, tk.Size} {
 				if p != "" {
 					parts = append(parts, p)
 				}
 			}
-			out = append(out, []string{"ticket", render.Truncate(tk.ID+" "+tk.Title, 28, t), b.ticketState(tk.Status), strings.Join(parts, sep)})
+			if tk.Round > 0 {
+				parts = append(parts, fmt.Sprintf("sent back %d", tk.Round))
+			}
+			out = append(out, []string{"ticket", render.Truncate(tk.ID+" "+tk.Title, 30, t), b.ticketState(tk.Status), strings.Join(parts, sep)})
 			b.refs = append(b.refs, rowRef{kind: rowTicket, snap: si, index: ti})
 		}
 	}
@@ -202,12 +208,12 @@ func (b *board) ticketState(s TicketStatus) string {
 	t := b.env.Theme
 	switch s {
 	case TicketActive:
+		return render.Warm(string(s), t)
+	case TicketReview:
 		return render.Cool(string(s), t)
 	case TicketDone:
 		return render.Good(string(s), t)
-	case TicketRework, TicketReported:
-		return render.Warm(string(s), t)
-	case TicketFailed:
+	case TicketFailed, TicketBlocked:
 		return render.Bad(string(s), t)
 	}
 	return render.Dim(string(s), t)
@@ -231,7 +237,7 @@ func (b *board) detail(i int) []string {
 	t := b.env.Theme
 	var out []string
 	add := func(key, value string) {
-		if value == "" {
+		if strings.TrimSpace(value) == "" {
 			return
 		}
 		lines := strings.Split(strings.TrimRight(value, "\n"), "\n")
@@ -240,27 +246,31 @@ func (b *board) detail(i int) []string {
 	}
 	switch r.kind {
 	case rowSprint:
-		add("prompt", s.Prompt)
-		add("objective", s.Objective.Objective)
-		for _, a := range s.Objective.Acceptance {
+		add("request", s.Request)
+		add("objective", s.Brief.Objective)
+		for _, a := range s.Brief.Acceptance {
 			add("acceptance", a)
 		}
-		for _, c := range s.Objective.Constraints {
+		for _, c := range s.Brief.Constraints {
 			add("constraint", c)
 		}
-		add("notes", s.Objective.Notes)
-		add("story", s.Story.Title)
-		add("story summary", s.Story.Summary)
-		add("size", s.Story.Size)
-		add("briefing", s.Briefing)
-		add("review round", strconv.Itoa(s.Round))
-		add("summary", s.Summary)
+		for _, o := range s.Brief.Untouched {
+			add("leave alone", o)
+		}
+		add("notes", s.Brief.Notes)
+		add("plan", s.Plan.Title)
+		add("summary", s.Plan.Summary)
+		add("approach", s.Plan.Approach)
+		for _, risk := range s.Plan.Risks {
+			add("risk", risk)
+		}
+		add("report", s.Summary)
 		if s.Running() && s.Paused != "" {
 			add("paused", s.Paused)
-			add("resume", "press r to resume, or x to stop the sprint")
+			add("resume", "press p to resume, or x to stop the sprint")
 		}
 		if s.Running() && s.Waiting != "" {
-			add("waiting", "answer "+s.Waiting+" in its session, or press r to resume")
+			add("waiting", "answer "+s.Waiting+" in the arena")
 		}
 		if s.Err != nil && !s.Stopped() {
 			add("error", s.Err.Error())
@@ -270,26 +280,25 @@ func (b *board) detail(i int) []string {
 		}
 	case rowMember:
 		m := s.Members[r.index]
-		add("role", m.Role)
-		if m.Live != nil && m.Live.Session != nil {
-			add("session", m.Live.Session.ID())
+		add("role", string(m.Role))
+		add("session", m.SessionID())
+		add("task", m.Task)
+		if n := s.Spent[m.Name]; n > 0 {
+			add("spent", render.Tokens(n)+" tokens")
 		}
-		if !m.Started.IsZero() {
-			add("started", m.Started.Local().Format("15:04:05"))
+		if !m.Joined.IsZero() {
+			add("joined", m.Joined.Local().Format("15:04:05"))
 		}
 	case rowTicket:
 		tk := s.Tickets[r.index]
 		add("description", tk.Description)
 		add("files", strings.Join(tk.Files, ", "))
 		add("depends on", strings.Join(tk.DependsOn, ", "))
-		add("engineer", tk.Engineer)
-		if tk.Round > 0 {
-			add("sent back", strconv.Itoa(tk.Round))
-		}
+		add("builder", tk.Builder)
 		for n, note := range tk.Notes {
-			add("lead note "+strconv.Itoa(n+1), note)
+			add("reviewer note "+strconv.Itoa(n+1), note)
 		}
-		add("report", tk.Report)
+		add("handoff", tk.Report)
 		add("error", tk.Err)
 	}
 	return out
@@ -306,10 +315,19 @@ func (b *board) open(l *cards.List, i int) tea.Cmd {
 	}
 	m := s.Members[r.index]
 	if m.Live == nil || b.env.Editor == nil || b.env.Editor.LiveOf(m.Live.Session) == nil {
-		return wm.Notify("the session of "+m.Name+" is closed, a fresh one opens when the sprint needs it", wm.Info)
+		return wm.Notify("the session of "+m.Name+" is closed", wm.Info)
 	}
 	live, flow := m.Live, s.ID
 	return func() tea.Msg { return harness.OpenedMsg{Live: live, Flow: flow} }
+}
+
+// Shows the sprint of the row in the arena
+func (b *board) arena(l *cards.List, i int) tea.Cmd {
+	open := func() tea.Msg { return cards.OpenPanelMsg{Key: ArenaKey} }
+	if _, s, ok := b.ref(i); ok {
+		return tea.Sequence(open, func() tea.Msg { return ShowMsg{ID: s.ID} })
+	}
+	return open
 }
 
 // Cancels the workflow of the sprint the row belongs to, saying so when it has ended already
@@ -331,60 +349,99 @@ func (b *board) stop(l *cards.List, i int) tea.Cmd {
 	return wm.Notify("stopping "+s.ID+", press r to restart it later", wm.Warn)
 }
 
-// Resumes a paused sprint, or restarts one that ended short of done at the stage it was in
+// Pauses the sprint of the row before its next step, or resumes it when paused
+func (b *board) pause(l *cards.List, i int) tea.Cmd {
+	_, snap, ok := b.ref(i)
+	if !ok {
+		return nil
+	}
+	s := sprintByID(snap.ID)
+	switch {
+	case s == nil:
+		return wm.Notify(snap.ID+" was started by another process and cannot be driven from here", wm.Warn)
+	case !snap.Running():
+		return wm.Notify(snap.ID+" is not running", wm.Info)
+	case snap.Paused != "" && s.Resume():
+		l.Refresh()
+		return wm.Notify(snap.ID+" resumes", wm.Success)
+	case s.Pause():
+		l.Refresh()
+		return wm.Notify(snap.ID+" pauses before its next step", wm.Warn)
+	}
+	return nil
+}
+
+// Restarts a sprint that ended short of done at the stage it was in
 func (b *board) resume(l *cards.List, i int) tea.Cmd {
 	_, snap, ok := b.ref(i)
 	if !ok {
 		return nil
 	}
 	s := sprintByID(snap.ID)
-	if s == nil {
-		return wm.Notify(snap.ID+" was started by another process and cannot be driven from here", wm.Warn)
-	}
 	switch {
-	case snap.Running() && s.Resume():
-		l.Refresh()
-		return wm.Notify(snap.ID+" resumes", wm.Success)
+	case s == nil:
+		return wm.Notify(snap.ID+" was started by another process and cannot be driven from here", wm.Warn)
+	case snap.Running() && snap.Paused != "":
+		return b.pause(l, i)
 	case snap.Running():
-		return wm.Notify(snap.ID+" is running, nothing to resume", wm.Info)
+		return wm.Notify(snap.ID+" is running", wm.Info)
 	case !snap.Restartable():
 		return wm.Notify(snap.ID+" is done, start another with /"+Name+" <request>", wm.Info)
 	case b.env.Editor == nil || b.env.Editor.Flows == nil:
 		return wm.Notify("cannot restart "+snap.ID+", the app runs no workflows", wm.Error)
 	}
-	if err := restart(b.env.Ctx, b.env.Editor, s); err != nil {
+	if _, err := b.env.Editor.Flows.Restart(b.env.Ctx, snap.ID, workflow(), nil, snap.Request); err != nil {
 		return wm.Notify(err.Error(), wm.Error)
 	}
 	l.Refresh()
 	return wm.Notify(fmt.Sprintf("%s restarts at the %s stage", snap.ID, restartStage(snap)), wm.Success)
 }
 
-// Legend of the row under the cursor, the keys that apply to the sprint in its state
-func (b *board) hints(_ *cards.List, i int) []wm.Hint {
-	out := []wm.Hint{{Action: ActionSettings}}
-	r, s, ok := b.ref(i)
+// Forgets an ended sprint, closing and storing the sessions of its team
+func (b *board) forget(l *cards.List, i int) tea.Cmd {
+	_, snap, ok := b.ref(i)
 	if !ok {
-		return out
+		return nil
 	}
-	open := wm.Hint{Action: ActionOpen, Label: "details"}
-	if r.kind == rowMember {
-		open.Label = "open session"
+	if snap.Running() {
+		return wm.Notify(snap.ID+" is running, stop it first", wm.Warn)
 	}
-	out = append([]wm.Hint{open}, out...)
-	switch {
-	case s.Running() && (s.Paused != "" || s.Waiting != ""):
-		out = append(out, wm.Hint{Action: ActionResume, Label: "resume"}, wm.Hint{Action: ActionStop})
-	case s.Running():
-		out = append(out, wm.Hint{Action: ActionStop})
-	case s.Restartable():
-		out = append(out, wm.Hint{Action: ActionResume, Label: "restart"})
+	released, err := Forget(b.env.Editor, snap.ID)
+	if err != nil {
+		return wm.Notify(err.Error(), wm.Error)
 	}
-	return out
+	l.Refresh()
+	return wm.Notify(fmt.Sprintf("forgot %s, %d sessions stored", snap.ID, released), wm.Success)
 }
 
 // Opens the settings panel of the extension
 func (b *board) settings(*cards.List, int) tea.Cmd {
 	return func() tea.Msg { return cards.OpenPanelMsg{Key: SettingsKey} }
+}
+
+// Legend of the row under the cursor, the keys that apply to the sprint in its state
+func (b *board) hints(_ *cards.List, i int) []wm.Hint {
+	out := []wm.Hint{{Action: BoardArena}, {Action: BoardSettings}}
+	r, s, ok := b.ref(i)
+	if !ok {
+		return out
+	}
+	open := wm.Hint{Action: BoardOpen, Label: "details"}
+	if r.kind == rowMember {
+		open.Label = "open session"
+	}
+	out = append([]wm.Hint{open}, out...)
+	switch {
+	case s.Running() && s.Paused != "":
+		out = append(out, wm.Hint{Action: BoardPause, Label: "resume"}, wm.Hint{Action: BoardStop})
+	case s.Running():
+		out = append(out, wm.Hint{Action: BoardPause}, wm.Hint{Action: BoardStop})
+	case s.Restartable():
+		out = append(out, wm.Hint{Action: BoardResume, Label: "restart"}, wm.Hint{Action: BoardForget})
+	default:
+		out = append(out, wm.Hint{Action: BoardForget})
+	}
+	return out
 }
 
 // Title of the session, its id while it has none
@@ -398,18 +455,37 @@ func sessionName(l *harness.Live) string {
 	return l.Session.ID()
 }
 
-// Duration in whole hours and minutes, in seconds while under a minute
-func span(d time.Duration) string {
-	d = max(d, 0)
-	if d < time.Minute {
-		return strconv.Itoa(int(d.Seconds())) + "s"
+// Asks the arena to show a sprint
+type ShowMsg struct {
+	ID string
+}
+
+// Drops an ended sprint from the registry and stores and closes the sessions of its team, reporting how many
+func Forget(app *harness.App, id string) (int, error) {
+	s := sprintByID(id)
+	if s == nil {
+		return 0, fmt.Errorf("no sprint %s in this process", id)
 	}
-	h, m := int(d.Hours()), int(d.Minutes())%60
-	switch {
-	case h == 0:
-		return strconv.Itoa(m) + "m"
-	case m == 0:
-		return strconv.Itoa(h) + "h"
+	if s.Snapshot().Running() {
+		return 0, fmt.Errorf("%s is running", id)
 	}
-	return fmt.Sprintf("%dh%02dm", h, m)
+	released := 0
+	for _, m := range s.Snapshot().Members {
+		if m.Live == nil || app == nil || app.LiveOf(m.Live.Session) == nil {
+			continue
+		}
+		if err := app.Release(m.Live); err != nil {
+			return released, err
+		}
+		released++
+	}
+	regMu.Lock()
+	defer regMu.Unlock()
+	for i, have := range sprints {
+		if have == s {
+			sprints = append(sprints[:i], sprints[i+1:]...)
+			break
+		}
+	}
+	return released, nil
 }

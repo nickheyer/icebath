@@ -58,7 +58,7 @@ func TestComposerAnswersByChoiceAndText(t *testing.T) {
 		t.Fatalf("asking %v multi %v height %d", c.Asking(), c.AskingMulti(), c.Height())
 	}
 	view := c.View(60, c.Height())
-	for _, want := range []string{"Which store?", "storage", "1 Postgres", "already in the stack", "2 SQLite", "3 Other", "1/2"} {
+	for _, want := range []string{"Which store?", "storage", "1 Postgres", "already in the stack", "2 SQLite", "3 Other", "1 of 2"} {
 		if !strings.Contains(ansi.Strip(view), want) {
 			t.Fatalf("view lacks %q:\n%s", want, ansi.Strip(view))
 		}
@@ -107,15 +107,27 @@ func TestComposerAnswersByChoiceAndText(t *testing.T) {
 	}
 }
 
+// Row of the block in view carrying the label of a choice, -1 when it is out of view
+func rowOf(c *Composer, choice int) int {
+	for i, r := range c.ask.shown {
+		if r.choice == choice && r.label {
+			return i
+		}
+	}
+	return -1
+}
+
 func TestComposerQuestionClicksAndRebinds(t *testing.T) {
 	c := askingComposer(t)
-	if _, ok := c.Click(3, 2); !ok || c.ask.at != 1 || c.ask.answers[0].Picked[0] != "SQLite" {
-		t.Fatalf("click on a choice: %v at %d %+v", ok, c.ask.at, c.ask.answers)
-	}
-	if _, ok := c.Click(3, 0); ok {
+	c.View(60, c.Height())
+	if _, ok := c.Click(3, 1); ok {
 		t.Fatal("click on the question line hit a choice")
 	}
-	if cmd, ok := c.Click(3, 2); !ok || cmd != nil || !c.ask.marked[1] {
+	if _, ok := c.Click(3, rowOf(c, 1)); !ok || c.ask.at != 1 || c.ask.answers[0].Picked[0] != "SQLite" {
+		t.Fatalf("click on a choice: %v at %d %+v", ok, c.ask.at, c.ask.answers)
+	}
+	c.View(60, c.Height())
+	if cmd, ok := c.Click(3, rowOf(c, 1)); !ok || cmd != nil || !c.ask.marked[1] {
 		t.Fatalf("click on a multi choice: %v %v marked %+v", cmd, ok, c.ask.marked)
 	}
 	same := &harness.Asking{ID: 3, Questions: []harness.Question{{Text: "x", Choices: []harness.Choice{{Label: "a"}, {Label: "b"}}}}}
@@ -133,5 +145,53 @@ func TestComposerQuestionClicksAndRebinds(t *testing.T) {
 	}
 	if cmd, ok := c.questionAction("question.pick"); ok || cmd != nil {
 		t.Fatal("question action handled with no question")
+	}
+}
+
+// Long questions wrap inside the width and a short prompt keeps the highlighted choice in view
+func TestComposerQuestionWrapsAndScrolls(t *testing.T) {
+	c := NewComposer(theme.Blackwall(), keys.Default(), "", nil)
+	c.SetFocus(true)
+	long := strings.Repeat("the staged code is the sprint extension and its biggest cost is the rasterizer ", 3)
+	c.SetQuestion(&harness.Asking{ID: 9, Questions: []harness.Question{{Text: long, Header: "focus", Choices: []harness.Choice{
+		{Label: "Render path first", Description: strings.Repeat("focus on the per frame world rasterizer ", 3)},
+		{Label: "Any hot path", Description: "also scan the tool and harness paths"},
+		{Label: "Lead decides", Description: "let the review pick the largest gain"},
+	}}}})
+	c.Fit(48)
+	full := c.Height()
+	view := ansi.Strip(c.View(48, full))
+	for i, line := range strings.Split(view, "\n") {
+		if w := ansi.StringWidth(line); w > 48 {
+			t.Fatalf("row %d is %d wide: %q", i, w, line)
+		}
+	}
+	for _, want := range []string{"focus", "1 Render path first", "2 Any hot path", "3 Lead decides", "4 Other", "rasterizer"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, theme.Blackwall().Glyphs.Ellipsis) {
+		t.Fatalf("a full view was cut:\n%s", view)
+	}
+	for i := 0; i < 3; i++ {
+		c.Action("question.down")
+	}
+	short := c.View(48, 8)
+	if rows := strings.Count(short, "\n") + 1; rows != 8 {
+		t.Fatalf("short view has %d rows", rows)
+	}
+	if rowOf(c, 3) < 0 || !strings.Contains(ansi.Strip(short), "4 Other") {
+		t.Fatalf("highlighted choice left the short view:\n%s", ansi.Strip(short))
+	}
+	if cur := c.Cursor(); cur == nil || cur.Y != len(c.ask.shown) {
+		t.Fatalf("cursor %+v is not under the %d rows in view", cur, len(c.ask.shown))
+	}
+	c.Action("question.up")
+	c.Action("question.up")
+	c.Action("question.up")
+	short = ansi.Strip(c.View(48, 8))
+	if rowOf(c, 0) < 0 {
+		t.Fatalf("highlighted choice left the short view after moving up:\n%s", short)
 	}
 }

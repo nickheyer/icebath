@@ -221,8 +221,8 @@ func (c *Config) endpointDetail(p profiles.Profile) []string {
 	if p.Ghost {
 		out = append(out, render.KV("ghost", "off disk, sends "+heard(p.GhostDirective), t))
 	}
-	if !p.ShowsThinking() {
-		out = append(out, render.KV("thinking", "kept out of the window", t))
+	if p.ExpandsThinking() {
+		out = append(out, render.KV("thinking", "opens as it arrives", t))
 	}
 	return out
 }

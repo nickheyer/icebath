@@ -166,17 +166,17 @@ func (m *Model) agentCard(id string) (*desk, *cards.Agent) {
 	}
 	card, ok := d.agents[id]
 	if !ok {
-		card = cards.NewAgent(m.env, r, d.live.ShowsThinking())
+		card = cards.NewAgent(m.env, r, d.live.ExpandsThinking())
 		d.agents[id] = card
 	}
 	return d, card
 }
 
-// Loads every transcript of the desk again as its session now shows or hides thinking
+// Loads every transcript of the desk again as its session now opens or folds thinking
 func (m *Model) rethink(d *desk) {
 	d.session.Rethink()
 	for _, a := range d.agents {
-		a.Rethink(d.live.ShowsThinking())
+		a.Rethink(d.live.ExpandsThinking())
 	}
 	m.wm.Repaint()
 }
@@ -232,18 +232,22 @@ func (m *Model) openRun(id string) tea.Cmd {
 	return m.wm.Focus(d.session)
 }
 
-// Sends session input, steering the root run when one is going and starting one otherwise
+// Sends session input, steering the root run or starting one, a session without a card taking it the same way
 func (m *Model) submit(msg cards.SubmitMsg) tea.Cmd {
 	d := m.deskOfSession(msg.Session)
-	if d == nil {
+	live, mission := m.app.LiveByID(msg.Session), ""
+	if d != nil {
+		live, mission = d.live, d.mission
+		if d.compacting {
+			return m.wm.Toast("compacting", wm.Warn, 0)
+		}
+	}
+	if live == nil {
 		return m.wm.Toast("session closed", wm.Warn, 0)
 	}
-	if d.compacting {
-		return m.wm.Toast("compacting", wm.Warn, 0)
-	}
-	if m.app.Busy(d.live) {
+	if m.app.Busy(live) {
 		for _, r := range m.app.Control.Active() {
-			if r.Parent == "" && r.Session == d.live.Session {
+			if r.Parent == "" && r.Session == live.Session {
 				if err := m.app.Control.Steer(r.ID, msg.Parts...); err != nil {
 					return m.wm.Toast(err.Error(), wm.Error, 0)
 				}
@@ -251,13 +255,16 @@ func (m *Model) submit(msg cards.SubmitMsg) tea.Cmd {
 			}
 		}
 	}
-	if d.live.Session.Title() == "" && msg.Text != "" {
-		d.live.Session.SetTitle(render.Summary(msg.Text, 60, m.theme))
+	if live.Session.Title() == "" && msg.Text != "" {
+		live.Session.SetTitle(render.Summary(msg.Text, 60, m.theme))
 	}
-	if _, err := m.app.RunOn(m.ctx, d.live, d.mission, msg.Parts); err != nil {
+	if _, err := m.app.RunOn(m.ctx, live, mission, msg.Parts); err != nil {
 		return m.wm.Toast(err.Error(), wm.Error, 0)
 	}
 	m.state = tea.ProgramStateWorking
+	if d == nil {
+		return nil
+	}
 	return m.wm.Focus(d.session)
 }
 

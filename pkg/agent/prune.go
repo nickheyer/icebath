@@ -96,9 +96,11 @@ func pruneStub(call protocol.ToolCall, r protocol.ToolResult) string {
 		lines = strings.Count(text, "\n") + 1
 	}
 	var sb strings.Builder
-	sb.WriteString("[" + name)
+	sb.WriteString("[")
+	sb.WriteString(name)
 	if args := excerptArgs(call.Args); args != "" {
-		sb.WriteString(" " + args)
+		sb.WriteString(" ")
+		sb.WriteString(args)
 	}
 	fmt.Fprintf(&sb, " result dropped from context, %d lines, about %s tokens", lines, roughTokens(protocol.EstimateTokens(r.Content)))
 	if attachments > 0 {

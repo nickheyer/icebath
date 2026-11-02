@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -30,6 +31,14 @@ type Lane struct {
 	Signal Signal
 	// Text after the signal mark, such as the tool running and how long the run has taken
 	Detail string
+}
+
+// Card standing on the bar for the sessions it holds, naming its chip and what waits in it
+type Reporter interface {
+	// Chip of the workspace while the card is its lead, an empty name leaving the chip bare
+	Lane() Lane
+	// First item waiting on the person inside the card, false while nothing waits
+	Waiting() (text string, signal Signal, at time.Time, ok bool)
 }
 
 // Item waiting on the person, shown in the field until its action serves it

@@ -70,8 +70,8 @@ type Profile struct {
 	Bare bool `json:"bare,omitempty"`
 	// Keeps sessions off disk and asks the endpoint to keep nothing of them
 	Ghost bool `json:"ghost,omitempty"`
-	// Hands the model's thinking to the transcript, false keeping every thinking event out of the window, nil taking the template's
-	Thinking *bool `json:"thinking,omitempty"`
+	// Opens every thinking block in the transcript as it arrives, nil taking the template's
+	ExpandThinking *bool `json:"expand_thinking,omitempty"`
 	// Headers and body fields that ask the endpoint to keep nothing, nil taking the template's
 	GhostDirective *provider.Directive `json:"ghost_directive,omitempty"`
 	// Headers and body fields that ask the endpoint to add nothing of its own, nil taking the template's
@@ -129,8 +129,8 @@ func (p Profile) Expand() (Profile, error) {
 	if out.BareDirective == nil {
 		out.BareDirective = cloneDirective(t.BareDirective)
 	}
-	if out.Thinking == nil {
-		out.Thinking = cloneBool(t.Thinking)
+	if out.ExpandThinking == nil {
+		out.ExpandThinking = cloneBool(t.ExpandThinking)
 	}
 	if out.Options == nil {
 		out.Options = t.Options
@@ -138,9 +138,9 @@ func (p Profile) Expand() (Profile, error) {
 	return out, nil
 }
 
-// Reports whether thinking reaches the transcript, which it does unless the profile turns it off
-func (p Profile) ShowsThinking() bool {
-	return p.Thinking == nil || *p.Thinking
+// Reports whether thinking blocks open as they arrive, which they do only when the profile asks
+func (p Profile) ExpandsThinking() bool {
+	return p.ExpandThinking != nil && *p.ExpandThinking
 }
 
 // Default model id, the first listed, or empty
@@ -446,7 +446,7 @@ func (p Profile) Clone() Profile {
 	p.Extra = cloneExtra(p.Extra)
 	p.GhostDirective = cloneDirective(p.GhostDirective)
 	p.BareDirective = cloneDirective(p.BareDirective)
-	p.Thinking = cloneBool(p.Thinking)
+	p.ExpandThinking = cloneBool(p.ExpandThinking)
 	p.Options = maps.Clone(p.Options)
 	return p
 }

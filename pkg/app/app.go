@@ -817,25 +817,33 @@ func (m *Model) cardMsg(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return m.wm.Toast("forgot mission "+msg.ID, wm.Success, 0), true
 	case cards.ThinkingMsg:
-		return m.toggleThinking(m.deskOfSession(msg.Session)), true
+		return m.toggleThinking(msg.Session), true
 	case cards.RunMsg:
 		return m.runLine(m.deskOfSession(msg.Session), msg.Line), true
 	}
 	return nil, false
 }
 
-// Shows the thinking of the session of the desk when hidden and hides it when shown, its transcripts loading again
-func (m *Model) toggleThinking(d *desk) tea.Cmd {
-	if d == nil {
+// Flips whether a session opens its thinking as it arrives, every card holding it loading its transcript again
+func (m *Model) toggleThinking(id string) tea.Cmd {
+	d := m.deskOfSession(id)
+	live := m.app.LiveByID(id)
+	if d != nil {
+		live = d.live
+	}
+	if live == nil {
 		return m.wm.Toast("session closed", wm.Warn, 0)
 	}
-	on := !d.live.ShowsThinking()
-	d.live.SetThinking(on)
-	m.rethink(d)
-	if on {
-		return m.wm.Toast("thinking shown", wm.Success, 0)
+	on := !live.ExpandsThinking()
+	live.SetExpandThinking(on)
+	if d != nil {
+		m.rethink(d)
 	}
-	return m.wm.Toast("thinking hidden", wm.Success, 0)
+	changed := func() tea.Msg { return cards.ThinkingChangedMsg{Session: id} }
+	if on {
+		return tea.Batch(changed, m.wm.Toast("thinking opens as it arrives", wm.Success, 0))
+	}
+	return tea.Batch(changed, m.wm.Toast("thinking stays folded until opened", wm.Success, 0))
 }
 
 // Applies a setting, then saves it for the next start, an empty value unsetting it and quiet skipping the toast

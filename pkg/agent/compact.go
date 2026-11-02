@@ -11,16 +11,10 @@ import (
 	"io"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/prompt"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
 )
-
-const summarySystem = `You write handoff summaries of agent sessions so the same agent can continue the work without the original transcript.
-Write the summary in these sections, each as a short heading followed by concise bullet points:
-Goal, Progress, Key facts, Decisions, Open items.
-Keep every file path, host name, command, identifier and value that later work will need. State plainly what was verified and what was only attempted.`
-
-const summaryCombine = `You merge partial handoff summaries of one agent session into a single summary with the same sections: Goal, Progress, Key facts, Decisions, Open items. Keep every path, host, command, identifier and value. Drop nothing that later work will need.`
 
 const (
 	// Characters of transcript summarized in one model call
@@ -101,26 +95,26 @@ func (s *Summarizer) Summarize(ctx context.Context) (string, error) {
 	}
 	transcript := session.FromHeader(session.Header{ID: s.Session.ID()}, head, nil).Markdown()
 	if len(transcript) <= chunkChars {
-		text, err := s.ask(ctx, summarySystem, "<transcript>\n"+transcript+"\n</transcript>\n\nWrite the handoff summary of this transcript.")
+		text, err := s.ask(ctx, prompt.SummarySystem(s.Instructions), prompt.SummaryRequest(transcript, 1, 1))
 		if err != nil {
 			return "", err
 		}
-		return "Summary of the earlier conversation:\n\n" + text, nil
+		return prompt.SummaryNote(text), nil
 	}
 	chunks := s.chunks(head)
 	partials := make([]string, 0, len(chunks))
 	for i, chunk := range chunks {
-		text, err := s.ask(ctx, summarySystem, fmt.Sprintf("<transcript part=\"%d of %d\">\n%s\n</transcript>\n\nWrite the handoff summary of this part of the transcript.", i+1, len(chunks), chunk))
+		text, err := s.ask(ctx, prompt.SummarySystem(s.Instructions), prompt.SummaryRequest(chunk, i+1, len(chunks)))
 		if err != nil {
 			return "", err
 		}
-		partials = append(partials, fmt.Sprintf("Part %d of %d:\n%s", i+1, len(chunks), text))
+		partials = append(partials, prompt.SummaryPart(i+1, len(chunks), text))
 	}
-	text, err := s.ask(ctx, summaryCombine, strings.Join(partials, "\n\n"))
+	text, err := s.ask(ctx, prompt.SummaryCombineSystem(s.Instructions), prompt.Compose(partials...))
 	if err != nil {
 		return "", err
 	}
-	return "Summary of the earlier conversation:\n\n" + text, nil
+	return prompt.SummaryNote(text), nil
 }
 
 // Splits the entries into markdown chunks of at most the chunk budget, never splitting a message
@@ -142,13 +136,11 @@ func (s *Summarizer) chunks(entries []session.Entry) []string {
 	return chunks
 }
 
-func (s *Summarizer) ask(ctx context.Context, prompt, text string) (string, error) {
-	if s.Instructions != "" {
-		prompt += "\n\n" + s.Instructions
-	}
+// Asks the model one question under the system prompt and returns what it wrote
+func (s *Summarizer) ask(ctx context.Context, system, text string) (string, error) {
 	req := protocol.Request{
 		Model:     s.ModelID,
-		System:    prompt,
+		System:    system,
 		MaxTokens: summaryMaxTokens,
 		Stream:    true,
 		Messages:  []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: text}}}},

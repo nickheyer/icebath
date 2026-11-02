@@ -1,233 +1,446 @@
 package sprint
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"math"
-	"os"
-	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/facts"
 	"github.com/nickheyer/icebath/pkg/harness"
-	"github.com/nickheyer/icebath/pkg/mission"
 	"github.com/nickheyer/icebath/pkg/profiles"
-	"github.com/nickheyer/icebath/pkg/tool/files"
-	"github.com/nickheyer/icebath/pkg/tool/shell"
-	"github.com/nickheyer/icebath/pkg/tool/web"
 )
 
-// Name the extension registers under and the file under the configuration directory holding its settings
+// Extension name, workflow name and the prefix of every setting and kind
+const Name = "sprint"
+
+// Seat on the team
+type Role string
+
 const (
-	Name       = "sprint"
-	ConfigFile = "ext/sprint.json"
+	RoleDirector  Role = "director"
+	RoleArchitect Role = "architect"
+	RoleBuilder   Role = "builder"
+	RoleReviewer  Role = "reviewer"
 )
 
-// Roles of a sprint team in the order the workflow brings them in
-const (
-	RolePM       = "pm"
-	RolePlanner  = "planner"
-	RoleLead     = "lead"
-	RoleEngineer = "engineer"
-)
+// Every role in the order the sprint brings them in
+var Roles = []Role{RoleDirector, RoleArchitect, RoleBuilder, RoleReviewer}
 
-var Roles = []string{RolePM, RolePlanner, RoleLead, RoleEngineer}
-
-// Kind a role runs as, registered with the app so its sessions show the role
-func KindName(role string) string { return Name + "-" + role }
-
-// Model, limits and instructions of one role
-type Role struct {
-	// Endpoint profile, the default endpoint when empty
-	Profile string `json:"profile,omitempty"`
-	// Model on that profile, its default when empty
-	Model string `json:"model,omitempty"`
-	// Output tokens one turn may produce, the app setting when zero
-	MaxTokens int `json:"max_tokens,omitempty"`
-	// Tool rounds one run may take, the app setting when zero
-	MaxRounds int `json:"max_rounds,omitempty"`
-	// Tokens the role may spend over one sprint across every turn, unlimited when zero
-	Budget int `json:"budget,omitempty"`
-	// Text added to the instructions of the role
-	Append string `json:"append,omitempty"`
-	// Tools offered, the defaults of the role when empty
-	Tools []string `json:"tools,omitempty"`
-	// Tools withheld beyond the defaults of the role
-	Deny []string `json:"deny,omitempty"`
+// Endpoint, limits and spend of one role
+type RoleConfig struct {
+	Profile   string
+	Model     string
+	MaxTokens int
+	MaxRounds int
+	Budget    int
 }
 
-// Size and pace of the sprint team
+// Size and patience of the team
 type Team struct {
-	MaxEngineers int `json:"max_engineers"`
-	// Tickets one engineer takes, the count of engineers following from it until the maximum
-	TicketsPerEngineer float64 `json:"tickets_per_engineer"`
-	// Engineers work at the same time rather than one after another
-	Parallel bool `json:"parallel"`
-	// Times a ticket may be sent back to its engineer, by the direction of the lead or its review
-	MaxRework int `json:"max_rework"`
-	// Tickets the planner may cut a story into
-	MaxTickets int `json:"max_tickets"`
+	Builders   int
+	Parallel   bool
+	MaxRework  int
+	MaxTickets int
 }
 
-// Time budgets, the whole sprint and each of its stages
+// Time the sprint and each of its stages may take
 type Limits struct {
-	Total  Duration `json:"total"`
-	Refine Duration `json:"refine"`
-	Plan   Duration `json:"plan"`
-	Build  Duration `json:"build"`
-	Review Duration `json:"review"`
+	Total  time.Duration
+	Brief  time.Duration
+	Plan   time.Duration
+	Build  time.Duration
+	Review time.Duration
 }
 
-// Everything the sprint workflow reads before it starts
+// How the arena draws
+type Arena struct {
+	Pixels string
+	FPS    int
+	Labels bool
+	Camera string
+}
+
+// Outfit of one member
+type Look struct {
+	Color string
+	Hat   string
+}
+
+// Every setting of the sprint as read from the configuration
 type Config struct {
-	PM       Role   `json:"pm"`
-	Planner  Role   `json:"planner"`
-	Lead     Role   `json:"lead"`
-	Engineer Role   `json:"engineer"`
-	Team     Team   `json:"team"`
-	Limits   Limits `json:"limits"`
-	// The project manager talks with the person before handing off, resolving the prompt alone when off
-	Interactive bool `json:"interactive"`
+	Roles       map[Role]RoleConfig
+	Team        Team
+	Limits      Limits
+	Interactive bool
+	Arena       Arena
+	Looks       map[Role][]Look
+	Names       map[Role][]string
 }
 
-// Duration written as a string such as 30m or 2h in the settings file
-type Duration time.Duration
+// Pixel modes the arena encodes cells with
+var PixelModes = []string{"quadrant", "half"}
 
-func (d Duration) String() string { return time.Duration(d).String() }
+// Camera presets the arena starts on
+var Cameras = []string{"overview", "follow", "orbit"}
 
-func (d Duration) MarshalJSON() ([]byte, error) { return json.Marshal(d.String()) }
+// Colors an outfit may be dyed, by name
+var ColorNames = []string{"teal", "amber", "violet", "lime", "coral", "sky", "rose", "mint", "crimson", "gold", "indigo", "slate"}
 
-// Takes a duration string, or a bare number of seconds
-func (d *Duration) UnmarshalJSON(data []byte) error {
-	var text string
-	if err := json.Unmarshal(data, &text); err == nil {
-		v, err := time.ParseDuration(text)
+// Hats a member may wear
+var HatNames = []string{"cap", "beanie", "fedora", "hardhat", "visor", "headphones", "bandana", "crown", "none"}
+
+// Names builders take when the settings name none
+var defaultBuilderNames = []string{"Ada", "Linus", "Grace", "Dennis", "Margaret", "Ken", "Barbara", "Alan"}
+
+// Outfits builders wear when the settings dress none
+var defaultBuilderLooks = []Look{{"teal", "cap"}, {"amber", "beanie"}, {"violet", "headphones"}, {"lime", "bandana"}, {"coral", "cap"}, {"sky", "beanie"}, {"rose", "headphones"}, {"mint", "bandana"}}
+
+// Configuration every unset setting falls back to
+func Default() Config {
+	return Config{
+		Roles:       map[Role]RoleConfig{RoleDirector: {}, RoleArchitect: {}, RoleBuilder: {}, RoleReviewer: {}},
+		Team:        Team{Builders: 3, Parallel: true, MaxRework: 2, MaxTickets: 12},
+		Limits:      Limits{Total: 3 * time.Hour, Brief: 45 * time.Minute, Plan: 30 * time.Minute, Build: 90 * time.Minute, Review: 20 * time.Minute},
+		Interactive: true,
+		Arena:       Arena{Pixels: "quadrant", FPS: 30, Labels: true, Camera: "overview"},
+		Looks:       map[Role][]Look{RoleDirector: {{"crimson", "fedora"}}, RoleArchitect: {{"gold", "hardhat"}}, RoleReviewer: {{"indigo", "visor"}}, RoleBuilder: slices.Clone(defaultBuilderLooks)},
+		Names:       map[Role][]string{RoleDirector: {"Director"}, RoleArchitect: {"Architect"}, RoleReviewer: {"Reviewer"}, RoleBuilder: slices.Clone(defaultBuilderNames)},
+	}
+}
+
+// Setting key of a role field
+func roleKey(role Role, field string) string { return Name + "." + string(role) + "." + field }
+
+// Every setting the extension registers, the roles first, then the team, the limits, the arena and the outfits
+func Settings() []harness.Setting {
+	var out []harness.Setting
+	for _, role := range Roles {
+		r := string(role)
+		out = append(out,
+			harness.Setting{Key: roleKey(role, "profile"), Help: "Endpoint profile the " + r + " runs on, the default endpoint when unset", Check: checkName("profile")},
+			harness.Setting{Key: roleKey(role, "model"), Help: "Model the " + r + " runs on that profile, its default when unset"},
+			harness.Setting{Key: roleKey(role, "max_tokens"), Help: "Output tokens one turn of the " + r + " may produce, the app setting when unset", Lo: 1, Step: 1024, Integer: true},
+			harness.Setting{Key: roleKey(role, "max_rounds"), Help: "Tool rounds one run of the " + r + " may take, the app setting when unset", Lo: 1, Step: 1, Integer: true},
+			harness.Setting{Key: roleKey(role, "budget"), Help: "Tokens the " + r + " may spend over one sprint across every turn, unlimited when unset", Lo: 1000, Step: 10000, Integer: true},
+		)
+	}
+	out = append(out,
+		harness.Setting{Key: Name + ".team.builders", Help: "Builders the team brings in, each taking one ticket at a time", Lo: 1, Hi: 8, Step: 1, Integer: true},
+		harness.Setting{Key: Name + ".team.parallel", Help: "Builders work at the same time rather than one after another", Choices: []string{"true", "false"}},
+		harness.Setting{Key: Name + ".team.max_rework", Help: "Times a ticket may be sent back to its builder by the reviewer", Lo: 0, Hi: 6, Step: 1, Integer: true},
+		harness.Setting{Key: Name + ".team.max_tickets", Help: "Tickets the architect may cut the brief into", Lo: 1, Hi: 40, Step: 1, Integer: true},
+		harness.Setting{Key: Name + ".limits.total", Help: "Time the whole sprint may take before it stops, such as 3h", Check: checkDuration("total")},
+		harness.Setting{Key: Name + ".limits.brief", Help: "Time the director has to settle the brief before it is told to wrap up", Check: checkDuration("brief")},
+		harness.Setting{Key: Name + ".limits.plan", Help: "Time the architect has to cut the plan before it is told to wrap up", Check: checkDuration("plan")},
+		harness.Setting{Key: Name + ".limits.build", Help: "Time a builder has on one ticket before it is told to hand off", Check: checkDuration("build")},
+		harness.Setting{Key: Name + ".limits.review", Help: "Time the reviewer has on one handoff before it is told to decide", Check: checkDuration("review")},
+		harness.Setting{Key: Name + ".interactive", Help: "The director may ask the person questions, and a stalled stage waits for the person instead of failing the sprint", Choices: []string{"true", "false"}},
+		harness.Setting{Key: Name + ".arena.pixels", Help: "How the arena turns pixels into cells, quadrant doubles the width, half keeps every color exact", Choices: PixelModes},
+		harness.Setting{Key: Name + ".arena.fps", Help: "Frames per second the arena redraws at while anything moves", Lo: 5, Hi: 60, Step: 5, Integer: true},
+		harness.Setting{Key: Name + ".arena.labels", Help: "Names float above every member in the arena", Choices: []string{"true", "false"}},
+		harness.Setting{Key: Name + ".arena.camera", Help: "Camera the arena opens with, the whole floor, the selected member or a slow orbit", Choices: Cameras},
+	)
+	for _, role := range Roles {
+		r := string(role)
+		many := role == RoleBuilder
+		lookHelp := "Outfit of the " + r + " as a color and a hat, such as crimson fedora, colors are " + strings.Join(ColorNames, ", ") + " and hats are " + strings.Join(HatNames, ", ")
+		nameHelp := "Name the " + r + " goes by"
+		if many {
+			lookHelp = "Outfits of the builders in order, comma separated, each a color and a hat such as teal cap"
+			nameHelp = "Names of the builders in order, comma separated"
+		}
+		out = append(out,
+			harness.Setting{Key: Name + ".look." + r, Help: lookHelp, Check: checkLooks(many)},
+			harness.Setting{Key: Name + ".name." + r, Help: nameHelp, Check: checkNames(many)},
+		)
+	}
+	return out
+}
+
+// Refuses a value that is not a profile name
+func checkName(what string) func(string) error {
+	return func(v string) error {
+		if !profiles.ValidName(v) {
+			return fmt.Errorf("%s must be letters, digits, dots, dashes and underscores, got %q", what, v)
+		}
+		return nil
+	}
+}
+
+// Refuses text that is not a duration above zero
+func checkDuration(what string) func(string) error {
+	return func(v string) error {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return fmt.Errorf("%s must be a duration above 0 such as 30m, got %q", what, v)
+		}
+		return nil
+	}
+}
+
+// Refuses an outfit list with an unknown color or hat, one outfit at most unless many are allowed
+func checkLooks(many bool) func(string) error {
+	return func(v string) error {
+		looks, err := parseLooks(v)
 		if err != nil {
 			return err
 		}
-		*d = Duration(v)
+		if !many && len(looks) > 1 {
+			return fmt.Errorf("one outfit is expected, got %d", len(looks))
+		}
 		return nil
 	}
-	var secs float64
-	if err := json.Unmarshal(data, &secs); err != nil {
-		return fmt.Errorf("duration must be a string such as 30m, got %s", data)
-	}
-	*d = Duration(secs * float64(time.Second))
-	return nil
 }
 
-// Settings a fresh file starts from
-func Default() Config {
-	return Config{
-		Team:        Team{MaxEngineers: 4, TicketsPerEngineer: 1, Parallel: true, MaxRework: 1, MaxTickets: 12},
-		Limits:      Limits{Total: Duration(3 * time.Hour), Refine: Duration(time.Hour), Plan: Duration(30 * time.Minute), Build: Duration(90 * time.Minute), Review: Duration(30 * time.Minute)},
-		Interactive: true,
-	}
-}
-
-// Tools a role gets while its settings name none
-func DefaultTools(role string) []string {
-	readOnly := []string{files.ReadName, files.GrepName, files.GlobName, files.OutlineName}
-	switch role {
-	case RolePM:
-		return append(readOnly, ToolResolve, ToolAsk)
-	case RolePlanner:
-		return append(readOnly, ToolPlan)
-	}
-	return nil
-}
-
-// Tools a role never gets, however its settings read
-func deniedTools(role string) []string {
-	switch role {
-	case RoleLead:
-		return []string{ToolResolve, ToolPlan, ToolAsk, ToolReport, files.WriteName, files.EditName, agent.SubagentTool}
-	case RoleEngineer:
-		return []string{ToolResolve, ToolPlan, ToolAsk, ToolDirect, ToolReview, agent.SubagentTool, mission.ToolName}
-	case RolePM:
-		return append([]string{ToolReport, ToolDirect, ToolReview}, quietTools()...)
-	case RolePlanner:
-		return append([]string{ToolAsk, ToolReport, ToolDirect, ToolReview}, quietTools()...)
-	}
-	return nil
-}
-
-// Tools that change the repository or reach outside it, kept from the roles that only read and decide
-func quietTools() []string {
-	return []string{files.WriteName, files.EditName, shell.ShellName, shell.OutputName, shell.KillName, web.FetchName, facts.ToolName, mission.ToolName, agent.SubagentTool}
-}
-
-// Role settings by name
-func (c *Config) Role(role string) *Role {
-	switch role {
-	case RolePM:
-		return &c.PM
-	case RolePlanner:
-		return &c.Planner
-	case RoleLead:
-		return &c.Lead
-	case RoleEngineer:
-		return &c.Engineer
-	}
-	return nil
-}
-
-// Checks the team numbers and the time budgets
-func (c Config) Validate() error {
-	if c.Team.MaxEngineers < 1 {
-		return errors.New("team.max_engineers must be at least 1")
-	}
-	if !(c.Team.TicketsPerEngineer > 0) {
-		return errors.New("team.tickets_per_engineer must be above 0")
-	}
-	if c.Team.MaxRework < 0 {
-		return errors.New("team.max_rework must not be negative")
-	}
-	if c.Team.MaxTickets < 1 {
-		return errors.New("team.max_tickets must be at least 1")
-	}
-	for _, l := range []struct {
-		name string
-		d    Duration
-	}{{"total", c.Limits.Total}, {"refine", c.Limits.Refine}, {"plan", c.Limits.Plan}, {"build", c.Limits.Build}, {"review", c.Limits.Review}} {
-		if l.d <= 0 {
-			return fmt.Errorf("limits.%s must be above 0", l.name)
+// Refuses an empty name, or several names where one is expected
+func checkNames(many bool) func(string) error {
+	return func(v string) error {
+		names := splitList(v)
+		if len(names) == 0 {
+			return fmt.Errorf("a name is required")
 		}
+		if !many && len(names) > 1 {
+			return fmt.Errorf("one name is expected, got %d", len(names))
+		}
+		for _, n := range names {
+			if len([]rune(n)) > 16 {
+				return fmt.Errorf("name %q is longer than 16 characters", n)
+			}
+		}
+		return nil
+	}
+}
+
+// Outfits from a comma separated list of color and hat pairs
+func parseLooks(v string) ([]Look, error) {
+	var out []Look
+	for _, item := range splitList(v) {
+		fields := strings.Fields(item)
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("outfit %q must be a color and a hat such as teal cap", item)
+		}
+		color, hat := strings.ToLower(fields[0]), strings.ToLower(fields[1])
+		if !slices.Contains(ColorNames, color) {
+			return nil, fmt.Errorf("unknown color %q, colors are %s", color, strings.Join(ColorNames, ", "))
+		}
+		if !slices.Contains(HatNames, hat) {
+			return nil, fmt.Errorf("unknown hat %q, hats are %s", hat, strings.Join(HatNames, ", "))
+		}
+		out = append(out, Look{Color: color, Hat: hat})
+	}
+	return out, nil
+}
+
+// Trimmed items of a comma separated list, blanks dropped
+func splitList(v string) []string {
+	var out []string
+	for _, item := range strings.Split(v, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// Text of an outfit as the setting holds it
+func (l Look) String() string { return l.Color + " " + l.Hat }
+
+// Outfit list as the setting holds it
+func looksText(looks []Look) string {
+	parts := make([]string, 0, len(looks))
+	for _, l := range looks {
+		parts = append(parts, l.String())
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Configuration read from the app settings, unset ones at their defaults, a value that does not parse refused
+func Load(c harness.Config) (Config, error) {
+	cfg := Default()
+	get := func(key string) string { return strings.TrimSpace(c.Setting(key)) }
+	num := func(key string, into *int) error {
+		v := get(key)
+		if v == "" {
+			return nil
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("%s must be an integer, got %q", key, v)
+		}
+		*into = n
+		return nil
+	}
+	flag := func(key string, into *bool) error {
+		v := get(key)
+		if v == "" {
+			return nil
+		}
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("%s must be true or false, got %q", key, v)
+		}
+		*into = b
+		return nil
+	}
+	span := func(key string, into *time.Duration) error {
+		v := get(key)
+		if v == "" {
+			return nil
+		}
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return fmt.Errorf("%s must be a duration above 0, got %q", key, v)
+		}
+		*into = d
+		return nil
+	}
+	choice := func(key string, into *string, choices []string) error {
+		v := get(key)
+		if v == "" {
+			return nil
+		}
+		if !slices.Contains(choices, v) {
+			return fmt.Errorf("%s must be one of %s, got %q", key, strings.Join(choices, ", "), v)
+		}
+		*into = v
+		return nil
 	}
 	for _, role := range Roles {
-		r := c.Role(role)
-		if r.MaxTokens < 0 || r.MaxRounds < 0 || r.Budget < 0 {
-			return fmt.Errorf("%s: max_tokens, max_rounds and budget must not be negative", role)
+		r := cfg.Roles[role]
+		r.Profile, r.Model = get(roleKey(role, "profile")), get(roleKey(role, "model"))
+		for _, step := range []error{num(roleKey(role, "max_tokens"), &r.MaxTokens), num(roleKey(role, "max_rounds"), &r.MaxRounds), num(roleKey(role, "budget"), &r.Budget)} {
+			if step != nil {
+				return Config{}, step
+			}
+		}
+		cfg.Roles[role] = r
+		if v := get(Name + ".look." + string(role)); v != "" {
+			looks, err := parseLooks(v)
+			if err != nil {
+				return Config{}, fmt.Errorf("%s: %w", Name+".look."+string(role), err)
+			}
+			cfg.Looks[role] = looks
+		}
+		if v := get(Name + ".name." + string(role)); v != "" {
+			cfg.Names[role] = splitList(v)
 		}
 	}
-	return nil
+	steps := []error{
+		num(Name+".team.builders", &cfg.Team.Builders),
+		flag(Name+".team.parallel", &cfg.Team.Parallel),
+		num(Name+".team.max_rework", &cfg.Team.MaxRework),
+		num(Name+".team.max_tickets", &cfg.Team.MaxTickets),
+		span(Name+".limits.total", &cfg.Limits.Total),
+		span(Name+".limits.brief", &cfg.Limits.Brief),
+		span(Name+".limits.plan", &cfg.Limits.Plan),
+		span(Name+".limits.build", &cfg.Limits.Build),
+		span(Name+".limits.review", &cfg.Limits.Review),
+		flag(Name+".interactive", &cfg.Interactive),
+		choice(Name+".arena.pixels", &cfg.Arena.Pixels, PixelModes),
+		num(Name+".arena.fps", &cfg.Arena.FPS),
+		flag(Name+".arena.labels", &cfg.Arena.Labels),
+		choice(Name+".arena.camera", &cfg.Arena.Camera, Cameras),
+	}
+	for _, step := range steps {
+		if step != nil {
+			return Config{}, step
+		}
+	}
+	if cfg.Team.Builders < 1 || cfg.Team.Builders > 8 {
+		return Config{}, fmt.Errorf("%s.team.builders must be from 1 to 8, got %d", Name, cfg.Team.Builders)
+	}
+	if cfg.Team.MaxTickets < 1 {
+		return Config{}, fmt.Errorf("%s.team.max_tickets must be at least 1, got %d", Name, cfg.Team.MaxTickets)
+	}
+	if cfg.Team.MaxRework < 0 {
+		return Config{}, fmt.Errorf("%s.team.max_rework must not be negative, got %d", Name, cfg.Team.MaxRework)
+	}
+	if cfg.Arena.FPS < 5 || cfg.Arena.FPS > 60 {
+		return Config{}, fmt.Errorf("%s.arena.fps must be from 5 to 60, got %d", Name, cfg.Arena.FPS)
+	}
+	return cfg, nil
 }
 
-// Kind a role runs as, with the model, limits, tools and instructions its settings give
-func (c Config) Kind(role string) harness.Kind {
-	r := c.Role(role)
-	k := harness.Kind{Name: KindName(role), Description: roleDescription(role), System: roleSystem(role), Append: r.Append, MaxRounds: r.MaxRounds, MaxTokens: r.MaxTokens, Source: Name}
-	k.Tools = append([]string(nil), r.Tools...)
-	if len(k.Tools) == 0 {
-		k.Tools = DefaultTools(role)
+// Values of every setting as the configuration holds them, empty while unset
+func Values(c harness.Config) map[string]string {
+	out := map[string]string{}
+	for _, s := range Settings() {
+		out[s.Key] = c.Setting(s.Key)
 	}
-	for _, name := range append(deniedTools(role), r.Deny...) {
-		if !contains(k.Tools, name) && !contains(k.Deny, name) {
-			k.Deny = append(k.Deny, name)
+	return out
+}
+
+// Name the member at an index of a role goes by, the defaults filling in past the names set
+func (c Config) NameOf(role Role, index int) string {
+	names := c.Names[role]
+	if index < len(names) {
+		return names[index]
+	}
+	if role == RoleBuilder {
+		if index < len(defaultBuilderNames) {
+			return defaultBuilderNames[index]
 		}
+		return "Builder " + strconv.Itoa(index+1)
 	}
-	if r.Profile != "" || r.Model != "" {
+	return strings.ToUpper(string(role[:1])) + string(role[1:])
+}
+
+// Outfit the member at an index of a role wears, the defaults filling in past the outfits set
+func (c Config) LookOf(role Role, index int) Look {
+	looks := c.Looks[role]
+	if index < len(looks) {
+		return looks[index]
+	}
+	if role == RoleBuilder {
+		return defaultBuilderLooks[index%len(defaultBuilderLooks)]
+	}
+	return Default().Looks[role][0]
+}
+
+// Kind name of a role
+func KindName(role Role) string { return Name + "-" + string(role) }
+
+// Role a kind name stands for, false for a kind of another extension
+func RoleOfKind(kind string) (Role, bool) {
+	rest, ok := strings.CutPrefix(kind, Name+"-")
+	if !ok {
+		return "", false
+	}
+	role := Role(rest)
+	if !slices.Contains(Roles, role) {
+		return "", false
+	}
+	return role, true
+}
+
+// Tools a role is offered, nil for every tool, and the ones withheld
+func roleTools(role Role) (offered, denied []string) {
+	explore := []string{"Read", "Glob", "Grep", "Outline"}
+	switch role {
+	case RoleDirector:
+		return append(explore, ToolBrief, ToolAsk), nil
+	case RoleArchitect:
+		return append(explore, ToolPlan), nil
+	case RoleReviewer:
+		return append(explore, "Shell", "ShellOutput", "KillShell", ToolVerdict), nil
+	}
+	return nil, []string{"Agent", facts.ToolName, ToolBrief, ToolAsk, ToolPlan, ToolVerdict}
+}
+
+// Kind a role runs as under the configuration, its endpoint, limits and tools
+func (c Config) Kind(role Role) harness.Kind {
+	r := c.Roles[role]
+	offered, denied := roleTools(role)
+	k := harness.Kind{Name: KindName(role), Description: roleDescription(role), System: roleSystem(role, c.Team), Tools: offered, Deny: denied, MaxRounds: r.MaxRounds, MaxTokens: r.MaxTokens}
+	if r.Profile != "" {
 		k.Model = &harness.Target{Profile: r.Profile, Model: r.Model}
 	}
 	return k
 }
 
-// Kinds of every role
+// Kinds of every role under the configuration
 func (c Config) Kinds() []harness.Kind {
 	out := make([]harness.Kind, 0, len(Roles))
 	for _, role := range Roles {
@@ -236,257 +449,15 @@ func (c Config) Kinds() []harness.Kind {
 	return out
 }
 
-// Every setting as text keyed by name, zero optional numbers and empty lists as empty text
-func (c Config) Values() map[string]string {
-	out := map[string]string{}
-	for _, role := range Roles {
-		r := c.Role(role)
-		out[role+".profile"] = r.Profile
-		out[role+".model"] = r.Model
-		out[role+".max_tokens"] = optional(r.MaxTokens)
-		out[role+".max_rounds"] = optional(r.MaxRounds)
-		out[role+".budget"] = optional(r.Budget)
-		out[role+".append"] = r.Append
-		out[role+".tools"] = strings.Join(r.Tools, ", ")
-		out[role+".deny"] = strings.Join(r.Deny, ", ")
+// One line on what a role does
+func roleDescription(role Role) string {
+	switch role {
+	case RoleDirector:
+		return "sprint director, settles the brief with the person and reports at the end"
+	case RoleArchitect:
+		return "sprint architect, cuts the brief into tickets a team can build side by side"
+	case RoleBuilder:
+		return "sprint builder, builds one ticket at a time and hands it off"
 	}
-	out["team.max_engineers"] = strconv.Itoa(c.Team.MaxEngineers)
-	out["team.tickets_per_engineer"] = strconv.FormatFloat(c.Team.TicketsPerEngineer, 'f', -1, 64)
-	out["team.parallel"] = strconv.FormatBool(c.Team.Parallel)
-	out["team.max_rework"] = strconv.Itoa(c.Team.MaxRework)
-	out["team.max_tickets"] = strconv.Itoa(c.Team.MaxTickets)
-	out["limits.total"] = c.Limits.Total.String()
-	out["limits.refine"] = c.Limits.Refine.String()
-	out["limits.plan"] = c.Limits.Plan.String()
-	out["limits.build"] = c.Limits.Build.String()
-	out["limits.review"] = c.Limits.Review.String()
-	out["interactive"] = strconv.FormatBool(c.Interactive)
-	return out
-}
-
-// Sets one setting from text, empty text returning an optional one to its default, refusing an unknown key or a bad value
-func (c *Config) Set(key, value string) error {
-	value = strings.TrimSpace(value)
-	section, field, _ := strings.Cut(key, ".")
-	if r := c.Role(section); r != nil {
-		switch field {
-		case "profile":
-			r.Profile = value
-		case "model":
-			r.Model = value
-		case "max_tokens":
-			return setCount(&r.MaxTokens, key, value, 0, 0)
-		case "max_rounds":
-			return setCount(&r.MaxRounds, key, value, 0, 0)
-		case "budget":
-			return setCount(&r.Budget, key, value, 0, 0)
-		case "append":
-			r.Append = value
-		case "tools":
-			r.Tools = list(value)
-		case "deny":
-			r.Deny = list(value)
-		default:
-			return fmt.Errorf("unknown setting %s", key)
-		}
-		return nil
-	}
-	defaults := Default()
-	switch key {
-	case "team.max_engineers":
-		return setCount(&c.Team.MaxEngineers, key, value, defaults.Team.MaxEngineers, 1)
-	case "team.tickets_per_engineer":
-		if value == "" {
-			c.Team.TicketsPerEngineer = defaults.Team.TicketsPerEngineer
-			return nil
-		}
-		f, err := strconv.ParseFloat(value, 64)
-		if err != nil || !(f > 0) || math.IsInf(f, 0) {
-			return fmt.Errorf("%s must be a number above 0, got %q", key, value)
-		}
-		c.Team.TicketsPerEngineer = f
-	case "team.parallel":
-		return setFlag(&c.Team.Parallel, key, value, defaults.Team.Parallel)
-	case "team.max_rework":
-		return setCount(&c.Team.MaxRework, key, value, defaults.Team.MaxRework, 0)
-	case "team.max_tickets":
-		return setCount(&c.Team.MaxTickets, key, value, defaults.Team.MaxTickets, 1)
-	case "limits.total":
-		return setDuration(&c.Limits.Total, key, value, defaults.Limits.Total)
-	case "limits.refine":
-		return setDuration(&c.Limits.Refine, key, value, defaults.Limits.Refine)
-	case "limits.plan":
-		return setDuration(&c.Limits.Plan, key, value, defaults.Limits.Plan)
-	case "limits.build":
-		return setDuration(&c.Limits.Build, key, value, defaults.Limits.Build)
-	case "limits.review":
-		return setDuration(&c.Limits.Review, key, value, defaults.Limits.Review)
-	case "interactive":
-		return setFlag(&c.Interactive, key, value, defaults.Interactive)
-	default:
-		return fmt.Errorf("unknown setting %s", key)
-	}
-	return nil
-}
-
-func setCount(into *int, key, value string, def, floor int) error {
-	if value == "" {
-		*into = def
-		return nil
-	}
-	n, err := strconv.Atoi(value)
-	if err != nil || n < floor {
-		return fmt.Errorf("%s must be a whole number of at least %d, got %q", key, floor, value)
-	}
-	*into = n
-	return nil
-}
-
-func setFlag(into *bool, key, value string, def bool) error {
-	if value == "" {
-		*into = def
-		return nil
-	}
-	b, err := strconv.ParseBool(value)
-	if err != nil {
-		return fmt.Errorf("%s must be true or false, got %q", key, value)
-	}
-	*into = b
-	return nil
-}
-
-func setDuration(into *Duration, key, value string, def Duration) error {
-	if value == "" {
-		*into = def
-		return nil
-	}
-	d, err := time.ParseDuration(value)
-	if err != nil || d <= 0 {
-		return fmt.Errorf("%s must be a duration above 0 such as 30m, got %q", key, value)
-	}
-	*into = Duration(d)
-	return nil
-}
-
-func optional(n int) string {
-	if n == 0 {
-		return ""
-	}
-	return strconv.Itoa(n)
-}
-
-// Names from comma separated text, blanks dropped
-func list(text string) []string {
-	var out []string
-	for _, s := range strings.Split(text, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func contains(names []string, name string) bool {
-	for _, have := range names {
-		if have == name {
-			return true
-		}
-	}
-	return false
-}
-
-// File the settings live in, under the user configuration directory
-func Path() (string, error) {
-	dir, err := profiles.ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, filepath.FromSlash(ConfigFile)), nil
-}
-
-// Reads the settings file over the defaults, the defaults alone when there is no file
-func Load() (Config, error) {
-	c := Default()
-	path, err := Path()
-	if err != nil {
-		return c, err
-	}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return c, nil
-	}
-	if err != nil {
-		return c, err
-	}
-	if err := json.Unmarshal(data, &c); err != nil {
-		return c, fmt.Errorf("%s: %w", path, err)
-	}
-	if err := c.Validate(); err != nil {
-		return c, fmt.Errorf("%s: %w", path, err)
-	}
-	return c, nil
-}
-
-// Writes the settings file, readable by the owner alone
-func Save(c Config) error {
-	if err := c.Validate(); err != nil {
-		return err
-	}
-	path, err := Path()
-	if err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(data, '\n'), 0o600)
-}
-
-var (
-	cfgMu  sync.RWMutex
-	cfg    Config
-	cfgErr error
-	loaded bool
-)
-
-// Settings in force, read from the file on first use and the defaults when the file cannot be read
-func Current() Config {
-	cfgMu.Lock()
-	defer cfgMu.Unlock()
-	if !loaded {
-		cfg, cfgErr = Load()
-		loaded = true
-	}
-	return cfg
-}
-
-// Error of the first read of the settings file, nil when it read or was absent
-func LoadError() error {
-	Current()
-	cfgMu.RLock()
-	defer cfgMu.RUnlock()
-	return cfgErr
-}
-
-// Saves the settings, makes them the ones in force and points the kinds of every role at them
-func Apply(app *harness.App, c Config) error {
-	if err := Save(c); err != nil {
-		return err
-	}
-	cfgMu.Lock()
-	cfg, cfgErr, loaded = c, nil, true
-	cfgMu.Unlock()
-	if app == nil {
-		return nil
-	}
-	for _, k := range c.Kinds() {
-		if err := app.PutKind(k); err != nil {
-			return err
-		}
-	}
-	return nil
+	return "sprint reviewer, checks every handoff and directs the builders"
 }

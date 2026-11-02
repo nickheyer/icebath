@@ -107,7 +107,7 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 	environment := &field{key: "context", label: "context", group: "prompt", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.NoContext), help: "Sends the environment block about the machine and session after the prompt"}
 	bare := &field{key: "bare", label: "bare", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Bare), help: "Asks the endpoint to add no prompt or tools of its own"}
 	ghost := &field{key: "ghost", label: "ghost", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(written.Ghost), help: "Keeps sessions off disk and asks the endpoint to keep nothing of them"}
-	thinking := &field{key: "thinking", label: "thinking", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, help: "Shows the model's thinking in the transcript, false keeps every thinking event out of the window"}
+	thinking := &field{key: "expand_thinking", label: "auto-expand thinking", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, help: "Opens each thinking block in the transcript as it arrives, false leaves every block folded until opened"}
 	enabled := &field{key: "enabled", label: "enabled", group: "behavior", kind: choiceField, choices: []string{"true", "false"}, value: strconv.FormatBool(!written.Disabled), help: "Off profiles stay out of pickers"}
 	describeKey := func() {
 		key.kind = textField
@@ -169,9 +169,9 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 			s = from.System
 		}
 		promptFrom.value, system.value = or(string(s.Kind), builtInChoice), s.Value
-		thinking.value = strconv.FormatBool(b.ShowsThinking())
-		if from.Thinking != nil {
-			thinking.value = strconv.FormatBool(*from.Thinking)
+		thinking.value = strconv.FormatBool(b.ExpandsThinking())
+		if from.ExpandThinking != nil {
+			thinking.value = strconv.FormatBool(*from.ExpandThinking)
 		}
 		for _, f := range []*field{endpoint, model, authName, key, system} {
 			f.cursor = len([]rune(f.value))
@@ -235,9 +235,9 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		p.NoContext = environment.value == "false"
 		p.Bare = bare.value == "true"
 		p.Ghost = ghost.value == "true"
-		p.Thinking = nil
-		if shown := thinking.value == "true"; shown != b.ShowsThinking() {
-			p.Thinking = &shown
+		p.ExpandThinking = nil
+		if open := thinking.value == "true"; open != b.ExpandsThinking() {
+			p.ExpandThinking = &open
 		}
 		if err := c.env.Editor.SaveProfile(oldName, p); err != nil {
 			return nil, err

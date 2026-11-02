@@ -54,14 +54,14 @@ type Live struct {
 	Facts    *facts.Store
 	Missions *mission.Store
 	Endpoint Endpoint
-	thinking atomic.Bool
+	expand   atomic.Bool
 }
 
-// Reports whether the thinking of its runs reaches the transcript
-func (l *Live) ShowsThinking() bool { return l.thinking.Load() }
+// Reports whether the thinking of its runs opens in the transcript as it arrives
+func (l *Live) ExpandsThinking() bool { return l.expand.Load() }
 
-// Hands the thinking of its runs to the transcript or keeps every thinking event out of it
-func (l *Live) SetThinking(on bool) { l.thinking.Store(on) }
+// Opens the thinking of its runs in the transcript as it arrives, or leaves each block folded
+func (l *Live) SetExpandThinking(on bool) { l.expand.Store(on) }
 
 // Everything built from a configuration, shared by the terminal app and the headless runner
 type App struct {
@@ -281,12 +281,6 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 			return l.Missions
 		}
 		return nil
-	}
-	app.Control.Thinking = func(sess *session.Session) bool {
-		if l := app.LiveOf(sess); l != nil {
-			return l.ShowsThinking()
-		}
-		return true
 	}
 	app.Flows = NewFlows(app, send)
 	for _, build := range toolsRegistered() {
@@ -644,7 +638,7 @@ func (a *App) live(sess *session.Session, ep Endpoint) (*Live, error) {
 		}
 	}
 	l := &Live{Session: sess, Facts: facts.New(), Missions: mission.New(), Endpoint: ep}
-	l.SetThinking(ep.Profile.ShowsThinking())
+	l.SetExpandThinking(ep.Profile.ExpandsThinking())
 	if err := l.Facts.Restore(sess); err != nil {
 		a.Store.Unlease(sess.ID())
 		return nil, err
@@ -823,7 +817,7 @@ func (a *App) SetEndpointOn(ctx context.Context, l *Live, name string, ep Endpoi
 		}
 	}
 	l.Endpoint = ep
-	l.SetThinking(ep.Profile.ShowsThinking())
+	l.SetExpandThinking(ep.Profile.ExpandsThinking())
 	l.Session.SetModel(ep.Model)
 	l.Session.Label(profileLabel, ep.Profile.Name)
 	a.SetDefaultEndpoint(name, ep)

@@ -20,6 +20,7 @@ import (
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/transform"
 
+	"github.com/nickheyer/icebath/pkg/prompt"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/tool"
 )
@@ -290,13 +291,11 @@ func decode(body []byte, charset string) (string, string, error) {
 }
 
 // Asks the summarizer to answer the prompt using only the fetched text
-func (f *fetch) answer(ctx context.Context, page Page, prompt string) (tool.Result, error) {
+func (f *fetch) answer(ctx context.Context, page Page, question string) (tool.Result, error) {
 	req := protocol.Request{
-		System:    "You answer questions about a web page using only its content below. Quote exact wording where it matters and say plainly when the page does not contain the answer.",
+		System:    prompt.PageSystem,
 		MaxTokens: maxSummaryTokens,
-		Messages: []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{
-			protocol.Text{Text: "<page>\n" + page.render() + "\n</page>\n\nPrompt: " + prompt},
-		}}},
+		Messages:  []protocol.Message{{Role: protocol.RoleUser, Content: []protocol.Part{protocol.Text{Text: prompt.PageRequest(page.render(), question)}}}},
 	}
 	resp, err := f.Summarizer.Complete(ctx, req)
 	if err != nil {

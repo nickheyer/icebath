@@ -31,9 +31,10 @@ type deskState struct {
 	signal  wm.Signal
 }
 
-// Session waiting on the person, served from the field in queue order
+// Session waiting on the person, served from the field in queue order, or a card that reports itself
 type attention struct {
 	desk   *desk
+	card   wm.Card
 	signal wm.Signal
 	at     time.Time
 	text   string
@@ -110,10 +111,15 @@ func failed(err error) bool {
 	return err != nil && !errors.Is(err, agent.ErrInterrupted) && !errors.Is(err, context.Canceled)
 }
 
-// Chip of a workspace named after its lead session, carrying the strongest signal of its sessions
+// Chip of a workspace named after its lead session or a reporting card, carrying the strongest signal
 func (m *Model) lane(ws *wm.Workspace, states map[*desk]deskState, now time.Time) wm.Lane {
 	desks := m.desksIn(ws)
 	if len(desks) == 0 {
+		for _, c := range ws.Cards() {
+			if r, ok := c.(wm.Reporter); ok {
+				return r.Lane()
+			}
+		}
 		return wm.Lane{}
 	}
 	lead := desks[0]
@@ -185,6 +191,19 @@ func (m *Model) queue(states map[*desk]deskState) []attention {
 			out = append(out, attention{desk: d, signal: wm.Fresh, at: s.run.Finished(), text: text + where})
 		}
 	}
+	for _, ws := range m.wm.Workspaces() {
+		for _, c := range ws.Cards() {
+			r, ok := c.(wm.Reporter)
+			if !ok || c == focused {
+				continue
+			}
+			text, signal, at, waiting := r.Waiting()
+			if !waiting {
+				continue
+			}
+			out = append(out, attention{card: c, signal: signal, at: at, text: text + sep + strconv.Itoa(m.wm.IndexOf(ws)+1) + " " + c.Title()})
+		}
+	}
 	for _, st := range m.app.Stuck() {
 		out = append(out, attention{signal: wm.Failed, at: st.Since, text: st.Text() + ", every run on it fails until you fix it or switch profile"})
 	}
@@ -206,6 +225,8 @@ func (m *Model) dispatch() tea.Cmd {
 	}
 	d := q[0].desk
 	switch {
+	case d == nil && q[0].card != nil:
+		return m.wm.Focus(q[0].card)
 	case d == nil:
 		return m.wm.OpenHere(m.panel("config"))
 	case q[0].signal == wm.Blocked && len(states[d].pending) > 0:
