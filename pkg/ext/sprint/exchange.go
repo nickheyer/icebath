@@ -113,6 +113,7 @@ func (r *runner) stall(ctx context.Context, m *Member, err error) error {
 	s.pause(why)
 	s.wait(m.Name)
 	if gerr := r.gate(ctx); gerr != nil {
+		s.unpause()
 		return gerr
 	}
 	if errors.Is(err, errExpired) {

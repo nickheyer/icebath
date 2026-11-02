@@ -138,6 +138,8 @@ type scanLine struct {
 type scene struct {
 	lay      dive
 	grid     vxl.Grid
+	gridLo   vxl.Vec3
+	gridHi   vxl.Vec3
 	chunks   []vxl.Chunk
 	dirty    bool
 	builders int
@@ -204,6 +206,7 @@ func (sc *scene) rebuild(plan []planNode, builders int) {
 	sc.builders = max(builders, 1)
 	sc.lay = buildDive(plan, sc.builders)
 	sc.grid = sc.lay.build()
+	sc.gridLo, sc.gridHi, _ = sc.grid.Bounds()
 	sc.dirty = true
 	seen := map[string]bool{}
 	for i, p := range plan {
@@ -229,7 +232,7 @@ func (sc *scene) rebuild(plan []planNode, builders int) {
 	}
 	sc.order = kept
 	for _, a := range sc.actors {
-		if a.pos.Y < 0.5 {
+		if a.pos.Y < 0.5 && !sc.lay.onPlatform(a.pos) {
 			a.pos = sc.lay.nearest(a.pos)
 		}
 		if a.landed && !a.gone {
@@ -480,7 +483,7 @@ func (sc *scene) syncMessages(snap *Snapshot) {
 			if to == nil {
 				continue
 			}
-			col, verdict := colNodeDone, VerdictAccepted
+			col, verdict := colGreen, VerdictAccepted
 			switch {
 			case strings.HasPrefix(m.Text, string(VerdictRework)):
 				col, verdict = colNodeWork, VerdictRework
@@ -677,7 +680,7 @@ func (sc *scene) update(dt float64) {
 		sc.parts.Add(vxl.Particle{Pos: vxl.V(sc.rnd.Next()*float64(sc.lay.w), 0.3+sc.rnd.Next()*7, sc.rnd.Next()*float64(sc.lay.d)), Vel: vxl.V(sc.rnd.Spread()*0.15, 0.2, sc.rnd.Spread()*0.15), Life: 7, Col: colIce, Size: 0.1, Additive: true})
 	}
 	if sc.ended && sc.endMode == endCheer && sc.t-sc.endedAt < 10 && sc.rnd.Chance(30, dt) {
-		cols := []vxl.RGB{colNodeDone, colIce, colPaper, colNodeWork}
+		cols := []vxl.RGB{colGreen, colIce, colPaper, colNodeWork}
 		sc.parts.Add(vxl.Particle{Pos: sc.lay.uplink.Add(vxl.V(sc.rnd.Spread()*12, 12+sc.rnd.Next()*3, sc.rnd.Spread()*5)), Vel: vxl.V(sc.rnd.Spread()*2, -1, sc.rnd.Spread()*2), Life: 5, Col: cols[sc.rnd.Intn(4)], Size: 0.3, Weight: 2, Floor: 0.1})
 	}
 	if sc.ended && sc.endMode == endFail && sc.t-sc.endedAt < 12 && sc.rnd.Chance(40, dt) {
@@ -741,7 +744,7 @@ func (sc *scene) emitState(a *actor, dt float64) {
 		}
 	case stateCheer:
 		if sc.rnd.Chance(3, dt) {
-			sc.parts.Add(vxl.Particle{Pos: a.headPos().Add(vxl.V(sc.rnd.Spread(), 0.8, sc.rnd.Spread())), Vel: vxl.V(0, 2, 0), Life: 0.9, Col: colNodeDone, Size: 0.18, Additive: true})
+			sc.parts.Add(vxl.Particle{Pos: a.headPos().Add(vxl.V(sc.rnd.Spread(), 0.8, sc.rnd.Spread())), Vel: vxl.V(0, 2, 0), Life: 0.9, Col: colGreen, Size: 0.18, Additive: true})
 		}
 	case stateBrief:
 		if sc.rnd.Chance(4, dt) {
@@ -813,12 +816,15 @@ func (sc *scene) sky(share float64) vxl.RGB {
 	return sc.zenith.Mix(sc.horizon, math.Pow(min(max(share, 0), 1), 1.6))
 }
 
-// Queues the static platform, meshing it again when it changed
+// Queues the static platform when any of it is in view, meshing it again when it changed
 func (sc *scene) drawStatic(r *vxl.Raster) {
 	if sc.dirty {
 		r.Lights = r.Lights[:0]
 		sc.chunks = sc.grid.Mesh(r)
 		sc.dirty = false
+	}
+	if !r.Visible(sc.gridLo, sc.gridHi) {
+		return
 	}
 	r.Chunks(sc.chunks)
 }
@@ -989,11 +995,15 @@ func (sc *scene) drawBeam(r *vxl.Raster) {
 		col = colRed
 	}
 	k := 0.9 + 0.1*math.Sin(sc.t*7)
-	for i := range 14 {
-		s := (float64(i) + 0.5) / 14
-		r.Billboard(from.Lerp(to, s), 0.3+2.2*s, col, (0.04+0.08*(1-s))*k, true)
-	}
+	_, _, forward := r.Basis()
+	side := to.Sub(from).Cross(forward).Norm()
 	w := vxl.Grey(1)
+	for layer, width := range []float64{1, 0.45} {
+		top, foot := side.Mul(0.15*width), side.Mul(1.3*width)
+		ribbon := vxl.Quad{P: [4]vxl.Vec3{from.Sub(top), from.Add(top), to.Add(foot), to.Sub(foot)}, Color: col, Alpha: (0.08 + 0.1*float64(layer)) * k, Additive: true, TwoSided: true}
+		ribbon.Light = [4]vxl.RGB{w, w, w, w}
+		r.Quad(ribbon)
+	}
 	pool := vxl.Quad{P: vxl.FloorQuad(vxl.V(to.X, 0, to.Z), 2.6, 2.6, 0.03), Color: col, Alpha: 0.16 * k, Additive: true, TwoSided: true}
 	pool.Light = [4]vxl.RGB{w, w, w, w}
 	if sc.beamLock != "" {

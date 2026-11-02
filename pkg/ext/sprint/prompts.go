@@ -173,7 +173,7 @@ func reportOpening(b Brief, p Plan, tickets []Ticket, cause string) string {
 	if cause != "" {
 		d.Para("The sprint stopped short: " + cause)
 	}
-	d.Para(prompt.KV("Brief", firstLine(b.Objective)), prompt.KV("Plan", p.Title)).Heading(2, "Tickets")
+	d.Raw(briefText(b)).Para(prompt.KV("Plan", p.Title)).Heading(2, "Tickets")
 	for _, t := range tickets {
 		head := prompt.H(3, t.ID+" "+t.Title+" is "+string(t.Status))
 		if t.Builder != "" {
@@ -185,7 +185,7 @@ func reportOpening(b Brief, p Plan, tickets []Ticket, cause string) string {
 		}
 		d.Para(append(lines, prompt.KV("Ended", t.Err))...)
 	}
-	return d.Para("Write the report for the person in Markdown with these sections: Shipped, Not shipped, How to verify, Left to do. Use only what the handoffs and verdicts say, without tool calls.").String()
+	return d.Para("Write the report for the person in Markdown with these sections: Shipped, Not shipped, How to verify, Left to do. Check what shipped against the acceptance of the brief. Use only what the handoffs and verdicts say, without tool calls.").String()
 }
 
 // Steer that tells a member to wrap up after its time ran out

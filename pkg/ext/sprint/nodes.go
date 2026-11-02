@@ -174,7 +174,7 @@ func (n *node) drawGlow(r *vxl.Raster, sc *scene) {
 	if n.shell > 0.02 {
 		ice := colIce
 		if n.status == TicketBlocked {
-			ice = colNodeBlock.Mix(colDark, 0.4)
+			ice = colViolet.Mix(colDark, 0.35)
 		}
 		size := 3.0 * (0.85 + 0.15*n.shell)
 		r.OrientedBox(c, vxl.V(size, size, size), 0.3+0.05*math.Sin(t*0.5), ice, (0.1+0.3*n.shell)*alpha)
@@ -203,8 +203,10 @@ func (sc *scene) drawConduit(r *vxl.Raster, n *node, dep string) {
 		col, base = colNodeDone, 0.9
 	case d.status == TicketDone:
 		col, base, flow = colNodeDone, 0.6, true
-	case d.status == TicketFailed || d.status == TicketBlocked:
+	case d.status == TicketFailed:
 		col, base = colNodeFail.Mix(colDark, 0.5), 0.4
+	case d.status == TicketBlocked:
+		col, base = colViolet.Mix(colDark, 0.4), 0.4
 	}
 	w := vxl.Grey(1)
 	for i, c := range cells {

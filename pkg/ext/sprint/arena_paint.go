@@ -397,9 +397,10 @@ func (a *arena) paintChips(p *painter, x, y, right int, live map[string]liveStat
 			break
 		}
 		bg, tfg := theme.Mix(t.Bg, t.Surface, 0.4), t.Text
-		if m.Name == a.sel {
+		switch m.Name {
+		case a.sel:
 			bg, tfg, fg = t.Ice, t.Bg, t.Bg
-		} else if m.Name == a.hover {
+		case a.hover:
 			bg = t.Steel
 		}
 		p.label(x, y, label, tfg, bg, m.Name == a.sel)

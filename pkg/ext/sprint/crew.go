@@ -65,9 +65,9 @@ func solidLayers(w, h, d int, key rune) []string {
 
 // Layers of the head of a figure wearing a rig, hair at the back and the face in front
 func headLayers(rig string) []string {
-	back := []string{".kkk.", "kkkkk", "kkkkk", "kkkkk", ".kkk."}
-	mid := []string{".kkk.", "ksssk", "sssss", "sssss", ".sss."}
-	front := []string{".kkk.", "ksssk", "seses", "sssss", ".sss."}
+	back := []string{".kkk.", "kkkkk", "kkkkk", "kkkkk", ".SSS."}
+	mid := []string{".kkk.", "ksssk", "sssss", "sssss", ".SSS."}
+	front := []string{".kkk.", "ksssk", "seses", "sssss", ".SSS."}
 	layers := [][]rune{}
 	for _, src := range [][]string{back, back, mid, mid, front} {
 		for _, row := range src {
@@ -292,7 +292,7 @@ func (a *actor) dress(look Look) {
 		body = a.col.Mix(colDark, 0.55)
 	}
 	a.pal = vxl.Palette{Colors: map[rune]vxl.RGB{
-		'c': body, 'C': body.Mix(colPaper, 0.3), 'd': body.Scale(0.6), 'k': colDark, 'p': colPants, 's': colSkin, 'e': colEye,
+		'c': body, 'C': body.Mix(colPaper, 0.3), 'd': body.Scale(0.6), 'k': colDark, 'p': colPants, 's': colSkin, 'S': colSkinDark, 'e': colEye,
 		'v': colIce, 'g': a.col, 't': a.col, 'w': colPaper,
 	}, Glow: map[rune]bool{'v': true, 'g': true, 't': true}}
 }

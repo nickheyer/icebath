@@ -269,6 +269,9 @@ func (r *runner) buildTicket(ctx context.Context, m *Member, t *Ticket) buildRes
 		if h := v.(Handoff); h.Ticket != t.ID {
 			return fmt.Errorf("your ticket is %s, hand that one off", t.ID)
 		}
+		if st := s.statusOf(t); st != TicketActive {
+			return fmt.Errorf("%s is %s, not in hand, end your turn", t.ID, st)
+		}
 		return nil
 	}
 	for {

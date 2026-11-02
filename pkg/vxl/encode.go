@@ -131,7 +131,7 @@ func (fr *Frame) Encode(buf *uv.Buffer, x0, y0, cols, rows int, mode CellMode, q
 			for cx := range cols {
 				for j := range py {
 					for i := range px {
-						pix[j*px+i] = fr.At(cx*px+i, cy*py+j)
+						pix[j*px+i] = fr.At(cx*px+i, cy*py+j).Clamp()
 					}
 				}
 				mask, fg, bg := partition(pix[:n])
