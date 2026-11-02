@@ -224,6 +224,8 @@ type Sprint struct {
 	seq      int
 	// What the director reported at the end
 	Summary string
+	// Why the build ended short, told to the report, empty while it ran its course
+	Cause string
 	// Why the sprint waits for the person to tell it to go on, empty while it runs on its own
 	Paused string
 	// Member whose session the sprint waits on the person to drive, empty while it waits on none
@@ -254,6 +256,7 @@ type Snapshot struct {
 	Members  []Member
 	Messages []Message
 	Summary  string
+	Cause    string
 	Paused   string
 	Waiting  string
 	Spent    map[string]int
@@ -345,7 +348,7 @@ func (s *Sprint) setAnnounce(announce func(any)) {
 func (s *Sprint) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := Snapshot{ID: s.ID, Request: s.Request, Started: s.Started, Finished: s.Finished, Stage: s.Stage, Last: s.Last, Status: s.Status, Err: s.Err, Brief: s.Brief, Plan: s.Plan, Summary: s.Summary, Paused: s.Paused, Waiting: s.Waiting}
+	out := Snapshot{ID: s.ID, Request: s.Request, Started: s.Started, Finished: s.Finished, Stage: s.Stage, Last: s.Last, Status: s.Status, Err: s.Err, Brief: s.Brief, Plan: s.Plan, Summary: s.Summary, Cause: s.Cause, Paused: s.Paused, Waiting: s.Waiting}
 	out.Tickets = make([]Ticket, 0, len(s.Tickets))
 	for _, t := range s.Tickets {
 		c := *t
@@ -372,6 +375,17 @@ func (s *Sprint) changed() {
 	announce := s.announce
 	s.mu.Unlock()
 	announce(ChangedMsg{ID: s.ID})
+}
+
+// Records why the build ended short, nothing once it ran its course
+func (s *Sprint) setCause(err error) {
+	s.mu.Lock()
+	s.Cause = ""
+	if err != nil {
+		s.Cause = err.Error()
+	}
+	s.mu.Unlock()
+	s.changed()
 }
 
 // Records what the director reported at the end
@@ -723,30 +737,44 @@ func (s *Sprint) finish(err error) {
 	s.changed()
 }
 
-// Stage an ended sprint picks up at, the first whose work is not in hand
+// Prefix of the error of a ticket the reviewer failed, which a restart leaves failed
+const reviewerFailed = "failed by the reviewer: "
+
+// Reports whether a ticket needs building again on restart, done and reviewer failed ones never do
+func unfinished(t Ticket) bool {
+	switch t.Status {
+	case TicketDone:
+		return false
+	case TicketFailed:
+		return !strings.HasPrefix(t.Err, reviewerFailed)
+	}
+	return true
+}
+
+// Stage an ended sprint picks up at, the report only once every ticket is settled for good
 func restartStage(s Snapshot) Stage {
 	switch {
 	case s.Brief.Objective == "":
 		return StageBrief
 	case len(s.Tickets) == 0:
 		return StagePlan
-	case s.Last == StageReport:
+	case s.Last == StageReport && !slices.ContainsFunc(s.Tickets, unfinished):
 		return StageReport
 	}
 	return StageBuild
 }
 
-// Readies an ended sprint to run again from its stage, tickets cut short going back to the queue
+// Readies an ended sprint to run again from its stage, every ticket still needing work going back to the queue
 func (s *Sprint) restart() Stage {
 	from := restartStage(s.Snapshot())
 	s.mu.Lock()
 	s.Finished, s.Err, s.Stage, s.Last, s.Status = time.Time{}, nil, from, "", "restarting"
 	s.Paused, s.Waiting = "", ""
+	if from != StageReport {
+		s.Cause = ""
+	}
 	for _, t := range s.Tickets {
-		switch {
-		case t.Status == TicketActive || t.Status == TicketReview:
-			t.Status, t.Err = TicketTodo, ""
-		case t.Status == TicketBlocked, t.Status == TicketFailed && !strings.HasPrefix(t.Err, "failed by the reviewer"):
+		if unfinished(*t) {
 			t.Status, t.Err, t.Finished = TicketTodo, "", time.Time{}
 		}
 	}

@@ -1076,7 +1076,123 @@ func (a *App) SaveProfile(old string, p profiles.Profile) error {
 	if err := e.Validate(); err != nil {
 		return err
 	}
-	return a.editProfiles(old, func(d *profiles.Document) error { return d.Put(old, p) })
+	var was profiles.Profile
+	if i := indexOf(a.Profiles, old); i >= 0 {
+		was = a.Profiles[i].Profile
+	}
+	if err := a.editProfiles(old, func(d *profiles.Document) error { return d.Put(old, p) }); err != nil {
+		return err
+	}
+	a.forgetListed(old, p.Name)
+	if old != "" && old != p.Name {
+		if err := a.renamed(old, p.Name); err != nil {
+			return err
+		}
+	}
+	return a.remodeled(was, e)
+}
+
+// Drops a model the edit took out of the profile from the configuration and the open sessions on it
+func (a *App) remodeled(was, now profiles.Profile) error {
+	gone := map[string]bool{}
+	for _, id := range was.Models {
+		if !slices.Contains(now.Models, id) {
+			gone[id] = true
+		}
+	}
+	if len(gone) == 0 {
+		return nil
+	}
+	if a.Config.Profile == now.Name && gone[a.Config.Model] {
+		a.Config.Model = now.Model()
+		f := Field{Path: []string{"model"}, Value: a.Config.Model}
+		if a.Config.Model == "" {
+			f = Field{Path: f.Path, Unset: true}
+		}
+		if err := Save(a.Dir, a.Config.Sources, f); err != nil {
+			return err
+		}
+	}
+	if a.Primary.Profile.Name == now.Name && gone[a.Primary.Model] {
+		a.Primary.Model = now.Model()
+	}
+	for _, l := range a.Lives() {
+		if l.Endpoint.Profile.Name != now.Name || !gone[l.Endpoint.Model] {
+			continue
+		}
+		l.Endpoint.Model = now.Model()
+		l.Session.SetModel(now.Model())
+		a.Saver.Touch(l.Session)
+	}
+	return nil
+}
+
+// Moves the configuration, settings, kinds and open sessions from a renamed profile to its new name
+func (a *App) renamed(old, name string) error {
+	var fields []Field
+	if a.Config.Profile == old {
+		a.Config.Profile = name
+		fields = append(fields, Field{Path: []string{"profile"}, Value: name})
+	}
+	if t := a.Config.Subagents.Model; t != nil && t.Profile == old {
+		t.Profile = name
+		fields = append(fields, Field{Path: []string{"subagents", "model", "profile"}, Value: name})
+	}
+	if t := a.Config.Compaction.Model; t != nil && t.Profile == old {
+		t.Profile = name
+		fields = append(fields, Field{Path: []string{"compaction", "model", "profile"}, Value: name})
+	}
+	for _, s := range Settings() {
+		if !s.Profile || a.Config.Setting(s.Key) != old {
+			continue
+		}
+		f, err := a.Config.settingField(s.Key, name)
+		if err != nil {
+			return err
+		}
+		fields = append(fields, f)
+	}
+	if len(fields) > 0 {
+		if err := Save(a.Dir, a.Config.Sources, fields...); err != nil {
+			return err
+		}
+	}
+	if err := a.rekind(old, name); err != nil {
+		return err
+	}
+	if a.Primary.Profile.Name == old {
+		a.Primary.Profile.Name = name
+	}
+	for _, l := range a.Lives() {
+		if l.Endpoint.Profile.Name == old {
+			l.Endpoint.Profile.Name = name
+		}
+		if l.Session.Labels()[profileLabel] == old {
+			l.Session.Label(profileLabel, name)
+			a.Saver.Touch(l.Session)
+		}
+	}
+	return nil
+}
+
+// Moves kinds on a renamed profile to its new name, rewriting the file of each kind read from one
+func (a *App) rekind(old, name string) error {
+	a.kindMu.Lock()
+	defer a.kindMu.Unlock()
+	for i := range a.kinds {
+		k := &a.kinds[i]
+		if k.Model == nil || k.Model.Profile != old {
+			continue
+		}
+		k.Model = &Target{Profile: name, Model: k.Model.Model}
+		if !filepath.IsAbs(k.Source) {
+			continue
+		}
+		if err := writeField(k.Source, "model", k.Model, false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Deletes a written profile, refusing one in use

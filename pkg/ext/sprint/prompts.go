@@ -167,11 +167,11 @@ func verdictText(d Decision) string {
 	return prompt.New().Para(d.Ticket + " failed: " + d.Notes).Para("Stop work on it and end your turn with one line.").String()
 }
 
-// Message the director gets to write the report
-func reportOpening(b Brief, p Plan, tickets []Ticket, err error) string {
+// Message the director gets to write the report, why the build stopped short ahead of it when it did
+func reportOpening(b Brief, p Plan, tickets []Ticket, cause string) string {
 	d := prompt.New()
-	if err != nil {
-		d.Para("The sprint stopped short: " + err.Error())
+	if cause != "" {
+		d.Para("The sprint stopped short: " + cause)
 	}
 	d.Para(prompt.KV("Brief", firstLine(b.Objective)), prompt.KV("Plan", p.Title)).Heading(2, "Tickets")
 	for _, t := range tickets {
@@ -196,6 +196,11 @@ func wrapUp(toolName string, limit time.Duration) string {
 // Steer that tells a member that ended its turn without calling its tool to call it
 func reminder(toolName string) string {
 	return "Call " + toolName + " now with what you have. Nothing moves until you do."
+}
+
+// Steer that tells the director its last turn held no report
+func reportReminder() string {
+	return "Your last turn held no report. Write it now in Markdown with the sections Shipped, Not shipped, How to verify, Left to do, from the handoffs and verdicts alone."
 }
 
 // Result the director reads once the brief is handed over

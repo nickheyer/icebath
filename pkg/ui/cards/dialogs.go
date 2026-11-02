@@ -90,7 +90,7 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		}
 		return nil
 	}}
-	model := &field{key: "model", label: "model", group: "profile", kind: textField, value: written.Model(), help: "Default model, empty takes the provider default"}
+	model := &field{key: "model", label: "model", group: "profile", kind: textField, value: written.Model(), help: "Default model, empty takes the provider default or the first model the endpoint lists"}
 	endpoint := &field{key: "endpoint", label: "endpoint", group: "endpoint", kind: textField, help: "Base URL such as https://api.example.com/v1"}
 	vendor := &field{key: "vendor", label: "vendor", group: "endpoint", kind: choiceField, help: "Model family, used to list models"}
 	proto := &field{key: "protocol", label: "protocol", group: "endpoint", kind: choiceField, choices: protocols, help: "Wire format of the endpoint"}
@@ -244,7 +244,7 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		}
 		c.profiles.refresh()
 		cmds := []tea.Cmd{wm.Notify("saved profile "+p.Name, wm.Success), c.checkCredentials()}
-		if oldName != "" && oldName == c.current() {
+		if oldName != "" && (oldName == c.current() || p.Name == c.current()) {
 			cmds = append(cmds, func() tea.Msg { return SetProfileMsg{Profile: p.Name} })
 		}
 		return tea.Batch(cmds...), nil

@@ -100,7 +100,7 @@ var defaultBuilderLooks = []Look{{"teal", "cap"}, {"amber", "beanie"}, {"violet"
 // Configuration every unset setting falls back to
 func Default() Config {
 	return Config{
-		Roles:       map[Role]RoleConfig{RoleDirector: {}, RoleArchitect: {}, RoleBuilder: {}, RoleReviewer: {}},
+		Roles:       map[Role]RoleConfig{RoleDirector: {MaxRounds: 10}, RoleArchitect: {MaxRounds: 20}, RoleBuilder: {}, RoleReviewer: {MaxRounds: 40}},
 		Team:        Team{Builders: 3, Parallel: true, MaxRework: 2, MaxTickets: 12},
 		Limits:      Limits{Total: 3 * time.Hour, Brief: 45 * time.Minute, Plan: 30 * time.Minute, Build: 90 * time.Minute, Review: 20 * time.Minute},
 		Interactive: true,
@@ -116,13 +116,18 @@ func roleKey(role Role, field string) string { return Name + "." + string(role) 
 // Every setting the extension registers, the roles first, then the team, the limits, the arena and the outfits
 func Settings() []harness.Setting {
 	var out []harness.Setting
+	d := Default()
 	for _, role := range Roles {
 		r := string(role)
+		rounds := "the app setting when unset"
+		if n := d.Roles[role].MaxRounds; n > 0 {
+			rounds = strconv.Itoa(n) + " when unset"
+		}
 		out = append(out,
-			harness.Setting{Key: roleKey(role, "profile"), Help: "Endpoint profile the " + r + " runs on, the default endpoint when unset", Check: checkName("profile")},
-			harness.Setting{Key: roleKey(role, "model"), Help: "Model the " + r + " runs on that profile, its default when unset"},
+			harness.Setting{Key: roleKey(role, "profile"), Help: "Endpoint profile the " + r + " runs on, the default endpoint when unset", Check: checkName("profile"), Profile: true},
+			harness.Setting{Key: roleKey(role, "model"), Help: "Model the " + r + " runs, the default model of its profile when unset"},
 			harness.Setting{Key: roleKey(role, "max_tokens"), Help: "Output tokens one turn of the " + r + " may produce, the app setting when unset", Lo: 1, Step: 1024, Integer: true},
-			harness.Setting{Key: roleKey(role, "max_rounds"), Help: "Tool rounds one run of the " + r + " may take, the app setting when unset", Lo: 1, Step: 1, Integer: true},
+			harness.Setting{Key: roleKey(role, "max_rounds"), Help: "Tool rounds one run of the " + r + " may take, " + rounds, Lo: 1, Step: 1, Integer: true},
 			harness.Setting{Key: roleKey(role, "budget"), Help: "Tokens the " + r + " may spend over one sprint across every turn, unlimited when unset", Lo: 1000, Step: 10000, Integer: true},
 		)
 	}
@@ -429,22 +434,34 @@ func roleTools(role Role) (offered, denied []string) {
 	return nil, []string{"Agent", facts.ToolName, ToolBrief, ToolAsk, ToolPlan, ToolVerdict}
 }
 
-// Kind a role runs as under the configuration, its endpoint, limits and tools
-func (c Config) Kind(role Role) harness.Kind {
+// Kind a role runs as, a model set without a profile running on the default profile named
+func (c Config) Kind(role Role, primary string) harness.Kind {
 	r := c.Roles[role]
 	offered, denied := roleTools(role)
-	k := harness.Kind{Name: KindName(role), Description: roleDescription(role), System: roleSystem(role, c.Team), Tools: offered, Deny: denied, MaxRounds: r.MaxRounds, MaxTokens: r.MaxTokens}
-	if r.Profile != "" {
-		k.Model = &harness.Target{Profile: r.Profile, Model: r.Model}
+	k := harness.Kind{Name: KindName(role), Description: roleDescription(role), System: roleSystem(role, c.Team), Tools: offered, Deny: denied, MaxRounds: r.MaxRounds, MaxTokens: r.MaxTokens, PruneAfter: pruneWindow(r.MaxRounds)}
+	profile := r.Profile
+	if profile == "" && r.Model != "" {
+		profile = primary
+	}
+	if profile != "" {
+		k.Model = &harness.Target{Profile: profile, Model: r.Model}
 	}
 	return k
 }
 
-// Kinds of every role under the configuration
-func (c Config) Kinds() []harness.Kind {
+// Assistant turns a member keeps tool results, the whole capped run with its reminders, the app window when uncapped
+func pruneWindow(maxRounds int) int {
+	if maxRounds <= 0 {
+		return 0
+	}
+	return maxRounds * (1 + maxReminders)
+}
+
+// Kinds of every role under the configuration, the default profile named for a role with a model and no profile
+func (c Config) Kinds(primary string) []harness.Kind {
 	out := make([]harness.Kind, 0, len(Roles))
 	for _, role := range Roles {
-		out = append(out, c.Kind(role))
+		out = append(out, c.Kind(role, primary))
 	}
 	return out
 }

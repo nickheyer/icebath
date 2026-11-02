@@ -251,7 +251,7 @@ func (m *Model) submit(msg cards.SubmitMsg) tea.Cmd {
 				if err := m.app.Control.Steer(r.ID, msg.Parts...); err != nil {
 					return m.wm.Toast(err.Error(), wm.Error, 0)
 				}
-				return m.wm.Toast("queued", wm.Info, 0)
+				return m.wm.Toast("queued for "+sessionName(live, m.theme)+", when the current turn ends or is stopped", wm.Info, 0)
 			}
 		}
 	}

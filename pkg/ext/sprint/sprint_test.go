@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
+	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
 )
@@ -70,7 +71,7 @@ func TestConfigLoad(t *testing.T) {
 func TestKinds(t *testing.T) {
 	c := Default()
 	c.Roles[RoleReviewer] = RoleConfig{Profile: "openai", Model: "gpt-5", MaxTokens: 2048, MaxRounds: 30}
-	kinds := c.Kinds()
+	kinds := c.Kinds("")
 	if len(kinds) != len(Roles) {
 		t.Fatalf("%d kinds", len(kinds))
 	}
@@ -79,24 +80,39 @@ func TestKinds(t *testing.T) {
 			t.Fatalf("%s: %v", k.Name, err)
 		}
 	}
-	reviewer := c.Kind(RoleReviewer)
+	reviewer := c.Kind(RoleReviewer, "")
 	if reviewer.Model == nil || reviewer.Model.Profile != "openai" || reviewer.Model.Model != "gpt-5" || reviewer.MaxTokens != 2048 || reviewer.MaxRounds != 30 {
 		t.Fatalf("reviewer kind %+v", reviewer)
 	}
 	if !reviewer.Offers("Shell") || !reviewer.Offers(ToolVerdict) || reviewer.Offers("Edit") || reviewer.Offers(ToolHandoff) || reviewer.Offers("Agent") {
 		t.Fatalf("reviewer tools %+v", reviewer)
 	}
-	director := c.Kind(RoleDirector)
+	director := c.Kind(RoleDirector, "")
 	if !director.Offers(ToolBrief) || !director.Offers(ToolAsk) || director.Offers("Write") || director.Offers(ToolPlan) {
 		t.Fatalf("director tools %+v", director)
 	}
-	architect := c.Kind(RoleArchitect)
+	architect := c.Kind(RoleArchitect, "")
 	if !architect.Offers(ToolPlan) || architect.Offers(ToolAsk) || architect.Offers("Edit") || architect.Offers("Shell") {
 		t.Fatalf("architect tools %+v", architect)
 	}
-	builder := c.Kind(RoleBuilder)
+	builder := c.Kind(RoleBuilder, "")
 	if !builder.Offers("Edit") || !builder.Offers("mcp__x__y") || !builder.Offers(ToolHandoff) || builder.Offers("Agent") || builder.Offers(ToolVerdict) || builder.Offers(ToolBrief) {
 		t.Fatalf("builder tools %+v", builder)
+	}
+	if reviewer.PruneAfter != 30*(1+maxReminders) || architect.MaxRounds != 20 || architect.PruneAfter != 20*(1+maxReminders) || director.MaxRounds != 10 || director.PruneAfter != 10*(1+maxReminders) || builder.MaxRounds != 0 || builder.PruneAfter != 0 {
+		t.Fatalf("round caps and prune windows: reviewer %d/%d architect %d/%d director %d/%d builder %d/%d", reviewer.MaxRounds, reviewer.PruneAfter, architect.MaxRounds, architect.PruneAfter, director.MaxRounds, director.PruneAfter, builder.MaxRounds, builder.PruneAfter)
+	}
+	c.Roles[RoleBuilder] = RoleConfig{Model: "kairi"}
+	if k := c.Kind(RoleBuilder, "home"); k.Model == nil || k.Model.Profile != "home" || k.Model.Model != "kairi" {
+		t.Fatalf("builder model without a profile %+v", k.Model)
+	}
+	if k := c.Kind(RoleBuilder, ""); k.Model != nil {
+		t.Fatalf("builder model with no default profile %+v", k.Model)
+	}
+	for _, s := range Settings() {
+		if strings.HasSuffix(s.Key, ".profile") != s.Profile {
+			t.Fatalf("%s marked as a profile: %v", s.Key, s.Profile)
+		}
 	}
 	if role, ok := RoleOfKind(builder.Name); !ok || role != RoleBuilder {
 		t.Fatalf("role of %s = %q %v", builder.Name, role, ok)
@@ -322,6 +338,73 @@ func TestRestartResetsTheSprint(t *testing.T) {
 	if from := planned.restart(); from != StagePlan {
 		t.Fatalf("a sprint with a brief and no plan restarts at %s", from)
 	}
+	reported := newSprint("sprint-11", "x", time.Now(), nil)
+	reported.setBrief(Brief{Objective: "x"})
+	reported.setPlan(Plan{Title: "p", Summary: "s"}, []*Ticket{{ID: "T1", Title: "a", Description: "d", Status: TicketTodo}})
+	reported.enter(StageReport, "writing")
+	reported.setCause(errors.New("build stage: no builder"))
+	reported.finish(errors.New("boom"))
+	if from := restartStage(reported.Snapshot()); from != StageBuild {
+		t.Fatalf("a report over unbuilt tickets restarts at %s", from)
+	}
+	if from := reported.restart(); from != StageBuild || reported.Snapshot().Cause != "" {
+		t.Fatalf("restart at %s keeping cause %q", from, reported.Snapshot().Cause)
+	}
+	settled := newSprint("sprint-12", "x", time.Now(), nil)
+	settled.setBrief(Brief{Objective: "x"})
+	settled.setPlan(Plan{Title: "p", Summary: "s"}, []*Ticket{{ID: "T1", Title: "a", Description: "d", Status: TicketDone}, {ID: "T2", Title: "b", Description: "d", Status: TicketFailed, Err: reviewerFailed + "no"}})
+	settled.enter(StageReport, "writing")
+	settled.setCause(errors.New("build stage: half"))
+	settled.finish(errors.New("boom"))
+	if from := settled.restart(); from != StageReport || settled.Snapshot().Cause == "" {
+		t.Fatalf("restart at %s with cause %q", from, settled.Snapshot().Cause)
+	}
+}
+
+func TestReportText(t *testing.T) {
+	if got := reportText(protocol.Response{Content: []protocol.Part{protocol.Text{Text: " " + agent.Omitted + " "}}}); got != "" {
+		t.Fatalf("omitted reasoning taken as a report: %q", got)
+	}
+	if got := reportText(protocol.Response{}); got != "" {
+		t.Fatalf("empty turn taken as a report: %q", got)
+	}
+	if got := reportText(protocol.Response{Content: []protocol.Part{protocol.Text{Text: "# Shipped\n"}}}); got != "# Shipped" {
+		t.Fatalf("report %q", got)
+	}
+}
+
+func TestCheckTeamFailsBeforeTheBrief(t *testing.T) {
+	t.Setenv(profiles.ConfigDirEnv, t.TempDir())
+	path, err := profiles.UserPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := profiles.Document{Default: "home", Profiles: []profiles.Profile{{Name: "home", Template: "anthropic", Key: profiles.Source{Kind: profiles.SourceStatic, Value: "k"}}}}
+	if err := profiles.WriteFile(path, doc); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	app, err := harness.Build(ctx, harness.Config{Profile: "home"}, func(any) {}, harness.BuildOptions{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close(ctx)
+	cfg := Default()
+	cfg.Roles[RoleReviewer] = RoleConfig{Profile: "gone", Model: "m"}
+	r := &runner{cfg: cfg, f: &harness.Flow{ID: "sprint-1", Name: Name, App: app}, s: newSprint("sprint-1", "x", time.Now(), nil)}
+	err = r.checkTeam(ctx)
+	if err == nil || !strings.Contains(err.Error(), "Reviewer") || !strings.Contains(err.Error(), "gone") {
+		t.Fatalf("unknown reviewer profile passed: %v", err)
+	}
+	msgs := r.s.Snapshot().Messages
+	if len(msgs) != 1 || msgs[0].Kind != MsgFailure || msgs[0].To != Person || !strings.Contains(msgs[0].Text, "gone") {
+		t.Fatalf("failure not told to the person: %+v", msgs)
+	}
+	cfg.Roles[RoleReviewer] = RoleConfig{Model: app.Primary.Model}
+	r.cfg = cfg
+	if err := r.checkTeam(ctx); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestMessagesAndRegistry(t *testing.T) {
@@ -387,7 +470,7 @@ func TestPrompts(t *testing.T) {
 		"next":      builderNext(tickets[1], tickets),
 		"review":    reviewOpening(b, p, tickets[1], h, "Linus", true),
 		"verdict":   verdictText(Decision{Ticket: "T2", Verdict: VerdictRework, Notes: "tests"}),
-		"report":    reportOpening(b, p, tickets, errors.New("build stage: boom")),
+		"report":    reportOpening(b, p, tickets, "build stage: boom"),
 		"plan":      planText(p, tickets),
 		"wrap":      wrapUp(ToolPlan, 30*time.Minute),
 		"reminder":  reminder(ToolHandoff),

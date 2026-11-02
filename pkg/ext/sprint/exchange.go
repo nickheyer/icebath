@@ -34,6 +34,35 @@ var errStalled = errors.New("ended its turns without handing off")
 // Error that ends a run once a role has spent its token budget
 var errBudget = errors.New("token budget spent")
 
+// Error of a director whose turn held no report
+var errNoReport = errors.New("ended its turn without writing the report")
+
+// Opens every role endpoint before the brief, a missing profile or model failing the sprint at once
+func (r *runner) checkTeam(ctx context.Context) error {
+	app := r.f.App
+	seen := map[harness.Target]bool{}
+	for _, k := range r.cfg.Kinds(app.Primary.Profile.Name) {
+		role, _ := RoleOfKind(k.Name)
+		var err error
+		switch {
+		case k.Model == nil && app.Primary.Provider == nil:
+			err = harness.ErrNoProfile
+		case k.Model == nil, seen[*k.Model]:
+			continue
+		default:
+			seen[*k.Model] = true
+			_, err = app.OpenEndpoint(ctx, k.Model.Profile, k.Model.Model)
+		}
+		if err == nil {
+			continue
+		}
+		err = fmt.Errorf("%s: %w", r.cfg.NameOf(role, 0), err)
+		r.s.say(MsgFailure, "", Person, "", err.Error())
+		return err
+	}
+	return nil
+}
+
 // Member of a role at an index, its session opened when it has none open yet
 func (r *runner) member(ctx context.Context, role Role, index int) (*Member, error) {
 	s := r.s
@@ -43,7 +72,10 @@ func (r *runner) member(ctx context.Context, role Role, index int) (*Member, err
 	}
 	live, err := r.f.App.CreateKind(ctx, KindName(role))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+		err = fmt.Errorf("%s: %w", name, err)
+		s.say(MsgFailure, name, Person, "", err.Error())
+		r.f.Notify(harness.Error, s.ID+": "+err.Error())
+		return nil, err
 	}
 	live.Session.SetTitle(name + " of " + s.ID)
 	m := &Member{Role: role, Name: name, Index: index, Live: live, Joined: time.Now()}
@@ -254,7 +286,7 @@ func sleep(ctx context.Context, d time.Duration) error {
 
 // Reports whether a run failure may pass on a retry, as endpoint hiccups and dropped streams do
 func transient(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, agent.ErrInterrupted) || errors.Is(err, agent.ErrRounds) || errors.Is(err, errBudget) || errors.Is(err, errExpired) || errors.Is(err, errStalled) {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, agent.ErrInterrupted) || errors.Is(err, agent.ErrRounds) || errors.Is(err, errBudget) || errors.Is(err, errExpired) || errors.Is(err, errStalled) || errors.Is(err, errNoReport) {
 		return false
 	}
 	var pe *protocol.Error

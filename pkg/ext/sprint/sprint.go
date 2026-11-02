@@ -74,7 +74,7 @@ func (extension) Manifest() ext.Manifest {
 
 // Declares the kinds, tools, budget hook, workflow, settings, panels and keys of the sprint team
 func (extension) Attach(h *ext.Host) error {
-	for _, k := range Default().Kinds() {
+	for _, k := range Default().Kinds("") {
 		h.Kind(k)
 	}
 	for _, s := range Settings() {

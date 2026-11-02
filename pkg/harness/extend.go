@@ -45,6 +45,8 @@ type Kind struct {
 	MaxRounds int `json:"max_rounds,omitempty"`
 	// Output tokens one model turn may produce, the configured limit when zero
 	MaxTokens int `json:"max_tokens,omitempty"`
+	// Assistant turns a tool result stays in requests, the configured window when zero
+	PruneAfter int `json:"prune_after,omitempty"`
 	// Hooks every agent of the kind runs with
 	Hooks []agent.Hook `json:"-"`
 	// Extension or file the kind came from
@@ -73,6 +75,9 @@ func (k Kind) Validate() error {
 	if k.MaxTokens < 0 {
 		return fmt.Errorf("kind %s: max_tokens must not be negative", k.Name)
 	}
+	if k.PruneAfter < 0 {
+		return fmt.Errorf("kind %s: prune_after must not be negative", k.Name)
+	}
 	return nil
 }
 
@@ -97,6 +102,8 @@ type Setting struct {
 	Check func(value string) error
 	// Shown masked wherever it is edited, for a key or token
 	Secret bool
+	// Holds a profile name, rewritten when that profile is renamed
+	Profile bool
 	// Extension the setting came from
 	Source string
 }

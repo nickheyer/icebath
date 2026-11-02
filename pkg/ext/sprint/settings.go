@@ -61,7 +61,7 @@ func settingRows(env *cards.Env) []cards.Field {
 			f.Kind, f.Choices = cards.FieldChoice, profileChoices(env)
 		default:
 			f.Kind = cards.FieldText
-			f.Placeholder = placeholder(s.Key)
+			f.Placeholder = placeholder(env, s.Key)
 		}
 		out = append(out, f)
 	}
@@ -75,6 +75,11 @@ func numberStart(key string) float64 {
 	case strings.HasSuffix(key, "max_tokens"):
 		return 8192
 	case strings.HasSuffix(key, "max_rounds"):
+		for _, role := range Roles {
+			if key == roleKey(role, "max_rounds") && d.Roles[role].MaxRounds > 0 {
+				return float64(d.Roles[role].MaxRounds)
+			}
+		}
 		return 50
 	case strings.HasSuffix(key, "budget"):
 		return 200000
@@ -91,7 +96,7 @@ func numberStart(key string) float64 {
 }
 
 // Default shown in a text field while it is unset
-func placeholder(key string) string {
+func placeholder(env *cards.Env, key string) string {
 	d := Default()
 	switch {
 	case strings.HasSuffix(key, "limits.total"):
@@ -105,7 +110,7 @@ func placeholder(key string) string {
 	case strings.HasSuffix(key, "limits.review"):
 		return durationText(d.Limits.Review)
 	case strings.HasSuffix(key, ".model"):
-		return "profile default"
+		return modelPlaceholder(env, key)
 	}
 	for _, role := range Roles {
 		switch key {
@@ -116,6 +121,27 @@ func placeholder(key string) string {
 		}
 	}
 	return ""
+}
+
+// Model a blank setting resolves to, the app default on the default profile, else the first listed
+func modelPlaceholder(env *cards.Env, key string) string {
+	profile := ""
+	for _, role := range Roles {
+		if key == roleKey(role, "model") && env.Settings != nil {
+			profile = strings.TrimSpace(env.Settings()[roleKey(role, "profile")])
+		}
+	}
+	if env.Editor == nil {
+		return "the default model of the profile"
+	}
+	primary := env.Editor.Primary
+	if (profile == "" || profile == primary.Profile.Name) && primary.Model != "" {
+		return "default, " + primary.Model
+	}
+	if p, ok := env.Editor.FindProfile(profile); ok && p.Model() != "" {
+		return "default, " + p.Model()
+	}
+	return "default, the first model the endpoint lists"
 }
 
 // Default first, then every profile switched on

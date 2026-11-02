@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/protocol"
 )
@@ -43,7 +44,7 @@ func run(ctx context.Context, f *harness.Flow, request string) error {
 	if err != nil {
 		return err
 	}
-	for _, k := range cfg.Kinds() {
+	for _, k := range cfg.Kinds(f.App.Primary.Profile.Name) {
 		if err := f.App.PutKind(k); err != nil {
 			return err
 		}
@@ -63,7 +64,9 @@ func run(ctx context.Context, f *harness.Flow, request string) error {
 	r := &runner{cfg: cfg, f: f, s: s, deadline: time.Now().Add(cfg.Limits.Total)}
 	f.Panel(ArenaKey)
 	f.App.Announce(ShowMsg{ID: s.ID})
-	err = r.stages(ctx)
+	if err = r.checkTeam(ctx); err == nil {
+		err = r.stages(ctx)
+	}
 	s.finish(err)
 	switch {
 	case err == nil:
@@ -91,20 +94,28 @@ func (r *runner) stages(ctx context.Context) error {
 		case StageBuild:
 			err, stage = r.build(ctx), StageReport
 		case StageReport:
-			return r.report(ctx, nil)
+			return r.report(ctx)
 		default:
 			return fmt.Errorf("sprint cannot run from the %s stage", stage)
 		}
 		if err == nil {
+			if stage == StageReport {
+				r.s.setCause(nil)
+			}
 			continue
 		}
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) || stage != StageReport {
 			return err
 		}
-		if rerr := r.report(ctx, err); rerr != nil {
+		r.s.setCause(err)
+		switch rerr := r.report(ctx); {
+		case rerr == nil:
+			return err
+		case errors.Is(rerr, context.Canceled):
+			return fmt.Errorf("%w, stopped while the report was written", err)
+		default:
 			return errors.Join(err, rerr)
 		}
-		return err
 	}
 }
 
@@ -284,7 +295,7 @@ func (r *runner) buildTicket(ctx context.Context, m *Member, t *Ticket) buildRes
 			return buildResult{m: m}
 		case VerdictFailed:
 			s.update(t, func(t *Ticket) {
-				t.Status, t.Finished, t.Err = TicketFailed, time.Now(), "failed by the reviewer: "+d.Notes
+				t.Status, t.Finished, t.Err = TicketFailed, time.Now(), reviewerFailed+d.Notes
 			})
 			r.tell(ctx, m, verdictText(d))
 			return buildResult{m: m}
@@ -341,28 +352,49 @@ func (r *runner) review(ctx context.Context, reviewer, builder *Member, t *Ticke
 	return v.(Decision), nil
 }
 
-// Director writes the report, the error that cut the build short told to it when there was one
-func (r *runner) report(ctx context.Context, cause error) error {
+// Director writes the report, told why the build stopped short, a turn with no report stalling the stage
+func (r *runner) report(ctx context.Context) error {
 	s := r.s
-	s.enter(StageReport, "writing the report")
+	snap := s.Snapshot()
+	status := "writing the report"
+	if snap.Cause != "" {
+		status += ", the build stopped short: " + firstLine(snap.Cause)
+	}
+	s.enter(StageReport, status)
 	d, err := r.member(ctx, RoleDirector, 0)
 	if err != nil {
 		return err
 	}
 	s.task(d, "", "writing the report")
 	defer s.task(d, "", "")
-	snap := s.Snapshot()
-	_, resp, err := r.persist(ctx, d, func() (any, protocol.Response, error) {
-		return r.exchange(ctx, d, reportOpening(snap.Brief, snap.Plan, snap.Tickets, cause), "", r.cfg.Limits.Brief, nil)
+	text, report := reportOpening(snap.Brief, snap.Plan, snap.Tickets, snap.Cause), ""
+	_, _, err = r.persist(ctx, d, func() (any, protocol.Response, error) {
+		_, resp, err := r.exchange(ctx, d, text, "", r.cfg.Limits.Brief, nil)
+		if report = reportText(resp); report != "" {
+			return nil, resp, nil
+		}
+		if err == nil {
+			err = fmt.Errorf("%s %w", d.Name, errNoReport)
+		}
+		text = reportReminder()
+		return nil, resp, err
 	})
-	text := strings.TrimSpace(resp.Text())
-	if err != nil && text == "" {
+	if err != nil {
 		return fmt.Errorf("report stage: %w", err)
 	}
-	s.setSummary(text)
-	r.f.Note(d.Live, harness.Info, text)
-	s.say(MsgNote, d.Name, Person, "", "report: "+firstLine(text))
+	s.setSummary(report)
+	r.f.Note(d.Live, harness.Info, report)
+	s.say(MsgNote, d.Name, Person, "", "report: "+firstLine(report))
 	return nil
+}
+
+// Report in a response, empty when the turn held none or only the mark of omitted reasoning
+func reportText(resp protocol.Response) string {
+	text := strings.TrimSpace(resp.Text())
+	if text == agent.Omitted {
+		return ""
+	}
+	return text
 }
 
 // Ticket of a snapshot by id, a bare one for an unknown id

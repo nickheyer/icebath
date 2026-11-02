@@ -104,6 +104,9 @@ type App struct {
 	// Profiles whose endpoint refuses every call until the person acts, by name
 	stuck   map[string]Stuck
 	stuckMu sync.Mutex
+	// First model each profile naming none listed, by profile name
+	listed   map[string]string
+	listedMu sync.Mutex
 }
 
 // Profile whose endpoint refuses every call until the person acts, with the refusal and when it was first heard
@@ -302,7 +305,7 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	return app, nil
 }
 
-// Resolves the profile, opens it and looks the model up in the catalog
+// Opens the profile and looks the model up, the app default model standing in on the default profile
 func (a *App) open(ctx context.Context, t Target) (Endpoint, error) {
 	if t.Profile == "" {
 		t.Profile = a.Primary.Profile.Name
@@ -330,8 +333,13 @@ func (a *App) open(ctx context.Context, t Target) (Endpoint, error) {
 	if model == "" {
 		model = prof.Model()
 	}
+	if model == "" && prof.Name == a.Primary.Profile.Name {
+		model = a.Primary.Model
+	}
 	if model == "" {
-		return Endpoint{}, fmt.Errorf("profile %s names no model, pass one", prof.Name)
+		if model, err = a.firstModel(ctx, prof, prov); err != nil {
+			return Endpoint{}, err
+		}
 	}
 	return Endpoint{Profile: prof.Resolved(), Provider: prov, Model: model, Catalog: describe(model, prof.Vendor), System: system}, nil
 }
@@ -462,6 +470,9 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 	if ep.Provider == nil {
 		return nil, ErrNoProfile
 	}
+	if ep.Model == "" {
+		return nil, fmt.Errorf("harness: profile %s has no model, pick one in config", ep.Profile.Name)
+	}
 	cfg := a.Config
 	kind, _ := a.KindOf(sess)
 	ag := &agent.Agent{Name: name, Model: named{Model: ep.Provider, profile: ep.Profile.Name}, ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
@@ -505,13 +516,50 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		}
 		ag.Hooks = append(ag.Hooks, s)
 	}
-	if after := cfg.PruneAfter(); after > 0 {
+	after := cfg.PruneAfter()
+	if after > 0 && kind.PruneAfter > 0 {
+		after = kind.PruneAfter
+	}
+	if after > 0 {
 		ag.Hooks = append(ag.Hooks, &agent.Pruner{Session: sess, After: after})
 	}
 	ag.Hooks = append(ag.Hooks, &agent.Dedup{Session: sess, Tools: ag.Tools})
 	// Last so it strips and digests the request exactly as every other hook leaves it
 	ag.Hooks = append(ag.Hooks, &agent.StripThinking{})
 	return ag, nil
+}
+
+// First model the endpoint lists for a profile naming none, remembered until the profile is edited
+func (a *App) firstModel(ctx context.Context, prof profiles.Profile, prov *provider.Provider) (string, error) {
+	a.listedMu.Lock()
+	model, ok := a.listed[prof.Name]
+	a.listedMu.Unlock()
+	if ok {
+		return model, nil
+	}
+	list, err := prof.ListModels(ctx, prov)
+	if err != nil {
+		return "", fmt.Errorf("profile %s names no model and listing them failed: %w", prof.Name, err)
+	}
+	if len(list) == 0 {
+		return "", fmt.Errorf("profile %s names no model and the endpoint lists none", prof.Name)
+	}
+	a.listedMu.Lock()
+	if a.listed == nil {
+		a.listed = map[string]string{}
+	}
+	a.listed[prof.Name] = list[0].ID
+	a.listedMu.Unlock()
+	return list[0].ID, nil
+}
+
+// Forgets the listed model of the named profiles, so an edited endpoint is listed again
+func (a *App) forgetListed(names ...string) {
+	a.listedMu.Lock()
+	for _, name := range names {
+		delete(a.listed, name)
+	}
+	a.listedMu.Unlock()
 }
 
 // Model whose failures name the profile they came from, so a transcript says which endpoint refused
@@ -865,10 +913,17 @@ func (a *App) Ghosted(s *session.Session) bool {
 	return false
 }
 
-// Moves new sessions to an opened endpoint
+// Moves new sessions to an opened endpoint, and every open session of that profile left without a model
 func (a *App) SetDefaultEndpoint(name string, ep Endpoint) {
 	a.Primary = ep
 	a.Config.Profile, a.Config.Model = name, ep.Model
+	for _, l := range a.Lives() {
+		if l.Endpoint.Profile.Name == name && l.Endpoint.Model == "" {
+			l.Endpoint = ep
+			l.Session.SetModel(ep.Model)
+			a.Saver.Touch(l.Session)
+		}
+	}
 }
 
 // Opens a profile as an endpoint without changing the app, usable off the event loop
