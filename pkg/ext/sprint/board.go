@@ -140,6 +140,8 @@ func (b *board) rows() [][]string {
 		switch {
 		case s.Running() && s.Paused != "":
 			state = render.Warm("paused", t)
+		case s.Exited():
+			state = render.Warm("interrupted", t)
 		case s.Stopped():
 			state = render.Warm("stopped", t)
 		}
@@ -304,7 +306,7 @@ func (b *board) detail(i int) []string {
 	return out
 }
 
-// Opens the session of a member row and toggles the detail of a sprint or ticket row
+// Opens the session of a member row, stored or open, and toggles the detail of a sprint or ticket row
 func (b *board) open(l *cards.List, i int) tea.Cmd {
 	r, s, ok := b.ref(i)
 	if !ok {
@@ -313,11 +315,25 @@ func (b *board) open(l *cards.List, i int) tea.Cmd {
 	if r.kind != rowMember {
 		return l.ToggleDetail()
 	}
-	m := s.Members[r.index]
-	if m.Live == nil || b.env.Editor == nil || b.env.Editor.LiveOf(m.Live.Session) == nil {
-		return wm.Notify("the session of "+m.Name+" is closed", wm.Info)
+	return openMember(b.env, s.Members[r.index], s.ID)
+}
+
+// Opens the session of a member as a window, loading the stored one when none is open
+func openMember(env *cards.Env, m Member, flow string) tea.Cmd {
+	if env.Editor == nil {
+		return wm.Notify("the app holds no sessions", wm.Error)
 	}
-	live, flow := m.Live, s.ID
+	live := m.Live
+	if live == nil || env.Editor.LiveOf(live.Session) == nil {
+		if m.Session == "" {
+			return wm.Notify(m.Name+" has no session yet", wm.Info)
+		}
+		opened, err := env.Editor.Open(env.Ctx, m.Session)
+		if err != nil {
+			return wm.Notify("the session of "+m.Name+" could not be opened, "+err.Error(), wm.Error)
+		}
+		live = opened
+	}
 	return func() tea.Msg { return harness.OpenedMsg{Live: live, Flow: flow} }
 }
 
@@ -358,7 +374,7 @@ func (b *board) pause(l *cards.List, i int) tea.Cmd {
 	s := sprintByID(snap.ID)
 	switch {
 	case s == nil:
-		return wm.Notify(snap.ID+" was started by another process and cannot be driven from here", wm.Warn)
+		return wm.Notify(snap.ID+" is no longer known", wm.Warn)
 	case !snap.Running():
 		return wm.Notify(snap.ID+" is not running", wm.Info)
 	case snap.Paused != "" && s.Resume():
@@ -380,7 +396,7 @@ func (b *board) resume(l *cards.List, i int) tea.Cmd {
 	s := sprintByID(snap.ID)
 	switch {
 	case s == nil:
-		return wm.Notify(snap.ID+" was started by another process and cannot be driven from here", wm.Warn)
+		return wm.Notify(snap.ID+" is no longer known", wm.Warn)
 	case snap.Running() && snap.Paused != "":
 		return b.pause(l, i)
 	case snap.Running():
@@ -460,11 +476,11 @@ type ShowMsg struct {
 	ID string
 }
 
-// Drops an ended sprint from the registry and stores and closes the sessions of its team, reporting how many
+// Drops an ended sprint from the registry and its file, closing the open sessions of its team, reporting how many
 func Forget(app *harness.App, id string) (int, error) {
 	s := sprintByID(id)
 	if s == nil {
-		return 0, fmt.Errorf("no sprint %s in this process", id)
+		return 0, fmt.Errorf("no sprint %s is known", id)
 	}
 	if s.Snapshot().Running() {
 		return 0, fmt.Errorf("%s is running", id)
@@ -478,6 +494,9 @@ func Forget(app *harness.App, id string) (int, error) {
 			return released, err
 		}
 		released++
+	}
+	if err := s.unkeep(); err != nil {
+		return released, err
 	}
 	regMu.Lock()
 	defer regMu.Unlock()

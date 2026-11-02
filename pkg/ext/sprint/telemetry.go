@@ -73,7 +73,7 @@ func exchangeStart(snap *Snapshot, m Member) time.Time {
 	return at
 }
 
-// Card over the platform beside a member with what the transcript would take minutes to tell
+// Card over the floor beside a member with what the transcript would take minutes to tell
 func (a *arena) paintTelemetry(p *painter, act *actor, sp spot, live liveState) {
 	t := a.env.Theme
 	wb := a.lay.world
@@ -82,15 +82,18 @@ func (a *arena) paintTelemetry(p *painter, act *actor, sp spot, live liveState) 
 		return
 	}
 	var lines []string
-	title := lipgloss.NewStyle().Foreground(t.Ice).Bold(true).Render(m.Name) + " " + render.Dim(crewTitle(m.Role), t)
+	title := lipgloss.NewStyle().Foreground(t.Ice).Bold(true).Render(m.Name)
+	if !strings.EqualFold(m.Name, string(m.Role)) {
+		title += " " + render.Dim(string(m.Role), t)
+	}
 	lines = append(lines, title)
 	switch {
 	case live.approval:
-		lines = append(lines, render.Warm(t.Glyphs.Flag+" iced, waiting for your approval", t))
+		lines = append(lines, render.Warm(t.Glyphs.Flag+" waiting for your approval", t))
 	case live.asking:
-		lines = append(lines, render.Cool(t.Glyphs.Ask+" beacon up, asking you", t))
+		lines = append(lines, render.Cool(t.Glyphs.Ask+" asking you", t))
 	case live.running && live.tool != "":
-		lines = append(lines, render.Good(t.Glyphs.Live+" jacked in", t)+"  "+render.ToolGlyph(live.tool, t)+" "+live.tool)
+		lines = append(lines, render.Good(t.Glyphs.Live+" running", t)+"  "+render.ToolGlyph(live.tool, t)+" "+live.tool)
 	case live.running:
 		lines = append(lines, render.Good(t.Glyphs.Live+" thinking", t))
 	case live.failed:
@@ -127,18 +130,8 @@ func (a *arena) paintTelemetry(p *painter, act *actor, sp spot, live liveState) 
 	case spent > 0:
 		lines = append(lines, render.Dim(render.Tokens(spent)+" tok, no budget set", t))
 	}
-	if n := live.tally.total(); n > 0 {
-		tl := live.tally
-		var parts []string
-		for _, c := range []struct {
-			n     int
-			glyph string
-		}{{tl.reads, t.Glyphs.Read}, {tl.edits, t.Glyphs.Edit}, {tl.shells, t.Glyphs.Shell}, {tl.fetches, t.Glyphs.Fetch}, {tl.agents, t.Glyphs.Spawn}, {tl.calls, t.Glyphs.Flow}, {tl.others, t.Glyphs.Tool}} {
-			if c.n > 0 {
-				parts = append(parts, lipgloss.NewStyle().Foreground(t.Ice).Render(c.glyph)+fmt.Sprint(c.n))
-			}
-		}
-		lines = append(lines, render.Dim(fmt.Sprintf("%d tool calls ", n), t)+strings.Join(parts, " "))
+	if live.tally.total() > 0 {
+		lines = append(lines, tallyText(live.tally, t))
 	}
 	w := 0
 	for _, l := range lines {
@@ -151,7 +144,7 @@ func (a *arena) paintTelemetry(p *painter, act *actor, sp spot, live liveState) 
 		x = sp.x - w - 4
 	}
 	x = max(x, wb.x+1)
-	y = min(max(y, wb.y+stripRows), wb.y+wb.h-h-1)
+	y = min(max(y, wb.y+a.stripRows()), wb.y+wb.h-h-1)
 	if y < wb.y || h > wb.h {
 		return
 	}
@@ -159,28 +152,28 @@ func (a *arena) paintTelemetry(p *painter, act *actor, sp spot, live liveState) 
 	p.lines(x+2, y+1, w-4, h-2, lines)
 }
 
-// Words on what an off duty member is doing on the platform
+// Words on what an idle member is doing on the floor
 func ambientText(a *actor) string {
 	if a.duty.kind != dutyIdle && a.duty.kind != dutyGather || a.exit > 0 {
 		return ""
 	}
 	switch a.ambient {
 	case "inspect":
-		return "off duty, looking over a node"
+		return "idle, looking over a ticket"
 	case "huddle":
 		if a.partner != nil {
-			return "off duty, huddled with " + a.partner.name
+			return "idle, talking with " + a.partner.name
 		}
 	case "perch":
-		return "off duty, perched on the edge"
+		return "idle, sitting on the edge"
 	case "watch":
-		return "off duty, watching a runner work"
+		return "idle, watching a builder work"
 	case "gaze":
-		return "off duty, facing the blackwall"
+		return "idle, looking at the horizon"
 	case "wander":
-		return "off duty, wandering the platform"
+		return "idle, wandering the floor"
 	}
-	return "off duty"
+	return "idle"
 }
 
 // Seconds a stage banner shows for after a stage change

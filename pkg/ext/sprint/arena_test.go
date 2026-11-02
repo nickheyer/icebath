@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/session"
+	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -78,12 +79,20 @@ func TestArenaPaint(t *testing.T) {
 		paintInto(a, size[0], size[1])
 		a.moveCamera(1.0 / 30)
 	}
+	a.rig.yaw.Kick(3)
+	paintInto(a, 120, 30)
+	if a.staticOK {
+		t.Fatal("static layer kept while the camera moves")
+	}
+	for _, v := range []*anim.Value{&a.rig.tx, &a.rig.ty, &a.rig.tz, &a.rig.yaw, &a.rig.pitch, &a.rig.dist} {
+		v.Snap()
+	}
 	for _, mode := range PixelModes {
 		a.cfg.Arena.Pixels = mode
 		paintInto(a, 120, 30)
 		paintInto(a, 120, 30)
-		if !a.staticOK || a.static.W != 120*cellWidth(mode) {
-			t.Fatalf("static layer not kept in %s mode: ok %v width %d", mode, a.staticOK, a.static.W)
+		if !a.staticOK || a.static.W != a.lay.world.w*cellWidth(mode) || a.lay.world.w >= 120 {
+			t.Fatalf("static layer not kept in %s mode: ok %v width %d floor %d", mode, a.staticOK, a.static.W, a.lay.world.w)
 		}
 	}
 	a.cfg.Arena.Pixels = "quadrant"
@@ -111,16 +120,33 @@ func TestArenaPaint(t *testing.T) {
 			a.refresh()
 		}
 	}
-	buf := paintInto(a, 220, 56)
-	if a.lay.insp.w == 0 || a.lay.world.w == 0 {
+	paintInto(a, 220, 56)
+	if a.lay.insp.w == 0 || a.lay.world.w == 0 || a.lay.side.w != sideWide {
 		t.Fatalf("layout %+v", a.lay)
+	}
+	if !a.showBoard || a.sideTickets.h == 0 || a.sideLog.h != 0 {
+		t.Fatalf("tickets not expanded after the tickets key: %+v %+v", a.sideTickets, a.sideLog)
+	}
+	a.Update(wm.ActionMsg{ID: ActBoard})
+	paintInto(a, 220, 56)
+	if len(a.sideRows) != len(s.Snapshot().Members) || a.sideTickets.h == 0 || a.sideLog.h == 0 {
+		t.Fatalf("sidebar rows %d tickets %+v log %+v", len(a.sideRows), a.sideTickets, a.sideLog)
 	}
 	if len(a.spots) == 0 {
 		t.Fatal("no actor was placed on the cells")
 	}
+	if len(a.chips) != 0 {
+		t.Fatalf("%d roster chips painted while the sidebar lists the team", len(a.chips))
+	}
+	a.sidebar = false
+	paintInto(a, 220, 56)
+	if len(a.chips) == 0 {
+		t.Fatal("no roster chips without the sidebar")
+	}
 	if _, ok := a.chipAt(a.chips[0].r.x, a.chips[0].r.y); !ok {
 		t.Fatal("chip of the first member is not under its own cell")
 	}
+	a.sidebar = true
 	if cur := a.Cursor(); cur != nil {
 		t.Fatal("cursor shown while not typing")
 	}
@@ -132,7 +158,7 @@ func TestArenaPaint(t *testing.T) {
 	a.Update(wm.ActionMsg{ID: ActLeave})
 	a.Update(wm.ActionMsg{ID: ActBoard})
 	a.Update(wm.ActionMsg{ID: ActLog})
-	buf = paintInto(a, 220, 56)
+	buf := paintInto(a, 220, 56)
 	for i := 0; i < 2; i++ {
 		a.Update(wm.ActionMsg{ID: ActHelp})
 		paintInto(a, 220, 56)
@@ -203,16 +229,53 @@ func TestArenaMouse(t *testing.T) {
 		t.Fatal("second click did not open the inspector")
 	}
 	yaw := a.rig.yawOff
-	a.Update(tea.MouseClickMsg{X: 30, Y: 30, Button: tea.MouseLeft})
-	a.Update(tea.MouseMotionMsg{X: 40, Y: 30, Button: tea.MouseLeft})
-	a.Update(tea.MouseReleaseMsg{X: 40, Y: 30, Button: tea.MouseLeft})
+	fx := a.lay.world.x + 30
+	a.Update(tea.MouseClickMsg{X: fx, Y: 30, Button: tea.MouseLeft})
+	a.Update(tea.MouseMotionMsg{X: fx + 10, Y: 30, Button: tea.MouseLeft})
+	a.Update(tea.MouseReleaseMsg{X: fx + 10, Y: 30, Button: tea.MouseLeft})
 	if a.rig.yawOff == yaw {
 		t.Fatal("drag did not turn the camera")
 	}
 	zoom := a.rig.zoom
-	a.Update(tea.MouseWheelMsg{X: 30, Y: 30, Button: tea.MouseWheelUp})
+	a.Update(tea.MouseWheelMsg{X: fx, Y: 30, Button: tea.MouseWheelUp})
 	if a.rig.zoom >= zoom {
 		t.Fatal("wheel did not zoom in")
+	}
+	a.Update(wm.ActionMsg{ID: ActInspect})
+	paintInto(a, 220, 56)
+	other := s.Snapshot().Members[0].Name
+	var row sideRow
+	for _, r := range a.sideRows {
+		if r.member == other {
+			row = r
+		}
+	}
+	if row.r.w == 0 {
+		t.Fatalf("no sidebar row for %s", other)
+	}
+	a.Update(tea.MouseClickMsg{X: row.r.x + 2, Y: row.r.y, Button: tea.MouseLeft})
+	if a.sel != other {
+		t.Fatalf("selected %q after clicking the sidebar row of %s", a.sel, other)
+	}
+	a.Update(tea.MouseWheelMsg{X: a.sideLog.x + 1, Y: a.sideLog.y + 1, Button: tea.MouseWheelUp})
+	if a.logTop != 0 && len(s.Snapshot().Messages) < 3 {
+		t.Fatalf("log scrolled past its two lines to %d", a.logTop)
+	}
+	if cmd := a.Update2(wm.ActionMsg{ID: ActSidebar}); cmd == nil {
+		t.Fatal("hiding the sidebar saved no setting")
+	}
+	paintInto(a, 220, 56)
+	if a.sidebar || a.lay.side.w != 0 || a.lay.world.x != 0 {
+		t.Fatalf("sidebar still laid out after hiding it: %+v", a.lay)
+	}
+	a.Update(wm.ActionMsg{ID: ActLog})
+	paintInto(a, 220, 56)
+	if !a.sidebar || !a.showLog || a.sideTickets.h != 0 || a.sideLog.h == 0 {
+		t.Fatalf("log key did not bring the sidebar back with the log expanded: sidebar %v log %v boxes %+v %+v", a.sidebar, a.showLog, a.sideTickets, a.sideLog)
+	}
+	narrow := paintInto(a, 80, 24)
+	if narrow == nil || a.lay.side.w != 0 {
+		t.Fatalf("sidebar kept on an 80 column card: %+v", a.lay)
 	}
 }
 

@@ -42,6 +42,8 @@ type Env struct {
 	Files files.Options
 	// Sessions open in a workspace, in open order
 	Lives func() []*harness.Live
+	// Title of a session by id, the id itself while it has none
+	SessionTitle func(id string) string
 	// Endpoint currently answering
 	Primary func() harness.Endpoint
 	// Lists models of a profile, hitting the endpoint

@@ -9,7 +9,7 @@ import (
 // Height of the core of a node over its pedestal
 const coreHeight = 2.8
 
-// Ticket as a data core on a pedestal, sealed in ice until its runner cracks it open
+// Ticket as a data core on a pedestal, sealed in ice until its builder cracks it open
 type node struct {
 	id     string
 	status TicketStatus
@@ -17,7 +17,7 @@ type node struct {
 	level  int
 	deps   []string
 	round  int
-	// Share of the shell the edits of the runner have broken
+	// Share of the shell the edits of the builder have broken
 	cracks float64
 	// Seconds left of the scan sweep a read started
 	scan float64
@@ -128,7 +128,16 @@ func (n *node) light(t float64) vxl.Light {
 	return vxl.Light{Pos: n.core(t), Color: n.color().Scale(k * (0.6 + 0.4*n.glow)), Radius: 7}
 }
 
-// Queues the solid parts of the node, its core and socket, and the conduits feeding it
+// Pixels below which a core is too small for its shell, pools and motes to read
+const nodeDetailPixels = 6
+
+// Reports whether the core stands tall enough on screen to carry its shell, pools and motes
+func (n *node) detailed(r *vxl.Raster, t float64) bool {
+	_, _, depth, ok := r.Project(n.core(t))
+	return ok && 1.5*r.ScaleY(depth) >= nodeDetailPixels
+}
+
+// Queues the core, socket and conduits of the node, and its corruption while the core reads large enough
 func (n *node) draw(r *vxl.Raster, sc *scene) {
 	t := sc.t
 	if n.rise <= 0 {
@@ -146,7 +155,7 @@ func (n *node) draw(r *vxl.Raster, sc *scene) {
 		band := c.Add(vxl.V(0, 0.55-float64(k)*0.35, 0))
 		r.EmissiveBox(band, vxl.V(1.7, 0.12, 1.7), n.spin+float64(k)*0.4, colNodeFail.Mix(colDark, 0.3), alpha, 1.1)
 	}
-	if n.corrupt > 0 {
+	if n.corrupt > 0 && n.detailed(r, t) {
 		for k := range 5 {
 			j := float64(k)
 			off := vxl.V(math.Sin(t*7+j*2.1)*1.3, math.Cos(t*5+j*1.3)*1.1, math.Sin(t*6+j*0.7)*1.3)
@@ -162,7 +171,7 @@ func (n *node) draw(r *vxl.Raster, sc *scene) {
 	}
 }
 
-// Queues the translucent parts of the node, its ice shell, kernel glow and pool of light on the floor
+// Queues the kernel glow, and the ice shell and floor pools while the core reads large enough
 func (n *node) drawGlow(r *vxl.Raster, sc *scene) {
 	if n.rise <= 0 {
 		return
@@ -171,6 +180,11 @@ func (n *node) drawGlow(r *vxl.Raster, sc *scene) {
 	c := n.core(t)
 	col := n.color()
 	alpha := vxl.Smoothstep(n.rise)
+	k := 0.6 + 0.4*math.Sin(t*4+n.seed*7)
+	r.Billboard(c, 2.4+n.glow*2, col, (0.18+0.25*n.glow)*alpha*k, true)
+	if !n.detailed(r, t) {
+		return
+	}
 	if n.shell > 0.02 {
 		ice := colIce
 		if n.status == TicketBlocked {
@@ -179,8 +193,6 @@ func (n *node) drawGlow(r *vxl.Raster, sc *scene) {
 		size := 3.0 * (0.85 + 0.15*n.shell)
 		r.OrientedBox(c, vxl.V(size, size, size), 0.3+0.05*math.Sin(t*0.5), ice, (0.1+0.3*n.shell)*alpha)
 	}
-	k := 0.6 + 0.4*math.Sin(t*4+n.seed*7)
-	r.Billboard(c, 2.4+n.glow*2, col, (0.18+0.25*n.glow)*alpha*k, true)
 	pool := vxl.Quad{P: vxl.FloorQuad(n.pos, 3.6, 3.6, 1.03), Color: col, Alpha: (0.13 + 0.07*k) * alpha, Additive: true, TwoSided: true}
 	w := vxl.Grey(1)
 	pool.Light = [4]vxl.RGB{w, w, w, w}
@@ -190,11 +202,14 @@ func (n *node) drawGlow(r *vxl.Raster, sc *scene) {
 	r.Quad(pool)
 }
 
-// Queues the conduit from a dependency to a node, dim until the dependency is done, then flowing light
+// Half width of a conduit strip in world units
+const conduitHalf = 0.22
+
+// Queues one face per straight run of a conduit, dim until the dependency is done, then pulsing
 func (sc *scene) drawConduit(r *vxl.Raster, n *node, dep string) {
-	cells := sc.lay.conduits[[2]string{n.id, dep}]
+	runs := sc.lay.runs[[2]string{n.id, dep}]
 	d := sc.nodes[dep]
-	if d == nil || len(cells) == 0 || n.rise < 1 || d.rise < 1 {
+	if d == nil || len(runs) == 0 || n.rise < 1 || d.rise < 1 {
 		return
 	}
 	col, base, flow := colIce.Scale(0.5), 0.35, false
@@ -208,15 +223,24 @@ func (sc *scene) drawConduit(r *vxl.Raster, n *node, dep string) {
 	case d.status == TicketBlocked:
 		col, base = colViolet.Mix(colDark, 0.4), 0.4
 	}
-	w := vxl.Grey(1)
-	for i, c := range cells {
-		k := base
-		if flow {
-			k = base + 0.9*max(0, math.Sin(n.flow-float64(i)*0.55))
+	l := vxl.Grey(base * 1.6)
+	if flow {
+		l = vxl.Grey((base + 0.9) * 1.6)
+	}
+	for _, run := range runs {
+		a := vxl.V(float64(run.a[0])+0.5, 0.02, float64(run.a[1])+0.5)
+		b := vxl.V(float64(run.b[0])+0.5, 0.02, float64(run.b[1])+0.5)
+		along := b.Sub(a).Norm()
+		if along == (vxl.Vec3{}) {
+			along = vxl.V(1, 0, 0)
 		}
-		at := vxl.V(float64(c[0])+0.5, 0, float64(c[1])+0.5)
-		q := vxl.Quad{P: vxl.FloorQuad(at, 0.22, 0.22, 0.02), Color: col, Alpha: 1, Light: [4]vxl.RGB{w, w, w, w}}
-		q.Light = [4]vxl.RGB{vxl.Grey(k * 1.6), vxl.Grey(k * 1.6), vxl.Grey(k * 1.6), vxl.Grey(k * 1.6)}
+		side := vxl.V(along.Z, 0, -along.X).Mul(conduitHalf)
+		a, b = a.Sub(along.Mul(conduitHalf)), b.Add(along.Mul(conduitHalf))
+		q := vxl.Quad{P: [4]vxl.Vec3{a.Sub(side), b.Sub(side), b.Add(side), a.Add(side)}, Color: col, Alpha: 1, Light: [4]vxl.RGB{l, l, l, l}}
+		if flow {
+			ua, ub := n.flow-0.55*(run.sa-conduitHalf), n.flow-0.55*(run.sb+conduitHalf)
+			q.Tex, q.UV = vxl.TexFlow, [4][2]float64{{ua, 0}, {ub, 0}, {ub, 0}, {ua, 0}}
+		}
 		r.Quad(q)
 	}
 }

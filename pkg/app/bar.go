@@ -259,10 +259,10 @@ func (m *Model) dials() []wm.Segment {
 		out = append(out, wm.Segment{Text: g.Flow + " " + strconv.Itoa(flows), Style: wm.Cool, Action: "workflow.stop"})
 	}
 	ep := m.endpoint()
-	if snap.Requests > 0 {
-		out = append(out, cacheDial(snap))
-	}
 	if d := m.current(); d != nil {
+		if cur, ok := m.app.Meter.SnapshotOf(d.live.Session.ID()); ok && cur.Requests > 0 {
+			out = append(out, cacheDial(cur))
+		}
 		out = append(out, m.contextDial(d.live.Session.Context(), ep.Catalog.Context))
 	}
 	if ep.Model != "" {
@@ -272,8 +272,7 @@ func (m *Model) dials() []wm.Segment {
 	return append(out, wm.Segment{Text: md.Label(), Style: modeStyle(md), Action: "mode.set"})
 }
 
-// Gauge of the context against the model window, warming as it fills, the token count when the window is unknown
-// Share of the last request read from cache, warm when a repeat request read nothing
+// Share of the last request of the session read from cache, warm when a repeat request read nothing
 func cacheDial(t harness.Telemetry) wm.Segment {
 	st := wm.Dim
 	if t.CacheRatio == 0 && t.Requests > 1 {
@@ -282,6 +281,7 @@ func cacheDial(t harness.Telemetry) wm.Segment {
 	return wm.Segment{Text: "cache " + render.Percent(t.CacheRatio), Style: st, Action: "open.metrics"}
 }
 
+// Gauge of the context against the model window, warming as it fills, the token count when the window is unknown
 func (m *Model) contextDial(used, window int) wm.Segment {
 	if window <= 0 {
 		return wm.Segment{Text: "ctx " + render.Tokens(used), Style: wm.Dim, Action: "open.metrics"}

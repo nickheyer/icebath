@@ -35,7 +35,7 @@ func TestConfigLoad(t *testing.T) {
 	if c.Arena.Pixels != "half" || c.Arena.FPS != 20 {
 		t.Fatalf("arena %+v", c.Arena)
 	}
-	if c.NameOf(RoleBuilder, 1) != "Bob" || c.NameOf(RoleBuilder, 2) != defaultBuilderNames[2] || c.NameOf(RoleDirector, 0) != "Fixer" {
+	if c.NameOf(RoleBuilder, 1) != "Bob" || c.NameOf(RoleBuilder, 2) != "Builder 3" || c.NameOf(RoleDirector, 0) != "Director" {
 		t.Fatalf("names %q %q %q", c.NameOf(RoleBuilder, 1), c.NameOf(RoleBuilder, 2), c.NameOf(RoleDirector, 0))
 	}
 	if c.LookOf(RoleBuilder, 1) != (Look{"rose", "halo"}) || c.LookOf(RoleBuilder, 0) != (Look{"teal", "crest"}) || c.LookOf(RoleBuilder, 4) != defaultBuilderLooks[4] || c.LookOf(RoleDirector, 0) != (Look{"gold", "hood"}) {
@@ -391,7 +391,7 @@ func TestCheckTeamFailsBeforeTheBrief(t *testing.T) {
 	cfg.Roles[RoleReviewer] = RoleConfig{Profile: "gone", Model: "m"}
 	r := &runner{cfg: cfg, f: &harness.Flow{ID: "sprint-1", Name: Name, App: app}, s: newSprint("sprint-1", "x", time.Now(), nil)}
 	err = r.checkTeam(ctx)
-	if err == nil || !strings.Contains(err.Error(), "Overwatch") || !strings.Contains(err.Error(), "gone") {
+	if err == nil || !strings.Contains(err.Error(), "Reviewer") || !strings.Contains(err.Error(), "gone") {
 		t.Fatalf("unknown reviewer profile passed: %v", err)
 	}
 	msgs := r.s.Snapshot().Messages
@@ -607,6 +607,44 @@ func TestDiveLayout(t *testing.T) {
 	empty := buildDive(nil, 1)
 	if len(empty.nodes) != 0 || empty.w <= 0 || empty.d <= landingDepth {
 		t.Fatalf("empty dive %+v", empty)
+	}
+	var wide []planNode
+	for i := range 14 {
+		wide = append(wide, planNode{id: "W" + string(rune('a'+i))})
+	}
+	wide = append(wide, planNode{id: "X", deps: []string{"Wa", "Wn"}})
+	flat := buildDive(wide, 8)
+	if flat.w >= 50 || flat.d >= 50 {
+		t.Fatalf("fourteen nodes on one level spread the platform to %d by %d", flat.w, flat.d)
+	}
+	rowsAt := map[float64]int{}
+	for id, p := range flat.nodes {
+		if id != "X" {
+			rowsAt[p.Z]++
+		}
+		at, _ := flat.jackSpot(id)
+		if !flat.walkable(int(at.X), int(at.Z)) || at.Flat(p) > 4 {
+			t.Fatalf("jack spot of %s at %v is not walkable beside its node at %v", id, at, p)
+		}
+	}
+	if len(rowsAt) != 3 {
+		t.Fatalf("fourteen nodes wrapped onto %d rows", len(rowsAt))
+	}
+	for z, n := range rowsAt {
+		if n > rowNodes || flat.nodes["X"].Z >= z {
+			t.Fatalf("row at %v holds %d nodes, the dependent sits at %v", z, n, flat.nodes["X"].Z)
+		}
+	}
+	for _, dep := range []string{"Wa", "Wn"} {
+		cells := flat.conduits[[2]string{"X", dep}]
+		if len(cells) == 0 || len(flat.runs[[2]string{"X", dep}]) > 5 {
+			t.Fatalf("conduit from %s has %d cells in %d runs", dep, len(cells), len(flat.runs[[2]string{"X", dep}]))
+		}
+		for _, c := range cells {
+			if flat.blocked[c] {
+				t.Fatalf("conduit from %s runs under a pedestal at %v", dep, c)
+			}
+		}
 	}
 	if rig, ok := hatRigs["fedora"]; !ok || rig != "hood" {
 		t.Fatal("old hats do not map to rigs")

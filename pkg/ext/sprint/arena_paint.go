@@ -22,8 +22,19 @@ import (
 // Rows the inspector spends above the transcript of a member
 const inspectorHead = 3
 
-// Rows the strip at the top of the floor takes
-const stripRows = 3
+// Rows the strip at the top of the floor takes without the sidebar, and with it
+const (
+	stripFull = 3
+	stripSlim = 1
+)
+
+// Rows the strip takes on this paint
+func (a *arena) stripRows() int {
+	if a.lay.side.w > 0 {
+		return stripSlim
+	}
+	return stripFull
+}
 
 // Chip of a member on the strip with where it was painted
 type chipRect struct {
@@ -31,7 +42,7 @@ type chipRect struct {
 	r    rect
 }
 
-// Draws the floor through the camera, then the strip, the panels, the inspector and the approval over it
+// Draws the sidebar, the floor through the camera with its strip, the inspector and the approval over the floor
 func (a *arena) Paint(buf *uv.Buffer) {
 	a.painted = time.Now()
 	a.w, a.h = buf.Width(), buf.Height()
@@ -40,11 +51,13 @@ func (a *arena) Paint(buf *uv.Buffer) {
 	p.fill(0, 0, a.w, a.h, a.env.Theme.Surface)
 	a.spots = map[string]spot{}
 	a.chips = a.chips[:0]
-	a.apRect, a.panelBox = rect{}, rect{}
+	a.apRect = rect{}
+	if a.lay.side.w > 0 {
+		a.paintSide(p)
+	}
 	if a.lay.world.w > 0 && a.lay.world.h > 0 {
 		a.paintWorld(p)
 		a.paintStrip(p)
-		a.paintPanels(p)
 		a.paintApproval(p)
 		if a.showHelp {
 			a.paintHelp(p)
@@ -58,13 +71,23 @@ func (a *arena) Paint(buf *uv.Buffer) {
 // View is never read, the arena paints its cells itself
 func (a *arena) View(w, h int) string { return "" }
 
-// Boxes of the floor and the inspector, the inspector taking the right side or the whole card when narrow
+// Boxes of the sidebar, the floor and the inspector, the sidebar and the floor giving way as the card narrows
 func (a *arena) arrange(w, h int) layout {
 	l := layout{world: rect{0, 0, w, h}}
-	if !a.inspect {
-		return l
+	_, picked := a.selected()
+	insp := a.inspect && picked
+	side := 0
+	switch {
+	case !a.sidebar:
+	case w >= 160:
+		side = sideWide
+	case w >= 90:
+		side = sideNarrow
 	}
-	if _, ok := a.selected(); !ok {
+	if !insp {
+		if side > 0 {
+			l.side, l.world = rect{0, 0, side, h}, rect{side, 0, w - side, h}
+		}
 		return l
 	}
 	if w < 100 {
@@ -72,11 +95,18 @@ func (a *arena) arrange(w, h int) layout {
 		return l
 	}
 	iw := min(max(int(float64(w)*0.42), 44), 100)
-	l.world, l.insp = rect{0, 0, w - iw, h}, rect{w - iw, 0, iw, h}
+	if side > 0 && w-side-iw < 30 {
+		l.side, l.world, l.insp = rect{0, 0, side, h}, rect{}, rect{side, 0, w - side, h}
+		return l
+	}
+	if side > 0 {
+		l.side = rect{0, 0, side, h}
+	}
+	l.world, l.insp = rect{side, 0, w - side - iw, h}, rect{w - iw, 0, iw, h}
 	return l
 }
 
-// Renders the platform into pixels, the static layer kept between frames, encodes the cells of the world box and places the labels
+// Renders the floor into pixels, the static layer cached once the camera rests, then encodes cells and places labels
 func (a *arena) paintWorld(p *painter) {
 	t := a.env.Theme
 	wb := a.lay.world
@@ -88,25 +118,36 @@ func (a *arena) paintWorld(p *painter) {
 	sc := a.sc
 	r := &a.r
 	r.FogColor, r.FogNear, r.FogFar = sc.horizon, a.cam.Dist*0.95, a.cam.Dist*3
-	if !a.staticOK || a.staticCam != a.cam || a.static.W != fr.W || a.static.H != fr.H || sc.dirty {
-		st := &a.static
-		st.PixelAspect = fr.PixelAspect
-		st.Resize(fr.W, fr.H)
-		st.Clear(func(x, y int) vxl.RGB {
-			share := float64(y) / float64(max(st.H, 1))
+	sky := func(fr *vxl.Frame) func(x, y int) vxl.RGB {
+		return func(x, y int) vxl.RGB {
+			share := float64(y) / float64(max(fr.H, 1))
 			c := sc.sky(share)
 			if share < 0.62 && vxl.Hash2(x, y*7+1) > 0.9975 {
 				c = c.Mix(vxl.Hex(0xbfe0f8), (0.2+0.3*vxl.Hash2(y, x))*(0.62-share)/0.62)
 			}
 			return c
-		})
-		r.Begin(st, a.cam)
-		sc.drawStatic(r)
-		r.Flush()
-		a.staticCam, a.staticOK = a.cam, true
+		}
 	}
-	fr.CopyFrom(&a.static)
-	r.Begin(fr, a.cam)
+	switch {
+	case !a.rig.settled():
+		fr.Clear(sky(fr))
+		r.Begin(fr, a.cam)
+		sc.drawStatic(r)
+		a.staticOK = false
+	default:
+		if !a.staticOK || a.staticCam != a.cam || a.static.W != fr.W || a.static.H != fr.H || sc.dirty {
+			st := &a.static
+			st.PixelAspect = fr.PixelAspect
+			st.Resize(fr.W, fr.H)
+			st.Clear(sky(st))
+			r.Begin(st, a.cam)
+			sc.drawStatic(r)
+			r.Flush()
+			a.staticCam, a.staticOK = a.cam, true
+		}
+		fr.CopyFrom(&a.static)
+		r.Begin(fr, a.cam)
+	}
 	sc.drawDynamic(r)
 	if act := a.selectedActor(); act != nil {
 		sc.ring(r, act, vxl.FromColor(t.Ice), 0.85)
@@ -115,6 +156,7 @@ func (a *arena) paintWorld(p *painter) {
 		sc.ring(r, sc.byName[a.hover], vxl.FromColor(t.TextDim), 0.5)
 	}
 	r.Flush()
+	fr.Outline(0.6)
 	if !t.Plain {
 		fr.Bloom(&a.post, 0.62, 0.8)
 		fr.Vignette(0.3)
@@ -123,7 +165,7 @@ func (a *arena) paintWorld(p *painter) {
 	if t.Plain {
 		quantize = vxl.ANSIQuantizer(t.Terminal)
 	}
-	fr.Encode(p.buf.Buffer, wb.x, wb.y, wb.w, wb.h, mode, quantize)
+	a.enc.Encode(fr, p.buf.Buffer, wb.x, wb.y, wb.w, wb.h, mode, quantize)
 	cell := func(sx, sy float64) (int, int) {
 		return wb.x + int(sx)/px, wb.y + int(sy)/py
 	}
@@ -146,10 +188,10 @@ func (a *arena) paintWorld(p *painter) {
 		if !ok {
 			continue
 		}
-		if act.emote != "" && sp.top-2 >= wb.y+stripRows && space.claim(sp.x, sp.top-2, 1) {
+		if act.emote != "" && sp.top-2 >= wb.y+a.stripRows() && space.claim(sp.x, sp.top-2, 1) {
 			p.text(sp.x, sp.top-2, act.emote, emoteColor(act.emote, t), true)
 		}
-		if !(a.labels || act.name == a.sel || act.name == a.hover) || sp.top-1 < wb.y+stripRows {
+		if !(a.labels || act.name == a.sel || act.name == a.hover) || sp.top-1 < wb.y+a.stripRows() {
 			continue
 		}
 		fg := t.Text
@@ -176,27 +218,27 @@ func (a *arena) paintWorld(p *painter) {
 			if n.status == TicketReview || n.glow > 0.3 {
 				fg = t.Text
 			}
-			if x := cx - len(id)/2; cy >= wb.y+stripRows && space.claim(x, cy, len(id)) {
+			if x := cx - len(id)/2; cy >= wb.y+a.stripRows() && space.claim(x, cy, len(id)) {
 				p.text(x, cy, id, fg, n.status == TicketReview)
 			}
 		}
 	}
-	if banner := stageBanner(sc, t); banner != "" && wb.h > stripRows+4 {
-		p.label(wb.x+(wb.w-ansi.StringWidth(banner))/2, wb.y+stripRows+1, " "+banner+" ", t.Ice, theme.Mix(t.Bg, t.Surface, 0.5), true)
+	if banner := stageBanner(sc, t); banner != "" && wb.h > a.stripRows()+4 {
+		p.label(wb.x+(wb.w-ansi.StringWidth(banner))/2, wb.y+a.stripRows()+1, " "+banner+" ", t.Ice, theme.Mix(t.Bg, t.Surface, 0.5), true)
 	}
-	if a.snap != nil {
+	if a.snap != nil && a.lay.side.w == 0 {
 		name := a.hover
 		if name == "" {
 			name = a.sel
 		}
-		if act := sc.byName[name]; act != nil && !act.gone && !a.showBoard && !a.showLog && !a.showHelp {
+		if act := sc.byName[name]; act != nil && !act.gone && !a.showHelp {
 			if sp, ok := a.spots[name]; ok {
 				a.paintTelemetry(p, act, sp, a.liveStates()[name])
 			}
 		}
 	}
-	if a.snap == nil {
-		msg := "no dive yet, run /" + Name + " <request> to send a crew beyond the blackwall"
+	if a.snap == nil && a.lay.side.w == 0 {
+		msg := "no sprint yet, run /" + Name + " <request> to start one"
 		p.label(wb.x+(wb.w-ansi.StringWidth(msg))/2, wb.y+wb.h-2, msg, t.TextDim, t.Surface, false)
 	}
 }
@@ -244,16 +286,28 @@ func emoteColor(e string, t theme.Theme) color.Color {
 	return t.Alarm
 }
 
-// Strip over the floor with the sprint, its stages, what it waits on and the roster of chips
+// Strip over the floor, the camera and the keys worth knowing with the sidebar, the whole sprint header without it
 func (a *arena) paintStrip(p *painter) {
 	t := a.env.Theme
 	wb := a.lay.world
-	p.tint(wb.x, wb.y, wb.w, stripRows, t.Bg, 0.6)
+	p.tint(wb.x, wb.y, wb.w, a.stripRows(), t.Bg, 0.6)
 	s := a.snap
 	x, right := wb.x+2, wb.x+wb.w-2
+	if a.lay.side.w > 0 {
+		cam := "camera " + a.rig.preset
+		if a.rig.preset == "follow" && a.sel != "" {
+			cam += " " + a.sel
+		}
+		p.text(x, wb.y, cam, t.TextDim, false)
+		hint := a.env.Keys.Display(ActHelp) + " keys"
+		if hx := right - ansi.StringWidth(hint); hx > x+ansi.StringWidth(cam)+2 {
+			p.text(hx, wb.y, hint, t.TextDim, false)
+		}
+		return
+	}
 	if s == nil {
 		p.text(x, wb.y, t.Glyphs.Mission+" arena", t.TextDim, true)
-		p.text(x, wb.y+1, "the platform is empty, nobody has jacked in", t.TextDim, false)
+		p.text(x, wb.y+1, "no sprint yet, run /"+Name+" <request> to start one", t.TextDim, false)
 		if a.cfgErr != nil {
 			p.text(x, wb.y+2, ansi.Truncate("settings: "+a.cfgErr.Error(), right-x, t.Glyphs.Ellipsis), t.Alarm, false)
 		}
@@ -308,22 +362,7 @@ func (a *arena) paintStrip(p *painter) {
 		meta = meta[:len(meta)-1]
 	}
 	live := a.liveStates()
-	status, fg := s.Status, t.TextDim
-	switch {
-	case s.Running() && s.Paused != "":
-		status, fg = t.Glyphs.Warn+" "+s.Paused, t.Accent
-	case s.Running() && s.Waiting != "" && live[s.Waiting].asking:
-		status, fg = t.Glyphs.Ask+" "+s.Waiting+" asks you", t.Ice
-	case s.Running() && s.Waiting != "":
-		status, fg = t.Glyphs.Flag+" "+s.Waiting+" waits for you", t.Accent
-	case !s.Running() && s.Err != nil && !s.Stopped():
-		status, fg = t.Glyphs.Fail+" "+s.Err.Error(), t.Alarm
-	case s.Stopped():
-		status, fg = "stopped, "+a.env.Keys.Display(ActRestart)+" restarts at the "+string(restartStage(*s))+" stage", t.Accent
-	}
-	if a.cfgErr != nil {
-		status, fg = "settings: "+a.cfgErr.Error(), t.Alarm
-	}
+	status, fg := a.statusLine(s)
 	p.text(wb.x+2, wb.y+1, ansi.Truncate(status, right-wb.x-2, t.Glyphs.Ellipsis), fg, false)
 	a.paintChips(p, wb.x+2, wb.y+2, right, live)
 }
@@ -420,72 +459,6 @@ func (a *arena) chipAt(x, y int) (string, bool) {
 	return "", false
 }
 
-// Ticket board or exchange log laid over the left of the floor
-func (a *arena) paintPanels(p *painter) {
-	switch {
-	case a.showBoard:
-		a.paintBoard(p)
-	case a.showLog:
-		a.paintLog(p)
-	}
-}
-
-// Box the open board or log takes, false while neither is open
-func (a *arena) panelRect() (rect, bool) {
-	if a.panelBox.w == 0 {
-		return rect{}, false
-	}
-	return a.panelBox, true
-}
-
-// Table of every ticket with where it stands
-func (a *arena) paintBoard(p *painter) {
-	t := a.env.Theme
-	wb := a.lay.world
-	var lines []string
-	if a.snap == nil || len(a.snap.Tickets) == 0 {
-		lines = []string{render.Dim("no tickets yet", t)}
-	}
-	if a.snap != nil {
-		for _, tk := range a.snap.Tickets {
-			state := statusText(tk.Status, t)
-			line := lipgloss.NewStyle().Foreground(t.Ice).Render(tk.ID) + " " + state + " " + tk.Title
-			var tail []string
-			if tk.Builder != "" {
-				tail = append(tail, tk.Builder)
-			}
-			if tk.Round > 0 {
-				tail = append(tail, fmt.Sprintf("sent back %d", tk.Round))
-			}
-			if len(tk.DependsOn) > 0 {
-				tail = append(tail, "after "+strings.Join(tk.DependsOn, " "))
-			}
-			if len(tail) > 0 {
-				line += " " + render.Dim(strings.Join(tail, " "+t.Glyphs.Sep+" "), t)
-			}
-			lines = append(lines, line)
-			if tk.Err != "" {
-				lines = append(lines, "   "+render.Bad(render.Truncate(tk.Err, 70, t), t))
-			}
-		}
-	}
-	a.panelBox = a.overlayBox(wb, 60, len(lines))
-	a.boardTop = min(a.boardTop, max(len(lines)-(a.panelBox.h-2), 0))
-	title := "TICKETS"
-	if a.snap != nil && a.snap.Plan.Title != "" {
-		title += " " + t.Glyphs.Sep + " " + a.snap.Plan.Title
-	}
-	p.panel(a.panelBox.x, a.panelBox.y, a.panelBox.w, a.panelBox.h, title, 0.88)
-	p.lines(a.panelBox.x+2, a.panelBox.y+1, a.panelBox.w-4, a.panelBox.h-2, lines[a.boardTop:])
-}
-
-// Box a panel of that many lines takes at the left of the floor under the strip
-func (a *arena) overlayBox(wb rect, width, lines int) rect {
-	w := min(width, wb.w-2)
-	h := min(lines+2, wb.h-stripRows-1)
-	return rect{wb.x + 1, wb.y + stripRows, max(w, 10), max(h, 3)}
-}
-
 // Status of a ticket in its color
 func statusText(s TicketStatus, t theme.Theme) string {
 	text := fmt.Sprintf("%-7s", string(s))
@@ -500,39 +473,6 @@ func statusText(s TicketStatus, t theme.Theme) string {
 		return render.Bad(text, t)
 	}
 	return render.Dim(text, t)
-}
-
-// Exchanges between the team and the person, newest last
-func (a *arena) paintLog(p *painter) {
-	t := a.env.Theme
-	wb := a.lay.world
-	var lines []string
-	if a.snap != nil {
-		for _, m := range a.snap.Messages {
-			who := m.From
-			if m.To != "" {
-				who += " " + t.Glyphs.Steer + " " + m.To
-			}
-			if who == "" {
-				who = string(m.Kind)
-			}
-			line := render.Dim(m.At.Local().Format("15:04:05"), t) + " " + lipgloss.NewStyle().Foreground(kindColor(m.Kind, t)).Render(who)
-			if m.Ticket != "" {
-				line += " " + lipgloss.NewStyle().Foreground(t.Ice).Render(m.Ticket)
-			}
-			lines = append(lines, line+" "+firstLine(m.Text))
-		}
-	}
-	if len(lines) == 0 {
-		lines = []string{render.Dim("nothing has happened yet", t)}
-	}
-	a.panelBox = a.overlayBox(wb, 90, len(lines))
-	rows := a.panelBox.h - 2
-	a.logTop = min(a.logTop, max(len(lines)-rows, 0))
-	end := len(lines) - a.logTop
-	start := max(end-rows, 0)
-	p.panel(a.panelBox.x, a.panelBox.y, a.panelBox.w, a.panelBox.h, "LOG", 0.88)
-	p.lines(a.panelBox.x+2, a.panelBox.y+1, a.panelBox.w-4, rows, lines[start:end])
 }
 
 // Color an exchange kind paints its names in
@@ -556,7 +496,7 @@ func kindColor(k MessageKind, t theme.Theme) color.Color {
 func (a *arena) paintHelp(p *painter) {
 	t := a.env.Theme
 	wb := a.lay.world
-	ids := []string{ActNext, ActPrev, ActInspect, ActSteer, ActLeave, ActOpen, ActKill, ActFollow, ActCamera, ActReset, ActOrbitLeft, ActOrbitRight, ActOrbitUp, ActOrbitDown, ActZoomIn, ActZoomOut, ActBoard, ActLog, ActLabels, ActCustomize, ActPause, ActStop, ActRestart, ActSprintNext, ActSprintPrev, ActSettings, ActHelp}
+	ids := []string{ActNext, ActPrev, ActInspect, ActSteer, ActLeave, ActOpen, ActKill, ActSidebar, ActBoard, ActLog, ActPageDown, ActPageUp, ActFollow, ActCamera, ActReset, ActOrbitLeft, ActOrbitRight, ActOrbitUp, ActOrbitDown, ActZoomIn, ActZoomOut, ActLabels, ActCustomize, ActPause, ActStop, ActRestart, ActSprintNext, ActSprintPrev, ActSettings, ActHelp}
 	var lines []string
 	for _, id := range ids {
 		act, ok := a.env.Keys.Action(id)
@@ -569,7 +509,7 @@ func (a *arena) paintHelp(p *painter) {
 		}
 		lines = append(lines, lipgloss.NewStyle().Foreground(t.Ice).Render(fmt.Sprintf("%-14s", key))+" "+act.Doc)
 	}
-	lines = append(lines, "", render.Dim("drag the platform to turn the camera, wheel to zoom, click a member to select", t))
+	lines = append(lines, "", render.Dim("drag the floor to turn the camera, wheel to zoom, click a member on the floor or in the sidebar to select it", t))
 	w := min(84, wb.w-4)
 	h := min(len(lines)+2, wb.h-2)
 	x, y := wb.x+(wb.w-w)/2, wb.y+(wb.h-h)/2
@@ -586,7 +526,7 @@ func (a *arena) paintApproval(p *painter) {
 	t := a.env.Theme
 	wb := a.lay.world
 	w := min(78, wb.w-4)
-	h := min(16, wb.h-stripRows-2)
+	h := min(16, wb.h-a.stripRows()-2)
 	if w < 20 || h < 6 {
 		return
 	}

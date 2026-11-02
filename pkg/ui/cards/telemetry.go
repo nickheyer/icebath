@@ -21,20 +21,45 @@ import (
 // Samples of throughput kept for the graph
 const sampleLimit = 120
 
-// Model layer gauges, context fill, throughput, cache, cost, latency, retries and rate limits
+// Attempt log lines kept over every session
+const noteLimit = 256
+
+// Keymap context of the metrics panel
+const metricsContext = "metrics"
+
+// Registers the metrics panel context and its switch between the focused session and the totals
+func init() {
+	if err := keys.AddContext(metricsContext, "metrics panel"); err != nil {
+		panic(err)
+	}
+	if err := keys.Add(keys.Action{ID: "metrics.total", Context: metricsContext, Label: "totals", Doc: "switch between the focused session and the totals over every session", Default: []string{"t"}}); err != nil {
+		panic(err)
+	}
+}
+
+// Model layer gauges of one session or of every session, context fill, throughput, cache, cost, latency and rate limits
 type Telemetry struct {
-	env     *Env
+	env *Env
+	// Session shown, empty until the app shows one
+	session string
+	// Shows the totals over every session with a row each in place of the one session
+	total   bool
 	snap    harness.Telemetry
 	samples []float64
-	events  []string
+	events  []meterNote
 	timer   ticker
+}
+
+// Line of the attempt log with the session it came from, empty for an attempt of no session
+type meterNote struct {
+	at      time.Time
+	session string
+	text    string
 }
 
 func NewTelemetry(env *Env) *Telemetry {
 	t := &Telemetry{env: env, timer: ticker{every: 250 * time.Millisecond}}
-	if env.Meter != nil {
-		t.snap = env.Meter.Snapshot()
-	}
+	t.reload()
 	return t
 }
 
@@ -45,67 +70,132 @@ func (c *Telemetry) Key() string   { return "metrics" }
 // Restarts sampling a stream that went on while the card was closed and missed its tick
 func (c *Telemetry) Init() tea.Cmd {
 	c.timer.reset()
-	if c.env.Meter != nil && c.env.Meter.Snapshot().Streaming {
+	c.reload()
+	if c.streaming() {
 		return c.timer.start()
 	}
 	return nil
 }
 
-func (c *Telemetry) Contexts() []string { return []string{keys.Panel} }
+func (c *Telemetry) Contexts() []string { return []string{metricsContext, keys.Panel} }
+
+// Actions the panel answers, the switch named for the view it leads to
+func (c *Telemetry) Hints() []wm.Hint {
+	if c.total {
+		return []wm.Hint{{Action: "metrics.total", Label: "session"}}
+	}
+	return []wm.Hint{{Action: "metrics.total"}}
+}
 
 // Telemetry as last seen
 func (c *Telemetry) Snapshot() harness.Telemetry { return c.snap }
 
-// Rereads the meter and drops the throughput history, for when the session behind it changed
-func (c *Telemetry) Reload() {
-	if c.env.Meter != nil {
-		c.snap = c.env.Meter.Snapshot()
+// Follows the session and rereads the meter, dropping the throughput history when the session changed
+func (c *Telemetry) Show(session string) {
+	if session != c.session {
+		c.samples = c.samples[:0]
+		c.session = session
 	}
-	c.samples = c.samples[:0]
+	c.reload()
 }
 
-func (c *Telemetry) note(s string) {
-	c.events = append(c.events, time.Now().Format("15:04:05")+" "+s)
-	if len(c.events) > 50 {
-		c.events = c.events[len(c.events)-50:]
+// Rereads the meter, the totals in total mode and the shown session otherwise
+func (c *Telemetry) reload() {
+	if c.env.Meter == nil {
+		return
+	}
+	if c.total {
+		c.snap = c.env.Meter.Snapshot()
+		return
+	}
+	c.snap, _ = c.env.Meter.SnapshotOf(c.session)
+}
+
+// Reports whether a turn streams that the panel follows, the shown session or any session in total mode
+func (c *Telemetry) streaming() bool {
+	if c.env.Meter == nil {
+		return false
+	}
+	if !c.total {
+		return c.snap.Streaming
+	}
+	for _, id := range c.env.Meter.Sessions() {
+		if s, _ := c.env.Meter.SnapshotOf(id); s.Streaming {
+			return true
+		}
+	}
+	return false
+}
+
+// Session the meter charges an event to, empty when it charges none
+func (c *Telemetry) sessionOf(msg harness.EventMsg) string {
+	if c.env.Meter == nil {
+		return ""
+	}
+	return c.env.Meter.SessionOf(msg.Run, msg.Event)
+}
+
+// Title of a session as the app names it
+func (c *Telemetry) titleOf(id string) string {
+	if c.env.SessionTitle != nil {
+		return c.env.SessionTitle(id)
+	}
+	return id
+}
+
+func (c *Telemetry) note(session, s string) {
+	c.events = append(c.events, meterNote{at: time.Now(), session: session, text: s})
+	if len(c.events) > noteLimit {
+		c.events = c.events[len(c.events)-noteLimit:]
 	}
 }
 
 func (c *Telemetry) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
 	case harness.AttemptMsg:
-		c.snap = msg.Telemetry
+		switch {
+		case c.total:
+			c.reload()
+		case msg.Session == c.session:
+			c.snap = msg.Telemetry
+		}
 		a := msg.Attempt
 		switch {
 		case a.Err != nil && a.Wait > 0:
-			c.note(render.Warm(fmt.Sprintf("retry in %s after %d from %s", render.Elapsed(a.Wait), a.Status, urlHost(a.URL)), c.env.Theme))
+			c.note(msg.Session, render.Warm(fmt.Sprintf("retry in %s after %d from %s", render.Elapsed(a.Wait), a.Status, urlHost(a.URL)), c.env.Theme))
 		case a.Err != nil:
-			c.note(render.Bad(render.Truncate(a.Err.Error(), 60, c.env.Theme)+" from "+urlHost(a.URL), c.env.Theme))
+			c.note(msg.Session, render.Bad(render.Truncate(a.Err.Error(), 60, c.env.Theme)+" from "+urlHost(a.URL), c.env.Theme))
 		default:
-			c.note(render.Dim(fmt.Sprintf("%d in %s", a.Status, render.Elapsed(a.Duration)), c.env.Theme))
+			c.note(msg.Session, render.Dim(fmt.Sprintf("%d in %s", a.Status, render.Elapsed(a.Duration)), c.env.Theme))
 		}
 	case harness.EventMsg:
-		if c.env.Meter != nil {
-			c.snap = c.env.Meter.Snapshot()
+		c.reload()
+		if msg.Event.Type == agent.EventCompactEnd {
+			c.note(c.sessionOf(msg), render.Warm("compacted", c.env.Theme))
 		}
-		switch msg.Event.Type {
-		case agent.EventTurnStart:
+		if c.streaming() {
 			return c, c.timer.start()
-		case agent.EventCompactEnd:
-			c.note(render.Warm("compacted", c.env.Theme))
+		}
+	case wm.ActionMsg:
+		if msg.ID == "metrics.total" {
+			c.total = !c.total
+			c.reload()
+			if c.streaming() {
+				return c, c.timer.start()
+			}
 		}
 	case tickMsg:
 		if !c.timer.owns(msg) {
 			return c, nil
 		}
-		if c.env.Meter != nil {
-			c.snap = c.env.Meter.Snapshot()
+		c.reload()
+		if !c.total {
+			c.samples = append(c.samples, c.snap.TokensPerSecond)
+			if len(c.samples) > sampleLimit {
+				c.samples = c.samples[len(c.samples)-sampleLimit:]
+			}
 		}
-		c.samples = append(c.samples, c.snap.TokensPerSecond)
-		if len(c.samples) > sampleLimit {
-			c.samples = c.samples[len(c.samples)-sampleLimit:]
-		}
-		if c.snap.Streaming {
+		if c.streaming() {
 			return c, c.timer.start()
 		}
 	}
@@ -139,14 +229,20 @@ func (c *Telemetry) graph(w int) string {
 }
 
 func (c *Telemetry) View(w, h int) string {
+	if c.total {
+		return c.totals(w, h)
+	}
 	t := c.env.Theme
+	if c.session == "" {
+		return emptyView(w, h, "no session, "+c.env.keyed("metrics.total", "shows totals"), t)
+	}
 	s := c.snap
 	var lines []string
 	model := s.Model
 	if model == "" {
 		model = "no model"
 	}
-	head := render.Heading(model, t)
+	head := render.Heading(c.titleOf(c.session), t) + " " + model
 	if s.Provider != "" {
 		head += " " + render.Dim("via "+s.Provider, t)
 	}
@@ -180,8 +276,59 @@ func (c *Telemetry) View(w, h int) string {
 	if h > 4 {
 		lines = append(lines, c.graph(w))
 	}
+	lines = append(lines, c.counters(s, w)...)
+	if s.RateLimit.Known() {
+		lines = append(lines, render.Truncate(render.KV("limits", limits(s), t), w, t))
+	}
+	return c.finish(c.notes(lines, w, h), h)
+}
+
+// Totals over every session followed by a row per session, the shown one lit
+func (c *Telemetry) totals(w, h int) string {
+	t := c.env.Theme
+	s := c.snap
+	var ids []string
+	if c.env.Meter != nil {
+		ids = c.env.Meter.Sessions()
+	}
+	head := render.Heading("every session", t) + " " + render.Dim(render.Count(len(ids), "session"), t)
+	lines := []string{render.Truncate(head, w, t)}
+	row := []string{render.KV("context", render.Tokens(s.Context), t)}
+	if s.Priced || s.Cost > 0 {
+		row = append(row, render.KV("cost", render.Money(s.Cost), t))
+	}
+	lines = append(lines, render.Truncate(strings.Join(row, "  "), w, t))
+	lines = append(lines, c.counters(s, w)...)
+	cols := []render.Column{{Title: "SESSION", Flex: 2}, {Title: "MODEL", Flex: 1}, {Title: "CONTEXT", Right: true}, {Title: "TOKENS", Right: true}, {Title: "COST", Right: true}}
+	rows := make([][]string, 0, len(ids))
+	sel := -1
+	for i, id := range ids {
+		st, _ := c.env.Meter.SnapshotOf(id)
+		if id == c.session {
+			sel = i
+		}
+		model := st.Model
+		if model == "" {
+			model = t.Glyphs.None
+		}
+		cost := t.Glyphs.None
+		if st.Priced || st.Cost > 0 {
+			cost = render.Money(st.Cost)
+		}
+		rows = append(rows, []string{c.titleOf(id), model, render.Tokens(st.Context), render.Tokens(st.Usage.Total()), cost})
+	}
+	if room := h - len(lines); len(rows) > 0 && room > render.TableHead {
+		table, _ := window(strings.Split(render.Table(cols, rows, w, sel, t), "\n"), max(sel, 0), room)
+		lines = append(lines, table...)
+	}
+	return c.finish(c.notes(lines, w, h), h)
+}
+
+// Usage by kind, tool shares, latency and request counters of the telemetry
+func (c *Telemetry) counters(s harness.Telemetry, w int) []string {
+	t := c.env.Theme
 	u := s.Usage
-	lines = append(lines, render.Truncate(render.KV("in", render.Tokens(u.Input), t)+"  "+render.KV("out", render.Tokens(u.Output), t)+"  "+render.KV("cached", render.Tokens(u.CacheRead), t)+"  "+render.KV("written", render.Tokens(u.CacheWrite), t), w, t))
+	lines := []string{render.Truncate(render.KV("in", render.Tokens(u.Input), t)+"  "+render.KV("out", render.Tokens(u.Output), t)+"  "+render.KV("cached", render.Tokens(u.CacheRead), t)+"  "+render.KV("written", render.Tokens(u.CacheWrite), t), w, t)}
 	if len(s.Tools) > 0 {
 		lines = append(lines, render.Truncate(render.KV("tools", toolShares(s), t), w, t))
 	}
@@ -203,37 +350,59 @@ func (c *Telemetry) View(w, h int) string {
 	if s.LastRequestID != "" {
 		reqs += "  " + render.Dim(render.Truncate(s.LastRequestID, 24, t), t)
 	}
-	lines = append(lines, render.Truncate(reqs, w, t))
-	if s.RateLimit.Known() {
-		rl := s.RateLimit
-		var parts []string
-		if rl.Requests > 0 {
-			parts = append(parts, fmt.Sprintf("req %d/%d", rl.RequestsRemaining, rl.Requests))
+	return append(lines, render.Truncate(reqs, w, t))
+}
+
+// Requests and tokens left in each rate limit window the endpoint reported
+func limits(s harness.Telemetry) string {
+	rl := s.RateLimit
+	var parts []string
+	if rl.Requests > 0 {
+		parts = append(parts, fmt.Sprintf("req %d/%d", rl.RequestsRemaining, rl.Requests))
+	}
+	if rl.Tokens > 0 {
+		parts = append(parts, fmt.Sprintf("tok %s/%s", render.Tokens(rl.TokensRemaining), render.Tokens(rl.Tokens)))
+	}
+	if rl.InputTokens > 0 {
+		parts = append(parts, fmt.Sprintf("in %s/%s", render.Tokens(rl.InputRemaining), render.Tokens(rl.InputTokens)))
+	}
+	if rl.OutputTokens > 0 {
+		parts = append(parts, fmt.Sprintf("out %s/%s", render.Tokens(rl.OutputRemaining), render.Tokens(rl.OutputTokens)))
+	}
+	if rl.Reset > 0 {
+		parts = append(parts, "reset "+render.Elapsed(rl.Reset))
+	}
+	return strings.Join(parts, " ")
+}
+
+// Lines followed by the newest log lines that fit, of the shown session or every session in total mode
+func (c *Telemetry) notes(lines []string, w, h int) []string {
+	t := c.env.Theme
+	var shown []string
+	for _, n := range c.events {
+		if !c.total && n.session != c.session {
+			continue
 		}
-		if rl.Tokens > 0 {
-			parts = append(parts, fmt.Sprintf("tok %s/%s", render.Tokens(rl.TokensRemaining), render.Tokens(rl.Tokens)))
+		text := n.at.Format("15:04:05") + " "
+		if c.total && n.session != "" {
+			text += render.Dim(render.Truncate(c.titleOf(n.session), 16, t), t) + " "
 		}
-		if rl.InputTokens > 0 {
-			parts = append(parts, fmt.Sprintf("in %s/%s", render.Tokens(rl.InputRemaining), render.Tokens(rl.InputTokens)))
-		}
-		if rl.OutputTokens > 0 {
-			parts = append(parts, fmt.Sprintf("out %s/%s", render.Tokens(rl.OutputRemaining), render.Tokens(rl.OutputTokens)))
-		}
-		if rl.Reset > 0 {
-			parts = append(parts, "reset "+render.Elapsed(rl.Reset))
-		}
-		lines = append(lines, render.Truncate(render.KV("limits", strings.Join(parts, " "), t), w, t))
+		shown = append(shown, text+n.text)
 	}
 	room := h - len(lines)
-	if room > 1 && len(c.events) > 0 {
+	if room > 1 && len(shown) > 0 {
 		lines = append(lines, render.Divider(min(w, 30), t))
-		from := max(0, len(c.events)-(room-1))
-		for _, e := range c.events[from:] {
+		for _, e := range shown[max(0, len(shown)-(room-1)):] {
 			lines = append(lines, render.Truncate(e, w, t))
 		}
 	}
+	return lines
+}
+
+// Lines cut to the height and joined
+func (c *Telemetry) finish(lines []string, h int) string {
 	if len(lines) > h {
-		lines = lines[:h]
+		lines = lines[:max(h, 0)]
 	}
 	return strings.Join(lines, "\n")
 }

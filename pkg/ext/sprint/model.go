@@ -149,23 +149,25 @@ type Decision struct {
 
 // One session of the team
 type Member struct {
-	Role   Role
-	Name   string
-	Index  int
-	Live   *harness.Live
-	Joined time.Time
+	Role  Role
+	Name  string
+	Index int
+	Live  *harness.Live
+	// Id of the stored session, kept so a later process opens the same transcript again
+	Session string
+	Joined  time.Time
 	// Ticket the member works on, empty between tickets
 	Ticket string
 	// Words on what the member does right now
 	Task string
 }
 
-// Id of the session of a member, empty while it has none
+// Id of the session of a member, the stored one while none is open, empty while it has none
 func (m Member) SessionID() string {
-	if m.Live == nil || m.Live.Session == nil {
-		return ""
+	if m.Live != nil && m.Live.Session != nil {
+		return m.Live.Session.ID()
 	}
-	return m.Live.Session.ID()
+	return m.Session
 }
 
 // Kind of exchange between members, or between a member and the person
@@ -238,6 +240,8 @@ type Sprint struct {
 	waits map[string]*handoffWait
 	// Tells the interface the sprint changed
 	announce func(msg any)
+	// File every change is written to, nothing written while unset
+	journal *journal
 }
 
 // Copy of a sprint safe to read while the workflow goes on
@@ -265,10 +269,19 @@ type Snapshot struct {
 // Reports whether the sprint still goes
 func (s Snapshot) Running() bool { return s.Finished.IsZero() }
 
-// Reports whether the person stopped the sprint before it was done
+// Error of a sprint the person stopped, as a journal of an earlier process records it
+var errStopped = errors.New("stopped by you")
+
+// Error of a sprint whose process ended before it did
+var errExited = errors.New("interrupted when icebath exited")
+
+// Reports whether the sprint ended short of done without failing, stopped by the person or by the process ending
 func (s Snapshot) Stopped() bool {
-	return !s.Running() && (errors.Is(s.Err, context.Canceled) || errors.Is(s.Err, agent.ErrInterrupted))
+	return !s.Running() && (errors.Is(s.Err, context.Canceled) || errors.Is(s.Err, agent.ErrInterrupted) || errors.Is(s.Err, errStopped) || errors.Is(s.Err, errExited))
 }
+
+// Reports whether the process ended while the sprint ran, so it waits for a restart
+func (s Snapshot) Exited() bool { return errors.Is(s.Err, errExited) }
 
 // Reports whether the sprint ended before its work was done, so it can pick up where it was
 func (s Snapshot) Restartable() bool { return !s.Running() && s.Last != StageDone }
@@ -369,11 +382,14 @@ func (s *Sprint) Snapshot() Snapshot {
 	return out
 }
 
-// Tells the interface the sprint changed
+// Tells the interface the sprint changed and schedules the journal write
 func (s *Sprint) changed() {
 	s.mu.Lock()
-	announce := s.announce
+	announce, j := s.announce, s.journal
 	s.mu.Unlock()
+	if j != nil {
+		j.touch(s)
+	}
 	announce(ChangedMsg{ID: s.ID})
 }
 
@@ -721,7 +737,7 @@ func (s *Sprint) paused() bool {
 	return s.Paused != ""
 }
 
-// Ends the sprint, failed when err is set and done otherwise, remembering the stage it was in
+// Ends the sprint, failed when err is set and done otherwise, keeping its stage and writing the journal
 func (s *Sprint) finish(err error) {
 	s.mu.Lock()
 	s.Finished, s.Err, s.Last = time.Now(), err, s.Stage
@@ -733,7 +749,11 @@ func (s *Sprint) finish(err error) {
 	for _, m := range s.Members {
 		m.Ticket, m.Task = "", ""
 	}
+	j := s.journal
 	s.mu.Unlock()
+	if j != nil {
+		j.flush(s)
+	}
 	s.changed()
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,9 @@ const hiddenAfter = 1.5 * float64(time.Second)
 // Longest step the floor advances by in one frame, so a stall never teleports the team
 const maxStep = 0.1
 
+// Floor units a followed member walks before the camera moves after it, so it rests while the member works
+const followSlack = 2.5
+
 // Camera that eases toward where its preset and the person point it
 type camRig struct {
 	preset   string
@@ -44,6 +48,16 @@ type camRig struct {
 	orbitT   float64
 }
 
+// Reports whether every spring of the camera is at rest
+func (c *camRig) settled() bool {
+	for _, v := range []*anim.Value{&c.tx, &c.ty, &c.tz, &c.yaw, &c.pitch, &c.dist} {
+		if !v.Settled() {
+			return false
+		}
+	}
+	return true
+}
+
 // Where an actor stands on the cells of the last paint
 type spot struct {
 	x, top, bottom int
@@ -57,6 +71,7 @@ func (r rect) contains(x, y int) bool { return x >= r.x && x < r.x+r.w && y >= r
 
 // Boxes the parts of the arena take on the cells
 type layout struct {
+	side  rect
 	world rect
 	insp  rect
 	full  bool
@@ -85,45 +100,55 @@ type arena struct {
 	fr     vxl.Frame
 	r      vxl.Raster
 	cam    vxl.Camera
-	// Platform and sky drawn once per camera position, copied under every frame
+	// Floor and sky drawn once per camera position, copied under every frame
 	static    vxl.Frame
 	staticCam vxl.Camera
 	staticOK  bool
 	post      vxl.Post
-	rig       camRig
-	cine      cinema
+	// Cell encoder holding the glyph of every cell between frames so the floor does not shimmer
+	enc  vxl.Encoder
+	rig  camRig
+	cine cinema
 	// Tool starts of every member by session id
-	tally     map[string]*toolTally
-	sprintID  string
-	snap      *Snapshot
-	sel       string
-	hover     string
-	inspect   bool
-	typing    bool
+	tally    map[string]*toolTally
+	sprintID string
+	snap     *Snapshot
+	sel      string
+	hover    string
+	inspect  bool
+	typing   bool
+	// Sidebar beside the floor, the tickets or the log taking its whole lower half when expanded
+	sidebar   bool
 	showBoard bool
 	showLog   bool
 	showHelp  bool
 	labels    bool
 	boardTop  int
 	logTop    int
-	sessions  map[string]*cards.Session
-	approvals map[string]*cards.Approval
-	toolSeen  map[string]time.Time
-	w, h      int
-	lay       layout
-	painted   time.Time
-	last      time.Time
-	acc       float64
-	needSync  bool
-	synced    time.Time
-	focused   bool
-	spots     map[string]spot
-	pending   []tea.Cmd
-	chips     []chipRect
-	apRect    rect
-	panelBox  rect
-	drag      *drag
-	draftDir  string
+	// Rows of the sidebar on the last paint and the boxes its tickets and log took
+	sideRows    []sideRow
+	sideTickets rect
+	sideLog     rect
+	sessions    map[string]*cards.Session
+	approvals   map[string]*cards.Approval
+	toolSeen    map[string]time.Time
+	w, h        int
+	lay         layout
+	painted     time.Time
+	last        time.Time
+	acc         float64
+	needSync    bool
+	synced      time.Time
+	focused     bool
+	spots       map[string]spot
+	pending     []tea.Cmd
+	chips       []chipRect
+	apRect      rect
+	drag        *drag
+	// Spot the follow camera rests on and whose member it is
+	followAt   vxl.Vec3
+	followName string
+	draftDir   string
 	// Sprints whose end the person has seen in the arena
 	seen map[string]bool
 }
@@ -140,7 +165,7 @@ func newArena(env *cards.Env) wm.Card {
 	}
 	c := a.sc.lay.center()
 	a.rig = camRig{preset: a.cfg.Arena.Camera, zoom: 1, tx: anim.NewValueWith(c.X, anim.Gentle), ty: anim.NewValueWith(c.Y, anim.Gentle), tz: anim.NewValueWith(c.Z, anim.Gentle), yaw: anim.NewValueWith(0.55, anim.Gentle), pitch: anim.NewValueWith(0.58, anim.Gentle), dist: anim.NewValueWith(50, anim.Gentle)}
-	a.labels = a.cfg.Arena.Labels
+	a.labels, a.sidebar = a.cfg.Arena.Labels, a.cfg.Arena.Sidebar
 	a.refresh()
 	return a
 }
@@ -167,9 +192,12 @@ func (a *arena) Title() string {
 	return "ARENA"
 }
 
-func (a *arena) Glyph() string           { return a.env.Theme.Glyphs.Mission }
-func (a *arena) Key() string             { return ArenaKey }
-func (a *arena) MinSize() (int, int)     { return 60, 16 }
+func (a *arena) Glyph() string       { return a.env.Theme.Glyphs.Mission }
+func (a *arena) Key() string         { return ArenaKey }
+func (a *arena) MinSize() (int, int) { return 60, 16 }
+
+// Reports whether a cell lies on the sidebar
+func (a *arena) onSide(x, y int) bool    { return a.lay.side.w > 0 && a.lay.side.contains(x, y) }
 func (a *arena) Selectable() bool        { return true }
 func (a *arena) Tracks() bool            { return true }
 func (a *arena) Init() tea.Cmd           { a.refresh(); return nil }
@@ -212,7 +240,7 @@ func (a *arena) Hints() []wm.Hint {
 	if a.showHelp {
 		return []wm.Hint{{Action: ActHelp, Label: "close help"}}
 	}
-	out := []wm.Hint{{Action: ActNext, Label: "member"}, {Action: ActInspect}, {Action: ActSteer}}
+	out := []wm.Hint{{Action: ActNext, Label: "member"}, {Action: ActInspect}, {Action: ActSteer}, {Action: ActSidebar}}
 	if ap := a.approval(); ap != nil {
 		out = append([]wm.Hint{{Action: "approval.allow"}, {Action: "approval.deny"}}, out...)
 	}
@@ -226,7 +254,7 @@ func (a *arena) Hints() []wm.Hint {
 			out = append(out, wm.Hint{Action: ActRestart})
 		}
 	}
-	return append(out, wm.Hint{Action: ActBoard}, wm.Hint{Action: ActHelp})
+	return append(out, wm.Hint{Action: ActHelp})
 }
 
 // Stage and progress of the sprint shown, the rest standing on the strip
@@ -581,7 +609,7 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case cards.SettingChangedMsg:
 		if strings.HasPrefix(msg.Key, Name+".") {
 			a.reloadConfig()
-			a.labels = a.cfg.Arena.Labels
+			a.labels, a.sidebar = a.cfg.Arena.Labels, a.cfg.Arena.Sidebar
 			if a.cfgErr == nil {
 				a.rig.preset = a.cfg.Arena.Camera
 			}
@@ -683,7 +711,10 @@ func (a *arena) moveCamera(dt float64) {
 	switch rig.preset {
 	case "follow":
 		if act := a.selectedActor(); act != nil {
-			target, pitch, dist = act.stand().Add(vxl.V(0, 2, 0)), 0.42, 17
+			if a.followName != act.name || act.pos.Flat(a.followAt) > followSlack || math.Abs(act.pos.Y-a.followAt.Y) > 1 {
+				a.followAt, a.followName = act.pos, act.name
+			}
+			target, pitch, dist = a.followAt.Add(vxl.V(0, 2, 0)), 0.42, 17
 		}
 	case "cinematic":
 		a.frame(dt)
@@ -701,7 +732,7 @@ func (a *arena) moveCamera(dt float64) {
 	a.cam = vxl.Camera{Target: vxl.V(rig.tx.Pos, rig.ty.Pos, rig.tz.Pos), Yaw: rig.yaw.Pos, Pitch: rig.pitch.Pos, Dist: rig.dist.Pos, FOV: 0.85}
 }
 
-// Picks the next shot of the cinematic once the last ran out, the busiest point of the platform drifting slowly by
+// Picks the next shot of the cinematic once the last ran out, the busiest point of the floor drifting slowly by
 func (a *arena) frame(dt float64) {
 	c := &a.cine
 	c.left -= dt
@@ -733,7 +764,7 @@ func (a *arena) frame(dt float64) {
 	c.target, c.dist = spots[a.sc.rnd.Intn(len(spots))], 20
 }
 
-// Distance at which the whole platform fits the world box at the yaw and pitch, found by projecting its corners
+// Distance at which the whole floor fits the world box at the yaw and pitch, found by projecting its corners
 func (a *arena) fitDistance(yaw, pitch float64) float64 {
 	ww, wh := max(a.lay.world.w, 20), max(a.lay.world.h, 8)
 	mode := vxl.CellModeOf(a.cfg.Arena.Pixels)
@@ -788,7 +819,7 @@ func (a *arena) roster() []Member {
 func (a *arena) selectBy(d int) tea.Cmd {
 	members := a.roster()
 	if len(members) == 0 {
-		return wm.Notify("nobody has jacked in yet", wm.Info)
+		return wm.Notify("nobody is on the team yet", wm.Info)
 	}
 	i := slices.IndexFunc(members, func(m Member) bool { return m.Name == a.sel })
 	if i < 0 {
@@ -868,15 +899,23 @@ func (a *arena) act(id string) tea.Cmd {
 		a.rig.preset = "follow"
 		return wm.Notify("following "+a.sel, wm.Info)
 	case ActBoard:
-		a.showBoard, a.boardTop = !a.showBoard, 0
+		a.showBoard, a.boardTop = !a.showBoard || !a.sidebar, 0
 		if a.showBoard {
 			a.showLog = false
 		}
+		if !a.sidebar {
+			return a.setSidebar(true)
+		}
 	case ActLog:
-		a.showLog, a.logTop = !a.showLog, 0
+		a.showLog, a.logTop = !a.showLog || !a.sidebar, 0
 		if a.showLog {
 			a.showBoard = false
 		}
+		if !a.sidebar {
+			return a.setSidebar(true)
+		}
+	case ActSidebar:
+		return a.setSidebar(!a.sidebar)
 	case ActHelp:
 		a.showHelp = !a.showHelp
 	case ActLabels:
@@ -928,6 +967,12 @@ func (a *arena) act(id string) tea.Cmd {
 	return nil
 }
 
+// Shows or hides the sidebar, the choice saved as a setting
+func (a *arena) setSidebar(on bool) tea.Cmd {
+	a.sidebar = on
+	return a.saveSetting(Name+".arena.sidebar", strconv.FormatBool(on))
+}
+
 // Opens the inspector on the selected member, or closes it
 func (a *arena) toggleInspect() tea.Cmd {
 	if a.inspect {
@@ -959,14 +1004,13 @@ func (a *arena) setTyping(on bool) tea.Cmd {
 	return cmd
 }
 
-// Scrolls the open board or log by pages
+// Scrolls the tickets or the log of the sidebar by pages, the expanded one, else the log
 func (a *arena) page(d int) {
-	rows := max(a.h-6, 1)
 	switch {
 	case a.showBoard:
-		a.boardTop = max(a.boardTop+d*rows, 0)
-	case a.showLog:
-		a.logTop = max(a.logTop+d*rows, 0)
+		a.boardTop = max(a.boardTop+d*max(a.sideTickets.h-1, 1), 0)
+	default:
+		a.logTop = max(a.logTop+d*max(a.sideLog.h-1, 1), 0)
 	}
 }
 
@@ -1055,17 +1099,13 @@ func (a *arena) kill() tea.Cmd {
 	return wm.Notify(m.Name+" has no run going", wm.Info)
 }
 
-// Opens the session of the selected member as a window of its own
+// Opens the session of the selected member as a window of its own, the stored one when none is open
 func (a *arena) openSession() tea.Cmd {
 	m, ok := a.selected()
-	if !ok || m.Live == nil {
+	if !ok {
 		return wm.Notify("select a member first", wm.Info)
 	}
-	if a.env.Editor != nil && a.env.Editor.LiveOf(m.Live.Session) == nil {
-		return wm.Notify("the session of "+m.Name+" is closed", wm.Warn)
-	}
-	live, flow := m.Live, a.sprintID
-	return func() tea.Msg { return harness.OpenedMsg{Live: live, Flow: flow} }
+	return openMember(a.env, m, a.sprintID)
 }
 
 // Offers to rename or dress the selected member, each choice saved as a setting
@@ -1076,14 +1116,14 @@ func (a *arena) customize() tea.Cmd {
 	}
 	t := a.env.Theme
 	look := a.cfg.LookOf(m.Role, m.Index)
-	items := []wm.Item{{ID: "name", Title: "Rename " + m.Name, Detail: "the handle shows on the platform and in every prompt from now on", Run: func() tea.Cmd { return a.renamePrompt(m) }}}
+	items := []wm.Item{{ID: "name", Title: "Rename " + m.Name, Detail: "the name shows on the floor and in every prompt from now on", Run: func() tea.Cmd { return a.renamePrompt(m) }}}
 	for _, c := range ColorNames {
 		c := c
 		items = append(items, wm.Item{ID: "color:" + c, Title: "Color " + c, Detail: "dye the suit and trace lines of " + m.Name, Keys: mark(c == look.Color, t), Run: func() tea.Cmd { return a.setLook(m, Look{Color: c, Hat: look.Hat}) }})
 	}
 	for _, h := range RigNames {
 		h := h
-		items = append(items, wm.Item{ID: "rig:" + h, Title: "Rig " + h, Detail: "what " + m.Name + " wears on its head", Keys: mark(h == look.Hat, t), Run: func() tea.Cmd { return a.setLook(m, Look{Color: look.Color, Hat: h}) }})
+		items = append(items, wm.Item{ID: "hat:" + h, Title: "Hat " + h, Detail: "what " + m.Name + " wears on its head", Keys: mark(h == look.Hat, t), Run: func() tea.Cmd { return a.setLook(m, Look{Color: look.Color, Hat: h}) }})
 	}
 	return wm.RequestOverlay(wm.NewPalette(t, items))
 }

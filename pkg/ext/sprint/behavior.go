@@ -369,7 +369,7 @@ func (sc *scene) findPartner(a *actor) *actor {
 	return best
 }
 
-// Runner jacked into a node, the nearest to the actor, nil when none is
+// Builder working at a node, the nearest to the actor, nil when none is
 func (sc *scene) activeRunner(a *actor) *actor {
 	var best *actor
 	bestD := math.Inf(1)

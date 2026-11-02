@@ -164,6 +164,7 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 	m.buildManager(layout.Layout, saved)
 	m.buildCards()
 	m.restoreDesks(layout)
+	m.follow()
 	m.wm.SetCommands(m.commands())
 	m.wm.SetBar(m.status)
 	m.retitle()
@@ -194,8 +195,9 @@ func (m *Model) environment() *cards.Env {
 	return &cards.Env{
 		Theme: m.theme, Keys: m.keys, Control: a.Control, Meter: a.Meter, Approver: a.Approver, Questions: a.Questions, MCP: a.MCP, Shell: a.Shell, Tools: a.Tools, Mode: a.Mode, Store: a.Store, Files: a.Files,
 		Editor: a, Ctx: m.ctx,
-		Lives:   a.Lives,
-		Primary: m.endpoint,
+		Lives:        a.Lives,
+		SessionTitle: m.sessionTitle,
+		Primary:      m.endpoint,
 		Models: func(ctx context.Context, p profiles.Profile) ([]profiles.Model, error) {
 			prov, err := p.Open(ctx)
 			if err != nil {
@@ -208,6 +210,32 @@ func (m *Model) environment() *cards.Env {
 		Root:       a.Root,
 		Extensions: extensionRows,
 		Version:    m.opts.Version,
+	}
+}
+
+// Title of an open or sub-agent session by id, the child run name or the id while it has none
+func (m *Model) sessionTitle(id string) string {
+	if l := m.app.LiveByID(id); l != nil && l.Session.Title() != "" {
+		return l.Session.Title()
+	}
+	for _, r := range m.app.Control.Runs() {
+		if r.Session == nil || r.Session.ID() != id {
+			continue
+		}
+		if title := r.Session.Title(); title != "" {
+			return title
+		}
+		if r.Parent != "" {
+			return r.Name
+		}
+	}
+	return id
+}
+
+// Points the metrics panel at the session of the desk on the stage, keeping the last while none is
+func (m *Model) follow() {
+	if d := m.current(); d != nil {
+		m.metrics.Show(d.live.Session.ID())
 	}
 }
 
@@ -507,10 +535,11 @@ func (m *Model) Attach(p *tea.Program) { m.relay.Attach(p) }
 
 type errMsg struct{ err error }
 
-// Handles the message, then writes the layout when anything but a frame changed it
+// Handles the message, then for anything but a frame follows the desk on the stage and writes the layout
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
 	if _, frame := msg.(anim.FrameMsg); !frame && !m.quitting {
+		m.follow()
 		cmd = tea.Batch(cmd, m.pruneOverflow())
 		if err := m.saveLayout(); err != nil {
 			cmd = tea.Batch(cmd, m.wm.Toast("layout: "+err.Error(), wm.Error, 0))
@@ -881,7 +910,7 @@ func (m *Model) setSetting(key, value string, quiet bool) tea.Cmd {
 	case "option_as_alt":
 		keys.SetOption(cfg.OptionAsAlt())
 	case "compact_threshold":
-		m.app.Meter.SetThreshold(cfg.CompactThreshold(m.endpoint().Catalog.Context))
+		m.app.TrackAll()
 	case "mode":
 		md := policy.ModeDefault
 		if value != "" {
@@ -1059,7 +1088,7 @@ func (m *Model) compactNow(d *desk) tea.Cmd {
 	go func() {
 		defer m.bg.Done()
 		req := protocol.Request{Messages: sess.Snapshot()}
-		ctx := m.ctx
+		ctx := m.app.Metered(m.ctx, sess)
 		for _, h := range ag.Hooks {
 			if err := h.BeforeTurn(ctx, &req); err != nil {
 				m.relay.Send(compactedMsg{desk: d, err: err})

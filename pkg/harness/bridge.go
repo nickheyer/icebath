@@ -61,9 +61,11 @@ type JobMsg struct {
 	Event shell.JobEvent
 }
 
-// One provider attempt with the telemetry as it stood afterwards
+// One provider attempt with the telemetry of its session afterwards, the totals for an attempt of no session
 type AttemptMsg struct {
-	Attempt   provider.Attempt
+	Attempt provider.Attempt
+	// Id of the session the attempt served, empty when its run is bound to none
+	Session   string
 	Telemetry Telemetry
 }
 

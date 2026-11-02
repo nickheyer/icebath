@@ -21,6 +21,7 @@ func workflow() harness.Workflow {
 		Description: "a director settles the request, an architect cuts it into tickets, builders build them and a reviewer checks every handoff, all of it shown in the arena",
 		Arg:         "request",
 		Run:         run,
+		NextID:      nextID,
 	}
 }
 
@@ -52,6 +53,9 @@ func run(ctx context.Context, f *harness.Flow, request string) error {
 	s := sprintByID(f.ID)
 	if s == nil {
 		s = newSprint(f.ID, request, time.Now(), f.App.Announce)
+		if err := s.keep(ctx, f.App); err != nil {
+			return err
+		}
 		register(s)
 	} else {
 		s.setAnnounce(f.App.Announce)

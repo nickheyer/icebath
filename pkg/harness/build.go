@@ -370,7 +370,7 @@ func (p primary) Complete(ctx context.Context, req protocol.Request) (protocol.R
 		return protocol.Response{}, ErrNoProfile
 	}
 	req.Model = p.a.Primary.Model
-	return p.a.Primary.Provider.Complete(ctx, req)
+	return p.a.Primary.Provider.Complete(labelChild(ctx), req)
 }
 
 func (a *App) buildTools(dir string) error {
@@ -436,7 +436,12 @@ func (a *App) childFactory(ctx context.Context, kind, model string) (*agent.Agen
 	sess.Label(parentLabel, parent)
 	sess.Label("agent", policy.AgentFrom(ctx))
 	sess.Label(session.ProjectLabel, a.Root)
-	return a.newAgent("", sess, ep)
+	ag, err := a.newAgent("", sess, ep)
+	if err != nil {
+		return nil, err
+	}
+	a.trackOn(sess, ep)
+	return ag, nil
 }
 
 func (a *App) buildPolicy(root string) error {
@@ -475,7 +480,7 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 	}
 	cfg := a.Config
 	kind, _ := a.KindOf(sess)
-	ag := &agent.Agent{Name: name, Model: named{Model: ep.Provider, profile: ep.Profile.Name}, ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
+	ag := &agent.Agent{Name: name, Model: labeled{named{Model: ep.Provider, profile: ep.Profile.Name}}, ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
 	if ag.MaxTokens == 0 && protocol.RequiresMaxTokens(ep.Provider.Protocol) {
 		ag.MaxTokens = ep.Catalog.MaxOutput
 	}
@@ -504,9 +509,9 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 	}
 	ag.Hooks = append(ag.Hooks, kind.Hooks...)
 	if threshold := cfg.CompactThreshold(ep.Catalog.Context); threshold > 0 {
-		s := &agent.Summarizer{Model: ep.Provider, ModelID: ep.Model, Session: sess, Threshold: threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
+		s := &agent.Summarizer{Model: labeled{ep.Provider}, ModelID: ep.Model, Session: sess, Threshold: threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
 		if a.summary != nil {
-			s.Model, s.ModelID = a.summary.Provider, a.summary.Model
+			s.Model, s.ModelID = labeled{a.summary.Provider}, a.summary.Model
 		}
 		if runner != nil {
 			s.Before = func(ctx context.Context) error {
@@ -582,6 +587,30 @@ func (n named) Stream(ctx context.Context, req protocol.Request) iter.Seq2[proto
 	}
 }
 
+// Model whose requests a sub-agent sends carry its child run id, so the meter charges them to the child session
+type labeled struct{ agent.Model }
+
+func (l labeled) Stream(ctx context.Context, req protocol.Request) iter.Seq2[protocol.Event, error] {
+	return l.Model.Stream(labelChild(ctx), req)
+}
+
+// Context labeled with the child run id when a sub-agent sends from it, unchanged for the root agent
+func labelChild(ctx context.Context) context.Context {
+	run, name := RunFrom(ctx), policy.AgentFrom(ctx)
+	if run == "" || name == "" || agent.LineageFrom(ctx).Depth == 0 {
+		return ctx
+	}
+	return provider.WithLabel(ctx, childRun(run, name))
+}
+
+// Context whose requests and agent events the meter charges to the session, for work on it outside any run
+func (a *App) Metered(ctx context.Context, sess *session.Session) context.Context {
+	label := "session:" + sess.ID()
+	a.Meter.Bind(label, sess.ID())
+	ctx = provider.WithLabel(ctx, label)
+	return agent.WithObserver(ctx, func(ev agent.Event) { a.Meter.Apply(label, ev) })
+}
+
 // Writer that turns hook output into messages
 type hookLog struct {
 	send Sender
@@ -647,10 +676,26 @@ func (a *App) Close(ctx context.Context) error {
 	return err
 }
 
-// Points the meter at the endpoint, its window and the compaction threshold that window gives
+// Points the meter totals and the selected session at the endpoint, its window and the compaction threshold it gives
 func (a *App) track(ep Endpoint) {
 	a.Meter.SetCatalog(ep.Catalog, ep.Profile.Name)
 	a.Meter.SetThreshold(a.Config.CompactThreshold(ep.Catalog.Context))
+	if a.Session != nil {
+		a.trackOn(a.Session, ep)
+	}
+}
+
+// Points the meter at the endpoint one session runs on, its window and the compaction threshold that window gives
+func (a *App) trackOn(sess *session.Session, ep Endpoint) {
+	a.Meter.Track(sess.ID(), ep.Catalog, ep.Profile.Name, a.Config.CompactThreshold(ep.Catalog.Context))
+}
+
+// Points the meter at the endpoint of every open session and the selected one again, after the threshold changed
+func (a *App) TrackAll() {
+	for _, l := range a.Lives() {
+		a.trackOn(l.Session, l.Endpoint)
+	}
+	a.track(a.endpointOf(a.Session))
 }
 
 // Hook that writes the system prompt built once per run into every turn, keeping an empty one while bare
@@ -706,6 +751,8 @@ func (a *App) live(sess *session.Session, ep Endpoint) (*Live, error) {
 	if sess.Project() == "" {
 		sess.Label(session.ProjectLabel, a.Root)
 	}
+	a.trackOn(sess, ep)
+	a.Meter.seed(sess.ID(), sess.Context())
 	id := sess.ID()
 	l.Facts.OnChange(func(c facts.Change) { a.send(FactMsg{Session: id, Change: c}) })
 	l.Missions.OnChange(func(c mission.Change) { a.send(MissionMsg{Session: id, Mission: c.Mission, Op: c.Op}) })
@@ -839,6 +886,7 @@ func (a *App) fork(sess *session.Session, ep Endpoint, n int) (*Live, error) {
 func (a *App) SetModelOn(l *Live, id string) {
 	l.Endpoint = withModel(l.Endpoint, id)
 	l.Session.SetModel(id)
+	a.trackOn(l.Session, l.Endpoint)
 	if l.Endpoint.Profile.Name == a.Primary.Profile.Name {
 		a.SetDefaultModel(id)
 	}
@@ -868,6 +916,7 @@ func (a *App) SetEndpointOn(ctx context.Context, l *Live, name string, ep Endpoi
 	l.SetExpandThinking(ep.Profile.ExpandsThinking())
 	l.Session.SetModel(ep.Model)
 	l.Session.Label(profileLabel, ep.Profile.Name)
+	a.trackOn(l.Session, ep)
 	a.SetDefaultEndpoint(name, ep)
 	if l.Session == a.Session {
 		a.track(ep)
@@ -921,6 +970,7 @@ func (a *App) SetDefaultEndpoint(name string, ep Endpoint) {
 		if l.Endpoint.Profile.Name == name && l.Endpoint.Model == "" {
 			l.Endpoint = ep
 			l.Session.SetModel(ep.Model)
+			a.trackOn(l.Session, ep)
 			a.Saver.Touch(l.Session)
 		}
 	}

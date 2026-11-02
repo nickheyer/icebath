@@ -227,6 +227,9 @@ func (c *Controller) Start(ctx context.Context, a *agent.Agent, missionID string
 	c.runs[id] = r
 	c.order = append(c.order, id)
 	c.mu.Unlock()
+	if c.Meter != nil && a.Session != nil {
+		c.Meter.Bind(id, a.Session.ID())
+	}
 	if store := c.missionsOf(a.Session); missionID != "" && store != nil {
 		store.Assign(missionID, a.Name)
 	}
@@ -297,22 +300,28 @@ func (c *Controller) owner(root *Run, agentName string) *Run {
 	if agentName == "" || agentName == root.Name {
 		return root
 	}
-	if child, ok := c.runs[root.ID+"/"+agentName]; ok {
+	if child, ok := c.runs[childRun(root.ID, agentName)]; ok {
 		return child
 	}
 	return root
 }
+
+// Id of the child run a sub-agent of the root run works under
+func childRun(root, name string) string { return root + "/" + name }
 
 func (c *Controller) childStarted(parent *Run, ev agent.Event) {
 	child, ok := ev.Data.(agent.Child)
 	if !ok || child.Agent == nil {
 		return
 	}
-	id := parent.ID + "/" + child.Name
+	id := childRun(parent.ID, child.Name)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, dup := c.runs[id]; dup {
 		return
+	}
+	if c.Meter != nil && child.Agent.Session != nil {
+		c.Meter.Bind(id, child.Agent.Session.ID())
 	}
 	r := &Run{ID: id, Name: child.Name, Mission: parent.Mission, Agent: child.Agent, Session: child.Agent.Session, Parent: parent.ID, Depth: child.Depth, CallID: child.CallID, Description: child.Description, Started: child.Started, running: true, done: make(chan struct{})}
 	if r.Started.IsZero() {
@@ -328,7 +337,7 @@ func (c *Controller) childEnded(parent *Run, ev agent.Event) {
 		return
 	}
 	c.mu.Lock()
-	r, found := c.runs[parent.ID+"/"+child.Name]
+	r, found := c.runs[childRun(parent.ID, child.Name)]
 	c.mu.Unlock()
 	if !found || !r.Running() {
 		return

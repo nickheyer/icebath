@@ -153,6 +153,8 @@ type Workflow struct {
 	// Placeholder of the argument, asked for when the command comes without one, none when empty
 	Arg string
 	Run func(ctx context.Context, f *Flow, arg string) error
+	// Picks the id of the next flow, unique across processes, the per process counter when nil
+	NextID func(app *App) (string, error)
 	// Extension the workflow came from
 	Source string
 }
@@ -741,10 +743,30 @@ func (fs *Flows) Start(ctx context.Context, w Workflow, live *Live, arg string) 
 	if w.Arg != "" && arg == "" {
 		return nil, fmt.Errorf("workflow %s needs %s", w.Name, w.Arg)
 	}
+	id := ""
+	if w.NextID != nil {
+		var err error
+		if id, err = w.NextID(fs.app); err != nil {
+			return nil, fmt.Errorf("workflow %s: %w", w.Name, err)
+		}
+		if !profiles.ValidName(id) {
+			return nil, fmt.Errorf("workflow %s: invalid flow id %q", w.Name, id)
+		}
+	}
 	fctx, cancel := context.WithCancel(ctx)
 	fs.mu.Lock()
-	fs.next++
-	id := w.Name + "-" + strconv.Itoa(fs.next)
+	if id == "" {
+		fs.next++
+		id = w.Name + "-" + strconv.Itoa(fs.next)
+	}
+	if have, dup := fs.flows[id]; dup {
+		fs.mu.Unlock()
+		cancel()
+		if have.Running() {
+			return nil, fmt.Errorf("harness: workflow %s is still running", id)
+		}
+		return nil, fmt.Errorf("harness: workflow %s already ran, restart it instead", id)
+	}
 	f := &Flow{ID: id, Name: w.Name, Arg: arg, App: fs.app, Live: live, Started: time.Now(), send: fs.send, running: true, cancel: cancel, done: make(chan struct{})}
 	fs.flows[id] = f
 	fs.order = append(fs.order, id)
@@ -753,23 +775,24 @@ func (fs *Flows) Start(ctx context.Context, w Workflow, live *Live, arg string) 
 	return f, nil
 }
 
-// Starts the workflow again under the id of an ended flow, so it carries on in the workspaces of the first run
+// Starts the workflow again under the id of an ended flow of this or an earlier process, in its workspaces
 func (fs *Flows) Restart(ctx context.Context, id string, w Workflow, live *Live, arg string) (*Flow, error) {
 	if err := w.Validate(); err != nil {
 		return nil, err
 	}
-	fs.mu.Lock()
-	old, ok := fs.flows[id]
-	if !ok {
-		fs.mu.Unlock()
-		return nil, fmt.Errorf("harness: no workflow %s to restart", id)
+	if !profiles.ValidName(id) {
+		return nil, fmt.Errorf("harness: invalid flow id %q", id)
 	}
-	if old.Running() {
+	fs.mu.Lock()
+	if old, ok := fs.flows[id]; ok && old.Running() {
 		fs.mu.Unlock()
 		return nil, fmt.Errorf("harness: workflow %s is still running", id)
 	}
 	fctx, cancel := context.WithCancel(ctx)
 	f := &Flow{ID: id, Name: w.Name, Arg: strings.TrimSpace(arg), App: fs.app, Live: live, Started: time.Now(), send: fs.send, running: true, cancel: cancel, done: make(chan struct{})}
+	if _, known := fs.flows[id]; !known {
+		fs.order = append(fs.order, id)
+	}
 	fs.flows[id] = f
 	fs.mu.Unlock()
 	fs.launch(fctx, f, w)

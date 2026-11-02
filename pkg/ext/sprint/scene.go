@@ -3,6 +3,7 @@ package sprint
 import (
 	"math"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/vxl"
@@ -177,6 +178,17 @@ type scene struct {
 	stageText        string
 	dust             float64
 	lastStep         float64
+	// Sky ramp for the zenith and horizon it was sampled from
+	skyRamp atomic.Pointer[skyRamp]
+}
+
+// Steps the sky ramp samples between the zenith and the horizon
+const skySteps = 512
+
+// Sky colors from the zenith down to the horizon at even steps, for one pair of end colors
+type skyRamp struct {
+	zenith, horizon vxl.RGB
+	at              [skySteps + 1]vxl.RGB
 }
 
 // Platform built for a team of that many builders, without a plan
@@ -523,7 +535,7 @@ func (sc *scene) syncMessages(snap *Snapshot) {
 	}
 }
 
-// Crew reacting to a verdict once its packet reaches the runner
+// Crew reacting to a verdict once its packet reaches the builder
 func (sc *scene) verdictLanded(a *actor, v Verdict) {
 	switch v {
 	case VerdictAccepted:
@@ -811,15 +823,25 @@ func (sc *scene) glitch(at vxl.Vec3, n int) {
 	}
 }
 
-// Color of the sky at a share of the way down the frame
+// Color overhead at a share of the way down the frame, safe from several goroutines
 func (sc *scene) sky(share float64) vxl.RGB {
-	return sc.zenith.Mix(sc.horizon, math.Pow(min(max(share, 0), 1), 1.6))
+	ramp := sc.skyRamp.Load()
+	if ramp == nil || ramp.zenith != sc.zenith || ramp.horizon != sc.horizon {
+		ramp = &skyRamp{zenith: sc.zenith, horizon: sc.horizon}
+		for i := range ramp.at {
+			ramp.at[i] = sc.zenith.Mix(sc.horizon, math.Pow(float64(i)/skySteps, 1.6))
+		}
+		sc.skyRamp.Store(ramp)
+	}
+	s := min(max(share, 0), 1) * skySteps
+	i := min(int(s), skySteps-1)
+	return ramp.at[i].Mix(ramp.at[i+1], s-float64(i))
 }
 
 // Queues the static platform when any of it is in view, meshing it again when it changed
 func (sc *scene) drawStatic(r *vxl.Raster) {
 	if sc.dirty {
-		r.Lights = r.Lights[:0]
+		r.SetLights(nil)
 		sc.chunks = sc.grid.Mesh(r)
 		sc.dirty = false
 	}
@@ -863,7 +885,7 @@ func (sc *scene) collectLights() []vxl.Light {
 
 // Queues everything that moves, the solid things first and the glows and veils after them
 func (sc *scene) drawDynamic(r *vxl.Raster) {
-	r.Lights = sc.collectLights()
+	r.SetLights(sc.collectLights())
 	for _, a := range sc.actors {
 		a.draw(r)
 	}
@@ -1027,7 +1049,7 @@ func (sc *scene) drawBeacons(r *vxl.Raster) {
 	}
 }
 
-// Queues the data tether from each jacked in runner to the core of its node, motes streaming along it in the color of its tool
+// Queues the data tether from each working builder to the core of its ticket, motes streaming in its tool color
 func (sc *scene) drawTethers(r *vxl.Raster) {
 	for _, a := range sc.actors {
 		if a.state != stateJack || a.gone {
@@ -1071,7 +1093,7 @@ func (sc *scene) drawTalk(r *vxl.Raster) {
 	}
 }
 
-// Queues the ring under each runner draining with the time its exchange has left, red once the limit passed
+// Queues the ring under each builder draining with the time its exchange has left, red once the limit passed
 func (sc *scene) drawClocks(r *vxl.Raster) {
 	for _, a := range sc.actors {
 		if a.clock <= 0 || a.gone || a.duty.kind != dutyNode {

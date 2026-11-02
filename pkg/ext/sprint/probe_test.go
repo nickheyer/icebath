@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -39,18 +40,28 @@ func probeLive() map[string]liveState {
 	}
 }
 
+// Strength of the outline the probe renders with
+const probeOutline = 0.6
+
 // Renders a scene through the default camera into a frame and the cells of the mode
 func renderProbe(sc *scene, cols, rows int, mode vxl.CellMode) (*vxl.Frame, *uv.Buffer) {
+	cam, _ := probeView(sc)
+	return renderProbeAt(sc, cam, cols, rows, mode)
+}
+
+// Renders a scene through a camera into a frame and the cells of the mode
+func renderProbeAt(sc *scene, cam vxl.Camera, cols, rows int, mode vxl.CellMode) (*vxl.Frame, *uv.Buffer) {
 	px, py := mode.Pixels()
 	fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}
 	fr.Resize(cols*px, rows*py)
 	fr.Clear(func(x, y int) vxl.RGB { return sc.sky(float64(y) / float64(fr.H)) })
-	cam := vxl.Camera{Target: sc.lay.center(), Yaw: 0.55, Pitch: 0.58, Dist: float64(sc.lay.w) * 1.6, FOV: 0.85}
-	r := &vxl.Raster{FogColor: sc.horizon, FogNear: cam.Dist * 0.95, FogFar: cam.Dist * 3, Sun: sunDir, SunColor: vxl.Hex(0xdfe9f2).Scale(0.72), Ambient: vxl.Hex(0x3a4c66)}
+	_, r := probeView(sc)
+	r.FogNear, r.FogFar = cam.Dist*0.95, cam.Dist*3
 	r.Begin(fr, cam)
 	sc.drawStatic(r)
 	sc.drawDynamic(r)
 	r.Flush()
+	fr.Outline(probeOutline)
 	var post vxl.Post
 	fr.Bloom(&post, 0.62, 0.8)
 	fr.Vignette(0.3)
@@ -59,7 +70,77 @@ func renderProbe(sc *scene, cols, rows int, mode vxl.CellMode) (*vxl.Frame, *uv.
 	return fr, buf
 }
 
-// Renders the probe scene into cells in every mode, writing PNGs of the pixels and the cells when SPRINT_PROBE_DIR names a directory
+// Figures far off draw as markers and blocks and nodes drop their shells, so the far view queues fewer faces
+func TestDetailByDistance(t *testing.T) {
+	sc := settledScene(probeSnapshot14(), probeLive14(), 8, 150)
+	mode := vxl.ModeOctant
+	px, py := mode.Pixels()
+	fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}
+	fr.Resize(220*px, 56*py)
+	queued := func(dist float64) (int, int) {
+		cam, r := probeView(sc)
+		cam.Dist = dist
+		r.Begin(fr, cam)
+		sc.drawDynamic(r)
+		n := r.Queued()
+		r.Flush()
+		full := 0
+		for _, a := range sc.actors {
+			if a.gone {
+				continue
+			}
+			_, _, depth, ok := r.Project(a.stand().Add(vxl.V(0, a.model.Height()/2, 0)))
+			if ok && a.model.Height()*r.ScaleY(depth) >= fullFigurePixels {
+				full++
+			}
+		}
+		return n, full
+	}
+	near, nearFull := queued(float64(sc.lay.w) * 1.2)
+	far, farFull := queued(float64(sc.lay.w) * 8)
+	if nearFull == 0 || farFull != 0 {
+		t.Fatalf("%d figures in full detail near and %d far", nearFull, farFull)
+	}
+	if far >= near*3/4 {
+		t.Fatalf("far view queued %d faces against %d near", far, near)
+	}
+}
+
+// Conduits of the fourteen ticket plan queue one face per straight run and paint the floor between their nodes
+func TestConduitRuns(t *testing.T) {
+	sc := settledScene(probeSnapshot14(), probeLive14(), 8, 150)
+	mode := vxl.ModeOctant
+	px, py := mode.Pixels()
+	fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}
+	fr.Resize(220*px, 56*py)
+	fr.Clear(func(x, y int) vxl.RGB { return vxl.RGB{} })
+	cam, r := probeView(sc)
+	r.Begin(fr, cam)
+	runs, cells := 0, 0
+	for _, id := range sc.order {
+		n := sc.nodes[id]
+		for _, dep := range n.deps {
+			runs += len(sc.lay.runs[[2]string{id, dep}])
+			cells += len(sc.lay.conduits[[2]string{id, dep}])
+			sc.drawConduit(r, n, dep)
+		}
+	}
+	r.Flush()
+	if runs == 0 || r.Queued() != runs || runs*3 > cells || runs > 48 {
+		t.Fatalf("%d conduit faces for %d runs over %d cells", r.Queued(), runs, cells)
+	}
+	lit := 0
+	for _, d := range fr.Depth {
+		if d > 0 {
+			lit++
+		}
+	}
+	if lit < cells {
+		t.Fatalf("conduits over %d cells painted %d pixels", cells, lit)
+	}
+}
+
+// Renders the probe scenes into cells in every mode, writing PNGs when SPRINT_PROBE_DIR names a directory
 func TestProbeRender(t *testing.T) {
 	cols, rows := 220, 56
 	sc := newScene(3)
@@ -115,6 +196,14 @@ func TestProbeRender(t *testing.T) {
 	writeCellsPNG(t, oct, vxl.ModeOctant, filepath.Join(dir, "cells-octant.png"))
 	_, sx := renderProbe(sc, cols, rows, vxl.ModeSextant)
 	writeCellsPNG(t, sx, vxl.ModeSextant, filepath.Join(dir, "cells-sextant.png"))
+	wide := settledScene(probeSnapshot14(), probeLive14(), 8, 300)
+	fr14, cells14 := renderProbe(wide, cols, rows, vxl.ModeOctant)
+	writePixels(t, fr14, filepath.Join(dir, "fourteen.png"))
+	writeCellsPNG(t, cells14, vxl.ModeOctant, filepath.Join(dir, "fourteen-octant.png"))
+	close, _ := probeView(wide)
+	close.Target, close.Dist = wide.byName["Ada"].stand().Add(vxl.V(0, 2, 0)), 18
+	fr14, _ = renderProbeAt(wide, close, cols, rows, vxl.ModeOctant)
+	writePixels(t, fr14, filepath.Join(dir, "fourteen-close.png"))
 	snap.Finished, snap.Stage = time.Now(), StageDone
 	for i := range 150 {
 		if i%10 == 0 {
@@ -232,31 +321,85 @@ func savePNG(t *testing.T, img image.Image, path string) {
 	}
 }
 
-// Frame of the probe scene at the size of a wide terminal in octant mode, the static layer cached as the arena keeps it
-func BenchmarkFrame(b *testing.B) {
-	cols, rows := 220, 56
-	sc := newScene(3)
-	snap := probeSnapshot()
-	live := probeLive()
+// Sprint of fourteen tickets on two levels of ten and four, eight runners on the platform
+func probeSnapshot14() Snapshot {
+	now := time.Now()
+	members := []Member{{Role: RoleDirector, Name: "Fixer"}, {Role: RoleArchitect, Name: "Navigator"}, {Role: RoleReviewer, Name: "Overwatch", Task: "reviewing T2", Ticket: "T2"}}
+	statuses := []TicketStatus{TicketActive, TicketReview, TicketDone, TicketActive, TicketTodo, TicketFailed, TicketActive, TicketDone, TicketActive, TicketActive}
+	builders := map[int]string{0: "Ada", 1: "Linus", 3: "Grace", 6: "Ken", 8: "Barbara", 9: "Dennis"}
+	var tickets []Ticket
+	for i, st := range statuses {
+		id := "T" + strconv.Itoa(i+1)
+		tickets = append(tickets, Ticket{ID: id, Title: id, Status: st, Builder: builders[i], Started: now.Add(-5 * time.Minute)})
+	}
+	for i := range 4 {
+		id := "T" + strconv.Itoa(i+11)
+		tickets = append(tickets, Ticket{ID: id, Title: id, Status: TicketTodo, DependsOn: []string{"T" + strconv.Itoa(i*2+1), "T" + strconv.Itoa(i*2+4)}})
+	}
+	names := []string{"Ada", "Linus", "Grace", "Ken", "Barbara", "Dennis", "Edsger", "Frances"}
+	ticketOf := map[string]string{}
+	for i, name := range builders {
+		ticketOf[name] = tickets[i].ID
+	}
+	for i, name := range names {
+		m := Member{Role: RoleBuilder, Name: name, Index: i, Ticket: ticketOf[name]}
+		if m.Ticket != "" {
+			m.Task = "building " + m.Ticket
+		}
+		members = append(members, m)
+	}
+	return Snapshot{ID: "sprint-14", Request: "probe", Started: now.Add(-20 * time.Minute), Stage: StageBuild, Status: "building", Members: members, Tickets: tickets, Spent: map[string]int{"Ada": 310000}}
+}
+
+// Harness state of the fourteen ticket probe, every runner with a ticket editing or reading
+func probeLive14() map[string]liveState {
+	live := map[string]liveState{"Overwatch": {running: true, tool: "Read", toolAt: time.Now(), tally: toolTally{reads: 4}}}
+	for i, name := range []string{"Ada", "Grace", "Ken", "Barbara", "Dennis"} {
+		tool := "Edit"
+		if i%2 == 1 {
+			tool = "Read"
+		}
+		live[name] = liveState{running: true, tool: tool, toolAt: time.Now(), tally: toolTally{reads: 3 + i, edits: i}, heat: 0.2 * float64(i), since: time.Now().Add(-4 * time.Minute), limit: 90 * time.Minute}
+	}
+	return live
+}
+
+// Scene of a sprint advanced a count of frames, synced every tenth
+func settledScene(snap Snapshot, live map[string]liveState, builders, frames int) *scene {
+	sc := newScene(builders)
 	cfg := Default()
-	for i := range 120 {
+	for i := range frames {
 		if i%10 == 0 {
 			sc.sync(&snap, live, cfg)
 		}
 		sc.update(1.0 / 30)
 	}
+	return sc
+}
+
+// Camera and raster the probe renders through, the whole platform in view
+func probeView(sc *scene) (vxl.Camera, *vxl.Raster) {
+	cam := vxl.Camera{Target: sc.lay.center(), Yaw: 0.55, Pitch: 0.58, Dist: float64(sc.lay.w) * 1.6, FOV: 0.85}
+	r := &vxl.Raster{FogColor: sc.horizon, FogNear: cam.Dist * 0.95, FogFar: cam.Dist * 3, Sun: sunDir, SunColor: vxl.Hex(0xdfe9f2).Scale(0.72), Ambient: vxl.Hex(0x3a4c66)}
+	return cam, r
+}
+
+// Times frames of a scene on a wide octant terminal, the static layer cached as the arena keeps it
+func benchFrame(b *testing.B, sc *scene) {
+	cols, rows := 220, 56
 	mode := vxl.ModeOctant
 	px, py := mode.Pixels()
 	static, fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}, &vxl.Frame{PixelAspect: mode.PixelAspect()}
 	static.Resize(cols*px, rows*py)
 	static.Clear(func(x, y int) vxl.RGB { return sc.sky(float64(y) / float64(static.H)) })
-	cam := vxl.Camera{Target: sc.lay.center(), Yaw: 0.55, Pitch: 0.58, Dist: float64(sc.lay.w) * 1.6, FOV: 0.85}
-	r := &vxl.Raster{FogColor: sc.horizon, FogNear: cam.Dist * 0.95, FogFar: cam.Dist * 3, Sun: sunDir, SunColor: vxl.Hex(0xdfe9f2).Scale(0.72), Ambient: vxl.Hex(0x3a4c66)}
+	cam, r := probeView(sc)
 	r.Begin(static, cam)
 	sc.drawStatic(r)
 	r.Flush()
 	var post vxl.Post
+	var enc vxl.Encoder
 	buf := uv.NewBuffer(cols, rows)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		sc.update(1.0 / 30)
@@ -264,27 +407,25 @@ func BenchmarkFrame(b *testing.B) {
 		r.Begin(fr, cam)
 		sc.drawDynamic(r)
 		r.Flush()
+		fr.Outline(probeOutline)
 		fr.Bloom(&post, 0.62, 0.8)
 		fr.Vignette(0.3)
-		fr.Encode(buf, 0, 0, cols, rows, mode, nil)
+		enc.Encode(fr, buf, 0, 0, cols, rows, mode, nil)
 	}
 }
 
-// Static layer of the probe scene drawn from scratch, as a camera move costs
-func BenchmarkStatic(b *testing.B) {
+// Times the static layer of a scene drawn from scratch, as a camera move costs
+func benchStatic(b *testing.B, sc *scene) {
 	cols, rows := 220, 56
-	sc := newScene(3)
-	snap := probeSnapshot()
-	sc.sync(&snap, probeLive(), Default())
 	mode := vxl.ModeOctant
 	px, py := mode.Pixels()
 	fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}
 	fr.Resize(cols*px, rows*py)
-	cam := vxl.Camera{Target: sc.lay.center(), Yaw: 0.55, Pitch: 0.58, Dist: float64(sc.lay.w) * 1.6, FOV: 0.85}
-	r := &vxl.Raster{Sun: sunDir, SunColor: vxl.Hex(0xdfe9f2).Scale(0.72), Ambient: vxl.Hex(0x3a4c66)}
+	cam, r := probeView(sc)
 	r.Begin(fr, cam)
 	sc.drawStatic(r)
 	r.Flush()
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		fr.Clear(func(x, y int) vxl.RGB { return sc.sky(float64(y) / float64(fr.H)) })
@@ -292,4 +433,20 @@ func BenchmarkStatic(b *testing.B) {
 		sc.drawStatic(r)
 		r.Flush()
 	}
+}
+
+// Frame of the seven ticket probe scene
+func BenchmarkFrame(b *testing.B) { benchFrame(b, settledScene(probeSnapshot(), probeLive(), 3, 120)) }
+
+// Static layer of the seven ticket probe scene
+func BenchmarkStatic(b *testing.B) { benchStatic(b, settledScene(probeSnapshot(), probeLive(), 3, 1)) }
+
+// Frame of the fourteen ticket probe scene with eight runners
+func BenchmarkFrame14(b *testing.B) {
+	benchFrame(b, settledScene(probeSnapshot14(), probeLive14(), 8, 120))
+}
+
+// Static layer of the fourteen ticket probe scene with eight runners
+func BenchmarkStatic14(b *testing.B) {
+	benchStatic(b, settledScene(probeSnapshot14(), probeLive14(), 8, 1))
 }

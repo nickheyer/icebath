@@ -18,12 +18,8 @@ func TestQuestionerAnswers(t *testing.T) {
 		}
 		got <- answers
 	}()
-	var asking *Asking
-	for deadline := time.Now().Add(2 * time.Second); asking == nil && time.Now().Before(deadline); {
-		if a := q.ForSession("sess"); a != nil {
-			asking = a
-			break
-		}
+	asking := q.ForSession("sess")
+	for deadline := time.Now().Add(2 * time.Second); asking == nil && time.Now().Before(deadline); asking = q.ForSession("sess") {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if asking == nil || len(q.Pending()) != 1 || q.Len() != 1 || q.ForSession("other") != nil {

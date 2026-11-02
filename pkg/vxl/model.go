@@ -1,6 +1,9 @@
 package vxl
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // Paint keys of a model resolved to colors when it is drawn
 type Palette struct {
@@ -23,6 +26,8 @@ type face struct {
 	n   Vec3
 	ao  [4]float64
 	key rune
+	// Place of the key among the keys of the model
+	ki int
 }
 
 // Rigid piece of a model, turned around its pivot and carried by its parent
@@ -35,6 +40,8 @@ type Part struct {
 	parent *Part
 	faces  []face
 	lo, hi Vec3
+	// Place of the part in the parts of its model
+	idx int
 }
 
 // Turn and shift of a part for one frame
@@ -48,6 +55,8 @@ type Pose struct {
 type Model struct {
 	Parts []*Part
 	Scale float64
+	// Every paint key the faces use, each once
+	keys []rune
 }
 
 // Part of a model by name, nil for an unknown one
@@ -62,7 +71,7 @@ func (m *Model) Part(name string) *Part {
 
 // Adds a part built from layers of text, front layer last, each row read from the top down
 func (m *Model) Add(name string, at, pivot Vec3, layers []string, rows int) *Part {
-	p := &Part{Name: name, At: at, Pivot: pivot}
+	p := &Part{Name: name, At: at, Pivot: pivot, idx: len(m.Parts)}
 	vox := map[[3]int]rune{}
 	for i, text := range layers {
 		z := i / rows
@@ -74,6 +83,14 @@ func (m *Model) Add(name string, at, pivot Vec3, layers []string, rows int) *Par
 		}
 	}
 	p.bake(vox)
+	for i := range p.faces {
+		f := &p.faces[i]
+		f.ki = slices.Index(m.keys, f.key)
+		if f.ki < 0 {
+			f.ki = len(m.keys)
+			m.keys = append(m.keys, f.key)
+		}
+	}
 	m.Parts = append(m.Parts, p)
 	return p
 }
@@ -275,50 +292,162 @@ func (p *Part) Hidden(poses map[string]Pose) bool {
 	return false
 }
 
-// Queues every face of the model in its stance, lit by the raster, glowing keys unlit
+// Linear map as the images of the three unit axes, then a shift
+type xform struct{ x, y, z, t Vec3 }
+
+// Vector under the linear part alone
+func (m xform) turn(v Vec3) Vec3 {
+	return Vec3{m.x.X*v.X + m.y.X*v.Y + m.z.X*v.Z, m.x.Y*v.X + m.y.Y*v.Y + m.z.Y*v.Z, m.x.Z*v.X + m.y.Z*v.Y + m.z.Z*v.Z}
+}
+
+// Point under the whole map
+func (m xform) apply(v Vec3) Vec3 { return m.turn(v).Add(m.t) }
+
+// Map doing o first and m after
+func (m xform) then(o xform) xform { return xform{m.turn(o.x), m.turn(o.y), m.turn(o.z), m.apply(o.t)} }
+
+// Turn of a pose as a map, roll first, then pitch, then yaw
+func poseTurn(p Pose) xform {
+	m := xform{x: Vec3{1, 0, 0}, y: Vec3{0, 1, 0}, z: Vec3{0, 0, 1}}
+	if p.Roll != 0 {
+		s, c := math.Sincos(p.Roll)
+		m = xform{x: Vec3{c, s, 0}, y: Vec3{-s, c, 0}, z: Vec3{0, 0, 1}}
+	}
+	if p.Pitch != 0 {
+		s, c := math.Sincos(p.Pitch)
+		m = xform{x: Vec3{1, 0, 0}, y: Vec3{0, c, s}, z: Vec3{0, -s, c}}.then(m)
+	}
+	if p.Yaw != 0 {
+		s, c := math.Sincos(p.Yaw)
+		m = xform{x: Vec3{c, 0, -s}, y: Vec3{0, 1, 0}, z: Vec3{s, 0, c}}.then(m)
+	}
+	return m
+}
+
+// Map of one part from voxel units into the world, and whether it or a carrier is hidden
+type partXF struct {
+	m      xform
+	hidden bool
+	done   bool
+}
+
+// Fills the map of a part and of every part carrying it, the world map at the root
+func (m *Model) place(p *Part, xs []partXF, poses map[string]Pose, world xform) *partXF {
+	x := &xs[p.idx]
+	if x.done {
+		return x
+	}
+	pose := poses[p.Name]
+	r := poseTurn(pose)
+	r.t = p.Pivot.Add(p.At).Add(pose.Shift).Sub(r.turn(p.Pivot))
+	parent, hidden := world, pose.Hidden
+	if p.parent != nil {
+		px := m.place(p.parent, xs, poses, world)
+		parent, hidden = px.m, hidden || px.hidden
+	}
+	*x = partXF{m: parent.then(r), hidden: hidden, done: true}
+	return x
+}
+
+// Queues every front face of the model in its stance, lit by the lights reaching each part, glowing keys unlit
 func (m *Model) Draw(r *Raster, pal Palette, st Stance) {
 	alpha := 1 - st.Fade
 	if alpha <= 0 {
 		return
 	}
+	var buf [24]partXF
+	xs := buf[:0]
+	if len(m.Parts) > len(buf) {
+		xs = make([]partXF, 0, len(m.Parts))
+	}
+	xs = xs[:len(m.Parts)]
+	var colBuf [16]RGB
+	var glowBuf [16]bool
+	cols, glows := colBuf[:0], glowBuf[:0]
+	if len(m.keys) > len(colBuf) {
+		cols, glows = make([]RGB, 0, len(m.keys)), make([]bool, 0, len(m.keys))
+	}
+	for _, k := range m.keys {
+		c, g := pal.color(k), pal.Glow[k]
+		if !g && st.Tint != nil {
+			c = st.Tint(c)
+		}
+		cols, glows = append(cols, c), append(glows, g)
+	}
+	s, c := math.Sincos(st.Yaw)
+	k := m.Scale
+	world := xform{x: Vec3{c * k, 0, -s * k}, y: Vec3{0, k, 0}, z: Vec3{s * k, 0, c * k}, t: st.Pos}
+	unscale := 1 / k
+	glow := Grey(1.5)
 	for _, part := range m.Parts {
-		if part.Hidden(st.Poses) {
+		x := m.place(part, xs, st.Poses, world)
+		if x.hidden || len(part.faces) == 0 {
 			continue
 		}
+		lo, hi := x.m.box(part.lo, part.hi)
+		if !r.Visible(lo, hi) {
+			continue
+		}
+		near := r.lightsInBox(lo, hi)
 		for i := range part.faces {
 			f := &part.faces[i]
 			var q Quad
 			for c := range 4 {
-				q.P[c] = part.Place(f.p[c], st.Poses).Mul(m.Scale).RotateY(st.Yaw).Add(st.Pos)
+				q.P[c] = x.m.apply(f.p[c])
 			}
-			q.Color, q.Alpha = pal.color(f.key), alpha
-			if pal.Glow[f.key] {
-				l := Grey(1.5)
-				q.Light = [4]RGB{l, l, l, l}
-				r.Quad(q)
+			if q.P[1].Sub(q.P[0]).Cross(q.P[3].Sub(q.P[0])).Dot(r.eye.Sub(q.P[0])) <= 0 {
 				continue
 			}
-			if st.Tint != nil {
-				q.Color = st.Tint(q.Color)
+			q.Color, q.Alpha = cols[f.ki], alpha
+			if glows[f.ki] {
+				q.Light = [4]RGB{glow, glow, glow, glow}
+				r.quad(&q)
+				continue
 			}
-			n := part.Orient(f.n, st.Poses).RotateY(st.Yaw)
-			r.Shade(&q, n)
+			r.shadeFrom(&q, x.m.turn(f.n).Mul(unscale), near)
 			for c := range 4 {
 				q.Light[c] = q.Light[c].Scale(f.ao[c])
 			}
-			r.Quad(q)
+			r.quad(&q)
 		}
 	}
+}
+
+// World box around the image of a box under the map, padded a hair against rounding
+func (m xform) box(lo, hi Vec3) (Vec3, Vec3) {
+	inf := math.Inf(1)
+	a, b := Vec3{inf, inf, inf}, Vec3{-inf, -inf, -inf}
+	for i := range 8 {
+		p := lo
+		if i&1 != 0 {
+			p.X = hi.X
+		}
+		if i&2 != 0 {
+			p.Y = hi.Y
+		}
+		if i&4 != 0 {
+			p.Z = hi.Z
+		}
+		w := m.apply(p)
+		a = Vec3{min(a.X, w.X), min(a.Y, w.Y), min(a.Z, w.Z)}
+		b = Vec3{max(b.X, w.X), max(b.Y, w.Y), max(b.Z, w.Z)}
+	}
+	pad := Vec3{1e-9, 1e-9, 1e-9}
+	return a.Sub(pad), b.Add(pad)
 }
 
 // Point of the model in the world for a point in its voxel units, before any pose
 func (m *Model) World(v Vec3, st Stance) Vec3 { return v.Mul(m.Scale).RotateY(st.Yaw).Add(st.Pos) }
 
-// Height of the model in world units
+// Rest stature in world units, every part raised by the parts carrying it
 func (m *Model) Height() float64 {
 	top := 0.0
 	for _, p := range m.Parts {
-		top = max(top, (p.hi.Y + p.At.Y))
+		y := p.hi.Y
+		for part := p; part != nil; part = part.parent {
+			y += part.At.Y
+		}
+		top = max(top, y)
 	}
 	return top * m.Scale
 }

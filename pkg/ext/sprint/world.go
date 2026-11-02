@@ -7,13 +7,14 @@ import (
 	"slices"
 )
 
-// Spacing of the nodes across a level and between levels
+// Spacing of the nodes across a row and between rows, and the most nodes one row holds
 const (
 	nodePitchX = 7
 	nodePitchZ = 8
+	rowNodes   = 5
 	// Rows of the landing south of the fort where the crew gathers
 	landingDepth = 9
-	// Height of the overwatch spire
+	// Height of the reviewer spire
 	spireHeight = 5
 	// Rows the blackwall stands north of the fort
 	wallGap = 7
@@ -22,9 +23,7 @@ const (
 // Colors every static surface of the dive paints with
 var (
 	colTileA     = vxl.Hex(0x33404f)
-	colTileB     = vxl.Hex(0x2b3745)
 	colFortA     = vxl.Hex(0x334a66)
-	colFortB     = vxl.Hex(0x2c425c)
 	colSeam      = vxl.Hex(0x4a7aa6)
 	colRim       = vxl.Hex(0x141b25)
 	colCliff     = vxl.Hex(0x0f1420)
@@ -40,9 +39,7 @@ var (
 	colTower     = vxl.Hex(0x171f2b)
 	colTowerHi   = vxl.Hex(0x29364a)
 	colCradle    = vxl.Hex(0x1f2b3a)
-	colWallA     = vxl.Hex(0x170407)
 	colWallB     = vxl.Hex(0x2c080e)
-	colWallC     = vxl.Hex(0x4a0d17)
 	colIce       = vxl.Hex(0x9cc7e8)
 	colIceDeep   = vxl.Hex(0x4a86b8)
 	colPaper     = vxl.Hex(0xf4f6f8)
@@ -133,6 +130,14 @@ type dive struct {
 	blocked map[[2]int]bool
 	// Floor cells conduits run through, by dependent then dependency
 	conduits map[[2]string][][2]int
+	// Straight stretches of each conduit, one face apiece
+	runs map[[2]string][]conduitRun
+}
+
+// Straight conduit stretch between two floor cell centers and how many cells along the conduit each lies
+type conduitRun struct {
+	a, b   [2]int
+	sa, sb float64
 }
 
 // Spot on the edge of the platform and the way out faces from it
@@ -149,7 +154,7 @@ type planNode struct {
 
 // Layout for a plan and a count of builders, a small dormant fort when the plan is empty
 func buildDive(plan []planNode, builders int) dive {
-	lay := dive{nodes: map[string]vxl.Vec3{}, levels: map[string]int{}, deps: map[string][]string{}, tiles: map[[2]int]bool{}, blocked: map[[2]int]bool{}, conduits: map[[2]string][][2]int{}}
+	lay := dive{nodes: map[string]vxl.Vec3{}, levels: map[string]int{}, deps: map[string][]string{}, tiles: map[[2]int]bool{}, blocked: map[[2]int]bool{}, conduits: map[[2]string][][2]int{}, runs: map[[2]string][]conduitRun{}}
 	known := map[string]bool{}
 	for _, n := range plan {
 		known[n.id] = true
@@ -185,18 +190,30 @@ func buildDive(plan []planNode, builders int) dive {
 		l := lay.levels[n.id]
 		lay.byLevel[l] = append(lay.byLevel[l], n.id)
 	}
-	cols := 3
+	cols, rows := 3, 0
 	for _, ids := range lay.byLevel {
-		cols = max(cols, len(ids))
+		cols = max(cols, min(len(ids), rowNodes))
+		rows += levelRows(len(ids))
 	}
 	lay.w = cols*nodePitchX + 6
-	lay.fortD = 4 + depth*nodePitchZ
+	lay.fortD = 4 + rows*nodePitchZ
 	lay.d = lay.fortD + landingDepth
-	for l, ids := range lay.byLevel {
-		z := float64(lay.fortD-4-l*nodePitchZ) + 0.5
-		for i, id := range ids {
-			x := float64(lay.w)/2 + (float64(i)-float64(len(ids)-1)/2)*nodePitchX
-			lay.nodes[id] = vxl.V(math.Floor(x)+0.5, 0, z)
+	row := 0
+	for _, ids := range lay.byLevel {
+		n := levelRows(len(ids))
+		next := 0
+		for k := range n {
+			count := len(ids) / n
+			if k < len(ids)%n {
+				count++
+			}
+			z := float64(lay.fortD-4-row*nodePitchZ) + 0.5
+			for i, id := range ids[next : next+count] {
+				x := float64(lay.w)/2 + (float64(i)-float64(count-1)/2)*nodePitchX
+				lay.nodes[id] = vxl.V(math.Floor(x)+0.5, 0, z)
+			}
+			next += count
+			row++
 		}
 	}
 	lay.uplink = vxl.V(math.Floor(float64(lay.w)/2)+0.5, 0, float64(lay.d-4)+0.5)
@@ -259,14 +276,60 @@ func buildDive(plan []planNode, builders int) dive {
 	for id, deps := range lay.deps {
 		to := lay.nodes[id]
 		for _, d := range deps {
-			from := lay.nodes[d]
-			cells := vxl.LineCells(int(from.X), int(from.Z)-2, int(from.X), int(to.Z)+3)
-			cells = append(cells, vxl.LineCells(int(from.X), int(to.Z)+3, int(to.X), int(to.Z)+3)...)
-			cells = append(cells, vxl.LineCells(int(to.X), int(to.Z)+3, int(to.X), int(to.Z)+2)...)
-			lay.conduits[[2]string{id, d}] = cells
+			key := [2]string{id, d}
+			lay.conduits[key] = lay.route(lay.nodes[d], to)
+			lay.runs[key] = straightRuns(lay.conduits[key])
 		}
 	}
 	return lay
+}
+
+// Rows a level of a count of nodes wraps onto, one for an empty level
+func levelRows(n int) int { return max((n+rowNodes-1)/rowNodes, 1) }
+
+// Floor cells of a conduit from a dependency north to its dependent, its long leg down a pedestal free lane
+func (lay *dive) route(from, to vxl.Vec3) [][2]int {
+	fx, fz, tx, tz := int(from.X), int(from.Z), int(to.X), int(to.Z)
+	south, north := fz-2, tz+3
+	lane := lay.lane(fx, tx, north, south)
+	cells := vxl.LineCells(fx, south, lane, south)
+	cells = append(cells, vxl.LineCells(lane, south, lane, north)...)
+	cells = append(cells, vxl.LineCells(lane, north, tx, north)...)
+	cells = append(cells, vxl.LineCells(tx, north, tx, tz+2)...)
+	return slices.Compact(cells)
+}
+
+// Column nearest a start, then nearest an end, whose cells between two rows hold no pedestal
+func (lay *dive) lane(from, to, z0, z1 int) int {
+	best, bestD := from, math.MaxInt
+	for x := range lay.w {
+		open := true
+		for z := z0; z <= z1 && open; z++ {
+			open = !lay.blocked[[2]int{x, z}]
+		}
+		if d := 2*lay.w*max(x-from, from-x) + max(x-to, to-x); open && d < bestD {
+			best, bestD = x, d
+		}
+	}
+	return best
+}
+
+// Stretches of cells running one way, each from the cell it turns at to the cell of its next turn
+func straightRuns(cells [][2]int) []conduitRun {
+	var out []conduitRun
+	for i := 0; i+1 < len(cells); {
+		step := [2]int{cells[i+1][0] - cells[i][0], cells[i+1][1] - cells[i][1]}
+		j := i + 1
+		for j+1 < len(cells) && [2]int{cells[j+1][0] - cells[j][0], cells[j+1][1] - cells[j][1]} == step {
+			j++
+		}
+		out = append(out, conduitRun{a: cells[i], b: cells[j], sa: float64(i), sb: float64(j)})
+		i = j
+	}
+	if len(cells) == 1 {
+		out = append(out, conduitRun{a: cells[0], b: cells[0]})
+	}
+	return out
 }
 
 // Reports whether a tile exists and nothing stands on it
@@ -306,7 +369,7 @@ func (lay *dive) nearest(p vxl.Vec3) vxl.Vec3 {
 	return p
 }
 
-// Spot a runner stands at to jack into a node, west of it, and the yaw toward the node
+// Spot a builder stands at to work at a node, west of it, and the yaw toward the node
 func (lay *dive) jackSpot(id string) (vxl.Vec3, float64) {
 	n := lay.nodes[id]
 	return lay.nearest(vxl.V(n.X-2.5, 0, n.Z+0.5)), math.Pi / 2
@@ -320,15 +383,15 @@ func (lay *dive) viewSpot(id string, share float64) (vxl.Vec3, float64) {
 	return at, vxl.HeadingOf(n.Sub(at))
 }
 
-// Spot in front of the spire where the overwatch lands when it leaves the tower
+// Spot in front of the spire where the reviewer lands when it leaves the tower
 func (lay *dive) spireFoot() vxl.Vec3 {
 	return lay.nearest(lay.spire.Add(vxl.V(0, 0, 3.5)))
 }
 
-// Where the overwatch stands on top of the spire
+// Where the reviewer stands on top of the spire
 func (lay *dive) spireTop() vxl.Vec3 { return lay.spire.Add(vxl.V(0, spireHeight, 0)) }
 
-// Cradle of a runner by index
+// Cradle of a builder by index
 func (lay *dive) cradle(index int) vxl.Vec3 {
 	if len(lay.cradles) == 0 {
 		return lay.uplink
@@ -356,91 +419,80 @@ func (lay *dive) bounds() (lo, hi vxl.Vec3) {
 // Center of the platform
 func (lay *dive) center() vxl.Vec3 { return vxl.V(float64(lay.w)/2, 1.5, float64(lay.d)/2) }
 
-// Static platform, stations, conduits and the blackwall as voxels
+// Static platform, stations, conduits and the blackwall as patterned voxels
 func (lay *dive) build() vxl.Grid {
 	g := vxl.Grid{}
 	for cell := range lay.tiles {
 		x, z := cell[0], cell[1]
-		a, b := colTileA, colTileB
+		c, tex := colTileA, vxl.TexPanel
 		if z < lay.fortD {
-			a, b = colFortA, colFortB
-		}
-		c := a
-		if (x+z)%2 == 1 {
-			c = b
+			c, tex = colFortA, vxl.TexCircuit
 		}
 		if x%6 == 0 || z%6 == 0 {
 			c = c.Mix(colSeam, 0.35)
 		}
-		g.Set(x, -1, z, c.Scale(0.94+0.12*vxl.Hash2(x, z)))
+		g.SetTex(x, -1, z, c, tex)
 		ring := min(x, z, lay.w-1-x, lay.d-1-z)
 		if ring == 0 || !lay.tiles[[2]int{x - 1, z}] || !lay.tiles[[2]int{x + 1, z}] || !lay.tiles[[2]int{x, z - 1}] || !lay.tiles[[2]int{x, z + 1}] {
-			g.Set(x, -1, z, colRim)
-			g.Set(x, -2, z, colCliff)
+			g.SetTex(x, -1, z, colRim, vxl.TexGrate)
+			g.SetTex(x, -2, z, colCliff, vxl.TexNoise)
 			if vxl.Hash2(z, x) > 0.5 {
-				g.Set(x, -3, z, colCliffDark)
+				g.SetTex(x, -3, z, colCliffDark, vxl.TexNoise)
 			}
 			if vxl.Hash2(x*3, z) > 0.8 {
-				g.Set(x, -4, z, colCliffDark)
+				g.SetTex(x, -4, z, colCliffDark, vxl.TexNoise)
 			}
 		} else if ring < 3 && vxl.Hash2(x, z*5) > 0.6 {
-			g.Set(x, -2, z, colCliff)
+			g.SetTex(x, -2, z, colCliff, vxl.TexNoise)
 		}
 	}
 	for _, cells := range lay.conduits {
 		for _, c := range cells {
 			if lay.tiles[c] {
-				g.Set(c[0], -1, c[1], colConduit)
+				g.SetTex(c[0], -1, c[1], colConduit, vxl.TexGrate)
 			}
 		}
 	}
 	for _, p := range lay.nodes {
 		x, z := int(p.X), int(p.Z)
-		g.Box(x-1, 0, z-1, 3, 1, 3, colPedestal)
+		g.BoxTex(x-1, 0, z-1, 3, 1, 3, colPedestal, vxl.TexGrate)
 		for _, c := range [][2]int{{x - 1, z - 1}, {x + 1, z - 1}, {x - 1, z + 1}, {x + 1, z + 1}} {
-			g.Set(c[0], 0, c[1], colPedestalH)
+			g.SetTex(c[0], 0, c[1], colPedestalH, vxl.TexGrate)
 		}
 		g.Del(x, 0, z)
-		g.Set(x, -1, z, colDark)
+		g.SetTex(x, -1, z, colDark, vxl.TexGrate)
 	}
 	ux, uz := int(lay.uplink.X), int(lay.uplink.Z)
-	g.Box(ux-1, 0, uz-1, 3, 1, 3, colPad)
-	g.Set(ux, 0, uz, colPadHi)
-	g.Box(ux, 1, uz+1, 1, 3, 1, colPillar)
-	g.Set(ux, 4, uz+1, colPadHi)
+	g.BoxTex(ux-1, 0, uz-1, 3, 1, 3, colPad, vxl.TexPanel)
+	g.SetTex(ux, 0, uz, colPadHi, vxl.TexPanel)
+	g.BoxTex(ux, 1, uz+1, 1, 3, 1, colPillar, vxl.TexGrate)
+	g.SetTex(ux, 4, uz+1, colPadHi, vxl.TexPanel)
 	cx, cz := int(lay.chart.X), int(lay.chart.Z)
-	g.Box(cx-2, 0, cz-1, 1, 1, 3, colTable)
-	g.Box(cx+2, 0, cz-1, 1, 1, 3, colTable)
-	g.Box(cx-2, 1, cz-1, 5, 1, 3, colTableTop)
+	g.BoxTex(cx-2, 0, cz-1, 1, 1, 3, colTable, vxl.TexGrate)
+	g.BoxTex(cx+2, 0, cz-1, 1, 1, 3, colTable, vxl.TexGrate)
+	g.BoxTex(cx-2, 1, cz-1, 5, 1, 3, colTableTop, vxl.TexPanel)
 	sx, sz := int(lay.spire.X), int(lay.spire.Z)
-	g.Box(sx-1, 0, sz-1, 3, spireHeight, 3, colTower)
+	g.BoxTex(sx-1, 0, sz-1, 3, spireHeight, 3, colTower, vxl.TexPanel)
 	for y := range spireHeight {
 		for _, c := range [][2]int{{sx - 1, sz - 1}, {sx + 1, sz - 1}, {sx - 1, sz + 1}, {sx + 1, sz + 1}} {
 			if (y+c[0]+c[1])%2 == 0 {
-				g.Set(c[0], y, c[1], colTowerHi)
+				g.SetTex(c[0], y, c[1], colTowerHi, vxl.TexGrate)
 			}
 		}
 	}
-	g.Box(sx-1, spireHeight, sz-1, 3, 1, 3, colTowerHi)
-	g.Box(sx, spireHeight+1, sz-1, 1, 2, 1, colPillar)
+	g.BoxTex(sx-1, spireHeight, sz-1, 3, 1, 3, colTowerHi, vxl.TexPanel)
+	g.BoxTex(sx, spireHeight+1, sz-1, 1, 2, 1, colPillar, vxl.TexGrate)
 	for _, c := range lay.cradles {
 		x, z := int(c.X), int(c.Z)
-		g.Box(x, -1, z, 2, 1, 1, colCradle)
+		g.BoxTex(x, -1, z, 2, 1, 1, colCradle, vxl.TexGrate)
 	}
 	for x := -8; x < lay.w+8; x++ {
 		h := 12 + int(vxl.Hash2(x, 99)*5)
 		for z := lay.wallZ - 1; z <= lay.wallZ; z++ {
-			for y := -4; y < h; y++ {
-				n := vxl.Hash3(x, y, z)
-				c := colWallA.Mix(colWallB, n)
-				if n > 0.9 {
-					c = colWallC
-				}
-				if y == h-1 {
-					c = colWallB
-				}
-				g.Set(x, y, z, c)
+			for y := -4; y < h-1; y++ {
+				g.SetTex(x, y, z, colWallB, vxl.TexNoise)
 			}
+			g.SetTex(x, h-1, z, colWallB, vxl.TexPanel)
 		}
 	}
 	return g

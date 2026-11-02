@@ -3,8 +3,6 @@ package vxl
 import (
 	"math"
 	"runtime"
-	"sync"
-	"sync/atomic"
 )
 
 // Orbit camera looking at a target from a yaw, a pitch and a distance
@@ -25,12 +23,15 @@ func (c Camera) Eye() Vec3 {
 // Nearest view depth a face may have and still be drawn
 const nearPlane = 0.25
 
-// Flat face in the world with a color, a light per corner and how it blends
+// Flat face in the world with a color, a light per corner, a pattern and how it blends
 type Quad struct {
 	P     [4]Vec3
 	Color RGB
 	// Light each corner reflects, multiplied into the color
 	Light [4]RGB
+	// Pattern scaling the color and its place at every corner, in world units for the tiling ones
+	Tex Texture
+	UV  [4][2]float64
 	// Share of the face laid over what is behind it, one covering it
 	Alpha float64
 	// Light added instead of laid over, for glows
@@ -52,21 +53,26 @@ type Light struct {
 	Radius float64
 }
 
-// Corner of a face in view space with its light
+// Corner of a face in view space with its light and pattern place
 type vertex struct {
 	p     Vec3
 	light RGB
+	uv    [2]float64
 }
 
 // Screen space triangle with everything its pixels need, binned by row band
 type tri struct {
 	x, y, z [3]float64
 	l       [3]RGB
-	col     RGB
-	alpha   float64
-	x0, x1  int32
-	y0, y1  int32
-	flags   uint8
+	// Pattern place of each corner over its depth
+	u, v   [3]float64
+	col    RGB
+	alpha  float64
+	x0, x1 int32
+	y0, y1 int32
+	normal uint32
+	flags  uint8
+	tex    Texture
 }
 
 // Flags of a triangle
@@ -95,7 +101,7 @@ type Raster struct {
 	SunColor RGB
 	// Light every face gets from everywhere
 	Ambient RGB
-	// Point lights Shade adds
+	// Point lights Shade adds, binned again by Begin and SetLights
 	Lights []Light
 	// Goroutines Flush draws with, the CPU count when zero
 	Workers int
@@ -103,6 +109,10 @@ type Raster struct {
 	tris    []tri
 	bands   [][]int32
 	bandH   int
+	bins    lightBins
+	cand    []int32
+	inBox   []int32
+	queued  int
 }
 
 // Points the raster at the frame through the camera, dropping anything queued
@@ -119,7 +129,12 @@ func (r *Raster) Begin(fr *Frame, cam Camera) {
 	aspect := float64(max(fr.W, 1)) * fr.PixelAspect / float64(max(fr.H, 1))
 	r.fx, r.fy = f/aspect, f
 	r.tris = r.tris[:0]
+	r.queued = 0
+	r.bins.build(r.Lights)
 }
+
+// Count of faces handed to Quad since Begin
+func (r *Raster) Queued() int { return r.queued }
 
 // Camera basis the raster draws through
 func (r *Raster) Basis() (right, up, forward Vec3) { return r.right, r.up, r.forward }
@@ -159,6 +174,14 @@ func (r *Raster) Scale(depth float64) float64 {
 	return r.fx * 0.5 * float64(r.fr.W) / depth
 }
 
+// Pixels one world unit spans at a view depth, upward
+func (r *Raster) ScaleY(depth float64) float64 {
+	if depth <= 0 {
+		return 0
+	}
+	return r.fy * 0.5 * float64(r.fr.H) / depth
+}
+
 // Reports whether a box may show on the frame, false with every corner behind the camera or past one edge
 func (r *Raster) Visible(lo, hi Vec3) bool {
 	left, right, above, below, behind := true, true, true, true, true
@@ -187,12 +210,15 @@ func (r *Raster) Visible(lo, hi Vec3) bool {
 	return !(behind || left || right || above || below)
 }
 
-// Fills the light of every corner from the sun, the ambient level and the point lights in reach
-func (r *Raster) Shade(q *Quad, n Vec3) {
+// Fills the light of every corner from the sun, the ambient level and the binned point lights near the face
+func (r *Raster) Shade(q *Quad, n Vec3) { r.shadeFrom(q, n, r.lightsNear(q)) }
+
+// Fills the light of every corner from the sun, the ambient level and the listed point lights in index order
+func (r *Raster) shadeFrom(q *Quad, n Vec3, near []int32) {
 	base := r.Ambient.Add(r.SunColor.Scale(max(n.Dot(r.Sun), 0)))
 	for c := range 4 {
 		l := base
-		for i := range r.Lights {
+		for _, i := range near {
 			lt := &r.Lights[i]
 			d := lt.Pos.Sub(q.P[c])
 			d2 := d.Dot(d)
@@ -209,15 +235,32 @@ func (r *Raster) Shade(q *Quad, n Vec3) {
 }
 
 // Queues a face, clipped to the near plane, back faces skipped unless it is two sided
-func (r *Raster) Quad(q Quad) {
+func (r *Raster) Quad(q Quad) { r.quad(&q) }
+
+// Corner of a face on the screen, its light and pattern place divided by its depth
+type svert struct {
+	x, y, z float64
+	l       RGB
+	u, v    float64
+}
+
+// Queues a face held by pointer, each corner projected once and shared by the triangles of its fan
+func (r *Raster) quad(q *Quad) {
+	r.queued++
 	if q.Alpha <= 0 {
 		return
 	}
-	if !q.TwoSided {
-		n := q.P[1].Sub(q.P[0]).Cross(q.P[3].Sub(q.P[0]))
-		if n.Dot(r.eye.Sub(q.P[0])) <= 0 {
-			return
+	n := q.P[1].Sub(q.P[0]).Cross(q.P[3].Sub(q.P[0]))
+	facing := n.Dot(r.eye.Sub(q.P[0]))
+	if !q.TwoSided && facing <= 0 {
+		return
+	}
+	var normal uint32
+	if !q.Additive && q.Alpha >= 1 {
+		if facing < 0 {
+			n = n.Mul(-1)
 		}
+		normal = packNormal(n)
 	}
 	poly := r.scratch[:0]
 	behind := 0
@@ -226,7 +269,7 @@ func (r *Raster) Quad(q Quad) {
 		if v.Z < nearPlane {
 			behind++
 		}
-		poly = append(poly, vertex{p: v, light: q.Light[i]})
+		poly = append(poly, vertex{p: v, light: q.Light[i], uv: q.UV[i]})
 	}
 	if behind == 4 {
 		r.scratch = poly
@@ -239,9 +282,23 @@ func (r *Raster) Quad(q Quad) {
 	if len(poly) < 3 {
 		return
 	}
-	for i := 1; i+1 < len(poly); i++ {
-		r.tri(poly[0], poly[i], poly[i+1], &q, i > 1)
+	var sv [8]svert
+	for i, v := range poly {
+		s := &sv[i]
+		s.x, s.y, s.z = r.screen(v.p)
+		s.l = v.light.Scale(s.z)
+		s.u, s.v = v.uv[0]*s.z, v.uv[1]*s.z
 	}
+	for i := 1; i+1 < len(poly); i++ {
+		r.tri(&sv[0], &sv[i], &sv[i+1], q, normal, i > 1)
+	}
+}
+
+// Unit facing packed as three signed bytes under a marker bit, so no facing packs to zero
+func packNormal(n Vec3) uint32 {
+	n = n.Norm()
+	b := func(f float64) uint32 { return uint32(uint8(int8(math.Round(f * 127)))) }
+	return b(n.X) | b(n.Y)<<8 | b(n.Z)<<16 | 1<<24
 }
 
 // Polygon cut to the part before the near plane, lights lerped along cut edges, written over the input
@@ -256,30 +313,34 @@ func clipNear(in []vertex) []vertex {
 		}
 		if ain != bin {
 			t := (nearPlane - a.p.Z) / (b.p.Z - a.p.Z)
-			out = append(out, vertex{p: a.p.Lerp(b.p, t), light: a.light.Mix(b.light, t)})
+			uv := [2]float64{a.uv[0] + (b.uv[0]-a.uv[0])*t, a.uv[1] + (b.uv[1]-a.uv[1])*t}
+			out = append(out, vertex{p: a.p.Lerp(b.p, t), light: a.light.Mix(b.light, t), uv: uv})
 		}
 	}
 	return append(in[:0], out...)
 }
 
-// Queues one view space triangle with its screen corners and bounds
-func (r *Raster) tri(a, b, c vertex, q *Quad, strict bool) {
+// Queues one screen space triangle with its bounds
+func (r *Raster) tri(a, b, c *svert, q *Quad, normal uint32, strict bool) {
 	fr := r.fr
-	var t tri
-	t.x[0], t.y[0], t.z[0] = r.screen(a.p)
-	t.x[1], t.y[1], t.z[1] = r.screen(b.p)
-	t.x[2], t.y[2], t.z[2] = r.screen(c.p)
-	x0 := int(math.Floor(min(t.x[0], t.x[1], t.x[2])))
-	x1 := int(math.Ceil(max(t.x[0], t.x[1], t.x[2])))
-	y0 := int(math.Floor(min(t.y[0], t.y[1], t.y[2])))
-	y1 := int(math.Ceil(max(t.y[0], t.y[1], t.y[2])))
+	x0 := int(math.Floor(min(a.x, b.x, c.x)))
+	x1 := int(math.Ceil(max(a.x, b.x, c.x)))
+	y0 := int(math.Floor(min(a.y, b.y, c.y)))
+	y1 := int(math.Ceil(max(a.y, b.y, c.y)))
 	if x1 < 0 || y1 < 0 || x0 >= fr.W || y0 >= fr.H {
 		return
 	}
+	r.tris = append(r.tris, tri{})
+	t := &r.tris[len(r.tris)-1]
+	t.x, t.y, t.z = [3]float64{a.x, b.x, c.x}, [3]float64{a.y, b.y, c.y}, [3]float64{a.z, b.z, c.z}
 	t.x0, t.x1 = int32(max(x0, 0)), int32(min(x1, fr.W-1))
 	t.y0, t.y1 = int32(max(y0, 0)), int32(min(y1, fr.H-1))
-	t.l[0], t.l[1], t.l[2] = a.light.Scale(t.z[0]), b.light.Scale(t.z[1]), c.light.Scale(t.z[2])
-	t.col, t.alpha = q.Color, q.Alpha
+	t.l = [3]RGB{a.l, b.l, c.l}
+	t.col, t.alpha, t.normal = q.Color, q.Alpha, normal
+	if q.Tex != TexNone {
+		t.tex = q.Tex
+		t.u, t.v = [3]float64{a.u, b.u, c.u}, [3]float64{a.v, b.v, c.v}
+	}
 	if q.Additive {
 		t.flags |= triAdditive
 	} else if q.Alpha >= 1 {
@@ -288,7 +349,6 @@ func (r *Raster) tri(a, b, c vertex, q *Quad, strict bool) {
 	if strict {
 		t.flags |= triStrict
 	}
-	r.tris = append(r.tris, t)
 }
 
 // Draws a camera facing square of the size at a point, for particles and glows
@@ -327,27 +387,16 @@ func (r *Raster) Flush() {
 			r.bands[b] = append(r.bands[b], int32(i))
 		}
 	}
-	var next atomic.Int32
-	var wg sync.WaitGroup
-	for range min(workers, n) {
-		wg.Go(func() {
-			for {
-				b := int(next.Add(1)) - 1
-				if b >= n {
-					return
-				}
-				y0, y1 := b*r.bandH, min((b+1)*r.bandH, fr.H)-1
-				for _, i := range r.bands[b] {
-					r.fill(&r.tris[i], y0, y1)
-				}
-			}
-		})
-	}
-	wg.Wait()
+	parallel(n, workers, func(b int) {
+		y0, y1 := b*r.bandH, min((b+1)*r.bandH, fr.H)-1
+		for _, i := range r.bands[b] {
+			r.fill(&r.tris[i], y0, y1)
+		}
+	})
 	r.tris = r.tris[:0]
 }
 
-// Fills the rows of one triangle between two rows with depth test, perspective correct light, fog and blending
+// Fills the rows of one triangle between two rows with depth test, perspective correct light and pattern, fog and blending
 func (r *Raster) fill(t *tri, rowLo, rowHi int) {
 	fr := r.fr
 	ax, ay, az := t.x[0], t.y[0], t.z[0]
@@ -367,6 +416,13 @@ func (r *Raster) fill(t *tri, rowLo, rowHi int) {
 	additive, write, strict := t.flags&triAdditive != 0, t.flags&triWrite != 0, t.flags&triStrict != 0
 	fog := r.FogFar > r.FogNear
 	fogSpan := r.FogFar - r.FogNear
+	tex := t.tex
+	ua, ub, uc := t.u[0], t.u[1], t.u[2]
+	va, vb, vc := t.v[0], t.v[1], t.v[2]
+	// Steps across and down of depth and of each pattern axis over depth, for the footprint of a pixel
+	dzx, dzy := b0*(az-cz)+b1*(bz-cz), c0*(az-cz)+c1*(bz-cz)
+	dux, duy := b0*(ua-uc)+b1*(ub-uc), c0*(ua-uc)+c1*(ub-uc)
+	dvx, dvy := b0*(va-vc)+b1*(vb-vc), c0*(va-vc)+c1*(vb-vc)
 	for py := y0; py <= y1; py++ {
 		yc := float64(py) + 0.5
 		xc := float64(x0) + 0.5
@@ -386,6 +442,13 @@ func (r *Raster) fill(t *tri, rowLo, rowHi int) {
 			k := 1 / invz
 			light := RGB{(w0*la.R + w1*lb.R + w2*lc.R) * k, (w0*la.G + w1*lb.G + w2*lc.G) * k, (w0*la.B + w1*lb.B + w2*lc.B) * k}
 			col := t.col.Mul(light)
+			if tex != TexNone {
+				u := (w0*ua + w1*ub + w2*uc) * k
+				v := (w0*va + w1*vb + w2*vc) * k
+				du := (math.Abs(dux-u*dzx) + math.Abs(duy-u*dzy)) * k
+				dv := (math.Abs(dvx-v*dzx) + math.Abs(dvy-v*dzy)) * k
+				col = col.Scale(tex.shade(u, v, du, dv))
+			}
 			if fog {
 				col = col.Mix(r.FogColor, (k-r.FogNear)/fogSpan)
 			}
@@ -399,6 +462,7 @@ func (r *Raster) fill(t *tri, rowLo, rowHi int) {
 			}
 			if write {
 				fr.Depth[i] = float32(invz)
+				fr.Normal[i] = t.normal
 			}
 		}
 	}
@@ -406,38 +470,73 @@ func (r *Raster) fill(t *tri, rowLo, rowHi int) {
 
 // Box turned by a yaw around its own center, shaded by the raster on its turned sides
 func (r *Raster) OrientedBox(center, size Vec3, yaw float64, col RGB, alpha float64) {
-	hx, hy, hz := size.X/2, size.Y/2, size.Z/2
-	corner := func(sx, sy, sz float64) Vec3 {
-		return Vec3{sx * hx, sy * hy, sz * hz}.RotateY(yaw).Add(center)
-	}
-	for i, f := range boxFaces {
-		n := boxNormals[i].RotateY(yaw)
+	corners := boxCorners(center, size, yaw)
+	sn, cs := math.Sincos(yaw)
+	for i := range boxFaces {
+		n := boxNormals[i]
 		var q Quad
 		for c := range 4 {
-			q.P[c] = corner(f[c][0], f[c][1], f[c][2])
+			q.P[c] = corners[boxCornerOf[i][c]]
 		}
 		q.Color, q.Alpha = col, alpha
-		r.Shade(&q, n)
-		r.Quad(q)
+		r.Shade(&q, Vec3{n.X*cs + n.Z*sn, n.Y, -n.X*sn + n.Z*cs})
+		r.quad(&q)
 	}
 }
 
 // Box lit evenly, for things that glow on their own
 func (r *Raster) EmissiveBox(center, size Vec3, yaw float64, col RGB, alpha float64, light float64) {
-	hx, hy, hz := size.X/2, size.Y/2, size.Z/2
-	corner := func(sx, sy, sz float64) Vec3 {
-		return Vec3{sx * hx, sy * hy, sz * hz}.RotateY(yaw).Add(center)
-	}
-	for _, f := range boxFaces {
-		var p [4]Vec3
+	corners := boxCorners(center, size, yaw)
+	l := Grey(light)
+	for i := range boxFaces {
+		q := Quad{Color: col, Alpha: alpha, Light: [4]RGB{l, l, l, l}}
 		for c := range 4 {
-			p[c] = corner(f[c][0], f[c][1], f[c][2])
+			q.P[c] = corners[boxCornerOf[i][c]]
 		}
-		q := FlatQuad(p, col, light)
-		q.Alpha = alpha
-		r.Quad(q)
+		r.quad(&q)
 	}
 }
+
+// Eight corners of a box turned by a yaw about its center, indexed by their axis sign bits
+func boxCorners(center, size Vec3, yaw float64) [8]Vec3 {
+	sn, cs := math.Sincos(yaw)
+	hx, hy, hz := size.X/2, size.Y/2, size.Z/2
+	var out [8]Vec3
+	for i := range 8 {
+		x, y, z := -hx, -hy, -hz
+		if i&1 != 0 {
+			x = hx
+		}
+		if i&2 != 0 {
+			y = hy
+		}
+		if i&4 != 0 {
+			z = hz
+		}
+		out[i] = Vec3{x*cs + z*sn + center.X, y + center.Y, -x*sn + z*cs + center.Z}
+	}
+	return out
+}
+
+// Corner index of each face corner of the unit box, the face corners read as sign bits
+var boxCornerOf = func() (out [6][4]int) {
+	for i, f := range boxFaces {
+		for c, p := range f {
+			k := 0
+			if p[0] > 0 {
+				k |= 1
+			}
+			if p[1] > 0 {
+				k |= 2
+			}
+			if p[2] > 0 {
+				k |= 4
+			}
+			out[i][c] = k
+		}
+	}
+	return out
+}()
 
 // Corners of the six faces of a unit box around the origin, wound to face outward
 var boxFaces = [6][4][3]float64{

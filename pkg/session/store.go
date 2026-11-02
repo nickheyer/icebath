@@ -160,11 +160,12 @@ func (st *Store) Save(ctx context.Context, s *Session) error {
 	if err != nil {
 		return err
 	}
-	entries, err := encodeEntries(s.Entries())
+	ents, recs := s.Entries(), s.Records()
+	entries, err := encodeEntries(ents)
 	if err != nil {
 		return err
 	}
-	records, err := encodeRecords(s.Records())
+	records, err := encodeRecords(recs)
 	if err != nil {
 		return err
 	}
@@ -192,7 +193,7 @@ func (st *Store) Save(ctx context.Context, s *Session) error {
 		fresh = true
 	}
 	if fresh {
-		size, err := rewrite(target, header, s.Entries(), entries, s.Records(), records)
+		size, err := rewrite(target, header, ents, entries, recs, records)
 		if err != nil {
 			return err
 		}

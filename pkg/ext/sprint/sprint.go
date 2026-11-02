@@ -1,4 +1,4 @@
-// Sprint extension, a fixer, a navigator, runners and an overwatch building one request as a crew diving beyond the blackwall
+// Sprint extension, a director, an architect, builders and a reviewer building one request as a team
 package sprint
 
 import (
@@ -53,6 +53,7 @@ const (
 	ActPageDown   = "sprint.page.down"
 	ActPageUp     = "sprint.page.up"
 	ActSettings   = "sprint.settings"
+	ActSidebar    = "sprint.sidebar"
 )
 
 // Actions of the board
@@ -69,7 +70,7 @@ const (
 type extension struct{}
 
 func (extension) Manifest() ext.Manifest {
-	return ext.Manifest{Name: Name, Version: "3", Description: "sprint crew diving beyond the blackwall in a voxel arena, a fixer settles the request, a navigator cuts it into nodes, runners crack them and an overwatch checks every handoff"}
+	return ext.Manifest{Name: Name, Version: "4", Description: "sprint team in a voxel arena, a director settles the request, an architect cuts it into tickets, builders build them and a reviewer checks every handoff"}
 }
 
 // Declares the kinds, tools, budget hook, workflow, settings, panels and keys of the sprint team
@@ -82,6 +83,9 @@ func (extension) Attach(h *ext.Host) error {
 	}
 	h.Tools(func(a *harness.App) ([]tool.Tool, error) {
 		if _, err := migrateLegacy(a); err != nil {
+			return nil, err
+		}
+		if _, err := recoverSprints(a); err != nil {
 			return nil, err
 		}
 		return sprintTools(a), nil
@@ -97,30 +101,31 @@ func (extension) Attach(h *ext.Host) error {
 	arena(ActNext, "next member", "select the next member of the team", "tab")
 	arena(ActPrev, "previous member", "select the previous member of the team", "shift+tab")
 	arena(ActInspect, "inspect", "open or close the transcript of the selected member", "enter", "i")
-	arena(ActSteer, "steer", "type to the selected member, steering its run or starting one", "s")
+	arena(ActSteer, "talk", "type to the selected member, steering its run or starting one", "s")
 	arena(ActFollow, "follow", "keep the camera on the selected member or let it go", "f")
-	arena(ActBoard, "tickets", "show or hide the ticket board", "b")
-	arena(ActLog, "log", "show or hide the log of exchanges", "l")
-	arena(ActCustomize, "customize", "rename or re-rig the selected member", "c")
+	arena(ActBoard, "tickets", "give the tickets the whole lower sidebar, or share it with the log again", "b")
+	arena(ActLog, "log", "give the log the whole lower sidebar, or share it with the tickets again", "l")
+	arena(ActCustomize, "customize", "rename or dress the selected member", "c")
 	arena(ActPause, "pause", "pause the sprint before its next step, or resume it", "p")
 	arena(ActStop, "stop", "stop the sprint, it can be restarted from the stage it was in", "x")
 	arena(ActRestart, "restart", "restart a stopped or failed sprint from the stage it was in", "r")
 	arena(ActOpen, "open session", "open the session of the selected member as its own window", "o")
 	arena(ActKill, "stop run", "stop the run of the selected member, the sprint pausing for you to steer it", "k")
-	arena(ActOrbitLeft, "orbit left", "turn the camera left around the platform", "left")
-	arena(ActOrbitRight, "orbit right", "turn the camera right around the platform", "right")
-	arena(ActOrbitUp, "tilt up", "tilt the camera up toward the blackwall", "up")
-	arena(ActOrbitDown, "tilt down", "tilt the camera down toward the platform", "down")
+	arena(ActOrbitLeft, "orbit left", "turn the camera left around the floor", "left")
+	arena(ActOrbitRight, "orbit right", "turn the camera right around the floor", "right")
+	arena(ActOrbitUp, "tilt up", "tilt the camera up toward the horizon", "up")
+	arena(ActOrbitDown, "tilt down", "tilt the camera down toward the floor", "down")
 	arena(ActZoomIn, "zoom in", "move the camera closer", "+", "=")
 	arena(ActZoomOut, "zoom out", "move the camera away", "-")
 	arena(ActCamera, "camera", "switch between the overview, following, orbiting and cinematic cameras", "v")
 	arena(ActReset, "reset camera", "put the camera back where the preset starts", "0")
-	arena(ActLabels, "labels", "show or hide the handles over the crew and the ids over the nodes", "n")
+	arena(ActLabels, "labels", "show or hide the names over the team and the ids over the tickets", "n")
+	arena(ActSidebar, "sidebar", "show or hide the sidebar with the team, the tickets and the log", "d")
 	arena(ActHelp, "help", "show or hide the key legend", "?")
 	arena(ActSprintNext, "next sprint", "show the next sprint", "]")
 	arena(ActSprintPrev, "previous sprint", "show the previous sprint", "[")
-	arena(ActPageDown, "scroll down", "scroll the open board or log down a page", "pgdown")
-	arena(ActPageUp, "scroll up", "scroll the open board or log up a page", "pgup")
+	arena(ActPageDown, "scroll down", "scroll the tickets or the log down a page", "pgdown")
+	arena(ActPageUp, "scroll up", "scroll the tickets or the log up a page", "pgup")
 	arena(ActSettings, "settings", "open the sprint settings", "S")
 	h.Action(keys.Action{ID: ActLeave, Context: ContextTyping, Label: "done typing", Doc: "hand the keys back to the arena", Default: []string{"esc"}})
 	board := func(id, label, doc string, chords ...string) {
@@ -133,9 +138,9 @@ func (extension) Attach(h *ext.Host) error {
 	board(BoardResume, "restart", "restart a stopped or failed sprint from the stage it was in", "r")
 	board(BoardForget, "forget", "forget an ended sprint, closing the sessions of its team", "D")
 	board(BoardSettings, "settings", "open the sprint settings", "s")
-	h.Panel(ext.Panel{Key: ArenaKey, Title: "Arena", Detail: "the sprint crew at work beyond the blackwall", New: newArena})
+	h.Panel(ext.Panel{Key: ArenaKey, Title: "Arena", Detail: "the sprint team at work, with the team, the tickets and the log beside the floor", New: newArena})
 	h.Panel(ext.Panel{Key: BoardKey, Title: "Sprints", Detail: "every sprint with its team and tickets", New: newBoard})
-	h.Panel(ext.Panel{Key: SettingsKey, Title: "Sprint settings", Detail: "models, team, time limits, arena and outfits of the sprint crew", New: newSettingsCard, Settings: true})
+	h.Panel(ext.Panel{Key: SettingsKey, Title: "Sprint settings", Detail: "models, team, time limits, arena and outfits of the sprint team", New: newSettingsCard, Settings: true})
 	return nil
 }
 

@@ -3,7 +3,8 @@ package vxl
 import (
 	"image/color"
 	"math"
-	"sort"
+	"math/bits"
+	"sync"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -57,12 +58,23 @@ func (m CellMode) Glyph(mask int) string {
 	case ModeHalf:
 		return halves[mask&3]
 	case ModeSextant:
-		return string(sextants[mask&63])
+		return sextantGlyphs[mask&63]
 	case ModeOctant:
-		return string(octants[mask&255])
+		return octantGlyphs[mask&255]
 	}
 	return quadrants[mask&15]
 }
+
+// Sextant and octant glyphs as strings, built once so drawing a cell allocates none
+var sextantGlyphs, octantGlyphs = func() (s [64]string, o [256]string) {
+	for i, r := range sextants {
+		s[i] = string(r)
+	}
+	for i, r := range octants {
+		o[i] = string(r)
+	}
+	return s, o
+}()
 
 // Half block glyphs by lit pixel mask, top one, bottom two
 var halves = [4]string{" ", "▀", "▄", "█"}
@@ -118,38 +130,210 @@ var octants = [256]rune{
 	0x1CDE1, 0x1CDE2, 0x259F, 0x1CDE3, 0x2586, 0x1CDE4, 0x1CDE5, 0x2588,
 }
 
-// Writes the frame into cells, each cell the two colors and glyph nearest its pixels
+// Writes the frame into cells, each the two colors and glyph nearest its pixels, remembering no earlier frame
 func (fr *Frame) Encode(buf *uv.Buffer, x0, y0, cols, rows int, mode CellMode, quantize func(RGB) color.Color) {
-	if quantize == nil {
-		quantize = func(c RGB) color.Color { return c.Color() }
+	e := encoders.Get().(*Encoder)
+	e.Reset()
+	e.Encode(fr, buf, x0, y0, cols, rows, mode, quantize)
+	encoders.Put(e)
+}
+
+// Encoders the stateless encode borrows, reset before each use
+var encoders = sync.Pool{New: func() any { return new(Encoder) }}
+
+// Writes frames into cells, holding each cell to its glyph and colors of the frame before while they still fit
+type Encoder struct {
+	cols, rows int
+	mode       CellMode
+	// Whether the cells hold colors boxed straight from their RGB rather than through a quantizer
+	direct bool
+	gen    uint32
+	cells  []encCell
+}
+
+// Glyph mask and colors a cell showed, valid while its generation matches the encoder
+type encCell struct {
+	fg, bg   RGB
+	qfg, qbg color.Color
+	// Hash of the raw pixels the cell was last encoded from
+	sum  uint64
+	gen  uint32
+	mask uint8
+}
+
+// Extra squared error per pixel a held glyph may carry over the best split before it gives way
+const holdSlack = 0.003
+
+// Squared distance under which a held color stands in for the new one, about three steps of 255 per channel
+const colorSlack = 3 * (3.0 / 255) * (3.0 / 255)
+
+// Forgets every cell, so the next frame encodes as if none came before
+func (e *Encoder) Reset() { e.gen++ }
+
+// Writes the frame into cells, each keeping its glyph and colors while they stay within slack of the best fit
+func (e *Encoder) Encode(fr *Frame, buf *uv.Buffer, x0, y0, cols, rows int, mode CellMode, quantize func(RGB) color.Color) {
+	cols, rows = max(cols, 0), max(rows, 0)
+	direct := quantize == nil
+	if e.cols != cols || e.rows != rows || e.mode != mode || e.direct != direct || len(e.cells) != cols*rows {
+		e.cols, e.rows, e.mode, e.direct = cols, rows, mode, direct
+		if cap(e.cells) >= cols*rows {
+			e.cells = e.cells[:cols*rows]
+		} else {
+			e.cells = make([]encCell, cols*rows)
+		}
+		e.gen++
+	}
+	if e.gen == 0 {
+		e.gen = 1
 	}
 	px, py := mode.Pixels()
 	n := px * py
-	parallelRows(rows, func(r0, r1 int) {
+	full := 1<<n - 1
+	inside := fr.W >= cols*px && fr.H >= rows*py
+	parallelBands(rows, 2, func(r0, r1 int) {
 		var pix [8]RGB
 		for cy := r0; cy < r1; cy++ {
 			for cx := range cols {
-				for j := range py {
-					for i := range px {
-						pix[j*px+i] = fr.At(cx*px+i, cy*py+j).Clamp()
+				if inside {
+					for j := range py {
+						at := (cy*py+j)*fr.W + cx*px
+						copy(pix[j*px:(j+1)*px], fr.Color[at:at+px])
+					}
+				} else {
+					for j := range py {
+						for i := range px {
+							pix[j*px+i] = fr.At(cx*px+i, cy*py+j)
+						}
 					}
 				}
-				mask, fg, bg := partition(pix[:n])
-				c := uv.Cell{Content: mode.Glyph(mask), Width: 1, Style: uv.Style{Bg: quantize(bg)}}
-				if mask != 0 {
-					c.Style.Fg = quantize(fg)
+				st := &e.cells[cy*cols+cx]
+				sum := pixelSum(pix[:n])
+				held := st.gen == e.gen
+				if held && st.sum == sum {
+					var qfg, qbg color.Color
+					switch {
+					case direct:
+						qfg, qbg = st.qfg, st.qbg
+					default:
+						qbg = quantize(st.bg)
+						if st.mask != 0 {
+							qfg = quantize(st.fg)
+						}
+					}
+					c := uv.Cell{Content: mode.Glyph(int(st.mask)), Width: 1, Style: uv.Style{Bg: qbg, Fg: qfg}}
+					buf.SetCell(x0+cx, y0+cy, &c)
+					continue
 				}
+				for i := range n {
+					pix[i] = pix[i].Clamp()
+				}
+				mask, fg, bg, best := partition(pix[:n])
+				if held {
+					mask, fg, bg = st.hold(pix[:n], mask, fg, bg, best, full)
+				}
+				var qfg, qbg color.Color
+				switch {
+				case !direct:
+					qbg = quantize(bg)
+					if mask != 0 {
+						qfg = quantize(fg)
+					}
+				default:
+					qbg = st.qbg
+					if !held || bg != st.bg || qbg == nil {
+						qbg = bg.Color()
+					}
+					if mask != 0 {
+						qfg = st.qfg
+						if !held || fg != st.fg || qfg == nil {
+							qfg = fg.Color()
+						}
+					}
+				}
+				*st = encCell{fg: fg, bg: bg, sum: sum, gen: e.gen, mask: uint8(mask)}
+				if direct {
+					st.qfg, st.qbg = qfg, qbg
+				}
+				c := uv.Cell{Content: mode.Glyph(mask), Width: 1, Style: uv.Style{Bg: qbg, Fg: qfg}}
 				buf.SetCell(x0+cx, y0+cy, &c)
 			}
 		}
 	})
 }
 
+// Hash of the exact bits of a run of pixels, mixed so any changed bit spreads through it all
+func pixelSum(px []RGB) uint64 {
+	h := uint64(0x9e3779b97f4a7c15)
+	for _, p := range px {
+		for _, v := range [3]float64{p.R, p.G, p.B} {
+			h = bits.RotateLeft64(h^math.Float64bits(v)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
+		}
+	}
+	h ^= h >> 33
+	h *= 0xff51afd7ed558ccd
+	return h ^ h>>33
+}
+
+// Glyph and colors for a cell, the shown ones kept while their error stays within slack of the best split
+func (st *encCell) hold(px []RGB, mask int, fg, bg RGB, best float64, full int) (int, RGB, RGB) {
+	prev := int(st.mask)
+	switch {
+	case mask == prev:
+	case prev != 0 && mask == full^prev:
+		mask, fg, bg = prev, bg, fg
+	default:
+		pf, pb, err := split(px, prev)
+		if err > best+holdSlack*float64(len(px)) {
+			return mask, fg, bg
+		}
+		mask, fg, bg = prev, pf, pb
+	}
+	if bg.Dist(st.bg) <= colorSlack {
+		bg = st.bg
+	}
+	if mask == 0 {
+		return 0, bg, bg
+	}
+	if fg.Dist(st.fg) <= colorSlack {
+		fg = st.fg
+	}
+	return mask, fg, bg
+}
+
+// Means of the lit and unlit pixels of a mask and the squared error of painting pixels their group mean
+func split(px []RGB, mask int) (fg, bg RGB, err float64) {
+	var sf, sb RGB
+	nf, nb := 0, 0
+	for i, p := range px {
+		err += p.Dot3(p)
+		if mask>>i&1 != 0 {
+			sf, nf = sf.Add(p), nf+1
+		} else {
+			sb, nb = sb.Add(p), nb+1
+		}
+	}
+	if nf > 0 {
+		fg = sf.Scale(1 / float64(nf))
+		err -= float64(nf) * fg.Dot3(fg)
+	}
+	if nb > 0 {
+		bg = sb.Scale(1 / float64(nb))
+		err -= float64(nb) * bg.Dot3(bg)
+	}
+	if nf == 0 {
+		fg = bg
+	}
+	if nb == 0 {
+		bg = fg
+	}
+	return fg, bg, max(err, 0)
+}
+
 // Error below which pixels paint as one solid color rather than a pattern
 const solidSlack = 0.0025
 
-// Split of pixels into lit and unlit groups with their mean colors, cut along the axis they spread most along
-func partition(px []RGB) (mask int, fg, bg RGB) {
+// Split of pixels into lit and unlit groups with their mean colors and squared error, cut along their widest spread
+func partition(px []RGB) (mask int, fg, bg RGB, err float64) {
 	n := len(px)
 	var mean RGB
 	for _, p := range px {
@@ -166,7 +350,7 @@ func partition(px []RGB) (mask int, fg, bg RGB) {
 		}
 	}
 	if total <= solidSlack*float64(n)/4 {
-		return 0, mean, mean
+		return 0, mean, mean, total
 	}
 	axis := px[far].Sub3(mean)
 	var order [8]int
@@ -175,7 +359,14 @@ func partition(px []RGB) (mask int, fg, bg RGB) {
 		order[i] = i
 		proj[i] = p.Sub3(mean).Dot3(axis)
 	}
-	sort.Slice(order[:n], func(i, j int) bool { return proj[order[i]] < proj[order[j]] })
+	for i := 1; i < n; i++ {
+		o := order[i]
+		j := i
+		for ; j > 0 && proj[order[j-1]] > proj[o]; j-- {
+			order[j] = order[j-1]
+		}
+		order[j] = o
+	}
 	var prefix [9]RGB
 	var prefix2 [9]float64
 	for i := range n {
@@ -199,9 +390,9 @@ func partition(px []RGB) (mask int, fg, bg RGB) {
 		mask |= 1 << order[i]
 	}
 	if mask == (1<<n)-1 {
-		return 0, fg, fg
+		return 0, fg, fg, max(best, 0)
 	}
-	return mask, fg, bg
+	return mask, fg, bg, max(best, 0)
 }
 
 // Difference of two colors channel by channel

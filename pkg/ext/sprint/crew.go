@@ -7,19 +7,6 @@ import (
 	"sync"
 )
 
-// Title a role carries on the crew
-func crewTitle(role Role) string {
-	switch role {
-	case RoleDirector:
-		return "fixer"
-	case RoleArchitect:
-		return "navigator"
-	case RoleReviewer:
-		return "overwatch"
-	}
-	return "runner"
-}
-
 // Rigs a member may wear on its head
 var RigNames = []string{"visor", "halo", "antenna", "hood", "crest", "mask", "horns", "plugs", "none"}
 
@@ -228,9 +215,7 @@ type actor struct {
 	pos   vxl.Vec3
 	yaw   float64
 	// Heading the actor settles on once it stands still
-	face float64
-	// Waypoints still to walk
-	path  []vxl.Vec3
+	face  float64
 	state actorState
 	// State taken once the errands are done, from the duty
 	rest  actorState
@@ -521,18 +506,57 @@ func (a *actor) pose(dt float64) {
 	}
 }
 
-// Queues the figure, tinted by failure and ice, its trace lines at their heat
+// Pixels a figure stands at or over to draw in full, and under which it shrinks to a marker
+const (
+	fullFigurePixels   = 14
+	markerFigurePixels = 6
+)
+
+// Queues the figure at the detail its screen size calls for, tinted by failure and ice, traces at their heat
 func (a *actor) draw(r *vxl.Raster) {
 	if a.gone {
 		return
 	}
-	a.pal.Colors['t'] = a.traceColor()
-	st := vxl.Stance{Pos: a.stand(), Yaw: a.yaw, Poses: a.poses, Fade: a.exit}
+	stand := a.stand()
+	tint := func(c vxl.RGB) vxl.RGB { return c }
 	if a.gloom > 0 || a.frozen > 0 {
 		gloom, frozen := a.gloom, a.frozen
-		st.Tint = func(c vxl.RGB) vxl.RGB { return c.Mix(vxl.Hex(0x4a1f2a), gloom*0.55).Mix(colIce, frozen*0.3) }
+		tint = func(c vxl.RGB) vxl.RGB { return c.Mix(vxl.Hex(0x4a1f2a), gloom*0.55).Mix(colIce, frozen*0.3) }
 	}
-	a.model.Draw(r, a.pal, st)
+	height := a.model.Height()
+	_, _, depth, ok := r.Project(stand.Add(vxl.V(0, height/2, 0)))
+	tall := 0.0
+	if ok {
+		tall = height * r.ScaleY(depth)
+	}
+	alpha := 1 - a.exit
+	switch {
+	case tall < markerFigurePixels:
+		r.EmissiveBox(stand.Add(vxl.V(0, height/2, 0)), vxl.V(1, height, 1), a.yaw, tint(a.col), alpha, 1.4)
+	case tall < fullFigurePixels:
+		a.drawBlock(r, stand, tint(a.pal.Colors['c']), tint(a.col.Mix(colPaper, 0.35)), alpha)
+	default:
+		a.pal.Colors['t'] = a.traceColor()
+		st := vxl.Stance{Pos: stand, Yaw: a.yaw, Poses: a.poses, Fade: a.exit}
+		if a.gloom > 0 || a.frozen > 0 {
+			st.Tint = tint
+		}
+		a.model.Draw(r, a.pal, st)
+	}
+}
+
+// Queues the figure as a torso box from floor to posed shoulders under a head box at its posed head
+func (a *actor) drawBlock(r *vxl.Raster, stand vxl.Vec3, body, head vxl.RGB, alpha float64) {
+	if alpha <= 0 {
+		return
+	}
+	st := vxl.Stance{Pos: stand, Yaw: a.yaw}
+	torso := a.model.World(a.model.Part("torso").Place(vxl.V(3, 7, 1.5), a.poses), st)
+	top := a.model.World(a.model.Part("head").Place(vxl.V(2.5, 5, 2.5), a.poses), st)
+	h := max(torso.Y-stand.Y, 0.5)
+	r.OrientedBox(vxl.V(torso.X, stand.Y+h/2, torso.Z), vxl.V(1.5, h, 0.75), a.yaw, body, alpha)
+	hs := max(top.Y-torso.Y, 0.5)
+	r.OrientedBox(vxl.V(top.X, torso.Y+hs/2, top.Z), vxl.V(1.25, hs, 1.25), a.yaw, head, alpha)
 }
 
 // Queues the ice encasing the actor while an approval waits, drawn after everything solid

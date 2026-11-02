@@ -1,22 +1,40 @@
 package vxl
 
-import "math"
+import (
+	"cmp"
+	"math"
+	"slices"
+)
 
-// Static voxels by integer cell, each a color
-type Grid map[[3]int]RGB
+// Static voxels by integer cell
+type Grid map[[3]int]Voxel
 
-// Sets a voxel at a cell
-func (g Grid) Set(x, y, z int, col RGB) { g[[3]int{x, y, z}] = col }
+// Color and pattern of one voxel
+type Voxel struct {
+	Col RGB
+	Tex Texture
+}
+
+// Sets a plain voxel at a cell
+func (g Grid) Set(x, y, z int, col RGB) { g[[3]int{x, y, z}] = Voxel{Col: col} }
+
+// Sets a voxel painted with a pattern at a cell
+func (g Grid) SetTex(x, y, z int, col RGB, tex Texture) {
+	g[[3]int{x, y, z}] = Voxel{Col: col, Tex: tex}
+}
 
 // Removes the voxel at a cell
 func (g Grid) Del(x, y, z int) { delete(g, [3]int{x, y, z}) }
 
-// Fills a box of voxels from a least corner and a size in cells
-func (g Grid) Box(x, y, z, w, h, d int, col RGB) {
+// Fills a box of plain voxels from a least corner and a size in cells
+func (g Grid) Box(x, y, z, w, h, d int, col RGB) { g.BoxTex(x, y, z, w, h, d, col, TexNone) }
+
+// Fills a box of patterned voxels from a least corner and a size in cells
+func (g Grid) BoxTex(x, y, z, w, h, d int, col RGB, tex Texture) {
 	for i := range w {
 		for j := range h {
 			for k := range d {
-				g.Set(x+i, y+j, z+k, col)
+				g.SetTex(x+i, y+j, z+k, col, tex)
 			}
 		}
 	}
@@ -52,36 +70,147 @@ type Chunk struct {
 // Side of the cubes of cells a mesh is cut into
 const chunkSize = 8
 
-// Faces of every voxel with no neighbor over them, lit at every corner and darkened where voxels crowd it
+// Open face of one voxel in a layer of a chunk, with the crowding of each of its corners
+type cellFace struct {
+	vox Voxel
+	ao  [4]int8
+	ok  bool
+}
+
+// Faces of every layer of one side of a chunk, by layer then the two axes across it
+type sideMask [chunkSize][chunkSize][chunkSize]cellFace
+
+// Open voxel faces merged into rectangles of one voxel and crowding, patterns tiling in world units
 func (g Grid) Mesh(r *Raster) []Chunk {
-	chunks := map[[3]int]*Chunk{}
-	for cell, col := range g {
-		x, y, z := cell[0], cell[1], cell[2]
-		key := [3]int{floorDiv(x, chunkSize), floorDiv(y, chunkSize), floorDiv(z, chunkSize)}
-		ch, ok := chunks[key]
-		if !ok {
-			lo := Vec3{float64(key[0] * chunkSize), float64(key[1] * chunkSize), float64(key[2] * chunkSize)}
-			ch = &Chunk{Lo: lo, Hi: lo.Add(Vec3{chunkSize, chunkSize, chunkSize})}
-			chunks[key] = ch
-		}
-		for side := range 6 {
-			n := sideNormals[side]
-			if g.Solid(x+n[0], y+n[1], z+n[2]) {
-				continue
-			}
-			q := faceQuad(x, y, z, side, col)
-			r.Shade(&q, boxNormals[side])
-			for c := range 4 {
-				q.Light[c] = q.Light[c].Scale(1 - 0.2*float64(g.occlusion(x, y, z, side, c)))
-			}
-			ch.Quads = append(ch.Quads, q)
-		}
+	byChunk := map[[3]int][][3]int{}
+	for cell := range g {
+		key := [3]int{floorDiv(cell[0], chunkSize), floorDiv(cell[1], chunkSize), floorDiv(cell[2], chunkSize)}
+		byChunk[key] = append(byChunk[key], cell)
 	}
-	out := make([]Chunk, 0, len(chunks))
-	for _, ch := range chunks {
-		out = append(out, *ch)
+	keys := make([][3]int, 0, len(byChunk))
+	for k := range byChunk {
+		keys = append(keys, k)
+	}
+	slices.SortFunc(keys, func(a, b [3]int) int {
+		return cmp.Or(cmp.Compare(a[1], b[1]), cmp.Compare(a[2], b[2]), cmp.Compare(a[0], b[0]))
+	})
+	mask := new(sideMask)
+	out := make([]Chunk, 0, len(keys))
+	for _, key := range keys {
+		base := [3]int{key[0] * chunkSize, key[1] * chunkSize, key[2] * chunkSize}
+		lo := Vec3{float64(base[0]), float64(base[1]), float64(base[2])}
+		ch := Chunk{Lo: lo, Hi: lo.Add(Vec3{chunkSize, chunkSize, chunkSize})}
+		for side := range 6 {
+			g.maskSide(mask, byChunk[key], base, side)
+			ch.Quads = mergeSide(mask, base, side, r, ch.Quads)
+		}
+		out = append(out, ch)
 	}
 	return out
+}
+
+// Fills the mask of one side of a chunk with the open faces of its voxels on that side
+func (g Grid) maskSide(mask *sideMask, cells [][3]int, base [3]int, side int) {
+	*mask = sideMask{}
+	n := sideNormals[side]
+	axis, u, w := sideAxes(side)
+	for _, c := range cells {
+		if g.Solid(c[0]+n[0], c[1]+n[1], c[2]+n[2]) {
+			continue
+		}
+		f := cellFace{vox: g[c], ok: true}
+		for k := range 4 {
+			f.ao[k] = int8(g.occlusion(c[0], c[1], c[2], side, k))
+		}
+		mask[c[axis]-base[axis]][c[u]-base[u]][c[w]-base[w]] = f
+	}
+}
+
+// Axis a side faces along and the two axes across it, in the order its corners run
+func sideAxes(side int) (axis, u, w int) {
+	n := sideNormals[side]
+	for n[axis] == 0 {
+		axis++
+	}
+	return axis, (axis + 1) % 3, (axis + 2) % 3
+}
+
+// Reports whether the crowding of a face holds steady along an axis across it, letting neighbors merge that way
+func flatAlong(side, axis int, ao [4]int8) bool {
+	normal, _, _ := sideAxes(side)
+	other := 3 - normal - axis
+	for a := range 4 {
+		for b := range 4 {
+			oa, ob := sideCorners[side][a], sideCorners[side][b]
+			if oa[axis] != ob[axis] && oa[other] == ob[other] && ao[a] != ao[b] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// Appends the merged faces of one side of a chunk, shaded at their corners with world unit pattern places
+func mergeSide(mask *sideMask, base [3]int, side int, r *Raster, quads []Quad) []Quad {
+	axis, u, w := sideAxes(side)
+	for layer := range chunkSize {
+		m := &mask[layer]
+		for a := range chunkSize {
+			for b := range chunkSize {
+				f := m[a][b]
+				if !f.ok {
+					continue
+				}
+				same := func(a2, b2 int) bool {
+					o := m[a2][b2]
+					return o.ok && o.vox == f.vox && o.ao == f.ao
+				}
+				wa := 1
+				if flatAlong(side, u, f.ao) {
+					for a+wa < chunkSize && same(a+wa, b) {
+						wa++
+					}
+				}
+				wb := 1
+				if flatAlong(side, w, f.ao) {
+					for b+wb < chunkSize {
+						fits := true
+						for i := range wa {
+							if !same(a+i, b+wb) {
+								fits = false
+								break
+							}
+						}
+						if !fits {
+							break
+						}
+						wb++
+					}
+				}
+				for i := range wa {
+					for j := range wb {
+						m[a+i][b+j].ok = false
+					}
+				}
+				var c, size [3]int
+				c[axis], c[u], c[w] = base[axis]+layer, base[u]+a, base[w]+b
+				size[axis], size[u], size[w] = 1, wa, wb
+				q := Quad{Color: f.vox.Col, Alpha: 1, Tex: f.vox.Tex}
+				for k := range 4 {
+					o := sideCorners[side][k]
+					p := [3]float64{float64(c[0] + o[0]*size[0]), float64(c[1] + o[1]*size[1]), float64(c[2] + o[2]*size[2])}
+					q.P[k] = Vec3{p[0], p[1], p[2]}
+					q.UV[k] = [2]float64{p[u], p[w]}
+				}
+				r.Shade(&q, boxNormals[side])
+				for k := range 4 {
+					q.Light[k] = q.Light[k].Scale(1 - 0.2*float64(f.ao[k]))
+				}
+				quads = append(quads, q)
+			}
+		}
+	}
+	return quads
 }
 
 // Queues the faces of every chunk the camera may see
@@ -117,17 +246,6 @@ var sideCorners = [6][4][3]int{
 	{{1, 0, 1}, {1, 1, 1}, {0, 1, 1}, {0, 0, 1}},
 	{{0, 0, 1}, {0, 1, 1}, {0, 1, 0}, {0, 0, 0}},
 	{{1, 0, 0}, {1, 1, 0}, {1, 1, 1}, {1, 0, 1}},
-}
-
-// One face of a unit voxel at a cell, unlit
-func faceQuad(x, y, z, side int, col RGB) Quad {
-	var q Quad
-	for c := range 4 {
-		o := sideCorners[side][c]
-		q.P[c] = Vec3{float64(x + o[0]), float64(y + o[1]), float64(z + o[2])}
-	}
-	q.Color, q.Alpha = col, 1
-	return q
 }
 
 // Voxels crowding a face corner, two along its edges and one diagonal, three when both edges are solid

@@ -63,14 +63,31 @@ func (r *runner) checkTeam(ctx context.Context) error {
 	return nil
 }
 
-// Member of a role at an index, its session opened when it has none open yet
+// Session labels naming the sprint and the role of a member session
+const (
+	sprintLabel = "sprint"
+	roleLabel   = "role"
+)
+
+// Member of a role at an index, back on its stored session when it has one, else on a fresh one
 func (r *runner) member(ctx context.Context, role Role, index int) (*Member, error) {
 	s := r.s
+	app := r.f.App
 	name := r.cfg.NameOf(role, index)
-	if m := s.member(name); m != nil && m.Live != nil && r.f.App.LiveOf(m.Live.Session) != nil {
+	m := s.member(name)
+	if m != nil && m.Live != nil && app.LiveOf(m.Live.Session) != nil {
 		return m, nil
 	}
-	live, err := r.f.App.CreateKind(ctx, KindName(role))
+	if m != nil && m.Session != "" {
+		live, err := app.Open(ctx, m.Session)
+		if err == nil {
+			r.adopt(m, live)
+			s.say(MsgNote, name, "", "", "back on its session "+m.Session)
+			return m, nil
+		}
+		s.say(MsgNote, name, "", "", "its session "+m.Session+" could not be opened, "+err.Error()+", starting a fresh one")
+	}
+	live, err := app.CreateKind(ctx, KindName(role))
 	if err != nil {
 		err = fmt.Errorf("%s: %w", name, err)
 		s.say(MsgFailure, name, Person, "", err.Error())
@@ -78,9 +95,24 @@ func (r *runner) member(ctx context.Context, role Role, index int) (*Member, err
 		return nil, err
 	}
 	live.Session.SetTitle(name + " of " + s.ID)
-	m := &Member{Role: role, Name: name, Index: index, Live: live, Joined: time.Now()}
-	s.putMember(m)
+	if m == nil {
+		m = &Member{Role: role, Name: name, Index: index, Joined: time.Now()}
+	}
+	r.adopt(m, live)
 	return m, nil
+}
+
+// Binds an open session to a member, labeling it with the sprint and the role, and records the member
+func (r *runner) adopt(m *Member, live *harness.Live) {
+	live.Session.Label(sprintLabel, r.s.ID)
+	live.Session.Label(roleLabel, string(m.Role))
+	if err := r.f.App.SetKindOn(live, KindName(m.Role)); err != nil {
+		r.f.Notify(harness.Error, r.s.ID+": "+err.Error())
+	}
+	r.s.mu.Lock()
+	m.Live, m.Session = live, live.Session.ID()
+	r.s.mu.Unlock()
+	r.s.putMember(m)
 }
 
 // Runs a unit of work on a member until it passes, failures pausing an interactive sprint for the person

@@ -45,6 +45,15 @@ func (a *arena) click(msg tea.MouseClickMsg) tea.Cmd {
 		}
 		return a.selectMember(name)
 	}
+	if a.onSide(x, y) {
+		if name, ok := a.sideRowAt(x, y); ok && msg.Button == tea.MouseLeft {
+			if name == a.sel {
+				return a.toggleInspect()
+			}
+			return a.selectMember(name)
+		}
+		return nil
+	}
 	if !a.lay.world.contains(x, y) {
 		return nil
 	}
@@ -115,6 +124,10 @@ func (a *arena) motion(msg tea.MouseMotionMsg) tea.Cmd {
 		a.hover = name
 		return nil
 	}
+	if a.onSide(msg.X, msg.Y) {
+		a.hover, _ = a.sideRowAt(msg.X, msg.Y)
+		return nil
+	}
 	a.hover, _ = a.actorAt(msg.X, msg.Y)
 	return nil
 }
@@ -134,12 +147,16 @@ func (a *arena) wheel(msg tea.MouseWheelMsg) tea.Cmd {
 			return cmd
 		}
 	}
-	if r, ok := a.panelRect(); ok && r.contains(msg.X, msg.Y) {
-		switch msg.Button {
-		case tea.MouseWheelDown:
-			a.scrollPanel(3)
-		case tea.MouseWheelUp:
-			a.scrollPanel(-3)
+	if a.onSide(msg.X, msg.Y) {
+		step := 3
+		if msg.Button == tea.MouseWheelUp {
+			step = -3
+		}
+		switch {
+		case a.sideTickets.contains(msg.X, msg.Y):
+			a.boardTop = max(a.boardTop+step, 0)
+		case a.sideLog.contains(msg.X, msg.Y):
+			a.logTop = max(a.logTop-step, 0)
 		}
 		return nil
 	}
@@ -154,16 +171,6 @@ func (a *arena) wheel(msg tea.MouseWheelMsg) tea.Cmd {
 		a.rig.yawOff += 0.1
 	}
 	return nil
-}
-
-// Scrolls the open board or log by lines
-func (a *arena) scrollPanel(d int) {
-	switch {
-	case a.showBoard:
-		a.boardTop = max(a.boardTop+d, 0)
-	case a.showLog:
-		a.logTop = max(a.logTop+d, 0)
-	}
 }
 
 // Member whose actor stands under a cell of the last paint, the nearest to the camera when several do
