@@ -51,6 +51,9 @@ func (c RGB) Dist(o RGB) float64 {
 	return dr*dr + dg*dg + db*db
 }
 
+// Channel by channel difference
+func (c RGB) Sub(o RGB) RGB { return RGB{c.R - o.R, c.G - o.G, c.B - o.B} }
+
 // Perceived brightness from 0 to 1
 func (c RGB) Luma() float64 { return 0.2126*c.R + 0.7152*c.G + 0.0722*c.B }
 

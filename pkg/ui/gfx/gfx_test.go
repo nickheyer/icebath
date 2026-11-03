@@ -601,6 +601,51 @@ func TestDivisorAdapts(t *testing.T) {
 	}
 }
 
+// A rise that undoes a lowering doubles the fast run the next lowering takes, so the divisor stops hunting between two sizes
+func TestDivisorStopsHunting(t *testing.T) {
+	term, c := kittyTerm("KONSOLE_VERSION", "1")
+	s := term.NewSurface(KittyPlaced)
+	s.SetRate(20)
+	frame := func(lat time.Duration) {
+		out := s.Emit(s.Pack(ramp(16, 8), 16, 8, 2, 1), 0, 0, c.now)
+		c.add(lat)
+		term.Update(answer(idOf(t, gcmds(out)), "OK"))
+	}
+	lower := func(want int) {
+		before := s.Stats().Divisor
+		for range want - 1 {
+			frame(time.Millisecond)
+		}
+		if d := s.Stats().Divisor; d != before {
+			t.Fatalf("%d fast answers moved the divisor from %v to %v", want-1, before, d)
+		}
+		frame(time.Millisecond)
+		if d := s.Stats().Divisor; d != max(before*0.85, 1) {
+			t.Fatalf("%d fast answers left the divisor at %v from %v", want, d, before)
+		}
+	}
+	frame(300 * time.Millisecond)
+	frame(300 * time.Millisecond)
+	lower(8)
+	frame(300 * time.Millisecond)
+	lower(16)
+	frame(300 * time.Millisecond)
+	lower(32)
+	lower(32)
+	for range 10 {
+		frame(300 * time.Millisecond)
+	}
+	lower(64)
+	for range 400 {
+		frame(300 * time.Millisecond)
+	}
+	lower(8 << 4)
+	for _, run := range []int{8 << 5, 8 << 6, 8 << 6} {
+		frame(300 * time.Millisecond)
+		lower(run)
+	}
+}
+
 // Frame size divides native size, keeps aspect, stays within the pixel cap and native size, floors at 64 by 32
 func TestBudget(t *testing.T) {
 	term, _ := kittyTerm("KONSOLE_VERSION", "1")

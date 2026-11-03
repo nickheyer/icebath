@@ -420,22 +420,26 @@ func benchFrame(b *testing.B, sc *scene) {
 	var layer vxl.Layer
 	r.FlushInto(&layer)
 	fin := sc.world.finish()
-	var post vxl.Post
+	look := vxl.Finish{Outline: fin.outline, BloomThreshold: fin.bloomThreshold, BloomStrength: fin.bloomStrength, Grade: fin.grade, Vignette: fin.vignette}
+	var out vxl.Output
+	var prev, in vxl.Changes
+	prev.Reset(fr.W, fr.H)
 	var enc vxl.Encoder
 	buf := uv.NewBuffer(cols, rows)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		sc.update(1.0 / 30)
-		layer.Restore(fr)
+		layer.Restore(fr, &prev)
 		r.Begin(fr, cam)
 		sc.drawDynamic(r)
 		r.FlushOver(&layer)
-		fr.Outline(fin.outline)
-		fr.Bloom(&post, fin.bloomThreshold, fin.bloomStrength)
-		fr.Grade(fin.grade)
-		fr.Vignette(fin.vignette)
-		enc.Encode(fr, buf, 0, 0, cols, rows, mode, nil)
+		in.CopyFrom(&prev)
+		in.Union(r.Changes())
+		in.Norm()
+		out.Finish(fr, look, &in)
+		prev.CopyFrom(r.Changes())
+		enc.Encode(&vxl.Frame{W: fr.W, H: fr.H, Color: out.Color, PixelAspect: fr.PixelAspect}, buf, 0, 0, cols, rows, mode, nil, out.Dirt())
 	}
 }
 

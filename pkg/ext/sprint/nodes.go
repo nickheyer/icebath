@@ -107,25 +107,31 @@ func (n *node) update(dt float64, sc *scene) {
 	}
 }
 
-// Light the core throws on everything near it
-func (n *node) light(t float64) vxl.Light {
+// Point light of the core, steady between frames so the lit floor keeps it, its strength by status and the glow in eighths
+func (n *node) light() vxl.Light {
 	k := 0.9
 	switch n.status {
 	case TicketActive:
-		k = 1.1 + 0.25*math.Sin(t*5+n.seed*9)
+		k = 1.1
 	case TicketReview:
-		k = 1.2 + 0.4*math.Sin(t*9)
+		k = 1.2
 	case TicketDone:
 		k = 1.3
 	case TicketFailed:
-		k = 0.9 + 0.5*math.Abs(math.Sin(t*13+n.seed))
+		k = 1.15
 	case TicketBlocked:
 		k = 0.45
 	}
 	if n.rise < 1 {
 		k *= n.rise
 	}
-	return vxl.Light{Pos: n.core(t), Color: n.color().Scale(k * (0.6 + 0.4*n.glow)), Radius: 7}
+	glow := math.Ceil(n.glow*8) / 8
+	return vxl.Light{Pos: n.pos.Add(vxl.V(0, 1+coreHeight-14*(1-vxl.Smoothstep(n.rise)), 0)), Color: n.color().Scale(k * (0.6 + 0.4*glow)), Radius: 7}
+}
+
+// Value held to a count of even steps between minus one and one, so a slow pulse changes only now and then
+func stepped(v float64, steps int) float64 {
+	return math.Round(v*float64(steps)/2) * 2 / float64(steps)
 }
 
 // Pixels below which a core is too small for its shell, pools and motes to read
@@ -180,7 +186,7 @@ func (n *node) drawGlow(r *vxl.Raster, sc *scene) {
 	c := n.core(t)
 	col := n.color()
 	alpha := vxl.Smoothstep(n.rise)
-	k := 0.6 + 0.4*math.Sin(t*4+n.seed*7)
+	k := 0.6 + 0.4*stepped(math.Sin(t*1.5+n.seed*7), 12)
 	r.Billboard(c, 2.4+n.glow*2, col, (0.18+0.25*n.glow)*alpha*k, true)
 	if !n.detailed(r, t) {
 		return
@@ -191,7 +197,7 @@ func (n *node) drawGlow(r *vxl.Raster, sc *scene) {
 			ice = colViolet.Mix(colDark, 0.35)
 		}
 		size := 2.5 * (0.85 + 0.15*n.shell)
-		r.OrientedBox(c, vxl.V(size, size, size), 0.3+0.05*math.Sin(t*0.5), ice, (0.07+0.22*n.shell)*alpha)
+		r.OrientedBox(c, vxl.V(size, size, size), 0.3, ice, (0.07+0.22*n.shell)*alpha)
 	}
 	pool := vxl.Quad{P: vxl.FloorQuad(n.pos, 3.6, 3.6, 1.03), Color: col, Alpha: (0.13 + 0.07*k) * alpha, Additive: true, TwoSided: true}
 	w := vxl.Grey(1)

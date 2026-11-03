@@ -298,6 +298,9 @@ func (a *actor) handsPos() vxl.Vec3 {
 // Where the feet of the actor touch down, with every height it has gained
 func (a *actor) stand() vxl.Vec3 { return a.pos.Add(vxl.V(0, a.bob+a.drop+a.lift, 0)) }
 
+// Where the feet of the actor touch down without its bob, still while it stands
+func (a *actor) restPos() vxl.Vec3 { return a.pos.Add(vxl.V(0, a.drop+a.lift, 0)) }
+
 // Unit vector the actor faces along
 func (a *actor) facing() vxl.Vec3 { return vxl.UnitYaw(a.yaw) }
 

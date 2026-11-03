@@ -135,7 +135,7 @@ func (m CellMode) library() *library {
 func (fr *Frame) Encode(buf *uv.Buffer, x0, y0, cols, rows int, mode CellMode, quantize func(RGB) color.Color) {
 	e := encoders.Get().(*Encoder)
 	e.Reset()
-	e.Encode(fr, buf, x0, y0, cols, rows, mode, quantize)
+	e.Encode(fr, buf, x0, y0, cols, rows, mode, quantize, nil)
 	encoders.Put(e)
 }
 
@@ -183,8 +183,8 @@ func (e *Encoder) Reset() {
 	}
 }
 
-// Writes the frame into cells, each keeping its glyph and colors while they stay within slack of the best fit
-func (e *Encoder) Encode(fr *Frame, buf *uv.Buffer, x0, y0, cols, rows int, mode CellMode, quantize func(RGB) color.Color) {
+// Writes the frame into cells, each keeping its glyph and colors while they stay within slack of the best fit, cells over no changed pixel kept as they were
+func (e *Encoder) Encode(fr *Frame, buf *uv.Buffer, x0, y0, cols, rows int, mode CellMode, quantize func(RGB) color.Color, changed *Dirt) {
 	cols, rows = max(cols, 0), max(rows, 0)
 	direct := quantize == nil
 	if e.cols != cols || e.rows != rows || e.mode != mode || e.direct != direct || len(e.cells) != cols*rows {
@@ -205,10 +205,26 @@ func (e *Encoder) Encode(fr *Frame, buf *uv.Buffer, x0, y0, cols, rows int, mode
 	if cols > 0 && rows > 0 && fr.W%(cols*cellCols) == 0 && fr.H%(rows*cellRows) == 0 && fr.W/(cols*cellCols) == fr.H/(rows*cellRows) {
 		super = fr.W / (cols * cellCols)
 	}
+	keep := changed != nil && !changed.All && changed.W == fr.W && changed.H == fr.H
 	parallelBands(rows, 2, func(r0, r1 int) {
 		var pix [cellPixels]RGB
 		for cy := r0; cy < r1; cy++ {
 			for cx := range cols {
+				if st := &e.cells[cy*cols+cx]; keep && st.gen == e.gen && !changed.Touches(cx*cellCols*super, cy*cellRows*super, (cx+1)*cellCols*super-1, (cy+1)*cellRows*super-1) {
+					var qfg, qbg color.Color
+					switch {
+					case direct:
+						qfg, qbg = st.qfg, st.qbg
+					default:
+						qbg = quantize(st.bg)
+						if st.glyph != spaceGlyph {
+							qfg = quantize(st.fg)
+						}
+					}
+					c := uv.Cell{Content: glyphs[st.glyph].str, Width: 1, Style: uv.Style{Bg: qbg, Fg: qfg}}
+					buf.SetCell(x0+cx, y0+cy, &c)
+					continue
+				}
 				switch {
 				case super > 1:
 					fr.gather(&pix, cx, cy, super)
@@ -311,7 +327,7 @@ func (fr *Frame) gather(pix *[cellPixels]RGB, cx, cy, super int) {
 	}
 }
 
-// Hash of the exact bits of a cell of pixels, mixed so any changed bit spreads through it all
+// Hash of the bytes a cell of pixels shows, mixed so any changed byte spreads through it all
 func pixelSum(px *[cellPixels]RGB) uint64 {
 	h0, h1, h2, h3 := uint64(0x9e3779b97f4a7c15), uint64(0xc2b2ae3d27d4eb4f), uint64(0x165667b19e3779f9), uint64(0x27d4eb2f165667c5)
 	for i := 0; i < cellPixels; i += 4 {
@@ -328,11 +344,10 @@ func pixelSum(px *[cellPixels]RGB) uint64 {
 	return h ^ h>>33
 }
 
-// Lane of the pixel hash with the bits of one more pixel folded in
+// Lane of the pixel hash with the red, green and blue bytes of one more pixel folded in
 func mixPixel(h uint64, p *RGB) uint64 {
-	h = bits.RotateLeft64(h^math.Float64bits(p.R)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
-	h = bits.RotateLeft64(h^math.Float64bits(p.G)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
-	return bits.RotateLeft64(h^math.Float64bits(p.B)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
+	v := uint64(channel(p.R))<<16 | uint64(channel(p.G))<<8 | uint64(channel(p.B))
+	return bits.RotateLeft64(h^(v+1)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
 }
 
 // Glyph and colors fitted to clamped pixels, the shown glyph kept while its error stays within slack of the best

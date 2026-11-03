@@ -97,12 +97,13 @@ const (
 	triStrict
 )
 
-// Point light with the pixel box its reach covers, bounds inclusive
+// Point light with the pixel box its reach covers, bounds inclusive, or the negative of a light a layer holds that is gone
 type lightSpan struct {
 	pos            Vec3
 	col            RGB
 	radius, r2     float64
 	x0, x1, y0, y1 int
+	remove         bool
 }
 
 // World point, unit facing, view direction, gloss and gathered light of one lit pixel in the row being resolved
@@ -162,20 +163,34 @@ type Raster struct {
 	rows   []float64
 	surf   []surfel
 	queued int
-	// Occlusion of every pixel, the grid it is read on, its cells before and after the blur and a scratch copy
-	ao, aoRaw, ao2, ao3 []float32
-	aoGrid              lowGrid
-	// Cells of the occlusion grid read again this flush, and the ones a drawn pixel lies in
-	redo  []bool
-	dirty []int32
+	// Occlusion per pixel now and as the layer lit it, its grid, the cells before and after the blur, scratch
+	ao, aoOld, aoRaw, ao2, ao3 []float32
+	aoGrid                     lowGrid
+	// Cells holding a drawn pixel, the nearest depth drawn in each and the reach of their samples in cells
+	aoDirty []bool
+	aoNearZ []float32
+	aoReach []int32
+	// Cells within that reach, the ones sampled again, the ones whose crowding moved and their neighbors
+	aoNear, redo, shift, moved []bool
+	// Sun share change per layer pixel, the pixels it is nonzero at and the pixels it may be
+	sunShift        []float32
+	shade, shadeBox Dirt
+	// Texels of the depth map differing from the ones the layer was shaded by
+	texelMark []bool
 	// Generation of the flush that last drew each opaque pixel, and the generation of this flush
 	stamp []uint32
 	gen   uint32
-	// Reflection every cell of the grid gathered
+	// Reflection every cell of the grid gathered and the pixel its ray hit, below zero for a miss
 	refl     []RGB
+	reflHit  []int32
 	reflGrid lowGrid
+	// Cells whose reflection moved since the layer and their neighbors
+	reflShift, reflMoved []bool
 	// Inscattered light along the ray of every cell of the haze grid
 	hz hazeField
+	// Pixels this flush changed, every one without a layer, and the ones lit anew now or restored since the layer was lit
+	ch    Changes
+	stale Dirt
 }
 
 // Points the raster at the frame through the camera, dropping anything queued
@@ -462,22 +477,33 @@ func (r *Raster) Billboard(center Vec3, size float64, col RGB, alpha float64, ad
 }
 
 // Draws opaque faces, reads crowding, lights and fogs them, mirrors the glossy ones, scatters the air, then lays blended faces
-func (r *Raster) Flush() { r.flush(nil, nil) }
+func (r *Raster) Flush() { r.flush(nil, nil, false) }
 
 // Flushes and keeps the frame as lit, before mirroring and haze, in a layer later flushes draw over
-func (r *Raster) FlushInto(l *Layer) { r.flush(nil, l) }
+func (r *Raster) FlushInto(l *Layer) { r.flush(nil, l, false) }
 
-// Flushes over a restored layer, lighting anew only the pixels drawn or crowded this flush and adding the lights the layer lacks over the rest
+// Flushes over a restored layer, lighting anew only the drawn pixels and the rest by what moved since the layer
 func (r *Raster) FlushOver(l *Layer) {
 	if l == nil || !l.Fits(r.fr.W, r.fr.H) {
-		r.flush(nil, nil)
+		r.flush(nil, nil, false)
 		return
 	}
-	r.flush(l, nil)
+	r.flush(l, nil, false)
 }
 
-// Fills, occludes, lights, mirrors, scatters and blends, over a layer when one is given, keeping the lit frame in another when asked
-func (r *Raster) flush(l, into *Layer) {
+// Lights a layer anew by the lights of the raster over a frame restored from it with nothing queued, reworking only the pixels, mirrors and haze the lights it lacks or has lost reach
+func (r *Raster) Relight(l *Layer) {
+	shadows := r.Shadows
+	r.Shadows = l.shadows
+	r.flush(l, nil, true)
+	r.Shadows = shadows
+}
+
+// Pixels the last flush changed, drew on and lit anew, every pixel after a flush without a layer
+func (r *Raster) Changes() *Changes { return &r.ch }
+
+// Fills, occludes, lights, mirrors, scatters and blends, over a layer when one is given, keeping the lit frame in another when asked or folding the light back into the layer
+func (r *Raster) flush(l, into *Layer, relight bool) {
 	fr := r.fr
 	if fr == nil || fr.W == 0 || fr.H == 0 {
 		r.tris = r.tris[:0]
@@ -501,7 +527,7 @@ func (r *Raster) flush(l, into *Layer) {
 			bands[b] = append(bands[b], int32(i))
 		}
 	}
-	r.prepLights()
+	r.prepLights(l)
 	dyn := make([]bool, len(r.spans))
 	for k := range r.spans {
 		dyn[k] = !l.has(&r.spans[k])
@@ -524,17 +550,50 @@ func (r *Raster) flush(l, into *Layer) {
 		clear(r.stamp)
 		r.gen = 1
 	}
+	r.ch.Reset(fr.W, fr.H)
+	var drawn, blended *Dirt
+	if l != nil {
+		drawn, blended = &r.ch.Drawn, &r.ch.Color
+	} else {
+		r.ch.Fill()
+	}
 	parallel(n, workers, func(b int) {
 		y0, y1 := b*r.bandH, min((b+1)*r.bandH, fr.H)-1
 		for _, i := range r.solid[b] {
-			r.fill(&r.tris[i], y0, y1)
+			r.fill(&r.tris[i], y0, y1, drawn)
 		}
 	})
-	r.markRedo(l)
-	if r.AO.Strength > 0 {
-		r.occlude(workers, l)
+	r.ch.Drawn.Norm()
+	if l != nil {
+		r.ch.Lit.CopyFrom(&r.ch.Drawn)
+	}
+	occluded := r.AO.Strength > 0
+	if occluded {
+		r.markRedo(l)
+		r.occludeGrid(workers, l)
 	} else {
-		r.ao = r.ao[:0]
+		r.ao, r.aoOld = r.ao[:0], r.aoOld[:0]
+	}
+	if l != nil {
+		lg := &r.aoGrid
+		switch {
+		case occluded:
+			markCells(&r.ch.Lit, r.moved, lg.w, lg.h, lg.shrink)
+		case l.aoW > 0:
+			r.ch.Lit.Fill()
+		}
+		r.shadowShift(workers, l)
+		r.ch.Lit.Union(&r.shade)
+		for k := range r.spans {
+			if s := &r.spans[k]; dyn[k] {
+				r.ch.Lit.AddRect(s.x0, s.y0, s.x1, s.y1)
+			}
+		}
+		r.ch.Lit.Norm()
+		r.ch.Color.CopyFrom(&r.ch.Lit)
+	}
+	if occluded {
+		r.occludeSpread(workers, l)
 	}
 	parallel(n, workers, func(b int) {
 		y0, y1 := b*r.bandH, min((b+1)*r.bandH, fr.H)-1
@@ -543,23 +602,45 @@ func (r *Raster) flush(l, into *Layer) {
 	if into != nil {
 		into.keep(r)
 	}
+	if relight {
+		l.bakeLight(r)
+	}
 	if r.Reflect.Strength > 0 {
-		r.reflect(workers)
+		r.reflect(workers, l)
+	} else {
+		r.refl, r.reflHit = r.refl[:0], r.reflHit[:0]
+		r.reflGrid.fit(0, 0, 1)
+	}
+	if into != nil {
+		into.keepReflect(r)
+	}
+	if relight {
+		l.keepReflect(r)
 	}
 	if r.Haze.Density > 0 {
-		r.scatter(workers, l, dyn, into != nil)
+		r.scatter(workers, l, dyn)
 	} else {
 		r.hz.fit(0, 0, 1, 1)
 	}
 	if into != nil {
 		into.keepHaze(r)
 	}
+	if relight {
+		l.bakeHaze(r)
+	}
 	parallel(n, workers, func(b int) {
 		y0, y1 := b*r.bandH, min((b+1)*r.bandH, fr.H)-1
 		for _, i := range r.blend[b] {
-			r.fill(&r.tris[i], y0, y1)
+			r.fill(&r.tris[i], y0, y1, blended)
 		}
 	})
+	r.ch.Color.Norm()
+	if into != nil {
+		into.keepFull(r)
+	}
+	if relight {
+		l.relit(r)
+	}
 	r.tris = r.tris[:0]
 }
 
@@ -574,8 +655,8 @@ func resetBands(bands [][]int32, n int) [][]int32 {
 	return bands
 }
 
-// Lists in index order every point light that may reach a drawn pixel, with the pixel box it covers
-func (r *Raster) prepLights() {
+// Lists in index order every point light that may reach a drawn pixel, with the pixel box it covers, then the negative of every light the layer holds that is gone
+func (r *Raster) prepLights(l *Layer) {
 	fr := r.fr
 	r.spans = r.spans[:0]
 	for i := range r.Lights {
@@ -585,6 +666,20 @@ func (r *Raster) prepLights() {
 		}
 		s := lightSpan{pos: l.Pos, col: l.Color, radius: l.Radius, r2: l.Radius * l.Radius, x1: fr.W - 1, y1: fr.H - 1}
 		if bounded(l) && !r.reach(&s) {
+			continue
+		}
+		r.spans = append(r.spans, s)
+	}
+	if l == nil {
+		return
+	}
+	for i := range l.lights {
+		k := &l.lights[i]
+		if k.Radius == 0 || slices.Contains(r.Lights, *k) {
+			continue
+		}
+		s := lightSpan{pos: k.Pos, col: k.Color.Scale(-1), radius: k.Radius, r2: k.Radius * k.Radius, x1: fr.W - 1, y1: fr.H - 1, remove: true}
+		if bounded(k) && !r.reach(&s) {
 			continue
 		}
 		r.spans = append(r.spans, s)
@@ -624,6 +719,130 @@ func (r *Raster) reach(s *lightSpan) bool {
 	}
 	s.x0, s.x1, s.y0, s.y1 = int(max(x0, 0)), int(min(x1, w)), int(max(y0, 0)), int(min(y1, h))
 	return true
+}
+
+// Texels of the depth map across a block of the mask the sun shift is bounded by
+const shadeBlock = 16
+
+// Marks the layer pixels whose sun share differs between the map of the layer and this one, keeping the difference
+func (r *Raster) shadowShift(workers int, l *Layer) {
+	fr := r.fr
+	w, h := fr.W, fr.H
+	r.shade.Reset(w, h)
+	old, cur := l.shadows, r.Shadows
+	if old == cur || r.SunColor == (RGB{}) {
+		r.sunShift = r.sunShift[:0]
+		return
+	}
+	r.sunShift = slices.Grow(r.sunShift[:0], w*h)[:w*h]
+	clear(r.sunShift)
+	r.shadeBox.Reset(w, h)
+	aligned := old != nil && cur != nil && old.aligned(cur)
+	if aligned {
+		r.shadeRegion(old, cur, l.sunLo)
+	} else {
+		r.shadeBox.Fill()
+	}
+	if r.shadeBox.Empty() {
+		return
+	}
+	D, N := fr.Depth, fr.Normal
+	parallelBandsWith(h, 4, workers, func(y0, y1 int) {
+		for y := y0; y < y1; y++ {
+			at := y * w
+			base := r.forward.Add(r.up.Mul(r.rows[y]))
+			r.shadeBox.Each(y, func(xa, xb int) {
+				for x := xa; x <= xb; x++ {
+					i := at + x
+					nv := N[i]
+					if nv&normalLit == 0 || D[i] == 0 || r.stamp[i] == r.gen {
+						continue
+					}
+					n := unpackNormal(nv)
+					if n.Dot(r.Sun) <= 0 {
+						continue
+					}
+					p := r.eye.Add(base.Add(r.right.Mul(r.cols[x])).Mul(1 / float64(D[i])))
+					if aligned && !cur.touches(r.texelMark, p, n) {
+						continue
+					}
+					was, now := litBy(old, p, n), litBy(cur, p, n)
+					if was == now {
+						continue
+					}
+					r.sunShift[i] = float32(now - was)
+					r.shade.Add(y, x, x)
+				}
+			})
+		}
+	})
+	r.shade.Norm()
+}
+
+// Marks the differing texels of two aligned maps and boxes the pixels their shadows may reach, all past the camera
+func (r *Raster) shadeRegion(old, cur *ShadowMap, sunLo float64) {
+	tw, th := cur.w, cur.h
+	r.texelMark = slices.Grow(r.texelMark[:0], tw*th)[:tw*th]
+	differ := false
+	for k := range tw * th {
+		r.texelMark[k] = old.depth[2*k] != cur.depth[2*k] || old.depth[2*k+1] != cur.depth[2*k+1]
+		differ = differ || r.texelMark[k]
+	}
+	if !differ || math.IsInf(sunLo, 1) {
+		return
+	}
+	margin := cur.texel * (shadowOffset + 1)
+	bw, bh := (tw+shadeBlock-1)/shadeBlock, (th+shadeBlock-1)/shadeBlock
+	fw, fh := float64(r.fr.W), float64(r.fr.H)
+	for by := range bh {
+		for bx := range bw {
+			top := math.Inf(-1)
+			for j := by * shadeBlock; j < min((by+1)*shadeBlock, th); j++ {
+				for i := bx * shadeBlock; i < min((bx+1)*shadeBlock, tw); i++ {
+					k := j*tw + i
+					if !r.texelMark[k] {
+						continue
+					}
+					top = max(top, float64(old.depth[2*k]), float64(cur.depth[2*k]))
+				}
+			}
+			if math.IsInf(top, -1) {
+				continue
+			}
+			ua := cur.u0 + float64(bx*shadeBlock)*cur.texel - margin
+			ub := cur.u0 + float64(min((bx+1)*shadeBlock, tw))*cur.texel + margin
+			va := cur.v0 + float64(by*shadeBlock)*cur.texel - margin
+			vb := cur.v0 + float64(min((by+1)*shadeBlock, th))*cur.texel + margin
+			dTop := top + cur.texel*shadowOffset
+			if dTop <= sunLo {
+				continue
+			}
+			x0, y0, x1, y1 := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+			for c := range 8 {
+				u, v, d := ua, va, sunLo
+				if c&1 != 0 {
+					u = ub
+				}
+				if c&2 != 0 {
+					v = vb
+				}
+				if c&4 != 0 {
+					d = dTop
+				}
+				sx, sy, _, ok := r.Project(cur.point(u, v, d))
+				if !ok {
+					r.shadeBox.Fill()
+					return
+				}
+				x0, y0, x1, y1 = min(x0, sx), min(y0, sy), max(x1, sx), max(y1, sy)
+			}
+			if x1 < 0 || y1 < 0 || x0 >= fw || y0 >= fh {
+				continue
+			}
+			r.shadeBox.AddRect(int(math.Floor(x0))-1, int(math.Floor(y0))-1, int(math.Ceil(x1))+1, int(math.Ceil(y1))+1)
+		}
+	}
+	r.shadeBox.Norm()
 }
 
 // World units a radiance lookup steps off its surface along the facing
@@ -681,7 +900,7 @@ func (r *Raster) fogShare(depth float32) float64 {
 	return min(max((1/float64(depth)-r.FogNear)/(r.FogFar-r.FogNear), 0), 1)
 }
 
-// Lights and fogs the opaque pixels of a band, every one without a layer, else the drawn and crowded ones anew and the rest by the lights the layer lacks
+// Lights and fogs the opaque pixels of a band, drawn ones anew, the rest by what moved since the layer
 func (r *Raster) resolve(b, rowLo, rowHi int, l *Layer, dyn []bool) {
 	fr := r.fr
 	w := fr.W
@@ -696,116 +915,143 @@ func (r *Raster) resolve(b, rowLo, rowHi int, l *Layer, dyn []bool) {
 	fog := r.FogFar > r.FogNear
 	sunFog := r.FogSun != RGB{}
 	sm, gi := r.Shadows, r.GI
-	var ao []float32
+	var ao, aoOld, shift []float32
 	if len(r.ao) == w*fr.H {
-		ao = r.ao
+		ao, aoOld = r.ao, r.aoOld
 	}
-	lg := &r.aoGrid
+	if len(r.sunShift) == w*fr.H {
+		shift = r.sunShift
+	}
 	for y := rowLo; y <= rowHi; y++ {
 		at := y * w
 		depth, normal, albedo, color := fr.Depth[at:at+w], fr.Normal[at:at+w], fr.Albedo[at:at+w], fr.Color[at:at+w]
 		base := r.forward.Add(r.up.Mul(r.rows[y]))
-		var pack uint32
-		var n Vec3
-		for x, nv := range normal {
-			if nv&normalLit == 0 {
-				continue
-			}
-			if nv&normalDir != pack {
-				pack, n = nv&normalDir, unpackNormal(nv)
-			}
-			dir := base.Add(r.right.Mul(r.cols[x]))
-			p := r.eye.Add(dir.Mul(1 / float64(depth[x])))
-			sf := surfel{p: p, n: n, gloss: unpackGloss(nv), full: l == nil || r.stamp[at+x] == r.gen || r.redo[lg.cell(x, y)]}
-			if sf.gloss > 0 {
-				sf.view = dir.Mul(-1).Norm()
-			}
-			if sf.full {
-				amb := r.Ambient
-				if gi != nil {
-					amb = amb.Add(gi.Sample(Vec3{p.X + n.X*giOffset, p.Y + n.Y*giOffset, p.Z + n.Z*giOffset}))
-				}
-				if ao != nil {
-					amb = amb.Scale(float64(ao[at+x]))
-				}
-				sf.l = amb
-				if ndl := n.Dot(r.Sun); ndl > 0 {
-					if sm != nil {
-						ndl *= sm.Lit(p, n)
-					}
-					sf.l = sf.l.Add(r.SunColor.Scale(ndl))
-					if sf.gloss > 0 && ndl > 0 {
-						sf.spec = r.SunColor.Scale(specular(n, r.Sun, sf.view, sf.gloss) * ndl)
-					}
-				}
-			}
-			surf[x] = sf
-		}
-		for _, k := range near {
-			s := &r.spans[k]
-			if y < s.y0 || y > s.y1 {
-				continue
-			}
-			fresh := dyn[k]
-			for x := s.x0; x <= s.x1; x++ {
-				if normal[x]&normalLit == 0 {
+		r.ch.Lit.Each(y, func(xa, xb int) {
+			var pack uint32
+			var n Vec3
+			for x := xa; x <= xb; x++ {
+				nv := normal[x]
+				if nv&normalLit == 0 {
 					continue
 				}
-				sf := &surf[x]
-				if !fresh && !sf.full {
-					continue
+				if nv&normalDir != pack {
+					pack, n = nv&normalDir, unpackNormal(nv)
 				}
-				d := s.pos.Sub(sf.p)
-				d2 := d.Dot(d)
-				if d2 >= s.r2 || d2 == 0 {
-					continue
-				}
-				dist := math.Sqrt(d2)
-				att := 1 - dist/s.radius
-				ndl := d.Dot(sf.n) / dist
-				if ndl <= 0 {
-					continue
-				}
-				sf.l = sf.l.Add(s.col.Scale(ndl * att * att))
+				dir := base.Add(r.right.Mul(r.cols[x]))
+				p := r.eye.Add(dir.Mul(1 / float64(depth[x])))
+				sf := surfel{p: p, n: n, gloss: unpackGloss(nv), full: l == nil || r.stamp[at+x] == r.gen}
 				if sf.gloss > 0 {
-					sf.spec = sf.spec.Add(s.col.Scale(specular(sf.n, d.Mul(1/dist), sf.view, sf.gloss) * ndl * att * att))
+					sf.view = dir.Mul(-1).Norm()
+				}
+				switch {
+				case sf.full:
+					amb := r.Ambient
+					if gi != nil {
+						amb = amb.Add(gi.Sample(Vec3{p.X + n.X*giOffset, p.Y + n.Y*giOffset, p.Z + n.Z*giOffset}))
+					}
+					if ao != nil {
+						amb = amb.Scale(float64(ao[at+x]))
+					}
+					sf.l = amb
+					if ndl := n.Dot(r.Sun); ndl > 0 {
+						if sm != nil {
+							ndl *= sm.Lit(p, n)
+						}
+						sf.l = sf.l.Add(r.SunColor.Scale(ndl))
+						if sf.gloss > 0 && ndl > 0 {
+							sf.spec = r.SunColor.Scale(specular(n, r.Sun, sf.view, sf.gloss) * ndl)
+						}
+					}
+				default:
+					if ao != nil {
+						if moved := float64(ao[at+x]) - float64(aoOld[at+x]); moved != 0 {
+							amb := r.Ambient
+							if gi != nil {
+								amb = amb.Add(gi.Sample(Vec3{p.X + n.X*giOffset, p.Y + n.Y*giOffset, p.Z + n.Z*giOffset}))
+							}
+							sf.l = amb.Scale(moved)
+						}
+					}
+					if shift != nil {
+						if k := float64(shift[at+x]); k != 0 {
+							if ndl := n.Dot(r.Sun); ndl > 0 {
+								sf.l = sf.l.Add(r.SunColor.Scale(ndl * k))
+								if sf.gloss > 0 {
+									sf.spec = sf.spec.Add(r.SunColor.Scale(specular(n, r.Sun, sf.view, sf.gloss) * ndl * k))
+								}
+							}
+						}
+					}
+				}
+				surf[x] = sf
+			}
+			for _, k := range near {
+				s := &r.spans[k]
+				if y < s.y0 || y > s.y1 {
+					continue
+				}
+				fresh := dyn[k]
+				for x := max(s.x0, xa); x <= min(s.x1, xb); x++ {
+					if normal[x]&normalLit == 0 {
+						continue
+					}
+					sf := &surf[x]
+					if !fresh && !sf.full || s.remove && sf.full {
+						continue
+					}
+					d := s.pos.Sub(sf.p)
+					d2 := d.Dot(d)
+					if d2 >= s.r2 || d2 == 0 {
+						continue
+					}
+					dist := math.Sqrt(d2)
+					att := 1 - dist/s.radius
+					ndl := d.Dot(sf.n) / dist
+					if ndl <= 0 {
+						continue
+					}
+					sf.l = sf.l.Add(s.col.Scale(ndl * att * att))
+					if sf.gloss > 0 {
+						sf.spec = sf.spec.Add(s.col.Scale(specular(sf.n, d.Mul(1/dist), sf.view, sf.gloss) * ndl * att * att))
+					}
 				}
 			}
-		}
-		for x, d := range depth {
-			if d <= 0 {
-				continue
-			}
-			lit := normal[x]&normalLit != 0
-			if lit && !surf[x].full {
-				sf := &surf[x]
-				if sf.l != (RGB{}) || sf.spec != (RGB{}) {
-					color[x] = color[x].Add(albedo[x].Mul(sf.l).Add(sf.spec).Scale(1 - r.fogShare(d)))
+			for x := xa; x <= xb; x++ {
+				d := depth[x]
+				if d <= 0 {
+					continue
 				}
-				continue
-			}
-			if !lit && l != nil && r.stamp[at+x] != r.gen {
-				continue
-			}
-			c := albedo[x]
-			if lit {
-				sf := &surf[x]
-				c = c.Mul(sf.l).Add(sf.spec)
-			}
-			if fog {
-				fc := r.FogColor
-				if sunFog {
-					fc = r.fogToward(base.Add(r.right.Mul(r.cols[x])).Norm())
+				lit := normal[x]&normalLit != 0
+				if lit && !surf[x].full {
+					sf := &surf[x]
+					if sf.l != (RGB{}) || sf.spec != (RGB{}) {
+						color[x] = color[x].Add(albedo[x].Mul(sf.l).Add(sf.spec).Scale(1 - r.fogShare(d)))
+					}
+					continue
 				}
-				c = c.Mix(fc, r.fogShare(d))
+				if !lit && l != nil && r.stamp[at+x] != r.gen {
+					continue
+				}
+				c := albedo[x]
+				if lit {
+					sf := &surf[x]
+					c = c.Mul(sf.l).Add(sf.spec)
+				}
+				if fog {
+					fc := r.FogColor
+					if sunFog {
+						fc = r.fogToward(base.Add(r.right.Mul(r.cols[x])).Norm())
+					}
+					c = c.Mix(fc, r.fogShare(d))
+				}
+				color[x] = c
 			}
-			color[x] = c
-		}
+		})
 	}
 }
 
-// Fills one triangle between two rows, opaque ones storing their surface, blended ones fogged and laid over
-func (r *Raster) fill(t *tri, rowLo, rowHi int) {
+// Fills one triangle between two rows, opaque ones storing their surface, blended ones fogged and laid over, the pixels marked when asked
+func (r *Raster) fill(t *tri, rowLo, rowHi int, dirt *Dirt) {
 	fr := r.fr
 	ax, ay, az := t.x[0], t.y[0], t.z[0]
 	bx, by, bz := t.x[1], t.y[1], t.z[1]
@@ -834,7 +1080,14 @@ func (r *Raster) fill(t *tri, rowLo, rowHi int) {
 	dvx, dvy := b0*(va-vc)+b1*(vb-vc), c0*(va-vc)+c1*(vb-vc)
 	for py := y0; py <= y1; py++ {
 		yc := float64(py) + 0.5
-		xc := float64(x0) + 0.5
+		xa, xb := rowExtent(a0+c0*yc, b0, a1+c1*yc, b1, x0, x1)
+		if xa > xb {
+			continue
+		}
+		if dirt != nil {
+			dirt.Add(py, xa, xb)
+		}
+		xc := float64(xa) + 0.5
 		w0 := a0 + b0*xc + c0*yc
 		w1 := a1 + b1*xc + c1*yc
 		row := py * fr.W
@@ -842,7 +1095,7 @@ func (r *Raster) fill(t *tri, rowLo, rowHi int) {
 		if sunFog && !write {
 			base = r.forward.Add(r.up.Mul(r.rows[py]))
 		}
-		for px := x0; px <= x1; px, w0, w1 = px+1, w0+b0, w1+b1 {
+		for px := xa; px <= xb; px, w0, w1 = px+1, w0+b0, w1+b1 {
 			w2 := 1 - w0 - w1
 			if w0 < 0 || w1 < 0 || w2 < 0 || strict && w2 == 0 {
 				continue
@@ -883,6 +1136,25 @@ func (r *Raster) fill(t *tri, rowLo, rowHi int) {
 			}
 		}
 	}
+}
+
+// Pixels of a row where every edge weight of a triangle stays at or above zero, one pixel of slack on either side, within the bounds given
+func rowExtent(w0, dw0, w1, dw1 float64, x0, x1 int) (int, int) {
+	lo, hi := float64(x0), float64(x1)
+	for _, e := range [3][2]float64{{w0, dw0}, {w1, dw1}, {1 - w0 - w1, -dw0 - dw1}} {
+		switch {
+		case e[1] > 0:
+			lo = max(lo, -e[0]/e[1]-0.5)
+		case e[1] < 0:
+			hi = min(hi, -e[0]/e[1]-0.5)
+		case e[0] < 0:
+			return 1, 0
+		}
+	}
+	if math.IsNaN(lo) || math.IsNaN(hi) {
+		return x0, x1
+	}
+	return max(int(math.Ceil(lo))-1, x0), min(int(math.Floor(hi))+1, x1)
 }
 
 // Box turned by a yaw around its own center, lit by the raster on its turned sides

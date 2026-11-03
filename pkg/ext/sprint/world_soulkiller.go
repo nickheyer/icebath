@@ -121,13 +121,13 @@ func (s *soulkiller) dress(r *vxl.Raster, sc *scene) {
 	}
 }
 
-// Red light over every figure, the mark of the soulkiller on the crew
+// Red light over every figure, the mark of the soulkiller on the crew, steady over a standing figure so the lit floor keeps it
 func (s *soulkiller) lights(out []vxl.Light, sc *scene) []vxl.Light {
 	for _, a := range sc.actors {
 		if a.gone {
 			continue
 		}
-		out = append(out, vxl.Light{Pos: a.headPos().Add(vxl.V(0, 1.6, 0)), Color: skRed.Scale(1.1), Radius: 5.5})
+		out = append(out, vxl.Light{Pos: a.pos.Add(vxl.V(0, a.drop+a.lift+a.model.Height()+1.6, 0)), Color: skRed.Scale(1.1), Radius: 5.5})
 	}
 	return out
 }

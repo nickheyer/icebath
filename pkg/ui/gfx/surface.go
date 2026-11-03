@@ -24,6 +24,7 @@ const (
 	silentAfter   = 3
 	brokenAfter   = 3
 	fastFrames    = 8
+	maxBounces    = 6
 	maxDivisor    = 8.0
 	directDivisor = 2.0
 	sentLimit     = 8
@@ -103,11 +104,14 @@ type Surface struct {
 	lastEmit              time.Time
 	lastSeq, floor        uint64
 	timeouts, fails, fast int
-	stats                 Stats
-	pending               map[uint64]string
-	box                   box
-	grid                  [][]string
-	gridMSB               uint32
+	// Whether the divisor was lowered since it last rose, and how often a rise followed a lowering, each doubling the fast run a lowering takes
+	lowered bool
+	bounces int
+	stats   Stats
+	pending map[uint64]string
+	box     box
+	grid    [][]string
+	gridMSB uint32
 }
 
 // Reports whether the protocol is one of the kitty graphics ways
@@ -167,7 +171,7 @@ func (s *Surface) interval() time.Duration { return time.Second / time.Duration(
 // Leaves shared memory for direct transmission once the terminal stopped taking it, starting the divisor over
 func (s *Surface) syncLocked(shared bool) {
 	if s.shared && !shared {
-		s.shared, s.divisor, s.fast = false, directDivisor, 0
+		s.shared, s.divisor, s.fast, s.lowered, s.bounces = false, directDivisor, 0, false, 0
 	}
 }
 
@@ -486,16 +490,22 @@ func (s *Surface) answer(id uint32, ok bool, now time.Time) (r answered) {
 	return r
 }
 
-// Raises the divisor on a slow answer and lowers it after a run of fast ones
+// Raises the divisor on a slow answer and lowers it after a run of fast ones, the run doubling every time a rise undid a lowering
 func (s *Surface) adaptLocked(lat time.Duration) {
 	target := s.interval()
 	switch {
 	case lat > target*5/4:
+		if s.divisor < maxDivisor && s.lowered {
+			s.bounces = min(s.bounces+1, maxBounces)
+		}
 		s.divisor = min(s.divisor*1.25, maxDivisor)
-		s.fast = 0
+		s.fast, s.lowered = 0, false
 	case lat < target/2:
 		s.fast++
-		if s.fast >= fastFrames {
+		if s.fast >= fastFrames<<s.bounces {
+			if s.divisor > 1 {
+				s.lowered = true
+			}
 			s.divisor = max(s.divisor*0.85, 1)
 			s.fast = 0
 		}

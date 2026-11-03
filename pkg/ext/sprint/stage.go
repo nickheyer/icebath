@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"math"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,7 +31,7 @@ const maxStep = 0.1
 // Floor units a followed member walks before the camera moves after it, so it rests while the member works
 const followSlack = 2.5
 
-// Frames per second the floor settles to while nobody walks, flies or turns the camera
+// Frames per second the floor settles to while nothing on it changes between frames
 const calmFPS = 8
 
 // Frames per second the floor draws at while the terminal window is not focused
@@ -38,6 +39,9 @@ const blurredFPS = 2
 
 // Frames in a row the camera must change before a drifting camera draws as a turning one
 const driftFrames = 2
+
+// Least time between two lightings of the floor brought on by lights settling away from its own
+const relightAfter = 500 * time.Millisecond
 
 // Yaw and pitch of the overview camera, from the south east and well above the floor
 const (
@@ -167,9 +171,19 @@ type stage struct {
 	layerOK    bool
 	layerWorld string
 	layerQ     quality
-	bloom      vxl.Post
+	// Lights of the floor and of the last frame and when the floor was lit, relit once they settle apart
+	layerLights []vxl.Light
+	lastLights  []vxl.Light
+	layerAt     time.Time
+	// Finished pixels of the last frame, reworked only where the frame changed
+	out vxl.Output
+	// Changes of the last flush over the layer, put back before the next, the ones a relight of the layer made, and all of them with the ones of the frame before
+	prev  vxl.Changes
+	baked vxl.Changes
+	in    vxl.Changes
+	// Whether the last settled frame changed nothing on the floor
+	still      bool
 	enc        vxl.Encoder
-	rgb        []byte
 	buf        *uv.Buffer
 	sel        string
 	hover      string
@@ -333,13 +347,13 @@ func (s *stage) tick(now time.Time) time.Duration {
 	return time.Duration(interval * float64(time.Second))
 }
 
-// Frames per second the floor draws at now, the configured rate while anything moves, calm while nothing does, slow while blurred
+// Frames per second the floor draws at now, the configured rate while anything moves or the last frame changed, calm while nothing does, slow while blurred
 func (s *stage) rate() float64 {
 	fps := float64(max(s.cfg.Arena.FPS, 5))
 	if s.blurred {
 		return blurredFPS
 	}
-	if !s.sc.busy() && s.rig.settled() && !s.refine && s.camStreak == 0 {
+	if s.still && !s.sc.busy() && s.rig.settled() && !s.refine && s.camStreak == 0 {
 		fps = min(fps, calmFPS)
 	}
 	return fps
@@ -667,7 +681,12 @@ func (s *stage) render(now time.Time) {
 	sc.world.light(r, sc, cam.Dist)
 	q.apply(r)
 	sky := func(x, y int) vxl.RGB { return sc.sky(r.Ray(float64(x)+0.5, float64(y)+0.5)) }
+	lights := sc.collectLights()
+	settled := slices.Equal(lights, s.lastLights)
+	s.lastLights = append(s.lastLights[:0], lights...)
+	relight := s.layerOK && settled && !slices.Equal(lights, s.layerLights) && now.Sub(s.layerAt) >= relightAfter
 	fresh := moving || !s.layerOK || s.layerCam != cam || !s.layer.Fits(fr.W, fr.H) || sc.dirty || s.layerWorld != sc.world.name() || s.layerQ != q
+	s.baked.Reset(fr.W, fr.H)
 	switch {
 	case moving:
 		r.SetLights(nil)
@@ -676,46 +695,61 @@ func (s *stage) render(now time.Time) {
 		sc.drawStatic(r)
 		s.layerOK = false
 	case fresh:
-		r.SetLights(nil)
+		r.SetLights(lights)
 		r.Begin(fr, cam)
 		fr.Clear(sky)
 		sc.drawStatic(r)
 		r.FlushInto(&s.layer)
-		s.layerCam, s.layerOK, s.layerWorld, s.layerQ = cam, true, sc.world.name(), q
-		s.layer.Restore(fr)
+		s.layerCam, s.layerOK, s.layerWorld, s.layerQ, s.layerAt = cam, true, sc.world.name(), q, now
+		s.layerLights = append(s.layerLights[:0], lights...)
 		r.Begin(fr, cam)
 	default:
-		s.layer.Restore(fr)
+		s.layer.Restore(fr, &s.prev)
 		r.Begin(fr, cam)
+		if relight {
+			r.SetLights(lights)
+			r.Relight(&s.layer)
+			s.baked.CopyFrom(r.Changes())
+			s.layerAt = now
+			s.layerLights = append(s.layerLights[:0], lights...)
+		}
 	}
 	sc.drawDynamic(r)
 	t := s.marks(r)
+	var changed *vxl.Changes
 	if moving {
 		r.Flush()
 	} else {
 		r.FlushOver(&s.layer)
+		if !fresh {
+			s.in.CopyFrom(&s.prev)
+			s.in.Union(&s.baked)
+			s.in.Union(r.Changes())
+			s.in.Norm()
+			changed = &s.in
+		}
 	}
 	fin := sc.world.finish()
 	if !image {
 		fin.grade.Aberration = 0
 	}
-	fr.Outline(fin.outline)
+	look := vxl.Finish{Outline: fin.outline, Grade: fin.grade}
 	if s.quantize == nil {
-		fr.Bloom(&s.bloom, fin.bloomThreshold, fin.bloomStrength)
+		look.BloomThreshold, look.BloomStrength, look.Vignette = fin.bloomThreshold, fin.bloomStrength, fin.vignette
 	}
-	fr.Grade(fin.grade)
-	if s.quantize == nil {
-		fr.Vignette(fin.vignette)
+	s.out.Finish(fr, look, changed)
+	s.still = !moving && !fresh && s.out.Moved() == 0
+	if !moving {
+		s.prev.CopyFrom(r.Changes())
 	}
 	f := &frame{cols: cols, rows: rows, moving: moving, spots: map[string]spot{}, actors: map[string]actorMark{}}
 	if image {
-		s.rgb = fr.Bytes(s.rgb)
-		f.packet, f.surface = s.surface.Pack(s.rgb, fr.W, fr.H, cols, rows), s.surface
+		f.packet, f.surface = s.surface.Pack(s.out.Bytes, fr.W, fr.H, cols, rows), s.surface
 	} else {
 		if s.buf == nil || s.buf.Width() != cols || s.buf.Height() != rows {
 			s.buf = uv.NewBuffer(cols, rows)
 		}
-		s.enc.Encode(fr, s.buf, 0, 0, cols, rows, s.mode, s.quantize)
+		s.enc.Encode(&vxl.Frame{W: fr.W, H: fr.H, Color: s.out.Color, PixelAspect: fr.PixelAspect}, s.buf, 0, 0, cols, rows, s.mode, s.quantize, s.out.Dirt())
 		f.cells = s.cellBuffer(cols * rows)
 		for y := range rows {
 			copy(f.cells[y*cols:(y+1)*cols], s.buf.Lines[y])

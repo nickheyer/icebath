@@ -1,6 +1,8 @@
 package sprint
 
 import (
+	"math"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -259,5 +261,84 @@ func TestStageEasesSettledQuality(t *testing.T) {
 	}
 	if !reused {
 		t.Fatal("no cell buffer was reused once the card painted past it")
+	}
+}
+
+// Lights settling away from the floor's own fold into the lit floor without lighting it whole, the frame matching one lit whole
+func TestStageRelightsSettledLights(t *testing.T) {
+	k := &sink{}
+	cfg := Default()
+	cfg.Arena.Quality = "high"
+	st := newStage(nil, k.send, theme.Blackwall(), cfg)
+	snap := probeSnapshot()
+	st.sync(&snap, probeLive())
+	st.resize(120, 30, vxl.ModeShapes, 0.5)
+	st.rig.snap()
+	now := time.Now()
+	st.render(now)
+	if !st.layerOK {
+		t.Fatal("no lit floor after a settled frame")
+	}
+	st.sc.beamAt = st.sc.beamAt.Add(vxl.V(3, 0, 1))
+	st.sc.beamWant = st.sc.beamAt
+	moved := append([]vxl.Light(nil), st.sc.collectLights()...)
+	st.render(now.Add(10 * time.Millisecond))
+	st.render(now.Add(20 * time.Millisecond))
+	if slices.Equal(st.layerLights, moved) {
+		t.Fatal("the floor was relit before the lights held still long enough")
+	}
+	st.render(now.Add(relightAfter + 30*time.Millisecond))
+	if !slices.Equal(st.layerLights, moved) {
+		t.Fatalf("the floor kept its old lights after they settled, %v", st.layerLights)
+	}
+	if d := st.out.Dirt(); d.All || d.Count() >= st.fr.W*st.fr.H {
+		t.Fatalf("the floor was lit whole for a moved light, %d pixels reworked", d.Count())
+	}
+	relit := append([]vxl.RGB(nil), st.out.Color...)
+	st.layerOK = false
+	st.render(now.Add(relightAfter + 40*time.Millisecond))
+	for i, c := range st.out.Color {
+		if d := math.Sqrt(c.Dist(relit[i])); d > 0.03 {
+			t.Fatalf("pixel %d is %v lit whole and %v relit", i, c, relit[i])
+		}
+	}
+}
+
+// The floor keeps its rate while a settled frame changes anything and calms once one changes nothing
+func TestStageCalmsOnlyWhenStill(t *testing.T) {
+	k := &sink{}
+	cfg := Default()
+	cfg.Arena.FPS = 30
+	st := newStage(nil, k.send, theme.Blackwall(), cfg)
+	snap := probeSnapshot()
+	st.sync(&snap, probeLive())
+	st.resize(80, 24, vxl.ModeShapes, 0.5)
+	st.rig.snap()
+	rest := func() {
+		for i := 0; i < 6000 && st.sc.busy(); i++ {
+			st.sc.update(1.0 / 30)
+		}
+		if st.sc.busy() {
+			t.Fatal("the floor never came to rest")
+		}
+	}
+	rest()
+	now := time.Now()
+	st.render(now)
+	st.sc.update(1.0 / 30)
+	rest()
+	st.render(now.Add(33 * time.Millisecond))
+	if st.out.Moved() == 0 || st.rate() != 30 {
+		t.Fatalf("rate %v after a settled frame that moved %d pixels", st.rate(), st.out.Moved())
+	}
+	st.render(now.Add(66 * time.Millisecond))
+	if st.out.Moved() != 0 || st.rate() != calmFPS {
+		t.Fatalf("rate %v after a settled frame that moved %d pixels", st.rate(), st.out.Moved())
+	}
+	st.sc.update(1.0 / 30)
+	rest()
+	st.render(now.Add(99 * time.Millisecond))
+	if st.out.Moved() == 0 || st.rate() != 30 {
+		t.Fatalf("rate %v once the floor moved again by %d pixels", st.rate(), st.out.Moved())
 	}
 }

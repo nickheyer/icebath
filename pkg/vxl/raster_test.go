@@ -851,7 +851,7 @@ func TestFlushOverLayer(t *testing.T) {
 		t.Fatal("the layer did not keep the frame")
 	}
 	two := &Frame{}
-	layer.Restore(two)
+	layer.Restore(two, nil)
 	r.SetLights(append(append([]Light{}, steady...), moving...))
 	r.Begin(two, cam)
 	dynamic(r)

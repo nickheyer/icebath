@@ -183,17 +183,17 @@ func (b *blackwall) dress(r *vxl.Raster, sc *scene) {
 	}
 	if sc.wallSurge > 0 {
 		r.Billboard(vxl.V(float64(sc.lay.w)/2, 6, z+1), float64(sc.lay.w)*1.2, colRed, 0.1*sc.wallSurge, true)
+		r.Billboard(vxl.V(float64(sc.lay.w)/2, 2, z-2), float64(sc.lay.w)*1.4, bwStrand, 0.12*sc.wallSurge, true)
 	}
 }
 
-// Broad red lights along the wall washing the north of the fort
+// Broad red lights along the wall washing the north of the fort, steady so the lit floor keeps them, the surge carried by the glow over the wall
 func (b *blackwall) lights(out []vxl.Light, sc *scene) []vxl.Light {
 	w := float64(sc.lay.w)
 	z := float64(sc.lay.wallZ) + 2.5
-	k := 0.5 + 0.5*sc.wallSurge
 	for i := range 3 {
 		x := w * (float64(i) + 0.5) / 3
-		out = append(out, vxl.Light{Pos: vxl.V(x, 5, z), Color: bwStrand.Scale(0.55 * k), Radius: 15})
+		out = append(out, vxl.Light{Pos: vxl.V(x, 5, z), Color: bwStrand.Scale(0.275), Radius: 15})
 	}
 	return out
 }

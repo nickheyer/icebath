@@ -257,8 +257,8 @@ func TestEncoderHoldsCells(t *testing.T) {
 		b.Encode(fb, 0, 0, cols, rows, mode, nil)
 		var e Encoder
 		ha, hb := uv.NewBuffer(cols, rows), uv.NewBuffer(cols, rows)
-		e.Encode(a, ha, 0, 0, cols, rows, mode, nil)
-		e.Encode(b, hb, 0, 0, cols, rows, mode, nil)
+		e.Encode(a, ha, 0, 0, cols, rows, mode, nil, nil)
+		e.Encode(b, hb, 0, 0, cols, rows, mode, nil, nil)
 		fresh, held := changedCells(fa, fb), changedCells(ha, hb)
 		if fresh < 200 || held*5 > fresh {
 			t.Fatalf("mode %d fresh encoders changed %d cells, the held one %d", mode, fresh, held)
@@ -268,13 +268,13 @@ func TestEncoderHoldsCells(t *testing.T) {
 		}
 		e.Reset()
 		hc := uv.NewBuffer(cols, rows)
-		e.Encode(b, hc, 0, 0, cols, rows, mode, nil)
+		e.Encode(b, hc, 0, 0, cols, rows, mode, nil, nil)
 		if changedCells(fb, hc) != 0 {
 			t.Fatalf("mode %d reset encoder still held cells", mode)
 		}
 		q := ANSIQuantizer([16]color.Color{})
 		pa, pb := uv.NewBuffer(cols, rows), uv.NewBuffer(cols, rows)
-		e.Encode(b, pa, 0, 0, cols, rows, mode, q)
+		e.Encode(b, pa, 0, 0, cols, rows, mode, q, nil)
 		b.Encode(pb, 0, 0, cols, rows, mode, q)
 		if changedCells(pa, pb) != 0 {
 			t.Fatalf("mode %d switching to a quantizer kept colors boxed for the direct path", mode)
@@ -430,10 +430,10 @@ func BenchmarkEncode(b *testing.B) {
 	}
 	buf := uv.NewBuffer(cols, rows)
 	var e Encoder
-	e.Encode(frames[len(frames)-1], buf, 0, 0, cols, rows, ModeAll, nil)
+	e.Encode(frames[len(frames)-1], buf, 0, 0, cols, rows, ModeAll, nil, nil)
 	i := 0
 	for b.Loop() {
-		e.Encode(frames[i%len(frames)], buf, 0, 0, cols, rows, ModeAll, nil)
+		e.Encode(frames[i%len(frames)], buf, 0, 0, cols, rows, ModeAll, nil, nil)
 		i++
 	}
 }

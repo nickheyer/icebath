@@ -483,6 +483,9 @@ func (sc *scene) direct(snap *Snapshot, m Member, st liveState) {
 		a.emote, a.emoteT = "!", 0.6
 	}
 	a.beacon += (flagF(st.asking) - a.beacon) * min(sc.lastStep*2, 1)
+	if math.Abs(a.beacon-flagF(st.asking)) < 0.01 {
+		a.beacon = flagF(st.asking)
+	}
 	if !d.same(a.duty) {
 		sc.assign(a, d)
 	} else {
@@ -743,7 +746,7 @@ func (sc *scene) update(dt float64) {
 	}
 }
 
-// Points the search beam at the node under review, else sweeps it over the platform now and then
+// Points the search beam at the node under review, else sweeps it over the platform now and then, landing exactly so the lit floor keeps its light
 func (sc *scene) updateBeam(dt float64) {
 	lock := ""
 	for _, a := range sc.actors {
@@ -772,6 +775,9 @@ func (sc *scene) updateBeam(dt float64) {
 		}
 	}
 	sc.beamAt = sc.beamAt.Lerp(sc.beamWant, min(dt*2.5, 1))
+	if sc.beamAt.Sub(sc.beamWant).Len() < 0.01 {
+		sc.beamAt = sc.beamWant
+	}
 }
 
 // Motes an actor gives off in its state, sparks of its tool while jacked in and thoughts while thinking
@@ -942,11 +948,11 @@ func (sc *scene) castShadows(r *vxl.Raster) {
 	r.Shadows = sm
 }
 
-// Every light on the platform this frame
+// Every light on the platform this frame, the ones on standing figures held still so the lit floor keeps them
 func (sc *scene) collectLights() []vxl.Light {
 	out := sc.lights[:0]
 	for _, id := range sc.order {
-		out = append(out, sc.nodes[id].light(sc.t))
+		out = append(out, sc.nodes[id].light())
 	}
 	out = sc.packetLights(out)
 	out = append(out, vxl.Light{Pos: sc.lay.uplink.Add(vxl.V(0, 3.2, 0)), Color: colIce.Scale(0.8 + 0.4*flagF(sc.waiting)), Radius: 7})
@@ -956,10 +962,10 @@ func (sc *scene) collectLights() []vxl.Light {
 			continue
 		}
 		if a.beacon > 0.05 {
-			out = append(out, vxl.Light{Pos: a.headPos().Add(vxl.V(0, 2, 0)), Color: colIce.Scale(a.beacon * 1.2), Radius: 6})
+			out = append(out, vxl.Light{Pos: a.restPos().Add(vxl.V(0, a.model.Height()+2.5, 0)), Color: colIce.Scale(math.Ceil(a.beacon*8) / 8 * 1.2), Radius: 6})
 		}
 		if a.state == stateJack {
-			out = append(out, vxl.Light{Pos: a.handsPos(), Color: a.toolKind.color().Scale(0.7), Radius: 3.5})
+			out = append(out, vxl.Light{Pos: a.restPos().Add(vxl.UnitYaw(a.yaw).Mul(1.1)).Add(vxl.V(0, 2.6, 0)), Color: a.toolKind.color().Scale(0.7), Radius: 3.5})
 		}
 		if a.exit > 0 {
 			out = append(out, vxl.Light{Pos: a.stand().Add(vxl.V(0, 2, 0)), Color: colIce.Scale(1.5), Radius: 8})
@@ -1072,7 +1078,7 @@ func (sc *scene) drawBeam(r *vxl.Raster) {
 	if sc.ended && sc.endMode == endFail {
 		col = colRed
 	}
-	k := 0.9 + 0.1*math.Sin(sc.t*7)
+	k := 0.9 + 0.1*stepped(math.Sin(sc.t*2), 8)
 	_, _, forward := r.Basis()
 	side := to.Sub(from).Cross(forward).Norm()
 	w := vxl.Grey(1)

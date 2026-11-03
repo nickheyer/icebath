@@ -35,6 +35,12 @@ const aoMaxSamples = 32
 // Cells the blur of the crowding grid reaches on either side
 const aoBlurReach = 2
 
+// Cells past its reach a cell may still sample, against the rounding of sample offsets and cell centers
+const aoSlack = 1
+
+// Blurred crowding change under which a cell keeps the crowding of the layer, under one step of 255
+const aoStill = 1.0 / 1024
+
 // Offsets of every sample of every turn, as the cosine, the sine and the root of the share along the spiral
 var aoTable = func() (out [aoRotations][aoMaxSamples][3]float64) {
 	for k := range aoRotations {
@@ -46,6 +52,16 @@ var aoTable = func() (out [aoRotations][aoMaxSamples][3]float64) {
 	}
 	return out
 }()
+
+// Turn of the sample table a cell of the grid reads
+func aoTurn(lx, ly int) *[aoMaxSamples][3]float64 {
+	return &aoTable[int(Hash2(lx, ly)*aoRotations)%aoRotations]
+}
+
+// Pixel a sample offset lands on around a pixel at a reach across and down
+func aoSampleAt(o *[3]float64, x, y int, rpx, rpy float64) (int, int) {
+	return x + int(math.Floor(o[0]*o[2]*rpx+0.5)), y + int(math.Floor(o[1]*o[2]*rpy+0.5))
+}
 
 // Grid of one value per block of pixels, spread back over the pixels by likeness of depth
 type lowGrid struct {
@@ -68,8 +84,8 @@ func (lg *lowGrid) pixel(lx, ly, w, h int) (int, int) {
 // Cell holding a pixel
 func (lg *lowGrid) cell(x, y int) int { return (y/lg.shrink)*lg.w + x/lg.shrink }
 
-// Four grid cells around a pixel with the weight of each, bilinear by place and shrunk by any gap in depth
-func (lg *lowGrid) around(x, y int, z float64) (cells [4]int, weights [4]float64) {
+// Four cells around a pixel weighted by place and by the gap between its depth and theirs
+func (lg *lowGrid) around(x, y int, z float64, Z []float32) (cells [4]int, weights [4]float64) {
 	fx := (float64(x)+0.5)/float64(lg.shrink) - 0.5
 	fy := (float64(y)+0.5)/float64(lg.shrink) - 0.5
 	lx0 := min(max(int(math.Floor(fx)), 0), lg.w-1)
@@ -83,13 +99,27 @@ func (lg *lowGrid) around(x, y int, z float64) (cells [4]int, weights [4]float64
 		if weights[k] <= 0 {
 			continue
 		}
-		dz := math.Abs(float64(lg.z[cells[k]]) - z)
+		dz := math.Abs(float64(Z[cells[k]]) - z)
 		weights[k] /= 1 + dz/(aoBlurDepth*z+1e-6)
 	}
 	return cells, weights
 }
 
-// Marks the cells of the occlusion grid holding a pixel this flush drew, widened by the sample reach and the blur, every cell without a layer
+// Grid value at a pixel blended from the cells around it, the cell itself at no shrink
+func (lg *lowGrid) spread(vals, Z []float32, x, y, i int, z float64) float32 {
+	if lg.shrink == 1 {
+		return vals[i]
+	}
+	cells, weights := lg.around(x, y, z, Z)
+	sum, wt := 0.0, 0.0
+	for k := range 4 {
+		sum += float64(vals[cells[k]]) * weights[k]
+		wt += weights[k]
+	}
+	return float32(sum / wt)
+}
+
+// Marks the cells holding a drawn pixel and the ones sampling such a cell, every cell without a layer grid
 func (r *Raster) markRedo(l *Layer) {
 	fr := r.fr
 	w, h := fr.W, fr.H
@@ -97,60 +127,125 @@ func (r *Raster) markRedo(l *Layer) {
 	lg.fit(w, h, r.AO.Shrink)
 	n := lg.w * lg.h
 	r.redo = slices.Grow(r.redo[:0], n)[:n]
-	if l == nil || !l.ok || l.aoW != lg.w || l.aoH != lg.h || l.aoShrink != lg.shrink || len(l.aoOcc) != n {
+	if !l.hasAO(lg) {
 		for i := range r.redo {
 			r.redo[i] = true
 		}
 		return
 	}
 	clear(r.redo)
-	r.dirty = r.dirty[:0]
+	r.aoDirty = slices.Grow(r.aoDirty[:0], n)[:n]
+	clear(r.aoDirty)
+	r.aoNearZ = slices.Grow(r.aoNearZ[:0], n)[:n]
+	for i := range r.aoNearZ {
+		r.aoNearZ[i] = float32(math.Inf(1))
+	}
+	D, N := fr.Depth, fr.Normal
 	for y := range h {
 		row := y * w
-		for x := range w {
-			if r.stamp[row+x] != r.gen {
-				continue
-			}
-			if c := lg.cell(x, y); !r.redo[c] {
-				r.redo[c] = true
-				r.dirty = append(r.dirty, int32(c))
-			}
-		}
-	}
-	if r.AO.Strength <= 0 {
-		return
-	}
-	sx, sy := r.fx*0.5*float64(w), r.fy*0.5*float64(h)
-	D := fr.Depth
-	for _, c := range r.dirty {
-		lx, ly := int(c)%lg.w, int(c)/lg.w
-		px, py := lg.pixel(lx, ly, w, h)
-		z := 1.0
-		if d := D[py*w+px]; d > 0 {
-			z = 1 / float64(d)
-		}
-		reach := int(math.Ceil(r.AO.Radius*max(sx, sy)/z/float64(lg.shrink))) + aoBlurReach
-		for dy := -reach; dy <= reach; dy++ {
-			ry := ly + dy
-			if ry < 0 || ry >= lg.h {
-				continue
-			}
-			for dx := -reach; dx <= reach; dx++ {
-				if rx := lx + dx; rx >= 0 && rx < lg.w {
-					r.redo[ry*lg.w+rx] = true
+		r.ch.Drawn.Each(y, func(xa, xb int) {
+			for x := xa; x <= xb; x++ {
+				if r.stamp[row+x] != r.gen {
+					continue
+				}
+				c := lg.cell(x, y)
+				r.aoDirty[c] = true
+				if d := D[row+x]; d > 0 {
+					r.aoNearZ[c] = min(r.aoNearZ[c], 1/d)
 				}
 			}
+		})
+	}
+	radius := r.AO.Radius
+	scale := radius * max(r.fx*0.5*float64(w), r.fy*0.5*float64(h))
+	r.aoReach = slices.Grow(r.aoReach[:0], n)[:n]
+	clear(r.aoReach)
+	for c := range n {
+		if !r.aoDirty[c] {
+			continue
+		}
+		r.redo[c] = true
+		z := max(float64(r.aoNearZ[c])-2*radius, nearPlane)
+		reach := int32(math.Ceil(scale/z/float64(lg.shrink))) + aoSlack
+		lx, ly := c%lg.w, c/lg.w
+		row := r.aoReach[ly*lg.w : (ly+1)*lg.w]
+		for x := max(lx-int(reach), 0); x <= min(lx+int(reach), lg.w-1); x++ {
+			row[x] = max(row[x], reach)
+		}
+	}
+	r.aoNear = slices.Grow(r.aoNear[:0], n)[:n]
+	clear(r.aoNear)
+	for c := range n {
+		reach := int(r.aoReach[c])
+		if reach == 0 {
+			continue
+		}
+		lx, ly := c%lg.w, c/lg.w
+		for y := max(ly-reach, 0); y <= min(ly+reach, lg.h-1); y++ {
+			r.aoNear[y*lg.w+lx] = true
+		}
+	}
+	samples := min(max(r.AO.Samples, 4), aoMaxSamples)
+	stride := aoMaxSamples / samples
+	sx, sy := r.fx*0.5*float64(w), r.fy*0.5*float64(h)
+	parallelBands(lg.h, 2, func(y0, y1 int) {
+		for ly := y0; ly < y1; ly++ {
+			for lx := range lg.w {
+				li := ly*lg.w + lx
+				if r.redo[li] || !r.aoNear[li] {
+					continue
+				}
+				x, y := lg.pixel(lx, ly, w, h)
+				i := y*w + x
+				if D[i] == 0 || N[i]&normalLit == 0 {
+					continue
+				}
+				z := 1 / float64(D[i])
+				rpx, rpy := radius*sx/z, radius*sy/z
+				if rpx < 0.75 && rpy < 0.75 {
+					continue
+				}
+				table := aoTurn(lx, ly)
+				for s := range samples {
+					qx, qy := aoSampleAt(&table[s*stride], x, y, rpx, rpy)
+					if qx < 0 || qy < 0 || qx >= w || qy >= h {
+						continue
+					}
+					if r.aoDirty[lg.cell(qx, qy)] {
+						r.redo[li] = true
+						break
+					}
+				}
+			}
+		}
+	})
+}
+
+// Adds the pixels under every marked cell of a grid at a shrink to a set, cell runs added as boxes
+func markCells(d *Dirt, on []bool, lw, lh, shrink int) {
+	for ly := range lh {
+		row := on[ly*lw : (ly+1)*lw]
+		for lx := 0; lx < lw; {
+			if !row[lx] {
+				lx++
+				continue
+			}
+			end := lx
+			for end+1 < lw && row[end+1] {
+				end++
+			}
+			d.AddRect(lx*shrink, ly*shrink, (end+1)*shrink-1, (ly+1)*shrink-1)
+			lx = end + 1
 		}
 	}
 }
 
-// Writes the occlusion of every opaque lit pixel, read on the marked cells of the grid, the rest taken from the layer, and spread back over the pixels
-func (r *Raster) occlude(workers int, l *Layer) {
+// Samples the marked cells, takes the rest from the layer, blurs, and marks the cells that moved with their neighbors
+func (r *Raster) occludeGrid(workers int, l *Layer) {
 	fr := r.fr
 	w, h := fr.W, fr.H
 	lg := &r.aoGrid
 	n := lg.w * lg.h
-	r.ao = slices.Grow(r.ao[:0], w*h)[:w*h]
 	r.aoRaw = slices.Grow(r.aoRaw[:0], n)[:n]
 	r.ao2 = slices.Grow(r.ao2[:0], n)[:n]
 	r.ao3 = slices.Grow(r.ao3[:0], n)[:n]
@@ -189,11 +284,10 @@ func (r *Raster) occlude(workers int, l *Layer) {
 				p := Vec3{r.cols[x] * z, r.rows[y] * z, z}
 				nw := unpackNormal(N[i])
 				nv := Vec3{nw.Dot(r.right), nw.Dot(r.up), nw.Dot(r.forward)}
-				table := &aoTable[int(Hash2(lx, ly)*aoRotations)%aoRotations]
+				table := aoTurn(lx, ly)
 				occ := 0.0
 				for s := range samples {
-					o := &table[s*stride]
-					qx, qy := x+int(math.Floor(o[0]*o[2]*rpx+0.5)), y+int(math.Floor(o[1]*o[2]*rpy+0.5))
+					qx, qy := aoSampleAt(&table[s*stride], x, y, rpx, rpy)
 					if qx < 0 || qy < 0 || qx >= w || qy >= h || qx == x && qy == y {
 						continue
 					}
@@ -230,26 +324,64 @@ func (r *Raster) occlude(workers int, l *Layer) {
 			}
 		}
 	})
+	r.shift = slices.Grow(r.shift[:0], n)[:n]
+	r.moved = slices.Grow(r.moved[:0], n)[:n]
+	if !l.hasAO(lg) {
+		for i := range r.moved {
+			r.shift[i], r.moved[i] = true, true
+		}
+		return
+	}
+	for li := range n {
+		r.shift[li] = math.Abs(float64(r.ao2[li]-l.aoBlur[li])) > aoStill || lg.z[li] != l.aoZ[li]
+	}
+	clear(r.moved)
+	for ly := range lg.h {
+		for lx := range lg.w {
+			if !r.shift[ly*lg.w+lx] {
+				continue
+			}
+			for y := max(ly-1, 0); y <= min(ly+1, lg.h-1); y++ {
+				for x := max(lx-1, 0); x <= min(lx+1, lg.w-1); x++ {
+					r.moved[y*lg.w+x] = true
+				}
+			}
+		}
+	}
+}
+
+// Spreads the crowding over the relit pixels beside the crowding the layer lit them by, equal where no cell moved
+func (r *Raster) occludeSpread(workers int, l *Layer) {
+	fr := r.fr
+	w, h := fr.W, fr.H
+	lg := &r.aoGrid
+	r.ao = slices.Grow(r.ao[:0], w*h)[:w*h]
+	r.aoOld = slices.Grow(r.aoOld[:0], w*h)[:w*h]
+	D, N := fr.Depth, fr.Normal
+	cached := l.hasAO(lg)
 	parallelBandsWith(h, 4, workers, func(y0, y1 int) {
 		for y := y0; y < y1; y++ {
-			for x := range w {
-				i := y*w + x
-				if D[i] == 0 || N[i]&normalLit == 0 || !r.redo[lg.cell(x, y)] {
-					r.ao[i] = 1
-					continue
+			r.ch.Lit.Each(y, func(xa, xb int) {
+				for x := xa; x <= xb; x++ {
+					i := y*w + x
+					if D[i] == 0 || N[i]&normalLit == 0 {
+						r.ao[i], r.aoOld[i] = 1, 1
+						continue
+					}
+					fresh := l == nil || r.stamp[i] == r.gen
+					if !fresh && !r.moved[lg.cell(x, y)] {
+						r.ao[i], r.aoOld[i] = 1, 1
+						continue
+					}
+					z := 1 / float64(D[i])
+					r.ao[i] = lg.spread(r.ao2, lg.z, x, y, lg.cell(x, y), z)
+					if fresh || !cached {
+						r.aoOld[i] = r.ao[i]
+						continue
+					}
+					r.aoOld[i] = lg.spread(l.aoBlur, l.aoZ, x, y, lg.cell(x, y), z)
 				}
-				if lg.shrink == 1 {
-					r.ao[i] = r.ao2[i]
-					continue
-				}
-				cells, weights := lg.around(x, y, 1/float64(D[i]))
-				sum, wt := 0.0, 0.0
-				for k := range 4 {
-					sum += float64(r.ao2[cells[k]]) * weights[k]
-					wt += weights[k]
-				}
-				r.ao[i] = float32(sum / wt)
-			}
+			})
 		}
 	})
 }

@@ -33,8 +33,6 @@ type hazeField struct {
 	acc []rgb32
 	// Whether a cell was marched
 	on []bool
-	// Light gathered up to the depth of every pixel of the frame, filled by a flush into a layer
-	pix []rgb32
 }
 
 // Sizes the field for a grid, every cell off
@@ -46,7 +44,6 @@ func (f *hazeField) fit(w, h, shrink, steps int) {
 	f.acc = slices.Grow(f.acc[:0], n*steps)[:n*steps]
 	f.on = slices.Grow(f.on[:0], n)[:n]
 	clear(f.on)
-	f.pix = f.pix[:0]
 }
 
 // Takes the size and every cell of another field
@@ -56,7 +53,6 @@ func (f *hazeField) copyFrom(o *hazeField) {
 	f.step = append(f.step[:0], o.step...)
 	f.acc = append(f.acc[:0], o.acc...)
 	f.on = append(f.on[:0], o.on...)
-	f.pix = append(f.pix[:0], o.pix...)
 }
 
 // Light gathered along the ray of a cell up to a distance, between the steps on either side of it
@@ -88,8 +84,8 @@ func (f *hazeField) end(cell int) float64 {
 	return float64(f.t0[cell]) + float64(f.step[cell])*float64(f.steps)
 }
 
-// Marches the haze of every cell, or over a layer only the cells near the lights the layer lacks, then adds it to every pixel by depth
-func (r *Raster) scatter(workers int, l *Layer, dyn []bool, keep bool) {
+// Marches the haze of every cell, or over a layer only the cells near the lights the layer lacks, then adds it by depth to every pixel without a layer, else to the changed pixels, the ones not lit anew taking only the fresh march
+func (r *Raster) scatter(workers int, l *Layer, dyn []bool) {
 	fr := r.fr
 	w, h := fr.W, fr.H
 	hz := r.Haze
@@ -195,12 +191,10 @@ func (r *Raster) scatter(workers int, l *Layer, dyn []bool, keep bool) {
 			}
 		}
 	})
-	var under *hazeField
-	if l != nil && l.haze.w == lw && l.haze.h == lh && l.haze.steps == steps && len(l.haze.pix) == w*h {
-		under = &l.haze
-	}
-	if keep {
-		field.pix = slices.Grow(field.pix[:0], w*h)[:w*h]
+	under := l.hazeUnder(lw, lh, steps)
+	if l != nil {
+		markCells(&r.ch.Color, field.on, lw, lh, shrink)
+		r.ch.Color.Norm()
 	}
 	C := fr.Color
 	parallelBandsWith(h, 8, workers, func(y0, y1 int) {
@@ -209,27 +203,22 @@ func (r *Raster) scatter(workers int, l *Layer, dyn []bool, keep bool) {
 			ly0 := min(max(int(math.Floor(fy)), 0), lh-1)
 			ly1 := min(ly0+1, lh-1)
 			ty := min(max(fy-float64(ly0), 0), 1)
-			for x := range w {
-				i := y*w + x
-				fx := (float64(x)+0.5)/float64(shrink) - 0.5
-				lx0 := min(max(int(math.Floor(fx)), 0), lw-1)
-				lx1 := min(lx0+1, lw-1)
-				tx := min(max(fx-float64(lx0), 0), 1)
-				if under != nil && r.stamp[i] != r.gen {
-					p := under.pix[i]
-					c := RGB{float64(p[0]), float64(p[1]), float64(p[2])}
-					if field.on[ly0*lw+lx0] || field.on[ly0*lw+lx1] || field.on[ly1*lw+lx0] || field.on[ly1*lw+lx1] {
-						c = c.Add(r.hazeAt(field, under, false, x, y, lx0, lx1, ly0, ly1, tx, ty, reach))
+			r.ch.Color.Each(y, func(xa, xb int) {
+				for x := xa; x <= xb; x++ {
+					i := y*w + x
+					fx := (float64(x)+0.5)/float64(shrink) - 0.5
+					lx0 := min(max(int(math.Floor(fx)), 0), lw-1)
+					lx1 := min(lx0+1, lw-1)
+					tx := min(max(fx-float64(lx0), 0), 1)
+					if l != nil && r.stamp[i] != r.gen {
+						if field.on[ly0*lw+lx0] || field.on[ly0*lw+lx1] || field.on[ly1*lw+lx0] || field.on[ly1*lw+lx1] {
+							C[i] = C[i].Add(r.hazeAt(field, under, false, x, y, lx0, lx1, ly0, ly1, tx, ty, reach))
+						}
+						continue
 					}
-					C[i] = C[i].Add(c)
-					continue
+					C[i] = C[i].Add(r.hazeAt(field, under, true, x, y, lx0, lx1, ly0, ly1, tx, ty, reach))
 				}
-				c := r.hazeAt(field, under, true, x, y, lx0, lx1, ly0, ly1, tx, ty, reach)
-				if keep {
-					field.pix[i] = rgb32{float32(c.R), float32(c.G), float32(c.B)}
-				}
-				C[i] = C[i].Add(c)
-			}
+			})
 		}
 	})
 }

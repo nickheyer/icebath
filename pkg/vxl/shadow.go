@@ -26,6 +26,8 @@ type ShadowMap struct {
 	// World units per texel and its inverse
 	texel, inv float64
 	w, h       int
+	// Depth toward the sun of the near and far sides of the world box
+	d0, d1 float64
 	// Nearest and second nearest depth toward the sun per texel, side by side, minus infinity where none was drawn
 	depth []float32
 }
@@ -47,6 +49,7 @@ func NewShadowMap(sun Vec3, lo, hi Vec3, texel float64) *ShadowMap {
 	up := dir.Cross(right)
 	inf := math.Inf(1)
 	u0, u1, v0, v1 := inf, -inf, inf, -inf
+	d0, d1 := inf, -inf
 	for i := range 8 {
 		p := lo
 		if i&1 != 0 {
@@ -58,8 +61,9 @@ func NewShadowMap(sun Vec3, lo, hi Vec3, texel float64) *ShadowMap {
 		if i&4 != 0 {
 			p.Z = hi.Z
 		}
-		u, v := p.Dot(right), p.Dot(up)
+		u, v, d := p.Dot(right), p.Dot(up), p.Dot(dir)
 		u0, u1, v0, v1 = min(u0, u), max(u1, u), min(v0, v), max(v1, v)
+		d0, d1 = min(d0, d), max(d1, d)
 	}
 	if !(texel > 0) {
 		texel = 0
@@ -70,7 +74,7 @@ func NewShadowMap(sun Vec3, lo, hi Vec3, texel float64) *ShadowMap {
 	}
 	w := min(max(int(math.Ceil((u1-u0)/texel))+2, 2), maxShadowTexels)
 	h := min(max(int(math.Ceil((v1-v0)/texel))+2, 2), maxShadowTexels)
-	sm := &ShadowMap{right: right, up: up, dir: dir, u0: u0 - texel, v0: v0 - texel, texel: texel, inv: 1 / texel, w: w, h: h, depth: make([]float32, 2*w*h)}
+	sm := &ShadowMap{right: right, up: up, dir: dir, u0: u0 - texel, v0: v0 - texel, texel: texel, inv: 1 / texel, w: w, h: h, d0: d0, d1: d1, depth: make([]float32, 2*w*h)}
 	sm.Clear()
 	return sm
 }
@@ -152,15 +156,19 @@ func (sm *ShadowMap) tri(ax, ay, az, bx, by, bz, cx, cy, cz float64) {
 	}
 }
 
-// Share of the sun reaching a point with a unit facing, four texels filtered after a nudge off the surface
-func (sm *ShadowMap) Lit(p, n Vec3) float64 {
+// First texel a nudged point reads, its place among the four read and its depth toward the sun
+func (sm *ShadowMap) place(p, n Vec3) (i, j int, tu, tv, d float64) {
 	off := sm.texel * shadowOffset
 	q := Vec3{p.X + n.X*off, p.Y + n.Y*off, p.Z + n.Z*off}
 	u := (q.Dot(sm.right)-sm.u0)*sm.inv - 0.5
 	v := (q.Dot(sm.up)-sm.v0)*sm.inv - 0.5
-	d := q.Dot(sm.dir)
 	fu, fv := math.Floor(u), math.Floor(v)
-	i, j := int(fu), int(fv)
+	return int(fu), int(fv), u - fu, v - fv, q.Dot(sm.dir)
+}
+
+// Share of the sun reaching a point with a unit facing, four texels filtered after a nudge off the surface
+func (sm *ShadowMap) Lit(p, n Vec3) float64 {
+	i, j, tu, tv, d := sm.place(p, n)
 	a, b, c, e := sm.open(i, j, d), sm.open(i+1, j, d), sm.open(i, j+1, d), sm.open(i+1, j+1, d)
 	switch a + b + c + e {
 	case 4:
@@ -168,8 +176,36 @@ func (sm *ShadowMap) Lit(p, n Vec3) float64 {
 	case 0:
 		return 0
 	}
-	tu, tv := u-fu, v-fv
 	return (a*(1-tu)+b*tu)*(1-tv) + (c*(1-tu)+e*tu)*tv
+}
+
+// Share of the sun reaching a point under a map, all of it under none
+func litBy(sm *ShadowMap, p, n Vec3) float64 {
+	if sm == nil {
+		return 1
+	}
+	return sm.Lit(p, n)
+}
+
+// Reports whether a point with a unit facing reads any marked texel of the map
+func (sm *ShadowMap) touches(mark []bool, p, n Vec3) bool {
+	i, j, _, _, _ := sm.place(p, n)
+	for _, t := range [4][2]int{{i, j}, {i + 1, j}, {i, j + 1}, {i + 1, j + 1}} {
+		if uint(t[0]) < uint(sm.w) && uint(t[1]) < uint(sm.h) && mark[t[1]*sm.w+t[0]] {
+			return true
+		}
+	}
+	return false
+}
+
+// Reports whether another map shares the axes, origin, texel size and extent
+func (sm *ShadowMap) aligned(o *ShadowMap) bool {
+	return o != nil && sm.right == o.right && sm.up == o.up && sm.dir == o.dir && sm.u0 == o.u0 && sm.v0 == o.v0 && sm.texel == o.texel && sm.w == o.w && sm.h == o.h
+}
+
+// World point at a place across the sun and a depth toward it
+func (sm *ShadowMap) point(u, v, d float64) Vec3 {
+	return sm.right.Mul(u).Add(sm.up.Mul(v)).Add(sm.dir.Mul(d))
 }
 
 // One off the map, or above the midpoint of the two nearest faces, or within tolerance of a lone face
