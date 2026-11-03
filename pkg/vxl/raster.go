@@ -2,7 +2,6 @@ package vxl
 
 import (
 	"math"
-	"runtime"
 	"slices"
 )
 
@@ -486,7 +485,7 @@ func (r *Raster) flush(l, into *Layer) {
 	}
 	workers := r.Workers
 	if workers <= 0 {
-		workers = runtime.GOMAXPROCS(0)
+		workers = Workers()
 	}
 	n := min(max(fr.H/6, 1), max(workers*3, 1))
 	r.bandH = (fr.H + n - 1) / n

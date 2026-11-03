@@ -4,11 +4,19 @@ package gfx
 
 import "errors"
 
-// Shared memory objects are made only on Linux, every other system sending pixels through the terminal
-func shmPut(name string, data []byte) error {
-	return errors.New("shared memory objects are not made here")
-}
+// Error of every shared memory call on a system without /dev/shm objects
+var errNoShm = errors.New("shared memory objects are made only on linux")
+
+func shmPut(name string, data []byte) error { return errNoShm }
+
+func shmLink(from, to string) error { return errNoShm }
+
+func shmTake(name string) ([]byte, error) { return nil, errNoShm }
+
+func shmRemove(name string) {}
 
 func shmWorks() bool { return false }
 
-func shmSweep() {}
+func shmSweep(prefix string) {}
+
+func shmReap() {}

@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/session"
-	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -21,9 +20,55 @@ import (
 	"github.com/nickheyer/icebath/pkg/vxl"
 )
 
-// Environment with a theme and keymap and nothing of the harness, as the arena sees it outside the app
+// Messages the worker of an arena sent to the program, held until a test hands them to the card
+type inbox struct{ msgs []tea.Msg }
+
+var inboxes = map[*cards.Env]*inbox{}
+
+// Environment with a theme and keymap and nothing of the harness, as the arena sees it outside the app, its sends collected
 func testEnv() *cards.Env {
-	return &cards.Env{Theme: theme.Blackwall(), Keys: keys.Default()}
+	in := &inbox{}
+	env := &cards.Env{Theme: theme.Blackwall(), Keys: keys.Default()}
+	env.Send = func(msg tea.Msg) { in.msgs = append(in.msgs, msg) }
+	inboxes[env] = in
+	return env
+}
+
+// Hands every message the worker sent to the card, answering how many frames were among them
+func (a *arena) deliver() int {
+	in := inboxes[a.env]
+	if in == nil {
+		return 0
+	}
+	msgs := in.msgs
+	in.msgs = nil
+	frames := 0
+	for _, msg := range msgs {
+		if _, ok := msg.(frameMsg); ok {
+			frames++
+		}
+		a.Update(msg)
+	}
+	return frames
+}
+
+// Drains the inputs of the floor, steps it by frames of a thirtieth of a second, draws it and hands the frame to the card
+func (a *arena) advance(frames int) {
+	st := a.stage
+	st.drain()
+	for range frames {
+		st.sc.update(1.0 / 30)
+		st.moveCamera(1.0 / 30)
+	}
+	st.render(time.Now())
+	a.deliver()
+}
+
+// Jumps every spring of the camera to its target and draws the frame that sees it hold still
+func (a *arena) settleCamera() {
+	a.stage.rig.snap()
+	a.advance(1)
+	a.advance(1)
 }
 
 // Sprint registered with open sessions for every member, as a running workflow leaves it
@@ -78,39 +123,49 @@ func (a *arena) hitsWith(prefix string) []hit {
 	return out
 }
 
-// Arena paints every size without a panic, with the inspector and the dock sections open and folded, and writes a PNG on request
+// Arena paints every size without a panic, keeps the lit layer only while the camera rests, and answers keys, folds and state
 func TestArenaPaint(t *testing.T) {
 	s := registerProbeSprint(t)
 	a := newArena(testEnv()).(*arena)
 	a.sprintID = s.ID
 	a.refresh()
-	for i := 0; i < 150; i++ {
-		a.sc.update(1.0 / 30)
-		if i%30 == 0 {
-			a.refresh()
-		}
+	for i := 0; i < 5; i++ {
+		a.advance(30)
+		a.refresh()
 	}
 	for _, size := range [][2]int{{4, 2}, {12, 3}, {40, 10}, {80, 20}, {140, 40}, {220, 56}} {
 		paintInto(a, size[0], size[1])
-		a.moveCamera(1.0 / 30)
+		a.advance(1)
+		paintInto(a, size[0], size[1])
 	}
-	a.rig.yaw.Kick(3)
+	a.stage.rig.yaw.Kick(3)
 	paintInto(a, 120, 30)
-	if a.layerOK {
-		t.Fatal("lit layer kept while the camera moves")
+	a.advance(1)
+	if a.stage.layerOK || a.frame == nil || !a.frame.moving {
+		t.Fatal("lit layer kept or frame not marked moving while the camera turns")
 	}
-	for _, v := range []*anim.Value{&a.rig.tx, &a.rig.ty, &a.rig.tz, &a.rig.yaw, &a.rig.pitch, &a.rig.dist} {
-		v.Snap()
-	}
-	for _, mode := range PixelModes {
-		a.cfg.Arena.Pixels = mode
+	a.settleCamera()
+	for _, mode := range GlyphModes {
+		a.cfg.Arena.Glyphs = mode
 		paintInto(a, 120, 30)
-		paintInto(a, 120, 30)
-		if !a.layerOK || !a.layer.Fits(a.lay.world.w*cellWidth(mode), a.fr.H) || a.lay.world.w >= 120 {
-			t.Fatalf("lit layer not kept in %s mode: ok %v floor %d", mode, a.layerOK, a.lay.world.w)
+		a.advance(1)
+		buf := paintInto(a, 120, 30)
+		if !a.stage.layerOK || a.frame.moving || a.frame.cols != a.lay.world.w || a.stage.fr.W != a.lay.world.w*cellWidth(mode) {
+			t.Fatalf("lit layer not kept in %s mode: ok %v frame %dx%d floor %d", mode, a.stage.layerOK, a.frame.cols, a.frame.rows, a.lay.world.w)
+		}
+		drawn := 0
+		for y := a.lay.world.y; y < a.lay.world.y+a.lay.world.h; y++ {
+			for x := a.lay.world.x; x < a.lay.world.x+a.lay.world.w; x++ {
+				if c := buf.CellAt(x, y); c != nil && c.Content != " " {
+					drawn++
+				}
+			}
+		}
+		if drawn < a.lay.world.w*a.lay.world.h/8 {
+			t.Fatalf("%s mode painted %d glyph cells on a %dx%d floor", mode, drawn, a.lay.world.w, a.lay.world.h)
 		}
 	}
-	a.cfg.Arena.Pixels = "shapes"
+	a.cfg.Arena.Glyphs = "shapes"
 	if _, cmd := a.Update(wm.ActionMsg{ID: ActNext}); cmd != nil {
 		cmd()
 	}
@@ -128,13 +183,12 @@ func TestArenaPaint(t *testing.T) {
 		t.Fatal("still typing after leave")
 	}
 	a.Update(wm.ActionMsg{ID: ActBoard})
-	for i := 0; i < 150; i++ {
-		a.sc.update(1.0 / 30)
-		a.moveCamera(1.0 / 30)
-		if i%30 == 0 {
-			a.refresh()
-		}
+	for i := 0; i < 5; i++ {
+		a.advance(30)
+		a.refresh()
 	}
+	paintInto(a, 220, 56)
+	a.advance(1)
 	paintInto(a, 220, 56)
 	if a.lay.insp.w == 0 || a.lay.world.w == 0 || a.lay.dock.w != a.dockWidth || a.lay.bar.h != 1 {
 		t.Fatalf("layout %+v", a.lay)
@@ -158,6 +212,14 @@ func TestArenaPaint(t *testing.T) {
 	}
 	if btn := a.hitsWith(ActSidebar); len(btn) != 1 || btn[0].r.y != 0 {
 		t.Fatalf("dock button %+v", btn)
+	}
+	if len(a.hitsWith(ActView)) != 1 {
+		t.Fatal("no view button painted")
+	}
+	for _, id := range []string{ActCamera, ActFollow, ActLabels, ActWorld, ActReset} {
+		if len(a.hitsWith(id)) != 0 {
+			t.Fatalf("%s button painted on the toolbar, it belongs to the view picker", id)
+		}
 	}
 	if len(a.spots) == 0 {
 		t.Fatal("no actor was placed on the cells")
@@ -198,6 +260,7 @@ func TestArenaPaint(t *testing.T) {
 	writeCells(t, buf, "arena-floor.png")
 	narrow := paintInto(a, 70, 24)
 	writeCells(t, narrow, "arena-narrow.png")
+	a.setCamera("orbit")
 	raw, err := json.Marshal(a.State())
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +271,8 @@ func TestArenaPaint(t *testing.T) {
 	if err := b.SetState(raw); err != nil {
 		t.Fatal(err)
 	}
-	if b.dockWidth != a.dockWidth || b.secOpen(secLog) != a.secOpen(secLog) || b.rig.preset != a.rig.preset {
+	b.stage.drain()
+	if b.dockWidth != a.dockWidth || b.secOpen(secLog) != a.secOpen(secLog) || b.camera != "orbit" || b.stage.rig.preset != "orbit" {
 		t.Fatalf("state did not carry over: %+v", b.State())
 	}
 }
@@ -218,13 +282,31 @@ func TestArenaEmpty(t *testing.T) {
 	a := newArena(testEnv()).(*arena)
 	a.sprintID = "nothing"
 	a.refresh()
-	if a.snap != nil || a.sc.lobby == nil {
-		t.Fatalf("snapshot %v lobby %v", a.snap, a.sc.lobby)
-	}
-	for i := 0; i < 30; i++ {
-		a.sc.update(0.1)
+	a.stage.drain()
+	if a.snap != nil || a.stage.sc.lobby == nil {
+		t.Fatalf("snapshot %v lobby %v", a.snap, a.stage.sc.lobby)
 	}
 	paintInto(a, 120, 30)
+	a.advance(30)
+	buf := paintInto(a, 120, 30)
+	if a.frame == nil || len(a.spots) != 1 {
+		t.Fatalf("frame %v spots %d with the lobby wanderer", a.frame != nil, len(a.spots))
+	}
+	found := false
+	for y := range buf.Height() {
+		var sb strings.Builder
+		for x := range buf.Width() {
+			if c := buf.CellAt(x, y); c != nil {
+				sb.WriteString(c.Content)
+			}
+		}
+		if strings.Contains(sb.String(), "no sprint") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the floor does not say how to start a sprint")
+	}
 	if cmd := a.Update2(wm.ActionMsg{ID: ActNext}); cmd == nil {
 		t.Fatal("selecting with nobody on the floor said nothing")
 	}
@@ -248,11 +330,13 @@ func TestArenaMouse(t *testing.T) {
 	a := newArena(testEnv()).(*arena)
 	a.sprintID = s.ID
 	a.refresh()
-	for i := 0; i < 90; i++ {
-		a.sc.update(1.0 / 30)
-		a.moveCamera(1.0 / 30)
+	paintInto(a, 220, 56)
+	for i := 0; i < 3; i++ {
+		a.advance(30)
 		a.refresh()
 	}
+	a.settleCamera()
+	a.advance(1)
 	paintInto(a, 220, 56)
 	name := s.Snapshot().Members[3].Name
 	sp, ok := a.spots[name]
@@ -264,22 +348,28 @@ func TestArenaMouse(t *testing.T) {
 	if a.sel != name {
 		t.Fatalf("selected %q after clicking %s", a.sel, name)
 	}
+	a.stage.drain()
+	if a.stage.sel != name {
+		t.Fatalf("floor marks %q after selecting %s", a.stage.sel, name)
+	}
 	a.Update(tea.MouseClickMsg{X: sp.x, Y: sp.bottom, Button: tea.MouseLeft})
 	a.Update(tea.MouseReleaseMsg{X: sp.x, Y: sp.bottom, Button: tea.MouseLeft})
 	if !a.inspect {
 		t.Fatal("second click did not open the inspector")
 	}
-	yaw := a.rig.yawOff
+	yaw := a.stage.rig.yawOff
 	fx, fy := a.lay.world.x+30, a.lay.world.y+a.lay.world.h-3
 	a.Update(tea.MouseClickMsg{X: fx, Y: fy, Button: tea.MouseLeft})
 	a.Update(tea.MouseMotionMsg{X: fx + 10, Y: fy, Button: tea.MouseLeft})
 	a.Update(tea.MouseReleaseMsg{X: fx + 10, Y: fy, Button: tea.MouseLeft})
-	if a.rig.yawOff == yaw {
+	a.stage.drain()
+	if a.stage.rig.yawOff == yaw {
 		t.Fatal("drag did not turn the camera")
 	}
-	zoom := a.rig.zoom
+	zoom := a.stage.rig.zoom
 	a.Update(tea.MouseWheelMsg{X: fx, Y: fy, Button: tea.MouseWheelUp})
-	if a.rig.zoom >= zoom {
+	a.stage.drain()
+	if a.stage.rig.zoom >= zoom {
 		t.Fatal("wheel did not zoom in")
 	}
 	paintInto(a, 220, 56)
@@ -325,6 +415,10 @@ func TestArenaMouse(t *testing.T) {
 	if a.hoverTicket != "T2" {
 		t.Fatalf("hovering the T2 row marks %q", a.hoverTicket)
 	}
+	a.stage.drain()
+	if a.stage.selTicket != "T2" || a.stage.hoverTick != "T2" {
+		t.Fatalf("floor marks ticket %q hover %q", a.stage.selTicket, a.stage.hoverTick)
+	}
 	log := a.secBox(secLog)
 	a.Update(tea.MouseWheelMsg{X: log.x + 1, Y: log.y + 1, Button: tea.MouseWheelUp})
 	if a.secs.Follows(secLog.String()) {
@@ -340,14 +434,12 @@ func TestArenaMouse(t *testing.T) {
 		t.Fatal("clicking the team title did not fold the team")
 	}
 	a.Update(tea.MouseClickMsg{X: head[0].r.x + 3, Y: head[0].r.y, Button: tea.MouseLeft})
-	labels := a.labels
-	btn := a.hitsWith(ActLabels)
+	btn := a.hitsWith(ActView)
 	if len(btn) != 1 {
-		t.Fatalf("labels button hits %+v", btn)
+		t.Fatalf("view button hits %+v", btn)
 	}
-	a.Update(tea.MouseClickMsg{X: btn[0].r.x + 1, Y: btn[0].r.y, Button: tea.MouseLeft})
-	if a.labels == labels {
-		t.Fatal("clicking the labels button changed nothing")
+	if cmd := a.Update2(tea.MouseClickMsg{X: btn[0].r.x + 1, Y: btn[0].r.y, Button: tea.MouseLeft}); cmd == nil {
+		t.Fatal("clicking the view button opened nothing")
 	}
 	if cmd := a.Update2(wm.ActionMsg{ID: ActSidebar}); cmd == nil {
 		t.Fatal("hiding the dock saved no setting")
@@ -406,92 +498,57 @@ func writeCells(t *testing.T, buf *uv.Buffer, name string) {
 	writeCellsPNG(t, buf, vxl.ModeQuadrant, filepath.Join(dir, name))
 }
 
-// Times a whole paint of a wide arena with the dock, the inspector and a long log, as a frame costs late in a sprint
-func BenchmarkArenaPaint(b *testing.B) {
-	snap := probeSnapshot()
-	s := newSprint(snap.ID+"-bench", snap.Request, snap.Started, nil)
-	s.enter(StageBuild, "building")
-	for i := range snap.Members {
-		m := snap.Members[i]
-		m.Live = &harness.Live{Session: session.New()}
-		s.putMember(&m)
-	}
-	tickets := make([]*Ticket, 0, len(snap.Tickets))
-	for i := range snap.Tickets {
-		tk := snap.Tickets[i]
-		tickets = append(tickets, &tk)
-	}
-	s.setPlan(Plan{Title: "Probe", Summary: "a plan"}, tickets)
-	for i := range 300 {
-		s.say(MsgChat, "Ada", "Linus", "T1", strings.Repeat("words of a long exchange between two builders about an interface ", 1+i%3))
-	}
-	register(s)
-	defer func() {
-		regMu.Lock()
-		sprints = sprints[:len(sprints)-1]
-		regMu.Unlock()
-	}()
-	a := newArena(testEnv()).(*arena)
-	a.sprintID = s.ID
-	a.refresh()
-	a.sel, a.inspect = "Ada", true
-	buf := uv.NewBuffer(220, 56)
-	a.Paint(buf)
-	for _, v := range []*anim.Value{&a.rig.tx, &a.rig.ty, &a.rig.tz, &a.rig.yaw, &a.rig.pitch, &a.rig.dist} {
-		v.Snap()
-	}
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		a.sc.update(1.0 / 30)
-		a.Paint(buf)
-	}
-}
-
-// Every world paints at several sizes with the static layer kept, switching worlds rebuilds the platform and the world key cycles through them
+// Every world draws at several sizes with the static layer kept, switching worlds rebuilds the platform and the world key cycles through them
 func TestArenaWorlds(t *testing.T) {
 	s := registerProbeSprint(t)
 	a := newArena(testEnv()).(*arena)
 	a.sprintID = s.ID
 	a.refresh()
-	for i := 0; i < 60; i++ {
-		a.sc.update(1.0 / 30)
-		a.moveCamera(1.0 / 30)
-	}
-	for _, v := range []*anim.Value{&a.rig.tx, &a.rig.ty, &a.rig.tz, &a.rig.yaw, &a.rig.pitch, &a.rig.dist} {
-		v.Snap()
-	}
+	paintInto(a, 120, 30)
+	a.advance(60)
+	a.settleCamera()
+	st := a.stage
 	for _, name := range Worlds {
 		if name == "off" {
 			continue
 		}
 		a.cfg.Arena.World = name
+		cfg := a.cfg
+		st.post(func(s *stage) { s.configure(cfg) })
 		a.refresh()
-		if a.sc.world.name() != name {
-			t.Fatalf("scene is in %q after asking for %q", a.sc.world.name(), name)
+		st.drain()
+		if st.sc.world.name() != name {
+			t.Fatalf("scene is in %q after asking for %q", st.sc.world.name(), name)
 		}
 		for _, q := range Qualities {
 			a.cfg.Arena.Quality = q
+			cfg := a.cfg
+			st.post(func(s *stage) { s.configure(cfg) })
 			for _, size := range [][2]int{{60, 16}, {120, 30}, {220, 56}} {
 				paintInto(a, size[0], size[1])
+				a.advance(1)
 			}
 			paintInto(a, 120, 30)
-			if !a.layerOK || a.layerWorld != name {
+			a.advance(1)
+			paintInto(a, 120, 30)
+			if !st.layerOK || st.layerWorld != name {
 				t.Fatalf("lit layer not kept in %s at %s quality", name, q)
 			}
-			if sup := qualityOf(q).super; a.fr.W != a.lay.world.w*cellWidth(a.cfg.Arena.Pixels)*sup {
-				t.Fatalf("%s quality drew %d pixels across for %d cells", q, a.fr.W, a.lay.world.w)
+			if sup := qualityOf(q).super; st.fr.W != a.lay.world.w*cellWidth(a.cfg.Arena.Glyphs)*sup {
+				t.Fatalf("%s quality drew %d pixels across for %d cells", q, st.fr.W, a.lay.world.w)
 			}
 		}
 		if len(a.spots) == 0 {
 			t.Fatalf("no actor placed in %s", name)
 		}
-		if a.sc.vol == nil || a.sc.chunks == nil {
+		if st.sc.vol == nil || st.sc.chunks == nil {
 			t.Fatalf("%s baked no radiance or meshed nothing", name)
 		}
 	}
 	a.cfg.Arena.Quality = "high"
 	a.cfg.Arena.World = "blackwall"
+	cfg := a.cfg
+	st.post(func(s *stage) { s.configure(cfg) })
 	a.refresh()
 	for i := range Worlds {
 		cmd := a.Update2(wm.ActionMsg{ID: ActWorld})
@@ -502,26 +559,48 @@ func TestArenaWorlds(t *testing.T) {
 			t.Fatalf("world %q after cycling, want %q", a.cfg.Arena.World, want)
 		}
 		paintInto(a, 120, 30)
+		a.advance(1)
 	}
 	if a.cfg.Arena.World != "blackwall" {
 		t.Fatalf("world %q after a full cycle", a.cfg.Arena.World)
 	}
-	if sm := a.sc.shadowStatic; sm != nil {
+	if sm := st.sc.shadowStatic; sm != nil {
 		t.Fatal("a world without a sun built a shadow map")
 	}
 	a.cfg.Arena.World = "nightcity"
+	cfg = a.cfg
+	st.post(func(s *stage) { s.configure(cfg) })
 	a.refresh()
 	paintInto(a, 120, 30)
-	if a.sc.shadowStatic == nil || a.r.Shadows == nil {
+	a.advance(1)
+	if st.sc.shadowStatic == nil || st.r.Shadows == nil {
 		t.Fatal("night city cast no sun shadows")
 	}
-	if a.r.AO.Strength <= 0 || a.r.Reflect.Strength <= 0 || a.r.Haze.Density <= 0 {
-		t.Fatalf("high quality left passes off: %+v %+v %+v", a.r.AO, a.r.Reflect, a.r.Haze)
+	if st.r.AO.Strength <= 0 || st.r.Reflect.Strength <= 0 || st.r.Haze.Density <= 0 {
+		t.Fatalf("high quality left passes off: %+v %+v %+v", st.r.AO, st.r.Reflect, st.r.Haze)
 	}
 	a.cfg.Arena.Quality = "low"
+	cfg = a.cfg
+	st.post(func(s *stage) { s.configure(cfg) })
 	paintInto(a, 120, 30)
-	if a.r.AO.Strength != 0 || a.r.Reflect.Strength != 0 || a.r.Haze.Density != 0 {
-		t.Fatalf("low quality left passes on: %+v %+v %+v", a.r.AO, a.r.Reflect, a.r.Haze)
+	a.advance(1)
+	if st.r.AO.Strength != 0 || st.r.Reflect.Strength != 0 || st.r.Haze.Density != 0 {
+		t.Fatalf("low quality left passes on: %+v %+v %+v", st.r.AO, st.r.Reflect, st.r.Haze)
+	}
+	a.cfg.Arena.Quality = "ultra"
+	cfg = a.cfg
+	st.post(func(s *stage) { s.configure(cfg) })
+	st.drain()
+	st.rig.yaw.Kick(3)
+	st.render(time.Now())
+	a.deliver()
+	if st.r.AO.Strength <= 0 || st.fr.W != a.lay.world.w*cellWidth(a.cfg.Arena.Glyphs) || !a.frame.moving {
+		t.Fatalf("a turning camera drew without the passes or past one pixel per cell pixel, %d pixels across", st.fr.W)
+	}
+	a.settleCamera()
+	a.advance(1)
+	if st.r.AO.Strength <= 0 || st.fr.W != a.lay.world.w*cellWidth(a.cfg.Arena.Glyphs)*2 || a.frame.moving {
+		t.Fatalf("the settled camera did not draw the ultra frame, %d pixels across", st.fr.W)
 	}
 }
 
@@ -543,13 +622,8 @@ func TestArenaOff(t *testing.T) {
 	if hits := a.hitsWith("tile:"); len(hits) != len(members) {
 		t.Fatalf("%d window headers painted", len(hits))
 	}
-	for _, id := range []string{ActCamera, ActFollow, ActLabels} {
-		if len(a.hitsWith(id)) != 0 {
-			t.Fatalf("%s button painted with the world off", id)
-		}
-	}
-	if len(a.hitsWith(ActWorld)) != 1 {
-		t.Fatal("no world button painted")
+	if len(a.hitsWith(ActView)) != 1 {
+		t.Fatal("no view button painted")
 	}
 	for _, tl := range a.tiles {
 		if tl.r.w < minTileWidth-2 || tl.r.h < minTileHeight {
@@ -605,22 +679,24 @@ func TestArenaOff(t *testing.T) {
 	if !a.Grabs(other.r.x+3, other.r.y+2) == a.Grabs(other.r.x+3, other.r.y) {
 		t.Fatal("grabs are the same on the header and the body")
 	}
-	a.last = time.Now().Add(-50 * time.Millisecond)
-	a.painted = time.Now()
-	a.step()
+	a.stage.drain()
+	a.stage.render(time.Now())
+	if a.deliver() != 0 {
+		t.Fatal("the floor drew a frame while the world is off")
+	}
 	narrow := paintInto(a, 70, 24)
 	if narrow == nil || len(a.tiles) != len(members) {
 		t.Fatalf("%d windows on a narrow card", len(a.tiles))
 	}
 	a.cfg.Arena.World = "den"
+	cfg := a.cfg
+	a.stage.post(func(s *stage) { s.configure(cfg) })
 	a.refresh()
-	for range 30 {
-		a.sc.update(1.0 / 30)
-		a.moveCamera(1.0 / 30)
-	}
 	paintInto(a, 220, 56)
-	if a.sc.world.name() != "den" || len(a.spots) == 0 {
-		t.Fatalf("world %q with %d spots after turning the world back on", a.sc.world.name(), len(a.spots))
+	a.advance(30)
+	paintInto(a, 220, 56)
+	if a.stage.sc.world.name() != "den" || len(a.spots) == 0 {
+		t.Fatalf("world %q with %d spots after turning the world back on", a.stage.sc.world.name(), len(a.spots))
 	}
 }
 

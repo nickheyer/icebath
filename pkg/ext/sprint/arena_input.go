@@ -11,6 +11,12 @@ import (
 // Cells the pointer may be off an actor sideways and still pick it
 const pickReach = 3
 
+// Radians the camera turns per cell the pointer drags sideways and per cell it drags up or down
+const (
+	dragYaw   = 0.018
+	dragPitch = 0.045
+)
+
 // Routes a press to the toolbar, the panel edges, the dock rows, the inspector, the approval or the floor
 func (a *arena) click(msg tea.MouseClickMsg) tea.Cmd {
 	x, y := msg.X, msg.Y
@@ -155,9 +161,11 @@ func (a *arena) press(id string) tea.Cmd {
 	case "ticket":
 		if a.selTicket == rest {
 			a.selTicket = ""
+			a.markFloor()
 			return nil
 		}
 		a.selTicket = rest
+		a.markFloor()
 		if tk, ok := a.snap.Ticket(rest); ok && tk.Builder != "" {
 			if _, ok := a.snap.Member(tk.Builder); ok {
 				return a.selectMember(tk.Builder)
@@ -225,8 +233,8 @@ func (a *arena) motion(msg tea.MouseMotionMsg) tea.Cmd {
 		case dragCamera:
 			if dx != 0 || dy != 0 {
 				d.moved = true
-				a.rig.yawOff -= float64(dx) * 0.018
-				a.rig.pitchOff += float64(dy) * 0.045
+				yaw, pitch := -float64(dx)*dragYaw, float64(dy)*dragPitch
+				a.stage.post(func(s *stage) { s.orbit(yaw, pitch) })
 				d.x, d.y = msg.X, msg.Y
 			}
 		case dragDock:
@@ -242,7 +250,13 @@ func (a *arena) motion(msg tea.MouseMotionMsg) tea.Cmd {
 		}
 		return nil
 	}
+	wasHover, wasTicket := a.hover, a.hoverTicket
 	a.hover, a.hoverTicket, a.hoverHit = "", "", ""
+	defer func() {
+		if a.hover != wasHover || a.hoverTicket != wasTicket {
+			a.markFloor()
+		}
+	}()
 	x, y := msg.X, msg.Y
 	switch {
 	case a.lay.insp.w > 0 && !a.lay.full && x == a.lay.insp.x && y >= a.lay.insp.y:
@@ -342,13 +356,13 @@ func (a *arena) wheel(msg tea.MouseWheelMsg) tea.Cmd {
 	}
 	switch msg.Button {
 	case tea.MouseWheelUp:
-		a.rig.zoom = max(a.rig.zoom*0.9, 0.3)
+		a.stage.post(func(s *stage) { s.zoom(0.9) })
 	case tea.MouseWheelDown:
-		a.rig.zoom = min(a.rig.zoom*1.11, 3)
+		a.stage.post(func(s *stage) { s.zoom(1.11) })
 	case tea.MouseWheelLeft:
-		a.rig.yawOff -= 0.1
+		a.stage.post(func(s *stage) { s.orbit(-0.1, 0) })
 	case tea.MouseWheelRight:
-		a.rig.yawOff += 0.1
+		a.stage.post(func(s *stage) { s.orbit(0.1, 0) })
 	}
 	return nil
 }

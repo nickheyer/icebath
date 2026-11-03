@@ -352,7 +352,7 @@ func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
 		for y := range e.raw.Lines {
 			copy(e.tinted.Lines[y], e.raw.Lines[y])
 		}
-		m.tint(e.tinted, dim)
+		m.tint(e.tinted, dim, holesOf(e.card))
 		e.dim = dim
 	}
 	return e.tinted.Buffer
@@ -363,14 +363,14 @@ func (m *Model) holding(e *entry) bool {
 	return m.settling() || m.motion > 0 && !(e.rect.W.Settled() && e.rect.H.Settled())
 }
 
-// Gives content the surface background and fades it toward the surface by dim, keeping links intact
-func (m *Model) tint(s screen, dim float64) {
+// Gives content the surface background and fades it toward the surface by dim, keeping links and the holes of the card intact
+func (m *Model) tint(s screen, dim float64, holes []Box) {
 	t := m.theme
 	fade := m.memo(func(c color.Color) color.Color { return theme.Mix(c, t.Surface, dim) })
-	for _, line := range s.Lines {
+	for y, line := range s.Lines {
 		for i := range line {
 			c := &line[i]
-			if gfx.Placeholder(c) {
+			if gfx.Placeholder(c) || inHole(holes, i, y) {
 				continue
 			}
 			c.Style.Fg = or(c.Style.Fg, t.Text)
@@ -384,6 +384,16 @@ func (m *Model) tint(s screen, dim float64) {
 			}
 		}
 	}
+}
+
+// Reports whether a content cell lies in one of the holes
+func inHole(holes []Box, x, y int) bool {
+	for _, h := range holes {
+		if h.contains(x, y) {
+			return true
+		}
+	}
+	return false
 }
 
 // Writes the card's glyph in the middle of a box of the face too small for content

@@ -93,7 +93,7 @@ func (a *arena) cachedBody(sec section, w int) body {
 	case secSprint:
 		key = fmt.Sprintf("%d|%d|%v|%d", w, a.snapGen, a.sprintFull, now)
 	case secTeam:
-		key = fmt.Sprintf("%d|%d|%s|%d|%d", w, a.snapGen, a.sel, int(a.sc.t*8)%len(a.env.Theme.Glyphs.Spinner), now)
+		key = fmt.Sprintf("%d|%d|%s|%d|%d", w, a.snapGen, a.sel, a.spinTick(), now)
 	default:
 		key = fmt.Sprintf("%d|%d", w, a.snapGen)
 	}
@@ -259,10 +259,15 @@ func (a *arena) statusLine(s *Snapshot) (string, color.Color) {
 	return s.Status, t.TextDim
 }
 
+// Step of the spinner at this moment, eight per second
+func (a *arena) spinTick() int {
+	return int(time.Now().UnixMilli()/125) % len(a.env.Theme.Glyphs.Spinner)
+}
+
 // Glyph and color of the state of a member
 func (a *arena) stateMark(st liveState) (string, color.Color) {
 	t := a.env.Theme
-	tick := int(a.sc.t * 8)
+	tick := a.spinTick()
 	switch {
 	case st.approval:
 		return t.Glyphs.Flag, t.Accent
@@ -303,8 +308,8 @@ func (a *arena) teamBody(w int) body {
 			if m.Task != "" {
 				doing += "  " + m.Task
 			}
-		case doing == "":
-			doing = ambientText(a.sc.byName[m.Name])
+		case doing == "" && a.idleOnFloor(m.Name):
+			doing = "idle"
 		}
 		for _, l := range cards.WrapIndent(doing, w-2, 0) {
 			b.lines = append(b.lines, "  "+render.Dim(l, t))
@@ -317,6 +322,14 @@ func (a *arena) teamBody(w int) body {
 		b.rows = append(b.rows, rowHit{id: "member:" + m.Name, first: first, n: len(b.lines) - first})
 	}
 	return b
+}
+
+// Reports whether the newest frame shows a member standing idle on the floor
+func (a *arena) idleOnFloor(name string) bool {
+	if a.frame == nil {
+		return false
+	}
+	return a.frame.actors[name].idle
 }
 
 // Detail lines of a member, its model, its ticket, its clock, its spend, its context and its tool tally

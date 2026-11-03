@@ -23,19 +23,18 @@ type Frame struct {
 	tmp         []RGB
 }
 
-// Frame of the size, the buffers reused when the size did not change
+// Frame of the size, the buffers kept and cut to fit while their capacity holds the pixels
 func (fr *Frame) Resize(w, h int) {
 	w, h = max(w, 0), max(h, 0)
 	if fr.PixelAspect == 0 {
 		fr.PixelAspect = 1
 	}
-	if fr.W != w || fr.H != h || fr.Color == nil || len(fr.Normal) != w*h || len(fr.Albedo) != w*h {
-		fr.W, fr.H = w, h
-		fr.Color = make([]RGB, w*h)
-		fr.Albedo = make([]RGB, w*h)
-		fr.Depth = make([]float32, w*h)
-		fr.Normal = make([]uint32, w*h)
-	}
+	n := w * h
+	fr.W, fr.H = w, h
+	fr.Color = slices.Grow(fr.Color[:0], n)[:n]
+	fr.Albedo = slices.Grow(fr.Albedo[:0], n)[:n]
+	fr.Depth = slices.Grow(fr.Depth[:0], n)[:n]
+	fr.Normal = slices.Grow(fr.Normal[:0], n)[:n]
 }
 
 // Paints the background from a function of the pixel, called from several goroutines, and clears depth and facing

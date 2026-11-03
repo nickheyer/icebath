@@ -55,6 +55,7 @@ const (
 	ActSettings   = "sprint.settings"
 	ActSidebar    = "sprint.sidebar"
 	ActWorld      = "sprint.world"
+	ActView       = "sprint.view"
 )
 
 // Actions of the board
@@ -84,6 +85,9 @@ func (extension) Attach(h *ext.Host) error {
 	}
 	h.Tools(func(a *harness.App) ([]tool.Tool, error) {
 		if _, err := migrateLegacy(a); err != nil {
+			return nil, err
+		}
+		if err := migratePixels(a); err != nil {
 			return nil, err
 		}
 		if _, err := recoverSprints(a); err != nil {
@@ -123,6 +127,7 @@ func (extension) Attach(h *ext.Host) error {
 	arena(ActLabels, "labels", "show or hide the names over the team and the ids over the tickets", "n")
 	arena(ActSidebar, "sidebar", "show or hide the sidebar with the team, the tickets and the log", "d")
 	arena(ActWorld, "world", "move the team into the next world, the blackwall, the soulkiller, night city, the den or the session windows alone", "w")
+	arena(ActView, "view", "pick the world, the camera, the labels, the display and the quality of the floor", "m")
 	arena(ActHelp, "help", "show or hide the key legend", "?")
 	arena(ActSprintNext, "next sprint", "show the next sprint", "]")
 	arena(ActSprintPrev, "previous sprint", "show the previous sprint", "[")

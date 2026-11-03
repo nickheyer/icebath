@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -92,6 +93,29 @@ func migrateLegacy(a *harness.App) (int, error) {
 		return moved, err
 	}
 	return moved, nil
+}
+
+// Moves the pixels setting of the third arena into the display and glyph settings once and drops it
+func migratePixels(a *harness.App) error {
+	oldKey := Name + ".arena.pixels"
+	old := a.Config.Setting(oldKey)
+	if old == "" {
+		return nil
+	}
+	if a.Config.Setting(Name+".arena.display") == "" && a.Config.Setting(Name+".arena.glyphs") == "" {
+		switch {
+		case old == "image":
+			if err := a.Config.SaveSetting(a.Dir, Name+".arena.display", "image"); err != nil {
+				return err
+			}
+		case slices.Contains(GlyphModes, old):
+			if err := a.Config.SaveSetting(a.Dir, Name+".arena.glyphs", old); err != nil {
+				return err
+			}
+		}
+	}
+	delete(a.Config.Settings, oldKey)
+	return harness.Save(a.Dir, a.Config.Sources, harness.Field{Path: []string{"settings", oldKey}, Unset: true})
 }
 
 // Settings of this version with the values of the first, the roles renamed and the limits renamed

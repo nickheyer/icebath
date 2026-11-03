@@ -34,12 +34,14 @@ type Action struct {
 
 // Keybinds in force, with the registry they are drawn from and the file they are kept in
 type Map struct {
-	actions  []Action
-	index    map[string]int
-	binds    map[string][]string
-	byChord  map[string]map[string][]string
-	path     string
-	stamp    time.Time
+	actions []Action
+	index   map[string]int
+	binds   map[string][]string
+	byChord map[string]map[string][]string
+	path    string
+	stamp   time.Time
+	// Text of the file as last read or written, so a rewrite of the same text by another program never reads as an edit
+	last     []byte
 	contexts []string
 }
 
@@ -566,7 +568,7 @@ func Pair(a, b string) string {
 // Name of the keybind file inside the configuration directory
 const FileName = "keybinds.json"
 
-// Map read from the file at path, written there with the defaults when none exists, every rejected entry reported
+// Map read from the file at path, written there with the defaults when none exists or with every action when it lacks some
 func Open(path string) (*Map, error) {
 	m := Default()
 	m.path = path
@@ -576,10 +578,19 @@ func Open(path string) (*Map, error) {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return m, m.Save()
 	}
-	return m, m.Reload()
+	err := m.Reload()
+	if outdated(err) && !bytes.Equal(m.last, m.Text()) {
+		if serr := m.Save(); serr != nil {
+			return m, fmt.Errorf("%s: %w", m.path, errors.Join(err, serr))
+		}
+		if err != nil {
+			err = fmt.Errorf("%w, the file was written again without them", err)
+		}
+	}
+	return m, err
 }
 
-// Reads the file again over the default keys, keeping the keys in force when the file does not parse
+// Reads the file again over the default keys without writing it, keeping the keys in force when it does not parse
 func (m *Map) Reload() error {
 	if m.path == "" {
 		return nil
@@ -588,22 +599,13 @@ func (m *Map) Reload() error {
 	if err != nil {
 		return err
 	}
-	m.mark()
+	m.mark(data)
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(data, &probe); err != nil {
 		return fmt.Errorf("%s: keys: %w", m.path, err)
 	}
 	m.defaults()
-	err = m.Read(data)
-	if outdated(err) && !bytes.Equal(data, m.Text()) {
-		if serr := m.Save(); serr != nil {
-			return fmt.Errorf("%s: %w", m.path, errors.Join(err, serr))
-		}
-		if err != nil {
-			err = fmt.Errorf("%w, the file was written again without them", err)
-		}
-	}
-	if err != nil {
+	if err := m.Read(data); err != nil {
 		return fmt.Errorf("%s: %w", m.path, err)
 	}
 	return nil
@@ -631,17 +633,29 @@ func outdated(err error) bool {
 	return true
 }
 
-// Reports whether the file changed on disk since it was last read or written
+// Reports whether the text of the file changed since it was last read or written, a rewrite of the same text passing silently
 func (m *Map) Stale() bool {
 	if m.path == "" {
 		return false
 	}
 	st, err := os.Stat(m.path)
-	return err == nil && !st.ModTime().Equal(m.stamp)
+	if err != nil || st.ModTime().Equal(m.stamp) {
+		return false
+	}
+	data, err := os.ReadFile(m.path)
+	if err != nil {
+		return false
+	}
+	if bytes.Equal(data, m.last) {
+		m.mark(data)
+		return false
+	}
+	return true
 }
 
-// Remembers when the file was last touched so only outside edits read as stale
-func (m *Map) mark() {
+// Remembers the text and the moment the file was last touched so only outside edits read as stale
+func (m *Map) mark(data []byte) {
+	m.last = data
 	if st, err := os.Stat(m.path); err == nil {
 		m.stamp = st.ModTime()
 	}
@@ -804,9 +818,10 @@ func (m *Map) Save() error {
 	if err := os.MkdirAll(filepath.Dir(m.path), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(m.path, m.Text(), 0o644); err != nil {
+	text := m.Text()
+	if err := os.WriteFile(m.path, text, 0o644); err != nil {
 		return err
 	}
-	m.mark()
+	m.mark(text)
 	return nil
 }

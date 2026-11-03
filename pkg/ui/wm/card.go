@@ -123,6 +123,18 @@ type Positioned interface {
 	Origin(x, y int)
 }
 
+// Card with boxes of content cells that must keep no background, so an image the terminal placed under them shows
+type Transparent interface {
+	Holes() []Box
+}
+
+func holesOf(c Card) []Box {
+	if t, ok := c.(Transparent); ok {
+		return t.Holes()
+	}
+	return nil
+}
+
 // Card that keeps state between runs, handed back on the next start what it reported
 type Stateful interface {
 	State() any

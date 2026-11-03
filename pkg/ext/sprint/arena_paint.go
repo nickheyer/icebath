@@ -15,6 +15,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -24,9 +25,8 @@ import (
 // Rows the inspector spends above the transcript of a member before its state wraps onto more
 const inspectorHead = 3
 
-// Draws the toolbar, the dock, the floor through the camera, the inspector and the approval over the floor
+// Draws the toolbar, the dock, the newest frame of the floor, the inspector and the approval over the floor
 func (a *arena) Paint(buf *uv.Buffer) {
-	a.painted = time.Now()
 	a.w, a.h = buf.Width(), buf.Height()
 	a.lay = a.arrange(a.w, a.h)
 	p := cards.NewPainter(buf, a.env.Theme)
@@ -37,6 +37,9 @@ func (a *arena) Paint(buf *uv.Buffer) {
 	a.paintToolbar(p)
 	if a.lay.dock.w > 0 {
 		a.paintDock(p)
+	}
+	if a.off() && a.surface != nil {
+		a.releaseImage()
 	}
 	if a.lay.world.w > 0 && a.lay.world.h > 0 {
 		if a.off() {
@@ -88,151 +91,105 @@ func (a *arena) arrange(w, h int) layout {
 	return l
 }
 
-// Renders the floor at the quality set over the cached static layer, finishes the frame, encodes cells and places labels
+// Tells the worker the size, glyph library and cell shape of the floor whenever they change, and swaps the surface when the display changes
+func (a *arena) fitFloor(wb rect) {
+	proto := a.protocol()
+	if proto != a.proto {
+		a.releaseImage()
+		if proto != gfx.None {
+			a.surface, a.proto = a.env.Graphics.NewSurface(proto), proto
+			sf := a.surface
+			a.stage.post(func(s *stage) { s.setSurface(sf) })
+		}
+	}
+	mode := vxl.CellModeOf(a.cfg.Arena.Glyphs)
+	aspect := 0.5
+	if a.env.Graphics != nil {
+		cw, ch := a.env.Graphics.Cell()
+		aspect = float64(cw) / float64(max(ch, 1))
+	}
+	if wb.w == a.sentCols && wb.h == a.sentRows && mode == a.sentMode && aspect == a.sentAspect {
+		return
+	}
+	a.sentCols, a.sentRows, a.sentMode, a.sentAspect = wb.w, wb.h, mode, aspect
+	cols, rows := wb.w, wb.h
+	a.stage.post(func(s *stage) { s.resize(cols, rows, mode, aspect) })
+}
+
+// Copies the newest frame of the floor into the cells, sends its pixels to the terminal, and places the labels over it
 func (a *arena) paintWorld(p *cards.Painter) {
 	t := a.env.Theme
 	wb := a.lay.world
-	fr := &a.fr
-	mode := vxl.CellModeOf(a.cfg.Arena.Pixels)
-	q := qualityOf(a.cfg.Arena.Quality)
-	px, py := mode.Pixels()
-	px, py = px*q.super, py*q.super
-	fr.PixelAspect = mode.PixelAspect()
-	imaged := a.imaged()
-	if imaged {
-		px, py, fr.PixelAspect = a.imagePixels(wb.w, wb.h)
-	} else if a.surface != nil {
-		a.releaseImage()
-		a.surface = nil
+	a.fitFloor(wb)
+	f := a.frame
+	p.Fill(wb.x, wb.y, wb.w, wb.h, t.Bg)
+	if f == nil {
+		msg := "drawing the floor"
+		p.Label(wb.x+(wb.w-ansi.StringWidth(msg))/2, wb.y+wb.h/2, msg, t.TextDim, t.Bg, false)
+		a.paintNotes(p, wb)
+		return
 	}
-	fr.Resize(wb.w*px, wb.h*py)
-	sc := a.sc
-	r := &a.r
-	sc.world.light(r, sc, a.cam.Dist)
-	moving := !a.rig.settled()
-	q.apply(r)
-	sky := func(x, y int) vxl.RGB { return sc.sky(r.Ray(float64(x)+0.5, float64(y)+0.5)) }
+	cols, rows := min(f.cols, wb.w), min(f.rows, wb.h)
 	switch {
-	case moving:
-		r.SetLights(nil)
-		r.Begin(fr, a.cam)
-		fr.Clear(sky)
-		sc.drawStatic(r)
-		a.layerOK = false
-	default:
-		if !a.layerOK || a.layerCam != a.cam || !a.layer.Fits(fr.W, fr.H) || sc.dirty || a.layerWorld != sc.world.name() {
-			r.SetLights(nil)
-			r.Begin(fr, a.cam)
-			fr.Clear(sky)
-			sc.drawStatic(r)
-			r.FlushInto(&a.layer)
-			a.layerCam, a.layerOK, a.layerWorld = a.cam, true, sc.world.name()
+	case f.packet != nil && a.surface != nil && f.surface == a.surface:
+		if !f.emitted {
+			f.emitted = true
+			if text := a.surface.Emit(f.packet, a.originX+wb.x, a.originY+wb.y, time.Now()); text != "" && a.env.Send != nil {
+				a.env.Send(tea.RawMsg{Msg: text})
+			}
 		}
-		a.layer.Restore(fr)
-		r.Begin(fr, a.cam)
-	}
-	sc.drawDynamic(r)
-	if act := a.selectedActor(); act != nil {
-		sc.ring(r, act, vxl.FromColor(t.Ice), 0.85)
-	}
-	if a.hover != "" && a.hover != a.sel {
-		sc.ring(r, sc.byName[a.hover], vxl.FromColor(t.TextDim), 0.5)
-	}
-	if n := sc.nodes[a.selTicket]; n != nil {
-		sc.nodeRing(r, n, vxl.FromColor(t.Ice), 0.7)
-	}
-	if n := sc.nodes[a.hoverTicket]; n != nil && a.hoverTicket != a.selTicket {
-		sc.nodeRing(r, n, vxl.FromColor(t.TextDim), 0.4)
-	}
-	if moving {
-		r.Flush()
-	} else {
-		r.FlushOver(&a.layer)
-	}
-	fin := sc.world.finish()
-	if !imaged {
-		fin.grade.Aberration = 0
-	}
-	fr.Outline(fin.outline)
-	if !t.Plain {
-		fr.Bloom(&a.post, fin.bloomThreshold, fin.bloomStrength)
-	}
-	fr.Grade(fin.grade)
-	if !t.Plain {
-		fr.Vignette(fin.vignette)
-	}
-	if imaged {
-		a.paintImage(p, fr, wb)
-	} else {
-		var quantize func(vxl.RGB) color.Color
-		if t.Plain {
-			quantize = vxl.ANSIQuantizer(t.Terminal)
+		a.surface.Paint(p.Cells(), wb.x, wb.y, cols, rows, t.Bg)
+	case f.cells != nil:
+		buf := p.Cells()
+		for y := range rows {
+			copy(buf.Lines[wb.y+y][wb.x:wb.x+cols], f.cells[y*f.cols:y*f.cols+cols])
 		}
-		a.enc.Encode(fr, p.Cells(), wb.x, wb.y, wb.w, wb.h, mode, quantize)
 	}
-	cell := func(sx, sy float64) (int, int) {
-		return wb.x + int(sx)/px, wb.y + int(sy)/py
+	a.stage.painted(f.gen)
+	if f.cols != wb.w || f.rows != wb.h {
+		return
 	}
-	for _, act := range sc.actors {
-		if act.gone {
-			continue
-		}
-		fx, fy, depth, ok := r.Project(act.stand())
-		hx, hy, _, ok2 := r.Project(act.headPos().Add(vxl.V(0, 0.5, 0)))
-		if !ok || !ok2 {
-			continue
-		}
-		cx, bottom := cell(fx, fy)
-		_, top := cell(hx, hy)
-		a.spots[act.name] = spot{x: cx, top: top, bottom: bottom, depth: depth}
+	for name, sp := range f.spots {
+		a.spots[name] = spot{x: wb.x + sp.x, top: wb.y + sp.top, bottom: wb.y + sp.bottom, depth: sp.depth}
 	}
 	var space labelSpace
 	labelBg := theme.Mix(t.Bg, t.Surface, 0.5)
-	for _, act := range a.labelOrder() {
-		sp, ok := a.spots[act.name]
-		if !ok {
-			continue
+	for _, name := range a.labelOrder() {
+		sp := a.spots[name]
+		mark := f.actors[name]
+		if mark.emote != "" && sp.top-2 >= wb.y && space.claim(sp.x, sp.top-2, 1) {
+			p.Text(sp.x, sp.top-2, mark.emote, emoteColor(mark.emote, t), true)
 		}
-		if act.emote != "" && sp.top-2 >= wb.y && space.claim(sp.x, sp.top-2, 1) {
-			p.Text(sp.x, sp.top-2, act.emote, emoteColor(act.emote, t), true)
-		}
-		if !(a.labels || act.name == a.sel || act.name == a.hover) || sp.top-1 < wb.y {
+		if !(a.labels || name == a.sel || name == a.hover) || sp.top-1 < wb.y {
 			continue
 		}
 		fg, bg := t.Text, labelBg
-		if act.name == a.sel {
+		if name == a.sel {
 			fg, bg = t.Bg, t.Ice
 		}
-		label := " " + act.name + " "
+		label := " " + name + " "
 		lw := ansi.StringWidth(label)
 		if x := sp.x - lw/2; space.claim(x, sp.top-1, lw) {
-			p.Label(max(x, wb.x), sp.top-1, label, fg, bg, act.name == a.sel)
+			p.Label(max(x, wb.x), sp.top-1, label, fg, bg, name == a.sel)
 		}
 	}
 	if a.labels {
-		for _, id := range sc.order {
-			n := sc.nodes[id]
-			if n.rise < 1 {
-				continue
-			}
-			sx, sy, _, ok := r.Project(n.core(sc.t).Add(vxl.V(0, 1.6, 0)))
-			if !ok {
-				continue
-			}
-			cx, cy := cell(sx, sy)
+		for _, n := range f.nodes {
+			cx, cy := wb.x+n.x, wb.y+n.y
 			fg, bg := statusColor(n.status, t), labelBg
-			if id == a.selTicket {
+			if n.id == a.selTicket {
 				fg, bg = t.Bg, t.Ice
 			}
-			label := " " + id + " "
+			label := " " + n.id + " "
 			lw := ansi.StringWidth(label)
 			if x := cx - lw/2; cy >= wb.y && cy < wb.y+wb.h && space.claim(x, cy, lw) {
-				p.Label(max(x, wb.x), cy, label, fg, bg, n.status == TicketReview || id == a.selTicket)
-				a.hits = append(a.hits, hit{id: "ticket:" + id, r: rect{max(x, wb.x), cy, lw, 1}})
+				p.Label(max(x, wb.x), cy, label, fg, bg, n.status == TicketReview || n.id == a.selTicket)
+				a.hits = append(a.hits, hit{id: "ticket:" + n.id, r: rect{max(x, wb.x), cy, lw, 1}})
 			}
 		}
 	}
-	if banner := stageBanner(sc, t); banner != "" && wb.h > 4 {
+	if f.banner != "" && wb.h > 4 {
+		banner := t.Glyphs.Mission + " " + f.banner
 		p.Label(wb.x+(wb.w-ansi.StringWidth(banner))/2, wb.y+1, " "+banner+" ", t.Ice, labelBg, true)
 	}
 	if a.snap != nil && a.lay.dock.w == 0 {
@@ -240,12 +197,18 @@ func (a *arena) paintWorld(p *cards.Painter) {
 		if name == "" {
 			name = a.sel
 		}
-		if act := sc.byName[name]; act != nil && !act.gone && !a.showHelp {
+		if mark, ok := f.actors[name]; ok && !mark.gone && !a.showHelp {
 			if sp, ok := a.spots[name]; ok {
-				a.paintTelemetry(p, act, sp, a.live[name])
+				a.paintTelemetry(p, name, mark, sp, a.live[name])
 			}
 		}
 	}
+	a.paintNotes(p, wb)
+}
+
+// Words over the floor while no sprint runs or the settings do not parse, when no dock carries them
+func (a *arena) paintNotes(p *cards.Painter, wb rect) {
+	t := a.env.Theme
 	if a.snap == nil && a.lay.dock.w == 0 {
 		msg := "no sprint yet, run /" + Name + " <request> to start one"
 		p.Label(wb.x+(wb.w-ansi.StringWidth(msg))/2, wb.y+wb.h-2, msg, t.TextDim, t.Surface, false)
@@ -255,30 +218,6 @@ func (a *arena) paintWorld(p *cards.Painter) {
 			p.Label(wb.x+2, wb.y+2+i, line, t.Alarm, t.Surface, false)
 		}
 	}
-}
-
-// Pixels across and down one cell of the floor image takes and the shape of a pixel, coarser than the cell past the pixel budget of the protocol
-func (a *arena) imagePixels(cols, rows int) (px, py int, aspect float64) {
-	cw, ch := a.env.Graphics.Cell()
-	_, most := a.env.Graphics.Budget()
-	d := 1
-	for (cols*cw/d)*(rows*ch/d) > most {
-		d++
-	}
-	px, py = max(cw/d, 1), max(ch/d, 1)
-	return px, py, (float64(cw) / float64(px)) / (float64(ch) / float64(py))
-}
-
-// Hands the frame to the terminal as pixels and paints the cells of the floor as the image needs them under it
-func (a *arena) paintImage(p *cards.Painter, fr *vxl.Frame, wb rect) {
-	if a.surface == nil {
-		a.surface = a.env.Graphics.NewSurface()
-	}
-	a.rgb = fr.Bytes(a.rgb)
-	if text := a.surface.Encode(a.rgb, fr.W, fr.H, a.originX+wb.x, a.originY+wb.y, wb.w, wb.h); text != "" && a.env.Send != nil {
-		a.env.Send(tea.RawMsg{Msg: text})
-	}
-	a.surface.Paint(p.Cells(), wb.x, wb.y, wb.w, wb.h, a.env.Theme.Bg)
 }
 
 // Color the status of a ticket paints in
@@ -310,20 +249,23 @@ func (l *labelSpace) claim(x, y, w int) bool {
 	return true
 }
 
-// Actors in the order their labels claim cells, the selected first, then the hovered, then the nearest
-func (a *arena) labelOrder() []*actor {
-	acts := slices.Clone(a.sc.actors)
-	rank := func(act *actor) float64 {
-		switch act.name {
+// Names of the placed actors in the order their labels claim cells, selected first, hovered next, then nearest
+func (a *arena) labelOrder() []string {
+	names := make([]string, 0, len(a.spots))
+	for name := range a.spots {
+		names = append(names, name)
+	}
+	rank := func(name string) float64 {
+		switch name {
 		case a.sel:
 			return -2
 		case a.hover:
 			return -1
 		}
-		return a.spots[act.name].depth
+		return a.spots[name].depth
 	}
-	slices.SortStableFunc(acts, func(p, q *actor) int { return cmp.Compare(rank(p), rank(q)) })
-	return acts
+	slices.SortStableFunc(names, func(p, q string) int { return cmp.Or(cmp.Compare(rank(p), rank(q)), cmp.Compare(p, q)) })
+	return names
 }
 
 // Color an emote glyph paints in
@@ -342,23 +284,13 @@ func emoteColor(e string, t theme.Theme) color.Color {
 // Buttons of the toolbar in order, each pressed when what it toggles is on
 func (a *arena) buttons() []cards.Button {
 	s := a.snap
-	out := []cards.Button{
-		{ID: ActSidebar, Label: "Dock", On: a.dock},
-		{ID: ActBoard, Label: "Tickets", On: a.dock && a.secs.IsOpen(secTickets.String())},
-		{ID: ActLog, Label: "Log", On: a.dock && a.secs.IsOpen(secLog.String())},
-	}
+	out := []cards.Button{{ID: ActSidebar, Label: "Dock", On: a.dock}}
 	if a.off() {
-		out = append(out, cards.Button{ID: ActInspect, Label: "Talk", On: a.typing}, cards.Button{ID: ActWorld, Label: "World off", Gap: true})
+		out = append(out, cards.Button{ID: ActInspect, Label: "Talk", On: a.typing})
 	} else {
-		out = append(out,
-			cards.Button{ID: ActInspect, Label: "Inspect", On: a.inspect},
-			cards.Button{ID: ActWorld, Label: "World " + a.cfg.Arena.World, Gap: true},
-			cards.Button{ID: ActCamera, Label: "Camera " + a.rig.preset},
-			cards.Button{ID: ActFollow, Label: "Follow", On: a.rig.preset == "follow"},
-			cards.Button{ID: ActLabels, Label: "Labels", On: a.labels, Rank: 2},
-			cards.Button{ID: ActReset, Label: "Reset view", Rank: 3},
-		)
+		out = append(out, cards.Button{ID: ActInspect, Label: "Inspect", On: a.inspect})
 	}
+	out = append(out, cards.Button{ID: ActView, Label: "View"})
 	if s != nil {
 		switch {
 		case s.Running() && s.Paused != "":
@@ -372,7 +304,7 @@ func (a *arena) buttons() []cards.Button {
 	if a.sprintCount > 1 {
 		out = append(out, cards.Button{ID: ActSprintPrev, Label: "Prev sprint", Gap: true, Rank: 1}, cards.Button{ID: ActSprintNext, Label: "Next sprint", Rank: 1})
 	}
-	return append(out, cards.Button{ID: ActSettings, Label: "Settings", Gap: true, Rank: 2}, cards.Button{ID: ActHelp, Label: "Keys", On: a.showHelp})
+	return append(out, cards.Button{ID: ActSettings, Label: "Settings", Gap: true, Rank: 2}, cards.Button{ID: ActHelp, Label: "Keys", On: a.showHelp, Rank: 3})
 }
 
 // Toolbar across the top, every button clickable and labeled with its key, the ones that fit the width
@@ -387,7 +319,7 @@ func (a *arena) paintToolbar(p *cards.Painter) {
 func (a *arena) paintHelp(p *cards.Painter) {
 	t := a.env.Theme
 	wb := a.lay.world
-	ids := []string{ActNext, ActPrev, ActInspect, ActSteer, ActLeave, ActOpen, ActKill, ActSidebar, ActBoard, ActLog, ActPageDown, ActPageUp, ActWorld, ActFollow, ActCamera, ActReset, ActOrbitLeft, ActOrbitRight, ActOrbitUp, ActOrbitDown, ActZoomIn, ActZoomOut, ActLabels, ActCustomize, ActPause, ActStop, ActRestart, ActSprintNext, ActSprintPrev, ActSettings, ActHelp}
+	ids := []string{ActNext, ActPrev, ActInspect, ActSteer, ActLeave, ActOpen, ActKill, ActSidebar, ActBoard, ActLog, ActPageDown, ActPageUp, ActView, ActWorld, ActFollow, ActCamera, ActReset, ActOrbitLeft, ActOrbitRight, ActOrbitUp, ActOrbitDown, ActZoomIn, ActZoomOut, ActLabels, ActCustomize, ActPause, ActStop, ActRestart, ActSprintNext, ActSprintPrev, ActSettings, ActHelp}
 	var lines []string
 	for _, id := range ids {
 		act, ok := a.env.Keys.Action(id)
@@ -569,3 +501,14 @@ func (a *arena) Cursor() *tea.Cursor {
 }
 
 var _ wm.Painter = (*arena)(nil)
+
+// Box of the floor while the terminal places its image under the cells, which must then keep no background
+func (a *arena) Holes() []wm.Box {
+	if a.surface == nil || a.proto != gfx.KittyPlaced || a.off() || a.lay.world.w <= 0 {
+		return nil
+	}
+	wb := a.lay.world
+	return []wm.Box{{X: wb.x, Y: wb.y, W: wb.w, H: wb.h}}
+}
+
+var _ wm.Transparent = (*arena)(nil)

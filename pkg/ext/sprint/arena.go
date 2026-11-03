@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/profiles"
-	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -29,48 +27,8 @@ import (
 // Share of the flex height of the dock the log takes until the rule between the tickets and the log is dragged
 const defaultLogShare = 0.45
 
-// Seconds without a paint after which the arena takes itself for hidden and stops moving
-const hiddenAfter = 1.5 * float64(time.Second)
-
-// Longest step the floor advances by in one frame, so a stall never teleports the team
-const maxStep = 0.1
-
-// Floor units a followed member walks before the camera moves after it, so it rests while the member works
-const followSlack = 2.5
-
-// Frames per second the arena settles to while nobody walks, flies or turns the camera
-const calmFPS = 8
-
-// Camera that eases toward where its preset and the person point it
-type camRig struct {
-	preset   string
-	yawOff   float64
-	pitchOff float64
-	zoom     float64
-	tx       anim.Value
-	ty       anim.Value
-	tz       anim.Value
-	yaw      anim.Value
-	pitch    anim.Value
-	dist     anim.Value
-	orbitT   float64
-}
-
-// Reports whether every spring of the camera is at rest
-func (c *camRig) settled() bool {
-	for _, v := range []*anim.Value{&c.tx, &c.ty, &c.tz, &c.yaw, &c.pitch, &c.dist} {
-		if !v.Settled() {
-			return false
-		}
-	}
-	return true
-}
-
-// Where an actor stands on the cells of the last paint
-type spot struct {
-	x, top, bottom int
-	depth          float64
-}
+// Seconds between syncs of the floor with the harness while nothing announces a change
+const syncEvery = time.Second
 
 // Box of cells
 type rect struct{ x, y, w, h int }
@@ -109,14 +67,6 @@ type layout struct {
 	world rect
 	insp  rect
 	full  bool
-}
-
-// Shot the cinematic camera holds, a point of interest and how long it stays on it
-type cinema struct {
-	target vxl.Vec3
-	dist   float64
-	left   float64
-	yaw    float64
 }
 
 // What a press on the arena may turn into as the pointer moves
@@ -169,24 +119,20 @@ type arena struct {
 	env    *cards.Env
 	cfg    Config
 	cfgErr error
-	sc     *scene
-	fr     vxl.Frame
-	r      vxl.Raster
-	cam    vxl.Camera
-	// Floor and sky lit once per camera position, every frame drawn over it
-	layer      vxl.Layer
-	layerCam   vxl.Camera
-	layerOK    bool
-	layerWorld string
-	post       vxl.Post
-	// Cell encoder holding the glyph of every cell between frames so the floor does not shimmer
-	enc vxl.Encoder
-	// Image the floor shows as pixels in a terminal that draws them, with the bytes of the last frame and where the card sits on the screen
-	surface          *gfx.Surface
-	rgb              []byte
+	// Worker drawing the floor, and the newest frame it handed over
+	stage *stage
+	frame *frame
+	// Surface the floor goes out through as pixels, nil while it goes out as glyphs
+	surface *gfx.Surface
+	proto   gfx.Protocol
+	// Screen cell the content of the card starts at, so placed images land under the floor
 	originX, originY int
-	rig              camRig
-	cine             cinema
+	// Size and glyph library the worker was last told to draw for
+	sentCols, sentRows int
+	sentMode           vxl.CellMode
+	sentAspect         float64
+	// Camera preset in force, mirrored from the worker for the buttons and the saved state
+	camera string
 	// Tool starts of every member by session id
 	tally    map[string]*toolTally
 	sprintID string
@@ -226,22 +172,19 @@ type arena struct {
 	lay       layout
 	// Rows the inspector header took on the last paint
 	inspHead int
-	painted  time.Time
-	last     time.Time
-	acc      float64
 	needSync bool
 	synced   time.Time
 	focused  bool
+	// Where every actor stood on the cells of the last paint, in card coordinates
 	spots    map[string]spot
 	pending  []tea.Cmd
 	apRect   rect
 	drag     *drag
-	// Spot the follow camera rests on and whose member it is
-	followAt   vxl.Vec3
-	followName string
-	draftDir   string
+	draftDir string
 	// Sprints whose end the person has seen in the arena
 	seen map[string]bool
+	// Whether the terminal window lost focus since the arena last saw input
+	blurred bool
 }
 
 // Builds the arena over the newest sprint
@@ -252,13 +195,12 @@ func newArena(env *cards.Env) wm.Card {
 	a.live = map[string]liveState{}
 	a.dockWidth, a.inspWidth, a.inspHead = 44, 72, inspectorHead
 	a.reloadConfig()
-	a.sc = newScene(a.cfg.Team.Builders, worldFor(a.cfg.Arena.World))
 	if dir, err := profiles.ConfigDir(); err == nil {
 		a.draftDir = dir
 	}
-	c := a.sc.lay.center()
-	a.rig = camRig{preset: a.cfg.Arena.Camera, zoom: 1, tx: anim.NewValueWith(c.X, anim.Gentle), ty: anim.NewValueWith(c.Y, anim.Gentle), tz: anim.NewValueWith(c.Z, anim.Gentle), yaw: anim.NewValueWith(overviewYaw, anim.Gentle), pitch: anim.NewValueWith(overviewPitch, anim.Gentle), dist: anim.NewValueWith(50, anim.Gentle)}
+	a.camera = a.cfg.Arena.Camera
 	a.labels, a.dock = a.cfg.Arena.Labels, a.cfg.Arena.Sidebar
+	a.stage = newStage(a, env.Send, env.Theme, a.cfg)
 	a.refresh()
 	return a
 }
@@ -285,13 +227,38 @@ func (a *arena) Title() string {
 	return "ARENA"
 }
 
-func (a *arena) Glyph() string           { return a.env.Theme.Glyphs.Mission }
-func (a *arena) Key() string             { return ArenaKey }
-func (a *arena) MinSize() (int, int)     { return 60, 16 }
-func (a *arena) Selectable() bool        { return true }
-func (a *arena) Tracks() bool            { return true }
-func (a *arena) Init() tea.Cmd           { a.refresh(); return nil }
-func (a *arena) Animate(dt float64) bool { return a.step() }
+func (a *arena) Glyph() string       { return a.env.Theme.Glyphs.Mission }
+func (a *arena) Key() string         { return ArenaKey }
+func (a *arena) MinSize() (int, int) { return 60, 16 }
+func (a *arena) Selectable() bool    { return true }
+func (a *arena) Tracks() bool        { return true }
+
+// Starts the worker and syncs the floor
+func (a *arena) Init() tea.Cmd {
+	a.stage.start()
+	a.refresh()
+	return nil
+}
+
+// Steps the session windows and syncs the floor with the harness now and then, the floor itself moving on its worker
+func (a *arena) Animate(dt float64) bool {
+	if a.needSync || time.Since(a.synced) > syncEvery {
+		a.refresh()
+	}
+	changed := false
+	if a.off() {
+		for _, m := range a.roster() {
+			if s := a.sessionOf(m.Name); s != nil && s.Animate(dt) {
+				changed = true
+			}
+		}
+		return changed
+	}
+	if s := a.inspected(); s != nil && s.Animate(dt) {
+		changed = true
+	}
+	return changed
+}
 
 // Reports whether a cell lies on the dock
 func (a *arena) onDock(x, y int) bool { return a.lay.dock.w > 0 && a.lay.dock.contains(x, y) }
@@ -299,9 +266,25 @@ func (a *arena) onDock(x, y int) bool { return a.lay.dock.w > 0 && a.lay.dock.co
 // Reports whether the arena shows the session windows of the team instead of a world
 func (a *arena) off() bool { return a.cfg.Arena.World == "off" }
 
-// Reports whether the floor is drawn as pixels, asked for and drawn by the terminal
-func (a *arena) imaged() bool {
-	return a.cfg.Arena.Pixels == "image" && a.env.Graphics != nil && a.env.Graphics.Protocol() != gfx.None
+// Protocol the floor goes out through as pixels, none while it goes out as glyphs
+func (a *arena) protocol() gfx.Protocol {
+	g := a.env.Graphics
+	if g == nil || a.off() {
+		return gfx.None
+	}
+	switch a.cfg.Arena.Display {
+	case "glyphs":
+		return gfx.None
+	case "image":
+		if p := g.Protocol(); p != gfx.None {
+			return p
+		}
+		return g.Guess()
+	}
+	if p := g.Protocol(); p == gfx.KittyCells {
+		return p
+	}
+	return gfx.None
 }
 
 // Takes the screen cell the content of the arena starts at
@@ -315,6 +298,8 @@ func (a *arena) releaseImage() {
 	if text := a.surface.Release(); text != "" && a.env.Send != nil {
 		a.env.Send(tea.RawMsg{Msg: text})
 	}
+	a.surface, a.proto = nil, gfx.None
+	a.stage.post(func(s *stage) { s.setSurface(nil) })
 }
 
 // Panel widths, folds and camera the arena keeps between runs
@@ -323,7 +308,7 @@ func (a *arena) State() any {
 	for _, s := range sections {
 		secs[s.String()] = a.secs.IsOpen(s.String())
 	}
-	return arenaState{DockWidth: a.dockWidth, InspectorWidth: a.inspWidth, Sections: secs, LogShare: 1 - a.secs.Share, SprintFull: a.sprintFull, Camera: a.rig.preset, Labels: a.labels}
+	return arenaState{DockWidth: a.dockWidth, InspectorWidth: a.inspWidth, Sections: secs, LogShare: 1 - a.secs.Share, SprintFull: a.sprintFull, Camera: a.camera, Labels: a.labels}
 }
 
 // Takes back the widths, folds and camera of the last run
@@ -348,7 +333,7 @@ func (a *arena) SetState(raw json.RawMessage) error {
 	}
 	a.sprintFull = st.SprintFull
 	if slices.Contains(Cameras, st.Camera) {
-		a.rig.preset = st.Camera
+		a.setCamera(st.Camera)
 	}
 	if st.Sections != nil {
 		a.labels = st.Labels
@@ -407,7 +392,7 @@ func (a *arena) Hints() []wm.Hint {
 	if a.showHelp {
 		return []wm.Hint{{Action: ActHelp, Label: "close help"}}
 	}
-	out := []wm.Hint{{Action: ActNext, Label: "member"}, {Action: ActInspect}, {Action: ActSteer}}
+	out := []wm.Hint{{Action: ActNext, Label: "member"}, {Action: ActInspect}, {Action: ActSteer}, {Action: ActView}}
 	if ap := a.approval(); ap != nil {
 		out = append([]wm.Hint{{Action: "approval.allow"}, {Action: "approval.deny"}}, out...)
 	}
@@ -522,7 +507,7 @@ func (a *arena) anyRunning() bool {
 // Sprint shown, nil while this process started none
 func (a *arena) sprint() *Sprint { return sprintByID(a.sprintID) }
 
-// Takes the snapshot of the sprint shown again, the newest running sprint when none is chosen, and syncs the floor
+// Takes the snapshot of the sprint shown again, the newest running sprint when none is chosen, and hands it to the floor
 func (a *arena) refresh() {
 	all := Sprints()
 	if a.sprintID == "" || sprintByID(a.sprintID) == nil {
@@ -561,9 +546,22 @@ func (a *arena) refresh() {
 	}
 	a.live = a.liveStates()
 	a.spent = a.cost()
-	a.sc.sync(a.snap, a.live, a.cfg)
 	a.synced, a.needSync = time.Now(), false
 	a.snapGen++
+	var snap *Snapshot
+	if a.snap != nil {
+		copy := *a.snap
+		snap = &copy
+	}
+	live := make(map[string]liveState, len(a.live))
+	for k, v := range a.live {
+		live[k] = v
+	}
+	sel, hover, selTicket, hoverTicket := a.sel, a.hover, a.selTicket, a.hoverTicket
+	a.stage.post(func(s *stage) {
+		s.sync(snap, live)
+		s.mark(sel, hover, selTicket, hoverTicket)
+	})
 }
 
 // What the harness says every member of the sprint shown is doing, with what it has spent and how long it has
@@ -758,6 +756,14 @@ func (a *arena) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 
 func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
+	case frameMsg:
+		if msg.f.gen > a.frameGen() {
+			a.frame = msg.f
+		}
+		if a.needSync || time.Since(a.synced) > syncEvery {
+			a.refresh()
+		}
+		return a, nil
 	case cards.ThinkingChangedMsg:
 		if s, ok := a.sessions[msg.Session]; ok {
 			s.Rethink()
@@ -822,8 +828,10 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			a.reloadConfig()
 			a.labels, a.dock = a.cfg.Arena.Labels, a.cfg.Arena.Sidebar
 			if a.cfgErr == nil && msg.Key == Name+".arena.camera" {
-				a.rig.preset = a.cfg.Arena.Camera
+				a.camera = a.cfg.Arena.Camera
 			}
+			cfg := a.cfg
+			a.stage.post(func(s *stage) { s.configure(cfg) })
 			a.refresh()
 		}
 		return a, nil
@@ -834,8 +842,17 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		return a, tea.Batch(cmds...)
+	case tea.FocusMsg:
+		a.setBlurred(false)
+		return a, nil
+	case tea.BlurMsg:
+		a.setBlurred(true)
+		return a, nil
 	case wm.FocusMsg:
 		a.focused = msg.Focused
+		if msg.Focused {
+			a.setBlurred(false)
+		}
 		if s := a.inspected(); s != nil && a.typing {
 			_, cmd := s.Update(msg)
 			return a, cmd
@@ -848,22 +865,28 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		a.typing = false
 		a.drag = nil
 		a.releaseImage()
+		a.stage.halt()
 		return a, nil
 	case wm.ActionMsg:
+		a.setBlurred(false)
 		return a, a.act(msg.ID)
 	case tea.KeyPressMsg, tea.PasteMsg:
+		a.setBlurred(false)
 		if s := a.inspected(); s != nil && a.typing {
 			_, cmd := s.Update(msg)
 			return a, cmd
 		}
 		return a, nil
 	case tea.MouseClickMsg:
+		a.setBlurred(false)
 		return a, a.click(msg)
 	case tea.MouseReleaseMsg:
 		return a, a.release(msg)
 	case tea.MouseMotionMsg:
+		a.setBlurred(false)
 		return a, a.motion(msg)
 	case tea.MouseWheelMsg:
+		a.setBlurred(false)
 		return a, a.wheel(msg)
 	}
 	if s := a.inspected(); s != nil {
@@ -871,6 +894,23 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		return a, cmd
 	}
 	return a, nil
+}
+
+// Tells the floor whether the terminal window is focused, once per change
+func (a *arena) setBlurred(blurred bool) {
+	if a.blurred == blurred {
+		return
+	}
+	a.blurred = blurred
+	a.stage.post(func(s *stage) { s.focus(!blurred) })
+}
+
+// Generation of the frame shown, zero while none has arrived
+func (a *arena) frameGen() uint64 {
+	if a.frame == nil {
+		return 0
+	}
+	return a.frame.gen
 }
 
 // Hands a message to the session card of a member by session id, when one is built
@@ -883,165 +923,16 @@ func (a *arena) forward(sessionID string, msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-// Advances the floor and the camera by the wall clock, a frame due at the configured rate while things move and a calm rate otherwise
-func (a *arena) step() bool {
-	now := time.Now()
-	if a.last.IsZero() {
-		a.last = now
-	}
-	dt := min(now.Sub(a.last).Seconds(), maxStep)
-	a.last = now
-	if !a.painted.IsZero() && float64(now.Sub(a.painted)) > hiddenAfter {
-		return false
-	}
-	if a.needSync || now.Sub(a.synced) > time.Second {
-		a.refresh()
-	}
-	streaming := false
-	if a.off() {
-		for _, m := range a.roster() {
-			if s := a.sessionOf(m.Name); s != nil {
-				s.Animate(dt)
-				streaming = streaming || s.Transcript.Busy()
-			}
-		}
-	} else {
-		a.sc.update(dt)
-		a.moveCamera(dt)
-		if s := a.inspected(); s != nil {
-			s.Animate(dt)
-			streaming = s.Transcript.Busy()
-		}
-	}
-	a.acc += dt
-	fps := float64(max(a.cfg.Arena.FPS, 5))
-	if a.imaged() {
-		most, _ := a.env.Graphics.Budget()
-		fps = min(fps, float64(most))
-	}
-	if a.off() && !streaming || !a.off() && !a.sc.busy() && !streaming && a.rig.settled() && a.drag == nil {
-		fps = min(fps, calmFPS)
-	}
-	frame := 1 / fps
-	if a.acc < frame {
-		return false
-	}
-	a.acc = math.Mod(a.acc, frame)
-	return true
+// Tells the floor which member and ticket are selected and under the pointer
+func (a *arena) markFloor() {
+	sel, hover, selTicket, hoverTicket := a.sel, a.hover, a.selTicket, a.hoverTicket
+	a.stage.post(func(s *stage) { s.mark(sel, hover, selTicket, hoverTicket) })
 }
 
-// Yaw and pitch of the overview camera, from the south east and well above the floor
-const (
-	overviewYaw   = 0.55
-	overviewPitch = 0.72
-)
-
-// Eases the camera toward its preset, the selected member when following, the shots of the cinematic, with the turns and zoom of the person
-func (a *arena) moveCamera(dt float64) {
-	rig := &a.rig
-	target, yaw, pitch := a.sc.lay.center(), overviewYaw, overviewPitch
-	if rig.preset == "orbit" {
-		rig.orbitT += dt
-		yaw += rig.orbitT * 0.07
-	}
-	dist := a.fitDistance(yaw+rig.yawOff, min(max(pitch+rig.pitchOff, 0.12), 1.45))
-	switch rig.preset {
-	case "follow":
-		if act := a.selectedActor(); act != nil {
-			if a.followName != act.name || act.pos.Flat(a.followAt) > followSlack || math.Abs(act.pos.Y-a.followAt.Y) > 1 {
-				a.followAt, a.followName = act.pos, act.name
-			}
-			target, pitch, dist = a.followAt.Add(vxl.V(0, 1.5, 0)), 0.6, 26
-		}
-	case "cinematic":
-		a.frame(dt)
-		target, pitch, dist, yaw = a.cine.target, 0.5, a.cine.dist, a.cine.yaw
-	}
-	rig.tx.Set(target.X)
-	rig.ty.Set(target.Y)
-	rig.tz.Set(target.Z)
-	rig.yaw.Set(yaw + rig.yawOff)
-	rig.pitch.Set(min(max(pitch+rig.pitchOff, 0.12), 1.45))
-	rig.dist.Set(max(dist*rig.zoom, 6))
-	for _, v := range []*anim.Value{&rig.tx, &rig.ty, &rig.tz, &rig.yaw, &rig.pitch, &rig.dist} {
-		v.Step(dt)
-	}
-	a.cam = vxl.Camera{Target: vxl.V(rig.tx.Pos, rig.ty.Pos, rig.tz.Pos), Yaw: rig.yaw.Pos, Pitch: rig.pitch.Pos, Dist: rig.dist.Pos, FOV: 0.85}
-}
-
-// Picks the next shot of the cinematic once the last ran out, the busiest point of the floor from a new angle, each shot held still
-func (a *arena) frame(dt float64) {
-	c := &a.cine
-	c.left -= dt
-	if c.left > 0 {
-		return
-	}
-	c.left = 7 + a.sc.rnd.Next()*4
-	c.yaw += 0.35 + a.sc.rnd.Next()*0.5
-	sc := a.sc
-	var spots []vxl.Vec3
-	for _, act := range sc.actors {
-		if act.gone {
-			continue
-		}
-		switch {
-		case act.beacon > 0.5, act.frozen > 0.5, act.state == stateJack, act.state == stateBrief, act.state == stateChart, act.state == stateReview && sc.beamLock != "":
-			spots = append(spots, act.stand().Add(vxl.V(0, 2.5, 0)))
-		}
-	}
-	for _, id := range sc.order {
-		if n := sc.nodes[id]; n.status == TicketReview || n.glow > 0.5 {
-			spots = append(spots, n.core(sc.t))
-		}
-	}
-	if len(spots) == 0 || a.sc.rnd.Next() < 0.2 {
-		c.target, c.dist = sc.lay.center(), a.fitDistance(c.yaw, 0.5)*1.05
-		return
-	}
-	c.target, c.dist = spots[a.sc.rnd.Intn(len(spots))], 24
-}
-
-// Distance at which the whole floor fits the world box at the yaw and pitch, found by projecting its corners
-func (a *arena) fitDistance(yaw, pitch float64) float64 {
-	ww, wh := max(a.lay.world.w, 20), max(a.lay.world.h, 8)
-	mode := vxl.CellModeOf(a.cfg.Arena.Pixels)
-	px, py := mode.Pixels()
-	fr := &vxl.Frame{W: ww * px, H: wh * py, PixelAspect: mode.PixelAspect()}
-	r := &vxl.Raster{}
-	lo, hi := a.sc.lay.bounds()
-	cam := vxl.Camera{Target: a.sc.lay.center(), Yaw: yaw, Pitch: pitch, Dist: 60, FOV: 0.85}
-	for range 6 {
-		r.Begin(fr, cam)
-		spread := 0.0
-		for i := range 8 {
-			c := lo
-			if i&1 != 0 {
-				c.X = hi.X
-			}
-			if i&2 != 0 {
-				c.Y = hi.Y
-			}
-			if i&4 != 0 {
-				c.Z = hi.Z
-			}
-			sx, sy, _, ok := r.Project(c)
-			if !ok {
-				spread = 2
-				break
-			}
-			spread = max(spread, math.Abs(sx/float64(fr.W)-0.5)/0.48, math.Abs(sy/float64(fr.H)-0.5)/0.46)
-		}
-		cam.Dist *= spread
-	}
-	return cam.Dist
-}
-
-// Actor of the selected member, nil while none is selected
-func (a *arena) selectedActor() *actor {
-	if a.sel == "" {
-		return nil
-	}
-	return a.sc.byName[a.sel]
+// Switches the camera preset on the floor and remembers it for the buttons
+func (a *arena) setCamera(name string) {
+	a.camera = name
+	a.stage.post(func(s *stage) { s.preset(name) })
 }
 
 // Members in roster order
@@ -1081,6 +972,7 @@ func (a *arena) selectMember(name string) tea.Cmd {
 		cmds = append(cmds, cmd)
 	}
 	a.sel = name
+	a.markFloor()
 	if s := a.inspected(); s != nil && a.typing {
 		_, cmd := s.Update(wm.FocusMsg{Focused: true})
 		cmds = append(cmds, cmd)
@@ -1133,18 +1025,7 @@ func (a *arena) act(id string) tea.Cmd {
 		a.inspect = true
 		return a.setTyping(true)
 	case ActFollow:
-		if a.rig.preset == "follow" {
-			a.rig.preset = a.cfg.Arena.Camera
-			if a.rig.preset == "follow" {
-				a.rig.preset = "overview"
-			}
-			return wm.Notify("camera "+a.rig.preset, wm.Info)
-		}
-		if _, ok := a.selected(); !ok {
-			return wm.Notify("select a member to follow", wm.Info)
-		}
-		a.rig.preset = "follow"
-		return wm.Notify("following "+a.sel, wm.Info)
+		return a.toggleFollow()
 	case ActBoard:
 		return a.toggleSection(secTickets)
 	case ActLog:
@@ -1155,6 +1036,8 @@ func (a *arena) act(id string) tea.Cmd {
 		a.showHelp = !a.showHelp
 	case ActLabels:
 		a.labels = !a.labels
+	case ActView:
+		return a.view()
 	case ActCustomize:
 		return a.customize()
 	case ActPause:
@@ -1168,26 +1051,21 @@ func (a *arena) act(id string) tea.Cmd {
 	case ActKill:
 		return a.kill()
 	case ActOrbitLeft:
-		a.rig.yawOff -= 0.2
+		a.stage.post(func(s *stage) { s.orbit(-0.2, 0) })
 	case ActOrbitRight:
-		a.rig.yawOff += 0.2
+		a.stage.post(func(s *stage) { s.orbit(0.2, 0) })
 	case ActOrbitUp:
-		a.rig.pitchOff -= 0.1
+		a.stage.post(func(s *stage) { s.orbit(0, -0.1) })
 	case ActOrbitDown:
-		a.rig.pitchOff += 0.1
+		a.stage.post(func(s *stage) { s.orbit(0, 0.1) })
 	case ActZoomIn:
-		a.rig.zoom = max(a.rig.zoom*0.85, 0.3)
+		a.stage.post(func(s *stage) { s.zoom(0.85) })
 	case ActZoomOut:
-		a.rig.zoom = min(a.rig.zoom*1.18, 3)
+		a.stage.post(func(s *stage) { s.zoom(1.18) })
 	case ActCamera:
-		i := slices.Index(Cameras, a.rig.preset)
-		a.rig.preset = Cameras[(i+1)%len(Cameras)]
-		if a.rig.preset == "follow" && a.sel == "" {
-			a.rig.preset = Cameras[(i+2)%len(Cameras)]
-		}
-		return wm.Notify("camera "+a.rig.preset, wm.Info)
+		return a.cycleCamera()
 	case ActReset:
-		a.rig.yawOff, a.rig.pitchOff, a.rig.zoom, a.rig.orbitT = 0, 0, 1, 0
+		a.stage.post(func(s *stage) { s.resetView() })
 	case ActSprintNext:
 		return a.switchSprint(1)
 	case ActSprintPrev:
@@ -1202,16 +1080,138 @@ func (a *arena) act(id string) tea.Cmd {
 	return nil
 }
 
+// Moves to the next camera preset, skipping the following one while nobody is selected
+func (a *arena) cycleCamera() tea.Cmd {
+	i := slices.Index(Cameras, a.camera)
+	next := Cameras[(i+1)%len(Cameras)]
+	if next == "follow" && a.sel == "" {
+		next = Cameras[(i+2)%len(Cameras)]
+	}
+	a.setCamera(next)
+	return wm.Notify("camera "+next, wm.Info)
+}
+
+// Keeps the camera on the selected member, or lets it go back to the configured preset
+func (a *arena) toggleFollow() tea.Cmd {
+	if a.camera == "follow" {
+		next := a.cfg.Arena.Camera
+		if next == "follow" {
+			next = "overview"
+		}
+		a.setCamera(next)
+		return wm.Notify("camera "+next, wm.Info)
+	}
+	if _, ok := a.selected(); !ok {
+		return wm.Notify("select a member to follow", wm.Info)
+	}
+	a.setCamera("follow")
+	return wm.Notify("following "+a.sel, wm.Info)
+}
+
 // Moves the team into the next world, the choice saved as a setting and taken up at once
 func (a *arena) cycleWorld() tea.Cmd {
 	i := slices.Index(Worlds, a.cfg.Arena.World)
 	next := Worlds[(i+1)%len(Worlds)]
-	a.cfg.Arena.World = next
-	if next != "off" {
-		a.sc.setWorld(worldFor(next))
-	}
+	return a.setWorld(next)
+}
+
+// Moves the team into a world, the choice saved as a setting and taken up at once
+func (a *arena) setWorld(name string) tea.Cmd {
+	a.cfg.Arena.World = name
 	a.typing = false
-	return tea.Batch(a.saveSetting(Name+".arena.world", next), wm.Notify("world "+next, wm.Info))
+	if name == "off" {
+		a.releaseImage()
+	}
+	cfg := a.cfg
+	a.stage.post(func(s *stage) { s.configure(cfg) })
+	return tea.Batch(a.saveSetting(Name+".arena.world", name), wm.Notify("world "+name, wm.Info))
+}
+
+// Picker over the look of the floor, the world, the camera, the labels, the display and the quality
+func (a *arena) view() tea.Cmd {
+	t := a.env.Theme
+	var items []wm.Item
+	for _, w := range Worlds {
+		w := w
+		items = append(items, wm.Item{ID: "world:" + w, Title: "World " + w, Detail: worldDetail(w), Keys: mark(w == a.cfg.Arena.World, t), Run: func() tea.Cmd { return a.setWorld(w) }})
+	}
+	for _, c := range Cameras {
+		c := c
+		items = append(items, wm.Item{ID: "camera:" + c, Title: "Camera " + c, Detail: cameraDetail(c), Keys: mark(c == a.camera, t), Run: func() tea.Cmd {
+			if c == "follow" {
+				return a.toggleFollow()
+			}
+			a.setCamera(c)
+			return wm.Notify("camera "+c, wm.Info)
+		}})
+	}
+	items = append(items, wm.Item{ID: "labels", Title: "Labels", Detail: "names over the team and ids over the tickets", Keys: mark(a.labels, t), Run: func() tea.Cmd { a.labels = !a.labels; return nil }})
+	for _, d := range Displays {
+		d := d
+		items = append(items, wm.Item{ID: "display:" + d, Title: "Display " + d, Detail: displayDetail(d, a.env.Graphics), Keys: mark(d == a.cfg.Arena.Display, t), Run: func() tea.Cmd { return a.saveSetting(Name+".arena.display", d) }})
+	}
+	for _, q := range Qualities {
+		q := q
+		items = append(items, wm.Item{ID: "quality:" + q, Title: "Quality " + q, Detail: qualityDetail(q), Keys: mark(q == a.cfg.Arena.Quality, t), Run: func() tea.Cmd { return a.saveSetting(Name+".arena.quality", q) }})
+	}
+	items = append(items, wm.Item{ID: "reset", Title: "Reset view", Detail: "put the camera back where the preset starts", Run: func() tea.Cmd { a.stage.post(func(s *stage) { s.resetView() }); return nil }})
+	return wm.RequestOverlay(wm.NewPalette(t, items))
+}
+
+// Words on a world for the view picker
+func worldDetail(name string) string {
+	switch name {
+	case "blackwall":
+		return "red strands over a glossy dark floor"
+	case "soulkiller":
+		return "the cyan data sea"
+	case "nightcity":
+		return "a rooftop over the city at dawn"
+	case "den":
+		return "a netrunner den walled with screens"
+	}
+	return "the session windows of the team side by side"
+}
+
+// Words on a camera preset for the view picker
+func cameraDetail(name string) string {
+	switch name {
+	case "overview":
+		return "the whole floor"
+	case "follow":
+		return "stays on the selected member"
+	case "orbit":
+		return "turns slowly around the floor"
+	}
+	return "cuts between whatever is busiest"
+}
+
+// Words on a display choice for the view picker, naming what the terminal answered
+func displayDetail(name string, g *gfx.Terminal) string {
+	found := "no terminal graphics found"
+	if g != nil {
+		found = g.Describe()
+	}
+	switch name {
+	case "glyphs":
+		return "always glyphs"
+	case "image":
+		return "pixels through whatever the terminal draws, " + found
+	}
+	return "pixels only where images follow the cells, " + found
+}
+
+// Words on a quality for the view picker
+func qualityDetail(name string) string {
+	switch name {
+	case "low":
+		return "the bare raster"
+	case "medium":
+		return "adds the glow of the air and soft shadows"
+	case "ultra":
+		return "twice the resolution with every pass"
+	}
+	return "adds mirrored floors"
 }
 
 // Shows or hides the dock, the choice saved as a setting

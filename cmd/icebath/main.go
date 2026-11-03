@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 
@@ -177,6 +178,21 @@ func run(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "icebath:", err)
 		return 2
+	}
+	if path := os.Getenv("ICEBATH_CPUPROFILE"); path != "" {
+		f, err := os.Create(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "icebath:", err)
+			return 2
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			fmt.Fprintln(os.Stderr, "icebath:", err)
+			return 2
+		}
+		defer func() {
+			pprof.StopCPUProfile()
+			f.Close()
+		}()
 	}
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithFilter(m.Filter))
 	m.Attach(p)

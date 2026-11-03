@@ -28,7 +28,19 @@ func (j job) run() {
 var (
 	poolOnce sync.Once
 	poolJobs chan job
+	workers  atomic.Int32
 )
+
+// Goroutines the passes of the package spread over, every CPU until SetWorkers lowers it
+func Workers() int {
+	if n := int(workers.Load()); n > 0 {
+		return n
+	}
+	return runtime.NumCPU()
+}
+
+// Caps the goroutines the passes of the package spread over, so the rest of the program keeps its CPUs
+func SetWorkers(n int) { workers.Store(int32(max(n, 1))) }
 
 // Starts one parked helper per CPU, kept for the life of the process
 func startPool() {
@@ -77,7 +89,7 @@ func parallelBands(h, grain int, fn func(y0, y1 int)) {
 	if h <= 0 {
 		return
 	}
-	workers := min(runtime.NumCPU(), max(h/max(grain, 1), 1))
+	workers := min(Workers(), max(h/max(grain, 1), 1))
 	band := (h + workers - 1) / workers
 	parallel((h+band-1)/band, workers, func(b int) { fn(b*band, min((b+1)*band, h)) })
 }
@@ -88,7 +100,7 @@ func parallelBandsWith(h, grain, workers int, fn func(y0, y1 int)) {
 		return
 	}
 	if workers <= 0 {
-		workers = runtime.NumCPU()
+		workers = Workers()
 	}
 	workers = min(workers, max(h/max(grain, 1), 1))
 	band := (h + workers - 1) / workers

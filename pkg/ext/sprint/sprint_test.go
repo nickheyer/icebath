@@ -33,11 +33,19 @@ func TestConfigLoad(t *testing.T) {
 	if c.Team.Builders != 5 || c.Team.Parallel || c.Limits.Build != 45*time.Minute || c.Interactive {
 		t.Fatalf("team %+v limits %+v interactive %v", c.Team, c.Limits, c.Interactive)
 	}
-	if c.Arena.Pixels != "half" || c.Arena.FPS != 20 || c.Arena.World != "den" || c.Arena.Quality != "ultra" {
+	if c.Arena.Glyphs != "half" || c.Arena.Display != "auto" || c.Arena.FPS != 20 || c.Arena.World != "den" || c.Arena.Quality != "ultra" {
 		t.Fatalf("arena %+v", c.Arena)
 	}
-	if d := Default().Arena; d.World != "blackwall" || d.Quality != "high" {
+	if d := Default().Arena; d.World != "blackwall" || d.Quality != "high" || d.Display != "auto" || d.Glyphs != "shapes" {
 		t.Fatalf("default arena %+v", d)
+	}
+	old, err := Load(harness.Config{Settings: map[string]string{Name + ".arena.pixels": "image"}})
+	if err != nil || old.Arena.Display != "image" || old.Arena.Glyphs != "shapes" {
+		t.Fatalf("old image setting became %+v, %v", old.Arena, err)
+	}
+	kept, err := Load(harness.Config{Settings: map[string]string{Name + ".arena.pixels": "image", Name + ".arena.display": "glyphs"}})
+	if err != nil || kept.Arena.Display != "glyphs" {
+		t.Fatalf("new display setting lost to the old one, %+v, %v", kept.Arena, err)
 	}
 	if c.NameOf(RoleBuilder, 1) != "Bob" || c.NameOf(RoleBuilder, 2) != "Builder 3" || c.NameOf(RoleDirector, 0) != "Director" {
 		t.Fatalf("names %q %q %q", c.NameOf(RoleBuilder, 1), c.NameOf(RoleBuilder, 2), c.NameOf(RoleDirector, 0))
@@ -47,7 +55,7 @@ func TestConfigLoad(t *testing.T) {
 	}
 	for _, bad := range []map[string]string{
 		{Name + ".team.builders": "0"}, {Name + ".team.builders": "nine"}, {Name + ".limits.plan": "0s"}, {Name + ".interactive": "maybe"},
-		{Name + ".arena.pixels": "braille"}, {Name + ".arena.fps": "2"}, {Name + ".look.builder": "teal"}, {Name + ".look.reviewer": "plaid cap"},
+		{Name + ".arena.display": "braille"}, {Name + ".arena.glyphs": "braille"}, {Name + ".arena.fps": "2"}, {Name + ".look.builder": "teal"}, {Name + ".look.reviewer": "plaid cap"},
 		{Name + ".arena.world": "mars"}, {Name + ".arena.quality": "best"},
 	} {
 		if _, err := Load(harness.Config{Settings: bad}); err == nil {
@@ -738,5 +746,51 @@ func TestSceneChoreography(t *testing.T) {
 	}
 	if !sc.lay.onPlatform(sc.lobby.pos) {
 		t.Fatalf("the lobby fixer wandered off at %v", sc.lobby.pos)
+	}
+}
+
+// The pixels setting of the third arena moves into the display or glyph setting on the disk once and is dropped
+func TestMigratePixels(t *testing.T) {
+	for _, s := range Settings() {
+		if _, ok := harness.LookupSetting(s.Key); !ok {
+			if err := harness.RegisterSetting(s); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	app := testApp(t)
+	old := Name + ".arena.pixels"
+	pixels := func(v string) {
+		if app.Config.Settings == nil {
+			app.Config.Settings = map[string]string{}
+		}
+		app.Config.Settings[old] = v
+		if err := harness.Save(app.Dir, app.Config.Sources, harness.Field{Path: []string{"settings", old}, Value: v}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pixels("image")
+	if err := migratePixels(app); err != nil {
+		t.Fatal(err)
+	}
+	if app.Config.Setting(Name+".arena.display") != "image" || app.Config.Setting(Name+".arena.pixels") != "" {
+		t.Fatalf("settings after the move %v", app.Config.Settings)
+	}
+	again, err := harness.Discover(app.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Setting(Name+".arena.display") != "image" || again.Setting(Name+".arena.pixels") != "" {
+		t.Fatalf("settings on disk after the move %v", again.Settings)
+	}
+	pixels("octant")
+	if err := migratePixels(app); err != nil {
+		t.Fatal(err)
+	}
+	if app.Config.Setting(Name+".arena.display") != "image" || app.Config.Setting(Name+".arena.glyphs") != "" || app.Config.Setting(Name+".arena.pixels") != "" {
+		t.Fatalf("a later pixels value overrode the chosen display, %v", app.Config.Settings)
+	}
+	if err := migratePixels(app); err != nil {
+		t.Fatal(err)
 	}
 }

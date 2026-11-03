@@ -2,7 +2,6 @@ package vxl
 
 import (
 	"math"
-	"runtime"
 	"slices"
 )
 
@@ -122,7 +121,7 @@ func (v *Volume) Splat(srcs []Light) {
 		list = append(list, src{pos: l.Pos, col: l.Color, radius: l.Radius, r2: l.Radius * l.Radius, y0: y0, y1: y1})
 	}
 	near := v.cell * 1.5
-	parallel(v.ny, runtime.NumCPU(), func(y int) {
+	parallel(v.ny, Workers(), func(y int) {
 		for z := range v.nz {
 			for x := range v.nx {
 				i := v.index(x, y, z)
@@ -220,7 +219,7 @@ func (v *Volume) Smooth(passes int) {
 	}
 	next := make([]rgb32, len(v.rad))
 	for range passes {
-		parallel(v.ny, runtime.NumCPU(), func(y int) {
+		parallel(v.ny, Workers(), func(y int) {
 			for z := range v.nz {
 				for x := range v.nx {
 					i := v.index(x, y, z)
@@ -257,7 +256,7 @@ func (v *Volume) Seal() {
 	for range 3 {
 		copy(next, v.rad)
 		copy(nextFilled, filled)
-		parallel(v.ny, runtime.NumCPU(), func(y int) {
+		parallel(v.ny, Workers(), func(y int) {
 			for z := range v.nz {
 				for x := range v.nx {
 					i := v.index(x, y, z)

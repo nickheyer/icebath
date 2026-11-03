@@ -91,10 +91,10 @@ func exchangeStart(snap *Snapshot, m Member) time.Time {
 }
 
 // Card over the floor beside a member with what the transcript would take minutes to tell, every line whole
-func (a *arena) paintTelemetry(p *cards.Painter, act *actor, sp spot, live liveState) {
+func (a *arena) paintTelemetry(p *cards.Painter, name string, mark actorMark, sp spot, live liveState) {
 	t := a.env.Theme
 	wb := a.lay.world
-	m, ok := a.snap.Member(act.name)
+	m, ok := a.snap.Member(name)
 	if !ok {
 		return
 	}
@@ -109,10 +109,8 @@ func (a *arena) paintTelemetry(p *cards.Painter, act *actor, sp spot, live liveS
 	}
 	lines = append(lines, title)
 	lines = append(lines, cards.WrapIndent(a.stateText(live, m), w, 2)...)
-	if m.Task == "" && !live.running {
-		if doing := ambientText(act); doing != "" {
-			lines = append(lines, render.Dim(doing, t))
-		}
+	if m.Task == "" && !live.running && mark.idle {
+		lines = append(lines, render.Dim("idle", t))
 	}
 	lines = append(lines, a.memberDetail(m, live, w)...)
 	h := len(lines) + 2
@@ -135,12 +133,4 @@ func ambientText(a *actor) string {
 		return ""
 	}
 	return "idle"
-}
-
-// Seconds a stage banner shows for after a stage change
-func stageBanner(sc *scene, t theme.Theme) string {
-	if sc.stageFlash <= 0 || sc.stageText == "" {
-		return ""
-	}
-	return t.Glyphs.Mission + " " + sc.stageText
 }
