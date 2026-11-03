@@ -12,23 +12,29 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/facts"
 	"github.com/nickheyer/icebath/pkg/mission"
+	"github.com/nickheyer/icebath/pkg/plugin"
 	"github.com/nickheyer/icebath/pkg/prompt"
+	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/shell"
 )
 
-// Instructions file priority
-var instructionNames = []string{"ICEBATH.md", "AGENTS.md", "CLAUDE.md"}
-
-// Base prompt of a session offered the tools, the conduct of a coding agent and then the configured instructions
-func Base(configured string, tools []string) string {
+// Base prompt of a session offered the tools, the conduct of a coding agent and then the configured instructions, an
+// output style standing in for the conduct sections unless it keeps them
+func Base(configured string, tools []string, style *plugin.Style) string {
 	system := prompt.System{
 		Identity: []string{"You are icebath, a coding agent in the user's terminal, acting through the tools offered.", "The user's own instructions arrive in the conversation."},
 		Harness:  &prompt.Harness{Reader: "the user", Speaker: "the user", Gatekeeper: "the user", Tools: tools},
 		Delivery: &prompt.Delivery{Asked: "the user", Confirmer: "the user"},
 		Writing:  &prompt.Writing{Reader: "the user"},
 	}
+	if style != nil && !style.KeepCoding {
+		system.Delivery, system.Writing = nil, nil
+	}
+	if style != nil {
+		system.Sections = append(system.Sections, prompt.Section{Title: "Output style " + style.Name, Text: []string{style.Body}})
+	}
 	if configured = strings.TrimSpace(configured); configured != "" {
-		system.Sections = []prompt.Section{{Title: "Instructions from the configuration", Text: []string{configured}}}
+		system.Sections = append(system.Sections, prompt.Section{Title: "Instructions from the configuration", Text: []string{configured}})
 	}
 	return system.String()
 }
@@ -41,24 +47,28 @@ func instructions(source, text string) string {
 	return prompt.New().Heading(1, "Instructions from "+source).Raw(text).String()
 }
 
-// Instructions of the project, one block per file found from the root down to the working directory
+// Instructions that always apply, one block per file, managed and user ones then the project walk, imports resolved
 func (a *App) ProjectInstructions() string {
-	root := a.Root
-	if root == "" {
-		root = a.Shell.Dir()
-	}
 	var blocks []string
-	for _, dir := range lineage(root, a.Shell.Dir()) {
-		for _, name := range instructionNames {
-			p := filepath.Join(dir, name)
-			data, err := os.ReadFile(p)
-			if err != nil {
-				continue
-			}
-			if text := instructions(p, string(data)); text != "" {
-				blocks = append(blocks, text)
-			}
-			break
+	for _, in := range plugin.Always(a.Instructions()) {
+		if text := instructions(in.Path, in.Text); text != "" {
+			blocks = append(blocks, text)
+		}
+	}
+	return prompt.Compose(blocks...)
+}
+
+// Instructions for a session, hooks hearing of each file the first time the session takes it in
+func (a *App) instructionsFor(ctx context.Context, sess *session.Session) string {
+	var blocks []string
+	for _, in := range plugin.Always(a.Instructions()) {
+		text := instructions(in.Path, in.Text)
+		if text == "" {
+			continue
+		}
+		blocks = append(blocks, text)
+		if !a.markLoaded(sess, "instructions:"+in.Path) {
+			a.instructionsLoaded(ctx, sess, in, "")
 		}
 	}
 	return prompt.Compose(blocks...)
@@ -119,29 +129,54 @@ func (a *App) ScratchFor(ctx context.Context) (string, error) {
 	return dir, nil
 }
 
-// Prompt of a run as the kind, its base, the project and environment blocks, then every registered fragment
+// Prompt of a run as the kind, its base or style, the kind text, instructions, memory, preloaded skills, the skill
+// listing and the environment, then every registered fragment
 func (a *App) PromptFor(ctx context.Context, ep Endpoint, kind Kind) (string, error) {
 	offered := a.Offered(kind)
-	base := Base(a.System, offered)
+	style, err := a.styleFor()
+	if err != nil {
+		return "", err
+	}
+	base := Base(a.System, offered, style)
 	if ep.Profile.System.Kind != "" {
 		base = ep.System
 	}
 	if kind.System != "" {
 		base = kind.System
 	}
+	sess := a.SessionFor(ctx)
 	project, env := "", ""
 	if !ep.Profile.NoContext {
-		var err error
 		if env, err = a.EnvironmentFor(ctx, ep.Model, offered); err != nil {
 			return "", err
 		}
-		project = a.ProjectInstructions()
+		if !kind.NoInstructions {
+			project = a.instructionsFor(ctx, sess)
+		}
 	}
-	blocks := []string{base, kind.Append, project, env}
+	memory, err := a.memoryBlock(kind)
+	if err != nil {
+		return "", err
+	}
+	preloaded := a.preloadedSkills(ctx, sess, kind)
+	blocks := []string{base, kind.Append, project, memory, preloaded, a.skillListing(ep, offered), env}
 	for _, fragment := range fragmentsRegistered() {
 		blocks = append(blocks, fragment(ctx, a, ep))
 	}
 	return prompt.Compose(blocks...), nil
+}
+
+// Block listing the skills the model may load, empty without the skill tool or any skill
+func (a *App) skillListing(ep Endpoint, offered []string) string {
+	lib := a.Library()
+	if lib == nil || !slices.Contains(offered, SkillTool) {
+		return ""
+	}
+	listing := lib.Listing(ep.Catalog.Context, a.Config.Plugins.ListingShare, a.skillUsage())
+	if listing == "" {
+		return ""
+	}
+	return prompt.New().Heading(1, "Skills").Para("Skills are instructions loaded on demand with the " + SkillTool + " tool, each named with what it covers. When the task at hand is one a skill covers, load it before working your own way. A skill the person invoked arrives in the conversation on its own.").Raw(listing).String()
 }
 
 // Built in tools the kind offers and the registry has on, in guide order

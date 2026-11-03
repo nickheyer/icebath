@@ -783,6 +783,8 @@ func (tr *Transcript) Apply(ev agent.Event) {
 		tr.add(&block{kind: bHook, agent: ev.Agent, at: at, text: ev.Text, data: ev.Data, done: true})
 	case agent.EventNote:
 		tr.add(&block{kind: bNote, agent: ev.Agent, at: at, text: ev.Text, done: true})
+	case agent.EventDisplay:
+		tr.display(ev.Agent, ev.Text)
 	case agent.EventSubagentStart:
 		tr.add(&block{kind: bChild, agent: ev.Agent, at: at, call: ev.Call, text: ev.Text, data: ev.Data})
 	case agent.EventSubagentEnd:
@@ -1092,6 +1094,19 @@ func (tr *Transcript) loadEntry(e session.Entry) {
 	}
 }
 
+// Shows the text a MessageDisplay hook gave in place of the last message of the agent
+func (tr *Transcript) display(agent, text string) {
+	for i := len(tr.blocks) - 1; i >= 0; i-- {
+		b := tr.blocks[i]
+		if b.kind == bText && (agent == "" || b.agent == agent) {
+			b.text = text
+			b.cacheKey = renderKey{}
+			tr.dirty = true
+			return
+		}
+	}
+}
+
 func (tr *Transcript) loadRecord(r session.Record) {
 	switch r.Kind {
 	case "approval":
@@ -1147,6 +1162,11 @@ func (tr *Transcript) loadRecord(r session.Record) {
 		var d harness.NoteData
 		if json.Unmarshal(r.Data, &d) == nil && d.Text != "" {
 			tr.add(&block{kind: bNote, agent: r.Agent, at: r.Time, text: d.Text, level: d.Level, rich: true, expanded: true, done: true})
+		}
+	case harness.DisplayKind:
+		var d harness.DisplayData
+		if json.Unmarshal(r.Data, &d) == nil {
+			tr.display(r.Agent, d.Text)
 		}
 	case facts.RecordKind:
 		var c facts.Change

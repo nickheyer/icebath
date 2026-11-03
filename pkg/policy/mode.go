@@ -19,10 +19,12 @@ const (
 	ModeAcceptEdits Mode = "acceptEdits"
 	// Every call runs with no rule, guard, memory or hook permission consulted
 	ModeBypass Mode = "bypassPermissions"
+	// Any call the base policy would ask about is denied, explicitly allowed ones still run
+	ModeDontAsk Mode = "dontAsk"
 )
 
 // Every mode in the order a user cycles through them
-func Modes() []Mode { return []Mode{ModeDefault, ModeAcceptEdits, ModePlan, ModeBypass} }
+func Modes() []Mode { return []Mode{ModeDefault, ModeAcceptEdits, ModePlan, ModeDontAsk, ModeBypass} }
 
 // Mode after m in the cycle order
 func (m Mode) Next() Mode {
@@ -44,6 +46,8 @@ func (m Mode) Label() string {
 		return "accept edits"
 	case ModeBypass:
 		return "bypass"
+	case ModeDontAsk:
+		return "dont ask"
 	}
 	return "default"
 }
@@ -51,8 +55,10 @@ func (m Mode) Label() string {
 // Parses a mode name
 func ParseMode(s string) (Mode, error) {
 	switch Mode(s) {
-	case ModeDefault, ModePlan, ModeAcceptEdits, ModeBypass:
+	case ModeDefault, ModePlan, ModeAcceptEdits, ModeBypass, ModeDontAsk:
 		return Mode(s), nil
+	case "manual":
+		return ModeDefault, nil
 	}
 	return "", fmt.Errorf("mode: unknown mode %q", s)
 }
@@ -99,6 +105,12 @@ func (p moded) Explain(call protocol.ToolCall) (Decision, string) {
 			return p.base(call)
 		}
 		return Deny, "plan mode denies tools that change anything"
+	case ModeDontAsk:
+		d, why := p.base(call)
+		if d == Ask {
+			return Deny, "dont ask mode denies what would ask, " + why
+		}
+		return d, why
 	case ModeAcceptEdits:
 		for _, name := range DefaultEdits {
 			if name == call.Name {

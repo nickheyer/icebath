@@ -174,6 +174,8 @@ type Request struct {
 	Temperature   *float64
 	StopSequences []string
 	Stream        bool
+	// Effort asked of the model, low, medium, high, xhigh or max, sent by the protocols that take one
+	Effort string
 	// Raw JSON deep merged over the encoded body for protocol specific fields
 	Extra map[string]json.RawMessage
 }

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -258,7 +259,14 @@ func (m *Model) submit(msg cards.SubmitMsg) tea.Cmd {
 	if live.Session.Title() == "" && msg.Text != "" {
 		live.Session.SetTitle(render.Summary(msg.Text, 60, m.theme))
 	}
-	if _, err := m.app.RunOn(m.ctx, live, mission, msg.Parts); err != nil {
+	parts := msg.Parts
+	if initial, err := m.app.InitialPrompt(m.ctx, live); err == nil {
+		parts = append(initial, parts...)
+	} else if !errors.Is(err, harness.ErrNoInitial) {
+		return m.wm.Toast(err.Error(), wm.Error, 0)
+	}
+	m.idleSince = time.Time{}
+	if _, err := m.app.RunOn(m.ctx, live, mission, parts); err != nil {
 		return m.wm.Toast(err.Error(), wm.Error, 0)
 	}
 	m.state = tea.ProgramStateWorking
@@ -310,8 +318,14 @@ func (m *Model) clearDesk(d *desk) tea.Cmd {
 		return m.wm.Toast(err.Error(), wm.Error, 0)
 	}
 	old := d.live
+	if err := m.app.SessionEnded(m.ctx, old.Session, "clear"); err != nil {
+		return m.wm.Toast(err.Error(), wm.Error, 0)
+	}
 	cmds := m.closeGrown(d)
 	d.live = live
+	if err := m.app.SessionStarted(m.ctx, live.Session, "clear"); err != nil {
+		cmds = append(cmds, m.wm.Toast(err.Error(), wm.Error, 0))
+	}
 	d.session.Rebind(live)
 	d.approval = cards.NewApproval(m.env, live.Session.ID(), func(run string) bool { return m.app.LiveOfRun(run) == live })
 	d.agents, d.missions, d.findings, d.mission = map[string]*cards.Agent{}, map[string]*cards.Mission{}, nil, ""
@@ -384,6 +398,9 @@ func (m *Model) openStored(ids ...string) tea.Cmd {
 			cmds = append(cmds, m.wm.Toast(err.Error(), wm.Error, 0))
 			continue
 		}
+		if err := m.app.SessionStarted(m.ctx, live.Session, "resume"); err != nil {
+			cmds = append(cmds, m.wm.Toast(err.Error(), wm.Error, 0))
+		}
 		cmds = append(cmds, m.openDesk(nil, live))
 		titles = append(titles, sessionName(live, m.theme)+" on "+live.Endpoint.Model)
 	}
@@ -446,7 +463,14 @@ func (m *Model) forkLive(d *desk, src *harness.Live, n int) (*harness.Live, erro
 	if d != nil && d.compacting {
 		return nil, errors.New("compacting")
 	}
-	return m.app.Fork(src, n)
+	f, err := m.app.Fork(src, n)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.app.SessionStarted(m.ctx, f.Session, "fork"); err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 // Deletes stored sessions that have no card open, with the prompt drafts kept for them
@@ -530,6 +554,9 @@ func (m *Model) closeSession(d *desk) tea.Cmd {
 	}
 	if cmd := m.held(d); cmd != nil {
 		return cmd
+	}
+	if err := m.app.SessionEnded(m.ctx, d.live.Session, "other"); err != nil {
+		return m.wm.Toast(err.Error(), wm.Error, 0)
 	}
 	cmds := append(m.releaseDesk(d), m.wm.Close(d.session), m.storedToast(d))
 	return tea.Batch(cmds...)

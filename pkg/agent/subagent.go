@@ -35,7 +35,8 @@ func subagentSchema(kinds []Kind) json.RawMessage {
 	props := map[string]any{
 		"prompt":      map[string]any{"type": "string", "description": "Complete task for the child agent, with every detail it needs since it starts with an empty transcript"},
 		"description": map[string]any{"type": "string", "description": "Short label for the task shown to the user"},
-		"model":       map[string]any{"type": "string", "description": "Model id the child runs on, on the same profile, such as a cheaper model for exploration or a stronger one for review, the kind or parent model when left out"},
+		"model":       map[string]any{"type": "string", "description": "Model id or alias the child runs on, on the same profile, such as a cheaper model for exploration or a stronger one for review, the kind or parent model when left out"},
+		"effort":      map[string]any{"type": "string", "enum": []string{"low", "medium", "high", "xhigh", "max"}, "description": "Effort the child asks of its model, the kind or session effort when left out"},
 	}
 	if len(kinds) > 0 {
 		names := make([]string, 0, len(kinds))
@@ -52,6 +53,7 @@ func subagentSchema(kinds []Kind) json.RawMessage {
 			sb.WriteString(".")
 		}
 		props["kind"] = map[string]any{"type": "string", "enum": names, "description": strings.TrimSpace(sb.String())}
+		props["subagent_type"] = map[string]any{"type": "string", "enum": names, "description": "Same as kind, the name other harnesses use for it"}
 	}
 	raw, _ := json.Marshal(map[string]any{"type": "object", "properties": props, "required": []string{"prompt"}, "additionalProperties": false})
 	return raw
@@ -83,7 +85,11 @@ type Subagents struct {
 	// Lets several children of one round run at the same time
 	Parallel bool
 	// Kinds the model may name, none when nil
-	Kinds    func() []Kind
+	Kinds func() []Kind
+	// Reports whether children of a kind run in the background, their answer delivered later
+	Background func(kind string) bool
+	// Hands the answer of a background child to whoever spawned it
+	Deliver  func(ctx context.Context, text string)
 	mu       sync.Mutex
 	spawned  int
 	children map[string]*Child
@@ -219,13 +225,23 @@ func (t *Subagents) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 		return tool.Error("subagent: no factory configured"), nil
 	}
 	var in struct {
-		Prompt      string `json:"prompt"`
-		Description string `json:"description"`
-		Kind        string `json:"kind"`
-		Model       string `json:"model"`
+		Prompt       string `json:"prompt"`
+		Description  string `json:"description"`
+		Kind         string `json:"kind"`
+		SubagentType string `json:"subagent_type"`
+		Model        string `json:"model"`
+		Effort       string `json:"effort"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return tool.Error(err.Error()), nil
+	}
+	if in.Kind == "" {
+		in.Kind = in.SubagentType
+	}
+	switch in.Effort {
+	case "", "low", "medium", "high", "xhigh", "max":
+	default:
+		return tool.Errorf("effort %q is not low, medium, high, xhigh or max", in.Effort), nil
 	}
 	if strings.TrimSpace(in.Prompt) == "" {
 		return tool.Error("prompt is required"), nil
@@ -244,6 +260,9 @@ func (t *Subagents) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 	if child == nil {
 		return tool.Error("subagent: factory returned no agent"), nil
 	}
+	if in.Effort != "" {
+		child.Effort = in.Effort
+	}
 	parent := policy.AgentFrom(ctx)
 	callID := ""
 	if call, ok := tool.CallFrom(ctx); ok {
@@ -259,6 +278,30 @@ func (t *Subagents) Run(ctx context.Context, args json.RawMessage) (tool.Result,
 	c := &Child{Name: child.Name, Description: in.Description, Parent: parent, Depth: depth, CallID: callID, Agent: child, Started: time.Now(), Running: true, cancel: cancel}
 	t.register(c)
 	Observe(ctx, Event{Type: EventSubagentStart, Text: in.Description, Call: protocol.ToolCall{ID: callID, Name: child.Name}, Data: t.snapshot(c)})
+	if in.Kind != "" && t.Background != nil && t.Deliver != nil && t.Background(in.Kind) {
+		bctx := context.WithoutCancel(ctx)
+		go func() {
+			defer cancel()
+			resp, err := child.Run(bctx, []protocol.Part{protocol.Text{Text: in.Prompt}}, func(ev Event) { Observe(ctx, ev) })
+			text := strings.TrimSpace(resp.Text())
+			if err == nil && text == "" {
+				err = fmt.Errorf("subagent %s finished without a text answer", child.Name)
+			}
+			t.finish(c, text, err)
+			end := Event{Type: EventSubagentEnd, Call: protocol.ToolCall{ID: callID, Name: child.Name}, Err: err, Data: t.snapshot(c)}
+			if err == nil {
+				r := resp
+				end.Response = &r
+			}
+			Observe(ctx, end)
+			if err != nil {
+				t.Deliver(ctx, "Background agent "+child.Name+" failed: "+err.Error())
+				return
+			}
+			t.Deliver(ctx, "Background agent "+child.Name+" finished:\n\n"+text)
+		}()
+		return tool.Text("Agent " + child.Name + " runs in the background. Its answer arrives as a later message, carry on meanwhile.").With(t.snapshot(c)), nil
+	}
 	resp, err := child.Run(cctx, []protocol.Part{protocol.Text{Text: in.Prompt}}, func(ev Event) { Observe(ctx, ev) })
 	text := strings.TrimSpace(resp.Text())
 	switch {

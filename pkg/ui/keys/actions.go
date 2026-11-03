@@ -38,6 +38,8 @@ const (
 	Keybinds   = "config.keys"
 	Extensions = "config.ext"
 	Terminal   = "terminal"
+	Plugins    = "plugins"
+	Skills     = "skills"
 )
 
 // ContextDocs describes each context in the keybind editor.
@@ -58,6 +60,8 @@ var ContextDocs = map[string]string{
 	Detail:     "open detail panes",
 	Sessions:   "sessions panel",
 	Agents:     "agents panel",
+	Plugins:    "plugins panel",
+	Skills:     "skills panel",
 	Findings:   "findings panel",
 	Jobs:       "jobs panel",
 	Transcript: "agent transcripts",
@@ -159,6 +163,11 @@ var registry = func() []Action {
 		act("open.jobs", Global, "jobs", "open the background jobs panel"),
 		act("open.sessions", Global, "sessions", "browse saved sessions"),
 		act("open.config", Global, "config", "open settings"),
+		act("open.plugins", Global, "plugins", "open the plugins panel"),
+		act("open.skills", Global, "skills", "open the skills panel"),
+		act("plugins.reload", Global, "reload plugins", "read every plugin, skill and agent again"),
+		act("style.set", Global, "output style", "pick the output style of the system prompt"),
+		act("setup.init", Global, "setup", "run the Setup hooks of the project"),
 		act("open.findings", Global, "findings", "open the findings panel"),
 		act("agent.open", Global, "agent transcript", "choose a child agent's transcript to open"),
 
@@ -359,6 +368,18 @@ var registry = func() []Action {
 		act("config.rule.add", Rules, "new", "add a rule", "a"),
 		act("config.rule.edit", Rules, "edit", "edit the rule", "enter", "e"),
 		act("config.rule.delete", Rules, "delete", "ask for confirmation, then delete the rule", "d"),
+		act("plugins.toggle", Plugins, "toggle", "enable or disable the plugin", "enter", "space"),
+		act("plugins.install", Plugins, "install", "install a plugin from a marketplace, name@marketplace", "i"),
+		act("plugins.uninstall", Plugins, "uninstall", "ask for confirmation, then uninstall the plugin", "d"),
+		act("plugins.update", Plugins, "update", "fetch the plugin again from its marketplace", "u"),
+		act("plugins.configure", Plugins, "configure", "set an option of the plugin, key=value", "c"),
+		act("plugins.market.add", Plugins, "add marketplace", "register a marketplace from owner/repo, a git url, an http url or a path", "m"),
+		act("plugins.market.remove", Plugins, "remove marketplace", "forget a registered marketplace", "M"),
+		act("plugins.available", Plugins, "available", "show the plugins every marketplace offers, or the installed ones again", "a"),
+		act("plugins.reload", Plugins, "reload", "read every plugin, skill and agent again", "r"),
+		act("plugins.open", Plugins, "open", "open the plugin directory in a terminal window", "o"),
+		act("skills.run", Skills, "run", "run the skill in the session on the stage", "enter"),
+		act("skills.open", Skills, "open", "show the skill file in a terminal window", "o"),
 		act("config.hook.add", Hooks, "new", "add a hook", "a"),
 		act("config.hook.edit", Hooks, "edit", "edit the hook", "enter", "e"),
 		act("config.hook.delete", Hooks, "delete", "ask for confirmation, then delete the hook", "d"),

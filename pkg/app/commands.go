@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -75,6 +76,10 @@ func (m *Model) commands() []wm.Command {
 		{ID: "open.jobs", Title: "Open: jobs", Run: run("jobs")},
 		{ID: "open.sessions", Title: "Open: sessions", Run: run("sessions")},
 		{ID: "open.config", Title: "Open: config", Run: run("config")},
+		{ID: "open.plugins", Title: "Open: plugins", Run: run("plugins")},
+		{ID: "open.skills", Title: "Open: skills", Run: run("skills")},
+		{ID: "plugins.reload", Title: "Plugins: reload", Run: run("reload-plugins")},
+		{ID: "style.set", Title: "Output style" + more, Run: m.pickStyle},
 		{ID: "open.findings", Title: "Open: findings", When: has, Run: run("findings")},
 		{ID: "agent.open", Title: "Agent: open" + more, When: func() bool { d := m.current(); return d != nil && len(m.childRuns(d)) > 0 }, Run: m.pickAgent},
 		{ID: "interrupt", Title: "Interrupt", Run: m.interrupt},
@@ -88,9 +93,167 @@ func (m *Model) editKeys() tea.Cmd {
 	return tea.Batch(m.wm.OpenHere(m.config), m.config.ShowKeys())
 }
 
-// Slash commands the composer lists as they are typed, the built in ones then those of extensions
+// Slash commands the composer lists as they are typed, the built in ones, those of extensions, then the skills
 func (m *Model) slashCommands() []cards.Command {
-	return append(m.builtinSlash(), m.extensionSlash()...)
+	out := append(m.builtinSlash(), m.extensionSlash()...)
+	taken := map[string]bool{}
+	for _, c := range out {
+		taken[c.Name] = true
+	}
+	if lib := m.app.Library(); lib != nil {
+		for _, s := range lib.UserSkills() {
+			names := append([]string{s.Name}, s.Aliases...)
+			for _, name := range names {
+				if taken[name] {
+					continue
+				}
+				taken[name] = true
+				desc := render.Summary(s.Description, 60, m.theme)
+				if s.Plugin != nil {
+					desc = m.sourced(desc, s.Plugin.Name)
+				}
+				out = append(out, cards.Command{Name: name, Desc: desc, Arg: s.ArgumentHint})
+			}
+		}
+	}
+	return out
+}
+
+// Values the plugin command completes, its verbs then plugin ids
+func (m *Model) pluginSuggest(prefix string) []string {
+	verbs := []string{"install", "uninstall", "enable", "disable", "update", "configure", "marketplace", "list"}
+	if !strings.Contains(prefix, " ") {
+		return verbs
+	}
+	var out []string
+	for _, r := range m.app.PluginRows() {
+		out = append(out, r.ID)
+	}
+	return out
+}
+
+// Names of the output styles known, with none
+func (m *Model) styleSuggest(string) []string {
+	return append(m.app.StyleNames(), "none")
+}
+
+func (m *Model) pickStyle() tea.Cmd {
+	current := m.app.Config.OutputStyle
+	items := []wm.Item{{ID: "none", Title: "none", Detail: "the built in conduct sections", Keys: m.mark(current == ""), Run: func() tea.Cmd { return m.setStyle("") }}}
+	for _, name := range m.app.StyleNames() {
+		name := name
+		items = append(items, wm.Item{ID: name, Title: name, Keys: m.mark(current == name), Run: func() tea.Cmd { return m.setStyle(name) }})
+	}
+	return m.pick("output style", items)
+}
+
+func (m *Model) setStyle(name string) tea.Cmd {
+	if name == "none" {
+		name = ""
+	}
+	if err := m.app.SetOutputStyle(name); err != nil {
+		return m.wm.Toast(err.Error(), wm.Error, 0)
+	}
+	if name == "" {
+		return m.wm.Toast("output style cleared", wm.Success, 0)
+	}
+	return m.wm.Toast("output style "+name, wm.Success, 0)
+}
+
+// Carries out the plugin command, its verb and arguments
+func (m *Model) pluginCommand(args string) tea.Cmd {
+	verb, rest, _ := strings.Cut(strings.TrimSpace(args), " ")
+	rest = strings.TrimSpace(rest)
+	app, ctx := m.app, m.ctx
+	done := func(fn func() (string, error)) tea.Cmd {
+		return func() tea.Msg {
+			text, err := fn()
+			if err != nil {
+				return harness.NoticeMsg{Level: harness.Error, Text: err.Error()}
+			}
+			return harness.NoticeMsg{Level: harness.Success, Text: text}
+		}
+	}
+	switch verb {
+	case "", "list":
+		return m.wm.OpenHere(m.plugins)
+	case "install", "i", "add":
+		if rest == "" {
+			return m.wm.Toast("plugin install needs a name or name@marketplace", wm.Warn, 0)
+		}
+		return func() tea.Msg {
+			id, err := app.InstallPlugin(ctx, rest, "", nil)
+			if err != nil {
+				return harness.NoticeMsg{Level: harness.Error, Text: err.Error()}
+			}
+			return cards.PluginInstalledMsg{ID: id}
+		}
+	case "uninstall", "remove", "rm":
+		if rest == "" {
+			return m.wm.Toast("plugin uninstall needs a plugin id", wm.Warn, 0)
+		}
+		return done(func() (string, error) { return "uninstalled " + rest, app.UninstallPlugin(ctx, rest, false) })
+	case "enable", "disable":
+		if rest == "" {
+			return m.wm.Toast("plugin "+verb+" needs a plugin id", wm.Warn, 0)
+		}
+		return done(func() (string, error) { return verb + "d " + rest, app.EnablePlugin(ctx, rest, verb == "enable", "") })
+	case "update":
+		if rest == "" {
+			return m.wm.Toast("plugin update needs a plugin id", wm.Warn, 0)
+		}
+		return done(func() (string, error) {
+			changed, err := app.UpdatePlugin(ctx, rest)
+			if err != nil {
+				return "", err
+			}
+			if !changed {
+				return rest + " is up to date", nil
+			}
+			return "updated " + rest, nil
+		})
+	case "configure":
+		id, kv, _ := strings.Cut(rest, " ")
+		key, value, ok := strings.Cut(strings.TrimSpace(kv), "=")
+		if id == "" || !ok {
+			return m.wm.Toast("plugin configure needs an id and key=value", wm.Warn, 0)
+		}
+		return done(func() (string, error) {
+			return "set " + key + " of " + id, app.ConfigurePlugin(id, map[string]string{key: value})
+		})
+	case "marketplace", "market":
+		sub, src, _ := strings.Cut(rest, " ")
+		src = strings.TrimSpace(src)
+		switch sub {
+		case "add":
+			if src == "" {
+				return m.wm.Toast("marketplace add needs a source", wm.Warn, 0)
+			}
+			return done(func() (string, error) {
+				mk, err := app.AddMarketplace(ctx, src, "")
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("added marketplace %s with %d plugins", mk.Name, len(mk.Plugins)), nil
+			})
+		case "remove", "rm":
+			if src == "" {
+				return m.wm.Toast("marketplace remove needs a name", wm.Warn, 0)
+			}
+			return done(func() (string, error) { return "removed marketplace " + src, app.RemoveMarketplace(src) })
+		case "list", "":
+			names, err := app.Marketplaces()
+			if err != nil {
+				return m.wm.Toast(err.Error(), wm.Error, 0)
+			}
+			if len(names) == 0 {
+				return m.wm.Toast("no marketplace is registered", wm.Info, 0)
+			}
+			return m.wm.Toast("marketplaces: "+strings.Join(names, ", "), wm.Info, 6*time.Second)
+		}
+		return m.wm.Toast("marketplace takes add, remove or list", wm.Warn, 0)
+	}
+	return m.wm.Toast("plugin takes install, uninstall, enable, disable, update, configure, marketplace or list", wm.Warn, 0)
 }
 
 // Built in slash commands with the values their arguments may take
@@ -136,6 +299,13 @@ func (m *Model) builtinSlash() []cards.Command {
 		{Name: "agents", Desc: "agents", Action: "open.agents"},
 		{Name: "findings", Desc: "findings", Action: "open.findings"},
 		{Name: "config", Desc: "config", Action: "open.config"},
+		{Name: "plugins", Desc: "plugins installed and offered", Action: "open.plugins"},
+		{Name: "plugin", Desc: "install, uninstall, enable, disable, update or configure a plugin, add or remove a marketplace", Arg: "install|uninstall|enable|disable|update|configure|marketplace <args>", Suggest: m.pluginSuggest},
+		{Name: "skills", Desc: "skills of every source", Action: "open.skills"},
+		{Name: "reload-plugins", Desc: "read every plugin, skill and agent again", Action: "plugins.reload"},
+		{Name: "output-style", Desc: "output style of the system prompt, none to clear it", Arg: "name", Suggest: m.styleSuggest, Action: "style.set"},
+		{Name: "add-dir", Desc: "load the skills, agents and instructions of another directory", Arg: "path"},
+		{Name: "init", Desc: "run the Setup hooks of the project", Action: "setup.init"},
 		{Name: "keys", Desc: "keybinds", Action: "keys.edit"},
 		{Name: "metrics", Desc: "metrics", Action: "open.metrics"},
 		{Name: "jobs", Desc: "shell jobs", Action: "open.jobs"},
@@ -218,6 +388,44 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 		return open(m.findingsOf(d))
 	case "config":
 		return open(m.config)
+	case "plugins":
+		return open(m.plugins)
+	case "skills":
+		return open(m.skills)
+	case "plugin":
+		return m.pluginCommand(args)
+	case "reload-plugins":
+		app, ctx := m.app, m.ctx
+		return func() tea.Msg {
+			if err := app.ReloadPlugins(ctx); err != nil {
+				return harness.NoticeMsg{Level: harness.Error, Text: err.Error()}
+			}
+			return harness.NoticeMsg{Level: harness.Success, Text: "plugins reloaded"}
+		}
+	case "output-style":
+		if strings.TrimSpace(args) == "" {
+			return m.pickStyle()
+		}
+		return m.setStyle(strings.TrimSpace(args))
+	case "add-dir":
+		if strings.TrimSpace(args) == "" {
+			return m.wm.Toast("add-dir needs a path", wm.Warn, 0)
+		}
+		app, ctx, dir := m.app, m.ctx, strings.TrimSpace(args)
+		return func() tea.Msg {
+			if err := app.AddDir(ctx, dir, "slash_command"); err != nil {
+				return harness.NoticeMsg{Level: harness.Error, Text: err.Error()}
+			}
+			return harness.NoticeMsg{Level: harness.Success, Text: "added " + dir}
+		}
+	case "init":
+		app, ctx := m.app, m.ctx
+		return func() tea.Msg {
+			if err := app.Setup(ctx, "init"); err != nil {
+				return harness.NoticeMsg{Level: harness.Error, Text: err.Error()}
+			}
+			return harness.NoticeMsg{Level: harness.Success, Text: "setup hooks ran"}
+		}
 	case "keys":
 		return m.editKeys()
 	case "metrics":
@@ -269,6 +477,9 @@ func (m *Model) command(d *desk, name, args string) tea.Cmd {
 	}
 	if cmd, ok := m.extensionCommand(d, name, args); ok {
 		return cmd
+	}
+	if _, _, ok := m.app.SkillOf("/" + name); ok {
+		return m.runSkill(d, name, args)
 	}
 	return m.wm.Toast("unknown command /"+name, wm.Warn, 0)
 }
@@ -565,6 +776,8 @@ var builtinPanels = []panelChoice{
 	{"findings", "Findings", "recorded facts", "open.findings"},
 	{"sessions", "Sessions", "stored sessions", "open.sessions"},
 	{"config", "Config", "profiles, models, rules, hooks, mcp, tools, keys", "open.config"},
+	{"plugins", "Plugins", "plugins installed and offered", "open.plugins"},
+	{"skills", "Skills", "skills of every source", "open.skills"},
 }
 
 // Panels a workspace can open, the built in ones then those of extensions

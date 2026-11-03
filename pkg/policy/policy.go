@@ -251,6 +251,8 @@ type Gate struct {
 	OnAsk func(Request)
 	// Called with the answer or error the approver gave
 	OnAnswer func(Request, Answer, error)
+	// Called when a call is about to be denied without a person, true asking the approver instead
+	OnDeny func(ctx context.Context, call protocol.ToolCall, reason string) bool
 }
 
 // Checks the call with a decision settled ahead of the policy, replacing its allow or ask but never its deny, nothing checked while the policy is bypassed
@@ -264,6 +266,9 @@ func (g Gate) Resolve(ctx context.Context, call protocol.ToolCall, settled Decis
 	}
 	if settled != "" && decision != Deny {
 		decision, by = settled, "settled decision"
+	}
+	if decision == Deny && g.OnDeny != nil && g.Approver != nil && g.OnDeny(ctx, call, "denied by "+by) {
+		decision, by = Ask, "retry after denial by "+by
 	}
 	switch decision {
 	case Allow:

@@ -32,6 +32,19 @@ func init() { protocol.Register(Protocol{}) }
 var _ protocol.Protocol = Protocol{}
 
 // Request body for creating a message
+// Output settings of a request, the effort level
+type outputConfigBody struct {
+	Effort string `json:"effort"`
+}
+
+// Output config for an effort, nil for none
+func outputConfig(effort string) *outputConfigBody {
+	if effort == "" {
+		return nil
+	}
+	return &outputConfigBody{Effort: effort}
+}
+
 type request struct {
 	Model         string      `json:"model"`
 	MaxTokens     int         `json:"max_tokens"`
@@ -42,6 +55,8 @@ type request struct {
 	Temperature   *float64    `json:"temperature,omitempty"`
 	StopSequences []string    `json:"stop_sequences,omitempty"`
 	Stream        bool        `json:"stream,omitempty"`
+	// Effort of the model, sent as output_config.effort
+	OutputConfig *outputConfigBody `json:"output_config,omitempty"`
 }
 
 type message struct {
@@ -238,6 +253,7 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 		Model:         req.Model,
 		MaxTokens:     req.MaxTokens,
 		Temperature:   req.Temperature,
+		OutputConfig:  outputConfig(req.Effort),
 		StopSequences: req.StopSequences,
 		Stream:        req.Stream,
 	}

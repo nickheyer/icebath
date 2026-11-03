@@ -41,6 +41,8 @@ const (
 	EventSubagentStart EventType = "subagent_start"
 	EventSubagentEnd   EventType = "subagent_end"
 	EventInterrupt     EventType = "interrupt"
+	// Text a MessageDisplay hook shows in place of the message whose id is the data
+	EventDisplay EventType = "display"
 )
 
 // Approval asked of the gate, pending until the answer or error is filled in
@@ -108,6 +110,16 @@ type Hook interface {
 	AfterTool(ctx context.Context, call protocol.ToolCall, result protocol.ToolResult) (protocol.ToolResult, error)
 	// Runs when the model stops and may hand back parts that continue the run, again reporting an earlier continuation
 	OnStop(ctx context.Context, resp protocol.Response, again bool) ([]protocol.Part, error)
+}
+
+// Hook that also hears every tool round after its results are in and may hand back parts for the next turn
+type Rounder interface {
+	AfterRound(ctx context.Context, calls []protocol.ToolCall, results []protocol.ToolResult) ([]protocol.Part, error)
+}
+
+// Hook that also hears a run end on an error
+type Failer interface {
+	OnFailure(ctx context.Context, err error)
 }
 
 // Hook assembled from optional functions, unset ones passing through
@@ -211,7 +223,9 @@ type Agent struct {
 	// Request options copied onto every turn, the output budget left to the model when zero
 	MaxTokens   int
 	Temperature *float64
-	Extra       map[string]json.RawMessage
+	// Effort asked of the model, low, medium, high, xhigh or max, none when empty
+	Effort string
+	Extra  map[string]json.RawMessage
 	// Tool rounds one Run may take before the model must answer, unlimited when zero
 	MaxRounds   int
 	Hooks       []Hook
@@ -325,6 +339,13 @@ func (a *Agent) Run(ctx context.Context, input []protocol.Part, observe func(Eve
 	observe(Event{Type: EventRunStart, Parts: input})
 	a.Session.Log(a.Name, "run_start", map[string]any{"model": a.ModelID, "input": protocolText(input)})
 	resp, dropped, err := a.run(ctx, input, observe, rounds, &round)
+	if err != nil && !errors.Is(err, ErrInterrupted) && ctx.Err() == nil {
+		for _, h := range a.Hooks {
+			if f, ok := h.(Failer); ok {
+				f.OnFailure(ctx, err)
+			}
+		}
+	}
 	end := Event{Type: EventRunEnd, Err: err, Usage: a.Session.Usage()}
 	if err == nil || resp.Content != nil {
 		r := resp
@@ -412,9 +433,23 @@ func (a *Agent) run(ctx context.Context, input []protocol.Part, observe func(Eve
 			a.Session.AddResults(a.Name, results)
 			return resp, nil, limit
 		}
-		a.Session.AddResults(a.Name, a.round(ctx, calls, observe))
+		results := a.round(ctx, calls, observe)
+		a.Session.AddResults(a.Name, results)
 		if a.stopRequested() {
 			return resp, nil, a.interrupt(ctx, observe)
+		}
+		for _, h := range a.Hooks {
+			r, ok := h.(Rounder)
+			if !ok {
+				continue
+			}
+			parts, err := r.AfterRound(ctx, calls, results)
+			if err != nil {
+				return resp, nil, err
+			}
+			if len(parts) > 0 {
+				a.Steer(parts...)
+			}
 		}
 	}
 }
@@ -465,6 +500,7 @@ func (a *Agent) turn(ctx context.Context, observe func(Event)) (protocol.Respons
 		Messages:    a.Session.Snapshot(),
 		MaxTokens:   a.MaxTokens,
 		Temperature: a.Temperature,
+		Effort:      a.Effort,
 		Extra:       extra,
 		Stream:      true,
 	}

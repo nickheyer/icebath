@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -228,7 +229,11 @@ func (m *Model) pickKind() tea.Cmd {
 	items := []wm.Item{{ID: harness.NoKind, Title: harness.NoKind, Detail: "the plain agent", Keys: m.mark(current == ""), Run: func() tea.Cmd { return m.setKind(d, "") }}}
 	for _, k := range m.app.Kinds() {
 		name := k.Name
-		items = append(items, wm.Item{ID: name, Title: name, Detail: m.sourced(k.Description, k.Source), Keys: m.mark(current == name), Run: func() tea.Cmd { return m.setKind(d, name) }})
+		detail := m.sourced(k.Description, k.Source)
+		if len(k.Problems) > 0 {
+			detail = m.sourced(k.Description, strings.Join(k.Problems, "; "))
+		}
+		items = append(items, wm.Item{ID: name, Title: name, Detail: detail, Keys: m.mark(current == name), Run: func() tea.Cmd { return m.setKind(d, name) }})
 	}
 	return m.pick("kind", items)
 }
@@ -317,8 +322,91 @@ func (m *Model) extensionMsg(msg tea.Msg) (tea.Cmd, bool) {
 	case startWorkflowMsg:
 		_, opened := m.ensureDesk()
 		return tea.Batch(opened, m.startWorkflow(msg.name, msg.arg)), true
+	case cards.InvokeSkillMsg:
+		d, opened := m.ensureDesk()
+		if d == nil {
+			return opened, true
+		}
+		return tea.Batch(opened, m.runSkill(d, msg.Name, msg.Args)), true
+	case cards.PluginInstalledMsg:
+		return m.onboard(msg.ID), true
 	}
 	return nil, false
+}
+
+// Runs the onboarding skill of a plugin just installed in a fresh session, nothing for a plugin without one
+func (m *Model) onboard(id string) tea.Cmd {
+	skill, ok := m.app.OnboardingSkill(id)
+	if !ok {
+		return nil
+	}
+	live, err := m.app.Create()
+	if err != nil {
+		return m.wm.Toast(err.Error(), wm.Error, 0)
+	}
+	opened := m.openDesk(nil, live)
+	d := m.deskOfLive(live)
+	if d == nil {
+		return opened
+	}
+	return tea.Batch(opened, m.runSkill(d, skill.Name, ""))
+}
+
+// Looks at the watched files and configuration off the event loop and sends the idle notice after a minute of quiet
+func (m *Model) poll() tea.Cmd {
+	app, ctx := m.app, m.ctx
+	idle := !m.idleSince.IsZero() && time.Since(m.idleSince) > time.Minute
+	var sess = app.Session
+	if idle {
+		m.idleSince = time.Time{}
+	}
+	return func() tea.Msg {
+		app.Poll(ctx)
+		if idle {
+			app.Notify(ctx, sess, "idle_prompt", "Claude is waiting for your input", "")
+		}
+		return nil
+	}
+}
+
+// Expands a skill the person typed and sends the result to the session of the desk, a forked one running on its own
+func (m *Model) runSkill(d *desk, name, args string) tea.Cmd {
+	if d == nil {
+		return m.wm.Toast("no session", wm.Warn, 0)
+	}
+	if d.compacting {
+		return m.wm.Toast("compacting", wm.Warn, 0)
+	}
+	line := "/" + name
+	if args != "" {
+		line += " " + args
+	}
+	exp, err := m.app.ExpandSkills(m.ctx, d.live, line, false)
+	if err != nil {
+		return m.wm.Toast(err.Error(), wm.Error, 6*time.Second)
+	}
+	var cmds []tea.Cmd
+	if exp.Forked != nil {
+		live, skill, rendered := d.live, exp.Forked, exp.Rendered
+		cmds = append(cmds, m.wm.Toast("running /"+skill.Name+" in agent "+forkAgent(skill.Agent), wm.Info, 0), func() tea.Msg {
+			if _, err := m.app.ForkSkill(context.Background(), live, skill, rendered, false); err != nil {
+				return harness.NoticeMsg{Level: harness.Error, Text: err.Error()}
+			}
+			return nil
+		})
+	}
+	if len(exp.Parts) > 0 {
+		cmds = append(cmds, m.submit(cards.SubmitMsg{Session: d.live.Session.ID(), Parts: exp.Parts, Text: line}))
+	}
+	return tea.Batch(cmds...)
+}
+
+// Name of the agent a forked skill runs in
+func forkAgent(name string) string {
+	if name == "" {
+		return harness.KindGeneral
+	}
+	return name
 }
 
 // Opens the session of a workflow in the first workspace of the flow with room, overflow workspaces added as needed

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/plugin"
+	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
@@ -51,6 +53,34 @@ type Kind struct {
 	Hooks []agent.Hook `json:"-"`
 	// Extension or file the kind came from
 	Source string `json:"-"`
+	// Tool rules allowed without asking, such as Bash(git *)
+	Grants []string `json:"grants,omitempty"`
+	// Permission mode agents of the kind run under, the mode of the parent when empty
+	Mode string `json:"mode,omitempty"`
+	// Context tokens at which compaction runs, the configured threshold when zero
+	CompactWindow int `json:"compact_window,omitempty"`
+	// Skills whose content is loaded into the prompt
+	Skills []string `json:"skills,omitempty"`
+	// Memory scope, user, project or local, none when empty
+	Memory string `json:"memory,omitempty"`
+	// Stays in the background when spawned, even when the parent would wait
+	Background bool `json:"background,omitempty"`
+	// Leaves the instruction files out of the prompt
+	NoInstructions bool `json:"no_instructions,omitempty"`
+	// Effort level asked of the model, low, medium, high, xhigh or max
+	Effort string `json:"effort,omitempty"`
+	// Worktree when agents of the kind work in a temporary git worktree
+	Isolation string `json:"isolation,omitempty"`
+	// Color agents of the kind are shown in
+	Color string `json:"color,omitempty"`
+	// First user turn submitted on its own when a session of the kind starts
+	InitialPrompt string `json:"initial_prompt,omitempty"`
+	// Command hooks agents of the kind run with
+	HookConfig agent.HookConfig `json:"hooks,omitempty"`
+	// Servers connected while an agent of the kind runs
+	Servers []plugin.ServerRef `json:"-"`
+	// Problems found reading the kind, shown beside it
+	Problems []string `json:"-"`
 }
 
 // Name that stands for no kind wherever a kind is chosen
@@ -77,6 +107,37 @@ func (k Kind) Validate() error {
 	}
 	if k.PruneAfter < 0 {
 		return fmt.Errorf("kind %s: prune_after must not be negative", k.Name)
+	}
+	if k.Mode != "" {
+		if _, err := policy.ParseMode(k.Mode); err != nil {
+			return fmt.Errorf("kind %s: %w", k.Name, err)
+		}
+	}
+	for _, g := range k.Grants {
+		if _, err := policy.ParseRule(g); err != nil {
+			return fmt.Errorf("kind %s: grant %q: %w", k.Name, g, err)
+		}
+	}
+	switch k.Memory {
+	case "", "user", "project", "local":
+	default:
+		return fmt.Errorf("kind %s: memory %q is not user, project or local", k.Name, k.Memory)
+	}
+	switch k.Isolation {
+	case "", "worktree":
+	default:
+		return fmt.Errorf("kind %s: isolation %q is not worktree", k.Name, k.Isolation)
+	}
+	switch k.Effort {
+	case "", "low", "medium", "high", "xhigh", "max":
+	default:
+		return fmt.Errorf("kind %s: effort %q is not low, medium, high, xhigh or max", k.Name, k.Effort)
+	}
+	if k.CompactWindow < 0 {
+		return fmt.Errorf("kind %s: compact_window must not be negative", k.Name)
+	}
+	if err := k.HookConfig.Validate(); err != nil {
+		return fmt.Errorf("kind %s: %w", k.Name, err)
 	}
 	return nil
 }
@@ -360,7 +421,14 @@ func loadKindDir(dir string) ([]Kind, error) {
 
 // Kinds from the registry and the kind directories, a file namesake replacing a registered one and the project the user
 func loadKinds(dir string) ([]Kind, error) {
-	out := RegisteredKinds()
+	out := builtinKinds()
+	for _, k := range RegisteredKinds() {
+		if i := slices.IndexFunc(out, func(have Kind) bool { return have.Name == k.Name }); i >= 0 {
+			out[i] = k
+			continue
+		}
+		out = append(out, k)
+	}
 	userDir, err := profiles.ConfigDir()
 	if err != nil {
 		return nil, err
@@ -493,6 +561,8 @@ func (l *Live) Kind() string { return l.Session.Labels()[kindLabel] }
 type kindTools struct {
 	agent.Hooks
 	kind Kind
+	// Rules the kind allows without asking, nil for none
+	grants *policy.Rules
 }
 
 func (h kindTools) BeforeTurn(ctx context.Context, req *protocol.Request) error {
@@ -509,6 +579,9 @@ func (h kindTools) BeforeTurn(ctx context.Context, req *protocol.Request) error 
 func (h kindTools) BeforeTool(ctx context.Context, call protocol.ToolCall) (agent.Advice, error) {
 	if !h.kind.Offers(call.Name) {
 		return agent.Advice{Call: call}, fmt.Errorf("tool %s is not offered to kind %s", call.Name, h.kind.Name)
+	}
+	if h.grants != nil && h.grants.Decide(call) == policy.Allow {
+		return agent.Advice{Call: call, Decision: policy.Allow}, nil
 	}
 	return agent.Advice{Call: call}, nil
 }
@@ -684,17 +757,31 @@ func (f *Flow) Start(ctx context.Context, l *Live, missionID string, input []pro
 	return f.App.RunOn(ctx, l, missionID, input)
 }
 
-// Waits for a run to end and hands back its final response or error
+// Waits for a run to end and hands back its final response or error, TeammateIdle hooks keeping the member working
 func (f *Flow) Wait(ctx context.Context, r *Run) (protocol.Response, error) {
-	done, ok := f.App.Control.Done(r.ID)
-	if !ok {
-		return protocol.Response{}, fmt.Errorf("harness: no run %s", r.ID)
-	}
-	select {
-	case <-done:
-		return r.Response(), r.Err()
-	case <-ctx.Done():
-		return protocol.Response{}, ctx.Err()
+	for {
+		done, ok := f.App.Control.Done(r.ID)
+		if !ok {
+			return protocol.Response{}, fmt.Errorf("harness: no run %s", r.ID)
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return protocol.Response{}, ctx.Err()
+		}
+		resp, err := r.Response(), r.Err()
+		if err != nil {
+			return resp, err
+		}
+		reason, more := f.App.teammateIdle(ctx, r, f)
+		if !more {
+			return resp, nil
+		}
+		next, err := f.App.RunOn(ctx, f.App.LiveOf(r.Session), r.Mission, []protocol.Part{protocol.Text{Text: reason}})
+		if err != nil {
+			return resp, err
+		}
+		r = next
 	}
 }
 

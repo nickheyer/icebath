@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -31,6 +32,8 @@ type HeadlessOptions struct {
 	Kind string
 	// Workflow run with the prompt as its argument instead of a plain run
 	Workflow string
+	// Runs the Setup hooks with the trigger, init or maintenance, then the startup hooks, and exits
+	Setup string
 	// Writes every bridge message as one JSON object per line instead of text
 	Print bool
 	// Answers every approval yes, every approval is denied otherwise
@@ -368,7 +371,14 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 			return 2
 		}
 	}
-	if err := app.SessionStart(ctx, "headless"); err != nil {
+	if opts.Setup != "" {
+		if err := app.Setup(ctx, opts.Setup); err != nil {
+			fmt.Fprintln(errw, "icebath:", err)
+			return 2
+		}
+		return 0
+	}
+	if err := app.SessionStart(ctx, "startup"); err != nil {
 		fmt.Fprintln(errw, "icebath:", err)
 		return 2
 	}
@@ -403,7 +413,32 @@ func Headless(ctx context.Context, opts HeadlessOptions) int {
 	if app.Session.Title() == "" {
 		app.Session.SetTitle(render.Summary(prompt, 60, t))
 	}
-	run, err := app.Run(ctx, missionID, []protocol.Part{protocol.Text{Text: prompt}})
+	parts := []protocol.Part{protocol.Text{Text: prompt}}
+	if _, _, ok := app.SkillOf(prompt); ok {
+		exp, err := app.ExpandSkills(ctx, app.Current(), prompt, true)
+		if err != nil {
+			fmt.Fprintln(errw, "icebath:", err)
+			return 2
+		}
+		if exp.Forked != nil {
+			answer, err := app.ForkSkill(ctx, app.Current(), exp.Forked, exp.Rendered, true)
+			if err != nil {
+				fmt.Fprintln(errw, "icebath:", err)
+				return 1
+			}
+			tw.newline()
+			fmt.Fprintln(out, answer)
+			return 0
+		}
+		parts = exp.Parts
+	}
+	if initial, err := app.InitialPrompt(ctx, app.Current()); err == nil {
+		parts = append(initial, parts...)
+	} else if !errors.Is(err, harness.ErrNoInitial) {
+		fmt.Fprintln(errw, "icebath:", err)
+		return 2
+	}
+	run, err := app.Run(ctx, missionID, parts)
 	if err != nil {
 		fmt.Fprintln(errw, "icebath:", err)
 		return 2

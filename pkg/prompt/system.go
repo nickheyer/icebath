@@ -123,7 +123,8 @@ var otherGuides = []guide{
 	{"WebFetch", "WebFetch reads a page, answering a question about it when one is given."},
 	{"Record", "Record keeps a conclusion a person wants after the session, such as a bug found, a risk, a decision or an open question. Routine command results and progress belong in prose. Working notes, drafted code, and temporary files go in the scratch directory named in the environment."},
 	{"Plan", "Plan holds the ordered steps of the work, on the attached mission or on this session. Call it before work that takes more than a few tool calls and whenever a step changes state, keeping one step active."},
-	{"Agent", "Agent delegates a self contained task to a child with its own transcript. Give it every detail it needs, since it starts empty."},
+	{"Agent", "Agent delegates a self contained task to a child with its own transcript, of a named kind when one fits. Give it every detail it needs, since it starts empty."},
+	{"Skill", "Skill loads the instructions of a listed skill into the conversation. Load the skill that covers the task before doing the work another way."},
 }
 
 // Every tool name the guide knows, in guide order

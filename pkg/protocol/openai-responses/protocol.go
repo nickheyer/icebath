@@ -51,6 +51,20 @@ type request struct {
 	Stream          bool           `json:"stream,omitempty"`
 	Store           bool           `json:"store"`
 	Include         []string       `json:"include"`
+	Reasoning       *reasoningBody `json:"reasoning,omitempty"`
+}
+
+// Reasoning settings of a request, the effort level
+type reasoningBody struct {
+	Effort string `json:"effort"`
+}
+
+// Reasoning body for an effort, nil for none
+func reasoningOf(effort string) *reasoningBody {
+	if effort == "" {
+		return nil
+	}
+	return &reasoningBody{Effort: effort}
 }
 
 type functionTool struct {
@@ -268,6 +282,7 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 		ToolChoice:      choice,
 		MaxOutputTokens: req.MaxTokens,
 		Temperature:     req.Temperature,
+		Reasoning:       reasoningOf(req.Effort),
 		Stream:          req.Stream,
 		Store:           false,
 		Include:         []string{includeEncrypted},

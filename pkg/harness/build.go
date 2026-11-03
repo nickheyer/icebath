@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/facts"
 	"github.com/nickheyer/icebath/pkg/mission"
+	"github.com/nickheyer/icebath/pkg/plugin"
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/protocol"
@@ -27,6 +28,22 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool/shell"
 	"github.com/nickheyer/icebath/pkg/tool/web"
 )
+
+// Name of the plan tool, whose calls the task hooks watch
+const planToolName = mission.ToolName
+
+// Mission id the context carries
+func missionIDFrom(ctx context.Context) string { return mission.IDFrom(ctx) }
+
+// Plan kept on a session
+func currentSessionPlan(sess *session.Session) (mission.SessionPlan, bool) {
+	return mission.CurrentSessionPlan(sess)
+}
+
+// Configuration directory of the user
+func configDirOf() (string, error) { return profiles.ConfigDir() }
+
+func sortStrings(list []string) { sort.Strings(list) }
 
 // Error of a run or an open while nothing names a profile
 var ErrNoProfile = errors.New("harness: no profile is open, pick one in config or pass -profile")
@@ -107,6 +124,25 @@ type App struct {
 	// First model each profile naming none listed, by profile name
 	listed   map[string]string
 	listedMu sync.Mutex
+	// Plugins, skills, agents, styles and instructions with the state kept for them
+	lib library
+	// Directories added beside the project
+	Added []string
+	// Files and configuration watched for change events
+	watch  *watcher
+	pollMu sync.Mutex
+	// Hook state shared by the agents of each session
+	states  map[string]*agent.HookState
+	stateMu sync.Mutex
+	// Why the sessions end at close, as SessionEnd hooks hear it, other when empty
+	EndReason string
+	// Shell job ids of the plugin monitors started, by plugin id and monitor name
+	monitors  map[string]string
+	monitorMu sync.Mutex
+	// Environment file the running session hooks may write, and the variables naming it
+	envFile  string
+	envMu    sync.Mutex
+	extraEnv []string
 }
 
 // Profile whose endpoint refuses every call until the person acts, with the refusal and when it was first heard
@@ -270,9 +306,20 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	app.Session, app.Facts, app.Missions = first.Session, first.Facts, first.Missions
 	app.Saver = NewSaver(app.Store, send)
 	app.Saver.Off = app.Ghosted
+	app.watch = newWatcher()
+	for _, d := range cfg.AddDirs {
+		if abs, err := filepath.Abs(d); err == nil {
+			app.lib.added = append(app.lib.added, abs)
+		}
+	}
+	app.Added = app.AddedDirs()
 	if err := app.buildTools(dir); err != nil {
 		return nil, err
 	}
+	if err := app.loadLibrary(); err != nil {
+		return nil, err
+	}
+	app.applyBins(app.Library())
 	if err := app.buildPolicy(root); err != nil {
 		return nil, err
 	}
@@ -297,10 +344,18 @@ func Build(ctx context.Context, cfg Config, send Sender, opts BuildOptions) (*Ap
 	}
 	app.MCP = NewMCP(send, app.Tools)
 	app.MCP.Options.Roots = []mcp.Root{{URI: "file://" + filepath.ToSlash(root), Name: filepath.Base(root)}}
+	app.MCP.Options.Elicit = app.elicit
 	for _, s := range cfg.MCP {
 		if err := app.MCP.Add(ctx, s); err != nil {
 			return nil, err
 		}
+	}
+	app.connectPluginServers(ctx, app.Library())
+	app.watch.cwd(app.Shell.Dir())
+	app.watch.changedConfig(app.configFiles())
+	app.watch.changedSkills(app.skillDirs())
+	if app.lib.store != nil {
+		app.lib.store.Sweep()
 	}
 	return app, nil
 }
@@ -400,11 +455,11 @@ func (a *App) buildTools(dir string) error {
 			return err
 		}
 	}
-	a.Subagents = &agent.Subagents{MaxDepth: cfg.Subagents.MaxDepth, Parallel: cfg.Subagents.Parallel, Timeout: seconds(cfg.Subagents.Timeout), Factory: a.childFactory, Kinds: a.agentKinds}
+	a.Subagents = &agent.Subagents{MaxDepth: cfg.Subagents.MaxDepth, Parallel: cfg.Subagents.Parallel, Timeout: seconds(cfg.Subagents.Timeout), Factory: a.childWithIsolation, Kinds: a.agentKinds, Background: a.kindBackground, Deliver: a.deliverToRun}
 	for _, name := range cfg.Tools.Disabled {
 		a.Tools.SetEnabled(name, false)
 	}
-	return a.Tools.Add(facts.Tool{Resolve: a.FactsFor}, mission.Tool{Resolve: a.MissionsFor, Session: a.SessionFor}, a.Subagents)
+	return a.Tools.Add(facts.Tool{Resolve: a.FactsFor}, mission.Tool{Resolve: a.MissionsFor, Session: a.SessionFor}, a.Subagents, skillTool{app: a})
 }
 
 // Builds a child agent on a fresh session labeled with its parent, on the kind endpoint, the subagent one or the parent one
@@ -443,8 +498,57 @@ func (a *App) childFactory(ctx context.Context, kind, model string) (*agent.Agen
 	if err != nil {
 		return nil, err
 	}
+	ag.Hooks = append([]agent.Hook{kindTools{kind: Kind{Name: "subagent", Deny: subagentDenied}}}, ag.Hooks...)
 	a.trackOn(sess, ep)
 	return ag, nil
+}
+
+// Child factory whose agents of an isolated kind work in a worktree of their own
+func (a *App) childWithIsolation(ctx context.Context, kind, model string) (*agent.Agent, error) {
+	ag, err := a.childFactory(ctx, kind, model)
+	if err != nil {
+		return nil, err
+	}
+	k, _ := a.KindOf(ag.Session)
+	if len(k.Servers) > 0 {
+		if err := a.connectKindServers(ctx, k); err != nil {
+			return nil, err
+		}
+		ag.Hooks = append(ag.Hooks, &serversHook{app: a, kind: k})
+	}
+	if k.Isolation != "worktree" {
+		return ag, nil
+	}
+	wt, err := a.createWorktree(ctx, ag.Session, kind)
+	if err != nil {
+		return nil, err
+	}
+	ag.Tools = wt.tools
+	ag.Hooks = append(ag.Hooks, &worktreeHook{app: a, sess: ag.Session, wt: wt})
+	return ag, nil
+}
+
+// Hook that ends the worktree of an isolated agent when its run stops, naming the kept path in its answer
+type worktreeHook struct {
+	agent.Hooks
+	app  *App
+	sess *session.Session
+	wt   *worktree
+}
+
+func (h *worktreeHook) BeforeRun(ctx context.Context, input []protocol.Part) ([]protocol.Part, error) {
+	return append(input, protocol.Text{Text: "You work in a temporary git worktree at " + h.wt.Path + ", branched from " + h.wt.Branch + ". Every command and file path of yours runs there."}), nil
+}
+
+func (h *worktreeHook) OnStop(ctx context.Context, resp protocol.Response, again bool) ([]protocol.Part, error) {
+	if kept := h.app.finishWorktree(ctx, h.sess, h.wt); kept != "" {
+		agent.Observe(ctx, agent.Event{Type: agent.EventNote, Text: "worktree with changes kept at " + kept})
+	}
+	return nil, nil
+}
+
+func (h *worktreeHook) OnFailure(ctx context.Context, err error) {
+	h.app.finishWorktree(ctx, h.sess, h.wt)
 }
 
 func (a *App) buildPolicy(root string) error {
@@ -464,8 +568,41 @@ func (a *App) buildPolicy(root string) error {
 	}
 	a.Mode = policy.Compose(start, pol, a.Tools)
 	a.Memory = &policy.Memory{Ask: a.Approver, Key: pol.Key}
-	a.Gate = policy.Gate{Policy: a.Mode, Approver: a.Memory, Tools: a.Tools}
+	a.Gate = policy.Gate{Policy: a.Mode, Approver: hookApprover{app: a}, Tools: a.Tools, OnDeny: a.permissionDenied}
 	return nil
+}
+
+// Permission mode a child of a kind runs under, the parent mode winning when it bypasses, accepts edits or plans
+func childMode(parent policy.Mode, kind Kind) policy.Mode {
+	own, err := policy.ParseMode(kind.Mode)
+	if kind.Mode == "" || err != nil {
+		return parent
+	}
+	switch parent {
+	case policy.ModeBypass, policy.ModeAcceptEdits:
+		return parent
+	case policy.ModePlan:
+		return policy.ModePlan
+	}
+	if own == policy.ModeBypass {
+		return parent
+	}
+	return own
+}
+
+// Gate of an agent of a kind, the shared one unless the kind names a mode of its own
+func (a *App) gateFor(kind Kind) policy.Gate {
+	if kind.Mode == "" {
+		return a.Gate
+	}
+	mode := childMode(a.Mode.Mode(), kind)
+	if mode == a.Mode.Mode() {
+		return a.Gate
+	}
+	sw := policy.Compose(mode, a.Rules, a.Tools)
+	g := a.Gate
+	g.Policy = sw
+	return g
 }
 
 // Builds an agent on the session with every configured hook, the endpoint of the session and the shared gate
@@ -475,6 +612,16 @@ func (a *App) NewAgent(name string, sess *session.Session) (*agent.Agent, error)
 
 // Builds an agent on the session that runs on the endpoint, as the kind of the session when it has one
 func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.Agent, error) {
+	return a.buildAgent(name, sess, ep, buildOptions{})
+}
+
+// Choices of an agent build beside the configuration
+type buildOptions struct {
+	// Leaves the command hooks out, for agents that serve hooks
+	noHooks bool
+}
+
+func (a *App) buildAgent(name string, sess *session.Session, ep Endpoint, opts buildOptions) (*agent.Agent, error) {
 	if ep.Provider == nil {
 		return nil, ErrNoProfile
 	}
@@ -483,7 +630,8 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 	}
 	cfg := a.Config
 	kind, _ := a.KindOf(sess)
-	ag := &agent.Agent{Name: name, Model: labeled{named{Model: ep.Provider, profile: ep.Profile.Name}}, ModelID: ep.Model, Tools: a.Tools, Gate: a.Gate, Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
+	ag := &agent.Agent{Name: name, Model: labeled{named{Model: ep.Provider, profile: ep.Profile.Name}}, ModelID: ep.Model, Tools: a.Tools, Gate: a.gateFor(kind), Session: sess, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature, Extra: cfg.Extra, MaxRounds: cfg.MaxRounds}
+	ag.Effort = kind.Effort
 	if ag.MaxTokens == 0 && protocol.RequiresMaxTokens(ep.Provider.Protocol) {
 		ag.MaxTokens = ep.Catalog.MaxOutput
 	}
@@ -494,15 +642,33 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		ag.MaxTokens = kind.MaxTokens
 	}
 	ag.Hooks = append(ag.Hooks, &systemHook{app: a, ep: ep, kind: kind})
+	ag.Hooks = append(ag.Hooks, activationHook{app: a, sess: sess, ep: ep})
 	var runner *agent.HookRunner
-	if len(cfg.Hooks) > 0 {
-		transcript, _ := a.Store.Path(sess.ID())
-		r := agent.HookRunner{Config: cfg.Hooks, Dir: a.Root, SessionID: sess.ID(), Transcript: transcript, Log: hookLog{send: a.send, run: name}}
+	if !opts.noHooks {
+		r := a.hookRunner(name, sess, ep, kind, a.stateOf(sess))
+		r.Host = a.hookHost(sess, ep, func() string { return name })
+		r.Env = a.hookEnv()
 		runner = &r
-		ag.Hooks = append(ag.Hooks, r)
+		ag.Hooks = append(ag.Hooks, r, watchHook{app: a, sess: sess}, &taskHook{app: a, sess: sess})
 	}
 	if kind.Name != "" {
-		ag.Hooks = append(ag.Hooks, kindTools{kind: kind})
+		kt := kindTools{kind: kind}
+		if len(kind.Grants) > 0 {
+			grants, err := policy.NewRules(policy.RuleSet{Allow: kind.Grants})
+			if err != nil {
+				return nil, fmt.Errorf("kind %s: %w", kind.Name, err)
+			}
+			grants.Default, grants.Dir, grants.DirFunc = policy.Deny, a.Root, a.Shell.Dir
+			kt.grants = grants
+		}
+		ag.Hooks = append(ag.Hooks, kt)
+	}
+	if kind.Memory != "" {
+		for _, name := range []string{"Read", "Write", "Edit"} {
+			if !kind.Offers(name) {
+				kind.Tools = append(kind.Tools, name)
+			}
+		}
 	}
 	info := AgentInfo{Name: name, Session: sess, Endpoint: ep, Kind: kind, App: a}
 	for _, build := range hooksRegistered() {
@@ -511,14 +677,34 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		}
 	}
 	ag.Hooks = append(ag.Hooks, kind.Hooks...)
-	if threshold := cfg.CompactThreshold(ep.Catalog.Context); threshold > 0 {
+	threshold := cfg.CompactThreshold(ep.Catalog.Context)
+	if kind.CompactWindow > 0 {
+		threshold = kind.CompactWindow
+	}
+	if threshold > 0 {
 		s := &agent.Summarizer{Model: labeled{ep.Provider}, ModelID: ep.Model, Session: sess, Threshold: threshold, Keep: cfg.Compaction.Keep, Instructions: cfg.Compaction.Instructions}
 		if a.summary != nil {
 			s.Model, s.ModelID = labeled{a.summary.Provider}, a.summary.Model
 		}
 		if runner != nil {
-			s.Before = func(ctx context.Context) error {
-				_, err := runner.Fire(ctx, agent.PreCompact, map[string]any{"trigger": "auto"})
+			s.Before = func(ctx context.Context, trigger string) error {
+				v, err := runner.Fire(ctx, agent.PreCompact, trigger, map[string]any{"trigger": trigger, "custom_instructions": cfg.Compaction.Instructions})
+				if err != nil {
+					return err
+				}
+				if v.Block {
+					return &agent.HookBlocked{HookEvent: agent.PreCompact, Reason: v.Reason}
+				}
+				return nil
+			}
+			s.After = func(ctx context.Context, trigger string) error {
+				a.forgetLoaded(sess)
+				runner.Fire(ctx, agent.PostCompact, trigger, map[string]any{"trigger": trigger})
+				for _, in := range plugin.Always(a.Instructions()) {
+					in.Reason = plugin.LoadCompact
+					a.instructionsLoaded(ctx, sess, in, "")
+				}
+				_, err := runner.Fire(ctx, agent.SessionStart, "compact", map[string]any{"source": "compact"})
 				return err
 			}
 		}
@@ -646,20 +832,11 @@ func (a *App) start(ctx context.Context, sess *session.Session, missionID string
 	return a.Control.Start(ctx, ag, missionID, input)
 }
 
-// Fires the SessionStart hooks
-func (a *App) SessionStart(ctx context.Context, source string) error {
-	if len(a.Config.Hooks) == 0 {
-		return nil
-	}
-	r := agent.HookRunner{Config: a.Config.Hooks, Dir: a.Root, SessionID: a.Session.ID(), Log: hookLog{send: a.send}}
-	_, err := r.Fire(ctx, agent.SessionStart, map[string]any{"source": source})
-	return err
-}
-
 // Stops runs, closes servers and the shell, saves every open session and fires the SessionEnd hooks
 func (a *App) Close(ctx context.Context) error {
 	var err error
 	a.closed.Do(func() {
+		a.stopMonitors(ctx)
 		a.Flows.Shutdown()
 		a.Control.Shutdown()
 		a.Approver.Close()
@@ -671,12 +848,24 @@ func (a *App) Close(ctx context.Context) error {
 		}
 		a.Saver.Wait()
 		a.Store.Close()
-		if len(a.Config.Hooks) > 0 {
-			r := agent.HookRunner{Config: a.Config.Hooks, Dir: a.Root, SessionID: a.Session.ID(), Log: hookLog{send: a.send}}
-			_, err = r.Fire(ctx, agent.SessionEnd, map[string]any{"reason": "exit"})
+		reason := a.EndReason
+		if reason == "" {
+			reason = "other"
+		}
+		for _, l := range a.Lives() {
+			if e := a.SessionEnded(ctx, l.Session, reason); e != nil && err == nil {
+				err = e
+			}
 		}
 	})
 	return err
+}
+
+// Extra environment hooks run with, the environment file while one is open
+func (a *App) hookEnv() []string {
+	a.envMu.Lock()
+	defer a.envMu.Unlock()
+	return append([]string(nil), a.extraEnv...)
 }
 
 // Points the meter totals and the selected session at the endpoint, its window and the compaction threshold it gives
@@ -843,9 +1032,15 @@ func NewestSession(ctx context.Context, store *session.Store, root string) (stri
 	return "", fmt.Errorf("no session of %s to continue", root)
 }
 
-// Opens a fresh session on the default endpoint beside the ones already open
+// Opens a fresh session on the default endpoint beside the ones already open, as the agent a plugin asks for when one does
 func (a *App) Create() (*Live, error) {
-	return a.live(session.New(), a.Primary)
+	sess := session.New()
+	if lib := a.Library(); lib != nil && lib.MainAgent != "" {
+		if _, ok := a.Kind(lib.MainAgent); ok {
+			sess.Label(kindLabel, lib.MainAgent)
+		}
+	}
+	return a.live(sess, a.Primary)
 }
 
 // Opens a fork of an open session cut at n entries on the same endpoint and writes it to the store
@@ -887,6 +1082,18 @@ func (a *App) fork(sess *session.Session, ep Endpoint, n int) (*Live, error) {
 
 // Changes the model of an open session, moving the default along when the session is on the default profile
 func (a *App) SetModelOn(l *Live, id string) {
+	a.SwitchModelOn(context.Background(), l, id)
+}
+
+// Changes the model of an open session after its PreModelSwitch hooks allow, PostModelSwitch hooks hearing of it
+func (a *App) SwitchModelOn(ctx context.Context, l *Live, id string) error {
+	from := l.Endpoint.Model
+	if from == id {
+		return nil
+	}
+	if err := a.modelSwitch(ctx, l.Session, from, id); err != nil {
+		return err
+	}
 	l.Endpoint = withModel(l.Endpoint, id)
 	l.Session.SetModel(id)
 	a.trackOn(l.Session, l.Endpoint)
@@ -896,6 +1103,8 @@ func (a *App) SetModelOn(l *Live, id string) {
 	if l.Session == a.Session {
 		a.track(l.Endpoint)
 	}
+	a.modelSwitched(ctx, l.Session, from, id)
+	return nil
 }
 
 // Changes the model new sessions start on
@@ -910,6 +1119,12 @@ func (a *App) SetEndpointOn(ctx context.Context, l *Live, name string, ep Endpoi
 		return errors.New("harness: an agent is still working")
 	}
 	was := l.Endpoint.Profile.Ghost
+	from := l.Endpoint.Model
+	if from != ep.Model {
+		if err := a.modelSwitch(ctx, l.Session, from, ep.Model); err != nil {
+			return err
+		}
+	}
 	if was && !ep.Profile.Ghost {
 		if err := a.Store.Lease(l.Session.ID()); err != nil {
 			return err
@@ -923,6 +1138,9 @@ func (a *App) SetEndpointOn(ctx context.Context, l *Live, name string, ep Endpoi
 	a.SetDefaultEndpoint(name, ep)
 	if l.Session == a.Session {
 		a.track(ep)
+	}
+	if from != ep.Model {
+		a.modelSwitched(ctx, l.Session, from, ep.Model)
 	}
 	switch {
 	case ep.Profile.Ghost && !was:

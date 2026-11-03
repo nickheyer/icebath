@@ -34,6 +34,31 @@ func (c *Config) SaveSetting(dir, key, value string) error {
 	return Save(dir, c.Sources, f)
 }
 
+// Configuration files a start under dir reads, the user one then the project one
+func ConfigLayers(dir string) ([]string, error) { return configLayers(dir) }
+
+// Writes each value into one configuration file, removing unset ones, creating the file when it is missing
+func SaveTo(path string, fields ...Field) error {
+	doc, err := readObject(path)
+	if err != nil {
+		return err
+	}
+	for _, f := range fields {
+		if f.Unset {
+			if doc.holds(f.Path) {
+				if err := doc.remove(f.Path); err != nil {
+					return fmt.Errorf("%s: %w", path, err)
+				}
+			}
+			continue
+		}
+		if err := doc.place(f.Path, f.Value); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return writeObject(path, doc)
+}
+
 // Writes each value into every file setting it, else the user file, and removes unset ones from every file
 func Save(dir string, sources []string, fields ...Field) error {
 	layers, err := configLayers(dir)

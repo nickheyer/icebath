@@ -70,7 +70,10 @@ icebath [flags] [prompt]
   -mission text      start a mission with an objective
   -kind name         kind the session runs as, from extensions or kind files
   -workflow name     run a workflow with the prompt as its argument
-  -k setting=value   max_tokens, max_rounds, temperature, compact_threshold, prune_after, theme, motion, cascade, option_as_alt, terminal_shell, terminal_scrollback, extra.<field>
+  -k setting=value   max_tokens, max_rounds, temperature, compact_threshold, prune_after, theme, motion, cascade, option_as_alt, terminal_shell, terminal_scrollback, output_style, skill_listing_share, skill_shell, extra.<field>
+  -add-dir path      directory whose skills, agents and instructions load beside the project, repeatable
+  -plugin-dir path   plugin directory loaded in place, repeatable
+  -init              run the Setup hooks and the startup hooks, then exit
   -config path       extra configuration file
   -dir path          working directory of the shell
   -root path         project root for hooks, rules and servers
@@ -80,6 +83,11 @@ icebath [flags] [prompt]
   -yes               approve every tool call without a terminal
   -sessions          list the stored sessions of this project
   -all               with -sessions, list the sessions of every project
+
+icebath plugin marketplace add owner/repo
+icebath plugin install name@marketplace
+icebath plugin list [-available]
+icebath plugin enable|disable|update|uninstall|configure|validate|prune ...
 ```
 
 ```sh
@@ -111,6 +119,12 @@ icebath -kind critic "review pkg/agent"
   </tr>
   <tr>
     <td><code>kinds/*.json</code></td>
+  </tr>
+  <tr>
+    <td><code>.claude/</code>, <code>.agents/</code>, <code>.icebath/</code> skills, commands, agents, output-styles, rules</td>
+  </tr>
+  <tr>
+    <td><code>~/.config/icebath/plugins/</code> and the plugins of <code>~/.claude</code> and <code>~/.codex</code></td>
   </tr>
   <tr>
     <td><code>~/.config/icebath/profiles.json</code></td>

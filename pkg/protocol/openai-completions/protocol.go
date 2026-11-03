@@ -36,6 +36,7 @@ type request struct {
 	Stop                []string       `json:"stop,omitempty"`
 	Stream              bool           `json:"stream,omitempty"`
 	StreamOptions       *streamOptions `json:"stream_options,omitempty"`
+	ReasoningEffort     string         `json:"reasoning_effort,omitempty"`
 }
 
 type streamOptions struct {
@@ -180,6 +181,7 @@ func (Protocol) Encode(req protocol.Request) (protocol.Call, error) {
 		Model:               req.Model,
 		MaxCompletionTokens: req.MaxTokens,
 		Temperature:         req.Temperature,
+		ReasoningEffort:     req.Effort,
 		Stop:                req.StopSequences,
 		Stream:              req.Stream,
 	}

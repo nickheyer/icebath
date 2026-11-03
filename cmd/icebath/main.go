@@ -46,6 +46,14 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "icebath:", err)
 		return 2
 	}
+	if len(args) > 0 && (args[0] == "plugin" || args[0] == "plugins") {
+		wd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "icebath:", err)
+			return 2
+		}
+		return runPlugin(args[1:], wd)
+	}
 	fs := flag.NewFlagSet("icebath", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
@@ -68,12 +76,18 @@ func run(args []string) int {
 		theme    = fs.String("theme", "", "palette, blackwall, light, contrast or plain")
 		motion   = fs.Float64("motion", -1, "animation scale from 0 to 1")
 		showVer  = fs.Bool("version", false, "print the version and exit")
+		setup    = fs.Bool("init", false, "run the Setup hooks with the init trigger and the startup hooks, then exit")
+		maintain = fs.Bool("maintenance", false, "run the Setup hooks with the maintenance trigger and the startup hooks, then exit")
 		set      settings
+		addDirs  settings
+		plugDirs settings
 	)
+	fs.Var(&addDirs, "add-dir", "directory whose skills, agents and instructions load beside the project, repeatable")
+	fs.Var(&plugDirs, "plugin-dir", "plugin directory loaded in place, repeatable")
 	fs.BoolVar(last, "c", false, "short for -continue")
 	fs.Var(&set, "k", "setting override such as max_tokens=4096, repeatable")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: icebath [flags] [prompt]\n\n")
+		fmt.Fprintf(os.Stderr, "usage: icebath [flags] [prompt]\n       icebath plugin <command> [arguments]\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -127,6 +141,8 @@ func run(args []string) int {
 		m := *motion
 		cfg.UI.Motion = &m
 	}
+	cfg.AddDirs = append(cfg.AddDirs, addDirs...)
+	cfg.Plugins.Dirs = append(cfg.Plugins.Dirs, plugDirs...)
 	for _, k := range set {
 		key, value, err := harness.ParseSetting(k)
 		if err != nil {
@@ -163,6 +179,16 @@ func run(args []string) int {
 	defer stop()
 	prompt := strings.TrimSpace(strings.Join(fs.Args(), " "))
 	tty := term.IsTerminal(os.Stdout.Fd()) && term.IsTerminal(os.Stdin.Fd())
+	trigger := ""
+	switch {
+	case *setup:
+		trigger = "init"
+	case *maintain:
+		trigger = "maintenance"
+	}
+	if trigger != "" {
+		return app.Headless(ctx, app.HeadlessOptions{Config: cfg, Resume: *resume, Dir: cwd, Setup: trigger, Print: *print, Yes: *yes, Out: os.Stdout, Err: os.Stderr})
+	}
 	if *print || *headless || !tty {
 		var in *os.File
 		if !term.IsTerminal(os.Stdin.Fd()) {

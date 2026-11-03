@@ -20,6 +20,15 @@ import (
 // Delay saves wait for more changes before writing
 const saveDelay = 400 * time.Millisecond
 
+// Record kind of the text a MessageDisplay hook shows in place of an assistant message
+const DisplayKind = "display"
+
+// Display text as the session record stores it, the id of the response it replaces and the text shown
+type DisplayData struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
 // One agent run the controller started or discovered as a child of one it started
 type Run struct {
 	ID      string
@@ -277,8 +286,16 @@ func (c *Controller) observer(r *Run) func(agent.Event) {
 				owner.called(ev.Call.Name)
 			}
 		}
+		if ev.Type == agent.EventDisplay {
+			c.mu.Lock()
+			owner := c.owner(r, ev.Agent)
+			c.mu.Unlock()
+			if owner != nil && owner.Session != nil {
+				owner.Session.Log(ev.Agent, DisplayKind, DisplayData{ID: fmt.Sprint(ev.Data), Text: ev.Text})
+			}
+		}
 		switch ev.Type {
-		case agent.EventTurnEnd, agent.EventToolEnd, agent.EventSteer, agent.EventCompactEnd, agent.EventApproval:
+		case agent.EventTurnEnd, agent.EventToolEnd, agent.EventSteer, agent.EventCompactEnd, agent.EventApproval, agent.EventDisplay:
 			if c.Saver != nil {
 				c.mu.Lock()
 				owner := c.owner(r, ev.Agent)

@@ -53,6 +53,23 @@ type Root struct {
 type Options struct {
 	// Roots served to the server, declaring the roots capability when non empty
 	Roots []Root
+	// Answers an elicitation request of a server, declaring the elicitation capability when set
+	Elicit func(ctx context.Context, server string, req Elicitation) ElicitationResult
+}
+
+// Request of a server for input from the person, a form described by a schema or a visit to a url
+type Elicitation struct {
+	ID      string          `json:"elicitationId,omitempty"`
+	Message string          `json:"message"`
+	Schema  json.RawMessage `json:"requestedSchema,omitempty"`
+	Mode    string          `json:"mode,omitempty"`
+	URL     string          `json:"url,omitempty"`
+}
+
+// Answer to an elicitation, accept with the content, decline or cancel
+type ElicitationResult struct {
+	Action  string         `json:"action"`
+	Content map[string]any `json:"content,omitempty"`
 }
 
 // What the server said about itself during initialization
@@ -171,6 +188,9 @@ func (c *Client) capabilities() map[string]any {
 	caps := map[string]any{}
 	if len(c.opts.Roots) > 0 {
 		caps["roots"] = map[string]any{"listChanged": false}
+	}
+	if c.opts.Elicit != nil {
+		caps["elicitation"] = map[string]any{"form": map[string]any{}, "url": map[string]any{}}
 	}
 	return caps
 }
@@ -374,6 +394,28 @@ func (c *Client) answer(req rpcMessage) {
 			break
 		}
 		raw, _ := json.Marshal(map[string]any{"roots": c.opts.Roots})
+		reply.Result = raw
+	case "elicitation/create":
+		if c.opts.Elicit == nil {
+			reply.Error = &Error{Code: -32601, Message: "method not found: elicitation/create"}
+			break
+		}
+		var el Elicitation
+		if err := json.Unmarshal(req.Params, &el); err != nil {
+			reply.Error = &Error{Code: -32602, Message: err.Error()}
+			break
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			<-c.closed
+			cancel()
+		}()
+		res := c.opts.Elicit(ctx, c.name, el)
+		cancel()
+		if res.Action == "" {
+			res.Action = "decline"
+		}
+		raw, _ := json.Marshal(res)
 		reply.Result = raw
 	default:
 		reply.Error = &Error{Code: -32601, Message: "method not found: " + req.Method}

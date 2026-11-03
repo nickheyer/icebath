@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"image/color"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -163,6 +165,28 @@ func (d *Agents) kill() tea.Cmd {
 }
 
 // Title of the session a run serves, through its root
+// Name of a run painted in the color of its kind, plain for a kind with none
+func (d *Agents) colored(r *harness.Run) string {
+	if d.env.Editor == nil || r.Session == nil {
+		return r.Name
+	}
+	kind, ok := d.env.Editor.KindOf(r.Session)
+	if !ok || kind.Color == "" {
+		return r.Name
+	}
+	c, ok := kindColors[kind.Color]
+	if !ok {
+		return r.Name
+	}
+	return render.Paint(lipgloss.NewStyle().Foreground(c), r.Name)
+}
+
+// Terminal colors the color field of an agent may name
+var kindColors = map[string]color.Color{
+	"red": lipgloss.Red, "blue": lipgloss.Blue, "green": lipgloss.Green, "yellow": lipgloss.Yellow,
+	"purple": lipgloss.Magenta, "orange": theme.Hex(0xffa500), "pink": theme.Hex(0xff69b4), "cyan": lipgloss.Cyan,
+}
+
 func (d *Agents) sessionOf(r *harness.Run) string {
 	for r != nil && r.Parent != "" {
 		parent, ok := d.env.Control.Get(r.Parent)
@@ -191,7 +215,7 @@ func (d *Agents) View(w, h int) string {
 	rows := make([][]string, 0, len(d.rows))
 	for _, r := range d.rows {
 		glyph, state := d.runState(r)
-		name := strings.Repeat("  ", r.Depth) + r.Name
+		name := strings.Repeat("  ", r.Depth) + d.colored(r)
 		if r.Parent != "" && r.Description != "" {
 			name += " " + render.Dim(render.Truncate(r.Description, 20, t), t)
 		}

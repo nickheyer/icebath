@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/plugin"
 	"github.com/nickheyer/icebath/pkg/policy"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
@@ -125,6 +126,29 @@ type UIConfig struct {
 	OptionAsAlt *bool `json:"option_as_alt,omitempty"`
 }
 
+// Plugin settings, which plugins are on, their option values and where more come from
+type PluginsConfig struct {
+	// Enablement by plugin id such as name@marketplace, the plugin default when unset
+	Enabled map[string]bool `json:"enabled,omitempty"`
+	// Option values of plugins by id and key
+	Config map[string]map[string]string `json:"config,omitempty"`
+	// Plugin directories loaded in place
+	Dirs []string `json:"dirs,omitempty"`
+	// Marketplaces registered from the configuration, by name
+	Marketplaces map[string]plugin.MarketSource `json:"marketplaces,omitempty"`
+	// Reads the plugins Claude Code and Codex installed too, on unless false
+	Foreign *bool `json:"foreign,omitempty"`
+	// Skills hidden or narrowed by name, on, name-only, user-invocable-only or off
+	SkillOverrides map[string]string `json:"skill_overrides,omitempty"`
+	// Share of the context window the skill listing may take, a hundredth when zero
+	ListingShare float64 `json:"listing_share,omitempty"`
+	// Inline commands of skills replaced by a notice
+	NoSkillShell bool `json:"no_skill_shell,omitempty"`
+}
+
+// Reports whether the installs of other harnesses are read
+func (p PluginsConfig) ReadsForeign() bool { return p.Foreign == nil || *p.Foreign }
+
 // Everything the shell app and the headless runner need, read from files, environment and flags
 type Config struct {
 	Profile string `json:"profile,omitempty"`
@@ -151,6 +175,11 @@ type Config struct {
 	Terminal    TerminalConfig             `json:"terminal,omitempty"`
 	// Values of the settings extensions register, by key
 	Settings map[string]string `json:"settings,omitempty"`
+	Plugins  PluginsConfig     `json:"plugins,omitempty"`
+	// Output style standing in for the conduct sections of the system prompt, none when empty
+	OutputStyle string `json:"output_style,omitempty"`
+	// Directories whose skills, commands and agents load beside the project
+	AddDirs []string `json:"add_dirs,omitempty"`
 	// Project root for hooks, rules and servers, the working directory when empty
 	Root string `json:"root,omitempty"`
 	// Directory sessions are written to, sessions under the configuration directory when empty
@@ -341,12 +370,62 @@ func Merge(base, over Config) Config {
 	if over.Root != "" {
 		out.Root = over.Root
 	}
+	if over.OutputStyle != "" {
+		out.OutputStyle = over.OutputStyle
+	}
+	out.AddDirs = append(append([]string(nil), base.AddDirs...), over.AddDirs...)
+	out.Plugins = mergePlugins(base.Plugins, over.Plugins)
 	if over.SessionsDir != "" {
 		out.SessionsDir = over.SessionsDir
 	}
 	out.ProfileFiles = append(append([]string(nil), base.ProfileFiles...), over.ProfileFiles...)
 	out.CatalogFiles = append(append([]string(nil), base.CatalogFiles...), over.CatalogFiles...)
 	out.Sources = append(append([]string(nil), base.Sources...), over.Sources...)
+	return out
+}
+
+// Lays plugin settings over, maps joining key by key and later values winning
+func mergePlugins(base, over PluginsConfig) PluginsConfig {
+	out := base
+	if len(over.Enabled) > 0 {
+		out.Enabled = make(map[string]bool, len(base.Enabled)+len(over.Enabled))
+		maps.Copy(out.Enabled, base.Enabled)
+		maps.Copy(out.Enabled, over.Enabled)
+	}
+	if len(over.Config) > 0 {
+		out.Config = make(map[string]map[string]string, len(base.Config)+len(over.Config))
+		for id, values := range base.Config {
+			out.Config[id] = maps.Clone(values)
+		}
+		for id, values := range over.Config {
+			merged := maps.Clone(out.Config[id])
+			if merged == nil {
+				merged = map[string]string{}
+			}
+			maps.Copy(merged, values)
+			out.Config[id] = merged
+		}
+	}
+	out.Dirs = append(append([]string(nil), base.Dirs...), over.Dirs...)
+	if len(over.Marketplaces) > 0 {
+		out.Marketplaces = make(map[string]plugin.MarketSource, len(base.Marketplaces)+len(over.Marketplaces))
+		maps.Copy(out.Marketplaces, base.Marketplaces)
+		maps.Copy(out.Marketplaces, over.Marketplaces)
+	}
+	if over.Foreign != nil {
+		out.Foreign = over.Foreign
+	}
+	if len(over.SkillOverrides) > 0 {
+		out.SkillOverrides = make(map[string]string, len(base.SkillOverrides)+len(over.SkillOverrides))
+		maps.Copy(out.SkillOverrides, base.SkillOverrides)
+		maps.Copy(out.SkillOverrides, over.SkillOverrides)
+	}
+	if over.ListingShare != 0 {
+		out.ListingShare = over.ListingShare
+	}
+	if over.NoSkillShell {
+		out.NoSkillShell = true
+	}
 	return out
 }
 
@@ -604,6 +683,23 @@ func (c *Config) settingField(key, value string) (Field, error) {
 		}
 		c.Terminal.Scrollback = &n
 		return Field{Path: path, Value: n}, nil
+	case "output_style":
+		c.OutputStyle = value
+		return Field{Path: path, Value: value}, nil
+	case "skill_listing_share":
+		f, err := strconv.ParseFloat(value, 64)
+		if err != nil || f <= 0 || f > 0.5 {
+			return Field{}, fmt.Errorf("skill_listing_share must be a number above 0 and at most 0.5, got %q", value)
+		}
+		c.Plugins.ListingShare = f
+		return Field{Path: path, Value: f}, nil
+	case "skill_shell":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return Field{}, fmt.Errorf("skill_shell must be true or false, got %q", value)
+		}
+		c.Plugins.NoSkillShell = !b
+		return Field{Path: path, Value: !b}, nil
 	}
 	if s, ok := LookupSetting(key); ok {
 		if err := s.Validate(value); err != nil {
@@ -646,6 +742,12 @@ func settingPath(key string) ([]string, error) {
 		return []string{"terminal", "shell"}, nil
 	case "terminal_scrollback":
 		return []string{"terminal", "scrollback"}, nil
+	case "output_style":
+		return []string{"output_style"}, nil
+	case "skill_listing_share":
+		return []string{"plugins", "listing_share"}, nil
+	case "skill_shell":
+		return []string{"plugins", "no_skill_shell"}, nil
 	}
 	if name, ok := strings.CutPrefix(key, "extra."); ok && name != "" {
 		return []string{"extra", name}, nil
@@ -683,6 +785,12 @@ func (c *Config) unset(key string) {
 		c.Terminal.Shell = ""
 	case "terminal_scrollback":
 		c.Terminal.Scrollback = nil
+	case "output_style":
+		c.OutputStyle = ""
+	case "skill_listing_share":
+		c.Plugins.ListingShare = 0
+	case "skill_shell":
+		c.Plugins.NoSkillShell = false
 	default:
 		if _, ok := LookupSetting(key); ok {
 			values := maps.Clone(c.Settings)

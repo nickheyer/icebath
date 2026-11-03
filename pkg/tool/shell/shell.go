@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -390,4 +391,15 @@ func joinInts(ns []int) string {
 		parts[i] = strconv.Itoa(n)
 	}
 	return strings.Join(parts, " ")
+}
+
+// Exports a variable into the shell every later command runs in
+func (s *Shell) SetEnv(name, value string) {
+	var out bytes.Buffer
+	s.sh.Run(context.Background(), "export "+name+"="+shellQuote(value), &out, &out)
+}
+
+// Text quoted for the shell
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

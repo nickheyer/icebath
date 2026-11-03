@@ -94,12 +94,15 @@ type Model struct {
 	// Desk last focused in each workspace, which session bound commands act on while a panel holds the focus
 	recent map[*wm.Workspace]*desk
 	// Workspaces opened so far, numbering the next id
-	spaces   int
-	metrics  *cards.Telemetry
-	jobs     *cards.Jobs
-	sessions *cards.Sessions
-	config   *cards.Config
-	roster   *cards.Agents
+	spaces    int
+	metrics   *cards.Telemetry
+	jobs      *cards.Jobs
+	sessions  *cards.Sessions
+	config    *cards.Config
+	roster    *cards.Agents
+	plugins   *cards.Plugins
+	skills    *cards.Skills
+	idleSince time.Time
 	// Extension panels built so far, by key
 	extPanels map[string]wm.Card
 	// Terminal windows built so far, by id, and the id the next one takes
@@ -317,6 +320,8 @@ func (m *Model) buildCards() {
 	m.sessions = cards.NewSessions(env)
 	m.config = cards.NewConfig(env)
 	m.roster = cards.NewAgents(env)
+	m.plugins = cards.NewPlugins(env)
+	m.skills = cards.NewSkills(env)
 }
 
 // Panels shared by every workspace, by key
@@ -332,6 +337,10 @@ func (m *Model) panel(key string) wm.Card {
 		return m.config
 	case "agents":
 		return m.roster
+	case "plugins":
+		return m.plugins
+	case "skills":
+		return m.skills
 	}
 	return m.extPanel(key)
 }
@@ -561,7 +570,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uv.KittyGraphicsEvent, uv.CellSizeEvent, uv.PixelSizeEvent, uv.PrimaryDeviceAttributesEvent:
 		return m, nil
 	case keysTickMsg:
-		return m, tea.Batch(m.reloadKeys(), m.watchKeys())
+		return m, tea.Batch(m.reloadKeys(), m.watchKeys(), m.poll())
 	case errMsg:
 		if msg.err != nil {
 			return m, m.wm.Toast(msg.err.Error(), wm.Error, 0)
@@ -651,6 +660,7 @@ func (m *Model) shutdown() tea.Cmd {
 		return tea.Quit
 	}
 	m.quitting = true
+	m.app.EndReason = "prompt_input_exit"
 	if err := m.saveLayout(); err != nil {
 		fmt.Fprintln(os.Stderr, "icebath: layout:", err)
 	}
@@ -715,6 +725,7 @@ func (m *Model) harnessMsg(msg tea.Msg) (tea.Cmd, bool) {
 		if msg.Err != nil {
 			m.state = tea.ProgramStateError
 		}
+		m.idleSince = time.Now()
 		if !failed(msg.Err) {
 			return nil, true
 		}
@@ -1095,6 +1106,11 @@ func (m *Model) compactNow(d *desk) tea.Cmd {
 	m.app.Config = saved
 	if err != nil {
 		return m.wm.Toast(err.Error(), wm.Error, 0)
+	}
+	for _, h := range ag.Hooks {
+		if s, ok := h.(*agent.Summarizer); ok {
+			s.Trigger = agent.CompactManual
+		}
 	}
 	d.compacting = true
 	sess := d.live.Session

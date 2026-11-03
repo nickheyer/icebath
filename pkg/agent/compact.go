@@ -35,9 +35,19 @@ type Summarizer struct {
 	Keep int
 	// Extra guidance appended to the summary instructions
 	Instructions string
-	// Runs before a summary is made, such as external PreCompact hooks
-	Before func(ctx context.Context) error
+	// Runs before a summary is made, such as external PreCompact hooks, with the trigger, auto or manual
+	Before func(ctx context.Context, trigger string) error
+	// Runs after the session was compacted, with the trigger
+	After func(ctx context.Context, trigger string) error
+	// What set the compaction off, manual when a person asked and auto otherwise
+	Trigger string
 }
+
+// Triggers of a compaction
+const (
+	CompactAuto   = "auto"
+	CompactManual = "manual"
+)
 
 // Tokens the pending request carries beyond the last measured response, estimated from the text added since
 func pendingTokens(messages []protocol.Message) int {
@@ -62,8 +72,12 @@ func (s *Summarizer) BeforeTurn(ctx context.Context, req *protocol.Request) erro
 	if s.Session.Context()+pendingTokens(req.Messages) < s.Threshold || s.Session.Len() <= s.Keep {
 		return nil
 	}
+	trigger := s.Trigger
+	if trigger == "" {
+		trigger = CompactAuto
+	}
 	if s.Before != nil {
-		if err := s.Before(ctx); err != nil {
+		if err := s.Before(ctx, trigger); err != nil {
 			return err
 		}
 	}
@@ -81,6 +95,9 @@ func (s *Summarizer) BeforeTurn(ctx context.Context, req *protocol.Request) erro
 	Observe(ctx, Event{Type: EventCompactEnd, Text: summary, Data: map[string]int{"before": before, "after": after}})
 	Observe(ctx, Event{Type: EventNote, Text: fmt.Sprintf("compacted %d messages into a summary, %d remain", before, after)})
 	s.Session.Log("", "compact", map[string]any{"before": before, "after": after, "summary": summary})
+	if s.After != nil {
+		return s.After(ctx, trigger)
+	}
 	return nil
 }
 
