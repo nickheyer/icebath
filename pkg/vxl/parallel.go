@@ -81,3 +81,16 @@ func parallelBands(h, grain int, fn func(y0, y1 int)) {
 	band := (h + workers - 1) / workers
 	parallel((h+band-1)/band, workers, func(b int) { fn(b*band, min((b+1)*band, h)) })
 }
+
+// Runs fn over bands of rows across at most a count of goroutines, each band at least a grain of rows
+func parallelBandsWith(h, grain, workers int, fn func(y0, y1 int)) {
+	if h <= 0 {
+		return
+	}
+	if workers <= 0 {
+		workers = runtime.NumCPU()
+	}
+	workers = min(workers, max(h/max(grain, 1), 1))
+	band := (h + workers - 1) / workers
+	parallel((h+band-1)/band, workers, func(b int) { fn(b*band, min((b+1)*band, h)) })
+}

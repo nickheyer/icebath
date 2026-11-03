@@ -114,7 +114,7 @@ func (lb *lightBins) cells(lo, hi, origin float64, n int) (int, int, bool) {
 	return int(max(a, 0)), int(min(b, float64(n-1))), true
 }
 
-// Replaces the point lights and bins them for shading
+// Replaces the point lights and bins them for the corner light of see through faces
 func (r *Raster) SetLights(ls []Light) {
 	r.Lights = ls
 	r.bins.build(ls)
@@ -155,27 +155,4 @@ func (r *Raster) lightsNear(q *Quad) []int32 {
 	cand = slices.Compact(cand)
 	r.cand = cand
 	return cand
-}
-
-// Indices in ascending order of the lights whose reach meets a box, plus every unbounded one
-func (r *Raster) lightsInBox(lo, hi Vec3) []int32 {
-	probe := Quad{P: [4]Vec3{lo, {hi.X, lo.Y, lo.Z}, hi, {lo.X, hi.Y, hi.Z}}}
-	near := r.lightsNear(&probe)
-	out := r.inBox[:0]
-	for _, i := range near {
-		l := &r.Lights[i]
-		if !bounded(l) {
-			out = append(out, i)
-			continue
-		}
-		p := l.Pos
-		dx := max(lo.X-p.X, 0, p.X-hi.X)
-		dy := max(lo.Y-p.Y, 0, p.Y-hi.Y)
-		dz := max(lo.Z-p.Z, 0, p.Z-hi.Z)
-		if dx*dx+dy*dy+dz*dz < l.Radius*l.Radius {
-			out = append(out, i)
-		}
-	}
-	r.inBox = out
-	return out
 }

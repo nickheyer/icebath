@@ -61,6 +61,10 @@ type Arena struct {
 	Labels  bool
 	Camera  string
 	Sidebar bool
+	// World the team is drawn in, off for the session windows alone
+	World string
+	// How much rendering work every frame gets
+	Quality string
 }
 
 // Outfit of one member, a color for the suit and a hat worn on the head
@@ -80,11 +84,17 @@ type Config struct {
 	Names       map[Role][]string
 }
 
-// Pixel modes the arena encodes cells with
-var PixelModes = []string{"quadrant", "half", "sextant", "octant"}
+// Glyph sets the arena fits cells with, from the block elements every font carries to the octants of the newest
+var PixelModes = []string{"shapes", "legacy", "all", "quadrant", "half", "sextant", "octant", "image"}
 
 // Camera presets the arena starts on
 var Cameras = []string{"overview", "follow", "orbit", "cinematic"}
+
+// Worlds the arena draws the team in, off showing the session windows of the team instead
+var Worlds = []string{"blackwall", "soulkiller", "nightcity", "den", "off"}
+
+// Rendering budgets of the arena, from the bare raster to supersampled frames with every pass
+var Qualities = []string{"low", "medium", "high", "ultra"}
 
 // Colors an outfit may be dyed, by name
 var ColorNames = []string{"teal", "amber", "violet", "lime", "coral", "sky", "rose", "mint", "crimson", "gold", "indigo", "slate"}
@@ -99,7 +109,7 @@ func Default() Config {
 		Team:        Team{Builders: 3, Parallel: true, MaxRework: 2, MaxTickets: 12},
 		Limits:      Limits{Total: 3 * time.Hour, Brief: 45 * time.Minute, Plan: 30 * time.Minute, Build: 90 * time.Minute, Review: 20 * time.Minute},
 		Interactive: true,
-		Arena:       Arena{Pixels: "quadrant", FPS: 30, Labels: true, Camera: "overview", Sidebar: true},
+		Arena:       Arena{Pixels: "shapes", FPS: 30, Labels: true, Camera: "overview", Sidebar: true, World: "blackwall", Quality: "high"},
 		Looks:       map[Role][]Look{RoleDirector: {{"crimson", "hood"}}, RoleArchitect: {{"gold", "halo"}}, RoleReviewer: {{"indigo", "mask"}}, RoleBuilder: slices.Clone(defaultBuilderLooks)},
 		Names:       map[Role][]string{RoleDirector: {"Director"}, RoleArchitect: {"Architect"}, RoleReviewer: {"Reviewer"}, RoleBuilder: nil},
 	}
@@ -134,14 +144,16 @@ func Settings() []harness.Setting {
 		harness.Setting{Key: Name + ".limits.total", Help: "Time the whole sprint may take before it stops, such as 3h", Check: checkDuration("total")},
 		harness.Setting{Key: Name + ".limits.brief", Help: "Time the director has to settle the brief before it is told to wrap up", Check: checkDuration("brief")},
 		harness.Setting{Key: Name + ".limits.plan", Help: "Time the architect has to cut the plan before it is told to wrap up", Check: checkDuration("plan")},
-		harness.Setting{Key: Name + ".limits.build", Help: "Time a builder has on one ticket before it is told to hand off", Check: checkDuration("build")},
+		harness.Setting{Key: Name + ".limits.build", Help: "Time a builder has on one ticket before it is told to hand it off", Check: checkDuration("build")},
 		harness.Setting{Key: Name + ".limits.review", Help: "Time the reviewer has on one handoff before it is told to decide", Check: checkDuration("review")},
-		harness.Setting{Key: Name + ".interactive", Help: "The director may ask the person questions, and a stalled stage waits for the person instead of failing the sprint", Choices: []string{"true", "false"}},
-		harness.Setting{Key: Name + ".arena.pixels", Help: "Pixels the arena packs into each cell, half keeps every color exact, quadrant doubles the width, sextant and octant triple and quadruple the height with the legacy computing glyphs newer fonts carry", Choices: PixelModes},
+		harness.Setting{Key: Name + ".interactive", Help: "The director may ask you questions, and a stalled stage waits for you instead of failing the sprint", Choices: []string{"true", "false"}},
+		harness.Setting{Key: Name + ".arena.pixels", Help: "How the arena draws, image as real pixels in a terminal that shows them through kitty, sixel or iTerm2 graphics and as shapes in any other, shapes needs only the block and triangle glyphs every font carries, legacy adds the wedges and sextants of fonts with the legacy computing block, all adds its octants, the rest fit one block set alone", Choices: PixelModes},
 		harness.Setting{Key: Name + ".arena.fps", Help: "Frames per second the arena redraws at while anything moves", Lo: 5, Hi: 60, Step: 5, Integer: true},
 		harness.Setting{Key: Name + ".arena.labels", Help: "Names float above every member in the arena", Choices: []string{"true", "false"}},
-		harness.Setting{Key: Name + ".arena.camera", Help: "Camera the arena opens with, the whole floor, the selected member, a slow orbit or cinematic shots of whatever is busiest", Choices: Cameras},
-		harness.Setting{Key: Name + ".arena.sidebar", Help: "Sidebar beside the floor listing the sprint, the team, the tickets and the log", Choices: []string{"true", "false"}},
+		harness.Setting{Key: Name + ".arena.camera", Help: "Camera the arena opens with, the whole world, the selected member, a slow orbit or cinematic shots of whatever is busiest", Choices: Cameras},
+		harness.Setting{Key: Name + ".arena.sidebar", Help: "Sidebar beside the world listing the sprint, the team, the tickets and the log", Choices: []string{"true", "false"}},
+		harness.Setting{Key: Name + ".arena.world", Help: "World the team works in, the blackwall of red strands over a glossy dark floor, the cyan data sea of the soulkiller, a rooftop over night city at dawn, a netrunner den walled with screens, or off for the session windows of the team side by side", Choices: Worlds},
+		harness.Setting{Key: Name + ".arena.quality", Help: "Rendering work every frame gets, low draws the bare raster, medium adds the glow of the air and soft shadows, high adds mirrored floors, ultra draws at twice the resolution", Choices: Qualities},
 	)
 	for _, role := range Roles {
 		r := string(role)
@@ -347,6 +359,8 @@ func Load(c harness.Config) (Config, error) {
 		flag(Name+".arena.labels", &cfg.Arena.Labels),
 		choice(Name+".arena.camera", &cfg.Arena.Camera, Cameras),
 		flag(Name+".arena.sidebar", &cfg.Arena.Sidebar),
+		choice(Name+".arena.world", &cfg.Arena.World, Worlds),
+		choice(Name+".arena.quality", &cfg.Arena.Quality, Qualities),
 	}
 	for _, step := range steps {
 		if step != nil {
@@ -420,7 +434,7 @@ func RoleOfKind(kind string) (Role, bool) {
 
 // Tools a role is offered, nil for every tool, and the ones withheld
 func roleTools(role Role) (offered, denied []string) {
-	explore := []string{"Read", "Glob", "Grep", "Outline"}
+	explore := []string{"Read", "Glob", "Grep", "Outline", ToolMessage}
 	switch role {
 	case RoleDirector:
 		return append(explore, ToolBrief, ToolAsk), nil
@@ -468,9 +482,9 @@ func (c Config) Kinds(primary string) []harness.Kind {
 func roleDescription(role Role) string {
 	switch role {
 	case RoleDirector:
-		return "sprint director, settles the brief with the person and reports at the end"
+		return "sprint director, writes the brief with you and reports at the end"
 	case RoleArchitect:
-		return "sprint architect, cuts the brief into tickets builders can take side by side"
+		return "sprint architect, plans the brief into tickets builders can take in parallel"
 	case RoleBuilder:
 		return "sprint builder, builds one ticket at a time and hands it off"
 	}

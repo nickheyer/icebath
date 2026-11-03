@@ -9,10 +9,14 @@ import (
 // Static voxels by integer cell
 type Grid map[[3]int]Voxel
 
-// Color and pattern of one voxel
+// Color, pattern, gloss and glow of one voxel
 type Voxel struct {
 	Col RGB
 	Tex Texture
+	// Share of the light its faces mirror
+	Gloss float64
+	// Light its faces give off on their own, scaling the color, none at zero
+	Emit float64
 }
 
 // Sets a plain voxel at a cell
@@ -21,6 +25,20 @@ func (g Grid) Set(x, y, z int, col RGB) { g[[3]int{x, y, z}] = Voxel{Col: col} }
 // Sets a voxel painted with a pattern at a cell
 func (g Grid) SetTex(x, y, z int, col RGB, tex Texture) {
 	g[[3]int{x, y, z}] = Voxel{Col: col, Tex: tex}
+}
+
+// Sets a voxel of any make at a cell
+func (g Grid) Put(x, y, z int, v Voxel) { g[[3]int{x, y, z}] = v }
+
+// Fills a box of voxels of one make from a least corner and a size in cells
+func (g Grid) Fill(x, y, z, w, h, d int, v Voxel) {
+	for i := range w {
+		for j := range h {
+			for k := range d {
+				g[[3]int{x + i, y + j, z + k}] = v
+			}
+		}
+	}
 }
 
 // Removes the voxel at a cell
@@ -195,12 +213,18 @@ func mergeSide(mask *sideMask, base [3]int, side int, r *Raster, quads []Quad) [
 				var c, size [3]int
 				c[axis], c[u], c[w] = base[axis]+layer, base[u]+a, base[w]+b
 				size[axis], size[u], size[w] = 1, wa, wb
-				q := Quad{Color: f.vox.Col, Alpha: 1, Tex: f.vox.Tex}
+				q := Quad{Color: f.vox.Col, Alpha: 1, Tex: f.vox.Tex, Gloss: f.vox.Gloss}
 				for k := range 4 {
 					o := sideCorners[side][k]
 					p := [3]float64{float64(c[0] + o[0]*size[0]), float64(c[1] + o[1]*size[1]), float64(c[2] + o[2]*size[2])}
 					q.P[k] = Vec3{p[0], p[1], p[2]}
 					q.UV[k] = [2]float64{p[u], p[w]}
+				}
+				if f.vox.Emit > 0 {
+					l := Grey(f.vox.Emit)
+					q.Light = [4]RGB{l, l, l, l}
+					quads = append(quads, q)
+					continue
 				}
 				r.Shade(&q, boxNormals[side])
 				for k := range 4 {

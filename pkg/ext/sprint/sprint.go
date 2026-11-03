@@ -54,6 +54,7 @@ const (
 	ActPageUp     = "sprint.page.up"
 	ActSettings   = "sprint.settings"
 	ActSidebar    = "sprint.sidebar"
+	ActWorld      = "sprint.world"
 )
 
 // Actions of the board
@@ -111,23 +112,24 @@ func (extension) Attach(h *ext.Host) error {
 	arena(ActRestart, "restart", "restart a stopped or failed sprint from the stage it was in", "r")
 	arena(ActOpen, "open session", "open the session of the selected member as its own window", "o")
 	arena(ActKill, "stop run", "stop the run of the selected member, the sprint pausing for you to steer it", "k")
-	arena(ActOrbitLeft, "orbit left", "turn the camera left around the floor", "left")
-	arena(ActOrbitRight, "orbit right", "turn the camera right around the floor", "right")
+	arena(ActOrbitLeft, "orbit left", "orbit the camera left", "left")
+	arena(ActOrbitRight, "orbit right", "orbit the camera right", "right")
 	arena(ActOrbitUp, "tilt up", "tilt the camera up toward the horizon", "up")
-	arena(ActOrbitDown, "tilt down", "tilt the camera down toward the floor", "down")
+	arena(ActOrbitDown, "tilt down", "tilt the camera down", "down")
 	arena(ActZoomIn, "zoom in", "move the camera closer", "+", "=")
 	arena(ActZoomOut, "zoom out", "move the camera away", "-")
 	arena(ActCamera, "camera", "switch between the overview, following, orbiting and cinematic cameras", "v")
 	arena(ActReset, "reset camera", "put the camera back where the preset starts", "0")
 	arena(ActLabels, "labels", "show or hide the names over the team and the ids over the tickets", "n")
 	arena(ActSidebar, "sidebar", "show or hide the sidebar with the team, the tickets and the log", "d")
+	arena(ActWorld, "world", "move the team into the next world, the blackwall, the soulkiller, night city, the den or the session windows alone", "w")
 	arena(ActHelp, "help", "show or hide the key legend", "?")
 	arena(ActSprintNext, "next sprint", "show the next sprint", "]")
 	arena(ActSprintPrev, "previous sprint", "show the previous sprint", "[")
 	arena(ActPageDown, "scroll down", "scroll the tickets or the log down a page", "pgdown")
 	arena(ActPageUp, "scroll up", "scroll the tickets or the log up a page", "pgup")
 	arena(ActSettings, "settings", "open the sprint settings", "S")
-	h.Action(keys.Action{ID: ActLeave, Context: ContextTyping, Label: "done typing", Doc: "hand the keys back to the arena", Default: []string{"esc"}})
+	h.Action(keys.Action{ID: ActLeave, Context: ContextTyping, Label: "done typing", Doc: "return focus to the arena", Default: []string{"esc"}})
 	board := func(id, label, doc string, chords ...string) {
 		h.Action(keys.Action{ID: id, Context: ContextBoard, Label: label, Doc: doc, Default: chords})
 	}
@@ -138,7 +140,7 @@ func (extension) Attach(h *ext.Host) error {
 	board(BoardResume, "restart", "restart a stopped or failed sprint from the stage it was in", "r")
 	board(BoardForget, "forget", "forget an ended sprint, closing the sessions of its team", "D")
 	board(BoardSettings, "settings", "open the sprint settings", "s")
-	h.Panel(ext.Panel{Key: ArenaKey, Title: "Arena", Detail: "the sprint team at work, with the team, the tickets and the log beside the floor", New: newArena})
+	h.Panel(ext.Panel{Key: ArenaKey, Title: "Arena", Detail: "the sprint team at work, with the team, the tickets and the log beside the world", New: newArena})
 	h.Panel(ext.Panel{Key: BoardKey, Title: "Sprints", Detail: "every sprint with its team and tickets", New: newBoard})
 	h.Panel(ext.Panel{Key: SettingsKey, Title: "Sprint settings", Detail: "models, team, time limits, arena and outfits of the sprint team", New: newSettingsCard, Settings: true})
 	return nil

@@ -21,6 +21,7 @@ func TestConfigLoad(t *testing.T) {
 		Name + ".director.profile": "anthropic", Name + ".director.model": "claude-fable-5-1", Name + ".builder.max_tokens": "4096", Name + ".builder.budget": "500000",
 		Name + ".team.builders": "5", Name + ".team.parallel": "false", Name + ".limits.build": "45m", Name + ".interactive": "false",
 		Name + ".arena.pixels": "half", Name + ".arena.fps": "20", Name + ".look.builder": "teal cap, rose crown", Name + ".name.builder": "Ann, Bob", Name + ".look.director": "gold fedora",
+		Name + ".arena.world": "den", Name + ".arena.quality": "ultra",
 	}}
 	c, err := Load(cfg)
 	if err != nil {
@@ -32,8 +33,11 @@ func TestConfigLoad(t *testing.T) {
 	if c.Team.Builders != 5 || c.Team.Parallel || c.Limits.Build != 45*time.Minute || c.Interactive {
 		t.Fatalf("team %+v limits %+v interactive %v", c.Team, c.Limits, c.Interactive)
 	}
-	if c.Arena.Pixels != "half" || c.Arena.FPS != 20 {
+	if c.Arena.Pixels != "half" || c.Arena.FPS != 20 || c.Arena.World != "den" || c.Arena.Quality != "ultra" {
 		t.Fatalf("arena %+v", c.Arena)
+	}
+	if d := Default().Arena; d.World != "blackwall" || d.Quality != "high" {
+		t.Fatalf("default arena %+v", d)
 	}
 	if c.NameOf(RoleBuilder, 1) != "Bob" || c.NameOf(RoleBuilder, 2) != "Builder 3" || c.NameOf(RoleDirector, 0) != "Director" {
 		t.Fatalf("names %q %q %q", c.NameOf(RoleBuilder, 1), c.NameOf(RoleBuilder, 2), c.NameOf(RoleDirector, 0))
@@ -44,6 +48,7 @@ func TestConfigLoad(t *testing.T) {
 	for _, bad := range []map[string]string{
 		{Name + ".team.builders": "0"}, {Name + ".team.builders": "nine"}, {Name + ".limits.plan": "0s"}, {Name + ".interactive": "maybe"},
 		{Name + ".arena.pixels": "braille"}, {Name + ".arena.fps": "2"}, {Name + ".look.builder": "teal"}, {Name + ".look.reviewer": "plaid cap"},
+		{Name + ".arena.world": "mars"}, {Name + ".arena.quality": "best"},
 	} {
 		if _, err := Load(harness.Config{Settings: bad}); err == nil {
 			t.Fatalf("settings %v loaded", bad)
@@ -437,7 +442,7 @@ func TestMessagesAndRegistry(t *testing.T) {
 	if _, _, ok := sprintOfSession("nobody"); ok {
 		t.Fatal("found a sprint for a stranger")
 	}
-	s.spend("Ada", 1234)
+	s.spend("Ada", protocol.Usage{Output: 1000, Input: 234, CacheRead: 5000})
 	if s.Snapshot().Spent["Ada"] != 1234 {
 		t.Fatal("spend not kept")
 	}
@@ -653,7 +658,7 @@ func TestDiveLayout(t *testing.T) {
 
 // Crew dropped on the platform settle into their duties and leave it together at the end
 func TestSceneChoreography(t *testing.T) {
-	sc := newScene(3)
+	sc := newScene(3, newBlackwall())
 	snap := probeSnapshot()
 	cfg := Default()
 	live := probeLive()

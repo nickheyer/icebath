@@ -118,6 +118,11 @@ type Animator interface {
 	Animate(dt float64) bool
 }
 
+// Card told the screen cell its content starts at before it paints, for images placed by screen position
+type Positioned interface {
+	Origin(x, y int)
+}
+
 // Card that keeps state between runs, handed back on the next start what it reported
 type Stateful interface {
 	State() any

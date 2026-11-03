@@ -285,8 +285,9 @@ func (b *board) detail(i int) []string {
 		add("role", string(m.Role))
 		add("session", m.SessionID())
 		add("task", m.Task)
-		if n := s.Spent[m.Name]; n > 0 {
-			add("spent", render.Tokens(n)+" tokens")
+		if u := s.Usage[m.Name]; u.Output > 0 || u.Input > 0 {
+			add("generated", render.Tokens(u.Output)+" tokens")
+			add("prompt", render.Tokens(u.Input+u.CacheRead+u.CacheWrite)+" tokens processed, "+render.Percent(Cached(u))+" from cache")
 		}
 		if !m.Joined.IsZero() {
 			add("joined", m.Joined.Local().Format("15:04:05"))

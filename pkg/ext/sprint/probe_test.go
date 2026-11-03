@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/protocol"
+
 	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/nickheyer/icebath/pkg/vxl"
@@ -27,7 +29,7 @@ func probeSnapshot() Snapshot {
 		{ID: "T4", Title: "four", Status: TicketTodo, DependsOn: []string{"T1"}}, {ID: "T5", Title: "five", Status: TicketTodo, DependsOn: []string{"T3", "T2"}}, {ID: "T6", Title: "six", Status: TicketFailed}, {ID: "T7", Title: "seven", Status: TicketDone, DependsOn: []string{"T6"}},
 	}
 	msgs := []Message{{Seq: 1, At: now.Add(-8 * time.Minute), Kind: MsgAssign, From: "Overwatch", To: "Ada", Ticket: "T1", Text: "take T1"}, {Seq: 2, At: now.Add(-2 * time.Minute), Kind: MsgHandoff, From: "Linus", To: "Overwatch", Ticket: "T2", Text: "done"}}
-	return Snapshot{ID: "sprint-1", Request: "probe", Started: now.Add(-20 * time.Minute), Stage: StageBuild, Status: "building", Members: members, Tickets: tickets, Messages: msgs, Spent: map[string]int{"Ada": 310000, "Linus": 90000}}
+	return Snapshot{ID: "sprint-1", Request: "probe", Started: now.Add(-20 * time.Minute), Stage: StageBuild, Status: "building", Members: members, Tickets: tickets, Messages: msgs, Spent: map[string]int{"Ada": 310000, "Linus": 90000}, Usage: map[string]protocol.Usage{"Ada": {Input: 290000, Output: 20000, CacheRead: 1200000}, "Linus": {Input: 80000, Output: 10000, CacheRead: 300000}}}
 }
 
 // Harness state of the probe, a runner editing, the overwatch reading and the fixer asking the person
@@ -40,31 +42,31 @@ func probeLive() map[string]liveState {
 	}
 }
 
-// Strength of the outline the probe renders with
-const probeOutline = 0.6
-
 // Renders a scene through the default camera into a frame and the cells of the mode
 func renderProbe(sc *scene, cols, rows int, mode vxl.CellMode) (*vxl.Frame, *uv.Buffer) {
 	cam, _ := probeView(sc)
 	return renderProbeAt(sc, cam, cols, rows, mode)
 }
 
-// Renders a scene through a camera into a frame and the cells of the mode
+// Renders a scene through a camera into a frame and the cells of the mode, finished as its world asks
 func renderProbeAt(sc *scene, cam vxl.Camera, cols, rows int, mode vxl.CellMode) (*vxl.Frame, *uv.Buffer) {
 	px, py := mode.Pixels()
 	fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}
 	fr.Resize(cols*px, rows*py)
-	fr.Clear(func(x, y int) vxl.RGB { return sc.sky(float64(y) / float64(fr.H)) })
 	_, r := probeView(sc)
-	r.FogNear, r.FogFar = cam.Dist*0.95, cam.Dist*3
+	sc.world.light(r, sc, cam.Dist)
+	qualityOf("high").apply(r)
 	r.Begin(fr, cam)
+	fr.Clear(func(x, y int) vxl.RGB { return sc.sky(r.Ray(float64(x)+0.5, float64(y)+0.5)) })
 	sc.drawStatic(r)
 	sc.drawDynamic(r)
 	r.Flush()
-	fr.Outline(probeOutline)
+	fin := sc.world.finish()
+	fr.Outline(fin.outline)
 	var post vxl.Post
-	fr.Bloom(&post, 0.62, 0.8)
-	fr.Vignette(0.3)
+	fr.Bloom(&post, fin.bloomThreshold, fin.bloomStrength)
+	fr.Grade(fin.grade)
+	fr.Vignette(fin.vignette)
 	buf := uv.NewBuffer(cols, rows)
 	fr.Encode(buf, 0, 0, cols, rows, mode, nil)
 	return fr, buf
@@ -143,7 +145,7 @@ func TestConduitRuns(t *testing.T) {
 // Renders the probe scenes into cells in every mode, writing PNGs when SPRINT_PROBE_DIR names a directory
 func TestProbeRender(t *testing.T) {
 	cols, rows := 220, 56
-	sc := newScene(3)
+	sc := newScene(3, newBlackwall())
 	snap := probeSnapshot()
 	live := probeLive()
 	cfg := Default()
@@ -196,6 +198,10 @@ func TestProbeRender(t *testing.T) {
 	writeCellsPNG(t, oct, vxl.ModeOctant, filepath.Join(dir, "cells-octant.png"))
 	_, sx := renderProbe(sc, cols, rows, vxl.ModeSextant)
 	writeCellsPNG(t, sx, vxl.ModeSextant, filepath.Join(dir, "cells-sextant.png"))
+	_, shapes := renderProbe(sc, cols, rows, vxl.ModeShapes)
+	writeCellsPNG(t, shapes, vxl.ModeShapes, filepath.Join(dir, "cells-shapes.png"))
+	_, all := renderProbe(sc, cols, rows, vxl.ModeAll)
+	writeCellsPNG(t, all, vxl.ModeAll, filepath.Join(dir, "cells-all.png"))
 	wide := settledScene(probeSnapshot14(), probeLive14(), 8, 300)
 	fr14, cells14 := renderProbe(wide, cols, rows, vxl.ModeOctant)
 	writePixels(t, fr14, filepath.Join(dir, "fourteen.png"))
@@ -204,6 +210,23 @@ func TestProbeRender(t *testing.T) {
 	close.Target, close.Dist = wide.byName["Ada"].stand().Add(vxl.V(0, 2, 0)), 18
 	fr14, _ = renderProbeAt(wide, close, cols, rows, vxl.ModeOctant)
 	writePixels(t, fr14, filepath.Join(dir, "fourteen-close.png"))
+	for _, name := range Worlds {
+		if name == "off" {
+			continue
+		}
+		wide.setWorld(worldFor(name))
+		for range 30 {
+			wide.update(1.0 / 30)
+		}
+		frw, cellsw := renderProbe(wide, cols, rows, vxl.ModeOctant)
+		writePixels(t, frw, filepath.Join(dir, "world-"+name+".png"))
+		writeCellsPNG(t, cellsw, vxl.ModeOctant, filepath.Join(dir, "world-"+name+"-cells.png"))
+		near, _ := probeView(wide)
+		near.Target, near.Dist, near.Pitch = wide.lay.uplink.Add(vxl.V(0, 2, -4)), 22, 0.35
+		frn, _ := renderProbeAt(wide, near, cols, rows, vxl.ModeOctant)
+		writePixels(t, frn, filepath.Join(dir, "world-"+name+"-near.png"))
+	}
+	wide.setWorld(newBlackwall())
 	snap.Finished, snap.Stage = time.Now(), StageDone
 	for i := range 150 {
 		if i%10 == 0 {
@@ -269,10 +292,6 @@ func writePixels(t *testing.T, fr *vxl.Frame, path string) {
 func writeCellsPNG(t *testing.T, buf *uv.Buffer, mode vxl.CellMode, path string) {
 	t.Helper()
 	px, py := mode.Pixels()
-	masks := map[string]int{}
-	for m := range 1 << (px * py) {
-		masks[mode.Glyph(m)] = m
-	}
 	cols, rows := buf.Width(), buf.Height()
 	img := image.NewRGBA(image.Rect(0, 0, cols*8, rows*16))
 	for cy := range rows {
@@ -281,7 +300,7 @@ func writeCellsPNG(t *testing.T, buf *uv.Buffer, mode vxl.CellMode, path string)
 			if c == nil {
 				continue
 			}
-			mask, known := masks[c.Content]
+			mask, known := vxl.GlyphMask(c.Content)
 			bg, fg := c.Style.Bg, c.Style.Fg
 			if bg == nil {
 				bg = color.Black
@@ -295,7 +314,7 @@ func writeCellsPNG(t *testing.T, buf *uv.Buffer, mode vxl.CellMode, path string)
 					switch {
 					case known:
 						bit := dy*py/16*px + dx*px/8
-						if mask&(1<<bit) != 0 {
+						if mask&(1<<uint(bit)) != 0 {
 							col = fg
 						}
 					case c.Content != " " && dx >= 2 && dx < 6 && dy >= 3 && dy < 13 && (dx+dy)%2 == 0:
@@ -348,7 +367,7 @@ func probeSnapshot14() Snapshot {
 		}
 		members = append(members, m)
 	}
-	return Snapshot{ID: "sprint-14", Request: "probe", Started: now.Add(-20 * time.Minute), Stage: StageBuild, Status: "building", Members: members, Tickets: tickets, Spent: map[string]int{"Ada": 310000}}
+	return Snapshot{ID: "sprint-14", Request: "probe", Started: now.Add(-20 * time.Minute), Stage: StageBuild, Status: "building", Members: members, Tickets: tickets, Spent: map[string]int{"Ada": 310000}, Usage: map[string]protocol.Usage{"Ada": {Input: 290000, Output: 20000, CacheRead: 1200000}}}
 }
 
 // Harness state of the fourteen ticket probe, every runner with a ticket editing or reading
@@ -366,7 +385,7 @@ func probeLive14() map[string]liveState {
 
 // Scene of a sprint advanced a count of frames, synced every tenth
 func settledScene(snap Snapshot, live map[string]liveState, builders, frames int) *scene {
-	sc := newScene(builders)
+	sc := newScene(builders, newBlackwall())
 	cfg := Default()
 	for i := range frames {
 		if i%10 == 0 {
@@ -377,10 +396,11 @@ func settledScene(snap Snapshot, live map[string]liveState, builders, frames int
 	return sc
 }
 
-// Camera and raster the probe renders through, the whole platform in view
+// Camera and raster the probe renders through, the whole platform in view, lit as the world of the scene asks
 func probeView(sc *scene) (vxl.Camera, *vxl.Raster) {
 	cam := vxl.Camera{Target: sc.lay.center(), Yaw: 0.55, Pitch: 0.58, Dist: float64(sc.lay.w) * 1.6, FOV: 0.85}
-	r := &vxl.Raster{FogColor: sc.horizon, FogNear: cam.Dist * 0.95, FogFar: cam.Dist * 3, Sun: sunDir, SunColor: vxl.Hex(0xdfe9f2).Scale(0.72), Ambient: vxl.Hex(0x3a4c66)}
+	r := &vxl.Raster{}
+	sc.world.light(r, sc, cam.Dist)
 	return cam, r
 }
 
@@ -389,13 +409,17 @@ func benchFrame(b *testing.B, sc *scene) {
 	cols, rows := 220, 56
 	mode := vxl.ModeOctant
 	px, py := mode.Pixels()
-	static, fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}, &vxl.Frame{PixelAspect: mode.PixelAspect()}
-	static.Resize(cols*px, rows*py)
-	static.Clear(func(x, y int) vxl.RGB { return sc.sky(float64(y) / float64(static.H)) })
+	fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}
+	fr.Resize(cols*px, rows*py)
 	cam, r := probeView(sc)
-	r.Begin(static, cam)
+	qualityOf("high").apply(r)
+	r.SetLights(nil)
+	r.Begin(fr, cam)
+	fr.Clear(func(x, y int) vxl.RGB { return sc.sky(r.Ray(float64(x)+0.5, float64(y)+0.5)) })
 	sc.drawStatic(r)
-	r.Flush()
+	var layer vxl.Layer
+	r.FlushInto(&layer)
+	fin := sc.world.finish()
 	var post vxl.Post
 	var enc vxl.Encoder
 	buf := uv.NewBuffer(cols, rows)
@@ -403,13 +427,14 @@ func benchFrame(b *testing.B, sc *scene) {
 	b.ResetTimer()
 	for b.Loop() {
 		sc.update(1.0 / 30)
-		fr.CopyFrom(static)
+		layer.Restore(fr)
 		r.Begin(fr, cam)
 		sc.drawDynamic(r)
-		r.Flush()
-		fr.Outline(probeOutline)
-		fr.Bloom(&post, 0.62, 0.8)
-		fr.Vignette(0.3)
+		r.FlushOver(&layer)
+		fr.Outline(fin.outline)
+		fr.Bloom(&post, fin.bloomThreshold, fin.bloomStrength)
+		fr.Grade(fin.grade)
+		fr.Vignette(fin.vignette)
 		enc.Encode(fr, buf, 0, 0, cols, rows, mode, nil)
 	}
 }
@@ -422,14 +447,15 @@ func benchStatic(b *testing.B, sc *scene) {
 	fr := &vxl.Frame{PixelAspect: mode.PixelAspect()}
 	fr.Resize(cols*px, rows*py)
 	cam, r := probeView(sc)
+	qualityOf("high").apply(r)
 	r.Begin(fr, cam)
 	sc.drawStatic(r)
 	r.Flush()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		fr.Clear(func(x, y int) vxl.RGB { return sc.sky(float64(y) / float64(fr.H)) })
 		r.Begin(fr, cam)
+		fr.Clear(func(x, y int) vxl.RGB { return sc.sky(r.Ray(float64(x)+0.5, float64(y)+0.5)) })
 		sc.drawStatic(r)
 		r.Flush()
 	}

@@ -2,9 +2,10 @@ package sprint
 
 import (
 	"container/heap"
-	"github.com/nickheyer/icebath/pkg/vxl"
 	"math"
 	"slices"
+
+	"github.com/nickheyer/icebath/pkg/vxl"
 )
 
 // Spacing of the nodes across a row and between rows, and the most nodes one row holds
@@ -22,12 +23,7 @@ const (
 
 // Colors every static surface of the dive paints with
 var (
-	colTileA     = vxl.Hex(0x33404f)
-	colFortA     = vxl.Hex(0x334a66)
-	colSeam      = vxl.Hex(0x4a7aa6)
-	colRim       = vxl.Hex(0x141b25)
 	colCliff     = vxl.Hex(0x0f1420)
-	colCliffDark = vxl.Hex(0x0a0e16)
 	colConduit   = vxl.Hex(0x1b3140)
 	colPedestal  = vxl.Hex(0x1a2434)
 	colPedestalH = vxl.Hex(0x2c3c52)
@@ -39,7 +35,6 @@ var (
 	colTower     = vxl.Hex(0x171f2b)
 	colTowerHi   = vxl.Hex(0x29364a)
 	colCradle    = vxl.Hex(0x1f2b3a)
-	colWallB     = vxl.Hex(0x2c080e)
 	colIce       = vxl.Hex(0x9cc7e8)
 	colIceDeep   = vxl.Hex(0x4a86b8)
 	colPaper     = vxl.Hex(0xf4f6f8)
@@ -59,9 +54,6 @@ var (
 	colNodeFail  = vxl.Hex(0xff4757)
 	colNodeBlock = vxl.Hex(0x6b4f8a)
 )
-
-// Direction toward the key light, from the south east and high
-var sunDir = vxl.V(0.35, 1, 0.55).Norm()
 
 // Dye of an outfit color name
 func dye(name string) vxl.RGB {
@@ -244,7 +236,7 @@ func buildDive(plan []planNode, builders int) dive {
 	}
 	block(int(lay.spire.X)-1, int(lay.spire.Z)-1, 3, 3)
 	block(int(lay.chart.X)-2, int(lay.chart.Z)-1, 5, 3)
-	block(int(lay.uplink.X), int(lay.uplink.Z)+1, 1, 1)
+	block(int(lay.uplink.X)-1, int(lay.uplink.Z)-1, 3, 3)
 	for z := 3; z < lay.d-3; z += 6 {
 		lay.perches = append(lay.perches, perch{at: vxl.V(0.5, 0, float64(z)+0.5), yaw: -math.Pi / 2}, perch{at: vxl.V(float64(lay.w)-0.5, 0, float64(z)+0.5), yaw: math.Pi / 2})
 	}
@@ -383,6 +375,26 @@ func (lay *dive) viewSpot(id string, share float64) (vxl.Vec3, float64) {
 	return at, vxl.HeadingOf(n.Sub(at))
 }
 
+// Spot behind the uplink pad where the director addresses the landing, facing the pad and the crew beyond it
+func (lay *dive) podium() (vxl.Vec3, float64) {
+	return lay.nearest(lay.uplink.Add(vxl.V(0, 0, -2.5))), 0
+}
+
+// Spot on the landing in front of the pad where the crew steps up from to jack out
+func (lay *dive) padFoot() vxl.Vec3 {
+	return lay.nearest(lay.uplink.Add(vxl.V(0, 0, 2.5)))
+}
+
+// Top of the uplink pad where a member stands to jack out
+func (lay *dive) padTop() vxl.Vec3 { return lay.uplink.Add(vxl.V(0, 1, 0)) }
+
+// Nearest walkable spot on the floor under or beside a point, however high it is
+func (lay *dive) ground(p vxl.Vec3) vxl.Vec3 {
+	q := lay.nearest(vxl.V(p.X, 0, p.Z))
+	q.Y = 0
+	return q
+}
+
 // Spot in front of the spire where the reviewer lands when it leaves the tower
 func (lay *dive) spireFoot() vxl.Vec3 {
 	return lay.nearest(lay.spire.Add(vxl.V(0, 0, 3.5)))
@@ -419,82 +431,95 @@ func (lay *dive) bounds() (lo, hi vxl.Vec3) {
 // Center of the platform
 func (lay *dive) center() vxl.Vec3 { return vxl.V(float64(lay.w)/2, 1.5, float64(lay.d)/2) }
 
-// Static platform, stations, conduits and the blackwall as patterned voxels
-func (lay *dive) build() vxl.Grid {
-	g := vxl.Grid{}
-	for cell := range lay.tiles {
-		x, z := cell[0], cell[1]
-		c, tex := colTileA, vxl.TexPanel
-		if z < lay.fortD {
-			c, tex = colFortA, vxl.TexCircuit
-		}
-		if x%6 == 0 || z%6 == 0 {
-			c = c.Mix(colSeam, 0.35)
-		}
-		g.SetTex(x, -1, z, c, tex)
-		ring := min(x, z, lay.w-1-x, lay.d-1-z)
-		if ring == 0 || !lay.tiles[[2]int{x - 1, z}] || !lay.tiles[[2]int{x + 1, z}] || !lay.tiles[[2]int{x, z - 1}] || !lay.tiles[[2]int{x, z + 1}] {
-			g.SetTex(x, -1, z, colRim, vxl.TexGrate)
-			g.SetTex(x, -2, z, colCliff, vxl.TexNoise)
-			if vxl.Hash2(z, x) > 0.5 {
-				g.SetTex(x, -3, z, colCliffDark, vxl.TexNoise)
-			}
-			if vxl.Hash2(x*3, z) > 0.8 {
-				g.SetTex(x, -4, z, colCliffDark, vxl.TexNoise)
-			}
-		} else if ring < 3 && vxl.Hash2(x, z*5) > 0.6 {
-			g.SetTex(x, -2, z, colCliff, vxl.TexNoise)
-		}
-	}
+// Voxels the stations of every world are built from
+type materials struct {
+	conduit, pedestal, pedestalHi, socket, pad, padHi, pillar, table, tableTop, tower, towerHi, cradle vxl.Voxel
+}
+
+// Conduits, pedestals, the uplink pad, the chart table, the spire and the cradles as voxels of the materials, over tiles already laid
+func (lay *dive) stations(g vxl.Grid, m materials) {
 	for _, cells := range lay.conduits {
 		for _, c := range cells {
 			if lay.tiles[c] {
-				g.SetTex(c[0], -1, c[1], colConduit, vxl.TexGrate)
+				g.Put(c[0], -1, c[1], m.conduit)
 			}
 		}
 	}
 	for _, p := range lay.nodes {
 		x, z := int(p.X), int(p.Z)
-		g.BoxTex(x-1, 0, z-1, 3, 1, 3, colPedestal, vxl.TexGrate)
+		g.Fill(x-1, 0, z-1, 3, 1, 3, m.pedestal)
 		for _, c := range [][2]int{{x - 1, z - 1}, {x + 1, z - 1}, {x - 1, z + 1}, {x + 1, z + 1}} {
-			g.SetTex(c[0], 0, c[1], colPedestalH, vxl.TexGrate)
+			g.Put(c[0], 0, c[1], m.pedestalHi)
 		}
 		g.Del(x, 0, z)
-		g.SetTex(x, -1, z, colDark, vxl.TexGrate)
+		g.Put(x, -1, z, m.socket)
 	}
 	ux, uz := int(lay.uplink.X), int(lay.uplink.Z)
-	g.BoxTex(ux-1, 0, uz-1, 3, 1, 3, colPad, vxl.TexPanel)
-	g.SetTex(ux, 0, uz, colPadHi, vxl.TexPanel)
-	g.BoxTex(ux, 1, uz+1, 1, 3, 1, colPillar, vxl.TexGrate)
-	g.SetTex(ux, 4, uz+1, colPadHi, vxl.TexPanel)
+	g.Fill(ux-1, 0, uz-1, 3, 1, 3, m.pad)
+	g.Put(ux, 0, uz, m.padHi)
+	g.Fill(ux, 1, uz+1, 1, 3, 1, m.pillar)
+	g.Put(ux, 4, uz+1, m.padHi)
 	cx, cz := int(lay.chart.X), int(lay.chart.Z)
-	g.BoxTex(cx-2, 0, cz-1, 1, 1, 3, colTable, vxl.TexGrate)
-	g.BoxTex(cx+2, 0, cz-1, 1, 1, 3, colTable, vxl.TexGrate)
-	g.BoxTex(cx-2, 1, cz-1, 5, 1, 3, colTableTop, vxl.TexPanel)
+	g.Fill(cx-2, 0, cz-1, 1, 1, 3, m.table)
+	g.Fill(cx+2, 0, cz-1, 1, 1, 3, m.table)
+	g.Fill(cx-2, 1, cz-1, 5, 1, 3, m.tableTop)
 	sx, sz := int(lay.spire.X), int(lay.spire.Z)
-	g.BoxTex(sx-1, 0, sz-1, 3, spireHeight, 3, colTower, vxl.TexPanel)
+	g.Fill(sx-1, 0, sz-1, 3, spireHeight, 3, m.tower)
 	for y := range spireHeight {
 		for _, c := range [][2]int{{sx - 1, sz - 1}, {sx + 1, sz - 1}, {sx - 1, sz + 1}, {sx + 1, sz + 1}} {
 			if (y+c[0]+c[1])%2 == 0 {
-				g.SetTex(c[0], y, c[1], colTowerHi, vxl.TexGrate)
+				g.Put(c[0], y, c[1], m.towerHi)
 			}
 		}
 	}
-	g.BoxTex(sx-1, spireHeight, sz-1, 3, 1, 3, colTowerHi, vxl.TexPanel)
-	g.BoxTex(sx, spireHeight+1, sz-1, 1, 2, 1, colPillar, vxl.TexGrate)
+	g.Fill(sx-1, spireHeight, sz-1, 3, 1, 3, m.towerHi)
+	g.Fill(sx, spireHeight+1, sz-1, 1, 2, 1, m.pillar)
 	for _, c := range lay.cradles {
 		x, z := int(c.X), int(c.Z)
-		g.BoxTex(x, -1, z, 2, 1, 1, colCradle, vxl.TexGrate)
+		g.Fill(x, -1, z, 2, 1, 1, m.cradle)
 	}
-	for x := -8; x < lay.w+8; x++ {
-		h := 12 + int(vxl.Hash2(x, 99)*5)
-		for z := lay.wallZ - 1; z <= lay.wallZ; z++ {
-			for y := -4; y < h-1; y++ {
-				g.SetTex(x, y, z, colWallB, vxl.TexNoise)
+}
+
+// Ring of a tile from the edge of the platform, zero on the edge
+func (lay *dive) ring(x, z int) int { return min(x, z, lay.w-1-x, lay.d-1-z) }
+
+// Reports whether a tile lies on the edge of the platform or beside a missing tile
+func (lay *dive) edge(x, z int) bool {
+	return lay.ring(x, z) == 0 || !lay.tiles[[2]int{x - 1, z}] || !lay.tiles[[2]int{x + 1, z}] || !lay.tiles[[2]int{x, z - 1}] || !lay.tiles[[2]int{x, z + 1}]
+}
+
+// Lays every tile of the platform from a function of its cell and whether it sits in the fort
+func (lay *dive) floor(g vxl.Grid, tile func(x, z int, fort bool) vxl.Voxel) {
+	for cell := range lay.tiles {
+		x, z := cell[0], cell[1]
+		g.Put(x, -1, z, tile(x, z, z < lay.fortD))
+	}
+}
+
+// Rims every edge tile and hangs a broken cliff of voxels under the edges, deeper where the hash falls
+func (lay *dive) cliff(g vxl.Grid, rim, cliff, cliffDark vxl.Voxel, depth int) {
+	for cell := range lay.tiles {
+		x, z := cell[0], cell[1]
+		switch {
+		case lay.edge(x, z):
+			g.Put(x, -1, z, rim)
+			g.Put(x, -2, z, cliff)
+			for y := 3; y <= depth; y++ {
+				if vxl.Hash2(z*y, x) > 0.35+0.1*float64(y) {
+					g.Put(x, -y, z, cliffDark)
+				}
 			}
-			g.SetTex(x, h-1, z, colWallB, vxl.TexPanel)
+		case lay.ring(x, z) < 3 && vxl.Hash2(x, z*5) > 0.6:
+			g.Put(x, -2, z, cliff)
 		}
 	}
+}
+
+// Static voxels of the platform in a world, its terrain first and the stations over it
+func (lay *dive) build(w world) vxl.Grid {
+	g := vxl.Grid{}
+	w.terrain(lay, g)
+	lay.stations(g, w.materials())
 	return g
 }
 

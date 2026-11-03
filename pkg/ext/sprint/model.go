@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/protocol"
+
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
 )
@@ -182,6 +184,7 @@ const (
 	MsgAnswer   MessageKind = "answer"
 	MsgNote     MessageKind = "note"
 	MsgFailure  MessageKind = "failure"
+	MsgChat     MessageKind = "chat"
 )
 
 // Name messages use for the person
@@ -232,8 +235,10 @@ type Sprint struct {
 	Paused string
 	// Member whose session the sprint waits on the person to drive, empty while it waits on none
 	Waiting string
-	// Tokens every member has spent, by name
+	// Tokens every member has spent on its own work, generated and processed fresh, by name
 	Spent map[string]int
+	// Tokens every member has used over every turn, by name
+	Usage map[string]protocol.Usage
 	// Closed and replaced whenever the person resumes the sprint, so every waiting stage wakes
 	resume chan struct{}
 	// Tool calls the stages wait for, by session id
@@ -242,6 +247,12 @@ type Sprint struct {
 	announce func(msg any)
 	// File every change is written to, nothing written while unset
 	journal *journal
+	// Context of the workflow driving the sprint, chat runs start under it and end with it
+	life context.Context
+	// Serializes opening member sessions and starting or steering runs on them
+	reachMu sync.Mutex
+	// Closed and replaced whenever a chat reaches a member, by name, so a stage waiting on a reply wakes
+	knocks map[string]chan struct{}
 }
 
 // Copy of a sprint safe to read while the workflow goes on
@@ -264,6 +275,7 @@ type Snapshot struct {
 	Paused   string
 	Waiting  string
 	Spent    map[string]int
+	Usage    map[string]protocol.Usage
 }
 
 // Reports whether the sprint still goes
@@ -344,7 +356,7 @@ func newSprint(id, request string, started time.Time, announce func(any)) *Sprin
 	if announce == nil {
 		announce = func(any) {}
 	}
-	return &Sprint{ID: id, Request: request, Started: started, Stage: StageBrief, Status: "starting", Spent: map[string]int{}, waits: map[string]*handoffWait{}, resume: make(chan struct{}), announce: announce}
+	return &Sprint{ID: id, Request: request, Started: started, Stage: StageBrief, Status: "starting", Spent: map[string]int{}, Usage: map[string]protocol.Usage{}, waits: map[string]*handoffWait{}, resume: make(chan struct{}), announce: announce}
 }
 
 // Points the sprint at the interface of the process running it now
@@ -378,6 +390,10 @@ func (s *Sprint) Snapshot() Snapshot {
 	out.Spent = make(map[string]int, len(s.Spent))
 	for k, v := range s.Spent {
 		out.Spent[k] = v
+	}
+	out.Usage = make(map[string]protocol.Usage, len(s.Usage))
+	for k, v := range s.Usage {
+		out.Usage[k] = v
 	}
 	return out
 }
@@ -428,6 +444,45 @@ func (s *Sprint) setStatus(status string) {
 	s.changed()
 }
 
+// Points chat runs at the context of the workflow driving the sprint now
+func (s *Sprint) drive(ctx context.Context) {
+	s.mu.Lock()
+	s.life = ctx
+	s.mu.Unlock()
+}
+
+// Context chat runs start under, nil while no workflow drives the sprint in this process
+func (s *Sprint) lifeCtx() context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.life
+}
+
+// Channel closed when a chat next reaches the member
+func (s *Sprint) knocked(name string) <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.knocks == nil {
+		s.knocks = map[string]chan struct{}{}
+	}
+	ch, ok := s.knocks[name]
+	if !ok {
+		ch = make(chan struct{})
+		s.knocks[name] = ch
+	}
+	return ch
+}
+
+// Wakes every stage waiting for a chat to reach the member
+func (s *Sprint) knock(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ch, ok := s.knocks[name]; ok {
+		close(ch)
+		delete(s.knocks, name)
+	}
+}
+
 // Adds an exchange to the log
 func (s *Sprint) say(kind MessageKind, from, to, ticket, text string) Message {
 	s.mu.Lock()
@@ -439,11 +494,23 @@ func (s *Sprint) say(kind MessageKind, from, to, ticket, text string) Message {
 	return m
 }
 
-// Records how many tokens a member has spent so far
-func (s *Sprint) spend(name string, total int) {
+// Records the tokens a member has used so far, the generated and freshly processed ones counting as spent
+func (s *Sprint) spend(name string, u protocol.Usage) {
 	s.mu.Lock()
-	s.Spent[name] = total
+	s.Usage[name] = u
+	s.Spent[name] = Spent(u)
 	s.mu.Unlock()
+}
+
+// Tokens of a usage that cost real work, the ones generated and the prompt ones processed fresh
+func Spent(u protocol.Usage) int { return u.Output + u.Input }
+
+// Share of the prompt tokens of a usage served from cache, zero without any prompt tokens
+func Cached(u protocol.Usage) float64 {
+	if n := u.Input + u.CacheRead + u.CacheWrite; n > 0 {
+		return float64(u.CacheRead) / float64(n)
+	}
+	return 0
 }
 
 // Adds a member, replacing an earlier one of the same name
@@ -602,7 +669,7 @@ func (s *Sprint) strand() int {
 	n := 0
 	for _, t := range s.Tickets {
 		if t.Status == TicketTodo {
-			t.Status, t.Err, t.Finished = TicketBlocked, "blocked, no ticket in hand could free it", time.Now()
+			t.Status, t.Err, t.Finished = TicketBlocked, "blocked, no ticket in progress can unblock it", time.Now()
 			n++
 		}
 	}

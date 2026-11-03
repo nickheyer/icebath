@@ -196,6 +196,9 @@ func (c *Config) endpointDetail(p profiles.Profile) []string {
 	if p.BaseURLEnv != "" {
 		out = append(out, render.KV("endpoint from", p.BaseURLEnv, t))
 	}
+	if p.Window > 0 {
+		out = append(out, render.KV("window", render.Tokens(p.Window)+" tokens", t))
+	}
 	if len(p.Header) > 0 {
 		out = append(out, render.KV("headers", headerNames(p.Header), t))
 	}

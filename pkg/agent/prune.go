@@ -12,17 +12,32 @@ import (
 	"github.com/nickheyer/icebath/pkg/session"
 )
 
-// Estimated tokens of eligible results that pile up before a batch is stubbed, so the cached prefix changes rarely
+// Estimated tokens of eligible results that pile up before a batch is stubbed while the window is unknown
 const pruneBatch = 8000
+
+// Share of the window a request may fill before the oldest eligible results are stubbed
+const pruneShare = 0.5
+
+// Share of the window a prune frees below the pruning share, so the request prefix changes rarely
+const pruneRelief = 0.15
 
 // Longest argument excerpt a stub carries
 const stubArgs = 80
 
-// Hook that swaps tool results older than After assistant turns for one line stubs in the request
+// Hook that swaps old tool results for one line stubs once the request presses on the context window
 type Pruner struct {
 	Hooks
 	Session *session.Session
-	After   int
+	// Assistant turns a result stays whole before it may be stubbed
+	After int
+	// Context tokens one request may carry, zero while unknown
+	Window int
+}
+
+// Tool result eligible for a stub with the tokens it holds, oldest first
+type candidate struct {
+	result protocol.ToolResult
+	tokens int
 }
 
 func (p *Pruner) BeforeTurn(ctx context.Context, req *protocol.Request) error {
@@ -37,10 +52,9 @@ func (p *Pruner) BeforeTurn(ctx context.Context, req *protocol.Request) error {
 			}
 		}
 	}
-	var pool []protocol.ToolResult
+	var pool []candidate
 	pending, turns := 0, 0
 	for _, m := range slices.Backward(req.Messages) {
-
 		if m.Role == protocol.RoleAssistant {
 			turns++
 			continue
@@ -56,14 +70,14 @@ func (p *Pruner) BeforeTurn(ctx context.Context, req *protocol.Request) error {
 			if _, done := p.Session.Pruned(r.CallID); done {
 				continue
 			}
-			pool = append(pool, r)
-			pending += protocol.EstimateTokens(r.Content)
+			n := protocol.EstimateTokens(r.Content)
+			pool = append(pool, candidate{result: r, tokens: n})
+			pending += n
 		}
 	}
-	if pending >= pruneBatch {
-		for _, r := range pool {
-			p.Session.Prune(r.CallID, pruneStub(calls[r.CallID], r))
-		}
+	slices.Reverse(pool)
+	for _, c := range p.chosen(pool, pending, req.Messages) {
+		p.Session.Prune(c.result.CallID, pruneStub(calls[c.result.CallID], c.result))
 	}
 	for i := range req.Messages {
 		m := &req.Messages[i]
@@ -84,6 +98,31 @@ func (p *Pruner) BeforeTurn(ctx context.Context, req *protocol.Request) error {
 	return nil
 }
 
+// Candidates to stub, every one in a batch while the window is unknown, else the oldest until the request fits under the window share
+func (p *Pruner) chosen(pool []candidate, pending int, messages []protocol.Message) []candidate {
+	if p.Window <= 0 {
+		if pending >= pruneBatch {
+			return pool
+		}
+		return nil
+	}
+	have := p.Session.Context() + pendingTokens(messages)
+	limit := int(float64(p.Window) * pruneShare)
+	if have < limit {
+		return nil
+	}
+	goal := int(float64(p.Window) * (pruneShare - pruneRelief))
+	var out []candidate
+	for _, c := range pool {
+		if have <= goal {
+			break
+		}
+		out = append(out, c)
+		have -= c.tokens
+	}
+	return out
+}
+
 // One line stub naming the call and the size of the body it stands in for
 func pruneStub(call protocol.ToolCall, r protocol.ToolResult) string {
 	name := call.Name
@@ -102,11 +141,11 @@ func pruneStub(call protocol.ToolCall, r protocol.ToolResult) string {
 		sb.WriteString(" ")
 		sb.WriteString(args)
 	}
-	fmt.Fprintf(&sb, " result dropped from context, %d lines, about %s tokens", lines, roughTokens(protocol.EstimateTokens(r.Content)))
+	fmt.Fprintf(&sb, " returned %d lines, about %s tokens, no longer in context", lines, roughTokens(protocol.EstimateTokens(r.Content)))
 	if attachments > 0 {
 		fmt.Fprintf(&sb, ", %d attachments", attachments)
 	}
-	sb.WriteString(", run the call again if it is needed]")
+	sb.WriteString("]")
 	return sb.String()
 }
 

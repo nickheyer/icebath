@@ -2,23 +2,25 @@ package vxl
 
 import (
 	"math"
-	"runtime"
 	"slices"
 )
 
-// Pixel grid with a depth and a facing per pixel and the shape of its pixels on screen
+// Pixel grid with the surface, depth and facing of every opaque pixel and the shape of its pixels on screen
 type Frame struct {
 	W, H  int
 	Color []RGB
+	// Color of each opaque pixel before scene light and fog, its reflectance where the facing is marked lit
+	Albedo []RGB
 	// One over the view depth of the pixel, zero where nothing was drawn
 	Depth []float32
-	// Facing of the opaque face the pixel shows, packed, zero where none was drawn
+	// Packed facing of the opaque face the pixel shows, bit 25 marking it lit and gloss above, zero where none
 	Normal []uint32
 	// Width of one pixel over its height as the screen shows it
 	PixelAspect float64
 	vig         []float32
 	vigW, vigH  int
 	vigS        float64
+	tmp         []RGB
 }
 
 // Frame of the size, the buffers reused when the size did not change
@@ -27,9 +29,10 @@ func (fr *Frame) Resize(w, h int) {
 	if fr.PixelAspect == 0 {
 		fr.PixelAspect = 1
 	}
-	if fr.W != w || fr.H != h || fr.Color == nil || len(fr.Normal) != w*h {
+	if fr.W != w || fr.H != h || fr.Color == nil || len(fr.Normal) != w*h || len(fr.Albedo) != w*h {
 		fr.W, fr.H = w, h
 		fr.Color = make([]RGB, w*h)
+		fr.Albedo = make([]RGB, w*h)
 		fr.Depth = make([]float32, w*h)
 		fr.Normal = make([]uint32, w*h)
 	}
@@ -49,16 +52,33 @@ func (fr *Frame) Clear(bg func(x, y int) RGB) {
 	})
 }
 
-// Copies the pixels, depths and facings of a frame of the same shape
+// Copies the pixels, surfaces, depths and facings of a frame
 func (fr *Frame) CopyFrom(o *Frame) {
 	fr.PixelAspect = o.PixelAspect
 	fr.Resize(o.W, o.H)
 	parallelRows(fr.H, func(y0, y1 int) {
 		a, b := y0*fr.W, y1*fr.W
 		copy(fr.Color[a:b], o.Color[a:b])
+		copy(fr.Albedo[a:b], o.Albedo[a:b])
 		copy(fr.Depth[a:b], o.Depth[a:b])
 		copy(fr.Normal[a:b], o.Normal[a:b])
 	})
+}
+
+// Red, green and blue of every pixel as bytes, row by row, written over the slice given
+func (fr *Frame) Bytes(dst []byte) []byte {
+	n := fr.W * fr.H * 3
+	if cap(dst) < n {
+		dst = make([]byte, n)
+	}
+	dst = dst[:n]
+	parallelRows(fr.H, func(y0, y1 int) {
+		for i := y0 * fr.W; i < y1*fr.W; i++ {
+			c := fr.Color[i]
+			dst[i*3], dst[i*3+1], dst[i*3+2] = channel(c.R), channel(c.G), channel(c.B)
+		}
+	})
+	return dst
 }
 
 // Pixel color, the nearest pixel of the frame past its edge
@@ -70,6 +90,18 @@ func (fr *Frame) At(x, y int) RGB {
 	return fr.Color[y*fr.W+x]
 }
 
+// Pixel color between pixel centers, blended from the four around a place in pixels
+func (fr *Frame) lerpAt(x, y float64) RGB {
+	x, y = x-0.5, y-0.5
+	x0, y0 := int(math.Floor(x)), int(math.Floor(y))
+	tx, ty := x-float64(x0), y-float64(y0)
+	a, b := fr.At(x0, y0), fr.At(x0+1, y0)
+	c, d := fr.At(x0, y0+1), fr.At(x0+1, y0+1)
+	top := RGB{a.R + (b.R-a.R)*tx, a.G + (b.G-a.G)*tx, a.B + (b.B-a.B)*tx}
+	bot := RGB{c.R + (d.R-c.R)*tx, c.G + (d.G-c.G)*tx, c.B + (d.B-c.B)*tx}
+	return RGB{top.R + (bot.R-top.R)*ty, top.G + (bot.G-top.G)*ty, top.B + (bot.B-top.B)*ty}
+}
+
 // Share of pixel depth a neighbor must stand nearer than the plane through the pixel predicts to cast a silhouette
 const silhouetteJump = 0.02
 
@@ -79,8 +111,9 @@ const creaseShare = 0.5
 // Dot product of packed facings below which two faces meet at a crease, about twenty six degrees apart
 const creaseDot = 127 * 127 * 9 / 10
 
-// Reports whether two packed facings of drawn pixels turn apart past the fold angle
+// Reports whether two packed facings of drawn pixels turn apart past the fold angle, lit or not, whatever their gloss
 func crease(a, b uint32) bool {
+	a, b = a&normalDir, b&normalDir
 	if a == b || a == 0 || b == 0 {
 		return false
 	}
@@ -132,124 +165,121 @@ func (fr *Frame) Outline(strength float64) {
 	})
 }
 
-// Scratch buffers of the bloom pass, reused across frames
-type Post struct {
-	small []RGB
-	sw    int
-	sh    int
-	w     int
-	// Columns of the small grid each pixel column blends between and the share of the second
-	x0, x1 []int32
-	tx     []float64
-	// Small rows blurred down the grid for each band of pixel rows, and which of them hold any light
-	vert []RGB
-	lit  []bool
-	row  []RGB
+// One level of the bloom chain, a grid of pixels at a shrink of the frame
+type bloomLevel struct {
+	w, h int
+	px   []RGB
+	tmp  []RGB
 }
 
-// Factor the bloom pass shrinks the frame by before blurring
-const bloomShrink = 4
+// Scratch buffers of the bloom pass, reused across frames
+type Post struct {
+	levels []bloomLevel
+	w, h   int
+}
 
-// Weights of the nine tap blur, the five tap binomial blur run twice, so each axis takes one pass
-var bloomWeights = [9]float64{1.0 / 256, 8.0 / 256, 28.0 / 256, 56.0 / 256, 70.0 / 256, 56.0 / 256, 28.0 / 256, 8.0 / 256, 1.0 / 256}
+// Most levels the bloom chain shrinks through, each half the size of the one before
+const bloomLevels = 6
 
-// Spreads the light of bright pixels into their surroundings, the glow added at the strength
+// Spreads the light of bright pixels into their surroundings through a chain of halved blurs, the glow added at the strength
 func (fr *Frame) Bloom(p *Post, threshold, strength float64) {
 	if fr.W == 0 || fr.H == 0 || strength <= 0 {
 		return
 	}
-	sw, sh := (fr.W+bloomShrink-1)/bloomShrink, (fr.H+bloomShrink-1)/bloomShrink
-	if p.sw != sw || p.sh != sh || p.w != fr.W {
-		p.sw, p.sh, p.w = sw, sh, fr.W
-		p.small = make([]RGB, sw*sh)
-		p.x0, p.x1, p.tx = make([]int32, fr.W), make([]int32, fr.W), make([]float64, fr.W)
-		for x := range fr.W {
-			fx := (float64(x)+0.5)/bloomShrink - 0.5
-			x0 := min(max(int(math.Floor(fx)), 0), sw-1)
-			p.x0[x], p.x1[x], p.tx[x] = int32(x0), int32(min(x0+1, sw-1)), min(max(fx-float64(x0), 0), 1)
+	if p.w != fr.W || p.h != fr.H || len(p.levels) == 0 {
+		p.w, p.h = fr.W, fr.H
+		p.levels = p.levels[:0]
+		w, h := (fr.W+1)/2, (fr.H+1)/2
+		for len(p.levels) < bloomLevels && w >= 2 && h >= 2 {
+			p.levels = append(p.levels, bloomLevel{w: w, h: h, px: make([]RGB, w*h), tmp: make([]RGB, w*h)})
+			w, h = (w+1)/2, (h+1)/2
 		}
 	}
-	workers := min(runtime.NumCPU(), max(sh/2, 1))
-	band := (sh + workers - 1) / workers
-	nb := (sh + band - 1) / band
-	p.row = slices.Grow(p.row[:0], nb*sw)[:nb*sw]
-	inv := 1 / float64(bloomShrink*bloomShrink)
-	// Shrinks the bright share of each block of pixels into a small row and blurs it across
-	parallel(nb, workers, func(b int) {
-		row := p.row[b*sw : (b+1)*sw]
-		for sy := b * band; sy < min((b+1)*band, sh); sy++ {
-			clear(row)
-			for y := sy * bloomShrink; y < min((sy+1)*bloomShrink, fr.H); y++ {
-				for x, c := range fr.Color[y*fr.W : (y+1)*fr.W] {
+	if len(p.levels) == 0 {
+		return
+	}
+	top := &p.levels[0]
+	parallelRows(top.h, func(y0, y1 int) {
+		for y := y0; y < y1; y++ {
+			for x := range top.w {
+				var sum RGB
+				for _, c := range [4]RGB{fr.At(2*x, 2*y), fr.At(2*x+1, 2*y), fr.At(2*x, 2*y+1), fr.At(2*x+1, 2*y+1)} {
 					if l := c.Luma(); l > threshold {
-						row[x/bloomShrink] = row[x/bloomShrink].Add(c.Scale((l - threshold) / l * inv))
+						sum = sum.Add(c.Scale((l - threshold) / l))
 					}
 				}
-			}
-			dst := p.small[sy*sw : (sy+1)*sw]
-			for x := range sw {
-				var acc RGB
-				for k, wt := range bloomWeights {
-					acc = acc.Add(row[min(max(x+k-4, 0), sw-1)].Scale(wt))
-				}
-				dst[x] = acc
+				top.px[y*top.w+x] = sum.Scale(0.25)
 			}
 		}
 	})
-	workers = min(runtime.NumCPU(), max(fr.H/8, 1))
-	band = (fr.H + workers - 1) / workers
-	nb = (fr.H + band - 1) / band
-	need := band/bloomShrink + 3
-	p.vert = slices.Grow(p.vert[:0], nb*need*sw)[:nb*need*sw]
-	p.lit = slices.Grow(p.lit[:0], nb*need)[:nb*need]
-	smallRow := func(y int) int { return min(max(int(math.Floor((float64(y)+0.5)/bloomShrink-0.5)), 0), sh-1) }
-	// Blurs down the grid the small rows a band of pixel rows needs, then lays them over its pixels
-	parallel(nb, workers, func(b int) {
-		r0, r1 := b*band, min((b+1)*band, fr.H)
-		top, bottom := smallRow(r0), min(smallRow(r1-1)+1, sh-1)
-		rows, lit := p.vert[b*need*sw:(b+1)*need*sw], p.lit[b*need:(b+1)*need]
-		for sy := top; sy <= bottom; sy++ {
-			dst := rows[(sy-top)*sw : (sy-top+1)*sw]
-			on := false
-			for x := range sw {
-				var acc RGB
-				for k, wt := range bloomWeights {
-					acc = acc.Add(p.small[min(max(sy+k-4, 0), sh-1)*sw+x].Scale(wt * strength))
+	top.blur()
+	for i := 1; i < len(p.levels); i++ {
+		src, dst := &p.levels[i-1], &p.levels[i]
+		parallelRows(dst.h, func(y0, y1 int) {
+			for y := y0; y < y1; y++ {
+				for x := range dst.w {
+					dst.px[y*dst.w+x] = src.at(2*x, 2*y).Add(src.at(2*x+1, 2*y)).Add(src.at(2*x, 2*y+1)).Add(src.at(2*x+1, 2*y+1)).Scale(0.25)
 				}
-				dst[x] = acc
-				on = on || acc != RGB{}
 			}
-			lit[sy-top] = on
-		}
-		var mixed [512]RGB
-		buf := mixed[:0]
-		if sw > len(mixed) {
-			buf = make([]RGB, 0, sw)
-		}
-		buf = buf[:sw]
-		for y := r0; y < r1; y++ {
-			fy := (float64(y)+0.5)/bloomShrink - 0.5
-			y0 := smallRow(y)
-			y1 := min(y0+1, sh-1)
-			if !lit[y0-top] && !lit[y1-top] {
-				continue
+		})
+		dst.blur()
+	}
+	for i := len(p.levels) - 2; i >= 0; i-- {
+		src, dst := &p.levels[i+1], &p.levels[i]
+		parallelRows(dst.h, func(y0, y1 int) {
+			for y := y0; y < y1; y++ {
+				for x := range dst.w {
+					dst.px[y*dst.w+x] = dst.px[y*dst.w+x].Add(src.lerp((float64(x)+0.5)/2, (float64(y)+0.5)/2))
+				}
 			}
-			a, c := rows[(y0-top)*sw:(y0-top+1)*sw], rows[(y1-top)*sw:(y1-top+1)*sw]
-			ty := min(max(fy-float64(y0), 0), 1)
-			for x := range sw {
-				buf[x] = RGB{a[x].R + (c[x].R-a[x].R)*ty, a[x].G + (c[x].G-a[x].G)*ty, a[x].B + (c[x].B-a[x].B)*ty}
-			}
+		})
+	}
+	k := strength / float64(len(p.levels))
+	parallelRows(fr.H, func(y0, y1 int) {
+		for y := y0; y < y1; y++ {
 			row := fr.Color[y*fr.W : (y+1)*fr.W]
 			for x := range row {
-				l, r := buf[p.x0[x]], buf[p.x1[x]]
-				if l == (RGB{}) && r == (RGB{}) {
-					continue
-				}
-				t := p.tx[x]
-				row[x] = row[x].Add(RGB{l.R + (r.R-l.R)*t, l.G + (r.G-l.G)*t, l.B + (r.B-l.B)*t})
+				row[x] = row[x].Add(top.lerp((float64(x)+0.5)/2, (float64(y)+0.5)/2).Scale(k))
 			}
 		}
 	})
+}
+
+// Pixel of a level, the nearest one past its edge
+func (l *bloomLevel) at(x, y int) RGB {
+	return l.px[min(max(y, 0), l.h-1)*l.w+min(max(x, 0), l.w-1)]
+}
+
+// Color between the pixel centers of a level, blended from the four around a place in its pixels
+func (l *bloomLevel) lerp(x, y float64) RGB {
+	x, y = x-0.5, y-0.5
+	x0, y0 := int(math.Floor(x)), int(math.Floor(y))
+	tx, ty := x-float64(x0), y-float64(y0)
+	a, b := l.at(x0, y0), l.at(x0+1, y0)
+	c, d := l.at(x0, y0+1), l.at(x0+1, y0+1)
+	top := RGB{a.R + (b.R-a.R)*tx, a.G + (b.G-a.G)*tx, a.B + (b.B-a.B)*tx}
+	bot := RGB{c.R + (d.R-c.R)*tx, c.G + (d.G-c.G)*tx, c.B + (d.B-c.B)*tx}
+	return RGB{top.R + (bot.R-top.R)*ty, top.G + (bot.G-top.G)*ty, top.B + (bot.B-top.B)*ty}
+}
+
+// Blurs a level with a three tap binomial filter across then down
+func (l *bloomLevel) blur() {
+	parallelRows(l.h, func(y0, y1 int) {
+		for y := y0; y < y1; y++ {
+			for x := range l.w {
+				l.tmp[y*l.w+x] = l.at(x-1, y).Add(l.at(x, y).Scale(2)).Add(l.at(x+1, y)).Scale(0.25)
+			}
+		}
+	})
+	l.px, l.tmp = l.tmp, l.px
+	parallelRows(l.h, func(y0, y1 int) {
+		for y := y0; y < y1; y++ {
+			for x := range l.w {
+				l.tmp[y*l.w+x] = l.at(x, y-1).Add(l.at(x, y).Scale(2)).Add(l.at(x, y+1)).Scale(0.25)
+			}
+		}
+	})
+	l.px, l.tmp = l.tmp, l.px
 }
 
 // Darkens the pixels toward the edges of the frame by the strength
@@ -277,4 +307,74 @@ func (fr *Frame) Vignette(strength float64) {
 			}
 		}
 	})
+}
+
+// Look of the finished frame, exposure and a filmic curve over the light, then saturation and color fringing
+type Grade struct {
+	// Factor every pixel is scaled by before the curve, one when zero
+	Exposure float64
+	// Filmic curve rolling bright light off toward white instead of clipping it
+	Tonemap bool
+	// Factor the distance of every color from grey is scaled by, one when zero
+	Saturation float64
+	// Pixels the red and blue channels slide apart by at the corners of the frame, none at zero
+	Aberration float64
+}
+
+// Applies the grade to every pixel, the fringing read from a copy of the frame
+func (fr *Frame) Grade(g Grade) {
+	if fr.W == 0 || fr.H == 0 {
+		return
+	}
+	exposure, sat := g.Exposure, g.Saturation
+	if exposure == 0 {
+		exposure = 1
+	}
+	if sat == 0 {
+		sat = 1
+	}
+	if g.Aberration > 0 {
+		fr.tmp = slices.Grow(fr.tmp[:0], fr.W*fr.H)[:fr.W*fr.H]
+		copy(fr.tmp, fr.Color)
+		src := &Frame{W: fr.W, H: fr.H, Color: fr.tmp}
+		cx, cy := float64(fr.W)/2, float64(fr.H)/2
+		parallelRows(fr.H, func(y0, y1 int) {
+			for y := y0; y < y1; y++ {
+				fy := (float64(y) + 0.5 - cy) / cy
+				for x := range fr.W {
+					fx := (float64(x) + 0.5 - cx) / cx
+					k := g.Aberration * (fx*fx + fy*fy)
+					ox, oy := fx*k, fy*k*fr.PixelAspect
+					px, py := float64(x)+0.5, float64(y)+0.5
+					c := &fr.Color[y*fr.W+x]
+					c.R = src.lerpAt(px-ox, py-oy).R
+					c.B = src.lerpAt(px+ox, py+oy).B
+				}
+			}
+		})
+	}
+	parallelRows(fr.H, func(y0, y1 int) {
+		for i := y0 * fr.W; i < y1*fr.W; i++ {
+			c := fr.Color[i]
+			if exposure != 1 {
+				c = c.Scale(exposure)
+			}
+			if g.Tonemap {
+				c = RGB{aces(c.R), aces(c.G), aces(c.B)}
+			}
+			if sat != 1 {
+				l := c.Luma()
+				c = RGB{l + (c.R-l)*sat, l + (c.G-l)*sat, l + (c.B-l)*sat}
+			}
+			fr.Color[i] = c
+		}
+	})
+}
+
+// Filmic curve of one channel, near straight in the shadows and rolling off to one in the highlights
+func aces(x float64) float64 {
+	if x <= 0 {
+		return 0
+	}
+	return min((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 1)
 }

@@ -2,6 +2,7 @@ package sprint
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -17,12 +18,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 	"github.com/nickheyer/icebath/pkg/vxl"
 )
+
+// Share of the flex height of the dock the log takes until the rule between the tickets and the log is dragged
+const defaultLogShare = 0.45
 
 // Seconds without a paint after which the arena takes itself for hidden and stops moving
 const hiddenAfter = 1.5 * float64(time.Second)
@@ -32,6 +37,9 @@ const maxStep = 0.1
 
 // Floor units a followed member walks before the camera moves after it, so it rests while the member works
 const followSlack = 2.5
+
+// Frames per second the arena settles to while nobody walks, flies or turns the camera
+const calmFPS = 8
 
 // Camera that eases toward where its preset and the person point it
 type camRig struct {
@@ -69,9 +77,35 @@ type rect struct{ x, y, w, h int }
 
 func (r rect) contains(x, y int) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
 
+// Part of the dock, each with a header that folds it
+type section int
+
+const (
+	secSprint section = iota
+	secTeam
+	secTickets
+	secLog
+)
+
+// Name of a section in the saved state
+func (s section) String() string {
+	switch s {
+	case secSprint:
+		return "sprint"
+	case secTeam:
+		return "team"
+	case secTickets:
+		return "tickets"
+	}
+	return "log"
+}
+
+var sections = []section{secSprint, secTeam, secTickets, secLog}
+
 // Boxes the parts of the arena take on the cells
 type layout struct {
-	side  rect
+	bar   rect
+	dock  rect
 	world rect
 	insp  rect
 	full  bool
@@ -85,10 +119,49 @@ type cinema struct {
 	yaw    float64
 }
 
-// Press on the floor that may become a drag of the camera
+// What a press on the arena may turn into as the pointer moves
+type dragKind int
+
+const (
+	dragNone dragKind = iota
+	dragCamera
+	dragDock
+	dragInspector
+	dragSplit
+)
+
+// Press that may become a drag, with where it started and what it moves
 type drag struct {
+	kind  dragKind
 	x, y  int
 	moved bool
+	// Width or share the drag started from
+	base float64
+}
+
+// Clickable thing painted on the last frame, a toolbar button, a section header or a dock row
+type hit struct {
+	id string
+	r  rect
+}
+
+// Least and greatest widths of the dock and the inspector
+const (
+	minDockWidth = 28
+	maxDockWidth = 90
+	minInspWidth = 40
+	maxInspWidth = 140
+)
+
+// State of the arena kept between runs of the app
+type arenaState struct {
+	DockWidth      int             `json:"dock_width"`
+	InspectorWidth int             `json:"inspector_width"`
+	Sections       map[string]bool `json:"sections"`
+	LogShare       float64         `json:"log_share"`
+	SprintFull     bool            `json:"sprint_full"`
+	Camera         string          `json:"camera"`
+	Labels         bool            `json:"labels"`
 }
 
 // Voxel world showing the newest sprint, its team moving as they work, each member openable and steerable from it
@@ -100,51 +173,69 @@ type arena struct {
 	fr     vxl.Frame
 	r      vxl.Raster
 	cam    vxl.Camera
-	// Floor and sky drawn once per camera position, copied under every frame
-	static    vxl.Frame
-	staticCam vxl.Camera
-	staticOK  bool
-	post      vxl.Post
+	// Floor and sky lit once per camera position, every frame drawn over it
+	layer      vxl.Layer
+	layerCam   vxl.Camera
+	layerOK    bool
+	layerWorld string
+	post       vxl.Post
 	// Cell encoder holding the glyph of every cell between frames so the floor does not shimmer
-	enc  vxl.Encoder
-	rig  camRig
-	cine cinema
+	enc vxl.Encoder
+	// Image the floor shows as pixels in a terminal that draws them, with the bytes of the last frame and where the card sits on the screen
+	surface          *gfx.Surface
+	rgb              []byte
+	originX, originY int
+	rig              camRig
+	cine             cinema
 	// Tool starts of every member by session id
 	tally    map[string]*toolTally
 	sprintID string
 	snap     *Snapshot
-	sel      string
-	hover    string
-	inspect  bool
-	typing   bool
-	// Sidebar beside the floor, the tickets or the log taking its whole lower half when expanded
-	sidebar   bool
-	showBoard bool
-	showLog   bool
-	showHelp  bool
-	labels    bool
-	boardTop  int
-	logTop    int
-	// Rows of the sidebar on the last paint and the boxes its tickets and log took
-	sideRows    []sideRow
-	sideTickets rect
-	sideLog     rect
-	sessions    map[string]*cards.Session
-	approvals   map[string]*cards.Approval
-	toolSeen    map[string]time.Time
-	w, h        int
-	lay         layout
-	painted     time.Time
-	last        time.Time
-	acc         float64
-	needSync    bool
-	synced      time.Time
-	focused     bool
-	spots       map[string]spot
-	pending     []tea.Cmd
-	chips       []chipRect
-	apRect      rect
-	drag        *drag
+	// What the harness said every member was doing at the last sync, read by every paint until the next
+	live map[string]liveState
+	// Dollars the sprint has cost and how many sprints there are, as of the last sync
+	spent       float64
+	sprintCount int
+	sprintIndex int
+	sel         string
+	selTicket   string
+	hover       string
+	hoverTicket string
+	hoverHit    string
+	inspect     bool
+	typing      bool
+	// Dock beside the world with the sprint, the team, the tickets and the log, each section folding on its own
+	dock       bool
+	dockWidth  int
+	inspWidth  int
+	secs       cards.Sections
+	sprintFull bool
+	showHelp   bool
+	labels     bool
+	// Bodies of the dock sections from the last paint and the count of syncs, so a section is rebuilt only on change
+	bodies  map[section]cachedBody
+	snapGen int
+	// Session windows of the team as the last paint laid them, while no world shows
+	tiles []tile
+	// Clickable things of the last paint
+	hits      []hit
+	sessions  map[string]*cards.Session
+	approvals map[string]*cards.Approval
+	toolSeen  map[string]time.Time
+	w, h      int
+	lay       layout
+	// Rows the inspector header took on the last paint
+	inspHead int
+	painted  time.Time
+	last     time.Time
+	acc      float64
+	needSync bool
+	synced   time.Time
+	focused  bool
+	spots    map[string]spot
+	pending  []tea.Cmd
+	apRect   rect
+	drag     *drag
 	// Spot the follow camera rests on and whose member it is
 	followAt   vxl.Vec3
 	followName string
@@ -156,16 +247,18 @@ type arena struct {
 // Builds the arena over the newest sprint
 func newArena(env *cards.Env) wm.Card {
 	a := &arena{env: env, sessions: map[string]*cards.Session{}, approvals: map[string]*cards.Approval{}, toolSeen: map[string]time.Time{}, tally: map[string]*toolTally{}, spots: map[string]spot{}, seen: map[string]bool{}, labels: true}
+	a.secs = cards.NewSections(1 - defaultLogShare)
+	a.bodies = map[section]cachedBody{}
+	a.live = map[string]liveState{}
+	a.dockWidth, a.inspWidth, a.inspHead = 44, 72, inspectorHead
 	a.reloadConfig()
-	a.sc = newScene(a.cfg.Team.Builders)
-	a.sc.zenith, a.sc.horizon = vxl.FromColor(env.Theme.Bg), vxl.FromColor(env.Theme.Bg).Mix(vxl.Hex(0x1c2a3f), 0.6)
-	a.r.Sun, a.r.SunColor, a.r.Ambient = sunDir, vxl.Hex(0xdfe9f2).Scale(0.72), vxl.Hex(0x3a4c66)
+	a.sc = newScene(a.cfg.Team.Builders, worldFor(a.cfg.Arena.World))
 	if dir, err := profiles.ConfigDir(); err == nil {
 		a.draftDir = dir
 	}
 	c := a.sc.lay.center()
-	a.rig = camRig{preset: a.cfg.Arena.Camera, zoom: 1, tx: anim.NewValueWith(c.X, anim.Gentle), ty: anim.NewValueWith(c.Y, anim.Gentle), tz: anim.NewValueWith(c.Z, anim.Gentle), yaw: anim.NewValueWith(0.55, anim.Gentle), pitch: anim.NewValueWith(0.58, anim.Gentle), dist: anim.NewValueWith(50, anim.Gentle)}
-	a.labels, a.sidebar = a.cfg.Arena.Labels, a.cfg.Arena.Sidebar
+	a.rig = camRig{preset: a.cfg.Arena.Camera, zoom: 1, tx: anim.NewValueWith(c.X, anim.Gentle), ty: anim.NewValueWith(c.Y, anim.Gentle), tz: anim.NewValueWith(c.Z, anim.Gentle), yaw: anim.NewValueWith(overviewYaw, anim.Gentle), pitch: anim.NewValueWith(overviewPitch, anim.Gentle), dist: anim.NewValueWith(50, anim.Gentle)}
+	a.labels, a.dock = a.cfg.Arena.Labels, a.cfg.Arena.Sidebar
 	a.refresh()
 	return a
 }
@@ -192,24 +285,98 @@ func (a *arena) Title() string {
 	return "ARENA"
 }
 
-func (a *arena) Glyph() string       { return a.env.Theme.Glyphs.Mission }
-func (a *arena) Key() string         { return ArenaKey }
-func (a *arena) MinSize() (int, int) { return 60, 16 }
-
-// Reports whether a cell lies on the sidebar
-func (a *arena) onSide(x, y int) bool    { return a.lay.side.w > 0 && a.lay.side.contains(x, y) }
+func (a *arena) Glyph() string           { return a.env.Theme.Glyphs.Mission }
+func (a *arena) Key() string             { return ArenaKey }
+func (a *arena) MinSize() (int, int)     { return 60, 16 }
 func (a *arena) Selectable() bool        { return true }
 func (a *arena) Tracks() bool            { return true }
 func (a *arena) Init() tea.Cmd           { a.refresh(); return nil }
 func (a *arena) Animate(dt float64) bool { return a.step() }
 
-// Holds the pointer over the floor for camera drags and over the transcript bar for scrolling
+// Reports whether a cell lies on the dock
+func (a *arena) onDock(x, y int) bool { return a.lay.dock.w > 0 && a.lay.dock.contains(x, y) }
+
+// Reports whether the arena shows the session windows of the team instead of a world
+func (a *arena) off() bool { return a.cfg.Arena.World == "off" }
+
+// Reports whether the floor is drawn as pixels, asked for and drawn by the terminal
+func (a *arena) imaged() bool {
+	return a.cfg.Arena.Pixels == "image" && a.env.Graphics != nil && a.env.Graphics.Protocol() != gfx.None
+}
+
+// Takes the screen cell the content of the arena starts at
+func (a *arena) Origin(x, y int) { a.originX, a.originY = x, y }
+
+// Hands the terminal the escape text that takes the image of the floor off the screen
+func (a *arena) releaseImage() {
+	if a.surface == nil {
+		return
+	}
+	if text := a.surface.Release(); text != "" && a.env.Send != nil {
+		a.env.Send(tea.RawMsg{Msg: text})
+	}
+}
+
+// Panel widths, folds and camera the arena keeps between runs
+func (a *arena) State() any {
+	secs := map[string]bool{}
+	for _, s := range sections {
+		secs[s.String()] = a.secs.IsOpen(s.String())
+	}
+	return arenaState{DockWidth: a.dockWidth, InspectorWidth: a.inspWidth, Sections: secs, LogShare: 1 - a.secs.Share, SprintFull: a.sprintFull, Camera: a.rig.preset, Labels: a.labels}
+}
+
+// Takes back the widths, folds and camera of the last run
+func (a *arena) SetState(raw json.RawMessage) error {
+	var st arenaState
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return err
+	}
+	if st.DockWidth > 0 {
+		a.dockWidth = min(max(st.DockWidth, minDockWidth), maxDockWidth)
+	}
+	if st.InspectorWidth > 0 {
+		a.inspWidth = min(max(st.InspectorWidth, minInspWidth), maxInspWidth)
+	}
+	for _, s := range sections {
+		if v, ok := st.Sections[s.String()]; ok {
+			a.secs.Open[s.String()] = v
+		}
+	}
+	if st.LogShare > 0 {
+		a.secs.Share = 1 - min(max(st.LogShare, 0.2), 0.8)
+	}
+	a.sprintFull = st.SprintFull
+	if slices.Contains(Cameras, st.Camera) {
+		a.rig.preset = st.Camera
+	}
+	if st.Sections != nil {
+		a.labels = st.Labels
+	}
+	return nil
+}
+
+// Holds the pointer over the floor for camera drags, over the panel edges for resizes and over the transcript bars for scrolling
 func (a *arena) Grabs(x, y int) bool {
-	if a.lay.insp.contains(x, y) {
-		if s := a.inspected(); s != nil {
-			return s.Grabs(x-a.lay.insp.x, y-a.lay.insp.y-inspectorHead)
+	if a.off() && a.lay.world.contains(x, y) {
+		if tl, ok := a.tileAt(x, y); ok && y > tl.r.y {
+			if s := a.sessionOf(tl.name); s != nil {
+				return s.Grabs(x-tl.r.x, y-tl.r.y-1)
+			}
 		}
 		return false
+	}
+	if a.lay.insp.contains(x, y) {
+		if x == a.lay.insp.x && !a.lay.full {
+			return true
+		}
+		if s := a.inspected(); s != nil {
+			return s.Grabs(x-a.lay.insp.x-1, y-a.lay.insp.y-inspectorHead)
+		}
+		return false
+	}
+	if a.onDock(x, y) {
+		return x == a.lay.dock.x+a.lay.dock.w-1 || y == a.secs.Split()
 	}
 	return a.lay.world.contains(x, y)
 }
@@ -229,7 +396,7 @@ func (a *arena) Contexts() []string {
 	return append(out, ContextArena, keys.Panel)
 }
 
-// Keys worth a reminder in the mode the arena is in
+// Keys worth a reminder in the mode the arena is in, the toolbar carrying the rest
 func (a *arena) Hints() []wm.Hint {
 	if a.typing {
 		if s := a.inspected(); s != nil {
@@ -240,24 +407,14 @@ func (a *arena) Hints() []wm.Hint {
 	if a.showHelp {
 		return []wm.Hint{{Action: ActHelp, Label: "close help"}}
 	}
-	out := []wm.Hint{{Action: ActNext, Label: "member"}, {Action: ActInspect}, {Action: ActSteer}, {Action: ActSidebar}}
+	out := []wm.Hint{{Action: ActNext, Label: "member"}, {Action: ActInspect}, {Action: ActSteer}}
 	if ap := a.approval(); ap != nil {
 		out = append([]wm.Hint{{Action: "approval.allow"}, {Action: "approval.deny"}}, out...)
-	}
-	if a.snap != nil {
-		switch {
-		case a.snap.Running() && a.snap.Paused != "":
-			out = append(out, wm.Hint{Action: ActPause, Label: "resume"}, wm.Hint{Action: ActStop})
-		case a.snap.Running():
-			out = append(out, wm.Hint{Action: ActPause}, wm.Hint{Action: ActStop})
-		case a.snap.Restartable():
-			out = append(out, wm.Hint{Action: ActRestart})
-		}
 	}
 	return append(out, wm.Hint{Action: ActHelp})
 }
 
-// Stage and progress of the sprint shown, the rest standing on the strip
+// Stage and progress of the sprint shown, the rest standing on the toolbar
 func (a *arena) Status() string {
 	s := a.snap
 	if s == nil {
@@ -311,21 +468,16 @@ func (a *arena) Waiting() (string, wm.Signal, time.Time, bool) {
 // Words on the first item waiting on the person, empty while none does
 func (a *arena) waitingText() string {
 	s := a.snap
-	if s == nil || a.env.Approver == nil {
+	if s == nil {
 		return ""
 	}
 	for _, m := range s.Members {
-		for _, p := range a.env.Approver.Pending() {
-			if a.ownedBy(p.Run, m) {
-				return "approve " + p.Request.Call.Name + " for " + m.Name
-			}
-		}
-	}
-	if a.env.Questions != nil {
-		for _, m := range s.Members {
-			if q := a.env.Questions.ForSession(m.SessionID()); q != nil {
-				return "answer " + m.Name + ": " + render.Summary(q.Questions[0].Text, 50, a.env.Theme)
-			}
+		st := a.live[m.Name]
+		switch {
+		case st.approval:
+			return "approve " + st.tool + " for " + m.Name
+		case st.asking:
+			return "answer " + m.Name
 		}
 	}
 	if s.Running() && s.Paused != "" {
@@ -357,19 +509,11 @@ func (a *arena) ownedBy(run string, m Member) bool {
 	return a.env.Editor.LiveOfRun(run) == m.Live
 }
 
-// Reports whether any member of the sprint shown has a run going
+// Reports whether any member of the sprint shown had a run going at the last sync
 func (a *arena) anyRunning() bool {
-	if a.snap == nil || a.env.Control == nil {
-		return false
-	}
-	for _, r := range a.env.Control.Active() {
-		if r.Parent != "" {
-			continue
-		}
-		for _, m := range a.snap.Members {
-			if m.Live != nil && r.Session == m.Live.Session {
-				return true
-			}
+	for _, st := range a.live {
+		if st.running {
+			return true
 		}
 	}
 	return false
@@ -393,6 +537,12 @@ func (a *arena) refresh() {
 			a.sprintID = all[0].ID
 		}
 	}
+	a.sprintCount, a.sprintIndex = len(all), 0
+	for i, s := range all {
+		if s.ID == a.sprintID {
+			a.sprintIndex = i
+		}
+	}
 	if s := a.sprint(); s != nil {
 		snap := s.Snapshot()
 		a.snap = &snap
@@ -404,8 +554,16 @@ func (a *arena) refresh() {
 			a.sel = ""
 		}
 	}
-	a.sc.sync(a.snap, a.liveStates(), a.cfg)
+	if a.snap != nil && a.selTicket != "" {
+		if _, ok := a.snap.Ticket(a.selTicket); !ok {
+			a.selTicket = ""
+		}
+	}
+	a.live = a.liveStates()
+	a.spent = a.cost()
+	a.sc.sync(a.snap, a.live, a.cfg)
 	a.synced, a.needSync = time.Now(), false
+	a.snapGen++
 }
 
 // What the harness says every member of the sprint shown is doing, with what it has spent and how long it has
@@ -416,7 +574,11 @@ func (a *arena) liveStates() map[string]liveState {
 	}
 	var runs []*harness.Run
 	if a.env.Control != nil {
-		runs = a.env.Control.Runs()
+		runs = a.env.Control.Active()
+	}
+	var pending []*harness.Pending
+	if a.env.Approver != nil {
+		pending = a.env.Approver.Pending()
 	}
 	for _, m := range a.snap.Members {
 		var st liveState
@@ -430,25 +592,62 @@ func (a *arena) liveStates() map[string]liveState {
 				if r.Parent != "" || r.Session != m.Live.Session {
 					continue
 				}
-				st.running = r.Running()
+				st.running = true
 				st.tool, _ = r.LastTool()
-				st.failed = !r.Running() && r.Err() != nil && !errors.Is(r.Err(), context.Canceled) && !errors.Is(r.Err(), agent.ErrInterrupted)
+			}
+			if !st.running {
+				st.failed = a.lastRunFailed(m)
 			}
 			st.toolAt = a.toolSeen[m.SessionID()]
-			if a.env.Approver != nil {
-				for _, p := range a.env.Approver.Pending() {
-					if a.ownedBy(p.Run, m) {
-						st.approval = true
-					}
+			for _, p := range pending {
+				if a.ownedBy(p.Run, m) {
+					st.approval, st.tool = true, p.Request.Call.Name
 				}
 			}
 			if a.env.Questions != nil && a.env.Questions.ForSession(m.SessionID()) != nil {
 				st.asking = true
 			}
+			if a.env.Meter != nil {
+				if tel, ok := a.env.Meter.SnapshotOf(m.SessionID()); ok {
+					st.context, st.contextLimit, st.cost = tel.Context, tel.ContextLimit, tel.Cost
+				}
+			}
 		}
 		out[m.Name] = st
 	}
 	return out
+}
+
+// Reports whether the newest finished root run of a member ended in an error of its own
+func (a *arena) lastRunFailed(m Member) bool {
+	if a.env.Control == nil {
+		return false
+	}
+	var last *harness.Run
+	for _, r := range a.env.Control.Runs() {
+		if r.Parent == "" && r.Session == m.Live.Session {
+			last = r
+		}
+	}
+	if last == nil || last.Running() {
+		return false
+	}
+	err := last.Err()
+	return err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, agent.ErrInterrupted)
+}
+
+// Dollars the members of the sprint shown spent, from the meter by session
+func (a *arena) cost() float64 {
+	if a.env.Meter == nil || a.snap == nil {
+		return 0
+	}
+	total := 0.0
+	for _, m := range a.snap.Members {
+		if tel, ok := a.env.Meter.SnapshotOf(m.SessionID()); ok {
+			total += tel.Cost
+		}
+	}
+	return total
 }
 
 // Member selected, false while none is
@@ -474,9 +673,21 @@ func (a *arena) session(m Member) *cards.Session {
 	return s
 }
 
-// Session card of the selected member while the inspector is open, nil otherwise
+// Session card of a member by name, nil for one without a session
+func (a *arena) sessionOf(name string) *cards.Session {
+	if a.snap == nil {
+		return nil
+	}
+	m, ok := a.snap.Member(name)
+	if !ok {
+		return nil
+	}
+	return a.session(m)
+}
+
+// Session card of the selected member while the inspector is open or the session windows show, nil otherwise
 func (a *arena) inspected() *cards.Session {
-	if !a.inspect {
+	if !a.inspect && !a.off() {
 		return nil
 	}
 	m, ok := a.selected()
@@ -554,12 +765,12 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		return a, nil
 	case ChangedMsg:
 		if a.sprintID == "" || msg.ID == a.sprintID || a.snap == nil || !a.snap.Running() {
-			a.refresh()
+			a.needSync = true
 		}
 		return a, nil
 	case ShowMsg:
 		if msg.ID != a.sprintID {
-			a.sprintID, a.sel, a.typing = msg.ID, "", false
+			a.sprintID, a.sel, a.selTicket, a.typing = msg.ID, "", "", false
 		}
 		a.refresh()
 		return a, nil
@@ -609,8 +820,8 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case cards.SettingChangedMsg:
 		if strings.HasPrefix(msg.Key, Name+".") {
 			a.reloadConfig()
-			a.labels, a.sidebar = a.cfg.Arena.Labels, a.cfg.Arena.Sidebar
-			if a.cfgErr == nil {
+			a.labels, a.dock = a.cfg.Arena.Labels, a.cfg.Arena.Sidebar
+			if a.cfgErr == nil && msg.Key == Name+".arena.camera" {
 				a.rig.preset = a.cfg.Arena.Camera
 			}
 			a.refresh()
@@ -636,6 +847,7 @@ func (a *arena) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case wm.ClosedMsg:
 		a.typing = false
 		a.drag = nil
+		a.releaseImage()
 		return a, nil
 	case wm.ActionMsg:
 		return a, a.act(msg.ID)
@@ -671,7 +883,7 @@ func (a *arena) forward(sessionID string, msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-// Advances the floor and the camera by the wall clock, reporting whether a frame is due at the configured rate
+// Advances the floor and the camera by the wall clock, a frame due at the configured rate while things move and a calm rate otherwise
 func (a *arena) step() bool {
 	now := time.Now()
 	if a.last.IsZero() {
@@ -685,13 +897,32 @@ func (a *arena) step() bool {
 	if a.needSync || now.Sub(a.synced) > time.Second {
 		a.refresh()
 	}
-	a.sc.update(dt)
-	a.moveCamera(dt)
-	if s := a.inspected(); s != nil {
-		s.Animate(dt)
+	streaming := false
+	if a.off() {
+		for _, m := range a.roster() {
+			if s := a.sessionOf(m.Name); s != nil {
+				s.Animate(dt)
+				streaming = streaming || s.Transcript.Busy()
+			}
+		}
+	} else {
+		a.sc.update(dt)
+		a.moveCamera(dt)
+		if s := a.inspected(); s != nil {
+			s.Animate(dt)
+			streaming = s.Transcript.Busy()
+		}
 	}
 	a.acc += dt
-	frame := 1 / float64(max(a.cfg.Arena.FPS, 5))
+	fps := float64(max(a.cfg.Arena.FPS, 5))
+	if a.imaged() {
+		most, _ := a.env.Graphics.Budget()
+		fps = min(fps, float64(most))
+	}
+	if a.off() && !streaming || !a.off() && !a.sc.busy() && !streaming && a.rig.settled() && a.drag == nil {
+		fps = min(fps, calmFPS)
+	}
+	frame := 1 / fps
 	if a.acc < frame {
 		return false
 	}
@@ -699,10 +930,16 @@ func (a *arena) step() bool {
 	return true
 }
 
+// Yaw and pitch of the overview camera, from the south east and well above the floor
+const (
+	overviewYaw   = 0.55
+	overviewPitch = 0.72
+)
+
 // Eases the camera toward its preset, the selected member when following, the shots of the cinematic, with the turns and zoom of the person
 func (a *arena) moveCamera(dt float64) {
 	rig := &a.rig
-	target, yaw, pitch := a.sc.lay.center(), 0.55, 0.58
+	target, yaw, pitch := a.sc.lay.center(), overviewYaw, overviewPitch
 	if rig.preset == "orbit" {
 		rig.orbitT += dt
 		yaw += rig.orbitT * 0.07
@@ -714,11 +951,11 @@ func (a *arena) moveCamera(dt float64) {
 			if a.followName != act.name || act.pos.Flat(a.followAt) > followSlack || math.Abs(act.pos.Y-a.followAt.Y) > 1 {
 				a.followAt, a.followName = act.pos, act.name
 			}
-			target, pitch, dist = a.followAt.Add(vxl.V(0, 2, 0)), 0.42, 17
+			target, pitch, dist = a.followAt.Add(vxl.V(0, 1.5, 0)), 0.6, 26
 		}
 	case "cinematic":
 		a.frame(dt)
-		target, pitch, dist, yaw = a.cine.target, 0.4, a.cine.dist, a.cine.yaw
+		target, pitch, dist, yaw = a.cine.target, 0.5, a.cine.dist, a.cine.yaw
 	}
 	rig.tx.Set(target.X)
 	rig.ty.Set(target.Y)
@@ -732,15 +969,15 @@ func (a *arena) moveCamera(dt float64) {
 	a.cam = vxl.Camera{Target: vxl.V(rig.tx.Pos, rig.ty.Pos, rig.tz.Pos), Yaw: rig.yaw.Pos, Pitch: rig.pitch.Pos, Dist: rig.dist.Pos, FOV: 0.85}
 }
 
-// Picks the next shot of the cinematic once the last ran out, the busiest point of the floor drifting slowly by
+// Picks the next shot of the cinematic once the last ran out, the busiest point of the floor from a new angle, each shot held still
 func (a *arena) frame(dt float64) {
 	c := &a.cine
 	c.left -= dt
-	c.yaw += dt * 0.04
 	if c.left > 0 {
 		return
 	}
 	c.left = 7 + a.sc.rnd.Next()*4
+	c.yaw += 0.35 + a.sc.rnd.Next()*0.5
 	sc := a.sc
 	var spots []vxl.Vec3
 	for _, act := range sc.actors {
@@ -758,10 +995,10 @@ func (a *arena) frame(dt float64) {
 		}
 	}
 	if len(spots) == 0 || a.sc.rnd.Next() < 0.2 {
-		c.target, c.dist = sc.lay.center(), a.fitDistance(c.yaw, 0.4)*1.05
+		c.target, c.dist = sc.lay.center(), a.fitDistance(c.yaw, 0.5)*1.05
 		return
 	}
-	c.target, c.dist = spots[a.sc.rnd.Intn(len(spots))], 20
+	c.target, c.dist = spots[a.sc.rnd.Intn(len(spots))], 24
 }
 
 // Distance at which the whole floor fits the world box at the yaw and pitch, found by projecting its corners
@@ -819,7 +1056,7 @@ func (a *arena) roster() []Member {
 func (a *arena) selectBy(d int) tea.Cmd {
 	members := a.roster()
 	if len(members) == 0 {
-		return wm.Notify("nobody is on the team yet", wm.Info)
+		return wm.Notify("no members yet", wm.Info)
 	}
 	i := slices.IndexFunc(members, func(m Member) bool { return m.Name == a.sel })
 	if i < 0 {
@@ -876,7 +1113,17 @@ func (a *arena) act(id string) tea.Cmd {
 	case ActPrev:
 		return a.selectBy(-1)
 	case ActInspect:
+		if a.off() {
+			if _, ok := a.selected(); !ok {
+				if cmd := a.selectBy(1); a.sel == "" {
+					return cmd
+				}
+			}
+			return a.setTyping(!a.typing)
+		}
 		return a.toggleInspect()
+	case ActWorld:
+		return a.cycleWorld()
 	case ActSteer:
 		if _, ok := a.selected(); !ok {
 			if cmd := a.selectBy(1); a.sel == "" {
@@ -899,23 +1146,11 @@ func (a *arena) act(id string) tea.Cmd {
 		a.rig.preset = "follow"
 		return wm.Notify("following "+a.sel, wm.Info)
 	case ActBoard:
-		a.showBoard, a.boardTop = !a.showBoard || !a.sidebar, 0
-		if a.showBoard {
-			a.showLog = false
-		}
-		if !a.sidebar {
-			return a.setSidebar(true)
-		}
+		return a.toggleSection(secTickets)
 	case ActLog:
-		a.showLog, a.logTop = !a.showLog || !a.sidebar, 0
-		if a.showLog {
-			a.showBoard = false
-		}
-		if !a.sidebar {
-			return a.setSidebar(true)
-		}
+		return a.toggleSection(secLog)
 	case ActSidebar:
-		return a.setSidebar(!a.sidebar)
+		return a.setDock(!a.dock)
 	case ActHelp:
 		a.showHelp = !a.showHelp
 	case ActLabels:
@@ -967,10 +1202,32 @@ func (a *arena) act(id string) tea.Cmd {
 	return nil
 }
 
-// Shows or hides the sidebar, the choice saved as a setting
-func (a *arena) setSidebar(on bool) tea.Cmd {
-	a.sidebar = on
+// Moves the team into the next world, the choice saved as a setting and taken up at once
+func (a *arena) cycleWorld() tea.Cmd {
+	i := slices.Index(Worlds, a.cfg.Arena.World)
+	next := Worlds[(i+1)%len(Worlds)]
+	a.cfg.Arena.World = next
+	if next != "off" {
+		a.sc.setWorld(worldFor(next))
+	}
+	a.typing = false
+	return tea.Batch(a.saveSetting(Name+".arena.world", next), wm.Notify("world "+next, wm.Info))
+}
+
+// Shows or hides the dock, the choice saved as a setting
+func (a *arena) setDock(on bool) tea.Cmd {
+	a.dock = on
 	return a.saveSetting(Name+".arena.sidebar", strconv.FormatBool(on))
+}
+
+// Folds a section of the dock or opens it, opening the dock when it was hidden
+func (a *arena) toggleSection(s section) tea.Cmd {
+	if !a.dock {
+		a.secs.Show(s.String())
+		return a.setDock(true)
+	}
+	a.secs.Toggle(s.String())
+	return nil
 }
 
 // Opens the inspector on the selected member, or closes it
@@ -1004,14 +1261,19 @@ func (a *arena) setTyping(on bool) tea.Cmd {
 	return cmd
 }
 
-// Scrolls the tickets or the log of the sidebar by pages, the expanded one, else the log
+// Scrolls the log of the dock by pages, the tickets when the log is folded
 func (a *arena) page(d int) {
-	switch {
-	case a.showBoard:
-		a.boardTop = max(a.boardTop+d*max(a.sideTickets.h-1, 1), 0)
-	default:
-		a.logTop = max(a.logTop+d*max(a.sideLog.h-1, 1), 0)
+	sec := secLog
+	if !a.secs.IsOpen(secLog.String()) {
+		sec = secTickets
 	}
+	r, _ := a.secs.Rect(sec.String())
+	a.scrollSection(sec.String(), d*max(r.H-2, 1))
+}
+
+// Scrolls a section by a count of rows, the log leaving its newest lines once scrolled up
+func (a *arena) scrollSection(id string, rows int) {
+	a.secs.Scroll(id, rows, id == secLog.String())
 }
 
 // Shows another sprint, by a count through the newest first list
@@ -1022,7 +1284,7 @@ func (a *arena) switchSprint(d int) tea.Cmd {
 	}
 	i := slices.IndexFunc(all, func(s Snapshot) bool { return s.ID == a.sprintID })
 	i = ((i+d)%len(all) + len(all)) % len(all)
-	a.sprintID, a.sel, a.typing = all[i].ID, "", false
+	a.sprintID, a.sel, a.selTicket, a.typing = all[i].ID, "", "", false
 	a.refresh()
 	return wm.Notify("showing "+a.sprintID, wm.Info)
 }
@@ -1116,7 +1378,7 @@ func (a *arena) customize() tea.Cmd {
 	}
 	t := a.env.Theme
 	look := a.cfg.LookOf(m.Role, m.Index)
-	items := []wm.Item{{ID: "name", Title: "Rename " + m.Name, Detail: "the name shows on the floor and in every prompt from now on", Run: func() tea.Cmd { return a.renamePrompt(m) }}}
+	items := []wm.Item{{ID: "name", Title: "Rename " + m.Name, Detail: "the name shows in the arena and in every prompt from now on", Run: func() tea.Cmd { return a.renamePrompt(m) }}}
 	for _, c := range ColorNames {
 		c := c
 		items = append(items, wm.Item{ID: "color:" + c, Title: "Color " + c, Detail: "dye the suit and trace lines of " + m.Name, Keys: mark(c == look.Color, t), Run: func() tea.Cmd { return a.setLook(m, Look{Color: c, Hat: look.Hat}) }})
@@ -1166,3 +1428,13 @@ func (a *arena) setLook(m Member, look Look) tea.Cmd {
 func (a *arena) saveSetting(key, value string) tea.Cmd {
 	return func() tea.Msg { return cards.SettingMsg{Key: key, Value: value, Quiet: true} }
 }
+
+// Words a sprint count takes beside the id when more than one has run
+func (a *arena) sprintOrdinal() string {
+	if a.sprintCount < 2 {
+		return ""
+	}
+	return render.Dim(fmt.Sprintf("%d of %d", a.sprintIndex+1, a.sprintCount), a.env.Theme)
+}
+
+var _ wm.Stateful = (*arena)(nil)

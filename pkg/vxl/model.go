@@ -349,7 +349,7 @@ func (m *Model) place(p *Part, xs []partXF, poses map[string]Pose, world xform) 
 	return x
 }
 
-// Queues every front face of the model in its stance, lit by the lights reaching each part, glowing keys unlit
+// Queues every front face of the model in its stance, lit by the raster with corner occlusion, glowing keys unlit
 func (m *Model) Draw(r *Raster, pal Palette, st Stance) {
 	alpha := 1 - st.Fade
 	if alpha <= 0 {
@@ -388,7 +388,6 @@ func (m *Model) Draw(r *Raster, pal Palette, st Stance) {
 		if !r.Visible(lo, hi) {
 			continue
 		}
-		near := r.lightsInBox(lo, hi)
 		for i := range part.faces {
 			f := &part.faces[i]
 			var q Quad
@@ -404,7 +403,7 @@ func (m *Model) Draw(r *Raster, pal Palette, st Stance) {
 				r.quad(&q)
 				continue
 			}
-			r.shadeFrom(&q, x.m.turn(f.n).Mul(unscale), near)
+			r.Shade(&q, x.m.turn(f.n).Mul(unscale))
 			for c := range 4 {
 				q.Light[c] = q.Light[c].Scale(f.ao[c])
 			}

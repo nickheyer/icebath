@@ -33,6 +33,8 @@ type wireRequest struct {
 type fakeModel struct {
 	mu    sync.Mutex
 	calls []string
+	// Answers a request before the stage rules, an empty tool ending the turn and ok false deferring to them
+	script func(last string, tools map[string]bool) (name, args string, ok bool)
 }
 
 var ticketOf = regexp.MustCompile(`(?:Your ticket|Handoff on) (T\d+)`)
@@ -75,8 +77,14 @@ func (f *fakeModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ticket = m[len(m)-1][1]
 	}
 	name, args := "", ""
+	scripted := false
+	if f.script != nil && !afterTool {
+		name, args, scripted = f.script(text, tools)
+	}
 	switch {
+	case scripted:
 	case afterTool:
+	case strings.HasPrefix(text, chatHead):
 	case strings.Contains(text, "Write the report"):
 	case tools[ToolBrief]:
 		name, args = ToolBrief, `{"objective":"make the thing","acceptance":["it works"]}`
@@ -120,6 +128,12 @@ func (f *fakeModel) seen() []string {
 // App whose only profile talks to the fake model, with the sprint tools and kinds in place
 func fakeApp(t *testing.T, model *fakeModel) *harness.App {
 	t.Helper()
+	return fakeAppSending(t, model, func(any) {})
+}
+
+// App on the fake model that hands every message it posts to the sender
+func fakeAppSending(t *testing.T, model *fakeModel, send harness.Sender) *harness.App {
+	t.Helper()
 	srv := httptest.NewServer(model)
 	t.Cleanup(srv.Close)
 	t.Setenv(profiles.ConfigDirEnv, t.TempDir())
@@ -132,7 +146,7 @@ func fakeApp(t *testing.T, model *fakeModel) *harness.App {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	app, err := harness.Build(ctx, harness.Config{Profile: "fake", Mode: "bypassPermissions", MaxTokens: 4096}, func(any) {}, harness.BuildOptions{Dir: t.TempDir()})
+	app, err := harness.Build(ctx, harness.Config{Profile: "fake", Mode: "bypassPermissions", MaxTokens: 4096}, send, harness.BuildOptions{Dir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,6 +219,20 @@ func TestSprintRunsEndToEnd(t *testing.T) {
 	for _, tk := range snap.Tickets {
 		if tk.Status != TicketDone || tk.Builder == "" {
 			t.Fatalf("ticket %+v", tk)
+		}
+	}
+	for _, m := range snap.Messages {
+		if m.Kind == MsgAssign && (m.From != "" || !strings.HasPrefix(m.To, "Builder")) {
+			t.Fatalf("assignment %+v", m)
+		}
+	}
+	for _, m := range snap.Members {
+		if m.Role != RoleBuilder {
+			continue
+		}
+		texts := userTexts(m.Live.Session)
+		if len(texts) == 0 || !strings.Contains(texts[0], "## Team, each reached with "+ToolMessage) || !strings.Contains(texts[0], "Reviewer, reviewer") || !strings.Contains(texts[0], "# Brief") {
+			t.Fatalf("%s opening lacks the brief or the team: %q", m.Name, texts)
 		}
 	}
 	if len(snap.Members) != 5 {
@@ -311,5 +339,9 @@ func TestSprintRecoversAndFinishes(t *testing.T) {
 	next, err := nextID(app)
 	if err != nil || next != "sprint-6" {
 		t.Fatalf("next id %q %v", next, err)
+	}
+	settle(t, app)
+	if _, err := Forget(app, "sprint-5"); err != nil {
+		t.Fatal(err)
 	}
 }

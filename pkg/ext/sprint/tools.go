@@ -20,6 +20,7 @@ const (
 	ToolPlan    = "SprintPlan"
 	ToolHandoff = "SprintHandoff"
 	ToolVerdict = "SprintVerdict"
+	ToolMessage = "SprintMessage"
 )
 
 // Most questions one ask puts and most choices one question offers
@@ -30,7 +31,7 @@ const (
 
 // Tools of the sprint built once the app stands
 func sprintTools(app *harness.App) []tool.Tool {
-	return []tool.Tool{briefTool{app}, askTool{app}, planTool{app}, handoffTool{app}, verdictTool{app}}
+	return []tool.Tool{briefTool{app}, askTool{app}, planTool{app}, handoffTool{app}, verdictTool{app}, messageTool{app}}
 }
 
 // Sprint and member of the session the calling run serves
@@ -382,4 +383,163 @@ func (t verdictTool) Run(ctx context.Context, args json.RawMessage) (tool.Result
 		return tool.Error(err.Error()), nil
 	}
 	return tool.Text(verdictTaken(in)).With(in), nil
+}
+
+// Address a message goes to for every other member of the team
+const toTeam = "team"
+
+// Message as a member sends it
+type messageInput struct {
+	To   string `json:"to"`
+	Text string `json:"text"`
+}
+
+type messageTool struct{ app *harness.App }
+
+func (messageTool) Definition() protocol.Tool {
+	return protocol.Tool{Name: ToolMessage, Description: "Sends a short message to a member of your sprint team by name, to team for every other member, or to you for the person watching. It returns at once, the answer arrives as a new message, and it never ends your stage.", Parameters: json.RawMessage(`{"type":"object","properties":{
+"to":{"type":"string","description":"Name of a member, team for every other member, or you for the person watching"},
+"text":{"type":"string","description":"The message, short and concrete, with the exact change when you ask for one"}},
+"required":["to","text"],"additionalProperties":false}`)}
+}
+
+func (t messageTool) Run(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+	var in messageInput
+	if err := json.Unmarshal(args, &in); err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	in.To, in.Text = strings.TrimSpace(in.To), strings.TrimSpace(in.Text)
+	if in.Text == "" {
+		return tool.Error("text is required"), nil
+	}
+	if in.To == "" {
+		return tool.Error("to is required, a member name, " + toTeam + " or " + Person), nil
+	}
+	cfg, err := Load(t.app.Config)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	s, m, err := callerOf(t.app, ctx)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	names, person, err := address(s.roster(cfg), m.Name, in.To)
+	if err != nil {
+		return tool.Error(err.Error()), nil
+	}
+	if person {
+		s.say(MsgChat, m.Name, Person, s.ticketOf(m), in.Text)
+		t.app.Announce(harness.NoticeMsg{Level: harness.Info, Text: m.Name + ": " + in.Text, Flow: s.ID})
+		return tool.Text(personSent()).With(in), nil
+	}
+	type target struct {
+		m    *Member
+		live *harness.Live
+	}
+	var targets []target
+	var missed []string
+	for _, name := range names {
+		mem := s.member(name)
+		if mem == nil {
+			missed = append(missed, name+" has not joined yet")
+			continue
+		}
+		live, err := s.rejoin(ctx, t.app, mem)
+		switch {
+		case err != nil:
+			missed = append(missed, name+" could not be reached, "+err.Error())
+		case live == nil:
+			missed = append(missed, name+" has not joined yet")
+		default:
+			targets = append(targets, target{mem, live})
+		}
+	}
+	if len(targets) == 0 {
+		return tool.Error(strings.Join(missed, ", ")), nil
+	}
+	label := toTeam
+	if !strings.EqualFold(in.To, toTeam) {
+		label = names[0]
+	}
+	s.say(MsgChat, m.Name, label, s.ticketOf(m), in.Text)
+	text := chatText(*m, s.whereOf(m), label == toTeam, in.Text)
+	var reached []string
+	for _, tg := range targets {
+		if err := s.post(t.app, m, tg.m, tg.live, text); err != nil {
+			missed = append(missed, err.Error())
+			continue
+		}
+		reached = append(reached, tg.m.Name)
+	}
+	if len(reached) == 0 {
+		s.say(MsgFailure, label, m.Name, s.ticketOf(m), "message from "+m.Name+" reached nobody, "+strings.Join(missed, ", "))
+		return tool.Error(strings.Join(missed, ", ")), nil
+	}
+	return tool.Text(chatSent(reached, missed)).With(in), nil
+}
+
+// Names the sprint staffs, its members in the order they joined, then the roles still to join
+func (s *Sprint) roster(cfg Config) []string {
+	snap := s.Snapshot()
+	var names []string
+	add := func(name string) {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	for _, m := range snap.Members {
+		add(m.Name)
+	}
+	for _, role := range Roles {
+		if role != RoleBuilder {
+			add(cfg.NameOf(role, 0))
+			continue
+		}
+		for i := range builderCount(cfg.Team, len(snap.Tickets)) {
+			add(cfg.NameOf(role, i))
+		}
+	}
+	return names
+}
+
+// Members a message goes to by name, every other one for team, or the person, refusing the sender and strangers
+func address(roster []string, from, to string) ([]string, bool, error) {
+	switch {
+	case strings.EqualFold(to, Person):
+		return nil, true, nil
+	case strings.EqualFold(to, toTeam):
+		var others []string
+		for _, name := range roster {
+			if name != from {
+				others = append(others, name)
+			}
+		}
+		if len(others) == 0 {
+			return nil, false, errors.New("nobody else is on the team")
+		}
+		return others, false, nil
+	}
+	for _, name := range roster {
+		if !strings.EqualFold(name, to) {
+			continue
+		}
+		if name == from {
+			return nil, false, fmt.Errorf("%s is you, send to another member, %s or %s", name, toTeam, Person)
+		}
+		return []string{name}, false, nil
+	}
+	return nil, false, fmt.Errorf("no member is named %q, send to one of %s, or to %s or %s", to, strings.Join(roster, ", "), toTeam, Person)
+}
+
+// Ticket a member holds with its title, or the stage the sprint is in while it holds none
+func (s *Sprint) whereOf(m *Member) string {
+	snap := s.Snapshot()
+	id := s.ticketOf(m)
+	if id == "" {
+		return string(snap.Stage) + " stage"
+	}
+	if t, ok := snap.Ticket(id); ok {
+		return t.ID + " " + t.Title
+	}
+	return id
 }

@@ -190,8 +190,8 @@ func (n *node) drawGlow(r *vxl.Raster, sc *scene) {
 		if n.status == TicketBlocked {
 			ice = colViolet.Mix(colDark, 0.35)
 		}
-		size := 3.0 * (0.85 + 0.15*n.shell)
-		r.OrientedBox(c, vxl.V(size, size, size), 0.3+0.05*math.Sin(t*0.5), ice, (0.1+0.3*n.shell)*alpha)
+		size := 2.5 * (0.85 + 0.15*n.shell)
+		r.OrientedBox(c, vxl.V(size, size, size), 0.3+0.05*math.Sin(t*0.5), ice, (0.07+0.22*n.shell)*alpha)
 	}
 	pool := vxl.Quad{P: vxl.FloorQuad(n.pos, 3.6, 3.6, 1.03), Color: col, Alpha: (0.13 + 0.07*k) * alpha, Additive: true, TwoSided: true}
 	w := vxl.Grey(1)

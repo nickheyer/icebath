@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/harness"
+	"github.com/nickheyer/icebath/pkg/protocol"
 )
 
 // Directory under the sessions directory holding one file per sprint
@@ -24,24 +25,25 @@ const journalDelay = 400 * time.Millisecond
 
 // Sprint as its file holds it
 type record struct {
-	ID       string         `json:"id"`
-	Project  string         `json:"project"`
-	Request  string         `json:"request"`
-	Started  time.Time      `json:"started"`
-	Finished time.Time      `json:"finished,omitempty"`
-	Stage    Stage          `json:"stage"`
-	Last     Stage          `json:"last,omitempty"`
-	Status   string         `json:"status,omitempty"`
-	Err      string         `json:"err,omitempty"`
-	Stopped  bool           `json:"stopped,omitempty"`
-	Brief    Brief          `json:"brief"`
-	Plan     Plan           `json:"plan"`
-	Tickets  []Ticket       `json:"tickets,omitempty"`
-	Members  []memberRecord `json:"members,omitempty"`
-	Messages []Message      `json:"messages,omitempty"`
-	Summary  string         `json:"summary,omitempty"`
-	Cause    string         `json:"cause,omitempty"`
-	Spent    map[string]int `json:"spent,omitempty"`
+	ID       string                    `json:"id"`
+	Project  string                    `json:"project"`
+	Request  string                    `json:"request"`
+	Started  time.Time                 `json:"started"`
+	Finished time.Time                 `json:"finished,omitempty"`
+	Stage    Stage                     `json:"stage"`
+	Last     Stage                     `json:"last,omitempty"`
+	Status   string                    `json:"status,omitempty"`
+	Err      string                    `json:"err,omitempty"`
+	Stopped  bool                      `json:"stopped,omitempty"`
+	Brief    Brief                     `json:"brief"`
+	Plan     Plan                      `json:"plan"`
+	Tickets  []Ticket                  `json:"tickets,omitempty"`
+	Members  []memberRecord            `json:"members,omitempty"`
+	Messages []Message                 `json:"messages,omitempty"`
+	Summary  string                    `json:"summary,omitempty"`
+	Cause    string                    `json:"cause,omitempty"`
+	Spent    map[string]int            `json:"spent,omitempty"`
+	Usage    map[string]protocol.Usage `json:"usage,omitempty"`
 }
 
 // Member as its file holds it, the session by id
@@ -140,7 +142,7 @@ func (j *journal) remove() error {
 
 // Record of a snapshot for the project
 func toRecord(snap Snapshot, project string) record {
-	r := record{ID: snap.ID, Project: project, Request: snap.Request, Started: snap.Started, Finished: snap.Finished, Stage: snap.Stage, Last: snap.Last, Status: snap.Status, Brief: snap.Brief, Plan: snap.Plan, Tickets: snap.Tickets, Messages: snap.Messages, Summary: snap.Summary, Cause: snap.Cause, Spent: snap.Spent}
+	r := record{ID: snap.ID, Project: project, Request: snap.Request, Started: snap.Started, Finished: snap.Finished, Stage: snap.Stage, Last: snap.Last, Status: snap.Status, Brief: snap.Brief, Plan: snap.Plan, Tickets: snap.Tickets, Messages: snap.Messages, Summary: snap.Summary, Cause: snap.Cause, Spent: snap.Spent, Usage: snap.Usage}
 	if snap.Err != nil {
 		r.Err, r.Stopped = snap.Err.Error(), snap.Stopped()
 	}
@@ -221,6 +223,9 @@ func fromRecord(r record, modified time.Time, dir string, announce func(any)) *S
 	}
 	if r.Spent != nil {
 		s.Spent = r.Spent
+	}
+	if r.Usage != nil {
+		s.Usage = r.Usage
 	}
 	switch {
 	case r.Err != "" && r.Stopped:

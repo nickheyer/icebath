@@ -58,6 +58,8 @@ type Profile struct {
 	Query url.Values `json:"query,omitempty"`
 	// Model ids the endpoint is known to serve, the first being the default
 	Models []string `json:"models,omitempty"`
+	// Context tokens one request may carry on this endpoint, for models the catalog does not know
+	Window int `json:"window,omitempty"`
 	// Environment variable whose value replaces the base URL when set
 	BaseURLEnv string `json:"base_url_env,omitempty"`
 	// Request fields merged into every turn sent through the endpoint
@@ -113,6 +115,9 @@ func (p Profile) Expand() (Profile, error) {
 	}
 	if len(out.Models) == 0 {
 		out.Models = t.Models
+	}
+	if out.Window == 0 {
+		out.Window = t.Window
 	}
 	if out.BaseURLEnv == "" {
 		out.BaseURLEnv = t.BaseURLEnv
@@ -178,6 +183,9 @@ func (p Profile) Validate() error {
 	u, err := url.Parse(p.BaseURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return fmt.Errorf("profile %s: invalid base url %q", p.Name, p.BaseURL)
+	}
+	if p.Window < 0 {
+		return fmt.Errorf("profile %s: window must not be negative", p.Name)
 	}
 	switch p.Auth {
 	case AuthNone, "", AuthBearer:

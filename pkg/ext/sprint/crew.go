@@ -1,10 +1,11 @@
 package sprint
 
 import (
-	"github.com/nickheyer/icebath/pkg/vxl"
 	"math"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/vxl"
 )
 
 // Rigs a member may wear on its head
@@ -373,7 +374,7 @@ func (a *actor) pose(dt float64) {
 		P["armL"] = vxl.Pose{Pitch: -1.3, Yaw: 0.9}
 		P["armR"] = vxl.Pose{Pitch: -1.3, Yaw: -0.9}
 		P["head"] = vxl.Pose{Pitch: -0.25, Yaw: 0.1 * math.Sin(ph*0.5)}
-		P["thighR"] = vxl.Pose{Pitch: -0.12 * max(math.Sin(ph*4), 0)}
+		P["thighR"] = vxl.Pose{Pitch: -0.12 * max(math.Sin(ph*3), 0)}
 		P["torso"] = vxl.Pose{Pitch: breathe}
 	case stateCheer:
 		a.phase += dt * 7
@@ -433,19 +434,20 @@ func (a *actor) pose(dt float64) {
 		P["coat"] = vxl.Pose{Pitch: -0.8}
 		P["cloak"] = vxl.Pose{Pitch: -0.6}
 	case stateTalk:
-		a.phase += dt * 2.3
+		a.phase += dt * 1.2
 		a.bob = 0
-		P["armL"] = vxl.Pose{Pitch: -0.5 * math.Abs(math.Sin(ph*1.3))}
-		P["armR"] = vxl.Pose{Pitch: -0.45 * math.Abs(math.Cos(ph*0.9))}
+		P["armL"] = vxl.Pose{Pitch: -0.3 * math.Abs(math.Sin(ph*1.3))}
+		P["armR"] = vxl.Pose{Pitch: -0.25 * math.Abs(math.Cos(ph*0.9))}
 		P["head"] = vxl.Pose{Pitch: 0.05, Yaw: 0.08 * math.Sin(ph*2)}
 		P["torso"] = vxl.Pose{Pitch: 0.04 + breathe}
 	case stateBrief:
-		a.phase += dt * 2.6
+		a.phase += dt * 1.1
 		a.bob = 0
-		P["armL"] = vxl.Pose{Pitch: -0.8 * math.Abs(math.Sin(ph*1.1)), Roll: 0.3}
-		P["armR"] = vxl.Pose{Pitch: -0.7 * math.Abs(math.Cos(ph*0.8)), Roll: -0.3}
-		P["head"] = vxl.Pose{Pitch: -0.2, Yaw: 0.1 * math.Sin(ph)}
-		P["torso"] = vxl.Pose{Pitch: -0.04 + breathe}
+		lift := 0.5 + 0.5*math.Sin(ph*0.7)
+		P["armR"] = vxl.Pose{Pitch: -0.4 - 0.5*lift, Yaw: -0.25}
+		P["armL"] = vxl.Pose{Pitch: -0.15, Roll: 0.15}
+		P["head"] = vxl.Pose{Pitch: -0.1, Yaw: 0.25 * math.Sin(ph*0.45)}
+		P["torso"] = vxl.Pose{Pitch: -0.03 + breathe}
 	case stateChart:
 		a.phase += dt * 2
 		a.bob = 0

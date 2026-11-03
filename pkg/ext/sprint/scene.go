@@ -3,7 +3,6 @@ package sprint
 import (
 	"math"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/vxl"
@@ -111,6 +110,10 @@ type liveState struct {
 	// Moment the current exchange began and how long it may take
 	since time.Time
 	limit time.Duration
+	// Tokens in the context window of the session, the window it may fill and the dollars it has cost
+	context      int
+	contextLimit int
+	cost         float64
 }
 
 // Most motes alive at once
@@ -137,14 +140,21 @@ type scanLine struct {
 
 // The platform with everyone and everything on it, advanced frame by frame from the state of a sprint
 type scene struct {
-	lay      dive
-	grid     vxl.Grid
-	gridLo   vxl.Vec3
-	gridHi   vxl.Vec3
-	chunks   []vxl.Chunk
+	lay    dive
+	world  world
+	grid   vxl.Grid
+	gridLo vxl.Vec3
+	gridHi vxl.Vec3
+	chunks []vxl.Chunk
+	// Sun shadows of the platform alone and with the crew added each frame, nil in a world without a sun
+	shadowStatic *vxl.ShadowMap
+	shadow       *vxl.ShadowMap
+	// Radiance baked over the platform from everything that glows
+	vol      *vxl.Volume
 	dirty    bool
 	builders int
 	planKey  string
+	plan     []planNode
 	nodes    map[string]*node
 	order    []string
 	actors   []*actor
@@ -162,10 +172,7 @@ type scene struct {
 	lastSeq  int
 	rnd      vxl.RNG
 	sprintID string
-	// Sky at the top and at the horizon
-	zenith  vxl.RGB
-	horizon vxl.RGB
-	lobby   *actor
+	lobby    *actor
 	// Where the search beam of the spire points, eased, and the node it locks on
 	beamAt, beamWant vxl.Vec3
 	beamLock         string
@@ -173,51 +180,38 @@ type scene struct {
 	wallSurge        float64
 	waiting          bool
 	paused           bool
-	scans            [7]scanLine
 	stageFlash       float64
 	stageText        string
 	dust             float64
 	lastStep         float64
-	// Sky ramp for the zenith and horizon it was sampled from
-	skyRamp atomic.Pointer[skyRamp]
 }
 
-// Steps the sky ramp samples between the zenith and the horizon
-const skySteps = 512
-
-// Sky colors from the zenith down to the horizon at even steps, for one pair of end colors
-type skyRamp struct {
-	zenith, horizon vxl.RGB
-	at              [skySteps + 1]vxl.RGB
-}
-
-// Platform built for a team of that many builders, without a plan
-func newScene(builders int) *scene {
-	sc := &scene{byName: map[string]*actor{}, nodes: map[string]*node{}, rnd: vxl.RNG{Seed: 0x1234567}, zenith: vxl.Hex(0x05070a), horizon: vxl.Hex(0x101a2a)}
+// Platform built for a team of that many builders in a world, without a plan
+func newScene(builders int, w world) *scene {
+	sc := &scene{byName: map[string]*actor{}, nodes: map[string]*node{}, rnd: vxl.RNG{Seed: 0x1234567}, world: w}
 	sc.parts.Max = maxParticles
 	sc.rebuild(nil, builders)
 	for i := range 26 {
 		sc.debris = append(sc.debris, shard{ang: sc.rnd.Next() * 2 * math.Pi, rad: 0.55 + sc.rnd.Next()*0.5, h: -8 + sc.rnd.Next()*18, size: 0.4 + sc.rnd.Next()*1.1, spin: sc.rnd.Next() * 6, speed: (0.02 + sc.rnd.Next()*0.05) * float64(1-2*(i%2))})
 	}
-	for i := range sc.scans {
-		sc.scans[i] = scanLine{y: sc.rnd.Next() * 16, speed: 0.6 + sc.rnd.Next()*1.6}
-		sc.rescan(i)
-	}
 	return sc
 }
 
-// Picks a new span across the wall for a scan line
-func (sc *scene) rescan(i int) {
-	w := float64(sc.lay.w + 16)
-	x0 := -8 + sc.rnd.Next()*w*0.7
-	sc.scans[i].x0, sc.scans[i].x1 = x0, x0+3+sc.rnd.Next()*w*0.3
+// Moves the platform into another world, built again from the same plan
+func (sc *scene) setWorld(w world) {
+	if w.name() == sc.world.name() {
+		return
+	}
+	sc.world = w
+	sc.rebuild(sc.plan, sc.builders)
 }
 
 // Builds the platform again for a plan and a count of builders, nodes kept where their ids match
 func (sc *scene) rebuild(plan []planNode, builders int) {
 	sc.builders = max(builders, 1)
+	sc.plan = plan
 	sc.lay = buildDive(plan, sc.builders)
-	sc.grid = sc.lay.build()
+	sc.grid = sc.lay.build(sc.world)
 	sc.gridLo, sc.gridHi, _ = sc.grid.Bounds()
 	sc.dirty = true
 	seen := map[string]bool{}
@@ -277,6 +271,9 @@ func (sc *scene) sync(snap *Snapshot, live map[string]liveState, cfg Config) {
 		sc.reset(snap.ID)
 	}
 	sc.lobby = nil
+	if cfg.Arena.World != "off" {
+		sc.setWorld(worldFor(cfg.Arena.World))
+	}
 	key, plan := planSignature(snap.Tickets)
 	builders := max(countRole(snap.Members, RoleBuilder), cfg.Team.Builders)
 	if key != sc.planKey || builders > sc.builders {
@@ -317,6 +314,27 @@ func countRole(members []Member, role Role) int {
 	return n
 }
 
+// Reports whether anyone walks, flies, leaps or drops in, so a frame is worth drawing soon
+func (sc *scene) busy() bool {
+	if len(sc.packets) > 0 || sc.stageFlash > 0 || sc.wallSurge > 0.3 || sc.parts.Len() > 120 {
+		return true
+	}
+	for _, a := range sc.actors {
+		if a.gone {
+			continue
+		}
+		if !a.landed || a.state == stateWalk || a.state == stateLeap || a.exit > 0 || a.state == stateCheer || a.state == stateStagger || a.nod > 0 || a.shake > 0 {
+			return true
+		}
+	}
+	for _, n := range sc.nodes {
+		if n.rise < 1 || n.glow > 0 || n.shell > n.shellWant()+0.01 {
+			return true
+		}
+	}
+	return false
+}
+
 // Clears the platform for another sprint
 func (sc *scene) reset(id string) {
 	sc.sprintID = id
@@ -351,7 +369,7 @@ func (sc *scene) spawn(m Member, cfg Config) *actor {
 func (sc *scene) station(role Role, index int) (vxl.Vec3, float64) {
 	switch role {
 	case RoleDirector:
-		return sc.lay.uplink, 0
+		return sc.lay.podium()
 	case RoleArchitect:
 		return sc.lay.nearest(sc.lay.chart.Add(vxl.V(0, 0, -2.5))), 0
 	case RoleReviewer:
@@ -407,7 +425,8 @@ func (sc *scene) direct(snap *Snapshot, m Member, st liveState) {
 	switch m.Role {
 	case RoleDirector:
 		if snap.Stage == StageBrief || snap.Stage == StageReport || st.running {
-			d = duty{kind: dutySpot, at: sc.lay.uplink, face: 0, rest: stateThink}
+			stand, face := sc.station(RoleDirector, 0)
+			d = duty{kind: dutySpot, at: stand, face: face, rest: stateThink}
 			if st.running {
 				d.rest = stateBrief
 			}
@@ -519,6 +538,30 @@ func (sc *scene) syncMessages(snap *Snapshot) {
 				to.nod = 1
 				to.emote = ""
 			}
+		case MsgChat:
+			var dests []*actor
+			switch {
+			case m.To == "team":
+				for _, b := range sc.actors {
+					if b != from && !b.gone {
+						dests = append(dests, b)
+					}
+				}
+			case to != nil:
+				dests = append(dests, to)
+			}
+			if from == nil {
+				continue
+			}
+			if m.To == Person {
+				sc.sendPacket(from.headPos(), from.headPos().Add(vxl.V(0, 14, 0)), colPaper, nil)
+				from.emote, from.emoteT = "!", 3
+			}
+			for _, b := range dests {
+				target := b
+				sc.sendPacket(from.headPos(), target.headPos(), colPaper, func(sc *scene) { target.nod = 1 })
+			}
+			from.nod = 0.6
 		case MsgFailure:
 			if from != nil {
 				sc.glitch(from.headPos(), 18)
@@ -596,7 +639,7 @@ func (sc *scene) syncEnd(snap *Snapshot) {
 		a.duty = duty{kind: dutyGather, at: spot, face: math.Pi, rest: stateIdle}
 		a.rest = stateIdle
 		if a.pos.Y > 0.5 {
-			a.steps = append(a.steps, step{kind: stepLeap, to: sc.lay.spireFoot()})
+			a.steps = append(a.steps, step{kind: stepLeap, to: sc.lay.ground(a.pos)})
 		}
 		switch sc.endMode {
 		case endCheer:
@@ -630,17 +673,20 @@ func (sc *scene) updateQueue() {
 			a.steps = append(a.steps, step{kind: stepFace, yaw: math.Pi})
 		}
 	}
-	if head.pos.Flat(head.duty.at) > 1.5 && head.pos.Flat(sc.lay.uplink) > 1 {
+	if head.pos.Flat(head.duty.at) > 1.5 && head.pos.Flat(sc.lay.padFoot()) > 1 {
 		sc.send(head, head.duty.at)
 		return
 	}
-	head.steps = append(sc.walkSteps(head, sc.lay.uplink), step{kind: stepFace, yaw: 0}, step{kind: stepHold, state: stateIdle, dur: 0.6}, step{kind: stepExit})
+	head.steps = append(sc.walkSteps(head, sc.lay.padFoot()), step{kind: stepLeap, to: sc.lay.padTop()}, step{kind: stepFace, yaw: 0}, step{kind: stepHold, state: stateIdle, dur: 0.6}, step{kind: stepExit})
 }
 
 // Keeps a lone fixer pacing the landing while no sprint runs
 func (sc *scene) syncLobby(cfg Config) {
 	if sc.sprintID != "" {
 		sc.reset("")
+	}
+	if cfg.Arena.World != "off" {
+		sc.setWorld(worldFor(cfg.Arena.World))
 	}
 	if sc.lobby == nil {
 		look := cfg.LookOf(RoleDirector, 0)
@@ -675,14 +721,7 @@ func (sc *scene) update(dt float64) {
 		d.ang += d.speed * dt
 		d.spin += dt * 0.3
 	}
-	for i := range sc.scans {
-		s := &sc.scans[i]
-		s.y += dt * s.speed * (1 + 3*sc.wallSurge)
-		if s.y > 17 {
-			s.y = -4
-			sc.rescan(i)
-		}
-	}
+	sc.world.update(dt, sc)
 	sc.wallSurge = max(sc.wallSurge-dt*0.08, 0)
 	sc.stageFlash = max(sc.stageFlash-dt, 0)
 	sc.updateBeam(dt)
@@ -823,32 +862,84 @@ func (sc *scene) glitch(at vxl.Vec3, n int) {
 	}
 }
 
-// Color overhead at a share of the way down the frame, safe from several goroutines
-func (sc *scene) sky(share float64) vxl.RGB {
-	ramp := sc.skyRamp.Load()
-	if ramp == nil || ramp.zenith != sc.zenith || ramp.horizon != sc.horizon {
-		ramp = &skyRamp{zenith: sc.zenith, horizon: sc.horizon}
-		for i := range ramp.at {
-			ramp.at[i] = sc.zenith.Mix(sc.horizon, math.Pow(float64(i)/skySteps, 1.6))
-		}
-		sc.skyRamp.Store(ramp)
-	}
-	s := min(max(share, 0), 1) * skySteps
-	i := min(int(s), skySteps-1)
-	return ramp.at[i].Mix(ramp.at[i+1], s-float64(i))
-}
+// Background along a unit direction out of the camera
+func (sc *scene) sky(dir vxl.Vec3) vxl.RGB { return sc.world.sky(dir, sc.t) }
 
-// Queues the static platform when any of it is in view, meshing it again when it changed
+// Queues the static platform and the world decor in view, meshed, shadowed and baked again when changed
 func (sc *scene) drawStatic(r *vxl.Raster) {
 	if sc.dirty {
 		r.SetLights(nil)
 		sc.chunks = sc.grid.Mesh(r)
+		lo, hi := sc.world.bounds(&sc.lay)
+		if r.SunColor != (vxl.RGB{}) {
+			sc.shadowStatic = vxl.NewShadowMap(r.Sun, lo, hi, shadowTexel)
+			sc.shadowStatic.Chunks(sc.chunks)
+			sc.shadow = vxl.NewShadowMap(r.Sun, lo, hi, shadowTexel)
+		} else {
+			sc.shadowStatic, sc.shadow = nil, nil
+		}
+		sc.bakeRadiance(r)
 		sc.dirty = false
 	}
+	r.Shadows, r.GI = sc.shadowStatic, sc.vol
 	if !r.Visible(sc.gridLo, sc.gridHi) {
 		return
 	}
 	r.Chunks(sc.chunks)
+	sc.world.decor(r, sc)
+}
+
+// Bakes the radiance over the platform from the glowing voxels, the emitters of the world and the bounce of the sun
+func (sc *scene) bakeRadiance(r *vxl.Raster) {
+	bk := sc.world.bake()
+	lo, hi := sc.lay.bounds()
+	lo = vxl.V(lo.X-bk.margin, -6, min(lo.Z-bk.margin, float64(sc.lay.wallZ)-2))
+	hi = vxl.V(hi.X+bk.margin, bk.height, hi.Z+bk.margin)
+	v := vxl.NewVolume(lo, hi, 1)
+	v.Occupy(sc.grid)
+	v.Splat(sc.grid.Emitters(bk.cluster, bk.radius))
+	v.Splat(sc.world.emitters(&sc.lay))
+	if bk.bounce > 0 && r.SunColor != (vxl.RGB{}) {
+		v.Splat(sc.grid.SunBounce(r.Sun, r.SunColor, sc.shadowStatic, bk.bounceCluster, bk.radius, bk.bounce))
+	}
+	v.Smooth(bk.smooth)
+	if bk.scale != 1 && bk.scale > 0 {
+		v.Scale(bk.scale)
+	}
+	v.Seal()
+	sc.vol = v
+}
+
+// World units one texel of the shadow maps spans
+const shadowTexel = 0.25
+
+// Fills the frame shadow map with the platform, the figures, the cores and the packets, none without a sun
+func (sc *scene) castShadows(r *vxl.Raster) {
+	if sc.dirty {
+		sc.drawStatic(r)
+	}
+	if sc.shadowStatic == nil {
+		r.Shadows = nil
+		return
+	}
+	sm := sc.shadow
+	sm.CopyFrom(sc.shadowStatic)
+	for _, a := range sc.actors {
+		if a.gone || a.exit > 0.5 {
+			continue
+		}
+		h := a.model.Height()
+		sm.Box(a.stand().Add(vxl.V(0, h/2, 0)), vxl.V(1.2, h, 0.8), a.yaw)
+	}
+	for _, id := range sc.order {
+		if n := sc.nodes[id]; n.rise >= 1 {
+			sm.Box(n.core(sc.t), vxl.V(1.5, 1.5, 1.5), n.spin)
+		}
+	}
+	for i := range sc.packets {
+		sm.Box(sc.packets[i].at(), vxl.V(0.45, 0.45, 0.45), 0)
+	}
+	r.Shadows = sm
 }
 
 // Every light on the platform this frame
@@ -879,12 +970,14 @@ func (sc *scene) collectLights() []vxl.Light {
 		beamCol = colNodeRev
 	}
 	out = append(out, vxl.Light{Pos: sc.beamAt.Add(vxl.V(0, 1.5, 0)), Color: beamCol.Scale(0.6), Radius: 5})
+	out = sc.world.lights(out, sc)
 	sc.lights = out
 	return out
 }
 
 // Queues everything that moves, the solid things first and the glows and veils after them
 func (sc *scene) drawDynamic(r *vxl.Raster) {
+	sc.castShadows(r)
 	r.SetLights(sc.collectLights())
 	for _, a := range sc.actors {
 		a.draw(r)
@@ -893,10 +986,11 @@ func (sc *scene) drawDynamic(r *vxl.Raster) {
 		sc.nodes[id].draw(r, sc)
 	}
 	sc.drawPackets(r)
-	sc.drawDebris(r)
+	if sc.world.drift() {
+		sc.drawDebris(r)
+	}
 	sc.drawStations(r)
-	sc.drawWall(r)
-	sc.drawShadows(r)
+	sc.world.dress(r, sc)
 	for _, id := range sc.order {
 		sc.nodes[id].drawGlow(r, sc)
 	}
@@ -964,44 +1058,6 @@ func (sc *scene) drawStations(r *vxl.Raster) {
 			at := base.Add(vxl.V(mx, 0.4+0.1*math.Sin(sc.t*2+n.seed*5), mz))
 			r.EmissiveBox(at, vxl.V(0.28, 0.28, 0.28), sc.t*0.5, n.color(), 1, 1.3)
 		}
-	}
-}
-
-// Queues the scan lines crawling over the face of the blackwall
-func (sc *scene) drawWall(r *vxl.Raster) {
-	z := float64(sc.lay.wallZ) + 1.002
-	for _, s := range sc.scans {
-		k := 0.5 + 0.5*sc.wallSurge
-		q := vxl.Quad{P: [4]vxl.Vec3{vxl.V(s.x0, s.y+0.4, z), vxl.V(s.x1, s.y+0.4, z), vxl.V(s.x1, s.y, z), vxl.V(s.x0, s.y, z)}, Color: colRed, Alpha: 0.5 + 0.5*sc.wallSurge, Additive: true, TwoSided: true}
-		l := vxl.Grey(1.6 * k)
-		q.Light = [4]vxl.RGB{l, l, l, l}
-		r.Quad(q)
-	}
-	if sc.wallSurge > 0 {
-		r.Billboard(vxl.V(float64(sc.lay.w)/2, 6, z+1), float64(sc.lay.w)*1.2, colRed, 0.1*sc.wallSurge, true)
-	}
-}
-
-// Soft shadows under the crew and the packets
-func (sc *scene) drawShadows(r *vxl.Raster) {
-	shadow := func(at vxl.Vec3, w, d, alpha float64) {
-		q := vxl.Quad{P: vxl.FloorQuad(vxl.V(at.X, 0, at.Z), w, d, 0.02), Color: vxl.RGB{}, Alpha: alpha, TwoSided: true}
-		q.Light = [4]vxl.RGB{{}, {}, {}, {}}
-		if at.Y > 4 {
-			q.P = vxl.FloorQuad(vxl.V(at.X, 0, at.Z), w, d, spireHeight+0.02)
-		}
-		r.Quad(q)
-	}
-	for _, a := range sc.actors {
-		if a.gone {
-			continue
-		}
-		h := a.drop + a.lift + max(a.bob, 0)
-		shadow(a.pos, 0.95/(1+h*0.3), 0.6/(1+h*0.3), 0.4*(1-a.exit)/(1+h*0.5))
-	}
-	for i := range sc.packets {
-		at := sc.packets[i].at()
-		shadow(at, 0.4, 0.4, 0.25/(1+at.Y*0.2))
 	}
 }
 
@@ -1120,6 +1176,26 @@ func (sc *scene) drawClocks(r *vxl.Raster) {
 			q.P = [4]vxl.Vec3{center.Add(vxl.V(-dx-nx, 0, -dz-nz)), center.Add(vxl.V(-dx+nx, 0, -dz+nz)), center.Add(vxl.V(dx+nx, 0, dz+nz)), center.Add(vxl.V(dx-nx, 0, dz-nz))}
 			r.Quad(q)
 		}
+	}
+}
+
+// Ring on the pedestal around a selected or hovered node
+func (sc *scene) nodeRing(r *vxl.Raster, n *node, col vxl.RGB, alpha float64) {
+	if n == nil || n.rise < 1 {
+		return
+	}
+	rad := 2.3 + 0.08*math.Sin(sc.t*4)
+	w := vxl.Grey(1)
+	for k := range 6 {
+		ang := -sc.t*1.2 + float64(k)*math.Pi/3
+		s, c := math.Sincos(ang)
+		center := n.pos.Add(vxl.V(rad*c, 1.05, rad*s))
+		q := vxl.Quad{Color: col, Alpha: alpha, Additive: true, TwoSided: true}
+		q.Light = [4]vxl.RGB{w, w, w, w}
+		dx, dz := -s*0.8, c*0.8
+		nx, nz := c*0.12, s*0.12
+		q.P = [4]vxl.Vec3{center.Add(vxl.V(-dx-nx, 0, -dz-nz)), center.Add(vxl.V(-dx+nx, 0, -dz+nz)), center.Add(vxl.V(dx+nx, 0, dz+nz)), center.Add(vxl.V(dx-nx, 0, dz-nz))}
+		r.Quad(q)
 	}
 }
 

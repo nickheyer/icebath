@@ -1703,7 +1703,8 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 	if name == "" {
 		name = "tool"
 	}
-	head := lipgloss.NewStyle().Foreground(tr.speakerColor(b)).Bold(true).Render(glyph+" "+name) + " " + lipgloss.NewStyle().Foreground(t.Text).Render(render.Truncate(CallSummary(b.call, b.partial, t), body/2, t))
+	head := lipgloss.NewStyle().Foreground(tr.speakerColor(b)).Bold(true).Render(glyph + " " + name)
+	summary := lipgloss.NewStyle().Foreground(t.Text).Render(tr.relative(CallSummary(b.call, b.partial, t)))
 	var status string
 	switch {
 	case b.result == nil && !b.started.IsZero():
@@ -1732,7 +1733,18 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 	if b.result != nil {
 		status += " " + render.Dim(render.Tokens(protocol.EstimateTokens(b.result.Content))+" tok", t)
 	}
-	lines := []string{mark + head + " " + status}
+	var lines []string
+	switch avail := body - ansi.StringWidth(head) - ansi.StringWidth(status) - 2; {
+	case summary == "":
+		lines = []string{mark + head + " " + status}
+	case ansi.StringWidth(summary) <= avail:
+		lines = []string{mark + head + " " + summary + " " + status}
+	default:
+		lines = []string{mark + head + " " + status}
+		for _, l := range strings.Split(render.Wrap(summary, max(body-4, 8)), "\n") {
+			lines = append(lines, "    "+l)
+		}
+	}
 	if b.err != nil {
 		shown, cut := tr.errorLines(b.err, body-2, b.expanded)
 		for _, l := range shown {
@@ -1778,6 +1790,16 @@ func (tr *Transcript) toolLines(mark string, b *block, body int) []string {
 		lines = append(lines, "  "+l)
 	}
 	return lines
+}
+
+// Text with every path under the project root shortened to its path inside the project
+func (tr *Transcript) relative(text string) string {
+	for _, root := range []string{tr.env.Root, tr.env.ProjectDir} {
+		if root != "" && root != "/" {
+			text = strings.ReplaceAll(text, strings.TrimSuffix(root, "/")+"/", "")
+		}
+	}
+	return text
 }
 
 // Every wrapped line of the error once expanded, else its first line cut to width with the marker for the rest

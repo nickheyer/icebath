@@ -15,6 +15,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/lockfile"
@@ -25,6 +26,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/session"
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -82,6 +84,7 @@ type Model struct {
 	opts    Options
 	app     *harness.App
 	relay   *relay
+	gfx     *gfx.Terminal
 	wm      *wm.Model
 	env     *cards.Env
 	keys    *keys.Map
@@ -148,7 +151,7 @@ func New(ctx context.Context, opts Options) (*Model, error) {
 		}
 		return nil, err
 	}
-	m := &Model{opts: opts, app: app, relay: r, theme: th, ctx: ctx, cancel: cancel, state: tea.ProgramStateIdle, layoutSaved: raw, stateDir: stateDir, instance: instance, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}, terms: map[int]*cards.Terminal{}}
+	m := &Model{opts: opts, app: app, relay: r, gfx: gfx.New(), theme: th, ctx: ctx, cancel: cancel, state: tea.ProgramStateIdle, layoutSaved: raw, stateDir: stateDir, instance: instance, recent: map[*wm.Workspace]*desk{}, extPanels: map[string]wm.Card{}, terms: map[int]*cards.Terminal{}}
 	if notice != "" {
 		m.notices = append(m.notices, notice)
 	}
@@ -195,6 +198,8 @@ func (m *Model) environment() *cards.Env {
 	return &cards.Env{
 		Theme: m.theme, Keys: m.keys, Control: a.Control, Meter: a.Meter, Approver: a.Approver, Questions: a.Questions, MCP: a.MCP, Shell: a.Shell, Tools: a.Tools, Mode: a.Mode, Store: a.Store, Files: a.Files,
 		Editor: a, Ctx: m.ctx,
+		Graphics:     m.gfx,
+		Send:         func(msg tea.Msg) { m.relay.Send(msg) },
 		Lives:        a.Lives,
 		SessionTitle: m.sessionTitle,
 		Primary:      m.endpoint,
@@ -492,7 +497,7 @@ func (m *Model) saveLayout() error {
 
 // Starts the manager and restored cards, lists models, watches the keybind file and fires the session start hooks
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.wm.Init(), m.listModels(true), m.watchKeys(), func() tea.Msg {
+	cmds := []tea.Cmd{m.wm.Init(), m.gfx.Probe(), m.listModels(true), m.watchKeys(), func() tea.Msg {
 		if err := m.app.SessionStart(m.ctx, "startup"); err != nil {
 			return errMsg{err}
 		}
@@ -549,7 +554,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.gfx.Update(msg) {
+		m.wm.Repaint()
+	}
 	switch msg := msg.(type) {
+	case uv.KittyGraphicsEvent, uv.CellSizeEvent, uv.PixelSizeEvent, uv.PrimaryDeviceAttributesEvent:
+		return m, nil
 	case keysTickMsg:
 		return m, tea.Batch(m.reloadKeys(), m.watchKeys())
 	case errMsg:
@@ -603,6 +613,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	_, cmd := m.wm.Update(msg)
 	cmds = append(cmds, cmd, m.sync())
+	if _, resized := msg.(tea.WindowSizeMsg); resized {
+		cmds = append(cmds, m.gfx.Measure())
+	}
 	return m, tea.Batch(cmds...)
 }
 
@@ -643,6 +656,7 @@ func (m *Model) shutdown() tea.Cmd {
 	}
 	m.cancel()
 	m.relay.Close()
+	gfx.Sweep()
 	m.closeTerminals()
 	m.bg.Wait()
 	m.app.Close(context.Background())

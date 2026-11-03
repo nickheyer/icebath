@@ -81,7 +81,7 @@ func grate(u, v, du, dv float64) float64 {
 
 // Traces across, down, crossing or ending in a pad per half unit cell, picked by a hash of the cell
 func circuit(u, v, du, dv float64) float64 {
-	const mean = 0.995
+	const mean = 0.997
 	tile := 1 + 0.1*(cellHash(u, v, 1)-0.5)*keep(max(du, dv), 1)
 	k := keep(max(du, dv), 2)
 	if k <= 0 {
@@ -100,7 +100,7 @@ func circuit(u, v, du, dv float64) float64 {
 	case h > 0.9:
 		trace = train(su-0.3, 0.4, sdu) * train(sv-0.3, 0.4, sdv)
 	}
-	return tile * (mean + (0.9+0.55*trace-mean)*k)
+	return tile * (mean + (0.94+0.3*trace-mean)*k)
 }
 
 // Smooth value noise of the hashes at the corners of the unit cell around a place

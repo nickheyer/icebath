@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/harness"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/session"
 )
 
@@ -62,7 +63,7 @@ func TestJournalRoundTrip(t *testing.T) {
 	s.setPlan(Plan{Title: "p", Summary: "s"}, []*Ticket{{ID: "T1", Title: "one", Description: "d", Status: TicketActive, Builder: "Builder 1"}, {ID: "T2", Title: "two", Description: "d", Status: TicketTodo, DependsOn: []string{"T1"}}})
 	s.putMember(&Member{Role: RoleBuilder, Name: "Builder 1", Session: "20260101-000000-abcdefabcdefabcd", Joined: time.Now()})
 	s.say(MsgAssign, "Reviewer", "Builder 1", "T1", "take T1")
-	s.spend("Builder 1", 4321)
+	s.spend("Builder 1", protocol.Usage{Output: 4321})
 	s.finish(context.Canceled)
 	dir, err := journalPath(app)
 	if err != nil {

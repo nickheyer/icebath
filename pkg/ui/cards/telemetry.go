@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/harness"
+	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -262,13 +263,13 @@ func (c *Telemetry) View(w, h int) string {
 		}
 		lines = append(lines, render.Gauge(frac, max(w-len(label)-10, 4), t)+" "+render.Percent(frac)+" "+label)
 	} else {
-		lines = append(lines, render.KV("context", render.Tokens(s.Context), t))
+		lines = append(lines, render.KV("context", render.Tokens(s.Context), t)+render.Dim(" of an unknown window, set window on the profile so compaction can run", t))
 	}
 	tps := t.Glyphs.None
 	if s.TokensPerSecond > 0 {
 		tps = fmt.Sprintf("%.0f tok/s", s.TokensPerSecond)
 	}
-	row := []string{render.KV("rate", tps, t), render.KV("cache", render.Percent(s.CacheRatio), t)}
+	row := []string{render.KV("rate", tps, t), render.KV("cache", render.Percent(s.CacheRatio)+render.Dim(" last, "+render.Percent(cachedShare(s.Usage))+" overall", t), t)}
 	if s.Priced || s.Cost > 0 {
 		row = append(row, render.KV("cost", render.Money(s.Cost), t))
 	}
@@ -299,7 +300,7 @@ func (c *Telemetry) totals(w, h int) string {
 	}
 	lines = append(lines, render.Truncate(strings.Join(row, "  "), w, t))
 	lines = append(lines, c.counters(s, w)...)
-	cols := []render.Column{{Title: "SESSION", Flex: 2}, {Title: "MODEL", Flex: 1}, {Title: "CONTEXT", Right: true}, {Title: "TOKENS", Right: true}, {Title: "COST", Right: true}}
+	cols := []render.Column{{Title: "SESSION", Flex: 2}, {Title: "MODEL", Flex: 1}, {Title: "CONTEXT", Right: true}, {Title: "OUT", Right: true}, {Title: "PROMPT", Right: true}, {Title: "CACHED", Right: true}, {Title: "COST", Right: true}}
 	rows := make([][]string, 0, len(ids))
 	sel := -1
 	for i, id := range ids {
@@ -315,7 +316,7 @@ func (c *Telemetry) totals(w, h int) string {
 		if st.Priced || st.Cost > 0 {
 			cost = render.Money(st.Cost)
 		}
-		rows = append(rows, []string{c.titleOf(id), model, render.Tokens(st.Context), render.Tokens(st.Usage.Total()), cost})
+		rows = append(rows, []string{c.titleOf(id), model, render.Tokens(st.Context), render.Tokens(st.Usage.Output), render.Tokens(st.Usage.Context()), render.Percent(cachedShare(st.Usage)), cost})
 	}
 	if room := h - len(lines); len(rows) > 0 && room > render.TableHead {
 		table, _ := window(strings.Split(render.Table(cols, rows, w, sel, t), "\n"), max(sel, 0), room)
@@ -432,7 +433,15 @@ func (c *Telemetry) Status() string {
 	if s.Cost > 0 {
 		return render.Money(s.Cost)
 	}
-	return render.Tokens(s.Usage.Total())
+	return render.Tokens(s.Usage.Output) + " out"
+}
+
+// Share of every prompt token of a usage that was served from cache
+func cachedShare(u protocol.Usage) float64 {
+	if n := u.Context(); n > 0 {
+		return float64(u.CacheRead) / float64(n)
+	}
+	return 0
 }
 
 // Host of an endpoint URL, the text itself when it does not parse

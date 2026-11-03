@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/anim"
+	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
@@ -277,6 +278,9 @@ func (m *Model) paintBody(e *entry, dx int, shown bool, veil float64) {
 		m.stamp(face, p)
 		return
 	}
+	if o, ok := e.card.(Positioned); ok {
+		o.Origin(p.x+c.X, p.y+c.Y)
+	}
 	m.content(e, c.W, c.H, (1-p.lit)*contentDim).Draw(face, uv.Rect(c.X, c.Y, c.W, c.H))
 	right := 0
 	if closable(e.card) && w >= minTitleW && e.ws != nil {
@@ -366,6 +370,9 @@ func (m *Model) tint(s screen, dim float64) {
 	for _, line := range s.Lines {
 		for i := range line {
 			c := &line[i]
+			if gfx.Placeholder(c) {
+				continue
+			}
 			c.Style.Fg = or(c.Style.Fg, t.Text)
 			c.Style.Bg = or(c.Style.Bg, t.Surface)
 			if dim <= 0 || t.Plain {

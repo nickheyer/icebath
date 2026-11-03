@@ -10,7 +10,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// How many pixels a cell holds and which glyphs it shows them with
+//go:generate python3 -I ../../scripts/glyphs.py
+
+// Glyph library a cell may pick its glyph from
 type CellMode int
 
 const (
@@ -18,33 +20,38 @@ const (
 	ModeQuadrant
 	ModeSextant
 	ModeOctant
+	ModeShapes
+	ModeLegacy
+	ModeAll
 )
 
-// Cell mode by its setting name, quadrant for an unknown one
+// Cell mode by its setting name, shapes for an unknown one
 func CellModeOf(name string) CellMode {
 	switch name {
 	case "half":
 		return ModeHalf
+	case "quadrant":
+		return ModeQuadrant
 	case "sextant":
 		return ModeSextant
 	case "octant":
 		return ModeOctant
+	case "legacy":
+		return ModeLegacy
+	case "all":
+		return ModeAll
 	}
-	return ModeQuadrant
+	return ModeShapes
 }
 
-// Pixels across and down one cell holds
-func (m CellMode) Pixels() (px, py int) {
-	switch m {
-	case ModeHalf:
-		return 1, 2
-	case ModeSextant:
-		return 2, 3
-	case ModeOctant:
-		return 2, 4
-	}
-	return 2, 2
-}
+// Pixels across and down every cell samples whatever its mode
+const cellCols, cellRows = 4, 8
+
+// Pixels one cell samples
+const cellPixels = cellCols * cellRows
+
+// Pixels across and down one cell samples
+func (m CellMode) Pixels() (px, py int) { return cellCols, cellRows }
 
 // Width over height of one pixel on screen, a cell being half as wide as it is tall
 func (m CellMode) PixelAspect() float64 {
@@ -52,85 +59,79 @@ func (m CellMode) PixelAspect() float64 {
 	return float64(py) / float64(2*px)
 }
 
-// Glyph showing a mask of lit pixels, bit i the pixel i read across then down
-func (m CellMode) Glyph(mask int) string {
-	switch m {
-	case ModeHalf:
-		return halves[mask&3]
-	case ModeSextant:
-		return sextantGlyphs[mask&63]
-	case ModeOctant:
-		return octantGlyphs[mask&255]
-	}
-	return quadrants[mask&15]
+// Coverage of each pixel of a glyph from 0 to 255, read across then down
+type cover [cellPixels]uint8
+
+// Glyph of the generated table with a bit per mode whose library holds it and its lit pixel mask
+type glyph struct {
+	str  string
+	libs uint8
+	mask uint32
+	cov  cover
 }
 
-// Sextant and octant glyphs as strings, built once so drawing a cell allocates none
-var sextantGlyphs, octantGlyphs = func() (s [64]string, o [256]string) {
-	for i, r := range sextants {
-		s[i] = string(r)
-	}
-	for i, r := range octants {
-		o[i] = string(r)
-	}
-	return s, o
-}()
+// Table indices of the blank and the full glyph, the first two the generator writes
+const spaceGlyph, fullGlyph = 0, 1
 
-// Half block glyphs by lit pixel mask, top one, bottom two
-var halves = [4]string{" ", "▀", "▄", "█"}
-
-// Quadrant glyphs by lit pixel mask, top left one, top right two, bottom left four, bottom right eight
-var quadrants = [16]string{" ", "▘", "▝", "▀", "▖", "▌", "▞", "▛", "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█"}
-
-// Sextant glyphs by lit pixel mask, two across and three down, bit i the pixel i read across then down
-var sextants = [64]rune{
-	0x0020, 0x1FB00, 0x1FB01, 0x1FB02, 0x1FB03, 0x1FB04, 0x1FB05, 0x1FB06,
-	0x1FB07, 0x1FB08, 0x1FB09, 0x1FB0A, 0x1FB0B, 0x1FB0C, 0x1FB0D, 0x1FB0E,
-	0x1FB0F, 0x1FB10, 0x1FB11, 0x1FB12, 0x1FB13, 0x258C, 0x1FB14, 0x1FB15,
-	0x1FB16, 0x1FB17, 0x1FB18, 0x1FB19, 0x1FB1A, 0x1FB1B, 0x1FB1C, 0x1FB1D,
-	0x1FB1E, 0x1FB1F, 0x1FB20, 0x1FB21, 0x1FB22, 0x1FB23, 0x1FB24, 0x1FB25,
-	0x1FB26, 0x1FB27, 0x2590, 0x1FB28, 0x1FB29, 0x1FB2A, 0x1FB2B, 0x1FB2C,
-	0x1FB2D, 0x1FB2E, 0x1FB2F, 0x1FB30, 0x1FB31, 0x1FB32, 0x1FB33, 0x1FB34,
-	0x1FB35, 0x1FB36, 0x1FB37, 0x1FB38, 0x1FB39, 0x1FB3A, 0x1FB3B, 0x2588,
+// Coverage of a glyph as shares with the sums color fitting needs
+type glyphFit struct {
+	cov [cellPixels]float64
+	// Sum of the coverage shares and of their squares
+	sum, sq float64
+	// Sum of the coverage bytes, how much of the cell the glyph covers
+	weight int
 }
 
-// Octant glyphs by lit pixel mask, two across and four down
-var octants = [256]rune{
-	0x0020, 0x1CEA8, 0x1CEAB, 0x1FB82, 0x1CD00, 0x2598, 0x1CD01, 0x1CD02,
-	0x1CD03, 0x1CD04, 0x259D, 0x1CD05, 0x1CD06, 0x1CD07, 0x1CD08, 0x2580,
-	0x1CD09, 0x1CD0A, 0x1CD0B, 0x1CD0C, 0x1FBE6, 0x1CD0D, 0x1CD0E, 0x1CD0F,
-	0x1CD10, 0x1CD11, 0x1CD12, 0x1CD13, 0x1CD14, 0x1CD15, 0x1CD16, 0x1CD17,
-	0x1CD18, 0x1CD19, 0x1CD1A, 0x1CD1B, 0x1CD1C, 0x1CD1D, 0x1CD1E, 0x1CD1F,
-	0x1FBE7, 0x1CD20, 0x1CD21, 0x1CD22, 0x1CD23, 0x1CD24, 0x1CD25, 0x1CD26,
-	0x1CD27, 0x1CD28, 0x1CD29, 0x1CD2A, 0x1CD2B, 0x1CD2C, 0x1CD2D, 0x1CD2E,
-	0x1CD2F, 0x1CD30, 0x1CD31, 0x1CD32, 0x1CD33, 0x1CD34, 0x1CD35, 0x1FB85,
-	0x1CEA3, 0x1CD36, 0x1CD37, 0x1CD38, 0x1CD39, 0x1CD3A, 0x1CD3B, 0x1CD3C,
-	0x1CD3D, 0x1CD3E, 0x1CD3F, 0x1CD40, 0x1CD41, 0x1CD42, 0x1CD43, 0x1CD44,
-	0x2596, 0x1CD45, 0x1CD46, 0x1CD47, 0x1CD48, 0x258C, 0x1CD49, 0x1CD4A,
-	0x1CD4B, 0x1CD4C, 0x259E, 0x1CD4D, 0x1CD4E, 0x1CD4F, 0x1CD50, 0x259B,
-	0x1CD51, 0x1CD52, 0x1CD53, 0x1CD54, 0x1CD55, 0x1CD56, 0x1CD57, 0x1CD58,
-	0x1CD59, 0x1CD5A, 0x1CD5B, 0x1CD5C, 0x1CD5D, 0x1CD5E, 0x1CD5F, 0x1CD60,
-	0x1CD61, 0x1CD62, 0x1CD63, 0x1CD64, 0x1CD65, 0x1CD66, 0x1CD67, 0x1CD68,
-	0x1CD69, 0x1CD6A, 0x1CD6B, 0x1CD6C, 0x1CD6D, 0x1CD6E, 0x1CD6F, 0x1CD70,
-	0x1CEA0, 0x1CD71, 0x1CD72, 0x1CD73, 0x1CD74, 0x1CD75, 0x1CD76, 0x1CD77,
-	0x1CD78, 0x1CD79, 0x1CD7A, 0x1CD7B, 0x1CD7C, 0x1CD7D, 0x1CD7E, 0x1CD7F,
-	0x1CD80, 0x1CD81, 0x1CD82, 0x1CD83, 0x1CD84, 0x1CD85, 0x1CD86, 0x1CD87,
-	0x1CD88, 0x1CD89, 0x1CD8A, 0x1CD8B, 0x1CD8C, 0x1CD8D, 0x1CD8E, 0x1CD8F,
-	0x2597, 0x1CD90, 0x1CD91, 0x1CD92, 0x1CD93, 0x259A, 0x1CD94, 0x1CD95,
-	0x1CD96, 0x1CD97, 0x2590, 0x1CD98, 0x1CD99, 0x1CD9A, 0x1CD9B, 0x259C,
-	0x1CD9C, 0x1CD9D, 0x1CD9E, 0x1CD9F, 0x1CDA0, 0x1CDA1, 0x1CDA2, 0x1CDA3,
-	0x1CDA4, 0x1CDA5, 0x1CDA6, 0x1CDA7, 0x1CDA8, 0x1CDA9, 0x1CDAA, 0x1CDAB,
-	0x2582, 0x1CDAC, 0x1CDAD, 0x1CDAE, 0x1CDAF, 0x1CDB0, 0x1CDB1, 0x1CDB2,
-	0x1CDB3, 0x1CDB4, 0x1CDB5, 0x1CDB6, 0x1CDB7, 0x1CDB8, 0x1CDB9, 0x1CDBA,
-	0x1CDBB, 0x1CDBC, 0x1CDBD, 0x1CDBE, 0x1CDBF, 0x1CDC0, 0x1CDC1, 0x1CDC2,
-	0x1CDC3, 0x1CDC4, 0x1CDC5, 0x1CDC6, 0x1CDC7, 0x1CDC8, 0x1CDC9, 0x1CDCA,
-	0x1CDCB, 0x1CDCC, 0x1CDCD, 0x1CDCE, 0x1CDCF, 0x1CDD0, 0x1CDD1, 0x1CDD2,
-	0x1CDD3, 0x1CDD4, 0x1CDD5, 0x1CDD6, 0x1CDD7, 0x1CDD8, 0x1CDD9, 0x1CDDA,
-	0x2584, 0x1CDDB, 0x1CDDC, 0x1CDDD, 0x1CDDE, 0x2599, 0x1CDDF, 0x1CDE0,
-	0x1CDE1, 0x1CDE2, 0x259F, 0x1CDE3, 0x2586, 0x1CDE4, 0x1CDE5, 0x2588,
+// Masks of the glyphs a mode may pick beside their table indices
+type library struct {
+	ids   []uint16
+	masks []uint32
 }
 
-// Writes the frame into cells, each the two colors and glyph nearest its pixels, remembering no earlier frame
+var (
+	fits       [len(glyphs)]glyphFit
+	modeLibs   [ModeAll + 1]library
+	glyphIndex = make(map[string]uint16, len(glyphs))
+)
+
+// Builds coverage shares, the glyph lookup and the mask list of every library from the library bits of each glyph
+func init() {
+	for i := range glyphs {
+		g, f := &glyphs[i], &fits[i]
+		for p, c := range g.cov {
+			f.cov[p] = float64(c) / 255
+			f.sum += f.cov[p]
+			f.sq += f.cov[p] * f.cov[p]
+			f.weight += int(c)
+		}
+		glyphIndex[g.str] = uint16(i)
+		for m := range modeLibs {
+			if g.libs>>m&1 != 0 {
+				modeLibs[m].ids = append(modeLibs[m].ids, uint16(i))
+				modeLibs[m].masks = append(modeLibs[m].masks, g.mask)
+			}
+		}
+	}
+}
+
+// Lit pixel mask of a glyph in any library, bit i the pixel i%4 across and i/4 down
+func GlyphMask(glyph string) (mask uint32, ok bool) {
+	i, ok := glyphIndex[glyph]
+	if !ok {
+		return 0, false
+	}
+	return glyphs[i].mask, true
+}
+
+// Library of the mode, shapes for a mode outside the known ones
+func (m CellMode) library() *library {
+	if m < 0 || int(m) >= len(modeLibs) {
+		m = ModeShapes
+	}
+	return &modeLibs[m]
+}
+
+// Writes the frame into cells, each the glyph and two colors nearest its pixels, remembering no earlier frame
 func (fr *Frame) Encode(buf *uv.Buffer, x0, y0, cols, rows int, mode CellMode, quantize func(RGB) color.Color) {
 	e := encoders.Get().(*Encoder)
 	e.Reset()
@@ -151,24 +152,36 @@ type Encoder struct {
 	cells  []encCell
 }
 
-// Glyph mask and colors a cell showed, valid while its generation matches the encoder
+// Glyph and colors a cell showed, valid while its generation matches the encoder
 type encCell struct {
 	fg, bg   RGB
 	qfg, qbg color.Color
 	// Hash of the raw pixels the cell was last encoded from
-	sum  uint64
-	gen  uint32
-	mask uint8
+	sum   uint64
+	gen   uint32
+	glyph uint16
 }
 
-// Extra squared error per pixel a held glyph may carry over the best split before it gives way
+// Extra squared error per pixel a held or sparser glyph may carry over the best fit before it gives way
 const holdSlack = 0.003
 
 // Squared distance under which a held color stands in for the new one, about three steps of 255 per channel
 const colorSlack = 3 * (3.0 / 255) * (3.0 / 255)
 
+// Error below which pixels paint as one solid color rather than a pattern
+const solidSlack = 0.0025
+
+// Glyphs nearest the split mask that get an exact color fit
+const nearest = 4
+
 // Forgets every cell, so the next frame encodes as if none came before
-func (e *Encoder) Reset() { e.gen++ }
+func (e *Encoder) Reset() {
+	e.gen++
+	if e.gen == 0 {
+		clear(e.cells)
+		e.gen = 1
+	}
+}
 
 // Writes the frame into cells, each keeping its glyph and colors while they stay within slack of the best fit
 func (e *Encoder) Encode(fr *Frame, buf *uv.Buffer, x0, y0, cols, rows int, mode CellMode, quantize func(RGB) color.Color) {
@@ -181,33 +194,38 @@ func (e *Encoder) Encode(fr *Frame, buf *uv.Buffer, x0, y0, cols, rows int, mode
 		} else {
 			e.cells = make([]encCell, cols*rows)
 		}
-		e.gen++
+		e.Reset()
 	}
 	if e.gen == 0 {
 		e.gen = 1
 	}
-	px, py := mode.Pixels()
-	n := px * py
-	full := 1<<n - 1
-	inside := fr.W >= cols*px && fr.H >= rows*py
+	lib := mode.library()
+	inside := fr.W >= cols*cellCols && fr.H >= rows*cellRows
+	super := 1
+	if cols > 0 && rows > 0 && fr.W%(cols*cellCols) == 0 && fr.H%(rows*cellRows) == 0 && fr.W/(cols*cellCols) == fr.H/(rows*cellRows) {
+		super = fr.W / (cols * cellCols)
+	}
 	parallelBands(rows, 2, func(r0, r1 int) {
-		var pix [8]RGB
+		var pix [cellPixels]RGB
 		for cy := r0; cy < r1; cy++ {
 			for cx := range cols {
-				if inside {
-					for j := range py {
-						at := (cy*py+j)*fr.W + cx*px
-						copy(pix[j*px:(j+1)*px], fr.Color[at:at+px])
+				switch {
+				case super > 1:
+					fr.gather(&pix, cx, cy, super)
+				case inside:
+					for j := range cellRows {
+						at := (cy*cellRows+j)*fr.W + cx*cellCols
+						copy(pix[j*cellCols:(j+1)*cellCols], fr.Color[at:at+cellCols])
 					}
-				} else {
-					for j := range py {
-						for i := range px {
-							pix[j*px+i] = fr.At(cx*px+i, cy*py+j)
+				default:
+					for j := range cellRows {
+						for i := range cellCols {
+							pix[j*cellCols+i] = fr.At(cx*cellCols+i, cy*cellRows+j)
 						}
 					}
 				}
 				st := &e.cells[cy*cols+cx]
-				sum := pixelSum(pix[:n])
+				sum := pixelSum(&pix)
 				held := st.gen == e.gen
 				if held && st.sum == sum {
 					var qfg, qbg color.Color
@@ -216,26 +234,41 @@ func (e *Encoder) Encode(fr *Frame, buf *uv.Buffer, x0, y0, cols, rows int, mode
 						qfg, qbg = st.qfg, st.qbg
 					default:
 						qbg = quantize(st.bg)
-						if st.mask != 0 {
+						if st.glyph != spaceGlyph {
 							qfg = quantize(st.fg)
 						}
 					}
-					c := uv.Cell{Content: mode.Glyph(int(st.mask)), Width: 1, Style: uv.Style{Bg: qbg, Fg: qfg}}
+					c := uv.Cell{Content: glyphs[st.glyph].str, Width: 1, Style: uv.Style{Bg: qbg, Fg: qfg}}
 					buf.SetCell(x0+cx, y0+cy, &c)
 					continue
 				}
-				for i := range n {
+				for i := range pix {
 					pix[i] = pix[i].Clamp()
 				}
-				mask, fg, bg, best := partition(pix[:n])
+				prev := -1
 				if held {
-					mask, fg, bg = st.hold(pix[:n], mask, fg, bg, best, full)
+					prev = int(st.glyph)
+				}
+				g, fg, bg := lib.fit(&pix, prev)
+				if held && g == prev {
+					if fg.Dist(st.fg) <= colorSlack {
+						fg = st.fg
+					}
+					if bg.Dist(st.bg) <= colorSlack {
+						bg = st.bg
+					}
+				}
+				switch g {
+				case spaceGlyph:
+					fg = bg
+				case fullGlyph:
+					bg = fg
 				}
 				var qfg, qbg color.Color
 				switch {
 				case !direct:
 					qbg = quantize(bg)
-					if mask != 0 {
+					if g != spaceGlyph {
 						qfg = quantize(fg)
 					}
 				default:
@@ -243,156 +276,220 @@ func (e *Encoder) Encode(fr *Frame, buf *uv.Buffer, x0, y0, cols, rows int, mode
 					if !held || bg != st.bg || qbg == nil {
 						qbg = bg.Color()
 					}
-					if mask != 0 {
+					if g != spaceGlyph {
 						qfg = st.qfg
 						if !held || fg != st.fg || qfg == nil {
 							qfg = fg.Color()
 						}
 					}
 				}
-				*st = encCell{fg: fg, bg: bg, sum: sum, gen: e.gen, mask: uint8(mask)}
+				*st = encCell{fg: fg, bg: bg, sum: sum, gen: e.gen, glyph: uint16(g)}
 				if direct {
 					st.qfg, st.qbg = qfg, qbg
 				}
-				c := uv.Cell{Content: mode.Glyph(mask), Width: 1, Style: uv.Style{Bg: qbg, Fg: qfg}}
+				c := uv.Cell{Content: glyphs[g].str, Width: 1, Style: uv.Style{Bg: qbg, Fg: qfg}}
 				buf.SetCell(x0+cx, y0+cy, &c)
 			}
 		}
 	})
 }
 
-// Hash of the exact bits of a run of pixels, mixed so any changed bit spreads through it all
-func pixelSum(px []RGB) uint64 {
-	h := uint64(0x9e3779b97f4a7c15)
-	for _, p := range px {
-		for _, v := range [3]float64{p.R, p.G, p.B} {
-			h = bits.RotateLeft64(h^math.Float64bits(v)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
+// Fills the pixels of a cell with the means of the blocks of frame pixels it covers at a multiple
+func (fr *Frame) gather(pix *[cellPixels]RGB, cx, cy, super int) {
+	inv := 1 / float64(super*super)
+	for j := range cellRows {
+		for i := range cellCols {
+			var sum RGB
+			for dy := range super {
+				at := ((cy*cellRows+j)*super+dy)*fr.W + (cx*cellCols+i)*super
+				for _, c := range fr.Color[at : at+super] {
+					sum = sum.Add(c)
+				}
+			}
+			pix[j*cellCols+i] = sum.Scale(inv)
 		}
 	}
+}
+
+// Hash of the exact bits of a cell of pixels, mixed so any changed bit spreads through it all
+func pixelSum(px *[cellPixels]RGB) uint64 {
+	h0, h1, h2, h3 := uint64(0x9e3779b97f4a7c15), uint64(0xc2b2ae3d27d4eb4f), uint64(0x165667b19e3779f9), uint64(0x27d4eb2f165667c5)
+	for i := 0; i < cellPixels; i += 4 {
+		h0 = mixPixel(h0, &px[i])
+		h1 = mixPixel(h1, &px[i+1])
+		h2 = mixPixel(h2, &px[i+2])
+		h3 = mixPixel(h3, &px[i+3])
+	}
+	h := bits.RotateLeft64(h0, 1) ^ bits.RotateLeft64(h1, 7) ^ bits.RotateLeft64(h2, 12) ^ bits.RotateLeft64(h3, 18)
 	h ^= h >> 33
 	h *= 0xff51afd7ed558ccd
+	h ^= h >> 33
+	h *= 0xc4ceb9fe1a85ec53
 	return h ^ h>>33
 }
 
-// Glyph and colors for a cell, the shown ones kept while their error stays within slack of the best split
-func (st *encCell) hold(px []RGB, mask int, fg, bg RGB, best float64, full int) (int, RGB, RGB) {
-	prev := int(st.mask)
-	switch {
-	case mask == prev:
-	case prev != 0 && mask == full^prev:
-		mask, fg, bg = prev, bg, fg
-	default:
-		pf, pb, err := split(px, prev)
-		if err > best+holdSlack*float64(len(px)) {
-			return mask, fg, bg
-		}
-		mask, fg, bg = prev, pf, pb
-	}
-	if bg.Dist(st.bg) <= colorSlack {
-		bg = st.bg
-	}
-	if mask == 0 {
-		return 0, bg, bg
-	}
-	if fg.Dist(st.fg) <= colorSlack {
-		fg = st.fg
-	}
-	return mask, fg, bg
+// Lane of the pixel hash with the bits of one more pixel folded in
+func mixPixel(h uint64, p *RGB) uint64 {
+	h = bits.RotateLeft64(h^math.Float64bits(p.R)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
+	h = bits.RotateLeft64(h^math.Float64bits(p.G)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
+	return bits.RotateLeft64(h^math.Float64bits(p.B)*0xc2b2ae3d27d4eb4f, 31) * 0x9e3779b185ebca87
 }
 
-// Means of the lit and unlit pixels of a mask and the squared error of painting pixels their group mean
-func split(px []RGB, mask int) (fg, bg RGB, err float64) {
-	var sf, sb RGB
-	nf, nb := 0, 0
-	for i, p := range px {
-		err += p.Dot3(p)
-		if mask>>i&1 != 0 {
-			sf, nf = sf.Add(p), nf+1
-		} else {
-			sb, nb = sb.Add(p), nb+1
+// Glyph and colors fitted to clamped pixels, the shown glyph kept while its error stays within slack of the best
+func (l *library) fit(px *[cellPixels]RGB, prev int) (g int, fg, bg RGB) {
+	var sum RGB
+	sq := 0.0
+	for i := range px {
+		sum = sum.Add(px[i])
+		sq += px[i].Dot3(px[i])
+	}
+	mean := sum.Scale(1.0 / cellPixels)
+	var cand [nearest + 2]int
+	n := 0
+	if sq-cellPixels*mean.Dot3(mean) <= solidSlack*cellPixels/4 {
+		cand[0], n = spaceGlyph, 1
+	} else {
+		var near [nearest]int
+		n = copy(cand[:], near[:l.nearest(partition(px, sum, mean), &near)])
+		for _, extra := range [2]int{spaceGlyph, fullGlyph} {
+			if !containsGlyph(cand[:n], extra) {
+				cand[n], n = extra, n+1
+			}
 		}
 	}
-	if nf > 0 {
-		fg = sf.Scale(1 / float64(nf))
-		err -= float64(nf) * fg.Dot3(fg)
+	var fgs, bgs [nearest + 2]RGB
+	var errs [nearest + 2]float64
+	pick := 0
+	for i := range n {
+		fgs[i], bgs[i], errs[i] = fitGlyph(px, sum, sq, &fits[cand[i]])
+		if errs[i] < errs[pick] {
+			pick = i
+		}
 	}
-	if nb > 0 {
-		bg = sb.Scale(1 / float64(nb))
-		err -= float64(nb) * bg.Dot3(bg)
+	best := errs[pick]
+	for i := range n {
+		if errs[i] <= best+holdSlack*cellPixels && sparser(cand[i], cand[pick]) {
+			pick = i
+		}
 	}
-	if nf == 0 {
+	g, fg, bg = cand[pick], fgs[pick], bgs[pick]
+	if prev < 0 || prev == g {
+		return g, fg, bg
+	}
+	pf, pb, perr := fitGlyph(px, sum, sq, &fits[prev])
+	if perr <= best+holdSlack*cellPixels {
+		return prev, pf, pb
+	}
+	return g, fg, bg
+}
+
+// Reports whether a glyph index is among the candidates
+func containsGlyph(cand []int, g int) bool {
+	for _, c := range cand {
+		if c == g {
+			return true
+		}
+	}
+	return false
+}
+
+// Reports whether glyph a covers less of the cell than glyph b, the earlier glyph winning a tie
+func sparser(a, b int) bool {
+	wa, wb := fits[a].weight, fits[b].weight
+	return wa < wb || wa == wb && a < b
+}
+
+// Colors and squared error painting pixels with a glyph, fg weighted by coverage and bg by the rest
+func fitGlyph(px *[cellPixels]RGB, sum RGB, sq float64, f *glyphFit) (fg, bg RGB, err float64) {
+	var t RGB
+	for i := range px {
+		c := f.cov[i]
+		t.R += c * px[i].R
+		t.G += c * px[i].G
+		t.B += c * px[i].B
+	}
+	switch {
+	case f.sum <= 0:
+		bg = sum.Scale(1.0 / cellPixels)
 		fg = bg
-	}
-	if nb == 0 {
+	case f.sum >= cellPixels:
+		fg = sum.Scale(1.0 / cellPixels)
 		bg = fg
+	default:
+		fg = t.Scale(1 / f.sum)
+		bg = sum.Sub3(t).Scale(1 / (cellPixels - f.sum))
 	}
+	d := fg.Sub3(bg)
+	err = sq - 2*bg.Dot3(sum) - 2*d.Dot3(t) + cellPixels*bg.Dot3(bg) + 2*f.sum*bg.Dot3(d) + f.sq*d.Dot3(d)
 	return fg, bg, max(err, 0)
 }
 
-// Error below which pixels paint as one solid color rather than a pattern
-const solidSlack = 0.0025
-
-// Split of pixels into lit and unlit groups with their mean colors and squared error, cut along their widest spread
-func partition(px []RGB) (mask int, fg, bg RGB, err float64) {
-	n := len(px)
-	var mean RGB
-	for _, p := range px {
-		mean = mean.Add(p)
-	}
-	mean = mean.Scale(1 / float64(n))
-	spread, total := 0.0, 0.0
-	far := 0
-	for i, p := range px {
-		d := p.Dist(mean)
-		total += d
-		if d > spread {
+// Lit pixel mask of the best split of pixels into two groups, cut along their widest spread from the mean
+func partition(px *[cellPixels]RGB, sum, mean RGB) uint32 {
+	far, spread := 0, -1.0
+	for i := range px {
+		if d := px[i].Dist(mean); d > spread {
 			spread, far = d, i
 		}
 	}
-	if total <= solidSlack*float64(n)/4 {
-		return 0, mean, mean, total
-	}
 	axis := px[far].Sub3(mean)
-	var order [8]int
-	var proj [8]float64
-	for i, p := range px {
-		order[i] = i
-		proj[i] = p.Sub3(mean).Dot3(axis)
+	var keys [cellPixels]uint64
+	for i := range px {
+		b := math.Float64bits(px[i].Sub3(mean).Dot3(axis))
+		if b>>63 != 0 {
+			b = ^b
+		} else {
+			b |= 1 << 63
+		}
+		keys[i] = b&^(cellPixels-1) | uint64(i)
 	}
-	for i := 1; i < n; i++ {
-		o := order[i]
+	for i := 1; i < cellPixels; i++ {
+		k := keys[i]
 		j := i
-		for ; j > 0 && proj[order[j-1]] > proj[o]; j-- {
-			order[j] = order[j-1]
+		for ; j > 0 && keys[j-1] > k; j-- {
+			keys[j] = keys[j-1]
 		}
-		order[j] = o
+		keys[j] = k
 	}
-	var prefix [9]RGB
-	var prefix2 [9]float64
-	for i := range n {
-		p := px[order[i]]
-		prefix[i+1] = prefix[i].Add(p)
-		prefix2[i+1] = prefix2[i] + p.Dist(RGB{})
-	}
-	best := math.Inf(1)
-	cut := 0
-	for k := 1; k < n; k++ {
-		lo, hi := prefix[k].Scale(1/float64(k)), prefix[n].Sub3(prefix[k]).Scale(1/float64(n-k))
-		errLo := prefix2[k] - float64(k)*lo.Dist(RGB{})
-		errHi := prefix2[n] - prefix2[k] - float64(n-k)*hi.Dist(RGB{})
-		if e := errLo + errHi; e < best {
-			best, cut = e, k
+	var lo RGB
+	best, cut := math.Inf(-1), 1
+	for k := 1; k < cellPixels; k++ {
+		lo = lo.Add(px[keys[k-1]&(cellPixels-1)])
+		hi := sum.Sub3(lo)
+		if s := lo.Dot3(lo)/float64(k) + hi.Dot3(hi)/float64(cellPixels-k); s > best {
+			best, cut = s, k
 		}
 	}
-	bg = prefix[cut].Scale(1 / float64(cut))
-	fg = prefix[n].Sub3(prefix[cut]).Scale(1 / float64(n-cut))
-	for i := cut; i < n; i++ {
-		mask |= 1 << order[i]
+	mask := uint32(0)
+	for _, k := range keys[cut:] {
+		mask |= 1 << (k & (cellPixels - 1))
 	}
-	if mask == (1<<n)-1 {
-		return 0, fg, fg, max(best, 0)
+	return mask
+}
+
+// Table indices of the glyphs whose masks or complements lie fewest bits from the mask, ties to the earlier glyph
+func (l *library) nearest(mask uint32, out *[nearest]int) int {
+	var dist [nearest]int
+	n, worst := 0, cellPixels+1
+	for j, gm := range l.masks {
+		h := bits.OnesCount32(mask ^ gm)
+		h = min(h, cellPixels-h)
+		if h >= worst {
+			continue
+		}
+		k := min(n, nearest-1)
+		for ; k > 0 && dist[k-1] > h; k-- {
+			dist[k], out[k] = dist[k-1], out[k-1]
+		}
+		dist[k], out[k] = h, int(l.ids[j])
+		if n < nearest {
+			n++
+		}
+		if n == nearest {
+			worst = dist[nearest-1]
+		}
 	}
-	return mask, fg, bg, max(best, 0)
+	return n
 }
 
 // Difference of two colors channel by channel

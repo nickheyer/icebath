@@ -100,7 +100,7 @@ func (sc *scene) assign(a *actor, d duty) {
 		a.steps = append(a.steps, step{kind: stepFace, yaw: d.face})
 	default:
 		if a.pos.Y > 0.5 {
-			a.steps = append(a.steps, step{kind: stepLeap, to: sc.lay.spireFoot()})
+			a.steps = append(a.steps, step{kind: stepLeap, to: sc.lay.ground(a.pos)})
 		}
 		a.steps = append(a.steps, sc.walkSteps(a, d.at)...)
 		a.steps = append(a.steps, step{kind: stepFace, yaw: d.face})
@@ -274,6 +274,9 @@ func (sc *scene) ambientWeights(a *actor) map[string]float64 {
 	return map[string]float64{"perch": 3, "huddle": 2, "wander": 2, "inspect": 2, "watch": 1, "gaze": 1}
 }
 
+// Behaviors in the order the pick runs through them, so the same roll picks the same one
+var ambientOrder = []string{"wander", "watch", "gaze", "huddle", "inspect", "perch"}
+
 // Picks a behavior for an idle actor whose cooldown ran out, planning its steps
 func (sc *scene) ambient(a *actor, dt float64) {
 	if a.duty.kind != dutyIdle && a.duty.kind != dutyGather || a.busy() || !a.landed || a.gone || a.frozen > 0 || a.exit > 0 {
@@ -308,7 +311,11 @@ func (sc *scene) ambient(a *actor, dt float64) {
 	}
 	pick := sc.rnd.Next() * total
 	name := "wander"
-	for n, w := range weights {
+	for _, n := range ambientOrder {
+		w, ok := weights[n]
+		if !ok {
+			continue
+		}
 		pick -= w
 		if pick <= 0 {
 			name = n
@@ -316,7 +323,7 @@ func (sc *scene) ambient(a *actor, dt float64) {
 		}
 	}
 	a.ambient = name
-	a.cool = 2 + sc.rnd.Next()*4
+	a.cool = 4 + sc.rnd.Next()*6
 	hold := func(state actorState, lo, hi float64) step {
 		return step{kind: stepHold, state: state, dur: lo + sc.rnd.Next()*(hi-lo)}
 	}

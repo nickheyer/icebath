@@ -336,7 +336,7 @@ func (s *Sessions) View(w, h int) string {
 	if s.every {
 		cols = append(cols, render.Column{Title: "PROJECT", Max: 20})
 	}
-	cols = append(cols, render.Column{Title: "MODEL", Max: 24}, render.Column{Title: "MSGS", Right: true}, render.Column{Title: "TOKENS", Right: true})
+	cols = append(cols, render.Column{Title: "MODEL", Max: 24}, render.Column{Title: "MSGS", Right: true}, render.Column{Title: "OUT", Right: true})
 	rows := make([][]string, 0, len(s.rows))
 	for _, info := range s.rows {
 		mark := " "
@@ -363,7 +363,7 @@ func (s *Sessions) View(w, h int) string {
 		if s.every {
 			row = append(row, projectName(info.Labels[session.ProjectLabel]))
 		}
-		rows = append(rows, append(row, info.Model, fmt.Sprint(info.Messages), render.Tokens(info.Usage.Total())))
+		rows = append(rows, append(row, info.Model, fmt.Sprint(info.Messages), render.Tokens(info.Usage.Output)))
 	}
 	table := strings.Split(render.TableMarked(cols, rows, w, s.sel, s.marked, nil, t), "\n")
 	table, s.start = window(table, s.sel, room)

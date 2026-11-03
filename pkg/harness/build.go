@@ -341,16 +341,19 @@ func (a *App) open(ctx context.Context, t Target) (Endpoint, error) {
 			return Endpoint{}, err
 		}
 	}
-	return Endpoint{Profile: prof.Resolved(), Provider: prov, Model: model, Catalog: describe(model, prof.Vendor), System: system}, nil
+	return Endpoint{Profile: prof.Resolved(), Provider: prov, Model: model, Catalog: describe(model, prof), System: system}, nil
 }
 
-// Catalog entry of a model, a bare entry naming the vendor when the catalog does not know it
-func describe(model, vendor string) profiles.Model {
+// Catalog entry of a model, a bare entry naming the vendor when the catalog does not know it, the profile window filling a missing one
+func describe(model string, prof profiles.Profile) profiles.Model {
 	known, ok := profiles.Describe(model)
 	if !ok {
-		known = profiles.Model{Vendor: vendor}
+		known = profiles.Model{Vendor: prof.Vendor}
 	}
 	known.ID = model
+	if known.Context == 0 {
+		known.Context = prof.Window
+	}
 	return known
 }
 
@@ -526,7 +529,7 @@ func (a *App) newAgent(name string, sess *session.Session, ep Endpoint) (*agent.
 		after = kind.PruneAfter
 	}
 	if after > 0 {
-		ag.Hooks = append(ag.Hooks, &agent.Pruner{Session: sess, After: after})
+		ag.Hooks = append(ag.Hooks, &agent.Pruner{Session: sess, After: after, Window: ep.Catalog.Context})
 	}
 	ag.Hooks = append(ag.Hooks, &agent.Dedup{Session: sess, Tools: ag.Tools})
 	// Last so it strips and digests the request exactly as every other hook leaves it
@@ -798,7 +801,7 @@ func withModel(ep Endpoint, id string) Endpoint {
 		return ep
 	}
 	ep.Model = id
-	ep.Catalog = describe(id, ep.Profile.Vendor)
+	ep.Catalog = describe(id, ep.Profile)
 	return ep
 }
 

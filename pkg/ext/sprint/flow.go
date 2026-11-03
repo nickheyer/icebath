@@ -18,7 +18,7 @@ func workflow() harness.Workflow {
 	return harness.Workflow{
 		Name:        Name,
 		Title:       "Sprint",
-		Description: "a director settles the request, an architect cuts it into tickets, builders build them and a reviewer checks every handoff, all of it shown in the arena",
+		Description: "a director writes the brief, an architect plans the tickets, builders build them and a reviewer checks every handoff, all shown in the arena",
 		Arg:         "request",
 		Run:         run,
 		NextID:      nextID,
@@ -65,6 +65,7 @@ func run(ctx context.Context, f *harness.Flow, request string) error {
 		from := s.restart()
 		s.say(MsgStage, "", "", "", "restarting at the "+string(from)+" stage")
 	}
+	s.drive(ctx)
 	r := &runner{cfg: cfg, f: f, s: s, deadline: time.Now().Add(cfg.Limits.Total)}
 	f.Panel(ArenaKey)
 	f.App.Announce(ShowMsg{ID: s.ID})
@@ -77,7 +78,7 @@ func run(ctx context.Context, f *harness.Flow, request string) error {
 		done, total := s.Snapshot().Progress()
 		f.Notify(harness.Success, fmt.Sprintf("%s done, %d of %d tickets shipped", s.ID, done, total))
 	case errors.Is(err, context.Canceled):
-		f.Notify(harness.Warn, s.ID+" stopped, it can be restarted from the arena")
+		f.Notify(harness.Warn, s.ID+" stopped, restart it from the arena")
 	default:
 		f.Notify(harness.Error, s.ID+" failed: "+err.Error())
 	}
@@ -126,12 +127,12 @@ func (r *runner) stages(ctx context.Context) error {
 // Director settles the brief with the person
 func (r *runner) brief(ctx context.Context) error {
 	s := r.s
-	s.enter(StageBrief, "settling the brief")
+	s.enter(StageBrief, "writing the brief")
 	d, err := r.member(ctx, RoleDirector, 0)
 	if err != nil {
 		return err
 	}
-	s.task(d, "", "settling the brief")
+	s.task(d, "", "writing the brief")
 	defer s.task(d, "", "")
 	v, _, err := r.persist(ctx, d, func() (any, protocol.Response, error) {
 		return r.exchange(ctx, d, directorOpening(s.Snapshot().Request, r.cfg.Interactive), ToolBrief, r.cfg.Limits.Brief, nil)
@@ -148,12 +149,12 @@ func (r *runner) brief(ctx context.Context) error {
 // Architect cuts the brief into tickets
 func (r *runner) plan(ctx context.Context) error {
 	s := r.s
-	s.enter(StagePlan, "cutting the plan")
+	s.enter(StagePlan, "planning the tickets")
 	a, err := r.member(ctx, RoleArchitect, 0)
 	if err != nil {
 		return err
 	}
-	s.task(a, "", "cutting the plan")
+	s.task(a, "", "planning the tickets")
 	defer s.task(a, "", "")
 	snap := s.Snapshot()
 	v, _, err := r.persist(ctx, a, func() (any, protocol.Response, error) {
@@ -186,11 +187,7 @@ func (r *runner) build(ctx context.Context) error {
 	if _, err := r.member(ctx, RoleReviewer, 0); err != nil {
 		return err
 	}
-	n := r.cfg.Team.Builders
-	if !r.cfg.Team.Parallel {
-		n = 1
-	}
-	n = min(n, max(len(s.Snapshot().Tickets), 1))
+	n := builderCount(r.cfg.Team, len(s.Snapshot().Tickets))
 	idle := make([]*Member, 0, n)
 	for i := range n {
 		m, err := r.member(ctx, RoleBuilder, i)
@@ -225,7 +222,7 @@ func (r *runner) build(ctx context.Context) error {
 			continue
 		}
 		done, total := s.Snapshot().Progress()
-		s.setStatus(fmt.Sprintf("building, %d of %d tickets done, %d in hand", done, total, active))
+		s.setStatus(fmt.Sprintf("building, %d of %d tickets done, %d in progress", done, total, active))
 		select {
 		case res := <-results:
 			active--
@@ -248,6 +245,15 @@ func (r *runner) build(ctx context.Context) error {
 	return nil
 }
 
+// Builders the build stage staffs for the tickets, one while the team works in series
+func builderCount(t Team, tickets int) int {
+	n := t.Builders
+	if !t.Parallel {
+		n = 1
+	}
+	return min(n, max(tickets, 1))
+}
+
 // Waits for the builders still working once the stage ends early and hands back why it ended
 func drain(results chan buildResult, active int, err error) error {
 	for ; active > 0; active-- {
@@ -263,18 +269,18 @@ func (r *runner) buildTicket(ctx context.Context, m *Member, t *Ticket) buildRes
 	s.update(t, func(t *Ticket) { t.Status, t.Builder, t.Started, t.Err = TicketActive, m.Name, time.Now(), "" })
 	s.task(m, t.ID, "building "+t.ID)
 	defer s.task(m, "", "")
-	s.say(MsgAssign, reviewer.Name, m.Name, t.ID, "take "+t.ID+" "+t.Title)
+	s.say(MsgAssign, "", m.Name, t.ID, "take "+t.ID+" "+t.Title)
 	snap := s.Snapshot()
-	text := builderOpening(snap.Brief, snap.Plan, snap.Tickets, snapTicket(snap, t.ID))
-	if m.Live.Session.Len() > 0 {
-		text = builderNext(snapTicket(snap, t.ID), snap.Tickets)
+	text := builderOpening(snap.Brief, snap.Plan, snap.Tickets, snapTicket(snap, t.ID), snap.Members...)
+	if briefed(m.Live.Session) {
+		text = builderNext(snapTicket(snap, t.ID), snap.Tickets, snap.Members...)
 	}
 	check := func(v any) error {
 		if h := v.(Handoff); h.Ticket != t.ID {
 			return fmt.Errorf("your ticket is %s, hand that one off", t.ID)
 		}
 		if st := s.statusOf(t); st != TicketActive {
-			return fmt.Errorf("%s is %s, not in hand, end your turn", t.ID, st)
+			return fmt.Errorf("%s is %s, not in progress, end your turn", t.ID, st)
 		}
 		return nil
 	}
@@ -287,7 +293,7 @@ func (r *runner) buildTicket(ctx context.Context, m *Member, t *Ticket) buildRes
 		}
 		h := v.(Handoff)
 		s.update(t, func(t *Ticket) { t.Status, t.Report = TicketReview, h.Summary })
-		s.task(m, t.ID, "waiting for the verdict on "+t.ID)
+		s.task(m, t.ID, "waiting for review of "+t.ID)
 		s.say(MsgHandoff, m.Name, reviewer.Name, t.ID, string(h.Status)+": "+firstLine(h.Summary))
 		d, err := r.review(ctx, reviewer, m, t, h)
 		if err != nil {
@@ -297,7 +303,7 @@ func (r *runner) buildTicket(ctx context.Context, m *Member, t *Ticket) buildRes
 		switch d.Verdict {
 		case VerdictAccepted:
 			s.update(t, func(t *Ticket) { t.Status, t.Finished, t.Err = TicketDone, time.Now(), "" })
-			s.task(m, t.ID, "closing out "+t.ID)
+			s.task(m, t.ID, "closing "+t.ID)
 			r.tell(ctx, m, verdictText(d))
 			return buildResult{m: m}
 		case VerdictFailed:

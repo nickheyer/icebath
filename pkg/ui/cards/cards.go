@@ -2,6 +2,7 @@
 package cards
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tool"
 	"github.com/nickheyer/icebath/pkg/tool/files"
 	"github.com/nickheyer/icebath/pkg/tool/shell"
+	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -58,6 +60,10 @@ type Env struct {
 	Extensions func() []Extension
 	// Version of the program, handed to the shells of terminal windows
 	Version string
+	// Terminal graphics as probed, what the terminal draws and how big its cells are
+	Graphics *gfx.Terminal
+	// Hands a message to the program from outside its update loop
+	Send func(tea.Msg)
 }
 
 // Loaded extension as the config tab lists it

@@ -14,6 +14,11 @@ func team(tools []string, must string, extra ...string) *prompt.Harness {
 	return &prompt.Harness{Reader: "the person watching the arena", Speaker: "the sprint", Gatekeeper: "the person", Tools: tools, SharedTree: true, Must: must, Extra: extra}
 }
 
+// Rule on talking to the team, naming the tool that alone ends the stage
+func talk(stageTool string) string {
+	return ToolMessage + " sends a short message to a member by name, to " + toTeam + " for every other member, or to " + Person + " for the person watching. Use it to settle an interface, ask the architect about the plan, ask the builder of a ticket for a change in a file it owns with the exact change, tell a dependent builder what you exported, or warn the reviewer. Answers and messages from the team arrive as user messages opening with " + strings.TrimSpace(chatHead) + ", so keep working meanwhile. A message never ends your stage, only " + stageTool + " does."
+}
+
 // Base prompt of a role, sent in place of the built in one, naming the tools the role is offered
 func roleSystem(role Role, t Team) string {
 	offered, denied := roleTools(role)
@@ -29,7 +34,7 @@ func roleSystem(role Role, t Team) string {
 				"The brief states what to deliver, how to check it and what to leave alone. Findings, diagnoses and designs are the team's work, keep them out.",
 				"Choices settled with the person or on their behalf go in the notes of " + ToolBrief + ".",
 			},
-			Harness: team(offered, "", "The brief stage ends only when you call "+ToolBrief+". A turn that ends without it earns a reminder, nothing more."),
+			Harness: team(offered, "", "The brief stage ends only when you call "+ToolBrief+". A turn that ends without it earns a reminder, nothing more.", talk(ToolBrief)),
 			Writing: &prompt.Writing{Reader: "the person who asked for the sprint"},
 			Closing: []string{"Call " + ToolBrief + " once with the brief. The report at the end is written from the handoffs and verdicts alone, without tool calls."},
 		}.String()
@@ -40,8 +45,9 @@ func roleSystem(role Role, t Team) string {
 				"Outline the tree first, then Grep for the symbols the brief names. Read a file only when those leave a ticket boundary unclear, several at once through file_paths.",
 				"Do not work out the changes. When the brief asks to find problems, cut tickets by area, each telling its builder to find and fix them in the files it owns.",
 				"A ticket states what to deliver and lists every file its builder will touch. No two tickets list the same file, and a file in no ticket is off limits to everyone. Add a dependency only when a ticket cannot start without another.",
+				"Once the plan is handed over, builders may ask you about it during the build stage. Answer each question with " + ToolMessage + " to whoever asked, from the plan and the code, and change no files.",
 			},
-			Harness: team(offered, ToolPlan),
+			Harness: team(offered, ToolPlan, talk(ToolPlan)),
 			Closing: []string{"Call " + ToolPlan + " within 15 tool calls."},
 		}.String()
 	case RoleBuilder:
@@ -49,11 +55,12 @@ func roleSystem(role Role, t Team) string {
 			Identity: []string{"You are a builder on a sprint team.", "You build one ticket, as the ticket and the brief say."},
 			Rules: []string{
 				"Orient with Outline and Grep, Read the files you own once, then change them with Edit, or Write for a new file.",
+				"Write your output early and grow it with Edit as you go. What you read leaves the context as it fills, so put what you learn into the files you own instead of reading again.",
 				"Build with Shell and run only the tests covering the packages the ticket touches, do not re-run tests. The commands and what they showed go in the tested field of " + ToolHandoff + ".",
 				"Call " + ToolHandoff + " when the ticket is done, when you are blocked, or with a question only the reviewer can settle. The verdict arrives as your next message.",
 			},
-			Harness:  team(offered, ToolHandoff),
-			Delivery: &prompt.Delivery{Asked: "the reviewer through " + ToolHandoff, Extra: []string{"Change only the files the ticket owns. A build broken by a file you do not own goes in the handoff, not under your hands."}},
+			Harness:  team(offered, ToolHandoff, talk(ToolHandoff)),
+			Delivery: &prompt.Delivery{Asked: "the reviewer through " + ToolHandoff, Extra: []string{"Change only the files the ticket owns. When you need a change in a file another ticket owns, ask its builder for the exact change with " + ToolMessage + ". A build broken by a file no builder holds goes in the handoff, not under your hands."}},
 		}.String()
 	}
 	rework := "Rework is not allowed, so accept or fail every handoff."
@@ -64,10 +71,10 @@ func roleSystem(role Role, t Team) string {
 		Identity: []string{"You are the reviewer of a sprint team.", "You judge each handoff against its ticket and the brief.", "You do not write code."},
 		Rules: []string{
 			"Done: Read the files the handoff names, not the git diff of the tree, which holds the work of other builders. Build with Shell and run the tests covering them. Accept when the ticket is met and the checks pass. Otherwise send rework naming the file, the gap and what done looks like. Fail only when it cannot be built as planned.",
-			"Blocked or question: decide and answer with guidance. Fail only when the block cannot be cleared.",
+			"Blocked or question: answer quickly with guidance. When the handoff leaves the problem unclear, ask the builder for specifics with " + ToolMessage + " before deciding. Fail only when the block cannot be cleared.",
 			rework,
 		},
-		Harness: team(offered, ToolVerdict),
+		Harness: team(offered, ToolVerdict, talk(ToolVerdict)),
 		Closing: []string{"Call " + ToolVerdict + " once for the ticket named."},
 	}.String()
 }
@@ -81,12 +88,18 @@ func directorOpening(request string, interactive bool) string {
 	return prompt.New().Para("Request:").Raw(request).Para(ask + " Then call " + ToolBrief + ".").String()
 }
 
+// Heading the brief opens with wherever the team reads it
+const briefTitle = "Brief"
+
 // Brief as the team reads it
 func briefDoc(b Brief) *prompt.Doc {
-	return prompt.New().Heading(1, "Brief").Raw(b.Objective).Titled("Acceptance", b.Acceptance...).Titled("Constraints", b.Constraints...).Titled("Leave alone", b.Untouched...).Para("Notes", strings.TrimSpace(b.Notes))
+	return prompt.New().Heading(1, briefTitle).Raw(b.Objective).Titled("Acceptance", b.Acceptance...).Titled("Constraints", b.Constraints...).Titled("Leave alone", b.Untouched...).Para("Notes", strings.TrimSpace(b.Notes))
 }
 
 func briefText(b Brief) string { return briefDoc(b).String() }
+
+// Reports whether a message opens with the brief
+func opensWithBrief(text string) bool { return strings.HasPrefix(text, prompt.H(1, briefTitle)) }
 
 // First message of the architect, the brief and the ticket limit
 func architectOpening(b Brief, maxTickets, builders int) string {
@@ -126,14 +139,53 @@ func ticketDoc(t Ticket) *prompt.Doc {
 		Para("Build it, run its tests, then call " + ToolHandoff + " with what you ran.")
 }
 
-// First message of a builder on a ticket, the brief, the plan, what is already built and its ticket
-func builderOpening(b Brief, p Plan, tickets []Ticket, t Ticket) string {
-	return briefDoc(b).Add(planHead(p)).Add(builtDoc(tickets)).Add(ticketDoc(t)).String()
+// Members as a builder reads them, what each one is for and the ticket each builder holds with its files
+func teamDoc(members []Member, tickets []Ticket, mine string) *prompt.Doc {
+	var items []string
+	for _, m := range members {
+		item := m.Name + ", " + string(m.Role)
+		switch m.Role {
+		case RoleDirector:
+			item += ", settled the brief with the person"
+		case RoleArchitect:
+			item += ", cut the plan, ask it what a ticket means"
+		case RoleReviewer:
+			item += ", judges every handoff"
+			if m.Ticket != "" {
+				item += ", reviewing " + m.Ticket
+			}
+		default:
+			if m.Ticket == "" {
+				item += ", between tickets"
+				break
+			}
+			if m.Ticket == mine {
+				item += ", that is you"
+			}
+			t := Ticket{ID: m.Ticket}
+			for _, have := range tickets {
+				if have.ID == m.Ticket {
+					t = have
+				}
+			}
+			item += ", on " + strings.TrimSpace(t.ID+" "+t.Title)
+			if len(t.Files) > 0 {
+				item += ", owns " + strings.Join(t.Files, ", ")
+			}
+		}
+		items = append(items, item)
+	}
+	return prompt.New().Titled(prompt.H(2, "Team, each reached with "+ToolMessage), items...)
 }
 
-// Message a builder gets when its next ticket comes in the same session
-func builderNext(t Ticket, tickets []Ticket) string {
-	return builtDoc(tickets).Add(ticketDoc(t)).String()
+// First message of a builder on a ticket, the brief, the plan, what is built, the team and its ticket
+func builderOpening(b Brief, p Plan, tickets []Ticket, t Ticket, members ...Member) string {
+	return briefDoc(b).Add(planHead(p)).Add(builtDoc(tickets)).Add(teamDoc(members, tickets, t.ID)).Add(ticketDoc(t)).String()
+}
+
+// Message a builder gets when its next ticket comes in the same session, with the team as it stands
+func builderNext(t Ticket, tickets []Ticket, members ...Member) string {
+	return builtDoc(tickets).Add(teamDoc(members, tickets, t.ID)).Add(ticketDoc(t)).String()
 }
 
 // Message the reviewer gets with a handoff to judge, the brief and the plan ahead of the first
@@ -196,6 +248,42 @@ func wrapUp(toolName string, limit time.Duration) string {
 // Steer that tells a member that ended its turn without calling its tool to call it
 func reminder(toolName string) string {
 	return "Call " + toolName + " now with what you have. Nothing moves until you do."
+}
+
+// Steer that sends a member back to its stage after messages from the team took its turn
+func resume(toolName string) string {
+	return "Messages from the team took your last turn. Go on with your work now and call " + toolName + " when it is done."
+}
+
+// Opening words of every chat a member reads, by which a stage tells that a chat took a turn
+const chatHead = "Message from "
+
+// Chat as its member reads it, who sent it from where, then the text and how to answer
+func chatText(from Member, where string, team bool, text string) string {
+	head := chatHead + from.Name + " (" + string(from.Role) + ", " + where + ")"
+	if team {
+		head += " to the team"
+	}
+	return prompt.New().Para(head + ":").Raw(text).Para("Answer with " + ToolMessage + " to " + from.Name + " when it asks something, no answer is needed otherwise. Then go on with your own work.").String()
+}
+
+// Result a member reads once its message is handed on, who got it and who did not
+func chatSent(reached, missed []string) string {
+	d := prompt.New().Para("Sent to " + strings.Join(reached, ", ") + ". Replies arrive as your next message, keep working meanwhile.")
+	if len(missed) > 0 {
+		d.Para("Not delivered: " + strings.Join(missed, ", ") + ".")
+	}
+	return d.String()
+}
+
+// Result a member reads once its message is shown to the person
+func personSent() string {
+	return "Shown to the person watching the arena. A reply, when they give one, arrives as your next message, keep working meanwhile."
+}
+
+// Steer that tells a member its message never reached the teammate
+func chatLost(to, why string) string {
+	return "Your message to " + to + " did not reach them, " + why + ". Send it again with " + ToolMessage + " or go on without it."
 }
 
 // Steer that tells the director its last turn held no report

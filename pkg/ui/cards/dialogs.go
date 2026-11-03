@@ -91,6 +91,15 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		return nil
 	}}
 	model := &field{key: "model", label: "model", group: "profile", kind: textField, value: written.Model(), help: "Default model, empty takes the provider default or the first model the endpoint lists"}
+	window := &field{key: "window", label: "window", group: "profile", kind: numberField, value: numberText(written.Window), optional: true, step: 4096, start: 32768, help: "Context tokens one request may carry, for models the catalog does not know, empty when the catalog knows them", check: func(v string) error {
+		if strings.TrimSpace(v) == "" {
+			return nil
+		}
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err != nil || n < 0 {
+			return errors.New("window must be a whole number of tokens")
+		}
+		return nil
+	}}
 	endpoint := &field{key: "endpoint", label: "endpoint", group: "endpoint", kind: textField, help: "Base URL such as https://api.example.com/v1"}
 	vendor := &field{key: "vendor", label: "vendor", group: "endpoint", kind: choiceField, help: "Model family, used to list models"}
 	proto := &field{key: "protocol", label: "protocol", group: "endpoint", kind: choiceField, choices: protocols, help: "Wire format of the endpoint"}
@@ -184,7 +193,7 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		provider = pick.value
 		fill(base(), profiles.Profile{})
 	}
-	fields := []*field{pick, name, model, endpoint, vendor, proto, auth, authName, keyFrom, key, promptFrom, system, environment, bare, ghost, thinking, enabled}
+	fields := []*field{pick, name, model, window, endpoint, vendor, proto, auth, authName, keyFrom, key, promptFrom, system, environment, bare, ghost, thinking, enabled}
 	title := "NEW PROFILE"
 	oldName := ""
 	if old != nil {
@@ -204,6 +213,10 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		p.Models = nil
 		if m != "" && !(p.Template != "" && m == b.Model() && len(rest) == 0) {
 			p.Models = append([]string{m}, rest...)
+		}
+		p.Window, _ = strconv.Atoi(strings.TrimSpace(window.value))
+		if p.Window == b.Window {
+			p.Window = 0
 		}
 		p.BaseURL = override(strings.TrimSpace(endpoint.value), b.BaseURL)
 		p.Vendor = override(chosen(vendor), b.Vendor)
@@ -249,6 +262,14 @@ func (c *Config) profileForm(old *harness.Instance, provider string) *Form {
 		}
 		return tea.Batch(cmds...), nil
 	})
+}
+
+// Number as a form field holds it, empty for zero
+func numberText(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
 }
 
 // Tool and pattern of a rule, the pattern empty when the rule names none
