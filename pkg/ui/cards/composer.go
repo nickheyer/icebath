@@ -13,7 +13,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/protocol"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -46,9 +45,9 @@ type Command struct {
 
 // One file attached to the next message
 type attachment struct {
-	Path string
-	Part protocol.Part
-	Size int
+	Path  string
+	Media string
+	Data  []byte
 }
 
 // Candidates offered for the token under the cursor
@@ -478,16 +477,13 @@ func (c *Composer) submit() tea.Cmd {
 		id := c.SessionID
 		return tea.Batch(cmd, func() tea.Msg { return CommandMsg{Session: id, Name: name, Args: args} })
 	}
-	parts := make([]protocol.Part, 0, len(c.attachments)+1)
+	files := make([]Attachment, 0, len(c.attachments))
 	for _, a := range c.attachments {
-		parts = append(parts, a.Part)
-	}
-	if text != "" {
-		parts = append(parts, protocol.Text{Text: text})
+		files = append(files, Attachment{Path: a.Path, MediaType: a.Media, Data: a.Data})
 	}
 	c.attachments = nil
 	id := c.SessionID
-	return tea.Batch(cmd, func() tea.Msg { return SubmitMsg{Session: id, Parts: parts, Text: text} })
+	return tea.Batch(cmd, func() tea.Msg { return SubmitMsg{Session: id, Text: text, Attachments: files} })
 }
 
 var imageTypes = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
@@ -514,7 +510,7 @@ func (c *Composer) attach(path string) tea.Cmd {
 	if err != nil {
 		return wm.Notify(err.Error(), wm.Error)
 	}
-	c.attachments = append(c.attachments, attachment{Path: path, Part: protocol.Image{MediaType: media, Data: data}, Size: len(data)})
+	c.attachments = append(c.attachments, attachment{Path: path, Media: media, Data: data})
 	return wm.Notify("attached "+filepath.Base(path)+" ("+render.Bytes(int64(len(data)))+")", wm.Success)
 }
 
@@ -904,7 +900,7 @@ func (c *Composer) Status() string {
 	if n := len(c.attachments); n > 0 {
 		size := 0
 		for _, a := range c.attachments {
-			size += a.Size
+			size += len(a.Data)
 		}
 		parts = append(parts, itoa(n)+" attached "+render.Bytes(int64(size)))
 	}

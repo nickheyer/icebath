@@ -14,8 +14,6 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/harness"
-	"github.com/nickheyer/icebath/pkg/shell"
 	"github.com/nickheyer/icebath/pkg/term"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -174,8 +172,8 @@ func (t *Terminal) startDir() string {
 	if t.dir != "" {
 		return t.dir
 	}
-	if t.env.Shell != nil {
-		return t.env.Shell.Dir()
+	if t.env.WorkDir != nil {
+		return t.env.WorkDir()
 	}
 	return t.env.Root
 }
@@ -184,7 +182,7 @@ func (t *Terminal) startDir() string {
 func (t *Terminal) command() term.Command {
 	cmd := term.DefaultShell()
 	if line := t.setting("terminal_shell"); line != "" {
-		if words, err := shell.Words(line); err == nil && len(words) > 0 {
+		if words, err := ShellWords(line); err == nil && len(words) > 0 {
 			cmd = term.Command{Path: words[0], Args: words[1:]}
 		}
 	}
@@ -206,7 +204,7 @@ func (t *Terminal) scrollback() int {
 	if n, err := strconv.Atoi(t.setting("terminal_scrollback")); err == nil && n >= 0 {
 		return n
 	}
-	return harness.DefaultScrollback
+	return DefaultScrollback
 }
 
 // Starts the shell off the event loop at the size the window has
