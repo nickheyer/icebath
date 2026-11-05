@@ -222,7 +222,7 @@ type profileRow struct {
 	defModel                                              string
 	fallbacks                                             []string
 	headers                                               map[string]string
-	aggregator, flat, hidden, noListing, noHealth         bool
+	aggregator, hidden, noListing, noHealth               bool
 	vision, noVisionTool, omitTemp                        bool
 	maxTokens                                             int
 	badFormats                                            []string
@@ -237,7 +237,7 @@ func (r profileRow) profile() Profile {
 		Name: r.name, DisplayName: r.display, Description: r.desc, SignupURL: r.signup,
 		BaseURL: r.base, BaseURLEnv: r.baseEnv, ModelsURL: r.modelsURL, Mode: r.mode, AuthType: r.authType,
 		KeyEnv: r.keys, DefaultModel: r.defModel, FallbackModels: r.fallbacks, Headers: r.headers,
-		Local: r.local, Aggregator: r.aggregator, FlatReseller: r.flat, Hidden: r.hidden,
+		Local: r.local, Aggregator: r.aggregator, Hidden: r.hidden,
 		ModelListing: !r.noListing, HealthCheck: !r.noHealth, Vision: r.vision, VisionToolMessages: !r.noVisionTool,
 		OmitTemperature: r.omitTemp, DefaultMaxTokens: r.maxTokens, UnsupportedResponseFormats: r.badFormats,
 		ModelsDevID: r.modelsDev, Hostnames: r.hostnames, PerModelMode: r.perModel,
@@ -249,16 +249,6 @@ func (r profileRow) profile() Profile {
 		p.ModelsURL = strings.TrimRight(p.BaseURL, "/") + "/models"
 	}
 	return p
-}
-
-// Every built in provider assembled from the registry rows, the overlays, and the plugin profiles
-func profileTable() []Profile {
-	rows := append(registryRows(), pluginRows()...)
-	out := make([]Profile, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, r.profile())
-	}
-	return out
 }
 
 // Registry rows in the auto detection priority order hermes scans api key providers
@@ -321,10 +311,10 @@ func registryRows() []profileRow {
 			keys: []string{"AI_GATEWAY_API_KEY"}, aggregator: true, headers: attributionHeaders("IcebathAgent"),
 			defModel: "google/gemini-3-flash", modelsDev: "vercel"},
 		{name: "opencode-zen", display: "OpenCode Zen", base: "https://opencode.ai/zen/v1", baseEnv: "OPENCODE_ZEN_BASE_URL",
-			keys: []string{"OPENCODE_ZEN_API_KEY"}, aggregator: true, flat: true, headers: attributionHeaders("IcebathAgent"),
+			keys: []string{"OPENCODE_ZEN_API_KEY"}, aggregator: true, headers: attributionHeaders("IcebathAgent"),
 			defModel: "gemini-3-flash", modelsDev: "opencode", perModel: func(m string) APIMode { return OpenCodeModelMode("opencode-zen", m) }},
 		{name: "opencode-go", display: "OpenCode Go", base: "https://opencode.ai/zen/go/v1", baseEnv: "OPENCODE_GO_BASE_URL",
-			keys: []string{"OPENCODE_GO_API_KEY"}, aggregator: true, flat: true, headers: attributionHeaders("IcebathAgent"),
+			keys: []string{"OPENCODE_GO_API_KEY"}, aggregator: true, headers: attributionHeaders("IcebathAgent"),
 			defModel: "glm-5", noVisionTool: true, perModel: func(m string) APIMode { return OpenCodeModelMode("opencode-go", m) }},
 		{name: "kilocode", display: "Kilo Code", base: "https://api.kilo.ai/api/gateway", baseEnv: "KILOCODE_BASE_URL",
 			keys: []string{"KILOCODE_API_KEY"}, aggregator: true, defModel: "google/gemini-3.6-flash", modelsDev: "kilo"},

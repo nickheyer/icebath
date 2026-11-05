@@ -253,20 +253,163 @@ func (m *rpcMutex) Unlock() { <-m.slot() }
 // Reports whether an RPC holds the mutex
 func (m *rpcMutex) Locked() bool { return len(m.slot()) == 1 }
 
-// Seconds a final shutdown spends cancelling loop tasks before giving up on resistant ones
-const mcpLoopDrainTimeout = 3 * time.Second
+// Seconds a final shutdown spends cancelling loop tasks before giving up on resistant ones, swapped by tests
+var mcpLoopDrainTimeout = 3 * time.Second
+
+// Seconds a stop waits for the loop goroutine to exit after the drain
+const mcpLoopJoinTimeout = 5 * time.Second
 
 // Error a task scheduled onto a stopped loop fails with, suppressed by the loop exception handler
 var errLoopClosed = errors.New("MCP event loop is closed")
 
-// mcpLoop is the task group every MCP server goroutine and scheduled call runs in
+// mcpLoop is the task group every MCP server goroutine runs in plus the serial callback executor owning it
 type mcpLoop struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	wg      sync.WaitGroup
-	pending int
-	stopped bool
+	ctx      context.Context
+	cancel   context.CancelFunc
+	mu       sync.Mutex
+	wg       sync.WaitGroup
+	pending  int
+	stopped  bool
+	ready    []func()
+	wake     *sync.Cond
+	stopping bool
+	running  bool
+	closed   bool
+	exited   chan struct{}
+}
+
+// Builds a loop and starts its executor goroutine
+func newMCPLoop() *mcpLoop {
+	ctx, cancel := context.WithCancel(context.Background())
+	l := &mcpLoop{ctx: ctx, cancel: cancel}
+	l.wake = sync.NewCond(&l.mu)
+	exited := l.markRunning()
+	go l.runForever(exited)
+	return l
+}
+
+// Flags the executor running and returns the channel its run closes on exit
+func (l *mcpLoop) markRunning() chan struct{} {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.running = true
+	l.exited = make(chan struct{})
+	return l.exited
+}
+
+// Runs queued callbacks one batch at a time until a stop lands, finishing the batch that holds it
+func (l *mcpLoop) runForever(exited chan struct{}) {
+	defer close(exited)
+	for {
+		l.mu.Lock()
+		for len(l.ready) == 0 && !l.stopping {
+			l.wake.Wait()
+		}
+		batch := l.ready
+		l.ready = nil
+		l.mu.Unlock()
+		for _, cb := range batch {
+			runLoopCallback(cb)
+		}
+		l.mu.Lock()
+		if l.stopping {
+			l.stopping, l.running = false, false
+			l.mu.Unlock()
+			return
+		}
+		l.mu.Unlock()
+	}
+}
+
+// Runs one callback, routing a panic through the loop exception handler
+func runLoopCallback(cb func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			loopExceptionHandler(r)
+		}
+	}()
+	cb()
+}
+
+// Queues cb behind every earlier callback and task start, an error once the loop is closed
+func (l *mcpLoop) callSoon(cb func()) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return errLoopClosed
+	}
+	l.ready = append(l.ready, cb)
+	l.wake.Signal()
+	return nil
+}
+
+// Makes the executor exit after the batch it is running
+func (l *mcpLoop) stop() {
+	l.mu.Lock()
+	l.stopping = true
+	l.wake.Signal()
+	l.mu.Unlock()
+}
+
+// True while the executor goroutine runs callbacks
+func (l *mcpLoop) isRunning() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.running
+}
+
+// True once the loop was closed
+func (l *mcpLoop) isClosed() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.closed
+}
+
+// Channel the latest executor run closes when it exits
+func (l *mcpLoop) exitedChan() chan struct{} {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.exited
+}
+
+// Closes a stopped loop and drops its queued callbacks, an error while the executor still runs
+func (l *mcpLoop) close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.running {
+		return errors.New("Cannot close a running event loop")
+	}
+	if l.closed {
+		return nil
+	}
+	l.closed = true
+	l.ready = nil
+	return nil
+}
+
+// Outcome of a scheduled drain, the error carrying a panic the drain raised
+type drainResult struct{ err error }
+
+// Queues the drain then the stop as one loop owned sequence, the channel delivering the drain outcome
+func (l *mcpLoop) scheduleDrainAndStop() (<-chan drainResult, error) {
+	done := make(chan drainResult, 1)
+	err := l.callSoon(func() {
+		go func() {
+			var res drainResult
+			defer func() {
+				if r := recover(); r != nil {
+					res.err = fmt.Errorf("%v", r)
+				}
+				_ = l.callSoon(l.stop)
+				done <- res
+			}()
+			drainMCPLoopTasks(l, mcpLoopDrainTimeout)
+		}()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return done, nil
 }
 
 // Loop the MCP tasks run in, guarded by mcpMu
@@ -280,47 +423,53 @@ func loopExceptionHandler(r any) {
 	mcpLogger().Error(fmt.Sprintf("Unhandled exception in MCP loop task: %v", r))
 }
 
-// Runs fn as a loop task, false when the loop has stopped accepting work
+// Queues the start of fn as a loop task behind earlier callbacks, false when the loop stopped accepting work
 func (l *mcpLoop) spawn(ctx context.Context, fn func(ctx context.Context)) bool {
 	l.mu.Lock()
-	if l.stopped {
-		l.mu.Unlock()
+	defer l.mu.Unlock()
+	if l.stopped || l.closed {
 		return false
 	}
 	l.pending++
 	l.wg.Add(1)
-	l.mu.Unlock()
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				loopExceptionHandler(r)
-			}
-			l.mu.Lock()
-			l.pending--
-			l.mu.Unlock()
-			l.wg.Done()
-		}()
-		fn(ctx)
-	}()
+	l.ready = append(l.ready, func() { go l.runTask(ctx, fn) })
+	l.wake.Signal()
 	return true
 }
 
-// Starts the MCP loop when it is not running
+// Runs one task body and settles the pending count however it ends
+func (l *mcpLoop) runTask(ctx context.Context, fn func(ctx context.Context)) {
+	defer func() {
+		if r := recover(); r != nil {
+			loopExceptionHandler(r)
+		}
+		l.mu.Lock()
+		l.pending--
+		l.mu.Unlock()
+		l.wg.Done()
+	}()
+	fn(ctx)
+}
+
+// Starts a fresh MCP loop unless one is already running
 func ensureMCPLoop() {
 	mcpMu.Lock()
 	defer mcpMu.Unlock()
-	if mcpLoopState != nil {
+	if mcpLoopState != nil && mcpLoopState.isRunning() {
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	mcpLoopState = &mcpLoop{ctx: ctx, cancel: cancel}
+	mcpLoopState = newMCPLoop()
 }
 
 // Loop when it is running, nil otherwise
 func runningLoop() *mcpLoop {
 	mcpMu.Lock()
-	defer mcpMu.Unlock()
-	return mcpLoopState
+	l := mcpLoopState
+	mcpMu.Unlock()
+	if l == nil || !l.isRunning() {
+		return nil
+	}
+	return l
 }
 
 // Starts a long lived task on the running loop, an error when the loop is down
@@ -329,12 +478,30 @@ func spawnOnLoop(ctx context.Context, fn func(ctx context.Context)) error {
 	if l == nil {
 		return errors.New("MCP event loop is not running")
 	}
-	taskCtx := wrapWithDashboardOAuthFlow(ctx, wrapWithHomeOverride(ctx, l.ctx))
+	taskCtx := wrapWithDashboardOAuthFlow(ctx, wrapWithHomeOverride(ctx, newLoopTaskContext(ctx, l.ctx)))
 	if !l.spawn(taskCtx, fn) {
 		return errors.New("MCP event loop unavailable (failed to schedule)")
 	}
 	return nil
 }
+
+// Lives as long as the loop and reads every caller value except the worker identity
+type loopTaskContext struct {
+	context.Context
+	values context.Context
+}
+
+// Loop task context holding a copy of the caller's values like a Python task scheduled from another thread
+func newLoopTaskContext(caller, loop context.Context) context.Context {
+	values := tools.WithActingFor(tools.WithWorker(context.WithoutCancel(caller), 0), 0)
+	return loopTaskContext{Context: loop, values: values}
+}
+
+// Caller's value under key, the worker identity reading as the loop's own
+func (c loopTaskContext) Value(key any) any { return c.values.Value(key) }
+
+// Runs f once the loop context ends so derived contexts need no watcher goroutine
+func (c loopTaskContext) AfterFunc(f func()) func() bool { return context.AfterFunc(c.Context, f) }
 
 // Task context carrying the caller's home override, the task context itself when there is none
 func wrapWithHomeOverride(caller, task context.Context) context.Context {
@@ -383,7 +550,7 @@ func runOnLoop[T any](ctx context.Context, timeout time.Duration, fn func(ctx co
 	if l == nil {
 		return zero, errors.New("MCP event loop is not running")
 	}
-	taskCtx, cancel := context.WithCancel(wrapWithDashboardOAuthFlow(ctx, wrapWithHomeOverride(ctx, l.ctx)))
+	taskCtx, cancel := context.WithCancel(wrapWithDashboardOAuthFlow(ctx, wrapWithHomeOverride(ctx, newLoopTaskContext(ctx, l.ctx))))
 	type outcome struct {
 		v   T
 		err error
@@ -394,6 +561,7 @@ func runOnLoop[T any](ctx context.Context, timeout time.Duration, fn func(ctx co
 		done <- outcome{v, err}
 	}) {
 		cancel()
+		mcpLogger().Debug(fmt.Sprintf("MCP scheduling failed: %s", errLoopClosed))
 		return zero, errors.New("MCP event loop unavailable (failed to schedule)")
 	}
 	start := time.Now()
@@ -472,7 +640,44 @@ func stopMCPLoop(onlyIfIdle bool) bool {
 	if l == nil {
 		return true
 	}
-	drainMCPLoopTasks(l, mcpLoopDrainTimeout)
+	var future <-chan drainResult
+	if l.isRunning() {
+		done, err := l.scheduleDrainAndStop()
+		if err != nil {
+			mcpLogger().Warn(fmt.Sprintf("MCP loop drain: failed to schedule: %s", excStr(err)))
+		} else {
+			future = done
+			wait := mcpLoopDrainTimeout + time.Second
+			select {
+			case res := <-done:
+				if res.err != nil {
+					mcpLogger().Warn(fmt.Sprintf("Error draining MCP loop tasks: %s", excStr(res.err)))
+				}
+			case <-time.After(wait):
+				mcpLogger().Warn(fmt.Sprintf("Timed out waiting for MCP loop drain after %.1fs", wait.Seconds()))
+			}
+		}
+	} else if !l.isClosed() {
+		if done, err := l.scheduleDrainAndStop(); err != nil {
+			mcpLogger().Warn(fmt.Sprintf("Error draining stopped MCP loop tasks: %s", excStr(err)))
+		} else {
+			l.runForever(l.markRunning())
+			if res := <-done; res.err != nil {
+				mcpLogger().Warn(fmt.Sprintf("Error draining stopped MCP loop tasks: %s", excStr(res.err)))
+			}
+		}
+	}
+	if future == nil && l.isRunning() {
+		_ = l.callSoon(l.stop)
+	}
+	select {
+	case <-l.exitedChan():
+	case <-time.After(mcpLoopJoinTimeout):
+		mcpLogger().Warn(fmt.Sprintf("MCP event loop thread did not stop within %.1fs", mcpLoopJoinTimeout.Seconds()))
+	}
+	if err := l.close(); err != nil {
+		mcpLogger().Warn(fmt.Sprintf("Unable to close MCP event loop cleanly: %s", excStr(err)))
+	}
 	killOrphanedMCPChildren(true, "")
 	return true
 }
@@ -545,13 +750,15 @@ type reconnectable interface {
 	currentSession() *Session
 }
 
-// Asks a server task to rebuild its transport, false when it has no reconnect machinery
+// Asks a server task to rebuild its transport through the loop when it runs, false without reconnect machinery
 func signalReconnect(srv reconnectable) bool {
 	ev := srv.reconnectEvent()
 	if ev == nil {
 		return false
 	}
-	ev.Set()
+	if l := runningLoop(); l == nil || l.callSoon(ev.Set) != nil {
+		ev.Set()
+	}
 	return true
 }
 
@@ -585,16 +792,21 @@ func waitForServerSessionReady(srv reconnectable, old *Session, timeout time.Dur
 
 // Requests a transport rebuild with readiness cleared first and waits for the fresh session
 func signalReconnectAndWait(serverName string, srv reconnectable, opDescription string, timeout time.Duration) bool {
-	if runningLoop() == nil {
+	l := runningLoop()
+	if l == nil {
 		return false
 	}
 	old := srv.currentSession()
 	mcpLogger().Info(fmt.Sprintf("MCP server '%s': %s requesting transport reconnect", serverName, opDescription))
-	if ready := srv.readyEvent(); ready != nil {
-		ready.Clear()
-	}
-	if ev := srv.reconnectEvent(); ev != nil {
-		ev.Set()
+	if l.callSoon(func() {
+		if ready := srv.readyEvent(); ready != nil {
+			ready.Clear()
+		}
+		if ev := srv.reconnectEvent(); ev != nil {
+			ev.Set()
+		}
+	}) != nil {
+		return false
 	}
 	return waitForServerSessionReady(srv, old, timeout)
 }

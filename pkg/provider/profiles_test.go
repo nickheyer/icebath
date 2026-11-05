@@ -82,11 +82,18 @@ func TestHostMandatedAndDetectedModes(t *testing.T) {
 	if DetermineMode("nous", "", "anthropic/claude-sonnet-4.6", "chat") != ModeChatCompletions || DetermineMode("nous", "", "anthropic/claude-sonnet-4.6", "native") != ModeAnthropicMessages {
 		t.Fatal("nous dual wire wrong")
 	}
-	if DetermineMode("opencode-go", "", "claude-sonnet-4.6", "") != ModeAnthropicMessages || DetermineMode("opencode-zen", "", "gpt-5.4", "") != ModeCodexResponses || DetermineMode("opencode-go", "", "glm-5", "") != ModeChatCompletions {
+	goProfile, _ := ProfileFor("opencode-go")
+	zenProfile, _ := ProfileFor("opencode-zen")
+	if goProfile.APIModeForModel("claude-sonnet-4.6", "") != ModeAnthropicMessages || zenProfile.APIModeForModel("gpt-5.4", "") != ModeCodexResponses || goProfile.APIModeForModel("glm-5", "") != ModeChatCompletions {
 		t.Fatal("opencode per model mode wrong")
 	}
-	if DetermineMode("azure-foundry", "https://x.openai.azure.com", "gpt-5-mini", "") != ModeCodexResponses || DetermineMode("azure-foundry", "https://x.openai.azure.com", "llama", "") != ModeChatCompletions {
+	azure, _ := ProfileFor("azure-foundry")
+	if azure.PerModelMode == nil || azure.PerModelMode("gpt-5-mini") != ModeCodexResponses || azure.PerModelMode("llama") != "" || azure.Mode != ModeChatCompletions {
 		t.Fatal("azure foundry model mode wrong")
+	}
+	fakeModelsDevInfo(t, nil)
+	if DetermineMode("opencode-go", "", "claude-sonnet-4.6", "") != ModeChatCompletions || DetermineMode("azure-foundry", "https://x.openai.azure.com", "gpt-5-mini", "") != ModeChatCompletions {
+		t.Fatal("determine_api_mode reads the overlay transport, the per model wire belongs to the profile")
 	}
 	if ParseMode("openai") != ModeChatCompletions || ParseMode("responses") != ModeCodexResponses || ParseMode("garbage") != "" {
 		t.Fatal("ParseMode wrong")

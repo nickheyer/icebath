@@ -51,6 +51,9 @@ func profileContextLength(providerName, model string) int {
 	}
 	profileContextHooksMu.RLock()
 	fn := profileContextLengthHooks[NormalizeProvider(providerName)]
+	if p := getProviderProfile(context.Background(), NormalizeProvider(providerName)); p != nil && p.GetModelContextLengthHook != nil {
+		fn = p.GetModelContextLengthHook
+	}
 	profileContextHooksMu.RUnlock()
 	if fn == nil {
 		return 0
@@ -67,6 +70,9 @@ func profileLiveContextLength(ctx context.Context, providerName, model, apiKey, 
 	}
 	profileContextHooksMu.RLock()
 	fn := profileLiveContextHooks[NormalizeProvider(providerName)]
+	if p := getProviderProfile(context.Background(), NormalizeProvider(providerName)); p != nil && p.LiveContextLengthHook != nil {
+		fn = p.LiveContextLengthHook
+	}
 	profileContextHooksMu.RUnlock()
 	if fn == nil {
 		return 0

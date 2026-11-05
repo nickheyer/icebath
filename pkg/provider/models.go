@@ -32,67 +32,6 @@ func fallbackRows(ids []string) CatalogRows {
 	return CatalogRows{IDs: cloneStrings(ids), Fallback: true}
 }
 
-// ---- plugin profile catalog hooks, registered per home ----
-
-// ProfileCatalogHooks are the catalog seams a plugin profile may supply for one home
-type ProfileCatalogHooks struct {
-	// Curated ids registered as the provider's row of the static catalog
-	StaticModels []string
-	// Credential files whose identity folds into every cached catalog fingerprint
-	CatalogCredentialFiles []string
-	// The provider's own picker catalog, false falls through to the generic profile fetch
-	PickerCatalog func(ctx context.Context, forceRefresh bool) ([]string, bool)
-	// Live model list override, false when the fetch failed or the provider lists nothing
-	FetchModels func(ctx context.Context, apiKey, baseURL string, timeout time.Duration) ([]string, bool)
-	// Answer for a models probe of a base URL this profile owns, owned false means the generic HTTP probe
-	ProbeModels func(ctx context.Context, baseURL, apiKey string, timeout time.Duration) (ids []string, probedURL, resolvedBaseURL string, owned bool)
-	// Drops in process catalog memos on a refresh
-	InvalidateCatalogCache func()
-}
-
-type profileHooksKey struct{ home, provider string }
-
-var (
-	catalogHooksMu sync.RWMutex
-	catalogHooks   = map[profileHooksKey]ProfileCatalogHooks{}
-)
-
-// RegisterProfileCatalogHooks installs a plugin profile's catalog seams for one home
-func RegisterProfileCatalogHooks(h, provider string, hooks ProfileCatalogHooks) {
-	catalogHooksMu.Lock()
-	defer catalogHooksMu.Unlock()
-	catalogHooks[profileHooksKey{home.Key(h), strings.ToLower(strings.TrimSpace(provider))}] = hooks
-}
-
-// UnregisterProfileCatalogHooks removes a home's catalog seams for a provider
-func UnregisterProfileCatalogHooks(h, provider string) {
-	catalogHooksMu.Lock()
-	defer catalogHooksMu.Unlock()
-	delete(catalogHooks, profileHooksKey{home.Key(h), strings.ToLower(strings.TrimSpace(provider))})
-}
-
-func profileCatalogHooksFor(ctx context.Context, provider string) (ProfileCatalogHooks, bool) {
-	catalogHooksMu.RLock()
-	defer catalogHooksMu.RUnlock()
-	hooks, ok := catalogHooks[profileHooksKey{home.Key(home.Dir(ctx)), strings.ToLower(strings.TrimSpace(provider))}]
-	return hooks, ok
-}
-
-// Every provider with hooks registered for the bound home, in name order
-func profileCatalogHookProviders(ctx context.Context) []string {
-	catalogHooksMu.RLock()
-	defer catalogHooksMu.RUnlock()
-	key := home.Key(home.Dir(ctx))
-	var out []string
-	for k := range catalogHooks {
-		if k.home == key {
-			out = append(out, k.provider)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
 // ---- static catalog ----
 
 // Built in catalog rows in the order the detection ladder walks them
@@ -135,8 +74,8 @@ func StaticCatalog(ctx context.Context, provider string) []string {
 	if provider == "" {
 		return []string{}
 	}
-	if hooks, ok := profileCatalogHooksFor(ctx, provider); ok {
-		return cloneStrings(hooks.StaticModels)
+	if p := getProviderProfile(ctx, provider); p != nil {
+		return cloneStrings(p.StaticModels)
 	}
 	return []string{}
 }
@@ -148,11 +87,10 @@ func StaticCatalogProviders(ctx context.Context) []string {
 	for _, p := range out {
 		seen[p] = true
 	}
-	for _, name := range profileCatalogHookProviders(ctx) {
-		hooks, _ := profileCatalogHooksFor(ctx, name)
-		if len(hooks.StaticModels) > 0 && !seen[name] {
-			out = append(out, name)
-			seen[name] = true
+	for _, p := range ListProviders(ctx) {
+		if len(p.StaticModels) > 0 && !seen[p.Name] {
+			out = append(out, p.Name)
+			seen[p.Name] = true
 		}
 	}
 	return out
@@ -1080,12 +1018,13 @@ func catalogFetcherFor(ctx context.Context, normalized string) (catalogFetcher, 
 	if fetcher, ok := providerCatalogFetchers[normalized]; ok {
 		return fetcher, true
 	}
-	hooks, ok := profileCatalogHooksFor(ctx, normalized)
-	if !ok || hooks.PickerCatalog == nil {
+	p := getProviderProfile(ctx, normalized)
+	if p == nil || p.PickerCatalog == nil {
 		return nil, false
 	}
+	hook := p.PickerCatalog
 	return func(ctx context.Context, _ string, forceRefresh bool) (CatalogRows, bool) {
-		ids, ok := hooks.PickerCatalog(ctx, forceRefresh)
+		ids, ok := hook(ctx, forceRefresh)
 		if !ok {
 			return CatalogRows{}, false
 		}
@@ -1098,52 +1037,9 @@ func modelsProfileFor(name string) (Profile, bool) {
 	return ProfileFor(name)
 }
 
-// Default live models listing of a profile, bearer auth plus its default headers
+// The profile's live models listing, its fetch_models hook or the base models endpoint fetch
 func profileFetchModels(ctx context.Context, p Profile, apiKey, baseURL string, timeout time.Duration) ([]string, bool) {
-	if hooks, ok := profileCatalogHooksFor(ctx, p.Name); ok && hooks.FetchModels != nil {
-		return hooks.FetchModels(ctx, apiKey, baseURL, timeout)
-	}
-	if timeout <= 0 {
-		timeout = 8 * time.Second
-	}
-	if !p.ModelListing {
-		return nil, false
-	}
-	callerBase := strings.TrimSpace(baseURL)
-	effectiveBase := callerBase
-	if effectiveBase == "" {
-		effectiveBase = p.BaseURL
-	}
-	customBase := callerBase != "" && strings.TrimRight(callerBase, "/") != strings.TrimRight(p.BaseURL, "/")
-	target := ""
-	if customBase {
-		target = strings.TrimRight(callerBase, "/") + "/models"
-	} else {
-		target = strings.TrimSpace(p.ModelsURL)
-		if target == "" {
-			if effectiveBase == "" {
-				return nil, false
-			}
-			target = strings.TrimRight(effectiveBase, "/") + "/models"
-		}
-	}
-	headers := map[string]string{"Accept": "application/json", "User-Agent": userAgent("icebath-cli")}
-	if apiKey != "" {
-		headers["Authorization"] = "Bearer " + apiKey
-	}
-	for k, v := range p.Headers {
-		headers[k] = v
-	}
-	payload, err := modelsGetJSON(ctx, target, timeout, headers, nil)
-	if err != nil {
-		modelsLog.Debug("fetch_models failed", "provider", p.Name, "error", err)
-		return nil, false
-	}
-	items := payload
-	if doc, ok := asMap(payload); ok {
-		items = doc["data"]
-	}
-	return ChatCatalogIDs(items), true
+	return p.FetchModels(ctx, apiKey, baseURL, timeout)
 }
 
 // Generic live fetch for any registered profile merged with its curated list
@@ -1432,7 +1328,7 @@ func credentialFingerprint(ctx context.Context, provider string) string {
 		}
 	}
 	if profile, ok := modelsProfileForFn(provider); ok && profile.AuthType == AuthTypeExternalProcess {
-		if spec, ok := externalProcessSpecFor(provider); ok {
+		if spec, ok := externalProcessSpecFor(ctx, provider); ok {
 			for _, ev := range append(cloneStrings(spec.CommandEnvVars), spec.ArgsEnvVar) {
 				if ev != "" {
 					parts = append(parts, ev+"="+GetEnvPreferDotenv(env, ev))
@@ -1494,9 +1390,8 @@ func credentialFingerprint(ctx context.Context, provider string) string {
 			mtimePart(rel, filepath.Join(h, rel))
 		}
 		var profileFiles []string
-		for _, name := range profileCatalogHookProviders(ctx) {
-			hooks, _ := profileCatalogHooksFor(ctx, name)
-			profileFiles = append(profileFiles, hooks.CatalogCredentialFiles...)
+		for _, p := range ListProviders(ctx) {
+			profileFiles = append(profileFiles, p.CatalogCredentialFiles...)
 		}
 		files := append([]string{"~/.codex/auth.json", "~/.claude/.credentials.json"}, profileFiles...)
 		files = append(files, "~/.minimax/credentials.json")
@@ -1664,10 +1559,8 @@ func CachedProviderModelIDs(ctx context.Context, provider string, opts CachedMod
 func invalidateProviderCatalogMemos(ctx context.Context) {
 	ClearCatalogFetchBackoff(ctx)
 	clearOllamaLocalCaches()
-	for _, name := range profileCatalogHookProviders(ctx) {
-		if hooks, ok := profileCatalogHooksFor(ctx, name); ok && hooks.InvalidateCatalogCache != nil {
-			hooks.InvalidateCatalogCache()
-		}
+	for _, p := range ListProviders(ctx) {
+		p.InvalidateCatalogCache()
 	}
 }
 
@@ -1853,11 +1746,9 @@ func ProbeAPIModels(ctx context.Context, apiKey, baseURL string, timeout time.Du
 	if normalized == "" {
 		return ProbeResult{}
 	}
-	if owner, ok := profileForHost(normalized); ok {
-		if hooks, ok := profileCatalogHooksFor(ctx, owner.Name); ok && hooks.ProbeModels != nil {
-			if ids, probedURL, resolvedBase, owned := hooks.ProbeModels(ctx, normalized, apiKey, timeout); owned {
-				return ProbeResult{Models: ids, Found: ids != nil, ProbedURL: probedURL, ResolvedBaseURL: resolvedBase}
-			}
+	if owner, ok := ProfileForHost(ctx, normalized, true); ok {
+		if owned := owner.ProbeModels(ctx, normalized, apiKey, timeout); owned != nil {
+			return ProbeResult{Models: owned.IDs, Found: owned.Listed, ProbedURL: owned.ProbedURL, ResolvedBaseURL: owned.ResolvedBaseURL}
 		}
 	}
 	alternateBase := normalized + "/v1"

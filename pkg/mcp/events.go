@@ -53,7 +53,7 @@ var terminalRefreshCodes = map[int]bool{eventCodeForbidden: true, eventCodeNotFo
 // Wake channels of the running refresh loops by server name
 var (
 	refreshWakersMu sync.Mutex
-	refreshWakers   = map[string]map[chan struct{}]bool{}
+	refreshWakers   = map[string]map[chan struct{}]*mcpLoop{}
 )
 
 // Reports whether a server opted into the MCP events extension
@@ -510,10 +510,15 @@ func subscribeRoute(ctx context.Context, sess *Session, h, routeName string, rou
 func wakeRefreshLoops(serverName string) {
 	refreshWakersMu.Lock()
 	defer refreshWakersMu.Unlock()
-	for wake := range refreshWakers[serverName] {
-		select {
-		case wake <- struct{}{}:
-		default:
+	for wake, loop := range refreshWakers[serverName] {
+		set := func() {
+			select {
+			case wake <- struct{}{}:
+			default:
+			}
+		}
+		if loop == nil || loop.callSoon(set) != nil {
+			set()
 		}
 	}
 }
@@ -591,12 +596,12 @@ var refreshPass = refreshServerSubscriptions
 
 // Keeps the server's event subscriptions alive for the life of one session until ctx ends
 func runRefreshLoop(ctx context.Context, srv *serverTask) {
-	wake := make(chan struct{}, 1)
+	wake, owner := make(chan struct{}, 1), runningLoop()
 	refreshWakersMu.Lock()
 	if refreshWakers[srv.name] == nil {
-		refreshWakers[srv.name] = map[chan struct{}]bool{}
+		refreshWakers[srv.name] = map[chan struct{}]*mcpLoop{}
 	}
-	refreshWakers[srv.name][wake] = true
+	refreshWakers[srv.name][wake] = owner
 	refreshWakersMu.Unlock()
 	defer func() {
 		refreshWakersMu.Lock()

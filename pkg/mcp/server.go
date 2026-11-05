@@ -750,11 +750,11 @@ func (s *serverTask) logPark(line string) {
 
 // Drops the tools and waits for a revival, self probing on a timer, true when shutdown came instead
 func (s *serverTask) park(ctx context.Context, revivalReason string) bool {
+	s.deregisterTools(ctx)
 	s.mu.Lock()
 	s.wasParked = true
 	s.parkReason = revivalReason
 	s.mu.Unlock()
-	s.deregisterTools(ctx)
 	s.reconnect.Clear()
 	paused := false
 	for {

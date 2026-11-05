@@ -1,12 +1,13 @@
 package provider
 
 import (
+	"context"
 	"net"
 	"net/url"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Wire protocols routed by providers whose adapters register their own mode constants
@@ -46,7 +47,6 @@ type Profile struct {
 	Headers                    map[string]string
 	Local                      bool
 	Aggregator                 bool
-	FlatReseller               bool
 	Hidden                     bool
 	ModelListing               bool
 	HealthCheck                bool
@@ -59,6 +59,113 @@ type Profile struct {
 	Hostnames                  []string
 	PerModelMode               func(model string) APIMode
 	AmbientCredentials         bool
+
+	SupportsStreaming          *bool
+	SupportsPromptCacheKey     bool
+	NativeReasoningDetailsType string
+	ProcessCommand             string
+	ProcessArgs                []string
+	ProcessCommandEnvVars      []string
+	ProcessArgsEnvVar          string
+	ModelAliases               map[string]string
+	Hostname                   string
+	LazyHeaders                *LazyHeaders
+	FixedTemperature           *float64
+	DefaultAuxModel            string
+	ModelCapabilities          map[string]map[string]any
+	AccountCard                map[string]string
+	MetadataHostnames          []string
+	MessageCarrierOpaque       string
+	MessageCarrierText         string
+	ReplaysToolCallSignatures  bool
+	StaticModels               []string
+	CatalogCredentialFiles     []string
+	PickerAfter                string
+	PickerGroup                []string
+	CatalogAliases             bool
+	Overlay                    *IcebathOverlay
+	OverlayAliases             []string
+	RegistryAuthType           string
+	RegistryAfter              string
+
+	// Responses wire flags stored so the zero value keeps the upstream defaults
+	ResponsesDropReplayItemIDs       bool
+	ResponsesOmitPromptCacheKey      bool
+	ResponsesIssuer                  string
+	ResponsesDistrustCompletedStatus bool
+	ResponsesNoNativeCompaction      bool
+	ResponsesReasoningFromProfile    bool
+
+	AuthHandler           func(action string, args []string, provider string) (bool, error)
+	RefreshCredential     func(entry PooledCredential) (map[string]any, error)
+	ClassifyAPIError      ClassifierHook
+	AccountStatus         func(ctx context.Context) (any, error)
+	StartDeviceLogin      func(ctx context.Context) (any, error)
+	PollDeviceLogin       func(ctx context.Context, state any) (any, error)
+	SaveDeviceLogin       func(ctx context.Context, result any) error
+	ModelSetupFlow        func(ctx context.Context, cfg any, currentModel string, args any) (any, error)
+	SetupReasoningEfforts func(model string) any
+	PickerCatalog         func(ctx context.Context, forceRefresh bool) ([]string, bool)
+
+	// Hook overrides, a nil hook runs the upstream default body
+	FetchAccountUsageHook               func(ctx context.Context, baseURL, apiKey string) (*AccountUsageSnapshot, error)
+	ResolveAuxModelHook                 func(vision bool) string
+	GetHostnameHook                     func() string
+	PrepareMessagesHook                 func(messages []map[string]any) []map[string]any
+	BuildExtraBodyHook                  func(sessionID string, context map[string]any) map[string]any
+	DefaultReasoningConfigHook          func(model string) *Reasoning
+	BuildAPIKwargsExtrasHook            func(reasoning *Reasoning, context map[string]any) (map[string]any, map[string]any)
+	BuildClientKwargsExtrasHook         func(context map[string]any) map[string]any
+	DefaultVisionModelHook              func() string
+	GetModelContextLengthHook           ProfileContextLengthHook
+	GetUsageCostHook                    UsageCostHook
+	GetMaxTokensHook                    func(model string) int
+	SupportedReasoningEffortsHook       func(model string) ([]string, bool)
+	APIModeForModelHook                 PerModelAPIModeHook
+	ClientHeadersHook                   func(baseURL, apiKey string, hasImages bool) map[string]string
+	RequestHeadersHook                  func(baseURL, model string, userInitiated bool) map[string]string
+	MaxTokensParamHook                  func(baseURL, model string) string
+	ListedHook                          func(ctx context.Context) (bool, error)
+	CreateClientHook                    func(ctx context.Context, clientKwargs map[string]any) (Client, error)
+	SetupStatusHook                     func(ctx context.Context, kwargs map[string]any) (map[string]any, error)
+	DiscoverModelsHook                  func(ctx context.Context, kwargs map[string]any) ([]map[string]any, error)
+	FetchModelsHook                     func(ctx context.Context, apiKey, baseURL string, timeout time.Duration) ([]string, bool)
+	LiveContextLengthHook               ProfileLiveContextLengthHook
+	NormalizeModelIDHook                ModelIDNormalizer
+	ResolveAPIKeySecretHook             APIKeySecretResolver
+	RuntimeBaseURLHook                  RuntimeBaseURLResolver
+	PreparePoolEntryHook                func(entry *PooledCredential, apiKey string) string
+	SeedPoolCredentialsHook             func(suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any
+	RemoveCredentialSourceHook          func(source string) ([]string, []string, bool)
+	RefreshRuntimeCredentialsHook       func(ctx context.Context, reason string) (apiKey, baseURL string, ok bool, err error)
+	IsStaleCredentialErrorHook          func(statusCode int, message string) bool
+	CredentialRefreshNoticeHook         func(reason string) string
+	RequestRejectionHintHook            func(statusCode int, baseURL string) []string
+	ExternalAuthEvidenceHook            func() (verified bool, source string, ok bool)
+	MissingCredentialsHintHook          func() string
+	ReasoningPayloadHook                func(model string, r Reasoning, baseURL string) map[string]any
+	ReplayMessageCarriersHook           func(values map[string]any, model, baseURL string) map[string]any
+	ReplaysFunctionThoughtSignatureHook func(model, baseURL string) bool
+	ProbeModelsHook                     func(ctx context.Context, baseURL, apiKey string, timeout time.Duration) *ModelsProbe
+	InvalidateCatalogCacheHook          func()
+}
+
+// Overlay fields for a provider's models.dev keyed definition
+type IcebathOverlay struct {
+	Transport       string
+	IsAggregator    bool
+	AuthType        string
+	ExtraEnvVars    []string
+	BaseURLOverride string
+	BaseURLEnvVar   string
+}
+
+// Result of a provider owned models probe, IDs nil with Listed false when the probe failed
+type ModelsProbe struct {
+	IDs             []string
+	Listed          bool
+	ProbedURL       string
+	ResolvedBaseURL string
 }
 
 // AuthKindOf maps a hermes auth_type literal onto the route credential style
@@ -97,68 +204,99 @@ func (p Profile) KeyEnvNames() []string {
 }
 
 var (
-	profilesOnce  sync.Once
-	profilesList  []Profile
-	profilesByKey map[string]int
-	aliasIndex    map[string]string
+	staticAliasOnce  sync.Once
+	staticAliasIndex map[string]string
+	aliasMemoMu      sync.Mutex
+	aliasMemo        = map[string]aliasMemoEntry{}
 )
 
-func buildProfiles() {
-	profilesList = profileTable()
-	profilesByKey = make(map[string]int, len(profilesList))
-	aliasIndex = make(map[string]string, len(profilesList)*4)
-	for i := range profilesList {
-		p := &profilesList[i]
-		if p.Auth == "" {
-			p.Auth = AuthKindOf(p.AuthType)
+type aliasMemoEntry struct {
+	generation int64
+	index      map[string]string
+}
+
+// Static alias table keyed by alias
+func staticAliases() map[string]string {
+	staticAliasOnce.Do(func() {
+		staticAliasIndex = map[string]string{}
+		for canon, aliases := range staticAliasGroups {
+			for _, a := range aliases {
+				staticAliasIndex[a] = canon
+			}
 		}
-		if p.AuthType == "" {
-			p.AuthType = AuthTypeAPIKey
-		}
-		if p.Mode == "" {
-			p.Mode = ModeChatCompletions
-		}
-		profilesByKey[p.Name] = i
+	})
+	return staticAliasIndex
+}
+
+// Aliases of the bound home's registered profiles, the first profile claiming an alias keeping it
+func profileAliasIndex(ctx context.Context) map[string]string {
+	key, gen := BoundRegistryKey(ctx)
+	aliasMemoMu.Lock()
+	if m, ok := aliasMemo[key]; ok && m.generation == gen {
+		aliasMemoMu.Unlock()
+		return m.index
 	}
-	for canon, aliases := range staticAliasGroups {
-		for _, a := range aliases {
-			aliasIndex[a] = canon
-		}
-	}
-	for _, p := range profilesList {
+	aliasMemoMu.Unlock()
+	index := map[string]string{}
+	for _, p := range listProviders(ctx) {
 		for _, a := range p.Aliases {
-			if _, taken := aliasIndex[a]; !taken {
-				aliasIndex[a] = p.Name
+			if _, taken := index[a]; !taken {
+				index[a] = p.Name
 			}
 		}
 	}
+	aliasMemoMu.Lock()
+	aliasMemo[key] = aliasMemoEntry{gen, index}
+	aliasMemoMu.Unlock()
+	return index
 }
 
-// Profiles returns every built in provider profile sorted by name
-func Profiles() []Profile {
-	profilesOnce.Do(buildProfiles)
-	out := make([]Profile, len(profilesList))
-	copy(out, profilesList)
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+// Profiles returns the registry rows in priority order followed by registered profiles without a row
+func Profiles() []Profile { return profilesCtx(context.Background()) }
+
+func profilesCtx(ctx context.Context) []Profile {
+	seen := map[string]bool{}
+	var out []Profile
+	for _, row := range canonicalRegistryRows(ctx) {
+		seen[row.Name] = true
+		out = append(out, mergedRegistryProfile(ctx, row))
+	}
+	for _, p := range listProviders(ctx) {
+		if !seen[p.Name] {
+			seen[p.Name] = true
+			out = append(out, *p)
+		}
+	}
 	return out
 }
 
-// ProfileFor resolves a provider id or alias to its profile
-func ProfileFor(name string) (Profile, bool) {
-	profilesOnce.Do(buildProfiles)
-	key := NormalizeProvider(name)
-	i, ok := profilesByKey[key]
-	if !ok {
-		return Profile{}, false
+// ProfileFor resolves a provider id or alias to its registry row, else to its registered profile
+func ProfileFor(name string) (Profile, bool) { return profileForCtx(context.Background(), name) }
+
+func profileForCtx(ctx context.Context, name string) (Profile, bool) {
+	key := normalizeProviderCtx(ctx, name)
+	if row := registryLookup(ctx, key); row != nil {
+		return mergedRegistryProfile(ctx, row), true
 	}
-	return profilesList[i], true
+	user, shared := boundProfileResolver(ctx)(key)
+	if user != nil {
+		return *user, true
+	}
+	if shared != nil {
+		return *shared, true
+	}
+	return Profile{}, false
 }
 
 // NormalizeProvider lowercases a provider name and collapses every alias onto its canonical id
-func NormalizeProvider(name string) string {
-	profilesOnce.Do(buildProfiles)
+func NormalizeProvider(name string) string { return normalizeProviderCtx(context.Background(), name) }
+
+func normalizeProviderCtx(ctx context.Context, name string) string {
 	key := strings.ToLower(strings.TrimSpace(name))
-	if canon, ok := aliasIndex[key]; ok {
+	if canon, ok := staticAliases()[key]; ok {
+		return canon
+	}
+	if canon, ok := profileAliasIndex(ctx)[key]; ok {
 		return canon
 	}
 	return key
@@ -192,25 +330,6 @@ func Label(providerID string) string {
 		return p.Label()
 	}
 	return canon
-}
-
-// IsAggregator reports whether the provider fronts many vendors under one key
-func IsAggregator(providerName string) bool {
-	canon := NormalizeProvider(providerName)
-	if strings.HasPrefix(canon, "custom:") {
-		return true
-	}
-	p, ok := ProfileFor(canon)
-	return ok && p.Aggregator
-}
-
-// IsRoutingAggregator excludes flat namespace resellers whose catalog is first party
-func IsRoutingAggregator(providerName string) bool {
-	canon := NormalizeProvider(providerName)
-	if p, ok := ProfileFor(canon); ok && p.FlatReseller {
-		return false
-	}
-	return IsAggregator(canon)
 }
 
 // Hostname returns the lowercase host of a URL without port, userinfo, or trailing dot
@@ -333,11 +452,6 @@ func IsOllamaEndpoint(rawURL string) bool {
 	return false
 }
 
-// IsActualRoute identifies Actual Computer by provider alias or hosted endpoint
-func IsActualRoute(providerName, baseURL string) bool {
-	return NormalizeProvider(providerName) == "actual" || Hostname(baseURL) == "api.actual.inc"
-}
-
 // NormalizeActualBaseURL pins hosted Actual routes onto the /v1 root
 func NormalizeActualBaseURL(baseURL string) string {
 	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -398,32 +512,6 @@ func DetectModeForURL(baseURL string) APIMode {
 func NousMode(model, anthropicWire string) APIMode {
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "anthropic/") && strings.ToLower(strings.TrimSpace(anthropicWire)) == "native" {
 		return ModeAnthropicMessages
-	}
-	return ModeChatCompletions
-}
-
-// DetermineMode picks the wire protocol from host mandate, Nous dual wire, then the profile transport
-func DetermineMode(providerName, baseURL, model, nousWire string) APIMode {
-	if IsActualRoute(providerName, baseURL) {
-		return ModeChatCompletions
-	}
-	if mandated := HostMandatedMode(baseURL); mandated != "" {
-		return mandated
-	}
-	canon := NormalizeProvider(providerName)
-	if canon == "nous" {
-		return NousMode(model, nousWire)
-	}
-	if p, ok := ProfileFor(canon); ok {
-		if p.PerModelMode != nil && model != "" {
-			if m := p.PerModelMode(model); m != "" {
-				return m
-			}
-		}
-		return p.Mode
-	}
-	if canon == "bedrock" {
-		return modeBedrockConverse
 	}
 	return ModeChatCompletions
 }

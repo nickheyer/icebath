@@ -37,9 +37,12 @@ func connectTimeoutOf(cfg map[string]any) time.Duration {
 	return time.Duration(floatOr(cfg, "connect_timeout", defaultConnectTimeout) * float64(time.Second))
 }
 
+// Builds the server task a connect starts, the seam tests replace to observe or wrap every task
+var newServerTaskFn = newServerTask
+
 // Starts a server task under the owner's secret scope and returns it once ready, shutting it down on failure unless claimed
 func connectServer(ctx context.Context, env *tools.Env, name string, r *Rendered, claim func(*serverTask)) (*serverTask, error) {
-	srv := newServerTask(name, ownerEnv(ctx, env))
+	srv := newServerTaskFn(name, ownerEnv(ctx, env))
 	if claim != nil {
 		claim(srv)
 	}
@@ -62,11 +65,20 @@ func connectServer(ctx context.Context, env *tools.Env, name string, r *Rendered
 
 // Wakes a recycled stdio server and waits briefly for its fresh session
 func requestLazyReconnect(ctx context.Context, serverName string, srv *serverTask) bool {
-	if !srv.isRecycledStdio() || runningLoop() == nil {
+	var l *mcpLoop
+	if srv.isRecycledStdio() {
+		l = runningLoop()
+	}
+	if l == nil {
 		return false
 	}
-	srv.ready.Clear()
-	srv.reconnect.Set()
+	if err := l.callSoon(func() {
+		srv.ready.Clear()
+		srv.reconnect.Set()
+	}); err != nil {
+		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed: %s", serverName, excStr(err)))
+		return false
+	}
 	ok, err := runOnLoop(ctx, recycledReconnectTimeout, func(c context.Context) (bool, error) {
 		deadline := managerNow().Add(recycledReconnectTimeout)
 		for managerNow().Before(deadline) {
@@ -390,6 +402,9 @@ func discoverAll(ctx context.Context, env *tools.Env, fresh map[string]*Rendered
 // Time one connect wave of a discovery pass may take, swapped by tests
 var discoveryWaveTimeout = 120 * time.Second
 
+// Discovery pass the register entry point runs, swapped by tests that adopt servers in place of connecting
+var discoveryPass = runDiscoveryPass
+
 // Runs one bounded discovery pass on the MCP loop with the caller's interrupt parked, clearing stale connecting marks when it dies early
 func runDiscoveryPass(ctx context.Context, env *tools.Env, fresh map[string]*Rendered) error {
 	worker := tools.WorkerOf(ctx)
@@ -542,7 +557,7 @@ func connectServers(ctx context.Context, env *tools.Env, servers map[string]*Ren
 		return existingToolNames(ctx), nil
 	}
 	ensureMCPLoop()
-	if err := runDiscoveryPass(ctx, env, fresh); err != nil {
+	if err := discoveryPass(ctx, env, fresh); err != nil {
 		return nil, err
 	}
 	logSummary(ctx, "MCP: registered", slices.Sorted(maps.Keys(fresh)), lazyTools, lazyServers)

@@ -526,21 +526,9 @@ func resolveLMStudioEffort(c reasoningCfg, allowed []string) (string, bool) {
 
 // ---- Gemini thinking config on the OpenAI compatible path ----
 
+// Major and minor of a Gemini model id, zero for unversioned or non Gemini ids
 func geminiVersion(model string) (int, int) {
-	name := strings.ToLower(strings.TrimSpace(model))
-	for _, p := range []string{"google/", "gemini/"} {
-		name = strings.TrimPrefix(name, p)
-	}
-	m := regexp.MustCompile(`gemini-(\d+)(?:\.(\d+))?`).FindStringSubmatch(name)
-	if m == nil {
-		return 0, 0
-	}
-	major, _ := strconv.Atoi(m[1])
-	minor := 0
-	if m[2] != "" {
-		minor, _ = strconv.Atoi(m[2])
-	}
-	return major, minor
+	return geminiNativeVersion(model)
 }
 
 func geminiUsesThinkingLevel(model string) bool {

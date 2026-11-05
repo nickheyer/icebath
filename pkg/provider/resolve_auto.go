@@ -357,13 +357,13 @@ func (r *resolver) parseAPIMode(raw any) APIMode {
 
 // Api mode when no explicit mode applies, URL detection, then the declared transport, then chat
 func (r *resolver) fallbackAPIMode(provider, baseURL, model string) APIMode {
-	if IsActualRoute(provider, baseURL) {
+	if isActualRouteCtx(r.ctx, provider, baseURL) {
 		return ModeChatCompletions
 	}
 	if detected := detectAPIModeForURL(baseURL); detected != "" {
 		return detected
 	}
-	declared := DetermineMode(provider, baseURL, model, r.nousAnthropicWire())
+	declared := determineModeCtx(r.ctx, provider, baseURL, model, r.nousAnthropicWire())
 	if declared == ModeAnthropicMessages && !onDeclaredAnthropicEndpoint(provider, baseURL) {
 		return ModeChatCompletions
 	}
@@ -397,7 +397,7 @@ func onDeclaredAnthropicEndpoint(provider, baseURL string) bool {
 
 // Api mode for legacy plain custom endpoints, only direct OpenAI shaped URLs imply Responses
 func (r *resolver) resolvePlainCustomAPIMode(modelCfg map[string]any, baseURL string) APIMode {
-	if IsActualRoute("", baseURL) {
+	if isActualRouteCtx(r.ctx, "", baseURL) {
 		return ModeChatCompletions
 	}
 	configured := r.parseAPIMode(modelCfg["api_mode"])
@@ -421,15 +421,20 @@ func (r *resolver) resolvePlainCustomAPIMode(modelCfg map[string]any, baseURL st
 
 // Registry profile, which excludes the openrouter and custom pseudo providers
 func registryProfile(provider string) (Profile, bool) {
+	return registryProfileCtx(context.Background(), provider)
+}
+
+// Registry profile of the home bound to ctx, the openrouter and custom pseudo providers excluded
+func registryProfileCtx(ctx context.Context, provider string) (Profile, bool) {
 	key := strings.ToLower(strings.TrimSpace(provider))
 	if key == "openrouter" || key == "custom" || key == "" {
 		return Profile{}, false
 	}
-	p, ok := ProfileFor(key)
-	if !ok || p.Name == "openrouter" || p.Name == "custom" {
+	row := registryLookup(ctx, normalizeProviderCtx(ctx, key))
+	if row == nil || row.Name == "openrouter" || row.Name == "custom" {
 		return Profile{}, false
 	}
-	return p, true
+	return mergedRegistryProfile(ctx, row), true
 }
 
 // Profile aliases share one registry id, unrelated routes stay distinct
@@ -509,6 +514,9 @@ func perModelProfile(provider string) *perModelHookProfile {
 	}
 	perModelHooksMu.RLock()
 	hook := perModelHooks[provider]
+	if p := getProviderProfile(context.Background(), provider); p != nil && p.APIModeForModelHook != nil {
+		hook = p.APIModeForModelHook
+	}
 	perModelHooksMu.RUnlock()
 	if hook == nil {
 		return nil
@@ -611,7 +619,7 @@ const noAnthropicCredentialsMsg = "No Anthropic credentials found. Run 'icebath 
 
 // Resolved runtime with Actual routes pinned onto chat completions and their canonical root
 func (r *resolver) runtime(provider string, apiMode APIMode, baseURL, apiKey, source string) *Runtime {
-	if IsActualRoute(provider, baseURL) {
+	if isActualRouteCtx(r.ctx, provider, baseURL) {
 		apiMode = ModeChatCompletions
 		baseURL = NormalizeActualBaseURL(baseURL)
 	}
@@ -974,6 +982,9 @@ func RegisterRuntimeBaseURLResolver(provider string, fn RuntimeBaseURLResolver) 
 func (r *resolver) apiKeyProviderSecret(providerID string, pconfig Profile) (string, string, func(context.Context) (string, error)) {
 	credentialSeamsMu.RLock()
 	owned := apiKeySecretSeams[providerID]
+	if p := getProviderProfile(context.Background(), providerID); p != nil && p.ResolveAPIKeySecretHook != nil {
+		owned = p.ResolveAPIKeySecretHook
+	}
 	credentialSeamsMu.RUnlock()
 	if owned != nil {
 		if key, source, ok := owned(); ok {
@@ -1070,6 +1081,9 @@ func (r *resolver) apiKeyProviderCredentials(providerID string) (apiKeyCreds, er
 	envURL := r.providerEnvBaseURL(pconfig)
 	credentialSeamsMu.RLock()
 	urlSeam := runtimeBaseURLSeams[providerID]
+	if p := getProviderProfile(context.Background(), providerID); p != nil && p.RuntimeBaseURLHook != nil {
+		urlSeam = p.RuntimeBaseURLHook
+	}
 	credentialSeamsMu.RUnlock()
 	baseURL := ""
 	if urlSeam != nil {
@@ -1130,12 +1144,17 @@ var authProviderAliases = map[string]string{
 
 // Auth style alias collapse, the registry table first then plugin declared aliases
 func authNormalizeProvider(name string) string {
+	return authNormalizeProviderCtx(context.Background(), name)
+}
+
+// Auth style alias collapse against the registry of the home bound to ctx
+func authNormalizeProviderCtx(ctx context.Context, name string) string {
 	key := strings.ToLower(strings.TrimSpace(name))
 	if canon, ok := authProviderAliases[key]; ok {
 		return canon
 	}
-	if canon := NormalizeProvider(key); canon != key && canon != "openrouter" {
-		if _, ok := ProfileFor(canon); ok {
+	if canon := normalizeProviderCtx(ctx, key); canon != key && canon != "openrouter" {
+		if _, ok := profileForCtx(ctx, canon); ok {
 			return canon
 		}
 	}
@@ -1282,11 +1301,11 @@ func (r *resolver) resolveProvider(requested, explicitAPIKey, explicitBaseURL st
 	if normalized == "" {
 		normalized = "auto"
 	}
-	normalized = authNormalizeProvider(normalized)
+	normalized = authNormalizeProviderCtx(r.ctx, normalized)
 	if normalized == "openrouter" || normalized == "custom" {
 		return normalized, nil
 	}
-	if _, ok := registryProfile(normalized); ok {
+	if _, ok := registryProfileCtx(r.ctx, normalized); ok {
 		return normalized, nil
 	}
 	if normalized != "auto" {
@@ -1859,7 +1878,7 @@ func (r *resolver) apiKeyProviderRuntime(provider string, pconfig Profile, reque
 		if names := pconfig.KeyEnvNames(); len(names) > 0 {
 			hint = fmt.Sprintf(" Set %s.", strings.Join(names, ", "))
 		}
-		hint += missingCredentialsSuffix(provider)
+		hint += missingCredentialsSuffix(r.ctx, provider)
 		hint += r.namedProfileKeyHint(pconfig.KeyEnvNames())
 		return nil, newAuthErr(provider, fmt.Sprintf("No usable credentials found for provider '%s'.%s", provider, hint), "missing_api_key", false)
 	}
@@ -1882,33 +1901,18 @@ func (r *resolver) apiKeyProviderRuntime(provider string, pconfig Profile, reque
 }
 
 var (
-	missingHintsMu sync.RWMutex
-	missingHints   = map[string]func() string{}
+	missingHintsMu            sync.Mutex
+	missingHintFailuresLogged = map[string]bool{}
 )
 
-// RegisterMissingCredentialsHint installs a profile owned hint appended to a missing key error
-func RegisterMissingCredentialsHint(provider string, fn func() string) {
-	missingHintsMu.Lock()
-	defer missingHintsMu.Unlock()
-	if fn == nil {
-		delete(missingHints, provider)
-		return
-	}
-	missingHints[provider] = fn
-}
-
-var missingHintFailuresLogged = map[string]bool{}
-
-// A space led hint from the provider's profile for a missing credentials message, else empty
-func missingCredentialsSuffix(provider string) (out string) {
+// A space led hint from the bound home profile for a missing credentials message, else empty
+func missingCredentialsSuffix(ctx context.Context, provider string) (out string) {
 	name := strings.ToLower(strings.TrimSpace(provider))
 	if name == "" {
 		return ""
 	}
-	missingHintsMu.RLock()
-	fn := missingHints[name]
-	missingHintsMu.RUnlock()
-	if fn == nil {
+	p := getProviderProfile(ctx, name)
+	if p == nil || p.MissingCredentialsHintHook == nil {
 		return ""
 	}
 	defer func() {
@@ -1922,7 +1926,7 @@ func missingCredentialsSuffix(provider string) (out string) {
 			out = ""
 		}
 	}()
-	hint := strings.TrimSpace(fn())
+	hint := strings.TrimSpace(p.MissingCredentialsHintHook())
 	if hint == "" {
 		return ""
 	}

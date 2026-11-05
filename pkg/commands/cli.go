@@ -86,7 +86,7 @@ var profileSuggestRe = regexp.MustCompile(`[^a-z0-9_-]+`)
 
 const profileNameRule = "Use lowercase letters, numbers, '-' or '_', starting with a letter or number, up to 64 characters"
 
-// Best effort valid profile id derived from a typed name
+// Valid profile id derived from a typed name
 func SuggestProfileName(name string) string {
 	candidate := strings.Trim(profileSuggestRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-"), "-_")
 	if r := []rune(candidate); len(r) > 64 {
@@ -185,6 +185,7 @@ func NewCLI() *CLI {
 	c.addTreeC(root)
 	c.addPM(root)
 	c.bindMCP()
+	c.bindMoA()
 	c.finishAll(root)
 	return c
 }

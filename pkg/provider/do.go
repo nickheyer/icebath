@@ -293,6 +293,7 @@ type DoOptions struct {
 	RecoverAfterRotation        func(ctx context.Context, st *RetryState, cl *Classified, apiErr *APIError) bool
 	// Stale credential self heal of a provider profile, true when a fresh credential was installed
 	RefreshStaleCredential func(ctx context.Context, st *RetryState, apiErr *APIError) (notice string, refreshed bool)
+	// Stale credential test, nil asks the profile owning the route credential refresh
 	IsStaleCredentialError func(route Route, status int, message string) bool
 	OnLongContextTier      func(ctx context.Context, st *RetryState, cl *Classified, apiErr *APIError) OverflowVerdict
 	OnOverflow             func(ctx context.Context, st *RetryState, cl *Classified, apiErr *APIError, wrappedOutputCap int) OverflowVerdict
@@ -1442,8 +1443,13 @@ func (l *doLoop) settleUnrecovered(apiErr *APIError, cl *Classified, errorContex
 			poolHas = pool.HasAvailable
 		}
 		l.cooldown.MarkEntitlementRejected(apiErr, l.route.Provider, l.route.Model, poolHas)
-		if !l.st.ProviderStaleRefreshAttempted && l.opts.IsStaleCredentialError != nil && l.opts.RefreshStaleCredential != nil &&
-			l.opts.IsStaleCredentialError(l.route, apiErr.StatusCode, apiErr.Message) {
+		isStale := l.opts.IsStaleCredentialError
+		if isStale == nil {
+			isStale = func(route Route, status int, message string) bool {
+				return routeProfileIsStaleCredentialError(l.ctx, route, status, message)
+			}
+		}
+		if !l.st.ProviderStaleRefreshAttempted && l.opts.RefreshStaleCredential != nil && isStale(l.route, apiErr.StatusCode, apiErr.Message) {
 			l.st.ProviderStaleRefreshAttempted = true
 			if notice, refreshed := l.opts.RefreshStaleCredential(l.ctx, l.st, apiErr); refreshed {
 				if notice == "" {

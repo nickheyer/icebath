@@ -970,7 +970,7 @@ func expandInstallDir(value any, installDir string) (string, error) {
 
 // Profile env value through the secret scope, then the profile .env file
 func catalogEnvValue(ctx context.Context, env *tools.Env, name string) (string, error) {
-	v, ok, err := getSecret(env, name)
+	v, ok, err := getSecret(ctx, env, name)
 	if err != nil {
 		return "", err
 	}

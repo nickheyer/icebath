@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -625,9 +626,8 @@ func (c *classifyCtx) largeSession(frac float64, tokens, messages int) bool {
 type ClassifierHook func(in ClassifyInput, status int, errorType, errorCode, message string, body map[string]any) *Verdict
 
 var (
-	classifierHooksMu   sync.RWMutex
-	classifierHooks     []ClassifierHook
-	providerClassifiers = map[string]ClassifierHook{}
+	classifierHooksMu sync.RWMutex
+	classifierHooks   []ClassifierHook
 )
 
 // RegisterClassifierHook adds a plugin classification hook consulted first in registration order
@@ -635,13 +635,6 @@ func RegisterClassifierHook(h ClassifierHook) {
 	classifierHooksMu.Lock()
 	defer classifierHooksMu.Unlock()
 	classifierHooks = append(classifierHooks, h)
-}
-
-// RegisterProviderClassifier binds a provider profile verdict hook to its provider slug
-func RegisterProviderClassifier(provider string, h ClassifierHook) {
-	classifierHooksMu.Lock()
-	defer classifierHooksMu.Unlock()
-	providerClassifiers[strings.ToLower(strings.TrimSpace(provider))] = h
 }
 
 func pluginVerdict(c *classifyCtx) *Verdict {
@@ -656,17 +649,22 @@ func pluginVerdict(c *classifyCtx) *Verdict {
 	return nil
 }
 
-func profileVerdict(c *classifyCtx) *Verdict {
+// The erroring provider's own profile classify_api_error verdict, a panicking hook counted as no verdict
+func profileVerdict(c *classifyCtx) (out *Verdict) {
 	if c.providerSlug == "" {
 		return nil
 	}
-	classifierHooksMu.RLock()
-	h, ok := providerClassifiers[c.providerSlug]
-	classifierHooksMu.RUnlock()
-	if !ok {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Debug(fmt.Sprintf("Provider profile error classification failed for %s: %v", c.providerSlug, r))
+			out = nil
+		}
+	}()
+	p := getProviderProfile(context.Background(), c.providerSlug)
+	if p == nil || p.ClassifyAPIError == nil {
 		return nil
 	}
-	vd := h(c.in, c.status, c.errorType, c.errorCode, c.msg, c.body)
+	vd := p.ClassifyAPIError(c.in, c.status, c.errorType, c.errorCode, c.msg, c.body)
 	if vd == nil || vd.Reason == "" {
 		return nil
 	}

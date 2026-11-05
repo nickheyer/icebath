@@ -815,10 +815,7 @@ var fetchModelsOverrideProfiles = setOf("actual", "meta-ai", "openrouter", "rout
 
 // Whether a profile replaces the generic models listing fetch with its own
 func profileOverridesFetchModels(ctx context.Context, p Profile) bool {
-	if hooks, ok := profileCatalogHooksFor(ctx, p.Name); ok && hooks.FetchModels != nil {
-		return true
-	}
-	return fetchModelsOverrideProfiles[p.Name]
+	return p.FetchModelsHook != nil || fetchModelsOverrideProfiles[p.Name]
 }
 
 // Catalog and authority of a profile whose catalog is not the generic models listing
@@ -1015,6 +1012,9 @@ type ValidateModelOptions struct {
 func profileNormalizeModelIDWithKey(provider, model, apiKey string) string {
 	modelIDNormalizersMu.RLock()
 	fn := modelIDNormalizers[provider]
+	if p := getProviderProfile(context.Background(), provider); p != nil && p.NormalizeModelIDHook != nil {
+		fn = p.NormalizeModelIDHook
+	}
 	modelIDNormalizersMu.RUnlock()
 	if fn == nil {
 		return ""

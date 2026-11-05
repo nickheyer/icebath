@@ -107,14 +107,21 @@ func TestEachHomeSeesOnlyItsOwnStaticModels(t *testing.T) {
 	root := t.TempDir()
 	const slug = "acme-static"
 	homes := map[string]string{"f": root + "/f", "g": root + "/g", "a": root + "/a"}
-	RegisterProfileCatalogHooks(homes["f"], slug, ProfileCatalogHooks{StaticModels: []string{"acme-f-only"}})
-	RegisterProfileCatalogHooks(homes["g"], slug, ProfileCatalogHooks{StaticModels: []string{"acme-g-small", "acme-g-large"}})
-	t.Cleanup(func() {
-		UnregisterProfileCatalogHooks(homes["f"], slug)
-		UnregisterProfileCatalogHooks(homes["g"], slug)
-	})
+	snapshotProviderRegistry(t)
+	for _, k := range []string{"f", "g"} {
+		writeProviderPluginDir(t, homes[k], slug)
+	}
+	fakeExternalProviderPlugins(t, map[string]func(string) ([]Profile, error){slug: func(homeKey string) ([]Profile, error) {
+		models := []string{"acme-f-only"}
+		if homeKey == home.Key(homes["g"]) {
+			models = []string{"acme-g-small", "acme-g-large"}
+		}
+		return []Profile{{Name: slug, DisplayName: "Acme Static", AuthType: AuthTypeAPIKey, KeyEnv: []string{"ACME_STATIC_KEY"},
+			BaseURL: "https://acme-static.invalid/v1", StaticModels: models}}, nil
+	}})
 	view := func(h string) (string, []string, bool) {
 		ctx := home.WithOverride(context.Background(), h)
+		SyncPluginProviderCatalog()
 		return GetDefaultModelForProvider(ctx, slug), StaticCatalog(ctx, slug), containsString(StaticCatalogProviders(ctx), slug)
 	}
 	check := func(h, def string, models []string, listed bool) {
@@ -645,24 +652,19 @@ func TestProbeAPIModelsHeadersAndFallbackCandidate(t *testing.T) {
 
 func TestProbeAPIModelsProfileHookOwnsTheProbe(t *testing.T) {
 	ctx := modelsTestHome(t)
-	profilesOnce.Do(buildProfiles)
-	profilesList = append(profilesList, Profile{Name: "acme-host", Hostnames: []string{"acme-host.example"}})
-	t.Cleanup(func() { profilesList = profilesList[:len(profilesList)-1] })
-	RegisterProfileCatalogHooks(home.Dir(ctx), "acme-host", ProfileCatalogHooks{ProbeModels: func(_ context.Context, baseURL, apiKey string, _ time.Duration) ([]string, string, string, bool) {
+	registerTestProfile(t, Profile{Name: "acme-host", Hostnames: []string{"acme-host.example"}, ProbeModelsHook: func(_ context.Context, baseURL, apiKey string, _ time.Duration) *ModelsProbe {
 		if apiKey != "k" {
 			t.Fatalf("hook receives the key: %q", apiKey)
 		}
-		return []string{"owned"}, baseURL + "/models", baseURL, true
+		return &ModelsProbe{IDs: []string{"owned"}, Listed: true, ProbedURL: baseURL + "/models", ResolvedBaseURL: baseURL}
 	}})
-	t.Cleanup(func() { UnregisterProfileCatalogHooks(home.Dir(ctx), "acme-host") })
 	res := ProbeAPIModels(ctx, "k", "https://acme-host.example/v1/", time.Second, "", nil)
 	if !res.Found || !modelsEqual(res.Models, []string{"owned"}) || res.ProbedURL != "https://acme-host.example/v1/models" || res.ResolvedBaseURL != "https://acme-host.example/v1" {
 		t.Fatalf("profile hook answer expected: %+v", res)
 	}
-	declined := ProfileCatalogHooks{ProbeModels: func(context.Context, string, string, time.Duration) ([]string, string, string, bool) {
-		return nil, "", "", false
-	}}
-	RegisterProfileCatalogHooks(home.Dir(ctx), "acme-host", declined)
+	RegisterProvider(Profile{Name: "acme-host", Hostnames: []string{"acme-host.example"}, ProbeModelsHook: func(context.Context, string, string, time.Duration) *ModelsProbe {
+		return nil
+	}})
 	modelsTransport = modelsFakeTransport(func(req *http.Request) (*http.Response, error) {
 		return modelsJSONResponse(req, 200, map[string]any{"data": []any{map[string]any{"id": "generic"}}}), nil
 	})
@@ -1104,8 +1106,7 @@ func TestClearProviderModelsCache(t *testing.T) {
 	storeCacheEntry(ctx, "openrouter", cacheEntry("fp", []string{"a"}, time.Now()))
 	storeCacheEntry(ctx, "nous", cacheEntry("fp", []string{"b"}, time.Now()))
 	invalidated := 0
-	RegisterProfileCatalogHooks(home.Dir(ctx), "acme", ProfileCatalogHooks{InvalidateCatalogCache: func() { invalidated++ }})
-	t.Cleanup(func() { UnregisterProfileCatalogHooks(home.Dir(ctx), "acme") })
+	registerTestProfile(t, Profile{Name: "acme", InvalidateCatalogCacheHook: func() { invalidated++ }})
 	ClearProviderModelsCache(ctx, "openrouter")
 	cache := loadProviderModelsCache(ctx)
 	if _, ok := cache["openrouter"]; ok || cache["nous"] == nil || invalidated != 1 {
@@ -1148,9 +1149,8 @@ func TestProfileFetchModelsDefault(t *testing.T) {
 	if _, ok := profileFetchModels(ctx, p, "k", "", 0); ok {
 		t.Fatal("no listing support")
 	}
-	hooked := Profile{Name: "hooked", ModelListing: true, BaseURL: "https://h.example/v1"}
-	RegisterProfileCatalogHooks(home.Dir(ctx), "hooked", ProfileCatalogHooks{FetchModels: func(context.Context, string, string, time.Duration) ([]string, bool) { return []string{"hook"}, true }})
-	t.Cleanup(func() { UnregisterProfileCatalogHooks(home.Dir(ctx), "hooked") })
+	hooked := Profile{Name: "hooked", ModelListing: true, BaseURL: "https://h.example/v1",
+		FetchModelsHook: func(context.Context, string, string, time.Duration) ([]string, bool) { return []string{"hook"}, true }}
 	if ids, _ := profileFetchModels(ctx, hooked, "", "", 0); !modelsEqual(ids, []string{"hook"}) {
 		t.Fatal("hook override")
 	}

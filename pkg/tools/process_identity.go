@@ -1293,6 +1293,60 @@ func IsOwnerDeathSupervisor(argv []string) bool {
 	return len(argv) >= 4 && argv[1] == "-c" && argv[3] == supervisorArgv0 && argv[2] == supervisorScript
 }
 
+// OwnerDeathSupervisor is a supervisor shell spawned outside the shared slot, closed and reaped by its caller
+type OwnerDeathSupervisor struct{ h supervisorHandle }
+
+// Pid of the supervisor shell
+func (s *OwnerDeathSupervisor) PID() int { return s.h.pid() }
+
+// Closes the control pipe and waits for the shell to exit, returning its exit status
+func (s *OwnerDeathSupervisor) CloseAndWait() int {
+	_ = s.h.closeStdin()
+	return s.h.wait()
+}
+
+// SpawnOwnerDeathSupervisor starts a watched supervisor without publishing it as this process's shared one
+func SpawnOwnerDeathSupervisor() (*OwnerDeathSupervisor, error) {
+	h, err := startSupervisorProcess()
+	if err != nil {
+		return nil, err
+	}
+	watchSupervisor(h)
+	return &OwnerDeathSupervisor{h: h}, nil
+}
+
+// OwnerDeathSupervisorPID is the pid of the published supervisor, zero when none runs
+func OwnerDeathSupervisorPID() int {
+	supervisorMu.Lock()
+	defer supervisorMu.Unlock()
+	if ownerSupervisor == nil {
+		return 0
+	}
+	return ownerSupervisor.pid()
+}
+
+// IsolateOwnerDeathSupervisor empties the supervisor slot with an immediate idle exit until the returned restore runs
+func IsolateOwnerDeathSupervisor() (restore func()) {
+	supervisorMu.Lock()
+	defer supervisorMu.Unlock()
+	prevSup, prevPgids, prevIdle := ownerSupervisor, supervisedPgids, supervisorIdleExit
+	ownerSupervisor, supervisedPgids, supervisorIdleExit = nil, map[int]bool{}, 0
+	return func() {
+		supervisorMu.Lock()
+		defer supervisorMu.Unlock()
+		ownerSupervisor, supervisedPgids, supervisorIdleExit = prevSup, prevPgids, prevIdle
+	}
+}
+
+// ProcessCmdline is the argv of a live process, an error once it is gone or unreadable
+func ProcessCmdline(pid int) ([]string, error) { return identityProber.Cmdline(pid) }
+
+// ProcessZombie reports whether pid exited and awaits its reaper
+func ProcessZombie(pid int) bool { return identityProber.Zombie(pid) }
+
+// ProcessChildren lists the direct children of pid from the process table
+func ProcessChildren(pid int) []int { return identityProber.Children(pid, false) }
+
 // Forgets supervised groups with no members left and returns what went, caller holds the lock
 func pruneDeadSupervisedPgids() map[int]bool {
 	stale := map[int]bool{}

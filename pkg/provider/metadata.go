@@ -281,18 +281,7 @@ func metadataHostTable() []hostProvider {
 
 // Registered profile whose declared hostnames match the host exactly or as a subdomain
 func profileForHost(rawURL string) (Profile, bool) {
-	host := Hostname(rawURL)
-	if host == "" {
-		return Profile{}, false
-	}
-	for _, p := range Profiles() {
-		for _, claimed := range p.Hostnames {
-			if HostMatches("https://"+host, claimed) {
-				return p, true
-			}
-		}
-	}
-	return Profile{}, false
+	return ProfileForHost(context.Background(), rawURL, false)
 }
 
 // Provider name for a base url, profile host claims beat substring rows
@@ -305,7 +294,7 @@ func inferProviderFromBaseURL(baseURL string) string {
 	if host == "" {
 		host = strings.ToLower(parsed.Path)
 	}
-	if p, ok := profileForHost("https://" + host); ok {
+	if p, ok := ProfileForHost(context.Background(), "https://"+host, true); ok {
 		return p.Name
 	}
 	for _, e := range metadataHostTable() {

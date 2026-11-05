@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"sync"
@@ -436,26 +437,21 @@ type PickerRow struct {
 	Members     []string
 }
 
-// PluginPickerPlacement is the catalog placement a plugin profile declares beyond its profile row
-type PluginPickerPlacement struct {
-	After          string
-	Group          ProviderGroup
-	CatalogAliases bool
-}
-
 var (
-	catalogMu            sync.Mutex
-	catalogOnce          sync.Once
-	canonicalProviders   []CanonicalProviderEntry
-	canonicalSlugs       map[string]bool
-	builtinSlugs         map[string]bool
-	providerLabels       map[string]string
-	providerGroups       []ProviderGroup
-	slugToGroup          map[string]string
-	aggregatorProviders  map[string]bool
-	pluginPlacements     = map[string]PluginPickerPlacement{}
-	pluginCatalogAliases = map[string]string{}
-	catalogBuilt         bool
+	catalogMu           reentrantMutex
+	catalogOnce         sync.Once
+	canonicalProviders  []CanonicalProviderEntry
+	canonicalSlugs      map[string]bool
+	builtinSlugs        map[string]bool
+	providerLabels      map[string]string
+	providerGroups      []ProviderGroup
+	slugToGroup         map[string]string
+	aggregatorProviders map[string]bool
+	catalogAliasMu      sync.Mutex
+	catalogAliasMemo    map[string]string
+	catalogAliasKey     string
+	catalogAliasGen     int64 = -1
+	catalogBuilt        bool
 )
 
 func groupIndex(id string) int {
@@ -502,16 +498,6 @@ func buildCatalogTables() {
 	catalogBuilt = true
 }
 
-// RegisterPluginPickerPlacement records where an out of tree plugin profile lands in the picker tables
-func RegisterPluginPickerPlacement(name string, placement PluginPickerPlacement) {
-	catalogMu.Lock()
-	defer catalogMu.Unlock()
-	pluginPlacements[strings.ToLower(strings.TrimSpace(name))] = placement
-	if catalogBuilt {
-		syncPluginProviderCatalogLocked()
-	}
-}
-
 // Picker admission for a plugin profile, any slug without a built in row, catalog lock held
 func pluginProviderEntersPicker(name string) bool {
 	return !canonicalSlugs[name]
@@ -536,7 +522,7 @@ func SyncPluginProviderCatalog() int {
 // Admits pending plugin rows with picker_after chains resolved in declared order
 func syncPluginProviderCatalogLocked() int {
 	var pending []Profile
-	for _, pp := range Profiles() {
+	for _, pp := range ListProviders(context.Background()) {
 		if pluginProviderEntersPicker(pp.Name) {
 			pending = append(pending, pp)
 		}
@@ -549,7 +535,7 @@ func syncPluginProviderCatalogLocked() int {
 		}
 		var ready []Profile
 		for _, pp := range pending {
-			if !names[pluginPlacements[pp.Name].After] {
+			if !names[pp.PickerAfter] {
 				ready = append(ready, pp)
 			}
 		}
@@ -581,10 +567,9 @@ func admitPluginProvider(pp Profile) {
 		desc = label + " (direct API)"
 	}
 	entry := CanonicalProviderEntry{Slug: pp.Name, Label: label, TUIDesc: desc}
-	placement := pluginPlacements[pp.Name]
 	at := len(canonicalProviders)
 	for i, p := range canonicalProviders {
-		if p.Slug == placement.After {
+		if p.Slug == pp.PickerAfter {
 			at = i + 1
 			break
 		}
@@ -592,29 +577,20 @@ func admitPluginProvider(pp Profile) {
 	canonicalProviders = append(canonicalProviders[:at], append([]CanonicalProviderEntry{entry}, canonicalProviders[at:]...)...)
 	canonicalSlugs[pp.Name] = true
 	providerLabels[pp.Name] = label
-	if placement.Group.ID != "" {
-		gi := groupIndex(placement.Group.ID)
+	if len(pp.PickerGroup) == 3 {
+		gid := pp.PickerGroup[0]
+		gi := groupIndex(gid)
 		if gi < 0 {
-			providerGroups = append(providerGroups, ProviderGroup{ID: placement.Group.ID, Label: placement.Group.Label, Description: placement.Group.Description})
+			providerGroups = append(providerGroups, ProviderGroup{ID: gid, Label: pp.PickerGroup[1], Description: pp.PickerGroup[2]})
 			gi = len(providerGroups) - 1
 		}
 		if !containsString(providerGroups[gi].Members, pp.Name) {
 			providerGroups[gi].Members = append(providerGroups[gi].Members, pp.Name)
 		}
-		slugToGroup[pp.Name] = placement.Group.ID
+		slugToGroup[pp.Name] = gid
 	}
 	if pp.Aggregator {
 		aggregatorProviders[pp.Name] = true
-	}
-	if placement.CatalogAliases && !builtinSlugs[pp.Name] {
-		for _, alias := range append(cloneStrings(pp.Aliases), staticAliasGroups[pp.Name]...) {
-			if _, ok := catalogProviderAliases[alias]; ok {
-				continue
-			}
-			if _, ok := pluginCatalogAliases[alias]; !ok {
-				pluginCatalogAliases[alias] = pp.Name
-			}
-		}
 	}
 }
 
@@ -803,20 +779,15 @@ func CatalogProviderAlias(name string) (string, bool) {
 	if target, ok := catalogProviderAliases[name]; ok {
 		return target, true
 	}
-	catalogOnce.Do(buildCatalogTables)
-	catalogMu.Lock()
-	defer catalogMu.Unlock()
-	target, ok := pluginCatalogAliases[name]
+	target, ok := catalogPluginAliases(context.Background())[name]
 	return target, ok
 }
 
 // CatalogProviderAliases returns every alias pair, built in first then plugin declared
 func CatalogProviderAliases() map[string]string {
-	catalogOnce.Do(buildCatalogTables)
-	catalogMu.Lock()
-	defer catalogMu.Unlock()
-	out := make(map[string]string, len(catalogProviderAliases)+len(pluginCatalogAliases))
-	for k, v := range pluginCatalogAliases {
+	plugin := catalogPluginAliases(context.Background())
+	out := make(map[string]string, len(catalogProviderAliases)+len(plugin))
+	for k, v := range plugin {
 		out[k] = v
 	}
 	for k, v := range catalogProviderAliases {
@@ -864,3 +835,41 @@ var modelsDevPreferred = map[string]bool{
 
 // IsModelsDevPreferred reports whether models.dev beats the curated list for the provider
 func IsModelsDevPreferred(provider string) bool { return modelsDevPreferred[provider] }
+
+// Catalog aliases of the bound home's plugin profiles, built in aliases win and the first registered plugin wins
+func catalogPluginAliases(ctx context.Context) map[string]string {
+	key, gen := BoundRegistryKey(ctx)
+	catalogAliasMu.Lock()
+	if catalogAliasMemo != nil && catalogAliasKey == key && catalogAliasGen == gen {
+		memo := catalogAliasMemo
+		catalogAliasMu.Unlock()
+		return memo
+	}
+	catalogAliasMu.Unlock()
+	found := map[string]string{}
+	for _, pp := range ListProviders(ctx) {
+		if !pp.CatalogAliases || builtinCatalogSlugs()[pp.Name] {
+			continue
+		}
+		for _, alias := range pp.Aliases {
+			if _, ok := catalogProviderAliases[alias]; ok {
+				continue
+			}
+			if _, ok := found[alias]; !ok {
+				found[alias] = pp.Name
+			}
+		}
+	}
+	catalogAliasMu.Lock()
+	catalogAliasMemo, catalogAliasKey, catalogAliasGen = found, key, gen
+	catalogAliasMu.Unlock()
+	return found
+}
+
+// Slugs of the built in canonical rows, plugin admissions excluded
+func builtinCatalogSlugs() map[string]bool {
+	catalogOnce.Do(buildCatalogTables)
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	return builtinSlugs
+}

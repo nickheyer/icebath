@@ -78,8 +78,11 @@ func httpEndpoint(ctx context.Context, serverName string, cfg map[string]any) (s
 	return url, headers, nil
 }
 
+// Resolver of a connection's inputs, swapped by tests that make one identity fail
+var connectInputs = resolveConnectInputs
+
 // Inputs a connection opens with plus the configured header names captured before the identity header merges
-func connectInputs(ctx context.Context, env *tools.Env, serverName string, r *Rendered) ([]any, map[string]bool, error) {
+func resolveConnectInputs(ctx context.Context, env *tools.Env, serverName string, r *Rendered) ([]any, map[string]bool, error) {
 	cfg := r.Config
 	if _, ok := cfg["url"]; ok {
 		url, headers, err := httpEndpoint(ctx, serverName, cfg)
@@ -365,9 +368,8 @@ func (s *serverTask) runStdio(ctx context.Context, r *Rendered) (string, error) 
 	if err != nil {
 		return "", s.withNodeABI(err, tee)
 	}
-	var newPIDs []int
-	if pid := t.PID(); pid > 0 {
-		newPIDs = []int{pid}
+	newPIDs := spawnedMCPChildren(t.PID())
+	if len(newPIDs) > 0 {
 		s.trackSpawnedChildren(newPIDs)
 		defer s.releaseSpawnedChildren(newPIDs)
 	}

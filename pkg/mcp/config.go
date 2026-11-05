@@ -695,7 +695,7 @@ func buildSafeEnv(ctx context.Context, env *tools.Env, userEnv map[string]any, u
 		}
 	}
 	for _, key := range secretSourceNamesFn() {
-		value, found, err := getSecret(env, key)
+		value, found, err := getSecret(ctx, env, key)
 		if err != nil {
 			return nil, err
 		}
@@ -1496,7 +1496,7 @@ func renderValue(ctx context.Context, env *tools.Env, v any, path string, prior,
 			if val, ok := contextVar(env, strings.TrimSpace(body)); ok {
 				return val
 			}
-			val, found, err := getSecret(env, envRefName(body))
+			val, found, err := getSecret(ctx, env, envRefName(body))
 			if err != nil && firstErr == nil {
 				firstErr = err
 			}
@@ -2070,8 +2070,11 @@ func ParseServerConfig(name string, cfg map[string]any, tree config.Tree) (*Serv
 	return c, nil
 }
 
-// Credential by env var name through the session's profile secret scope, global names reading the process env
-func getSecret(env *tools.Env, name string) (string, bool, error) {
+// Credential by env var name from the bound owner scope, else the env's profile secrets
+func getSecret(ctx context.Context, env *tools.Env, name string) (string, bool, error) {
+	if value, found, bound, err := boundScopeSecret(ctx, name); bound {
+		return value, found, err
+	}
 	var fallback *string
 	if v, ok := os.LookupEnv(name); ok {
 		fallback = &v

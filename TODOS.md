@@ -133,7 +133,7 @@
 - [x] hermes_platform/host/runtime.py
 - [x] hermes_platform/host/summary.py
 
-### 5. pkg/provider: 38% (128 of 334 files completed)
+### 5. pkg/provider: 41% (137 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
 - [ ] agent/account_usage.py
 - [ ] agent/account_usage_cache.py
@@ -166,7 +166,7 @@
 - [x] agent/auxiliary_task_config.py
 - [ ] agent/auxiliary_unavailable.py
 - [ ] agent/auxiliary_wire.py
-- [ ] agent/azure_identity_adapter.py
+- [x] agent/azure_identity_adapter.py
 - [x] agent/backend_identity.py
 - [ ] agent/bedrock_adapter.py
 - [ ] agent/billing_links.py
@@ -187,7 +187,7 @@
 - [x] agent/codex_responses_adapter.py
 - [x] agent/codex_runtime.py
 - [ ] agent/codex_runtime_history_seed.py
-- [ ] agent/codex_service_tiers.py
+- [x] agent/codex_service_tiers.py
 - [x] agent/command_token_source.py
 - [x] agent/credential_auth_recovery.py
 - [x] agent/credential_persistence.py
@@ -207,9 +207,9 @@
 - [x] agent/errors.py
 - [x] agent/fallback_cooldown.py
 - [x] agent/fast_mode.py
-- [ ] agent/gemini_long_decode.py
-- [ ] agent/gemini_native_adapter.py
-- [ ] agent/gemini_schema.py
+- [x] agent/gemini_long_decode.py
+- [x] agent/gemini_native_adapter.py
+- [x] agent/gemini_schema.py
 - [x] agent/image_eviction_policy.py
 - [x] agent/image_token_cost.py
 - [ ] agent/jiter_preload.py
@@ -271,7 +271,7 @@
 - [ ] agent/transports/__init__.py
 - [ ] agent/transports/anthropic.py
 - [ ] agent/transports/base.py
-- [ ] agent/transports/bedrock.py
+- [x] agent/transports/bedrock.py
 - [x] agent/transports/chat_completions.py
 - [x] agent/transports/codex.py
 - [ ] agent/transports/codex_app_server.py
@@ -282,7 +282,7 @@
 - [ ] agent/usage_anchor.py
 - [x] agent/usage_gauges.py
 - [x] agent/usage_pricing.py
-- [ ] agent/vertex_adapter.py
+- [x] agent/vertex_adapter.py
 - [x] agent/web_search_provider.py
 - [x] agent/web_search_registry.py
 - [ ] hermes_cli/_secrets_common.py
@@ -340,8 +340,8 @@
 - [ ] hermes_cli/local_runtime/processes.py
 - [ ] hermes_cli/local_runtime/recovery.py
 - [ ] hermes_cli/local_runtime/supervisor.py
-- [ ] hermes_cli/moa_cmd.py
-- [ ] hermes_cli/moa_config.py
+- [x] hermes_cli/moa_cmd.py
+- [x] hermes_cli/moa_config.py
 - [x] hermes_cli/model_catalog.py
 - [x] hermes_cli/model_cost_guard.py
 - [x] hermes_cli/model_data_policy_guard.py

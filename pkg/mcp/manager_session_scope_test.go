@@ -13,6 +13,7 @@ import (
 func TestSessionMCPRegistryIsolationAndScopedRelease(t *testing.T) {
 	_, env := managerHome(t)
 	bare := context.Background()
+	isolateMCPRegistry(t, bare)
 	scopeA, scopeB := "editor-session:a", "editor-session:b"
 	t.Cleanup(func() {
 		ShutdownMCPServers(bare, &scopeA, nil, 5*time.Second)
@@ -71,5 +72,17 @@ func TestSessionMCPRegistryIsolationAndScopedRelease(t *testing.T) {
 	}
 	if got := dispatch(ctxB, b.name); !strings.Contains(got, "ONLY_B") {
 		t.Fatalf("session b lost its server after a scoped release of a, got %q", got)
+	}
+}
+
+// Removes global MCP tools other tests left registered so the session scopes start from a fresh registry
+func isolateMCPRegistry(t *testing.T, ctx context.Context) {
+	t.Helper()
+	for _, d := range tools.Default.Snapshot(ctx, "") {
+		if strings.HasPrefix(d.Name, "mcp__") {
+			if err := tools.Default.Deregister(d.Name, "", ""); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }

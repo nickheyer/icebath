@@ -812,6 +812,9 @@ func reportedUsageCost(provider, model string, usage CanonicalUsage) (CostResult
 	}
 	usageCostHooksMu.Lock()
 	hook := usageCostHooks[NormalizeProvider(provider)]
+	if p := getProviderProfile(context.Background(), NormalizeProvider(provider)); p != nil && p.GetUsageCostHook != nil {
+		hook = p.GetUsageCostHook
+	}
 	usageCostHooksMu.Unlock()
 	if hook == nil {
 		return CostResult{}, false

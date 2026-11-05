@@ -19,8 +19,9 @@ func resetCatalogTables() {
 	defer catalogMu.Unlock()
 	catalogOnce = sync.Once{}
 	catalogBuilt = false
-	pluginPlacements = map[string]PluginPickerPlacement{}
-	pluginCatalogAliases = map[string]string{}
+	catalogAliasMu.Lock()
+	catalogAliasMemo = nil
+	catalogAliasMu.Unlock()
 }
 
 var testCodexModels = []string{"gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.1-codex"}
@@ -230,25 +231,23 @@ func TestHiddenProfilesStayOutOfTheListedRowsUntilOptedIn(t *testing.T) {
 	}
 }
 
-func TestRegisterPluginPickerPlacement(t *testing.T) {
+func TestPluginProfilePickerPlacement(t *testing.T) {
 	resetCuratedCatalog(t)
-	RegisterPluginPickerPlacement("upstage", PluginPickerPlacement{After: "nous", Group: ProviderGroup{ID: "solar", Label: "Solar", Description: "Upstage Solar"}, CatalogAliases: true})
+	registerTestProfile(t, Profile{Name: "upstage-test", AuthType: AuthTypeAPIKey, PickerAfter: "nous", Aliases: []string{"solar"},
+		PickerGroup: []string{"solar", "Solar", "Upstage Solar"}, CatalogAliases: true})
+	SyncPluginProviderCatalog()
 	rows := CanonicalProviders()
-	RegisterPluginPickerPlacement("deepinfra", PluginPickerPlacement{After: "nous"})
-	if CanonicalProviders()[1].Slug != "upstage" {
-		t.Fatal("a placement registered after admission must not rewrite the admitted row")
-	}
 	idx := map[string]int{}
 	for i, p := range rows {
 		idx[p.Slug] = i
 	}
-	if idx["upstage"] != idx["nous"]+1 {
-		t.Fatalf("upstage not anchored after nous: %d vs %d", idx["upstage"], idx["nous"])
+	if idx["upstage-test"] != idx["nous"]+1 {
+		t.Fatalf("upstage-test not anchored after nous: %d vs %d", idx["upstage-test"], idx["nous"])
 	}
-	if ProviderGroupForSlug("upstage") != "solar" {
+	if ProviderGroupForSlug("upstage-test") != "solar" {
 		t.Fatal("group not registered")
 	}
-	if target, ok := CatalogProviderAlias("solar"); !ok || target != "upstage" {
+	if target, ok := CatalogProviderAlias("solar"); !ok || target != "upstage-test" {
 		t.Fatalf("catalog alias: %q %v", target, ok)
 	}
 }

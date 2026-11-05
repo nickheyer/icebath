@@ -14,40 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-// Appends a profile to the registry for one test, the registry restored afterwards
-func registerTestProfile(t *testing.T, p Profile) {
-	t.Helper()
-	profilesOnce.Do(buildProfiles)
-	if _, taken := profilesByKey[p.Name]; taken {
-		t.Fatalf("profile %s already registered", p.Name)
-	}
-	if p.Auth == "" {
-		p.Auth = AuthKindOf(p.AuthType)
-	}
-	if p.Mode == "" {
-		p.Mode = ModeChatCompletions
-	}
-	profilesList = append(profilesList, p)
-	profilesByKey[p.Name] = len(profilesList) - 1
-	t.Cleanup(func() {
-		profilesList = profilesList[:len(profilesList)-1]
-		delete(profilesByKey, p.Name)
-	})
-}
-
 func registerAcmeACP(t *testing.T) {
 	t.Helper()
 	for _, v := range []string{"ICEBATH_ACME_ACP_COMMAND", "ICEBATH_ACME_ACP_ARGS", "ACME_ACP_BASE_URL"} {
 		t.Setenv(v, "")
 	}
-	registerTestProfile(t, Profile{Name: "acme-acp", DisplayName: "acme-acp", AuthType: AuthTypeExternalProcess, BaseURL: "acp://acme", BaseURLEnv: "ACME_ACP_BASE_URL"})
-	RegisterExternalProcessSpec("acme-acp", ExternalProcessSpec{Command: "acme", Args: []string{"--acp", "--stdio"}, CommandEnvVars: []string{"ICEBATH_ACME_ACP_COMMAND"}, ArgsEnvVar: "ICEBATH_ACME_ACP_ARGS"})
-	t.Cleanup(func() {
-		externalProcessMu.Lock()
-		delete(externalProcessSpecs, "acme-acp")
-		externalProcessMu.Unlock()
-		UnregisterExternalAuthEvidence("acme-acp")
-	})
+	registerTestProfile(t, acmeACPProfile())
 }
 
 func writeExecutable(t *testing.T, path string) string {
@@ -134,7 +106,9 @@ func TestAuthVerifiedFalseWithoutEvidence(t *testing.T) {
 	if status["auth_verified"] != false || status["auth_source"] != nil || status["configured"] != false {
 		t.Fatalf("unexpected status %v", status)
 	}
-	RegisterExternalAuthEvidence("acme-acp", func() (bool, string) { return true, "~/.acme/credentials.json" })
+	evidenced := acmeACPProfile()
+	evidenced.ExternalAuthEvidenceHook = func() (bool, string, bool) { return true, "~/.acme/credentials.json", true }
+	RegisterProvider(evidenced)
 	status = GetExternalProcessProviderStatus(env, "acme-acp")
 	if status["auth_verified"] != true || status["auth_source"] != "~/.acme/credentials.json" {
 		t.Fatalf("evidence ignored %v", status)
@@ -688,4 +662,11 @@ func TestFormatAuthErrorCopy(t *testing.T) {
 	if got := formatAuthError(newAuthErr("zai", "dead", "invalid_grant", true)); got != "dead Run `icebath model` to re-authenticate." {
 		t.Fatalf("relogin %q", got)
 	}
+}
+
+// External process test profile launching acme over stdio with env overrides for its command and argv
+func acmeACPProfile() Profile {
+	return Profile{Name: "acme-acp", DisplayName: "acme-acp", AuthType: AuthTypeExternalProcess, BaseURL: "acp://acme",
+		BaseURLEnv: "ACME_ACP_BASE_URL", ProcessCommand: "acme", ProcessArgs: []string{"--acp", "--stdio"},
+		ProcessCommandEnvVars: []string{"ICEBATH_ACME_ACP_COMMAND"}, ProcessArgsEnvVar: "ICEBATH_ACME_ACP_ARGS"}
 }

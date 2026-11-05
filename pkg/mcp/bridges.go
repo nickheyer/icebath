@@ -84,6 +84,15 @@ func withSecretScope(ctx context.Context, secrets map[string]string, profileHome
 	return provider.WithSecretScope(ctx, secrets, profileHome)
 }
 
+// Secret under the context's bound profile scope mapping, bound false when no mapping is bound
+func boundScopeSecret(ctx context.Context, name string) (value string, found, bound bool, err error) {
+	if provider.CurrentSecretScope(ctx) == nil {
+		return "", false, false, nil
+	}
+	value, found, err = provider.GetSecret(ctx, name)
+	return value, found, true, err
+}
+
 // Hydrates a profile's external secret sources, true once every source applied
 func hydrateSecretSources(h string) bool {
 	provider.HydrateProfileSecretSources(h)

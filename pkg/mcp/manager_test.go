@@ -238,6 +238,7 @@ func TestRegisterWakesStaleCachedServer(t *testing.T) {
 	if _, err := Connect(context.Background(), env, map[string]*Rendered{"stale": mockEntry(t, nil)}); err != nil {
 		t.Fatal(err)
 	}
+	flushLoop(t)
 	if !stale.reconnect.IsSet() {
 		t.Fatal("a known server without a session must be signalled to reconnect")
 	}

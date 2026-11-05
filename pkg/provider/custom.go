@@ -17,22 +17,26 @@ import (
 
 // ---- user configured provider definitions (hermes_cli/providers.py) ----
 
-// UserProvider is a provider definition read from the providers or custom_providers config sections
-type UserProvider struct {
-	ID        string
-	Name      string
-	Transport string
-	KeyEnv    []string
-	BaseURL   string
-	Source    string
+// ProviderDef is a resolved provider merged from models.dev, the overlays, plugin profiles and user config
+type ProviderDef struct {
+	ID           string
+	Name         string
+	Transport    string
+	KeyEnv       []string
+	BaseURL      string
+	BaseURLEnv   string
+	IsAggregator bool
+	AuthType     string
+	Doc          string
+	Source       string
 }
 
 // Shared user-config definition for providers and custom_providers entries
-func userPdef(pid, name, baseURL, keyEnv, transport string) *UserProvider {
+func userPdef(pid, name, baseURL, keyEnv, transport string) *ProviderDef {
 	if transport == "" {
 		transport = "openai_chat"
 	}
-	p := &UserProvider{ID: pid, Name: name, Transport: transport, BaseURL: baseURL, Source: "user-config"}
+	p := &ProviderDef{ID: pid, Name: name, Transport: transport, BaseURL: baseURL, AuthType: "api_key", Source: "user-config"}
 	if keyEnv != "" {
 		p.KeyEnv = []string{keyEnv}
 	}
@@ -40,7 +44,7 @@ func userPdef(pid, name, baseURL, keyEnv, transport string) *UserProvider {
 }
 
 // Provider definition from a providers block that carries an endpoint, nil for built in tuning blocks
-func resolveUserProvider(name string, userConfig map[string]any) *UserProvider {
+func resolveUserProvider(name string, userConfig map[string]any) *ProviderDef {
 	if len(userConfig) == 0 {
 		return nil
 	}
@@ -110,12 +114,12 @@ func CustomProviderAliases(displayName, providerKey string) map[string]bool {
 }
 
 // Provider definition from the legacy custom_providers list, bare custom healing onto the first entry
-func resolveCustomProvider(name string, customProviders []any) *UserProvider {
+func resolveCustomProvider(name string, customProviders []any) *ProviderDef {
 	requested := strings.ToLower(strings.TrimSpace(name))
 	if requested == "" || len(customProviders) == 0 {
 		return nil
 	}
-	var firstValid *UserProvider
+	var firstValid *ProviderDef
 	for _, raw := range customProviders {
 		entry, ok := raw.(map[string]any)
 		if !ok {

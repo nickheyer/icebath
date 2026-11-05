@@ -55,6 +55,7 @@ func TestCircuitBreakerHalfOpenDeadSessionRequestsReconnect(t *testing.T) {
 	now := breakerClock(t)
 	openBreakerPastCooldown(now, circuitBreakerThreshold)
 	out := decodeResult(t, makeToolHandler("srv", "tool1", 10, false)(context.Background(), toolCall(map[string]any{})))
+	flushLoop(t)
 	if msg, _ := out["error"].(string); !strings.Contains(strings.ToLower(msg), "reconnect") || !srv.reconnect.IsSet() {
 		t.Fatalf("got %v reconnect set %v", out, srv.reconnect.IsSet())
 	}

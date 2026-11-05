@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 // ---- OpenRouter and bare custom fallback ----
@@ -215,23 +214,14 @@ type ExternalProcessSpec struct {
 	ArgsEnvVar     string
 }
 
-var (
-	externalProcessMu    sync.RWMutex
-	externalProcessSpecs = map[string]ExternalProcessSpec{}
-)
-
-// RegisterExternalProcessSpec declares the launch details of an external process provider profile
-func RegisterExternalProcessSpec(provider string, spec ExternalProcessSpec) {
-	externalProcessMu.Lock()
-	defer externalProcessMu.Unlock()
-	externalProcessSpecs[strings.ToLower(strings.TrimSpace(provider))] = spec
-}
-
-func externalProcessSpecFor(provider string) (ExternalProcessSpec, bool) {
-	externalProcessMu.RLock()
-	defer externalProcessMu.RUnlock()
-	spec, ok := externalProcessSpecs[provider]
-	return spec, ok
+// Launch details declared by the provider's registered profile
+func externalProcessSpecFor(ctx context.Context, provider string) (ExternalProcessSpec, bool) {
+	p := getProviderProfile(ctx, provider)
+	if p == nil {
+		return ExternalProcessSpec{}, false
+	}
+	return ExternalProcessSpec{Command: p.ProcessCommand, Args: cloneStrings(p.ProcessArgs),
+		CommandEnvVars: cloneStrings(p.ProcessCommandEnvVars), ArgsEnvVar: p.ProcessArgsEnvVar}, true
 }
 
 // Keyed on the registered provider's auth type
@@ -248,15 +238,18 @@ func isExternalProcessProvider(provider string) bool {
 
 // ExternalProcessLaunchEnvNames lists the env names that choose an external provider's executable or argv
 func ExternalProcessLaunchEnvNames() map[string]bool {
-	externalProcessMu.RLock()
-	defer externalProcessMu.RUnlock()
 	out := map[string]bool{}
-	for _, spec := range externalProcessSpecs {
-		for _, v := range spec.CommandEnvVars {
-			out[v] = true
+	for _, p := range ListProviders(context.Background()) {
+		if p.AuthType != AuthTypeExternalProcess {
+			continue
 		}
-		if spec.ArgsEnvVar != "" {
-			out[spec.ArgsEnvVar] = true
+		for _, v := range p.ProcessCommandEnvVars {
+			if v != "" {
+				out[v] = true
+			}
+		}
+		if p.ProcessArgsEnvVar != "" {
+			out[p.ProcessArgsEnvVar] = true
 		}
 	}
 	return out
@@ -328,7 +321,7 @@ func (r *resolver) externalProcessSpec(pconfig Profile) (string, []string, strin
 	if baseURL == "" {
 		baseURL = pconfig.BaseURL
 	}
-	spec, _ := externalProcessSpecFor(pconfig.Name)
+	spec, _ := externalProcessSpecFor(r.ctx, pconfig.Name)
 	command := ""
 	for _, v := range spec.CommandEnvVars {
 		if val := strings.TrimSpace(os.Getenv(v)); val != "" {

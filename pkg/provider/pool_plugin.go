@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -40,6 +41,11 @@ func UnregisterProviderProfileHooks(provider string) {
 }
 
 func providerProfileHooks(provider string) *ProviderProfileHooks {
+	if p := getProviderProfile(context.Background(), strings.ToLower(strings.TrimSpace(provider))); p != nil &&
+		(p.RefreshCredential != nil || p.SeedPoolCredentialsHook != nil || p.RemoveCredentialSourceHook != nil || p.AuthHandler != nil) {
+		return &ProviderProfileHooks{RefreshCredential: p.RefreshCredential, SeedPoolCredentials: p.SeedPoolCredentialsHook,
+			RemoveCredentialSource: p.RemoveCredentialSourceHook, AuthHandler: p.AuthHandler}
+	}
 	profileHooksMu.RLock()
 	defer profileHooksMu.RUnlock()
 	return profileHooks[strings.ToLower(strings.TrimSpace(provider))]

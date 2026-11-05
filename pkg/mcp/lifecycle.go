@@ -3,6 +3,10 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -310,3 +314,100 @@ func killOrphanedMCPChildren(includeActive bool, serverName string) {
 
 // Stops the MCP loop only when no registered server still owns it
 func stopMCPLoopIfIdle() bool { return stopMCPLoop(true) }
+
+// Argv markers of gateway children that race into a spawn window and are never MCP servers, matched against argv[1:]
+var nonMCPChildCmdlineMarkers = []string{
+	"tui_gateway.slash_worker", "tui_gateway.entry",
+	"-dorg.eclipse.equinox.launcher", "eclipse.jdt.ls", "org.eclipse.equinox.launcher_",
+}
+
+// Direct child pids of this process unioned over every thread, the process table when no thread list is readable
+func snapshotChildPIDs() map[int]bool {
+	self := os.Getpid()
+	found := map[int]bool{}
+	taskDir := filepath.Join("/proc", strconv.Itoa(self), "task")
+	entries, err := os.ReadDir(taskDir)
+	readable := false
+	if err == nil {
+		for _, e := range entries {
+			data, err := os.ReadFile(filepath.Join(taskDir, e.Name(), "children"))
+			if err != nil {
+				continue
+			}
+			readable = true
+			for _, field := range strings.Fields(strings.TrimPrefix(string(data), "\ufeff")) {
+				pid, err := strconv.Atoi(field)
+				if err != nil {
+					break
+				}
+				found[pid] = true
+			}
+		}
+	}
+	if !readable {
+		for _, pid := range tools.ProcessChildren(self) {
+			found[pid] = true
+		}
+	}
+	return found
+}
+
+// Drops raced away pids, the owner death supervisor and gateway children so MCP teardown never group kills them
+func filterMCPChildren(pids map[int]bool) map[int]bool {
+	if len(pids) == 0 {
+		return pids
+	}
+	kept := map[int]bool{}
+	for pid := range pids {
+		argv, err := settledCmdline(pid)
+		if err != nil || (len(argv) == 0 && tools.ProcessZombie(pid)) {
+			continue
+		}
+		if tools.IsOwnerDeathSupervisor(argv) || argvHasNonMCPMarker(argv) {
+			continue
+		}
+		kept[pid] = true
+	}
+	return kept
+}
+
+// Reports whether any argument after the program carries a non MCP child marker
+func argvHasNonMCPMarker(argv []string) bool {
+	for _, arg := range argv[min(1, len(argv)):] {
+		for _, marker := range nonMCPChildCmdlineMarkers {
+			if strings.Contains(arg, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Pids a stdio spawn tracks, the transport's child kept only while it is a live direct MCP child
+func spawnedMCPChildren(pid int) []int {
+	if pid <= 0 || !snapshotChildPIDs()[pid] {
+		return nil
+	}
+	if !filterMCPChildren(map[int]bool{pid: true})[pid] {
+		return nil
+	}
+	return []int{pid}
+}
+
+// Bound and pause of the argv re-reads that wait out a fresh child whose exec has not published its arguments
+const (
+	execSettleTimeout = 200 * time.Millisecond
+	execSettlePoll    = time.Millisecond
+)
+
+// Argv of pid once its exec published the argument area, empty only for a zombie or a process that stays argless
+func settledCmdline(pid int) ([]string, error) {
+	deadline := time.Now().Add(execSettleTimeout)
+	for {
+		argv, err := tools.ProcessCmdline(pid)
+		if err != nil || len(argv) > 0 || tools.ProcessZombie(pid) || !time.Now().Before(deadline) {
+			return argv, err
+		}
+		time.Sleep(execSettlePoll)
+	}
+}

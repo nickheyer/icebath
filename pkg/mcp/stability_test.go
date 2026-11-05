@@ -333,6 +333,11 @@ func TestStabilityDrainBoundedWhenTaskIgnoresCancellation(t *testing.T) {
 	mcpMu.Lock()
 	mcpLoopState = nil
 	mcpMu.Unlock()
+	t.Cleanup(func() {
+		_ = l.callSoon(l.stop)
+		<-l.exitedChan()
+		_ = l.close()
+	})
 	release, finished := make(chan struct{}), make(chan struct{})
 	started := make(chan struct{})
 	l.spawn(l.ctx, func(ctx context.Context) {
@@ -357,5 +362,78 @@ func TestStabilityDrainBoundedWhenTaskIgnoresCancellation(t *testing.T) {
 	<-finished
 	if logs.count("still pending after") == 0 {
 		t.Fatalf("no pending warning: %s", logs.text())
+	}
+}
+
+func TestStabilityOuterTimeoutStillAllowsLoopOwnedDrainBeforeStop(t *testing.T) {
+	isolateHome(t)
+	resetRegistry := func() {
+		mcpMu.Lock()
+		clear(mcpServers)
+		clear(serverConnecting)
+		mcpMu.Unlock()
+	}
+	resetRegistry()
+	ensureMCPLoop()
+	l := runningLoop()
+	if l == nil {
+		t.Fatal("loop not running")
+	}
+	parkedStarted, cleanupRan, future := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	blockerStarted, releaseBlocker := make(chan struct{}), make(chan struct{})
+	release := sync.OnceFunc(func() { close(releaseBlocker) })
+	if err := spawnOnLoop(context.Background(), func(ctx context.Context) {
+		defer close(future)
+		defer close(cleanupRan)
+		close(parkedStarted)
+		<-ctx.Done()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitTimeout := func(ch chan struct{}, what string) {
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s never started", what)
+		}
+	}
+	waitTimeout(parkedStarted, "parked task")
+	if err := l.callSoon(func() {
+		close(blockerStarted)
+		select {
+		case <-releaseBlocker:
+		case <-time.After(5 * time.Second):
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitTimeout(blockerStarted, "loop blocker")
+	prev := mcpLoopDrainTimeout
+	mcpLoopDrainTimeout = 10 * time.Millisecond
+	timer := time.AfterFunc(1200*time.Millisecond, release)
+	t.Cleanup(func() {
+		timer.Stop()
+		release()
+		resetRegistry()
+		stopMCPLoop(false)
+		mcpLoopDrainTimeout = prev
+	})
+	logs := captureLogs(t)
+	stopMCPLoop(false)
+	select {
+	case <-cleanupRan:
+	default:
+		t.Fatal("drain was overtaken by loop.stop")
+	}
+	select {
+	case <-future:
+	default:
+		t.Fatal("parked task remained pending after loop resumed")
+	}
+	if !l.isClosed() {
+		t.Fatal("loop not closed")
+	}
+	if logs.count("Timed out waiting for MCP loop drain") == 0 {
+		t.Fatalf("no outer timeout warning: %s", logs.text())
 	}
 }

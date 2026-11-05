@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 var (
@@ -187,3 +188,21 @@ func resetLedgers(t *testing.T) {
 
 // Pointer to a float literal
 func fptr(f float64) *float64 { return &f }
+
+// Waits until the running loop has run every callback queued before this call
+func flushLoop(t *testing.T) {
+	t.Helper()
+	l := runningLoop()
+	if l == nil {
+		return
+	}
+	done := make(chan struct{})
+	if l.callSoon(func() { close(done) }) != nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("loop never ran its queued callbacks")
+	}
+}

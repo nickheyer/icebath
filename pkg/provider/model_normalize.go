@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"strings"
 	"sync"
 )
@@ -54,6 +55,9 @@ func RegisterModelIDNormalizer(provider string, fn ModelIDNormalizer) {
 func profileNormalizeModelID(provider, model string) (out string) {
 	modelIDNormalizersMu.RLock()
 	fn := modelIDNormalizers[provider]
+	if p := getProviderProfile(context.Background(), provider); p != nil && p.NormalizeModelIDHook != nil {
+		fn = p.NormalizeModelIDHook
+	}
 	modelIDNormalizersMu.RUnlock()
 	if fn == nil {
 		return ""

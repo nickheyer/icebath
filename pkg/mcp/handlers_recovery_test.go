@@ -138,6 +138,7 @@ func TestStdioDeadChildNeverReturningIsNotReportedAsTimeout(t *testing.T) {
 			t.Fatalf("%q in %q", forbidden, message)
 		}
 	}
+	flushLoop(t)
 	if !srv.reconnect.IsSet() || tr.count(methodToolsCall) != 0 || serverErrorCounts[ServerKey{Name: "srv-gone"}] != 1 {
 		t.Fatalf("reconnect %v calls %d strikes %d", srv.reconnect.IsSet(), tr.count(methodToolsCall), serverErrorCounts[ServerKey{Name: "srv-gone"}])
 	}

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -451,7 +452,7 @@ func authResolver(env PoolEnv) *resolver {
 
 // GetAPIKeyProviderStatus is the status snapshot for an API key provider
 func GetAPIKeyProviderStatus(env PoolEnv, providerID string) map[string]any {
-	pconfig, ok := registryProfile(providerID)
+	pconfig, ok := registryProfileCtx(env.ctx(), providerID)
 	if !ok || pconfig.AuthType != AuthTypeAPIKey {
 		return map[string]any{"configured": false}
 	}
@@ -481,32 +482,12 @@ func GetAPIKeyProviderStatus(env PoolEnv, providerID string) map[string]any {
 	}
 }
 
-var (
-	externalAuthEvidenceMu sync.RWMutex
-	externalAuthEvidence   = map[string]func() (bool, string){}
-)
-
-// RegisterExternalAuthEvidence installs a profile's positive auth evidence reader for an external process provider
-func RegisterExternalAuthEvidence(provider string, fn func() (bool, string)) {
-	externalAuthEvidenceMu.Lock()
-	defer externalAuthEvidenceMu.Unlock()
-	externalAuthEvidence[strings.ToLower(strings.TrimSpace(provider))] = fn
-}
-
-// UnregisterExternalAuthEvidence removes a provider's auth evidence reader
-func UnregisterExternalAuthEvidence(provider string) {
-	externalAuthEvidenceMu.Lock()
-	defer externalAuthEvidenceMu.Unlock()
-	delete(externalAuthEvidence, strings.ToLower(strings.TrimSpace(provider)))
-}
-
 // Positive evidence that an external process CLI is authed, the binary resolving being the generic proof
-func externalProcessAuthEvidence(providerID, resolvedCommand string) (bool, string) {
-	externalAuthEvidenceMu.RLock()
-	fn := externalAuthEvidence[strings.ToLower(strings.TrimSpace(providerID))]
-	externalAuthEvidenceMu.RUnlock()
-	if fn != nil {
-		return fn()
+func externalProcessAuthEvidence(ctx context.Context, providerID, resolvedCommand string) (bool, string) {
+	if p := getProviderProfile(ctx, providerID); p != nil {
+		if verified, source, ok := p.ExternalAuthEvidence(); ok {
+			return verified, source
+		}
 	}
 	if resolvedCommand != "" {
 		return true, "command: " + resolvedCommand
@@ -516,13 +497,13 @@ func externalProcessAuthEvidence(providerID, resolvedCommand string) (bool, stri
 
 // GetExternalProcessProviderStatus is the structural status of a provider that runs a local subprocess
 func GetExternalProcessProviderStatus(env PoolEnv, providerID string) map[string]any {
-	pconfig, ok := registryProfile(providerID)
+	pconfig, ok := registryProfileCtx(env.ctx(), providerID)
 	if !ok || pconfig.AuthType != AuthTypeExternalProcess {
 		return map[string]any{"configured": false}
 	}
 	command, args, baseURL, resolvedCommand, _ := authResolver(env).externalProcessSpec(pconfig)
 	available := resolvedCommand != "" || strings.HasPrefix(baseURL, "acp+tcp://")
-	authVerified, authSource := externalProcessAuthEvidence(providerID, resolvedCommand)
+	authVerified, authSource := externalProcessAuthEvidence(env.ctx(), providerID, resolvedCommand)
 	var resolved, source any
 	if resolvedCommand != "" {
 		resolved = resolvedCommand
@@ -576,7 +557,7 @@ func GetAuthStatus(env PoolEnv, providerID string) map[string]any {
 	if statusFn, ok := bespokeStatusFunctions()[target]; ok {
 		return statusFn(env)
 	}
-	if pconfig, ok := registryProfile(target); ok {
+	if pconfig, ok := registryProfileCtx(env.ctx(), target); ok {
 		if byType, ok := statusByAuthType[pconfig.AuthType]; ok {
 			return byType(env, target)
 		}
@@ -757,7 +738,7 @@ func getConfigProvider(env PoolEnv) string {
 // True when logout should reset model.provider because config.yaml selects this registry provider
 func shouldResetConfigProviderOnLogout(env PoolEnv, providerID string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(providerID))
-	if _, ok := registryProfile(normalized); !ok {
+	if _, ok := registryProfileCtx(env.ctx(), normalized); !ok {
 		return false
 	}
 	return getConfigProvider(env) == normalized

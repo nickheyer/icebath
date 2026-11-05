@@ -794,7 +794,7 @@ func ProviderEnvEntries() map[string]config.EnvVar {
 	providerEnvMu.Lock()
 	defer providerEnvMu.Unlock()
 	if providerEnvCatalog == nil {
-		providerEnvCatalog = providerEnvEntriesFor(Profiles(), staticDeclaredEnvNames())
+		providerEnvCatalog = providerEnvEntriesFor(bundledAndBuiltinProfiles(), staticDeclaredEnvNames())
 	}
 	out := make(map[string]config.EnvVar, len(providerEnvCatalog))
 	for k, v := range providerEnvCatalog {
