@@ -22,7 +22,7 @@ func TestLiveCatalogueCacheIsScopedToAccessToken(t *testing.T) {
 	ft.handle = func(r *http.Request) (*http.Response, error) {
 		next := responses[0]
 		responses = responses[1:]
-		return jsonResponse(200, next), nil
+		return jsonResponse(nil, 200, next, nil), nil
 	}
 	reqFor := func(subject string) ContextLengthRequest {
 		return ContextLengthRequest{Model: "gpt-5.5", BaseURL: "https://chatgpt.com/backend-api/codex", APIKey: codexJWT(subject), Provider: "openai-codex"}
@@ -48,8 +48,10 @@ func TestLiveCatalogueCacheIsScopedToAccessToken(t *testing.T) {
 
 func TestProbeFailureFallsBackToHardcoded(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
-	ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(401, map[string]any{}), nil }
-	mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.5")), 272_000, "fallback")
+	ft.handle = func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(nil, 401, map[string]any{}, nil), nil
+	}
+	mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.5")), 272_000, "fallback")
 }
 
 func TestGatewayKeyNeverProbesTheDirectCatalog(t *testing.T) {
@@ -64,7 +66,7 @@ func TestGatewayKeyNeverProbesTheDirectCatalog(t *testing.T) {
 func TestCustomBaseProbesItsOwnCatalog(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, codexCatalog(map[string]any{"slug": "gpt-5.5", "context_window": 272_000})), nil
+		return jsonResponse(nil, 200, codexCatalog(map[string]any{"slug": "gpt-5.5", "context_window": 272_000}), nil), nil
 	}
 	got := GetModelContextLength(ctx, ContextLengthRequest{Model: "gpt-5.5", BaseURL: "https://codex-gw.example/backend-api/codex", APIKey: codexJWT("acct"), Provider: "openai-codex"})
 	mustEqual(t, got, 272_000, "ctx")
@@ -79,9 +81,9 @@ func TestLiveCodexContextReplacesStaleCacheInBothDirections(t *testing.T) {
 		base := "https://chatgpt.com/backend-api/codex"
 		writeContextCacheFile(t, dir, map[string]any{"gpt-5.5@" + base: tc[0], "other-model@https://api.openai.com/v1/": 128_000})
 		ft.handle = func(r *http.Request) (*http.Response, error) {
-			return jsonResponse(200, codexCatalog(map[string]any{"slug": "gpt-5.5", "context_window": tc[1]})), nil
+			return jsonResponse(nil, 200, codexCatalog(map[string]any{"slug": "gpt-5.5", "context_window": tc[1]}), nil), nil
 		}
-		mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.5")), tc[1], "live")
+		mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.5")), tc[1], "live")
 		mustEqual(t, ft.count(), 1, "one probe")
 		remaining := readContextCacheFile(t, dir)
 		mustEqual(t, intOrDefault(remaining["gpt-5.5@"+base], 0), tc[1], "replaced")
@@ -92,18 +94,18 @@ func TestLiveCodexContextReplacesStaleCacheInBothDirections(t *testing.T) {
 func TestBaseSlugKeepsAdvertised272k(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, codexCatalog(map[string]any{"slug": "gpt-5.6-sol", "context_window": 272_000})), nil
+		return jsonResponse(nil, 200, codexCatalog(map[string]any{"slug": "gpt-5.6-sol", "context_window": 272_000}), nil), nil
 	}
-	mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.6-sol")), 272_000, "base")
+	mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol")), 272_000, "base")
 }
 
 func TestNon272kAdvertisementIsTrustedVerbatim(t *testing.T) {
 	for _, advertised := range []int{372_000, 200_000, 1_050_000} {
 		ctx, ft, _ := metaTest(t)
 		ft.handle = func(r *http.Request) (*http.Response, error) {
-			return jsonResponse(200, codexCatalog(map[string]any{"slug": "gpt-5.6-sol", "context_window": advertised})), nil
+			return jsonResponse(nil, 200, codexCatalog(map[string]any{"slug": "gpt-5.6-sol", "context_window": advertised}), nil), nil
 		}
-		mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.6-sol-900k")), advertised, "verbatim")
+		mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol-900k")), advertised, "verbatim")
 	}
 }
 
@@ -115,8 +117,10 @@ func TestOptedInVariantCappedAtLiveCatalogMax(t *testing.T) {
 			if tc.max > 0 {
 				item["max_context_window"] = tc.max
 			}
-			ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(200, codexCatalog(item)), nil }
-			mustEqual(t, GetModelContextLength(ctx, codexRequest(base+"-900k")), tc.want, base)
+			ft.handle = func(r *http.Request) (*http.Response, error) {
+				return jsonResponse(nil, 200, codexCatalog(item), nil), nil
+			}
+			mustEqual(t, GetModelContextLength(ctx, codexContextRequest(base+"-900k")), tc.want, base)
 		}
 	}
 }
@@ -124,41 +128,41 @@ func TestOptedInVariantCappedAtLiveCatalogMax(t *testing.T) {
 func TestBaseSlugKeepsAdvertisedCtxEvenWithCatalogMax(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, codexCatalog(map[string]any{"slug": "gpt-5.6-sol", "context_window": 272_000, "max_context_window": 872_000})), nil
+		return jsonResponse(nil, 200, codexCatalog(map[string]any{"slug": "gpt-5.6-sol", "context_window": 272_000, "max_context_window": 872_000}), nil), nil
 	}
-	mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.6-sol")), 272_000, "base")
+	mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol")), 272_000, "base")
 }
 
 func TestFailedRefreshPastTTLKeepsTheObservedCatalogCap(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, codexCatalog(map[string]any{"slug": "GPT-5.6-Luna", "context_window": 272_000, "max_context_window": 600_000})), nil
+		return jsonResponse(nil, 200, codexCatalog(map[string]any{"slug": "GPT-5.6-Luna", "context_window": 272_000, "max_context_window": 600_000}), nil), nil
 	}
-	mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.6-luna-900k")), 600_000, "first")
+	mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.6-luna-900k")), 600_000, "first")
 	ft.handle = func(r *http.Request) (*http.Response, error) { return nil, errors.New("catalog down") }
 	wallNow = func() time.Time { return time.Now().Add(codexOAuthContextCacheTTL + time.Second) }
-	mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.6-luna-900k")), 600_000, "after failed refresh")
+	mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.6-luna-900k")), 600_000, "after failed refresh")
 }
 
 func TestAProbeThatFindsNoCatalogIsNotRepeatedWithinTheNegativeTTL(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(r *http.Request) (*http.Response, error) { return nil, errors.New("catalog down") }
-	mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.6-sol")), 272_000, "down")
+	mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol")), 272_000, "down")
 	perProbe := ft.count()
-	GetModelContextLength(ctx, codexRequest("gpt-5.6-sol"))
-	GetModelContextLength(ctx, codexRequest("gpt-5.6-sol-900k"))
+	GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol"))
+	GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol-900k"))
 	if perProbe == 0 || ft.count() != perProbe {
 		t.Fatalf("re-probed inside the negative ttl: %d then %d", perProbe, ft.count())
 	}
 	wallNow = func() time.Time { return time.Now().Add(codexOAuthContextNegativeTTL + time.Second) }
-	GetModelContextLength(ctx, codexRequest("gpt-5.6-sol"))
+	GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol"))
 	mustEqual(t, ft.count(), 2*perProbe, "retried after the negative ttl")
 }
 
 func TestCatalogMaxIsPublishedBeforeTheContextEntry(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, codexCatalog(map[string]any{"slug": "gpt-5.6-luna", "context_window": 272_000, "max_context_window": 872_000})), nil
+		return jsonResponse(nil, 200, codexCatalog(map[string]any{"slug": "gpt-5.6-luna", "context_window": 272_000, "max_context_window": 872_000}), nil), nil
 	}
 	live, fresh := fetchCodexOAuthContextLengthsWithSource(ctx, codexJWT("fake-token"), "")
 	if !fresh || live["gpt-5.6-luna"] != 272_000 {
@@ -174,9 +178,11 @@ func TestCatalogMaxIsPublishedBeforeTheContextEntry(t *testing.T) {
 
 func TestFallbackTableResolutionAlsoBumped(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
-	ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(401, map[string]any{}), nil }
-	mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.6-sol-900k")), 900_000, "bumped")
-	mustEqual(t, GetModelContextLength(ctx, codexRequest("gpt-5.6-sol")), 272_000, "base stays")
+	ft.handle = func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(nil, 401, map[string]any{}, nil), nil
+	}
+	mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol-900k")), 900_000, "bumped")
+	mustEqual(t, GetModelContextLength(ctx, codexContextRequest("gpt-5.6-sol")), 272_000, "base stays")
 }
 
 func Test900kEligibilityTable(t *testing.T) {
@@ -199,16 +205,18 @@ func Test900kEligibilityTable(t *testing.T) {
 		ctx, ft, _ := metaTest(t)
 		slug := strings.TrimSuffix(StripCodexContextVariantSuffix(lastPathSegment(row.model)), "-900k")
 		ft.handle = func(r *http.Request) (*http.Response, error) {
-			return jsonResponse(200, codexCatalog(map[string]any{"slug": slug, "context_window": 272_000})), nil
+			return jsonResponse(nil, 200, codexCatalog(map[string]any{"slug": slug, "context_window": 272_000}), nil), nil
 		}
-		mustEqual(t, GetModelContextLength(ctx, codexRequest(row.model)), row.ctx, row.model+" ctx")
+		mustEqual(t, GetModelContextLength(ctx, codexContextRequest(row.model)), row.ctx, row.model+" ctx")
 	}
 }
 
 func TestEndpointAuthFailureStopsAfterFirstCandidate(t *testing.T) {
 	for _, status := range []int{401, 403} {
 		ctx, ft, _ := metaTest(t)
-		ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(status, map[string]any{}), nil }
+		ft.handle = func(r *http.Request) (*http.Response, error) {
+			return jsonResponse(nil, status, map[string]any{}, nil), nil
+		}
 		if got := FetchEndpointModelMetadata(ctx, "https://custom.example/v1", "", false); len(got) != 0 {
 			t.Fatalf("got %v", got)
 		}

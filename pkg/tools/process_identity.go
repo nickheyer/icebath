@@ -263,13 +263,35 @@ type LedgerEntry struct {
 	BootID        *string  `json:"boot_id"`
 }
 
-// Row map of the entry in the ledger's JSON shape
+// Row map of the entry in the ledger's JSON shape, built without a JSON round trip so invalid bytes survive
 func (e LedgerEntry) asMap() map[string]any {
-	data, _ := json.Marshal(e)
-	var m map[string]any
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.UseNumber()
-	dec.Decode(&m)
+	m := map[string]any{
+		"pid": e.Pid, "create_time": nil, "purpose": e.Purpose, "install": e.Install, "spawner_pid": nil,
+		"spawner_create": nil, "registered_at": e.RegisteredAt, "argv": e.Argv, "host": e.Host, "port": nil,
+		"profile": e.Profile, "icebath_home": e.IcebathHome, "isolated": e.Isolated, "boot_start": nil,
+		"spawner_boot": nil, "boot_id": nil,
+	}
+	if e.CreateTime != nil {
+		m["create_time"] = *e.CreateTime
+	}
+	if e.SpawnerPid != nil {
+		m["spawner_pid"] = *e.SpawnerPid
+	}
+	if e.SpawnerCreate != nil {
+		m["spawner_create"] = *e.SpawnerCreate
+	}
+	if e.Port != nil {
+		m["port"] = *e.Port
+	}
+	if e.BootStart != nil {
+		m["boot_start"] = *e.BootStart
+	}
+	if e.SpawnerBoot != nil {
+		m["spawner_boot"] = *e.SpawnerBoot
+	}
+	if e.BootID != nil {
+		m["boot_id"] = *e.BootID
+	}
 	return m
 }
 

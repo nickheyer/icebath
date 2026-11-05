@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -374,8 +373,9 @@ func pyTypeName(v any) string {
 
 // Attaches the foreground to background promotion note to a spawn result, unchanged on error
 func withPromotedNote(resultJSON string, requestedTimeout int) string {
-	var data map[string]any
-	if err := json.Unmarshal([]byte(resultJSON), &data); err != nil || data == nil {
+	decoded, err := jsonDecodeWTF8([]byte(resultJSON))
+	data, _ := decoded.(map[string]any)
+	if err != nil || data == nil {
 		return resultJSON
 	}
 	if e, ok := data["error"]; ok && e != nil && e != "" {

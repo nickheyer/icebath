@@ -158,6 +158,13 @@ func HydrateProfileSecretSources(h string) map[string]string {
 	return hydrateProfileSecretSourcesLocked(h)
 }
 
+// Reports whether every external secret source of a home applied, the exported face for pkg/mcp
+func SecretHomeApplied(h string) bool {
+	secretSourceCacheMu.Lock()
+	defer secretSourceCacheMu.Unlock()
+	return appliedSecretHomes[homeKey(h)]
+}
+
 func hydrateProfileSecretSourcesLocked(h string) map[string]string {
 	if workerConfigSnapshotActive() {
 		return map[string]string{}

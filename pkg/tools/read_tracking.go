@@ -328,6 +328,7 @@ func NotifyOtherToolCall(taskID string) {
 
 // ClearFileOpsCache drops every per task file tool state, all tasks when the id is empty
 func ClearFileOpsCache(taskID string) {
+	forgetFileOps(taskID)
 	readTrackerLock.Lock()
 	if taskID != "" {
 		delete(readTracker, taskID)
@@ -367,12 +368,18 @@ func invalidateDedupForPath(resolved, taskID string) {
 }
 
 // Refreshes the stored mtime after a write so same task edits never read as stale
-func updateReadTimestamp(env *Env, path, taskID string) {
-	resolved := resolvePathForTask(env, path)
+func updateReadTimestamp(env *Env, path, taskID string) error {
+	resolved, err := resolvePathForTaskID(env, taskID, path)
+	if err != nil {
+		if isPathResolutionFailure(err) {
+			return nil
+		}
+		return err
+	}
 	invalidateDedupForPath(resolved, taskID)
 	mtime, ok := mtimeOf(resolved)
 	if !ok {
-		return
+		return nil
 	}
 	readTrackerLock.Lock()
 	defer readTrackerLock.Unlock()
@@ -380,6 +387,7 @@ func updateReadTimestamp(env *Env, path, taskID string) {
 		td.readTimestamps.set(resolved, mtime)
 		capReadTrackerData(td)
 	}
+	return nil
 }
 
 func metaOf(fi os.FileInfo) fileMeta {
@@ -611,8 +619,14 @@ func noteReadCoverage(td *taskTracker, resolved string, version fileVersion, sta
 }
 
 // Reports whether the mtime changed since this task last read the file
-func readMtimeDrifted(env *Env, path, taskID string) bool {
-	resolved := resolvePathForTask(env, path)
+func readMtimeDrifted(env *Env, path, taskID string) (bool, error) {
+	resolved, err := resolvePathForTaskID(env, taskID, path)
+	if err != nil {
+		if isPathResolutionFailure(err) {
+			return false, nil
+		}
+		return false, err
+	}
 	readTrackerLock.Lock()
 	var readMtime float64
 	ok := false
@@ -621,19 +635,23 @@ func readMtimeDrifted(env *Env, path, taskID string) bool {
 	}
 	readTrackerLock.Unlock()
 	if !ok {
-		return false
+		return false, nil
 	}
 	current, exists := mtimeOf(resolved)
-	return exists && current != readMtime
+	return exists && current != readMtime, nil
 }
 
 // Warning when the file changed since the last read, else empty
-func checkFileStaleness(env *Env, path, taskID string) string {
-	if readMtimeDrifted(env, path, taskID) {
-		return "Warning: " + path + " was modified since you last read it (external edit or concurrent agent). " +
-			"The content you read may be stale. Consider re-reading the file to verify before writing."
+func checkFileStaleness(env *Env, path, taskID string) (string, error) {
+	drifted, err := readMtimeDrifted(env, path, taskID)
+	if err != nil {
+		return "", err
 	}
-	return ""
+	if drifted {
+		return "Warning: " + path + " was modified since you last read it (external edit or concurrent agent). " +
+			"The content you read may be stale. Consider re-reading the file to verify before writing.", nil
+	}
+	return "", nil
 }
 
 // Tells the host that successful edits made earlier verification evidence stale
@@ -659,7 +677,12 @@ func markVerificationStale(env *Env, taskID, sessionID string, resolvedPaths []s
 		}
 	}
 	if cwd == "" {
-		cwd = authoritativeWorkspaceRoot(env)
+		root, err := authoritativeWorkspaceRootFor(env, taskID)
+		if err != nil {
+			envLog(env).Debug("verification stale marker failed", "error", err)
+			return
+		}
+		cwd = root
 	}
 	if cwd == "" {
 		cwd = parents[0]

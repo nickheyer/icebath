@@ -49,8 +49,8 @@ func newCatalogFixture(t *testing.T, cfg CatalogConfig) *catalogFixture {
 	}
 	loadCatalogConfig = func(context.Context) CatalogConfig { return cfg }
 	prevOR, prevNous, prevPortal := fetchOpenRouterModelsFn, fetchNousRecommendedModelsFn, resolveNousPortalURLFn
-	fetchOpenRouterModelsFn = func(context.Context, bool) { f.openRouterFetch++ }
-	fetchNousRecommendedModelsFn = func(context.Context, string, bool) { f.nousRecommended++ }
+	fetchOpenRouterModelsFn = func(context.Context, bool) []CatalogModel { f.openRouterFetch++; return nil }
+	fetchNousRecommendedModelsFn = func(context.Context, string, bool) map[string]any { f.nousRecommended++; return nil }
 	resolveNousPortalURLFn = func(context.Context) string { return "https://portal.nousresearch.com" }
 	t.Cleanup(func() {
 		WaitCatalogRefreshes()

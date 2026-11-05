@@ -51,6 +51,17 @@ func promptDangerousApproval(ctx context.Context, env *Env, o promptOptions) pro
 }
 
 // Asks through the host asker with the menu shape the caller allows
+// TerminalMenuAsker marks an asker that reads single keys from a terminal menu rather than returning a callback answer
+type TerminalMenuAsker interface {
+	TerminalMenu() bool
+}
+
+// Reports whether answers come from a terminal key menu, where an unoffered key denies as the Python input loop does
+func askerReadsTerminalKeys(a Asker) bool {
+	t, ok := a.(TerminalMenuAsker)
+	return ok && t.TerminalMenu()
+}
+
 func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 	displayCommand := redactApprovalDisplay(env, o.command, false)
 	displayDescription := redactApprovalDisplay(env, o.description, false)
@@ -94,7 +105,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 		raw = result.Answers[0].Text
 	}
 	raw = strings.ToLower(strings.TrimSpace(raw))
-	if onceOnly {
+	if onceOnly && askerReadsTerminalKeys(env.Ask) {
 		switch raw {
 		case "o", "once":
 			return promptChoice{value: "once"}

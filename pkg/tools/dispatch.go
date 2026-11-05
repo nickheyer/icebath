@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -69,8 +68,9 @@ func boundJSONErrorResult(result string) string {
 	if len(result) <= maxToolErrorChars || !strings.Contains(result, `"error"`) {
 		return result
 	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(result), &payload); err != nil || payload == nil {
+	decoded, err := jsonDecodeWTF8([]byte(result))
+	payload, _ := decoded.(map[string]any)
+	if err != nil || payload == nil {
 		return result
 	}
 	errText, ok := payload["error"].(string)
@@ -581,7 +581,7 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 		return result
 	}
 	elapsedMS := func() int { return int(time.Since(start).Milliseconds()) }
-	resolved := &Call{Name: name, Args: args, ToolCallID: call.ToolCallID, TaskID: call.TaskID, SessionID: call.SessionID,
+	resolved := &Call{Name: name, Args: args, RawArgs: call.RawArgs, ToolCallID: call.ToolCallID, TaskID: call.TaskID, SessionID: call.SessionID,
 		TurnID: call.TurnID, APIRequestID: call.APIRequestID, UserTask: call.UserTask, Env: env}
 	if result, underlying, underlyingArgs, bridged := d.dispatchBridgeTool(ctx, resolved, enabled, disabled); bridged {
 		if underlying == "" {

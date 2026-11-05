@@ -274,3 +274,7 @@ func mustContain(t *testing.T, s, sub string) {
 func jsonUnmarshalString(raw string, out *map[string]any) error {
 	return json.Unmarshal([]byte(raw), out)
 }
+
+func (noSkillLocks) ExternalSkillsDirs(*Env) []string { return nil }
+func (noSkillLocks) ProjectSkillsDirs(*Env) []string  { return nil }
+func (noSkillLocks) IsExcludedSkillDir(string) bool   { return false }

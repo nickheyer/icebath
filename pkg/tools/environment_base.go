@@ -759,15 +759,22 @@ type ExecProcess struct {
 	pgidStart string
 }
 
-// Writes data to the child stdin on a goroutine and closes it so the child sees EOF
+// Writes data encoded with surrogateescape to the child stdin on a goroutine, recording an encode failure, then closes it
 func pipeStdin(p *ExecProcess, w *os.File, data string) {
 	p.stdinDone = make(chan struct{})
 	go func() {
 		defer close(p.stdinDone)
-		defer w.Close()
-		if _, err := w.WriteString(data); err != nil && !errors.Is(err, os.ErrClosed) && !isBrokenPipe(err) {
-			p.stdinErr = err.Error()
+		if w == nil {
+			p.stdinErr = "process stdin unavailable"
+			return
 		}
+		defer w.Close()
+		raw, err := surrogateEscapeEncode(data)
+		if err != nil {
+			p.stdinErr = err.Error()
+			return
+		}
+		w.Write(raw)
 	}()
 }
 

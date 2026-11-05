@@ -34,8 +34,8 @@ type ToolCallFunction struct {
 // One transcript row in provider message shape
 type Message struct {
 	// Row id, zero before the message is stored
-	RowID     int64  `json:"-"`
-	Role      string `json:"role"`
+	RowID int64  `json:"-"`
+	Role  string `json:"role"`
 	// String text or a list of content parts
 	Content          any             `json:"content"`
 	ToolCallID       string          `json:"tool_call_id,omitempty"`

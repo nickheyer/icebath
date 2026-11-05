@@ -42,11 +42,6 @@ func newFakeTransport() *fakeTransport {
 	return &fakeTransport{routes: map[string]func(*http.Request) *http.Response{}}
 }
 
-func jsonResponse(status int, body any) *http.Response {
-	raw, _ := json.Marshal(body)
-	return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewReader(raw)), ContentLength: int64(len(raw))}
-}
-
 func textResponse(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), ContentLength: int64(len(body))}
 }
@@ -55,7 +50,7 @@ func textResponse(status int, body string) *http.Response {
 func (f *fakeTransport) on(method, target string, status int, body any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.routes[method+" "+target] = func(*http.Request) *http.Response { return jsonResponse(status, body) }
+	f.routes[method+" "+target] = func(*http.Request) *http.Response { return jsonResponse(nil, status, body, nil) }
 }
 
 func (f *fakeTransport) onFunc(method, target string, fn func(*http.Request) *http.Response) {
@@ -227,7 +222,7 @@ func codexJWT(subject string) string {
 	return enc([]byte(`{"alg":"RS256"}`)) + "." + enc(payload) + ".test-signature"
 }
 
-func codexRequest(model string) ContextLengthRequest {
+func codexContextRequest(model string) ContextLengthRequest {
 	return ContextLengthRequest{Model: model, BaseURL: "https://chatgpt.com/backend-api/codex", APIKey: codexJWT("fake-token"), Provider: "openai-codex"}
 }
 

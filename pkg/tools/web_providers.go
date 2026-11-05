@@ -103,25 +103,20 @@ func argL(args map[string]any, key string) []any {
 
 // Compact JSON without HTML escaping, mirroring ensure_ascii false output
 func jsonCompact(v any) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	b, err := jsonEncodeWTF8(v)
+	if err != nil {
 		return ErrorResult(err)
 	}
-	return strings.TrimSuffix(buf.String(), "\n")
+	return string(b)
 }
 
 // Two space indented JSON without HTML escaping
 func jsonIndent(v any) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
+	b, err := jsonEncodeWTF8Indent(v, "", "  ")
+	if err != nil {
 		return ErrorResult(err)
 	}
-	return strings.TrimSuffix(buf.String(), "\n")
+	return string(b)
 }
 
 // Error body bounded so a raw exception cannot bloat history across retries
@@ -1188,13 +1183,7 @@ func mcpCall(ctx context.Context, target, tool string, arguments map[string]any)
 }
 
 // First n characters of a string by rune
-func truncateRunes(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n])
-}
+func truncateRunes(s string, n int) string { return runePrefix(s, n) }
 
 // Keyless search body with the standard hint on MCP errors and a formatter for other errors
 func keylessSearch(vendor string, rows func() ([]WebSearchHit, error), format func(error) string) *WebSearchResponse {

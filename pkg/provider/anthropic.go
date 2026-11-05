@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -1087,12 +1089,39 @@ func (c *anthropicClient) requestHeaders(ctx context.Context, betas []string, ex
 		headers[k] = stringOf(v)
 	}
 	for k, v := range auth {
-		headers[k] = v
+		anthSetHeader(headers, k, v)
+	}
+	for k, v := range anthCustomProviderExtraHeaders(ctx, c.route.BaseURL) {
+		anthSetHeader(headers, k, v)
 	}
 	for k, v := range c.route.Headers {
-		headers[k] = v
+		anthSetHeader(headers, k, v)
 	}
 	return headers, oauth, nil
+}
+
+// Replaces every case variant of the header name so the later layer always wins on the wire
+func anthSetHeader(headers map[string]string, name, value string) {
+	for k := range headers {
+		if strings.EqualFold(k, name) {
+			delete(headers, k)
+		}
+	}
+	headers[name] = value
+}
+
+// Extra headers of the custom provider entry routed at the base URL, empty when no entry matches
+func anthCustomProviderExtraHeaders(ctx context.Context, baseURL string) map[string]string {
+	if strings.TrimSpace(baseURL) == "" {
+		return nil
+	}
+	h := home.Dir(ctx)
+	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
+	if err != nil {
+		catalogLog.Debug("custom-provider extra_headers skipped for Anthropic client", "error", err)
+		return nil
+	}
+	return CustomProviderExtraHeaders(baseURL, nil, map[string]any(tree))
 }
 
 // Builds the wire body and headers of one request
@@ -1134,7 +1163,7 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 		model: model, messages: dicts, tools: tools, maxTokens: maxTokens, reasoning: anthReasoningFromRequest(req.Reasoning),
 		toolChoice: req.ToolChoice, isOAuth: isOAuth, preserveDots: c.preserveDots(), contextLength: contextLength,
 		baseURL: c.route.BaseURL, fastMode: strings.EqualFold(strings.TrimSpace(req.ServiceTier), "fast"), dropContext1M: drop1M,
-		resolveProfileARN: c.transport.ResolveProfileARN,
+		resolveProfileARN: anthProfileResolver(ctx, c.transport),
 	})
 	if err != nil {
 		return nil, err
@@ -1546,6 +1575,9 @@ func (c *anthropicClient) CountTokens(ctx context.Context, req *Request) (int, e
 	}
 	n, ok := anyInt(payload["input_tokens"])
 	if !ok {
+		n, ok = anyInt(payload["inputTokens"])
+	}
+	if !ok {
 		return 0, &APIError{Provider: c.route.Provider, Model: c.route.Model, StatusCode: resp.StatusCode, Kind: ErrInvalidRequest, Code: "count_tokens_shape",
 			Message: "count_tokens response carried no input_tokens", Body: string(data), RequestID: headerRequestID(resp.Header)}
 	}
@@ -1604,6 +1636,11 @@ func (c *anthropicClient) normalizeResponse(message map[string]any, status int, 
 			Message: "Provider returned a message with no content blocks", Body: string(raw), RequestID: requestID,
 			Err: &ccHeadersError{err: errors.New("message carried no content"), headers: headers}}
 	}
+	return c.normalizeMessage(message, raw, requestID, status, headers, latency), nil
+}
+
+// Response of a structurally valid Messages payload, empty content yielding an empty assistant turn
+func (c *anthropicClient) normalizeMessage(message map[string]any, raw []byte, requestID string, status int, headers http.Header, latency time.Duration) *Response {
 	content, _ := asList(message["content"])
 	var textParts, reasoningParts []string
 	var reasoningDetails, ordered []any
@@ -1685,5 +1722,5 @@ func (c *anthropicClient) normalizeResponse(message map[string]any, status int, 
 	if guardrail {
 		anthMarkRaw(resp, ccRawContentFilter, true)
 	}
-	return resp, nil
+	return resp
 }

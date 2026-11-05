@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 )
 
@@ -11,8 +10,7 @@ var ReadTerminalPane func(env *Env, window map[string]int) (string, error)
 
 // Desktop answers with a JSON object, passed through, else the raw text wrapped
 func termPassthroughJSON(raw string) string {
-	var v any
-	if err := json.Unmarshal([]byte(raw), &v); err == nil {
+	if v, err := jsonDecodeWTF8([]byte(raw)); err == nil {
 		return JSON(v)
 	}
 	return JSON(map[string]any{"text": raw})

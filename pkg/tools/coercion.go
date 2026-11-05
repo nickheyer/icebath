@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"math"
 	"net/url"
@@ -332,8 +331,8 @@ func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, boo
 		if !((expectsArray && strings.HasPrefix(trimmed, "[")) || (expectsObject && strings.HasPrefix(trimmed, "{"))) {
 			return value, false
 		}
-		var parsed any
-		if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		parsed, err := jsonDecodeWTF8([]byte(trimmed))
+		if err != nil {
 			return value, false
 		}
 		_, isList := parsed.([]any)
@@ -459,8 +458,8 @@ func coerceSchemaAllowsNull(schema map[string]any) bool {
 
 // Parses the string as JSON when the parsed kind matches the expected container
 func coerceJSON(value string, expected string) (any, bool) {
-	var parsed any
-	if err := json.Unmarshal([]byte(value), &parsed); err != nil {
+	parsed, err := jsonDecodeWTF8([]byte(value))
+	if err != nil {
 		slog.Warn("coerce_tool_args: failed to parse string as JSON for expected type", "type", expected, "error", err)
 		return value, false
 	}

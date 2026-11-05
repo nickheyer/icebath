@@ -40,8 +40,8 @@ const GuardrailRefusalKey = "guardrail_refusal"
 
 // Parses JSON returning nil on any error the way utils.safe_json_loads does
 func safeJSONLoads(text string) any {
-	var v any
-	if err := json.Unmarshal([]byte(text), &v); err != nil {
+	v, err := jsonDecodeWTF8([]byte(text))
+	if err != nil {
 		return nil
 	}
 	return v
@@ -459,7 +459,7 @@ func (d ToolGuardrailDecision) ToMetadata() map[string]any {
 
 // Sorted compact JSON of any value with unencodable values rendered as strings
 func canonicalJSON(value any) string {
-	b, err := json.Marshal(canonicalizable(value))
+	b, err := jsonEncodeWTF8(canonicalizable(value))
 	if err != nil {
 		return fmt.Sprint(value)
 	}
@@ -483,9 +483,8 @@ func canonicalizable(v any) any {
 	case nil, bool, string, float64, float32, int, int64, int32, json.Number:
 		return v
 	default:
-		if b, err := json.Marshal(v); err == nil {
-			var round any
-			if json.Unmarshal(b, &round) == nil {
+		if b, err := jsonEncodeWTF8(v); err == nil {
+			if round, err := jsonDecodeWTF8(b); err == nil {
 				return round
 			}
 		}
@@ -1137,8 +1136,8 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 			expanded = append(expanded, call)
 			continue
 		}
-		var args map[string]any
-		parseErr := json.Unmarshal([]byte(call.Function.Arguments), &args)
+		decoded, parseErr := jsonDecodeWTF8([]byte(call.Function.Arguments))
+		args, _ := decoded.(map[string]any)
 		var entries []ToolCallEntry
 		errText := ""
 		if parseErr != nil || args == nil {
@@ -1195,8 +1194,8 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 }
 
 func decodedArguments(call state.ToolCall) any {
-	var v any
-	if err := json.Unmarshal([]byte(call.Function.Arguments), &v); err != nil {
+	v, err := jsonDecodeWTF8([]byte(call.Function.Arguments))
+	if err != nil {
 		return map[string]any{}
 	}
 	return v
@@ -1399,8 +1398,8 @@ func batchAdmission(ctx context.Context, env *Env, call state.ToolCall, executio
 	if NeverParallelTools[toolName] {
 		return nil
 	}
-	var parsed any
-	if err := json.Unmarshal([]byte(call.Function.Arguments), &parsed); err != nil {
+	parsed, err := jsonDecodeWTF8([]byte(call.Function.Arguments))
+	if err != nil {
 		raw := call.Function.Arguments
 		if len(raw) > 200 {
 			raw = raw[:200]
@@ -1667,7 +1666,7 @@ func MultimodalTextSummary(value any) string {
 		}
 		return "[multimodal tool result]"
 	}
-	b, err := json.Marshal(canonicalizable(value))
+	b, err := jsonEncodeWTF8(canonicalizable(value))
 	if err != nil {
 		return fmt.Sprint(value)
 	}
@@ -2159,8 +2158,7 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 			toolCalls[i].Function.Arguments = "{}"
 			continue
 		}
-		var parsed any
-		if err := json.Unmarshal([]byte(args), &parsed); err != nil {
+		if _, err := jsonDecodeWTF8([]byte(args)); err != nil {
 			if !(mixed && !validNames[toolCalls[i].Function.Name]) {
 				invalidJSON = append(invalidJSON, badArgs{toolCalls[i].Function.Name, err.Error()})
 			}

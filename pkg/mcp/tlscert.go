@@ -28,11 +28,11 @@ func resolveClientCert(server string, rawCert any, rawKey any) (*tls.Certificate
 	expand := func(v any, label string) (string, error) {
 		s, ok := v.(string)
 		if !ok || strings.TrimSpace(s) == "" {
-			return "", fmt.Errorf("%s%s must be a non-empty string path (got %T)", prefix, label, v)
+			return "", fmt.Errorf("%s%s must be a non-empty string path (got %s)", prefix, label, pyTypeName(v))
 		}
 		path := expandUser(strings.TrimSpace(s))
-		if st, err := os.Stat(path); err != nil || st.IsDir() {
-			return "", fmt.Errorf("%s%s not found at %q", prefix, label, path)
+		if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
+			return "", &fileNotFoundError{msg: fmt.Sprintf("%s%s not found at %s", prefix, label, pyReprStr(path))}
 		}
 		return path, nil
 	}
@@ -129,17 +129,17 @@ func decryptedKeyBlock(data []byte, password string) ([]byte, string, error) {
 
 // ASN.1 object identifiers of the PBES2 algorithms accepted for encrypted PKCS#8 keys
 var (
-	oidPBES2        = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 5, 13}
-	oidPBKDF2       = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 5, 12}
-	oidHMACSHA1     = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 7}
-	oidHMACSHA224   = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 8}
-	oidHMACSHA256   = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 9}
-	oidHMACSHA384   = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 10}
-	oidHMACSHA512   = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 11}
-	oidAES128CBC    = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}
-	oidAES192CBC    = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 22}
-	oidAES256CBC    = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 42}
-	oidDESEDE3CBC   = asn1.ObjectIdentifier{1, 2, 840, 113549, 3, 7}
+	oidPBES2      = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 5, 13}
+	oidPBKDF2     = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 5, 12}
+	oidHMACSHA1   = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 7}
+	oidHMACSHA224 = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 8}
+	oidHMACSHA256 = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 9}
+	oidHMACSHA384 = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 10}
+	oidHMACSHA512 = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 11}
+	oidAES128CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}
+	oidAES192CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 22}
+	oidAES256CBC  = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 42}
+	oidDESEDE3CBC = asn1.ObjectIdentifier{1, 2, 840, 113549, 3, 7}
 )
 
 type pkcs8Encrypted struct {
@@ -158,10 +158,10 @@ type pbes2Params struct {
 }
 
 type pbkdf2Params struct {
-	Salt      []byte
+	Salt       []byte
 	Iterations int
-	KeyLength int                 `asn1:"optional"`
-	PRF       algorithmIdentifier `asn1:"optional"`
+	KeyLength  int                 `asn1:"optional"`
+	PRF        algorithmIdentifier `asn1:"optional"`
 }
 
 // decryptPKCS8 decrypts an EncryptedPrivateKeyInfo protected with PBES2 and PBKDF2

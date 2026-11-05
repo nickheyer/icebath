@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"os"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -290,8 +293,7 @@ func interruptWorkerIDs(ids []WorkerID, reason string) {
 
 // ParseToolArguments parses model emitted arguments without repairing them
 func ParseToolArguments(raw string) (map[string]any, string) {
-	var parsed any
-	if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+	if parsed, err := jsonDecodeWTF8([]byte(raw)); err == nil {
 		if m, ok := parsed.(map[string]any); ok {
 			return m, ""
 		}
@@ -301,11 +303,12 @@ func ParseToolArguments(raw string) (map[string]any, string) {
 
 // ToolCallRef is the identity of one call as every hook and result message sees it
 type ToolCallRef struct {
-	Name   string
-	Args   map[string]any
-	TaskID string
-	CallID string
-	Trace  []map[string]any
+	Name    string
+	Args    map[string]any
+	RawArgs string
+	TaskID  string
+	CallID  string
+	Trace   []map[string]any
 }
 
 // Emits the one terminal post tool call for this call
@@ -346,8 +349,8 @@ func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args m
 		return underlying, underlyingArgs, ""
 	}
 	if flattenProbe {
-		var probe map[string]any
-		if err := json.Unmarshal([]byte(scopeBlock), &probe); err == nil {
+		decoded, err := jsonDecodeWTF8([]byte(scopeBlock))
+		if probe, isMap := decoded.(map[string]any); err == nil && (isMap || decoded == nil) {
 			errText, _ := probe["error"].(string)
 			hint, _ := probe["hint"].(string)
 			params := probe["parameters"]
@@ -372,7 +375,45 @@ type ParsedCall struct {
 
 // Ref builds the call reference every hook and result message sees
 func (p *ParsedCall) Ref(taskID string) *ToolCallRef {
-	return &ToolCallRef{Name: p.Name, Args: p.Args, TaskID: taskID, CallID: CoalesceToolCallID(p.ToolCall.ID), Trace: p.Trace}
+	raw := p.ToolCall.Function.Arguments
+	if p.Name != CanonicalToolName(p.ToolCall.Function.Name) {
+		raw = rawArgsFor([]byte(raw), p.Args)
+	}
+	return &ToolCallRef{Name: p.Name, Args: p.Args, RawArgs: raw, TaskID: taskID, CallID: CoalesceToolCallID(p.ToolCall.ID), Trace: p.Trace}
+}
+
+// JSON text inside raw that decodes to args, searching members, items and JSON strings, empty when absent
+func rawArgsFor(raw []byte, args map[string]any) string {
+	decoded, err := jsonDecodeWTF8(raw)
+	if err != nil {
+		return ""
+	}
+	if m, ok := decoded.(map[string]any); ok && reflect.DeepEqual(m, args) {
+		return string(raw)
+	}
+	switch v := decoded.(type) {
+	case string:
+		return rawArgsFor([]byte(v), args)
+	case map[string]any:
+		var members map[string]json.RawMessage
+		if json.Unmarshal(raw, &members) == nil {
+			for _, k := range slices.Sorted(maps.Keys(members)) {
+				if found := rawArgsFor(members[k], args); found != "" {
+					return found
+				}
+			}
+		}
+	case []any:
+		var items []json.RawMessage
+		if json.Unmarshal(raw, &items) == nil {
+			for _, item := range items {
+				if found := rawArgsFor(item, args); found != "" {
+					return found
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // ParseToolCall canonicalizes the name, parses the arguments, and unwraps a bridge call
@@ -684,9 +725,7 @@ func (e *Executor) beginToolExecution(ref *ToolCallRef, displayIndex int) {
 			if IsDestructiveCommand(command) {
 				cwd, _ := ref.Args["workdir"].(string)
 				label := command
-				if len(label) > 60 {
-					label = label[:60]
-				}
+				label = runePrefix(label, 60)
 				host.EnsureTerminalCheckpoint(cwd, "before terminal: "+label)
 			}
 		}
@@ -1181,7 +1220,7 @@ func (b *concurrentBatch) dispatchWorker(ctx context.Context, index int, ref *To
 	var result string
 	managed, err := e.runToolExecutionMiddleware(ctx, managedInput{name: ref.Name, args: ref.Args, taskID: ref.TaskID, toolCallID: ref.CallID,
 		execute: func(ctx context.Context, next map[string]any) (string, error) {
-			return e.invokeTool(ctx, ref.Name, next, ref.TaskID, ref.CallID, b.messages, ref.Trace)
+			return e.invokeTool(ctx, ref.Name, next, ref.RawArgs, ref.TaskID, ref.CallID, b.messages, ref.Trace)
 		},
 		scopeBlock: scopeBlock, displayIndex: index + 1, trace: ref.Trace, beginExecution: startGate.advance, gate: b.authGate})
 	if err == errBatchAbandoned {
@@ -1529,9 +1568,7 @@ func delegateSpinnerLabel(args map[string]any) string {
 		return fmt.Sprintf("\U0001F500 delegating %d tasks · (/agents to monitor)", len(tasks))
 	}
 	goal, _ := args["goal"].(string)
-	if len([]rune(goal)) > 30 {
-		goal = string([]rune(goal)[:30])
-	}
+	goal = runePrefix(goal, 30)
 	if goal != "" {
 		return "\U0001F500 " + goal + " · (/agents to monitor)"
 	}
@@ -1587,7 +1624,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 			errorLog: "memory manager handle_tool_call raised", finishSpinner: true, finishInFinally: true}
 	}
 	execute := func(ctx context.Context, next map[string]any) (string, error) {
-		return e.dispatchRegistry(ctx, name, next, ref.TaskID, ref.CallID, ref.Trace), nil
+		return e.dispatchRegistry(ctx, name, next, ref.RawArgs, ref.TaskID, ref.CallID, ref.Trace), nil
 	}
 	var spinner Spinner
 	if host.QuietMode() {
@@ -1599,13 +1636,13 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 }
 
 // Registry tools go through the dispatcher with the inner observer suppressed
-func (e *Executor) dispatchRegistry(ctx context.Context, name string, args map[string]any, taskID, toolCallID string, trace []map[string]any) string {
+func (e *Executor) dispatchRegistry(ctx context.Context, name string, args map[string]any, rawArgs, taskID, toolCallID string, trace []map[string]any) string {
 	host := e.Host
 	var enabledTools []string
 	if valid := host.ValidToolNames(); len(valid) > 0 {
 		enabledTools = sortedSet(valid)
 	}
-	call := &Call{Name: name, Args: args, ToolCallID: toolCallID, TaskID: taskID, SessionID: host.SessionID(), TurnID: host.TurnID(),
+	call := &Call{Name: name, Args: args, RawArgs: rawArgs, ToolCallID: toolCallID, TaskID: taskID, SessionID: host.SessionID(), TurnID: host.TurnID(),
 		APIRequestID: host.APIRequestID(), Env: host.Env()}
 	return e.Dispatcher.DispatchWith(ctx, call, DispatchOptions{SkipPreToolCallHook: true, SkipToolRequestMiddleware: true,
 		SkipToolExecutionMiddleware: true, SuppressPostToolCallHook: true, Trace: append([]map[string]any(nil), trace...),
@@ -1613,7 +1650,7 @@ func (e *Executor) dispatchRegistry(ctx context.Context, name string, args map[s
 }
 
 // Resolves inline agent level tools then the registry for the concurrent path
-func (e *Executor) invokeTool(ctx context.Context, name string, args map[string]any, taskID, toolCallID string, messages *[]*state.Message, trace []map[string]any) (string, error) {
+func (e *Executor) invokeTool(ctx context.Context, name string, args map[string]any, rawArgs, taskID, toolCallID string, messages *[]*state.Message, trace []map[string]any) (string, error) {
 	if inline := inlineToolExecutor(name); inline != nil {
 		return inline(ctx, e.Host, args, InlineToolContext{TaskID: taskID, ToolCallID: toolCallID, Messages: messages})
 	}
@@ -1626,7 +1663,7 @@ func (e *Executor) invokeTool(ctx context.Context, name string, args map[string]
 	if fn, ok := e.Host.MemoryManagerTool(name); ok {
 		return fn(ctx, args)
 	}
-	return e.dispatchRegistry(ctx, name, args, taskID, toolCallID, trace), nil
+	return e.dispatchRegistry(ctx, name, args, rawArgs, taskID, toolCallID, trace), nil
 }
 
 // Waits for the worker in interrupt poll slices extending the deadline by human approval wait

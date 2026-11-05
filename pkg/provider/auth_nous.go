@@ -102,9 +102,12 @@ func nousProcessEnv() PoolEnv {
 	return env
 }
 
+// Account entitlement lookup of the nous account slice, swappable so tests can script it
+var nousEntitlementMessageFn = nousPortalEntitlementMessage
+
 // Portal entitlement notice for the capability from fresh account data, empty when unavailable
 func nousPortalEntitlementMessageFor(env PoolEnv, capability string) string {
-	message, err := nousPortalEntitlementMessage(env, capability)
+	message, err := nousEntitlementMessageFn(env, capability)
 	if err != nil {
 		return ""
 	}
@@ -602,7 +605,9 @@ func writeSharedNousState(env PoolEnv, state map[string]any, renewal bool) {
 			merged[nousSharedRenewalKey] = nousSharedShape(state)
 			shared = merged
 		} else {
-			guestHandoffNoteReplacement(env, held, state)
+			if err := nousGuestHandoffNoteFn(env, held, state); err != nil {
+				return err
+			}
 			if same {
 				if renewed, present := held[nousSharedRenewalKey]; present {
 					shared[nousSharedRenewalKey] = renewed
@@ -900,6 +905,9 @@ var nousHTTPClientFn = oauthHTTPClient
 
 // State refresh the shared import runs, swappable so tests can stand in for the Portal
 var refreshNousOAuthFromStateFn = refreshNousOAuthFromState
+
+// Guest handoff replacement note of the guest handoff slice, swappable so tests can record it
+var nousGuestHandoffNoteFn = guestHandoffNoteReplacement
 
 // Redeems the refresh token, on terminal failure quarantines state plus pool rows, persists and returns the error
 func refreshNousOrQuarantine(env PoolEnv, client *http.Client, tx *ProviderTxn, state map[string]any, portalBaseURL, clientID, refreshToken, reason string, persist func() error) (map[string]any, error) {

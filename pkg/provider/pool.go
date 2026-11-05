@@ -629,7 +629,9 @@ func (p *Pool) syncDeviceCodeEntryToAuthStore(entry PooledCredential) {
 			writeThroughProviderStateToGlobalRoot(p.env, p.provider, state)
 			return nil
 		}
-		p.env.Store.StoreProviderState(data, p.provider, state, false)
+		if err := p.env.Store.StoreProviderState(data, p.provider, state, false); err != nil {
+			return err
+		}
 		return p.env.Store.Save(data)
 	}()
 	if err != nil {
@@ -1055,7 +1057,9 @@ func (p *Pool) clearTerminalTokensState(entry PooledCredential, cause error) {
 		}
 		state["last_auth_error"] = map[string]any{"provider": p.provider, "code": code, "message": cause.Error(),
 			"reason": "credential_pool_refresh_failure", "relogin_required": true, "at": utcNowISO()}
-		p.env.Store.StoreProviderState(data, p.provider, state, false)
+		if err := p.env.Store.StoreProviderState(data, p.provider, state, false); err != nil {
+			return err
+		}
 		return p.env.Store.Save(data)
 	}()
 	if err != nil {
@@ -1086,7 +1090,9 @@ func (p *Pool) clearTerminalNousState(entry PooledCredential, cause error) {
 		}
 		quarantineNousOAuthState(state, cause, "credential_pool_refresh_failure")
 		quarantineNousPoolEntries(data, cause, "credential_pool_refresh_failure")
-		p.env.Store.StoreProviderState(data, "nous", state, false)
+		if err := p.env.Store.StoreProviderState(data, "nous", state, false); err != nil {
+			return err
+		}
 		return p.env.Store.Save(data)
 	}()
 	if err != nil {

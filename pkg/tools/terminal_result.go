@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -262,10 +261,10 @@ func orderedJSON(fields [][2]any) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		key, _ := json.Marshal(kv[0])
-		val, err := json.Marshal(kv[1])
+		key, _ := jsonEncodeWTF8(kv[0])
+		val, err := jsonEncodeWTF8(kv[1])
 		if err != nil {
-			val, _ = json.Marshal(fmt.Sprint(kv[1]))
+			val, _ = jsonEncodeWTF8(fmt.Sprint(kv[1]))
 		}
 		b.Write(key)
 		b.WriteByte(':')

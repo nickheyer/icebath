@@ -209,7 +209,9 @@ func saveCodexTokens(env PoolEnv, tokens map[string]any, lastRefresh, label stri
 			}
 			targetData, targetPath, setActive = rootData, tx.SourcePath, false
 		}
-		env.Store.StoreProviderState(targetData, "openai-codex", state, setActive)
+		if err := env.Store.StoreProviderState(targetData, "openai-codex", state, setActive); err != nil {
+			return err
+		}
 		syncCodexPoolEntries(targetData, tokens, lastRefresh, previousSingletonTokens)
 		return env.Store.SaveTo(targetData, targetPath)
 	})

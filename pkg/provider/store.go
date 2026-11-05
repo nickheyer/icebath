@@ -26,15 +26,13 @@ type AuthData map[string]any
 var nousStalePortalHosts = map[string]bool{"api.nousresearch.com": true}
 
 // ProviderWriteHook observes every provider state replacement so guest handoff records can be kept
-type ProviderWriteHook func(providerID string, previous, next map[string]any)
+type ProviderWriteHook func(providerID string, previous, next map[string]any) error
 
 // Store persists auth.json for one icebath home with the global root as read only fallback
 type Store struct {
 	home       string
 	path       string
 	globalPath string
-	locksMu    sync.Mutex
-	locks      map[string]*storeLock
 	cacheMu    sync.Mutex
 	gcacheKey  string
 	gcacheSig  string
@@ -49,11 +47,14 @@ func NewStore(h string) *Store {
 	if h == "" {
 		h = home.Process()
 	}
-	s := &Store{home: h, path: home.AuthPath(h), locks: map[string]*storeLock{}, Log: slog.Default()}
+	s := &Store{home: h, path: home.AuthPath(h), Log: slog.Default()}
 	root := home.RootOf(h)
 	if !samePath(root, h) {
 		s.globalPath = home.AuthPath(root)
 	}
+	s.hooks = []ProviderWriteHook{func(providerID string, previous, next map[string]any) error {
+		return guestHandoffNoteStoreWrite(PoolEnv{Store: s}, providerID, previous, next)
+	}}
 	return s
 }
 
@@ -114,14 +115,20 @@ type storeLock struct {
 	depth int
 }
 
+var (
+	storeLocksMu sync.Mutex
+	storeLocks   = map[string]*storeLock{}
+)
+
+// Process wide lock of one resolved auth path shared by every Store instance like the module level hermes lock
 func (s *Store) processLock(path string) *storeLock {
-	s.locksMu.Lock()
-	defer s.locksMu.Unlock()
+	storeLocksMu.Lock()
+	defer storeLocksMu.Unlock()
 	key := resolvedKey(path)
-	m, ok := s.locks[key]
+	m, ok := storeLocks[key]
 	if !ok {
 		m = &storeLock{}
-		s.locks[key] = m
+		storeLocks[key] = m
 	}
 	return m
 }
@@ -544,20 +551,23 @@ func (tx *ProviderTxn) SaveState(state map[string]any) error {
 }
 
 // StoreProviderState writes state under providers and optionally makes it the active provider
-func (s *Store) StoreProviderState(data AuthData, providerID string, state map[string]any, setActive bool) {
+func (s *Store) StoreProviderState(data AuthData, providerID string, state map[string]any, setActive bool) error {
 	s.hooksMu.Lock()
 	hooks := append([]ProviderWriteHook(nil), s.hooks...)
 	s.hooksMu.Unlock()
 	if len(hooks) > 0 {
 		previous := s.ProviderState(data, providerID)
 		for _, h := range hooks {
-			h(providerID, previous, state)
+			if err := h(providerID, previous, state); err != nil {
+				return err
+			}
 		}
 	}
 	section(data, "providers")[providerID] = state
 	if setActive {
 		data["active_provider"] = providerID
 	}
+	return nil
 }
 
 // SaveActiveProviderState locks loads writes the state as active provider and saves
@@ -571,7 +581,9 @@ func (s *Store) SaveActiveProviderState(providerID string, state map[string]any)
 	if err != nil {
 		return "", err
 	}
-	s.StoreProviderState(data, providerID, state, true)
+	if err := s.StoreProviderState(data, providerID, state, true); err != nil {
+		return "", err
+	}
 	return s.path, s.Save(data)
 }
 
@@ -586,14 +598,18 @@ func (s *Store) PersistProviderStateToStore(providerID string, state map[string]
 	if err != nil {
 		return "", err
 	}
-	s.StoreProviderState(data, providerID, cloneMap(state), setActive)
+	if err := s.StoreProviderState(data, providerID, cloneMap(state), setActive); err != nil {
+		return "", err
+	}
 	return target, s.SaveTo(data, target)
 }
 
 // SaveProviderStateToSource persists provider state to the store it was read from leaving active_provider alone
 func (s *Store) SaveProviderStateToSource(data AuthData, providerID string, state map[string]any, source string) error {
 	if source == "" || samePath(source, s.path) {
-		s.StoreProviderState(data, providerID, state, false)
+		if err := s.StoreProviderState(data, providerID, state, false); err != nil {
+			return err
+		}
 		return s.Save(data)
 	}
 	_, err := s.PersistProviderStateToStore(providerID, state, source, false)

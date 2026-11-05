@@ -40,5 +40,5 @@ func ResolveSafePath(env *Env, path string) (string, error) {
 	if msg := ntNamespaceError(path, "Access"); msg != "" {
 		return "", errors.New(msg)
 	}
-	return resolvePathForTask(env, path), nil
+	return resolvePathForTask(env, path)
 }

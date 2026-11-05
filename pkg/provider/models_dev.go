@@ -503,9 +503,10 @@ func fetchModelsDevFromNetwork(h string, conditional bool) (map[string]any, stri
 	deadline := modelsDevFetchDeadlineFor()
 	ctx, cancel := context.WithTimeout(context.Background(), deadline)
 	done := make(chan result, 1)
+	download := downloadModelsDev
 	go func() {
 		defer modelsDevDownloadSlot.Unlock()
-		status, data, etag, err := downloadModelsDev(ctx, url, headers)
+		status, data, etag, err := download(ctx, url, headers)
 		done <- result{status, data, etag, err}
 	}()
 	select {

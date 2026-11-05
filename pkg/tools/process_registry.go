@@ -914,11 +914,14 @@ func (r *ProcessRegistry) globalWatchAdmit(env *Env, now float64) bool {
 
 // Liveness of a host visible pid
 func isHostPidAlive(pid int) bool {
-	return pid > 0 && identityProber.Running(pid)
+	return procAlive(pid)
 }
 
 // Kernel start ticks for a host pid, nil when unavailable
-func safeHostStartTime(pid int) *int64 {
+func safeHostStartTime(pid int) *int64 { return safeHostStartTimeSeam(pid) }
+
+// Start time probe swapped by tests that simulate a failing probe
+var safeHostStartTimeSeam = func(pid int) *int64 {
 	if pid <= 0 {
 		return nil
 	}
@@ -2252,9 +2255,18 @@ var errPipeStdinClosed = errors.New("stdin pipe is closed")
 // WriteStdin sends raw data to a running process's stdin without a newline
 func (r *ProcessRegistry) WriteStdin(env *Env, sessionID, data string) map[string]any {
 	return r.stdinOp(env, sessionID,
-		func(p *ptyProcess) error { return p.Write([]byte(data)) },
+		func(p *ptyProcess) error {
+			if isWindowsHost {
+				return p.Write([]byte(data))
+			}
+			raw, err := surrogateEscapeEncode(data)
+			if err != nil {
+				return err
+			}
+			return p.Write(raw)
+		},
 		func(p *ExecProcess) error { return errPipeStdinClosed },
-		map[string]any{"status": "ok", "bytes_written": len(data)})
+		map[string]any{"status": "ok", "bytes_written": wtf8RuneCount(data)})
 }
 
 // SubmitStdin sends data plus Enter, CR on a POSIX PTY, CRLF on a Windows PTY, LF on a pipe

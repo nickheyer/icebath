@@ -362,14 +362,11 @@ func pageableText(content string) string {
 
 // One space indented JSON with sorted keys and no HTML escaping
 func jsonIndentOne(v any) string {
-	var buf strings.Builder
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", " ")
-	if err := enc.Encode(v); err != nil {
+	b, err := jsonEncodeWTF8Indent(v, "", " ")
+	if err != nil {
 		return ErrorResult(err)
 	}
-	return strings.TrimSuffix(buf.String(), "\n")
+	return string(b)
 }
 
 // Shell command creating the directory owner only on a shared host

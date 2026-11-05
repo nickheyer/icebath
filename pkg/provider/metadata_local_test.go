@@ -147,18 +147,24 @@ func TestLmstudioNativeAPIBaseURLIsNotDoubled(t *testing.T) {
 
 func TestDetectLocalServerTypePassesBearerToken(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
-	ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(200, map[string]any{}), nil }
+	ft.handle = func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(nil, 200, map[string]any{}, nil), nil
+	}
 	mustEqual(t, DetectLocalServerType(ctx, "http://localhost:1234/v1", "lm-token"), "lm-studio", "lm studio first")
 	mustEqual(t, ft.calls[0].Headers.Get("Authorization"), "Bearer lm-token", "auth header")
 	ctx, ft, _ = metaTest(t)
-	ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(200, map[string]any{}), nil }
+	ft.handle = func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(nil, 200, map[string]any{}, nil), nil
+	}
 	mustEqual(t, DetectLocalServerType(ctx, "http://localhost:1234/api/v1", ""), "lm-studio", "native base")
 	mustEqual(t, ft.urls()[0], "http://127.0.0.1:1234/api/v1/models", "not doubled")
 }
 
 func TestDetectLocalServerTypeLocalhostResolvedToIPv4(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
-	ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(404, map[string]any{}), nil }
+	ft.handle = func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(nil, 404, map[string]any{}, nil), nil
+	}
 	DetectLocalServerType(ctx, "http://localhost:8317/v1", "")
 	for _, u := range ft.urls() {
 		if strings.Contains(u, "localhost") || !strings.Contains(u, "127.0.0.1") {
@@ -166,7 +172,9 @@ func TestDetectLocalServerTypeLocalhostResolvedToIPv4(t *testing.T) {
 		}
 	}
 	ctx, ft, _ = metaTest(t)
-	ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(404, map[string]any{}), nil }
+	ft.handle = func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(nil, 404, map[string]any{}, nil), nil
+	}
 	DetectLocalServerType(ctx, "http://192.168.1.100:8080", "")
 	for _, u := range ft.urls() {
 		if !strings.Contains(u, "192.168.1.100") {
@@ -272,7 +280,9 @@ func TestLocalContextProbeTTLCache(t *testing.T) {
 	mustEqual(t, ft.count(), 2, "different key probes")
 	ctx, ft, _ = metaTest(t)
 	seedServerType("http://localhost:11434/v1", "")
-	ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(404, map[string]any{}), nil }
+	ft.handle = func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(nil, 404, map[string]any{}, nil), nil
+	}
 	mustEqual(t, queryLocalContextLength(ctx, "m", "http://localhost:11434/v1", ""), 0, "miss")
 	first := ft.count()
 	mustEqual(t, queryLocalContextLength(ctx, "m", "http://localhost:11434/v1", ""), 0, "retry")
@@ -304,7 +314,9 @@ func TestPublicHostsGetNoProbeLocalHostsDo(t *testing.T) {
 		probes  bool
 	}{{"https://api.openai.com/v1", false}, {"https://api.openai.com./v1", false}, {"https://api.anthropic.com", false}, {"http://127.0.0.1:11434/v1", true}, {"http://my-box:8080/v1", true}} {
 		ctx, ft, _ := metaTest(t)
-		ft.handle = func(r *http.Request) (*http.Response, error) { return jsonResponse(404, map[string]any{}), nil }
+		ft.handle = func(r *http.Request) (*http.Response, error) {
+			return jsonResponse(nil, 404, map[string]any{}, nil), nil
+		}
 		mustEqual(t, DetectLocalServerType(ctx, tc.baseURL, ""), "", tc.baseURL)
 		mustEqual(t, ft.count() > 0, tc.probes, tc.baseURL+" probes")
 	}

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/tools"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +47,7 @@ func RoutingProcessHome() string {
 
 // SetMultiplexActive marks the process a profile multiplexer and pins the launch home while it is
 func SetMultiplexActive(active bool) {
+	tools.SetMultiplexActive(active)
 	multiplexMu.Lock()
 	defer multiplexMu.Unlock()
 	multiplexActive = active
@@ -358,3 +360,6 @@ func RefreshInstalledSecretScope(ctx context.Context, h string) bool {
 	}
 	return true
 }
+
+// Reports whether a home is the process home, the exported face for pkg/mcp
+func IsProcessHome(h string) bool { return isProcessHome(h) }

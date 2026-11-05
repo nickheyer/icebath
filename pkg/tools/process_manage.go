@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -199,13 +198,11 @@ func handoffProcess(env *Env, sessionID string, args map[string]any, taskID stri
 
 // JSON without HTML escaping, the ensure_ascii false dump the model reads
 func processJSON(v any) string {
-	var b strings.Builder
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	b, err := jsonEncodeWTF8(v)
+	if err != nil {
 		return ErrorResult(err)
 	}
-	return strings.TrimSuffix(b.String(), "\n")
+	return string(b)
 }
 
 // Dispatches one process_manage call

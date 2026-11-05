@@ -57,11 +57,15 @@ func approvalTestEnv(t *testing.T, sessionKey string, approvals map[string]any, 
 
 // Asker returning a scripted answer or blocking until the context ends
 type scriptedAsker struct {
-	answer string
-	block  bool
-	mu     sync.Mutex
-	seen   []Question
+	answer   string
+	block    bool
+	terminal bool
+	mu       sync.Mutex
+	seen     []Question
 }
+
+// TerminalMenu reports whether the scripted answers model single keys typed at the terminal menu
+func (a *scriptedAsker) TerminalMenu() bool { return a.terminal }
 
 func (a *scriptedAsker) Ask(ctx context.Context, qs []Question) (FormResult, error) {
 	a.mu.Lock()
@@ -1067,7 +1071,7 @@ func TestPromptChoicesAndMenuShapes(t *testing.T) {
 			t.Fatalf("question %+v", asker.seen[0])
 		}
 	}
-	asker := &scriptedAsker{answer: "session"}
+	asker := &scriptedAsker{answer: "session", terminal: true}
 	env.Ask = asker
 	got := promptDangerousApproval(context.Background(), env, promptOptions{command: "rm -rf /tmp/example", description: "recursive delete", allowSession: true, smartDenied: true})
 	if got.value != "deny" || strings.Join(asker.seen[0].Choices, ",") != "once,deny" {

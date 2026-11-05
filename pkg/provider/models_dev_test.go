@@ -18,14 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-func jsonMap(raw string) map[string]any {
-	var m map[string]any
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		panic(err)
-	}
-	return m
-}
-
 func sampleRegistry() map[string]any {
 	return jsonMap(`{
 	 "anthropic": {"id": "anthropic", "name": "Anthropic", "models": {
@@ -527,7 +519,11 @@ func TestFetchDeadlineAbandonsATricklingRegistry(t *testing.T) {
 	f.mu.Unlock()
 	prevDeadline := modelsDevFetchDeadlineFor
 	modelsDevFetchDeadlineFor = func() time.Duration { return 20 * time.Millisecond }
-	t.Cleanup(func() { modelsDevFetchDeadlineFor = prevDeadline })
+	t.Cleanup(func() {
+		modelsDevDownloadSlot.Lock()
+		modelsDevDownloadSlot.Unlock()
+		modelsDevFetchDeadlineFor = prevDeadline
+	})
 	started := time.Now()
 	_, _, err := fetchModelsDevFromNetwork(f.home, false)
 	var deadline *ModelsDevFetchDeadlineError

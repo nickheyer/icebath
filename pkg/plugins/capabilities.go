@@ -19,14 +19,14 @@ type CapabilitySpec struct {
 
 // Every capability with an enforcing surface, keyed by id
 var CapabilityRegistry = map[string]CapabilitySpec{
-	"tools.override":             {"tools.override", []string{"allow_tool_override"}, "Replace built-in tools (e.g. shell_exec, write_file) — an override can intercept everything routed through that tool"},
-	"llm.provider_override":      {"llm.provider_override", []string{"llm", "allow_provider_override"}, "Run host-owned LLM calls against a provider other than your active one (uses your credentials)"},
-	"llm.model_override":         {"llm.model_override", []string{"llm", "allow_model_override"}, "Choose which model host-owned LLM calls use (spend follows the chosen model)"},
-	"llm.agent_id_override":      {"llm.agent_id_override", []string{"llm", "allow_agent_id_override"}, "Attribute its LLM calls to a different agent id"},
-	"llm.profile_override":       {"llm.profile_override", []string{"llm", "allow_profile_override"}, "Run LLM calls under a different auth profile"},
-	"llm.task_override":          {"llm.task_override", []string{"llm", "allow_task_override"}, "Route its LLM calls through the host's built-in auxiliary task lanes"},
-	"llm.side_question":          {"llm.side_question", nil, "Ask your agent a short question after each turn. It sees the whole session, including memory, and spends your main model's tokens."},
-	"gateway.platform_actions":   {"gateway.platform_actions", []string{"allow_platform_actions"}, "Act on connected chat platforms as the gateway bot (add reactions, rename threads) via ctx.platform_actions"},
+	"tools.override":           {"tools.override", []string{"allow_tool_override"}, "Replace built-in tools (e.g. shell_exec, write_file) — an override can intercept everything routed through that tool"},
+	"llm.provider_override":    {"llm.provider_override", []string{"llm", "allow_provider_override"}, "Run host-owned LLM calls against a provider other than your active one (uses your credentials)"},
+	"llm.model_override":       {"llm.model_override", []string{"llm", "allow_model_override"}, "Choose which model host-owned LLM calls use (spend follows the chosen model)"},
+	"llm.agent_id_override":    {"llm.agent_id_override", []string{"llm", "allow_agent_id_override"}, "Attribute its LLM calls to a different agent id"},
+	"llm.profile_override":     {"llm.profile_override", []string{"llm", "allow_profile_override"}, "Run LLM calls under a different auth profile"},
+	"llm.task_override":        {"llm.task_override", []string{"llm", "allow_task_override"}, "Route its LLM calls through the host's built-in auxiliary task lanes"},
+	"llm.side_question":        {"llm.side_question", nil, "Ask your agent a short question after each turn. It sees the whole session, including memory, and spends your main model's tokens."},
+	"gateway.platform_actions": {"gateway.platform_actions", []string{"allow_platform_actions"}, "Act on connected chat platforms as the gateway bot (add reactions, rename threads) via ctx.platform_actions"},
 }
 
 // Config keys under plugins.entries.<id> holding consent state

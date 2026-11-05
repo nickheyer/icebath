@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -134,18 +135,20 @@ func buildAdapterSecretEnv() map[string]bool {
 }
 
 var (
-	providerBlocklistOnce sync.Once
-	providerBlocklist     map[string]bool
+	providerBlocklistMu sync.Mutex
+	providerBlocklist   map[string]bool
 )
 
-// ProviderEnvBlocklist is the union of provider credentials and adapter secrets, built once
+// ProviderEnvBlocklist is the union of provider credentials and adapter secrets, built on first use
 func ProviderEnvBlocklist() map[string]bool {
-	providerBlocklistOnce.Do(func() {
+	providerBlocklistMu.Lock()
+	defer providerBlocklistMu.Unlock()
+	if providerBlocklist == nil {
 		providerBlocklist = buildProviderEnvBlocklist()
 		for n := range buildAdapterSecretEnv() {
 			providerBlocklist[n] = true
 		}
-	})
+	}
 	return providerBlocklist
 }
 
@@ -304,12 +307,18 @@ func IsGlobalEnv(name string) bool {
 // ErrUnscopedSecret is returned when a multiplexing process reads a secret without a bound profile scope
 var ErrUnscopedSecret = errors.New("secret read without a bound profile scope while profile multiplexing is active")
 
+// Process wide multiplex flag a gateway raises when it serves many profiles, the set_multiplex_active state
+var multiplexActiveFlag atomic.Bool
+
+// SetMultiplexActive marks this process as a profile multiplexer so unscoped secret reads fail closed
+func SetMultiplexActive(active bool) { multiplexActiveFlag.Store(active) }
+
+// MultiplexActive reports the process wide multiplex flag
+func MultiplexActive() bool { return multiplexActiveFlag.Load() }
+
 // Whether this process serves many profiles so an unscoped secret read must fail closed
 func isMultiplexActive(env *Env) bool {
-	if sessionFlag(env, "multiplex", "ICEBATH_MULTIPLEX_ACTIVE") {
-		return true
-	}
-	return cfgTree(env).Bool("gateway.multiplex_profiles", false)
+	return multiplexActiveFlag.Load() || sessionFlag(env, "multiplex", "ICEBATH_MULTIPLEX_ACTIVE")
 }
 
 // ResolvePassthroughValue resolves an allowlisted variable through the profile secret scope
@@ -362,6 +371,9 @@ func ResetEnvPassthroughConfigCache() {
 	passthroughMu.Lock()
 	passthroughConfig = map[string]map[string]bool{}
 	passthroughMu.Unlock()
+	providerBlocklistMu.Lock()
+	providerBlocklist = nil
+	providerBlocklistMu.Unlock()
 }
 
 // Reads a process env value the way os.getenv does for callers that need the raw fallback

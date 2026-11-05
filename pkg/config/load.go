@@ -37,6 +37,7 @@ type fileSig struct {
 type cacheEntry struct {
 	sig      fileSig
 	exists   bool
+	managed  fileSig
 	expanded Tree
 	raw      map[string]any
 	refs     map[string]*string
@@ -111,6 +112,7 @@ func normalizeMaps(v any) any {
 
 // Raw user config of a home, no defaults merged and no references expanded
 func ReadUser(h string) (map[string]any, error) {
+	NoteRuntimeImport("hermes_cli.config")
 	return ReadDocument(home.ConfigPath(h))
 }
 
@@ -249,6 +251,7 @@ func normalizeModelKeys(doc map[string]any) map[string]any {
 
 // Effective configuration of a home, defaults merged under the user file and references expanded
 func Load(h string, lookup Lookup) (Tree, error) {
+	NoteRuntimeImport("hermes_cli.config")
 	path := home.ConfigPath(h)
 	sig, exists, err := signature(path)
 	if err != nil {
@@ -257,7 +260,8 @@ func Load(h string, lookup Lookup) (Tree, error) {
 	cacheMu.Lock()
 	entry := cache[path]
 	cacheMu.Unlock()
-	if entry != nil && entry.exists == exists && (!exists || entry.sig == sig) && SnapshotCurrent(entry.refs, lookup) {
+	managedSig := managedConfigSignature()
+	if entry != nil && entry.exists == exists && (!exists || entry.sig == sig) && entry.managed == managedSig && SnapshotCurrent(entry.refs, lookup) {
 		return entry.expanded.Clone(), nil
 	}
 	user := map[string]any{}
@@ -268,9 +272,9 @@ func Load(h string, lookup Lookup) (Tree, error) {
 		}
 	}
 	canonical := Canonicalize(DeepMerge(map[string]any(Defaults()), Canonicalize(user)))
-	expanded := Tree(Expand(canonical, lookup).(map[string]any))
+	expanded := Tree(Canonicalize(ApplyManagedOverlay(Expand(canonical, lookup).(map[string]any))))
 	cacheMu.Lock()
-	cache[path] = &cacheEntry{sig: sig, exists: exists, expanded: expanded.Clone(), raw: Clone(user).(map[string]any), refs: RefSnapshot(canonical, lookup)}
+	cache[path] = &cacheEntry{sig: sig, exists: exists, managed: managedSig, expanded: expanded.Clone(), raw: Clone(user).(map[string]any), refs: RefSnapshot(canonical, lookup)}
 	cacheMu.Unlock()
 	return expanded, nil
 }

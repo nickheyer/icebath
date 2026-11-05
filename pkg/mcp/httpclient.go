@@ -14,8 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/net/http/httpproxy"
 )
 
 // Characters of a rejection body kept for diagnostics
@@ -133,8 +131,12 @@ func newOwnedClient(opts HTTPOptions) (*ownedClient, error) {
 	if connect <= 0 {
 		connect = 30 * time.Second
 	}
+	mounts, err := mcpProxyMounts(opts.URL)
+	if err != nil {
+		return nil, err
+	}
 	transport := &http.Transport{
-		Proxy:                 proxyFromEnvironment,
+		Proxy:                 func(req *http.Request) (*url.URL, error) { return mounts[req.URL.Scheme], nil },
 		DialContext:           (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext,
 		TLSClientConfig:       tlsConf,
 		TLSHandshakeTimeout:   connect,
@@ -144,7 +146,7 @@ func newOwnedClient(opts HTTPOptions) (*ownedClient, error) {
 		IdleConnTimeout:       90 * time.Second,
 	}
 	oc := &ownedClient{origin: originOf(target), opts: opts, rejected: &rejectionRecorder{}}
-	oc.client = &http.Client{Transport: transport, CheckRedirect: oc.checkRedirect}
+	oc.client = &http.Client{Transport: &bodyCapTransport{inner: transport, limit: MaxHTTPBodyBytes}, CheckRedirect: oc.checkRedirect}
 	return oc, nil
 }
 
@@ -170,36 +172,6 @@ func (oc *ownedClient) checkRedirect(req *http.Request, via []*http.Request) err
 		}
 	}
 	return nil
-}
-
-// proxyFromEnvironment resolves the proxy for a request honoring NO_PROXY and normalizing socks schemes
-func proxyFromEnvironment(req *http.Request) (*url.URL, error) {
-	cfg := httpproxy.FromEnvironment()
-	cfg.HTTPProxy = normalizeProxyURL(cfg.HTTPProxy)
-	cfg.HTTPSProxy = normalizeProxyURL(cfg.HTTPSProxy)
-	if isLoopbackHost(req.URL.Hostname()) {
-		return nil, nil
-	}
-	return cfg.ProxyFunc()(req.URL)
-}
-
-// normalizeProxyURL rewrites the socks scheme shells export to the one Go understands
-func normalizeProxyURL(p string) string {
-	p = strings.TrimSpace(p)
-	if strings.HasPrefix(strings.ToLower(p), "socks://") {
-		return "socks5://" + p[len("socks://"):]
-	}
-	return p
-}
-
-// isLoopbackHost reports localhost or any loopback literal
-func isLoopbackHost(host string) bool {
-	host = strings.ToLower(strings.Trim(strings.TrimSpace(host), "[]"))
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // buildTLSConfig applies ssl_verify and the mTLS client certificate shapes the config accepts

@@ -544,11 +544,11 @@ type catalogEntry struct {
 	Status       string
 	LoadName     string
 	// Carried index metadata when the entry comes from a prompt snapshot
-	SkillName  string
-	Conditions map[string][]string
-	Platforms  []string
+	SkillName    string
+	Conditions   map[string][]string
+	Platforms    []string
 	RequiresApps []string
-	Rel        string
+	Rel          string
 }
 
 var (

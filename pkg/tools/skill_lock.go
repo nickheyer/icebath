@@ -16,6 +16,9 @@ type SkillLockSource interface {
 	AllSkillsDirs(env *Env) []string
 	IsExcludedSkillPath(path, root string) bool
 	FindSkillDirName(env *Env, name string) string
+	ExternalSkillsDirs(env *Env) []string
+	ProjectSkillsDirs(env *Env) []string
+	IsExcludedSkillDir(name string) bool
 }
 
 // SkillLocks is installed by pkg/skills before any terminal or file guard runs

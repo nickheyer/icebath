@@ -32,8 +32,8 @@ type Implementation struct {
 
 // ClientCapabilities advertised in initialize
 type ClientCapabilities struct {
-	Sampling     map[string]any `json:"sampling,omitempty"`
-	Elicitation  map[string]any `json:"elicitation,omitempty"`
+	Sampling     map[string]any `json:"sampling,omitzero"`
+	Elicitation  map[string]any `json:"elicitation,omitzero"`
 	Roots        map[string]any `json:"roots,omitempty"`
 	Experimental map[string]any `json:"experimental,omitempty"`
 }
@@ -135,8 +135,8 @@ type ContentBlock struct {
 
 // ResourceContents is the payload of an embedded resource or a resources/read entry
 type ResourceContents struct {
-	URI      string `json:"uri"`
-	MimeType string `json:"mimeType,omitempty"`
+	URI      string  `json:"uri"`
+	MimeType string  `json:"mimeType,omitempty"`
 	Text     *string `json:"text,omitempty"`
 	Blob     *string `json:"blob,omitempty"`
 }
@@ -253,12 +253,34 @@ type ElicitParams struct {
 	Mode            string         `json:"mode,omitempty"`
 	URL             string         `json:"url,omitempty"`
 	ElicitationID   string         `json:"elicitationId,omitempty"`
+	// Raw requestedSchema bytes so the consent summary follows the server's property order
+	RawRequestedSchema json.RawMessage `json:"-"`
+}
+
+// Decodes the params and keeps the requestedSchema bytes as sent
+func (p *ElicitParams) UnmarshalJSON(data []byte) error {
+	type plain ElicitParams
+	var raw struct {
+		plain
+		RequestedSchema json.RawMessage `json:"requestedSchema,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*p = ElicitParams(raw.plain)
+	if len(raw.RequestedSchema) > 0 && string(raw.RequestedSchema) != "null" {
+		p.RawRequestedSchema = raw.RequestedSchema
+		if err := json.Unmarshal(raw.RequestedSchema, &p.RequestedSchema); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ElicitResult is the answer to elicitation/create
 type ElicitResult struct {
 	Action  string         `json:"action"`
-	Content map[string]any `json:"content,omitempty"`
+	Content map[string]any `json:"content,omitzero"`
 }
 
 // Method names used by this client

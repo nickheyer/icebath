@@ -50,13 +50,6 @@ func jsonList(v any) []any {
 	return out
 }
 
-func jsonMap(v any) map[string]any {
-	raw, _ := json.Marshal(v)
-	var out map[string]any
-	_ = json.Unmarshal(raw, &out)
-	return out
-}
-
 func jsonText(v any) string {
 	var b strings.Builder
 	enc := json.NewEncoder(&b)

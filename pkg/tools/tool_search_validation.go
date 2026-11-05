@@ -246,12 +246,12 @@ func ValidateDeferredCallArgs(ctx context.Context, env *Env, name string, args m
 		slog.Debug("validate_deferred_call_args schema compile failed", "tool", name, "error", err)
 		return ""
 	}
-	var instance any
-	raw, err := json.Marshal(candidate)
+	raw, err := jsonEncodeWTF8(candidate)
 	if err != nil {
 		return ""
 	}
-	if err := json.Unmarshal(raw, &instance); err != nil {
+	instance, err := jsonDecodeWTF8(raw)
+	if err != nil {
 		return ""
 	}
 	verr := compiled.Validate(instance)
@@ -313,8 +313,8 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 		rawCalls = []any{map[string]any{"name": args["name"], "arguments": args["arguments"]}}
 	}
 	if s, ok := rawCalls.(string); ok {
-		var parsed any
-		if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+		parsed, err := jsonDecodeWTF8([]byte(s))
+		if err != nil {
 			return nil, fmt.Sprintf("tool_call 'calls' is not valid JSON: %s", err.Error())
 		}
 		rawCalls = parsed
@@ -347,8 +347,8 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 			rawArgs = map[string]any{}
 		}
 		if s, isStr := rawArgs.(string); isStr {
-			var parsed any
-			if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+			parsed, err := jsonDecodeWTF8([]byte(s))
+			if err != nil {
 				return nil, fmt.Sprintf("tool_call calls[%d].arguments is not valid JSON: %s", position, err.Error())
 			}
 			rawArgs = parsed

@@ -121,3 +121,7 @@ func TestLockResolvesByDisplayNameAsWellAsDirectory(t *testing.T) {
 		t.Fatal("free skill reported locked")
 	}
 }
+
+func (s *testSkillLocks) ExternalSkillsDirs(*Env) []string { return nil }
+func (s *testSkillLocks) ProjectSkillsDirs(*Env) []string  { return nil }
+func (s *testSkillLocks) IsExcludedSkillDir(string) bool   { return false }

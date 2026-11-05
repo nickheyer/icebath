@@ -60,6 +60,15 @@ var (
 	nousLoginPolicyAllowedFn = func(ctx context.Context) (map[string]bool, bool) { return NousPolicyAllowedIDs(ctx, false) }
 )
 
+// Sibling slice steps the login runs, swappable so tests can script or record them
+var (
+	nousPromptModelSelectionFn = promptModelSelection
+	nousSaveModelChoiceFn      = saveModelChoice
+	nousGuestHandoffDrainFn    = guestHandoffDrain
+	nousSettleAfterUpgradeFn   = settleAfterUpgrade
+	nousBillingInvalidateFn    = nousBillingInvalidateCachedToken
+)
+
 // Runs the Nous device code flow and returns the full OAuth state without persisting it
 func nousDeviceCodeLogin(env PoolEnv, out io.Writer, args NousDeviceLoginArgs) (map[string]any, error) {
 	portalBaseURL := strings.TrimRight(firstNonEmpty(args.PortalBaseURL, oauthGetenv("ICEBATH_PORTAL_BASE_URL"), oauthGetenv("NOUS_PORTAL_BASE_URL"), DefaultNousPortalURL), "/")
@@ -194,16 +203,18 @@ func StepUpNousBillingScope(env PoolEnv, out io.Writer, openBrowser bool, timeou
 		return false, err
 	}
 	nousMirrorStateBestEffort(env, authState)
-	guestHandoffDrain(env)
+	if _, err := nousGuestHandoffDrainFn(env); err != nil {
+		return false, err
+	}
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
 				env.log().Debug(fmt.Sprintf("Billing token cache invalidation failed: %v", r))
 			}
 		}()
-		nousBillingInvalidateCachedToken()
+		nousBillingInvalidateFn()
 	}()
-	settleAfterUpgrade(env, authState)
+	nousSettleAfterUpgradeFn(env, authState)
 	granted, ok := authState["scope"].(string)
 	return ok && containsString(strings.Fields(granted), NousBillingManageScope), nil
 }
@@ -251,7 +262,7 @@ func nousPickModelAfterLogin(env PoolEnv, out io.Writer, authState map[string]an
 			modelIDs = featuredFirst(modelIDs, featured)
 		}
 		fmt.Fprintf(out, "Showing %d curated models — use \"Enter custom model name\" for others.\n", len(modelIDs))
-		selected, _ := promptModelSelection(env, out, ModelSelectionPrompt{
+		selected, _ := nousPromptModelSelectionFn(env, out, ModelSelectionPrompt{
 			ModelIDs: modelIDs, Pricing: pricing, UnavailableModels: unavailableModels, PortalURL: portal,
 			UnavailableMessage: unavailableMessage, ConfirmProvider: "nous", ConfirmBaseURL: inferenceBaseURL,
 			ConfirmAPIKey: runtimeKey, Usage: usage})
@@ -375,9 +386,12 @@ func loginNous(env PoolEnv, out io.Writer, args NousLoginArgs) error {
 		return err
 	}
 	writeSharedNousState(env, authState, false)
-	handoff := guestHandoffDrain(env)
+	handoff, err := nousGuestHandoffDrainFn(env)
+	if err != nil {
+		return err
+	}
 	nousSyncPoolFromAuthStore(env)
-	settleAfterUpgrade(env, authState)
+	nousSettleAfterUpgradeFn(env, authState)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Login successful!")
 	fmt.Fprintf(out, "  Auth state: %s\n", savedTo)
@@ -409,7 +423,7 @@ func loginNous(env PoolEnv, out io.Writer, args NousLoginArgs) error {
 	if err != nil {
 		return err
 	}
-	if err := saveModelChoice(env, selected); err != nil {
+	if err := nousSaveModelChoiceFn(env, selected); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Default model set to: %s\n", selected)

@@ -16,6 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
+// Longest a checkpoint write waits for the store lock, the Python lock blocks without a deadline
+const checkpointWriteLockWait = 24 * time.Hour
+
 // Durable state of the process registry, the crash checkpoint, completed receipts, ownership, awaiting, wait policy and notifications
 
 // Hooks the delegation runtime and the gateway install for completion routing
@@ -127,7 +130,7 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []map[string]an
 	path := checkpointPathFn(env)
 	lockPath := path + ".lock"
 	os.MkdirAll(filepath.Dir(lockPath), 0o700)
-	unlock, err := lockStoreFile(lockPath, 0)
+	unlock, err := lockStoreFile(lockPath, checkpointWriteLockWait)
 	if err != nil {
 		toolsLogger(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
 		return
@@ -1509,7 +1512,7 @@ func shortTitle(title string) string {
 	return title
 }
 
-func utf8Len(s string) int { return len([]rune(s)) }
+func utf8Len(s string) int { return wtf8RuneCount(s) }
 
 // ProcessCompleteDisplayKind names the UI row kind of a process completion
 const ProcessCompleteDisplayKind = "process_complete"

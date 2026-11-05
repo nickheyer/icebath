@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // ScopedCredentialSource narrows a pool to the rows a custom entry owns before selecting one
@@ -1257,7 +1258,7 @@ func (r *resolver) envKeyAutoDetected(oauthActive string) string {
 
 // Hint for an unknown provider error, a moved provider's install line, a removed provider, or config issues
 func (r *resolver) unknownProviderHint(providerName string) string {
-	if moved := leftCoreProviderInstallHint(providerName); moved != "" {
+	if moved := ProviderInstallHint(home.WithOverride(r.ctx, r.home), providerName); moved != "" {
 		return moved
 	}
 	switch strings.ToLower(strings.TrimSpace(providerName)) {
@@ -2104,7 +2105,7 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 // ResolveRuntime walks the hermes ladder and returns the full runtime for a requested provider
 func (r *resolver) ResolveRuntime(requested, explicitAPIKey, explicitBaseURL string, explicitToken func(context.Context) (string, error), targetModel string) (*Runtime, error) {
 	requestedProvider := r.resolveRequestedProvider(requested)
-	recoverLeftCoreProvider(requestedProvider)
+	recoverLeftCoreProvider(r.ctx, r.home, requestedProvider)
 	if err := r.raiseIfProviderDisabled(requestedProvider); err != nil {
 		return nil, err
 	}

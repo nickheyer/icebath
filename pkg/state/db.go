@@ -116,9 +116,11 @@ func Open(path string, opts Options) (*DB, error) {
 	sqlDB.SetMaxOpenConns(4)
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 	d := &DB{path: path, readOnly: opts.ReadOnly, db: sqlDB}
+	TrackConnection(path)
 	if !opts.ReadOnly {
 		if err := d.initSchema(); err != nil {
 			sqlDB.Close()
+			UntrackConnection(path)
 			return nil, err
 		}
 		for _, p := range []string{path, path + "-wal", path + "-shm"} {
@@ -146,6 +148,7 @@ func (d *DB) Close() error {
 		return nil
 	}
 	d.closed = true
+	defer UntrackConnection(d.path)
 	if !d.readOnly {
 		d.writeMu.Lock()
 		_, _ = d.db.Exec("PRAGMA wal_checkpoint(PASSIVE)")

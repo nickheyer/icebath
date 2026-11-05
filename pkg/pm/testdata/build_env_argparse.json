@@ -1,0 +1,333 @@
+[
+ {
+  "argv": [
+   "--help"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 0,
+  "stdout": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\n\nBuild and inspect explicit Python dependency environments through PM.\n\noptions:\n  -h, --help            show this help message and exit\n  --source SOURCE\n  --out OUT\n  --python PYTHON\n  --cache CACHE\n  --extra EXTRAS\n  --group GROUPS\n  --all-extras\n  --no-install-project\n  --resolve             resolve the source lock before building\n  --lock-only\n  --check-lock\n  --export-requirements EXPORT_REQUIREMENTS\n  --prune-cache\n  --exact-lock          prune to the project lock: entries the uv.lock cannot\n                        resolve are deleted\n  --manager-runtime\n  --lock-source LOCK_SOURCE\n                        repo whose uv.lock selects the kept entries for\n                        --exact-lock (default: cwd)\n  --upgrade\n  --ci\n  --sealed\n  --offline\n  --explicit            CLI builds are always explicit requests\n  --record-selection    record the --extra list as this install's baseline\n                        dependency selection\n  --wheelhouse WHEELHOUSE\n  --requirements REQUIREMENTS\n  --requirement REQUIREMENT\n  --lock LOCK           uv.lock the requirements were exported from; its\n                        overrides apply\n",
+  "stderr": ""
+ },
+ {
+  "argv": [
+   "-h"
+  ],
+  "columns": "40",
+  "colors": "",
+  "code": 0,
+  "stdout": "usage: build_env.py [-h]\n                    [--source SOURCE]\n                    [--out OUT]\n                    [--python PYTHON]\n                    [--cache CACHE]\n                    [--extra EXTRAS]\n                    [--group GROUPS]\n                    [--all-extras]\n                    [--no-install-project]\n                    [--resolve]\n                    [--lock-only |\n                    --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache |\n                    --exact-lock |\n                    --manager-runtime]\n                    [--lock-source LOCK_SOURCE]\n                    [--upgrade] [--ci]\n                    [--sealed]\n                    [--offline]\n                    [--explicit]\n                    [--record-selection]\n                    [--wheelhouse WHEELHOUSE]\n                    [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT]\n                    [--lock LOCK]\n\nBuild and inspect explicit Python\ndependency environments through PM.\n\noptions:\n  -h, --help      show this help\n                  message and exit\n  --source SOURCE\n  --out OUT\n  --python PYTHON\n  --cache CACHE\n  --extra EXTRAS\n  --group GROUPS\n  --all-extras\n  --no-install-project\n  --resolve       resolve the source\n                  lock before building\n  --lock-only\n  --check-lock\n  --export-requirements EXPORT_REQUIREMENTS\n  --prune-cache\n  --exact-lock    prune to the project\n                  lock: entries the\n                  uv.lock cannot\n                  resolve are deleted\n  --manager-runtime\n  --lock-source LOCK_SOURCE\n                  repo whose uv.lock\n                  selects the kept\n                  entries for --exact-\n                  lock (default: cwd)\n  --upgrade\n  --ci\n  --sealed\n  --offline\n  --explicit      CLI builds are\n                  always explicit\n                  requests\n  --record-selection\n                  record the --extra\n                  list as this\n                  install's baseline\n                  dependency selection\n  --wheelhouse WHEELHOUSE\n  --requirements REQUIREMENTS\n  --requirement REQUIREMENT\n  --lock LOCK     uv.lock the\n                  requirements were\n                  exported from; its\n                  overrides apply\n",
+  "stderr": ""
+ },
+ {
+  "argv": [
+   "--he"
+  ],
+  "columns": "200",
+  "colors": "",
+  "code": 0,
+  "stdout": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON] [--cache CACHE] [--extra EXTRAS] [--group GROUPS] [--all-extras] [--no-install-project] [--resolve] [--lock-only |\n                    --check-lock | --export-requirements EXPORT_REQUIREMENTS | --prune-cache | --exact-lock | --manager-runtime] [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed] [--offline]\n                    [--explicit] [--record-selection] [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS] [--requirement REQUIREMENT] [--lock LOCK]\n\nBuild and inspect explicit Python dependency environments through PM.\n\noptions:\n  -h, --help            show this help message and exit\n  --source SOURCE\n  --out OUT\n  --python PYTHON\n  --cache CACHE\n  --extra EXTRAS\n  --group GROUPS\n  --all-extras\n  --no-install-project\n  --resolve             resolve the source lock before building\n  --lock-only\n  --check-lock\n  --export-requirements EXPORT_REQUIREMENTS\n  --prune-cache\n  --exact-lock          prune to the project lock: entries the uv.lock cannot resolve are deleted\n  --manager-runtime\n  --lock-source LOCK_SOURCE\n                        repo whose uv.lock selects the kept entries for --exact-lock (default: cwd)\n  --upgrade\n  --ci\n  --sealed\n  --offline\n  --explicit            CLI builds are always explicit requests\n  --record-selection    record the --extra list as this install's baseline dependency selection\n  --wheelhouse WHEELHOUSE\n  --requirements REQUIREMENTS\n  --requirement REQUIREMENT\n  --lock LOCK           uv.lock the requirements were exported from; its overrides apply\n",
+  "stderr": ""
+ },
+ {
+  "argv": [
+   "-hx"
+  ],
+  "columns": "60",
+  "colors": "",
+  "code": 0,
+  "stdout": "usage: build_env.py [-h] [--source SOURCE] [--out OUT]\n                    [--python PYTHON] [--cache CACHE]\n                    [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project]\n                    [--resolve] [--lock-only |\n                    --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock |\n                    --manager-runtime]\n                    [--lock-source LOCK_SOURCE]\n                    [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit]\n                    [--record-selection]\n                    [--wheelhouse WHEELHOUSE]\n                    [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT]\n                    [--lock LOCK]\n\nBuild and inspect explicit Python dependency environments\nthrough PM.\n\noptions:\n  -h, --help            show this help message and exit\n  --source SOURCE\n  --out OUT\n  --python PYTHON\n  --cache CACHE\n  --extra EXTRAS\n  --group GROUPS\n  --all-extras\n  --no-install-project\n  --resolve             resolve the source lock before\n                        building\n  --lock-only\n  --check-lock\n  --export-requirements EXPORT_REQUIREMENTS\n  --prune-cache\n  --exact-lock          prune to the project lock: entries\n                        the uv.lock cannot resolve are\n                        deleted\n  --manager-runtime\n  --lock-source LOCK_SOURCE\n                        repo whose uv.lock selects the\n                        kept entries for --exact-lock\n                        (default: cwd)\n  --upgrade\n  --ci\n  --sealed\n  --offline\n  --explicit            CLI builds are always explicit\n                        requests\n  --record-selection    record the --extra list as this\n                        install's baseline dependency\n                        selection\n  --wheelhouse WHEELHOUSE\n  --requirements REQUIREMENTS\n  --requirement REQUIREMENT\n  --lock LOCK           uv.lock the requirements were\n                        exported from; its overrides apply\n",
+  "stderr": ""
+ },
+ {
+  "argv": [
+   "--help"
+  ],
+  "columns": "80",
+  "colors": "1",
+  "code": 0,
+  "stdout": "\u001b[1;34musage: \u001b[0m\u001b[1;35mbuild_env.py\u001b[0m [\u001b[32m-h\u001b[0m] [\u001b[36m--source \u001b[33mSOURCE\u001b[0m] [\u001b[36m--out \u001b[33mOUT\u001b[0m] [\u001b[36m--python \u001b[33mPYTHON\u001b[0m]\n                    [\u001b[36m--cache \u001b[33mCACHE\u001b[0m] [\u001b[36m--extra \u001b[33mEXTRAS\u001b[0m] [\u001b[36m--group \u001b[33mGROUPS\u001b[0m]\n                    [\u001b[36m--all-extras\u001b[0m] [\u001b[36m--no-install-project\u001b[0m] [\u001b[36m--resolve\u001b[0m]\n                    [\u001b[36m--lock-only\u001b[0m | \u001b[36m--check-lock\u001b[0m |\n                    \u001b[36m--export-requirements \u001b[33mEXPORT_REQUIREMENTS\u001b[0m |\n                    \u001b[36m--prune-cache\u001b[0m | \u001b[36m--exact-lock\u001b[0m | \u001b[36m--manager-runtime\u001b[0m]\n                    [\u001b[36m--lock-source \u001b[33mLOCK_SOURCE\u001b[0m] [\u001b[36m--upgrade\u001b[0m] [\u001b[36m--ci\u001b[0m] [\u001b[36m--sealed\u001b[0m]\n                    [\u001b[36m--offline\u001b[0m] [\u001b[36m--explicit\u001b[0m] [\u001b[36m--record-selection\u001b[0m]\n                    [\u001b[36m--wheelhouse \u001b[33mWHEELHOUSE\u001b[0m] [\u001b[36m--requirements \u001b[33mREQUIREMENTS\u001b[0m]\n                    [\u001b[36m--requirement \u001b[33mREQUIREMENT\u001b[0m] [\u001b[36m--lock \u001b[33mLOCK\u001b[0m]\n\nBuild and inspect explicit Python dependency environments through PM.\n\n\u001b[1;34moptions:\u001b[0m\n  \u001b[1;32m-h\u001b[0m, \u001b[1;36m--help\u001b[0m            show this help message and exit\n  \u001b[1;36m--source\u001b[0m \u001b[1;33mSOURCE\u001b[0m\n  \u001b[1;36m--out\u001b[0m \u001b[1;33mOUT\u001b[0m\n  \u001b[1;36m--python\u001b[0m \u001b[1;33mPYTHON\u001b[0m\n  \u001b[1;36m--cache\u001b[0m \u001b[1;33mCACHE\u001b[0m\n  \u001b[1;36m--extra\u001b[0m \u001b[1;33mEXTRAS\u001b[0m\n  \u001b[1;36m--group\u001b[0m \u001b[1;33mGROUPS\u001b[0m\n  \u001b[1;36m--all-extras\u001b[0m\n  \u001b[1;36m--no-install-project\u001b[0m\n  \u001b[1;36m--resolve\u001b[0m             resolve the source lock before building\n  \u001b[1;36m--lock-only\u001b[0m\n  \u001b[1;36m--check-lock\u001b[0m\n  \u001b[1;36m--export-requirements\u001b[0m \u001b[1;33mEXPORT_REQUIREMENTS\u001b[0m\n  \u001b[1;36m--prune-cache\u001b[0m\n  \u001b[1;36m--exact-lock\u001b[0m          prune to the project lock: entries the uv.lock cannot\n                        resolve are deleted\n  \u001b[1;36m--manager-runtime\u001b[0m\n  \u001b[1;36m--lock-source\u001b[0m \u001b[1;33mLOCK_SOURCE\u001b[0m\n                        repo whose uv.lock selects the kept entries for\n                        --exact-lock (default: cwd)\n  \u001b[1;36m--upgrade\u001b[0m\n  \u001b[1;36m--ci\u001b[0m\n  \u001b[1;36m--sealed\u001b[0m\n  \u001b[1;36m--offline\u001b[0m\n  \u001b[1;36m--explicit\u001b[0m            CLI builds are always explicit requests\n  \u001b[1;36m--record-selection\u001b[0m    record the --extra list as this install's baseline\n                        dependency selection\n  \u001b[1;36m--wheelhouse\u001b[0m \u001b[1;33mWHEELHOUSE\u001b[0m\n  \u001b[1;36m--requirements\u001b[0m \u001b[1;33mREQUIREMENTS\u001b[0m\n  \u001b[1;36m--requirement\u001b[0m \u001b[1;33mREQUIREMENT\u001b[0m\n  \u001b[1;36m--lock\u001b[0m \u001b[1;33mLOCK\u001b[0m           uv.lock the requirements were exported from; its\n                        overrides apply\n",
+  "stderr": ""
+ },
+ {
+  "argv": [
+   "--bogus",
+   "x"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: unrecognized arguments: --bogus x\n"
+ },
+ {
+  "argv": [
+   "--source"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: argument --source: expected one argument\n"
+ },
+ {
+  "argv": [
+   "--re",
+   "x"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: ambiguous option: --re could match --resolve, --record-selection, --requirements, --requirement\n"
+ },
+ {
+  "argv": [
+   "--lock-only",
+   "--check-lock"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: argument --check-lock: not allowed with argument --lock-only\n"
+ },
+ {
+  "argv": [
+   "--check-lock",
+   "--lock-only",
+   "--check-lock"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: argument --lock-only: not allowed with argument --check-lock\n"
+ },
+ {
+  "argv": [
+   "--all-extras=1"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: argument --all-extras: ignored explicit argument '1'\n"
+ },
+ {
+  "argv": [
+   "--lock-only="
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: argument --lock-only: ignored explicit argument ''\n"
+ },
+ {
+  "argv": [
+   "--",
+   "x"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: unrecognized arguments: -- x\n"
+ },
+ {
+  "argv": [
+   "x",
+   "y"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: unrecognized arguments: x y\n"
+ },
+ {
+  "argv": [
+   "--source",
+   "-x"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: argument --source: expected one argument\n"
+ },
+ {
+  "argv": [
+   "--source",
+   "--",
+   "x"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: argument --source: expected one argument\n"
+ },
+ {
+  "argv": [
+   "--sources",
+   "x"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: unrecognized arguments: --sources x\n"
+ },
+ {
+  "argv": [
+   "--source=x",
+   "-s"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: unrecognized arguments: -s\n"
+ },
+ {
+  "argv": [
+   "--export-requirements",
+   "x",
+   "--check-lock"
+  ],
+  "columns": "50",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE]\n                    [--out OUT]\n                    [--python PYTHON]\n                    [--cache CACHE]\n                    [--extra EXTRAS]\n                    [--group GROUPS]\n                    [--all-extras]\n                    [--no-install-project]\n                    [--resolve] [--lock-only |\n                    --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache |\n                    --exact-lock |\n                    --manager-runtime]\n                    [--lock-source LOCK_SOURCE]\n                    [--upgrade] [--ci]\n                    [--sealed] [--offline]\n                    [--explicit]\n                    [--record-selection]\n                    [--wheelhouse WHEELHOUSE]\n                    [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT]\n                    [--lock LOCK]\nbuild_env.py: error: argument --check-lock: not allowed with argument --export-requirements\n"
+ },
+ {
+  "argv": [
+   "--exact-lock",
+   "--ci"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --exact-lock replaces --ci/--prune-cache: downloaded wheels the lock keeps must survive\n"
+ },
+ {
+  "argv": [
+   "--exact-lock"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --exact-lock requires --lock-source\n"
+ },
+ {
+  "argv": [
+   "--exact-lock",
+   "--lock-source",
+   "x"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --exact-lock requires --cache\n"
+ },
+ {
+  "argv": [
+   "--prune-cache"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --prune-cache requires --cache\n"
+ },
+ {
+  "argv": [],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --source is required for project operations\n"
+ },
+ {
+  "argv": [
+   "--source",
+   "s"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --out is required when building an environment\n"
+ },
+ {
+  "argv": [
+   "--source",
+   "s",
+   "--out",
+   "o",
+   "--manager-runtime"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --manager-runtime requires the target --python\n"
+ },
+ {
+  "argv": [
+   "--source",
+   "s",
+   "--out",
+   "o",
+   "--record-selection"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --record-selection records the --extra list of a project environment build\n"
+ },
+ {
+  "argv": [
+   "--source",
+   "s",
+   "--out",
+   "o",
+   "--extra",
+   "a",
+   "--record-selection",
+   "--all-extras"
+  ],
+  "columns": "80",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py [-h] [--source SOURCE] [--out OUT] [--python PYTHON]\n                    [--cache CACHE] [--extra EXTRAS] [--group GROUPS]\n                    [--all-extras] [--no-install-project] [--resolve]\n                    [--lock-only | --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache | --exact-lock | --manager-runtime]\n                    [--lock-source LOCK_SOURCE] [--upgrade] [--ci] [--sealed]\n                    [--offline] [--explicit] [--record-selection]\n                    [--wheelhouse WHEELHOUSE] [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT] [--lock LOCK]\nbuild_env.py: error: --record-selection records the --extra list of a project environment build\n"
+ },
+ {
+  "argv": [
+   "--help"
+  ],
+  "columns": "30",
+  "colors": "",
+  "code": 0,
+  "stdout": "usage: build_env.py [-h]\n                    [--source SOURCE]\n                    [--out OUT]\n                    [--python PYTHON]\n                    [--cache CACHE]\n                    [--extra EXTRAS]\n                    [--group GROUPS]\n                    [--all-extras]\n                    [--no-install-project]\n                    [--resolve]\n                    [--lock-only |\n                    --check-lock |\n                    --export-requirements EXPORT_REQUIREMENTS |\n                    --prune-cache |\n                    --exact-lock |\n                    --manager-runtime]\n                    [--lock-source LOCK_SOURCE]\n                    [--upgrade]\n                    [--ci]\n                    [--sealed]\n                    [--offline]\n                    [--explicit]\n                    [--record-selection]\n                    [--wheelhouse WHEELHOUSE]\n                    [--requirements REQUIREMENTS]\n                    [--requirement REQUIREMENT]\n                    [--lock LOCK]\n\nBuild and inspect explicit\nPython dependency\nenvironments through PM.\n\noptions:\n  -h, --help\n        show this help\n        message and exit\n  --source SOURCE\n  --out OUT\n  --python PYTHON\n  --cache CACHE\n  --extra EXTRAS\n  --group GROUPS\n  --all-extras\n  --no-install-project\n  --resolve\n        resolve the source\n        lock before building\n  --lock-only\n  --check-lock\n  --export-requirements EXPORT_REQUIREMENTS\n  --prune-cache\n  --exact-lock\n        prune to the project\n        lock: entries the\n        uv.lock cannot\n        resolve are deleted\n  --manager-runtime\n  --lock-source LOCK_SOURCE\n        repo whose uv.lock\n        selects the kept\n        entries for --exact-\n        lock (default: cwd)\n  --upgrade\n  --ci\n  --sealed\n  --offline\n  --explicit\n        CLI builds are\n        always explicit\n        requests\n  --record-selection\n        record the --extra\n        list as this\n        install's baseline\n        dependency selection\n  --wheelhouse WHEELHOUSE\n  --requirements REQUIREMENTS\n  --requirement REQUIREMENT\n  --lock LOCK\n        uv.lock the\n        requirements were\n        exported from; its\n        overrides apply\n",
+  "stderr": ""
+ },
+ {
+  "argv": [
+   "--bogus"
+  ],
+  "columns": "20",
+  "colors": "",
+  "code": 2,
+  "stdout": "",
+  "stderr": "usage: build_env.py\n       [-h]\n       [--source SOURCE]\n       [--out OUT]\n       [--python PYTHON]\n       [--cache CACHE]\n       [--extra EXTRAS]\n       [--group GROUPS]\n       [--all-extras]\n       [--no-install-project]\n       [--resolve]\n       [--lock-only |\n       --check-lock |\n       --export-requirements EXPORT_REQUIREMENTS |\n       --prune-cache |\n       --exact-lock |\n       --manager-runtime]\n       [--lock-source LOCK_SOURCE]\n       [--upgrade]\n       [--ci]\n       [--sealed]\n       [--offline]\n       [--explicit]\n       [--record-selection]\n       [--wheelhouse WHEELHOUSE]\n       [--requirements REQUIREMENTS]\n       [--requirement REQUIREMENT]\n       [--lock LOCK]\nbuild_env.py: error: unrecognized arguments: --bogus\n"
+ }
+]

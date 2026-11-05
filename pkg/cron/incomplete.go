@@ -61,14 +61,18 @@ func init() {
 // Store, scheduler and tick entry points the remaining modules must provide
 var (
 	_ = func(home string, now func() time.Time) *Store { return openCronStore(home, now) }
-	_ = func(s *Store, runner Runner, deliverer Deliverer) *Scheduler { return newScheduler(s, runner, deliverer) }
+	_ = func(s *Store, runner Runner, deliverer Deliverer) *Scheduler {
+		return newScheduler(s, runner, deliverer)
+	}
 	_ = func(ctx context.Context, sch *Scheduler) (int, error) { return schedulerTick(ctx, sch) }
 	_ = func(s *Store, schedule string) (*Schedule, error) { return parseSchedule(s, schedule) }
 	_ = func(s *Store, sched *Schedule, lastRunAt *string, timezone *string) *string {
 		return computeNextRun(s, sched, lastRunAt, timezone)
 	}
 	_ = func(s *Store) ([]*Job, error) { return getDueJobs(s) }
-	_ = func(s *Store, jobID string, success bool, opts MarkOptions) bool { return markJobRun(s, jobID, success, opts) }
+	_ = func(s *Store, jobID string, success bool, opts MarkOptions) bool {
+		return markJobRun(s, jobID, success, opts)
+	}
 	_ = func(s *Store, jobID string) (*Job, bool) { return claimJobForFire(s, jobID) }
 	_ = func(s *Store) *Ledger { return openExecutionsLedger(s) }
 	_ = func(s *Store) *IncidentStore { return openIncidents(s) }
@@ -78,13 +82,17 @@ var (
 	_ = func(prompt, script string) error { return checkGatewayLifecycle(prompt, script) }
 	_ = func(prompt string) string { return scanCronPrompt(prompt) }
 	_ = func(s *Store, job *Job, extra string) (string, error) { return buildJobPrompt(s, job, extra) }
-	_ = func(s *Store, job *Job, content string, forFailure bool) []Target { return resolveDeliveryTargets(s, job, forFailure) }
+	_ = func(s *Store, job *Job, content string, forFailure bool) []Target {
+		return resolveDeliveryTargets(s, job, forFailure)
+	}
 	_ = func() []AutomationBlueprint { return listBlueprints() }
 	_ = func(s *Store) []Suggestion { return listPendingSuggestions(s) }
 	_ = func(s *Store, job *Job) [][2]string { return cronListRows(s, job) }
 	_ = func(s *Store) []string { return cronStatusLines(s) }
 	_ = func(arg string) []string { return cronCommandLines(arg) }
 	_ = func(fn func() bool, interval time.Duration) *ScheduledHandle { return schedulePeriodic(fn, interval) }
-	_ = func(s *Store, snapshotID string) map[string]any { return restoreCronPromptFieldsIfDegraded(s, snapshotID) }
+	_ = func(s *Store, snapshotID string) map[string]any {
+		return restoreCronPromptFieldsIfDegraded(s, snapshotID)
+	}
 	_ = func() Provider { return newChronosProvider() }
 )

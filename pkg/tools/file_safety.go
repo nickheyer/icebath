@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -397,7 +398,7 @@ func formatMirrorWarning(info *mirrorInfo, body, bypass string) string {
 		return ""
 	}
 	body = strings.ReplaceAll(body, "{inner_path}", "'"+info.inner+"'")
-	return sprintf(sandboxMirrorWarning, info.target, info.root, body, bypass)
+	return fmt.Sprintf(sandboxMirrorWarning, info.target, info.root, body, bypass)
 }
 
 // Soft guard warning when the path lands in a sandbox mirror, empty otherwise
@@ -682,11 +683,11 @@ func maskSecret(value string, head, tail, floor int) string {
 	if value == "" {
 		return ""
 	}
-	runes := []rune(value)
+	runes := wtf8Runes(value)
 	if len(runes) < floor {
 		return "***"
 	}
-	return string(runes[:head]) + "..." + string(runes[len(runes)-tail:])
+	return wtf8FromRunes(runes[:head]) + "..." + wtf8FromRunes(runes[len(runes)-tail:])
 }
 
 func maskToken(token string) string {
@@ -815,7 +816,7 @@ func looksLikeOpaqueCredential(value string) bool {
 	if value == "***" || strings.HasPrefix(value, "«redacted:") {
 		return true
 	}
-	n := utf8.RuneCountInString(value)
+	n := wtf8RuneCount(value)
 	if n >= 16 && hexRe.MatchString(value) {
 		return true
 	}
@@ -840,7 +841,7 @@ func looksLikeOpaqueCredential(value string) bool {
 
 // Reports whether a dot free segment is long and mixes case and digits like a secret
 func opaquePathSegment(seg string) bool {
-	if strings.Contains(seg, ".") || utf8.RuneCountInString(seg) < 16 {
+	if strings.Contains(seg, ".") || wtf8RuneCount(seg) < 16 {
 		return false
 	}
 	return strings.ContainsAny(seg, "abcdefghijklmnopqrstuvwxyz") && strings.ContainsAny(seg, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") &&

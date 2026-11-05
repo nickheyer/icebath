@@ -25,9 +25,6 @@ func resetNousSeams(t *testing.T) {
 	curated, pricing, free, policy := nousLoginCuratedIDsFn, nousLoginPricingFn, nousLoginFreeTierFn, nousLoginPolicyAllowedFn
 	loadPool, resolve := nousKeepaliveLoadPoolFn, nousKeepaliveResolveFn
 	recommended := fetchNousRecommendedModelsFn
-	prompt := testPromptModelSelection
-	guest := testGuestWithoutFreeTier
-	entitlement := testNousEntitlementMessage
 	t.Setenv("ICEBATH_SHARED_AUTH_DIR", filepath.Join(t.TempDir(), "shared"))
 	t.Setenv("NOUS_INFERENCE_BASE_URL", "")
 	t.Setenv("ICEBATH_PORTAL_BASE_URL", "")
@@ -39,15 +36,12 @@ func resetNousSeams(t *testing.T) {
 	resolveTokenCacheMu.Lock()
 	resolveTokenCache = map[string]resolvedNousToken{}
 	resolveTokenCacheMu.Unlock()
-	testBillingInvalidateCalls, testSettleAfterUpgradeCalls, testSaveModelChoiceCalls, testGuestHandoffDrainResult = 0, 0, nil, nil
+	installNousRecorders(t)
 	t.Cleanup(func() {
 		nousRefreshAccessTokenFn, nousHTTPClientFn, refreshNousOAuthFromStateFn, nousDeviceCodeLoginFn = refresh, client, fromState, login
 		nousLoginCuratedIDsFn, nousLoginPricingFn, nousLoginFreeTierFn, nousLoginPolicyAllowedFn = curated, pricing, free, policy
 		nousKeepaliveLoadPoolFn, nousKeepaliveResolveFn = loadPool, resolve
 		fetchNousRecommendedModelsFn = recommended
-		testPromptModelSelection = prompt
-		testGuestWithoutFreeTier = guest
-		testNousEntitlementMessage = entitlement
 		SetMultiplexActive(false)
 		InvalidateNousAuthStatusCache()
 	})
@@ -63,7 +57,9 @@ func nousJWT(seconds float64, scope any, sub string, extra map[string]any) strin
 
 func invokeJWT(seconds float64) string { return nousJWT(seconds, DefaultNousScope, "test-user", nil) }
 
-func futureISO(seconds float64) string { return nousISO(time.Now().Add(time.Duration(seconds * float64(time.Second)))) }
+func futureISO(seconds float64) string {
+	return nousISO(time.Now().Add(time.Duration(seconds * float64(time.Second))))
+}
 
 type nousAuthSetup struct {
 	accessToken, refreshToken, scope, expiresAt string
@@ -1113,9 +1109,20 @@ func TestStepUpDropsTheBillingTokenCache(t *testing.T) {
 	nousDeviceCodeLoginFn = func(env PoolEnv, out io.Writer, args NousDeviceLoginArgs) (map[string]any, error) {
 		return map[string]any{"scope": "inference:invoke billing:manage", "access_token": "new"}, nil
 	}
+	nousBillingInvalidateFn = nousBillingInvalidateCachedToken
+	t.Cleanup(nousBillingInvalidateCachedToken)
+	nousBillingTokenMu.Lock()
+	nousBillingTokenCache["home"] = nousBillingCachedToken{token: "old-unscoped", base: "https://portal"}
+	nousBillingTokenMu.Unlock()
 	granted, err := StepUpNousBillingScope(testEnv(t, h), io.Discard, true, 15*time.Second, nil)
-	if err != nil || !granted || testBillingInvalidateCalls != 1 || testSettleAfterUpgradeCalls != 1 {
-		t.Fatalf("granted %v err %v invalidations %d settles %d", granted, err, testBillingInvalidateCalls, testSettleAfterUpgradeCalls)
+	if err != nil || !granted {
+		t.Fatalf("granted %v err %v", granted, err)
+	}
+	nousBillingTokenMu.Lock()
+	cached := len(nousBillingTokenCache)
+	nousBillingTokenMu.Unlock()
+	if cached != 0 {
+		t.Fatalf("billing token cache still holds %d entries", cached)
 	}
 }
 

@@ -760,7 +760,7 @@ func sanitizeReplayBlock(b any) map[string]any {
 
 func applyAssistantCacheControlToLastCacheableBlock(blocks []any, cc any) {
 	ccm, ok := asMap(cc)
-	if !ok {
+	if !ok || ccm == nil {
 		return
 	}
 	for i := len(blocks) - 1; i >= 0; i-- {

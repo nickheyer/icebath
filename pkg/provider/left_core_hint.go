@@ -2,23 +2,6 @@ package provider
 
 import "strings"
 
-// Provider names and hosts a left core plugin serves
-type leftCoreHostFeature struct {
-	plugin    string
-	label     string
-	providers []string
-	hosts     []string
-}
-
-var copilotAPIProviders = []string{"copilot", "github-copilot", "github-models", "github-model", "github"}
-
-var copilotACPProviders = []string{"copilot-acp", "github-copilot-acp", "copilot-acp-agent"}
-
-// Left core features whose providers own hosts
-var leftCoreHostFeatures = []leftCoreHostFeature{
-	{plugin: "github-copilot", label: "GitHub Copilot", providers: append(append([]string{}, copilotAPIProviders...), copilotACPProviders...), hosts: []string{"githubcopilot.com", "models.github.ai"}},
-}
-
 // Reports whether the url is at the host or a subdomain, an unparsable url is at no host
 func leftCoreAtHost(rawURL, host string) bool {
 	if _, err := parseURL(rawURL); err != nil {
@@ -27,19 +10,17 @@ func leftCoreAtHost(rawURL, host string) bool {
 	return HostMatches(rawURL, host)
 }
 
-func leftCoreProviderFeature(name string) (leftCoreHostFeature, bool) {
+func leftCoreProviderFeature(name string) (*LeftCoreFeature, bool) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	if key == "" {
-		return leftCoreHostFeature{}, false
+		return nil, false
 	}
-	for _, f := range leftCoreHostFeatures {
-		for _, p := range f.providers {
-			if p == key {
-				return f, true
-			}
+	for i := range leftCoreTable {
+		if containsString(leftCoreTable[i].Providers, key) {
+			return &leftCoreTable[i], true
 		}
 	}
-	return leftCoreHostFeature{}, false
+	return nil, false
 }
 
 // ProviderLeftCore reports a provider a plugin supplies that no registered profile serves now
@@ -53,9 +34,10 @@ func ProviderLeftCore(name string) bool {
 
 // HostInstallHint names the install sentence for a left core host whose providers are all unregistered
 func HostInstallHint(baseURL string) string {
-	for _, f := range leftCoreHostFeatures {
+	for i := range leftCoreTable {
+		f := &leftCoreTable[i]
 		matched := false
-		for _, h := range f.hosts {
+		for _, h := range f.Hosts {
 			if leftCoreAtHost(baseURL, h) {
 				matched = true
 				break
@@ -64,12 +46,12 @@ func HostInstallHint(baseURL string) string {
 		if !matched {
 			continue
 		}
-		for _, name := range f.providers {
+		for _, name := range f.Providers {
 			if !ProviderLeftCore(name) {
 				return ""
 			}
 		}
-		return leftCoreProviderInstallHint(f.providers[0])
+		return leftCoreProviderInstallHint(f.Providers[0])
 	}
 	return ""
 }

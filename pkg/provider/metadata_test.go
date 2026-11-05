@@ -175,7 +175,7 @@ func TestCodexProxyRouteCapsAnOptedInVariantByItsOwnCatalogMax(t *testing.T) {
 		return ContextLengthRequest{Model: model, BaseURL: "http://127.0.0.1:8317/v1", APIKey: "proxy-key", Provider: "custom:codex-proxy", CustomProviders: codexProxyEntry()}
 	}
 	ft.handle = func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, map[string]any{"models": []any{map[string]any{"slug": "GPT-6-Sol", "context_window": 1_050_000, "max_context_window": 600_000}}}), nil
+		return jsonResponse(nil, 200, map[string]any{"models": []any{map[string]any{"slug": "GPT-6-Sol", "context_window": 1_050_000, "max_context_window": 600_000}}}, nil), nil
 	}
 	mustEqual(t, GetModelContextLength(ctx, req("gpt-6-sol-900k")), 600_000, "capped variant")
 	mustEqual(t, GetModelContextLength(ctx, req("gpt-6-sol")), 272_000, "base slug")
@@ -193,7 +193,7 @@ func TestCodexProxyRouteCapsAnOptedInVariantByItsOwnCatalogMax(t *testing.T) {
 	memoLock.Unlock()
 	ft.reset()
 	ft.handle = func(r *http.Request) (*http.Response, error) {
-		return jsonResponse(200, map[string]any{"data": []any{map[string]any{"id": "gpt-6-sol"}}}), nil
+		return jsonResponse(nil, 200, map[string]any{"data": []any{map[string]any{"id": "gpt-6-sol"}}}, nil), nil
 	}
 	for i := 0; i < 3; i++ {
 		mustEqual(t, GetModelContextLength(ctx, req("gpt-6-sol-900k")), 900_000, "uncapped")

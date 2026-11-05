@@ -2,7 +2,6 @@ package tools
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -97,8 +96,8 @@ func DefaultApprovalDBPath(env *Env) string {
 
 // Decodes JSON text, ok false on malformed input
 func jsonOrNone(raw string) (any, bool) {
-	var v any
-	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+	v, err := jsonDecodeWTF8([]byte(raw))
+	if err != nil {
 		return nil, false
 	}
 	return v, true

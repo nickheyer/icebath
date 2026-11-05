@@ -9,11 +9,11 @@ import (
 
 // Options of a message search
 type SearchOptions struct {
-	Sources         []string
-	ExcludeSources  []string
-	Roles           []string
-	Limit           int
-	Offset          int
+	Sources        []string
+	ExcludeSources []string
+	Roles          []string
+	Limit          int
+	Offset         int
 	// newest, oldest or empty for rank order
 	Sort            string
 	IncludeInactive bool

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,6 +47,14 @@ func asIntValue(value any) (int, bool) {
 		return int(v), true
 	case float64:
 		return int(v), true
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			return int(n), true
+		}
+		if f, err := v.Float64(); err == nil {
+			return int(f), true
+		}
+		return 0, false
 	case string:
 		n, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil {

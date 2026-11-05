@@ -73,15 +73,15 @@ func TestAnnotateHints(t *testing.T) {
 
 func TestRewriteCompoundBackground(t *testing.T) {
 	cases := map[string]string{
-		"A && B &":                      "A && { B & }",
-		"A || B &":                      "A || { B & }",
-		"A && B &\nfalse || C &":        "A && { B & }\nfalse || { C & }",
-		"sleep 5 &":                     "sleep 5 &",
-		"echo hi &>/dev/null":           "echo hi &>/dev/null",
-		"A && B 2>&1 &":                 "A && { B 2>&1 & }",
-		"echo 'A && B &'":               "echo 'A && B &'",
-		"# A && B &\nC":                 "# A && B &\nC",
-		"A\t&&\tB\t&":                   "A\t&&\t{ B\t& }",
+		"A && B &":                       "A && { B & }",
+		"A || B &":                       "A || { B & }",
+		"A && B &\nfalse || C &":         "A && { B & }\nfalse || { C & }",
+		"sleep 5 &":                      "sleep 5 &",
+		"echo hi &>/dev/null":            "echo hi &>/dev/null",
+		"A && B 2>&1 &":                  "A && { B 2>&1 & }",
+		"echo 'A && B &'":                "echo 'A && B &'",
+		"# A && B &\nC":                  "# A && B &\nC",
+		"A\t&&\tB\t&":                    "A\t&&\t{ B\t& }",
 		"echo hi && sleep 5 & echo done": "echo hi && { sleep 5 & } ; echo done",
 	}
 	for in, want := range cases {

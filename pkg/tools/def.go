@@ -3,7 +3,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"sort"
 	"sync"
@@ -40,6 +39,7 @@ type Def struct {
 type Call struct {
 	Name         string
 	Args         map[string]any
+	RawArgs      string // arguments JSON text as the model emitted it, the key order approval displays follow
 	ToolCallID   string
 	TaskID       string
 	SessionID    string
@@ -127,7 +127,7 @@ func (e *Env) Emit(ev Event) {
 
 // JSON encodes a tool result as the string returned to the model
 func JSON(v any) string {
-	b, err := json.Marshal(v)
+	b, err := jsonEncodeWTF8(v)
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -136,7 +136,7 @@ func JSON(v any) string {
 
 // ErrorResult formats an error as the JSON object the model reads
 func ErrorResult(err error) string {
-	b, _ := json.Marshal(map[string]any{"error": err.Error()})
+	b, _ := jsonEncodeWTF8(map[string]any{"error": err.Error()})
 	return string(b)
 }
 

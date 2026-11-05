@@ -3,12 +3,13 @@ package provider
 import (
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
-const (
-	stablePrefixMaxEntries = 32
-	stablePrefixMaxChars   = 4 * 1024 * 1024
-)
+const stablePrefixMaxEntries = 32
+
+var stablePrefixMaxChars = 4 * 1024 * 1024
 
 var (
 	stablePrefixMu   sync.Mutex
@@ -35,7 +36,7 @@ func RegisterStablePrefix(prefix string) {
 	total := func() int {
 		n := 0
 		for _, p := range stablePrefixList {
-			n += len(p)
+			n += utf8.RuneCountInString(p)
 		}
 		return n
 	}
@@ -51,7 +52,7 @@ func findStablePrefix(content string) string {
 	best := ""
 	bestIdx := -1
 	for i, p := range stablePrefixList {
-		if strings.HasPrefix(content, p) && strings.TrimSpace(content[len(p):]) != "" && len(p) > len(best) {
+		if strings.HasPrefix(content, p) && pyStripSpace(content[len(p):]) != "" && len(p) > len(best) {
 			best, bestIdx = p, i
 		}
 	}
@@ -71,7 +72,9 @@ func hasLitellmToken(value, delimiters string) bool {
 	if value == "" {
 		return false
 	}
-	fields := strings.FieldsFunc(value, func(r rune) bool { return strings.ContainsRune(delimiters, r) || r == ' ' })
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return strings.ContainsRune(delimiters, r) || r == 0x1c || r == 0x1d || r == 0x1e || r == 0x1f || unicode.IsSpace(r)
+	})
 	for _, f := range fields {
 		if f == "litellm" {
 			return true
@@ -81,7 +84,7 @@ func hasLitellmToken(value, delimiters string) bool {
 }
 
 func envelopeToolPartCacheMarkersSupported(providerName, baseURL string) bool {
-	return !isLitellmRoute(strings.ToLower(strings.TrimSpace(providerName)), baseURL)
+	return !isLitellmRoute(strings.ToLower(pyStripSpace(providerName)), baseURL)
 }
 
 // A request no later call can read back from cache
@@ -197,18 +200,18 @@ var no1HTierModels = map[string]bool{"minimax-m2.5": true}
 var machinePacedSources = map[string]bool{"subagent": true, "cron": true, "oneshot": true, "webhook": true, "kanban": true, "api": true, "tool": true, "batch": true}
 
 func flatModel(model string) string {
-	m := strings.ToLower(strings.TrimSpace(model))
+	m := pyStripSpace(model)
 	if i := strings.LastIndex(m, "/"); i >= 0 {
 		m = m[i+1:]
 	}
-	return m
+	return strings.ToLower(m)
 }
 
 func isQwenModel(model string) bool { return strings.Contains(strings.ToLower(model), "qwen") }
 
 // AutoCacheTTLForSource resolves the auto tier, 5m for machine paced sources and 1h for human paced ones
 func AutoCacheTTLForSource(source string) string {
-	if machinePacedSources[strings.ToLower(strings.TrimSpace(source))] {
+	if machinePacedSources[strings.ToLower(pyStripSpace(source))] {
 		return "5m"
 	}
 	return "1h"
@@ -240,7 +243,7 @@ func applySystemCacheMarkers(message map[string]any, marker map[string]any, stat
 	content, isStr := asString(message["content"])
 	if staticPrefix != "" && isStr && strings.HasPrefix(content, staticPrefix) {
 		suffix := content[len(staticPrefix):]
-		if strings.TrimSpace(suffix) != "" {
+		if pyStripSpace(suffix) != "" {
 			var suffixMarker map[string]any
 			if markSuffix {
 				suffixMarker = marker
@@ -358,7 +361,8 @@ func stripAnthropicCacheControl(messages []map[string]any) []map[string]any {
 		skillSplit := firstMarked
 		if !skillSplit && userPair {
 			p0, _ := asMap(content[0])
-			skillSplit = findStablePrefix(joined) == asStr(p0["text"])
+			prefix := findStablePrefix(joined)
+			skillSplit = prefix != "" && prefix == asStr(p0["text"])
 		}
 		if len(content) == 1 || (role == "system" && len(content) == 2) || skillSplit {
 			msg["content"] = joined
@@ -472,7 +476,7 @@ type cachePlanOptions struct {
 func buildPromptCachePlan(apiMessages []map[string]any, tools []map[string]any, opts cachePlanOptions) ([]map[string]any, []map[string]any) {
 	plannedTools := stripAnthropicToolCacheControl(tools)
 	if !opts.directNativeToolCache || len(plannedTools) == 0 {
-		msgs := applyAnthropicCacheControl(append([]map[string]any{}, apiMessages...), opts.ttl, opts.nativeAnthropic, opts.staticSystemPrefix, opts.toolPartMarkers)
+		msgs := applyAnthropicCacheControl(apiMessages, opts.ttl, opts.nativeAnthropic, opts.staticSystemPrefix, opts.toolPartMarkers)
 		return msgs, plannedTools
 	}
 	messages := stripPriorDecoration(append([]map[string]any{}, apiMessages...))
@@ -501,7 +505,7 @@ func applyAnthropicCacheControl(apiMessages []map[string]any, ttl string, native
 	if len(apiMessages) == 0 {
 		return apiMessages
 	}
-	messages := stripPriorDecoration(apiMessages)
+	messages := stripPriorDecoration(append([]map[string]any{}, apiMessages...))
 	marker := buildCacheMarker(ttl)
 	used := 0
 	if asStr(messages[0]["role"]) == "system" {

@@ -478,21 +478,29 @@ type quickText struct {
 func quickMessages(surface string) quickText {
 	if surface == "gateway" {
 		return quickText{
-			noTarget:    func(c string) string { return "Quick command '/" + strings.TrimLeft(c, "/") + "' has no target defined." },
-			unsupported: func(c string) string { return "Quick command '/" + strings.TrimLeft(c, "/") + "' has unsupported type (supported: 'exec', 'alias')." },
-			noCommand:   func(c string) string { return "Quick command '/" + strings.TrimLeft(c, "/") + "' has no command defined." },
-			NoOutput:    "Command returned no output.",
-			TimedOut:    "Quick command timed out (30s).",
-			Error:       func(e string) string { return "Quick command error: " + e },
+			noTarget: func(c string) string {
+				return "Quick command '/" + strings.TrimLeft(c, "/") + "' has no target defined."
+			},
+			unsupported: func(c string) string {
+				return "Quick command '/" + strings.TrimLeft(c, "/") + "' has unsupported type (supported: 'exec', 'alias')."
+			},
+			noCommand: func(c string) string {
+				return "Quick command '/" + strings.TrimLeft(c, "/") + "' has no command defined."
+			},
+			NoOutput: "Command returned no output.",
+			TimedOut: "Quick command timed out (30s).",
+			Error:    func(e string) string { return "Quick command error: " + e },
 		}
 	}
 	return quickText{
-		noTarget:    func(c string) string { return "Quick command '" + c + "' has no target defined" },
-		unsupported: func(c string) string { return "Quick command '" + c + "' has unsupported type (supported: 'exec', 'alias')" },
-		noCommand:   func(c string) string { return "Quick command '" + c + "' has no command defined" },
-		NoOutput:    "Command returned no output",
-		TimedOut:    "Quick command timed out (30s)",
-		Error:       func(e string) string { return "Quick command error: " + e },
+		noTarget: func(c string) string { return "Quick command '" + c + "' has no target defined" },
+		unsupported: func(c string) string {
+			return "Quick command '" + c + "' has unsupported type (supported: 'exec', 'alias')"
+		},
+		noCommand: func(c string) string { return "Quick command '" + c + "' has no command defined" },
+		NoOutput:  "Command returned no output",
+		TimedOut:  "Quick command timed out (30s)",
+		Error:     func(e string) string { return "Quick command error: " + e },
 	}
 }
 

@@ -77,19 +77,6 @@ func (s *scriptedTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	return jsonResponse(req, step.status, step.payload, step.headers), nil
 }
 
-func jsonResponse(req *http.Request, status int, payload any, headers map[string]string) *http.Response {
-	body, _ := json.Marshal(payload)
-	if raw, ok := payload.([]byte); ok {
-		body = raw
-	}
-	resp := &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(body)), Request: req}
-	resp.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		resp.Header.Set(k, v)
-	}
-	return resp
-}
-
 func useCodexTransport(t *testing.T, rt http.RoundTripper) {
 	t.Helper()
 	codexHTTPClientFn = func(timeout time.Duration) *http.Client { return &http.Client{Transport: rt, Timeout: timeout} }

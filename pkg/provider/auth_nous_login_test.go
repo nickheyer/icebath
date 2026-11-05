@@ -22,8 +22,10 @@ func patchLoginInternals(t *testing.T, promptReturns string) {
 	t.Helper()
 	fakeState := map[string]any{"access_token": "fake-nous-token", "agent_key": "fake-agent-key", "inference_base_url": "https://inference-api.nousresearch.com",
 		"portal_base_url": "https://portal.nousresearch.com", "refresh_token": "fake-refresh", "token_expires_at": 9999999999}
-	nousDeviceCodeLoginFn = func(env PoolEnv, out io.Writer, args NousDeviceLoginArgs) (map[string]any, error) { return cloneMap(fakeState), nil }
-	testPromptModelSelection = func(p ModelSelectionPrompt) (string, bool) { return promptReturns, promptReturns != "" }
+	nousDeviceCodeLoginFn = func(env PoolEnv, out io.Writer, args NousDeviceLoginArgs) (map[string]any, error) {
+		return cloneMap(fakeState), nil
+	}
+	scriptNousPicker(func(p ModelSelectionPrompt) (string, bool) { return promptReturns, promptReturns != "" })
 	nousLoginCuratedIDsFn = func(ctx context.Context) []string { return []string{"xiaomi/mimo-v2-pro", "nous/other"} }
 	nousLoginPricingFn = func(ctx context.Context) PricingTable { return PricingTable{} }
 	nousLoginFreeTierFn = func(ctx context.Context) bool { return false }
@@ -110,12 +112,12 @@ func TestLoginNousPrintsHandoffLinesAndFailureCopy(t *testing.T) {
 	h := newTestHome(t)
 	setupHomeWithOpenRouter(t, h)
 	patchLoginInternals(t, "")
-	testGuestHandoffDrainResult = []map[string]any{{"line": "Moved 2 apps to your account."}}
+	testGuestHandoffDrainResult = []map[string]any{{"state": GuestHandoffClaimed, "connectors_kind": "none"}}
 	var out bytes.Buffer
 	if err := LoginNous(testEnv(t, h), &out, NousLoginArgs{NoBrowser: true}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "  Moved 2 apps to your account.") || testSettleAfterUpgradeCalls != 1 {
+	if !strings.Contains(out.String(), "  There were no free-tier apps to move.") || testSettleAfterUpgradeCalls != 1 {
 		t.Fatalf("output = %s settles %d", out.String(), testSettleAfterUpgradeCalls)
 	}
 	nousDeviceCodeLoginFn = func(env PoolEnv, out io.Writer, args NousDeviceLoginArgs) (map[string]any, error) {
@@ -169,16 +171,16 @@ func loginPickerIDs(t *testing.T, freeTier bool, pricing PricingTable, allowed m
 	nousLoginPolicyAllowedFn = func(ctx context.Context) (map[string]bool, bool) { return allowed, allowed != nil }
 	fetchNousRecommendedModelsFn = func(ctx context.Context, portalURL string, forceRefresh bool) map[string]any { return nil }
 	nousLoginCuratedIDsFn = func(ctx context.Context) []string { return []string{"curated/only"} }
-	testNousEntitlementMessage = ""
+	scriptNousEntitlement("")
 	var offered, unavailable []string
-	testPromptModelSelection = func(p ModelSelectionPrompt) (string, bool) {
+	scriptNousPicker(func(p ModelSelectionPrompt) (string, bool) {
 		offered = append([]string(nil), p.ModelIDs...)
 		unavailable = append([]string(nil), p.UnavailableModels...)
 		if len(p.ModelIDs) == 0 {
 			return "", false
 		}
 		return p.ModelIDs[0], true
-	}
+	})
 	if _, err := nousPickModelAfterLogin(testEnv(t, h), io.Discard, map[string]any{"agent_key": "k", "portal_base_url": ""}, "https://x.test/v1"); err != nil {
 		t.Fatal(err)
 	}

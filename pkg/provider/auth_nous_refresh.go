@@ -228,11 +228,13 @@ func resolveNousRuntimeCredentialsWith(env PoolEnv, opts NousResolveOptions) (ma
 			if code == "" {
 				code = "anon_credential_dead"
 			}
-			deadToken := ""
-			if state, stateErr := env.Store.GetProviderAuthState("nous"); stateErr == nil && state != nil {
-				deadToken = anyString(state["anon_token"])
+			state, stateErr := env.Store.GetProviderAuthState("nous")
+			if stateErr != nil {
+				return nil, stateErr
 			}
-			clearDeadGuest(env, code, deadToken)
+			if clearErr := clearDeadGuest(env, code, anyString(state["anon_token"])); clearErr != nil {
+				return nil, clearErr
+			}
 		}
 		return nil, err
 	}

@@ -10,6 +10,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -29,19 +31,19 @@ type StdioParams struct {
 
 // StdioTransport runs an MCP server as a child process speaking newline framed JSON-RPC
 type StdioTransport struct {
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	recv     chan *Message
-	done     chan struct{}
-	exited   chan struct{}
-	writeMu  sync.Mutex
-	errMu    sync.Mutex
-	err      error
-	closed   bool
-	pid      int
-	pgid     int
-	start    time.Time
-	waitErr  error
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	recv    chan *Message
+	done    chan struct{}
+	exited  chan struct{}
+	writeMu sync.Mutex
+	errMu   sync.Mutex
+	err     error
+	closed  bool
+	pid     int
+	pgid    int
+	start   time.Time
+	waitErr error
 }
 
 // StartStdio spawns the child and begins pumping its stdout into messages
@@ -51,7 +53,11 @@ func StartStdio(ctx context.Context, p StdioParams) (*StdioTransport, error) {
 	}
 	cmd := exec.Command(p.Command, p.Args...)
 	cmd.Dir = p.Cwd
-	cmd.Env = flattenEnv(p.Env)
+	merged := defaultEnvironment()
+	for k, v := range p.Env {
+		merged[k] = v
+	}
+	cmd.Env = flattenEnv(merged)
 	cmd.Stderr = p.Stderr
 	if p.Stderr == nil {
 		cmd.Stderr = io.Discard
@@ -76,6 +82,22 @@ func StartStdio(ctx context.Context, p StdioParams) (*StdioTransport, error) {
 	return t, nil
 }
 
+// Parent values of the names the SDK passes to every stdio child, skipping exported shell functions
+func defaultEnvironment() map[string]string {
+	names := []string{"HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"}
+	if runtime.GOOS == "windows" {
+		names = []string{"APPDATA", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "PATH", "PATHEXT", "PROCESSOR_ARCHITECTURE",
+			"SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "USERNAME", "USERPROFILE"}
+	}
+	env := map[string]string{}
+	for _, name := range names {
+		if v, ok := os.LookupEnv(name); ok && !strings.HasPrefix(v, "()") {
+			env[name] = v
+		}
+	}
+	return env
+}
+
 // flattenEnv renders an env map as KEY=VALUE pairs
 func flattenEnv(env map[string]string) []string {
 	out := make([]string, 0, len(env))
@@ -92,7 +114,7 @@ func (t *StdioTransport) pump(stdout io.Reader) {
 	for {
 		line, err := readLongLine(reader, maxStdioLineBytes)
 		if len(bytes.TrimSpace(line)) > 0 {
-			msgs, derr := DecodeMessages(line)
+			msgs, derr := DecodeMessages([]byte(decodeReplace(line)))
 			if derr != nil {
 				t.setErr(fmt.Errorf("stdio server sent a non JSON-RPC line: %w", derr))
 			} else {
@@ -207,7 +229,9 @@ func (t *StdioTransport) Close() error {
 		t.writeMu.Unlock()
 		return nil
 	}
+	t.errMu.Lock()
 	t.closed = true
+	t.errMu.Unlock()
 	close(t.done)
 	_ = t.stdin.Close()
 	t.writeMu.Unlock()
