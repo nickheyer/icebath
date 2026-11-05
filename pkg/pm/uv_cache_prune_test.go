@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Lock fixture directory with the given uv.lock text
@@ -167,7 +169,7 @@ func TestVenvEntryKeepsIsolationAndPMOffTheImportPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code := "import json, sys, venv_only_dep; print(json.dumps([venv_only_dep.VALUE, " + pyRepr(filepath.Dir(entry)) + " in sys.path]))"
+	code := "import json, sys, venv_only_dep; print(json.dumps([venv_only_dep.VALUE, " + pyrepr.StrRepr(filepath.Dir(entry)) + " in sys.path]))"
 	if got := peRunJSON(t, []string{peHostPython(t), "-I", "-S", entry, site, "-c", code}, root); !reflect.DeepEqual(got, []any{"from the venv", false}) {
 		t.Fatalf("got %v", got)
 	}

@@ -9,6 +9,9 @@ import (
 	"unsafe"
 )
 
+// Released lock files keep one space since a byte range lock needs a non empty file
+const lockReleasePad = " "
+
 var (
 	kernel32         = syscall.NewLazyDLL("kernel32.dll")
 	procLockFileEx   = kernel32.NewProc("LockFileEx")

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Working directory values that mean not configured
@@ -772,6 +774,6 @@ func isPathResolutionFailure(err error) bool {
 	var pe *os.PathError
 	var le *os.LinkError
 	var se *os.SyscallError
-	var ue *pyUnicodeEncodeError
+	var ue *pystr.UnicodeEncodeError
 	return errors.As(err, &pe) || errors.As(err, &le) || errors.As(err, &se) || errors.As(err, &ue)
 }

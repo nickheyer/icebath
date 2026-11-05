@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const minimaxOAuthErrorBodyLimit = 16 * 1024
@@ -59,7 +60,7 @@ func minimaxResponseErrorText(body io.Reader, limit int) string {
 	if len(text) > limit {
 		text = text[:limit]
 	}
-	out := sanitizeSurrogates(string(text))
+	out := pystr.DecodeUTF8Replace(text)
 	if len(raw) > limit {
 		out += "...[truncated]"
 	}
@@ -240,9 +241,21 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	portalBaseURL, inferenceBaseURL := MinimaxOAuthGlobalBase, MinimaxOAuthGlobalInference
+	pconfig, err := providerConfig(env.Ctx, "minimax-oauth")
+	if err != nil {
+		return nil, err
+	}
+	portalBaseURL, inferenceBaseURL := pconfig.PortalBaseURL, pconfig.BaseURL
 	if region == "cn" {
-		portalBaseURL, inferenceBaseURL = MinimaxOAuthCNBase, MinimaxOAuthCNInference
+		cnPortal, ok := pconfig.Extra["cn_portal_base_url"].(string)
+		if !ok {
+			return nil, errors.New("KeyError: 'cn_portal_base_url'")
+		}
+		cnInference, ok := pconfig.Extra["cn_inference_base_url"].(string)
+		if !ok {
+			return nil, errors.New("KeyError: 'cn_inference_base_url'")
+		}
+		portalBaseURL, inferenceBaseURL = cnPortal, cnInference
 	}
 	verifier, challenge, state := minimaxPKCEPair()
 	if isRemoteSession() {
@@ -252,7 +265,7 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	fmt.Fprintf(out, "Portal: %s\n", portalBaseURL)
 	ctx := env.ctx()
 	client := minimaxHTTPClientFn(timeout)
-	codeData, err := minimaxRequestUserCode(ctx, client, portalBaseURL, MinimaxOAuthClientID, challenge, state)
+	codeData, err := minimaxRequestUserCode(ctx, client, portalBaseURL, pconfig.ClientID, challenge, state)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +287,7 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	if !ok {
 		return nil, fmt.Errorf("invalid literal for int(): %s", pyStr(codeData["expired_in"]))
 	}
-	tokenData, err := minimaxPollToken(ctx, client, portalBaseURL, MinimaxOAuthClientID, pyStr(codeData["user_code"]), verifier, int64(expiredIn), intervalMS)
+	tokenData, err := minimaxPollToken(ctx, client, portalBaseURL, pconfig.ClientID, pyStr(codeData["user_code"]), verifier, int64(expiredIn), intervalMS)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +297,7 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	}
 	authState := map[string]any{
 		"provider": "minimax-oauth", "region": region, "portal_base_url": portalBaseURL, "inference_base_url": inferenceBaseURL,
-		"client_id": MinimaxOAuthClientID, "scope": MinimaxOAuthScope, "token_type": tokenType,
+		"client_id": pconfig.ClientID, "scope": MinimaxOAuthScope, "token_type": tokenType,
 		"access_token": tokenData["access_token"], "refresh_token": tokenData["refresh_token"], "resource_url": tokenData["resource_url"],
 	}
 	expiry, err := minimaxExpiryFields(tokenData["expired_in"])

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Argv starting this binary's isolated PM worker, swapped by tests for a re-executed test binary
@@ -73,7 +75,7 @@ func refuseColdRuntime(ctx context.Context, cold *InstallError, extras []string)
 		for i, extra := range extras {
 			hints[i] = InstallHint(extra)
 		}
-		refusal = NewInstallError(cold.Package, fmt.Sprintf("%s while enabling %s", cold.Cause, pyListRepr(extras)),
+		refusal = NewInstallError(cold.Package, fmt.Sprintf("%s while enabling %s", cold.Cause, pyrepr.Repr(extras)),
 			"run `"+strings.Join(hints, "`, `")+"`")
 	}
 	token := BeginReceipt(ctx, "sync")
@@ -183,7 +185,7 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 			}
 			done, _ := jsonNumber(args[1])
 			total, _ := jsonNumber(args[2])
-			return hooks.progress(pyStr(args[0]), int64(done), int64(total), pyStr(args[3]))
+			return hooks.progress(pyrepr.Str(args[0]), int64(done), int64(total), pyrepr.Str(args[3]))
 		}
 	}
 	if hooks.downloadProgress != nil {
@@ -202,8 +204,8 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 
 // Policy fields of a wire request's arguments
 func policyFromArguments(arguments map[string]any) (policyArgs, error) {
-	args := policyArgs{Name: pyStr(arguments["name"]), Explicit: truthy(arguments["explicit"]), Repair: truthy(arguments["repair"])}
-	if raw, ok := arguments["extras"]; ok && truthy(raw) {
+	args := policyArgs{Name: pyrepr.Str(arguments["name"]), Explicit: pyrepr.Truthy(arguments["explicit"]), Repair: pyrepr.Truthy(arguments["repair"])}
+	if raw, ok := arguments["extras"]; ok && pyrepr.Truthy(raw) {
 		extras, err := pyIterStrings(raw)
 		if err != nil {
 			return policyArgs{}, err
@@ -228,7 +230,7 @@ func request(ctx context.Context, operation string, arguments map[string]any, ho
 				return nil, err
 			}
 		} else {
-			names = []string{pyStr(arguments["name"])}
+			names = []string{pyrepr.Str(arguments["name"])}
 		}
 	}
 	definitions, err := PackageDefinitions(names)
@@ -401,7 +403,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 		}
 		parsed, ok := value.(map[string]any)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyTypeName(value))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(value))}
 		}
 		if !jsonEquals(parsed["id"], s.id) {
 			return nil, NewInstallError("pm", "worker returned a different request id", "")
@@ -416,10 +418,10 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 				args = orderedCallbackArgs(ordered, args)
 			}
 		}
-		handler, known := callbacks[pyStr(parsed["callback"])]
+		handler, known := callbacks[pyrepr.Str(parsed["callback"])]
 		var runErr error
 		if !known {
-			runErr = &PyError{Class: "KeyError", Message: pyRepr(pyStr(parsed["callback"]))}
+			runErr = &PyError{Class: "KeyError", Message: pyrepr.StrRepr(pyrepr.Str(parsed["callback"]))}
 		} else {
 			runErr = handler(args)
 		}
@@ -603,13 +605,13 @@ func SyncVenv(ctx context.Context, opts SyncVenvOptions) error {
 		}
 		if !running {
 			return RefuseLazyFor(ctx, "venv", fmt.Sprintf("%s: this process is not running from the install's dependency environment "+
-				"(%s); only an explicit install may change what later processes boot into", pyListRepr(opts.Extras), prefix))
+				"(%s); only an explicit install may change what later processes boot into", pyrepr.Repr(opts.Extras), prefix))
 		}
 	}
 	plugins := opts.Plugins
 	if selection, ok := plugins.(*Selection); ok {
 		if _, has := selection.Data["expected_config"]; !has {
-			digest, found, err := FileDigest(filepath.Join(pyStr(selection.Data["home"]), "config.yaml"))
+			digest, found, err := FileDigest(filepath.Join(pyrepr.Str(selection.Data["home"]), "config.yaml"))
 			if err != nil {
 				return err
 			}
@@ -752,7 +754,7 @@ func VenvIsCurrent(ctx context.Context, opts VenvIsCurrentOptions) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	return truthy(result), nil
+	return pyrepr.Truthy(result), nil
 }
 
 // Checks a project lock is current

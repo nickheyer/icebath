@@ -59,6 +59,9 @@ func TestBackendOffNoticePrintsOnceAndUnquotedOffCounts(t *testing.T) {
 	if !strings.Contains(strings.Join(res.ConfigAdded, "\n"), "browser.backend: off") {
 		t.Fatalf("config added %v", res.ConfigAdded)
 	}
+	if v := rawMigrated(t, h)["_config_version"]; !pyEq(v, latestConfigVersion()) {
+		t.Fatalf("stamp %v", v)
+	}
 	if _, out = migrateFromStamp(t, h, false); strings.Contains(out, "browser_exec") {
 		t.Fatalf("second pass printed %q", out)
 	}

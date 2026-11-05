@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"unsafe"
+	"weak"
 )
 
 // Credential source tags for callable keys that mint a bearer on first use
@@ -29,10 +32,48 @@ const credentialSourceUnknownLabel = "token provider"
 type TaggedTokenSource struct {
 	Mint   func(ctx context.Context) (string, error)
 	Source string
+	once   sync.Once
+	fn     func(ctx context.Context) (string, error)
 }
 
 // Token mints through the wrapped minter
 func (t *TaggedTokenSource) Token(ctx context.Context) (string, error) { return t.Mint(ctx) }
+
+// Bare minter funcs handed out by tagged sources, keyed by func value identity
+var taggedTokenFuncs sync.Map
+
+// Identity of a func value, the address of its closure record
+func tokenFuncIdentity(f func(context.Context) (string, error)) uintptr {
+	return *(*uintptr)(unsafe.Pointer(&f))
+}
+
+// Func is the minter as a bare route token source that still answers its source tag
+func (t *TaggedTokenSource) Func() func(context.Context) (string, error) {
+	t.once.Do(func() {
+		t.fn = func(ctx context.Context) (string, error) { return t.Mint(ctx) }
+		key, owner := tokenFuncIdentity(t.fn), weak.Make(t)
+		taggedTokenFuncs.Store(key, owner)
+		runtime.AddCleanup(t, func(k uintptr) { taggedTokenFuncs.CompareAndDelete(k, owner) }, key)
+	})
+	return t.fn
+}
+
+// Tagged source a bare route token source came from, nil for an untagged func
+func taggedSourceOfFunc(f func(context.Context) (string, error)) *TaggedTokenSource {
+	if f == nil {
+		return nil
+	}
+	key := tokenFuncIdentity(f)
+	v, ok := taggedTokenFuncs.Load(key)
+	if !ok {
+		return nil
+	}
+	t := v.(weak.Pointer[TaggedTokenSource]).Value()
+	if t == nil || tokenFuncIdentity(t.fn) != key {
+		return nil
+	}
+	return t
+}
 
 // TagCredentialSource records the source on a minter and returns a callable token source
 func TagCredentialSource(mint func(ctx context.Context) (string, error), source string) *TaggedTokenSource {
@@ -49,6 +90,10 @@ func CredentialSourceOf(key any) string {
 	case *CommandTokenSource:
 		if k != nil {
 			return CredentialSourceKeyCmd
+		}
+	case func(context.Context) (string, error):
+		if t := taggedSourceOfFunc(k); t != nil {
+			return t.Source
 		}
 	}
 	return ""

@@ -15,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,16 +34,16 @@ func pythonVersionOf(ctx context.Context, python string) (string, error) {
 	cmd := exec.CommandContext(ctx, Native(python), "-I", "-c", "import platform; print(platform.python_version())")
 	out, err := cmd.Output()
 	if ctx.Err() == context.DeadlineExceeded {
-		return "", &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 60 seconds", pyListRepr(cmd.Args))}
+		return "", &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 60 seconds", pyrepr.Repr(cmd.Args))}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return "", &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyListRepr(cmd.Args), exitErr.ExitCode())}
+		return "", &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyrepr.Repr(cmd.Args), exitErr.ExitCode())}
 	}
 	if err != nil {
 		return "", err
 	}
-	return pyStrip(string(out)), nil
+	return pystr.Strip(string(out)), nil
 }
 
 // Python version lookup the eviction verdicts use, replaceable by tests the way Python patches it
@@ -272,7 +275,7 @@ func disablePlugin(plugins *yaml.Node, name string, spellings map[string]bool, r
 			return err
 		}
 	}
-	words := []rune(strings.Join(strings.FieldsFunc(reason, pyIsSpace), " "))
+	words := []rune(strings.Join(strings.FieldsFunc(reason, pystr.IsSpace), " "))
 	if len(words) > 300 {
 		words = words[:300]
 	}
@@ -338,7 +341,7 @@ func jsonKey(v any) (string, error) {
 	case fmt.Stringer:
 		return "i:" + t.String(), nil
 	}
-	return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("unhashable type: '%s'", pyTypeName(v))}
+	return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))}
 }
 
 // Forgets the records of plugins the user just enabled, disabled or removed, then prunes the rest
@@ -417,8 +420,8 @@ func recordedEvictions(ctx context.Context) ([]recordedEviction, error) {
 		plugins, _ := orEmpty(selection["plugins"]).(map[string]any)
 		memory, _ := orEmpty(selection["memory"]).(map[string]any)
 		provider := ""
-		if raw := memory["provider"]; truthy(raw) {
-			provider = pyStrip(pyStr(raw))
+		if raw := memory["provider"]; pyrepr.Truthy(raw) {
+			provider = pystr.Strip(pyrepr.Str(raw))
 		}
 		record, ok := plugins[DisabledByUpdateRecord].(map[string]any)
 		if !ok {
@@ -448,7 +451,7 @@ func recordedEvictions(ctx context.Context) ([]recordedEviction, error) {
 			if pluginDir == "" {
 				continue
 			}
-			keep := truthy(earlier["enabled"])
+			keep := pyrepr.Truthy(earlier["enabled"])
 			if !keep {
 				spellings, err := pluginSpellings(pluginDir, name)
 				if err != nil {
@@ -466,7 +469,7 @@ func recordedEvictions(ctx context.Context) ([]recordedEviction, error) {
 
 // Empty mapping for a falsy decoded value, the value otherwise
 func orEmpty(v any) any {
-	if !truthy(v) {
+	if !pyrepr.Truthy(v) {
 		return map[string]any{}
 	}
 	return v
@@ -968,8 +971,8 @@ func outcomeNotices(entries []PluginEntry, recorded []recordedEviction, reasons,
 		if why == "" {
 			why = waiting[key]
 		}
-		if why == "" && truthy(r.Record["reason"]) {
-			why = pyStr(r.Record["reason"])
+		if why == "" && pyrepr.Truthy(r.Record["reason"]) {
+			why = pyrepr.Str(r.Record["reason"])
 		}
 		if why == "" {
 			why = "unknown"

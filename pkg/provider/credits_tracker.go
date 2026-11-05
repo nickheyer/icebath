@@ -250,6 +250,9 @@ func FormatWindowReset(resetsAtMs, nowMs int64) string {
 	if resetsAtMs <= nowMs {
 		return "shortly"
 	}
+	if resetsAtMs > math.MaxInt64/int64(time.Millisecond) {
+		return "the next reset"
+	}
 	stamp := time.UnixMilli(resetsAtMs).Local()
 	left := resetsAtMs - nowMs
 	switch {
@@ -992,6 +995,13 @@ func RememberWindowNotices(sessionID string, latch map[string]any) {
 	seenWindowNotices.put(sessionID, entry)
 }
 
+// Pricing warm, seed account read and worker launch of the cold start seed, swappable so tests can gate and join them
+var (
+	creditsWarmPricingFn = warmNousPricingCache
+	creditsSeedAccountFn = GetNousPortalAccountInfo
+	creditsGo            = func(fn func()) { go fn() }
+)
+
 func creditsCtx() context.Context {
 	return home.WithOverride(context.Background(), home.Process())
 }
@@ -1054,11 +1064,11 @@ func RewarmPricingBeforeDepletedNotice(c *CreditsCapture) bool {
 		return false
 	}
 	ctx := creditsCtx()
-	go func() {
+	creditsGo(func() {
 		defer pricingWarmFlights.Delete(c)
-		warmNousPricingCache(ctx)
+		creditsWarmPricingFn(ctx)
 		c.EmitCreditsNotices()
-	}()
+	})
 	return true
 }
 
@@ -1075,9 +1085,9 @@ func SeedCreditsAtSessionStart(c *CreditsCapture) bool {
 		return true
 	}
 	ctx := creditsCtx()
-	go func() {
-		warmNousPricingCache(ctx)
-		info := GetNousPortalAccountInfo(ctx, true)
+	creditsGo(func() {
+		creditsWarmPricingFn(ctx)
+		info := creditsSeedAccountFn(ctx, true)
 		if c.Credits() != nil {
 			c.EmitCreditsNotices()
 			return
@@ -1085,6 +1095,6 @@ func SeedCreditsAtSessionStart(c *CreditsCapture) bool {
 		if state := creditsStateFromAccount(info); state != nil {
 			hydrateSeedState(c, state)
 		}
-	}()
+	})
 	return true
 }

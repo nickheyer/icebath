@@ -1,18 +1,25 @@
 package skills
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Directory profile distribution installs stage into before an atomic swap
@@ -42,8 +49,8 @@ const (
 // Leading words of every same tier ambiguity refusal
 const AmbiguousSkillPrefix = "Ambiguous skill name "
 
-// Platform names a skill may declare mapped to the Go runtime GOOS
-var platformMap = map[string]string{"macos": "darwin", "darwin": "darwin", "linux": "linux", "windows": "windows", "win32": "windows"}
+// Platform names a skill may declare mapped to the Python sys.platform prefix they match
+var platformMap = map[string]string{"macos": "darwin", "linux": "linux", "windows": "win32"}
 
 // Reports whether a path has an excluded directory component or sits in a support package
 func isExcludedSkillPath(path string, root string) bool {
@@ -79,22 +86,23 @@ func isSkillSupportPath(path string, root string) bool {
 	return false
 }
 
-// Reports whether a platforms declaration includes the running OS, absent meaning all
+// Reports whether a platforms declaration includes sys.platform of this host, falsy meaning all
 func skillMatchesPlatformList(platforms any) bool {
-	list := fmStringList(platforms)
-	if platforms == nil || (len(list) == 0 && !fmTruthy(platforms)) {
+	if !pyrepr.Truthy(platforms) {
 		return true
 	}
-	if len(list) == 0 {
-		return true
+	items, isList := platforms.([]any)
+	if !isList {
+		items = []any{platforms}
 	}
-	for _, p := range list {
-		norm := strings.ToLower(strings.TrimSpace(p))
+	current := hostinfo.OSFamily()
+	for _, p := range items {
+		norm := pystr.Strip(pystr.Lower(pyrepr.Str(p)))
 		mapped, ok := platformMap[norm]
 		if !ok {
 			mapped = norm
 		}
-		if strings.HasPrefix(runtime.GOOS, mapped) {
+		if strings.HasPrefix(current, mapped) {
 			return true
 		}
 	}
@@ -148,8 +156,8 @@ func (s *Scope) detectKanban() bool {
 	if os.Getenv("ICEBATH_KANBAN_TASK") != "" || os.Getenv("ICEBATH_KANBAN_BOARD") != "" {
 		return true
 	}
-	if s.Config != nil {
-		for _, ts := range config.AsStrings(s.Config["toolsets"]) {
+	if cfg := s.tree(); cfg != nil {
+		for _, ts := range config.AsStrings(cfg["toolsets"]) {
 			if ts == "kanban" {
 				return true
 			}
@@ -309,10 +317,7 @@ func (s *Scope) isSkillDisabled(platform string, names ...string) bool {
 
 // Path with symlinks resolved, the cleaned absolute path when resolution fails
 func resolvePath(p string) string {
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		if a, err := filepath.Abs(r); err == nil {
-			return a
-		}
+	if r, err := pypath.Realpath(p, pypath.Lax); err == nil {
 		return r
 	}
 	if a, err := filepath.Abs(p); err == nil {
@@ -350,24 +355,48 @@ func lexists(p string) bool {
 
 // Validated deduplicated external skill dirs from config, existing dirs only and never the local dir
 func (s *Scope) ExternalSkillsDirs() []string {
+	key, keyed := "", false
+	if s.live {
+		ctx := context.Background()
+		configPath := home.ConfigPath(s.Home)
+		exists, err := config.ConfigExists(ctx, configPath)
+		if err != nil {
+			panic(err)
+		}
+		if !exists {
+			return nil
+		}
+		key, keyed = configCacheKey(ctx, configPath)
+		if keyed {
+			externalDirsCache.mu.Lock()
+			cached, ok := externalDirsCache.m[key]
+			externalDirsCache.mu.Unlock()
+			if ok {
+				return append([]string(nil), cached...)
+			}
+		}
+	}
 	cfg := s.skillsCfg()
 	if cfg == nil {
 		return nil
 	}
 	local := resolvePath(s.SkillsDir())
 	var out []string
-	seen := map[string]bool{}
 	for _, entry := range fmStringList(cfg["external_dirs"]) {
 		p := resolvePath(s.homeRelative(expandPath(entry)))
-		if p == local || seen[p] {
+		if p == local || slices.Contains(out, p) {
 			continue
 		}
-		seen[p] = true
 		if isDir(p) {
 			out = append(out, p)
 		} else {
-			s.logger().Debug("external skills dir does not exist, skipping", "dir", p)
+			s.logger().Debug("External skills dir does not exist, skipping", "dir", p)
 		}
+	}
+	if keyed {
+		externalDirsCache.mu.Lock()
+		externalDirsCache.m[key] = append([]string(nil), out...)
+		externalDirsCache.mu.Unlock()
 	}
 	return out
 }
@@ -699,12 +728,10 @@ func (s *Scope) candidateProjectSkillsDirs(root string) []string {
 
 // Project root of the cwd when discovery is on and its trust state matches
 func (s *Scope) currentProjectRoot(trusted bool) string {
-	if v := s.skillsCfgGet("project_discovery"); v != nil {
-		if b, ok := config.AsBool(v); ok && !b {
-			return ""
-		}
+	if v, ok := s.skillsCfgGet("project_discovery").(bool); ok && !v {
+		return ""
 	}
-	root := findProjectRoot(s.Cwd)
+	root := s.FindProjectRoot()
 	if root == "" || s.IsProjectRootTrusted(root) != trusted {
 		return ""
 	}
@@ -743,6 +770,9 @@ var (
 
 const projectScanSource = "project-local"
 
+// Scanner project skill quarantine runs, replaceable so tests can make it fail
+var quarantineScan = ScanSkillCached
+
 // Reports whether a project skill scanned dangerous, failing closed on any scan problem
 func (s *Scope) isQuarantinedProjectSkill(skillMD string) bool {
 	skillDir := filepath.Dir(skillMD)
@@ -754,7 +784,7 @@ func (s *Scope) isQuarantinedProjectSkill(skillMD string) bool {
 		return cached
 	}
 	cacheDir := filepath.Join(s.Home, "cache", "project_skill_scans")
-	result, _, err := ScanSkillCached(skillDir, projectScanSource, "", cacheDir)
+	result, _, err := quarantineScan(skillDir, projectScanSource, "", cacheDir)
 	quarantined := true
 	if err != nil {
 		s.logger().Warn("project skill scan failed, quarantining", "skill", skillDir, "err", err)
@@ -779,6 +809,11 @@ func (s *Scope) iterProjectSkillFiles(projectDir string) []string {
 		}
 	}
 	return out
+}
+
+// NormalizeSkillLookupName turns a trusted absolute skill path into the relative name skill_view accepts
+func (s *Scope) NormalizeSkillLookupName(identifier string) string {
+	return s.normalizeSkillLookupName(identifier)
 }
 
 // Translates a trusted absolute skill path to the relative form skill_view accepts
@@ -915,50 +950,75 @@ func (s *Scope) DiscoverAllSkillConfigVars() []SkillConfigVar {
 // Config prefix under which skill config values live
 const SkillConfigPrefix = "skills.config"
 
-var homeVarRe = regexp.MustCompile(`\$(?:\{HOME\}|HOME)(?:$|[/\\])`)
+var homeVarRe = regexp.MustCompile(`\$(?:\{HOME\}|HOME)`)
 
 // Expands a tilde and HOME references against the tool subprocess home
 func (s *Scope) expandSkillConfigPath(value string) string {
-	subHome := s.subprocessHome()
+	subHome := tools.SubprocessHome(s.registrationEnv())
 	if subHome != "" {
 		if value == "~" || strings.HasPrefix(value, "~/") || strings.HasPrefix(value, `~\`) {
 			value = subHome + value[1:]
 		}
-		value = homeVarRe.ReplaceAllStringFunc(value, func(m string) string {
-			return subHome + m[len(m)-1:]
-		})
+		value = replaceHomeVars(value, subHome)
 	}
 	return expandPath(value)
 }
 
-// HOME tool subprocesses see, the profile home inside containers and the real home elsewhere
-func (s *Scope) subprocessHome() string {
-	mode := "auto"
-	if s.Config != nil {
-		mode = strings.ToLower(s.Config.String("terminal.home_mode", "auto"))
+// Replaces each HOME reference ending at a separator or the end of the value with the subprocess home
+func replaceHomeVars(value, subHome string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range homeVarRe.FindAllStringIndex(value, -1) {
+		if m[1] < len(value) && value[m[1]] != '/' && value[m[1]] != '\\' {
+			continue
+		}
+		b.WriteString(value[last:m[0]])
+		b.WriteString(subHome)
+		last = m[1]
 	}
-	switch mode {
-	case "profile", "hermes", "icebath":
-		return filepath.Join(s.Home, "home")
-	case "real", "host":
-		u, _ := os.UserHomeDir()
-		return u
+	b.WriteString(value[last:])
+	return b.String()
+}
+
+// Walks a nested mapping along a dotted key, nil when any part is missing
+func resolveDotpath(cfg map[string]any, dotted string) any {
+	var cur any = cfg
+	for _, part := range strings.Split(dotted, ".") {
+		m := config.AsMap(cur)
+		if m == nil {
+			return nil
+		}
+		next, ok := m[part]
+		if !ok {
+			return nil
+		}
+		cur = next
 	}
-	if isContainer() {
-		return filepath.Join(s.Home, "home")
+	return cur
+}
+
+// Project root of the effective working directory, empty when none
+func (s *Scope) FindProjectRoot() string { return findProjectRoot(s.agentCwd()) }
+
+// Working directory project discovery starts from, the session cwd then TERMINAL_CWD then the scope cwd
+func (s *Scope) agentCwd() string {
+	cwd, err := tools.ResolveAgentCwd(s.registrationEnv())
+	if err != nil {
+		if config.IsOSError(err) {
+			return ""
+		}
+		panic(err)
 	}
-	u, _ := os.UserHomeDir()
-	return u
+	return cwd
 }
 
 // Current values of declared config variables, declared defaults filling gaps and paths expanded
 func (s *Scope) ResolveSkillConfigValues(vars []SkillConfigVar) map[string]any {
+	raw := s.rawConfig()
 	out := map[string]any{}
 	for _, v := range vars {
 		var value any
-		if s.Config != nil {
-			value, _ = s.Config.Lookup(SkillConfigPrefix + "." + v.Key)
-		}
+		value = resolveDotpath(raw, SkillConfigPrefix+"."+v.Key)
 		if value == nil || (isString(value) && strings.TrimSpace(value.(string)) == "") {
 			value = v.Default
 			if value == nil {
@@ -983,17 +1043,17 @@ func isString(v any) bool {
 const SkillPromptDescLimit = 60
 
 var (
-	lastWhitespaceRe = regexp.MustCompile(`\s\S*$`)
-	clipTrailRe      = regexp.MustCompile("[\\s.,;:\\-–—(/]+$")
+	lastWhitespaceRe = regexp.MustCompile(`[` + pySpaceClass + `][^` + pySpaceClass + `]*\n?\z`)
+	clipTrailRe      = regexp.MustCompile(`[` + pySpaceClass + `.,;:\-–—(/]+\n?\z`)
 )
 
 // Normalized description of a frontmatter for comparison and truncation
 func normalizeSkillDescription(fm map[string]any) string {
 	raw := fm["description"]
-	if raw == nil {
+	if !pyrepr.Truthy(raw) {
 		return ""
 	}
-	return strings.Trim(strings.TrimSpace(fmString(raw)), "'\"")
+	return strings.Trim(pystr.Strip(pyrepr.Str(raw)), "'\"")
 }
 
 // Description fitted to the index budget and cut at a word boundary

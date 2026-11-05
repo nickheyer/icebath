@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -28,7 +29,6 @@ const (
 	startOrderGateTimeoutS          = 120.0
 	authorizationGateLockTimeoutS   = 360.0
 	toolActivityHeartbeatInterval   = 30 * time.Second
-	sequentialInterruptPollInterval = time.Second
 	PrunedToolArgumentsError        = "suspected_pruned_tool_arguments"
 	ReasonUserInterrupt             = "user interrupt"
 	defaultConcurrentBatchWaitSlice = 5 * time.Second
@@ -36,6 +36,9 @@ const (
 	heartbeatThreadJoinTimeout      = 2 * time.Second
 	sequentialHeartbeatEverySeconds = 30
 )
+
+// Interrupt poll slice of the sequential worker wait, shortened by tests
+var sequentialInterruptPollInterval = time.Second
 
 // PrunedToolArgumentsMessage explains why a call carrying a compression marker was refused
 var PrunedToolArgumentsMessage = "Tool was not executed because effect-capable arguments contain an icebath context-compression artifact. " +
@@ -293,7 +296,7 @@ func interruptWorkerIDs(ids []WorkerID, reason string) {
 
 // ParseToolArguments parses model emitted arguments without repairing them
 func ParseToolArguments(raw string) (map[string]any, string) {
-	if parsed, err := jsonDecodeWTF8([]byte(raw)); err == nil {
+	if parsed, err := pyjson.DecodeWTF8([]byte(raw)); err == nil {
 		if m, ok := parsed.(map[string]any); ok {
 			return m, ""
 		}
@@ -349,7 +352,7 @@ func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args m
 		return underlying, underlyingArgs, ""
 	}
 	if flattenProbe {
-		decoded, err := jsonDecodeWTF8([]byte(scopeBlock))
+		decoded, err := pyjson.DecodeWTF8([]byte(scopeBlock))
 		if probe, isMap := decoded.(map[string]any); err == nil && (isMap || decoded == nil) {
 			errText, _ := probe["error"].(string)
 			hint, _ := probe["hint"].(string)
@@ -379,12 +382,12 @@ func (p *ParsedCall) Ref(taskID string) *ToolCallRef {
 	if p.Name != CanonicalToolName(p.ToolCall.Function.Name) {
 		raw = rawArgsFor([]byte(raw), p.Args)
 	}
-	return &ToolCallRef{Name: p.Name, Args: p.Args, RawArgs: raw, TaskID: taskID, CallID: CoalesceToolCallID(p.ToolCall.ID), Trace: p.Trace}
+	return &ToolCallRef{Name: p.Name, Args: p.Args, RawArgs: raw, TaskID: taskID, CallID: state.CoalesceToolCallID(p.ToolCall), Trace: p.Trace}
 }
 
 // JSON text inside raw that decodes to args, searching members, items and JSON strings, empty when absent
 func rawArgsFor(raw []byte, args map[string]any) string {
-	decoded, err := jsonDecodeWTF8(raw)
+	decoded, err := pyjson.DecodeWTF8(raw)
 	if err != nil {
 		return ""
 	}
@@ -1057,9 +1060,9 @@ func (e *Executor) appendSkippedToolResults(ctx context.Context, messages *[]*st
 			name = "tool"
 		}
 		result := strings.ReplaceAll(opts.content, "{name}", name)
-		*messages = append(*messages, MakeToolResultMessage(name, result, CoalesceToolCallID(tc.ID), "none"))
+		*messages = append(*messages, MakeToolResultMessage(name, result, state.CoalesceToolCallID(tc), "none"))
 		if opts.hookErrorType != "" {
-			id := CoalesceToolCallID(tc.ID)
+			id := state.CoalesceToolCallID(tc)
 			if opts.hookID != nil {
 				id = opts.hookID(tc)
 			}

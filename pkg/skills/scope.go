@@ -1,7 +1,6 @@
 package skills
 
 import (
-	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -20,17 +20,22 @@ type Scope struct {
 	Platform string
 	Cwd      string
 	Log      *slog.Logger
+	// Session env the scope came from, nil for a process scope
+	Env *tools.Env
 	// Overrides the home skills directory when set
 	SkillsDirOverride string
+	// Reads config.yaml live on every lookup because the scope was built from the process config
+	live bool
 }
 
 // Scope over a home and its config with the process environment supplying platform and cwd
 func NewScope(h string, cfg config.Tree) *Scope {
-	if cfg == nil {
+	live := cfg == nil
+	if live {
 		cfg = config.Defaults()
 	}
 	cwd, _ := os.Getwd()
-	return &Scope{Home: h, Config: cfg, Secrets: config.NewSecrets(h), Platform: envPlatform(), Cwd: cwd, Log: slog.Default()}
+	return &Scope{Home: h, Config: cfg, Secrets: config.NewSecrets(h), Platform: envPlatform(), Cwd: cwd, Log: slog.Default(), live: live}
 }
 
 // Scope derived from a tool environment
@@ -38,12 +43,13 @@ func ScopeFromEnv(env *tools.Env) *Scope {
 	if env == nil {
 		return NewScope(home.Process(), nil)
 	}
-	s := &Scope{Home: env.Home, Config: env.Config, Secrets: env.Secrets, Platform: env.Platform, Cwd: env.Cwd, Log: env.Log}
+	s := &Scope{Home: env.Home, Config: env.Config, Secrets: env.Secrets, Platform: env.Platform, Cwd: env.Cwd, Log: env.Log, Env: env}
 	if s.Home == "" {
 		s.Home = home.Process()
 	}
 	if s.Config == nil {
 		s.Config = config.Defaults()
+		s.live = true
 	}
 	if s.Secrets == nil {
 		s.Secrets = config.NewSecrets(s.Home)
@@ -86,10 +92,11 @@ func (s *Scope) logger() *slog.Logger {
 
 // Skills section of the config, nil when absent or malformed
 func (s *Scope) skillsCfg() map[string]any {
-	if s.Config == nil {
+	raw := s.rawConfig()
+	if raw == nil {
 		return nil
 	}
-	return config.AsMap(s.Config["skills"])
+	return config.AsMap(raw["skills"])
 }
 
 // One skills config value, nil when the section or key is absent
@@ -132,13 +139,7 @@ func (s *Scope) displayHome() string {
 
 // Expands a tilde and environment references in a config path entry
 func expandPath(entry string) string {
-	entry = os.ExpandEnv(entry)
-	if entry == "~" || strings.HasPrefix(entry, "~/") || strings.HasPrefix(entry, `~\`) {
-		if u, err := os.UserHomeDir(); err == nil {
-			entry = u + entry[1:]
-		}
-	}
-	return entry
+	return pypath.Expanduser(tools.OSPathExpandVars(entry))
 }
 
 // Anchors a relative config path at the home, absolute paths passing through
@@ -150,13 +151,7 @@ func (s *Scope) homeRelative(p string) string {
 }
 
 // Encodes a tool payload as the JSON string handed to the model
-func jsonResult(payload map[string]any) string {
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return tools.ErrorResult(err)
-	}
-	return string(b)
-}
+func jsonResult(payload map[string]any) string { return tools.JSON(payload) }
 
 // Failure payload with an error message and extra fields
 func failResult(message string, extra map[string]any) string {

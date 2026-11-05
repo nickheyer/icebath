@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 )
 
 // Matching approvals.deny glob, empty when none, run over the deobfuscated variants
@@ -34,7 +36,7 @@ func matchUserDenyRule(env *Env, command string) string {
 	for _, variant := range DenyCommandVariants(command) {
 		candidate := strings.TrimSpace(strings.ToLower(variant))
 		for _, pattern := range globs {
-			if fnmatchCase(candidate, strings.ToLower(pattern)) {
+			if fnmatch.FnmatchCase(candidate, strings.ToLower(pattern)) {
 				return pattern
 			}
 		}
@@ -198,64 +200,9 @@ func commandMatchesPermanentAllowlist(env *Env, command string) bool {
 		if pattern == "" {
 			continue
 		}
-		if command == pattern || (strings.ContainsAny(pattern, "*?[") && fnmatchCase(command, pattern)) {
+		if command == pattern || (strings.ContainsAny(pattern, "*?[") && fnmatch.FnmatchCase(command, pattern)) {
 			return true
 		}
 	}
 	return false
-}
-
-// Translates a shell style glob into an anchored regex the way fnmatch.translate does
-func fnmatchTranslate(pattern string) string {
-	runes := []rune(pattern)
-	var b strings.Builder
-	b.WriteString(`(?s:`)
-	i, n := 0, len(runes)
-	for i < n {
-		c := runes[i]
-		i++
-		switch c {
-		case '*':
-			b.WriteString(".*")
-		case '?':
-			b.WriteString(".")
-		case '[':
-			j := i
-			if j < n && runes[j] == '!' {
-				j++
-			}
-			if j < n && runes[j] == ']' {
-				j++
-			}
-			for j < n && runes[j] != ']' {
-				j++
-			}
-			if j >= n {
-				b.WriteString(`\[`)
-				continue
-			}
-			stuff := string(runes[i:j])
-			i = j + 1
-			if strings.HasPrefix(stuff, "!") {
-				stuff = "^" + stuff[1:]
-			} else if strings.HasPrefix(stuff, "^") {
-				stuff = `\` + stuff
-			}
-			stuff = strings.ReplaceAll(stuff, `\`, `\\`)
-			b.WriteString("[" + stuff + "]")
-		default:
-			b.WriteString(regexp.QuoteMeta(string(c)))
-		}
-	}
-	b.WriteString(`)\z`)
-	return b.String()
-}
-
-// Case sensitive shell style match where star spans separators like fnmatch.fnmatchcase
-func fnmatchCase(name, pattern string) bool {
-	re, err := regexp.Compile(`\A` + fnmatchTranslate(pattern))
-	if err != nil {
-		return false
-	}
-	return re.MatchString(name)
 }

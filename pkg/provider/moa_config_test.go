@@ -7,7 +7,6 @@ import (
 	"errors"
 	"math"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -235,12 +234,14 @@ func TestMoAReferenceSlotsAcceptJSONStringsAndSingleMappings(t *testing.T) {
 }
 
 func TestMoADefaultAndActivePresetSelection(t *testing.T) {
+	presets := map[string]any{" beta ": map[string]any{"fanout": "per_iteration"}, "alpha": map[string]any{}, "  ": map[string]any{}}
+	config.SetMappingKeys(presets, []string{" beta ", "alpha", "  "})
 	cfg := normalizeMoAConfig(map[string]any{"default_preset": "missing", "active_preset": "beta", "privacy_filter": "display",
-		"presets": map[string]any{" beta ": map[string]any{"fanout": "per_iteration"}, "alpha": map[string]any{}, "  ": map[string]any{}}})
-	if names, _ := moaPresetNames(cfg); !reflect.DeepEqual(names, []string{"alpha", "beta"}) {
+		"presets": presets})
+	if names, _ := moaPresetNames(cfg); !reflect.DeepEqual(names, []string{"beta", "alpha"}) {
 		t.Fatalf("names %v", names)
 	}
-	if cfg["default_preset"] != "alpha" || cfg["active_preset"] != "beta" || cfg["privacy_filter"] != "display" || cfg["fanout"] != "user_turn" {
+	if cfg["default_preset"] != "beta" || cfg["active_preset"] != "beta" || cfg["privacy_filter"] != "display" || cfg["fanout"] != "per_iteration" {
 		t.Fatalf("selection %v", cfg)
 	}
 	provider, model, ok := resolveMoaAggregator(map[string]any{"moa": cfg}, "beta")
@@ -363,9 +364,23 @@ func TestMoAURLSafeBase64MatchesPythonNonStrictDecoding(t *testing.T) {
 	}
 }
 
-func TestMoAPresetOrderIsSorted(t *testing.T) {
-	names := moaPresetOrder(map[string]any{"b": 1, "a": 2, "c": 3})
-	if !sort.StringsAreSorted(names) || len(names) != 3 {
-		t.Fatal(names)
+func TestMoAPresetOrderIsDefaultsThenFileOrder(t *testing.T) {
+	doc, err := config.FastSafeLoad([]byte("moa:\n  presets:\n    zeta: {}\n    alpha: {}\n    \" alpha \": {}\n    mid: {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := doc.(map[string]any)
+	merged := config.DeepMerge(map[string]any(config.Defaults()), user)
+	ApplyUserMoAPresets(merged, user)
+	names, _ := moaPresetNames(merged["moa"])
+	if !reflect.DeepEqual(names, []string{"zeta", "alpha", "mid"}) {
+		t.Fatalf("presets %v", names)
+	}
+	if def := normalizeMoAConfig(map[string]any{"presets": merged["moa"].(map[string]any)["presets"]})["default_preset"]; def != "zeta" {
+		t.Fatalf("first preset fallback %v", def)
+	}
+	defaults, _ := moaPresetNames(config.Defaults()["moa"])
+	if !reflect.DeepEqual(defaults, []string{DefaultMoAPresetName}) {
+		t.Fatalf("defaults %v", defaults)
 	}
 }

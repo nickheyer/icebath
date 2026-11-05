@@ -21,8 +21,8 @@ func TestProfileForResolvesAliasesAndDefaults(t *testing.T) {
 	if !ok || p.Name != "kimi-coding" || p.BaseURL != "https://api.moonshot.ai/v1" || !p.OmitTemperature || p.DefaultMaxTokens != 32000 {
 		t.Fatalf("kimi profile wrong: %+v ok=%v", p, ok)
 	}
-	if p.Headers["Accept-Encoding"] != "gzip" || p.Headers["User-Agent"] == "" {
-		t.Fatalf("kimi headers wrong: %v", p.Headers)
+	if h := p.DefaultHeaders(); h["Accept-Encoding"] != "gzip" || h["User-Agent"] == "" {
+		t.Fatalf("kimi headers wrong: %v", h)
 	}
 	a, _ := ProfileFor("anthropic")
 	if a.Mode != ModeAnthropicMessages || a.Auth != AuthAPIKey || a.ModelsURL != "https://api.anthropic.com/models" {
@@ -84,11 +84,18 @@ func TestHostMandatedAndDetectedModes(t *testing.T) {
 	}
 	goProfile, _ := ProfileFor("opencode-go")
 	zenProfile, _ := ProfileFor("opencode-zen")
-	if goProfile.APIModeForModel("claude-sonnet-4.6", "") != ModeAnthropicMessages || zenProfile.APIModeForModel("gpt-5.4", "") != ModeCodexResponses || goProfile.APIModeForModel("glm-5", "") != ModeChatCompletions {
+	if goProfile.APIModeForModel("claude-sonnet-4.6", "") != "" || zenProfile.APIModeForModel("gpt-5.4", "") != "" {
+		t.Fatal("opencode profiles declare a per model wire, upstream routes opencode per model in core")
+	}
+	if OpenCodeModelMode("opencode-go", "claude-sonnet-4.6") != ModeAnthropicMessages || OpenCodeModelMode("opencode-zen", "gpt-5.4") != ModeCodexResponses || OpenCodeModelMode("opencode-go", "glm-5") != ModeChatCompletions {
 		t.Fatal("opencode per model mode wrong")
 	}
 	azure, _ := ProfileFor("azure-foundry")
-	if azure.PerModelMode == nil || azure.PerModelMode("gpt-5-mini") != ModeCodexResponses || azure.PerModelMode("llama") != "" || azure.Mode != ModeChatCompletions {
+	if azure.PerModelMode != nil || azure.APIModeForModel("gpt-5-mini", "") != "" || azure.Mode != ModeChatCompletions {
+		t.Fatal("azure foundry profile declares a per model wire, upstream infers it at runtime resolution")
+	}
+	if AzureFoundryModelMode("gpt-5-mini") != ModeCodexResponses || AzureFoundryModelMode("openai/o3") != ModeCodexResponses || AzureFoundryModelMode("llama") != "" ||
+		azureInferredAPIMode("gpt-5-mini", ModeChatCompletions) != ModeCodexResponses || azureInferredAPIMode("gpt-5-mini", ModeAnthropicMessages) != ModeAnthropicMessages {
 		t.Fatal("azure foundry model mode wrong")
 	}
 	fakeModelsDevInfo(t, nil)

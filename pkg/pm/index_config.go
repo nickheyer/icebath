@@ -9,6 +9,10 @@ import (
 	"runtime"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ForwardedUVSettings are the uv index and transport settings that survive into uv
@@ -137,7 +141,7 @@ func PipConfIndexURL(env map[string]string, sitePrefix string) (string, error) {
 	if !parser.hasSection("global") {
 		return "", nil
 	}
-	return pyStrip(parser.get("global", "index-url")), nil
+	return pystr.Strip(parser.get("global", "index-url")), nil
 }
 
 // UnicodeDecodeError text of the first invalid UTF-8 sequence, nil for valid input
@@ -242,19 +246,19 @@ func (c *rawConfig) parse(path, text string) error {
 	seenOptions := map[string]bool{}
 	defer func() {
 		for _, o := range options {
-			o.target[o.name] = strings.TrimRightFunc(strings.Join(o.lines, "\n"), pyIsSpace)
+			o.target[o.name] = strings.TrimRightFunc(strings.Join(o.lines, "\n"), pystr.IsSpace)
 		}
 	}()
 	for i, raw := range strings.Split(universalNewlines(text), "\n") {
 		lineno := i + 1
-		stripped := pyStrip(raw)
+		stripped := pystr.Strip(raw)
 		if stripped == "" || strings.HasPrefix(stripped, "#") || strings.HasPrefix(stripped, ";") {
 			if stripped == "" && option != nil {
 				option.lines = append(option.lines, "")
 			}
 			continue
 		}
-		indent := utf8.RuneCountInString(raw) - utf8.RuneCountInString(strings.TrimLeftFunc(raw, pyIsSpace))
+		indent := utf8.RuneCountInString(raw) - utf8.RuneCountInString(strings.TrimLeftFunc(raw, pystr.IsSpace))
 		if option != nil && indent > indentLevel {
 			option.lines = append(option.lines, stripped)
 			continue
@@ -271,28 +275,28 @@ func (c *rawConfig) parse(path, text string) error {
 			if _, ok := c.sections[name]; !ok {
 				c.sections[name] = map[string]string{}
 			} else if seenSections[name] {
-				return fmt.Errorf("While reading from %s [line %d]: section %s already exists", pyRepr(path), lineno, pyRepr(name))
+				return fmt.Errorf("While reading from %s [line %d]: section %s already exists", pyrepr.StrRepr(path), lineno, pyrepr.StrRepr(name))
 			}
 			seenSections[name] = true
 			current = c.sections[name]
 			continue
 		}
 		if current == nil {
-			return fmt.Errorf("File contains no section headers.\nfile: %s, line: %d\n%s", pyRepr(path), lineno, pyRepr(raw+"\n"))
+			return fmt.Errorf("File contains no section headers.\nfile: %s, line: %d\n%s", pyrepr.StrRepr(path), lineno, pyrepr.StrRepr(raw+"\n"))
 		}
 		cut := strings.IndexAny(stripped, "=:")
 		if cut < 0 {
-			return errors.New("Source contains parsing errors: " + pyRepr(path))
+			return errors.New("Source contains parsing errors: " + pyrepr.StrRepr(path))
 		}
-		key := strings.ToLower(strings.TrimRightFunc(stripped[:cut], pyIsSpace))
+		key := strings.ToLower(strings.TrimRightFunc(stripped[:cut], pystr.IsSpace))
 		if key == "" {
-			return errors.New("Source contains parsing errors: " + pyRepr(path))
+			return errors.New("Source contains parsing errors: " + pyrepr.StrRepr(path))
 		}
 		if seenOptions[currentName+"\x00"+key] {
-			return fmt.Errorf("While reading from %s [line %d]: option %s in section %s already exists", pyRepr(path), lineno, pyRepr(key), pyRepr(currentName))
+			return fmt.Errorf("While reading from %s [line %d]: option %s in section %s already exists", pyrepr.StrRepr(path), lineno, pyrepr.StrRepr(key), pyrepr.StrRepr(currentName))
 		}
 		seenOptions[currentName+"\x00"+key] = true
-		option = &rawOption{target: current, name: key, lines: []string{pyStrip(stripped[cut+1:])}}
+		option = &rawOption{target: current, name: key, lines: []string{pystr.Strip(stripped[cut+1:])}}
 		options = append(options, option)
 	}
 	return nil
@@ -307,7 +311,7 @@ func NPMRegistry(env map[string]string) string {
 	for k, v := range env {
 		lowered[strings.ToLower(k)] = v
 	}
-	value := pyStrip(lowered["npm_config_registry"])
+	value := pystr.Strip(lowered["npm_config_registry"])
 	if value == "" {
 		npmrc := lowered["npm_config_userconfig"]
 		if npmrc == "" {
@@ -315,10 +319,10 @@ func NPMRegistry(env map[string]string) string {
 		}
 		npmrc = expandUser(npmrc)
 		if data, err := os.ReadFile(npmrc); err == nil && utf8.Valid(data) {
-			for _, line := range pySplitLines(string(trimBOM(data))) {
+			for _, line := range pystr.Splitlines(string(trimBOM(data)), false) {
 				key, candidate, found := strings.Cut(line, "=")
-				if found && strings.ToLower(pyStrip(key)) == "registry" {
-					value = strings.Trim(pyStrip(candidate), `"'`)
+				if found && strings.ToLower(pystr.Strip(key)) == "registry" {
+					value = strings.Trim(pystr.Strip(candidate), `"'`)
 				}
 			}
 		}
@@ -373,15 +377,15 @@ func ntExpandUser(path string) string {
 		if !ok {
 			return path
 		}
-		home = ntJoin(os.Getenv("HOMEDRIVE"), homePath)
+		home = pypath.NtJoin(os.Getenv("HOMEDRIVE"), homePath)
 	}
 	if i != 1 {
 		target := path[1:i]
 		if current := os.Getenv("USERNAME"); target != current {
-			if current != ntBasename(home) {
+			if current != pypath.NtBasename(home) {
 				return path
 			}
-			home = ntJoin(ntDirname(home), target)
+			home = pypath.NtJoin(pypath.NtDirname(home), target)
 		}
 	}
 	return home + path[i:]
@@ -389,89 +393,6 @@ func ntExpandUser(path string) string {
 
 // Reports a Windows path separator
 func isNTSep(c byte) bool { return c == '\\' || c == '/' }
-
-// Drive, root and rest of a Windows path the way ntpath splitroot divides it
-func ntSplitRoot(p string) (string, string, string) {
-	norm := strings.ReplaceAll(p, "/", "\\")
-	switch {
-	case strings.HasPrefix(norm, `\\`):
-		start := 2
-		if len(norm) >= 8 && strings.ToUpper(norm[:8]) == `\\?\UNC\` {
-			start = 8
-		}
-		index := strings.IndexByte(norm[min(start, len(norm)):], '\\')
-		if index < 0 {
-			return p, "", ""
-		}
-		index += start
-		index2 := strings.IndexByte(norm[index+1:], '\\')
-		if index2 < 0 {
-			return p, "", ""
-		}
-		index2 += index + 1
-		return p[:index2], p[index2 : index2+1], p[index2+1:]
-	case strings.HasPrefix(norm, `\`):
-		return "", p[:1], p[1:]
-	case len(norm) >= 2 && norm[1] == ':':
-		if len(norm) >= 3 && norm[2] == '\\' {
-			return p[:2], p[2:3], p[3:]
-		}
-		return p[:2], "", p[2:]
-	}
-	return "", "", p
-}
-
-// Joins Windows path parts the way ntpath join does
-func ntJoin(path string, paths ...string) string {
-	drive, root, rest := ntSplitRoot(path)
-	for _, p := range paths {
-		pDrive, pRoot, pRest := ntSplitRoot(p)
-		if pRoot != "" {
-			if pDrive != "" || drive == "" {
-				drive = pDrive
-			}
-			root, rest = pRoot, pRest
-			continue
-		}
-		if pDrive != "" && pDrive != drive {
-			if strings.ToLower(pDrive) != strings.ToLower(drive) {
-				drive, root, rest = pDrive, pRoot, pRest
-				continue
-			}
-			drive = pDrive
-		}
-		if rest != "" && !isNTSep(rest[len(rest)-1]) {
-			rest += "\\"
-		}
-		rest += pRest
-	}
-	if rest != "" && root == "" && drive != "" && !strings.ContainsRune(`:\/`, rune(drive[len(drive)-1])) {
-		return drive + "\\" + rest
-	}
-	return drive + root + rest
-}
-
-// Head and tail of a Windows path the way ntpath split divides it
-func ntSplit(p string) (string, string) {
-	drive, root, rest := ntSplitRoot(p)
-	i := len(rest)
-	for i > 0 && !isNTSep(rest[i-1]) {
-		i--
-	}
-	return drive + root + strings.TrimRight(rest[:i], `\/`), rest[i:]
-}
-
-// Final component of a Windows path the way ntpath basename splits it
-func ntBasename(p string) string {
-	_, tail := ntSplit(p)
-	return tail
-}
-
-// Directory of a Windows path the way ntpath dirname splits it
-func ntDirname(p string) string {
-	head, _ := ntSplit(p)
-	return head
-}
 
 // A public npm registry URL rebased onto the configured registry, other URLs unchanged
 func NPMRegistryURL(rawURL string, env map[string]string) string {
@@ -496,7 +417,7 @@ func BridgedIndexSettings(ambient map[string]string, sitePrefix string) (map[str
 		}
 	}
 	if !hasIndex {
-		indexURL := pyStrip(ambient["PIP_INDEX_URL"])
+		indexURL := pystr.Strip(ambient["PIP_INDEX_URL"])
 		if indexURL == "" {
 			fromConf, err := PipConfIndexURL(ambient, sitePrefix)
 			if err != nil {
@@ -509,7 +430,7 @@ func BridgedIndexSettings(ambient map[string]string, sitePrefix string) (map[str
 		}
 	}
 	for _, pair := range pipToUV {
-		value := pyStrip(ambient[pair[0]])
+		value := pystr.Strip(ambient[pair[0]])
 		if value != "" && settings[pair[1]] == "" {
 			settings[pair[1]] = value
 		}

@@ -25,6 +25,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Largest file the probe reads, anything bigger counts as unreadable
@@ -172,8 +173,8 @@ func ReserveInstallTrial() error {
 // Reports whether any marker holds a trial reservation
 func TrialReserved() bool {
 	for _, marker := range machinePlaces().Markers {
-		if obj, ok := installReadMarker(marker).(*pyJSONObject); ok && len(obj.keys) == 1 {
-			if v, _ := obj.get("trial"); v == "reserved" {
+		if obj, ok := installReadMarker(marker).(*pyjson.Object); ok && len(obj.Keys) == 1 {
+			if v, _ := obj.Get("trial"); v == "reserved" {
 				return true
 			}
 		}
@@ -212,7 +213,7 @@ func installReadMarker(marker string) any {
 	if err != nil {
 		return nil
 	}
-	v, err := pyJSONLoads(text)
+	v, err := pyjson.Loads(text)
 	if err != nil {
 		return nil
 	}
@@ -623,7 +624,7 @@ func (r *installRoot) authStores() ([]any, error) {
 				r.authErr = err
 				break
 			}
-			store, err := installReadMapping(p, pyJSONLoads)
+			store, err := installReadMapping(p, pyjson.Loads)
 			if err != nil {
 				r.authErr = err
 				break
@@ -683,8 +684,8 @@ func installMapGet(m any, key string) (any, bool) {
 	case map[string]any:
 		v, ok := t[key]
 		return v, ok
-	case *pyJSONObject:
-		return t.get(key)
+	case *pyjson.Object:
+		return t.Get(key)
 	}
 	return nil, false
 }
@@ -692,7 +693,7 @@ func installMapGet(m any, key string) (any, bool) {
 // Reports whether a loaded value is a mapping the way isinstance(value, dict) does
 func installIsMapping(v any) bool {
 	switch v.(type) {
-	case map[string]any, *pyJSONObject:
+	case map[string]any, *pyjson.Object:
 		return true
 	}
 	return false
@@ -810,11 +811,11 @@ func installProviderLogin(r *installRoot) (bool, error) {
 		if pyTruthy(active) {
 			return true, nil
 		}
-		if providers, ok := store.(*pyJSONObject); ok {
-			if inner, _ := providers.get("providers"); inner != nil {
-				if obj, ok := inner.(*pyJSONObject); ok {
-					for _, k := range obj.keys {
-						if pyTruthy(obj.vals[k]) {
+		if providers, ok := store.(*pyjson.Object); ok {
+			if inner, _ := providers.Get("providers"); inner != nil {
+				if obj, ok := inner.(*pyjson.Object); ok {
+					for _, k := range obj.Keys {
+						if pyTruthy(obj.Vals[k]) {
 							return true, nil
 						}
 					}
@@ -827,12 +828,12 @@ func installProviderLogin(r *installRoot) (bool, error) {
 			}
 		}
 		pool, _ := installMapGet(store, "credential_pool")
-		obj, ok := pool.(*pyJSONObject)
+		obj, ok := pool.(*pyjson.Object)
 		if !ok {
 			continue
 		}
-		for _, k := range obj.keys {
-			rows, ok := obj.vals[k].([]any)
+		for _, k := range obj.Keys {
+			rows, ok := obj.Vals[k].([]any)
 			if !ok {
 				continue
 			}

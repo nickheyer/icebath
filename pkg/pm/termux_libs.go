@@ -14,6 +14,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -103,47 +106,22 @@ var debField = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9-]*):[ ]?(.*)$`)
 func ParseTermuxIndex(text string) map[string]PoolPackage {
 	pool := map[string]PoolPackage{}
 	fields := map[string]string{}
-	lines := append(pySplitLines(text), "")
+	lines := append(pystr.Splitlines(text, false), "")
 	for _, line := range lines {
-		if pyStrip(line) == "" {
+		if pystr.Strip(line) == "" {
 			if row, ok := poolPackage(fields); ok {
 				pool[row.Name] = row
 			}
 			fields = map[string]string{}
 			continue
 		}
-		if r, _ := utf8.DecodeRuneInString(line); !pyIsSpace(r) {
+		if r, _ := utf8.DecodeRuneInString(line); !pystr.IsSpace(r) {
 			if m := debField.FindStringSubmatch(line); m != nil {
-				fields[m[1]] = pyStrip(m[2])
+				fields[m[1]] = pystr.Strip(m[2])
 			}
 		}
 	}
 	return pool
-}
-
-// Splits like str splitlines across every line boundary Python recognizes
-func pySplitLines(text string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(text); {
-		r, size := utf8.DecodeRuneInString(text[i:])
-		switch r {
-		case '\r':
-			lines = append(lines, text[start:i])
-			if i+1 < len(text) && text[i+1] == '\n' {
-				size = 2
-			}
-			start = i + size
-		case '\n', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\u0085', '\u2028', '\u2029':
-			lines = append(lines, text[start:i])
-			start = i + size
-		}
-		i += size
-	}
-	if start < len(text) {
-		lines = append(lines, text[start:])
-	}
-	return lines
 }
 
 // Installable archive of one stanza, ok false without name, filename or hash
@@ -266,7 +244,7 @@ func checkBracketedNetloc(netloc string) error {
 	}
 	addr, err := netip.ParseAddr(hostname)
 	if err != nil {
-		return fmt.Errorf("%s does not appear to be an IPv4 or IPv6 address", pyRepr(hostname))
+		return fmt.Errorf("%s does not appear to be an IPv4 or IPv6 address", pyrepr.StrRepr(hostname))
 	}
 	if addr.Is4() {
 		return errors.New("An IPv4 address cannot be in brackets")
@@ -318,13 +296,13 @@ type Retired struct {
 func pySubscriptError(v any, key string) error {
 	switch v.(type) {
 	case *OrderedObject, map[string]any:
-		return fmt.Errorf("KeyError: %s", pyRepr(key))
+		return fmt.Errorf("KeyError: %s", pyrepr.StrRepr(key))
 	case string:
 		return errors.New("TypeError: string indices must be integers, not 'str'")
 	case []any:
 		return errors.New("TypeError: list indices must be integers or slices, not str")
 	}
-	return fmt.Errorf("TypeError: '%s' object is not subscriptable", pyTypeName(v))
+	return fmt.Errorf("TypeError: '%s' object is not subscriptable", pyrepr.TypeName(v))
 }
 
 // Field of an ordered row the way Python subscripting reads it, raising for a missing key or non dict
@@ -343,7 +321,7 @@ func orderedFieldOr(row *OrderedObject, key string) string {
 	if !ok {
 		return ""
 	}
-	return pyStr(v)
+	return pyrepr.Str(v)
 }
 
 // Every pinned URL the pool serves, the table's libraries and license plus the lockfile's bionic tools
@@ -352,14 +330,14 @@ func TermuxPins(table *OrderedObject, lockfile *Lockfile) ([]Pin, error) {
 	if libsValue, _ := table.Get("libs"); truthyOrdered(libsValue) {
 		libs, ok := libsValue.(*OrderedObject)
 		if !ok {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'items'", pyTypeName(libsValue))
+			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'items'", pyrepr.TypeName(libsValue))
 		}
 		for _, name := range libs.Keys {
 			u, err := orderedField(libs.Values[name], "url")
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, Pin{Scope: "library", Name: name, URL: pyStr(u), Version: orderedFieldOr(libs.Values[name].(*OrderedObject), "version")})
+			out = append(out, Pin{Scope: "library", Name: name, URL: pyrepr.Str(u), Version: orderedFieldOr(libs.Values[name].(*OrderedObject), "version")})
 		}
 	}
 	if licenses, _ := table.Get("licenses"); truthyOrdered(licenses) {
@@ -367,7 +345,7 @@ func TermuxPins(table *OrderedObject, lockfile *Lockfile) ([]Pin, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, Pin{Scope: "license", Name: "termux-licenses", URL: pyStr(u), Version: orderedFieldOr(licenses.(*OrderedObject), "version")})
+		out = append(out, Pin{Scope: "license", Name: "termux-licenses", URL: pyrepr.Str(u), Version: orderedFieldOr(licenses.(*OrderedObject), "version")})
 	}
 	for _, name := range lockfile.Names() {
 		artifacts := lockfile.PinnedArtifacts(name)
@@ -397,7 +375,7 @@ func truthyOrdered(v any) bool {
 	if obj, ok := v.(*OrderedObject); ok {
 		return len(obj.Keys) > 0
 	}
-	return truthy(v)
+	return pyrepr.Truthy(v)
 }
 
 // Rows of a target's pin, a single object standing for a one row list
@@ -471,7 +449,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 		artifacts := lockfile.PinnedArtifacts(name)
 		rows, ok := artifacts[target]
 		if !ok {
-			return fmt.Errorf("KeyError: %s", pyRepr(target))
+			return fmt.Errorf("KeyError: %s", pyrepr.StrRepr(target))
 		}
 		pinPkg, err := PackageOf(pin.URL)
 		if err != nil {
@@ -480,7 +458,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 		for _, row := range artifactRows(rows) {
 			m, ok := row.(map[string]any)
 			if !ok {
-				return fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyTypeName(row))
+				return fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(row))
 			}
 			u, _ := m["url"].(string)
 			rowPkg, err := PackageOf(u)
@@ -512,7 +490,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 		if _, isList := row.([]any); isList {
 			return errors.New("TypeError: list indices must be integers or slices, not str")
 		}
-		return fmt.Errorf("TypeError: '%s' object does not support item assignment", pyTypeName(row))
+		return fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(row))
 	}
 	obj.Set("url", replacement.URL)
 	obj.Set("sha256", replacement.SHA256)

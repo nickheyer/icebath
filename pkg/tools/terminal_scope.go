@@ -1,9 +1,14 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -156,48 +161,97 @@ func defaultTerminalScope() TerminalPolicy {
 	return policy
 }
 
-// Builds the complete TERMINAL_* policy of a home from defaults, dotenv, process env and config
+// Reads the profile dotenv bytes, a seam for tests that deny the read
+var readProfileEnvBytes = os.ReadFile
+
+// Builds the complete TERMINAL_* policy of a home with the process environment as the overlay layer
 func BuildTerminalScope(h string, secrets *config.Secrets) (TerminalPolicy, error) {
-	policy := defaultTerminalScope()
-	defaultImage := policy["TERMINAL_DOCKER_IMAGE"]
-	imagePinned := false
+	envPath := home.EnvPath(h)
 	if secrets != nil {
-		if _, err := os.Stat(secrets.Path()); err == nil {
-			if _, err := os.ReadFile(secrets.Path()); err != nil {
-				return nil, &TerminalPolicyUnavailable{Reason: fmt.Sprintf("cannot read %s: %v", secrets.Path(), err)}
-			}
-			file := secrets.File()
-			for k, v := range file {
-				if strings.HasPrefix(k, "TERMINAL_") {
-					policy[k] = v
-				}
-			}
-			if _, ok := file["TERMINAL_DOCKER_IMAGE"]; ok {
-				imagePinned = true
-			}
+		envPath = secrets.Path()
+	}
+	return buildTerminalLayers(context.Background(), h, envPath, processTerminalEnv())
+}
+
+// Builds the complete TERMINAL_* policy of a profile home over a trusted launch overlay, never the process env
+func BuildProfileTerminalScope(ctx context.Context, h string, envOverlay map[string]string) (TerminalPolicy, error) {
+	policy, err := buildTerminalLayers(ctx, h, home.EnvPath(h), envOverlay)
+	if err != nil {
+		return nil, err
+	}
+	resolveScopeCwdPlaceholder(policy)
+	return policy, nil
+}
+
+// TERMINAL_* assignments of the process environment
+func processTerminalEnv() map[string]string {
+	out := map[string]string{}
+	for _, kv := range os.Environ() {
+		if k, v, ok := strings.Cut(kv, "="); ok && strings.HasPrefix(k, "TERMINAL_") {
+			out[k] = v
 		}
 	}
-	for _, kv := range os.Environ() {
-		k, v, ok := strings.Cut(kv, "=")
-		if !ok || !strings.HasPrefix(k, "TERMINAL_") || k == "TERMINAL_DOCKER_IMAGE_PINNED" {
-			continue
+	return out
+}
+
+// Layers defaults, profile dotenv, overlay, profile config and managed config into one total policy
+func buildTerminalLayers(ctx context.Context, h, envPath string, envOverlay map[string]string) (TerminalPolicy, error) {
+	policy := defaultTerminalScope()
+	defaultImage, hasDefaultImage := policy["TERMINAL_DOCKER_IMAGE"]
+	imagePinned := false
+	if _, err := os.Stat(envPath); err == nil {
+		raw, err := readProfileEnvBytes(envPath)
+		if err != nil && (!errors.Is(err, fs.ErrPermission) || config.PinnedTerminalBackend() == "") {
+			return nil, &TerminalPolicyUnavailable{Reason: fmt.Sprintf("cannot read %s: %v", envPath, err)}
 		}
-		policy[k] = v
-		if k == "TERMINAL_DOCKER_IMAGE" && v != defaultImage {
-			imagePinned = true
+		profileEnv := map[string]string{}
+		if err == nil {
+			profileEnv = config.ParseEnv(config.DecodeEnvBytes(raw))
 		}
+		for k, v := range profileEnv {
+			if strings.HasPrefix(k, "TERMINAL_") {
+				policy[k] = v
+			}
+		}
+		_, imagePinned = profileEnv["TERMINAL_DOCKER_IMAGE"]
+	}
+	for k, v := range envOverlay {
+		if strings.HasPrefix(k, "TERMINAL_") && k != "TERMINAL_DOCKER_IMAGE_PINNED" {
+			policy[k] = v
+		}
+	}
+	if v, ok := envOverlay["TERMINAL_DOCKER_IMAGE"]; ok && (!hasDefaultImage || v != defaultImage) {
+		imagePinned = true
 	}
 	configPath := home.ConfigPath(h)
-	if _, err := os.Stat(configPath); err == nil {
-		raw, err := config.ReadDocument(configPath)
+	hasConfig, err := config.ConfigExists(ctx, configPath)
+	if err != nil {
+		return nil, &TerminalPolicyUnavailable{Reason: fmt.Sprintf("cannot resolve terminal config in %s: %v", h, err)}
+	}
+	var rawTerminal map[string]any
+	if hasConfig {
+		raw, err := config.ReadConfigDocReadonly(ctx, configPath)
 		if err != nil {
 			return nil, &TerminalPolicyUnavailable{Reason: fmt.Sprintf("cannot parse %s: %v", configPath, err)}
 		}
-		if terminal, ok := raw["terminal"].(map[string]any); ok {
-			applyTerminalMapping(policy, terminal)
-			if _, ok := terminal["docker_image"]; ok {
+		if doc, ok := raw.(map[string]any); ok {
+			rawTerminal, _ = doc["terminal"].(map[string]any)
+		}
+		if rawTerminal != nil {
+			applyTerminalMapping(policy, rawTerminal)
+			if _, ok := rawTerminal["docker_image"]; ok {
 				imagePinned = true
 			}
+		}
+	}
+	if managed, ok := config.ApplyManagedOverlay(map[string]any{})["terminal"].(map[string]any); ok {
+		base := rawTerminal
+		if base == nil {
+			base = map[string]any{}
+		}
+		applyTerminalMapping(policy, config.DeepMerge(base, managed))
+		if managed["docker_image"] != nil {
+			imagePinned = true
 		}
 	}
 	if imagePinned {
@@ -206,6 +260,128 @@ func BuildTerminalScope(h string, secrets *config.Secrets) (TerminalPolicy, erro
 		policy["TERMINAL_DOCKER_IMAGE_PINNED"] = "0"
 	}
 	return policy, nil
+}
+
+// Gives a policy without an explicit cwd the TERMINAL_CWD a standalone gateway resolves at startup
+func resolveScopeCwdPlaceholder(policy TerminalPolicy) {
+	if policy["TERMINAL_CWD"] != "" {
+		return
+	}
+	homeFallback, _ := os.UserHomeDir()
+	mount := strings.ToLower(strings.TrimSpace(policy.Get("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false")))
+	resolved, ok := ResolvePlaceholderTerminalCwd("", policy["TERMINAL_ENV"], "", mount == "true" || mount == "1" || mount == "yes", homeFallback)
+	if ok && resolved != "" {
+		policy["TERMINAL_CWD"] = resolved
+	}
+}
+
+// Placeholder values of terminal.cwd that carry no directory choice
+var cwdPlaceholders = map[string]bool{".": true, "auto": true, "cwd": true}
+
+// TERMINAL_CWD for a configured cwd and backend, false when the sandbox default applies
+func ResolvePlaceholderTerminalCwd(configuredCwd, terminalBackend, messagingCwd string, dockerMountCwdToWorkspace bool, homeFallback string) (string, bool) {
+	if configuredCwd != "" && !cwdPlaceholders[configuredCwd] {
+		return configuredCwd, true
+	}
+	backend := terminalBackend
+	if backend == "" {
+		backend = "local"
+	}
+	backend = strings.ToLower(strings.TrimSpace(backend))
+	messaging := strings.TrimSpace(messagingCwd)
+	if backend == "local" {
+		if messaging != "" {
+			return messaging, true
+		}
+		return homeFallback, true
+	}
+	if backend == "docker" && dockerMountCwdToWorkspace && messaging != "" && !cwdPlaceholders[messaging] {
+		return messaging, true
+	}
+	return "", false
+}
+
+// Refusal scope installed when a profile terminal policy cannot be resolved
+type TerminalPolicyRefusal struct {
+	Reason string
+}
+
+// Terminal scope bound to a turn, a complete policy or a refusal
+type TerminalScope struct {
+	Policy  TerminalPolicy
+	Refusal *TerminalPolicyRefusal
+}
+
+// Context key of the bound terminal scope
+type terminalScopeKey struct{}
+
+// Binds scope as the context terminal policy, nil unbinds it
+func SetTerminalScope(ctx context.Context, scope *TerminalScope) context.Context {
+	return context.WithValue(ctx, terminalScopeKey{}, scope)
+}
+
+// Active terminal scope of the context, nil when none is bound
+func GetTerminalScope(ctx context.Context) *TerminalScope {
+	if ctx == nil {
+		return nil
+	}
+	scope, _ := ctx.Value(terminalScopeKey{}).(*TerminalScope)
+	return scope
+}
+
+// Error when the context scope is a refusal so execution fails closed
+func EnforceNoRefusal(ctx context.Context) error {
+	return GetTerminalScope(ctx).refusalError()
+}
+
+// Unavailable error of a refusal scope, nil for a policy scope or no scope
+func (s *TerminalScope) refusalError() error {
+	if s != nil && s.Refusal != nil {
+		return &TerminalPolicyUnavailable{Reason: s.Refusal.Reason}
+	}
+	return nil
+}
+
+// Profile policy scope of a home, the refusal scope when the policy cannot be resolved
+func PrepareProfileTerminalScope(ctx context.Context, h string, envOverlay map[string]string) *TerminalScope {
+	policy, err := BuildProfileTerminalScope(ctx, h, envOverlay)
+	if err == nil {
+		return &TerminalScope{Policy: policy}
+	}
+	reason := err.Error()
+	var unavailable *TerminalPolicyUnavailable
+	if errors.As(err, &unavailable) {
+		reason = unavailable.Reason
+	}
+	slog.Default().Warn(fmt.Sprintf("terminal policy unavailable: %s", reason))
+	return &TerminalScope{Refusal: &TerminalPolicyRefusal{Reason: reason}}
+}
+
+// Binds the profile policy of a home on the context, the refusal scope when it cannot be resolved
+func WithProfileTerminalScope(ctx context.Context, h string, envOverlay map[string]string) context.Context {
+	return SetTerminalScope(ctx, PrepareProfileTerminalScope(ctx, h, envOverlay))
+}
+
+// Binds a scope prepared earlier for a bounded turn, building the home policy when none was prepared
+func WithPreparedTerminalScope(ctx context.Context, h string, prepared *TerminalScope) context.Context {
+	if prepared != nil {
+		return SetTerminalScope(ctx, prepared)
+	}
+	return WithProfileTerminalScope(ctx, h, nil)
+}
+
+// Env of a call carrying the context terminal scope, the same env when none is bound
+func EnvInTerminalScope(ctx context.Context, env *Env) *Env {
+	scope := GetTerminalScope(ctx)
+	if scope == nil || (env != nil && env.TerminalScope == scope) {
+		return env
+	}
+	scoped := &Env{}
+	if env != nil {
+		*scoped = *env
+	}
+	scoped.TerminalScope = scope
+	return scoped
 }
 
 // Cached policy with the inputs it was built from
@@ -243,8 +419,14 @@ func processTerminalEnvSig() string {
 	return strings.Join(parts, "\x00")
 }
 
-// Policy of the session home, rebuilt only when its inputs changed
+// Policy bound to the env scope, else the session home policy rebuilt only when its inputs changed
 func terminalPolicy(env *Env) (TerminalPolicy, error) {
+	if env != nil && env.TerminalScope != nil {
+		if err := env.TerminalScope.refusalError(); err != nil {
+			return nil, err
+		}
+		return env.TerminalScope.Policy, nil
+	}
 	h := ""
 	var secrets *config.Secrets
 	if env != nil {
@@ -254,6 +436,9 @@ func terminalPolicy(env *Env) (TerminalPolicy, error) {
 		secrets = config.NewSecrets(h)
 	}
 	configSig := fileSig(home.ConfigPath(h)) + "|" + fileSig(home.EnvPath(h))
+	if md := config.ManagedDir(); md != "" {
+		configSig += "|" + fileSig(filepath.Join(md, "config.yaml"))
+	}
 	envSig := processTerminalEnvSig()
 	scopeCache.Lock()
 	defer scopeCache.Unlock()

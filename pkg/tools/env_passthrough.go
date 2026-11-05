@@ -65,7 +65,7 @@ var staticAdapterSecretEnv = []string{
 // PlatformSecretEnvSuffixes mark gateway env override keys that hold secrets
 var PlatformSecretEnvSuffixes = []string{"_TOKEN", "_SECRET", "_KEY", "_PASSWORD", "_JSON"}
 
-// BundledPlatformSecretEnvs lists the bundled platform plugin manifests' secret names, installed by pkg/plugins
+// BundledPlatformSecretEnvs lists the bundled platform plugin manifests' secret names, installed by this package's init
 var BundledPlatformSecretEnvs func() []string
 
 // ConfigEnvTableKeys lists the gateway env override table keys, installed by the gateway package
@@ -74,10 +74,10 @@ var ConfigEnvTableKeys func() []string
 // RegisteredAdapterSecretEnv lists secrets declared by registered and profile installed platform plugins
 var RegisteredAdapterSecretEnv func(env *Env) map[string]bool
 
-// Refuses to build a blocklist before the manifest and adapter sources are wired
+// Refuses to build a blocklist before the gateway env table and platform registry sources are wired
 func requireAdapterSecretSources() {
-	if BundledPlatformSecretEnvs == nil || ConfigEnvTableKeys == nil || RegisteredAdapterSecretEnv == nil {
-		panic("tools: pkg/plugins and the gateway must install BundledPlatformSecretEnvs, ConfigEnvTableKeys, and RegisteredAdapterSecretEnv before the provider env blocklist is read")
+	if ConfigEnvTableKeys == nil || RegisteredAdapterSecretEnv == nil {
+		panic("tools: the gateway must install ConfigEnvTableKeys (profile channels env table) and RegisteredAdapterSecretEnv (platform registry) before the provider env blocklist is read")
 	}
 }
 

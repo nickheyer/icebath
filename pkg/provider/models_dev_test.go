@@ -142,11 +142,14 @@ func TestProviderMappingXAIOAuthUsesXAICatalog(t *testing.T) {
 	if providerToModelsDev["xai"] != "xai" || providerToModelsDev["xai-oauth"] != "xai" {
 		t.Fatal("xai mapping")
 	}
-	if id, ok := ModelsDevIDFor("alibaba-cn"); !ok || id != "alibaba" {
-		t.Fatalf("profile declared id: %q %v", id, ok)
+	for _, name := range []string{"alibaba-cn", "solstice", "deepinfra"} {
+		if id, ok := ModelsDevIDFor(name); ok {
+			t.Fatalf("%s registers no models_dev_id upstream yet maps to %q", name, id)
+		}
 	}
-	if _, ok := ModelsDevIDFor("solstice"); ok {
-		t.Fatal("a profile without a declared models.dev id must not map")
+	registerTestProfile(t, Profile{Name: "probe-mdev-declared", ModelsDevID: "probe-mdev", BaseURL: "https://probe.example/v1"})
+	if id, ok := ModelsDevIDFor("probe-mdev-declared"); !ok || id != "probe-mdev" || ModelsDevProviderMap()["probe-mdev-declared"] != "probe-mdev" {
+		t.Fatalf("profile declared id: %q %v", id, ok)
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // LlamaCpp is one llama.cpp backend build with every library it loads staged beside llama-server
@@ -255,7 +257,7 @@ func githubReleaseDigests(repo, tag string) (map[string]string, error) {
 	}
 	release, isMap := data.(map[string]any)
 	if !isMap {
-		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyTypeName(data))
+		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(data))
 	}
 	digests := map[string]string{}
 	assets := []any{}
@@ -267,13 +269,13 @@ func githubReleaseDigests(repo, tag string) (map[string]string, error) {
 	for _, item := range assets {
 		asset, isAsset := item.(map[string]any)
 		if !isAsset {
-			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyTypeName(item))
+			return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(item))
 		}
 		digest := ""
-		if raw := asset["digest"]; truthy(raw) {
+		if raw := asset["digest"]; pyrepr.Truthy(raw) {
 			text, isText := raw.(string)
 			if !isText {
-				return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'partition'", pyTypeName(raw))
+				return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'partition'", pyrepr.TypeName(raw))
 			}
 			_, digest, _ = strings.Cut(text, "sha256:")
 		}
@@ -284,7 +286,7 @@ func githubReleaseDigests(repo, tag string) (map[string]string, error) {
 		if !present {
 			return nil, keyError("name")
 		}
-		digests[pyStr(name)] = digest
+		digests[pyrepr.Str(name)] = digest
 	}
 	releaseDigestMu.Lock()
 	releaseDigestCache[key] = digests
@@ -332,7 +334,7 @@ func pyIterItems(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("TypeError: '%s' object is not iterable", pyTypeName(v))
+	return nil, fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(v))
 }
 
 // Children of dir whose names match a single component pattern, case folded where pathlib folds case

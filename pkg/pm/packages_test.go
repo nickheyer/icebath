@@ -15,6 +15,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Replaces a package level seam for the rest of the test
@@ -848,7 +851,7 @@ func TestCatProbeRunnerReportsExitTimeoutAndSpawnFailure(t *testing.T) {
 	}
 	missing := filepath.Join(t.TempDir(), "absent")
 	_, err = startProcess(processSpec{Argv: []string{missing}})
-	if got := pyOSErrorText(err); got != "[Errno 2] No such file or directory: "+pyRepr(missing) {
+	if got := pypath.OSErrorText(err); got != "[Errno 2] No such file or directory: "+pyrepr.StrRepr(missing) {
 		t.Fatalf("spawn failure = %q", got)
 	}
 }

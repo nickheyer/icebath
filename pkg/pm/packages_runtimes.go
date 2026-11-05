@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Distro libatomic repair Node's staged verification asks for, replaced by tests
@@ -164,7 +166,7 @@ func (p *Python) FetchURL(version, target string) (string, error) {
 	}
 	pyver, tag := partition(version, "+")
 	if tag == "" {
-		return "", NewInstallError(p.Name, fmt.Sprintf("version %s needs the +<release> tag", pyRepr(version)), "")
+		return "", NewInstallError(p.Name, fmt.Sprintf("version %s needs the +<release> tag", pyrepr.StrRepr(version)), "")
 	}
 	triple, ok := rustTriple[target]
 	if !ok {
@@ -345,7 +347,7 @@ func (p *Npm) Unpack(archive, staged, target string) error {
 	if !present {
 		return keyError("entry")
 	}
-	nodeBin := node.Binary(location.Store.Entry(pyStr(entryName)), target)
+	nodeBin := node.Binary(location.Store.Entry(pyrepr.Str(entryName)), target)
 	if nodeBin == "" || !isRegularFile(nodeBin) {
 		return NewInstallError(p.Name, "node's entry is missing its binary", "")
 	}
@@ -423,8 +425,8 @@ func (p *Npm) LatestVersions(target, locked string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if latest := tags["latest"]; truthy(latest) {
-		return []string{pyStr(latest)}, nil
+	if latest := tags["latest"]; pyrepr.Truthy(latest) {
+		return []string{pyrepr.Str(latest)}, nil
 	}
 	return nil, nil
 }

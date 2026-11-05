@@ -15,6 +15,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Service lifetime defaults in seconds
@@ -102,7 +108,7 @@ func pyFloat(v any) (float64, error) {
 	case float64:
 		return t, nil
 	case string:
-		s := strings.ToLower(pyStrip(t))
+		s := strings.ToLower(pystr.Strip(t))
 		switch strings.TrimLeft(s, "+-") {
 		case "inf", "infinity":
 			if strings.HasPrefix(s, "-") {
@@ -117,9 +123,9 @@ func pyFloat(v any) (float64, error) {
 				return f, nil
 			}
 		}
-		return 0, &pyExc{typ: "ValueError", text: "could not convert string to float: " + pyStrRepr(t)}
+		return 0, &pyExc{typ: "ValueError", text: "could not convert string to float: " + pyrepr.StrRepr(t)}
 	}
-	return 0, &pyExc{typ: "TypeError", text: fmt.Sprintf("float() argument must be a string or a real number, not '%s'", pyTypeName(v))}
+	return 0, &pyExc{typ: "TypeError", text: fmt.Sprintf("float() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v))}
 }
 
 // Float of a config value with a default for None and unconvertible values
@@ -150,7 +156,7 @@ func pathList(v any) ([]string, bool) {
 			return nil, false
 		}
 		if s != "" {
-			out = append(out, expandUser(s))
+			out = append(out, pypath.Expanduser(s))
 		}
 	}
 	return out, true
@@ -161,7 +167,7 @@ func ParseTrustedWorkspaces(rt *Runtime, value any) []string {
 	roots, ok := pathList(value)
 	if !ok {
 		rt.logf(slog.LevelWarn, eventLogger, "lsp.trusted_workspaces must be a list of directories, e.g. ['~/code/my-app'] (got %s); only the "+
-			"workspaces you launched Icebath or opened a session in are trusted until the key is fixed", pyTypeName(value))
+			"workspaces you launched Icebath or opened a session in are trusted until the key is fixed", pyrepr.TypeName(value))
 		return []string{}
 	}
 	return roots
@@ -172,7 +178,7 @@ func parseExcludeRoots(rt *Runtime, value any) ([]string, bool) {
 	roots, ok := pathList(value)
 	if !ok {
 		rt.logf(slog.LevelWarn, eventLogger, "lsp.exclude_roots must be a list of glob patterns, e.g. ['~/big-monorepo', '/srv/*/vendor'] "+
-			"(got %s); LSP is skipped for every workspace until the key is fixed", pyTypeName(value))
+			"(got %s); LSP is skipped for every workspace until the key is fixed", pyrepr.TypeName(value))
 	}
 	return roots, ok
 }
@@ -275,7 +281,7 @@ func ServiceFromConfig(rt *Runtime, lspCfg any, operatorRoots map[string]bool) (
 	case string:
 		waitMode = wm
 	case []any, map[string]any:
-		return nil, &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", pyTypeName(wm))}
+		return nil, &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(wm))}
 	}
 	waitTimeout, err := pyFloat(dgetOr(cfg, "wait_timeout", DiagnosticsDocumentWait.Seconds()))
 	if err != nil {
@@ -283,13 +289,13 @@ func ServiceFromConfig(rt *Runtime, lspCfg any, operatorRoots map[string]bool) (
 	}
 	installStrategy := "auto"
 	if v, ok := cfg["install_strategy"]; ok {
-		installStrategy = pyStr(v)
+		installStrategy = pyrepr.Str(v)
 		if s, isStr := v.(string); isStr {
 			installStrategy = s
 		}
 	}
 	o := Options{
-		Enabled: pyTruthy(dgetOr(cfg, "enabled", true)), WaitMode: waitMode, WaitTimeout: waitTimeout,
+		Enabled: pyrepr.Truthy(dgetOr(cfg, "enabled", true)), WaitMode: waitMode, WaitTimeout: waitTimeout,
 		InstallStrategy: installStrategy, BinaryOverrides: map[string][]string{}, EnvOverrides: map[string]map[string]string{},
 		InitOverrides: map[string]map[string]any{}, IdleTimeout: idle,
 		BrokenRetrySeconds: floatOr(cfg["broken_retry_seconds"], 0), WarmupTimeout: floatOr(cfg["warmup_timeout"], 0),
@@ -307,21 +313,21 @@ func ServiceFromConfig(rt *Runtime, lspCfg any, operatorRoots map[string]bool) (
 		if cmd, ok := c["command"].([]any); ok && len(cmd) > 0 {
 			parts := make([]string, len(cmd))
 			for i, p := range cmd {
-				parts[i] = pyStr(p)
+				parts[i] = pyrepr.Str(p)
 			}
 			o.BinaryOverrides[n] = parts
 		}
 		if env, ok := c["env"].(map[string]any); ok {
 			m := map[string]string{}
 			for k, v := range env {
-				m[k] = pyStr(v)
+				m[k] = pyrepr.Str(v)
 			}
 			o.EnvOverrides[n] = m
 		}
 		if init, ok := c["initialization_options"].(map[string]any); ok {
 			o.InitOverrides[n] = init
 		}
-		if pyTruthy(c["disabled"]) {
+		if pyrepr.Truthy(c["disabled"]) {
 			o.DisabledServers = append(o.DisabledServers, n)
 		}
 	}
@@ -457,7 +463,7 @@ func (s *Service) rootExcluded(root string) bool {
 	}
 	sep := string(filepath.Separator)
 	for _, pat := range s.excludeRoots {
-		if fnmatchCase(root, pat) || fnmatchCase(root, strings.TrimRight(pat, sep)+sep+"*") {
+		if fnmatch.FnmatchCase(root, pat) || fnmatch.FnmatchCase(root, strings.TrimRight(pat, sep)+sep+"*") {
 			return true
 		}
 	}
@@ -529,9 +535,9 @@ func (s *Service) waitBudget(filePath string) time.Duration {
 }
 
 // SnapshotBaseline records the current diagnostics of a file as the delta baseline before a write
-func (s *Service) SnapshotBaseline(filePath string, operatorRoots map[string]bool) {
+func (s *Service) SnapshotBaseline(filePath string, operatorRoots map[string]bool) error {
 	if !s.EnabledFor(filePath, operatorRoots) {
-		return
+		return nil
 	}
 	budget := s.waitBudget(filePath)
 	t := max(DiagnosticsDocumentWait+3*time.Second, budget+3*time.Second)
@@ -546,13 +552,18 @@ func (s *Service) SnapshotBaseline(filePath string, operatorRoots map[string]boo
 	if diags == nil {
 		diags = []map[string]any{}
 	}
-	s.setDeltaBaseline(pyAbspath(filePath), diags)
+	absPath, err := pypath.Abspath(filePath)
+	if err != nil {
+		return err
+	}
+	s.setDeltaBaseline(absPath, diags)
+	return nil
 }
 
 // StartEditCheck schedules the non blocking post write check, nil when LSP does not handle the file
-func (s *Service) StartEditCheck(filePath string, preText, postText *string, owner string, carry []Note, operatorRoots map[string]bool) *EditFuture {
+func (s *Service) StartEditCheck(filePath string, preText, postText *string, owner string, carry []Note, operatorRoots map[string]bool) (*EditFuture, error) {
 	if !s.EnabledFor(filePath, operatorRoots) {
-		return nil
+		return nil, nil
 	}
 	return startEditCheck(s, filePath, preText, postText, owner, carry)
 }
@@ -620,7 +631,10 @@ func (s *Service) GetDiagnosticsSync(filePath string, delta bool, timeout time.D
 
 // Drops diagnostics present in the shifted baseline, then rolls the baseline forward
 func (s *Service) applyDelta(filePath string, diags []map[string]any, shift LineShift) ([]map[string]any, error) {
-	absPath := pyAbspath(filePath)
+	absPath, err := pypath.Abspath(filePath)
+	if err != nil {
+		return nil, err
+	}
 	s.stateMu.Lock()
 	baseline, _ := s.deltaBaseline.get(absPath)
 	s.stateMu.Unlock()
@@ -1063,17 +1077,20 @@ func (s *Service) shutdownAll(ctx context.Context, clients []*Client) error {
 }
 
 // ReleaseWorkspace shuts down the clients serving a removed worktree or any root beneath it
-func (s *Service) ReleaseWorkspace(workspaceRoot string) int {
+func (s *Service) ReleaseWorkspace(workspaceRoot string) (int, error) {
 	if !s.enabled {
-		return 0
+		return 0, nil
 	}
-	root := pyAbspath(workspaceRoot)
+	root, err := pypath.Abspath(workspaceRoot)
+	if err != nil {
+		return 0, err
+	}
 	n, err := runOnLoop(s.l, 15*time.Second, func(ctx context.Context) (int, error) { return s.releaseAsync(ctx, root) })
 	if err != nil {
 		s.rt.logf(slog.LevelDebug, managerLogger, "LSP release of %s failed: %s", root, errText(err))
-		return 0
+		return 0, nil
 	}
-	return n
+	return n, nil
 }
 
 func (s *Service) releaseAsync(ctx context.Context, root string) (int, error) {

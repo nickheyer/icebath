@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
@@ -246,11 +247,11 @@ func ValidateDeferredCallArgs(ctx context.Context, env *Env, name string, args m
 		slog.Debug("validate_deferred_call_args schema compile failed", "tool", name, "error", err)
 		return ""
 	}
-	raw, err := jsonEncodeWTF8(candidate)
+	raw, err := pyjson.EncodeWTF8(candidate)
 	if err != nil {
 		return ""
 	}
-	instance, err := jsonDecodeWTF8(raw)
+	instance, err := pyjson.DecodeWTF8(raw)
 	if err != nil {
 		return ""
 	}
@@ -313,7 +314,7 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 		rawCalls = []any{map[string]any{"name": args["name"], "arguments": args["arguments"]}}
 	}
 	if s, ok := rawCalls.(string); ok {
-		parsed, err := jsonDecodeWTF8([]byte(s))
+		parsed, err := pyjson.DecodeWTF8([]byte(s))
 		if err != nil {
 			return nil, fmt.Sprintf("tool_call 'calls' is not valid JSON: %s", err.Error())
 		}
@@ -347,7 +348,7 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 			rawArgs = map[string]any{}
 		}
 		if s, isStr := rawArgs.(string); isStr {
-			parsed, err := jsonDecodeWTF8([]byte(s))
+			parsed, err := pyjson.DecodeWTF8([]byte(s))
 			if err != nil {
 				return nil, fmt.Sprintf("tool_call calls[%d].arguments is not valid JSON: %s", position, err.Error())
 			}

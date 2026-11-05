@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Local backend env rooted at a fresh workspace with every file tool cache reset
@@ -25,7 +26,7 @@ func newFileToolTestEnv(t *testing.T) (*Env, string) {
 // Decodes a tool result into a generic object
 func ftDecode(t *testing.T, out string) map[string]any {
 	t.Helper()
-	v, err := jsonDecodeWTF8([]byte(out))
+	v, err := pyjson.DecodeWTF8([]byte(out))
 	m, ok := v.(map[string]any)
 	if err != nil || !ok {
 		t.Fatalf("not a JSON object %q: %v", out, err)

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pelletier/go-toml/v2/unstable"
 )
@@ -132,7 +134,7 @@ func orderTOML(v any, path string, order map[string][]string) any {
 func tomlRepr(v any) string {
 	switch t := v.(type) {
 	case string:
-		return pyRepr(t)
+		return pyrepr.StrRepr(t)
 	case bool:
 		if t {
 			return "True"
@@ -149,7 +151,7 @@ func tomlRepr(v any) string {
 		case math.IsNaN(t):
 			return "nan"
 		}
-		return pyFloatRepr(t)
+		return pyrepr.Float(t)
 	case []any:
 		parts := make([]string, len(t))
 		for i, e := range t {
@@ -159,7 +161,7 @@ func tomlRepr(v any) string {
 	case *OrderedObject:
 		parts := make([]string, len(t.Keys))
 		for i, k := range t.Keys {
-			parts[i] = pyRepr(k) + ": " + tomlRepr(t.Values[k])
+			parts[i] = pyrepr.StrRepr(k) + ": " + tomlRepr(t.Values[k])
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	case toml.LocalDate:
@@ -261,7 +263,7 @@ func tomlIndex(v any, key string) (any, error) {
 	}
 	value, ok := obj.Values[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
 	}
 	return value, nil
 }

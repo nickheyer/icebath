@@ -8,6 +8,9 @@ import (
 	"syscall"
 )
 
+// Released lock files stay empty since flock needs no byte to lock
+const lockReleasePad = ""
+
 // kernelLock takes or releases a non blocking exclusive flock on the open lock file
 func kernelLock(f *os.File, acquire bool) error {
 	how := syscall.LOCK_UN

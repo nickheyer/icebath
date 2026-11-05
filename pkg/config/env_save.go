@@ -1,14 +1,17 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
-	"time"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Stream that receives env write refusals, standard error outside tests
@@ -136,10 +139,14 @@ func ValidateEnvNameForWrite(key string) error {
 	return nil
 }
 
-// Saves or replaces the first assignment of key in the home .env and publishes it to the process environment
+// Saves or replaces one assignment in the home .env, refused writes printed and skipped
 func SaveEnvValue(h, key, value string) error {
-	if refusal := EnvWriteRefusal(h, key, "set"); refusal != "" {
-		fmt.Fprintln(EnvRefusalOut, refusal)
+	return SaveEnvValueContext(context.Background(), h, key, value)
+}
+
+// Saves one .env assignment, matching export lines too, and publishes it to the scope or process env
+func SaveEnvValueContext(ctx context.Context, h, key, value string) error {
+	if envWriteBlocked(h, key, "set") {
 		return nil
 	}
 	if err := ValidateEnvNameForWrite(key); err != nil {
@@ -149,51 +156,49 @@ func SaveEnvValue(h, key, value string) error {
 	if err := checkASCIICredential(key, value); err != nil {
 		return err
 	}
-	path := filepath.Join(h, ".env")
-	prior, priorErr := os.Stat(path)
-	if err := EnsureHome(h); err != nil {
+	if err := EnsureIcebathHome(h); err != nil {
 		return err
 	}
-	envWriteMu.Lock()
-	defer envWriteMu.Unlock()
-	unlock, err := lockEnvFile(path+".lock", 15*time.Second)
+	path := home.EnvPath(h)
+	err := withEnvWriteLock(path, func() error {
+		_, statErr := os.Stat(path)
+		exists := statErr == nil
+		var lines []string
+		if exists {
+			read, err := readSanitizedEnvLines(path)
+			if err != nil {
+				return err
+			}
+			lines = read
+		}
+		assignment := key + "=" + quoteSavedEnvValue(value) + "\n"
+		idx := slices.IndexFunc(lines, func(line string) bool { return envLineDefines(line, key) })
+		if idx >= 0 {
+			lines[idx] = assignment
+		} else {
+			if n := len(lines); n > 0 && !strings.HasSuffix(lines[n-1], "\n") {
+				lines[n-1] += "\n"
+			}
+			lines = append(lines, assignment)
+		}
+		return writeEnvLinesMode(h, path, lines, exists)
+	})
 	if err != nil {
 		return err
 	}
-	defer unlock()
-	info, statErr := os.Stat(path)
-	var lines []string
-	if raw, err := os.ReadFile(path); err == nil {
-		for _, l := range strings.SplitAfter(DecodeEnvBytes(raw), "\n") {
-			if l == "" {
-				continue
-			}
-			bare := strings.TrimRight(l, "\r\n")
-			if stripped := strings.TrimSpace(bare); stripped != "" && !strings.HasPrefix(stripped, "#") {
-				bare = stripped
-			}
-			lines = append(lines, bare+"\n")
-		}
+	publishEnvValue(ctx, key, &value)
+	return nil
+}
+
+// Home .env lines decoded as utf-8-sig with replacement and normalized like the upstream reader
+func readSanitizedEnvLines(path string) ([]string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
-	assignment := key + "=" + quoteSavedEnvValue(value) + "\n"
-	replaced := false
-	for i, line := range lines {
-		if envLineDefines(line, key) {
-			lines[i], replaced = assignment, true
-			break
-		}
+	lines := readEnvTextLines(raw)
+	if n := len(lines); n > 0 && lines[n-1] == "" {
+		lines = lines[:n-1]
 	}
-	if !replaced {
-		lines = append(lines, assignment)
-	}
-	mode := os.FileMode(0o600)
-	if priorErr == nil {
-		mode = prior.Mode().Perm()
-	} else if statErr == nil {
-		mode = info.Mode().Perm()
-	}
-	if err := AtomicWrite(path, []byte(strings.Join(lines, "")), mode); err != nil {
-		return err
-	}
-	return os.Setenv(key, value)
+	return SanitizeEnvLines(lines), nil
 }

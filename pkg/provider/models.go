@@ -1304,7 +1304,7 @@ func fileCacheVersion(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ino, ctime := fileIdentity(st)
+	ino, ctime := fileIdentity(path, st)
 	digest := ""
 	if raw, rerr := os.ReadFile(path); rerr == nil {
 		sum := sha256.Sum256(raw)

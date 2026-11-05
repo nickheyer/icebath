@@ -27,7 +27,11 @@ func testPersistMigration(h string, cfg map[string]any) error {
 	if err != nil {
 		return err
 	}
-	stripped := StripDefaults(Canonicalize(Clone(cfg).(map[string]any)), map[string]any(Defaults()), ExplicitPaths(Canonicalize(raw)))
+	canon, err := Canonicalize(Clone(cfg).(map[string]any))
+	if err != nil {
+		return err
+	}
+	stripped := StripDefaults(canon, map[string]any(Defaults()), ExplicitPaths(raw))
 	return SaveUser(h, stripped)
 }
 
@@ -156,21 +160,10 @@ func rawMigrated(t *testing.T, h string) map[string]any {
 	return raw
 }
 
-// Runs the ladder from the stamp on disk the way the migrate command hands it over
+// Runs migrate_config for one home the way the update and migrate commands do
 func migrateFromStamp(t *testing.T, h string, quiet bool) (*MigrationResults, string) {
 	t.Helper()
-	stamp, _, err := ReadConfigVersionStamp(h, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cur := 0
-	if stamp != nil {
-		cur = *stamp
-	}
-	var out bytes.Buffer
-	res := &MigrationResults{}
-	RunMigrations(h, cur, res, quiet, MigrationOptions{Unversioned: stamp == nil}, migrationTestSources(h, &out))
-	return res, out.String()
+	return migrateConfigHome(t, h, quiet)
 }
 
 func runFrom(t *testing.T, h string, ver int) *MigrationResults {
@@ -309,10 +302,13 @@ func TestFailingStepIsSkippedWithAWarningInResultsAndTheLog(t *testing.T) {
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
-	res := runFrom(t, h, 12)
+	res, _ := migrateFromStamp(t, h, true)
 	found := false
 	for _, w := range res.Warnings {
 		found = found || strings.HasPrefix(w, "config migration to v13 failed and was skipped")
+	}
+	if v := rawMigrated(t, h)["_config_version"]; !pyEq(v, MigrationVersions()[len(MigrationVersions())-1]) {
+		t.Fatalf("stamp %v", v)
 	}
 	if !found || !strings.Contains(logged.String(), "level=WARN") || !strings.Contains(logged.String(), "config migration to v13 failed and was skipped") {
 		t.Fatalf("warnings %v log %q", res.Warnings, logged.String())

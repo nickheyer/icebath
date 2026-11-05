@@ -160,7 +160,7 @@ func TestV16CreatesPlatformEntriesInDocumentOrder(t *testing.T) {
 	if AsMap(platforms["telegram"])["tool_progress"] != "all" || AsMap(platforms["discord"])["tool_progress"] != "new" {
 		t.Fatalf("platforms %v", platforms)
 	}
-	if !strings.Contains(out.String(), "display.platforms: telegram=all, discord=off") {
+	if !strings.Contains(out.String(), "display.platforms: telegram=all, discord=False") {
 		t.Fatalf("output %q", out.String())
 	}
 }

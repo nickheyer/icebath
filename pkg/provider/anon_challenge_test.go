@@ -193,7 +193,7 @@ func TestChallengeMessagingGatewayNeverWaitsOnAChallenge(t *testing.T) {
 func TestChallengeA428OnSignUpIsStillTheProofOfWorkVerdict(t *testing.T) {
 	portal, env := installAnonPortal(t)
 	portal.set(func(p *anonFakePortal) {
-		p.createResponse = &anonCanned{428, map[string]any{"error": "challenge_required", "challenges": []any{}}}
+		p.createResponse = &anonCanned{status: 428, body: map[string]any{"error": "challenge_required", "challenges": []any{}}}
 	})
 	_, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true})
 	if ae := anonCodeOf(t, err); ae.Code != AnonPowRequired {
@@ -203,7 +203,9 @@ func TestChallengeA428OnSignUpIsStillTheProofOfWorkVerdict(t *testing.T) {
 
 func TestChallengeAProofOfWorkVerdictOff428StaysTheProofOfWorkVerdict(t *testing.T) {
 	portal, env := installAnonPortal(t)
-	portal.set(func(p *anonFakePortal) { p.createResponse = &anonCanned{400, map[string]any{"error": "pow_invalid"}} })
+	portal.set(func(p *anonFakePortal) {
+		p.createResponse = &anonCanned{status: 400, body: map[string]any{"error": "pow_invalid"}}
+	})
 	_, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true})
 	if ae := anonCodeOf(t, err); ae.Code != AnonPowRequired || anonRetryable(ae) {
 		t.Fatalf("%v", ae)
@@ -212,7 +214,9 @@ func TestChallengeAProofOfWorkVerdictOff428StaysTheProofOfWorkVerdict(t *testing
 
 func TestChallengeA403OnSignUpStaysRetryable(t *testing.T) {
 	portal, env := installAnonPortal(t)
-	portal.set(func(p *anonFakePortal) { p.createResponse = &anonCanned{403, map[string]any{"error": "access_denied"}} })
+	portal.set(func(p *anonFakePortal) {
+		p.createResponse = &anonCanned{status: 403, body: map[string]any{"error": "access_denied"}}
+	})
 	_, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true})
 	if ae := anonCodeOf(t, err); ae.Code != AnonServerError || !anonRetryable(ae) {
 		t.Fatalf("%v", ae)
@@ -250,7 +254,7 @@ func TestChallengeAnUnknownChallengeTypeFallsBackToSignIn(t *testing.T) {
 	portal, env := installAnonPortal(t)
 	anonRecordPresented(t)
 	portal.set(func(p *anonFakePortal) {
-		p.tokenResponse = &anonCanned{428, map[string]any{"error": "challenge_required", "message": "Attest your device.",
+		p.tokenResponse = &anonCanned{status: 428, body: map[string]any{"error": "challenge_required", "message": "Attest your device.",
 			"challenges": []any{map[string]any{"type": "attestation-v9", "url": p.URL + "/x"}}}}
 	})
 	_, err := anonResolve(t, env)
@@ -262,7 +266,9 @@ func TestChallengeAnUnknownChallengeTypeFallsBackToSignIn(t *testing.T) {
 
 func TestChallengeAnUnknown428IsASignInNotTheProofOfWorkSentence(t *testing.T) {
 	portal, env := installAnonPortal(t)
-	portal.set(func(p *anonFakePortal) { p.tokenResponse = &anonCanned{428, map[string]any{"error": "something_new"}} })
+	portal.set(func(p *anonFakePortal) {
+		p.tokenResponse = &anonCanned{status: 428, body: map[string]any{"error": "something_new"}}
+	})
 	_, err := anonResolve(t, env)
 	ae := anonCodeOf(t, err)
 	if ae.Code != AnonSigninRequired || strings.Contains(ae.Error(), "proof of work") {
@@ -275,7 +281,7 @@ func TestChallengeARefusalUsesTheServicesOwnWords(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			portal, env := installAnonPortal(t)
 			portal.set(func(p *anonFakePortal) {
-				p.tokenResponse = &anonCanned{403, map[string]any{"error": name, "message": "Not from here, sorry."}}
+				p.tokenResponse = &anonCanned{status: 403, body: map[string]any{"error": name, "message": "Not from here, sorry."}}
 			})
 			_, err := anonResolve(t, env)
 			ae := anonCodeOf(t, err)

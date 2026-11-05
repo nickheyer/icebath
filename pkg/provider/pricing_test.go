@@ -322,7 +322,7 @@ func TestGoogleAndVertexRoutesShareOfficialPricingSnapshot(t *testing.T) {
 		}
 	}
 	vertex, _ := ProfileFor("vertex")
-	result := EstimateUsageCost(f.ctx, vertex.DefaultModel, CanonicalUsage{InputTokens: 100, OutputTokens: 100, CacheReadTokens: 100, RequestCount: 1}, vertex.Name, vertex.BaseURL, "")
+	result := EstimateUsageCost(f.ctx, vertex.DefaultAuxModel, CanonicalUsage{InputTokens: 100, OutputTokens: 100, CacheReadTokens: 100, RequestCount: 1}, vertex.Name, vertex.BaseURL, "")
 	if result.Status != "estimated" || result.AmountUSD == nil || result.AmountUSD.Sign() <= 0 {
 		t.Fatalf("%+v", result)
 	}

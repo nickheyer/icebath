@@ -16,6 +16,7 @@ import (
 	sdkerrors "github.com/daytona/clients/sdk-go/pkg/errors"
 	"github.com/daytona/clients/sdk-go/pkg/options"
 	"github.com/daytona/clients/sdk-go/pkg/types"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // daytonaEnv runs commands in a Daytona cloud sandbox, persistent mode stopping it on cleanup and resuming it next time
@@ -247,7 +248,7 @@ func (d *daytonaEnv) runBash(ctx context.Context, cmd string, login bool, timeou
 			}
 			stateMu.Unlock()
 			remoteStdin := d.stagedStdinPath()
-			payload, err := surrogateEscapeEncode(*stdinData)
+			payload, err := pystr.SurrogateEscapeEncode(*stdinData)
 			if err != nil {
 				return "", 1
 			}

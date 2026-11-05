@@ -285,39 +285,22 @@ func (p IronProxy) IronProxyVersion(binary string) string {
 	return out
 }
 
-func noFollowFlag() int {
-	if runtime.GOOS == "windows" {
-		return 0
-	}
-	return syscall.O_NOFOLLOW
-}
-
 // Creates or truncates the file 0600 from the first byte, refusing a planted symlink
 func writePrivateFile(path string, data []byte) error {
-	fd, err := syscall.Open(path, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_TRUNC|noFollowFlag(), 0o600)
+	f, err := openNoFollow(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
-		return &os.PathError{Op: "open", Path: path, Err: err}
+		return err
 	}
-	f := os.NewFile(uintptr(fd), path)
 	defer f.Close()
 	_ = f.Chmod(0o600)
 	_, err = f.Write(data)
 	return err
 }
 
-// False only when the open file is owned by another uid
+// True only when the open file is owned by the current user, a failed owner lookup counts as foreign
 func fdOwnedByUs(f *os.File) bool {
-	if runtime.GOOS == "windows" {
-		return true
-	}
-	info, err := f.Stat()
-	if err != nil {
-		return true
-	}
-	if st, ok := info.Sys().(*syscall.Stat_t); ok {
-		return int(st.Uid) == os.Getuid()
-	}
-	return true
+	_, ours, err := fdOwner(f)
+	return err == nil && ours
 }
 
 // EnsureCACert generates or returns the 10 year CA cert and key through the host openssl
@@ -636,11 +619,10 @@ func toAnyList(items []string) []any {
 
 // Opens the path append only at 0600 refusing symlinks, the chmod failure fatal only when strict
 func openPrivateAppend(path string, strictChmod bool) (*os.File, error) {
-	fd, err := syscall.Open(path, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_APPEND|noFollowFlag(), 0o600)
+	f, err := openNoFollow(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		return nil, err
 	}
-	f := os.NewFile(uintptr(fd), path)
 	if err := f.Chmod(0o600); err != nil && strictChmod {
 		f.Close()
 		return nil, err
@@ -849,11 +831,10 @@ func (p IronProxy) persistedNoncePath() string {
 
 // Nonce from disk, empty when missing unreadable or not owned by us
 func (p IronProxy) readPersistedNonce() string {
-	fd, err := syscall.Open(p.persistedNoncePath(), syscall.O_RDONLY|noFollowFlag(), 0)
+	f, err := openNoFollow(p.persistedNoncePath(), os.O_RDONLY, 0)
 	if err != nil {
 		return ""
 	}
-	f := os.NewFile(uintptr(fd), p.persistedNoncePath())
 	defer f.Close()
 	if !fdOwnedByUs(f) {
 		return ""
@@ -874,11 +855,7 @@ func (p IronProxy) pidAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	if runtime.GOOS != "windows" {
-		if err := syscall.Kill(pid, 0); err != nil && !errors.Is(err, syscall.EPERM) {
-			return false
-		}
-	} else if _, err := os.FindProcess(pid); err != nil {
+	if !psPidExists(pid) {
 		return false
 	}
 	var candidates []string
@@ -1028,22 +1005,18 @@ func (p IronProxy) spawnDaemon(binPath, cfg string, env map[string]string, logPa
 		return nil, fmt.Errorf("Refusing to write iron-proxy log %s: %v.  Remove that path manually and retry.", logPath, err)
 	}
 	defer logFile.Close()
-	if !fdOwnedByUs(logFile) {
-		uid := -1
-		if info, err := logFile.Stat(); err == nil {
-			if st, ok := info.Sys().(*syscall.Stat_t); ok {
-				uid = int(st.Uid)
-			}
-		}
-		return nil, fmt.Errorf("iron-proxy log %s has unexpected owner uid=%d; refusing to write.", logPath, uid)
+	owner, ours, err := fdOwner(logFile)
+	if err != nil {
+		return nil, err
+	}
+	if !ours {
+		return nil, fmt.Errorf("iron-proxy log %s has unexpected owner uid=%s; refusing to write.", logPath, owner)
 	}
 	cmd := exec.Command(binPath, "-config", cfg)
 	cmd.Env = envList(env)
 	cmd.Stdin = nil
 	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	}
+	detachDaemon(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to spawn iron-proxy: %v", err)
 	}
@@ -1052,22 +1025,26 @@ func (p IronProxy) spawnDaemon(binPath, cfg string, env map[string]string, logPa
 
 // Writes the pidfile exclusively refusing symlinks, a stale leftover is replaced once
 func (p IronProxy) writePidfileSafely(pidfile string, pid int) error {
-	flags := syscall.O_WRONLY | syscall.O_CREAT | syscall.O_EXCL | noFollowFlag()
-	fd, err := syscall.Open(pidfile, flags, 0o600)
-	if errors.Is(err, syscall.EEXIST) {
+	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
+	f, err := openNoFollow(pidfile, flags, 0o600)
+	if errors.Is(err, os.ErrExist) {
 		if existing := p.readPID(); existing != 0 && p.pidAlive(existing) {
 			return fmt.Errorf("Another iron-proxy start appears to be in progress (pidfile %s -> pid %d).  Run `icebath egress stop` if that proxy is stuck.", pidfile, existing)
 		}
 		_ = os.Remove(pidfile)
-		fd, err = syscall.Open(pidfile, flags, 0o600)
+		f, err = openNoFollow(pidfile, flags, 0o600)
 	}
 	if err != nil {
 		return fmt.Errorf("Refusing to write pidfile %s: %v.  Remove that path manually and retry.", pidfile, err)
 	}
-	f := os.NewFile(uintptr(fd), pidfile)
-	if !fdOwnedByUs(f) {
+	owner, ours, err := fdOwner(f)
+	if err != nil {
 		f.Close()
-		return fmt.Errorf("pidfile %s has unexpected owner", pidfile)
+		return err
+	}
+	if !ours {
+		f.Close()
+		return fmt.Errorf("pidfile %s has unexpected owner uid=%s", pidfile, owner)
 	}
 	_, err = f.WriteString(fmt.Sprint(pid))
 	f.Close()
@@ -1084,7 +1061,7 @@ func killAndWait(cmd *exec.Cmd, grace time.Duration) {
 	if cmd.Process == nil {
 		return
 	}
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+	if err := terminateChild(cmd.Process); err != nil {
 		return
 	}
 	done := make(chan struct{})
@@ -1208,7 +1185,7 @@ func (p IronProxy) StopProxy() bool {
 		return false
 	}
 	startBefore := pidProcStartTime(pid)
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+	if err := psSignal(pid, false); err != nil {
 		p.forgetDaemon()
 		return false
 	}
@@ -1226,7 +1203,7 @@ func (p IronProxy) StopProxy() bool {
 		if (startBefore != "" && startAfter != "" && startBefore != startAfter) || !p.pidAlive(pid) {
 			p.log().Warn(fmt.Sprintf("iron-proxy pid=%d appears recycled before SIGKILL; not killing.", pid))
 		} else {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+			_ = psSignal(pid, true)
 		}
 	}
 	p.forgetDaemon()

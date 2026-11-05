@@ -12,6 +12,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const pipCheckLock = `version = 1
@@ -248,7 +250,7 @@ func TestPipCheckRequirementsBuildsFromAnOverriddenLockApplyItsOverrides(t *test
 	if _, err := exportRequirements(ctx, ExportRequirementsOptions{Source: source, Out: exported, Cache: cache, Env: env, Explicit: true}); err != nil {
 		t.Fatal(err)
 	}
-	requirements := pySplitLines(peRead(t, exported))
+	requirements := pystr.Splitlines(peRead(t, exported), false)
 	if !containsString(requirements, "shared-dep==2.0") {
 		t.Fatalf("export %q", requirements)
 	}

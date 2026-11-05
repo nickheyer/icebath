@@ -12,6 +12,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // StageNativeArgs are the isolated native staging child's arguments, empty TUI or Web when not given
@@ -480,14 +483,14 @@ func revParseCommit(ctx context.Context, source, ref string) (string, error) {
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return "", &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command %s returned non-zero exit status %d.", pyListRepr(argv), pyReturnCode(exitErr))}
+			return "", &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command %s returned non-zero exit status %d.", pyrepr.Repr(argv), pyReturnCode(exitErr))}
 		}
 		return "", err
 	}
 	if err := strictUTF8(output); err != nil {
 		return "", &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
-	return pyStrip(string(output)), nil
+	return pystr.Strip(string(output)), nil
 }
 
 // Replaces the payload uv cache with the lock scoped copy of the build cache
@@ -569,7 +572,7 @@ func StageNativeMain(ctx context.Context, args StageNativeArgs) (int, error) {
 	}
 	cache, ok := os.LookupEnv("UV_CACHE_DIR")
 	if !ok {
-		return 0, &PyError{Class: "KeyError", Message: pyRepr("UV_CACHE_DIR")}
+		return 0, &PyError{Class: "KeyError", Message: pyrepr.StrRepr("UV_CACHE_DIR")}
 	}
 	code, err := func() (int, error) {
 		prepared, err := PrepareNative(ctx, args.Out, ref, source, cache, "", nil)

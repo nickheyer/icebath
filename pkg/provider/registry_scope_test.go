@@ -398,16 +398,16 @@ func resolveHintedProvider(t *testing.T) error {
 	return err
 }
 
-func hintedProfile(hint func() string) Profile {
+func hintedProfile(hint func() any) Profile {
 	return Profile{Name: "fake-hinted", DisplayName: "Fake", AuthType: AuthTypeAPIKey, KeyEnv: []string{"FAKE_HINTED_KEY"},
 		BaseURL: "https://api.fake-hinted.test/v1", MissingCredentialsHintHook: hint}
 }
 
 func TestRuntimeResolutionAppendsTheProfileHint(t *testing.T) {
 	for _, tc := range []struct {
-		hint   func() string
+		hint   func() any
 		suffix string
-	}{{func() string { return fakeHint }, " " + fakeHint}, {nil, ""}} {
+	}{{func() any { return fakeHint }, " " + fakeHint}, {nil, ""}} {
 		t.Run(fmt.Sprintf("hinted=%v", tc.hint != nil), func(t *testing.T) {
 			snapshotProviderRegistry(t)
 			registerPluginForTest(t, hintedProfile(tc.hint))
@@ -421,23 +421,41 @@ func TestRuntimeResolutionAppendsTheProfileHint(t *testing.T) {
 }
 
 func TestABrokenHintKeepsTheAuthError(t *testing.T) {
-	snapshotProviderRegistry(t)
-	var logs bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-	missingHintsMu.Lock()
-	missingHintFailuresLogged = map[string]bool{}
-	missingHintsMu.Unlock()
-	registerPluginForTest(t, hintedProfile(func() string { panic("plugin host is down") }))
-	for range 2 {
-		err := resolveHintedProvider(t)
-		if err == nil || err.Error() != "No usable credentials found for provider 'fake-hinted'. Set FAKE_HINTED_KEY." {
-			t.Fatalf("error = %v", err)
-		}
-	}
-	if n := strings.Count(logs.String(), "missing_credentials_hint failed"); n != 1 {
-		t.Fatalf("warned %d times, once per provider expected", n)
+	for _, tc := range []struct {
+		name   string
+		hint   func() any
+		warned int
+	}{
+		{"raising", func() any { panic("plugin host is down") }, 1},
+		{"list", func() any { return []any{"not", "a", "string"} }, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshotProviderRegistry(t)
+			var logs bytes.Buffer
+			prev := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(prev) })
+			missingHintsMu.Lock()
+			missingHintFailuresLogged = map[string]bool{}
+			missingHintsMu.Unlock()
+			registerPluginForTest(t, hintedProfile(tc.hint))
+			for range 2 {
+				err := resolveHintedProvider(t)
+				if err == nil || err.Error() != "No usable credentials found for provider 'fake-hinted'. Set FAKE_HINTED_KEY." {
+					t.Fatalf("error = %v", err)
+				}
+			}
+			h := os.Getenv("ICEBATH_HOME")
+			t.Setenv("OPENROUTER_API_KEY", "sk-or-fake")
+			cfg := config.Tree(map[string]any{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "acme/model"}}})
+			rt, entry, err := newResolver(context.Background(), cfg, config.NewSecrets(h), h, &fakeCreds{}).ResolveRuntimeWithFallback("fake-hinted", "", "", "")
+			if err != nil || rt.Provider != "openrouter" || entry["provider"] != "openrouter" {
+				t.Fatalf("fallback chain = %+v %v %v", rt, entry, err)
+			}
+			if n := strings.Count(logs.String(), "missing_credentials_hint failed"); n != tc.warned {
+				t.Fatalf("warned %d times, %d expected", n, tc.warned)
+			}
+		})
 	}
 }
 

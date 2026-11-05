@@ -102,3 +102,11 @@ func expireHomeLayerChecks() {
 		l.mu.Unlock()
 	}
 }
+
+// Registers an oauth external profile carrying the hook bundle, the registry restored when the test ends
+func registerHookedProfile(t *testing.T, name string, hooks ProviderProfileHooks) {
+	t.Helper()
+	registerTestProfile(t, Profile{Name: name, AuthType: AuthTypeOAuthExternal, BaseURL: "https://example.invalid/v1",
+		RefreshCredential: hooks.RefreshCredential, SeedPoolCredentialsHook: hooks.SeedPoolCredentials,
+		RemoveCredentialSourceHook: hooks.RemoveCredentialSource, AuthHandler: hooks.AuthHandler})
+}

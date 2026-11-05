@@ -15,6 +15,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Recipe is how one server package installs and which binary it provides
@@ -251,26 +255,17 @@ func doInstall(rt *Runtime, pkg string) (string, error) {
 	case "pip":
 		return installPip(rt, recipe.Pkg, binName)
 	}
-	rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] unknown strategy %s for %s", pyStrRepr(strategy), pkg)
+	rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] unknown strategy %s for %s", pyrepr.StrRepr(strategy), pkg)
 	return "", nil
 }
 
 // Python dict repr of a recipe
 func recipeRepr(r Recipe) string {
-	s := fmt.Sprintf("{'strategy': %s, 'pkg': %s, 'bin': %s", pyStrRepr(r.Strategy), pyStrRepr(r.Pkg), pyStrRepr(r.Bin))
+	s := fmt.Sprintf("{'strategy': %s, 'pkg': %s, 'bin': %s", pyrepr.StrRepr(r.Strategy), pyrepr.StrRepr(r.Pkg), pyrepr.StrRepr(r.Bin))
 	if r.ExtraPkgs != nil {
-		s += ", 'extra_pkgs': " + pyListRepr(r.ExtraPkgs)
+		s += ", 'extra_pkgs': " + pyrepr.Repr(r.ExtraPkgs)
 	}
 	return s + "}"
-}
-
-// Python list repr of strings
-func pyListRepr(items []string) string {
-	parts := make([]string, len(items))
-	for i, s := range items {
-		parts[i] = pyStrRepr(s)
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // Captured outcome of one installer child
@@ -293,7 +288,7 @@ var runInstallCommand = func(argv []string, timeout time.Duration, env map[strin
 	hideWindow(cmd)
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, &TimeoutError{msg: fmt.Sprintf("Command %s timed out after %d seconds", pyListRepr(argv), int(timeout/time.Second))}
+		return nil, &TimeoutError{msg: fmt.Sprintf("Command %s timed out after %d seconds", pyrepr.Repr(argv), int(timeout/time.Second))}
 	}
 	res := &installRun{stdout: decodeUTF8Replace(stdout.Bytes()), stderr: decodeUTF8Replace(stderr.Bytes())}
 	if err != nil {
@@ -340,9 +335,9 @@ func runInstaller(rt *Runtime, tool, pkg string, cmd []string, timeout time.Dura
 		return false
 	}
 	if res.code != 0 {
-		detail := pyStrip(res.stderr)
+		detail := pystr.Strip(res.stderr)
 		if detail == "" {
-			detail = pyStrip(res.stdout)
+			detail = pystr.Strip(res.stdout)
 		}
 		rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] %s install failed for %s: %s", tool, pkg, runePrefix(detail, 500))
 		return false
@@ -410,12 +405,12 @@ var nodePMArgv = map[string]func(staging string) []string{
 // Configured Node package manager, empty for an unknown value so installs fail closed
 func nodePackageManager(rt *Runtime) string {
 	pm := "npm"
-	if v := rt.lspConfig()["package_manager"]; pyTruthy(v) {
-		pm = strings.ToLower(pyStrip(pyStr(v)))
+	if v := rt.lspConfig()["package_manager"]; pyrepr.Truthy(v) {
+		pm = strings.ToLower(pystr.Strip(pyrepr.Str(v)))
 	}
 	if _, ok := nodePMArgv[pm]; !ok {
 		rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] lsp.package_manager=%s is not one of %s; skipping install",
-			pyStrRepr(pm), pyListRepr([]string{"npm", "pnpm", "yarn"}))
+			pyrepr.StrRepr(pm), pyrepr.Repr([]string{"npm", "pnpm", "yarn"}))
 		return ""
 	}
 	return pm
@@ -510,7 +505,7 @@ func installNpm(rt *Runtime, pkg, binName string, extraPkgs []string) (string, e
 	}
 	if pmBin == "" {
 		rt.logf(slog.LevelWarn, "agent.lsp.install", "[install] cannot install %s: lsp.package_manager is %s but no usable %s was found "+
-			"(install it, or set lsp.package_manager: npm)", pkg, pyStrRepr(pm), pm)
+			"(install it, or set lsp.package_manager: npm)", pkg, pyrepr.StrRepr(pm), pm)
 		return "", nil
 	}
 	bin, err := BinDir(rt)
@@ -566,7 +561,7 @@ func installGo(rt *Runtime, pkg, binName string) (string, error) {
 	}
 	binPath := filepath.Join(staging, binName)
 	if isWindowsHost() {
-		root, _ := pySplitext(binPath)
+		root, _ := pypath.Splitext(binPath)
 		binPath = root + ".exe"
 	}
 	if osPathExists(binPath) {

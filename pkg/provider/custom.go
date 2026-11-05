@@ -392,7 +392,10 @@ func (s *CommandTokenSource) childEnv() []string {
 
 // Runs a shell command and returns its stdout and exit code
 func runShellCommand(ctx context.Context, command string, env []string) ([]byte, int, error) {
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd, err := pyShellCommand(ctx, command)
+	if err != nil {
+		return nil, 0, err
+	}
 	cmd.Env = env
 	cmd.Stdin = nil
 	stdout, err := cmd.Output()
@@ -1273,7 +1276,7 @@ func (r *resolver) resolveDirectAliasRuntime(requestedProvider, explicitAPIKey, 
 	rt := r.customRuntime(baseURL, apiKey, "", "direct-alias")
 	rt.RequestedProvider = requestedProvider
 	if apiKey == "" && entrySrc != nil {
-		rt.TokenSource = entrySrc.Token
+		rt.TokenSource = TagCredentialSource(entrySrc.Token, CredentialSourceKeyCmd).Func()
 		rt.KeyCmd = entrySrc.Command
 	}
 	return rt
@@ -1365,7 +1368,7 @@ func (r *resolver) resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, 
 	rt := r.customRuntime(baseURL, apiKey, entryMode, "custom_provider:"+sourceName)
 	rt.RequestedProvider = requestedProvider
 	if apiKey == "" && tokenSrc != nil {
-		rt.TokenSource = tokenSrc.Token
+		rt.TokenSource = TagCredentialSource(tokenSrc.Token, CredentialSourceKeyCmd).Func()
 		rt.KeyCmd = tokenSrc.Command
 	}
 	rt.KeyEnv = cfgString(customProvider["key_env"])

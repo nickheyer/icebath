@@ -119,6 +119,9 @@ func (r *Registry) mergedTools(ctx context.Context, scope string) map[string]*De
 	defer r.mu.RUnlock()
 	out := make(map[string]*Def, len(r.tools)+8)
 	for k, v := range r.tools {
+		if r.hiddenLocked(k, v) {
+			continue
+		}
 		out[k] = v
 	}
 	for k, v := range e.scoped[scope] {
@@ -158,7 +161,7 @@ func (r *Registry) Lookup(ctx context.Context, scope, name string) *Def {
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.tools[name]
+	return r.globalLocked(name)
 }
 
 // Entry resolves a tool for the environment's profile home
@@ -177,6 +180,9 @@ func (r *Registry) SnapshotRegistration(scope, name string) *Def {
 	defer e.mu.RUnlock()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if scope == "" {
+		return r.globalLocked(name)
+	}
 	return r.slot(scope, false)[name]
 }
 
@@ -364,11 +370,11 @@ func (r *Registry) RegisterScoped(scope string, d Def) error {
 		existing = target[d.Name]
 	}
 	if existing == nil {
-		existing = r.tools[d.Name]
+		existing = r.globalLocked(d.Name)
 	}
 	owner := d.Plugin
 	denied := owner != "" && !e.overrideAllowed(scope, owner)
-	shadowsGlobal := owner != "" && scope != "" && target[d.Name] == nil && r.tools[d.Name] != nil
+	shadowsGlobal := owner != "" && scope != "" && target[d.Name] == nil && r.globalLocked(d.Name) != nil
 	if shadowsGlobal {
 		if !d.Override {
 			return fmt.Errorf("tool registration rejected: plugin %q would shadow global tool %q without override", owner, d.Name)
@@ -406,8 +412,11 @@ func (r *Registry) Deregister(name, scope, callerPlugin string) error {
 	defer r.mu.Unlock()
 	target := r.slot(scope, false)
 	entry := target[name]
+	if scope == "" && r.hiddenLocked(name, entry) {
+		entry = nil
+	}
 	if entry == nil {
-		if scope != "" && callerPlugin != "" && r.tools[name] != nil {
+		if scope != "" && callerPlugin != "" && r.globalLocked(name) != nil {
 			return fmt.Errorf("scoped plugin %q cannot deregister process-global tool %q", callerPlugin, name)
 		}
 		return nil
@@ -433,6 +442,9 @@ func (r *Registry) Deregister(name, scope, callerPlugin string) error {
 func (r *Registry) toolsetHasEntriesLocked(toolset, scope string) bool {
 	e := r.ext()
 	for _, d := range r.tools {
+		if r.hiddenLocked(d.Name, d) {
+			continue
+		}
 		if d.Toolset == toolset {
 			return true
 		}
@@ -455,7 +467,7 @@ func (r *Registry) MoveToScope(names []string, scope string) {
 	defer r.mu.Unlock()
 	moved := false
 	for _, n := range names {
-		if d, ok := r.tools[n]; ok {
+		if d := r.globalLocked(n); d != nil {
 			delete(r.tools, n)
 			r.slot(scope, true)[n] = d
 			moved = true
@@ -493,6 +505,9 @@ func (r *Registry) RestoreRegistration(name string, current, previous *Def, scop
 	for ts := range affected {
 		var surviving []*Def
 		for _, d := range r.tools {
+			if r.hiddenLocked(d.Name, d) {
+				continue
+			}
 			if d.Toolset == ts {
 				surviving = append(surviving, d)
 			}

@@ -18,9 +18,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // SecretSourceAPIVersion gates plugin secret source compatibility
@@ -112,7 +116,11 @@ func (e *SourceEnvironment) Mapping() map[string]string {
 // SourceChildEnv is the environment for a helper child, the scrubbed process env or only the per fetch view
 func SourceChildEnv(environ *SourceEnvironment) map[string]string {
 	if environ.IsProcess() {
-		return localSubprocessEnv(false, false)
+		child, err := tools.BuildSubprocessEnv(context.Background(), nil, tools.SubprocessEnvOptions{})
+		if err != nil {
+			panic(err)
+		}
+		return child
 	}
 	return environ.Snapshot()
 }
@@ -460,27 +468,43 @@ func (c *SecretDiskCache) currentPath(homePath string) string {
 	return CurrentCachePath(ResolveCacheHome(homePath), c.basename)
 }
 
-// Read is the fresh cached entry for key, false on mismatch, staleness or any error
-func (c *SecretDiskCache) Read(key string, ttl float64, homePath string) (CachedFetch, bool) {
+// Read is the fresh cached entry for key, false on mismatch or staleness, an error only for undecodable bytes
+func (c *SecretDiskCache) Read(key string, ttl float64, homePath string) (CachedFetch, bool, error) {
 	if ttl <= 0 {
-		return CachedFetch{}, false
+		return CachedFetch{}, false, nil
 	}
 	raw, err := os.ReadFile(c.currentPath(homePath))
 	if err != nil {
-		return CachedFetch{}, false
+		return CachedFetch{}, false, nil
 	}
-	var payload map[string]any
-	if json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &payload) != nil {
-		return CachedFetch{}, false
+	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
+	for i := 0; i < len(raw); {
+		r, size := utf8.DecodeRune(raw[i:])
+		if r == utf8.RuneError && size <= 1 {
+			return CachedFetch{}, false, pystr.UTF8DecodeError(raw, i)
+		}
+		i += size
 	}
-	if anyString(payload["key"]) != key {
-		return CachedFetch{}, false
+	parsed, err := pyjson.Loads(string(raw))
+	if err != nil {
+		return CachedFetch{}, false, nil
+	}
+	obj, isDict := parsed.(*pyjson.Object)
+	if !isDict {
+		return CachedFetch{}, false, nil
+	}
+	if stored, isStr := obj.Vals["key"].(string); !isStr || stored != key {
+		return CachedFetch{}, false, nil
+	}
+	payload := map[string]any{"fetched_at": obj.Vals["fetched_at"]}
+	if secrets, isObj := obj.Vals["secrets"].(*pyjson.Object); isObj {
+		payload["secrets"] = secrets.Vals
 	}
 	entry, ok := CachedFetchFromPayload(payload)
 	if !ok || !entry.IsFresh(ttl) {
-		return CachedFetch{}, false
+		return CachedFetch{}, false, nil
 	}
-	return entry, true
+	return entry, true, nil
 }
 
 // Write persists the entry atomically, a no-op when the TTL is off or on an I/O error
@@ -508,27 +532,30 @@ func NewSecretCache(basename string) *SecretCache {
 	return &SecretCache{memory: map[string]CachedFetch{}, Disk: NewSecretDiskCache(basename)}
 }
 
-// Lookup is the fresh entry from memory, else from disk promoted into memory
-func (c *SecretCache) Lookup(key string, ttl float64, homePath string, readDisk func() (CachedFetch, bool)) (CachedFetch, bool) {
+// Lookup is the fresh entry from memory, else from disk promoted into memory, erring on an undecodable file
+func (c *SecretCache) Lookup(key string, ttl float64, homePath string, readDisk func() (CachedFetch, bool)) (CachedFetch, bool, error) {
 	c.mu.Lock()
 	cached, ok := c.memory[key]
 	c.mu.Unlock()
 	if ok && cached.IsFresh(ttl) {
-		return cached, true
+		return cached, true, nil
 	}
 	var entry CachedFetch
 	var found bool
 	if readDisk != nil {
 		entry, found = readDisk()
 	} else {
-		entry, found = c.Disk.Read(key, ttl, homePath)
+		var err error
+		if entry, found, err = c.Disk.Read(key, ttl, homePath); err != nil {
+			return CachedFetch{}, false, err
+		}
 	}
 	if found {
 		c.mu.Lock()
 		c.memory[key] = entry
 		c.mu.Unlock()
 	}
-	return entry, found
+	return entry, found, nil
 }
 
 // Store writes the entry to both layers

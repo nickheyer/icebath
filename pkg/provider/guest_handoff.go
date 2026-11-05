@@ -421,7 +421,7 @@ func guestHandoffStartWorker(env PoolEnv) {
 	}
 	stop, done := make(chan struct{}), make(chan struct{})
 	guestHandoffWorkerStop, guestHandoffWorkerDone = stop, done
-	go guestHandoffWorkerLoop(env, stop, done)
+	spawnNamedFn("nous-guest-handoff", func() { guestHandoffWorkerLoop(env, stop, done) })
 }
 
 // Stops the retry worker and waits up to timeout for it to exit

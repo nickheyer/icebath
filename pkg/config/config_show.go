@@ -13,8 +13,11 @@ const defaultVercelImage = "vercel/sandbox/universal:latest"
 
 // One skill declared config variable as config show lists it
 type SkillConfigVar struct {
-	Key   string
-	Skill string
+	Key         string
+	Skill       string
+	Description string
+	Prompt      string
+	Default     any
 }
 
 // Readers config show consults, supplied by the facade, auth, personality, skills and redaction owners

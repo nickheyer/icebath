@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Write approval subsystems gating cross session writes
@@ -341,7 +342,7 @@ func CheckWriteApproval(ctx context.Context, env *Env, subsystem, inlineSummary,
 
 // Asks the session human to save a memory write, unanswered when nobody can answer so the caller stages
 func promptInlineMemoryApproval(ctx context.Context, env *Env, summary, detail string) (bool, bool) {
-	if noUserCanAnswer(env) {
+	if NoUserCanAnswer(env) {
 		return false, false
 	}
 	if env == nil || env.Ask == nil {
@@ -431,7 +432,7 @@ func frontmatterDescription(content string) string {
 		return ""
 	}
 	desc := strings.Trim(pyStrip(m[1]), `'"`)
-	if wtf8RuneCount(desc) > 140 {
+	if pystr.Len(desc) > 140 {
 		desc = runePrefix(desc, 140)
 	}
 	return desc

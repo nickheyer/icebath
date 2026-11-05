@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -53,6 +54,7 @@ type CacheScopeAgent struct {
 	PersistDisabled     bool
 	InheritedCacheScope string
 	Platform            string
+	Env                 *tools.Env
 	PromptCacheForkTag  string
 	CompressionCount    func() int
 	Provider            string
@@ -92,7 +94,7 @@ func cacheScopeAgentSource(a *CacheScopeAgent, sessionID string, db any, rowSour
 	if rowSource != nil && *rowSource != "" {
 		return *rowSource
 	}
-	return pyStripSpace(sessionSourceFor(a.Platform))
+	return pyStripSpace(SessionSourceFor(a.Env, a.Platform))
 }
 
 // Durable reset generation of the declared conversation key, empty when the store records none

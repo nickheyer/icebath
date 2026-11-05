@@ -47,8 +47,8 @@ var compoundTermRe = regexp.MustCompile(`\b(\w+(?:[._-]\w+)+)\b`)
 
 // Query safe for an FTS5 MATCH, quoted phrases kept and stray syntax dropped
 func SanitizeFTSQuery(query string) string {
-	if len(query) > MaxFTSQueryChars {
-		query = query[:MaxFTSQueryChars]
+	if len(query) > MaxFTS5QueryChars {
+		query = query[:MaxFTS5QueryChars]
 	}
 	var quoted []string
 	sanitized := quotedPhraseRe.ReplaceAllStringFunc(query, func(m string) string {
@@ -214,7 +214,7 @@ func (d *DB) likeSearch(q string, o SearchOptions) ([]SearchHit, error) {
 			continue
 		}
 		clauses = append(clauses, "m.content LIKE ? ESCAPE '\\'")
-		params = append(params, "%"+escapeLike(strings.TrimSuffix(t, "*"))+"%")
+		params = append(params, "%"+EscapeLike(strings.TrimSuffix(t, "*"))+"%")
 	}
 	if len(clauses) == 0 {
 		return nil, nil

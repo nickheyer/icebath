@@ -10,6 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Realpath prefixes that block writes, only the sensitive macOS private var subtrees
@@ -176,7 +178,7 @@ func protectedInstructionReason(env *Env, filePath, taskID string, enabled bool,
 			return base
 		}
 		for _, pattern := range extraPatterns {
-			if fnmatchCase(baseLower, strings.ToLower(pattern)) {
+			if fnmatch.FnmatchCase(baseLower, strings.ToLower(pattern)) {
 				return base
 			}
 		}
@@ -243,7 +245,7 @@ func requestProtectedInstructionApproval(ctx context.Context, env *Env, reasons 
 		if env.Ask == nil {
 			return blocked(noHumanWhy)
 		}
-		if noUserCanAnswer(env) {
+		if NoUserCanAnswer(env) {
 			return blocked(noHumanWhy)
 		}
 		hook := map[string]any{"command": display, "description": description, "pattern_key": "protected_instruction_file",
@@ -493,17 +495,17 @@ func staleOverwriteBlocker(env *Env, filePath, resolved, taskID string) (string,
 }
 
 // Model facing refusal for write_file, stale_write_blocked tells it apart from I/O errors
-func staleWriteRefusal(filePath, reason, resolved string) *pyJSONObject {
-	out := &pyJSONObject{vals: map[string]any{}}
-	out.set("error", "Refusing to overwrite "+filePath+": "+reason+" "+
+func staleWriteRefusal(filePath, reason, resolved string) *pyjson.Object {
+	out := &pyjson.Object{Vals: map[string]any{}}
+	out.Set("error", "Refusing to overwrite "+filePath+": "+reason+" "+
 		"The file was NOT modified. Reload the current contents with read_file "+
 		"(every page, for a file that needs offset/limit), merge the requested "+
 		"change, then call write_file again. For small edits, prefer patch so "+
 		"existing unrelated changes are preserved.")
-	out.set("stale_write_blocked", true)
-	out.set("path", filePath)
+	out.Set("stale_write_blocked", true)
+	out.Set("path", filePath)
 	if resolved != "" {
-		out.set("resolved_path", resolved)
+		out.Set("resolved_path", resolved)
 	}
 	return out
 }

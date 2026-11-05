@@ -71,10 +71,14 @@ var (
 
 // Runs the Nous device code flow and returns the full OAuth state without persisting it
 func nousDeviceCodeLogin(env PoolEnv, out io.Writer, args NousDeviceLoginArgs) (map[string]any, error) {
-	portalBaseURL := strings.TrimRight(firstNonEmpty(args.PortalBaseURL, oauthGetenv("ICEBATH_PORTAL_BASE_URL"), oauthGetenv("NOUS_PORTAL_BASE_URL"), DefaultNousPortalURL), "/")
-	requestedInferenceURL := strings.TrimRight(firstNonEmpty(args.InferenceBaseURL, oauthGetenv("NOUS_INFERENCE_BASE_URL"), DefaultNousInferenceURL), "/")
-	clientID := firstNonEmpty(args.ClientID, DefaultNousClientID)
-	scope := firstNonEmpty(args.Scope, DefaultNousScope)
+	pconfig, err := providerConfig(env.Ctx, "nous")
+	if err != nil {
+		return nil, err
+	}
+	portalBaseURL := strings.TrimRight(firstNonEmpty(args.PortalBaseURL, oauthGetenv("ICEBATH_PORTAL_BASE_URL"), oauthGetenv("NOUS_PORTAL_BASE_URL"), pconfig.PortalBaseURL), "/")
+	requestedInferenceURL := strings.TrimRight(firstNonEmpty(args.InferenceBaseURL, oauthGetenv("NOUS_INFERENCE_BASE_URL"), pconfig.BaseURL), "/")
+	clientID := firstNonEmpty(args.ClientID, pconfig.ClientID)
+	scope := firstNonEmpty(args.Scope, pconfig.Scope)
 	timeout := args.Timeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
@@ -84,7 +88,7 @@ func nousDeviceCodeLogin(env PoolEnv, out io.Writer, args NousDeviceLoginArgs) (
 	if isRemoteSession() {
 		openBrowser = false
 	}
-	fmt.Fprintln(out, "Starting Icebath login via Nous Portal...")
+	fmt.Fprintf(out, "Starting Icebath login via %s...\n", pconfig.DisplayName)
 	fmt.Fprintf(out, "Portal: %s\n", portalBaseURL)
 	if args.Insecure {
 		fmt.Fprintln(out, "TLS verification: disabled (--insecure)")
@@ -192,9 +196,13 @@ func StepUpNousBillingScope(env PoolEnv, out io.Writer, openBrowser bool, timeou
 			requested = append(requested, s)
 		}
 	}
+	pconfig, err := providerConfig(env.Ctx, "nous")
+	if err != nil {
+		return false, err
+	}
 	authState, err := nousDeviceCodeLoginFn(env, out, NousDeviceLoginArgs{
 		PortalBaseURL: anyString(prior["portal_base_url"]), InferenceBaseURL: anyString(prior["inference_base_url"]),
-		ClientID: firstNonEmpty(anyString(prior["client_id"]), DefaultNousClientID), Scope: strings.Join(requested, " "),
+		ClientID: firstNonEmpty(anyString(prior["client_id"]), pconfig.ClientID), Scope: strings.Join(requested, " "),
 		OpenBrowser: openBrowser, Timeout: timeout, OnVerification: onVerification})
 	if err != nil {
 		return false, err
@@ -354,10 +362,13 @@ func loginNous(env PoolEnv, out io.Writer, args NousLoginArgs) error {
 	caBundle := firstNonEmpty(args.CABundle, oauthGetenv("ICEBATH_CA_BUNDLE"), oauthGetenv("SSL_CERT_FILE"))
 	authState, imported := nousOfferSharedImport(env, out, timeout)
 	if !imported {
-		var err error
+		pconfig, err := providerConfig(env.Ctx, "nous")
+		if err != nil {
+			return err
+		}
 		authState, err = nousDeviceCodeLoginFn(env, out, NousDeviceLoginArgs{
 			PortalBaseURL: args.PortalURL, InferenceBaseURL: args.InferenceURL,
-			ClientID: firstNonEmpty(args.ClientID, DefaultNousClientID), Scope: args.Scope,
+			ClientID: firstNonEmpty(args.ClientID, pconfig.ClientID), Scope: args.Scope,
 			OpenBrowser: !args.NoBrowser, Timeout: timeout, Insecure: args.Insecure, CABundle: caBundle})
 		if err != nil {
 			return err

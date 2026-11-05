@@ -8,6 +8,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Schedule is the parsed schedule a job fires on
@@ -15,8 +18,10 @@ type Schedule struct {
 	Kind    string
 	Expr    string
 	Minutes int
-	RunAt   string
-	Display string
+	// Minutes key present with a number, so zero minutes stays distinct from absent
+	HasMinutes bool
+	RunAt      string
+	Display    string
 	// Legacy or hand edited keys such as value
 	Extra map[string]json.RawMessage
 	// Text of a schedule that was not an object on disk
@@ -85,6 +90,7 @@ func (s *Schedule) UnmarshalJSON(data []byte) error {
 		case "minutes":
 			if n, ok := decodeNumber(v); ok {
 				s.Minutes = int(n)
+				s.HasMinutes = true
 			}
 		case "run_at":
 			s.RunAt, _ = decodeText(v)
@@ -143,9 +149,9 @@ type MonitorState struct {
 
 // RetryState is the unreachable model re run ladder position
 type RetryState struct {
-	Attempt int    `json:"attempt"`
-	At      string `json:"at"`
-	Expr    string `json:"expr"`
+	Attempt int     `json:"attempt"`
+	At      string  `json:"at"`
+	Expr    *string `json:"expr"`
 }
 
 // NullString is a key that may be present with a null value
@@ -235,8 +241,14 @@ type Job struct {
 	LastDeliveryQueued   any
 	// Keys this package does not know, preserved verbatim
 	Extra map[string]json.RawMessage
+	// Read views attached by listings and the due scan, never persisted
+	LatestExecution  map[string]any
+	LiveExecution    map[string]any
+	ScheduledInstant *string
 	// Record arrived with enabled absent, which reads as true
 	enabledAbsent bool
+	// Key order the record was loaded with, kept on save the way a Python dict keeps insertion order
+	keyOrder []string
 }
 
 type kvPair struct {
@@ -414,7 +426,7 @@ func (j *Job) MarshalJSON() ([]byte, error) {
 	for _, k := range sortedRawKeys(j.Extra) {
 		pairs = append(pairs, kvPair{k, j.Extra[k]})
 	}
-	return encodeOrdered(pairs)
+	return encodeOrdered(orderPairs(pairs, j.keyOrder))
 }
 
 // Text view of a JSON scalar the way Python str() renders it, false for objects and null
@@ -552,6 +564,11 @@ func (j *Job) UnmarshalJSON(data []byte) error {
 	}
 	if len(j.Extra) == 0 {
 		j.Extra = nil
+	}
+	if v, err := pyjson.LoadsBytes(data); err == nil {
+		if o, ok := v.(*pyjson.Object); ok {
+			j.keyOrder = o.Keys
+		}
 	}
 	return nil
 }
@@ -882,4 +899,52 @@ func deref(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// Loaded keys first in their loaded order, then keys the record gained since in canonical order
+func orderPairs(pairs []kvPair, order []string) []kvPair {
+	if len(order) == 0 {
+		return pairs
+	}
+	byKey := make(map[string]kvPair, len(pairs))
+	for _, p := range pairs {
+		byKey[p.key] = p
+	}
+	out := make([]kvPair, 0, len(pairs))
+	placed := make(map[string]bool, len(pairs))
+	for _, k := range order {
+		if p, ok := byKey[k]; ok && !placed[k] {
+			out = append(out, p)
+			placed[k] = true
+		}
+	}
+	for _, p := range pairs {
+		if !placed[p.key] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Encodes the dispatch stamp in Python key order with lateness as a Python float
+func (d Dispatch) MarshalJSON() ([]byte, error) {
+	return encodeOrdered([]kvPair{
+		{"scheduled_at", d.ScheduledAt},
+		{"dispatched_at", d.DispatchedAt},
+		{"lateness_seconds", json.RawMessage(pyFloatJSON(d.LatenessSeconds))},
+		{"kind", d.Kind},
+	})
+}
+
+// Float as Python json.dumps writes it, Infinity and NaN spelled the way json accepts them back
+func pyFloatJSON(f float64) string {
+	switch {
+	case math.IsNaN(f):
+		return "NaN"
+	case math.IsInf(f, 1):
+		return "Infinity"
+	case math.IsInf(f, -1):
+		return "-Infinity"
+	}
+	return pyrepr.Float(f)
 }

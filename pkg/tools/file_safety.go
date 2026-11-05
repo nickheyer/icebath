@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/user"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Secret value caches and the sidecar token, as home relative POSIX paths
@@ -526,40 +528,75 @@ var pythonReprEnvSuffixes = []string{"_API_KEY", "_TOKEN", "_SECRET", "_PASSWORD
 var pythonReprCredentialSuffixes = []string{"apikey", "api_key", "token", "secret", "password", "passwd", "credential", "credentials"}
 
 var vaultRedactionLock sync.Mutex
-var vaultRedactionValues []string
+var vaultRedactionValues = map[string][]string{}
 
-const vaultRedactionMax = 64
+const vaultRedactionMaxPerProfile = 64
 
-// RegisterVaultRedactionValue adds a vault secret every file read must scrub before reaching the model
-func RegisterVaultRedactionValue(value string) {
-	value = strings.TrimSpace(value)
-	if len(value) < 4 {
-		return
-	}
-	vaultRedactionLock.Lock()
-	defer vaultRedactionLock.Unlock()
-	for _, v := range vaultRedactionValues {
-		if v == value {
-			return
-		}
-	}
-	if len(vaultRedactionValues) >= vaultRedactionMax {
-		vaultRedactionValues = vaultRedactionValues[1:]
-	}
-	vaultRedactionValues = append(vaultRedactionValues, value)
+// Profile home keying the vault buckets so one profile never scrubs with another's values
+func vaultScope(ctx context.Context) string {
+	return filepath.Clean(home.Dir(ctx))
 }
 
-// Scrubs every registered vault value, longest first
-func redactRegisteredVaultValues(text string) string {
+func vaultScopeOf(env *Env) string {
+	if env != nil && env.Home != "" {
+		return filepath.Clean(env.Home)
+	}
+	return vaultScope(context.Background())
+}
+
+// RegisterVaultRedactionValue registers a vault secret under the process home profile
+func RegisterVaultRedactionValue(value string) {
+	RegisterVaultRedactionValueIn(context.Background(), value)
+}
+
+// RegisterVaultRedactionValueIn registers a vault secret and its CR LF stripped form for the context profile
+func RegisterVaultRedactionValueIn(ctx context.Context, value string) {
+	if value == "" {
+		return
+	}
+	normalized := strings.ReplaceAll(strings.ReplaceAll(value, "\r", ""), "\n", "")
+	scope := vaultScope(ctx)
 	vaultRedactionLock.Lock()
-	values := append([]string{}, vaultRedactionValues...)
-	vaultRedactionLock.Unlock()
-	if len(values) == 0 {
+	defer vaultRedactionLock.Unlock()
+	bucket := vaultRedactionValues[scope]
+	for _, v := range []string{value, normalized} {
+		if v == "" {
+			continue
+		}
+		kept := bucket[:0:0]
+		for _, old := range bucket {
+			if old != v {
+				kept = append(kept, old)
+			}
+		}
+		bucket = append(kept, v)
+	}
+	for len(bucket) > vaultRedactionMaxPerProfile {
+		bucket = bucket[1:]
+	}
+	vaultRedactionValues[scope] = bucket
+}
+
+// ClearVaultRedactionValues drops the context profile's registered vault values
+func ClearVaultRedactionValues(ctx context.Context) {
+	vaultRedactionLock.Lock()
+	defer vaultRedactionLock.Unlock()
+	delete(vaultRedactionValues, vaultScope(ctx))
+}
+
+// Scrubs every vault value registered for the env profile, longest first
+func redactRegisteredVaultValues(env *Env, text string) string {
+	if text == "" {
 		return text
 	}
-	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
+	vaultRedactionLock.Lock()
+	values := append([]string{}, vaultRedactionValues[vaultScopeOf(env)]...)
+	vaultRedactionLock.Unlock()
+	sort.SliceStable(values, func(i, j int) bool { return len([]rune(values[i])) > len([]rune(values[j])) })
 	for _, v := range values {
-		text = strings.ReplaceAll(text, v, "«redacted-vault-secret»")
+		if strings.Contains(text, v) {
+			text = strings.ReplaceAll(text, v, "«redacted-vault-secret»")
+		}
 	}
 	return text
 }
@@ -669,7 +706,7 @@ func prefixBoundaryOK(text string) func(loc []int) bool {
 }
 
 func hasKnownPrefixSubstring(text string) bool {
-	for _, sub := range prefixSubstrings {
+	for _, sub := range currentPrefixSubstrings() {
 		if strings.Contains(text, sub) {
 			return true
 		}
@@ -683,11 +720,11 @@ func maskSecret(value string, head, tail, floor int) string {
 	if value == "" {
 		return ""
 	}
-	runes := wtf8Runes(value)
+	runes := pystr.Runes(value)
 	if len(runes) < floor {
 		return "***"
 	}
-	return wtf8FromRunes(runes[:head]) + "..." + wtf8FromRunes(runes[len(runes)-tail:])
+	return pystr.FromRunes(runes[:head]) + "..." + pystr.FromRunes(runes[len(runes)-tail:])
 }
 
 func maskToken(token string) string {
@@ -699,7 +736,7 @@ func maskToken(token string) string {
 
 // Non reusable sentinel keeping only the vendor prefix label
 func maskTokenNonreusable(token string) string {
-	for _, sub := range prefixSubstrings {
+	for _, sub := range currentPrefixSubstrings() {
 		if token != "" && strings.HasPrefix(token, sub) {
 			return "«redacted:" + sub + "…»"
 		}
@@ -733,7 +770,7 @@ func maskControlSplitTokens(text string, mask func(string) string) string {
 		text       string
 	}
 	var repls []repl
-	for _, loc := range scanMatches(prefixAltRe, s, prefixBoundaryOK(s)) {
+	for _, loc := range prefixScan(s) {
 		startOrig := origIdx[runeStart[loc[0]]]
 		lastRuneIdx := runeStart[loc[1]]
 		if _, ok := runeStart[loc[1]]; !ok {
@@ -743,7 +780,7 @@ func maskControlSplitTokens(text string, mask func(string) string) string {
 		_, size := utf8.DecodeRuneInString(text[lastByte:])
 		endOrig := lastByte + size
 		span := text[startOrig:endOrig]
-		if (strings.Contains(span, "\n") || strings.Contains(span, "\r")) && prefixAltRe.MatchString(span) {
+		if (strings.Contains(span, "\n") || strings.Contains(span, "\r")) && prefixSearch(span) {
 			continue
 		}
 		clean := true
@@ -816,7 +853,7 @@ func looksLikeOpaqueCredential(value string) bool {
 	if value == "***" || strings.HasPrefix(value, "«redacted:") {
 		return true
 	}
-	n := wtf8RuneCount(value)
+	n := pystr.Len(value)
 	if n >= 16 && hexRe.MatchString(value) {
 		return true
 	}
@@ -841,7 +878,7 @@ func looksLikeOpaqueCredential(value string) bool {
 
 // Reports whether a dot free segment is long and mixes case and digits like a secret
 func opaquePathSegment(seg string) bool {
-	if strings.Contains(seg, ".") || wtf8RuneCount(seg) < 16 {
+	if strings.Contains(seg, ".") || pystr.Len(seg) < 16 {
 		return false
 	}
 	return strings.ContainsAny(seg, "abcdefghijklmnopqrstuvwxyz") && strings.ContainsAny(seg, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") &&
@@ -1152,14 +1189,14 @@ func redactFileText(env *Env, text string, secretFile bool) string {
 	if text == "" {
 		return text
 	}
-	text = redactRegisteredVaultValues(text)
+	text = redactRegisteredVaultValues(env, text)
 	if !redactionEnabled(env) {
 		return text
 	}
 	codeFile := !secretFile
 	if hasKnownPrefixSubstring(text) {
 		text = maskControlSplitTokens(text, maskTokenNonreusable)
-		text = replaceSpans(text, scanMatches(prefixAltRe, text, prefixBoundaryOK(text)), func(loc []int) string {
+		text = replaceSpans(text, prefixScan(text), func(loc []int) string {
 			return maskTokenNonreusable(text[loc[0]:loc[1]])
 		})
 	}

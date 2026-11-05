@@ -1,0 +1,104 @@
+package provider
+
+import (
+	"context"
+	"errors"
+	"maps"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"github.com/nickheyer/icebath/pkg/config"
+)
+
+// Runs fn under a multiplex flag and, when secrets is non nil, a bound secret scope
+func withFacadeScope(t *testing.T, secrets map[string]string, multiplex bool, fn func(ctx context.Context)) {
+	t.Helper()
+	SetMultiplexActive(multiplex)
+	defer SetMultiplexActive(false)
+	ctx := context.Background()
+	if secrets != nil {
+		ctx = WithSecretScope(ctx, secrets, "")
+	}
+	fn(ctx)
+}
+
+func TestGetEnvValueScope(t *testing.T) {
+	h := filepath.Join(t.TempDir(), ".icebath")
+	if err := os.MkdirAll(h, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ICEBATH_HOME", h)
+	t.Setenv("OPENAI_API_KEY", "sk-other-profile")
+	withFacadeScope(t, map[string]string{"OPENAI_API_KEY": "sk-this-profile"}, true, func(ctx context.Context) {
+		if v, ok, err := config.GetEnvValue(ctx, h, "OPENAI_API_KEY"); err != nil || !ok || v != "sk-this-profile" {
+			t.Fatalf("scoped value must win, got %q %v %v", v, ok, err)
+		}
+	})
+	withFacadeScope(t, map[string]string{}, true, func(ctx context.Context) {
+		if v, ok, err := config.GetEnvValue(ctx, h, "OPENAI_API_KEY"); err != nil || ok {
+			t.Fatalf("a multiplexed scope miss must not leak environ, got %q %v %v", v, ok, err)
+		}
+	})
+	t.Setenv("OPENAI_API_KEY", "sk-from-shell")
+	withFacadeScope(t, map[string]string{}, false, func(ctx context.Context) {
+		if v, _, err := config.GetEnvValue(ctx, h, "OPENAI_API_KEY"); err != nil || v != "sk-from-shell" {
+			t.Fatalf("multiplex off falls back to environ, got %q %v", v, err)
+		}
+	})
+	withFacadeScope(t, nil, false, func(ctx context.Context) {
+		if v, _, err := config.GetEnvValue(ctx, h, "OPENAI_API_KEY"); err != nil || v != "sk-from-shell" {
+			t.Fatalf("no scope behaves like a single profile, got %q %v", v, err)
+		}
+	})
+	withFacadeScope(t, nil, true, func(ctx context.Context) {
+		var unscoped *UnscopedSecretError
+		if _, _, err := config.GetEnvValue(ctx, h, "OPENAI_API_KEY"); !errors.As(err, &unscoped) {
+			t.Fatalf("an unscoped multiplexed read must fail closed, got %v", err)
+		}
+	})
+	if err := os.WriteFile(filepath.Join(h, ".env"), []byte("MY_TEST_KEY=from-dotenv\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	os.Unsetenv("MY_TEST_KEY")
+	withFacadeScope(t, nil, false, func(ctx context.Context) {
+		if v, _, err := config.GetEnvValue(ctx, h, "MY_TEST_KEY"); err != nil || v != "from-dotenv" {
+			t.Fatalf("dotenv fallback, got %q %v", v, err)
+		}
+	})
+}
+
+func TestCoreDeclaredEnvNamesExcludePlatformInjection(t *testing.T) {
+	core := configFacadeCoreDeclaredEnvNames()
+	for name := range config.StaticCoreEnvNames() {
+		if !core[name] {
+			t.Fatalf("static name %s missing", name)
+		}
+	}
+	for name := range providerEnvNames {
+		if !core[name] {
+			t.Fatalf("provider name %s missing", name)
+		}
+	}
+	if _, err := config.PlatformManifestSecretEnvs(t.TempDir(), config.PlatformSourceUser, true); err != nil {
+		t.Fatalf("the bridge registers core names, got %v", err)
+	}
+}
+
+func TestStaticDeclaredEnvNamesSkipPlatformInjectedNames(t *testing.T) {
+	prevNames := staticEnvNames
+	staticEnvNamesOnce, staticEnvNames = sync.Once{}, nil
+	config.OptionalEnvVars["CHATX_INJECTED_SIGNING_SECRET"] = config.EnvVar{Password: true, Category: "messaging"}
+	t.Cleanup(func() {
+		delete(config.OptionalEnvVars, "CHATX_INJECTED_SIGNING_SECRET")
+		staticEnvNamesOnce, staticEnvNames = sync.Once{}, prevNames
+		if prevNames != nil {
+			staticEnvNamesOnce.Do(func() {})
+		}
+	})
+	got, want := staticDeclaredEnvNames(), config.StaticCoreEnvNames()
+	if got["CHATX_INJECTED_SIGNING_SECRET"] || !maps.Equal(got, want) {
+		t.Fatalf("static names %d, core %d, injected %v", len(got), len(want), got["CHATX_INJECTED_SIGNING_SECRET"])
+	}
+}

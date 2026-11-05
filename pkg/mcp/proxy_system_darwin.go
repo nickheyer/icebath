@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 )
 
 // scutilProxies parses the SystemConfiguration proxy dictionary that scutil prints
@@ -114,7 +116,7 @@ func macProxyBypass(host string, excludeSimple bool, exceptions []string) bool {
 			if uint64(hostIP)>>shift == base>>shift {
 				return true
 			}
-		} else if fnmatchCase(host, value) {
+		} else if fnmatch.FnmatchCase(host, value) {
 			return true
 		}
 	}

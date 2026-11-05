@@ -1364,7 +1364,7 @@ func BuildEntraTokenProvider(cfg *EntraIdentityConfig, scope string, excludeInte
 		}
 		return tok.Token, nil
 	}
-	return TagCredentialSource(src, CredentialSourceEntraID).Token
+	return TagCredentialSource(src, CredentialSourceEntraID).Func()
 }
 
 func entraTokenProvider(scope string) (func(context.Context) (string, error), error) {
@@ -1501,15 +1501,20 @@ func MaterializeBearerForHTTP(ctx context.Context, value any) (string, error) {
 			return "", err
 		}
 		if token == "" {
-			return "", errors.New("token provider returned empty value")
+			return "", &BearerValueError{Message: "token provider returned empty value"}
 		}
 		return token, nil
 	}
 	if s, ok := value.(string); ok && s != "" {
 		return s, nil
 	}
-	return "", errors.New("no usable api_key / token provider")
+	return "", &BearerValueError{Message: "no usable api_key / token provider"}
 }
+
+// BearerValueError is an unusable key or an empty mint, the one failure the bearer hook sends without auth
+type BearerValueError struct{ Message string }
+
+func (e *BearerValueError) Error() string { return e.Message }
 
 // Round tripper that mints a fresh Entra bearer per request and replaces every preset auth header
 type EntraBearerTransport struct {
@@ -1532,6 +1537,13 @@ func NewEntraBearerTransport(provider func(context.Context) (string, error), sen
 func (t *EntraBearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	out := req.Clone(req.Context())
 	token, err := MaterializeBearerForHTTP(req.Context(), t.TokenProvider)
+	var empty *BearerValueError
+	if err != nil && !errors.As(err, &empty) {
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
+		return nil, err
+	}
 	for _, h := range []string{"Authorization", "Api-Key", "X-Api-Key"} {
 		out.Header.Del(h)
 	}

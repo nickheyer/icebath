@@ -11,8 +11,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
+	"weak"
 
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -81,7 +84,30 @@ func deepCopyAny(v any) any {
 	return v
 }
 
-// OpenAI shaped dict of a transcript row with replay carriers split out of reasoning details
+// Ordered Messages blocks of live assistant turns, gone once the message is collected and never persisted
+var anthropicLiveBlocks sync.Map
+
+// Attaches the ordered Messages block sidecar to the in memory message only
+func setAnthropicLiveBlocks(m *state.Message, blocks []any) {
+	key := weak.Make(m)
+	anthropicLiveBlocks.Store(key, blocks)
+	runtime.AddCleanup(m, func(k weak.Pointer[state.Message]) { anthropicLiveBlocks.Delete(k) }, key)
+}
+
+// Ordered Messages block sidecar of a live message, absent for a message reloaded from the session store
+func anthropicLiveBlocksOf(m *state.Message) ([]any, bool) {
+	if m == nil {
+		return nil, false
+	}
+	v, ok := anthropicLiveBlocks.Load(weak.Make(m))
+	if !ok {
+		return nil, false
+	}
+	blocks, ok := v.([]any)
+	return blocks, ok && len(blocks) > 0
+}
+
+// OpenAI shaped dict of a transcript row with its stored carriers verbatim and the live ordered sidecar
 func messageToDict(m *state.Message) map[string]any {
 	d := map[string]any{"role": m.Role}
 	if m.Content != nil {
@@ -113,55 +139,14 @@ func messageToDict(m *state.Message) map[string]any {
 	}
 	if len(m.ReasoningDetails) > 0 {
 		var details any
-		if json.Unmarshal(m.ReasoningDetails, &details) == nil {
-			if list, ok := asList(details); ok {
-				thinking, ordered, carriers := splitReasoningCarriers(list)
-				if len(thinking) > 0 || len(carriers) > 0 {
-					d["reasoning_details"] = append(thinking, carriers...)
-				}
-				if ordered != nil {
-					d["anthropic_content_blocks"] = ordered
-				}
-			}
+		if json.Unmarshal(m.ReasoningDetails, &details) == nil && details != nil {
+			d["reasoning_details"] = details
 		}
+	}
+	if blocks, ok := anthropicLiveBlocksOf(m); ok {
+		d["anthropic_content_blocks"] = deepCopyAny(blocks)
 	}
 	return d
-}
-
-// Thinking blocks, the ordered block list when one was stored, and non Anthropic carrier records
-func splitReasoningCarriers(list []any) ([]any, []any, []any) {
-	var thinking, carriers []any
-	orderedCarrier := false
-	for _, item := range list {
-		b, ok := asMap(item)
-		if !ok {
-			continue
-		}
-		t := strings.ToLower(strings.TrimSpace(asStr(b["type"])))
-		switch {
-		case thinkingBlockTypes[t]:
-			thinking = append(thinking, b)
-		case t == "text" || t == "tool_use" || t == "image":
-			orderedCarrier = true
-		default:
-			carriers = append(carriers, b)
-		}
-	}
-	if !orderedCarrier {
-		return thinking, nil, carriers
-	}
-	ordered := make([]any, 0, len(list))
-	for _, item := range list {
-		b, ok := asMap(item)
-		if !ok {
-			continue
-		}
-		t := strings.ToLower(strings.TrimSpace(asStr(b["type"])))
-		if thinkingBlockTypes[t] || t == "text" || t == "tool_use" || t == "image" {
-			ordered = append(ordered, b)
-		}
-	}
-	return thinking, ordered, carriers
 }
 
 func asStr(v any) string {

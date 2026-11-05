@@ -1181,7 +1181,7 @@ func humanDecision(ctx context.Context, env *Env, spec gateSpec, in humanDecisio
 
 // Presence trio of the current context, cleared for single query and cron, ask only with an answering client
 func presence(env *Env) (isCLI, isGateway, isAsk bool) {
-	isCLI, isGateway = isInteractiveCLI(env), isGatewayApprovalContext(env)
+	isCLI, isGateway = isInteractiveCLI(env), IsGatewayApprovalContext(env)
 	isAsk = sessionFlag(env, "exec_ask", "ICEBATH_EXEC_ASK")
 	if isSingleQueryApprovalContext(env) || isCronApprovalContext(env) {
 		return false, false, false
@@ -1687,6 +1687,7 @@ func dockerHasHostAccess(env *Env, policy TerminalPolicy) bool {
 
 // CheckCommandApproval is the shared pre exec verdict for a terminal command of one task
 func CheckCommandApproval(ctx context.Context, env *Env, command, taskID string) (ApprovalDecision, error) {
+	env = EnvInTerminalScope(ctx, env)
 	policy, err := terminalPolicy(env)
 	if err != nil {
 		return ApprovalDecision{}, err

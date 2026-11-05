@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // LSP languageId per language for didOpen, in Python dict order
@@ -122,39 +124,16 @@ type ServerContext struct {
 // Multi part extensions naming another language than their last segment
 var compoundExts = []string{".blade.php"}
 
-// Python os.path.basename
-func pyBasename(path string) string {
-	i := strings.LastIndex(path, "/")
-	if runtime.GOOS == "windows" {
-		i = max(i, strings.LastIndex(path, `\`))
-		if i < 0 && len(path) >= 2 && path[1] == ':' {
-			i = 1
-		}
-	}
-	return path[i+1:]
-}
-
-// Python os.path.splitext returning root and extension
-func pySplitext(path string) (string, string) {
-	base := pyBasename(path)
-	dot := strings.LastIndex(base, ".")
-	if dot <= 0 || strings.Trim(base[:dot], ".") == "" {
-		return path, ""
-	}
-	cut := len(path) - len(base) + dot
-	return path[:cut], path[cut:]
-}
-
 // Lower cased extension with compound ones first, or the basename of an extensionless file
 func fileExtOrBasename(path string) string {
-	base := pyBasename(path)
+	base := pypath.Basename(path)
 	lower := strings.ToLower(base)
 	for _, c := range compoundExts {
 		if strings.HasSuffix(lower, c) {
 			return c
 		}
 	}
-	if _, ext := pySplitext(base); ext != "" {
+	if _, ext := pypath.Splitext(base); ext != "" {
 		return strings.ToLower(ext)
 	}
 	return base
@@ -204,17 +183,6 @@ func markersRoot(markers, excludes []string) RootFn {
 		return func(_, ws string) string { return ws }
 	}
 	return func(fp, ws string) string { return rootOrWorkspace(fp, ws, markers, excludes) }
-}
-
-// Python os.path.join of two components
-func pyPathJoin(a, b string) string {
-	if a == "" || filepath.IsAbs(b) {
-		return b
-	}
-	if strings.HasSuffix(a, "/") || strings.HasSuffix(a, string(filepath.Separator)) {
-		return a + b
-	}
-	return a + string(filepath.Separator) + b
 }
 
 // Python os.path.exists
@@ -285,7 +253,7 @@ func spawnPyright(root string, ctx ServerContext) (*SpawnSpec, error) {
 	if err != nil || binPath == "" {
 		return nil, err
 	}
-	stem, suffix := pySplitext(pyBasename(binPath))
+	stem, suffix := pypath.Splitext(pypath.Basename(binPath))
 	if stem == "pyright" {
 		sibling := filepath.Join(filepath.Dir(binPath), "pyright-langserver"+suffix)
 		if osPathExists(sibling) {
@@ -318,7 +286,7 @@ func detectPython(rt *Runtime, root string) (string, error) {
 	}
 	for _, v := range venvs {
 		for _, sub := range []string{"bin/python", "bin/python3", "Scripts/python.exe"} {
-			if p := pyPathJoin(v, sub); osPathExists(p) {
+			if p := pypath.Join(v, sub); osPathExists(p) {
 				return p, nil
 			}
 		}
@@ -368,18 +336,6 @@ const vueTunnelMsg = "vue-language-server: the installed @vue/language-server is
 const vueTsdkMsg = "vue-language-server: no JavaScript TypeScript SDK (typescript/lib/typescript.js) next to the server or under " +
 	"the project's node_modules — diagnostics are skipped. Reinstall (the recipe co-installs one): " + vueReinstall
 
-// Python os.path.realpath without strict mode
-func pyRealpath(p string) string {
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		abs = p
-	}
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		return real
-	}
-	return abs
-}
-
 // node_modules trees that may hold a server and its TypeScript SDK, launcher tree first
 func nodeModulesTrees(rt *Runtime, binPath, root string) ([]string, error) {
 	binDir, err := BinDir(rt)
@@ -390,7 +346,10 @@ func nodeModulesTrees(rt *Runtime, binPath, root string) ([]string, error) {
 	if root != "" {
 		trees = append(trees, filepath.Join(root, "node_modules"))
 	}
-	real := pyRealpath(binPath)
+	real, err := pypath.Realpath(binPath, pypath.Lax)
+	if err != nil {
+		return nil, err
+	}
 	marker := string(filepath.Separator) + "node_modules" + string(filepath.Separator)
 	if idx := strings.LastIndex(real, marker); idx >= 0 {
 		trees = append([]string{real[:idx+len(marker)-1]}, trees...)
@@ -419,13 +378,13 @@ func vueServerMajor(rt *Runtime, trees []string) (int, error) {
 		}
 		m, ok := v.(map[string]any)
 		if !ok {
-			return 0, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyTypeName(v))
+			return 0, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(v))
 		}
 		version, ok := m["version"]
 		if !ok {
 			version = ""
 		}
-		head, _, _ := strings.Cut(pyStr(version), ".")
+		head, _, _ := strings.Cut(pyrepr.Str(version), ".")
 		n, err := pyInt(head)
 		if err != nil {
 			continue
@@ -511,8 +470,8 @@ func findPSESBundle(ctx ServerContext) string {
 	if override := ctx.BinaryOverrides["powershell"]; len(override) > 0 {
 		candidates = append(candidates, override[0])
 	}
-	if init := ctx.InitOverrides["powershell"]; init != nil && pyTruthy(init["bundlePath"]) {
-		candidates = append(candidates, pyStr(init["bundlePath"]))
+	if init := ctx.InitOverrides["powershell"]; init != nil && pyrepr.Truthy(init["bundlePath"]) {
+		candidates = append(candidates, pyrepr.Str(init["bundlePath"]))
 	}
 	candidates = append(candidates, os.Getenv("PSES_BUNDLE_PATH"),
 		filepath.Join(ctx.Runtime.home(), "lsp", "PowerShellEditorServices"))
@@ -735,10 +694,10 @@ func LanguageIDFor(path string, srv *ServerDef) string {
 // Spawn builder for a config declared server, the first command element a path or PATH lookup
 func customSpawn(serverID string, command []string) SpawnFn {
 	return func(root string, ctx ServerContext) (*SpawnSpec, error) {
-		binPath := which(expandUser(command[0]))
+		binPath := which(pypath.Expanduser(command[0]))
 		if binPath == "" {
 			warnOnce(ctx.Runtime, "custom:"+serverID, fmt.Sprintf("lsp.servers.%s: command %s not found on PATH — server skipped",
-				serverID, pyStrRepr(command[0])))
+				serverID, pyrepr.StrRepr(command[0])))
 			return nil, nil
 		}
 		return makeSpec(root, ctx, serverID, append([]string{binPath}, command[1:]...), nil, false)
@@ -801,16 +760,16 @@ func CustomServers(rt *Runtime, serversCfg any) []*ServerDef {
 		var markers []string
 		if list, ok := entry["root_markers"].([]any); ok && len(list) > 0 {
 			for _, m := range list {
-				markers = append(markers, pyStr(m))
+				markers = append(markers, pyrepr.Str(m))
 			}
 		}
 		description := serverID + " — custom (lsp.servers)"
-		if d := entry["description"]; pyTruthy(d) {
-			description = pyStr(d)
+		if d := entry["description"]; pyrepr.Truthy(d) {
+			description = pyrepr.Str(d)
 		}
 		languageID := ""
-		if l := entry["language_id"]; pyTruthy(l) {
-			languageID = pyStr(l)
+		if l := entry["language_id"]; pyrepr.Truthy(l) {
+			languageID = pyrepr.Str(l)
 		}
 		out = append(out, &ServerDef{ServerID: serverID, Extensions: exts, ResolveRoot: markersRoot(markers, nil),
 			BuildSpawn: customSpawn(serverID, command), Description: description, LanguageID: languageID})

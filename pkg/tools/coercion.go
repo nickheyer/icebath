@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var (
@@ -331,7 +333,7 @@ func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, boo
 		if !((expectsArray && strings.HasPrefix(trimmed, "[")) || (expectsObject && strings.HasPrefix(trimmed, "{"))) {
 			return value, false
 		}
-		parsed, err := jsonDecodeWTF8([]byte(trimmed))
+		parsed, err := pyjson.DecodeWTF8([]byte(trimmed))
 		if err != nil {
 			return value, false
 		}
@@ -458,7 +460,7 @@ func coerceSchemaAllowsNull(schema map[string]any) bool {
 
 // Parses the string as JSON when the parsed kind matches the expected container
 func coerceJSON(value string, expected string) (any, bool) {
-	parsed, err := jsonDecodeWTF8([]byte(value))
+	parsed, err := pyjson.DecodeWTF8([]byte(value))
 	if err != nil {
 		slog.Warn("coerce_tool_args: failed to parse string as JSON for expected type", "type", expected, "error", err)
 		return value, false

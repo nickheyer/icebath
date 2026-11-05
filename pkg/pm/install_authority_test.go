@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Environment variable selecting the install engine helper mode of a re-executed test binary
@@ -145,7 +147,7 @@ func TestAuthoritySameVersionDifferentShaIsNotInstalledAndRepaired(t *testing.T)
 			}
 			fact, _ := e.facts(t).Get("faketool")
 			target, _ := CurrentTarget()
-			if string(readFile(t, filepath.Join(e.runtime, pyStr(fact["entry"]), "bin/faketool"))) != "#!B" ||
+			if string(readFile(t, filepath.Join(e.runtime, pyrepr.Str(fact["entry"]), "bin/faketool"))) != "#!B" ||
 				fact["target"] != target || !jsonEquals(fact["artifacts"], []any{digestB}) {
 				t.Fatalf("fact %v", fact)
 			}

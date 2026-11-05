@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestSVInventoryUsesTheTargetAndRequiresEveryAnchor(t *testing.T) {
@@ -31,14 +33,14 @@ func TestSVInventoryUsesTheTargetAndRequiresEveryAnchor(t *testing.T) {
 	}
 	witness := filepath.Join(tmp, "child.json")
 	pkg := sttMkdir(t, filepath.Join(site, "inventory_anchor"))
-	writeFile(t, filepath.Join(pkg, "__init__.py"), []byte("import json, pathlib, sys\npathlib.Path("+pyRepr(witness)+").write_text(json.dumps(sys.executable), encoding='utf-8')\n"), 0o666)
+	writeFile(t, filepath.Join(pkg, "__init__.py"), []byte("import json, pathlib, sys\npathlib.Path("+pyrepr.StrRepr(witness)+").write_text(json.dumps(sys.executable), encoding='utf-8')\n"), 0o666)
 	writeFile(t, filepath.Join(pkg, "present.py"), []byte("VALUE = 'target'\n"), 0o666)
 	writeFile(t, filepath.Join(site, "one_part.py"), nil, 0o666)
 	editable := sttMkdir(t, filepath.Join(tmp, "editable"))
 	writeFile(t, filepath.Join(editable, "editable_anchor.py"), nil, 0o666)
 	writeFile(t, filepath.Join(site, "editable.pth"), []byte(editable+"\n"), 0o666)
 	launches := filepath.Join(tmp, "launches.jsonl")
-	writeFile(t, filepath.Join(site, "launches.pth"), []byte("import json, pathlib, sys; p = pathlib.Path("+pyRepr(launches)+"); "+
+	writeFile(t, filepath.Join(site, "launches.pth"), []byte("import json, pathlib, sys; p = pathlib.Path("+pyrepr.StrRepr(launches)+"); "+
 		"text = p.read_text(encoding='utf-8') if p.exists() else ''; "+
 		"p.write_text(text + json.dumps(sys.executable) + '\\n', encoding='utf-8')\n"), 0o666)
 	mapping := map[string][]string{"complete": {"inventory_anchor.present"}, "partial": {"one_part", "absent_part"},

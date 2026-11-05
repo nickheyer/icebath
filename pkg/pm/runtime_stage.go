@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // StageRuntimeOptions name the locked project, network mode, cache, validation imports and an optional wheelhouse
@@ -88,7 +90,7 @@ func StageRuntime(ctx context.Context, uv, python, destination string, opts Stag
 		if err := utf8Strict([]byte(stderr.String())); err != nil {
 			return "", err
 		}
-		return "", NewInstallError("pm-runtime", "dependency validation failed: "+pyStrip(universalNewlines(stderr.String())), "")
+		return "", NewInstallError("pm-runtime", "dependency validation failed: "+pystr.Strip(universalNewlines(stderr.String())), "")
 	}
 	return executable, nil
 }

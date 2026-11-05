@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -829,7 +831,7 @@ func (v *vercelEnv) runBash(ctx context.Context, cmd string, login bool, timeout
 			}
 			stateMu.Unlock()
 			remoteStdin := v.stagedStdinPath()
-			payload, err := surrogateEscapeEncode(*stdinData)
+			payload, err := pystr.SurrogateEscapeEncode(*stdinData)
 			if err != nil {
 				return "", 1
 			}

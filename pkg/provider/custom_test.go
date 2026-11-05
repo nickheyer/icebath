@@ -229,17 +229,17 @@ func TestCommandTokenSource(t *testing.T) {
 	if BuildCommandTokenSource("  ", "x", "", nil) != nil || src.CacheIdentity() != "cmd:echo tok" {
 		t.Fatal("empty command and identity")
 	}
-	real := BuildCommandTokenSource("printf bare-token", "x", "", nil)
+	real := BuildCommandTokenSource(printTokenCmd("bare-token"), "x", "", nil)
 	if tok, err := real.Token(context.Background()); err != nil || tok != "bare-token" {
 		t.Fatalf("real shell: %q %v", tok, err)
 	}
 }
 
 func TestNamedEntryKeyCmdMintsPerRequest(t *testing.T) {
-	cfg := map[string]any{"providers": map[string]any{"gw": map[string]any{"api": "https://gw.example/v1", "key_cmd": "printf minted-token", "api_key": "static-ignored"}}}
+	cfg := map[string]any{"providers": map[string]any{"gw": map[string]any{"api": "https://gw.example/v1", "key_cmd": printTokenCmd("minted-token"), "api_key": "static-ignored"}}}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
 	rt := mustResolve(t, r, "custom:gw", "", "", "")
-	if rt.TokenSource == nil || rt.APIKey != NoKeyPlaceholder || rt.KeyCmd != "printf minted-token" {
+	if rt.TokenSource == nil || rt.APIKey != NoKeyPlaceholder || rt.KeyCmd != printTokenCmd("minted-token") {
 		t.Fatalf("got %+v", rt)
 	}
 	if tok, err := rt.TokenSource(context.Background()); err != nil || tok != "minted-token" {

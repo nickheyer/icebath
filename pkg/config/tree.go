@@ -20,6 +20,16 @@ type PathError struct {
 
 func (e *PathError) Error() string { return "config path " + e.Path + ": " + e.Reason }
 
+// Refusal to create a nested key beside a literal dotted sibling it would shadow
+type PhantomKeyError struct {
+	Part, Path, Shadowed, Escaped string
+}
+
+func (e *PhantomKeyError) Error() string {
+	return fmt.Sprintf("Refusing to create nested key %s in %s: the mapping already contains a literal key %s that contains a dot. If you meant that key, escape its dots with a backslash (e.g. %s).",
+		PyRepr(e.Part), PyRepr(e.Path), PyRepr(e.Shadowed), e.Escaped)
+}
+
 // Segments of a dotted path, a backslash before a dot keeping the dot literal
 func SplitPath(key string) []string {
 	var parts []string
@@ -184,7 +194,7 @@ func (t Tree) Set(path string, value any) error {
 			}
 			if shadowed := phantomSibling(c, part); shadowed != "" {
 				escaped := strings.ReplaceAll(shadowed, ".", `\.`)
-				return &PathError{path, fmt.Sprintf("creating %q would shadow the dotted key %q, escape its dots as %s", part, shadowed, escaped)}
+				return &PhantomKeyError{Part: part, Path: path, Shadowed: shadowed, Escaped: escaped}
 			}
 			next := map[string]any{}
 			c[part] = next
@@ -429,6 +439,7 @@ func Clone(v any) any {
 		for k, val := range c {
 			out[k] = Clone(val)
 		}
+		copyMeta(out, c)
 		return out
 	case Tree:
 		return Tree(Clone(map[string]any(c)).(map[string]any))
@@ -452,10 +463,15 @@ func (t Tree) Clone() Tree {
 // Override merged into base, maps recursing and a null over a map section ignored
 func DeepMerge(base, override map[string]any) map[string]any {
 	result := make(map[string]any, len(base)+len(override))
+	order := MappingKeys(base)
 	for k, v := range base {
 		result[k] = v
 	}
-	for k, v := range override {
+	for _, k := range MappingKeys(override) {
+		v := override[k]
+		if _, had := result[k]; !had {
+			order = append(order, k)
+		}
 		existing, overDict := result[k].(map[string]any)
 		if overDict {
 			if vm, ok := v.(map[string]any); ok {
@@ -468,6 +484,7 @@ func DeepMerge(base, override map[string]any) map[string]any {
 		}
 		result[k] = v
 	}
+	SetMappingKeys(result, order)
 	return result
 }
 
@@ -530,7 +547,7 @@ func stripValue(value, def any, path []string, keep map[string]bool) (any, bool)
 		}
 		return out, false
 	}
-	if Equal(value, def) {
+	if pyEq(value, def) {
 		return nil, true
 	}
 	return Clone(value), false

@@ -64,7 +64,7 @@ func RedactSensitiveTextWith(env *Env, text string, o RedactOptions) string {
 	if text == "" {
 		return text
 	}
-	text = redactRegisteredVaultValues(text)
+	text = redactRegisteredVaultValues(env, text)
 	if !(o.Force || redactionEnabled(env)) {
 		return text
 	}
@@ -75,7 +75,7 @@ func RedactSensitiveTextWith(env *Env, text string, o RedactOptions) string {
 	}
 	if hasKnownPrefixSubstring(text) {
 		text = maskControlSplitTokens(text, prefixMask)
-		text = replaceSpans(text, scanMatches(prefixAltRe, text, prefixBoundaryOK(text)), func(loc []int) string {
+		text = replaceSpans(text, prefixScan(text), func(loc []int) string {
 			return prefixMask(text[loc[0]:loc[1]])
 		})
 	}

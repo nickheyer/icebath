@@ -19,6 +19,10 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ActivationInputs are the checkout files deciding the dependency set, a changed mtime triggering a resync
@@ -247,7 +251,7 @@ func payloadStorePython(root string) (string, error) {
 	}
 	target := ""
 	if v, present := manifest["target"]; present {
-		target = pyStr(v)
+		target = pyrepr.Str(v)
 	}
 	if strings.HasSuffix(target, "-bionic") {
 		return "", nil
@@ -276,24 +280,11 @@ func VenvCommand(ctx context.Context, projectRoot, venv string, options []string
 	return VenvEntryCommand(ctx, storePython, options, site)
 }
 
-// Reports Python str isdigit over a whole non empty string
-func pyIsDigitString(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if !pyIsDigit(r) {
-			return false
-		}
-	}
-	return true
-}
-
 // Decimal text Python int gives a digit string, a ValueError for digit forms int refuses
 func pyIntText(s string) (string, error) {
 	for _, r := range s {
 		if !isDecimalRune(r) {
-			return "", &PyError{Class: "ValueError", Message: "invalid literal for int() with base 10: " + pyRepr(s)}
+			return "", &PyError{Class: "ValueError", Message: "invalid literal for int() with base 10: " + pyrepr.StrRepr(s)}
 		}
 	}
 	return digitsValue(s).String(), nil
@@ -304,7 +295,7 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 	parse := func(text string) (string, string, bool, error) {
 		head, rest, _ := strings.Cut(text, ".")
 		tail, _, _ := strings.Cut(rest, ".")
-		if !pyIsDigitString(head) || !pyIsDigitString(tail) {
+		if !pystr.All(head, pystr.IsDigit) || !pystr.All(tail, pystr.IsDigit) {
 			return "", "", false, nil
 		}
 		a, err := pyIntText(head)
@@ -322,12 +313,12 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 		if err := utf8Strict(data); err != nil {
 			return "", "", false, err
 		}
-		for _, line := range pySplitLines(string(data)) {
+		for _, line := range pystr.Splitlines(string(data), false) {
 			key, value, _ := strings.Cut(line, "=")
-			if k := pyStrip(key); k != "version" && k != "version_info" {
+			if k := pystr.Strip(key); k != "version" && k != "version_info" {
 				continue
 			}
-			if a, b, found, err := parse(pyStrip(value)); err != nil || found {
+			if a, b, found, err := parse(pystr.Strip(value)); err != nil || found {
 				return a, b, found, err
 			}
 		}
@@ -361,7 +352,7 @@ func pinnedPythonVersion() (string, string, error) {
 	major, rest, _ := strings.Cut(version, ".")
 	minor, _, _ := strings.Cut(rest, ".")
 	if !ok || major == "" || minor == "" {
-		return "", "", &PyError{Class: "RuntimeError", Message: fmt.Sprintf("the lock pins no python version: %s", pyRepr(version))}
+		return "", "", &PyError{Class: "RuntimeError", Message: fmt.Sprintf("the lock pins no python version: %s", pyrepr.StrRepr(version))}
 	}
 	return major, minor, nil
 }
@@ -683,7 +674,7 @@ var shellIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 func ShellExports(env []string, dialect string) (string, error) {
 	shell, ok := shellDialects[dialect]
 	if !ok {
-		return "", &PyError{Class: "KeyError", Message: pyRepr(dialect)}
+		return "", &PyError{Class: "KeyError", Message: pyrepr.StrRepr(dialect)}
 	}
 	var lines []string
 	for _, kv := range env {
@@ -735,14 +726,14 @@ func parseEnvironmentsArgs(argv []string, prog string, stdout, stderr io.Writer)
 		case arg == "-h" || name == "--help" || strings.HasPrefix(arg, "--h") && strings.HasPrefix("--help", name):
 			option = "help"
 		case strings.HasPrefix(arg, "-h"):
-			return fail(fmt.Sprintf("argument -h/--help: ignored explicit argument %s", pyRepr(arg[2:])))
+			return fail(fmt.Sprintf("argument -h/--help: ignored explicit argument %s", pyrepr.StrRepr(arg[2:])))
 		case strings.HasPrefix(name, "--f") && strings.HasPrefix("--format", name):
 			option = "format"
 		}
 		switch option {
 		case "help":
 			if explicit {
-				return fail(fmt.Sprintf("argument -h/--help: ignored explicit argument %s", pyRepr(value)))
+				return fail(fmt.Sprintf("argument -h/--help: ignored explicit argument %s", pyrepr.StrRepr(value)))
 			}
 			io.WriteString(stdout, environmentsHelp(prog, t))
 			return "", 0, false
@@ -755,7 +746,7 @@ func parseEnvironmentsArgs(argv []string, prog string, stdout, stderr io.Writer)
 				value = argv[i]
 			}
 			if _, ok := shellDialects[value]; !ok && value != "json" {
-				return fail(fmt.Sprintf("argument --format: invalid choice: %s (choose from json, sh, fish)", pyRepr(value)))
+				return fail(fmt.Sprintf("argument --format: invalid choice: %s (choose from json, sh, fish)", pyrepr.StrRepr(value)))
 			}
 			format = value
 		default:
@@ -806,11 +797,11 @@ func EnvironmentsMain(ctx context.Context, argv []string, prog string, stdout, s
 func rowItem(row any, key string) (any, error) {
 	m, ok := row.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyTypeName(row))}
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(row))}
 	}
 	v, present := m[key]
 	if !present {
-		return nil, &PyError{Class: "KeyError", Message: pyRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
 	}
 	return v, nil
 }
@@ -823,7 +814,7 @@ func rowPath(row any, key string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a str or an os.PathLike object, not '%s'", pyTypeName(v))}
+		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a str or an os.PathLike object, not '%s'", pyrepr.TypeName(v))}
 	}
 	return s, nil
 }
@@ -835,7 +826,7 @@ func rowBase64(v any) ([]byte, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a bytes-like object or ASCII string, not '%s'", pyTypeName(v))}
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a bytes-like object or ASCII string, not '%s'", pyrepr.TypeName(v))}
 	}
 	out, err := base64.StdEncoding.Strict().DecodeString(s)
 	if err != nil {
@@ -942,7 +933,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 		!strings.HasPrefix(filepath.Base(backup), ".previous-") || metadata != filepath.Join(parent, ".install-metadata.json") {
 		return &PyError{Class: "ValueError", Message: "plugin publication paths escape their home"}
 	}
-	committed := truthy(row["committed"])
+	committed := pyrepr.Truthy(row["committed"])
 	if !committed {
 		before, err := rowItem(row, "facts_before")
 		if err != nil {
@@ -1002,7 +993,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 			if err != nil {
 				return err
 			}
-			if !truthy(existed) && pathExists(target) {
+			if !pyrepr.Truthy(existed) && pathExists(target) {
 				if err := rmtreeForce(target); err != nil {
 					return err
 				}
@@ -1034,7 +1025,7 @@ func recoverJournal(ctx context.Context, project, journal string, data []byte) e
 	}
 	row, ok := doc.(map[string]any)
 	if !ok {
-		return &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(doc))}
+		return &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(doc))}
 	}
 	if kind, _ := row["kind"].(string); kind == "plugin" {
 		return recoverPluginPublication(ctx, project, row, journal)
@@ -1066,7 +1057,7 @@ func recoverJournal(ctx context.Context, project, journal string, data []byte) e
 		}
 		configs = append(configs, journalConfig{path: config, previous: previous, after: entry.(map[string]any)["config_after"]})
 	}
-	if !truthy(row["committed"]) {
+	if !pyrepr.Truthy(row["committed"]) {
 		before, err := rowItem(row, "facts_before")
 		if err != nil {
 			return err
@@ -1109,7 +1100,7 @@ func pyExceptionText(err error) string {
 	var pathErr *fs.PathError
 	var linkErr *os.LinkError
 	if errors.As(err, &pathErr) || errors.As(err, &linkErr) {
-		return pyOSErrorText(err)
+		return pypath.OSErrorText(err)
 	}
 	return err.Error()
 }
@@ -1143,7 +1134,7 @@ func finishPublication(ctx context.Context, project string) error {
 	}
 	row, ok := doc.(map[string]any)
 	if !ok {
-		return &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object does not support item assignment", pyTypeName(doc))}
+		return &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object does not support item assignment", pyrepr.TypeName(doc))}
 	}
 	row["committed"] = true
 	encoded, err := dumpsJSON(row, false)

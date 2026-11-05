@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 )
 
 // ProviderProfileHooks are the optional credential hooks a model provider plugin profile ships
@@ -20,35 +19,14 @@ type ProviderProfileHooks struct {
 	AuthHandler func(action string, args []string, provider string) (bool, error)
 }
 
-var (
-	profileHooksMu sync.RWMutex
-	profileHooks   = map[string]*ProviderProfileHooks{}
-)
-
-// RegisterProviderProfileHooks installs a plugin profile's credential hooks for a provider
-func RegisterProviderProfileHooks(provider string, hooks ProviderProfileHooks) {
-	profileHooksMu.Lock()
-	defer profileHooksMu.Unlock()
-	h := hooks
-	profileHooks[strings.ToLower(strings.TrimSpace(provider))] = &h
-}
-
-// UnregisterProviderProfileHooks removes a provider's plugin hooks
-func UnregisterProviderProfileHooks(provider string) {
-	profileHooksMu.Lock()
-	defer profileHooksMu.Unlock()
-	delete(profileHooks, strings.ToLower(strings.TrimSpace(provider)))
-}
-
+// Credential hooks of the provider's registered profile, nil when the profile ships none
 func providerProfileHooks(provider string) *ProviderProfileHooks {
-	if p := getProviderProfile(context.Background(), strings.ToLower(strings.TrimSpace(provider))); p != nil &&
-		(p.RefreshCredential != nil || p.SeedPoolCredentialsHook != nil || p.RemoveCredentialSourceHook != nil || p.AuthHandler != nil) {
-		return &ProviderProfileHooks{RefreshCredential: p.RefreshCredential, SeedPoolCredentials: p.SeedPoolCredentialsHook,
-			RemoveCredentialSource: p.RemoveCredentialSourceHook, AuthHandler: p.AuthHandler}
+	p := getProviderProfile(context.Background(), strings.ToLower(strings.TrimSpace(provider)))
+	if p == nil || (p.RefreshCredential == nil && p.SeedPoolCredentialsHook == nil && p.RemoveCredentialSourceHook == nil && p.AuthHandler == nil) {
+		return nil
 	}
-	profileHooksMu.RLock()
-	defer profileHooksMu.RUnlock()
-	return profileHooks[strings.ToLower(strings.TrimSpace(provider))]
+	return &ProviderProfileHooks{RefreshCredential: p.RefreshCredential, SeedPoolCredentials: p.SeedPoolCredentialsHook,
+		RemoveCredentialSource: p.RemoveCredentialSourceHook, AuthHandler: p.AuthHandler}
 }
 
 // The profile's refresh hook, nil when its pooled OAuth rows are not refreshable

@@ -3,127 +3,160 @@
 package provider
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
+	"sort"
 	"syscall"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 )
 
-func readProcStat(pid int) (ppid int, state byte, ok bool) {
-	raw, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
-	if err != nil {
-		return 0, 0, false
-	}
-	text := string(raw)
-	end := strings.LastIndexByte(text, ')')
-	if end < 0 {
-		return 0, 0, false
-	}
-	fields := strings.Fields(text[end+1:])
-	if len(fields) < 2 {
-		return 0, 0, false
-	}
-	ppid, err = strconv.Atoi(fields[1])
-	if err != nil {
-		return 0, 0, false
-	}
-	return ppid, fields[0][0], true
+// Signal sender and process table reader, swapped by tests to refuse signals or schedule a fork
+var (
+	deadlineKill = syscall.Kill
+	procPPIDMap  = readPPIDMap
+)
+
+type procParent struct{ pid, ppid int }
+
+type treeProc struct {
+	pid   int
+	birth float64
 }
 
-func childrenOf(root int) []int {
-	entries, err := os.ReadDir("/proc")
+var errProcessGone = errors.New("no such process")
+
+// Lists every pid with its parent in ascending pid order like the psutil parent map
+func readPPIDMap() []procParent {
+	table, err := proc.Snapshot()
 	if err != nil {
 		return nil
 	}
-	parents := map[int]int{}
-	for _, e := range entries {
-		pid, err := strconv.Atoi(e.Name())
-		if err != nil {
+	out := make([]procParent, 0, len(table))
+	for _, p := range table {
+		out = append(out, procParent{p.PID, p.PPID})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].pid < out[j].pid })
+	return out
+}
+
+// Walks descendants depth first like psutil children recursive, keeping only those started after the root
+func childrenOf(root treeProc) []treeProc {
+	reverse := map[int][]int{}
+	for _, e := range procPPIDMap() {
+		reverse[e.ppid] = append(reverse[e.ppid], e.pid)
+	}
+	var out []treeProc
+	seen := map[int]bool{}
+	stack := []int{root.pid}
+	for len(stack) > 0 {
+		pid := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[pid] {
 			continue
 		}
-		if ppid, _, ok := readProcStat(pid); ok {
-			parents[pid] = ppid
-		}
-	}
-	var out []int
-	queue := []int{root}
-	seen := map[int]bool{root: true}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for pid, ppid := range parents {
-			if ppid == cur && !seen[pid] {
-				seen[pid] = true
-				out = append(out, pid)
-				queue = append(queue, pid)
+		seen[pid] = true
+		for _, child := range reverse[pid] {
+			birth, err := proc.Birth(child)
+			if err != nil || root.birth > birth {
+				continue
 			}
+			out = append(out, treeProc{child, birth})
+			stack = append(stack, child)
 		}
 	}
 	return out
 }
 
-func procTreeAlive(pid int) bool {
-	_, state, ok := readProcStat(pid)
-	return ok && state != 'Z' && state != 'X'
+// Reports whether the pid still names the process recorded at snapshot time, zombies included
+func (p treeProc) running() bool {
+	birth, err := proc.Birth(p.pid)
+	return err == nil && birth == p.birth
 }
 
-// processTreeSnapshot stops each hard kill target before discovering its children so a fork cannot escape
-func processTreeSnapshot(pid int, hardKill bool) (descendants []int, stopped []int) {
-	descendants = childrenOf(pid)
+// Signals the recorded process unless its pid was reused, mapping a vanished pid to errProcessGone
+func (p treeProc) signal(sig syscall.Signal) error {
+	if !p.running() {
+		return errProcessGone
+	}
+	if err := deadlineKill(p.pid, sig); err != nil {
+		if err == syscall.ESRCH {
+			return errProcessGone
+		}
+		return err
+	}
+	return nil
+}
+
+// Stops each hard kill target before discovering its children so a fork cannot escape the snapshot
+func processTreeSnapshot(pid int, hardKill bool) (descendants []treeProc, stopped []treeProc) {
+	rootBirth, err := proc.Birth(pid)
+	if err != nil {
+		slog.Debug(fmt.Sprintf("kill_process_tree: snapshot incomplete for pid %d: %v", pid, err))
+		return nil, nil
+	}
+	root := treeProc{pid, rootBirth}
+	descendants = childrenOf(root)
 	if !hardKill {
 		return descendants, nil
 	}
-	pending := []int{pid}
+	incomplete := func(reason string) ([]treeProc, []treeProc) {
+		slog.Debug(fmt.Sprintf("kill_process_tree: snapshot incomplete for pid %d: %s", pid, reason))
+		return descendants, stopped
+	}
+	pending := []treeProc{root}
 	seen := map[int]bool{os.Getpid(): true}
 	known := map[int]bool{}
 	for _, d := range descendants {
-		known[d] = true
+		known[d.pid] = true
 	}
 	stopDeadline := deadlineNow().Add(time.Second)
 	for len(pending) > 0 {
 		for _, p := range pending {
-			if seen[p] {
+			if seen[p.pid] {
 				continue
 			}
-			seen[p] = true
-			if deadlineNow().After(stopDeadline) {
-				slog.Debug(fmt.Sprintf("kill_process_tree: snapshot incomplete for pid %d", pid))
-				return descendants, stopped
+			seen[p.pid] = true
+			if !deadlineNow().Before(stopDeadline) {
+				return incomplete("process tree did not stop before snapshot deadline")
 			}
-			_, state, ok := readProcStat(p)
-			if !ok || state == 'Z' || state == 'X' {
+			state, err := proc.State(p.pid)
+			if err != nil || state == 'Z' || state == 'X' {
 				continue
 			}
-			if state != 'T' && state != 't' {
-				if err := syscall.Kill(p, syscall.SIGSTOP); err == nil {
-					stopped = append(stopped, p)
+			if state != 'T' {
+				err := p.signal(syscall.SIGSTOP)
+				if err == errProcessGone {
+					continue
 				}
+				if err != nil {
+					return incomplete(err.Error())
+				}
+				stopped = append(stopped, p)
 			}
 			for {
-				_, st, ok := readProcStat(p)
-				if !ok || st == 'T' || st == 't' {
+				state, err := proc.State(p.pid)
+				if err != nil || state == 'T' {
 					break
 				}
-				if deadlineNow().After(stopDeadline) {
-					slog.Debug(fmt.Sprintf("kill_process_tree: snapshot incomplete for pid %d", pid))
-					return descendants, stopped
+				if !deadlineNow().Before(stopDeadline) {
+					return incomplete("process did not stop before snapshot deadline")
 				}
 				time.Sleep(time.Millisecond)
 			}
 		}
-		for _, c := range childrenOf(pid) {
-			if !known[c] {
-				known[c] = true
+		for _, c := range childrenOf(root) {
+			if !known[c.pid] {
+				known[c.pid] = true
 				descendants = append(descendants, c)
 			}
 		}
 		pending = pending[:0]
 		for _, d := range descendants {
-			if !seen[d] {
+			if !seen[d.pid] {
 				pending = append(pending, d)
 			}
 		}
@@ -139,15 +172,14 @@ func KillProcessTree(pid int, sig syscall.Signal) bool {
 	descendants, stopped := processTreeSnapshot(pid, sig == syscall.SIGKILL)
 	defer func() {
 		for _, p := range stopped {
-			if err := syscall.Kill(p, syscall.SIGCONT); err != nil {
+			if err := p.signal(syscall.SIGCONT); err != nil {
 				slog.Debug(fmt.Sprintf("kill_process_tree: target already gone or resume refused: %v", err))
 			}
 		}
 	}()
 	signalled := false
 	for i := len(descendants) - 1; i >= 0; i-- {
-		child := descendants[i]
-		if procTreeAlive(child) && syscall.Kill(child, sig) == nil {
+		if descendants[i].signal(sig) == nil {
 			signalled = true
 		}
 	}
@@ -156,9 +188,9 @@ func KillProcessTree(pid int, sig syscall.Signal) bool {
 		pgid = -1
 	}
 	if pgid == pid {
-		err = syscall.Kill(-pgid, sig)
+		err = deadlineKill(-pgid, sig)
 	} else {
-		err = syscall.Kill(pid, sig)
+		err = deadlineKill(pid, sig)
 	}
 	switch {
 	case err == nil:

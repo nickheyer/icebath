@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Copies a file's bytes and metadata into dst or into dst's directory the way shutil copy2 does
@@ -22,7 +24,7 @@ func copy2(src, dst string) error {
 func copyFileData(src, dst string) error {
 	if srcSt, err := os.Stat(src); err == nil {
 		if dstSt, err := os.Stat(dst); err == nil && os.SameFile(srcSt, dstSt) {
-			return fmt.Errorf("%s and %s are the same file", pyRepr(src), pyRepr(dst))
+			return fmt.Errorf("%s and %s are the same file", pyrepr.StrRepr(src), pyrepr.StrRepr(dst))
 		}
 	}
 	for _, name := range []string{src, dst} {

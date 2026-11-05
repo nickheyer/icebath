@@ -4,11 +4,15 @@ package tools
 import (
 	"context"
 	"log/slog"
+	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -116,6 +120,8 @@ type Env struct {
 	Log      *slog.Logger
 	// Shared per-session values keyed by tool name
 	Values *sync.Map
+	// Profile terminal policy bound for this turn, nil resolves from Home
+	TerminalScope *TerminalScope
 }
 
 // Emit sends a progress event when the host registered a listener
@@ -127,7 +133,7 @@ func (e *Env) Emit(ev Event) {
 
 // JSON encodes a tool result as the string returned to the model
 func JSON(v any) string {
-	b, err := jsonEncodeWTF8(v)
+	b, err := pyjson.EncodeWTF8(v)
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -136,14 +142,15 @@ func JSON(v any) string {
 
 // ErrorResult formats an error as the JSON object the model reads
 func ErrorResult(err error) string {
-	b, _ := jsonEncodeWTF8(map[string]any{"error": err.Error()})
+	b, _ := pyjson.EncodeWTF8(map[string]any{"error": err.Error()})
 	return string(b)
 }
 
 // Registry holds every tool definition by name
 type Registry struct {
-	mu    sync.RWMutex
-	tools map[string]*Def
+	mu      sync.RWMutex
+	tools   map[string]*Def
+	builtin map[string]builtinEntry
 }
 
 // Default is the process wide registry every tool file registers into at init
@@ -154,8 +161,14 @@ func NewRegistry() *Registry {
 	return &Registry{tools: map[string]*Def{}}
 }
 
-// Register adds a tool to the default registry
-func Register(d Def) { Default.Register(d) }
+// Register adds a builtin tool to the default registry recording the source module that registered it
+func Register(d Def) {
+	module := ""
+	if _, file, _, ok := runtime.Caller(1); ok {
+		module = filepath.Base(filepath.Dir(file)) + "." + strings.TrimSuffix(filepath.Base(file), ".go")
+	}
+	Default.registerBuiltin(d, module)
+}
 
 // Register adds a tool, replacing a same toolset entry and panicking on a cross toolset shadow without override
 func (r *Registry) Register(d Def) {
@@ -180,7 +193,7 @@ func (r *Registry) Register(d Def) {
 func (r *Registry) Get(name string) *Def {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.tools[name]
+	return r.globalLocked(name)
 }
 
 // Names lists registered tool names sorted
@@ -188,7 +201,10 @@ func (r *Registry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]string, 0, len(r.tools))
-	for n := range r.tools {
+	for n, d := range r.tools {
+		if r.hiddenLocked(n, d) {
+			continue
+		}
 		out = append(out, n)
 	}
 	sort.Strings(out)

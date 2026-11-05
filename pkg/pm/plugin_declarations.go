@@ -11,6 +11,10 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"gopkg.in/yaml.v3"
 )
 
@@ -56,7 +60,7 @@ func NativeManifestFile(pluginDir string) (string, error) {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", path, pyOSErrorText(err))}
+			return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", path, pypath.OSErrorText(err))}
 		}
 		return path, nil
 	}
@@ -91,7 +95,7 @@ func ReadNativeManifest(path string) (map[string]any, error) {
 	text, err := readUTF8SigText(path)
 	if err != nil {
 		var pyErr *PyError
-		message := pyOSErrorText(err)
+		message := pypath.OSErrorText(err)
 		if errors.As(err, &pyErr) {
 			message = pyErr.Message
 		}
@@ -142,7 +146,7 @@ func pyIntValue(v any) (*big.Int, bool, error) {
 
 // Python int() of a string, signed decimal digits of any script with single underscores between digits
 func pyIntString(text string) (*big.Int, bool, error) {
-	text = pyStrip(text)
+	text = pystr.Strip(text)
 	sign := ""
 	if strings.HasPrefix(text, "+") || strings.HasPrefix(text, "-") {
 		sign, text = text[:1], text[1:]
@@ -192,10 +196,10 @@ func ManifestVersionError(manifest map[string]any, name string) (string, error) 
 		return "", err
 	}
 	if !valid {
-		return fmt.Sprintf("Plugin '%s' has invalid manifest_version '%s' (expected an integer).", name, pyStr(version)), nil
+		return fmt.Sprintf("Plugin '%s' has invalid manifest_version '%s' (expected an integer).", name, pyrepr.Str(version)), nil
 	}
 	if parsed.Cmp(big.NewInt(int64(host.SupportedManifestVersion))) > 0 {
-		return fmt.Sprintf("Plugin '%s' requires manifest_version %s, but this installer only supports up to %d.", name, pyStr(version), host.SupportedManifestVersion), nil
+		return fmt.Sprintf("Plugin '%s' requires manifest_version %s, but this installer only supports up to %d.", name, pyrepr.Str(version), host.SupportedManifestVersion), nil
 	}
 	return "", nil
 }
@@ -224,10 +228,10 @@ func newPythonDeclaration(d PythonDeclaration) (*PythonDeclaration, error) {
 func (d *PythonDeclaration) External() bool {
 	value := d.Manifest["python_runtime"]
 	text := ""
-	if pyTruthy(value) {
-		text = pyStr(value)
+	if pyrepr.Truthy(value) {
+		text = pyrepr.Str(value)
 	}
-	return strings.ToLower(pyStrip(text)) == "external"
+	return strings.ToLower(pystr.Strip(text)) == "external"
 }
 
 // Requirements the shared environment installs, none for an external runtime
@@ -258,7 +262,7 @@ func (d *PythonDeclaration) PythonError(version string) (string, error) {
 	}
 	specs, err := parseSpecifierSet(*d.RequiresPython)
 	if err != nil {
-		return "", &PyError{Class: "InvalidSpecifier", Message: fmt.Sprintf("Invalid specifier: %s", pyRepr(*d.RequiresPython))}
+		return "", &PyError{Class: "InvalidSpecifier", Message: fmt.Sprintf("Invalid specifier: %s", pyrepr.StrRepr(*d.RequiresPython))}
 	}
 	ok, err := specifierSetContains(specs, version)
 	if err != nil || ok {

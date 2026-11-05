@@ -243,13 +243,19 @@ func pyTypeNameOfError(err error) string {
 	return fmt.Sprintf("%T", err)
 }
 
-// Reports a raw Converse body carrying output, the shape the transport accepts
-func validateBedrockConverseResponse(raw map[string]any) bool {
-	if raw == nil {
-		return false
+// Reports a raw Converse body carrying output or a non nil normalized answer as acceptable
+func validateBedrockConverseResponse(response any) bool {
+	switch r := response.(type) {
+	case map[string]any:
+		if r == nil {
+			return false
+		}
+		_, ok := r["output"]
+		return ok
+	case *bedrockConverseResult:
+		return r != nil
 	}
-	_, ok := raw["output"]
-	return ok
+	return false
 }
 
 // Response of an answer, reasoning details stamped with the answering model and the ordered blocks carried along
@@ -390,7 +396,7 @@ func (c *bedrockConverseClient) CountTokens(ctx context.Context, req *Request) (
 	if err != nil {
 		return 0, err
 	}
-	return estimateBodyContextTokens(p.kwargs, DefaultImageTokenCost), nil
+	return estimateBodyContextTokens(p.kwargs, CurrentImageTokenCost(ctx)), nil
 }
 
 // Raw Converse body or a normalized answer as the transport's normalized response, stamped with the model

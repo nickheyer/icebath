@@ -277,13 +277,15 @@ type profileChallenge struct {
 }
 
 var (
-	challengeStateMu   sync.Mutex
-	challengeProfiles            = map[string]*profileChallenge{}
-	challengeOpened              = map[string]bool{}
-	challengeSleep               = time.Sleep
-	challengeWait                = 120 * time.Second
-	presentChallengeFn           = presentChallenge
-	challengeStderr    io.Writer = os.Stderr
+	challengeStateMu    sync.Mutex
+	challengeProfiles             = map[string]*profileChallenge{}
+	challengeOpened               = map[string]bool{}
+	challengeSleep                = time.Sleep
+	challengeWait                 = 120 * time.Second
+	presentChallengeFn            = presentChallenge
+	announceChallengeFn           = announceChallenge
+	presentInTerminalFn           = presentChallengeInTerminal
+	challengeStderr     io.Writer = os.Stderr
 )
 
 type backgroundCallerKey struct{}
@@ -463,17 +465,17 @@ func presentChallengeInTerminal(env PoolEnv, challenge BrowserChallenge) {
 
 // Gets the challenge URL in front of something that can load it for the current surface
 func presentChallenge(env PoolEnv, challenge BrowserChallenge) {
-	if clientSurface(env) == "desktop" && announceChallenge(env, challenge) {
+	if clientSurface(env) == "desktop" && announceChallengeFn(env, challenge) {
 		return
 	}
 	if !challenge.Required || isBackgroundCaller(env.ctx()) {
 		return
 	}
 	hooks := freeTierGatewayHooks()
-	if hooks.BroadcastGlobal != nil && hooks.StdioIsRPCChannel != nil && hooks.StdioIsRPCChannel() && announceChallenge(env, challenge) {
+	if hooks.BroadcastGlobal != nil && hooks.StdioIsRPCChannel != nil && hooks.StdioIsRPCChannel() && announceChallengeFn(env, challenge) {
 		return
 	}
-	presentChallengeInTerminal(env, challenge)
+	presentInTerminalFn(env, challenge)
 }
 
 // One status read, only a 200 naming a status being a verdict and a refused poll ending the wait
@@ -585,6 +587,6 @@ func noteOptionalChallenges(env PoolEnv, payload map[string]any, portalBaseURL s
 		return
 	}
 	if !challenge.Required && clientSurface(env) == "desktop" {
-		announceChallenge(env, recordChallenge(env, *challenge, false))
+		announceChallengeFn(env, recordChallenge(env, *challenge, false))
 	}
 }

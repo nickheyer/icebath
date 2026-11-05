@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Shell linters by extension, tsx deliberately absent so LSP covers it
@@ -79,7 +82,7 @@ func lintJSONInproc(content string) (bool, string) {
 	case excType == "":
 		return true, ""
 	case jerr != nil:
-		return false, "JSONDecodeError: " + jerr.msg + " (line " + strconv.Itoa(jerr.lineno) + ", column " + strconv.Itoa(jerr.colno) + ")"
+		return false, "JSONDecodeError: " + jerr.Msg + " (line " + strconv.Itoa(jerr.Lineno) + ", column " + strconv.Itoa(jerr.Colno) + ")"
 	}
 	return false, excType + ": " + msg
 }
@@ -118,7 +121,7 @@ except Exception as e:
 
 // Python syntax verdict from ast.parse of the surrogateescape encoded content in the host interpreter
 func lintPythonInproc(content string) (bool, string) {
-	data, err := surrogateEscapeEncode(content)
+	data, err := pystr.SurrogateEscapeEncode(content)
 	if err != nil {
 		return false, "UnicodeEncodeError: " + err.Error()
 	}
@@ -161,24 +164,24 @@ const pyJSONMaxDepth = 52154
 const pyIntMaxStrDigits = 4300
 
 // json.loads outcome as exception type and message, the decode error set for JSONDecodeError
-func pyJSONLoadsCheck(text string) (string, string, *pyJSONError) {
-	rs := wtf8Runes(text)
+func pyJSONLoadsCheck(text string) (string, string, *pyjson.DecodeError) {
+	rs := pystr.Runes(text)
 	if len(rs) > 0 && rs[0] == 0xfeff {
-		return "JSONDecodeError", "", &pyJSONError{msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", pos: 0, lineno: 1, colno: 1}
+		return "JSONDecodeError", "", &pyjson.DecodeError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Pos: 0, Lineno: 1, Colno: 1}
 	}
 	scan := scanJSONHazards(rs)
 	parseText := text
 	if scan.overflowAt >= 0 {
-		parseText = wtf8FromRunes(rs[:scan.overflowAt]) + "0"
+		parseText = pystr.FromRunes(rs[:scan.overflowAt]) + "0"
 	}
-	_, err := pyJSONLoads(parseText)
+	_, err := pyjson.Loads(parseText)
 	errPos := -1
-	var jerr *pyJSONError
+	var jerr *pyjson.DecodeError
 	if err != nil {
 		if !errors.As(err, &jerr) {
 			return "ValueError", err.Error(), nil
 		}
-		errPos = jerr.pos
+		errPos = jerr.Pos
 	}
 	limit := len(rs)
 	if scan.overflowAt >= 0 {
@@ -806,7 +809,7 @@ func tomllibLoadsError(content string) (result string) {
 func tomllibDecode(s string) []rune {
 	out := make([]rune, 0, len(s))
 	for i := 0; i < len(s); {
-		r, size := wtf8DecodeRune(s[i:])
+		r, size := pystr.DecodeRune(s[i:])
 		if r == '\n' && len(out) > 0 && out[len(out)-1] == '\r' {
 			out[len(out)-1] = '\n'
 		} else {
@@ -2305,8 +2308,8 @@ func yamlParserInitialize(input string) *yamlParser {
 func ruamelUTF8EncodeError(content string) string {
 	pos := 0
 	for i := 0; i < len(content); {
-		r, w := wtf8DecodeRune(content[i:])
-		if !isSurrogateRune(r) {
+		r, w := pystr.DecodeRune(content[i:])
+		if !pystr.IsSurrogate(r) {
 			i += w
 			pos++
 			continue
@@ -2314,8 +2317,8 @@ func ruamelUTF8EncodeError(content string) string {
 		bad := r
 		run := 0
 		for i < len(content) {
-			r, w = wtf8DecodeRune(content[i:])
-			if !isSurrogateRune(r) {
+			r, w = pystr.DecodeRune(content[i:])
+			if !pystr.IsSurrogate(r) {
 				break
 			}
 			run++

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -90,7 +91,9 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []map[string]an
 	entries := []map[string]any{}
 	r.mu.Lock()
 	for _, s := range orderedSessions(r.running, func(s *ProcessSession) int64 { return s.runSeq }) {
+		s.mu.Lock()
 		if s.Exited {
+			s.mu.Unlock()
 			continue
 		}
 		if s.HostStartTime == nil && s.PidScope == "host" && s.Pid != 0 {
@@ -100,6 +103,7 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []map[string]an
 		for _, f := range checkpointFields {
 			entry[f] = s.field(f)
 		}
+		s.mu.Unlock()
 		entry["command"] = RedactSensitiveTextWith(env, s.Command, RedactOptions{CodeFile: true})
 		owner := s.OwnerTaskID
 		if owner == "" {
@@ -699,7 +703,7 @@ func (r *ProcessRegistry) AwaitsNotification(ownerTaskIDs []string) bool {
 	r.mu.Lock()
 	for _, store := range []map[string]*ProcessSession{r.running, r.finished} {
 		for _, s := range store {
-			if owners[s.OwnerTaskID] && s.NotifyOnComplete && s.Exited && !s.completionEvent.isSet() {
+			if owners[s.OwnerTaskID] && s.NotifyOnComplete && s.isExited() && !s.completionEvent.isSet() {
 				r.mu.Unlock()
 				return true
 			}
@@ -890,7 +894,7 @@ func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string
 		}
 		return result
 	}
-	if s.Exited || waitPolicyCountUnchanged(s) < waitPolicyPromoteAfter || !canDeliverCompletion(ctx, env) {
+	if s.isExited() || waitPolicyCountUnchanged(s) < waitPolicyPromoteAfter || !canDeliverCompletion(ctx, env) {
 		return result
 	}
 	if !callerReceivesCompletion(env, s) {
@@ -1512,7 +1516,7 @@ func shortTitle(title string) string {
 	return title
 }
 
-func utf8Len(s string) int { return wtf8RuneCount(s) }
+func utf8Len(s string) int { return pystr.Len(s) }
 
 // ProcessCompleteDisplayKind names the UI row kind of a process completion
 const ProcessCompleteDisplayKind = "process_complete"

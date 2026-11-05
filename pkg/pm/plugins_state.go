@@ -11,6 +11,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"github.com/nickheyer/icebath/pkg/home"
 	"gopkg.in/yaml.v3"
 )
@@ -240,7 +243,7 @@ func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]H
 func providerFromConfig(homeDir string, config map[string]any, installing string) (string, error) {
 	memory, _ := config["memory"].(map[string]any)
 	provider, _ := memory["provider"].(string)
-	name := pyStrip(provider)
+	name := pystr.Strip(provider)
 	if name == "" {
 		return "", nil
 	}
@@ -284,8 +287,8 @@ func pluginSpellings(pluginDir, key string) (map[string]bool, error) {
 		return nil, err
 	case err == nil && manifest != nil:
 		name := ""
-		if pyTruthy(manifest["name"]) {
-			name = pyStr(manifest["name"])
+		if pyrepr.Truthy(manifest["name"]) {
+			name = pyrepr.Str(manifest["name"])
 		}
 		names[name] = true
 	}

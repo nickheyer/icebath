@@ -439,15 +439,8 @@ func authResolver(env PoolEnv) *resolver {
 	if env.Store != nil {
 		h = env.Store.Home()
 	}
-	secrets := env.Secrets
-	if secrets == nil {
-		secrets = config.NewSecrets(h)
-	}
-	var creds CredentialSource
-	if env.Store != nil {
-		creds = env.Store
-	}
-	return newResolver(env.ctx(), config.Tree(env.config()), secrets, h, creds)
+	creds := newHomeCredentials(env)
+	return newResolver(env.ctx(), config.Tree(creds.env.config()), creds.env.Secrets, h, creds)
 }
 
 // GetAPIKeyProviderStatus is the status snapshot for an API key provider

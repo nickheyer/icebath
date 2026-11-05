@@ -184,13 +184,13 @@ func isSingleQueryApprovalContext(env *Env) bool {
 	return sessionFlag(env, "single_query", "ICEBATH_SINGLE_QUERY_SESSION")
 }
 
-// Reports single query, cron and unattended platform sessions
-func noUserCanAnswer(env *Env) bool {
+// Reports single query, cron and unattended platform sessions where no user can answer
+func NoUserCanAnswer(env *Env) bool {
 	return isSingleQueryApprovalContext(env) || isCronApprovalContext(env) || isUnattendedPlatformApprovalContext(env)
 }
 
 // Reports a gateway or API session that can answer an approval, never cron or unattended
-func isGatewayApprovalContext(env *Env) bool {
+func IsGatewayApprovalContext(env *Env) bool {
 	if isCronApprovalContext(env) || isUnattendedPlatformApprovalContext(env) {
 		return false
 	}

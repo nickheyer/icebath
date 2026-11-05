@@ -19,6 +19,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -480,7 +483,7 @@ func recordOf(data map[string]any, key, name string) (any, error) {
 	}
 	records, ok := raw.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(raw))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
 	}
 	return records[name], nil
 }
@@ -618,7 +621,7 @@ func metadataLockHolderHint(path string) string {
 		return ""
 	}
 	text, _ := decodeUTF8Replace(raw, true)
-	fields := strings.FieldsFunc(strings.TrimPrefix(text, "\ufeff"), pyIsSpace)
+	fields := strings.FieldsFunc(strings.TrimPrefix(text, "\ufeff"), pystr.IsSpace)
 	if len(fields) == 0 {
 		return ""
 	}

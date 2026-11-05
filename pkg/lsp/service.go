@@ -53,7 +53,12 @@ func ReleaseWorkspace(path string) int {
 					svc.rt.logf(slog.LevelDebug, "agent.lsp", "LSP workspace release failed for %s: %s", path, fmt.Sprint(r))
 				}
 			}()
-			released += svc.ReleaseWorkspace(path)
+			n, err := svc.ReleaseWorkspace(path)
+			if err != nil {
+				svc.rt.logf(slog.LevelDebug, "agent.lsp", "LSP workspace release failed for %s: %s", path, errText(err))
+				return
+			}
+			released += n
 		}()
 	}
 	return released

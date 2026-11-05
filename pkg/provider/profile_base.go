@@ -393,9 +393,9 @@ func (p Profile) FetchAccountUsage(ctx context.Context, baseURL, apiKey string) 
 }
 
 // ResolveAuxModel returns the cheap auxiliary model, empty for the generic choice
-func (p Profile) ResolveAuxModel(vision bool) string {
+func (p Profile) ResolveAuxModel(ctx context.Context, vision bool) string {
 	if p.ResolveAuxModelHook != nil {
-		return p.ResolveAuxModelHook(vision)
+		return p.ResolveAuxModelHook(ctx, vision)
 	}
 	return ""
 }
@@ -457,9 +457,9 @@ func (p Profile) BuildClientKwargsExtras(context map[string]any) map[string]any 
 }
 
 // DefaultVisionModel returns the provider vision model, empty for none
-func (p Profile) DefaultVisionModel() string {
+func (p Profile) DefaultVisionModel(ctx context.Context) string {
 	if p.DefaultVisionModelHook != nil {
-		return p.DefaultVisionModelHook()
+		return p.DefaultVisionModelHook(ctx)
 	}
 	return ""
 }
@@ -489,11 +489,11 @@ func (p Profile) GetMaxTokens(model string) int {
 }
 
 // SupportedReasoningEfforts returns the efforts the model accepts, false when the profile declares none
-func (p Profile) SupportedReasoningEfforts(model string) ([]string, bool) {
+func (p Profile) SupportedReasoningEfforts(ctx context.Context, model string) ([]string, bool, error) {
 	if p.SupportedReasoningEffortsHook != nil {
-		return p.SupportedReasoningEffortsHook(model)
+		return p.SupportedReasoningEffortsHook(ctx, model)
 	}
-	return nil, false
+	return nil, false, nil
 }
 
 // APIModeForModel returns the per model wire, empty for the profile mode
@@ -733,12 +733,12 @@ func (p Profile) ExternalAuthEvidence() (bool, string, bool) {
 	return false, "", false
 }
 
-// MissingCredentialsHint returns the sentence appended to missing credential messages, empty for none
-func (p Profile) MissingCredentialsHint() string {
+// MissingCredentialsHint returns the hook's answer for missing credential messages, nil for none
+func (p Profile) MissingCredentialsHint() any {
 	if p.MissingCredentialsHintHook != nil {
 		return p.MissingCredentialsHintHook()
 	}
-	return ""
+	return nil
 }
 
 // ReasoningPayload returns the verbatim reasoning object the endpoint takes, nil for none

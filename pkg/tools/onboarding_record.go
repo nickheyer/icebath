@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -226,7 +227,7 @@ func ObserveOnboardingToolResult(db *state.DB, sessionID string, hasSetupBeat bo
 	if !OnboardingAppliesTo(name) || !hasSetupBeat {
 		return result
 	}
-	decoded, err := jsonDecodeWTF8([]byte(result))
+	decoded, err := pyjson.DecodeWTF8([]byte(result))
 	parsed, _ := decoded.(map[string]any)
 	if err != nil || parsed == nil {
 		return result
@@ -239,14 +240,22 @@ func ObserveOnboardingToolResult(db *state.DB, sessionID string, hasSetupBeat bo
 	}
 	step, err := AdvanceOnboarding(db, sessionID, OnbApplied{Tool: name, Args: copyMap(args), Result: parsed})
 	if err != nil {
-		toolsLogger(nil).Warn("onboarding: tool result did not update the run record", "tool", name, "error", err)
+		toolsLogger(nil).Warn(fmt.Sprintf("onboarding: %s result did not update the run record", name), "error", err)
 		return result
 	}
 	text := OnboardingReminder(step.Reminder, step.Record, OnboardingFactsFromStored(asMapOrEmpty(step.Record["facts"])), "", nil)
 	if text == "" {
 		return result
 	}
-	out := copyMap(parsed)
-	out["reminder"] = text
-	return jsonCompact(out)
+	ordered, err := pyjson.DecodeWTF8Ordered([]byte(result))
+	out, _ := ordered.(*pyjson.Object)
+	if err != nil || out == nil {
+		return result
+	}
+	out.Set("reminder", text)
+	dumped, err := pyjson.Dumps(out, pyjson.EnsureASCII(false))
+	if err != nil {
+		return result
+	}
+	return dumped
 }

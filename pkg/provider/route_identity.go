@@ -126,7 +126,7 @@ func providerOwnsRouteIn(provider, baseURL string, cfg map[string]any) (owned bo
 	if !found && userDef == nil {
 		return true, true
 	}
-	inferred := inferProviderFromURL(baseURL)
+	inferred := inferProviderFromBaseURL(baseURL)
 	if inferred == "" {
 		return false, false
 	}

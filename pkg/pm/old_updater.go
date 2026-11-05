@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Exit status a pm command ends the process with, the error form of a Python SystemExit
@@ -153,7 +158,7 @@ func takeoverEnv(homeValue any) []string {
 }
 
 // Runs one takeover child over a request and result file pair, returning its status and decoded acknowledgement
-func runChild(ctx context.Context, request *OrderedObject) (int, *pyJSONObject, error) {
+func runChild(ctx context.Context, request *OrderedObject) (int, *pyjson.Object, error) {
 	root := RepoRoot()
 	var homeValue any
 	if value, ok := os.LookupEnv("ICEBATH_HOME"); ok {
@@ -190,7 +195,7 @@ func runChild(ctx context.Context, request *OrderedObject) (int, *pyJSONObject, 
 	if err != nil {
 		return 0, nil, err
 	}
-	completed := &pyJSONObject{vals: map[string]any{}}
+	completed := &pyjson.Object{Vals: map[string]any{}}
 	if info, statErr := os.Stat(resultPath); statErr == nil && info.Mode().IsRegular() {
 		data, err := os.ReadFile(resultPath)
 		if err != nil {
@@ -200,11 +205,11 @@ func runChild(ctx context.Context, request *OrderedObject) (int, *pyJSONObject, 
 		if err := strictUTF8(data); err != nil {
 			return 0, nil, &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
 		}
-		decoded, err := pyJSONLoads(string(data))
+		decoded, err := pyjson.Loads(string(data))
 		if err != nil {
 			return 0, nil, err
 		}
-		object, ok := decoded.(*pyJSONObject)
+		object, ok := decoded.(*pyjson.Object)
 		if !ok {
 			return 0, nil, &PyError{Class: "ValueError", Message: "invalid update takeover acknowledgement"}
 		}
@@ -263,21 +268,23 @@ func pyJSONTruthy(v any) bool {
 		return t
 	case string:
 		return t != ""
-	case pyJSONInt:
-		return t != "0"
+	case int64:
+		return t != 0
+	case *big.Int:
+		return t.Sign() != 0
 	case float64:
 		return t != 0
 	case []any:
 		return len(t) > 0
-	case *pyJSONObject:
-		return len(t.keys) > 0
+	case *pyjson.Object:
+		return len(t.Keys) > 0
 	}
 	return true
 }
 
 // Whether a takeover failure is one of the OSError, ValueError or TypeError classes a stop reports
 func takeoverCaught(err error) bool {
-	var decode *pyJSONError
+	var decode *pyjson.DecodeError
 	if errors.As(err, &decode) {
 		return true
 	}
@@ -294,7 +301,7 @@ func takeoverErrorText(err error) string {
 	if errors.As(err, &py) {
 		return py.Message
 	}
-	return pyOSErrorText(err)
+	return pypath.OSErrorText(err)
 }
 
 // Finishes the update in a fresh takeover child once and returns its status as a SystemExit
@@ -322,7 +329,7 @@ func stopForRelaunch(ctx context.Context, incomplete bool) error {
 		}
 		code = 1
 		fmt.Fprintf(cliStderr(ctx), "Update takeover failed: %s\n", takeoverErrorText(err))
-	} else if handled, _ := completed.get("receipt_handled"); pyJSONTruthy(handled) && receipt.Clear != nil {
+	} else if handled, _ := completed.Get("receipt_handled"); pyJSONTruthy(handled) && receipt.Clear != nil {
 		receipt.Clear()
 	}
 	takeoverMemo.Lock()
@@ -333,7 +340,7 @@ func stopForRelaunch(ctx context.Context, incomplete bool) error {
 
 // Relaunches the serves a historical atexit token left stopped, clearing pending once the child handled them
 func RelaunchStoppedServes(ctx context.Context, token *OrderedObject) error {
-	if pending, _ := token.Get("pending"); !truthy(pending) {
+	if pending, _ := token.Get("pending"); !pyrepr.Truthy(pending) {
 		return nil
 	}
 	request := NewOrderedObject()
@@ -345,10 +352,10 @@ func RelaunchStoppedServes(ctx context.Context, token *OrderedObject) error {
 		}
 		code = 1
 		fmt.Fprintf(cliStderr(ctx), "Stopped serve recovery failed: %s\n", takeoverErrorText(err))
-	} else if handled, _ := completed.get("serves_handled"); handled == true {
+	} else if handled, _ := completed.Get("serves_handled"); handled == true {
 		token.Set("pending", false)
 	}
-	if pending, _ := token.Get("pending"); code != 0 || truthy(pending) {
+	if pending, _ := token.Get("pending"); code != 0 || pyrepr.Truthy(pending) {
 		fmt.Fprintln(cliStderr(ctx), "Stopped serve recovery did not complete; restart the affected serve/dashboard backends manually.")
 	}
 	return nil

@@ -31,6 +31,9 @@ var fileSignature = FileSignature
 // Racy check seam the settle tests replace
 var mtimeIsRacy = MtimeIsRacy
 
+// Reader of the cache key content digest, the seam the settle tests count opens through
+var readDigestBytes = os.ReadFile
+
 // Reports whether a timestamp is too recent to rule out a same tick write after the stat
 func MtimeIsRacy(mtimeNS int64) bool {
 	return time.Now().UnixNano()-mtimeNS < RacyMtimeWindowNS
@@ -49,7 +52,7 @@ func frozenConfigWorker(path string) bool {
 
 // Digest of the file bytes, or the bracketed error name when the file stats but cannot be read
 func fileDigest(path string) string {
-	data, err := os.ReadFile(path)
+	data, err := readDigestBytes(path)
 	if err != nil {
 		return "<" + pyOSErrorName(err) + ">"
 	}
@@ -103,11 +106,20 @@ func fileCacheVersionOf(path string, fi os.FileInfo, alwaysDigest bool) []any {
 
 // Parsed YAML root of bytes, nil for an empty document, mappings string keyed
 func FastSafeLoad(data []byte) (any, error) {
-	var doc any
-	if err := yaml.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &doc); err != nil {
+	var node yaml.Node
+	if err := yaml.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &node); err != nil {
 		return nil, err
 	}
-	return normalizeMaps(doc), nil
+	var doc any
+	if len(node.Content) > 0 {
+		resolveYAML11(&node, false)
+		if err := node.Decode(&doc); err != nil {
+			return nil, err
+		}
+	}
+	doc = normalizeMaps(doc)
+	recordNodeOrder(&node, doc)
+	return doc, nil
 }
 
 type yamlFileCacheEntry struct {
@@ -132,7 +144,7 @@ func LoadYAMLFileReadonly(path string) (any, error) {
 	if ok && reflect.DeepEqual(cached.version, version) {
 		return cached.data, nil
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := readYAMLFile(path)
 	if err != nil {
 		return nil, err
 	}

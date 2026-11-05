@@ -481,12 +481,12 @@ func parseSkillDirs(v any, dir string) []string {
 func ParseManifestFile(file, dir, source, prefix string) *Manifest {
 	raw, err := os.ReadFile(file)
 	if err != nil {
-		slog.Warn("failed to read plugin manifest", "file", file, "err", err)
+		logWarn(fmt.Sprintf("Failed to parse %s: %v", file, err), excInfo(err)...)
 		return nil
 	}
 	var doc any
 	if err := yaml.Unmarshal(stripBOM(raw), &doc); err != nil {
-		slog.Warn("failed to parse plugin manifest", "file", file, "err", err)
+		logWarn(fmt.Sprintf("Failed to parse %s: %v", file, err), excInfo(err)...)
 		return nil
 	}
 	data := asMap(doc)

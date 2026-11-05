@@ -20,7 +20,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Client wait budgets and retry policy
@@ -68,24 +72,31 @@ var clientCapabilities = map[string]any{
 }
 
 // FileURI returns the file URI of a path, spaces, unicode and drive letters included
-func FileURI(path string) string {
-	abs := pyAbspath(path)
+func FileURI(path string) (string, error) {
+	abs, err := pypath.Abspath(path)
+	if err != nil {
+		return "", err
+	}
 	if runtime.GOOS == "windows" {
 		abs = strings.ReplaceAll(abs, `\`, "/")
 		if !strings.HasPrefix(abs, "/") {
 			abs = "/" + abs
 		}
 	}
-	return "file://" + pyQuote(abs, "/:")
+	return "file://" + pyQuote(abs, "/:"), nil
 }
 
 // LSP WorkspaceFolder of a root
-func folder(root string) map[string]any {
-	name := pyBasename(strings.TrimRight(root, string(filepath.Separator)))
+func folder(root string) (map[string]any, error) {
+	name := pypath.Basename(strings.TrimRight(root, string(filepath.Separator)))
 	if name == "" {
 		name = root
 	}
-	return map[string]any{"name": name, "uri": FileURI(root)}
+	uri, err := FileURI(root)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"name": name, "uri": uri}, nil
 }
 
 // URIToPath inverts FileURI
@@ -97,7 +108,7 @@ func URIToPath(uri string) string {
 	if runtime.GOOS == "windows" && strings.HasPrefix(raw, "/") && len(raw) > 2 && raw[2] == ':' {
 		raw = raw[1:]
 	}
-	return pyNormpath(pyUnquote(raw))
+	return pypath.Normpath(pyUnquote(raw))
 }
 
 // UTF-16 code units of a string
@@ -117,7 +128,7 @@ func endPosition(text string) map[string]any {
 	if text == "" {
 		return map[string]any{"line": 0, "character": 0}
 	}
-	lines := pySplitLines(text)
+	lines := pystr.Splitlines(text, false)
 	if strings.HasSuffix(text, "\n") || strings.HasSuffix(text, "\r") {
 		return map[string]any{"line": len(lines), "character": 0}
 	}
@@ -593,7 +604,7 @@ func (c *Client) drainStderr(ctx context.Context, p *serverProc) {
 		if len(line) == 0 && err != nil {
 			return
 		}
-		text := strings.TrimRightFunc(decodeUTF8Replace(line), pyIsSpace)
+		text := strings.TrimRightFunc(decodeUTF8Replace(line), pystr.IsSpace)
 		if text != "" {
 			text = runePrefix(text, 1000)
 			c.logf(slog.LevelDebug, "[%s] stderr: %s", c.ServerID, text)
@@ -667,7 +678,7 @@ func (c *Client) dispatch(msg any) error {
 	case KindNotification:
 		c.dispatchNotification(key, msg.(map[string]any))
 	default:
-		c.logf(slog.LevelWarn, "[%s] dropping invalid message: %s", c.ServerID, pyRepr(msg))
+		c.logf(slog.LevelWarn, "[%s] dropping invalid message: %s", c.ServerID, pyrepr.Repr(msg))
 	}
 	return nil
 }
@@ -710,12 +721,16 @@ func (c *Client) readerLoop(ctx context.Context, p *serverProc) {
 	}
 }
 
-func (c *Client) workspaceFolderList() []any {
+func (c *Client) workspaceFolderList() ([]any, error) {
 	out := make([]any, len(c.workspaceFolders))
 	for i, r := range c.workspaceFolders {
-		out[i] = folder(r)
+		f, err := folder(r)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = f
 	}
-	return out
+	return out, nil
 }
 
 // Attaches another root to a running multi root server, recording it before announcing it
@@ -726,8 +741,12 @@ func (c *Client) addWorkspaceFolder(ctx context.Context, root string) error {
 		}
 	}
 	c.workspaceFolders = append(c.workspaceFolders, root)
+	f, err := folder(root)
+	if err != nil {
+		return err
+	}
 	return clientSendNotification(c, ctx, "workspace/didChangeWorkspaceFolders",
-		map[string]any{"event": map[string]any{"added": []any{folder(root)}, "removed": []any{}}})
+		map[string]any{"event": map[string]any{"added": []any{f}, "removed": []any{}}})
 }
 
 // Detaches a root from a running multi root server so it keeps serving its siblings
@@ -743,15 +762,27 @@ func (c *Client) removeWorkspaceFolder(ctx context.Context, root string) error {
 		return nil
 	}
 	c.workspaceFolders = append(c.workspaceFolders[:idx:idx], c.workspaceFolders[idx+1:]...)
+	f, err := folder(root)
+	if err != nil {
+		return err
+	}
 	return clientSendNotification(c, ctx, "workspace/didChangeWorkspaceFolders",
-		map[string]any{"event": map[string]any{"added": []any{}, "removed": []any{folder(root)}}})
+		map[string]any{"event": map[string]any{"added": []any{}, "removed": []any{f}}})
 }
 
 // Sends initialize, records the sync kind, then initialized and the configuration push
 func (c *Client) initialize(ctx context.Context) error {
+	rootURI, err := FileURI(c.WorkspaceRoot)
+	if err != nil {
+		return err
+	}
+	folders, err := c.workspaceFolderList()
+	if err != nil {
+		return err
+	}
 	params := map[string]any{
-		"rootUri": FileURI(c.WorkspaceRoot), "rootPath": c.WorkspaceRoot, "processId": os.Getpid(),
-		"workspaceFolders": c.workspaceFolderList(), "initializationOptions": c.initOptions, "capabilities": clientCapabilities,
+		"rootUri": rootURI, "rootPath": c.WorkspaceRoot, "processId": os.Getpid(),
+		"workspaceFolders": folders, "initializationOptions": c.initOptions, "capabilities": clientCapabilities,
 	}
 	result, err := waitFor(ctx, InitializeTimeout, func(ctx context.Context) (any, error) {
 		return c.sendRequest(ctx, "initialize", params)
@@ -787,7 +818,7 @@ func (c *Client) initialize(ctx context.Context) error {
 
 // AttributeError a get call on a non dict raises
 func attributeError(v any) error {
-	return &pyExc{typ: "AttributeError", text: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(v))}
+	return &pyExc{typ: "AttributeError", text: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))}
 }
 
 // Graceful shutdown and exit, a grace period for the server to honour exit, then the hard kill
@@ -921,7 +952,7 @@ var errConnectionLost = &pyExc{typ: "ConnectionResetError", text: "Connection lo
 
 func (c *Client) requireOpen(method string) error {
 	if !c.connectionIsOpen() {
-		return protocolErrorf("cannot send %s: server connection closed", pyStrRepr(method))
+		return protocolErrorf("cannot send %s: server connection closed", pyrepr.StrRepr(method))
 	}
 	return nil
 }
@@ -943,7 +974,7 @@ func (c *Client) sendRequest(ctx context.Context, method string, params any) (an
 		if isCancellation(err) {
 			return nil, err
 		}
-		return nil, protocolErrorf("send failed for %s: %s", pyStrRepr(method), writeErrorText(err))
+		return nil, protocolErrorf("send failed for %s: %s", pyrepr.StrRepr(method), writeErrorText(err))
 	}
 	defer delete(c.pending, id)
 	if err := c.l.await(ctx, fut.done); err != nil {
@@ -1014,7 +1045,7 @@ func (c *Client) dispatchResponse(id any, msg map[string]any) error {
 	if err != nil {
 		return err
 	}
-	fut.setError(NewRequestError(int(code), pyStr(dgetOr(em, "message", "unknown")), em["data"]))
+	fut.setError(NewRequestError(int(code), pyrepr.Str(dgetOr(em, "message", "unknown")), em["data"]))
 	return nil
 }
 
@@ -1045,7 +1076,13 @@ func (c *Client) dispatchRequest(ctx context.Context, id any, msg map[string]any
 	case "window/workDoneProgress/create", "client/registerCapability", "client/unregisterCapability", "workspace/diagnostic/refresh":
 		reply = MakeResponse(id, nil)
 	case "workspace/workspaceFolders":
-		reply = MakeResponse(id, c.workspaceFolderList())
+		folders, err := c.workspaceFolderList()
+		if err != nil {
+			c.logf(slog.LevelWarn, "[%s] request handler %s failed: %s", c.ServerID, name, errText(err))
+			reply = MakeErrorResponse(id, -32000, "handler failed: "+errText(err), nil)
+		} else {
+			reply = MakeResponse(id, folders)
+		}
 	case "workspace/configuration":
 		result, err := c.handleWorkspaceConfiguration(params)
 		if err != nil {
@@ -1055,7 +1092,7 @@ func (c *Client) dispatchRequest(ctx context.Context, id any, msg map[string]any
 			reply = MakeResponse(id, result)
 		}
 	default:
-		reply = MakeErrorResponse(id, ErrorMethodNotFound, "method not found: "+pyStr(method), nil)
+		reply = MakeErrorResponse(id, ErrorMethodNotFound, "method not found: "+pyrepr.Str(method), nil)
 	}
 	c.sendReply(ctx, reply)
 }
@@ -1081,7 +1118,7 @@ func (c *Client) handleWorkspaceConfiguration(params any) (any, error) {
 	case string:
 		items = make([]any, utf8.RuneCountInString(t))
 	default:
-		return nil, fmt.Errorf("'%s' object is not iterable", pyTypeName(t))
+		return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(t))
 	}
 	out := make([]any, 0, len(items))
 	for _, item := range items {
@@ -1096,14 +1133,14 @@ func (c *Client) configSection(item any) any {
 		return nil
 	}
 	section := m["section"]
-	if !pyTruthy(section) || len(c.initOptions) == 0 {
+	if !pyrepr.Truthy(section) || len(c.initOptions) == 0 {
 		if len(c.initOptions) == 0 {
 			return nil
 		}
 		return c.initOptions
 	}
 	var cur any = c.initOptions
-	for _, part := range strings.Split(pyStr(section), ".") {
+	for _, part := range strings.Split(pyrepr.Str(section), ".") {
 		cm, ok := cur.(map[string]any)
 		if !ok {
 			return nil
@@ -1164,7 +1201,10 @@ func (c *Client) openFile(ctx context.Context, path, languageID string, text *st
 	if !c.isRunning() {
 		return 0, protocolErrorf("client not running")
 	}
-	absPath := pyAbspath(path)
+	absPath, err := pypath.Abspath(path)
+	if err != nil {
+		return 0, err
+	}
 	var content string
 	if text == nil {
 		raw, err := os.ReadFile(absPath)
@@ -1179,7 +1219,10 @@ func (c *Client) openFile(ctx context.Context, path, languageID string, text *st
 	} else {
 		content = AsDiskRead(*text)
 	}
-	uri := FileURI(absPath)
+	uri, err := FileURI(absPath)
+	if err != nil {
+		return 0, err
+	}
 	doc := c.docs.get(absPath)
 	if doc != nil && doc.version < 0 {
 		doc = nil
@@ -1224,8 +1267,12 @@ func (c *Client) evictLRUDocs(ctx context.Context) error {
 		oldPath, old := c.docs.oldest()
 		c.docs.pop(oldPath)
 		if old.version >= 0 {
+			uri, err := FileURI(oldPath)
+			if err != nil {
+				return err
+			}
 			if err := clientSendNotification(c, ctx, "textDocument/didClose",
-				map[string]any{"textDocument": map[string]any{"uri": FileURI(oldPath)}}); err != nil {
+				map[string]any{"textDocument": map[string]any{"uri": uri}}); err != nil {
 				return err
 			}
 		}
@@ -1238,19 +1285,34 @@ func (c *Client) saveFile(ctx context.Context, path string) error {
 	if !c.isRunning() {
 		return nil
 	}
+	absPath, err := pypath.Abspath(path)
+	if err != nil {
+		return err
+	}
+	uri, err := FileURI(absPath)
+	if err != nil {
+		return err
+	}
 	return clientSendNotification(c, ctx, "textDocument/didSave",
-		map[string]any{"textDocument": map[string]any{"uri": FileURI(pyAbspath(path))}})
+		map[string]any{"textDocument": map[string]any{"uri": uri}})
 }
 
 // Pulls document diagnostics into the pull store tagged with the version at send time
 func (c *Client) pullDocumentDiagnostics(ctx context.Context, path string) error {
-	absPath := pyAbspath(path)
+	absPath, err := pypath.Abspath(path)
+	if err != nil {
+		return err
+	}
 	sentVersion := -1
 	if doc := c.docs.get(absPath); doc != nil {
 		sentVersion = doc.version
 	}
+	uri, err := FileURI(absPath)
+	if err != nil {
+		return err
+	}
 	result, err := c.sendRequestWithRetry(ctx, "textDocument/diagnostic",
-		map[string]any{"textDocument": map[string]any{"uri": FileURI(absPath)}}, diagnosticsRequestTimeout)
+		map[string]any{"textDocument": map[string]any{"uri": uri}}, diagnosticsRequestTimeout)
 	if err != nil {
 		if !isLSPFailure(err) {
 			return err
@@ -1310,7 +1372,10 @@ func (c *Client) waitForDiagnostics(ctx context.Context, path string, version in
 		}
 	}
 	deadline := time.Now().Add(timeout)
-	absPath := pyAbspath(path)
+	absPath, err := pypath.Abspath(path)
+	if err != nil {
+		return false, err
+	}
 	var pull, push *task
 	if c.pullOK {
 		pull = c.l.spawn(ctx, func(ctx context.Context) { c.pullDocumentDiagnostics(ctx, absPath) })
@@ -1411,17 +1476,24 @@ func (c *Client) waitForSeed(ctx context.Context, absPath string, timeout time.D
 func (c *Client) seedsFirstPush() bool { return c.seedFirstPush }
 
 // Text last synced for a path, false when never opened
-func (c *Client) documentText(path string) (string, bool) {
-	doc := c.docs.get(pyAbspath(path))
-	if doc != nil && doc.version >= 0 {
-		return doc.text, true
+func (c *Client) documentText(path string) (string, bool, error) {
+	absPath, err := pypath.Abspath(path)
+	if err != nil {
+		return "", false, err
 	}
-	return "", false
+	if doc := c.docs.get(absPath); doc != nil && doc.version >= 0 {
+		return doc.text, true, nil
+	}
+	return "", false, nil
 }
 
 // Merged and deduped push and pull diagnostics, stores counting only once fresh when asked
 func (c *Client) diagnosticsFor(path string, freshOnly bool) ([]map[string]any, error) {
-	doc := c.docs.get(pyAbspath(path))
+	absPath, err := pypath.Abspath(path)
+	if err != nil {
+		return nil, err
+	}
+	doc := c.docs.get(absPath)
 	if doc == nil {
 		return []map[string]any{}, nil
 	}
@@ -1483,12 +1555,12 @@ func DiagnosticKey(d map[string]any) (string, error) {
 	}
 	code := ""
 	if v, ok := d["code"]; ok && v != nil {
-		code = pyStr(v)
+		code = pyrepr.Str(v)
 	}
 	return strings.Join([]string{
-		pyStr(pyOr(d["severity"], int64(1))), code, pyStr(pyOr(d["source"], "")),
-		pyStrip(pyStr(pyOr(d["message"], ""))),
-		pyStr(dgetOr(start, "line", int64(0))) + ":" + pyStr(dgetOr(start, "character", int64(0))) + "-" +
-			pyStr(dgetOr(end, "line", int64(0))) + ":" + pyStr(dgetOr(end, "character", int64(0))),
+		pyrepr.Str(pyOr(d["severity"], int64(1))), code, pyrepr.Str(pyOr(d["source"], "")),
+		pystr.Strip(pyrepr.Str(pyOr(d["message"], ""))),
+		pyrepr.Str(dgetOr(start, "line", int64(0))) + ":" + pyrepr.Str(dgetOr(start, "character", int64(0))) + "-" +
+			pyrepr.Str(dgetOr(end, "line", int64(0))) + ":" + pyrepr.Str(dgetOr(end, "character", int64(0))),
 	}, "\x00"), nil
 }

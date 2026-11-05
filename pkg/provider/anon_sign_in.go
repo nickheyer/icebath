@@ -318,7 +318,12 @@ func RunSignIn(env PoolEnv, opts SignInOptions) iter.Seq[SignInState] {
 			yield(SignInAlreadySignedIn{})
 			return
 		}
-		clientID, scopeStr := DefaultNousClientID, DefaultNousScope
+		pconfig, err := providerConfig(env.Ctx, "nous")
+		if err != nil {
+			yield(signInStateFromError(err))
+			return
+		}
+		clientID, scopeStr := pconfig.ClientID, pconfig.Scope
 		verify := resolveOAuthVerify(env, nil, "", nil)
 		factory := opts.ClientFactory
 		if factory == nil {

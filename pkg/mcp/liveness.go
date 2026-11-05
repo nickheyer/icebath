@@ -307,7 +307,7 @@ func liveEndpoint(ctx context.Context, serverName string) (url string, headers m
 	}
 	headers = map[string]string{}
 	if token != "" {
-		tools.RegisterVaultRedactionValue(token)
+		tools.RegisterVaultRedactionValueIn(ctx, token)
 		headers["Authorization"] = "Bearer " + token
 	}
 	return url, headers, true, nil

@@ -2,11 +2,12 @@ package tools
 
 import (
 	"encoding/json"
+	"math/big"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/lsp"
 )
 
@@ -77,7 +78,7 @@ func lspDecodeJSON(text string) (any, error) {
 	if class != "" {
 		return nil, lsp.PythonError(class, msg)
 	}
-	v, err := pyJSONLoads(text)
+	v, err := pyjson.Loads(text)
 	if err != nil {
 		return nil, err
 	}
@@ -87,10 +88,10 @@ func lspDecodeJSON(text string) (any, error) {
 // Decoded value in the plain map, int64 and float64 shapes the LSP layer reads
 func lspJSONValue(v any) any {
 	switch t := v.(type) {
-	case *pyJSONObject:
-		m := make(map[string]any, len(t.keys))
-		for _, k := range t.keys {
-			m[k] = lspJSONValue(t.vals[k])
+	case *pyjson.Object:
+		m := make(map[string]any, len(t.Keys))
+		for _, k := range t.Keys {
+			m[k] = lspJSONValue(t.Vals[k])
 		}
 		return m
 	case []any:
@@ -99,11 +100,10 @@ func lspJSONValue(v any) any {
 			out[i] = lspJSONValue(e)
 		}
 		return out
-	case pyJSONInt:
-		if n, err := strconv.ParseInt(string(t), 10, 64); err == nil {
-			return n
-		}
-		return json.Number(t)
+	case int64:
+		return t
+	case *big.Int:
+		return json.Number(t.String())
 	}
 	return v
 }
@@ -167,9 +167,9 @@ func (w *lspSessionService) StartEditCheck(path string, preText, postText *strin
 	for i, n := range carry {
 		notes[i] = lsp.Note{Text: n.Text, BaselineText: n.BaselineText}
 	}
-	fut := w.svc.StartEditCheck(path, preText, postText, owner, notes, lspOperatorWorkspaceRoots(w.env))
-	if fut == nil {
-		return nil, nil
+	fut, err := w.svc.StartEditCheck(path, preText, postText, owner, notes, lspOperatorWorkspaceRoots(w.env))
+	if err != nil || fut == nil {
+		return nil, err
 	}
 	return lspFuture{fut}, nil
 }

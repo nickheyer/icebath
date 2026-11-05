@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // UndefinedMarkerError is packaging's UndefinedComparison or UndefinedEnvironmentName raised while evaluating a marker
@@ -184,7 +186,7 @@ func mustSpecVersion(text string) (*pep440Version, error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, &PyError{Class: "InvalidVersion", Message: fmt.Sprintf("Invalid version: %s", pyRepr(text))}
+		return nil, &PyError{Class: "InvalidVersion", Message: fmt.Sprintf("Invalid version: %s", pyrepr.StrRepr(text))}
 	}
 	return v, nil
 }
@@ -311,7 +313,7 @@ func (s pySpecifier) contains(item string) (bool, error) {
 		}
 		return true, nil
 	}
-	return false, &PyError{Class: "ValueError", Message: "unknown specifier operator " + pyRepr(s.op)}
+	return false, &PyError{Class: "ValueError", Message: "unknown specifier operator " + pyrepr.StrRepr(s.op)}
 }
 
 // Whether a version satisfies every clause of a specifier set with prereleases admitted
@@ -348,7 +350,7 @@ func evalMarkerOp(lhs, op, rhs, key string) (bool, error) {
 	case "!=":
 		return lhs != rhs, nil
 	}
-	return false, &UndefinedMarkerError{Class: "UndefinedComparison", Message: fmt.Sprintf("Undefined <Op(%s)> on %s and %s.", pyRepr(op), pyRepr(lhs), pyRepr(rhs))}
+	return false, &UndefinedMarkerError{Class: "UndefinedComparison", Message: fmt.Sprintf("Undefined <Op(%s)> on %s and %s.", pyrepr.StrRepr(op), pyrepr.StrRepr(lhs), pyrepr.StrRepr(rhs))}
 }
 
 // Evaluates a parsed marker against a full environment the way packaging's _evaluate_markers does
@@ -375,7 +377,7 @@ func evaluateMarkerList(markers markerList, env map[string]string) (bool, error)
 				rhs, found = env[key]
 			}
 			if !found {
-				return false, &UndefinedMarkerError{Class: "UndefinedEnvironmentName", Message: pyRepr(key)}
+				return false, &UndefinedMarkerError{Class: "UndefinedEnvironmentName", Message: pyrepr.StrRepr(key)}
 			}
 			if key == "extras" || key == "dependency_groups" {
 				lhs, rhs = CanonicalizeName(lhs), CanonicalizeName(rhs)

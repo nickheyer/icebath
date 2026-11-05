@@ -230,6 +230,8 @@ type profileRow struct {
 	hostnames                                             []string
 	perModel                                              func(string) APIMode
 	local                                                 bool
+	portal, clientID, scope                               string
+	extra                                                 map[string]any
 }
 
 func (r profileRow) profile() Profile {
@@ -241,6 +243,7 @@ func (r profileRow) profile() Profile {
 		ModelListing: !r.noListing, HealthCheck: !r.noHealth, Vision: r.vision, VisionToolMessages: !r.noVisionTool,
 		OmitTemperature: r.omitTemp, DefaultMaxTokens: r.maxTokens, UnsupportedResponseFormats: r.badFormats,
 		ModelsDevID: r.modelsDev, Hostnames: r.hostnames, PerModelMode: r.perModel,
+		PortalBaseURL: r.portal, ClientID: r.clientID, Scope: r.scope, Extra: r.extra,
 	}
 	if p.ModelsDevID == "" {
 		p.ModelsDevID = p.Name
@@ -256,7 +259,8 @@ func registryRows() []profileRow {
 	return []profileRow{
 		{name: "nous", display: "Nous Portal", desc: "Nous Research - Hermes model family", signup: "https://nousresearch.com/",
 			base: NousInferenceBaseURL, authType: AuthTypeOAuthDeviceCode, keys: []string{"NOUS_API_KEY"},
-			fallbacks: []string{"hermes-3-405b", "hermes-3-70b"}, perModel: func(m string) APIMode { return NousMode(m, "chat") }},
+			fallbacks: []string{"hermes-3-405b", "hermes-3-70b"}, perModel: func(m string) APIMode { return NousMode(m, "chat") },
+			portal: DefaultNousPortalURL, clientID: DefaultNousClientID, scope: DefaultNousScope},
 		{name: "openai-codex", display: "ChatGPT or Codex Subscription", base: CodexBaseURL, baseEnv: "ICEBATH_CODEX_BASE_URL",
 			mode: ModeCodexResponses, authType: AuthTypeOAuthExternal, noListing: true},
 		{name: "openai-api", display: "OpenAI API", base: OpenAIBaseURL, baseEnv: "OPENAI_BASE_URL", mode: ModeCodexResponses,
@@ -289,7 +293,9 @@ func registryRows() []profileRow {
 		{name: "minimax", display: "MiniMax", base: MiniMaxOAuthBaseURL, baseEnv: "MINIMAX_BASE_URL", mode: ModeAnthropicMessages,
 			keys: []string{"MINIMAX_API_KEY"}, defModel: "MiniMax-M3"},
 		{name: "minimax-oauth", display: "MiniMax (OAuth)", desc: "MiniMax via OAuth browser flow - no API key required", signup: "https://api.minimax.io/",
-			base: MiniMaxOAuthBaseURL, mode: ModeAnthropicMessages, authType: AuthTypeOAuthMiniMax, defModel: "MiniMax-M2.7"},
+			base: MiniMaxOAuthBaseURL, mode: ModeAnthropicMessages, authType: AuthTypeOAuthMiniMax, defModel: "MiniMax-M2.7",
+			portal: MinimaxOAuthGlobalBase, clientID: MinimaxOAuthClientID, scope: MinimaxOAuthScope,
+			extra: map[string]any{"region": "global", "cn_portal_base_url": MinimaxOAuthCNBase, "cn_inference_base_url": MinimaxOAuthCNInference}},
 		{name: "anthropic", display: "Anthropic", base: AnthropicBaseURL, baseEnv: "ANTHROPIC_BASE_URL", mode: ModeAnthropicMessages,
 			keys: []string{"ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"}, defModel: "claude-haiku-4-5-20251001"},
 		{name: "alibaba", display: "Qwen Cloud", base: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", baseEnv: "DASHSCOPE_BASE_URL",
@@ -334,8 +340,7 @@ func registryRows() []profileRow {
 		{name: "vertex", display: "Google Vertex AI", base: "https://aiplatform.googleapis.com", authType: AuthTypeVertex,
 			defModel: "google/gemini-3.6-flash", noListing: true},
 		{name: "azure-foundry", display: "Azure Foundry", desc: "Microsoft Foundry - OpenAI-compatible endpoint (user-supplied base URL)",
-			signup: "https://ai.azure.com/", baseEnv: "AZURE_FOUNDRY_BASE_URL", keys: []string{"AZURE_FOUNDRY_API_KEY"},
-			perModel: AzureFoundryModelMode},
+			signup: "https://ai.azure.com/", baseEnv: "AZURE_FOUNDRY_BASE_URL", keys: []string{"AZURE_FOUNDRY_API_KEY"}},
 	}
 }
 

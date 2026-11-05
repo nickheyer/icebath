@@ -30,6 +30,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type readExtractGolden struct {
@@ -239,12 +241,12 @@ func TestReadExtractJSONParser(t *testing.T) {
 		"{1:2}":    "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
 	}
 	for in, want := range cases {
-		_, err := pyJSONLoads(in)
+		_, err := pyjson.Loads(in)
 		if err == nil || err.Error() != want {
-			t.Errorf("pyJSONLoads(%q) = %v want %q", in, err, want)
+			t.Errorf("pyjson.Loads(%q) = %v want %q", in, err, want)
 		}
 	}
-	v, err := pyJSONLoads(`{"b": [1, 2.5, NaN, -Infinity, "x\ud83d\ude00"], "a": {"k": null}, "b": true}`)
+	v, err := pyjson.Loads(`{"b": [1, 2.5, NaN, -Infinity, "x\ud83d\ude00"], "a": {"k": null}, "b": true}`)
 	if err != nil {
 		t.Fatal(err)
 	}

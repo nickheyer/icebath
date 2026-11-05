@@ -1,20 +1,28 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"gopkg.in/yaml.v3"
 )
 
 // Model validation used by the switch pipeline, replaced in tests
 var switchValidateModelFn = ValidateRequestedModel
+
+// Route decision and config publication of a persisted selection, replaced in tests
+var (
+	selectionClearsContextPinFn = ShouldClearContextPin
+	selectionPublishFn          = config.WriteConfigDocument
+)
 
 // Models dev capabilities and metadata of the switched model, replaced in tests
 var (
@@ -22,9 +30,6 @@ var (
 	switchModelInfoFn    = ModelsDevModelInfo
 	switchUsageNoticeFn  = LargeModelNoticeFor
 )
-
-// Serializes model selection writes to a config file
-var modelSelectionConfigMu sync.Mutex
 
 // Normalizes and validates the model for the target, accepting config declared models the remote catalog lacks
 func validateSwitch(ctx context.Context, st *modelSwitch) *ModelSwitchResult {
@@ -218,7 +223,7 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 		{Key: "base_url", Value: orNil(result.BaseURL)}, {Key: "api_mode", Value: orNil(result.APIMode)},
 	}
 	if _, pinned := modelCfg["context_length"]; pinned {
-		if ShouldClearContextPin(pyStrOrEmpty(pyOr(modelCfg["default"], modelCfg["model"])), result.NewModel,
+		if selectionClearsContextPinFn(pyStrOrEmpty(pyOr(modelCfg["default"], modelCfg["model"])), result.NewModel,
 			pyStrOrEmpty(modelCfg["base_url"]), result.BaseURL, pyStrOrEmpty(modelCfg["provider"]), result.TargetProvider) {
 			updates = append(updates, config.KeyValue{Key: "context_length"})
 		}
@@ -369,13 +374,18 @@ func PersistModelSelection(ctx context.Context, result ModelSwitchResult, config
 
 // Merges the selection into a fresh read of the config and replaces it, recomputing when the model section moved
 func persistSelectionLocked(ctx context.Context, path string, result ModelSwitchResult, plannedFrom any, updates []config.KeyValue) error {
-	modelSelectionConfigMu.Lock()
-	defer modelSelectionConfigMu.Unlock()
+	ctx, unlock := config.LockConfig(ctx)
+	defer unlock()
 	cfg, err := readUserConfigRaw(ctx, path)
 	if err != nil {
 		return err
 	}
 	modelCfg := cfg["model"]
+	if m, ok := modelCfg.(map[string]any); ok {
+		for _, at := range modelAliasPaths(path) {
+			shareConfigValue(cfg, at, m)
+		}
+	}
 	if !pyJSONEqual(modelCfg, plannedFrom) {
 		updates = ModelSelectionConfigUpdates(result, modelCfg)
 	}
@@ -388,7 +398,7 @@ func persistSelectionLocked(ctx context.Context, path string, result ModelSwitch
 	} else {
 		cfg["model"] = merged
 	}
-	return config.WriteConfigDocument(ctx, path, cfg, "")
+	return selectionPublishFn(ctx, path, cfg, "")
 }
 
 // Normalized extra headers of a provider config entry, empty for a non mapping
@@ -402,4 +412,80 @@ func extraHeadersFromConfig(entry any) map[string]string {
 		headers = map[string]string{}
 	}
 	return headers
+}
+
+// Document paths holding a plain YAML alias of the anchored top level model mapping
+func modelAliasPaths(path string) [][]any {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var doc yaml.Node
+	if yaml.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &doc) != nil || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	root := doc.Content[0]
+	var anchor *yaml.Node
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "model" {
+			anchor = root.Content[i+1]
+		}
+	}
+	if anchor == nil || anchor.Anchor == "" || anchor.Kind != yaml.MappingNode {
+		return nil
+	}
+	var out [][]any
+	var walk func(n *yaml.Node, at []any)
+	walk = func(n *yaml.Node, at []any) {
+		switch n.Kind {
+		case yaml.AliasNode:
+			if n.Alias == anchor {
+				out = append(out, slices.Clone(at))
+			}
+		case yaml.MappingNode:
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				if key := n.Content[i]; key.Tag != "!!merge" && key.Value != "<<" {
+					walk(n.Content[i+1], append(slices.Clip(at), key.Value))
+				}
+			}
+		case yaml.SequenceNode:
+			for i, c := range n.Content {
+				walk(c, append(slices.Clip(at), i))
+			}
+		}
+	}
+	walk(root, nil)
+	return out
+}
+
+// Points the decoded value at path to the shared mapping so an in place edit reaches every alias
+func shareConfigValue(cfg map[string]any, at []any, shared map[string]any) {
+	var cur any = cfg
+	for i, step := range at {
+		last := i == len(at)-1
+		switch c := cur.(type) {
+		case map[string]any:
+			key, _ := step.(string)
+			if _, ok := c[key]; !ok {
+				return
+			}
+			if last {
+				c[key] = shared
+				return
+			}
+			cur = c[key]
+		case []any:
+			idx, _ := step.(int)
+			if idx >= len(c) {
+				return
+			}
+			if last {
+				c[idx] = shared
+				return
+			}
+			cur = c[idx]
+		default:
+			return
+		}
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +25,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools/anydoc"
 	_ "modernc.org/sqlite"
 )
@@ -287,26 +290,26 @@ func parseHostedPDF(ctx context.Context, env *Env, data []byte, filename, apiKey
 	if err != nil {
 		return "", errors.New("Firecrawl Parse: " + err.Error())
 	}
-	reply := &pyJSONObject{vals: map[string]any{}}
+	reply := &pyjson.Object{Vals: map[string]any{}}
 	if utf8.Valid(body) {
-		if v, err := pyJSONLoads(strings.TrimPrefix(string(body), "\ufeff")); err == nil {
-			if obj, ok := v.(*pyJSONObject); ok {
+		if v, err := pyjson.Loads(strings.TrimPrefix(string(body), "\ufeff")); err == nil {
+			if obj, ok := v.(*pyjson.Object); ok {
 				reply = obj
 			}
 		}
 	}
-	success, _ := reply.get("success")
+	success, _ := reply.Get("success")
 	if resp.StatusCode != 200 || !pyTruthy(success) {
 		detail := fmt.Sprintf("HTTP %d", resp.StatusCode)
-		if e, _ := reply.get("error"); pyTruthy(e) {
+		if e, _ := reply.Get("error"); pyTruthy(e) {
 			detail = pyJSONStr(e)
 		}
 		return "", errors.New(describeHostedFailure(resp.StatusCode, detail, apiKey != ""))
 	}
-	dataField, _ := reply.get("data")
+	dataField, _ := reply.Get("data")
 	markdown := ""
-	if obj, ok := dataField.(*pyJSONObject); ok {
-		if m, ok := obj.vals["markdown"].(string); ok {
+	if obj, ok := dataField.(*pyjson.Object); ok {
+		if m, ok := obj.Vals["markdown"].(string); ok {
 			markdown = m
 		}
 	}
@@ -328,14 +331,16 @@ func pyTruthy(v any) bool {
 		return x
 	case string:
 		return x != ""
-	case pyJSONInt:
-		return x != "0"
+	case int64:
+		return x != 0
+	case *big.Int:
+		return x.Sign() != 0
 	case float64:
 		return x != 0
 	case []any:
 		return len(x) > 0
-	case *pyJSONObject:
-		return len(x.keys) > 0
+	case *pyjson.Object:
+		return len(x.Keys) > 0
 	}
 	return true
 }
@@ -486,7 +491,7 @@ func pdfCoverageNote(ctx context.Context, p, displayPath string) string {
 	counts := make([]int, len(texts))
 	var empty []int
 	for i, page := range texts {
-		counts[i] = wtf8RuneCount(pyStrip(page))
+		counts[i] = pystr.Len(pyStrip(page))
 		if counts[i] < pdfEmptyPageChars {
 			empty = append(empty, i+1)
 		}
@@ -535,39 +540,6 @@ func joinedLines(lines []string, emptyError string) (string, error) {
 	return "", &ExtractionError{Msg: emptyError}
 }
 
-// Length of the maximal invalid UTF-8 subpart at the start of b
-func utf8MaximalSubpart(b []byte) int {
-	c := b[0]
-	lo, hi, need := byte(0x80), byte(0xBF), 0
-	switch {
-	case c >= 0xC2 && c <= 0xDF:
-		need = 1
-	case c == 0xE0:
-		lo, need = 0xA0, 2
-	case c >= 0xE1 && c <= 0xEC, c == 0xEE, c == 0xEF:
-		need = 2
-	case c == 0xED:
-		hi, need = 0x9F, 2
-	case c == 0xF0:
-		lo, need = 0x90, 3
-	case c >= 0xF1 && c <= 0xF3:
-		need = 3
-	case c == 0xF4:
-		hi, need = 0x8F, 3
-	default:
-		return 1
-	}
-	n := 1
-	for k := 0; k < need && n < len(b); k++ {
-		if b[n] < lo || b[n] > hi {
-			break
-		}
-		lo, hi = 0x80, 0xBF
-		n++
-	}
-	return n
-}
-
 // Decodes UTF-8 replacing each maximal invalid subpart with U+FFFD like errors=replace
 func decodeUTF8Replace(b []byte) string {
 	if utf8.Valid(b) {
@@ -582,7 +554,7 @@ func decodeUTF8Replace(b []byte) string {
 			continue
 		}
 		sb.WriteRune(utf8.RuneError)
-		i += utf8MaximalSubpart(b[i:])
+		i += pystr.UTF8MaximalSubpart(b[i:])
 	}
 	return sb.String()
 }
@@ -642,13 +614,13 @@ var v3MimeKeys = [][2]string{{"png", "image/png"}, {"jpeg", "image/jpeg"}, {"svg
 
 // One notebook output as compact text with heavy payloads replaced by sized placeholders
 func notebookOutputText(output any) (string, error) {
-	out, ok := output.(*pyJSONObject)
+	out, ok := output.(*pyjson.Object)
 	if !ok {
 		return "", nil
 	}
-	otype, _ := out.get("output_type")
+	otype, _ := out.Get("output_type")
 	if otype == "stream" {
-		text, _ := out.get("text")
+		text, _ := out.Get("text")
 		body := cleanStreamText(notebookSourceText(text))
 		if pyStrip(body) == "" {
 			return "", nil
@@ -660,7 +632,7 @@ func notebookOutputText(output any) (string, error) {
 	}
 	if otype == "error" || otype == "pyerr" {
 		tbText := ""
-		if tb, ok := out.vals["traceback"].([]any); ok {
+		if tb, ok := out.Vals["traceback"].([]any); ok {
 			var parts []string
 			for _, l := range tb {
 				if s, ok := l.(string); ok {
@@ -669,11 +641,11 @@ func notebookOutputText(output any) (string, error) {
 			}
 			tbText = cleanStreamText(strings.Join(parts, "\n"))
 		}
-		ename, ok := out.get("ename")
+		ename, ok := out.Get("ename")
 		if !ok {
 			ename = ""
 		}
-		evalue, ok := out.get("evalue")
+		evalue, ok := out.Get("evalue")
 		if !ok {
 			evalue = ""
 		}
@@ -683,38 +655,38 @@ func notebookOutputText(output any) (string, error) {
 	if otype != "execute_result" && otype != "display_data" && otype != "pyout" {
 		return "", nil
 	}
-	data, ok := out.vals["data"].(*pyJSONObject)
+	data, ok := out.Vals["data"].(*pyjson.Object)
 	if !ok {
-		data = &pyJSONObject{vals: map[string]any{}}
-		switch t := out.vals["text"].(type) {
+		data = &pyjson.Object{Vals: map[string]any{}}
+		switch t := out.Vals["text"].(type) {
 		case string, []any:
-			data.set("text/plain", t)
+			data.Set("text/plain", t)
 		}
 		for _, km := range v3MimeKeys {
-			if v, ok := out.get(km[0]); ok {
-				data.set(km[1], v)
+			if v, ok := out.Get(km[0]); ok {
+				data.Set(km[1], v)
 			}
 		}
 	}
-	if _, ok := data.get("application/vnd.jupyter.widget-view+json"); ok {
+	if _, ok := data.Get("application/vnd.jupyter.widget-view+json"); ok {
 		return "[interactive widget — omitted]", nil
 	}
 	for _, mime := range []string{"text/plain", "text/markdown"} {
-		if v, ok := data.get(mime); ok {
+		if v, ok := data.Get(mime); ok {
 			if body := cleanStreamText(notebookSourceText(v)); pyStrip(body) != "" {
 				return body, nil
 			}
 		}
 	}
-	for _, mime := range data.keys {
+	for _, mime := range data.Keys {
 		if strings.HasPrefix(mime, "image/") {
-			return fmt.Sprintf("[%s output — %s, omitted]", mime, humanSize(base64Bytes(notebookSourceText(data.vals[mime])))), nil
+			return fmt.Sprintf("[%s output — %s, omitted]", mime, humanSize(base64Bytes(notebookSourceText(data.Vals[mime])))), nil
 		}
 	}
-	if v, ok := data.get("text/html"); ok {
-		return fmt.Sprintf("[text/html output — %s chars, omitted]", commaInt(wtf8RuneCount(notebookSourceText(v)))), nil
+	if v, ok := data.Get("text/html"); ok {
+		return fmt.Sprintf("[text/html output — %s chars, omitted]", commaInt(pystr.Len(notebookSourceText(v)))), nil
 	}
-	names := strings.Join(data.keys, ", ")
+	names := strings.Join(data.Keys, ", ")
 	if names == "" {
 		names = "unknown"
 	}
@@ -722,8 +694,8 @@ func notebookOutputText(output any) (string, error) {
 }
 
 // Rendered outputs of a code cell capped at the per cell character budget
-func notebookOutputs(cell *pyJSONObject, jqPointer, filename string) (string, error) {
-	outputs, ok := cell.vals["outputs"].([]any)
+func notebookOutputs(cell *pyjson.Object, jqPointer, filename string) (string, error) {
+	outputs, ok := cell.Vals["outputs"].([]any)
 	if !ok {
 		return "", nil
 	}
@@ -738,7 +710,7 @@ func notebookOutputs(cell *pyJSONObject, jqPointer, filename string) (string, er
 		}
 	}
 	joined := strings.Join(parts, "\n")
-	total := wtf8RuneCount(joined)
+	total := pystr.Len(joined)
 	if total <= maxNotebookOutputChars {
 		return joined, nil
 	}
@@ -757,11 +729,11 @@ func extractNotebook(p, displayPath string) (string, error) {
 	if err != nil {
 		return "", extractionErr("Not a valid notebook: %s", err.Error())
 	}
-	parsed, err := pyJSONLoads(decodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
+	parsed, err := pyjson.Loads(decodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
 	if err != nil {
 		return "", extractionErr("Not a valid notebook: %s", err.Error())
 	}
-	nb, ok := parsed.(*pyJSONObject)
+	nb, ok := parsed.(*pyjson.Object)
 	if !ok {
 		return "", extractionErr("Notebook root is not an object")
 	}
@@ -770,12 +742,12 @@ func extractNotebook(p, displayPath string) (string, error) {
 		cell    any
 	}
 	var cells []pointedCell
-	if rawCells, ok := nb.vals["cells"].([]any); ok {
+	if rawCells, ok := nb.Vals["cells"].([]any); ok {
 		for i, c := range rawCells {
 			cells = append(cells, pointedCell{fmt.Sprintf(".cells[%d].outputs", i), c})
 		}
 	} else {
-		worksheets, ok := nb.get("worksheets")
+		worksheets, ok := nb.Get("worksheets")
 		if !ok {
 			worksheets = []any{}
 		}
@@ -784,11 +756,11 @@ func extractNotebook(p, displayPath string) (string, error) {
 			return "", err
 		}
 		for wi, ws := range wsList {
-			wsObj, ok := ws.(*pyJSONObject)
+			wsObj, ok := ws.(*pyjson.Object)
 			if !ok {
 				continue
 			}
-			wsCells, ok := wsObj.get("cells")
+			wsCells, ok := wsObj.Get("cells")
 			if !ok {
 				wsCells = []any{}
 			}
@@ -807,10 +779,10 @@ func extractNotebook(p, displayPath string) (string, error) {
 	counts := map[string]int{}
 	var out []string
 	for _, pc := range cells {
-		cell, isObj := pc.cell.(*pyJSONObject)
+		cell, isObj := pc.cell.(*pyjson.Object)
 		var typ any
 		if isObj {
-			typ, _ = cell.get("cell_type")
+			typ, _ = cell.Get("cell_type")
 		}
 		if err := pyJSONHashable(typ); err != nil {
 			return "", err
@@ -825,7 +797,7 @@ func extractNotebook(p, displayPath string) (string, error) {
 		if name != "raw" {
 			suffix = " " + strconv.Itoa(counts[name])
 		}
-		src, ok := cell.get("source")
+		src, ok := cell.Get("source")
 		if !ok {
 			src = ""
 		}
@@ -1315,7 +1287,7 @@ func sqliteCell(v any) string {
 		text = fmt.Sprint(x)
 	}
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "|", `\|`), "\n", " ")
-	if wtf8RuneCount(text) <= sqliteCellChars {
+	if pystr.Len(text) <= sqliteCellChars {
 		return text
 	}
 	return firstRunes(text, sqliteCellChars-1) + "…"

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // The process_manage tool, poll, wait, log, kill, stdin and handoff of terminal background processes
@@ -198,7 +200,7 @@ func handoffProcess(env *Env, sessionID string, args map[string]any, taskID stri
 
 // JSON without HTML escaping, the ensure_ascii false dump the model reads
 func processJSON(v any) string {
-	b, err := jsonEncodeWTF8(v)
+	b, err := pyjson.EncodeWTF8(v)
 	if err != nil {
 		return ErrorResult(err)
 	}

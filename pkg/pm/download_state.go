@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // GCGraceSeconds is how long an untouched partial survives collection
@@ -50,7 +52,7 @@ func CollectPartials(root string, graceSeconds float64) error {
 	keys := map[string]bool{}
 	for _, e := range entries {
 		name := e.Name()
-		if ext := pathlibSuffix(name); ext == ".part" || ext == ".ranges" {
+		if ext := pypath.PathSuffix(name); ext == ".part" || ext == ".ranges" {
 			keys[strings.TrimSuffix(name, ext)] = true
 		}
 	}
@@ -71,15 +73,6 @@ func CollectPartials(root string, graceSeconds float64) error {
 		release()
 	}
 	return nil
-}
-
-// Final dotted suffix the way pathlib reports it, empty when the last dot starts or ends the name
-func pathlibSuffix(name string) string {
-	i := strings.LastIndex(name, ".")
-	if 0 < i && i < len(name)-1 {
-		return name[i:]
-	}
-	return ""
 }
 
 // Deletes one owned partial pair unless either file is younger than the grace period

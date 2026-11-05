@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -50,7 +51,7 @@ var (
 	spawnCredentialKeys = map[string]bool{"ICEBATH_DASHBOARD_SESSION_TOKEN": true}
 
 	// Seams for the updater skip, the external source pass and the terminal bridge, replaced in tests
-	skipExternalSecretSourcesFn  = shouldSkipExternalSecretSources
+	skipExternalSecretSourcesFn  = pm.ShouldSkipExternalSecretSources
 	applyExternalSecretSourcesFn = ApplyExternalSecretSources
 	terminalConfigBridgeFn       = applyTerminalConfigToEnv
 )

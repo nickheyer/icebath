@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -195,11 +196,11 @@ func TestEveryAPIKeyProviderVarIsDeclaredInCore(t *testing.T) {
 	FillProviderEnvVars()
 	core := CoreDeclaredEnvNames()
 	count := 0
-	for _, p := range Profiles() {
+	for _, p := range ListProviders(context.Background()) {
 		if p.AuthType != AuthTypeAPIKey {
 			continue
 		}
-		for _, v := range p.KeyEnv {
+		for _, v := range profileEnvVars(p) {
 			count++
 			if _, ok := config.OptionalEnvVars[v]; !ok {
 				t.Errorf("%s not in OptionalEnvVars", v)

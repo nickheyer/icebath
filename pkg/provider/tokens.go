@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"regexp"
 
@@ -45,11 +46,34 @@ var persistenceOnlyFields = map[string]bool{
 	"absorbed_message_uids": true, "tool_call_uids": true, "tool_call_uid": true, "token_count": true,
 }
 
-// Message as a wire shadow map holding only what the provider receives
+// Replay carriers priced at zero, opaque signatures, duplicate reasoning copies and ordered sidecars
+var unpricedCoreFields = []string{"_anthropic_content_blocks", "reasoning_details", "extra_content", "bedrock_content_blocks", "data_use"}
+
+// Core unpriced carriers plus every message carrier key a registered profile declares
+func unpricedReplayFields() map[string]bool {
+	out := make(map[string]bool, len(unpricedCoreFields))
+	for _, k := range unpricedCoreFields {
+		out[k] = true
+	}
+	for _, p := range ListProviders(context.Background()) {
+		if p.MessageCarrierOpaque != "" {
+			out[p.MessageCarrierOpaque] = true
+		}
+		if p.MessageCarrierText != "" {
+			out[p.MessageCarrierText] = true
+		}
+	}
+	return out
+}
+
+// Message as a wire shadow map holding only what the provider receives, the live ordered sidecar included
 func messageShadow(m *state.Message) (map[string]any, int) {
 	raw, _ := json.Marshal(m)
 	var row map[string]any
 	_ = json.Unmarshal(raw, &row)
+	if blocks, ok := anthropicLiveBlocksOf(m); ok {
+		row["anthropic_content_blocks"] = blocks
+	}
 	return mapShadow(row)
 }
 
@@ -61,9 +85,10 @@ func mapShadow(row map[string]any) (map[string]any, int) {
 	sidecarWins := sidecar != "" && (role == "user" || role == "assistant")
 	rc, _ := row["reasoning_content"].(string)
 	dropReasoningDup := len(regexp.MustCompile(`\S`).FindString(rc)) > 0
+	unpriced := unpricedReplayFields()
 	shadow := map[string]any{}
 	for k, v := range row {
-		if persistenceOnlyFields[k] || (k == "reasoning" && dropReasoningDup) {
+		if unpriced[k] || persistenceOnlyFields[k] || (k == "reasoning" && dropReasoningDup) {
 			continue
 		}
 		switch {

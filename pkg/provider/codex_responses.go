@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -224,7 +225,7 @@ func (c *codexResponsesClient) prepare(ctx context.Context, req *Request) (*code
 		}
 	}
 	params := codexParams{
-		reasoning: reasoningFromRequest(req.Reasoning), sessionID: req.SessionID, cacheScopeID: req.CacheScope,
+		ctx: ctx, reasoning: reasoningFromRequest(req.Reasoning), sessionID: req.SessionID, cacheScopeID: req.CacheScope,
 		maxTokens: req.MaxTokens, timeout: timeout.Seconds(), requestOverrides: c.requestOverrides(req),
 		provider: c.route.Provider, baseURL: c.route.BaseURL, isCodexBackend: c.flags.isCodexBackend, isXAI: c.flags.isXAI,
 		profileReasoning: profileReasoning, replayEncryptedReasoning: req.Metadata[CodexReasoningReplayOffKey] != "off",
@@ -268,7 +269,7 @@ func (c *codexResponsesClient) prepare(ctx context.Context, req *Request) (*code
 	if t, ok := kwargs["timeout"].(float64); ok && t > 0 {
 		timeout = secondsDuration(t)
 	}
-	est := estimateBodyContextTokens(wire, DefaultImageTokenCost)
+	est := estimateBodyContextTokens(wire, CurrentImageTokenCost(ctx))
 	return &codexPrepared{kwargs: kwargs, body: body, wire: wire, url: endpointURL, headers: headers, settings: settings,
 		estTokens: est, timeout: timeout, watch: c.resolveWatchdogs(ctx, req, settings, est, kwargs)}, nil
 }
@@ -369,7 +370,7 @@ func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared,
 
 // APIError for a non success HTTP response
 func (c *codexResponsesClient) httpError(resp *http.Response, data []byte) error {
-	body := sanitizeSurrogates(string(data))
+	body := pystr.DecodeUTF8Replace(data)
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {

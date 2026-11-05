@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var managedModalTerminalStatuses = map[string]bool{"completed": true, "failed": true, "cancelled": true, "timeout": true}
@@ -103,7 +104,7 @@ func managedModalClient(connect, read time.Duration) *http.Client {
 func (m *managedModalEnv) request(method, path string, body any, connect, read time.Duration, extra map[string]string) (*http.Response, []byte, error) {
 	var reader io.Reader
 	if body != nil {
-		raw, err := jsonEncodeWTF8ASCII(body)
+		raw, err := pyjson.EncodeWTF8ASCII(body)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -79,7 +79,7 @@ var (
 
 // Configured request timeout for a Bedrock model, model override over the provider value
 func bedrockRequestTimeout(ctx context.Context, model string) (time.Duration, bool) {
-	tree, err := config.Load(home.Dir(ctx), nil)
+	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
 	if err != nil {
 		return 0, false
 	}
@@ -682,7 +682,7 @@ func bedrockIssuer(msg map[string]any) (string, bool) {
 // Resolves an application profile ARN through resolve, the ARN itself when unresolved
 func bedrockResolveIssuerARN(model string, resolve func(string) string) string {
 	if resolve == nil {
-		return model
+		return resolveInferenceProfileModelID(context.Background(), model, "")
 	}
 	if out := resolve(model); out != "" {
 		return out

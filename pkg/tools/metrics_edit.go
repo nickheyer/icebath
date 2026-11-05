@@ -1,6 +1,10 @@
 package tools
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+)
 
 // Shared metrics mark name for one file edit tool call
 const fileEditMetricName = "icebath.file_edit"
@@ -57,7 +61,7 @@ func fuzzyStrategyRank() map[string]int {
 
 // Parsed tool result object, empty when the result is not a JSON object
 func parsedResultObject(result string) map[string]any {
-	decoded, err := jsonDecodeWTF8([]byte(result))
+	decoded, err := pyjson.DecodeWTF8([]byte(result))
 	if err != nil {
 		return map[string]any{}
 	}

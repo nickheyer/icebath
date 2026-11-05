@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 )
@@ -29,12 +31,21 @@ func ExpandString(s string, lookup Lookup) string {
 		return s
 	}
 	return envRefRe.ReplaceAllStringFunc(s, func(raw string) string {
-		name := envRefName(raw[2 : len(raw)-1])
+		inner := strings.TrimSpace(raw[2 : len(raw)-1])
+		name := envRefName(inner)
 		if name == "" {
+			if !strings.HasPrefix(inner, "env:") && strings.Contains(inner, ":") && secretSourceRe.MatchString(inner) {
+				slog.Warn(fmt.Sprintf("Config ref %s uses source %s which is not resolvable in config.yaml — external secret sources "+
+					"inject env vars at startup, so reference the variable as ${env:NAME} instead",
+					PyRepr(raw), PyRepr(strings.SplitN(inner, ":", 2)[0])))
+			}
 			return raw
 		}
 		if v, ok := lookup(name); ok {
 			return v
+		}
+		if strings.HasPrefix(inner, "env:") {
+			slog.Warn(fmt.Sprintf("Config ref %s: %s is not set (check ~/.icebath/.env); keeping the literal placeholder", PyRepr(raw), name))
 		}
 		return raw
 	})
@@ -50,6 +61,7 @@ func Expand(v any, lookup Lookup) any {
 		for k, val := range c {
 			out[k] = Expand(val, lookup)
 		}
+		SetMappingKeys(out, MappingKeys(c))
 		return out
 	case Tree:
 		return Tree(Expand(map[string]any(c), lookup).(map[string]any))

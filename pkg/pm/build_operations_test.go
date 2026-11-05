@@ -19,6 +19,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Fixture tool whose env names its entry
@@ -95,9 +98,9 @@ func TestBuildOperationsStageToolsCopiesVerifiedClosureWithoutAcquiringOrLiveSta
 		t.Fatalf("stage %q %v", got, err)
 	}
 	toolFact, _ := facts.Get("copy-tool")
-	linked := filepath.Join(destination, pyStr(toolFact["entry"]), "data")
+	linked := filepath.Join(destination, pyrepr.Str(toolFact["entry"]), "data")
 	os.Remove(linked)
-	if err := os.Link(filepath.Join(source, pyStr(toolFact["entry"]), "data"), linked); err != nil {
+	if err := os.Link(filepath.Join(source, pyrepr.Str(toolFact["entry"]), "data"), linked); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := stageTools(ctx, StageToolsOptions{Names: []string{"copy-tool"}, SourceStore: source, Out: destination, Target: target}); err != nil {
@@ -109,7 +112,7 @@ func TestBuildOperationsStageToolsCopiesVerifiedClosureWithoutAcquiringOrLiveSta
 	}
 	for _, name := range []string{"copy-leaf", "copy-tool"} {
 		fact, _ := facts.Get(name)
-		entry := pyStr(fact["entry"])
+		entry := pyrepr.Str(fact["entry"])
 		copied, original := filepath.Join(destination, entry, "data"), filepath.Join(source, entry, "data")
 		if peRead(t, copied) != peRead(t, original) {
 			t.Fatalf("%s copy differs", name)
@@ -132,7 +135,7 @@ func TestBuildOperationsStageToolsCopiesVerifiedClosureWithoutAcquiringOrLiveSta
 		existsOrLink(filepath.Join(tmp, ".icebath", "config.yaml")) || existsOrLink(filepath.Join(tmp, "store", "facts.json")) {
 		t.Fatal("staging touched source facts, the home or the live store")
 	}
-	original := filepath.Join(source, pyStr(toolFact["entry"]), "data")
+	original := filepath.Join(source, pyrepr.Str(toolFact["entry"]), "data")
 	peWrite(t, original, "corrupt")
 	if _, err := stageTools(ctx, StageToolsOptions{Names: []string{"copy-tool"}, SourceStore: source, Out: destination, Target: target}); err == nil || !strings.Contains(err.Error(), "source failed verification") {
 		t.Fatalf("corrupt source: %v", err)
@@ -160,7 +163,7 @@ func TestBuildOperationsStageToolsCopiesVerifiedClosureWithoutAcquiringOrLiveSta
 		t.Fatal(err)
 	}
 	if err := facts.Record("copy-tool", "1.0", filepath.Base(entry), tool.Env(entry, target), source,
-		FactRecord{Target: &target, Artifacts: []string{pyStr(artifacts[0])}, Digest: &digest}); err != nil {
+		FactRecord{Target: &target, Artifacts: []string{pyrepr.Str(artifacts[0])}, Digest: &digest}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = stageTools(ctx, StageToolsOptions{Names: []string{"copy-tool"}, SourceStore: source, Out: filepath.Join(tmp, "other-output"), Target: target})
@@ -326,7 +329,7 @@ func TestBuildOperationsFrozenExportKeepsMarkersAndExcludesBuildMetadata(t *test
 	}
 	text := peRead(t, out)
 	requirements := map[string]*pyRequirement{}
-	for _, line := range pySplitLines(text) {
+	for _, line := range pystr.Splitlines(text, false) {
 		r, err := ParseRequirement(line)
 		if err != nil {
 			t.Fatalf("%q: %v", line, err)
@@ -513,9 +516,9 @@ func TestBuildOperationsWheelhouseCannotFallBackToIndexOrBuildSource(t *testing.
 	os.MkdirAll(wheels, 0o777)
 	backend := "from pathlib import Path\nimport base64\n" +
 		"def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):\n" +
-		"    Path(wheel_directory, " + pyRepr(filepath.Base(wheel)) + ").write_bytes(base64.b64decode(" +
+		"    Path(wheel_directory, " + pyrepr.StrRepr(filepath.Base(wheel)) + ").write_bytes(base64.b64decode(" +
 		"b'" + base64.StdEncoding.EncodeToString(readFile(t, wheel)) + "'))\n" +
-		"    return " + pyRepr(filepath.Base(wheel)) + "\n"
+		"    return " + pyrepr.StrRepr(filepath.Base(wheel)) + "\n"
 	entries := [][2]string{{"pyproject.toml", "[project]\nname=\"leaf-dep\"\nversion=\"1.0\"\n[build-system]\nrequires=[]\nbuild-backend=\"backend\"\nbackend-path=[\".\"]\n"},
 		{"backend.py", backend}}
 	var buf bytes.Buffer

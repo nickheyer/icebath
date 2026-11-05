@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -58,7 +59,9 @@ func ReadConfigVersionStamp(h string, raiseOnParseError bool) (*int, int, error)
 	}
 	doc, err := readRawConfigRoot(path)
 	if err != nil {
-		WarnConfigParseFailure(path, err, "defaults")
+		if werr := WarnConfigParseFailure(path, err, "defaults"); werr != nil {
+			return nil, latest, werr
+		}
 		if raiseOnParseError {
 			return nil, latest, &InvalidUserConfigError{Path: path, Err: fmt.Errorf("Cannot inspect %s: config.yaml is not valid YAML (%w)", path, err)}
 		}
@@ -116,21 +119,41 @@ type StampHooks struct {
 	AdoptAgentBrowserEnv func(h string, cfg map[string]any) []string
 }
 
-// Records left core use and adopts browser env into a first stamped config, returning the browser moves
+// Records left core use and adopts browser env into a first stamped config, incomplete hooks panic with the reason
 func NoteFirstStamp(h string, onDisk, toWrite map[string]any, hooks StampHooks) []string {
+	moves, err := noteFirstStamp(h, onDisk, toWrite, hooks)
+	if err != nil {
+		panic(err)
+	}
+	return moves
+}
+
+// Error naming the first stamp collaborators no owner registered
+var ErrStampHooksUnregistered = errors.New("config first stamp collaborators are not registered: link pkg/provider so left core " +
+	"use is recorded and agent browser env is adopted before config.yaml gets its first _config_version")
+
+// First stamp work, refusing with ErrStampHooksUnregistered when a collaborator it must run is missing
+func noteFirstStamp(h string, onDisk, toWrite map[string]any, hooks StampHooks) ([]string, error) {
 	if _, stamped := onDisk["_config_version"]; stamped {
-		return nil
+		return nil, nil
 	}
 	if _, stamping := toWrite["_config_version"]; !stamping {
-		return nil
+		return nil, nil
 	}
-	if hooks.WorkerSnapshotActive() {
-		return nil
+	active := hooks.WorkerSnapshotActive
+	if active == nil {
+		active = func() bool { return CurrentSafeWorkerPolicy() != nil }
+	}
+	if active() {
+		return nil, nil
+	}
+	if hooks.RecordCoreUse == nil || hooks.AdoptAgentBrowserEnv == nil {
+		return nil, ErrStampHooksUnregistered
 	}
 	for _, v := range hooks.CoreVersions {
 		hooks.RecordCoreUse(h, toWrite, v)
 	}
-	return hooks.AdoptAgentBrowserEnv(h, toWrite)
+	return hooks.AdoptAgentBrowserEnv(h, toWrite), nil
 }
 
 // Writes a first stamped config.yaml for an unmanaged home without one whose env needs adopting
@@ -140,8 +163,9 @@ func StampMissingConfig(h string, hooks StampHooks) (bool, error) {
 		return false, nil
 	}
 	cfg := map[string]any{"_config_version": latestConfigVersion()}
-	if len(NoteFirstStamp(h, map[string]any{}, cfg, hooks)) == 0 {
-		return false, nil
+	moves, err := noteFirstStamp(h, map[string]any{}, cfg, hooks)
+	if err != nil || len(moves) == 0 {
+		return false, err
 	}
 	if err := os.MkdirAll(h, 0o755); err != nil {
 		return false, err

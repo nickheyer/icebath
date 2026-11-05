@@ -372,7 +372,7 @@ func TestFileBackendProtocolDefaultsAreNoOps(t *testing.T) {
 	if err := fb.ApplyInMemory(ctx, "/h", nil); err == nil || err.Error() != "the file backend persists migrations to config.yaml" {
 		t.Fatalf("apply in memory %v", err)
 	}
-	if fb.Destination(ctx, "/h") != filepath.Join("/h", "config.yaml") || !fb.HonorsManagedConfig() || fb.Boot(ctx, "/h") != nil {
+	if dest, err := fb.Destination(ctx, "/h"); err != nil || dest != filepath.Join("/h", "config.yaml") || !fb.HonorsManagedConfig() || fb.Boot(ctx, "/h") != nil {
 		t.Fatal("destination")
 	}
 	if names, err := DeploymentEnvNames(ctx); names != nil || err != nil {

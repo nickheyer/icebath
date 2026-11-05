@@ -13,14 +13,18 @@ type PlatformManifest struct {
 type CheckDiagnosticsSources struct {
 	PlatformToolsetDiagnostics func(platformToolsets any, cfg map[string]any) []string
 	DisabledPlugins            func() map[string]bool
-	BundledPlatformManifests   func() []PlatformManifest
+	BundledPlatformManifests   func() ([]PlatformManifest, error)
 }
 
 // Saved toolset problems plus each disabled bundled platform whose required credentials are all configured
-func ConfigCheckDiagnostics(cfg map[string]any, getEnv func(name string) string, src CheckDiagnosticsSources) []string {
+func ConfigCheckDiagnostics(cfg map[string]any, getEnv func(name string) string, src CheckDiagnosticsSources) ([]string, error) {
 	diagnostics := src.PlatformToolsetDiagnostics(cfg["platform_toolsets"], cfg)
 	disabled := src.DisabledPlugins()
-	for _, m := range src.BundledPlatformManifests() {
+	manifests, err := src.BundledPlatformManifests()
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range manifests {
 		key := "platforms/" + m.Name
 		if !disabled[key] && !disabled[m.ManifestName] {
 			continue
@@ -40,5 +44,5 @@ func ConfigCheckDiagnostics(cfg map[string]any, getEnv func(name string) string,
 				"Run `icebath plugins enable %s` if you want it active.", key, key))
 		}
 	}
-	return diagnostics
+	return diagnostics, nil
 }

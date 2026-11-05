@@ -11,6 +11,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // VenvState is the dependency environment state package a venv sync drives, the catalogue Venv or a test double
@@ -302,7 +304,7 @@ func featurePolicy(ctx context.Context, extras []string, repair bool) (shipped, 
 			}
 		}
 		if len(unsupported) > 0 {
-			return nil, nil, NewInstallError("venv", fmt.Sprintf("extras %s are not supported by this Python/platform", pyListRepr(unsupported)),
+			return nil, nil, NewInstallError("venv", fmt.Sprintf("extras %s are not supported by this Python/platform", pyrepr.Repr(unsupported)),
 				"choose a supported provider; no dependency environment was changed")
 		}
 	}
@@ -327,7 +329,7 @@ func featurePolicy(ctx context.Context, extras []string, repair bool) (shipped, 
 		}
 		if len(outside) > 0 {
 			return nil, nil, RefuseLazyFor(ctx, "venv", fmt.Sprintf(
-				"extras %s are outside this bundle's frozen feature set (security.allow_lazy_installs is false)", pyListRepr(outside)))
+				"extras %s are outside this bundle's frozen feature set (security.allow_lazy_installs is false)", pyrepr.Repr(outside)))
 		}
 	}
 	return shipped, frozen, nil
@@ -578,12 +580,12 @@ func refuseDeclined(ctx context.Context, p VenvState, extras []string, explicit 
 	var why []string
 	for _, extra := range dropped {
 		if reason, ok := reasons[ExtraKey(extra)]; ok {
-			why = append(why, fmt.Sprintf("an update left %s out because %s", pyRepr(extra), reason))
+			why = append(why, fmt.Sprintf("an update left %s out because %s", pyrepr.StrRepr(extra), reason))
 		}
 	}
 	cause := strings.Join(why, "; ")
 	if cause == "" {
-		cause = fmt.Sprintf("extras %s were removed with `icebath pm install --without`", pyListRepr(dropped))
+		cause = fmt.Sprintf("extras %s were removed with `icebath pm install --without`", pyrepr.Repr(dropped))
 	}
 	hints := make([]string, len(dropped))
 	for i, extra := range dropped {
@@ -681,7 +683,7 @@ func (s *venvSync) locked(ctx context.Context, extras []string) error {
 	if !current && !s.repair && !s.explicit && !LazyInstallsAllowedFor(ctx) {
 		what := "venv out of sync"
 		if len(extras) > 0 {
-			what = pyListRepr(extras)
+			what = pyrepr.Repr(extras)
 		}
 		return RefuseLazyFor(ctx, "venv", what)
 	}

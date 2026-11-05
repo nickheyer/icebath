@@ -34,7 +34,7 @@ func startVictim(t *testing.T, script string) *exec.Cmd {
 	t.Cleanup(func() {
 		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
-		cmd.Wait()
+		<-cmdReaped(cmd)
 	})
 	return cmd
 }
@@ -55,12 +55,22 @@ func procWaitUntil(t *testing.T, timeout time.Duration, what string, cond func()
 	}
 }
 
-// Waits for a direct child to exit, false at the timeout
-func waitExited(cmd *exec.Cmd, timeout time.Duration) bool {
+var cmdReapers sync.Map
+
+// Channel closed once the single waiter goroutine of the child has reaped it
+func cmdReaped(cmd *exec.Cmd) <-chan struct{} {
 	done := make(chan struct{})
-	go func() { cmd.Wait(); close(done) }()
+	actual, loaded := cmdReapers.LoadOrStore(cmd, done)
+	if !loaded {
+		go func() { cmd.Wait(); close(done) }()
+	}
+	return actual.(chan struct{})
+}
+
+// Waits for a direct child to exit through its one reaper, false at the timeout
+func waitExited(cmd *exec.Cmd, timeout time.Duration) bool {
 	select {
-	case <-done:
+	case <-cmdReaped(cmd):
 		return true
 	case <-time.After(timeout):
 		return false
@@ -187,7 +197,7 @@ func startTestSupervisor(t *testing.T, env []string) *testSupervisor {
 	}
 	t.Cleanup(func() {
 		syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
-		cmd.Wait()
+		<-cmdReaped(cmd)
 	})
 	return &testSupervisor{cmd: cmd, stdin: stdin}
 }
@@ -220,7 +230,7 @@ func armedVictim(t *testing.T) (*exec.Cmd, int) {
 	}
 	t.Cleanup(func() {
 		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		cmd.Wait()
+		<-cmdReaped(cmd)
 	})
 	line, _ := bufio.NewReader(out).ReadString('\n')
 	if strings.TrimSpace(line) != "armed" {
@@ -1094,7 +1104,7 @@ func sleepChild(t *testing.T) *exec.Cmd {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
+	t.Cleanup(func() { cmd.Process.Kill(); <-cmdReaped(cmd) })
 	return cmd
 }
 

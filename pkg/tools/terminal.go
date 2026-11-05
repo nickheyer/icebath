@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Force redacts text before serializing a terminal error envelope
@@ -373,7 +375,7 @@ func pyTypeName(v any) string {
 
 // Attaches the foreground to background promotion note to a spawn result, unchanged on error
 func withPromotedNote(resultJSON string, requestedTimeout int) string {
-	decoded, err := jsonDecodeWTF8([]byte(resultJSON))
+	decoded, err := pyjson.DecodeWTF8([]byte(resultJSON))
 	data, _ := decoded.(map[string]any)
 	if err != nil || data == nil {
 		return resultJSON

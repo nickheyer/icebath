@@ -23,6 +23,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -894,6 +895,8 @@ type anthropicClient struct {
 	requestToolNames map[string]bool
 	transportsMu     sync.Mutex
 	transports       map[time.Duration]*http.Transport
+	mintedMu         sync.Mutex
+	mintedOAuth      *bool
 }
 
 func newAnthropicClient(route Route) (Client, error) {
@@ -921,26 +924,57 @@ func (c *anthropicClient) Route() Route { return c.route }
 
 // HTTP client for the route, dial and handshake bounded by the connect timeout
 func (c *anthropicClient) httpClient(connect time.Duration) *http.Client {
-	if c.route.Transport != nil {
-		return &http.Client{Transport: c.route.Transport}
-	}
-	c.transportsMu.Lock()
-	defer c.transportsMu.Unlock()
-	tr, ok := c.transports[connect]
-	if !ok {
-		tr = &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext,
-			TLSClientConfig:       PlatformTLSConfig(),
-			TLSHandshakeTimeout:   connect,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			ExpectContinueTimeout: time.Second,
+	base := c.route.Transport
+	if base == nil {
+		c.transportsMu.Lock()
+		tr, ok := c.transports[connect]
+		if !ok {
+			tr = &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext,
+				TLSClientConfig:       PlatformTLSConfig(),
+				TLSHandshakeTimeout:   connect,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				ExpectContinueTimeout: time.Second,
+			}
+			c.transports[connect] = tr
 		}
-		c.transports[connect] = tr
+		c.transportsMu.Unlock()
+		base = tr
 	}
-	return &http.Client{Transport: tr}
+	if c.variant == "direct" && c.route.TokenSource != nil {
+		var sendsAsAPIKey func(string) bool
+		if isNativeAnthropicHost(c.route.BaseURL) {
+			sendsAsAPIKey = func(token string) bool { return !isOAuthToken(token) }
+		}
+		base = &EntraBearerTransport{Base: base, TokenProvider: c.route.TokenSource, SendsAsAPIKey: sendsAsAPIKey}
+	}
+	return &http.Client{Transport: base}
+}
+
+// OAuth shape of the first token the route minter yields, a failed mint counting as non OAuth
+func (c *anthropicClient) mintedTokenIsOAuth(ctx context.Context) bool {
+	c.mintedMu.Lock()
+	defer c.mintedMu.Unlock()
+	if c.mintedOAuth == nil {
+		token, err := c.route.TokenSource(ctx)
+		oauth := err == nil && isOAuthToken(token)
+		c.mintedOAuth = &oauth
+	}
+	return *c.mintedOAuth
+}
+
+// Claude Code OAuth identity of the route, a minter judged once by its first token
+func (c *anthropicClient) routeIsOAuth(ctx context.Context) bool {
+	if c.route.TokenSource == nil || c.route.APIKey != "" {
+		return AnthropicRouteIsOAuth(ctx, c.route.BaseURL, c.route.APIKey, nil, c.route.Provider)
+	}
+	if !(IsNativeAnthropicHost(c.route.BaseURL) || strings.ToLower(strings.TrimSpace(c.route.Provider)) == "anthropic") {
+		return false
+	}
+	return c.mintedTokenIsOAuth(ctx)
 }
 
 // Marks the session so later requests buffer tool input server side
@@ -1024,20 +1058,7 @@ func (c *anthropicClient) authHeaders(ctx context.Context, normalized string) (m
 		return headers, "platform", nil
 	}
 	if c.route.TokenSource != nil {
-		token, err := c.route.TokenSource(ctx)
-		if err != nil {
-			return nil, "", err
-		}
-		token = strings.TrimSpace(token)
-		if token == "" {
-			return nil, "", errors.New("token provider returned empty value")
-		}
-		if isNativeAnthropicHost(c.route.BaseURL) && !isOAuthToken(token) {
-			headers["x-api-key"] = token
-			return headers, "api_key", nil
-		}
-		headers["Authorization"] = "Bearer " + token
-		if anthropicRouteIsOAuth(c.route.BaseURL, token, c.route.Provider) {
+		if isNativeAnthropicHost(c.route.BaseURL) && c.mintedTokenIsOAuth(ctx) {
 			return headers, "oauth", nil
 		}
 		return headers, "bearer", nil
@@ -1137,7 +1158,7 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 	if model == "" {
 		model = c.route.Model
 	}
-	isOAuth := c.variant == "direct" && AnthropicRouteIsOAuth(ctx, c.route.BaseURL, c.route.APIKey, c.route.TokenSource, c.route.Provider)
+	isOAuth := c.variant == "direct" && c.routeIsOAuth(ctx)
 	dicts := make([]map[string]any, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		if m != nil {
@@ -1242,7 +1263,7 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 	c.requestToolNames = requestToolNames
 	c.mu.Unlock()
 	return &anthPrepared{body: kwargs, headers: headers, betas: betas, oauth: oauth || isOAuth, settings: settings,
-		estTokens: estimateBodyContextTokens(kwargs, DefaultImageTokenCost)}, nil
+		estTokens: estimateBodyContextTokens(kwargs, CurrentImageTokenCost(ctx))}, nil
 }
 
 // Merges an extra body mapping into the kwargs, nested extra_body entries folded into the same map
@@ -1332,7 +1353,7 @@ func (c *anthropicClient) streamTimeouts(req *Request, settings wireSettings, es
 
 // APIError for a non success HTTP response
 func (c *anthropicClient) httpError(resp *http.Response, data []byte) error {
-	body := sanitizeSurrogates(string(data))
+	body := pystr.DecodeUTF8Replace(data)
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {
@@ -1401,8 +1422,8 @@ func (c *anthropicClient) completeOnce(ctx context.Context, req *Request, p *ant
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, sanitizeSurrogates(string(data)), err)
-		apiErr.Message = "Provider returned a non-JSON message body: " + truncate(redactSensitiveText(sanitizeSurrogates(strings.TrimSpace(string(data)))), 300)
+		apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, pystr.DecodeUTF8Replace(data), err)
+		apiErr.Message = "Provider returned a non-JSON message body: " + truncate(redactSensitiveText(strings.TrimSpace(pystr.DecodeUTF8Replace(data))), 300)
 		apiErr.Err = &ccHeadersError{err: err, headers: resp.Header.Clone()}
 		return nil, apiErr
 	}
@@ -1571,7 +1592,7 @@ func (c *anthropicClient) CountTokens(ctx context.Context, req *Request) (int, e
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return 0, Classify(c.route.Provider, c.route.Model, resp.StatusCode, sanitizeSurrogates(string(data)), err)
+		return 0, Classify(c.route.Provider, c.route.Model, resp.StatusCode, pystr.DecodeUTF8Replace(data), err)
 	}
 	n, ok := anyInt(payload["input_tokens"])
 	if !ok {
@@ -1622,6 +1643,11 @@ func anthValidateMessage(message map[string]any) bool {
 	}
 	stop := asStr(message["stop_reason"])
 	return len(content) > 0 || stop == "end_turn" || stop == "refusal"
+}
+
+// ResponseStopDetails returns the stop_details object a Messages reply carried, nil when it carried none
+func ResponseStopDetails(resp *Response) any {
+	return rawResponseField(resp, "stop_details")
 }
 
 // Response of one Messages payload with text, reasoning, ordered thinking carriers and tool calls
@@ -1704,10 +1730,11 @@ func (c *anthropicClient) normalizeMessage(message map[string]any, raw []byte, r
 			hasToolUse = true
 		}
 	}
-	if signed && hasToolUse {
-		msg.ReasoningDetails, _ = json.Marshal(ordered)
-	} else if len(reasoningDetails) > 0 {
+	if len(reasoningDetails) > 0 {
 		msg.ReasoningDetails, _ = json.Marshal(reasoningDetails)
+	}
+	if signed && hasToolUse {
+		setAnthropicLiveBlocks(msg, ordered)
 	}
 	usage := Usage{}
 	if u, ok := asMap(message["usage"]); ok {

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
@@ -257,7 +259,7 @@ func iePauseCase(t *testing.T, route string, cached bool) {
 			t.Fatal("a stage created the facts file")
 		}
 	} else {
-		entry = filepath.Join(root, pyStr(fact["entry"]))
+		entry = filepath.Join(root, pyrepr.Str(fact["entry"]))
 		digest, _ := TreeDigest(entry)
 		if !jsonEquals(fact["artifacts"], []any{shas[0], shas[1]}) || fact["digest"] != digest {
 			t.Fatalf("fact %v", fact)

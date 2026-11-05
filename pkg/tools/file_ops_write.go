@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Deletes one file, refusing directories, natively on a local POSIX host else through a backend snippet
@@ -121,12 +123,12 @@ func (s *shellFileOps) MoveFile(src, dst string) *WriteResult {
 
 // Refusal before any subprocess of content holding a surrogate outside the surrogateescape range
 func rejectUnencodable(path, content string) *WriteResult {
-	r, found := firstUnencodableSurrogate(content)
+	r, found := pystr.FirstUnencodableSurrogate(content)
 	if !found {
 		return nil
 	}
 	return &WriteResult{Error: "Refusing to write '" + path + "': content contains a lone " +
-		"surrogate character (" + pyReprStr(wtf8FromRunes([]rune{r})) + ") that cannot be " +
+		"surrogate character (" + pyReprStr(pystr.FromRunes([]rune{r})) + ") that cannot be " +
 		"encoded as UTF-8. The file was NOT created or modified."}
 }
 
@@ -303,7 +305,7 @@ func (s *shellFileOps) WriteFile(path, content string, preContent *string) *Writ
 		content = utf8BOM + content
 	}
 	dirsCreated := pathDirnameOS(path) != ""
-	contentBytes, err := surrogateEscapeEncode(content)
+	contentBytes, err := pystr.SurrogateEscapeEncode(content)
 	if err != nil {
 		panic(err)
 	}
@@ -351,7 +353,7 @@ func (s *shellFileOps) verifyPatchPersisted(path, newContent string) *PatchResul
 	if failed != nil {
 		return &PatchResult{Error: "Post-write verification failed: could not re-read " + path}
 	}
-	bomless, _ := stripBOM(surrogateEscapeDecode(data))
+	bomless, _ := stripBOM(pystr.SurrogateEscapeDecode(data))
 	onDisk := strings.ReplaceAll(strings.ReplaceAll(bomless, "\r\n", "\n"), "\r", "\n")
 	intended := strings.ReplaceAll(strings.ReplaceAll(newContent, "\r\n", "\n"), "\r", "\n")
 	if onDisk != intended {
@@ -378,7 +380,7 @@ func (s *shellFileOps) patchReplace(path, oldString, newString string, replaceAl
 		}
 		return &PatchResult{Error: msg}
 	}
-	rawContent := surrogateEscapeDecode(data)
+	rawContent := pystr.SurrogateEscapeDecode(data)
 	content, _ := stripBOM(rawContent)
 	var correctionNotes []string
 	newContent, matchCount, strategy, errText := fuzzyFindAndReplace(content, oldString, newString, replaceAll, &correctionNotes, probe)

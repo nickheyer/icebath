@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Drops every ambient uv and pip setting and disables pip config files, the clean index env fixture
@@ -157,16 +159,16 @@ func TestIndexConfigExpandUserMatchesPython(t *testing.T) {
 		t.Fatalf("home drive and path gave %q", got)
 	}
 	for _, tc := range []struct{ got, want string }{
-		{ntJoin("C:", `\Users\nick`), `C:\Users\nick`},
-		{ntJoin(`\\server\share`, "x"), `\\server\share\x`},
-		{ntJoin("C:", `D:\x`), `D:\x`},
-		{ntJoin(`c:\a`, "C:b"), `C:\a\b`},
-		{ntJoin("X", ""), `X\`},
-		{ntDirname(`\\server\share\nick`), `\\server\share\`},
-		{ntDirname(`C:\Users\nick`), `C:\Users`},
-		{ntDirname(`C:\nick`), `C:\`},
-		{ntBasename("C:foo"), "foo"},
-		{ntDirname(`\\?\UNC\srv\sh\u`), `\\?\UNC\srv\sh\`},
+		{pypath.NtJoin("C:", `\Users\nick`), `C:\Users\nick`},
+		{pypath.NtJoin(`\\server\share`, "x"), `\\server\share\x`},
+		{pypath.NtJoin("C:", `D:\x`), `D:\x`},
+		{pypath.NtJoin(`c:\a`, "C:b"), `C:\a\b`},
+		{pypath.NtJoin("X", ""), `X\`},
+		{pypath.NtDirname(`\\server\share\nick`), `\\server\share\`},
+		{pypath.NtDirname(`C:\Users\nick`), `C:\Users`},
+		{pypath.NtDirname(`C:\nick`), `C:\`},
+		{pypath.NtBasename("C:foo"), "foo"},
+		{pypath.NtDirname(`\\?\UNC\srv\sh\u`), `\\?\UNC\srv\sh\`},
 	} {
 		if tc.got != tc.want {
 			t.Fatalf("ntpath gave %q, want %q", tc.got, tc.want)

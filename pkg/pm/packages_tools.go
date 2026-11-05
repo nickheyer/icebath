@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Whether this host executes PE images, the only host able to run PortableGit's extractor, replaced by tests
@@ -266,7 +268,7 @@ func (p *Ripgrep) Stage(store *Store, staged, version, target string) error {
 	if !present {
 		return keyError("entry")
 	}
-	vcRuntime := filepath.Join(location.Store.Entry(pyStr(entryName)), "vcruntime140.dll")
+	vcRuntime := filepath.Join(location.Store.Entry(pyrepr.Str(entryName)), "vcruntime140.dll")
 	if !isRegularFile(vcRuntime) {
 		return NewInstallError(p.Name, "python's entry has no vcruntime140.dll", "")
 	}

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 func TestLintLooksLikeLinterUnusable(t *testing.T) {
@@ -565,7 +567,7 @@ var tomllibGoldenCases = []tomllibGoldenCase{
 	{"table repr unicode 17 point", "[\"\\u088F\\U0001FAEA\"]\n[\"\\u088F\\U0001FAEA\"]", "TOMLDecodeError: Cannot declare ('\\u088f\\U0001faea',) twice (at line 2, column 20)", false},
 	{"table repr printable unicode", "['\xc3\xa9\xf0\x9f\x98\x80\xe6\x97\xa5']\n['\xc3\xa9\xf0\x9f\x98\x80\xe6\x97\xa5']", "TOMLDecodeError: Cannot declare ('\xc3\xa9\xf0\x9f\x98\x80\xe6\x97\xa5',) twice (at line 2, column 7)", false},
 	{"table repr control escapes", "[\"\\t\\n\\r\\b\\f\\u007f\"]\n[\"\\t\\n\\r\\b\\f\\u007f\"]", "TOMLDecodeError: Cannot declare ('\\t\\n\\r\\x08\\x0c\\x7f',) twice (at line 2, column 20)", false},
-	{"table repr surrogate", surrogateEscapeDecode([]byte("['\xed\xa0\x80']\n['\xed\xa0\x80']")), "TOMLDecodeError: Cannot declare ('\\udced\\udca0\\udc80',) twice (at line 2, column 7)", false},
+	{"table repr surrogate", pystr.SurrogateEscapeDecode([]byte("['\xed\xa0\x80']\n['\xed\xa0\x80']")), "TOMLDecodeError: Cannot declare ('\\udced\\udca0\\udc80',) twice (at line 2, column 7)", false},
 	{"table repr lone surrogate", "['\xed\xa0\x80']\n['\xed\xa0\x80']", "TOMLDecodeError: Cannot declare ('\\ud800',) twice (at line 2, column 5)", false},
 	{"lone surrogate value", "a = '\xed\xa0\x80'", "", false},
 	{"lone surrogate bare key", "k\xed\xa0\x80 = 1", "TOMLDecodeError: Expected '=' after a key in a key/value pair (at line 1, column 2)", false},
@@ -1062,7 +1064,7 @@ func TestRuamelCParseSurrogates(t *testing.T) {
 		{"first run reported", "a\xff b\xfe\xfd", "UnicodeEncodeError: 'utf-8' codec can't encode character '\\udcff' in position 1: surrogates not allowed"},
 		{"surrogate before nul", "\x00\xff", "UnicodeEncodeError: 'utf-8' codec can't encode character '\\udcff' in position 1: surrogates not allowed"},
 		{"surrogate before scanner error", "a: b: c\xff", "UnicodeEncodeError: 'utf-8' codec can't encode character '\\udcff' in position 7: surrogates not allowed"},
-		{"encoded surrogate bytes", surrogateEscapeDecode([]byte("a\xed\xa0\x80")), "UnicodeEncodeError: 'utf-8' codec can't encode characters in position 1-3: surrogates not allowed"},
+		{"encoded surrogate bytes", pystr.SurrogateEscapeDecode([]byte("a\xed\xa0\x80")), "UnicodeEncodeError: 'utf-8' codec can't encode characters in position 1-3: surrogates not allowed"},
 		{"lone surrogate code point", "a\xed\xa0\x80", "UnicodeEncodeError: 'utf-8' codec can't encode character '\\ud800' in position 1: surrogates not allowed"},
 		{"escape range code point", "x\xed\xb2\x80y", "UnicodeEncodeError: 'utf-8' codec can't encode character '\\udc80' in position 1: surrogates not allowed"},
 		{"overlong bytes", "\xc0\x80", "UnicodeEncodeError: 'utf-8' codec can't encode characters in position 0-1: surrogates not allowed"},

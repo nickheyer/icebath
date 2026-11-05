@@ -65,15 +65,6 @@ var (
 		return newScheduler(s, runner, deliverer)
 	}
 	_ = func(ctx context.Context, sch *Scheduler) (int, error) { return schedulerTick(ctx, sch) }
-	_ = func(s *Store, schedule string) (*Schedule, error) { return parseSchedule(s, schedule) }
-	_ = func(s *Store, sched *Schedule, lastRunAt *string, timezone *string) *string {
-		return computeNextRun(s, sched, lastRunAt, timezone)
-	}
-	_ = func(s *Store) ([]*Job, error) { return getDueJobs(s) }
-	_ = func(s *Store, jobID string, success bool, opts MarkOptions) bool {
-		return markJobRun(s, jobID, success, opts)
-	}
-	_ = func(s *Store, jobID string) (*Job, bool) { return claimJobForFire(s, jobID) }
 	_ = func(s *Store) *Ledger { return openExecutionsLedger(s) }
 	_ = func(s *Store) *IncidentStore { return openIncidents(s) }
 	_ = func(s *Store) *Notepad { return openNotepad(s) }

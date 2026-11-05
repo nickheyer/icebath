@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 func remoteTestEnv(t *testing.T) *Env {
@@ -576,7 +577,7 @@ func TestVercelPayloadStdinIsStagedByteExactNotInArgv(t *testing.T) {
 		session: &vercelSession{id: "sbx_1", cwd: "/vercel/sandbox", status: "running"}, workspaceRoot: "/vercel/sandbox"}
 	initBaseEnv(&v.baseEnv, v, remoteTestEnv(t), "/vercel/sandbox", 30, nil, false)
 	raw := append(bytes.Repeat([]byte("A"), 160*1024), []byte("\x00\xff\xfeTAIL")...)
-	payload := surrogateEscapeDecode(raw)
+	payload := pystr.SurrogateEscapeDecode(raw)
 	h, err := v.runBash(context.Background(), "cat > /tmp/out", false, 30, &payload)
 	if err != nil {
 		t.Fatal(err)
@@ -630,7 +631,7 @@ func TestManagedModalStdinPayloadEscapesSurrogatesLikeRequests(t *testing.T) {
 		connectTO: time.Second, pollReadTO: time.Second, cancelReadTO: time.Second, sandboxID: "sb1"}
 	m.stdinMode = "payload"
 	initBaseEnv(&m.baseEnv, m, remoteTestEnv(t), "/root", 30, nil, false)
-	stdin := "caf\xc3\xa9 " + surrogateEscapeDecode([]byte{0xff}) + "<"
+	stdin := "caf\xc3\xa9 " + pystr.SurrogateEscapeDecode([]byte{0xff}) + "<"
 	if res, err := m.Execute(context.Background(), "cat > /tmp/out", ExecOptions{Stdin: &stdin}); err != nil || res.ReturnCode != 0 {
 		t.Fatalf("%+v %v", res, err)
 	}

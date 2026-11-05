@@ -1,16 +1,13 @@
 package provider
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestSanitizeSurrogatesReplacesEachLoneSurrogate(t *testing.T) {
-	lone := "\xed\xa0\x80"
-	if got := sanitizeSurrogates("a" + lone + lone + "b"); got != "a��b" {
-		t.Fatalf("%q", got)
-	}
-	if got := sanitizeSurrogates("plain é text"); got != "plain é text" {
-		t.Fatalf("%q", got)
-	}
-	if got := sanitizeSurrogates("x\x80\x80y"); got != "x��y" {
-		t.Fatalf("%q", got)
+func TestNonJSONStreamTextDecodesEachInvalidByteAsPythonDoes(t *testing.T) {
+	err := providerStreamErrorFromNonJSON("a\xed\xa0\x80b x\x80\x80y plain é", nil)
+	if text := err.Error(); !strings.Contains(text, "a���b x��y plain é") {
+		t.Fatalf("%q", text)
 	}
 }

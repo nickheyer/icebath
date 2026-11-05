@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Stand in binary tool whose bin dir lands on PATH, the pm core FakeTool
@@ -191,7 +193,7 @@ func (e *ieEnv) entry(t *testing.T, name string) string {
 	if !ok {
 		t.Fatalf("%s has no fact", name)
 	}
-	return pyStr(fact["entry"])
+	return pyrepr.Str(fact["entry"])
 }
 
 // Reports whether the engine considers a package installed

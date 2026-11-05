@@ -184,10 +184,7 @@ type ccRoute struct {
 
 func newCCRoute(r Route) *ccRoute {
 	ml := strings.ToLower(strings.TrimSpace(r.Model))
-	bare := ml
-	if i := strings.LastIndex(ml, "/"); i >= 0 {
-		bare = ml[i+1:]
-	}
+	bare := bareModel(r.Model)
 	return &ccRoute{
 		route: r, provider: strings.ToLower(strings.TrimSpace(r.Provider)), baseURL: strings.TrimSpace(r.BaseURL),
 		host: ccHostname(r.BaseURL), modelLower: ml, bare: bare, local: r.Local || isLocalEndpoint(r.BaseURL),
@@ -349,14 +346,6 @@ func clampEffort(effort string, supported []string, overrides map[string]string)
 
 func isAstraModel(model string) bool {
 	return astraModelIDs[bareModel(model)]
-}
-
-func bareModel(model string) string {
-	m := strings.ToLower(strings.TrimSpace(model))
-	if i := strings.LastIndex(m, "/"); i >= 0 {
-		return m[i+1:]
-	}
-	return m
 }
 
 func hasAnyPrefix(s string, prefixes []string) bool {
@@ -655,42 +644,6 @@ func raiseGeminiThinkingMaxTokens(model string, c reasoningCfg, requested int) i
 
 // ---- reasoning carriers and must echo families ----
 
-type echoRule struct {
-	family    string
-	raw       map[string]bool
-	lowered   map[string]bool
-	modelSubs []string
-	hosts     []string
-}
-
-var reasoningEchoRules = []echoRule{
-	{"kimi", map[string]bool{"kimi-coding": true, "kimi-coding-cn": true}, map[string]bool{}, nil, []string{"api.kimi.com", "moonshot.ai", "moonshot.cn"}},
-	{"deepseek", map[string]bool{}, map[string]bool{"deepseek": true}, []string{"deepseek"}, []string{"api.deepseek.com"}},
-	{"mimo", map[string]bool{}, map[string]bool{"xiaomi": true}, []string{"mimo"}, []string{"api.xiaomimimo.com", "xiaomimimo.com"}},
-	{"missingno", map[string]bool{}, map[string]bool{}, []string{"stealth/missingno"}, nil},
-}
-
-// Reports whether the route is in the must echo tier for reasoning_content
-func needsReasoningEcho(provider, model, baseURL string) bool {
-	ml := strings.ToLower(model)
-	for _, rule := range reasoningEchoRules {
-		if rule.raw[provider] || rule.lowered[strings.ToLower(provider)] {
-			return true
-		}
-		for _, sub := range rule.modelSubs {
-			if strings.Contains(ml, sub) {
-				return true
-			}
-		}
-		for _, h := range rule.hosts {
-			if hostMatches(baseURL, h) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 const carrierRC, carrierR, carrierRD = "reasoning_content", "reasoning", "reasoning_details"
 
 type carrierRoute struct {
@@ -715,25 +668,6 @@ var reasoningCarrierRoutes = []carrierRoute{
 	{carrierSet(carrierRC, carrierR), carrierSet("ollama-cloud", "custom", "lmstudio", "upstage"), []string{"ollama.com", "upstage.ai"}},
 }
 
-// Reasoning keys an assistant wire copy carries on this route
-func routeReasoningCarriers(provider, baseURL string) map[string]bool {
-	p := strings.ToLower(strings.TrimSpace(provider))
-	for _, r := range reasoningCarrierRoutes {
-		if r.providers[p] {
-			return r.carriers
-		}
-		for _, h := range r.hosts {
-			if hostMatches(baseURL, h) {
-				return r.carriers
-			}
-		}
-	}
-	if baseURL != "" && isLocalEndpoint(baseURL) {
-		return carrierSet(carrierRC, carrierR)
-	}
-	return carrierSet(carrierRC)
-}
-
 // Process memory of reasoning keys a provider host model triple rejected
 var rejectedReasoningMu sync.Mutex
 var rejectedReasoningRoutes = map[string]map[string]bool{}
@@ -742,56 +676,10 @@ func reasoningRouteKey(provider, baseURL, model string) string {
 	return strings.ToLower(strings.TrimSpace(provider)) + "|" + ccHostname(baseURL) + "|" + strings.TrimSpace(model)
 }
 
-var unknownFieldPhrases = []string{
-	"extra inputs are not permitted", "is unsupported", "no such field", "unknown field", "unrecognized request argument",
-	"unrecognized field", "unknown parameter", "unexpected field", "additional propert", "unknown key",
-}
-
-var namedFieldRes = map[string]*regexp.Regexp{
-	carrierRC: regexp.MustCompile(`(?:^|[^\w])reasoning_content(?:$|[^\w])`),
-	carrierRD: regexp.MustCompile(`(?:^|[^\w])reasoning_details(?:$|[^\w])`),
-	carrierR:  regexp.MustCompile(`messages[^\n]{0,80}?(?:^|[^\w])reasoning(?:$|[^\w])`),
-}
-
-// Reasoning keys to drop after an unknown field rejection naming one the request carried
-func rejectedReasoningFields(errBody string, sentMessages []*omap) map[string]bool {
-	body := strings.ToLower(errBody)
-	if !containsAnyStr(body, unknownFieldPhrases...) {
-		return map[string]bool{}
-	}
-	sent := map[string]bool{}
-	for _, m := range sentMessages {
-		if r, _ := m.Get("role"); r != "assistant" {
-			continue
-		}
-		for _, k := range []string{carrierRC, carrierR, carrierRD} {
-			if m.Has(k) {
-				sent[k] = true
-			}
-		}
-	}
-	named := map[string]bool{}
-	for k := range sent {
-		if namedFieldRes[k].MatchString(body) {
-			named[k] = true
-		}
-	}
-	if len(named) == 0 {
-		return map[string]bool{}
-	}
-	out := map[string]bool{}
-	for k := range sent {
-		if named[carrierRC] || k != carrierRC {
-			out[k] = true
-		}
-	}
-	return out
-}
-
 // RecordReasoningFieldRejection remembers the reasoning keys a route rejected and returns the new ones
 func RecordReasoningFieldRejection(route Route, errBody string, sentMessages []*omap) map[string]bool {
-	fields := rejectedReasoningFields(errBody, sentMessages)
-	if needsReasoningEcho(route.Provider, route.Model, route.BaseURL) {
+	fields := RejectedReasoningFields(errBody, sentMessages)
+	if NeedsReasoningEcho(route.Provider, route.Model, route.BaseURL) {
 		delete(fields, carrierRC)
 	}
 	if len(fields) == 0 {
@@ -907,27 +795,8 @@ func mistralToolID(key string) string {
 	return string(out)
 }
 
-// Pairing key of a tool call id, the call half of a composite call pipe item id
-func coalesceToolCallID(id string) string {
-	v := strings.TrimSpace(id)
-	if v == "" {
-		return ""
-	}
-	if head, _, ok := strings.Cut(v, "|"); ok {
-		if h := strings.TrimSpace(head); h != "" {
-			return h
-		}
-	}
-	return v
-}
-
-// Deterministic call id when the API omits one
-func deterministicCallID(name, arguments string, index int) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", name, arguments, index)))
-	return "call_" + hex.EncodeToString(sum[:])[:12]
-}
-
-var developerRoleModels = []string{"gpt-5", "codex"}
+// DeveloperRoleModels are model name substrings whose system prompt is sent under the developer role
+var DeveloperRoleModels = []string{"gpt-5", "codex"}
 
 // Private reasoning_details record type carrying provider native assistant carriers
 const nativeCarrierType = "icebath.native_assistant"
@@ -937,6 +806,7 @@ func modelConsumesThoughtSignature(model, baseURL, provider string) bool {
 	m := strings.ToLower(model)
 	p := strings.ToLower(strings.TrimSpace(provider))
 	return strings.Contains(m, "gemini") || strings.Contains(m, "gemma") || p == "gemini" || p == "vertex" ||
+		profileReplaysToolCallSignatures(provider) ||
 		hostMatches(baseURL, "generativelanguage.googleapis.com") || hostMatches(baseURL, "aiplatform.googleapis.com")
 }
 
@@ -1004,12 +874,12 @@ func (c *ccRoute) convertMessages(msgs []*state.Message, echoOptIn bool) []*omap
 	for k := range rejectedReasoningCarriers(c.route) {
 		delete(carriers, k)
 	}
-	pad := (echoOptIn || needsReasoningEcho(c.route.Provider, c.route.Model, c.baseURL)) && carriers[carrierRC]
+	pad := (echoOptIn || NeedsReasoningEcho(c.route.Provider, c.route.Model, c.baseURL)) && carriers[carrierRC]
 	keepSig := modelConsumesThoughtSignature(c.route.Model, c.baseURL, c.provider)
 	mistral := routeRequiresMistralToolIDs(c.provider, c.route.Model, c.baseURL)
 	qwen := c.isQwenPortal() || c.provider == "qwen-oauth"
 	developer := false
-	for _, p := range developerRoleModels {
+	for _, p := range DeveloperRoleModels {
 		if strings.Contains(c.modelLower, p) {
 			developer = true
 		}
@@ -1036,7 +906,7 @@ func (c *ccRoute) convertMessages(msgs []*state.Message, echoOptIn bool) []*omap
 		if m.Role == "tool" {
 			tcid := m.ToolCallID
 			if mistral {
-				if key := coalesceToolCallID(tcid); key != "" {
+				if key := state.CoalesceToolCallID(map[string]any{"id": tcid}); key != "" {
 					tcid = mistralToolID(key)
 				}
 			}
@@ -1080,7 +950,7 @@ func (c *ccRoute) convertMessages(msgs []*state.Message, echoOptIn bool) []*omap
 			for _, tc := range m.ToolCalls {
 				id := tc.ID
 				if mistral {
-					if key := coalesceToolCallID(id); key != "" {
+					if key := state.CoalesceToolCallID(map[string]any{"id": id}); key != "" {
 						id = mistralToolID(key)
 					}
 				}
@@ -1480,46 +1350,16 @@ func deepCopyJSON(v any) any {
 
 // ---- temperature and output caps ----
 
-func isKimiModel(model string) bool {
-	bare := bareModel(model)
-	return strings.HasPrefix(bare, "kimi-") || bare == "kimi"
-}
-
-func isOpenAIDefaultTemperatureOnly(model string) bool {
-	bare := bareModel(model)
-	return (strings.HasPrefix(bare, "gpt-5") || strings.HasPrefix(bare, "o1") || strings.HasPrefix(bare, "o3") || strings.HasPrefix(bare, "o4")) && !strings.HasPrefix(bare, "gpt-5-chat")
-}
-
-// Routes whose temperature parameter was rejected and is omitted from then on
-var temperatureRejectedMu sync.Mutex
-var temperatureRejectedRoutes = map[string]bool{}
-
-// RememberTemperatureRejection omits temperature for the route and model from the next request on
-func RememberTemperatureRejection(route Route) {
-	temperatureRejectedMu.Lock()
-	defer temperatureRejectedMu.Unlock()
-	temperatureRejectedRoutes[reasoningRouteKey(route.Provider, route.BaseURL, bareModel(route.Model))] = true
-}
-
 // Temperature policy, omit when true, else the fixed value when non nil
 func (c *ccRoute) fixedTemperature() (omit bool, fixed *float64) {
-	if isKimiModel(c.route.Model) || c.provider == "kimi-coding" || c.provider == "kimi-coding-cn" {
+	if c.provider == "kimi-coding" || c.provider == "kimi-coding-cn" {
 		return true, nil
 	}
-	if isOpenAIDefaultTemperatureOnly(c.route.Model) || geminiSamplingDeprecated(c.bare) {
-		return true, nil
+	omit, fixed, err := auxFixedTemperatureForModel(c.route.Model, c.route.BaseURL, "")
+	if err != nil {
+		return false, nil
 	}
-	temperatureRejectedMu.Lock()
-	rejected := temperatureRejectedRoutes[reasoningRouteKey(c.provider, c.baseURL, c.bare)]
-	temperatureRejectedMu.Unlock()
-	if rejected {
-		return true, nil
-	}
-	if c.bare == "trinity-large-thinking" {
-		v := 0.5
-		return false, &v
-	}
-	return false, nil
+	return omit, fixed
 }
 
 func modelForcesMaxCompletionTokens(model string) bool {
@@ -1617,86 +1457,10 @@ func staticPromptInstructions(msgs []*omap) string {
 
 // ---- structured output memo ----
 
-var structuredRejectedMu sync.Mutex
-var structuredRejectedRoutes = map[string]bool{}
-
-var capabilityRejectionMarkers = []string{
-	"unavailable", "does not support", "doesn't support", "not supported", "unsupported parameter", "unsupported_parameter",
-	"unknown parameter", "unrecognized request argument", "unrecognized parameter", "extra inputs are not permitted",
-}
-
-var profileUnsupportedResponseFormats = map[string][]string{"deepseek": {"json_schema"}}
-
-func structuredRouteKey(provider, baseURL string) string {
-	if h := ccHostname(baseURL); h != "" {
-		return h
-	}
-	return strings.ToLower(strings.TrimSpace(provider))
-}
-
-// IsCapabilityRejection reports whether an error speaks to the route capability rather than one schema
-func IsCapabilityRejection(err error) bool {
-	if err == nil {
-		return false
-	}
-	lower := strings.ToLower(err.Error())
-	if strings.Contains(lower, "invalid schema") {
-		return false
-	}
-	return containsAnyStr(lower, capabilityRejectionMarkers...)
-}
-
-// RememberStructuredOutputRejection records a response format type the route and model rejected
-func RememberStructuredOutputRejection(route Route, formatType string, err error) {
-	if formatType == "" || !IsCapabilityRejection(err) {
-		return
-	}
-	structuredRejectedMu.Lock()
-	defer structuredRejectedMu.Unlock()
-	structuredRejectedRoutes[structuredRouteKey(route.Provider, route.BaseURL)+"|"+route.Model+"|"+formatType] = true
-}
-
-// Reports whether the response format type is known to be rejected on this route and model
-func (c *ccRoute) responseFormatUnsupported(formatType string) bool {
-	if formatType == "" {
-		return false
-	}
-	profile := c.provider
-	if profile == "custom" {
-		if inferred := inferProviderFromURL(c.baseURL); inferred != "" {
-			profile = inferred
-		}
-	}
-	if containsStr(profileUnsupportedResponseFormats[profile], formatType) {
-		return true
-	}
-	structuredRejectedMu.Lock()
-	defer structuredRejectedMu.Unlock()
-	return structuredRejectedRoutes[structuredRouteKey(c.provider, c.baseURL)+"|"+c.route.Model+"|"+formatType]
-}
-
-var urlToProvider = []struct{ part, provider string }{
-	{"api.openai.com", "openai"}, {"chatgpt.com", "openai"}, {"api.anthropic.com", "anthropic"}, {"api.z.ai", "zai"},
-	{"open.bigmodel.cn", "zai"}, {"api.moonshot.ai", "kimi-coding"}, {"api.moonshot.cn", "kimi-coding-cn"},
-	{"api.kimi.com", "kimi-coding"}, {"api.stepfun.ai", "stepfun"}, {"api.stepfun.com", "stepfun"}, {"api.arcee.ai", "arcee"},
-	{"api.minimax", "minimax"}, {"dashscope.aliyuncs.com", "alibaba"}, {"dashscope-intl.aliyuncs.com", "alibaba"},
-	{"portal.qwen.ai", "qwen-oauth"}, {"openrouter.ai", "openrouter"}, {"generativelanguage.googleapis.com", "gemini"},
-	{"inference-api.nousresearch.com", "nous"}, {"api.deepseek.com", "deepseek"}, {"api.fireworks.ai", "fireworks"},
-	{"opencode.ai", "opencode-go"}, {"api.x.ai", "xai"},
-}
-
-// Provider name inferred from a base URL host substring
-func inferProviderFromURL(baseURL string) string {
-	host := ccHostname(baseURL)
-	if host == "" {
-		return ""
-	}
-	for _, e := range urlToProvider {
-		if strings.Contains(host, e.part) {
-			return e.provider
-		}
-	}
-	return ""
+// Reports whether the shared rejection memo or the provider profile rules out the response format type
+func (c *ccRoute) responseFormatUnsupported(ctx context.Context, model string, formatType any) (bool, error) {
+	known, _, err := auxResponseFormatKnownUnsupported(ctx, c.provider, c.baseURL, model, formatType)
+	return known, err
 }
 
 // ---- OpenRouter and Nous reasoning capability catalogs ----
@@ -2180,6 +1944,7 @@ type ccBuild struct {
 	headers   map[string]string
 	aliases   map[string]string
 	extraBody *omap
+	err       error
 }
 
 // Settings read from the home configuration that shape requests
@@ -2391,6 +2156,7 @@ func (c *ccRoute) build(ctx context.Context, req *Request, settings wireSettings
 	body := newOmap()
 	extra := newOmap()
 	top := map[string]any{}
+	var buildErr error
 	body.Set("model", req.Model)
 	body.Set("messages", msgs)
 	omitTemp, fixed := c.fixedTemperature()
@@ -2435,8 +2201,10 @@ func (c *ccRoute) build(ctx context.Context, req *Request, settings wireSettings
 		body.Set(k, v)
 	}
 	if req.ResponseFormat != nil {
-		ft := stringOf(req.ResponseFormat["type"])
-		if !c.responseFormatUnsupported(ft) {
+		unsupported, err := c.responseFormatUnsupported(ctx, req.Model, req.ResponseFormat["type"])
+		if err != nil {
+			buildErr = err
+		} else if !unsupported {
 			body.Set("response_format", req.ResponseFormat)
 		}
 	}
@@ -2471,7 +2239,7 @@ func (c *ccRoute) build(ctx context.Context, req *Request, settings wireSettings
 		}
 	}
 	headers := c.requestHeaders(req, top)
-	return &ccBuild{body: body, messages: msgs, headers: headers, aliases: aliases, extraBody: extra}
+	return &ccBuild{body: body, messages: msgs, headers: headers, aliases: aliases, extraBody: extra, err: buildErr}
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -2914,19 +2682,22 @@ func containsAnySub(s string, subs ...string) bool {
 	return false
 }
 
-var glmVersionRe = regexp.MustCompile(`^glm-(\d+)(?:\.(\d+))?`)
+var glmVersionRe = regexp.MustCompile(`^glm-(\p{Nd}+)(?:\.(\p{Nd}+))?`)
 
+// True for GLM 4.5 and later thinking capable families, version digits read as Python int reads Unicode digits
 func glmSupportsThinking(model string) bool {
 	m := glmVersionRe.FindStringSubmatch(strings.ToLower(strings.TrimSpace(model)))
 	if m == nil {
 		return false
 	}
-	major, _ := strconv.Atoi(m[1])
-	minor := 0
+	major, minor := unicodeDigitsInt(m[1]), big.NewInt(0)
 	if m[2] != "" {
-		minor, _ = strconv.Atoi(m[2])
+		minor = unicodeDigitsInt(m[2])
 	}
-	return major > 4 || (major == 4 && minor >= 5)
+	if c := major.Cmp(big.NewInt(4)); c != 0 {
+		return c > 0
+	}
+	return minor.Cmp(big.NewInt(5)) >= 0
 }
 
 // Static and per request headers of the route, route headers winning

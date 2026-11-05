@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Prerequisite policies of worker operations, always, policy, state and never
@@ -134,7 +136,7 @@ func camelToSnake(name string) string {
 
 // Python TypeError for a value of the wrong JSON kind
 func kwargTypeError(op, name, want string, value any) error {
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("%s() argument '%s' must be %s, not %s", op, name, want, pyTypeName(value))}
+	return &PyError{Class: "TypeError", Message: fmt.Sprintf("%s() argument '%s' must be %s, not %s", op, name, want, pyrepr.TypeName(value))}
 }
 
 // Assigns one decoded JSON value to a field of the options struct
@@ -159,7 +161,7 @@ func assignKwarg(op, name string, field reflect.Value, value any) error {
 		field.SetString(s)
 		return nil
 	case reflect.TypeOf(false):
-		field.SetBool(truthy(value))
+		field.SetBool(pyrepr.Truthy(value))
 		return nil
 	case reflect.TypeOf([]string(nil)):
 		if value == nil {
@@ -300,7 +302,7 @@ func (k *kwargs) flag(name string, fallback bool) bool {
 	if !ok {
 		return fallback
 	}
-	return truthy(v)
+	return pyrepr.Truthy(v)
 }
 
 // Plugin input keyword decoded from its wire form, nil when absent or null
@@ -311,7 +313,7 @@ func (k *kwargs) plugins() (PluginInput, error) {
 	}
 	encoded, isMap := raw.(map[string]any)
 	if !isMap {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyTypeName(raw))}
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(raw))}
 	}
 	return DecodePluginInput(encoded)
 }
@@ -347,7 +349,7 @@ func runEnsure(ctx context.Context, args map[string]any, hooks workerHooks) (any
 		}
 		opts.BaseEnv = map[string]string{}
 		for key, value := range object {
-			opts.BaseEnv[key] = pyStr(value)
+			opts.BaseEnv[key] = pyrepr.Str(value)
 		}
 	}
 	if _, err := ensure(ctx, name, opts); err != nil {
@@ -458,7 +460,7 @@ var workerOperations = map[string]*workerOperation{
 func lookupOperation(name string) (*workerOperation, error) {
 	spec, ok := workerOperations[name]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyRepr(name)}
+		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(name)}
 	}
 	return spec, nil
 }

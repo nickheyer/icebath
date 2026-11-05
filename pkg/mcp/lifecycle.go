@@ -55,6 +55,9 @@ func clearConnectCooldowns(keys map[ServerKey]bool, all bool) {
 	}
 }
 
+// Builds an adopter's secret mapping for its re-registration pass, swapped by tests that fail one home
+var adopterSecretScope = profileSecretScope
+
 // Re-registers profiles whose adopted shared connection an owner teardown removed, each under its own home and secrets
 func reregisterOrphanedAdopters(ctx context.Context, env *tools.Env) {
 	mcpMu.Lock()
@@ -68,7 +71,7 @@ func reregisterOrphanedAdopters(ctx context.Context, env *tools.Env) {
 					mcpLogger().Debug(fmt.Sprintf("MCP: re-registration for profile scope %s failed: %v", adopter, r))
 				}
 			}()
-			actx := home.WithOverride(ctx, adopter)
+			actx := withSecretScope(home.WithOverride(ctx, adopter), adopterSecretScope(adopter), adopter)
 			aenv := &tools.Env{}
 			if env != nil {
 				copied := *env

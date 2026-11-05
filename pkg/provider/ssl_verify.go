@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -24,6 +25,9 @@ var (
 	platformBundle   string
 	staleBundleMu    sync.Mutex
 	staleBundleKnown = map[string]string{}
+	caBundleMu       sync.Mutex
+	caBundleWhere    *string
+	reloadCABundle   = reloadCABundleFromSearch
 )
 
 // Well known Linux bundle files, read directly so an SSL_CERT_FILE override is unioned rather than substituted
@@ -114,8 +118,12 @@ func sharedTLSConfig(caPath string, union bool) *tls.Config {
 		pool = platformRoots.Clone()
 	}
 	if caPath != "" {
-		if raw, err := os.ReadFile(caPath); err == nil {
-			pool.AppendCertsFromPEM(raw)
+		raw, err := os.ReadFile(caPath)
+		if err != nil {
+			return failedTLSConfig(err)
+		}
+		if !pool.AppendCertsFromPEM(raw) {
+			return failedTLSConfig(errNoCertificateFound)
 		}
 	}
 	cfg := &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
@@ -123,31 +131,90 @@ func sharedTLSConfig(caPath string, union bool) *tls.Config {
 	return cfg
 }
 
+var errNoCertificateFound = errors.New("[X509: NO_CERTIFICATE_OR_CRL_FOUND] no certificate or crl found")
+
+// Fails every handshake with the load error and stays uncached so the next client retries the bundle
+func failedTLSConfig(err error) *tls.Config {
+	return &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true, VerifyConnection: func(tls.ConnectionState) error {
+		return err
+	}}
+}
+
+// Absolute path with symlinks resolved, the input path when it cannot be resolved
+func resolvedPath(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		return real
+	}
+	return abs
+}
+
 // PlatformTLSConfig is the process wide client context with an SSL_CERT_FILE bundle unioned on top
 func PlatformTLSConfig() *tls.Config {
 	InstallTrustStore()
-	if ca := strings.TrimSpace(os.Getenv("SSL_CERT_FILE")); ca != "" {
-		if abs, err := filepath.Abs(ca); err == nil {
-			if info, statErr := os.Stat(abs); statErr == nil && !info.IsDir() {
-				return sharedTLSConfig(abs, true)
-			}
-		}
+	if ca := strings.TrimSpace(os.Getenv("SSL_CERT_FILE")); ca != "" && fileExists(ca) {
+		return sharedTLSConfig(resolvedPath(ca), true)
 	}
 	return sharedTLSConfig("", false)
 }
 
-// DefaultCABundlePath is an on disk CA bundle the platform resolves, re-derived once when a remembered path vanished
+// DefaultCABundlePath is the bundle the process resolved on first use, re-derived once when its path vanished
 func DefaultCABundlePath() string {
-	if ca := strings.TrimSpace(os.Getenv("SSL_CERT_FILE")); ca != "" {
-		if info, err := os.Stat(ca); err == nil && !info.IsDir() {
-			return ca
-		}
-		return recoverBundleOnce(ca)
+	stale, ok := importCABundle()
+	if !ok {
+		return ""
 	}
+	if fileExists(stale) {
+		return stale
+	}
+	return recoverBundleOnce(stale)
+}
+
+// Resolves the bundle once and caches it for the process, an unresolved search is retried on the next call
+func importCABundle() (string, bool) {
+	caBundleMu.Lock()
+	defer caBundleMu.Unlock()
+	if caBundleWhere != nil {
+		return *caBundleWhere, true
+	}
+	path, ok := searchCABundle()
+	if ok {
+		caBundleWhere = &path
+	}
+	return path, ok
+}
+
+// First bundle file present on the live candidate list
+func searchCABundle() (string, bool) {
 	for _, bundle := range linuxRootBundles {
-		if info, err := os.Stat(bundle); err == nil && !info.IsDir() {
-			return bundle
+		if fileExists(bundle) {
+			return bundle, true
 		}
+	}
+	return "", false
+}
+
+// Drops the cached bundle and re-derives it from the live candidates, restoring the old one when none resolves
+func reloadCABundleFromSearch() string {
+	caBundleMu.Lock()
+	defer caBundleMu.Unlock()
+	if caBundleWhere == nil {
+		return ""
+	}
+	dropped := caBundleWhere
+	caBundleWhere = nil
+	path, ok := searchCABundle()
+	if !ok {
+		caBundleWhere = dropped
+		slog.Default().Debug("certifi could not be re-resolved: no CA bundle on the live search path")
+		return ""
+	}
+	caBundleWhere = &path
+	if fileExists(path) {
+		return path
 	}
 	return ""
 }
@@ -155,29 +222,28 @@ func DefaultCABundlePath() string {
 // Re-derives a vanished bundle path at most once, reporting it at most once
 func recoverBundleOnce(stale string) string {
 	staleBundleMu.Lock()
-	defer staleBundleMu.Unlock()
-	if cached, known := staleBundleKnown[stale]; known {
-		if cached == "" {
-			return ""
-		}
-		if info, err := os.Stat(cached); err == nil && !info.IsDir() {
-			return cached
-		}
+	if cached, known := staleBundleKnown[stale]; known && (cached == "" || fileExists(cached)) {
+		staleBundleMu.Unlock()
+		return cached
 	}
-	recovered := ""
-	for _, bundle := range linuxRootBundles {
-		if info, err := os.Stat(bundle); err == nil && !info.IsDir() {
-			recovered = bundle
-			break
-		}
-	}
+	recovered := reloadCABundle()
 	staleBundleKnown[stale] = recovered
+	staleBundleMu.Unlock()
 	if recovered != "" {
-		slog.Default().Warn(fmt.Sprintf("TLS trust: CA bundle %s no longer exists — re-resolved to %s. TLS clients built before this point used the dead path.", stale, recovered))
+		slog.Default().Warn(fmt.Sprintf("TLS trust: certifi's CA bundle %s no longer exists — the install environment it belongs to was replaced under this process; re-resolved to %s. TLS clients built before this point used the dead path.", stale, recovered))
 		return recovered
 	}
-	slog.Default().Warn(fmt.Sprintf("TLS trust: CA bundle %s no longer exists and no system bundle could be re-resolved; using the platform trust store for the rest of this process.", stale))
+	slog.Default().Warn(fmt.Sprintf("TLS trust: certifi's CA bundle %s no longer exists and certifi could not be re-resolved; using the platform trust store for the rest of this process.", stale))
 	return ""
+}
+
+// The resolved bundle trusted the way a default client context trusts it, else the shared platform context
+func defaultVerify() *tls.Config {
+	bundle := DefaultCABundlePath()
+	if bundle == "" {
+		return sharedTLSConfig("", false)
+	}
+	return sharedTLSConfig(bundle, InstallTrustStore())
 }
 
 // PlatformStoreBundle writes the OS store roots once to a PEM file under the home cache, empty when none
@@ -266,9 +332,11 @@ func SubprocessVerifyBundle(h string) string {
 	if bundle := DefaultCABundlePath(); bundle != "" {
 		return bundle
 	}
-	if dir := strings.TrimSpace(os.Getenv("SSL_CERT_DIR")); dir != "" {
-		if _, err := os.Stat(dir); err == nil {
-			return dir
+	for _, key := range []string{"SSL_CERT_FILE", "SSL_CERT_DIR"} {
+		if candidate := strings.TrimSpace(os.Getenv(key)); candidate != "" {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
 		}
 	}
 	return PlatformStoreBundle(h)
@@ -297,12 +365,12 @@ func ResolveTLSVerify(log *slog.Logger, caBundle string, sslVerify any, baseURL 
 	if effective := strings.TrimSpace(caBundle); effective != "" {
 		path := expandTildePath(effective)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			if abs, err := filepath.Abs(path); err == nil {
-				path = abs
-			}
-			return TLSVerify{Config: sharedTLSConfig(path, false)}
+			return TLSVerify{Config: sharedTLSConfig(resolvedPath(path), false)}
 		}
 		log.Warn(fmt.Sprintf("ssl_ca_cert path does not exist: %s — using the OS trust store instead", effective))
 	}
-	return TLSVerify{Config: sharedTLSConfig("", false)}
+	if os.Getenv("SSL_CERT_FILE") != "" || os.Getenv("SSL_CERT_DIR") != "" {
+		return TLSVerify{Config: sharedTLSConfig("", false)}
+	}
+	return TLSVerify{Config: defaultVerify()}
 }

@@ -5,12 +5,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"math"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -191,36 +194,99 @@ func geminiToolCallID(tc map[string]any) string {
 	return ""
 }
 
-// Decodes JSON text keeping numbers as written
+// Decodes JSON text with json.loads rules into maps and json.Number text, functionCall args kept in API key order
 func geminiJSONLoads(text string) (any, error) {
-	dec := json.NewDecoder(strings.NewReader(text))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
+	v, err := pyjson.Loads(text)
+	if err != nil {
 		return nil, err
 	}
-	if dec.More() {
-		return nil, &json.SyntaxError{Offset: dec.InputOffset()}
+	return geminiPlainJSON(v, false), nil
+}
+
+// Plain maps and json.Number numbers for a decoded value, leaving args under functionCall as ordered Python values
+func geminiPlainJSON(v any, underCall bool) any {
+	switch t := v.(type) {
+	case *pyjson.Object:
+		m := make(map[string]any, len(t.Keys))
+		for _, k := range t.Keys {
+			if underCall && k == "args" {
+				m[k] = t.Vals[k]
+				continue
+			}
+			m[k] = geminiPlainJSON(t.Vals[k], k == "functionCall")
+		}
+		return m
+	case []any:
+		for i, e := range t {
+			t[i] = geminiPlainJSON(e, false)
+		}
+		return t
 	}
-	if _, err := dec.Token(); err == nil {
-		return nil, &json.SyntaxError{Offset: dec.InputOffset()}
+	return geminiNumber(v)
+}
+
+// json.Number in Python spelling for a decoded int or finite float, any other value unchanged
+func geminiNumber(v any) any {
+	switch t := v.(type) {
+	case int64:
+		return json.Number(strconv.FormatInt(t, 10))
+	case *big.Int:
+		return json.Number(t.String())
+	case float64:
+		if math.IsNaN(t) || math.IsInf(t, 0) {
+			return t
+		}
+		return json.Number(pyrepr.Float(t))
 	}
-	return v, nil
+	return v
+}
+
+// Request side decode keeping every object in key order with numbers spelled the way json.dumps writes them
+func geminiRequestJSONLoads(text string) (any, error) {
+	v, err := pyjson.Loads(text)
+	if err != nil {
+		return nil, err
+	}
+	var walk func(any) any
+	walk = func(v any) any {
+		switch t := v.(type) {
+		case *pyjson.Object:
+			out := pyjson.NewObject()
+			for _, k := range t.Keys {
+				out.Set(k, walk(t.Vals[k]))
+			}
+			return out
+		case []any:
+			for i, e := range t {
+				t[i] = walk(e)
+			}
+			return t
+		}
+		return geminiNumber(v)
+	}
+	return walk(v), nil
+}
+
+// Single key ordered object as Python builds the wrapper dicts around non object arguments
+func geminiWrap(key string, v any) *pyjson.Object {
+	o := pyjson.NewObject()
+	o.Set(key, v)
+	return o
 }
 
 // functionCall part with its replayed signature or the skip sentinel
 func translateToolCallToGemini(tc map[string]any, includeIDs bool) map[string]any {
 	fn, _ := tc["function"].(map[string]any)
-	var args any = map[string]any{}
+	var args any = pyjson.NewObject()
 	if raw, ok := fn["arguments"].(string); ok && raw != "" {
-		if parsed, err := geminiJSONLoads(raw); err == nil {
+		if parsed, err := geminiRequestJSONLoads(raw); err == nil {
 			args = parsed
 		} else {
-			args = map[string]any{"_raw": raw}
+			args = geminiWrap("_raw", raw)
 		}
 	}
-	if _, ok := args.(map[string]any); !ok {
-		args = map[string]any{"_value": args}
+	if _, ok := args.(*pyjson.Object); !ok {
+		args = geminiWrap("_value", args)
 	}
 	call := map[string]any{"name": pyOrStr(fn["name"]), "args": args}
 	if includeIDs {
@@ -238,6 +304,16 @@ func translateToolCallToGemini(tc map[string]any, includeIDs bool) map[string]an
 // Reports whether a parsed value holds a local JSON schema ref pointer
 func looksLikeJSONSchema(node any) bool {
 	switch v := node.(type) {
+	case *pyjson.Object:
+		for _, k := range v.Keys {
+			val := v.Vals[k]
+			if s, ok := val.(string); k == "$ref" && ok && strings.HasPrefix(s, "#/") {
+				return true
+			}
+			if looksLikeJSONSchema(val) {
+				return true
+			}
+		}
 	case map[string]any:
 		for k, val := range v {
 			if s, ok := val.(string); k == "$ref" && ok && strings.HasPrefix(s, "#/") {
@@ -274,9 +350,9 @@ func translateToolResultToGemini(msg map[string]any, nameByCallID map[string]str
 	content := coerceGeminiContentToText(raw)
 	var parsed any
 	if t := strings.TrimSpace(content); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
-		parsed, _ = geminiJSONLoads(content)
+		parsed, _ = geminiRequestJSONLoads(content)
 	}
-	pm, isObj := parsed.(map[string]any)
+	pm, isObj := parsed.(*pyjson.Object)
 	fr := map[string]any{"name": name}
 	if isObj && !looksLikeJSONSchema(pm) {
 		fr["response"] = pm
@@ -732,8 +808,8 @@ func geminiDumpCallArgs(fc map[string]any) string {
 	if !pyTruthy(args) {
 		args = map[string]any{}
 	}
-	out, ok := pyJSONDumps(args)
-	if !ok {
+	out, err := pyjson.Dumps(args, pyjson.EnsureASCII(false))
+	if err != nil {
 		return "{}"
 	}
 	return out

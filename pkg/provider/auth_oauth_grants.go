@@ -584,7 +584,7 @@ func statSig(path string) any {
 	if err != nil {
 		return nil
 	}
-	ino, ctime := fileIdentity(st)
+	ino, ctime := fileIdentity(path, st)
 	return []int64{st.ModTime().UnixNano(), st.Size(), ino, ctime}
 }
 

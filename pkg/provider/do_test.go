@@ -605,7 +605,9 @@ func TestRunBounded(t *testing.T) {
 	}
 	marked := &suspectBackend{}
 	onTimeout := 0
-	res, err = RunBounded(context.Background(), func(ctx context.Context) (any, error) { <-ctx.Done(); return nil, ctx.Err() }, 20*time.Millisecond, true, "slow", func() { onTimeout++ }, marked)
+	release := make(chan struct{})
+	defer close(release)
+	res, err = RunBounded(context.Background(), func(ctx context.Context) (any, error) { <-release; return nil, nil }, 20*time.Millisecond, true, "slow", func() { onTimeout++ }, marked)
 	if err != nil || !res.TimedOut || onTimeout != 1 || marked.reasons != 1 {
 		t.Fatalf("timeout %+v err %v onTimeout %d marked %d", res, err, onTimeout, marked.reasons)
 	}

@@ -73,25 +73,25 @@ func TestSessionContextPredicates(t *testing.T) {
 		t.Setenv(name, "")
 	}
 	env := &Env{Config: config.Tree{}, Values: &sync.Map{}}
-	if isGatewayApprovalContext(env) {
+	if IsGatewayApprovalContext(env) {
 		t.Fatal("no platform is not a gateway context")
 	}
 	env.Values.Store("session.platform", "webhook")
-	if isGatewayApprovalContext(env) || !isUnattendedPlatformApprovalContext(env) || !noUserCanAnswer(env) {
+	if IsGatewayApprovalContext(env) || !isUnattendedPlatformApprovalContext(env) || !NoUserCanAnswer(env) {
 		t.Fatal("webhook is unattended")
 	}
 	for _, p := range []string{"msgraph_webhook", "api_server"} {
 		env.Values.Store("session.platform", p)
-		if isGatewayApprovalContext(env) {
+		if IsGatewayApprovalContext(env) {
 			t.Fatalf("%s must not be a gateway context", p)
 		}
 	}
 	env.Values.Store("session.platform", "telegram")
-	if !isGatewayApprovalContext(env) {
+	if !IsGatewayApprovalContext(env) {
 		t.Fatal("telegram is a gateway context")
 	}
 	env.Values.Store("session.cron", true)
-	if isGatewayApprovalContext(env) || !isCronApprovalContext(env) {
+	if IsGatewayApprovalContext(env) || !isCronApprovalContext(env) {
 		t.Fatal("cron is never a gateway context")
 	}
 	env.Values.Delete("session.cron")

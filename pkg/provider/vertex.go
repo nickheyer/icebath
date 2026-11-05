@@ -341,7 +341,7 @@ func vertexRuntimeConfig(ctx context.Context, cfg map[string]any, secrets *confi
 		cfg = map[string]any(tree)
 	}
 	e := vertexEnv{cfg: cfg, secrets: secrets}
-	src := func(c context.Context) (string, error) { return vertexAccessToken(c, e) }
+	src := TagCredentialSource(func(c context.Context) (string, error) { return vertexAccessToken(c, e) }, CredentialSourceVertexOAuth).Func()
 	if deferredTokenMint(ctx) {
 		base := vertexGetBaseURL(ctx, e, "", "")
 		return src, base, base != ""

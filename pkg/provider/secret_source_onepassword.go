@@ -194,7 +194,11 @@ func FetchOnePasswordSecrets(opts OnePasswordFetchOptions) (map[string]string, [
 	tokenValue := strings.TrimSpace(environ.Value(tokenEnv))
 	cacheKey := fmt.Sprintf("%s|%s|%s", opAuthFingerprint(environ, tokenEnv), opts.Account, opRefsFingerprint(valid))
 	if opts.UseCache {
-		if cached, ok := opStore.Lookup(cacheKey, opts.CacheTTL, opts.HomePath, nil); ok {
+		cached, ok, err := opStore.Lookup(cacheKey, opts.CacheTTL, opts.HomePath, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		if ok {
 			out := map[string]string{}
 			for k, v := range cached.Secrets {
 				out[k] = v

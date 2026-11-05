@@ -6,12 +6,13 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
+	"context"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Alias spellings of api_mode accepted from older configs mapped onto the canonical transport names
@@ -748,15 +749,19 @@ var (
 	providerEnvFillOnce sync.Once
 )
 
-// Names config declared before any provider profile entry was added
+// Names config declared before any platform manifest or provider profile entry was added
 func staticDeclaredEnvNames() map[string]bool {
-	staticEnvNamesOnce.Do(func() {
-		staticEnvNames = make(map[string]bool, len(config.OptionalEnvVars))
-		for name := range config.OptionalEnvVars {
-			staticEnvNames[name] = true
-		}
-	})
+	staticEnvNamesOnce.Do(func() { staticEnvNames = config.StaticCoreEnvNames() })
 	return staticEnvNames
+}
+
+// Key env names then the base URL env name, the order the env_vars tuple of the profile lists them
+func profileEnvVars(p Profile) []string {
+	out := append([]string(nil), p.KeyEnv...)
+	if p.BaseURLEnv != "" && !slices.Contains(out, p.BaseURLEnv) {
+		out = append(out, p.BaseURLEnv)
+	}
+	return out
 }
 
 // Entries for the api_key profiles' env vars minus skipped names, first profile to declare a name wins
@@ -766,7 +771,7 @@ func providerEnvEntriesFor(profiles []Profile, skip map[string]bool) map[string]
 		if p.AuthType != AuthTypeAPIKey {
 			continue
 		}
-		for _, v := range p.KeyEnv {
+		for _, v := range profileEnvVars(p) {
 			if skip[v] {
 				continue
 			}
@@ -794,7 +799,7 @@ func ProviderEnvEntries() map[string]config.EnvVar {
 	providerEnvMu.Lock()
 	defer providerEnvMu.Unlock()
 	if providerEnvCatalog == nil {
-		providerEnvCatalog = providerEnvEntriesFor(bundledAndBuiltinProfiles(), staticDeclaredEnvNames())
+		providerEnvCatalog = providerEnvEntriesFor(BundledProfiles(), staticDeclaredEnvNames())
 	}
 	out := make(map[string]config.EnvVar, len(providerEnvCatalog))
 	for k, v := range providerEnvCatalog {
@@ -961,7 +966,7 @@ func SaveEnvSetting(h, key, value string) error {
 	if refusal := envWriteRefusal(h, upper, "set"); refusal != "" {
 		return fmt.Errorf("%s", refusal)
 	}
-	if err := config.SetEnvValue(home.EnvPath(h), upper, value); err != nil {
+	if err := config.SaveEnvValue(h, upper, value); err != nil {
 		return err
 	}
 	_, err := dropConfigYAMLCopies(h, key)
@@ -974,7 +979,7 @@ func RemoveEnvSetting(h, key string) (bool, error) {
 	if refusal := envWriteRefusal(h, upper, "remove"); refusal != "" {
 		return false, fmt.Errorf("%s", refusal)
 	}
-	removed, err := config.RemoveEnvValue(home.EnvPath(h), upper)
+	removed, err := config.RemoveHomeEnvValue(context.Background(), h, upper)
 	if err != nil {
 		return false, err
 	}

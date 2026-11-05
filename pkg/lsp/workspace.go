@@ -2,11 +2,12 @@ package lsp
 
 import (
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const (
@@ -29,56 +30,14 @@ var (
 func NormalizePath(path string) string {
 	p, err := normalizePath(path)
 	if err != nil {
-		return filepath.Clean(expandUser(path))
+		return pypath.Normpath(pypath.Expanduser(path))
 	}
 	return p
 }
 
 // Absolute clean form of a path, the getcwd failure when a relative path has no cwd to anchor on
 func normalizePath(path string) (string, error) {
-	return filepath.Abs(expandUser(path))
-}
-
-// Python os.path.expanduser for a leading tilde
-func expandUser(path string) string {
-	if !strings.HasPrefix(path, "~") {
-		return path
-	}
-	seps := "/"
-	if runtime.GOOS == "windows" {
-		seps = `/\`
-	}
-	i := strings.IndexAny(path, seps)
-	if i < 0 {
-		i = len(path)
-	}
-	var home string
-	if i == 1 {
-		home = os.Getenv("HOME")
-		if runtime.GOOS == "windows" {
-			home = os.Getenv("USERPROFILE")
-		}
-		if home == "" {
-			u, err := user.Current()
-			if err != nil {
-				return path
-			}
-			home = u.HomeDir
-		}
-	} else {
-		u, err := user.Lookup(path[1:i])
-		if err != nil {
-			return path
-		}
-		home = u.HomeDir
-	}
-	if home != "/" {
-		home = strings.TrimRight(home, seps)
-	}
-	if home == "" {
-		home = "/"
-	}
-	return home + path[i:]
+	return pypath.Abspath(pypath.Expanduser(path))
 }
 
 // Normalized start directory, the parent when the start is a regular file

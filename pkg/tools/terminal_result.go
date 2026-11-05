@@ -5,6 +5,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Signal death notes keyed by signum, used for both negative and 128 plus signum encodings
@@ -261,10 +263,10 @@ func orderedJSON(fields [][2]any) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		key, _ := jsonEncodeWTF8(kv[0])
-		val, err := jsonEncodeWTF8(kv[1])
+		key, _ := pyjson.EncodeWTF8(kv[0])
+		val, err := pyjson.EncodeWTF8(kv[1])
 		if err != nil {
-			val, _ = jsonEncodeWTF8(fmt.Sprint(kv[1]))
+			val, _ = pyjson.EncodeWTF8(fmt.Sprint(kv[1]))
 		}
 		b.Write(key)
 		b.WriteByte(':')

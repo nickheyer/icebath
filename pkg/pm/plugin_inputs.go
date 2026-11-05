@@ -1,6 +1,10 @@
 package pm
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+)
 
 // MemberDir is one plugin member, the installed identity it answers to and the tree that supplies it
 type MemberDir struct {
@@ -76,7 +80,7 @@ func EncodePluginInput(p PluginInput) map[string]any {
 func pluginInputField(value map[string]any, key string) (any, error) {
 	v, ok := value[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
 	}
 	return v, nil
 }
@@ -105,7 +109,7 @@ func DecodePluginInput(value map[string]any) (PluginInput, error) {
 		if raw, ok := value["sources"]; ok {
 			list, ok := raw.([]any)
 			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyTypeName(raw))}
+				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(raw))}
 			}
 			dirs := make([]MemberDir, 0, len(list))
 			for _, item := range list {
@@ -138,20 +142,12 @@ func DecodePluginInput(value map[string]any) (PluginInput, error) {
 		}
 		data, ok := raw.(map[string]any)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not a mapping", pyTypeName(raw))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not a mapping", pyrepr.TypeName(raw))}
 		}
 		if kind == "selection" {
 			return &Selection{Data: data}, nil
 		}
 		return &StagedUpdate{Data: data}, nil
 	}
-	return nil, &PyError{Class: "ValueError", Message: "unknown plugin input kind: " + pyReprValue(rawKind)}
-}
-
-// Python repr of a decoded JSON scalar, strings quoted
-func pyReprValue(v any) string {
-	if s, ok := v.(string); ok {
-		return pyRepr(s)
-	}
-	return pyStr(v)
+	return nil, &PyError{Class: "ValueError", Message: "unknown plugin input kind: " + pyrepr.Repr(rawKind)}
 }

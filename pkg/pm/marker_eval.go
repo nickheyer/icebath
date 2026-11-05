@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 //go:embed marker_eval.py
@@ -44,5 +46,5 @@ func EvaluateMarkerInRuntime(ctx context.Context, marker string, environment map
 	if !utf8.ValidString(stdout.String()) {
 		return true
 	}
-	return pyStrip(universalNewlines(stdout.String())) == "1"
+	return pystr.Strip(universalNewlines(stdout.String())) == "1"
 }

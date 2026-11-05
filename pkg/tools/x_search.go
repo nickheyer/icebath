@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // x_search defaults and limits
@@ -300,8 +302,8 @@ func (e *xaiHTTPError) Error() string {
 
 // Readable xAI error from the JSON body code and error, else the body text, else the status line
 func xaiHTTPErrorMessage(e *xaiHTTPError) string {
-	payload, err := pyJSONLoads(string(e.body))
-	obj, isObj := payload.(*pyJSONObject)
+	payload, err := pyjson.Loads(string(e.body))
+	obj, isObj := payload.(*pyjson.Object)
 	if err != nil || !isObj {
 		if text := strings.TrimSpace(string(e.body)); text != "" {
 			return clipRunes(text, 500)
@@ -309,11 +311,11 @@ func xaiHTTPErrorMessage(e *xaiHTTPError) string {
 		return e.Error()
 	}
 	code := ""
-	if v, _ := obj.get("code"); pyTruthy(v) {
+	if v, _ := obj.Get("code"); pyTruthy(v) {
 		code = strings.TrimSpace(pyJSONStr(v))
 	}
 	message := ""
-	if v, _ := obj.get("error"); pyTruthy(v) {
+	if v, _ := obj.Get("error"); pyTruthy(v) {
 		message = strings.TrimSpace(pyJSONStr(v))
 	}
 	if message == "" {
@@ -352,7 +354,7 @@ func pyConfigRepr(v any) string {
 	if err != nil {
 		return fmt.Sprint(v)
 	}
-	decoded, err := pyJSONLoads(string(b))
+	decoded, err := pyjson.Loads(string(b))
 	if err != nil {
 		return fmt.Sprint(v)
 	}
@@ -572,7 +574,7 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 	dec.UseNumber()
 	if err := dec.Decode(&decoded); err != nil {
 		msg := err.Error()
-		if _, perr := pyJSONLoads(string(raw)); perr != nil {
+		if _, perr := pyjson.Loads(string(raw)); perr != nil {
 			msg = perr.Error()
 		}
 		log.Error("x_search failed", "error", msg)
@@ -581,7 +583,7 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 	data, ok := decoded.(map[string]any)
 	if !ok {
 		typeName := "NoneType"
-		if v, perr := pyJSONLoads(string(raw)); perr == nil {
+		if v, perr := pyjson.Loads(string(raw)); perr == nil {
 			typeName = pyJSONTypeName(v)
 		}
 		msg := fmt.Sprintf("'%s' object has no attribute 'get'", typeName)

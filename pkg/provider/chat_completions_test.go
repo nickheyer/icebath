@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ---- think scrubber (tests/agent/test_think_scrubber.py) ----
@@ -403,7 +404,7 @@ func TestRepairToolCallArguments(t *testing.T) {
 		"None":                         "{}",
 		"":                             "{}",
 		`{"path": "x`:                  "{}",
-		`{"a": 1}`:                     `{"a": 1}`,
+		`{"a": 1}`:                     `{"a":1}`,
 	}
 	for in, want := range cases {
 		if got := RepairToolCallArguments(in, "t"); got != want {
@@ -1058,7 +1059,7 @@ func TestCompleteNormalizesRefusalUsageAndToolIDs(t *testing.T) {
 		t.Fatalf("resp %+v", resp)
 	}
 	tc := resp.Message.ToolCalls[0]
-	if tc.ID != deterministicCallID("terminal", `{"command":"ls"}`, 0) || tc.Function.Arguments != `{"command":"ls"}` {
+	if tc.ID != tools.DeterministicCallID("terminal", `{"command":"ls"}`, 0) || tc.Function.Arguments != `{"command":"ls"}` {
 		t.Fatalf("tool call %+v", tc)
 	}
 	if resp.Message.Reasoning != "thinking" || resp.Message.ReasoningContent != "thinking" {
@@ -1195,8 +1196,11 @@ func TestAzureAuthHeaders(t *testing.T) {
 	if err != nil || h["Authorization"] != "Bearer tok-1" || h["api-key"] != "" || fmt.Sprint(strip) != "[Authorization Api-Key X-Api-Key]" {
 		t.Fatalf("entra headers %v strip %v err %v", h, strip, err)
 	}
-	if _, _, err = ccAuthHeaders(context.Background(), Route{BaseURL: "https://x", TokenSource: func(context.Context) (string, error) { return "", nil }}); err == nil {
-		t.Fatal("empty token accepted")
+	if h, strip, err = ccAuthHeaders(context.Background(), Route{BaseURL: "https://x", TokenSource: func(context.Context) (string, error) { return "", nil }}); err != nil || len(h) != 0 || len(strip) != 3 {
+		t.Fatalf("empty mint must send without auth %v %v %v", h, strip, err)
+	}
+	if _, _, err = ccAuthHeaders(context.Background(), Route{BaseURL: "https://x", TokenSource: func(context.Context) (string, error) { return "", errors.New("chain exhausted") }}); err == nil {
+		t.Fatal("mint error swallowed")
 	}
 	h, _, err = ccAuthHeaders(context.Background(), Route{BaseURL: "https://api.openai.com/v1", APIKey: "k"})
 	if err != nil || h["Authorization"] != "Bearer k" || h["api-key"] != "" {

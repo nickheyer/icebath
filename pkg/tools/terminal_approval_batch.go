@@ -160,7 +160,7 @@ func (s *terminalSlot) prepare(ctx context.Context, ref *ToolCallRef) error {
 			s.mu.Unlock()
 			s.markReady()
 		}()
-		policy, err := terminalPolicy(env)
+		policy, err := terminalPolicy(EnvInTerminalScope(ctx, env))
 		if err != nil {
 			return
 		}

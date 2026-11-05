@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // DesktopEmitter delivers one renderer event to the window or session identified by sid
@@ -86,7 +88,7 @@ func desktopEmitOrError(env *Env, event string, payload map[string]any, failPref
 
 // Desktop answers with a JSON object, passed through, else the raw text wrapped
 func desktopPassthroughJSON(raw string) string {
-	if v, err := jsonDecodeWTF8([]byte(raw)); err == nil {
+	if v, err := pyjson.DecodeWTF8([]byte(raw)); err == nil {
 		return jsonCompact(v)
 	}
 	return jsonCompact(map[string]any{"text": raw})

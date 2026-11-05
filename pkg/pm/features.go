@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // FeaturesFilename is the enabled features file beside a payload or the runtime store
@@ -75,7 +78,7 @@ func readFeatures(ctx context.Context) ([]string, error) {
 	}
 	record, ok := doc.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(doc))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(doc))}
 	}
 	list, ok := record["extras"].([]any)
 	if !ok {
@@ -83,7 +86,7 @@ func readFeatures(ctx context.Context) ([]string, error) {
 	}
 	names := make([]string, len(list))
 	for i, item := range list {
-		names[i] = pyStr(item)
+		names[i] = pyrepr.Str(item)
 	}
 	return sortedSet(names), nil
 }
@@ -185,7 +188,7 @@ func optInExtras(repoDir string) ([]string, error) {
 		}
 	}
 	if len(unknown) > 0 {
-		return nil, &PyError{Class: "ValueError", Message: "[tool.icebath] opt-in-extras names undeclared extras: " + pyListRepr(unknown)}
+		return nil, &PyError{Class: "ValueError", Message: "[tool.icebath] opt-in-extras names undeclared extras: " + pyrepr.Repr(unknown)}
 	}
 	return sortedSet(names), nil
 }
@@ -218,12 +221,12 @@ func InstalledExtras(ctx context.Context, repoDir, venvDir, python string) ([]st
 	argv := []string{python, "-B", "-I", "-S", "-c", featureProbeSource, resolvePath(venvDir), string(asciiEscape(pySeparators(encoded)))}
 	result, err := runFeatureProbe(ctx, argv, repoDir)
 	if err == nil && result.Code != 0 {
-		err = fmt.Errorf("Command %s returned non-zero exit status %d.", pyListRepr(argv), result.Code)
+		err = fmt.Errorf("Command %s returned non-zero exit status %d.", pyrepr.Repr(argv), result.Code)
 	}
 	if err != nil {
-		detail := pyStrip(result.Stderr)
+		detail := pystr.Strip(result.Stderr)
 		if detail == "" {
-			detail = pyStrip(pyExceptionText(err))
+			detail = pystr.Strip(pyExceptionText(err))
 		}
 		return nil, &FeatureProbeError{Message: fmt.Sprintf("feature inventory failed on %s: %s", python, detail)}
 	}

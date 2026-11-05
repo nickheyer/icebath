@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var codexLog = slog.Default()
@@ -605,7 +606,7 @@ func resolveCallID(rawCallID, rawItemID, fnName, arguments string, index int, ca
 		callID = canonicalCallIDFromFC(embeddedItemID)
 	}
 	if strings.TrimSpace(callID) == "" {
-		callID = deterministicCallID(fnName, arguments, index)
+		callID = tools.DeterministicCallID(fnName, arguments, index)
 	}
 	return strings.TrimSpace(callID)
 }

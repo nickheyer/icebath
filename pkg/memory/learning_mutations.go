@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -234,7 +236,7 @@ func NodeDetail(ctx context.Context, env *tools.Env, nodeID string) (map[string]
 			return nil, err
 		}
 		body := pyStrip(chunks[local])
-		lines := pySplitLines(body)
+		lines := pystr.Splitlines(body, false)
 		if len(lines) == 0 {
 			return nil, &pyError{class: "IndexError", msg: "list index out of range"}
 		}

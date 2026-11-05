@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 )
 
 // Version stamped into scan provenance so cached verdicts expire with the rules
@@ -880,16 +881,16 @@ func loadSkillIgnore(skillDir string) func(string) bool {
 				}
 				continue
 			}
-			if fnmatch(relPosix, p) {
+			if fnmatch.Fnmatch(relPosix, p) {
 				return true
 			}
 			if !anchored {
-				if fnmatch(base, p) || below {
+				if fnmatch.Fnmatch(base, p) || below {
 					return true
 				}
 				if !strings.Contains(p, "/") {
 					for _, seg := range segs {
-						if fnmatch(seg, p) {
+						if fnmatch.Fnmatch(seg, p) {
 							return true
 						}
 					}
@@ -898,59 +899,6 @@ func loadSkillIgnore(skillDir string) func(string) bool {
 		}
 		return false
 	}
-}
-
-// Shell style wildcard match where star spans separators like Python fnmatch
-func fnmatch(name, pattern string) bool {
-	re, err := regexp.Compile(fnmatchTranslate(pattern))
-	if err != nil {
-		return false
-	}
-	return re.MatchString(name)
-}
-
-// Translates a shell pattern to an anchored regular expression
-func fnmatchTranslate(pat string) string {
-	var sb strings.Builder
-	sb.WriteString(`(?s)^`)
-	runes := []rune(pat)
-	for i := 0; i < len(runes); i++ {
-		c := runes[i]
-		switch c {
-		case '*':
-			sb.WriteString(`.*`)
-		case '?':
-			sb.WriteString(`.`)
-		case '[':
-			j := i + 1
-			if j < len(runes) && runes[j] == '!' {
-				j++
-			}
-			if j < len(runes) && runes[j] == ']' {
-				j++
-			}
-			for j < len(runes) && runes[j] != ']' {
-				j++
-			}
-			if j >= len(runes) {
-				sb.WriteString(`\[`)
-				continue
-			}
-			stuff := string(runes[i+1 : j])
-			i = j
-			if strings.HasPrefix(stuff, "!") {
-				stuff = "^" + stuff[1:]
-			} else if strings.HasPrefix(stuff, "^") {
-				stuff = `\` + stuff
-			}
-			stuff = strings.ReplaceAll(stuff, `\`, `\\`)
-			sb.WriteString("[" + stuff + "]")
-		default:
-			sb.WriteString(regexp.QuoteMeta(string(c)))
-		}
-	}
-	sb.WriteString(`$`)
-	return sb.String()
 }
 
 var sourcePrefixAliases = []string{"skills-sh/", "skills.sh/", "skils-sh/", "skils.sh/"}

@@ -273,7 +273,7 @@ func TestDocsCacheIsLRUBoundedAndReopensEvicted(t *testing.T) {
 		if c.docs.len() != 3 || c.docs.get(files[0]) != nil {
 			t.Errorf("docs %d, first kept %v", c.docs.len(), c.docs.get(files[0]) != nil)
 		}
-		if len(closed) != 2 || closed[0] != FileURI(files[0]) || closed[1] != FileURI(files[1]) {
+		if len(closed) != 2 || closed[0] != mustURI(t, files[0]) || closed[1] != mustURI(t, files[1]) {
 			t.Errorf("closed %v", closed)
 		}
 		v, err := c.openFile(ctx, files[0], "python", nil)
@@ -397,7 +397,7 @@ func TestIncrementalReplacementsPreserveServerDocument(t *testing.T) {
 				}
 				hover, err := waitFor(ctx, 5*time.Second, func(ctx context.Context) (any, error) {
 					return c.sendRequest(ctx, "textDocument/hover", map[string]any{
-						"textDocument": map[string]any{"uri": FileURI(path)}, "position": map[string]any{"line": 0, "character": 0}})
+						"textDocument": map[string]any{"uri": mustURI(t, path)}, "position": map[string]any{"line": 0, "character": 0}})
 				})
 				if err != nil {
 					return struct{}{}, err

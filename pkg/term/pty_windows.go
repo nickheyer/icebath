@@ -64,7 +64,7 @@ func (p *Process) spawn(c Command) error {
 		return err
 	}
 	defer attrs.Delete()
-	if err := attrs.Update(windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, unsafe.Pointer(p.console), unsafe.Sizeof(p.console)); err != nil {
+	if err := attrs.Update(windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, *(*unsafe.Pointer)(unsafe.Pointer(&p.console)), unsafe.Sizeof(p.console)); err != nil {
 		return err
 	}
 	si := &windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}

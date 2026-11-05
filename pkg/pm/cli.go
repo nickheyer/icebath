@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/mattn/go-isatty"
 )
 
@@ -170,7 +172,7 @@ func lockedExtras(root string) (map[string]bool, error) {
 			provides, _ := meta.Get("provides-extras")
 			list, _ := provides.([]any)
 			for _, extra := range list {
-				extras[pyStr(extra)] = true
+				extras[pyrepr.Str(extra)] = true
 			}
 		}
 		return extras, nil
@@ -428,7 +430,7 @@ func installFlagError(args InstallArgs, extras []string, crossTarget string, too
 	names := len(args.Names) > 0
 	if crossTarget != "" {
 		if !containsString(AllTargets, crossTarget) {
-			return fmt.Sprintf("unknown target %s; known: %s", pyRepr(crossTarget), strings.Join(AllTargets, ", ")), nil
+			return fmt.Sprintf("unknown target %s; known: %s", pyrepr.StrRepr(crossTarget), strings.Join(AllTargets, ", ")), nil
 		}
 		if !names {
 			return "--target requires explicit package names", nil
@@ -773,14 +775,14 @@ func CmdDoctor(ctx context.Context, repair bool) (int, error) {
 			bad += weight
 			continue
 		}
-		entry := location.Store.Entry(pyStr(fact["entry"]))
+		entry := location.Store.Entry(pyrepr.Str(fact["entry"]))
 		if reason := p.Verify(entry, target); reason != "" {
 			fmt.Fprintf(out, "✗ %s: installed but failed verification: %s\n", name, reason)
 			bad++
 			continue
 		}
 		if digest, ok := fact["digest"]; ok && digest != nil {
-			text := pyStr(digest)
+			text := pyrepr.Str(digest)
 			matches, err := DigestMatches(entry, &text)
 			if err != nil {
 				return 0, err
@@ -791,7 +793,7 @@ func CmdDoctor(ctx context.Context, repair bool) (int, error) {
 				continue
 			}
 		}
-		fmt.Fprintf(out, "✓ %s %s\n", name, pyStr(fact["version"]))
+		fmt.Fprintf(out, "✓ %s %s\n", name, pyrepr.Str(fact["version"]))
 	}
 	cache, err := doctorUVCache(ctx, repair)
 	if err != nil {
@@ -1027,12 +1029,12 @@ func extraRequirements(project string, extras []string) ([]string, error) {
 			listed, found = declaredExtras.Get(extra)
 		}
 		if !found {
-			return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("%s is not an extra declared in %s", pyRepr(extra), path)}
+			return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("%s is not an extra declared in %s", pyrepr.StrRepr(extra), path)}
 		}
 		seen[extra] = true
 		rows, _ := listed.([]any)
 		for _, row := range rows {
-			requirement := pyStr(row)
+			requirement := pyrepr.Str(row)
 			if m := own.FindStringSubmatch(strings.ReplaceAll(requirement, " ", "")); m != nil {
 				pending = append(pending, strings.Split(m[1], ",")...)
 			} else {

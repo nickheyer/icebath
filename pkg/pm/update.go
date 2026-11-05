@@ -19,6 +19,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	xunicode "golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/encoding/unicode/utf32"
 )
@@ -40,9 +44,6 @@ var (
 	btbnTag            = regexp.MustCompile(`^autobuild-(\p{Nd}{4})-(\p{Nd}{2})-\p{Nd}{2}-\p{Nd}{2}-\p{Nd}{2}$`)
 	btbnAsset          = regexp.MustCompile(`^ffmpeg-n(\p{Nd}+\.\p{Nd}+\.\p{Nd}+)-.+-(win|linux)(64|arm64)-gpl-\p{Nd}+\.\p{Nd}+\.(?:zip|tar\.xz)$`)
 	pbsTag             = regexp.MustCompile(`^[0-9]{8}$`)
-	pyDigitExtra       = [][2]rune{{0xB2, 0xB3}, {0xB9, 0xB9}, {0x1369, 0x1371}, {0x19DA, 0x19DA}, {0x2070, 0x2070}, {0x2074, 0x2079},
-		{0x2080, 0x2089}, {0x2460, 0x2468}, {0x2474, 0x247C}, {0x2488, 0x2490}, {0x24EA, 0x24EA}, {0x24F5, 0x24FD}, {0x24FF, 0x24FF},
-		{0x2776, 0x277E}, {0x2780, 0x2788}, {0x278A, 0x2792}, {0x10A40, 0x10A43}, {0x10E60, 0x10E68}, {0x11052, 0x1105A}, {0x1F100, 0x1F10A}}
 )
 
 var indexResponses struct {
@@ -83,9 +84,6 @@ func storeIndexResponse(key string, value any) {
 		indexResponses.current[key] = value
 	}
 }
-
-// Reports Python str isdigit, decimal digits plus the superscript, circled and other digit forms
-func pyIsDigit(r rune) bool { return unicode.Is(unicode.Nd, r) || inRuneRanges(r, pyDigitExtra) }
 
 // Integer a Unicode decimal digit run spells
 func digitsValue(digits string) *big.Int {
@@ -343,7 +341,7 @@ func rowURLs(rows []any) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		urls = append(urls, pyStr(value))
+		urls = append(urls, pyrepr.Str(value))
 	}
 	return urls, nil
 }
@@ -356,7 +354,7 @@ func rowField(row any, key string) (any, error) {
 	}
 	v, ok := m[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
 	}
 	return v, nil
 }
@@ -465,7 +463,7 @@ func urlOrigin(raw string) (indexOrigin, error) {
 	if err != nil {
 		return indexOrigin{}, err
 	}
-	scheme := pyLower(parts.Scheme)
+	scheme := pystr.Lower(parts.Scheme)
 	_, hostinfo := reverseCut(parts.Netloc, "@")
 	hostname, port := "", ""
 	if _, bracketed, found := strings.Cut(hostinfo, "["); found {
@@ -477,16 +475,16 @@ func urlOrigin(raw string) (indexOrigin, error) {
 	}
 	if hostname != "" {
 		name, zone, percent := strings.Cut(hostname, "%")
-		hostname = pyLower(name)
+		hostname = pystr.Lower(name)
 		if percent {
 			hostname += "%" + zone
 		}
 	}
-	origin := indexOrigin{Scheme: scheme, Host: strings.TrimRight(pyLower(hostname), ".")}
+	origin := indexOrigin{Scheme: scheme, Host: strings.TrimRight(pystr.Lower(hostname), ".")}
 	if port != "" {
 		value, ok := asciiPort(port)
 		if !ok {
-			return indexOrigin{}, &PyError{Class: "ValueError", Message: "Port could not be cast to integer value as " + pyRepr(port)}
+			return indexOrigin{}, &PyError{Class: "ValueError", Message: "Port could not be cast to integer value as " + pyrepr.StrRepr(port)}
 		}
 		if value < 0 || value > 65535 {
 			return indexOrigin{}, &PyError{Class: "ValueError", Message: "Port out of range 0-65535"}
@@ -517,7 +515,7 @@ func reverseCut(s, sep string) (string, string) {
 // Integer of an all ASCII digit port, ok false otherwise or when it overflows the port range check
 func asciiPort(port string) (int, bool) {
 	for _, r := range port {
-		if !pyIsDigit(r) || r > 127 {
+		if !pystr.IsDigit(r) || r > 127 {
 			return 0, false
 		}
 	}
@@ -781,7 +779,7 @@ func GetText(url string, headers map[string]string) (string, error) { return get
 func jsonGet(v any, key string, fallback any) (any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(v))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))}
 	}
 	if value, ok := m[key]; ok {
 		return value, nil
@@ -809,7 +807,7 @@ func jsonIter(v any) ([]any, error) {
 	case nil:
 		return nil, &PyError{Class: "TypeError", Message: "'NoneType' object is not iterable"}
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyTypeName(v))}
+	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
 }
 
 // String field of a decoded JSON object with a default
@@ -820,7 +818,7 @@ func jsonString(v any, key, fallback string) (string, error) {
 	}
 	s, ok := value.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyTypeName(value))}
+		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(value))}
 	}
 	return s, nil
 }
@@ -841,7 +839,7 @@ func LlamaAppBucketVersions() []string {
 	if err != nil {
 		return []string{}
 	}
-	if !pyTruthy(data) {
+	if !pyrepr.Truthy(data) {
 		return []string{}
 	}
 	entries, err := jsonIter(data)
@@ -871,23 +869,6 @@ func LlamaAppBucketVersions() []string {
 	return out
 }
 
-// Python truthiness of a decoded JSON value
-func pyTruthy(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case string:
-		return t != ""
-	case []any:
-		return len(t) > 0
-	case map[string]any:
-		return len(t) > 0
-	}
-	return truthy(v)
-}
-
 // Release objects of up to the given pages of a GitHub releases listing, stopping at a short or empty page
 func githubReleasePages(repo string, pages int, each func(release any) (bool, error)) error {
 	for page := 1; page <= pages; page++ {
@@ -895,7 +876,7 @@ func githubReleasePages(repo string, pages int, each func(release any) (bool, er
 		if err != nil {
 			return err
 		}
-		if !pyTruthy(data) {
+		if !pyrepr.Truthy(data) {
 			return nil
 		}
 		releases, err := jsonIter(data)
@@ -925,7 +906,7 @@ func unpublished(release any) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pyTruthy(draft) || pyTruthy(pre), nil
+	return pyrepr.Truthy(draft) || pyrepr.Truthy(pre), nil
 }
 
 // Newest first version shaped release tags of a GitHub repo, a prefix stripped and drafts and prereleases skipped
@@ -945,7 +926,7 @@ func GithubReleaseTags(repo, stripPrefix string) ([]string, error) {
 		if stripPrefix != "" && strings.HasPrefix(tag, stripPrefix) {
 			tag = tag[len(stripPrefix):]
 		}
-		if r, _ := utf8.DecodeRuneInString(tag); tag == "" || !pyIsDigit(r) {
+		if r, _ := utf8.DecodeRuneInString(tag); tag == "" || !pystr.IsDigit(r) {
 			return false, nil
 		}
 		tags = append(tags, tag)
@@ -962,7 +943,7 @@ func NpmDistTags(name string) (map[string]any, error) {
 	}
 	tags, ok := data.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(data))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(data))}
 	}
 	return tags, nil
 }
@@ -1057,7 +1038,7 @@ func btbn() (btbnBuilds, error) {
 		if err != nil {
 			return builds, err
 		}
-		if !pyTruthy(data) {
+		if !pyrepr.Truthy(data) {
 			break
 		}
 		items, err := jsonIter(data)
@@ -1345,7 +1326,7 @@ func syncVenvStep(ctx context.Context, out io.Writer) (bool, error) {
 
 // Splices new bootstrap pins into a checkout's installers, a lock outside a checkout feeding none
 func regenerateBootstrapPins(ctx context.Context, lockfile *Lockfile) (int, error) {
-	script := pyJoin(pyJoin(pyDirname(pyDirname(lockfile.Path)), "scripts"), "gen-bootstrap-pins.py")
+	script := pypath.Join(pypath.Join(pypath.Dirname(pypath.Dirname(lockfile.Path)), "scripts"), "gen-bootstrap-pins.py")
 	if !isRegularFile(script) {
 		return 0, nil
 	}
@@ -1487,7 +1468,7 @@ func refreshNPMLock(ctx context.Context, out io.Writer) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	env := NpmEnv(pyJoin(writable, ".npm-cache"), EnvFor([]string{"npm"}, nil))
+	env := NpmEnv(pypath.Join(writable, ".npm-cache"), EnvFor([]string{"npm"}, nil))
 	code, tail, err := updateRunLive(ctx, out, []string{npm.Binary, "update"}, RepoRoot(), env, 3600*time.Second)
 	if err != nil {
 		return 0, err
@@ -1686,7 +1667,7 @@ func pinArtifacts(p Package, d *Resolved, current map[string]any) (map[string]an
 				if err != nil {
 					return nil, err
 				}
-				known[pyStr(u)] = sha
+				known[pyrepr.Str(u)] = sha
 			}
 			urls, updated := d.ArtifactUpdates[tv.Target]
 			if !updated {
@@ -1705,12 +1686,12 @@ func pinArtifacts(p Package, d *Resolved, current map[string]any) (map[string]an
 			var pinned []any
 			for _, u := range urls {
 				var digest any = known[u]
-				if !pyTruthy(digest) {
+				if !pyrepr.Truthy(digest) {
 					if h, ok := hashes[u]; ok && h != "" {
 						digest = h
 					}
 				}
-				if !pyTruthy(digest) {
+				if !pyrepr.Truthy(digest) {
 					sha, err := p.KnownSHA256(tv.Version, u)
 					if err != nil {
 						return nil, err

@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"log/slog"
@@ -9,6 +10,8 @@ import (
 	"runtime"
 	"sort"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -51,7 +54,7 @@ func lastUsed(state string) (float64, error) {
 
 // Store wide retention in seconds from the owning data root's config, ok false when reclaiming is off
 func retentionSeconds(dataRoot string) (float64, bool, error) {
-	tree, err := config.Load(dataRoot, config.NewSecrets(dataRoot).Lookup())
+	tree, err := config.LoadReadonly(context.Background(), dataRoot, config.NewSecrets(dataRoot).Lookup())
 	if err != nil {
 		return 0, false, err
 	}
@@ -95,7 +98,7 @@ func isOrphan(state, dataRoot string, retention float64, retain bool) (bool, err
 	if err := strictUTF8(trimBOM(data)); err != nil {
 		return false, err
 	}
-	root := pyStrip(string(trimBOM(data)))
+	root := pystr.Strip(string(trimBOM(data)))
 	if root == "" {
 		return false, nil
 	}

@@ -14,8 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // InstallProgress reports download, unpack and verify stages, an error aborting the install
@@ -171,7 +174,7 @@ func InstalledLocation(ctx context.Context, p Package, lockfile *Lockfile, targe
 		if len(fact) == 0 || !facts.Installed(name, nil, store.Root, nil) {
 			continue
 		}
-		binary := p.Binary(store.Entry(pyStr(fact["entry"])), target)
+		binary := p.Binary(store.Entry(pyrepr.Str(fact["entry"])), target)
 		if binary != "" && !isRegularFile(binary) {
 			continue
 		}
@@ -184,7 +187,7 @@ func InstalledLocation(ctx context.Context, p Package, lockfile *Lockfile, targe
 		if facts.Installed(name, expected, store.Root, identity) {
 			return &Location{Facts: facts, Store: store}, nil
 		}
-		if opts.AllowOutdated && jsonEquals(fact["target"], target) && truthy(fact["artifacts"]) && truthy(fact["digest"]) {
+		if opts.AllowOutdated && jsonEquals(fact["target"], target) && pyrepr.Truthy(fact["artifacts"]) && pyrepr.Truthy(fact["digest"]) {
 			fallback = &Location{Facts: facts, Store: store}
 		}
 	}
@@ -216,8 +219,8 @@ func Installed(ctx context.Context, name string, allowOutdated bool) (*Installed
 		return nil, err
 	}
 	fact, _ := loc.Facts.Get(name)
-	entry := loc.Store.Entry(pyStr(fact["entry"]))
-	out := &InstalledPackage{Path: Native(entry), Version: pyStr(fact["version"])}
+	entry := loc.Store.Entry(pyrepr.Str(fact["entry"]))
+	out := &InstalledPackage{Path: Native(entry), Version: pyrepr.Str(fact["version"])}
 	if binary := p.Binary(entry, target); binary != "" {
 		out.Binary = Native(binary)
 	}
@@ -227,7 +230,7 @@ func Installed(ctx context.Context, name string, allowOutdated bool) (*Installed
 // Installed uv or uvx launcher for a user declared MCP stdio command, empty when it is not installed
 func UvLauncher(ctx context.Context, name string) (string, error) {
 	if name != "uv" && name != "uvx" {
-		return "", &PyError{Class: "ValueError", Message: pyRepr(name) + " is not a uv launcher"}
+		return "", &PyError{Class: "ValueError", Message: pyrepr.StrRepr(name) + " is not a uv launcher"}
 	}
 	p, err := GetPackage("uv")
 	if err != nil {
@@ -242,11 +245,11 @@ func UvLauncher(ctx context.Context, name string) (string, error) {
 		return "", err
 	}
 	fact, _ := loc.Facts.Get("uv")
-	binary := p.Binary(loc.Store.Entry(pyStr(fact["entry"])), target)
+	binary := p.Binary(loc.Store.Entry(pyrepr.Str(fact["entry"])), target)
 	if binary == "" {
 		return "", nil
 	}
-	launcher := filepath.Join(filepath.Dir(binary), name+pathlibSuffix(filepath.Base(binary)))
+	launcher := filepath.Join(filepath.Dir(binary), name+pypath.PathSuffix(filepath.Base(binary)))
 	if !isRegularFile(launcher) {
 		return "", nil
 	}
@@ -261,7 +264,7 @@ func pinIdentity(lockfile *Lockfile, name, target string) *Identity {
 	}
 	shas := make([]string, len(artifacts))
 	for i, a := range artifacts {
-		shas[i] = pyStr(a["sha256"])
+		shas[i] = pyrepr.Str(a["sha256"])
 	}
 	return &Identity{Target: target, SHA256s: shas}
 }
@@ -279,10 +282,10 @@ func LazyInstallsAllowedFor(ctx context.Context) bool {
 		return false
 	}
 	h := home.Dir(ctx)
-	if _, err := config.ReadUser(h); err != nil {
+	if _, err := config.RequireReadableConfigBeforeWrite(ctx, ""); err != nil {
 		return false
 	}
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
+	tree, err := config.LoadReadonly(ctx, h, config.NewSecrets(h).Lookup())
 	if err != nil {
 		return false
 	}
@@ -411,7 +414,7 @@ func reclaimSetAside(store *Store) int {
 // Releases a package's cached archives after publication under its store lock
 func removeDownloads(store *Store, artifacts []map[string]any) {
 	for _, artifact := range artifacts {
-		discardEntry(store, "fetch-"+pyStr(artifact["sha256"]))
+		discardEntry(store, "fetch-"+pyrepr.Str(artifact["sha256"]))
 	}
 }
 
@@ -425,7 +428,7 @@ func factDigest(fact map[string]any) *string {
 
 // Reports realized bytes that still verify and match the recorded digest
 func entryVerified(p Package, fact map[string]any, store *Store, target string) bool {
-	entry := store.Entry(pyStr(fact["entry"]))
+	entry := store.Entry(pyrepr.Str(fact["entry"]))
 	if p.Verify(entry, target) != "" {
 		return false
 	}
@@ -563,7 +566,7 @@ func envDiffEqual(a, b EnvDiff) bool {
 		if aList && !slices.Equal(al, bl) {
 			return false
 		}
-		if !aList && pyStr(av) != pyStr(bv) {
+		if !aList && pyrepr.Str(av) != pyrepr.Str(bv) {
 			return false
 		}
 	}
@@ -596,14 +599,14 @@ func refreshRecordedEnv(p Package, facts *Facts, store *Store, entry string, pre
 		}
 		record.Artifacts = list
 	}
-	return facts.Record(name, pyStr(previous["version"]), pyStr(previous["entry"]), env, store.Root, record)
+	return facts.Record(name, pyrepr.Str(previous["version"]), pyrepr.Str(previous["entry"]), env, store.Root, record)
 }
 
 // Re-records a found entry's env in the writable store under its install lock
 func refreshFoundEnv(ctx context.Context, p Package, loc *Location, target string, op *installOperation) error {
 	name := p.Base().Name
 	fact, _ := loc.Facts.Get(name)
-	entry := loc.Store.Entry(pyStr(fact["entry"]))
+	entry := loc.Store.Entry(pyrepr.Str(fact["entry"]))
 	writable, err := WritableStoreRoot(ctx)
 	if err != nil {
 		return err
@@ -640,7 +643,7 @@ func copyVerifiedSource(p Package, lockfile *Lockfile, copyFrom *Location, stage
 		!entryVerified(p, source, copyFrom.Store, target) {
 		return NewInstallError(name, "bundled copy source failed verification", "")
 	}
-	if err := copyTreeSymlinks(copyFrom.Store.Entry(pyStr(source["entry"])), staged); err != nil {
+	if err := copyTreeSymlinks(copyFrom.Store.Entry(pyrepr.Str(source["entry"])), staged); err != nil {
 		return err
 	}
 	recorded := factDigest(source)
@@ -727,19 +730,19 @@ func logRepair(p Package, previous map[string]any, version string, artifacts []m
 	oldArtifact := any("?")
 	if list, ok := previous["artifacts"].([]any); ok && len(list) > 0 {
 		oldArtifact = list[0]
-	} else if truthy(previous["artifacts"]) {
+	} else if pyrepr.Truthy(previous["artifacts"]) {
 		if items, err := pyIterStrings(previous["artifacts"]); err == nil && len(items) > 0 {
 			oldArtifact = items[0]
 		}
 	}
 	oldVersion := "?"
 	if v, ok := previous["version"]; ok {
-		oldVersion = pyStr(v)
+		oldVersion = pyrepr.Str(v)
 	}
-	old := oldVersion + "/" + pyPrefix(pyStr(oldArtifact), 12)
+	old := oldVersion + "/" + pyPrefix(pyrepr.Str(oldArtifact), 12)
 	fresh := version
 	if len(artifacts) > 0 {
-		fresh = version + "/" + pyPrefix(pyStr(artifacts[0]["sha256"]), 12)
+		fresh = version + "/" + pyPrefix(pyrepr.Str(artifacts[0]["sha256"]), 12)
 	}
 	slog.Info(fmt.Sprintf("repair: %s re-realized %s -> %s", p.Base().Name, old, fresh))
 }
@@ -768,7 +771,7 @@ func isInstallError(err error) bool {
 func stagePin(target string, artifacts []map[string]any) (string, error) {
 	shas := make([]any, len(artifacts))
 	for i, a := range artifacts {
-		shas[i] = pyStr(a["sha256"])
+		shas[i] = pyrepr.Str(a["sha256"])
 	}
 	pin := NewOrderedObject()
 	pin.Set("target", target)
@@ -781,7 +784,7 @@ func stagePin(target string, artifacts []map[string]any) (string, error) {
 func artifactPlan(artifacts []map[string]any) []Artifact {
 	out := make([]Artifact, len(artifacts))
 	for i, a := range artifacts {
-		out[i] = Artifact{URL: pyStr(a["url"]), SHA256: pyStr(a["sha256"])}
+		out[i] = Artifact{URL: pyrepr.Str(a["url"]), SHA256: pyrepr.Str(a["sha256"])}
 	}
 	return out
 }
@@ -804,7 +807,7 @@ func prepareArtifacts(p Package, store *Store, scratch string, artifacts []map[s
 			active := ranges[len(ranges)-1].Key
 			index := -1
 			for i, artifact := range artifacts {
-				if pyStr(artifact["url"]) == active {
+				if pyrepr.Str(artifact["url"]) == active {
 					index = i
 					break
 				}
@@ -975,7 +978,7 @@ func InstallPackage(ctx context.Context, p Package, lockfile *Lockfile, facts *F
 			}
 			shas := make([]string, len(artifacts))
 			for i, a := range artifacts {
-				shas[i] = pyStr(a["sha256"])
+				shas[i] = pyrepr.Str(a["sha256"])
 			}
 			env, err := PackageEnv(p, entry, target)
 			if err != nil {
@@ -1246,7 +1249,7 @@ func pyIterStrings(v any) ([]string, error) {
 		for _, item := range t {
 			s, ok := item.(string)
 			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyTypeName(item))}
+				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(item))}
 			}
 			out = append(out, s)
 		}
@@ -1260,7 +1263,7 @@ func pyIterStrings(v any) ([]string, error) {
 	case map[string]any:
 		return sortedKeys(t), nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyTypeName(v))}
+	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
 }
 
 // DriftReport maps each unhealthy package to its reason in the order the problems were found
@@ -1457,7 +1460,7 @@ func truthyEnv(value any) bool {
 	if list, ok := envList(value); ok {
 		return len(list) > 0
 	}
-	return pyStr(value) != ""
+	return pyrepr.Str(value) != ""
 }
 
 // Store verdict activation reports, the engine check unless a caller counts it

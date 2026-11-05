@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -45,11 +46,18 @@ func ListConfigBackups(configPath, reason string) []string {
 	return out
 }
 
-// Copies config to the backups dir and returns the copy, empty when skipped or failed
-func BackupConfig(configPath, reason string, keep int) string {
+// Copies config into the backups dir, empty when skipped or failed, errors when no backend serves config
+func BackupConfig(configPath, reason string, keep int) (string, error) {
+	files, err := SupportsFileTooling(context.Background())
+	if err != nil {
+		return "", err
+	}
+	if !files {
+		return "", nil
+	}
 	st, err := os.Stat(configPath)
 	if err != nil || !st.Mode().IsRegular() || st.Size() == 0 {
-		return ""
+		return "", nil
 	}
 	root := BackupsDir(configPath)
 	fail := func(err error) string {
@@ -57,39 +65,39 @@ func BackupConfig(configPath, reason string, keep int) string {
 		return ""
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
-		return fail(err)
+		return fail(err), nil
 	}
 	sweepLegacySiblings(configPath, root)
 	existing := ListConfigBackups(configPath, reason)
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return fail(err)
+		return fail(err), nil
 	}
 	if len(existing) > 0 {
 		newest, err := os.ReadFile(existing[0])
 		if err != nil {
-			return fail(err)
+			return fail(err), nil
 		}
 		if bytes.Equal(data, newest) {
-			return ""
+			return "", nil
 		}
 	}
 	dest := filepath.Join(root, filepath.Base(configPath)+"."+reason+"."+time.Now().Format("20060102-150405"))
 	if _, err := os.Lstat(dest); err == nil {
-		return ""
+		return "", nil
 	}
 	if err := copyPreservingTimes(configPath, dest, st); err != nil {
-		return fail(err)
+		return fail(err), nil
 	}
 	all := append([]string{dest}, existing...)
 	if keep < len(all) {
 		for _, stale := range all[max(keep, 0):] {
 			if err := os.Remove(stale); err != nil && !os.IsNotExist(err) {
-				return fail(err)
+				return fail(err), nil
 			}
 		}
 	}
-	return dest
+	return dest, nil
 }
 
 // Copies a file with its mode and modification time as shutil copy2 does
@@ -116,11 +124,15 @@ func copyPreservingTimes(src, dest string, st os.FileInfo) error {
 	return os.Chtimes(dest, st.ModTime(), st.ModTime())
 }
 
-// Raw mapping of the newest good backup, nil when absent, unreadable or not a mapping
-func LoadNewestGoodBackup(configPath string) map[string]any {
+// Raw mapping of the newest good backup, nil when absent, unreadable, not a mapping or the backend has no files
+func LoadNewestGoodBackup(configPath string) (map[string]any, error) {
+	files, err := SupportsFileTooling(context.Background())
+	if err != nil || !files {
+		return nil, err
+	}
 	newest := ListConfigBackups(configPath, "good")
 	if len(newest) == 0 {
-		return nil
+		return nil, nil
 	}
 	data, err := os.ReadFile(newest[0])
 	var doc any
@@ -129,12 +141,12 @@ func LoadNewestGoodBackup(configPath string) map[string]any {
 	}
 	if err != nil {
 		slog.Warn("Last-known-good backup is unreadable", "path", newest[0], "error", err)
-		return nil
+		return nil, nil
 	}
 	if m := AsMap(doc); m != nil {
-		return normalizeMaps(m).(map[string]any)
+		return normalizeMaps(m).(map[string]any), nil
 	}
-	return nil
+	return nil, nil
 }
 
 // Moves legacy backup siblings of config.yaml into the backups dir

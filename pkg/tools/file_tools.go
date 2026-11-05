@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Read size guard in characters, a model agnostic proxy for tokens, configurable as file_read_max_chars
@@ -116,22 +117,22 @@ func truncateToCharBudget(content string, maxChars int) (string, int, bool) {
 }
 
 // Trims content to the budget and annotates the result with the continuation hint
-func applyCharBudget(result *pyJSONObject, content string, offset int, totalLines any, maxChars int) string {
+func applyCharBudget(result *pyjson.Object, content string, offset int, totalLines any, maxChars int) string {
 	trimmed, linesKept, _ := truncateToCharBudget(content, maxChars)
 	nextOffset := offset + linesKept
-	result.set("content", trimmed)
-	result.set("truncated", true)
-	result.set("truncated_by", "bytes")
-	result.set("next_offset", nextOffset)
+	result.Set("content", trimmed)
+	result.Set("truncated", true)
+	result.Set("truncated_by", "bytes")
+	result.Set("next_offset", nextOffset)
 	hint := fmt.Sprintf("Output truncated at the %s-char read budget after %d line(s) (showing lines %d-%d of %s). Use offset=%d to continue.",
 		commaInt(maxChars), linesKept, offset, nextOffset-1, pyDisplay(totalLines), nextOffset)
 	first, _, _ := strings.Cut(trimmed, "\n")
 	if utf8Len(first) >= maxChars {
-		result.set("truncated_lines", true)
+		result.Set("truncated_lines", true)
 		hint += " Note: the first line alone exceeded the budget and was " +
 			"clamped mid-line; its remainder is not retrievable via offset."
 	}
-	result.set("hint", hint)
+	result.Set("hint", hint)
 	return trimmed
 }
 
@@ -507,32 +508,32 @@ func specialFileKind(path string) string {
 }
 
 // Empty ordered result object
-func newDict() *pyJSONObject { return &pyJSONObject{vals: map[string]any{}} }
+func newDict() *pyjson.Object { return &pyjson.Object{Vals: map[string]any{}} }
 
 // Removes a key from an ordered result object
-func dictDel(o *pyJSONObject, key string) {
-	if _, ok := o.vals[key]; !ok {
+func dictDel(o *pyjson.Object, key string) {
+	if _, ok := o.Vals[key]; !ok {
 		return
 	}
-	delete(o.vals, key)
-	for i, k := range o.keys {
+	delete(o.Vals, key)
+	for i, k := range o.Keys {
 		if k == key {
-			o.keys = append(o.keys[:i], o.keys[i+1:]...)
+			o.Keys = append(o.Keys[:i], o.Keys[i+1:]...)
 			break
 		}
 	}
 }
 
 // Sets a key only when absent, the dict setdefault form
-func dictSetDefault(o *pyJSONObject, key string, v any) {
-	if _, ok := o.vals[key]; !ok {
-		o.set(key, v)
+func dictSetDefault(o *pyjson.Object, key string, v any) {
+	if _, ok := o.Vals[key]; !ok {
+		o.Set(key, v)
 	}
 }
 
 // Truthy value of a result key
-func dictTruthy(o *pyJSONObject, key string) bool {
-	v, _ := o.get(key)
+func dictTruthy(o *pyjson.Object, key string) bool {
+	v, _ := o.Get(key)
 	if n, ok := v.(json.Number); ok {
 		f, _ := n.Float64()
 		return f != 0
@@ -541,15 +542,15 @@ func dictTruthy(o *pyJSONObject, key string) bool {
 }
 
 // String value of a result key, empty when absent or not a string
-func dictString(o *pyJSONObject, key string) string {
-	v, _ := o.get(key)
+func dictString(o *pyjson.Object, key string) string {
+	v, _ := o.Get(key)
 	s, _ := v.(string)
 	return s
 }
 
 // Integer value of a result key and whether it held a JSON integer
-func dictInt(o *pyJSONObject, key string) (int, bool) {
-	v, _ := o.get(key)
+func dictInt(o *pyjson.Object, key string) (int, bool) {
+	v, _ := o.Get(key)
 	switch n := v.(type) {
 	case json.Number:
 		i, err := n.Int64()
@@ -561,22 +562,22 @@ func dictInt(o *pyJSONObject, key string) (int, bool) {
 }
 
 // Ordered dict of a result value through its JSON encoding, nested objects ordered and surrogates kept
-func toDict(v any) *pyJSONObject {
-	data, err := jsonEncodeWTF8(v)
+func toDict(v any) *pyjson.Object {
+	data, err := pyjson.EncodeWTF8(v)
 	if err != nil {
 		out := newDict()
-		out.set("error", err.Error())
+		out.Set("error", err.Error())
 		return out
 	}
-	value, err := jsonDecodeWTF8Ordered(data)
-	if obj, ok := value.(*pyJSONObject); ok && err == nil {
+	value, err := pyjson.DecodeWTF8Ordered(data)
+	if obj, ok := value.(*pyjson.Object); ok && err == nil {
 		return obj
 	}
 	return newDict()
 }
 
 // Compact JSON of an ordered result object
-func dictJSON(o *pyJSONObject) string {
+func dictJSON(o *pyjson.Object) string {
 	b, err := o.MarshalJSON()
 	if err != nil {
 		return ErrorResult(err)
@@ -587,9 +588,9 @@ func dictJSON(o *pyJSONObject) string {
 // Error envelope with a bounded message and extra keys in the given order
 func fileToolError(message string, extra ...any) string {
 	out := newDict()
-	out.set("error", boundErrorText(message))
+	out.Set("error", boundErrorText(message))
 	for i := 0; i+1 < len(extra); i += 2 {
-		out.set(extra[i].(string), extra[i+1])
+		out.Set(extra[i].(string), extra[i+1])
 	}
 	return dictJSON(out)
 }
@@ -657,13 +658,13 @@ func readExtractedDocument(ctx context.Context, env *Env, path, resolved string,
 	if pageText != "" {
 		content = ops.addLineNumbers(pageText, offset)
 	}
-	result.set("content", content)
-	result.set("total_lines", totalLines)
-	result.set("file_size", binary.FileSize)
-	result.set("truncated", totalLines > endLine)
-	result.set("extracted_document", true)
+	result.Set("content", content)
+	result.Set("total_lines", totalLines)
+	result.Set("file_size", binary.FileSize)
+	result.Set("truncated", totalLines > endLine)
+	result.Set("extracted_document", true)
 	if totalLines > endLine {
-		result.set("hint", fmt.Sprintf("Use offset=%d to continue reading (showing %d-%d of %d lines)", endLine+1, offset, min(endLine, totalLines), totalLines))
+		result.Set("hint", fmt.Sprintf("Use offset=%d to continue reading (showing %d-%d of %d lines)", endLine+1, offset, min(endLine, totalLines), totalLines))
 	}
 	maxChars := maxReadChars(env)
 	if utf8Len(content) > maxChars {
@@ -672,7 +673,7 @@ func readExtractedDocument(ctx context.Context, env *Env, path, resolved string,
 	redacted := false
 	if rendered := dictString(result, "content"); rendered != "" {
 		red := redactFileText(env, rendered, isSecretFileArg(env, resolved))
-		result.set("content", red)
+		result.Set("content", red)
 		redacted = red != rendered
 	}
 	if offset == 1 && !dictTruthy(result, "truncated") && !redacted && !truncatedLines && !dictTruthy(result, "truncated_lines") {
@@ -704,11 +705,11 @@ func dedupStubOrBlock(td *taskTracker, key dedupKey, path string) string {
 			"path", path, "already_read", hits+1, GuardrailRefusalKey, true)
 	}
 	out := newDict()
-	out.set("status", "unchanged")
-	out.set("message", readDedupStatusMessage)
-	out.set("path", path)
-	out.set("dedup", true)
-	out.set("content_returned", false)
+	out.Set("status", "unchanged")
+	out.Set("message", readDedupStatusMessage)
+	out.Set("path", path)
+	out.Set("dedup", true)
+	out.Set("content_returned", false)
 	return dictJSON(out)
 }
 
@@ -839,8 +840,8 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 	if handle.usesHostPaths() {
 		if kind := specialFileKind(resolved); kind != "" {
 			out := newDict()
-			out.set("success", false)
-			out.set("note", fmt.Sprintf("'%s' is %s, not a regular file — reading it would block indefinitely, so no read was attempted. Use terminal utilities if you need to interact with it.", path, kind))
+			out.Set("success", false)
+			out.Set("note", fmt.Sprintf("'%s' is %s, not a regular file — reading it would block indefinitely, so no read was attempted. Use terminal utilities if you need to interact with it.", path, kind))
 			return dictJSON(out), nil
 		}
 	}
@@ -883,8 +884,8 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 	errText := dictString(dict, "error")
 	if strings.HasPrefix(errText, "File not found:") {
 		if fields := ExpiredArchiveFields(path); len(fields) > 0 {
-			dict.set("expired", fields["expired"])
-			dict.set("hint", fields["hint"])
+			dict.Set("expired", fields["expired"])
+			dict.Set("hint", fields["hint"])
 		}
 		recordNotFound("read", resolved, taskID, dictJSON(dict))
 	}
@@ -895,7 +896,7 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 	maxChars := maxReadChars(env)
 	content := result.Content
 	if utf8Len(content) > maxChars {
-		totalLines, ok := dict.get("total_lines")
+		totalLines, ok := dict.Get("total_lines")
 		if !ok {
 			totalLines = "unknown"
 		}
@@ -906,12 +907,12 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 		unredacted := content
 		content = redactFileText(env, unredacted, isSecretFileArg(env, resolved))
 		redacted = content != unredacted
-		dict.set("content", content)
+		dict.Set("content", content)
 	}
 	if content != "" {
 		if conflicts := countConflictBlocks(content); conflicts > 0 {
-			dict.set("conflict_blocks", conflicts)
-			dict.set("_hint", fmt.Sprintf("%d unresolved git merge-conflict block(s) (<<<<<<< / ======= / >>>>>>>) in this "+
+			dict.Set("conflict_blocks", conflicts)
+			dict.Set("_hint", fmt.Sprintf("%d unresolved git merge-conflict block(s) (<<<<<<< / ======= / >>>>>>>) in this "+
 				"range. Resolve them (keep one side or combine, delete the markers) before editing around them.", conflicts))
 		}
 	}
@@ -946,7 +947,7 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 			"path", path, "already_read", count, GuardrailRefusalKey, true), nil
 	}
 	if count >= 3 {
-		dict.set("_warning", fmt.Sprintf("You have read this exact file region %d times consecutively. "+
+		dict.Set("_warning", fmt.Sprintf("You have read this exact file region %d times consecutively. "+
 			"The content has not changed since your last read. Use the information you already have. "+
 			"If you are stuck in a loop, stop reading and proceed with writing or responding.", count))
 	}
@@ -1158,13 +1159,13 @@ func writeFileToolErr(ctx context.Context, env *Env, path, content, taskID strin
 	result := handle.forCall(ctx).WriteFile(target, content, nil)
 	dict := toDict(result)
 	if len(warnings) > 0 {
-		dict.set("_warning", warnings[0])
+		dict.Set("_warning", warnings[0])
 	}
 	if rewriteHint != "" && !dictTruthy(dict, "error") {
-		dict.set("hint", rewriteHint)
+		dict.Set("hint", rewriteHint)
 	}
 	if resolved != "" {
-		dict.set("resolved_path", resolved)
+		dict.Set("resolved_path", resolved)
 	}
 	if dictTruthy(dict, "error") {
 		if err := updateReadTimestamp(env, path, taskID); err != nil {
@@ -1173,7 +1174,7 @@ func writeFileToolErr(ctx context.Context, env *Env, path, content, taskID strin
 		return dictJSON(dict), nil
 	}
 	if resolved != "" {
-		dict.set("files_modified", []string{resolved})
+		dict.Set("files_modified", []string{resolved})
 		expected := ""
 		if result.ContentSha256 != nil {
 			expected = *result.ContentSha256
@@ -1290,7 +1291,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, pro
 	for _, r := range lockOrder {
 		unlocks = append(unlocks, fileState.lockPath(r))
 	}
-	dict, early, err := func() (*pyJSONObject, bool, error) {
+	dict, early, err := func() (*pyjson.Object, bool, error) {
 		defer func() {
 			for i := len(unlocks) - 1; i >= 0; i-- {
 				unlocks[i]()
@@ -1334,7 +1335,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, pro
 		}
 		dict := toDict(result)
 		if len(staleWarnings) > 0 {
-			dict.set("_warning", strings.Join(staleWarnings, " | "))
+			dict.Set("_warning", strings.Join(staleWarnings, " | "))
 		}
 		if !dictTruthy(dict, "error") {
 			modified := make([]string, len(paths))
@@ -1348,9 +1349,9 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, pro
 					modified[i] = p
 				}
 			}
-			dict.set("files_modified", modified)
+			dict.Set("files_modified", modified)
 			if len(modified) == 1 {
-				dict.set("resolved_path", modified[0])
+				dict.Set("resolved_path", modified[0])
 			}
 			if err := noteEdited(env, taskID, paths, pathToResolved, a.sessionID); err != nil {
 				return nil, false, err
@@ -1372,7 +1373,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, pro
 	if early {
 		return dictJSON(dict), nil
 	}
-	if errText := pyDisplay(dict.vals["error"]); dictTruthy(dict, "error") && strings.Contains(errText, "Could not find") {
+	if errText := pyDisplay(dict.Vals["error"]); dictTruthy(dict, "error") && strings.Contains(errText, "Could not find") {
 		failureCount := 0
 		if a.mode == "replace" && a.path != "" {
 			target := pathToResolved[a.path]
@@ -1382,7 +1383,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, pro
 			failureCount = recordPatchFailure(taskID, target)
 		}
 		if failureCount >= 3 {
-			dict.set("_hint", fmt.Sprintf("This is failure #%d patching %s. "+
+			dict.Set("_hint", fmt.Sprintf("This is failure #%d patching %s. "+
 				"Stop retrying with variations of the same old_string. "+
 				"Either: (1) re-read the file fresh to verify current "+
 				"content, (2) use a longer / more unique old_string with "+
@@ -1390,7 +1391,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, pro
 				"full, then use write_file to replace it if the targeted "+
 				"region is hard to anchor.", failureCount, pyReprStr(a.path)))
 		} else if !strings.Contains(errText, "Did you mean one of these sections?") {
-			dict.set("_hint", "old_string not found. Use read_file to verify the current "+
+			dict.Set("_hint", "old_string not found. Use read_file to verify the current "+
 				"content, or search_files to locate the text.")
 		}
 	}
@@ -1398,9 +1399,9 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string, pro
 }
 
 // Bounded error object returned straight from inside the locked patch section
-func patchErrorDict(message string) *pyJSONObject {
+func patchErrorDict(message string) *pyjson.Object {
 	out := newDict()
-	out.set("error", boundErrorText(message))
+	out.Set("error", boundErrorText(message))
 	return out
 }
 
@@ -1464,18 +1465,18 @@ func searchToolErr(ctx context.Context, env *Env, a searchArgs, taskID string) (
 	}
 	dict := result.toDict(true)
 	if omitted > 0 {
-		dict.set("_omitted", fmt.Sprintf("%d result(s) omitted because they target credential, "+
+		dict.Set("_omitted", fmt.Sprintf("%d result(s) omitted because they target credential, "+
 			"token, cache, or secret-bearing environment files.", omitted))
 	}
 	if strings.HasPrefix(dictString(dict, "error"), "Path not found:") {
 		recordNotFound("search", resolvedSearchPath, taskID, dictJSON(dict))
 	}
 	if count >= 3 {
-		dict.set("_warning", fmt.Sprintf("You have run this exact search %d times consecutively. "+
+		dict.Set("_warning", fmt.Sprintf("You have run this exact search %d times consecutively. "+
 			"The results have not changed. Use the information you already have.", count))
 	}
 	if dictTruthy(dict, "truncated") {
-		dict.set("_hint", fmt.Sprintf("Results truncated. Use offset=%d to see more, "+
+		dict.Set("_hint", fmt.Sprintf("Results truncated. Use offset=%d to see more, "+
 			"or narrow with a more specific pattern or file_glob.", offset+limit))
 	}
 	return dictJSON(dict), nil

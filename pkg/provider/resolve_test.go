@@ -1163,7 +1163,10 @@ func namedProfileResolver(t *testing.T, keyEnv bool, dotenv string, modelExtra m
 		entry["key_env"] = "CANARY_KEY"
 	}
 	cfg := config.Tree{"model": model, "custom_providers": []any{entry}}
-	return newResolver(context.Background(), cfg, config.NewSecrets(h), h, &fakeCreds{})
+	SetMultiplexActive(true)
+	t.Cleanup(func() { SetMultiplexActive(false) })
+	ctx := WithSecretScope(context.Background(), BuildProfileSecretScope(h), h)
+	return newResolver(ctx, cfg, config.NewSecrets(h), h, &fakeCreds{})
 }
 
 func TestDeclaredKeyMissingFromProfileScopeFailsBeforeTheRequest(t *testing.T) {

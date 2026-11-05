@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Git for Windows bash under the store's git entry, Windows bundles only
@@ -59,18 +61,18 @@ func WindowsBashCandidates(onPath string, env map[string]string) []string {
 	if override := env["ICEBATH_GIT_BASH_PATH"]; override != "" {
 		candidates = append(candidates, override)
 	}
-	roots := []string{ntJoin(programFiles, "Git")}
+	roots := []string{pypath.NtJoin(programFiles, "Git")}
 	if x86 := env["ProgramFiles(x86)"]; x86 != "" {
-		roots = append(roots, ntJoin(x86, "Git"))
+		roots = append(roots, pypath.NtJoin(x86, "Git"))
 	}
 	if local := env["LOCALAPPDATA"]; local != "" {
-		roots = append(roots, ntJoin(local, "icebath", "git"), ntJoin(local, "Programs", "Git"))
+		roots = append(roots, pypath.NtJoin(local, "icebath", "git"), pypath.NtJoin(local, "Programs", "Git"))
 	}
 	for _, root := range roots {
-		candidates = append(candidates, ntJoin(root, "bin", "bash.exe"), ntJoin(root, "usr", "bin", "bash.exe"))
+		candidates = append(candidates, pypath.NtJoin(root, "bin", "bash.exe"), pypath.NtJoin(root, "usr", "bin", "bash.exe"))
 	}
 	if onPath != "" {
-		norm := strings.ToLower(ntNormpath(onPath))
+		norm := strings.ToLower(pypath.NtNormpath(onPath))
 		launcher := false
 		for _, dir := range windowsBashLauncherDirs {
 			if strings.Contains(norm, dir) {
@@ -90,32 +92,6 @@ func WindowsBashCandidates(onPath string, env map[string]string) []string {
 		}
 	}
 	return out
-}
-
-// Normalizes a Windows path the way ntpath normpath does
-func ntNormpath(path string) string {
-	path = strings.ReplaceAll(path, "/", `\`)
-	drive, root, tail := ntSplitRoot(path)
-	prefix := drive + root
-	var comps []string
-	for _, comp := range strings.Split(tail, `\`) {
-		switch {
-		case comp == "" || comp == ".":
-		case comp == "..":
-			switch {
-			case len(comps) > 0 && comps[len(comps)-1] != "..":
-				comps = comps[:len(comps)-1]
-			case len(comps) > 0 || root == "":
-				comps = append(comps, comp)
-			}
-		default:
-			comps = append(comps, comp)
-		}
-	}
-	if prefix == "" && len(comps) == 0 {
-		comps = append(comps, ".")
-	}
-	return prefix + strings.Join(comps, `\`)
 }
 
 // Reports whether a bash candidate actually starts, a broken install or a launcher failing here

@@ -12,8 +12,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/charmbracelet/x/term"
 )
@@ -38,7 +40,7 @@ func VerboseOutput(env map[string]string) bool {
 	if env != nil {
 		get = func(k string) string { return env[k] }
 	}
-	explicit := strings.ToLower(pyStrip(get("ICEBATH_VERBOSE")))
+	explicit := strings.ToLower(pystr.Strip(get("ICEBATH_VERBOSE")))
 	if verboseTrue[explicit] {
 		return true
 	}
@@ -46,7 +48,7 @@ func VerboseOutput(env map[string]string) bool {
 		return false
 	}
 	for _, key := range []string{"CI", "GITHUB_ACTIONS"} {
-		v := strings.ToLower(pyStrip(get(key)))
+		v := strings.ToLower(pystr.Strip(get(key)))
 		if v != "" && !verboseFalse[v] {
 			return true
 		}
@@ -192,8 +194,8 @@ func (t *LiveTail) Close(ok bool) {
 
 // Records one output line in the tail and redraws the status line at most every interval
 func (t *LiveTail) line(line string) {
-	line = strings.TrimRightFunc(ansiEscape.ReplaceAllString(lastRunes(line, MaxLine), ""), pyIsSpace)
-	if pyStrip(line) == "" {
+	line = strings.TrimRightFunc(ansiEscape.ReplaceAllString(lastRunes(line, MaxLine), ""), pystr.IsSpace)
+	if pystr.Strip(line) == "" {
 		return
 	}
 	t.Tail = append(t.Tail, line)
@@ -208,7 +210,7 @@ func (t *LiveTail) line(line string) {
 		return
 	}
 	t.lastDraw = now
-	t.draw(fmt.Sprintf("%s→ %s… %s", t.Indent, *t.Label, pyStrip(line)))
+	t.draw(fmt.Sprintf("%s→ %s… %s", t.Indent, *t.Label, pystr.Strip(line)))
 }
 
 // Rewrites the status line, padding over the previous text instead of an ANSI erase
@@ -241,7 +243,7 @@ type CalledProcessError struct {
 }
 
 func (e *CalledProcessError) Error() string {
-	command := pyListRepr(e.Argv)
+	command := pyrepr.Repr(e.Argv)
 	if e.Code < 0 {
 		if name := signalName(-e.Code); name != "" {
 			return fmt.Sprintf("Command '%s' died with <Signals.%s: %d>.", command, name, -e.Code)
@@ -258,12 +260,6 @@ func pyReturnCode(exitErr *exec.ExitError) int {
 	}
 	return exitErr.ExitCode()
 }
-
-// Reports Python str isspace, the Unicode whitespace plus the ASCII separators 0x1c through 0x1f
-func pyIsSpace(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f) }
-
-// Trims both ends the way Python str strip does with no argument
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
 
 // Translates CRLF and lone CR to LF the way a universal newlines text stream reads them
 func universalNewlines(s string) string {
@@ -337,15 +333,6 @@ func appendUTF8Replace(dst, data []byte, final bool) ([]byte, int) {
 		i += n
 	}
 	return dst, len(data)
-}
-
-// Python repr of a list of strings
-func pyListRepr(items []string) string {
-	parts := make([]string, len(items))
-	for i, s := range items {
-		parts[i] = pyRepr(s)
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // ContainOptions shape a contained child run

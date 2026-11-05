@@ -4,27 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
-	"strings"
-	"unicode"
 )
 
-// Longest title a session may carry
-const MaxTitleLength = 200
-
-// Provenance of a title derived from the first message
-const TitleSourceDerived = "derived"
-
-// Provenance of a title a model wrote
-const TitleSourceLLM = "llm"
-
-// Provenance of a title the person typed
-const TitleSourceUser = "user"
-
 var titleRank = map[string]int{TitleSourceDerived: 1, TitleSourceLLM: 2, TitleSourceUser: 3}
-
-var numberedTitleRe = regexp.MustCompile(`^(.*?) #(\d+)$`)
 
 // Error of a title another session holds
 type TitleInUseError struct {
@@ -34,26 +17,6 @@ type TitleInUseError struct {
 
 func (e *TitleInUseError) Error() string {
 	return "title " + strconv.Quote(e.Title) + " is already in use by session " + e.SessionID
-}
-
-// Title without control, zero width and bidi characters and with whitespace collapsed
-func SanitizeTitle(title string) (string, error) {
-	var b strings.Builder
-	for _, r := range title {
-		switch {
-		case r == '\t' || r == '\n' || r == '\r':
-			b.WriteRune(' ')
-		case unicode.IsControl(r):
-		case r >= 0x200b && r <= 0x200f, r >= 0x2028 && r <= 0x202e, r >= 0x2060 && r <= 0x2069, r == 0xfeff, r == 0xfffc, r >= 0xfff9 && r <= 0xfffb:
-		default:
-			b.WriteRune(r)
-		}
-	}
-	cleaned := strings.Join(strings.Fields(b.String()), " ")
-	if len([]rune(cleaned)) > MaxTitleLength {
-		return "", fmt.Errorf("title too long (%d characters, max %d)", len([]rune(cleaned)), MaxTitleLength)
-	}
-	return cleaned, nil
 }
 
 // Rank of a stored provenance, legacy rows without one ranking as user titles
@@ -185,7 +148,7 @@ func (d *DB) ResolveByTitle(title string) (string, error) {
 	}
 	var numbered string
 	err = d.read(func(q querier) error {
-		return q.QueryRow("SELECT id FROM sessions WHERE title LIKE ? ESCAPE '\\' ORDER BY started_at DESC LIMIT 1", escapeLike(title)+" #%").Scan(&numbered)
+		return q.QueryRow("SELECT id FROM sessions WHERE title LIKE ? ESCAPE '\\' ORDER BY started_at DESC LIMIT 1", EscapeLike(title)+" #%").Scan(&numbered)
 	})
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
@@ -194,43 +157,4 @@ func (d *DB) ResolveByTitle(title string) (string, error) {
 		return numbered, nil
 	}
 	return exact, nil
-}
-
-// Next free title in a lineage, the unnumbered original counting as number one
-func (d *DB) NextTitleInLineage(base string) (string, error) {
-	if m := numberedTitleRe.FindStringSubmatch(base); m != nil {
-		base = m[1]
-	}
-	var titles []string
-	err := d.read(func(q querier) error {
-		rows, err := q.Query("SELECT title FROM sessions WHERE title = ? OR title LIKE ? ESCAPE '\\'", base, escapeLike(base)+" #%")
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		titles = nil
-		for rows.Next() {
-			var t string
-			if err := rows.Scan(&t); err != nil {
-				return err
-			}
-			titles = append(titles, t)
-		}
-		return rows.Err()
-	})
-	if err != nil {
-		return "", err
-	}
-	if len(titles) == 0 {
-		return base, nil
-	}
-	highest := 1
-	for _, t := range titles {
-		if m := numberedTitleRe.FindStringSubmatch(t); m != nil {
-			if n, err := strconv.Atoi(m[2]); err == nil && n > highest {
-				highest = n
-			}
-		}
-	}
-	return fmt.Sprintf("%s #%d", base, highest+1), nil
 }

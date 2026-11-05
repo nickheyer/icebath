@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -18,11 +18,15 @@ import (
 
 // Error of a config.yaml that does not parse
 type InvalidUserConfigError struct {
-	Path string
-	Err  error
+	Path    string
+	Err     error
+	Message string
 }
 
 func (e *InvalidUserConfigError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
 	return "config file " + e.Path + " cannot be parsed: " + e.Err.Error()
 }
 
@@ -33,20 +37,6 @@ type fileSig struct {
 	mtime int64
 	hash  [32]byte
 }
-
-type cacheEntry struct {
-	sig      fileSig
-	exists   bool
-	managed  fileSig
-	expanded Tree
-	raw      map[string]any
-	refs     map[string]*string
-}
-
-var (
-	cacheMu sync.Mutex
-	cache   = map[string]*cacheEntry{}
-)
 
 // Signature of a file, exists false when it is absent
 func signature(path string) (fileSig, bool, error) {
@@ -66,15 +56,15 @@ func signature(path string) (fileSig, bool, error) {
 
 // Parsed user document of a YAML file, empty when the file is absent or blank
 func ReadDocument(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
+	data, err := readYAMLFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]any{}, nil
 		}
 		return nil, err
 	}
-	var doc any
-	if err := yaml.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &doc); err != nil {
+	doc, err := FastSafeLoad(data)
+	if err != nil {
 		return nil, &InvalidUserConfigError{Path: path, Err: err}
 	}
 	if doc == nil {
@@ -84,7 +74,7 @@ func ReadDocument(path string) (map[string]any, error) {
 	if m == nil {
 		return nil, &InvalidUserConfigError{Path: path, Err: fmt.Errorf("top level is %T, a mapping is required", doc)}
 	}
-	return normalizeMaps(m).(map[string]any), nil
+	return m, nil
 }
 
 // Document with every nested mapping as a string keyed map
@@ -116,28 +106,40 @@ func ReadUser(h string) (map[string]any, error) {
 	return ReadDocument(home.ConfigPath(h))
 }
 
-// Document with the model section and the turn cap in their canonical places
-func Canonicalize(doc map[string]any) map[string]any {
-	return normalizeModelKeys(normalizeMaxTurns(doc))
+// Document with legacy root max_turns under agent and the model section canonical, the Python error for an agent that is no mapping
+func Canonicalize(doc map[string]any) (map[string]any, error) {
+	moved, err := normalizeMaxTurns(doc)
+	if err != nil {
+		return nil, err
+	}
+	return normalizeModelKeys(moved), nil
 }
 
-// Document with a root max_turns moved under agent
-func normalizeMaxTurns(doc map[string]any) map[string]any {
-	raw, has := doc["max_turns"]
-	if !has {
-		return doc
+// Shallow copy with a root max_turns moved under agent, an agent key kept as a mapping whenever present
+func normalizeMaxTurns(doc map[string]any) (map[string]any, error) {
+	agent, err := pyDictOf(doc["agent"])
+	if err != nil {
+		return nil, err
 	}
-	out := Clone(doc).(map[string]any)
-	agent, _ := out["agent"].(map[string]any)
-	if agent == nil {
-		agent = map[string]any{}
+	out := make(map[string]any, len(doc)+1)
+	for k, v := range doc {
+		out[k] = v
 	}
-	if _, set := agent["max_turns"]; !set {
+	order := MappingKeys(doc)
+	raw, hasRoot := doc["max_turns"]
+	if _, set := agent["max_turns"]; hasRoot && !set {
 		agent["max_turns"] = raw
+		AppendMappingKey(agent, "max_turns")
 	}
-	out["agent"] = agent
+	if _, has := doc["agent"]; len(agent) > 0 || has {
+		if !has {
+			order = append(order, "agent")
+		}
+		out["agent"] = agent
+	}
 	delete(out, "max_turns")
-	return out
+	SetMappingKeys(out, order)
+	return out, nil
 }
 
 // Model and provider of a model default value that may be a string or a mapping
@@ -249,60 +251,12 @@ func normalizeModelKeys(doc map[string]any) map[string]any {
 	return out
 }
 
-// Effective configuration of a home, defaults merged under the user file and references expanded
-func Load(h string, lookup Lookup) (Tree, error) {
-	NoteRuntimeImport("hermes_cli.config")
-	path := home.ConfigPath(h)
-	sig, exists, err := signature(path)
-	if err != nil {
-		return nil, err
-	}
-	cacheMu.Lock()
-	entry := cache[path]
-	cacheMu.Unlock()
-	managedSig := managedConfigSignature()
-	if entry != nil && entry.exists == exists && (!exists || entry.sig == sig) && entry.managed == managedSig && SnapshotCurrent(entry.refs, lookup) {
-		return entry.expanded.Clone(), nil
-	}
-	user := map[string]any{}
-	if exists {
-		user, err = ReadDocument(path)
-		if err != nil {
-			return nil, err
-		}
-	}
-	canonical := Canonicalize(DeepMerge(map[string]any(Defaults()), Canonicalize(user)))
-	expanded := Tree(Canonicalize(ApplyManagedOverlay(Expand(canonical, lookup).(map[string]any))))
-	cacheMu.Lock()
-	cache[path] = &cacheEntry{sig: sig, exists: exists, managed: managedSig, expanded: expanded.Clone(), raw: Clone(user).(map[string]any), refs: RefSnapshot(canonical, lookup)}
-	cacheMu.Unlock()
-	return expanded, nil
-}
-
-// Forgets every cached configuration document
-func ResetCache() {
-	cacheMu.Lock()
-	cache = map[string]*cacheEntry{}
-	cacheMu.Unlock()
-}
-
 // Header written above a new config file
 const fileHeader = "# icebath configuration. Settings live here, secrets live in .env beside this file.\n"
 
 // Writes the effective document of a home, dropping values equal to the defaults the user never set
 func Save(h string, doc Tree) error {
-	path := home.ConfigPath(h)
-	if _, err := home.Mkdir(h); err != nil {
-		return err
-	}
-	raw, err := ReadDocument(path)
-	if err != nil {
-		return err
-	}
-	normalized := Canonicalize(Clone(map[string]any(doc)).(map[string]any))
-	stripped := StripDefaults(normalized, map[string]any(Defaults()), ExplicitPaths(Canonicalize(raw)))
-	stripped["_config_version"] = Version
-	return writeDocument(path, stripped)
+	return SaveConfig(context.Background(), h, map[string]any(doc), SaveOptions{})
 }
 
 // Writes the raw user document of a home exactly as given

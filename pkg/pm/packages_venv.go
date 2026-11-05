@@ -13,7 +13,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Venv is the project venv made true by a frozen uv sync of pyproject, uv.lock and the enabled extras
@@ -179,8 +183,8 @@ func (v *Venv) Prepare(ctx context.Context, extras []string, opts VenvApplyOptio
 		replay = filepath.Dir(recorded)
 	}
 	seed := filepath.Join(project, "uv.lock")
-	if lockText := prior["resolved_lock"]; len(members) > 0 && truthy(lockText) {
-		seed = pyStr(lockText)
+	if lockText := prior["resolved_lock"]; len(members) > 0 && pyrepr.Truthy(lockText) {
+		seed = pyrepr.Str(lockText)
 	}
 	workspace := filepath.Join(generation, "workspace")
 	if err := LockAndSync(ctx, members, extras, LockAndSyncOptions{
@@ -363,13 +367,13 @@ func UvCacheDir(ctx context.Context) (string, error) {
 		if err := strictUTF8(text); err != nil {
 			return "", fmt.Errorf("UnicodeDecodeError: %s", err)
 		}
-		current = pyStrip(string(text)) == seed
+		current = pystr.Strip(string(text)) == seed
 	}
 	if current {
 		return machine, nil
 	}
 	if err := seedPayloadCache(payloadCache, machine); err != nil {
-		slog.Warn(fmt.Sprintf("uv cache seed incomplete, retrying on the next install: %s", pyOSErrorText(err)))
+		slog.Warn(fmt.Sprintf("uv cache seed incomplete, retrying on the next install: %s", pypath.OSErrorText(err)))
 		return machine, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(marker), 0o777); err == nil {

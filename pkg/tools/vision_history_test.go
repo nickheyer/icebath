@@ -224,9 +224,9 @@ func TestNativeTurnDedupe(t *testing.T) {
 	dir := t.TempDir()
 	same := writeFixturePNG(t, filepath.Join(dir, "same.png"), 16, 16, false)
 	other := writeFixturePNG(t, filepath.Join(dir, "other.png"), 16, 16, true)
-	parts := []any{
-		map[string]any{"type": "text", "text": "look\n\n[Image attached at: " + same + "]"},
-		map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64,AAAA"}},
+	parts, skipped, err := BuildNativeContentParts(env, "look", []string{same}, nil)
+	if err != nil || len(skipped) != 0 {
+		t.Fatalf("native parts %v %v", skipped, err)
 	}
 	restore := NativeTurnImages(env, parts)
 	result := nativeLoad(env, "s", same, nil)

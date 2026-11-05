@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -72,7 +74,7 @@ func ComposeEnv(diffs []EnvDiff, base map[string]string) map[string]string {
 	for _, diff := range diffs {
 		for key, value := range diff {
 			if key != "PATH" {
-				env[key] = Native(pyStr(value))
+				env[key] = Native(pyrepr.Str(value))
 			}
 		}
 	}
@@ -99,7 +101,7 @@ func envDirs(value any) []string {
 	if list, ok := envList(value); ok {
 		return list
 	}
-	return []string{pyStr(value)}
+	return []string{pyrepr.Str(value)}
 }
 
 // Package is what a package IS, versions and hashes living in lock.json
@@ -242,7 +244,7 @@ func formatTemplate(template string, fields map[string]string) (string, error) {
 			name := template[i+1 : i+end]
 			value, ok := fields[name]
 			if !ok {
-				return "", fmt.Errorf("KeyError: %s", pyRepr(name))
+				return "", fmt.Errorf("KeyError: %s", pyrepr.StrRepr(name))
 			}
 			out.WriteString(value)
 			i += end
@@ -553,35 +555,4 @@ func EnvList(env map[string]string) []string {
 		out = append(out, k+"="+env[k])
 	}
 	return out
-}
-
-// Python repr of a string, single quoted unless it holds a single quote and no double quote
-func pyRepr(s string) string {
-	quote := byte('\'')
-	if strings.ContainsRune(s, '\'') && !strings.ContainsRune(s, '"') {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteByte(quote)
-	for _, r := range s {
-		switch {
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r == rune(quote):
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte(quote)
-	return b.String()
 }

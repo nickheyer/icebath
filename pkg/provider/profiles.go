@@ -87,6 +87,10 @@ type Profile struct {
 	OverlayAliases             []string
 	RegistryAuthType           string
 	RegistryAfter              string
+	PortalBaseURL              string
+	ClientID                   string
+	Scope                      string
+	Extra                      map[string]any
 
 	// Responses wire flags stored so the zero value keeps the upstream defaults
 	ResponsesDropReplayItemIDs       bool
@@ -109,18 +113,18 @@ type Profile struct {
 
 	// Hook overrides, a nil hook runs the upstream default body
 	FetchAccountUsageHook               func(ctx context.Context, baseURL, apiKey string) (*AccountUsageSnapshot, error)
-	ResolveAuxModelHook                 func(vision bool) string
+	ResolveAuxModelHook                 func(ctx context.Context, vision bool) string
 	GetHostnameHook                     func() string
 	PrepareMessagesHook                 func(messages []map[string]any) []map[string]any
 	BuildExtraBodyHook                  func(sessionID string, context map[string]any) map[string]any
 	DefaultReasoningConfigHook          func(model string) *Reasoning
 	BuildAPIKwargsExtrasHook            func(reasoning *Reasoning, context map[string]any) (map[string]any, map[string]any)
 	BuildClientKwargsExtrasHook         func(context map[string]any) map[string]any
-	DefaultVisionModelHook              func() string
+	DefaultVisionModelHook              func(ctx context.Context) string
 	GetModelContextLengthHook           ProfileContextLengthHook
 	GetUsageCostHook                    UsageCostHook
 	GetMaxTokensHook                    func(model string) int
-	SupportedReasoningEffortsHook       func(model string) ([]string, bool)
+	SupportedReasoningEffortsHook       func(ctx context.Context, model string) ([]string, bool, error)
 	APIModeForModelHook                 PerModelAPIModeHook
 	ClientHeadersHook                   func(baseURL, apiKey string, hasImages bool) map[string]string
 	RequestHeadersHook                  func(baseURL, model string, userInitiated bool) map[string]string
@@ -142,7 +146,7 @@ type Profile struct {
 	CredentialRefreshNoticeHook         func(reason string) string
 	RequestRejectionHintHook            func(statusCode int, baseURL string) []string
 	ExternalAuthEvidenceHook            func() (verified bool, source string, ok bool)
-	MissingCredentialsHintHook          func() string
+	MissingCredentialsHintHook          func() any
 	ReasoningPayloadHook                func(model string, r Reasoning, baseURL string) map[string]any
 	ReplayMessageCarriersHook           func(values map[string]any, model, baseURL string) map[string]any
 	ReplaysFunctionThoughtSignatureHook func(model, baseURL string) bool

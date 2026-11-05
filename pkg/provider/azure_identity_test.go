@@ -367,11 +367,11 @@ func TestEntraAzureCLICredential(t *testing.T) {
 	if _, err := cli.GetToken(context.Background(), ScopeAIAzureDefault); err == nil || err.Error() != "Azure CLI not found on path" {
 		t.Fatalf("err = %v", err)
 	}
-	os.WriteFile(filepath.Join(bin, "az"), []byte("#!/bin/sh\nfor a in \"$@\"; do last=\"$a\"; done\necho '{\"accessToken\":\"cli-token\",\"expires_on\":1999999999,\"resource\":\"'$last'\"}'\n"), 0o700)
+	writeFakeAz(t, bin, true)
 	if tok, err := cli.GetToken(context.Background(), ScopeAIAzureDefault); err != nil || tok.Token != "cli-token" || tok.ExpiresOn != 1999999999 {
 		t.Fatalf("tok %+v err %v", tok, err)
 	}
-	os.WriteFile(filepath.Join(bin, "az"), []byte("#!/bin/sh\necho \"ERROR: Please run 'az login' to setup account.\" >&2\nexit 1\n"), 0o700)
+	writeFakeAz(t, bin, false)
 	if _, err := cli.GetToken(context.Background(), ScopeAIAzureDefault); err == nil || err.Error() != "Please run 'az login' to set up an account" {
 		t.Fatalf("err = %v", err)
 	}

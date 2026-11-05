@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Registers the native Gemini adapter and routes native Gemini base URLs of chat routes onto it
@@ -324,12 +325,14 @@ type geminiNativeClient struct {
 	mu     sync.Mutex
 	base   string
 	token  func(context.Context) (string, error)
+	// RPC method names a subclass speaking the same wire under another credential overrides
+	generateMethod, streamMethod string
 }
 
 func newGeminiNativeClient(route Route) (Client, error) {
 	c := &geminiNativeClient{route: route, token: route.TokenSource,
 		chat:   &chatCompletionsClient{route: route, cc: newCCRoute(route), transports: map[time.Duration]*http.Transport{}},
-		bearer: route.TokenSource != nil || route.Auth == AuthGCPOAuth}
+		bearer: route.TokenSource != nil || route.Auth == AuthGCPOAuth, generateMethod: geminiGenerateMethod, streamMethod: geminiStreamMethod}
 	if !c.bearer && strings.TrimSpace(route.APIKey) == "" {
 		return nil, errors.New(geminiMissingKeyError)
 	}
@@ -484,7 +487,7 @@ func (c *geminiNativeClient) prepare(ctx context.Context, req *Request) (*gemini
 		ResponseFormat: responseFormat, Model: model, ToolsAsJSONSchema: geminiAcceptsParametersJSONSchema(baseURL)})
 	bare := bareGeminiModelID(model)
 	return &geminiPrepared{request: request, model: bare, url: baseURL + "/models/" + bare + ":", extra: extra, auth: auth, baseURL: baseURL,
-		settings: settings, estTokens: estimateBodyContextTokens(kwargs, DefaultImageTokenCost)}, nil
+		settings: settings, estTokens: estimateBodyContextTokens(kwargs, CurrentImageTokenCost(ctx))}, nil
 }
 
 // Integer value of a JSON integer, false for floats, strings and booleans
@@ -531,7 +534,7 @@ func (c *geminiNativeClient) apiError(gerr *GeminiAPIError) *APIError {
 
 // Error for a non 200 response, without API key remedies on a bearer credential
 func (c *geminiNativeClient) httpError(p *geminiPrepared, status int, headers http.Header, body string) *APIError {
-	return c.apiError(geminiHTTPError(status, headers, sanitizeSurrogates(body), c.route.APIKey, p.baseURL, !c.bearer))
+	return c.apiError(geminiHTTPError(status, headers, pystr.DecodeUTF8Replace([]byte(body)), c.route.APIKey, p.baseURL, !c.bearer))
 }
 
 // One unary generateContent hop
@@ -540,7 +543,7 @@ func (c *geminiNativeClient) generate(ctx context.Context, p *geminiPrepared, re
 	if err != nil {
 		return nil, 0, nil, fmt.Errorf("provider: encode gemini request: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url+geminiGenerateMethod, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url+c.generateMethod, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, nil, err
 	}
@@ -668,7 +671,7 @@ func ResponseInitialPromptTokens(resp *Response) (int, int, bool) {
 func (c *geminiNativeClient) CountTokens(ctx context.Context, req *Request) (int, error) {
 	settings := loadWireSettings(ctx)
 	build := c.chat.cc.build(ctx, req, settings)
-	return estimateBodyContextTokens(geminiPlain(build.body), DefaultImageTokenCost), nil
+	return estimateBodyContextTokens(geminiPlain(build.body), CurrentImageTokenCost(ctx)), nil
 }
 
 // One message from the stream producer to the watchdog loop
@@ -723,7 +726,7 @@ func (c *geminiNativeClient) produceStream(ctx context.Context, p *geminiPrepare
 	maxHops := geminiMaxHops(p.request)
 	body := p.request
 	resume, sends := "", 0
-	url := p.url + geminiStreamMethod + "?alt=sse"
+	url := p.url + c.streamMethod + "?alt=sse"
 	for {
 		dropErr, fatal := c.streamRequest(ctx, p, url, body, connect, send, slots, &hopUsage, maxHops, &resume, &sends)
 		if fatal != nil {

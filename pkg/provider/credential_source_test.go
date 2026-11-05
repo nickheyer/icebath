@@ -98,10 +98,9 @@ func TestRemovalStepsCleanTheRightSource(t *testing.T) {
 	if _, ok := FindRemovalStep("openrouter", "manual"); ok {
 		t.Fatal("manual rows have nothing external to clean")
 	}
-	RegisterProviderProfileHooks("plug", ProviderProfileHooks{RemoveCredentialSource: func(source string) ([]string, []string, bool) {
+	registerHookedProfile(t, "plug", ProviderProfileHooks{RemoveCredentialSource: func(source string) ([]string, []string, bool) {
 		return []string{source, source + "-alt"}, []string{"hint"}, true
 	}})
-	t.Cleanup(func() { UnregisterProviderProfileHooks("plug") })
 	step, ok = FindRemovalStep("plug", "env:X")
 	if !ok {
 		t.Fatal("profile claim expected")

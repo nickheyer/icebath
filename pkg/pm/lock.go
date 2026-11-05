@@ -18,6 +18,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // LockSchema is the schema number of lock.json and facts.json
@@ -352,7 +354,7 @@ func (f *Facts) Installed(name string, expectedVersion *string, storeRoot string
 			return false
 		}
 	}
-	_, err := os.Stat(filepath.Join(storeRoot, pyStr(fact["entry"])))
+	_, err := os.Stat(filepath.Join(storeRoot, pyrepr.Str(fact["entry"])))
 	return err == nil
 }
 
@@ -465,7 +467,7 @@ func (f *Facts) EntriesInUse() map[string]bool {
 	for _, v := range f.packages {
 		if fact, ok := v.(map[string]any); ok {
 			if entry, has := fact["entry"]; has {
-				out[pyStr(entry)] = true
+				out[pyrepr.Str(entry)] = true
 			}
 		}
 	}
@@ -484,7 +486,7 @@ func templatizeStore(env EnvDiff, storeRoot string) map[string]any {
 			out[key] = items
 			continue
 		}
-		out[key] = strings.ReplaceAll(pyStr(value), storeRoot, StoreToken)
+		out[key] = strings.ReplaceAll(pyrepr.Str(value), storeRoot, StoreToken)
 	}
 	return out
 }
@@ -501,7 +503,7 @@ func resolveStoreToken(env map[string]any, storeRoot string) EnvDiff {
 			out[key] = items
 			continue
 		}
-		out[key] = strings.ReplaceAll(pyStr(value), StoreToken, storeRoot)
+		out[key] = strings.ReplaceAll(pyrepr.Str(value), StoreToken, storeRoot)
 	}
 	return out
 }
@@ -514,7 +516,7 @@ func envList(value any) ([]string, bool) {
 	case []any:
 		out := make([]string, len(t))
 		for i, v := range t {
-			out[i] = pyStr(v)
+			out[i] = pyrepr.Str(v)
 		}
 		return out, true
 	}

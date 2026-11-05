@@ -23,12 +23,16 @@ type ToolCall struct {
 	ID       string           `json:"id"`
 	Type     string           `json:"type,omitempty"`
 	Function ToolCallFunction `json:"function"`
+	// Dict keys the struct has no field for, kept for lossless dict round trips
+	Extra map[string]any `json:"-"`
 }
 
 // Function part of a tool call
 type ToolCallFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
+	// Dict keys the struct has no field for, kept for lossless dict round trips
+	Extra map[string]any `json:"-"`
 }
 
 // One transcript row in provider message shape
@@ -66,6 +70,8 @@ type Message struct {
 	Compacted    bool              `json:"-"`
 	// Set once the row exists so a flush never appends it again
 	Persisted bool `json:"-"`
+	// Dict keys the struct has no field for, such as underscore bookkeeping keys and data_use
+	Extra map[string]any `json:"-"`
 }
 
 // Text of a message, content parts joined when the content is a list
@@ -308,21 +314,12 @@ func (d *DB) AppendMessages(sessionID string, msgs []*Message) ([]int64, error) 
 			return err
 		}
 		if endedAt.Valid && endReason.String == EndReasonCompression {
-			return &CompressionClosedError{SessionID: sessionID}
+			return &CompressionSessionClosedError{SessionID: sessionID}
 		}
 		ids, err = insertMessages(tx, sessionID, msgs)
 		return err
 	})
 	return ids, err
-}
-
-// Error of a write to a session a compression continuation replaced
-type CompressionClosedError struct {
-	SessionID string
-}
-
-func (e *CompressionClosedError) Error() string {
-	return "session " + e.SessionID + " was closed by compression, write to its continuation"
 }
 
 const messageSelect = `id, session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason,
@@ -552,7 +549,7 @@ func (d *DB) ArchiveAndCompact(sessionID string, compacted []*Message, watermark
 			var expires float64
 			err := tx.QueryRow("SELECT holder, expires_at FROM compression_locks WHERE session_id = ?", sessionID).Scan(&holder, &expires)
 			if errors.Is(err, sql.ErrNoRows) || (err == nil && (holder != lockHolder || expires <= now())) {
-				return &CompressionInProgressError{SessionID: sessionID}
+				return &SessionCompressionInProgressError{Msg: "Compression lease for " + pyRepr(sessionID) + " lost before commit; refusing to publish a stale compaction"}
 			}
 			if err != nil {
 				return err
@@ -655,15 +652,6 @@ func (d *DB) ArchiveAndCompact(sessionID string, compacted []*Message, watermark
 		return tx.QueryRow("SELECT COUNT(*) FROM messages WHERE session_id = ? AND active = 1", sessionID).Scan(&result.ActiveCount)
 	})
 	return result, err
-}
-
-// Error of a compaction whose lease another writer holds
-type CompressionInProgressError struct {
-	SessionID string
-}
-
-func (e *CompressionInProgressError) Error() string {
-	return "session " + e.SessionID + " is being compressed by another writer"
 }
 
 // Outcome of a rewind

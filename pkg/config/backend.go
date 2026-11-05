@@ -69,7 +69,7 @@ type ConfigBackend interface {
 	DoctorWarnings(ctx context.Context, home string) []DoctorWarning
 	ApplyInMemory(ctx context.Context, home string, doc map[string]any) error
 	Describe(ctx context.Context, home string) string
-	Destination(ctx context.Context, home string) string
+	Destination(ctx context.Context, home string) (string, error)
 }
 
 // Selected backend cannot serve config, an exit and never a fall back to defaults
@@ -139,7 +139,7 @@ func (FileBackend) VersionPath(path string) ([]any, error) {
 
 // Parsed root of a file, nil when empty, the open error when it cannot be read
 func (FileBackend) ReadPath(path string) (any, error) {
-	data, err := os.ReadFile(path)
+	data, err := readYAMLFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -243,8 +243,10 @@ func (FileBackend) ApplyInMemory(context.Context, string, map[string]any) error 
 	return errors.New("the file backend persists migrations to config.yaml")
 }
 
-func (b FileBackend) Describe(_ context.Context, home string) string    { return b.ConfigPath(home) }
-func (b FileBackend) Destination(_ context.Context, home string) string { return b.ConfigPath(home) }
+func (b FileBackend) Describe(_ context.Context, home string) string { return b.ConfigPath(home) }
+func (b FileBackend) Destination(_ context.Context, home string) (string, error) {
+	return b.ConfigPath(home), nil
+}
 
 var (
 	backendKindRe     = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
@@ -313,6 +315,9 @@ func ensureBootstrapEnv(ctx context.Context) error {
 	}
 	return runBootstrap(ctx, "", "", true)
 }
+
+// Marks the process as not yet bootstrapped so the next backend selection publishes the deployment again
+func ResetBootstrapForTests() { bootstrapped.Store(false) }
 
 // Publishes the deployment from an explicit dotenv load home and project file before its first config read
 func BootstrapDeployment(ctx context.Context, home, projectEnv string) error {
@@ -429,6 +434,11 @@ func VersionToken(version []any) float64 {
 		return 0
 	}
 	switch n := version[0].(type) {
+	case bool:
+		if n {
+			return 1.0 / 1_000_000_000
+		}
+		return 0
 	case int:
 		return float64(n) / 1_000_000_000
 	case int64:
@@ -484,7 +494,7 @@ func ConfigDestination(ctx context.Context, configPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return backend.Destination(ctx, h), nil
+	return backend.Destination(ctx, h)
 }
 
 // Sets one dotted key, nil removing it

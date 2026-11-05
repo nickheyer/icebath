@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (
@@ -54,7 +56,7 @@ func clarifyCleanAnswer(raw any, multi bool) any {
 	var items []any
 	switch v := raw.(type) {
 	case string:
-		decoded, err := jsonDecodeWTF8([]byte(v))
+		decoded, err := pyjson.DecodeWTF8([]byte(v))
 		if parsed, isList := decoded.([]any); err == nil && isList {
 			items = parsed
 		} else {

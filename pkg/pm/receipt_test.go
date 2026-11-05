@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -181,7 +183,7 @@ func TestReceiptBeginRecordFinalizeRoundtrip(t *testing.T) {
 			var messages []string
 			for i := range warnings {
 				messages = append(messages, rptItem(t, warnings, i, "message").(string))
-				if !truthy(rptItem(t, warnings, i, "at")) {
+				if !pyrepr.Truthy(rptItem(t, warnings, i, "at")) {
 					t.Fatalf("warning %d has no time", i)
 				}
 			}

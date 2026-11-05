@@ -318,7 +318,7 @@ func TestToolCallIDHelpers(t *testing.T) {
 	if calls[0].ID != "call_0" || calls[1].ID != "call_0_d3|fc_1" || calls[2].ID != "call_0_d4" {
 		t.Fatalf("got %v", calls)
 	}
-	if CoalesceToolCallID(" call_x|fc ") != "call_x" || DeterministicCallID("t", "{}", 0) != DeterministicCallID("t", "{}", 0) {
+	if state.CoalesceToolCallID(map[string]any{"id": " call_x|fc "}) != "call_x" || DeterministicCallID("t", "{}", 0) != DeterministicCallID("t", "{}", 0) {
 		t.Fatal("id helpers")
 	}
 	provider := []state.ToolCall{segTC("a", "{}", "chatcmpl-tool-1"), segTC("b", "{}", "chatcmpl-tool-2|fc_9")}

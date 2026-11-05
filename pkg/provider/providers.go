@@ -441,7 +441,7 @@ func determineModeCtx(ctx context.Context, providerName, baseURL, model, nousWir
 		if m, ok := transportToAPIMode[pdef.Transport]; ok {
 			return m
 		}
-		if registeredAPIModes()[pdef.Transport] {
+		if RegisteredAPIModes()[pdef.Transport] {
 			return APIMode(pdef.Transport)
 		}
 		return ModeChatCompletions

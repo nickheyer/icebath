@@ -12,6 +12,9 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var (
@@ -59,7 +62,7 @@ func recordedToolchain(python string) any {
 func recordedText(recorded any, key string) (string, error) {
 	m, ok := recorded.(map[string]any)
 	if !ok {
-		return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(recorded))}
+		return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(recorded))}
 	}
 	v, ok := m[key]
 	if !ok {
@@ -67,7 +70,7 @@ func recordedText(recorded any, key string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'split'", pyTypeName(v))}
+		return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'split'", pyrepr.TypeName(v))}
 	}
 	return s, nil
 }
@@ -131,7 +134,7 @@ func whichOn(cmd string, path *string) string {
 		}
 		seen[norm] = true
 		for _, file := range files {
-			name := pyJoin(dir, file)
+			name := pypath.Join(dir, file)
 			if dir == "" {
 				name = file
 			}

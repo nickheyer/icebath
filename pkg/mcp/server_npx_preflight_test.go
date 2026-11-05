@@ -5,9 +5,19 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+// Bin path npm lays down in an npx cache entry, the cmd launcher on Windows
+func npxCacheBin(binDir, name string) string {
+	target := filepath.Join(binDir, name)
+	if runtime.GOOS == "windows" {
+		target += ".cmd"
+	}
+	return target
+}
 
 func TestPreflightChecksOriginalPackageBeforeCacheAccess(t *testing.T) {
 	for _, rejected := range []bool{false, true} {
@@ -19,8 +29,8 @@ func TestPreflightChecksOriginalPackageBeforeCacheAccess(t *testing.T) {
 			os.MkdirAll(filepath.Join(entry, "node_modules", "mcp-linear"), 0o755)
 			os.WriteFile(filepath.Join(entry, "package.json"), []byte(`{"dependencies": {"mcp-linear": "1"}}`), 0o644)
 			os.WriteFile(filepath.Join(entry, "node_modules", "mcp-linear", "package.json"), []byte(`{"bin": {"mcp-linear": "i.js"}}`), 0o644)
-			target := filepath.Join(entry, "node_modules", ".bin", "mcp-linear")
-			os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755)
+			target := npxCacheBin(filepath.Join(entry, "node_modules", ".bin"), "mcp-linear")
+			os.WriteFile(target, []byte("#!/usr/bin/env node\n"), 0o755)
 			args := []string{"-y", "mcp-linear", "--port", "7"}
 			var seen [][]string
 			prevCheck, prevLookup := malwareCheck, npxCacheLookup

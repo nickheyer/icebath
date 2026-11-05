@@ -9,7 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Error code of an SSE data frame that was not JSON
@@ -369,7 +370,7 @@ func providerStreamErrorFromNonJSON(raw string, headers http.Header) *ProviderSt
 			"message": "Provider stream returned an empty SSE data frame (keepalive with no payload).",
 		}, 0), Headers: headers}
 	}
-	safe := redactSensitiveText(sanitizeSurrogates(raw))
+	safe := redactSensitiveText(pystr.DecodeUTF8Replace([]byte(raw)))
 	if len(safe) > providerStreamErrorTextLimit {
 		safe = safe[:providerStreamErrorTextLimit]
 	}
@@ -427,76 +428,6 @@ func isRouterTimeoutShim(content string, toolCalls int, usage Usage) bool {
 		return false
 	}
 	return usage.OutputTokens <= 0
-}
-
-var finishReasonAliases = map[string]string{"max_tokens": "length", "end": "stop", "function_call": "tool_calls"}
-
-// Folds a wire finish reason to the lowercase OpenAI contract value
-func normalizeFinishReason(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	lower := strings.ToLower(raw)
-	if alias, ok := finishReasonAliases[lower]; ok {
-		return alias
-	}
-	return lower
-}
-
-// Replaces each lone surrogate, carried as a three byte WTF-8 sequence, with one replacement character
-func sanitizeSurrogates(s string) string {
-	if utf8.ValidString(s) {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r != utf8.RuneError || size == 3 {
-			b.WriteString(s[i : i+size])
-			i += size
-			continue
-		}
-		if i+3 <= len(s) && s[i] == 0xED && s[i+1] >= 0xA0 && s[i+1] <= 0xBF && s[i+2] >= 0x80 && s[i+2] <= 0xBF {
-			b.WriteString("\ufffd")
-			i += 3
-			continue
-		}
-		b.WriteString("\ufffd")
-		i += invalidUTF8SubpartLen(s[i:])
-	}
-	return b.String()
-}
-
-// Bytes of the maximal invalid UTF-8 subpart at the start of s, so each one decodes to one replacement like Python
-func invalidUTF8SubpartLen(s string) int {
-	lo, hi, need := byte(0x80), byte(0xBF), 0
-	switch lead := s[0]; {
-	case lead >= 0xC2 && lead <= 0xDF:
-		need = 1
-	case lead == 0xE0:
-		need, lo = 2, 0xA0
-	case lead == 0xED:
-		need, hi = 2, 0x9F
-	case lead >= 0xE1 && lead <= 0xEF:
-		need = 2
-	case lead == 0xF0:
-		need, lo = 3, 0x90
-	case lead >= 0xF1 && lead <= 0xF3:
-		need = 3
-	case lead == 0xF4:
-		need, hi = 3, 0x8F
-	default:
-		return 1
-	}
-	n := 1
-	for n <= need && n < len(s) {
-		if c := s[n]; (n == 1 && (c < lo || c > hi)) || c < 0x80 || c > 0xBF {
-			break
-		}
-		n++
-	}
-	return n
 }
 
 var redactPatterns = []*regexp.Regexp{

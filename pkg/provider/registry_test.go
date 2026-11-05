@@ -377,7 +377,7 @@ func TestProfileHookDefaultsMatchTheBaseProfile(t *testing.T) {
 	if c, err := p.CreateClient(context.Background(), nil); c != nil || err != nil {
 		t.Fatal("create_client default must be nil")
 	}
-	if _, ok := p.SupportedReasoningEfforts("m"); ok || p.ReasoningPayload("m", Reasoning{}, "") != nil {
+	if _, ok, err := p.SupportedReasoningEfforts(context.Background(), "m"); err != nil || ok || p.ReasoningPayload("m", Reasoning{}, "") != nil {
 		t.Fatal("reasoning defaults wrong")
 	}
 	p.Hostname = "pinned.example"

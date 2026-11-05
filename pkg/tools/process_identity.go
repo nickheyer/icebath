@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 )
 
 // Spawn tags, the machine wide spawn ledger, the Windows job object and the POSIX owner death supervisor
@@ -39,7 +40,7 @@ var ReapablePurposes = setOf("serve", "dashboard", "gateway", "mcp-helper")
 
 var backendOwnerPurposes = setOf("serve", "dashboard", "gateway")
 
-var errNoSuchProcess = errors.New("no such process")
+var errNoSuchProcess = proc.ErrNoSuchProcess
 
 // Process facts the identity layer reads, swapped by tests
 type processProber interface {
@@ -879,9 +880,6 @@ const reapMinAgeSeconds = 180.0
 
 // Null spawner owner reparented to init, old and claimed by no Desktop SSH lock
 func reparentedOrphan(pid int) bool {
-	if isWindowsHost {
-		return false
-	}
 	ppid, ok := identityProber.PPID(pid)
 	if !ok || (ppid != 0 && ppid != 1) {
 		return false
@@ -1188,6 +1186,13 @@ var (
 )
 
 func init() { spawnSupervisorFn = spawnSupervisor }
+
+// Reports whether the owner death supervisor currently covers the process group
+func ProcessGroupSupervised(pgid int) bool {
+	supervisorMu.Lock()
+	defer supervisorMu.Unlock()
+	return supervisedPgids[pgid]
+}
 
 // Starts the per process supervisor, nil when it cannot be started
 func spawnSupervisor() supervisorHandle {

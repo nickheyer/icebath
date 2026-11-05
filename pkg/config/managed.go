@@ -1,12 +1,17 @@
 package config
 
 import (
+	"bytes"
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // EnvManagedDir is the IT only override naming the managed scope directory
@@ -15,8 +20,14 @@ const EnvManagedDir = "ICEBATH_MANAGED_DIR"
 // POSIX default managed scope directory, other platform locations belong only inside ManagedDir
 const defaultManagedDir = "/etc/icebath"
 
-// ManagedConfigHonored reports whether the active config backend takes managed files, the local backend always does
-var ManagedConfigHonored = func() bool { return true }
+// Whether the selected config backend takes managed files, an unavailable backend exiting like the Python SystemExit
+var ManagedConfigHonored = func() bool {
+	backend, err := GetConfigBackend(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	return backend.HonorsManagedConfig()
+}
 
 var (
 	managedMu          sync.Mutex
@@ -56,8 +67,15 @@ func InvalidateManagedCache() {
 
 // Signature keyed read of a managed file, nil when absent or malformed, a parse failure logged loudly
 func managedCachedRead(path string, cache map[string]managedEntry, parse func(string) (any, error)) any {
+	if _, err := os.Stat(path); err != nil {
+		return nil
+	}
 	sig, exists, err := signature(path)
-	if err != nil || !exists {
+	if err == nil && !exists {
+		return nil
+	}
+	if err != nil {
+		slog.Warn("managed scope: failed to parse managed file, IGNORING it. Admin policy from this file is NOT being applied. Fix and restart.", "path", path, "error", err)
 		return nil
 	}
 	managedMu.Lock()
@@ -96,23 +114,50 @@ func LoadManagedConfig() map[string]any {
 		return map[string]any{}
 	}
 	return loadManagedFile("config.yaml", managedConfigCache, func(path string) (any, error) {
-		doc, err := ReadDocument(path)
+		text, err := readManagedText(path)
 		if err != nil {
 			return nil, err
+		}
+		doc, err := FastSafeLoad([]byte(text))
+		if err != nil {
+			return nil, err
+		}
+		if m := AsMap(doc); m != nil {
+			return m, nil
+		}
+		if doc == nil {
+			return map[string]any{}, nil
 		}
 		return doc, nil
 	})
 }
 
+// Text of a managed file read as strict utf-8-sig, a decode error failing loud instead of falling back to Latin-1
+func readManagedText(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+	for i := 0; i < len(data); {
+		r, size := utf8.DecodeRune(data[i:])
+		if r == utf8.RuneError && size <= 1 {
+			return "", pystr.UTF8DecodeError(data, i)
+		}
+		i += size
+	}
+	return string(data), nil
+}
+
 // LoadManagedEnv is the parsed managed .env, empty when absent
 func LoadManagedEnv() map[string]string {
 	raw := loadManagedFile(".env", managedEnvCache, func(path string) (any, error) {
-		data, err := os.ReadFile(path)
+		text, err := readManagedText(path)
 		if err != nil {
 			return nil, err
 		}
 		out := map[string]any{}
-		for k, v := range ParseEnv(string(data)) {
+		for k, v := range ParseEnv(text) {
 			out[k] = v
 		}
 		return out, nil
@@ -149,7 +194,7 @@ func ApplyManagedOverlay(doc map[string]any) map[string]any {
 	if expanded == nil {
 		return doc
 	}
-	expanded = Canonicalize(expanded)
+	expanded = normalizeModelKeys(expanded)
 	if model, ok := expanded["model"].(string); ok {
 		expanded = Clone(expanded).(map[string]any)
 		expanded["model"] = map[string]any{"default": model}
@@ -202,21 +247,4 @@ func PinnedTerminalBackend() string {
 	terminal, _ := ApplyManagedOverlay(map[string]any{})["terminal"].(map[string]any)
 	backend, _ := terminal["backend"].(string)
 	return strings.TrimSpace(backend)
-}
-
-// LoadUserEffective is the user config with refs expanded and the managed overlay applied, no defaults merged
-func LoadUserEffective(path string, lookup Lookup) (map[string]any, error) {
-	raw := map[string]any{}
-	if _, err := os.Stat(path); err == nil {
-		doc, err := ReadDocument(path)
-		if err != nil {
-			return nil, err
-		}
-		raw = doc
-	}
-	expanded, _ := Expand(raw, lookup).(map[string]any)
-	if expanded == nil {
-		expanded = map[string]any{}
-	}
-	return Canonicalize(ApplyManagedOverlay(expanded)), nil
 }

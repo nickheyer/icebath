@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"math"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -35,19 +35,21 @@ var (
 	checkLastGood   = map[checkKey]time.Time{}
 	checkEverGood   = map[checkKey]bool{}
 	checkDropWarned = map[checkKey]bool{}
+	checkPins       = map[uintptr]func(*Env) bool{}
 	checkEpoch      int64
-	noCacheChecks   = map[uintptr]bool{}
+	noCacheChecks   = map[uintptr]func(*Env) bool{}
 	checkNow        = time.Now
 )
 
+// Closure identity of a check, distinct per closure value like the Python callable it keys
 func fnPointer(fn func(*Env) bool) uintptr {
-	return reflect.ValueOf(fn).Pointer()
+	return uintptr(*(*unsafe.Pointer)(unsafe.Pointer(&fn)))
 }
 
 // NoCacheCheck marks a config backed availability check as never cached
 func NoCacheCheck(fn func(*Env) bool) func(*Env) bool {
 	checkMu.Lock()
-	noCacheChecks[fnPointer(fn)] = true
+	noCacheChecks[fnPointer(fn)] = fn
 	checkMu.Unlock()
 	return fn
 }
@@ -68,6 +70,7 @@ func InvalidateCheckCache() {
 	checkLastGood = map[checkKey]time.Time{}
 	checkEverGood = map[checkKey]bool{}
 	checkDropWarned = map[checkKey]bool{}
+	checkPins = map[uintptr]func(*Env) bool{}
 }
 
 type verdictWindowKey struct{}
@@ -158,7 +161,7 @@ func runCheckUncached(env *Env, fn func(*Env) bool) (value bool, panicked any) {
 func (r *Registry) checkCached(ctx context.Context, env *Env, fn func(*Env) bool) bool {
 	ptr := fnPointer(fn)
 	checkMu.Lock()
-	uncached := noCacheChecks[ptr]
+	uncached := noCacheChecks[ptr] != nil
 	checkMu.Unlock()
 	if uncached {
 		v, p := runCheckUncached(env, fn)
@@ -191,6 +194,7 @@ func (r *Registry) checkCached(ctx context.Context, env *Env, fn func(*Env) bool
 	checkMu.Lock()
 	defer checkMu.Unlock()
 	pruneCheckCaches(now)
+	checkPins[ptr] = fn
 	if value {
 		checkLastGood[key] = now
 		checkEverGood[key] = true

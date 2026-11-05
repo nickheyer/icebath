@@ -3,15 +3,18 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Longest wait handed to any platform primitive, a year off Windows and the DWORD millisecond cap on it
@@ -69,21 +72,49 @@ func markBackendSuspect(backend any, label string, timeout time.Duration) {
 	if backend == nil {
 		return
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Debug(fmt.Sprintf("deadline mark_suspect failed: %v", r))
+		}
+	}()
 	if sb, ok := backend.(interface{ MarkSuspect(reason string) }); ok {
 		sb.MarkSuspect(fmt.Sprintf("%s timed out after %.1fs", label, timeout.Seconds()))
 	}
 }
 
+// Swapped by tests to observe the all goroutine traceback dump
+var stackDumpWriter io.Writer = os.Stderr
+
 // dumpAllStacks writes every goroutine stack to stderr like a fault handler traceback
-func dumpAllStacks() {
+func dumpAllStacks() error {
 	buf := make([]byte, 1<<20)
 	for {
 		n := runtime.Stack(buf, true)
 		if n < len(buf) {
-			_, _ = os.Stderr.Write(buf[:n])
-			return
+			_, err := stackDumpWriter.Write(buf[:n])
+			return err
 		}
 		buf = make([]byte, len(buf)*2)
+	}
+}
+
+// Warns that an expiry went unprocessed past the grace window and dumps every goroutine stack
+func dumpBlockedLoopDiagnostics(label string, timeout time.Duration) {
+	slog.Warn(fmt.Sprintf("[deadline] %s deadline (%.0fs) expired but the event loop has not processed the expiry after a further %.0fs — the loop thread appears BLOCKED in a synchronous call, which is why no asyncio timeout can fire. Dumping all thread stacks to stderr to identify the blocking frame.", pyrepr.StrRepr(label), timeout.Seconds(), loopBlockedDumpGrace.Seconds()))
+	if err := dumpAllStacks(); err != nil {
+		slog.Debug(fmt.Sprintf("faulthandler traceback dump failed: %v", err))
+	}
+}
+
+// Runs the detached abandonment cleanup and logs its failure or panic at debug level
+func runAbandonCleanup(ctx context.Context, onAbandon func(ctx context.Context) error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Debug(fmt.Sprintf("deadline abandon-cleanup failed: %v", r))
+		}
+	}()
+	if err := onAbandon(ctx); err != nil {
+		slog.Debug(fmt.Sprintf("deadline abandon-cleanup failed: %v", err))
 	}
 }
 
@@ -206,41 +237,52 @@ func ResolveTimeout(cfg config.Tree, key string, def time.Duration, hasDefault b
 	return ClampTimeout(def.Seconds())
 }
 
-// RunBounded runs fn under a wall clock deadline, abandoning it on expiry after marking the backend suspect
+type boundedOutcome struct {
+	value any
+	err   error
+}
+
+// Starts fn on its own goroutine and delivers its value, error or recovered panic on the returned channel
+func startBounded(ctx context.Context, fn func(ctx context.Context) (any, error), label string) <-chan boundedOutcome {
+	done := make(chan boundedOutcome, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				done <- boundedOutcome{err: fmt.Errorf("%s panicked: %v", label, r)}
+			}
+		}()
+		v, err := fn(ctx)
+		done <- boundedOutcome{value: v, err: err}
+	}()
+	return done
+}
+
+// RunBounded runs fn on a worker keeping the caller context values, abandoning the worker uncancelled on expiry
 func RunBounded(ctx context.Context, fn func(ctx context.Context) (any, error), timeout time.Duration, bounded bool, label string, onTimeout func(), backend any) (BoundedResult, error) {
 	start := deadlineNow()
 	if !bounded {
 		v, err := fn(ctx)
 		return BoundedResult{Value: v, Elapsed: deadlineNow().Sub(start), Label: label}, err
 	}
-	type outcome struct {
-		value any
-		err   error
+	done := startBounded(context.WithoutCancel(ctx), fn, label)
+	result := func(o boundedOutcome) (BoundedResult, error) {
+		return BoundedResult{Value: o.value, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, o.err
 	}
-	done := make(chan outcome, 1)
-	workCtx, cancel := context.WithCancel(ctx)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				done <- outcome{err: fmt.Errorf("%s panicked: %v", label, r)}
-			}
-		}()
-		v, err := fn(workCtx)
-		done <- outcome{value: v, err: err}
-	}()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case o := <-done:
-		cancel()
-		return BoundedResult{Value: o.value, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, o.err
+		return result(o)
 	case <-ctx.Done():
-		cancel()
 		return BoundedResult{Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, ctx.Err()
 	case <-timer.C:
 	}
-	cancel()
-	slog.Warn(fmt.Sprintf("[deadline] %q timed out after %.1fs; worker abandoned", label, timeout.Seconds()))
+	select {
+	case o := <-done:
+		return result(o)
+	default:
+	}
+	slog.Warn(fmt.Sprintf("[deadline] %s timed out after %.1fs; worker abandoned", pyrepr.StrRepr(label), timeout.Seconds()))
 	markBackendSuspect(backend, label, timeout)
 	if onTimeout != nil {
 		func() {
@@ -252,15 +294,57 @@ func RunBounded(ctx context.Context, fn func(ctx context.Context) (any, error), 
 			onTimeout()
 		}()
 	}
-	go func() {
-		watchdog := time.NewTimer(loopBlockedDumpGrace)
-		defer watchdog.Stop()
-		select {
-		case <-done:
-		case <-watchdog.C:
-			slog.Warn(fmt.Sprintf("[deadline] %q deadline (%.0fs) expired but the worker has not returned after a further %.0fs — it appears BLOCKED in a synchronous call, which is why no timeout can fire. Dumping all goroutine stacks to stderr to identify the blocking frame.", label, timeout.Seconds(), loopBlockedDumpGrace.Seconds()))
-			dumpAllStacks()
+	return BoundedResult{TimedOut: true, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, nil
+}
+
+// RunBoundedAsync runs fn under a timer driven deadline, cancelling and abandoning it on expiry or caller cancellation
+func RunBoundedAsync(ctx context.Context, fn func(ctx context.Context) (any, error), timeout time.Duration, bounded bool, label string, onAbandon func(ctx context.Context) error, dumpOnBlockedLoop bool, backend any) (BoundedResult, error) {
+	start := deadlineNow()
+	if !bounded {
+		v, err := fn(ctx)
+		return BoundedResult{Value: v, Elapsed: deadlineNow().Sub(start), Label: label}, err
+	}
+	taskCtx, cancelTask := context.WithCancel(ctx)
+	done := startBounded(taskCtx, fn, label)
+	expired := make(chan struct{})
+	var processed atomic.Bool
+	timers := []*time.Timer{time.AfterFunc(timeout, func() { close(expired) })}
+	if dumpOnBlockedLoop {
+		timers = append(timers, time.AfterFunc(timeout+loopBlockedDumpGrace, func() {
+			if !processed.Load() {
+				dumpBlockedLoopDiagnostics(label, timeout)
+			}
+		}))
+	}
+	defer func() {
+		for _, t := range timers {
+			t.Stop()
 		}
+		processed.Store(true)
 	}()
+	result := func(o boundedOutcome) (BoundedResult, error) {
+		cancelTask()
+		return BoundedResult{Value: o.value, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, o.err
+	}
+	select {
+	case o := <-done:
+		return result(o)
+	case <-ctx.Done():
+		cancelTask()
+		return BoundedResult{Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, ctx.Err()
+	case <-expired:
+		processed.Store(true)
+	}
+	select {
+	case o := <-done:
+		return result(o)
+	default:
+	}
+	cancelTask()
+	markBackendSuspect(backend, label, timeout)
+	if onAbandon != nil {
+		go runAbandonCleanup(context.WithoutCancel(ctx), onAbandon)
+	}
+	slog.Warn(fmt.Sprintf("[deadline] %s timed out after %.1fs; task abandoned", pyrepr.StrRepr(label), timeout.Seconds()))
 	return BoundedResult{TimedOut: true, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, nil
 }

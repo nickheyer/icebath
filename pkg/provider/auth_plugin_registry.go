@@ -36,12 +36,7 @@ var (
 func providerRegistry() *homeScopedRegistry {
 	authRegistryOnce.Do(func() {
 		reg := &homeScopedRegistry{rows: map[string]*Profile{}, builtin: map[string]bool{}}
-		rows := registryRows()
-		for _, r := range pluginRows() {
-			if r.name == "moa" {
-				rows = append(rows, r)
-			}
-		}
+		rows := append(registryRows(), moaVirtualRow())
 		for _, r := range rows {
 			p := r.profile()
 			normalizeRegisteredProfile(&p)
@@ -51,6 +46,7 @@ func providerRegistry() *homeScopedRegistry {
 		}
 		reg.syncPending = true
 		authRegistry = reg
+		authRegistryReady.Store(true)
 	})
 	return authRegistry
 }
@@ -415,23 +411,5 @@ func mergedRegistryProfile(ctx context.Context, row *Profile) Profile {
 	out.BaseURL = row.BaseURL
 	out.KeyEnv = row.KeyEnv
 	out.BaseURLEnv = row.BaseURLEnv
-	return out
-}
-
-// Bundled profiles followed by the built in registry rows no bundled plugin declares, config and discovery free
-func bundledAndBuiltinProfiles() []Profile {
-	out := BundledProfiles()
-	seen := map[string]bool{}
-	for _, p := range out {
-		seen[p.Name] = true
-	}
-	reg := providerRegistry()
-	reg.mu.RLock()
-	defer reg.mu.RUnlock()
-	for _, k := range reg.keys {
-		if row := reg.rows[k]; reg.builtin[k] && row.Name == k && !seen[k] {
-			out = append(out, *row)
-		}
-	}
 	return out
 }

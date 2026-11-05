@@ -12,6 +12,10 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ProxySubprocessEnvAllowlist is the infrastructure only environment an iron-proxy child may see
@@ -38,7 +42,7 @@ type Bws struct {
 func (b *Bws) FetchURL(version, target string) (string, error) {
 	triple, ok := rustTriple[target]
 	if !ok {
-		return "", fmt.Errorf("KeyError: %s", pyRepr(target))
+		return "", fmt.Errorf("KeyError: %s", pyrepr.StrRepr(target))
 	}
 	triple = strings.ReplaceAll(triple, "linux-gnu", "linux-musl")
 	platform := triple
@@ -137,7 +141,7 @@ func (s *SignedBinary) Stage(store *Store, staged, version, target string) error
 	}
 	expected := ""
 	found := false
-	for _, line := range pySplitLines(string(trimBOM(data))) {
+	for _, line := range pystr.Splitlines(string(trimBOM(data)), false) {
 		row := strings.Fields(line)
 		if len(row) == 2 && strings.TrimLeft(row[1], "*") == filename {
 			expected, found = row[0], true
@@ -164,8 +168,8 @@ func archiveFilename(archive map[string]any) (string, error) {
 	}
 	rawURL, isString := raw.(string)
 	if !isString {
-		if truthy(raw) {
-			return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'decode'", pyTypeName(raw))
+		if pyrepr.Truthy(raw) {
+			return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'decode'", pyrepr.TypeName(raw))
 		}
 		return "", errors.New("TypeError: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'bytes'")
 	}
@@ -187,7 +191,7 @@ func archiveFilename(archive map[string]any) (string, error) {
 func pyPathName(p string) string {
 	rest, seps := p, "/"
 	if runtime.GOOS == "windows" {
-		_, _, rest = ntSplitRoot(p)
+		_, _, rest = pypath.NtSplitRoot(p)
 		seps = `\/`
 	}
 	parts := strings.FieldsFunc(rest, func(r rune) bool { return strings.ContainsRune(seps, r) })
@@ -278,7 +282,7 @@ func runGPG(gpg string, args []string) (int, error) {
 	cmd := exec.CommandContext(ctx, gpg, args...)
 	_, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
-		return 0, fmt.Errorf("Command '%s' timed out after 60 seconds", pyListRepr(cmd.Args))
+		return 0, fmt.Errorf("Command '%s' timed out after 60 seconds", pyrepr.Repr(cmd.Args))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

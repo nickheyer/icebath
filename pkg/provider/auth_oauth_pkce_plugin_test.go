@@ -165,8 +165,7 @@ func TestPKCEHandlerAddStatusRefreshLogoutAgainstFakeIdP(t *testing.T) {
 	idp.installBrowser(t)
 	out := capturePKCEOut(t)
 	hooks := PKCEProviderProfileHooks(idp.config())
-	RegisterProviderProfileHooks(pkceTestProvider, hooks)
-	t.Cleanup(func() { UnregisterProviderProfileHooks(pkceTestProvider) })
+	registerHookedProfile(t, pkceTestProvider, hooks)
 
 	if ok, err := hooks.AuthHandler("add", nil, pkceTestProvider); !ok || err != nil {
 		t.Fatalf("add %v %v", ok, err)
@@ -279,8 +278,7 @@ func TestPKCESpentRefreshTokenIsGrantDeadAndMarksThePoolRowDead(t *testing.T) {
 	idp.installBrowser(t)
 	capturePKCEOut(t)
 	hooks := PKCEProviderProfileHooks(idp.config())
-	RegisterProviderProfileHooks(pkceTestProvider, hooks)
-	t.Cleanup(func() { UnregisterProviderProfileHooks(pkceTestProvider) })
+	registerHookedProfile(t, pkceTestProvider, hooks)
 	if ok, err := hooks.AuthHandler("add", nil, pkceTestProvider); !ok || err != nil {
 		t.Fatalf("add %v %v", ok, err)
 	}
@@ -343,8 +341,7 @@ func TestPKCEBrokeredRefreshThroughThePool(t *testing.T) {
 	}
 	cfg := NewOAuthPKCEConfig("", "", "")
 	cfg.TokenRequest = broker
-	RegisterProviderProfileHooks(name, PKCEProviderProfileHooks(cfg))
-	t.Cleanup(func() { UnregisterProviderProfileHooks(name) })
+	registerHookedProfile(t, name, PKCEProviderProfileHooks(cfg))
 	writeRow := func(access string, expiresAtMS int64) {
 		writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{name: []any{map[string]any{
 			"id": "abc123", "label": name, "auth_type": "oauth", "priority": 0, "source": PKCEPoolSource,
@@ -374,7 +371,7 @@ func TestPKCEBrokeredRefreshThroughThePool(t *testing.T) {
 	deadCfg.TokenRequest = func(map[string]string) (map[string]any, error) {
 		return nil, &AuthError{Message: "rejected", Provider: name, Code: "invalid_grant", ReloginRequired: true}
 	}
-	RegisterProviderProfileHooks(name, ProviderProfileHooks{RefreshCredential: PKCERefreshCredential(deadCfg)})
+	RegisterProvider(Profile{Name: name, AuthType: AuthTypeOAuthExternal, BaseURL: "https://example.invalid/v1", RefreshCredential: PKCERefreshCredential(deadCfg)})
 	writeRow("ya29.revoked", nowMS+3_600_000)
 	pool := LoadPool(testEnv(t, h), name)
 	pool.Select("")

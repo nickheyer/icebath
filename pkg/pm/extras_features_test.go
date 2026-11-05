@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Checkout carrying the reference pyproject under icebath names, gates reread from it until the test ends
@@ -402,7 +404,7 @@ func TestSVSyncVenvRefusesOutsideFrozenExtras(t *testing.T) {
 	}
 	saved := LatestReceipt(ctx)
 	refusal, _ := saved["refusal"].(map[string]any)
-	if refusal["code"] != "lazy-install" || saved["outcome"] != "failed" || pyStr(saved["exit_code"]) == "0" {
+	if refusal["code"] != "lazy-install" || saved["outcome"] != "failed" || pyrepr.Str(saved["exit_code"]) == "0" {
 		t.Fatalf("receipt %v", saved)
 	}
 	steps, _ := saved["steps"].([]any)
@@ -410,7 +412,7 @@ func TestSVSyncVenvRefusesOutsideFrozenExtras(t *testing.T) {
 		t.Fatalf("receipt without steps %v", saved)
 	}
 	last := steps[len(steps)-1].(map[string]any)
-	detail := pyStr(last["detail"])
+	detail := pyrepr.Str(last["detail"])
 	if last["ok"] != false || !strings.Contains(detail, "slack") || !strings.Contains(detail, "icebath pm install") {
 		t.Fatalf("last step %v", last)
 	}

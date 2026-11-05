@@ -1127,6 +1127,11 @@ func runAnalysis(ctx context.Context, env *Env, kind, source, userPrompt, model 
 	return finish(result)
 }
 
+// VisionAnalyzeTool describes an image with the default auxiliary vision model and returns the JSON result text
+func VisionAnalyzeTool(ctx context.Context, env *Env, imageURL, userPrompt string) string {
+	return visionAnalyzeTool(visionCtx(ctx, env), env, imageURL, userPrompt, "", "", nil)
+}
+
 // Describes an image with the auxiliary vision model, the prompt already formatted by the caller
 func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, model, taskID string, region any) string {
 	source := pyStrOrEmpty(imageURL)

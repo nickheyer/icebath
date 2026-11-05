@@ -9,6 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ---- message content flattening ----
@@ -880,7 +883,7 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 	if toolName == "" {
 		toolName = "?"
 	}
-	stripped := strings.TrimSpace(rawArgs)
+	stripped := pystr.Strip(rawArgs)
 	if stripped == "" {
 		catalogLog.Warn(fmt.Sprintf("Sanitized empty tool_call arguments for %s", toolName))
 		return "{}"
@@ -889,12 +892,13 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 		catalogLog.Warn(fmt.Sprintf("Sanitized Python-None tool_call arguments for %s", toolName))
 		return "{}"
 	}
-	lenient := escapeInvalidCharsInJSONStrings(stripped)
-	if jsonLoadsOK(lenient) {
-		if lenient != stripped {
-			catalogLog.Warn(fmt.Sprintf("Repaired unescaped control chars in tool_call arguments for %s", toolName))
+	if parsed, err := pyjson.LoadsLenient(stripped); err == nil {
+		if reserialised, err := pyjson.Dumps(parsed, pyjson.Separators(",", ":")); err == nil {
+			if reserialised != stripped {
+				catalogLog.Warn(fmt.Sprintf("Repaired unescaped control chars in tool_call arguments for %s", toolName))
+			}
+			return reserialised
 		}
-		return lenient
 	}
 	fixed := trailingCommaRe.ReplaceAllString(stripped, "$1")
 	if balanced, ok := rebalanceJSONClosers(fixed); ok && balanced != "" {

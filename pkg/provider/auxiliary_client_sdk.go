@@ -1,0 +1,834 @@
+package provider
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"math/rand/v2"
+	"net"
+	"net/http"
+	"net/http/httptrace"
+	"net/mail"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+)
+
+// AuxClient is one resolved auxiliary chat client, the OpenAI SDK client or a wire adapter
+type AuxClient interface {
+	BaseURL() string
+	APIKey() string
+	CreateChatCompletion(ctx context.Context, kwargs map[string]any) (any, error)
+	Close() error
+}
+
+// OpenAI SDK defaults for timeout, connect timeout, retries and retry backoff in seconds
+const (
+	auxSDKDefaultTimeout        = 600.0
+	auxSDKDefaultConnectTimeout = 5.0
+	auxSDKDefaultMaxRetries     = 2
+	auxSDKInitialRetryDelay     = 0.5
+	auxSDKMaxRetryDelay         = 8.0
+	auxSDKDefaultBaseURL        = "https://api.openai.com/v1"
+	auxSDKUserAgent             = "icebath-agent"
+)
+
+// Retry sleep seam so tests observe the SDK backoff without waiting
+var auxSDKSleep = func(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Shared default HTTP client of SDK clients built without a keepalive client
+var auxSDKDefaultHTTPClient = sync.OnceValue(func() *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: time.Duration(auxSDKDefaultConnectTimeout * float64(time.Second)), KeepAlive: 30 * time.Second}).DialContext,
+		TLSClientConfig:       PlatformTLSConfig(),
+		TLSHandshakeTimeout:   time.Duration(auxSDKDefaultConnectTimeout * float64(time.Second)),
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   100,
+		MaxConnsPerHost:       1000,
+		IdleConnTimeout:       5 * time.Second,
+		ExpectContinueTimeout: time.Second,
+	}}
+})
+
+// OpenAI SDK chat client of an auxiliary route
+type auxOpenAIClient struct {
+	mu             sync.Mutex
+	apiKey         string
+	apiKeyProvider func() (string, error)
+	baseURL        string
+	customHeaders  map[string]string
+	customQuery    map[string]string
+	timeout        float64
+	hasTimeout     bool
+	maxRetries     int
+	httpClient     *http.Client
+	ownsHTTP       bool
+	initErr        error
+}
+
+// OpenAI SDK client with a static or callable key, the env key and base URL when none is given
+func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxOpenAIClient {
+	c := &auxOpenAIClient{customHeaders: map[string]string{}, customQuery: map[string]string{}, maxRetries: auxSDKDefaultMaxRetries}
+	switch k := apiKey.(type) {
+	case string:
+		c.apiKey = k
+	case func() (string, error):
+		c.apiKeyProvider = k
+	case func() string:
+		c.apiKeyProvider = func() (string, error) { return k(), nil }
+	case nil:
+		env, ok := os.LookupEnv("OPENAI_API_KEY")
+		if !ok {
+			c.initErr = &AuxSDKError{Class: "OpenAIError", Message: "The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable"}
+		}
+		c.apiKey = env
+	default:
+		c.apiKey = fmt.Sprint(k)
+	}
+	if baseURL == "" {
+		baseURL = os.Getenv("OPENAI_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = auxSDKDefaultBaseURL
+	}
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/"
+	}
+	c.baseURL = baseURL
+	for k, v := range opts.DefaultHeaders {
+		c.customHeaders[k] = v
+	}
+	for k, v := range opts.DefaultQuery {
+		c.customQuery[k] = v
+	}
+	if opts.MaxRetries != nil {
+		c.maxRetries = *opts.MaxRetries
+	}
+	switch {
+	case opts.Timeout > 0:
+		c.timeout, c.hasTimeout = opts.Timeout, true
+	case opts.HTTPClient != nil:
+		c.hasTimeout = false
+	default:
+		c.timeout, c.hasTimeout = auxSDKDefaultTimeout, true
+	}
+	c.httpClient = opts.HTTPClient
+	if c.httpClient == nil {
+		c.httpClient = auxSDKDefaultHTTPClient()
+	} else {
+		c.ownsHTTP = true
+	}
+	return c
+}
+
+// Base URL with the trailing slash the SDK enforces
+func (c *auxOpenAIClient) BaseURL() string { return c.baseURL }
+
+// Static key, or the key the callable last minted
+func (c *auxOpenAIClient) APIKey() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.apiKey
+}
+
+// Closes the client's own HTTP client, the shared SDK default client stays open
+func (c *auxOpenAIClient) Close() error {
+	if c.ownsHTTP {
+		closeHTTPClient(c.httpClient)
+	}
+	return nil
+}
+
+// Mints a fresh key from the callable before every request
+func (c *auxOpenAIClient) refreshAPIKey() (string, error) {
+	c.mu.Lock()
+	provider := c.apiKeyProvider
+	c.mu.Unlock()
+	if provider == nil {
+		return c.APIKey(), nil
+	}
+	key, err := provider()
+	if err != nil {
+		return "", err
+	}
+	c.mu.Lock()
+	c.apiKey = key
+	c.mu.Unlock()
+	return key, nil
+}
+
+// One chat completions request split into body, headers, query and timeout
+type auxSDKRequest struct {
+	body       []byte
+	stream     bool
+	headers    map[string]any
+	query      map[string]string
+	timeout    float64
+	hasTimeout bool
+}
+
+func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKRequest, error) {
+	r := &auxSDKRequest{query: map[string]string{}, headers: map[string]any{}, timeout: c.timeout, hasTimeout: c.hasTimeout}
+	body := map[string]any{}
+	for k, v := range kwargs {
+		switch k {
+		case "extra_body", "extra_headers", "extra_query", "timeout":
+		default:
+			body[k] = v
+		}
+	}
+	if extra, ok := kwargs["extra_body"].(map[string]any); ok {
+		for k, v := range extra {
+			body[k] = v
+		}
+	}
+	switch h := kwargs["extra_headers"].(type) {
+	case map[string]any:
+		for k, v := range h {
+			r.headers[k] = v
+		}
+	case map[string]string:
+		for k, v := range h {
+			r.headers[k] = v
+		}
+	}
+	switch q := kwargs["extra_query"].(type) {
+	case map[string]any:
+		for k, v := range q {
+			r.query[k] = pyrepr.Str(v)
+		}
+	case map[string]string:
+		for k, v := range q {
+			r.query[k] = v
+		}
+	}
+	if t, ok := kwargs["timeout"]; ok {
+		switch v := t.(type) {
+		case nil:
+			r.timeout, r.hasTimeout = 0, false
+		case float64:
+			r.timeout, r.hasTimeout = v, true
+		case float32:
+			r.timeout, r.hasTimeout = float64(v), true
+		case int:
+			r.timeout, r.hasTimeout = float64(v), true
+		case int64:
+			r.timeout, r.hasTimeout = float64(v), true
+		case time.Duration:
+			r.timeout, r.hasTimeout = v.Seconds(), true
+		default:
+			return nil, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", pyrepr.Repr(v))
+		}
+	}
+	r.stream, _ = body["stream"].(bool)
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	r.body = raw
+	return r, nil
+}
+
+// Sends one chat completion with SDK retries, a response map or an SSE chunk stream when streaming
+func (c *auxOpenAIClient) CreateChatCompletion(ctx context.Context, kwargs map[string]any) (any, error) {
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
+	req, err := auxSDKBuildRequest(c, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	for retries := 0; ; retries++ {
+		out, retryAfter, retry, err := c.attempt(ctx, req, retries)
+		if !retry || retries >= c.maxRetries {
+			return out, err
+		}
+		if err := auxSDKSleep(ctx, c.retryDelay(retries, retryAfter)); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// Backoff before the next retry, a short server retry-after wins over the jittered exponential delay
+func (c *auxOpenAIClient) retryDelay(retries int, headers http.Header) time.Duration {
+	if after, ok := auxSDKRetryAfter(headers); ok && after > 0 && after <= 60 {
+		return time.Duration(after * float64(time.Second))
+	}
+	sleep := math.Min(auxSDKInitialRetryDelay*math.Pow(2, float64(min(retries, 1000))), auxSDKMaxRetryDelay)
+	return time.Duration(math.Max(sleep*(1-0.25*rand.Float64()), 0) * float64(time.Second))
+}
+
+// Seconds from retry-after-ms, retry-after seconds or an HTTP date, false when absent or unparseable
+func auxSDKRetryAfter(h http.Header) (float64, bool) {
+	if h == nil {
+		return 0, false
+	}
+	if v, err := strconv.ParseFloat(strings.TrimSpace(h.Get("retry-after-ms")), 64); err == nil {
+		return v / 1000, true
+	}
+	raw := h.Get("retry-after")
+	if v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil {
+		return v, true
+	}
+	if t, err := mail.ParseDate(raw); err == nil {
+		return time.Until(t).Seconds(), true
+	}
+	return 0, false
+}
+
+// Whether the SDK retries this status, x-should-retry overriding the status rule
+func auxSDKShouldRetry(resp *http.Response) bool {
+	switch resp.Header.Get("x-should-retry") {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	return resp.StatusCode == 408 || resp.StatusCode == 409 || resp.StatusCode == 429 || resp.StatusCode >= 500
+}
+
+// One HTTP attempt returning the result, the retry headers, whether a retry is allowed and the error
+func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries int) (any, http.Header, bool, error) {
+	key, err := c.refreshAPIKey()
+	if err != nil {
+		return nil, nil, false, err
+	}
+	target, err := url.Parse(c.baseURL + "chat/completions")
+	if err != nil {
+		return nil, nil, false, err
+	}
+	q := target.Query()
+	for k, v := range c.customQuery {
+		q.Set(k, v)
+	}
+	for k, v := range r.query {
+		q.Set(k, v)
+	}
+	target.RawQuery = q.Encode()
+	attemptCtx, cancel := context.WithCancel(ctx)
+	stream := &auxSDKStream{cancel: cancel}
+	attemptCtx = httptrace.WithClientTrace(attemptCtx, &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+		stream.mu.Lock()
+		stream.conn = info.Conn
+		stream.mu.Unlock()
+	}})
+	httpReq, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, target.String(), bytes.NewReader(r.body))
+	if err != nil {
+		cancel()
+		return nil, nil, false, err
+	}
+	c.applyHeaders(httpReq, key, r, retries)
+	idle := newAuxIdleTimer(r.timeout, r.hasTimeout, cancel)
+	resp, err := c.httpClient.Do(httpReq)
+	idle.stop()
+	if err != nil {
+		cancel()
+		if ctx.Err() != nil {
+			return nil, nil, false, ctx.Err()
+		}
+		if idle.fired() {
+			return nil, nil, true, auxSDKTimeoutError(&keepaliveTimeoutError{msg: "timed out"})
+		}
+		if auxIsTimeoutErr(err) {
+			return nil, nil, true, auxSDKTimeoutError(err)
+		}
+		return nil, nil, true, &AuxSDKError{Class: "APIConnectionError", Message: "Connection error.", Err: err}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if retries < c.maxRetries && auxSDKShouldRetry(resp) {
+			_ = resp.Body.Close()
+			cancel()
+			return nil, resp.Header, true, auxSDKStatusError(resp, nil)
+		}
+		data, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		cancel()
+		if readErr != nil {
+			return nil, nil, false, &AuxSDKError{Class: "APIConnectionError", Message: "Connection error.", Err: readErr}
+		}
+		return nil, nil, false, auxSDKStatusError(resp, data)
+	}
+	if r.stream {
+		stream.resp = resp
+		stream.idle = newAuxIdleTimer(r.timeout, r.hasTimeout, func() { _ = resp.Body.Close() })
+		stream.idle.stop()
+		stream.lines = bufio.NewReaderSize(resp.Body, 64*1024)
+		return stream, nil, false, nil
+	}
+	body := &auxIdleReader{r: resp.Body, idle: newAuxIdleTimer(r.timeout, r.hasTimeout, cancel)}
+	data, err := io.ReadAll(body)
+	body.idle.stop()
+	_ = resp.Body.Close()
+	cancel()
+	if err != nil {
+		if body.idle.fired() {
+			return nil, nil, true, auxSDKTimeoutError(&keepaliveTimeoutError{msg: "timed out"})
+		}
+		if auxIsTimeoutErr(err) {
+			return nil, nil, true, auxSDKTimeoutError(err)
+		}
+		return nil, nil, true, &AuxSDKError{Class: "APIConnectionError", Message: "Connection error.", Err: err}
+	}
+	var payload any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return string(data), nil, false, nil
+	}
+	return payload, nil, false, nil
+}
+
+// SDK headers, auth, organization and project, retry count, then client defaults and per request extras
+func (c *auxOpenAIClient) applyHeaders(req *http.Request, key string, r *auxSDKRequest, retries int) {
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", auxSDKUserAgent)
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	if org := os.Getenv("OPENAI_ORG_ID"); org != "" {
+		req.Header.Set("OpenAI-Organization", org)
+	}
+	if project := os.Getenv("OPENAI_PROJECT_ID"); project != "" {
+		req.Header.Set("OpenAI-Project", project)
+	}
+	for k, v := range c.customHeaders {
+		req.Header.Set(k, v)
+	}
+	for k, v := range r.headers {
+		if v == nil {
+			req.Header.Del(k)
+			continue
+		}
+		req.Header.Set(k, pyrepr.Str(v))
+	}
+	if req.Header.Get("X-Stainless-Retry-Count") == "" {
+		req.Header.Set("X-Stainless-Retry-Count", strconv.Itoa(retries))
+	}
+}
+
+// SDK status error with the Error code message, the error object body and the status class
+func auxSDKStatusError(resp *http.Response, data []byte) *AuxSDKError {
+	e := &AuxSDKError{StatusCode: resp.StatusCode, Headers: resp.Header.Clone(), Class: auxSDKStatusClass(resp.StatusCode)}
+	if data == nil {
+		e.Message = fmt.Sprintf("Error code: %d", resp.StatusCode)
+		return e
+	}
+	text := strings.TrimSpace(pystr.DecodeUTF8Replace(data))
+	var body any = text
+	parsed, err := pyjson.Loads(text)
+	if err == nil {
+		body = parsed
+		e.Message = fmt.Sprintf("Error code: %d - %s", resp.StatusCode, pyrepr.Str(parsed))
+	} else if text != "" {
+		e.Message = text
+	} else {
+		e.Message = fmt.Sprintf("Error code: %d", resp.StatusCode)
+	}
+	plain := auxSDKPlain(body)
+	if m, ok := plain.(map[string]any); ok {
+		if inner, has := m["error"]; has {
+			plain = inner
+		}
+	}
+	e.Body = plain
+	if m, ok := plain.(map[string]any); ok {
+		if v := m["code"]; v != nil {
+			e.Code = pyrepr.Str(v)
+		}
+		if v := m["type"]; v != nil {
+			e.Type = pyrepr.Str(v)
+		}
+	}
+	return e
+}
+
+// Plain Go maps and slices for a pyjson value
+func auxSDKPlain(v any) any {
+	if _, ok := v.(string); ok {
+		return v
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out any
+	if json.Unmarshal(raw, &out) != nil {
+		return v
+	}
+	return out
+}
+
+// SDK error class of an HTTP status
+func auxSDKStatusClass(status int) string {
+	switch {
+	case status == 400:
+		return "BadRequestError"
+	case status == 401:
+		return "AuthenticationError"
+	case status == 403:
+		return "PermissionDeniedError"
+	case status == 404:
+		return "NotFoundError"
+	case status == 409:
+		return "ConflictError"
+	case status == 422:
+		return "UnprocessableEntityError"
+	case status == 429:
+		return "RateLimitError"
+	case status >= 500:
+		return "InternalServerError"
+	}
+	return "APIStatusError"
+}
+
+// SDK APITimeoutError raised from a transport timeout
+func auxSDKTimeoutError(cause error) *AuxSDKError {
+	return &AuxSDKError{Class: "APITimeoutError", Message: "Request timed out.", Err: cause}
+}
+
+func auxIsTimeoutErr(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
+// Read inactivity timer that runs its action once the timeout passes without progress
+type auxIdleTimer struct {
+	mu      sync.Mutex
+	t       *time.Timer
+	d       time.Duration
+	didFire bool
+}
+
+func newAuxIdleTimer(seconds float64, enabled bool, action func()) *auxIdleTimer {
+	it := &auxIdleTimer{}
+	if !enabled {
+		return it
+	}
+	it.d = time.Duration(seconds * float64(time.Second))
+	it.t = time.AfterFunc(it.d, func() {
+		it.mu.Lock()
+		it.didFire = true
+		it.mu.Unlock()
+		action()
+	})
+	return it
+}
+
+func (it *auxIdleTimer) reset() {
+	if it.t != nil {
+		it.t.Reset(it.d)
+	}
+}
+
+func (it *auxIdleTimer) stop() {
+	if it.t != nil {
+		it.t.Stop()
+	}
+}
+
+func (it *auxIdleTimer) fired() bool {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	return it.didFire
+}
+
+// Body reader that re-arms the read timeout after every successful read
+type auxIdleReader struct {
+	r    io.Reader
+	idle *auxIdleTimer
+}
+
+func (r *auxIdleReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if n > 0 {
+		r.idle.reset()
+	}
+	return n, err
+}
+
+// One server sent event as the SDK decoder emits it
+type auxSSEEvent struct {
+	event string
+	data  string
+}
+
+// SDK chunk stream over an SSE body, io.EOF after [DONE] or the end of the body
+type auxSDKStream struct {
+	mu        sync.Mutex
+	resp      *http.Response
+	lines     *bufio.Reader
+	idle      *auxIdleTimer
+	cancel    context.CancelFunc
+	conn      net.Conn
+	released  bool
+	onRelease func()
+	eventName string
+	hasEvent  bool
+	data      []string
+	hasID     bool
+	retry     bool
+	pending   []string
+}
+
+// Next SSE event per the SDK decoder, an unterminated trailing event is dropped
+func (s *auxSDKStream) nextEvent() (*auxSSEEvent, error) {
+	for {
+		if len(s.pending) == 0 {
+			chunk, err := s.readChunk()
+			if err != nil {
+				return nil, err
+			}
+			s.pending = auxSplitLines(chunk)
+			continue
+		}
+		line := s.pending[0]
+		s.pending = s.pending[1:]
+		if ev := s.decode(line); ev != nil {
+			return ev, nil
+		}
+	}
+}
+
+// Reads up to and including the next blank line boundary, the trailing partial chunk at EOF
+func (s *auxSDKStream) readChunk() (string, error) {
+	var b strings.Builder
+	for {
+		s.idle.reset()
+		line, err := s.lines.ReadString('\n')
+		s.idle.stop()
+		b.WriteString(line)
+		if err != nil {
+			if b.Len() > 0 {
+				return b.String(), nil
+			}
+			return "", err
+		}
+		if trimmed := strings.TrimRight(line, "\r\n"); trimmed == "" {
+			return b.String(), nil
+		}
+	}
+}
+
+// Python str splitlines over one chunk, an empty string at each blank separator line
+func auxSplitLines(chunk string) []string {
+	var out []string
+	for len(chunk) > 0 {
+		i := strings.IndexAny(chunk, "\r\n")
+		if i < 0 {
+			out = append(out, chunk)
+			break
+		}
+		out = append(out, chunk[:i])
+		if chunk[i] == '\r' && i+1 < len(chunk) && chunk[i+1] == '\n' {
+			chunk = chunk[i+2:]
+		} else {
+			chunk = chunk[i+1:]
+		}
+	}
+	return out
+}
+
+// Feeds one line to the SDK decoder state, an event at each blank line that closes a non empty event
+func (s *auxSDKStream) decode(line string) *auxSSEEvent {
+	if line == "" {
+		if !s.hasEvent && len(s.data) == 0 && !s.hasID && !s.retry {
+			return nil
+		}
+		ev := &auxSSEEvent{event: s.eventName, data: strings.Join(s.data, "\n")}
+		s.eventName, s.hasEvent, s.data, s.retry = "", false, nil, false
+		return ev
+	}
+	if strings.HasPrefix(line, ":") {
+		return nil
+	}
+	field, value, _ := strings.Cut(line, ":")
+	value = strings.TrimPrefix(value, " ")
+	switch field {
+	case "event":
+		s.eventName, s.hasEvent = value, true
+	case "data":
+		s.data = append(s.data, value)
+	case "id":
+		if !strings.Contains(value, "\x00") {
+			s.hasID = true
+		}
+	case "retry":
+		if _, err := strconv.Atoi(value); err == nil {
+			s.retry = true
+		}
+	}
+	return nil
+}
+
+// Next chunk map, io.EOF after [DONE] or the body end, a streamed error object raised as APIError
+func (s *auxSDKStream) Next(ctx context.Context) (map[string]any, error) {
+	s.mu.Lock()
+	released := s.released
+	s.mu.Unlock()
+	if released {
+		return nil, io.EOF
+	}
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			s.finish()
+			return nil, err
+		}
+		stop := context.AfterFunc(ctx, func() { _ = s.resp.Body.Close() })
+		defer stop()
+	}
+	for {
+		ev, err := s.nextEvent()
+		if err != nil {
+			s.finish()
+			if ctx != nil && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if errors.Is(err, io.EOF) {
+				return nil, io.EOF
+			}
+			if s.idle.fired() {
+				return nil, &AuxTransportError{Class: "ReadTimeout", Message: "timed out", Err: &keepaliveTimeoutError{msg: "timed out"}}
+			}
+			return nil, &AuxTransportError{Class: "RemoteProtocolError", Message: err.Error(), Err: err}
+		}
+		if strings.HasPrefix(ev.data, "[DONE]") {
+			s.finish()
+			return nil, io.EOF
+		}
+		var data any
+		if err := json.Unmarshal([]byte(ev.data), &data); err != nil {
+			s.finish()
+			return nil, &AuxTransportError{Class: "JSONDecodeError", Message: err.Error(), Err: err}
+		}
+		m, isMap := data.(map[string]any)
+		if strings.HasPrefix(ev.event, "thread.") {
+			return map[string]any{"data": data, "event": ev.event}, nil
+		}
+		if isMap && pyrepr.Truthy(m["error"]) {
+			s.finish()
+			return nil, auxSDKStreamErrorEvent(m["error"])
+		}
+		return m, nil
+	}
+}
+
+// SDK APIError for an error object streamed in place of a chunk
+func auxSDKStreamErrorEvent(errObj any) *AuxSDKError {
+	e := &AuxSDKError{Class: "APIError", Body: errObj}
+	if m, ok := errObj.(map[string]any); ok {
+		if msg, ok := m["message"].(string); ok && msg != "" {
+			e.Message = msg
+		}
+		if v := m["code"]; v != nil {
+			e.Code = pyrepr.Str(v)
+		}
+		if v := m["type"]; v != nil {
+			e.Type = pyrepr.Str(v)
+		}
+	}
+	if e.Message == "" {
+		e.Message = "An error occurred during streaming"
+	}
+	return e
+}
+
+// Closes the response once, running the pin release first so a late watchdog never cuts a pooled connection
+func (s *auxSDKStream) finish() {
+	s.mu.Lock()
+	if s.released {
+		s.mu.Unlock()
+		return
+	}
+	s.released = true
+	release := s.onRelease
+	s.mu.Unlock()
+	if release != nil {
+		release()
+	}
+	s.idle.stop()
+	_ = s.resp.Body.Close()
+	s.cancel()
+}
+
+func (s *auxSDKStream) Close() error {
+	s.finish()
+	return nil
+}
+
+// Pins this attempt's connection and returns its shutdown, a no op once the stream has released it
+func (s *auxSDKStream) auxPinAttempt(onRelease func()) func() {
+	s.mu.Lock()
+	s.onRelease = onRelease
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		conn, released := s.conn, s.released
+		s.mu.Unlock()
+		if !released && conn != nil {
+			auxShutdownConn(conn)
+		}
+	}
+}
+
+// Raw connection of the attempt while the stream still holds it, nil once released
+func (s *auxSDKStream) auxAttemptConn() net.Conn {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.released {
+		return nil
+	}
+	return s.conn
+}
+
+// Shuts both directions of the raw TCP socket under any TLS or pool wrapper, closing other connections
+func auxShutdownConn(conn net.Conn) {
+	for {
+		switch c := conn.(type) {
+		case *tls.Conn:
+			conn = c.NetConn()
+			continue
+		case interface{ NetConn() net.Conn }:
+			conn = c.NetConn()
+			continue
+		case *net.TCPConn:
+			_ = c.CloseRead()
+			_ = c.CloseWrite()
+			return
+		}
+		_ = conn.Close()
+		return
+	}
+}
+
+// AuxTransportError is an httpx transport failure raised while a streamed response is consumed
+type AuxTransportError struct {
+	Class   string
+	Message string
+	Err     error
+}
+
+func (e *AuxTransportError) Error() string { return e.Message }
+func (e *AuxTransportError) Unwrap() error { return e.Err }
+func (e *AuxTransportError) Timeout() bool { return strings.HasSuffix(e.Class, "Timeout") }

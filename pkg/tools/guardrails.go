@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -40,7 +43,7 @@ const GuardrailRefusalKey = "guardrail_refusal"
 
 // Parses JSON returning nil on any error the way utils.safe_json_loads does
 func safeJSONLoads(text string) any {
-	v, err := jsonDecodeWTF8([]byte(text))
+	v, err := pyjson.DecodeWTF8([]byte(text))
 	if err != nil {
 		return nil
 	}
@@ -459,7 +462,7 @@ func (d ToolGuardrailDecision) ToMetadata() map[string]any {
 
 // Sorted compact JSON of any value with unencodable values rendered as strings
 func canonicalJSON(value any) string {
-	b, err := jsonEncodeWTF8(canonicalizable(value))
+	b, err := pyjson.EncodeWTF8(canonicalizable(value))
 	if err != nil {
 		return fmt.Sprint(value)
 	}
@@ -483,8 +486,8 @@ func canonicalizable(v any) any {
 	case nil, bool, string, float64, float32, int, int64, int32, json.Number:
 		return v
 	default:
-		if b, err := jsonEncodeWTF8(v); err == nil {
-			if round, err := jsonDecodeWTF8(b); err == nil {
+		if b, err := pyjson.EncodeWTF8(v); err == nil {
+			if round, err := pyjson.DecodeWTF8(b); err == nil {
 				return round
 			}
 		}
@@ -1070,33 +1073,26 @@ func guardSHA256(value string) string {
 
 // ---- Tool call id helpers and local batch expansion ----
 
-// CoalesceToolCallID returns the pairing half of a possibly composite call id
-func CoalesceToolCallID(id string) string {
-	value := strings.TrimSpace(id)
-	if value == "" {
-		return ""
-	}
-	if half := strings.TrimSpace(strings.SplitN(value, "|", 2)[0]); half != "" {
-		return half
-	}
-	return value
-}
-
 // DeterministicCallID is the stable fallback id when the API omits one
 func DeterministicCallID(fnName, arguments string, index int) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", fnName, arguments, index)))
 	return "call_" + hex.EncodeToString(sum[:])[:12]
 }
 
-// UniquifyToolCallIDs renames duplicate ids within one turn with a deterministic _d suffix
+// UniquifyToolCallIDs renames duplicate ids within one turn with a deterministic _d suffix, keeping call_id in step
 func UniquifyToolCallIDs(toolCalls []state.ToolCall, taken map[string]bool) []state.ToolCall {
 	seen := map[string]bool{}
 	for k := range taken {
 		seen[k] = true
 	}
 	for i := range toolCalls {
-		raw := strings.TrimSpace(toolCalls[i].ID)
-		cid := strings.SplitN(raw, "|", 2)[0]
+		tc := &toolCalls[i]
+		raw := state.ToolCallField(tc, "call_id")
+		if !pyrepr.Truthy(raw) {
+			raw = state.ToolCallField(tc, "id")
+		}
+		text, _ := raw.(string)
+		cid, _, _ := strings.Cut(pystr.Strip(text), "|")
 		if cid == "" {
 			continue
 		}
@@ -1105,21 +1101,26 @@ func UniquifyToolCallIDs(toolCalls []state.ToolCall, taken map[string]bool) []st
 			continue
 		}
 		newID := ""
-		for n := 2; n <= len(seen)+3; n++ {
-			candidate := fmt.Sprintf("%s_d%d", cid, n)
-			if !seen[candidate] {
+		for n := 2; n < len(seen)+3; n++ {
+			if candidate := fmt.Sprintf("%s_d%d", cid, n); !seen[candidate] {
 				newID = candidate
 				break
 			}
 		}
 		seen[newID] = true
-		if strings.Contains(raw, "|") {
-			toolCalls[i].ID = newID + "|" + strings.SplitN(raw, "|", 2)[1]
+		if _, item, ok := strings.Cut(tc.ID, "|"); ok {
+			tc.ID = newID + "|" + item
 		} else {
-			toolCalls[i].ID = newID
+			tc.ID = newID
 		}
-		slog.Warn("Model reused tool call id; renamed the duplicate to keep call/result pairing lossless",
-			"id", cid, "new_id", newID, "tool", toolCalls[i].Function.Name)
+		if pyrepr.Truthy(state.ToolCallField(tc, "call_id")) {
+			_ = state.ToolCallSet(tc, "call_id", newID)
+		}
+		fnName := tc.Function.Name
+		if fnName == "" {
+			fnName = "?"
+		}
+		slog.Warn(fmt.Sprintf("Model reused tool call id %s; renamed the duplicate to %s (tool=%s) to keep call/result pairing lossless.", cid, newID, fnName))
 	}
 	return toolCalls
 }
@@ -1136,7 +1137,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 			expanded = append(expanded, call)
 			continue
 		}
-		decoded, parseErr := jsonDecodeWTF8([]byte(call.Function.Arguments))
+		decoded, parseErr := pyjson.DecodeWTF8([]byte(call.Function.Arguments))
 		args, _ := decoded.(map[string]any)
 		var entries []ToolCallEntry
 		errText := ""
@@ -1156,7 +1157,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 			expanded = append(expanded, call)
 			continue
 		}
-		parentID := CoalesceToolCallID(call.ID)
+		parentID := state.CoalesceToolCallID(call)
 		var children []state.ToolCall
 		for index, entry := range entries {
 			arguments := jsonCompact(map[string]any{"calls": []any{map[string]any{"name": entry.Name, "arguments": entry.Arguments}}})
@@ -1194,7 +1195,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 }
 
 func decodedArguments(call state.ToolCall) any {
-	v, err := jsonDecodeWTF8([]byte(call.Function.Arguments))
+	v, err := pyjson.DecodeWTF8([]byte(call.Function.Arguments))
 	if err != nil {
 		return map[string]any{}
 	}
@@ -1220,7 +1221,7 @@ func anthropicBatchChildren(block any, replacements map[string][]state.ToolCall)
 		for k, v := range m {
 			nb[k] = v
 		}
-		nb["id"] = CoalesceToolCallID(child.ID)
+		nb["id"] = state.CoalesceToolCallID(child)
 		nb["input"] = decodedArguments(child)
 		out = append(out, nb)
 	}
@@ -1251,7 +1252,7 @@ func bedrockBatchChildren(block any, replacements map[string][]state.ToolCall) [
 		for k, v := range tool {
 			nt[k] = v
 		}
-		nt["toolUseId"] = CoalesceToolCallID(child.ID)
+		nt["toolUseId"] = state.CoalesceToolCallID(child)
 		nt["input"] = decodedArguments(child)
 		nb["toolUse"] = nt
 		out = append(out, nb)
@@ -1398,7 +1399,7 @@ func batchAdmission(ctx context.Context, env *Env, call state.ToolCall, executio
 	if NeverParallelTools[toolName] {
 		return nil
 	}
-	parsed, err := jsonDecodeWTF8([]byte(call.Function.Arguments))
+	parsed, err := pyjson.DecodeWTF8([]byte(call.Function.Arguments))
 	if err != nil {
 		raw := call.Function.Arguments
 		if len(raw) > 200 {
@@ -1666,7 +1667,7 @@ func MultimodalTextSummary(value any) string {
 		}
 		return "[multimodal tool result]"
 	}
-	b, err := jsonEncodeWTF8(canonicalizable(value))
+	b, err := pyjson.EncodeWTF8(canonicalizable(value))
 	if err != nil {
 		return fmt.Sprint(value)
 	}
@@ -2088,7 +2089,7 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 			continue
 		}
 		for _, tc := range msg.ToolCalls {
-			if id := CoalesceToolCallID(tc.ID); id != "" {
+			if id := state.CoalesceToolCallID(tc); id != "" {
 				taken[id] = true
 			}
 		}
@@ -2158,7 +2159,7 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 			toolCalls[i].Function.Arguments = "{}"
 			continue
 		}
-		if _, err := jsonDecodeWTF8([]byte(args)); err != nil {
+		if _, err := pyjson.DecodeWTF8([]byte(args)); err != nil {
 			if !(mixed && !validNames[toolCalls[i].Function.Name]) {
 				invalidJSON = append(invalidJSON, badArgs{toolCalls[i].Function.Name, err.Error()})
 			}
@@ -2220,29 +2221,36 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 
 var providerToolIDPrefixes = []string{"chatcmpl-tool-"}
 
-// NormalizeProviderToolCallIDs rewrites known provider ids a parallel batch replay would reject
+// NormalizeProviderToolCallIDs rewrites known provider ids a parallel batch replay would reject, id and call_id alike
 func NormalizeProviderToolCallIDs(toolCalls []state.ToolCall) []state.ToolCall {
 	if len(toolCalls) < 2 {
 		return toolCalls
 	}
 	for _, tc := range toolCalls {
-		if !hasProviderToolIDPrefix(CoalesceToolCallID(tc.ID)) {
+		if !hasProviderToolIDPrefix(state.CoalesceToolCallID(tc)) {
 			return toolCalls
 		}
 	}
 	slog.Warn("Normalized provider-minted parallel tool-call ids for replay compatibility")
 	for i := range toolCalls {
-		primary, item, hasItem := strings.Cut(strings.TrimSpace(toolCalls[i].ID), "|")
-		primary = strings.TrimSpace(primary)
-		if !hasProviderToolIDPrefix(primary) {
-			continue
+		tc := &toolCalls[i]
+		for _, key := range []string{"id", "call_id"} {
+			value, ok := state.ToolCallField(tc, key).(string)
+			if !ok {
+				continue
+			}
+			primary, item, hasItem := strings.Cut(pystr.Strip(value), "|")
+			primary = pystr.Strip(primary)
+			if !hasProviderToolIDPrefix(primary) {
+				continue
+			}
+			sum := sha256.Sum256([]byte(primary))
+			rewritten := "call_" + hex.EncodeToString(sum[:])[:12]
+			if hasItem {
+				rewritten += "|" + item
+			}
+			_ = state.ToolCallSet(tc, key, rewritten)
 		}
-		sum := sha256.Sum256([]byte(primary))
-		rewritten := "call_" + hex.EncodeToString(sum[:])[:12]
-		if hasItem {
-			rewritten += "|" + item
-		}
-		toolCalls[i].ID = rewritten
 	}
 	return toolCalls
 }

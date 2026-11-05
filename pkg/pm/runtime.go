@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,7 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // PMRuntimeImports is the probe statement proving a PM runtime generation imports its own dependencies
@@ -133,8 +135,8 @@ func FindResidentRuntime() (*ResidentRuntime, error) {
 	if !ok || !okPython || !okSite {
 		return nil, invalid
 	}
-	python := resolvePath(pyJoin(runtimeDir, pythonRel))
-	site := resolvePath(pyJoin(runtimeDir, siteRel))
+	python := resolvePath(pypath.Join(runtimeDir, pythonRel))
+	site := resolvePath(pypath.Join(runtimeDir, siteRel))
 	siteInfo, siteErr := os.Stat(site)
 	if !isRegularFile(python) || siteErr != nil || !siteInfo.IsDir() ||
 		(payload != "" && (!isRelativeTo(python, payload) || !isRelativeTo(site, runtimeDir))) {
@@ -153,7 +155,7 @@ var validateRuntime = func(ctx context.Context, python, imports string, env map[
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("Command '%s' timed out after 30 seconds", pyListRepr(cmd.Args))
+		return fmt.Sprintf("Command '%s' timed out after 30 seconds", pyrepr.Repr(cmd.Args))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -231,7 +233,7 @@ func PrepareRuntime(ctx context.Context, uv, python, root string, opts RuntimeOp
 		}
 		m, ok := v.(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v))
+			return "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
 		}
 		fact = m
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -281,33 +283,9 @@ func generationPath(root string, value any) (string, error) {
 		if runtime.GOOS == "windows" {
 			kind = "WindowsPath"
 		}
-		return "", fmt.Errorf("unsupported operand type(s) for /: '%s' and '%s'", kind, pyTypeName(value))
+		return "", fmt.Errorf("unsupported operand type(s) for /: '%s' and '%s'", kind, pyrepr.TypeName(value))
 	}
-	return filepath.Clean(pyJoin(root, generation)), nil
-}
-
-// Python type name of a decoded JSON value
-func pyTypeName(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case json.Number:
-		if strings.ContainsAny(t.String(), ".eE") {
-			return "float"
-		}
-		return "int"
-	case float64:
-		return "float"
-	case []any:
-		return "list"
-	case map[string]any:
-		return "dict"
-	}
-	return fmt.Sprintf("%T", v)
+	return filepath.Clean(pypath.Join(root, generation)), nil
 }
 
 // Stages a generation at its final path then writes its marker and the selection record
@@ -374,7 +352,7 @@ func CollectRuntimeGenerations(root string) ([]string, error) {
 		}
 		m, ok := v.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v))
+			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
 		}
 		if g, has := m["generation"]; has {
 			selectedValue = g

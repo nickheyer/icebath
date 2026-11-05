@@ -14,10 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	sqlite "modernc.org/sqlite"
-	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
@@ -52,6 +50,8 @@ type DB struct {
 	writes   int
 	closed   bool
 	closeMu  sync.Mutex
+	// Opened through Acquire, so Close releases one registry reference instead of closing
+	sharedRegistryOwned atomic.Bool
 }
 
 // Error of a write that stayed locked past its patience
@@ -68,13 +68,7 @@ func (e *LockedError) Unwrap() error { return e.Err }
 
 // Reports whether an error is SQLite lock contention
 func isLockError(err error) bool {
-	var se *sqlite.Error
-	if errors.As(err, &se) {
-		code := se.Code() & 0xff
-		return code == sqlite3.SQLITE_BUSY || code == sqlite3.SQLITE_LOCKED
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "database table is locked")
+	return IsSQLiteLockError(err) || isNoMoreRows(err)
 }
 
 // Opens the session database of a home, creating and migrating it unless read only
@@ -129,6 +123,7 @@ func Open(path string, opts Options) (*DB, error) {
 			}
 		}
 	}
+	registerTestInstance(d)
 	return d, nil
 }
 
@@ -140,8 +135,12 @@ func OpenHome(h string, opts Options) (*DB, error) {
 // Path of the database file
 func (d *DB) Path() string { return d.path }
 
-// Closes the database after a passive checkpoint
+// Closes the database after a passive checkpoint, or releases one reference of a registry shared handle
 func (d *DB) Close() error {
+	if d.sharedRegistryOwned.Load() {
+		Release(d)
+		return nil
+	}
 	d.closeMu.Lock()
 	defer d.closeMu.Unlock()
 	if d.closed {
@@ -173,7 +172,7 @@ func (d *DB) initSchema() error {
 		err := tx.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
-			if _, err := tx.Exec("INSERT INTO schema_version (version) VALUES (?)", SchemaVersion); err != nil {
+			if _, err := tx.Exec("INSERT INTO schema_version (version) VALUES (?)", goSchemaVersion); err != nil {
 				return err
 			}
 			if _, err := tx.Exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')"); err != nil {
@@ -181,8 +180,8 @@ func (d *DB) initSchema() error {
 			}
 		case err != nil:
 			return err
-		case version < SchemaVersion:
-			if _, err := tx.Exec("UPDATE schema_version SET version = ?", SchemaVersion); err != nil {
+		case version < goSchemaVersion:
+			if _, err := tx.Exec("UPDATE schema_version SET version = ?", goSchemaVersion); err != nil {
 				return err
 			}
 		}
@@ -372,7 +371,7 @@ func NewUID() string {
 
 // Session identifier carrying its creation stamp
 func NewSessionID() string {
-	return time.Now().Format("20060102_150405") + "_" + NewUID()[:8]
+	return NewSessionIDAt(time.Time{}, DefaultHexLen)
 }
 
 // SHA-256 hex of a prompt
@@ -384,14 +383,6 @@ func promptHash(prompt string) string {
 // Unix seconds as a float with sub second precision
 func now() float64 {
 	return float64(time.Now().UnixNano()) / 1e9
-}
-
-// Placeholders for n bound parameters
-func placeholders(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
 
 // Values of a string list as bound parameters
@@ -430,7 +421,7 @@ func (d *DB) SetMeta(key, value string) error {
 func (d *DB) ListMetaPrefix(prefix string) (map[string]string, error) {
 	out := map[string]string{}
 	err := d.read(func(q querier) error {
-		rows, err := q.Query("SELECT key, value FROM state_meta WHERE key LIKE ? ESCAPE '\\' ORDER BY key", escapeLike(prefix)+"%")
+		rows, err := q.Query("SELECT key, value FROM state_meta WHERE key LIKE ? ESCAPE '\\' ORDER BY key", EscapeLike(prefix)+"%")
 		if err != nil {
 			return err
 		}
@@ -446,11 +437,4 @@ func (d *DB) ListMetaPrefix(prefix string) (map[string]string, error) {
 		return rows.Err()
 	})
 	return out, err
-}
-
-// Text with LIKE wildcards escaped for an ESCAPE backslash clause
-func escapeLike(text string) string {
-	text = strings.ReplaceAll(text, `\`, `\\`)
-	text = strings.ReplaceAll(text, "%", `\%`)
-	return strings.ReplaceAll(text, "_", `\_`)
 }

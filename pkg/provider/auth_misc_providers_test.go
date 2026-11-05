@@ -142,13 +142,12 @@ func TestPluginOAuthPoolEntryExpiry(t *testing.T) {
 }
 
 func TestPluginOAuthDispatchOffersTheAuthHandler(t *testing.T) {
-	RegisterProviderProfileHooks("plugtest", ProviderProfileHooks{AuthHandler: func(action string, args []string, provider string) (bool, error) {
+	registerHookedProfile(t, "plugtest", ProviderProfileHooks{AuthHandler: func(action string, args []string, provider string) (bool, error) {
 		if action == "add" {
 			return true, nil
 		}
 		return false, os.ErrPermission
 	}})
-	t.Cleanup(func() { UnregisterProviderProfileHooks("plugtest") })
 	if owned, err := dispatchPluginAuth("add", nil, "plugtest"); !owned || err != nil {
 		t.Fatal(owned, err)
 	}

@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -36,7 +38,7 @@ func pyJSONDumpsASCII(s string) string {
 		b.WriteByte(digits[u&0xf])
 	}
 	for i := 0; i < len(s); {
-		r, size := wtf8DecodeRune(s[i:])
+		r, size := pystr.DecodeRune(s[i:])
 		i += size
 		switch {
 		case r == '"':
@@ -257,7 +259,7 @@ func (s *shellFileOps) utf16PageShell(path string, offset, limit int) (string, i
 	if i := strings.Index(payload, "\n"); i >= 0 {
 		payload = payload[:i]
 	}
-	decoded, err := jsonDecodeWTF8([]byte(payload))
+	decoded, err := pyjson.DecodeWTF8([]byte(payload))
 	data, _ := decoded.(map[string]any)
 	if err != nil {
 		return "", 0, "", false
@@ -767,7 +769,7 @@ func (s *shellFileOps) ReadFileRaw(path string) *ReadResult {
 	if failed != nil {
 		return &ReadResult{Error: "Failed to read file: " + failed.Stdout}
 	}
-	raw, _ := stripBOM(surrogateEscapeDecode(data))
+	raw, _ := stripBOM(pystr.SurrogateEscapeDecode(data))
 	sum := sha256.Sum256(data)
 	return &ReadResult{Content: raw, FileSize: fileSize, ContentSha256: shaRef(hexString(sum[:]))}
 }

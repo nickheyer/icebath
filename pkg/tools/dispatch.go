@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Tools the agent loop intercepts because they need live agent state
@@ -68,7 +70,7 @@ func boundJSONErrorResult(result string) string {
 	if len(result) <= maxToolErrorChars || !strings.Contains(result, `"error"`) {
 		return result
 	}
-	decoded, err := jsonDecodeWTF8([]byte(result))
+	decoded, err := pyjson.DecodeWTF8([]byte(result))
 	payload, _ := decoded.(map[string]any)
 	if err != nil || payload == nil {
 		return result
@@ -495,6 +497,11 @@ func normalizeHandlerResult(result string) string {
 
 // RegistryDispatch runs a registered handler with every panic returned as a JSON error
 func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result string) {
+	if scoped := EnvInTerminalScope(ctx, call.Env); scoped != call.Env {
+		bound := *call
+		bound.Env = scoped
+		call = &bound
+	}
 	entry := d.Registry.Entry(ctx, call.Env, call.Name)
 	if entry == nil {
 		return toolErrorJSON("Unknown tool: "+call.Name, nil)

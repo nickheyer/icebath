@@ -18,6 +18,8 @@ import (
 	"time"
 	"unicode/utf8"
 	"weak"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // fileOperations is the file backend every terminal environment exposes to the file tools
@@ -399,7 +401,7 @@ func (s *shellFileOps) addLineNumbers(content string, startLine int) string {
 }
 
 // Python len of the str s models, a surrogate or stray byte counting as one character
-func pyLen(s string) int { return wtf8RuneCount(s) }
+func pyLen(s string) int { return pystr.Len(s) }
 
 var tildeUserRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
@@ -462,7 +464,7 @@ func (s *shellFileOps) escapeNativeToolArg(arg string) string {
 // Atomic write through a same directory temp and rename, natively on a local POSIX host
 func (s *shellFileOps) atomicWrite(path, content string) *ExecuteResult {
 	if s.nativeReadEnabled() {
-		data, err := surrogateEscapeEncode(content)
+		data, err := pystr.SurrogateEscapeEncode(content)
 		if err != nil {
 			panic(err)
 		}

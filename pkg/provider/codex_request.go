@@ -1,8 +1,10 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
@@ -74,6 +76,7 @@ var legacyAliasFallback = func() map[string]string {
 
 // Parameters of one Responses request build
 type codexParams struct {
+	ctx                      context.Context
 	instructions             string
 	reasoning                reasoningCfg
 	sessionID                string
@@ -239,7 +242,7 @@ func resolveReasoning(model string, p codexParams) (string, bool) {
 		var declared []string
 		declaredOK := false
 		if !(p.isCodexBackend || isOpenAIAPIOrigin(p.baseURL)) {
-			declared, declaredOK = profileDeclaredEfforts(p.provider, model, p.baseURL)
+			declared, declaredOK = profileDeclaredEfforts(p.ctx, p.provider, model, p.baseURL)
 		}
 		if declaredOK {
 			supported = declared
@@ -361,24 +364,34 @@ func sanitizeAstraRequestKwargs(kwargs map[string]any, model, baseURL string) {
 	}
 }
 
-// Profile declared reasoning effort vocabulary by endpoint host then provider name
-func profileDeclaredEfforts(provider, model, baseURL string) ([]string, bool) {
+// Profile declared reasoning effort vocabulary by endpoint host then provider name, any hook error failing open to none
+func profileDeclaredEfforts(ctx context.Context, provider, model, baseURL string) ([]string, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	name := strings.ToLower(strings.TrimSpace(provider))
+	var (
+		declared []string
+		ok       bool
+		err      error
+	)
 	if baseURL != "" {
-		if inferred := inferProviderFromURL(baseURL); inferred != "" && inferred != name {
-			if p, ok := ProfileFor(inferred); ok {
-				if declared, ok := p.SupportedReasoningEfforts(model); ok {
-					return declared, true
-				}
+		if inferred := inferProviderFromBaseURL(baseURL); inferred != "" && inferred != name {
+			if p := getProviderProfile(ctx, inferred); p != nil {
+				declared, ok, err = p.SupportedReasoningEfforts(ctx, model)
 			}
 		}
 	}
-	if name != "" {
-		if p, ok := ProfileFor(name); ok {
-			return p.SupportedReasoningEfforts(model)
+	if err == nil && !ok && name != "" {
+		if p := getProviderProfile(ctx, name); p != nil {
+			declared, ok, err = p.SupportedReasoningEfforts(ctx, model)
 		}
 	}
-	return nil, false
+	if err != nil {
+		slog.Debug(fmt.Sprintf("profile-declared efforts lookup failed: %s", err))
+		return nil, false
+	}
+	return declared, ok
 }
 
 // True for Microsoft Foundry's Responses API by provider id or host

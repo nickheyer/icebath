@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Byte span of one match in the original content
@@ -103,7 +105,7 @@ func buildOrigToNormMap(original string, normInRunes bool) normMap {
 	var m normMap
 	pos := 0
 	for i := 0; i < len(original); {
-		r, size := wtf8DecodeRune(original[i:])
+		r, size := pystr.DecodeRune(original[i:])
 		m.origOff = append(m.origOff, i)
 		m.norm = append(m.norm, pos)
 		if repl, ok := unicodeMap[r]; ok {
@@ -220,7 +222,7 @@ func strategyExact(content, pattern string) []matchSpan {
 			if i == len(content) {
 				break
 			}
-			_, size := wtf8DecodeRune(content[i:])
+			_, size := pystr.DecodeRune(content[i:])
 			i += size
 		}
 		return out
@@ -411,7 +413,7 @@ func boundaryNote(strategies []string, target, where string) string {
 
 // Reports a re sent edit whose non trivial new text is present and old text gone
 func isAlreadyApplied(content, oldString, newString string) bool {
-	if newString == "" || wtf8RuneCount(pyStrip(newString)) < 8 || !strings.Contains(content, newString) {
+	if newString == "" || pystr.Len(pyStrip(newString)) < 8 || !strings.Contains(content, newString) {
 		return false
 	}
 	return oldString == newString || !strings.Contains(content, oldString)
@@ -441,7 +443,7 @@ func formatMatchLocations(content string, matches []matchSpan, limit int) string
 			lineEnd += lineStart
 		}
 		snippet := pyStrip(content[lineStart:lineEnd])
-		if wtf8RuneCount(snippet) > 80 {
+		if pystr.Len(snippet) > 80 {
 			snippet = runePrefix(snippet, 77) + "..."
 		}
 		rows = append(rows, fmt.Sprintf("  L%d: %s", lineNo, snippet))
@@ -687,7 +689,7 @@ func runeOffsets(s string) []int {
 	offs := make([]int, 0, len(s)+1)
 	for i := 0; i < len(s); {
 		offs = append(offs, i)
-		_, size := wtf8DecodeRune(s[i:])
+		_, size := pystr.DecodeRune(s[i:])
 		i += size
 	}
 	return append(offs, len(s))

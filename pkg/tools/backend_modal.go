@@ -16,6 +16,7 @@ import (
 	"time"
 
 	modal "github.com/modal-labs/modal-client/go"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Modal SDK stdin chunk size, under the 2 MB legacy server cap and flushed per chunk
@@ -228,7 +229,7 @@ func (m *modalEnv) exec(ctx context.Context, cmd string, timeout time.Duration, 
 		return nil, err
 	}
 	if stdin != nil {
-		payload, err := surrogateEscapeEncode(*stdin)
+		payload, err := pystr.SurrogateEscapeEncode(*stdin)
 		if err != nil {
 			return nil, err
 		}
@@ -355,7 +356,7 @@ func (m *modalEnv) runBash(ctx context.Context, cmd string, login bool, timeout 
 			return "Modal exec failed: " + err.Error(), 1
 		}
 		if stdinData != nil {
-			payload, err := surrogateEscapeEncode(*stdinData)
+			payload, err := pystr.SurrogateEscapeEncode(*stdinData)
 			if err != nil {
 				return "", 1
 			}

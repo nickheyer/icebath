@@ -435,7 +435,7 @@ func (s *ccStreamState) handleChunk(chunk map[string]any) (bool, error) {
 		return false, nil
 	}
 	delta, _ := choice["delta"].(map[string]any)
-	if fr := normalizeFinishReason(ccFinishReasonText(choice["finish_reason"])); fr != "" {
+	if fr, _ := NormalizeFinishReason(ccFinishReasonText(choice["finish_reason"])).(string); fr != "" {
 		s.finishReason = fr
 	}
 	if u, ok := chunk["usage"].(map[string]any); ok && len(u) > 0 {

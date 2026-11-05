@@ -73,11 +73,6 @@ type NewSession struct {
 	ProfileName     string
 }
 
-// End reasons that mark a conversation boundary rather than a continuation
-var resetEndReasons = map[string]bool{
-	"session_reset": true, "session_switch": true, "idle": true, "daily": true, "suspended": true, "new_session": true,
-}
-
 // Reason a compression continuation ends its parent with
 const EndReasonCompression = "compression"
 
@@ -229,7 +224,7 @@ func (d *DB) ResolveSessionID(idOrPrefix string) (string, error) {
 	var ids []string
 	err := d.read(func(q querier) error {
 		rows, err := q.Query("SELECT id FROM sessions WHERE id = ? OR id LIKE ? ESCAPE '\\' ORDER BY (id = ?) DESC, started_at DESC LIMIT 2",
-			idOrPrefix, escapeLike(idOrPrefix)+"%", idOrPrefix)
+			idOrPrefix, EscapeLike(idOrPrefix)+"%", idOrPrefix)
 		if err != nil {
 			return err
 		}
@@ -458,10 +453,10 @@ func (d *DB) ListSessions(f ListFilter) ([]*Session, error) {
 	}
 	if f.CwdPrefix != "" {
 		where = append(where, "(tip.cwd = ? OR tip.cwd LIKE ? ESCAPE '\\')")
-		params = append(params, f.CwdPrefix, escapeLike(strings.TrimRight(f.CwdPrefix, "/"))+"/%")
+		params = append(params, f.CwdPrefix, EscapeLike(strings.TrimRight(f.CwdPrefix, "/"))+"/%")
 	}
 	if f.Search != "" {
-		needle := "%" + escapeLike(f.Search) + "%"
+		needle := "%" + EscapeLike(f.Search) + "%"
 		where = append(where, "(tip.id LIKE ? ESCAPE '\\' OR tip.title LIKE ? ESCAPE '\\' OR "+previewSQL+" LIKE ? ESCAPE '\\')")
 		params = append(params, needle, needle, needle)
 	}

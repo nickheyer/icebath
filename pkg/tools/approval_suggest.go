@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	_ "modernc.org/sqlite"
 )
 
@@ -96,7 +97,7 @@ func DefaultApprovalDBPath(env *Env) string {
 
 // Decodes JSON text, ok false on malformed input
 func jsonOrNone(raw string) (any, bool) {
-	v, err := jsonDecodeWTF8([]byte(raw))
+	v, err := pyjson.DecodeWTF8([]byte(raw))
 	if err != nil {
 		return nil, false
 	}

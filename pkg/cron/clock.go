@@ -27,14 +27,24 @@ func (c *clock) now() time.Time {
 	return t.In(c.zone())
 }
 
-// Configured zone, the system local zone when none is configured
+// Configured zone, the system local offset of the current moment when none is configured
 func (c *clock) zone() *time.Location {
-	if c != nil && c.zoneFn != nil {
-		if z := c.zoneFn(); z != nil {
-			return z
-		}
+	if z := c.configuredZone(); z != nil {
+		return z
 	}
-	return time.Local
+	t := time.Now()
+	if c != nil && c.nowFn != nil {
+		t = c.nowFn()
+	}
+	return systemFixedZone(t)
+}
+
+// Zone named by the environment or config, nil for server local time
+func (c *clock) configuredZone() *time.Location {
+	if c != nil && c.zoneFn != nil {
+		return c.zoneFn()
+	}
+	return nil
 }
 
 // Current instant as Python isoformat text

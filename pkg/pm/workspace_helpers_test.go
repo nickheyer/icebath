@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -122,7 +124,7 @@ func wsStrings(v any) []string {
 	items, _ := v.([]any)
 	out := []string{}
 	for _, item := range items {
-		out = append(out, pyStr(item))
+		out = append(out, pyrepr.Str(item))
 	}
 	return out
 }
@@ -157,7 +159,7 @@ func wsLocked(t *testing.T, lock string) map[string]string {
 	out := map[string]string{}
 	packages, _ := wsAt(wsTOML(t, lock), "package").([]any)
 	for _, p := range packages {
-		out[pyStr(wsAt(p, "name"))] = pyStr(wsAt(p, "version"))
+		out[pyrepr.Str(wsAt(p, "name"))] = pyrepr.Str(wsAt(p, "version"))
 	}
 	return out
 }

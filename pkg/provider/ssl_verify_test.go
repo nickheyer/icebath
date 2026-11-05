@@ -25,8 +25,8 @@ func TestMissingExplicitBundleFallsBackToThePlatformStore(t *testing.T) {
 	noCAEnv(t)
 	sink := &recordingHandler{}
 	verify := ResolveTLSVerify(newRecordingLogger(sink), filepath.Join(t.TempDir(), "nope.pem"), nil, "")
-	if verify.Insecure || verify.Config != sharedTLSConfig("", false) {
-		t.Fatal("the platform context is the fallback")
+	if verify.Insecure || verify.Config != defaultVerify() {
+		t.Fatal("the default verification is the fallback")
 	}
 	if len(sink.containing("does not exist")) != 1 {
 		t.Fatal("the missing bundle is reported")
@@ -35,8 +35,10 @@ func TestMissingExplicitBundleFallsBackToThePlatformStore(t *testing.T) {
 
 func TestMissingBundleUnderACertEnvVarSharesThePlatformContext(t *testing.T) {
 	noCAEnv(t)
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	defer srv.Close()
 	bundle := filepath.Join(t.TempDir(), "roots.pem")
-	if err := os.WriteFile(bundle, []byte(""), 0o600); err != nil {
+	if err := os.WriteFile(bundle, pemOf(srv.Certificate()), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("SSL_CERT_FILE", bundle)
@@ -124,23 +126,6 @@ func base64Lines(raw []byte) string {
 	}
 	lines.WriteString(encoded + "\n")
 	return lines.String()
-}
-
-func TestDefaultCABundleReResolvesOnceWhenThePathVanished(t *testing.T) {
-	noCAEnv(t)
-	gone := filepath.Join(t.TempDir(), "deleted", "cacert.pem")
-	t.Setenv("SSL_CERT_FILE", gone)
-	staleBundleMu.Lock()
-	staleBundleKnown = map[string]string{}
-	staleBundleMu.Unlock()
-	first := DefaultCABundlePath()
-	second := DefaultCABundlePath()
-	if first != second || first == gone {
-		t.Fatalf("the dead path is never handed over: %q %q", first, second)
-	}
-	if first != "" && !fileExists(first) {
-		t.Fatal("a re-resolved bundle exists on disk")
-	}
 }
 
 func TestSubprocessVerifyBundleKeepsOwnOverridesAndHandsOverThePlatformStore(t *testing.T) {

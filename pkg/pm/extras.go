@@ -15,6 +15,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Anchors maps each extra to the imports that prove it installed
@@ -60,7 +63,7 @@ var anchorImportable = func(ctx context.Context, anchor string) bool {
 		return false
 	}
 	result, err := runCaptured(ctx, append(command, "-c", importableProbe, anchor), root, pyEnviron(), 60*time.Second)
-	return err == nil && result.Code == 0 && pyStrip(result.Stdout) == "1"
+	return err == nil && result.Code == 0 && pystr.Strip(result.Stdout) == "1"
 }
 
 // Reports every anchor of an extra importable and its platform gate admitting this machine
@@ -199,17 +202,17 @@ func EnsureImport(ctx context.Context, extra string) error {
 			return err
 		}
 		return NewInstallError("venv", fmt.Sprintf("extra %s is not supported on this platform (gate: %s); the adapter degrades without it",
-			pyRepr(extra), pyRepr(gates[extra])), "")
+			pyrepr.StrRepr(extra), pyrepr.StrRepr(gates[extra])), "")
 	}
 	appRunning := InteractiveAppRunning != nil && InteractiveAppRunning()
 	if !appRunning && promptTerminals() {
-		answer, err := promptInput(fmt.Sprintf("\nThis needs icebath's optional %s feature, which isn't installed yet.\nInstall it now? [Y/n] ", pyRepr(extra)))
+		answer, err := promptInput(fmt.Sprintf("\nThis needs icebath's optional %s feature, which isn't installed yet.\nInstall it now? [Y/n] ", pyrepr.StrRepr(extra)))
 		if err != nil {
 			answer = "n"
 		}
-		answer = pyLower(pyStrip(answer))
+		answer = pystr.Lower(pystr.Strip(answer))
 		if answer != "" && answer != "y" && answer != "yes" {
-			return NewInstallError("venv", fmt.Sprintf("installation of extra %s declined", pyRepr(extra)), "")
+			return NewInstallError("venv", fmt.Sprintf("installation of extra %s declined", pyrepr.StrRepr(extra)), "")
 		}
 	}
 	if err := clientSyncVenv(ctx, SyncVenvOptions{Extras: []string{extra}}); err != nil {
@@ -250,7 +253,7 @@ func EnsureImport(ctx context.Context, extra string) error {
 // Ensures an extra then merges the bindings importer returns into target, false when either step fails
 func EnsureAndBind(ctx context.Context, extra string, importer func() (map[string]any, error), target map[string]any) (bool, error) {
 	if err := EnsureImport(ctx, extra); err != nil {
-		slog.Warn(fmt.Sprintf("extra %s unavailable: %s", pyRepr(extra), err))
+		slog.Warn(fmt.Sprintf("extra %s unavailable: %s", pyrepr.StrRepr(extra), err))
 		return false, nil
 	}
 	bindings, err := importer()
@@ -258,7 +261,7 @@ func EnsureAndBind(ctx context.Context, extra string, importer func() (map[strin
 		if errorClass(err) != "ImportError" && errorClass(err) != "ModuleNotFoundError" {
 			return false, err
 		}
-		slog.Warn(fmt.Sprintf("import after installing %s failed: %s", pyRepr(extra), err))
+		slog.Warn(fmt.Sprintf("import after installing %s failed: %s", pyrepr.StrRepr(extra), err))
 		return false, nil
 	}
 	for k, v := range bindings {
@@ -388,7 +391,7 @@ func recordDeclinedExtras(ctx context.Context, add, remove []string, reasons map
 		merged[name] = text
 	}
 	for name, text := range reasons {
-		merged[ExtraKey(name)] = pyPrefix(strings.Join(strings.FieldsFunc(text, pyIsSpace), " "), 300)
+		merged[ExtraKey(name)] = pyPrefix(strings.Join(strings.FieldsFunc(text, pystr.IsSpace), " "), 300)
 	}
 	noted := map[string]string{}
 	for name, text := range merged {

@@ -2,9 +2,7 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -407,20 +405,19 @@ func ensureDirectAliases(ctx context.Context) {
 	directAliasLoaded = loaded
 }
 
-// Env var read through the profile secret scope, the process env only for an unscoped default profile read
+// Scoped secret read failing closed under multiplexing, otherwise the profile dotenv before the process env
 func scopedKeyEnv(ctx context.Context, name string) (string, error) {
 	if name == "" {
 		return "", nil
 	}
-	value, _, err := SecretScopeFrom(ctx).Secret(name)
-	if err != nil {
-		var unscoped *UnscopedSecretError
-		if errors.As(err, &unscoped) {
-			return pyStripSpace(os.Getenv(name)), nil
+	if scope := SecretScopeFrom(ctx); scope.Mapping != nil || IsMultiplexActive(ctx) {
+		value, _, err := scope.Secret(name)
+		if err != nil {
+			return "", nil
 		}
-		return "", err
+		return pyStripSpace(value), nil
 	}
-	return pyStripSpace(value), nil
+	return pyStripSpace(GetEnvPreferDotenv(modelsPoolEnv(ctx), name)), nil
 }
 
 // DirectAliasAPIKey resolves the alias credential from an env template, a literal key, then key_env

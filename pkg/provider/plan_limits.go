@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"strings"
 )
@@ -106,7 +107,7 @@ func CurrentModelIsTopTier(c *CreditsCapture) *bool {
 	c.mu.Lock()
 	model, baseURL := c.Model, c.BaseURL
 	c.mu.Unlock()
-	return topTierMark(model, CachedPricing(baseURL))
+	return topTierMark(model, planCachedPricingFn(baseURL))
 }
 
 func topTierMark(model string, pricing map[string]any) *bool {
@@ -123,6 +124,24 @@ func IsBlocked(model string, gauges []WindowGauge, pricing map[string]any) bool 
 }
 
 // Portal free picks this profile already holds in process or on disk, never fetched
+// Catalog, featured picks, portal free picks, context window, fit and suggestion steps, swappable so tests can script them
+var (
+	planCachedPricingFn  = CachedPricing
+	planFeaturedModelsFn = planFeaturedModels
+	planPortalFreeFn     = portalFreeModels
+	planContextLengthFn  = GetModelContextLength
+	planFitsContextFn    = fitsPlanContext
+	planSuggestModelsFn  = SuggestModels
+)
+
+// Featured model ids of the last plan snapshot at any age, nil when none is known
+func planFeaturedModels() []string {
+	if usage := NousPickerUsage(false, true); usage != nil {
+		return usage.FeaturedModelIDs
+	}
+	return nil
+}
+
 func portalFreeModels(ctx context.Context) []string {
 	base := resolveNousPortalURL(ctx)
 	nousRecommendedMu.Lock()
@@ -149,7 +168,7 @@ func fitsPlanContext(ctx context.Context, model string, neededTokens int, baseUR
 	if neededTokens <= 0 {
 		return true
 	}
-	window := GetModelContextLength(ctx, ContextLengthRequest{Model: model, BaseURL: baseURL, Provider: PlanProvider})
+	window := planContextLengthFn(ctx, ContextLengthRequest{Model: model, BaseURL: baseURL, Provider: PlanProvider})
 	return window == 0 || window >= neededTokens+planContextHeadroomTokens
 }
 
@@ -163,7 +182,7 @@ func SuggestModels(ctx context.Context, currentModel string, gauges []WindowGaug
 			seen[m] = true
 		}
 	}
-	for _, m := range portalFreeModels(ctx) {
+	for _, m := range planPortalFreeFn(ctx) {
 		if !seen[m] {
 			pool = append(pool, m)
 			seen[m] = true
@@ -174,7 +193,7 @@ func SuggestModels(ctx context.Context, currentModel string, gauges []WindowGaug
 		if model == currentModel || IsSubscriptionBilled(pricing[model]) {
 			continue
 		}
-		if IsBlocked(model, gauges, pricing) || !fitsPlanContext(ctx, model, neededTokens, baseURL) {
+		if IsBlocked(model, gauges, pricing) || !planFitsContextFn(ctx, model, neededTokens, baseURL) {
 			continue
 		}
 		note := NoteIncluded
@@ -209,14 +228,23 @@ func CreditsOptionFor(state *CreditsState) *CreditsOption {
 }
 
 // LimitHitFor names the allowance that refused the current model with its reset and the ways on
-func LimitHitFor(ctx context.Context, c *CreditsCapture, message string, neededTokens int) *LimitHit {
+func LimitHitFor(ctx context.Context, c *CreditsCapture, message string, neededTokens int) (hit *LimitHit) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Debug("plan limits: limit_hit failed", "panic", r)
+			hit = nil
+		}
+	}()
+	if c == nil {
+		return nil
+	}
 	c.mu.Lock()
 	state, model, baseURL := c.credits, c.Model, c.BaseURL
 	c.mu.Unlock()
 	if state == nil || !state.IsUsageWindow() {
 		return nil
 	}
-	pricing := CachedPricing(baseURL)
+	pricing := planCachedPricingFn(baseURL)
 	gauges := state.Gauges
 	mark := topTierMark(model, pricing)
 	g := BlockingGauge(gauges, IsPlanFree(model, pricing), mark == nil || *mark)
@@ -228,14 +256,11 @@ func LimitHitFor(ctx context.Context, c *CreditsCapture, message string, neededT
 	if g == nil {
 		return nil
 	}
-	var featured []string
-	if usage := NousPickerUsage(false, true); usage != nil {
-		featured = usage.FeaturedModelIDs
-	}
+	featured := planFeaturedModelsFn()
 	return &LimitHit{
 		GaugeID: g.ID, Scope: g.Scope, LimitName: GaugeLimitName(*g), ResetsAtMs: g.ResetsAtMs,
 		Message: message, CurrentModel: model, Credits: CreditsOptionFor(state),
-		Suggestions: SuggestModels(ctx, model, gauges, pricing, featured, neededTokens, baseURL, planMaxSuggestions),
+		Suggestions: planSuggestModelsFn(ctx, model, gauges, pricing, featured, neededTokens, baseURL, planMaxSuggestions),
 	}
 }
 

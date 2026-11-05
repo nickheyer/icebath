@@ -12,7 +12,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const buildEnvDescription = "Build and inspect explicit Python dependency environments through PM."
@@ -350,7 +354,7 @@ func buildEnvHelp(prog string, t argTheme) string {
 // Normalized text of a path the way str of pathlib Path prints it
 func pyPathText(p string) string {
 	if runtime.GOOS == "windows" {
-		drive, root, rest := ntSplitRoot(strings.ReplaceAll(p, "/", `\`))
+		drive, root, rest := pypath.NtSplitRoot(strings.ReplaceAll(p, "/", `\`))
 		var parts []string
 		for _, part := range strings.Split(rest, `\`) {
 			if part != "" && part != "." {
@@ -544,7 +548,7 @@ func parseBuildEnvArgs(argv []string, prog string, stdout, stderr io.Writer) (*B
 				explicit := *m.explicit
 				if !o.takes && m.flag[1] != '-' && explicit != "" {
 					if m.sep || explicit[0] == '-' {
-						return nil, fail(fmt.Sprintf("argument %s: ignored explicit argument %s", optionName(o), pyRepr(explicit)))
+						return nil, fail(fmt.Sprintf("argument %s: ignored explicit argument %s", optionName(o), pyrepr.StrRepr(explicit)))
 					}
 					pending = append(pending, func() error { return take(o, nil) })
 					next := "-" + explicit[:1]
@@ -577,7 +581,7 @@ func parseBuildEnvArgs(argv []string, prog string, stdout, stderr io.Writer) (*B
 					pending = append(pending, func() error { return take(o, []string{value}) })
 					break
 				}
-				return nil, fail(fmt.Sprintf("argument %s: ignored explicit argument %s", optionName(o), pyRepr(explicit)))
+				return nil, fail(fmt.Sprintf("argument %s: ignored explicit argument %s", optionName(o), pyrepr.StrRepr(explicit)))
 			}
 			if o.takes {
 				if i+1 >= len(argv) || patterns[i+1] != 'A' {
@@ -692,8 +696,8 @@ func BuildEnvMain(ctx context.Context, argv []string, prog string, stdout, stder
 			fmt.Fprintln(stderr, pyTraceback(err))
 			return 1
 		}
-		for _, line := range pySplitLines(string(data)) {
-			if stripped := pyStrip(line); stripped != "" && !strings.HasPrefix(strings.TrimLeftFunc(line, pyIsSpace), "#") {
+		for _, line := range pystr.Splitlines(string(data), false) {
+			if stripped := pystr.Strip(line); stripped != "" && !strings.HasPrefix(strings.TrimLeftFunc(line, pystr.IsSpace), "#") {
 				requirements = append(requirements, stripped)
 			}
 		}

@@ -8,7 +8,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/skills"
 )
+
+// OSV malware verdict of the package an npx, uvx or pipx launch would run
+func checkPackageForMalware(command string, args []string) (string, error) {
+	return skills.CheckPackageForMalware(command, args)
+}
 
 // Env var names some profile's external secret source applied
 func secretSourceNames() []string { return provider.SecretSourceNames() }
@@ -98,6 +104,9 @@ func hydrateSecretSources(h string) bool {
 	provider.HydrateProfileSecretSources(h)
 	return provider.SecretHomeApplied(h)
 }
+
+// Secret mapping built from a profile's env file, external sources and managed env
+func profileSecretScope(h string) map[string]string { return provider.BuildProfileSecretScope(h) }
 
 // Fresh secret mapping of a profile, the launch profile's over the frozen launch env and a served one's from its files
 func profileSecretMapping(h string) map[string]string {

@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Generation of this install, selected or superseded, whose site packages this process resolves imports from
@@ -147,15 +149,15 @@ func generationDistributions(environment string) (map[string]installedDistributi
 				}
 			}
 		} else if installed := distributionText(filepath.Join(path, "installed-files.txt")); installed != "" {
-			for _, line := range pySplitLines(installed) {
+			for _, line := range pystr.Splitlines(installed, false) {
 				dist.files = append(dist.files, resolvePath(filepath.Join(path, filepath.FromSlash(line))))
 			}
 		} else if sources := distributionText(filepath.Join(path, "SOURCES.txt")); sources != "" {
-			for _, line := range pySplitLines(sources) {
+			for _, line := range pystr.Splitlines(sources, false) {
 				dist.files = append(dist.files, resolvePath(filepath.Join(site, filepath.FromSlash(line))))
 			}
 		}
-		out[pyLower(distributionSeparators.ReplaceAllString(*name, "-"))] = dist
+		out[pystr.Lower(distributionSeparators.ReplaceAllString(*name, "-"))] = dist
 	}
 	return out, nil
 }

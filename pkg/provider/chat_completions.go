@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Registers the OpenAI chat completions and Codex Responses adapters
@@ -95,6 +97,9 @@ func (c *chatCompletionsClient) includeUsage(req *Request, rejected bool) bool {
 func (c *chatCompletionsClient) prepare(ctx context.Context, req *Request, stream bool) (*ccPrepared, error) {
 	settings := loadWireSettings(ctx)
 	build := c.cc.build(ctx, req, settings)
+	if build.err != nil {
+		return nil, build.err
+	}
 	c.mu.Lock()
 	c.lastAliases = build.aliases
 	rejected := c.streamOptionsRejected
@@ -148,7 +153,7 @@ func (c *chatCompletionsClient) prepare(ctx context.Context, req *Request, strea
 	}
 	wireMap := wire.Map()
 	return &ccPrepared{build: build, body: body, wire: wireMap, url: endpoint, headers: headers, settings: settings,
-		estTokens: estimateBodyContextTokens(wireMap, DefaultImageTokenCost)}, nil
+		estTokens: estimateBodyContextTokens(wireMap, CurrentImageTokenCost(ctx))}, nil
 }
 
 func (c *chatCompletionsClient) newRequest(ctx context.Context, p *ccPrepared) (*http.Request, error) {
@@ -198,7 +203,7 @@ func headerRequestID(h http.Header) string {
 
 // APIError for a non success HTTP response
 func (c *chatCompletionsClient) httpError(resp *http.Response, data []byte) error {
-	body := sanitizeSurrogates(string(data))
+	body := pystr.DecodeUTF8Replace(data)
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {
@@ -267,8 +272,8 @@ func (c *chatCompletionsClient) Complete(ctx context.Context, req *Request) (*Re
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, sanitizeSurrogates(string(data)), err)
-		apiErr.Message = "Provider returned a non-JSON completion body: " + truncate(redactSensitiveText(sanitizeSurrogates(strings.TrimSpace(string(data)))), 300)
+		apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, pystr.DecodeUTF8Replace(data), err)
+		apiErr.Message = "Provider returned a non-JSON completion body: " + truncate(redactSensitiveText(strings.TrimSpace(pystr.DecodeUTF8Replace(data))), 300)
 		apiErr.Err = &ccHeadersError{err: err, headers: resp.Header.Clone()}
 		return nil, apiErr
 	}
@@ -534,7 +539,7 @@ func (c *chatCompletionsClient) normalizeResponse(payload map[string]any, status
 	if msg == nil {
 		msg = map[string]any{}
 	}
-	finish := normalizeFinishReason(ccFinishReasonText(choice["finish_reason"]))
+	finish, _ := NormalizeFinishReason(ccFinishReasonText(choice["finish_reason"])).(string)
 	if finish == "" {
 		finish = "stop"
 	}
@@ -569,7 +574,7 @@ func (c *chatCompletionsClient) normalizeResponse(payload map[string]any, status
 			}
 			id := strings.TrimSpace(ccDeltaID(tc["id"]))
 			if id == "" {
-				id = deterministicCallID(name, args, i)
+				id = tools.DeterministicCallID(name, args, i)
 			}
 			typ := stringOf(tc["type"])
 			if typ == "" {

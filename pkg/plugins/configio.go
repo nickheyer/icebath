@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 var configWriteMu sync.Mutex
@@ -133,9 +133,12 @@ func pluginsDir(h string) (string, error) {
 	return dir, nil
 }
 
-// Bundled plugins directory from the environment, empty when unset
-func bundledPluginsDir() string {
-	return strings.TrimSpace(os.Getenv("ICEBATH_BUNDLED_PLUGINS"))
+// Bundled plugins directory, ICEBATH_BUNDLED_PLUGINS first, else the plugins tree beside the running install
+func GetBundledPluginsDir() string {
+	if override := os.Getenv("ICEBATH_BUNDLED_PLUGINS"); override != "" {
+		return override
+	}
+	return filepath.Join(pm.RepoRoot(), "plugins")
 }
 
 // Reports whether an environment variable is set to a truthy value

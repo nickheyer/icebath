@@ -17,6 +17,12 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 var memberExclude = map[string]bool{".git": true, ".venv": true, "venv": true, "node_modules": true, "__pycache__": true}
@@ -190,7 +196,7 @@ func publishedStoreEntries(directory string) map[string]bool {
 	}
 	if entries, err := os.ReadDir(directory); err == nil {
 		for _, e := range entries {
-			if fnmatchCase(e.Name(), "fetch-*") && isDirectory(filepath.Join(directory, e.Name())) {
+			if fnmatch.FnmatchCase(e.Name(), "fetch-*") && isDirectory(filepath.Join(directory, e.Name())) {
 				names[e.Name()] = true
 			}
 		}
@@ -231,7 +237,7 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 		from, to := filepath.Join(src, name), filepath.Join(dst, name)
 		st, err := os.Lstat(from)
 		if err != nil {
-			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyRepr(from), pyRepr(to), pyRepr(pyOSErrorText(err))))
+			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(from), pyrepr.StrRepr(to), pyrepr.StrRepr(pypath.OSErrorText(err))))
 			continue
 		}
 		if st.Mode()&fs.ModeSymlink != 0 && symlinks {
@@ -240,7 +246,7 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 				err = os.Symlink(target, to)
 			}
 			if err != nil {
-				failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyRepr(from), pyRepr(to), pyRepr(pyOSErrorText(err))))
+				failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(from), pyrepr.StrRepr(to), pyrepr.StrRepr(pypath.OSErrorText(err))))
 			}
 			continue
 		}
@@ -250,72 +256,16 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 			err = copy2(from, to)
 		}
 		if err != nil {
-			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyRepr(from), pyRepr(to), pyRepr(err.Error())))
+			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(from), pyrepr.StrRepr(to), pyrepr.StrRepr(err.Error())))
 		}
 	}
 	if err := copyStat(src, dst); err != nil {
-		failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyRepr(src), pyRepr(dst), pyRepr(pyOSErrorText(err))))
+		failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(src), pyrepr.StrRepr(dst), pyrepr.StrRepr(pypath.OSErrorText(err))))
 	}
 	if len(failures) > 0 {
 		return &PyError{Class: "Error", Message: "[" + strings.Join(failures, ", ") + "]"}
 	}
 	return nil
-}
-
-// Paths under root a pathlib glob pattern matches, double star spanning directories without following links
-func pathlibGlob(root, pattern string) []string {
-	parts := strings.FieldsFunc(filepath.ToSlash(pattern), func(r rune) bool { return r == '/' })
-	var walk func(dir string, parts []string) []string
-	walk = func(dir string, parts []string) []string {
-		if len(parts) == 0 {
-			return []string{dir}
-		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return nil
-		}
-		var out []string
-		if parts[0] == "**" {
-			if len(parts) == 1 {
-				for _, e := range entries {
-					child := filepath.Join(dir, e.Name())
-					out = append(out, child)
-					if st, err := os.Lstat(child); err == nil && st.IsDir() {
-						out = append(out, walk(child, parts)...)
-					}
-				}
-				return out
-			}
-			out = append(out, walk(dir, parts[1:])...)
-			for _, e := range entries {
-				child := filepath.Join(dir, e.Name())
-				if st, err := os.Lstat(child); err == nil && st.IsDir() {
-					out = append(out, walk(child, parts)...)
-				}
-			}
-			return out
-		}
-		for _, e := range entries {
-			if !fnmatchCase(e.Name(), parts[0]) {
-				continue
-			}
-			child := filepath.Join(dir, e.Name())
-			if len(parts) > 1 && !isDirectory(child) {
-				continue
-			}
-			out = append(out, walk(child, parts[1:])...)
-		}
-		return out
-	}
-	seen := map[string]bool{}
-	var out []string
-	for _, match := range walk(root, parts) {
-		if !seen[match] {
-			seen[match] = true
-			out = append(out, match)
-		}
-	}
-	return out
 }
 
 // Snapshots the core project's build inputs, packages and named files, never from the signed source in place
@@ -373,7 +323,7 @@ func copyCoreInputs(source, destination string) error {
 		files[r] = true
 	case *OrderedObject:
 		if file, ok := r.Get("file"); ok {
-			files[pyStr(file)] = true
+			files[pyrepr.Str(file)] = true
 		}
 	}
 	licenseFiles, err := tomlGet(project, "license-files", []any{})
@@ -385,13 +335,21 @@ func copyCoreInputs(source, destination string) error {
 		return err
 	}
 	for _, pattern := range licensePatterns {
-		for _, match := range pathlibGlob(source, pyStr(pattern)) {
+		matches, err := pypath.Glob(source, pyrepr.Str(pattern))
+		if err != nil {
+			return err
+		}
+		for _, match := range matches {
 			if rel, err := filepath.Rel(source, match); err == nil {
 				files[rel] = true
 			}
 		}
 	}
-	for _, match := range pathlibGlob(source, "*.py") {
+	pyFiles, err := pypath.Glob(source, "*.py")
+	if err != nil {
+		return err
+	}
+	for _, match := range pyFiles {
 		files[filepath.Base(match)] = true
 	}
 	excluded := map[string]bool{".git": true, ".venv": true, "venv": true, "node_modules": true, "__pycache__": true, "build": true, "dist": true, "release": true}
@@ -424,7 +382,7 @@ func copyCoreInputs(source, destination string) error {
 		}
 		matched := false
 		for pattern := range packageRoots {
-			if fnmatchCase(e.Name(), pattern) {
+			if fnmatch.FnmatchCase(e.Name(), pattern) {
 				matched = true
 				break
 			}
@@ -588,7 +546,7 @@ func generatePyproject(ctx context.Context, pluginDirs []MemberDir, root, source
 		}
 		core := NewOrderedObject()
 		core.Set("workspace", true)
-		sources.Set(pyStr(name), core)
+		sources.Set(pyrepr.Str(name), core)
 		if err := solveOnlyFor(uvPolicy, target); err != nil {
 			return err
 		}
@@ -644,11 +602,11 @@ func targetEnvironment(ctx context.Context, python string) (map[string]string, e
 	cmd.Stderr = &strings.Builder{}
 	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
-		return nil, &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 60 seconds", pyListRepr(argv))}
+		return nil, &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 60 seconds", pyrepr.Repr(argv))}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return nil, &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyListRepr(argv), pyReturnCode(exitErr))}
+		return nil, &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyrepr.Repr(argv), pyReturnCode(exitErr))}
 	}
 	if err != nil {
 		return nil, err
@@ -665,7 +623,7 @@ func targetEnvironment(ctx context.Context, python string) (map[string]string, e
 
 // Narrows tool.uv.environments to the platform and machine of the installing interpreter
 func solveOnlyFor(uvPolicy *OrderedObject, target map[string]string) error {
-	host := fmt.Sprintf("sys_platform == %s and platform_machine == %s", pyRepr(target["sys_platform"]), pyRepr(target["platform_machine"]))
+	host := fmt.Sprintf("sys_platform == %s and platform_machine == %s", pyrepr.StrRepr(target["sys_platform"]), pyrepr.StrRepr(target["platform_machine"]))
 	var narrowed []any
 	if existing, ok := uvPolicy.Get("environments"); ok && tomlTruthy(existing) {
 		entries, err := pyIterate(existing)
@@ -673,7 +631,7 @@ func solveOnlyFor(uvPolicy *OrderedObject, target map[string]string) error {
 			return err
 		}
 		for _, entry := range entries {
-			narrowed = append(narrowed, fmt.Sprintf("(%s) and %s", pyStr(entry), host))
+			narrowed = append(narrowed, fmt.Sprintf("(%s) and %s", pyrepr.Str(entry), host))
 		}
 	}
 	if len(narrowed) == 0 {
@@ -840,7 +798,7 @@ var memberNameUnsafe = regexp.MustCompile(`[^a-z0-9._-]+`)
 // Plugin dir name plus sixteen hex digits of its resolved path hash, unique across homes and readable in uv errors
 func memberKey(identity string) string {
 	sum := sha256.Sum256([]byte(resolvePath(absoluteUnresolved(identity))))
-	name := strings.Trim(memberNameUnsafe.ReplaceAllString(pyLower(pyPathName(identity)), "-"), "-.")
+	name := strings.Trim(memberNameUnsafe.ReplaceAllString(pystr.Lower(pyPathName(identity)), "-"), "-.")
 	if name == "" {
 		name = "plugin"
 	}
@@ -937,7 +895,7 @@ func selectedMemberExtras(document *OrderedObject, extras []string, target marke
 	if err != nil {
 		return nil, nil, err
 	}
-	own := CanonicalizeName(pyStr(name))
+	own := CanonicalizeName(pyrepr.Str(name))
 	selected := map[string]bool{}
 	for _, extra := range extras {
 		if _, ok := declared[ExtraKey(extra)]; ok {
@@ -1026,7 +984,7 @@ func pruneMemberSources(settings any, installed map[string]bool) bool {
 			return false
 		}
 		extra, has := row.Get("extra")
-		return !has || installed[ExtraKey(pyStr(extra))]
+		return !has || installed[ExtraKey(pyrepr.Str(extra))]
 	}
 	pruned := NewOrderedObject()
 	changed := false
@@ -1074,7 +1032,7 @@ func renameVirtualMember(document *OrderedObject, name string) error {
 	if declared == nil {
 		declared = ""
 	}
-	own := CanonicalizeName(pyStr(declared))
+	own := CanonicalizeName(pyrepr.Str(declared))
 	project.Set("name", name)
 	if own == "" {
 		return nil
@@ -1155,7 +1113,7 @@ func renameVirtualMember(document *OrderedObject, name string) error {
 			if pkg == nil {
 				pkg = ""
 			}
-			if CanonicalizeName(pyStr(pkg)) == own {
+			if CanonicalizeName(pyrepr.Str(pkg)) == own {
 				row.Set("package", name)
 			}
 		}
@@ -1249,7 +1207,7 @@ func runtimeMemberMetadata(document *OrderedObject, extras []string, target mark
 					if _, isGroup := row.Get("group"); isGroup {
 						continue
 					}
-					if extra, hasExtra := row.Get("extra"); hasExtra && !keptExtras[ExtraKey(pyStr(extra))] {
+					if extra, hasExtra := row.Get("extra"); hasExtra && !keptExtras[ExtraKey(pyrepr.Str(extra))] {
 						continue
 					}
 				}
@@ -1681,11 +1639,11 @@ func InstallNodeSidecar(ctx context.Context, pluginDir string, explicit bool) st
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err = cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("npm %s failed to run: Command '%s' timed out after 900 seconds", installCmd, pyListRepr(argv))
+		return fmt.Sprintf("npm %s failed to run: Command '%s' timed out after 900 seconds", installCmd, pyrepr.Repr(argv))
 	}
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {
-		return fmt.Sprintf("npm %s failed to run: %s", installCmd, pyOSErrorText(err))
+		return fmt.Sprintf("npm %s failed to run: %s", installCmd, pypath.OSErrorText(err))
 	}
 	if exitErr == nil {
 		return ""
@@ -1698,7 +1656,7 @@ func InstallNodeSidecar(ctx context.Context, pluginDir string, explicit bool) st
 	if tail == "" {
 		tail = decode(stdout.String())
 	}
-	tail = pyStrip(tail)
+	tail = pystr.Strip(tail)
 	if n := utf8.RuneCountInString(tail); n > 300 {
 		tail = string([]rune(tail)[n-300:])
 	}

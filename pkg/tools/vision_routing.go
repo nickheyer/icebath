@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -344,7 +345,7 @@ func shouldProbeOllamaVision(ctx context.Context, provider, baseURL, apiKey stri
 // Image input mode from config, auto unless native or text
 func coerceImageMode(raw any) string {
 	s, _ := raw.(string)
-	switch mode := strings.ToLower(strings.TrimSpace(s)); mode {
+	switch mode := pystr.Lower(pystr.Strip(s)); mode {
 	case "auto", "native", "text":
 		return mode
 	}
@@ -426,6 +427,11 @@ func lookupSupportsVision(ctx context.Context, env *Env, provider, model string,
 		envLog(env).Debug("image_routing: probe gave no verdict", "probe", p.label, "provider", provider, "model", model)
 	}
 	return false, false
+}
+
+// LookupSupportsVision reports the vision verdict for a provider and model under the session config and whether it is known
+func LookupSupportsVision(ctx context.Context, env *Env, provider, model string) (bool, bool) {
+	return lookupSupportsVision(visionCtx(ctx, env), env, provider, model, map[string]any(cfgTree(env)), "")
 }
 
 // DecideImageInputMode returns native or text for a provider and model under the session config

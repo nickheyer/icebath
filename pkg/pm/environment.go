@@ -15,6 +15,9 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var uvLabels = map[string]string{
@@ -69,7 +72,7 @@ type uvTimeoutError struct {
 }
 
 func (e *uvTimeoutError) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyListRepr(e.Argv), pySeconds(e.Timeout))
+	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyrepr.Repr(e.Argv), pySeconds(e.Timeout))
 }
 
 // Seconds of a duration the way Python prints an int or float timeout
@@ -93,13 +96,13 @@ func isBytecodeCompileFailure(r uvResult) bool {
 	if r.Code == 0 {
 		return false
 	}
-	return strings.Contains(pyLower(r.Stderr+"\n"+r.Stdout), bytecodeCompileMarker)
+	return strings.Contains(pystr.Lower(r.Stderr+"\n"+r.Stdout), bytecodeCompileMarker)
 }
 
 // Classified error of a failed uv stage, a resolver conflict, a build failure or a plain install error
 func ClassifyUVFailure(stage string, code int, output string) error {
-	cause := fmt.Sprintf("uv %s exited %d: %s", stage, code, lastChars(pyStrip(output), 600))
-	lowered := pyLower(output)
+	cause := fmt.Sprintf("uv %s exited %d: %s", stage, code, lastChars(pystr.Strip(output), 600))
+	lowered := pystr.Lower(output)
 	undated := true
 	for _, marker := range undatedFile {
 		if !strings.Contains(lowered, marker) {
@@ -727,7 +730,7 @@ func runStreaming(ctx context.Context, command []string, cwd string, env map[str
 		return uvResult{}, err
 	}
 	retained := tail.String()
-	if conflict != "" && !strings.Contains(pyLower(retained), conflict) {
+	if conflict != "" && !strings.Contains(pystr.Lower(retained), conflict) {
 		keep := streamTailChars - len([]rune(conflict)) - 1
 		retained = conflict + "\n" + lastChars(retained, max(keep, 0))
 	}
@@ -979,7 +982,7 @@ func (e *PythonEnvironment) withCacheRecovery(ctx context.Context, stage string,
 		if err := e.PurgeCachedPackages(ctx, names); err != nil {
 			var ie *InstallError
 			if errors.As(err, &ie) {
-				original := lastChars(pyStrip(result.Stderr+"\n"+result.Stdout), 600)
+				original := lastChars(pystr.Strip(result.Stderr+"\n"+result.Stdout), 600)
 				return result, NewInstallError(ie.Package, fmt.Sprintf("%s; uv %s had failed with: %s", ie.Cause, stage, original), ie.Remedy)
 			}
 			return result, err
@@ -1002,11 +1005,11 @@ func (e *PythonEnvironment) withCacheRecovery(ctx context.Context, stage string,
 			remedy = "the package source is serving a broken wheel; retry later or pin another version"
 		}
 		return result, NewInstallError("venv", fmt.Sprintf("uv %s exited %d: the cached copy of %s is still invalid after removing %s from the uv cache at %s: %s",
-			stage, result.Code, strings.Join(sortedNames(still), ", "), strings.Join(sortedNames(purged), ", "), cache, lastChars(pyStrip(text), 600)), remedy)
+			stage, result.Code, strings.Join(sortedNames(still), ", "), strings.Join(sortedNames(purged), ", "), cache, lastChars(pystr.Strip(text), 600)), remedy)
 	}
 	if e.Offline {
 		return result, NewInstallError("venv", fmt.Sprintf("uv %s exited %d: removed the corrupt cached copy of %s from %s, and offline mode cannot fetch it again: %s",
-			stage, result.Code, strings.Join(sortedNames(purged), ", "), cache, lastChars(pyStrip(text), 600)), "retry with network access")
+			stage, result.Code, strings.Join(sortedNames(purged), ", "), cache, lastChars(pystr.Strip(text), 600)), "retry with network access")
 	}
 	return result, nil
 }

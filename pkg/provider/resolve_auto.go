@@ -154,12 +154,13 @@ func isGlobalEnv(name string) bool {
 	return false
 }
 
-// Process environment value a routed profile is allowed to see, global names only
+// Process environment value under the get_secret rules, a scoped routed profile never reading another profile's value
 func (r *resolver) processEnv(name string) string {
-	if r.servesRoutedProfile() && !isGlobalEnv(name) {
-		return ""
+	if boundScope(r.ctx) != nil && !isGlobalEnv(name) && r.servesRoutedProfile() {
+		return CurrentSecretScope(r.ctx)[name]
 	}
-	return os.Getenv(name)
+	v, _ := SecretScopeFrom(r.ctx).GetSecret(name)
+	return v
 }
 
 // Secret by env var name from the profile .env then the process environment the profile may read
@@ -305,17 +306,6 @@ var validAPIModes = map[string]bool{
 	"chat_completions": true, "codex_responses": true, "anthropic_messages": true, "bedrock_converse": true, "codex_app_server": true,
 }
 
-// Wire protocols with a registered adapter
-func registeredAPIModes() map[string]bool {
-	factoriesMu.RLock()
-	defer factoriesMu.RUnlock()
-	out := make(map[string]bool, len(factories))
-	for mode := range factories {
-		out[string(mode)] = true
-	}
-	return out
-}
-
 // Hosts that only speak one wire protocol
 var hostMandatedAPIModes = map[string]APIMode{
 	"api.x.ai": ModeCodexResponses, "api.meta.ai": ModeCodexResponses, "api.actual.inc": ModeChatCompletions,
@@ -349,7 +339,7 @@ func (r *resolver) parseAPIMode(raw any) APIMode {
 	if normalized == "" {
 		return ""
 	}
-	if validAPIModes[normalized] || registeredAPIModes()[normalized] {
+	if validAPIModes[normalized] || RegisteredAPIModes()[normalized] {
 		return APIMode(normalized)
 	}
 	return ""
@@ -438,17 +428,17 @@ func registryProfileCtx(ctx context.Context, provider string) (Profile, bool) {
 }
 
 // Profile aliases share one registry id, unrelated routes stay distinct
-func sameRegisteredProvider(provider, configuredProvider string) bool {
+func sameRegisteredProvider(ctx context.Context, provider, configuredProvider string) bool {
 	if provider == configuredProvider {
 		return true
 	}
-	p, ok1 := registryProfile(provider)
-	c, ok2 := registryProfile(configuredProvider)
+	p, ok1 := registryProfileCtx(ctx, provider)
+	c, ok2 := registryProfileCtx(ctx, configuredProvider)
 	return ok1 && ok2 && p.Name == c.Name
 }
 
 // Whether a persisted api_mode may be honoured for the provider
-func providerSupportsExplicitAPIMode(provider, configuredProvider string) bool {
+func providerSupportsExplicitAPIMode(ctx context.Context, provider, configuredProvider string) bool {
 	p := strings.ToLower(strings.TrimSpace(provider))
 	c := strings.ToLower(strings.TrimSpace(configuredProvider))
 	if c == "" {
@@ -457,7 +447,7 @@ func providerSupportsExplicitAPIMode(provider, configuredProvider string) bool {
 	if p == "custom" {
 		return c == "custom" || strings.HasPrefix(c, "custom:")
 	}
-	return sameRegisteredProvider(p, c)
+	return sameRegisteredProvider(ctx, p, c)
 }
 
 func cfgProviderOf(modelCfg map[string]any) string {
@@ -467,7 +457,7 @@ func cfgProviderOf(modelCfg map[string]any) string {
 // Persisted model.api_mode when valid and recorded for this provider
 func (r *resolver) configuredAPIMode(provider string, modelCfg map[string]any) APIMode {
 	configured := r.parseAPIMode(modelCfg["api_mode"])
-	if configured != "" && providerSupportsExplicitAPIMode(provider, cfgProviderOf(modelCfg)) {
+	if configured != "" && providerSupportsExplicitAPIMode(r.ctx, provider, cfgProviderOf(modelCfg)) {
 		return configured
 	}
 	return ""
@@ -509,12 +499,17 @@ type perModelHookProfile struct {
 
 // The provider's profile when it routes api mode per model through a registered hook
 func perModelProfile(provider string) *perModelHookProfile {
+	return perModelProfileCtx(context.Background(), provider)
+}
+
+// Per model hook profile of the home bound to ctx
+func perModelProfileCtx(ctx context.Context, provider string) *perModelHookProfile {
 	if provider == "" {
 		return nil
 	}
 	perModelHooksMu.RLock()
 	hook := perModelHooks[provider]
-	if p := getProviderProfile(context.Background(), provider); p != nil && p.APIModeForModelHook != nil {
+	if p := getProviderProfile(ctx, provider); p != nil && p.APIModeForModelHook != nil {
 		hook = p.APIModeForModelHook
 	}
 	perModelHooksMu.RUnlock()
@@ -522,7 +517,7 @@ func perModelProfile(provider string) *perModelHookProfile {
 		return nil
 	}
 	declared := ModeChatCompletions
-	if p, ok := ProfileFor(provider); ok && p.Mode != "" {
+	if p, ok := profileForCtx(ctx, provider); ok && p.Mode != "" {
 		declared = p.Mode
 	}
 	return &perModelHookProfile{name: provider, mode: declared, hook: hook}
@@ -541,7 +536,7 @@ func modelAPIMode(profile *perModelHookProfile, model, apiKey string) (mode APIM
 
 // Api mode for a provider that routes per model, its hard per model wire beating a stale persisted one
 func (r *resolver) profileRuntimeAPIMode(provider string, modelCfg map[string]any, apiKey, targetModel string) APIMode {
-	profile := perModelProfile(provider)
+	profile := perModelProfileCtx(r.ctx, provider)
 	configured := r.configuredAPIMode(provider, modelCfg)
 	modelName := strings.TrimSpace(effectiveModel(modelCfg, targetModel))
 	if configured != "" {
@@ -591,7 +586,7 @@ func (r *resolver) configuredOrFallbackAPIMode(provider string, modelCfg map[str
 
 // Api mode for a registry api_key provider on the explicit and env paths
 func (r *resolver) apiKeyProviderAPIMode(provider string, modelCfg map[string]any, apiKey, baseURL, model string, opencodeByModel bool) APIMode {
-	if perModelProfile(provider) != nil {
+	if perModelProfileCtx(r.ctx, provider) != nil {
 		return r.profileRuntimeAPIMode(provider, modelCfg, apiKey, model)
 	}
 	if provider == "xai" {
@@ -628,11 +623,16 @@ func (r *resolver) runtime(provider string, apiMode APIMode, baseURL, apiKey, so
 
 // model.base_url only when model.provider is this provider so a stale URL never leaks across providers
 func configBaseURLForProvider(modelCfg map[string]any, provider string) string {
+	return configBaseURLForProviderCtx(context.Background(), modelCfg, provider)
+}
+
+// Config base url for the provider judged against the registry of the home bound to ctx
+func configBaseURLForProviderCtx(ctx context.Context, modelCfg map[string]any, provider string) string {
 	configured := cfgProviderOf(modelCfg)
 	if provider == "actual" {
 		configured = NormalizeProvider(configured)
 	}
-	if !sameRegisteredProvider(provider, configured) {
+	if !sameRegisteredProvider(ctx, provider, configured) {
 		return ""
 	}
 	return strings.TrimRight(strings.TrimSpace(cfgString(modelCfg["base_url"])), "/")
@@ -982,7 +982,7 @@ func RegisterRuntimeBaseURLResolver(provider string, fn RuntimeBaseURLResolver) 
 func (r *resolver) apiKeyProviderSecret(providerID string, pconfig Profile) (string, string, func(context.Context) (string, error)) {
 	credentialSeamsMu.RLock()
 	owned := apiKeySecretSeams[providerID]
-	if p := getProviderProfile(context.Background(), providerID); p != nil && p.ResolveAPIKeySecretHook != nil {
+	if p := getProviderProfile(r.ctx, providerID); p != nil && p.ResolveAPIKeySecretHook != nil {
 		owned = p.ResolveAPIKeySecretHook
 	}
 	credentialSeamsMu.RUnlock()
@@ -1067,7 +1067,7 @@ func (r *resolver) apiKeyProviderBaseURL(providerID, apiKey string, pconfig Prof
 
 // Api key and base URL for a registry api key provider
 func (r *resolver) apiKeyProviderCredentials(providerID string) (apiKeyCreds, error) {
-	pconfig, ok := registryProfile(providerID)
+	pconfig, ok := registryProfileCtx(r.ctx, providerID)
 	if !ok || pconfig.AuthType != AuthTypeAPIKey {
 		return apiKeyCreds{}, newAuthErr(providerID, fmt.Sprintf("Provider '%s' is not an API-key provider.", providerID), "invalid_provider", false)
 	}
@@ -1081,7 +1081,7 @@ func (r *resolver) apiKeyProviderCredentials(providerID string) (apiKeyCreds, er
 	envURL := r.providerEnvBaseURL(pconfig)
 	credentialSeamsMu.RLock()
 	urlSeam := runtimeBaseURLSeams[providerID]
-	if p := getProviderProfile(context.Background(), providerID); p != nil && p.RuntimeBaseURLHook != nil {
+	if p := getProviderProfile(r.ctx, providerID); p != nil && p.RuntimeBaseURLHook != nil {
 		urlSeam = p.RuntimeBaseURLHook
 	}
 	credentialSeamsMu.RUnlock()
@@ -1206,6 +1206,9 @@ func (r *resolver) openrouterAutoDetected() bool {
 	if r.creds == nil {
 		return false
 	}
+	if src, ok := r.creds.(PoolPresenceSource); ok {
+		return src.HasPoolCredentials("openrouter")
+	}
 	_, ok := r.creds.Credential("openrouter")
 	return ok
 }
@@ -1217,7 +1220,7 @@ func (r *resolver) loggedInOAuthActiveProvider(skipFreeTier bool) string {
 		return ""
 	}
 	active := src.ActiveLoggedInProvider(skipFreeTier)
-	if _, known := registryProfile(active); !known {
+	if _, known := registryProfileCtx(r.ctx, active); !known {
 		return ""
 	}
 	return active
@@ -1234,7 +1237,7 @@ func (r *resolver) configModelProvider() (map[string]any, string) {
 	if provider == "custom" || strings.HasPrefix(provider, "custom:") {
 		return modelCfg, "custom"
 	}
-	if _, ok := registryProfile(provider); provider == "openrouter" || ok {
+	if _, ok := registryProfileCtx(r.ctx, provider); provider == "openrouter" || ok {
 		return modelCfg, provider
 	}
 	if provider != "" && r.HasNamedCustomProvider(provider) {
@@ -1254,12 +1257,15 @@ var noAutoDetectProviders = map[string]bool{"lmstudio": true}
 
 // First registry api key provider in registry order with a usable env key
 func (r *resolver) envKeyAutoDetected(oauthActive string) string {
-	for _, pconfig := range Profiles() {
-		pid := pconfig.Name
-		if _, ok := registryProfile(pid); !ok {
-			continue
+	ambient := map[string]bool{}
+	for _, p := range listProviders(r.ctx) {
+		if p.AmbientCredentials {
+			ambient[p.Name] = true
 		}
-		if pconfig.AuthType != AuthTypeAPIKey || noAutoDetectProviders[pid] || pconfig.AmbientCredentials {
+	}
+	for _, pconfig := range canonicalRegistryRows(r.ctx) {
+		pid := pconfig.Name
+		if pconfig.AuthType != AuthTypeAPIKey || noAutoDetectProviders[pid] || ambient[pid] {
 			continue
 		}
 		for _, envVar := range pconfig.KeyEnvNames() {
@@ -1386,7 +1392,7 @@ var v1TailRe = regexp.MustCompile(`/v1/?$`)
 // Api mode and base URL for a pool entry of the provider
 func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCfg map[string]any, model, baseURL string) (APIMode, string) {
 	if provider == "actual" && strings.HasPrefix(cred.Source, "env:") {
-		if cfgURL := configBaseURLForProvider(modelCfg, provider); cfgURL != "" {
+		if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
 			baseURL = cfgURL
 		}
 	}
@@ -1397,7 +1403,7 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 				return simple.mode, override
 			}
 			if baseURL == "" || baseURL == defaultURL {
-				if cfgURL := configBaseURLForProvider(modelCfg, provider); cfgURL != "" {
+				if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
 					baseURL = cfgURL
 				}
 			}
@@ -1408,7 +1414,7 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 				canonical = strings.TrimRight(p.BaseURL, "/")
 			}
 			if t := strings.TrimRight(baseURL, "/"); t == "" || t == canonical {
-				if cfgURL := configBaseURLForProvider(modelCfg, provider); cfgURL != "" {
+				if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
 					baseURL = cfgURL
 				}
 			}
@@ -1435,7 +1441,7 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 		}
 		return NousMode(model, r.nousAnthropicWire()), u
 	}
-	if perModelProfile(provider) != nil {
+	if perModelProfileCtx(r.ctx, provider) != nil {
 		mode := r.profileRuntimeAPIMode(provider, modelCfg, cred.APIKey, model)
 		if baseURL == "" {
 			if p, ok := ProfileFor(provider); ok {
@@ -1447,7 +1453,7 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 	if provider == "azure-foundry" {
 		mode := ModeChatCompletions
 		if cfgProviderOf(modelCfg) == "azure-foundry" {
-			if cfgURL := configBaseURLForProvider(modelCfg, "azure-foundry"); cfgURL != "" {
+			if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, "azure-foundry"); cfgURL != "" {
 				baseURL = cfgURL
 			}
 			if parsed := r.parseAPIMode(modelCfg["api_mode"]); parsed != "" {
@@ -1460,8 +1466,8 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 		}
 		return mode, baseURL
 	}
-	if pconfig, ok := registryProfile(provider); ok && (baseURL == "" || strings.TrimRight(baseURL, "/") == strings.TrimRight(pconfig.BaseURL, "/")) {
-		if cfgURL := configBaseURLForProvider(modelCfg, provider); cfgURL != "" {
+	if pconfig, ok := registryProfileCtx(r.ctx, provider); ok && (baseURL == "" || strings.TrimRight(baseURL, "/") == strings.TrimRight(pconfig.BaseURL, "/")) {
+		if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
 			baseURL = cfgURL
 		} else if baseURL == "" {
 			baseURL = pconfig.BaseURL
@@ -1548,6 +1554,9 @@ func (r *resolver) explicitAnthropic(requestedProvider string, modelCfg map[stri
 
 // Stored login of an oauth provider or its typed missing credential error
 func (r *resolver) oauthCredential(provider string) (Credential, error) {
+	if src, ok := r.creds.(RuntimeCredentialSource); ok {
+		return src.RuntimeCredential(provider)
+	}
 	if r.creds != nil {
 		if cred, ok := r.creds.Credential(provider); ok && (cred.APIKey != "" || cred.TokenSource != nil) {
 			return cred, nil
@@ -1673,7 +1682,7 @@ func (r *resolver) explicitAPIKeyProvider(provider string, pconfig Profile, requ
 	if baseURL == "" {
 		switch {
 		case provider == "actual":
-			baseURL = configBaseURLForProvider(modelCfg, provider)
+			baseURL = configBaseURLForProviderCtx(r.ctx, modelCfg, provider)
 			if baseURL == "" {
 				creds, err := r.apiKeyProviderCredentials(provider)
 				if err != nil {
@@ -1742,7 +1751,7 @@ func (r *resolver) resolveExplicitRuntime(provider, requestedProvider string, mo
 	case "azure-foundry":
 		return r.resolveAzureFoundryRuntime(requestedProvider, modelCfg, explicitAPIKey, nil, explicitBaseURL, targetModel)
 	}
-	pconfig, ok := registryProfile(provider)
+	pconfig, ok := registryProfileCtx(r.ctx, provider)
 	if !ok || pconfig.AuthType != AuthTypeAPIKey {
 		return nil, nil
 	}
@@ -1792,7 +1801,7 @@ func (r *resolver) resolveOAuthRuntime(provider, requestedProvider string, model
 }
 
 func (r *resolver) minimaxOAuthRuntime(provider, requestedProvider string) (*Runtime, error) {
-	pconfig, ok := registryProfile(provider)
+	pconfig, ok := registryProfileCtx(r.ctx, provider)
 	if !ok || pconfig.AuthType != AuthTypeOAuthMiniMax {
 		return nil, nil
 	}
@@ -1861,7 +1870,7 @@ func (r *resolver) apiKeyProviderRuntime(provider string, pconfig Profile, reque
 		return nil, err
 	}
 	if provider == "actual" && creds.TokenSource == nil && !hasUsableSecret(creds.APIKey) {
-		cfgURL := configBaseURLForProvider(modelCfg, provider)
+		cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider)
 		probe := cfgURL
 		if probe == "" {
 			probe = strings.TrimRight(creds.BaseURL, "/")
@@ -1882,7 +1891,7 @@ func (r *resolver) apiKeyProviderRuntime(provider string, pconfig Profile, reque
 		hint += r.namedProfileKeyHint(pconfig.KeyEnvNames())
 		return nil, newAuthErr(provider, fmt.Sprintf("No usable credentials found for provider '%s'.%s", provider, hint), "missing_api_key", false)
 	}
-	baseURL := configBaseURLForProvider(modelCfg, provider)
+	baseURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider)
 	if baseURL == "" {
 		baseURL = strings.TrimRight(creds.BaseURL, "/")
 	}
@@ -1926,11 +1935,11 @@ func missingCredentialsSuffix(ctx context.Context, provider string) (out string)
 			out = ""
 		}
 	}()
-	hint := strings.TrimSpace(p.MissingCredentialsHintHook())
-	if hint == "" {
+	hint, ok := p.MissingCredentialsHintHook().(string)
+	if !ok || strings.TrimSpace(hint) == "" {
 		return ""
 	}
-	return " " + hint
+	return " " + strings.TrimSpace(hint)
 }
 
 // ---- the resolution ladder ----
@@ -2087,7 +2096,7 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 			return rt, err
 		}
 	}
-	if isExternalProcessProvider(provider) {
+	if isExternalProcessProvider(r.ctx, provider) {
 		return r.resolveExternalProcessRuntime(provider, requestedProvider)
 	}
 	if provider == "anthropic" {
@@ -2096,7 +2105,7 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 	if provider == "bedrock" {
 		return r.resolveBedrockRuntime(requestedProvider, modelCfg, targetModel)
 	}
-	if pconfig, ok := registryProfile(provider); ok && pconfig.AuthType == AuthTypeAPIKey {
+	if pconfig, ok := registryProfileCtx(r.ctx, provider); ok && pconfig.AuthType == AuthTypeAPIKey {
 		return r.apiKeyProviderRuntime(provider, pconfig, requestedProvider, modelCfg, targetModel)
 	}
 	fallback := r.openrouterFallback(requestedProvider, explicitAPIKey, explicitBaseURL)
@@ -2208,78 +2217,6 @@ func resolveRuntimeLadder(ctx context.Context, cfg config.Tree, secrets *config.
 	return rt.Route(), nil
 }
 
-// Auxiliary task config with plugin declared defaults layered under user config and inherit_from resolved
-func (r *resolver) auxiliaryTaskConfig(task string, seen map[string]bool) map[string]any {
-	if task == "" {
-		return map[string]any{}
-	}
-	aux, _ := r.cfg["auxiliary"].(map[string]any)
-	taskConfig, _ := aux[task].(map[string]any)
-	if taskConfig == nil {
-		taskConfig = map[string]any{}
-	}
-	for _, entry := range pluginAuxiliaryTasks() {
-		if cfgString(entry["key"]) != task {
-			continue
-		}
-		defaults, ok := entry["defaults"].(map[string]any)
-		if !ok {
-			break
-		}
-		inherit := cfgString(entry["inherit_from"])
-		if inherit != "" && seen[task] {
-			slog.Default().Warn(fmt.Sprintf("Auxiliary task %q has a circular inherit_from chain — ignoring inheritance", task))
-		}
-		if inherit == "" || seen[task] {
-			merged := copyAnyMap(defaults)
-			for k, v := range taskConfig {
-				merged[k] = v
-			}
-			return merged
-		}
-		next := map[string]bool{task: true}
-		for k := range seen {
-			next[k] = true
-		}
-		base := r.auxiliaryTaskConfig(inherit, next)
-		inherited := copyAnyMap(base)
-		for k, v := range defaults {
-			inherited[k] = v
-		}
-		return layerOverInherited(inherited, taskConfig)
-	}
-	return taskConfig
-}
-
-// Fields that together pick where an auxiliary call goes
-var auxRouteKeys = map[string]bool{
-	"provider": true, "model": true, "base_url": true, "api_key": true, "api_mode": true, "key_env": true,
-	"api_key_env": true, "reasoning_effort": true,
-}
-
-// Merges a task's own auxiliary block over its inherited base, a pinned route replacing the whole route
-func layerOverInherited(inherited, user map[string]any) map[string]any {
-	provider := strings.ToLower(strings.TrimSpace(cfgString(user["provider"])))
-	pinned := (provider != "" && provider != "auto") || strings.TrimSpace(cfgString(user["model"])) != "" || strings.TrimSpace(cfgString(user["base_url"])) != ""
-	merged := map[string]any{}
-	for k, v := range inherited {
-		if pinned && auxRouteKeys[k] {
-			continue
-		}
-		merged[k] = v
-	}
-	for key, value := range user {
-		if s, ok := value.(string); ok && s == "" && !(pinned && auxRouteKeys[key]) {
-			continue
-		}
-		if key == "provider" && !pinned {
-			continue
-		}
-		merged[key] = value
-	}
-	return merged
-}
-
 var localServerAliases = map[string]bool{"ollama": true, "vllm": true, "llamacpp": true, "llama.cpp": true, "llama-cpp": true}
 
 // True when a first class provider keeps its identity alongside an explicit base URL
@@ -2291,7 +2228,7 @@ func (r *resolver) preserveProviderWithBaseURL(provider string) bool {
 	if localServerAliases[normalized] {
 		return true
 	}
-	if _, ok := registryProfile(authNormalizeProvider(normalized)); ok {
+	if _, ok := registryProfileCtx(r.ctx, authNormalizeProvider(normalized)); ok {
 		return true
 	}
 	return r.HasNamedCustomProvider(normalized)
@@ -2315,10 +2252,10 @@ type auxRoute struct {
 }
 
 // Provider, model, base URL, key, and api mode for a task, explicit args beating config beating auto
-func (r *resolver) resolveTaskProviderModel(task, provider, model, baseURL, apiKey string) auxRoute {
+func (r *resolver) resolveTaskProviderModel(task any, provider, model, baseURL, apiKey string) auxRoute {
 	var cfgProvider, cfgModel, cfgBaseURL, cfgAPIKey string
 	var resolvedMode APIMode
-	if task != "" {
+	if auxTaskName(task) != "" {
 		tc := r.auxiliaryTaskConfig(task, map[string]bool{})
 		cfgProvider = strings.TrimSpace(cfgString(tc["provider"]))
 		cfgModel = strings.TrimSpace(cfgString(tc["model"]))

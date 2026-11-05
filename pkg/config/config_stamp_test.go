@@ -153,7 +153,9 @@ func TestParseFailureProbeTracksTheBrokenBytes(t *testing.T) {
 	h := t.TempDir()
 	path := writeConfig(t, h, "model: [unterminated\n")
 	if _, err := ReadDocument(path); err != nil {
-		WarnConfigParseFailure(path, err, "defaults")
+		if werr := WarnConfigParseFailure(path, err, "defaults"); werr != nil {
+			t.Fatal(werr)
+		}
 	}
 	if msg, ok := ActiveConfigParseFailure(h); !ok || msg == "" {
 		t.Fatal("expected an active parse failure")
@@ -179,7 +181,9 @@ func TestTransientReadErrorIsNotACorruptConfig(t *testing.T) {
 	readErr := &os.PathError{Op: "open", Path: path, Err: syscall.EMFILE}
 	saved := readFailureBytes
 	readFailureBytes = func(string) ([]byte, error) { return nil, readErr }
-	WarnConfigParseFailure(path, readErr, "defaults")
+	if werr := WarnConfigParseFailure(path, readErr, "defaults"); werr != nil {
+		t.Fatal(werr)
+	}
 	if _, ok := ActiveConfigParseFailure(h); !ok {
 		t.Fatal("unreadable file not reported while the fault holds")
 	}
@@ -245,27 +249,27 @@ func TestBackupConfigDedupesSweepsAndPrunes(t *testing.T) {
 	path := writeConfig(t, h, "a: 1\n")
 	legacy := filepath.Join(h, "config.yaml.bak.1")
 	os.WriteFile(legacy, []byte("old"), 0o600)
-	first := BackupConfig(path, "good", 2)
-	if first == "" || BackupConfig(path, "good", 2) != "" {
+	first := mustBackup(t, path, "good", 2)
+	if first == "" || mustBackup(t, path, "good", 2) != "" {
 		t.Fatal("identical bytes backed up twice")
 	}
 	if _, err := os.Stat(filepath.Join(BackupsDir(path), "config.yaml.bak.1")); err != nil {
 		t.Fatal("legacy sibling not swept")
 	}
-	if got := LoadNewestGoodBackup(path); got["a"] != 1 {
+	if got, err := LoadNewestGoodBackup(path); err != nil || got["a"] != 1 {
 		t.Fatalf("good backup = %v", got)
 	}
 	os.WriteFile(filepath.Join(BackupsDir(path), "config.yaml.good.20000101-000000"), []byte("a: 0\n"), 0o600)
 	os.WriteFile(filepath.Join(BackupsDir(path), "config.yaml.good.19990101-000000"), []byte("a: -1\n"), 0o600)
 	os.Remove(first)
 	writeConfig(t, h, "a: 2\n")
-	if BackupConfig(path, "good", 2) == "" {
+	if mustBackup(t, path, "good", 2) == "" {
 		t.Fatal("changed file not backed up")
 	}
 	if got := ListConfigBackups(path, "good"); len(got) != 2 {
 		t.Fatalf("kept %v", got)
 	}
-	if BackupConfig(filepath.Join(h, "missing.yaml"), "good", 2) != "" {
+	if mustBackup(t, filepath.Join(h, "missing.yaml"), "good", 2) != "" {
 		t.Fatal("missing file backed up")
 	}
 }

@@ -31,8 +31,10 @@ func anonJWT(claims map[string]any) string {
 }
 
 type anonCanned struct {
-	status int
-	body   map[string]any
+	status  int
+	body    map[string]any
+	headers map[string]string
+	text    string
 }
 
 // Minimal NAS anonymous surface over TLS that records every call
@@ -58,6 +60,7 @@ type anonFakePortal struct {
 	tokenRequests         []map[string]any
 	createRequests        []map[string]any
 	afterHandle           func(p *anonFakePortal)
+	servedCanned          *anonCanned
 	routes                map[string]func(r *http.Request, req map[string]any) (int, map[string]any)
 }
 
@@ -94,7 +97,8 @@ func (p *anonFakePortal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Body = io.NopCloser(bytes.NewReader(raw))
 	p.mu.Lock()
 	status, body := p.handle(r, raw)
-	after := p.afterHandle
+	after, canned := p.afterHandle, p.servedCanned
+	p.servedCanned = nil
 	p.mu.Unlock()
 	if status == 0 {
 		hj, _ := w.(http.Hijacker)
@@ -106,6 +110,17 @@ func (p *anonFakePortal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.mu.Lock()
 		after(p)
 		p.mu.Unlock()
+	}
+	if canned != nil {
+		for k, v := range canned.headers {
+			w.Header().Set(k, v)
+		}
+		if canned.text != "" {
+			w.Header().Set("content-type", "text/html")
+			w.WriteHeader(status)
+			io.WriteString(w, canned.text)
+			return
+		}
 	}
 	w.Header().Set("content-type", "application/json")
 	w.WriteHeader(status)
@@ -139,6 +154,7 @@ func (p *anonFakePortal) handle(r *http.Request, raw []byte) (int, map[string]an
 	case "/api/anonymous/create":
 		p.createRequests = append(p.createRequests, req)
 		if p.createResponse != nil {
+			p.servedCanned = p.createResponse
 			return p.createResponse.status, p.createResponse.body
 		}
 		p.minted++
@@ -163,6 +179,7 @@ func (p *anonFakePortal) handle(r *http.Request, raw []byte) (int, map[string]an
 	case "/api/anonymous/token":
 		p.tokenRequests = append(p.tokenRequests, map[string]any{"body": req, "user_agent": r.Header.Get("user-agent")})
 		if p.tokenResponse != nil {
+			p.servedCanned = p.tokenResponse
 			return p.tokenResponse.status, p.tokenResponse.body
 		}
 		connectors := p.honoursPurpose && req["purpose"] == "connectors"

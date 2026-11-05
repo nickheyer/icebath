@@ -21,7 +21,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"golang.org/x/text/encoding/charmap"
 )
 
@@ -177,7 +180,7 @@ func pyIntHeader(value string) (int64, error) {
 		return 0, nil
 	}
 	if !pyIntLiteral.MatchString(value) {
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyRepr(value))
+		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(value))
 	}
 	return strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(value), "_", ""), 10, 64)
 }
@@ -227,65 +230,6 @@ func pyIsAbs(p string) bool {
 	return strings.HasPrefix(head[min(1, len(head)):], `:\`) || strings.HasPrefix(head, `\\`)
 }
 
-// Joins like os.path.join on this platform, a rooted second part replacing the first
-func pyJoin(a, b string) string {
-	if runtime.GOOS == "windows" {
-		return ntJoin(a, b)
-	}
-	if strings.HasPrefix(b, "/") {
-		return b
-	}
-	if a == "" || strings.HasSuffix(a, "/") {
-		return a + b
-	}
-	return a + "/" + b
-}
-
-// Directory part of a path the way os.path.dirname splits it on this platform
-func pyDirname(name string) string {
-	if runtime.GOOS == "windows" {
-		return ntDirname(name)
-	}
-	head := name[:strings.LastIndex(name, "/")+1]
-	if trimmed := strings.TrimRight(head, "/"); trimmed != "" {
-		return trimmed
-	}
-	return head
-}
-
-// Collapses dot and dot dot components lexically the way os.path.normpath does on this platform
-func pyNormpath(p string) string {
-	if p == "" {
-		return "."
-	}
-	sep, prefix, rest := "/", "", p
-	if runtime.GOOS == "windows" {
-		sep = `\`
-		drive, root, tail := ntSplitRoot(strings.ReplaceAll(p, "/", `\`))
-		prefix, rest = drive+root, tail
-	} else if strings.HasPrefix(p, "/") {
-		prefix, rest = "/", p[1:]
-		if strings.HasPrefix(p, "//") && !strings.HasPrefix(p, "///") {
-			prefix, rest = "//", p[2:]
-		}
-	}
-	rooted := strings.HasSuffix(prefix, sep)
-	var comps []string
-	for _, c := range strings.Split(rest, sep) {
-		switch {
-		case c == "" || c == ".":
-		case c != ".." || (!rooted && len(comps) == 0) || (len(comps) > 0 && comps[len(comps)-1] == ".."):
-			comps = append(comps, c)
-		case len(comps) > 0:
-			comps = comps[:len(comps)-1]
-		}
-	}
-	if out := prefix + strings.Join(comps, sep); out != "" {
-		return out
-	}
-	return "."
-}
-
 // Resolves symlinks the way realpath does under strict ALLOW_MISSING, tolerating only a missing component
 func realpathAllowMissing(path string) (string, error) {
 	return realpathMode(path, true)
@@ -309,11 +253,11 @@ func tarFilter(m *tarInfo, dest string) (*filteredMember, error) {
 		return nil, &TarFilterError{Kind: "AbsoluteLinkError", Member: m.name}
 	}
 	name := strings.TrimRight(m.name, "/")
-	placed, err := tarRealpath(pyJoin(dest, name), false)
+	placed, err := tarRealpath(pypath.Join(dest, name), false)
 	if err != nil {
 		return nil, err
 	}
-	target, err := tarRealpath(pyJoin(pyJoin(dest, pyDirname(name)), m.linkname), false)
+	target, err := tarRealpath(pypath.Join(pypath.Join(dest, pypath.Dirname(name)), m.linkname), false)
 	if err != nil {
 		return nil, err
 	}
@@ -353,9 +297,9 @@ func tarDataFilter(m *tarInfo, dest string) (*filteredMember, error) {
 		return nil, &TarFilterError{Kind: "AbsolutePathError", Member: m.name}
 	}
 	if slices.Contains(strings.Split(strings.ReplaceAll(name, string(filepath.Separator), "/"), "/"), "..") {
-		name = pyNormpath(name)
+		name = pypath.Normpath(name)
 	}
-	targetPath, err := tarRealpath(pyJoin(dest, name), true)
+	targetPath, err := tarRealpath(pypath.Join(dest, name), true)
 	if err != nil {
 		return nil, err
 	}
@@ -384,8 +328,8 @@ func tarDataFilter(m *tarInfo, dest string) (*filteredMember, error) {
 	if targetPath == dest {
 		return nil, &TarFilterError{Kind: "OutsideDestinationError", Member: m.name, Path: targetPath}
 	}
-	f.link = pyNormpath(m.linkname)
-	linked, err := tarRealpath(pyJoin(dest, f.link), true)
+	f.link = pypath.Normpath(m.linkname)
+	linked, err := tarRealpath(pypath.Join(dest, f.link), true)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +388,7 @@ func (x *tarExtraction) extractAll() error {
 			return err
 		}
 		if m.islnk() {
-			target := pyJoin(x.dest, f.link)
+			target := pypath.Join(x.dest, f.link)
 			f.linkTarget = &target
 		}
 		if m.isdir() {
@@ -465,7 +409,7 @@ func (x *tarExtraction) extractAll() error {
 		if err != nil {
 			continue
 		}
-		dirpath := pyJoin(x.dest, f.name)
+		dirpath := pypath.Join(x.dest, f.name)
 		st, err := os.Lstat(dirpath)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -486,7 +430,7 @@ func (x *tarExtraction) extractAll() error {
 
 // Extracts one filtered member, dropping a skippable ExtractError and raising every other failure
 func (x *tarExtraction) extractOne(f *filteredMember, setAttrs bool) error {
-	err := x.extractMember(f, pyJoin(x.dest, f.name), setAttrs)
+	err := x.extractMember(f, pypath.Join(x.dest, f.name), setAttrs)
 	var skipped *tarExtractError
 	if errors.As(err, &skipped) {
 		return nil
@@ -497,7 +441,7 @@ func (x *tarExtraction) extractOne(f *filteredMember, setAttrs bool) error {
 // Writes a filtered member at targetpath creating missing parents, then applies its mode and time
 func (x *tarExtraction) extractMember(f *filteredMember, targetpath string, setAttrs bool) error {
 	targetpath = strings.ReplaceAll(strings.TrimRight(targetpath, "/"), "/", string(filepath.Separator))
-	if upper := pyDirname(targetpath); upper != "" {
+	if upper := pypath.Dirname(targetpath); upper != "" {
 		if _, err := os.Stat(upper); err != nil {
 			if err := os.MkdirAll(upper, 0o777); err != nil {
 				return err
@@ -697,7 +641,7 @@ func (x *tarExtraction) findLinkTarget(f *filteredMember) (*tarInfo, string, err
 	name, limit := f.link, f.member
 	if f.member.issym() {
 		var parts []string
-		for _, p := range []string{pyDirname(f.name), f.link} {
+		for _, p := range []string{pypath.Dirname(f.name), f.link} {
 			if p != "" {
 				parts = append(parts, p)
 			}
@@ -708,13 +652,13 @@ func (x *tarExtraction) findLinkTarget(f *filteredMember) (*tarInfo, string, err
 	if err != nil {
 		return nil, name, err
 	}
-	want, skipping := pyNormpath(name), limit != nil
+	want, skipping := pypath.Normpath(name), limit != nil
 	for i := len(members) - 1; i >= 0; i-- {
 		if skipping {
 			skipping = members[i].offset.Cmp(limit.offset) != 0
 			continue
 		}
-		if pyNormpath(members[i].name) == want {
+		if pypath.Normpath(members[i].name) == want {
 			return members[i], name, nil
 		}
 	}
@@ -803,7 +747,7 @@ func zipTargetPath(member, dest string, isDir bool) (string, error) {
 	if arcname == "" && !isDir {
 		return "", errors.New("Empty filename.")
 	}
-	return filepath.Clean(pyJoin(dest, arcname)), nil
+	return filepath.Clean(pypath.Join(dest, arcname)), nil
 }
 
 // Extracts a zip, restoring executable modes and placing in root symlinks last
@@ -893,14 +837,14 @@ func writeZipMember(f *zip.File, path string) error {
 // Places a zip symlink whose path and target both stay inside dest, else skips it
 func zipSymlink(member, target, dest string) error {
 	root := realpath(dest)
-	link := realpath(pyJoin(root, filepath.FromSlash(member)))
+	link := realpath(pypath.Join(root, filepath.FromSlash(member)))
 	if !isRelativeTo(link, root) {
 		return nil
 	}
 	if pyIsAbs(target) || filepath.IsAbs(target) {
 		return nil
 	}
-	resolved := realpath(pyJoin(filepath.Dir(link), target))
+	resolved := realpath(pypath.Join(filepath.Dir(link), target))
 	if !isRelativeTo(resolved, root) {
 		return nil
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Side environment name of a checkout's test suite
@@ -40,7 +42,7 @@ func TestenvPython(ctx context.Context, projectRoot string) (string, error) {
 
 // Extras an override value names split on commas and whitespace, nil selecting the defaults
 func ParseTestExtras(value string) []string {
-	fields := strings.FieldsFunc(strings.ReplaceAll(value, ",", " "), pyIsSpace)
+	fields := strings.FieldsFunc(strings.ReplaceAll(value, ",", " "), pystr.IsSpace)
 	if len(fields) == 0 {
 		return nil
 	}

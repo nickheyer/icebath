@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Characters Python str patterns match with a backslash s class
@@ -55,9 +57,6 @@ func validPackageName(name string) string {
 // Reports a character Python str patterns count as a word character, a letter, a number or underscore
 func pyIsWord(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsNumber(r) }
 
-// Lowercases with Python str lower full mapping, dotted capital I becoming i and a combining dot
-func pyLower(s string) string { return strings.ToLower(strings.ReplaceAll(s, "\u0130", "i\u0307")) }
-
 // Wheel names uv's install step reports, the shortest run ending in a whl suffix at a word boundary
 func failedWheels(output string) []string {
 	var wheels []string
@@ -81,7 +80,7 @@ func failedWheels(output string) []string {
 func wheelEnd(text string, start int) int {
 	for i := start; i < len(text); {
 		r, size := utf8.DecodeRuneInString(text[i:])
-		if pyIsSpace(r) || r == '(' || r == ')' {
+		if pystr.IsSpace(r) || r == '(' || r == ')' {
 			return -1
 		}
 		i += size
@@ -97,7 +96,7 @@ func wheelEnd(text string, start int) int {
 
 // Packages uv failed to install because their cached copy is corrupt, empty for any other failure
 func FailedCachedPackages(output string) map[string]bool {
-	lowered := pyLower(output)
+	lowered := pystr.Lower(output)
 	corrupt := missingArchive.MatchString(output)
 	for _, cause := range corruptCauses {
 		if strings.Contains(lowered, cause) {

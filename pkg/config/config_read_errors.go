@@ -113,6 +113,9 @@ func configStatVersion(path string) (string, error) {
 // Reader the failure version digests through, swapped by tests to inject a transient read fault
 var readFailureBytes = os.ReadFile
 
+// Reads the bytes of a YAML file every config parse reads, the seam transient read faults replace
+var readYAMLFile = os.ReadFile
+
 // Version a parse failure record matches on, content digested so a same tick fix clears it
 func failureVersion(path string) (string, error) {
 	sig, err := configStatVersion(path)
@@ -126,8 +129,8 @@ func failureVersion(path string) (string, error) {
 	return fmt.Sprintf("%s:%x", sig, sha256.Sum256(data)), nil
 }
 
-// Records a config parse failure and warns once per file signature with a corrupt backup for bad YAML
-func WarnConfigParseFailure(configPath string, err error, fallback string) {
+// Records a config parse failure and warns once per signature, errors when the corrupt backup has no backend
+func WarnConfigParseFailure(configPath string, err error, fallback string) error {
 	parseFailureMu.Lock()
 	key := configPath + "|0:0"
 	if sig, serr := configStatVersion(configPath); serr == nil {
@@ -138,13 +141,16 @@ func WarnConfigParseFailure(configPath string, err error, fallback string) {
 	}
 	if configParseWarned[key] {
 		parseFailureMu.Unlock()
-		return
+		return nil
 	}
 	configParseWarned[key] = true
 	parseFailureMu.Unlock()
 	backup := ""
 	if !IsOSError(err) {
-		backup = BackupConfig(configPath, "corrupt", DefaultBackupKeep)
+		var berr error
+		if backup, berr = BackupConfig(configPath, "corrupt", DefaultBackupKeep); berr != nil {
+			return berr
+		}
 	}
 	msg := FormatConfigParseFailure(configPath, err, fallback)
 	if backup != "" {
@@ -153,6 +159,7 @@ func WarnConfigParseFailure(configPath string, err error, fallback string) {
 	details := YAMLErrorDetails(err)
 	slog.Warn(msg+" Details: "+details, "path", configPath)
 	fmt.Fprintf(ParseFailureOut, "⚠️  icebath config: %s\n    Details: %s\n", msg, details)
+	return nil
 }
 
 // Recorded parse error while the active config file is byte identical to the one that failed
@@ -203,7 +210,18 @@ func ReadErrorFix(err error) string {
 func RefuseFailedRead(h, configPath string, data any) error {
 	failed, ok := data.(*FailedConfigRead)
 	if !ok {
-		return nil
+		var m map[string]any
+		switch d := data.(type) {
+		case map[string]any:
+			m = d
+		case Tree:
+			m = d
+		}
+		readErr := FailedReadError(m)
+		if readErr == nil {
+			return nil
+		}
+		failed = &FailedConfigRead{Data: m, ReadError: readErr}
 	}
 	err := failed.ReadError
 	if IsOSError(err) {

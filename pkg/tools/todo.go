@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (
@@ -490,7 +492,7 @@ func IsTodoToolCall(name string, rawArgs any) bool {
 	var args map[string]any
 	switch v := rawArgs.(type) {
 	case string:
-		decoded, err := jsonDecodeWTF8([]byte(v))
+		decoded, err := pyjson.DecodeWTF8([]byte(v))
 		if err != nil {
 			return false
 		}

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -153,7 +155,7 @@ func CollectMemorySnapshot(historyBytes *int) MemorySnapshot {
 			if !found || (key != "VmRSS" && key != "RssAnon") {
 				continue
 			}
-			fields := pyFields(raw)
+			fields := pystr.SplitWhitespace(raw, -1)
 			if len(fields) == 0 || !isASCIIDigits(fields[0]) {
 				continue
 			}

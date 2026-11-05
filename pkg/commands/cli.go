@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/profiles"
 	"io"
 	"os"
 	"regexp"
@@ -82,27 +83,6 @@ func init() {
 }
 
 var profileNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
-var profileSuggestRe = regexp.MustCompile(`[^a-z0-9_-]+`)
-
-const profileNameRule = "Use lowercase letters, numbers, '-' or '_', starting with a letter or number, up to 64 characters"
-
-// Valid profile id derived from a typed name
-func SuggestProfileName(name string) string {
-	candidate := strings.Trim(profileSuggestRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-"), "-_")
-	if r := []rune(candidate); len(r) > 64 {
-		candidate = string(r[:64])
-	}
-	if profileNameRe.MatchString(candidate) {
-		return candidate
-	}
-	return "my-work"
-}
-
-// Message for a profile name that fails validation
-func InvalidProfileNameError(name string) string {
-	s := SuggestProfileName(name)
-	return fmt.Sprintf("'%s' is not a valid profile name. %s (for example: %s). Then run `icebath profile create %s`.", name, profileNameRule, s, s)
-}
 
 func cfgPathForHelp() string {
 	return home.Display(home.Process()) + "/config.yaml"
@@ -186,6 +166,8 @@ func NewCLI() *CLI {
 	c.addPM(root)
 	c.bindMCP()
 	c.bindMoA()
+	c.bindConfig()
+	c.bindSkin()
 	c.finishAll(root)
 	return c
 }
@@ -743,7 +725,7 @@ func (c *CLI) ScanProfileFlag(argv []string) (string, int, int, error) {
 				return value, 2, i, nil
 			}
 			if !sawSub && !looksLikeOptionValue(raw) {
-				return "", 0, -1, &ExitError{Code: 2, Msg: "Error: " + InvalidProfileNameError(raw) + "\nRun `icebath profile list` to see your profiles."}
+				return "", 0, -1, &ExitError{Code: 2, Msg: "Error: " + profiles.InvalidProfileNameError(raw).Error() + "\nRun `icebath profile list` to see your profiles."}
 			}
 			break
 		}

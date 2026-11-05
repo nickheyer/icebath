@@ -1,11 +1,11 @@
 package cron
 
 import (
-	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 )
 
 // ISOTime is a parsed ISO 8601 stamp that remembers whether it carried a UTC offset
@@ -20,152 +20,21 @@ func systemFixedZone(now time.Time) *time.Location {
 	return time.FixedZone(name, off)
 }
 
-// FormatISO renders t the way Python isoformat does, microseconds only when present
+// FormatISO renders t the way Python isoformat does
 func FormatISO(t time.Time) string {
-	base := t.Format("2006-01-02T15:04:05")
-	if us := t.Nanosecond() / 1000; us != 0 {
-		base += fmt.Sprintf(".%06d", us)
-	}
-	_, off := t.Zone()
-	sign := "+"
-	if off < 0 {
-		sign = "-"
-		off = -off
-	}
-	return fmt.Sprintf("%s%s%02d:%02d", base, sign, off/3600, (off%3600)/60)
+	return pydatetime.ISOFormat(t)
 }
 
 // FormatISOUTC renders an instant in UTC with a +00:00 suffix
 func FormatISOUTC(t time.Time) string { return FormatISO(t.UTC()) }
 
-// ErrNotISO reports a value that is not an ISO 8601 timestamp
-var ErrNotISO = errors.New("not an ISO 8601 timestamp")
-
-// ParseISO accepts the forms Python fromisoformat accepts, naive values kept as UTC wall fields
+// ParseISO parses like Python datetime fromisoformat, naive values kept as UTC wall fields
 func ParseISO(value string) (ISOTime, error) {
-	s := strings.TrimSpace(value)
-	if len(s) < 10 {
-		return ISOTime{}, ErrNotISO
-	}
-	year, err1 := strconv.Atoi(s[0:4])
-	month, err2 := strconv.Atoi(s[5:7])
-	day, err3 := strconv.Atoi(s[8:10])
-	if err1 != nil || err2 != nil || err3 != nil || s[4] != '-' || s[7] != '-' {
-		return ISOTime{}, ErrNotISO
-	}
-	if month < 1 || month > 12 || day < 1 || day > 31 {
-		return ISOTime{}, ErrNotISO
-	}
-	rest := s[10:]
-	if rest == "" {
-		return ISOTime{Time: time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)}, nil
-	}
-	if rest[0] != 'T' && rest[0] != 't' && rest[0] != ' ' {
-		return ISOTime{}, ErrNotISO
-	}
-	rest = rest[1:]
-	loc := time.UTC
-	aware := false
-	if idx := strings.IndexAny(rest, "+-Zz"); idx >= 0 {
-		offset := rest[idx:]
-		rest = rest[:idx]
-		off, err := parseOffset(offset)
-		if err != nil {
-			return ISOTime{}, err
-		}
-		loc = time.FixedZone("", off)
-		if off == 0 {
-			loc = time.UTC
-		}
-		aware = true
-	}
-	hour, minute, second, nanos, err := parseClock(rest)
+	t, aware, err := pydatetime.ParseISOFormat(value)
 	if err != nil {
 		return ISOTime{}, err
 	}
-	t := time.Date(year, time.Month(month), day, hour, minute, second, nanos, loc)
-	if t.Day() != day || t.Month() != time.Month(month) {
-		return ISOTime{}, ErrNotISO
-	}
 	return ISOTime{Time: t, Aware: aware}, nil
-}
-
-// Parses HH:MM[:SS[.fraction]] clock text
-func parseClock(s string) (int, int, int, int, error) {
-	parts := strings.Split(s, ":")
-	if len(parts) < 2 || len(parts) > 3 {
-		return 0, 0, 0, 0, ErrNotISO
-	}
-	hour, err := strconv.Atoi(parts[0])
-	if err != nil || hour < 0 || hour > 23 || len(parts[0]) != 2 {
-		return 0, 0, 0, 0, ErrNotISO
-	}
-	minute, err := strconv.Atoi(parts[1])
-	if err != nil || minute < 0 || minute > 59 || len(parts[1]) != 2 {
-		return 0, 0, 0, 0, ErrNotISO
-	}
-	second, nanos := 0, 0
-	if len(parts) == 3 {
-		sec := parts[2]
-		frac := ""
-		if dot := strings.IndexAny(sec, ".,"); dot >= 0 {
-			frac = sec[dot+1:]
-			sec = sec[:dot]
-		}
-		second, err = strconv.Atoi(sec)
-		if err != nil || second < 0 || second > 59 || len(sec) != 2 {
-			return 0, 0, 0, 0, ErrNotISO
-		}
-		if frac != "" {
-			if len(frac) > 9 {
-				frac = frac[:9]
-			}
-			n, err := strconv.Atoi(frac)
-			if err != nil {
-				return 0, 0, 0, 0, ErrNotISO
-			}
-			for i := len(frac); i < 9; i++ {
-				n *= 10
-			}
-			nanos = n
-		}
-	}
-	return hour, minute, second, nanos, nil
-}
-
-// Parses Z, +HH, +HHMM or +HH:MM into seconds east of UTC
-func parseOffset(s string) (int, error) {
-	if s == "Z" || s == "z" {
-		return 0, nil
-	}
-	sign := 1
-	switch s[0] {
-	case '+':
-	case '-':
-		sign = -1
-	default:
-		return 0, ErrNotISO
-	}
-	body := strings.ReplaceAll(s[1:], ":", "")
-	if len(body) != 2 && len(body) != 4 && len(body) != 6 {
-		return 0, ErrNotISO
-	}
-	h, err := strconv.Atoi(body[:2])
-	if err != nil || h > 23 {
-		return 0, ErrNotISO
-	}
-	m, sec := 0, 0
-	if len(body) >= 4 {
-		if m, err = strconv.Atoi(body[2:4]); err != nil || m > 59 {
-			return 0, ErrNotISO
-		}
-	}
-	if len(body) == 6 {
-		if sec, err = strconv.Atoi(body[4:6]); err != nil || sec > 59 {
-			return 0, ErrNotISO
-		}
-	}
-	return sign * (h*3600 + m*60 + sec), nil
 }
 
 // Aware instant in target, a naive value read as system local wall time of the current offset

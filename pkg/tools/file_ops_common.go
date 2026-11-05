@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // SearchMatch is one search hit with the modification time used for sorting
@@ -113,64 +116,46 @@ type searchMatchJSON struct {
 }
 
 // Ordered dict of the result, path grouped matches when densify is set and worth it
-func (r *SearchResult) toDict(densify bool) *pyJSONObject {
-	out := &pyJSONObject{vals: map[string]any{}}
-	out.set("total_count", r.TotalCount)
+func (r *SearchResult) toDict(densify bool) *pyjson.Object {
+	out := &pyjson.Object{Vals: map[string]any{}}
+	out.Set("total_count", r.TotalCount)
 	if len(r.Matches) > 0 {
 		dense, ok := "", false
 		if densify {
 			dense, ok = r.densifyMatches()
 		}
 		if ok {
-			out.set("matches_format", "path-grouped: each file path on its own line, followed by "+
+			out.Set("matches_format", "path-grouped: each file path on its own line, followed by "+
 				"indented '<line>: <content>' rows for matches in that file")
-			out.set("matches_text", dense)
+			out.Set("matches_text", dense)
 		} else {
 			rows := make([]searchMatchJSON, len(r.Matches))
 			for i, m := range r.Matches {
 				rows[i] = searchMatchJSON{Path: m.Path, Line: json.Number(m.lineNumberText()), Content: m.Content}
 			}
-			out.set("matches", rows)
+			out.Set("matches", rows)
 		}
 	}
 	if len(r.Files) > 0 {
-		out.set("files", r.Files)
+		out.Set("files", r.Files)
 	}
 	if len(r.Counts) > 0 {
-		counts := &pyJSONObject{vals: map[string]any{}}
+		counts := &pyjson.Object{Vals: map[string]any{}}
 		for _, c := range r.Counts {
-			counts.set(c.Path, c.Count)
+			counts.Set(c.Path, c.Count)
 		}
-		out.set("counts", counts)
+		out.Set("counts", counts)
 	}
 	if r.Truncated {
-		out.set("truncated", true)
-		out.set("total_count_is_lower_bound", true)
+		out.Set("truncated", true)
+		out.Set("total_count_is_lower_bound", true)
 	}
 	for _, kv := range [][2]string{{"limit_reason", r.LimitReason}, {"warning", r.Warning}, {"error", r.Error}} {
 		if kv[1] != "" {
-			out.set(kv[0], kv[1])
+			out.Set(kv[0], kv[1])
 		}
 	}
 	return out
-}
-
-// MarshalJSON writes the object keys in insertion order without HTML escaping, surrogates kept as code points
-func (o *pyJSONObject) MarshalJSON() ([]byte, error) {
-	buf := []byte{'{'}
-	for i, k := range o.keys {
-		if i > 0 {
-			buf = append(buf, ',')
-		}
-		buf = appendJSONStringWTF8(buf, k)
-		buf = append(buf, ':')
-		val, err := jsonEncodeWTF8(o.vals[k])
-		if err != nil {
-			return nil, err
-		}
-		buf = append(buf, val...)
-	}
-	return append(buf, '}'), nil
 }
 
 // LintResult is one syntax check outcome, construct with newLintResult for the success default
@@ -185,21 +170,21 @@ type LintResult struct {
 func newLintResult() *LintResult { return &LintResult{Success: true} }
 
 // Lint dict in status, output, message order or the skipped status with its message
-func (l *LintResult) toDict() *pyJSONObject {
-	out := &pyJSONObject{vals: map[string]any{}}
+func (l *LintResult) toDict() *pyjson.Object {
+	out := &pyjson.Object{Vals: map[string]any{}}
 	if l.Skipped {
-		out.set("status", "skipped")
-		out.set("message", l.Message)
+		out.Set("status", "skipped")
+		out.Set("message", l.Message)
 		return out
 	}
 	status := "error"
 	if l.Success {
 		status = "ok"
 	}
-	out.set("status", status)
-	out.set("output", l.Output)
+	out.Set("status", status)
+	out.Set("output", l.Output)
 	if l.Message != "" {
-		out.set("message", l.Message)
+		out.Set("message", l.Message)
 	}
 	return out
 }
@@ -248,7 +233,7 @@ func stripTerminalFenceLeaks(text string) string {
 func runePrefix(s string, n int) string {
 	i := 0
 	for count := 0; i < len(s) && count < n; count++ {
-		_, size := wtf8DecodeRune(s[i:])
+		_, size := pystr.DecodeRune(s[i:])
 		i += size
 	}
 	return s[:i]
@@ -369,12 +354,12 @@ func pyLower(s string) string {
 	if isASCIIString(s) {
 		return strings.ToLower(s)
 	}
-	rs := wtf8Runes(s)
+	rs := pystr.Runes(s)
 	var b strings.Builder
 	for i, at := 0, 0; at < len(s); i++ {
-		r, size := wtf8DecodeRune(s[at:])
+		r, size := pystr.DecodeRune(s[at:])
 		switch {
-		case isSurrogateRune(r):
+		case pystr.IsSurrogate(r):
 			b.WriteString(s[at : at+size])
 		case r == 0x130:
 			b.WriteString("i\xcc\x87")

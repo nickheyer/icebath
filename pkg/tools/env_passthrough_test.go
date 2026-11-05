@@ -47,7 +47,9 @@ func TestConfigPassthrough(t *testing.T) {
 }
 
 func TestProfileScopedResolution(t *testing.T) {
-	env := passthroughEnv(t, config.Tree{"gateway": map[string]any{"multiplex_profiles": true}})
+	env := passthroughEnv(t, nil)
+	SetMultiplexActive(true)
+	t.Cleanup(func() { SetMultiplexActive(false) })
 	secretsPath := filepath.Join(env.Home, ".env")
 	os.WriteFile(secretsPath, []byte("SERVICE_TOKEN=profile-b\n"), 0o600)
 	env.Secrets = config.NewSecrets(env.Home)
@@ -64,11 +66,14 @@ func TestProfileScopedResolution(t *testing.T) {
 	if _, err := ResolvePassthroughValue(env, "SERVICE_TOKEN", &fallback); err != ErrUnscopedSecret {
 		t.Fatalf("unscoped multiplex read did not fail closed: %v", err)
 	}
+	SetMultiplexActive(false)
 	single := passthroughEnv(t, nil)
 	got, err = ResolvePassthroughValue(single, "SERVICE_TOKEN", &fallback)
 	if err != nil || got == nil || *got != "profile-a" {
 		t.Fatal("single profile fallback")
 	}
+	SetMultiplexActive(true)
+	env.Secrets = config.NewSecrets(env.Home)
 	explicit := "/explicit"
 	got, _ = ResolvePassthroughValue(env, "TERMINAL_CWD", &explicit)
 	if got == nil || *got != "/explicit" {

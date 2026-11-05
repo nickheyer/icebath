@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -137,7 +138,7 @@ func winregOverrideBypass(host, override string) bool {
 			if !strings.Contains(host, ".") {
 				return true
 			}
-		} else if fnmatchCase(norm(host), norm(test)) {
+		} else if fnmatch.FnmatchCase(norm(host), norm(test)) {
 			return true
 		}
 	}

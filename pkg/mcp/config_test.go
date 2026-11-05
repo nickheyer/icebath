@@ -470,9 +470,9 @@ func TestNpxCachedBin(t *testing.T) {
 	os.MkdirAll(filepath.Join(entry, "node_modules", "@scope", "srv"), 0o755)
 	os.WriteFile(filepath.Join(entry, "package.json"), []byte("\xef\xbb\xbf{\"dependencies\": {\"@scope/srv\": \"1\"}}"), 0o644)
 	os.WriteFile(filepath.Join(entry, "node_modules", "@scope", "srv", "package.json"), []byte(`{"bin": {"srv-bin": "x.js"}}`), 0o644)
-	os.WriteFile(filepath.Join(entry, "node_modules", ".bin", "srv-bin"), []byte("#!/bin/sh\n"), 0o755)
+	os.WriteFile(npxCacheBin(filepath.Join(entry, "node_modules", ".bin"), "srv-bin"), []byte("#!/usr/bin/env node\n"), 0o755)
 	bin, rest, ok, err := npxCachedBin([]string{"-y", "@scope/srv", "--port", "1"})
-	if err != nil || !ok || bin != filepath.Join(entry, "node_modules", ".bin", "srv-bin") || !reflect.DeepEqual(rest, []string{"--port", "1"}) {
+	if err != nil || !ok || bin != npxCacheBin(filepath.Join(entry, "node_modules", ".bin"), "srv-bin") || !reflect.DeepEqual(rest, []string{"--port", "1"}) {
 		t.Fatalf("cached bin %q %v %v %v", bin, rest, ok, err)
 	}
 	for _, args := range [][]string{{"-y", "@scope/srv@1.2.3"}, {"@scope/srv", "-y"}, {"-y"}, {"--other"}, nil} {

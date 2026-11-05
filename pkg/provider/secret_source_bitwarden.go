@@ -192,7 +192,11 @@ func FetchBitwardenSecrets(opts BitwardenFetchOptions) (map[string]string, []str
 		if opts.EncryptedCacheEnabled {
 			reader = func() (CachedFetch, bool) { return readEncrypted(opts.CacheTTL) }
 		}
-		if cached, ok := bwsStore.Lookup(cacheKey, opts.CacheTTL, opts.HomePath, reader); ok {
+		cached, ok, err := bwsStore.Lookup(cacheKey, opts.CacheTTL, opts.HomePath, reader)
+		if err != nil {
+			return nil, nil, err
+		}
+		if ok {
 			return cached.Secrets, nil, nil
 		}
 	}
@@ -213,7 +217,10 @@ func FetchBitwardenSecrets(opts BitwardenFetchOptions) (map[string]string, []str
 				stale, found = readEncrypted(opts.EncryptedCacheMaxStale)
 				label = "stale ENCRYPTED disk cache"
 			} else if opts.CacheTTL > 0 {
-				stale, found = bwsStore.Disk.Read(cacheKey, math.Inf(1), opts.HomePath)
+				var readErr error
+				if stale, found, readErr = bwsStore.Disk.Read(cacheKey, math.Inf(1), opts.HomePath); readErr != nil {
+					return nil, nil, readErr
+				}
 				label = "stale disk cache"
 			}
 			if found {

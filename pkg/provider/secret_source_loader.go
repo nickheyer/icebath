@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -134,21 +136,43 @@ func SecretSourceRestoreValues(h string) map[string]string {
 	return out
 }
 
-// Reads just the secrets section of config.yaml so a malformed config cannot break dotenv
+// Secrets section of config.yaml through the cached reader, an unavailable backend panics like SystemExit
 func loadSecretsConfig(h string) (map[string]any, error) {
-	path := home.ConfigPath(h)
-	if _, err := os.Stat(path); err != nil {
-		return map[string]any{}, nil
+	ctx := context.Background()
+	panicOnSystemExit := func(err error) {
+		var exit config.SystemExitError
+		if errors.As(err, &exit) {
+			panic(err)
+		}
 	}
-	doc, err := config.ReadDocument(path)
+	path := home.ConfigPath(h)
+	exists, err := config.ConfigExists(ctx, path)
 	if err != nil {
+		panicOnSystemExit(err)
 		return nil, err
 	}
-	section, _ := doc["secrets"].(map[string]any)
-	if section == nil {
+	if !exists {
 		return map[string]any{}, nil
 	}
-	return section, nil
+	secrets := func(doc any) map[string]any {
+		if section, _ := config.AsMap(doc)["secrets"].(map[string]any); section != nil {
+			return section
+		}
+		return map[string]any{}
+	}
+	if filepath.Clean(h) == filepath.Clean(RoutingProcessHome()) {
+		raw, rerr := config.ReadRawConfig(ctx, h)
+		if rerr == nil {
+			return secrets(raw), nil
+		}
+		panicOnSystemExit(rerr)
+	}
+	doc, err := config.ReadConfigDocReadonly(ctx, path)
+	if err != nil {
+		panicOnSystemExit(err)
+		return map[string]any{}, nil
+	}
+	return secrets(doc), nil
 }
 
 // HydrateProfileSecretSources resolves one profile's sources into a private mapping without touching the process env

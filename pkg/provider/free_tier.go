@@ -127,7 +127,7 @@ func ReconcileSetupRecord(env PoolEnv) *SetupRecord {
 	if stamp := setupStampConfig(env); inventory != nil && *inventory == stamp {
 		return record
 	}
-	if !setupInventoryOtherProviders(env) {
+	if !setupInventoryFn(env) {
 		return CurrentSetupRecord()
 	}
 	refreshed := *record
@@ -166,6 +166,9 @@ func setupStampConfig(env PoolEnv) setupConfigStamp {
 	}
 	return stamp
 }
+
+// Inventory step the bootstrap, refresh and reconcile paths run, replaced by tests
+var setupInventoryFn = setupInventoryOtherProviders
 
 // Asks the resolver with the free tier rung hidden whether anything besides the free tier carries inference
 func setupInventoryOtherProviders(env PoolEnv) bool {
@@ -244,7 +247,7 @@ func RunFreeTierBootstrap(env PoolEnv, announce bool) *SetupRecord {
 	setupMu.Unlock()
 
 	settled := setupSettleInstall(env)
-	record := setupBuildRecord(env, setupInventoryOtherProviders(env))
+	record := setupBuildRecord(env, setupInventoryFn(env))
 	setupMu.Lock()
 	setupRecord, setupSettled = record, settled
 	if !setupDoneSet {
@@ -296,7 +299,7 @@ func RefreshSetupRecord(env PoolEnv, announce bool) *SetupRecord {
 	if CurrentSetupRecord() == nil {
 		return nil
 	}
-	record := setupBuildRecord(env, setupInventoryOtherProviders(env))
+	record := setupBuildRecord(env, setupInventoryFn(env))
 	setupMu.Lock()
 	setupRecord = record
 	setupMu.Unlock()

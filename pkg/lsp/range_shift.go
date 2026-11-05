@@ -1,5 +1,7 @@
 package lsp
 
+import "github.com/nickheyer/icebath/pkg/internal/pystr"
+
 // LineShift maps a pre edit line to its post edit line, false when the line was deleted
 type LineShift func(line int64) (int64, bool)
 
@@ -7,10 +9,10 @@ type LineShift func(line int64) (int64, bool)
 func BuildLineShift(rt *Runtime, preText, postText string) (LineShift, error) {
 	var pre, post []string
 	if preText != "" {
-		pre = pySplitLines(preText)
+		pre = pystr.Splitlines(preText, false)
 	}
 	if postText != "" {
-		post = pySplitLines(postText)
+		post = pystr.Splitlines(postText, false)
 	}
 	if equalLines(pre, post) {
 		return func(line int64) (int64, bool) { return line, true }, nil

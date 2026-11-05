@@ -144,7 +144,7 @@ func (r *resolver) resolveOpenRouterRuntime(requestedProvider, explicitAPIKey, e
 	}
 	rt := r.runtime("custom", r.resolvePlainCustomAPIMode(modelCfg, baseURL), baseURL, apiKey, source)
 	if apiKey == "" && entrySrc != nil {
-		rt.TokenSource = entrySrc.Token
+		rt.TokenSource = TagCredentialSource(entrySrc.Token, CredentialSourceKeyCmd).Func()
 		rt.KeyCmd = entrySrc.Command
 	}
 	return rt
@@ -225,12 +225,12 @@ func externalProcessSpecFor(ctx context.Context, provider string) (ExternalProce
 }
 
 // Keyed on the registered provider's auth type
-func isExternalProcessProvider(provider string) bool {
+func isExternalProcessProvider(ctx context.Context, provider string) bool {
 	name := strings.ToLower(strings.TrimSpace(provider))
 	if name == "" {
 		return false
 	}
-	if p, ok := registryProfile(name); ok {
+	if p, ok := registryProfileCtx(ctx, name); ok {
 		return p.AuthType == AuthTypeExternalProcess
 	}
 	return false
@@ -343,7 +343,7 @@ func (r *resolver) externalProcessSpec(pconfig Profile) (string, []string, strin
 
 // Runtime details for a local subprocess backed provider, the subprocess owning real auth
 func (r *resolver) resolveExternalProcessRuntime(provider, requestedProvider string) (*Runtime, error) {
-	pconfig, ok := registryProfile(provider)
+	pconfig, ok := registryProfileCtx(r.ctx, provider)
 	if !ok || pconfig.AuthType != AuthTypeExternalProcess {
 		return nil, newAuthErr(provider, fmt.Sprintf("Provider '%s' is not an external-process provider.", provider), "invalid_provider", false)
 	}

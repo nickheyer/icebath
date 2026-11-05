@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Cooperative scheduler of one service, every task holding mu while it runs and releasing it across blocking waits
@@ -220,7 +222,7 @@ func errorString(r any) string {
 	if s, ok := r.(string); ok {
 		return s
 	}
-	return pyStr(r)
+	return pyrepr.Str(r)
 }
 
 // Future resolved once from a task, waited on from tasks or outside the loop

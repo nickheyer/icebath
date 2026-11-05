@@ -22,7 +22,7 @@ const DefaultVercelImage = "vercel/sandbox/universal:latest"
 const LegacyVercelRuntime = "node24"
 
 // Full default configuration document
-func Defaults() Tree {
+func defaultsLiteral() Tree {
 	return Tree(map[string]any{
 		"model":              "",
 		"providers":          map[string]any{},

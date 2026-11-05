@@ -7,6 +7,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -17,7 +19,7 @@ var (
 
 // PEP 503 spelling of a name, runs of separators collapsed and lowercased like Python lower
 func pep503Name(name string) string {
-	return pyLower(pep503Runs.ReplaceAllString(name, "-"))
+	return pystr.Lower(pep503Runs.ReplaceAllString(name, "-"))
 }
 
 // Integer a run of Unicode decimal digits spells, as Python int reads it
@@ -214,8 +216,8 @@ func OverriddenVersions(lock string) (map[string]map[string]bool, error) {
 // Report lines a lock does not account for, nil when the report cannot be read line by line
 func UnexpectedIncompatibilities(report, lock string) ([]string, error) {
 	var lines []string
-	for _, line := range pySplitLines(report) {
-		if stripped := pyStrip(line); pipReportLine.MatchString(stripped) {
+	for _, line := range pystr.Splitlines(report, false) {
+		if stripped := pystr.Strip(line); pipReportLine.MatchString(stripped) {
 			lines = append(lines, stripped)
 		}
 	}

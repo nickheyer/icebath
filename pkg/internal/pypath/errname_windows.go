@@ -1,0 +1,63 @@
+//go:build windows
+
+package pypath
+
+import "syscall"
+
+// CPython winerror_to_errno targets named the way the MSVC errno module names them
+var winErrnoNames = map[syscall.Errno]string{
+	2: "ENOENT", 3: "ENOENT", 15: "ENOENT", 18: "ENOENT", 53: "ENOENT", 67: "ENOENT", 161: "ENOENT", 206: "ENOENT",
+	10: "E2BIG",
+	11: "ENOEXEC", 188: "ENOEXEC", 189: "ENOEXEC", 190: "ENOEXEC", 191: "ENOEXEC", 192: "ENOEXEC", 193: "ENOEXEC",
+	194: "ENOEXEC", 195: "ENOEXEC", 196: "ENOEXEC", 197: "ENOEXEC", 198: "ENOEXEC", 199: "ENOEXEC", 200: "ENOEXEC",
+	201: "ENOEXEC", 202: "ENOEXEC",
+	6: "EBADF", 114: "EBADF", 130: "EBADF",
+	128: "ECHILD", 129: "ECHILD",
+	89: "EAGAIN", 164: "EAGAIN", 215: "EAGAIN",
+	7: "ENOMEM", 8: "ENOMEM", 9: "ENOMEM", 1816: "ENOMEM",
+	5: "EACCES", 16: "EACCES", 19: "EACCES", 20: "EACCES", 21: "EACCES", 22: "EACCES", 23: "EACCES", 24: "EACCES",
+	25: "EACCES", 26: "EACCES", 27: "EACCES", 28: "EACCES", 29: "EACCES", 30: "EACCES", 31: "EACCES", 32: "EACCES",
+	33: "EACCES", 34: "EACCES", 35: "EACCES", 36: "EACCES", 65: "EACCES", 82: "EACCES", 83: "EACCES", 108: "EACCES",
+	132: "EACCES", 158: "EACCES", 167: "EACCES",
+	80: "EEXIST", 183: "EEXIST",
+	17:  "EXDEV",
+	267: "ENOTDIR",
+	4:   "EMFILE",
+	112: "ENOSPC",
+	109: "EPIPE", 232: "EPIPE",
+	145:  "ENOTEMPTY",
+	1113: "EILSEQ",
+}
+
+// Winsock codes that are MSVC errno values offset by 10000
+var winsockErrnoNames = map[syscall.Errno]string{10004: "EINTR", 10009: "EBADF", 10013: "EACCES", 10014: "EFAULT",
+	10022: "EINVAL", 10024: "EMFILE"}
+
+func errnoName(errno syscall.Errno) string {
+	code := errno
+	if uint32(code)&0xFFFF0000 == 0x80070000 {
+		code &= 0xFFFF
+	}
+	if code >= 10000 && code < 12000 {
+		if name, ok := winsockErrnoNames[code]; ok {
+			return name
+		}
+		return winsockNames[code]
+	}
+	if name, ok := winErrnoNames[code]; ok {
+		return name
+	}
+	return "EINVAL"
+}
+
+// Winsock codes CPython keeps as the errno, named as the Windows errno module names them
+var winsockNames = map[syscall.Errno]string{10035: "WSAEWOULDBLOCK", 10036: "WSAEINPROGRESS", 10037: "WSAEALREADY",
+	10038: "WSAENOTSOCK", 10039: "WSAEDESTADDRREQ", 10040: "WSAEMSGSIZE", 10041: "WSAEPROTOTYPE", 10042: "WSAENOPROTOOPT",
+	10043: "WSAEPROTONOSUPPORT", 10044: "WSAESOCKTNOSUPPORT", 10045: "WSAEOPNOTSUPP", 10046: "WSAEPFNOSUPPORT",
+	10047: "WSAEAFNOSUPPORT", 10048: "WSAEADDRINUSE", 10049: "WSAEADDRNOTAVAIL", 10050: "WSAENETDOWN",
+	10051: "WSAENETUNREACH", 10052: "WSAENETRESET", 10053: "WSAECONNABORTED", 10054: "WSAECONNRESET",
+	10055: "WSAENOBUFS", 10056: "WSAEISCONN", 10057: "WSAENOTCONN", 10058: "WSAESHUTDOWN", 10059: "WSAETOOMANYREFS",
+	10060: "WSAETIMEDOUT", 10061: "WSAECONNREFUSED", 10062: "WSAELOOP", 10063: "WSAENAMETOOLONG", 10064: "WSAEHOSTDOWN",
+	10065: "WSAEHOSTUNREACH", 10066: "WSAENOTEMPTY", 10067: "WSAEPROCLIM", 10068: "WSAEUSERS", 10069: "WSAEDQUOT",
+	10070: "WSAESTALE", 10071: "WSAEREMOTE", 10091: "WSASYSNOTREADY", 10092: "WSAVERNOTSUPPORTED",
+	10093: "WSANOTINITIALISED", 10101: "WSAEDISCON"}

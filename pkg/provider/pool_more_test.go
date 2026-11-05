@@ -187,12 +187,8 @@ func TestPluginMetadataSurvivesLoadSaveLoad(t *testing.T) {
 
 func registerExamplePlugin(t *testing.T, hook func(PooledCredential) (map[string]any, error)) {
 	t.Helper()
-	RegisterProviderProfileHooks("example-oauth", ProviderProfileHooks{RefreshCredential: hook})
-	RegisterProviderProfileHooks("example-oauth-nohook", ProviderProfileHooks{})
-	t.Cleanup(func() {
-		UnregisterProviderProfileHooks("example-oauth")
-		UnregisterProviderProfileHooks("example-oauth-nohook")
-	})
+	registerHookedProfile(t, "example-oauth", ProviderProfileHooks{RefreshCredential: hook})
+	RegisterProvider(Profile{Name: "example-oauth-nohook", AuthType: AuthTypeOAuthExternal, BaseURL: "https://example.invalid/v1"})
 }
 
 func TestPoolRefreshDispatchesToProfileHook(t *testing.T) {

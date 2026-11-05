@@ -11,9 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
@@ -370,7 +371,7 @@ func EnvironmentStoreRoot(ctx context.Context, projectRoot string, honorRuntimeO
 				return unstampedStore(ctx, root), nil
 			}
 			if m, ok := doc.(map[string]any); ok {
-				if value, has := m["runtimeDir"]; has && truthy(value) {
+				if value, has := m["runtimeDir"]; has && pyrepr.Truthy(value) {
 					s, isStr := value.(string)
 					if !isStr {
 						return "", fmt.Errorf("install stamp %s runtimeDir is not a path: %v", stamp, value)
@@ -402,28 +403,6 @@ func trimBOM(data []byte) []byte {
 		return data[3:]
 	}
 	return data
-}
-
-// Python truthiness of a decoded JSON value
-func truthy(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case string:
-		return t != ""
-	case float64:
-		return t != 0
-	case json.Number:
-		f, err := strconv.ParseFloat(t.String(), 64)
-		return err != nil || f != 0
-	case []any:
-		return len(t) > 0
-	case map[string]any:
-		return len(t) > 0
-	}
-	return true
 }
 
 // Platform name the way Python sys.platform spells it

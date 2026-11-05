@@ -75,7 +75,7 @@ func ccAuthHeaders(ctx context.Context, route Route) (map[string]string, []strin
 			return nil, nil, err
 		}
 		if strings.TrimSpace(token) == "" {
-			return nil, nil, errors.New("token provider returned empty value")
+			return headers, azureStrippedAuthHeaders, nil
 		}
 		headers["Authorization"] = "Bearer " + strings.TrimSpace(token)
 		return headers, azureStrippedAuthHeaders, nil

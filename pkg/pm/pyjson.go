@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Decodes JSON the way json loads does, numbers normalized to Python's own spelling and NaN or Infinity accepted
@@ -114,47 +116,7 @@ func pyNumberText(n json.Number) any {
 	if err != nil {
 		return n
 	}
-	return json.Number(pyFloatRepr(f))
-}
-
-// Shortest round trip repr of a float the way Python repr spells it
-func pyFloatRepr(f float64) string {
-	if math.IsNaN(f) {
-		return "nan"
-	}
-	if math.IsInf(f, 0) {
-		if f > 0 {
-			return "inf"
-		}
-		return "-inf"
-	}
-	e := strconv.FormatFloat(f, 'e', -1, 64)
-	sign := ""
-	if strings.HasPrefix(e, "-") {
-		sign, e = "-", e[1:]
-	}
-	mantissa, expText, _ := strings.Cut(e, "e")
-	exp, _ := strconv.Atoi(expText)
-	digits := strings.Replace(mantissa, ".", "", 1)
-	if exp < -4 || exp >= 16 {
-		out := digits[:1]
-		if len(digits) > 1 {
-			out += "." + digits[1:]
-		}
-		expSign := "+"
-		if exp < 0 {
-			expSign, exp = "-", -exp
-		}
-		return fmt.Sprintf("%s%se%s%02d", sign, out, expSign, exp)
-	}
-	point := exp + 1
-	switch {
-	case point <= 0:
-		return sign + "0." + strings.Repeat("0", -point) + digits
-	case point >= len(digits):
-		return sign + digits + strings.Repeat("0", point-len(digits)) + ".0"
-	}
-	return sign + digits[:point] + "." + digits[point:]
+	return json.Number(pyrepr.Float(f))
 }
 
 // Replaces NaN and Infinity values with sentinel strings the encoder accepts, nil mappings staying null
@@ -264,26 +226,10 @@ func asciiEscape(in []byte) []byte {
 	return out
 }
 
-// Python str of a decoded JSON scalar
-func pyStr(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return "None"
-	case string:
-		return t
-	case bool:
-		if t {
-			return "True"
-		}
-		return "False"
-	case json.Number:
-		return t.String()
-	case pyFloatSpecial:
-		return map[pyFloatSpecial]string{"NaN": "nan", "Infinity": "inf", "-Infinity": "-inf"}[t]
-	case float64:
-		return pyFloatRepr(t)
-	case int:
-		return strconv.Itoa(t)
-	}
-	return fmt.Sprint(v)
+// Python repr of a NaN or infinite float
+func (s pyFloatSpecial) PyRepr() string {
+	return map[pyFloatSpecial]string{"NaN": "nan", "Infinity": "inf", "-Infinity": "-inf"}[s]
 }
+
+// Python type name of a NaN or infinite float
+func (s pyFloatSpecial) PyTypeName() string { return "float" }

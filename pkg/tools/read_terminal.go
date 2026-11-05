@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // ReadTerminalPane reads the desktop in-app terminal through the gateway bridge, installed by the desktop gateway
@@ -10,7 +12,7 @@ var ReadTerminalPane func(env *Env, window map[string]int) (string, error)
 
 // Desktop answers with a JSON object, passed through, else the raw text wrapped
 func termPassthroughJSON(raw string) string {
-	if v, err := jsonDecodeWTF8([]byte(raw)); err == nil {
+	if v, err := pyjson.DecodeWTF8([]byte(raw)); err == nil {
 		return JSON(v)
 	}
 	return JSON(map[string]any{"text": raw})

@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // DeclinedFilename records the default packages a user opted out of
@@ -64,7 +66,7 @@ func Declined(ctx context.Context, projectRoot string) (map[string]bool, error) 
 
 // Items Python iteration yields over a falsy-or-iterable JSON value, characters of a string and keys of an object
 func pyIterate(v any) ([]any, error) {
-	if !truthy(v) {
+	if !pyrepr.Truthy(v) {
 		return nil, nil
 	}
 	switch t := v.(type) {
@@ -83,7 +85,7 @@ func pyIterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyTypeName(v))
+	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
 }
 
 // Updates the recorded opt outs, writing only on change, and returns the new set

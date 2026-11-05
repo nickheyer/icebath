@@ -1,14 +1,8 @@
 // Session database of a home, sessions and messages in SQLite with full text search
 package state
 
-// Schema version written to the database, bumped only with a data migration
-const SchemaVersion = 1
-
-// Characters of a tool result the word index covers
-const FTSToolContentPrefixChars = 8192
-
-// Longest user controlled search query the sanitizer accepts
-const MaxFTSQueryChars = 2048
+// Version the pre port schema stamps until the schema slice replaces initSchema
+const goSchemaVersion = 1
 
 // Tables and indexes every writable open applies
 const schemaSQL = `

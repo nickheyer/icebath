@@ -23,6 +23,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // UserAgent is a browser shaped agent every asset CDN accepts, with identity encoding requested
@@ -1242,7 +1244,7 @@ func (d *Download) fetchSingle(source Source, remote remoteInfo, tick func([]Ran
 	if length := strings.TrimSpace(resp.Header.Get("Content-Length")); length != "" {
 		n, perr := strconv.ParseInt(length, 10, 64)
 		if perr != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyRepr(length))
+			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(length))
 		}
 		declared = n
 	}

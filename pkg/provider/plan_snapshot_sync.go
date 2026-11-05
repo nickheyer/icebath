@@ -27,6 +27,11 @@ var (
 	planSyncInflight    = map[string]bool{}
 	planSyncLastAttempt = map[string]planSyncAttempt{}
 	planSyncNow         = time.Now
+	planSyncPeek        = PeekNousAccountInfoCache
+	planSyncCached      = CachedNousPortalAccountInfo
+	planSyncFetch       = GetNousPortalAccountInfo
+	planSyncCatalog     = func(ctx context.Context) { GetPricingForProvider(ctx, "nous", "", true, false) }
+	planSyncSpawn       = func(run func()) { go run() }
 )
 
 // Sorted joined ids of the full gauges, a stable set key
@@ -77,30 +82,38 @@ func planSyncRefresh(ctx context.Context, planChanged bool, key string) {
 		delete(planSyncInflight, key)
 		planSyncMu.Unlock()
 	}()
-	if info := GetNousPortalAccountInfo(ctx, true); info == nil || info.Source == "error" {
+	if info := planSyncFetch(ctx, true); info != nil && info.Source == "error" {
 		planSyncMu.Lock()
 		delete(planSyncLastAttempt, key)
 		planSyncMu.Unlock()
 	}
 	if planChanged {
-		GetPricingForProvider(ctx, "nous", "", true, false)
+		planSyncCatalog(ctx)
 	}
 }
 
 // SyncPlanSnapshot starts one background account refresh when a reply says the cached plan is out of date
-func SyncPlanSnapshot(state *CreditsState) bool {
+func SyncPlanSnapshot(state *CreditsState) (started bool) {
 	ctx := creditsCtx()
 	key := home.Key(home.Dir(ctx))
+	defer func() {
+		if r := recover(); r != nil {
+			planSyncMu.Lock()
+			delete(planSyncInflight, key)
+			planSyncMu.Unlock()
+			started = false
+		}
+	}()
 	onWindow := state != nil && state.IsUsageWindow()
 	if !onWindow {
-		if _, cachedWindow := snapshotFullIDs(PeekNousAccountInfoCache(ctx)); !cachedWindow {
+		if _, cachedWindow := snapshotFullIDs(planSyncPeek(ctx)); !cachedWindow {
 			planSyncMu.Lock()
 			delete(planSyncLastAttempt, key)
 			planSyncMu.Unlock()
 			return false
 		}
 	}
-	snapshot := CachedNousPortalAccountInfo(ctx, true)
+	snapshot := planSyncCached(ctx, true)
 	if !PlanSnapshotIsStale(state, snapshot) {
 		planSyncMu.Lock()
 		delete(planSyncLastAttempt, key)
@@ -120,6 +133,6 @@ func SyncPlanSnapshot(state *CreditsState) bool {
 	planSyncInflight[key] = true
 	planSyncLastAttempt[key] = planSyncAttempt{seen: seen, at: now}
 	planSyncMu.Unlock()
-	go planSyncRefresh(ctx, planChanged, key)
+	planSyncSpawn(func() { planSyncRefresh(ctx, planChanged, key) })
 	return true
 }

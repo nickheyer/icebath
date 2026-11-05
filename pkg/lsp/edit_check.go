@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Write latency budget and the verdict cache cap
@@ -174,11 +176,14 @@ func (f *EditFuture) resolve(res *CheckResult, cancelled bool, err error) {
 }
 
 // Schedules the check of an already written file on the service loop, nil when the loop is gone
-func startEditCheck(s *Service, path string, preText, postText *string, owner string, carry []Note) *EditFuture {
+func startEditCheck(s *Service, path string, preText, postText *string, owner string, carry []Note) (*EditFuture, error) {
 	if !s.l.running() {
-		return nil
+		return nil, nil
 	}
-	absPath := pyAbspath(path)
+	absPath, err := pypath.Abspath(path)
+	if err != nil {
+		return nil, err
+	}
 	s.checks.newestMu.Lock()
 	if postText != nil {
 		s.checks.newest[absPath] = postText
@@ -189,24 +194,24 @@ func startEditCheck(s *Service, path string, preText, postText *string, owner st
 	fut := &EditFuture{done: make(chan struct{})}
 	carry = append([]Note{}, carry...)
 	var res *CheckResult
-	var err error
+	var checkErr error
 	t := s.l.spawn(context.Background(), func(ctx context.Context) {
 		defer func() {
 			if r := recover(); r != nil {
-				res, err = nil, panicError(r)
+				res, checkErr = nil, panicError(r)
 			}
 		}()
-		res, err = serializedCheck(ctx, s, absPath, preText, postText, owner, carry)
+		res, checkErr = serializedCheck(ctx, s, absPath, preText, postText, owner, carry)
 	})
 	go func() {
 		<-t.done
-		if err != nil && isCancellation(err) {
+		if checkErr != nil && isCancellation(checkErr) {
 			fut.resolve(nil, true, nil)
 			return
 		}
-		fut.resolve(res, false, err)
+		fut.resolve(res, false, checkErr)
 	}()
-	return fut
+	return fut, nil
 }
 
 // Runs after any unfinished check of the file, taking over the same session's unfinished check
@@ -329,7 +334,11 @@ func runCheck(ctx context.Context, s *Service, absPath string, baselineText, pos
 	languageID := LanguageIDFor(absPath, srv)
 	checks := s.checks
 	useSync := syncSupported(client)
-	if _, opened := client.documentText(absPath); client.seedsFirstPush() && !opened && !useSync {
+	_, opened, err := client.documentText(absPath)
+	if err != nil {
+		return nil, false, err
+	}
+	if client.seedsFirstPush() && !opened && !useSync {
 		openText := baselineText
 		if baselineText == nil {
 			openText = postText
@@ -374,7 +383,10 @@ func runCheck(ctx context.Context, s *Service, absPath string, baselineText, pos
 		}
 		return report(s.rt, serverID, absPath, nil, false)
 	}
-	synced, hasSynced := client.documentText(absPath)
+	synced, hasSynced, err := client.documentText(absPath)
+	if err != nil {
+		return nil, false, err
+	}
 	verdictDiags := diags
 	if len(diags) > 0 && baselineText != nil && hasSynced {
 		baseline, cached := checks.recall(absPath, *baselineText)
@@ -441,7 +453,11 @@ func resyncDisk(ctx context.Context, s *Service, client *Client, absPath, langua
 		}
 		return nil
 	}
-	if text, ok := client.documentText(absPath); !ok || AsDiskRead(*newest) != text {
+	text, ok, err := client.documentText(absPath)
+	if err != nil {
+		return err
+	}
+	if !ok || AsDiskRead(*newest) != text {
 		_, err := client.openFile(ctx, absPath, languageID, newest)
 		return err
 	}

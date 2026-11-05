@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -493,14 +492,9 @@ func moaReferenceSlots(raw any) []any {
 	return []any{}
 }
 
-// Names of a preset map in the order every MoA surface lists them, sorted since config maps carry no key order
+// Preset names in config file order, the order Python iterates the preset dict
 func moaPresetOrder(presets map[string]any) []string {
-	names := make([]string, 0, len(presets))
-	for name := range presets {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return config.MappingKeys(presets)
 }
 
 // ValidateMoAPayload returns the problems normalizing would silently repair, empty when safe to save
@@ -606,13 +600,18 @@ func normalizeMoAConfig(raw any) map[string]any {
 		m = map[string]any{}
 	}
 	presets := map[string]any{}
+	var order []string
 	if rawPresets, ok := m["presets"].(map[string]any); ok {
-		for name, preset := range rawPresets {
+		for _, name := range config.MappingKeys(rawPresets) {
 			if clean := pyStripSpace(name); clean != "" {
-				presets[clean] = normalizeMoAPreset(preset)
+				if _, seen := presets[clean]; !seen {
+					order = append(order, clean)
+				}
+				presets[clean] = normalizeMoAPreset(rawPresets[name])
 			}
 		}
 	}
+	config.SetMappingKeys(presets, order)
 	if len(presets) == 0 {
 		presets[DefaultMoAPresetName] = normalizeMoAPreset(m)
 	}
@@ -713,7 +712,7 @@ func ApplyUserMoAPresets(merged map[string]any, raw any) {
 	if !ok {
 		return
 	}
-	mergedMoA["presets"] = deepCopyAny(presets)
+	mergedMoA["presets"] = config.Clone(presets)
 }
 
 // ExactMoAPresetName returns the text when it names an enabled preset, empty otherwise

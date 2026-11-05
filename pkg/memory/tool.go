@@ -149,7 +149,7 @@ func builtinMemoryStoreFlags(section map[string]any) (bool, bool) {
 
 // Store flags from the live config, both enabled when the config cannot load
 func liveStoreFlags(env *tools.Env) (bool, bool) {
-	tree, err := config.Load(envHome(env), configLookup(env))
+	tree, err := config.LoadReadonly(context.Background(), envHome(env), configLookup(env))
 	if err != nil {
 		envLog(env).Debug("Could not read memory config for availability", "error", err)
 		return builtinMemoryStoreFlags(map[string]any{})

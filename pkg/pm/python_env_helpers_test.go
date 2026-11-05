@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Upstream reference checkout resolved before any test changes directory
@@ -94,7 +96,7 @@ func peFetchPinned(pkg, binaryName string) (string, error) {
 	if !ok {
 		return "", &fs.PathError{Op: "pin", Path: pkg + " " + target, Err: fs.ErrNotExist}
 	}
-	url, sha := pyStr(artifact["url"]), pyStr(artifact["sha256"])
+	url, sha := pyrepr.Str(artifact["url"]), pyrepr.Str(artifact["sha256"])
 	if peCacheRoot == "" {
 		return "", &fs.PathError{Op: "cache", Path: "user cache directory", Err: fs.ErrNotExist}
 	}
@@ -182,7 +184,7 @@ func peWheel(t *testing.T, dir, name, version string, requirements []string, ext
 		paths = append(paths, path)
 		entries[path] = body
 	}
-	add(name+"/__init__.py", "__version__ = "+pyRepr(version)+"\n")
+	add(name+"/__init__.py", "__version__ = "+pyrepr.StrRepr(version)+"\n")
 	meta := "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n"
 	for _, r := range requirements {
 		meta += "Requires-Dist: " + r + "\n"

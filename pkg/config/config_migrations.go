@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -58,6 +59,7 @@ type PersonalitySources struct {
 // Collaborators the ladder reaches outside this package, wired by the caller
 type MigrationSources struct {
 	Out                                 io.Writer
+	ReadRaw                             func(h string) (map[string]any, error)
 	Persist                             func(h string, cfg map[string]any) error
 	GetEnvValue                         func(name string) string
 	GetEnvValuePreferDotenv             func(name string) string
@@ -108,9 +110,13 @@ func (r *migrationRun) say(msg string) {
 	fmt.Fprintln(out, msg)
 }
 
-// Raw user config as written, an empty document when missing or unparseable
+// Raw user config through the selected backend, an empty document when missing or unparseable
 func (r *migrationRun) read() map[string]any {
-	doc, err := ReadUser(r.h)
+	read := r.src.ReadRaw
+	if read == nil {
+		read = func(h string) (map[string]any, error) { return ReadRawConfig(context.Background(), h) }
+	}
+	doc, err := read(r.h)
 	if err != nil || doc == nil {
 		return map[string]any{}
 	}

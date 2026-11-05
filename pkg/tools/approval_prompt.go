@@ -421,7 +421,7 @@ func RequestElicitationConsent(ctx context.Context, env *Env, message, descripti
 	}
 	scoped := o.RememberKey != ""
 	apiRunContext := getSessionPlatform(env) == "api_server" && !isCronApprovalContext(env) && !isSingleQueryApprovalContext(env)
-	if isGatewayApprovalContext(env) || apiRunContext {
+	if IsGatewayApprovalContext(env) || apiRunContext {
 		notify := gatewayNotifyCb(sessionKey)
 		if notify == nil {
 			log.Warn("Elicitation requested in gateway session but no notify_cb is registered — failing closed", "session", sessionKey)
@@ -438,7 +438,7 @@ func RequestElicitationConsent(ctx context.Context, env *Env, message, descripti
 		}
 		return rememberedConsent(env, sessionKey, decision.Choice, o.RememberKey, "decline")
 	}
-	if noUserCanAnswer(env) {
+	if NoUserCanAnswer(env) {
 		log.Info("Elicitation consent declined: no user can answer in this session", "surface", o.Surface)
 		return "decline"
 	}
@@ -541,7 +541,7 @@ func sanitizeCommandForDisplay(text string, prose bool) string {
 
 // Secret redaction plus display sanitizing for every approval surface
 func redactApprovalDisplay(env *Env, text string, force bool) string {
-	text = redactRegisteredVaultValues(text)
+	text = redactRegisteredVaultValues(env, text)
 	if force || redactionEnabled(env) {
 		text = RedactSensitiveText(text)
 	}

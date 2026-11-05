@@ -1,9 +1,11 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -234,6 +236,11 @@ type NousAuthKeepalive struct {
 
 var nousKeepalive = &NousAuthKeepalive{}
 
+// Runs fn on its own goroutine labelled with the thread name the Python worker carries
+var spawnNamedFn = func(name string, fn func()) {
+	go pprof.Do(context.Background(), pprof.Labels("thread", name), func(context.Context) { fn() })
+}
+
 // Sleep that ends early when the stop channel closes, true when stopped
 func nousKeepaliveWait(stop <-chan struct{}, d time.Duration) bool {
 	if d <= 0 {
@@ -322,7 +329,8 @@ func StartNousAuthKeepalive(env PoolEnv, opts NousKeepaliveStartOptions) bool {
 	}
 	k.stop = make(chan struct{})
 	k.done = make(chan struct{})
-	go nousKeepaliveLoop(env, k.stop, k.done, interval, initialDelay, minKeyTTL, opts.Timeout)
+	stop, done := k.stop, k.done
+	spawnNamedFn("nous-auth-keepalive", func() { nousKeepaliveLoop(env, stop, done, interval, initialDelay, minKeyTTL, opts.Timeout) })
 	env.log().Debug("Nous auth keepalive started")
 	return true
 }

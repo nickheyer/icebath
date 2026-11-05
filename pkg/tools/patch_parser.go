@@ -6,6 +6,9 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // V4A operation kinds
@@ -87,7 +90,7 @@ func pyReprStr(s string) string {
 	var b strings.Builder
 	b.WriteRune(quote)
 	for i := 0; i < len(s); {
-		r, size := wtf8DecodeRune(s[i:])
+		r, size := pystr.DecodeRune(s[i:])
 		i += size
 		switch {
 		case r == quote || r == '\\':
@@ -213,7 +216,7 @@ func parseV4APatch(patchContent string) ([]*v4aOperation, string) {
 // Counts occurrences advancing one character per hit so overlaps count
 func countOccurrences(text, pattern string) int {
 	if pattern == "" {
-		return wtf8RuneCount(text) + 1
+		return pystr.Len(text) + 1
 	}
 	n := 0
 	for i := 0; i <= len(text)-len(pattern); i++ {
@@ -425,7 +428,7 @@ type v4aApplyResult struct {
 	ok      bool
 	payload string
 	lsp     string
-	lint    *pyJSONObject
+	lint    *pyjson.Object
 	write   *patchWrite
 	notes   []string
 }
@@ -503,7 +506,7 @@ func applyV4AOperations(operations []*v4aOperation, fileOps v4aFileOps) *PatchRe
 	}
 	files := map[string][]string{"created": {}, "deleted": {}, "modified": {}}
 	var allDiffs, notes, lspBlocks []string
-	lintResults := &pyJSONObject{vals: map[string]any{}}
+	lintResults := &pyjson.Object{Vals: map[string]any{}}
 	var writes []patchWrite
 	for _, op := range operations {
 		d := v4aApplyDispatch[op.kind]
@@ -529,8 +532,8 @@ func applyV4AOperations(operations []*v4aOperation, fileOps v4aFileOps) *PatchRe
 		if res.lsp != "" {
 			lspBlocks = append(lspBlocks, res.lsp)
 		}
-		if res.lint != nil && len(res.lint.keys) > 0 {
-			lintResults.set(op.filePath, res.lint)
+		if res.lint != nil && len(res.lint.Keys) > 0 {
+			lintResults.Set(op.filePath, res.lint)
 		}
 	}
 	out := &PatchResult{
@@ -546,7 +549,7 @@ func applyV4AOperations(operations []*v4aOperation, fileOps v4aFileOps) *PatchRe
 	if len(errs) > 0 {
 		out.Error = "Apply phase failed (state may be inconsistent — run `git diff` to assess):\n" + v4aBullets(errs)
 	}
-	if len(lintResults.keys) > 0 {
+	if len(lintResults.Keys) > 0 {
 		out.Lint = lintResults
 	}
 	return out
@@ -650,7 +653,7 @@ func insertAdditionOnly(newContent string, h *v4aHunk, insertText string) (strin
 // Byte offset n characters before pos, clamped at the start
 func runeOffsetBack(s string, pos, n int) int {
 	for ; n > 0 && pos > 0; n-- {
-		_, size := wtf8DecodeLastRune(s[:pos])
+		_, size := pystr.DecodeLastRune(s[:pos])
 		pos -= size
 	}
 	return pos
@@ -659,7 +662,7 @@ func runeOffsetBack(s string, pos, n int) int {
 // Byte offset n characters after pos, clamped at the end
 func runeOffsetFwd(s string, pos, n int) int {
 	for ; n > 0 && pos < len(s); n-- {
-		_, size := wtf8DecodeRune(s[pos:])
+		_, size := pystr.DecodeRune(s[pos:])
 		pos += size
 	}
 	return pos

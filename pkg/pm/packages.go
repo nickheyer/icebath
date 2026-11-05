@@ -14,10 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unicode"
-	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Rust target triple of each supported target
@@ -48,7 +48,7 @@ var nodePlat = map[string]string{
 var packagesCurrentTarget = CurrentTarget
 
 // Python KeyError text for a missing mapping key
-func keyError(key string) error { return fmt.Errorf("KeyError: %s", pyRepr(key)) }
+func keyError(key string) error { return fmt.Errorf("KeyError: %s", pyrepr.StrRepr(key)) }
 
 // Python ValueError text of unpacking a split into exactly two names
 func unpackTwo(parts []string) (string, string, error) {
@@ -146,7 +146,7 @@ func (b *BinaryPackage) Verify(entry, target string) string {
 	case errors.As(err, &timeout):
 		return described + " timed out after 60s"
 	case err != nil:
-		return fmt.Sprintf("could not exec %s: %s", described, pyOSErrorText(err))
+		return fmt.Sprintf("could not exec %s: %s", described, pypath.OSErrorText(err))
 	case result.Code != 0:
 		return ProbeReason(bin, result.Code, result.Stdout, result.Stderr)
 	}
@@ -270,7 +270,7 @@ type processTimeoutError struct {
 }
 
 func (e *processTimeoutError) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyListRepr(e.Argv), strconv.FormatFloat(e.Timeout.Seconds(), 'f', -1, 64))
+	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyrepr.Repr(e.Argv), strconv.FormatFloat(e.Timeout.Seconds(), 'f', -1, 64))
 }
 
 // Runs a child to completion, replaced by tests the way they patch subprocess run
@@ -365,37 +365,6 @@ func startProcess(spec processSpec) (processResult, error) {
 		return processResult{}, waitErr
 	}
 	return result, nil
-}
-
-// Python str of the OSError a failed spawn or file call raises
-func pyOSErrorText(err error) string {
-	var execErr *exec.Error
-	if errors.As(err, &execErr) && errors.Is(execErr.Err, exec.ErrNotFound) {
-		if runtime.GOOS == "windows" {
-			return "[WinError 2] The system cannot find the file specified"
-		}
-		return "[Errno 2] No such file or directory: " + pyRepr(execErr.Name)
-	}
-	var errno syscall.Errno
-	if !errors.As(err, &errno) {
-		return err.Error()
-	}
-	label, msg := "Errno", errno.Error()
-	if runtime.GOOS == "windows" {
-		label, msg = "WinError", strings.TrimRight(msg, ". \r\n")
-	} else if r, size := utf8.DecodeRuneInString(msg); size > 0 {
-		msg = string(unicode.ToUpper(r)) + msg[size:]
-	}
-	text := fmt.Sprintf("[%s %d] %s", label, int(errno), msg)
-	var linkErr *os.LinkError
-	var pathErr *fs.PathError
-	switch {
-	case errors.As(err, &linkErr):
-		text += fmt.Sprintf(": %s -> %s", pyRepr(linkErr.Old), pyRepr(linkErr.New))
-	case errors.As(err, &pathErr) && !(runtime.GOOS == "windows" && pathErr.Op == "fork/exec"):
-		text += ": " + pyRepr(pathErr.Path)
-	}
-	return text
 }
 
 // Reports whether a path is itself a symlink

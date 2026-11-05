@@ -6,6 +6,9 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // InvalidRequirementError is a dependency specifier packaging refuses
@@ -270,17 +273,17 @@ func (s pySpecifier) String() string { return s.op + s.version }
 // Parses one clause like packaging Specifier
 func parseSpecifier(spec string) (pySpecifier, error) {
 	if !specifierFull.MatchString(spec) {
-		return pySpecifier{}, &InvalidRequirementError{Message: "Invalid specifier: " + pyRepr(spec)}
+		return pySpecifier{}, &InvalidRequirementError{Message: "Invalid specifier: " + pyrepr.StrRepr(spec)}
 	}
-	spec = pyStrip(spec)
+	spec = pystr.Strip(spec)
 	switch {
 	case strings.HasPrefix(spec, "==="):
-		return pySpecifier{"===", pyStrip(spec[3:])}, nil
+		return pySpecifier{"===", pystr.Strip(spec[3:])}, nil
 	case strings.HasPrefix(spec, "~="), strings.HasPrefix(spec, "=="), strings.HasPrefix(spec, "!="),
 		strings.HasPrefix(spec, "<="), strings.HasPrefix(spec, ">="):
-		return pySpecifier{spec[:2], pyStrip(spec[2:])}, nil
+		return pySpecifier{spec[:2], pystr.Strip(spec[2:])}, nil
 	}
-	return pySpecifier{spec[:1], pyStrip(spec[1:])}, nil
+	return pySpecifier{spec[:1], pystr.Strip(spec[1:])}, nil
 }
 
 // Identity two clauses compare equal by, trailing release zeros dropped except for the compatible operator
@@ -302,7 +305,7 @@ func (s pySpecifier) canonical() (string, error) {
 func parseSpecifierSet(text string) ([]pySpecifier, error) {
 	var specs []pySpecifier
 	for _, part := range strings.Split(text, ",") {
-		part = pyStrip(part)
+		part = pystr.Strip(part)
 		if part == "" {
 			continue
 		}
@@ -342,7 +345,7 @@ func formatSpecifierSet(specs []pySpecifier) (string, error) {
 
 // Normalizes a project or extra name like packaging canonicalize_name
 func CanonicalizeName(name string) string {
-	value := strings.ReplaceAll(strings.ReplaceAll(pyLower(name), "_", "-"), ".", "-")
+	value := strings.ReplaceAll(strings.ReplaceAll(pystr.Lower(name), "_", "-"), ".", "-")
 	for strings.Contains(value, "--") {
 		value = strings.ReplaceAll(value, "--", "-")
 	}

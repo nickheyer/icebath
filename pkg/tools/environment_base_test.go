@@ -29,9 +29,6 @@ func newTestToolEnv(t *testing.T) *Env {
 func installTestEnvHooks(t *testing.T) {
 	t.Helper()
 	prevB, prevC, prevR, prevP := BundledPlatformSecretEnvs, ConfigEnvTableKeys, RegisteredAdapterSecretEnv, ProfileSecrets
-	if BundledPlatformSecretEnvs == nil {
-		BundledPlatformSecretEnvs = func() []string { return nil }
-	}
 	if ConfigEnvTableKeys == nil {
 		ConfigEnvTableKeys = func() []string { return nil }
 	}
@@ -57,25 +54,25 @@ func (testProfileSecrets) BuildProfileSecretScope(profileHome string) map[string
 func (testProfileSecrets) CurrentSecretScope(ctx context.Context) map[string]string { return nil }
 
 // Concrete environment for base class tests with an injectable run hook
-type stubEnv struct {
+type fakeBaseEnv struct {
 	baseEnv
 	run func(ctx context.Context, cmd string, login bool, timeout int, stdin *string) (ProcessHandle, error)
 }
 
-func (s *stubEnv) EnvType() string          { return "stub" }
-func (s *stubEnv) Cleanup(force bool) error { return nil }
+func (s *fakeBaseEnv) EnvType() string          { return "fake" }
+func (s *fakeBaseEnv) Cleanup(force bool) error { return nil }
 
-func (s *stubEnv) runBash(ctx context.Context, cmd string, login bool, timeout int, stdin *string) (ProcessHandle, error) {
+func (s *fakeBaseEnv) runBash(ctx context.Context, cmd string, login bool, timeout int, stdin *string) (ProcessHandle, error) {
 	if s.run == nil {
 		return nil, errors.New("Use mock")
 	}
 	return s.run(ctx, cmd, login, timeout, stdin)
 }
 
-// Stub environment with the sudo probe supported and no snapshot taken
-func newStubEnv(t *testing.T, env *Env) *stubEnv {
+// Fake environment with the sudo probe supported and no snapshot taken
+func newFakeBaseEnv(t *testing.T, env *Env) *fakeBaseEnv {
 	t.Helper()
-	s := &stubEnv{}
+	s := &fakeBaseEnv{}
 	s.passwordlessSudoProbeSupported = true
 	initBaseEnv(&s.baseEnv, s, env, "/tmp", 10, nil, true)
 	return s
@@ -152,7 +149,7 @@ func TestUpdateJSONStoreIsLockedAndAtomic(t *testing.T) {
 func TestPrepareCommandUsesSelectedEnvironmentForNopasswd(t *testing.T) {
 	env := newTestToolEnv(t)
 	env.Values.Store("session.interactive", true)
-	s := newStubEnv(t, env)
+	s := newFakeBaseEnv(t, env)
 	s.run = func(ctx context.Context, cmd string, login bool, timeout int, stdin *string) (ProcessHandle, error) {
 		if cmd != "sudo -n true" {
 			t.Fatalf("unexpected command %q", cmd)
@@ -174,7 +171,7 @@ func TestNopasswdProbeRunsSudoNInsideBackendOnlyWhenSupported(t *testing.T) {
 	}{{true, 0, true, true}, {true, 1, false, true}, {false, 0, false, false}}
 	for _, c := range cases {
 		env := newTestToolEnv(t)
-		s := newStubEnv(t, env)
+		s := newFakeBaseEnv(t, env)
 		s.passwordlessSudoProbeSupported = c.supported
 		called := false
 		s.run = func(ctx context.Context, cmd string, login bool, timeout int, stdin *string) (ProcessHandle, error) {
@@ -248,7 +245,7 @@ func TestBoundedOutputCollectorSpillsFullStream(t *testing.T) {
 }
 
 func TestWrapCommandUsesAtomicTempThenMv(t *testing.T) {
-	s := newStubEnv(t, newTestToolEnv(t))
+	s := newFakeBaseEnv(t, newTestToolEnv(t))
 	s.snapshotReady = true
 	wrapped := s.wrapCommand("echo hi", "/tmp")
 	if !strings.Contains(wrapped, "export -p") || !strings.Contains(wrapped, "> ") || !strings.Contains(wrapped, ".tmp.") || !strings.Contains(wrapped, "mv -f ") {
@@ -266,7 +263,7 @@ func TestWrapCommandUsesAtomicTempThenMv(t *testing.T) {
 }
 
 func TestInitSessionBootstrapAlsoAtomicAndMktemp(t *testing.T) {
-	s := newStubEnv(t, newTestToolEnv(t))
+	s := newFakeBaseEnv(t, newTestToolEnv(t))
 	captured := ""
 	s.run = func(ctx context.Context, cmd string, login bool, timeout int, stdin *string) (ProcessHandle, error) {
 		if captured == "" {
@@ -337,7 +334,7 @@ func TestSnapshotAndCwdFilesArePrivate(t *testing.T) {
 }
 
 func TestExtractCwdFromOutputHappyPath(t *testing.T) {
-	s := newStubEnv(t, newTestToolEnv(t))
+	s := newFakeBaseEnv(t, newTestToolEnv(t))
 	marker := s.cwdMarker
 	res := &ExecResult{Output: "hello\n" + marker + "/home/user" + marker + "\n"}
 	s.extractCwdFromOutput(res)
@@ -367,7 +364,7 @@ func TestEmbedStdinHeredocCompoundCommandReceivesStdinAsGroup(t *testing.T) {
 }
 
 func TestInitSessionSnapshotReadyFalseOnFailure(t *testing.T) {
-	s := newStubEnv(t, newTestToolEnv(t))
+	s := newFakeBaseEnv(t, newTestToolEnv(t))
 	s.run = func(ctx context.Context, cmd string, login bool, timeout int, stdin *string) (ProcessHandle, error) {
 		return nil, errors.New("bash not found")
 	}
@@ -378,7 +375,7 @@ func TestInitSessionSnapshotReadyFalseOnFailure(t *testing.T) {
 }
 
 func TestInitSessionPrefersNonloginWhenLoginBashIsDead(t *testing.T) {
-	s := newStubEnv(t, newTestToolEnv(t))
+	s := newFakeBaseEnv(t, newTestToolEnv(t))
 	s.run = func(ctx context.Context, cmd string, login bool, timeout int, stdin *string) (ProcessHandle, error) {
 		if login {
 			return newFakeProc(t, "", 1), nil
@@ -404,7 +401,7 @@ func TestInitSessionPrefersNonloginWhenLoginBashIsDead(t *testing.T) {
 
 func TestCwdMarkerUniquePerInstance(t *testing.T) {
 	env := newTestToolEnv(t)
-	if newStubEnv(t, env).cwdMarker == newStubEnv(t, env).cwdMarker {
+	if newFakeBaseEnv(t, env).cwdMarker == newFakeBaseEnv(t, env).cwdMarker {
 		t.Fatal("markers must differ")
 	}
 }
@@ -617,7 +614,7 @@ func TestCapturingPipestatusChangesNothingTheModelSees(t *testing.T) {
 }
 
 func TestExtractPipelineStatusIntoResult(t *testing.T) {
-	s := newStubEnv(t, newTestToolEnv(t))
+	s := newFakeBaseEnv(t, newTestToolEnv(t))
 	res := &ExecResult{Output: "x\n" + s.pipeMarker + "1 0" + s.pipeMarker + "\n" + s.cwdMarker + "/tmp" + s.cwdMarker + "\n"}
 	s.extractCwdFromOutput(res)
 	if len(res.PipelineStatus) != 2 || res.PipelineStatus[0] != 1 || res.PipelineStatus[1] != 0 || res.Output != "x" {
@@ -690,7 +687,7 @@ func TestMultilineSessionValueNotExecutedViaSnapshot(t *testing.T) {
 }
 
 func TestWrapCommandRestoresPassthroughAndSkipsRedumpWithoutPersistence(t *testing.T) {
-	s := newStubEnv(t, newTestToolEnv(t))
+	s := newFakeBaseEnv(t, newTestToolEnv(t))
 	s.snapshotReady = true
 	s.persistEnv = false
 	s.snapshotPassthroughNames["MY_TOKEN"] = true
@@ -744,14 +741,14 @@ func TestRemoteArgvExportsAndJoins(t *testing.T) {
 
 // Environment double exposing a host side exec prefix for the stream tests
 type prefixEnv struct {
-	stubEnv
+	fakeBaseEnv
 	prefix []string
 }
 
 func (p *prefixEnv) ExecPrefix(user string, interactive bool) ([]string, error) { return p.prefix, nil }
 
 func TestExecPrefixAndStreamsSupport(t *testing.T) {
-	plain := newStubEnv(t, newTestToolEnv(t))
+	plain := newFakeBaseEnv(t, newTestToolEnv(t))
 	if SupportsStreams(plain) || ExecPrefix(plain, "", true) != nil {
 		t.Fatal("backend without a prefix cannot stream")
 	}
@@ -872,7 +869,7 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 
 func TestOnlyAConnectionThatNeverReachesItsTargetCountsAsAForwardFailure(t *testing.T) {
 	defer relayOnHost(t)()
-	env := newStubEnv(t, newTestToolEnv(t))
+	env := newFakeBaseEnv(t, newTestToolEnv(t))
 	live := oneShotServer(t, []byte("devtools"), false)
 	port, err := ForwardPort(env, live, "", "")
 	if err != nil {
@@ -895,7 +892,7 @@ func TestOnlyAConnectionThatNeverReachesItsTargetCountsAsAForwardFailure(t *test
 func TestA404OnTheOldBrowserPathCountsAsAForwardFailure(t *testing.T) {
 	defer relayOnHost(t)()
 	notFound := []byte("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
-	env := newStubEnv(t, newTestToolEnv(t))
+	env := newFakeBaseEnv(t, newTestToolEnv(t))
 	stale := oneShotServer(t, notFound, true)
 	request := []byte("GET /devtools/browser/old-id HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\n\r\n")
 	port, _ := ForwardPort(env, stale, "", "")

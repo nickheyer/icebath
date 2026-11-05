@@ -443,7 +443,7 @@ func TestWorkspaceRemovalReleasesOnlyItsLanguageServers(t *testing.T) {
 					}
 				})
 			}
-			if svc.ReleaseWorkspace(gone) != 0 {
+			if n, err := svc.ReleaseWorkspace(gone); err != nil || n != 0 {
 				t.Fatal("a repeat release must be a no-op")
 			}
 			if d, _ := svc.GetDiagnosticsSync(filepath.Join(kept, "x.py"), false, 0, nil, roots); len(d) == 0 {
@@ -923,7 +923,7 @@ func TestEditCheckSilentServerDoesNotHoldTheWrite(t *testing.T) {
 	for _, step := range [][2]string{{"x = 1\n", "x = 2\n"}, {"x = 2\n", "x = 3\n"}} {
 		must(t, os.WriteFile(target, []byte(step[1]), 0o644))
 		started := time.Now()
-		fut := svc.StartEditCheck(target, strp(step[0]), strp(step[1]), "S-lsp", nil, cwdRoots())
+		fut := mustStartEditCheck(t, svc, target, strp(step[0]), strp(step[1]), "S-lsp", nil, cwdRoots())
 		if fut == nil {
 			t.Fatal("no check")
 		}
@@ -940,7 +940,7 @@ func TestEditCheckLateVerdictCarriesOnlyTheIntroducedError(t *testing.T) {
 	repo, gate, svc := editCheckRepo(t, "by_content")
 	target := writeFile(t, filepath.Join(repo, "b.py"), "x = bad\n")
 	started := time.Now()
-	fut := svc.StartEditCheck(target, strp("x = 1\n"), strp("x = bad\n"), "S-lsp", nil, cwdRoots())
+	fut := mustStartEditCheck(t, svc, target, strp("x = 1\n"), strp("x = bad\n"), "S-lsp", nil, cwdRoots())
 	if _, ready, _ := fut.Wait(InlineWait(started)); ready {
 		t.Fatal("the held server answered inline")
 	}
@@ -973,9 +973,9 @@ func TestEditCheckSessionsAreJudgedOnTheirOwnBytes(t *testing.T) {
 	})
 	<-held
 	must(t, os.WriteFile(target, []byte("x = 2\n"), 0o644))
-	futA := svc.StartEditCheck(target, strp("x = 1\n"), strp("x = 2\n"), "S-A2", nil, cwdRoots())
+	futA := mustStartEditCheck(t, svc, target, strp("x = 1\n"), strp("x = 2\n"), "S-A2", nil, cwdRoots())
 	must(t, os.WriteFile(target, []byte("x = bad\n"), 0o644))
-	futB := svc.StartEditCheck(target, strp("x = 2\n"), strp("x = bad\n"), "S-B2", nil, cwdRoots())
+	futB := mustStartEditCheck(t, svc, target, strp("x = 2\n"), strp("x = bad\n"), "S-B2", nil, cwdRoots())
 	close(release)
 	resA, _, errA := futA.Wait(20 * time.Second)
 	resB, _, errB := futB.Wait(20 * time.Second)
@@ -993,10 +993,10 @@ func TestEditCheckSessionsAreJudgedOnTheirOwnBytes(t *testing.T) {
 func TestEditCheckSameSessionTakesOverItsUnfinishedCheck(t *testing.T) {
 	repo, gate, svc := editCheckRepo(t, "by_content")
 	target := writeFile(t, filepath.Join(repo, "d.py"), "x = bad\n")
-	first := svc.StartEditCheck(target, strp("x = 1\n"), strp("x = bad\n"), "S-A", nil, cwdRoots())
+	first := mustStartEditCheck(t, svc, target, strp("x = 1\n"), strp("x = bad\n"), "S-A", nil, cwdRoots())
 	time.Sleep(200 * time.Millisecond)
 	must(t, os.WriteFile(target, []byte("x = bad\ny = 2\n"), 0o644))
-	second := svc.StartEditCheck(target, strp("x = bad\n"), strp("x = bad\ny = 2\n"), "S-A", nil, cwdRoots())
+	second := mustStartEditCheck(t, svc, target, strp("x = bad\n"), strp("x = bad\ny = 2\n"), "S-A", nil, cwdRoots())
 	must(t, os.WriteFile(gate, nil, 0o644))
 	r1, _, err1 := first.Wait(20 * time.Second)
 	r2, _, err2 := second.Wait(20 * time.Second)

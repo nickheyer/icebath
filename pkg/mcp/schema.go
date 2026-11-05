@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -327,7 +328,7 @@ func MatchesNameFilter(toolName string, patterns map[string]bool) bool {
 		return true
 	}
 	for p := range patterns {
-		if strings.ContainsAny(p, "*?[") && fnmatchCase(toolName, p) {
+		if strings.ContainsAny(p, "*?[") && fnmatch.FnmatchCase(toolName, p) {
 			return true
 		}
 	}

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // StartupImports are the distribution, module and attribute triples a dependency environment must import
@@ -27,7 +29,7 @@ var StartupImports = [][3]string{
 func startupImportsLiteral() string {
 	rows := make([]string, len(StartupImports))
 	for i, row := range StartupImports {
-		rows[i] = fmt.Sprintf("(%s, %s, %s)", pyRepr(row[0]), pyRepr(row[1]), pyRepr(row[2]))
+		rows[i] = fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(row[0]), pyrepr.StrRepr(row[1]), pyrepr.StrRepr(row[2]))
 	}
 	return "(" + strings.Join(rows, ", ") + ")"
 }
@@ -68,7 +70,7 @@ func ValidateEnvironment(ctx context.Context, python string, argvPrefix []string
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("Command '%s' timed out after 60 seconds", pyListRepr(cmd.Args))
+		return fmt.Errorf("Command '%s' timed out after 60 seconds", pyrepr.Repr(cmd.Args))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -127,7 +129,7 @@ func baselineGaps(ctx context.Context, root string) ([]string, error) {
 	if venv, ok := storeFacts.Get("venv"); ok {
 		if list, ok := venv["extras"].([]any); ok {
 			for _, e := range list {
-				shipped = append(shipped, pyStr(e))
+				shipped = append(shipped, pyrepr.Str(e))
 			}
 		}
 	}
@@ -203,7 +205,7 @@ func RefreshDependencies(ctx context.Context, projectRoot string) (string, error
 	var recorded []string
 	if list, ok := fact["extras"].([]any); ok {
 		for _, e := range list {
-			recorded = append(recorded, pyStr(e))
+			recorded = append(recorded, pyrepr.Str(e))
 		}
 	}
 	stamp, _ := fact["stamp"].(string)

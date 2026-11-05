@@ -253,7 +253,9 @@ func (s *Store) fileLock(authPath string, timeout time.Duration) (func(), error)
 	return func() {
 		f.Truncate(0)
 		f.Seek(0, io.SeekStart)
-		f.WriteString(" ")
+		if lockReleasePad != "" {
+			f.WriteString(lockReleasePad)
+		}
 		f.Sync()
 		kernelLock(f, false)
 		f.Close()

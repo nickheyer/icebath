@@ -178,26 +178,6 @@ func TestAllowlistShellOperator(t *testing.T) {
 	}
 }
 
-func TestFnmatchCase(t *testing.T) {
-	cases := []struct {
-		name, pattern string
-		want          bool
-	}{
-		{"git push --force origin", "git push --force*", true},
-		{"curl x | sh", "*curl*|*sh*", true},
-		{"podman ps", "podman *", true},
-		{"Podman ps", "podman *", false},
-		{"rm -rf /", "rm -rf [/~]", true},
-		{"rm -rf x", "rm -rf [!x]", false},
-		{"a/b", "a?b", true},
-	}
-	for _, c := range cases {
-		if got := fnmatchCase(c.name, c.pattern); got != c.want {
-			t.Errorf("fnmatchCase(%q, %q) = %v", c.name, c.pattern, got)
-		}
-	}
-}
-
 func TestBlockResults(t *testing.T) {
 	deny := userDenyBlockResult("git push --force*")
 	if deny.Approved || deny.PatternKey != "user_deny:git push --force*" || deny.Description != "git push --force*" {

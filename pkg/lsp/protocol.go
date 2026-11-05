@@ -11,6 +11,10 @@ import (
 	"math/big"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // LSP error codes the client acts on
@@ -108,7 +112,7 @@ func readHeaders(r *bufio.Reader) ([]headerField, bool, error) {
 				if len(line) == 0 && len(headers) == 0 {
 					return nil, false, nil
 				}
-				return nil, false, protocolErrorf("unexpected EOF while reading LSP headers (partial=%s)", pyBytesRepr(line))
+				return nil, false, protocolErrorf("unexpected EOF while reading LSP headers (partial=%s)", pyrepr.BytesRepr(line))
 			}
 			return nil, false, err
 		}
@@ -122,14 +126,14 @@ func readHeaders(r *bufio.Reader) ([]headerField, bool, error) {
 		}
 		for _, c := range line {
 			if c >= 0x80 {
-				return nil, false, protocolErrorf("non-ASCII LSP header: %s", pyBytesRepr(line))
+				return nil, false, protocolErrorf("non-ASCII LSP header: %s", pyrepr.BytesRepr(line))
 			}
 		}
 		key, value, _ := strings.Cut(string(line), ":")
 		if key == "" {
-			return nil, false, protocolErrorf("malformed LSP header line: %s", pyBytesRepr(line))
+			return nil, false, protocolErrorf("malformed LSP header line: %s", pyrepr.BytesRepr(line))
 		}
-		headers = append(headers, headerField{strings.ToLower(pyStrip(key)), pyStrip(value)})
+		headers = append(headers, headerField{strings.ToLower(pystr.Strip(key)), pystr.Strip(value)})
 	}
 }
 
@@ -166,9 +170,9 @@ func ReadMessage(r *bufio.Reader, decode func(text string) (any, error)) (msg an
 	if cl == nil {
 		return nil, false, protocolErrorf("LSP message missing Content-Length: %s", headersRepr(headers))
 	}
-	n, valid := pyParseInt(*cl)
+	n, valid := pyint.Parse(*cl)
 	if !valid {
-		return nil, false, protocolErrorf("non-integer Content-Length: %s", pyStrRepr(*cl))
+		return nil, false, protocolErrorf("non-integer Content-Length: %s", pyrepr.StrRepr(*cl))
 	}
 	if n.Sign() < 0 || n.Cmp(big.NewInt(maxBodyBytes)) > 0 {
 		return nil, false, protocolErrorf("unreasonable Content-Length: %s", n.String())
@@ -200,7 +204,7 @@ func ReadMessage(r *bufio.Reader, decode func(text string) (any, error)) (msg an
 func headersRepr(headers []headerField) string {
 	parts := make([]string, len(headers))
 	for i, h := range headers {
-		parts[i] = pyStrRepr(h.key) + ": " + pyStrRepr(h.value)
+		parts[i] = pyrepr.StrRepr(h.key) + ": " + pyrepr.StrRepr(h.value)
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
 }

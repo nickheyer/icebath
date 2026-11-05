@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -86,6 +87,7 @@ func autodetectWebBackend(env *Env) string {
 
 // Keyless free tier backend name, strictly the last autodetect rung
 func keylessWebBackend(env *Env) string {
+	ensureWebPluginsLoaded(context.Background(), env)
 	if !keylessEnabled(env) {
 		return ""
 	}
@@ -284,6 +286,7 @@ func CheckWebAPIKey(env *Env) bool {
 			return true
 		}
 	}
+	ensureWebPluginsLoaded(context.Background(), env)
 	for _, p := range []WebProvider{activeSearchProvider(env), activeExtractProvider(env)} {
 		if p != nil && webCheckSkip[p.Name()] {
 			if keylessWebBackend(env) != "" {
@@ -389,6 +392,7 @@ func WebSearchTool(ctx context.Context, env *Env, query string, limitArg any) st
 		return toolErrorJSON("Interrupted", map[string]any{"success": false})
 	}
 	call := webCallContext{ctx, env}
+	ensureWebPluginsLoaded(ctx, env)
 	backend := getSearchBackend(env)
 	var provider WebProvider
 	if backend != "" {
@@ -464,7 +468,7 @@ func validateExtractURLs(items []any) validatedExtract {
 		}
 		normalized := normalizeURLForRequest(u)
 		for _, candidate := range []string{u, unquoteLoose(u), normalized, unquoteLoose(normalized)} {
-			if prefixAltRe.MatchString(candidate) {
+			if prefixSearch(candidate) {
 				out.blocked = jsonCompact(map[string]any{"success": false, "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."})
 				return out
 			}
@@ -774,6 +778,7 @@ func WebExtractTool(ctx context.Context, env *Env, items []any, format string, c
 	var results []*WebPage
 	if len(safeURLs) > 0 {
 		backend := getExtractBackend(env)
+		ensureWebPluginsLoaded(ctx, env)
 		provider, errJSON := resolveExtractProvider(env, backend)
 		if errJSON != "" {
 			return errJSON
@@ -858,4 +863,20 @@ func registerWebTools() {
 			}
 			return WebExtractTool(ctx, call.Env, items, "markdown", call.Args["char_limit"])
 		}})
+}
+
+// EnsurePluginsDiscovered runs idempotent plugin discovery for the profile home of a ctx, installed by the plugins package
+var EnsurePluginsDiscovered func(ctx context.Context) error
+
+var errPluginDiscoveryUnwired = errors.New("plugin discovery is not installed")
+
+// Discovers plugins so plugin registered web providers exist before dispatch, a failure logged as a warning
+func ensureWebPluginsLoaded(ctx context.Context, env *Env) {
+	err := errPluginDiscoveryUnwired
+	if EnsurePluginsDiscovered != nil {
+		err = EnsurePluginsDiscovered(visionCtx(ctx, env))
+	}
+	if err != nil {
+		envLog(env).Warn("Web plugin discovery failed (non-fatal): " + err.Error())
+	}
 }

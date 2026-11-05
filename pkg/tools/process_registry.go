@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // In memory registry of background processes with rolling output, poll, log, wait, kill and crash recovery
@@ -337,6 +339,13 @@ func (s *ProcessSession) markExited(exitCode *int, reason, source string) {
 			s.TerminationSource = source
 		}
 	}
+}
+
+// Reports the recorded exit, read under the session lock its writers hold
+func (s *ProcessSession) isExited() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Exited
 }
 
 func (s *ProcessSession) readerAlive() bool {
@@ -687,7 +696,7 @@ func (r *ProcessRegistry) heartbeatLoop() {
 		due := []*ProcessSession{}
 		r.mu.Lock()
 		for _, s := range r.running {
-			if s.HeartbeatSeconds > 0 && !s.Exited && now-s.heartbeatLast >= float64(s.HeartbeatSeconds) {
+			if s.HeartbeatSeconds > 0 && !s.isExited() && now-s.heartbeatLast >= float64(s.HeartbeatSeconds) {
 				due = append(due, s)
 			}
 		}
@@ -761,7 +770,7 @@ func (r *ProcessRegistry) emitOutput(s *ProcessSession, chunk string) {
 
 // Scans a freshly read chunk for watch patterns and queues rate limited notifications
 func (r *ProcessRegistry) checkWatchPatterns(s *ProcessSession, newText string) {
-	if len(s.WatchPatterns) == 0 || s.watchDisabled || s.Exited {
+	if len(s.WatchPatterns) == 0 || s.watchDisabled || s.isExited() {
 		return
 	}
 	matchedPattern := ""
@@ -964,7 +973,7 @@ func (r *ProcessRegistry) detachedHostFate(pid int, expectedStart *int64) string
 
 // Re attaches, closes or prunes a recovered host pid session
 func (r *ProcessRegistry) refreshDetachedSession(s *ProcessSession) *ProcessSession {
-	if s == nil || s.Exited || !s.Detached || s.PidScope != "host" || s.OutputLog != "" {
+	if s == nil || s.isExited() || !s.Detached || s.PidScope != "host" || s.OutputLog != "" {
 		return s
 	}
 	switch r.detachedHostFate(s.Pid, s.HostStartTime) {
@@ -988,7 +997,9 @@ func (r *ProcessRegistry) closeReusedDetached(s *ProcessSession) {
 	s.mu.Unlock()
 	r.mu.Lock()
 	if _, ok := r.running[s.ID]; ok {
+		s.mu.Lock()
 		s.ExitedAt = nowSeconds()
+		s.mu.Unlock()
 		delete(r.running, s.ID)
 	}
 	r.insertFinished(s)
@@ -1020,7 +1031,13 @@ func (r *ProcessRegistry) pruneUncollectedDetached(s *ProcessSession) *ProcessSe
 
 // Reports a detached entry closed without a collected exit whose pid is gone
 func (r *ProcessRegistry) uncollectedGone(s *ProcessSession) bool {
-	return s != nil && s.Exited && s.ExitCode == nil && s.Detached && s.PidScope == "host" && !isHostPidAlive(s.Pid)
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	uncollected := s.Exited && s.ExitCode == nil
+	s.mu.Unlock()
+	return uncollected && s.Detached && s.PidScope == "host" && !isHostPidAlive(s.Pid)
 }
 
 // terminal.<key> as a non negative float, zero disables, fallback when unreadable
@@ -1385,7 +1402,7 @@ func (r *ProcessRegistry) envPollerLoop(s *ProcessSession, e Environment, logPat
 	prevOutputBytes := 0
 	ctx := context.Background()
 	lost := func() { r.finishExited(s, procIntPtr(-1), "lost", "backend_lost", true) }
-	for !s.Exited {
+	for !s.isExited() {
 		time.Sleep(2 * time.Second)
 		res, err := e.Execute(ctx, logDeltaCommand(shQuote(logPath), prevOutputBytes), ExecOptions{Timeout: 10})
 		if err != nil {
@@ -1526,16 +1543,19 @@ func (r *ProcessRegistry) moveToFinished(s *ProcessSession, fromReader bool) boo
 	_, wasRunning := r.running[s.ID]
 	if wasRunning {
 		s.finishClaimed = true
+		s.mu.Lock()
 		s.ExitedAt = nowSeconds()
+		s.mu.Unlock()
 		saveCompletedResult(s.env, s)
 		delete(r.running, s.ID)
 	}
+	claimed := s.finishClaimed
 	r.insertFinished(s)
 	r.mu.Unlock()
 	r.releaseJobGroup(s)
 	func() {
 		defer func() {
-			if wasRunning || !s.finishClaimed {
+			if wasRunning || !claimed {
 				s.completionEvent.set()
 			}
 		}()
@@ -1555,18 +1575,21 @@ func (r *ProcessRegistry) publishFinished(s *ProcessSession, wasRunning, fromRea
 		if s.HandoffNote != "" {
 			notification["handoff_note"] = s.HandoffNote
 		}
+		s.mu.Lock()
 		for k, v := range exitFields(s) {
 			notification[k] = v
 		}
 		for k, v := range completionOutput(s) {
 			notification[k] = v
 		}
+		s.mu.Unlock()
 		notification["started_at"] = s.StartedAt
 		redactProcessResult(s.env, notification)
 		r.enqueue(s.env, notification)
 	}
 }
 
+// Exit code, completion reason and termination source, read under the session lock
 func exitFields(s *ProcessSession) map[string]any {
 	return map[string]any{
 		"exit_code": s.field("exit_code"), "completion_reason": s.CompletionReason, "termination_source": s.TerminationSource,
@@ -1623,6 +1646,8 @@ func (r *ProcessRegistry) IsSessionWaiting(sessionID string) bool {
 		return false
 	}
 	s = refreshed
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return !s.Exited && !(len(s.WatchPatterns) > 0 && !s.watchDisabled && s.watchHits > 0)
 }
 
@@ -1862,7 +1887,7 @@ func (r *ProcessRegistry) resolvePrefix(env *Env, sessionID string) *ProcessSess
 
 // Reconciles exited against the real child state when a descendant holds the pipe open
 func (r *ProcessRegistry) reconcileLocalExit(s *ProcessSession) {
-	if s == nil || s.Exited {
+	if s == nil || s.isExited() {
 		return
 	}
 	proc := s.Process
@@ -1907,6 +1932,7 @@ func (r *ProcessRegistry) reconcileLocalExit(s *ProcessSession) {
 	r.moveToFinished(s, false)
 }
 
+// Session id, command and running or exited status, read under the session lock
 func statusHead(s *ProcessSession) map[string]any {
 	status := "running"
 	if s.Exited {
@@ -1925,15 +1951,17 @@ func (r *ProcessRegistry) Poll(env *Env, sessionID string) map[string]any {
 	s.mu.Lock()
 	preview := outputTail(s, 1000)
 	exited, finalizing := s.Exited, readerFinalizing(s)
-	s.mu.Unlock()
 	result := statusHead(s)
-	result["pid"] = s.field("pid")
-	result["uptime_seconds"] = int(nowSeconds() - s.StartedAt)
-	result["output_preview"] = preview
 	if exited {
 		for k, v := range exitFields(s) {
 			result[k] = v
 		}
+	}
+	s.mu.Unlock()
+	result["pid"] = s.field("pid")
+	result["uptime_seconds"] = int(nowSeconds() - s.StartedAt)
+	result["output_preview"] = preview
+	if exited {
 		if !finalizing {
 			r.markPollObserved(sessionID)
 		}
@@ -1954,6 +1982,7 @@ func (r *ProcessRegistry) ReadLog(env *Env, sessionID string, offset *int, limit
 	s.mu.Lock()
 	full := StripANSI(s.OutputBuffer)
 	exited, finalizing := s.Exited, readerFinalizing(s)
+	result := statusHead(s)
 	s.mu.Unlock()
 	lines := splitLines(full)
 	total := len(lines)
@@ -1972,7 +2001,6 @@ func (r *ProcessRegistry) ReadLog(env *Env, sessionID string, offset *int, limit
 		selected = lines[start:stop]
 		observedCompletionOutput = total == 0 || (len(selected) > 0 && stop == total)
 	}
-	result := statusHead(s)
 	result["output"] = strings.Join(selected, "\n")
 	result["total_lines"] = total
 	result["showing"] = fmt.Sprintf("%d lines", len(selected))
@@ -2046,14 +2074,20 @@ func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, 
 		}
 		r.reconcileLocalExit(s)
 		var result map[string]any
-		if s.Exited && !readerFinalizing(s) {
-			r.markConsumed(sessionID)
+		s.mu.Lock()
+		exited := s.Exited && !readerFinalizing(s)
+		if exited {
 			result = exitSnapshot(s, "exited")
+		}
+		tail := outputTail(s, 1000)
+		s.mu.Unlock()
+		if exited {
+			r.markConsumed(sessionID)
 		} else if IsInterrupted(ctx) {
-			result = map[string]any{"status": "interrupted", "command": s.Command, "output": outputTail(s, 1000),
+			result = map[string]any{"status": "interrupted", "command": s.Command, "output": tail,
 				"note": "User sent a new message -- wait interrupted"}
 		} else if ConsumeYield(WorkerOf(ctx)) {
-			result = map[string]any{"status": "interrupted", "command": s.Command, "output": outputTail(s, 1000),
+			result = map[string]any{"status": "interrupted", "command": s.Command, "output": tail,
 				"process_running": true,
 				"note":            "User sent a new message -- wait released; the process is still running and you will be notified on exit. Respond to the user now."}
 		}
@@ -2069,7 +2103,10 @@ func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, 
 		}
 		s.completionEvent.wait(min(time.Second, remaining))
 	}
-	result := map[string]any{"status": "timeout", "command": s.Command, "output": outputTail(s, 1000), "process_running": true}
+	s.mu.Lock()
+	tail := outputTail(s, 1000)
+	s.mu.Unlock()
+	result := map[string]any{"status": "timeout", "command": s.Command, "output": tail, "process_running": true}
 	baseNote := fmt.Sprintf("Wait window of %ds elapsed — the process is still running. This is not an error.", effective)
 	if s.StartedAt != 0 {
 		baseNote += fmt.Sprintf(" Uptime: %ds.", int(nowSeconds()-s.StartedAt))
@@ -2108,7 +2145,7 @@ func (r *ProcessRegistry) KillProcess(env *Env, sessionID, source string, consum
 	if s == nil {
 		return notFoundResult(sessionID)
 	}
-	if s.Exited {
+	if s.isExited() {
 		scopeStopped := r.stopScope(s)
 		s.mu.Lock()
 		result := exitSnapshot(s, "already_exited")
@@ -2165,12 +2202,12 @@ func (r *ProcessRegistry) KillProcess(env *Env, sessionID, source string, consum
 	s.ExitCode = procIntPtr(-15)
 	s.CompletionReason = "killed"
 	s.TerminationSource = source
+	result := map[string]any{"status": "killed", "session_id": s.ID, "completion_reason": s.CompletionReason, "termination_source": s.TerminationSource}
 	s.mu.Unlock()
 	if !r.moveToFinished(s, false) {
 		saveCompletedResult(env, s)
 	}
 	r.writeCheckpoint(env, nil)
-	result := map[string]any{"status": "killed", "session_id": s.ID, "completion_reason": s.CompletionReason, "termination_source": s.TerminationSource}
 	for k, v := range output {
 		result[k] = v
 	}
@@ -2183,7 +2220,9 @@ func (r *ProcessRegistry) stopScope(s *ProcessSession) bool {
 		return true
 	}
 	stopped := stopSystemdUnit(s.SystemdUnit)
+	r.mu.Lock()
 	s.scopeStopPending = !stopped
+	r.mu.Unlock()
 	return stopped
 }
 
@@ -2206,7 +2245,9 @@ func (r *ProcessRegistry) signalKill(env *Env, s *ProcessSession, sessionID stri
 				r.markConsumed(sessionID)
 			}
 			r.closeReusedDetached(s)
+			s.mu.Lock()
 			result := map[string]any{"status": "already_exited", "exit_code": s.field("exit_code")}
+			s.mu.Unlock()
 			for k, v := range output {
 				result[k] = v
 			}
@@ -2231,7 +2272,7 @@ func (r *ProcessRegistry) stdinOp(env *Env, sessionID string, ptyOp func(*ptyPro
 	if s == nil {
 		return notFoundResult(sessionID)
 	}
-	if s.Exited {
+	if s.isExited() {
 		return map[string]any{"status": "already_exited", "error": alreadyExitedError(s)}
 	}
 	var err error
@@ -2259,14 +2300,14 @@ func (r *ProcessRegistry) WriteStdin(env *Env, sessionID, data string) map[strin
 			if isWindowsHost {
 				return p.Write([]byte(data))
 			}
-			raw, err := surrogateEscapeEncode(data)
+			raw, err := pystr.SurrogateEscapeEncode(data)
 			if err != nil {
 				return err
 			}
 			return p.Write(raw)
 		},
 		func(p *ExecProcess) error { return errPipeStdinClosed },
-		map[string]any{"status": "ok", "bytes_written": wtf8RuneCount(data)})
+		map[string]any{"status": "ok", "bytes_written": pystr.Len(data)})
 }
 
 // SubmitStdin sends data plus Enter, CR on a POSIX PTY, CRLF on a Windows PTY, LF on a pipe
@@ -2358,6 +2399,7 @@ func (r *ProcessRegistry) ListSessions(env *Env, taskID, sessionKey string, incl
 	result := []map[string]any{}
 	for _, s := range all {
 		r.reconcileLocalExit(s)
+		s.mu.Lock()
 		status := "running"
 		if s.Exited {
 			status = "exited"
@@ -2391,6 +2433,7 @@ func (r *ProcessRegistry) ListSessions(env *Env, taskID, sessionKey string, incl
 			entry["exited_at"] = s.ExitedAt
 			entry["completion_reason"] = s.CompletionReason
 		}
+		s.mu.Unlock()
 		if s.Detached {
 			entry["detached"] = true
 		}
@@ -2413,7 +2456,7 @@ func (r *ProcessRegistry) anyRunning(pred func(*ProcessSession) bool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, s := range r.running {
-		if !s.Exited && pred(s) {
+		if !s.isExited() && pred(s) {
 			return true
 		}
 	}
@@ -2434,7 +2477,7 @@ func (r *ProcessRegistry) RunningOwnedBy(ownerTaskID string) []*ProcessSession {
 	defer r.mu.Unlock()
 	out := []*ProcessSession{}
 	for _, s := range r.running {
-		if s.OwnerTaskID == ownerTaskID && !s.Exited {
+		if s.OwnerTaskID == ownerTaskID && !s.isExited() {
 			out = append(out, s)
 		}
 	}
@@ -2447,7 +2490,10 @@ func (r *ProcessRegistry) UnreadCompletionsOwnedBy(ownerTaskID string) []*Proces
 	defer r.mu.Unlock()
 	out := []*ProcessSession{}
 	for _, s := range r.finished {
-		if s.OwnerTaskID == ownerTaskID && s.NotifyOnComplete && s.ExitCode != nil && !r.IsCompletionConsumed(s.ID) && !r.isPollObserved(s.ID) {
+		s.mu.Lock()
+		collected := s.NotifyOnComplete && s.ExitCode != nil
+		s.mu.Unlock()
+		if s.OwnerTaskID == ownerTaskID && collected && !r.IsCompletionConsumed(s.ID) && !r.isPollObserved(s.ID) {
 			out = append(out, s)
 		}
 	}
@@ -2459,7 +2505,7 @@ func (r *ProcessRegistry) TransferOwnership(env *Env, sessionID, fromOwner, toOw
 	s := r.Get(env, sessionID)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if s == nil || s.Exited || s.OwnerTaskID != fromOwner {
+	if s == nil || s.isExited() || s.OwnerTaskID != fromOwner {
 		return nil
 	}
 	s.OwnerTaskID = toOwner
@@ -2509,7 +2555,7 @@ func (r *ProcessRegistry) KillAll(env *Env, taskID string, excludeIDs map[string
 	r.mu.Lock()
 	for _, store := range []map[string]*ProcessSession{r.running, r.finished} {
 		for _, s := range store {
-			if (taskID == "" || s.OwnerTaskID == taskID) && !excludeIDs[s.ID] && (!s.Exited || s.scopeStopPending) && !(lifecycle && s.PersistOnRelease) {
+			if (taskID == "" || s.OwnerTaskID == taskID) && !excludeIDs[s.ID] && (!s.isExited() || s.scopeStopPending) && !(lifecycle && s.PersistOnRelease) {
 				targets = append(targets, s)
 			}
 		}

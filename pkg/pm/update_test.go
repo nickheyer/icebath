@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestUpdateVersionKeySortsNumericAndSuffixes(t *testing.T) {
@@ -305,7 +307,7 @@ func TestUpdateOneFailingPinDoesNotBlockTheRest(t *testing.T) {
 	}
 	latest := LatestReceipt(ctx)
 	steps, _ := latest["steps"].([]any)
-	if latest["outcome"] != "failed" || pyStr(latest["exit_code"]) != "1" || len(steps) != 1 || steps[0].(map[string]any)["name"] != "pin broken-pin" {
+	if latest["outcome"] != "failed" || pyrepr.Str(latest["exit_code"]) != "1" || len(steps) != 1 || steps[0].(map[string]any)["name"] != "pin broken-pin" {
 		t.Fatalf("receipt %v", latest)
 	}
 }
@@ -399,7 +401,7 @@ func TestUpdateSameMinorRefreshUpdatesRealBytesAndPreservesUnresolvedTargets(t *
 			}
 			facts, _ := NewFacts(filepath.Join(tmp, "tools", "facts.json"), false)
 			fact, _ := facts.Get("rolling-tool")
-			if peRead(t, filepath.Join(tmp, "tools", pyStr(fact["entry"]), "tool.txt")) != "new rolling build" || syncs != 1 {
+			if peRead(t, filepath.Join(tmp, "tools", pyrepr.Str(fact["entry"]), "tool.txt")) != "new rolling build" || syncs != 1 {
 				t.Fatalf("installed fact %v syncs %d", fact, syncs)
 			}
 			for _, path := range requests.list() {

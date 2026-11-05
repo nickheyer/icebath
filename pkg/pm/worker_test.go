@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -172,7 +174,7 @@ func TestWorkerArtifactLifecycleKeepsIdentityAndRelaysProgress(t *testing.T) {
 			}
 			var entry string
 			if operation == "stage_only" {
-				entry = pyStr(result)
+				entry = pyrepr.Str(result)
 				if pathExists(factsPath) {
 					t.Fatal("staging published host identity")
 				}
@@ -182,7 +184,7 @@ func TestWorkerArtifactLifecycleKeepsIdentityAndRelaysProgress(t *testing.T) {
 				}
 				facts, _ := NewFacts(factsPath, false)
 				fact, _ := facts.Get("node")
-				entry = filepath.Join(storeRoot, pyStr(fact["entry"]))
+				entry = filepath.Join(storeRoot, pyrepr.Str(fact["entry"]))
 				last := downloads[len(downloads)-1]
 				if len(downloads) == 0 || last.done != last.total || len(last.ranges) == 0 {
 					t.Fatalf("download progress %v", downloads)
@@ -199,7 +201,7 @@ func TestWorkerArtifactLifecycleKeepsIdentityAndRelaysProgress(t *testing.T) {
 			install := func() (string, error) {
 				if operation == "stage_only" {
 					out, err := request(ctx, "stage_only", map[string]any{"name": "node", "target": target}, workerHooks{}, "")
-					return pyStr(out), err
+					return pyrepr.Str(out), err
 				}
 				_, err := request(ctx, "ensure", map[string]any{"name": "node", "explicit": true}, workerHooks{}, "")
 				return entry, err
@@ -365,7 +367,7 @@ func TestWorkerUnknownOperationIsNotDispatched(t *testing.T) {
 					response := ieRawWorker(t, map[string]any{"id": "unsupported", "operation": operation, "arguments": arguments,
 						"callbacks": []any{}, "packages": []any{}, "context": map[string]any{"repo": RepoRoot(), "lockfile": LockfilePath()}}, false)
 					payload, _ := response["error"].(map[string]any)
-					if payload["type"] != "KeyError" || !strings.Contains(pyStr(payload["message"]), operation) {
+					if payload["type"] != "KeyError" || !strings.Contains(pyrepr.Str(payload["message"]), operation) {
 						t.Fatalf("response %v", response)
 					}
 				}
@@ -665,7 +667,7 @@ func TestWorkerDefinitionTheBinaryDoesNotCarryIsAPackageError(t *testing.T) {
 				"context": map[string]any{"repo": RepoRoot(), "lockfile": LockfilePath()}}, false)
 			payload, _ := response["error"].(map[string]any)
 			if payload["type"] != "InstallError" || payload["package"] != definition.Name ||
-				!strings.Contains(pyStr(payload["cause"]), "cannot load package definition") || !strings.Contains(pyStr(payload["remedy"]), "keep the package definition") {
+				!strings.Contains(pyrepr.Str(payload["cause"]), "cannot load package definition") || !strings.Contains(pyrepr.Str(payload["remedy"]), "keep the package definition") {
 				t.Fatalf("response %v", response)
 			}
 		})

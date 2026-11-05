@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	_ "modernc.org/sqlite"
 )
@@ -362,7 +363,7 @@ func pageableText(content string) string {
 
 // One space indented JSON with sorted keys and no HTML escaping
 func jsonIndentOne(v any) string {
-	b, err := jsonEncodeWTF8Indent(v, "", " ")
+	b, err := pyjson.EncodeWTF8Indent(v, "", " ")
 	if err != nil {
 		return ErrorResult(err)
 	}

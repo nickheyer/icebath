@@ -16,6 +16,34 @@ type commandLookupContext struct {
 	PathExt *string
 }
 
+// Search path handed to which, nil for the ambient PATH whether the caller left it unset or passed none
+func (c *commandLookupContext) effectivePath() *string {
+	return c.Path
+}
+
+// State of one checked fact, consumers branch on it and never parse the detail
+type checkState string
+
+const (
+	checkNotChecked  checkState = "not_checked"
+	checkPresent     checkState = "present"
+	checkAbsent      checkState = "absent"
+	checkUnavailable checkState = "unavailable"
+	checkError       checkState = "error"
+)
+
+// One checked fact with its state, the value when present and a human detail
+type observation[T any] struct {
+	State  checkState
+	Value  *T
+	Detail string
+}
+
+// Observation of a fact nobody probed
+func observationNotChecked[T any]() observation[T] {
+	return observation[T]{State: checkNotChecked}
+}
+
 // One place a lookup probed, recorded whether or not the command was there
 type commandCandidate struct {
 	Value   string
@@ -121,13 +149,13 @@ func commandWhich(name string, ctx *commandLookupContext) (string, bool) {
 			}
 		}
 		for _, ext := range exts {
-			if hit, ok := shutilWhich(name+ext, ctx.Path); ok {
+			if hit, ok := shutilWhich(name+ext, ctx.effectivePath()); ok {
 				return hit, true
 			}
 		}
 		return "", false
 	}
-	return shutilWhich(name, ctx.Path)
+	return shutilWhich(name, ctx.effectivePath())
 }
 
 // Reports a regular file this process may execute
@@ -141,8 +169,8 @@ func knownDirVariants(base string) []string {
 	if runtime.GOOS != "windows" {
 		return []string{base}
 	}
-	source := os.Getenv("PATHEXT")
-	if source == "" {
+	source, ok := os.LookupEnv("PATHEXT")
+	if !ok {
 		source = ".EXE;.CMD;.BAT"
 	}
 	variants := []string{base}

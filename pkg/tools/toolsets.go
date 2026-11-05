@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"sort"
 	"strings"
@@ -770,35 +771,75 @@ func containsString(list []string, s string) bool {
 	return false
 }
 
-// Distribution maps toolset entries to the percent chance each is enabled per prompt
+// Distribution maps toolset entries to the percent chance each is enabled per prompt, Order keeping declaration order
 type Distribution struct {
 	Description string
 	Toolsets    map[string]int
+	Order       []string
 }
 
-func dist(description string, toolsets map[string]int) Distribution {
-	return Distribution{Description: description, Toolsets: toolsets}
+// Distribution from alternating entry and percent arguments in declaration order
+func dist(description string, pairs ...any) Distribution {
+	d := Distribution{Description: description, Toolsets: map[string]int{}}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		entry := pairs[i].(string)
+		d.Toolsets[entry] = pairs[i+1].(int)
+		d.Order = append(d.Order, entry)
+	}
+	return d
 }
 
 // Distributions are the batch data generation toolset distributions
 var Distributions = map[string]Distribution{
-	"default":        dist("All available tools, all the time", map[string]int{"web": 100, "vision": 100, "image_gen": 100, "terminal": 100, "file": 100, "browser": 100}),
-	"image_gen":      dist("Heavy focus on image generation with vision and web support", map[string]int{"image_gen": 90, "vision": 90, "web": 55, "terminal": 45}),
-	"research":       dist("Web research with vision analysis and reasoning", map[string]int{"web": 90, "browser": 70, "vision": 50, "terminal": 10}),
-	"science":        dist("Scientific research with web, terminal, file, and browser capabilities", map[string]int{"web": 94, "terminal": 94, "file": 94, "vision": 65, "browser": 50, "image_gen": 15}),
-	"development":    dist("Terminal, file tools, and reasoning with occasional web lookup", map[string]int{"terminal": 80, "file": 80, "web": 30, "vision": 10}),
-	"safe":           dist("All tools except terminal for safety", map[string]int{"web": 80, "browser": 70, "vision": 60, "image_gen": 60}),
-	"balanced":       dist("Equal probability of all toolsets", map[string]int{"web": 50, "vision": 50, "image_gen": 50, "terminal": 50, "file": 50, "browser": 50}),
-	"minimal":        dist("Only web tools for basic research", map[string]int{"web": 100}),
-	"terminal_only":  dist("Terminal and file tools for code execution tasks", map[string]int{"terminal": 100, "file": 100}),
-	"terminal_web":   dist("Terminal and file tools with web search for documentation lookup", map[string]int{"terminal": 100, "file": 100, "web": 100}),
-	"creative":       dist("Image generation and vision analysis focus", map[string]int{"image_gen": 90, "vision": 90, "web": 30}),
-	"reasoning":      dist("Heavy research/reasoning distribution with minimal other tools", map[string]int{"web": 90, "file": 60, "terminal": 20}),
-	"browser_use":    dist("Full browser-based web interaction with search, vision, and page control", map[string]int{"browser": 100, "web": 80, "vision": 70}),
-	"browser_only":   dist("Only browser automation tools for pure web interaction tasks", map[string]int{"browser": 100}),
-	"browser_tasks":  dist("Browser-focused distribution with web_search for finding URLs (Google blocks direct browser searches)", map[string]int{"browser+search": 97, "vision": 12, "terminal": 15}),
-	"terminal_tasks": dist("Terminal-focused distribution with high terminal/file availability, occasional other tools", map[string]int{"terminal": 97, "file": 97, "web": 97, "browser": 75, "vision": 50, "image_gen": 10}),
-	"mixed_tasks":    dist("Mixed distribution with high browser, terminal, and file availability for complex tasks", map[string]int{"browser": 92, "terminal": 92, "file": 92, "web": 35, "vision": 15, "image_gen": 15}),
+	"default":        dist("All available tools, all the time", "web", 100, "vision", 100, "image_gen", 100, "terminal", 100, "file", 100, "browser", 100),
+	"image_gen":      dist("Heavy focus on image generation with vision and web support", "image_gen", 90, "vision", 90, "web", 55, "terminal", 45),
+	"research":       dist("Web research with vision analysis and reasoning", "web", 90, "browser", 70, "vision", 50, "terminal", 10),
+	"science":        dist("Scientific research with web, terminal, file, and browser capabilities", "web", 94, "terminal", 94, "file", 94, "vision", 65, "browser", 50, "image_gen", 15),
+	"development":    dist("Terminal, file tools, and reasoning with occasional web lookup", "terminal", 80, "file", 80, "web", 30, "vision", 10),
+	"safe":           dist("All tools except terminal for safety", "web", 80, "browser", 70, "vision", 60, "image_gen", 60),
+	"balanced":       dist("Equal probability of all toolsets", "web", 50, "vision", 50, "image_gen", 50, "terminal", 50, "file", 50, "browser", 50),
+	"minimal":        dist("Only web tools for basic research", "web", 100),
+	"terminal_only":  dist("Terminal and file tools for code execution tasks", "terminal", 100, "file", 100),
+	"terminal_web":   dist("Terminal and file tools with web search for documentation lookup", "terminal", 100, "file", 100, "web", 100),
+	"creative":       dist("Image generation and vision analysis focus", "image_gen", 90, "vision", 90, "web", 30),
+	"reasoning":      dist("Heavy research/reasoning distribution with minimal other tools", "web", 90, "file", 60, "terminal", 20),
+	"browser_use":    dist("Full browser-based web interaction with search, vision, and page control", "browser", 100, "web", 80, "vision", 70),
+	"browser_only":   dist("Only browser automation tools for pure web interaction tasks", "browser", 100),
+	"browser_tasks":  dist("Browser-focused distribution with web_search for finding URLs (Google blocks direct browser searches)", "browser+search", 97, "vision", 12, "terminal", 15),
+	"terminal_tasks": dist("Terminal-focused distribution with high terminal/file availability, occasional other tools", "terminal", 97, "file", 97, "web", 97, "browser", 75, "vision", 50, "image_gen", 10),
+	"mixed_tasks":    dist("Mixed distribution with high browser, terminal, and file availability for complex tasks", "browser", 92, "terminal", 92, "file", 92, "web", 35, "vision", 15, "image_gen", 15),
+}
+
+// GetDistribution returns the named distribution
+func GetDistribution(name string) (Distribution, bool) {
+	d, ok := Distributions[name]
+	return d, ok
+}
+
+// ListDistributions returns a copy of every distribution keyed by name
+func ListDistributions() map[string]Distribution {
+	out := make(map[string]Distribution, len(Distributions))
+	for k, v := range Distributions {
+		out[k] = v
+	}
+	return out
+}
+
+// PrintDistributionInfo writes a distribution's description and toolset chances highest first
+func PrintDistributionInfo(w io.Writer, name string) {
+	d, ok := Distributions[name]
+	if !ok {
+		fmt.Fprintf(w, "❌ Unknown distribution: %s\n", name)
+		return
+	}
+	fmt.Fprintf(w, "\n📊 Distribution: %s\n", name)
+	fmt.Fprintf(w, "   Description: %s\n", d.Description)
+	fmt.Fprintln(w, "   Toolsets:")
+	order := append([]string{}, d.Order...)
+	sort.SliceStable(order, func(i, j int) bool { return d.Toolsets[order[i]] > d.Toolsets[order[j]] })
+	for _, entry := range order {
+		fmt.Fprintf(w, "     • %-15s : %3d%% chance\n", entry, d.Toolsets[entry])
+	}
 }
 
 // ValidateDistribution reports whether a distribution name exists
@@ -821,11 +862,7 @@ func (r *Registry) SampleToolsetsFromDistribution(ctx context.Context, scope, na
 	if !ok {
 		return nil, nil, fmt.Errorf("unknown distribution: %s", name)
 	}
-	entries := make([]string, 0, len(d.Toolsets))
-	for e := range d.Toolsets {
-		entries = append(entries, e)
-	}
-	sort.Strings(entries)
+	entries := d.Order
 	var selected, warnings []string
 	for _, entry := range entries {
 		members := distributionMembers(entry)

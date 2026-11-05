@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Extra wait past the inner poll deadline before the outer backstop fires
@@ -769,7 +770,7 @@ func pipeStdin(p *ExecProcess, w *os.File, data string) {
 			return
 		}
 		defer w.Close()
-		raw, err := surrogateEscapeEncode(data)
+		raw, err := pystr.SurrogateEscapeEncode(data)
 		if err != nil {
 			p.stdinErr = err.Error()
 			return

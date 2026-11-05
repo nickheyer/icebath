@@ -27,6 +27,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Every vendor here caps max_results at 20 server side
@@ -103,7 +105,7 @@ func argL(args map[string]any, key string) []any {
 
 // Compact JSON without HTML escaping, mirroring ensure_ascii false output
 func jsonCompact(v any) string {
-	b, err := jsonEncodeWTF8(v)
+	b, err := pyjson.EncodeWTF8(v)
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -112,7 +114,7 @@ func jsonCompact(v any) string {
 
 // Two space indented JSON without HTML escaping
 func jsonIndent(v any) string {
-	b, err := jsonEncodeWTF8Indent(v, "", "  ")
+	b, err := pyjson.EncodeWTF8Indent(v, "", "  ")
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -173,7 +175,7 @@ func webCfg(env *Env) config.Tree {
 
 // Lower cased web.<key> selection, empty when unset
 func webBackendKey(env *Env, key string) string {
-	return strings.ToLower(strings.TrimSpace(webCfg(env).String(key, "")))
+	return pystr.Strip(pystr.Lower(webCfg(env).String(key, "")))
 }
 
 // Module version from build info, dev when unknown

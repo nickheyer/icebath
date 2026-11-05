@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -48,7 +48,7 @@ func validateProfileName(name string) error {
 		return nil
 	}
 	if !home.ProfileIDRe.MatchString(name) {
-		return errors.New(commands.InvalidProfileNameError(name))
+		return profiles.InvalidProfileNameError(name)
 	}
 	if reservedProfileNames[name] {
 		return fmt.Errorf("Profile name %s is reserved — it collides with either the icebath installation itself or a "+
@@ -67,7 +67,7 @@ func profileDir(name string) (string, error) {
 		return home.Root(), nil
 	}
 	if !home.ProfileIDRe.MatchString(canon) {
-		return "", errors.New(commands.InvalidProfileNameError(canon))
+		return "", profiles.InvalidProfileNameError(canon)
 	}
 	return home.ProfileHome(home.Root(), canon), nil
 }

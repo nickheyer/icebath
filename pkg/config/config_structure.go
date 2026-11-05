@@ -7,6 +7,13 @@ import (
 )
 
 // Fields that belong inside a custom_providers entry rather than at the root
+// Fields a custom_providers list entry may carry, key_env included since the runtime reads it
+var ValidCustomProviderFields = map[string]bool{
+	"name": true, "base_url": true, "api_key": true, "api_mode": true, "model": true, "models": true,
+	"context_length": true, "rate_limit_delay": true, "extra_body": true,
+	"ssl_ca_cert": true, "ssl_verify": true, "key_env": true, "catalog_provider": true,
+}
+
 var customProviderLikeFields = map[string]bool{"base_url": true, "api_key": true, "rate_limit_delay": true, "api_mode": true}
 
 type requiredField struct{ name, hint string }

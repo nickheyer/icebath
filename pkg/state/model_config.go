@@ -6,20 +6,6 @@ import (
 	"errors"
 )
 
-// Non throwing JSON lookup over a JSON text column
-func sqlJSONExtract(expression, path string) string {
-	return "json_extract((CASE WHEN json_valid(" + expression + ") THEN " + expression + " ELSE json_object() END), '" + path + "')"
-}
-
-// End reasons of a reset boundary a legacy reset child rides on
-const resetEndReasonsSQL = "'session_reset', 'session_switch', 'idle', 'daily', 'suspended', 'resume_pending_expired'"
-
-// Pre marker reset continuation heuristic over the alias of a child row
-func legacyResetChildSQL(alias string) string {
-	return "EXISTS (SELECT 1 FROM sessions p WHERE p.id = " + alias + ".parent_session_id AND p.end_reason IN (" + resetEndReasonsSQL + ")" +
-		" AND " + alias + ".session_key IS NOT NULL AND " + alias + ".session_key != '' AND " + alias + ".session_key = p.session_key)"
-}
-
 // Tolerant parse of a model config column
 func parseModelConfig(raw sql.NullString) map[string]any {
 	cfg := map[string]any{}
@@ -165,7 +151,7 @@ func (d *DB) ResolveResumeSessionID(id string) string {
 				" AND "+sqlJSONExtract("child.model_config", "$._branched_from")+" IS NULL"+
 				" AND "+sqlJSONExtract("child.model_config", "$._delegate_from")+" IS NULL"+
 				" AND "+sqlJSONExtract("child.model_config", "$._reset_from")+" IS NULL"+
-				" AND NOT "+legacyResetChildSQL("child")+
+				" AND NOT "+legacyResetChildSQL("child", resetEndReasonsSQL)+
 				" AND COALESCE(child.source, '') != 'tool'"+
 				" ORDER BY child.started_at DESC, child.id DESC LIMIT 1", current).Scan(&child)
 		})

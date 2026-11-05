@@ -209,7 +209,10 @@ func ApplyXAIRetirementMigration(ctx context.Context, configPath string, issues 
 	}
 	backupPath := ""
 	if backup {
-		backupPath = config.BackupConfig(configPath, "pre-migrate-xai", config.DefaultBackupKeep)
+		var err error
+		if backupPath, err = config.BackupConfig(configPath, "pre-migrate-xai", config.DefaultBackupKeep); err != nil {
+			return RetirementApplyResult{}, err
+		}
 	}
 	if _, err := config.RequireReadableConfigBeforeWrite(ctx, configPath); err != nil {
 		return RetirementApplyResult{}, err

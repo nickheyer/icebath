@@ -49,29 +49,6 @@ var bundledPluginDirs = []struct {
 	{"vertex", []string{"vertex"}}, {"xai", []string{"xai"}}, {"xiaomi", []string{"xiaomi"}}, {"zai", []string{"zai"}},
 }
 
-// Aliases each bundled plugin profile declares
-var bundledPluginAliases = map[string][]string{
-	"actual": {"actual-computer", "actualcomputer", "aci"}, "ai-gateway": {"vercel", "vercel-ai-gateway", "ai_gateway", "aigateway"},
-	"alibaba": {"dashscope", "alibaba-cloud", "qwen-dashscope", "aliyun"}, "alibaba-cn": {"dashscope-cn", "alibaba-cloud-cn"},
-	"alibaba-token-plan": {"dashscope-token-plan"}, "alibaba-token-plan-cn": {"dashscope-token-plan-cn"},
-	"alibaba-coding-plan": {"alibaba_coding", "alibaba-coding", "dashscope-coding"}, "alibaba-coding-plan-cn": {"alibaba-coding-cn", "dashscope-coding-cn"},
-	"anthropic": {"claude", "claude-oauth", "claude-code"}, "arcee": {"arcee-ai", "arceeai"}, "azure-foundry": {"azure", "azure-ai-foundry", "azure-ai"},
-	"bedrock": {"aws", "aws-bedrock", "amazon-bedrock", "amazon"}, "commandcode": {"commandcode-chat"}, "commandcode-anthropic": {"commandcode-claude"},
-	"custom": {"ollama", "local", "vllm", "llamacpp", "llama.cpp", "llama-cpp"}, "deepinfra": {"deep-infra", "deepinfra-ai"},
-	"deepseek": {"deepseek-chat", "deep-seek"}, "fireworks": {"fireworks-ai", "fw"}, "gemini": {"google", "google-gemini", "google-ai-studio"},
-	"gmi": {"gmi-cloud", "gmicloud"}, "huggingface": {"hf", "hugging-face", "huggingface-hub"}, "kilocode": {"kilo-code", "kilo", "kilo-gateway"},
-	"kimi-coding": {"kimi", "moonshot", "kimi-for-coding"}, "kimi-coding-cn": {"kimi-cn", "moonshot-cn"},
-	"meta-ai": {"meta", "muse", "muse-spark", "model-api", "msl"}, "minimax": {"mini-max"}, "minimax-cn": {"minimax-china", "minimax_cn"},
-	"minimax-oauth":        {"minimax_oauth", "minimax-portal", "minimax-global", "minimax-oauth-io"},
-	"nebius-token-factory": {"nebius", "nebius-tokenfactory", "nebius-tf", "token-factory", "tokenfactory"},
-	"nous":                 {"nous-portal", "nousresearch"}, "novita": {"novita-ai", "novitaai"}, "nvidia": {"nvidia-nim", "nim", "build-nvidia", "nemotron"},
-	"ollama-cloud": {"ollama_cloud"}, "openai-codex": {"codex", "openai_codex"}, "opencode-zen": {"opencode", "opencode_zen", "zen"},
-	"opencode-go": {"opencode_go", "go", "opencode-go-sub"}, "openrouter": {"or"}, "qwen-oauth": {"qwen", "qwen-portal", "qwen-cli"},
-	"router": {"ramp-router", "ramp", "router.com"}, "solstice": {"solstice-oauth"}, "stepfun": {"step", "stepfun-coding-plan"},
-	"upstage": {"solar"}, "vertex": {"google-vertex", "vertex-ai", "gcp-vertex", "vertexai"}, "xai": {"grok", "x-ai", "x.ai"},
-	"xiaomi": {"mimo", "xiaomi-mimo"}, "zai": {"glm", "z-ai", "z.ai", "zhipu"},
-}
-
 // The profiles of one home's plugin directories with the scan bookkeeping for that home
 type homeLayer struct {
 	mu             sync.Mutex
@@ -101,14 +78,16 @@ var (
 	regGeneration  atomic.Int64
 	regDiscovered  atomic.Bool
 	regDiscovering atomic.Bool
-	regScanDepth   atomic.Int32
-	discoveryMu    reentrantMutex
-	homeLayersMu   sync.Mutex
-	homeLayers     = map[string]*homeLayer{}
-	hostMemoMu     sync.Mutex
-	hostMemo       = map[hostMemoKey]hostMemoEntry{}
-	namedCustomMu  sync.Mutex
-	namedCustomMem = map[string]*namedCustomMemo{}
+	// Set once the auth registry is built, the mirror skipped before then as the build syncs on first read
+	authRegistryReady atomic.Bool
+	regScanDepth      atomic.Int32
+	discoveryMu       reentrantMutex
+	homeLayersMu      sync.Mutex
+	homeLayers        = map[string]*homeLayer{}
+	hostMemoMu        sync.Mutex
+	hostMemo          = map[hostMemoKey]hostMemoEntry{}
+	namedCustomMu     sync.Mutex
+	namedCustomMem    = map[string]*namedCustomMemo{}
 )
 
 type hostMemoKey struct {
@@ -184,11 +163,26 @@ func registerIntoLayer(layer *homeLayer, p Profile) {
 	}
 }
 
-// Mirrors profiles into the auth registry, the picker catalog and the provider env catalog
+// Mirrors profiles into the auth registry and picker catalog once built, and the env catalog without config or home scans
 func syncAuthRegistry(ctx context.Context) {
-	syncPluginProviderRegistry(ctx)
+	if authRegistryReady.Load() {
+		syncPluginProviderRegistry(ctx)
+	}
 	syncPluginProviderCatalogIfBuilt()
-	SyncRegisteredProviders(profileValues(listProviders(ctx)))
+	SyncRegisteredProviders(processWideRegisteredProfiles())
+}
+
+// Process wide registered profiles in registration order, bundled sources left out
+func processWideRegisteredProfiles() []Profile {
+	regMu.Lock()
+	defer regMu.Unlock()
+	var out []Profile
+	for _, name := range regOrder {
+		if p := regProfiles[name]; p != nil && regSources[name] != "bundled" {
+			out = append(out, *p)
+		}
+	}
+	return out
 }
 
 // Admits plugin rows into the picker catalog once its tables exist, building them admits rows itself
@@ -906,19 +900,9 @@ func discoverEntryPointProviders(ctx context.Context) {
 
 // Every bundled plugin profile in discovery order, the source both discovery and the catalog read
 func bundledSource() []Profile {
-	rows := map[string]profileRow{}
-	for _, r := range append(registryRows(), pluginRows()...) {
-		rows[r.name] = r
-	}
 	var out []Profile
 	for _, d := range bundledPluginDirs {
-		for _, name := range d.names {
-			r, ok := rows[name]
-			if !ok {
-				continue
-			}
-			p := r.profile()
-			p.Aliases = append([]string(nil), bundledPluginAliases[name]...)
+		for _, p := range bundledPluginPort(d.dir)() {
 			normalizeRegisteredProfile(&p)
 			out = append(out, p)
 		}
@@ -962,7 +946,7 @@ func discoverProviders(ctx context.Context) {
 	}
 	regDiscovered.Store(true)
 	regDiscovering.Store(true)
-	runDiscoverySteps(ctx)
+	runDiscoveryStepsFn(ctx)
 	regDiscovering.Store(false)
 	discoveryMu.Unlock()
 	syncAuthRegistry(ctx)
@@ -992,5 +976,11 @@ var (
 	scanHomeLayerFn   func(ctx context.Context, layer *homeLayer, h, key string)
 )
 
+// Discovery passes, replaced in tests running a cold discovery with their own registrations
+var runDiscoveryStepsFn func(ctx context.Context)
+
 // Binds the scan at init since the scan imports plugins that reach the registry
-func init() { scanHomeLayerFn = scanHomeLayer }
+func init() {
+	scanHomeLayerFn = scanHomeLayer
+	runDiscoveryStepsFn = runDiscoverySteps
+}

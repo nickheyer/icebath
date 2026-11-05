@@ -320,7 +320,7 @@ func BuildProfileSecretScope(h string) map[string]string {
 			secrets["GATEWAY_ALLOW_ALL_USERS"] = bridged
 		}
 	}
-	for k, v := range loadManagedEnv() {
+	for k, v := range config.LoadManagedEnv() {
 		if !IsGlobalEnv(k) {
 			secrets[k] = v
 		}
