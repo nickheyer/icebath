@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Row of the sessions table
@@ -59,18 +61,25 @@ type Session struct {
 	LastActive float64
 }
 
-// Fields a new session row carries
+// Keyword arguments of the session row upsert, empty strings and a nil map are the Python None keywords
 type NewSession struct {
-	ID              string
-	Source          string
-	UserID          string
-	Model           string
-	ModelConfig     map[string]any
-	SystemPrompt    string
-	ParentSessionID string
-	Cwd             string
-	GitRepoRoot     string
-	ProfileName     string
+	ID               string
+	Source           string
+	UserID           string
+	Model            string
+	ModelConfig      map[string]any
+	SystemPrompt     string
+	ParentSessionID  string
+	Cwd              string
+	GitRepoRoot      string
+	ProfileName      string
+	SessionKey       string
+	ChatID           string
+	ChatType         string
+	ThreadID         string
+	TransportProfile string
+	OriginJSON       string
+	DisplayName      string
 }
 
 // Reason a compression continuation ends its parent with
@@ -134,7 +143,7 @@ func storePrompt(tx *Tx, prompt string) (string, error) {
 
 // Drops prompts no session references
 func deleteUnreferencedPrompts(tx *Tx) error {
-	_, err := tx.Exec("DELETE FROM system_prompts WHERE hash NOT IN (SELECT system_prompt_hash FROM sessions WHERE system_prompt_hash IS NOT NULL)")
+	_, err := tx.Exec(deleteUnreferencedSystemPromptsSQL)
 	return err
 }
 
@@ -156,63 +165,6 @@ func jsonOrNull(m map[string]any) any {
 		return nil
 	}
 	return string(b)
-}
-
-// Creates a session row, filling only columns an earlier writer left empty
-func (d *DB) CreateSession(n NewSession) error {
-	if n.ID == "" {
-		return errors.New("session id required")
-	}
-	if n.Source == "" {
-		n.Source = "unknown"
-	}
-	return d.retryWrite(func(tx *Tx) error {
-		hash, err := storePrompt(tx, n.SystemPrompt)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(`INSERT INTO sessions (id, source, user_id, model, model_config, system_prompt_hash, parent_session_id,
-			started_at, cwd, git_repo_root, profile_name)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				source = CASE WHEN sessions.source = 'unknown' AND excluded.source != 'unknown' THEN excluded.source ELSE sessions.source END,
-				user_id = COALESCE(sessions.user_id, excluded.user_id),
-				model = COALESCE(sessions.model, excluded.model),
-				model_config = COALESCE(sessions.model_config, excluded.model_config),
-				system_prompt_hash = COALESCE(sessions.system_prompt_hash, excluded.system_prompt_hash),
-				parent_session_id = COALESCE(sessions.parent_session_id, excluded.parent_session_id),
-				cwd = COALESCE(sessions.cwd, excluded.cwd),
-				git_repo_root = COALESCE(sessions.git_repo_root, excluded.git_repo_root),
-				profile_name = COALESCE(sessions.profile_name, excluded.profile_name)`,
-			n.ID, n.Source, nullStr(n.UserID), nullStr(n.Model), jsonOrNull(n.ModelConfig), nullStr(hash),
-			nullStr(n.ParentSessionID), now(), nullStr(n.Cwd), nullStr(n.GitRepoRoot), nullStr(n.ProfileName))
-		if err != nil {
-			return err
-		}
-		if n.ParentSessionID != "" {
-			_, err = tx.Exec(`UPDATE sessions SET
-				cwd = COALESCE(cwd, (SELECT p.cwd FROM sessions p WHERE p.id = sessions.parent_session_id)),
-				git_repo_root = COALESCE(git_repo_root, (SELECT p.git_repo_root FROM sessions p WHERE p.id = sessions.parent_session_id)),
-				git_branch = COALESCE(git_branch, (SELECT p.git_branch FROM sessions p WHERE p.id = sessions.parent_session_id)),
-				profile_name = COALESCE(profile_name, (SELECT p.profile_name FROM sessions p WHERE p.id = sessions.parent_session_id))
-				WHERE id = ?`, n.ID)
-		}
-		return err
-	}, TranscriptWritePatience)
-}
-
-// Session row by id, nil when absent
-func (d *DB) GetSession(id string) (*Session, error) {
-	var out *Session
-	err := d.read(func(q querier) error {
-		s, err := scanSession(q.QueryRow("SELECT "+sessionColumns+sessionFrom+" WHERE s.id = ?", id))
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		out = s
-		return err
-	})
-	return out, err
 }
 
 // Full session id matching an id or a unique prefix, empty when none or ambiguous
@@ -351,7 +303,7 @@ func (d *DB) TouchActivity(id, description string) error {
 	return d.retryWrite(func(tx *Tx) error {
 		_, err := tx.Exec("UPDATE sessions SET last_activity_at = ?, last_activity_description = ? WHERE id = ?", now(), nullStr(description), id)
 		return err
-	}, 500*time.Millisecond)
+	}, sessionActivityWritePatienceS)
 }
 
 // Sets the archived flag of a session
@@ -799,9 +751,12 @@ func (d *DB) ArchiveStaleSessions(idle time.Duration) (int, error) {
 
 // Reclaims free pages, blocking writers while it runs
 func (d *DB) Vacuum() error {
-	d.writeMu.Lock()
-	defer d.writeMu.Unlock()
-	_, err := d.db.Exec("VACUUM")
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.conn == nil {
+		return &SQLiteError{Class: SQLiteProgrammingError, Msg: "Cannot operate on a closed database."}
+	}
+	_, err := d.conn.ExecContext(d.openCtx, "VACUUM")
 	return err
 }
 
@@ -818,4 +773,51 @@ func (d *DB) FreelistRatio() (float64, error) {
 		return 0, err
 	}
 	return float64(free) / float64(pages), nil
+}
+
+// Typed view of a session dict, nil for a missing row
+func sessionFromRow(row *pyjson.Object) *Session {
+	if row == nil {
+		return nil
+	}
+	str := func(k string) string {
+		if v, ok := rowValue(row, k).(string); ok {
+			return v
+		}
+		return ""
+	}
+	f64 := func(k string) float64 {
+		f, _ := pyFloatOf(orZero(rowValue(row, k)))
+		return f
+	}
+	i64 := func(k string) int64 {
+		n, err := pyIntOf(orZero(rowValue(row, k)))
+		if err != nil {
+			return 0
+		}
+		return n.Int64()
+	}
+	s := &Session{ID: str("id"), Source: str("source"), UserID: str("user_id"), Model: str("model"),
+		SystemPrompt: str("system_prompt"), ParentSessionID: str("parent_session_id"), StartedAt: f64("started_at"),
+		EndedAt: f64("ended_at"), EndReason: str("end_reason"), MessageCount: int(i64("message_count")),
+		ToolCallCount: int(i64("tool_call_count")), InputTokens: i64("input_tokens"), OutputTokens: i64("output_tokens"),
+		CacheReadTokens: i64("cache_read_tokens"), CacheWriteTokens: i64("cache_write_tokens"),
+		ReasoningTokens: i64("reasoning_tokens"), Cwd: str("cwd"), GitBranch: str("git_branch"),
+		GitRepoRoot: str("git_repo_root"), BillingProvider: str("billing_provider"), BillingBaseURL: str("billing_base_url"),
+		BillingMode: str("billing_mode"), EstimatedCostUSD: f64("estimated_cost_usd"), ActualCostUSD: f64("actual_cost_usd"),
+		CostStatus: str("cost_status"), CostSource: str("cost_source"), PricingVersion: str("pricing_version"),
+		Title: str("title"), TitleSource: str("title_source"), LastActivityAt: f64("last_activity_at"),
+		LastActivity: str("last_activity_description"), APICallCount: int(i64("api_call_count")),
+		ProfileName: str("profile_name"), RewindCount: int(i64("rewind_count")), Archived: i64("archived") != 0,
+		AutoArchived: i64("auto_archived") != 0, Pinned: i64("pinned") != 0, Hidden: i64("hidden") != 0,
+		LastReadAt: f64("last_read_at"), TranscriptRev: i64("transcript_revision")}
+	if cfg := parseModelConfigValue(rowValue(row, "model_config")); cfg.Len() > 0 {
+		if b, err := cfg.MarshalJSON(); err == nil {
+			_ = json.Unmarshal(b, &s.ModelConfig)
+		}
+	}
+	if names := str("tool_names"); names != "" {
+		_ = json.Unmarshal([]byte(names), &s.ToolNames)
+	}
+	return s
 }

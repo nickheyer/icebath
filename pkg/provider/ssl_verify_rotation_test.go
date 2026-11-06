@@ -3,6 +3,7 @@ package provider
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -230,5 +231,24 @@ func TestUnloadableBundleFailsEveryHandshakeUncached(t *testing.T) {
 	}
 	if _, err := getThrough(first, srv.URL); err == nil || !strings.Contains(err.Error(), errNoCertificateFound.Error()) {
 		t.Fatalf("the load error fails the request, got %v", err)
+	}
+}
+
+func TestTrustStoreFailureDegradesToTheDefaultTrustPaths(t *testing.T) {
+	noCAEnv(t)
+	sink := captureSSLWarnings(t)
+	prevPool, prevBundles, prevDirs := systemCertPool, linuxRootBundles, linuxRootDirs
+	t.Cleanup(func() { systemCertPool, linuxRootBundles, linuxRootDirs = prevPool, prevBundles, prevDirs })
+	systemCertPool = func() (*x509.CertPool, error) { return nil, errors.New("unavailable fixture") }
+	linuxRootBundles, linuxRootDirs = nil, nil
+	if InstallTrustStore() || InstallTrustStore() {
+		t.Fatal("a store that cannot load reports false every time")
+	}
+	if len(sink.containing("truststore unavailable")) != 1 {
+		t.Fatal("the failure is reported once")
+	}
+	verify := ResolveTLSVerify(nil, "", nil, "")
+	if verify.Insecure || verify.Config == nil || verify.Config.InsecureSkipVerify {
+		t.Fatal("a degraded store still verifies certificates")
 	}
 }

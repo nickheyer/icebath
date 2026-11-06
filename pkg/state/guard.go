@@ -40,10 +40,15 @@ func realPlatformStateRoot() (string, bool) {
 	return realpathLax(root), true
 }
 
+// Whether the environment carries a pytest variable or the test isolation marker
+func testEnvSignal() bool {
+	return os.Getenv("PYTEST_CURRENT_TEST") != "" || os.Getenv("PYTEST_VERSION") != "" ||
+		os.Getenv(testIsolationMarkerEnv) != ""
+}
+
 // Whether this process runs under pytest or go test by environment, the isolation marker or the test binary itself
 func runningUnderTest() bool {
-	return os.Getenv("PYTEST_CURRENT_TEST") != "" || os.Getenv("PYTEST_VERSION") != "" ||
-		os.Getenv(testIsolationMarkerEnv) != "" || testing.Testing()
+	return testEnvSignal() || testing.Testing()
 }
 
 // Launcher basenames of a pytest run, matched per argv token so a pytest temp path never matches

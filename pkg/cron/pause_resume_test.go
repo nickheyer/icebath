@@ -177,3 +177,21 @@ func TestResolveJobRefAndAmbiguousNames(t *testing.T) {
 		}
 	}
 }
+
+func TestExportedResolveJobRefUsesTheGivenOrAmbientHome(t *testing.T) {
+	s, _ := newTestStore(t)
+	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("A"), Schedule: "1h", Name: prompt("Alpha")})
+	for _, h := range []string{s.home, ""} {
+		if got, err := ResolveJobRef(h, "alpha"); err != nil || got == nil || got.ID != job.ID {
+			t.Fatal(h, got, err)
+		}
+	}
+	mustCreate(t, s, CreateJobOptions{Prompt: prompt("B"), Schedule: "1h", Name: prompt("Alpha")})
+	var amb *AmbiguousJobReferenceError
+	if _, err := ResolveJobRef("", "alpha"); !errors.As(err, &amb) {
+		t.Fatal(err)
+	}
+	if got, err := ResolveJobRef(t.TempDir(), job.ID); got != nil || err != nil {
+		t.Fatal("another home resolved the job", got, err)
+	}
+}

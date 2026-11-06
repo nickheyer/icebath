@@ -24,7 +24,8 @@ type MarkOptions struct {
 
 // FireClaimOptions tunes one external fire claim
 type FireClaimOptions struct {
-	TTLSeconds float64
+	// Claim age past which an existing claim is stale, the fire claim TTL when nil
+	TTLSeconds *float64
 	Force      bool
 	Manual     bool
 }
@@ -307,9 +308,9 @@ func ptrEqual(a, b *string) bool {
 
 // Claims one external fire of a job, the winner getting a copy carrying its scheduled instant
 func (s *Store) claimJobForFire(ctx context.Context, jobID string, o FireClaimOptions) (*Job, bool, error) {
-	ttl := o.TTLSeconds
-	if ttl == 0 {
-		ttl = FireClaimTTLSeconds
+	ttl := float64(FireClaimTTLSeconds)
+	if o.TTLSeconds != nil {
+		ttl = *o.TTLSeconds
 	}
 	var won *Job
 	ok, err := s.underFireFence(ctx, jobID, func(ctx context.Context) (bool, error) {

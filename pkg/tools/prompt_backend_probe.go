@@ -69,7 +69,7 @@ func runBackendProbe(ctx context.Context, env *Env, envType string) (string, err
 	if isContainerBackend(envType) {
 		containerConfig = containerConfigFromConfig(cfg)
 	}
-	e, err := createEnvironment(ctx, env, envType, image, cwd, probeConfigInt(cfg["timeout"], 180), sshConfig, containerConfig, nil,
+	e, err := createEnvironmentFn(ctx, env, envType, image, cwd, probeConfigInt(cfg["timeout"], 180), sshConfig, containerConfig, nil,
 		"prompt-backend-probe", hostCwd, true)
 	if err != nil {
 		return "", err

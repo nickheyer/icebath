@@ -203,6 +203,11 @@ func resolvedOrNothing(candidate, cwd string) (string, bool) {
 	}
 	return filepath.Join(base, path), true
 }
+// Exported form for pkg/cron, same answer as the package resolver
+func ResolveLifecycleScriptPath(h, scriptPath string) (string, bool) {
+	return resolveScriptPath(h, scriptPath)
+}
+
 
 // Resolves a cron script value the way the scheduler does, relative names live under home scripts
 func resolveScriptPath(h, scriptPath string) (string, bool) {

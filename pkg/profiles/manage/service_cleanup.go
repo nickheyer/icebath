@@ -33,10 +33,32 @@ var runQuiet = func(timeout time.Duration, args ...string) (int, error) {
 	return 0, nil
 }
 
+// Gateway service manager facts the cleanup reads, the gateway contract functions unless a test swaps one
+var serviceFacts = struct {
+	ServiceName                   func(ctx context.Context) string
+	UserSystemdUnitDir            func(ctx context.Context) string
+	SystemUnitDir                 func() string
+	LaunchdPlistPath              func(ctx context.Context) string
+	PinnedHome                    func(definition string) (string, bool)
+	Resolve                       func(p string) string
+	WindowsTaskName               func(ctx context.Context) string
+	WindowsTaskRegistered         func(ctx context.Context) bool
+	ExecSchtasks                  func(args []string) (int, string, string)
+	WindowsStartupEntryPath       func(ctx context.Context) string
+	WindowsLegacyStartupEntryPath func(ctx context.Context) string
+	Geteuid                       func() int
+}{
+	ServiceName: gatewayServiceName, UserSystemdUnitDir: gatewayUserSystemdUnitDir, SystemUnitDir: gatewaySystemUnitDir,
+	LaunchdPlistPath: gatewayLaunchdPlistPath, PinnedHome: gatewayServicePinnedHome, Resolve: gatewayServiceResolve,
+	WindowsTaskName: gatewayWindowsTaskName, WindowsTaskRegistered: gatewayWindowsTaskRegistered,
+	ExecSchtasks: gatewayExecSchtasks, WindowsStartupEntryPath: gatewayWindowsStartupEntryPath,
+	WindowsLegacyStartupEntryPath: gatewayWindowsLegacyStartupEntryPath, Geteuid: os.Geteuid,
+}
+
 // False with a notice when a service definition pins another home than the profile being removed
 func ownedByProfile(definition, profileDir string) bool {
-	raw, pinned := gatewayServicePinnedHome(definition)
-	if !pinned || gatewayServiceResolve(raw) == gatewayServiceResolve(profileDir) {
+	raw, pinned := serviceFacts.PinnedHome(definition)
+	if !pinned || serviceFacts.Resolve(raw) == serviceFacts.Resolve(profileDir) {
 		return true
 	}
 	fmt.Fprintf(stdout, "↷ %s runs ICEBATH_HOME=%s, not %s: another install's service, left alone\n", definition, raw, profileDir)
@@ -45,12 +67,12 @@ func ownedByProfile(definition, profileDir string) bool {
 
 // Removes the system wide systemd unit of the profile when root, else names the leftover and its removal command
 func removeSystemSystemdUnit(ctx context.Context, profileDir string) (bool, error) {
-	svc := gatewayServiceName(ctx)
-	unit := filepath.Join(gatewaySystemUnitDir(), svc+".service")
+	svc := serviceFacts.ServiceName(ctx)
+	unit := filepath.Join(serviceFacts.SystemUnitDir(), svc+".service")
 	if !pathExists(unit) || !ownedByProfile(unit, profileDir) {
 		return false, nil
 	}
-	if os.Geteuid() != 0 {
+	if serviceFacts.Geteuid() != 0 {
 		fmt.Fprintf(stdout, "⚠ System service %s remains at %s; it will restart the removed profile at boot.\n", svc, unit)
 		fmt.Fprintf(stdout, "  Remove it with: sudo systemctl disable --now %s && sudo rm %s && sudo systemctl daemon-reload\n", svc, unit)
 		return false, nil
@@ -78,10 +100,10 @@ func removeSystemSystemdUnit(ctx context.Context, profileDir string) (bool, erro
 
 // Deletes the profile's Scheduled Task and Startup folder login items without a UAC prompt
 func removeWindowsTask(ctx context.Context) (bool, error) {
-	task := gatewayWindowsTaskName(ctx)
+	task := serviceFacts.WindowsTaskName(ctx)
 	removed := false
-	if gatewayWindowsTaskRegistered(ctx) {
-		code, _, errText := gatewayExecSchtasks([]string{"/Delete", "/F", "/TN", task})
+	if serviceFacts.WindowsTaskRegistered(ctx) {
+		code, _, errText := serviceFacts.ExecSchtasks([]string{"/Delete", "/F", "/TN", task})
 		if code == 0 {
 			removed = true
 			fmt.Fprintf(stdout, "✓ Removed Scheduled Task %s\n", pyrepr.Repr(task))
@@ -89,7 +111,7 @@ func removeWindowsTask(ctx context.Context) (bool, error) {
 			fmt.Fprintf(stdout, "⚠ Scheduled Task %s remains (schtasks code %d): %s\n", pyrepr.Repr(task), code, pystr.Strip(errText))
 		}
 	}
-	for _, path := range []string{gatewayWindowsStartupEntryPath(ctx), gatewayWindowsLegacyStartupEntryPath(ctx)} {
+	for _, path := range []string{serviceFacts.WindowsStartupEntryPath(ctx), serviceFacts.WindowsLegacyStartupEntryPath(ctx)} {
 		if err := os.Remove(path); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue

@@ -36,6 +36,9 @@ func gatewayRecordedServedProfiles() ([]string, bool, error) {
 	return gatewayStatusHook(h, h == nil, "hermes_cli/gateway_multiplex_served.py recorded_served_profiles")()
 }
 
+// served_profiles the live default gateway recorded, recorded false when the key is absent or no gateway runs
+func RecordedServedProfiles() ([]string, bool, error) { return gatewayRecordedServedProfiles() }
+
 // Exclusive maintenance reservation of dirs, a *gatewayOwnershipConflict when a gateway owns one
 func gatewayExclusiveMaintenance(dirs []string) (func(), error) {
 	h := profiles.GatewayStatusHooks.ExclusiveMaintenance

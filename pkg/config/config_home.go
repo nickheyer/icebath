@@ -6,8 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -195,56 +193,8 @@ func containerOrChmodSkipped() bool {
 	return hostinfo.IsContainer()
 }
 
-// Applies ICEBATH_UID and ICEBATH_GID ownership when set, failures ignored
-func chownToIcebathUID(path string) {
-	if runtime.GOOS == "windows" {
-		return
-	}
-	envInt := func(name string) int {
-		n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(name)))
-		if err != nil {
-			return -1
-		}
-		return n
-	}
-	uid, gid := envInt("ICEBATH_UID"), envInt("ICEBATH_GID")
-	if uid < 0 && gid < 0 {
-		return
-	}
-	_ = os.Chown(path, uid, gid)
-}
-
 // Owner only directory unless managed, container defaults or ICEBATH_HOME_MODE say otherwise
-func SecureDir(h, path string) {
-	if ManagedSystem(h) != "" {
-		return
-	}
-	explicit := strings.TrimSpace(os.Getenv("ICEBATH_HOME_MODE"))
-	if containerOrChmodSkipped() && explicit == "" {
-		chownToIcebathUID(path)
-		return
-	}
-	text := explicit
-	if text == "" {
-		text = "700"
-	}
-	mode, err := strconv.ParseUint(text, 8, 32)
-	if err != nil {
-		mode = 0o700
-	}
-	fm := os.FileMode(mode & 0o777)
-	if mode&0o4000 != 0 {
-		fm |= os.ModeSetuid
-	}
-	if mode&0o2000 != 0 {
-		fm |= os.ModeSetgid
-	}
-	if mode&0o1000 != 0 {
-		fm |= os.ModeSticky
-	}
-	_ = os.Chmod(path, fm)
-	chownToIcebathUID(path)
-}
+func SecureDir(h, path string) { home.ApplySecureDirPolicy(path, h) }
 
 // Owner only config file unless managed or in a container
 func SecureFile(h, path string) {

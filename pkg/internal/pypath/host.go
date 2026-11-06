@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"os/user"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -121,7 +120,7 @@ func Getcwd() (string, error) {
 // os.path.abspath, a relative path joined to the working directory whose getcwd failure is returned
 func Abspath(p string) (string, error) {
 	if windows {
-		return filepath.Abs(p)
+		return ntAbspath(p)
 	}
 	if !PosixIsAbs(p) {
 		cwd, err := Getcwd()
@@ -267,32 +266,4 @@ func realpathStep(newpath string, strict Strict, partCount int, seen map[string]
 		return "", errKeepNewpath
 	}
 	return os.Readlink(newpath)
-}
-
-// ntpath.realpath resolving the longest existing prefix and appending the unresolved tail
-func ntRealpath(p string, strict Strict) (string, error) {
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return "", err
-	}
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		return real, nil
-	} else if strict == StrictAll || (strict == AllowMissing && !errors.Is(err, fs.ErrNotExist)) {
-		return "", err
-	}
-	head, tail := abs, ""
-	for {
-		h, name := NtSplit(head)
-		if h == head || name == "" {
-			return abs, nil
-		}
-		tail = NtJoin(name, tail)
-		if tail == name+`\` {
-			tail = name
-		}
-		head = h
-		if real, err := filepath.EvalSymlinks(head); err == nil {
-			return NtJoin(real, tail), nil
-		}
-	}
 }

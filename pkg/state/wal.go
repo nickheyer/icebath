@@ -104,6 +104,11 @@ var onDiskJournalMode = func(ctx context.Context, conn SQLiteConn) (string, bool
 	return "", false, nil
 }
 
+// Journal mode read from the header for callers outside this package, false when undeterminable
+func OnDiskJournalMode(ctx context.Context, conn SQLiteConn) (string, bool, error) {
+	return onDiskJournalMode(ctx, conn)
+}
+
 // Caps the WAL file at 64 MiB after checkpoints, an operational failure only logged
 func applyWALSizeLimit(ctx context.Context, conn SQLiteConn) error {
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA journal_size_limit=%d", walSizeLimitBytes)); err != nil {

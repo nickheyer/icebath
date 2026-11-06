@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -159,7 +160,7 @@ func (o *ProfileOwnership) Reserve(homes []string, purpose string) error {
 }
 
 func (o *ProfileOwnership) reserveOne(h, purpose string) error {
-	if err := makeUserDir(h, 0o700, true, true); err != nil {
+	if _, err := home.MakeUserDir(h, 0o700, true, true); err != nil {
 		return err
 	}
 	path := pypath.PathJoin(h, gatewayLockFilename)

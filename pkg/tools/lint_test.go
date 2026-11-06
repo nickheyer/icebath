@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1163,12 +1164,34 @@ func TestRuamelCParseDeepNesting(t *testing.T) {
 	})
 }
 
-// Block nesting fails with MemoryError once the marks stack passes INT_MAX over two bytes
+// Block nesting fails with MemoryError once the marks stack passes INT_MAX over two bytes, run at a scaled down limit
 func TestRuamelCParseStackLimit(t *testing.T) {
+	if libyamlStackByteLimit != math.MaxInt32/2 {
+		t.Fatalf("stack byte limit = %d, want %d", libyamlStackByteLimit, math.MaxInt32/2)
+	}
+	if got := libyamlStackMaxLen(libyamlStackByteLimit, libyamlSizeofMark); got != 67108864 {
+		t.Fatalf("marks held at the real limit = %d, want 67108864", got)
+	}
+	const marks = 1024
+	prev := libyamlStackByteLimit
+	libyamlStackByteLimit = marks * libyamlSizeofMark
+	t.Cleanup(func() { libyamlStackByteLimit = prev })
+	if got := libyamlStackMaxLen(libyamlStackByteLimit, libyamlSizeofMark); got != marks {
+		t.Fatalf("marks held at the scaled limit = %d, want %d", got, marks)
+	}
 	ruamelCParseCheck(t, ruamelCParseError, []ruamelCParseCase{
-		{"block depth at mark stack limit", strings.Repeat("- ", 67108864) + "\"", "YAMLError: while scanning a quoted scalar\n  in \"<unicode string>\", line 1, column 134217729\nfound unexpected end of stream\n  in \"<unicode string>\", line 1, column 134217730"},
-		{"block depth over mark stack limit", strings.Repeat("- ", 67108865) + "\"", "MemoryError: "},
+		{"block depth at mark stack limit", strings.Repeat("- ", marks) + "\"", "YAMLError: while scanning a quoted scalar\n  in \"<unicode string>\", line 1, column 2049\nfound unexpected end of stream\n  in \"<unicode string>\", line 1, column 2050"},
+		{"block depth over mark stack limit", strings.Repeat("- ", marks+1) + "\"", "MemoryError: "},
 	})
+}
+
+// Entries a libyaml stack holds before growth past the byte limit is refused, capacity doubling from sixteen
+func libyamlStackMaxLen(limit, elemSize int) int {
+	capacity := libyamlInitialStackSize
+	for capacity*elemSize < limit {
+		capacity *= 2
+	}
+	return capacity
 }
 
 // Byte input through the same reader covering UTF-16 and every UTF-8 decoding error

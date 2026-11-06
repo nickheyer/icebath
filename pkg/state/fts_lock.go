@@ -16,10 +16,12 @@ import (
 	"time"
 )
 
+// Admission wait a test may shorten
+var ftsRebuildLockTimeoutSeconds = 120.0
+
 const (
-	ftsRebuildLockTimeoutSeconds = 120.0
-	ftsRebuildLockPollSeconds    = 0.1
-	lockBreakReacquireSeconds    = 5.0
+	ftsRebuildLockPollSeconds = 0.1
+	lockBreakReacquireSeconds = 5.0
 )
 
 var isWindows = runtime.GOOS == "windows"

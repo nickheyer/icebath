@@ -1,10 +1,13 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -107,4 +110,83 @@ func yaml11FloatValue(v string) (float64, bool) {
 		total = total*60 + d
 	}
 	return sign * total, true
+}
+
+var (
+	yaml11TimestampParts = regexp.MustCompile(`^([0-9][0-9][0-9][0-9])-([0-9][0-9]?)-([0-9][0-9]?)(?:(?:[Tt]|[ \t]+)([0-9][0-9]?):([0-9][0-9]):([0-9][0-9])(?:\.[0-9]*)?(?:[ \t]*(?:Z|([-+])([0-9][0-9]?)(?::([0-9][0-9]))?))?)?$`)
+)
+
+// First ValueError a YAML 1.1 safe loader raises building date and datetime values from plain timestamp scalars
+func yaml11TimestampError(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		if n.Style != 0 || !yaml11Timestamp.MatchString(n.Value) {
+			return nil
+		}
+		if msg := yaml11TimestampValueError(n.Value); msg != "" {
+			return errors.New(msg)
+		}
+		return nil
+	}
+	for _, c := range n.Content {
+		if err := yaml11TimestampError(c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Python datetime constructor message for an out of range timestamp field, empty for a real date
+func yaml11TimestampValueError(v string) string {
+	m := yaml11TimestampParts.FindStringSubmatch(v)
+	num := func(i int) int { n, _ := strconv.Atoi(m[i]); return n }
+	if m[7] != "" {
+		minutes := num(8) * 60
+		if m[9] != "" {
+			minutes += num(9)
+		}
+		if minutes >= 24*60 {
+			if m[7] == "-" {
+				minutes = -minutes
+			}
+			return "offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not " + pyTimedeltaRepr(minutes*60) + "."
+		}
+	}
+	year, month, day := num(1), num(2), num(3)
+	switch {
+	case year < 1:
+		return fmt.Sprintf("year %d is out of range", year)
+	case month < 1 || month > 12:
+		return "month must be in 1..12"
+	case day < 1 || day > time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day():
+		return "day is out of range for month"
+	case m[4] == "":
+		return ""
+	case num(4) > 23:
+		return "hour must be in 0..23"
+	case num(5) > 59:
+		return "minute must be in 0..59"
+	case num(6) > 59:
+		return "second must be in 0..59"
+	}
+	return ""
+}
+
+// Python repr of a timedelta holding whole seconds
+func pyTimedeltaRepr(seconds int) string {
+	days := seconds / 86400
+	if seconds%86400 < 0 {
+		days--
+	}
+	secs := seconds - days*86400
+	var parts []string
+	if days != 0 {
+		parts = append(parts, fmt.Sprintf("days=%d", days))
+	}
+	if secs != 0 {
+		parts = append(parts, fmt.Sprintf("seconds=%d", secs))
+	}
+	if len(parts) == 0 {
+		return "datetime.timedelta(0)"
+	}
+	return "datetime.timedelta(" + strings.Join(parts, ", ") + ")"
 }

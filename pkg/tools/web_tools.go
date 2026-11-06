@@ -630,7 +630,7 @@ func finalURLRefusal(env *Env, fetched *WebPage) *WebPage {
 		}
 		return p
 	}
-	blocked, err := CheckWebsiteAccess(env, finalURL, "")
+	blocked, err := extractWebsiteAccess(env, finalURL, "")
 	if err != nil {
 		envLog(env).Warn("Website policy check failed for redirect target", "url", finalURL, "error", err)
 		return refusal("Website policy check failed for redirect target: "+err.Error(), nil)
@@ -639,7 +639,7 @@ func finalURLRefusal(env *Env, fetched *WebPage) *WebPage {
 		envLog(env).Info("Blocked redirected web_extract", "host", blocked.Host, "rule", blocked.Rule)
 		return refusal(blocked.Message, blocked)
 	}
-	if !isSafeURL(env, finalURL) {
+	if !extractURLSafe(env, finalURL) {
 		envLog(env).Info("Blocked redirected web_extract for unsafe final URL", "url", finalURL)
 		return refusal("Blocked: URL targets a private or internal network address", nil)
 	}
@@ -702,7 +702,7 @@ func cachedFinalURLAllowed(env *Env, hit *WebPage, requested string) bool {
 	if finalURL == "" || finalURL == requested {
 		return true
 	}
-	blocked, err := CheckWebsiteAccess(env, finalURL, "")
+	blocked, err := extractWebsiteAccess(env, finalURL, "")
 	if err != nil {
 		envLog(env).Warn("Website policy check failed for cached final URL", "url", finalURL, "error", err)
 		return false
@@ -710,7 +710,7 @@ func cachedFinalURLAllowed(env *Env, hit *WebPage, requested string) bool {
 	if blocked != nil {
 		return false
 	}
-	return isSafeURL(env, finalURL)
+	return extractURLSafe(env, finalURL)
 }
 
 // Serves cache hits, fetches the rest, and merges back in order
@@ -720,7 +720,7 @@ func extractSafeURLs(call webCallContext, provider WebProvider, safeURLs []strin
 	var fetchURLs []string
 	var fetchPositions []int
 	for position, u := range safeURLs {
-		blocked, err := CheckWebsiteAccess(env, u, "")
+		blocked, err := extractWebsiteAccess(env, u, "")
 		var hit *WebPage
 		if err == nil && blocked == nil {
 			hit = ExtractCacheGet(env, u, format, provider.Name())

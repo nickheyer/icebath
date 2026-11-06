@@ -78,3 +78,54 @@ func sqliteTotalChanges(conn SQLiteConn) (int64, error) {
 	})
 	return n, err
 }
+
+// Error of the last failed call on a SQLite handle with its extended code and message
+func sqliteHandleError(tls *libc.TLS, db uintptr) error {
+	code := int(sqlite3.Xsqlite3_extended_errcode(tls, db))
+	return &SQLiteError{Class: classForCode(code), Msg: libc.GoString(sqlite3.Xsqlite3_errmsg(tls, db)), Code: code, HasCode: true}
+}
+
+// Copies the main database of src into dst through the online backup API, the sqlite3 Connection.backup loop
+func sqliteBackup(src, dst SQLiteConn, pages int, progress func(status, remaining, total int) error, sleepSeconds float64) error {
+	return withRawSQLite(src, func(_ *libc.TLS, srcDB uintptr) error {
+		return withRawSQLite(dst, func(tls *libc.TLS, dstDB uintptr) error {
+			if sqlite3.Xsqlite3_get_autocommit(tls, dstDB) == 0 {
+				return &SQLiteError{Class: SQLiteOperationalError, Msg: "target is in transaction"}
+			}
+			zMain, err := libc.CString("main")
+			if err != nil {
+				return err
+			}
+			defer libc.Xfree(tls, zMain)
+			bck := sqlite3.Xsqlite3_backup_init(tls, dstDB, zMain, srcDB, zMain)
+			if bck == 0 {
+				return sqliteHandleError(tls, dstDB)
+			}
+			var callbackErr error
+			for {
+				rc := sqlite3.Xsqlite3_backup_step(tls, bck, int32(pages))
+				if progress != nil {
+					remaining := int(sqlite3.Xsqlite3_backup_remaining(tls, bck))
+					total := int(sqlite3.Xsqlite3_backup_pagecount(tls, bck))
+					if callbackErr = progress(int(rc), remaining, total); callbackErr != nil {
+						break
+					}
+				}
+				if rc == sqlite3.SQLITE_BUSY || rc == sqlite3.SQLITE_LOCKED {
+					sqlite3.Xsqlite3_sleep(tls, int32(sleepSeconds*1000))
+				}
+				if rc != sqlite3.SQLITE_OK && rc != sqlite3.SQLITE_BUSY && rc != sqlite3.SQLITE_LOCKED {
+					break
+				}
+			}
+			rc := sqlite3.Xsqlite3_backup_finish(tls, bck)
+			if callbackErr != nil {
+				return callbackErr
+			}
+			if rc != sqlite3.SQLITE_OK {
+				return sqliteHandleError(tls, dstDB)
+			}
+			return nil
+		})
+	})
+}

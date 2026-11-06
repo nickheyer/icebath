@@ -31,7 +31,6 @@ var (
 	moaFlatPresetKeys = []string{"reference_models", "aggregator", "reference_temperature", "aggregator_temperature",
 		"reference_timeout", "degraded_reference_policy", "fanout", "enabled"}
 	moaAggregatorSlotFields = map[string]bool{"provider": true, "model": true, "reasoning_effort": true}
-	validReasoningEfforts   = []string{"minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
 )
 
 // Default reference slots each marked enabled
@@ -284,30 +283,7 @@ func CoercePrivacyFilter(value any) string {
 }
 
 // Reasoning effort config of a level, nil for empty or unrecognized input and enabled false for a disable spelling
-func ParseReasoningEffort(effort any) map[string]any {
-	if effort == nil || effort == true {
-		return nil
-	}
-	if m, ok := effort.(map[string]any); ok {
-		if enabled, has := m["enabled"]; has && enabled == false {
-			return map[string]any{"enabled": false}
-		}
-		level := pyStripSpace(pyOrStr(m["effort"]))
-		if level == "" {
-			return nil
-		}
-		return map[string]any{"enabled": true, "effort": level}
-	}
-	text := strings.ToLower(pyStripSpace(pyStr(effort)))
-	switch text {
-	case "none", "false", "disabled":
-		return map[string]any{"enabled": false}
-	}
-	if containsString(validReasoningEfforts, text) {
-		return map[string]any{"enabled": true, "effort": text}
-	}
-	return nil
-}
+func ParseReasoningEffort(effort any) map[string]any { return config.ParseReasoningEffort(effort) }
 
 // Canonical per slot reasoning effort, empty when unset or invalid
 func cleanMoAReasoningEffort(value any) string {

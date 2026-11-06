@@ -1,14 +1,14 @@
-### 1. pkg/home: 33% (3 of 9 files completed)
+### 1. pkg/home: 100% (9 of 9 files completed)
 #### Home directory resolution, named profiles, directory layout, path ACL checks
 - [x] hermes_cli/config_home.py
-- [ ] hermes_cli/fs_utils.py
+- [x] hermes_cli/fs_utils.py
 - [x] hermes_cli/home_data_layout.py
 - [x] hermes_cli/runtime_paths.py
-- [ ] hermes_constants.py
-- [ ] hermes_constants_scratch.py
-- [ ] hermes_constants_scratch_detach.py
-- [ ] hermes_constants_scratch_stuck.py
-- [ ] hermes_dir_acl.py
+- [x] hermes_constants.py
+- [x] hermes_constants_scratch.py
+- [x] hermes_constants_scratch_detach.py
+- [x] hermes_constants_scratch_stuck.py
+- [x] hermes_dir_acl.py
 
 ### 2. pkg/config: 100% (40 of 40 files completed)
 #### Config defaults, YAML load and merge, env expansion, managed overlay, migrations, skins
@@ -53,13 +53,13 @@
 - [x] plugins/config_backends/remote/paths.py
 - [x] plugins/config_backends/remote/values.py
 
-### 3. pkg/state: 29% (20 of 67 files completed)
+### 3. pkg/state: 35% (24 of 67 files completed)
 #### SQLite session store, messages, compaction, FTS search, titles, usage, locks, repair
 - [x] hermes_cli/session_schema_history.py
 - [x] hermes_cli/sqlite_runtime.py
 - [x] hermes_cli/sqlite_safe_read.py
 - [x] hermes_cli/sqlite_util.py
-- [ ] hermes_state.py
+- [x] hermes_state.py
 - [ ] hermes_state_api_content.py
 - [x] hermes_state_common.py
 - [ ] hermes_state_compaction_display.py
@@ -106,7 +106,7 @@
 - [ ] hermes_state_rewind.py
 - [ ] hermes_state_runtime.py
 - [ ] hermes_state_runtime_workers.py
-- [ ] hermes_state_schema.py
+- [x] hermes_state_schema.py
 - [ ] hermes_state_search.py
 - [ ] hermes_state_session_list.py
 - [ ] hermes_state_sessions.py
@@ -116,8 +116,8 @@
 - [ ] hermes_state_timeline.py
 - [ ] hermes_state_titles.py
 - [ ] hermes_state_todo.py
-- [ ] hermes_state_usage.py
-- [ ] hermes_state_user_copy.py
+- [x] hermes_state_usage.py
+- [x] hermes_state_user_copy.py
 - [x] hermes_state_wal.py
 - [ ] hermes_state_worker_compression.py
 - [ ] hermes_state_worker_context.py
@@ -133,7 +133,7 @@
 - [x] hermes_platform/host/runtime.py
 - [x] hermes_platform/host/summary.py
 
-### 5. pkg/provider: 68% (229 of 334 files completed)
+### 5. pkg/provider: 70% (236 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
 - [x] agent/account_usage.py
 - [x] agent/account_usage_cache.py
@@ -178,10 +178,10 @@
 - [ ] agent/chat_completion_helpers.py
 - [x] agent/chat_completion_helpers_relay.py
 - [x] agent/chat_completion_helpers_tool_calls.py
-- [ ] agent/chat_completion_local.py
+- [x] agent/chat_completion_local.py
 - [ ] agent/chat_completion_nonstream.py
 - [ ] agent/chat_completion_stream_monitor.py
-- [ ] agent/chat_completion_wait_notice.py
+- [x] agent/chat_completion_wait_notice.py
 - [ ] agent/client_lifecycle.py
 - [x] agent/codex_headers.py
 - [ ] agent/codex_responses_adapter.py
@@ -250,7 +250,7 @@
 - [x] agent/repetition_guard.py
 - [x] agent/retry_utils.py
 - [ ] agent/route_binding.py
-- [ ] agent/sdk_transform_bypass.py
+- [x] agent/sdk_transform_bypass.py
 - [ ] agent/secret_scope.py
 - [x] agent/secret_sources/__init__.py
 - [ ] agent/secret_sources/_cache.py
@@ -309,7 +309,7 @@
 - [x] hermes_cli/auth_xai.py
 - [x] hermes_cli/auth_zai_kimi.py
 - [x] hermes_cli/azure_detect.py
-- [ ] hermes_cli/backend_retirement.py
+- [x] hermes_cli/backend_retirement.py
 - [x] hermes_cli/codex_models.py
 - [ ] hermes_cli/codex_runtime_plugin_migration.py
 - [ ] hermes_cli/codex_runtime_switch.py
@@ -384,8 +384,8 @@
 - [x] hermes_cli/profiles_config.py
 - [x] hermes_cli/profiles_honcho.py
 - [x] hermes_cli/profiles_initialization.py
-- [ ] hermes_cli/profiles_remove.py
-- [ ] hermes_cli/profiles_service_cleanup.py
+- [x] hermes_cli/profiles_remove.py
+- [x] hermes_cli/profiles_service_cleanup.py
 - [ ] hermes_cli/prompt_size.py
 - [x] hermes_cli/provider_catalog.py
 - [x] hermes_cli/providers.py
@@ -416,7 +416,7 @@
 - [ ] hermes_cli/subcommands/moa.py
 - [ ] hermes_cli/subcommands/model.py
 - [ ] hermes_cli/subcommands/peer.py
-- [ ] hermes_cli/subcommands/profile.py
+- [x] hermes_cli/subcommands/profile.py
 - [ ] hermes_cli/subcommands/secrets.py
 - [ ] hermes_cli/subcommands/usage.py
 - [ ] hermes_cli/subcommands/vault.py
@@ -470,7 +470,7 @@
 - [x] providers/__init__.py
 - [x] providers/base.py
 
-### 6. pkg/tools: 58% (163 of 279 files completed)
+### 6. pkg/tools: 63% (177 of 279 files completed)
 #### Tool registry, approval, terminal backends, file ops, search, web, vision, checkpoints
 - [ ] agent/async_utils.py
 - [ ] agent/background_review.py
@@ -569,8 +569,8 @@
 - [ ] hermes_platform/resolver/known_dirs.py
 - [ ] model_tools.py
 - [ ] plugins/web/_common.py
-- [ ] plugins/web/brave_free/__init__.py
-- [ ] plugins/web/brave_free/provider.py
+- [x] plugins/web/brave_free/__init__.py
+- [x] plugins/web/brave_free/provider.py
 - [ ] plugins/web/ddgs/__init__.py
 - [ ] plugins/web/ddgs/_search_worker.py
 - [ ] plugins/web/ddgs/provider.py
@@ -578,21 +578,21 @@
 - [ ] plugins/web/exa/provider.py
 - [x] plugins/web/firecrawl/__init__.py
 - [x] plugins/web/firecrawl/provider.py
-- [ ] plugins/web/keenable/__init__.py
-- [ ] plugins/web/keenable/provider.py
+- [x] plugins/web/keenable/__init__.py
+- [x] plugins/web/keenable/provider.py
 - [x] plugins/web/keyless_mcp.py
-- [ ] plugins/web/openai_native/__init__.py
-- [ ] plugins/web/openai_native/provider.py
+- [x] plugins/web/openai_native/__init__.py
+- [x] plugins/web/openai_native/provider.py
 - [ ] plugins/web/parallel/__init__.py
 - [ ] plugins/web/parallel/provider.py
-- [ ] plugins/web/perplexity/__init__.py
-- [ ] plugins/web/perplexity/provider.py
-- [ ] plugins/web/searxng/__init__.py
-- [ ] plugins/web/searxng/provider.py
-- [ ] plugins/web/tavily/__init__.py
-- [ ] plugins/web/tavily/provider.py
-- [ ] plugins/web/xai/__init__.py
-- [ ] plugins/web/xai/provider.py
+- [x] plugins/web/perplexity/__init__.py
+- [x] plugins/web/perplexity/provider.py
+- [x] plugins/web/searxng/__init__.py
+- [x] plugins/web/searxng/provider.py
+- [x] plugins/web/tavily/__init__.py
+- [x] plugins/web/tavily/provider.py
+- [x] plugins/web/xai/__init__.py
+- [x] plugins/web/xai/provider.py
 - [ ] tools/__init__.py
 - [x] tools/annotate_preview_tool.py
 - [x] tools/ansi_strip.py
@@ -850,7 +850,7 @@
 - [ ] hermes_cli/update_completion.py
 - [x] tools/slash_confirm.py
 
-### 10. pkg/skills: 52% (19 of 36 files completed)
+### 10. pkg/skills: 77% (28 of 36 files completed)
 #### Bundled skill trees, frontmatter, guard scan, catalog, hub, sync, linter, ledger
 - [x] agent/skill_bundles.py
 - [ ] agent/skill_commands.py
@@ -869,18 +869,18 @@
 - [ ] tools/skill_manager_guards.py
 - [x] tools/skill_manager_tool.py
 - [x] tools/skill_provenance.py
-- [ ] tools/skillevaluator_scan.py
+- [x] tools/skillevaluator_scan.py
 - [ ] tools/skills_ast_audit.py
 - [x] tools/skills_guard.py
-- [ ] tools/skills_hub.py
-- [ ] tools/skills_hub_clawhub.py
-- [ ] tools/skills_hub_github.py
+- [x] tools/skills_hub.py
+- [x] tools/skills_hub_clawhub.py
+- [x] tools/skills_hub_github.py
 - [ ] tools/skills_hub_install.py
-- [ ] tools/skills_hub_models.py
-- [ ] tools/skills_hub_official.py
-- [ ] tools/skills_hub_search.py
-- [ ] tools/skills_hub_skillssh.py
-- [ ] tools/skills_hub_sources.py
+- [x] tools/skills_hub_models.py
+- [x] tools/skills_hub_official.py
+- [x] tools/skills_hub_search.py
+- [x] tools/skills_hub_skillssh.py
+- [x] tools/skills_hub_sources.py
 - [x] tools/skills_sync.py
 - [x] tools/skills_sync_bundled_ops.py
 - [x] tools/skills_sync_optional.py
@@ -889,12 +889,12 @@
 - [x] tools/skills_tool_plugin.py
 - [x] tools/skills_tool_setup.py
 
-### 11. pkg/memory: 62% (20 of 32 files completed)
+### 11. pkg/memory: 71% (23 of 32 files completed)
 #### Memory store and tool, providers, manager, curator, learning graph, insights
 - [ ] agent/curator.py
 - [ ] agent/curator_backup.py
-- [ ] agent/insights.py
-- [ ] agent/learn_prompt.py
+- [x] agent/insights.py
+- [x] agent/learn_prompt.py
 - [x] agent/learning_graph.py
 - [x] agent/learning_graph_render.py
 - [x] agent/learning_mutations.py
@@ -903,7 +903,7 @@
 - [x] agent/memory_manager.py
 - [x] agent/memory_manager_tools.py
 - [x] agent/memory_provider.py
-- [ ] agent/onboarding_facts.py
+- [x] agent/onboarding_facts.py
 - [ ] hermes_cli/curator.py
 - [x] hermes_cli/mem_trim.py
 - [x] hermes_cli/memory_oauth.py
@@ -924,7 +924,7 @@
 - [x] tools/skill_ledger.py
 - [x] tools/skill_usage.py
 
-### 12. pkg/cron: 10% (7 of 68 files completed)
+### 12. pkg/cron: 14% (10 of 68 files completed)
 #### Job store, schedules, due scan, scheduler, delivery, blueprints, cronjob tool
 - [ ] agent/periodic_scheduler.py
 - [ ] agent/sleep_clock.py
@@ -942,7 +942,7 @@
 - [ ] cron/executions.py
 - [ ] cron/extra_fire.py
 - [ ] cron/incidents.py
-- [ ] cron/job_definition.py
+- [x] cron/job_definition.py
 - [ ] cron/jobs.py
 - [x] cron/jobs_invariants.py
 - [ ] cron/jobs_model_pin.py
@@ -951,7 +951,7 @@
 - [x] cron/lifecycle_guard.py
 - [ ] cron/missed_runs.py
 - [ ] cron/monitor.py
-- [ ] cron/notepad.py
+- [x] cron/notepad.py
 - [ ] cron/occurrences.py
 - [ ] cron/quota_hold.py
 - [ ] cron/scheduler.py
@@ -976,7 +976,7 @@
 - [ ] cron/scheduler_worktree_maintenance.py
 - [x] cron/store_health.py
 - [ ] cron/suggestion_catalog.py
-- [ ] cron/suggestions.py
+- [x] cron/suggestions.py
 - [ ] cron/unreachable_retry.py
 - [ ] cron/worker_bootstrap.py
 - [ ] gateway/cron_store_notices.py
@@ -995,7 +995,7 @@
 - [ ] tools/cronjob_prompt_scan.py
 - [ ] tools/cronjob_tools.py
 
-### 13. pkg/plugins: 9% (11 of 111 files completed)
+### 13. pkg/plugins: 13% (15 of 111 files completed)
 #### Plugin manifests, discovery, hooks, middleware, host wire, install, catalog, guard
 - [ ] agent/plugin_live_notes.py
 - [ ] agent/plugin_llm.py
@@ -1007,12 +1007,12 @@
 - [ ] agent/verify/runner.py
 - [ ] agent/verify_hooks.py
 - [ ] hermes_cli/agent_plugins.py
-- [ ] hermes_cli/git_credentials.py
+- [x] hermes_cli/git_credentials.py
 - [ ] hermes_cli/github_api.py
 - [ ] hermes_cli/hooks.py
 - [x] hermes_cli/middleware.py
 - [ ] hermes_cli/plugin_capabilities.py
-- [ ] hermes_cli/plugin_catalog.py
+- [x] hermes_cli/plugin_catalog.py
 - [ ] hermes_cli/plugin_catalog_presence.py
 - [ ] hermes_cli/plugin_choices.py
 - [ ] hermes_cli/plugin_command_dispatch.py
@@ -1034,8 +1034,8 @@
 - [ ] hermes_cli/plugin_session.py
 - [ ] hermes_cli/plugin_validate.py
 - [ ] hermes_cli/plugin_validate_core_override.py
-- [ ] hermes_cli/plugin_validate_desktop.py
-- [ ] hermes_cli/plugin_validate_locales.py
+- [x] hermes_cli/plugin_validate_desktop.py
+- [x] hermes_cli/plugin_validate_locales.py
 - [ ] hermes_cli/plugin_validate_private_imports.py
 - [ ] hermes_cli/plugins.py
 - [ ] hermes_cli/plugins_activation.py
@@ -1109,14 +1109,14 @@
 - [x] tools/plugin_guard.py
 - [x] tools/plugin_guard_context.py
 
-### 14. pkg/mcp: 74% (26 of 35 files completed)
+### 14. pkg/mcp: 77% (27 of 35 files completed)
 #### MCP sessions, transports, OAuth, config, server lifecycle, tool registration, catalog
 - [x] hermes_cli/mcp_catalog.py
 - [x] hermes_cli/mcp_config.py
 - [x] hermes_cli/mcp_picker.py
 - [x] hermes_cli/mcp_security.py
 - [x] hermes_cli/mcp_startup.py
-- [ ] hermes_cli/tools_config_mcp.py
+- [x] hermes_cli/tools_config_mcp.py
 - [ ] tools/connectors/mcp.py
 - [ ] tools/connectors/mcp_oauth.py
 - [x] tools/mcp_dashboard_oauth.py
@@ -1211,7 +1211,7 @@
 - [ ] tools/browser_vault_context.py
 - [ ] tools/browser_vault_tool.py
 
-### 16. pkg/media: 0% (0 of 61 files completed)
+### 16. pkg/media: 1% (1 of 61 files completed)
 #### Image and video generation, TTS, transcription, voice mode, wake word
 - [ ] agent/image_gen_provider.py
 - [ ] agent/image_gen_registry.py
@@ -1238,7 +1238,7 @@
 - [ ] plugins/video_gen/fal/__init__.py
 - [ ] plugins/video_gen/openrouter/__init__.py
 - [ ] plugins/video_gen/xai/__init__.py
-- [ ] tools/audio_container.py
+- [x] tools/audio_container.py
 - [ ] tools/fal_common.py
 - [ ] tools/image_generation_catalog.py
 - [ ] tools/image_generation_managed.py
@@ -1275,7 +1275,7 @@
 - [ ] tools/wake_word_engines.py
 - [ ] tools/xai_video_tools.py
 
-### 17. pkg/agent: 11% (14 of 127 files completed)
+### 17. pkg/agent: 13% (17 of 127 files completed)
 #### Turn loop, prompt builder, compression, delegation, session search, interrupts, hooks
 - [ ] agent/acp_client.py
 - [ ] agent/acp_openai_bridge.py
@@ -1327,7 +1327,7 @@
 - [ ] agent/iteration_budget.py
 - [ ] agent/lazy_forward.py
 - [ ] agent/legacy_cli.py
-- [ ] agent/local_prompt_progress.py
+- [x] agent/local_prompt_progress.py
 - [ ] agent/managed_worker.py
 - [ ] agent/manual_compression_feedback.py
 - [x] agent/message_content.py
@@ -1348,7 +1348,7 @@
 - [ ] agent/reactions.py
 - [ ] agent/relay_compaction.py
 - [ ] agent/relay_llm.py
-- [ ] agent/relay_runtime.py
+- [x] agent/relay_runtime.py
 - [ ] agent/relay_tools.py
 - [ ] agent/replay_cleanup.py
 - [ ] agent/runtime_session_child.py
@@ -1356,7 +1356,7 @@
 - [ ] agent/runtime_session_lifecycle.py
 - [ ] agent/runtime_session_store.py
 - [x] agent/safe_worker_policy.py
-- [ ] agent/session_activity.py
+- [x] agent/session_activity.py
 - [ ] agent/session_client_env.py
 - [ ] agent/session_persistence.py
 - [x] agent/session_source.py
@@ -1936,7 +1936,7 @@
 - [ ] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 1% (3 of 161 files completed)
+### 22. cmd/icebath: 3% (5 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -2046,7 +2046,7 @@
 - [ ] hermes_cli/subcommands/status.py
 - [ ] hermes_cli/subcommands/uninstall.py
 - [ ] hermes_cli/subcommands/update.py
-- [ ] hermes_cli/timefmt.py
+- [x] hermes_cli/timefmt.py
 - [ ] hermes_cli/uninstall.py
 - [ ] hermes_cli/update_abort_recovery.py
 - [ ] hermes_cli/update_channel.py
@@ -2081,7 +2081,7 @@
 - [ ] hermes_cli/update_lock.py
 - [ ] hermes_cli/update_owning_install.py
 - [ ] hermes_cli/update_pause_record.py
-- [ ] hermes_cli/update_proxy_env.py
+- [x] hermes_cli/update_proxy_env.py
 - [ ] hermes_cli/update_receipt.py
 - [ ] hermes_cli/update_restart_recovery.py
 - [ ] hermes_cli/update_serve_obligations.py
@@ -2218,7 +2218,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 1% (13 of 760 files completed)
+### 24. gateway: 4% (32 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2241,10 +2241,10 @@
 - [ ] acp_adapter/server.py
 - [ ] acp_adapter/session.py
 - [ ] acp_adapter/tools.py
-- [ ] agent/monitoring/__init__.py
-- [ ] agent/monitoring/cron_health.py
-- [ ] agent/monitoring/emitter.py
-- [ ] agent/monitoring/events.py
+- [x] agent/monitoring/__init__.py
+- [x] agent/monitoring/cron_health.py
+- [x] agent/monitoring/emitter.py
+- [x] agent/monitoring/events.py
 - [ ] agent/monitoring/gateway_health.py
 - [ ] agent/monitoring/gateway_health_export.py
 - [ ] agent/monitoring/otlp_exporter.py
@@ -2259,7 +2259,7 @@
 - [ ] gateway/bot_loop_guard.py
 - [ ] gateway/cgroup_cleanup.py
 - [ ] gateway/channel_directory.py
-- [ ] gateway/code_skew.py
+- [x] gateway/code_skew.py
 - [ ] gateway/config.py
 - [x] gateway/config_env.py
 - [ ] gateway/config_loader.py
@@ -2268,7 +2268,7 @@
 - [ ] gateway/dead_targets.py
 - [ ] gateway/delivery.py
 - [ ] gateway/delivery_ledger.py
-- [ ] gateway/disk_status.py
+- [x] gateway/disk_status.py
 - [ ] gateway/display_config.py
 - [ ] gateway/drain_control.py
 - [ ] gateway/hooks.py
@@ -2336,7 +2336,7 @@
 - [ ] gateway/plugin_command_choice.py
 - [ ] gateway/plugin_keyless_inject.py
 - [ ] gateway/plugin_messages.py
-- [ ] gateway/profile_routing.py
+- [x] gateway/profile_routing.py
 - [ ] gateway/readiness.py
 - [ ] gateway/relay/__init__.py
 - [ ] gateway/relay/adapter.py
@@ -2351,7 +2351,7 @@
 - [ ] gateway/relay/transport.py
 - [ ] gateway/relay/ws_transport.py
 - [ ] gateway/response_filters.py
-- [ ] gateway/restart.py
+- [x] gateway/restart.py
 - [ ] gateway/restart_loop_guard.py
 - [ ] gateway/restart_notice.py
 - [ ] gateway/rich_sent_store.py
@@ -2654,20 +2654,20 @@
 - [ ] hermes_cli/main_container.py
 - [ ] hermes_cli/observability/__init__.py
 - [ ] hermes_cli/observability/relay_shared_metrics.py
-- [ ] hermes_cli/observability/shared_metrics.py
+- [x] hermes_cli/observability/shared_metrics.py
 - [ ] hermes_cli/observability/shared_metrics_busy.py
-- [ ] hermes_cli/observability/shared_metrics_catalog.py
-- [ ] hermes_cli/observability/shared_metrics_connectors.py
+- [x] hermes_cli/observability/shared_metrics_catalog.py
+- [x] hermes_cli/observability/shared_metrics_connectors.py
 - [ ] hermes_cli/observability/shared_metrics_consent.py
-- [ ] hermes_cli/observability/shared_metrics_contract.py
+- [x] hermes_cli/observability/shared_metrics_contract.py
 - [ ] hermes_cli/observability/shared_metrics_desktop.py
-- [ ] hermes_cli/observability/shared_metrics_disabled.py
-- [ ] hermes_cli/observability/shared_metrics_drift.py
+- [x] hermes_cli/observability/shared_metrics_disabled.py
+- [x] hermes_cli/observability/shared_metrics_drift.py
 - [ ] hermes_cli/observability/shared_metrics_efficiency.py
 - [ ] hermes_cli/observability/shared_metrics_engagement.py
 - [ ] hermes_cli/observability/shared_metrics_events.py
-- [ ] hermes_cli/observability/shared_metrics_fields.py
-- [ ] hermes_cli/observability/shared_metrics_gateway.py
+- [x] hermes_cli/observability/shared_metrics_fields.py
+- [x] hermes_cli/observability/shared_metrics_gateway.py
 - [ ] hermes_cli/observability/shared_metrics_harness.py
 - [ ] hermes_cli/observability/shared_metrics_install.py
 - [ ] hermes_cli/observability/shared_metrics_install_run.py
@@ -2675,14 +2675,14 @@
 - [ ] hermes_cli/observability/shared_metrics_model.py
 - [ ] hermes_cli/observability/shared_metrics_prepared_compaction.py
 - [ ] hermes_cli/observability/shared_metrics_process.py
-- [ ] hermes_cli/observability/shared_metrics_send_config.py
-- [ ] hermes_cli/observability/shared_metrics_sender.py
+- [x] hermes_cli/observability/shared_metrics_send_config.py
+- [x] hermes_cli/observability/shared_metrics_sender.py
 - [ ] hermes_cli/observability/shared_metrics_setup.py
 - [ ] hermes_cli/observability/shared_metrics_signals.py
 - [ ] hermes_cli/observability/shared_metrics_snapshot.py
 - [ ] hermes_cli/observability/shared_metrics_startup.py
 - [ ] hermes_cli/observability/shared_metrics_subscriber.py
-- [ ] hermes_cli/observability/shared_metrics_update.py
+- [x] hermes_cli/observability/shared_metrics_update.py
 - [ ] hermes_cli/pairing.py
 - [ ] hermes_cli/pets.py
 - [ ] hermes_cli/platform_actions.py

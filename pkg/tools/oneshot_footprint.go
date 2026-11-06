@@ -1,11 +1,6 @@
 package tools
 
-import (
-	"fmt"
-	"sync"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-)
+import "sync"
 
 // OneshotSkillsLoadGuidance replaces the skills coaching in a one shot session prompt
 const OneshotSkillsLoadGuidance = "## Skills\n" +
@@ -48,31 +43,4 @@ func AgentIsOneshot(o *OneshotSession, env *Env) bool {
 		o.pinned, o.value = true, IsSingleQuerySession(env)
 	}
 	return o.value
-}
-
-// Tool schemas with delegate_task swapped for its one shot variant without live control parameters
-func OneshotToolSchemas(tools []map[string]any) ([]map[string]any, error) {
-	out := make([]map[string]any, 0, len(tools))
-	for _, tool := range tools {
-		raw := tool["function"]
-		fn, isMap := raw.(map[string]any)
-		if !isMap && pyrepr.Truthy(raw) {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
-		}
-		if name, _ := fn["name"].(string); name != "delegate_task" {
-			out = append(out, tool)
-			continue
-		}
-		swapped := make(map[string]any, len(tool))
-		for k, v := range tool {
-			swapped[k] = v
-		}
-		variant, err := OneshotDelegateFunction(fn)
-		if err != nil {
-			return nil, err
-		}
-		swapped["function"] = variant
-		out = append(out, swapped)
-	}
-	return out, nil
 }

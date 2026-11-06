@@ -3,10 +3,7 @@
 package manage
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -23,29 +20,6 @@ func bindUnixSocket(t *testing.T, path string) {
 	}
 	l.(*net.UnixListener).SetUnlinkOnClose(false)
 	l.Close()
-}
-
-func archiveNames(t *testing.T, archive string) []string {
-	t.Helper()
-	f, err := os.Open(archive)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	tr := tar.NewReader(gz)
-	for {
-		h, err := tr.Next()
-		if err != nil {
-			break
-		}
-		names = append(names, h.Name)
-	}
-	return names
 }
 
 func anyName(names []string, pred func(string) bool) bool {

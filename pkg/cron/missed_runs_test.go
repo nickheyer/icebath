@@ -12,7 +12,9 @@ import (
 func resetMissedHooks(t *testing.T) {
 	t.Helper()
 	testHooks.missed = nil
-	t.Cleanup(func() { testHooks.missed = nil })
+	saved := recordCronMissed
+	recordCronMissed = func(_ context.Context, job *Job) { testHooks.missed = append(testHooks.missed, job.ID) }
+	t.Cleanup(func() { testHooks.missed, recordCronMissed = nil, saved })
 }
 
 func TestStaleRecurringRunsOnceAndBooksCollapsedSlots(t *testing.T) {

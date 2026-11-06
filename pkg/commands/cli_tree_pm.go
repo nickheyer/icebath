@@ -11,6 +11,7 @@ import (
 
 // Adds the pm tree bound to pkg/pm handlers plus the hidden update takeover entry
 func (c *CLI) addPM(root *cobra.Command) {
+	pm.SetCommandArgv(c.CommandArgv)
 	pmCmd := c.newCmd(root, "pm", "Package manager: lock, install, repair, env, doctor, gc, bundle", "")
 	c.Bind("pm", func(cmd *cobra.Command, args []string) error {
 		return &ExitError{Code: 2, Msg: fmt.Sprintf("usage: %s\n%s: error: the following arguments are required: cmd", cmd.UseLine(), cmd.CommandPath())}
@@ -118,6 +119,26 @@ func (c *CLI) addPM(root *cobra.Command) {
 	c.Bind("pm stage-native", func(cmd *cobra.Command, args []string) error {
 		stageArgs := pmStageNativeArgs(cmd)
 		return runPM(cmd, func(ctx context.Context) (int, error) { return pm.StageNativeMain(ctx, stageArgs) })
+	})
+
+	payloadCmd := c.newCmd(pmCmd, "payload", "relocate payload links or rehash payload tool facts", "")
+	payloadCmd.Hidden = true
+	c.pos(payloadCmd, p("action"), p("payload"))
+	c.Bind("pm payload", func(cmd *cobra.Command, args []string) error {
+		action, payload := args[0], args[1]
+		return runPM(cmd, func(ctx context.Context) (int, error) { return pm.PayloadMain(pm.SyncOutput(ctx), action, payload) })
+	})
+
+	assemble := c.newCmd(pmCmd, "assemble-agent", "assemble a runnable agent from prepared inputs", "")
+	assemble.Hidden = true
+	sf(assemble, "inputs", "", "", "")
+	_ = assemble.MarkFlagRequired("inputs")
+	sf(assemble, "out", "", "", "")
+	_ = assemble.MarkFlagRequired("out")
+	c.Bind("pm assemble-agent", func(cmd *cobra.Command, args []string) error {
+		inputs, _ := cmd.Flags().GetString("inputs")
+		out, _ := cmd.Flags().GetString("out")
+		return runPM(cmd, func(ctx context.Context) (int, error) { return 0, pm.AgentMain(ctx, inputs, out) })
 	})
 
 	takeover := c.newCmd(root, "update-takeover", "finish an update a historical updater handed off", "")

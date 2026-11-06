@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -13,7 +14,8 @@ type Export struct {
 
 // Session with its rows, the compacted history included on request, nil when absent
 func (d *DB) ExportSession(sessionID string, includeCompacted, includeInactive bool) (*Export, error) {
-	s, err := d.GetSession(sessionID)
+	row, err := d.GetSession(context.Background(), sessionID)
+	s := sessionFromRow(row)
 	if err != nil || s == nil {
 		return nil, err
 	}
@@ -48,7 +50,7 @@ func (d *DB) ImportSessions(exports []*Export) (int, error) {
 		if e == nil || e.Session == nil || e.Session.ID == "" {
 			return imported, errors.New("export without a session id")
 		}
-		existing, err := d.GetSession(e.Session.ID)
+		existing, err := d.GetSession(context.Background(), e.Session.ID)
 		if err != nil {
 			return imported, err
 		}

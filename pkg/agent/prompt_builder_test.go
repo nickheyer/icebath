@@ -1,11 +1,14 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -253,7 +256,7 @@ func TestSkipsAgentsMDInInstallTreeOnFallback(t *testing.T) {
 	if root == "" {
 		t.Fatal("test binary has no running source root")
 	}
-	t.Chdir(root)
+	t.Chdir(filepath.Join(root, "pkg", "skills", "bundled"))
 	allowed, err := BuildContextFilesPrompt(context.Background(), env, ContextFilesOptions{SkipSoul: true, AllowInstallTreeFallback: true})
 	if err != nil {
 		t.Fatal(err)
@@ -267,5 +270,162 @@ func TestSkipsAgentsMDInInstallTreeOnFallback(t *testing.T) {
 	}
 	if out != "" {
 		t.Fatalf("install tree fallback prompt %q", out)
+	}
+}
+
+func environmentHintsFor(t *testing.T, env *tools.Env) string {
+	t.Helper()
+	tools.ClearBackendProbeCache()
+	out, err := BuildEnvironmentHints(context.Background(), env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func failRemoteProbe(t *testing.T) {
+	t.Helper()
+	prev := probeRemoteBackendFn
+	probeRemoteBackendFn = func(context.Context, *tools.Env, string) (string, bool, error) { return "", false, nil }
+	t.Cleanup(func() { probeRemoteBackendFn = prev })
+}
+
+func fakeBotScreen(t *testing.T, display, holder string) {
+	t.Helper()
+	prev := BotScreenStatus
+	BotScreenStatus = func(*tools.Env) (string, string, error) { return display, holder, nil }
+	t.Cleanup(func() { BotScreenStatus = prev })
+}
+
+func TestBuildEnvironmentHintsSuppressesHostOnDockerBackend(t *testing.T) {
+	env := promptTestEnv(t)
+	t.Setenv("TERMINAL_ENV", "docker")
+	failRemoteProbe(t)
+	out := environmentHintsFor(t, env)
+	for _, host := range []string{"Host:", "User home directory:", "PowerShell"} {
+		if strings.Contains(out, host) {
+			t.Fatalf("remote hints carry %q: %q", host, out)
+		}
+	}
+	if !strings.Contains(out, "Terminal backend: docker") || !strings.Contains(strings.ToLower(out), "inside") {
+		t.Fatalf("backend hint %q", out)
+	}
+}
+
+func TestBuildEnvironmentHintsUsesTerminalCwdOverLaunchDir(t *testing.T) {
+	env := promptTestEnv(t)
+	tmp := t.TempDir()
+	configured := filepath.Join(tmp, "workspace")
+	if err := os.MkdirAll(configured, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TERMINAL_ENV", "")
+	os.Unsetenv("TERMINAL_ENV")
+	t.Setenv("TERMINAL_CWD", configured)
+	t.Chdir(tmp)
+	if out := environmentHintsFor(t, env); !strings.Contains(out, "Current working directory: "+configured) {
+		t.Fatalf("hints %q", out)
+	}
+}
+
+func TestBuildEnvironmentHintsFallsBackToLaunchDir(t *testing.T) {
+	env := promptTestEnv(t)
+	tmp := t.TempDir()
+	t.Setenv("TERMINAL_ENV", "")
+	os.Unsetenv("TERMINAL_ENV")
+	t.Setenv("TERMINAL_CWD", "")
+	os.Unsetenv("TERMINAL_CWD")
+	t.Chdir(tmp)
+	if out := environmentHintsFor(t, env); !strings.Contains(out, "Current working directory: "+tmp) {
+		t.Fatalf("hints %q", out)
+	}
+}
+
+func TestRunningBotScreenRidesTheEnvironmentHints(t *testing.T) {
+	env := promptTestEnv(t)
+	t.Setenv("TERMINAL_ENV", "")
+	os.Unsetenv("TERMINAL_ENV")
+	fakeBotScreen(t, ":20", "agent")
+	out := environmentHintsFor(t, env)
+	if !strings.Contains(out, "Bot Screen") || !strings.Contains(out, "display :20") || !strings.Contains(out, "you hold it") {
+		t.Fatalf("hints %q", out)
+	}
+}
+
+func TestHumanHeldBotScreenSaysSo(t *testing.T) {
+	env := promptTestEnv(t)
+	t.Setenv("TERMINAL_ENV", "")
+	os.Unsetenv("TERMINAL_ENV")
+	fakeBotScreen(t, ":20", "human")
+	out := environmentHintsFor(t, env)
+	if !strings.Contains(out, "a human holds it") || !strings.Contains(out, "do not drive the screen") {
+		t.Fatalf("hints %q", out)
+	}
+}
+
+func TestStoppedBotScreenLeavesNoHint(t *testing.T) {
+	env := promptTestEnv(t)
+	t.Setenv("TERMINAL_ENV", "")
+	os.Unsetenv("TERMINAL_ENV")
+	fakeBotScreen(t, "", "")
+	if out := environmentHintsFor(t, env); strings.Contains(out, "Bot Screen") {
+		t.Fatalf("hints %q", out)
+	}
+}
+
+func TestRemoteBackendNeverSeesAHostBotScreen(t *testing.T) {
+	env := promptTestEnv(t)
+	t.Setenv("TERMINAL_ENV", "docker")
+	failRemoteProbe(t)
+	fakeBotScreen(t, ":20", "agent")
+	if out := environmentHintsFor(t, env); strings.Contains(out, "Bot Screen") {
+		t.Fatalf("hints %q", out)
+	}
+}
+
+func TestEnvironmentHintFromEnvVarIsAppended(t *testing.T) {
+	env := promptTestEnv(t)
+	t.Setenv("TERMINAL_ENV", "")
+	os.Unsetenv("TERMINAL_ENV")
+	t.Setenv("ICEBATH_ENVIRONMENT_HINT", "Running inside an OpenShell sandbox.")
+	out := environmentHintsFor(t, env)
+	if !strings.Contains(out, "Running inside an OpenShell sandbox.") || !strings.Contains(out, "Host:") || strings.Index(out, "Host:") > strings.Index(out, "OpenShell") {
+		t.Fatalf("hints %q", out)
+	}
+}
+
+func TestContextFileReadTimeoutSlowIcebathMDIsSkippedAndAgentsMDStillLoads(t *testing.T) {
+	env := promptTestEnv(t)
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("context_file_read_timeout: 0.05\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmp, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(tmp, ".icebath.md"), []byte("Icebath project rules."), 0o644)
+	os.WriteFile(filepath.Join(tmp, "AGENTS.md"), []byte("Agent fallback rules."), 0o644)
+	original := tools.ReadContextFileText
+	tools.ReadContextFileText = func(path string) (string, error) {
+		if filepath.Base(path) == ".icebath.md" {
+			time.Sleep(600 * time.Millisecond)
+		}
+		return original(path)
+	}
+	t.Cleanup(func() { tools.ReadContextFileText = original })
+	var logs bytes.Buffer
+	prevLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prevLogger) })
+	start := time.Now()
+	result := projectPrompt(t, env, tmp)
+	if elapsed := time.Since(start); elapsed >= 400*time.Millisecond {
+		t.Fatalf("context load blocked for %.2fs", elapsed.Seconds())
+	}
+	if !strings.Contains(result, "Agent fallback rules") || strings.Contains(result, "Icebath project rules") {
+		t.Fatalf("result %q", result)
+	}
+	if !strings.Contains(strings.ToLower(logs.String()), "timed out") {
+		t.Fatalf("logs %q", logs.String())
 	}
 }

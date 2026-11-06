@@ -227,10 +227,10 @@ func TestTestInstancesRegisterOnlyUnderTheIsolationMarker(t *testing.T) {
 	}
 	defer CloseAll()
 	CloseLeakedTestInstances()
-	if !leaked.closed {
+	if !leaked.closedForTest() {
 		t.Fatal("the leak sweep left a registered instance open")
 	}
-	if shared.closed {
+	if shared.closedForTest() {
 		t.Fatal("the leak sweep closed a registry shared handle")
 	}
 	if err := leaked.Close(); err != nil {

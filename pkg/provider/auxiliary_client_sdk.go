@@ -182,6 +182,7 @@ func (c *auxOpenAIClient) refreshAPIKey() (string, error) {
 
 // One chat completions request split into body, headers, query and timeout
 type auxSDKRequest struct {
+	path       string
 	body       []byte
 	stream     bool
 	headers    map[string]any
@@ -191,7 +192,7 @@ type auxSDKRequest struct {
 }
 
 func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKRequest, error) {
-	r := &auxSDKRequest{query: map[string]string{}, headers: map[string]any{}, timeout: c.timeout, hasTimeout: c.hasTimeout}
+	r := &auxSDKRequest{path: "chat/completions", query: map[string]string{}, headers: map[string]any{}, timeout: c.timeout, hasTimeout: c.hasTimeout}
 	body := map[string]any{}
 	for k, v := range kwargs {
 		switch k {
@@ -254,6 +255,15 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 
 // Sends one chat completion with SDK retries, a response map or an SSE chunk stream when streaming
 func (c *auxOpenAIClient) CreateChatCompletion(ctx context.Context, kwargs map[string]any) (any, error) {
+	return c.create(ctx, "chat/completions", kwargs)
+}
+
+// Sends one Responses API request with SDK retries, a response map or an SSE event stream when streaming
+func (c *auxOpenAIClient) CreateResponse(ctx context.Context, kwargs map[string]any) (any, error) {
+	return c.create(ctx, "responses", kwargs)
+}
+
+func (c *auxOpenAIClient) create(ctx context.Context, path string, kwargs map[string]any) (any, error) {
 	if c.initErr != nil {
 		return nil, c.initErr
 	}
@@ -261,6 +271,7 @@ func (c *auxOpenAIClient) CreateChatCompletion(ctx context.Context, kwargs map[s
 	if err != nil {
 		return nil, err
 	}
+	req.path = path
 	for retries := 0; ; retries++ {
 		out, retryAfter, retry, err := c.attempt(ctx, req, retries)
 		if !retry || retries >= c.maxRetries {
@@ -316,7 +327,7 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 	if err != nil {
 		return nil, nil, false, err
 	}
-	target, err := url.Parse(c.baseURL + "chat/completions")
+	target, err := url.Parse(c.baseURL + r.path)
 	if err != nil {
 		return nil, nil, false, err
 	}

@@ -98,3 +98,8 @@ func (c *auxProbeClient) CreateChatCompletion(context.Context, map[string]any) (
 }
 
 func (c *auxProbeClient) Close() error { return c.used("close") }
+
+// Availability probe clients refuse the Responses call like every other real client use
+func (c *auxProbeClient) CreateResponse(context.Context, map[string]any) (any, error) {
+	return nil, c.used("responses")
+}

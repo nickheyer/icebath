@@ -8,6 +8,7 @@ require (
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/alecthomas/chroma/v2 v2.27.0
+	github.com/andybalholm/brotli v1.2.0
 	github.com/charmbracelet/harmonica v0.2.0
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4
 	github.com/charmbracelet/x/ansi v0.11.9
@@ -15,6 +16,7 @@ require (
 	github.com/daytona/clients/api-client-go v0.227.3
 	github.com/daytona/clients/sdk-go v0.227.3
 	github.com/dlclark/regexp2/v2 v2.2.1
+	github.com/ebitengine/purego v0.10.1
 	github.com/gen2brain/avif v0.6.0
 	github.com/gen2brain/heic v0.7.2
 	github.com/google/uuid v1.6.0
@@ -27,11 +29,13 @@ require (
 	github.com/spf13/pflag v1.0.9
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/ulikunitz/xz v0.5.17
+	github.com/xo/terminfo v1.0.0
 	golang.org/x/image v0.46.0
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
+	modernc.org/libc v1.77.1
 	modernc.org/sqlite v1.60.1
 )
 
@@ -63,7 +67,6 @@ require (
 	github.com/daytona/clients/analytics-api-client-go v0.0.0-20260722121532-3d2223c79fe5 // indirect
 	github.com/daytona/clients/toolbox-api-client-go v0.227.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.10.1
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -82,7 +85,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -102,7 +104,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )

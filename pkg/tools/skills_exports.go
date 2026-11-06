@@ -53,3 +53,8 @@ type FileLockHolder = fileLockHolder
 func AcquireFileLock(lockPath string, holder *FileLockHolder, timeout time.Duration, msg string) (func(), error) {
 	return acquireFileLock(lockPath, holder, timeout, msg)
 }
+
+// Environment for internal git and gh runs that never prompt, page or read user git config
+func NoninteractiveGitEnv(base map[string]string) map[string]string {
+	return noninteractiveGitEnv(base)
+}

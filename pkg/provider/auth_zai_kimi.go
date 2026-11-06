@@ -47,8 +47,7 @@ var zaiHTTPClientFn = func(timeout time.Duration) *http.Client {
 var detectZaiEndpointFn = detectZaiEndpoint
 
 // Probes one Z.AI endpoint with each candidate model in order, nil when none answers 200
-func probeSingleZaiEndpoint(ctx context.Context, apiKey string, ep zaiEndpoint, timeout time.Duration) map[string]string {
-	client := zaiHTTPClientFn(timeout)
+func probeSingleZaiEndpoint(ctx context.Context, client *http.Client, apiKey string, ep zaiEndpoint) map[string]string {
 	for _, model := range ep.ProbeModels {
 		body, _ := json.Marshal(map[string]any{"model": model, "stream": false, "max_tokens": 1,
 			"messages": []any{map[string]any{"role": "user", "content": "ping"}}})
@@ -87,8 +86,9 @@ func detectZaiEndpoint(ctx context.Context, apiKey string, timeout time.Duration
 		result map[string]string
 	}
 	ch := make(chan outcome, len(endpoints))
+	client := zaiHTTPClientFn(timeout)
 	for _, ep := range endpoints {
-		go func(ep zaiEndpoint) { ch <- outcome{ep.ID, probeSingleZaiEndpoint(ctx, apiKey, ep, timeout)} }(ep)
+		go func(ep zaiEndpoint) { ch <- outcome{ep.ID, probeSingleZaiEndpoint(ctx, client, apiKey, ep)} }(ep)
 	}
 	done := map[string]bool{}
 	results := map[string]map[string]string{}

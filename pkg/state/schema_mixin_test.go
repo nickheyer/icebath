@@ -16,7 +16,7 @@ import (
 func schemaFixture(t *testing.T, rows [][3]string) (*sessionSchema, *fakeSearchHost) {
 	t.Helper()
 	s, host := searchStore(t, rows)
-	return newSessionSchema(host, s.fts), host
+	return newSessionSchema(&fakeSchemaHost{fakeSearchHost: host, search: s}, s.fts), host
 }
 
 func triggerSQL(t *testing.T, conn SQLiteConn, name string) string {

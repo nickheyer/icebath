@@ -396,7 +396,7 @@ func (c *bedrockConverseClient) CountTokens(ctx context.Context, req *Request) (
 	if err != nil {
 		return 0, err
 	}
-	return estimateBodyContextTokens(p.kwargs, CurrentImageTokenCost(ctx)), nil
+	return EstimateRequestContextTokens(ctx, p.kwargs), nil
 }
 
 // Raw Converse body or a normalized answer as the transport's normalized response, stamped with the model

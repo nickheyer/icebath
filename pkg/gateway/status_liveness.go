@@ -40,7 +40,7 @@ func RecordStartAndCheckStorm(h string, maxStarts int, windowS, backoffCapS floa
 
 func recordStartAndCheckStorm(h string, maxStarts int, windowS, backoffCapS float64) (*StormInfo, error) {
 	path := filepath.Join(h, "gateway-starts.log")
-	if err := makeUserDir(filepath.Dir(path), 0o777, true, true); err != nil {
+	if _, err := home.MakeUserDir(filepath.Dir(path), 0o777, true, true); err != nil {
 		return nil, err
 	}
 	now := float64(time.Now().UnixMicro()) / 1e6
@@ -119,6 +119,11 @@ func ProfileNameForHome(profileHome string) (string, bool) {
 		return "default", true
 	}
 	return "", false
+}
+
+// Multiplexer rung of the liveness ladder, swapped by tests that pin the roster answer
+var statusMultiplexerLivenessForProfile = func(profileDir string) (int, *pyjson.Object, bool, error) {
+	return MultiplexerLivenessForProfile(profileDir)
 }
 
 // Pid and host gateway_state.json when the live host multiplexer serves the profile at profileDir
@@ -324,7 +329,7 @@ func ResolveGatewayLiveness(o LivenessOptions) GatewayLiveness {
 	if !scoped {
 		ownHome = processHermesHome()
 	}
-	if pid, muxRuntime, ok, err := MultiplexerLivenessForProfile(ownHome); err != nil {
+	if pid, muxRuntime, ok, err := statusMultiplexerLivenessForProfile(ownHome); err != nil {
 		probeError = true
 	} else if ok {
 		return GatewayLiveness{Running: true, PID: pid, Source: "multiplexer", HealthBody: healthBody, Runtime: muxRuntime}

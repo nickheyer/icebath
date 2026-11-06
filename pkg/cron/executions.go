@@ -18,6 +18,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/monitoring"
+	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -353,7 +355,7 @@ func rowsChanged(res sql.Result, err error) (int64, error) {
 // Projects a ledger record to monitoring, never letting monitoring break the ledger
 func emitExecutionStateSafe(record map[string]any, deliveryOutcome *string) {
 	defer func() { recover() }()
-	emitExecutionState(record, deliveryOutcome)
+	monitoring.EmitExecutionState(record, deliveryOutcome)
 }
 
 // Text column value, empty for NULL
@@ -548,7 +550,7 @@ func (l *Ledger) Finish(ctx context.Context, executionID string, success bool, e
 		return nil, err
 	}
 	emitExecutionStateSafe(record, deliveryOutcome)
-	recordCronFinish(record, deliveryOutcome)
+	observability.RecordCronFinish(ctx, record, deliveryOutcome)
 	return record, nil
 }
 
@@ -634,7 +636,7 @@ func (l *Ledger) RecoverReceipted(ctx context.Context, executionID, jobID string
 		return nil, err
 	}
 	emitExecutionStateSafe(record, deliveryOutcome)
-	recordCronFinish(record, deliveryOutcome)
+	observability.RecordCronFinish(ctx, record, deliveryOutcome)
 	return record, nil
 }
 

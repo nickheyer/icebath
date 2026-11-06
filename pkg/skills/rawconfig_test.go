@@ -679,3 +679,15 @@ func TestSkillCreateDirFollowsLiveConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestIsExternalSkillPathExported(t *testing.T) {
+	f := newProjectFixture(t)
+	f.trust(t)
+	s := f.scope()
+	if !s.IsExternalSkillPath(filepath.Join(f.repo, ".icebath", "skills", "repo-skill", "SKILL.md")) {
+		t.Fatal("trusted project skill is not external")
+	}
+	if s.IsExternalSkillPath(filepath.Join(s.SkillsDir(), "local-skill", "SKILL.md")) {
+		t.Fatal("local skill reported external")
+	}
+}

@@ -29,6 +29,16 @@ func ironHome(t *testing.T) (string, IronProxy) {
 	return h, IronProxy{Home: h}
 }
 
+// State dir of the proxy home, failing the test when it cannot be created
+func ironStateDir(t *testing.T, p IronProxy) string {
+	t.Helper()
+	state, err := p.stateDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state
+}
+
 func sampleMapping(envName string) TokenMapping {
 	return TokenMapping{ProxyToken: MintProxyToken("test"), RealEnvName: envName, UpstreamHosts: []string{"openrouter.ai", "*.openrouter.ai"}, MatchHeaders: []string{"Authorization"}}
 }
@@ -93,10 +103,10 @@ func TestBuildProxyConfigCustomAllowedHostsAndNoAuditPath(t *testing.T) {
 
 func TestLoadMappingsHandlesCorruptJSON(t *testing.T) {
 	_, p := ironHome(t)
-	if err := os.WriteFile(filepath.Join(p.stateDir(), "mappings.json"), []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(ironStateDir(t, p), "mappings.json"), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if len(p.LoadMappings()) != 0 {
+	if loaded, err := p.LoadMappings(); err != nil || len(loaded) != 0 {
 		t.Fatal("corrupt mappings load as empty")
 	}
 }
@@ -137,7 +147,7 @@ func fakeIronProcess(t *testing.T) int {
 func TestStartProxyIdempotentWhenAlreadyRunning(t *testing.T) {
 	_, p := ironHome(t)
 	pid := fakeIronProcess(t)
-	state := p.stateDir()
+	state := ironStateDir(t, p)
 	_ = os.WriteFile(filepath.Join(state, "iron-proxy.pid"), []byte(strconv.Itoa(pid)), 0o600)
 	_ = os.WriteFile(filepath.Join(state, "proxy.yaml"), []byte("proxy: {}\n"), 0o600)
 	status, err := p.StartProxy(IronProxyStartOptions{Binary: "/nonexistent/iron-proxy"})
@@ -176,11 +186,14 @@ func TestMappingsRoundtripPreservesHeadersAndAliases(t *testing.T) {
 	if _, err := p.WriteMappings([]TokenMapping{m}); err != nil {
 		t.Fatal(err)
 	}
-	loaded := p.LoadMappings()
+	loaded, err := p.LoadMappings()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(loaded) != 1 || loaded[0].MatchHeaders[0] != "x-goog-api-key" || loaded[0].AliasEnvNames[0] != "GOOGLE_API_KEY" || loaded[0].ProxyToken != m.ProxyToken {
 		t.Fatalf("got %+v", loaded)
 	}
-	if info, _ := os.Stat(filepath.Join(p.stateDir(), "mappings.json")); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(filepath.Join(ironStateDir(t, p), "mappings.json")); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatal("mappings are private")
 	}
 }
@@ -228,7 +241,7 @@ func TestReloadProxyPostsBearerToManagementEndpoint(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	host, port, _ := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
-	state := p.stateDir()
+	state := ironStateDir(t, p)
 	_ = os.WriteFile(filepath.Join(state, "iron-proxy.pid"), []byte(strconv.Itoa(pid)), 0o600)
 	_ = os.WriteFile(filepath.Join(state, "proxy.yaml"), []byte("management:\n  listen: "+host+":"+port+"\n"), 0o600)
 	token, _ := p.EnsureManagementToken(false)
@@ -259,7 +272,7 @@ func TestGetStatusProbesConfiguredBindHost(t *testing.T) {
 	}
 	t.Cleanup(func() { listener.Close() })
 	port := listener.Addr().(*net.TCPAddr).Port
-	state := p.stateDir()
+	state := ironStateDir(t, p)
 	_ = os.WriteFile(filepath.Join(state, "proxy.yaml"), []byte("proxy:\n  http_listen: 127.0.0.1:"+strconv.Itoa(port)+"\n"), 0o600)
 	_ = os.WriteFile(filepath.Join(state, "ca.crt"), []byte("cert"), 0o600)
 	_ = os.WriteFile(filepath.Join(state, "iron-proxy.pid"), []byte(strconv.Itoa(pid)), 0o600)
@@ -316,5 +329,36 @@ func TestProxyConfigRoundTripsThroughYAML(t *testing.T) {
 	raw, _ := json.Marshal(cfg)
 	if !strings.Contains(string(raw), "\"require\":true") {
 		t.Fatal("secret rules fail closed")
+	}
+}
+
+func TestUncreatableStateDirFailsEveryWriterAndStop(t *testing.T) {
+	h, p := ironHome(t)
+	if err := os.WriteFile(filepath.Join(h, "proxy"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := p.EnsureCACert(false); err == nil {
+		t.Fatal("the CA cert needs the state dir")
+	}
+	if _, err := p.EnsureManagementToken(false); err == nil {
+		t.Fatal("the management token needs the state dir")
+	}
+	if _, err := p.WriteProxyConfig(map[string]any{"proxy": map[string]any{}}); err == nil {
+		t.Fatal("proxy.yaml needs the state dir")
+	}
+	if _, err := p.WriteMappings([]TokenMapping{sampleMapping("OPENROUTER_API_KEY")}); err == nil {
+		t.Fatal("mappings.json needs the state dir")
+	}
+	if _, err := p.LoadMappings(); err == nil {
+		t.Fatal("loading mappings creates the state dir first")
+	}
+	if _, err := p.StartProxy(IronProxyStartOptions{Binary: "/nonexistent/iron-proxy"}); err == nil {
+		t.Fatal("start needs the state dir for its config")
+	}
+	if stopped, err := p.StopProxy(); err == nil || stopped {
+		t.Fatal("stop cannot forget the daemon without the state dir")
+	}
+	if raw, _ := os.ReadFile(filepath.Join(h, "proxy")); string(raw) != "not a directory" {
+		t.Fatal("the blocking file is left alone")
 	}
 }

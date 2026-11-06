@@ -153,7 +153,7 @@ func (c *chatCompletionsClient) prepare(ctx context.Context, req *Request, strea
 	}
 	wireMap := wire.Map()
 	return &ccPrepared{build: build, body: body, wire: wireMap, url: endpoint, headers: headers, settings: settings,
-		estTokens: estimateBodyContextTokens(wireMap, CurrentImageTokenCost(ctx))}, nil
+		estTokens: EstimateRequestContextTokens(ctx, wireMap)}, nil
 }
 
 func (c *chatCompletionsClient) newRequest(ctx context.Context, p *ccPrepared) (*http.Request, error) {

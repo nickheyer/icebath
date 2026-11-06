@@ -1,10 +1,14 @@
 package provider
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/home"
+)
 
 // Canonical default endpoints shared by resolution and the profile table
 const (
-	OpenRouterBaseURL     = "https://openrouter.ai/api/v1"
+	OpenRouterBaseURL     = home.OpenRouterBaseURL
 	CodexBaseURL          = "https://chatgpt.com/backend-api/codex"
 	OpenAIBaseURL         = "https://api.openai.com/v1"
 	AnthropicBaseURL      = "https://api.anthropic.com"

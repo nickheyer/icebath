@@ -436,26 +436,38 @@ func mergeCronStore(src, home string) error {
 	if h.LoadJobs == nil || h.ImportJobDefinitions == nil {
 		panic("manage: pkg/cron must install profiles.CronDistributionHooks (cron/jobs.py load_jobs, cron/job_definition.py import_job_definitions)")
 	}
-	tmp, err := os.MkdirTemp("", "icebath_dist_cron_")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	if err := os.Mkdir(filepath.Join(tmp, "cron"), 0o777); err != nil {
-		return err
-	}
-	if err := pyfs.Copy2(src, filepath.Join(tmp, "cron", "jobs.json")); err != nil {
-		return err
-	}
 	wrap := func(err error) error {
 		if isOSError(err) {
 			return err
 		}
 		return distErr("Could not merge cron jobs into %s: %v", dest, err)
 	}
-	jobs, err := h.LoadJobs(tmp)
+	shipped, err := loadShippedCronJobs(src, h.LoadJobs, wrap)
 	if err != nil {
+		return err
+	}
+	if err := h.ImportJobDefinitions(home, shipped, "Installed from a profile distribution; review it, then resume."); err != nil {
 		return wrap(err)
+	}
+	return nil
+}
+
+// Jobs of a shipped cron store keyed by id, loaded from a scratch store removed before returning
+func loadShippedCronJobs(src string, load func(home string) ([]any, error), wrap func(error) error) (_ *pyjson.Object, err error) {
+	tmp, err := os.MkdirTemp("", "icebath_dist_cron_")
+	if err != nil {
+		return nil, err
+	}
+	defer pyfs.CloseTempDir(tmp, &err)
+	if err := os.Mkdir(filepath.Join(tmp, "cron"), 0o777); err != nil {
+		return nil, err
+	}
+	if err := pyfs.Copy2(src, filepath.Join(tmp, "cron", "jobs.json")); err != nil {
+		return nil, err
+	}
+	jobs, err := load(tmp)
+	if err != nil {
+		return nil, wrap(err)
 	}
 	shipped := pyjson.NewObject()
 	for _, j := range jobs {
@@ -463,10 +475,7 @@ func mergeCronStore(src, home string) error {
 			shipped.Set(profilesPyStr(job["id"]), job)
 		}
 	}
-	if err := h.ImportJobDefinitions(home, shipped, "Installed from a profile distribution; review it, then resume."); err != nil {
-		return wrap(err)
-	}
-	return nil
+	return shipped, nil
 }
 
 // Python str of a job id, the text itself for a string
@@ -751,12 +760,12 @@ func bootstrapUserDirs(target string) error {
 }
 
 // Installs a distribution from source into a new profile, or over an existing one with force, returning its plan
-func InstallDistribution(ctx context.Context, source, name string, force, createAlias bool) (*InstallPlan, error) {
+func InstallDistribution(ctx context.Context, source, name string, force, createAlias bool) (_ *InstallPlan, err error) {
 	tmp, err := os.MkdirTemp("", "icebath_dist_install_")
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmp)
+	defer pyfs.CloseTempDir(tmp, &err)
 	plan, err := PlanInstall(ctx, source, tmp, name)
 	if err != nil {
 		return nil, err
@@ -796,7 +805,7 @@ func existingDistProfile(name string) (string, string, error) {
 }
 
 // Re-pulls an installed distribution from its recorded source, user data kept and config.yaml kept unless forced
-func UpdateDistribution(ctx context.Context, profileName string, forceConfig bool) (*InstallPlan, error) {
+func UpdateDistribution(ctx context.Context, profileName string, forceConfig bool) (_ *InstallPlan, err error) {
 	canon, target, err := existingDistProfile(profileName)
 	if err != nil {
 		return nil, err
@@ -816,7 +825,7 @@ func UpdateDistribution(ctx context.Context, profileName string, forceConfig boo
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmp)
+	defer pyfs.CloseTempDir(tmp, &err)
 	plan, err := PlanInstall(ctx, existing.Source, tmp, canon)
 	if err != nil {
 		return nil, err

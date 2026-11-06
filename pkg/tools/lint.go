@@ -2074,7 +2074,6 @@ const (
 	libyamlMaxFileSize        = math.MaxInt64
 	libyamlInitialStackSize   = 16
 	libyamlInitialStringSize  = 16
-	libyamlStackByteLimit     = math.MaxInt32 / 2
 	libyamlMaxNumberLength    = 9
 	libyamlSizeofInt          = 4
 	libyamlSizeofMark         = 24
@@ -2082,6 +2081,9 @@ const (
 	libyamlSizeofState        = 4
 	libyamlSizeofTagDirective = 16
 )
+
+// Bytes a libyaml stack may reach before growth fails with MemoryError, lowered by the scaled stack limit test
+var libyamlStackByteLimit = math.MaxInt32 / 2
 
 type yamlMark struct {
 	index, line, column int

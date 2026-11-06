@@ -18,28 +18,7 @@ import (
 var EnvRefusalOut io.Writer = os.Stderr
 
 // Package manager owning the install from ICEBATH_MANAGED or the home marker, empty when unmanaged
-func ManagedSystem(h string) string {
-	marker := strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_MANAGED")))
-	set := marker != ""
-	if !set {
-		path := filepath.Join(h, ".managed")
-		if _, err := os.Stat(path); err == nil {
-			set = true
-			if b, err := os.ReadFile(path); err == nil {
-				marker = strings.ToLower(strings.TrimSpace(strings.ToValidUTF8(string(b), "�")))
-			} else {
-				marker = ""
-			}
-		}
-	}
-	switch {
-	case !set, marker == "brew", marker == "homebrew", marker == "false", marker == "0", marker == "no", marker == "off":
-		return ""
-	case marker == "", marker == "true", marker == "1", marker == "yes":
-		return "nixos"
-	}
-	return marker
-}
+func ManagedSystem(h string) string { return home.ManagedSystem(h) }
 
 // User facing refusal for an action on a package manager managed install
 func FormatManagedMessage(h, action string) string {

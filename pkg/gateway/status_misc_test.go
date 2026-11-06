@@ -326,3 +326,20 @@ func TestSharedListenerMirrorsAndMultiplexerProjection(t *testing.T) {
 		t.Fatal(def.Keys)
 	}
 }
+
+func TestSameHermesHomeAndProfileLabelForHomeExports(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ICEBATH_HOME", root)
+	if same, err := SameHermesHome(root, root+string(os.PathSeparator)); err != nil || !same {
+		t.Fatalf("same %v %v", same, err)
+	}
+	if same, err := SameHermesHome(root, filepath.Join(root, "other")); err != nil || same {
+		t.Fatalf("distinct %v %v", same, err)
+	}
+	if got := ProfileLabelForHome(filepath.Join(root, "profiles", "coder")); got != "coder" {
+		t.Fatalf("profile label %q", got)
+	}
+	if got := ProfileLabelForHome(filepath.Join(root, "elsewhere", "Bad Name")); got != "" {
+		t.Fatalf("unknown label %q", got)
+	}
+}

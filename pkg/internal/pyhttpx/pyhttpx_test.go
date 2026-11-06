@@ -1,7 +1,10 @@
 package pyhttpx
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
+	"github.com/andybalholm/brotli"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -61,5 +64,62 @@ func TestDoReadsBodyAndTimesOutPerPhase(t *testing.T) {
 	req, _ = http.NewRequest("GET", srv.URL+"/redir", nil)
 	if resp, err := Do(PlainClient(true), req, time.Second); err != nil || resp.StatusCode != 200 {
 		t.Fatalf("followed redirect gave %v %v", resp, err)
+	}
+}
+
+func TestRetryAfterSecondsAndHeaderGet(t *testing.T) {
+	h := http.Header{}
+	if _, ok := RetryAfterSeconds(h); ok {
+		t.Fatal("absent header parsed")
+	}
+	for raw, want := range map[string]float64{"5": 5, " 2.5 ": 2.5, "-3": 0, "1_0": 10, "nan": 0} {
+		h.Set("Retry-After", raw)
+		if got, ok := RetryAfterSeconds(h); !ok || got != want {
+			t.Fatalf("%q -> %v %v", raw, got, ok)
+		}
+	}
+	h.Set("retry-after", time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat))
+	if got, ok := RetryAfterSeconds(h); !ok || got != 0 {
+		t.Fatalf("past date -> %v %v", got, ok)
+	}
+	h.Set("Retry-After", time.Now().Add(30*time.Second).UTC().Format(http.TimeFormat))
+	if got, ok := RetryAfterSeconds(h); !ok || got < 25 || got > 31 {
+		t.Fatalf("future date -> %v %v", got, ok)
+	}
+	h.Set("Retry-After", "soon")
+	if _, ok := RetryAfterSeconds(h); ok {
+		t.Fatal("garbage parsed")
+	}
+	h.Add("X-A", "1")
+	h.Add("X-A", "2")
+	if HeaderGet(h, "x-a", "") != "1, 2" || HeaderGet(h, "X-B", "d") != "d" {
+		t.Fatal("HeaderGet joins repeated values")
+	}
+}
+
+func TestDecodeContentUndoesEncodingsLikeHttpx(t *testing.T) {
+	var gz bytes.Buffer
+	w := gzip.NewWriter(&gz)
+	w.Write([]byte(`{"skills": []}`))
+	w.Close()
+	h := http.Header{}
+	h.Set("Content-Encoding", "gzip")
+	if out, err := DecodeContent(h, gz.Bytes()); err != nil || string(out) != `{"skills": []}` {
+		t.Fatal(string(out), err)
+	}
+	var br bytes.Buffer
+	bw := brotli.NewWriter(&br)
+	bw.Write([]byte("brotli body"))
+	bw.Close()
+	h.Set("Content-Encoding", "br")
+	if out, err := DecodeContent(h, br.Bytes()); err != nil || string(out) != "brotli body" {
+		t.Fatal(string(out), err)
+	}
+	var de *DecodingError
+	if _, err := DecodeContent(h, []byte("not brotli at all")); !errors.As(err, &de) {
+		t.Fatal(err)
+	}
+	if out, _ := DecodeContent(http.Header{}, []byte("plain")); string(out) != "plain" {
+		t.Fatal(string(out))
 	}
 }

@@ -316,6 +316,19 @@ class HostRuntime:
         args, kwargs = self._decode_args(params)
         return encode(self._run(target(*args, **kwargs)))
 
+    def op_provider_module_call(self, params: dict[str, Any]) -> Any:
+        """Load a provider package the way the memory loader names it, then call one function of a submodule."""
+        package = _load_provider_package(str(params["module_name"]), Path(str(params["path"])),
+                                         [str(p) for p in params.get("parents") or []],
+                                         Path(str(params["plugins_root"])), params.get("synthetic_namespace"))
+        if package is None:
+            return encode({"loaded": False})
+        submodule = str(params.get("submodule") or "")
+        target = importlib.import_module(f"{package.__name__}.{submodule}") if submodule else package
+        function = getattr(target, str(params["function"]))
+        args, kwargs = self._decode_args(params)
+        return encode({"loaded": True, "result": self._run(function(*args, **kwargs))})
+
     def op_asgi(self, params: dict[str, Any]) -> Any:
         """Serve one dashboard API request with the plugin's FastAPI ``router`` (loaded once)."""
         api_path = Path(str(params["dashboard_dir"])) / str(params["api_file"])
@@ -432,6 +445,7 @@ class HostRuntime:
 _HANDLERS: dict[str, Callable[[HostRuntime, dict[str, Any]], Any]] = {
     "hello": HostRuntime.op_hello, "load": HostRuntime.op_load, "load_tools": HostRuntime.op_load_tools, "load_instance": HostRuntime.op_load_instance,
     "asgi": HostRuntime.op_asgi, "profile_call": HostRuntime.op_profile_call,
+    "provider_module_call": HostRuntime.op_provider_module_call,
     "invoke": HostRuntime.op_invoke,
     "obj_invoke": HostRuntime.op_obj_invoke, "obj_getattr": HostRuntime.op_obj_getattr,
     "obj_setattr": HostRuntime.op_obj_setattr, "unload": HostRuntime.op_unload,
@@ -523,6 +537,75 @@ def _import_plugin(params: dict[str, Any]) -> Any:
             sys.modules.pop(name, None)
         raise
     return module
+
+
+_PROVIDER_LOAD_LOCK = threading.RLock()
+
+
+def _new_module(name: str, file: Path, search_locations: Optional[list] = None) -> Any:
+    """spec -> module -> sys.modules[name] (not executed); None if no spec."""
+    spec = importlib.util.spec_from_file_location(name, str(file), submodule_search_locations=search_locations)
+    if not spec:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    return mod
+
+
+def _exec_module(mod: Any) -> bool:
+    """Exec a _new_module module, False when it is None or raised; the sys.modules entry stays."""
+    if mod is None:
+        return False
+    try:
+        mod.__spec__.loader.exec_module(mod)
+        return True
+    except Exception as exc:
+        logging.getLogger(__name__).debug("Failed to exec_module %s: %s", mod.__name__, exc)
+        return False
+
+
+def _load_provider_package(module_name: str, plugin_dir: Path, parents: list, plugins_root: Path,
+                           synthetic_namespace: Optional[str]) -> Any:
+    """plugins.plugin_loader.load_plugin_module: parents, synthetic namespace, siblings, then the package."""
+    init_file = plugin_dir / "__init__.py"
+    if not init_file.exists():
+        return None
+    with _PROVIDER_LOAD_LOCK:
+        cached = sys.modules.get(module_name)
+        if cached is not None and getattr(cached, "__file__", None):
+            return cached
+        for parent in parents:
+            parent_path = plugins_root.joinpath(*parent.split(".")[1:])
+            if parent not in sys.modules and (parent_path / "__init__.py").exists():
+                _exec_module(_new_module(parent, parent_path / "__init__.py", [str(parent_path)]))
+        if synthetic_namespace and synthetic_namespace not in sys.modules:
+            ns_pkg = types.ModuleType(synthetic_namespace)
+            ns_pkg.__path__ = []  # type: ignore[attr-defined]
+            ns_pkg.__package__ = synthetic_namespace
+            sys.modules[synthetic_namespace] = ns_pkg
+        mod = _new_module(module_name, init_file, [str(plugin_dir)])
+        if mod is None:
+            return None
+        loaded_submodules = []
+        for sub_file in plugin_dir.glob("*.py"):
+            full_sub_name = f"{module_name}.{sub_file.stem}"
+            if sub_file.name == "__init__.py" or full_sub_name in sys.modules:
+                continue
+            sub_mod = _new_module(full_sub_name, sub_file)
+            if _exec_module(sub_mod):
+                loaded_submodules.append((sub_file.stem, sub_mod))
+            else:
+                sys.modules.pop(full_sub_name, None)
+        if not _exec_module(mod):
+            sys.modules.pop(module_name, None)
+            return None
+        parent_name, child_name = module_name.rsplit(".", 1)
+        parent_mod = sys.modules.get(parent_name)
+        if parent_mod is not None:
+            setattr(parent_mod, child_name, mod)
+        for sub_name, sub_mod in loaded_submodules:
+            setattr(mod, sub_name, sub_mod)
+        return mod
 
 
 def _take_protocol_streams():

@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -202,6 +203,19 @@ func icebathFitError(mf *Manifest) string {
 		return ""
 	}
 	return coreRequirementError(mf.Path)
+}
+
+// Applicable core requirement refusal of a plugin directory, empty when its declaration cannot be read
+func coreRequirementError(pluginDir string) string {
+	declaration, err := pm.ReadPythonDeclaration(pluginDir)
+	if err != nil {
+		return ""
+	}
+	reason, err := pm.CoreRequirementError(context.Background(), declaration)
+	if err != nil {
+		return ""
+	}
+	return reason
 }
 
 // Reports missing Python dependencies without installing during discovery

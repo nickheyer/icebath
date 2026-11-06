@@ -554,12 +554,7 @@ func discoverPortableMCP(root, dataRoot string, diags *[]AgentPluginDiagnostic, 
 		return fail("mcpServers must be an object")
 	}
 	out := map[string]map[string]any{}
-	names := make([]string, 0, len(servers))
-	for n := range servers {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range orderedMapKeys(servers, jsonObjectKeyOrder(path, "mcpServers")) {
 		server := asMap(servers[name])
 		var translated map[string]any
 		var terr error

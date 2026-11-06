@@ -624,12 +624,7 @@ func isAlnumUnderscore(s string) bool {
 	return true
 }
 
-func normalizeScope(scope string) string {
-	if strings.TrimSpace(scope) == "" {
-		return ""
-	}
-	return home.Key(scope)
-}
+func normalizeScope(scope string) string { return home.NormalizeScope(scope) }
 
 // RegisterSecretSource registers a source, true on success, rejections are logged never raised
 func RegisterSecretSource(source SecretSource, replace, builtin bool, scope string) bool {

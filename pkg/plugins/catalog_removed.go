@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"embed"
-	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -10,12 +9,11 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
-	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-//go:embed catalog/removed.yaml
+//go:embed catalog/*.yaml
 var inTreeCatalog embed.FS
 
 const LiveCatalogMaxStaleSeconds = 24 * 60 * 60
@@ -28,22 +26,6 @@ type RemovedEntry struct {
 	Repo   string
 	Reason string
 	Date   string
-}
-
-// Parses a catalog YAML document, nil with a warning when unreadable or malformed
-func readCatalogYAML(raw []byte, label string) any {
-	var doc any
-	if err := yaml.Unmarshal(stripBOM(raw), &doc); err != nil {
-		logWarn("Plugin catalog: failed to read "+label, "error", err)
-		return nil
-	}
-	if doc == nil {
-		return map[string]any{}
-	}
-	if m, ok := doc.(map[string]any); ok {
-		return normalizeAnyMaps(m)
-	}
-	return doc
 }
 
 // Kill list entries from a raw removed list, skipping rows without a name
@@ -184,12 +166,8 @@ func staleLiveCache(cache string) map[string]any {
 	if err != nil || !st.Mode().IsRegular() {
 		return nil
 	}
-	raw, err := os.ReadFile(cache)
+	data, err := readLiveCacheDoc(cache)
 	if err != nil {
-		return nil
-	}
-	var data map[string]any
-	if err := json.Unmarshal(stripBOM(raw), &data); err != nil || data == nil {
 		return nil
 	}
 	if time.Since(st.ModTime()).Seconds() > LiveCatalogMaxStaleSeconds {

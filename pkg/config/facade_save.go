@@ -285,7 +285,7 @@ func SaveConfig(ctx context.Context, h string, cfg map[string]any, opts SaveOpti
 	observe := savedObserver
 	facadeMu.RUnlock()
 	if observe != nil && ctx.Value(appliedWriteKey{}) == nil {
-		observe(raw, current)
+		observe(h, raw, current)
 	}
 	return nil
 }

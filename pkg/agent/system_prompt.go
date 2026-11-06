@@ -825,7 +825,7 @@ func sessionPrompt(a *AIAgent) string {
 	if a.sessionDB == nil || a.sessionID == "" {
 		return ""
 	}
-	row, err := a.sessionDB.GetSession(a.sessionID)
+	row, err := a.sessionDB.GetSession(context.Background(), a.sessionID)
 	if err != nil {
 		slog.Debug(fmt.Sprintf("workspace snapshot: session row read failed (session=%s)", a.sessionID), "err", err)
 		return ""
@@ -833,7 +833,9 @@ func sessionPrompt(a *AIAgent) string {
 	if row == nil {
 		return ""
 	}
-	return row.SystemPrompt
+	prompt, _ := row.Get("system_prompt")
+	text, _ := prompt.(string)
+	return text
 }
 
 // Pins the workspace snapshot the session's existing prompt carries when it was taken in this cwd
@@ -927,7 +929,7 @@ func joinTier(parts []string) string {
 func BuildSystemPromptParts(ctx context.Context, a *AIAgent, systemMessage *string) (SystemPromptParts, error) {
 	var ctxLen *int
 	if a.contextCompressor != nil {
-		if n := a.contextCompressor.ContextLength(); n > 0 {
+		if n := a.contextCompressor.Base().ContextLength; n > 0 {
 			ctxLen = &n
 		}
 	}

@@ -14,6 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// Control verb and store opener the identity rekey goes through, swapped by tests
+var (
+	migrateGatewayIdentity = gatewayMigrateProfileIdentity
+	acquireStateDB         = state.Acquire
+)
+
 // Retries the durable identity migration of a completed rename, true when every applicable identity moved
 func MigrateProfileIdentity(ctx context.Context, oldName, newName string) (bool, error) {
 	oldCanon, err := profiles.CanonValid(oldName)
@@ -103,7 +109,7 @@ func purgeProfileIdentity(ctx context.Context, canon string, liveMux bool) bool 
 		if !pathExists(dbPath) {
 			continue
 		}
-		db, err := state.Acquire(ctx, dbPath)
+		db, err := acquireStateDB(ctx, dbPath)
 		if err == nil {
 			err = db.PurgeProfileState(canon)
 			state.ReleaseOrClose(db)
@@ -163,7 +169,7 @@ func migrateProfileIdentity(ctx context.Context, oldCanon, newCanon string, live
 	root := profiles.DefaultHome()
 	if liveMux {
 		var reason string
-		answer, err := gatewayMigrateProfileIdentity(root, oldCanon, newCanon)
+		answer, err := migrateGatewayIdentity(root, oldCanon, newCanon)
 		if err != nil {
 			reason = excText(err)
 		} else {
@@ -188,7 +194,7 @@ func migrateProfileIdentity(ctx context.Context, oldCanon, newCanon string, live
 		if !pathExists(dbPath) {
 			continue
 		}
-		db, err := state.Acquire(ctx, dbPath)
+		db, err := acquireStateDB(ctx, dbPath)
 		if err == nil {
 			err = db.RekeyProfileState(oldCanon, newCanon)
 			state.ReleaseOrClose(db)

@@ -287,7 +287,7 @@ type schemaHost interface {
 	readOnly() bool
 	quarantineReason() (string, bool)
 	foreignStateDBHolders() ([]Holder, error)
-	reapInactiveOrphanDesktopHolders(holders []Holder, minAgeSeconds float64) []int
+	reapInactiveOrphanDesktopHolders(holders []Holder, minAgeSeconds float64) ([]int, error)
 	ftsExternalIndexEmptyWithMessages(ctx context.Context, conn SQLiteConn) (bool, error)
 }
 

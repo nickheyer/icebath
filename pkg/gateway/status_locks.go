@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
@@ -100,7 +101,7 @@ func isGatewayRuntimeLockActiveStrictLive(lockPath string) (bool, error) {
 // Writes this process pid record with O_EXCL so a racing gateway sees fs.ErrExist
 func WritePidFile() error {
 	path := pidPath()
-	if err := makeUserDir(filepath.Dir(path), 0o777, true, true); err != nil {
+	if _, err := home.MakeUserDir(filepath.Dir(path), 0o777, true, true); err != nil {
 		return err
 	}
 	if err := writeJSONExcl(path, statusBuildPidRecord()); err != nil {
@@ -216,7 +217,7 @@ func AcquireScopedLock(scope, identity string, metadata *pyjson.Object) (bool, *
 }
 
 func acquireScopedLockAt(lockPath, scope, identity string, metadata *pyjson.Object) (bool, *pyjson.Object, error) {
-	if err := makeUserDir(filepath.Dir(lockPath), 0o777, true, true); err != nil {
+	if _, err := home.MakeUserDir(filepath.Dir(lockPath), 0o777, true, true); err != nil {
 		return false, nil, err
 	}
 	if f, err := os.Open(lockPath); err == nil {

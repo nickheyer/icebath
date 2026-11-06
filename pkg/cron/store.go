@@ -31,7 +31,6 @@ import (
 const (
 	// TickerIntervalSeconds is the scheduler loop period
 	TickerIntervalSeconds = 60
-	jobsLockTimeout       = 30 * time.Second
 	oneshotGraceSeconds   = 120
 	cronOutputDefaultKeep = 50
 	saveJobsMergeAttempts = 5
@@ -49,6 +48,8 @@ type Store struct {
 	loadConfig func() (config.Tree, error)
 	// Executions database path a test points elsewhere, the cron dir default when empty
 	executionsFile string
+	// Notepad database path a test points elsewhere, the cron dir default when empty
+	notepadFile string
 }
 
 // Held jobs lock section carrying the jobs.json stamp captured by the last load inside it
@@ -151,6 +152,9 @@ func (s *Store) openJobsLock() (*os.File, error) {
 	}
 	return f, nil
 }
+
+// Bounded wait for the jobs lock and each fire fence, shortened by tests
+var jobsLockTimeout = 30 * time.Second
 
 type fireFenceHeldKey struct{}
 

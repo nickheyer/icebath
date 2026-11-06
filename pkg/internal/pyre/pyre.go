@@ -99,21 +99,35 @@ type parser struct {
 
 // Translates a Python re pattern into regexp2 syntax, failing where re.compile fails
 func Translate(pattern string) (string, error) {
+	out, _, err := translate(pattern)
+	return out, err
+}
+
+// Python groupindex of a pattern, each group name mapped to its group number in the translation
+func GroupIndex(pattern string) (map[string]int, error) {
+	_, p, err := translate(pattern)
+	if err != nil {
+		return nil, err
+	}
+	return p.names, nil
+}
+
+func translate(pattern string) (string, *parser, error) {
 	p := &parser{src: []rune(pattern), pattern: pattern, names: map[string]int{}, open: map[int]bool{}, widths: map[int]width{}, condRefs: map[int]int{}, lookbehindAt: -1}
 	fl := flags{}
 	out, _, err := p.parseSub(&fl, 0)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if p.i < len(p.src) {
-		return "", p.err("unbalanced parenthesis", 0)
+		return "", nil, p.err("unbalanced parenthesis", 0)
 	}
 	for g, pos := range p.condRefs {
 		if g > p.groups {
-			return "", &Error{Msg: fmt.Sprintf("invalid group reference %d", g), Pattern: pattern, Pos: pos, HasPos: true}
+			return "", nil, &Error{Msg: fmt.Sprintf("invalid group reference %d", g), Pattern: pattern, Pos: pos, HasPos: true}
 		}
 	}
-	return out, nil
+	return out, p, nil
 }
 
 // Compiles a Python re pattern with Python matching semantics on the regexp2 engine

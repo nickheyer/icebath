@@ -34,7 +34,7 @@ var (
 	facadeMu      sync.RWMutex
 	facadeHooks   FacadeHooks
 	policyNote    func(setter, homeKey string, raw any)
-	savedObserver func(oldRaw, newConfig map[string]any)
+	savedObserver func(h string, oldRaw, newConfig map[string]any)
 )
 
 // Installs the facade collaborators, called from an init of the package that owns them
@@ -51,8 +51,8 @@ func RegisterPolicyNote(note func(setter, homeKey string, raw any)) {
 	facadeMu.Unlock()
 }
 
-// Installs the observer a saved config is reported to after the write
-func RegisterConfigSavedObserver(observe func(oldRaw, newConfig map[string]any)) {
+// Installs the observer a user saved config is reported to after the write with the home that owns it
+func RegisterConfigSavedObserver(observe func(h string, oldRaw, newConfig map[string]any)) {
 	facadeMu.Lock()
 	savedObserver = observe
 	facadeMu.Unlock()

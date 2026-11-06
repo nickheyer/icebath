@@ -468,7 +468,7 @@ func prepareNative(ctx context.Context, out, ref, source, cache, tools string, e
 		Project: filepath.Join(repoDir, "pyproject.toml"), Code: repoDir, Repo: "icebath-agent",
 		Placement: "contained", Target: target, Python: pythonBin,
 		SitePackages: site, Environment: venvDir,
-		Tools: storeDir, PMRuntime: filepath.Join(out, "pm-runtime"), Ref: ref,
+		Tools: storeDir, PMRuntime: filepath.Join(out, "pm-runtime"), Ref: &ref,
 		Resources: resources, Features: filepath.Join(out, "enabled-features.json"),
 	}
 	return publishPrepared(ctx, out, source, revision, inputs)
@@ -483,7 +483,7 @@ func revParseCommit(ctx context.Context, source, ref string) (string, error) {
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return "", &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command %s returned non-zero exit status %d.", pyrepr.Repr(argv), pyReturnCode(exitErr))}
+			return "", &CalledProcessError{Argv: argv, Code: pyReturnCode(exitErr)}
 		}
 		return "", err
 	}
@@ -534,7 +534,7 @@ func FinishNative(ctx context.Context, prepared string, frontends map[string]str
 		if err := os.Remove(filepath.Join(out, "manifest.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		inputs, err := loadPrepared(prepared)
+		inputs, err := loadPrepared(ctx, prepared)
 		if err != nil {
 			return err
 		}

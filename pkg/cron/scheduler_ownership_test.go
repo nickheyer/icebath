@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"syscall"
 	"testing"
 
@@ -25,11 +26,14 @@ func ownershipHomes(t *testing.T) (string, string) {
 		}
 	}
 	t.Setenv("ICEBATH_HOME", a)
-	prevProbes, prevDiscarded := gatewayProbes, testHooks.discarded
-	testHooks.discarded = nil
+	prevProbes := gatewayProbes
+	discardParallelPools([]string{home.Key(a), home.Key(b)})
+	openCronStore(a, nil).getParallelPool(nil)
+	openCronStore(b, nil).getParallelPool(nil)
 	t.Cleanup(func() {
 		registerTickedHomes(nil)
-		gatewayProbes, testHooks.discarded = prevProbes, prevDiscarded
+		gatewayProbes = prevProbes
+		discardParallelPools([]string{home.Key(a), home.Key(b)})
 	})
 	return a, b
 }
@@ -69,8 +73,8 @@ func TestPoolOfAnUntickedHomeIsReaped(t *testing.T) {
 		t.Fatal("degraded record not stored")
 	}
 	registerTickedHomes([]string{a})
-	if !reflect.DeepEqual(testHooks.discarded, []string{home.Key(b)}) {
-		t.Fatalf("departed pools %v", testHooks.discarded)
+	if pools := poolHomes(); !reflect.DeepEqual(pools, []string{home.Key(a)}) {
+		t.Fatalf("pools after reaping %v", pools)
 	}
 	if servesProfile(b) || !servesProfile(a) {
 		t.Fatal("served set did not follow the republished homes")
@@ -96,8 +100,8 @@ func TestSharedStoreOfADepartedHomeKeepsItsState(t *testing.T) {
 	if DegradedRecord(cronA) == nil {
 		t.Fatal("store still reached by a ticked home was forgotten")
 	}
-	if !reflect.DeepEqual(testHooks.discarded, []string{home.Key(b)}) {
-		t.Fatalf("departed pools %v", testHooks.discarded)
+	if pools := poolHomes(); !reflect.DeepEqual(pools, []string{home.Key(a)}) {
+		t.Fatalf("pools after reaping %v", pools)
 	}
 }
 
@@ -234,4 +238,16 @@ func TestClaimOwnerIsDeadOnlyForAProvenLocalDeath(t *testing.T) {
 	if claimOwnerIsDead(&Claim{By: host + ":123"}) {
 		t.Fatal("hostname failure proved a death")
 	}
+}
+
+// Sorted home keys holding a parallel pool
+func poolHomes() []string {
+	parallelPools.Lock()
+	defer parallelPools.Unlock()
+	keys := make([]string, 0, len(parallelPools.pools))
+	for k := range parallelPools.pools {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

@@ -111,6 +111,9 @@ func sqliteClassOf(err error) (SQLiteClass, bool) {
 	return 0, false
 }
 
+// Python sqlite3 exception class of an error for callers outside this package, false when it is no sqlite3 exception
+func SQLiteClassOf(err error) (SQLiteClass, bool) { return sqliteClassOf(err) }
+
 // Reports whether an error is a sqlite3.DatabaseError or one of its subclasses
 func isDatabaseError(err error) bool {
 	class, ok := sqliteClassOf(err)
@@ -185,6 +188,9 @@ func errText(v any) string {
 	}
 	return fmt.Sprint(v)
 }
+
+// str() of an exception value with sqlite3 messages rendered as CPython prints them
+func ErrText(v any) string { return errText(v) }
 
 // Reports whether text contains any marker
 func containsAny(text string, markers []string) bool {
@@ -349,9 +355,15 @@ func (e *DeletedWalGenerationError) As(target any) bool {
 }
 
 // Quarantines a handle that observed structural corruption, a sqlite3.DatabaseError subclass
-type StateDBCorruptError struct{ Msg string }
+type StateDBCorruptError struct {
+	Msg   string
+	Cause error
+}
 
 func (e *StateDBCorruptError) Error() string { return e.Msg }
+
+// Cause the quarantine was raised from, carrying its SQLite result code
+func (e *StateDBCorruptError) Unwrap() error { return e.Cause }
 
 const stateDBApplicationIDOffset = 68
 

@@ -633,7 +633,7 @@ func ServedProfileChildEnv(ctx context.Context, env *Env, base map[string]string
 	}
 	if target != "" {
 		child["ICEBATH_HOME"] = target
-		applyScratchTmpEnv(env, child)
+		home.ApplyScratchTmpEnv(child)
 		if isRoutedHome(target) {
 			StripLaunchProfileEnv(env, child, target)
 			scrubCredentials(env, child, false)

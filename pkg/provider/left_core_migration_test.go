@@ -544,3 +544,12 @@ func TestLeftCoreAnAppendRacingAClaimIsDeliveredNotLost(t *testing.T) {
 		t.Fatalf("delivered %v", all)
 	}
 }
+
+func TestPluginHooksReturnsInstalledHooks(t *testing.T) {
+	withPluginHooks(t, func(h *PluginManagerHooks) {
+		h.DependencyHomes = func() []string { return []string{"/profiles/coder"} }
+	})
+	if got := PluginHooks().DependencyHomes(); len(got) != 1 || got[0] != "/profiles/coder" {
+		t.Fatal(got)
+	}
+}

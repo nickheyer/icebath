@@ -854,6 +854,9 @@ func (s *Scope) isExternalSkillPath(path string) bool {
 	return false
 }
 
+// Reports whether lifecycle maintenance must treat the path as an externally owned read only skill
+func (s *Scope) IsExternalSkillPath(path string) bool { return s.isExternalSkillPath(path) }
+
 // Conditional activation keys read from the icebath metadata
 var conditionKeys = []string{"fallback_for_toolsets", "requires_toolsets", "fallback_for_tools", "requires_tools", "session_platforms"}
 
@@ -1199,6 +1202,9 @@ func decodeText(data []byte) string {
 	text := strings.ToValidUTF8(string(data), "�")
 	return strings.TrimPrefix(text, "\uFEFF")
 }
+
+// Exported form for pkg/memory, same answer as the package reader
+func ReadSkillName(skillMD string, fallback string) string { return readSkillName(skillMD, fallback) }
 
 // Frontmatter name of a SKILL.md read from its first 4000 characters, else the fallback
 func readSkillName(skillMD string, fallback string) string {

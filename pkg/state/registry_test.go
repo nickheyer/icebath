@@ -1,9 +1,11 @@
 package state
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -32,21 +34,28 @@ func mustAcquire(t *testing.T, path string) *DB {
 	return d
 }
 
-// Replaces the file at path with a fresh inode holding a new database
+// Copies the live file aside, unlinks it and renames the copy into place so the path names a new inode
 func replaceDBFile(t *testing.T, path string) {
 	t.Helper()
-	fresh := path + ".fresh"
-	d, err := Open(fresh, Options{JournalMode: "delete"})
+	tmp := strings.TrimSuffix(path, filepath.Ext(path)) + ".replacement.tmp"
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Close(); err != nil {
+	st, err := os.Stat(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, suffix := range []string{"-wal", "-shm"} {
-		os.Remove(path + suffix)
+	if err := os.WriteFile(tmp, data, st.Mode().Perm()); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.Rename(fresh, path); err != nil {
+	if err := os.Chtimes(tmp, st.ModTime(), st.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -63,16 +72,23 @@ func TestLiveHoldersKeepWorkingHandleAcrossReplacement(t *testing.T) {
 	if stats := RegistryStats(); stats["live_generations"] != 1 || stats["retired_generations"] != 1 {
 		t.Fatalf("stats after replacement %v", stats)
 	}
-	if err := old.SetMeta("k", "v"); err != nil {
-		t.Fatalf("retired holder lost its handle: %v", err)
+	if old.closedForTest() {
+		t.Fatal("retired generation closed while holders live")
+	}
+	var replaced *StateDBReplacedError
+	if err := old.SetMeta(context.Background(), "k", "v"); !errors.As(err, &replaced) {
+		t.Fatalf("retired holder write was not refused as replaced: %v", err)
+	}
+	if err := next.SetMeta(context.Background(), "k", "v"); err != nil {
+		t.Fatalf("new generation write failed: %v", err)
 	}
 	if again := mustAcquire(t, path); again != next {
 		t.Fatal("the retired generation was lent again")
 	}
-	if !Release(old) || !old.closed {
+	if !Release(old) || !old.closedForTest() {
 		t.Fatal("the last holder of a retired generation did not tear it down")
 	}
-	if next.closed || RegistryStats()["retired_generations"] != 0 {
+	if next.closedForTest() || RegistryStats()["retired_generations"] != 0 {
 		t.Fatalf("retired drain disturbed the live generation %v", RegistryStats())
 	}
 }
@@ -241,13 +257,13 @@ func TestMaintenanceBorrowPinsConnectionUntilScopeExits(t *testing.T) {
 			t.Fatalf("borrowed %v", borrowed)
 		}
 		Release(d)
-		if d.closed {
+		if d.closedForTest() {
 			t.Fatal("the owner's release closed a borrowed handle")
 		}
 		return errors.New("maintenance failed")
 	})
-	if err == nil || !d.closed {
-		t.Fatalf("borrow err %v closed %v", err, d.closed)
+	if err == nil || !d.closedForTest() {
+		t.Fatalf("borrow err %v closed %v", err, d.closedForTest())
 	}
 }
 
@@ -256,14 +272,14 @@ func TestCloseOnSharedInstanceReleasesOneRefcount(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.db")
 	a := mustAcquire(t, path)
 	mustAcquire(t, path)
-	if err := a.Close(); err != nil || a.closed {
+	if err := a.Close(); err != nil || a.closedForTest() {
 		t.Fatalf("close of a shared handle tore it down: %v", err)
 	}
 	if RegistryStats()["total_refcounts"] != 1 {
 		t.Fatalf("stats %v", RegistryStats())
 	}
 	a.Close()
-	if !a.closed || RegistryStats()["live_generations"] != 0 {
+	if !a.closedForTest() || RegistryStats()["live_generations"] != 0 {
 		t.Fatal("the final close did not tear the generation down")
 	}
 }
@@ -278,7 +294,7 @@ func TestReleaseOrCloseClosesAnUnmanagedHandle(t *testing.T) {
 		t.Fatal("an unmanaged handle was released")
 	}
 	ReleaseOrClose(bare)
-	if !bare.closed {
+	if !bare.closedForTest() {
 		t.Fatal("ReleaseOrClose left an unmanaged handle open")
 	}
 }
@@ -314,7 +330,7 @@ func TestRetiredDrainDoesNotLiftAPendingCurrentTeardown(t *testing.T) {
 	go func() { published <- mustAcquire(t, path) }()
 	lifecycle.Unlock()
 	d := <-published
-	if !old.closed || !current.closed || d == current || d == old {
+	if !old.closedForTest() || !current.closedForTest() || d == current || d == old {
 		t.Fatal("a replacement was published before both admitted closes settled")
 	}
 }
@@ -327,7 +343,7 @@ func TestCloseAllUnderClosesConnectionsInsideDirectoryOnly(t *testing.T) {
 	if n := CloseAllUnder(inside); n != 1 {
 		t.Fatalf("closed %d", n)
 	}
-	if !doomed.closed || outside.closed {
+	if !doomed.closedForTest() || outside.closedForTest() {
 		t.Fatal("close_all_under crossed the directory boundary")
 	}
 	if n := CloseAllUnder(t.TempDir()); n != 0 {
@@ -342,7 +358,7 @@ func TestCloseAllUnderClosesConnectionsInsideDirectoryOnly(t *testing.T) {
 	if live := LiveSharedSessionDBs(); len(live) != 1 || live[0] != outside {
 		t.Fatalf("live shared %v", live)
 	}
-	if n := CloseAll(); n != 1 || !outside.closed {
+	if n := CloseAll(); n != 1 || !outside.closedForTest() {
 		t.Fatalf("close_all closed %d", n)
 	}
 }
@@ -369,8 +385,8 @@ func TestCloseAllUnderWaitsForAdmittedTeardownAfterGenerationIsGone(t *testing.T
 	case <-time.After(100 * time.Millisecond):
 	}
 	lifecycle.Unlock()
-	if n := <-swept; n != 0 || !d.closed {
-		t.Fatalf("swept %d closed %v", n, d.closed)
+	if n := <-swept; n != 0 || !d.closedForTest() {
+		t.Fatalf("swept %d closed %v", n, d.closedForTest())
 	}
 }
 
@@ -378,9 +394,9 @@ func TestFailedTeardownStillSettlesTheBarrier(t *testing.T) {
 	withRegistryOpen(t, nil)
 	path := filepath.Join(t.TempDir(), "state.db")
 	d := mustAcquire(t, path)
-	real := d.db
+	real := d.conn
 	defer real.Close()
-	d.db = nil
+	d.conn = &TrackedConn{}
 	func() {
 		defer func() {
 			if recover() == nil {

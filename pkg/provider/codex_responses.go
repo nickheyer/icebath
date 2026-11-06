@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -186,6 +187,65 @@ type codexPrepared struct {
 	watch     codexWatchdogs
 }
 
+// Native compaction context management this route sends for the request, empty when ineligible
+func (c *codexResponsesClient) nativeContextManagement(ctx context.Context, req *Request, model string, settings wireSettings, endpoint *responsesEndpointQuirks) []map[string]any {
+	runtimeCapability := resolveNativeCompactionCapability(model, c.route.BaseURL, c.route.Provider, c.flags.isCodexBackend)
+	if req.Metadata[CodexNativeCompactionOffKey] == "off" {
+		runtimeCapability = false
+	}
+	var localTrigger any
+	if raw := strings.TrimSpace(req.Metadata[CompressionTriggerTokensKey]); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			localTrigger = n
+		}
+	}
+	return nativeCompactionContextManagement(nativeCompactionInputs{
+		runtimeCapability: runtimeCapability, configured: settings.nativeCompaction, compressionEnabled: settings.compressionEnabled,
+		checkpointRequired: codexCheckpointRequired(ctx), model: model, provider: c.route.Provider, baseURL: c.route.BaseURL,
+		trustedProxy:       pyTruthy(req.Metadata[CodexTrustedProxyCompactionKey]) && strings.ToLower(req.Metadata[CodexTrustedProxyCompactionKey]) != "false" && req.Metadata[CodexTrustedProxyCompactionKey] != "0",
+		localTriggerTokens: localTrigger, compactThreshold: settings.compactThreshold, isCodexBackend: c.flags.isCodexBackend,
+		isXAI: c.flags.isXAI, endpoint: endpoint,
+	})
+}
+
+// EstimateNativePreflightTokens estimates the checkpoint pruned Responses input, false when native compaction is ineligible or conversion fails
+func (c *codexResponsesClient) EstimateNativePreflightTokens(ctx context.Context, req *Request, systemPrompt string, tools []map[string]any) (int, bool) {
+	if req == nil || req.Messages == nil {
+		return 0, false
+	}
+	model := req.Model
+	if model == "" {
+		model = c.route.Model
+	}
+	endpoint := c.flags.endpoint
+	if !nativeCompactionActive(c.nativeContextManagement(ctx, req, model, loadWireSettings(ctx), &endpoint)) {
+		return 0, false
+	}
+	if override, ok := c.requestOverrides(req)["model"].(string); ok && override != "" {
+		model = override
+	}
+	items, err := chatMessagesToResponsesInput(codexMsgsOf(req.Messages), codexConvertOptions{
+		isXAI: c.flags.isXAI, dropReplayItemIDs: !endpoint.replayItemIDs, replayEncryptedReasoning: req.Metadata[CodexReasoningReplayOffKey] != "off",
+		currentIssuerKind:  classifyResponsesIssuer(c.flags.isXAI, c.flags.isCodexBackend, c.route.BaseURL, &endpoint),
+		currentIssuerModel: wireModelIdentity(model), nativeCompactionEligible: true,
+	})
+	if err != nil {
+		slog.Default().Debug("native Responses replay conversion failed; using the generic fallback", "error", err)
+		return 0, false
+	}
+	total := 0
+	if systemPrompt != "" {
+		total = EstimateTokens(systemPrompt)
+	}
+	if len(items) > 0 {
+		total += estimateRowsTokens(items, CurrentImageTokenCost(ctx))
+	}
+	if len(tools) > 0 {
+		total += EstimateToolsTokens(tools)
+	}
+	return total, true
+}
+
 // Builds, preflights and serializes one request with its headers and watchdogs
 func (c *codexResponsesClient) prepare(ctx context.Context, req *Request) (*codexPrepared, error) {
 	if req == nil {
@@ -200,24 +260,8 @@ func (c *codexResponsesClient) prepare(ctx context.Context, req *Request) (*code
 	if model == "" {
 		model = c.route.Model
 	}
-	runtimeCapability := resolveNativeCompactionCapability(model, c.route.BaseURL, c.route.Provider, c.flags.isCodexBackend)
-	if req.Metadata[CodexNativeCompactionOffKey] == "off" {
-		runtimeCapability = false
-	}
-	var localTrigger any
-	if raw := strings.TrimSpace(req.Metadata[CompressionTriggerTokensKey]); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil {
-			localTrigger = n
-		}
-	}
 	endpoint := c.flags.endpoint
-	contextManagement := nativeCompactionContextManagement(nativeCompactionInputs{
-		runtimeCapability: runtimeCapability, configured: settings.nativeCompaction, compressionEnabled: settings.compressionEnabled,
-		checkpointRequired: codexCheckpointRequired(ctx), model: model, provider: c.route.Provider, baseURL: c.route.BaseURL,
-		trustedProxy:       pyTruthy(req.Metadata[CodexTrustedProxyCompactionKey]) && strings.ToLower(req.Metadata[CodexTrustedProxyCompactionKey]) != "false" && req.Metadata[CodexTrustedProxyCompactionKey] != "0",
-		localTriggerTokens: localTrigger, compactThreshold: settings.compactThreshold, isCodexBackend: c.flags.isCodexBackend,
-		isXAI: c.flags.isXAI, endpoint: &endpoint,
-	})
+	contextManagement := c.nativeContextManagement(ctx, req, model, settings, &endpoint)
 	var profileReasoning map[string]any
 	if endpoint.profileReasoning {
 		if p, ok := profileForHost(c.route.BaseURL); ok {
@@ -269,7 +313,7 @@ func (c *codexResponsesClient) prepare(ctx context.Context, req *Request) (*code
 	if t, ok := kwargs["timeout"].(float64); ok && t > 0 {
 		timeout = secondsDuration(t)
 	}
-	est := estimateBodyContextTokens(wire, CurrentImageTokenCost(ctx))
+	est := EstimateRequestContextTokens(ctx, wire)
 	return &codexPrepared{kwargs: kwargs, body: body, wire: wire, url: endpointURL, headers: headers, settings: settings,
 		estTokens: est, timeout: timeout, watch: c.resolveWatchdogs(ctx, req, settings, est, kwargs)}, nil
 }
@@ -699,6 +743,7 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 				if hint != "" {
 					status = hint
 				}
+				bumpStaleStreak(ctx)
 				return nil, events, kill("stale_call_kill",
 					fmt.Sprintf("⚠️ No response from provider for %ds (non-streaming, model: %s). %s", int(elapsed), model, status),
 					withHint(fmt.Sprintf("Non-streaming API call timed out after %ds with no response (threshold: %ds)", int(elapsed), int(w.stale)), ". "))
@@ -828,3 +873,10 @@ func (c *codexResponsesClient) finish(result map[string]any, status int, headers
 	}
 	return out, fn(StreamEvent{Kind: EventDone})
 }
+
+// NativePreflightEstimator estimates the natively compacted Responses wire for the preflight compression check
+type NativePreflightEstimator interface {
+	EstimateNativePreflightTokens(ctx context.Context, req *Request, systemPrompt string, tools []map[string]any) (int, bool)
+}
+
+var _ NativePreflightEstimator = (*codexResponsesClient)(nil)

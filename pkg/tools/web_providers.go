@@ -695,7 +695,7 @@ func failureMessage(vendor, kind string, err error, env *Env, verbatimValueError
 
 // Interrupt check plus uniform failure classification around a search body
 func runSearch(ctx context.Context, env *Env, vendor string, body func() (*WebSearchResponse, error), verbatimValueError bool) *WebSearchResponse {
-	if ctx.Err() != nil {
+	if IsInterrupted(ctx) || ctx.Err() != nil {
 		return searchFail("Interrupted")
 	}
 	resp, err := body()
@@ -712,7 +712,7 @@ func extractInterrupted(urls []string) []*WebPage {
 
 // Interrupt check plus uniform failure classification around an extract body
 func runExtract(ctx context.Context, env *Env, vendor string, urls []string, body func() ([]*WebPage, error), verbatimValueError bool) []*WebPage {
-	if ctx.Err() != nil {
+	if IsInterrupted(ctx) || ctx.Err() != nil {
 		return extractInterrupted(urls)
 	}
 	pages, err := body()
@@ -720,38 +720,6 @@ func runExtract(ctx context.Context, env *Env, vendor string, urls []string, bod
 		return extractFail(urls, failureMessage(vendor, "extract", err, env, verbatimValueError))
 	}
 	return pages
-}
-
-// GET and parse JSON, or a search failure naming the vendor
-func httpGetJSON(ctx context.Context, env *Env, label, target string, params, headers map[string]string, timeout time.Duration, reachTarget string) (any, *WebSearchResponse) {
-	if reachTarget == "" {
-		reachTarget = label
-	}
-	status, text, err := getText(ctx, webHTTPClient(timeout), target, params, headers)
-	if err != nil {
-		envLog(env).Warn(label+" request error", "error", err.Error())
-		return nil, searchFail(fmt.Sprintf("Could not reach %s: %v", reachTarget, err))
-	}
-	if status >= 400 {
-		envLog(env).Warn(label+" HTTP error", "status", status)
-		return nil, searchFail(fmt.Sprintf("%s returned HTTP %d", label, status))
-	}
-	data, err := decodeJSON(text)
-	if err != nil {
-		envLog(env).Warn(label+" response parse error", "error", err.Error())
-		return nil, searchFail(fmt.Sprintf("Could not parse %s response as JSON", label))
-	}
-	return data, nil
-}
-
-// Brave and SearXNG row normalizer with 1 based positions
-func titledRows(raw []any, descriptionKey string) []WebSearchHit {
-	out := make([]WebSearchHit, 0, len(raw))
-	for i, item := range raw {
-		m := asMap(item)
-		out = append(out, titleHit(asStr(m["title"]), asStr(m["url"]), asStr(m[descriptionKey]), i+1))
-	}
-	return out
 }
 
 // ---- provider contract --------------------------------------------------------------------------------
@@ -790,7 +758,11 @@ func (b *baseWebProvider) SupportsExtract() bool {
 
 // Available ignores the keyless tier so the legacy walk never routes keyed users onto a free tier
 func (b *baseWebProvider) Available(env *Env) bool {
-	return b.keyEnv != "" && secretValue(env, b.keyEnv) != ""
+	if b.keyEnv == "" {
+		return false
+	}
+	key, err := providerEnv(context.Background(), env, b.keyEnv)
+	return err == nil && key != ""
 }
 
 // Keyless vendors are free tier capable unless pinned paid
@@ -1019,7 +991,6 @@ func webConfigSelects(env *Env, name string) bool {
 const (
 	exaMCPURL      = "https://mcp.exa.ai/mcp"
 	parallelMCPURL = "https://search.parallel.ai/mcp"
-	keenableAPIURL = "https://api.keenable.ai"
 	keenableTitle  = "icebath"
 )
 

@@ -465,16 +465,17 @@ func writeUserConfig(ctx context.Context, h, configPath string, userConfig map[s
 	observe := savedObserver
 	facadeMu.RUnlock()
 	var before map[string]any
-	if observe != nil {
+	snapshot := false
+	if observe != nil && ctx.Value(appliedWriteKey{}) == nil {
 		if raw, err := ReadUserConfigRaw(ctx, configPath); err == nil {
-			before = raw
+			before, snapshot = raw, true
 		}
 	}
 	if err := AtomicConfigReplace(ctx, h, configPath, userConfig, ""); err != nil {
 		return err
 	}
-	if before != nil {
-		observe(before, userConfig)
+	if snapshot {
+		observe(h, before, userConfig)
 	}
 	return nil
 }

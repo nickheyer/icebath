@@ -13,7 +13,7 @@ import (
 )
 
 // Target of an NTFS directory junction with the verbatim prefix removed, false for anything else
-func junctionTarget(path string) (string, bool) {
+func ntfsJunctionTarget(path string) (string, bool) {
 	if pyfs.ReparseTag(path) != windows.IO_REPARSE_TAG_MOUNT_POINT {
 		return "", false
 	}
@@ -28,7 +28,7 @@ func junctionTarget(path string) (string, bool) {
 }
 
 // Creates link as a directory junction to target the way the winapi CreateJunction call does
-func createJunction(target, link string) error {
+func ntfsCreateJunction(target, link string) error {
 	full, err := windows.FullPath(target)
 	if err != nil {
 		return err

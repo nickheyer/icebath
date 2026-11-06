@@ -178,7 +178,7 @@ func waitThenForceKill(pids []int, startTimes map[int]*int64, wait time.Duration
 }
 
 // Terminates stray backends bound to the profile that the gateway pid file never names
-func stopProfileBackends(canon, profileDir string) {
+var stopProfileBackends = func(canon, profileDir string) {
 	pids := profileBoundBackendPids(canon, profileDir)
 	if len(pids) == 0 {
 		return
@@ -384,13 +384,19 @@ type s6Manager interface {
 	UnregisterProfileGateway(name string) error
 }
 
+// Service manager detection and lookup of hermes_cli/service_manager.py, swapped by tests
+var (
+	detectServiceManager = serviceManagerDetect
+	getServiceManager    = serviceManagerGet
+)
+
 // The s6 manager inside the container, nil on a host or when detection fails
 func s6RuntimeManager() s6Manager {
-	kind, err := serviceManagerDetect()
+	kind, err := detectServiceManager()
 	if err != nil || kind != "s6" {
 		return nil
 	}
-	mgr, err := serviceManagerGet()
+	mgr, err := getServiceManager()
 	if err != nil || mgr == nil || !mgr.SupportsRuntimeRegistration() {
 		return nil
 	}
@@ -398,7 +404,7 @@ func s6RuntimeManager() s6Manager {
 }
 
 // Registers a profile gateway with s6 inside the container, warning on failure and accepting an existing slot
-func maybeRegisterGatewayService(profileName string) {
+var maybeRegisterGatewayService = func(profileName string) {
 	mgr := s6RuntimeManager()
 	if mgr == nil {
 		return
@@ -411,7 +417,7 @@ func maybeRegisterGatewayService(profileName string) {
 }
 
 // Tears down a profile's s6 gateway service inside the container, a host no op
-func maybeUnregisterGatewayService(profileName string) {
+var maybeUnregisterGatewayService = func(profileName string) {
 	mgr := s6RuntimeManager()
 	if mgr == nil {
 		return
@@ -435,7 +441,7 @@ var hostSystem = func() string {
 }
 
 // Disables and removes the profile's user service registration, true when one was removed
-func cleanupGatewayService(ctx context.Context, name, profileDir string) bool {
+var cleanupGatewayService = func(ctx context.Context, name, profileDir string) bool {
 	oldHome, hadHome := os.LookupEnv(home.EnvHome)
 	pctx := home.WithOverride(ctx, profileDir)
 	os.Setenv(home.EnvHome, profileDir)
@@ -459,8 +465,8 @@ func cleanupGatewayServiceIn(ctx context.Context, profileDir string) (bool, erro
 	switch hostSystem() {
 	case "Linux":
 		removed := false
-		svc := gatewayServiceName(ctx)
-		svcFile := filepath.Join(gatewayUserSystemdUnitDir(ctx), svc+".service")
+		svc := serviceFacts.ServiceName(ctx)
+		svcFile := filepath.Join(serviceFacts.UserSystemdUnitDir(ctx), svc+".service")
 		if pathExists(svcFile) && ownedByProfile(svcFile, profileDir) {
 			for _, args := range [][]string{{"systemctl", "--user", "disable", svc}, {"systemctl", "--user", "stop", svc}} {
 				if err := run(args...); err != nil {
@@ -479,7 +485,7 @@ func cleanupGatewayServiceIn(ctx context.Context, profileDir string) (bool, erro
 		system, err := removeSystemSystemdUnit(ctx, profileDir)
 		return system || removed, err
 	case "Darwin":
-		plist := gatewayLaunchdPlistPath(ctx)
+		plist := serviceFacts.LaunchdPlistPath(ctx)
 		if pathExists(plist) && ownedByProfile(plist, profileDir) {
 			if err := run("launchctl", "unload", plist); err != nil {
 				return false, err
@@ -498,7 +504,7 @@ func cleanupGatewayServiceIn(ctx context.Context, profileDir string) (bool, erro
 }
 
 // Stops a running gateway through its pid file, refusing a record stamped with another profile's home
-func stopGatewayProcess(profileDir string) {
+var stopGatewayProcess = func(profileDir string) {
 	pidFile := filepath.Join(profileDir, "gateway.pid")
 	if !pathExists(pidFile) {
 		return

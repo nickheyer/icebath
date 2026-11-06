@@ -26,6 +26,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
 const (
@@ -120,6 +121,9 @@ func canonicalHermesHome(p string) (string, error) {
 	return pypath.Realpath(pypath.Expanduser(p), pypath.Lax)
 }
 
+// Compares two home paths with the host platform case rules for callers outside this package
+func SameHermesHome(left, right string) (bool, error) { return sameHermesHome(left, right) }
+
 // Compares two home paths with the host platform case rules
 func sameHermesHome(left, right string) (bool, error) {
 	l, err := canonicalHermesHome(left)
@@ -148,6 +152,9 @@ func RecordedGatewayHomeConflicts(record *pyjson.Object, expectedHome string) bo
 }
 
 var profileLabelRe = regexp.MustCompile(`\A[a-z0-9][a-z0-9_-]{0,63}\n?\z`)
+
+// Profile label of a home for callers outside this package, empty when unknown
+func ProfileLabelForHome(h string) string { return profileLabelForHomeLive(h) }
 
 // Profile label of a home, the profiles child name, default for the root home, empty when unknown
 func profileLabelForHomeLive(h string) string {
@@ -409,11 +416,11 @@ func buildPidRecordLive() *pyjson.Object {
 
 // Code identity of this process for gateway_state.json, empty when the identity is unavailable
 func codeIdentityFields() [][2]any {
-	identity, err := getCodeIdentity()
+	identity, err := updaterecord.GetCodeIdentity(false)
 	if err != nil {
 		return nil
 	}
-	return [][2]any{{"code_sha", identity["sha"]}, {"code_version", identity["version"]}}
+	return [][2]any{{"code_sha", identity.Vals["sha"]}, {"code_version", identity.Vals["version"]}}
 }
 
 // Whether a record's home is this process home, a legacy record without one counting as ours

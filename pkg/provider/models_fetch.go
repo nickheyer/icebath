@@ -22,6 +22,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Clock behind every catalog TTL in this slice
@@ -147,9 +148,12 @@ func modelsReadJSONCache(path string) map[string]any {
 	return m
 }
 
-// Atomically persists a cache file under the home, creating parents
-func modelsWriteJSONCache(path string, data any) error {
-	return atomicJSONWrite(path, data)
+// Atomically persists a cache file with the dump options, creating parents unless they lie in a dead profile
+func modelsWriteJSONCache(path string, data any, opts ...pyjson.Option) error {
+	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+		return err
+	}
+	return config.AtomicJSONWriteWith(path, data, opts...)
 }
 
 // Primary verbatim then the secondary entries whose key is new
@@ -218,7 +222,7 @@ func writeOpenrouterCatalogDisk(ctx context.Context, curated []CatalogModel) {
 	for _, c := range curated {
 		rows = append(rows, []string{c.ID, c.Description})
 	}
-	if err := modelsWriteJSONCache(openrouterCatalogDiskPath(ctx), map[string]any{"fetched_at": modelsClock().Unix(), "curated": rows}); err != nil {
+	if err := modelsWriteJSONCache(openrouterCatalogDiskPath(ctx), map[string]any{"fetched_at": modelsClock().Unix(), "curated": rows}, pyjson.Indent(2)); err != nil {
 		modelsLog.Debug("openrouter curated catalog disk write failed", "error", err)
 	}
 }
@@ -432,7 +436,7 @@ func writeNousRecommendedDisk(ctx context.Context, base string, data map[string]
 		blob = map[string]any{}
 	}
 	blob[base] = map[string]any{"data": data, "ts": float64(modelsClock().UnixNano()) / 1e9}
-	if err := modelsWriteJSONCache(path, blob); err != nil {
+	if err := modelsWriteJSONCache(path, blob, pyjson.Indent(2)); err != nil {
 		modelsLog.Debug("nous recommended-models disk cache write failed", "error", err)
 	}
 }

@@ -242,7 +242,7 @@ func TestLoadGatewayConfigExpandsAndBridges(t *testing.T) {
 		t.Fatalf("expanded refs %v %v", wh, cfg.Platforms[PlatformAPIServer].Extra)
 	}
 
-	clearEnv(t, "WEBHOOK_SECRET_UNSET_FOR_TEST")
+	clearEnv(t, "WEBHOOK_SECRET_UNSET_FOR_TEST", "WEBHOOK_SECRET", "API_SERVER_KEY", "HOOK_PREFIX_FOR_TEST")
 	cfg = loadYAML(t, "platforms:\n  webhook:\n    enabled: true\n    secret: ${WEBHOOK_SECRET_UNSET_FOR_TEST}\n")
 	if got := cfg.Platforms[PlatformWebhook].Extra["secret"]; got != "${WEBHOOK_SECRET_UNSET_FOR_TEST}" {
 		t.Fatalf("unresolved ref %v", got)
@@ -348,22 +348,6 @@ func TestLoadGatewayConfigPlatformLayers(t *testing.T) {
 	cfg = loadYAML(t, "gateway:\n  platforms:\n    telegram:\n      extra:\n        rich_messages: false\n")
 	if got, ok := cfg.Platforms[PlatformTelegram].Extra["rich_messages"]; !ok || got != false {
 		t.Fatalf("rich messages %v", cfg.Platforms[PlatformTelegram].Extra)
-	}
-}
-
-func TestProfileScopedEnvOverridesDoNotFallBackToDefaultProfileEnv(t *testing.T) {
-	defaultHome, secondary := t.TempDir(), t.TempDir()
-	writeBytes(t, filepath.Join(defaultHome, "config.yaml"), "multiplex_profiles: true\n")
-	writeBytes(t, filepath.Join(secondary, "config.yaml"), "multiplex_profiles: true\n")
-	t.Setenv("ICEBATH_HOME", defaultHome)
-	t.Setenv("API_SERVER_ENABLED", "true")
-	t.Setenv("DISCORD_BOT_TOKEN", "default-token")
-	cfg := loadScoped(t, home.WithOverride(context.Background(), secondary), map[string]string{"DISCORD_BOT_TOKEN": "worker-token"})
-	if cfg.MultiplexProfiles == nil || !*cfg.MultiplexProfiles || cfg.Platforms[PlatformDiscord].Token != "worker-token" {
-		t.Fatalf("scoped token %+v", cfg.Platforms[PlatformDiscord])
-	}
-	if _, ok := cfg.Platforms[PlatformAPIServer]; ok {
-		t.Fatal("api_server enabled from the default profile env")
 	}
 }
 

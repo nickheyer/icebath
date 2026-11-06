@@ -192,7 +192,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	if anchor := provider.CaptureUsageAnchor(anchorPrompt, aggregator.OutputTokens, messages); anchor != nil {
 		a.setUsageAnchor(anchor, apiCallCount == 1)
 	}
-	threshold := compressor.ThresholdTokens()
+	threshold := compressor.Base().ThresholdTokens
 	if shouldRearmCompressionBudget(compressionAttempts, completedCompactionPending, usagePrompt, threshold) {
 		log.Info(fmt.Sprintf("Compression budget rearmed after provider-confirmed recovery: prompt=%s < threshold=%s (attempts were %d/%d)",
 			groupedInt(usagePrompt), groupedInt(threshold), compressionAttempts, maxCompressionAttempts))
@@ -207,7 +207,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	a.lastPromptSizeTokens = anchorPrompt
 
 	if p, ok := compressor.(contextProbeTracker); ok && p.ContextProbed() {
-		length := compressor.ContextLength()
+		length := compressor.Base().ContextLength
 		if p.ContextProbePersistable() {
 			provider.SaveProviderContextLength(ctx, a.Model, a.BaseURL, length, a.Provider)
 			a.safePrint(fmt.Sprintf("%s💾 Cached context length: %s tokens for %s", a.logPrefix, groupedInt(length), a.Model), false)

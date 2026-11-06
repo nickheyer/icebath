@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// InterruptedError is the Python InterruptedError a user interrupt raises inside a provider stream
+// Python InterruptedError a user interrupt raises inside a provider stream
 type InterruptedError struct {
 	Message string
 }
@@ -44,7 +44,7 @@ func auxCloseQuietly(target any, failureNote string) {
 	}
 }
 
-// CodexStreamStallMarker is the text the context compressor reads as a retry ladder timeout
+// Text the context compressor reads as a retry ladder timeout
 const CodexStreamStallMarker = "stream stalled"
 
 // Progress aware deadline and connection safe timeout watchdog of one Codex auxiliary stream attempt
@@ -69,7 +69,7 @@ type auxCodexStreamGuard struct {
 	attemptStream         any
 }
 
-// Guard whose first token and inter event window is the task override or the default, clamped by the total and host deadline
+// Guard with a task or default no progress window clamped by the total and host deadline
 func newAuxCodexStreamGuard(ctx context.Context, client any, totalTimeout float64, hasTotal bool, noProgressTimeout float64) *auxCodexStreamGuard {
 	g := &auxCodexStreamGuard{ctx: ctx, client: client, totalTimeout: totalTimeout, hasTotal: hasTotal, start: time.Now()}
 	g.noProgressTimeout = auxStreamNoProgressTimeoutSeconds

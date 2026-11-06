@@ -1,14 +1,15 @@
 package plugins
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // A plugin compiled into the binary that registers its tools, hooks and commands through a context
@@ -17,8 +18,11 @@ type Plugin interface {
 	Register(ctx *Context) error
 }
 
-// Error raised by plugin management operations with a user facing message
-type PluginOperationError struct{ Msg string }
+// Error raised by plugin management operations with a user facing message and its failure class
+type PluginOperationError struct {
+	Msg          string
+	FailureClass string
+}
 
 func (e *PluginOperationError) Error() string { return e.Msg }
 
@@ -89,11 +93,14 @@ func readInstallMetadata(h string) (map[string]any, error) {
 	if err != nil {
 		return nil, &PluginOperationError{Msg: fmt.Sprintf("Could not read plugin install metadata: %v", err)}
 	}
-	var value any
-	if err := json.Unmarshal(stripBOM(raw), &value); err != nil {
+	if !utf8.Valid(stripBOM(raw)) {
+		return nil, fmt.Errorf("'utf-8' codec can't decode %s", path)
+	}
+	value, err := pyjson.Loads(string(stripBOM(raw)))
+	if err != nil {
 		return nil, &PluginOperationError{Msg: fmt.Sprintf("Could not read plugin install metadata: %v", err)}
 	}
-	doc, ok := value.(map[string]any)
+	doc, ok := pyjson.Plain(value).(map[string]any)
 	if !ok {
 		return nil, &PluginOperationError{Msg: "Plugin install metadata must be a JSON object."}
 	}

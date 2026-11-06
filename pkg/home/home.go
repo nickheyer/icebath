@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -12,6 +13,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Environment variable naming the home directory of the running process
@@ -58,34 +62,28 @@ func Override(ctx context.Context) string {
 
 // Expands a tilde and environment references in a home path
 func expand(path string) string {
-	path = os.ExpandEnv(path)
-	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
-		if u, err := os.UserHomeDir(); err == nil {
-			path = u + path[1:]
-		}
-	}
-	return filepath.Clean(path)
+	return pypath.PathStr(pypath.Expanduser(pypath.Expandvars(path)))
 }
 
 // Platform default home with the data directory suffix applied
 func platformDefault(environ func(string) string, userHome func() (string, error)) (string, error) {
 	suffix := environ(EnvSuffix)
 	if runtime.GOOS == "windows" {
-		base := strings.TrimSpace(environ("LOCALAPPDATA"))
+		base := pystr.Strip(environ("LOCALAPPDATA"))
 		if base == "" {
 			h, err := userHome()
 			if err != nil {
 				return "", err
 			}
-			base = filepath.Join(h, "AppData", "Local")
+			base = pypath.PathJoin(h, "AppData", "Local")
 		}
-		return filepath.Join(base, "icebath"+suffix), nil
+		return pypath.PathJoin(base, "icebath"+suffix), nil
 	}
 	h, err := userHome()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(h, dirName+suffix), nil
+	return pypath.PathJoin(h, dirName+suffix), nil
 }
 
 // Platform default home of the running process
@@ -99,7 +97,7 @@ func PlatformDefault() string {
 
 // Home directory of the process from the environment variable or the platform default
 func Process() string {
-	if v := strings.TrimSpace(os.Getenv(EnvHome)); v != "" {
+	if v := pystr.Strip(os.Getenv(EnvHome)); v != "" {
 		return expand(v)
 	}
 	return PlatformDefault()
@@ -109,6 +107,9 @@ func Process() string {
 func Dir(ctx context.Context) string {
 	if o := Override(ctx); o != "" {
 		return expand(o)
+	}
+	if pystr.Strip(os.Getenv(EnvHome)) == "" {
+		warnProfileFallbackOnce()
 	}
 	return Process()
 }
@@ -130,12 +131,11 @@ func rootOf(native, home string) string {
 	if home == "" {
 		return native
 	}
-	rel, err := filepath.Rel(native, home)
-	if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if _, under := pypath.PathRelativeTo(resolve(home), resolve(native)); under {
 		return native
 	}
-	if filepath.Base(filepath.Dir(home)) == ProfilesDir {
-		return filepath.Dir(filepath.Dir(home))
+	if parent := pypath.PathParent(home); pypath.PathName(parent) == ProfilesDir {
+		return pypath.PathParent(parent)
 	}
 	return home
 }
@@ -147,7 +147,10 @@ func Root() string {
 
 // Root home that owns the given home
 func RootOf(home string) string {
-	return rootOf(PlatformDefault(), expand(home))
+	if h := pystr.Strip(home); h != "" {
+		return rootOf(PlatformDefault(), expand(h))
+	}
+	return PlatformDefault()
 }
 
 // Reports whether dir is provably the profiles directory of a home
@@ -210,16 +213,8 @@ func ProfileNameFor(path string) string {
 
 // Path with every symlink resolved, the cleaned path when resolution fails
 func resolve(path string) string {
-	if r, err := filepath.EvalSymlinks(path); err == nil {
-		if a, err := filepath.Abs(r); err == nil {
-			return a
-		}
-		return r
-	}
-	if a, err := filepath.Abs(path); err == nil {
-		return a
-	}
-	return filepath.Clean(path)
+	r, _ := pypath.Realpath(path, pypath.Lax)
+	return r
 }
 
 // Home directory of the named profile under the root, the root for default
@@ -300,8 +295,11 @@ type ErrProfileMissing struct {
 }
 
 func (e *ErrProfileMissing) Error() string {
-	return fmt.Sprintf("named profile home does not exist: %s, create the profile explicitly before using it", e.Home)
+	return fmt.Sprintf("Named profile home does not exist: %s. Create the profile explicitly before using it.", e.Home)
 }
+
+// Matches fs.ErrNotExist like the FileNotFoundError Python raises
+func (e *ErrProfileMissing) Is(target error) bool { return target == fs.ErrNotExist }
 
 // Fails when path lies under a deleted or missing named profile
 func AssertProfileLive(path string) error {
@@ -318,15 +316,12 @@ func AssertProfileLive(path string) error {
 	return nil
 }
 
-// Creates path and its parents with owner only permissions, refusing to materialize a dead profile
+// Creates path and its parents through MakeUserDir, refusing to materialize a dead profile
 func Mkdir(path string) (string, error) {
 	if err := AssertProfileLive(path); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		return "", err
-	}
-	return path, nil
+	return MakeUserDir(path, 0o777, true, true)
 }
 
 // Names of every live named profile under root, sorted
@@ -347,19 +342,22 @@ func ListProfiles(root string) []string {
 	return out
 }
 
-// Path with the user home shortened to a tilde, for text shown to people
+// Path relative to the user home as a tilde posix path, the path itself when outside the user home
 func Display(path string) string {
-	u, err := os.UserHomeDir()
-	if err != nil || u == "" {
-		return path
+	p := pypath.PathStr(path)
+	rel, ok := pypath.PathRelativeTo(p, pypath.Expanduser("~"))
+	if !ok {
+		return p
 	}
-	if path == u {
-		return "~"
+	return "~/" + rel
+}
+
+// Registry write scope key, empty staying empty for the process global layer and anything else keyed like Key
+func NormalizeScope(scope string) string {
+	if scope == "" {
+		return ""
 	}
-	if strings.HasPrefix(path, u+string(filepath.Separator)) {
-		return "~" + path[len(u):]
-	}
-	return path
+	return Key(scope)
 }
 
 var (
@@ -369,28 +367,27 @@ var (
 
 // Stable key of a home directory, the resolved path, cached once the directory exists
 func Key(path string) string {
-	raw := filepath.Clean(path)
+	raw := pypath.PathStr(path)
 	keyMu.Lock()
 	defer keyMu.Unlock()
 	if k, ok := keyCache[raw]; ok {
 		return k
 	}
-	expanded := expand(raw)
-	if _, err := os.Stat(expanded); err != nil {
+	expanded := pypath.Expanduser(raw)
+	resolved, err := strictResolve(expanded)
+	if err != nil {
 		return normcase(resolve(expanded))
 	}
-	k := normcase(resolve(expanded))
+	k := normcase(resolved)
 	keyCache[raw] = k
 	return k
 }
 
+// Strict realpath a key must pass before it is remembered, swapped by tests counting filesystem resolves
+var strictResolve = func(p string) (string, error) { return pypath.Realpath(p, pypath.StrictAll) }
+
 // Lower cases a path on case insensitive platforms
-func normcase(p string) string {
-	if runtime.GOOS == "windows" {
-		return strings.ToLower(p)
-	}
-	return p
-}
+func normcase(p string) string { return pypath.Normcase(p) }
 
 // Forgets every cached home key
 func ResetKeyCache() {

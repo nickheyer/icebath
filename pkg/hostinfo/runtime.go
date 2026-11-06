@@ -16,6 +16,7 @@ var (
 	wslDetected   bool
 	containerOnce sync.Once
 	containerSeen bool
+	pathExists    = func(p string) bool { _, err := os.Stat(p); return err == nil }
 )
 
 // IsWSL reports whether this process runs inside WSL
@@ -65,7 +66,7 @@ func detectContainer() bool {
 // Reports whether any of the paths exists
 func fileExistsAny(paths ...string) bool {
 	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
+		if pathExists(p) {
 			return true
 		}
 	}

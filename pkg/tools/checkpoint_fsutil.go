@@ -14,6 +14,9 @@ import (
 	"unicode/utf8"
 )
 
+// Deletes a tree that plain rmtree refuses, read only files and directories included
+func RmtreeReadonly(path string, ignoreErrors bool) error { return rmtreeReadonly(path, ignoreErrors) }
+
 // Deletes a tree, clearing the write bit on a failing path and its parent before retrying that one operation
 func rmtreeReadonly(path string, ignoreErrors bool) error {
 	err := rmtreeTop(path)

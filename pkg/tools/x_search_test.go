@@ -64,6 +64,7 @@ func xsEnv(t *testing.T) *Env {
 type fakePools struct {
 	token, base string
 	asked       []string
+	refreshed   string
 }
 
 func (f *fakePools) SelectPooled(env *Env, provider string) (string, string, bool) {
@@ -72,6 +73,14 @@ func (f *fakePools) SelectPooled(env *Env, provider string) (string, string, boo
 		return "", "", false
 	}
 	return f.token, f.base, f.token != ""
+}
+
+func (f *fakePools) RefreshMatching(env *Env, provider, apiKeyHint string) (string, string, bool) {
+	f.asked = append(f.asked, "refresh:"+apiKeyHint)
+	if f.refreshed == "" {
+		return "", "", false
+	}
+	return f.refreshed, f.base, true
 }
 
 func TestXSearchPostsResponsesRequest(t *testing.T) {

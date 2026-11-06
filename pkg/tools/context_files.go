@@ -88,6 +88,9 @@ func readTextFile(path string) (string, error) {
 	return strings.ReplaceAll(text, "\r", "\n"), nil
 }
 
+// File reader the timed context read runs, swapped by tests for a read that blocks
+var ReadContextFileText = readTextFile
+
 // Reads path on its own goroutine, false after the timeout so a slow file cannot stall prompt building
 func ReadTextWithTimeout(env *Env, path string, timeout *float64) (string, bool, error) {
 	secs := 0.0
@@ -102,7 +105,7 @@ func ReadTextWithTimeout(env *Env, path string, timeout *float64) (string, bool,
 	}
 	result := make(chan readResult, 1)
 	go func() {
-		text, err := readTextFile(path)
+		text, err := ReadContextFileText(path)
 		result <- readResult{text, err}
 	}()
 	timer := time.NewTimer(time.Duration(secs * float64(time.Second)))

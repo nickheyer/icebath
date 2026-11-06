@@ -31,7 +31,7 @@ fi`)
 	if crtInfo, _ := os.Stat(crt); crtInfo.Mode().Perm() != 0o644 {
 		t.Fatal("the cert is public")
 	}
-	if dirInfo, _ := os.Stat(p.stateDir()); dirInfo.Mode().Perm() != 0o700 {
+	if dirInfo, _ := os.Stat(ironStateDir(t, p)); dirInfo.Mode().Perm() != 0o700 {
 		t.Fatal("the state dir is private")
 	}
 }
@@ -79,7 +79,7 @@ func TestStartProxyInjectsManagementKeyEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { p.StopProxy() })
+	t.Cleanup(func() { _, _ = p.StopProxy() })
 	if status.PID == 0 || !status.Listening {
 		t.Fatalf("started status expected: %+v", status)
 	}
@@ -93,7 +93,7 @@ func TestStartProxyInjectsManagementKeyEnv(t *testing.T) {
 	if p.readPersistedNonce() == "" || !p.pidAlive(status.PID) {
 		t.Fatal("the nonce is persisted beside the pidfile and proves the pid")
 	}
-	if !p.StopProxy() {
+	if stopped, err := p.StopProxy(); err != nil || !stopped {
 		t.Fatal("stop reports it was running")
 	}
 	if p.readPID() != 0 || p.GetStatus().PID != 0 {

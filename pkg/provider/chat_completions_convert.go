@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -23,6 +24,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -2073,13 +2076,8 @@ func providerPreferences(cfg map[string]any, model string) map[string]any {
 			}
 		}
 	}
-	if s, ok := flat["sort"].(string); ok {
-		s = strings.ToLower(strings.TrimSpace(s))
-		if s == "throughput" || s == "latency" || s == "price" {
-			flat["sort"] = s
-		} else {
-			delete(flat, "sort")
-		}
+	if s, ok := validatedOpenRouterProviderSort(flat["sort"]); ok {
+		flat["sort"] = s
 	} else {
 		delete(flat, "sort")
 	}
@@ -2736,4 +2734,22 @@ func containsAnyStr(s string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+// Normalized OpenRouter provider.sort value, warning about and dropping a string outside the allowed set
+func validatedOpenRouterProviderSort(raw any) (string, bool) {
+	text, ok := raw.(string)
+	if !ok {
+		return "", false
+	}
+	value := pystr.Lower(pystr.Strip(text))
+	if value == "" {
+		return "", false
+	}
+	switch value {
+	case "throughput", "latency", "price":
+		return value, true
+	}
+	slog.Warn(fmt.Sprintf("Ignoring invalid OpenRouter provider.sort value %s (allowed: latency, price, throughput)", pyrepr.Repr(raw)))
+	return "", false
 }

@@ -109,10 +109,16 @@ func (h *Hub) HTTPSession(ctx context.Context) (context.Context, func()) {
 	return context.WithValue(ctx, hubSessionKey{}, sess), base.CloseIdleConnections
 }
 
+// httpx.InvalidURL, raised past the HTTPError handlers of every hub fetch helper
+type hubInvalidURLError struct{ err error }
+
+func (e *hubInvalidURLError) Error() string { return e.err.Error() }
+func (e *hubInvalidURLError) Unwrap() error { return e.err }
+
 func hubRequest(ctx context.Context, rawURL string, o hubGet) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pyhttpx.MergeParams(rawURL, o.Params), nil)
 	if err != nil {
-		return nil, err
+		return nil, &hubInvalidURLError{err}
 	}
 	for k, v := range o.Headers {
 		req.Header.Set(k, v)
@@ -182,7 +188,7 @@ func (h *Hub) hopAllowed(rawURL string) bool {
 	return true
 }
 
-// GET with SSRF and website policy checks on every redirect hop, nil when blocked or failed
+// GET with SSRF and website policy checks on every redirect hop, nil when blocked or failed, invalid URLs raised through hubRaise
 func (h *Hub) guardedHTTPGet(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) *pyhttpx.Response {
 	if h.io.guardedGet != nil {
 		return h.io.guardedGet(ctx, rawURL, timeout, headers)
@@ -194,6 +200,10 @@ func (h *Hub) guardedHTTPGet(ctx context.Context, rawURL string, timeout time.Du
 		}
 		resp, err := h.ssrfSafeHTTPGet(ctx, current, timeout, headers)
 		if err != nil {
+			var invalid *hubInvalidURLError
+			if errors.As(err, &invalid) {
+				hubRaise(err)
+			}
 			h.S.logger().Debug(fmt.Sprintf("Skills Hub fetch failed for %s: %s", current, err))
 			return nil
 		}
@@ -204,8 +214,7 @@ func (h *Hub) guardedHTTPGet(ctx context.Context, rawURL string, timeout time.Du
 			}
 			next, err := pyurl.Join(current, location)
 			if err != nil {
-				h.S.logger().Debug(fmt.Sprintf("Skills Hub fetch failed for %s: %s", current, err))
-				return nil
+				hubRaise(err)
 			}
 			current = next
 			continue
@@ -216,7 +225,7 @@ func (h *Hub) guardedHTTPGet(ctx context.Context, rawURL string, timeout time.Du
 	return nil
 }
 
-// Streams one response with bounded policy checked redirects, nil when blocked or failed, the caller closes the body
+// Streams one response with policy checked redirects, nil when blocked or failed, invalid URLs raised through hubRaise
 func (h *Hub) guardedHTTPStream(ctx context.Context, rawURL string, params pyhttpx.Params, timeout time.Duration) *pyhttpx.StreamResponse {
 	current, currentParams := rawURL, params
 	for range maxSkillFetchRedirects + 1 {
@@ -235,6 +244,10 @@ func (h *Hub) guardedHTTPStream(ctx context.Context, rawURL string, params pyhtt
 			resp, err = pyhttpx.Stream(client, req, timeout)
 		}
 		if err != nil {
+			var invalid *hubInvalidURLError
+			if errors.As(err, &invalid) {
+				hubRaise(err)
+			}
 			h.S.logger().Debug(fmt.Sprintf("Skills Hub stream failed for %s: %s", current, err))
 			return nil
 		}
@@ -247,7 +260,7 @@ func (h *Hub) guardedHTTPStream(ctx context.Context, rawURL string, params pyhtt
 			return nil
 		}
 		if current, err = pyurl.Join(current, location); err != nil {
-			return nil
+			hubRaise(err)
 		}
 		currentParams = nil
 	}

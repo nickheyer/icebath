@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"strconv"
@@ -9,7 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -26,7 +27,7 @@ type cacheScopeLineageReader interface {
 }
 
 type cacheScopeSessionReader interface {
-	GetSession(id string) (*state.Session, error)
+	GetSession(ctx context.Context, id string) (*pyjson.Object, error)
 }
 
 type cacheScopeForkReader interface {
@@ -85,8 +86,10 @@ func cacheScopeAgentSource(a *CacheScopeAgent, sessionID string, db any, rowSour
 	if rowSource == nil && sessionID != "" && db != nil {
 		read := ""
 		if reader, ok := db.(cacheScopeSessionReader); ok {
-			if row, err := reader.GetSession(sessionID); err == nil && row != nil {
-				read = pyStripSpace(row.Source)
+			if row, err := reader.GetSession(context.Background(), sessionID); err == nil && row != nil {
+				source, _ := row.Get("source")
+				text, _ := source.(string)
+				read = pyStripSpace(text)
 			}
 		}
 		rowSource = &read

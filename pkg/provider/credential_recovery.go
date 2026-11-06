@@ -20,13 +20,7 @@ const (
 )
 
 // ProfileCLISelector is the -p name selector pinning copy pasteable guidance to the active named profile
-func ProfileCLISelector(h string) string {
-	name := home.ProfileNameFor(h)
-	if name != "" && name != "default" {
-		return "-p " + name + " "
-	}
-	return ""
-}
+func ProfileCLISelector(h string) string { return home.ProfileCLISelector(h) }
 
 // OAuthReloginCommand is the exact re-login command for a rejected OAuth grant
 func OAuthReloginCommand(provider string) string {

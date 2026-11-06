@@ -88,12 +88,16 @@ func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, a
 			return nil, err
 		}
 	}
-	hydrate := func(rows []*pyjson.Object) []any {
+	hydrate := func(rows []*pyjson.Object) ([]any, error) {
 		out := []any{}
 		for _, row := range rows {
-			out = append(out, s.host.rowToMessageDict(row, "get_anchored_view", false))
+			msg, err := s.host.rowToMessageDict(row, "get_anchored_view", false)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, msg)
 		}
-		return out
+		return out, nil
 	}
 	view := pyjson.NewObject()
 	view.Set("window", filtered)
@@ -101,8 +105,16 @@ func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, a
 	after, _ := primitive.Get("messages_after")
 	view.Set("messages_before", before)
 	view.Set("messages_after", after)
-	view.Set("bookend_start", hydrate(startRows))
-	view.Set("bookend_end", hydrate(endRows))
+	startMsgs, err := hydrate(startRows)
+	if err != nil {
+		return nil, err
+	}
+	endMsgs, err := hydrate(endRows)
+	if err != nil {
+		return nil, err
+	}
+	view.Set("bookend_start", startMsgs)
+	view.Set("bookend_end", endMsgs)
 	return view, nil
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
 // Reports whether this host is Windows
@@ -249,7 +250,7 @@ func coerceSSHRemoteCwd(env *Env, cwd, envType string) string {
 		return text
 	}
 	subHome := subprocessHome(env, nil)
-	if subHome == "" || !path.IsAbs(text) || path.Clean(subHome) == path.Clean(realHome(nil)) {
+	if subHome == "" || !path.IsAbs(text) || path.Clean(subHome) == path.Clean(realHome(env, nil)) {
 		return text
 	}
 	rel, err := filepath.Rel(path.Clean(subHome), path.Clean(text))
@@ -307,186 +308,25 @@ func expandPathVars(p string) string {
 	return expandUser(os.ExpandEnv(p))
 }
 
-// Home mode aliases accepted by TERMINAL_HOME_MODE
-var homeModeAliases = map[string]string{
-	"isolated": "profile", "profile_home": "profile", "profile-home": "profile",
-	"host": "real", "user": "real", "real_home": "real", "real-home": "real",
-}
-
-// Profile home directory beside the config when it exists
-func profileHomePath(env *Env, child map[string]string) string {
-	h := ""
-	if env != nil {
-		h = env.Home
-	}
-	if v, ok := child["ICEBATH_HOME"]; ok && v != "" {
-		h = v
-	}
-	if h == "" {
-		h = os.Getenv("ICEBATH_HOME")
-	}
-	if h == "" {
-		return ""
-	}
-	p := filepath.Join(expandPathVars(h), "home")
-	if st, err := os.Stat(p); err == nil && st.IsDir() {
-		return p
-	}
-	return ""
-}
-
-// Value of a key from a child environment or the process environment
-func childEnvGet(child map[string]string, key, def string) string {
-	if v, ok := child[key]; ok && v != "" {
-		return strings.TrimSpace(v)
-	}
-	if v := os.Getenv(key); v != "" {
-		return strings.TrimSpace(v)
-	}
-	return def
-}
-
 // Normalised form of a home path for comparison
-func normHomePath(p string) string {
-	if p == "" {
-		return ""
-	}
-	abs, err := filepath.Abs(expandUser(p))
-	if err != nil {
-		return filepath.Clean(p)
-	}
-	if isWindowsHost {
-		return strings.ToLower(filepath.Clean(abs))
-	}
-	return filepath.Clean(abs)
-}
+func normHomePath(p string) string { return home.NormHomePath(p) }
 
-// Real OS user home, never the profile home
-func realHome(child map[string]string) string {
-	profile := profileHomePath(nil, child)
-	candidates := []string{childEnvGet(child, "ICEBATH_REAL_HOME", ""), childEnvGet(child, "HOME", ""), childEnvGet(child, "USERPROFILE", "")}
-	if h, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, h)
-	}
-	seen := map[string]bool{}
-	for _, c := range candidates {
-		key := normHomePath(c)
-		if key == "" || seen[key] {
-			continue
-		}
-		seen[key] = true
-		if profile == "" || key != normHomePath(profile) {
-			return c
-		}
-	}
-	return os.TempDir()
+// Real OS user home, never the profile home of the session or the child environment
+func realHome(env *Env, child map[string]string) string {
+	return home.RealHome(visionCtx(nil, env), child)
 }
 
 // HOME a child process gets under the configured home mode, empty when it keeps its own
 func subprocessHome(env *Env, child map[string]string) string {
-	profile := profileHomePath(env, child)
-	mode := strings.ToLower(childEnvGet(child, "TERMINAL_HOME_MODE", "auto"))
-	if mode == "" {
-		mode = "auto"
-	}
-	if alias, ok := homeModeAliases[mode]; ok {
-		mode = alias
-	}
-	if mode == "profile" {
-		return profile
-	}
-	real := realHome(child)
-	current := childEnvGet(child, "HOME", "")
-	repaired := ""
-	if normHomePath(real) != normHomePath(current) {
-		repaired = real
-	}
-	if mode == "real" {
-		return repaired
-	}
-	if profile != "" && runningInContainer() {
-		return profile
-	}
-	if current == "" || (profile != "" && normHomePath(current) == normHomePath(profile)) {
-		return repaired
-	}
-	return ""
+	return home.SubprocessHome(visionCtx(nil, env), child)
 }
 
 // Reports whether this process runs inside a container
-func runningInContainer() bool {
-	if _, err := os.Stat("/.dockerenv"); err == nil {
-		return true
-	}
-	if _, err := os.Stat("/run/.containerenv"); err == nil {
-		return true
-	}
-	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
-		return true
-	}
-	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
-		for _, m := range []string{"docker", "podman", "/lxc/", "kubepods", "containerd", "crio"} {
-			if strings.Contains(string(data), m) {
-				return true
-			}
-		}
-	}
-	if data, err := os.ReadFile("/proc/self/mountinfo"); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			f := strings.Fields(line)
-			if len(f) >= 5 && f[4] == "/" {
-				for _, m := range []string{"kubepods", "containerd", "crio"} {
-					if strings.Contains(line, m) {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
-}
+func runningInContainer() bool { return hostinfo.IsContainer() }
 
 // Applies the subprocess HOME contract and the scratch temp directories to a child environment
 func applySubprocessHomeEnv(env *Env, child map[string]string) {
-	if real := realHome(child); real != "" {
-		child["ICEBATH_REAL_HOME"] = real
-	}
-	if h := subprocessHome(env, child); h != "" {
-		child["HOME"] = h
-	}
-	applyScratchTmpEnv(env, child)
-}
-
-// Temp variables repointed at the scratch directory of the home
-var scratchTmpVars = []string{"TMPDIR", "TMP", "TEMP"}
-
-// Marker variable naming the scratch directory this process exported
-const scratchMarkerEnv = "ICEBATH_SCRATCH_DIR"
-
-// Points the temp variables of a child at the scratch dir of its home unless the user set them
-func applyScratchTmpEnv(env *Env, child map[string]string) bool {
-	ours := child[scratchMarkerEnv]
-	for _, key := range scratchTmpVars {
-		if v := strings.TrimSpace(child[key]); v != "" && v != ours {
-			return false
-		}
-	}
-	h := strings.TrimSpace(child["ICEBATH_HOME"])
-	if h == "" && env != nil {
-		h = env.Home
-	}
-	if h == "" {
-		return false
-	}
-	scratch := home.ScratchDir(expandPathVars(h))
-	if err := os.MkdirAll(scratch, 0o700); err != nil {
-		return false
-	}
-	for _, key := range scratchTmpVars {
-		child[key] = scratch
-	}
-	child[scratchMarkerEnv] = scratch
-	return true
+	home.ApplySubprocessHomeEnv(visionCtx(nil, env), child)
 }
 
 // Default sandbox image every container backend uses unless configured

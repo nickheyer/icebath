@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -648,7 +649,7 @@ func (s *Store) createJobTx(tx *jobsTx, o CreateJobOptions) (*Job, error) {
 	if promptText == "" && script == nil && len(skills) == 0 {
 		return nil, errors.New(emptyPayloadError)
 	}
-	if err := checkGatewayLifecycle(promptText, deref(script)); err != nil {
+	if err := checkGatewayLifecycle(s, promptText, deref(script)); err != nil {
 		return nil, err
 	}
 	label := promptText
@@ -724,6 +725,14 @@ func (s *Store) getJob(jobID string) (*Job, error) {
 		}
 	}
 	return nil, nil
+}
+
+// Job of a reference in the cron store of h, the ambient home when h is empty
+func ResolveJobRef(h string, ref string) (*Job, error) {
+	if h == "" {
+		h = home.Dir(context.Background())
+	}
+	return openCronStore(h, time.Now).resolveJobRef(ref)
 }
 
 // Job by id, then by case insensitive name, an ambiguous name failing rather than picking one

@@ -77,7 +77,7 @@ func fastForwardMissedRecurring(d *dueJob, grace int) (bool, error) {
 	if instantAfter(nextAt, sc.now) && !s.jobCatchesUp(job) {
 		s.log.Info(fmt.Sprintf("Job '%s' missed its scheduled time (%s, grace=%ds). Skipping %d missed occurrence(s) "+
 			"because catch-up is off for this job; next run: %s", d.label(), d.nextRun, grace, missed, next))
-		sc.onSaved = append(sc.onSaved, func() { recordCronMissed(job) },
+		sc.onSaved = append(sc.onSaved, func() { recordCronMissed(sc.ctx, job) },
 			func() { s.bookMissed(job, missed, &first, "skipped, catch-up off; next run "+next, capped) })
 		return true, nil
 	}
@@ -119,7 +119,7 @@ func retireExpiredOneshot(d *dueJob) bool {
 		first := d.nextRun
 		writeMissed(s, job, first)
 		sc.retire(job.ID)
-		sc.onSaved = append(sc.onSaved, func() { recordCronMissed(job) },
+		sc.onSaved = append(sc.onSaved, func() { recordCronMissed(sc.ctx, job) },
 			func() { s.bookMissed(job, 1, &first, "one-shot past its grace window; catch-up off", false) })
 	}
 	return true

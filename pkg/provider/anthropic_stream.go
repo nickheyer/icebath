@@ -452,6 +452,7 @@ func (c *anthropicClient) consumeStream(ctx context.Context, cancel context.Canc
 			elapsed := time.Since(lastChunk).Seconds()
 			catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, t.stale.Seconds(), model, commaInt(s.estTokens)))
 			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(s.estTokens))})
+			bumpStaleStreak(ctx)
 			kill.fire("stale", elapsed)
 			cancel()
 			return nil, c.attemptError(ctx, kill, errors.New("stale stream"), s)

@@ -675,11 +675,10 @@ func TestHermesYAMLSafeLoadFollowsTheYAML11Policy(t *testing.T) {
 func onboardingRoot(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
-	root := filepath.Join(tmp, ".icebath")
+	root := filepath.Join(tmp, "active")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", tmp)
 	t.Setenv(home.EnvHome, root)
 	t.Setenv(config.EnvManagedDir, filepath.Join(tmp, "no-managed"))
 	config.InvalidateManagedCache()

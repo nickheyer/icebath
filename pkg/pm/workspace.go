@@ -697,6 +697,11 @@ func SelectedPluginDir(pluginsDir, name, installing string) (string, error) {
 	return pluginDir, nil
 }
 
+// Effective plugin selection as distinct plugin trees for the plugin installer
+func EnabledPluginDirs(ctx context.Context, opts EnabledPluginsOptions) ([]string, error) {
+	return enabledPluginDirs(ctx, opts)
+}
+
 // Effective plugin selection as distinct plugin trees, declarations not yet consulted
 func enabledPluginDirs(ctx context.Context, opts EnabledPluginsOptions) ([]string, error) {
 	entries, err := enabledPluginEntries(ctx, opts)
@@ -1427,6 +1432,11 @@ func hermesFitError(ctx context.Context, declaration *PythonDeclaration, extras 
 		return reason, nil
 	}
 	return coreRequirementError(ctx, declaration, extras, nil)
+}
+
+// Why an applicable icebath-agent requirement of the declaration rejects the running icebath, empty when none does
+func CoreRequirementError(ctx context.Context, declaration *PythonDeclaration) (string, error) {
+	return coreRequirementError(ctx, declaration, nil, nil)
 }
 
 // Workspace member of a plugin inside the generation, its pyproject trimmed to what installs or a generated deps project

@@ -45,6 +45,9 @@ func leftCoreHooks() *PluginManagerHooks {
 	return h
 }
 
+// Installed plugin manager hooks, panicking when the plugins package never installed them
+func PluginHooks() *PluginManagerHooks { return leftCoreHooks() }
+
 // Plugin auxiliary task registrations sorted by key after idempotent discovery
 func pluginAuxiliaryTasks() []map[string]any { return leftCoreHooks().AuxiliaryTasks() }
 

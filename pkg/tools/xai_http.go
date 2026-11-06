@@ -15,6 +15,8 @@ const defaultXAIOAuthBaseURL = "https://api.x.ai/v1"
 type CredentialPoolSource interface {
 	// Runtime bearer and base URL of the selected entry, expiring rows refreshed, ok false when none is usable
 	SelectPooled(env *Env, provider string) (token, baseURL string, ok bool)
+	// Force refreshes the entry that issued the rejected bearer, ok false when no entry matches or the refresh fails
+	RefreshMatching(env *Env, provider, apiKeyHint string) (token, baseURL string, ok bool)
 }
 
 // CredentialPools is the installed pool source, nil when no pool backend is wired
@@ -97,6 +99,15 @@ func resolveExplicitXAIAPIKey(env *Env) string {
 
 // Bearer credentials for direct xAI endpoints, OAuth first unless an explicit API key is preferred
 func resolveXAIHTTPCredentials(env *Env, preferAPIKey bool) xaiHTTPCredentials {
+	return resolveXAIHTTPCredentialsWith(env, preferAPIKey, false, "")
+}
+
+// Credentials after a rejected bearer, the issuing pool entry force refreshed before any other is selected
+func resolveXAIHTTPCredentialsRefreshed(env *Env, apiKeyHint string) xaiHTTPCredentials {
+	return resolveXAIHTTPCredentialsWith(env, false, true, apiKeyHint)
+}
+
+func resolveXAIHTTPCredentialsWith(env *Env, preferAPIKey, forceRefresh bool, apiKeyHint string) xaiHTTPCredentials {
 	if preferAPIKey {
 		if explicit := strings.TrimSpace(resolveExplicitXAIAPIKey(env)); explicit != "" {
 			return xaiHTTPCredentials{Provider: "xai", APIKey: explicit,
@@ -104,7 +115,15 @@ func resolveXAIHTTPCredentials(env *Env, preferAPIKey bool) xaiHTTPCredentials {
 		}
 	}
 	if CredentialPools != nil {
-		if token, base, ok := CredentialPools.SelectPooled(env, "xai-oauth"); ok && strings.TrimSpace(token) != "" {
+		var token, base string
+		var ok bool
+		if forceRefresh {
+			token, base, ok = CredentialPools.RefreshMatching(env, "xai-oauth", apiKeyHint)
+		}
+		if !ok {
+			token, base, ok = CredentialPools.SelectPooled(env, "xai-oauth")
+		}
+		if ok && strings.TrimSpace(token) != "" {
 			fallback := strings.TrimRight(strings.TrimSpace(base), "/")
 			if fallback == "" {
 				fallback = defaultXAIOAuthBaseURL

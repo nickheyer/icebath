@@ -76,7 +76,7 @@ type poolTask struct {
 	future *PoolFuture
 }
 
-// DaemonPool is the shared executor for best effort work that must never block process exit
+// DaemonPool is the shared executor for background work that must never block process exit
 type DaemonPool struct {
 	mu         sync.Mutex
 	maxWorkers int
@@ -149,8 +149,9 @@ func (p *DaemonPool) worker(name string) {
 		}
 		task := p.queue[0]
 		p.queue = p.queue[1:]
+		more := len(p.queue) > 0
 		p.mu.Unlock()
-		if len(p.queue) > 0 {
+		if more {
 			select {
 			case p.wake <- struct{}{}:
 			default:

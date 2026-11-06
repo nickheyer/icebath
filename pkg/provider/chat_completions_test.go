@@ -993,7 +993,7 @@ func TestStreamPromptProgressStatus(t *testing.T) {
 	if ws.request(0).Body["return_progress"] != true {
 		t.Fatalf("return_progress missing: %v", ws.request(0).Body)
 	}
-	if statuses := log.texts(EventStatus); len(statuses) != 1 || statuses[0] != "⚙ processing prompt — 50%" {
+	if statuses := log.texts(EventWaitNotice); len(statuses) != 1 || statuses[0] != "⚙ processing prompt — 50%" {
 		t.Fatalf("status %v", statuses)
 	}
 }

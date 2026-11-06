@@ -968,7 +968,7 @@ const (
 	// NousPolicyAppendMax is the largest allowlist still worth showing in place of an empty picker
 	NousPolicyAppendMax = 64
 	// AIGatewayBaseURL is the Vercel AI Gateway OpenAI compatible root
-	AIGatewayBaseURL = "https://ai-gateway.vercel.sh/v1"
+	AIGatewayBaseURL = home.AIGatewayBaseURL
 )
 
 var (

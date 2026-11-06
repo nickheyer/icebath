@@ -79,7 +79,7 @@ func openPreviewTool(env *Env, rawURL, label string) string {
 	label = strings.TrimSpace(label)
 	return desktopEmitOrError(env, "preview.open", map[string]any{"url": target, "label": label},
 		"Failed to open the preview pane: ", "The preview pane is only available in the Icebath desktop app.",
-		map[string]any{"success": true, "url": target, "label": label})
+		pyObject("success", true, "url", target, "label", label))
 }
 
 // Asks the desktop GUI to close the preview pane, or the tab for the url
@@ -91,7 +91,7 @@ func previewClose(env *Env, rawURL string) string {
 	}
 	return desktopEmitOrError(env, "preview.close", map[string]any{"url": target},
 		"Failed to close the preview: ", "The preview pane is only available in the Icebath desktop app.",
-		map[string]any{"success": true, "closed": closed})
+		pyObject("success", true, "closed", closed))
 }
 
 // ReadPreviewPane reads the active preview tab through the gateway bridge, installed by the desktop gateway

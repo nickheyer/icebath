@@ -259,7 +259,7 @@ func walkNoFollow(root string, out *[]string) error {
 type ExportExtraFile struct{ Rel, Content string }
 
 // Exports a profile to a tar.gz without credentials and with staged text force redacted, returning the archive path
-func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (string, error) {
+func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (_ string, err error) {
 	canon, profileDir, err := profiles.ExistingProfileDir(name)
 	if err != nil {
 		return "", err
@@ -294,7 +294,7 @@ func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (strin
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(tmp)
+	defer pyfs.CloseTempDir(tmp, &err)
 	staged := filepath.Join(tmp, canon)
 	if err := pyfs.CopyTree(profileDir, staged, true, false, ignore); err != nil {
 		return "", err
@@ -318,8 +318,11 @@ func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (strin
 	return pyfs.MakeTargz(base, tmp, canon)
 }
 
+// Removes a staged runtime tree of an imported archive, swapped by tests
+var rmtreeStagedRuntime = func(p string) error { return pyfs.RmTree(p, nil) }
+
 // Imports a profile archive with exactly one root directory, dropping foreign package manager runtime trees
-func ImportProfile(archivePath, name string) (string, error) {
+func ImportProfile(archivePath, name string) (_ string, err error) {
 	if !pathExists(archivePath) {
 		return "", &profiles.NotFoundError{Msg: "Archive not found: " + archivePath}
 	}
@@ -366,7 +369,7 @@ func ImportProfile(archivePath, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(staging)
+	defer pyfs.CloseTempDir(staging, &err)
 	if err := pyfs.SafeExtractTargz(archivePath, staging); err != nil {
 		return "", err
 	}
@@ -391,7 +394,7 @@ func ImportProfile(archivePath, name string) (string, error) {
 		}
 		p := filepath.Join(finalSource, child.Name())
 		if isDir(p) {
-			err = pyfs.RmTree(p, nil)
+			err = rmtreeStagedRuntime(p)
 		} else {
 			err = unlinkMissingOK(p)
 		}

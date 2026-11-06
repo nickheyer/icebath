@@ -396,18 +396,8 @@ func (s *Store) LoadGlobal() AuthData {
 	return data
 }
 
-// secureParentDir tightens the parent directory to 0700 unless it is the filesystem root or a top level directory
-func secureParentDir(target string) {
-	parent, err := filepath.Abs(filepath.Dir(target))
-	if err != nil {
-		return
-	}
-	parts := strings.Split(strings.Trim(filepath.ToSlash(parent), "/"), "/")
-	if parent == string(filepath.Separator) || len(parts) < 2 {
-		return
-	}
-	os.Chmod(parent, 0o700)
-}
+// Restricts the resolved parent to 0700 except the root, top level dirs and the install tree
+func secureParentDir(target string) { home.SecureParentDir(target) }
 
 // savePrivateJSON writes indented JSON at mode 0600 under a 0700 parent and fsyncs the directory
 func savePrivateJSON(target string, data any) error {

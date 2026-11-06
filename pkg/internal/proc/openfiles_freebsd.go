@@ -2,7 +2,6 @@ package proc
 
 import (
 	"encoding/binary"
-	"errors"
 	"os"
 	"strings"
 	"syscall"
@@ -20,21 +19,6 @@ const (
 	kfPathOff       = 368
 	kfMinRecordSize = 36
 )
-
-// Process error psutil raises for a failed kinfo sysctl of pid
-func kinfoError(pid int, name string, err error) error {
-	var errno syscall.Errno
-	if !errors.As(err, &errno) {
-		return err
-	}
-	switch errno {
-	case syscall.ESRCH:
-		return ErrNoSuchProcess
-	case syscall.EPERM, syscall.EACCES:
-		return ErrAccessDenied
-	}
-	return os.NewSyscallError(name, errno)
-}
 
 // Regular files pid holds open through vnode descriptors, read from packed kinfo_file records
 func OpenFiles(pid int) ([]OpenFile, error) {

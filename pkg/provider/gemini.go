@@ -487,7 +487,7 @@ func (c *geminiNativeClient) prepare(ctx context.Context, req *Request) (*gemini
 		ResponseFormat: responseFormat, Model: model, ToolsAsJSONSchema: geminiAcceptsParametersJSONSchema(baseURL)})
 	bare := bareGeminiModelID(model)
 	return &geminiPrepared{request: request, model: bare, url: baseURL + "/models/" + bare + ":", extra: extra, auth: auth, baseURL: baseURL,
-		settings: settings, estTokens: estimateBodyContextTokens(kwargs, CurrentImageTokenCost(ctx))}, nil
+		settings: settings, estTokens: EstimateRequestContextTokens(ctx, kwargs)}, nil
 }
 
 // Integer value of a JSON integer, false for floats, strings and booleans
@@ -671,7 +671,7 @@ func ResponseInitialPromptTokens(resp *Response) (int, int, bool) {
 func (c *geminiNativeClient) CountTokens(ctx context.Context, req *Request) (int, error) {
 	settings := loadWireSettings(ctx)
 	build := c.chat.cc.build(ctx, req, settings)
-	return estimateBodyContextTokens(geminiPlain(build.body), CurrentImageTokenCost(ctx)), nil
+	return EstimateRequestContextTokens(ctx, geminiPlain(build.body)), nil
 }
 
 // One message from the stream producer to the watchdog loop
@@ -834,6 +834,7 @@ func (c *geminiNativeClient) consumeGeminiStream(ctx context.Context, cancel con
 			elapsed := time.Since(lastChunk).Seconds()
 			catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, t.stale.Seconds(), model, commaInt(s.estTokens)))
 			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(s.estTokens))})
+			bumpStaleStreak(ctx)
 			kill.fire("stale", elapsed)
 			cancel()
 			return nil, c.chat.attemptError(ctx, kill, errors.New("stale stream"), s)

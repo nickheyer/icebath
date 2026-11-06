@@ -6,6 +6,8 @@ import (
 	"net/netip"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // URL holds the parts urllib.parse splits a URL into, params apart from the path
@@ -62,7 +64,27 @@ func Split(raw string) (URL, error) {
 		raw, u.Query = raw[:i], raw[i+1:]
 	}
 	u.Path = raw
+	if err := checkNetloc(u.Netloc); err != nil {
+		return URL{}, err
+	}
 	return u, nil
+}
+
+// Rejects a non ASCII netloc whose NFKC form gains URL delimiters, the urlsplit netloc check
+func checkNetloc(netloc string) error {
+	ascii := true
+	for i := 0; i < len(netloc); i++ {
+		ascii = ascii && netloc[i] < utf8.RuneSelf
+	}
+	if ascii {
+		return nil
+	}
+	n := strings.NewReplacer("@", "", ":", "", "#", "", "?", "").Replace(netloc)
+	normalized := norm.NFKC.String(n)
+	if n != normalized && strings.ContainsAny(normalized, "/?#@:") {
+		return fmt.Errorf("netloc '%s' contains invalid characters under NFKC normalization", netloc)
+	}
+	return nil
 }
 
 // Validates the bracketed host of a netloc the way urlsplit checks it

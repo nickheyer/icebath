@@ -20,40 +20,49 @@ import (
 
 // Higher package collaborators the top level wiring installs so pkg/plugins never imports them
 type Services struct {
-	InvokeLifecycleHook         func(ctx context.Context, hookName string, kwargs map[string]any) []any
-	RequestToolApproval         func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error)
-	FailoverReason              func(value any) (any, bool)
-	ClearDashboardAuthProviders func()
-	MemoryProviderDir           func(h, name string) (string, bool)
-	HostObject                  func(kind string, obj any) (name string, ok bool)
-	BindProfileSecretScope      func(ctx context.Context, home string) context.Context
-	GetSecret                   func(ctx context.Context, name string) (string, bool, error)
-	PlatformActions             func(c *Context) any
-	PluginLLM                   func(c *Context) any
-	SubagentLifecycle           func(c *Context) any
-	DelegationBackends          func(c *Context) any
-	CurrentCronExecution        func(ctx context.Context) any
-	CallMCPTool                 func(ctx context.Context, server, tool string, timeout float64, args map[string]any) (string, error)
-	RedeemSideQuestion          func(ctx context.Context, token, prompt, pluginID, h string, timeout float64) (*string, error)
-	BoundSessionKey             func(ctx context.Context) string
-	SessionCwd                  func(ctx context.Context, h string) string
-	SessionSurface              func(ctx context.Context, h string) string
-	PostMessage                 func(ctx context.Context, c *Context, text string) any
-	AskChoice                   func(ctx context.Context, question string, choices []any) (string, bool)
-	ResolveBuiltinCommand       func(name string) bool
-	DispatchTool                func(ctx context.Context, scope, toolName string, args, kwargs map[string]any) (string, error)
-	RegisterContextReference    func(provider any) error
-	DashboardAuth               DashboardAuthRegistry
-	Platforms                   PlatformRegistry
-	ProviderRegistries          map[string]ScopedRegistry
-	BuiltinAuxTaskKeys          func() []string
-	RegisterRedactionPatterns   func(patterns any, source string) (int, error)
-	PluginSDK                   func(ctx context.Context, home, op string, args []any, kwargs map[string]any) (any, error)
-	BuildPluginBlueprint        func(pluginName, key string, spec BlueprintSpec) (string, any, error)
-	SecretSources               SecretSources
-	ReRegisterShellHooks        func() error
-	ReRegisterOutboundWebhooks  func() error
-	PlatformDeclarations        PlatformDeclarations
+	InvokeLifecycleHook               func(ctx context.Context, hookName string, kwargs map[string]any) []any
+	RequestToolApproval               func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error)
+	FailoverReason                    func(value any) (any, bool)
+	ClearDashboardAuthProviders       func()
+	MemoryProviderDir                 func(h, name string) (string, bool)
+	HostObject                        func(kind string, obj any) (name string, ok bool)
+	BindProfileSecretScope            func(ctx context.Context, home string) context.Context
+	GetSecret                         func(ctx context.Context, name string) (string, bool, error)
+	PlatformActions                   func(c *Context) any
+	PluginLLM                         func(c *Context) any
+	SubagentLifecycle                 func(c *Context) any
+	DelegationBackends                func(c *Context) any
+	CurrentCronExecution              func(ctx context.Context) any
+	CallMCPTool                       func(ctx context.Context, server, tool string, timeout float64, args map[string]any) (string, error)
+	RedeemSideQuestion                func(ctx context.Context, token, prompt, pluginID, h string, timeout float64) (*string, error)
+	BoundSessionKey                   func(ctx context.Context) string
+	SessionCwd                        func(ctx context.Context, h string) string
+	SessionSurface                    func(ctx context.Context, h string) string
+	PostMessage                       func(ctx context.Context, c *Context, text string) any
+	AskChoice                         func(ctx context.Context, question string, choices []any) (string, bool)
+	ResolveBuiltinCommand             func(name string) bool
+	DispatchTool                      func(ctx context.Context, scope, toolName string, args, kwargs map[string]any) (string, error)
+	RegisterContextReference          func(provider any) error
+	DashboardAuth                     DashboardAuthRegistry
+	Platforms                         PlatformRegistry
+	ProviderRegistries                map[string]ScopedRegistry
+	BuiltinAuxTaskKeys                func() []string
+	RegisterRedactionPatterns         func(patterns any, source string) (int, error)
+	PluginSDK                         func(ctx context.Context, home, op string, args []any, kwargs map[string]any) (any, error)
+	BuildPluginBlueprint              func(pluginName, key string, spec BlueprintSpec) (string, any, error)
+	SecretSources                     SecretSources
+	ReRegisterShellHooks              func() error
+	ReRegisterOutboundWebhooks        func() error
+	PlatformDeclarations              PlatformDeclarations
+	OAuthSurface                      func(manifest map[string]any) map[string]bool
+	OAuthAdmissionProblems            func(manifest map[string]any, pluginDir string) []string
+	OAuthAdmissionWarnings            func(manifest map[string]any, pluginDir string) []string
+	PortableServerAvailability        func(ctx context.Context, decl AgentPluginServerDeclaration) (PortableAvailability, error)
+	MaskedSecretPrompt                func(prompt string) (string, error)
+	ServerAvailabilityReason          func(ctx context.Context, declaration AgentPluginServerDeclaration, appTitle string) (reason string, offerable bool, err error)
+	DefinesMemoryProvider             func(pluginDir string) bool
+	PrepareMemoryProviderDependencies func(ctx context.Context, name string) error
+	RequiresAuthNotice                func(manifest map[string]any) string
 }
 
 var services atomic.Pointer[Services]

@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Wall clock cap on one probe including the whole body
@@ -26,7 +28,7 @@ var probeTotalDeadline = 15 * time.Second
 var metadataTransport http.RoundTripper
 
 // OpenRouter catalog endpoint
-const OpenRouterModelsURL = "https://openrouter.ai/api/v1/models"
+const OpenRouterModelsURL = home.OpenRouterModelsURL
 
 // Response of one metadata probe with the body already read for successes
 type probeResponse struct {

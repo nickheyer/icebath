@@ -711,7 +711,27 @@ func TestRetainDBSyncTurnQueuesBothSides(t *testing.T) {
 	if err := p.Shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
-	reqs := srv.seen()
+	soul, err := os.ReadFile(filepath.Join(h, "SOUL.md"))
+	if err != nil {
+		t.Fatal("config load did not seed the default SOUL.md", err)
+	}
+	var reqs, seeds []rdbRequest
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		reqs, seeds = nil, nil
+		for _, r := range srv.seen() {
+			if r.path == "/v1/memory/agent/icebath/seed" {
+				seeds = append(seeds, r)
+			} else {
+				reqs = append(reqs, r)
+			}
+		}
+		if len(seeds) > 0 || time.Now().After(deadline) {
+			break
+		}
+	}
+	if len(seeds) != 1 || seeds[0].body["content"] != strings.TrimSpace(string(soul)) || seeds[0].body["source"] != "soul_md" {
+		t.Fatalf("soul seed %+v", seeds)
+	}
 	if len(reqs) != 1 || reqs[0].body["session_id"] != "init-session" || reqs[0].body["user_id"] != "u9" {
 		t.Fatalf("ingest %+v", reqs)
 	}

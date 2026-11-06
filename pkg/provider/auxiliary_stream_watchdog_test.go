@@ -152,8 +152,8 @@ func TestChatStreamWindowsCapAtTheRequestTimeout(t *testing.T) {
 	ctx := modelsTestHome(t)
 	local := &auxProbeClient{baseURL: "http://127.0.0.1:8080/v1"}
 	w := auxChatStreamWindows(ctx, local, map[string]any{"model": "m", "timeout": 20.0}, "")
-	if w.Window != auxStreamNoProgressTimeoutSeconds || w.HasFirstToken {
-		t.Fatalf("local endpoint keeps prefill on the request timeout, got %+v", w)
+	if w.Window != 20 || w.HasFirstToken {
+		t.Fatalf("local endpoint leaves prefill to the request timeout with the window capped, got %+v", w)
 	}
 	w = auxChatStreamWindows(ctx, local, map[string]any{"model": "m", "timeout": 7}, "")
 	if w.Window != 7 {

@@ -66,18 +66,12 @@ var (
 	}
 	_ = func(ctx context.Context, sch *Scheduler) (int, error) { return schedulerTick(ctx, sch) }
 	_ = func(s *Store) *Ledger { return openExecutionsLedger(s) }
-	_ = func(s *Store) *IncidentStore { return openIncidents(s) }
-	_ = func(s *Store) *Notepad { return openNotepad(s) }
-	_ = func(s *Store) *DeliveryQueue { return openDeliveryQueue(s) }
-	_ = func(s *Store, job *Job) MonitorOutcome { return checkMonitor(s, job) }
-	_ = func(prompt, script string) error { return checkGatewayLifecycle(prompt, script) }
 	_ = func(prompt string) string { return scanCronPrompt(prompt) }
 	_ = func(s *Store, job *Job, extra string) (string, error) { return buildJobPrompt(s, job, extra) }
 	_ = func(s *Store, job *Job, content string, forFailure bool) []Target {
 		return resolveDeliveryTargets(s, job, forFailure)
 	}
 	_ = func() []AutomationBlueprint { return listBlueprints() }
-	_ = func(s *Store) []Suggestion { return listPendingSuggestions(s) }
 	_ = func(s *Store, job *Job) [][2]string { return cronListRows(s, job) }
 	_ = func(s *Store) []string { return cronStatusLines(s) }
 	_ = func(arg string) []string { return cronCommandLines(arg) }
@@ -86,4 +80,5 @@ var (
 		return restoreCronPromptFieldsIfDegraded(s, snapshotID)
 	}
 	_ = func() Provider { return newChronosProvider() }
+	_ = func(s *Store, job *Job, owner *string) *fireOwnership { return s.newFireOwnership(job, owner) }
 )

@@ -61,19 +61,19 @@ func servableProfileHomes(ctx context.Context) (map[string]bool, error) {
 	homes := map[string]bool{}
 	for _, p := range served {
 		if p.Name == "default" || home.ProfileHasServableIdentity(p.Home) {
-			homes[resolvedPath(p.Home)] = true
+			homes[launchResolvedPath(p.Home)] = true
 		}
 	}
 	launch := os.Getenv(home.EnvHome)
 	if launch == "" {
 		launch = home.PlatformDefault()
 	}
-	homes[resolvedPath(launch)] = true
+	homes[launchResolvedPath(launch)] = true
 	return homes, nil
 }
 
 // Absolute path with every existing symlink resolved, the non strict Path.resolve form
-func resolvedPath(p string) string {
+func launchResolvedPath(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return p

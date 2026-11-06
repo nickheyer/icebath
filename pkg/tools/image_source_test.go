@@ -488,3 +488,17 @@ func TestImageSourceVideoPermitted(t *testing.T) {
 		t.Fatalf("junk video: %v", err)
 	}
 }
+
+func TestReadBlockErrorExported(t *testing.T) {
+	h := t.TempDir()
+	env := &Env{Home: h}
+	if got := ReadBlockError(env, filepath.Join(h, "auth.json")); !strings.Contains(got, "is an icebath credential store") {
+		t.Fatal(got)
+	}
+	if got := ReadBlockError(env, filepath.Join(h, "skills", ".hub", "lock.json")); !strings.Contains(got, "internal icebath cache file") {
+		t.Fatal(got)
+	}
+	if got := ReadBlockError(env, filepath.Join(h, "notes.txt")); got != "" {
+		t.Fatal(got)
+	}
+}

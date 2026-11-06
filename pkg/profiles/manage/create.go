@@ -299,7 +299,7 @@ func pathExists(p string) bool {
 }
 
 // Asks a live default multiplexer to serve or unroute a profile now instead of at its next rescan
-func notifyMultiplexer(canon string) { gatewayNotifyProfilesChanged(canon) }
+var notifyMultiplexer = func(canon string) { gatewayNotifyProfilesChanged(canon) }
 
 // Settles a deleted profile's durable identity, false when the settlement is still pending
 func purgeIdentity(ctx context.Context, canon string) bool {
@@ -307,7 +307,7 @@ func purgeIdentity(ctx context.Context, canon string) bool {
 }
 
 // Reports whether a live default gateway recorded a served profile set
-func liveDefaultMultiplexer() bool {
+var liveDefaultMultiplexer = func() bool {
 	_, recorded, err := gatewayRecordedServedProfiles()
 	return err == nil && recorded
 }

@@ -129,16 +129,6 @@ func CLICommandName(projectRoot string) (string, error) {
 	return strings.TrimSuffix(filepath.Base(command), ".exe"), nil
 }
 
-// In tree venv or .venv directory of a checkout, venv winning, empty when neither exists
-func projectVenvDir(root string) string {
-	for _, name := range []string{"venv", ".venv"} {
-		if candidate := filepath.Join(root, name); isDirectory(candidate) {
-			return candidate
-		}
-	}
-	return ""
-}
-
 // Payload environment, then the checkout's in tree venv, then the venv path a first install creates
 func BaseVenv(projectRoot string) (string, error) {
 	payload, err := PayloadVenv(projectRoot)
@@ -146,8 +136,9 @@ func BaseVenv(projectRoot string) (string, error) {
 		return payload, err
 	}
 	root := resolvePath(projectRoot)
-	if dir := projectVenvDir(root); dir != "" {
-		return dir, nil
+	dir, err := projectVenvDir(root)
+	if err != nil || dir != "" {
+		return dir, err
 	}
 	return filepath.Join(root, "venv"), nil
 }
@@ -394,6 +385,11 @@ var processPrefix = func() (string, error) {
 		return "", err
 	}
 	return filepath.Dir(resolvePath(exe)), nil
+}
+
+// Exported form for pkg/memory setup, same answer as the package function
+func RunningFromSelectedEnvironment(ctx context.Context, projectRoot string) (bool, string, error) {
+	return runningFromSelectedEnvironment(ctx, projectRoot)
 }
 
 // Reports whether this process resolves imports from the install's selected environment, with what it runs from
@@ -910,6 +906,11 @@ func removeForce(dir string) error {
 		}
 	}
 	return retry(dir, func() error { return os.Remove(dir) })
+}
+
+// Rolls back or settles a shipped caller's plugin publication row
+func RecoverPluginPublication(ctx context.Context, project string, row map[string]any, journal string) error {
+	return recoverPluginPublication(ctx, project, row, journal)
 }
 
 // Rolls back or settles an interrupted plugin code publication from its journal row

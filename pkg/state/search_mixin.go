@@ -34,7 +34,7 @@ type searchHost interface {
 	ftsMergeMaxPagesPerIndex() int
 	ftsMergeCommandsPerPass() int
 	GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*pyjson.Object, error)
-	rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) *pyjson.Object
+	rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) (*pyjson.Object, error)
 }
 
 const (

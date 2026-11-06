@@ -5,17 +5,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Entry count bound of the message token memo
-const msgTokensCacheMax = 4096
+var msgTokensCacheMax = 4096
 
 // Retained bytes budget of the message token memo
-const msgTokensCacheMaxBytes = 16 * 1024 * 1024
+var msgTokensCacheMaxBytes = 16 * 1024 * 1024
 
 // Fingerprint structure cost per pinned string leaf
 const leafOverheadBytes = 120
@@ -203,11 +204,10 @@ func msgFingerprint(value any, pins *MemoPins) (string, bool) {
 			return []any{"n", "int", t}, true
 		case int64:
 			return []any{"n", "int", t}, true
+		case *big.Int:
+			return []any{"n", "int", t.String()}, true
 		case float64:
-			if t == float64(int64(t)) {
-				return []any{"n", "int", int64(t)}, true
-			}
-			return []any{"n", "float", t}, true
+			return []any{"n", "float", pyrepr.Float(t)}, true
 		case json.Number:
 			return []any{"n", "number", t.String()}, true
 		case map[string]any:
@@ -224,6 +224,17 @@ func msgFingerprint(value any, pins *MemoPins) (string, bool) {
 		case []any:
 			out := make([]any, 0, len(t)+1)
 			out = append(out, "l")
+			for _, item := range t {
+				fv, ok := walk(item)
+				if !ok {
+					return nil, false
+				}
+				out = append(out, fv)
+			}
+			return out, true
+		case pyrepr.Tuple:
+			out := make([]any, 0, len(t)+1)
+			out = append(out, "t")
 			for _, item := range t {
 				fv, ok := walk(item)
 				if !ok {
@@ -269,33 +280,24 @@ func withoutPersistenceFields(row map[string]any) map[string]any {
 	return out
 }
 
-// Text tokens of a message row shadow without its image parts
-func estimateRowTokensWithoutImages(row map[string]any) (int, int) {
-	shadow, images := mapShadow(row)
-	b, _ := json.Marshal(shadow)
-	return EstimateTokens(string(b)), images
-}
+// Text token estimate the memo computes on a miss
+var messageTextTokens = estimateMessageTokensWithoutImages
 
-// EstimateRowTokensCached memoizes text tokens and image count so a repriced image cost reuses rows
-func EstimateRowTokensCached(row map[string]any, imageCost int) int {
+// Text tokens and image count of a row memoized on its fingerprint so a repriced image cost reuses the row
+func estimateMessageTokensCached(msg any, imageCost int) int {
+	keyed := msg
+	if row, ok := msg.(map[string]any); ok {
+		keyed = withoutPersistenceFields(row)
+	}
 	pins := &MemoPins{}
-	key, ok := msgFingerprint(withoutPersistenceFields(row), pins)
+	key, ok := msgFingerprint(keyed, pins)
 	if !ok {
-		text, images := estimateRowTokensWithoutImages(row)
-		return text + images*imageCost
+		return messageTextTokens(msg) + countImageParts(msg)*imageCost
 	}
 	if cached, hit := lookupMessageTokens(key); hit {
 		return cached.text + cached.images*imageCost
 	}
-	text, images := estimateRowTokensWithoutImages(row)
+	text, images := messageTextTokens(msg), countImageParts(msg)
 	rememberMessageTokens(key, messageTokenEntry{pins: pins, text: text, images: images})
 	return text + images*imageCost
-}
-
-// EstimateMessageTokensCached is the memoized per message estimate for a state message
-func EstimateMessageTokensCached(m *state.Message, imageCost int) int {
-	raw, _ := json.Marshal(m)
-	var row map[string]any
-	_ = json.Unmarshal(raw, &row)
-	return EstimateRowTokensCached(row, imageCost)
 }

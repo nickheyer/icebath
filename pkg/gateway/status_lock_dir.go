@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sync"
 	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // The scoped lock directory this token cannot create, read or replace locks in, a permission error
@@ -38,7 +40,7 @@ func unusableLockDir(lockDir string, cause error) error {
 	unusableLockDirMu.Unlock()
 	msg := fmt.Sprintf("Gateway lock directory %s is not usable by this process (%v); it was likely created "+
 		"by an elevated (administrator) Icebath. Platforms that need a token lock stay down until it "+
-		"is repaired. To repair, %s", lockDir, cause, unusableDirRemedy(lockDir))
+		"is repaired. To repair, %s", lockDir, cause, home.UnusableDirRemedy(lockDir))
 	if warned {
 		slog.Debug(msg)
 	} else {

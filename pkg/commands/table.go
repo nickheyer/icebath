@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Category identifiers in the order the registry introduces them
@@ -34,7 +36,7 @@ type Subgroup struct {
 }
 
 // IndicatorStyles lists the TUI busy indicator styles the /indicator command accepts
-var IndicatorStyles = []string{"ascii", "emoji", "kaomoji", "unicode"}
+var IndicatorStyles = home.IndicatorStyles
 
 // HelpSessionSubgroups splits the Session category into sub headings for /help
 var HelpSessionSubgroups = []Subgroup{

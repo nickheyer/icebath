@@ -294,6 +294,7 @@ type ccStreamState struct {
 	progress           map[string]any
 	progressAt         time.Time
 	lastProgressNotice time.Time
+	mon                *streamWaitMonitor
 	started            time.Time
 	lifetimeCap        float64
 }
@@ -367,6 +368,9 @@ func (s *ccStreamState) showPromptProgress(now time.Time) error {
 	text := "⚙ processing prompt"
 	if pct, ok := promptProgressPercent(s.progress); ok {
 		text = fmt.Sprintf("⚙ processing prompt — %d%%", pct)
+	}
+	if s.mon != nil {
+		return s.mon.showPromptProgress(now, text)
 	}
 	return s.emit(StreamEvent{Kind: EventStatus, Text: text})
 }
@@ -763,14 +767,27 @@ func (c *chatCompletionsClient) consumeStream(ctx context.Context, cancel contex
 	if model == "" {
 		model = "unknown"
 	}
+	s.mon = newStreamWaitMonitor(s, c.route.BaseURL, t.stale.Seconds(), time.Now())
+	poll := time.NewTicker(streamMonitorPoll)
+	defer poll.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, c.attemptError(ctx, kill, ctx.Err(), s)
+		case now := <-poll.C:
+			moved, err := s.mon.tick(now, &lastChunk)
+			if err != nil {
+				cancel()
+				return nil, err
+			}
+			if moved {
+				resetTimer(staleTimer, t.stale-now.Sub(lastChunk))
+			}
 		case <-staleTimer.C:
 			elapsed := time.Since(lastChunk).Seconds()
 			catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, t.stale.Seconds(), model, commaInt(s.estTokens)))
 			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(s.estTokens))})
+			bumpStaleStreak(ctx)
 			kill.fire("stale", elapsed)
 			cancel()
 			return nil, c.attemptError(ctx, kill, errors.New("stale stream"), s)

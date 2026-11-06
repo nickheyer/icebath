@@ -38,6 +38,8 @@ var linuxRootBundles = []string{
 
 var linuxRootDirs = []string{"/etc/ssl/certs", "/etc/pki/tls/certs", "/system/etc/security/cacerts"}
 
+var systemCertPool = x509.SystemCertPool
+
 // InstallTrustStore loads the OS trust store once, false when no platform root could be read
 func InstallTrustStore() bool {
 	trustMu.Lock()
@@ -45,7 +47,7 @@ func InstallTrustStore() bool {
 	if trustInstalled != nil {
 		return *trustInstalled
 	}
-	pool, err := x509.SystemCertPool()
+	pool, err := systemCertPool()
 	if err != nil || pool == nil {
 		pool = x509.NewCertPool()
 	}
@@ -76,7 +78,7 @@ func InstallTrustStore() bool {
 	if loaded {
 		slog.Default().Debug("TLS trust: platform store")
 	} else {
-		slog.Default().Warn(fmt.Sprintf("platform trust store unavailable (%v); falling back to the runtime's default trust paths. Certificates trusted only by the OS store — a corporate root, for instance — will not verify.", err))
+		slog.Default().Warn(fmt.Sprintf("truststore unavailable (%v); falling back to OpenSSL's default trust paths. Certificates trusted only by the OS store — a corporate root, for instance — will not verify.", err))
 	}
 	return loaded
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // OSV malware verdict of the package an npx, uvx or pipx launch would run
@@ -67,9 +68,6 @@ func pluginPortableServers(homeDir string) (map[string]map[string]any, error) {
 	return plugins.PortableMCPServers(homeDir)
 }
 
-// Package manager install tree that OAuth token directories must never live inside
-func pmInstallRoot() string { return pm.InstallRoot() }
-
 // Binary and version of the package manager entry for a package, empty when it has no installed binary
 func pmInstalledBinary(ctx context.Context, name string) (binary, version string, err error) {
 	installed, err := pm.Installed(ctx, name, false)
@@ -115,3 +113,11 @@ func profileSecretMapping(h string) map[string]string {
 	}
 	return provider.BuildProfileSecretScope(h)
 }
+
+// Runs a git network verb anonymously, then with each credential the user owns for the remote host
+func runGitWithCredentialFallback(ctx context.Context, argv []string, url string, env map[string]string) (int, string, error) {
+	return provider.RunGitWithCredentialFallback(ctx, argv, url, env)
+}
+
+// Skill requires_apps names resolve through the platform declaration registry
+func init() { skills.AppAvailability = tools.PlatformSkillAppAvailability }

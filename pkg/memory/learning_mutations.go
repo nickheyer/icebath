@@ -216,6 +216,10 @@ func dispatchNode(nodeID string, memoryFn, skillFn func(string) (map[string]any,
 	}
 	out, err := fn(nodeID)
 	if err != nil {
+		var ue *pystr.UnicodeDecodeError
+		if errors.As(err, &ue) {
+			return map[string]any{"ok": false, "message": ue.Error()}, nil
+		}
 		var pe *pyError
 		if errors.As(err, &pe) {
 			switch pe.class {
@@ -268,10 +272,17 @@ func DeleteNode(ctx context.Context, env *tools.Env, nodeID string) (map[string]
 		return mutateMemory(ctx, env, id, nil)
 	}, func(name string) (map[string]any, error) {
 		bound := homeBoundEnv(ctx, env)
-		if pyTruthy(GetSkillRecord(bound.Home, name)["pinned"]) {
+		rec, err := GetSkillRecord(bound.Home, name)
+		if err != nil {
+			return nil, err
+		}
+		if pyTruthy(rec["pinned"]) {
 			return map[string]any{"ok": false, "message": fmt.Sprintf("'%s' is pinned \u2014 unpin it first (icebath curator unpin %s)", name, name)}, nil
 		}
-		ok, message := ArchiveSkill(ctx, bound, name)
+		ok, message, err := ArchiveSkill(ctx, bound, name)
+		if err != nil {
+			return nil, err
+		}
 		if ok {
 			clearSkillCache(ctx, env)
 			message = fmt.Sprintf("archived '%s' \u2014 restore with: icebath curator restore %s", name, name)

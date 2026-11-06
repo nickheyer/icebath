@@ -369,6 +369,9 @@ func readBlockError(env *Env, path string) string {
 	return "Access denied: " + path + " " + reason
 }
 
+// Refusal message for a read of a denied icebath path, empty when the read is allowed
+func ReadBlockError(env *Env, path string) string { return readBlockError(env, path) }
+
 const sandboxMirrorWarning = "Sandbox-mirror write blocked by soft guard: %s sits under '%s', which is %s " +
 	"Use the host-side tool for authoritative state (e.g. ``memory`` for memories), or address the host path directly. " +
 	"To bypass %s with ``cross_profile=True``. (Defense-in-depth — not a security boundary; the terminal tool can still bypass.)"

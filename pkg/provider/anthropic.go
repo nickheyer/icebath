@@ -1263,7 +1263,7 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 	c.requestToolNames = requestToolNames
 	c.mu.Unlock()
 	return &anthPrepared{body: kwargs, headers: headers, betas: betas, oauth: oauth || isOAuth, settings: settings,
-		estTokens: estimateBodyContextTokens(kwargs, CurrentImageTokenCost(ctx))}, nil
+		estTokens: EstimateRequestContextTokens(ctx, kwargs)}, nil
 }
 
 // Merges an extra body mapping into the kwargs, nested extra_body entries folded into the same map

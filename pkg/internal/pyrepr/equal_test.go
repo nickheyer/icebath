@@ -38,6 +38,12 @@ func TestEqual(t *testing.T) {
 		{[]any{1, "x"}, []any{1.0, "x"}, true},
 		{[]any{1}, Tuple{1}, false},
 		{eqMap{{"a", 1}, {"b", 2}}, eqMap{{"b", 2}, {"a", 1}}, true},
+		{map[string]any{}, map[string]any{}, true},
+		{map[string]any{"a": 1}, eqMap{{"a", 1.0}}, true},
+		{eqMap{{"a", 1}}, map[string]any{"a": 1}, true},
+		{map[string]any{"a": 1}, map[string]any{"a": 2}, false},
+		{map[string]any{"a": 1}, map[string]any{"a": 1, "b": 2}, false},
+		{map[string]any{}, []any{}, false},
 		{eqMap{{"a", 1}}, eqMap{{"a", 1}, {"b", 2}}, false},
 		{eqMap{{"a", 1}}, eqMap{{"a", 2}}, false},
 	}

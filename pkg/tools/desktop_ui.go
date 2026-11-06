@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -34,9 +35,16 @@ func DesktopAvailable() bool {
 	return desktopEmit != nil
 }
 
-// Reads a desktop Appearance switch from display.<setting>, the default when the config is unreadable
+// Reads a desktop Appearance switch from display.<setting> of the effective config, the default when unreadable
 func desktopUserEnabled(env *Env, setting string, fallback bool) bool {
-	doc, err := readRawConfig(env)
+	if env == nil || env.Home == "" {
+		return fallback
+	}
+	secrets := env.Secrets
+	if secrets == nil {
+		secrets = config.NewSecrets(env.Home)
+	}
+	doc, err := config.LoadReadonly(context.Background(), env.Home, secrets.Lookup())
 	if err != nil {
 		return fallback
 	}
@@ -75,7 +83,7 @@ func desktopEmitEvent(env *Env, event string, payload map[string]any) (bool, err
 }
 
 // Emits the event and returns the result JSON, the failure text, or the desktop only text
-func desktopEmitOrError(env *Env, event string, payload map[string]any, failPrefix, desktopOnly string, result map[string]any) string {
+func desktopEmitOrError(env *Env, event string, payload map[string]any, failPrefix, desktopOnly string, result *pyjson.Object) string {
 	ok, err := desktopEmitEvent(env, event, payload)
 	if err != nil {
 		return toolErrorJSON(failPrefix+err.Error(), nil)
@@ -83,15 +91,33 @@ func desktopEmitOrError(env *Env, event string, payload map[string]any, failPref
 	if !ok {
 		return toolErrorJSON(desktopOnly, nil)
 	}
-	return jsonCompact(result)
+	return dumpsUnicode(result)
 }
 
-// Desktop answers with a JSON object, passed through, else the raw text wrapped
+// Desktop answers with a JSON object, passed through in key order, else the raw text wrapped
 func desktopPassthroughJSON(raw string) string {
-	if v, err := pyjson.DecodeWTF8([]byte(raw)); err == nil {
-		return jsonCompact(v)
+	if v, err := pyjson.Loads(raw); err == nil {
+		return dumpsUnicode(v)
 	}
-	return jsonCompact(map[string]any{"text": raw})
+	return dumpsUnicode(pyObject("text", raw))
+}
+
+// Ordered JSON object from alternating keys and values, the shape of a Python dict literal
+func pyObject(kv ...any) *pyjson.Object {
+	o := pyjson.NewObject()
+	for i := 0; i+1 < len(kv); i += 2 {
+		o.Set(kv[i].(string), kv[i+1])
+	}
+	return o
+}
+
+// json.dumps with ensure_ascii false and the default separators
+func dumpsUnicode(v any) string {
+	out, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	if err != nil {
+		return ErrorResult(err)
+	}
+	return out
 }
 
 // Comma joined list for enum error texts
@@ -158,7 +184,7 @@ func focusPaneTool(env *Env, pane string) string {
 		return toolErrorJSON(fmt.Sprintf("pane must be one of: %s.", joinEnum(panes)), nil)
 	}
 	return desktopEmitOrError(env, "pane.reveal", map[string]any{"pane": name}, fmt.Sprintf("Failed to focus the %s pane: ", name),
-		"Pane focus is only available in the Icebath desktop app.", map[string]any{"success": true, "pane": name})
+		"Pane focus is only available in the Icebath desktop app.", pyObject("success", true, "pane", name))
 }
 
 var focusPaneSchema = map[string]any{

@@ -78,3 +78,31 @@ func TestTranslatedPatternsMatchLikePython(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupIndexMatchesPythonGroupindex(t *testing.T) {
+	pattern := `(a)(?P<owner>[^/]+)(?:x)(?P<repo>b)(c)(?P<skill>d)?`
+	idx, err := GroupIndex(pattern)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx) != 3 || idx["owner"] != 2 || idx["repo"] != 3 || idx["skill"] != 5 {
+		t.Fatalf("groupindex %v", idx)
+	}
+	re, err := Compile(pattern)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := re.FindStringMatch("aOxbc")
+	if err != nil || m == nil {
+		t.Fatal(m, err)
+	}
+	if g := m.GroupByNumber(idx["owner"]).String(); g != "O" {
+		t.Fatalf("owner %q", g)
+	}
+	if g := m.GroupByNumber(idx["skill"]); g == nil || len(g.Captures) != 0 {
+		t.Fatalf("skill took part %v", g)
+	}
+	if _, err := GroupIndex(`(?P<a>x)(?P<a>y)`); err == nil || err.Error() != "redefinition of group name 'a' as group 2; was group 1 at position 12" {
+		t.Fatalf("duplicate name: %v", err)
+	}
+}

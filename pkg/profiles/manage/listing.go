@@ -65,6 +65,12 @@ var checkGatewayRunning = func(profileDir string) bool { return gatewayProfileRu
 // Whether the live default gateway multiplexes a named profile
 var servedByRunningMultiplexer = func(name string) bool { return gatewayServesNamedProfile(name) }
 
+// Gateway liveness of a profile dir without unlinking its stale pid file
+func CheckGatewayRunning(profileDir string) bool { return checkGatewayRunning(profileDir) }
+
+// Whether the live default gateway multiplexes the named profile
+func ServedByRunningMultiplexer(name string) bool { return servedByRunningMultiplexer(name) }
+
 func mtimeSeconds(fi os.FileInfo) float64 { return float64(fi.ModTime().UnixNano()) / 1e9 }
 
 // Newest mtime of the skills dir and its immediate subdirectories, zero when the dir cannot be stat'ed

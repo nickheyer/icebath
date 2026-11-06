@@ -48,6 +48,9 @@ var reportStartupProgress = func(expectedS float64, phase string) {
 	}
 }
 
+// Declares a phase owned progress lease on the armed startup watchdog for callers outside this package
+func ReportStartupProgress(expectedS float64, phase string) { reportStartupProgress(expectedS, phase) }
+
 // First 120 characters of a holder command line, or a marker when the argv cannot be read
 func holderCmdline(pid int) string {
 	argv, ok := readProcArgv(pid)
@@ -150,7 +153,10 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 	}
 	escalate := attempts.Cmp(big.NewInt(ftsHolderEscalateAttempts)) >= 0 && now-firstSeen >= ftsHolderEscalateSeconds
 	if escalate {
-		reaped := s.host.reapInactiveOrphanDesktopHolders(foreignHolders, ftsHolderEscalateSeconds)
+		reaped, err := s.host.reapInactiveOrphanDesktopHolders(foreignHolders, ftsHolderEscalateSeconds)
+		if err != nil {
+			return false, err
+		}
 		if len(reaped) > 0 {
 			slog.Error(fmt.Sprintf("Reaped inactive orphan Desktop backend(s) %s after %s "+
 				"state.db FTS rebuild deferrals; checking holders again.", pyrepr.Repr(pidList(reaped)), attempts.String()))

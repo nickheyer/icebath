@@ -30,6 +30,9 @@ func homeCredentialSource(h string) CredentialSource {
 	return newHomeCredentials(homePoolEnv(h))
 }
 
+// Exported credential source for home h so other packages resolve runtimes the way the provider does
+func HomeCredentialSource(h string) CredentialSource { return homeCredentialSource(h) }
+
 // Pool environment bound to the store, profile env file and config of home h
 func homePoolEnv(h string) PoolEnv {
 	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Config: ConfigLoader(h)}

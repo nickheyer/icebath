@@ -180,17 +180,17 @@ func TestLaunchStubFilterFollowsAdmissionsTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	if got, err := d.launchStubFilterSQL(); err != nil || got != "s.message_count > 0" {
-		t.Fatalf("without admissions %q %v", got, err)
+	if got, err := d.launchStubFilterSQL(); err != nil || got != notALaunchStubSQL {
+		t.Fatalf("with admissions %q %v", got, err)
 	}
 	if err := d.write(func(tx *Tx) error {
-		_, err := tx.Exec("CREATE TABLE session_admissions (target_session_id TEXT)")
+		_, err := tx.Exec("DROP TABLE session_admissions")
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := d.launchStubFilterSQL(); err != nil || got != notALaunchStubSQL {
-		t.Fatalf("with admissions %q %v", got, err)
+	if got, err := d.launchStubFilterSQL(); err != nil || got != "s.message_count > 0" {
+		t.Fatalf("without admissions %q %v", got, err)
 	}
 }
 
@@ -337,11 +337,11 @@ func TestEmitSessionDeletedPayloadAndProfileRebind(t *testing.T) {
 		return nil, nil
 	})
 	defer SetLifecycleHookInvoker(nil)
-	d := &DB{path: filepath.Join(profileHome, "state.db")}
+	d := &DB{sessionCore: &sessionCore{path: filepath.Join(profileHome, "state.db")}}
 	d.EmitSessionDeleted(context.Background(), []string{"b", "", "a", "b"}, "prune", "", "/tmp/sessions")
 	d.EmitSessionDeleted(context.Background(), nil, "prune", "", "")
 	d.EmitSessionDeleted(context.Background(), []string{"x", "y"}, "archive", "y", "")
-	plain := &DB{path: filepath.Join(t.TempDir(), "state.db")}
+	plain := &DB{sessionCore: &sessionCore{path: filepath.Join(t.TempDir(), "state.db")}}
 	plain.EmitSessionDeleted(context.Background(), []string{"solo"}, "delete", "other", "")
 	if len(calls) != 3 {
 		t.Fatalf("calls %d", len(calls))

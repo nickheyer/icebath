@@ -52,6 +52,7 @@ type AppDeclaration struct {
 	Name        string
 	RequiredGPU string
 	AppFor      func(osFamily string) (AppDefinition, bool)
+	Platform    any
 }
 
 // AppAvailability is the install time availability verdict of a declaration
@@ -311,4 +312,88 @@ func liveEndpoint(ctx context.Context, serverName string) (url string, headers m
 		headers["Authorization"] = "Bearer " + token
 	}
 	return url, headers, true, nil
+}
+
+// toolsPlatform is the hermes_platform declaration registry and app resolver of pkg/tools
+type toolsPlatform struct{}
+
+// Declaration registry and app resolver liveness reads
+func platformApps() appPlatform { return toolsPlatform{} }
+
+// Installs the single hook run after every declaration registry mutation
+func onAppDeclarationChange(fn func()) { tools.SetPlatformDeclarationOnChange(fn) }
+
+// Registered declaration of a server, nil when none
+func (toolsPlatform) Declaration(serverName string) *AppDeclaration {
+	decl := tools.LookupPlatformDeclaration(serverName)
+	if decl == nil {
+		return nil
+	}
+	gpu := ""
+	if g := decl.RequiredGPU(); g != nil {
+		gpu = *g
+	}
+	return &AppDeclaration{Name: decl.Name, RequiredGPU: gpu, Platform: decl, AppFor: func(osFamily string) (AppDefinition, bool) {
+		def, ok := decl.AppFor(osFamily)
+		if !ok {
+			return AppDefinition{}, false
+		}
+		return AppDefinition{Platform: def, LivenessKind: def.LivenessKind, LivenessPath: def.LivenessPath,
+			LivenessPIDKey: def.LivenessPIDKey, LivenessURLKey: def.LivenessURLKey, LivenessTokenKey: def.LivenessTokenKey}, true
+	}}
+}
+
+// Install time availability of a declaration, a bare one carrying only its GPU requirement
+func (toolsPlatform) Availability(decl *AppDeclaration) AppAvailability {
+	pd, ok := decl.Platform.(*tools.PlatformDeclaration)
+	if !ok {
+		pd = &tools.PlatformDeclaration{Name: decl.Name}
+		if decl.RequiredGPU != "" {
+			gpu := decl.RequiredGPU
+			pd.Requires.GPU = &gpu
+		}
+	}
+	a := tools.PlatformAvailabilityOf(pd, "")
+	deref := func(s *string) string {
+		if s == nil {
+			return ""
+		}
+		return *s
+	}
+	return AppAvailability{State: a.State, MinVersion: deref(a.MinVersion), Version: deref(a.Version), Path: deref(a.Path)}
+}
+
+func (toolsPlatform) GPULabel(gpu string) string { return tools.PlatformGPULabel(gpu) }
+
+// Platform definition with the liveness keys the declared runtime file applies
+func platformDefinition(def AppDefinition) tools.PlatformAppDef {
+	pd, _ := def.Platform.(tools.PlatformAppDef)
+	pd.LivenessKind, pd.LivenessPath = def.LivenessKind, def.LivenessPath
+	pd.LivenessPIDKey, pd.LivenessURLKey, pd.LivenessTokenKey = def.LivenessPIDKey, def.LivenessURLKey, def.LivenessTokenKey
+	return pd
+}
+
+// Local probe of the runtime file, Running set only when the pid is alive, an OverflowError propagating
+func (toolsPlatform) ProbeLocal(def AppDefinition) AppProbe {
+	r := tools.PlatformAppResolver{Definition: platformDefinition(def)}
+	p, err := r.Probe(r.Locate(nil), tools.EffortLocal, 3.0)
+	if err != nil {
+		panic(err)
+	}
+	var probe AppProbe
+	if p.Running.Value != nil && *p.Running.Value {
+		running := true
+		probe.Running = &running
+	}
+	probe.EndpointPresent = p.Endpoint.State == "present"
+	return probe
+}
+
+// Current validated endpoint and token of the runtime file, an OverflowError propagating
+func (toolsPlatform) Endpoint(def AppDefinition) (url, token string, ok bool) {
+	ep, ok, err := tools.PlatformAppResolver{Definition: platformDefinition(def)}.Endpoint()
+	if err != nil {
+		panic(err)
+	}
+	return ep.URL, ep.Token, ok
 }

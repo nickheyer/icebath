@@ -141,12 +141,12 @@ const CatalogPageRetries = 5
 
 // Registry adapter contract every hub source implements
 type SkillSource interface {
-	Search(query string, limit int) ([]SkillMeta, error)
-	Fetch(identifier string) (*SkillBundle, error)
-	Inspect(identifier string) (*SkillMeta, error)
+	Search(ctx context.Context, query string, limit int) ([]SkillMeta, error)
+	Fetch(ctx context.Context, identifier string) (*SkillBundle, error)
+	Inspect(ctx context.Context, identifier string) (*SkillMeta, error)
 	SourceID() string
 	TrustLevelFor(identifier string) string
-	CurrentRevision(identifier string) (string, error)
+	CurrentRevision(ctx context.Context, identifier string) (string, error)
 }
 
 // Defaults of a source, community trust for every identifier and no cheap revision probe
@@ -164,7 +164,7 @@ func (b SourceBase) TrustLevelFor(string) string {
 }
 
 // Empty revision so update checks take the full fetch path
-func (b SourceBase) CurrentRevision(string) (string, error) { return "", nil }
+func (b SourceBase) CurrentRevision(context.Context, string) (string, error) { return "", nil }
 
 var hubFrontmatterEnd = pyMust(`\n---\s*\n`)
 
@@ -302,6 +302,32 @@ func pyMust(p string) *regexp2.Regexp {
 		panic(err)
 	}
 	return re
+}
+
+// Pattern compiled through pyre with its Python group names kept for group lookups
+type pyNamedRe struct {
+	*regexp2.Regexp
+	index map[string]int
+}
+
+func pyMustNamed(p string) pyNamedRe {
+	index, err := pyre.GroupIndex(p)
+	if err != nil {
+		panic(err)
+	}
+	return pyNamedRe{pyMust(p), index}
+}
+
+// Text of the named group in the match, empty when the group took no part
+func (r pyNamedRe) group(m *regexp2.Match, name string) string {
+	n, ok := r.index[name]
+	if !ok {
+		panic("no such group " + name)
+	}
+	if g := m.GroupByNumber(n); g != nil {
+		return g.String()
+	}
+	return ""
 }
 
 // Whether the regexp2 pattern matches anywhere in s
@@ -541,6 +567,10 @@ func hubPassThrough(err error) error {
 	}
 	var ude *pystr.UnicodeDecodeError
 	if errors.As(err, &ude) {
+		return err
+	}
+	var invalid *hubInvalidURLError
+	if errors.As(err, &invalid) {
 		return err
 	}
 	return nil

@@ -34,7 +34,8 @@ func (h *fakeSearchHost) GetMessagesAround(ctx context.Context, sessionID string
 	slices.Reverse(before)
 	msgs := []any{}
 	for _, r := range append(before, after...) {
-		msgs = append(msgs, h.rowToMessageDict(r, "get_messages_around", false))
+		msg, _ := h.rowToMessageDict(r, "get_messages_around", false)
+		msgs = append(msgs, msg)
 	}
 	out.Set("window", msgs)
 	out.Set("messages_before", int64(max(0, len(before)-1)))
@@ -42,13 +43,13 @@ func (h *fakeSearchHost) GetMessagesAround(ctx context.Context, sessionID string
 	return out, nil
 }
 
-func (h *fakeSearchHost) rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) *pyjson.Object {
+func (h *fakeSearchHost) rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) (*pyjson.Object, error) {
 	row.Delete("display_identity")
 	row.Delete("display_order")
 	content, _ := row.Get("content")
 	row.Set("content", h.decodeContent(content))
 	row.Set("_hydrated_by", warnContext)
-	return row
+	return row, nil
 }
 
 func viewIDs(t *testing.T, view *pyjson.Object, key string) []int64 {

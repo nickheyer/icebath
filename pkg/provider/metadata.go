@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Descending probe tiers for unknown models, the first is also the default fallback
@@ -305,20 +306,8 @@ func inferProviderFromBaseURL(baseURL string) string {
 	return ""
 }
 
-// OpenRouter request time routing variant suffixes
-var openRouterVariantSuffixes = map[string]bool{"nitro": true, "floor": true, "exacto": true, "online": true}
-
 // OpenRouterVariantBase returns the base id of a routing variant suffix or empty
-func OpenRouterVariantBase(model string) string {
-	i := strings.LastIndex(model, ":")
-	if i <= 0 {
-		return ""
-	}
-	if openRouterVariantSuffixes[strings.ToLower(model[i+1:])] {
-		return model[:i]
-	}
-	return ""
-}
+func OpenRouterVariantBase(model string) string { return home.OpenRouterVariantBase(model) }
 
 // Strips an OpenRouter routing variant for catalog lookup only when the request routes through OpenRouter
 func stripOpenRouterRoutingVariant(model, baseURL, providerName string) string {

@@ -125,9 +125,22 @@ func TestLoadOnDiskStoreHonorsConfiguredLimitsAndPermissions(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("memory: [unclosed"), 0o644)
 	config.ResetCache()
-	fallback := onDisk(t, env)
-	if fallback.MemoryCharLimit != DefaultMemoryCharLimit || fallback.UserCharLimit != DefaultUserCharLimit || !fallback.MemoryEnabled || !fallback.UserProfileEnabled {
-		t.Fatalf("%+v", fallback)
+	if kept := onDisk(t, env); kept.MemoryCharLimit != 999 || kept.UserCharLimit != 444 || kept.MemoryEnabled {
+		t.Fatalf("broken edit dropped the last good config %+v", kept)
+	}
+	fresh := waEnv(t)
+	os.WriteFile(filepath.Join(fresh.Home, "config.yaml"), []byte("memory: [unclosed"), 0o644)
+	config.ResetCache()
+	notInts := waEnv(t)
+	if err := config.SetKey(notInts.Home, "memory.memory_char_limit", "lots"); err != nil {
+		t.Fatal(err)
+	}
+	config.ResetCache()
+	for _, e := range []*tools.Env{fresh, notInts} {
+		fallback := onDisk(t, e)
+		if fallback.MemoryCharLimit != DefaultMemoryCharLimit || fallback.UserCharLimit != DefaultUserCharLimit || !fallback.MemoryEnabled || !fallback.UserProfileEnabled {
+			t.Fatalf("%+v", fallback)
+		}
 	}
 }
 

@@ -27,8 +27,14 @@ func positiveInt(raw any) (int, bool, error) {
 
 // Positive timeout from the env var then cron.<configKey>, false when neither yields one
 func (s *Store) timeoutFromEnvOrConfig(ctx context.Context, envVar, configKey, label string) (int, bool) {
+	return timeoutSetting(s, ctx, envVar, configKey, label, positiveInt)
+}
+
+// Value parse yields from the env var then cron.<configKey>, false when neither yields one
+func timeoutSetting[T any](s *Store, ctx context.Context, envVar, configKey, label string, parse func(any) (T, bool, error)) (T, bool) {
+	var zero T
 	if envValue := pystr.Strip(s.cronEnvSetting(ctx, envVar, "")); envValue != "" {
-		v, ok, err := positiveInt(envValue)
+		v, ok, err := parse(envValue)
 		if err != nil {
 			s.log.Warn(fmt.Sprintf("Invalid %s=%s; using config/default", envVar, pyrepr.StrRepr(envValue)))
 		} else if ok {
@@ -38,21 +44,21 @@ func (s *Store) timeoutFromEnvOrConfig(ctx context.Context, envVar, configKey, l
 	cfg, err := s.loadConfig()
 	if err != nil {
 		s.log.Debug(fmt.Sprintf("Failed to load %s from config: %v", label, err))
-		return 0, false
+		return zero, false
 	}
 	cron, isMap := cfg["cron"].(map[string]any)
 	if raw, present := cfg["cron"]; present && !isMap {
 		s.log.Debug(fmt.Sprintf("Failed to load %s from config: %T object has no attribute get", label, raw))
-		return 0, false
+		return zero, false
 	}
 	configured, present := cron[configKey]
 	if !present || configured == nil {
-		return 0, false
+		return zero, false
 	}
-	v, ok, err := positiveInt(configured)
+	v, ok, err := parse(configured)
 	if err != nil {
 		s.log.Debug(fmt.Sprintf("Failed to load %s from config: %v", label, err))
-		return 0, false
+		return zero, false
 	}
 	return v, ok
 }

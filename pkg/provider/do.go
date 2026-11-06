@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -259,7 +260,7 @@ type RetrySession struct {
 	stream5xxProbeAt         time.Time
 	stream5xxProbed          bool
 	retryStatusBuffer        []string
-	staleStreak              int
+	staleStreak              atomic.Int64
 }
 
 // OverflowVerdict is the agent's answer to a context overflow or long context tier rejection
@@ -512,7 +513,7 @@ func (l *doLoop) restartAfterFallback() error {
 	l.st.RestartWithRebuiltMessages = true
 	l.retryCount = 0
 	l.compressionAttempts = 0
-	l.session.staleStreak = 0
+	l.session.ResetStaleStreak()
 	return l.switchRoute(l.chain.Current())
 }
 
@@ -698,6 +699,7 @@ func Do(ctx context.Context, client Client, req *Request, opts DoOptions) (*Resp
 	if opts.Session == nil {
 		opts.Session = &RetrySession{}
 	}
+	ctx = withStaleStreak(ctx, opts.Session)
 	if opts.MaxRetries <= 0 {
 		opts.MaxRetries = DefaultMaxRetries
 	}
@@ -744,7 +746,7 @@ func (l *doLoop) run() (*Response, error) {
 		if err == nil {
 			l.firePostRequest(start, firstChunk, resp)
 			l.captureSuccessHeaders(resp)
-			l.session.staleStreak = 0
+			l.session.ResetStaleStreak()
 			l.activity(fmt.Sprintf("API call #%d completed", l.opts.APICallCount))
 			return resp, nil
 		}
@@ -790,6 +792,9 @@ func (l *doLoop) interrupted(err error, start time.Time) *DoError {
 
 // call issues the request on the streaming or blocking path
 func (l *doLoop) call() (*Response, time.Time, error) {
+	if err := checkStaleGiveup(l.session); err != nil {
+		return nil, time.Time{}, err
+	}
 	if l.opts.Stream != nil && !l.session.DisableStreaming {
 		return l.streamWithReconnects()
 	}
@@ -1025,6 +1030,7 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 						firstChunk = l.now()
 					}
 					deltasSent = true
+					l.session.ResetStaleStreak()
 					if ev.Kind == EventTextDelta {
 						l.streamedText += ev.Text
 					}
@@ -1037,6 +1043,7 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 			case EventToolCallDone:
 				partialToolInFlight = false
 				deltasSent = true
+				l.session.ResetStaleStreak()
 			}
 			return l.opts.Stream(ev)
 		}

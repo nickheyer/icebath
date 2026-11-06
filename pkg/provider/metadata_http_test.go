@@ -248,9 +248,9 @@ func (*timeoutErr) Temporary() bool { return true }
 func TestMessageTokenMemo(t *testing.T) {
 	metaTest(t)
 	row := map[string]any{"role": "user", "content": strings.Repeat("hello world ", 50), "timestamp": "2026-01-01"}
-	first := EstimateRowTokensCached(row, 1500)
+	first := estimateMessageTokensCached(row, 1500)
 	row["timestamp"] = "2026-02-02"
-	mustEqual(t, EstimateRowTokensCached(row, 1500), first, "persistence fields never miss the memo")
+	mustEqual(t, estimateMessageTokensCached(row, 1500), first, "persistence fields never miss the memo")
 	msgTokensCache.mu.Lock()
 	entries := msgTokensCache.order.Len()
 	msgTokensCache.mu.Unlock()
@@ -259,8 +259,8 @@ func TestMessageTokenMemo(t *testing.T) {
 		t.Fatal("retained bytes tracked")
 	}
 	image := map[string]any{"role": "user", "content": []any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64," + strings.Repeat("A", 100)}}}}
-	withCost := EstimateRowTokensCached(image, 1500)
-	repriced := EstimateRowTokensCached(image, 100)
+	withCost := estimateMessageTokensCached(image, 1500)
+	repriced := estimateMessageTokensCached(image, 100)
 	if withCost-repriced != 1400 {
 		t.Fatalf("image count memoized separately from its price: %d %d", withCost, repriced)
 	}

@@ -1,6 +1,7 @@
 package pyrepr
 
 import (
+	"iter"
 	"math"
 	"math/big"
 )
@@ -33,8 +34,11 @@ func Equal(a, b any) bool {
 		y, ok := b.([]any)
 		return ok && equalSeq(x, y)
 	case Mapping:
-		y, ok := b.(Mapping)
+		y, ok := asMapping(b)
 		return ok && equalMapping(x, y)
+	case map[string]any:
+		y, ok := asMapping(b)
+		return ok && equalMapping(stringMap(x), y)
 	}
 	return false
 }
@@ -99,4 +103,27 @@ func exactFloat(n *big.Int, f *float64) *big.Float {
 		return new(big.Float).SetFloat64(*f)
 	}
 	return new(big.Float).SetInt(n)
+}
+
+// Plain decoded dict as a Mapping
+type stringMap map[string]any
+
+func (m stringMap) PyItems() iter.Seq2[any, any] {
+	return func(yield func(any, any) bool) {
+		for k, v := range m {
+			if !yield(k, v) {
+				return
+			}
+		}
+	}
+}
+
+func asMapping(v any) (Mapping, bool) {
+	switch m := v.(type) {
+	case Mapping:
+		return m, true
+	case map[string]any:
+		return stringMap(m), true
+	}
+	return nil, false
 }

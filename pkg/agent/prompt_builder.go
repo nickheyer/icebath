@@ -165,11 +165,14 @@ func botScreenHint(env *tools.Env) string {
 	return BotScreenNote(true, display, holder)
 }
 
+// Remote backend probe, the seam tests replace to skip a live sandbox
+var probeRemoteBackendFn = tools.ProbeRemoteBackend
+
 // Backend only block for remote and sandbox backends, the live probe state or a fallback description
 func remoteBackendHint(ctx context.Context, env *tools.Env, backend string) (string, error) {
 	lead := fmt.Sprintf("Terminal backend: %s. Your `terminal`, `read_file`, `write_file`, `patch`, and "+
 		"`search_files` tools all operate inside ", backend)
-	probe, ok, err := tools.ProbeRemoteBackend(ctx, env, backend)
+	probe, ok, err := probeRemoteBackendFn(ctx, env, backend)
 	if err != nil {
 		return "", err
 	}

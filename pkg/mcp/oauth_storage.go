@@ -100,33 +100,7 @@ func safeFilename(name string) string {
 }
 
 // Tightens a credential file's parent to 0700, refusing the root, top level dirs and the install tree
-func secureParentDir(path string) {
-	parent, err := filepath.Abs(filepath.Dir(path))
-	if err != nil {
-		return
-	}
-	if resolved, rerr := filepath.EvalSymlinks(parent); rerr == nil {
-		parent = resolved
-	}
-	vol := filepath.VolumeName(parent)
-	parts := strings.Split(strings.Trim(filepath.ToSlash(parent[len(vol):]), "/"), "/")
-	if parent == vol+string(filepath.Separator) || len(parts) < 2 || parts[0] == "" {
-		return
-	}
-	if root := pmInstallRoot(); root != "" {
-		if r, rerr := filepath.Abs(root); rerr == nil {
-			if resolved, eerr := filepath.EvalSymlinks(r); eerr == nil {
-				r = resolved
-			}
-			if rel, relErr := filepath.Rel(r, parent); relErr == nil && (rel == "." || !strings.HasPrefix(rel, "..")) {
-				mcpLogger().Warn(fmt.Sprintf("Not restricting permissions on %s: it is inside the icebath install directory (%s). "+
-					"Credential files are normally stored under the icebath home directory instead.", parent, r))
-				return
-			}
-		}
-	}
-	_ = os.Chmod(parent, 0o700)
-}
+func secureParentDir(path string) { home.SecureParentDir(path) }
 
 // Decoded JSON of a file, nil when missing, unreadable or invalid with a warning for the latter two
 func readOAuthJSON(path string) any {

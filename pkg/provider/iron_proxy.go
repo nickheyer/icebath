@@ -147,12 +147,17 @@ func (p IronProxy) home() string {
 // State dir without creating it, for status probes and pidfile reads
 func (p IronProxy) stateDirRO() string { return filepath.Join(p.home(), "proxy") }
 
-// State dir created 0700, an unconditional chmod tightens a pre-existing slack umask dir
-func (p IronProxy) stateDir() string {
+// State dir created 0700 and re-tightened, the mkdir error returned and a chmod failure ignored
+func (p IronProxy) stateDir() (string, error) {
 	d := p.stateDirRO()
-	_ = os.MkdirAll(d, 0o700)
+	if err := os.MkdirAll(filepath.Dir(d), 0o777); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(d, 0o700); err != nil {
+		return "", err
+	}
 	_ = os.Chmod(d, 0o700)
-	return d
+	return d, nil
 }
 
 // FindIronProxy resolves the binary from PATH or the tool store, installing on a miss when asked
@@ -305,7 +310,10 @@ func fdOwnedByUs(f *os.File) bool {
 
 // EnsureCACert generates or returns the 10 year CA cert and key through the host openssl
 func (p IronProxy) EnsureCACert(force bool) (string, string, error) {
-	state := p.stateDir()
+	state, err := p.stateDir()
+	if err != nil {
+		return "", "", err
+	}
 	caCrt, caKey := filepath.Join(state, "ca.crt"), filepath.Join(state, "ca.key")
 	if fileExists(caCrt) && fileExists(caKey) && !force {
 		return caCrt, caKey, nil
@@ -374,7 +382,9 @@ func (p IronProxy) managementTokenPath() string {
 
 // EnsureManagementToken returns the management API bearer key, minting it on first call
 func (p IronProxy) EnsureManagementToken(force bool) (string, error) {
-	p.stateDir()
+	if _, err := p.stateDir(); err != nil {
+		return "", err
+	}
 	path := p.managementTokenPath()
 	if !force {
 		if existing := readTextOrEmpty(path); existing != "" {
@@ -645,7 +655,11 @@ func (p IronProxy) WriteProxyConfig(cfg map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(p.stateDir(), "proxy.yaml")
+	state, err := p.stateDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(state, "proxy.yaml")
 	if err := config.AtomicWrite(path, raw, 0o600); err != nil {
 		return "", err
 	}
@@ -663,27 +677,34 @@ func (p IronProxy) WriteMappings(mappings []TokenMapping) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(p.stateDir(), "mappings.json")
+	state, err := p.stateDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(state, "mappings.json")
 	if err := config.AtomicWrite(path, raw, 0o600); err != nil {
 		return "", err
 	}
 	return path, nil
 }
 
-// LoadMappings reads mappings.json, empty on any error
-func (p IronProxy) LoadMappings() []TokenMapping {
-	path := filepath.Join(p.stateDir(), "mappings.json")
-	raw, err := os.ReadFile(path)
+// LoadMappings reads mappings.json, empty on a read or parse failure, erring only when the state dir cannot be made
+func (p IronProxy) LoadMappings() ([]TokenMapping, error) {
+	state, err := p.stateDir()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(filepath.Join(state, "mappings.json"))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			p.log().Warn(fmt.Sprintf("Failed to read iron-proxy mappings.json: %v", err))
 		}
-		return nil
+		return nil, nil
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &payload); err != nil {
 		p.log().Warn(fmt.Sprintf("Failed to read iron-proxy mappings.json: %v", err))
-		return nil
+		return nil, nil
 	}
 	items, _ := payload["tokens"].([]any)
 	var out []TokenMapping
@@ -703,7 +724,7 @@ func (p IronProxy) LoadMappings() []TokenMapping {
 		}
 		out = append(out, TokenMapping{ProxyToken: token, RealEnvName: envName, UpstreamHosts: anyStrings(m["upstream_hosts"]), MatchHeaders: headers, AliasEnvNames: anyStrings(m["alias_env_names"])})
 	}
-	return out
+	return out, nil
 }
 
 func anyStrings(v any) []string {
@@ -793,7 +814,14 @@ func MergeMappings(existing, discovered []TokenMapping, rotate bool) []TokenMapp
 	return out
 }
 
-func (p IronProxy) pidfile() string { return filepath.Join(p.stateDir(), "iron-proxy.pid") }
+// Pidfile path inside the state dir, creating the dir first
+func (p IronProxy) pidfile() (string, error) {
+	state, err := p.stateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(state, "iron-proxy.pid"), nil
+}
 
 func (p IronProxy) readPID() int {
 	raw, err := os.ReadFile(filepath.Join(p.stateDirRO(), "iron-proxy.pid"))
@@ -915,7 +943,11 @@ func (p IronProxy) StartProxy(opts IronProxyStartOptions) (IronProxyStatus, erro
 	}
 	cfg := opts.ConfigPath
 	if cfg == "" {
-		cfg = filepath.Join(p.stateDir(), "proxy.yaml")
+		state, err := p.stateDir()
+		if err != nil {
+			return IronProxyStatus{}, err
+		}
+		cfg = filepath.Join(state, "proxy.yaml")
 	}
 	if !fileExists(cfg) {
 		return IronProxyStatus{}, fmt.Errorf("iron-proxy config not found at %s. Run `icebath egress setup` first.", cfg)
@@ -939,12 +971,20 @@ func (p IronProxy) StartProxy(opts IronProxyStartOptions) (IronProxyStatus, erro
 	ironProxyNonce = nonce
 	ironNonceMu.Unlock()
 	env[IronProxyNonceEnv] = nonce
-	logPath := filepath.Join(p.stateDir(), "iron-proxy.log")
+	state, err := p.stateDir()
+	if err != nil {
+		return IronProxyStatus{}, err
+	}
+	logPath := filepath.Join(state, "iron-proxy.log")
 	cmd, err := p.spawnDaemon(binPath, cfg, env, logPath)
 	if err != nil {
 		return IronProxyStatus{}, err
 	}
-	pidfile := p.pidfile()
+	pidfile, err := p.pidfile()
+	if err != nil {
+		killAndWait(cmd, 2*time.Second)
+		return IronProxyStatus{}, err
+	}
 	if err := p.writePidfileSafely(pidfile, cmd.Process.Pid); err != nil {
 		killAndWait(cmd, 2*time.Second)
 		return IronProxyStatus{}, err
@@ -1083,7 +1123,10 @@ func killAndWait(cmd *exec.Cmd, grace time.Duration) {
 // Allowlisted infra vars plus the secrets named in mappings, with the proxy recursion vars stripped
 func (p IronProxy) buildProxySubprocessEnv(extraEnv map[string]string, refreshFromBitwarden bool, bitwardenConfig map[string]any) (map[string]string, error) {
 	env := IronAllowlistedEnv()
-	mappings := p.LoadMappings()
+	mappings, err := p.LoadMappings()
+	if err != nil {
+		return nil, err
+	}
 	needed := map[string]bool{}
 	aliasSources := map[string][]string{}
 	for _, m := range mappings {
@@ -1169,25 +1212,34 @@ func (p IronProxy) refreshSecretsFromBitwarden(env map[string]string, needed map
 	return nil
 }
 
-func (p IronProxy) forgetDaemon() {
-	_ = os.Remove(p.pidfile())
+// Removes the pidfile and persisted nonce, erring when the pidfile cannot be removed
+func (p IronProxy) forgetDaemon() error {
+	pidfile, err := p.pidfile()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(pidfile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	_ = os.Remove(p.persistedNoncePath())
 	ironNonceMu.Lock()
 	ironProxyNonce = ""
 	ironNonceMu.Unlock()
+	return nil
 }
 
-// StopProxy terminates the daemon, true when it was running
-func (p IronProxy) StopProxy() bool {
+// StopProxy terminates the daemon, true when it was running, a failed cleanup or a refused signal returned as the error
+func (p IronProxy) StopProxy() (bool, error) {
 	pid := p.readPID()
 	if pid == 0 || !p.pidAlive(pid) {
-		p.forgetDaemon()
-		return false
+		return false, p.forgetDaemon()
 	}
 	startBefore := pidProcStartTime(pid)
 	if err := psSignal(pid, false); err != nil {
-		p.forgetDaemon()
-		return false
+		if !psIsNoSuchProcess(err) {
+			return false, err
+		}
+		return false, p.forgetDaemon()
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	exited := false
@@ -1203,12 +1255,16 @@ func (p IronProxy) StopProxy() bool {
 		if (startBefore != "" && startAfter != "" && startBefore != startAfter) || !p.pidAlive(pid) {
 			p.log().Warn(fmt.Sprintf("iron-proxy pid=%d appears recycled before SIGKILL; not killing.", pid))
 		} else {
-			_ = psSignal(pid, true)
+			if err := psSignal(pid, true); err != nil && !psIsNoSuchProcess(err) {
+				return false, err
+			}
 		}
 	}
-	p.forgetDaemon()
+	if err := p.forgetDaemon(); err != nil {
+		return false, err
+	}
 	p.log().Info(fmt.Sprintf("Stopped iron-proxy pid=%d", pid))
-	return true
+	return true, nil
 }
 
 // GetStatus snapshots the proxy state without side effects

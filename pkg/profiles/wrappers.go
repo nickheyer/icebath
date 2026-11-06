@@ -72,6 +72,9 @@ func WrapperDir() (string, error) {
 	return filepath.Join(h, ".local", "bin"), nil
 }
 
+// Wrapper script path of an alias in the wrapper dir
+func WrapperPath(alias string) (string, error) { return wrapperPath(alias) }
+
 // Wrapper script path of alias, a bat file on Windows
 func wrapperPath(alias string) (string, error) {
 	dir, err := WrapperDir()

@@ -113,6 +113,9 @@ func FastSafeLoad(data []byte) (any, error) {
 	var doc any
 	if len(node.Content) > 0 {
 		resolveYAML11(&node, false)
+		if err := yaml11TimestampError(&node); err != nil {
+			return nil, err
+		}
 		if err := node.Decode(&doc); err != nil {
 			return nil, err
 		}

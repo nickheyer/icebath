@@ -31,3 +31,6 @@ func init() {
 	registerCuratorBackup()
 	registerCuratorCommands()
 }
+
+// Onboarding facts are read by pkg/tools ReadOnboardingFacts over pkg/hostinfo
+func registerOnboardingFacts() {}

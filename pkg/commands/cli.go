@@ -168,6 +168,9 @@ func NewCLI() *CLI {
 	c.bindMoA()
 	c.bindConfig()
 	c.bindSkin()
+	c.bindSkillsHub()
+	c.bindProfile()
+	c.bindMemory()
 	c.finishAll(root)
 	return c
 }

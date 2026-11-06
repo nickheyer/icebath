@@ -133,6 +133,12 @@ func materializeSymlinkedFiles(profileDir string) ([]string, error) {
 	return done, nil
 }
 
+// Junction probe and creator a clone uses, swapped by tests that simulate Windows junctions
+var (
+	junctionTarget = ntfsJunctionTarget
+	createJunction = ntfsCreateJunction
+)
+
 // Tree copy keeping links that recreates NTFS junctions as junctions instead of descending into them
 func copytreeKeepJunctions(src, dst string, ignore pyfs.IgnoreFunc, dirsExistOK bool) error {
 	junctions := map[string]string{}

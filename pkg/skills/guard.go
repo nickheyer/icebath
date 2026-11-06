@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -705,8 +706,8 @@ func ScanSkillCached(skillPath string, source string, sourceURL string, cacheDir
 	prov["summary"] = result.Summary
 	prov["fresh"] = true
 	if os.MkdirAll(cacheDir, 0o755) == nil {
-		if data, err := json.MarshalIndent(prov, "", "  "); err == nil {
-			os.WriteFile(cacheFile, append(data, '\n'), 0o644)
+		if text, err := pyjson.Dumps(scanProvenanceObject(prov), pyjson.Indent(2)); err == nil {
+			os.WriteFile(cacheFile, []byte(text+"\n"), 0o644)
 		}
 	}
 	result.ScanProvenance = prov

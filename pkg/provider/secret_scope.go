@@ -17,33 +17,16 @@ var (
 	multiplexMu     sync.Mutex
 	multiplexActive bool
 	autoPinnedHome  string
-	pinnedHome      string
-	pinnedHomeSet   bool
 )
 
 // PinProcessHome fixes the launch home routed profile decisions compare against, empty releases it
-func PinProcessHome(path string) {
-	multiplexMu.Lock()
-	defer multiplexMu.Unlock()
-	pinnedHome, pinnedHomeSet = path, path != ""
-}
+func PinProcessHome(path string) { home.PinProcess(path, path == "") }
 
 // ProcessHomePinned reports whether a host pinned the launch home
-func ProcessHomePinned() bool {
-	multiplexMu.Lock()
-	defer multiplexMu.Unlock()
-	return pinnedHomeSet
-}
+func ProcessHomePinned() bool { return home.ProcessPinned() }
 
 // RoutingProcessHome is the pinned launch home, else the process home
-func RoutingProcessHome() string {
-	multiplexMu.Lock()
-	defer multiplexMu.Unlock()
-	if pinnedHomeSet {
-		return pinnedHome
-	}
-	return home.Process()
-}
+func RoutingProcessHome() string { return home.RoutingProcess() }
 
 // SetMultiplexActive marks the process a profile multiplexer and pins the launch home while it is
 func SetMultiplexActive(active bool) {
@@ -52,15 +35,15 @@ func SetMultiplexActive(active bool) {
 	defer multiplexMu.Unlock()
 	multiplexActive = active
 	if active {
-		if !pinnedHomeSet {
-			autoPinnedHome = home.Process()
-			pinnedHome, pinnedHomeSet = autoPinnedHome, true
+		if !home.ProcessPinned() {
+			autoPinnedHome = home.RoutingProcess()
+			home.PinProcess(autoPinnedHome, false)
 		}
 		return
 	}
 	if autoPinnedHome != "" {
-		if pinnedHomeSet && pinnedHome == autoPinnedHome {
-			pinnedHome, pinnedHomeSet = "", false
+		if home.RoutingProcess() == autoPinnedHome {
+			home.PinProcess("", true)
 		}
 		autoPinnedHome = ""
 	}

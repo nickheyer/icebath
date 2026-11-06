@@ -138,6 +138,8 @@ const (
 	EventToolCallDone   EventKind = "tool_call_done"
 	EventUsage          EventKind = "usage"
 	EventStatus         EventKind = "status"
+	EventWaitNotice     EventKind = "wait_notice"
+	EventActivity       EventKind = "activity"
 	EventDone           EventKind = "done"
 )
 

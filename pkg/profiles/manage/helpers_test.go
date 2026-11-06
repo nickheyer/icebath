@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-// Temp HOME with an empty default profile home, returning the HOME dir
+// Temp HOME and default profile home with the state guard bypassed since its real root follows HOME, returning HOME
 func manageEnv(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
@@ -20,6 +20,7 @@ func manageEnv(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv(home.EnvHome, def)
+	t.Setenv("ICEBATH_STATE_DB_GUARD_BYPASS", "1")
 	profiles.ResetFileCache()
 	profiles.ResetStandaloneMemo()
 	home.ResetKeyCache()

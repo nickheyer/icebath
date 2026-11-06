@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (
@@ -1074,7 +1075,7 @@ func loadOllamaCloudCache(ctx context.Context, ignoreTTL bool) ([]string, bool) 
 // Persists the merged Ollama Cloud list with its timestamp, a write failure leaves the old file
 func saveOllamaCloudCache(ctx context.Context, models []string) {
 	now := float64(ollamaCloudWallClock().UnixNano()) / 1e9
-	data := newOmap()
+	data := pyjson.NewObject()
 	data.Set("models", models)
 	data.Set("cached_at", now)
 	_ = modelsWriteJSONCache(ollamaCloudCachePath(ctx), data)

@@ -16,13 +16,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
+// Meta writer and alias probe a rename goes through, swapped by tests
+var (
+	writeProfileMeta    = profiles.WriteProfileMeta
+	checkAliasCollision = profiles.CheckAliasCollision
+)
+
 // Appends the old slug to the renamed profile's previous names history, logging instead of failing
 func recordProfileRename(newDir, oldCanon string) {
 	history := append([]string{}, profiles.ReadProfileMeta(newDir).PreviousNames...)
 	if !slices.Contains(history, oldCanon) {
 		history = append(history, oldCanon)
 	}
-	if err := profiles.WriteProfileMeta(newDir, profiles.MetaUpdate{PreviousNames: &history}); err != nil {
+	if err := writeProfileMeta(newDir, profiles.MetaUpdate{PreviousNames: &history}); err != nil {
 		slog.Default().Debug(fmt.Sprintf("profile rename: could not record previous name %s in %s: %v", pyrepr.Repr(oldCanon), newDir, err))
 	}
 }
@@ -118,7 +124,7 @@ func RenameProfile(ctx context.Context, oldName, newName string) (string, error)
 	if _, err := profiles.RemoveWrapperScript(oldCanon); err != nil {
 		return "", err
 	}
-	collision, err := profiles.CheckAliasCollision(newCanon)
+	collision, err := checkAliasCollision(newCanon)
 	if err != nil {
 		return "", err
 	}

@@ -37,7 +37,7 @@ func TestOAuthTokenWriteAfterProfileDeleteDoesNotRecreateHome(t *testing.T) {
 	}
 	err := writeOAuthJSON(filepath.Join(profile, "mcp-oauth", "tokens.json"), map[string]any{"access_token": "x"})
 	var missing *home.ErrProfileMissing
-	if !errors.As(err, &missing) || !strings.Contains(err.Error(), "named profile home does not exist") {
+	if !errors.As(err, &missing) || !strings.Contains(err.Error(), "Named profile home does not exist") {
 		t.Fatalf("err %v", err)
 	}
 	if exists(profile) {

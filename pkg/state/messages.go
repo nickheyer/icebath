@@ -324,7 +324,7 @@ func (d *DB) AppendMessages(sessionID string, msgs []*Message) ([]int64, error) 
 
 const messageSelect = `id, session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason,
 	reasoning, reasoning_content, reasoning_details, codex_reasoning_items, codex_message_items, platform_message_id,
-	observed, compressed_summary, active, compacted, api_content, display_kind, display_metadata, message_uid,
+	observed, _compressed_summary, active, compacted, api_content, display_kind, display_metadata, message_uid,
 	absorbed_message_uids, tool_call_uids, tool_call_uid`
 
 // Message decoded from a row selected with messageSelect
@@ -757,4 +757,13 @@ func (d *DB) MessagesAround(sessionID string, rowID int64, window int) ([]*Messa
 		return rows.Err()
 	})
 	return out, err
+}
+
+// Column list every message writer binds, in insert order
+var messageColumns = []string{
+	"session_id", "role", "content", "tool_call_id", "tool_calls", "tool_name", "timestamp", "token_count",
+	"finish_reason", "reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items",
+	"codex_message_items", "platform_message_id", "observed", "_compressed_summary", "active", "compacted",
+	"api_content", "display_kind", "display_metadata", "message_uid", "absorbed_message_uids",
+	"tool_call_uids", "tool_call_uid",
 }

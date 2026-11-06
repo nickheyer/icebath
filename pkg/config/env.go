@@ -132,15 +132,6 @@ func isPySpace(r rune) bool {
 	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
 }
 
-// Assignments of a dotenv file, empty when it is absent or unreadable
-func LoadEnvFile(path string) map[string]string {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return map[string]string{}
-	}
-	return ParseEnv(DecodeEnvBytes(raw))
-}
-
 // Reports whether a line assigns key, with or without an export prefix
 func envLineDefines(line, key string) bool {
 	trimmed := strings.TrimSpace(line)

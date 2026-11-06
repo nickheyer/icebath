@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Live identity keys of a message dict, shared with the agent message metadata
@@ -39,6 +41,8 @@ func pyTruthy(v any) bool {
 		return len(x) > 0
 	case map[string]any:
 		return len(x) > 0
+	case *pyjson.Object:
+		return x != nil && x.Len() > 0
 	}
 	return true
 }
