@@ -77,6 +77,11 @@ func inPluginLoadWorker(ctx context.Context) bool {
 	return ctx.Value(loadScopeKey{}) != nil
 }
 
+// Reports a deadline bound plugin load worker context to the gateway platform registry
+func InPluginLoadWorker(ctx context.Context) bool {
+	return inPluginLoadWorker(ctx)
+}
+
 // Per plugin load deadline from plugins.load_timeout_seconds, zero meaning inline loads
 func resolvePluginLoadTimeout(h string) float64 {
 	cfg, err := loadConfig(h)
@@ -295,19 +300,24 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 		predeclared, hasPredeclared := m.predeclaredModules[key]
 		delete(m.predeclaredModules, key)
 		m.mu.Unlock()
-		loaded.Module = moduleName
+		loaded.Module, loaded.ModuleFile = moduleName, ""
 		if hasPredeclared {
-			loaded.Module = predeclared
+			loaded.Module, loaded.ModuleFile = predeclared.name, predeclared.file
 		}
 		if inHost {
-			if mf.Path != "" && !isFile(filepath.Join(mf.Path, "__init__.py")) {
+			directory := mf.Source == "user" || mf.Source == "project" || mf.Source == "bundled"
+			if directory && mf.Path != "" && !isFile(filepath.Join(mf.Path, "__init__.py")) {
 				return false, &FileNotFoundError{Msg: "No __init__.py in " + mf.Path}
 			}
 			host, err := m.pluginHost()
 			if err != nil {
 				return false, err
 			}
-			return true, host.Load(ctx, mf, pctx, moduleName, mf.Source != "user" && mf.Source != "project")
+			file, err := host.Load(ctx, mf, pctx, moduleName, !directory)
+			if err == nil {
+				loaded.ModuleFile = file
+			}
+			return true, err
 		}
 		plugin, ok := bundledPlugin(key)
 		if !ok {
@@ -324,7 +334,7 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 	if err == nil && ok {
 		m.attributeRegistrations(loaded, key, start)
 		loaded.Enabled = true
-		m.dropFallbackHooks(hookSourceOf(mf.Name, loaded.Module))
+		m.dropFallbackHooks(hookSourceOf(mf.Name, loaded.ModuleFile))
 	}
 	if err != nil {
 		m.mu.RLock()
@@ -727,9 +737,9 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 	}
 	moduleName := m.policyModuleName(mf)
 	err := callGuarded(func() error {
-		loaded.Module = moduleName
+		loaded.Module, loaded.ModuleFile = moduleName, ""
 		m.mu.Lock()
-		m.predeclaredModules[key] = moduleName
+		m.predeclaredModules[key] = loadedModule{name: moduleName}
 		m.mu.Unlock()
 		pctx := newContext(mf, m)
 		pctx.module = moduleName
@@ -738,9 +748,14 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 			if err != nil {
 				return err
 			}
-			if err := host.LoadTools(ctx, mf, pctx, moduleName); err != nil {
+			file, err := host.LoadTools(ctx, mf, pctx, moduleName)
+			if err != nil {
 				return err
 			}
+			loaded.ModuleFile = file
+			m.mu.Lock()
+			m.predeclaredModules[key] = loadedModule{name: moduleName, file: file}
+			m.mu.Unlock()
 		} else {
 			registrar, ok := plugin.(ToolsRegistrar)
 			if !ok {

@@ -32,7 +32,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	memory := c.newCmd(root, "memory", "Configure external memory provider",
 		"Set up and manage external memory provider plugins.\n\nBundled providers: retaindb, byterover.\nCatalog providers (e.g. honcho, hindsight, supermemory,\nmem0, openviking, holographic): icebath plugins install <name>.\n\nOnly one external provider can be active at a time.\nBuilt-in memory (MEMORY.md/USER.md) is always active.")
 	mSetup := c.newCmd(memory, "setup", "Interactive provider selection and configuration", "")
-	c.pos(mSetup, pOpt("provider"))
+	c.pos(mSetup, pOpt("provider").withHelp("Provider to configure directly (e.g. honcho), skipping the picker"))
 	c.newCmd(memory, "status", "Show current memory provider config", "")
 	c.newCmd(memory, "off", "Disable external provider (built-in only)", "")
 	mReset := c.newCmd(memory, "reset", "Erase all built-in memory (MEMORY.md and USER.md)", "")

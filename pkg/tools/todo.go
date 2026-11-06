@@ -8,15 +8,16 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 const (
 	MaxTodoContentChars = 4000
 	MaxTodoItems        = 256
-	MaxTodoResultChars  = 512_000
+	MaxTodoResultChars  = state.MaxTodoResultChars
 	todoTruncationMark  = "… [truncated]"
 	// TodoInjectionHeader is the stable header the compressor keys on to tell the synthetic row from a user message
-	TodoInjectionHeader = "[Your active task list was preserved across context compression]"
+	TodoInjectionHeader = state.TodoInjectionHeader
 	TodoToolName        = "todo_list"
 )
 

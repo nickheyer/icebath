@@ -14,4 +14,13 @@ var GatewayServiceHooks struct {
 	ExecSchtasks                  func(args []string) (int, string, string)
 	WindowsStartupEntryPath       func(ctx context.Context) string
 	WindowsLegacyStartupEntryPath func(ctx context.Context) string
+	ServiceManagerDetect          func() (string, error)
+	ServiceManagerGet             func() (ProfileServiceManager, error)
+}
+
+// Service manager able to register profile gateways at runtime inside a container
+type ProfileServiceManager interface {
+	SupportsRuntimeRegistration() bool
+	RegisterProfileGateway(name string, startNow bool) error
+	UnregisterProfileGateway(name string) error
 }

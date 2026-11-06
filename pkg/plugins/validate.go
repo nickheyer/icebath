@@ -772,16 +772,15 @@ func checkSecurityScan(report *ValidationReport, pluginDir string) {
 	}
 }
 
-// Final component of a path as pathlib names it, empty for an empty path
+// Final component of a path as pathlib names it, dot components and repeated separators dropped
 func purePathName(p string) string {
-	p = strings.TrimRight(filepath.ToSlash(p), "/")
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		p = p[i+1:]
+	name := ""
+	for _, part := range strings.Split(filepath.ToSlash(p), "/") {
+		if part != "" && part != "." {
+			name = part
+		}
 	}
-	if p == "." {
-		return ""
-	}
-	return p
+	return name
 }
 
 // Source order of the keys of the mapping a key path names in a YAML document

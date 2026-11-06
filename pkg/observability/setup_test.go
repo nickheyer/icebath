@@ -13,13 +13,7 @@ import (
 // Installs the shipped provider names the setup rows name and restores the catalog afterwards
 func withProviderNames(t *testing.T, names ...string) {
 	t.Helper()
-	SetCatalogSource("provider_names", func() ([]string, error) { return names, nil })
-	t.Cleanup(func() {
-		catalogMu.Lock()
-		delete(catalogSources, "provider_names")
-		catalogMu.Unlock()
-		ResetCatalogCaches()
-	})
+	setCatalog(t, "provider_names", names...)
 }
 
 // Event and failure class of every provider setup row

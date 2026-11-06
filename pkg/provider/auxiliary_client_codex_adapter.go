@@ -456,6 +456,7 @@ func auxCodexToolCallWire(tc codexToolCall) map[string]any {
 
 // OpenAI client compatible wrapper routing chat completions through the Codex Responses API
 type CodexAuxiliaryClient struct {
+	auxEffectiveStamp
 	realClient auxResponsesClient
 	adapter    *auxCodexCompletionsAdapter
 }
@@ -480,6 +481,7 @@ func (c *CodexAuxiliaryClient) auxRealClient() AuxClient { return c.realClient }
 
 // Async twin of a wire adapter client running the sync body and mirroring its leaf SDK client for cache eviction
 type auxAsyncAuxiliaryClientBase struct {
+	auxEffectiveStamp
 	sync       AuxClient
 	apiKey     string
 	baseURL    string

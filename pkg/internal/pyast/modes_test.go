@@ -17,6 +17,7 @@ type modeCase struct {
 	Mode     string  `json:"mode"`
 	TC       bool    `json:"tc"`
 	FV       *int    `json:"fv"`
+	Opt      int     `json:"opt"`
 	WError   bool    `json:"werror"`
 	Dump     *string `json:"dump"`
 	Unparse  *string `json:"unparse"`
@@ -29,7 +30,7 @@ type modeCase struct {
 
 // Parses a recorded case with the source file the case names written to a temporary path
 func parseModeCase(t *testing.T, c modeCase) (*Node, []Warning, error) {
-	opts := Options{Mode: c.Mode, TypeComments: c.TC, FeatureVersion: c.FV, WarningsAsErrors: c.WError}
+	opts := Options{Mode: c.Mode, TypeComments: c.TC, FeatureVersion: c.FV, Optimize: c.Opt, WarningsAsErrors: c.WError}
 	if c.FileHex != "" {
 		content, _ := hex.DecodeString(c.FileHex)
 		opts.Filename = filepath.Join(t.TempDir(), "srcfile.py")

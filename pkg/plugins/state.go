@@ -176,8 +176,8 @@ func (s *PluginState) QuotaBytes() int { return pluginStateQuotaBytes }
 // Refuses keys outside the 1 to 128 character safe alphabet or containing a double dot
 func validateStateKey(key string) error {
 	if !pluginStateKeyRe.MatchString(key) || strings.Contains(key, "..") {
-		return errors.New("Plugin state keys must be 1-128 characters using letters, " +
-			"numbers, '_', '-', '.', or ':' (without '..')")
+		return &HostBuiltinError{Type: "ValueError", Message: "Plugin state keys must be 1-128 characters using letters, " +
+			"numbers, '_', '-', '.', or ':' (without '..')"}
 	}
 	return nil
 }
@@ -271,12 +271,12 @@ func (s *PluginState) Set(key string, value any) error {
 		enc.SetEscapeHTML(false)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(data); err != nil {
-			return fmt.Errorf("Plugin state value for %s is not JSON-serializable", config.PyRepr(key))
+			return &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("Plugin state value for %s is not JSON-serializable", config.PyRepr(key))}
 		}
 		encoded := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 		if len(encoded) > s.QuotaBytes() {
-			return fmt.Errorf("Plugin state quota exceeded: %d bytes is greater than the %d-byte per-plugin quota",
-				len(encoded), s.QuotaBytes())
+			return &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("Plugin state quota exceeded: %d bytes is greater than the %d-byte per-plugin quota",
+				len(encoded), s.QuotaBytes())}
 		}
 		return config.AtomicWrite(s.Path(), encoded, 0o600)
 	})

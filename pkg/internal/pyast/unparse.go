@@ -659,7 +659,7 @@ func (u *unparser) traverse(n *Node) {
 		v := n.Child("value")
 		u.setPrec(precAtom, v)
 		u.traverse(v)
-		if _, isInt := v.Get("value").(*big.Int); v.Is("Constant") && isInt {
+		if v.Is("Constant") && isPyInt(v.Get("value")) {
 			u.write(" ")
 		}
 		attr, _ := n.Str("attr")
@@ -1111,4 +1111,13 @@ func (u *unparser) writeInterpolation(n *Node, useStr bool) {
 		u.ftInner(spec, true)
 	}
 	u.write("}")
+}
+
+// Reports whether a constant is an int instance in Python, bool included
+func isPyInt(v any) bool {
+	switch v.(type) {
+	case *big.Int, int, bool:
+		return true
+	}
+	return false
 }

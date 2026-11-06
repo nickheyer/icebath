@@ -73,3 +73,34 @@ func TestCopyTreeGathersFailures(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestCopyTreeAbortableStopsAtTheIgnoreError(t *testing.T) {
+	src := t.TempDir()
+	for _, d := range []string{"a/deep", "b"} {
+		if err := os.MkdirAll(filepath.Join(src, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(src, "a", "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stop := errors.New("refused")
+	var seen []string
+	dst := filepath.Join(t.TempDir(), "out")
+	err := CopyTreeAbortable(src, dst, false, false, func(dir string, names []string) (map[string]bool, error) {
+		seen = append(seen, filepath.Base(dir))
+		if filepath.Base(dir) == "deep" {
+			return nil, stop
+		}
+		return map[string]bool{}, nil
+	})
+	if err != stop {
+		t.Fatalf("err %v, want the ignore error unchanged", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dst, "b")); !os.IsNotExist(statErr) {
+		t.Fatalf("copy went on after the abort, seen %v", seen)
+	}
+	if err := CopyTreeAbortable(src, filepath.Join(t.TempDir(), "ok"), false, false, nil); err != nil {
+		t.Fatal(err)
+	}
+}

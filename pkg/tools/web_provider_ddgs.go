@@ -29,6 +29,9 @@ var ddgsPollInterval = 100 * time.Millisecond
 // Wait after terminate before escalating to kill, in seconds
 var ddgsTerminateGraceSecs = 1.0
 
+// Reap grace bound when _terminate_and_reap was defined, the default a later patch of the grace never reaches
+const ddgsReapGrace = time.Second
+
 // Test only hook forwarded to the worker
 var ddgsTestHook string
 
@@ -263,7 +266,7 @@ func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit in
 		case <-time.After(min(ddgsPollInterval, remaining)):
 		}
 	}
-	ddgsTerminateAndReap(p, grace)
+	ddgsTerminateAndReap(p, ddgsReapGrace)
 	if !done {
 		select {
 		case r := <-result:

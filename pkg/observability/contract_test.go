@@ -99,7 +99,7 @@ func TestDecisionMarkAndTokenSums(t *testing.T) {
 		t.Fatal("mark with a category accepted")
 	}
 	tokens := &RelayEvent{Kind: "mark", Name: ModelTokensMark, Metadata: meta, Data: map[string]any{
-		"aux_task": "none", "call_role": "primary", "model": "gpt-5", "provider": "custom",
+		"aux_task": "none", "call_role": "primary", "model": "custom", "provider": "custom",
 		"input": 10, "output": 0, "cache_read": 3, "cache_write": 0, "reasoning": 0}}
 	sums := ModelTokenCounters(tokens)
 	if len(sums) != 2 || sums[0].Dimensions["token_type"] != "cache_read" || sums[0].Amount != 3 || sums[1].Amount != 10 {

@@ -89,13 +89,17 @@ type lexer struct {
 	contLine              bool
 	err                   *SyntaxError
 	toks                  []token
-	lineStarts            []int
-	blankline             bool
-	typeComments          bool
-	warnErrors            bool
-	typeIgnores           []typeIgnore
-	warns                 []lexWarning
-	errInFString          bool
+	barry                 bool
+	future                futureScan
+	// barryAt turns <> on from that token index, -1 after the scanned import, -2 never, barryTok is where it turned on
+	barryAt, barryTok int
+	lineStarts        []int
+	blankline         bool
+	typeComments      bool
+	warnErrors        bool
+	typeIgnores       []typeIgnore
+	warns             []lexWarning
+	errInFString      bool
 }
 
 type typeIgnore struct {
@@ -141,7 +145,13 @@ func tokenize(src []byte) *lexer { return tokenizeWith(src, false, false) }
 
 // Tokenizes with TYPE_COMMENT tokens and type ignores when asked, and tokenizer warnings raised as errors when asked
 func tokenizeWith(src []byte, typeComments, warnErrors bool) *lexer {
-	lx := &lexer{src: src, atbol: true, indstack: []int{0}, altindstack: []int{0}, modes: []tokMode{{kind: modeRegular}}, typeComments: typeComments, warnErrors: warnErrors}
+	return tokenizeBarry(src, typeComments, warnErrors, -1)
+}
+
+// Tokenizes with <> enabled from token index at, after the first barry_as_FLUFL future import for -1, never for -2
+func tokenizeBarry(src []byte, typeComments, warnErrors bool, at int) *lexer {
+	lx := &lexer{src: src, atbol: true, indstack: []int{0}, altindstack: []int{0}, modes: []tokMode{{kind: modeRegular}}, typeComments: typeComments, warnErrors: warnErrors, barryAt: at, barryTok: -1}
+	lx.toks = make([]token, 0, tokenEstimate(src))
 	for i := 0; i <= len(src); i++ {
 		if i == 0 || src[i-1] == '\n' {
 			lx.lineStarts = append(lx.lineStarts, i)
@@ -162,7 +172,48 @@ func tokenizeWith(src []byte, typeComments, warnErrors bool) *lexer {
 	}
 }
 
+// Byte classes of the token count estimate, word bytes 1, operators and quotes 2, newlines 3, blanks 0
+var estimateClass = func() (t [256]byte) {
+	for c := 0; c < 256; c++ {
+		switch {
+		case c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\\':
+		case c == '\n':
+			t[c] = 3
+		case c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80:
+			t[c] = 1
+		default:
+			t[c] = 2
+		}
+	}
+	return
+}()
+
+// Counts word runs, operator bytes and two per newline, about the token count, so the token slice rarely grows
+func tokenEstimate(src []byte) int {
+	n, prev := 16, byte(0)
+	for _, c := range src {
+		k := estimateClass[c]
+		switch {
+		case k == 3:
+			n += 2
+		case k == 2 || k == 1 && prev != 1:
+			n++
+		}
+		prev = k
+	}
+	return n
+}
+
+// Returns the next byte of the current line inline and leaves line refills to nextLine
 func (lx *lexer) nextc() int {
+	if c := lx.cur; c < lx.inp {
+		lx.cur = c + 1
+		return int(lx.src[c])
+	}
+	return lx.nextLine()
+}
+
+func (lx *lexer) nextLine() int {
 	for {
 		if lx.cur != lx.inp {
 			c := lx.src[lx.cur]
@@ -255,6 +306,78 @@ func (lx *lexer) emit(k tokKind, start, end int) {
 		t.ec = lx.cur - lx.lineStart
 	}
 	lx.toks = append(lx.toks, t)
+	switch {
+	case lx.barryAt == -1:
+		lx.scanFuture()
+	case lx.barryAt == len(lx.toks):
+		lx.barry, lx.barryTok = true, lx.barryAt
+	}
+}
+
+// Tracks a from __future__ import statement over emitted tokens, the parser action that enables barry_as_FLUFL runs at its end
+type futureScan struct {
+	step         int
+	paren, barry bool
+}
+
+// Turns on <> tokenization after the token ending a from __future__ import naming barry_as_FLUFL, as _PyPegen_checked_future_import
+func (lx *lexer) scanFuture() {
+	f := &lx.future
+	n := len(lx.toks)
+	t := &lx.toks[n-1]
+	name := t.kind == tName
+	finish := func() {
+		if f.barry && !lx.barry {
+			lx.barry, lx.barryTok = true, n
+		}
+		*f = futureScan{}
+	}
+	switch f.step {
+	case 0:
+		if name && t.val == "from" && !lx.barry {
+			if n == 1 || lx.toks[n-2].kind == tNewline || lx.toks[n-2].kind == tIndent || lx.toks[n-2].kind == tDedent || lx.toks[n-2].val == ";" || lx.toks[n-2].val == ":" {
+				f.step = 1
+			}
+		}
+	case 1, 2:
+		if name && (f.step == 1 && normIdent(t.val) == "__future__" || f.step == 2 && t.val == "import") {
+			f.step++
+		} else {
+			*f = futureScan{}
+		}
+	case 3, 4:
+		switch {
+		case f.step == 3 && t.val == "(":
+			f.paren, f.step = true, 4
+		case name:
+			f.barry = f.barry || normIdent(t.val) == "barry_as_FLUFL"
+			f.step = 5
+		case f.step == 4 && f.paren && t.val == ")":
+			finish()
+		default:
+			*f = futureScan{}
+		}
+	case 5, 7:
+		switch {
+		case f.step == 5 && name && t.val == "as":
+			f.step = 6
+		case t.val == ",":
+			f.step = 4
+		case f.paren && t.val == ")" || !f.paren:
+			finish()
+		default:
+			*f = futureScan{}
+		}
+	case 6:
+		switch {
+		case name:
+			f.step = 7
+		case !f.paren:
+			finish()
+		default:
+			*f = futureScan{}
+		}
+	}
 }
 
 // Offset of the line holding a source position
@@ -522,7 +645,7 @@ again:
 		}
 	}
 	c2 := lx.nextc()
-	if two := string([]byte{byte(c), byte(c2)}); c2 != eofChar && twoCharOps[two] {
+	if two := string([]byte{byte(c), byte(c2)}); c2 != eofChar && twoCharOps[two] && (two != "<>" || lx.barry) {
 		c3 := lx.nextc()
 		if c3 != eofChar && threeCharOps[two+string(rune(c3))] {
 			return lx.tok(tOp, lx.start, lx.cur)

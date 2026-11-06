@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Environment variable enabling project local plugin discovery
@@ -17,7 +18,6 @@ const EnvEnableProjectPlugins = "ICEBATH_ENABLE_PROJECT_PLUGINS"
 const EnvSafeMode = "ICEBATH_SAFE_MODE"
 
 // Environment variable naming the Relay plugins toml override the removed relay plugin pointed at
-const RelayPluginsConfigEnv = "ICEBATH_NEMO_RELAY_PLUGINS_TOML"
 
 // Keys of the removed relay plugin that core now owns
 var legacyRelayPluginKeys = map[string]bool{"nemo_relay": true, "observability/nemo_relay": true}
@@ -196,7 +196,7 @@ func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[s
 		return ManifestGate{Action: "placeholder", Enabled: enabledFlag, Error: err, Log: log, Level: level}
 	}
 	if intersects(names, legacyRelayPluginKeys) {
-		err := "removed — Relay lifecycle is owned by icebath core; configure a standard user or system Relay plugins.toml, or use " + RelayPluginsConfigEnv + " for an explicit user-file override"
+		err := "removed — Relay lifecycle is owned by icebath core; configure a standard user or system Relay plugins.toml, or use " + tools.RelayPluginsConfigEnv + " for an explicit user-file override"
 		return placeholder(err, "warn", "refusing to load removed Relay plugin "+key, false)
 	}
 	if intersects(names, disabled) {

@@ -53,7 +53,7 @@
 - [x] plugins/config_backends/remote/paths.py
 - [x] plugins/config_backends/remote/values.py
 
-### 3. pkg/state: 40% (27 of 67 files completed)
+### 3. pkg/state: 44% (30 of 67 files completed)
 #### SQLite session store, messages, compaction, FTS search, titles, usage, locks, repair
 - [x] hermes_cli/session_schema_history.py
 - [x] hermes_cli/sqlite_runtime.py
@@ -64,7 +64,7 @@
 - [x] hermes_state_common.py
 - [x] hermes_state_compaction_display.py
 - [ ] hermes_state_compression.py
-- [ ] hermes_state_coverage.py
+- [x] hermes_state_coverage.py
 - [x] hermes_state_dbfile.py
 - [x] hermes_state_detached_results.py
 - [x] hermes_state_errors.py
@@ -97,8 +97,8 @@
 - [x] hermes_state_pidns.py
 - [ ] hermes_state_portability.py
 - [ ] hermes_state_profile_repair.py
-- [ ] hermes_state_prompt_refresh.py
-- [ ] hermes_state_prune_rewrite.py
+- [x] hermes_state_prompt_refresh.py
+- [x] hermes_state_prune_rewrite.py
 - [x] hermes_state_readpool.py
 - [ ] hermes_state_reconcile.py
 - [x] hermes_state_registry.py
@@ -133,7 +133,7 @@
 - [x] hermes_platform/host/runtime.py
 - [x] hermes_platform/host/summary.py
 
-### 5. pkg/provider: 73% (245 of 334 files completed)
+### 5. pkg/provider: 75% (252 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
 - [x] agent/account_usage.py
 - [x] agent/account_usage_cache.py
@@ -185,7 +185,7 @@
 - [ ] agent/client_lifecycle.py
 - [x] agent/codex_headers.py
 - [ ] agent/codex_responses_adapter.py
-- [ ] agent/codex_runtime.py
+- [x] agent/codex_runtime.py
 - [x] agent/codex_runtime_history_seed.py
 - [x] agent/codex_service_tiers.py
 - [x] agent/command_token_source.py
@@ -233,9 +233,9 @@
 - [x] agent/prompt_cache_boundary.py
 - [ ] agent/prompt_cache_scope.py
 - [x] agent/prompt_caching.py
-- [ ] agent/provider_base.py
+- [x] agent/provider_base.py
 - [ ] agent/provider_projection.py
-- [ ] agent/provider_registry.py
+- [x] agent/provider_registry.py
 - [ ] agent/provider_route_hooks.py
 - [x] agent/proxy_bypass.py
 - [ ] agent/proxy_sources/iron_proxy.py
@@ -275,7 +275,7 @@
 - [x] agent/transports/chat_completions.py
 - [x] agent/transports/codex.py
 - [x] agent/transports/codex_app_server.py
-- [ ] agent/transports/codex_app_server_session.py
+- [x] agent/transports/codex_app_server_session.py
 - [x] agent/transports/codex_event_projector.py
 - [ ] agent/transports/hermes_tools_mcp_server.py
 - [ ] agent/transports/types.py
@@ -311,8 +311,8 @@
 - [x] hermes_cli/azure_detect.py
 - [x] hermes_cli/backend_retirement.py
 - [x] hermes_cli/codex_models.py
-- [ ] hermes_cli/codex_runtime_plugin_migration.py
-- [ ] hermes_cli/codex_runtime_switch.py
+- [x] hermes_cli/codex_runtime_plugin_migration.py
+- [x] hermes_cli/codex_runtime_switch.py
 - [x] hermes_cli/credential_lifecycle.py
 - [ ] hermes_cli/env_loader.py
 - [x] hermes_cli/fallback_cmd.py
@@ -372,7 +372,7 @@
 - [x] hermes_cli/nous_billing.py
 - [x] hermes_cli/nous_subscription.py
 - [ ] hermes_cli/onepassword_secrets_cli.py
-- [ ] hermes_cli/partial_compress.py
+- [x] hermes_cli/partial_compress.py
 - [ ] hermes_cli/profile_channels.py
 - [ ] hermes_cli/profile_cmd.py
 - [x] hermes_cli/profile_describer.py
@@ -470,7 +470,7 @@
 - [x] providers/__init__.py
 - [x] providers/base.py
 
-### 6. pkg/tools: 67% (188 of 279 files completed)
+### 6. pkg/tools: 73% (205 of 279 files completed)
 #### Tool registry, approval, terminal backends, file ops, search, web, vision, checkpoints
 - [ ] agent/async_utils.py
 - [ ] agent/background_review.py
@@ -485,7 +485,7 @@
 - [x] agent/file_safety.py
 - [x] agent/image_routing.py
 - [ ] agent/interrupt_compat.py
-- [ ] agent/interrupt_control.py
+- [x] agent/interrupt_control.py
 - [ ] agent/interrupt_scope.py
 - [ ] agent/markdown_tables.py
 - [ ] agent/onboarding.py
@@ -496,18 +496,18 @@
 - [x] agent/onboarding_text.py
 - [x] agent/process_bootstrap.py
 - [x] agent/redact.py
-- [ ] agent/relay_cwd.py
+- [x] agent/relay_cwd.py
 - [ ] agent/review_engine.py
 - [ ] agent/review_idle_queue.py
 - [x] agent/runtime_cwd.py
 - [x] agent/runtime_self_protection.py
 - [x] agent/search_policy.py
-- [ ] agent/subagent_lifecycle.py
+- [x] agent/subagent_lifecycle.py
 - [ ] agent/subdirectory_hints.py
 - [x] agent/terminal_approval_batch.py
 - [x] agent/terminal_env_provider.py
 - [x] agent/terminal_env_registry.py
-- [ ] agent/thread_scoped_output.py
+- [x] agent/thread_scoped_output.py
 - [x] agent/tool_call_batches.py
 - [x] agent/tool_dispatch_helpers.py
 - [ ] agent/tool_executor.py
@@ -527,15 +527,15 @@
 - [ ] hermes_cli/dump.py
 - [ ] hermes_cli/git_pack_tidy.py
 - [ ] hermes_cli/gitlock.py
-- [ ] hermes_cli/input_sanitize.py
+- [x] hermes_cli/input_sanitize.py
 - [x] hermes_cli/install_state.py
 - [x] hermes_cli/onboarding_due.py
 - [x] hermes_cli/onboarding_run.py
 - [x] hermes_cli/process_identity.py
 - [x] hermes_cli/projects_db.py
-- [ ] hermes_cli/pty_bridge.py
-- [ ] hermes_cli/pty_session.py
-- [ ] hermes_cli/setup_terminal.py
+- [x] hermes_cli/pty_bridge.py
+- [x] hermes_cli/pty_session.py
+- [x] hermes_cli/setup_terminal.py
 - [x] hermes_cli/sizefmt.py
 - [ ] hermes_cli/subcommands/approvals.py
 - [ ] hermes_cli/subcommands/backup.py
@@ -551,7 +551,7 @@
 - [x] hermes_cli/toolset_scope.py
 - [x] hermes_cli/toolset_validation.py
 - [ ] hermes_cli/tui_worktree_resume.py
-- [ ] hermes_cli/win_pty_bridge.py
+- [x] hermes_cli/win_pty_bridge.py
 - [ ] hermes_cli/worktree_archive.py
 - [ ] hermes_cli/worktree_cmd.py
 - [ ] hermes_cli/worktree_exit.py
@@ -568,14 +568,14 @@
 - [x] hermes_platform/resolver/core.py
 - [x] hermes_platform/resolver/known_dirs.py
 - [ ] model_tools.py
-- [ ] plugins/web/_common.py
+- [x] plugins/web/_common.py
 - [x] plugins/web/brave_free/__init__.py
 - [x] plugins/web/brave_free/provider.py
-- [ ] plugins/web/ddgs/__init__.py
-- [ ] plugins/web/ddgs/_search_worker.py
-- [ ] plugins/web/ddgs/provider.py
-- [ ] plugins/web/exa/__init__.py
-- [ ] plugins/web/exa/provider.py
+- [x] plugins/web/ddgs/__init__.py
+- [x] plugins/web/ddgs/_search_worker.py
+- [x] plugins/web/ddgs/provider.py
+- [x] plugins/web/exa/__init__.py
+- [x] plugins/web/exa/provider.py
 - [x] plugins/web/firecrawl/__init__.py
 - [x] plugins/web/firecrawl/provider.py
 - [x] plugins/web/keenable/__init__.py
@@ -583,8 +583,8 @@
 - [x] plugins/web/keyless_mcp.py
 - [x] plugins/web/openai_native/__init__.py
 - [x] plugins/web/openai_native/provider.py
-- [ ] plugins/web/parallel/__init__.py
-- [ ] plugins/web/parallel/provider.py
+- [x] plugins/web/parallel/__init__.py
+- [x] plugins/web/parallel/provider.py
 - [x] plugins/web/perplexity/__init__.py
 - [x] plugins/web/perplexity/provider.py
 - [x] plugins/web/searxng/__init__.py
@@ -702,7 +702,7 @@
 - [x] tools/read_preview_tool.py
 - [x] tools/read_terminal_tool.py
 - [x] tools/read_window_tool.py
-- [x] tools/registry.py
+- [ ] tools/registry.py
 - [x] tools/schema_sanitizer.py
 - [x] tools/self_repo_guard.py
 - [ ] tools/session_search_tool.py
@@ -725,7 +725,7 @@
 - [x] tools/threat_patterns.py
 - [x] tools/tip_tool.py
 - [x] tools/todo_tool.py
-- [ ] tools/tool_backend_helpers.py
+- [x] tools/tool_backend_helpers.py
 - [x] tools/tool_labels.py
 - [x] tools/tool_output_limits.py
 - [x] tools/tool_output_truncate.py
@@ -889,9 +889,9 @@
 - [x] tools/skills_tool_plugin.py
 - [x] tools/skills_tool_setup.py
 
-### 11. pkg/memory: 78% (25 of 32 files completed)
+### 11. pkg/memory: 96% (31 of 32 files completed)
 #### Memory store and tool, providers, manager, curator, learning graph, insights
-- [ ] agent/curator.py
+- [x] agent/curator.py
 - [x] agent/curator_backup.py
 - [x] agent/insights.py
 - [x] agent/learn_prompt.py
@@ -907,12 +907,12 @@
 - [x] hermes_cli/curator.py
 - [x] hermes_cli/mem_trim.py
 - [x] hermes_cli/memory_oauth.py
-- [ ] hermes_cli/memory_provider_migration.py
-- [ ] hermes_cli/memory_setup.py
+- [x] hermes_cli/memory_provider_migration.py
+- [x] hermes_cli/memory_setup.py
 - [x] hermes_cli/profile_memory_config.py
-- [ ] hermes_cli/subcommands/curator.py
-- [ ] hermes_cli/subcommands/insights.py
-- [ ] hermes_cli/subcommands/memory.py
+- [x] hermes_cli/subcommands/curator.py
+- [x] hermes_cli/subcommands/insights.py
+- [x] hermes_cli/subcommands/memory.py
 - [x] hermes_cli/write_approval_commands.py
 - [ ] plugins/memory/__init__.py
 - [x] plugins/memory/byterover/__init__.py
@@ -924,13 +924,13 @@
 - [x] tools/skill_ledger.py
 - [x] tools/skill_usage.py
 
-### 12. pkg/cron: 25% (17 of 68 files completed)
+### 12. pkg/cron: 36% (25 of 68 files completed)
 #### Job store, schedules, due scan, scheduler, delivery, blueprints, cronjob tool
 - [x] agent/periodic_scheduler.py
 - [x] agent/sleep_clock.py
 - [ ] cron/__init__.py
-- [ ] cron/blueprint_catalog.py
-- [ ] cron/blueprint_plugins.py
+- [x] cron/blueprint_catalog.py
+- [x] cron/blueprint_plugins.py
 - [ ] cron/bot_chat_legacy.py
 - [ ] cron/cancellation.py
 - [x] cron/constants.py
@@ -982,56 +982,56 @@
 - [ ] gateway/cron_store_notices.py
 - [ ] gateway/session_cron.py
 - [ ] gateway/session_cron_commands.py
-- [ ] hermes_cli/backup_cron_prompts.py
-- [ ] hermes_cli/blueprint_cmd.py
-- [ ] hermes_cli/cli_cron_lines.py
+- [x] hermes_cli/backup_cron_prompts.py
+- [x] hermes_cli/blueprint_cmd.py
+- [x] hermes_cli/cli_cron_lines.py
 - [ ] hermes_cli/cron.py
 - [ ] plugins/cron_providers/__init__.py
-- [ ] plugins/cron_providers/chronos/__init__.py
-- [ ] plugins/cron_providers/chronos/_nas_client.py
-- [ ] plugins/cron_providers/chronos/verify.py
+- [x] plugins/cron_providers/chronos/__init__.py
+- [x] plugins/cron_providers/chronos/_nas_client.py
+- [x] plugins/cron_providers/chronos/verify.py
 - [x] tools/blueprints.py
 - [ ] tools/cronjob_job_args.py
 - [x] tools/cronjob_prompt_scan.py
 - [ ] tools/cronjob_tools.py
 
-### 13. pkg/plugins: 26% (29 of 111 files completed)
+### 13. pkg/plugins: 67% (75 of 111 files completed)
 #### Plugin manifests, discovery, hooks, middleware, host wire, install, catalog, guard
-- [ ] agent/plugin_live_notes.py
-- [ ] agent/plugin_llm.py
+- [x] agent/plugin_live_notes.py
+- [x] agent/plugin_llm.py
 - [x] agent/plugin_stream_hooks.py
 - [x] agent/shell_hooks.py
-- [ ] agent/verify/__init__.py
-- [ ] agent/verify/environment.py
-- [ ] agent/verify/recipes.py
-- [ ] agent/verify/runner.py
-- [ ] agent/verify_hooks.py
+- [x] agent/verify/__init__.py
+- [x] agent/verify/environment.py
+- [x] agent/verify/recipes.py
+- [x] agent/verify/runner.py
+- [x] agent/verify_hooks.py
 - [ ] hermes_cli/agent_plugins.py
 - [x] hermes_cli/git_credentials.py
-- [ ] hermes_cli/github_api.py
+- [x] hermes_cli/github_api.py
 - [ ] hermes_cli/hooks.py
 - [x] hermes_cli/middleware.py
-- [ ] hermes_cli/plugin_capabilities.py
+- [x] hermes_cli/plugin_capabilities.py
 - [x] hermes_cli/plugin_catalog.py
-- [ ] hermes_cli/plugin_catalog_presence.py
-- [ ] hermes_cli/plugin_choices.py
-- [ ] hermes_cli/plugin_command_dispatch.py
-- [ ] hermes_cli/plugin_compat.py
-- [ ] hermes_cli/plugin_dev.py
+- [x] hermes_cli/plugin_catalog_presence.py
+- [x] hermes_cli/plugin_choices.py
+- [x] hermes_cli/plugin_command_dispatch.py
+- [x] hermes_cli/plugin_compat.py
+- [x] hermes_cli/plugin_dev.py
 - [x] hermes_cli/plugin_events.py
 - [ ] hermes_cli/plugin_host.py
 - [ ] hermes_cli/plugin_host_child.py
 - [ ] hermes_cli/plugin_host_http_auth.py
-- [ ] hermes_cli/plugin_host_profiles.py
+- [x] hermes_cli/plugin_host_profiles.py
 - [ ] hermes_cli/plugin_host_wire.py
-- [ ] hermes_cli/plugin_install_phase.py
+- [x] hermes_cli/plugin_install_phase.py
 - [x] hermes_cli/plugin_isolation.py
 - [x] hermes_cli/plugin_isolation_audit.py
-- [ ] hermes_cli/plugin_messages.py
+- [x] hermes_cli/plugin_messages.py
 - [x] hermes_cli/plugin_oauth.py
 - [ ] hermes_cli/plugin_packs.py
 - [x] hermes_cli/plugin_provider_requests.py
-- [ ] hermes_cli/plugin_session.py
+- [x] hermes_cli/plugin_session.py
 - [x] hermes_cli/plugin_validate.py
 - [x] hermes_cli/plugin_validate_core_override.py
 - [x] hermes_cli/plugin_validate_desktop.py
@@ -1042,18 +1042,18 @@
 - [x] hermes_cli/plugins_activation_live.py
 - [x] hermes_cli/plugins_admission.py
 - [ ] hermes_cli/plugins_aux_tasks.py
-- [ ] hermes_cli/plugins_cadence.py
+- [x] hermes_cli/plugins_cadence.py
 - [ ] hermes_cli/plugins_capability_ctx.py
 - [ ] hermes_cli/plugins_cmd.py
-- [ ] hermes_cli/plugins_cmd_capabilities.py
+- [x] hermes_cli/plugins_cmd_capabilities.py
 - [ ] hermes_cli/plugins_cmd_catalog.py
 - [ ] hermes_cli/plugins_cmd_git.py
 - [x] hermes_cli/plugins_cmd_inspect.py
 - [ ] hermes_cli/plugins_cmd_install.py
 - [x] hermes_cli/plugins_cmd_listing.py
-- [ ] hermes_cli/plugins_cmd_remove.py
+- [x] hermes_cli/plugins_cmd_remove.py
 - [ ] hermes_cli/plugins_cmd_toggle.py
-- [ ] hermes_cli/plugins_cmd_update.py
+- [x] hermes_cli/plugins_cmd_update.py
 - [x] hermes_cli/plugins_cmd_update_all.py
 - [ ] hermes_cli/plugins_content.py
 - [ ] hermes_cli/plugins_discovery.py
@@ -1068,44 +1068,44 @@
 - [x] hermes_cli/plugins_state.py
 - [ ] hermes_cli/plugins_transaction.py
 - [x] hermes_cli/plugins_updates.py
-- [ ] hermes_cli/relay_plugin_cutover.py
+- [x] hermes_cli/relay_plugin_cutover.py
 - [ ] hermes_cli/relay_plugin_migrate.py
 - [ ] hermes_cli/subcommands/hooks.py
 - [ ] hermes_cli/subcommands/plugins.py
 - [ ] hermes_cli/subcommands/verify.py
-- [ ] plugins/context_engine/__init__.py
-- [ ] plugins/delegation/default/__init__.py
-- [ ] plugins/disk-cleanup/__init__.py
-- [ ] plugins/disk-cleanup/disk_cleanup.py
+- [x] plugins/context_engine/__init__.py
+- [x] plugins/delegation/default/__init__.py
+- [x] plugins/disk-cleanup/__init__.py
+- [x] plugins/disk-cleanup/disk_cleanup.py
 - [ ] plugins/google_meet/__init__.py
-- [ ] plugins/google_meet/_jsonfile.py
-- [ ] plugins/google_meet/audio_bridge.py
+- [x] plugins/google_meet/_jsonfile.py
+- [x] plugins/google_meet/audio_bridge.py
 - [ ] plugins/google_meet/cli.py
-- [ ] plugins/google_meet/meet_bot.py
-- [ ] plugins/google_meet/node/__init__.py
+- [x] plugins/google_meet/meet_bot.py
+- [x] plugins/google_meet/node/__init__.py
 - [ ] plugins/google_meet/node/cli.py
-- [ ] plugins/google_meet/node/client.py
-- [ ] plugins/google_meet/node/protocol.py
-- [ ] plugins/google_meet/node/registry.py
-- [ ] plugins/google_meet/node/server.py
-- [ ] plugins/google_meet/process_manager.py
-- [ ] plugins/google_meet/realtime/openai_client.py
+- [x] plugins/google_meet/node/client.py
+- [x] plugins/google_meet/node/protocol.py
+- [x] plugins/google_meet/node/registry.py
+- [x] plugins/google_meet/node/server.py
+- [x] plugins/google_meet/process_manager.py
+- [x] plugins/google_meet/realtime/openai_client.py
 - [ ] plugins/google_meet/tools.py
-- [ ] plugins/hermes-achievements/dashboard/plugin_api.py
-- [ ] plugins/plugin_loader.py
-- [ ] plugins/plugin_storage.py
-- [ ] plugins/plugin_utils.py
-- [ ] plugins/security-guidance/__init__.py
-- [ ] plugins/security-guidance/patterns.py
+- [x] plugins/hermes-achievements/dashboard/plugin_api.py
+- [x] plugins/plugin_loader.py
+- [x] plugins/plugin_storage.py
+- [x] plugins/plugin_utils.py
+- [x] plugins/security-guidance/__init__.py
+- [x] plugins/security-guidance/patterns.py
 - [ ] plugins/teams_pipeline/__init__.py
 - [ ] plugins/teams_pipeline/cli.py
 - [ ] plugins/teams_pipeline/meetings.py
-- [ ] plugins/teams_pipeline/models.py
+- [x] plugins/teams_pipeline/models.py
 - [ ] plugins/teams_pipeline/pipeline.py
 - [ ] plugins/teams_pipeline/runtime.py
 - [ ] plugins/teams_pipeline/store.py
-- [ ] plugins/teams_pipeline/subscriptions.py
-- [ ] tools/lazy_deps.py
+- [x] plugins/teams_pipeline/subscriptions.py
+- [x] tools/lazy_deps.py
 - [x] tools/plugin_guard.py
 - [x] tools/plugin_guard_context.py
 
@@ -1147,7 +1147,7 @@
 - [x] tools/mcp_tool_server_run.py
 - [x] tools/mcp_tool_transport.py
 
-### 15. pkg/browser: 0% (0 of 61 files completed)
+### 15. pkg/browser: 14% (9 of 61 files completed)
 #### Chromium launch, CDP sessions, page tools, supervisor, cloud providers, vault
 - [ ] agent/browser_page_backend.py
 - [ ] agent/browser_page_registry.py
@@ -1166,7 +1166,7 @@
 - [ ] agent/vault_store.py
 - [ ] hermes_cli/browser_connect.py
 - [ ] hermes_cli/browser_credential.py
-- [ ] hermes_cli/browser_runtime.py
+- [x] hermes_cli/browser_runtime.py
 - [ ] hermes_cli/cli_browser_gateway.py
 - [ ] hermes_cli/vault.py
 - [ ] plugins/browser/_common.py
@@ -1189,10 +1189,10 @@
 - [ ] tools/bot_desktop/thumbnail.py
 - [ ] tools/browser_cdp_tool.py
 - [ ] tools/browser_dialog_tool.py
-- [ ] tools/browser_harness_dirs.py
-- [ ] tools/browser_launcher.py
-- [ ] tools/browser_launcher_holders.py
-- [ ] tools/browser_lightpanda.py
+- [x] tools/browser_harness_dirs.py
+- [x] tools/browser_launcher.py
+- [x] tools/browser_launcher_holders.py
+- [x] tools/browser_lightpanda.py
 - [ ] tools/browser_session.py
 - [ ] tools/browser_session_cdp.py
 - [ ] tools/browser_session_cloud.py
@@ -1203,19 +1203,19 @@
 - [ ] tools/browser_supervisor_capture.py
 - [ ] tools/browser_supervisor_dialogs.py
 - [ ] tools/browser_supervisor_frames.py
-- [ ] tools/browser_tool.py
-- [ ] tools/browser_tool_install.py
-- [ ] tools/browser_url_policy.py
+- [x] tools/browser_tool.py
+- [x] tools/browser_tool_install.py
+- [x] tools/browser_url_policy.py
 - [ ] tools/browser_use_cli.py
-- [ ] tools/browser_use_shot.py
+- [x] tools/browser_use_shot.py
 - [ ] tools/browser_vault_context.py
 - [ ] tools/browser_vault_tool.py
 
-### 16. pkg/media: 1% (1 of 61 files completed)
+### 16. pkg/media: 11% (7 of 61 files completed)
 #### Image and video generation, TTS, transcription, voice mode, wake word
-- [ ] agent/image_gen_provider.py
-- [ ] agent/image_gen_registry.py
-- [ ] agent/provider_media.py
+- [x] agent/image_gen_provider.py
+- [x] agent/image_gen_registry.py
+- [x] agent/provider_media.py
 - [ ] agent/transcription_provider.py
 - [ ] agent/transcription_registry.py
 - [ ] agent/tts_provider.py
@@ -1239,9 +1239,9 @@
 - [ ] plugins/video_gen/openrouter/__init__.py
 - [ ] plugins/video_gen/xai/__init__.py
 - [x] tools/audio_container.py
-- [ ] tools/fal_common.py
-- [ ] tools/image_generation_catalog.py
-- [ ] tools/image_generation_managed.py
+- [x] tools/fal_common.py
+- [x] tools/image_generation_catalog.py
+- [x] tools/image_generation_managed.py
 - [ ] tools/image_generation_tool.py
 - [ ] tools/neutts_synth.py
 - [ ] tools/stt_lease.py
@@ -1275,7 +1275,7 @@
 - [ ] tools/wake_word_engines.py
 - [ ] tools/xai_video_tools.py
 
-### 17. pkg/agent: 22% (28 of 127 files completed)
+### 17. pkg/agent: 28% (36 of 127 files completed)
 #### Turn loop, prompt builder, compression, delegation, session search, interrupts, hooks
 - [ ] agent/acp_client.py
 - [ ] agent/acp_openai_bridge.py
@@ -1283,7 +1283,7 @@
 - [ ] agent/agent_init.py
 - [ ] agent/agent_init_compression_notice.py
 - [ ] agent/agent_init_fallback.py
-- [ ] agent/agent_init_memory_provider.py
+- [x] agent/agent_init_memory_provider.py
 - [ ] agent/agent_init_ollama.py
 - [ ] agent/agent_init_params.py
 - [ ] agent/agent_runtime_helpers.py
@@ -1295,14 +1295,14 @@
 - [ ] agent/compression_automation.py
 - [ ] agent/compression_facade.py
 - [ ] agent/context_breakdown.py
-- [ ] agent/context_compressor.py
-- [ ] agent/context_compressor_prellm.py
+- [x] agent/context_compressor.py
+- [x] agent/context_compressor_prellm.py
 - [ ] agent/context_compressor_prune.py
 - [x] agent/context_compressor_retry.py
 - [ ] agent/context_compressor_summary.py
 - [ ] agent/context_compressor_tail.py
 - [ ] agent/context_compressor_telemetry.py
-- [ ] agent/context_compressor_window.py
+- [x] agent/context_compressor_window.py
 - [ ] agent/context_engine.py
 - [ ] agent/context_file_sources.py
 - [ ] agent/context_pin.py
@@ -1315,7 +1315,7 @@
 - [ ] agent/conversation_compression_manual.py
 - [ ] agent/conversation_compression_reply_anchor.py
 - [ ] agent/conversation_compression_telemetry.py
-- [ ] agent/conversation_compression_watermark.py
+- [x] agent/conversation_compression_watermark.py
 - [ ] agent/conversation_loop.py
 - [ ] agent/copilot_acp_client.py
 - [ ] agent/history_commentary.py
@@ -1357,7 +1357,7 @@
 - [ ] agent/runtime_session_store.py
 - [x] agent/safe_worker_policy.py
 - [x] agent/session_activity.py
-- [ ] agent/session_client_env.py
+- [x] agent/session_client_env.py
 - [ ] agent/session_persistence.py
 - [x] agent/session_source.py
 - [ ] agent/side_question.py
@@ -1388,7 +1388,7 @@
 - [ ] agent/turn_loop_errors.py
 - [ ] agent/turn_overflow.py
 - [ ] agent/turn_preflight.py
-- [ ] agent/turn_preflight_gate.py
+- [x] agent/turn_preflight_gate.py
 - [ ] agent/turn_recovery.py
 - [ ] agent/turn_recovery_autorecover.py
 - [ ] agent/turn_recovery_codex.py
@@ -1396,7 +1396,7 @@
 - [ ] agent/turn_response_check.py
 - [ ] agent/turn_response_intake.py
 - [x] agent/turn_retry_state.py
-- [ ] agent/turn_scripted_prelude.py
+- [x] agent/turn_scripted_prelude.py
 - [ ] agent/turn_stop_gates.py
 - [x] agent/turn_summary.py
 - [ ] agent/turn_tool_round.py
@@ -1405,255 +1405,291 @@
 - [ ] agent/turn_usage.py
 - [ ] agent/vision_message_prep.py
 
-### 18. pkg/builtin: 0% (0 of 365 files completed)
+### 18. pkg/builtin: 83% (334 of 401 files completed)
 #### EGM, hallmark and impeccable embedded as in process plugins
-- [ ] elephant-goldfish-model/agents/bootstrap_orchestrator.md
-- [ ] elephant-goldfish-model/agents/codebase_details.md
-- [ ] elephant-goldfish-model/agents/comprehension.md
-- [ ] elephant-goldfish-model/agents/design_critic.md
-- [ ] elephant-goldfish-model/agents/implementation_readiness.md
-- [ ] elephant-goldfish-model/agents/structural.md
-- [ ] elephant-goldfish-model/agents/style.md
-- [ ] elephant-goldfish-model/agents/synthesizer.md
-- [ ] elephant-goldfish-model/agents/zoom_out.md
-- [ ] elephant-goldfish-model/plugin.json
-- [ ] elephant-goldfish-model/resources/README.md
-- [ ] elephant-goldfish-model/resources/document_standards/feature-spec-standard.md
-- [ ] elephant-goldfish-model/resources/document_standards/heilmeier-standard.md
-- [ ] elephant-goldfish-model/resources/document_standards/implementation-readiness-standard.md
-- [ ] elephant-goldfish-model/resources/document_standards/re-implementation-standard.md
-- [ ] elephant-goldfish-model/resources/document_standards/zoom-out-standard.md
-- [ ] elephant-goldfish-model/resources/execution_instructions.md
-- [ ] elephant-goldfish-model/skills/egm-bootstrap/SKILL.md
-- [ ] elephant-goldfish-model/skills/egm-bootstrap/TEST.md
-- [ ] elephant-goldfish-model/skills/egm-bootstrap/agents/openai.yaml
-- [ ] elephant-goldfish-model/skills/egm-bootstrap/assets/icon.svg
-- [ ] elephant-goldfish-model/skills/egm-bootstrap/references/templates.md
-- [ ] elephant-goldfish-model/skills/egm-bootstrap/references/worker-return.schema.json
-- [ ] elephant-goldfish-model/skills/egm-bootstrap/test_scenarios.yaml
-- [ ] elephant-goldfish-model/skills/egm-brainstorm/SKILL.md
-- [ ] elephant-goldfish-model/skills/egm-brainstorm/TEST.md
-- [ ] elephant-goldfish-model/skills/egm-brainstorm/agents/openai.yaml
-- [ ] elephant-goldfish-model/skills/egm-brainstorm/assets/icon.svg
-- [ ] elephant-goldfish-model/skills/egm-brainstorm/test_scenarios.yaml
-- [ ] elephant-goldfish-model/skills/egm-draft/SKILL.md
-- [ ] elephant-goldfish-model/skills/egm-draft/TEST.md
-- [ ] elephant-goldfish-model/skills/egm-draft/agents/openai.yaml
-- [ ] elephant-goldfish-model/skills/egm-draft/assets/icon.svg
-- [ ] elephant-goldfish-model/skills/egm-draft/references/design_doc.md
-- [ ] elephant-goldfish-model/skills/egm-draft/test_scenarios.yaml
-- [ ] elephant-goldfish-model/skills/egm-drift-report/SKILL.md
-- [ ] elephant-goldfish-model/skills/egm-drift-report/TEST.md
-- [ ] elephant-goldfish-model/skills/egm-drift-report/agents/openai.yaml
-- [ ] elephant-goldfish-model/skills/egm-drift-report/assets/icon.svg
-- [ ] elephant-goldfish-model/skills/egm-drift-report/test_scenarios.yaml
-- [ ] elephant-goldfish-model/skills/egm-resolve/SKILL.md
-- [ ] elephant-goldfish-model/skills/egm-resolve/TEST.md
-- [ ] elephant-goldfish-model/skills/egm-resolve/agents/openai.yaml
-- [ ] elephant-goldfish-model/skills/egm-resolve/assets/icon.svg
-- [ ] elephant-goldfish-model/skills/egm-resolve/test_scenarios.yaml
-- [ ] elephant-goldfish-model/skills/egm-review-loop/SKILL.md
-- [ ] elephant-goldfish-model/skills/egm-review-loop/TEST.md
-- [ ] elephant-goldfish-model/skills/egm-review-loop/agents/openai.yaml
-- [ ] elephant-goldfish-model/skills/egm-review-loop/assets/icon.svg
-- [ ] elephant-goldfish-model/skills/egm-review-loop/test_scenarios.yaml
-- [ ] elephant-goldfish-model/skills/egm-review/SKILL.md
-- [ ] elephant-goldfish-model/skills/egm-review/TEST.md
-- [ ] elephant-goldfish-model/skills/egm-review/agents/openai.yaml
-- [ ] elephant-goldfish-model/skills/egm-review/assets/icon.svg
-- [ ] elephant-goldfish-model/skills/egm-review/test_scenarios.yaml
+- [ ] elephant-goldfish-model/.codex-plugin/plugin.json
+- [x] elephant-goldfish-model/AGENTS.md
+- [x] elephant-goldfish-model/LICENSE
+- [x] elephant-goldfish-model/README.md
+- [x] elephant-goldfish-model/TESTING.md
+- [x] elephant-goldfish-model/agents/bootstrap_orchestrator.md
+- [x] elephant-goldfish-model/agents/codebase_details.md
+- [x] elephant-goldfish-model/agents/comprehension.md
+- [x] elephant-goldfish-model/agents/design_critic.md
+- [x] elephant-goldfish-model/agents/implementation_readiness.md
+- [x] elephant-goldfish-model/agents/structural.md
+- [x] elephant-goldfish-model/agents/style.md
+- [x] elephant-goldfish-model/agents/synthesizer.md
+- [x] elephant-goldfish-model/agents/zoom_out.md
+- [ ] elephant-goldfish-model/assets/icon.svg
+- [x] elephant-goldfish-model/docs/assets/readme-header.svg
+- [x] elephant-goldfish-model/docs/claude.md
+- [x] elephant-goldfish-model/docs/codex.md
+- [x] elephant-goldfish-model/docs/copilot.md
+- [x] elephant-goldfish-model/docs/cursor.md
+- [x] elephant-goldfish-model/docs/designs/README.md
+- [x] elephant-goldfish-model/docs/designs/additional-harnesses.md
+- [x] elephant-goldfish-model/docs/designs/architecture.md
+- [x] elephant-goldfish-model/docs/designs/ask.md
+- [x] elephant-goldfish-model/docs/designs/bootstrap.md
+- [x] elephant-goldfish-model/docs/designs/brainstorm.md
+- [x] elephant-goldfish-model/docs/designs/claude_release_branch_distribution.md
+- [x] elephant-goldfish-model/docs/designs/draft.md
+- [x] elephant-goldfish-model/docs/designs/drift_report.md
+- [x] elephant-goldfish-model/docs/designs/multi_harness_support.md
+- [x] elephant-goldfish-model/docs/designs/releases.md
+- [x] elephant-goldfish-model/docs/designs/review.md
+- [x] elephant-goldfish-model/docs/designs/runtime_packaging.md
+- [x] elephant-goldfish-model/docs/designs/skill_icons.md
+- [x] elephant-goldfish-model/docs/designs/synthesizer.md
+- [x] elephant-goldfish-model/docs/directory.md
+- [x] elephant-goldfish-model/docs/faq.md
+- [x] elephant-goldfish-model/docs/getting_started.md
+- [x] elephant-goldfish-model/docs/harnesses.md
+- [x] elephant-goldfish-model/docs/index.md
+- [x] elephant-goldfish-model/docs/muse.md
+- [x] elephant-goldfish-model/docs/opencode.md
+- [x] elephant-goldfish-model/docs/privacy.md
+- [x] elephant-goldfish-model/docs/releases.md
+- [x] elephant-goldfish-model/plugin.json
+- [x] elephant-goldfish-model/resources/README.md
+- [x] elephant-goldfish-model/resources/document_standards/feature-spec-standard.md
+- [x] elephant-goldfish-model/resources/document_standards/heilmeier-standard.md
+- [x] elephant-goldfish-model/resources/document_standards/implementation-readiness-standard.md
+- [x] elephant-goldfish-model/resources/document_standards/re-implementation-standard.md
+- [x] elephant-goldfish-model/resources/document_standards/zoom-out-standard.md
+- [x] elephant-goldfish-model/resources/execution_instructions.md
+- [x] elephant-goldfish-model/scripts/pack_plugin.py
+- [x] elephant-goldfish-model/skills/egm-bootstrap/SKILL.md
+- [x] elephant-goldfish-model/skills/egm-bootstrap/TEST.md
+- [x] elephant-goldfish-model/skills/egm-bootstrap/agents/openai.yaml
+- [x] elephant-goldfish-model/skills/egm-bootstrap/assets/icon.svg
+- [x] elephant-goldfish-model/skills/egm-bootstrap/references/templates.md
+- [x] elephant-goldfish-model/skills/egm-bootstrap/references/worker-return.schema.json
+- [x] elephant-goldfish-model/skills/egm-bootstrap/test_scenarios.yaml
+- [x] elephant-goldfish-model/skills/egm-brainstorm/SKILL.md
+- [x] elephant-goldfish-model/skills/egm-brainstorm/TEST.md
+- [x] elephant-goldfish-model/skills/egm-brainstorm/agents/openai.yaml
+- [x] elephant-goldfish-model/skills/egm-brainstorm/assets/icon.svg
+- [x] elephant-goldfish-model/skills/egm-brainstorm/test_scenarios.yaml
+- [x] elephant-goldfish-model/skills/egm-draft/SKILL.md
+- [x] elephant-goldfish-model/skills/egm-draft/TEST.md
+- [x] elephant-goldfish-model/skills/egm-draft/agents/openai.yaml
+- [x] elephant-goldfish-model/skills/egm-draft/assets/icon.svg
+- [x] elephant-goldfish-model/skills/egm-draft/references/design_doc.md
+- [x] elephant-goldfish-model/skills/egm-draft/test_scenarios.yaml
+- [x] elephant-goldfish-model/skills/egm-drift-report/SKILL.md
+- [x] elephant-goldfish-model/skills/egm-drift-report/TEST.md
+- [x] elephant-goldfish-model/skills/egm-drift-report/agents/openai.yaml
+- [x] elephant-goldfish-model/skills/egm-drift-report/assets/icon.svg
+- [x] elephant-goldfish-model/skills/egm-drift-report/test_scenarios.yaml
+- [x] elephant-goldfish-model/skills/egm-resolve/SKILL.md
+- [x] elephant-goldfish-model/skills/egm-resolve/TEST.md
+- [x] elephant-goldfish-model/skills/egm-resolve/agents/openai.yaml
+- [x] elephant-goldfish-model/skills/egm-resolve/assets/icon.svg
+- [x] elephant-goldfish-model/skills/egm-resolve/test_scenarios.yaml
+- [x] elephant-goldfish-model/skills/egm-review-loop/SKILL.md
+- [x] elephant-goldfish-model/skills/egm-review-loop/TEST.md
+- [x] elephant-goldfish-model/skills/egm-review-loop/agents/openai.yaml
+- [x] elephant-goldfish-model/skills/egm-review-loop/assets/icon.svg
+- [x] elephant-goldfish-model/skills/egm-review-loop/test_scenarios.yaml
+- [x] elephant-goldfish-model/skills/egm-review/SKILL.md
+- [x] elephant-goldfish-model/skills/egm-review/TEST.md
+- [x] elephant-goldfish-model/skills/egm-review/agents/openai.yaml
+- [x] elephant-goldfish-model/skills/egm-review/assets/icon.svg
+- [x] elephant-goldfish-model/skills/egm-review/test_scenarios.yaml
 - [ ] hallmark/.claude-plugin/marketplace.json
-- [ ] hallmark/.claude-plugin/plugin.json
+- [x] hallmark/.claude-plugin/plugin.json
 - [ ] hallmark/skills/hallmark/LICENSE
-- [ ] hallmark/skills/hallmark/SKILL.md
+- [x] hallmark/skills/hallmark/SKILL.md
 - [ ] hallmark/skills/hallmark/agents/openai.yaml
-- [ ] hallmark/skills/hallmark/references/anatomy.md
-- [ ] hallmark/skills/hallmark/references/brand-truth.md
-- [ ] hallmark/skills/hallmark/references/comp.md
-- [ ] hallmark/skills/hallmark/references/craft.md
-- [ ] hallmark/skills/hallmark/references/dark-mode.md
-- [ ] hallmark/skills/hallmark/references/data-viz.md
-- [ ] hallmark/skills/hallmark/references/design-md.md
-- [ ] hallmark/skills/hallmark/references/direction.md
-- [ ] hallmark/skills/hallmark/references/export-formats.md
-- [ ] hallmark/skills/hallmark/references/flow.md
-- [ ] hallmark/skills/hallmark/references/fonts.md
-- [ ] hallmark/skills/hallmark/references/gates.md
-- [ ] hallmark/skills/hallmark/references/genres/atmospheric.md
-- [ ] hallmark/skills/hallmark/references/genres/editorial.md
-- [ ] hallmark/skills/hallmark/references/genres/modern-minimal.md
-- [ ] hallmark/skills/hallmark/references/genres/playful.md
-- [ ] hallmark/skills/hallmark/references/imagery.md
-- [ ] hallmark/skills/hallmark/references/interaction-and-states.md
-- [ ] hallmark/skills/hallmark/references/layout.md
-- [ ] hallmark/skills/hallmark/references/macrostructures.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/01-bento-grid.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/02-long-document.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/03-marquee-hero.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/04-stat-led.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/05-workbench.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/06-conversational-faq.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/07-manifesto.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/08-photographic.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/09-quote-led.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/10-specimen.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/11-catalogue.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/12-letter.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/13-index-first.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/14-narrative-workflow.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/15-split-studio.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/16-feature-stack.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/17-type-specimen.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/18-portfolio-grid.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/19-map-diagram.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/20-ecosystem-index.md
-- [ ] hallmark/skills/hallmark/references/macrostructures/21-component-playground.md
-- [ ] hallmark/skills/hallmark/references/microinteractions.md
-- [ ] hallmark/skills/hallmark/references/patterns.md
-- [ ] hallmark/skills/hallmark/references/redesign.md
-- [ ] hallmark/skills/hallmark/references/responsive.md
-- [ ] hallmark/skills/hallmark/references/review-finish.md
-- [ ] hallmark/skills/hallmark/references/review-hero.md
-- [ ] hallmark/skills/hallmark/references/scroll-choreography.md
-- [ ] hallmark/skills/hallmark/references/texture.md
-- [ ] hallmark/skills/hallmark/references/themes/README.md
-- [ ] hallmark/skills/hallmark/references/themes/almanac.jpg
-- [ ] hallmark/skills/hallmark/references/themes/almanac.md
-- [ ] hallmark/skills/hallmark/references/themes/arcade.jpg
-- [ ] hallmark/skills/hallmark/references/themes/arcade.md
-- [ ] hallmark/skills/hallmark/references/themes/atelier.jpg
-- [ ] hallmark/skills/hallmark/references/themes/atelier.md
-- [ ] hallmark/skills/hallmark/references/themes/bloom.jpg
-- [ ] hallmark/skills/hallmark/references/themes/bloom.md
-- [ ] hallmark/skills/hallmark/references/themes/blueprint.jpg
-- [ ] hallmark/skills/hallmark/references/themes/blueprint.md
-- [ ] hallmark/skills/hallmark/references/themes/broadside.jpg
-- [ ] hallmark/skills/hallmark/references/themes/broadside.md
-- [ ] hallmark/skills/hallmark/references/themes/brutal.jpg
-- [ ] hallmark/skills/hallmark/references/themes/brutal.md
-- [ ] hallmark/skills/hallmark/references/themes/carnival.jpg
-- [ ] hallmark/skills/hallmark/references/themes/carnival.md
-- [ ] hallmark/skills/hallmark/references/themes/cobalt.jpg
-- [ ] hallmark/skills/hallmark/references/themes/cobalt.md
-- [ ] hallmark/skills/hallmark/references/themes/console.jpg
-- [ ] hallmark/skills/hallmark/references/themes/console.md
-- [ ] hallmark/skills/hallmark/references/themes/coral.jpg
-- [ ] hallmark/skills/hallmark/references/themes/coral.md
-- [ ] hallmark/skills/hallmark/references/themes/darkroom.jpg
-- [ ] hallmark/skills/hallmark/references/themes/darkroom.md
-- [ ] hallmark/skills/hallmark/references/themes/dose.jpg
-- [ ] hallmark/skills/hallmark/references/themes/dose.md
-- [ ] hallmark/skills/hallmark/references/themes/dusk.jpg
-- [ ] hallmark/skills/hallmark/references/themes/dusk.md
-- [ ] hallmark/skills/hallmark/references/themes/editorial.jpg
-- [ ] hallmark/skills/hallmark/references/themes/editorial.md
-- [ ] hallmark/skills/hallmark/references/themes/formwork.jpg
-- [ ] hallmark/skills/hallmark/references/themes/formwork.md
-- [ ] hallmark/skills/hallmark/references/themes/furrow.jpg
-- [ ] hallmark/skills/hallmark/references/themes/furrow.md
-- [ ] hallmark/skills/hallmark/references/themes/garden.jpg
-- [ ] hallmark/skills/hallmark/references/themes/garden.md
-- [ ] hallmark/skills/hallmark/references/themes/grid.jpg
-- [ ] hallmark/skills/hallmark/references/themes/grid.md
-- [ ] hallmark/skills/hallmark/references/themes/halftone.jpg
-- [ ] hallmark/skills/hallmark/references/themes/halftone.md
-- [ ] hallmark/skills/hallmark/references/themes/hedgerow.jpg
-- [ ] hallmark/skills/hallmark/references/themes/hedgerow.md
-- [ ] hallmark/skills/hallmark/references/themes/hum.jpg
-- [ ] hallmark/skills/hallmark/references/themes/hum.md
-- [ ] hallmark/skills/hallmark/references/themes/index.json
-- [ ] hallmark/skills/hallmark/references/themes/ink.jpg
-- [ ] hallmark/skills/hallmark/references/themes/ink.md
-- [ ] hallmark/skills/hallmark/references/themes/kiln.jpg
-- [ ] hallmark/skills/hallmark/references/themes/kiln.md
-- [ ] hallmark/skills/hallmark/references/themes/loom.jpg
-- [ ] hallmark/skills/hallmark/references/themes/loom.md
-- [ ] hallmark/skills/hallmark/references/themes/lumen.jpg
-- [ ] hallmark/skills/hallmark/references/themes/lumen.md
-- [ ] hallmark/skills/hallmark/references/themes/manifesto.jpg
-- [ ] hallmark/skills/hallmark/references/themes/manifesto.md
-- [ ] hallmark/skills/hallmark/references/themes/midnight.jpg
-- [ ] hallmark/skills/hallmark/references/themes/midnight.md
-- [ ] hallmark/skills/hallmark/references/themes/newsprint.jpg
-- [ ] hallmark/skills/hallmark/references/themes/newsprint.md
-- [ ] hallmark/skills/hallmark/references/themes/overprint.jpg
-- [ ] hallmark/skills/hallmark/references/themes/overprint.md
-- [ ] hallmark/skills/hallmark/references/themes/pasteup.jpg
-- [ ] hallmark/skills/hallmark/references/themes/pasteup.md
-- [ ] hallmark/skills/hallmark/references/themes/piste.jpg
-- [ ] hallmark/skills/hallmark/references/themes/piste.md
-- [ ] hallmark/skills/hallmark/references/themes/refract.jpg
-- [ ] hallmark/skills/hallmark/references/themes/refract.md
-- [ ] hallmark/skills/hallmark/references/themes/ribbon.jpg
-- [ ] hallmark/skills/hallmark/references/themes/ribbon.md
-- [ ] hallmark/skills/hallmark/references/themes/rim.jpg
-- [ ] hallmark/skills/hallmark/references/themes/rim.md
-- [ ] hallmark/skills/hallmark/references/themes/riso.jpg
-- [ ] hallmark/skills/hallmark/references/themes/riso.md
-- [ ] hallmark/skills/hallmark/references/themes/solstice.jpg
-- [ ] hallmark/skills/hallmark/references/themes/solstice.md
-- [ ] hallmark/skills/hallmark/references/themes/specimen.jpg
-- [ ] hallmark/skills/hallmark/references/themes/specimen.md
-- [ ] hallmark/skills/hallmark/references/themes/spore.jpg
-- [ ] hallmark/skills/hallmark/references/themes/spore.md
-- [ ] hallmark/skills/hallmark/references/themes/sport.jpg
-- [ ] hallmark/skills/hallmark/references/themes/sport.md
-- [ ] hallmark/skills/hallmark/references/themes/squeeze.jpg
-- [ ] hallmark/skills/hallmark/references/themes/squeeze.md
-- [ ] hallmark/skills/hallmark/references/themes/sticker.jpg
-- [ ] hallmark/skills/hallmark/references/themes/sticker.md
-- [ ] hallmark/skills/hallmark/references/themes/studio.jpg
-- [ ] hallmark/skills/hallmark/references/themes/studio.md
-- [ ] hallmark/skills/hallmark/references/themes/terminal.jpg
-- [ ] hallmark/skills/hallmark/references/themes/terminal.md
-- [ ] hallmark/skills/hallmark/references/themes/terrazzo.jpg
-- [ ] hallmark/skills/hallmark/references/themes/terrazzo.md
-- [ ] hallmark/skills/hallmark/references/themes/ultraviolet.jpg
-- [ ] hallmark/skills/hallmark/references/themes/ultraviolet.md
-- [ ] hallmark/skills/hallmark/references/themes/vantage.jpg
-- [ ] hallmark/skills/hallmark/references/themes/vantage.md
-- [ ] hallmark/skills/hallmark/references/themes/vellum.jpg
-- [ ] hallmark/skills/hallmark/references/themes/vellum.md
-- [ ] hallmark/skills/hallmark/references/themes/wayfind.jpg
-- [ ] hallmark/skills/hallmark/references/themes/wayfind.md
-- [ ] hallmark/skills/hallmark/references/themes/werkstatt.jpg
-- [ ] hallmark/skills/hallmark/references/themes/werkstatt.md
-- [ ] hallmark/skills/hallmark/scripts/capture.mjs
-- [ ] hallmark/skills/hallmark/scripts/fixtures/exemplars/atmospheric.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/exemplars/editorial.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/exemplars/modern-minimal.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/exemplars/playful.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/eyebrow-fail/index.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/eyebrow-pass/index.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/kept/after.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/kept/before.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/slopped.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/tailwind-fail/Feature.vue
-- [ ] hallmark/skills/hallmark/scripts/fixtures/tailwind-fail/Hero.tsx
-- [ ] hallmark/skills/hallmark/scripts/fixtures/tailwind-fail/index.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/tailwind-fail/style.css
-- [ ] hallmark/skills/hallmark/scripts/fixtures/tailwind-pass/Hero.tsx
-- [ ] hallmark/skills/hallmark/scripts/fixtures/tailwind-pass/index.html
-- [ ] hallmark/skills/hallmark/scripts/fixtures/tailwind-pass/style.css
-- [ ] hallmark/skills/hallmark/scripts/fixtures/waiver/index.html
-- [ ] hallmark/skills/hallmark/scripts/imagegen.mjs
-- [ ] hallmark/skills/hallmark/scripts/install-hook.mjs
-- [ ] hallmark/skills/hallmark/scripts/install.mjs
-- [ ] hallmark/skills/hallmark/scripts/lint-hook.mjs
-- [ ] hallmark/skills/hallmark/scripts/photos.json
-- [ ] hallmark/skills/hallmark/scripts/picture.mjs
-- [ ] hallmark/skills/hallmark/scripts/refcheck.mjs
-- [ ] hallmark/skills/hallmark/scripts/sloplint-render.mjs
-- [ ] hallmark/skills/hallmark/scripts/sloplint.mjs
-- [ ] hallmark/skills/hallmark/scripts/theme.mjs
-- [ ] hallmark/skills/hallmark/scripts/theme.test.mjs
-- [ ] impeccable/plugin/.claude-plugin/plugin.json
+- [x] hallmark/skills/hallmark/references/anatomy.md
+- [x] hallmark/skills/hallmark/references/brand-truth.md
+- [x] hallmark/skills/hallmark/references/comp.md
+- [x] hallmark/skills/hallmark/references/craft.md
+- [x] hallmark/skills/hallmark/references/dark-mode.md
+- [x] hallmark/skills/hallmark/references/data-viz.md
+- [x] hallmark/skills/hallmark/references/design-md.md
+- [x] hallmark/skills/hallmark/references/direction.md
+- [x] hallmark/skills/hallmark/references/export-formats.md
+- [x] hallmark/skills/hallmark/references/flow.md
+- [x] hallmark/skills/hallmark/references/fonts.md
+- [x] hallmark/skills/hallmark/references/gates.md
+- [x] hallmark/skills/hallmark/references/genres/atmospheric.md
+- [x] hallmark/skills/hallmark/references/genres/editorial.md
+- [x] hallmark/skills/hallmark/references/genres/modern-minimal.md
+- [x] hallmark/skills/hallmark/references/genres/playful.md
+- [x] hallmark/skills/hallmark/references/imagery.md
+- [x] hallmark/skills/hallmark/references/interaction-and-states.md
+- [x] hallmark/skills/hallmark/references/layout.md
+- [x] hallmark/skills/hallmark/references/macrostructures.md
+- [x] hallmark/skills/hallmark/references/macrostructures/01-bento-grid.md
+- [x] hallmark/skills/hallmark/references/macrostructures/02-long-document.md
+- [x] hallmark/skills/hallmark/references/macrostructures/03-marquee-hero.md
+- [x] hallmark/skills/hallmark/references/macrostructures/04-stat-led.md
+- [x] hallmark/skills/hallmark/references/macrostructures/05-workbench.md
+- [x] hallmark/skills/hallmark/references/macrostructures/06-conversational-faq.md
+- [x] hallmark/skills/hallmark/references/macrostructures/07-manifesto.md
+- [x] hallmark/skills/hallmark/references/macrostructures/08-photographic.md
+- [x] hallmark/skills/hallmark/references/macrostructures/09-quote-led.md
+- [x] hallmark/skills/hallmark/references/macrostructures/10-specimen.md
+- [x] hallmark/skills/hallmark/references/macrostructures/11-catalogue.md
+- [x] hallmark/skills/hallmark/references/macrostructures/12-letter.md
+- [x] hallmark/skills/hallmark/references/macrostructures/13-index-first.md
+- [x] hallmark/skills/hallmark/references/macrostructures/14-narrative-workflow.md
+- [x] hallmark/skills/hallmark/references/macrostructures/15-split-studio.md
+- [x] hallmark/skills/hallmark/references/macrostructures/16-feature-stack.md
+- [x] hallmark/skills/hallmark/references/macrostructures/17-type-specimen.md
+- [x] hallmark/skills/hallmark/references/macrostructures/18-portfolio-grid.md
+- [x] hallmark/skills/hallmark/references/macrostructures/19-map-diagram.md
+- [x] hallmark/skills/hallmark/references/macrostructures/20-ecosystem-index.md
+- [x] hallmark/skills/hallmark/references/macrostructures/21-component-playground.md
+- [x] hallmark/skills/hallmark/references/microinteractions.md
+- [x] hallmark/skills/hallmark/references/patterns.md
+- [x] hallmark/skills/hallmark/references/redesign.md
+- [x] hallmark/skills/hallmark/references/responsive.md
+- [x] hallmark/skills/hallmark/references/review-finish.md
+- [x] hallmark/skills/hallmark/references/review-hero.md
+- [x] hallmark/skills/hallmark/references/scroll-choreography.md
+- [x] hallmark/skills/hallmark/references/texture.md
+- [x] hallmark/skills/hallmark/references/themes/README.md
+- [x] hallmark/skills/hallmark/references/themes/almanac.jpg
+- [x] hallmark/skills/hallmark/references/themes/almanac.md
+- [x] hallmark/skills/hallmark/references/themes/arcade.jpg
+- [x] hallmark/skills/hallmark/references/themes/arcade.md
+- [x] hallmark/skills/hallmark/references/themes/atelier.jpg
+- [x] hallmark/skills/hallmark/references/themes/atelier.md
+- [x] hallmark/skills/hallmark/references/themes/bloom.jpg
+- [x] hallmark/skills/hallmark/references/themes/bloom.md
+- [x] hallmark/skills/hallmark/references/themes/blueprint.jpg
+- [x] hallmark/skills/hallmark/references/themes/blueprint.md
+- [x] hallmark/skills/hallmark/references/themes/broadside.jpg
+- [x] hallmark/skills/hallmark/references/themes/broadside.md
+- [x] hallmark/skills/hallmark/references/themes/brutal.jpg
+- [x] hallmark/skills/hallmark/references/themes/brutal.md
+- [x] hallmark/skills/hallmark/references/themes/carnival.jpg
+- [x] hallmark/skills/hallmark/references/themes/carnival.md
+- [x] hallmark/skills/hallmark/references/themes/cobalt.jpg
+- [x] hallmark/skills/hallmark/references/themes/cobalt.md
+- [x] hallmark/skills/hallmark/references/themes/console.jpg
+- [x] hallmark/skills/hallmark/references/themes/console.md
+- [x] hallmark/skills/hallmark/references/themes/coral.jpg
+- [x] hallmark/skills/hallmark/references/themes/coral.md
+- [x] hallmark/skills/hallmark/references/themes/darkroom.jpg
+- [x] hallmark/skills/hallmark/references/themes/darkroom.md
+- [x] hallmark/skills/hallmark/references/themes/dose.jpg
+- [x] hallmark/skills/hallmark/references/themes/dose.md
+- [x] hallmark/skills/hallmark/references/themes/dusk.jpg
+- [x] hallmark/skills/hallmark/references/themes/dusk.md
+- [x] hallmark/skills/hallmark/references/themes/editorial.jpg
+- [x] hallmark/skills/hallmark/references/themes/editorial.md
+- [x] hallmark/skills/hallmark/references/themes/formwork.jpg
+- [x] hallmark/skills/hallmark/references/themes/formwork.md
+- [x] hallmark/skills/hallmark/references/themes/furrow.jpg
+- [x] hallmark/skills/hallmark/references/themes/furrow.md
+- [x] hallmark/skills/hallmark/references/themes/garden.jpg
+- [x] hallmark/skills/hallmark/references/themes/garden.md
+- [x] hallmark/skills/hallmark/references/themes/grid.jpg
+- [x] hallmark/skills/hallmark/references/themes/grid.md
+- [x] hallmark/skills/hallmark/references/themes/halftone.jpg
+- [x] hallmark/skills/hallmark/references/themes/halftone.md
+- [x] hallmark/skills/hallmark/references/themes/hedgerow.jpg
+- [x] hallmark/skills/hallmark/references/themes/hedgerow.md
+- [x] hallmark/skills/hallmark/references/themes/hum.jpg
+- [x] hallmark/skills/hallmark/references/themes/hum.md
+- [x] hallmark/skills/hallmark/references/themes/index.json
+- [x] hallmark/skills/hallmark/references/themes/ink.jpg
+- [x] hallmark/skills/hallmark/references/themes/ink.md
+- [x] hallmark/skills/hallmark/references/themes/kiln.jpg
+- [x] hallmark/skills/hallmark/references/themes/kiln.md
+- [x] hallmark/skills/hallmark/references/themes/loom.jpg
+- [x] hallmark/skills/hallmark/references/themes/loom.md
+- [x] hallmark/skills/hallmark/references/themes/lumen.jpg
+- [x] hallmark/skills/hallmark/references/themes/lumen.md
+- [x] hallmark/skills/hallmark/references/themes/manifesto.jpg
+- [x] hallmark/skills/hallmark/references/themes/manifesto.md
+- [x] hallmark/skills/hallmark/references/themes/midnight.jpg
+- [x] hallmark/skills/hallmark/references/themes/midnight.md
+- [x] hallmark/skills/hallmark/references/themes/newsprint.jpg
+- [x] hallmark/skills/hallmark/references/themes/newsprint.md
+- [x] hallmark/skills/hallmark/references/themes/overprint.jpg
+- [x] hallmark/skills/hallmark/references/themes/overprint.md
+- [x] hallmark/skills/hallmark/references/themes/pasteup.jpg
+- [x] hallmark/skills/hallmark/references/themes/pasteup.md
+- [x] hallmark/skills/hallmark/references/themes/piste.jpg
+- [x] hallmark/skills/hallmark/references/themes/piste.md
+- [x] hallmark/skills/hallmark/references/themes/refract.jpg
+- [x] hallmark/skills/hallmark/references/themes/refract.md
+- [x] hallmark/skills/hallmark/references/themes/ribbon.jpg
+- [x] hallmark/skills/hallmark/references/themes/ribbon.md
+- [x] hallmark/skills/hallmark/references/themes/rim.jpg
+- [x] hallmark/skills/hallmark/references/themes/rim.md
+- [x] hallmark/skills/hallmark/references/themes/riso.jpg
+- [x] hallmark/skills/hallmark/references/themes/riso.md
+- [x] hallmark/skills/hallmark/references/themes/solstice.jpg
+- [x] hallmark/skills/hallmark/references/themes/solstice.md
+- [x] hallmark/skills/hallmark/references/themes/specimen.jpg
+- [x] hallmark/skills/hallmark/references/themes/specimen.md
+- [x] hallmark/skills/hallmark/references/themes/spore.jpg
+- [x] hallmark/skills/hallmark/references/themes/spore.md
+- [x] hallmark/skills/hallmark/references/themes/sport.jpg
+- [x] hallmark/skills/hallmark/references/themes/sport.md
+- [x] hallmark/skills/hallmark/references/themes/squeeze.jpg
+- [x] hallmark/skills/hallmark/references/themes/squeeze.md
+- [x] hallmark/skills/hallmark/references/themes/sticker.jpg
+- [x] hallmark/skills/hallmark/references/themes/sticker.md
+- [x] hallmark/skills/hallmark/references/themes/studio.jpg
+- [x] hallmark/skills/hallmark/references/themes/studio.md
+- [x] hallmark/skills/hallmark/references/themes/terminal.jpg
+- [x] hallmark/skills/hallmark/references/themes/terminal.md
+- [x] hallmark/skills/hallmark/references/themes/terrazzo.jpg
+- [x] hallmark/skills/hallmark/references/themes/terrazzo.md
+- [x] hallmark/skills/hallmark/references/themes/ultraviolet.jpg
+- [x] hallmark/skills/hallmark/references/themes/ultraviolet.md
+- [x] hallmark/skills/hallmark/references/themes/vantage.jpg
+- [x] hallmark/skills/hallmark/references/themes/vantage.md
+- [x] hallmark/skills/hallmark/references/themes/vellum.jpg
+- [x] hallmark/skills/hallmark/references/themes/vellum.md
+- [x] hallmark/skills/hallmark/references/themes/wayfind.jpg
+- [x] hallmark/skills/hallmark/references/themes/wayfind.md
+- [x] hallmark/skills/hallmark/references/themes/werkstatt.jpg
+- [x] hallmark/skills/hallmark/references/themes/werkstatt.md
+- [x] hallmark/skills/hallmark/scripts/capture.mjs
+- [x] hallmark/skills/hallmark/scripts/fixtures/exemplars/atmospheric.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/exemplars/editorial.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/exemplars/modern-minimal.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/exemplars/playful.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/eyebrow-fail/index.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/eyebrow-pass/index.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/kept/after.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/kept/before.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/slopped.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/tailwind-fail/Feature.vue
+- [x] hallmark/skills/hallmark/scripts/fixtures/tailwind-fail/Hero.tsx
+- [x] hallmark/skills/hallmark/scripts/fixtures/tailwind-fail/index.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/tailwind-fail/style.css
+- [x] hallmark/skills/hallmark/scripts/fixtures/tailwind-pass/Hero.tsx
+- [x] hallmark/skills/hallmark/scripts/fixtures/tailwind-pass/index.html
+- [x] hallmark/skills/hallmark/scripts/fixtures/tailwind-pass/style.css
+- [x] hallmark/skills/hallmark/scripts/fixtures/waiver/index.html
+- [x] hallmark/skills/hallmark/scripts/imagegen.mjs
+- [x] hallmark/skills/hallmark/scripts/install-hook.mjs
+- [x] hallmark/skills/hallmark/scripts/install.mjs
+- [x] hallmark/skills/hallmark/scripts/lint-hook.mjs
+- [x] hallmark/skills/hallmark/scripts/photos.json
+- [x] hallmark/skills/hallmark/scripts/picture.mjs
+- [x] hallmark/skills/hallmark/scripts/refcheck.mjs
+- [x] hallmark/skills/hallmark/scripts/sloplint-render.mjs
+- [x] hallmark/skills/hallmark/scripts/sloplint.mjs
+- [x] hallmark/skills/hallmark/scripts/theme.mjs
+- [x] hallmark/skills/hallmark/scripts/theme.test.mjs
+- [x] impeccable/plugin/.claude-plugin/plugin.json
 - [ ] impeccable/plugin/.grok-plugin/plugin.json
 - [ ] impeccable/plugin/agents/impeccable-asset-producer.md
 - [ ] impeccable/plugin/agents/impeccable-documenter.md
 - [ ] impeccable/plugin/agents/impeccable-finish-reviewer.md
 - [ ] impeccable/plugin/agents/impeccable-manual-edit-applier.md
-- [ ] impeccable/plugin/hooks/hooks.json
+- [x] impeccable/plugin/hooks/hooks.json
 - [ ] impeccable/plugin/skills/impeccable/SKILL.md
 - [ ] impeccable/plugin/skills/impeccable/reference/adapt.md
 - [ ] impeccable/plugin/skills/impeccable/reference/adapt.native.md
@@ -1706,74 +1742,74 @@
 - [ ] impeccable/plugin/skills/impeccable/scripts/data/font-index.json
 - [ ] impeccable/plugin/skills/impeccable/scripts/engine-checksums.txt
 - [ ] impeccable/plugin/skills/impeccable/scripts/impeccable
-- [ ] impeccable/plugin/skills/impeccable/scripts/impeccable.cmd
+- [x] impeccable/plugin/skills/impeccable/scripts/impeccable.cmd
 - [ ] impeccable/plugin/skills/impeccable/scripts/live-browser-dom.js
 - [ ] impeccable/plugin/skills/impeccable/scripts/live-browser-ignores.js
 - [ ] impeccable/plugin/skills/impeccable/scripts/live-browser-session.js
 - [ ] impeccable/plugin/skills/impeccable/scripts/live-browser.js
 - [ ] impeccable/plugin/skills/impeccable/scripts/modern-screenshot.umd.js
-- [ ] impeccable/skill/SKILL.src.md
-- [ ] impeccable/skill/agents/impeccable-asset-producer.md
-- [ ] impeccable/skill/agents/impeccable-documenter.md
-- [ ] impeccable/skill/agents/impeccable-finish-reviewer.md
-- [ ] impeccable/skill/agents/impeccable-manual-edit-applier.md
-- [ ] impeccable/skill/hermes-plugin/__init__.py
-- [ ] impeccable/skill/hermes-plugin/plugin.yaml
-- [ ] impeccable/skill/reference/adapt.md
-- [ ] impeccable/skill/reference/adapt.native.md
-- [ ] impeccable/skill/reference/android.md
-- [ ] impeccable/skill/reference/animate.md
-- [ ] impeccable/skill/reference/audit.md
-- [ ] impeccable/skill/reference/audit.native.md
-- [ ] impeccable/skill/reference/bolder.md
-- [ ] impeccable/skill/reference/clarify.md
-- [ ] impeccable/skill/reference/colorize.md
-- [ ] impeccable/skill/reference/component-review.md
-- [ ] impeccable/skill/reference/craft-floor.md
-- [ ] impeccable/skill/reference/craft.md
-- [ ] impeccable/skill/reference/critique.md
-- [ ] impeccable/skill/reference/delight.md
-- [ ] impeccable/skill/reference/distill.md
-- [ ] impeccable/skill/reference/doctor.md
-- [ ] impeccable/skill/reference/document.md
-- [ ] impeccable/skill/reference/extract.md
-- [ ] impeccable/skill/reference/generate.md
-- [ ] impeccable/skill/reference/harden.md
-- [ ] impeccable/skill/reference/hooks.md
-- [ ] impeccable/skill/reference/init.md
-- [ ] impeccable/skill/reference/ios.md
-- [ ] impeccable/skill/reference/layout.md
-- [ ] impeccable/skill/reference/live-setup.md
-- [ ] impeccable/skill/reference/live.md
-- [ ] impeccable/skill/reference/mode-operate.md
-- [ ] impeccable/skill/reference/mode-persuade.md
-- [ ] impeccable/skill/reference/mode-read.md
-- [ ] impeccable/skill/reference/new-work.md
-- [ ] impeccable/skill/reference/onboard.md
-- [ ] impeccable/skill/reference/operate.md
-- [ ] impeccable/skill/reference/optimize.md
-- [ ] impeccable/skill/reference/overdrive.md
-- [ ] impeccable/skill/reference/polish.md
-- [ ] impeccable/skill/reference/quieter.md
-- [ ] impeccable/skill/reference/region-map.md
-- [ ] impeccable/skill/reference/routing.md
-- [ ] impeccable/skill/reference/shape.md
-- [ ] impeccable/skill/reference/typeset.md
-- [ ] impeccable/skill/reference/visualize.md
-- [ ] impeccable/skill/scripts/VERSION
-- [ ] impeccable/skill/scripts/command-metadata.json
-- [ ] impeccable/skill/scripts/data/font-index-failures.json
-- [ ] impeccable/skill/scripts/data/font-index.json
-- [ ] impeccable/skill/scripts/engine-checksums.txt
-- [ ] impeccable/skill/scripts/impeccable
-- [ ] impeccable/skill/scripts/impeccable.cmd
-- [ ] impeccable/skill/scripts/live-browser-dom.js
-- [ ] impeccable/skill/scripts/live-browser-ignores.js
-- [ ] impeccable/skill/scripts/live-browser-session.js
-- [ ] impeccable/skill/scripts/live-browser.js
-- [ ] impeccable/skill/scripts/modern-screenshot.umd.js
+- [x] impeccable/skill/SKILL.src.md
+- [x] impeccable/skill/agents/impeccable-asset-producer.md
+- [x] impeccable/skill/agents/impeccable-documenter.md
+- [x] impeccable/skill/agents/impeccable-finish-reviewer.md
+- [x] impeccable/skill/agents/impeccable-manual-edit-applier.md
+- [x] impeccable/skill/hermes-plugin/__init__.py
+- [x] impeccable/skill/hermes-plugin/plugin.yaml
+- [x] impeccable/skill/reference/adapt.md
+- [x] impeccable/skill/reference/adapt.native.md
+- [x] impeccable/skill/reference/android.md
+- [x] impeccable/skill/reference/animate.md
+- [x] impeccable/skill/reference/audit.md
+- [x] impeccable/skill/reference/audit.native.md
+- [x] impeccable/skill/reference/bolder.md
+- [x] impeccable/skill/reference/clarify.md
+- [x] impeccable/skill/reference/colorize.md
+- [x] impeccable/skill/reference/component-review.md
+- [x] impeccable/skill/reference/craft-floor.md
+- [x] impeccable/skill/reference/craft.md
+- [x] impeccable/skill/reference/critique.md
+- [x] impeccable/skill/reference/delight.md
+- [x] impeccable/skill/reference/distill.md
+- [x] impeccable/skill/reference/doctor.md
+- [x] impeccable/skill/reference/document.md
+- [x] impeccable/skill/reference/extract.md
+- [x] impeccable/skill/reference/generate.md
+- [x] impeccable/skill/reference/harden.md
+- [x] impeccable/skill/reference/hooks.md
+- [x] impeccable/skill/reference/init.md
+- [x] impeccable/skill/reference/ios.md
+- [x] impeccable/skill/reference/layout.md
+- [x] impeccable/skill/reference/live-setup.md
+- [x] impeccable/skill/reference/live.md
+- [x] impeccable/skill/reference/mode-operate.md
+- [x] impeccable/skill/reference/mode-persuade.md
+- [x] impeccable/skill/reference/mode-read.md
+- [x] impeccable/skill/reference/new-work.md
+- [x] impeccable/skill/reference/onboard.md
+- [x] impeccable/skill/reference/operate.md
+- [x] impeccable/skill/reference/optimize.md
+- [x] impeccable/skill/reference/overdrive.md
+- [x] impeccable/skill/reference/polish.md
+- [x] impeccable/skill/reference/quieter.md
+- [x] impeccable/skill/reference/region-map.md
+- [x] impeccable/skill/reference/routing.md
+- [x] impeccable/skill/reference/shape.md
+- [x] impeccable/skill/reference/typeset.md
+- [x] impeccable/skill/reference/visualize.md
+- [x] impeccable/skill/scripts/VERSION
+- [x] impeccable/skill/scripts/command-metadata.json
+- [x] impeccable/skill/scripts/data/font-index-failures.json
+- [x] impeccable/skill/scripts/data/font-index.json
+- [x] impeccable/skill/scripts/engine-checksums.txt
+- [x] impeccable/skill/scripts/impeccable
+- [x] impeccable/skill/scripts/impeccable.cmd
+- [x] impeccable/skill/scripts/live-browser-dom.js
+- [x] impeccable/skill/scripts/live-browser-ignores.js
+- [x] impeccable/skill/scripts/live-browser-session.js
+- [x] impeccable/skill/scripts/live-browser.js
+- [x] impeccable/skill/scripts/modern-screenshot.umd.js
 
-### 19. pkg/kanban: 0% (0 of 59 files completed)
+### 19. pkg/kanban: 1% (1 of 59 files completed)
 #### Boards, worker swarm, task dispatch, hosted rooms, PR acceptance
 - [ ] agent/kanban_stop.py
 - [ ] agent/kanban_turn_recovery.py
@@ -1822,7 +1858,7 @@
 - [ ] hermes_cli/kanban_transfer.py
 - [ ] hermes_cli/kanban_worker_client.py
 - [ ] hermes_cli/kanban_worker_log.py
-- [ ] hermes_cli/kanban_workflow.py
+- [x] hermes_cli/kanban_workflow.py
 - [ ] plugins/kanban/dashboard/plugin_api.py
 - [ ] tools/kanban_tools.py
 - [ ] tools/kanban_tools_schemas.py
@@ -1835,7 +1871,7 @@
 - [ ] tui_gateway/hosted_room_server_rpc.py
 - [ ] tui_gateway/hosted_room_service.py
 
-### 20. pkg/codeexec: 0% (0 of 24 files completed)
+### 20. pkg/codeexec: 12% (3 of 24 files completed)
 #### execute_code kernel, RPC bridge, computer use backends
 - [ ] hermes_cli/subcommands/computer_use.py
 - [ ] hermes_cli/subcommands/computer_use_screen.py
@@ -1843,10 +1879,10 @@
 - [ ] plugins/computer_use/__init__.py
 - [ ] plugins/computer_use/cua/__init__.py
 - [ ] tools/code_execution_env.py
-- [ ] tools/code_execution_rpc.py
+- [x] tools/code_execution_rpc.py
 - [ ] tools/code_execution_tool.py
-- [ ] tools/code_kernel.py
-- [ ] tools/code_kernel_remote.py
+- [x] tools/code_kernel.py
+- [x] tools/code_kernel_remote.py
 - [ ] tools/computer_use/__init__.py
 - [ ] tools/computer_use/backend.py
 - [ ] tools/computer_use/cua_backend.py
@@ -1936,7 +1972,7 @@
 - [ ] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 3% (5 of 161 files completed)
+### 22. cmd/icebath: 4% (8 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -1969,7 +2005,7 @@
 - [ ] hermes_cli/init_command.py
 - [ ] hermes_cli/install_identity.py
 - [ ] hermes_cli/inventory.py
-- [ ] hermes_cli/lifecycle.py
+- [x] hermes_cli/lifecycle.py
 - [ ] hermes_cli/logs.py
 - [ ] hermes_cli/loops.py
 - [x] hermes_cli/macos_signing.py
@@ -2082,7 +2118,7 @@
 - [ ] hermes_cli/update_owning_install.py
 - [ ] hermes_cli/update_pause_record.py
 - [x] hermes_cli/update_proxy_env.py
-- [ ] hermes_cli/update_receipt.py
+- [x] hermes_cli/update_receipt.py
 - [ ] hermes_cli/update_restart_recovery.py
 - [ ] hermes_cli/update_serve_obligations.py
 - [ ] hermes_cli/update_serve_resume.py
@@ -2094,7 +2130,7 @@
 - [ ] hermes_cli/windows_store_update.py
 - [ ] hermes_logging.py
 - [ ] hermes_startup_watchdog.py
-- [ ] hermes_time.py
+- [x] hermes_time.py
 - [x] registration_lifecycle.py
 - [ ] run_agent.py
 - [ ] trajectory_compressor.py
@@ -2218,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 6% (50 of 760 files completed)
+### 24. gateway: 15% (117 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2280,7 +2316,7 @@
 - [ ] gateway/local_viewer_events.py
 - [ ] gateway/media_fetch.py
 - [ ] gateway/media_policy.py
-- [ ] gateway/media_repair.py
+- [x] gateway/media_repair.py
 - [ ] gateway/memory_monitor.py
 - [ ] gateway/memory_status.py
 - [x] gateway/message_timestamps.py
@@ -2335,7 +2371,7 @@
 - [ ] gateway/platforms/whatsapp_common.py
 - [ ] gateway/plugin_command_choice.py
 - [ ] gateway/plugin_keyless_inject.py
-- [ ] gateway/plugin_messages.py
+- [x] gateway/plugin_messages.py
 - [x] gateway/profile_routing.py
 - [ ] gateway/readiness.py
 - [ ] gateway/relay/__init__.py
@@ -2658,34 +2694,34 @@
 - [ ] hermes_cli/observability/shared_metrics_busy.py
 - [x] hermes_cli/observability/shared_metrics_catalog.py
 - [x] hermes_cli/observability/shared_metrics_connectors.py
-- [ ] hermes_cli/observability/shared_metrics_consent.py
+- [x] hermes_cli/observability/shared_metrics_consent.py
 - [x] hermes_cli/observability/shared_metrics_contract.py
 - [x] hermes_cli/observability/shared_metrics_desktop.py
 - [x] hermes_cli/observability/shared_metrics_disabled.py
 - [x] hermes_cli/observability/shared_metrics_drift.py
 - [x] hermes_cli/observability/shared_metrics_efficiency.py
-- [ ] hermes_cli/observability/shared_metrics_engagement.py
+- [x] hermes_cli/observability/shared_metrics_engagement.py
 - [ ] hermes_cli/observability/shared_metrics_events.py
 - [x] hermes_cli/observability/shared_metrics_fields.py
 - [x] hermes_cli/observability/shared_metrics_gateway.py
-- [ ] hermes_cli/observability/shared_metrics_harness.py
+- [x] hermes_cli/observability/shared_metrics_harness.py
 - [ ] hermes_cli/observability/shared_metrics_install.py
 - [x] hermes_cli/observability/shared_metrics_install_run.py
 - [ ] hermes_cli/observability/shared_metrics_loop.py
-- [ ] hermes_cli/observability/shared_metrics_model.py
+- [x] hermes_cli/observability/shared_metrics_model.py
 - [ ] hermes_cli/observability/shared_metrics_prepared_compaction.py
 - [ ] hermes_cli/observability/shared_metrics_process.py
 - [x] hermes_cli/observability/shared_metrics_send_config.py
 - [x] hermes_cli/observability/shared_metrics_sender.py
 - [ ] hermes_cli/observability/shared_metrics_setup.py
-- [ ] hermes_cli/observability/shared_metrics_signals.py
+- [x] hermes_cli/observability/shared_metrics_signals.py
 - [ ] hermes_cli/observability/shared_metrics_snapshot.py
-- [ ] hermes_cli/observability/shared_metrics_startup.py
+- [x] hermes_cli/observability/shared_metrics_startup.py
 - [ ] hermes_cli/observability/shared_metrics_subscriber.py
 - [x] hermes_cli/observability/shared_metrics_update.py
 - [ ] hermes_cli/pairing.py
 - [ ] hermes_cli/pets.py
-- [ ] hermes_cli/platform_actions.py
+- [x] hermes_cli/platform_actions.py
 - [ ] hermes_cli/platforms.py
 - [ ] hermes_cli/portal_cli.py
 - [x] hermes_cli/resource_limits.py
@@ -2789,7 +2825,7 @@
 - [ ] hermes_cli/webapp_page_policy.py
 - [ ] hermes_cli/webapp_previews.py
 - [ ] hermes_cli/webapp_sign_in.py
-- [ ] hermes_cli/webhook.py
+- [x] hermes_cli/webhook.py
 - [ ] hermes_cli/windows_ssh_runtime.py
 - [ ] plugins/dashboard_auth/_shared.py
 - [ ] plugins/dashboard_auth/basic/__init__.py
@@ -2803,132 +2839,132 @@
 - [ ] plugins/platforms/a2a/security.py
 - [ ] plugins/platforms/a2a/tools.py
 - [ ] plugins/platforms/bluebubbles/adapter.py
-- [ ] plugins/platforms/bluebubbles/gateway_env.py
+- [x] plugins/platforms/bluebubbles/gateway_env.py
 - [ ] plugins/platforms/buzz/adapter.py
-- [ ] plugins/platforms/buzz/buzz_cursors.py
-- [ ] plugins/platforms/buzz/nostr_auth.py
+- [x] plugins/platforms/buzz/buzz_cursors.py
+- [x] plugins/platforms/buzz/nostr_auth.py
 - [ ] plugins/platforms/buzz/send_targets.py
 - [ ] plugins/platforms/dingtalk/adapter.py
-- [ ] plugins/platforms/dingtalk/gateway_env.py
+- [x] plugins/platforms/dingtalk/gateway_env.py
 - [ ] plugins/platforms/dingtalk/inbound.py
 - [ ] plugins/platforms/discord/adapter.py
 - [ ] plugins/platforms/discord/adapter_authorization.py
 - [ ] plugins/platforms/discord/adapter_component_auth.py
 - [ ] plugins/platforms/discord/adapter_config_readers.py
 - [ ] plugins/platforms/discord/adapter_exec_approval_view.py
-- [ ] plugins/platforms/discord/adapter_hint.py
+- [x] plugins/platforms/discord/adapter_hint.py
 - [ ] plugins/platforms/discord/adapter_media.py
 - [ ] plugins/platforms/discord/adapter_slash_auth.py
 - [ ] plugins/platforms/discord/adapter_thread_titles.py
 - [ ] plugins/platforms/discord/adapter_voice_info.py
-- [ ] plugins/platforms/discord/dashboard_card.py
+- [x] plugins/platforms/discord/dashboard_card.py
 - [ ] plugins/platforms/discord/ffmpeg_utils.py
-- [ ] plugins/platforms/discord/gateway_env.py
+- [x] plugins/platforms/discord/gateway_env.py
 - [ ] plugins/platforms/discord/onboarding.py
 - [ ] plugins/platforms/discord/recovery.py
 - [ ] plugins/platforms/discord/send_targets.py
 - [ ] plugins/platforms/discord/voice_mixer.py
 - [ ] plugins/platforms/email/adapter.py
-- [ ] plugins/platforms/email/gateway_env.py
+- [x] plugins/platforms/email/gateway_env.py
 - [ ] plugins/platforms/feishu/adapter.py
-- [ ] plugins/platforms/feishu/adapter_hint.py
-- [ ] plugins/platforms/feishu/dashboard_card.py
-- [ ] plugins/platforms/feishu/feishu_admission_diagnostics.py
+- [x] plugins/platforms/feishu/adapter_hint.py
+- [x] plugins/platforms/feishu/dashboard_card.py
+- [x] plugins/platforms/feishu/feishu_admission_diagnostics.py
 - [ ] plugins/platforms/feishu/feishu_comment.py
-- [ ] plugins/platforms/feishu/feishu_comment_rules.py
+- [x] plugins/platforms/feishu/feishu_comment_rules.py
 - [ ] plugins/platforms/feishu/feishu_meeting_invite.py
-- [ ] plugins/platforms/feishu/gateway_env.py
+- [x] plugins/platforms/feishu/gateway_env.py
 - [ ] plugins/platforms/feishu/send_targets.py
 - [ ] plugins/platforms/google_chat/adapter.py
-- [ ] plugins/platforms/google_chat/cards.py
+- [x] plugins/platforms/google_chat/cards.py
 - [ ] plugins/platforms/google_chat/oauth.py
 - [ ] plugins/platforms/google_chat/setup_files.py
 - [ ] plugins/platforms/irc/adapter.py
 - [ ] plugins/platforms/line/adapter.py
 - [ ] plugins/platforms/matrix/adapter.py
 - [ ] plugins/platforms/matrix/adapter_crypto.py
-- [ ] plugins/platforms/matrix/adapter_hint.py
-- [ ] plugins/platforms/matrix/dashboard_card.py
-- [ ] plugins/platforms/matrix/gateway_env.py
+- [x] plugins/platforms/matrix/adapter_hint.py
+- [x] plugins/platforms/matrix/dashboard_card.py
+- [x] plugins/platforms/matrix/gateway_env.py
 - [ ] plugins/platforms/matrix/send_targets.py
-- [ ] plugins/platforms/matrix/voice_mention.py
+- [x] plugins/platforms/matrix/voice_mention.py
 - [ ] plugins/platforms/mattermost/adapter.py
-- [ ] plugins/platforms/mattermost/gateway_env.py
+- [x] plugins/platforms/mattermost/gateway_env.py
 - [ ] plugins/platforms/ntfy/adapter.py
 - [ ] plugins/platforms/photon/adapter.py
 - [ ] plugins/platforms/photon/auth.py
 - [ ] plugins/platforms/photon/cli.py
-- [ ] plugins/platforms/photon/sidecar_paths.py
+- [x] plugins/platforms/photon/sidecar_paths.py
 - [ ] plugins/platforms/qqbot/adapter.py
-- [ ] plugins/platforms/qqbot/chunked_upload.py
-- [ ] plugins/platforms/qqbot/constants.py
-- [ ] plugins/platforms/qqbot/crypto.py
-- [ ] plugins/platforms/qqbot/gateway_env.py
-- [ ] plugins/platforms/qqbot/keyboards.py
+- [x] plugins/platforms/qqbot/chunked_upload.py
+- [x] plugins/platforms/qqbot/constants.py
+- [x] plugins/platforms/qqbot/crypto.py
+- [x] plugins/platforms/qqbot/gateway_env.py
+- [x] plugins/platforms/qqbot/keyboards.py
 - [ ] plugins/platforms/qqbot/onboard.py
 - [ ] plugins/platforms/qqbot/register.py
 - [ ] plugins/platforms/qqbot/send.py
-- [ ] plugins/platforms/qqbot/utils.py
+- [x] plugins/platforms/qqbot/utils.py
 - [ ] plugins/platforms/raft/adapter.py
 - [ ] plugins/platforms/signal/__init__.py
 - [ ] plugins/platforms/signal/adapter.py
-- [ ] plugins/platforms/signal/gateway_env.py
+- [x] plugins/platforms/signal/gateway_env.py
 - [ ] plugins/platforms/signal/register.py
 - [ ] plugins/platforms/signal/setup.py
 - [ ] plugins/platforms/signal/signal_format.py
-- [ ] plugins/platforms/signal/signal_rate_limit.py
+- [x] plugins/platforms/signal/signal_rate_limit.py
 - [ ] plugins/platforms/signal/standalone.py
 - [ ] plugins/platforms/simplex/adapter.py
 - [ ] plugins/platforms/slack/adapter.py
 - [ ] plugins/platforms/slack/adapter_config_readers.py
-- [ ] plugins/platforms/slack/adapter_hint.py
-- [ ] plugins/platforms/slack/adapter_reactions_context.py
-- [ ] plugins/platforms/slack/adapter_slash_lane.py
+- [x] plugins/platforms/slack/adapter_hint.py
+- [x] plugins/platforms/slack/adapter_reactions_context.py
+- [x] plugins/platforms/slack/adapter_slash_lane.py
 - [ ] plugins/platforms/slack/adapter_slash_payload.py
-- [ ] plugins/platforms/slack/block_kit.py
-- [ ] plugins/platforms/slack/dashboard_card.py
-- [ ] plugins/platforms/slack/gateway_env.py
+- [x] plugins/platforms/slack/block_kit.py
+- [x] plugins/platforms/slack/dashboard_card.py
+- [x] plugins/platforms/slack/gateway_env.py
 - [ ] plugins/platforms/slack/send_targets.py
 - [ ] plugins/platforms/sms/adapter.py
-- [ ] plugins/platforms/sms/gateway_env.py
+- [x] plugins/platforms/sms/gateway_env.py
 - [ ] plugins/platforms/teams/adapter.py
 - [ ] plugins/platforms/teams/summary_writer.py
 - [ ] plugins/platforms/telegram/adapter.py
-- [ ] plugins/platforms/telegram/adapter_hint.py
-- [ ] plugins/platforms/telegram/dashboard_card.py
-- [ ] plugins/platforms/telegram/gateway_env.py
+- [x] plugins/platforms/telegram/adapter_hint.py
+- [x] plugins/platforms/telegram/dashboard_card.py
+- [x] plugins/platforms/telegram/gateway_env.py
 - [ ] plugins/platforms/telegram/inline_picker.py
-- [ ] plugins/platforms/telegram/telegram_context.py
-- [ ] plugins/platforms/telegram/telegram_entities.py
+- [x] plugins/platforms/telegram/telegram_context.py
+- [x] plugins/platforms/telegram/telegram_entities.py
 - [ ] plugins/platforms/telegram/telegram_held_inbound.py
 - [ ] plugins/platforms/telegram/telegram_ids.py
 - [ ] plugins/platforms/telegram/telegram_network.py
 - [ ] plugins/platforms/telegram/telegram_resolved_prompt.py
-- [ ] plugins/platforms/telegram/telegram_topic_routing.py
+- [x] plugins/platforms/telegram/telegram_topic_routing.py
 - [ ] plugins/platforms/telegram/telegram_topic_transfer.py
 - [ ] plugins/platforms/telegram/update_admission.py
 - [ ] plugins/platforms/wecom/adapter.py
 - [ ] plugins/platforms/wecom/callback_adapter.py
-- [ ] plugins/platforms/wecom/gateway_env.py
+- [x] plugins/platforms/wecom/gateway_env.py
 - [ ] plugins/platforms/wecom/media.py
-- [ ] plugins/platforms/wecom/send_queue.py
-- [ ] plugins/platforms/wecom/streaming.py
-- [ ] plugins/platforms/wecom/wecom_crypto.py
+- [x] plugins/platforms/wecom/send_queue.py
+- [x] plugins/platforms/wecom/streaming.py
+- [x] plugins/platforms/wecom/wecom_crypto.py
 - [ ] plugins/platforms/weixin/adapter.py
-- [ ] plugins/platforms/weixin/gateway_env.py
+- [x] plugins/platforms/weixin/gateway_env.py
 - [ ] plugins/platforms/whatsapp/adapter.py
 - [ ] plugins/platforms/whatsapp/bridge_ownership.py
-- [ ] plugins/platforms/whatsapp/gateway_env.py
+- [x] plugins/platforms/whatsapp/gateway_env.py
 - [ ] plugins/platforms/whatsapp_cloud/adapter.py
-- [ ] plugins/platforms/whatsapp_cloud/gateway_env.py
+- [x] plugins/platforms/whatsapp_cloud/gateway_env.py
 - [ ] plugins/platforms/whatsapp_cloud/setup_wizard.py
 - [ ] plugins/platforms/yuanbao/__init__.py
 - [ ] plugins/platforms/yuanbao/adapter.py
-- [ ] plugins/platforms/yuanbao/gateway_env.py
+- [x] plugins/platforms/yuanbao/gateway_env.py
 - [ ] plugins/platforms/yuanbao/register.py
-- [ ] plugins/platforms/yuanbao/yuanbao_media.py
-- [ ] plugins/platforms/yuanbao/yuanbao_proto.py
-- [ ] plugins/platforms/yuanbao/yuanbao_sticker.py
+- [x] plugins/platforms/yuanbao/yuanbao_media.py
+- [x] plugins/platforms/yuanbao/yuanbao_proto.py
+- [x] plugins/platforms/yuanbao/yuanbao_sticker.py
 - [ ] tools/bot_failure_reasons.py
 - [ ] tools/bot_live_delivery.py
 - [ ] tools/bot_mode_dm.py
@@ -2941,7 +2977,7 @@
 - [x] tools/connectors/contract.py
 - [ ] tools/connectors/data_use.py
 - [ ] tools/connectors/dispatch.py
-- [ ] tools/connectors/display.py
+- [x] tools/connectors/display.py
 - [ ] tools/connectors/gateway/__init__.py
 - [ ] tools/connectors/gateway/bridge.py
 - [ ] tools/connectors/gateway/client.py
@@ -2954,11 +2990,11 @@
 - [x] tools/connectors/live.py
 - [ ] tools/connectors/managed.py
 - [x] tools/connectors/operation.py
-- [ ] tools/connectors/portal/client.py
-- [ ] tools/connectors/portal/errors.py
+- [x] tools/connectors/portal/client.py
+- [x] tools/connectors/portal/errors.py
 - [ ] tools/connectors/portal/policy.py
 - [ ] tools/connectors/portal/tools_cache.py
-- [ ] tools/connectors/portal/wire.py
+- [x] tools/connectors/portal/wire.py
 - [ ] tools/connectors/run.py
 - [ ] tools/connectors/search.py
 - [x] tools/connectors/targets.py
@@ -2970,7 +3006,7 @@
 - [ ] tools/feishu_drive_tool.py
 - [ ] tools/feishu_lark.py
 - [ ] tools/managed_gateway_auth.py
-- [ ] tools/managed_gateway_identity.py
+- [x] tools/managed_gateway_identity.py
 - [ ] tools/managed_tool_gateway.py
 - [ ] tools/microsoft_graph_auth.py
 - [ ] tools/microsoft_graph_client.py

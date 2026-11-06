@@ -114,7 +114,7 @@ func TestFallbackHookIsInertWhenGeneralDiscoveryOwnsTheSource(t *testing.T) {
 	m := NewManager(dir)
 	c := newContext(&Manifest{Name: "mem"}, m)
 	module := dir + "/__init__.py"
-	m.plugins["mem"] = &LoadedPlugin{Manifest: c.manifest, Module: module, Enabled: true}
+	m.plugins["mem"] = &LoadedPlugin{Manifest: c.manifest, Module: "icebath_plugins.mem", ModuleFile: module, Enabled: true}
 	src := hookSourceOf("mem", module)
 	h := m.registerFallbackHook(c, src, "pre_llm_call", func(context.Context, map[string]any) (any, error) { return nil, nil }, false)
 	if m.HasHook("pre_llm_call") || h.Kind != "hook" {

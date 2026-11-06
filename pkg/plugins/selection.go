@@ -719,7 +719,7 @@ func CmdPluginDoctor(ctx context.Context, target string, ci bool, out io.Writer)
 		return err
 	}
 	NewConsole(out).Print(report.FormatText())
-	if ci && !report.OK {
+	if ci && !report.OK() {
 		return &CommandExit{Code: 1}
 	}
 	return nil

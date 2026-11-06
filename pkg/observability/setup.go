@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -125,6 +126,7 @@ func SetupFailureClass(err error) string {
 	}
 	check := func(fn func(error) bool, e error) bool { return fn != nil && e != nil && fn(e) }
 	_, setupCancelled := err.(interface{ SetupCancelled() })
+	setupCancelled = setupCancelled || errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, cliui.ErrEOF) || errors.Is(err, tools.ErrKeyboardInterrupt)
 	code := ""
 	if traits.OAuthErrorCode != nil {
 		code = traits.OAuthErrorCode(err)

@@ -49,6 +49,10 @@ var (
 	ledgerWallTime     = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 	ledgerPidExists    = proc.Exists
 	ledgerStartTime    = processStartTime
+	ledgerGetpid       = os.Getpid
+	ownerIsLive        = defaultOwnerIsLive
+	// Terminal rows the ledger keeps, the module attribute retention tests lower
+	maxTerminalExecutions = MaxTerminalExecutions
 )
 
 // Ledger is the per home executions database recording every claimed attempt
@@ -96,12 +100,12 @@ func processStartTime(pid int) (int64, bool) {
 }
 
 // Owner pid is alive and the same incarnation, true whenever death cannot be proven
-func ownerIsLive(pid int64, startedAt any) (bool, error) {
+func defaultOwnerIsLive(pid int64, startedAt any) (bool, error) {
 	if !ledgerPidExists(int(pid)) {
 		return false, nil
 	}
 	if startedAt == nil {
-		return int(pid) == os.Getpid(), nil
+		return int(pid) == ledgerGetpid(), nil
 	}
 	current, ok := ledgerStartTime(int(pid))
 	if !ok {
@@ -391,7 +395,7 @@ func (l *Ledger) TouchProgress(ctx context.Context, executionID string) (bool, e
 		var err error
 		n, err = rowsChanged(conn.ExecContext(ctx, `UPDATE executions SET progress_at=?
                WHERE id=? AND status IN ('claimed','running') AND process_id=? AND pid=?`,
-			now, executionID, executionProcessID, os.Getpid()))
+			now, executionID, executionProcessID, ledgerGetpid()))
 		return err
 	})
 	return n == 1, err
@@ -404,7 +408,7 @@ func pruneExecutions(ctx context.Context, conn state.SQLiteConn) error {
              WHERE status IN ('completed','failed','unknown','cancelled','missed')
              ORDER BY julianday(finished_at) DESC, finished_at DESC,
                       julianday(claimed_at) DESC, claimed_at DESC, id DESC LIMIT -1 OFFSET ?
-           )`, max(0, MaxTerminalExecutions))
+           )`, max(0, maxTerminalExecutions))
 	return err
 }
 
@@ -412,7 +416,7 @@ func pruneExecutions(ctx context.Context, conn state.SQLiteConn) error {
 func (l *Ledger) Create(ctx context.Context, jobID, source string, scheduled *string) (map[string]any, error) {
 	now := l.s.clk.nowISO()
 	id := newExecutionID()
-	pid := os.Getpid()
+	pid := ledgerGetpid()
 	var startedAt any
 	if st, ok := ledgerStartTime(pid); ok {
 		startedAt = st
@@ -443,7 +447,7 @@ func (l *Ledger) SetOccurrence(ctx context.Context, executionID string, instant 
 	canonical := nullable(scheduledInstant(l.s, instant))
 	return l.transaction(ctx, func(conn state.SQLiteConn) error {
 		n, err := rowsChanged(conn.ExecContext(ctx, "UPDATE executions SET scheduled_instant=? WHERE id=? AND status='claimed' "+
-			"AND handoff_pending=0 AND process_id=? AND pid=?", canonical, executionID, executionProcessID, os.Getpid()))
+			"AND handoff_pending=0 AND process_id=? AND pid=?", canonical, executionID, executionProcessID, ledgerGetpid()))
 		if err != nil {
 			return err
 		}
@@ -478,7 +482,7 @@ func (l *Ledger) MarkHandoffPending(ctx context.Context, executionID string) (ma
 	record, err := l.updateAndFetch(ctx, executionID, false, `UPDATE executions
                SET handoff_pending=1, handoff_started_at=?
                WHERE id=? AND status='claimed'
-                 AND process_id=? AND pid=?`, ledgerWallTime(), executionID, executionProcessID, os.Getpid())
+                 AND process_id=? AND pid=?`, ledgerWallTime(), executionID, executionProcessID, ledgerGetpid())
 	if err != nil || record == nil {
 		return nil, err
 	}
@@ -488,7 +492,7 @@ func (l *Ledger) MarkHandoffPending(ctx context.Context, executionID string) (ma
 
 // Transfers a pending handoff to this worker process and starts it, nil for every loser
 func (l *Ledger) AdoptClaimed(ctx context.Context, executionID string) (map[string]any, error) {
-	pid := os.Getpid()
+	pid := ledgerGetpid()
 	var startedAt any
 	if st, ok := ledgerStartTime(pid); ok {
 		startedAt = st
@@ -512,7 +516,7 @@ func (l *Ledger) MarkRunning(ctx context.Context, executionID string) (map[strin
                SET status='running', started_at=?, handoff_pending=0,
                    handoff_started_at=NULL
                WHERE id=? AND status='claimed' AND handoff_pending=0
-                 AND process_id=? AND pid=?`, l.s.clk.nowISO(), executionID, executionProcessID, os.Getpid())
+                 AND process_id=? AND pid=?`, l.s.clk.nowISO(), executionID, executionProcessID, ledgerGetpid())
 	if err != nil || record == nil {
 		return nil, err
 	}
@@ -545,7 +549,7 @@ func (l *Ledger) Finish(ctx context.Context, executionID string, success bool, e
                    handoff_started_at=NULL, delivery_outcome=?
                WHERE id=? AND status IN ('claimed','running')
                  AND process_id=? AND pid=?`,
-		status, l.s.clk.nowISO(), failureDetail(success, errText), nullable(deliveryOutcome), executionID, executionProcessID, os.Getpid())
+		status, l.s.clk.nowISO(), failureDetail(success, errText), nullable(deliveryOutcome), executionID, executionProcessID, ledgerGetpid())
 	if err != nil || record == nil {
 		return nil, err
 	}
@@ -561,7 +565,7 @@ func (l *Ledger) RecordMissed(ctx context.Context, jobID string, count int, firs
 	}
 	now := l.s.clk.nowISO()
 	id := newExecutionID()
-	pid := os.Getpid()
+	pid := ledgerGetpid()
 	var startedAt any
 	if st, ok := ledgerStartTime(pid); ok {
 		startedAt = st
@@ -679,6 +683,7 @@ func (l *Ledger) RecoverInterrupted(ctx context.Context) (int, error) {
 	now := l.s.clk.nowISO()
 	changed := 0
 	var recovered []map[string]any
+	var recs []map[string]any
 	err := l.transaction(ctx, func(conn state.SQLiteConn) error {
 		rows, err := conn.QueryContext(ctx, `SELECT id, status, process_id, pid, process_started_at,
                       handoff_pending, handoff_started_at, claimed_at, progress_at
@@ -687,68 +692,83 @@ func (l *Ledger) RecoverInterrupted(ctx context.Context) (int, error) {
 		if err != nil {
 			return err
 		}
-		recs, err := scanRecords(rows)
-		if err != nil {
-			return err
+		recs, err = scanRecords(rows)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	// Liveness runs outside the ledger lock like the autocommit read, the guarded update fences a concurrent adoption
+	type candidate struct {
+		row    map[string]any
+		reason string
+	}
+	var candidates []candidate
+	staleAfter, staleKnown, staleResolved := 0.0, false, false
+	for _, row := range recs {
+		if recText(row, "process_id") == executionProcessID {
+			continue
 		}
-		staleAfter, staleKnown, staleResolved := 0.0, false, false
-		for _, row := range recs {
-			if recText(row, "process_id") == executionProcessID {
+		reason := ownerGoneReason
+		live, err := ownerIsLive(recInt(row, "pid"), row["process_started_at"])
+		if err != nil {
+			return 0, err
+		}
+		if live {
+			if !staleResolved {
+				staleAfter, staleKnown = l.s.liveOwnerStaleAfterSeconds(ctx)
+				staleResolved = true
+			}
+			if !staleKnown {
 				continue
 			}
-			reason := ownerGoneReason
-			live, err := ownerIsLive(recInt(row, "pid"), row["process_started_at"])
+			age, err := l.s.staleAgeSeconds(recText(row, "claimed_at"), row["progress_at"])
 			if err != nil {
-				return err
+				return 0, err
 			}
-			if live {
-				if !staleResolved {
-					staleAfter, staleKnown = l.s.liveOwnerStaleAfterSeconds(ctx)
-					staleResolved = true
-				}
-				if !staleKnown {
-					continue
-				}
-				age, err := l.s.staleAgeSeconds(recText(row, "claimed_at"), row["progress_at"])
-				if err != nil {
-					return err
-				}
-				if age <= staleAfter {
-					continue
-				}
-				reason = ownerWedgedReason
-			}
-			if handoffFenced(row) {
+			if age <= staleAfter {
 				continue
 			}
-			n, err := rowsChanged(conn.ExecContext(ctx, `UPDATE executions
+			reason = ownerWedgedReason
+		}
+		if handoffFenced(row) {
+			continue
+		}
+		candidates = append(candidates, candidate{row, reason})
+	}
+	if len(candidates) > 0 {
+		err = l.transaction(ctx, func(conn state.SQLiteConn) error {
+			for _, c := range candidates {
+				row := c.row
+				n, err := rowsChanged(conn.ExecContext(ctx, `UPDATE executions
                    SET status='unknown', finished_at=?, error=?,
                        handoff_pending=0, handoff_started_at=NULL
                    WHERE id=? AND status=? AND process_id=? AND pid=?
                      AND handoff_pending=?
                      AND handoff_started_at IS ?
                      AND claimed_at=? AND progress_at IS ?`,
-				now, reason, row["id"], row["status"], row["process_id"], row["pid"],
-				row["handoff_pending"], row["handoff_started_at"], row["claimed_at"], row["progress_at"]))
-			if err != nil {
-				return err
-			}
-			changed += int(n)
-			if n != 0 {
-				record, err := fetchExecution(ctx, conn, recText(row, "id"))
+					now, c.reason, row["id"], row["status"], row["process_id"], row["pid"],
+					row["handoff_pending"], row["handoff_started_at"], row["claimed_at"], row["progress_at"]))
 				if err != nil {
 					return err
 				}
-				if record != nil {
-					recovered = append(recovered, record)
+				changed += int(n)
+				if n != 0 {
+					record, err := fetchExecution(ctx, conn, recText(row, "id"))
+					if err != nil {
+						return err
+					}
+					if record != nil {
+						recovered = append(recovered, record)
+					}
 				}
 			}
-		}
-		if changed != 0 {
-			return pruneExecutions(ctx, conn)
-		}
-		return nil
-	})
+			if changed != 0 {
+				return pruneExecutions(ctx, conn)
+			}
+			return nil
+		})
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -829,7 +849,7 @@ func (l *Ledger) GiveUp(ctx context.Context, executionID, reason string) (bool, 
 		n, err := rowsChanged(conn.ExecContext(ctx, `UPDATE executions SET status='unknown', finished_at=?, error=?,
                    handoff_pending=0, handoff_started_at=NULL
                WHERE id=? AND status IN ('claimed','running') AND process_id=? AND pid=?`,
-			now, reason, executionID, executionProcessID, os.Getpid()))
+			now, reason, executionID, executionProcessID, ledgerGetpid()))
 		if err != nil || n != 1 {
 			return err
 		}
@@ -940,7 +960,7 @@ func cleanJobIDs(ids []string) []string {
 	return out
 }
 
-// Placeholder list and arguments for an IN clause
+// Question mark list and arguments for an IN clause
 func inClause(ids []string) (string, []any) {
 	args := make([]any, len(ids))
 	for i, id := range ids {

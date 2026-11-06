@@ -169,8 +169,7 @@ func (s *terminalSlot) prepare(ctx context.Context, ref *ToolCallRef) error {
 			return
 		}
 		host := s.batch.exec.Host
-		SetCurrentObservabilityContext(env, host.TurnID(), ref.CallID, host.SessionID())
-		defer ResetCurrentObservabilityContext(env)
+		env := WithObservabilityContext(env, host.TurnID(), ref.CallID, host.SessionID())
 		if !truthy(ref.Args["background"]) {
 			if rewritten := trailingAmpBackgroundCommand(command); rewritten != "" {
 				command = rewritten

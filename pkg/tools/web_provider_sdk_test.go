@@ -104,10 +104,10 @@ func recordParallelSleeps(t *testing.T) *[]time.Duration {
 }
 
 // Swaps one keyless searcher and extractor for the test
-func swapKeyless(t *testing.T, name string, search func(context.Context, string, int) *WebSearchResponse, extract func(context.Context, []string) []*WebPage) {
+func swapKeyless(t *testing.T, name string, search func(context.Context, string, int) *WebSearchResponse, extract func(context.Context, []string) ([]*WebPage, error)) {
 	prevS, prevE := keylessSearchers[name], keylessExtractors[name]
 	if search != nil {
-		keylessSearchers[name] = search
+		keylessSearchers[name] = func(ctx context.Context, query string, limit int) (*WebSearchResponse, error) { return search(ctx, query, limit), nil }
 	}
 	if extract != nil {
 		keylessExtractors[name] = extract
@@ -545,7 +545,9 @@ func TestSDKProviderRouting(t *testing.T) {
 	})
 	t.Run("parallel keyless extract", func(t *testing.T) {
 		env := sdkProviderEnv(t, "", map[string]any{"web.backend": "parallel"})
-		swapKeyless(t, "parallel", nil, func(context.Context, []string) []*WebPage { return []*WebPage{{URL: "https://a", Content: "c"}} })
+		swapKeyless(t, "parallel", nil, func(context.Context, []string) ([]*WebPage, error) {
+			return []*WebPage{{URL: "https://a", Content: "c"}}, nil
+		})
 		if out, _ := parallelP().Extract(context.Background(), env, []string{"https://a"}, ""); out[0].Content != "c" {
 			t.Fatalf("%+v", out)
 		}
@@ -646,6 +648,16 @@ func TestProviderEnvScopeRules(t *testing.T) {
 	t.Setenv("PARALLEL_API_KEY", "launch")
 	if v, _ := providerEnv(empty, env, "PARALLEL_API_KEY"); v != "" {
 		t.Fatalf("scope miss read the process env %q", v)
+	}
+	if v, _ := providerEnv(empty, env, "EXA_API_KEY"); v != "from-dotenv" {
+		t.Fatalf("routed scope miss skipped the profile .env %q", v)
+	}
+	t.Setenv("ICEBATH_HOME", env.Home)
+	if v, _ := providerEnv(empty, env, "PARALLEL_API_KEY"); v != "launch" {
+		t.Fatalf("launch profile scope miss skipped the process env %q", v)
+	}
+	if v, _ := providerEnv(empty, env, "EXA_API_KEY"); v != "from-dotenv" {
+		t.Fatalf("launch profile scope miss skipped the .env %q", v)
 	}
 	SetMultiplexActive(true)
 	if _, err := providerEnv(context.Background(), &Env{}, "EXA_API_KEY"); err != ErrUnscopedSecret {

@@ -1111,6 +1111,7 @@ func (r *resolver) tryResolveFromCustomPool(baseURL, providerLabel string, apiMo
 		}
 		rt := r.runtime(providerLabel, mode, baseURL, poolAPIKey, "pool:"+poolKey)
 		rt.TokenSource = cred.TokenSource
+		rt.CredentialPool = cred.Pool
 		return rt
 	}
 	return nil

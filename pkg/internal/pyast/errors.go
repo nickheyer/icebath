@@ -368,6 +368,13 @@ func (p *parser) run(start func() *Node) (n *Node, err error) {
 		default:
 			panic(r)
 		}
+		if p.barryRelevant() {
+			if ne := p.barryErrorPass(); ne != nil {
+				if _, limit := r.(*LimitError); !limit {
+					err, hi = ne, len(p.toks)+1
+				}
+			}
+		}
 		p.lexWarnings(p.main, hi)
 	}()
 	if len(p.toks) == 0 && p.lx.err != nil {
@@ -409,7 +416,10 @@ func (p *parser) raiseUnclosed() {
 }
 
 // Normalizes a non ASCII identifier with NFKC as the parser does for every NAME
-func (p *parser) identifier(s string) string {
+func (p *parser) identifier(s string) string { return normIdent(s) }
+
+// Applies NFKC to identifiers holding a non ASCII byte as _PyPegen_new_identifier does
+func normIdent(s string) string {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= 0x80 {
 			return nfkc(s)

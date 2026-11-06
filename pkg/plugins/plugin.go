@@ -51,6 +51,13 @@ func RegisterBundled(p Plugin) {
 	bundledOrder = append(bundledOrder, key)
 }
 
+// Registry keys of every compiled-in plugin in registration order
+func BundledPluginKeys() []string {
+	bundledMu.RLock()
+	defer bundledMu.RUnlock()
+	return append([]string(nil), bundledOrder...)
+}
+
 // Manifests of every compiled-in plugin in registration order, tagged bundled with no directory
 func bundledManifests() []*Manifest {
 	bundledMu.RLock()
@@ -106,6 +113,9 @@ func readInstallMetadata(h string) (map[string]any, error) {
 	}
 	return doc, nil
 }
+
+// Profile-local plugin install metadata keyed by plugin directory name, for callers outside the package
+func ReadInstallMetadata(h string) (map[string]any, error) { return readInstallMetadata(h) }
 
 // Installer record of a directory directly under the plugins dir, nil otherwise
 func installRecord(h, pluginDir string) map[string]any {

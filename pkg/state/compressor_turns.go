@@ -308,6 +308,9 @@ func StripContextSummaryHandoffMessage(message map[string]any) map[string]any {
 	return nil
 }
 
+// Exported projection of summary content to its handoff for the agent turn context
+func HandoffOnlyContent(content any) any { return handoffOnlyContent(content) }
+
 // Summary bearing content projected to the synthetic handoff alone, never keeping live media
 func handoffOnlyContent(content any) any {
 	throughEndMarker := func(text string) string {

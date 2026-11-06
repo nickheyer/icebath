@@ -23,7 +23,7 @@ import (
 
 const (
 	hostExtractTimeout   = 60 * time.Second
-	hostProfileCacheVers = 1
+	hostProfileCacheVers = 2
 )
 
 // Model provider profile whose overridden methods and callable fields run in the plugin host
@@ -34,6 +34,8 @@ type HostedProfile struct {
 	Calls     map[string]HostedProfileCall
 	PluginDir string
 	Module    string
+	// Why hermes would import this profile in process, its create_client then serving a live host client
+	InProcess string
 }
 
 // One overridden method or callable field of a hosted profile
@@ -65,27 +67,16 @@ var hostedProfiles = map[string][]*HostedProfile{}
 
 // Hosted profile proxies of a model provider plugin plus the reason each profile that must load in process cannot be hosted
 func LoadHostedProfiles(ctx context.Context, pluginDir, moduleName string) ([]*HostedProfile, map[string]string, error) {
-	payload, err := cachedProfileExtraction(ctx, pluginDir, moduleName)
+	all, err := loadProviderProfiles(ctx, pluginDir, moduleName)
 	if err != nil {
 		return nil, nil, err
 	}
-	if e := payload["error"]; config.PyTruthy(e) {
-		return nil, nil, &PluginHostUnavailable{Reason: config.PyStr(e)}
-	}
 	inProcess := map[string]string{}
 	hosted := []*HostedProfile{}
-	for _, raw := range listOrEmpty(payload["profiles"]) {
-		entry, _ := raw.(map[string]any)
-		if entry == nil {
+	for _, profile := range all {
+		if profile.InProcess != "" {
+			inProcess[profile.Name] = profile.InProcess
 			continue
-		}
-		if reason := entry["in_process"]; config.PyTruthy(reason) {
-			inProcess[config.PyStr(entry["name"])] = config.PyStr(reason)
-			continue
-		}
-		profile, err := hostedProfileFrom(pluginDir, moduleName, entry)
-		if err != nil {
-			return nil, nil, err
 		}
 		hosted = append(hosted, profile)
 	}
@@ -93,6 +84,38 @@ func LoadHostedProfiles(ctx context.Context, pluginDir, moduleName string) ([]*H
 	hostedProfiles[pluginDir] = hosted
 	hostedProfilesMu.Unlock()
 	return hosted, inProcess, nil
+}
+
+// Every profile a model provider plugin registers in extraction order, in process ones carrying their reason
+func loadProviderProfiles(ctx context.Context, pluginDir, moduleName string) ([]*HostedProfile, error) {
+	payload, err := cachedProfileExtraction(ctx, pluginDir, moduleName)
+	if err != nil {
+		return nil, err
+	}
+	if e := payload["error"]; config.PyTruthy(e) {
+		return nil, &PluginHostUnavailable{Reason: config.PyStr(e)}
+	}
+	return hostedProfilesFrom(pluginDir, moduleName, payload["profiles"])
+}
+
+// Profile proxies of extraction entries, the in process reason kept on each profile that has one
+func hostedProfilesFrom(pluginDir, moduleName string, entries any) ([]*HostedProfile, error) {
+	out := []*HostedProfile{}
+	for _, raw := range listOrEmpty(entries) {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		profile, err := hostedProfileFrom(pluginDir, moduleName, entry)
+		if err != nil {
+			return nil, err
+		}
+		if reason := entry["in_process"]; config.PyTruthy(reason) {
+			profile.InProcess = config.PyStr(reason)
+		}
+		out = append(out, profile)
+	}
+	return out, nil
 }
 
 func hostedProfileFrom(pluginDir, moduleName string, entry map[string]any) (*HostedProfile, error) {
@@ -248,6 +271,9 @@ func extractProfiles(ctx context.Context, pluginDir, moduleName, python string) 
 		return map[string]any{"error": fmt.Sprintf("profile extraction failed: %v", err)}
 	}
 	env["HOME"], env["USERPROFILE"], env["ICEBATH_HOME"], env["PYTHONPATH"], env[HostProcessEnv] = userHome, userHome, h, pythonPath, "1"
+	if networkDenied(ctx) {
+		env[hostDenyNetworkEnv] = "1"
+	}
 	launcher, err := hostLauncher(h)
 	if err != nil {
 		return map[string]any{"error": fmt.Sprintf("profile extraction failed: %v", err)}

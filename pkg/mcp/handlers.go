@@ -838,12 +838,8 @@ func makeToolHandler(serverName, toolName string, toolTimeout float64, nativeIma
 		var imgMu sync.Mutex
 		var imagePaths []string
 		var report ProgressFunc
-		if env != nil && env.Notify != nil {
-			name := call.Name
-			if name == "" {
-				name = toolName
-			}
-			report = newProgressReporter(env, name, call.ToolCallID)
+		if relay := tools.CurrentToolProgress(ctx); relay != nil {
+			report = ProgressFunc(relay)
 		}
 		callFn := func(c context.Context) (string, error) {
 			if err := srv.rpc.Lock(c); err != nil {

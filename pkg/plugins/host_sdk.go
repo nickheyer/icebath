@@ -14,11 +14,11 @@ import (
 var PluginSDKModules = []string{
 	"agent.provider_base", "agent.provider_media", "agent.image_gen_provider", "agent.video_gen_provider",
 	"agent.web_search_provider", "agent.browser_provider", "agent.terminal_env_provider", "agent.secret_sources",
-	"agent.secret_sources.base", "agent.tts_provider", "agent.transcription_provider", "agent.delegation_provider",
+	"agent.secret_sources.base", "agent.tts_provider", "agent.transcription_provider", "agent.delegation_provider", "agent.plugin_llm", "agent.subagent_lifecycle",
 	"agent.context_engine", "agent.context_references", "agent.memory_provider", "agent.secret_scope", "agent.redact",
 	"agent.compression_marker", "agent.context_compressor", "agent.process_bootstrap", "agent.proxy_bypass",
 	"agent.thread_scoped_output", "agent.codex_headers", "agent.jiter_preload", "icebath_bootstrap", "utils", "providers", "providers.base",
-	"plugins.plugin_utils", "icebath_constants", "tools.environments.local", "icebath_cli.plugins",
+	"plugins.plugin_utils", "plugins.plugin_storage", "plugins.plugin_loader", "tools.lazy_deps", "cron", "cron.scheduler_provider", "icebath_constants", "tools.environments.local", "icebath_cli.plugins",
 	"icebath_cli.config", "icebath_cli.auth", "icebath_cli.version_info", "icebath_cli.urllib_security",
 	"icebath_cli.chat_catalog", "icebath_cli.env_loader",
 }
@@ -53,12 +53,14 @@ var hostSDKOps = map[string]hostSDKOp{
 	"redact_sensitive_text": sdkRedactSensitiveText,
 	"get_env_value":         sdkGetEnvValue,
 	"build_subprocess_env":  sdkBuildSubprocessEnv,
+	"plugin_db_prepare":     sdkPluginDBPrepare,
 }
 
 // SDK calls the top level wiring answers through Services.PluginSDK
 var hostSDKServiceOps = map[string]bool{
 	"provider_media.save_url": true, "read_credential_pool": true, "open_credentialed_url": true,
 	"chat_catalog_ids": true, "format_secret_source_suffix": true, "get_version_info": true,
+	"cron.recover_interrupted": true, "cron.claim_fire": true, "cron.fire_claimed": true,
 }
 
 // Runs one plugin SDK call the child sent and encodes its result for the child

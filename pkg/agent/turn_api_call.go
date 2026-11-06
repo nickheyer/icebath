@@ -224,7 +224,7 @@ func (a *AIAgent) handleAPIInterrupt(retry *TurnRetryState, spinner tools.Spinne
 	default:
 		finalResponse = fmt.Sprintf("%s%.1fs elapsed).", interruptWaitingForModelPrefix, apiElapsed)
 	}
-	if err := a.persistSession(*messages, conversationHistory); err != nil {
+	if err := a.persistSession(messages, conversationHistory); err != nil {
 		return APIInterruptVerdict{}, err
 	}
 	return APIInterruptVerdict{"break", spinner, interrupted, finalResponse}, nil
@@ -232,7 +232,7 @@ func (a *AIAgent) handleAPIInterrupt(retry *TurnRetryState, spinner tools.Spinne
 
 // Turn result for a Nous Portal rate limit the provider guard hit with no fallback left, persisted first
 func (a *AIAgent) nousRateLimitResult(ctx context.Context, de *provider.DoError, messages, conversationHistory []*state.Message, apiCallCount int) (map[string]any, error) {
-	if err := a.persistSession(messages, conversationHistory); err != nil {
+	if err := a.persistSession(&messages, conversationHistory); err != nil {
 		return nil, err
 	}
 	anonymous := de.FreeTierKind == "rate_limited"

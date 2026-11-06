@@ -524,10 +524,7 @@ func manifestFromData(data map[string]any, dir, source, prefix string) *Manifest
 	}
 	m.ProvidesMiddlewar = stringList(data["provides_middleware"])
 	m.Kind = manifestKind(data, key, dir)
-	m.RequiresIcebath = strings.TrimSpace(scalarString(data["requires_icebath"]))
-	if m.RequiresIcebath == "" {
-		m.RequiresIcebath = strings.TrimSpace(scalarString(data["requires_hermes"]))
-	}
+	m.RequiresIcebath = manifestRequires(data)
 	m.Capabilities = ParseDeclaredCapabilities(data["capabilities"], name)
 	if mv, ok := data["manifest_version"]; ok {
 		if n, ok := asInt(mv); ok {

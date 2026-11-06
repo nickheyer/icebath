@@ -34,6 +34,11 @@ const (
 
 var payloadFields = []string{"prompt", "script", "skill", "skills", "no_agent"}
 
+// ValueError is a job argument or schedule the jobs store rejects, the ValueError of cron.jobs
+type ValueError struct{ Msg string }
+
+func (e *ValueError) Error() string { return e.Msg }
+
 // AmbiguousJobReferenceError reports a job name matching more than one job
 type AmbiguousJobReferenceError struct {
 	Ref     string
@@ -513,8 +518,8 @@ func normalizeCatchUp(value any) (*bool, error) {
 }
 
 func oneshotPastGraceError(runAt any) error {
-	return fmt.Errorf("Requested one-shot time %s is more than %ds in the past and cannot be scheduled.",
-		pyrepr.Str(runAt), oneshotGraceSeconds)
+	return &ValueError{fmt.Sprintf("Requested one-shot time %s is more than %ds in the past and cannot be scheduled.",
+		pyrepr.Str(runAt), oneshotGraceSeconds)}
 }
 
 // Next run of a schedule, rejecting a one shot outside the grace window so no ghost job is stored
@@ -1263,10 +1268,10 @@ func (s *Store) rearmOneshot(ctx context.Context, ref string, runAt any) (*Job, 
 	}
 	parsed, err := s.parseSchedule(pyrepr.Str(runAt))
 	if err != nil {
-		return nil, err
+		return nil, &ValueError{err.Error()}
 	}
 	if parsed.Kind != "once" {
-		return nil, errors.New(rearmRecurringError)
+		return nil, &ValueError{rearmRecurringError}
 	}
 	next, err := s.computeNextRun(parsed, nil, jobRef.Timezone)
 	if err != nil {
@@ -1283,13 +1288,13 @@ func (s *Store) rearmOneshot(ctx context.Context, ref string, runAt any) (*Job, 
 	out, _, err := withJob(s, jobRef.ID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (*Job, error) {
 		now := s.clk.now()
 		if claimIsLive(s, job.RunClaim, now, ttl) {
-			return nil, errors.New("Cannot re-arm one-shot over a live run claim.")
+			return nil, &ValueError{"Cannot re-arm one-shot over a live run claim."}
 		}
 		if claimIsLive(s, job.FireClaim, now, FireClaimTTLSeconds) {
-			return nil, errors.New("Cannot re-arm one-shot over a live fire claim.")
+			return nil, &ValueError{"Cannot re-arm one-shot over a live fire claim."}
 		}
 		if job.Kind() != "once" {
-			return nil, errors.New(rearmRecurringError)
+			return nil, &ValueError{rearmRecurringError}
 		}
 		if job.Repeat == nil {
 			job.Repeat = &Repeat{}

@@ -2,8 +2,10 @@ package agent
 
 import (
 	"context"
+	"maps"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -104,10 +106,12 @@ type ContextCompressor struct {
 
 	summaryModel              string
 	summaryModelFallenBack    bool
-	sessionDB                 *state.DB
+	sessionDB                 any
+	rejectedThinking          *provider.RejectedThinkingTracker
 	sessionID                 string
 	preparedCompaction        *PreparedCompaction
 	compressionCancelledCheck func() bool
+	attempt                   *compressorAttemptSlots
 
 	previousSummary                     *string
 	summaryHasUserTurn                  *bool
@@ -132,7 +136,7 @@ type ContextCompressor struct {
 	cooldownPersistFailed               bool
 	lastCompressAborted                 bool
 	lastCompressRefusedWouldGrow        bool
-	lastCooldownRefreshWasAuthoritative bool
+	lastCooldownRefreshWasAuthoritative *bool
 
 	lastSummaryAuthFailure         bool
 	lastSummaryNetworkFailure      bool
@@ -370,7 +374,8 @@ func (c *ContextCompressor) UpdateModel(model string, contextLength int, baseURL
 func (c *ContextCompressor) CloneForAgent() ContextEngine { return c.cloneForAgent() }
 
 func (c *ContextCompressor) BindSessionState(db *state.DB, sessionID string) error {
-	return c.bindSessionState(db, sessionID)
+	c.bindSessionState(sessionStoreOf(db), sessionID)
+	return nil
 }
 
 func (c *ContextCompressor) BoundSessionID() string { return c.sessionID }
@@ -405,16 +410,19 @@ func (c *ContextCompressor) PreviousSummary() string {
 	return *c.previousSummary
 }
 
+// Summary generator every compress path calls, swapped by tests as hermes patches _generate_summary
+var compressorGenerateSummary = (*ContextCompressor).generateSummary
+
 func (c *ContextCompressor) GenerateWindowSummary(ctx context.Context, turns []map[string]any, focusTopic *string, memoryContext string) (*string, error) {
-	return c.generateSummary(ctx, turns, focusTopic, memoryContext, false)
+	return compressorGenerateSummary(c, ctx, turns, focusTopic, memoryContext, false)
 }
 
 func (c *ContextCompressor) GenerateWindowSummaryBypassingCooldown(ctx context.Context, turns []map[string]any, focusTopic *string, memoryContext string, bypassCooldown bool) (*string, error) {
-	return c.generateSummary(ctx, turns, focusTopic, memoryContext, bypassCooldown)
+	return compressorGenerateSummary(c, ctx, turns, focusTopic, memoryContext, bypassCooldown)
 }
 
 func (c *ContextCompressor) GenerateSummary(ctx context.Context, turns []map[string]any, focusTopic *string) (*string, error) {
-	return c.generateSummary(ctx, turns, focusTopic, "", false)
+	return compressorGenerateSummary(c, ctx, turns, focusTopic, "", false)
 }
 
 // Per row tail price shared by every gate that sizes a tail region
@@ -537,7 +545,17 @@ func (c *ContextCompressor) SummaryFailureCooldownUntil() float64 {
 	return c.summaryFailureCooldownUntil
 }
 
-func (c *ContextCompressor) SetSessionDB(db *state.DB) { c.sessionDB = db }
+func (c *ContextCompressor) SetSessionDB(db *state.DB) { c.sessionDB = sessionStoreOf(db) }
+
+// Shares the agent rejected thinking fingerprints so the tail walk prices the replay the preflight prices
+func (c *ContextCompressor) SetRejectedThinkingTracker(t *provider.RejectedThinkingTracker) {
+	c.rejectedThinking = t
+}
+
+// Whether the last forced cooldown refresh read the durable row, nil before any refresh
+func (c *ContextCompressor) LastCooldownRefreshWasAuthoritative() *bool {
+	return c.lastCooldownRefreshWasAuthoritative
+}
 
 func (c *ContextCompressor) SetCompressionCancelledCheck(check func() bool) {
 	c.compressionCancelledCheck = check
@@ -610,4 +628,41 @@ func (c *ContextCompressor) ScanWindowHandoffs(messages []map[string]any, start,
 
 func (c *ContextCompressor) PruneToolResultsOnly(messages []map[string]any, currentTokens *int) ([]map[string]any, int) {
 	return c.pruneToolResultsOnly(messages, currentTokens)
+}
+
+// Independent engine copy with its own budget state, durable backends shared and no prepared worker
+func (c *ContextCompressor) cloneForAgent() ContextEngine {
+	clone := *c
+	clone.ModelThresholds = maps.Clone(c.ModelThresholds)
+	clone.customProviders = pycopy.Of(c.customProviders)
+	for _, p := range []**int{&clone.thresholdTokensCap, &clone.auxContextCeiling, &clone.maxTokens, &clone.configContextLength, &clone.resolvedContextLength, &clone.thresholdTokens, &clone.tailTokenBudget, &clone.maxSummaryTokens} {
+		if *p != nil {
+			v := **p
+			*p = &v
+		}
+	}
+	for _, p := range []**string{&clone.previousSummary, &clone.lastSummaryError} {
+		if *p != nil {
+			v := **p
+			*p = &v
+		}
+	}
+	for _, p := range []**bool{&clone.summaryHasUserTurn, &clone.lastCooldownRefreshWasAuthoritative} {
+		if *p != nil {
+			v := **p
+			*p = &v
+		}
+	}
+	if c.lastReclaimBlockWarn != nil {
+		v := *c.lastReclaimBlockWarn
+		clone.lastReclaimBlockWarn = &v
+	}
+	clone.attempt = c.attempt.copySlots()
+	for _, p := range []**pyjson.Object{&clone.Seed, &clone.Active, &clone.Last} {
+		if *p != nil {
+			*p = pycopy.Of(*p)
+		}
+	}
+	clone.preparedCompaction = nil
+	return &clone
 }

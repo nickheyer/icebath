@@ -74,8 +74,10 @@ func trySharedLock(f *os.File) (bool, error) {
 	handle := windows.Handle(f.Fd())
 	ol := windows.Overlapped{Offset: windowsLockOffset}
 	if windows.LockFileEx(handle, windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1+leaseSlots, 0, &ol) != nil {
+		pauseAt("shared-probe")
 		return false, nil
 	}
+	pauseAt("shared-probe")
 	ol = windows.Overlapped{Offset: windowsLockOffset}
 	_ = windows.UnlockFileEx(handle, 0, 1+leaseSlots, 0, &ol)
 	return true, nil

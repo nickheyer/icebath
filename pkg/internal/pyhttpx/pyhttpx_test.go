@@ -123,3 +123,15 @@ func TestDecodeContentUndoesEncodingsLikeHttpx(t *testing.T) {
 		t.Fatal(string(out))
 	}
 }
+
+func TestRetryAfterValueMatchesParseRetryAfterSeconds(t *testing.T) {
+	for _, tc := range []struct {
+		in   any
+		want float64
+		ok   bool
+	}{{nil, 0, false}, {true, 0, false}, {4, 4, true}, {int64(-3), 0, true}, {2.5, 2.5, true}, {" 7 ", 7, true}, {"", 0, false}, {"soon", 0, false}, {[]any{}, 0, false}, {map[string]any{"retry-after": "3"}, 3, true}, {map[string]any{"Retry-After": map[string]any{}}, 0, false}} {
+		if got, ok := RetryAfterValue(tc.in); got != tc.want || ok != tc.ok {
+			t.Fatalf("%v -> %v %v", tc.in, got, ok)
+		}
+	}
+}

@@ -24,6 +24,10 @@ type parser struct {
 	probing      int
 	seen, main   int
 	mode         string
+	barry        bool
+	// barryTok is the fill when the barry_as_FLUFL import set the flag, recBarryTok the same from CPython's pass one
+	barryTok, recBarryTok int
+	barryChecked          bool
 	// noFullTokenize marks an error raised after parsing, knownErrLine the line of p->known_err_token
 	noFullTokenize bool
 	knownErrLine   int
@@ -59,10 +63,18 @@ func (p *parser) tk(i int) *token {
 	return &p.toks[i]
 }
 
-func (p *parser) cur() *token { return p.tk(p.pos) }
+// Returns a token already read without repeating the fill, warning and error bookkeeping of tk
+func (p *parser) cur() *token {
+	if i := p.pos; i < p.main && i < p.fill && i < p.seen && i < len(p.toks) {
+		if t := &p.toks[i]; t.kind != tError {
+			return t
+		}
+	}
+	return p.tk(p.pos)
+}
 
 func (p *parser) next() *token {
-	t := p.tk(p.pos)
+	t := p.cur()
 	if p.pos < len(p.toks) {
 		p.pos++
 	}
@@ -114,11 +126,11 @@ func (p *parser) forceOp(op string) *token {
 
 // Runs a parse function, restoring the position and reporting false on a generic failure
 func (p *parser) speculate(f func() *Node) (n *Node, ok bool) {
-	save := p.pos
+	save, level := p.pos, p.level
 	defer func() {
 		if r := recover(); r != nil {
 			if _, isFail := r.(failSignal); isFail {
-				p.pos = save
+				p.pos, p.level = save, level
 				n, ok = nil, false
 				return
 			}
@@ -384,10 +396,6 @@ func (p *parser) simpleStmts() []*Node {
 
 func (p *parser) simpleStmt() *Node {
 	t := p.cur()
-	if t.kind == tName && t.val == "return" {
-		p.enter(32)
-		defer p.leave(32)
-	}
 	if t.kind == tName {
 		switch t.val {
 		case "return":
@@ -460,8 +468,6 @@ func (p *parser) simpleStmt() *Node {
 			}
 		}
 	}
-	p.enter(32)
-	defer p.leave(32)
 	return p.exprOrAssign()
 }
 
@@ -518,8 +524,6 @@ func (p *parser) exprOrAssign() *Node {
 		p.checkAssignHere(t, first)
 		targets := []*Node{first}
 		var value *Node
-		p.enter(2)
-		defer p.leave(2)
 		for p.isOp("=") {
 			p.next()
 			var rhs *Node
@@ -737,6 +741,13 @@ func (p *parser) importFrom() *Node {
 			p.fail()
 		}
 	}
+	if module == "__future__" && level == 0 {
+		for _, a := range names {
+			if !p.barry && a.Get("name") == "barry_as_FLUFL" {
+				p.barry, p.barryTok = true, p.fill
+			}
+		}
+	}
 	return p.mkFrom(t, "ImportFrom", module, names, level)
 }
 
@@ -845,8 +856,6 @@ func (p *parser) block(what string, line int) []*Node {
 			p.indentError(fmt.Sprintf("expected an indented block after %s on line %d", what, line))
 		}
 		p.next()
-		p.enter(8)
-		defer p.leave(8)
 		var body []*Node
 		for p.cur().kind != tDedent && p.cur().kind != tEnd {
 			body = append(body, p.statement()...)

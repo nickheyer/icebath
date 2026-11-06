@@ -420,7 +420,10 @@ func TestKeenableKeylessUsesTheRing(t *testing.T) {
 	env := httpxProviderEnv(t, "", map[string]any{"web.provider_tier.keenable": "free"})
 	var searched, extracted bool
 	swapKeyless(t, "keenable", func(context.Context, string, int) *WebSearchResponse { searched = true; return searchOK(nil) },
-		func(_ context.Context, urls []string) []*WebPage { extracted = true; return extractFail(urls, "x") })
+		func(_ context.Context, urls []string) ([]*WebPage, error) {
+			extracted = true
+			return extractFail(urls, "x"), nil
+		})
 	keenableP().Search(context.Background(), env, "q", 3)
 	keenableP().Extract(context.Background(), env, []string{"https://a.example"}, "")
 	if !searched || !extracted {

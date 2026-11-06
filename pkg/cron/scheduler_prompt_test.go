@@ -403,7 +403,7 @@ func TestGuardJobCredentialExfilAndBlockAndPause(t *testing.T) {
 	s := promptStore(t)
 	saved := cronBaseURLValidator
 	t.Cleanup(func() { cronBaseURLValidator = saved })
-	cronBaseURLValidator = func(_, _ *string) (string, error) { return "", errors.New("boom") }
+	cronBaseURLValidator = func(_ *Store, _, _ *string) (string, error) { return "", errors.New("boom") }
 	if err := s.guardJobCredentialExfil(&Job{ID: "j"}); err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestGuardJobCredentialExfilAndBlockAndPause(t *testing.T) {
 	if err == nil || err.Error() != "Cron job 'j' blocked for safety: could not validate provider/base_url pair (RuntimeError: boom); refusing to run a job with an unverified base_url override" {
 		t.Fatal(err)
 	}
-	cronBaseURLValidator = func(_, _ *string) (string, error) { return "off origin", nil }
+	cronBaseURLValidator = func(_ *Store, _, _ *string) (string, error) { return "off origin", nil }
 	if err := s.guardJobCredentialExfil(&Job{ID: "j"}); err == nil || err.Error() != "Cron job 'j' blocked for safety: off origin" {
 		t.Fatal(err)
 	}

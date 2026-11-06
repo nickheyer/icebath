@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"encoding/json"
 	"math/big"
 	"reflect"
@@ -20,7 +21,7 @@ const (
 
 // Session store lookup that reports a row role, false when the row is gone
 type MessageRoleReader interface {
-	GetMessageRole(sessionID string, messageID int64) (string, bool)
+	GetMessageRole(ctx context.Context, sessionID string, messageID int64) (string, bool, error)
 }
 
 // Fields the commit matches a retired row without an id by
@@ -142,8 +143,9 @@ func NewestExactHeldID(messages, verbatimTail []map[string]any) (int64, bool) {
 func CoverageForCommit(sessionDB any, sessionID string, messages, verbatimTail []map[string]any) (covered []int64, unresolved []map[string]any, ok bool, err error) {
 	newest, has := NewestExactHeldID(messages, verbatimTail)
 	if reader, isReader := sessionDB.(MessageRoleReader); has && isReader {
-		if _, live := reader.GetMessageRole(sessionID, newest); !live {
-			return nil, nil, false, nil
+		_, live, err := reader.GetMessageRole(context.Background(), sessionID, newest)
+		if err != nil || !live {
+			return nil, nil, false, err
 		}
 	}
 	covered, unresolved = HeldArchiveCoverage(messages, verbatimTail)

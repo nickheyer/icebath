@@ -39,9 +39,9 @@ func TestWindowsStrictBranchSkipsStatus(t *testing.T) {
 
 func TestWindowsNeverReleases(t *testing.T) {
 	calls := 0
-	prev := releaseGroupsFn
-	releaseGroupsFn = func([]int) { calls++ }
-	t.Cleanup(func() { releaseGroupsFn = prev })
+	prev := ReleaseProcessGroupsFn
+	ReleaseProcessGroupsFn = func([]int) { calls++ }
+	t.Cleanup(func() { ReleaseProcessGroupsFn = prev })
 	if ReleaseProcessGroupOnceEmpty(os.Getpid(), nil, 0) || calls != 0 {
 		t.Fatal("a Windows pid was released as a group")
 	}

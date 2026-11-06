@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Tools the agent loop intercepts because they need live agent state
@@ -59,28 +62,10 @@ func SanitizeToolError(errorMsg string) string {
 	for _, p := range toolErrorStripRes {
 		sanitized = p.ReplaceAllString(sanitized, "")
 	}
-	if len(sanitized) > toolErrorMaxLen {
-		sanitized = sanitized[:toolErrorMaxLen-3] + "..."
+	if len(pystr.Runes(sanitized)) > toolErrorMaxLen {
+		sanitized = pystr.Slice(sanitized, 0, toolErrorMaxLen-3) + "..."
 	}
 	return "[TOOL_ERROR] " + sanitized
-}
-
-// Trims an oversized error field in a JSON string result at the dispatch boundary
-func boundJSONErrorResult(result string) string {
-	if len(result) <= maxToolErrorChars || !strings.Contains(result, `"error"`) {
-		return result
-	}
-	decoded, err := pyjson.DecodeWTF8([]byte(result))
-	payload, _ := decoded.(map[string]any)
-	if err != nil || payload == nil {
-		return result
-	}
-	errText, ok := payload["error"].(string)
-	if !ok || len(errText) <= maxToolErrorChars {
-		return result
-	}
-	payload["error"] = boundErrorText(errText)
-	return jsonCompact(payload)
 }
 
 // ToolHookIDs are the identity fields every hook and middleware call carries
@@ -209,6 +194,89 @@ type DispatchOptions struct {
 
 type enabledToolsKey struct{}
 
+type postHookSuppressedKey struct{}
+
+type dispatcherKey struct{}
+
+// SuppressPostToolCallHook lets an outer executor own the terminal post tool event, false re-enables it
+func SuppressPostToolCallHook(ctx context.Context, suppressed bool) context.Context {
+	return context.WithValue(ctx, postHookSuppressedKey{}, suppressed)
+}
+
+// PostToolCallHookSuppressed reports whether an outer executor owns the post tool event for this context
+func PostToolCallHookSuppressed(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	v, _ := ctx.Value(postHookSuppressedKey{}).(bool)
+	return v
+}
+
+// WithDispatcher binds the dispatcher whose hooks nested tool calls from a handler run through
+func WithDispatcher(ctx context.Context, d *Dispatcher) context.Context {
+	return context.WithValue(ctx, dispatcherKey{}, d)
+}
+
+// DispatcherOf returns the bound dispatcher, the process default when none is bound
+func DispatcherOf(ctx context.Context) *Dispatcher {
+	if ctx != nil {
+		if d, _ := ctx.Value(dispatcherKey{}).(*Dispatcher); d != nil {
+			return d
+		}
+	}
+	return DefaultDispatcher
+}
+
+// DefaultDispatcher carries the process wide plugin hooks and middleware over the default registry
+var DefaultDispatcher = NewDispatcher(Default)
+
+// HandleFunctionCall routes one tool call through hooks and middleware to the registry and returns its JSON result
+func HandleFunctionCall(ctx context.Context, call *Call) string {
+	return DispatcherOf(ctx).DispatchWith(ctx, call, DispatchOptions{})
+}
+
+// Bare Python style class name of an error for observer hooks
+func exceptionTypeName(err error) string {
+	t := reflect.TypeOf(err)
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil || t.Name() == "" {
+		return fmt.Sprintf("%T", err)
+	}
+	return t.Name()
+}
+
+// Relay rewrite applied at the authorization boundary before request middleware
+var relayToolRequestIntercepts = ApplyRelayToolRequestIntercepts
+
+// Relay intercepts then the request middleware chain, failing open to the caller's args and trace
+func (d *Dispatcher) applyRequestMiddleware(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, trace []map[string]any) (map[string]any, map[string]any, []map[string]any) {
+	current := args
+	var relayTrace []map[string]any
+	if ids.SessionID != "" {
+		relayArgs, err := relayToolRequestIntercepts(ctx, ids.SessionID, name, schemaDeepCopy(args).(map[string]any))
+		if err != nil {
+			toolsLogger(env).Debug("tool_request middleware error", "error", err)
+			fallback := make(map[string]any, len(args))
+			for k, v := range args {
+				fallback[k] = v
+			}
+			return args, fallback, trace
+		}
+		if !reflect.DeepEqual(relayArgs, args) {
+			current = schemaDeepCopy(relayArgs).(map[string]any)
+			relayTrace = []map[string]any{{"source": "nemo_relay"}}
+		}
+	}
+	payload, original, mwTrace := d.ApplyToolRequestMiddleware(ctx, env, name, current, args, ids)
+	out := append(relayTrace, mwTrace...)
+	if out == nil {
+		out = []map[string]any{}
+	}
+	return payload, original, out
+}
+
 // WithEnabledTools carries the sandbox tool list execute_code reads
 func WithEnabledTools(ctx context.Context, names []string) context.Context {
 	return context.WithValue(ctx, enabledToolsKey{}, names)
@@ -225,14 +293,15 @@ func EnabledToolsOf(ctx context.Context) ([]string, bool) {
 
 // Derives status, error type, and error message from a tool result for observer hooks
 func toolResultObserverFields(toolName, result string) (string, string, string) {
-	if data, ok := safeJSONLoads(result).(map[string]any); ok {
-		if e := data["error"]; truthy(e) {
-			return "error", "tool_error", fmt.Sprint(e)
+	if decoded, err := pyjson.Loads(result); err == nil {
+		if data, ok := decoded.(*pyjson.Object); ok {
+			if e, _ := data.Get("error"); pyrepr.Truthy(e) {
+				return "error", "tool_error", pyrepr.Str(e)
+			}
 		}
 	}
 	if failed, suffix := ClassifyToolFailure(toolName, &result); failed {
-		msg := strings.Trim(strings.TrimSpace(suffix), "[]")
-		return "error", "tool_error", msg
+		return "error", "tool_error", pystr.StripChars(pystr.Strip(suffix), "[]")
 	}
 	return "ok", "", ""
 }
@@ -355,16 +424,15 @@ func (d *Dispatcher) dispatchPreToolCallHooks(ctx context.Context, env *Env, nam
 	if ruleKey == "" {
 		ruleKey = name
 	}
-	SetCurrentObservabilityContext(env, ids.TurnID, ids.ToolCallID, ids.SessionID)
+	bound := WithObservabilityContext(env, ids.TurnID, ids.ToolCallID, ids.SessionID)
 	result := func() (out GuardResult) {
 		defer func() {
 			if rec := recover(); rec != nil {
 				out = GuardResult{Approved: false, Message: fmt.Sprintf("BLOCKED: plugin approval gate failed for %s", name)}
 			}
 		}()
-		return RequestToolApproval(ctx, env, name, approve.Message, ruleKey)
+		return RequestToolApproval(ctx, bound, name, approve.Message, ruleKey)
 	}()
-	ResetCurrentObservabilityContext(env)
 	if !result.Approved {
 		if result.Message != "" {
 			return result.Message, modified
@@ -396,7 +464,7 @@ func (d *Dispatcher) ApplyToolRequestMiddleware(ctx context.Context, env *Env, n
 					out = RequestMiddlewareDirective{}
 				}
 			}()
-			return mw(ctx, env, name, current, original, ids)
+			return mw(ctx, env, name, schemaDeepCopy(current).(map[string]any), schemaDeepCopy(original).(map[string]any), ids)
 		}()
 		if directive.Args == nil {
 			continue
@@ -475,7 +543,7 @@ func (d *Dispatcher) RunToolExecutionMiddleware(ctx context.Context, env *Env, n
 		if errors.As(err, &downstream) {
 			return "", downstream.original
 		}
-		if errors.Is(err, errMiddlewareNextTwice) {
+		if errors.Is(err, errMiddlewareNextTwice) || IsKeyboardInterrupt(ctx, err) {
 			return "", err
 		}
 		toolsLogger(env).Warn("tool_execution middleware failed", "tool", name, "error", err)
@@ -491,8 +559,8 @@ func (d *Dispatcher) RunToolExecutionMiddleware(ctx context.Context, env *Env, n
 }
 
 // Normalizes a handler result so hooks, budgeting, and persistence never see an unexpected shape
-func normalizeHandlerResult(result string) string {
-	return boundJSONErrorResult(result)
+func normalizeHandlerResult(env *Env, result string) string {
+	return boundJSONErrorResult(env, result)
 }
 
 // RegistryDispatch runs a registered handler with every panic returned as a JSON error
@@ -508,11 +576,15 @@ func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result s
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			toolsLogger(call.Env).Error("Tool dispatch panicked", "tool", call.Name, "panic", boundErrorText(fmt.Sprint(rec)))
-			result = toolErrorJSON(SanitizeToolError(fmt.Sprintf("Tool execution failed: panic: %v", rec)), nil)
+			toolsLogger(call.Env).Error(fmt.Sprintf("Tool %s dispatch error: %s", call.Name, boundModelErrorText(call.Env, fmt.Sprint(rec))))
+			kind := "panic"
+			if err, ok := rec.(error); ok {
+				kind = exceptionTypeName(err)
+			}
+			result = toolErrorJSON(SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %v", kind, rec)), nil)
 		}
 	}()
-	return normalizeHandlerResult(entry.Handler(ctx, call))
+	return normalizeHandlerResult(call.Env, entry.Handler(ctx, call))
 }
 
 // Handles a bridge call returning the finished result or the underlying call to re dispatch
@@ -580,8 +652,9 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 	if disabled == nil && env != nil {
 		disabled = env.Disabled
 	}
+	suppressed := opts.SuppressPostToolCallHook || PostToolCallHookSuppressed(ctx)
 	emit := func(result string, status, errorType, errorMessage string, durationMS int) string {
-		if !opts.SuppressPostToolCallHook {
+		if !suppressed {
 			d.EmitPostToolCall(ctx, env, PostToolCallEvent{ToolName: name, Args: args, Result: result, IDs: ids, DurationMS: durationMS,
 				Status: status, ErrorType: errorType, ErrorMessage: errorMessage, MiddlewareTrace: append([]map[string]any(nil), trace...)})
 		}
@@ -596,7 +669,7 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 		}
 		if underlying == ConnectorBatchSentinel {
 			calls, _ := underlyingArgs["calls"].([]any)
-			return emit(dispatchConnectorBatch(ctx, d, resolved, calls, opts), "", "", "", elapsedMS())
+			return emit(dispatchConnectorBatch(SuppressPostToolCallHook(ctx, false), d, resolved, calls, opts), "", "", "", elapsedMS())
 		}
 		inner := *resolved
 		inner.Name, inner.Args = underlying, underlyingArgs
@@ -616,11 +689,7 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 		originalArgs[k] = v
 	}
 	if !opts.SkipToolRequestMiddleware {
-		var mwTrace []map[string]any
-		args, originalArgs, mwTrace = d.ApplyToolRequestMiddleware(ctx, env, name, args, nil, ids)
-		if len(mwTrace) > 0 {
-			trace = mwTrace
-		}
+		args, originalArgs, trace = d.applyRequestMiddleware(ctx, env, name, args, ids, trace)
 		resolved.Args = args
 	}
 	if AgentLoopTools[name] {
@@ -662,11 +731,15 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 		NotifyOtherToolCall(taskID)
 	}
 	start = time.Now()
-	result, err := d.executeTool(ctx, resolved, originalArgs, ids, opts)
+	execCtx := WithDispatcher(ctx, d)
+	if suppressed {
+		execCtx = SuppressPostToolCallHook(execCtx, true)
+	}
+	result, err := d.executeTool(execCtx, resolved, originalArgs, ids, opts)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Error executing %s: %s", name, err.Error())
 		toolsLogger(env).Error(errorMsg)
-		return emit(toolErrorJSON(SanitizeToolError(errorMsg), nil), "error", fmt.Sprintf("%T", err), err.Error(), elapsedMS())
+		return emit(toolErrorJSON(SanitizeToolError(errorMsg), nil), "error", exceptionTypeName(err), err.Error(), elapsedMS())
 	}
 	durationMS := elapsedMS()
 	emit(result, "", "", "", durationMS)
@@ -675,7 +748,10 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 
 // Runs the registry handler through execution middleware with the approval observability context bound
 func (d *Dispatcher) executeTool(ctx context.Context, call *Call, originalArgs map[string]any, ids ToolHookIDs, opts DispatchOptions) (string, error) {
-	env := call.Env
+	env := WithObservabilityContext(call.Env, ids.TurnID, ids.ToolCallID, ids.SessionID)
+	bound := *call
+	bound.Env = env
+	call = &bound
 	if call.Name == "execute_code" {
 		names := opts.EnabledTools
 		if names == nil {
@@ -691,8 +767,6 @@ func (d *Dispatcher) executeTool(ctx context.Context, call *Call, originalArgs m
 		}
 		return d.RegistryDispatch(ctx, &inner), nil
 	}
-	SetCurrentObservabilityContext(env, ids.TurnID, ids.ToolCallID, ids.SessionID)
-	defer ResetCurrentObservabilityContext(env)
 	if opts.SkipToolExecutionMiddleware {
 		return dispatch(call.Args)
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 	"weak"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -322,6 +323,31 @@ func (c *bedrockConverseClient) completeOnce(ctx context.Context, p *bedrockConv
 }
 
 // Stream runs ConverseStream with live deltas, falling back to Converse for the session once IAM denies streaming
+// Poll cadence of the Bedrock stream interrupt and stale event watchdog
+var bedrockStreamPoll = 300 * time.Millisecond
+
+// modelId of Converse kwargs, unknown when absent
+func bedrockStreamModel(kwargs map[string]any) string {
+	if m, ok := kwargs["modelId"]; ok {
+		return pyrepr.Str(m)
+	}
+	return "unknown"
+}
+
+// Ends a Bedrock stream silent past its stale budget, evicting the region client and feeding the breaker
+func bedrockStreamStaleKill(ctx context.Context, region, model string, elapsed, stale float64, emit func(StreamEvent) error) error {
+	bedrockLog.Warn(fmt.Sprintf("Bedrock stream stale for %.0fs (threshold %.0fs) — no events received. region=%s model=%s. Aborting call.", elapsed, stale, region, model))
+	_ = emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No events from Bedrock for %ds (model: %s). Aborting...", int(elapsed), model)})
+	bumpStaleStreak(ctx)
+	InvalidateBedrockRuntimeClient(ctx, region)
+	if session, _ := ctx.Value(staleStreakKey{}).(*RetrySession); session != nil {
+		if err := checkStaleGiveup(session); err != nil {
+			return err
+		}
+	}
+	return &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: fmt.Errorf("Bedrock stream produced no events for %ds (threshold %ds) — aborting stalled stream so the retry/fallback path can recover.", int(elapsed), int(stale))}
+}
+
 func (c *bedrockConverseClient) Stream(ctx context.Context, req *Request, fn StreamFunc) (*Response, error) {
 	c.mu.Lock()
 	latched := c.nonStreaming
@@ -338,58 +364,65 @@ func (c *bedrockConverseClient) Stream(ctx context.Context, req *Request, fn Str
 		return nil, err
 	}
 	started := time.Now()
-	httpResp, err := bedrockConverseCall(ctx, p.region, p.kwargs, true, true)
-	var denied *bedrockStreamDenied
-	if errors.As(err, &denied) {
-		c.mu.Lock()
-		c.nonStreaming = true
-		c.mu.Unlock()
-		bedrockLog.Info(fmt.Sprintf("bedrock: converse_stream denied by IAM (%s) — using non-streaming converse() for this session.", pyTypeNameOfError(denied.err)))
-		result, raw, err := bedrockConverseComplete(ctx, p.region, p.kwargs)
-		if err != nil {
-			return nil, err
-		}
-		resp := bedrockConverseResponse(result, p.model, c.route.Provider)
-		resp.Raw, _ = json.Marshal(raw)
-		resp.Latency = time.Since(started)
-		return resp, (&anthropicClient{}).replay(resp, fn)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer httpResp.Body.Close()
+	var emitMu sync.Mutex
 	emit := func(ev StreamEvent) error {
 		if fn == nil {
 			return nil
 		}
+		emitMu.Lock()
+		defer emitMu.Unlock()
 		return fn(ev)
 	}
+	hooks := streamCallFrom(ctx).hooks
 	cb := bedrockStreamCallbacks{
-		OnTextDelta:      func(text string) error { return emit(StreamEvent{Kind: EventTextDelta, Text: text}) },
-		OnReasoningDelta: func(text string) error { return emit(StreamEvent{Kind: EventReasoningDelta, Text: text}) },
 		OnToolStart: func(index int, id, name string) error {
 			return emit(StreamEvent{Kind: EventToolCallStart, Index: index, ToolCall: &state.ToolCall{ID: id, Type: "function", Function: state.ToolCallFunction{Name: name}}})
 		},
 		OnToolDone: func(index int, call state.ToolCall) error {
 			return emit(StreamEvent{Kind: EventToolCallDone, Index: index, ToolCall: &call})
 		},
-		OnInterruptCheck: func() bool { return ctx.Err() != nil },
 	}
-	result, interrupted, err := streamConverseWithCallbacks(bedrockConverseEvents(httpResp.Body, httpResp.Header.Clone()), cb)
+	if hooks.textWanted() {
+		cb.OnTextDelta = func(text string) error { return emit(StreamEvent{Kind: EventTextDelta, Text: text}) }
+	}
+	if hooks.reasoningWanted(ctx) {
+		cb.OnReasoningDelta = func(text string) error { return emit(StreamEvent{Kind: EventReasoningDelta, Text: text}) }
+	}
+	out, err := runBedrockStream(ctx, bedrockStreamRun{
+		region: p.region, kwargs: p.kwargs, stale: cloudStaleTimeoutFor(ctx, c.route.Provider, p.model, p.kwargs), cb: cb,
+		interrupted:  func() bool { return ctx.Err() != nil },
+		interruptErr: func(bool) error { return ctx.Err() },
+		emit:         emit,
+		onDenied: func() {
+			c.mu.Lock()
+			c.nonStreaming = true
+			c.mu.Unlock()
+			if session, _ := ctx.Value(staleStreakKey{}).(*RetrySession); session != nil {
+				session.DisableStreaming = true
+			}
+			_ = emit(StreamEvent{Kind: EventStatus, Diagnostic: true, Text: bedrockIAMDeniedNotice})
+		},
+		fence: hooks.fence, identity: hooks.relayIdentity(c.route, "bedrock"),
+	})
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
 		return nil, err
 	}
-	resp := bedrockConverseResponse(result, p.model, c.route.Provider)
-	resp.Headers = httpResp.Header.Clone()
-	resp.StatusCode = httpResp.StatusCode
-	resp.RequestID = httpResp.Header.Get("X-Amzn-Requestid")
-	resp.Latency = time.Since(started)
-	if interrupted {
-		return resp, ctx.Err()
+	result := out.final
+	if result == nil {
+		result = out.streamed
 	}
+	if result == nil {
+		return nil, &EmptyStreamError{Message: "Bedrock Converse stream ended before messageStop; response is incomplete"}
+	}
+	resp := bedrockConverseResponse(result, p.model, c.route.Provider)
+	resp.Latency = time.Since(started)
+	if out.denied {
+		resp.Raw, _ = json.Marshal(out.raw)
+		return resp, (&anthropicClient{}).replay(resp, fn)
+	}
+	resp.Headers = out.headers
+	resp.StatusCode = out.status
+	resp.RequestID = out.headers.Get("X-Amzn-Requestid")
 	usage := resp.Usage
 	if err := emit(StreamEvent{Kind: EventUsage, Usage: &usage}); err != nil {
 		return resp, err

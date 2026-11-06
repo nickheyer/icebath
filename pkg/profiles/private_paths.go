@@ -15,6 +15,9 @@ var secretCacheStores = []string{
 	"cache/bws_cache.json", "cache/bws_cache.enc.json", "cache/op_cache.json", "runtime/photon-sidecar.json",
 }
 
+// Home relative secret cache stores of home_data_layout, a fresh copy per call
+func SecretCacheStores() []string { return append([]string(nil), secretCacheStores...) }
+
 // Profile relative stores holding credentials, never cloned, exported or shared
 var ProfileCredentialPaths = func() map[string]bool {
 	paths := []string{

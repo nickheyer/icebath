@@ -244,8 +244,11 @@ func displayDedupeKey(row map[string]any) (string, error) {
 		pyReprValue(row["tool_call_id"]) + ", " + pyReprValue(row["tool_calls"]) + ", " + pyReprValue(row["tool_name"]) + ")", nil
 }
 
+// Display key hash every reader and writer calls, swappable so tests can count hashing work
+var displayIdentityOf = displayIdentityDigest
+
 // Fixed width durable identity of a display key for indexed generation lookup
-func displayIdentityOf(key string) []byte {
+func displayIdentityDigest(key string) []byte {
 	sum := sha256.Sum256([]byte(key))
 	return sum[:]
 }
@@ -484,8 +487,16 @@ func (d *SessionDB) checkTranscriptWriteGuards(ctx context.Context, conn SQLiteC
 	return nil
 }
 
-// Conversation lease key reached by walking compression parents on the caller connection
+// Conversation lease key on the caller connection through the test override when one is installed
 func (d *SessionDB) sessionTurnLeaseKeyOnConn(ctx context.Context, conn SQLiteConn, sessionID string) (string, error) {
+	if d.leaseSeams.keyOnConn != nil {
+		return d.leaseSeams.keyOnConn(ctx, conn, sessionID)
+	}
+	return d.walkTurnLeaseKeyOnConn(ctx, conn, sessionID)
+}
+
+// Conversation lease key reached by walking compression parents on the caller connection
+func (d *SessionDB) walkTurnLeaseKeyOnConn(ctx context.Context, conn SQLiteConn, sessionID string) (string, error) {
 	if sessionID == "" {
 		return sessionID, nil
 	}

@@ -117,6 +117,7 @@ type sessionCore struct {
 	retiredCaptureMu         sync.Mutex
 	retiredGenerationCapture string
 	retireConnection         func(conn any)
+	leaseSeams               turnLeaseSeams
 	connectionPinned         bool
 	walLockGuard             lockGuardHeld
 
@@ -1259,8 +1260,16 @@ func (c *sessionCore) raiseIfDBCorrupt(storage bool) error {
 	return nil
 }
 
-// Sleeps one jitter interval inside the budget, fast jitter first then slow, false once the deadline passed
+// Sleeps before a write retry through the test override when one is installed
 func (c *sessionCore) sleepBeforeWriteRetry(deadline, patienceS float64) bool {
+	if c.leaseSeams.sleepRetry != nil {
+		return c.leaseSeams.sleepRetry(deadline, patienceS)
+	}
+	return c.sleepBeforeWriteRetryJitter(deadline, patienceS)
+}
+
+// Sleeps one jitter interval inside the budget, fast jitter first then slow, false once the deadline passed
+func (c *sessionCore) sleepBeforeWriteRetryJitter(deadline, patienceS float64) bool {
 	now := monotonicSeconds()
 	if now >= deadline {
 		return false

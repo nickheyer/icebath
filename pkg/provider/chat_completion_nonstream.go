@@ -214,6 +214,9 @@ type nonStreamResult struct {
 
 // Runs one blocking request on a worker polled for wait notices, the stale kill and interrupts
 func runNonStreamRequest(ctx context.Context, model string, estTokens int, stale float64, call func(context.Context) (*Response, error)) (*Response, error) {
+	if inlineNonStream(ctx) {
+		return runInlineNonStreamRequest(ctx, model, estTokens, stale, call)
+	}
 	surface := nonStreamEmitter(ctx, nil)
 	w := newNonStreamWaiter(model, epochSeconds(time.Now()), codexWatchdogs{stale: stale, estTokens: estTokens}, surface)
 	w.touch("waiting for non-streaming API response")

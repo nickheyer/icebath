@@ -34,8 +34,32 @@ func Copy2(src, dst string) error {
 	return copyFile2(src, dst)
 }
 
+// Names of a directory listing a tree copy skips, or an error that stops the whole copy
+type IgnoreErrFunc func(dir string, names []string) (map[string]bool, error)
+
+type ignoreAbort struct{ err error }
+
+func (a *ignoreAbort) Error() string { return a.err.Error() }
+
 // Copies a directory tree the way shutil.copytree does with copy2, failures gathered into one error
 func CopyTree(src, dst string, symlinks, dirsExistOK bool, ignore IgnoreFunc) error {
+	var wrapped IgnoreErrFunc
+	if ignore != nil {
+		wrapped = func(dir string, names []string) (map[string]bool, error) { return ignore(dir, names), nil }
+	}
+	return CopyTreeAbortable(src, dst, symlinks, dirsExistOK, wrapped)
+}
+
+// Tree copy whose ignore callback raising stops the copy at once and returns that error unchanged
+func CopyTreeAbortable(src, dst string, symlinks, dirsExistOK bool, ignore IgnoreErrFunc) error {
+	err := copyTreeAbortable(src, dst, symlinks, dirsExistOK, ignore)
+	if a, ok := err.(*ignoreAbort); ok {
+		return a.err
+	}
+	return err
+}
+
+func copyTreeAbortable(src, dst string, symlinks, dirsExistOK bool, ignore IgnoreErrFunc) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return err
@@ -46,7 +70,9 @@ func CopyTree(src, dst string, symlinks, dirsExistOK bool, ignore IgnoreFunc) er
 	}
 	ignored := map[string]bool{}
 	if ignore != nil {
-		ignored = ignore(src, names)
+		if ignored, err = ignore(src, names); err != nil {
+			return &ignoreAbort{err}
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o777); err != nil {
 		return err
@@ -93,14 +119,17 @@ func CopyTree(src, dst string, symlinks, dirsExistOK bool, ignore IgnoreFunc) er
 				continue
 			}
 			if isDirPath(from) {
-				err = CopyTree(from, to, symlinks, dirsExistOK, ignore)
+				err = copyTreeAbortable(from, to, symlinks, dirsExistOK, ignore)
 			} else {
 				err = Copy2(from, to)
 			}
 		} else if st.IsDir() || isMountPoint(from) {
-			err = CopyTree(from, to, symlinks, dirsExistOK, ignore)
+			err = copyTreeAbortable(from, to, symlinks, dirsExistOK, ignore)
 		} else {
 			err = Copy2(from, to)
+		}
+		if a, ok := err.(*ignoreAbort); ok {
+			return a
 		}
 		if err != nil {
 			fail(from, to, err)

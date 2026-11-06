@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -30,6 +31,9 @@ type runMarks struct {
 	quotaHoldSeconds                 float64
 	failureIncidentID                *string
 	notificationAllTargetsSuppressed bool
+	botChatDeliveryReceipts          *pyjson.Object
+	mediaAckLost                     bool
+	botChatRunID                     string
 }
 
 // Incident id a queued failure notice carries through the delivery queue payload
@@ -389,7 +393,7 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 		return nil
 	}
 	lane := normalizeDeliverValue(deliveryLaneValue(job, !d.success))
-	d.unresolvedOrigin = lane == "origin" && len(resolveDeliveryTargets(s, job, !d.success)) == 0
+	d.unresolvedOrigin = lane == "origin" && len(resolveDeliveryTargets(ctx, s, job, !d.success)) == 0
 	if job.ExecutionID != nil && *job.ExecutionID != "" && !job.NoAgent {
 		executionID := *job.ExecutionID
 		if d.unresolvedOrigin || lane == "local" {
@@ -429,8 +433,9 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 			return errFireClaimLostDuringSideEffect
 		}
 		d.deliveryAttempted = true
-		d.deliveryError = s.deliverResult(ctx, job, composed.content, o.Adapters, o.Loop, !d.success)
-		return nil
+		var derr error
+		d.deliveryError, derr = s.deliverResult(ctx, job, composed.content, o.Adapters, o.Loop, !d.success)
+		return derr
 	})
 	if err != nil {
 		if errors.Is(err, errFireClaimLostDuringSideEffect) {
@@ -456,9 +461,14 @@ func (s *Store) deliverCrashFailure(ctx context.Context, job *Job, errText strin
 				s.log.Error(fmt.Sprintf("Delivery failed for job %s: %v", job.ID, r))
 			}
 		}()
-		return s.deliverResult(ctx, job, s.summarizeCronFailureForDelivery(job, &errText)+s.failureStreakNudge(job), adapters, loop, true)
+		errOut, err := s.deliverResult(ctx, job, s.summarizeCronFailureForDelivery(job, &errText)+s.failureStreakNudge(job), adapters, loop, true)
+		if err != nil {
+			s.log.Error(fmt.Sprintf("Delivery failed for job %s: %v", job.ID, err))
+			return strPtr(err.Error())
+		}
+		return errOut
 	}()
-	unresolved := deliveryError == nil && normalized == "origin" && len(resolveDeliveryTargets(s, job, true)) == 0
+	unresolved := deliveryError == nil && normalized == "origin" && len(resolveDeliveryTargets(ctx, s, job, true)) == 0
 	outcome := classifyDeliveryOutcome(deliveryError, true, unresolved, normalized, false, false, job.LastDeliveryQueued, job.run.notificationAllTargetsSuppressed)
 	if outcome == "delivered" || outcome == "not_configured" {
 		s.markIncidentAlerted(incidentID)

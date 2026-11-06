@@ -27,6 +27,7 @@ const (
 type fieldSpec struct {
 	name string
 	kind fieldKind
+	typ  string
 }
 
 type nodeSpec struct {
@@ -197,9 +198,10 @@ func buildSpecs() map[string]*nodeSpec {
 	for _, r := range schemaRows {
 		s := &nodeSpec{name: r[0], base: r[1], attrs: r[3] == "true"}
 		if r[2] != "" {
-			for _, f := range strings.Split(r[2], ",") {
+			types := strings.Split(fieldTypes[r[0]], ",")
+			for i, f := range strings.Split(r[2], ",") {
 				name, k, _ := strings.Cut(f, ":")
-				s.fields = append(s.fields, fieldSpec{name, kinds[k]})
+				s.fields = append(s.fields, fieldSpec{name, kinds[k], types[i]})
 			}
 		}
 		specs[s.name] = s
@@ -455,7 +457,7 @@ func dumpInto(b *strings.Builder, n *Node, attrs bool) error {
 				continue
 			}
 		case kIdentList:
-			if len(v.([]string)) == 0 {
+			if items, _ := listItems(v); len(items) == 0 {
 				continue
 			}
 		}
@@ -534,6 +536,8 @@ func ConstantRepr(v any) (string, error) {
 		return fmt.Sprint(x), nil
 	case float64:
 		return pyrepr.Float(x), nil
+	case pyrepr.Tuple, FrozenSet:
+		return objRepr(v)
 	}
 	return pyrepr.Repr(v), nil
 }

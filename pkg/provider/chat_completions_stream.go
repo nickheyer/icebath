@@ -148,20 +148,41 @@ const ccRawCleanEOF = "_clean_eof"
 const ccRawRunaway = "_runaway_repetition"
 const ccRawContentFilter = "_content_filter_terminated"
 
+const ccRawOverflowTerminal = "_overflow_terminal"
+
+// How a partial stream stub is tagged, its wire shape following the api mode
+type partialStubOptions struct {
+	overflowTerminal bool
+	cleanEOF         bool
+	apiMode          APIMode
+}
+
 // Stub response for a stream that ended without a finish reason after delivering content
-func buildPartialStreamStub(route Route, content, reasoning, model string, usage *Usage, droppedToolNames []string, cleanEOF bool) *Response {
-	msg := map[string]any{"role": "assistant", "content": nil, "tool_calls": nil, "reasoning_content": nil}
-	if content != "" {
-		msg["content"] = content
+func buildPartialStreamStub(route Route, content, reasoning, model string, usage *Usage, droppedToolNames []string, o partialStubOptions) *Response {
+	var dropped any
+	if len(droppedToolNames) > 0 {
+		dropped = droppedToolNames
 	}
-	if reasoning != "" {
-		msg["reasoning_content"] = reasoning
+	var raw map[string]any
+	if o.apiMode == ModeAnthropicMessages {
+		raw = map[string]any{
+			"id": PartialStreamStubID, "type": "message", "role": "assistant", "model": model,
+			"content": []any{map[string]any{"type": "text", "text": content}}, "stop_reason": "max_tokens", "stop_sequence": nil, "usage": nil,
+		}
+	} else {
+		msg := map[string]any{"role": "assistant", "content": nil, "tool_calls": nil, "reasoning_content": nil}
+		if content != "" {
+			msg["content"] = content
+		}
+		if reasoning != "" {
+			msg["reasoning_content"] = reasoning
+		}
+		raw = map[string]any{
+			"id": PartialStreamStubID, "model": model, "usage": nil,
+			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "length"}},
+		}
 	}
-	raw := map[string]any{
-		"id": PartialStreamStubID, "model": model,
-		"choices":             []any{map[string]any{"index": 0, "message": msg, "finish_reason": "length"}},
-		ccRawDroppedToolNames: droppedToolNames, ccRawCleanEOF: cleanEOF,
-	}
+	raw[ccRawDroppedToolNames], raw[ccRawOverflowTerminal], raw[ccRawCleanEOF] = dropped, o.overflowTerminal, o.cleanEOF
 	if usage != nil {
 		raw["usage"] = usage
 	}
@@ -210,6 +231,12 @@ func PartialStreamDroppedToolNames(resp *Response) []string {
 // PartialStreamCleanEOF reports a stub built after a clean server close with no transport error
 func PartialStreamCleanEOF(resp *Response) bool {
 	v, _ := rawResponseField(resp, ccRawCleanEOF).(bool)
+	return v
+}
+
+// PartialStreamOverflowTerminal reports a stub whose stream died on a context overflow so the turn must end
+func PartialStreamOverflowTerminal(resp *Response) bool {
+	v, _ := rawResponseField(resp, ccRawOverflowTerminal).(bool)
 	return v
 }
 
@@ -692,11 +719,11 @@ func (s *ccStreamState) finish(latency time.Duration) (*Response, error) {
 			dropped = append(dropped, name)
 		}
 		catalogLog.Warn(fmt.Sprintf("Clean EOF, no finish_reason: server ended the stream (no transport exception) while a tool call's arguments were still incomplete (tools=%v). The server or a proxy closed the stream cleanly; not an output-length truncation.", dropped))
-		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, dropped, true), nil
+		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, dropped, partialStubOptions{cleanEOF: true}), nil
 	}
 	if finishReason == "" && (len(s.contentParts) > 0 || len(s.reasoningParts) > 0) && s.tools.Len() == 0 && s.usage == nil {
 		catalogLog.Warn("Clean EOF, no finish_reason: server ended the stream (no transport exception) after delivering text with no tool calls. The server or a proxy closed the stream cleanly.")
-		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, nil, true), nil
+		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, nil, partialStubOptions{cleanEOF: true}), nil
 	}
 	effective := finishReason
 	if truncated {

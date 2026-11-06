@@ -252,6 +252,8 @@ type Job struct {
 	enabledAbsent bool
 	// Key order the record was loaded with, kept on save the way a Python dict keeps insertion order
 	keyOrder []string
+	// Written with exactly the keyOrder keys, the way a raw jobs.json dict saves
+	onlyStoredKeys bool
 }
 
 type kvPair struct {
@@ -429,7 +431,17 @@ func (j *Job) MarshalJSON() ([]byte, error) {
 	for _, k := range sortedRawKeys(j.Extra) {
 		pairs = append(pairs, kvPair{k, j.Extra[k]})
 	}
-	return encodeOrdered(orderPairs(pairs, j.keyOrder))
+	ordered := orderPairs(pairs, j.keyOrder)
+	if j.onlyStoredKeys {
+		stored := ordered[:0]
+		for _, p := range ordered {
+			if containsString(j.keyOrder, p.key) {
+				stored = append(stored, p)
+			}
+		}
+		ordered = stored
+	}
+	return encodeOrdered(ordered)
 }
 
 // Text view of a JSON scalar the way Python str() renders it, false for objects and null
@@ -720,7 +732,11 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 			j.Timezone = &empty
 		}
 	case "grace_minutes":
-		if !isNull {
+		if isNull {
+			j.GraceMinutes = nil
+			delete(j.Extra, "grace_minutes")
+		} else {
+			delete(j.Extra, "grace_minutes")
 			if n, ok := decodeNumber(raw); ok && n == math.Trunc(n) {
 				v := int(n)
 				j.GraceMinutes = &v

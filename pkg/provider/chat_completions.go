@@ -69,7 +69,7 @@ func (c *chatCompletionsClient) httpClient(connect time.Duration) *http.Client {
 			IdleConnTimeout:       90 * time.Second,
 			ExpectContinueTimeout: time.Second,
 		}
-		c.transports[connect] = tr
+		c.transports[connect] = auxTrackPoolConns(tr)
 	}
 	return &http.Client{Transport: tr}
 }
@@ -166,6 +166,7 @@ func (c *chatCompletionsClient) newRequest(ctx context.Context, p *ccPrepared) (
 	for k, v := range p.headers {
 		httpReq.Header.Set(k, v)
 	}
+	applyProviderRequestHeaders(ctx, httpReq.Header)
 	return httpReq, nil
 }
 
@@ -325,6 +326,9 @@ func (c *chatCompletionsClient) Stream(ctx context.Context, req *Request, fn Str
 
 // Runs one streaming attempt and reports whether visible deltas reached the consumer
 func (c *chatCompletionsClient) streamOnce(ctx context.Context, req *Request, p *ccPrepared, fn StreamFunc) (*Response, bool, error) {
+	if _, managed := relayCurrentSessionID(ctx); managed {
+		return chatManagedRelayStream(ctx, c, req, p, fn)
+	}
 	t := c.streamTimeouts(req, p.settings, p.estTokens)
 	s := &ccStreamState{c: c, req: req, fn: fn, estTokens: p.estTokens, tools: newCCToolCallAccumulator(), scrubber: NewStreamingThinkScrubber(),
 		contentWatch: NewRunawayStreamWatch(), reasoningWatch: NewRunawayStreamWatch(), detailWatch: NewRunawayStreamWatch(),
@@ -338,16 +342,21 @@ func (c *chatCompletionsClient) streamOnce(ctx context.Context, req *Request, p 
 	if err != nil {
 		return nil, false, err
 	}
+	stopHdrStale := armHeaderStaleKill(ctx, cancel, kill, s.emit, s.req.Model, s.estTokens, t.stale, s.started)
 	hdrTimer := time.AfterFunc(t.read, func() {
 		kill.fire("read", t.read.Seconds())
 		cancel()
 	})
 	resp, err := c.httpClient(t.connect).Do(httpReq)
 	hdrTimer.Stop()
+	stopHdrStale()
 	if err != nil {
 		return nil, false, c.attemptError(attemptCtx, kill, err, s)
 	}
 	defer resp.Body.Close()
+	if reabortIfCancelled(attemptCtx, resp) {
+		return nil, false, c.attemptError(attemptCtx, kill, context.Cause(attemptCtx), s)
+	}
 	s.headers = resp.Header.Clone()
 	s.status = resp.StatusCode
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

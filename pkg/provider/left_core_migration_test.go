@@ -20,11 +20,10 @@ func testPluginManagerHooks() PluginManagerHooks {
 		Install: func(context.Context, string, bool) (map[string]any, error) {
 			return nil, errors.New("provider tests install no plugins")
 		},
-		SharedDependencyAnswers: func(fn func()) { fn() },
-		LoadError:               func(string) string { return "" },
-		RefreshBoundHome:        func() {},
-		DependencyHomes:         func() []string { return nil },
-		AuxiliaryTasks:          func() []map[string]any { return nil },
+		LoadError:        func(string) string { return "" },
+		RefreshBoundHome: func() {},
+		DependencyHomes:  func() []string { return nil },
+		AuxiliaryTasks:   func() []map[string]any { return nil },
 	}
 }
 

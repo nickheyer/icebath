@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools/anydoc"
 	_ "modernc.org/sqlite"
@@ -322,30 +322,8 @@ func parseHostedPDF(ctx context.Context, env *Env, data []byte, filename, apiKey
 	return markdown, nil
 }
 
-// Python truthiness of a decoded JSON value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case *big.Int:
-		return x.Sign() != 0
-	case float64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case *pyjson.Object:
-		return len(x.Keys) > 0
-	}
-	return true
-}
+// Python truthiness of a decoded value, empty containers and zero numbers false like bool()
+func pyTruthy(v any) bool { return pyrepr.Truthy(v) }
 
 // Converts a host document through anydoc, sending scanned PDFs to hosted OCR when allowed
 func extractNativeDocument(ctx context.Context, env *Env, p string) (string, error) {

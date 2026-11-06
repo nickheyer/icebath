@@ -74,7 +74,7 @@ func (a *AIAgent) collapseContinuationTrail(ctx context.Context, messages *[]*st
 	}
 	partial := pystr.Strip(a.stripThinkBlocks(joinTruncatedParts(raw)))
 	if partial != "" && a.holdStream {
-		partial, _, _ = applyLLMOutputTransform(ctx, a, partial, a.currentTurnID)
+		partial, _, _ = applyLLMOutputTransform(ctx, a, partial, a.currentTurnID, nil)
 	}
 	if partial != "" {
 		appendLiveMessage(messages, map[string]any{"role": "assistant", "content": partial, "finish_reason": finishReason})
@@ -236,7 +236,7 @@ func (st *truncState) endTurn(finalResponse string, o endTurnOptions) (Truncatio
 	if !o.skipCleanup {
 		st.a.cleanupTaskResources(st.effectiveTaskID)
 	}
-	if err := st.a.persistSession(st.Messages, st.conversationHistory); err != nil {
+	if err := st.a.persistSession(&st.Messages, st.conversationHistory); err != nil {
 		return TruncationVerdict{}, err
 	}
 	rows := st.Messages
@@ -740,7 +740,7 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 
 	a.codexIncompleteRetries = 0
 	a.codexReasoningOnlyStreak = 0
-	if err := a.persistSession(*messages, conversationHistory); err != nil {
+	if err := a.persistSession(messages, conversationHistory); err != nil {
 		return nil, false, err
 	}
 	return PartialResult(*messages, apiCallCount, "Codex response remained incomplete after 3 continuation attempts", nil, false, false), false, nil
@@ -841,7 +841,7 @@ func (a *AIAgent) handleContentPolicyRefusal(ctx context.Context, r RefusalReque
 	}
 	refusalResponse := "⚠️ " + ContentPolicyCopy(ProviderLabelFor(a.provider), summary)
 	a.cleanupTaskResources(r.EffectiveTaskID)
-	if err := a.persistSession(r.Messages, r.ConversationHistory); err != nil {
+	if err := a.persistSession(&r.Messages, r.ConversationHistory); err != nil {
 		return RefusalVerdict{}, err
 	}
 	detail := refusalText

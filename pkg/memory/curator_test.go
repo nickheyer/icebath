@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,7 +20,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
-var curRuns [][2]string
+var (
+	curRunsMu sync.Mutex
+	curRuns   [][2]string
+)
 
 // Temp home with a skills dir, default curator config and the warn once memory cleared
 func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
@@ -29,9 +34,13 @@ func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
 	}
 	t.Setenv("ICEBATH_HOME", h)
 	prevCfg, prevLLM, prevRec := curatorConfig, curatorLLMReview, curatorRecordRun
+	curRunsMu.Lock()
 	curRuns = nil
+	curRunsMu.Unlock()
 	curatorRecordRun = func(_ context.Context, trigger, outcome string, counts func() map[string]int, _ string) {
+		curRunsMu.Lock()
 		curRuns = append(curRuns, [2]string{trigger, outcome})
+		curRunsMu.Unlock()
 		counts()
 	}
 	curatorConfig = func(context.Context) map[string]any {
@@ -230,8 +239,11 @@ func TestCuratorRunReviewRecordsState(t *testing.T) {
 	if st.Vals["last_run_at"] == nil || curatorCount(st, "run_count") < 1 || st.Vals["last_run_summary"] == nil {
 		t.Fatalf("state %v", st.Vals)
 	}
-	if len(curRuns) != 1 || curRuns[0] != [2]string{"manual", "success"} {
-		t.Fatalf("run metric %v", curRuns)
+	curRunsMu.Lock()
+	runs := slices.Clone(curRuns)
+	curRunsMu.Unlock()
+	if len(runs) != 1 || runs[0] != [2]string{"manual", "success"} {
+		t.Fatalf("run metric %v", runs)
 	}
 	report := pyStr(st.Vals["last_report_path"])
 	for _, f := range []string{"run.json", "REPORT.md"} {

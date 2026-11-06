@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -195,7 +196,7 @@ func (s settings) autoLocalForPrivateURLs() bool {
 }
 
 // Real profile consent, read on every call
-func (s settings) useRealProfile() bool { return s.section().Bool("use_real_profile", false) }
+func (s settings) useRealProfile() bool { return pyrepr.Truthy(s.section().Get("use_real_profile")) }
 
 func (s settings) realProfileAutoclose() bool {
 	return truthy(s.section().Get("real_profile_autoclose"))
@@ -205,16 +206,8 @@ func (s settings) realProfilePin() string {
 	return strings.TrimSpace(s.section().String("real_profile_pin", ""))
 }
 
-// Private address access granted by browser.allow_private_urls or the global security switch
-func (s settings) allowPrivateURLs() bool {
-	if truthy(s.section().Get("allow_private_urls")) {
-		return true
-	}
-	if s.env == nil || s.env.Config == nil {
-		return false
-	}
-	return truthy(s.env.Config.Get("security.allow_private_urls"))
-}
+// Private address access granted by browser.allow_private_urls
+func (s settings) allowPrivateURLs() bool { return truthy(s.section().Get("allow_private_urls")) }
 
 // Configured cdp_url without any network resolution
 func (s settings) configuredCDPURL() string {

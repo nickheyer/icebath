@@ -302,9 +302,18 @@ func (p *parser) compareOp() string {
 		switch t.val {
 		case "==":
 			return "Eq"
-		case "!=":
+		case "!=", "<>":
+			if t.val == "!=" && p.barry {
+				p.raiseLast("with Barry as BDFL, use '<>' instead of '!='")
+			}
+			if t.val == "<>" && !p.barry {
+				return ""
+			}
 			return "NotEq"
 		case "<":
+			if n := p.tk(p.pos + 1); n.val == ">" && n.kind == tOp && n.l == t.el && n.c == t.ec {
+				p.raiseAt(t.l, t.c, n.el, n.ec, "invalid syntax.  Maybe you meant '!=' instead of '<>'?")
+			}
 			return "Lt"
 		case "<=":
 			return "LtE"
@@ -826,8 +835,6 @@ const (
 
 // Parses call arguments after the opening parenthesis into a Call, a lone generator argument included
 func (p *parser) call(start *token, fn *Node) *Node {
-	p.enter(5)
-	defer p.leave(5)
 	return p.callArgs(start, fn, true)
 }
 

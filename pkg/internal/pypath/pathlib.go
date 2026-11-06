@@ -45,6 +45,15 @@ func PathStr(p string) string {
 	return "."
 }
 
+// pathlib as_posix of a host path, backslash separators turned into forward slashes on Windows
+func PathAsPosix(p string) string {
+	s := PathStr(p)
+	if windows {
+		return strings.ReplaceAll(s, `\`, "/")
+	}
+	return s
+}
+
 // pathlib name, the final component or empty for a bare anchor
 func PathName(p string) string {
 	_, parts := PathParts(p)

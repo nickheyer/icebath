@@ -606,30 +606,6 @@ func pyInvalidUTF8Len(raw []byte) int {
 	return n
 }
 
-// Writes dotenv lines atomically, keeping the prior mode when asked or securing the file otherwise
-func writeEnvLinesMode(h, path string, lines []string, preserveMode bool) error {
-	var mode os.FileMode
-	keep := false
-	if preserveMode {
-		if info, err := os.Stat(path); err == nil {
-			mode, keep = info.Mode().Perm(), true
-		}
-	}
-	perm := os.FileMode(0o600)
-	if keep {
-		perm = mode
-	}
-	if err := AtomicWrite(path, []byte(strings.Join(lines, "")), perm); err != nil {
-		return err
-	}
-	if keep {
-		_ = os.Chmod(path, mode)
-		return nil
-	}
-	SecureFile(h, path)
-	return nil
-}
-
 // Holds the process and cross process .env write locks for the duration of fn
 func withEnvWriteLock(path string, fn func() error) error {
 	envWriteMu.Lock()

@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -45,6 +46,44 @@ const authorizationKept = "the authorization had already completed when this was
 func init() {
 	tools.MCPOperationRunner = RunMCPOperation
 	tools.MCPCatalogNames = connCatalogNamesList
+	tools.NousPortalBaseURL = provider.ResolveNousPortalBaseURL
+	tools.NoteAppConnected = func(ctx context.Context, env *tools.Env) { provider.NoteAppConnected(connPoolEnv(ctx, env)) }
+	tools.NoteConnectedAppsSeen = func(ctx context.Context, env *tools.Env, rows []any) {
+		provider.NoteConnectedAppsSeen(connPoolEnv(ctx, env), rows)
+	}
+	tools.TelemetrySendConsented = connSendConsented
+	tools.ConnectorConversationContext = func(ctx context.Context) string {
+		if observability.ConversationContextHook == nil {
+			return ""
+		}
+		return observability.ConversationContextHook(ctx)
+	}
+}
+
+// Whether the profile's raw config resolves to sending shared metrics
+func connSendConsented(ctx context.Context, env *tools.Env) (bool, error) {
+	raw, err := config.ReadRawConfigReadonly(ctx, connHome(ctx, env))
+	if err != nil {
+		return false, err
+	}
+	if raw == nil {
+		raw = map[string]any{}
+	}
+	return observability.ResolveSendConfig(raw).Send, nil
+}
+
+// Profile home of the tool env, the calling context's home when the env names none
+func connHome(ctx context.Context, env *tools.Env) string {
+	if env != nil && env.Home != "" {
+		return env.Home
+	}
+	return home.Dir(ctx)
+}
+
+// Pool environment of the tool env's profile home, the calling context's home when the env names none
+func connPoolEnv(ctx context.Context, env *tools.Env) provider.PoolEnv {
+	h := connHome(ctx, env)
+	return provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Config: provider.ConfigLoader(h), Ctx: ctx}
 }
 
 // Sorted catalog entry names

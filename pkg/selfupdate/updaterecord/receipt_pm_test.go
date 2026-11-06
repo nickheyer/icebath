@@ -179,8 +179,8 @@ func TestReceiptPMWarningsAndRefusalEmbed(t *testing.T) {
 
 func TestReceiptEmbedFailureNeverBreaksTheUpdateReceipt(t *testing.T) {
 	ctx, _ := rcHome(t)
-	pmLastForUpdate = func(context.Context, string, bool) map[string]any { panic("pm import exploded") }
-	t.Cleanup(func() { pmLastForUpdate = pm.LastForUpdate })
+	pmLastForUpdate = func(context.Context, string, bool) *pyjson.Object { panic("pm import exploded") }
+	t.Cleanup(func() { pmLastForUpdate = pm.LastForUpdateObject })
 	BeginUpdateReceipt(ctx, nil, "")
 	path := FinalizeUpdateReceipt(ctx, "success", nil, "")
 	if path == "" || rcLoad(t, path)["outcome"] != "success" {

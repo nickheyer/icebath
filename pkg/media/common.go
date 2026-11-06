@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +25,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -215,61 +218,6 @@ func firstSecret(env *tools.Env, names ...string) string {
 	return ""
 }
 
-// Voice provider API key, explicit config value, then the .env and process environment
-func resolveProviderSecret(env *tools.Env, envVar, configValue string) string {
-	if v := strings.TrimSpace(configValue); v != "" {
-		return v
-	}
-	return secret(env, envVar)
-}
-
-// OpenAI audio key, the dedicated voice tools override first then the general key
-func resolveOpenAIAudioKey(env *tools.Env) string {
-	return firstSecret(env, "VOICE_TOOLS_OPENAI_KEY", "OPENAI_API_KEY")
-}
-
-var selectionNameKeys = map[string][]string{
-	"browser":   {"cloud_provider"},
-	"web":       {"backend"},
-	"image_gen": {"provider", "backend", "cloud_provider"},
-	"video_gen": {"provider", "backend", "cloud_provider"},
-	"tts":       {"provider", "backend", "cloud_provider"},
-	"stt":       {"provider", "backend", "cloud_provider"},
-}
-
-// Persisted picker selection, nous for the managed row, a vendor name, or empty when never configured
-func readSelection(cfg config.Tree, sec string) string {
-	raw := section(cfg, sec)
-	if len(raw) == 0 {
-		return ""
-	}
-	if truthy(raw["use_gateway"], false) {
-		return NousManagedProvider
-	}
-	keys, ok := selectionNameKeys[sec]
-	if !ok {
-		keys = []string{"provider", "backend", "cloud_provider"}
-	}
-	for _, k := range keys {
-		if v, ok := raw[k]; ok && v != nil {
-			if text := strings.ToLower(strings.TrimSpace(fmt.Sprint(v))); text != "" {
-				return text
-			}
-		}
-	}
-	return ""
-}
-
-// Uniform error text for a selected but broken provider
-func selectionError(sec, selection, failure string) string {
-	return fmt.Sprintf("%s is configured to use %s (set via icebath tools), but %s. Run 'icebath tools' to change it.", sec, selection, failure)
-}
-
-// Reports whether FAL_KEY carries a non blank value
-func falKeyConfigured(env *tools.Env) bool {
-	return secret(env, "FAL_KEY") != ""
-}
-
 // Random lowercase hex of n bytes
 func randomHex(n int) string {
 	b := make([]byte, n)
@@ -290,179 +238,6 @@ func uuid4() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// Cache directory under the home for one media kind, created on demand
-func cacheDir(env *tools.Env, kind string) (string, error) {
-	dir := filepath.Join(home.CacheDir(homeOf(env)), filepath.FromSlash(kind))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	return dir, nil
-}
-
-// Timestamped unique cache file path for one media kind
-func cachePath(env *tools.Env, kind, prefix, ext string) (string, error) {
-	dir, err := cacheDir(env, kind)
-	if err != nil {
-		return "", err
-	}
-	name := fmt.Sprintf("%s_%s_%s.%s", prefix, time.Now().Format("20060102_150405"), randomHex(4), ext)
-	return filepath.Join(dir, name), nil
-}
-
-// Writes raw bytes into the cache and returns the absolute path
-func saveBytes(env *tools.Env, kind string, raw []byte, prefix, ext string) (string, error) {
-	path, err := cachePath(env, kind, prefix, ext)
-	if err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
-		return "", err
-	}
-	return path, nil
-}
-
-// Decodes base64 into the cache and returns the absolute path
-func saveB64(env *tools.Env, kind, b64, prefix, ext string) (string, error) {
-	raw, err := decodeB64(b64)
-	if err != nil {
-		return "", err
-	}
-	return saveBytes(env, kind, raw, prefix, ext)
-}
-
-// Base64 decode tolerant of missing padding and url safe alphabets
-func decodeB64(s string) ([]byte, error) {
-	s = strings.TrimSpace(s)
-	if raw, err := base64.StdEncoding.DecodeString(s); err == nil {
-		return raw, nil
-	}
-	if raw, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(s, "=")); err == nil {
-		return raw, nil
-	}
-	if raw, err := base64.URLEncoding.DecodeString(s); err == nil {
-		return raw, nil
-	}
-	return base64.RawURLEncoding.DecodeString(strings.TrimRight(s, "="))
-}
-
-// Download options for cached media URLs
-type saveURLOptions struct {
-	Prefix       string
-	Timeout      time.Duration
-	MaxBytes     int64
-	ContentTypes map[string]string
-	URLExts      []string
-	DefaultExt   string
-	Label        string
-	EmptyError   string
-	Headers      map[string]string
-	RequireKnown bool
-	Trusted      bool
-}
-
-var redirectStatuses = map[int]bool{301: true, 302: true, 303: true, 307: true, 308: true}
-
-const maxSaveURLRedirects = 5
-
-// Streams a provider supplied URL into the cache with SSRF checks on every hop and a size cap
-func saveURL(ctx context.Context, env *tools.Env, kind, rawURL string, o saveURLOptions) (string, error) {
-	current, hopHeaders, trusted := rawURL, o.Headers, o.Trusted
-	client := &http.Client{Timeout: o.Timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for hop := 0; hop <= maxSaveURLRedirects; hop++ {
-		if trusted {
-			if isAlwaysBlockedURL(current) {
-				return "", fmt.Errorf("%s URL targets an always-blocked address: %s", o.Label, current)
-			}
-		} else if !isSafeURL(env, current) {
-			return "", fmt.Errorf("%s URL failed the SSRF safety check: %s", o.Label, current)
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, current, nil)
-		if err != nil {
-			return "", err
-		}
-		for k, v := range hopHeaders {
-			req.Header.Set(k, v)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return "", err
-		}
-		if redirectStatuses[resp.StatusCode] {
-			loc := resp.Header.Get("Location")
-			resp.Body.Close()
-			if loc == "" {
-				return "", fmt.Errorf("%s download redirected without a Location: %s", o.Label, current)
-			}
-			base, err := url.Parse(current)
-			if err != nil {
-				return "", err
-			}
-			next, err := base.Parse(loc)
-			if err != nil {
-				return "", err
-			}
-			current, hopHeaders, trusted = next.String(), nil, false
-			continue
-		}
-		path, err := writeCachedResponse(env, kind, resp, current, rawURL, o)
-		resp.Body.Close()
-		return path, err
-	}
-	return "", fmt.Errorf("%s download exceeded %d redirects: %s", o.Label, maxSaveURLRedirects, rawURL)
-}
-
-// Writes one HTTP response body to the cache, choosing the extension from content type then URL suffix
-func writeCachedResponse(env *tools.Env, kind string, resp *http.Response, current, original string, o saveURLOptions) (string, error) {
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return "", fmt.Errorf("%s download failed (HTTP %d): %s", o.Label, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	ctype := strings.ToLower(strings.TrimSpace(strings.SplitN(resp.Header.Get("Content-Type"), ";", 2)[0]))
-	ext, known := o.ContentTypes[ctype]
-	if o.RequireKnown && !known {
-		if ctype == "" {
-			ctype = "(missing)"
-		}
-		return "", fmt.Errorf("%s download returned unexpected Content-Type %s", o.Label, ctype)
-	}
-	if !known {
-		urlPath := strings.ToLower(strings.SplitN(current, "?", 2)[0])
-		ext = o.DefaultExt
-		for _, e := range o.URLExts {
-			if strings.HasSuffix(urlPath, "."+e) {
-				ext = e
-				if e == "jpeg" {
-					ext = "jpg"
-				}
-				break
-			}
-		}
-	}
-	path, err := cachePath(env, kind, o.Prefix, ext)
-	if err != nil {
-		return "", err
-	}
-	fh, err := os.Create(path)
-	if err != nil {
-		return "", err
-	}
-	written, copyErr := io.Copy(fh, io.LimitReader(resp.Body, o.MaxBytes+1))
-	fh.Close()
-	if copyErr != nil {
-		os.Remove(path)
-		return "", copyErr
-	}
-	if written > o.MaxBytes {
-		os.Remove(path)
-		return "", fmt.Errorf("%s at %s exceeds %dMB cap; refusing to cache.", o.Label, original, o.MaxBytes/(1024*1024))
-	}
-	if written == 0 {
-		os.Remove(path)
-		return "", errors.New(strings.ReplaceAll(o.EmptyError, "{url}", original))
-	}
-	return path, nil
-}
-
 // Result of one JSON POST attempt that failed
 type httpFailure struct {
 	Kind      string
@@ -477,17 +252,35 @@ type httpFailure struct {
 // Error message extractor for a failed JSON body
 type errorMessageFunc func(status int, body []byte) string
 
-// Default error text, the error.message of a JSON body else its first 300 chars
-func defaultErrorMessage(_ int, body []byte) string {
-	var parsed map[string]any
-	if json.Unmarshal(body, &parsed) == nil {
-		if e, ok := parsed["error"].(map[string]any); ok {
-			if m, ok := e["message"].(string); ok && m != "" {
-				return m
-			}
-		}
+// Value of a key in a decoded JSON object and whether the node is an object at all
+func jsonObjectGet(node any, key string) (any, bool, bool) {
+	switch o := node.(type) {
+	case map[string]any:
+		v, has := o[key]
+		return v, has, true
+	case *pyjson.Object:
+		v, has := o.Get(key)
+		return v, has, true
 	}
-	return clip(string(body), 300)
+	return nil, false, false
+}
+
+// Message of the error object in a JSON body, else the first 300 characters of the body
+func defaultErrorMessage(_ int, body []byte) string {
+	text := clipRunes(pystr.DecodeUTF8Replace(body), 300)
+	parsed, err := pyjson.LoadsBytes(body)
+	if err != nil {
+		return text
+	}
+	errNode, has, isObj := jsonObjectGet(parsed, "error")
+	if !isObj || !has {
+		return text
+	}
+	message, has, isObj := jsonObjectGet(errNode, "message")
+	if !isObj || !has {
+		return text
+	}
+	return pyrepr.Str(message)
 }
 
 // First n bytes of a string
@@ -501,42 +294,83 @@ func clip(s string, n int) string {
 // Shared HTTP client with no global timeout so each call sets its own deadline
 var httpClient = &http.Client{}
 
-// Posts JSON with a deadline and returns the decoded body or a classified failure
-func postJSON(ctx context.Context, rawURL string, headers map[string]string, payload any, timeout time.Duration, label string, msg errorMessageFunc) (map[string]any, *httpFailure) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, &httpFailure{Kind: "request", Error: fmt.Sprintf("%s request failed: %v", label, err), ErrorType: "api_error"}
+// Connect and read timeouts of a requests call, read bounding each wait on the server
+type requestsTimeout struct{ Connect, Read time.Duration }
+
+// Body bytes with every read bounded by the idle timeout, the request cancelled when one stalls
+func readWithIdleTimeout(r io.Reader, idle time.Duration, cancel context.CancelFunc) ([]byte, error) {
+	if idle <= 0 {
+		return io.ReadAll(r)
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(body))
+	timer := time.AfterFunc(idle, cancel)
+	defer timer.Stop()
+	var buf bytes.Buffer
+	chunk := make([]byte, 32<<10)
+	for {
+		n, err := r.Read(chunk)
+		buf.Write(chunk[:n])
+		timer.Reset(idle)
+		if err == io.EOF {
+			return buf.Bytes(), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+}
+
+// Posts JSON and returns the decoded body or a classified failure, request errors raised unless caught
+func postJSON(ctx context.Context, rawURL string, headers map[string]string, payload any, timeout requestsTimeout, label string, msg errorMessageFunc, catchRequestException bool) (any, *httpFailure, error) {
+	requestFailure := func(err error) (any, *httpFailure, error) {
+		if !catchRequestException {
+			return nil, nil, err
+		}
+		return nil, &httpFailure{Kind: "request", Error: fmt.Sprintf("%s request failed: %v", label, err), ErrorType: "api_error"}, nil
+	}
+	body, err := pyjson.Dumps(payload, pyjson.AllowNaN(false))
 	if err != nil {
-		return nil, &httpFailure{Kind: "request", Error: fmt.Sprintf("%s request failed: %v", label, err), ErrorType: "api_error"}
+		return nil, nil, err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(body))
+	if err != nil {
+		return requestFailure(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", UserAgent)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := httpClient.Do(req)
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: timeout.Connect}).DialContext,
+		TLSHandshakeTimeout: timeout.Read, ResponseHeaderTimeout: timeout.Read, ForceAttemptHTTP2: true}
+	defer transport.CloseIdleConnections()
+	resp, err := (&http.Client{Transport: transport}).Do(req)
 	if err != nil {
-		return nil, classifyTransportFailure(err, label, timeout)
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) && (strings.Contains(urlErr.Err.Error(), "unsupported protocol scheme") || strings.Contains(urlErr.Err.Error(), "no Host in request URL")) {
+			return requestFailure(err)
+		}
+		return nil, classifyTransportFailure(err, label, timeout.Read), nil
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-	if resp.StatusCode >= 400 {
+	raw, err := readWithIdleTimeout(resp.Body, timeout.Read, cancel)
+	if err != nil {
+		return nil, &httpFailure{Kind: "connection", Error: fmt.Sprintf("%s connection error: %v", label, err), ErrorType: "connection_error"}, nil
+	}
+	if resp.StatusCode >= 400 && resp.StatusCode < 600 {
 		if msg == nil {
 			msg = defaultErrorMessage
 		}
 		message := msg(resp.StatusCode, raw)
 		return nil, &httpFailure{Kind: "http", Error: fmt.Sprintf("%s image generation failed (%d): %s", label, resp.StatusCode, message),
-			ErrorType: "api_error", Status: resp.StatusCode, Message: message, Body: raw, Header: resp.Header}
+			ErrorType: "api_error", Status: resp.StatusCode, Message: message, Body: raw, Header: resp.Header}, nil
 	}
-	var parsed map[string]any
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil, &httpFailure{Kind: "invalid_json", Error: fmt.Sprintf("%s returned invalid JSON: %v", label, err), ErrorType: "invalid_response", Message: err.Error()}
+	parsed, err := pyjson.LoadsBytes(raw)
+	if err != nil {
+		return nil, &httpFailure{Kind: "invalid_json", Error: fmt.Sprintf("%s returned invalid JSON: %v", label, err), ErrorType: "invalid_response", Message: err.Error()}, nil
 	}
-	return parsed, nil
+	return parsed, nil, nil
 }
 
 // Maps a transport error to timeout, unreachable, or connection failure kinds
@@ -655,380 +489,6 @@ func stringList(v any) []string {
 		out = append(out, t...)
 	}
 	return out
-}
-
-// Trims and lowercases a candidate name
-func lowerKey(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
-
-// Credential store file names under the home that must never be read as media sources
-var credentialFileNames = []string{"auth.json", "auth.lock", ".anthropic_oauth.json", ".env", "webhook_subscriptions.json", filepath.Join("auth", "google_oauth.json")}
-
-var readDeniedDirs = []struct{ sub, dirMsg, fileMsg string }{
-	{"mcp-tokens", "is the icebath MCP token directory and cannot be read directly.", "is an icebath MCP token file and cannot be read directly."},
-	{"browser-profile", "is the icebath real-profile browser snapshot directory (copied cookies/logins) and cannot be read directly.", "is inside the icebath real-profile browser snapshot (copied cookies/logins) and cannot be read directly."},
-	{"vault", "is the icebath credential vault directory and cannot be read directly (secrets are filled server-side by browser_vault).", "is inside the icebath credential vault (encrypted secrets + local key) and cannot be read directly (browser_vault resolves them server-side)."},
-	{"webapp", "is the icebath Webapp sign-in directory and cannot be read directly.", "is an icebath Webapp sign-in file (the browser credential or its sign-in records) and cannot be read directly."},
-}
-
-var blockedProjectEnvBasenames = map[string]bool{".env": true, ".env.local": true, ".env.production": true, ".env.development": true, ".env.staging": true, ".env.test": true}
-
-const didSuffix = " (Defense-in-depth, not a security boundary; the terminal tool can still bypass.)"
-
-// Resolves symlinks and relative segments, falling back to the cleaned absolute path
-func resolvePath(p string) string {
-	expanded := expandUser(p)
-	abs, err := filepath.Abs(expanded)
-	if err != nil {
-		abs = expanded
-	}
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		return real
-	}
-	return filepath.Clean(abs)
-}
-
-// Expands a leading tilde to the user home directory
-func expandUser(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
-		if h, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(h, p[1:])
-		}
-	}
-	return p
-}
-
-// Reports whether child is base or lies under it
-func isUnder(child, base string) bool {
-	rel, err := filepath.Rel(base, child)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
-}
-
-// Error text when a read targets a denied credential store, cache, or project env file
-func readBlockError(env *tools.Env, path string) string {
-	resolved := resolvePath(path)
-	homes := []string{resolvePath(homeOf(env))}
-	if root := home.RootOf(homeOf(env)); root != "" && resolvePath(root) != homes[0] {
-		homes = append(homes, resolvePath(root))
-	}
-	reason := ""
-	for _, h := range homes {
-		if isUnder(resolved, filepath.Join(h, "skills", ".hub")) {
-			reason = "is an internal icebath cache file and cannot be read directly to prevent prompt injection. Use the skills_list or skill_view tools instead."
-		}
-	}
-	if reason == "" {
-		for _, h := range homes {
-			for _, name := range credentialFileNames {
-				if resolved == resolvePath(filepath.Join(h, name)) {
-					reason = "is an icebath credential store and cannot be read directly. Provider tools consume these credentials through internal channels." + didSuffix
-				}
-			}
-		}
-	}
-	if reason == "" {
-	outer:
-		for _, d := range readDeniedDirs {
-			for _, h := range homes {
-				blocked := resolvePath(filepath.Join(h, d.sub))
-				if isUnder(resolved, blocked) {
-					if resolved == blocked {
-						reason = d.dirMsg + didSuffix
-					} else {
-						reason = d.fileMsg + didSuffix
-					}
-					break outer
-				}
-			}
-		}
-	}
-	if reason == "" && blockedProjectEnvBasenames[strings.ToLower(filepath.Base(resolved))] {
-		reason = "is a secret-bearing environment file and cannot be read to prevent credential leakage. If you need to check the file structure, read .env.example instead." + didSuffix
-	}
-	if reason == "" {
-		return ""
-	}
-	return fmt.Sprintf("Access denied: %s %s", path, reason)
-}
-
-// Image magic byte table in detection order
-var imageMagic = []struct {
-	checks []struct {
-		off int
-		sig []byte
-	}
-	mime string
-}{
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte("\x89PNG\r\n\x1a\n")}}, "image/png"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte{0xff, 0xd8, 0xff}}}, "image/jpeg"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte("GIF87a")}}, "image/gif"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte("GIF89a")}}, "image/gif"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte("RIFF")}, {8, []byte("WEBP")}}, "image/webp"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte("BM")}}, "image/bmp"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{4, []byte("ftyp")}, {8, []byte("avif")}}, "image/avif"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{4, []byte("ftyp")}, {8, []byte("avis")}}, "image/avif"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte("II*\x00")}}, "image/tiff"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte("MM\x00*")}}, "image/tiff"},
-	{[]struct {
-		off int
-		sig []byte
-	}{{0, []byte{0, 0, 1, 0}}}, "image/x-icon"},
-}
-
-var heicBrands = []string{"heic", "heix", "hevc", "hevx", "mif1", "msf1", "heim", "heis"}
-
-// Image MIME type from magic bytes or empty when unrecognised
-func sniffImageMime(raw []byte) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	for _, m := range imageMagic {
-		match := true
-		for _, c := range m.checks {
-			if len(raw) < c.off+len(c.sig) || !bytes.Equal(raw[c.off:c.off+len(c.sig)], c.sig) {
-				match = false
-				break
-			}
-		}
-		if match {
-			return m.mime
-		}
-	}
-	if len(raw) >= 12 && bytes.Equal(raw[4:8], []byte("ftyp")) {
-		brand := strings.ToLower(string(raw[8:12]))
-		for _, b := range heicBrands {
-			if brand == b {
-				return "image/heic"
-			}
-		}
-	}
-	head := bytes.ToLower(bytes.TrimLeft(raw[:min(len(raw), 512)], " \t\r\n\xef\xbb\xbf"))
-	if (bytes.HasPrefix(head, []byte("<?xml")) || bytes.HasPrefix(head, []byte("<svg"))) && bytes.Contains(head, []byte("<svg")) {
-		return "image/svg+xml"
-	}
-	return ""
-}
-
-// MIME type by media file extension for the local source inliner
-func mimeByExtension(name string) string {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	case ".bmp":
-		return "image/bmp"
-	case ".svg":
-		return "image/svg+xml"
-	case ".tif", ".tiff":
-		return "image/tiff"
-	case ".heic", ".heif":
-		return "image/heic"
-	case ".avif":
-		return "image/avif"
-	case ".mp4", ".m4v":
-		return "video/mp4"
-	case ".mov":
-		return "video/quicktime"
-	case ".webm":
-		return "video/webm"
-	case ".mkv":
-		return "video/x-matroska"
-	case ".wav":
-		return "audio/wav"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".ogg", ".oga":
-		return "audio/ogg"
-	case ".flac":
-		return "audio/flac"
-	case ".m4a":
-		return "audio/mp4"
-	}
-	return ""
-}
-
-// Reports whether a source string is an http, https, or data reference
-func isRemoteRef(s string) bool {
-	l := strings.ToLower(strings.TrimSpace(s))
-	return strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "data:")
-}
-
-// Reports whether a source string is an http or https URL
-func isHTTPRef(s string) bool {
-	l := strings.ToLower(strings.TrimSpace(s))
-	return strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://")
-}
-
-// Base64 data URL for raw bytes with the given MIME type
-func dataURL(mime string, raw []byte) string {
-	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(raw)
-}
-
-// Splits a data URL into its declared MIME type and decoded bytes
-func parseDataURL(s string) (string, []byte, error) {
-	header, payload, ok := strings.Cut(s, ",")
-	if !ok {
-		return "", nil, errors.New("data: URL is missing a comma separator")
-	}
-	if !strings.Contains(header, ";base64") {
-		return "", nil, errors.New("data: URL must be base64-encoded")
-	}
-	declared := strings.TrimSpace(strings.SplitN(strings.TrimPrefix(header, "data:"), ";", 2)[0])
-	if declared == "" {
-		declared = "application/octet-stream"
-	}
-	raw, err := decodeB64(payload)
-	if err != nil {
-		return "", nil, fmt.Errorf("invalid base64 in data: URL: %v", err)
-	}
-	return declared, raw, nil
-}
-
-// Maximum raw bytes ingested from one media source
-const maxIngestBytes = 50 * 1024 * 1024
-
-// Resolves a local path, data URL, or http URL to bytes and a verified image MIME type
-func resolveImageSource(ctx context.Context, env *tools.Env, src string, permitVideo bool) ([]byte, string, error) {
-	s := strings.TrimSpace(src)
-	if s == "" {
-		return nil, "", errors.New("image_url is required")
-	}
-	var data []byte
-	var declared string
-	switch {
-	case strings.HasPrefix(s, "data:"):
-		var err error
-		declared, data, err = parseDataURL(s)
-		if err != nil {
-			return nil, "", err
-		}
-	case isHTTPRef(s):
-		if !isSafeURL(env, s) {
-			return nil, "", errors.New("blocked: unsafe or private URL")
-		}
-		raw, err := downloadBytes(ctx, s, maxIngestBytes)
-		if err != nil {
-			return nil, "", err
-		}
-		data = raw
-	default:
-		candidate := s
-		if strings.HasPrefix(strings.ToLower(s), "file://") {
-			candidate = s[len("file://"):]
-		}
-		if blocked := readBlockError(env, candidate); blocked != "" {
-			return nil, "", errors.New(blocked)
-		}
-		path := expandUser(candidate)
-		st, err := os.Stat(path)
-		if err != nil || !st.Mode().IsRegular() {
-			return nil, "", fmt.Errorf("media file not found: '%s'", path)
-		}
-		if st.Size() > maxIngestBytes {
-			return nil, "", errors.New("media exceeds size limit")
-		}
-		data, err = os.ReadFile(path)
-		if err != nil {
-			return nil, "", err
-		}
-		declared = mimeByExtension(path)
-	}
-	if len(data) > maxIngestBytes {
-		return nil, "", errors.New("media exceeds size limit")
-	}
-	if mime := sniffImageMime(data); mime != "" {
-		return data, mime, nil
-	}
-	if bytes.Contains(bytes.ToLower(data[:min(len(data), 4096)]), []byte("<svg")) {
-		return data, "image/svg+xml", nil
-	}
-	if permitVideo {
-		if strings.HasPrefix(declared, "video/") {
-			return data, declared, nil
-		}
-		if len(data) > 12 && bytes.Equal(data[4:8], []byte("ftyp")) {
-			return data, "video/mp4", nil
-		}
-		return nil, "", errors.New("source is not a recognized video (mp4 expected)")
-	}
-	return nil, "", errors.New("source is not a recognized image")
-}
-
-// Downloads a URL into memory with a size cap
-func downloadBytes(ctx context.Context, rawURL string, maxBytes int64) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", UserAgent)
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, rawURL)
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(raw)) > maxBytes {
-		return nil, errors.New("media exceeds size limit")
-	}
-	return raw, nil
-}
-
-// Converts a path like source into a data URL, URL shaped sources pass through
-func localSourceToDataURL(ctx context.Context, env *tools.Env, src string, permitVideo bool) (string, error) {
-	s := strings.TrimSpace(src)
-	if s == "" || isRemoteRef(s) {
-		return src, nil
-	}
-	data, mime, err := resolveImageSource(ctx, env, s, permitVideo)
-	if err != nil {
-		return "", err
-	}
-	return dataURL(mime, data), nil
 }
 
 // Path of a binary on PATH or in the common Homebrew and local prefixes

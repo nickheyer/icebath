@@ -28,10 +28,7 @@ func providerEnv(ctx context.Context, env *Env, name string) (string, error) {
 	if !IsGlobalEnv(name) {
 		if ProfileSecrets != nil {
 			if scope := ProfileSecrets.CurrentSecretScope(ctx); scope != nil {
-				if v, ok := scope[name]; ok {
-					return pystr.Strip(v), nil
-				}
-				return dotenvValue(env, name), nil
+				return scopedProviderEnv(scope, env, name), nil
 			}
 		}
 		if isMultiplexActive(env) && (env == nil || env.Secrets == nil) {
@@ -39,6 +36,22 @@ func providerEnv(ctx context.Context, env *Env, name string) (string, error) {
 		}
 	}
 	return secretValue(env, name), nil
+}
+
+// Scope value, else the process env for the launch profile only, else the profile .env
+func scopedProviderEnv(scope map[string]string, env *Env, name string) string {
+	if v, ok := scope[name]; ok {
+		return pystr.Strip(v)
+	}
+	if !servesRoutedEnv(env) {
+		if v, ok := os.LookupEnv(name); ok {
+			return pystr.Strip(v)
+		}
+	}
+	if env == nil || env.Secrets == nil {
+		return ""
+	}
+	return pystr.Strip(env.Secrets.File()[name])
 }
 
 // Raw process level setting a vendor SDK reads from its environment, the .env layer included
@@ -218,7 +231,32 @@ func pyDictGet(v any, key string) (any, error) {
 
 // AttributeError text for a missing attribute of a decoded value
 func pyAttributeError(v any, attr string) error {
-	return fmt.Errorf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)
+	return &pyAttrError{fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+}
+
+// AttributeError raised while reading a decoded payload
+type pyAttrError struct{ msg string }
+
+func (e *pyAttrError) Error() string { return e.msg }
+
+// TypeError raised while iterating, joining or slicing a decoded payload
+type pyTypeError struct{ msg string }
+
+func (e *pyTypeError) Error() string { return e.msg }
+
+// The value sliced to its first n items like v[:n], the TypeError of an unsliceable value
+func pySubscriptTo(v any, n int) (any, error) {
+	switch x := v.(type) {
+	case []any:
+		return x[:min(n, len(x))], nil
+	case string:
+		runes := []rune(x)
+		return string(runes[:min(n, len(runes))]), nil
+	}
+	if _, ok := pyDict(v); ok {
+		return nil, &pyTypeError{"unhashable type: 'slice'"}
+	}
+	return nil, &pyTypeError{fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v))}
 }
 
 // Items of a for loop over a decoded value, dict keys and string characters included
@@ -240,7 +278,7 @@ func pyIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, &pyTypeError{fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
 }
 
 // Value or a fallback when the value is falsy, the Python x or y
@@ -255,13 +293,13 @@ func pyOr(v any, fallback any) any {
 func pyJoin(sep string, v any) (string, error) {
 	items, err := pyIter(v)
 	if err != nil {
-		return "", errors.New("can only join an iterable")
+		return "", &pyTypeError{"can only join an iterable"}
 	}
 	parts := make([]string, 0, len(items))
 	for i, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			return "", fmt.Errorf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(item))
+			return "", &pyTypeError{fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(item))}
 		}
 		parts = append(parts, s)
 	}

@@ -134,12 +134,12 @@ func isPySpace(r rune) bool {
 
 // Reports whether a line assigns key, with or without an export prefix
 func envLineDefines(line, key string) bool {
-	trimmed := strings.TrimSpace(line)
+	trimmed := strings.TrimFunc(line, isPySpace)
 	if strings.HasPrefix(trimmed, "export ") {
-		trimmed = strings.TrimLeft(trimmed[len("export "):], " \t")
+		trimmed = strings.TrimLeftFunc(trimmed[len("export "):], isPySpace)
 	}
 	name, _, ok := strings.Cut(trimmed, "=")
-	return ok && envVarPolicyName(strings.TrimSpace(name)) == envVarPolicyName(key)
+	return ok && envVarPolicyName(strings.TrimFunc(name, isPySpace)) == envVarPolicyName(key)
 }
 
 // Value quoted for a dotenv line when it carries whitespace, quotes, a hash or a backslash

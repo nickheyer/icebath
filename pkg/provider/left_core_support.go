@@ -23,13 +23,12 @@ import (
 
 // PluginManagerHooks are the plugin manager entry points the plugins package installs into this package
 type PluginManagerHooks struct {
-	CatalogEntry            func(name string) (string, bool)
-	Install                 func(ctx context.Context, name string, consent bool) (map[string]any, error)
-	SharedDependencyAnswers func(fn func())
-	LoadError               func(plugin string) string
-	RefreshBoundHome        func()
-	DependencyHomes         func() []string
-	AuxiliaryTasks          func() []map[string]any
+	CatalogEntry     func(name string) (string, bool)
+	Install          func(ctx context.Context, name string, consent bool) (map[string]any, error)
+	LoadError        func(plugin string) string
+	RefreshBoundHome func()
+	DependencyHomes  func() []string
+	AuxiliaryTasks   func() []map[string]any
 }
 
 var pluginManagerHooks atomic.Pointer[PluginManagerHooks]

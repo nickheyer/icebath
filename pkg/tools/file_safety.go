@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -371,6 +372,24 @@ func readBlockError(env *Env, path string) string {
 
 // Refusal message for a read of a denied icebath path, empty when the read is allowed
 func ReadBlockError(env *Env, path string) string { return readBlockError(env, path) }
+
+// ResolveActiveProfileName names the profile the active home sits in under the root profiles dir, default on any failure
+func ResolveActiveProfileName(ctx context.Context) string {
+	h, err := pypath.Resolve(home.Dir(ctx))
+	if err != nil {
+		return "default"
+	}
+	root, err := pypath.Resolve(home.Root())
+	if err != nil {
+		return "default"
+	}
+	rel, ok := pypath.PathRelativeTo(h, pypath.PathJoin(root, "profiles"))
+	if !ok || rel == "." {
+		return "default"
+	}
+	name, _, _ := strings.Cut(rel, "/")
+	return name
+}
 
 const sandboxMirrorWarning = "Sandbox-mirror write blocked by soft guard: %s sits under '%s', which is %s " +
 	"Use the host-side tool for authoritative state (e.g. ``memory`` for memories), or address the host path directly. " +

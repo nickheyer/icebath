@@ -15,7 +15,7 @@ import (
 )
 
 // Parent and sibling names whose blank text the lxml HTML parser keeps, libxml2 allowPCData
-var lxmlAllowPCData = setOf("a", "abbr", "acronym", "address", "applet", "b", "bdo", "big", "blockquote", "body", "button", "caption", "center", "cite", "code", "dd", "del", "dfn", "div", "dt", "em", "font", "form", "h1", "h2", "h3", "h4", "h5", "h6", "i", "iframe", "ins", "kbd", "label", "legend", "li", "map", "menu", "object", "ol", "p", "pre", "q", "s", "samp", "small", "span", "strike", "strong", "td", "th", "tt", "u", "ul", "var")
+var lxmlAllowPCData = setOf("a", "abbr", "acronym", "address", "applet", "b", "bdo", "big", "blockquote", "body", "button", "caption", "center", "cite", "code", "dd", "del", "dfn", "div", "dt", "em", "font", "form", "h1", "h2", "h3", "h4", "h5", "h6", "i", "iframe", "ins", "kbd", "label", "legend", "li", "noframes", "noscript", "object", "p", "pre", "q", "s", "samp", "small", "span", "strike", "strong", "td", "th", "tt", "u", "var")
 
 // lxml.html.defs.block_tags, the tags that make a fragment body a div rather than a span
 var lxmlBlockTags = setOf("address", "blockquote", "center", "dir", "div", "dl", "fieldset", "form", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "isindex", "menu", "noframes", "noscript", "ol", "p", "pre", "table", "ul")
@@ -27,77 +27,6 @@ type lxmlTree struct {
 	doc   *html.Node
 	root  *html.Node
 	order map[*html.Node]int
-}
-
-// Text made only of the four characters libxml2 counts as blank
-func lxmlBlank(s string) bool {
-	return strings.Trim(s, " \t\n\r") == ""
-}
-
-// Drops comments and the blank text the parser options remove_blank_text and remove_comments discard
-func lxmlStripBlanks(doc *html.Node) {
-	var walk func(n *html.Node)
-	walk = func(n *html.Node) {
-		for c := n.FirstChild; c != nil; {
-			next := c.NextSibling
-			switch {
-			case c.Type == html.CommentNode:
-				n.RemoveChild(c)
-			case c.Type == html.TextNode && lxmlBlankRemoved(n, c):
-				n.RemoveChild(c)
-			default:
-				walk(c)
-			}
-			c = next
-		}
-	}
-	walk(doc)
-}
-
-// Applies the libxml2 areBlanks rule to a blank text node under its parent
-func lxmlBlankRemoved(parent, text *html.Node) bool {
-	if !lxmlBlank(text.Data) {
-		return false
-	}
-	if parent.Type != html.ElementNode {
-		return true
-	}
-	if parent.Data == "html" || parent.Data == "head" {
-		return true
-	}
-	if parent.Data == "body" && lxmlHTML4Doctype(parent) {
-		return true
-	}
-	prev := text.PrevSibling
-	for prev != nil && prev.Type == html.CommentNode {
-		prev = prev.PrevSibling
-	}
-	if prev == nil {
-		return !lxmlAllowPCData[parent.Data]
-	}
-	if prev.Type == html.TextNode {
-		return false
-	}
-	return !(prev.Type == html.ElementNode && lxmlAllowPCData[prev.Data])
-}
-
-// Reports an HTML 4.01 or HTML 4 strict public identifier on the document type
-func lxmlHTML4Doctype(n *html.Node) bool {
-	for n.Parent != nil {
-		n = n.Parent
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type != html.DoctypeNode {
-			continue
-		}
-		for _, a := range c.Attr {
-			if a.Key == "public" {
-				id := strings.ToLower(a.Val)
-				return id == "-//w3c//dtd html 4.01//en" || id == "-//w3c//dtd html 4//en"
-			}
-		}
-	}
-	return false
 }
 
 // Element children of a node, the len and indexing lxml gives an element
@@ -135,14 +64,10 @@ func lxmlTail(n *html.Node) string {
 
 // Parses page text like lxml.html.fromstring with the ddgs parser options, fragments wrapped the lxml way
 func lxmlFromString(text string) (*lxmlTree, error) {
-	if pystr.Strip(text) == "" {
+	doc := lxmlParseHTML(text)
+	if doc == nil {
 		return nil, verbatim("ParserError: Document is empty")
 	}
-	doc, err := html.Parse(strings.NewReader(text))
-	if err != nil {
-		return nil, err
-	}
-	lxmlStripBlanks(doc)
 	t := &lxmlTree{doc: doc, order: map[*html.Node]int{}}
 	var number func(n *html.Node)
 	number = func(n *html.Node) {
@@ -153,14 +78,19 @@ func lxmlFromString(text string) (*lxmlTree, error) {
 	}
 	number(doc)
 	var htmlEl, body *html.Node
-	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+	for c := doc.FirstChild; c != nil && htmlEl == nil; c = c.NextSibling {
 		if c.Type == html.ElementNode {
 			htmlEl = c
 		}
 	}
 	t.root = htmlEl
-	if lxmlFullHTMLRe.MatchString(text) || htmlEl == nil {
+	if lxmlFullHTMLRe.MatchString(text) {
 		return t, nil
+	}
+	for _, c := range lxmlElementChildren(htmlEl) {
+		if c.Data == "head" {
+			return t, nil
+		}
 	}
 	for _, c := range lxmlElementChildren(htmlEl) {
 		if c.Data == "body" {
@@ -520,29 +450,55 @@ func (t *lxmlTree) docOrder(nodes []xpNode) []xpNode {
 	return out
 }
 
-// Nodes along an axis from one context node in axis order
+// Nodes of an axis from a node, reverse axes listed nearest first so predicate positions count proximity
 func axisNodes(x xpNode, axis string) ([]xpNode, error) {
-	if x.attr >= 0 {
-		switch axis {
-		case "self", "descendant-or-self":
-			return []xpNode{x}, nil
-		case "parent", "ancestor":
-			return []xpNode{{n: x.n, attr: -1}}, nil
-		}
-		return nil, nil
-	}
 	var out []xpNode
+	add := func(n *html.Node) { out = append(out, xpNode{n: n, attr: -1}) }
 	var desc func(n *html.Node)
 	desc = func(n *html.Node) {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			out = append(out, xpNode{n: c, attr: -1})
+			add(c)
 			desc(c)
 		}
+	}
+	ancestors := func(n *html.Node) {
+		for p := n.Parent; p != nil; p = p.Parent {
+			add(p)
+		}
+	}
+	if x.attr >= 0 {
+		switch axis {
+		case "self", "descendant-or-self":
+			out = append(out, x)
+		case "parent":
+			add(x.n)
+		case "ancestor-or-self":
+			out = append(out, x)
+			add(x.n)
+			ancestors(x.n)
+		case "ancestor":
+			add(x.n)
+			ancestors(x.n)
+		case "following":
+			desc(x.n)
+			for n := x.n; n != nil; n = n.Parent {
+				for s := n.NextSibling; s != nil; s = s.NextSibling {
+					add(s)
+					desc(s)
+				}
+			}
+		case "preceding":
+			return axisNodes(xpNode{n: x.n, attr: -1}, axis)
+		case "child", "descendant", "attribute", "following-sibling", "preceding-sibling":
+		default:
+			return nil, fmt.Errorf("XPathEvalError: Unsupported axis %s", axis)
+		}
+		return out, nil
 	}
 	switch axis {
 	case "child":
 		for c := x.n.FirstChild; c != nil; c = c.NextSibling {
-			out = append(out, xpNode{n: c, attr: -1})
+			add(c)
 		}
 	case "descendant":
 		desc(x.n)
@@ -553,7 +509,41 @@ func axisNodes(x xpNode, axis string) ([]xpNode, error) {
 		out = append(out, x)
 	case "parent":
 		if x.n.Parent != nil {
-			out = append(out, xpNode{n: x.n.Parent, attr: -1})
+			add(x.n.Parent)
+		}
+	case "ancestor":
+		ancestors(x.n)
+	case "ancestor-or-self":
+		out = append(out, x)
+		ancestors(x.n)
+	case "following-sibling":
+		for s := x.n.NextSibling; s != nil; s = s.NextSibling {
+			add(s)
+		}
+	case "preceding-sibling":
+		for s := x.n.PrevSibling; s != nil; s = s.PrevSibling {
+			add(s)
+		}
+	case "following":
+		for n := x.n; n != nil; n = n.Parent {
+			for s := n.NextSibling; s != nil; s = s.NextSibling {
+				add(s)
+				desc(s)
+			}
+		}
+	case "preceding":
+		for n := x.n; n != nil; n = n.Parent {
+			for s := n.PrevSibling; s != nil; s = s.PrevSibling {
+				var sub []xpNode
+				saved := out
+				out = nil
+				add(s)
+				desc(s)
+				sub, out = out, saved
+				for i := len(sub) - 1; i >= 0; i-- {
+					out = append(out, sub[i])
+				}
+			}
 		}
 	case "attribute":
 		if x.n.Type == html.ElementNode {

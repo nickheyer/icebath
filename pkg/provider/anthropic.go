@@ -939,7 +939,7 @@ func (c *anthropicClient) httpClient(connect time.Duration) *http.Client {
 				IdleConnTimeout:       90 * time.Second,
 				ExpectContinueTimeout: time.Second,
 			}
-			c.transports[connect] = tr
+			c.transports[connect] = auxTrackPoolConns(tr)
 		}
 		c.transportsMu.Unlock()
 		base = tr
@@ -1116,6 +1116,9 @@ func (c *anthropicClient) requestHeaders(ctx context.Context, betas []string, ex
 		anthSetHeader(headers, k, v)
 	}
 	for k, v := range c.route.Headers {
+		anthSetHeader(headers, k, v)
+	}
+	for k, v := range providerRequestHeaders(ctx) {
 		anthSetHeader(headers, k, v)
 	}
 	return headers, oauth, nil
@@ -1476,6 +1479,9 @@ func (c *anthropicClient) Stream(ctx context.Context, req *Request, fn StreamFun
 
 // Runs one streaming attempt and reports whether visible deltas reached the consumer
 func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthPrepared, fn StreamFunc) (*Response, bool, error) {
+	if _, managed := relayCurrentSessionID(ctx); managed {
+		return anthropicManagedRelayStream(ctx, c, req, p, fn)
+	}
 	t := c.streamTimeouts(req, p.settings, p.estTokens)
 	s := &anthStreamState{c: c, req: req, fn: fn, acc: newAnthAccumulator(), textWatch: NewRunawayStreamWatch(), thinkWatch: NewRunawayStreamWatch(),
 		toolSlots: map[int]int{}, started: time.Now(), estTokens: p.estTokens, lifetime: t.lifetime.Seconds()}
@@ -1488,16 +1494,21 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 		return nil, false, err
 	}
 	s.wire = failedStreamRequestOf(httpReq)
+	stopHdrStale := armHeaderStaleKill(ctx, cancel, kill, s.emit, s.req.Model, s.estTokens, t.stale, s.started)
 	hdrTimer := time.AfterFunc(t.read, func() {
 		kill.fire("read", t.read.Seconds())
 		cancel()
 	})
 	resp, err := c.httpClient(t.connect).Do(httpReq)
 	hdrTimer.Stop()
+	stopHdrStale()
 	if err != nil {
 		return nil, false, c.attemptError(attemptCtx, kill, err, s)
 	}
 	defer resp.Body.Close()
+	if reabortIfCancelled(attemptCtx, resp) {
+		return nil, false, c.attemptError(attemptCtx, kill, context.Cause(attemptCtx), s)
+	}
 	s.headers = resp.Header.Clone()
 	s.status = resp.StatusCode
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

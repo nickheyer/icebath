@@ -166,6 +166,11 @@ func CmdList(ctx context.Context, opts ListOptions, out io.Writer) error {
 	return nil
 }
 
+// icebath plugins show printing one plugin's details to out
+func CmdShow(ctx context.Context, name string, out io.Writer) error {
+	return cmdShow(ctx, name, NewConsole(out))
+}
+
 // Details of one plugin with its isolation, sign in notice and declared emits and listens
 func cmdShow(ctx context.Context, name string, console *Console) error {
 	h := home.Dir(ctx)

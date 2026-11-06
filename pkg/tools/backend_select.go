@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // NousManagedProvider is the stored selection naming the Nous Tool Gateway
@@ -68,33 +70,74 @@ func nousToolGatewayUnavailableMessage(env *Env, capability string, forceFresh b
 
 // NormalizeBrowserCloudProvider returns the normalized browser provider key
 func NormalizeBrowserCloudProvider(value string) string {
-	provider := strings.ToLower(strings.TrimSpace(value))
+	provider := pystr.Lower(pystr.Strip(value))
 	if provider == "" {
 		return defaultBrowserProvider
 	}
 	return provider
 }
 
-// NormalizeModalMode returns the requested modal mode when valid else the default
-func NormalizeModalMode(value string) string {
-	mode := strings.ToLower(strings.TrimSpace(value))
+// CoerceModalMode returns the requested modal mode when valid else the default
+func CoerceModalMode(value string) string {
+	mode := pystr.Lower(pystr.Strip(value))
 	if validModalModes[mode] {
 		return mode
 	}
 	return defaultModalMode
 }
 
-// Reads a credential through the profile secret scope, empty when unset
+// NormalizeModalMode returns the requested modal mode when valid else the default
+func NormalizeModalMode(value string) string { return CoerceModalMode(value) }
+
+// Process home directory seam, the Path.home lookup
+var modalHomeDir = os.UserHomeDir
+
+// Credential through the profile secret scope, a multiplexed miss never borrowing the process environment
 func scopedCredential(env *Env, name string) string {
-	return strings.TrimSpace(secretValue(env, name))
+	if isMultiplexActive(env) && !IsGlobalEnv(name) {
+		if env == nil || env.Secrets == nil {
+			return ""
+		}
+		return pystr.Strip(env.Secrets.File()[name])
+	}
+	if env != nil && env.Secrets != nil {
+		return pystr.Strip(env.Secrets.String(name))
+	}
+	return pystr.Strip(os.Getenv(name))
 }
 
-// Reads a value from the profile .env file only
+// Scoped environment value when present, else the profile .env value, the get_env_value order
 func dotenvValue(env *Env, name string) string {
+	if isMultiplexActive(env) && !IsGlobalEnv(name) {
+		if env != nil && env.Secrets != nil {
+			if v, ok := env.Secrets.File()[name]; ok {
+				return pystr.Strip(v)
+			}
+		}
+		return ""
+	}
+	if v, ok := os.LookupEnv(name); ok {
+		return pystr.Strip(v)
+	}
 	if env == nil || env.Secrets == nil {
 		return ""
 	}
-	return strings.TrimSpace(env.Secrets.File()[name])
+	return pystr.Strip(env.Secrets.File()[name])
+}
+
+// Bool coercion over the shared truthy string set, default for a missing value
+func isTruthyValue(v any, def bool) bool {
+	switch x := v.(type) {
+	case nil:
+		return def
+	case string:
+		switch pystr.Lower(pystr.Strip(x)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+		return false
+	}
+	return pyrepr.Truthy(v)
 }
 
 // HasDirectModalCredentials reports whether a Modal token pair or ~/.modal.toml exists
@@ -102,7 +145,7 @@ func HasDirectModalCredentials(env *Env) bool {
 	if scopedCredential(env, "MODAL_TOKEN_ID") != "" && scopedCredential(env, "MODAL_TOKEN_SECRET") != "" {
 		return true
 	}
-	home, err := os.UserHomeDir()
+	home, err := modalHomeDir()
 	if err != nil {
 		return false
 	}
@@ -122,7 +165,7 @@ type ModalBackendState struct {
 
 // ResolveModalBackendState picks direct or managed Modal, auto preferring managed when available
 func ResolveModalBackendState(env *Env, modalMode string, hasDirect, managedReady bool, managedEnabled *bool) ModalBackendState {
-	requested := NormalizeModalMode(modalMode)
+	requested := CoerceModalMode(modalMode)
 	enabled := false
 	if managedEnabled != nil {
 		enabled = *managedEnabled
@@ -160,7 +203,7 @@ func envSourceSuppressed(env *Env, providerID, envVar string) bool {
 
 // ResolveProviderSecret resolves a voice provider key through config, scope, .env, then the credential pool
 func ResolveProviderSecret(env *Env, envVar, providerID, configValue string, envGetter func(string) string) string {
-	if key := strings.TrimSpace(configValue); key != "" {
+	if key := pystr.Strip(configValue); key != "" {
 		return key
 	}
 	suppressed := envSourceSuppressed(env, providerID, envVar)
@@ -169,13 +212,13 @@ func ResolveProviderSecret(env *Env, envVar, providerID, configValue string, env
 			return key
 		}
 	}
-	if ProfileSecrets != nil && isMultiplexActive(env) {
+	if isMultiplexActive(env) {
 		return ""
 	}
 	key := ""
 	if !suppressed {
 		if envGetter != nil {
-			key = strings.TrimSpace(envGetter(envVar))
+			key = pystr.Strip(envGetter(envVar))
 		} else {
 			key = dotenvValue(env, envVar)
 		}
@@ -185,7 +228,7 @@ func ResolveProviderSecret(env *Env, envVar, providerID, configValue string, env
 	}
 	if NousAccount != nil {
 		for _, poolKey := range []string{providerID, "custom:" + providerID} {
-			if k := strings.TrimSpace(NousAccount.PoolAPIKey(env, poolKey)); k != "" {
+			if k := pystr.Strip(NousAccount.PoolAPIKey(env, poolKey)); k != "" {
 				return k
 			}
 		}
@@ -206,7 +249,8 @@ func PrefersGateway(env *Env, section string) bool {
 	if env == nil {
 		return false
 	}
-	return config.Truthy(env.Config.Get(section + ".use_gateway"))
+	sec, ok := env.Config.Get(section).(map[string]any)
+	return ok && isTruthyValue(sec["use_gateway"], false)
 }
 
 // SelectionConfigKeys lists the dotted config keys the selection readers honour
@@ -252,7 +296,7 @@ func ReadSelection(env *Env, section string) string {
 	if raw == nil {
 		return ""
 	}
-	if config.Truthy(raw["use_gateway"]) {
+	if isTruthyValue(raw["use_gateway"], false) {
 		return NousManagedProvider
 	}
 	keys, ok := selectionNameKeys[section]
@@ -263,7 +307,7 @@ func ReadSelection(env *Env, section string) string {
 		if raw[key] == nil {
 			continue
 		}
-		if text := strings.ToLower(strings.TrimSpace(asStr(raw[key]))); text != "" {
+		if text := pystr.Lower(pystr.Strip(pyrepr.Str(raw[key]))); text != "" {
 			return text
 		}
 	}
@@ -274,7 +318,7 @@ func ReadSelection(env *Env, section string) string {
 func ReadWebCapabilitySelection(env *Env, capability string) string {
 	if capability != "" {
 		raw := rawSection(env, "web")
-		if pin := strings.ToLower(strings.TrimSpace(asStr(raw[capability+"_backend"]))); pin != "" {
+		if pin := pystr.Lower(pystr.Strip(pyOrStr(raw[capability+"_backend"]))); pin != "" {
 			return pin
 		}
 	}
@@ -295,7 +339,7 @@ func SelectionExists(env *Env, section string) bool {
 		return false
 	}
 	for _, key := range extra {
-		if strings.TrimSpace(asStr(raw[key])) != "" {
+		if pystr.Strip(pyOrStr(raw[key])) != "" {
 			return true
 		}
 	}
@@ -307,7 +351,7 @@ var RemovedBackends = map[string]map[string]string{}
 
 // RemovedBackendNote explains a removed backend or returns empty
 func RemovedBackendNote(section, name string) string {
-	key := strings.ToLower(strings.Trim(strings.TrimSpace(name), "'\""))
+	key := pystr.Lower(strings.Trim(pystr.Strip(name), "'\""))
 	return RemovedBackends[section][key]
 }
 
@@ -322,4 +366,12 @@ func SelectionError(section, selectionName, failure string) string {
 // FalKeyIsConfigured reports whether FAL_KEY holds a non blank value in scope or .env
 func FalKeyIsConfigured(env *Env) bool {
 	return scopedCredential(env, "FAL_KEY") != "" || dotenvValue(env, "FAL_KEY") != ""
+}
+
+// Text of value or the empty string when the value is falsy, the str(value or "") idiom
+func pyOrStr(v any) string {
+	if !pyrepr.Truthy(v) {
+		return ""
+	}
+	return pyrepr.Str(v)
 }

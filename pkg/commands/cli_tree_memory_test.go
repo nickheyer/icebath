@@ -120,3 +120,58 @@ func TestCuratorInsightsAndMemoryOffResetAreBoundThroughTheTree(t *testing.T) {
 		t.Fatalf("memory reset: %v\n%s", err, out)
 	}
 }
+
+func TestMemorySubparsersParseThroughTheTree(t *testing.T) {
+	h := filepath.Join(t.TempDir(), "profiles", "work")
+	for name, body := range map[string]string{"config.yaml": "memory:\n  provider: honcho\n", "memories/MEMORY.md": "m", "memories/USER.md": "u"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(h, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(h, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("ICEBATH_HOME", h)
+	config.ResetCache()
+	t.Cleanup(config.ResetCache)
+	run := func(argv ...string) string {
+		out := &bytes.Buffer{}
+		cli := NewCLI()
+		cli.Root.SetOut(out)
+		cli.Root.SetErr(out)
+		cli.Root.SetIn(strings.NewReader(""))
+		if err := cli.Execute(argv); err != nil {
+			out.WriteString("\nerror: " + err.Error())
+		}
+		return out.String()
+	}
+	for _, argv := range [][]string{{"memory", "setup", "honcho"}, {"memory", "status"}, {"memory"}} {
+		if out := run(argv...); !strings.Contains(out, "icebath -p work plugins install honcho") || strings.Contains(out, "\nerror: ") {
+			t.Fatalf("%v\n%s", argv, out)
+		}
+	}
+	if out := run("memory", "setup", "honcho", "extra"); !strings.Contains(out, "unrecognized arguments: extra") {
+		t.Fatalf("second setup positional accepted\n%s", out)
+	}
+	if out := run("memory", "reset", "--target", "bogus", "--yes"); !strings.Contains(out, "argument --target: invalid choice: 'bogus' (choose from 'all', 'memory', 'user')") {
+		t.Fatalf("reset target choice\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(h, "memories", "USER.md")); err != nil {
+		t.Fatalf("rejected reset touched USER.md: %v", err)
+	}
+	for argv, want := range map[string][]string{
+		"memory --help":       {"Only one external provider can be active at a time.", "Interactive provider selection and configuration", "Show current memory provider config", "Disable external provider (built-in only)", "Erase all built-in memory (MEMORY.md and USER.md)"},
+		"memory setup --help": {"Provider to configure directly (e.g. honcho), skipping the picker"},
+		"memory reset --help": {"Which store to reset: 'all' (default), 'memory', or 'user'", "Skip confirmation prompt"},
+	} {
+		out := run(strings.Fields(argv)...)
+		for _, w := range want {
+			if !strings.Contains(out, w) {
+				t.Fatalf("%s lacks %q\n%s", argv, w, out)
+			}
+		}
+	}
+	if out := run("memory", "reset", "-y"); !strings.Contains(out, "Deleted MEMORY.md") || !strings.Contains(out, "Deleted USER.md (user profile)") {
+		t.Fatalf("default reset target\n%s", out)
+	}
+}

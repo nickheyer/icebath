@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // ProfileSecretSource is the secret scope and dotenv bookkeeping of pkg/provider the child env builders read
@@ -477,14 +478,16 @@ func delegatedChildSubprocessEnv(env *Env, child map[string]string) map[string]s
 	return scrubKanbanEnv(env, child)
 }
 
-// Guards shared by every spawn surface, returns the possibly new map
-func finalizeChildEnv(env *Env, child map[string]string) map[string]string {
+// Guards shared by every spawn surface, returns the possibly new map or the damaged runtime record error
+func finalizeChildEnv(env *Env, child map[string]string) (map[string]string, error) {
 	applyProfileHome(env, child)
 	injectSessionContextEnv(env, child)
-	stripIcebathOwnedPythonpathAndRuntimeMarkers(child)
+	if err := stripIcebathOwnedPythonpathAndRuntimeMarkers(child); err != nil {
+		return nil, err
+	}
 	StripSupervisedProcessIdentity(child)
 	applyWindowsMsysBashEnvDefaults(child)
-	return delegatedChildSubprocessEnv(env, child)
+	return delegatedChildSubprocessEnv(env, child), nil
 }
 
 // One source of a scrubbed env and whether forced names unwrap from it
@@ -513,7 +516,7 @@ func scrubbedEnv(env *Env, parts []envPart, pluginStrip map[string]bool, fixPath
 	if pathKey, ok := pathEnvKey(out); ok {
 		out[pathKey] = prependIcebathBinDir(fixPath(out[pathKey]))
 	}
-	return finalizeChildEnv(env, out), nil
+	return finalizeChildEnv(env, out)
 }
 
 // SanitizeSubprocessEnv filters managed secrets from a background, PTY, worker or script child environment
@@ -529,8 +532,17 @@ func terminalEnv(child map[string]string) map[string]string {
 	return child
 }
 
-// IcebathSubprocessEnv sanitizes a non terminal child environment without skill passthrough
+// IcebathSubprocessEnv sanitizes a non terminal child environment and panics with the damaged runtime record error
 func IcebathSubprocessEnv(env *Env, inheritCredentials bool, base map[string]string) map[string]string {
+	child, err := icebathSubprocessEnv(env, inheritCredentials, base)
+	if err != nil {
+		panic(err)
+	}
+	return child
+}
+
+// Sanitized non terminal child environment without skill passthrough, or the damaged runtime record error
+func icebathSubprocessEnv(env *Env, inheritCredentials bool, base map[string]string) (map[string]string, error) {
 	child := map[string]string{}
 	if base != nil {
 		for k, v := range base {
@@ -625,7 +637,10 @@ func ServedProfileChildEnv(ctx context.Context, env *Env, base map[string]string
 			child[k] = v
 		}
 	} else {
-		child = IcebathSubprocessEnv(env, inheritCredentials, nil)
+		var err error
+		if child, err = icebathSubprocessEnv(env, inheritCredentials, nil); err != nil {
+			return nil, err
+		}
 	}
 	target := targetHome
 	if target == "" && env != nil && env.Home != home.Process() {
@@ -918,59 +933,6 @@ func alwaysStripFolded() map[string]bool {
 	return folded
 }
 
-// Runtime owned PYTHONPATH stripping
-
-// Removes PYTHONPATH entries owned by the running runtime root and then the venv marker vars
-func stripIcebathOwnedPythonpathAndRuntimeMarkers(child map[string]string) {
-	stripIcebathOwnedPythonpath(child)
-	for _, m := range activeVenvMarkerVars {
-		delete(child, m)
-	}
-}
-
-// Spellings of the runtime root the launchers may emit
-func icebathRepoRootAliases() []string {
-	root := RunningSourceRoot()
-	if root == "" {
-		return nil
-	}
-	aliases := []string{root}
-	if resolved, err := filepath.EvalSymlinks(root); err == nil && normHomePath(resolved) != normHomePath(root) {
-		aliases = append(aliases, resolved)
-	}
-	return aliases
-}
-
-// Removes exact runtime root entries from PYTHONPATH keeping every user path byte for byte
-func stripIcebathOwnedPythonpath(child map[string]string) {
-	pp := child["PYTHONPATH"]
-	if pp == "" {
-		return
-	}
-	owned := icebathRepoRootAliases()
-	entries := strings.Split(pp, string(os.PathListSeparator))
-	var kept []string
-	for _, e := range entries {
-		strip := false
-		if e != "" {
-			for _, o := range owned {
-				if normHomePath(e) == normHomePath(o) {
-					strip = true
-					break
-				}
-			}
-		}
-		if !strip {
-			kept = append(kept, e)
-		}
-	}
-	if len(kept) > 0 {
-		child["PYTHONPATH"] = strings.Join(kept, string(os.PathListSeparator))
-	} else {
-		delete(child, "PYTHONPATH")
-	}
-}
-
 // Shell discovery
 
 // Resolves the bash binary commands run with
@@ -1112,7 +1074,7 @@ var icebathBinDirCache struct {
 }
 
 // Directory holding the icebath executable, empty when none is found
-func resolveIcebathBinDir() string {
+var resolveIcebathBinDir = func() string {
 	icebathBinDirCache.Do(func() {
 		candidate := ""
 		if which, err := exec.LookPath("icebath"); err == nil {
@@ -1139,13 +1101,26 @@ func prependIcebathBinDir(existing string) string {
 	return prependMissingPathEntries(existing, []string{binDir})
 }
 
-// Existing managed runtime dirs of the home for the subshell PATH
-func managedRuntimePathEntries(env *Env) []string {
-	bin := filepath.Join(envHome(env), "bin")
-	if st, err := os.Stat(bin); err == nil && st.IsDir() {
-		return []string{bin}
+// Existing pm node and npm dirs then the home bin for the subshell PATH, none when pm cannot answer
+var managedRuntimePathEntries = func(env *Env) (entries []string) {
+	defer func() {
+		if recover() != nil {
+			entries = nil
+		}
+	}()
+	var candidates []string
+	for _, d := range strings.Split(managedNodePathEnv(map[string]string{"PATH": ""})["PATH"], string(os.PathListSeparator)) {
+		if d != "" {
+			candidates = append(candidates, pypath.PathStr(d))
+		}
 	}
-	return nil
+	candidates = append(candidates, pypath.PathStr(envHome(env)+string(os.PathSeparator)+"bin"))
+	for _, d := range candidates {
+		if st, err := os.Stat(d); err == nil && st.IsDir() {
+			entries = append(entries, d)
+		}
+	}
+	return entries
 }
 
 // The user's local bin when it exists

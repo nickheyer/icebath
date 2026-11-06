@@ -94,17 +94,32 @@ func (c *Context) cachedFacade(slot *any, name string, build func(*Services) fun
 
 // Capability gated platform action facade re-checking gateway.platform_actions on every call
 func (c *Context) PlatformActions() (any, error) {
-	return c.cachedFacade(&c.platformActions, "PlatformActions", func(s *Services) func(*Context) any { return s.PlatformActions })
+	c.facadeMu.Lock()
+	defer c.facadeMu.Unlock()
+	if c.platformActions == nil {
+		c.platformActions = &PlatformActions{pluginID: c.PluginID()}
+	}
+	return c.platformActions, nil
 }
 
 // Host owned completion facade on the active model, overrides gated per plugin
-func (c *Context) LLM() (any, error) {
-	return c.cachedFacade(&c.llm, "PluginLLM", func(s *Services) func(*Context) any { return s.PluginLLM })
+func (c *Context) LLM() *PluginLlm {
+	c.facadeMu.Lock()
+	defer c.facadeMu.Unlock()
+	if c.llm == nil {
+		c.llm = newPluginLlm(c.PluginID())
+	}
+	return c.llm
 }
 
 // Plugin safe subagent lifecycle service returning serializable handles and snapshots
-func (c *Context) SubagentLifecycle() (any, error) {
-	return c.cachedFacade(&c.subagentLifecycle, "SubagentLifecycle", func(s *Services) func(*Context) any { return s.SubagentLifecycle })
+func (c *Context) SubagentLifecycle() *SubagentLifecycleService {
+	c.facadeMu.Lock()
+	defer c.facadeMu.Unlock()
+	if c.subagentLifecycle == nil {
+		c.subagentLifecycle = NewSubagentLifecycleService(GetActiveSubagentParent)
+	}
+	return c.subagentLifecycle
 }
 
 // Delegation backend listing and selection service
@@ -570,22 +585,18 @@ func (c *Context) SessionSurface(ctx context.Context) (string, error) {
 }
 
 // Posts text into the session bound to this call and returns an editable handle that never raises
-func (c *Context) PostMessage(ctx context.Context, text string) (any, error) {
-	fn, err := needService("PostMessage", func(s *Services) func(context.Context, *Context, string) any { return s.PostMessage })
-	if err != nil {
-		return nil, err
-	}
-	return fn(ctx, c, text), nil
+func (c *Context) PostMessage(ctx context.Context, text string) *PluginMessage {
+	return postMessage(ctx, c, text)
+}
+
+// Post for async code already on the gateway loop, its edits made with AEdit
+func (c *Context) APostMessage(ctx context.Context, text string) (*PluginMessage, error) {
+	return apostMessage(ctx, c, text)
 }
 
 // Asks the slash command user to pick one choice, false when nobody can answer
 func (c *Context) AskChoice(ctx context.Context, question string, choices []any) (string, bool, error) {
-	fn, err := needService("AskChoice", func(s *Services) func(context.Context, string, []any) (string, bool) { return s.AskChoice })
-	if err != nil {
-		return "", false, err
-	}
-	value, ok := fn(ctx, question, choices)
-	return value, ok, nil
+	return askChoice(ctx, question, choices)
 }
 
 // Plugin CLI subcommand registration with its parser setup and handler

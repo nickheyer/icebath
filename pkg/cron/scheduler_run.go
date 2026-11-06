@@ -42,12 +42,19 @@ var cronDeliveryVars = []string{
 var watchdogPollSeconds = 5.0
 
 // Sends queued worker results through the live adapters, zero when no worker ever queued one
+
+// Runtime resolution run_job reaches, swapped by tests like a patched resolve_runtime_provider
+var resolveRuntimeProviderSeam = provider.ResolveRuntimeProvider
+
 func (s *Store) drainDeliveryQueue(ctx context.Context, adapters, loop any) (int, error) {
 	if _, err := os.Stat(QueuePath(s.home)); err != nil {
 		return 0, nil
 	}
 	send := func(queued *Job, content string, forFailure bool) (*string, error) {
-		errText := s.deliverResult(ctx, queued, content, adapters, loop, forFailure)
+		errText, err := s.deliverResult(ctx, queued, content, adapters, loop, forFailure)
+		if err != nil {
+			return nil, err
+		}
 		if errText == nil && forFailure && !queued.run.notificationAllTargetsSuppressed {
 			s.markIncidentAlerted(queuedFailureIncidentID(queued))
 		}
@@ -453,7 +460,7 @@ func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, j
 	if job.BaseURL != nil {
 		baseURL = *job.BaseURL
 	}
-	rt, resolveErr := provider.ResolveRuntimeProvider(ctx, s.home, requested, model, baseURL, "")
+	rt, resolveErr := resolveRuntimeProviderSeam(ctx, s.home, requested, model, baseURL, "")
 	if resolveErr == nil {
 		return rt, model, nil, nil
 	}
@@ -489,7 +496,7 @@ func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, j
 			fbBase = pyStrOrEmpty(entry["base_url"])
 		}
 		fbKey := provider.ResolveFallbackEntryAPIKey(ctx, s.home, entry)
-		fbRT, err := provider.ResolveRuntimeProvider(ctx, s.home, fbProvider, fbModel, fbBase, fbKey)
+		fbRT, err := resolveRuntimeProviderSeam(ctx, s.home, fbProvider, fbModel, fbBase, fbKey)
 		if err != nil {
 			s.log.Debug(fmt.Sprintf("Job '%s': fallback %s failed: %v", jobID, fbProvider, err))
 			continue
@@ -731,7 +738,7 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					err = fmt.Errorf("%v", r)
+					err = panicTraceback(r)
 				}
 			}()
 			result, err = a.RunConversation(ctx, prompt, taskID)
@@ -809,7 +816,7 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 }
 
 // Deliverable reply of a conversation result, failing on a reported failure and dropping explainer only turns
-func finalResponseFromResult(s *Store, result map[string]any, jobID, jobName string) (string, error) {
+func finalResponseFromResult(ctx context.Context, s *Store, result map[string]any, jobID, jobName string) (string, error) {
 	turnExitReason := pyStrOrEmpty(result["turn_exit_reason"])
 	finalText := pystr.Strip(pyStrOrEmpty(result["final_response"]))
 	maxIterationSummary := isMaxIterationHandoff(result)
@@ -831,7 +838,7 @@ func finalResponseFromResult(s *Store, result map[string]any, jobID, jobName str
 	finalResponse := pyStrOrEmpty(result["final_response"])
 	if finalResponse != "" {
 		messages, _ := result["messages"].([]any)
-		finalResponse = gateway.RepairExplicitComputerUseMediaPaths(finalResponse, messages)
+		finalResponse = gateway.RepairExplicitComputerUseMediaPathsAt(ctx, finalResponse, messages, 0)
 	}
 	if pystr.Strip(finalResponse) == "(No response generated)" {
 		finalResponse = ""
@@ -1097,7 +1104,7 @@ func (s *Store) reloadDotenvAndPublishDeliveryTarget(ctx context.Context, job *J
 	if _, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{Home: s.home}); err != nil {
 		return err
 	}
-	target := s.resolveDeliveryTarget(job)
+	target := s.resolveDeliveryTarget(ctx, job)
 	if target != nil {
 		scope.sessionVars["ICEBATH_CRON_AUTO_DELIVER_PLATFORM"] = target.Platform
 		scope.sessionVars["ICEBATH_CRON_AUTO_DELIVER_CHAT_ID"] = target.ChatID
@@ -1251,6 +1258,9 @@ type runJobOptions struct {
 	ExecutionID        *string
 }
 
+// Agent setup resolver run_job calls, the module attribute tests patch
+var resolveCronAgentSetupSeam = (*Store).resolveCronAgentSetup
+
 // Executes one job and returns the success flag, run document, final response and error text
 func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOutcome, error) {
 	owner, isOwner := currentOwnerExecution(ctx)
@@ -1317,7 +1327,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
-		setup, err := s.resolveCronAgentSetup(runCtx, job, jobID, jobName, jc)
+		setup, err := resolveCronAgentSetupSeam(s, runCtx, job, jobID, jobName, jc)
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
@@ -1342,7 +1352,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
-		finalResponse, err := finalResponseFromResult(s, result, jobID, jobName)
+		finalResponse, err := finalResponseFromResult(ctx, s, result, jobID, jobName)
 		if err != nil {
 			return jobRunOutcome{}, err
 		}

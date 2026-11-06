@@ -255,6 +255,18 @@ func (m *Manager) refreshSecretSourcesAfterDiscovery() {
 // Collects, gates and loads every manifest in dependency order, an error only for a user interrupt
 func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 	manifests := CollectDirectoryManifests(m.home)
+	directoryKeys := map[string]bool{}
+	for _, mf := range manifests {
+		directoryKeys[mf.ID()] = true
+	}
+	var epManifests []*Manifest
+	for _, mf := range discoverEntrypointManifests(ctx) {
+		if !directoryKeys[mf.ID()] {
+			epManifests = append(epManifests, mf)
+		}
+	}
+	logDebug(fmt.Sprintf("  entrypoints: %d manifest(s)", len(epManifests)))
+	manifests = append(manifests, epManifests...)
 	cfg := loadConfigOrEmpty(m.home)
 	disabled := DisabledPlugins(m.home)
 	enabled, enabledPresent := enabledPlugins(cfg)
@@ -267,7 +279,7 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 	if len(stale) > 0 {
 		sort.Strings(stale)
 		logWarn(fmt.Sprintf("Removed icebath plugin %s is still listed in plugins.enabled; remove it and configure a standard user or system Relay plugins.toml, or use %s for an explicit user-file override",
-			strings.Join(stale, ", "), RelayPluginsConfigEnv))
+			strings.Join(stale, ", "), tools.RelayPluginsConfigEnv))
 	}
 	winners := ResolveManifestWinners(manifests)
 	var order []string

@@ -121,7 +121,7 @@ func ModelDerivedAPIMode(ctx context.Context, provider, model, apiKey string) (s
 	if profile == nil {
 		return "", false
 	}
-	mode := modelAPIMode(profile, model, apiKey)
+	mode := modelAPIMode(ctx, profile, model, apiKey)
 	return string(mode), mode != ""
 }
 

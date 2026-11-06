@@ -122,6 +122,8 @@ type Env struct {
 	Values *sync.Map
 	// Profile terminal policy bound for this turn, nil resolves from Home
 	TerminalScope *TerminalScope
+	// Tool correlation ids of the call this copy was bound for
+	observability *observabilityIDs
 }
 
 // Emit sends a progress event when the host registered a listener
@@ -187,6 +189,7 @@ func (r *Registry) Register(d Def) {
 	}
 	copy := d
 	r.tools[d.Name] = &copy
+	r.noteSlotWrite("", d.Name)
 }
 
 // Get returns the tool with this name or nil
@@ -217,5 +220,6 @@ func (r *Registry) Remove(name string) bool {
 	defer r.mu.Unlock()
 	_, ok := r.tools[name]
 	delete(r.tools, name)
+	r.noteSlotDelete("", name)
 	return ok
 }

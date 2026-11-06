@@ -200,30 +200,29 @@ func MigrateAllMemoryHomes(ctx context.Context, say func(string)) []string {
 			say(fmt.Sprintf("  Memory provider '%s' is configured in %d profiles (%s); your answers to its dependency "+
 				"questions apply to all of them.", g.name, len(g.homes), strings.Join(labels, ", ")))
 		}
-		provider.PluginHooks().SharedDependencyAnswers(func() {
-			for i, h := range g.homes {
-				ok, interrupted := installPendingMemory(ctx, h, g.name, migrationSteps.installInto(ctx, h, nil), labelled(h))
-				if interrupted {
-					cancelled = true
-					return
-				}
-				if ok {
-					installed = append(installed, g.name)
-					continue
-				}
-				if rest := g.homes[i+1:]; len(rest) > 0 {
-					labels := make([]string, len(rest))
-					commands := make([]string, len(rest))
-					for j, r := range rest {
-						labels[j] = provider.PluginHomeLabel(r)
-						commands[j] = "`" + provider.PluginInstallCommand(g.name, r) + "`"
-					}
-					say(fmt.Sprintf("  \u26a0 Memory provider '%s' was not installed for %s either. Run %s.",
-						g.name, strings.Join(labels, ", "), strings.Join(commands, ", ")))
-				}
+		gctx := plugins.WithSharedDependencyAnswers(ctx)
+		for i, h := range g.homes {
+			ok, interrupted := installPendingMemory(gctx, h, g.name, migrationSteps.installInto(gctx, h, nil), labelled(h))
+			if interrupted {
+				cancelled = true
 				break
 			}
-		})
+			if ok {
+				installed = append(installed, g.name)
+				continue
+			}
+			if rest := g.homes[i+1:]; len(rest) > 0 {
+				labels := make([]string, len(rest))
+				commands := make([]string, len(rest))
+				for j, r := range rest {
+					labels[j] = provider.PluginHomeLabel(r)
+					commands[j] = "`" + provider.PluginInstallCommand(g.name, r) + "`"
+				}
+				say(fmt.Sprintf("  \u26a0 Memory provider '%s' was not installed for %s either. Run %s.",
+					g.name, strings.Join(labels, ", "), strings.Join(commands, ", ")))
+			}
+			break
+		}
 		if cancelled {
 			say("  \u26a0 Memory provider migration cancelled. Profiles already migrated keep their plugin; " +
 				"run `icebath plugins install <name>` (with `-p <profile>`) for the rest.")

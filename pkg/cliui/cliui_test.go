@@ -13,6 +13,8 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/nickheyer/icebath/pkg/term"
+
+	"github.com/xo/terminfo"
 )
 
 // Replays queued key codes, minus one once the queue is empty unless exhausting
@@ -68,8 +70,10 @@ func (f *fakeScreen) Refresh() error {
 	f.frames = append(f.frames, frame)
 	return nil
 }
-func (f *fakeScreen) HasColors() bool       { return false }
-func (f *fakeScreen) InitColors(bool) error { return f.initErr }
+func (f *fakeScreen) HasColors() bool             { return false }
+func (f *fakeScreen) InitColors(bool) error       { return f.initErr }
+func (f *fakeScreen) InitPairs(map[int]int) error { return f.initErr }
+func (f *fakeScreen) Colors() int                 { return 0 }
 
 func keys(s string) []int {
 	out := make([]int, 0, len(s))
@@ -677,5 +681,27 @@ func TestMissingTerminfoFallsBackToNumberedList(t *testing.T) {
 	got, err := c.CursesRadiolist(context.Background(), "Pick", items("a", "b"), 0, RadiolistOptions{})
 	if err != nil || got != 1 || !strings.Contains(out.String(), "Select by number") {
 		t.Fatalf("got %d err %v out %q", got, err, out.String())
+	}
+}
+
+func TestInitPairsHidesTheCursorAndMapsCursesColors(t *testing.T) {
+	var out bytes.Buffer
+	c := &Console{Out: &out}
+	ti := &terminfo.Terminfo{Strings: map[int][]byte{terminfo.CursorInvisible: []byte("\x1b[?25l"), terminfo.SetAForeground: []byte("\x1b[3%p1%dm")}, Nums: map[int]int{}}
+	s := &ansiScreen{c: c, ti: ti, colors: 256, pairs: map[int]string{}}
+	if err := s.InitPairs(map[int]int{1: ColorGreen, 3: ColorCyan, 4: 8, 5: 200}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "\x1b[?25l" || s.pairs[1] != "32" || s.pairs[3] != "36" || s.pairs[4] != "90" || s.pairs[5] != "38;5;200" || s.Colors() != 256 {
+		t.Fatalf("out %q pairs %v", out.String(), s.pairs)
+	}
+	bare := &ansiScreen{c: c, ti: &terminfo.Terminfo{Strings: map[int][]byte{}, Nums: map[int]int{}}, pairs: map[int]string{}}
+	if err := bare.InitPairs(map[int]int{1: ColorGreen}); err == nil || err.Error() != "curs_set() returned ERR" {
+		t.Fatalf("limited terminal %v", err)
+	}
+	opened := 0
+	c.OpenScreen = func() (Screen, func(), error) { opened++; return &fakeScreen{}, func() {}, nil }
+	if scr, _, err := c.OpenFullScreen(); err != nil || scr == nil || opened != 1 {
+		t.Fatalf("injected opener %v %d", err, opened)
 	}
 }

@@ -458,3 +458,36 @@ func resetForTests() {
 		}
 	}
 }
+
+// Records a tool metric event under its named mark when collection is on, true when the event was a metric
+func RecordToolMetricEvent(ctx context.Context, env *tools.Env, ev tools.Event) bool {
+	if ev.Kind != "metric" {
+		return false
+	}
+	name, _ := ev.Data["name"].(string)
+	if name == "" {
+		return true
+	}
+	if name == TerminalOutcomeMark {
+		outcome, _ := ev.Data["outcome"].(string)
+		RecordTerminalOutcome(ctx, env, ev.Data["command"], ev.Data["backend"], nil, outcome)
+		return true
+	}
+	if name == ExecutionBackendMark {
+		kind, _ := ev.Data["kind"].(string)
+		var errorClass any
+		if class, _ := ev.Data["error_class"].(string); class != "" {
+			errorClass = class
+		}
+		RecordExecutionBackend(ctx, env, kind, ev.Data["backend"], ev.Data["result"], errorClass)
+		return true
+	}
+	data := make(map[string]string, len(ev.Data))
+	for k, v := range ev.Data {
+		if s, ok := v.(string); ok && k != "name" {
+			data[k] = s
+		}
+	}
+	emit(ctx, name, func() map[string]string { return data })
+	return true
+}

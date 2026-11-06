@@ -328,10 +328,9 @@ func TestDoStreamReconnectsAfterTransientDrop(t *testing.T) {
 func TestDoStreamFailureAfterDeliveryIsPartial(t *testing.T) {
 	route := testRoute()
 	client := &fakeClient{route: route, queue: []fakeCall{{events: []StreamEvent{{Kind: EventTextDelta, Text: "partial"}}, err: &APIError{Message: "connection lost", Kind: ErrNetwork}}}}
-	_, err := Do(t.Context(), client, &Request{Model: route.Model}, DoOptions{Sleep: noSleep, Stream: func(StreamEvent) error { return nil }})
-	var de *DoError
-	if !asDoError(err, &de) || de.Failure != FailPartialStream || !de.DeltasSent {
-		t.Fatalf("err %v", err)
+	resp, err := Do(t.Context(), client, &Request{Model: route.Model}, DoOptions{Sleep: noSleep, Stream: func(StreamEvent) error { return nil }})
+	if err != nil || !IsPartialStreamStub(resp) || resp.FinishReason != "length" || resp.Message.Content != "partial" || PartialStreamOverflowTerminal(resp) {
+		t.Fatalf("resp %+v err %v", resp, err)
 	}
 	if client.calls != 1 {
 		t.Fatalf("calls %d", client.calls)

@@ -72,7 +72,7 @@ func (a *AIAgent) handleOuterLoopError(ctx context.Context, e error, outerErrorC
 		errorMsg := fmt.Sprintf("Interpreter is shutting down — cannot continue (API call #%d): %s", apiCallCount, e)
 		a.safePrint("❌ "+errorMsg, true)
 		log.Warn(errorMsg)
-		_ = a.persistSession(*messages, conversationHistory)
+		_ = a.persistSession(messages, conversationHistory)
 		turnExitReason = "interpreter_shutdown"
 		failed = true
 		resume := ""

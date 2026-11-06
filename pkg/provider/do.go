@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"log/slog"
 	"math"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -285,6 +287,17 @@ type DoOptions struct {
 	Fast    *FastWindow
 	Session *RetrySession
 	Stream  StreamFunc
+	// Brackets each stream attempt with the agent display hooks for its start and end
+	StreamEmitters StreamEmitters
+	// Fired once on the first text, reasoning or tool start delta the call delivers
+	OnFirstDelta func()
+	// Agent route of this moment, a stream retry is handed back once it moved off the request route
+	LiveRoute func() Route
+	// Writer fence owner, delta gates and the delegated flag the Relay call role reads
+	WriterFence        any
+	HasStreamConsumers func() bool
+	WantsReasoning     func() bool
+	Subagent           bool
 	// Builds the client for a route after a fallback or rotation, defaults to NewClient
 	ClientFor func(ctx context.Context, route Route) (Client, error)
 	// Rebuilds the request for a new route before the block restarts, defaults to a model rename
@@ -352,7 +365,6 @@ const (
 	FailInterrupted        DoFailure = "interrupted"
 	FailNousRateLimited    DoFailure = "nous_rate_limited"
 	FailCompactionDisabled DoFailure = "compaction_disabled"
-	FailPartialStream      DoFailure = "partial_stream"
 	FailDeadline           DoFailure = "deadline"
 	FailOverflow           DoFailure = "overflow"
 )
@@ -766,8 +778,10 @@ func (l *doLoop) run() (*Response, error) {
 		}
 		var partial *PartialStreamError
 		if errors.As(err, &partial) {
-			apiErr := l.asAPIError(partial.Err)
-			return nil, &DoError{Failure: FailPartialStream, Err: err, APIError: apiErr, Summary: SummarizeAPIError(partial.Err, l.route.Provider), Route: l.route, DeltasSent: true, Message: SummarizeAPIError(partial.Err, l.route.Provider)}
+			stub := l.partialStreamStub(partial)
+			l.firePostRequest(start, firstChunk, stub)
+			l.activity(fmt.Sprintf("API call #%d completed", l.opts.APICallCount))
+			return stub, nil
 		}
 		de, continueLoop, loopErr := l.handleError(err, start)
 		if loopErr != nil {
@@ -810,7 +824,11 @@ func (l *doLoop) call() (*Response, time.Time, error) {
 	if !l.blocking {
 		return l.streamWithReconnects()
 	}
-	resp, err := l.client.Complete(withNonStreamSurface(l.ctx, l.nonStreamSurface), l.req)
+	ctx := withNonStreamSurface(l.ctx, l.nonStreamSurface)
+	if directAPICallFor(l.ctx, l.route.Provider, l.opts.Platform, l.route.Mode) {
+		ctx = withInlineNonStream(ctx, l.req == nil || l.req.Timeout <= 0)
+	}
+	resp, err := l.client.Complete(ctx, l.req)
 	return resp, time.Time{}, err
 }
 
@@ -831,6 +849,8 @@ func (l *doLoop) nonStreamSurface(ev StreamEvent) {
 // PartialStreamError is a stream that died after visible deltas were delivered
 type PartialStreamError struct {
 	Err error
+	// Tool calls the dying attempt started, in start order
+	ToolNames []string
 }
 
 func (e *PartialStreamError) Error() string {
@@ -838,6 +858,55 @@ func (e *PartialStreamError) Error() string {
 }
 
 func (e *PartialStreamError) Unwrap() error { return e.Err }
+
+// Length truncated stub for a stream that died after delivering text, empty and terminal on a context overflow
+func (l *doLoop) partialStreamStub(partial *PartialStreamError) *Response {
+	text := l.streamedText
+	if l.opts.StreamedText != nil {
+		text = l.opts.StreamedText()
+	}
+	partialText := pystr.Strip(text)
+	names := partial.ToolNames
+	if len(names) > 0 {
+		nameStr := strings.Join(names[:min(3, len(names))], ", ")
+		if len(names) > 3 {
+			nameStr += fmt.Sprintf(", +%d more", len(names)-3)
+		}
+		warn := fmt.Sprintf("\n\n⚠ Stream stalled mid tool-call (%s); the action was not executed. Ask me to retry if you want to continue.", nameStr)
+		partialText += warn
+		if l.opts.Warning != nil {
+			func() {
+				defer func() { _ = recover() }()
+				l.opts.Warning(warn)
+			}()
+		}
+		l.log.Warn(fmt.Sprintf("Partial stream dropped tool call(s) %s after %d chars of text; surfaced warning to user: %v",
+			pyrepr.Repr(stringsToAny(names)), utf8.RuneCountInString(partialText), partial.Err))
+	}
+	cl := l.classify(l.asAPIError(partial.Err))
+	l.session.ResetStaleStreak()
+	model := l.route.Model
+	if l.req != nil && l.req.Model != "" {
+		model = l.req.Model
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	if cl != nil && cl.Reason == ReasonContextOverflow {
+		l.log.Warn(fmt.Sprintf("Partial stream ended on a context-overflow error after %d chars; NOT seeding a continuation stub (transcript is already over budget): %v",
+			utf8.RuneCountInString(partialText), partial.Err))
+		return buildPartialStreamStub(l.route, "", "", model, nil, names, partialStubOptions{overflowTerminal: true, apiMode: l.route.Mode})
+	}
+	if len(names) == 0 {
+		l.log.Warn(fmt.Sprintf("Partial stream delivered before error; returning length-truncated stub with %d chars of recovered content so the loop can continue from where the stream died: %v",
+			utf8.RuneCountInString(partialText), partial.Err))
+	}
+	stub := buildPartialStreamStub(l.route, partialText, "", model, nil, names, partialStubOptions{apiMode: l.route.Mode})
+	if cl != nil && cl.Reason == ReasonContentPolicyBlocked {
+		anthMarkRaw(stub, ccRawContentFilter, true)
+	}
+	return stub
+}
 
 func streamRetries() int {
 	raw := strings.TrimSpace(os.Getenv(StreamRetriesEnv))
@@ -1004,9 +1073,15 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 	compatRetries := 0
 	attempt := -1
 	var firstChunk time.Time
-	call := &streamCall{inline: directAPICallFor(l.ctx, l.route.Provider, l.opts.Platform, l.route.Mode)}
+	call := &streamCall{inline: directAPICallFor(l.ctx, l.route.Provider, l.opts.Platform, l.route.Mode), hooks: l.streamHooks()}
 	ctx := withStreamCall(l.ctx, call)
+	requestRoute := l.liveRoute()
+	firstFired := false
+	var lastErr error
 	for attempt < maxStreamRetries+compatRetries {
+		if lastErr != nil && l.routeSwitchedUnderRequest(requestRoute) {
+			return nil, firstChunk, lastErr
+		}
 		attempt++
 		call.start()
 		if l.ctx.Err() != nil {
@@ -1014,7 +1089,18 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 		}
 		deltasSent := false
 		partialToolInFlight := false
+		var partialToolNames []string
 		fn := func(ev StreamEvent) error {
+			if ev.Kind == EventToolCallStart && ev.ToolCall != nil && ev.ToolCall.Function.Name != "" {
+				partialToolNames = append(partialToolNames, ev.ToolCall.Function.Name)
+			}
+			if !firstFired && l.opts.OnFirstDelta != nil && (ev.Kind == EventToolCallStart || ((ev.Kind == EventTextDelta || ev.Kind == EventReasoningDelta) && ev.Text != "")) {
+				firstFired = true
+				func() {
+					defer func() { _ = recover() }()
+					l.opts.OnFirstDelta()
+				}()
+			}
 			switch ev.Kind {
 			case EventTextDelta, EventReasoningDelta:
 				if ev.Text != "" {
@@ -1039,18 +1125,25 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 			}
 			return l.opts.Stream(ev)
 		}
-		resp, err := l.client.Stream(ctx, l.req, fn)
+		resp, err := l.streamAttempt(ctx, fn)
 		if err == nil {
+			if l.ctx.Err() != nil {
+				return nil, firstChunk, &InterruptedError{Message: "Agent interrupted during streaming API call (post-worker)"}
+			}
+			if diag := call.currentDiag(); diag != nil && diag.FirstChunkAt != nil {
+				firstChunk = *diag.FirstChunkAt
+			}
 			return resp, firstChunk, nil
 		}
 		if l.ctx.Err() != nil {
 			return nil, firstChunk, err
 		}
+		lastErr = err
 		var abandoned *StreamAbandonedError
 		if errors.As(err, &abandoned) {
 			l.forgetInvisibleDeltas(err, &deltasSent, partialToolInFlight)
 			if deltasSent {
-				return nil, firstChunk, &PartialStreamError{Err: err}
+				return nil, firstChunk, &PartialStreamError{Err: err, ToolNames: partialToolNames}
 			}
 			return nil, firstChunk, err
 		}
@@ -1076,7 +1169,7 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 		if deltasSent {
 			if !(partialToolInFlight && isTransient && attempt < maxStreamRetries) {
 				l.log.Warn(fmt.Sprintf("Streaming failed after partial delivery, not retrying: %v", err))
-				return nil, firstChunk, &PartialStreamError{Err: err}
+				return nil, firstChunk, &PartialStreamError{Err: err, ToolNames: partialToolNames}
 			}
 			if l.opts.Warning != nil {
 				l.opts.Warning("\n\n⚠ Connection dropped mid tool-call; reconnecting…\n\n")
@@ -1116,6 +1209,62 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 		return nil, firstChunk, err
 	}
 	return nil, firstChunk, errors.New("stream attempt loop ended without a response")
+}
+
+// One wire attempt between the stream emitters, an interrupted attempt ends them finished without text
+func (l *doLoop) streamAttempt(ctx context.Context, fn StreamFunc) (*Response, error) {
+	var resp *Response
+	var err error
+	_, _ = WithStreamEmitters(l.opts.StreamEmitters, func() (any, error) {
+		resp, err = l.client.Stream(ctx, l.req, fn)
+		if err != nil && l.ctx.Err() == nil {
+			return nil, err
+		}
+		if err != nil {
+			return nil, nil
+		}
+		return resp, nil
+	})
+	return resp, err
+}
+
+// Agent surfaces of the typed stream attempts of this call
+func (l *doLoop) streamHooks() streamHooks {
+	var requestID any
+	if l.opts.APIRequestID != "" {
+		requestID = l.opts.APIRequestID
+	}
+	return streamHooks{
+		identity:           streamRelayIdentity{SessionID: l.opts.SessionID, CallRole: streamCallRole(l.opts.Subagent, l.chain != nil && l.chain.Activated()), APIRequestID: requestID},
+		fence:              l.opts.WriterFence,
+		hasStreamConsumers: l.opts.HasStreamConsumers,
+		wantsReasoning:     l.opts.WantsReasoning,
+	}
+}
+
+// Route the agent points at now, the loop route when the caller reports none
+func (l *doLoop) liveRoute() Route {
+	if l.opts.LiveRoute != nil {
+		return l.opts.LiveRoute()
+	}
+	return l.route
+}
+
+// True with a warning once a model switch moved the agent off the route the request was built for
+func (l *doLoop) routeSwitchedUnderRequest(requestRoute Route) bool {
+	live := l.liveRoute()
+	if live.Model == requestRoute.Model && live.Provider == requestRoute.Provider && live.BaseURL == requestRoute.BaseURL && live.Mode == requestRoute.Mode {
+		return false
+	}
+	via := func(r Route) string {
+		if r.Provider != "" {
+			return r.Provider
+		}
+		return r.BaseURL
+	}
+	l.log.Warn(fmt.Sprintf("Stream retry skipped: model/provider switched mid-request (%s via %s -> %s via %s); handing back to the turn loop to rebuild the request for the current route.",
+		requestRoute.Model, via(requestRoute), live.Model, via(live)))
+	return true
 }
 
 // Treats a stream that delivered deltas but no visible text and no tool call as undelivered

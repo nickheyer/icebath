@@ -17,6 +17,7 @@ func runCuratorReview(ctx context.Context, req memory.CuratorReviewRequest) (*me
 		Model: req.Model, Provider: req.Provider, RequestOverrides: req.RequestOverrides,
 		ReasoningConfig: req.ReasoningConfig, EnabledToolsets: req.EnabledToolsets, MaxIterations: req.MaxIterations,
 		QuietMode: req.QuietMode, Platform: req.Platform, SkipContextFiles: req.SkipContextFiles, SkipMemory: req.SkipMemory,
+		ACPCommand: req.ACPCommand, ACPArgs: req.ACPArgs, CredentialPool: req.CredentialPool,
 	}
 	if r := req.Route; r != nil {
 		o.APIKey, o.BaseURL, o.APIMode = r.APIKey, r.BaseURL, string(r.Mode)

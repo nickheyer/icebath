@@ -66,3 +66,13 @@ func Unescape(s string) string {
 	}
 	return charrefRe.ReplaceAllStringFunc(s, func(m string) string { return replaceCharref(m[1:]) })
 }
+
+// LongestEntity matches the longest HTML5 named reference at the start of s, returning its characters and name length
+func LongestEntity(s string) (string, int) {
+	for k := min(len(s), 33); k > 0; k-- {
+		if v, ok := html5[s[:k]]; ok {
+			return v, k
+		}
+	}
+	return "", 0
+}

@@ -247,9 +247,9 @@ func matchHostAgainstRule(host, pattern string) bool {
 }
 
 func extractHostFromURLish(raw string) string {
-	host := urlHostname(raw, false)
+	host, _ := urlHostname(raw, false)
 	if host == "" && !strings.Contains(raw, "://") {
-		host = urlHostname("//"+raw, false)
+		host, _ = urlHostname("//"+raw, false)
 	}
 	return normalizeHostname(host)
 }

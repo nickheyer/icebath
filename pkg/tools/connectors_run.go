@@ -11,6 +11,16 @@ import (
 // WatchIntervalSeconds is the observe tick of a driven operation, swapped by tests
 var WatchIntervalSeconds = 5.0
 
+// Refusals a card retry answers with, the connector_refusals copy keys
+const (
+	ConnUnknownTarget  = "unknown_target"
+	ConnMixedKinds     = "mixed_kinds"
+	ConnLinkStillValid = "link_still_valid"
+	ConnSettled        = "settled"
+	ConnNotAllowed     = "not_allowed"
+	ConnRefused        = "refused"
+)
+
 // The interrupt flag has no wake hook so the tick sleep is sliced and the flag read each slice
 const connWakeSlice = 250 * time.Millisecond
 

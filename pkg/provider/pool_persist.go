@@ -1290,7 +1290,7 @@ func (c *PoolCredentials) CredentialForModel(provider, model string) (Credential
 	if !ok {
 		return Credential{}, false
 	}
-	return poolCredential(entry), true
+	return poolCredential(pool, entry), true
 }
 
 // TokenBenchedForModel reports a model cooldown the provider's pool holds for the token
@@ -1309,7 +1309,7 @@ func (c *PoolCredentials) CredentialForEntry(poolKey string, entry map[string]an
 	if !ok {
 		return Credential{}, false
 	}
-	return poolCredential(row), true
+	return poolCredential(pool, row), true
 }
 
 // LoadPoolProbe adapts LoadPool to the chain's PoolProbe loader

@@ -145,6 +145,13 @@ func wireEncodeDepth(value any, refs func(any) map[string]any, depth int) any {
 		return map[string]any{"__bytes__": base64.StdEncoding.EncodeToString(v)}
 	case *Opaque:
 		return map[string]any{"__opaque__": v.TypeName, "repr": v.Text}
+	case *hostCallable:
+		if refs != nil {
+			if ref := refs(v); ref != nil {
+				return ref
+			}
+		}
+		return map[string]any{"__opaque__": "function", "repr": "<icebath callable>"}
 	case Record:
 		out := map[string]any{}
 		for k, item := range v {
@@ -156,6 +163,14 @@ func wireEncodeDepth(value any, refs func(any) map[string]any, depth int) any {
 		return wireEncodeDepth(e.PythonEnumValue(), refs, depth+1)
 	}
 	rv := reflect.ValueOf(value)
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return nil
+		}
+		if rv.Elem().Kind() != reflect.Struct {
+			return wireEncodeDepth(rv.Elem().Interface(), refs, depth+1)
+		}
+	}
 	switch rv.Kind() {
 	case reflect.Map:
 		out := map[string]any{}
@@ -296,7 +311,9 @@ func wireDecode(value any, resolve func(map[string]any) (any, error)) (any, erro
 		_, c := v["__callable__"]
 		_, o := v["__object__"]
 		_, h := v["__handle__"]
-		if (c || o || h) && resolve != nil {
+		_, pe := v["__parent_event__"]
+		_, ce := v["__child_event__"]
+		if (c || o || h || pe || ce) && resolve != nil {
 			return resolve(v)
 		}
 		out := map[string]any{}

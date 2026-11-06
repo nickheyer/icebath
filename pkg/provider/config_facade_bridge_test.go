@@ -6,10 +6,13 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Runs fn under a multiplex flag and, when secrets is non nil, a bound secret scope
@@ -100,5 +103,29 @@ func TestStaticDeclaredEnvNamesSkipPlatformInjectedNames(t *testing.T) {
 	got, want := staticDeclaredEnvNames(), config.StaticCoreEnvNames()
 	if got["CHATX_INJECTED_SIGNING_SECRET"] || !maps.Equal(got, want) {
 		t.Fatalf("static names %d, core %d, injected %v", len(got), len(want), got["CHATX_INJECTED_SIGNING_SECRET"])
+	}
+}
+
+// The v38 step drops only the removed Relay plugin keys through the plugins lane hook
+func TestFacadeMigrationDropsOnlyLegacyRelayPluginKeys(t *testing.T) {
+	h := camofoxFresh(t)
+	writeConfigYAML(t, h, "_config_version: 37\nplugins:\n  enabled:\n  - keep-me\n  - observability/nemo_relay\n  - nemo_relay\n")
+	config.ResetCache()
+	res, err := config.MigrateConfig(home.WithOverride(context.Background(), h), h, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plugins, _ := camofoxConfig(t, h)["plugins"].(map[string]any)
+	if enabled, _ := plugins["enabled"].([]any); !slices.Equal(enabled, []any{"keep-me"}) {
+		t.Fatalf("plugins %v", plugins)
+	}
+	hits := 0
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "ICEBATH_NEMO_RELAY_PLUGINS_TOML") {
+			hits++
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("warnings %v", res.Warnings)
 	}
 }

@@ -60,6 +60,7 @@ func relayOutcomeForFailure(v any) string {
 
 // RunConversation admits one turn under the durable session lease and relay scopes, then runs the conversation loop
 func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o RunConversationOptions) (result map[string]any, err error) {
+	ctx = withLifecycleEnv(ctx, a.env)
 	cancelBackgroundReviewForLiveTurn(a)
 	effectiveTaskID := o.TaskID
 	if effectiveTaskID == "" {

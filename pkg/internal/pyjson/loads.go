@@ -23,6 +23,7 @@ func (e *DecodeError) Error() string {
 type parser struct {
 	s       []rune
 	lenient bool
+	pairs   func(keys []string, vals []any) (any, error)
 }
 
 // Signals that no value starts at the offset, the StopIteration of the Python scanner
@@ -55,10 +56,28 @@ func Loads(text string) (any, error) { return loads(text, false) }
 func LoadsLenient(text string) (any, error) { return loads(text, true) }
 
 func loads(text string, lenient bool) (any, error) {
+	return loadsWith(&parser{lenient: lenient}, text)
+}
+
+// json.loads with object_pairs_hook, each object built by hook from its keys and values in order
+func LoadsPairsHook(text string, hook func(keys []string, vals []any) (any, error)) (any, error) {
+	return loadsWith(&parser{pairs: hook}, text)
+}
+
+// json.loads of bytes under json.detect_encoding with object_pairs_hook
+func LoadsBytesPairsHook(b []byte, hook func(keys []string, vals []any) (any, error)) (any, error) {
+	text, err := DecodeBytes(b)
+	if err != nil {
+		return nil, err
+	}
+	return LoadsPairsHook(text, hook)
+}
+
+func loadsWith(p *parser, text string) (any, error) {
 	if strings.HasPrefix(text, "\ufeff") {
 		return nil, &DecodeError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Lineno: 1, Colno: 1}
 	}
-	p := &parser{s: pystr.Runes(text), lenient: lenient}
+	p.s = pystr.Runes(text)
 	idx := p.ws(0)
 	v, end, err := p.value(idx)
 	if stop, ok := err.(*stopError); ok {
@@ -238,9 +257,18 @@ func (p *parser) str(end int) (any, int, error) {
 
 func (p *parser) object(i int) (any, int, error) {
 	obj := NewObject()
+	var keys []string
+	var vals []any
+	done := func(end int) (any, int, error) {
+		if p.pairs == nil {
+			return obj, end, nil
+		}
+		v, err := p.pairs(keys, vals)
+		return v, end, err
+	}
 	i = p.ws(i)
 	if i < len(p.s) && p.s[i] == '}' {
-		return obj, i + 1, nil
+		return done(i + 1)
 	}
 	for {
 		if i >= len(p.s) || p.s[i] != '"' {
@@ -259,10 +287,14 @@ func (p *parser) object(i int) (any, int, error) {
 		if err != nil {
 			return nil, next, err
 		}
-		obj.Set(key.(string), val)
+		if p.pairs != nil {
+			keys, vals = append(keys, key.(string)), append(vals, val)
+		} else {
+			obj.Set(key.(string), val)
+		}
 		i = p.ws(next)
 		if i < len(p.s) && p.s[i] == '}' {
-			return obj, i + 1, nil
+			return done(i + 1)
 		}
 		if i >= len(p.s) || p.s[i] != ',' {
 			return nil, i, p.fail("Expecting ',' delimiter", i)

@@ -98,3 +98,14 @@ func Native(n *big.Int) any {
 	}
 	return n
 }
+
+// Integer value of v when isinstance(v, int) holds in Python, bools counting as 0 and 1
+func Instance(v any) (*big.Int, bool) {
+	if b, ok := v.(bool); ok {
+		if b {
+			return big.NewInt(1), true
+		}
+		return big.NewInt(0), true
+	}
+	return pyrepr.Int(v)
+}

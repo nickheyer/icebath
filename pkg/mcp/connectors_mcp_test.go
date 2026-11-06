@@ -219,27 +219,30 @@ func plainJSON(v any) map[string]any {
 
 // The MCP route of manage_connections over the ported target normalization and validation
 func manageMCP(ctx context.Context, args map[string]any, cb tools.ConnCallback, backend ConnectorBackend) map[string]any {
-	action, _ := args["action"].(string)
-	managed, mcpNames, msg := tools.NormalizeTargets(args["connectors"])
-	if msg == "" {
-		msg = tools.ValidateAction(action, managed, mcpNames)
-	}
-	if msg != "" {
-		return map[string]any{"error": msg}
-	}
-	if !slices.Contains(tools.MCPActions, action) {
-		panic("managed action reached the managed path: " + action)
-	}
 	var b any
 	if backend != nil {
 		b = backend
 	}
-	out := tools.MCPOperationRunner(ctx, &tools.Env{}, mcpNames, action, tools.MCPOperationOptions{Callback: cb, SessionID: "s1", Backend: b})
+	out := tools.ManageConnections(ctx, &tools.Env{}, args, tools.ManageOptions{Callback: cb, SessionID: "s1", MCPBackend: b})
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
 		panic(out)
 	}
 	return parsed
+}
+
+func TestConnRegistryDispatchNeverBlocksAndNeverReachesACard(t *testing.T) {
+	connFixture(t, newFakeConnBackend())
+	def := tools.Default.Get("manage_connections")
+	raw := def.Handler(context.Background(), &tools.Call{Name: "manage_connections", Env: &tools.Env{},
+		Args: map[string]any{"action": "enable", "connectors": []any{mcpTarget("linear")}}})
+	var out map[string]any
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("%q: %v", raw, err)
+	}
+	if state := out["targets"].([]any)[0].(map[string]any)["state"]; state != string(tools.TargetConnected) {
+		t.Fatalf("out %v", out)
+	}
 }
 
 func mcpTarget(name string, extra ...any) map[string]any {

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -33,7 +34,13 @@ func defaultAndWorkerHomes(t *testing.T) map[string]string {
 	}
 	t.Setenv("ICEBATH_HOME", def)
 	t.Setenv("NO_PROXY", "*")
+	shutdownServersFirst(t)
 	return map[string]string{"default": def, "worker": worker}
+}
+
+// Shuts the MCP servers down before every cleanup registered earlier restores homes, hooks or test servers
+func shutdownServersFirst(t *testing.T) {
+	t.Cleanup(func() { ShutdownMCPServers(context.Background(), nil, nil, time.Second) })
 }
 
 // Profile runtime scope of the gateway, the profile home with its own secret mapping bound
@@ -74,6 +81,7 @@ func TestSharedConnectionProfileWithOtherSecretSourceValueGetsItsOwnStdioConnect
 	prev := secretSourceNamesFn
 	secretSourceNamesFn = func() []string { return []string{"GH_TOKEN"} }
 	t.Cleanup(func() { secretSourceNamesFn = prev })
+	shutdownServersFirst(t)
 	for name, h := range homes {
 		writeEnvFile(t, h, "GH_TOKEN=fake-token-"+name+"\n")
 		writeProfileConfig(t, h, fmt.Sprintf("mcp_servers:\n  gh:\n    command: %q\n    args: []\n    env:\n      MOCK_MCP_TOOLS: env\n", mockBinary(t)))
@@ -129,6 +137,7 @@ func TestSharedConnectionProfileWithOtherProfileIdentityHeaderGetsItsOwnHTTPConn
 		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": result})
 	}))
 	t.Cleanup(srv.Close)
+	shutdownServersFirst(t)
 	for _, h := range homes {
 		writeProfileConfig(t, h, fmt.Sprintf("mcp_servers:\n  team:\n    url: %s/mcp\n    identity_header:\n      name: X-Icebath-Profile\n      value_from: profile\n", srv.URL))
 	}

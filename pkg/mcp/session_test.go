@@ -288,46 +288,28 @@ func TestServerLogCallback(t *testing.T) {
 	}
 }
 
-func TestToolProgressReachesTheHost(t *testing.T) {
+func TestToolProgressTokenOnlyWithAReporter(t *testing.T) {
 	var mu sync.Mutex
-	var events []tools.Event
-	env := &tools.Env{Notify: func(e tools.Event) { mu.Lock(); events = append(events, e); mu.Unlock() }}
-	s, rec := mockSession(t, nil, SessionOptions{Env: env})
+	var stages []string
+	s, rec := mockSession(t, nil, SessionOptions{})
 	ctx := context.Background()
 	s.Initialize(ctx)
-	r, err := s.CallTool(ctx, "progress", nil, newProgressReporter(env, "mcp__prog__slow", "call-7"))
+	r, err := s.CallTool(ctx, "progress", nil, func(progress float64, total *float64, message string) {
+		mu.Lock()
+		stages = append(stages, message)
+		mu.Unlock()
+	})
 	if err != nil || r.Content[0].Text != "done" {
 		t.Fatalf("call %v %v", r, err)
 	}
 	mu.Lock()
-	defer mu.Unlock()
-	if len(events) == 0 || len(events) >= 20 {
-		t.Fatalf("events %d", len(events))
+	if len(stages) != 20 || stages[19] != "stage 20" {
+		t.Fatalf("stages %v", stages)
 	}
-	last := events[len(events)-1]
-	if last.Kind != "tool.progress" || last.Tool != "mcp__prog__slow" || last.Data["tool_call_id"] != "call-7" || last.Data["percent"] != 100 || last.Text != "stage 20" {
-		t.Fatalf("last %+v", last)
-	}
+	mu.Unlock()
 	s.CallTool(ctx, "plain", nil, nil)
 	if got := recorded(t, rec, "tools/call plain"); !strings.Contains(got, "tools/call progress progress=true") || !strings.Contains(got, "tools/call plain progress=false") {
 		t.Fatalf("progress token opt in %q", got)
-	}
-}
-
-func TestProgressThrottlePerCall(t *testing.T) {
-	clock := 0.0
-	prev := progressNow
-	progressNow = func() float64 { return 100 + clock/8 }
-	t.Cleanup(func() { progressNow = prev })
-	var got []float64
-	env := &tools.Env{Notify: func(e tools.Event) { got = append(got, e.Data["progress"].(float64)) }}
-	report := newProgressReporter(env, "t", "call-1")
-	for step := 1; step <= 10; step++ {
-		report(float64(step*10), fptr(100), "")
-		clock++
-	}
-	if len(got) != 4 || got[0] != 10 || got[1] != 50 || got[2] != 90 || got[3] != 100 {
-		t.Fatalf("throttled %v", got)
 	}
 }
 

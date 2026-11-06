@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -83,6 +84,7 @@ func (p *ptyProcess) spawn(argv []string, cwd string, env map[string]string) err
 	}
 	si := &windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}
 	si.Cb = uint32(unsafe.Sizeof(*si))
+	si.Flags |= windows.STARTF_USESTDHANDLES
 	cmdline, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(argv))
 	if err != nil {
 		return err
@@ -119,10 +121,7 @@ func ptyEnvironBlock(env map[string]string) (*uint16, error) {
 		b.WriteString(k + "=" + env[k] + "\x00")
 	}
 	b.WriteString("\x00")
-	u, err := windows.UTF16FromString(b.String())
-	if err != nil {
-		return nil, err
-	}
+	u := utf16.Encode([]rune(b.String()))
 	return &u[0], nil
 }
 
@@ -174,6 +173,11 @@ func (p *ptyProcess) Terminate(force bool) bool {
 	case <-time.After(2 * time.Second):
 		return !p.IsAlive()
 	}
+}
+
+// Resizes the pseudo console to rows by cols
+func (p *ptyProcess) Resize(rows, cols int) error {
+	return windows.ResizePseudoConsole(p.console, windows.Coord{X: int16(cols), Y: int16(rows)})
 }
 
 // Writes the console end of file keystroke

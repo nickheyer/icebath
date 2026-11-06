@@ -47,7 +47,13 @@ func storeSessionValue(env *Env, key string, value any) {
 }
 
 func loadSessionString(env *Env, key string) (string, bool) {
-	if env == nil || env.Values == nil {
+	if env == nil {
+		return "", false
+	}
+	if v, ok := env.observability.lookup(key); ok {
+		return v, true
+	}
+	if env.Values == nil {
 		return "", false
 	}
 	v, ok := env.Values.Load(key)
@@ -137,6 +143,34 @@ func SetCurrentObservabilityContext(env *Env, turnID, toolCallID, sessionID stri
 	storeSessionValue(env, "approval.turn_id", turnID)
 	storeSessionValue(env, "approval.tool_call_id", toolCallID)
 	storeSessionValue(env, "approval.session_id", sessionID)
+}
+
+// Correlation ids one tool call binds, the per call contextvars approval hooks and output transforms read
+type observabilityIDs struct{ turnID, toolCallID, sessionID string }
+
+func (o *observabilityIDs) lookup(key string) (string, bool) {
+	if o == nil {
+		return "", false
+	}
+	switch key {
+	case "approval.turn_id":
+		return o.turnID, true
+	case "approval.tool_call_id":
+		return o.toolCallID, true
+	case "approval.session_id":
+		return o.sessionID, true
+	}
+	return "", false
+}
+
+// WithObservabilityContext copies env with its own tool correlation ids so concurrent calls never read each other's
+func WithObservabilityContext(env *Env, turnID, toolCallID, sessionID string) *Env {
+	if env == nil {
+		return nil
+	}
+	bound := *env
+	bound.observability = &observabilityIDs{turnID: turnID, toolCallID: toolCallID, sessionID: sessionID}
+	return &bound
 }
 
 // ResetCurrentObservabilityContext drops the bound tool correlation ids

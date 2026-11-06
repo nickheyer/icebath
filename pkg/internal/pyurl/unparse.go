@@ -1,6 +1,10 @@
 package pyurl
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+)
 
 // Reassembles split parts like urllib.parse.urlunsplit, empty query and fragment dropped
 func Unsplit(u URL) string {
@@ -32,9 +36,9 @@ func (u URL) Hostname() string {
 	}
 	h, zone, hasZone := strings.Cut(host, "%")
 	if hasZone {
-		return strings.ToLower(h) + "%" + zone
+		return pystr.Lower(h) + "%" + zone
 	}
-	return strings.ToLower(h)
+	return pystr.Lower(h)
 }
 
 // Lowercased hostname of a base URL that may lack a scheme, the urlparse ValueError on a bad netloc

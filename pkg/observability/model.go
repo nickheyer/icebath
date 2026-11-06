@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // MetricsAgent is the agent state model and efficiency metrics read, implemented by pkg/agent
@@ -283,6 +284,16 @@ func RecordToolCallQuality(ctx context.Context, agent MetricsAgent, toolCalls []
 			recordProcessMark(ctx, ToolUnavailableMark, unavailable)
 		}
 	}
+}
+
+// Counts the calls of one validated response, a call whose name or streamed argument JSON was repaired reads repaired
+func RecordValidatedToolCalls(ctx context.Context, agent MetricsAgent, toolCalls []state.ToolCall, repaired map[int]bool) {
+	calls := make([]EmittedToolCall, len(toolCalls))
+	for i, tc := range toolCalls {
+		argsRepaired, _ := tc.Function.Extra["args_repaired"].(bool)
+		calls[i] = EmittedToolCall{Name: tc.Function.Name, Arguments: tc.Function.Arguments, NameRepaired: repaired[i], ArgsRepaired: argsRepaired}
+	}
+	RecordToolCallQuality(ctx, agent, calls)
 }
 
 // FrictionOptions names the session and model one friction action counts against

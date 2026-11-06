@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Live /browser connect endpoints and publish counts per home key
@@ -60,11 +63,11 @@ func ResolveCDPOverride(ctx context.Context, cdpURL string) string {
 	}
 	ws, err := discoverWebSocketURL(ctx, versionURL)
 	if err != nil {
-		slogDefault().Warn("browser: CDP discovery failed, using raw endpoint", "endpoint", RedactCDPURL(raw), "error", RedactCDPURL(err.Error()))
+		slog.Default().Warn("browser: CDP discovery failed, using raw endpoint", "endpoint", tools.RedactCDPURL(raw), "error", tools.RedactCDPURL(err.Error()))
 		return raw
 	}
 	if ws == "" {
-		slogDefault().Warn("browser: CDP discovery returned no webSocketDebuggerUrl", "endpoint", RedactCDPURL(versionURL))
+		slog.Default().Warn("browser: CDP discovery returned no webSocketDebuggerUrl", "endpoint", tools.RedactCDPURL(versionURL))
 		return raw
 	}
 	return ws

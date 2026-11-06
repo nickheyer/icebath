@@ -126,7 +126,7 @@ func (m *Manager) ApplyLLMRequestMiddleware(request map[string]any, context map[
 }
 
 // Runs relay intercepts then tool request middleware where a returned args mapping replaces the tool arguments
-func (m *Manager) ApplyToolRequestMiddleware(toolName string, args, originalArgs map[string]any, context map[string]any) RequestMiddlewareResult {
+func (m *Manager) ApplyToolRequestMiddleware(goctx context.Context, toolName string, args, originalArgs map[string]any, context map[string]any) (RequestMiddlewareResult, error) {
 	if originalArgs == nil {
 		originalArgs = args
 	}
@@ -142,7 +142,10 @@ func (m *Manager) ApplyToolRequestMiddleware(toolName string, args, originalArgs
 	delete(ctx, "skip_relay")
 	if sessionID != "" && !skipRelay {
 		currentArgs, _ := current.(map[string]any)
-		relayArgs := relayApplyToolRequestIntercepts(sessionID, toolName, currentArgs)
+		relayArgs, err := relayApplyToolRequestIntercepts(goctx, sessionID, toolName, currentArgs)
+		if err != nil {
+			return RequestMiddlewareResult{}, err
+		}
 		if !reflect.DeepEqual(relayArgs, currentArgs) {
 			current = safeCopy(relayArgs)
 			trace = append(trace, map[string]any{"source": "nemo_relay"})
@@ -153,12 +156,12 @@ func (m *Manager) ApplyToolRequestMiddleware(toolName string, args, originalArgs
 		if len(trace) > 0 {
 			payload = current
 		}
-		return RequestMiddlewareResult{Payload: payload, OriginalPayload: args, Changed: len(trace) > 0, Trace: trace}
+		return RequestMiddlewareResult{Payload: payload, OriginalPayload: args, Changed: len(trace) > 0, Trace: trace}, nil
 	}
 	ctx["tool_name"] = toolName
 	ctx["args"] = current
 	ctx["original_args"] = original
-	return m.applyRequestChain(ToolRequestMiddleware, "args", trace, original, ctx)
+	return m.applyRequestChain(ToolRequestMiddleware, "args", trace, original, ctx), nil
 }
 
 // Runs provider execution through the registered LLM execution middleware

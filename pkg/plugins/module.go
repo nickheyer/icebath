@@ -28,18 +28,13 @@ type Services struct {
 	HostObject                        func(kind string, obj any) (name string, ok bool)
 	BindProfileSecretScope            func(ctx context.Context, home string) context.Context
 	GetSecret                         func(ctx context.Context, name string) (string, bool, error)
-	PlatformActions                   func(c *Context) any
-	PluginLLM                         func(c *Context) any
-	SubagentLifecycle                 func(c *Context) any
+	PluginLLM                         PluginLLMClient
+	SubagentLifecycle                 SubagentDelegation
 	DelegationBackends                func(c *Context) any
 	CurrentCronExecution              func(ctx context.Context) any
 	CallMCPTool                       func(ctx context.Context, server, tool string, timeout float64, args map[string]any) (string, error)
 	RedeemSideQuestion                func(ctx context.Context, token, prompt, pluginID, h string, timeout float64) (*string, error)
 	BoundSessionKey                   func(ctx context.Context) string
-	SessionCwd                        func(ctx context.Context, h string) string
-	SessionSurface                    func(ctx context.Context, h string) string
-	PostMessage                       func(ctx context.Context, c *Context, text string) any
-	AskChoice                         func(ctx context.Context, question string, choices []any) (string, bool)
 	ResolveBuiltinCommand             func(name string) bool
 	DispatchTool                      func(ctx context.Context, scope, toolName string, args, kwargs map[string]any) (string, error)
 	RegisterContextReference          func(provider any) error
@@ -72,6 +67,18 @@ type Services struct {
 	RefreshPluginSessions             func(ctx context.Context, home, pluginKey, note string) error
 	MCP                               MCPConnector
 	BroadcastGlobalEvent              func(name string, payload map[string]any)
+	ActiveMemoryProvider              func(ctx context.Context, h string) string
+	PruneInactiveMemoryProviderSkills func(ctx context.Context, h, active string)
+	LoadMemoryProvider                func(ctx context.Context, h, name string)
+	GatewayLoop                       func(ctx context.Context) (runner any, onLoop bool)
+	BoundRoute                        func(ctx context.Context) any
+	ResolvePluginMessageTarget        func(ctx context.Context, runner any, sessionKey string, route any, pluginHome, pluginID string) (target any, refusal map[string]any, err error)
+	PostPluginMessage                 func(ctx context.Context, target any, text, pluginID string) map[string]any
+	EditPluginMessage                 func(ctx context.Context, target, messageID any, text, pluginID string) map[string]any
+	ActiveSessionPolicy               func(ctx context.Context) (platform, cwd string, ok bool)
+	GatewayRunnerRef                  func() PlatformActionRunner
+	ParseServerLiveness               func(raw any) (ServerLiveness, error)
+	DiscoverMemoryProviders           func(ctx context.Context) [][2]string
 }
 
 // Host rendezvous record of a running dashboard or Desktop backend, Record carried back to the rendezvous

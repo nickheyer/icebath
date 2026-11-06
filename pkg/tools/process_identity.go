@@ -73,11 +73,14 @@ var lockOwnedServePidsFn = func() map[int]bool { return lockOwnedServePids("") }
 // Group existence probe the supervisor bookkeeping uses, swapped by tests
 var processGroupGoneFn = func(pgid int) bool { return processGroupGone(pgid) }
 
-// Ledger record of an owned child, swapped by tests
-var registerChildFn = func(pid int, purpose, projectRoot string) bool { return RegisterChild(pid, purpose, projectRoot) }
+// RegisterChildFn records an owned child in the spawn ledger, swappable so a test observes the record
+var RegisterChildFn = func(pid int, purpose, projectRoot string) bool { return RegisterChild(pid, purpose, projectRoot) }
 
-// Release path of an emptied group, swapped by tests
-var releaseGroupsFn = func(pgids []int) { releaseProcessGroups(pgids) }
+// OwnProcessGroupsFn makes process groups die with this process, swappable so a test observes the call
+var OwnProcessGroupsFn = func(pgids []int) { ownProcessGroups(pgids) }
+
+// ReleaseProcessGroupsFn stops covering process groups this process stopped, swappable so a test observes the call
+var ReleaseProcessGroupsFn = func(pgids []int) { releaseProcessGroups(pgids) }
 
 // Executable directory of this install, the project root a spawner identifies itself by
 var installRootFn = func() string {
@@ -1373,10 +1376,10 @@ func ownProcessGroups(pgids []int) { updateSupervisedPgids("register", pgids) }
 func releaseProcessGroups(pgids []int) { updateSupervisedPgids("unregister", pgids) }
 
 // OwnProcessGroups makes these process groups die with this process however it dies
-func OwnProcessGroups(pgids []int) { ownProcessGroups(pgids) }
+func OwnProcessGroups(pgids []int) { OwnProcessGroupsFn(pgids) }
 
 // ReleaseProcessGroups stops covering these groups because this process stopped them itself
-func ReleaseProcessGroups(pgids []int) { releaseProcessGroups(pgids) }
+func ReleaseProcessGroups(pgids []int) { ReleaseProcessGroupsFn(pgids) }
 
 // ReleaseProcessGroupOnceEmpty releases pgid once no member is left, polling the leader through poll
 func ReleaseProcessGroupOnceEmpty(pgid int, poll func(), timeout time.Duration) bool {
@@ -1389,7 +1392,7 @@ func ReleaseProcessGroupOnceEmpty(pgid int, poll func(), timeout time.Duration) 
 			poll()
 		}
 		if processGroupGoneFn(pgid) {
-			releaseGroupsFn([]int{pgid})
+			ReleaseProcessGroupsFn([]int{pgid})
 			return true
 		}
 		if !time.Now().Before(deadline) {
@@ -1436,8 +1439,8 @@ func SpawnOwned(cmd *exec.Cmd, purpose string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	ownProcessGroups([]int{cmd.Process.Pid})
-	registerChildFn(cmd.Process.Pid, purpose, "")
+	OwnProcessGroupsFn([]int{cmd.Process.Pid})
+	RegisterChildFn(cmd.Process.Pid, purpose, "")
 	return nil
 }
 

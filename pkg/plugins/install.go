@@ -110,7 +110,7 @@ func installPluginPythonDeps(ctx context.Context, manifest map[string]any, targe
 		console.Print(fmt.Sprintf("\n[bold]%s[/bold] declares Node dependencies (package.json).", manifestText(manifest, "name", "this plugin")))
 		nodeOK := isTTY() && askYesNo(ctx, []any{"node", manifest["name"]}, "  Install them into the plugin's own node_modules now? [y/N]: ", console)
 		if nodeOK {
-			if reason := pm.InstallNodeSidecar(ctx, target, true); reason != "" {
+			if reason := installNodeSidecar(ctx, target, true); reason != "" {
 				console.Print("[yellow]⚠[/yellow] Node deps: " + reason)
 			}
 		} else {

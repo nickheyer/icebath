@@ -433,7 +433,7 @@ func isNousInferenceRoute(prov, baseURL string) bool {
 }
 
 // Actionable billing or entitlement guidance for the active route
-func billingOrEntitlementMessage(ctx context.Context, capability, prov, baseURL, model string, unverified bool) string {
+var billingOrEntitlementMessage = func(ctx context.Context, capability, prov, baseURL, model string, unverified bool) string {
 	if isNousInferenceRoute(prov, baseURL) {
 		return nousEntitlementMessage(ctx, capability, true)
 	}
@@ -1118,7 +1118,7 @@ func providerOverflowExhaustedResult(ctx context.Context, a *AIAgent, messages, 
 	a.flushStatusBuffer()
 	conversationLoopLog().Error(fmt.Sprintf("%sContext compression failed after %d attempts; rebuilt request remains over threshold at ~%s tokens.",
 		a.logPrefix, maxCompressionAttempts, groupThousands(requestPressureTokens)))
-	if err := a.persistSession(messages, conversationHistory); err != nil {
+	if err := a.persistSession(&messages, conversationHistory); err != nil {
 		return nil, err
 	}
 	copyText, err := tools.SiteCopy(ctx, "context_overflow", map[string]any{"model": a.model})

@@ -209,6 +209,7 @@ type streamCall struct {
 	discardedChunks int
 	discardedBytes  int
 	diag            *StreamDiag
+	hooks           streamHooks
 }
 
 type streamCallKey struct{}
@@ -488,4 +489,33 @@ func streamKillCause(err error) error {
 		return nil
 	}
 	return err
+}
+
+// Stale kill over the header wait of an attempt, measured from the attempt start like the monitor's stale window
+func armHeaderStaleKill(requestCtx context.Context, cancel context.CancelFunc, kill *ccKill, emit func(StreamEvent) error, model string, estTokens int, stale time.Duration, started time.Time) func() {
+	if stale <= 0 || stale >= secondsDuration(math.Inf(1)) {
+		return func() {}
+	}
+	var mu sync.Mutex
+	stopped := false
+	timer := time.AfterFunc(stale-time.Since(started), func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if stopped {
+			return
+		}
+		elapsed := time.Since(started).Seconds()
+		model := orUnknown2(model)
+		catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, stale.Seconds(), model, commaInt(estTokens)))
+		_ = emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(estTokens))})
+		kill.fire("stale", elapsed)
+		bumpStaleStreak(requestCtx)
+		cancel()
+	})
+	return func() {
+		timer.Stop()
+		mu.Lock()
+		stopped = true
+		mu.Unlock()
+	}
 }

@@ -19,6 +19,8 @@ func init() {
 	s.ExecSchtasks = func([]string) (int, string, string) { return 0, "", "" }
 	s.WindowsStartupEntryPath = func(context.Context) string { return "/nonexistent-startup" }
 	s.WindowsLegacyStartupEntryPath = func(context.Context) string { return "/nonexistent-legacy" }
+	s.ServiceManagerDetect = func() (string, error) { return "none", nil }
+	s.ServiceManagerGet = func() (profiles.ProfileServiceManager, error) { return nil, nil }
 	g := &profiles.GatewayStatusHooks
 	g.Identify = func(string) (any, error) { return nil, nil }
 	g.MigrateProfileIdentity = func(string, string, string) (any, error) { return nil, nil }

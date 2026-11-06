@@ -6,16 +6,46 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
 const taskNameDefault = "Icebath_Gateway"
 
 var (
+	serviceGOOS          = runtime.GOOS
 	errWindowsOnly       = errors.New("gateway_windows is Windows-only")
 	windowsFilenameBadRE = regexp.MustCompile("[<>:\"/\\\\|?*\x00-\x1f]")
 )
+
+// Installs the Windows task facts pkg/profiles/manage reaches through profiles.GatewayServiceHooks
+func init() {
+	h := &profiles.GatewayServiceHooks
+	h.WindowsTaskName = func(ctx context.Context) string { return mustService(GetTaskName(ctx)) }
+	h.WindowsTaskRegistered = func(ctx context.Context) bool {
+		ok, err := IsTaskRegistered(ctx)
+		mustService("", err)
+		return ok
+	}
+	h.ExecSchtasks = func(args []string) (int, string, string) {
+		code, out, errText, err := ExecSchtasks(args)
+		mustService("", err)
+		return code, out, errText
+	}
+	h.WindowsStartupEntryPath = func(ctx context.Context) string { return mustService(GetStartupEntryPath(ctx)) }
+	h.WindowsLegacyStartupEntryPath = func(ctx context.Context) string { return mustService(LegacyStartupEntryPath(ctx)) }
+}
+
+// Value of a naming call, raising its error the way the uncaught Python exception does
+func mustService(v string, err error) string {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
 
 // RuntimeError of every gateway_windows entry point off Windows
 func assertWindows() error {
@@ -30,7 +60,7 @@ func GetTaskName(ctx context.Context) (string, error) {
 	if err := assertWindows(); err != nil {
 		return "", err
 	}
-	suffix, err := profileSuffix(ctx)
+	suffix, err := gateway.ProfileSuffix(ctx)
 	if err != nil {
 		return "", err
 	}

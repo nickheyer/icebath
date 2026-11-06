@@ -340,3 +340,39 @@ func ShouldSkipExternalSecretSources() bool {
 	}
 	return len(argv) > 0 && argv[0] == "update"
 }
+
+// File an interrupted checkout fast forward leaves in the git dir until its move is repaired
+const InterruptedPullMarker = "icebath-update-pull"
+
+// Git dir of root, the .git directory or the gitdir a linked worktree's .git file names
+func checkoutGitDir(root string) (string, error) {
+	dotGit := filepath.Join(root, ".git")
+	if info, err := os.Stat(dotGit); err == nil && info.Mode().IsRegular() {
+		raw, err := os.ReadFile(dotGit)
+		if err != nil {
+			return "", err
+		}
+		text, err := pystr.DecodeUTF8Sig(raw)
+		if err != nil {
+			return "", err
+		}
+		text = pystr.Strip(text)
+		if strings.HasPrefix(text, "gitdir:") {
+			target := pystr.Strip(text[len("gitdir:"):])
+			if filepath.IsAbs(target) {
+				return target, nil
+			}
+			return filepath.Join(root, target), nil
+		}
+	}
+	return dotGit, nil
+}
+
+// Path of the interrupted pull marker inside root's git dir
+func InterruptedPullMarkerPath(root string) (string, error) {
+	gitDir, err := checkoutGitDir(root)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(gitDir, InterruptedPullMarker), nil
+}

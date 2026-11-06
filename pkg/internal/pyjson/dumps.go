@@ -216,6 +216,8 @@ func (e *encoder) encode(v any) error {
 		return e.container(sliceID(reflect.ValueOf(x)), func() error {
 			return e.list(len(x), func(i int) any { return x[i] })
 		})
+	case interface{ PyStr() string }:
+		e.str(x.PyStr())
 	default:
 		return e.reflected(v)
 	}

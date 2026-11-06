@@ -463,9 +463,9 @@ func TestSpawnOwnedStartsAGroupLeaderRegistersItAndRecordsTheLedger(t *testing.T
 	fake := &fakeSupervisor{}
 	spawnSupervisorFn = func() supervisorHandle { return fake }
 	ledger := [][2]any{}
-	prevRegister := registerChildFn
-	registerChildFn = func(pid int, purpose, root string) bool { ledger = append(ledger, [2]any{pid, purpose}); return true }
-	t.Cleanup(func() { registerChildFn = prevRegister })
+	prevRegister := RegisterChildFn
+	RegisterChildFn = func(pid int, purpose, root string) bool { ledger = append(ledger, [2]any{pid, purpose}); return true }
+	t.Cleanup(func() { RegisterChildFn = prevRegister })
 	cmd := exec.Command("sh", "-c", "exec sleep 300")
 	if err := SpawnOwned(cmd, "unit-test"); err != nil {
 		t.Fatal(err)
@@ -839,9 +839,9 @@ func TestASupervisorKilledEveryTimeItStartsIsNotRestartedInALoop(t *testing.T) {
 func releasedGroups(t *testing.T) *[][]int {
 	t.Helper()
 	calls := [][]int{}
-	prev := releaseGroupsFn
-	releaseGroupsFn = func(pgids []int) { calls = append(calls, append([]int{}, pgids...)) }
-	t.Cleanup(func() { releaseGroupsFn = prev })
+	prev := ReleaseProcessGroupsFn
+	ReleaseProcessGroupsFn = func(pgids []int) { calls = append(calls, append([]int{}, pgids...)) }
+	t.Cleanup(func() { ReleaseProcessGroupsFn = prev })
 	return &calls
 }
 

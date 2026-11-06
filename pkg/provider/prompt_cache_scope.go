@@ -4,13 +4,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -276,4 +279,276 @@ func pyUTF8Replace(s string) []byte {
 		i += size
 	}
 	return out
+}
+
+var validCacheTTLs = map[string]bool{"5m": true, "1h": true}
+
+// CacheTTLMeansDisabled reports whether a configured cache_ttl value turns prompt caching off, unknown values never do
+func CacheTTLMeansDisabled(ttl any) bool {
+	if s, ok := ttl.(string); ok && validCacheTTLs[s] {
+		return false
+	}
+	if ttl == nil || ttl == false {
+		return true
+	}
+	switch strings.ToLower(pyrepr.Str(ttl)) {
+	case "off", "false", "disabled", "no", "none":
+		return true
+	}
+	return false
+}
+
+// Raw prompt_caching cache_ttl of the bound home config, the default when the config cannot be read
+func rawCacheTTLFromConfig(ctx context.Context, def any) any {
+	cfg := LoadConfigSafe(home.Dir(ctx))
+	if cfg == nil {
+		return def
+	}
+	section := cfg["prompt_caching"]
+	if !pyTruthy(section) {
+		return "5m"
+	}
+	m, ok := section.(map[string]any)
+	if !ok {
+		return def
+	}
+	if v, has := m["cache_ttl"]; has {
+		return v
+	}
+	return "5m"
+}
+
+// PromptCachingDisabledFromConfig reports whether the bound config turns prompt caching off
+func PromptCachingDisabledFromConfig(ctx context.Context) bool {
+	return CacheTTLMeansDisabled(rawCacheTTLFromConfig(ctx, "5m"))
+}
+
+// Configured 5m or 1h cache tier, empty for auto, unknown or unreadable config
+func configuredCacheTTL(ctx context.Context) string {
+	if s, ok := rawCacheTTLFromConfig(ctx, nil).(string); ok && validCacheTTLs[s] {
+		return s
+	}
+	return ""
+}
+
+// ConfiguredCacheTTL returns the configured 5m or 1h cache tier, empty when none applies
+func ConfiguredCacheTTL(ctx context.Context) string { return configuredCacheTTL(ctx) }
+
+// CachePolicyAgent is the agent state the cache policy falls back to, nil CustomProviders means none attached yet
+type CachePolicyAgent struct {
+	Provider        string
+	BaseURL         string
+	APIMode         string
+	Model           any
+	CacheDisabled   bool
+	CustomProviders []map[string]any
+}
+
+// CacheDestination overrides agent fields per call, a nil field reads the agent value
+type CacheDestination struct {
+	Provider, BaseURL, APIMode, Model *string
+}
+
+// BlankCachePolicyAgent is the identity blank policy agent, a nil disable flag reads the bound config
+func BlankCachePolicyAgent(ctx context.Context, cacheDisabled *bool) *CachePolicyAgent {
+	disabled := false
+	if cacheDisabled == nil {
+		disabled = PromptCachingDisabledFromConfig(ctx)
+	} else {
+		disabled = *cacheDisabled
+	}
+	return &CachePolicyAgent{CacheDisabled: disabled}
+}
+
+// Agent field unless the destination names its own value
+func cacheDestField(override *string, fallback string) string {
+	if override != nil {
+		return *override
+	}
+	return fallback
+}
+
+// Whether the resolved destination accepts native tool cache markers on the Anthropic wire
+func directNativeAnthropicToolCacheCapability(agent *CachePolicyAgent, dest CacheDestination) bool {
+	baseURL := cacheDestField(dest.BaseURL, agent.BaseURL)
+	apiMode := cacheDestField(dest.APIMode, agent.APIMode)
+	return apiMode == "anthropic_messages" && baseURLHostname(baseURL) == "api.anthropic.com"
+}
+
+// Cache policy of the MoA preset aggregator slot, false false when it cannot be resolved
+func moaAggregatorCachePolicy(ctx context.Context, agent *CachePolicyAgent, effModel string) (bool, bool) {
+	cfg := LoadConfigSafe(home.Dir(ctx))
+	if cfg == nil {
+		return false, false
+	}
+	var moaCfg any = map[string]any{}
+	if pyTruthy(cfg["moa"]) {
+		moaCfg = cfg["moa"]
+	}
+	preset, err := ResolveMoAPreset(moaCfg, effModel)
+	if err != nil {
+		slog.Debug("MoA aggregator cache-policy resolution failed", "err", err)
+		return false, false
+	}
+	agg, _ := preset["aggregator"].(map[string]any)
+	aggProvider := strings.TrimSpace(pyOrStr(agg["provider"]))
+	aggModel := strings.TrimSpace(pyOrStr(agg["model"]))
+	if aggProvider == "" || aggModel == "" {
+		return false, false
+	}
+	aggBaseURL, aggAPIMode := "", ""
+	if rt, rerr := ResolveRuntimeProvider(ctx, home.Dir(ctx), aggProvider, aggModel, "", ""); rerr == nil && rt != nil {
+		aggBaseURL, aggAPIMode = rt.BaseURL, string(rt.APIMode)
+	}
+	return anthropicPromptCachePolicy(ctx, agent, CacheDestination{Provider: &aggProvider, BaseURL: &aggBaseURL, APIMode: &aggAPIMode, Model: &aggModel})
+}
+
+// Capability lookup and offline provider catalog probe of the cache policy, swapped by tests
+var (
+	cachePolicyCapabilityLookup = CustomProviderModelCapability
+	cachePolicyProviderDef      = GetProviderDef
+)
+
+// Identity gate deciding whether a custom provider capability lookup is worth running
+func routeMayBeCustom(ctx context.Context, agent *CachePolicyAgent, effProvider, providerLower, effBaseURL string) bool {
+	if len(agent.CustomProviders) > 0 {
+		ids := map[string]bool{providerLower: true, strings.TrimPrefix(providerLower, "custom:"): true}
+		effNormalized := NormalizeRouteBaseURL(effBaseURL)
+		for _, entry := range agent.CustomProviders {
+			if entry == nil {
+				continue
+			}
+			for alias := range CustomProviderAliases(pyOrStr(entry["name"]), pyOrStr(entry["provider_key"])) {
+				if ids[alias] {
+					return true
+				}
+			}
+			if effNormalized != "" && NormalizeRouteBaseURL(cfgString(entry["base_url"])) == effNormalized {
+				return true
+			}
+		}
+		return false
+	}
+	if agent.CustomProviders != nil {
+		return false
+	}
+	def := cachePolicyProviderDef(ctx, effProvider, false)
+	return def == nil || (def.BaseURL != "" && baseURLHostname(def.BaseURL) != baseURLHostname(effBaseURL))
+}
+
+// Whether to apply Anthropic prompt caching and whether markers go on inner blocks, branch order matters
+func anthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, dest CacheDestination) (bool, bool) {
+	if agent.CacheDisabled {
+		return false, false
+	}
+	effProvider := cacheDestField(dest.Provider, agent.Provider)
+	effBaseURL := cacheDestField(dest.BaseURL, agent.BaseURL)
+	effAPIMode := cacheDestField(dest.APIMode, agent.APIMode)
+	var rawModel any = agent.Model
+	if dest.Model != nil {
+		rawModel = *dest.Model
+	}
+	if strings.ToLower(pyStripSpace(effProvider)) == "moa" {
+		return moaAggregatorCachePolicy(ctx, agent, pyOrStr(rawModel))
+	}
+	if m, ok := rawModel.(map[string]any); ok {
+		rawModel = m["model"]
+		if !pyTruthy(rawModel) {
+			rawModel = m["default"]
+		}
+		if !pyTruthy(rawModel) {
+			rawModel = ""
+		}
+	}
+	effModel, ok := rawModel.(string)
+	if !ok {
+		effModel = pyOrStr(rawModel)
+	}
+	modelLower := strings.ToLower(effModel)
+	providerLower := strings.ToLower(effProvider)
+	isClaude := strings.Contains(modelLower, "claude")
+	isKimi := modelNameIsKimiFamily(effModel) || strings.Contains(modelLower, "moonshot")
+	isOpenRouter := baseURLHostMatches(effBaseURL, "openrouter.ai")
+	isNousPortal := baseURLHostMatches(effBaseURL, "nousresearch.com")
+	isAnthropicWire := effAPIMode == "anthropic_messages"
+	isNativeAnthropic := isAnthropicWire && (effProvider == "anthropic" || baseURLHostname(effBaseURL) == "api.anthropic.com")
+	supportsCacheMarkers := effAPIMode == "anthropic_messages" || effAPIMode == "chat_completions"
+	litellmOpenAIWire := effAPIMode == "chat_completions" && isClaude && isLitellmRoute(providerLower, effBaseURL)
+	if supportsCacheMarkers && (isAnthropicWire || litellmOpenAIWire || routeMayBeCustom(ctx, agent, effProvider, providerLower, effBaseURL)) {
+		var cfg map[string]any
+		if agent.CustomProviders == nil {
+			cfg = LoadConfigSafe(home.Dir(ctx))
+		}
+		if cfg != nil || agent.CustomProviders != nil {
+			if value, known := cachePolicyCapabilityLookup(effModel, effBaseURL, "prompt_caching", agent.CustomProviders, cfg); known {
+				return value, value && isAnthropicWire
+			}
+		}
+	}
+	isMinimaxRoute := providerLower == "minimax" || providerLower == "minimax-cn" ||
+		baseURLHostMatches(effBaseURL, "api.minimax.io") || baseURLHostMatches(effBaseURL, "api.minimaxi.com")
+	if isAnthropicWire && isMinimaxRoute && modelNameSuggestsMinimaxM3(effModel) {
+		return false, false
+	}
+	if isNativeAnthropic {
+		return true, true
+	}
+	if (isOpenRouter || isNousPortal) && (isClaude || isKimi) && !isAnthropicWire {
+		return true, false
+	}
+	if isNousPortal && strings.Contains(modelLower, "qwen") {
+		return true, false
+	}
+	if isAnthropicWire && isClaude {
+		return true, true
+	}
+	if litellmOpenAIWire {
+		return true, false
+	}
+	if isAnthropicWire && isMinimaxRoute {
+		return true, true
+	}
+	if alibabaFamilyProviders[providerLower] && isQwenModel(modelLower) {
+		return true, false
+	}
+	return false, false
+}
+
+// ResolveAnthropicPromptCachePolicy returns should cache and native layout for the agent and destination overrides
+func ResolveAnthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, dest CacheDestination) (bool, bool) {
+	return anthropicPromptCachePolicy(ctx, agent, dest)
+}
+
+// Request local cache sections for one resolved destination, stripped copies when the route never caches
+func planCacheSectionsForDestination(ctx context.Context, messages, tools []map[string]any, provider, baseURL, apiMode, model string,
+	cacheDisabled *bool, cacheTTL string, staticSystemPrefix *string) ([]map[string]any, []map[string]any) {
+	blankAgent := BlankCachePolicyAgent(ctx, cacheDisabled)
+	dest := CacheDestination{Provider: &provider, BaseURL: &baseURL, APIMode: &apiMode, Model: &model}
+	shouldCache, nativeLayout := anthropicPromptCachePolicy(ctx, blankAgent, dest)
+	if !shouldCache {
+		canonical := make([]map[string]any, 0, len(messages))
+		for _, msg := range messages {
+			copyM, _ := asMap(deepCopyAny(msg))
+			canonical = append(canonical, copyM)
+		}
+		stripAnthropicCacheControl(canonical)
+		return canonical, stripAnthropicToolCacheControl(tools)
+	}
+	prefix := ""
+	if staticSystemPrefix != nil {
+		prefix = *staticSystemPrefix
+	}
+	return buildPromptCachePlan(messages, tools, cachePlanOptions{
+		ttl:                   effectiveCacheTTL(cacheTTL, model, provider),
+		nativeAnthropic:       nativeLayout,
+		staticSystemPrefix:    prefix,
+		directNativeToolCache: directNativeAnthropicToolCacheCapability(blankAgent, dest),
+		toolPartMarkers:       envelopeToolPartCacheMarkersSupported(provider, baseURL),
+	})
+}
+
+// PlanCacheSectionsForDestination plans request local cache sections for a MoA or auxiliary destination
+func PlanCacheSectionsForDestination(ctx context.Context, messages, tools []map[string]any, provider, baseURL, apiMode, model string,
+	cacheDisabled *bool, cacheTTL string, staticSystemPrefix *string) ([]map[string]any, []map[string]any) {
+	return planCacheSectionsForDestination(ctx, messages, tools, provider, baseURL, apiMode, model, cacheDisabled, cacheTTL, staticSystemPrefix)
 }

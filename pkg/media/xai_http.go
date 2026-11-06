@@ -2,7 +2,6 @@ package media
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,92 +17,6 @@ const DefaultXAIBaseURL = "https://api.x.ai/v1"
 
 const maxXAIStorageExpiresAfter = 30 * 24 * 60 * 60
 const safeXAIStorageExpiresAfter = 2 * 24 * 60 * 60
-
-// Resolved bearer for direct xAI HTTP endpoints
-type xaiCredentials struct {
-	Provider string
-	APIKey   string
-	BaseURL  string
-}
-
-// Reports whether an xAI base URL override keeps the api.x.ai origin or a loopback host
-func validateXAIBaseURL(override, fallback string) string {
-	override = strings.TrimRight(strings.TrimSpace(override), "/")
-	if override == "" {
-		return fallback
-	}
-	u, err := url.Parse(override)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
-		return fallback
-	}
-	host := strings.ToLower(u.Hostname())
-	if host == "api.x.ai" || strings.HasSuffix(host, ".x.ai") || host == "localhost" || host == "127.0.0.1" {
-		return override
-	}
-	return fallback
-}
-
-// xAI base URL override from the env, empty when unset
-func xaiBaseURLOverride(env *tools.Env) string {
-	return strings.TrimRight(firstSecret(env, "ICEBATH_XAI_BASE_URL", "XAI_BASE_URL"), "/")
-}
-
-// Reports whether xAI credentials are likely usable without any network
-func hasXAICredentials(env *tools.Env) bool {
-	if secret(env, "XAI_API_KEY") != "" {
-		return true
-	}
-	state, _ := providerAuthState(env, "xai-oauth")
-	tokens, _ := state["tokens"].(map[string]any)
-	if stripAt(tokens, "access_token") != "" {
-		return true
-	}
-	for _, row := range credentialPool(env, "xai-oauth") {
-		if stripAt(row, "access_token") != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// Bearer credentials for direct xAI endpoints, OAuth first unless an API key is preferred
-func resolveXAIHTTPCredentials(env *tools.Env, preferAPIKey bool) xaiCredentials {
-	explicit := secret(env, "XAI_API_KEY")
-	if preferAPIKey && explicit != "" {
-		return xaiCredentials{Provider: "xai", APIKey: explicit, BaseURL: validateXAIBaseURL(xaiBaseURLOverride(env), DefaultXAIBaseURL)}
-	}
-	for _, row := range credentialPool(env, "xai-oauth") {
-		token := stripAt(row, "runtime_api_key")
-		if token == "" {
-			token = stripAt(row, "access_token")
-		}
-		if token == "" {
-			continue
-		}
-		fallback := strings.TrimRight(stripAt(row, "runtime_base_url"), "/")
-		if fallback == "" {
-			fallback = strings.TrimRight(stripAt(row, "base_url"), "/")
-		}
-		if fallback == "" {
-			fallback = DefaultXAIOAuthBaseURL
-		}
-		return xaiCredentials{Provider: "xai-oauth", APIKey: token, BaseURL: validateXAIBaseURL(xaiBaseURLOverride(env), fallback)}
-	}
-	state, _ := providerAuthState(env, "xai-oauth")
-	tokens, _ := state["tokens"].(map[string]any)
-	if token := stripAt(tokens, "access_token"); token != "" {
-		fallback := strings.TrimRight(stripAt(state, "inference_base_url"), "/")
-		if fallback == "" {
-			fallback = DefaultXAIOAuthBaseURL
-		}
-		return xaiCredentials{Provider: "xai-oauth", APIKey: token, BaseURL: validateXAIBaseURL(xaiBaseURLOverride(env), fallback)}
-	}
-	base := strings.TrimRight(secret(env, "XAI_BASE_URL"), "/")
-	if base == "" {
-		base = DefaultXAIBaseURL
-	}
-	return xaiCredentials{Provider: "xai", APIKey: explicit, BaseURL: base}
-}
 
 // xAI Imagine storage settings of a config section
 type xaiStorageConfig struct {

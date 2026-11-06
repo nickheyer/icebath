@@ -146,14 +146,18 @@ func MultiplexerLivenessForProfile(profileDir string) (int, *pyjson.Object, bool
 	if err != nil {
 		return 0, nil, false, err
 	}
+	served := false
+	if topology != nil {
+		if served, err = topology.Serves(name); err != nil {
+			return 0, nil, false, err
+		}
+	}
 	launchHome := defaultRoot
 	var pid int
 	var havePid bool
 	switch {
-	case topology != nil && topology.Serves(name):
-		if topology.PID != nil {
-			pid, havePid = *topology.PID, true
-		}
+	case served:
+		pid, havePid = topology.PID, true
 		if topology.Home != "" {
 			launchHome = topology.Home
 		}

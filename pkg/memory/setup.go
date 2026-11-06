@@ -27,6 +27,7 @@ var (
 	setupReadManifest        = plugins.ReadManifestForInstall
 	setupSyncVenv            = pm.SyncVenv
 	setupRunningFromSelected = pm.RunningFromSelectedEnvironment
+	setupFindProviderDir     = FindProviderDir
 )
 
 type setupProvider struct {
@@ -138,15 +139,15 @@ func (m *MemorySetup) readPrompt(label, def string, secret bool) (string, error)
 
 // Manifest of the provider plugin and the extras and candidate members its preparation needs
 func MemoryProviderDependencyInputs(ctx context.Context, env *tools.Env, name string) (map[string]any, *pm.SyncVenvOptions, error) {
-	reg := FindProvider(ctx, env, name)
-	if reg == nil || reg.Dir == "" {
+	dir := setupFindProviderDir(ctx, env, name)
+	if dir == "" {
 		return map[string]any{}, nil, nil
 	}
-	meta, err := setupReadManifest(reg.Dir)
+	meta, err := setupReadManifest(dir)
 	member := false
 	if err == nil {
 		var decl *pm.PythonDeclaration
-		if decl, err = pm.ReadPythonDeclaration(reg.Dir); err == nil {
+		if decl, err = pm.ReadPythonDeclaration(dir); err == nil {
 			member, err = decl.InstallsPackages()
 		}
 	}
@@ -162,7 +163,7 @@ func MemoryProviderDependencyInputs(ctx context.Context, env *tools.Env, name st
 	}
 	opts := &pm.SyncVenvOptions{Extras: extras, Explicit: true}
 	if member {
-		opts.Plugins = &pm.Candidates{Dirs: []string{reg.Dir}}
+		opts.Plugins = &pm.Candidates{Dirs: []string{dir}}
 	}
 	return meta, opts, nil
 }

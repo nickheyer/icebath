@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const receiptKeep = 20
@@ -21,11 +22,11 @@ const receiptKeep = 20
 // Per context receipt state, the analogue of the receipt ContextVars
 type receiptScope struct {
 	mu                sync.Mutex
-	current           map[string]any
-	completedByUpdate map[string]map[string]any
+	current           *pyjson.Object
+	completedByUpdate map[string]*pyjson.Object
 	workerSet         bool
 	workerUpdate      *string
-	lastCompleted     map[string]any
+	lastCompleted     *pyjson.Object
 }
 
 type receiptScopeKey struct{}
@@ -77,6 +78,11 @@ func WorkerContext(ctx context.Context, updateID *string) func() {
 
 // Deep copy of the last receipt finalized in this scope
 func LastCompleted(ctx context.Context) map[string]any {
+	return receiptPlain(LastCompletedObject(ctx))
+}
+
+// Insertion ordered deep copy of the last receipt finalized in this scope
+func LastCompletedObject(ctx context.Context) *pyjson.Object {
 	s := scopeOf(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,11 +90,12 @@ func LastCompleted(ctx context.Context) map[string]any {
 }
 
 // Files a worker's finished receipt under its update id after checking the correlation
-func AcceptWorkerReceipt(ctx context.Context, data map[string]any, updateID *string) error {
+func AcceptWorkerReceipt(ctx context.Context, receipt any, updateID *string) error {
+	data := receiptObject(receipt)
 	if data == nil {
 		return nil
 	}
-	if !jsonEquals(data["update_id"], optionalString(updateID)) {
+	if !jsonEquals(data.Vals["update_id"], optionalString(updateID)) {
 		return errors.New("PM worker receipt correlation mismatch")
 	}
 	if updateID != nil && *updateID != "" {
@@ -109,8 +116,8 @@ func optionalString(v *string) any {
 }
 
 // Copy on write insertion into the completed by update map
-func withCompleted(m map[string]map[string]any, id string, data map[string]any) map[string]map[string]any {
-	out := make(map[string]map[string]any, len(m)+1)
+func withCompleted(m map[string]*pyjson.Object, id string, data *pyjson.Object) map[string]*pyjson.Object {
+	out := make(map[string]*pyjson.Object, len(m)+1)
 	for k, v := range m {
 		out[k] = v
 	}
@@ -150,7 +157,7 @@ func receiptDir(ctx context.Context) string {
 // ReceiptToken restores the receipt that was current before a nested begin
 type ReceiptToken struct {
 	scope    *receiptScope
-	previous map[string]any
+	previous *pyjson.Object
 	used     bool
 }
 
@@ -160,44 +167,88 @@ func BeginReceipt(ctx context.Context, kind string) *ReceiptToken {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	token := &ReceiptToken{scope: s, previous: s.current}
-	s.current = map[string]any{
-		"schema":       jsonInt(1),
-		"kind":         kind,
-		"update_id":    ambientUpdateID(ctx, s),
-		"started_at":   utcNowISO(),
-		"steps":        []any{},
-		"venv_rebuild": nil,
-		"feature_list": nil,
-		"platform":     nil,
-		"outcome":      nil,
-		"warnings":     []any{},
-		"refusal":      nil,
-	}
+	s.current = pyjson.ObjectOf(
+		"schema", jsonInt(1),
+		"kind", kind,
+		"update_id", ambientUpdateID(ctx, s),
+		"started_at", utcNowISO(),
+		"steps", []any{},
+		"venv_rebuild", nil,
+		"feature_list", nil,
+		"platform", nil,
+		"outcome", nil,
+		"warnings", []any{},
+		"refusal", nil,
+	)
 	return token
 }
 
 // Copy on write mutation of the in flight receipt, a no op when nothing was begun
-func recordReceipt(ctx context.Context, mutate func(map[string]any)) {
+func recordReceipt(ctx context.Context, mutate func(*pyjson.Object)) {
 	s := scopeOf(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.current == nil {
 		return
 	}
-	updated := make(map[string]any, len(s.current))
-	for k, v := range s.current {
-		updated[k] = v
-	}
+	updated := s.current.Copy()
 	mutate(updated)
 	s.current = copyReceipt(updated)
 }
 
 // Deep copy of a receipt document
-func copyReceipt(m map[string]any) map[string]any {
-	if m == nil {
+func copyReceipt(o *pyjson.Object) *pyjson.Object {
+	if o == nil {
 		return nil
 	}
-	return deepCopyJSON(m).(map[string]any)
+	return pyjson.Clone(o).(*pyjson.Object)
+}
+
+// Plain map form of a receipt document for the map facing readers
+func receiptPlain(o *pyjson.Object) map[string]any {
+	if o == nil {
+		return nil
+	}
+	return pyjson.Plain(o).(map[string]any)
+}
+
+// Ordered receipt document of a worker receipt, a plain map entering with sorted keys
+func receiptObject(v any) *pyjson.Object {
+	switch t := v.(type) {
+	case *pyjson.Object:
+		return copyReceipt(t)
+	case *OrderedObject:
+		if t == nil {
+			return nil
+		}
+		return orderedToObject(t).(*pyjson.Object)
+	case map[string]any:
+		if t == nil {
+			return nil
+		}
+		o, _ := pyjson.AsObject(pyjson.Clone(t))
+		return o
+	}
+	return nil
+}
+
+// Converts an ordered decode tree into pyjson objects keeping every key order
+func orderedToObject(v any) any {
+	switch t := v.(type) {
+	case *OrderedObject:
+		out := pyjson.NewObject()
+		for _, k := range t.Keys {
+			out.Set(k, orderedToObject(t.Values[k]))
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, x := range t {
+			out[i] = orderedToObject(x)
+		}
+		return out
+	}
+	return v
 }
 
 // List value of a receipt field
@@ -208,35 +259,35 @@ func receiptList(v any) []any {
 
 // Records one named step and its result
 func RecordStep(ctx context.Context, name string, ok bool, detail string) {
-	recordReceipt(ctx, func(r map[string]any) {
-		r["steps"] = append(append([]any{}, receiptList(r["steps"])...),
-			map[string]any{"name": name, "ok": ok, "detail": detail, "at": utcNowISO()})
+	recordReceipt(ctx, func(r *pyjson.Object) {
+		r.Set("steps", append(append([]any{}, receiptList(r.Vals["steps"])...),
+			pyjson.ObjectOf("name", name, "ok", ok, "detail", detail, "at", utcNowISO())))
 	})
 }
 
 // Records whether the dependency environment rebuild succeeded and why
 func RecordVenvRebuild(ctx context.Context, ok bool, reason string) {
-	recordReceipt(ctx, func(r map[string]any) { r["venv_rebuild"] = map[string]any{"ok": ok, "reason": reason} })
+	recordReceipt(ctx, func(r *pyjson.Object) { r.Set("venv_rebuild", pyjson.ObjectOf("ok", ok, "reason", reason)) })
 }
 
 // Records the selected extras, nil standing for none recorded
 func RecordFeatureList(ctx context.Context, extras []string) {
-	recordReceipt(ctx, func(r map[string]any) {
+	recordReceipt(ctx, func(r *pyjson.Object) {
 		if extras == nil {
-			r["feature_list"] = nil
+			r.Set("feature_list", nil)
 			return
 		}
 		list := make([]any, len(extras))
 		for i, e := range extras {
 			list[i] = e
 		}
-		r["feature_list"] = list
+		r.Set("feature_list", list)
 	})
 }
 
 // Records the platform id the sync ran for
 func RecordPlatform(ctx context.Context, platformID string) {
-	recordReceipt(ctx, func(r map[string]any) { r["platform"] = platformID })
+	recordReceipt(ctx, func(r *pyjson.Object) { r.Set("platform", platformID) })
 }
 
 // JSONRecord is a check result that serializes itself into the receipt
@@ -246,7 +297,7 @@ type JSONRecord interface {
 
 // Records plugin update check results, each serialized when it knows how
 func RecordPluginChecks(ctx context.Context, results []any) {
-	recordReceipt(ctx, func(r map[string]any) {
+	recordReceipt(ctx, func(r *pyjson.Object) {
 		list := make([]any, len(results))
 		for i, item := range results {
 			if rec, ok := item.(JSONRecord); ok {
@@ -255,22 +306,22 @@ func RecordPluginChecks(ctx context.Context, results []any) {
 				list[i] = item
 			}
 		}
-		r["plugin_checks"] = list
+		r.Set("plugin_checks", list)
 	})
 }
 
 // Records a warning that reached the user during this sync
 func RecordWarning(ctx context.Context, message string) {
-	recordReceipt(ctx, func(r map[string]any) {
-		r["warnings"] = append(append([]any{}, receiptList(r["warnings"])...),
-			map[string]any{"message": message, "at": utcNowISO()})
+	recordReceipt(ctx, func(r *pyjson.Object) {
+		r.Set("warnings", append(append([]any{}, receiptList(r.Vals["warnings"])...),
+			pyjson.ObjectOf("message", message, "at", utcNowISO())))
 	})
 }
 
 // Records why this sync refused to act
 func RecordRefusal(ctx context.Context, code, detail string) {
-	recordReceipt(ctx, func(r map[string]any) {
-		r["refusal"] = map[string]any{"code": code, "detail": detail, "at": utcNowISO()}
+	recordReceipt(ctx, func(r *pyjson.Object) {
+		r.Set("refusal", pyjson.ObjectOf("code", code, "detail", detail, "at", utcNowISO()))
 	})
 }
 
@@ -279,7 +330,7 @@ func ReceiptSnapshot(ctx context.Context) map[string]any {
 	s := scopeOf(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return copyReceipt(s.current)
+	return receiptPlain(s.current)
 }
 
 // Writes and rotates the receipt, a token restoring the outer receipt and panicking on reuse or another scope
@@ -305,15 +356,15 @@ func FinalizeReceipt(ctx context.Context, outcome string, exitCode int, token *R
 	} else {
 		s.current = nil
 	}
-	current["outcome"] = outcome
-	current["exit_code"] = jsonInt(exitCode)
-	current["finished_at"] = utcNowISO()
+	current.Set("outcome", outcome)
+	current.Set("exit_code", jsonInt(exitCode))
+	current.Set("finished_at", utcNowISO())
 	s.lastCompleted = copyReceipt(current)
-	if id, ok := current["update_id"].(string); ok && id != "" {
+	if id, ok := current.Vals["update_id"].(string); ok && id != "" {
 		s.completedByUpdate = withCompleted(s.completedByUpdate, id, current)
 	}
 	s.mu.Unlock()
-	path, err := writeRotatedReceipt(ctx, current)
+	path, err := writeRotatedReceipt(ctx, receiptPlain(current))
 	if err != nil {
 		return ""
 	}
@@ -322,6 +373,11 @@ func FinalizeReceipt(ctx context.Context, outcome string, exitCode int, token *R
 
 // Last receipt completed in this scope under an update id, optionally consuming it
 func LastForUpdate(ctx context.Context, updateID string, consume bool) map[string]any {
+	return receiptPlain(LastForUpdateObject(ctx, updateID, consume))
+}
+
+// Insertion ordered form of the last receipt completed under an update id, optionally consuming it
+func LastForUpdateObject(ctx context.Context, updateID string, consume bool) *pyjson.Object {
 	if updateID == "" {
 		return nil
 	}
@@ -330,7 +386,7 @@ func LastForUpdate(ctx context.Context, updateID string, consume bool) map[strin
 	defer s.mu.Unlock()
 	completed := s.completedByUpdate[updateID]
 	if consume {
-		entries := make(map[string]map[string]any, len(s.completedByUpdate))
+		entries := make(map[string]*pyjson.Object, len(s.completedByUpdate))
 		for k, v := range s.completedByUpdate {
 			if k != updateID {
 				entries[k] = v

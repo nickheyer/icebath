@@ -46,10 +46,11 @@ type MarkerBusy struct{ Path string }
 
 func (e *MarkerBusy) Error() string { return e.Path + " is held by another update" }
 
-// Reports whether err stands for a Python OSError, MarkerBusy included
+// Reports whether err stands for a Python OSError, MarkerBusy and the pause record failures included
 func isOSError(err error) bool {
 	var busy *MarkerBusy
-	return errors.As(err, &busy) || pypath.IsOSError(err)
+	var pause *PauseRecordError
+	return errors.As(err, &busy) || errors.As(err, &pause) || pypath.IsOSError(err)
 }
 
 var runtimeHostMatcher atomic.Pointer[func([]string) bool]
@@ -60,9 +61,20 @@ func SetRuntimeHostMatcher(match func([]string) bool) {
 }
 
 var (
-	parentOf  = psutilParent
-	cmdlineOf = proc.Cmdline
+	parentOf    = psutilParent
+	cmdlineOf   = proc.Cmdline
+	linkMarker  = os.Link
+	writeMarker = (*os.File).Write
+	sharedProbe = trySharedLock
+	pausePoint  atomic.Pointer[func(string)]
 )
+
+// Runs the probe hook installed for a named step of the marker protocol
+func pauseAt(point string) {
+	if hook := pausePoint.Load(); hook != nil {
+		(*hook)(point)
+	}
+}
 
 // Pid of the orchestrating updater named by the handoff variable, zero when absent or malformed
 func handoffPID() int {
@@ -165,7 +177,7 @@ func tmpWriterGone(owner *uint64, entry string) (bool, error) {
 		return true, nil
 	}
 	if int(*owner) != os.Getpid() {
-		return !pidAlive(int(*owner)), nil
+		return !aliveOf(int(*owner)), nil
 	}
 	info, err := os.Stat(entry)
 	if err != nil {
@@ -311,12 +323,18 @@ func holderAge(m marker, w World, clamp bool) float64 {
 }
 
 // Live update holding the marker, a held holder while the checkout lock outlives a dead claim, nil when clear
-func ReadLiveUpdate(ctx context.Context, path, installRoot string) *UpdateHolder {
+func ReadLiveUpdate(ctx context.Context, path, installRoot string) (holder *UpdateHolder) {
 	if path == "" {
 		path = UpdateMarkerPath()
 	}
+	defer func() {
+		if failure := recover(); failure != nil {
+			slog.Debug("Could not judge update marker", "path", path, "error", failure)
+			holder = nil
+		}
+	}()
 	for range 2 {
-		parsed := readMarker(path)
+		parsed := markerReader(path)
 		if parsed == nil {
 			return nil
 		}
@@ -349,13 +367,14 @@ func ReadLiveUpdate(ctx context.Context, path, installRoot string) *UpdateHolder
 
 // Removes a dead marker under the mutex, answering reclaimed, held, live, absent or busy
 func reclaimDead(ctx context.Context, path, installRoot string) (string, error) {
+	pauseAt("reclaim")
 	ctx, release, err := MarkerMutex(ctx, path, MutexWaitSeconds*time.Second)
 	if err != nil {
 		slog.Debug("Left update marker for its current mutator", "path", path, "error", err)
 		return "busy", nil
 	}
 	defer release()
-	current := readMarker(path)
+	current := markerReader(path)
 	if current == nil {
 		return "absent", nil
 	}
@@ -369,6 +388,7 @@ func reclaimDead(ctx context.Context, path, installRoot string) (string, error) 
 	if held {
 		return "held", nil
 	}
+	pauseAt("unlink")
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		slog.Debug("Left update marker for its current mutator", "path", path, "error", err)
 		return "busy", nil
@@ -387,7 +407,7 @@ func LegacyProfileClaims(root string) []UpdateHolder {
 		return nil
 	}
 	for _, profile := range names {
-		m := readMarker(filepath.Join(root, "profiles", profile, MarkerName))
+		m := markerReader(filepath.Join(root, "profiles", profile, MarkerName))
 		if m == nil || m.inFlight {
 			continue
 		}
@@ -721,7 +741,7 @@ func CheckoutLockHeld(ctx context.Context, installRoot string) (bool, error) {
 		return !errors.Is(err, fs.ErrNotExist), nil
 	}
 	defer f.Close()
-	free, err := trySharedLock(f)
+	free, err := sharedProbe(f)
 	if err != nil {
 		return false, nil
 	}
@@ -735,7 +755,7 @@ func publishExclusive(ctx context.Context, path string, body []byte) (bool, erro
 		_ = os.Remove(tmp)
 		return false, err
 	}
-	err := os.Link(tmp, path)
+	err := linkMarker(tmp, path)
 	_ = os.Remove(tmp)
 	if err == nil {
 		return true, nil
@@ -756,7 +776,7 @@ func publishExclusive(ctx context.Context, path string, body []byte) (bool, erro
 		f.Close()
 		return false, err
 	}
-	n, err := f.Write(body)
+	n, err := writeMarker(f, body)
 	if err == nil && n != len(body) {
 		err = &os.PathError{Op: "write", Path: path, Err: syscall.ENOSPC}
 	}
@@ -912,7 +932,7 @@ func (l *UpdateLock) judgeExisting(ctx context.Context, body []byte) (bool, bool
 		return true, false, err
 	}
 	defer release()
-	existing := readMarker(l.Path)
+	existing := markerReader(l.Path)
 	if existing == nil {
 		return false, false, nil
 	}

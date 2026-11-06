@@ -2,8 +2,12 @@ package tools
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"math"
+	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -12,11 +16,10 @@ import (
 )
 
 const (
-	checkTTL         = 30 * time.Second
-	checkGrace       = 60 * time.Second
-	checkGraceReuse  = 5 * time.Second
-	checkCacheMax    = 512
-	checkCacheBypass = "\x00bypass"
+	checkTTL        = 30 * time.Second
+	checkGrace      = 60 * time.Second
+	checkGraceReuse = 5 * time.Second
+	checkCacheMax   = 512
 )
 
 type checkKey struct {
@@ -32,7 +35,9 @@ type checkVerdict struct {
 var (
 	checkMu         sync.Mutex
 	checkCache      = map[checkKey]checkVerdict{}
+	checkCacheOrder []checkKey
 	checkLastGood   = map[checkKey]time.Time{}
+	checkGoodOrder  []checkKey
 	checkEverGood   = map[checkKey]bool{}
 	checkDropWarned = map[checkKey]bool{}
 	checkPins       = map[uintptr]func(*Env) bool{}
@@ -67,7 +72,9 @@ func InvalidateCheckCache() {
 	defer checkMu.Unlock()
 	checkEpoch++
 	checkCache = map[checkKey]checkVerdict{}
+	checkCacheOrder = nil
 	checkLastGood = map[checkKey]time.Time{}
+	checkGoodOrder = nil
 	checkEverGood = map[checkKey]bool{}
 	checkDropWarned = map[checkKey]bool{}
 	checkPins = map[uintptr]func(*Env) bool{}
@@ -114,29 +121,68 @@ func verdictWindowOf(ctx context.Context) *VerdictWindow {
 	return w
 }
 
+// Expires stale verdicts and evicts the oldest inserted entries past the cap, caller holds the lock
 func pruneCheckCaches(now time.Time) {
-	for k, v := range checkCache {
-		if now.Sub(v.at) >= checkTTL {
-			delete(checkCache, k)
+	checkCacheOrder = pruneOrdered(checkCache, checkCacheOrder, func(k checkKey) bool { return now.Sub(checkCache[k].at) >= checkTTL })
+	checkGoodOrder = pruneOrdered(checkLastGood, checkGoodOrder, func(k checkKey) bool { return now.Sub(checkLastGood[k]) >= checkGrace })
+}
+
+// Drops expired keys then the first inserted keys until the map is under the cap
+func pruneOrdered[V any](m map[checkKey]V, order []checkKey, expired func(checkKey) bool) []checkKey {
+	kept := order[:0]
+	for _, k := range order {
+		if _, ok := m[k]; !ok {
+			continue
 		}
-	}
-	for k, v := range checkLastGood {
-		if now.Sub(v) >= checkGrace {
-			delete(checkLastGood, k)
+		if expired(k) {
+			delete(m, k)
+			continue
 		}
+		kept = append(kept, k)
 	}
-	for len(checkCache) >= checkCacheMax {
-		for k := range checkCache {
-			delete(checkCache, k)
-			break
-		}
+	for len(kept) >= checkCacheMax {
+		delete(m, kept[0])
+		kept = kept[1:]
 	}
-	for len(checkLastGood) >= checkCacheMax {
-		for k := range checkLastGood {
-			delete(checkLastGood, k)
-			break
-		}
+	return kept
+}
+
+// Stores a verdict keeping the first insertion position of a key already present
+func storeCheckVerdict(key checkKey, v checkVerdict) {
+	if _, ok := checkCache[key]; !ok {
+		checkCacheOrder = append(checkCacheOrder, key)
 	}
+	checkCache[key] = v
+}
+
+// Stores a last success stamp keeping the first insertion position of a key already present
+func storeCheckLastGood(key checkKey, at time.Time) {
+	if _, ok := checkLastGood[key]; !ok {
+		checkGoodOrder = append(checkGoodOrder, key)
+	}
+	checkLastGood[key] = at
+}
+
+// Qualified function name of a probe for log lines
+func fnLabel(fn func(*Env) bool) string {
+	if f := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()); f != nil {
+		return f.Name()
+	}
+	return fmt.Sprintf("%p", fn)
+}
+
+// CheckFnCacheScope is the profile key availability verdicts are cached under, empty for the shared process cache
+func CheckFnCacheScope(env *Env) (scope string, bypass bool) {
+	if env == nil {
+		return "", true
+	}
+	if !servesRoutedEnv(env) {
+		return "", false
+	}
+	if env.Home == "" {
+		return "", true
+	}
+	return ScopeKey(env.Home), false
 }
 
 func checkLogger(env *Env) *slog.Logger {
@@ -163,16 +209,9 @@ func (r *Registry) checkCached(ctx context.Context, env *Env, fn func(*Env) bool
 	checkMu.Lock()
 	uncached := noCacheChecks[ptr] != nil
 	checkMu.Unlock()
-	if uncached {
-		v, p := runCheckUncached(env, fn)
-		if p != nil {
-			checkLogger(env).Warn("availability check panicked, dependent tools unavailable this turn", "panic", p)
-		}
-		return v
-	}
-	scope := scopeOf(env)
-	if env == nil {
-		scope = checkCacheBypass
+	scope, bypass := CheckFnCacheScope(env)
+	if uncached || bypass {
+		return runCheckLogged(env, fn)
 	}
 	key := checkKey{ptr, scope}
 	window := verdictWindowOf(ctx)
@@ -188,7 +227,7 @@ func (r *Registry) checkCached(ctx context.Context, env *Env, fn func(*Env) bool
 	value, panicked := runCheckUncached(env, fn)
 	var coreDropped []string
 	if !value {
-		coreDropped = r.coreToolsGatedBy(ctx, scope, fn)
+		coreDropped = r.coreToolsGatedBy(ctx, scopeOf(env), fn)
 	}
 	now = checkNow()
 	checkMu.Lock()
@@ -196,37 +235,65 @@ func (r *Registry) checkCached(ctx context.Context, env *Env, fn func(*Env) bool
 	pruneCheckCaches(now)
 	checkPins[ptr] = fn
 	if value {
-		checkLastGood[key] = now
+		storeCheckLastGood(key, now)
 		checkEverGood[key] = true
-		checkCache[key] = checkVerdict{now, true}
+		storeCheckVerdict(key, checkVerdict{now, true})
 		window.note(now.Add(checkTTL))
 		return true
 	}
-	outcome := "returned false"
+	outcome := "returned False"
 	if panicked != nil {
-		outcome = "panicked"
+		outcome = "raised"
 	}
+	label := fnLabel(fn)
 	if last, ok := checkLastGood[key]; ok && now.Sub(last) < checkGrace {
 		reuse := now.Add(checkGraceReuse)
 		if end := last.Add(checkGrace); end.Before(reuse) {
 			reuse = end
 		}
 		window.note(reuse)
-		checkLogger(env).Warn("availability check failed within the grace window of its last success, keeping tools available",
-			"outcome", outcome, "grace_seconds", checkGrace.Seconds())
+		checkLogger(env).Warn(fmt.Sprintf("check_fn %s failed (%s) within %.0fs of last success; treating as transient and keeping tool(s) available",
+			label, outcome, checkGrace.Seconds()))
 		return true
 	}
 	if len(coreDropped) > 0 && checkEverGood[key] && !checkDropWarned[key] {
 		checkDropWarned[key] = true
-		checkLogger(env).Warn("availability check dropped previously available core tools",
-			"outcome", outcome, "tools", strings.Join(coreDropped, ", "))
+		checkLogger(env).Warn(fmt.Sprintf("check_fn %s %s; previously available core tool(s) %s dropped (non-deferrable, so not searchable either); dependent tools will be unavailable this turn",
+			label, outcome, strings.Join(coreDropped, ", ")), panicAttrs(panicked)...)
 	} else if panicked != nil {
-		checkLogger(env).Warn("availability check panicked, dependent tools unavailable this turn", "panic", panicked)
+		checkLogger(env).Warn(fmt.Sprintf("check_fn %s %s; dependent tools will be unavailable this turn", label, outcome), panicAttrs(panicked)...)
 	} else {
-		checkLogger(env).Info("availability check returned false, dependent tools unavailable this turn")
+		checkLogger(env).Info(fmt.Sprintf("check_fn %s %s; dependent tools will be unavailable this turn", label, outcome))
 	}
-	checkCache[key] = checkVerdict{now, false}
+	storeCheckVerdict(key, checkVerdict{now, false})
 	window.note(now.Add(checkTTL))
+	return false
+}
+
+// Log attributes carrying a probe panic, none when the probe returned normally
+func panicAttrs(panicked any) []any {
+	if panicked == nil {
+		return nil
+	}
+	return []any{"panic", panicked}
+}
+
+// Runs a probe outside the cache logging an unscoped secret read at debug when no profile scope is bound
+func runCheckLogged(env *Env, fn func(*Env) bool) bool {
+	v, p := runCheckUncached(env, fn)
+	if p == nil {
+		return v
+	}
+	label := fnLabel(fn)
+	if err, ok := p.(error); ok && errors.Is(err, ErrUnscopedSecret) {
+		if env == nil || env.Secrets == nil {
+			checkLogger(env).Debug(fmt.Sprintf("check_fn %s hit the multiplex fail-closed path with no profile secret scope active; dependent tools re-probe on the first scoped turn", label))
+		} else {
+			checkLogger(env).Warn(fmt.Sprintf("check_fn %s raised UnscopedSecretError while the profile cache scope was resolved; dependent tools will be unavailable this turn", label), "panic", p)
+		}
+		return false
+	}
+	checkLogger(env).Warn(fmt.Sprintf("check_fn %s raised; dependent tools will be unavailable this turn", label), "panic", p)
 	return false
 }
 
@@ -262,10 +329,11 @@ func (r *Registry) memoCheck(ctx context.Context, env *Env, fn func(*Env) bool, 
 
 // CachedCheckResult returns a probe's live cached verdict without ever running it
 func CachedCheckResult(env *Env, fn func(*Env) bool) (bool, bool) {
-	if env == nil {
+	scope, bypass := CheckFnCacheScope(env)
+	if bypass {
 		return false, false
 	}
-	key := checkKey{fnPointer(fn), scopeOf(env)}
+	key := checkKey{fnPointer(fn), scope}
 	now := checkNow()
 	checkMu.Lock()
 	defer checkMu.Unlock()

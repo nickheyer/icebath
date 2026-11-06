@@ -53,7 +53,7 @@ func (p *keenableProvider) Search(ctx context.Context, env *Env, query string, l
 		}
 		if useKeyless(env, "keenable", apiKey) {
 			envLog(env).Info("Keenable keyless search", "query", query, "limit", limit)
-			return keylessSearchWithFailover(ctx, env, "keenable", query, limit), nil
+			return keylessSearchWithFailover(ctx, env, "keenable", query, limit)
 		}
 		envLog(env).Info("Keenable search", "query", query, "limit", limit)
 		payload := pyjson.NewObject()
@@ -103,7 +103,11 @@ func keenableFetch(ctx context.Context, apiKey, u string) (*WebPage, error) {
 		return nil, err
 	}
 	if resp.status >= 400 {
-		if origin := keenableOriginError(resp.status, resp.text()); origin != "" {
+		origin, err := keenableOriginError(resp.status, resp.text())
+		if err != nil {
+			return nil, err
+		}
+		if origin != "" {
 			return pageError(u, origin), nil
 		}
 		return nil, fmt.Errorf("%s", httpStatusDetail(resp.status, resp.text()))
@@ -130,7 +134,7 @@ func (p *keenableProvider) Extract(ctx context.Context, env *Env, urls []string,
 		}
 		if useKeyless(env, "keenable", apiKey) {
 			envLog(env).Info("Keenable keyless extract", "urls", len(urls))
-			return keylessExtractWithFailover(ctx, env, "keenable", urls), nil
+			return keylessExtractWithFailover(ctx, env, "keenable", urls)
 		}
 		envLog(env).Info("Keenable extract", "urls", len(urls))
 		results := make([]*WebPage, 0, len(urls))

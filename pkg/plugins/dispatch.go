@@ -46,6 +46,21 @@ type hookEntry struct {
 	name     string
 	module   string
 	shellKey *shellHookKey
+	hosted   bool
+	params   []wireParam
+}
+
+// Whether the callback takes arbitrary keyword arguments, a Go callback and an unknown hosted signature always do
+func (e *hookEntry) acceptsVarKwargs() bool {
+	if !e.hosted || len(e.params) == 0 {
+		return true
+	}
+	for _, p := range e.params {
+		if p.Kind == paramVarKeyword {
+			return true
+		}
+	}
+	return false
 }
 
 // Timeout suppression slot of one callback on one hook
@@ -138,7 +153,16 @@ func (m *Manager) TrackHook(c *Context, hookName string, fn HookFunc, holdStream
 
 // Registers a hook callback under the module and display name that attribute it
 func (m *Manager) trackHookAs(c *Context, hookName string, fn HookFunc, holdStream bool, module, name string) *Registration {
-	entry := &hookEntry{fn: fn, name: name, module: module}
+	return m.trackHookEntry(c, hookName, &hookEntry{fn: fn, name: name, module: module}, holdStream)
+}
+
+// Registers a hosted hook callback keeping its signature for the Plugin Doctor keyword check
+func (m *Manager) trackHostedHook(c *Context, hookName string, cb *HostedCallable, holdStream bool) *Registration {
+	return m.trackHookEntry(c, hookName, &hookEntry{fn: hostedHook(cb), name: cb.Name, module: cb.Module, hosted: true, params: cb.Sig}, holdStream)
+}
+
+// Stores one hook entry, hold_stream honoured only on the output transform hook
+func (m *Manager) trackHookEntry(c *Context, hookName string, entry *hookEntry, holdStream bool) *Registration {
 	handle := trackCallback(c, "hook", hookName, entry, m.hooks, validHooks)
 	if holdStream && hookName != StreamHoldingHook {
 		logWarn(fmt.Sprintf("Plugin '%s' set hold_stream on '%s'; only %s rewrites the reply, ignored",

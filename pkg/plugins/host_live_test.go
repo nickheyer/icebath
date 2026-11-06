@@ -381,6 +381,10 @@ func TestLivePluginRunsOutOfProcessAndSurvivesHostCrash(t *testing.T) {
 			}
 			deadline, result := time.Now().Add(15*time.Second), ""
 			for time.Now().Before(deadline) {
+				if tools.Default.Lookup(homeCtx(h), h, "hostprobe_pid") == nil {
+					time.Sleep(200 * time.Millisecond)
+					continue
+				}
 				if result = dispatchLive(t, h, "hostprobe_pid", nil); strings.Contains(result, `"pid"`) {
 					break
 				}

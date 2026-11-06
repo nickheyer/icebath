@@ -439,6 +439,33 @@ func recordTerminalMetric(env *Env, name string, data map[string]any) {
 	env.Emit(Event{Kind: "metric", Tool: "terminal", Data: data})
 }
 
+// Counts one terminal call that got past planning against its backend and returns the result unchanged
+func meterTerminalBackend(env *Env, plan *execPlan, result, errorClass string) string {
+	if plan == nil {
+		return result
+	}
+	recordTerminalMetric(env, "icebath.execution_backend", map[string]any{"kind": "terminal", "backend": plan.envType, "result": result, "error_class": errorClass})
+	return result
+}
+
+// Exit statuses of a command the shell killed by signal
+var killedExitStatuses = map[int]bool{137: true, 143: true}
+
+// How one foreground command ended, the icebath deadline and interrupt flags first, then its exit status
+func terminalOutcome(result *ExecResult) string {
+	switch {
+	case result.TimedOut:
+		return "timeout"
+	case result.Interrupted:
+		return "killed"
+	case result.ReturnCode == 0:
+		return "ok"
+	case result.ReturnCode < 0 || killedExitStatuses[result.ReturnCode]:
+		return "killed"
+	}
+	return "nonzero"
+}
+
 // Executes in the foreground with retry on transient errors, then finalizes
 func runForeground(ctx context.Context, env *Env, command string, e Environment, plan *execPlan, taskID, sessionID, sessionKey, workdir, approvalNote string, clearInterrupt, metered bool) (string, error) {
 	const maxRetries = 3
@@ -490,13 +517,7 @@ func runForeground(ctx context.Context, env *Env, command string, e Environment,
 		}), nil
 	}
 	if metered {
-		outcome := "exit"
-		if result.TimedOut {
-			outcome = "icebath_timed_out"
-		} else if result.Interrupted {
-			outcome = "interrupted"
-		}
-		recordTerminalMetric(env, "icebath.terminal.outcome", map[string]any{"backend": envType, "exit_code": result.ReturnCode, "outcome": outcome})
+		recordTerminalMetric(env, "icebath.terminal.outcome", map[string]any{"command": command, "backend": envType, "outcome": terminalOutcome(result)})
 	}
 	return finalizeForegroundResult(env, command, result, e, envType, eff, taskID, sessionID, sessionKey, workdir, commandCwd, approvalNote), nil
 }
@@ -568,10 +589,13 @@ func runBoundedGuard(timeout time.Duration, guard func() error) (error, bool) {
 }
 
 // Runs the terminal tool with the plan already made, errors carry the finished result
-func terminalRun(ctx context.Context, env *Env, req TerminalRequest) (string, error) {
+func terminalRun(ctx context.Context, env *Env, req TerminalRequest, metered **execPlan) (string, error) {
 	plan, err := planExecutionFn(env, req.Command, req.TaskID, req.Timeout, req.Background, req.HostLocal)
 	if err != nil {
 		return "", err
+	}
+	if !req.HostLocal {
+		*metered = plan
 	}
 	command, _ := req.Command.(string)
 	background := req.Background
@@ -635,60 +659,39 @@ func terminalRun(ctx context.Context, env *Env, req TerminalRequest) (string, er
 		if plan.promotedFromForegroundTimeout != 0 {
 			result = withPromotedNote(result, plan.promotedFromForegroundTimeout)
 		}
-		if !req.HostLocal {
-			recordTerminalMetric(env, "icebath.execution_backend.count", map[string]any{"tool": "terminal", "backend": envType, "error_class": ""})
-		}
 		return result, nil
 	}
 	result, err := runForegroundFn(ctx, env, command, e, plan, req.TaskID, req.SessionID, sessionKey, req.Workdir, verdict.note, verdict.approvedRun, !req.HostLocal)
 	if err != nil {
 		return "", err
 	}
-	if !req.HostLocal {
-		recordTerminalMetric(env, "icebath.execution_backend.count", map[string]any{"tool": "terminal", "backend": envType, "error_class": ""})
-	}
 	return result, nil
 }
 
 // TerminalTool executes a command in the configured terminal environment and returns the JSON result
 func TerminalTool(ctx context.Context, env *Env, req TerminalRequest) (out string) {
-	var envType string
+	var plan *execPlan
 	defer func() {
 		if r := recover(); r != nil {
 			err, ok := r.(error)
 			if !ok {
 				err = fmt.Errorf("%v", r)
 			}
-			out = fatalErrorJSON(env, err)
-			if !req.HostLocal && envType != "" {
-				recordTerminalMetric(env, "icebath.execution_backend.count", map[string]any{"tool": "terminal", "backend": envType, "error_class": "exception"})
-			}
+			out = meterTerminalBackend(env, plan, fatalErrorJSON(env, err), "exception")
 		}
 	}()
-	if cfg, err := getEnvConfig(env); err == nil {
-		envType, _ = cfg["env_type"].(string)
-		if req.HostLocal {
-			envType = "local"
-		}
-	}
-	result, err := terminalRun(ctx, env, req)
+	result, err := terminalRun(ctx, env, req, &plan)
 	if err == nil {
-		return result
+		return meterTerminalBackend(env, plan, result, "")
 	}
 	if rej, ok := err.(*terminalRejected); ok {
 		return rej.resultJSON
 	}
 	var ce *EnvironmentConnectionError
 	if errors.As(err, &ce) {
-		if !req.HostLocal && envType != "" {
-			recordTerminalMetric(env, "icebath.execution_backend.count", map[string]any{"tool": "terminal", "backend": envType, "error_class": "tool_error"})
-		}
-		return degradedResult(env, ce, req.TaskID)
+		return meterTerminalBackend(env, plan, degradedResult(env, ce, req.TaskID), "tool_error")
 	}
-	if !req.HostLocal && envType != "" {
-		recordTerminalMetric(env, "icebath.execution_backend.count", map[string]any{"tool": "terminal", "backend": envType, "error_class": "exception"})
-	}
-	return fatalErrorJSON(env, err)
+	return meterTerminalBackend(env, plan, fatalErrorJSON(env, err), "exception")
 }
 
 // Model visible schema of the terminal tool

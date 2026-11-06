@@ -3,11 +3,14 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/cliui"
 )
 
 func TestDeviceFlowErrorCopy(t *testing.T) {
@@ -50,6 +53,9 @@ func TestErrorClassifiers(t *testing.T) {
 	}
 	if !IsCancelled(context.Canceled) || !IsCancelled(io.EOF) || !IsCancelled(&SignInCancelledError{ExitCode: 130, HasCode: true}) || !IsCancelled(&SignInCancelledError{}) || !IsCancelled(&DeviceFlowCancelledError{}) {
 		t.Fatal("cancellation shapes")
+	}
+	if !IsCancelled(cliui.ErrInterrupt) || !IsCancelled(cliui.ErrEOF) || !IsCancelled(fmt.Errorf("sign in: %w", cliui.ErrInterrupt)) || !IsCancelled(fmt.Errorf("prompt: %w", cliui.ErrEOF)) {
+		t.Fatal("prompt interrupt and closed input are cancellations")
 	}
 	if IsCancelled(&SignInCancelledError{ExitCode: 1, HasCode: true}) || IsCancelled(errors.New("x")) || IsCancelled(nil) {
 		t.Fatal("non cancellations")

@@ -3,10 +3,12 @@ package memory
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -207,6 +209,17 @@ func TestStartupRecoveryBacksOffAfterAFailedInstall(t *testing.T) {
 	if len(attempts) != 1 || !strings.Contains(said[len(said)-1], "`icebath plugins install hindsight`") {
 		t.Fatalf("attempts %v said %v", attempts, said)
 	}
+	stamp := filepath.Join(home.CacheDir(h), "left-core-hindsight.failed")
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stamp, past, past); err != nil {
+		t.Fatal(err)
+	}
+	migrationAttemptedMu.Lock()
+	migrationAttempted = map[[2]string]bool{}
+	migrationAttemptedMu.Unlock()
+	if ok, err := RecoverMemoryProviderAtStartup(ctx, "hindsight", nil); ok || err != nil || len(attempts) != 2 {
+		t.Fatalf("%v %v attempts %v", ok, err, attempts)
+	}
 }
 
 func TestCloneHonchoForProfileRunsThePluginCLIInTheHost(t *testing.T) {
@@ -274,6 +287,146 @@ func TestStartupRecoveryNeverAsksADependencyQuestion(t *testing.T) {
 		}
 		if !tc.installs && (len(consents) != 0 || !strings.Contains(said[len(said)-1], "`icebath plugins install "+tc.name+"`")) {
 			t.Fatalf("%s consents %v said %v", tc.name, consents, said)
+		}
+	}
+}
+
+// Installs plugin manager hooks for one test and puts the previous ones back
+func withPluginManagerHooks(t *testing.T, hooks provider.PluginManagerHooks) {
+	t.Helper()
+	var saved *provider.PluginManagerHooks
+	func() {
+		defer func() { _ = recover() }()
+		saved = provider.PluginHooks()
+	}()
+	provider.InstallPluginManagerHooks(hooks)
+	t.Cleanup(func() {
+		if saved == nil {
+			saved = &provider.PluginManagerHooks{}
+		}
+		provider.InstallPluginManagerHooks(*saved)
+	})
+}
+
+// Default home plus named profile homes all configured with twin, a left core stand in
+func migrationProfileHomes(t *testing.T, names ...string) []string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), ".icebath")
+	homes := []string{root}
+	for _, n := range names {
+		homes = append(homes, filepath.Join(root, "profiles", n))
+	}
+	for _, h := range homes {
+		writeMigrationHome(t, h, "memory:\n  provider: twin\n")
+	}
+	t.Setenv("ICEBATH_HOME", root)
+	withMigrationSteps(t, catalogAll)
+	leftCoreMemoryProviders = map[string]bool{"twin": true}
+	return homes
+}
+
+func TestUpdateAsksOnceAndNamesEachProfile(t *testing.T) {
+	homes := migrationProfileHomes(t, "work-a", "work-b")
+	withPluginManagerHooks(t, provider.PluginManagerHooks{DependencyHomes: func() []string { return homes }})
+	migrationSteps.interactive = func() bool { return true }
+	migrationSteps.installInto = func(ctx context.Context, h string, _ *bool) MemoryInstallFunc {
+		return func(name string) (map[string]any, error) {
+			consented, reason := plugins.ConsentPythonDeps(ctx, name, []string{"twin-client"}, plugins.NewConsole(io.Discard), false)
+			if !consented {
+				return map[string]any{"ok": false, "error": reason}, nil
+			}
+			if err := os.MkdirAll(filepath.Join(h, "plugins", name), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return map[string]any{"ok": true}, nil
+		}
+	}
+	for _, tc := range []struct {
+		answer string
+		want   []string
+	}{{"n", nil}, {"y", []string{"twin", "twin", "twin"}}} {
+		var prompts, said []string
+		restore := plugins.SwapTerminalIO(func() bool { return true }, func(prompt string) (string, error) {
+			prompts = append(prompts, prompt)
+			return tc.answer, nil
+		})
+		got := MigrateAllMemoryHomes(context.Background(), func(s string) { said = append(said, s) })
+		restore()
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") || len(prompts) != 1 {
+			t.Fatalf("%s got %v prompts %v said %q", tc.answer, got, prompts, said)
+		}
+		if tc.answer == "n" {
+			if len(said) < 3 || !strings.Contains(said[1], "[profile 'default']") || !strings.Contains(said[1], "dependency install declined") ||
+				!strings.Contains(said[2], "icebath -p work-a plugins install twin") || !strings.Contains(said[2], "icebath -p work-b plugins install twin") {
+				t.Fatalf("said %q", said)
+			}
+			for _, h := range homes {
+				if _, err := os.Stat(filepath.Join(h, "plugins")); err == nil {
+					t.Fatalf("declined install created %s/plugins", h)
+				}
+			}
+			continue
+		}
+		var labels []string
+		for _, line := range said[1:] {
+			labels = append(labels, strings.SplitN(line, "]", 2)[0])
+		}
+		if strings.Join(labels, "|") != "  [profile 'default'|  [profile 'work-a'|  [profile 'work-b'" {
+			t.Fatalf("said %q", said)
+		}
+	}
+}
+
+func TestUnattendedUpdateRefusalInOneProfileDoesNotSkipTheOthers(t *testing.T) {
+	homes := migrationProfileHomes(t, "work")
+	def, work := homes[0], homes[1]
+	migrationSteps.interactive = func() bool { return false }
+	migrationSteps.lazyInstalls = func(ctx context.Context) bool { return home.Dir(ctx) == work }
+	migrationSteps.installInto = memoryInstallInto
+	withPluginManagerHooks(t, provider.PluginManagerHooks{
+		DependencyHomes: func() []string { return []string{def, work} },
+		Install: func(ctx context.Context, name string, consent bool) (map[string]any, error) {
+			if !consent {
+				return map[string]any{"ok": false, "error": "dependency install skipped (non-interactive)"}, nil
+			}
+			if err := os.MkdirAll(filepath.Join(home.Dir(ctx), "plugins", name), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return map[string]any{"ok": true}, nil
+		},
+	})
+	var said []string
+	got := MigrateAllMemoryHomes(context.Background(), func(s string) { said = append(said, s) })
+	if len(got) != 1 || got[0] != "twin" {
+		t.Fatalf("got %v said %q", got, said)
+	}
+	if st, err := os.Stat(filepath.Join(work, "plugins", "twin")); err != nil || !st.IsDir() {
+		t.Fatalf("work home not migrated %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(def, "plugins")); err == nil {
+		t.Fatal("the refusing default home was installed into")
+	}
+	for _, line := range said {
+		if strings.Contains(line, "either") {
+			t.Fatalf("said %q", said)
+		}
+	}
+}
+
+func TestStartupHintInstallsIntoTheProfileThatPrintedIt(t *testing.T) {
+	homes := migrationProfileHomes(t, "work")
+	migrationSteps.lazyInstalls = func(context.Context) bool { return false }
+	for _, tc := range []struct{ h, command string }{
+		{homes[1], "icebath -p work plugins install twin"}, {homes[0], "icebath plugins install twin"},
+	} {
+		migrationAttemptedMu.Lock()
+		migrationAttempted = map[[2]string]bool{}
+		migrationAttemptedMu.Unlock()
+		t.Setenv("ICEBATH_HOME", tc.h)
+		var said []string
+		ok, err := RecoverMemoryProviderAtStartup(context.Background(), "twin", func(s string) { said = append(said, s) })
+		if ok || err != nil || len(said) == 0 || !strings.Contains(said[0], "`"+tc.command+"`") {
+			t.Fatalf("%s %v %v said %q", tc.h, ok, err, said)
 		}
 	}
 }

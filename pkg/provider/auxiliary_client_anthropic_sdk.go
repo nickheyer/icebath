@@ -79,6 +79,19 @@ func buildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeo
 		betas: anthCommonBetasForBaseURL(normalized, dropContext1MBeta)}, nil
 }
 
+// Client whose default headers merge the given headers over its own, the SDK with_options call
+func (c *anthropicSDKClient) withDefaultHeaders(headers map[string]string) *anthropicSDKClient {
+	merged := map[string]string{}
+	for k, v := range c.inner.route.Headers {
+		merged[k] = v
+	}
+	for k, v := range headers {
+		merged[k] = v
+	}
+	c.inner.route.Headers = merged
+	return c
+}
+
 // Request body and per call headers of SDK kwargs, extra_body merged and extra_headers lifted out
 func anthSDKRequest(apiKwargs map[string]any, stream bool) (map[string]any, map[string]any) {
 	body := make(map[string]any, len(apiKwargs)+1)
@@ -211,4 +224,27 @@ func (c *anthropicSDKClient) create(ctx context.Context, apiKwargs map[string]an
 		return nil, apiErr
 	}
 	return payload, nil
+}
+
+// AnthropicBedrock client signing with the scoped AWS identity, the 1M context beta and guardrail headers attached
+func buildAnthropicBedrockClient(ctx context.Context, region string, timeout float64) (*anthropicSDKClient, error) {
+	scoped, err := scopedAWSSessionOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	read := 900 * time.Second
+	if timeout > 0 {
+		read = time.Duration(timeout * float64(time.Second))
+	}
+	betas := append(cloneStrings(anthropicCommonBetas), anthropicContext1MBeta)
+	headers := bedrockGuardrailHeaders(bedrockProcessConfig(ctx))
+	tr := auxDeadlineTransport(10*time.Second, read, read)
+	route := Route{Provider: "bedrock", Mode: ModeAnthropicMessages, Auth: AuthAWSSigV4, Region: region, Headers: headers, Transport: tr,
+		AccessKeyID: scoped.AccessKeyID, SecretAccessKey: scoped.SecretAccessKey, SessionToken: scoped.SessionToken}
+	built, err := newAnthropicClient(route)
+	if err != nil {
+		return nil, err
+	}
+	return &anthropicSDKClient{inner: built.(*anthropicClient), baseURL: "https://bedrock-runtime." + region + ".amazonaws.com", transport: tr,
+		betas: betas}, nil
 }

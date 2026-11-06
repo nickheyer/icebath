@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -87,29 +89,50 @@ func checkNetloc(netloc string) error {
 	return nil
 }
 
-// Validates the bracketed host of a netloc the way urlsplit checks it
+var ipvFutureRe = regexp.MustCompile(`\A[vV][a-fA-F0-9]+\..+\z`)
+
+// Validates the bracketed host of a netloc like urlsplit _check_bracketed_netloc and _check_bracketed_host
 func checkBracketedNetloc(netloc string) error {
 	hostinfo := netloc[strings.LastIndex(netloc, "@")+1:]
-	open := strings.Index(hostinfo, "[")
-	closeIdx := strings.Index(hostinfo, "]")
-	if open < 0 || closeIdx < open {
-		return ErrInvalidIPv6
+	var host string
+	if before, bracketed, open := strings.Cut(hostinfo, "["); open {
+		if before != "" {
+			return ErrInvalidIPv6
+		}
+		var port string
+		host, port, _ = strings.Cut(bracketed, "]")
+		if port != "" && !strings.HasPrefix(port, ":") {
+			return ErrInvalidIPv6
+		}
+	} else {
+		host, _, _ = strings.Cut(hostinfo, ":")
 	}
-	host := hostinfo[open+1 : closeIdx]
-	if strings.HasPrefix(host, "v") {
-		if len(host) < 2 || !strings.Contains(host, ".") {
-			return fmt.Errorf("IPvFuture address is invalid")
+	if strings.HasPrefix(host, "v") || strings.HasPrefix(host, "V") {
+		if !ipvFutureRe.MatchString(host) {
+			return errors.New("IPvFuture address is invalid")
 		}
 		return nil
 	}
-	if i := strings.IndexByte(host, '%'); i >= 0 {
-		host = host[:i]
+	addr, ok := ipAddress(host)
+	if !ok {
+		return fmt.Errorf("%s does not appear to be an IPv4 or IPv6 address", pyrepr.StrRepr(host))
 	}
-	addr, err := netip.ParseAddr(host)
-	if err != nil || !addr.Is6() {
-		return fmt.Errorf("%q does not appear to be an IPv4 or IPv6 address", host)
+	if addr.Is4() {
+		return errors.New("An IPv4 address cannot be in brackets")
 	}
 	return nil
+}
+
+// Parses like ipaddress.ip_address, an IPv6 scope id non empty and free of percent signs
+func ipAddress(s string) (netip.Addr, bool) {
+	if _, zone, scoped := strings.Cut(s, "%"); scoped && (zone == "" || strings.Contains(zone, "%")) {
+		return netip.Addr{}, false
+	}
+	addr, err := netip.ParseAddr(s)
+	if err != nil || (addr.Is4() && addr.Zone() != "") {
+		return netip.Addr{}, false
+	}
+	return addr, true
 }
 
 var UsesParams = map[string]bool{"": true, "ftp": true, "hdl": true, "prospero": true, "http": true, "imap": true, "https": true,

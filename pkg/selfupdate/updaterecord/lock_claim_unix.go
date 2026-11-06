@@ -57,6 +57,7 @@ func tryLock(f *os.File) (bool, error) {
 // Shared flock probe dropped when the caller closes f, false on a holder
 func trySharedLock(f *os.File) (bool, error) {
 	err := unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB)
+	pauseAt("shared-probe")
 	if err == nil {
 		return true, nil
 	}

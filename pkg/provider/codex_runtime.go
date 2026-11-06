@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // CodexSessionDB is the session store surface the runtime reads thread bindings from and queues accounting into
@@ -100,6 +101,7 @@ type CodexRuntimeAgent interface {
 	TouchActivityHook() func(desc string)
 	SyncExternalMemoryForTurnHook() func(originalUserMessage, finalResponse any, interrupted bool, messages []map[string]any)
 	SpawnBackgroundReviewHook() func(messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool)
+	ToolEnv() *tools.Env
 }
 
 // Invokes an optional display or debug hook, a panic in it is logged and never ends the turn

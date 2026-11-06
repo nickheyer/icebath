@@ -193,14 +193,6 @@ func (d *DB) ResolveSessionID(idOrPrefix string) (string, error) {
 	return "", nil
 }
 
-// Marks a session ended, the first reason winning
-func (d *DB) EndSession(id, reason string) error {
-	return d.write(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ? AND ended_at IS NULL", now(), reason, id)
-		return err
-	})
-}
-
 // Clears the end of a session so it can be resumed, dropping an automatic archive
 func (d *DB) ReopenSession(id string) error {
 	return d.write(func(tx *Tx) error {
@@ -219,34 +211,6 @@ func (d *DB) UpdateSessionModel(id, model, provider, baseURL string) error {
 			nullStr(model), nullStr(provider), nullStr(baseURL), id)
 		return err
 	})
-}
-
-// Merges keys into the model config of a session, a nil value removing the key
-func (d *DB) PatchModelConfig(id string, patch map[string]any) error {
-	return d.write(func(tx *Tx) error {
-		return patchModelConfig(tx, id, patch)
-	})
-}
-
-// Merges keys into the model config of a session inside a transaction
-func patchModelConfig(tx *Tx, id string, patch map[string]any) error {
-	var raw sql.NullString
-	if err := tx.QueryRow("SELECT model_config FROM sessions WHERE id = ?", id).Scan(&raw); err != nil {
-		return err
-	}
-	cfg := map[string]any{}
-	if raw.Valid && raw.String != "" {
-		_ = json.Unmarshal([]byte(raw.String), &cfg)
-	}
-	for k, v := range patch {
-		if v == nil {
-			delete(cfg, k)
-		} else {
-			cfg[k] = v
-		}
-	}
-	_, err := tx.Exec("UPDATE sessions SET model_config = ? WHERE id = ?", jsonOrNull(cfg), id)
-	return err
 }
 
 // Records the working directory and git facts of a session
@@ -519,43 +483,6 @@ func (d *DB) CompressionTip(id string) (string, error) {
 	return d.GetCompressionTip(context.Background(), id)
 }
 
-// Deletes a session with its messages, orphaning children and removing delegate children
-func (d *DB) DeleteSession(id string) error {
-	return d.write(func(tx *Tx) error {
-		ids := []string{id}
-		rows, err := tx.Query("SELECT id FROM sessions WHERE parent_session_id = ? AND json_extract(model_config, '$._delegate_from') IS NOT NULL", id)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var child string
-			if err := rows.Scan(&child); err != nil {
-				rows.Close()
-				return err
-			}
-			ids = append(ids, child)
-		}
-		rows.Close()
-		ph := placeholders(len(ids))
-		if _, err := tx.Exec("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id IN ("+ph+")", args(ids)...); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("DELETE FROM compression_locks WHERE session_id IN ("+ph+")", args(ids)...); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("DELETE FROM session_turn_leases WHERE conversation_id IN ("+ph+")", args(ids)...); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("DELETE FROM messages WHERE session_id IN ("+ph+")", args(ids)...); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("DELETE FROM sessions WHERE id IN ("+ph+")", args(ids)...); err != nil {
-			return err
-		}
-		return deleteUnreferencedPrompts(tx)
-	})
-}
-
 // Deletes ended sessions idle longer than the retention, returning how many went
 func (d *DB) PruneSessions(olderThan time.Duration, source string) (int, error) {
 	cutoff := now() - olderThan.Seconds()
@@ -599,23 +526,6 @@ func (d *DB) PruneSessions(olderThan time.Duration, source string) (int, error) 
 				}
 			}
 		}
-		return deleteUnreferencedPrompts(tx)
-	})
-	return count, err
-}
-
-// Deletes ended sessions that never received a message
-func (d *DB) DeleteEmptySessions() (int, error) {
-	count := 0
-	err := d.write(func(tx *Tx) error {
-		res, err := tx.Exec(`DELETE FROM sessions WHERE message_count = 0 AND ended_at IS NOT NULL AND pinned = 0
-			AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.session_id = sessions.id)
-			AND NOT EXISTS (SELECT 1 FROM sessions c WHERE c.parent_session_id = sessions.id)`)
-		if err != nil {
-			return err
-		}
-		n, _ := res.RowsAffected()
-		count = int(n)
 		return deleteUnreferencedPrompts(tx)
 	})
 	return count, err

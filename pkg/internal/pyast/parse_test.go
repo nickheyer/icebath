@@ -105,6 +105,12 @@ func unparseOutcome(src []byte, isBytes bool) string {
 }
 
 func parseOutcome(src []byte, isBytes bool) string {
+	got, _ := parseOutcomes(src, isBytes)
+	return got
+}
+
+// Dump outcome and unparse outcome of one parse, the unparse text empty when the parse failed
+func parseOutcomes(src []byte, isBytes bool) (string, string) {
 	var n *Node
 	var err error
 	if isBytes {
@@ -113,13 +119,17 @@ func parseOutcome(src []byte, isBytes bool) string {
 		n, err = Parse(string(src))
 	}
 	if err != nil {
-		return "err:" + errorRow(err)
+		return "err:" + errorRow(err), ""
 	}
 	d, err := Dump(n, true)
-	if err != nil {
-		return "dumperr:ValueError|" + err.Error()
+	up, uerr := Unparse(n)
+	if uerr != nil {
+		up = "unparseerr:" + uerr.Error()
 	}
-	return "dump:" + d
+	if err != nil {
+		return "dumperr:ValueError|" + err.Error(), up
+	}
+	return "dump:" + d, up
 }
 
 func TestParseMatchesCPythonCases(t *testing.T) {
@@ -205,7 +215,7 @@ func TestParseMatchesCPythonOnHermesTree(t *testing.T) {
 					results <- result{rel, "source changed since the CPython reference was recorded"}
 					continue
 				}
-				got := parseOutcome(data, true)
+				got, unparsed := parseOutcomes(data, true)
 				if kind == "ok" {
 					sum := sha256.Sum256([]byte(strings.TrimPrefix(got, "dump:")))
 					if !strings.HasPrefix(got, "dump:") || hex.EncodeToString(sum[:]) != want {
@@ -213,7 +223,7 @@ func TestParseMatchesCPythonOnHermesTree(t *testing.T) {
 						continue
 					}
 					if parts[4] != "-" {
-						up := sha256.Sum256([]byte(unparseOutcome(data, true)))
+						up := sha256.Sum256([]byte(unparsed))
 						if hex.EncodeToString(up[:]) != parts[4] {
 							results <- result{rel, "unparse differs"}
 						}

@@ -74,6 +74,9 @@ type CuratorReviewRequest struct {
 	SkipMemory          bool
 	MemoryNudgeInterval int
 	SkillNudgeInterval  int
+	ACPCommand          string
+	ACPArgs             []string
+	CredentialPool      *provider.Pool
 }
 
 // CuratorReviewResult is what the review fork returned and the session messages it recorded
@@ -1525,40 +1528,35 @@ func curatorResolveReviewRuntime(cfg any) (curatorReviewBinding, error) {
 	return curatorReviewBinding{provider: ps, model: ms, requestOverrides: map[string]any{}}, nil
 }
 
-// Route, model, provider and request overrides of the review fork, logging and falling back to the main model on failure
-func curatorResolveReviewProvider(ctx context.Context) (*provider.Route, string, string, map[string]any) {
+// Runtime of the review fork, model, provider and request overrides, logging and falling back to the main model on failure
+func curatorResolveReviewProvider(ctx context.Context) (*provider.Runtime, string, string, map[string]any) {
 	h := home.Dir(ctx)
 	overrides, prov, model := map[string]any{}, "", ""
 	bindingProvider := "None"
 	cfg, err := config.LoadReadonly(ctx, h, configLookup(&tools.Env{Home: h}))
-	var route *provider.Route
+	var rt *provider.Runtime
 	if err == nil {
 		var b curatorReviewBinding
 		if b, err = curatorResolveReviewRuntime(map[string]any(cfg)); err == nil {
 			bindingProvider, model = b.provider, b.model
-			var r provider.Route
-			r, err = resolveCuratorRoute(ctx, cfg, h, b)
-			if err == nil {
-				route = &r
-				prov = r.Provider
+			if rt, err = curatorResolveRuntime(ctx, h, b); err == nil {
+				prov = rt.Provider
 				if prov == "" {
 					prov = b.provider
 				}
-				runtime := map[string]any{}
-				if len(r.ExtraBody) > 0 {
-					runtime["extra_body"] = r.ExtraBody
-				}
-				overrides = curatorMergeRequestOverrides(runtime, b.requestOverrides["extra_body"])
-				if m := pyStrip(r.Model); m != "" {
+				overrides = curatorMergeRequestOverrides(rt.RequestOverrides, b.requestOverrides["extra_body"])
+				if m := pyStrip(rt.Model); m != "" {
 					model = m
 				}
+			} else {
+				rt = nil
 			}
 		}
 	}
 	if err != nil {
 		curatorLog().Warn(fmt.Sprintf("curator: auxiliary.curator.provider '%s' (model '%s') could not be resolved: %v — the review runs on the main model instead", bindingProvider, model, err))
 	}
-	return route, model, prov, overrides
+	return rt, model, prov, overrides
 }
 
 // Forks the review agent on the prompt and collects its final response and tool calls
@@ -1570,18 +1568,27 @@ func curatorRunLLMReview(ctx context.Context, prompt string) *pyjson.Object {
 		meta.Set("summary", msg)
 		return meta
 	}
-	route, model, prov, overrides := curatorResolveReviewProvider(ctx)
+	rt, model, prov, overrides := curatorResolveReviewProvider(ctx)
 	meta.Set("model", model)
 	meta.Set("provider", prov)
 	h := home.Dir(ctx)
 	cfg, err := config.LoadReadonly(ctx, h, configLookup(&tools.Env{Home: h}))
 	var res *CuratorReviewResult
 	if err == nil {
-		res, err = CuratorHooks.RunReview(ctx, CuratorReviewRequest{
-			Prompt: prompt, Model: model, Provider: prov, Route: route, RequestOverrides: overrides,
+		req := CuratorReviewRequest{
+			Prompt: prompt, Model: model, Provider: prov, RequestOverrides: overrides,
 			ReasoningConfig: config.ResolveReasoningConfig(map[string]any(cfg), model), EnabledToolsets: []string{"skills"},
 			MaxIterations: 9999, Platform: "curator", WriteOrigin: backgroundReviewOrigin, QuietMode: true, SkipContextFiles: true, SkipMemory: true,
-		})
+		}
+		if rt != nil {
+			route := rt.Route()
+			req.Route = &route
+			req.CredentialPool = rt.CredentialPool
+			if rt.Command != "" {
+				req.ACPCommand, req.ACPArgs = rt.Command, append([]string{}, rt.Args...)
+			}
+		}
+		res, err = CuratorHooks.RunReview(ctx, req)
 	}
 	if err != nil {
 		msg := "error: " + err.Error()
@@ -1689,10 +1696,9 @@ func MaybeRunCurator(ctx context.Context, idleForSeconds *float64, onSummary fun
 
 func registerCurator() {}
 
-// Runtime route the review fork runs on, the curator binding standing in as the explicit request
-func resolveCuratorRoute(ctx context.Context, cfg config.Tree, h string, b curatorReviewBinding) (provider.Route, error) {
-	return provider.Resolve(ctx, cfg, config.NewSecrets(h), h, provider.HomeCredentialSource(h),
-		provider.Overrides{Provider: b.provider, Model: b.model, APIKey: b.apiKey, BaseURL: b.baseURL})
+// Runtime the review fork runs on, the curator binding standing in as the explicit request, replaced by tests
+var curatorResolveRuntime = func(ctx context.Context, h string, b curatorReviewBinding) (*provider.Runtime, error) {
+	return provider.ResolveRuntimeProvider(ctx, h, b.provider, b.model, b.baseURL, b.apiKey)
 }
 
 // Python re.search of the needle between word boundaries

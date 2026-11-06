@@ -31,6 +31,9 @@ func formatMapDepth(template string, values map[string]any, depth int) (string, 
 				i++
 				continue
 			}
+			if i+1 == len(rs) {
+				return "", fmtErr("ValueError", "Single '{' encountered in format string")
+			}
 			end, nest := i+1, 1
 			for ; end < len(rs); end++ {
 				if rs[end] == '{' {

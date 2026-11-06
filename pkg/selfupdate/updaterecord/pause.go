@@ -45,7 +45,9 @@ func IsPauseRecordError(err error, kind string) bool {
 }
 
 // Install root the pause record is keyed by, the resolved directory of the running binary
-func PauseInstallRoot() string { return pm.RepoRoot() }
+var pauseInstall = pm.RepoRoot
+
+func PauseInstallRoot() string { return pauseInstall() }
 
 // First twelve hex digits of the sha256 of the normcased install root
 func pauseInstallKey(root string) string {
@@ -75,9 +77,13 @@ func PauseIdentity(pid int) map[string]any {
 
 // Update marker incarnation rule for a recorded identity, unprovable counting as live
 func PauseIdentityIsLive(ident map[string]any) bool {
-	var pid int64
+	var raw any = 0
 	if truthy(ident["pid"]) {
-		pid, _ = pyIntValue(ident["pid"])
+		raw = ident["pid"]
+	}
+	pid, err := pyIntConvert(raw)
+	if err != nil {
+		return false
 	}
 	var ct any
 	if truthy(ident["ct"]) {
@@ -142,12 +148,14 @@ func pauseAtomicWrite(path string, body any) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := pauseReplace(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
 	return nil
 }
+
+var pauseReplace = os.Rename
 
 // Saved pause body, nil only when absent, RecordUnknown when it cannot be read or parsed
 func ReadPauseRecord(path string) (map[string]any, error) {
@@ -188,21 +196,22 @@ func globEscape(name string) string {
 	return strings.NewReplacer("[", "[[]", "*", "[*]", "?", "[?]").Replace(name)
 }
 
-type pauseFile struct {
-	src  string
-	body map[string]any
+// PauseFile is one record or claim of this install with its parsed body
+type PauseFile struct {
+	Src  string
+	Body map[string]any
 }
 
 // This install's record and claims, RecordUnknown when one cannot be read
-func pauseFiles(path string) ([]pauseFile, error) {
-	var found []pauseFile
+func pauseFiles(path string) ([]PauseFile, error) {
+	var found []PauseFile
 	for _, src := range append([]string{path}, pauseClaims(path)...) {
 		body, err := ReadPauseRecord(src)
 		if err != nil {
 			return nil, err
 		}
 		if body != nil && pyrepr.Equal(body["install_root"], PauseInstallRoot()) {
-			found = append(found, pauseFile{src, body})
+			found = append(found, PauseFile{src, body})
 		}
 	}
 	return found, nil
@@ -242,7 +251,7 @@ func MarkStopConsumed(path string, marker *pyjson.Object, sameHome func(left, ri
 		return err
 	}
 	for _, f := range files {
-		token := f.body["token"].(map[string]any)
+		token := f.Body["token"].(map[string]any)
 		markers, ok := orEmptyMap(token["stop_markers"])
 		if !ok {
 			return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(token["stop_markers"]))
@@ -267,7 +276,7 @@ func MarkStopConsumed(path string, marker *pyjson.Object, sameHome func(left, ri
 			return err
 		}
 		token["stop_sent"] = sent
-		if err := pauseAtomicWrite(f.src, f.body); err != nil {
+		if err := pauseAtomicWrite(f.Src, f.Body); err != nil {
 			return err
 		}
 	}

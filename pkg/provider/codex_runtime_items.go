@@ -209,39 +209,3 @@ func codexIsZero(v any) bool {
 	}
 	return false
 }
-
-// Unwritten functions of the codex runtime, switch and plugin migration modules, each named for its Python function
-var _ = []any{
-	codexPruneZeroEventRetryPayload,
-	codexModelProvider,
-	codexWireModel,
-	codexTurnEffort,
-	codexTurnServiceTier,
-	ensureCodexSession,
-	persistProjectedMessages,
-	transformCodexReply,
-	RunCodexAppServerTurn,
-	CodexRuntimeParseArgs,
-	GetCurrentCodexRuntime,
-	GetConfiguredCodexBinary,
-	SetCodexRuntime,
-	CheckCodexBinaryOK,
-	codexRuntimeMigrationLines,
-	ApplyCodexRuntime,
-	codexMigrationStrMap,
-	codexTranslateOneServer,
-	codexEscapeTOMLString,
-	codexFormatTOMLValue,
-	codexQuoteTOMLKey,
-	RenderCodexTOMLSection,
-	codexInsertManagedBlockAtTopLevel,
-	codexStripUnmanagedPluginTables,
-	codexUnmanagedMCPServerNames,
-	codexLooksLikeTableHeader,
-	codexStripExistingManagedBlock,
-	codexQueryCodexPlugins,
-	codexLooksLikeTestTempdir,
-	codexBuildToolsMCPEntry,
-	codexWriteAtomic,
-	MigrateCodexRuntimePlugins,
-}

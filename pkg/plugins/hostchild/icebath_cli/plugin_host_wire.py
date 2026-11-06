@@ -22,6 +22,7 @@ import contextvars
 import dataclasses
 import enum
 import functools
+import importlib
 import inspect
 import itertools
 import json
@@ -61,6 +62,9 @@ _REMOTE_EXCEPTIONS = {
                                   NotImplementedError, TimeoutError, LookupError, RuntimeError)
 }
 _REMOTE_EXCEPTIONS["PluginHostUnsupported"] = PluginHostUnsupported
+# Facade errors raised as the SDK class plugins import, keyed by the remote class name
+_SDK_EXCEPTIONS = {"PluginLlmTrustError": "agent.plugin_llm", "SubagentLifecycleError": "agent.subagent_lifecycle",
+                   "DelegationRouteError": "agent.delegation_provider"}
 
 
 def raise_remote(error: dict[str, Any]) -> None:
@@ -68,6 +72,8 @@ def raise_remote(error: dict[str, Any]) -> None:
     type_name = str(error.get("type") or "")
     message = str(error.get("message") or "")
     cls = _REMOTE_EXCEPTIONS.get(type_name)
+    if cls is None and type_name in _SDK_EXCEPTIONS:
+        cls = getattr(importlib.import_module(_SDK_EXCEPTIONS[type_name]), type_name)
     if cls is not None:
         raise cls(message)
     raise PluginHostError(type_name, message)
@@ -118,6 +124,9 @@ def encode(value: Any, refs: Optional[Callable[[Any], Optional[dict]]] = None, _
         return [encode(v, refs, _depth + 1) for v in value]
     if isinstance(value, Opaque):
         return {"__opaque__": value.type_name, "repr": value.text}
+    own_ref = getattr(type(value), "__icebath_ref__", None)
+    if callable(own_ref):
+        return own_ref(value)
     if refs is not None:
         ref = refs(value)
         if ref is not None:
@@ -150,7 +159,9 @@ def decode(value: Any, resolve: Optional[Callable[[dict], Any]] = None) -> Any:
         return base64.b64decode(value["__bytes__"])
     if "__opaque__" in value:
         return Opaque(str(value["__opaque__"]), str(value.get("repr") or ""))
-    if ("__callable__" in value or "__object__" in value or "__handle__" in value) and resolve is not None:
+    if ("__callable__" in value or "__object__" in value or "__handle__" in value
+            or "__parent_callable__" in value or "__parent_event__" in value
+            or "__child_event__" in value) and resolve is not None:
         return resolve(value)
     return {k: decode(v, resolve) for k, v in value.items()}
 

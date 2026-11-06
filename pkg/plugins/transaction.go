@@ -86,11 +86,17 @@ func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newM
 			return err
 		}
 	}
-	return pm.SyncVenv(ctx, pm.SyncVenvOptions{Explicit: true, Plugins: &pm.StagedUpdate{Data: map[string]any{
+	return syncVenv(ctx, pm.SyncVenvOptions{Explicit: true, Plugins: &pm.StagedUpdate{Data: map[string]any{
 		"staged": resolvePath(staged), "target": absTarget, "old_metadata": oldMetadata,
 		"new_metadata": newMetadata, "target_digest": digest,
 	}}})
 }
+
+// Venv publication of a staged plugin, swapped by tests that act inside the window before its lock
+var syncVenv = pm.SyncVenv
+
+// Node sidecar install of a plugin tree, swapped by tests that stand in for npm
+var installNodeSidecar = pm.InstallNodeSidecar
 
 // File bytes, nil when the file cannot be read
 func bytesOrNil(path string) []byte {
@@ -121,7 +127,7 @@ func refreshDeclaredDependencies(ctx context.Context, target, staged string, man
 			}
 		}
 		if moved {
-			if reason := pm.InstallNodeSidecar(ctx, staged, true); reason != "" {
+			if reason := installNodeSidecar(ctx, staged, true); reason != "" {
 				return &PluginOperationError{Msg: fmt.Sprintf("Node dependencies could not be refreshed: %s. "+
 					"The installed plugin and active environment are unchanged.", reason)}
 			}

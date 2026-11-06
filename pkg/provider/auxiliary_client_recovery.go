@@ -265,10 +265,13 @@ func auxPrepareSameProviderRetry(ctx context.Context, prep auxSameProviderRetry,
 	if base == "" {
 		base = prep.ResolvedBaseURL
 	}
-	retryKwargs := auxBuildCallKwargs(ctx, provider, model, prep.Messages, auxCallKwargsOptions{
+	retryKwargs, err := auxBuildCallKwargs(ctx, provider, model, prep.Messages, auxCallKwargsOptions{
 		Temperature: prep.Temperature, MaxTokens: prep.MaxTokens, Tools: prep.Tools, Timeout: prep.EffectiveTimeout,
 		ExtraBody: prep.EffectiveExtraBody, ReasoningConfig: prep.ReasoningConfig, BaseURL: base, Task: prep.Task,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
 	if len(prep.ExtraHeaders) > 0 {
 		headers := make(map[string]string, len(prep.ExtraHeaders))
 		for k, v := range prep.ExtraHeaders {
@@ -292,7 +295,7 @@ func auxRetrySameProviderSync(ctx context.Context, prep auxSameProviderRetry) (a
 	if err != nil {
 		return nil, err
 	}
-	return auxValidateLLMResponse(out, prep.Task, "", "")
+	return auxValidateLLMResponse(ctx, out, prep.Task, "", "")
 }
 
 // Validated response of a rebuilt async client retry through the relayed async completion
@@ -305,7 +308,7 @@ func auxRetrySameProviderAsync(ctx context.Context, prep auxSameProviderRetry) (
 	if err != nil {
 		return nil, err
 	}
-	return auxValidateLLMResponse(out, prep.Task, "", "")
+	return auxValidateLLMResponse(ctx, out, prep.Task, "", "")
 }
 
 // Codex runtime resolver seam forcing a token refresh

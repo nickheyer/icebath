@@ -88,6 +88,15 @@ type AIAgent struct {
 	sanitizationState
 	turnExplainersState
 	systemPromptState
+	turnContextState
+	runtimeHookState
+	sessionPersistenceState
+	imageEvictionState
+	compressionAttemptState
+	compressionTimeoutState
+	conversationCompressionState
+	statusOutputState
+	agentInitState
 	passSessionID                      bool
 	skipContextFiles                   bool
 	loadSoulIdentity                   bool
@@ -134,16 +143,15 @@ type AIAgent struct {
 	compressionInPlace                 bool
 	compressionCheckpointRequired      bool
 	compressionIdleCompactAfterSeconds float64
-	compressionThresholdAutoraised     bool
+	compressionThresholdAutoraised     map[string]any
 	maxCompressionAttempts             int
 	auxCompressionContextLengthConfig  int
 	configContextLength                int
 	codexResponsesNativeCompaction     bool
 	codexResponsesCompactThreshold     float64
-	codexAppServerAutoCompaction       bool
+	codexAppServerAutoCompaction       string
 	lmstudioLoadMode                   string
 	fastAutoSeconds                    float64
-	fastModeUnavailableModels          map[string]bool
 	reasoningEchoFlag                  any
 	creditsLatch                       any
 	autoRecoveryCycles                 int
@@ -198,9 +206,16 @@ type AIAgent struct {
 	clientLock                         *sync.Mutex
 	modelRequestActive                 *pythread.Event
 	supportsActiveTurnRedirect         bool
-	pendingSteer                       any
+	pendingSteer                       string
+	pendingSteerParts                  []steerPart
+	steerTicketFates                   map[any]bool
+	steerLastDrain                     *steerDrain
 	pendingSteerLock                   *sync.Mutex
-	pendingRedirect                    any
+	pendingRedirect                    string
+	toolInterruptReason                string
+	activeCompressionCommitFence       any
+	activeRequestAbort                 func(reason string)
+	rejectedThinking                   *provider.RejectedThinkingTracker
 	pendingRedirectLock                *sync.Mutex
 	toolWorkerThreads                  map[int64]bool
 	toolWorkerThreadsLock              *sync.Mutex
@@ -234,7 +249,7 @@ type AIAgent struct {
 	codexReasoningReplayRejected       bool
 	memoryWriteOrigin                  string
 	memoryWriteContext                 string
-	sessionPersistLock                 *sync.Mutex
+	sessionPersistLock                 *pythread.RLock
 	pendingCLIUserMessage              any
 	lastFlushedDBIdx                   int
 	userTurnCount                      int
@@ -292,13 +307,18 @@ type AIAgent struct {
 	reviewInputTokenBudget             int
 	lastCompressionAttemptRecorded     bool
 	lastCompressionAttemptInPlace      *bool
-	heldTransforms                     any
+	heldTransforms                     func(ctx context.Context, kwargs map[string]any) (string, bool)
 	incrementalPersistenceFailed       bool
 	lastPersistenceErrorCause          any
 	compressionAdoptionFailed          bool
 	authPoolRefreshCounts              map[string]int
 	currentAPIRequestID                string
 	turnUserIntervened                 bool
+	sanitizeArgsCursor                 map[string]any
+	nousWirePending                    any
+	emptyContentRetries                int
+	lastAPIFirstChunkAt                *float64
+	promptRefreshEpoch                 *int
 	codexIncompleteRetries             int
 	codexReasoningOnlyStreak           int
 	metricsScratch                     sync.Map
@@ -396,7 +416,7 @@ type RunConversationOptions struct {
 	TurnAuthor                 map[string]any
 	RelayMetadata              map[string]any
 	TitleUserMessage           *string
-	Prelude                    func(ctx context.Context) error
+	Prelude                    Prelude
 }
 
 // Builds an agent through the init_agent forwarder, runtime fields filling the route keywords like cron does

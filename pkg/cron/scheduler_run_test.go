@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -197,6 +198,11 @@ func (f *fakeCronAgent) Close() error {
 
 // Binds the job as the canonical owner execution so run_job runs the agent in process
 func ownerRun(t *testing.T, s *Store, job *Job, fake *fakeCronAgent) (context.Context, string) {
+	savedResolve := preflightResolveRuntime
+	preflightResolveRuntime = func(context.Context, string, string, string, string, string) (*provider.Runtime, error) {
+		return &provider.Runtime{}, nil
+	}
+	t.Cleanup(func() { preflightResolveRuntime = savedResolve })
 	t.Helper()
 	db, err := state.Acquire(context.Background(), home.StatePath(s.home))
 	if err != nil {
@@ -204,13 +210,18 @@ func ownerRun(t *testing.T, s *Store, job *Job, fake *fakeCronAgent) (context.Co
 	}
 	t.Cleanup(func() { state.ReleaseOrClose(db) })
 	execID := "exec-" + job.ID
-	ctx := gateway.WithCronOwnerExecutionForTest(context.Background(), gateway.CronOwnerExecution{
+	ctx := gateway.BindCronExecution(context.Background(), gateway.CronOwnerExecution{
 		DB: db, DBPath: home.StatePath(s.home), SessionID: "cron_owner_session", JobID: job.ID, ExecutionID: execID,
 	})
 	installFakeAgent(t, func(ctx context.Context, spec AgentOptions) (CronAgent, error) {
 		fake.spec = spec
 		return fake, nil
 	})
+	prevResolve := resolveRuntimeProviderSeam
+	t.Cleanup(func() { resolveRuntimeProviderSeam = prevResolve })
+	resolveRuntimeProviderSeam = func(context.Context, string, string, string, string, string) (*provider.Runtime, error) {
+		return &provider.Runtime{}, nil
+	}
 	return ctx, execID
 }
 

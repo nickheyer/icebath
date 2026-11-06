@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -15,11 +16,12 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"golang.org/x/net/idna"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // Proxy env vars that delegate DNS to the proxy when set
@@ -340,7 +342,7 @@ func fakeIPRanges(env *Env) []netip.Prefix {
 }
 
 func normalizeHostname(host string) string {
-	return strings.TrimRight(strings.ToLower(strings.TrimSpace(host)), ".")
+	return strings.TrimRight(pystr.Lower(pystr.Strip(host)), ".")
 }
 
 const urlEdgeWhitespace = " \t\n\r\x0b\x0c"
@@ -348,14 +350,15 @@ const urlEdgeWhitespace = " \t\n\r\x0b\x0c"
 // Dots IDNA maps to a period, used when IDNA encoding fails
 var idnaDots = strings.NewReplacer("。", ".", "．", ".", "｡", ".")
 
-// Host of the url the way a WHATWG client dials it
-func urlHostname(raw string, percentDecode bool) string {
-	parts := splitURL(strings.Trim(raw, urlEdgeWhitespace))
-	host := netlocHost(parts.netloc)
+// Host of the url the way a WHATWG client dials it, the urlsplit ValueError returned
+func urlHostname(raw string, percentDecode bool) (string, error) {
+	parts, err := pyurl.Split(strings.Trim(raw, urlEdgeWhitespace))
+	if err != nil {
+		return "", err
+	}
+	host := parts.Hostname()
 	if percentDecode {
-		if decoded, err := url.PathUnescape(host); err == nil {
-			host = decoded
-		}
+		host = pyurl.Unquote(host)
 	}
 	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
 		host = ascii
@@ -364,46 +367,48 @@ func urlHostname(raw string, percentDecode bool) string {
 	} else {
 		host = idnaDots.Replace(host)
 	}
-	return normalizeHostname(host)
+	return normalizeHostname(host), nil
 }
 
-// Why another client could read a different host or port from the url, empty when unambiguous
-func authorityAmbiguity(raw string, floor bool) string {
+// Why another client could read a different host or port from the url, empty when unambiguous, the urlsplit ValueError returned
+func authorityAmbiguity(raw string, floor bool) (string, error) {
 	raw = strings.Trim(raw, urlEdgeWhitespace)
-	parts := splitURL(raw)
-	if !isHTTPScheme(parts.scheme) {
-		return ""
+	parts, err := pyurl.Split(raw)
+	if err != nil {
+		return "", err
+	}
+	if !isHTTPScheme(parts.Scheme) {
+		return "", nil
 	}
 	for _, c := range raw {
 		if c < 0x20 || c == 0x7F {
-			return "control character in URL"
+			return "control character in URL", nil
 		}
 	}
-	if !parts.hasNetloc || parts.netloc == "" {
-		return "authority not introduced by //"
+	if parts.Netloc == "" {
+		return "authority not introduced by //", nil
 	}
-	if strings.Contains(parts.netloc, "\\") {
-		return "backslash in authority"
+	if strings.Contains(parts.Netloc, "\\") {
+		return "backslash in authority", nil
 	}
 	if floor {
-		return ""
+		return "", nil
 	}
-	host := parts.netloc
-	if i := strings.LastIndex(host, "@"); i >= 0 {
-		return "userinfo in authority"
+	at := strings.LastIndex(parts.Netloc, "@")
+	if at >= 0 {
+		return "userinfo in authority", nil
 	}
+	host := parts.Netloc
 	if strings.Contains(host, "%") {
-		return "percent-encoding in host"
+		return "percent-encoding in host", nil
 	}
-	for _, c := range host {
-		if unicode.IsSpace(c) {
-			return "whitespace in host"
-		}
+	if strings.IndexFunc(host, pystr.IsSpace) >= 0 {
+		return "whitespace in host", nil
 	}
-	if _, ok := netlocPort(parts.netloc); !ok {
-		return "invalid port"
+	if _, _, err := parts.Port(); err != nil {
+		return "invalid port", nil
 	}
-	return ""
+	return "", nil
 }
 
 // IP literal of a hostname, false for names
@@ -465,11 +470,20 @@ var lookupHostIPs = func(ctx context.Context, hostname string) ([]netip.Addr, er
 // Reports whether the url targets the always blocked cloud metadata floor
 func isAlwaysBlockedURL(env *Env, raw string) bool {
 	log := envLog(env)
-	if reason := authorityAmbiguity(raw, true); reason != "" {
+	reason, err := authorityAmbiguity(raw, true)
+	if err != nil {
+		log.Debug(fmt.Sprintf("is_always_blocked_url error for %s: %v", raw, err))
+		return false
+	}
+	if reason != "" {
 		log.Warn("Blocked request, ambiguous URL authority (always-blocked floor)", "reason", reason)
 		return true
 	}
-	hostname := urlHostname(raw, true)
+	hostname, err := urlHostname(raw, true)
+	if err != nil {
+		log.Debug(fmt.Sprintf("is_always_blocked_url error for %s: %v", raw, err))
+		return false
+	}
 	if hostname == "" {
 		return false
 	}
@@ -517,8 +531,11 @@ func resolvedIPBlockReason(env *Env, ip netip.Addr, allowPrivate bool) string {
 // Reports whether the url target is not a private or internal address, failing closed
 func isSafeURL(env *Env, raw string) bool {
 	log := envLog(env)
-	parts := splitURL(strings.TrimSpace(raw))
-	scheme := strings.ToLower(parts.scheme)
+	parts, err := pyurl.Parse(raw)
+	if err != nil {
+		return safetyCheckError(log, raw, err)
+	}
+	scheme := parts.Scheme
 	if !isHTTPScheme(scheme) {
 		if scheme == "" {
 			scheme = "<empty>"
@@ -526,11 +543,18 @@ func isSafeURL(env *Env, raw string) bool {
 		log.Warn("Blocked request, unsupported URL scheme", "scheme", scheme)
 		return false
 	}
-	if reason := authorityAmbiguity(raw, false); reason != "" {
+	reason, err := authorityAmbiguity(raw, false)
+	if err != nil {
+		return safetyCheckError(log, raw, err)
+	}
+	if reason != "" {
 		log.Warn("Blocked request, ambiguous URL authority", "reason", reason)
 		return false
 	}
-	hostname := urlHostname(raw, false)
+	hostname, err := urlHostname(raw, false)
+	if err != nil {
+		return safetyCheckError(log, raw, err)
+	}
 	if hostname == "" {
 		return false
 	}
@@ -701,4 +725,10 @@ func newSSRFSafeClient(env *Env, timeout time.Duration, followRedirects bool, on
 		return nil
 	}
 	return client
+}
+
+// Logs the fail closed safety check error and refuses the url
+func safetyCheckError(log *slog.Logger, raw string, err error) bool {
+	log.Warn(fmt.Sprintf("Blocked request, URL safety check error for %s: %v", raw, err))
+	return false
 }

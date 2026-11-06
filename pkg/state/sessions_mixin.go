@@ -334,3 +334,61 @@ func (d *SessionDB) ClearSessionActivityLabels(sessionID string) error {
 		"UPDATE sessions SET last_activity_description = ?, last_activity_provenance = ? WHERE id = ?",
 		[]any{"", string(ActivityProvenanceUnknown), sessionID}, false, &patience)
 }
+
+// Merges the patch into the stored model_config, nil values deleting keys, returning the JSON text or nil when empty
+func mergeModelConfigJSON(ctx context.Context, conn SQLiteConn, sessionID string, patch *pyjson.Object, raiseOnMissing bool) (any, bool, error) {
+	row, err := connRow(ctx, conn, "SELECT model_config FROM sessions WHERE id = ?", sessionID)
+	if err != nil {
+		return nil, false, err
+	}
+	if row == nil {
+		if raiseOnMissing {
+			return nil, true, pyValueError("Session not found: " + sessionID)
+		}
+		return nil, true, nil
+	}
+	config := parseModelConfigValue(row["model_config"])
+	for _, key := range patch.Keys {
+		if value := patch.Vals[key]; value == nil {
+			config.Delete(key)
+		} else {
+			config.Set(key, value)
+		}
+	}
+	if config.Len() == 0 {
+		return nil, false, nil
+	}
+	text, err := pyjson.Dumps(config)
+	if err != nil {
+		return nil, false, err
+	}
+	return text, false, nil
+}
+
+// Marks a session ended keeping the first end reason, advancing the generation only when this call ended it
+func (d *SessionDB) EndSession(sessionID, endReason string) error {
+	ctx := context.Background()
+	return d.executeWrite(ctx, func(conn SQLiteConn) error {
+		_, err := d.endAndBump(ctx, conn, "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ? AND ended_at IS NULL",
+			[]any{now(), endReason, sessionID}, sessionID, endReason)
+		return err
+	}, nil)
+}
+
+// Runs an end stamp update and bumps the conversation generation only for a boundary it wrote
+func (d *SessionDB) endAndBump(ctx context.Context, conn SQLiteConn, query string, params []any, sessionID, reason string) (int64, error) {
+	res, err := conn.ExecContext(ctx, query, params...)
+	if err != nil {
+		return 0, err
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if changed > 0 {
+		if err := bumpConversationGeneration(ctx, conn, sessionID, reason); err != nil {
+			return 0, err
+		}
+	}
+	return changed, nil
+}

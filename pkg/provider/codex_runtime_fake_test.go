@@ -1,6 +1,10 @@
 package provider
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/nickheyer/icebath/pkg/tools"
+)
 
 type fakeCodexCall struct {
 	name string
@@ -32,6 +36,9 @@ type fakeCodexAgent struct {
 	flush                                                       func([]map[string]any) (bool, error)
 	hooks                                                       map[string]bool
 	panics                                                      map[string]bool
+	env                                                         *tools.Env
+	transform                                                   func(string, any) (string, bool, any)
+	requestOverrides                                            map[string]any
 }
 
 func newFakeCodexAgent(hooks ...string) *fakeCodexAgent {
@@ -179,4 +186,18 @@ func (a *fakeCodexAgent) SpawnBackgroundReviewHook() func([]map[string]any, bool
 		return nil
 	}
 	return func(m []map[string]any, mem, skills bool) { a.record("_spawn_background_review", len(m), mem, skills) }
+}
+
+func (a *fakeCodexAgent) ToolEnv() *tools.Env { return a.env }
+
+func (a *fakeCodexAgent) ApplyLLMOutputTransform(finalResponse string, turnID any) (string, bool, any) {
+	a.record("apply_llm_output_transform", finalResponse, turnID)
+	if a.transform == nil {
+		return finalResponse, false, nil
+	}
+	return a.transform(finalResponse, turnID)
+}
+
+func (a *fakeCodexAgent) EffectiveRequestOverrides() map[string]any {
+	return a.requestOverrides
 }

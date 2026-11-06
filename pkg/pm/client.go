@@ -165,7 +165,7 @@ func workerCall(ctx context.Context, operation string, args policyArgs, run func
 	}
 	restore := WorkerContext(workerCtx, updateID)
 	failure := run(workerCtx)
-	completed := LastCompleted(workerCtx)
+	completed := LastCompletedObject(workerCtx)
 	restore()
 	if err := acceptWorkerReceipt(ctx, completed, updateID); err != nil {
 		return err
@@ -392,6 +392,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 	reader := bufio.NewReader(s.stdout)
 	var callbackErr error
 	var response map[string]any
+	var resultLine []byte
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) == 0 && err != nil {
@@ -409,7 +410,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 			return nil, NewInstallError("pm", "worker returned a different request id", "")
 		}
 		if jsonEquals(parsed["type"], "result") {
-			response = parsed
+			response, resultLine = parsed, line
 			break
 		}
 		args, _ := parsed["args"].([]any)
@@ -449,8 +450,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 	case <-time.After(5 * time.Second):
 		return nil, &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 5 seconds", strings.Join(s.cmd.Args, " "))}
 	}
-	receipt, _ := response["receipt"].(map[string]any)
-	if err := acceptWorkerReceipt(ctx, receipt, updateID); err != nil {
+	if err := acceptWorkerReceipt(ctx, orderedWorkerReceipt(resultLine), updateID); err != nil {
 		return nil, err
 	}
 	if callbackErr != nil {
@@ -794,4 +794,21 @@ func StageTools(ctx context.Context, opts StageToolsOptions) (string, error) {
 func PruneCache(ctx context.Context, opts PruneCacheOptions) error {
 	return workerCall(ctx, "prune_cache", policyArgs{},
 		func(c context.Context) error { return pruneCache(c, opts) })
+}
+
+// Receipt of a worker result line in the key order the worker wrote it, nil when absent or not an object
+func orderedWorkerReceipt(line []byte) any {
+	root, err := loadOrderedJSON(line)
+	if err != nil {
+		return nil
+	}
+	doc, ok := root.(*OrderedObject)
+	if !ok {
+		return nil
+	}
+	receipt, _ := doc.Get("receipt")
+	if obj, ok := receipt.(*OrderedObject); ok && obj != nil {
+		return obj
+	}
+	return nil
 }

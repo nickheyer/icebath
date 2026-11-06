@@ -47,7 +47,7 @@ func (h *PluginHost) ProviderModuleCall(ctx context.Context, pluginDir, moduleNa
 	raw, err := h.call(ctx, "provider_module_call", map[string]any{"path": pluginDir, "module_name": moduleName,
 		"parents": providerModuleParents, "plugins_root": GetBundledPluginsDir(), "synthetic_namespace": namespace,
 		"submodule": submodule, "function": function,
-		"args": wireEncode(nonNilArgs(args), nil), "kwargs": wireEncode(nonNilKwargs(kwargs), nil)}, nil, 0, nil)
+		"args": h.encodeArgs(nonNilArgs(args)), "kwargs": h.encodeArgs(nonNilKwargs(kwargs))}, nil, 0, nil)
 	if err != nil {
 		return nil, true, err
 	}

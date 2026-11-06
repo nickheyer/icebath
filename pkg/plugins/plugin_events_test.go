@@ -73,14 +73,13 @@ func TestNamesThatCannotFormANamespacedEventAreRefusedBeforeEmit(t *testing.T) {
 func TestContextSurfaceAndCwdFollowTheCLIReference(t *testing.T) {
 	m := NewManager(t.TempDir())
 	installActivationServices(t, &Services{
-		SessionSurface: func(_ context.Context, h string) string { return "telegram:" + h },
-		SessionCwd:     func(_ context.Context, h string) string { return "/work:" + h },
+		ActiveSessionPolicy: func(context.Context) (string, string, bool) { return "telegram", "/work", true },
 	})
 	ctx := context.Background()
-	if s, _ := contextSurface(ctx, m); s != "telegram:"+m.home {
+	if s, _ := contextSurface(ctx, m); s != "telegram" {
 		t.Fatalf("surface = %q", s)
 	}
-	if c, _ := contextCwd(ctx, m); c != "/work:"+m.home {
+	if c, _ := contextCwd(ctx, m); c != "/work" {
 		t.Fatalf("cwd = %q", c)
 	}
 	m.cliRef = struct{ CLIHost }{}

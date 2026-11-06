@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 )
 
@@ -155,9 +156,151 @@ func exaResultRows(data any) ([]*pyjson.Object, error) {
 		if !ok {
 			return nil, pyAttributeError(item, "get")
 		}
+		entities, _ := row.Get("entities")
+		if err := exaCheckEntities(entities); err != nil {
+			return nil, err
+		}
 		rows = append(rows, toSnakeCase(row))
 	}
 	return rows, nil
+}
+
+// Mapping the SDK reads with get, the AttributeError of any other value
+func exaMapping(v any) (*pyjson.Object, error) {
+	if d, ok := pyDict(v); ok {
+		return d, nil
+	}
+	return nil, pyAttributeError(v, "get")
+}
+
+// Raises what the SDK entity parsing raises on a malformed result entities list
+func exaCheckEntities(raw any) error {
+	if !pyTruthy(raw) {
+		return nil
+	}
+	items, err := pyIter(raw)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		entity, err := exaMapping(item)
+		if err != nil {
+			return err
+		}
+		kind, _ := entity.Get("type")
+		check := exaCheckPersonProperties
+		switch kind {
+		case "company":
+			check = exaCheckCompanyProperties
+		case "person":
+		default:
+			continue
+		}
+		for _, key := range []string{"id", "version"} {
+			if _, ok := entity.Get(key); !ok {
+				return errors.New(pyrepr.StrRepr(key))
+			}
+		}
+		props, ok := entity.Get("properties")
+		if !ok {
+			props = pyjson.NewObject()
+		}
+		if err := check(props); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Reads of an optional nested mapping, skipped when falsy like the SDK's not data guard
+func exaCheckOptional(v any) error {
+	if !pyTruthy(v) {
+		return nil
+	}
+	_, err := exaMapping(v)
+	return err
+}
+
+// Raises what parsing company properties raises, nested blocks in the SDK's order
+func exaCheckCompanyProperties(raw any) error {
+	d, err := exaMapping(raw)
+	if err != nil {
+		return err
+	}
+	workforce, _ := d.Get("workforce")
+	headquarters, _ := d.Get("headquarters")
+	for _, nested := range []any{workforce, headquarters} {
+		if err := exaCheckOptional(nested); err != nil {
+			return err
+		}
+	}
+	financials, _ := d.Get("financials")
+	if err := exaCheckOptional(financials); err != nil {
+		return err
+	}
+	if pyTruthy(financials) {
+		f, _ := exaMapping(financials)
+		round, _ := f.Get("fundingLatestRound")
+		if err := exaCheckOptional(round); err != nil {
+			return err
+		}
+	}
+	traffic, _ := d.Get("webTraffic")
+	return exaCheckOptional(traffic)
+}
+
+// Raises what parsing person properties raises, histories iterated when not None
+func exaCheckPersonProperties(raw any) error {
+	d, err := exaMapping(raw)
+	if err != nil {
+		return err
+	}
+	work, _ := d.Get("workHistory")
+	education, _ := d.Get("educationHistory")
+	for _, history := range []struct {
+		entries any
+		ref     string
+	}{{work, "company"}, {education, "institution"}} {
+		if history.entries == nil {
+			continue
+		}
+		entries, err := pyIter(history.entries)
+		if err != nil {
+			return err
+		}
+		for _, raw := range entries {
+			entry, err := exaMapping(raw)
+			if err != nil {
+				return err
+			}
+			dates, _ := entry.Get("dates")
+			ref, _ := entry.Get(history.ref)
+			for _, nested := range []any{dates, ref} {
+				if err := exaCheckOptional(nested); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	research, _ := d.Get("research")
+	if err := exaCheckOptional(research); err != nil || !pyTruthy(research) {
+		return err
+	}
+	r, _ := exaMapping(research)
+	notable, _ := r.Get("notableWorks")
+	if notable == nil {
+		return nil
+	}
+	works, err := pyIter(notable)
+	if err != nil {
+		return err
+	}
+	for _, w := range works {
+		if _, err := exaMapping(w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Search returning query relevant highlights for each result
@@ -246,7 +389,7 @@ func (p *exaProvider) Search(ctx context.Context, env *Env, query string, limit 
 		}
 		if useKeyless(env, "exa", key) {
 			envLog(env).Info("Exa keyless search", "query", query, "limit", limit)
-			return keylessSearchWithFailover(ctx, env, "exa", query, limit), nil
+			return keylessSearchWithFailover(ctx, env, "exa", query, limit)
 		}
 		envLog(env).Info("Exa search", "query", query, "limit", limit)
 		client, err := getExaClient(ctx, env)
@@ -281,7 +424,7 @@ func (p *exaProvider) Extract(ctx context.Context, env *Env, urls []string, form
 		}
 		if useKeyless(env, "exa", key) {
 			envLog(env).Info("Exa keyless extract", "urls", len(urls))
-			return keylessExtractWithFailover(ctx, env, "exa", urls), nil
+			return keylessExtractWithFailover(ctx, env, "exa", urls)
 		}
 		envLog(env).Info("Exa extract", "urls", len(urls))
 		client, err := getExaClient(ctx, env)
@@ -303,7 +446,11 @@ func (p *exaProvider) Extract(ctx context.Context, env *Env, urls []string, form
 			if status, ok := s.status.(string); !ok || status != "error" {
 				continue
 			}
-			out = append(out, vendorErrorEntry(pyStrField(pyOr(s.id, "")), exaStatusOrigin(s), s.tag, nil))
+			entry, err := vendorErrorEntry(pyStrField(pyOr(s.id, "")), exaStatusOrigin(s), s.tag, nil)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, entry)
 		}
 		return out, nil
 	}, true), nil

@@ -378,6 +378,16 @@ func refuseIncompatibleCatalogEntry(ctx context.Context, entry *PluginCatalogEnt
 	return nil
 }
 
+// Operation error naming the first candidate name or repo on the kill list, for the mcp catalog
+func RaiseIfRemoved(ctx context.Context, candidates ...string) error {
+	return raiseIfRemoved(ctx, candidates...)
+}
+
+// Operation error when the entry cannot run here by platform or icebath version, for the mcp catalog
+func RefuseIncompatibleCatalogEntry(ctx context.Context, entry *PluginCatalogEntry) error {
+	return refuseIncompatibleCatalogEntry(ctx, entry)
+}
+
 // Options of a catalog entry install beyond the entry itself
 type CatalogInstallOptions struct {
 	Force             bool

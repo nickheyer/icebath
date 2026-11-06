@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -323,8 +324,12 @@ func isMultiplexActive(env *Env) bool {
 
 // ResolvePassthroughValue resolves an allowlisted variable through the profile secret scope
 func ResolvePassthroughValue(env *Env, name string, fallback *string) (*string, error) {
-	if IsGlobalEnv(name) && fallback != nil {
+	global := IsGlobalEnv(name)
+	if global && fallback != nil {
 		return fallback, nil
+	}
+	if global {
+		return processEnvValue(name), nil
 	}
 	multiplex := isMultiplexActive(env)
 	if env == nil || env.Secrets == nil {
@@ -333,13 +338,33 @@ func ResolvePassthroughValue(env *Env, name string, fallback *string) (*string, 
 		}
 		return fallback, nil
 	}
-	if value, ok := env.Secrets.Get(name); ok {
+	if value, ok := env.Secrets.File()[name]; ok {
 		return &value, nil
 	}
 	if multiplex {
 		return nil, nil
 	}
+	if servesRoutedEnv(env) {
+		return fallback, nil
+	}
+	if value := processEnvValue(name); value != nil {
+		return value, nil
+	}
 	return fallback, nil
+}
+
+// Reports whether the bound secret scope belongs to a profile other than the routing launch home
+func servesRoutedEnv(env *Env) bool {
+	if isMultiplexActive(env) {
+		return true
+	}
+	scopeHome := ""
+	if env != nil && env.Secrets != nil {
+		scopeHome = filepath.Dir(env.Secrets.Path())
+	} else if env != nil {
+		scopeHome = env.Home
+	}
+	return scopeHome != "" && home.Key(scopeHome) != home.Key(home.RoutingProcess())
 }
 
 // ScopedPassthroughAdditions returns declared names the profile scope supplies but the filtered env lacks
@@ -348,11 +373,12 @@ func ScopedPassthroughAdditions(env *Env, present map[string]bool) map[string]st
 	if env == nil || env.Secrets == nil {
 		return additions
 	}
+	scope := env.Secrets.File()
 	for name := range AllPassthrough(env) {
 		if present[name] || IsGlobalEnv(name) {
 			continue
 		}
-		if value, ok := env.Secrets.Get(name); ok {
+		if value, ok := scope[name]; ok {
 			additions[name] = value
 		}
 	}

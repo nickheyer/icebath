@@ -80,6 +80,7 @@ func auxProbeActive(ctx context.Context) bool {
 
 // Client returned during an availability probe that fails loudly on any runtime use
 type auxProbeClient struct {
+	auxEffectiveStamp
 	apiKey  string
 	baseURL string
 }

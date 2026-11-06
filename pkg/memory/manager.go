@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -967,54 +969,23 @@ func (m *MemoryManager) HandleToolCall(ctx context.Context, toolName string, arg
 	return result
 }
 
-// Catalog plugin names the plugin package installs so the provider metric keeps known names
-var (
-	catalogNamesMu     sync.RWMutex
-	pluginCatalogNames func() map[string]bool
-)
-
-// Installs the plugin catalog name source the memory op metric validates provider names against
-func SetPluginCatalogNames(fn func() map[string]bool) {
-	catalogNamesMu.Lock()
-	defer catalogNamesMu.Unlock()
-	pluginCatalogNames = fn
-}
-
-// Metric provider value, the provider name when bundled, catalogued, builtin or plugin, else plugin
+// Metric provider value, the bounded contract name when bundled, catalogued or builtin, else plugin
 func memoryProviderName(v any) string {
-	name := normMetricValue(v)
-	if name == "" {
-		name = "builtin"
-	}
-	if name == "builtin" || name == "plugin" {
-		return name
-	}
-	registryMu.RLock()
-	for _, r := range registrations {
-		if r.Source == SourceBundled && r.Name == name {
-			registryMu.RUnlock()
-			return name
-		}
-	}
-	registryMu.RUnlock()
-	catalogNamesMu.RLock()
-	fn := pluginCatalogNames
-	catalogNamesMu.RUnlock()
-	if fn != nil {
-		if names := safeCatalogNames(fn); names[name] {
-			return name
-		}
-	}
-	return "plugin"
+	return observability.MemoryProviderName(v)
 }
 
-func safeCatalogNames(fn func() map[string]bool) (names map[string]bool) {
-	defer func() {
-		if recover() != nil {
-			names = nil
+// Sorted names of the bundled providers the binary ships, the shared metrics bundled memory provider list
+func bundledMemoryProviderNames() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	var names []string
+	for _, r := range registrations {
+		if r.Source == SourceBundled && !slices.Contains(names, r.Name) {
+			names = append(names, r.Name)
 		}
-	}()
-	return fn()
+	}
+	slices.Sort(names)
+	return names
 }
 
 // Operation a provider tool performs, its action argument else a verb in its name
@@ -1700,5 +1671,7 @@ func InjectMemoryProviderTools(ctx context.Context, env *tools.Env, manager *Mem
 	return surface, validNames, added
 }
 
-// Memory manager registers nothing at import
-func registerMemoryManager() {}
+// Installs the bundled provider name list the shared metrics memory provider dimension validates provider names against
+func registerMemoryManager() {
+	observability.BundledMemoryProvidersHook = bundledMemoryProviderNames
+}

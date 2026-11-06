@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 type kanbanSelectionKey struct{}
@@ -312,22 +313,22 @@ func setLastResolvedToolNames(defs []map[string]any) {
 // Memoized list unless missing or past its verdict expiry, caller holds the lock
 func liveToolDefsEntry(key string) ([]map[string]any, bool) {
 	entry, ok := toolDefsCache[key]
-	if !ok || !time.Now().Before(entry.expiry) {
+	if !ok || !checkNow().Before(entry.expiry) {
 		return nil, false
 	}
 	return entry.defs, true
 }
 
-// Stat signature of the profile config so edits invalidate dynamic schemas
-func configVersionOf(env *Env) string {
+// Config backend version of the profile config so a replaced file invalidates dynamic schemas
+func configVersionOf(ctx context.Context, env *Env) string {
 	if env == nil || env.Home == "" {
-		return ""
+		return "<nil>"
 	}
-	st, err := os.Stat(filepath.Join(env.Home, "config.yaml"))
+	version, err := config.ConfigVersion(ctx, filepath.Join(env.Home, "config.yaml"))
 	if err != nil {
-		return ""
+		return "<nil>"
 	}
-	return fmt.Sprintf("%d:%d", st.ModTime().UnixNano(), st.Size())
+	return fmt.Sprintf("%#v", version)
 }
 
 // Reports whether a kanban task identity is pinned on this execution
@@ -356,8 +357,9 @@ func definitionSelectionContext(env *Env) SelectionContext {
 }
 
 // Memo key covering every input that changes the result, empty when caching must be bypassed
-func toolDefsCacheKey(r *Registry, env *Env, opts DefinitionOptions) string {
-	if env == nil {
+func toolDefsCacheKey(ctx context.Context, r *Registry, env *Env, opts DefinitionOptions) string {
+	profileScope, bypass := CheckFnCacheScope(env)
+	if bypass {
 		return ""
 	}
 	sel := definitionSelectionContext(env)
@@ -370,9 +372,9 @@ func toolDefsCacheKey(r *Registry, env *Env, opts DefinitionOptions) string {
 		disabled = strings.Join(sortedSet(toSet(opts.Disabled)), ",")
 	}
 	return strings.Join([]string{
-		scopeOf(env), enabled, disabled, fmt.Sprint(r.Generation()), configVersionOf(env),
+		scopeOf(env), enabled, disabled, fmt.Sprint(r.Generation()), configVersionOf(ctx, env),
 		fmt.Sprint(sel.KanbanTask), fmt.Sprint(opts.SkipToolSearchAssembly), fmt.Sprint(sel.DelegatedChild),
-		fmt.Sprint(sel.DispatcherOwnedWorker), fmt.Sprint(CheckCacheEpoch()), fmt.Sprint(opts.ContextLength),
+		fmt.Sprint(sel.DispatcherOwnedWorker), profileScope, fmt.Sprint(CheckCacheEpoch()), fmt.Sprint(opts.ContextLength),
 	}, "\x1f")
 }
 
@@ -392,7 +394,7 @@ func (r *Registry) ToolDefinitions(ctx context.Context, env *Env, opts Definitio
 	if !opts.Quiet {
 		return r.computeToolDefinitions(ctx, env, opts)
 	}
-	key := toolDefsCacheKey(r, env, opts)
+	key := toolDefsCacheKey(ctx, r, env, opts)
 	if key != "" {
 		toolDefsCacheMu.Lock()
 		cached, ok := liveToolDefsEntry(key)
@@ -504,14 +506,65 @@ func resolveActiveContextLength(ctx context.Context, env *Env) int {
 	if modelID == "" {
 		return 0
 	}
-	if n, ok := config.AsInt(modelCfg["context_length"]); ok && n > 0 {
-		return n
+	if RuntimeProviderCredentials == nil || CachedContextLength == nil || ModelContextLength == nil {
+		panic("tools: the provider metadata wiring must install RuntimeProviderCredentials, CachedContextLength and ModelContextLength before tool definitions resolve a model window")
 	}
-	if ActiveContextLengthResolver == nil {
-		panic("tools: the provider metadata wiring must install ActiveContextLengthResolver before tool definitions resolve a model window")
+	configCtx := 0
+	switch n := modelCfg["context_length"].(type) {
+	case int:
+		configCtx = max(n, 0)
+	case int64:
+		configCtx = int(max(n, 0))
+	case bool:
+		if n {
+			configCtx = 1
+		}
 	}
-	return ActiveContextLengthResolver(ctx, env.Config, modelID)
+	provider := strings.TrimSpace(configStr(modelCfg["provider"]))
+	baseURL := strings.TrimSpace(configStr(modelCfg["base_url"]))
+	apiKey := ""
+	if provider != "" {
+		rtBase, rtKey, err := RuntimeProviderCredentials(ctx, env, provider, modelID)
+		if err != nil {
+			toolsLogger(env).Debug(fmt.Sprintf("Runtime credential resolution failed for tool-search context gate (provider=%s): %s — using config values only", provider, err))
+		} else {
+			if rtBase != "" {
+				baseURL = rtBase
+			}
+			baseURL = strings.TrimSpace(baseURL)
+			apiKey = strings.TrimSpace(rtKey)
+		}
+	}
+	if configCtx == 0 && baseURL != "" {
+		if cached, ok := CachedContextLength(ctx, modelID, baseURL); ok && cached > 0 {
+			return cached
+		}
+	}
+	return max(ModelContextLength(ctx, ContextLengthQuery{Model: modelID, BaseURL: baseURL, APIKey: apiKey, Provider: provider, ConfigContextLength: configCtx}), 0)
 }
 
-// ActiveContextLengthResolver resolves a model's context window through provider metadata, installed by the provider wiring
-var ActiveContextLengthResolver func(ctx context.Context, cfg config.Tree, modelID string) int
+// Python str of a config value with falsy values read as empty
+func configStr(v any) string {
+	if !pyrepr.Truthy(v) {
+		return ""
+	}
+	return pyrepr.Str(v)
+}
+
+// ContextLengthQuery carries the routing a provider aware context window lookup needs, zero ConfigContextLength means unset
+type ContextLengthQuery struct {
+	Model               string
+	BaseURL             string
+	APIKey              string
+	Provider            string
+	ConfigContextLength int
+}
+
+var (
+	// RuntimeProviderCredentials resolves a provider's live base URL and api key, installed by the provider wiring
+	RuntimeProviderCredentials func(ctx context.Context, env *Env, requested, targetModel string) (baseURL, apiKey string, err error)
+	// CachedContextLength reads the on disk model metadata cache, installed by the provider wiring
+	CachedContextLength func(ctx context.Context, modelID, baseURL string) (int, bool)
+	// ModelContextLength runs the full provider aware context window resolver, installed by the provider wiring
+	ModelContextLength func(ctx context.Context, q ContextLengthQuery) int
+)

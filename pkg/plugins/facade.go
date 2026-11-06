@@ -70,7 +70,7 @@ func askYes(prompt string, reader func(prompt string) (string, error)) bool {
 }
 
 // Install and update time scanning, on unless plugins.scan_on_install is falsy
-func scanOnInstallEnabled(h string) bool {
+var scanOnInstallEnabled = func(h string) bool {
 	return jsonTruthy(configValue(h, true, "plugins", "scan_on_install"))
 }
 
@@ -82,7 +82,7 @@ type scanOptions struct {
 }
 
 // Scans a tree and enforces the install policy, nil result when scanning is disabled
-func scanPluginTree(h, pluginDir, identifier string, opts scanOptions) (*skills.ScanResult, error) {
+var scanPluginTree = func(h, pluginDir, identifier string, opts scanOptions) (*skills.ScanResult, error) {
 	if !scanOnInstallEnabled(h) {
 		return nil, nil
 	}

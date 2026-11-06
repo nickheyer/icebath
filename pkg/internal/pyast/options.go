@@ -2,19 +2,24 @@ package pyast
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Options holds the ast.parse arguments filename, mode, type_comments and feature_version and the warnings error filter
+// Options holds the ast.parse arguments filename, mode, type_comments, feature_version and optimize and the warnings error filter
 type Options struct {
-	Filename         string
-	Mode             string
-	TypeComments     bool
-	FeatureVersion   *int
+	Filename       string
+	Mode           string
+	TypeComments   bool
+	FeatureVersion *int
+	// FeatureMajor is the major of a (major, minor) feature_version tuple whose minor is FeatureVersion
+	FeatureMajor     *int
+	Optimize         int
 	WarningsAsErrors bool
 	encoding         string
 }
@@ -31,7 +36,10 @@ const latestMinor = 14
 
 // ParseWith parses source text like ast.parse with options, returning the tree and the warnings it emitted
 func ParseWith(source string, opts Options) (*Node, []Warning, error) {
-	if err := checkMode(opts.Mode); err != nil {
+	if err := checkCompileArgs(opts); err != nil {
+		return nil, nil, err
+	}
+	if err := pystr.StrictUTF8EncodeError(source); err != nil {
 		return nil, nil, err
 	}
 	if strings.IndexByte(source, 0) >= 0 {
@@ -43,10 +51,10 @@ func ParseWith(source string, opts Options) (*Node, []Warning, error) {
 
 // ParseBytesWith parses encoded source like ast.parse(bytes) with options, honouring a BOM and a coding declaration
 func ParseBytesWith(source []byte, opts Options) (*Node, []Warning, error) {
-	if err := checkMode(opts.Mode); err != nil {
+	if err := checkCompileArgs(opts); err != nil {
 		return nil, nil, err
 	}
-	if strings.IndexByte(string(source), 0) >= 0 {
+	if bytes.IndexByte(source, 0) >= 0 {
 		return nil, nil, nullBytesError()
 	}
 	text, err := decodeSource(translateLines(source, execMode(opts.Mode)))
@@ -57,11 +65,42 @@ func ParseBytesWith(source []byte, opts Options) (*Node, []Warning, error) {
 	return parseOpts(text, opts)
 }
 
+// ParseNode compiles an AST object like ast.parse(tree), returning a converted, validated and preprocessed copy
+func ParseNode(n *Node, opts Options) (*Node, error) {
+	if err := checkCompileArgs(opts); err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, pyErr("TypeError", "compile() arg 1 must be a string, bytes or AST object")
+	}
+	mode := opts.Mode
+	if mode == "" {
+		mode = "exec"
+	}
+	mod, err := obj2mod(n, mode)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMod(mod); err != nil {
+		return nil, err
+	}
+	if err := compileAST(mod, opts, cpythonStack, len(Walk(mod))); err != nil {
+		return nil, withFilename(err, opts)
+	}
+	return mod, nil
+}
+
 func execMode(mode string) bool { return mode == "" || mode == "exec" }
 
-// Rejects a mode compile() does not know with its ValueError text
-func checkMode(mode string) error {
-	switch mode {
+// Rejects a feature_version tuple major other than 3, an optimize level or a mode compile() does not know
+func checkCompileArgs(o Options) error {
+	if o.FeatureMajor != nil && *o.FeatureMajor != 3 {
+		return &LimitError{Class: "ValueError", Msg: fmt.Sprintf("Unsupported major version: %d", *o.FeatureMajor)}
+	}
+	if o.Optimize < -1 || o.Optimize > 2 {
+		return &LimitError{Class: "ValueError", Msg: "compile(): invalid optimize value"}
+	}
+	switch o.Mode {
 	case "", "exec", "eval", "single", "func_type":
 		return nil
 	}
@@ -88,8 +127,46 @@ func parseOpts(buf []byte, o Options) (*Node, []Warning, error) {
 	if o.FeatureVersion != nil && *o.FeatureVersion >= 0 {
 		fv = *o.FeatureVersion
 	}
-	lx := tokenizeWith(buf, o.TypeComments, o.WarningsAsErrors)
-	p := &parser{lx: lx, toks: lx.toks, parens: map[*Node]bool{}, filename: o.filename(), fv: fv, warnErrors: o.WarningsAsErrors, mode: o.Mode}
+	p, n, err := parseLexed(buf, o, fv)
+	if err == nil {
+		if err = compileAST(n, o, cpythonStack, len(p.toks)); err != nil {
+			n = nil
+		}
+	}
+	if err != nil {
+		err = withFilename(err, o)
+	}
+	if o.WarningsAsErrors {
+		return n, nil, err
+	}
+	return n, p.warns, err
+}
+
+// Lexes and parses, lexing again with <> from the fill where CPython's pass one ran the barry_as_FLUFL import when that differs
+func parseLexed(buf []byte, o Options, fv int) (p *parser, n *Node, err error) {
+	var tried []int
+	for at := -1; ; {
+		p = &parser{lx: tokenizeBarry(buf, o.TypeComments, o.WarningsAsErrors, at), parens: map[*Node]bool{}, filename: o.filename(), fv: fv, warnErrors: o.WarningsAsErrors, mode: o.Mode, barryTok: -1, recBarryTok: -1}
+		n, err = p.parseMode(o)
+		truth := p.barryTok
+		if p.barryChecked {
+			truth = p.recBarryTok
+		}
+		next := truth
+		if next < 0 {
+			next = -2
+		}
+		tried = append(tried, at)
+		if !barryLexDiffers(p.lx.toks, p.lx.barryTok, truth) || slices.Contains(tried, next) {
+			return p, n, err
+		}
+		at = next
+	}
+}
+
+// Runs the start rule of the mode over the lexer's tokens and the CPython stack overflow check
+func (p *parser) parseMode(o Options) (*Node, error) {
+	p.toks = p.lx.toks
 	if execMode(o.Mode) && o.Filename != "" {
 		p.sourceFile, p.encoding = o.Filename, o.encoding
 	}
@@ -98,19 +175,12 @@ func parseOpts(buf []byte, o Options) (*Node, []Warning, error) {
 	case "eval":
 		start = p.evalInput
 	case "single":
-		p.toks = singleInputTokens(lx, len(buf))
+		p.toks = singleInputTokens(p.lx, len(p.lx.src))
 		start = p.interactive
 	case "func_type":
 		start = p.funcTypeInput
 	}
-	n, err := p.run(start)
-	if err != nil {
-		err = withFilename(err, o)
-	}
-	if o.WarningsAsErrors {
-		return n, nil, err
-	}
-	return n, p.warns, err
+	return p.withCPythonDepth(p.run(start))
 }
 
 // Turns ENDMARKER after any token into NEWLINE plus the implied dedents as _PyPegen_fill_token does for single input

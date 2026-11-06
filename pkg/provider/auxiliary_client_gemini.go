@@ -23,6 +23,7 @@ var auxGeminiDefaultTimeouts = auxGeminiTimeouts{connect: 15 * time.Second, read
 
 // OpenAI chat completions facade over the native Gemini REST API for auxiliary callers
 type auxGeminiNativeClient struct {
+	auxEffectiveStamp
 	route      Route
 	apiKey     string
 	baseURL    string
@@ -123,7 +124,7 @@ func (c *auxGeminiNativeClient) transport(t auxGeminiTimeouts) *http.Transport {
 // Pooled transport whose dial, TLS handshake, reads and writes carry the httpx connect, read and write timeouts
 func auxDeadlineTransport(connect, read, write time.Duration) *http.Transport {
 	dialer := &net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}
-	return &http.Transport{
+	return auxTrackPoolConns(&http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			conn, err := dialer.DialContext(ctx, network, addr)
@@ -134,7 +135,7 @@ func auxDeadlineTransport(connect, read, write time.Duration) *http.Transport {
 		},
 		TLSClientConfig: PlatformTLSConfig(), TLSHandshakeTimeout: connect, ForceAttemptHTTP2: true,
 		MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, ExpectContinueTimeout: time.Second,
-	}
+	})
 }
 
 // Messages kwarg as the list the Gemini request builder reads
@@ -275,3 +276,27 @@ func (s *auxGeminiStream) Close() error {
 	s.cancel()
 	return nil
 }
+
+// Async wrapper over a native Gemini client whose leaf client is the sync client itself
+type auxAsyncGeminiNativeClient struct {
+	auxEffectiveStamp
+	sync *auxGeminiNativeClient
+}
+
+// Wraps a sync native Gemini client for async callers
+func newAuxAsyncGeminiNativeClient(sync *auxGeminiNativeClient) *auxAsyncGeminiNativeClient {
+	return &auxAsyncGeminiNativeClient{sync: sync}
+}
+
+func (c *auxAsyncGeminiNativeClient) BaseURL() string { return c.sync.BaseURL() }
+func (c *auxAsyncGeminiNativeClient) APIKey() string  { return c.sync.APIKey() }
+
+// Runs the sync client body
+func (c *auxAsyncGeminiNativeClient) CreateChatCompletion(ctx context.Context, kwargs map[string]any) (any, error) {
+	return c.sync.CreateChatCompletion(ctx, kwargs)
+}
+
+// Closes the sync client
+func (c *auxAsyncGeminiNativeClient) Close() error { return c.sync.Close() }
+
+func (c *auxAsyncGeminiNativeClient) auxRealClient() AuxClient { return c.sync }

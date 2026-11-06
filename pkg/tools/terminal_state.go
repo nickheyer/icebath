@@ -584,17 +584,6 @@ func resolveConfigCwd(env *Env, policy TerminalPolicy, envType string, mountDock
 	return cwd, hostCwd
 }
 
-// Normalizes TERMINAL_MODAL_MODE to auto, direct or managed
-func coerceModalMode(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "direct":
-		return "direct"
-	case "managed":
-		return "managed"
-	}
-	return "auto"
-}
-
 // Terminal configuration seam
 var envConfigFn = resolveEnvConfig
 
@@ -667,7 +656,7 @@ func resolveEnvConfig(env *Env) (map[string]any, error) {
 	}
 	return map[string]any{
 		"env_type":                        envType,
-		"modal_mode":                      coerceModalMode(policy.Get("TERMINAL_MODAL_MODE", "auto")),
+		"modal_mode":                      CoerceModalMode(policy.Get("TERMINAL_MODAL_MODE", "auto")),
 		"docker_image":                    policy.Get("TERMINAL_DOCKER_IMAGE", defaultSandboxImage),
 		"docker_image_pinned":             policy.Get("TERMINAL_DOCKER_IMAGE_PINNED", "0") == "1",
 		"docker_forward_env":              dockerForwardEnv,

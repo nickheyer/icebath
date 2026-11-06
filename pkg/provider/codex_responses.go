@@ -87,7 +87,7 @@ func (c *codexResponsesClient) httpClient(connect time.Duration) *http.Client {
 			IdleConnTimeout:       90 * time.Second,
 			ExpectContinueTimeout: time.Second,
 		}
-		c.transports[connect] = tr
+		c.transports[connect] = auxTrackPoolConns(tr)
 	}
 	return &http.Client{Transport: tr}
 }
@@ -408,6 +408,7 @@ func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared,
 	for k, v := range p.headers {
 		httpReq.Header.Set(k, v)
 	}
+	applyProviderRequestHeaders(ctx, httpReq.Header)
 	codexCompressRequest(httpReq, c.route.BaseURL, body)
 	return httpReq, nil
 }

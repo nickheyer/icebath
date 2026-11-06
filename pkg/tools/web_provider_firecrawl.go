@@ -12,7 +12,7 @@ import (
 
 const nousManagedProvider = NousManagedProvider
 
-const firecrawlCloudAPIURL = "https://api.firecrawl.dev"
+var firecrawlCloudAPIURL = "https://api.firecrawl.dev"
 
 const (
 	firecrawlScrapeTimeoutMsg = "Scrape timed out after 60s — page may be too large or unresponsive. Try browser_exec instead."
@@ -52,7 +52,7 @@ func (c *firecrawlClient) post(ctx context.Context, path string, payload map[str
 		}
 		return nil, fmt.Errorf("HTTP %d: %s", status, text)
 	}
-	return decodeJSON(body)
+	return decodePyJSON(body)
 }
 
 func (c *firecrawlClient) search(ctx context.Context, query string, limit int) (any, error) {
@@ -140,9 +140,9 @@ func firecrawlFinalURL(metadata map[string]any, requested string) string {
 }
 
 // Flags a scrape whose target answered 400 or above from either status key spelling
-func firecrawlWithScrapeStatus(p *WebPage, metadata map[string]any) *WebPage {
+func firecrawlWithScrapeStatus(p *WebPage, metadata map[string]any) (*WebPage, error) {
 	if metadata == nil {
-		return p
+		return p, nil
 	}
 	status, ok := metadata["statusCode"]
 	if !ok {
@@ -379,7 +379,12 @@ func firecrawlScrapeOne(ctx context.Context, env *Env, u string, formats []strin
 		content = markdown
 	}
 	entry := &WebPage{URL: finalURL, Title: title, Content: content, RawContent: content, HasRaw: true, Metadata: metadata}
-	return firecrawlWithScrapeStatus(entry, metadata)
+	flagged, err := firecrawlWithScrapeStatus(entry, metadata)
+	if err != nil {
+		envLog(env).Debug("Firecrawl scrape failed", "url", u, "error", err.Error())
+		return firecrawlErrorEntry(u, err.Error(), "", true, nil)
+	}
+	return flagged
 }
 
 type firecrawlProvider struct{ baseWebProvider }
@@ -393,7 +398,7 @@ func (p *firecrawlProvider) Search(ctx context.Context, env *Env, query string, 
 	}
 	if firecrawlUseKeylessRing(env, "search") {
 		envLog(env).Info("Firecrawl keyless search", "query", query, "limit", limit)
-		return keylessSearchWithFailover(ctx, env, "firecrawl", query, limit), nil
+		return keylessSearchWithFailover(ctx, env, "firecrawl", query, limit)
 	}
 	envLog(env).Info("Firecrawl search", "query", query, "limit", limit)
 	client, err := firecrawlClientFor(env, "search")
@@ -417,7 +422,7 @@ func (p *firecrawlProvider) Extract(ctx context.Context, env *Env, urls []string
 	}
 	if firecrawlUseKeylessRing(env, "extract") {
 		envLog(env).Info("Firecrawl keyless extract", "urls", len(urls))
-		return keylessExtractWithFailover(ctx, env, "firecrawl", urls), nil
+		return keylessExtractWithFailover(ctx, env, "firecrawl", urls)
 	}
 	formats := []string{"markdown", "html"}
 	if format == "markdown" || format == "html" {

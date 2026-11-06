@@ -538,21 +538,3 @@ func applyAnthropicCacheControl(apiMessages []map[string]any, ttl string, native
 func modelNameSuggestsMinimaxM3(model string) bool {
 	return strings.Contains(flatModel(model), "minimax-m3")
 }
-
-// AnthropicPromptCachePolicy decides whether an Anthropic Messages route gets cache markers
-func AnthropicPromptCachePolicy(providerName, baseURL, model string) bool {
-	p := strings.ToLower(strings.TrimSpace(providerName))
-	lower := strings.ToLower(model)
-	isClaude := strings.Contains(lower, "claude")
-	minimaxRoute := p == "minimax" || p == "minimax-cn" || baseURLHostMatches(baseURL, "api.minimax.io") || baseURLHostMatches(baseURL, "api.minimaxi.com")
-	if minimaxRoute && modelNameSuggestsMinimaxM3(model) {
-		return false
-	}
-	if p == "anthropic" || baseURLHostname(baseURL) == "api.anthropic.com" {
-		return true
-	}
-	if isClaude || minimaxRoute {
-		return true
-	}
-	return false
-}

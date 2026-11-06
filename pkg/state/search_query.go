@@ -16,6 +16,7 @@ import (
 
 // Python re patterns of the FTS5 sanitizer compiled with Python semantics
 var (
+	quotedPhraseRe         = regexp.MustCompile(`"[^"]*"`)
 	sanitizeStarRunRE      = regexp.MustCompile(`\*+`)
 	sanitizeLeadingStarRE  = mustPyRe(`(^|\s)\*`)
 	sanitizeLeadingOpRE    = mustPyRe(`(?i)^(AND|OR|NOT)\b\s*`)

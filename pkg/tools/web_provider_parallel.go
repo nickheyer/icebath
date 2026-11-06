@@ -321,7 +321,7 @@ func (p *parallelProvider) Search(ctx context.Context, env *Env, query string, l
 		}
 		if useKeyless(env, "parallel", key) {
 			envLog(env).Info("Parallel keyless search", "query", query, "limit", limit)
-			return keylessSearchWithFailover(ctx, env, "parallel", query, limit), nil
+			return keylessSearchWithFailover(ctx, env, "parallel", query, limit)
 		}
 		mode := resolveParallelSearchMode(env)
 		envLog(env).Info("Parallel search", "query", query, "mode", mode, "limit", limit)
@@ -374,7 +374,7 @@ func (p *parallelProvider) Extract(ctx context.Context, env *Env, urls []string,
 		}
 		if useKeyless(env, "parallel", key) {
 			envLog(env).Info("Parallel keyless extract", "urls", len(urls))
-			return keylessExtractWithFailover(ctx, env, "parallel", urls), nil
+			return keylessExtractWithFailover(ctx, env, "parallel", urls)
 		}
 		envLog(env).Info("Parallel extract", "urls", len(urls))
 		client, err := getParallelAsyncClient(ctx, env)
@@ -440,7 +440,11 @@ func (p *parallelProvider) Extract(ctx context.Context, env *Env, urls []string,
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, vendorErrorEntry(pyStrField(pyOr(u, "")), status, reason, body))
+			entry, err := vendorErrorEntry(pyStrField(pyOr(u, "")), status, reason, body)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, entry)
 		}
 		return out, nil
 	}, true), nil

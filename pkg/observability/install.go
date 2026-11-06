@@ -48,10 +48,11 @@ var (
 
 var errHookUnavailable = errors.New("owning module unavailable")
 
-// Readers tests replace, the installed version and the code root of this install
+// Readers tests replace, the installed version, the code root and the host RAM of this install
 var (
-	installVersionInfo = updaterecord.GetVersionInfo
-	installProjectRoot = config.GetProjectRoot
+	installVersionInfo   = updaterecord.GetVersionInfo
+	installProjectRoot   = config.GetProjectRoot
+	installRAMTotalBytes = hostinfo.RAMTotalBytes
 )
 
 // Install method the client resource names, the Microsoft Store build included
@@ -162,7 +163,7 @@ func BehindBucket(ctx context.Context, homeDir string, now float64) (string, err
 
 // Nominal RAM size bucket of the host, unknown when the OS does not say
 func RamBucket() (string, error) {
-	total := hostinfo.RAMTotalBytes()
+	total := installRAMTotalBytes()
 	if total <= 0 {
 		return "unknown", nil
 	}

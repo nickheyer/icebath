@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 func TestLivenessParseContract(t *testing.T) {
@@ -132,5 +134,34 @@ func TestLivenessLiveEndpointOnlyForRuntimeFiles(t *testing.T) {
 	e := &LiveEndpointUnavailableError{Msg: "MCP server 'x' has no usable live endpoint"}
 	if e.Error() != e.Msg || classifyMCPFailure(e) != "transient" {
 		t.Fatal("an unavailable live endpoint is a transient connection error")
+	}
+}
+
+// Plugins services parser converts each parsed declaration field for field and keeps the parse error text
+func TestLivenessConvertsToThePluginsServerLiveness(t *testing.T) {
+	var parse func(raw any) (plugins.ServerLiveness, error) = func(raw any) (plugins.ServerLiveness, error) {
+		l, err := ParseLiveness(raw)
+		return plugins.ServerLiveness(l), err
+	}
+	cases := []struct {
+		raw  any
+		want plugins.ServerLiveness
+	}{
+		{map[string]any{"kind": "static"}, plugins.ServerLiveness{Kind: "static", URLField: "http", TokenField: "token", PIDField: "pid"}},
+		{map[string]any{"kind": "interactive_session"}, plugins.ServerLiveness{Kind: "interactive_session", URLField: "http", TokenField: "token", PIDField: "pid"}},
+		{map[string]any{"kind": "server_json", "path": " ~/.app/server.json ", "fields": map[string]any{"url": " endpoint ", "pid": "process"}},
+			plugins.ServerLiveness{Kind: "server_json", Path: "~/.app/server.json", URLField: "endpoint", TokenField: "token", PIDField: "process"}},
+	}
+	for _, c := range cases {
+		got, err := parse(c.raw)
+		if err != nil || got != c.want {
+			t.Fatalf("parse(%v) = %+v, %v want %+v", c.raw, got, err, c.want)
+		}
+	}
+	if got, err := parse(map[string]any{"kind": "server_json", "path": "  "}); err == nil || err.Error() != "server_json liveness requires a non-empty path" || got != (plugins.ServerLiveness{}) {
+		t.Fatalf("blank path parsed to %+v, %v", got, err)
+	}
+	if _, err := parse("static"); err == nil || err.Error() != "liveness must be an object" {
+		t.Fatalf("non object liveness error %v", err)
 	}
 }

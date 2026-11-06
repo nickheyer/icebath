@@ -12,6 +12,7 @@ type Credential struct {
 	TokenSource func(ctx context.Context) (string, error)
 	BaseURL     string
 	Source      string
+	Pool        *Pool
 }
 
 // CredentialSource answers which login a provider has

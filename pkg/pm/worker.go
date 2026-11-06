@@ -383,7 +383,7 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 	} else {
 		response["result"] = result
 	}
-	if completed := LastCompleted(workerCtx); completed != nil {
+	if completed := LastCompletedObject(workerCtx); completed != nil {
 		response["receipt"] = completed
 	} else {
 		response["receipt"] = nil

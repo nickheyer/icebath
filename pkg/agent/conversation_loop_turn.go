@@ -174,7 +174,7 @@ func runAPIRetryLoop(ctx context.Context, a *AIAgent, s *LoopState) (map[string]
 // The turn's result when it never enters the generic loop, nil otherwise
 func turnWithoutLoop(ctx context.Context, a *AIAgent, s *LoopState, blockMessage string) (map[string]any, error) {
 	if blockMessage != "" {
-		s.FinalResponse, s.TurnExitReason = blockMessage, preLLMBlockExitReason
+		s.FinalResponse, s.TurnExitReason = blockMessage, PreLLMBlockExitReason
 		return finalizeTurn(ctx, a, s)
 	}
 	if a.apiMode == "codex_app_server" {
@@ -254,7 +254,12 @@ func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o Run
 		conversationLoopLog().Debug("per-turn env credential refresh failed", "error", err)
 	}
 	held := plugins.HeldStreamTransforms(ctx)
-	a.heldTransforms, a.holdStream = held, len(held) > 0
+	a.heldTransforms, a.holdStream = nil, len(held) > 0
+	if len(held) > 0 {
+		a.heldTransforms = func(ctx context.Context, kwargs map[string]any) (string, bool) {
+			return plugins.GetPluginManager(ctx).RunHeldTransforms(ctx, held, kwargs)
+		}
+	}
 
 	tc, err := buildTurnContext(ctx, a, TurnContextRequest{
 		UserMessage: userMessage, SystemMessage: o.SystemMessage, ConversationHistory: o.ConversationHistory, TaskID: taskID,
@@ -270,6 +275,7 @@ func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o Run
 		}
 		return nil, err
 	}
+	ctx = tc.Ctx
 	tc.ActiveSystemPrompt = beginVoiceTurnRoute(ctx, a, tc.Messages, tc.ActiveSystemPrompt)
 
 	a.deliveredInterimTexts = map[string]bool{}
@@ -412,11 +418,7 @@ const failedTurnErrorMaxChars = 2000
 
 // Error text and error surface a client needs to redraw a failed turn's card, every string force redacted
 func failedTurnDisplayMetadata(a *AIAgent, result map[string]any) map[string]any {
-	surface, err := buildErrorSurfaceFromResult(result, a.provider, a.model)
-	if err != nil {
-		conversationLoopLog().Debug("failed-turn error surface unavailable", "error", err)
-		surface = nil
-	}
+	surface := buildErrorSurfaceFromResult(result, a.provider, a.model)
 	errText := ""
 	if v := result["error"]; pyTruthy(v) {
 		errText = fmt.Sprint(v)

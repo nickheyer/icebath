@@ -19,11 +19,13 @@ type Context struct {
 	module                   string
 	facadeMu                 sync.Mutex
 	memoryProvider           any
-	llm                      any
-	platformActions          any
-	subagentLifecycle        any
+	platformActions          *PlatformActions
+	llm                      *PluginLlm
+	subagentLifecycle        *SubagentLifecycleService
 	delegationBackends       any
 	sideQuestionDenialLogged atomic.Bool
+	collector                *memoryCollector
+	engineCollector          *engineCollector
 }
 
 // Context bound to one manifest and the manager loading it

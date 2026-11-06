@@ -316,3 +316,16 @@ func DecimalValue(r rune) (int, bool) {
 	}
 	return 0, false
 }
+
+// True for a non empty string whose every character is a digit, str.isdigit
+func StrIsDigit(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}

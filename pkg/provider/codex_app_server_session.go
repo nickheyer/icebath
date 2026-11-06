@@ -276,6 +276,15 @@ type codexTierState struct {
 	tier    *string
 }
 
+// Client constructor every default session factory spawns through, swappable like the module attribute
+var codexAppServerClientFactory = func(opts CodexAppServerOptions) (CodexRPCClient, error) {
+	client, err := NewCodexAppServerClient(opts)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
 // CodexAppServerSession owns one codex thread for an icebath session, one caller at a time
 type CodexAppServerSession struct {
 	cwd                   string
@@ -333,7 +342,7 @@ func NewCodexAppServerSession(opts CodexAppServerSessionOptions) *CodexAppServer
 	if s.clientFactory == nil {
 		env := opts.ToolEnv
 		s.clientFactory = func(codexBin, codexHome string) (CodexRPCClient, error) {
-			return NewCodexAppServerClient(CodexAppServerOptions{CodexBin: codexBin, CodexHome: codexHome, ToolEnv: env})
+			return codexAppServerClientFactory(CodexAppServerOptions{CodexBin: codexBin, CodexHome: codexHome, ToolEnv: env})
 		}
 	}
 	return s

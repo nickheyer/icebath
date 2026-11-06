@@ -26,6 +26,7 @@ const (
 	hostChildModule       = "icebath_cli.plugin_host_child"
 	HostProcessEnv        = "ICEBATH_PLUGIN_HOST_PROCESS"
 	hostLogLevelEnv       = "ICEBATH_PLUGIN_HOST_LOG_LEVEL"
+	hostDenyNetworkEnv    = "ICEBATH_PLUGIN_HOST_DENY_NETWORK"
 	hostIsolationResource = "icebath_cli/plugin_isolation.py"
 )
 
@@ -156,12 +157,13 @@ func materializeHostChild() (string, error) {
 		return "", err
 	}
 	if err := os.Rename(tmp, dir); err != nil {
-		_ = os.RemoveAll(tmp)
 		if isFile(marker) {
+			_ = os.RemoveAll(tmp)
 			return dir, nil
 		}
 		_ = os.RemoveAll(dir)
 		if err := os.Rename(tmp, dir); err != nil {
+			_ = os.RemoveAll(tmp)
 			return "", err
 		}
 	}

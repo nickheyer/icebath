@@ -558,6 +558,25 @@ func (r *Registry) AllToolsets(ctx context.Context, scope string) map[string]Too
 	return out
 }
 
+// OrderedToolsetNames lists static toolsets in table order then plugin display names like the all toolsets dict keys
+func (r *Registry) OrderedToolsetNames(ctx context.Context, scope string) []string {
+	out := orderedToolsetNames()
+	have := make(map[string]bool, len(out))
+	for _, n := range out {
+		have[n] = true
+	}
+	for _, display := range r.pluginDisplayNames(ctx, scope) {
+		if have[display] {
+			continue
+		}
+		if _, ok := r.GetToolset(ctx, scope, display, true); ok {
+			have[display] = true
+			out = append(out, display)
+		}
+	}
+	return out
+}
+
 // ToolsetNames lists every static and plugin toolset name sorted, aliases excluded
 func (r *Registry) ToolsetNames(ctx context.Context, scope string) []string {
 	names := map[string]bool{}
@@ -582,6 +601,11 @@ func (r *Registry) SessionPlatformToolDrops(ctx context.Context, scope, platform
 		}
 	}
 	return out
+}
+
+// SessionPlatformToolDrops returns the default registry tools of platform gated toolsets the platform lacks
+func SessionPlatformToolDrops(platform string) map[string]bool {
+	return Default.SessionPlatformToolDrops(context.Background(), ScopeKey(home.Dir(context.Background())), platform)
 }
 
 // SessionDisabledToolsets extends a disabled list with platform gated and one shot toolsets

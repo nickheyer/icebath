@@ -189,6 +189,7 @@ func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[
 
 // OpenAI client compatible wrapper over a native Anthropic client
 type AnthropicAuxiliaryClient struct {
+	auxEffectiveStamp
 	realClient *anthropicSDKClient
 	adapter    *auxAnthropicCompletionsAdapter
 	apiKey     any
@@ -374,6 +375,7 @@ func auxBedrockResultWire(r *bedrockConverseResult) map[string]any {
 
 // OpenAI client compatible wrapper over the Bedrock Converse API
 type BedrockAuxiliaryClient struct {
+	auxEffectiveStamp
 	region  string
 	model   string
 	adapter *auxBedrockCompletionsAdapter

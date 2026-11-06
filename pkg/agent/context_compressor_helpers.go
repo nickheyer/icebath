@@ -329,7 +329,7 @@ func archiveWatermarkFor(ctx context.Context, sessionDB any, sessionID string, h
 		}
 		startWatermark = &w
 	}
-	return heldArchiveWatermark(ctx, db, sessionID, *startWatermark, held, true)
+	return heldArchiveWatermark(ctx, db, sessionID, *startWatermark, held, nil, true)
 }
 
 // Marks every row as already persisted in place
@@ -541,10 +541,11 @@ func (k summaryFailureKind) FallbackReason() string {
 	return "failed"
 }
 
-// Python TimeoutError, the deadline and net timeout errors Go raises for it
+// Python TimeoutError, the aux watchdog timeout and the deadline and net timeout errors Go raises for it
 func isPyTimeoutError(err error) bool {
 	var ne net.Error
-	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
+	var auxTimeout *provider.AuxTimeoutError
+	return errors.As(err, &auxTimeout) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
 }
 
 func isJSONDecodeError(err error) bool {

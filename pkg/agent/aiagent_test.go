@@ -139,8 +139,9 @@ func TestGatewayOriginJSON(t *testing.T) {
 }
 
 func TestLaunchCwdForSession(t *testing.T) {
+	prevGetwd := launchGetwd
 	launchGetwd = func() (string, error) { return "/work", nil }
-	t.Cleanup(func() { launchGetwd = nil })
+	t.Cleanup(func() { launchGetwd = prevGetwd })
 	t.Setenv("TERMINAL_ENV", "")
 	if launchCwdForSession("cli") != "/work" || launchCwdForSession("telegram") != "" {
 		t.Fatal("local cli family source must stamp the cwd and nothing else")

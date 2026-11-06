@@ -8,9 +8,13 @@ import (
 )
 
 // Runtime state of one loaded plugin
+// Dotted name and file of a plugin module imported ahead of its registration
+type loadedModule struct{ name, file string }
+
 type LoadedPlugin struct {
 	Manifest             *Manifest
 	Module               string
+	ModuleFile           string
 	ToolsRegistered      []string
 	HooksRegistered      []string
 	MiddlewareRegistered []string
@@ -66,7 +70,7 @@ type Manager struct {
 	slackActionHandlers           []*SlackActionHandler
 	platformHandlerFactories      map[string][]*PlatformHandlerFactory
 	pluginLoadedListeners         []*loadedListener
-	predeclaredModules            map[string]string
+	predeclaredModules            map[string]loadedModule
 	predeclaredTools              map[string][]string
 	pluginSecretSourcesReconciled bool
 	pluginHostInstance            *PluginHost
@@ -103,7 +107,7 @@ func NewManager(h string) *Manager {
 		auxTasks:                   map[string]*auxTask{},
 		approvalTransports:         map[string]*tools.RegisteredApprovalTransport{},
 		platformHandlerFactories:   map[string][]*PlatformHandlerFactory{},
-		predeclaredModules:         map[string]string{},
+		predeclaredModules:         map[string]loadedModule{},
 		predeclaredTools:           map[string][]string{},
 	}
 }

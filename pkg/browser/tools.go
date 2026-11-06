@@ -1,9 +1,9 @@
 package browser
 
-// Registers every browser tool into tools.Default once the remaining modules exist
+// Registers browser_exec, browser_cdp, browser_dialog and browser_vault into the tool registry
 func init() {
-	registerPageTools()
-	registerCDPTool()
-	registerDialogTool()
-	registerVaultTool()
+	registerBrowserExecTool()
+	registerBrowserCDPTool()
+	registerBrowserDialogTool()
+	registerBrowserVaultTool()
 }

@@ -353,17 +353,16 @@ func (a *AIAgent) GuardrailBlockResult(d tools.ToolGuardrailDecision) string {
 	return tools.ToolguardSyntheticResult(d)
 }
 
-// Runs the assistant tool calls through the segment planner and appends their results to messages
-func (a *AIAgent) executeToolCalls(ctx context.Context, assistantMessage *state.Message, messages *[]*state.Message, effectiveTaskID string) {
+// Runs the assistant tool calls through the segment planner and appends their results, a dispatch error skipping the trim
+func (a *AIAgent) executeToolCalls(ctx context.Context, assistantMessage *state.Message, messages *[]*state.Message, effectiveTaskID string) error {
 	toolCalls := assistantMessage.ToolCalls
 	a.executingTools = true
-	func() {
+	err := func() error {
 		defer func() { a.executingTools = false }()
 		ctx := tools.WithConnectionSurface(ctx, agentConnectionSurface(a))
 		exec := a.toolExecutor()
 		if len(toolCalls) <= 1 {
-			exec.ExecuteToolCallsSequential(ctx, toolCalls, messages, effectiveTaskID, true)
-			return
+			return exec.ExecuteToolCallsSequential(ctx, toolCalls, messages, effectiveTaskID, true)
 		}
 		execCwd := ""
 		if env, err := tools.GetActiveEnv(a.env, effectiveTaskID); err == nil && env != nil {
@@ -372,18 +371,20 @@ func (a *AIAgent) executeToolCalls(ctx context.Context, assistantMessage *state.
 		segments := tools.PlanToolBatchSegments(ctx, a.env, toolCalls, execCwd)
 		if len(segments) == 1 {
 			if segments[0].Mode == "parallel" {
-				exec.ExecuteToolCallsConcurrent(ctx, toolCalls, messages, effectiveTaskID, true)
-			} else {
-				exec.ExecuteToolCallsSequential(ctx, toolCalls, messages, effectiveTaskID, true)
+				return exec.ExecuteToolCallsConcurrent(ctx, toolCalls, messages, effectiveTaskID, true)
 			}
-			return
+			return exec.ExecuteToolCallsSequential(ctx, toolCalls, messages, effectiveTaskID, true)
 		}
-		exec.ExecuteToolCallsSegmented(ctx, toolCalls, messages, effectiveTaskID, segments)
+		return exec.ExecuteToolCallsSegmented(ctx, toolCalls, messages, effectiveTaskID, segments)
 	}()
+	if err != nil {
+		return err
+	}
 	if a.trimAfterToolBatch {
 		a.trimAfterToolBatch = false
 		memory.TrimMemory(ctx, a.env, memory.TrimOptions{Reason: "large tool result"})
 	}
+	return nil
 }
 
 // Single delegate_task dispatch site mapping the schema fields onto the delegate tool keywords

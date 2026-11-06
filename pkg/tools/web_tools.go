@@ -324,18 +324,22 @@ func strictSelectionError(env *Env, capability, backend string) string {
 
 // Runs the paid search with the managed fallback and the keyless rescue around it, rescued true when served elsewhere
 func paidSearch(ctx webCallContext, provider WebProvider, query string, fetchLimit int) (*WebSearchResponse, bool, error) {
-	servedAfterFailure := func(errText string) *WebSearchResponse {
+	servedAfterFailure := func(errText string) (*WebSearchResponse, error) {
 		if fallback := managedSearchFallback(ctx, provider, errText, query, fetchLimit); fallback != nil {
-			return fallback
+			return fallback, nil
 		}
 		if rescueEligible(ctx.env, provider) {
 			return rescueSearch(ctx, provider.Name(), errText, query, fetchLimit)
 		}
-		return nil
+		return nil, nil
 	}
 	resp, err := provider.Search(ctx.ctx, ctx.env, query, fetchLimit)
 	if err != nil {
-		if served := servedAfterFailure(err.Error()); served != nil {
+		served, serr := servedAfterFailure(err.Error())
+		if serr != nil {
+			return nil, false, serr
+		}
+		if served != nil {
 			return served, true, nil
 		}
 		return nil, false, err
@@ -344,7 +348,11 @@ func paidSearch(ctx webCallContext, provider WebProvider, query string, fetchLim
 		resp = searchFail("")
 	}
 	if !resp.Success {
-		if served := servedAfterFailure(resp.Error); served != nil {
+		served, serr := servedAfterFailure(resp.Error)
+		if serr != nil {
+			return nil, false, serr
+		}
+		if served != nil {
 			return served, true, nil
 		}
 	}
@@ -599,7 +607,7 @@ func fetchWithRescue(call webCallContext, provider WebProvider, urls []string, f
 		if !rescueEligible(env, provider) {
 			return failed, false, nil
 		}
-		return rescueExtract(call, provider.Name(), urls, failed), true, nil
+		return rescuedExtract(rescueExtract(call, provider.Name(), urls, failed))
 	}
 	if out.err != nil {
 		if !rescueEligible(env, provider) {
@@ -609,12 +617,20 @@ func fetchWithRescue(call webCallContext, provider WebProvider, urls []string, f
 		for _, u := range urls {
 			failed = append(failed, pageError(u, out.err.Error()))
 		}
-		return rescueExtract(call, provider.Name(), urls, failed), true, nil
+		return rescuedExtract(rescueExtract(call, provider.Name(), urls, failed))
 	}
 	if backendFailedWholeBatch(out.results) && rescueEligible(env, provider) {
-		return rescueExtract(call, provider.Name(), urls, out.results), true, nil
+		return rescuedExtract(rescueExtract(call, provider.Name(), urls, out.results))
 	}
 	return out.results, false, nil
+}
+
+// Rescue outcome as the extract result, a raised ring error returned in place of the rescue
+func rescuedExtract(pages []*WebPage, err error) ([]*WebPage, bool, error) {
+	if err != nil {
+		return nil, false, err
+	}
+	return pages, true, nil
 }
 
 // Refusal entry when a page's reported URL fails the website policy or SSRF gate, nil when it passes

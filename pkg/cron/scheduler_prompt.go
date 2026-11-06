@@ -60,7 +60,9 @@ const cronHint = "[IMPORTANT: You are running as a scheduled cron job. " +
 	"context for this run, not as a request to schedule another job.]\n\n"
 
 // Seam over the cronjob_job_args base_url validator so tests can drive both outcomes
-var cronBaseURLValidator = validateCronBaseURL
+var cronBaseURLValidator = func(s *Store, prov, baseURL *string) (string, error) {
+	return s.validateCronBaseURL(context.Background(), ptrValue(prov), ptrValue(baseURL))
+}
 
 // Cached outcome of a pre run script the caller already executed for the wake gate
 type scriptRun struct {
@@ -549,7 +551,7 @@ func (s *Store) scanAssembledCronPrompt(assembled string, job *Job, hasSkills, h
 
 // Refuses a job whose stored provider and base_url pair could send a stored key off origin
 func (s *Store) guardJobCredentialExfil(job *Job) error {
-	msg, err := cronBaseURLValidator(job.Provider, job.BaseURL)
+	msg, err := cronBaseURLValidator(s, job.Provider, job.BaseURL)
 	if err != nil {
 		msg = ""
 		if job.BaseURL != nil && *job.BaseURL != "" {

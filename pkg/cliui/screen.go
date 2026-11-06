@@ -34,7 +34,22 @@ type Screen interface {
 	HasColors() bool
 	// Hides the cursor and sets up the color pairs, failing like curs_set or start_color on a limited terminal
 	InitColors(extraPairs bool) error
+	// Hides the cursor, then with colors maps each pair to a curses foreground number over the default background
+	InitPairs(pairs map[int]int) error
+	// Number of terminal colors, the curses COLORS value
+	Colors() int
 }
+
+// Curses foreground color numbers for InitPairs
+const (
+	ColorGreen  = 2
+	ColorYellow = 3
+	ColorCyan   = 6
+	ColorWhite  = 7
+)
+
+// ErrCursesInit marks a screen that could not be set up, the condition menus route to their text fallback
+var ErrCursesInit = errCursesInit
 
 type cell struct {
 	text string
@@ -130,6 +145,38 @@ func (s *ansiScreen) InitColors(extra bool) error {
 		}
 	}
 	return nil
+}
+
+func (s *ansiScreen) InitPairs(pairs map[int]int) error {
+	civis := s.ti.Strings[terminfo.CursorInvisible]
+	if len(civis) == 0 {
+		return errors.New("curs_set() returned ERR")
+	}
+	io.WriteString(s.c.Out, string(civis))
+	if !s.HasColors() {
+		return nil
+	}
+	for pair, fg := range pairs {
+		switch {
+		case fg < 8:
+			s.pairs[pair] = fmt.Sprint(30 + fg)
+		case fg < 16:
+			s.pairs[pair] = fmt.Sprint(90 + fg - 8)
+		default:
+			s.pairs[pair] = fmt.Sprintf("38;5;%d", fg)
+		}
+	}
+	return nil
+}
+
+func (s *ansiScreen) Colors() int { return s.colors }
+
+// Full screen surface standing in for curses.wrapper, the injected opener first
+func (c *Console) OpenFullScreen() (Screen, func(), error) {
+	if c.OpenScreen != nil {
+		return c.OpenScreen()
+	}
+	return c.openANSIScreen()
 }
 
 func (s *ansiScreen) Timeout(ms int) { s.timeoutMs = ms }

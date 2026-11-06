@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -41,7 +42,11 @@ func applyKind(m *Manager, kind string, payload map[string]any) RequestMiddlewar
 	if kind == LLMRequestMiddleware {
 		return m.ApplyLLMRequestMiddleware(payload, map[string]any{})
 	}
-	return m.ApplyToolRequestMiddleware("fixture", payload, nil, map[string]any{})
+	result, err := m.ApplyToolRequestMiddleware(context.Background(), "fixture", payload, nil, map[string]any{})
+	if err != nil {
+		panic(err)
+	}
+	return result
 }
 
 func TestRequestMiddlewareRewritesCompose(t *testing.T) {
@@ -85,7 +90,10 @@ func TestRequestMiddlewareInPlaceMutationDoesNotLeak(t *testing.T) {
 func TestToolRequestWithoutMiddlewareReturnsArgsUnchanged(t *testing.T) {
 	m := NewManager(t.TempDir())
 	args := map[string]any{"a": 1}
-	result := m.ApplyToolRequestMiddleware("fixture", args, nil, map[string]any{"skip_relay": true, "session_id": "s1"})
+	result, err := m.ApplyToolRequestMiddleware(context.Background(), "fixture", args, nil, map[string]any{"skip_relay": true, "session_id": "s1"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if result.Changed || !reflect.DeepEqual(result.Payload, args) || len(result.Trace) != 0 {
 		t.Fatalf("%#v", result)
 	}

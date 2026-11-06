@@ -130,9 +130,15 @@ type World struct {
 	CTOf  func(int) *float64
 }
 
+var (
+	aliveOf      = pidAlive
+	createTimeOf = ProcessCreateTime
+	markerReader = readMarker
+)
+
 // The running process, the wall clock and the live process table
 func realWorld() World {
-	return World{PID: os.Getpid(), CT: ownCreateTime(), Now: float64(time.Now().UnixNano()) / 1e9, Alive: pidAlive, CTOf: ProcessCreateTime}
+	return World{PID: os.Getpid(), CT: ownCreateTime(), Now: float64(time.Now().UnixNano()) / 1e9, Alive: aliveOf, CTOf: createTimeOf}
 }
 
 func boolPtr(value bool) *bool { return &value }

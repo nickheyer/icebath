@@ -20,8 +20,23 @@ var auxResolveRuntimeProviderFn = func(ctx context.Context, requested string) (*
 }
 
 // Azure Foundry runtime resolution seam over the main resolver
-var auxResolveAzureFoundryRuntimeFn = func(ctx context.Context, modelCfg map[string]any, explicitAPIKey, explicitBaseURL, targetModel string) (*Runtime, error) {
-	return modelsResolver(ctx).resolveAzureFoundryRuntime("azure-foundry", modelCfg, explicitAPIKey, nil, explicitBaseURL, targetModel)
+var auxResolveAzureFoundryRuntimeFn = func(ctx context.Context, modelCfg map[string]any, explicitAPIKey string, forwardedToken func(context.Context) (string, error), explicitBaseURL, targetModel string) (*Runtime, error) {
+	return modelsResolver(ctx).resolveAzureFoundryRuntime("azure-foundry", modelCfg, explicitAPIKey, forwardedToken, explicitBaseURL, targetModel)
+}
+
+// Static explicit key or the Entra token provider callable passed through intact, never stringified
+func auxAzureExplicitKey(key any) (string, func(context.Context) (string, error)) {
+	switch k := key.(type) {
+	case string:
+		return k, nil
+	case func() (string, error):
+		return "", func(context.Context) (string, error) { return k() }
+	case func() string:
+		return "", func(context.Context) (string, error) { return k(), nil }
+	case func(context.Context) (string, error):
+		return "", k
+	}
+	return "", nil
 }
 
 // Seams the hermes tests patch as module attributes
@@ -219,7 +234,7 @@ func auxBuildCodexClient(ctx context.Context, model string) (AuxClient, string, 
 }
 
 // Azure Foundry client from the main runtime resolver on its per model wire, nil when unresolvable
-func auxTryAzureFoundry(ctx context.Context, model, explicitAPIKey, explicitBaseURL, apiMode string) (AuxClient, string, error) {
+func auxTryAzureFoundry(ctx context.Context, model string, explicitAPIKey any, explicitBaseURL, apiMode string) (AuxClient, string, error) {
 	modelCfg := map[string]any{}
 	if cfg, err := auxLoadConfigReadonlyFn(ctx); err == nil {
 		if m, ok := cfg["model"].(map[string]any); ok {
@@ -229,7 +244,8 @@ func auxTryAzureFoundry(ctx context.Context, model, explicitAPIKey, explicitBase
 	var rt *Runtime
 	var rerr error
 	if perr := auxRecoverRaise(func() {
-		rt, rerr = auxResolveAzureFoundryRuntimeFn(ctx, modelCfg, explicitAPIKey, explicitBaseURL, model)
+		staticKey, forwardedToken := auxAzureExplicitKey(explicitAPIKey)
+		rt, rerr = auxResolveAzureFoundryRuntimeFn(ctx, modelCfg, staticKey, forwardedToken, explicitBaseURL, model)
 	}); perr != nil {
 		rerr = perr
 	}

@@ -20,4 +20,10 @@ def parent_call(op: str, *args: Any, **kwargs: Any) -> Any:
     runtime = _RUNTIME
     if runtime is None:
         raise PluginHostUnavailable(f"plugin SDK call {op!r} needs the Icebath plugin host channel")
-    return decode(runtime.channel.call("sdk", {"op": op, "args": encode(list(args)), "kwargs": encode(kwargs)}))
+    def resolve(ref: dict) -> Any:
+        if "__parent_event__" in ref or "__child_event__" in ref:
+            return runtime.resolve_event(ref)
+        return {k: decode(v, resolve) for k, v in ref.items()}
+
+    return decode(runtime.channel.call("sdk", {"op": op, "args": encode(list(args), runtime.event_ref),
+                                               "kwargs": encode(kwargs, runtime.event_ref)}), resolve)

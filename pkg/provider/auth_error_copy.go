@@ -10,9 +10,11 @@ import (
 	"os"
 	"strings"
 	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/cliui"
 )
 
-// DeviceFlowErrorCopy maps RFC 8628 device flow error codes onto plain copy with a retry placeholder
+// DeviceFlowErrorCopy maps RFC 8628 device flow error codes onto plain copy that names the retry command
 var DeviceFlowErrorCopy = map[string]string{
 	"expired_token":  "The sign-in code expired before it was approved in the browser. Run `{retry}` to get a new code.",
 	"access_denied":  "Sign-in was declined in the browser. Run `{retry}` to try again, or `icebath model` to pick a different provider.",
@@ -104,7 +106,7 @@ func IsCancelled(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, cliui.ErrEOF) {
 		return true
 	}
 	var cancelled *SignInCancelledError

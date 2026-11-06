@@ -36,6 +36,7 @@ const (
 type PluginHost struct {
 	manager     *Manager
 	home        string
+	envOverride map[string]string
 	mu          sync.Mutex
 	proc        *hostProcess
 	channel     *Channel
@@ -52,6 +53,8 @@ type PluginHost struct {
 	releases    []int64
 	info        map[string]any
 	restartWait func(time.Duration)
+	parents     map[int64]parentCallableSlot
+	parentIDs   int64
 }
 
 // One started child with its exit status once known
@@ -73,7 +76,7 @@ func (p *hostProcess) poll() (int, bool) {
 
 func newPluginHost(m *Manager) (*PluginHost, error) {
 	h := &PluginHost{manager: m, home: m.home, contexts: map[string]*Context{}, handles: map[int64]*Registration{},
-		info: map[string]any{}, restartWait: time.Sleep}
+		info: map[string]any{}, restartWait: time.Sleep, parents: map[int64]parentCallableSlot{}}
 	h.baseCtx = h.buildBaseContext()
 	return h, nil
 }
@@ -161,6 +164,9 @@ func (h *PluginHost) env() ([]string, error) {
 		env[hostLogLevelEnv] = "WARNING"
 	}
 	env[HostProcessEnv] = "1"
+	for k, v := range h.envOverride {
+		env[k] = v
+	}
 	return envList(env), nil
 }
 
@@ -404,6 +410,7 @@ func (h *PluginHost) exitReason() string {
 
 // Records an unexpected child death and reloads its plugins in the background, the loading culprit excluded
 func (h *PluginHost) onChannelClose(generation int, reason string) {
+	h.dropParentCallables(generation)
 	h.mu.Lock()
 	stale := h.stopping || generation != h.generation
 	h.mu.Unlock()
@@ -540,10 +547,10 @@ func hostCtxMethods() []string {
 }
 
 // Imports a plugin in the child and replays its registrations onto the plugin context
-func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, entrypoint bool) error {
+func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, entrypoint bool) (string, error) {
 	ch, err := h.ensureStarted(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	key := mf.ID()
 	h.stateMu.Lock()
@@ -555,7 +562,7 @@ func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, modu
 		"entrypoint": entrypoint, "profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf),
 		"ctx_methods": anyList(hostCtxMethods()),
 	}
-	_, err = ch.Call(ctx, "load", params, 0)
+	result, err := ch.Call(ctx, "load", params, 0)
 	h.stateMu.Lock()
 	h.loading = ""
 	if err != nil {
@@ -563,17 +570,23 @@ func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, modu
 	}
 	h.stateMu.Unlock()
 	if err != nil {
-		return h.unavailableAsExit(err)
+		return "", h.unavailableAsExit(err)
 	}
 	_, err = pctx.OnUnload(func() error { return h.unload(key) })
-	return err
+	return replyModuleFile(result), err
+}
+
+// Module file the child reported for an imported plugin, empty for a module without one
+func replyModuleFile(result any) string {
+	reply, _ := result.(map[string]any)
+	return wireStr(reply["file"])
 }
 
 // Imports a deferred platform plugin tools.py in the child and runs its register_tools(ctx)
-func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context, moduleName string) error {
+func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context, moduleName string) (string, error) {
 	ch, err := h.ensureStarted(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	key := mf.ID()
 	h.stateMu.Lock()
@@ -589,14 +602,14 @@ func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context,
 	h.loading = ""
 	h.stateMu.Unlock()
 	if err != nil {
-		return h.unavailableAsExit(err)
+		return "", h.unavailableAsExit(err)
 	}
 	if reply, _ := result.(map[string]any); reply != nil && reply["register_tools"] == false {
 		logWarn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.",
 			key, pyListRepr(mf.ProvidesTools)))
 	}
 	_, err = pctx.OnUnload(func() error { return h.unload(key) })
-	return err
+	return replyModuleFile(result), err
 }
 
 func pyListRepr(items []string) string { return config.PyRepr(anyList(items)) }
@@ -614,21 +627,43 @@ func nilIfEmpty(s string) any {
 }
 
 // Loads a category plugin in the child and returns a proxy that reloads it after a host restart
-func (h *PluginHost) LoadInstance(ctx context.Context, pluginDir, moduleName, baseRef, capture string, pctx *Context, beforeReload func()) (*HostedObject, error) {
+func (h *PluginHost) LoadInstance(ctx context.Context, pluginDir, moduleName, baseRef, capture string, pctx *Context, beforeReload func(context.Context)) (*HostedObject, error) {
+	return h.loadInstance(ctx, pluginDir, moduleName, baseRef, capture, pctx, beforeReload, nil)
+}
+
+// Category plugin load whose extra params ask the child for the in process loader path
+func (h *PluginHost) loadInstance(ctx context.Context, pluginDir, moduleName, baseRef, capture string, pctx *Context, beforeReload func(context.Context), extra map[string]any) (*HostedObject, error) {
+	name := filepath.Base(pluginDir)
 	load := func(ctx context.Context) (map[string]any, error) {
-		return h.loadInstanceRef(ctx, pluginDir, moduleName, baseRef, capture, pctx)
+		pluginID := name
+		if pctx != nil {
+			pluginID = pctx.PluginID()
+		}
+		params := map[string]any{
+			"plugin_id": pluginID, "name": name, "path": pluginDir, "module_name": moduleName,
+			"base": baseRef, "capture": capture, "forward": pctx != nil,
+			"manifest": map[string]any{"name": name, "path": pluginDir, "source": "user"},
+		}
+		for k, v := range extra {
+			params[k] = v
+		}
+		return h.instanceRef(ctx, capture+":"+name, "load_instance", params, pctx)
 	}
+	return h.reloadableInstance(ctx, capture, name, baseRef, load, beforeReload)
+}
+
+// Proxy over the object load answers, reloading it into a restarted child after beforeReload
+func (h *PluginHost) reloadableInstance(ctx context.Context, capture, name, baseRef string, load func(context.Context) (map[string]any, error), beforeReload func(context.Context)) (*HostedObject, error) {
 	ref, err := load(ctx)
 	if err != nil || ref == nil {
 		return nil, err
 	}
-	name := filepath.Base(pluginDir)
 	reload := func(ctx context.Context) (map[string]any, error) {
 		if h.restartRefused(fmt.Sprintf("%s plugin %s", capture, name)) {
 			return nil, &PluginHostUnavailable{Reason: h.exitReason()}
 		}
 		if beforeReload != nil {
-			beforeReload()
+			beforeReload(ctx)
 		}
 		fresh, err := load(ctx)
 		if err != nil {
@@ -642,28 +677,23 @@ func (h *PluginHost) LoadInstance(ctx context.Context, pluginDir, moduleName, ba
 	return h.objectProxy(ref, baseRef, reload), nil
 }
 
-func (h *PluginHost) loadInstanceRef(ctx context.Context, pluginDir, moduleName, baseRef, capture string, pctx *Context) (map[string]any, error) {
+// Object ref one instance loading request answers, pctx serving the registrations it forwards
+func (h *PluginHost) instanceRef(ctx context.Context, key, method string, params map[string]any, pctx *Context) (map[string]any, error) {
 	ch, err := h.ensureStarted(ctx)
 	if err != nil {
 		return nil, err
 	}
-	name := filepath.Base(pluginDir)
-	key := capture + ":" + name
-	pluginID := name
 	h.stateMu.Lock()
 	if pctx != nil {
 		h.contexts[key] = pctx
-		pluginID = pctx.PluginID()
 	}
 	h.loading = key
 	h.stateMu.Unlock()
-	params := map[string]any{
-		"plugin_key": key, "plugin_id": pluginID, "name": name, "path": pluginDir, "module_name": moduleName,
-		"base": baseRef, "capture": capture, "forward": pctx != nil,
-		"manifest":    map[string]any{"name": name, "path": pluginDir, "source": "user"},
-		"ctx_methods": anyList(hostCtxMethods()),
+	params["plugin_key"] = key
+	if _, ok := params["ctx_methods"]; !ok {
+		params["ctx_methods"] = anyList(hostCtxMethods())
 	}
-	raw, err := ch.Call(ctx, "load_instance", params, 0)
+	raw, err := ch.Call(ctx, method, params, 0)
 	h.stateMu.Lock()
 	h.loading = ""
 	h.stateMu.Unlock()
@@ -693,7 +723,7 @@ func (h *PluginHost) ProfileCall(ctx context.Context, pluginDir, moduleName, pro
 		return nil, err
 	}
 	return h.call(ctx, "profile_call", map[string]any{"path": pluginDir, "module_name": moduleName, "profile": profile,
-		"attr": attr, "args": wireEncode(nonNilArgs(args), nil), "kwargs": wireEncode(nonNilKwargs(kwargs), nil)}, nil, 0, nil)
+		"attr": attr, "args": h.encodeArgs(nonNilArgs(args)), "kwargs": h.encodeArgs(nonNilKwargs(kwargs))}, nil, 0, nil)
 }
 
 // Serves one dashboard plugin API request with the plugin router in the child, a TimeoutError after timeout
@@ -755,6 +785,11 @@ func (h *PluginHost) unavailableAsExit(err error) error {
 
 // Calls the child, flushing queued releases first and rebuilding object refs of a declared provider return
 func (h *PluginHost) call(ctx context.Context, method string, params map[string]any, generation *int, timeout time.Duration, returns *pyHint) (any, error) {
+	return h.callIn(ctx, "", method, params, generation, timeout, returns)
+}
+
+// One child request whose object refs resolve under base, the base the return hint declares when empty
+func (h *PluginHost) callIn(ctx context.Context, forcedBase, method string, params map[string]any, generation *int, timeout time.Duration, returns *pyHint) (any, error) {
 	h.mu.Lock()
 	ch := h.channel
 	current := h.generation
@@ -783,6 +818,9 @@ func (h *PluginHost) call(ctx context.Context, method string, params map[string]
 		return nil, h.unavailableAsExit(err)
 	}
 	base := hostObjectBase(returns)
+	if forcedBase != "" {
+		base = forcedBase
+	}
 	value, err := wireDecode(raw, func(ref map[string]any) (any, error) { return h.resolveResultRef(ref, base) })
 	if err != nil {
 		return nil, err
@@ -800,8 +838,8 @@ func (h *PluginHost) release(generation int, ref int64) {
 }
 
 func (h *PluginHost) invoke(ctx context.Context, ref int64, args []any, kwargs map[string]any, generation int) (any, error) {
-	return h.call(ctx, "invoke", map[string]any{"ref": ref, "args": wireEncode(nonNilArgs(args), nil),
-		"kwargs": wireEncode(nonNilKwargs(kwargs), nil)}, &generation, 0, nil)
+	return h.call(ctx, "invoke", map[string]any{"ref": ref, "args": h.encodeArgs(nonNilArgs(args)),
+		"kwargs": h.encodeArgs(nonNilKwargs(kwargs))}, &generation, 0, nil)
 }
 
 func nonNilArgs(args []any) []any {
@@ -840,6 +878,15 @@ func (h *PluginHost) handle(ctx context.Context, method string, params map[strin
 		return h.serveFacade(ctx, params)
 	case "sdk":
 		return h.serveSDK(ctx, params)
+	case "parent_call":
+		return h.serveParentCall(ctx, params)
+	case "parent_event":
+		return h.serveParentEvent(ctx, params)
+	case "release_parent":
+		h.releaseParentCallables(listOrEmpty(params["ids"]))
+		return nil, nil
+	case "collect_source":
+		return h.serveCollectSource(ctx, params)
 	case "dispose":
 		id, _ := wireInt(params["handle"])
 		h.stateMu.Lock()
@@ -886,11 +933,14 @@ func (h *PluginHost) serveCtx(ctx context.Context, params map[string]any) (any, 
 	if err != nil {
 		return nil, err
 	}
-	fn, ok := hostCtxDispatch[method]
-	if !ok {
-		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginContext' object has no attribute %s", config.PyRepr(method))}
+	var result any
+	if c.engineCollector != nil {
+		result, err = c.engineCollector.serve(ctx, h, c, method, rawArgs.([]any), rawKwargs.(map[string]any))
+	} else if c.collector != nil {
+		result, err = c.collector.serve(ctx, h, c, method, rawArgs.([]any), rawKwargs.(map[string]any))
+	} else {
+		result, err = hostCtxCall(ctx, h, c, method, rawArgs.([]any), rawKwargs.(map[string]any))
 	}
-	result, err := fn(ctx, h, c, rawArgs.([]any), rawKwargs.(map[string]any))
 	if err != nil {
 		return nil, err
 	}
@@ -907,6 +957,9 @@ func (h *PluginHost) serveFacade(ctx context.Context, params map[string]any) (an
 	refusal := &PluginHostUnsupported{Msg: fmt.Sprintf("ctx.%s.%s is not available in the plugin host", facade, method)}
 	if !HostRemoteFacades[facade] || strings.HasPrefix(method, "_") {
 		return nil, refusal
+	}
+	if c.collector != nil || c.engineCollector != nil {
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: facade}
 	}
 	obj, err := hostFacadeObject(ctx, c, facade)
 	if err != nil {
@@ -948,11 +1001,11 @@ func hostFacadeObject(ctx context.Context, c *Context, facade string) (any, erro
 	case "state":
 		return c.State(ctx), nil
 	case "llm":
-		return c.LLM()
+		return c.LLM(), nil
 	case "platform_actions":
 		return c.PlatformActions()
 	case "subagent_lifecycle":
-		return c.SubagentLifecycle()
+		return c.SubagentLifecycle(), nil
 	case "delegation_backends":
 		return c.DelegationBackends()
 	}
@@ -984,7 +1037,7 @@ func (h *PluginHost) encodeForHost(value any) any {
 	return wireEncode(value, func(obj any) map[string]any {
 		reg, ok := obj.(*Registration)
 		if !ok || reg == nil {
-			return nil
+			return h.parentRef(obj)
 		}
 		h.stateMu.Lock()
 		h.handleIDs++
@@ -997,6 +1050,9 @@ func (h *PluginHost) encodeForHost(value any) any {
 
 // Proxy for a callable or provider object ref the child sent as an argument
 func (h *PluginHost) resolveRef(ref map[string]any, base string) (any, error) {
+	if e, ok, err := h.resolveEventRef(ref); ok {
+		return e, err
+	}
 	if _, ok := ref["__callable__"]; ok {
 		return h.callableProxy(ref), nil
 	}
@@ -1015,6 +1071,12 @@ func (h *PluginHost) resolveRef(ref map[string]any, base string) (any, error) {
 
 // Proxy for an object a hosted method returned when its contract declares a provider, else an Opaque
 func (h *PluginHost) resolveResultRef(ref map[string]any, base string) (any, error) {
+	if e, ok, err := h.resolveEventRef(ref); ok {
+		return e, err
+	}
+	if base == hostedRawRefBase {
+		return ref, nil
+	}
 	if raw, ok := ref["__object__"]; ok && base == "" {
 		id, _ := wireInt(raw)
 		h.mu.Lock()
@@ -1177,8 +1239,8 @@ func (o *HostedObject) Call(ctx context.Context, method string, args []any, kwar
 	if err != nil {
 		return nil, err
 	}
-	return o.host.call(ctx, "obj_invoke", map[string]any{"ref": ref, "method": method, "args": wireEncode(nonNilArgs(args), nil),
-		"kwargs": wireEncode(nonNilKwargs(kwargs), nil)}, &generation, 0, declaredReturn(o.Base, method))
+	return o.host.callIn(ctx, o.liveClientBase(), "obj_invoke", map[string]any{"ref": ref, "method": method, "args": o.host.encodeArgs(nonNilArgs(args)),
+		"kwargs": o.host.encodeArgs(nonNilKwargs(kwargs))}, &generation, 0, declaredReturn(o.Base, method))
 }
 
 // Reads an attribute, live ones from the child and the rest locally first, an absent one an AttributeError
@@ -1206,9 +1268,12 @@ func (o *HostedObject) remoteGet(ctx context.Context, name string) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	value, err := o.host.call(ctx, "obj_getattr", map[string]any{"ref": ref, "name": name}, &generation, 0, declaredReturn(o.Base, name))
+	value, err := o.host.callIn(ctx, o.liveClientBase(), "obj_getattr", map[string]any{"ref": ref, "name": name}, &generation, 0, declaredReturn(o.Base, name))
 	if err != nil {
 		return nil, err
+	}
+	if nested, ok := value.(*HostedObject); ok && o.Base == hostedClientBase {
+		nested.slot.reload = o.attributeReload(name)
 	}
 	if m, ok := value.(map[string]any); ok && len(m) == 1 {
 		if _, missing := m["__missing__"]; missing {

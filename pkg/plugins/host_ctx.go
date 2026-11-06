@@ -48,7 +48,12 @@ func pyMissingList(names []string) string {
 
 // Binds a call the way Python binds arguments to a PluginContext method, raising its TypeError wording
 func bindPy(method string, params []pyParam, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
-	fname := "PluginContext." + method + "()"
+	return bindPyOn("PluginContext", method, params, args, kwargs)
+}
+
+// Binds a call to a method of the named class the way Python binds arguments, raising its TypeError wording
+func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
+	fname := owner + "." + method + "()"
 	typeErr := func(format string, a ...any) error {
 		return &HostBuiltinError{Type: "TypeError", Message: fname + " " + fmt.Sprintf(format, a...)}
 	}
@@ -310,7 +315,7 @@ func init() {
 			return c.SessionSurface(ctx)
 		}),
 		"ask_choice": hostMethod("ask_choice", []pyParam{req("question"), req("choices")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-			choice, ok, err := c.AskChoice(ctx, argStr(a["question"]), argList(a["choices"]))
+			choice, ok, err := c.AskChoice(ctx, config.PyStr(a["question"]), argList(a["choices"]))
 			if err != nil || !ok {
 				return nil, err
 			}
@@ -322,8 +327,7 @@ func init() {
 				if err != nil {
 					return nil, err
 				}
-				run := func(ctx context.Context, raw string) (any, error) { return handler.Call(ctx, []any{raw}, nil) }
-				return c.RegisterCommand(argStr(a["name"]), run, argStr(a["description"]), argStr(a["args_hint"]), argStr(a["argument_mode"])), nil
+				return c.RegisterCommand(argStr(a["name"]), hostedCommandHandler(handler), argStr(a["description"]), argStr(a["args_hint"]), argStr(a["argument_mode"])), nil
 			}),
 		"dispatch_tool": hostMethod("dispatch_tool", []pyParam{req("tool_name"), req("args"), varKwargs()},
 			func(ctx context.Context, _ *PluginHost, c *Context, a, extra map[string]any) (any, error) {
@@ -364,7 +368,7 @@ func init() {
 				if err != nil {
 					return nil, err
 				}
-				return c.manager.trackHookAs(c, argStr(a["hook_name"]), hostedHook(cb), config.PyTruthy(a["hold_stream"]), cb.Module, cb.Name), nil
+				return c.manager.trackHostedHook(c, argStr(a["hook_name"]), cb, config.PyTruthy(a["hold_stream"])), nil
 			}),
 		"register_middleware": hostMethod("register_middleware", []pyParam{req("kind"), req("callback")}, func(_ context.Context, h *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			cb, err := argCallable("register_middleware", "callback", a["callback"])

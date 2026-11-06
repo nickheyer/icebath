@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"reflect"
 	"testing"
 )
@@ -176,9 +177,9 @@ func TestDataUseStampAndLift(t *testing.T) {
 
 type fakeRoleReader map[int64]string
 
-func (f fakeRoleReader) GetMessageRole(sessionID string, messageID int64) (string, bool) {
+func (f fakeRoleReader) GetMessageRole(ctx context.Context, sessionID string, messageID int64) (string, bool, error) {
 	role, ok := f[messageID]
-	return role, ok
+	return role, ok, nil
 }
 
 func TestCoverageForCommit(t *testing.T) {

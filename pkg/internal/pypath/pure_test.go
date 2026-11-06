@@ -20,3 +20,15 @@ func TestPurePathStrMatchesPathlib(t *testing.T) {
 		}
 	}
 }
+
+func TestPathAsPosixMatchesPathlib(t *testing.T) {
+	cases := map[string]string{"/a//b/": "/a/b", "a/./b": "a/b", "": ".", "/": "/"}
+	if windows {
+		cases = map[string]string{`C:\\a\\b`: "C:/a/b", `a\\b\\`: "a/b", "": "."}
+	}
+	for in, want := range cases {
+		if got := PathAsPosix(in); got != want {
+			t.Errorf("PathAsPosix(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

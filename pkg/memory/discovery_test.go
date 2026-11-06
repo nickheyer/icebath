@@ -3,10 +3,14 @@ package memory
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const discoveryProviderSource = `from agent.memory_provider import MemoryProvider
@@ -42,8 +46,20 @@ func discProvider(t *testing.T, root, name string) string {
 	return dir
 }
 
-// Fresh home and an empty import path so only the provider trees a test writes are visible
+// Fresh home, an empty import path and the system python3 launching every plugin host child
 func discHome(t *testing.T) (context.Context, string) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 is required to run the plugin host child: %v", err)
+	}
+	t.Cleanup(plugins.SetHostInterpreterForTests(python))
+	savedKeys, savedAdapters, savedSecrets := tools.ConfigEnvTableKeys, tools.RegisteredAdapterSecretEnv, tools.ProfileSecrets
+	t.Cleanup(func() {
+		tools.ConfigEnvTableKeys, tools.RegisteredAdapterSecretEnv, tools.ProfileSecrets = savedKeys, savedAdapters, savedSecrets
+	})
+	tools.ConfigEnvTableKeys = func() []string { return nil }
+	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return nil }
+	tools.ProfileSecrets = brvSecretSource{}
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("PYTHONPATH", "")

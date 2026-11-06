@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"gopkg.in/yaml.v3"
 )
@@ -1412,31 +1413,30 @@ func MigrateAllLeftCoreHomes(ctx context.Context, say func(string)) []string {
 			say(fmt.Sprintf("  %s is used in %d profiles (%s); your answers to its dependency questions apply to all of them.",
 				f.Label, len(g.homes), strings.Join(labels, ", ")))
 		}
-		leftCoreHooks().SharedDependencyAnswers(func() {
-			for i, h := range g.homes {
-				ok := leftCoreInstallOne(h, f, leftCoreInstallInto(ctx, h, nil), labelled(h), isLaunchHome(h))
-				if ctx.Err() != nil {
-					cancelled = true
-					return
-				}
-				if ok {
-					installed = append(installed, f.Plugin)
-					continue
-				}
-				rest := g.homes[i+1:]
-				if len(rest) > 0 {
-					labels := make([]string, len(rest))
-					commands := make([]string, len(rest))
-					for j, r := range rest {
-						labels[j] = PluginHomeLabel(r)
-						commands[j] = "`" + PluginInstallCommand(f.Plugin, r) + "`"
-					}
-					say(fmt.Sprintf("  \u26a0 The '%s' plugin was not installed for %s either. Run %s.",
-						f.Plugin, strings.Join(labels, ", "), strings.Join(commands, ", ")))
-				}
+		gctx := plugins.WithSharedDependencyAnswers(ctx)
+		for i, h := range g.homes {
+			ok := leftCoreInstallOne(h, f, leftCoreInstallInto(gctx, h, nil), labelled(h), isLaunchHome(h))
+			if ctx.Err() != nil {
+				cancelled = true
 				break
 			}
-		})
+			if ok {
+				installed = append(installed, f.Plugin)
+				continue
+			}
+			rest := g.homes[i+1:]
+			if len(rest) > 0 {
+				labels := make([]string, len(rest))
+				commands := make([]string, len(rest))
+				for j, r := range rest {
+					labels[j] = PluginHomeLabel(r)
+					commands[j] = "`" + PluginInstallCommand(f.Plugin, r) + "`"
+				}
+				say(fmt.Sprintf("  \u26a0 The '%s' plugin was not installed for %s either. Run %s.",
+					f.Plugin, strings.Join(labels, ", "), strings.Join(commands, ", ")))
+			}
+			break
+		}
 		if cancelled {
 			say("  \u26a0 Plugin migration cancelled. Profiles already migrated keep their plugin; run " +
 				"`icebath plugins install <name>` (with `-p <profile>`) for the rest.")

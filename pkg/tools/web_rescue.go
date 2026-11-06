@@ -81,10 +81,13 @@ func rescueEligible(env *Env, provider WebProvider) bool {
 }
 
 // Rescues a failed search via the ring, annotating the result with the original failure
-func rescueSearch(ctx webCallContext, providerName, originalError, query string, limit int) *WebSearchResponse {
+func rescueSearch(ctx webCallContext, providerName, originalError, query string, limit int) (*WebSearchResponse, error) {
 	env := ctx.env
 	envLog(env).Warn("web_search backend failed; one-shot keyless rescue", "backend", providerName, "error", headRunes(originalError, 200))
-	rescued := keylessSearchWithFailover(ctx.ctx, env, providerName, query, limit)
+	rescued, err := keylessSearchWithFailover(ctx.ctx, env, providerName, query, limit)
+	if err != nil {
+		return nil, err
+	}
 	if rescued != nil && rescued.Success {
 		shown := originalError
 		if shown == "" {
@@ -93,7 +96,7 @@ func rescueSearch(ctx webCallContext, providerName, originalError, query string,
 		data := rescued.data()
 		data.RescuedFrom = providerName
 		data.BackendError = "Configured backend '" + providerName + "' failed this call (" + headRunes(shown, 300) + "); result served by the keyless free tier. The next call will use '" + providerName + "' again."
-		return rescued
+		return rescued, nil
 	}
 	ringError := "unknown"
 	if rescued != nil && rescued.Error != "" {
@@ -103,7 +106,7 @@ func rescueSearch(ctx webCallContext, providerName, originalError, query string,
 	if lead == "" {
 		lead = "search failed"
 	}
-	return searchFail(lead + " (keyless rescue also failed: " + ringError + ")")
+	return searchFail(lead + " (keyless rescue also failed: " + ringError + ")"), nil
 }
 
 // True for a website policy refusal, intentional and never rescued
@@ -111,8 +114,8 @@ func policyBlockedResult(p *WebPage) bool {
 	return p.BlockedByPolicy != nil || strings.Contains(strings.ToLower(p.Error), "blocked by website policy")
 }
 
-// Rescues a whole batch extract failure via the ring, policy blocked entries preserved verbatim
-func rescueExtract(ctx webCallContext, providerName string, urls []string, results []*WebPage) []*WebPage {
+// Rescues a whole batch extract failure via the ring, policy blocked entries preserved verbatim, ring errors raised
+func rescueExtract(ctx webCallContext, providerName string, urls []string, results []*WebPage) ([]*WebPage, error) {
 	env := ctx.env
 	parity := len(results) == len(urls)
 	var rescueIdx []int
@@ -122,7 +125,7 @@ func rescueExtract(ctx webCallContext, providerName string, urls []string, resul
 		}
 	}
 	if len(rescueIdx) == 0 {
-		return results
+		return results, nil
 	}
 	rescueURLs := urls
 	if parity {
@@ -139,7 +142,10 @@ func rescueExtract(ctx webCallContext, providerName string, urls []string, resul
 		}
 	}
 	envLog(env).Warn("web_extract backend failed every URL; one-shot keyless rescue", "backend", providerName, "urls", len(rescueURLs), "error", headRunes(originalError, 200))
-	rescued := keylessExtractWithFailover(ctx.ctx, env, providerName, rescueURLs)
+	rescued, err := keylessExtractWithFailover(ctx.ctx, env, providerName, rescueURLs)
+	if err != nil {
+		return nil, err
+	}
 	if len(rescued) > 0 {
 		allFailed := true
 		for _, r := range rescued {
@@ -148,7 +154,7 @@ func rescueExtract(ctx webCallContext, providerName string, urls []string, resul
 			}
 		}
 		if allFailed {
-			return results
+			return results, nil
 		}
 	}
 	for _, r := range rescued {
@@ -166,7 +172,7 @@ func rescueExtract(ctx webCallContext, providerName string, urls []string, resul
 		for pos, i := range rescueIdx {
 			out[i] = rescued[pos]
 		}
-		return out
+		return out, nil
 	}
-	return rescued
+	return rescued, nil
 }

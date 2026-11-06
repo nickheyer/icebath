@@ -39,11 +39,7 @@ func (s *Store) updateRawJobs(update func(jobs []any) (bool, error)) error {
 		}
 		raw := make([]any, 0, len(jobs))
 		for _, job := range jobs {
-			data, err := job.MarshalJSON()
-			if err != nil {
-				return err
-			}
-			obj, err := pyjson.LoadsBytes(data)
+			obj, err := storedJobObject(job)
 			if err != nil {
 				return err
 			}
@@ -64,6 +60,10 @@ func (s *Store) updateRawJobs(update func(jobs []any) (bool, error)) error {
 			if err := json.Unmarshal([]byte(text), &job); err != nil {
 				return fmt.Errorf("invalid cron job record: %w", err)
 			}
+			if obj, ok := item.(*pyjson.Object); ok {
+				job.keyOrder = append([]string(nil), obj.Keys...)
+				job.onlyStoredKeys = true
+			}
 			kept[job.ID] = true
 			next = append(next, &job)
 		}
@@ -75,4 +75,27 @@ func (s *Store) updateRawJobs(update func(jobs []any) (bool, error)) error {
 		}
 		return s.saveJobsLocked(tx, next, removed, false)
 	})
+}
+
+// Record object of a job with only the keys its stored record names, absent keys staying absent
+func storedJobObject(job *Job) (any, error) {
+	data, err := job.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	v, err := pyjson.LoadsBytes(data)
+	if err != nil {
+		return nil, err
+	}
+	obj, ok := v.(*pyjson.Object)
+	if !ok || job.keyOrder == nil {
+		return v, nil
+	}
+	out := pyjson.NewObject()
+	for _, k := range obj.Keys {
+		if containsString(job.keyOrder, k) {
+			out.Set(k, obj.Vals[k])
+		}
+	}
+	return out, nil
 }

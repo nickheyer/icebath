@@ -2,12 +2,16 @@ package provider
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+	"weak"
 
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -255,4 +259,234 @@ func (g *auxCodexStreamGuard) finish() {
 	if g.timeoutReleasePending.Load() {
 		auxCloseQuietly(g.client, "owner-thread close after timeout failed")
 	}
+}
+
+// Live connections of one pool, each leaving the set when it closes
+type auxConnSet struct {
+	mu    sync.Mutex
+	conns map[net.Conn]struct{}
+}
+
+func (s *auxConnSet) add(c net.Conn) {
+	s.mu.Lock()
+	if s.conns == nil {
+		s.conns = map[net.Conn]struct{}{}
+	}
+	s.conns[c] = struct{}{}
+	s.mu.Unlock()
+}
+
+func (s *auxConnSet) remove(c net.Conn) {
+	s.mu.Lock()
+	delete(s.conns, c)
+	s.mu.Unlock()
+}
+
+func (s *auxConnSet) snapshot() []net.Conn {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]net.Conn, 0, len(s.conns))
+	for c := range s.conns {
+		out = append(out, c)
+	}
+	return out
+}
+
+// Pooled connection registered in its transport set until closed
+type auxPooledConn struct {
+	net.Conn
+	set  *auxConnSet
+	once sync.Once
+}
+
+func (c *auxPooledConn) NetConn() net.Conn { return c.Conn }
+
+func (c *auxPooledConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(func() { c.set.remove(c) })
+	return err
+}
+
+// Connection sets of live tracked transports keyed weakly so a dropped transport leaves the map
+var auxPoolConnSets auxConnSetRegistry
+
+type auxConnSetRegistry struct{ m sync.Map }
+
+func (r *auxConnSetRegistry) Store(t *http.Transport, set *auxConnSet) {
+	key := weak.Make(t)
+	r.m.Store(key, set)
+	runtime.AddCleanup(t, func(k weak.Pointer[http.Transport]) { r.m.Delete(k) }, key)
+}
+
+func (r *auxConnSetRegistry) Load(t *http.Transport) (*auxConnSet, bool) {
+	v, ok := r.m.Load(weak.Make(t))
+	if !ok {
+		return nil, false
+	}
+	return v.(*auxConnSet), true
+}
+
+// Records every connection the transport dials so a timeout abort can reach its whole pool
+func auxTrackPoolConns(t *http.Transport) *http.Transport {
+	set := &auxConnSet{}
+	dial := t.DialContext
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		conn, err := dial(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		pc := &auxPooledConn{Conn: conn, set: set}
+		set.add(pc)
+		return pc, nil
+	}
+	if dialTLS := t.DialTLSContext; dialTLS != nil {
+		t.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := dialTLS(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			pc := &auxPooledConn{Conn: conn, set: set}
+			set.add(pc)
+			return pc, nil
+		}
+	}
+	auxPoolConnSets.Store(t, set)
+	return t
+}
+
+// Innermost connection under TLS and pool wrappers, the identity of one socket
+func auxRawConn(conn net.Conn) net.Conn {
+	for {
+		switch c := conn.(type) {
+		case *tls.Conn:
+			conn = c.NetConn()
+		case interface{ NetConn() net.Conn }:
+			conn = c.NetConn()
+		default:
+			return conn
+		}
+	}
+}
+
+// Sockets of the client pools, only the own in flight requests on a process shared pool
+func auxPoolSockets(client any) []net.Conn {
+	var rts []http.RoundTripper
+	switch c := client.(type) {
+	case nil:
+		return nil
+	case *http.Client:
+		rts = append(rts, auxClientTransport(c))
+	case interface{ poolHTTPClient() *http.Client }:
+		if hc := c.poolHTTPClient(); hc != nil {
+			rts = append(rts, auxClientTransport(hc))
+		}
+	case interface{ poolTransports() []http.RoundTripper }:
+		rts = append(rts, c.poolTransports()...)
+	case http.RoundTripper:
+		rts = append(rts, c)
+	}
+	var pools []http.RoundTripper
+	seenPools := map[http.RoundTripper]bool{}
+	addPool := func(rt http.RoundTripper) {
+		if rt != nil && !seenPools[rt] {
+			seenPools[rt] = true
+			pools = append(pools, rt)
+		}
+	}
+	for _, rt := range rts {
+		if ct, ok := rt.(*keepaliveClientTransport); ok {
+			for _, scheme := range []string{"http", "https"} {
+				addPool(ct.mounts[scheme])
+			}
+			continue
+		}
+		addPool(rt)
+	}
+	seen := map[net.Conn]bool{}
+	var out []net.Conn
+	for _, pool := range pools {
+		var conns []net.Conn
+		switch p := pool.(type) {
+		case *sharedTransportView:
+			conns = p.inflightConns()
+		case *http.Transport:
+			if set, ok := auxPoolConnSets.Load(p); ok {
+				conns = set.snapshot()
+			}
+		}
+		for _, conn := range conns {
+			raw := auxRawConn(conn)
+			if raw != nil && !seen[raw] {
+				seen[raw] = true
+				out = append(out, raw)
+			}
+		}
+	}
+	return out
+}
+
+// Transport of an HTTP client, the default transport when none is set
+func auxClientTransport(c *http.Client) http.RoundTripper {
+	if c.Transport == nil {
+		return http.DefaultTransport
+	}
+	return c.Transport
+}
+
+// Shuts down every pool socket of the client without closing a descriptor and returns the count
+func forceCloseTCPSockets(client any) int {
+	count := 0
+	for _, conn := range auxPoolSockets(client) {
+		auxShutdownConn(conn)
+		count++
+	}
+	return count
+}
+
+// ForceCloseTCPSockets aborts in flight TCP reads and writes on every pool socket of the client
+func ForceCloseTCPSockets(client any) int { return forceCloseTCPSockets(client) }
+
+func (c *auxOpenAIClient) poolHTTPClient() *http.Client { return c.httpClient }
+
+// Route transport and every per connect timeout transport of the client
+func (c *chatCompletionsClient) poolTransports() []http.RoundTripper {
+	c.transportsMu.Lock()
+	defer c.transportsMu.Unlock()
+	return auxRouteAndTransports(c.route.Transport, c.transports)
+}
+
+// Route transport and every per connect timeout transport of the client
+func (c *codexResponsesClient) poolTransports() []http.RoundTripper {
+	c.transportsMu.Lock()
+	defer c.transportsMu.Unlock()
+	return auxRouteAndTransports(c.route.Transport, c.transports)
+}
+
+// Route transport and every per connect timeout transport of the client
+func (c *anthropicClient) poolTransports() []http.RoundTripper {
+	c.transportsMu.Lock()
+	defer c.transportsMu.Unlock()
+	return auxRouteAndTransports(c.route.Transport, c.transports)
+}
+
+// Every per timeout transport of the Gemini native client
+func (c *auxGeminiNativeClient) poolTransports() []http.RoundTripper {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return auxRouteAndTransports(nil, c.transports)
+}
+
+// Route supplied transport first, then the client built transports
+func auxRouteAndTransports[K comparable](route http.RoundTripper, transports map[K]*http.Transport) []http.RoundTripper {
+	var out []http.RoundTripper
+	if route != nil {
+		out = append(out, route)
+	}
+	for _, t := range transports {
+		out = append(out, t)
+	}
+	return out
 }

@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // ScopedCredentialSource narrows a pool to the rows a custom entry owns before selecting one
@@ -69,6 +71,7 @@ type Runtime struct {
 	Args              []string
 	AuthError         *AuthError
 	Expiry            map[string]any
+	CredentialPool    *Pool
 }
 
 // Route converts the runtime into the wire route the adapters consume
@@ -286,7 +289,7 @@ func (r *resolver) modelConfig() map[string]any {
 	return cfg
 }
 
-// Provider request from the explicit arg, then config, then ICEBATH_INFERENCE_PROVIDER, else auto
+// Provider request from the explicit arg, then config, then the bound client or secret ICEBATH_INFERENCE_PROVIDER, else auto
 func (r *resolver) resolveRequestedProvider(requested string) string {
 	if strings.TrimSpace(requested) != "" {
 		return strings.ToLower(strings.TrimSpace(requested))
@@ -294,7 +297,13 @@ func (r *resolver) resolveRequestedProvider(requested string) string {
 	if cfgProvider, ok := r.modelConfig()["provider"].(string); ok && strings.TrimSpace(cfgProvider) != "" {
 		return strings.ToLower(strings.TrimSpace(cfgProvider))
 	}
-	if env := strings.ToLower(strings.TrimSpace(r.secret("ICEBATH_INFERENCE_PROVIDER"))); env != "" {
+	var requestedEnv string
+	if client := state.BoundClientEnv(r.ctx); client != nil {
+		requestedEnv = client["ICEBATH_INFERENCE_PROVIDER"]
+	} else {
+		requestedEnv = r.secret("ICEBATH_INFERENCE_PROVIDER")
+	}
+	if env := strings.ToLower(strings.TrimSpace(requestedEnv)); env != "" {
 		return env
 	}
 	return "auto"
@@ -523,11 +532,24 @@ func perModelProfileCtx(ctx context.Context, provider string) *perModelHookProfi
 	return &perModelHookProfile{name: provider, mode: declared, hook: hook}
 }
 
-// The profile's per model wire answer with a raising hook answering the declared mode
-func modelAPIMode(profile *perModelHookProfile, model, apiKey string) (mode APIMode) {
+// Providers whose raising api mode hook was already logged in this process
+var (
+	apiModeWarnedMu sync.Mutex
+	apiModeWarned   = map[string]bool{}
+)
+
+// The profile's per model wire answer, a raising hook answering the declared mode and warning once per provider
+func modelAPIMode(ctx context.Context, profile *perModelHookProfile, model, apiKey string) (mode APIMode) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Default().Warn(fmt.Sprintf("provider %s: api_mode_for_model failed; using its declared api_mode", profile.name))
+			apiModeWarnedMu.Lock()
+			first := !apiModeWarned[profile.name]
+			apiModeWarned[profile.name] = true
+			apiModeWarnedMu.Unlock()
+			if first {
+				slog.Default().WarnContext(ctx, fmt.Sprintf("provider %s: api_mode_for_model failed; using its declared api_mode", profile.name),
+					"exc_info", fmt.Sprintf("%v\n%s", rec, debug.Stack()))
+			}
 			mode = profile.mode
 		}
 	}()
@@ -540,7 +562,7 @@ func (r *resolver) profileRuntimeAPIMode(provider string, modelCfg map[string]an
 	configured := r.configuredAPIMode(provider, modelCfg)
 	modelName := strings.TrimSpace(effectiveModel(modelCfg, targetModel))
 	if configured != "" {
-		if configured == ModeCodexResponses && modelName != "" && profile != nil && modelAPIMode(profile, modelName, "") == ModeChatCompletions {
+		if configured == ModeCodexResponses && modelName != "" && profile != nil && modelAPIMode(r.ctx, profile, modelName, "") == ModeChatCompletions {
 			return ModeChatCompletions
 		}
 		return configured
@@ -549,7 +571,7 @@ func (r *resolver) profileRuntimeAPIMode(provider string, modelCfg map[string]an
 		return ModeChatCompletions
 	}
 	if modelName != "" {
-		if m := modelAPIMode(profile, modelName, apiKey); m != "" {
+		if m := modelAPIMode(r.ctx, profile, modelName, apiKey); m != "" {
 			return m
 		}
 	}
@@ -1487,6 +1509,7 @@ func (r *resolver) runtimeFromPoolEntry(provider string, cred Credential, reques
 	rt := r.runtime(provider, mode, baseURL, cred.APIKey, source)
 	rt.TokenSource = cred.TokenSource
 	rt.RequestedProvider = requestedProvider
+	rt.CredentialPool = cred.Pool
 	return rt
 }
 

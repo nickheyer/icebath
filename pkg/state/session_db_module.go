@@ -101,6 +101,9 @@ func (e *SessionExportTooLargeError) Error() string {
 
 func (e *SessionExportTooLargeError) PyTypeName() string { return "ValueError" }
 
+// Pid existence probe of lease holders, swapped by tests as hermes swaps its psutil module
+var holderPIDExists = psutilPIDExists
+
 // Lock holder pid token of a compression lease
 var compressionHolderPIDRe = mustPyRe(`(?:^|:)pid=(\d+)(?::|$)`)
 
@@ -117,7 +120,7 @@ func compressionLockHolderProcessIsDead(holder string) bool {
 	if !n.IsInt64() || n.Int64() > math.MaxInt32 {
 		return false
 	}
-	return !psutilPIDExists(int(n.Int64()))
+	return !holderPIDExists(int(n.Int64()))
 }
 
 // Default state database path resolved at call time, a repointed DefaultDBPath winning
@@ -204,15 +207,14 @@ func roleIn(role any, roles ...string) (bool, error) {
 
 // Reports a persisted background review harness prompt in a user or system message
 func isBackgroundReviewHarnessMessage(msg any) (bool, error) {
-	obj, ok := msg.(*pyjson.Object)
-	if !ok {
+	if !isMapping(msg) {
 		return false, nil
 	}
-	role, _ := obj.Get("role")
+	role, _ := mappingGet(msg, "role")
 	if in, err := roleIn(role, "user", "system"); err != nil || !in {
 		return false, err
 	}
-	content, _ := obj.Get("content")
+	content, _ := mappingGet(msg, "content")
 	text, ok := content.(string)
 	if !ok {
 		return false, nil
@@ -245,11 +247,9 @@ func stripBackgroundReviewHarness(messages []any) ([]any, error) {
 		}
 		if skipNextAssistant {
 			skipNextAssistant = false
-			if obj, ok := msg.(*pyjson.Object); ok {
-				if role, _ := obj.Get("role"); pyrepr.Equal(role, "assistant") {
-					previousWasHarness = false
-					continue
-				}
+			if role, _ := mappingGet(msg, "role"); isMapping(msg) && pyrepr.Equal(role, "assistant") {
+				previousWasHarness = false
+				continue
 			}
 		}
 		previousWasHarness = false
@@ -263,16 +263,15 @@ var staleToolCallMarkerRe = regexp.MustCompile(`^\[[A-Za-z_][A-Za-z0-9_.-]*\]$`)
 
 // Reports an assistant tool call turn whose content is a bare marker
 func isStaleToolCallMarkerMessage(msg any) bool {
-	obj, ok := msg.(*pyjson.Object)
-	if !ok {
+	if !isMapping(msg) {
 		return false
 	}
-	role, _ := obj.Get("role")
-	calls, _ := obj.Get("tool_calls")
+	role, _ := mappingGet(msg, "role")
+	calls, _ := mappingGet(msg, "tool_calls")
 	if !pyrepr.Equal(role, "assistant") || !pyrepr.Truthy(calls) {
 		return false
 	}
-	content, _ := obj.Get("content")
+	content, _ := mappingGet(msg, "content")
 	text, ok := content.(string)
 	return ok && staleToolCallMarkerRe.MatchString(pystr.Strip(text))
 }
@@ -282,7 +281,12 @@ func stripStaleToolCallMarkers(messages []any) []any {
 	repaired := 0
 	for _, msg := range messages {
 		if isStaleToolCallMarkerMessage(msg) {
-			msg.(*pyjson.Object).Set("content", "")
+			switch m := msg.(type) {
+			case map[string]any:
+				m["content"] = ""
+			case *pyjson.Object:
+				m.Set("content", "")
+			}
 			repaired++
 		}
 	}

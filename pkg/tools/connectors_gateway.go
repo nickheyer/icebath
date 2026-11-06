@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +17,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
 // ---- names --------------------------------------------------------------------------------------
@@ -674,8 +675,11 @@ var executionSurfaces = map[string]bool{"acp": true, "api": true, "batch": true,
 var surfaceAliases = map[string]string{"api_server": "api", "relay": "gateway", "cron": "scheduled_task", "scheduler": "scheduled_task", "scheduled": "scheduled_task"}
 var knownGatewayPlatforms = map[string]bool{"discord": true, "email": true, "slack": true, "telegram": true, "teams": true, "whatsapp": true}
 
-// TelemetrySendConsented reports whether the profile opted into sending telemetry, installed by the observability wiring
-var TelemetrySendConsented func(env *Env) bool
+// TelemetrySendConsented reports whether the profile opted into sending telemetry, installed by the connectors wiring
+var TelemetrySendConsented func(ctx context.Context, env *Env) (bool, error)
+
+// ConnectorConversationContext is the conversation lineage root the context carries, installed by the connectors wiring
+var ConnectorConversationContext func(ctx context.Context) string
 
 // Normalizes a platform value to the shared metrics execution surface
 func executionSurface(value string) string {
@@ -706,7 +710,11 @@ func sessionPlatformName(env *Env) string {
 	return strings.ToLower(strings.TrimSpace(platform))
 }
 
-func connectorPlatformName(env *Env) string {
+// Running turn's lease platform, else the bound session platform or source, else cron or cli
+func connectorPlatformName(ctx context.Context, env *Env) string {
+	if turn := CurrentRelayTurn(ctx); turn != nil && turn.Lease != nil && turn.Lease.Platform != "" {
+		return turn.Lease.Platform
+	}
 	if p := sessionPlatformName(env); p != "" {
 		return p
 	}
@@ -716,39 +724,48 @@ func connectorPlatformName(env *Env) string {
 	return "cli"
 }
 
-func requestSurface(env *Env) string {
-	surface := executionSurface(connectorPlatformName(env))
+func requestSurface(ctx context.Context, env *Env) string {
+	surface := executionSurface(connectorPlatformName(ctx, env))
 	if surface == "unknown" {
 		return "other"
 	}
 	return surface
 }
 
-var osFamilyNames = map[string]string{"darwin": "macos", "linux": "linux", "windows": "windows"}
+var osFamilyNames = map[string]string{"darwin": "macos", "linux": "linux", "win32": "windows"}
 
-// ConnectorUserAgent is the user agent every first party gateway request carries
-func ConnectorUserAgent(env *Env) string {
-	osName := osFamilyNames[runtime.GOOS]
+// ConnectorUserAgent is the user agent every first party gateway request carries, failing when the install stamp does
+func ConnectorUserAgent(ctx context.Context, env *Env) (string, error) {
+	info, err := updaterecord.GetVersionInfo()
+	if err != nil {
+		return "", err
+	}
+	osName := osFamilyNames[hostinfo.OSFamily()]
 	if osName == "" {
 		osName = "unknown"
 	}
-	return fmt.Sprintf("icebath/%s (%s; %s)", icebathVersion(), requestSurface(env), osName)
+	return fmt.Sprintf("icebath-agent/%s (%s; %s)", info.BaseVersion, requestSurface(ctx, env), osName), nil
 }
 
-func conversationID(env *Env, call *CallRef) string {
-	if v := sessionValue(env, "conversation", "ICEBATH_CONVERSATION_ID"); v != "" {
-		return v
+func conversationID(ctx context.Context, env *Env) string {
+	if ConnectorConversationContext != nil {
+		if v := ConnectorConversationContext(ctx); v != "" {
+			return v
+		}
 	}
 	return sessionValue(env, "id", "ICEBATH_SESSION_ID")
 }
 
 // CorrelationHeaders names the conversation, turn, and tool call once telemetry is consented
-func CorrelationHeaders(env *Env, call *CallRef) map[string]string {
-	if TelemetrySendConsented == nil || !TelemetrySendConsented(env) {
-		return map[string]string{}
+func CorrelationHeaders(ctx context.Context, env *Env, call *CallRef) (map[string]string, error) {
+	if TelemetrySendConsented == nil {
+		return map[string]string{}, nil
+	}
+	if consented, err := TelemetrySendConsented(ctx, env); err != nil || !consented {
+		return map[string]string{}, err
 	}
 	headers := map[string]string{requestIDHeader: uuid.NewString()}
-	if v := conversationID(env, call); v != "" {
+	if v := conversationID(ctx, env); v != "" {
 		headers[sessionHeader] = v
 	}
 	if call != nil {
@@ -759,13 +776,20 @@ func CorrelationHeaders(env *Env, call *CallRef) map[string]string {
 			headers[toolCallHeader] = call.ToolCallID
 		}
 	}
-	return headers
+	return headers, nil
 }
 
-func connectorHeaders(env *Env, call *CallRef) map[string]string {
-	headers := CorrelationHeaders(env, call)
-	headers["User-Agent"] = ConnectorUserAgent(env)
-	return headers
+func connectorHeaders(ctx context.Context, env *Env, call *CallRef) (map[string]string, error) {
+	agent, err := ConnectorUserAgent(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	headers, err := CorrelationHeaders(ctx, env, call)
+	if err != nil {
+		return nil, err
+	}
+	headers["User-Agent"] = agent
+	return headers, nil
 }
 
 func responseRequestID(resp *http.Response) string {
@@ -838,15 +862,19 @@ func IsManagedNousGatewayURL(raw string) bool {
 }
 
 // ManagedGatewayAuthHeaders returns live auth headers for a managed gateway URL or none
-func ManagedGatewayAuthHeaders(env *Env, raw string) map[string]string {
+func ManagedGatewayAuthHeaders(ctx context.Context, env *Env, raw string) (map[string]string, error) {
 	if !IsManagedNousGatewayURL(raw) {
-		return map[string]string{}
+		return map[string]string{}, nil
 	}
 	token := readNousAccessToken(env)
 	if token == "" {
-		return map[string]string{}
+		return map[string]string{}, nil
 	}
-	return map[string]string{"Authorization": "Bearer " + token, "User-Agent": ConnectorUserAgent(env)}
+	agent, err := ConnectorUserAgent(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"Authorization": "Bearer " + token, "User-Agent": agent}, nil
 }
 
 // ---- config -------------------------------------------------------------------------------------
@@ -1017,15 +1045,23 @@ type ConnectorClient struct {
 	initiator string
 	sleep     func(time.Duration)
 	origin    func() (string, error)
-	headers   func(string) map[string]string
+	headers   func(ctx context.Context, u string) (map[string]string, error)
 }
 
 // NewConnectorClient builds the real client for a user or model action
 func NewConnectorClient(env *Env, call *CallRef, initiator string) *ConnectorClient {
 	c := &ConnectorClient{env: env, http: webHTTPClient(0), storage: webHTTPClient(0), call: call, initiator: initiator, sleep: time.Sleep}
 	c.origin = func() (string, error) { return ConnectorGatewayOrigin() }
-	c.headers = func(u string) map[string]string { return ManagedGatewayAuthHeaders(env, u) }
+	c.headers = func(ctx context.Context, u string) (map[string]string, error) {
+		return ManagedGatewayAuthHeaders(ctx, env, u)
+	}
 	return c
+}
+
+// Client over the given HTTP client, origin and auth header provider, the transport and endpoint seams of the gateway client
+func NewConnectorClientWith(env *Env, call *CallRef, initiator string, client *http.Client, origin func() (string, error), headers func(string) map[string]string) *ConnectorClient {
+	return &ConnectorClient{env: env, http: client, storage: client, call: call, initiator: initiator, sleep: time.Sleep, origin: origin,
+		headers: func(_ context.Context, u string) (map[string]string, error) { return headers(u), nil }}
 }
 
 func (c *ConnectorClient) url(path string) (string, error) {
@@ -1052,15 +1088,23 @@ func routeKey(path string) string {
 	return strings.Join(parts, ".")
 }
 
-func (c *ConnectorClient) attemptHeaders(u, idempotencyKey string) (map[string]string, error) {
+func (c *ConnectorClient) attemptHeaders(ctx context.Context, u, idempotencyKey string) (map[string]string, error) {
+	auth, err := c.headers(ctx, u)
+	if err != nil {
+		return nil, err
+	}
 	headers := map[string]string{}
-	for k, v := range c.headers(u) {
+	for k, v := range auth {
 		headers[k] = v
 	}
 	if len(headers) == 0 {
 		return nil, &ToolGatewayError{Message: "no portal access token available", Code: "NO_TOKEN", Status: 401, Kind: gatewayKindAuth}
 	}
-	for k, v := range connectorHeaders(c.env, c.call) {
+	identity, err := connectorHeaders(ctx, c.env, c.call)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range identity {
 		headers[k] = v
 	}
 	headers["Content-Type"] = "application/json"
@@ -1078,7 +1122,7 @@ type connectorHTTPResponse struct {
 }
 
 func (c *ConnectorClient) send(ctx context.Context, method, u string, body any, timeout time.Duration, idempotencyKey string, retryTransport bool) (*connectorHTTPResponse, error) {
-	headers, err := c.attemptHeaders(u, idempotencyKey)
+	headers, err := c.attemptHeaders(ctx, u, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}

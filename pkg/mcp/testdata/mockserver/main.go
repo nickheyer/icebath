@@ -170,7 +170,7 @@ func handle(m message) {
 		token, hasToken := meta["progressToken"]
 		record(fmt.Sprintf("tools/call %s progress=%v", name, hasToken))
 		switch name {
-		case "progress":
+		case "progress", "slow":
 			for i := 1; i <= 20 && hasToken; i++ {
 				send(map[string]any{"jsonrpc": "2.0", "method": "notifications/progress", "params": map[string]any{
 					"progressToken": token, "progress": i * 5, "total": 100, "message": fmt.Sprintf("stage %d", i)}})

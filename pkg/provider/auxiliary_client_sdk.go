@@ -60,7 +60,7 @@ var auxSDKSleep = func(ctx context.Context, d time.Duration) error {
 
 // Shared default HTTP client of SDK clients built without a keepalive client
 var auxSDKDefaultHTTPClient = sync.OnceValue(func() *http.Client {
-	return &http.Client{Transport: &http.Transport{
+	return &http.Client{Transport: auxTrackPoolConns(&http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: time.Duration(auxSDKDefaultConnectTimeout * float64(time.Second)), KeepAlive: 30 * time.Second}).DialContext,
 		TLSClientConfig:       PlatformTLSConfig(),
@@ -70,11 +70,12 @@ var auxSDKDefaultHTTPClient = sync.OnceValue(func() *http.Client {
 		MaxConnsPerHost:       1000,
 		IdleConnTimeout:       5 * time.Second,
 		ExpectContinueTimeout: time.Second,
-	}}
+	})}
 })
 
 // OpenAI SDK chat client of an auxiliary route
 type auxOpenAIClient struct {
+	auxEffectiveStamp
 	mu             sync.Mutex
 	apiKey         string
 	apiKeyProvider func() (string, error)
@@ -826,7 +827,10 @@ func auxShutdownConn(conn net.Conn) {
 		case interface{ NetConn() net.Conn }:
 			conn = c.NetConn()
 			continue
-		case *net.TCPConn:
+		case interface {
+			CloseRead() error
+			CloseWrite() error
+		}:
 			_ = c.CloseRead()
 			_ = c.CloseWrite()
 			return

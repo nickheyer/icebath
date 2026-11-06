@@ -31,3 +31,26 @@ func TestUnescapeMatchesPython(t *testing.T) {
 		t.Fatalf("html5 table has %d names, Python has 2231", len(html5))
 	}
 }
+
+// The longest table name wins, legacy names match without a semicolon and unknown names match nothing
+func TestLongestEntity(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+		n    int
+	}{
+		{"amp;rest", "&", 4},
+		{"ampx", "&", 3},
+		{"notin;", "∉", 6},
+		{"notit;", "¬", 3},
+		{"nGt;", "≫⃒", 4},
+		{"zzz;", "", 0},
+		{"", "", 0},
+		{"CounterClockwiseContourIntegral;x", "∳", 32},
+	}
+	for _, c := range cases {
+		if v, n := LongestEntity(c.in); v != c.want || n != c.n {
+			t.Errorf("LongestEntity(%q) = %q, %d, want %q, %d", c.in, v, n, c.want, c.n)
+		}
+	}
+}

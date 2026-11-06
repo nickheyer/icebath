@@ -209,6 +209,12 @@ func TestForceCloseOnlyTouchesOwningClientsInflightSockets(t *testing.T) {
 	if len(va.inflightConns()) != 0 || len(vb.inflightConns()) != 0 {
 		t.Fatal("idle pooled connections belong to no request")
 	}
+	if set, ok := auxPoolConnSets.Load(va.inner.transport); !ok || len(set.snapshot()) == 0 {
+		t.Fatal("the shared pool must hold the warm connection")
+	}
+	if len(auxPoolSockets(a)) != 0 || forceCloseTCPSockets(a) != 0 {
+		t.Fatal("nothing of a is in flight so nothing of a may be touched")
+	}
 	keepaliveOK(t, b, srv.URL+"/again")
 	resp, err := keepaliveGet(t, b, srv.URL+"/stream")
 	if err != nil {
@@ -216,6 +222,9 @@ func TestForceCloseOnlyTouchesOwningClientsInflightSockets(t *testing.T) {
 	}
 	if len(va.inflightConns()) != 0 || len(vb.inflightConns()) != 1 {
 		t.Fatalf("in flight a=%d b=%d", len(va.inflightConns()), len(vb.inflightConns()))
+	}
+	if len(auxPoolSockets(a)) != 0 || len(auxPoolSockets(b)) != 1 {
+		t.Fatalf("pool sockets a=%d b=%d", len(auxPoolSockets(a)), len(auxPoolSockets(b)))
 	}
 	close(release)
 	_, _ = io.Copy(io.Discard, resp.Body)

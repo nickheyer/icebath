@@ -254,9 +254,24 @@ func schedulerClaimFire(ctx context.Context, p CronScheduler, jobID string, forc
 	if h, ok := p.(claimFireHook); ok {
 		return h.ClaimFire(ctx, jobID, force, manual)
 	}
+	return baseClaimFire(ctx, p, jobID, force, manual)
+}
+
+// Base class claim_fire and fire_claimed, the module attributes provider tests patch
+var (
+	baseClaimFire   = defaultClaimFire
+	baseFireClaimed = defaultFireClaimed
+)
+
+func defaultClaimFire(ctx context.Context, p CronScheduler, jobID string, force, manual bool) (*Job, error) {
+	return claimFireForSource(ctx, p.Name(), jobID, force, manual)
+}
+
+// Creates the audit attempt under source, claims the fire and stamps the attempt on the snapshot
+func claimFireForSource(ctx context.Context, source, jobID string, force, manual bool) (*Job, error) {
 	s := cronStoreFrom(ctx)
 	ledger := openExecutionsLedger(s)
-	execution, err := ledger.Create(ctx, jobID, p.Name(), nil)
+	execution, err := ledger.Create(ctx, jobID, source, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +307,10 @@ func schedulerFireClaimed(ctx context.Context, p CronScheduler, job *Job, o Fire
 	if h, ok := p.(fireClaimedHook); ok {
 		return h.FireClaimed(ctx, job, o)
 	}
+	return baseFireClaimed(ctx, p, job, o)
+}
+
+func defaultFireClaimed(ctx context.Context, p CronScheduler, job *Job, o FireOptions) (bool, error) {
 	if _, err := runOneJobSeam(ctx, cronStoreFrom(ctx), job, runOneJobOptions{Adapters: o.Adapters, Loop: o.Loop, Cancel: o.Cancel, Verbose: true}); err != nil {
 		return false, err
 	}

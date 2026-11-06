@@ -101,3 +101,19 @@ func gatewayPurgeProfileIdentity(root, name string) (any, error) {
 	h := profiles.GatewayStatusHooks.PurgeProfileIdentity
 	return gatewayStatusHook(h, h == nil, "gateway/control_socket.py purge_gateway_profile_identity")(root, name)
 }
+
+// Service manager kind of the environment from hermes_cli/service_manager.py detect
+func serviceManagerDetect() (string, error) {
+	h := profiles.GatewayServiceHooks.ServiceManagerDetect
+	return gatewayServiceHook(h, h == nil, "service_manager.detect")()
+}
+
+// Service manager of the environment from hermes_cli/service_manager.py get_service_manager
+func serviceManagerGet() (s6Manager, error) {
+	h := profiles.GatewayServiceHooks.ServiceManagerGet
+	mgr, err := gatewayServiceHook(h, h == nil, "service_manager.get_service_manager")()
+	if err != nil || mgr == nil {
+		return nil, err
+	}
+	return mgr, nil
+}

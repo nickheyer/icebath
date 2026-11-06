@@ -636,7 +636,7 @@ func (p *Pool) CredentialForModel(provider, model string) (Credential, bool) {
 	if !ok {
 		return Credential{}, false
 	}
-	return poolCredential(entry), true
+	return poolCredential(p, entry), true
 }
 
 // TokenBenchedForModel reports a model cooldown on the token
@@ -647,8 +647,8 @@ func (p *Pool) TokenBenchedForModel(provider, token, model string) bool {
 	return p.TokenIsBlocked(token, model)
 }
 
-func poolCredential(entry PooledCredential) Credential {
-	return Credential{APIKey: entry.RuntimeAPIKey(), BaseURL: entry.RuntimeBaseURL(), Source: "pool:" + entry.Source}
+func poolCredential(pool *Pool, entry PooledCredential) Credential {
+	return Credential{APIKey: entry.RuntimeAPIKey(), BaseURL: entry.RuntimeBaseURL(), Source: "pool:" + entry.Source, Pool: pool}
 }
 
 // Rotate benches the route's credential for the classified failure and rebinds the route to the next entry

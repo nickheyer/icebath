@@ -1076,13 +1076,12 @@ type responsesRouteFlags struct {
 
 // Route flags from provider and base URL with exact host or subdomain checks
 func classifyResponsesRoute(provider, baseURL string) responsesRouteFlags {
-	p := strings.ToLower(strings.TrimSpace(provider))
 	host := strings.ToLower(baseURLHostname(baseURL))
 	lower := strings.ToLower(baseURL)
 	hostIs := func(domain string) bool { return host == domain || strings.HasSuffix(host, "."+domain) }
 	return responsesRouteFlags{
-		isCodexBackend: p == "openai-codex" || (hostIs("chatgpt.com") && strings.Contains(lower, "/backend-api/codex")),
-		isXAI:          p == "xai" || p == "xai-oauth" || host == "api.x.ai",
+		isCodexBackend: provider == "openai-codex" || (hostIs("chatgpt.com") && strings.Contains(lower, "/backend-api/codex")),
+		isXAI:          provider == "xai" || provider == "xai-oauth" || host == "api.x.ai",
 		endpoint:       responsesEndpointQuirksFor(baseURL),
 	}
 }

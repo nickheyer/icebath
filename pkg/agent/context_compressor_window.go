@@ -68,7 +68,7 @@ func RetryableUserText(content any) (string, error) {
 // Summarizable middle boundaries, an older assistant or tool bridge keeping the newest user ask out of the merge slot
 func (c *ContextCompressor) compressWindow(messages []map[string]any) (int, int) {
 	compressStart := c.AlignBoundaryForward(messages, c.protectHeadSize(messages))
-	compressEnd := c.findTailCutByTokens(messages, compressStart, nil)
+	compressEnd := compressorFindTailCutByTokens(c, messages, compressStart, nil)
 	latestActionable := c.FindLastUserMessageIdx(messages, 0)
 	if compressEnd == latestActionable {
 		bridge := latestActionable - 1
@@ -91,7 +91,7 @@ func (c *ContextCompressor) compressWindow(messages []map[string]any) (int, int)
 // Phases one and two of compress, a pruned copy without blank echoes and the window indexing into it
 func (c *ContextCompressor) planCompactionWindow(messages []map[string]any) (working []map[string]any, pruned, start, end int) {
 	tailTokens := c.TailTokenBudget()
-	working, pruned = c.pruneOldToolResults(messages, c.ProtectLastN, &tailTokens, pruneMinChars)
+	working, pruned = compressorPruneScan(c, messages, c.ProtectLastN, &tailTokens, pruneMinChars)
 	working = c.dropBlankEchoes(working)
 	start, end = c.compressWindow(working)
 	return working, pruned, start, end

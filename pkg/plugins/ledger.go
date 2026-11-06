@@ -12,13 +12,13 @@ import (
 type hookSource struct{ name, source string }
 
 // Identity of a plugin by name and module file, nil when the module has no file
-func hookSourceOf(name, module string) *hookSource {
-	if module == "" {
+func hookSourceOf(name, file string) *hookSource {
+	if file == "" {
 		return nil
 	}
-	resolved, err := filepath.Abs(module)
+	resolved, err := filepath.Abs(file)
 	if err != nil {
-		resolved = module
+		resolved = file
 	}
 	if real, err := filepath.EvalSymlinks(resolved); err == nil {
 		resolved = real
@@ -267,13 +267,18 @@ func (m *Manager) dropFallbackHooks(src *hookSource) {
 
 // Registers a memory loader hook unless general discovery already loaded the same source
 func (m *Manager) registerFallbackHook(c *Context, src *hookSource, hookName string, fn HookFunc, holdStream bool) *Registration {
+	return m.registerFallbackHookWith(c, src, hookName, func() *Registration { return c.RegisterHook(hookName, fn, holdStream) })
+}
+
+// Fallback hook registration through register, a no op handle when general discovery owns the source
+func (m *Manager) registerFallbackHookWith(c *Context, src *hookSource, hookName string, register func() *Registration) *Registration {
 	if src == nil {
-		return c.RegisterHook(hookName, fn, holdStream)
+		return register()
 	}
 	m.mu.RLock()
 	owned := false
 	for _, loaded := range m.plugins {
-		if s := hookSourceOf(loaded.Manifest.Name, loaded.Module); loaded.Enabled && s != nil && *s == *src {
+		if s := hookSourceOf(loaded.Manifest.Name, loaded.ModuleFile); loaded.Enabled && s != nil && *s == *src {
 			owned = true
 			break
 		}
@@ -283,7 +288,7 @@ func (m *Manager) registerFallbackHook(c *Context, src *hookSource, hookName str
 	if owned {
 		handle = c.track("hook", hookName, func() error { return nil }, false)
 	} else {
-		handle = c.RegisterHook(hookName, fn, holdStream)
+		handle = register()
 	}
 	m.mu.Lock()
 	m.memoryHookRegistrations[*src] = append(m.memoryHookRegistrations[*src], handle)

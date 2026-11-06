@@ -4,17 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/pem"
-	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/provider/anonportaltest"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -22,12 +20,7 @@ const anonWelcome = "https://welcome-api.nousresearch.com/v1"
 
 // Anonymous NAS JWT with the fake portal's default claims overridden by claims
 func anonJWT(claims map[string]any) string {
-	payload := map[string]any{"sub": "nas_user:1", "client_id": "nas-anonymous", "account_tier": "anonymous",
-		"scope": "inference:invoke", "exp": time.Now().Unix() + 900}
-	for k, v := range claims {
-		payload[k] = v
-	}
-	return jwtWithClaims(payload)
+	return anonportaltest.JWT(claims)
 }
 
 type anonCanned struct {
@@ -40,7 +33,6 @@ type anonCanned struct {
 // Minimal NAS anonymous surface over TLS that records every call
 type anonFakePortal struct {
 	mu                    sync.Mutex
-	server                *httptest.Server
 	URL                   string
 	calls                 []string
 	deadTokens            map[string]bool
@@ -158,8 +150,7 @@ func (p *anonFakePortal) handle(r *http.Request, raw []byte) (int, map[string]an
 			return p.createResponse.status, p.createResponse.body
 		}
 		p.minted++
-		return 201, map[string]any{"user_id": fmt.Sprintf("nas_user:%d", p.minted), "org_id": "nas_org:1",
-			"token": fmt.Sprintf("anon_%04d", p.minted), "idle_ttl_days": 14}
+		return 201, anonportaltest.CreateBody(p.minted)
 	case "/api/anonymous/challenge/status":
 		if len(p.challengeStatusErrors) > 0 {
 			code := p.challengeStatusErrors[0]
@@ -193,15 +184,7 @@ func (p *anonFakePortal) handle(r *http.Request, raw []byte) (int, map[string]an
 					"required": true, "expires_in": 600, "interval": 2}},
 				"fallback_url": p.URL + "/login"}
 		}
-		claims := map[string]any{}
-		if connectors {
-			claims["scope"] = "connectors:invoke"
-		}
-		body := map[string]any{"access_token": anonJWT(claims), "token_type": "Bearer", "expires_in": 900,
-			"user_id": "nas_user:1", "org_id": "nas_org:1"}
-		if p.inferenceBaseURL != "" {
-			body["inference_base_url"] = p.inferenceBaseURL
-		}
+		body := anonportaltest.TokenBody(connectors, p.inferenceBaseURL)
 		if p.optionalChallenge && !connectors {
 			body["challenges"] = []any{map[string]any{"type": "browser", "url": p.challengeURL, "state": "pending",
 				"required": false, "expires_in": 600, "interval": 2}}
@@ -214,26 +197,17 @@ func (p *anonFakePortal) handle(r *http.Request, raw []byte) (int, map[string]an
 // Routes every Nous client at a fake portal, isolates the stores and resets the per process memos
 func installAnonPortal(t *testing.T) (*anonFakePortal, PoolEnv) {
 	t.Helper()
-	resetNousSeams(t)
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
+	resetAnonPortalSeams(t)
 	fake := &anonFakePortal{deadTokens: map[string]bool{}, inferenceBaseURL: anonWelcome, honoursPurpose: true}
-	fake.server = httptest.NewTLSServer(fake)
-	t.Cleanup(fake.server.Close)
-	fake.URL = fake.server.URL
+	fake.URL = anonportaltest.Serve(t, fake).URL
 	fake.challengeURL = fake.URL + "/challenge?code=ticket"
-	caPath := filepath.Join(t.TempDir(), "portal-ca.pem")
-	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: fake.server.Certificate().Raw})
-	if err := os.WriteFile(caPath, pemBytes, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_CA_BUNDLE", caPath)
-	t.Setenv("ICEBATH_PORTAL_BASE_URL", fake.URL)
-	t.Setenv(AnonSecretEnv, "test-secret")
-	for _, name := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "NOUS_API_KEY", "ICEBATH_DESKTOP", PreviewFullConnectorsEnv} {
-		t.Setenv(name, "")
-		os.Unsetenv(name)
-	}
+	return fake, modelsPoolEnv(context.Background())
+}
+
+// Resets the Nous seams and the mint and challenge memos, restoring the challenge hooks at cleanup
+func resetAnonPortalSeams(t *testing.T) {
+	t.Helper()
+	resetNousSeams(t)
 	resetMintMemoForTests()
 	resetChallengeForTests()
 	sleep, wait, present, stderr := challengeSleep, challengeWait, presentChallengeFn, challengeStderr
@@ -244,7 +218,42 @@ func installAnonPortal(t *testing.T) (*anonFakePortal, PoolEnv) {
 		resetMintMemoForTests()
 		resetChallengeForTests()
 	})
-	return fake, modelsPoolEnv(context.Background())
+}
+
+func TestAnonPortalTestEnvLiteralsMatchProvider(t *testing.T) {
+	if anonportaltest.AnonSecretEnv != AnonSecretEnv || anonportaltest.PreviewFullConnectorsEnv != PreviewFullConnectorsEnv || anonportaltest.Welcome != anonWelcome {
+		t.Fatalf("constants drifted %q %q %q", anonportaltest.AnonSecretEnv, anonportaltest.PreviewFullConnectorsEnv, anonportaltest.Welcome)
+	}
+	resetAnonPortalSeams(t)
+	t.Setenv(anonportaltest.DesktopEnv, "1")
+	portal := anonportaltest.Install(t)
+	env := modelsPoolEnv(context.Background())
+	if got := nousPortalEnvOverride(env); got != portal.URL {
+		t.Fatalf("portal override %q want %q", got, portal.URL)
+	}
+	if got := nousSharedAuthDir(env); got != portal.SharedDir {
+		t.Fatalf("shared dir %q want %q", got, portal.SharedDir)
+	}
+	if got := env.Store.Home(); got != portal.Home {
+		t.Fatalf("store home %q want %q", got, portal.Home)
+	}
+	if tools.IsDesktopOwnedBackend(nil) {
+		t.Fatal("desktop marker survived Install")
+	}
+	state, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true})
+	if err != nil || state == nil || portal.Creates() != 1 {
+		t.Fatalf("mint through the default surface %v %v %v", state, err, portal.Calls())
+	}
+	for _, path := range portal.Calls() {
+		if path != "/api/anonymous/create" && path != "/api/anonymous/token" {
+			t.Fatalf("unexpected call %q in %v", path, portal.Calls())
+		}
+	}
+	for _, req := range portal.TokenRequests() {
+		if req["body"].(map[string]any)["token"] != "anon_0001" {
+			t.Fatalf("token exchange %v", req)
+		}
+	}
 }
 
 // The env as work for the local Desktop app

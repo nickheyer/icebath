@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"math"
 	"regexp"
 	"strconv"
@@ -56,18 +57,11 @@ func (e *PluginCommandTimeoutError) Error() string {
 	return fmt.Sprintf("Plugin command async handler did not complete within %.0fs", e.Seconds)
 }
 
-type runningLoopKey struct{}
-
 // Marks a context as served by a goroutine that must never block on an awaited plugin result
-func WithRunningLoop(ctx context.Context) context.Context {
-	return context.WithValue(ctx, runningLoopKey{}, true)
-}
+func WithRunningLoop(ctx context.Context) context.Context { return pyctx.WithRunningLoop(ctx) }
 
 // Reports whether the caller marked its context as a running loop
-func runningLoop(ctx context.Context) bool {
-	v, _ := ctx.Value(runningLoopKey{}).(bool)
-	return v
-}
+func runningLoop(ctx context.Context) bool { return pyctx.RunningLoop(ctx) }
 
 // Error carrying a recovered callback panic
 type CallbackPanicError struct{ Value any }

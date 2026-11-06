@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -324,7 +325,7 @@ func (r *ProviderRegistration) Description() string {
 	return ""
 }
 
-// Plugin skill registry the plugin manager installs, used to resolve and retract provider skills
+// Plugin skill lookups used to resolve and retract provider skills
 type PluginSkillRegistry interface {
 	FindPluginSkill(qualifiedName string) (string, bool)
 	RemovePluginSkill(qualifiedName string)
@@ -369,11 +370,19 @@ func UnregisterProviders(source, homeDir string) {
 	registrations = kept
 }
 
-// Installs the plugin manager's skill registry
+// Replaces the plugin manager of the home in effect as the provider skill registry, nil restores it
 func SetPluginSkillRegistry(r PluginSkillRegistry) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	skillRegistry = r
+}
+
+// Skill registry provider skills resolve against, the replacement first and the home plugin manager otherwise
+func pluginSkillsLocked(ctx context.Context, env *tools.Env) PluginSkillRegistry {
+	if skillRegistry != nil {
+		return skillRegistry
+	}
+	return plugins.GetPluginManager(home.WithOverride(ctx, registryHome(ctx, env)))
 }
 
 // Home the registry resolves user sources and config against, the context override first
@@ -543,10 +552,7 @@ func instantiate(ctx context.Context, env *tools.Env, r *ProviderRegistration, o
 func trackProviderSkill(ctx context.Context, env *tools.Env, qualified string) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
-	if skillRegistry == nil {
-		return
-	}
-	path, ok := skillRegistry.FindPluginSkill(qualified)
+	path, ok := pluginSkillsLocked(ctx, env).FindPluginSkill(qualified)
 	if !ok {
 		return
 	}
@@ -563,14 +569,13 @@ func PruneInactiveMemoryProviderSkills(ctx context.Context, env *tools.Env, acti
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	registered := registeredSkills[key]
+	reg := pluginSkillsLocked(ctx, env)
 	for qualified, path := range registered {
 		if namespace, _, _ := strings.Cut(qualified, ":"); namespace == activeProvider {
 			continue
 		}
-		if skillRegistry != nil {
-			if current, ok := skillRegistry.FindPluginSkill(qualified); ok && current == path {
-				skillRegistry.RemovePluginSkill(qualified)
-			}
+		if current, ok := reg.FindPluginSkill(qualified); ok && current == path {
+			reg.RemovePluginSkill(qualified)
 		}
 		delete(registered, qualified)
 	}

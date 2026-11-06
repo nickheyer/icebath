@@ -138,6 +138,9 @@ func getenv(ctx context.Context, name string) (string, bool) {
 	return os.LookupEnv(name)
 }
 
+// Env value as a string with a default for an unset name, the platform_env getenv adapters call
+func Getenv(ctx context.Context, name, def string) string { return getenvStr(ctx, name, def) }
+
 // Env value as a string with a default for an unset name
 func getenvStr(ctx context.Context, name, def string) string {
 	if v, ok := getenv(ctx, name); ok {

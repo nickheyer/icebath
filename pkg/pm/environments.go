@@ -348,6 +348,9 @@ func pinnedPythonVersion() (string, string, error) {
 	return major, minor, nil
 }
 
+// Major and minor version of the pinned Python for callers outside pm, a RuntimeError when the lock pins none
+func PinnedPythonVersion() (major, minor string, err error) { return pinnedPythonVersion() }
+
 // Site packages directory of a venv for the interpreter version the tree actually holds
 func SitePackages(venv string) (string, error) {
 	if runtime.GOOS == "windows" {

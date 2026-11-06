@@ -218,6 +218,7 @@ type keepaliveDialer struct {
 	racing  atomic.Bool
 	proxied bool
 	slots   chan struct{}
+	live    auxConnSet
 }
 
 func (d *keepaliveDialer) acquire(ctx context.Context) error {
@@ -249,7 +250,13 @@ func (d *keepaliveDialer) DialContext(ctx context.Context, network, address stri
 		<-d.slots
 		return nil, err
 	}
-	return &keepaliveConn{Conn: conn, release: func() { <-d.slots }}, nil
+	kc := &keepaliveConn{Conn: conn}
+	kc.release = func() {
+		d.live.remove(kc)
+		<-d.slots
+	}
+	d.live.add(kc)
+	return kc, nil
 }
 
 // TCP connect plus TLS handshake under one connect deadline with HTTP/1.1 negotiated
@@ -322,6 +329,7 @@ func newKeepaliveTransport(tlsConfig *tls.Config, limits keepaliveLimits, proxy 
 	} else {
 		t.DialTLSContext = d.dialTLS(tlsConfig)
 	}
+	auxPoolConnSets.Store(t, &d.live)
 	return &keepaliveTransport{transport: t, dialer: d}
 }
 

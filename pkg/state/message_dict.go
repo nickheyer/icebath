@@ -163,12 +163,12 @@ func assignDictValue(fv reflect.Value, value any) bool {
 		if value == nil {
 			return true
 		}
-		raw, err := json.Marshal(value)
+		raw, err := rawJSONOf(value)
 		if err != nil {
 			return false
 		}
 		candidate := reflect.ValueOf(json.RawMessage(raw))
-		if !reflect.DeepEqual(fieldToDictValue(candidate), value) {
+		if !reflect.DeepEqual(fieldToDictValue(candidate), plainDictTree(value)) {
 			return false
 		}
 		fv.Set(candidate)
@@ -180,7 +180,7 @@ func assignDictValue(fv reflect.Value, value any) bool {
 		}
 		calls := make([]ToolCall, len(items))
 		for i, item := range items {
-			dict, ok := item.(map[string]any)
+			dict, ok := dictValue(item)
 			if !ok {
 				return false
 			}
@@ -189,7 +189,7 @@ func assignDictValue(fv reflect.Value, value any) bool {
 		fv.Set(reflect.ValueOf(calls))
 		return true
 	case ToolCallFunction:
-		dict, ok := value.(map[string]any)
+		dict, ok := dictValue(value)
 		if !ok {
 			return false
 		}
@@ -267,4 +267,53 @@ func exactInt(value any) (int64, bool) {
 		return n, err == nil && !strings.ContainsAny(v.String(), ".eE")
 	}
 	return 0, false
+}
+
+// Plain map of a dict value, an insertion ordered object from the row decoder counting as its dict
+func dictValue(value any) (map[string]any, bool) {
+	switch d := value.(type) {
+	case map[string]any:
+		return d, true
+	case pyObject:
+		out := make(map[string]any, len(d))
+		for _, kv := range d {
+			out[kv.Key] = kv.Value
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+// Value with every ordered object at any depth turned into the plain map a json decode yields
+func plainDictTree(v any) any {
+	switch t := v.(type) {
+	case pyObject:
+		out := make(map[string]any, len(t))
+		for _, kv := range t {
+			out[kv.Key] = plainDictTree(kv.Value)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, item := range t {
+			out[k] = plainDictTree(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = plainDictTree(item)
+		}
+		return out
+	}
+	return v
+}
+
+// Compact JSON bytes of a value, ordered objects keeping their key order
+func rawJSONOf(v any) ([]byte, error) {
+	if !reflect.DeepEqual(plainDictTree(v), v) {
+		text, err := pyDumps(v, pyJSON{itemSep: ",", keySep: ":"})
+		return []byte(text), err
+	}
+	return json.Marshal(v)
 }

@@ -393,6 +393,7 @@ func (r *Registry) RegisterScoped(scope string, d Def) error {
 	}
 	copy := d
 	target[d.Name] = &copy
+	r.noteSlotWrite(scope, d.Name)
 	if scope == "" && d.Check != nil {
 		if _, ok := e.toolsetChecks[d.Toolset]; !ok {
 			e.toolsetChecks[d.Toolset] = d.Check
@@ -428,6 +429,7 @@ func (r *Registry) Deregister(name, scope, callerPlugin string) error {
 		}
 	}
 	delete(target, name)
+	r.noteSlotDelete(scope, name)
 	if scope != "" && len(target) == 0 {
 		delete(e.scoped, scope)
 	}
@@ -469,7 +471,9 @@ func (r *Registry) MoveToScope(names []string, scope string) {
 	for _, n := range names {
 		if d := r.globalLocked(n); d != nil {
 			delete(r.tools, n)
+			r.noteSlotDelete("", n)
 			r.slot(scope, true)[n] = d
+			r.noteSlotWrite(scope, n)
 			moved = true
 		}
 	}
@@ -492,8 +496,10 @@ func (r *Registry) RestoreRegistration(name string, current, previous *Def, scop
 	}
 	if previous == nil {
 		delete(target, name)
+		r.noteSlotDelete(scope, name)
 	} else {
 		target[name] = previous
+		r.noteSlotWrite(scope, name)
 	}
 	if scope != "" && len(target) == 0 {
 		delete(e.scoped, scope)

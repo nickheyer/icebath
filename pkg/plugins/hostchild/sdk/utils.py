@@ -30,3 +30,10 @@ def base_url_hostname(base_url: str) -> str:
     otherwise pass as native endpoints and mis-route api_mode and auth.
     """
     return _hostname_of(_parse_base_url(base_url))
+
+
+def fast_safe_load(stream):
+    """Use the shared safe reader."""
+    import yaml
+
+    return yaml.safe_load(stream)

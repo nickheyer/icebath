@@ -6,6 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -33,7 +34,7 @@ func init() {
 func configFacadeMigrationSources(h string) config.MigrationSources {
 	return config.MigrationSources{
 		CustomProviderEntryToProviderConfig: customProviderEntryToProviderConfig,
-		LegacyRelayPluginKeys:               legacyRelayPluginKeys,
+		LegacyRelayPluginKeys:               plugins.LegacyRelayPluginKeysIn,
 		BotProtocolHeading:                  tools.BotModeProtocolHeading,
 		BotRoster:                           botmode.ConfigRoster,
 		StripLegacyBotProtocol:              tools.StripLegacyBotProtocol,

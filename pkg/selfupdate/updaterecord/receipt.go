@@ -58,7 +58,7 @@ var (
 	receiptLog              = slog.Default
 
 	consentReaderImportable = func() bool { return true }
-	pmLastForUpdate         = pm.LastForUpdate
+	pmLastForUpdate         = pm.LastForUpdateObject
 
 	finalized struct {
 		sync.Mutex
@@ -1132,18 +1132,18 @@ func embedPMSync(ctx context.Context, data *pyjson.Object, updateID string) {
 	sync := pmLastForUpdate(ctx, updateID, true)
 	if sync != nil {
 		for _, key := range []string{"venv_rebuild", "plugin_bisect", "feature_list", "steps", "exit_code"} {
-			if sync[key] != nil {
-				data.Set("pm_"+key, sync[key])
+			if sync.Vals[key] != nil {
+				data.Set("pm_"+key, sync.Vals[key])
 			}
 		}
-		if sync["outcome"] != nil {
-			data.Set("pm_sync_outcome", sync["outcome"])
+		if sync.Vals["outcome"] != nil {
+			data.Set("pm_sync_outcome", sync.Vals["outcome"])
 		}
-		if truthy(sync["warnings"]) {
-			data.Set("pm_warnings", sync["warnings"])
+		if truthy(sync.Vals["warnings"]) {
+			data.Set("pm_warnings", sync.Vals["warnings"])
 		}
-		if sync["refusal"] != nil {
-			data.Set("pm_refusal", sync["refusal"])
+		if sync.Vals["refusal"] != nil {
+			data.Set("pm_refusal", sync.Vals["refusal"])
 		}
 	}
 }

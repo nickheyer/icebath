@@ -30,6 +30,9 @@ type AuxRuntimeError struct {
 
 func (e *AuxRuntimeError) Error() string { return e.Message }
 
+// Marks the error as a Python RuntimeError for callers that branch on the exception class
+func (e *AuxRuntimeError) PyRuntimeError() {}
+
 // HTTP status and error code of a Bedrock service error, zero and empty for any other error
 func auxBotocoreError(err error) (int, string) {
 	var ae *AWSServiceError
