@@ -2,8 +2,12 @@ package commands
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 
+	xterm "github.com/charmbracelet/x/term"
+	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -14,12 +18,40 @@ var skillsHubPaths = []string{"", "browse", "search", "install", "inspect", "lis
 	"reset", "list-modified", "diff", "opt-out", "opt-in", "repair-official", "publish", "snapshot", "snapshot export",
 	"snapshot import", "tap", "tap list", "tap add", "tap remove"}
 
+// Hub command runner over the active home, replaced where a caller swaps hub collaborators
+var newSkillsHubCLI = func(ctx context.Context) *skills.HubCLI {
+	return skills.NewHubCLI(skills.NewScope(home.Dir(ctx), nil))
+}
+
 // Binds icebath skills and its hub subcommands to the skills hub router
 func (c *CLI) bindSkillsHub() {
 	for _, sub := range skillsHubPaths {
 		path := strings.TrimSpace("skills " + sub)
 		c.Bind(path, func(cmd *cobra.Command, args []string) error { return runSkillsHub(cmd, sub, args) })
 	}
+	c.Bind("skills config", runSkillsConfig)
+	for _, action := range []string{"trust", "untrust"} {
+		c.Bind("skills "+action, func(cmd *cobra.Command, args []string) error {
+			path := ""
+			if len(args) > 0 {
+				path = args[0]
+			}
+			return skills.SkillsTrustCommand(cmdContext(cmd), home.Dir(cmdContext(cmd)), action, path, cmd.OutOrStdout())
+		})
+	}
+}
+
+// Stdin terminal check the interactive skills config gate reads
+var skillsConfigStdinTTY = func() bool { return xterm.IsTerminal(os.Stdin.Fd()) }
+
+// Refuses a piped stdin with exit status one, then runs the interactive skill enable and disable picker
+func runSkillsConfig(cmd *cobra.Command, args []string) error {
+	if !skillsConfigStdinTTY() {
+		fmt.Fprint(cmd.ErrOrStderr(), "Error: 'icebath skills config' requires an interactive terminal.\nIt cannot be run through a pipe or non-interactive subprocess.\nRun it directly in your terminal instead.\n")
+		return &ExitError{Code: 1}
+	}
+	ctx := cmdContext(cmd)
+	return skills.SkillsCommand(ctx, cliui.Default(), home.Dir(ctx))
 }
 
 // Parses one skills hub command line into its argparse namespace and runs it
@@ -86,7 +118,7 @@ func runSkillsHub(cmd *cobra.Command, sub string, args []string) error {
 			a.Name = arg(0)
 		}
 	}
-	x := skills.NewHubCLI(skills.NewScope(home.Dir(ctx), nil))
+	x := newSkillsHubCLI(ctx)
 	x.C, x.Stdout = pyrich.NewConsole(cmd.OutOrStdout()), cmd.OutOrStdout()
 	code, err := x.SkillsCommand(ctx, a)
 	if err != nil {

@@ -154,7 +154,7 @@ func auxRelaySyncCompletion(ctx context.Context, client AuxClient, kwargs map[st
 	callback := create
 	if callback == nil {
 		callback = func(ctx context.Context, request map[string]any) (any, error) {
-			return auxCreateWithProgress(ctx, client, request, task)
+			return auxCreateWithProgress(ctx, client, request, task, false)
 		}
 	}
 	providerName, fallbackModel, metadata, ok := auxRelayAuxiliaryMetadata(ctx, provider, apiMode)
@@ -179,7 +179,7 @@ func auxRelayAsyncCompletion(ctx context.Context, client AuxClient, kwargs map[s
 	callback := create
 	if callback == nil {
 		callback = func(ctx context.Context, request map[string]any) (any, error) {
-			return auxAcreateWithProgress(ctx, client, request)
+			return auxAcreateWithProgress(ctx, client, request, "", false)
 		}
 	}
 	providerName, fallbackModel, metadata, ok := auxRelayAuxiliaryMetadata(ctx, provider, apiMode)

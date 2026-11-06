@@ -481,6 +481,8 @@ func (c *codexResponsesClient) Stream(ctx context.Context, req *Request, fn Stre
 	const maxStreamRetries = 1
 	kwargs := p.kwargs
 	watch := &codexWatchState{callStart: time.Now()}
+	watch.waiter = newNonStreamWaiter(req.Model, epochSeconds(watch.callStart), p.watch, nonStreamEmitter(ctx, fn))
+	watch.waiter.touch("waiting for non-streaming API response")
 	for attempt := 0; attempt <= maxStreamRetries; attempt++ {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -587,6 +589,13 @@ type codexWatchState struct {
 	attemptStart time.Time
 	lastEvent    time.Time
 	lastProgress time.Time
+	retryStarted time.Time
+	waiter       *nonStreamWaiter
+}
+
+// Watchdog markers of the current attempt in epoch seconds
+func (w *codexWatchState) snapshot() nonStreamSnapshot {
+	return nonStreamSnapshot{lastEvent: markerSeconds(w.lastEvent), lastProgress: markerSeconds(w.lastProgress), retryStarted: markerSeconds(w.retryStarted)}
 }
 
 // Runs one physical streaming attempt, returning the response, the events parsed and the failure
@@ -611,6 +620,7 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 		watch.lastEvent, watch.lastProgress = time.Time{}, time.Time{}
 	}
 	if attempt > 0 && p.watch.idleRequiresProgress {
+		watch.retryStarted = start
 		codexLog.Info(fmt.Sprintf("Codex physical stream retry at %.3f (attempt=%d/%d, model=%s)", float64(start.UnixNano())/1e9, attempt+1, 2, orUnknown2(req.Model)))
 	}
 	model := orUnknown2(req.Model)
@@ -687,7 +697,7 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 	kill := func(reason, status, message string) error {
-		_ = emit(StreamEvent{Kind: EventStatus, Text: status})
+		watch.waiter.surface(StreamEvent{Kind: EventStatus, Text: status})
 		cancel()
 		return &codexKillError{reason: reason, message: message, headers: headers}
 	}
@@ -702,6 +712,8 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 	for !terminal {
 		select {
 		case <-ctx.Done():
+			recordInterruptedProviderWait(ctx, time.Since(watch.callStart).Seconds(), !watch.lastEvent.IsZero())
+			codexLog.Debug("Force-closing httpx client due to interrupt (not a network error).")
 			return nil, events, ctx.Err()
 		case <-attemptCtx.Done():
 			if ctx.Err() == nil && errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
@@ -709,6 +721,7 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 			}
 			return nil, events, attemptCtx.Err()
 		case now := <-ticker.C:
+			watch.waiter.poll(epochSeconds(now), watch.snapshot())
 			elapsed := now.Sub(watch.callStart).Seconds()
 			attemptElapsed := now.Sub(watch.attemptStart).Seconds()
 			lastEvent, lastProgress := watch.lastEvent, watch.lastProgress
@@ -786,9 +799,14 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 			}
 			watch.lastEvent = now
 			events++
-			if codexEventHasContent(event) && watch.lastProgress.IsZero() {
-				codexLog.Info(fmt.Sprintf("Codex stream first substantive progress at %.3f (attempt=%d/%d, model=%s)", float64(now.UnixNano())/1e9, attempt+1, 2, model))
+			if codexEventHasContent(event) {
+				if watch.lastProgress.IsZero() {
+					codexLog.Info(fmt.Sprintf("Codex stream first substantive progress at %.3f (attempt=%d/%d, model=%s)", float64(now.UnixNano())/1e9, attempt+1, 2, model))
+				}
 				watch.lastProgress = now
+				if p.watch.idleRequiresProgress {
+					watch.retryStarted = time.Time{}
+				}
 			}
 			done, err := assembler.feed(event)
 			if err != nil {

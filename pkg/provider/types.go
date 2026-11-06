@@ -145,12 +145,14 @@ const (
 
 // StreamEvent is one incremental piece of a streamed response
 type StreamEvent struct {
-	Kind     EventKind
-	Text     string
-	Index    int
-	ToolCall *state.ToolCall
-	Usage    *Usage
-	Raw      json.RawMessage
+	Kind EventKind
+	Text string
+	// Wait notice carrying diagnostic text, the gateway DiagnosticText routing
+	Diagnostic bool
+	Index      int
+	ToolCall   *state.ToolCall
+	Usage      *Usage
+	Raw        json.RawMessage
 }
 
 // StreamFunc receives stream events and aborts the stream by returning an error

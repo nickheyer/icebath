@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 )
 
 // CommandArg returns everything after the slash command word, optionally lowercased
@@ -511,97 +512,10 @@ func UnknownCommandLines(typed string, known []string) (string, string) {
 		base = fields[0]
 	}
 	hint := ""
-	if close := CloseMatches(base, known, 1, 0.6); len(close) > 0 {
+	if close := pydifflib.GetCloseMatches(base, known, 1, 0.6); len(close) > 0 {
 		hint = " Did you mean " + close[0] + "?"
 	}
 	return "Unknown command " + base + " — nothing was sent." + hint, "Type /help for the full list."
-}
-
-// CloseMatches returns the best fuzzy matches above a cutoff the way difflib ranks them
-func CloseMatches(word string, possibilities []string, n int, cutoff float64) []string {
-	type scored struct {
-		score float64
-		text  string
-	}
-	var results []scored
-	for _, x := range possibilities {
-		if score := Ratio(x, word); score >= cutoff {
-			results = append(results, scored{score, x})
-		}
-	}
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].score != results[j].score {
-			return results[i].score > results[j].score
-		}
-		return results[i].text > results[j].text
-	})
-	if len(results) > n {
-		results = results[:n]
-	}
-	out := make([]string, 0, len(results))
-	for _, r := range results {
-		out = append(out, r.text)
-	}
-	return out
-}
-
-// Ratio is the difflib similarity of two strings, matched characters twice over the total length
-func Ratio(a, b string) float64 {
-	ra, rb := []rune(a), []rune(b)
-	total := len(ra) + len(rb)
-	if total == 0 {
-		return 1.0
-	}
-	return 2.0 * float64(matchingChars(ra, rb)) / float64(total)
-}
-
-func matchingChars(a, b []rune) int {
-	b2j := map[rune][]int{}
-	for j, r := range b {
-		b2j[r] = append(b2j[r], j)
-	}
-	type span struct{ alo, ahi, blo, bhi int }
-	queue := []span{{0, len(a), 0, len(b)}}
-	matches := 0
-	for len(queue) > 0 {
-		s := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-		i, j, k := longestMatch(a, b2j, s.alo, s.ahi, s.blo, s.bhi)
-		if k == 0 {
-			continue
-		}
-		matches += k
-		if s.alo < i && s.blo < j {
-			queue = append(queue, span{s.alo, i, s.blo, j})
-		}
-		if i+k < s.ahi && j+k < s.bhi {
-			queue = append(queue, span{i + k, s.ahi, j + k, s.bhi})
-		}
-	}
-	return matches
-}
-
-func longestMatch(a []rune, b2j map[rune][]int, alo, ahi, blo, bhi int) (int, int, int) {
-	besti, bestj, bestsize := alo, blo, 0
-	j2len := map[int]int{}
-	for i := alo; i < ahi; i++ {
-		newj2len := map[int]int{}
-		for _, j := range b2j[a[i]] {
-			if j < blo {
-				continue
-			}
-			if j >= bhi {
-				break
-			}
-			k := j2len[j-1] + 1
-			newj2len[j] = k
-			if k > bestsize {
-				besti, bestj, bestsize = i-k+1, j-k+1, k
-			}
-		}
-		j2len = newj2len
-	}
-	return besti, bestj, bestsize
 }
 
 // DestructiveSkipTokens bypass the destructive slash confirmation inline

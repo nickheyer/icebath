@@ -217,7 +217,7 @@ func TestReadOnlyConnectionKeepsFTSSearchAvailable(t *testing.T) {
 	if err := w.CreateSession(NewSession{ID: "fts-read-only", Source: "cli"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.AppendMessage("fts-read-only", &Message{Role: "user", Content: "readonlywoodpecker 大别山项目"}); err != nil {
+	if _, err := w.AppendMessage(context.Background(), "fts-read-only", map[string]any{"role": "user", "content": "readonlywoodpecker 大别山项目"}, AppendGuards{}); err != nil {
 		t.Fatal(err)
 	}
 	w.Close()

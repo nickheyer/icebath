@@ -25,6 +25,7 @@ const (
 	tTMiddle
 	tTEnd
 	tError
+	tTypeComment
 )
 
 type token struct {
@@ -34,6 +35,7 @@ type token struct {
 	level           int
 	so, eo          int
 	curLine, curCol int
+	cursor          int
 }
 
 const (
@@ -89,11 +91,57 @@ type lexer struct {
 	toks                  []token
 	lineStarts            []int
 	blankline             bool
+	typeComments          bool
+	warnErrors            bool
+	typeIgnores           []typeIgnore
+	warns                 []lexWarning
+	errInFString          bool
+}
+
+type typeIgnore struct {
+	lineno int
+	tag    string
+}
+
+// One tokenizer SyntaxWarning tied to the index of the token being read when it was issued
+type lexWarning struct {
+	tok int
+	w   Warning
+}
+
+// Records a tokenizer SyntaxWarning, or raises it as the SyntaxError the error filter produces
+func (lx *lexer) warn(msg string) bool {
+	if lx.warnErrors {
+		lx.syntaxError("%s", msg)
+		return false
+	}
+	lx.warns = append(lx.warns, lexWarning{len(lx.toks), Warning{Category: "SyntaxWarning", Msg: msg, Lineno: lx.lineno}})
+	return true
+}
+
+// Matches the "# type: " prefix where each space stands for any run of blanks, returning the offset after it
+func typeCommentStart(src []byte, i, end int) (int, bool) {
+	for _, c := range []byte("# type: ") {
+		if c == ' ' {
+			for i < end && (src[i] == ' ' || src[i] == '\t') {
+				i++
+			}
+			continue
+		}
+		if i >= end || src[i] != c {
+			return i, false
+		}
+		i++
+	}
+	return i, true
 }
 
 // Splits decoded UTF-8 source into tokens, stopping at the first tokenizer error
-func tokenize(src []byte) *lexer {
-	lx := &lexer{src: src, atbol: true, indstack: []int{0}, altindstack: []int{0}, modes: []tokMode{{kind: modeRegular}}}
+func tokenize(src []byte) *lexer { return tokenizeWith(src, false, false) }
+
+// Tokenizes with TYPE_COMMENT tokens and type ignores when asked, and tokenizer warnings raised as errors when asked
+func tokenizeWith(src []byte, typeComments, warnErrors bool) *lexer {
+	lx := &lexer{src: src, atbol: true, indstack: []int{0}, altindstack: []int{0}, modes: []tokMode{{kind: modeRegular}}, typeComments: typeComments, warnErrors: warnErrors}
 	for i := 0; i <= len(src); i++ {
 		if i == 0 || src[i-1] == '\n' {
 			lx.lineStarts = append(lx.lineStarts, i)
@@ -185,6 +233,7 @@ func (lx *lexer) syntaxErrorRange(col, endCol int, format string, args ...any) t
 		endCol = col
 	}
 	lx.err = &SyntaxError{Class: "SyntaxError", Msg: fmt.Sprintf(format, args...), Lineno: lx.lineno, Offset: col, EndLineno: lx.lineno, EndOffset: endCol, Text: lx.lineText(), HasText: true, HasEnd: true}
+	lx.errInFString = len(lx.modes) > 1
 	lx.done = doneError
 	return tError
 }
@@ -196,7 +245,7 @@ func (lx *lexer) indentError() tokKind {
 }
 
 func (lx *lexer) emit(k tokKind, start, end int) {
-	t := token{kind: k, l: lx.lineno, el: lx.lineno, c: -1, ec: -1, level: lx.level, so: start, eo: end, curLine: lx.lineno, curCol: lx.cur - lx.lineStart}
+	t := token{kind: k, l: lx.lineno, el: lx.lineno, c: -1, ec: -1, level: lx.level, so: start, eo: end, curLine: lx.lineno, curCol: lx.cur - lx.lineStart, cursor: lx.cur}
 	if k == tString || k == tFMiddle || k == tTMiddle {
 		t.l = lx.firstLineno
 	}
@@ -347,6 +396,28 @@ again:
 	if c == '#' {
 		for c != eofChar && c != '\n' && c != '\r' {
 			c = lx.nextc()
+		}
+		if lx.typeComments {
+			end := lx.cur
+			if c != eofChar {
+				end--
+			}
+			if typeStart, ok := typeCommentStart(lx.src, lx.start, end); ok {
+				lx.backup(c)
+				rest := lx.src[typeStart:lx.cur]
+				if len(rest) >= 6 && string(rest[:6]) == "ignore" && (len(rest) == 6 || (rest[6] < 0x80 && !isAlnumByte(rest[6]))) {
+					tagEnd := lx.cur
+					if lx.blankline {
+						if lx.nextc() != eofChar {
+							tagEnd = lx.cur
+						}
+						lx.atbol = true
+					}
+					lx.typeIgnores = append(lx.typeIgnores, typeIgnore{lx.lineno, string(lx.src[typeStart+6 : tagEnd])})
+					goto nextline
+				}
+				return lx.tok(tTypeComment, typeStart, lx.cur)
+			}
 		}
 	}
 	if c == eofChar {
@@ -633,6 +704,11 @@ func (lx *lexer) verifyEndOfNumber(c int, kind string) bool {
 		r = lx.lookahead("ot")
 	}
 	if r {
+		if !lx.warn("invalid " + kind + " literal") {
+			lx.backup(c)
+			lx.syntaxError("invalid %s literal", kind)
+			return false
+		}
 		return true
 	}
 	if c >= 0 && c < 128 && isIdentChar(c) {
@@ -1051,6 +1127,10 @@ func (lx *lexer) fstringMode(m *tokMode) tokKind {
 				peek = lx.nextc()
 			}
 			if peek == '{' || peek == '}' {
+				if !m.raw && !lx.warn(fmt.Sprintf("\"\\%c\" is an invalid escape sequence. Such sequences will not work in the future. Did you mean \"\\\\%c\"? A raw string is also an option.", peek, peek)) {
+					lx.syntaxError("\"\\%c\" is an invalid escape sequence. Did you mean \"\\\\%c\"? A raw string is also an option.", peek, peek)
+					return tError
+				}
 				lx.backup(peek)
 				continue
 			}

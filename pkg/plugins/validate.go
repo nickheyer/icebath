@@ -853,8 +853,12 @@ func validatePluginDir(ctx context.Context, path string, probe *validationProbe)
 	if err != nil || manifest == nil {
 		return report, err
 	}
-	checkCoreOverride(report, path)
-	checkPrivateImports(report, path)
+	if err := checkCoreOverride(report, path); err != nil {
+		return nil, err
+	}
+	if err := checkPrivateImports(report, path); err != nil {
+		return nil, err
+	}
 	checkDesktopSurface(report, path)
 	checkLanguagePacks(report, manifest, path)
 	isolation, err := auditPluginDir(path, manifest)

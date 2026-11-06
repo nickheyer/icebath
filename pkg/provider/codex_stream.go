@@ -867,22 +867,32 @@ type codexWatchdogs struct {
 
 // Base non stream stale timeout and whether it is the implicit default
 func (c *codexResponsesClient) staleTimeoutBase(req *Request, settings wireSettings) (float64, bool) {
-	if d, ok := configuredProviderTimeout(settings.providers, c.cc.provider, req.Model, "stale_timeout_seconds", "stale_timeout_seconds"); ok {
+	return nonStreamStaleTimeoutBase(settings, c.cc.provider, req.Model)
+}
+
+// Effective stale timeout scaled by context, floored for high effort, and capped by the context deadline
+func (c *codexResponsesClient) computeStaleTimeout(ctx context.Context, req *Request, settings wireSettings, estTokens int, kwargs map[string]any) float64 {
+	return computeNonStreamStaleTimeout(ctx, settings, c.cc.provider, req, c.cc.local, true, estTokens, kwargs)
+}
+
+// Base non streaming stale timeout, per model or provider config then the env then the reasoning floor then 90s
+func nonStreamStaleTimeoutBase(settings wireSettings, provider, model string) (float64, bool) {
+	if d, ok := configuredProviderTimeout(settings.providers, provider, model, "stale_timeout_seconds", "stale_timeout_seconds"); ok {
 		return d.Seconds(), false
 	}
 	if _, explicit := os.LookupEnv(APICallStaleTimeoutEnv); explicit {
 		return envFloat(APICallStaleTimeoutEnv, 90), false
 	}
-	if floor, ok := ReasoningStaleTimeoutFloor(req.Model); ok {
+	if floor, ok := ReasoningStaleTimeoutFloor(model); ok {
 		return floor.Seconds(), false
 	}
 	return 90, true
 }
 
-// Effective stale timeout scaled by context, floored for high effort, and capped by the context deadline
-func (c *codexResponsesClient) computeStaleTimeout(ctx context.Context, req *Request, settings wireSettings, estTokens int, kwargs map[string]any) float64 {
-	base, implicit := c.staleTimeoutBase(req, settings)
-	if implicit && c.cc.local {
+// Non streaming stale timeout scaled by context, floored for high effort codex, multiplied by long decode hops and capped by the deadline
+func computeNonStreamStaleTimeout(ctx context.Context, settings wireSettings, provider string, req *Request, local, codex bool, estTokens int, payload map[string]any) float64 {
+	base, implicit := nonStreamStaleTimeoutBase(settings, provider, req.Model)
+	if implicit && local {
 		return math.Inf(1)
 	}
 	timeout := base
@@ -892,20 +902,16 @@ func (c *codexResponsesClient) computeStaleTimeout(ctx context.Context, req *Req
 	case estTokens > 50000:
 		timeout = math.Max(base, 150)
 	}
-	explicit := !implicit && (os.Getenv(APICallStaleTimeoutEnv) != "" || c.providerStaleConfigured(req, settings))
-	if !explicit {
-		timeout = math.Max(timeout, highEffortSilenceFloor(reasoningFromRequest(req.Reasoning)))
-		if extra, ok := kwargs["extra_body"].(map[string]any); ok {
-			timeout *= float64(longDecodeHops(extra["max_output_tokens"]))
+	_, envSet := os.LookupEnv(APICallStaleTimeoutEnv)
+	_, configured := configuredProviderTimeout(settings.providers, provider, req.Model, "stale_timeout_seconds", "stale_timeout_seconds")
+	if explicit := envSet || configured; !explicit {
+		if codex {
+			timeout = math.Max(timeout, highEffortSilenceFloor(reasoningFromRequest(req.Reasoning)))
 		}
+		timeout *= float64(longDecodeStaleMultiplier(payload))
 		timeout = capToContextDeadline(ctx, timeout)
 	}
 	return timeout
-}
-
-func (c *codexResponsesClient) providerStaleConfigured(req *Request, settings wireSettings) bool {
-	_, ok := configuredProviderTimeout(settings.providers, c.cc.provider, req.Model, "stale_timeout_seconds", "stale_timeout_seconds")
-	return ok
 }
 
 // Implicit stale timeout capped at half the remaining context deadline, never below 60s

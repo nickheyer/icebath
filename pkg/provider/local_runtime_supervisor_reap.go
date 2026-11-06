@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 )
 
 // Kills processes running this binary whose parent is gone, never the live router and never on Windows
@@ -31,7 +33,7 @@ func lrReapOrphans(exe string, ownPid int) {
 // Process table view the orphan reaper walks
 var (
 	lrReapPids      = lrAllPids
-	lrReapExe       = psExe
+	lrReapExe       = proc.Exe
 	lrReapPPID      = psPPID
 	lrReapPidExists = psPidExists
 	lrReapKill      = func(pid int) error {

@@ -177,7 +177,7 @@ func (a *AIAgent) sanitizeOutboundKwargs(apiKwargs map[string]any) {
 	if !a.forceASCIIPayload {
 		return
 	}
-	if tools, ok := apiKwargs["tools"]; ok && tools != nil && sameList(tools, a.Tools) {
+	if tools, ok := apiKwargs["tools"]; ok && tools != nil && sameList(tools, a.tools) {
 		apiKwargs["tools"] = cloneMessageForSend(tools)
 	}
 	state.SanitizeStructureNonASCII(apiKwargs)
@@ -301,7 +301,7 @@ func reapplyReasoningEcho(apiMessages []any, needsThinkingPad bool, carriers map
 
 // Provider, base URL host and model a reasoning rejection is learned for
 func (a *AIAgent) reasoningRouteKey() [3]string {
-	return [3]string{pystr.Lower(pystr.Strip(a.Provider)), provider.Hostname(a.BaseURL), pystr.Strip(a.Model)}
+	return [3]string{pystr.Lower(pystr.Strip(a.provider)), provider.Hostname(a.baseURL), pystr.Strip(a.model)}
 }
 
 // Reasoning keys the active route rejected this session, loading the persisted record once per session
@@ -360,11 +360,11 @@ func (a *AIAgent) rejectedReasoningCarriers() (map[string]bool, error) {
 
 // Remembers and persists the reasoning keys this route newly rejected, empty when no retry is warranted
 func (a *AIAgent) recordReasoningFieldRejection(errorBody, sentMessages any) (map[string]bool, error) {
-	if a.APIMode != "chat_completions" {
+	if a.apiMode != "chat_completions" {
 		return map[string]bool{}, nil
 	}
 	fields := provider.RejectedReasoningFields(errorBody, sentMessages)
-	if provider.NeedsReasoningEcho(a.Provider, a.Model, a.BaseURL) {
+	if provider.NeedsReasoningEcho(a.provider, a.model, a.baseURL) {
 		delete(fields, carrierRC)
 	}
 	if len(fields) == 0 {

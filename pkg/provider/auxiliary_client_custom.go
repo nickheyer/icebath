@@ -187,9 +187,9 @@ func auxBuildXaiOAuthAuxClient(ctx context.Context, model string) (AuxClient, st
 			"pass model explicitly (auxiliary.<task>.model in config.yaml).")
 		return nil, "", nil
 	}
-	apiKey, baseURL, ok, err := auxResolveXaiOAuthForAux(ctx)
-	if err != nil || !ok {
-		return nil, "", err
+	apiKey, baseURL, ok := auxResolveXaiOAuthForAux(ctx)
+	if !ok {
+		return nil, "", nil
 	}
 	slog.Debug(fmt.Sprintf("Auxiliary client: xAI OAuth (%s via Responses API)", model))
 	real := auxCreateOpenAIClient(ctx, apiKey, baseURL, auxOpenAIOptions{DefaultHeaders: tools.XAIDefaultHeaders()})

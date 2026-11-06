@@ -1383,7 +1383,8 @@ func (c *anthropicClient) Complete(ctx context.Context, req *Request) (*Response
 		if err != nil {
 			return nil, err
 		}
-		resp, err := c.completeOnce(ctx, req, p)
+		stale := computeNonStreamStaleTimeout(ctx, p.settings, c.providerLower(), req, IsLocalEndpoint(c.route.BaseURL), false, p.estTokens, p.body)
+		resp, err := runNonStreamRequest(ctx, req.Model, p.estTokens, stale, func(ctx context.Context) (*Response, error) { return c.completeOnce(ctx, req, p) })
 		if err != nil && attempt == 0 && c.noteContext1MRejection(err) {
 			continue
 		}
@@ -1478,6 +1479,7 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 	t := c.streamTimeouts(req, p.settings, p.estTokens)
 	s := &anthStreamState{c: c, req: req, fn: fn, acc: newAnthAccumulator(), textWatch: NewRunawayStreamWatch(), thinkWatch: NewRunawayStreamWatch(),
 		toolSlots: map[int]int{}, started: time.Now(), estTokens: p.estTokens, lifetime: t.lifetime.Seconds()}
+	s.diag = streamCallFrom(ctx).newDiag()
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	kill := &ccKill{}
@@ -1485,6 +1487,7 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 	if err != nil {
 		return nil, false, err
 	}
+	s.wire = failedStreamRequestOf(httpReq)
 	hdrTimer := time.AfterFunc(t.read, func() {
 		kill.fire("read", t.read.Seconds())
 		cancel()
@@ -1501,6 +1504,7 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 		data, _ := readLimited(resp.Body, ccErrorBodyLimit)
 		return nil, false, c.httpError(resp, data)
 	}
+	StreamDiagCaptureResponse(s.diag, resp)
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(ct, "application/json") && !strings.Contains(ct, "event-stream") {
 		data, err := io.ReadAll(resp.Body)
@@ -1524,7 +1528,7 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 		}
 		return final, false, c.replay(final, fn)
 	}
-	out, err := c.consumeStream(attemptCtx, cancel, kill, c.transport.Events(resp), s, t)
+	out, err := c.consumeStream(ctx, attemptCtx, cancel, kill, c.transport.Events(resp), s, t)
 	return out, s.deltasSent, err
 }
 

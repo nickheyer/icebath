@@ -115,8 +115,9 @@ func preflightStdioCommand(ctx context.Context, serverName, command string, args
 		err error
 	}
 	ch := make(chan verdict, 1)
+	check := malwareCheck
 	go func() {
-		msg, err := malwareCheck(command, args)
+		msg, err := check(command, args)
 		ch <- verdict{msg, err}
 	}()
 	t := time.NewTimer(osvMalwareCheckTimeout)
@@ -620,6 +621,7 @@ func (s *serverTask) registerDiscoveredToolsIfNeeded(ctx context.Context) error 
 	}
 	s.mu.Lock()
 	s.toolNames = names
+	s.toolNamesSet = true
 	s.mu.Unlock()
 	mcpMu.Lock()
 	for _, k := range owned {

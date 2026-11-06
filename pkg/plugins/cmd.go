@@ -28,6 +28,15 @@ var urlSchemes = []string{"https://", "http://", "git@", "ssh://", "file://"}
 type Console struct {
 	Out   io.Writer
 	Color bool
+	// Width in cells panels fit within, zero reading the terminal size the way rich does
+	Width int
+}
+
+func (c *Console) width() int {
+	if c.Width > 0 {
+		return c.Width
+	}
+	return pyrich.DetectWidth()
 }
 
 // Console over a writer, styled only when the writer is a terminal file

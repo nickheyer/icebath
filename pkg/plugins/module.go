@@ -51,7 +51,6 @@ type Services struct {
 	PluginSDK                         func(ctx context.Context, home, op string, args []any, kwargs map[string]any) (any, error)
 	BuildPluginBlueprint              func(pluginName, key string, spec BlueprintSpec) (string, any, error)
 	SecretSources                     SecretSources
-	ReRegisterShellHooks              func() error
 	ReRegisterOutboundWebhooks        func() error
 	PlatformDeclarations              PlatformDeclarations
 	OAuthSurface                      func(manifest map[string]any) map[string]bool
@@ -63,6 +62,43 @@ type Services struct {
 	DefinesMemoryProvider             func(pluginDir string) bool
 	PrepareMemoryProviderDependencies func(ctx context.Context, name string) error
 	RequiresAuthNotice                func(manifest map[string]any) string
+	DeclaresModelProviderKind         func(pluginDir string) bool
+	PluginOAuthKey                    func(pluginDir string) string
+	ForgetPluginGrants                func(plugin string) error
+	ReloadGatewayPlugins              func(ctx context.Context, target, profileHome string) (map[string]any, error)
+	HostRendezvous                    HostRendezvous
+	GatewayRunningPid                 func(pidPath string, cleanupStale bool) (int, bool, error)
+	InstalledGatewayServiceKind       func(ctx context.Context) (string, bool)
+	RefreshPluginSessions             func(ctx context.Context, home, pluginKey, note string) error
+	MCP                               MCPConnector
+	BroadcastGlobalEvent              func(name string, payload map[string]any)
+}
+
+// Host rendezvous record of a running dashboard or Desktop backend, Record carried back to the rendezvous
+type HostRecord struct {
+	Role   string
+	Port   int
+	Record any
+}
+
+// Host rendezvous reads the activation path makes to find the running serve backend
+type HostRendezvous interface {
+	ReadRecord(role string) (*HostRecord, error)
+	RecordTokenIsConsistent(record *HostRecord) bool
+	ReadToken(role string) (string, error)
+	DialHost(record *HostRecord) string
+}
+
+// MCP configuration, registration and naming the activation path reaches through the wiring
+type MCPConnector interface {
+	LoadConfig(ctx context.Context) (map[string]any, error)
+	FilterSuspicious(servers map[string]any) map[string]any
+	RegisterServers(ctx context.Context, servers map[string]any) ([]string, error)
+	RegisteredToolNames(ctx context.Context, server string) ([]string, error)
+	UtilityKinds() []string
+	Status(ctx context.Context) ([]map[string]any, error)
+	SanitizeNameComponent(value string) string
+	ToolNamePrefix() string
 }
 
 var services atomic.Pointer[Services]

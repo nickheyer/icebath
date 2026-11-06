@@ -552,6 +552,8 @@ type relayGeneratorExit struct{}
 
 func (relayGeneratorExit) Error() string { return "GeneratorExit" }
 
+func (relayGeneratorExit) auxBaseException() {}
+
 // Relay's provider callback state, an async generator yielding JSON encoded chunks
 type relayProviderGen struct {
 	s       *ManagedLlmStream
@@ -781,7 +783,7 @@ func (s *ManagedLlmStream) startManaged(ctx context.Context, a *relayManagedAtte
 	}()
 	if s.loop {
 		outcome := "failed"
-		if auxIsCancellation(err) {
+		if relayIsCancellation(err) {
 			outcome = "cancelled"
 		}
 		if ferr := s.finishLogical(ctx, outcome, err); ferr != nil {
@@ -906,7 +908,7 @@ func (s *ManagedLlmStream) Next(ctx context.Context) (any, error) {
 			return s.Next(ctx)
 		}
 		outcome := "failed"
-		if auxIsCancellation(err) {
+		if relayIsCancellation(err) {
 			outcome = "cancelled"
 		}
 		if cerr := s.closeStream(ctx, outcome, err); cerr != nil {
@@ -1681,4 +1683,13 @@ func relayJSONEqual(left, right any) bool {
 	}
 	r, err := tools.RelayCanonicalJSON(right, nil)
 	return err == nil && l == r
+}
+
+// Whether the error is a task cancel, an interrupted call or a keyboard interrupt
+func relayIsCancellation(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, ErrSecretPromptInterrupted) {
+		return true
+	}
+	var ie auxInterruptedError
+	return errors.As(err, &ie)
 }

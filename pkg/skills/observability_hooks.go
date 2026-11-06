@@ -1,12 +1,13 @@
 package skills
 
 import (
-	"maps"
+	"io/fs"
 
 	"github.com/nickheyer/icebath/pkg/observability"
 )
 
-// Hands the hub source alias table to the shared metrics extension registry
+// Installs the skill index walk and the embedded bundled and optional trees the install snapshot and catalog read
 func init() {
-	observability.SkillSourceIDAliasesHook = func() map[string]string { return maps.Clone(sourceIDAliases) }
+	observability.SkillIndexFilesHook = IterSkillIndexFiles
+	observability.BundledSkillTreesHook = func() (fs.FS, fs.FS) { return BundledFS(), OptionalFS() }
 }

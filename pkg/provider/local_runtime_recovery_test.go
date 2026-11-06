@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -114,7 +115,7 @@ func lr4ModernRecord(t *testing.T, pid int) map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exe, err := psExe(pid)
+	exe, err := proc.Exe(pid)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -587,10 +587,17 @@ func metaExtra(m *SkillMeta) *pyjson.Object {
 
 // Advisory SkillEvaluator Tier 1 report that never blocks, secrets rendered red
 func (x *HubCLI) printTier1Advisory(ctx context.Context, skillDir string, c *pyrich.Console) {
-	if !x.S.Tier1AdvisoryEnabled() {
+	enabled, scan := x.S.Tier1AdvisoryEnabled, RunTier1Scan
+	if x.seams.tier1Enabled != nil {
+		enabled = x.seams.tier1Enabled
+	}
+	if x.seams.tier1Scan != nil {
+		scan = x.seams.tier1Scan
+	}
+	if !enabled() {
 		return
 	}
-	report, err := RunTier1Scan(ctx, skillDir, ScanTimeoutSeconds)
+	report, err := scan(ctx, skillDir, ScanTimeoutSeconds)
 	if err != nil {
 		x.S.logger().Debug(fmt.Sprintf("Tier 1 advisory scan skipped: %v", err))
 		return

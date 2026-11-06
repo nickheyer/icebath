@@ -141,7 +141,10 @@ func OpenOnboardingSessionIDs(db *state.DB) []string {
 	tips := map[string]bool{}
 	var open []string
 	for _, sid := range ids {
-		tip := db.ResolveResumeSessionID(sid)
+		tip, err := db.ResolveResumeSessionID(sid)
+		if err != nil {
+			return nil
+		}
 		if tip == "" {
 			tip = sid
 		}
@@ -168,7 +171,10 @@ func ActiveOnboardingSessionID(db *state.DB) string {
 // DeleteOnboardingChat runs the delete and, when it removed the chat holding the live run, ends that run on every copy
 func DeleteOnboardingChat(db *state.DB, sessionID string, deleteChat func() bool) (bool, error) {
 	record := LoadOnboardingRecord(db, sessionID)
-	tip := db.ResolveResumeSessionID(sessionID)
+	tip, err := db.ResolveResumeSessionID(sessionID)
+	if err != nil {
+		return false, err
+	}
 	if tip == "" {
 		tip = sessionID
 	}

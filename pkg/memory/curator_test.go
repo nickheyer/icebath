@@ -45,6 +45,7 @@ func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
 	curatorWarned.seen = map[string]bool{}
 	curatorWarned.Unlock()
 	t.Cleanup(func() { curatorConfig, curatorLLMReview, curatorRecordRun = prevCfg, prevLLM, prevRec })
+	t.Cleanup(curatorReviewThreads.Wait)
 	return context.Background(), h
 }
 

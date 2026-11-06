@@ -306,8 +306,10 @@ type ProviderRegistration struct {
 	Manifest     string
 	New          func(ctx context.Context, env *tools.Env, opts LoadOptions) (Provider, error)
 	ConfigSchema func(ctx context.Context) (*ProviderConfigSchema, error)
-	OAuth        OAuthFlow
-	CLI          *ProviderCLI
+	// config_schema.py the plugin host runs for ConfigSchema, no schema while it is not a file
+	SchemaFile string
+	OAuth      OAuthFlow
+	CLI        *ProviderCLI
 }
 
 // Description from the plugin manifest, empty when absent or unreadable
@@ -402,6 +404,7 @@ func visibleRegistrations(ctx context.Context, env *tools.Env) []*ProviderRegist
 		out = append(out, r)
 	}
 	registryMu.RUnlock()
+	out = append(out, scannedRegistrations(ctx, env, out)...)
 	sort.SliceStable(out, func(i, j int) bool {
 		if sourceRank[out[i].Source] != sourceRank[out[j].Source] {
 			return sourceRank[out[i].Source] < sourceRank[out[j].Source]
@@ -640,6 +643,9 @@ func GetProviderConfigSchema(ctx context.Context, env *tools.Env, name string) *
 	if r == nil || r.ConfigSchema == nil {
 		return nil
 	}
+	if r.SchemaFile != "" && !isRegularFile(r.SchemaFile) {
+		return nil
+	}
 	key := r.Source + "\x00" + homeKey(r.Home) + "\x00" + r.Dir + "\x00" + r.Name
 	registryMu.RLock()
 	cached, ok := schemaCache[key]
@@ -716,7 +722,14 @@ func DiscoverPluginCLICommands(ctx context.Context, env *tools.Env) []PluginCLIC
 		return nil
 	}
 	r := FindProvider(ctx, env, active)
-	if r == nil || r.CLI == nil || r.CLI.Setup == nil {
+	if r == nil {
+		return nil
+	}
+	cli := r.CLI
+	if cli == nil && r.Source != SourceBundled && r.Dir != "" {
+		cli = hostedProviderCLI(ctx, env, r)
+	}
+	if cli == nil || cli.Setup == nil {
 		return nil
 	}
 	desc := r.Description()
@@ -724,7 +737,7 @@ func DiscoverPluginCLICommands(ctx context.Context, env *tools.Env) []PluginCLIC
 	if help == "" {
 		help = fmt.Sprintf("Manage %s memory plugin", active)
 	}
-	return []PluginCLICommand{{Name: active, Help: help, Description: desc, Setup: r.CLI.Setup, Handler: r.CLI.Handler, Plugin: active}}
+	return []PluginCLICommand{{Name: active, Help: help, Description: desc, Setup: cli.Setup, Handler: cli.Handler, Plugin: active}}
 }
 
 // Provider registry registers nothing at import, bundled providers register from their own files

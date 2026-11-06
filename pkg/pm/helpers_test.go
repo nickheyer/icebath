@@ -33,6 +33,7 @@ func isolateHome(t *testing.T) string {
 	}
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	t.Setenv(home.EnvHome, h)
 	t.Setenv(EnvRuntimeDir, "")
 	os.Unsetenv(EnvRuntimeDir)

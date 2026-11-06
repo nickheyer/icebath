@@ -111,7 +111,7 @@ func purgeProfileIdentity(ctx context.Context, canon string, liveMux bool) bool 
 		}
 		db, err := acquireStateDB(ctx, dbPath)
 		if err == nil {
-			err = db.PurgeProfileState(canon)
+			_, err = db.PurgeProfileState(canon)
 			state.ReleaseOrClose(db)
 		}
 		if err != nil {
@@ -196,7 +196,7 @@ func migrateProfileIdentity(ctx context.Context, oldCanon, newCanon string, live
 		}
 		db, err := acquireStateDB(ctx, dbPath)
 		if err == nil {
-			err = db.RekeyProfileState(oldCanon, newCanon)
+			_, err = db.RekeyProfileState(oldCanon, newCanon)
 			state.ReleaseOrClose(db)
 		}
 		if err != nil {

@@ -16,7 +16,7 @@ func attendedTestAgent(t *testing.T, platform string, vars map[string]string) *A
 	if vars != nil {
 		tools.BindSessionContext(env, vars)
 	}
-	return &AIAgent{Platform: platform, Env: env}
+	return &AIAgent{platform: platform, env: env}
 }
 
 func TestSessionSourceSets(t *testing.T) {

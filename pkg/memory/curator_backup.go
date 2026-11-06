@@ -146,10 +146,12 @@ var curatorBackupConfig = func(ctx context.Context) map[string]any {
 	return curatorConfigSection(ctx, "curator backup", curatorBackupLog(), "curator", "backup")
 }
 
-// Snapshot id clock and snapshot entry the rollback and curator run reach, replaced by tests
+// Snapshot id clock, snapshot entry, move and rename the rollback and curator run reach, replaced by tests
 var (
 	curatorUTCIDNow       = curatorUTCID
 	curatorSnapshotSkills = SnapshotSkills
+	curatorMove           = pyfs.Move
+	curatorRename         = os.Rename
 )
 
 // Snapshot before mutating passes, on unless curator.backup.enabled is false
@@ -595,7 +597,7 @@ func curatorRestoreExcludedSubtrees(staged, skillsDir string) []string {
 			rel, _ := filepath.Rel(staged, src)
 			dest := filepath.Join(skillsDir, rel)
 			if st, err := os.Stat(filepath.Dir(dest)); err == nil && st.IsDir() && !curatorExists(dest) {
-				if _, err := pyfs.Move(src, dest); err != nil {
+				if _, err := curatorMove(src, dest); err != nil {
 					failed = append(failed, rel)
 					curatorBackupLog().Debug(fmt.Sprintf("Could not restore excluded entry %s: %v", src, err))
 				}
@@ -618,7 +620,7 @@ func curatorRetainStaging(staged string, unrestored []string, reason string) (bo
 		kept = filepath.Join(parent, fmt.Sprintf("%s-%d", base, n))
 	}
 	note := ""
-	if err := os.Rename(staged, kept); err != nil {
+	if err := curatorRename(staged, kept); err != nil {
 		curatorBackupLog().Warn(fmt.Sprintf("Could not retain rollback staging dir %s: %v", staged, err))
 		kept, note = staged, fmt.Sprintf(" (rename failed: %v; move it before the next curator run or it will be pruned)", err)
 	}
@@ -637,7 +639,7 @@ func curatorUnstage(moved []curatorMoved) []string {
 			failed = append(failed, filepath.Base(m.orig))
 			continue
 		}
-		if _, err := pyfs.Move(m.dest, m.orig); err != nil {
+		if _, err := curatorMove(m.dest, m.orig); err != nil {
 			failed = append(failed, filepath.Base(m.orig))
 		}
 	}
@@ -737,7 +739,7 @@ func RollbackCuratorSnapshot(ctx context.Context, backupID string) (bool, string
 				continue
 			}
 			orig, dest := filepath.Join(skillsDir, e.Name()), filepath.Join(staged, e.Name())
-			if _, err = pyfs.Move(orig, dest); err != nil {
+			if _, err = curatorMove(orig, dest); err != nil {
 				break
 			}
 			moved = append(moved, curatorMoved{orig, dest})
@@ -788,8 +790,8 @@ func RollbackCuratorSnapshot(ctx context.Context, backupID string) (bool, string
 	return true, msg, target
 }
 
-// Extracts the gzip snapshot through the tarfile data filter
-func curatorExtractArchive(archive, dest string) error {
+// Extracts the gzip snapshot through the tarfile data filter, replaced by tests that fail mid extract
+var curatorExtractArchive = func(archive, dest string) error {
 	f, err := os.Open(archive)
 	if err != nil {
 		return err

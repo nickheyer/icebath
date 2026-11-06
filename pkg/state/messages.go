@@ -291,37 +291,6 @@ func insertMessages(tx *Tx, sessionID string, msgs []*Message) ([]int64, error) 
 	return ids, nil
 }
 
-// Appends one message to a session, returning its row id
-func (d *DB) AppendMessage(sessionID string, m *Message) (int64, error) {
-	ids, err := d.AppendMessages(sessionID, []*Message{m})
-	if err != nil {
-		return 0, err
-	}
-	return ids[0], nil
-}
-
-// Appends messages to a session in one transaction, returning their row ids
-func (d *DB) AppendMessages(sessionID string, msgs []*Message) ([]int64, error) {
-	var ids []int64
-	err := d.transcriptWrite(func(tx *Tx) error {
-		var endReason sql.NullString
-		var endedAt sql.NullFloat64
-		err := tx.QueryRow("SELECT ended_at, end_reason FROM sessions WHERE id = ?", sessionID).Scan(&endedAt, &endReason)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("session %s does not exist", sessionID)
-		}
-		if err != nil {
-			return err
-		}
-		if endedAt.Valid && endReason.String == EndReasonCompression {
-			return &CompressionSessionClosedError{SessionID: sessionID}
-		}
-		ids, err = insertMessages(tx, sessionID, msgs)
-		return err
-	})
-	return ids, err
-}
-
 const messageSelect = `id, session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason,
 	reasoning, reasoning_content, reasoning_details, codex_reasoning_items, codex_message_items, platform_message_id,
 	observed, _compressed_summary, active, compacted, api_content, display_kind, display_metadata, message_uid,
@@ -431,105 +400,6 @@ func pairToolCallUIDs(msgs []*Message) {
 			}
 		}
 	}
-}
-
-// Live messages of a session, the exact transcript the model is fed
-func (d *DB) Conversation(sessionID string) ([]*Message, error) {
-	return d.fetchMessages([]string{sessionID}, activeClause(false, false))
-}
-
-// Every stored row of a session including rewound and compacted ones
-func (d *DB) AllMessages(sessionID string) ([]*Message, error) {
-	return d.fetchMessages([]string{sessionID}, "")
-}
-
-// Messages the person sees, live rows plus compacted history with carried copies shown once
-func (d *DB) DisplayMessages(sessionID string) ([]*Message, error) {
-	rows, err := d.fetchMessages([]string{sessionID}, activeClause(false, true))
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	var out []*Message
-	for _, m := range rows {
-		if m.DisplayMetadata != nil {
-			if v, ok := m.DisplayMetadata[ModelOnlyKey]; ok && v != false && v != nil && v != 0 {
-				continue
-			}
-		}
-		key := displayIdentity(m)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		out = append(out, m)
-	}
-	return out, nil
-}
-
-// Identity collapsing a message and its carried copies for display
-func displayIdentity(m *Message) string {
-	if m.MessageUID != "" {
-		return "uid:" + m.MessageUID
-	}
-	calls, _ := json.Marshal(m.ToolCalls)
-	return fmt.Sprintf("%s|%s|%.3f|%s|%s", m.Role, ContentText(m.Content), m.Timestamp, m.ToolCallID, calls)
-}
-
-// Highest active row id of a session, zero when empty
-func (d *DB) ActiveWatermark(sessionID string) (int64, error) {
-	var mark sql.NullInt64
-	err := d.read(func(q querier) error {
-		return q.QueryRow("SELECT MAX(id) FROM messages WHERE session_id = ? AND active = 1", sessionID).Scan(&mark)
-	})
-	return mark.Int64, err
-}
-
-// Role of the newest live row of a session, empty when none
-func (d *DB) LatestRole(sessionID string) (string, error) {
-	var role string
-	err := d.read(func(q querier) error {
-		return q.QueryRow("SELECT role FROM messages WHERE session_id = ? AND active = 1 ORDER BY id DESC LIMIT 1", sessionID).Scan(&role)
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return role, err
-}
-
-// Number of live rows of a session
-func (d *DB) ActiveMessageCount(sessionID string) (int, error) {
-	var n int
-	err := d.read(func(q querier) error {
-		return q.QueryRow("SELECT COUNT(*) FROM messages WHERE session_id = ? AND active = 1", sessionID).Scan(&n)
-	})
-	return n, err
-}
-
-// Replaces the live transcript of a session, old rows kept as rewound history
-func (d *DB) ReplaceMessages(sessionID string, msgs []*Message) error {
-	return d.transcriptWrite(func(tx *Tx) error {
-		if _, err := tx.Exec("UPDATE messages SET active = 0 WHERE session_id = ? AND active = 1", sessionID); err != nil {
-			return err
-		}
-		for _, m := range msgs {
-			m.RowID, m.Persisted = 0, false
-		}
-		if _, err := insertMessages(tx, sessionID, msgs); err != nil {
-			return err
-		}
-		return resetCounters(tx, sessionID)
-	})
-}
-
-// Recomputes the row counters of a session from its live rows
-func resetCounters(tx *Tx, sessionID string) error {
-	_, err := tx.Exec(`UPDATE sessions SET
-		message_count = (SELECT COUNT(*) FROM messages m WHERE m.session_id = sessions.id AND m.active = 1),
-		tool_call_count = (SELECT COALESCE(SUM(CASE WHEN m.tool_calls IS NULL THEN 0 ELSE json_array_length(m.tool_calls) END), 0)
-			FROM messages m WHERE m.session_id = sessions.id AND m.active = 1 AND m.role = 'assistant')
-		WHERE id = ?`, sessionID)
-	return err
 }
 
 // Result of an in place compaction
@@ -694,49 +564,6 @@ func (d *DB) RewindToMessage(sessionID string, targetRowID int64) (RewindResult,
 	return result, err
 }
 
-// Deactivates one live row, reporting whether it existed
-func (d *DB) DeactivateMessage(sessionID string, rowID int64) (bool, error) {
-	changed := false
-	err := d.write(func(tx *Tx) error {
-		res, err := tx.Exec("UPDATE messages SET active = 0, compacted = 0 WHERE session_id = ? AND id = ? AND active = 1", sessionID, rowID)
-		if err != nil {
-			return err
-		}
-		n, _ := res.RowsAffected()
-		changed = n > 0
-		return resetCounters(tx, sessionID)
-	})
-	return changed, err
-}
-
-// Rewrites the content of a user row in place
-func (d *DB) SetMessageContent(sessionID string, rowID int64, content any) error {
-	return d.write(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE messages SET content = ? WHERE session_id = ? AND id = ?", encodeContent(content), sessionID, rowID)
-		return err
-	})
-}
-
-// Row id of the newest live row of a role, zero when none
-func (d *DB) LatestRowID(sessionID, role string) (int64, error) {
-	var id sql.NullInt64
-	err := d.read(func(q querier) error {
-		return q.QueryRow("SELECT MAX(id) FROM messages WHERE session_id = ? AND active = 1 AND role = ?", sessionID, role).Scan(&id)
-	})
-	return id.Int64, err
-}
-
-// Deletes every row of a session and zeroes its counters
-func (d *DB) ClearMessages(sessionID string) error {
-	return d.write(func(tx *Tx) error {
-		if _, err := tx.Exec("DELETE FROM messages WHERE session_id = ?", sessionID); err != nil {
-			return err
-		}
-		_, err := tx.Exec("UPDATE sessions SET message_count = 0, tool_call_count = 0 WHERE id = ?", sessionID)
-		return err
-	})
-}
-
 // Rows of a session with the rows around one row id, for search context
 func (d *DB) MessagesAround(sessionID string, rowID int64, window int) ([]*Message, error) {
 	var out []*Message
@@ -766,4 +593,14 @@ var messageColumns = []string{
 	"codex_message_items", "platform_message_id", "observed", "_compressed_summary", "active", "compacted",
 	"api_content", "display_kind", "display_metadata", "message_uid", "absorbed_message_uids",
 	"tool_call_uids", "tool_call_uid",
+}
+
+// Recomputes the session counters from its active rows inside the transaction
+func resetCounters(tx *Tx, sessionID string) error {
+	_, err := tx.Exec(`UPDATE sessions SET
+		message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?1 AND active = 1),
+		tool_call_count = (SELECT COALESCE(SUM(CASE WHEN json_valid(tool_calls) AND json_type(tool_calls) = 'array'
+			THEN json_array_length(tool_calls) ELSE 0 END), 0) FROM messages WHERE session_id = ?1 AND active = 1)
+		WHERE id = ?1`, sessionID)
+	return err
 }

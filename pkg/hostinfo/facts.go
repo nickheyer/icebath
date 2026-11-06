@@ -258,7 +258,12 @@ func isDigits(s string) bool {
 var gpuClassOnce = cached(func() string { return gpuClassImpl() })
 
 // GPUClass is nvidia, amd, intel, apple_silicon, none, or unknown
-func GPUClass() string { return gpuClassOnce() }
+func GPUClass() string {
+	if p := gpuClassPin.Load(); p != nil {
+		return *p
+	}
+	return gpuClassOnce()
+}
 
 const (
 	nvidiaProcGPUs  = "/proc/driver/nvidia/gpus"
@@ -308,4 +313,9 @@ var nvidiaGPUsOnce = cached(func() []NvidiaGPU { return nvidiaGPUsImpl() })
 func NvidiaGPUs() []NvidiaGPU { return nvidiaGPUsOnce() }
 
 // InteractiveSession reports whether this process can reach an interactive user session
-func InteractiveSession() bool { return interactiveSessionImpl() }
+func InteractiveSession() bool {
+	if p := interactiveSessionPin.Load(); p != nil {
+		return *p
+	}
+	return interactiveSessionImpl()
+}

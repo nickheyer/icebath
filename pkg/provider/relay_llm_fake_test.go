@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -48,7 +49,13 @@ type relayLLMFake struct {
 	pops              []relayLLMFakePop
 	requestIntercepts []relayLLMFakeRequestIntercept
 	streamIntercepts  []relayLLMFakeStreamIntercept
+	subscribers       []relayLLMFakeSubscriber
 	relay             *tools.NemoRelay
+}
+
+type relayLLMFakeSubscriber struct {
+	name     string
+	callback func(event *tools.RelayEventView)
 }
 
 func newRelayLLMFake() *relayLLMFake {
@@ -57,8 +64,22 @@ func newRelayLLMFake() *relayLLMFake {
 		Scope:         &tools.NemoRelayScope{Push: f.push, Pop: f.pop, GetHandle: func(context.Context) (any, error) { return f.top(), nil }},
 		ScopeType:     tools.NemoRelayScopeTypes{Agent: "agent", Function: "function"},
 		GetScopeStack: f.scopeStack,
-		Subscribers:   &tools.NemoRelaySubscribers{FlushAsync: func(context.Context) (any, error) { return nil, nil }},
-		LLM:           &tools.NemoRelayLLM{Execute: f.execute, StreamExecute: f.streamExecute},
+		Subscribers: &tools.NemoRelaySubscribers{Register: f.subscribe, Deregister: f.unsubscribe, Flush: func() error { return nil },
+			FlushAsync: func(context.Context) (any, error) { return nil, nil }},
+		LLM: &tools.NemoRelayLLM{Execute: f.execute, StreamExecute: f.streamExecute,
+			Call: func(ctx context.Context, name string, request any, kwargs map[string]any) (any, error) {
+				return f.manualCall(ctx, "llm", name, request, kwargs)
+			},
+			CallEnd: func(ctx context.Context, handle, response any, kwargs map[string]any) error {
+				return f.manualCallEnd(ctx, "llm", handle, response, kwargs)
+			}},
+		Tools: &tools.NemoRelayTools{
+			Call: func(ctx context.Context, name string, args map[string]any, kwargs map[string]any) (any, error) {
+				return f.manualCall(ctx, "tool", name, args, kwargs)
+			},
+			CallEnd: func(ctx context.Context, handle, result any, kwargs map[string]any) error {
+				return f.manualCallEnd(ctx, "tool", handle, result, kwargs)
+			}},
 		LLMRequest: func(headers, content map[string]any) (any, error) {
 			return &tools.RelayLLMRequest{Headers: headers, Content: content}, nil
 		},
@@ -69,6 +90,64 @@ func newRelayLLMFake() *relayLLMFake {
 		},
 	}
 	return f
+}
+
+// Registers a subscriber by name, a repeated name replacing the earlier callback in place
+func (f *relayLLMFake) subscribe(name string, callback func(event *tools.RelayEventView)) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.subscribers {
+		if f.subscribers[i].name == name {
+			f.subscribers[i].callback = callback
+			return nil
+		}
+	}
+	f.subscribers = append(f.subscribers, relayLLMFakeSubscriber{name, callback})
+	return nil
+}
+
+// Removes the named subscriber
+func (f *relayLLMFake) unsubscribe(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.subscribers {
+		if f.subscribers[i].name == name {
+			f.subscribers = append(f.subscribers[:i], f.subscribers[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+// Delivers one event to every subscriber in registration order
+func (f *relayLLMFake) emit(event *tools.RelayEventView) {
+	f.mu.Lock()
+	subs := append([]relayLLMFakeSubscriber(nil), f.subscribers...)
+	f.mu.Unlock()
+	for _, s := range subs {
+		s.callback(event)
+	}
+}
+
+// Opens a manual llm or tool call handle under the current top scope and emits its start event
+func (f *relayLLMFake) manualCall(_ context.Context, category, name string, data any, kwargs map[string]any) (any, error) {
+	f.mu.Lock()
+	f.seq++
+	h := &relayLLMFakeHandle{name: name, seq: f.seq}
+	f.mu.Unlock()
+	f.emit(&tools.RelayEventView{Kind: "start", Name: name, Category: category, ScopeCategory: category, Metadata: kwargs["metadata"], Data: data})
+	return h, nil
+}
+
+// Emits the end event of a manual llm or tool call handle with its response
+func (f *relayLLMFake) manualCallEnd(_ context.Context, category string, handle, data any, kwargs map[string]any) error {
+	h, _ := handle.(*relayLLMFakeHandle)
+	name := ""
+	if h != nil {
+		name = h.name
+	}
+	f.emit(&tools.RelayEventView{Kind: "end", Name: name, Category: category, ScopeCategory: category, Metadata: kwargs["metadata"], Data: data})
+	return nil
 }
 
 // Typed codec double, the anthropic one dropping cache_control like a typed model that cannot carry it
@@ -231,7 +310,9 @@ func (f *relayLLMFake) streamExecute(_ context.Context, operation string, reques
 	intercepts := append([]relayLLMFakeStreamIntercept(nil), f.streamIntercepts...)
 	f.mu.Unlock()
 	sort.SliceStable(intercepts, func(i, j int) bool { return intercepts[i].priority > intercepts[j].priority })
-	chain := relayLLMFakeNext(func(ctx context.Context, r *tools.RelayLLMRequest) (*tools.RelayAsyncIterator, error) { return provider(ctx, r) })
+	chain := relayLLMFakeNext(func(ctx context.Context, r *tools.RelayLLMRequest) (*tools.RelayAsyncIterator, error) {
+		return provider(ctx, r)
+	})
 	sctx := relayLLMFakeStreamContext{responseCodec: kwargs["response_codec"]}
 	for _, ic := range intercepts {
 		inner, ic := chain, ic
@@ -442,4 +523,24 @@ func (r *relayLLMRawStream) Close() error {
 	defer r.mu.Unlock()
 	r.closeCalls++
 	return r.closeErr
+}
+
+func TestRelayLLMFakeSubscribersSeeManualCalls(t *testing.T) {
+	f := newRelayLLMFake()
+	var seen []string
+	if err := f.relay.Subscribers.Register("probe", func(e *tools.RelayEventView) {
+		seen = append(seen, e.Kind.(string)+":"+e.Category.(string)+":"+e.Name.(string))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	h, _ := f.relay.LLM.Call(ctx, "chat", map[string]any{"model": "m"}, map[string]any{"metadata": map[string]any{}})
+	_ = f.relay.LLM.CallEnd(ctx, h, map[string]any{}, map[string]any{})
+	th, _ := f.relay.Tools.Call(ctx, "terminal", map[string]any{}, map[string]any{})
+	_ = f.relay.Tools.CallEnd(ctx, th, "ok", map[string]any{})
+	_ = f.relay.Subscribers.Deregister("probe")
+	_, _ = f.relay.LLM.Call(ctx, "late", nil, map[string]any{})
+	if strings.Join(seen, ",") != "start:llm:chat,end:llm:chat,start:tool:terminal,end:tool:terminal" || f.relay.Subscribers.Flush() != nil {
+		t.Fatalf("seen %v", seen)
+	}
 }

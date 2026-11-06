@@ -360,3 +360,6 @@ func RelaunchStoppedServes(ctx context.Context, token *OrderedObject) error {
 	}
 	return nil
 }
+
+// Hands the update to a fresh takeover child the way stop_for_relaunch() does from tools_config
+func StopForRelaunch(ctx context.Context) error { return stopForRelaunch(ctx, false) }

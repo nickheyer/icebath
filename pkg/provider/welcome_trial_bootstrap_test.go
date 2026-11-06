@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
@@ -47,7 +48,7 @@ func trialBootChat(t *testing.T, env PoolEnv, model string) {
 	if err := db.CreateSession(state.NewSession{ID: "s1", Source: "desktop", Model: model}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.AppendMessage("s1", &state.Message{Role: "user", Content: "hi"}); err != nil {
+	if _, err := db.AppendMessage(context.Background(), "s1", map[string]any{"role": "user", "content": "hi"}, state.AppendGuards{}); err != nil {
 		t.Fatal(err)
 	}
 }

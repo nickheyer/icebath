@@ -5,7 +5,6 @@ package provider
 import (
 	"bytes"
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,27 +13,6 @@ import (
 
 // Linux pids start at 1, the init process has no parent
 const psLowestPID = 1
-
-// Executable from /proc, empty for kernel threads whose exe link is absent
-func psExe(pid int) (string, error) {
-	dir := filepath.Join("/proc", strconv.Itoa(pid))
-	target, err := os.Readlink(filepath.Join(dir, "exe"))
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			if _, lerr := os.Lstat(dir); lerr == nil {
-				return "", nil
-			}
-		}
-		return "", err
-	}
-	target, _, _ = strings.Cut(target, "\x00")
-	if strings.HasSuffix(target, " (deleted)") {
-		if _, err := os.Stat(target); err != nil {
-			target = strings.TrimSuffix(target, " (deleted)")
-		}
-	}
-	return target, nil
-}
 
 // Parent pid from the stat fields after the command name
 func psPPID(pid int) (int, error) {

@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -24,7 +25,7 @@ func migrateHonchoProfileHost(oldName, newName, newDir string) error {
 	legacyOldHost := "icebath." + oldName
 	newHost := "icebath_" + newName
 	candidates := []string{filepath.Join(newDir, "honcho.json"), filepath.Join(profiles.DefaultHome(), "honcho.json")}
-	if accountHome, err := userHomeDir(); err == nil {
+	if accountHome, err := home.UserHome(); err == nil {
 		candidates = append(candidates, filepath.Join(accountHome, ".honcho", "config.json"))
 	}
 	seen := map[string]bool{}

@@ -55,6 +55,17 @@ type ChannelError struct{ Msg string }
 
 func (e *ChannelError) Error() string { return e.Msg }
 
+type ValueError struct{ Msg string }
+
+func (e *ValueError) Error() string { return e.Msg }
+
+// Reports whether err is of the ValueError family, ChannelError included
+func IsValueError(err error) bool {
+	var channel *ChannelError
+	var value *ValueError
+	return errors.As(err, &channel) || errors.As(err, &value)
+}
+
 // Returns a lowercase hyphenated channel name of at most 32 characters that names no reserved device
 func ValidateChannelName(value any) (string, error) {
 	name, ok := value.(string)
@@ -86,10 +97,10 @@ func CanaryTimestamp(tag any) *string {
 func CanaryTagForDate(version, dateUTC string) (string, error) {
 	core := strings.TrimPrefix(version, "v")
 	if !updaterecord.StableTagRE.MatchString("v" + core) {
-		return "", fmt.Errorf("invalid stable version for canary: %s", pyrepr.Repr(version))
+		return "", &ValueError{Msg: "invalid stable version for canary: " + pyrepr.Repr(version)}
 	}
 	if !canaryStampRE.MatchString(dateUTC) {
-		return "", fmt.Errorf("invalid canary UTC timestamp: %s", pyrepr.Repr(dateUTC))
+		return "", &ValueError{Msg: "invalid canary UTC timestamp: " + pyrepr.Repr(dateUTC)}
 	}
 	return "v" + core + "+canary." + dateUTC, nil
 }
@@ -168,7 +179,7 @@ func DefaultChannel(projectRoot string) (string, error) {
 	if stampGet(stamp, "source") == "channel-build" {
 		request, ok := stampGet(stamp, "channelBuild").(*pyjson.Object)
 		if !ok {
-			return "", errors.New("Channel bundle has no baked subscription")
+			return "", &ValueError{Msg: "Channel bundle has no baked subscription"}
 		}
 		return ValidateChannelName(stampGet(request, "channel"))
 	}
@@ -251,7 +262,7 @@ func ResolveUpdateChannel(cfg any, projectRoot string) (string, error) {
 func SetInstallChannel(ctx context.Context, channel, projectRoot string) (string, error) {
 	root := rootOrInstall(projectRoot)
 	if IsCommitBuild(root) {
-		return "", errors.New(CommitBuildUpdateMessage)
+		return "", &ValueError{Msg: CommitBuildUpdateMessage}
 	}
 	channel, err := ValidateChannelName(channel)
 	if err != nil {
@@ -263,10 +274,10 @@ func SetInstallChannel(ctx context.Context, channel, projectRoot string) (string
 		if !pyrepr.Truthy(distribution) {
 			distribution = "an external steward"
 		}
-		return "", fmt.Errorf("channels don't apply here; updates are owned by %s", pyrepr.Str(distribution))
+		return "", &ValueError{Msg: "channels don't apply here; updates are owned by " + pyrepr.Str(distribution)}
 	}
 	sha16 := InstallID(root)
-	if _, err := writeChannelRecord(ctx, sha16, root, channel, nil, ""); err != nil {
+	if _, err := writeChannelRecord(ctx, sha16, root, channel, nil, false, ""); err != nil {
 		return "", err
 	}
 	return sha16, nil
@@ -284,6 +295,9 @@ func HandleMetadataArgs(ctx context.Context, stdout io.Writer, installIDFlag boo
 	channel := *setChannel
 	key, err := SetInstallChannel(ctx, channel, projectRoot)
 	if err != nil {
+		if !IsValueError(err) {
+			return true, err
+		}
 		fmt.Fprintln(stdout, err.Error())
 		return true, &pm.SystemExit{Code: 2}
 	}
@@ -334,21 +348,55 @@ func AdoptRetiredChannel(ctx context.Context, request map[string]any) (bool, err
 	if !ok || retirement == nil {
 		return false, nil
 	}
-	fields, _ := retirement.(map[string]any)
-	source, _ := request["source"].(string)
-	homeDir, _ := request["home"].(string)
-	destination, err := ValidateChannelName(fields["destination"])
+	fields, ok := retirement.(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(retirement))
+	}
+	source, err := requestString(request, "source")
 	if err != nil {
 		return false, err
 	}
-	original, _ := fields["original"].(map[string]any)
-	if original == nil {
-		original = map[string]any{}
+	destinationValue, ok := fields["destination"]
+	if !ok {
+		return false, &KeyError{Key: "destination"}
 	}
-	return writeChannelRecord(ctx, InstallID(source), source, destination, original, filepath.Join(homeDir, "config.yaml"))
+	destination, err := ValidateChannelName(destinationValue)
+	if err != nil {
+		return false, err
+	}
+	originalValue, ok := fields["original"]
+	if !ok {
+		return false, &KeyError{Key: "original"}
+	}
+	homeDir, err := requestString(request, "home")
+	if err != nil {
+		return false, err
+	}
+	sha16 := pm.InstallKey(source)
+	if source == "" {
+		sha16 = pm.InstallKey(".")
+	}
+	return writeChannelRecord(ctx, sha16, source, destination, originalValue, true, filepath.Join(homeDir, "config.yaml"))
 }
 
-func writeChannelRecord(ctx context.Context, sha16, path, channel string, expected map[string]any, configPath string) (bool, error) {
+type KeyError struct{ Key string }
+
+func (e *KeyError) Error() string { return pyrepr.Repr(e.Key) }
+
+// Returns the string request[key] holds, the KeyError subscripting raises when it is absent
+func requestString(request map[string]any, key string) (string, error) {
+	value, ok := request[key]
+	if !ok {
+		return "", &KeyError{Key: key}
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("expected str, bytes or os.PathLike object, not %s", pyrepr.TypeName(value))
+	}
+	return text, nil
+}
+
+func writeChannelRecord(ctx context.Context, sha16, path, channel string, expected any, compare bool, configPath string) (bool, error) {
 	if configPath == "" {
 		configPath = home.ConfigPath(home.Dir(ctx))
 	}
@@ -357,11 +405,11 @@ func writeChannelRecord(ctx context.Context, sha16, path, channel string, expect
 		return false, err
 	}
 	defer release()
-	return writeChannelRecordLocked(locked, sha16, path, channel, expected, configPath)
+	return writeChannelRecordLocked(locked, sha16, path, channel, expected, compare, configPath)
 }
 
 // Writes update.installs.<sha16> keeping every other key, refusing malformed update sections
-func writeChannelRecordLocked(ctx context.Context, sha16, path, channel string, expected map[string]any, configPath string) (bool, error) {
+func writeChannelRecordLocked(ctx context.Context, sha16, path, channel string, expected any, compare bool, configPath string) (bool, error) {
 	existing, err := config.RequireReadableConfigBeforeWrite(ctx, configPath)
 	if err != nil {
 		return false, err
@@ -369,20 +417,21 @@ func writeChannelRecordLocked(ctx context.Context, sha16, path, channel string, 
 	update, present := existing["update"]
 	updateMap, isMap := update.(map[string]any)
 	if present && update != nil && !isMap {
-		return false, errors.New("config key 'update' is not a mapping")
+		return false, &ValueError{Msg: "config key 'update' is not a mapping"}
 	}
 	var installs map[string]any
 	if isMap {
 		value, ok := updateMap["installs"]
 		installs, isMap = value.(map[string]any)
 		if ok && value != nil && !isMap {
-			return false, errors.New("config key 'update.installs' is not a mapping")
+			return false, &ValueError{Msg: "config key 'update.installs' is not a mapping"}
 		}
 	}
-	record, _ := installs[sha16].(map[string]any)
-	if expected != nil {
-		current := record
-		if len(current) == 0 {
+	raw := installs[sha16]
+	record, _ := raw.(map[string]any)
+	if compare && expected != nil {
+		current := raw
+		if !pyrepr.Truthy(current) {
 			current = map[string]any{}
 		}
 		if !reflect.DeepEqual(current, expected) {

@@ -133,15 +133,18 @@ func TestManagerOwnerHydrationRetriesOncePerInterval(t *testing.T) {
 	now := time.Unix(5000, 0)
 	managerNow = func() time.Time { return now }
 	t.Cleanup(func() { managerNow = time.Now })
-	before := shimHydrateCalls
+	calls := 0
+	prev := hydrateSecretSources
+	hydrateSecretSources = func(string) bool { calls++; return false }
+	t.Cleanup(func() { hydrateSecretSources = prev })
 	ownerSecretMapping(dir)
 	ownerSecretMapping(dir)
-	if shimHydrateCalls-before != 1 {
-		t.Fatalf("hydrated %d times inside the interval", shimHydrateCalls-before)
+	if calls != 1 {
+		t.Fatalf("hydrated %d times inside the interval", calls)
 	}
 	now = now.Add(hydrateRetryInterval)
 	ownerSecretMapping(dir)
-	if shimHydrateCalls-before != 2 {
+	if calls != 2 {
 		t.Fatal("hydration must retry after the interval")
 	}
 }

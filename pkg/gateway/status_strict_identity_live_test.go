@@ -154,6 +154,9 @@ func writePreviousGatewayPidFile(t *testing.T, home string, pid int) {
 	default:
 		t.Fatalf("start_time %T", raw)
 	}
+	if live, isInt := statusProcessStartTime(pid).(int64); isInt && live < start {
+		start = live
+	}
 	record.Set("start_time", max(int64(1), start-500))
 	writeRecord(t, path, record)
 }

@@ -53,6 +53,8 @@ type unparser struct {
 	ignores   map[int]string
 	indent    int
 	inTryStar bool
+	// inInteractive joins top level simple statements with semicolons as visit_Interactive does
+	inInteractive bool
 }
 
 // UnparseError is the ValueError ast.unparse raises for a node it cannot render
@@ -87,6 +89,18 @@ func (u *unparser) visit(n *Node) string {
 func (u *unparser) write(s ...string) { u.out = append(u.out, s...) }
 
 func (u *unparser) fill(text string) {
+	if u.inInteractive && u.indent == 0 {
+		if len(u.out) > 0 {
+			u.write("; ")
+		}
+		u.write(text)
+		return
+	}
+	u.fillBlock(text)
+}
+
+// Starts a new indented line even at the top level of interactive input, as fill with allow_semicolon False
+func (u *unparser) fillBlock(text string) {
 	if len(u.out) > 0 {
 		u.write("\n")
 	}
@@ -189,7 +203,7 @@ func rawDocstring(n *Node) *Node {
 
 func (u *unparser) docstringAndBody(n *Node) {
 	if d := rawDocstring(n); d != nil {
-		u.fill("")
+		u.fillBlock("")
 		if k, _ := d.Str("kind"); k == "u" {
 			u.write("u")
 		}
@@ -220,7 +234,9 @@ func (u *unparser) traverse(n *Node) {
 		u.docstringAndBody(n)
 		u.ignores = map[int]string{}
 	case "Interactive":
-		u.traverseAll(n.Children("body"))
+		u.inInteractive = true
+		u.docstringAndBody(n)
+		u.inInteractive = false
 	case "Expression":
 		u.traverse(n.Child("body"))
 	case "FunctionType":
@@ -349,23 +365,23 @@ func (u *unparser) traverse(n *Node) {
 	case "Try", "TryStar":
 		prev := u.inTryStar
 		u.inTryStar = n.Type == "TryStar"
-		u.fill("try")
+		u.fillBlock("try")
 		u.block("", func() { u.traverseAll(n.Children("body")) })
 		u.traverseAll(n.Children("handlers"))
 		if o := n.Children("orelse"); len(o) > 0 {
-			u.fill("else")
+			u.fillBlock("else")
 			u.block("", func() { u.traverseAll(o) })
 		}
 		if f := n.Children("finalbody"); len(f) > 0 {
-			u.fill("finally")
+			u.fillBlock("finally")
 			u.block("", func() { u.traverseAll(f) })
 		}
 		u.inTryStar = prev
 	case "ExceptHandler":
 		if u.inTryStar {
-			u.fill("except*")
+			u.fillBlock("except*")
 		} else {
-			u.fill("except")
+			u.fillBlock("except")
 		}
 		if t := n.Child("type"); t != nil {
 			u.write(" ")
@@ -379,11 +395,11 @@ func (u *unparser) traverse(n *Node) {
 	case "ClassDef":
 		u.maybeNewline()
 		for _, d := range n.Children("decorator_list") {
-			u.fill("@")
+			u.fillBlock("@")
 			u.traverse(d)
 		}
 		name, _ := n.Str("name")
-		u.fill("class " + name)
+		u.fillBlock("class " + name)
 		u.typeParams(n.Children("type_params"))
 		bases, kws := n.Children("bases"), n.Children("keywords")
 		u.delimitIf("(", ")", len(bases) > 0 || len(kws) > 0, func() {
@@ -393,7 +409,7 @@ func (u *unparser) traverse(n *Node) {
 	case "FunctionDef", "AsyncFunctionDef":
 		u.maybeNewline()
 		for _, d := range n.Children("decorator_list") {
-			u.fill("@")
+			u.fillBlock("@")
 			u.traverse(d)
 		}
 		prefix := "def"
@@ -401,7 +417,7 @@ func (u *unparser) traverse(n *Node) {
 			prefix = "async def"
 		}
 		name, _ := n.Str("name")
-		u.fill(prefix + " " + name)
+		u.fillBlock(prefix + " " + name)
 		u.typeParams(n.Children("type_params"))
 		u.write("(")
 		u.traverse(n.Child("args"))
@@ -435,9 +451,9 @@ func (u *unparser) traverse(n *Node) {
 		u.traverse(n.Child("value"))
 	case "For", "AsyncFor":
 		if n.Type == "For" {
-			u.fill("for ")
+			u.fillBlock("for ")
 		} else {
-			u.fill("async for ")
+			u.fillBlock("async for ")
 		}
 		u.setPrec(precTuple, n.Child("target"))
 		u.traverse(n.Child("target"))
@@ -445,36 +461,36 @@ func (u *unparser) traverse(n *Node) {
 		u.traverse(n.Child("iter"))
 		u.block(u.typeComment(n), func() { u.traverseAll(n.Children("body")) })
 		if o := n.Children("orelse"); len(o) > 0 {
-			u.fill("else")
+			u.fillBlock("else")
 			u.block("", func() { u.traverseAll(o) })
 		}
 	case "If":
-		u.fill("if ")
+		u.fillBlock("if ")
 		u.traverse(n.Child("test"))
 		u.block("", func() { u.traverseAll(n.Children("body")) })
 		for o := n.Children("orelse"); len(o) == 1 && o[0].Is("If"); o = n.Children("orelse") {
 			n = o[0]
-			u.fill("elif ")
+			u.fillBlock("elif ")
 			u.traverse(n.Child("test"))
 			u.block("", func() { u.traverseAll(n.Children("body")) })
 		}
 		if o := n.Children("orelse"); len(o) > 0 {
-			u.fill("else")
+			u.fillBlock("else")
 			u.block("", func() { u.traverseAll(o) })
 		}
 	case "While":
-		u.fill("while ")
+		u.fillBlock("while ")
 		u.traverse(n.Child("test"))
 		u.block("", func() { u.traverseAll(n.Children("body")) })
 		if o := n.Children("orelse"); len(o) > 0 {
-			u.fill("else")
+			u.fillBlock("else")
 			u.block("", func() { u.traverseAll(o) })
 		}
 	case "With", "AsyncWith":
 		if n.Type == "With" {
-			u.fill("with ")
+			u.fillBlock("with ")
 		} else {
-			u.fill("async with ")
+			u.fillBlock("async with ")
 		}
 		u.interleave(", ", n.Children("items"), u.traverse)
 		u.block(u.typeComment(n), func() { u.traverseAll(n.Children("body")) })
@@ -681,7 +697,7 @@ func (u *unparser) traverse(n *Node) {
 			u.traverse(st)
 		}
 	case "Match":
-		u.fill("match ")
+		u.fillBlock("match ")
 		u.traverse(n.Child("subject"))
 		u.block("", func() { u.traverseAll(n.Children("cases")) })
 	case "arg":
@@ -729,7 +745,7 @@ func (u *unparser) traverse(n *Node) {
 			u.traverse(v)
 		}
 	case "match_case":
-		u.fill("case ")
+		u.fillBlock("case ")
 		u.traverse(n.Child("pattern"))
 		if g := n.Child("guard"); g != nil {
 			u.write(" if ")

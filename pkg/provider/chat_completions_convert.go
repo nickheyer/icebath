@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -1571,20 +1572,42 @@ type capsDiskRow struct {
 
 func (c *capsCatalog) saveDisk(caps map[string]reasoningCaps) {
 	path := reasoningCapsDiskPath()
-	data := map[string]capsDiskEntry{}
+	data := pyjson.NewObject()
 	if raw, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(raw, &data)
+		if v, err := pyjson.Loads(string(raw)); err == nil {
+			if obj, ok := v.(*pyjson.Object); ok {
+				data = obj
+			}
+		}
 	}
-	rows := make(map[string]capsDiskRow, len(caps))
-	for id, cp := range caps {
-		rows[id] = capsDiskRow{Known: cp.known, Supports: cp.supports, Efforts: cp.supportedEfforts, Mandatory: cp.mandatory}
+	ids := make([]string, 0, len(caps))
+	for id := range caps {
+		ids = append(ids, id)
 	}
-	data[c.url] = capsDiskEntry{TS: float64(time.Now().Unix()), Caps: rows}
-	b, err := json.Marshal(data)
-	if err != nil {
-		return
+	sort.Strings(ids)
+	rows := pyjson.NewObject()
+	for _, id := range ids {
+		cp := caps[id]
+		row := pyjson.NewObject()
+		row.Set("known", cp.known)
+		row.Set("supports_reasoning", cp.supports)
+		if len(cp.supportedEfforts) > 0 {
+			efforts := make([]any, len(cp.supportedEfforts))
+			for i, e := range cp.supportedEfforts {
+				efforts[i] = e
+			}
+			row.Set("supported_efforts", efforts)
+		}
+		row.Set("mandatory", cp.mandatory)
+		rows.Set(id, row)
 	}
-	_ = config.AtomicWrite(path, b, 0o600)
+	entry := pyjson.NewObject()
+	entry.Set("ts", float64(time.Now().UnixNano())/1e9)
+	entry.Set("caps", rows)
+	data.Set(c.url, entry)
+	if err := modelsWriteJSONCache(path, data, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
+		catalogLog.Debug(fmt.Sprintf("Failed to save reasoning-caps disk cache: %v", err))
+	}
 }
 
 func (c *capsCatalog) loadDisk() (map[string]reasoningCaps, time.Duration) {
@@ -2003,24 +2026,11 @@ func loadWireSettings(ctx context.Context) wireSettings {
 
 // Per provider request or stale timeout from the providers configuration block
 func configuredProviderTimeout(providers map[string]any, provider, model, modelKey, providerKey string) (time.Duration, bool) {
-	if provider == "" || providers == nil {
-		return 0, false
-	}
-	pc, ok := providers[provider].(map[string]any)
+	f, ok := configuredProviderSeconds(providers, provider, model, modelKey, providerKey)
 	if !ok {
 		return 0, false
 	}
-	if models, ok := pc["models"].(map[string]any); ok && model != "" {
-		if mc, ok := models[model].(map[string]any); ok {
-			if f, ok := config.AsFloat(mc[modelKey]); ok && f > 0 {
-				return time.Duration(f * float64(time.Second)), true
-			}
-		}
-	}
-	if f, ok := config.AsFloat(pc[providerKey]); ok && f > 0 {
-		return time.Duration(f * float64(time.Second)), true
-	}
-	return 0, false
+	return secondsDuration(f), true
 }
 
 // Environment float with an ICEBATH prefixed name, the default when unset or unparseable

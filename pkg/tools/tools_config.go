@@ -11,19 +11,37 @@ import (
 
 // PluginToolsetCatalog is the plugin toolset source pkg/plugins installs at init
 var PluginToolsetCatalog struct {
-	Discover   func(ctx context.Context)
-	Toolsets   func(ctx context.Context) []ConfigurableToolset
-	KeysNowait func(ctx context.Context) map[string]bool
+	Discover       func(ctx context.Context)
+	Toolsets       func(ctx context.Context) []ConfigurableToolset
+	KeysNowait     func(ctx context.Context) map[string]bool
+	PortableNowait func(ctx context.Context) map[string]bool
 }
 
-// GatewayPluginToolsets is the projected plugin toolset list a gateway backed CLI installs, false when not projected
-var GatewayPluginToolsets func() ([]ConfigurableToolset, bool)
+// GatewayPluginToolsets is the projected plugin toolsets and portable MCP servers a gateway backed CLI installs
+var GatewayPluginToolsets func() ([]ConfigurableToolset, map[string]bool, bool)
 
-func projectedPluginToolsets() ([]ConfigurableToolset, bool) {
+func projectedPluginToolsets() ([]ConfigurableToolset, map[string]bool, bool) {
 	if GatewayPluginToolsets == nil {
-		return nil, false
+		return nil, nil, false
 	}
 	return GatewayPluginToolsets()
+}
+
+// Portable plugin MCP server names from the gateway projection, else the plugin catalog without discovery
+func portableMCPServerNames(ctx context.Context) (names map[string]bool) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			toolsConfigLogger().Debug("Failed to include portable MCP servers", "error", rec)
+			names = map[string]bool{}
+		}
+	}()
+	if _, portable, ok := projectedPluginToolsets(); ok {
+		return portable
+	}
+	if PluginToolsetCatalog.PortableNowait == nil {
+		return map[string]bool{}
+	}
+	return PluginToolsetCatalog.PortableNowait(ctx)
 }
 
 // Toolset title without its leading emoji word for GUI surfaces, the raw stripped label otherwise
@@ -66,7 +84,7 @@ func EffectiveConfigurableToolsets(ctx context.Context) (result []ConfigurableTo
 			result = result[:len(ConfigurableToolsets)]
 		}
 	}()
-	projected, ok := projectedPluginToolsets()
+	projected, _, ok := projectedPluginToolsets()
 	if !ok {
 		PluginToolsetCatalog.Discover(ctx)
 		projected = PluginToolsetCatalog.Toolsets(ctx)
@@ -87,7 +105,7 @@ func PluginToolsetKeys(ctx context.Context) (keys map[string]bool) {
 			keys = map[string]bool{}
 		}
 	}()
-	if projected, ok := projectedPluginToolsets(); ok {
+	if projected, _, ok := projectedPluginToolsets(); ok {
 		keys = map[string]bool{}
 		for _, ts := range projected {
 			keys[ts.Key] = true

@@ -79,6 +79,7 @@ func (s *serverTask) refreshTools(ctx context.Context) error {
 	s.deregisterOwned(ctx, namesMissingFrom(old, newNames))
 	s.mu.Lock()
 	s.toolNames = registered
+	s.toolNamesSet = true
 	s.mu.Unlock()
 	var changes []string
 	if added := namesMissingFrom(registered, nameSet(old)); len(added) > 0 {

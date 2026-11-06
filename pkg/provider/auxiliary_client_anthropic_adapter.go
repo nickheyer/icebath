@@ -42,6 +42,9 @@ func auxTranslateAnthropicResponseFormat(anthropicKwargs map[string]any, respons
 	outputConfig["format"] = map[string]any{"type": "json_schema", "schema": schema}
 }
 
+// Messages create seam the tests swap to capture the translated api kwargs
+var auxCreateAnthropicMessageFn = createAnthropicMessage
+
 // Translates chat completions kwargs into one Anthropic Messages request
 type auxAnthropicCompletionsAdapter struct {
 	client  *anthropicSDKClient
@@ -158,7 +161,7 @@ func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[
 	if auxProgressActive(ctx) {
 		hook = auxAnthropicAuxStreamEventHook(ctx)
 	}
-	response, err := createAnthropicMessage(ctx, a.client, anthropicKwargs, hook)
+	response, err := auxCreateAnthropicMessageFn(ctx, a.client, anthropicKwargs, hook)
 	if err != nil {
 		return nil, err
 	}

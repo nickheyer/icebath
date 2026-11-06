@@ -16,4 +16,7 @@ var GatewayStatusHooks struct {
 	ProcessStartTime       func(pid int) (int64, bool)
 	TerminatePid           func(pid int, force bool, expectedStart *int64) error
 	RecordedHomeConflicts  func(record map[string]any, expectedHome string) bool
+	Identify               func(root string) (any, error)
+	MigrateProfileIdentity func(root, oldName, newName string) (any, error)
+	PurgeProfileIdentity   func(root, name string) (any, error)
 }

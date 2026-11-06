@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -108,7 +109,7 @@ func (p *psProcess) raiseIfReused() error {
 }
 
 func (p *psProcess) Exe() (string, error) {
-	exe, err := psExe(p.pid)
+	exe, err := proc.Exe(p.pid)
 	if err != nil {
 		return "", p.classify(err)
 	}

@@ -19,7 +19,7 @@ func (s *Store) notifyProviderJobsChanged() {
 			slog.Debug(fmt.Sprintf("on_jobs_changed notify failed: %v", r))
 		}
 	}()
-	if err := resolveCronScheduler(s).OnJobsChanged(); err != nil {
+	if err := schedulerOnJobsChanged(schedulerResolver(s)); err != nil {
 		slog.Debug(fmt.Sprintf("on_jobs_changed notify failed: %v", err))
 	}
 }
@@ -158,7 +158,7 @@ func (s *Store) createJobWithSchedulerRegistration(spec *pyjson.Object) (*Job, e
 	if !job.Enabled {
 		return job, nil
 	}
-	if err := resolveCronScheduler(s).RegisterJob(job); err != nil {
+	if err := schedulerRegisterJob(schedulerResolver(s), job); err != nil {
 		return nil, &CronSchedulerRegistrationError{Job: job, Cause: err}
 	}
 	return job, nil

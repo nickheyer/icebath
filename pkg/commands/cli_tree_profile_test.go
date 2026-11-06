@@ -15,12 +15,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 )
 
-// Temp account home with the root icebath home inside and quiet gateway hooks
+// Temp user home with the root icebath home inside and quiet gateway hooks
 func profileTestHome(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("USERPROFILE", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	def := filepath.Join(tmp, ".icebath")
 	if err := os.MkdirAll(def, 0o755); err != nil {
 		t.Fatal(err)

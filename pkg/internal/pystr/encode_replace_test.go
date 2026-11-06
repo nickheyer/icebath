@@ -11,3 +11,13 @@ func TestEncodeUTF8ReplaceSwapsSurrogatesOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestEncodeUTF8BackslashReplaceEscapesLoneSurrogates(t *testing.T) {
+	in := "a" + FromRunes([]rune{0xD83D}) + "é" + FromRunes([]rune{0xDC00})
+	if got := EncodeUTF8BackslashReplace(in); got != "a\\ud83dé\\udc00" {
+		t.Fatalf("got %q", got)
+	}
+	if got := EncodeUTF8BackslashReplace("plain 中"); got != "plain 中" {
+		t.Fatalf("got %q", got)
+	}
+}

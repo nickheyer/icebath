@@ -27,7 +27,7 @@ func TestPlainAndEscape(t *testing.T) {
 	if got := Escape("[red]x"); got != `\[red]x` {
 		t.Errorf("Escape = %q", got)
 	}
-	if got := Render("[red]x[/red]", true); got != "\x1b[0m\x1b[31mx\x1b[0m" {
+	if got := Render("[red]x[/red]", true); got != "\x1b[31mx\x1b[0m" {
 		t.Errorf("Render color = %q", got)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 )
 
 const exaMissingKey = "EXA_API_KEY environment variable not set. Get your API key at https://exa.ai"
@@ -17,7 +18,7 @@ const exaMissingKey = "EXA_API_KEY environment variable not set. Get your API ke
 var exaBaseURL = "https://api.exa.ai"
 
 // Exa client limit for connecting and for each wait on the server
-const exaRequestTimeout = 600 * time.Second
+var exaRequestTimeout = pyrequests.Seconds(600.0)
 
 // Longest stretch of a non JSON Exa body quoted in the error
 const exaNonJSONBodySnippet = 500
@@ -49,10 +50,10 @@ func (c *exaClient) request(ctx context.Context, env *Env, endpoint string, data
 	if err != nil {
 		return nil, err
 	}
-	timeouts := sdkTimeouts{connect: exaRequestTimeout, idle: exaRequestTimeout}
-	resp, err := sdkSend(ctx, timeouts, http.MethodPost, c.baseURL+endpoint, []byte(body), c.header)
+	started := time.Now()
+	resp, err := requestsSend(ctx, exaRequestTimeout, http.MethodPost, c.baseURL+endpoint, []byte(body), c.header)
 	if err != nil {
-		return nil, err
+		return nil, exaTypedTimeouts(err, exaRequestTimeout, time.Since(started))
 	}
 	if resp.status >= 400 {
 		return nil, verbatim(fmt.Sprintf("Request failed with status code %d: %s", resp.status, resp.text()))

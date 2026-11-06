@@ -866,7 +866,11 @@ func selectMemoryProvider(ctx context.Context, h, name string, console *Console,
 	if err != nil {
 		return err
 	}
-	disabled, aliases := getDisabledSet(h), pluginAliases(h, name)
+	disabled := getDisabledSet(h)
+	aliases, err := pluginAliases(h, name)
+	if err != nil {
+		return err
+	}
 	lifted := map[string]bool{}
 	overlap := false
 	for key := range disabled {
@@ -1040,7 +1044,7 @@ func DashboardInstallPlugin(ctx context.Context, opts DashboardInstallOptions) (
 		step = func(InstallPhase) {}
 	}
 	if opts.InspectedSha != "" {
-		forgetInspection(opts.Identifier, opts.CatalogName)
+		forgetInspection(ctx, opts.Identifier, opts.CatalogName)
 	}
 	entry, identifier, warnings, refusal := resolveSource(ctx, opts.Identifier, opts.CatalogName)
 	if refusal != nil {

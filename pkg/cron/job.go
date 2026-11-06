@@ -245,6 +245,9 @@ type Job struct {
 	LatestExecution  map[string]any
 	LiveExecution    map[string]any
 	ScheduledInstant *string
+	ExecutionID      *string
+	// Markers a run sets for its own bookkeeping, never persisted
+	run runMarks
 	// Record arrived with enabled absent, which reads as true
 	enabledAbsent bool
 	// Key order the record was loaded with, kept on save the way a Python dict keeps insertion order
@@ -666,7 +669,13 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 	case "deliver":
 		if !isNull {
 			if list, ok := decodeStringList(raw); ok && !bytes.HasPrefix(bytes.TrimSpace(raw), []byte(`"`)) {
-				joined := strings.Join(list, ",")
+				parts := []string{}
+				for _, p := range list {
+					if p = strings.TrimSpace(p); p != "" {
+						parts = append(parts, p)
+					}
+				}
+				joined := strings.Join(parts, ",")
 				j.Deliver = &joined
 			} else {
 				j.Deliver = decodeStringPtr(raw)

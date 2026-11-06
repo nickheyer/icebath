@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -46,7 +48,18 @@ type ccTimeouts struct {
 }
 
 func secondsDuration(f float64) time.Duration {
+	if math.IsNaN(f) || f*float64(time.Second) >= math.MaxInt64 {
+		return time.Duration(math.MaxInt64)
+	}
 	return time.Duration(f * float64(time.Second))
+}
+
+// Seconds of a watchdog window, the unbounded window of an infinite timeout reads back as infinity
+func durationSeconds(d time.Duration) float64 {
+	if d == time.Duration(math.MaxInt64) {
+		return math.Inf(1)
+	}
+	return d.Seconds()
 }
 
 // Overall request timeout and whether a per provider setting supplied it
@@ -226,6 +239,13 @@ type ccKill struct {
 	elapsed float64
 }
 
+// Records a stream_max_lifetime kill, the latest cap kill names the attempt error over any other kill
+func (k *ccKill) capKill(elapsed float64) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.reason, k.elapsed = "lifetime", elapsed
+}
+
 func (k *ccKill) fire(reason string, elapsed float64) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -263,6 +283,8 @@ func commaInt(n int) string {
 // Live state of one streamed chat completion attempt
 type ccStreamState struct {
 	c                  *chatCompletionsClient
+	diag               *StreamDiag
+	wire               *FailedStreamRequest
 	req                *Request
 	fn                 StreamFunc
 	headers            http.Header
@@ -297,6 +319,28 @@ type ccStreamState struct {
 	mon                *streamWaitMonitor
 	started            time.Time
 	lifetimeCap        float64
+}
+
+func (s *ccStreamState) monitorModel() string {
+	if s.req == nil {
+		return ""
+	}
+	return s.req.Model
+}
+
+func (s *ccStreamState) monitorFirstChunk() time.Time { return s.firstChunkAt }
+
+func (s *ccStreamState) monitorPromptProgress() bool { return s.progress != nil }
+
+func (s *ccStreamState) monitorEstTokens() int { return s.estTokens }
+
+// Decoded payload of a frame a killed attempt delivered, nil when it is not JSON
+func decodedFrame(data string) any {
+	var v any
+	if json.Unmarshal([]byte(data), &v) != nil {
+		return nil
+	}
+	return v
 }
 
 func (s *ccStreamState) emit(ev StreamEvent) error {
@@ -428,6 +472,9 @@ func (s *ccStreamState) handleChunk(chunk map[string]any) (bool, error) {
 	if s.upstreamProvider == "" {
 		if p, ok := chunk["provider"].(string); ok && p != "" {
 			s.upstreamProvider = p
+			if s.diag != nil {
+				s.diag.ServingProvider = pystr.Slice(pystr.Strip(p), 0, 64)
+			}
 		}
 	}
 	choices, _ := chunk["choices"].([]any)
@@ -441,6 +488,9 @@ func (s *ccStreamState) handleChunk(chunk map[string]any) (bool, error) {
 	delta, _ := choice["delta"].(map[string]any)
 	if fr, _ := NormalizeFinishReason(ccFinishReasonText(choice["finish_reason"])).(string); fr != "" {
 		s.finishReason = fr
+		if s.diag != nil {
+			s.diag.FinishReasonSeen = true
+		}
 	}
 	if u, ok := chunk["usage"].(map[string]any); ok && len(u) > 0 {
 		s.usage = u
@@ -735,9 +785,11 @@ func resetTimer(t *time.Timer, d time.Duration) {
 }
 
 // Reads one streamed chat completion attempt from an open response through the chunk loop
-func (c *chatCompletionsClient) consumeStream(ctx context.Context, cancel context.CancelFunc, kill *ccKill, resp *http.Response, s *ccStreamState, t ccTimeouts) (*Response, error) {
+func (c *chatCompletionsClient) consumeStream(requestCtx, ctx context.Context, cancel context.CancelFunc, kill *ccKill, resp *http.Response, s *ccStreamState, t ccTimeouts) (*Response, error) {
 	frames := make(chan ccFrameMsg, 32)
+	readerDone := make(chan struct{})
 	go func() {
+		defer close(readerDone)
 		r := newSSEReader(resp.Body)
 		for {
 			f, err := r.Next()
@@ -752,57 +804,52 @@ func (c *chatCompletionsClient) consumeStream(ctx context.Context, cancel contex
 			}
 		}
 	}()
-	staleTimer := time.NewTimer(t.stale)
+	w := newStreamWatchdog(requestCtx, cancel, kill, readerDone, s.emit, func(base error) error { return Classify(c.route.Provider, c.route.Model, 0, "", base) }, s.req.Model, s.estTokens, t, s.started)
+	defer w.stop()
+	defer w.logAbnormalExit()
 	readTimer := time.NewTimer(t.read)
-	defer staleTimer.Stop()
 	defer readTimer.Stop()
-	var lifetimeC <-chan time.Time
-	if t.lifetime > 0 {
-		lifetimeTimer := time.NewTimer(t.lifetime)
-		defer lifetimeTimer.Stop()
-		lifetimeC = lifetimeTimer.C
-	}
-	lastChunk := s.started
-	model := s.req.Model
-	if model == "" {
-		model = "unknown"
-	}
-	s.mon = newStreamWaitMonitor(s, c.route.BaseURL, t.stale.Seconds(), time.Now())
+	s.mon = newStreamWaitMonitor(s, c.route.BaseURL, durationSeconds(t.stale), time.Now())
+	s.mon.w = w
 	poll := time.NewTicker(streamMonitorPoll)
 	defer poll.Stop()
+	var unwindErr error
 	for {
 		select {
-		case <-ctx.Done():
-			return nil, c.attemptError(ctx, kill, ctx.Err(), s)
+		case <-requestCtx.Done():
+			return nil, w.interrupt(time.Now(), s.deltasSent)
+		case <-w.unwound():
+			return nil, c.attemptError(requestCtx, kill, unwindErr, s)
 		case now := <-poll.C:
-			moved, err := s.mon.tick(now, &lastChunk)
+			moved, err := s.mon.tick(now, &w.lastChunk)
 			if err != nil {
 				cancel()
 				return nil, err
 			}
 			if moved {
-				resetTimer(staleTimer, t.stale-now.Sub(lastChunk))
+				w.moved(now)
 			}
-		case <-staleTimer.C:
-			elapsed := time.Since(lastChunk).Seconds()
-			catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, t.stale.Seconds(), model, commaInt(s.estTokens)))
-			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(s.estTokens))})
-			bumpStaleStreak(ctx)
-			kill.fire("stale", elapsed)
-			cancel()
-			return nil, c.attemptError(ctx, kill, errors.New("stale stream"), s)
-		case <-readTimer.C:
+		case now := <-w.staleC():
+			if w.onStale(now) {
+				return nil, w.abandoned
+			}
+		case <-w.readC(readTimer.C):
 			kill.fire("read", t.read.Seconds())
 			cancel()
 			return nil, c.attemptError(ctx, kill, errors.New("read timeout"), s)
-		case <-lifetimeC:
-			elapsed := time.Since(s.started).Seconds()
-			catalogLog.Warn(fmt.Sprintf("Stream still running after %.0fs (stream_max_lifetime %.0fs) — killing connection. model=%s", elapsed, t.lifetime.Seconds(), model))
-			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ Response still streaming after %ds (stream_max_lifetime %ds, model: %s). Aborting...", int(elapsed), int(t.lifetime.Seconds()), model)})
-			kill.fire("lifetime", elapsed)
-			cancel()
-			return nil, c.attemptError(ctx, kill, errors.New("stream lifetime exceeded"), s)
+		case now := <-w.lifeC():
+			if w.onLifetime(now) {
+				return nil, w.abandoned
+			}
 		case m := <-frames:
+			if w.killed {
+				if m.err != nil {
+					unwindErr = streamKillCause(m.err)
+				} else if m.frame != nil {
+					w.call.discard(w.attempt, decodedFrame(m.frame.Data))
+				}
+				continue
+			}
 			if m.err != nil {
 				if errors.Is(m.err, io.EOF) {
 					return s.finish(time.Since(s.started))
@@ -846,8 +893,7 @@ func (c *chatCompletionsClient) consumeStream(ctx context.Context, cancel contex
 				}
 			}
 			now := time.Now()
-			lastChunk = now
-			resetTimer(staleTimer, t.stale)
+			w.chunk(now)
 			if c.llamacpp {
 				if progress := promptProgress(chunk); progress != nil {
 					s.progress, s.progressAt = progress, now
@@ -860,6 +906,10 @@ func (c *chatCompletionsClient) consumeStream(ctx context.Context, cancel contex
 			}
 			if s.firstChunkAt.IsZero() {
 				s.firstChunkAt = now
+			}
+			if err := s.countChunk(now, estimateChunkBytes(chunk)); err != nil {
+				cancel()
+				return nil, err
 			}
 			stop, err := s.handleChunk(chunk)
 			if err != nil {
@@ -914,7 +964,7 @@ func (c *chatCompletionsClient) attemptError(ctx context.Context, kill *ccKill, 
 		if s != nil {
 			cap = s.lifetimeCap
 		}
-		base = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: &ccTimeoutError{err: &StreamLifetimeExceededError{Elapsed: elapsed, Cap: cap}, headers: headers}}
+		base = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: &ccTimeoutError{err: &StreamLifetimeExceededError{Elapsed: elapsed, Cap: cap, Cause: streamKillCause(err)}, headers: headers}}
 	case "read":
 		base = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: &ccTimeoutError{err: fmt.Errorf("Read timed out after %.0fs waiting for the provider stream.", elapsed), headers: headers}}
 	default:
@@ -931,7 +981,16 @@ func (c *chatCompletionsClient) attemptError(ctx context.Context, kill *ccKill, 
 			}
 		}
 	}
+	if s != nil && s.wire != nil {
+		base = withWireRequest(base, s.wire)
+	}
 	return Classify(c.route.Provider, c.route.Model, 0, "", base)
+}
+
+// Counts a real chunk into the attempt diagnostics and refreshes the activity clock
+func (s *ccStreamState) countChunk(now time.Time, size int) error {
+	countDiagChunk(s.diag, now, size)
+	return s.emit(StreamEvent{Kind: EventActivity, Text: "receiving stream response"})
 }
 
 // Watchdog kill of a stream attempt, a temporary timeout that carries the response headers

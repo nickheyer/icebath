@@ -561,20 +561,12 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 
 // Recorded working directory of the calling session, never the gateway process cwd
 func (c *Context) SessionCwd(ctx context.Context) (string, error) {
-	fn, err := needService("SessionCwd", func(s *Services) func(context.Context, string) string { return s.SessionCwd })
-	if err != nil {
-		return "", err
-	}
-	return fn(ctx, c.manager.home), nil
+	return contextCwd(ctx, c.manager)
 }
 
 // Client surface or messaging platform of the calling session
 func (c *Context) SessionSurface(ctx context.Context) (string, error) {
-	fn, err := needService("SessionSurface", func(s *Services) func(context.Context, string) string { return s.SessionSurface })
-	if err != nil {
-		return "", err
-	}
-	return fn(ctx, c.manager.home), nil
+	return contextSurface(ctx, c.manager)
 }
 
 // Posts text into the session bound to this call and returns an editable handle that never raises

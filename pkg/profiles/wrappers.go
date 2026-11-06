@@ -8,13 +8,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Characters of a candidate wrapper read when probing for the profile launch marker
@@ -51,23 +52,11 @@ var runWhich = func(name string) (string, int, error) {
 	return strings.ToValidUTF8(out.String(), "�"), 0, nil
 }
 
-// User home directory as Python Path.home resolves it
-func userHome() (string, error) {
-	if h, err := os.UserHomeDir(); err == nil {
-		return h, nil
-	}
-	u, err := user.Current()
-	if err != nil {
-		return "", err
-	}
-	return u.HomeDir, nil
-}
-
 // Directory holding alias wrapper scripts
 func WrapperDir() (string, error) {
-	h, err := userHome()
+	h, err := home.UserHome()
 	if err != nil {
-		return "", errors.New("Could not determine home directory.")
+		return "", err
 	}
 	return filepath.Join(h, ".local", "bin"), nil
 }

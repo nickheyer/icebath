@@ -1407,9 +1407,6 @@ func TestFileOpsFailClosedSyntaxGate(t *testing.T) {
 		if data, _ := os.ReadFile(target); string(data) != content {
 			t.Fatalf("native=%v valid content %q", native, data)
 		}
-		if hostPythonInterpreter() == "" {
-			continue
-		}
 		broken := filepath.Join(dir, "broken.py")
 		bad := "def foo(:\n    pass\n"
 		r = ops.WriteFile(broken, bad, nil)

@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -78,7 +79,7 @@ var (
 
 var (
 	pluginSectionFrameRe = regexp.MustCompile(`(?m)^## Plugin Context: ([a-z0-9][a-z0-9._-]{0,127})\n<!-- icebath-plugin-section-chars:([0-9]{1,4}) -->\n\n`)
-	sessionStampRe       = regexp.MustCompile(`^([0-9]{8})_([0-9]{6})`)
+	sessionStampRe       = regexp.MustCompile(`^(\p{Nd}{8})_(\p{Nd}{6})`)
 	gateWords            = map[string]bool{"true": true, "always": true, "yes": true, "on": true, "false": false, "never": false, "no": false, "off": false}
 	skillToolNames       = []string{"skills_list", "skill_view", "skill_manage"}
 	truthyStrings        = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
@@ -180,15 +181,15 @@ func tuiEmbeddedPaneClarifier(hint string) string {
 
 // Session metadata exposed to plugin prompt sections at render time
 func pluginSessionInfo(ctx context.Context, a *AIAgent) map[string]any {
-	cwd, err := tools.ResolveContextCwd(a.Env, true)
+	cwd, err := tools.ResolveContextCwd(a.env, true)
 	if err != nil {
 		cwd = ""
 	}
 	return map[string]any{
 		"session_id":   a.sessionID,
-		"model":        a.Model,
-		"provider":     a.Provider,
-		"platform":     a.Platform,
+		"model":        a.model,
+		"provider":     a.provider,
+		"platform":     a.platform,
 		"profile_name": activeProfileName(ctx, a, ambientPluginProfileName),
 		"cwd":          cwd,
 	}
@@ -310,7 +311,7 @@ func pluginSectionBlocks(sections []plugins.RenderedSystemPromptSection, positio
 func sessionStartLike(a *AIAgent, now time.Time) time.Time {
 	root := ""
 	if a.sessionDB != nil && a.sessionID != "" {
-		if r, err := a.sessionDB.ConversationRoot(a.sessionID); err == nil {
+		if r, err := a.sessionDB.GetConversationRoot(a.sessionID); err == nil {
 			root = r
 		}
 	}
@@ -319,14 +320,23 @@ func sessionStartLike(a *AIAgent, now time.Time) time.Time {
 		if m == nil {
 			continue
 		}
-		if t, err := time.ParseInLocation("20060102_150405", m[1]+"_"+m[2], time.Local); err == nil {
-			return t.In(now.Location())
+		if t, _, err := pydatetime.Strptime(m[1]+"_"+m[2], "%Y%m%d_%H%M%S"); err == nil {
+			return stampDisplayTime(t, now)
 		}
 	}
 	if !a.sessionStart.IsZero() {
 		return a.sessionStart.In(now.Location())
 	}
 	return now
+}
+
+// Attaches the local offset in force at a naive stamp then converts to now's zone, naive when localtime refuses
+func stampDisplayTime(naive, now time.Time) time.Time {
+	secs, ok := pydatetime.LocalToSeconds(naive, time.Local, 0, pydatetime.LocaltimeAccepts)
+	if !ok {
+		return naive
+	}
+	return time.Unix(secs, 0).In(now.Location())
 }
 
 // The agent's own profile home from a bound home override or its session database, empty for ambient
@@ -371,7 +381,7 @@ func profileNameForHome(h string) string {
 }
 
 // Tool aware memory, session search, skills and kanban guidance joined into one block
-func toolGuidanceBlock(a *AIAgent) string {
+func toolGuidanceBlock(ctx context.Context, a *AIAgent) string {
 	names := a.validToolNames
 	memoryGuidance := ""
 	if names["memory"] {
@@ -380,7 +390,7 @@ func toolGuidanceBlock(a *AIAgent) string {
 	kanban := ""
 	if a.kanbanWorkerGuidance != nil {
 		kanban = *a.kanbanWorkerGuidance
-	} else if names["kanban_show"] && tools.OwnedKanbanTask(a.Env) != "" {
+	} else if names["kanban_show"] && tools.OwnedKanbanTask(tools.WithToolEnv(ctx, a.env)) != "" {
 		kanban = KanbanGuidance
 	}
 	guidance := []string{memoryGuidance}
@@ -423,13 +433,13 @@ func skillsPrompt(ctx context.Context, a *AIAgent) (string, error) {
 		}
 	}
 	var compact map[string]bool
-	if cwd, err := tools.ResolveContextCwd(a.Env, true); err == nil {
-		compact = tools.CodingCompactSkillCategories(a.Env, a.Platform, cwd)
+	if cwd, err := tools.ResolveContextCwd(a.env, true); err == nil {
+		compact = tools.CodingCompactSkillCategories(a.env, a.platform, cwd)
 	}
 	if len(compact) == 0 {
 		compact = nil
 	}
-	return skills.ScopeFromEnv(a.Env).BuildSkillsSystemPrompt(ctx, skills.SkillsPromptOptions{
+	return skills.ScopeFromEnv(a.env).BuildSkillsSystemPrompt(ctx, skills.SkillsPromptOptions{
 		AvailableTools: a.validToolNames, AvailableToolsets: toolsets, CompactCategories: compact, SkillsDirOverride: agentSkillsDir(ctx, a),
 	})
 }
@@ -438,11 +448,11 @@ func skillsPrompt(ctx context.Context, a *AIAgent) (string, error) {
 func agentSkillsScope(ctx context.Context, a *AIAgent) (context.Context, *skills.Scope) {
 	h := agentOwnHome(ctx, a)
 	if h == "" {
-		return ctx, skills.ScopeFromEnv(a.Env)
+		return ctx, skills.ScopeFromEnv(a.env)
 	}
 	env := tools.Env{Home: h}
-	if a.Env != nil {
-		env = *a.Env
+	if a.env != nil {
+		env = *a.env
 		env.Home, env.Config, env.Secrets = h, nil, nil
 	}
 	return home.WithOverride(ctx, h), skills.ScopeFromEnv(&env)
@@ -493,10 +503,27 @@ func botModeParts(ctx context.Context, a *AIAgent) []string {
 	return parts
 }
 
+// Profile X when the ambient home resolves under the resolved root's profiles dir, default otherwise
+func ambientFileSafetyProfileName(ctx context.Context) string {
+	resolved, err := pypath.Realpath(home.Dir(ctx), pypath.Lax)
+	if err != nil {
+		return "default"
+	}
+	root, err := pypath.Realpath(home.Root(), pypath.Lax)
+	if err != nil {
+		return "default"
+	}
+	rel, err := filepath.Rel(filepath.Join(root, "profiles"), resolved)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "default"
+	}
+	return strings.Split(rel, string(filepath.Separator))[0]
+}
+
 // Names the running profile and where the default profile's data lives
 func activeProfileLine(ctx context.Context, a *AIAgent) string {
 	ownHome := agentOwnHome(ctx, a)
-	active := activeProfileName(ctx, a, func(ctx context.Context) string { return profileNameForHome(home.Dir(ctx)) })
+	active := activeProfileName(ctx, a, ambientFileSafetyProfileName)
 	if active == "default" {
 		root := home.Dir(ctx)
 		if ownHome != "" {
@@ -523,14 +550,22 @@ func activeProfileLine(ctx context.Context, a *AIAgent) string {
 		"explicitly directs you to.", active, profileHome, root, root, root, root)
 }
 
+// The registered platform hint and whether an entry exists, no entry while no registry is installed
+func platformRegistryEntry(ctx context.Context, platformKey string) (string, bool) {
+	if PlatformRegistryHint == nil {
+		return "", false
+	}
+	return PlatformRegistryHint(ctx, platformKey)
+}
+
 // Built in hint, else the platform registry hint after plugin discovery, plus the Telegram rich messages opt in
 func defaultPlatformHint(ctx context.Context, platformKey string) string {
 	hint := PlatformHints[platformKey]
-	if hint == "" && platformKey != "" && PlatformRegistryHint != nil {
-		h, found := PlatformRegistryHint(ctx, platformKey)
+	if hint == "" && platformKey != "" {
+		h, found := platformRegistryEntry(ctx, platformKey)
 		if !found {
 			plugins.DiscoverPlugins(ctx, false)
-			h, found = PlatformRegistryHint(ctx, platformKey)
+			h, found = platformRegistryEntry(ctx, platformKey)
 		}
 		if found {
 			hint = h
@@ -544,7 +579,7 @@ func defaultPlatformHint(ctx context.Context, platformKey string) string {
 
 // The cron delivery channel's hint with its override, empty without an auto deliver platform
 func cronDeliveryHint(ctx context.Context, a *AIAgent) string {
-	key := pystr.Strip(pystr.Lower(tools.SessionEnvValue(a.Env, "ICEBATH_CRON_AUTO_DELIVER_PLATFORM")))
+	key := pystr.Strip(pystr.Lower(tools.SessionEnvValue(a.env, "ICEBATH_CRON_AUTO_DELIVER_PLATFORM")))
 	if key == "" || key == "cron" {
 		return ""
 	}
@@ -557,7 +592,7 @@ func cronDeliveryHint(ctx context.Context, a *AIAgent) string {
 
 // PlatformHint is the platform hint with its override, the desktop TUI clarifier and a cron agent's delivery hint
 func PlatformHint(ctx context.Context, a *AIAgent) string {
-	key := pystr.Strip(pystr.Lower(a.Platform))
+	key := pystr.Strip(pystr.Lower(a.platform))
 	hint := resolvePlatformHint(a, key, defaultPlatformHint(ctx, key))
 	if key == "tui" && hint != "" {
 		hint = tuiEmbeddedPaneClarifier(hint)
@@ -667,7 +702,7 @@ func timestampLine(ctx context.Context, a *AIAgent) string {
 	if a.passSessionID {
 		sessionID = a.sessionID
 	}
-	trailer := [][2]string{{"Session ID", sessionID}, {"Model", a.Model}, {"Provider", a.Provider}, {"Platform", a.Platform}}
+	trailer := [][2]string{{"Session ID", sessionID}, {"Model", a.model}, {"Provider", a.provider}, {"Platform", a.platform}}
 	var b strings.Builder
 	b.WriteString(line)
 	for _, kv := range trailer {
@@ -705,7 +740,7 @@ func memoryParts(ctx context.Context, a *AIAgent) []string {
 			}
 		}
 	}
-	if a.memoryManager != nil && memory.MemoryProviderToolsExposed(ctx, a.Env, toolSurface(a.Tools)) {
+	if a.memoryManager != nil && memory.MemoryProviderToolsExposed(ctx, a.env, toolSurface(a.tools)) {
 		if block := a.memoryManager.BuildSystemPrompt(ctx); block != "" {
 			parts = append(parts, block)
 		}
@@ -716,7 +751,7 @@ func memoryParts(ctx context.Context, a *AIAgent) []string {
 // SOUL.md from the agent's own home as the identity, else the default identity, with whether SOUL loaded
 func identityParts(ctx context.Context, a *AIAgent, ctxLen *int) ([]string, bool) {
 	if a.loadSoulIdentity || !a.skipContextFiles {
-		if soul, ok := loadSoulMDFn(ctx, a.Env, ctxLen, agentOwnHome(ctx, a)); ok && soul != "" {
+		if soul, ok := loadSoulMDFn(ctx, a.env, ctxLen, agentOwnHome(ctx, a)); ok && soul != "" {
 			return []string{soul}, true
 		}
 	}
@@ -724,7 +759,7 @@ func identityParts(ctx context.Context, a *AIAgent, ctxLen *int) ([]string, bool
 }
 
 // Universal, tool aware and model gated guidance blocks, each behind its config gate
-func guidanceParts(a *AIAgent) []string {
+func guidanceParts(ctx context.Context, a *AIAgent) []string {
 	var parts []string
 	hasTools := len(a.validToolNames) > 0
 	if hasTools {
@@ -735,21 +770,21 @@ func guidanceParts(a *AIAgent) []string {
 			parts = append(parts, ParallelToolCallGuidance)
 		}
 	}
-	parts = append(parts, toolGuidanceBlock(a))
+	parts = append(parts, toolGuidanceBlock(ctx, a))
 	if !hasTools {
 		return parts
 	}
 	if !a.agentIsOneshot() {
 		parts = append(parts, SteerChannelNote)
 	}
-	if modelGate(a.toolUseEnforcement, a.Model, ToolUseEnforcementModels) {
+	if modelGate(a.toolUseEnforcement, a.model, ToolUseEnforcementModels) {
 		parts = append(parts, ToolUseEnforcementGuidance)
-		ml := pystr.Lower(a.Model)
+		ml := pystr.Lower(a.model)
 		if strings.Contains(ml, "gemini") || strings.Contains(ml, "gemma") {
 			parts = append(parts, GoogleModelOperationalGuidance)
 		}
 	}
-	if modelGate(a.executionGuidance, a.Model, ExecutionGuidanceModels) {
+	if modelGate(a.executionGuidance, a.model, ExecutionGuidanceModels) {
 		parts = append(parts, ExecutionGuidanceText(a.validToolNames))
 	}
 	return parts
@@ -757,24 +792,24 @@ func guidanceParts(a *AIAgent) []string {
 
 // The real model identity for the Alibaba Coding Plan, which always reports glm-4.7
 func alibabaIdentityPart(a *AIAgent) []string {
-	if a.Provider != "alibaba" {
+	if a.provider != "alibaba" {
 		return nil
 	}
-	short := a.Model[strings.LastIndex(a.Model, "/")+1:]
+	short := a.model[strings.LastIndex(a.model, "/")+1:]
 	return []string{"You are powered by the model named " + short + ". " +
-		"The exact model ID is " + a.Model + ". " +
+		"The exact model ID is " + a.model + ". " +
 		"When asked what model you are, always answer based on this information, " +
 		"not on any model name returned by the API."}
 }
 
 // The directory the workspace probe inspects, empty when the cwd was deleted
 func workspacePinKey(a *AIAgent) string {
-	cwd, err := tools.ResolveContextCwd(a.Env, true)
+	cwd, err := tools.ResolveContextCwd(a.env, true)
 	if err != nil {
 		return ""
 	}
 	if cwd == "" {
-		if cwd, err = tools.ResolveAgentCwd(a.Env); err != nil {
+		if cwd, err = tools.ResolveAgentCwd(a.env); err != nil {
 			return ""
 		}
 	}
@@ -857,7 +892,7 @@ func codingParts(a *AIAgent) ([]string, []string, []string) {
 	if len(a.validToolNames) == 0 {
 		return nil, nil, nil
 	}
-	cwd, err := tools.ResolveContextCwd(a.Env, true)
+	cwd, err := tools.ResolveContextCwd(a.env, true)
 	if err != nil {
 		return nil, nil, nil
 	}
@@ -870,7 +905,7 @@ func codingParts(a *AIAgent) ([]string, []string, []string) {
 		block := pin.block
 		replay = &block
 	}
-	prefix, workspace, trailing := tools.CodingSystemPromptParts(a.Env, a.Platform, cwd, a.Model, a.validToolNames, replay)
+	prefix, workspace, trailing := tools.CodingSystemPromptParts(a.env, a.platform, cwd, a.model, a.validToolNames, replay)
 	if replay == nil {
 		block := ""
 		if len(workspace) > 0 {
@@ -885,7 +920,7 @@ func codingParts(a *AIAgent) ([]string, []string, []string) {
 func postWorkspaceParts(ctx context.Context, a *AIAgent) []string {
 	var parts []string
 	if a.environmentProbe {
-		parts = append(parts, tools.EnvironmentProbeLine(a.Env, false))
+		parts = append(parts, tools.EnvironmentProbeLine(a.env, false))
 	}
 	if a.botModeProtocol {
 		parts = append(parts, botModeParts(ctx, a)...)
@@ -898,16 +933,16 @@ func contextFilesPart(ctx context.Context, a *AIAgent, ctxLen *int, soulLoaded b
 	if a.skipContextFiles {
 		return nil, nil
 	}
-	cwd, err := tools.ResolveContextCwd(a.Env, !a.contextCwdIsLaunchArtifact)
+	cwd, err := tools.ResolveContextCwd(a.env, !a.contextCwdIsLaunchArtifact)
 	if err != nil {
 		return nil, err
 	}
 	o := ContextFilesOptions{SkipSoul: soulLoaded, ContextLength: ctxLen,
-		AllowInstallTreeFallback: a.Platform == "cli" || a.Platform == "tui", HomeOverride: agentOwnHome(ctx, a)}
+		AllowInstallTreeFallback: a.platform == "cli" || a.platform == "tui", HomeOverride: agentOwnHome(ctx, a)}
 	if cwd != "" {
 		o.Cwd = &cwd
 	}
-	p, err := buildContextFilesPromptFn(ctx, a.Env, o)
+	p, err := buildContextFilesPromptFn(ctx, a.env, o)
 	if err != nil {
 		return nil, err
 	}
@@ -936,7 +971,7 @@ func BuildSystemPromptParts(ctx context.Context, a *AIAgent, systemMessage *stri
 	stable, soulLoaded := identityParts(ctx, a, ctxLen)
 	helpSlot := len(stable)
 	stable = append(stable, IcebathAgentHelpGuidanceNoSkills)
-	stable = append(stable, guidanceParts(a)...)
+	stable = append(stable, guidanceParts(ctx, a)...)
 	skillsText, err := skillsPrompt(ctx, a)
 	if err != nil {
 		return SystemPromptParts{}, err
@@ -946,7 +981,7 @@ func BuildSystemPromptParts(ctx context.Context, a *AIAgent, systemMessage *stri
 	}
 	stable = append(stable, alibabaIdentityPart(a)...)
 	stable = append(stable, autoLoadParts(ctx, a)...)
-	environmentHints, err := buildEnvironmentHintsFn(ctx, a.Env)
+	environmentHints, err := buildEnvironmentHintsFn(ctx, a.env)
 	if err != nil {
 		return SystemPromptParts{}, err
 	}
@@ -1028,11 +1063,11 @@ func ReconstructStaticPrefix(ctx context.Context, a *AIAgent, systemMessage *str
 
 // FormatToolsForSystemMessage renders the tool definitions as trajectory format JSON
 func FormatToolsForSystemMessage(a *AIAgent) (string, error) {
-	if len(a.Tools) == 0 {
+	if len(a.tools) == 0 {
 		return "[]", nil
 	}
-	out := make([]any, 0, len(a.Tools))
-	for _, t := range a.Tools {
+	out := make([]any, 0, len(a.tools))
+	for _, t := range a.tools {
 		tool, _ := pyDict(t)
 		fn, ok := pyDict(tool["function"])
 		if !ok {

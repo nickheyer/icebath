@@ -293,10 +293,35 @@ func (t *Table) RenderWidth(color bool, width int) string {
 // Rich panel with the rounded box expanded to the console width, title and subtitle centered in the border
 type Panel struct {
 	Body, Title, Subtitle, BorderStyle string
+	// Panel sized to its content as Panel(expand=False) instead of the full width
+	Fit bool
+	// Renderable drawn in place of Body when set, as a Markdown body
+	Content Renderable
+}
+
+// Width a fitted panel takes, the body measure plus padding widened for the title and capped at width
+func (p Panel) fitWidth(color bool, width int) int {
+	child := width - 2
+	if p.Content != nil {
+		child = min(p.Content.MeasureMax(width-2)+2, width-2)
+	} else {
+		longest := 0
+		for _, l := range strings.Split(Render(p.Body, color), "\n") {
+			longest = max(longest, CellLen(ansiRE.ReplaceAllString(l, "")))
+		}
+		child = min(min(longest, width-2)+2, width-2)
+	}
+	if p.Title != "" {
+		child = min(width-2, max(child, CellLen(Plain(strings.ReplaceAll(p.Title, "\n", " ")))+4))
+	}
+	return child + 2
 }
 
 // Lines of the panel at width cells
-func (p Panel) Render(color bool, width int) string {
+func (p Panel) Render(color bool, width int) string { return p.render(color, true, width) }
+
+// Panel lines with the body repr highlighted when highlight is true, as a console prints a Panel
+func (p Panel) render(color, highlight bool, width int) string {
 	border := func(s string) string {
 		if p.BorderStyle == "" || !color {
 			return s
@@ -314,11 +339,24 @@ func (p Panel) Render(color bool, width int) string {
 		l := excess / 2
 		return border(left+"─"+strings.Repeat("─", l)) + rendered + border(strings.Repeat("─", excess-l)+"─"+right)
 	}
+	if p.Fit {
+		width = p.fitWidth(color, width)
+	}
 	inner := max(1, width-4)
 	lines := []string{edge("╭", "╮", p.Title)}
-	for _, l := range WrapStyled(Render(p.Body, color), inner, true) {
-		l = truncateStyled(l, inner, "ellipsis")
-		pad := strings.Repeat(" ", max(0, inner-CellLen(ansiRE.ReplaceAllString(l, ""))))
+	body := WrapStyled(renderHighlighted(p.Body, color, highlight), inner, true)
+	if p.Content != nil {
+		system := ""
+		if color {
+			system = TermColorSystem()
+		}
+		body = p.Content.RenderLines(color, system, inner)
+	}
+	for _, l := range body {
+		if p.Content == nil {
+			l = truncateStyled(l, inner, "ellipsis")
+		}
+		pad := strings.Repeat(" ", max(0, inner-CellLen(oscRE.ReplaceAllString(ansiRE.ReplaceAllString(l, ""), ""))))
 		lines = append(lines, border("│")+" "+l+pad+" "+border("│"))
 	}
 	lines = append(lines, edge("╰", "╯", p.Subtitle))

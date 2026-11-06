@@ -184,7 +184,10 @@ func auditPluginDir(pluginDir string, manifest map[string]any) (*IsolationReport
 		if err != nil {
 			return nil, err
 		}
-		visit, syntaxMsg := isolationVisitSource(native, source, kind == "model-provider")
+		visit, syntaxMsg, err := isolationVisitSource(native, source, kind == "model-provider")
+		if err != nil {
+			return nil, err
+		}
 		if visit == nil {
 			notes = append(notes, native+": not parseable ("+syntaxMsg+"); not audited")
 			continue

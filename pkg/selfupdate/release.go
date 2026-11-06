@@ -518,7 +518,7 @@ var fetchFailureRules = []struct {
 	message string
 }{
 	{func(s string) bool {
-		return hasHTTPCode(s, "429") || strings.Contains(strings.ToLower(s), "rate limit")
+		return hasHTTPCode(s, "429") || strings.Contains(pystr.Lower(s), "rate limit")
 	},
 		"✗ GitHub is rate limiting requests or having an outage (HTTP 429) — try again in 5 minutes."},
 	{func(s string) bool { return hasHTTPCode(s, "500", "502", "503", "504") },

@@ -281,7 +281,7 @@ func blockedForPlatform(a *AIAgent, origin string) bool {
 	if origin != "turn-end" {
 		return false
 	}
-	if a.Platform == "cron" || a.Platform == "subagent" || a.delegateDepth > 0 {
+	if a.platform == "cron" || a.platform == "subagent" || a.delegateDepth > 0 {
 		return true
 	}
 	return a.agentIsOneshot()
@@ -504,7 +504,7 @@ func (p *PreparedCompaction) blocked(a *AIAgent, compressor PreparedCompactionCo
 	if !a.compressionEnabled || a.persistDisabled {
 		return true
 	}
-	if a.APIMode == "codex_app_server" || a.codexResponsesNativeCompaction || compressor.MicroCompactEnabled() {
+	if a.apiMode == "codex_app_server" || a.codexResponsesNativeCompaction || compressor.MicroCompactEnabled() {
 		return true
 	}
 	if p.providerContextNeeded() || blockedForPlatform(a, origin) {

@@ -18,8 +18,7 @@ import (
 func profileEnv(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("USERPROFILE", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	def := filepath.Join(tmp, ".icebath")
 	if err := os.MkdirAll(def, 0o755); err != nil {
 		t.Fatal(err)
@@ -411,7 +410,7 @@ func TestResolveProfileEnvMissingNamedProfileRaises(t *testing.T) {
 }
 
 func TestResolveProfileEnvUnsetFallsBackToDefaultRoot(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(home.PatchUserHome(t.TempDir()))
 	t.Setenv(home.EnvHome, "")
 	if got, err := ResolveProfileEnv("default"); err != nil || got != DefaultHome() {
 		t.Fatalf("%q %v want %q", got, err, DefaultHome())

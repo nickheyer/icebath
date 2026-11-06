@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 )
 
 // CLIHandler runs one bound CLI subcommand
@@ -62,6 +63,13 @@ type posSpec struct {
 	Int      bool
 	Choices  []string
 	Default  string
+	Help     string
+}
+
+// Same positional carrying the help line the positional arguments section shows
+func (s posSpec) withHelp(help string) posSpec {
+	s.Help = help
+	return s
 }
 
 // PreArgparseInheritedFlags are consumed before parsing and carried over on relaunch
@@ -152,7 +160,8 @@ func NewCLI() *CLI {
 		Annotations:      map[string]string{"epilog": rootEpilog},
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.SetUsageTemplate(root.UsageTemplate() + `{{if .Annotations.epilog}}
+	root.SetUsageTemplate(strings.Replace(root.UsageTemplate(), "{{if .HasAvailableLocalFlags}}\n\nFlags:",
+		"{{if .Annotations.positionals}}\n\nPositional Arguments:\n{{.Annotations.positionals}}{{end}}{{if .HasAvailableLocalFlags}}\n\nFlags:", 1) + `{{if .Annotations.epilog}}
 {{.Annotations.epilog}}
 {{end}}`)
 	c.Root = root
@@ -165,13 +174,17 @@ func NewCLI() *CLI {
 	c.addTreeC(root)
 	c.addPM(root)
 	c.bindMCP()
+	c.bindWebhook()
 	c.bindMoA()
 	c.bindConfig()
 	c.bindSkin()
 	c.bindSkillsHub()
+	c.bindBundles()
 	c.bindProfile()
 	c.bindMemory()
 	c.finishAll(root)
+	c.argparseAbbrev(c.find("skills"))
+	c.argparseAbbrev(c.find("bundles"))
 	return c
 }
 
@@ -339,6 +352,31 @@ func (c *CLI) choice(cmd *cobra.Command, name string, choices ...string) {
 	})
 }
 
+// Accepts a unique prefix of any long option in the subtree the way argparse allow_abbrev does
+func (c *CLI) argparseAbbrev(cmd *cobra.Command) {
+	known := map[string]bool{"help": true}
+	c.Root.PersistentFlags().VisitAll(func(f *pflag.Flag) { known[f.Name] = true })
+	cmd.Flags().VisitAll(func(f *pflag.Flag) { known[f.Name] = true })
+	cmd.Flags().SetNormalizeFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
+		if known[name] {
+			return pflag.NormalizedName(name)
+		}
+		var hits []string
+		f.VisitAll(func(fl *pflag.Flag) {
+			if strings.HasPrefix(fl.Name, name) {
+				hits = append(hits, fl.Name)
+			}
+		})
+		if len(hits) == 1 {
+			return pflag.NormalizedName(hits[0])
+		}
+		return pflag.NormalizedName(name)
+	})
+	for _, sub := range cmd.Commands() {
+		c.argparseAbbrev(sub)
+	}
+}
+
 func hide(cmd *cobra.Command, names ...string) {
 	for _, n := range names {
 		if fl := cmd.Flags().Lookup(n); fl != nil {
@@ -412,6 +450,12 @@ func (c *CLI) finishAll(cmd *cobra.Command) {
 		}
 		cmd.Use = cmd.Name() + " " + strings.Join(parts, " ")
 		cmd.Args = c.positionalArgs(specs)
+		if block := positionalHelp(specs); block != "" {
+			if cmd.Annotations == nil {
+				cmd.Annotations = map[string]string{}
+			}
+			cmd.Annotations["positionals"] = block
+		}
 	} else if cmd.Args == nil {
 		if cmd.HasSubCommands() {
 			cmd.Args = c.groupArgs()
@@ -425,6 +469,23 @@ func (c *CLI) finishAll(cmd *cobra.Command) {
 	for _, sub := range cmd.Commands() {
 		c.finishAll(sub)
 	}
+}
+
+// Aligned name and help rows of the positionals that carry help, empty when none does
+func positionalHelp(specs []posSpec) string {
+	width := 0
+	for _, s := range specs {
+		if s.Help != "" && len(s.Name) > width {
+			width = len(s.Name)
+		}
+	}
+	var rows []string
+	for _, s := range specs {
+		if s.Help != "" {
+			rows = append(rows, "  "+s.Name+strings.Repeat(" ", width-len(s.Name))+"   "+s.Help)
+		}
+	}
+	return strings.Join(rows, "\n")
 }
 
 // Validates positional count, choices, and integer typed positionals like argparse
@@ -515,7 +576,7 @@ func (c *CLI) unknownCommand(cmd *cobra.Command, value string) error {
 			names = append(names, sub.Name())
 		}
 	}
-	close := CloseMatches(value, names, 3, 0.6)
+	close := pydifflib.GetCloseMatches(value, names, 3, 0.6)
 	install := ""
 	if c.InstallHint != nil && prog == c.Root.Name() && regexp.MustCompile(`^[a-z0-9_-]{1,64}$`).MatchString(value) {
 		install = c.InstallHint(value)

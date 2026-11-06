@@ -55,7 +55,7 @@ type moaAggregatorSlotClient interface {
 
 // Surface the agent's own row create stamps so an accounting guard never mints an anonymous session
 func (a *AIAgent) agentSessionSource() string {
-	return provider.SessionSourceFor(a.Env, a.Platform)
+	return provider.SessionSourceFor(a.env, a.platform)
 }
 
 // Folds MoA advisor usage into the reported counts and flushes the turn trace, returning the advisor cost
@@ -121,7 +121,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	log := conversationLoopLog()
 	a.sessionAPICalls++
 	rawUsage := state.ToolCallField(response, "usage")
-	providerName := a.Provider
+	providerName := a.provider
 	if providerName == "" {
 		providerName = "unknown"
 	}
@@ -133,12 +133,12 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 			n.NoteUsageLessResponse()
 		}
 		log.Info(fmt.Sprintf("API call #%d: model=%s provider=%s in=? out=? total=? latency=%.1fs usage=unavailable",
-			a.sessionAPICalls, a.Model, providerName, apiDuration))
+			a.sessionAPICalls, a.model, providerName, apiDuration))
 		return ResponseUsageOutcome{CompressionAttempts: compressionAttempts, Rearmed: rearmed}
 	}
 
 	tier, _ := state.ToolCallField(response, "service_tier").(string)
-	canonical := provider.WithServedServiceTier(provider.NormalizeUsage(rawUsage, a.Provider, a.APIMode), tier)
+	canonical := provider.WithServedServiceTier(provider.NormalizeUsage(rawUsage, a.provider, a.apiMode), tier)
 	aggregator := canonical
 	moaClient, canonical, moaRefCost := a.foldMoAUsage(canonical)
 	promptTokens := canonical.PromptTokens()
@@ -209,8 +209,8 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	if p, ok := compressor.(contextProbeTracker); ok && p.ContextProbed() {
 		length := compressor.Base().ContextLength
 		if p.ContextProbePersistable() {
-			provider.SaveProviderContextLength(ctx, a.Model, a.BaseURL, length, a.Provider)
-			a.safePrint(fmt.Sprintf("%s💾 Cached context length: %s tokens for %s", a.logPrefix, groupedInt(length), a.Model), false)
+			provider.SaveProviderContextLength(ctx, a.model, a.baseURL, length, a.provider)
+			a.safePrint(fmt.Sprintf("%s💾 Cached context length: %s tokens for %s", a.logPrefix, groupedInt(length), a.model), false)
 		}
 		p.ResetContextProbe()
 	}
@@ -242,20 +242,20 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 		ident += " upstream=" + upstream
 	}
 	log.Info(fmt.Sprintf("API call #%d: model=%s provider=%s in=%d out=%d total=%d latency=%.1fs%s%s",
-		a.sessionAPICalls, a.Model, providerName, promptTokens, completionTokens, totalTokens, apiDuration, cachePct, ident))
-	if a.sessionAPICalls == 1 && a.Provider == "nous" {
+		a.sessionAPICalls, a.model, providerName, promptTokens, completionTokens, totalTokens, apiDuration, cachePct, ident))
+	if a.sessionAPICalls == 1 && a.provider == "nous" {
 		a.maybeSwitchWireAfterFirstResponse(ctx, response, a.sessionAPICalls)
 	}
 
-	costModel, costProvider, costBaseURL := a.Model, a.Provider, a.BaseURL
+	costModel, costProvider, costBaseURL := a.model, a.provider, a.baseURL
 	if s, ok := moaClient.(moaAggregatorSlotClient); ok {
 		if slot := s.LastAggregatorSlot(); len(slot) > 0 && pyrepr.Truthy(slot["model"]) {
 			costModel = pyrepr.Str(slot["model"])
-			costProvider = pyStrOr(slot["provider"], a.Provider)
-			costBaseURL = pyStrOr(slot["base_url"], a.BaseURL)
+			costProvider = pyStrOr(slot["provider"], a.provider)
+			costBaseURL = pyStrOr(slot["base_url"], a.baseURL)
 		}
 	}
-	costResult := provider.EstimateUsageCost(ctx, costModel, aggregator, costProvider, costBaseURL, a.APIKey)
+	costResult := provider.EstimateUsageCost(ctx, costModel, aggregator, costProvider, costBaseURL, a.apiKey)
 	var costDelta *float64
 	if costResult.AmountUSD != nil {
 		amount, _ := costResult.AmountUSD.Float64()
@@ -317,9 +317,9 @@ func (a *AIAgent) queueResponseTokenCounts(canonical provider.CanonicalUsage, co
 		EstimatedCostUSD: costDelta,
 		CostStatus:       &status,
 		CostSource:       &costSource,
-		BillingProvider:  &a.Provider,
-		BillingBaseURL:   &a.BaseURL,
-		Model:            &a.Model,
+		BillingProvider:  &a.provider,
+		BillingBaseURL:   &a.baseURL,
+		Model:            &a.model,
 		APICallCount:     1,
 		Task:             a.turnRouteTask,
 	}

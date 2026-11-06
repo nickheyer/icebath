@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Swaps a package variable for the duration of a test
@@ -236,7 +238,7 @@ func cpWriteJSON(t *testing.T, p string, v any) {
 	}
 }
 
-// Points HOME, USERPROFILE and ICEBATH_HOME at a fresh fake home
+// Points HOME, USERPROFILE, the user home and ICEBATH_HOME at a fresh fake home
 func cpFakeHome(t *testing.T, tmp string) string {
 	t.Helper()
 	h := filepath.Join(tmp, "home")
@@ -245,6 +247,7 @@ func cpFakeHome(t *testing.T, tmp string) string {
 	}
 	t.Setenv("HOME", h)
 	t.Setenv("USERPROFILE", h)
+	t.Cleanup(home.PatchUserHome(h))
 	t.Setenv("ICEBATH_HOME", filepath.Join(h, ".icebath"))
 	t.Setenv("HOMEDRIVE", "")
 	t.Setenv("HOMEPATH", "")

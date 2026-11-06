@@ -200,12 +200,15 @@ func httpsUpdateURL(url any) (string, error) {
 }
 
 // Fetches a feed over https only, redirects included, reading at most one MiB as text
+// Round tripper feed fetches use, nil for the default transport
+var feedTransport http.RoundTripper
+
 var defaultFetch = func(ctx context.Context, url string) (string, error) {
 	target, err := httpsUpdateURL(url)
 	if err != nil {
 		return "", err
 	}
-	client := &http.Client{Timeout: feedFetchTimeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	client := &http.Client{Transport: feedTransport, Timeout: feedFetchTimeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if !strings.HasPrefix(strings.ToLower(req.URL.String()), "https://") {
 			return errors.New("update_url redirect must use https://")
 		}

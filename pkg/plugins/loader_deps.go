@@ -69,7 +69,10 @@ func findDistributionVersion(name string, path []string) (version string, found 
 }
 
 // Version header of an installed distribution's METADATA or PKG-INFO, empty when it has none
-func distributionVersion(dir string) string {
+func distributionVersion(dir string) string { return distributionHeader(dir, "version") }
+
+// One header of an installed distribution's METADATA or PKG-INFO, matched case insensitively, empty when absent
+func distributionHeader(dir, header string) string {
 	text := ""
 	for _, name := range []string{"METADATA", "PKG-INFO"} {
 		if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
@@ -87,7 +90,7 @@ func distributionVersion(dir string) string {
 		if line == "" {
 			break
 		}
-		if key, value, ok := strings.Cut(line, ":"); ok && strings.EqualFold(strings.TrimSpace(key), "version") {
+		if key, value, ok := strings.Cut(line, ":"); ok && strings.EqualFold(strings.TrimSpace(key), header) {
 			return strings.TrimSpace(value)
 		}
 	}

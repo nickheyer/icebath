@@ -1,12 +1,14 @@
 package pyast
 
 import (
+	"errors"
 	"fmt"
 	"iter"
 	"math/big"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Dict is a literal dict keeping insertion order, its keys compared with Python equality
@@ -244,22 +246,8 @@ func convertLiteral(n *Node) any {
 
 // ParseExpression parses source in eval mode like ast.parse(source, mode='eval'), returning an Expression
 func ParseExpression(source string) (*Node, error) {
-	if strings.IndexByte(source, 0) >= 0 {
-		return nil, nullBytesError()
-	}
-	buf := []byte(strings.ReplaceAll(strings.ReplaceAll(source, "\r\n", "\n"), "\r", "\n"))
-	lx := tokenize(buf)
-	p := &parser{lx: lx, toks: lx.toks, parens: map[*Node]bool{}}
-	return p.run(func() *Node {
-		body := p.expressions()
-		for p.cur().kind == tNewline {
-			p.next()
-		}
-		if p.cur().kind != tEnd {
-			p.fail()
-		}
-		return NewNode("Expression", body)
-	})
+	n, _, err := ParseWith(source, Options{Mode: "eval"})
+	return n, err
 }
 
 // Comma separated expressions of eval input, a tuple when a comma appears
@@ -357,5 +345,55 @@ func reprNodeList(b *strings.Builder, list []*Node, depth int) error {
 		}
 	}
 	b.WriteString("]")
+	return nil
+}
+
+// Items of a list literal rendered with str, false on ValueError, SyntaxError or a non list, other exceptions returned
+func LiteralStrList(text string) ([]string, bool, error) {
+	v, err := LiteralEval(pystr.Strip(text))
+	if err != nil {
+		var se *SyntaxError
+		var le *LiteralError
+		if errors.As(err, &se) || (errors.As(err, &le) && le.Class == "ValueError") {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return nil, false, nil
+	}
+	out := make([]string, len(items))
+	for i, item := range items {
+		if err := intDigitsCheck(item); err != nil {
+			return nil, false, err
+		}
+		out[i] = pyrepr.Str(item)
+	}
+	return out, true, nil
+}
+
+// The ValueError str raises for an int past the 4300 digit limit anywhere inside a literal value
+func intDigitsCheck(v any) error {
+	switch x := v.(type) {
+	case *big.Int:
+		_, err := ConstantRepr(x)
+		return err
+	case []any:
+		for _, e := range x {
+			if err := intDigitsCheck(e); err != nil {
+				return err
+			}
+		}
+	case pyrepr.Tuple:
+		return intDigitsCheck([]any(x))
+	case Set:
+		return intDigitsCheck([]any(x))
+	case *Dict:
+		if err := intDigitsCheck(x.Keys); err != nil {
+			return err
+		}
+		return intDigitsCheck(x.Values)
+	}
 	return nil
 }

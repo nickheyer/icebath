@@ -299,7 +299,6 @@ func TestControlAnswerFailureText(t *testing.T) {
 func TestHonchoHostBlockMigrates(t *testing.T) {
 	tmp := manageEnv(t)
 	out := captureOut(t)
-	t.Setenv("HOME", tmp)
 	dir := namedProfile(t, tmp, "writer")
 	writeFile(t, filepath.Join(dir, "honcho.json"), `{"hosts": {"icebath_coder": {"workspace": "w"}, "other": {}}}`)
 	if err := migrateHonchoProfileHost("coder", "writer", dir); err != nil {

@@ -18,6 +18,9 @@ const maxStrDigits = 4300
 
 // Value of a NUMBER token as parsenumber, with the huge decimal literal error
 func (p *parser) numberValue(t *token) any {
+	if p.fv < 6 && strings.Contains(t.val, "_") {
+		p.raiseLast("Underscores in numeric literals are only supported in Python 3.6 and greater")
+	}
 	s := strings.ReplaceAll(t.val, "_", "")
 	last := s[len(s)-1]
 	if last == 'j' || last == 'J' {
@@ -205,20 +208,80 @@ func (p *parser) stringConstant(t *token) (*Node, bool) {
 		if raw {
 			return p.mkTok(t, "Constant", []byte(body), kind), true
 		}
-		b, err := decodeBytesEscapes(body)
+		b, err, bad := decodeBytesEscapes(body)
 		if err != "" {
 			p.raiseLast("(value error) " + err)
+		}
+		if bad >= 0 {
+			p.escapeWarning(t, t, body, bad)
 		}
 		return p.mkTok(t, "Constant", b, kind), true
 	}
 	if raw {
 		return p.mkTok(t, "Constant", body, kind), false
 	}
-	v, err := decodeUnicodeEscapes(body)
+	v, err, buf, bad := decodeUnicodeEscapes(body)
 	if err != "" {
 		p.raiseLast("(unicode error) " + err)
 	}
+	if bad >= 0 {
+		p.escapeWarning(t, t, buf, bad)
+	}
 	return p.mkTok(t, "Constant", v, kind), false
+}
+
+// Issues the invalid escape SyntaxWarning of warn_invalid_escape_sequence once per literal token, located from token t
+func (p *parser) escapeWarning(key, t *token, buf string, bad int) {
+	if p.probing > 0 || p.warnedEscape[key] {
+		return
+	}
+	c := buf[bad]
+	if (t.kind == tFMiddle || t.kind == tFEnd || t.kind == tTMiddle || t.kind == tTEnd) && (c == '{' || c == '}') {
+		return
+	}
+	if p.warnedEscape == nil {
+		p.warnedEscape = map[*token]bool{}
+	}
+	p.warnedEscape[key] = true
+	lineno, col := t.l, t.c
+	for i := 0; i < bad; i++ {
+		if buf[i] == '\n' {
+			lineno, col = lineno+1, 0
+		} else {
+			col++
+		}
+	}
+	if lineno == t.l {
+		quotes, first := 0, byte(0)
+		for i := 0; i < len(t.val) && (t.val[i] == '\'' || t.val[i] == '"'); i++ {
+			if quotes == 0 {
+				first = t.val[i]
+			}
+			if t.val[i] == first {
+				quotes++
+			}
+		}
+		col += quotes
+	}
+	var warnMsg, errMsg string
+	if c >= '4' && c <= '7' {
+		seq := buf[bad:min(bad+3, len(buf))]
+		warnMsg = fmt.Sprintf("\"\\%s\" is an invalid octal escape sequence. Such sequences will not work in the future. Did you mean \"\\\\%s\"? A raw string is also an option.", seq, seq)
+		errMsg = fmt.Sprintf("\"\\%s\" is an invalid octal escape sequence. Did you mean \"\\\\%s\"? A raw string is also an option.", seq, seq)
+	} else {
+		ch := string(rune(c))
+		warnMsg = fmt.Sprintf("\"\\%s\" is an invalid escape sequence. Such sequences will not work in the future. Did you mean \"\\\\%s\"? A raw string is also an option.", ch, ch)
+		errMsg = fmt.Sprintf("\"\\%s\" is an invalid escape sequence. Did you mean \"\\\\%s\"? A raw string is also an option.", ch, ch)
+	}
+	if p.warnErrors {
+		p.knownErrLine = t.l
+		p.raiseAt(lineno, col-1, lineno, col+1, errMsg)
+	}
+	category := "SyntaxWarning"
+	if p.fv < 12 {
+		category = "DeprecationWarning"
+	}
+	p.warns = append(p.warns, Warning{Category: category, Msg: warnMsg, Filename: p.filename, Lineno: lineno})
 }
 
 func hexVal(c byte) int {
@@ -234,8 +297,9 @@ func hexVal(c byte) int {
 }
 
 // Bytes literal escapes as _PyBytes_DecodeEscape with the invalid \x ValueError text
-func decodeBytesEscapes(s string) ([]byte, string) {
+func decodeBytesEscapes(s string) ([]byte, string, int) {
 	var out []byte
+	bad := -1
 	for i := 0; i < len(s); {
 		c := s[i]
 		if c != '\\' {
@@ -245,7 +309,7 @@ func decodeBytesEscapes(s string) ([]byte, string) {
 		}
 		i++
 		if i >= len(s) {
-			return nil, "Trailing \\ in string"
+			return nil, "Trailing \\ in string", bad
 		}
 		e := s[i]
 		i++
@@ -273,6 +337,9 @@ func decodeBytesEscapes(s string) ([]byte, string) {
 				v = v<<3 + int(s[i]-'0')
 				i++
 			}
+			if v > 0o377 && bad < 0 {
+				bad = i - 3
+			}
 			out = append(out, byte(v))
 		case 'x':
 			if i+1 < len(s) && hexVal(s[i]) < 16 && hexVal(s[i+1]) < 16 {
@@ -280,13 +347,16 @@ func decodeBytesEscapes(s string) ([]byte, string) {
 				i += 2
 				continue
 			}
-			return nil, fmt.Sprintf("invalid \\x escape at position %d", i-2)
+			return nil, fmt.Sprintf("invalid \\x escape at position %d", i-2), bad
 		default:
+			if bad < 0 {
+				bad = i - 1
+			}
 			out = append(out, '\\')
 			i--
 		}
 	}
-	return out, ""
+	return out, "", bad
 }
 
 // Rewrites non ASCII text as \U escapes like decode_unicode_with_escapes before escape decoding
@@ -323,9 +393,10 @@ func unicodeEscapeError(start, end int, msg string, buf string) string {
 }
 
 // Decodes str literal escapes as the unicode_escape codec, returning its error text on failure
-func decodeUnicodeEscapes(src string) (string, string) {
+func decodeUnicodeEscapes(src string) (string, string, string, int) {
 	s := escapeBuffer(src)
 	var out []byte
+	bad := -1
 	for i := 0; i < len(s); {
 		c := s[i]
 		if c != '\\' {
@@ -336,7 +407,7 @@ func decodeUnicodeEscapes(src string) (string, string) {
 		start := i
 		i++
 		if i >= len(s) {
-			return "", unicodeEscapeError(start, len(s), "\\ at end of string", s)
+			return "", unicodeEscapeError(start, len(s), "\\ at end of string", s), s, bad
 		}
 		e := s[i]
 		i++
@@ -364,6 +435,9 @@ func decodeUnicodeEscapes(src string) (string, string) {
 				v = v<<3 + rune(s[i]-'0')
 				i++
 			}
+			if v > 0o377 && bad < 0 {
+				bad = i - 3
+			}
 			out = pystr.AppendRune(out, v)
 		case 'x', 'u', 'U':
 			count, msg := 2, "truncated \\xXX escape"
@@ -375,19 +449,19 @@ func decodeUnicodeEscapes(src string) (string, string) {
 			var ch rune
 			for ; count > 0; count-- {
 				if i >= len(s) || hexVal(s[i]) >= 16 {
-					return "", unicodeEscapeError(start, i, msg, s)
+					return "", unicodeEscapeError(start, i, msg, s), s, bad
 				}
 				ch = ch<<4 + rune(hexVal(s[i]))
 				i++
 			}
 			if ch > 0x10ffff || ch < 0 {
-				return "", unicodeEscapeError(start, i, "illegal Unicode character", s)
+				return "", unicodeEscapeError(start, i, "illegal Unicode character", s), s, bad
 			}
 			out = pystr.AppendRune(out, ch)
 		case 'N':
 			msg := "malformed \\N character escape"
 			if i >= len(s) {
-				return "", unicodeEscapeError(start, i, msg, s)
+				return "", unicodeEscapeError(start, i, msg, s), s, bad
 			}
 			if s[i] == '{' {
 				nameStart := i + 1
@@ -396,7 +470,7 @@ func decodeUnicodeEscapes(src string) (string, string) {
 					j++
 				}
 				if j >= len(s) {
-					return "", unicodeEscapeError(start, j, msg, s)
+					return "", unicodeEscapeError(start, j, msg, s), s, bad
 				}
 				if j > nameStart {
 					i = j + 1
@@ -404,16 +478,19 @@ func decodeUnicodeEscapes(src string) (string, string) {
 						out = pystr.AppendRune(out, r)
 						continue
 					}
-					return "", unicodeEscapeError(start, i, "unknown Unicode character name", s)
+					return "", unicodeEscapeError(start, i, "unknown Unicode character name", s), s, bad
 				}
 				i = j
 			}
-			return "", unicodeEscapeError(start, i, msg, s)
+			return "", unicodeEscapeError(start, i, msg, s), s, bad
 		default:
+			if bad < 0 {
+				bad = i - 1
+			}
 			out = append(out, '\\', e)
 		}
 	}
-	return string(out), ""
+	return string(out), "", s, bad
 }
 
 // Parses an f-string or t-string from its start token into a JoinedStr or TemplateStr
@@ -421,16 +498,21 @@ func (p *parser) fstring() *Node {
 	start := p.next()
 	tstr := start.kind == tTStart
 	raw := strings.ContainsAny(start.val, "rR")
+	p.rawFString = append(p.rawFString, raw)
+	defer func() { p.rawFString = p.rawFString[:len(p.rawFString)-1] }()
 	var items []*Node
+	var middles []*token
+	var end *token
 	for {
 		t := p.cur()
 		if t.kind == tFEnd || t.kind == tTEnd {
-			p.next()
+			end = p.next()
 			break
 		}
 		if t.kind == tFMiddle || t.kind == tTMiddle {
 			p.next()
 			items = append(items, p.mkTok(t, "Constant", t.val, nil))
+			middles = append(middles, t)
 			continue
 		}
 		if t.kind == tOp && t.val == "{" {
@@ -440,6 +522,7 @@ func (p *parser) fstring() *Node {
 		p.fail()
 	}
 	var vals []*Node
+	mid := 0
 	for _, it := range items {
 		if it.Is("JoinedStr") {
 			vals = append(vals, it.Children("values")...)
@@ -450,10 +533,15 @@ func (p *parser) fstring() *Node {
 			if text == "{{" || text == "}}" {
 				text = text[:1]
 			}
+			key := middles[mid]
+			mid++
 			if !raw && strings.Contains(text, "\\") {
-				v, err := decodeUnicodeEscapes(text)
+				v, err, buf, bad := decodeUnicodeEscapes(text)
 				if err != "" {
 					p.raiseLast("(unicode error) " + err)
+				}
+				if bad >= 0 {
+					p.escapeWarning(key, end, buf, bad)
 				}
 				text = v
 			}
@@ -468,7 +556,11 @@ func (p *parser) fstring() *Node {
 	if tstr {
 		typ = "TemplateStr"
 	}
-	return p.mkFrom(start, typ, vals)
+	n := p.mkFrom(start, typ, vals)
+	if tstr {
+		p.checkVersion(14, "t-strings are")
+	}
+	return n
 }
 
 func (p *parser) strPrefix(tstr bool) string {
@@ -585,12 +677,15 @@ func (p *parser) replacementField(tstr bool) *Node {
 			t := p.cur()
 			if t.kind == tFMiddle || t.kind == tTMiddle {
 				p.next()
-				v, err := decodeUnicodeEscapes(t.val)
-				if !strings.Contains(t.val, "\\") {
-					v, err = t.val, ""
+				v, err, buf, bad := decodeUnicodeEscapes(t.val)
+				if !strings.Contains(t.val, "\\") || p.rawFString[len(p.rawFString)-1] {
+					v, err, bad = t.val, "", -1
 				}
 				if err != "" {
 					p.raiseLast("(unicode error) " + err)
+				}
+				if bad >= 0 {
+					p.escapeWarning(t, t, buf, bad)
 				}
 				items = append(items, p.mkTok(t, "Constant", v, nil))
 				continue

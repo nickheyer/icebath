@@ -40,6 +40,8 @@ func isOSError(err error) bool {
 	var linkErr *os.LinkError
 	var sysErr *os.SyscallError
 	var errno syscall.Errno
+	var pyOSError interface{ OSError() bool }
 	return errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &sysErr) ||
-		errors.As(err, &errno) || errors.Is(err, os.ErrDeadlineExceeded)
+		errors.As(err, &errno) || errors.Is(err, os.ErrDeadlineExceeded) ||
+		(errors.As(err, &pyOSError) && pyOSError.OSError())
 }

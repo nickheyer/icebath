@@ -44,7 +44,7 @@ func promptTestAgent(t *testing.T, platform string) *AIAgent {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	empty := ""
-	a := &AIAgent{Platform: platform, Env: &tools.Env{Values: &sync.Map{}}, validToolNames: map[string]bool{}}
+	a := &AIAgent{platform: platform, env: &tools.Env{Values: &sync.Map{}}, validToolNames: map[string]bool{}}
 	a.toolUseEnforcement = false
 	a.botModeProtocol = true
 	a.kanbanWorkerGuidance = &empty
@@ -159,7 +159,7 @@ func TestCronAgentGetsDeliveryChannelHintWithItsOverride(t *testing.T) {
 	fakePlatformRegistry(t, map[string]string{"slack": slackHint})
 	extra := "Always attach the report as a .pdf."
 	a := promptTestAgent(t, "cron")
-	tools.BindSessionContext(a.Env, map[string]string{"ICEBATH_CRON_AUTO_DELIVER_PLATFORM": "slack"})
+	tools.BindSessionContext(a.env, map[string]string{"ICEBATH_CRON_AUTO_DELIVER_PLATFORM": "slack"})
 	a.platformHintOverrides = map[string]any{"slack": map[string]any{"append": extra}}
 	hint := PlatformHint(context.Background(), a)
 	if !strings.HasPrefix(hint, PlatformHints["cron"]) || !strings.Contains(hint, slackHint) || !strings.Contains(hint, extra) {
@@ -178,12 +178,12 @@ func TestDeliveryTargetOnlyAppliesToCronAgents(t *testing.T) {
 	tgHint := "You are on Telegram."
 	fakePlatformRegistry(t, map[string]string{"slack": "You are on Slack.", "telegram": tgHint})
 	tg := promptTestAgent(t, "telegram")
-	tools.BindSessionContext(tg.Env, map[string]string{"ICEBATH_CRON_AUTO_DELIVER_PLATFORM": "slack"})
+	tools.BindSessionContext(tg.env, map[string]string{"ICEBATH_CRON_AUTO_DELIVER_PLATFORM": "slack"})
 	if got := PlatformHint(context.Background(), tg); got != tgHint {
 		t.Fatalf("telegram hint %q", got)
 	}
 	cron := promptTestAgent(t, "cron")
-	tools.BindSessionContext(cron.Env, map[string]string{"ICEBATH_CRON_AUTO_DELIVER_PLATFORM": ""})
+	tools.BindSessionContext(cron.env, map[string]string{"ICEBATH_CRON_AUTO_DELIVER_PLATFORM": ""})
 	if got := PlatformHint(context.Background(), cron); got != PlatformHints["cron"] {
 		t.Fatalf("cron without target %q", got)
 	}
@@ -372,7 +372,7 @@ func TestModelGate(t *testing.T) {
 func TestTimestampLineAndTimelessBotPrompt(t *testing.T) {
 	loc := time.FixedZone("EST", -5*3600)
 	fixedPromptClock(t, time.Date(2026, 3, 4, 10, 0, 0, 0, loc))
-	a := &AIAgent{Model: "m", Provider: "p", Platform: "cli", sessionID: "20260301_120000_abc", passSessionID: true}
+	a := &AIAgent{model: "m", provider: "p", platform: "cli", sessionID: "20260301_120000_abc", passSessionID: true}
 	line := timestampLine(context.Background(), a)
 	want := "Conversation started: Sunday, March 01, 2026 (EST, UTC-05:00)\nToday's date (as of the last context rebuild): Wednesday, March 04, 2026"
 	if !strings.HasPrefix(line, want) {
@@ -412,7 +412,7 @@ func TestFormatToolsForSystemMessage(t *testing.T) {
 	if got, _ := FormatToolsForSystemMessage(a); got != "[]" {
 		t.Fatalf("empty %q", got)
 	}
-	a.Tools = []any{map[string]any{"function": map[string]any{"name": "web", "description": "Söke", "parameters": map[string]any{"type": "object"}}}, map[string]any{"function": map[string]any{"name": "x"}}}
+	a.tools = []any{map[string]any{"function": map[string]any{"name": "web", "description": "Söke", "parameters": map[string]any{"type": "object"}}}, map[string]any{"function": map[string]any{"name": "x"}}}
 	got, err := FormatToolsForSystemMessage(a)
 	want := `[{"name": "web", "description": "Söke", "parameters": {"type": "object"}, "required": null}, {"name": "x", "description": "", "parameters": {}, "required": null}]`
 	if err != nil || got != want {

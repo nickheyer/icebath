@@ -456,6 +456,9 @@ func TestResolveStdioCommandOnChildPath(t *testing.T) {
 	if cmd != "mytool" {
 		t.Fatalf("absent child PATH must miss, got %q", cmd)
 	}
+	prevMissing := pmMissingReason
+	pmMissingReason = func(string) (string, error) { return "no build for this platform", nil }
+	t.Cleanup(func() { pmMissingReason = prevMissing })
 	cmd, _, err = resolveStdioCommand(context.Background(), "npx", map[string]string{"PATH": dir})
 	if err != nil || cmd != "npx" {
 		t.Fatalf("launcher without a managed build keeps the bare name %q %v", cmd, err)

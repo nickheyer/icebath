@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // CoreTools is the shared tool list every platform bundle inherits
@@ -248,8 +252,35 @@ var BuiltinToolsetNames = func() map[string]bool {
 	return out
 }()
 
-// PlatformRegistered reports whether a plugin platform of this name is loaded, set by the gateway package
-var PlatformRegistered = func(name string) bool { return false }
+// PlatformRegistered reports whether a plugin platform of this name is loaded through the gateway names hook
+var PlatformRegistered = func(name string) bool {
+	return RegisteredPlatformNames != nil && containsString(RegisteredPlatformNames(), name)
+}
+
+// Toolset table keys in upstream TOOLSETS definition order, runtime custom toolsets appended
+var toolsetOrder = []string{
+	"web", "search", "x_search", "vision", "video", "image_gen", "video_gen", "computer_use", "terminal", "skills",
+	"browser", "cronjob", "file", "tts", "todo", "memory", "context_engine", "session_search", "connections",
+	"project", "bot_room", "desktop_ui", "onboarding", "catalog", "clarify", "code_execution", "delegation", "kanban",
+	"discord", "discord_admin", "yuanbao", "feishu_doc", "feishu_drive", "debugging", "safe", "coding",
+	"icebath-acp", "icebath-api-server", "icebath-cli", "icebath-cron", "icebath-telegram", "icebath-discord",
+	"icebath-whatsapp", "icebath-slack", "icebath-signal", "icebath-bluebubbles", "icebath-email",
+	"icebath-mattermost", "icebath-matrix", "icebath-dingtalk", "icebath-feishu", "icebath-weixin", "icebath-qqbot",
+	"icebath-wecom", "icebath-wecom-callback", "icebath-yuanbao", "icebath-sms", "icebath-webhook", "icebath-gateway",
+}
+
+// Static toolset names in table definition order like iterating the upstream TOOLSETS dict
+func orderedToolsetNames() []string {
+	toolsetsMu.RLock()
+	defer toolsetsMu.RUnlock()
+	out := make([]string, 0, len(Toolsets))
+	for _, n := range toolsetOrder {
+		if _, ok := Toolsets[n]; ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
 
 func staticToolset(name string) (Toolset, bool) {
 	toolsetsMu.RLock()
@@ -622,6 +653,9 @@ func (r *Registry) ValidateToolset(ctx context.Context, scope, name string) bool
 func CreateCustomToolset(name, description string, tools, includes []string) {
 	toolsetsMu.Lock()
 	defer toolsetsMu.Unlock()
+	if _, exists := Toolsets[name]; !exists {
+		toolsetOrder = append(toolsetOrder, name)
+	}
 	Toolsets[name] = ts(description, tools, includes...)
 	resolveMemoMu.Lock()
 	resolveMemo = map[resolveKey][]string{}
@@ -1028,7 +1062,7 @@ func ParsePlatformToolsetsValue(value any) ([]string, bool) {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
-			out = append(out, fmt.Sprint(item))
+			out = append(out, pyrepr.Str(item))
 		}
 		return out, true
 	case []string:
@@ -1140,17 +1174,48 @@ type PlatformToolsOptions struct {
 	PluginToolsetKeys        map[string]bool
 	PortableMCPServers       map[string]bool
 	IncludeDefaultMCPServers bool
-	XAICredentialsPresent    bool
 }
 
 // MCPServerEnabled reports whether an mcp_servers entry is enabled unless explicitly off
 func MCPServerEnabled(serverCfg map[string]any) bool {
 	v, ok := serverCfg["enabled"]
-	if !ok || v == nil {
-		return true
+	if !ok {
+		v = true
 	}
-	b, isBool := config.AsBool(v)
-	return !isBool || b
+	return parseMCPBoolish(v, true)
+}
+
+var (
+	mcpTrueWords    = map[string]bool{"true": true, "1": true, "yes": true, "on": true}
+	mcpFalseWords   = map[string]bool{"false": true, "0": true, "no": true, "off": true}
+	mcpCommonLogger = slog.Default
+)
+
+// Numbers by truthiness, words from a fixed set, anything else the default with a warning
+func parseMCPBoolish(value any, def bool) bool {
+	switch v := value.(type) {
+	case nil:
+		return def
+	case bool:
+		return v
+	case string:
+		lowered := strings.ToLower(strings.TrimSpace(v))
+		if mcpTrueWords[lowered] {
+			return true
+		}
+		if mcpFalseWords[lowered] {
+			return false
+		}
+	default:
+		if n, isInt := pyrepr.Int(v); isInt {
+			return n.Sign() != 0
+		}
+		if name := pyrepr.TypeName(v); name == "float" {
+			return pyTruthy(v)
+		}
+	}
+	mcpCommonLogger().Warn(fmt.Sprintf("MCP config expected a boolean-ish value, got %s; using default=%s", pyrepr.Repr(value), pyrepr.Str(def)))
+	return def
 }
 
 // EnabledMCPServerNames lists MCP servers enabled in config plus portable plugin servers
@@ -1272,7 +1337,7 @@ func (r *Registry) explicitToolsets(ctx context.Context, scope string, names []s
 	return enabled
 }
 
-func (r *Registry) compositeToolsets(ctx context.Context, scope string, names []string, platform string, explicit, xai bool) map[string]bool {
+func (r *Registry) compositeToolsets(ctx context.Context, scope string, names []string, platform string, explicit bool) map[string]bool {
 	all := map[string]bool{}
 	for _, n := range names {
 		for _, t := range r.ResolveToolset(ctx, scope, n) {
@@ -1281,7 +1346,7 @@ func (r *Registry) compositeToolsets(ctx context.Context, scope string, names []
 	}
 	enabled := configurableSubsetOf(ctx, r, scope, all, platform)
 	off := defaultOffToolsets(platform, explicit)
-	if ToolsetAllowedForPlatform("x_search", platform) && xai {
+	if ToolsetAllowedForPlatform("x_search", platform) && xaiCredentialsPresent(ctx) {
 		enabled["x_search"] = true
 		delete(off, "x_search")
 	}
@@ -1308,7 +1373,7 @@ func (r *Registry) recoverPlatformNativeToolsets(ctx context.Context, scope stri
 			claimed[t] = true
 		}
 	}
-	for _, name := range staticToolsetNames() {
+	for _, name := range orderedToolsetNames() {
 		spec, _ := staticToolset(name)
 		if skip[name] || strings.HasPrefix(name, BundlePrefix) || (DefaultOffToolsets[name] && name != platform) || len(spec.Includes) > 0 || spec.Posture {
 			continue
@@ -1388,21 +1453,13 @@ func mergeMCPServers(cfg config.Tree, names []string, passthrough map[string]boo
 
 // PlatformToolsExplicitlySaved reports whether platform_toolsets holds a saved list for the platform
 func PlatformToolsExplicitlySaved(cfg config.Tree, platform string) bool {
-	raw, ok := cfg.Sub("platform_toolsets")[platform]
-	if !ok {
-		return false
-	}
-	_, isList := ParsePlatformToolsetsValue(raw)
+	_, isList := coercePlatformToolsetsValue(cfg.Sub("platform_toolsets")[platform], platform)
 	return isList
 }
 
 // PlatformTools resolves the enabled toolset names for one platform from config
 func (r *Registry) PlatformTools(ctx context.Context, scope string, cfg config.Tree, platform string, opts PlatformToolsOptions) map[string]bool {
-	raw, present := cfg.Sub("platform_toolsets")[platform]
-	names, explicit := ParsePlatformToolsetsValue(raw)
-	if present && !explicit && raw != nil {
-		checkLogger(nil).Warn("platform_toolsets entry is not a list of toolset names, falling back to the platform default", "platform", platform)
-	}
+	names, explicit := coercePlatformToolsetsValue(cfg.Sub("platform_toolsets")[platform], platform)
 	if !explicit {
 		names = []string{PlatformDefaultToolset(platform)}
 	}
@@ -1410,7 +1467,7 @@ func (r *Registry) PlatformTools(ctx context.Context, scope string, cfg config.T
 	configurable := configurableKeys()
 	pluginKeys := opts.PluginToolsetKeys
 	if pluginKeys == nil {
-		pluginKeys = map[string]bool{}
+		pluginKeys = PluginToolsetKeys(ctx)
 	}
 	defaults := platformDefaultKeys()
 	known := map[string]bool{}
@@ -1430,7 +1487,7 @@ func (r *Registry) PlatformTools(ctx context.Context, scope string, cfg config.T
 	if anyKnown {
 		enabled = r.explicitToolsets(ctx, scope, names, known, cfg, platform, explicit)
 	} else {
-		enabled = r.compositeToolsets(ctx, scope, names, platform, explicit, opts.XAICredentialsPresent)
+		enabled = r.compositeToolsets(ctx, scope, names, platform, explicit)
 	}
 	skip := map[string]bool{}
 	for k := range known {
@@ -1441,18 +1498,11 @@ func (r *Registry) PlatformTools(ctx context.Context, scope string, cfg config.T
 	}
 	r.recoverPlatformNativeToolsets(ctx, scope, enabled, platform, skip)
 	if len(pluginKeys) > 0 {
-		knownForPlatform := map[string]bool{}
-		for _, n := range config.AsStrings(cfg.Sub("known_plugin_toolsets")[platform]) {
-			knownForPlatform[n] = true
-		}
-		for p := range pluginKeys {
-			if containsString(names, p) || (!DefaultOffToolsets[p] && !knownForPlatform[p]) {
-				enabled[p] = true
-			}
+		for p := range enabledPluginToolsets(cfg, platform, names, pluginKeys) {
+			enabled[p] = true
 		}
 	}
-	engine := strings.ToLower(strings.TrimSpace(cfg.String("context.engine", "compressor")))
-	if engine != "" && engine != "compressor" && !(explicit && len(names) == 0) {
+	if contextEngineActive(cfg) && !(explicit && len(names) == 0) {
 		enabled["context_engine"] = true
 	}
 	passthrough := map[string]bool{}
@@ -1461,10 +1511,14 @@ func (r *Registry) PlatformTools(ctx context.Context, scope string, cfg config.T
 			passthrough[n] = true
 		}
 	}
-	for k := range mergeMCPServers(cfg, names, passthrough, opts.IncludeDefaultMCPServers, opts.PortableMCPServers) {
+	portable := opts.PortableMCPServers
+	if portable == nil {
+		portable = portableMCPServerNames(ctx)
+	}
+	for k := range mergeMCPServers(cfg, names, passthrough, opts.IncludeDefaultMCPServers, portable) {
 		enabled[k] = true
 	}
-	if !explicit && containsString(config.AsStrings(cfg.Get("toolsets")), "kanban") {
+	if !explicit && pyContainsKanban(cfg["toolsets"]) {
 		enabled["kanban"] = true
 	}
 	if disabled := cfg.Get("agent.disabled_toolsets"); disabled != nil {
@@ -1477,6 +1531,9 @@ func (r *Registry) PlatformTools(ctx context.Context, scope string, cfg config.T
 		if len(disabledNames) > 0 {
 			enabled = r.pruneToolsetsStrippedByDisabled(ctx, scope, enabled, disabledNames)
 		}
+	}
+	if explicit && len(names) > 0 {
+		r.warnAllInvalidPlatformToolsets(ctx, scope, platform, names, cfg)
 	}
 	return enabled
 }
@@ -1629,10 +1686,10 @@ func (r *Registry) SavePlatformTools(ctx context.Context, scope string, cfg conf
 		drop[k] = true
 	}
 	drop["no_mcp"] = true
-	existing, _ := ParsePlatformToolsetsValue(cfg.Sub("platform_toolsets")[platform])
+	existing, _ := coercePlatformToolsetsValue(cfg.Sub("platform_toolsets")[platform], platform)
 	preserved := map[string]bool{}
 	for _, e := range existing {
-		if !drop[e] {
+		if !drop[e] && !drop[CanonicalToolsetName(e)] {
 			preserved[e] = true
 		}
 	}
@@ -1720,52 +1777,118 @@ func IsKnownPlatformBundle(platform, name string) bool {
 	if CanonicalToolsetName(name) != PlatformDefaultToolset(platform) {
 		return false
 	}
-	if _, ok := PlatformInfoFor(platform); ok {
+	if _, ok := PlatformInfoFor(platform); ok || bundledPlatformNames()[platform] {
+		return true
+	}
+	if LeftCorePlatforms != nil && containsString(LeftCorePlatforms(), platform) {
 		return true
 	}
 	return PlatformRegistered(platform)
 }
 
-// SavedToolsetResolver returns the validity test a saved platform_toolsets list is judged by
-func (r *Registry) SavedToolsetResolver(ctx context.Context, scope string, cfg config.Tree, pluginNames map[string]bool) func(string) bool {
-	known := map[string]bool{"no_mcp": true}
-	for name := range cfg.Map("mcp_servers") {
-		known[name] = true
-		known["mcp-"+name] = true
+// LeftCorePlatforms lists the platforms that left core for a catalog plugin, installed by the provider slice
+var LeftCorePlatforms func() []string
+
+// Bundled platform plugin names under the install root, read once per process
+var bundledPlatformNames = sync.OnceValue(loadBundledPlatformNames)
+
+func loadBundledPlatformNames() map[string]bool {
+	out := map[string]bool{}
+	for _, n := range config.BundledPlatformDirNames(home.Process()) {
+		out[n] = true
 	}
-	for p := range pluginNames {
-		known[p] = true
-		known["mcp-"+p] = true
-	}
-	return func(name string) bool {
-		name = CanonicalToolsetName(name)
-		if r.ValidateToolset(ctx, scope, name) || known[name] {
-			return true
-		}
-		return strings.HasPrefix(name, BundlePrefix) && PlatformRegistered(strings.TrimPrefix(name, BundlePrefix))
-	}
+	return out
 }
 
 const noToolsSuffix = "the agent will have no tools on this platform. Run `icebath tools` to reconfigure."
 
-// ValidatePlatformToolsets returns human readable warnings for a platform_toolsets mapping
+// ValidatePlatformToolsets returns the warnings for a platform_toolsets mapping judged with the platform scope rules
 func ValidatePlatformToolsets(platformToolsets map[string]any, isValid func(string) bool) []string {
-	var warnings []string
-	if len(platformToolsets) == 0 {
+	return ValidatePlatformToolsetsWith(platformToolsets, isValid, ToolsetAllowedForPlatform)
+}
+
+// Default toolset is valid when the resolver accepts it on the platform or a plugin platform registered it
+func platformDefaultIsValid(platform, def string, isValid func(string) bool, isAllowed func(string, string) bool) bool {
+	if isValid(def) && isAllowed(def, platform) {
+		return true
+	}
+	return platformRegisteredSafe(platform)
+}
+
+// Platform registry lookup where a failing lookup counts as not registered
+func platformRegisteredSafe(platform string) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	return PlatformRegistered(platform)
+}
+
+// Mapping entries in Python iteration order, a Go map in sorted key order, nil for a non mapping or empty one
+func platformToolsetsItems(value any) [][2]any {
+	var items [][2]any
+	switch m := value.(type) {
+	case *pyjson.Object:
+		if m == nil {
+			return nil
+		}
+		for _, k := range m.Keys {
+			v, _ := m.Get(k)
+			items = append(items, [2]any{k, v})
+		}
+	case config.Tree:
+		return platformToolsetsItems(map[string]any(m))
+	case map[string]any:
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			items = append(items, [2]any{k, m[k]})
+		}
+	}
+	return items
+}
+
+// Saved list as stored, string items kept and others marked so non string entries are skipped like upstream
+func platformToolsetsRawList(raw any) ([]any, bool) {
+	switch v := raw.(type) {
+	case []any:
+		return v, true
+	case []string:
+		out := make([]any, len(v))
+		for i, s := range v {
+			out[i] = s
+		}
+		return out, true
+	}
+	names, ok := ParsePlatformToolsetsValue(raw)
+	if !ok {
+		return nil, false
+	}
+	out := make([]any, len(names))
+	for i, s := range names {
+		out[i] = s
+	}
+	return out, true
+}
+
+// ValidatePlatformToolsetsWith reports unknown, platform restricted, empty and non list entries of a platform_toolsets mapping
+func ValidatePlatformToolsetsWith(platformToolsets any, isValid func(string) bool, isAllowed func(string, string) bool) []string {
+	warnings := []string{}
+	items := platformToolsetsItems(platformToolsets)
+	if len(items) == 0 {
 		return warnings
 	}
 	valid := 0
-	platforms := make([]string, 0, len(platformToolsets))
-	for p := range platformToolsets {
-		platforms = append(platforms, p)
-	}
-	sort.Strings(platforms)
-	for _, platform := range platforms {
-		raw := platformToolsets[platform]
+	for _, item := range items {
+		platform, raw := pyrepr.Str(item[0]), item[1]
 		def := PlatformDefaultToolset(platform)
-		defaultValid := (isValid(def) && ToolsetAllowedForPlatform(def, platform)) || PlatformRegistered(platform)
+		defaultValid := platformDefaultIsValid(platform, def, isValid, isAllowed)
 		platformValid := 0
-		list, ok := ParsePlatformToolsetsValue(raw)
+		list, ok := platformToolsetsRawList(raw)
 		if !ok {
 			if defaultValid {
 				valid++
@@ -1775,33 +1898,34 @@ func ValidatePlatformToolsets(platformToolsets map[string]any, isValid func(stri
 			if defaultValid {
 				fallback = fmt.Sprintf("falling back to '%s'", def)
 			}
-			detail := "invalid toolset value"
+			var detail string
 			switch v := raw.(type) {
 			case nil:
 				detail = "a null toolset value"
 			case string:
 				detail = fmt.Sprintf("invalid toolset value '%s'", v)
 			default:
-				detail = fmt.Sprintf("invalid %T toolset value", raw)
+				detail = fmt.Sprintf("invalid %s toolset value", pyrepr.TypeName(raw))
 			}
-			warnings = append(warnings, fmt.Sprintf("platform '%s' has %s - %s. Run `icebath tools` to configure explicitly.", platform, detail, fallback))
+			warnings = append(warnings, fmt.Sprintf("platform '%s' has %s — %s. Run `icebath tools` to configure explicitly.", platform, detail, fallback))
 			if platformValid == 0 {
-				warnings = append(warnings, fmt.Sprintf("platform '%s' has no valid toolsets configured - %s", platform, noToolsSuffix))
+				warnings = append(warnings, fmt.Sprintf("platform '%s' has no valid toolsets configured — %s", platform, noToolsSuffix))
 			}
 			continue
 		}
-		for _, name := range list {
-			if name == "" {
+		for _, entry := range list {
+			name, isStr := entry.(string)
+			if !isStr || name == "" {
 				continue
 			}
 			switch {
 			case !isValid(name) && !IsKnownPlatformBundle(platform, name):
 				hint := ""
 				if defaultValid {
-					hint = fmt.Sprintf(" - did you mean '%s'?", def)
+					hint = fmt.Sprintf(" — did you mean '%s'?", def)
 				}
 				warnings = append(warnings, fmt.Sprintf("platform '%s' references unknown toolset '%s'%s", platform, name, hint))
-			case ToolsetAllowedForPlatform(name, platform):
+			case isAllowed(name, platform):
 				valid++
 				platformValid++
 			default:
@@ -1813,17 +1937,17 @@ func ValidatePlatformToolsets(platformToolsets map[string]any, isValid func(stri
 			if len(list) == 0 {
 				reason = "is configured with an empty toolset list"
 			}
-			warnings = append(warnings, fmt.Sprintf("platform '%s' %s - %s", platform, reason, noToolsSuffix))
+			warnings = append(warnings, fmt.Sprintf("platform '%s' %s — %s", platform, reason, noToolsSuffix))
 		}
 	}
 	if valid == 0 {
-		warnings = append(warnings, "platform_toolsets resolves to zero valid toolsets - the agent will have no tools. Run `icebath tools` to reconfigure.")
+		warnings = append(warnings, "platform_toolsets resolves to zero valid toolsets — the agent will have no tools. Run `icebath tools` to reconfigure.")
 	}
 	return warnings
 }
 
-// FilterToEnabledToolsets keeps the unavailable entries a session's toolset selection would load
-func FilterToEnabledToolsets(unavailable []UnavailableToolset, enabled []string, resolve func(string) []string) []UnavailableToolset {
+// FilterToEnabledToolsets keeps the unavailable entries whose name or tools fall inside the session toolset selection
+func FilterToEnabledToolsets(unavailable []UnavailableToolset, enabled []string, resolve func(string) ([]string, error)) []UnavailableToolset {
 	var names []string
 	for _, n := range enabled {
 		if n != "" {
@@ -1837,11 +1961,15 @@ func FilterToEnabledToolsets(unavailable []UnavailableToolset, enabled []string,
 	nameSet := map[string]bool{}
 	for _, n := range names {
 		nameSet[n] = true
-		for _, t := range resolve(n) {
+		members, err := resolveNoticeToolset(resolve, n)
+		if err != nil {
+			continue
+		}
+		for _, t := range members {
 			enabledTools[t] = true
 		}
 	}
-	var out []UnavailableToolset
+	out := []UnavailableToolset{}
 	for _, item := range unavailable {
 		keep := nameSet[item.Name]
 		for _, t := range item.Tools {
@@ -1856,25 +1984,53 @@ func FilterToEnabledToolsets(unavailable []UnavailableToolset, enabled []string,
 	return out
 }
 
-var multiProviderNotices = map[string]string{
-	"web": "Web search is off - no search provider is set up yet (any one of Nous subscription, Exa, Tavily, Firecrawl, Brave, or free DuckDuckGo works). Run `icebath setup tools` and set one up under \"Web Search & Scraping\".",
+// Resolver call where a panic counts as an error so one failing bundle never aborts the filter
+func resolveNoticeToolset(resolve func(string) ([]string, error), name string) (members []string, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			members, err = nil, fmt.Errorf("%v", rec)
+		}
+	}()
+	return resolve(name)
 }
 
-// ToolAvailabilityWarningLines renders the startup notices for toolsets switched off by missing requirements
-func ToolAvailabilityWarningLines(unavailable []UnavailableToolset, terminalReason, terminalBackend string) []string {
-	if terminalBackend == "" {
-		terminalBackend = "local"
+// CurrentTerminalBackend names the terminal backend this process selected, local when unset
+func CurrentTerminalBackend(env *Env) (string, error) {
+	cfg, err := getEnvConfig(env)
+	if err != nil {
+		return "", err
 	}
-	var lines []string
+	if v := cfg["env_type"]; pyTruthy(v) {
+		return pyrepr.Str(v), nil
+	}
+	return "local", nil
+}
+
+var multiProviderNotices = map[string]string{
+	"web": "[yellow]⚠ Web search is off[/] — no search provider is set up yet (any one of Nous subscription, Exa, " +
+		"Tavily, Firecrawl, Brave, or free DuckDuckGo works). Run [bold]icebath setup tools[/] and set one up under " +
+		"\"Web Search & Scraping\".",
+}
+
+const genericNoticeFooter = "[dim]   Run 'icebath setup tools' to configure[/]"
+
+func terminalNoticeLine(backend, reason string) string {
+	detail := ""
+	if reason != "" {
+		detail = " (" + reason + ")"
+	}
+	return fmt.Sprintf("[yellow]⚠ Terminal tool disabled:[/] the '%s' backend is not usable%s. ", backend, detail) +
+		"Run [bold]icebath doctor[/] for details, or [bold]icebath setup terminal[/] to pick another backend."
+}
+
+// ToolAvailabilityWarningLines renders the Rich markup startup notices for toolsets switched off by missing requirements
+func ToolAvailabilityWarningLines(unavailable []UnavailableToolset, terminalReason, terminalBackend string) []string {
+	lines := []string{}
 	var generic []UnavailableToolset
 	for _, item := range unavailable {
 		switch {
 		case item.Name == "terminal":
-			detail := ""
-			if terminalReason != "" {
-				detail = " (" + terminalReason + ")"
-			}
-			lines = append(lines, fmt.Sprintf("Terminal tool disabled: the '%s' backend is not usable%s. Run `icebath doctor` for details, or `icebath setup terminal` to pick another backend.", terminalBackend, detail))
+			lines = append(lines, terminalNoticeLine(terminalBackend, terminalReason))
 		case multiProviderNotices[item.Name] != "":
 			lines = append(lines, multiProviderNotices[item.Name])
 		case len(item.EnvVars) > 0:
@@ -1882,11 +2038,11 @@ func ToolAvailabilityWarningLines(unavailable []UnavailableToolset, terminalReas
 		}
 	}
 	if len(generic) > 0 {
-		lines = append(lines, "Some tools disabled (missing API keys):")
+		lines = append(lines, "[yellow]⚠️  Some tools disabled (missing API keys):[/]")
 		for _, item := range generic {
-			lines = append(lines, fmt.Sprintf("   - %s (%s)", item.Name, strings.Join(item.EnvVars, ", ")))
+			lines = append(lines, fmt.Sprintf("   [dim]• %s[/] [dim italic](%s)[/]", item.Name, strings.Join(item.EnvVars, ", ")))
 		}
-		lines = append(lines, "   Run 'icebath setup tools' to configure")
+		lines = append(lines, genericNoticeFooter)
 	}
 	return lines
 }

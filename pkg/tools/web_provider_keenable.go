@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 )
 
 // Test seam for the keyed Keenable API root
 var keenableAPIURL = "https://api.keenable.ai"
 
-var keenableTimeouts = sdkTimeouts{connect: 30 * time.Second, idle: 30 * time.Second}
+var keenableTimeouts = pyrequests.Seconds(30)
 
 // App identifier the keyless tier requires plus Bearer auth when a key is set
 func keenableHeaders(apiKey string) http.Header {
@@ -39,7 +39,7 @@ func keenableSend(ctx context.Context, method, target string, payload *pyjson.Ob
 		body = []byte(text)
 		h.Set("Content-Type", "application/json")
 	}
-	return sdkSend(ctx, keenableTimeouts, method, target, body, h)
+	return requestsSend(ctx, keenableTimeouts, method, target, body, h)
 }
 
 type keenableProvider struct{ baseWebProvider }

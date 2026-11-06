@@ -70,7 +70,7 @@ func sharedHomes(t *testing.T) (string, string) {
 	root := filepath.Join(tmp, "home")
 	_ = os.MkdirAll(root, 0o755)
 	t.Setenv(home.EnvHome, root)
-	t.Setenv("HOME", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	home.ResetKeyCache()
 	return tmp, root
 }

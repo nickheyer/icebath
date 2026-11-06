@@ -13,21 +13,6 @@ import (
 // The System Idle Process holds pid 0 on Windows
 const psLowestPID = 0
 
-// Win32 image path of the process
-func psExe(pid int) (string, error) {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
-	if err != nil {
-		return "", err
-	}
-	defer windows.CloseHandle(h)
-	buf := make([]uint16, windows.MAX_LONG_PATH)
-	size := uint32(len(buf))
-	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &size); err != nil {
-		return "", err
-	}
-	return windows.UTF16ToString(buf[:size]), nil
-}
-
 // Parent pid from a toolhelp process snapshot
 func psPPID(pid int) (int, error) {
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)

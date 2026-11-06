@@ -1,6 +1,9 @@
 package pyast
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type failSignal struct{}
 
@@ -12,6 +15,20 @@ type parser struct {
 	inCondition bool
 	parens      map[*Node]bool
 	filename    string
+	// fv is the feature_version minor, warnErrors turns warnings into SyntaxErrors as the error filter does
+	fv           int
+	warnErrors   bool
+	warns        []Warning
+	warnedEscape map[*token]bool
+	rawFString   []bool
+	probing      int
+	seen, main   int
+	mode         string
+	// noFullTokenize marks an error raised after parsing, knownErrLine the line of p->known_err_token
+	noFullTokenize bool
+	knownErrLine   int
+	// sourceFile names the file whose lines exec mode errors quote, read with encoding
+	sourceFile, encoding string
 }
 
 const maxStack = 6000
@@ -28,6 +45,13 @@ func (p *parser) tk(i int) *token {
 	}
 	if i+1 > p.fill {
 		p.fill = i + 1
+	}
+	if i+1 > p.seen {
+		p.seen = i + 1
+	}
+	if p.probing == 0 && i+1 > p.main {
+		p.lexWarnings(p.main, i+1)
+		p.main = i + 1
 	}
 	if p.toks[i].kind == tError {
 		p.raiseUnclosed()
@@ -107,9 +131,37 @@ func (p *parser) speculate(f func() *Node) (n *Node, ok bool) {
 // Runs a pass two diagnostic parse that leaves the furthest token of pass one untouched
 func (p *parser) probe(f func() *Node) (*Node, bool) {
 	fill := p.fill
+	p.probing++
+	defer func() { p.probing-- }()
 	n, ok := p.speculate(f)
 	p.fill = fill
 	return n, ok
+}
+
+// Appends the tokenizer warnings issued while reading tokens lo up to hi
+func (p *parser) lexWarnings(lo, hi int) {
+	for _, w := range p.lx.warns {
+		if w.tok >= lo && w.tok < hi {
+			w.w.Filename = p.filename
+			p.warns = append(p.warns, w.w)
+		}
+	}
+}
+
+// Raises the "X only supported in Python 3.N and greater" error of CHECK_VERSION at the furthest token
+func (p *parser) checkVersion(version int, what string) {
+	if p.fv < version {
+		p.raiseLast(fmt.Sprintf("%s only supported in Python 3.%d and greater", what, version))
+	}
+}
+
+// Consumes an optional TYPE_COMMENT token, returning its text or nil
+func (p *parser) typeComment() any {
+	if t := p.cur(); t.kind == tTypeComment {
+		p.next()
+		return t.val
+	}
+	return nil
 }
 
 func (p *parser) enter(n int) {
@@ -147,6 +199,37 @@ func mkAt(typ string, l, c, el, ec int, vals ...any) *Node {
 	n := NewNode(typ, vals...)
 	n.Lineno, n.ColOffset, n.EndLineno, n.EndColOffset = l, c, el, ec
 	return n
+}
+
+// Source line _PyPegen_raise_error_known_location reports, the tokenizer's current line when lineno lies past it
+func (p *parser) errorLine(lineno int) string {
+	if p.sourceFile != "" {
+		if text, ok := programText(p.sourceFile, lineno, p.encoding); ok {
+			return text
+		}
+	}
+	if p.fill > 0 {
+		if cur := p.toks[min(p.fill, len(p.toks))-1].curLine; cur < lineno {
+			lineno = cur
+		}
+	}
+	text := p.lineText(lineno)
+	if lineno >= 1 && lineno <= len(p.lx.lineStarts) && p.lx.lineStarts[lineno-1]+len(text) < len(p.lx.src) {
+		text += "\n"
+	}
+	return text
+}
+
+// Character offset of a one based byte column within a line as _PyPegen_byte_offset_to_character_offset
+func byteToCharRaw(line string, col int) int {
+	b := []byte(line)
+	if col > len(b)+1 {
+		col = len(b) + 1
+	}
+	if col > len(b) {
+		return charCount(b) + 1
+	}
+	return charCount(b[:max(col, 0)])
 }
 
 func (p *parser) lineText(lineno int) string {
@@ -196,10 +279,10 @@ func (p *parser) raiseKnown(class string, l, col, el, end int, msg string) {
 		last := p.tk(p.fill - 1)
 		el, end = last.curLine, last.curCol
 	}
-	text := p.lineText(l)
-	e := &SyntaxError{Class: class, Msg: msg, Lineno: l, Offset: byteToChar(text, col), EndLineno: el, EndOffset: end, Text: text, HasText: true, HasEnd: true, Filename: p.filename}
+	text := p.errorLine(l)
+	e := &SyntaxError{Class: class, Msg: msg, Lineno: l, Offset: byteToCharRaw(text, col), EndLineno: el, EndOffset: end, Text: strings.TrimSuffix(text, "\n"), HasText: true, HasEnd: true, Filename: p.filename}
 	if end > 0 {
-		e.EndOffset = byteToChar(p.lineText(el), end)
+		e.EndOffset = byteToCharRaw(p.errorLine(el), end)
 	}
 	panic(e)
 }
@@ -248,7 +331,11 @@ func (p *parser) file() *Node {
 	for p.cur().kind != tEnd {
 		body = append(body, p.statement()...)
 	}
-	return NewNode("Module", body, nil)
+	var ignores []*Node
+	for _, ti := range p.lx.typeIgnores {
+		ignores = append(ignores, NewNode("TypeIgnore", ti.lineno, ti.tag))
+	}
+	return NewNode("Module", body, ignores)
 }
 
 func (p *parser) statement() []*Node {
@@ -421,7 +508,12 @@ func (p *parser) exprOrAssign() *Node {
 			simple = 1
 		}
 		setContext(first, ctxStore)
-		return p.mkFrom(t, "AnnAssign", first, ann, v, simple)
+		n := p.mkFrom(t, "AnnAssign", first, ann, v, simple)
+		if simple == 1 {
+			p.checkVersion(6, "Variable annotation syntax is")
+		}
+		p.checkVersion(6, "Variable annotations syntax is")
+		return n
 	case p.isOp("="):
 		p.checkAssignHere(t, first)
 		targets := []*Node{first}
@@ -451,7 +543,11 @@ func (p *parser) exprOrAssign() *Node {
 			}
 			setContext(tg, ctxStore)
 		}
-		return p.mkFrom(t, "Assign", targets, value, nil)
+		tc := p.typeComment()
+		return p.mkFrom(t, "Assign", targets, value, tc)
+	case p.isOp("@=") && p.fv < 5:
+		p.next()
+		p.checkVersion(5, "The '@' operator is")
 	case p.cur().kind == tOp && augOps[p.cur().val] != "":
 		if !first.Is("Name", "Attribute", "Subscript") {
 			p.raiseNode(first, "'"+exprName(first)+"' is an illegal expression for augmented assignment")
@@ -671,7 +767,9 @@ func (p *parser) typeAlias() *Node {
 	}
 	p.expectOp("=")
 	v := p.expression()
-	return p.mkFrom(t, "TypeAlias", name, params, v)
+	n := p.mkFrom(t, "TypeAlias", name, params, v)
+	p.checkVersion(12, "Type statement is")
+	return n
 }
 
 func (p *parser) typeParams() []*Node {
@@ -696,6 +794,7 @@ func (p *parser) typeParams() []*Node {
 			if p.isOp("=") {
 				p.next()
 				def = p.starExpression()
+				p.checkVersion(13, "Type parameter defaults are")
 			}
 			out = append(out, p.mkFrom(t, "TypeVarTuple", name, def))
 		case p.isOp("**"):
@@ -711,6 +810,7 @@ func (p *parser) typeParams() []*Node {
 			if p.isOp("=") {
 				p.next()
 				def = p.expression()
+				p.checkVersion(13, "Type parameter defaults are")
 			}
 			out = append(out, p.mkFrom(t, "ParamSpec", name, def))
 		default:
@@ -723,6 +823,7 @@ func (p *parser) typeParams() []*Node {
 			if p.isOp("=") {
 				p.next()
 				def = p.expression()
+				p.checkVersion(13, "Type parameter defaults are")
 			}
 			out = append(out, p.mkFrom(t, "TypeVar", name, bound, def))
 		}
@@ -732,6 +833,7 @@ func (p *parser) typeParams() []*Node {
 		p.next()
 	}
 	p.expectOp("]")
+	p.checkVersion(12, "Type parameter lists are")
 	return out
 }
 
@@ -863,13 +965,18 @@ func (p *parser) forStmt(isAsync bool) *Node {
 	p.next()
 	iter := p.starExpressions()
 	p.colon()
+	tc := p.typeComment()
 	body := p.block("'for' statement", t.l)
 	orelse := p.elseBlock()
 	typ := "For"
 	if isAsync {
 		typ = "AsyncFor"
 	}
-	return p.mkFrom(t, typ, target, iter, body, orelse, nil)
+	n := p.mkFrom(t, typ, target, iter, body, orelse, tc)
+	if isAsync {
+		p.checkVersion(5, "Async for loops are")
+	}
+	return n
 }
 
 // Target of a for statement, reporting the first invalid target like invalid_for_target
@@ -937,8 +1044,16 @@ func (p *parser) withStmt(isAsync bool) *Node {
 		save := p.pos
 		if items, ok := p.speculateItems(); ok {
 			p.colon()
+			var tc any
+			if !isAsync {
+				tc = p.typeComment()
+			}
 			body := p.block("'with' statement", t.l)
-			return p.mkFrom(t, typ, items, body, nil)
+			n := p.mkFrom(t, typ, items, body, tc)
+			if isAsync {
+				p.checkVersion(5, "Async with statements are")
+			}
+			return n
 		}
 		p.pos = save
 	}
@@ -951,8 +1066,13 @@ func (p *parser) withStmt(isAsync bool) *Node {
 		p.next()
 	}
 	p.colon()
+	tc := p.typeComment()
 	body := p.block("'with' statement", t.l)
-	return p.mkFrom(t, typ, items, body, nil)
+	n := p.mkFrom(t, typ, items, body, tc)
+	if isAsync {
+		p.checkVersion(5, "Async with statements are")
+	}
+	return n
 }
 
 // Parenthesized with items followed by a colon, or false so the parenthesis is read as an expression
@@ -1022,12 +1142,17 @@ func (p *parser) tryStmt() *Node {
 	if star == 1 {
 		typ = "TryStar"
 	}
-	return p.mkFrom(t, typ, body, handlers, orelse, final)
+	n := p.mkFrom(t, typ, body, handlers, orelse, final)
+	if star == 1 {
+		p.checkVersion(11, "Exception groups are")
+	}
+	return n
 }
 
 func (p *parser) exceptBlock(isStar bool) *Node {
 	t := p.next()
 	what := "'except' statement"
+	bare := false
 	if isStar {
 		p.next()
 		what = "'except*' statement"
@@ -1060,6 +1185,7 @@ func (p *parser) exceptBlock(isStar bool) *Node {
 				p.raiseAt(typ.Lineno, typ.ColOffset, nt.el, nt.ec, "multiple exception types must be parenthesized when using 'as'")
 			}
 			typ = p.mkFrom(st, "Tuple", elts, ctxLoad)
+			bare = true
 		} else if p.isKw("as") {
 			p.next()
 			name = p.expectName()
@@ -1067,7 +1193,11 @@ func (p *parser) exceptBlock(isStar bool) *Node {
 	}
 	p.colon()
 	body := p.block(what, t.l)
-	return p.mkFrom(t, "ExceptHandler", typ, name, body)
+	n := p.mkFrom(t, "ExceptHandler", typ, name, body)
+	if bare {
+		p.checkVersion(14, "except expressions without parentheses are")
+	}
+	return n
 }
 
 func (p *parser) funcDef() *Node {
@@ -1091,12 +1221,34 @@ func (p *parser) funcDef() *Node {
 		returns = p.expression()
 	}
 	p.forceOp(":")
+	tc := p.funcTypeComment()
 	body := p.block("function definition", t.l)
 	typ := "FunctionDef"
 	if isAsync {
 		typ = "AsyncFunctionDef"
 	}
-	return p.mkFrom(t, typ, name, args, body, nil, returns, nil, tparams)
+	n := p.mkFrom(t, typ, name, args, body, nil, returns, tc, tparams)
+	if isAsync {
+		p.checkVersion(5, "Async functions are")
+	}
+	return n
+}
+
+// Rule func_type_comment, a type comment after the colon or alone on the next line before the indented body
+func (p *parser) funcTypeComment() any {
+	if p.cur().kind == tNewline && p.tk(p.pos+1).kind == tTypeComment {
+		if p.tk(p.pos+2).kind == tNewline && p.tk(p.pos+3).kind == tIndent {
+			p.next()
+			return p.next().val
+		}
+	}
+	if p.cur().kind != tTypeComment {
+		return nil
+	}
+	if p.tk(p.pos+1).kind == tNewline && p.tk(p.pos+2).kind == tTypeComment && p.tk(p.pos+3).kind == tNewline && p.tk(p.pos+4).kind == tIndent {
+		p.raiseLast("Cannot have two type comments on def")
+	}
+	return p.next().val
 }
 
 func (p *parser) classDef() *Node {
@@ -1127,6 +1279,7 @@ func (p *parser) parameters(lambda bool) *Node {
 	var slashTok, starTok *token
 	for !p.isOp(close) {
 		t := p.cur()
+		var last *Node
 		switch {
 		case p.isOp("/"):
 			if seenSlash {
@@ -1154,8 +1307,12 @@ func (p *parser) parameters(lambda bool) *Node {
 					}
 					p.raiseTok(t, "named arguments must follow bare *")
 				}
+				if p.isOp(",") && p.tk(p.pos+1).kind == tTypeComment {
+					p.raiseLast("bare * has associated type comment")
+				}
 			} else {
 				vararg = p.param(lambda, true)
+				last = vararg
 				if p.isOp("=") {
 					p.raiseTok(p.cur(), "var-positional argument cannot have default value")
 				}
@@ -1166,8 +1323,10 @@ func (p *parser) parameters(lambda bool) *Node {
 			if p.isOp("=") {
 				p.raiseTok(p.cur(), "var-keyword argument cannot have default value")
 			}
+			p.argTypeComment(kwarg, lambda, false)
 			if p.isOp(",") {
 				p.next()
+				p.argTypeComment(kwarg, lambda, true)
 				if !p.isOp(close) {
 					nt := p.cur()
 					if nt.kind == tOp && (nt.val == "*" || nt.val == "**" || nt.val == "/") {
@@ -1185,6 +1344,7 @@ func (p *parser) parameters(lambda bool) *Node {
 			p.raiseParenthesized(lambda)
 		default:
 			a := p.param(lambda, false)
+			last = a
 			var def *Node
 			if p.isOp("=") {
 				p.next()
@@ -1203,16 +1363,35 @@ func (p *parser) parameters(lambda bool) *Node {
 				args = append(args, a)
 			}
 		}
+		p.argTypeComment(last, lambda, false)
 		if !p.isOp(",") {
 			break
 		}
 		p.next()
+		p.argTypeComment(last, lambda, true)
 	}
 	_, _ = slashTok, starTok
 	if !p.isOp(close) {
 		p.fail()
 	}
-	return NewNode("arguments", posonly, args, vararg, kwonly, kwDefaults, kwarg, defaults)
+	n := NewNode("arguments", posonly, args, vararg, kwonly, kwDefaults, kwarg, defaults)
+	if seenSlash {
+		p.checkVersion(8, "Positional-only parameters are")
+	}
+	return n
+}
+
+// Attaches a TYPE_COMMENT after a def parameter, after its comma or right before the closing parenthesis
+func (p *parser) argTypeComment(a *Node, lambda, afterComma bool) {
+	if a == nil || lambda || p.cur().kind != tTypeComment {
+		return
+	}
+	if !afterComma {
+		if n := p.tk(p.pos + 1); n.kind != tOp || n.val != ")" {
+			return
+		}
+	}
+	a.Set("type_comment", p.next().val)
 }
 
 func (p *parser) raiseParenthesized(lambda bool) {
@@ -1284,7 +1463,9 @@ func (p *parser) matchStmt() *Node {
 		p.fail()
 	}
 	p.next()
-	return p.mkFrom(t, "Match", subject, cases)
+	n := p.mkFrom(t, "Match", subject, cases)
+	p.checkVersion(10, "Pattern matching is")
+	return n
 }
 
 func (p *parser) speculateStmts() (n *Node, ok bool) {

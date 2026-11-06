@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -110,7 +111,7 @@ func lr7StartupCase(t *testing.T, c string) {
 		}
 	}
 	lr5Touch(t, filepath.Join(mdir, "model.gguf"), "GGUF")
-	routerExe, err := psExe(router.PID)
+	routerExe, err := proc.Exe(router.PID)
 	if err != nil {
 		t.Fatal(err)
 	}

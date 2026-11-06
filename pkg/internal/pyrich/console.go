@@ -41,7 +41,11 @@ type Console struct {
 	Terminal bool
 	// Every print dropped, as Console(quiet=True)
 	Quiet bool
-	mu    sync.Mutex
+	// Repr highlighting of printed strings off, as Console(highlight=False)
+	NoHighlight bool
+	// Colors dropped while attributes and links stay, as Console(no_color=True) or a non empty NO_COLOR
+	NoColor bool
+	mu      sync.Mutex
 }
 
 // Console over a writer, styled and animated only when the writer is a terminal
@@ -51,8 +55,8 @@ func NewConsole(w io.Writer) *Console {
 		tty = xterm.IsTerminal(f.Fd())
 	}
 	term := os.Getenv("TERM")
-	color := tty && os.Getenv("NO_COLOR") == "" && term != "dumb" && term != "unknown"
-	return &Console{Out: w, Color: color, Width: DetectWidth(), Terminal: tty}
+	color := tty && term != "dumb" && term != "unknown"
+	return &Console{Out: w, Color: color, Width: DetectWidth(), Terminal: tty, NoColor: os.Getenv("NO_COLOR") != ""}
 }
 
 // Console width rich computes, the first terminal among stdin stdout stderr, then COLUMNS, then 80
@@ -89,19 +93,82 @@ func (c *Console) write(lines []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, l := range lines {
-		io.WriteString(c.Out, l+"\n")
+		io.WriteString(c.Out, c.colorless(l)+"\n")
 	}
+}
+
+// Rendered output with color codes removed when the console is in no color mode
+func (c *Console) colorless(rendered string) string {
+	if c.NoColor && c.Color {
+		return removeColor(rendered)
+	}
+	return rendered
+}
+
+// Every SGR segment stripped of its color codes and dropped with its reset when no code stays, as Segment.remove_color
+func removeColor(rendered string) string {
+	var b strings.Builder
+	dropReset := false
+	pos := 0
+	for _, m := range ansiRE.FindAllStringIndex(rendered, -1) {
+		b.WriteString(rendered[pos:m[0]])
+		pos = m[1]
+		seq := rendered[m[0]+2 : m[1]-1]
+		if seq == "0" {
+			if !dropReset {
+				b.WriteString("\x1b[0m")
+			}
+			dropReset = false
+			continue
+		}
+		if kept := attributeCodes(seq); kept != "" {
+			b.WriteString("\x1b[" + kept + "m")
+		} else {
+			dropReset = true
+		}
+	}
+	b.WriteString(rendered[pos:])
+	return b.String()
+}
+
+// SGR parameters with every foreground and background color code removed
+func attributeCodes(seq string) string {
+	params := strings.Split(seq, ";")
+	var kept []string
+	for i := 0; i < len(params); i++ {
+		n, err := strconv.Atoi(params[i])
+		switch {
+		case err != nil:
+			kept = append(kept, params[i])
+		case n == 38 || n == 48:
+			if i+1 < len(params) && params[i+1] == "5" {
+				i += 2
+			} else if i+1 < len(params) && params[i+1] == "2" {
+				i += 4
+			}
+		case n >= 30 && n <= 37, n == 39, n >= 40 && n <= 47, n == 49, n >= 90 && n <= 97, n >= 100 && n <= 107:
+		default:
+			kept = append(kept, params[i])
+		}
+	}
+	return strings.Join(kept, ";")
 }
 
 // Prints markup wrapped at the console width, an empty call printing a blank line
 func (c *Console) Print(markup ...string) {
 	text := strings.Join(markup, " ")
-	c.write(WrapStyled(Render(text, c.Color), c.Width, true))
+	c.write(WrapStyled(renderHighlighted(text, c.Color, !c.NoHighlight), c.Width, true))
+}
+
+// Prints markup wrapped at the console width with repr highlighting off, as print(..., highlight=False)
+func (c *Console) PrintNoHighlight(markup ...string) {
+	text := strings.Join(markup, " ")
+	c.write(WrapStyled(renderHighlighted(text, c.Color, false), c.Width, true))
 }
 
 // Prints markup on unwrapped lines, as print(..., soft_wrap=True)
 func (c *Console) PrintSoft(markup string) {
-	c.write([]string{Render(markup, c.Color)})
+	c.write([]string{renderHighlighted(markup, c.Color, !c.NoHighlight)})
 }
 
 // Prints a table fitted to the console width
@@ -111,10 +178,12 @@ func (c *Console) PrintTable(t *Table) {
 
 // Prints a panel expanded to the console width
 func (c *Console) PrintPanel(p Panel) {
-	c.write(strings.Split(p.Render(c.Color, c.Width), "\n"))
+	c.write(strings.Split(p.render(c.Color, !c.NoHighlight, c.Width), "\n"))
 }
 
 var ansiRE = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+var escapeSeqRE = regexp.MustCompile("\x1b\\[[0-9;]*m|\x1b\\]8;[^\x1b]*\x1b\\\\")
 
 type styledRune struct {
 	r      rune
@@ -126,7 +195,7 @@ func splitStyled(s string) ([]styledRune, string) {
 	var out []styledRune
 	pending := ""
 	for len(s) > 0 {
-		if loc := ansiRE.FindStringIndex(s); loc != nil && loc[0] == 0 {
+		if loc := escapeSeqRE.FindStringIndex(s); loc != nil && loc[0] == 0 {
 			pending += s[:loc[1]]
 			s = s[loc[1]:]
 			continue
@@ -139,13 +208,35 @@ func splitStyled(s string) ([]styledRune, string) {
 	return out, pending
 }
 
-// SGR state in force after the escapes, empty after a reset
-func activeAfter(state, escapes string) string {
-	for _, esc := range ansiRE.FindAllString(escapes, -1) {
-		if esc == "\x1b[0m" {
-			state = ""
-		} else {
-			state += esc
+type escState struct{ link, sgr string }
+
+// Escapes reopening the hyperlink and SGR attributes in force
+func (e escState) open() string { return e.link + e.sgr }
+
+// Escapes ending the SGR attributes then the hyperlink in force, the order rich closes a segment in
+func (e escState) close() string {
+	out := ""
+	if e.sgr != "" {
+		out += "\x1b[0m"
+	}
+	if e.link != "" {
+		out += "\x1b]8;;\x1b\\"
+	}
+	return out
+}
+
+// SGR and hyperlink state in force after the escapes, a reset clearing SGR and an empty link closing the link
+func activeAfter(state escState, escapes string) escState {
+	for _, esc := range escapeSeqRE.FindAllString(escapes, -1) {
+		switch {
+		case esc == "\x1b[0m":
+			state.sgr = ""
+		case esc == "\x1b]8;;\x1b\\":
+			state.link = ""
+		case strings.HasPrefix(esc, "\x1b]"):
+			state.link = esc
+		default:
+			state.sgr += esc
 		}
 	}
 	return state
@@ -154,28 +245,31 @@ func activeAfter(state, escapes string) string {
 // Styled lines of runes cut at the given rune ranges, each line reopening the style in force at its start
 func joinStyled(runes []styledRune, tail string, cuts [][2]int) []string {
 	out := make([]string, 0, len(cuts))
-	state := ""
+	var state escState
 	pos := 0
 	for _, cut := range cuts {
 		for ; pos < cut[0]; pos++ {
 			state = activeAfter(state, runes[pos].prefix)
 		}
 		var b strings.Builder
-		b.WriteString(state)
 		cur := state
 		for i := cut[0]; i < cut[1]; i++ {
-			b.WriteString(runes[i].prefix)
 			cur = activeAfter(cur, runes[i].prefix)
+			if i == cut[0] {
+				b.WriteString(cur.open())
+			} else {
+				b.WriteString(runes[i].prefix)
+			}
 			b.WriteRune(runes[i].r)
 		}
 		pos = cut[1]
 		state = cur
-		if cut[1] == len(runes) {
-			b.WriteString(tail)
-			cur = activeAfter(cur, tail)
-		}
-		if cur != "" {
-			b.WriteString("\x1b[0m")
+		if cut[1] > cut[0] {
+			if cut[1] == len(runes) {
+				b.WriteString(tail)
+				cur = activeAfter(cur, tail)
+			}
+			b.WriteString(cur.close())
 		}
 		out = append(out, b.String())
 	}
@@ -328,6 +422,7 @@ var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 
 // Starts a dots spinner beside the markup, drawing nothing unless the console is a terminal
 func (c *Console) Status(markup string) *Status {
+	mustMarkupText(markup)
 	s := &Status{c: c, text: markup}
 	if !c.Terminal || c.Quiet {
 		return s
@@ -343,7 +438,7 @@ func (c *Console) Status(markup string) *Status {
 			text := s.text
 			s.mu.Unlock()
 			c.mu.Lock()
-			fmt.Fprintf(c.Out, "\r\x1b[2K%s %s", Render("[green]"+spinnerFrames[i%len(spinnerFrames)]+"[/]", c.Color), Render(text, c.Color))
+			fmt.Fprintf(c.Out, "\r\x1b[2K%s %s", c.colorless(Render("[green]"+spinnerFrames[i%len(spinnerFrames)]+"[/]", c.Color)), c.colorless(Render(text, c.Color)))
 			c.mu.Unlock()
 			select {
 			case <-s.stop:
@@ -360,6 +455,7 @@ func (c *Console) Status(markup string) *Status {
 
 // Replaces the status markup
 func (s *Status) Update(markup string) {
+	mustMarkupText(markup)
 	s.mu.Lock()
 	s.text = markup
 	s.mu.Unlock()

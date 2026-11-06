@@ -320,7 +320,7 @@ func TestDoStreamReconnectsAfterTransientDrop(t *testing.T) {
 	if client.calls != 2 || len(sleeper.waits) != 1 || sleeper.waits[0] != time.Second {
 		t.Fatalf("calls %d waits %v", client.calls, sleeper.waits)
 	}
-	if !strings.Contains(strings.Join(buffered, "\n"), "openrouter stream drop (*provider.APIError) — attempt 1/3 dropped, reconnecting") {
+	if !strings.Contains(strings.Join(buffered, "\n"), "openrouter stream drop (APIError) — attempt 1/3 dropped, reconnecting") {
 		t.Fatalf("buffered %q", buffered)
 	}
 }

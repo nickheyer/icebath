@@ -16,8 +16,7 @@ import (
 func exportHomes(t *testing.T, dir, accountHome string) {
 	t.Helper()
 	t.Setenv(home.EnvHome, dir)
-	t.Setenv("HOME", accountHome)
-	t.Setenv("USERPROFILE", accountHome)
+	t.Cleanup(home.PatchUserHome(accountHome))
 	profiles.ResetFileCache()
 	home.ResetKeyCache()
 }

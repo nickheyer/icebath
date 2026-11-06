@@ -20,8 +20,7 @@ import (
 func profileEnv(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("USERPROFILE", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	def := filepath.Join(tmp, ".icebath")
 	if err := os.MkdirAll(def, 0o755); err != nil {
 		t.Fatal(err)

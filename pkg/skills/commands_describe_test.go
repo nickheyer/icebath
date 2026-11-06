@@ -159,3 +159,25 @@ func TestExtractUserInstructionFromBundleTurn(t *testing.T) {
 		t.Fatalf("bare skill turn yielded %q", got)
 	}
 }
+
+func TestPreviewShapingStripsTheAutoLoadScaffold(t *testing.T) {
+	s, _ := describeScope(t)
+	request := "Fix the CI gate before the release"
+	if got := state.ShapePreview(autoLoadScaffold(t, s, []string{"work"}, request)); got != request {
+		t.Fatalf("preview %q", got)
+	}
+}
+
+func TestLongAutoLoadScaffoldPreviewKeepsTheRequest(t *testing.T) {
+	s, skills := describeScope(t)
+	writeDescribeSkill(t, skills, "work", strings.Repeat("Long skill paragraph.\n\n", 80)+describeSkillBody)
+	resetSkillCommandCaches(t)
+	request := "Fix the CI gate before the release"
+	message := autoLoadScaffold(t, s, []string{"work"}, request)
+	if got := state.ShapePreview(message); got != request {
+		t.Fatalf("full message preview %q", got)
+	}
+	if got := state.ShapePreview(previewExcerpt(message, 400)); got != request {
+		t.Fatalf("excerpt preview %q", got)
+	}
+}

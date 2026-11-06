@@ -206,7 +206,7 @@ func (a *AIAgent) recordFileMutationResult(toolName string, args map[string]any,
 		if taskKey == "" {
 			taskKey = "default"
 		}
-		if mgr := a.checkpointMgr; mgr != nil && mgr.Enabled && tools.ContainerBackendForTask(a.Env, taskKey) == "" {
+		if mgr := a.checkpointMgr; mgr != nil && mgr.Enabled && tools.ContainerBackendForTask(a.env, taskKey) == "" {
 			for _, p := range landedPaths {
 				mgr.RecordAgentWrite(p)
 			}
@@ -215,7 +215,7 @@ func (a *AIAgent) recordFileMutationResult(toolName string, args map[string]any,
 	if isError && !landed {
 		preview := tools.ExtractErrorPreview(result, 180)
 		for _, path := range targets {
-			identity, err := fileMutationIdentity(a.Env, path, taskID)
+			identity, err := fileMutationIdentity(a.env, path, taskID)
 			if err != nil {
 				return err
 			}
@@ -231,7 +231,7 @@ func (a *AIAgent) recordFileMutationResult(toolName string, args map[string]any,
 		source = landedPaths
 	}
 	for _, p := range source {
-		identity, err := fileMutationIdentity(a.Env, p, taskID)
+		identity, err := fileMutationIdentity(a.env, p, taskID)
 		if err != nil {
 			return err
 		}
@@ -242,7 +242,7 @@ func (a *AIAgent) recordFileMutationResult(toolName string, args map[string]any,
 		identity := info.Identity
 		if identity == "" {
 			var err error
-			if identity, err = fileMutationIdentity(a.Env, path, taskID); err != nil {
+			if identity, err = fileMutationIdentity(a.env, path, taskID); err != nil {
 				return err
 			}
 		}

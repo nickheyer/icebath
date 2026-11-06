@@ -589,6 +589,12 @@ func (c *geminiNativeClient) Complete(ctx context.Context, req *Request) (*Respo
 	if err != nil {
 		return nil, err
 	}
+	stale := computeNonStreamStaleTimeout(ctx, p.settings, c.chat.cc.provider, req, c.chat.cc.local, false, p.estTokens, map[string]any{"extra_body": p.extra})
+	return runNonStreamRequest(ctx, req.Model, p.estTokens, stale, func(ctx context.Context) (*Response, error) { return c.completeOnce(ctx, req, p) })
+}
+
+// One blocking generateContent call with its long decode hops on the request worker
+func (c *geminiNativeClient) completeOnce(ctx context.Context, req *Request, p *geminiPrepared) (*Response, error) {
 	base, configured := c.chat.requestTimeout(req, p.settings)
 	connect := 15 * time.Second
 	if configured {
@@ -700,8 +706,12 @@ func (c *geminiNativeClient) Stream(ctx context.Context, req *Request, fn Stream
 	defer cancel()
 	kill := &ccKill{}
 	msgs := make(chan geminiStreamMsg, 32)
-	go c.produceStream(attemptCtx, p, t.connect, msgs)
-	resp, err := c.consumeGeminiStream(attemptCtx, cancel, kill, msgs, s, t)
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		c.produceStream(attemptCtx, p, t.connect, msgs)
+	}()
+	resp, err := c.consumeGeminiStream(ctx, attemptCtx, cancel, kill, msgs, readerDone, s, t)
 	if err != nil {
 		return nil, err
 	}
@@ -809,47 +819,55 @@ func (c *geminiNativeClient) streamRequest(ctx context.Context, p *geminiPrepare
 	}
 }
 
-// Drives the stale, read and lifetime watchdogs over the producer and feeds chunks to the chat stream state
-func (c *geminiNativeClient) consumeGeminiStream(ctx context.Context, cancel context.CancelFunc, kill *ccKill, msgs <-chan geminiStreamMsg, s *ccStreamState, t ccTimeouts) (*Response, error) {
-	staleTimer := time.NewTimer(t.stale)
+// Drives the wait monitor and the stale, read and lifetime watchdogs over the producer and feeds chunks to the chat stream state
+func (c *geminiNativeClient) consumeGeminiStream(requestCtx, ctx context.Context, cancel context.CancelFunc, kill *ccKill, msgs <-chan geminiStreamMsg, readerDone <-chan struct{}, s *ccStreamState, t ccTimeouts) (*Response, error) {
+	w := newStreamWatchdog(requestCtx, cancel, kill, readerDone, s.emit, func(base error) error { return Classify(c.chat.route.Provider, c.chat.route.Model, 0, "", base) }, s.req.Model, s.estTokens, t, s.started)
+	defer w.stop()
+	defer w.logAbnormalExit()
 	readTimer := time.NewTimer(t.read)
-	defer staleTimer.Stop()
 	defer readTimer.Stop()
-	var lifetimeC <-chan time.Time
-	if t.lifetime > 0 {
-		lifetimeTimer := time.NewTimer(t.lifetime)
-		defer lifetimeTimer.Stop()
-		lifetimeC = lifetimeTimer.C
-	}
-	lastChunk := s.started
-	model := s.req.Model
-	if model == "" {
-		model = "unknown"
-	}
+	s.mon = newStreamWaitMonitor(s, c.chat.route.BaseURL, durationSeconds(t.stale), time.Now())
+	s.mon.w = w
+	poll := time.NewTicker(streamMonitorPoll)
+	defer poll.Stop()
+	var unwindErr error
 	for {
 		select {
-		case <-ctx.Done():
-			return nil, c.chat.attemptError(ctx, kill, ctx.Err(), s)
-		case <-staleTimer.C:
-			elapsed := time.Since(lastChunk).Seconds()
-			catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, t.stale.Seconds(), model, commaInt(s.estTokens)))
-			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(s.estTokens))})
-			bumpStaleStreak(ctx)
-			kill.fire("stale", elapsed)
-			cancel()
-			return nil, c.chat.attemptError(ctx, kill, errors.New("stale stream"), s)
-		case <-readTimer.C:
+		case <-requestCtx.Done():
+			return nil, w.interrupt(time.Now(), s.deltasSent)
+		case <-w.unwound():
+			return nil, c.chat.attemptError(requestCtx, kill, unwindErr, s)
+		case now := <-poll.C:
+			moved, err := s.mon.tick(now, &w.lastChunk)
+			if err != nil {
+				cancel()
+				return nil, err
+			}
+			if moved {
+				w.moved(now)
+			}
+		case now := <-w.staleC():
+			if w.onStale(now) {
+				return nil, w.abandoned
+			}
+		case <-w.readC(readTimer.C):
 			kill.fire("read", t.read.Seconds())
 			cancel()
 			return nil, c.chat.attemptError(ctx, kill, errors.New("read timeout"), s)
-		case <-lifetimeC:
-			elapsed := time.Since(s.started).Seconds()
-			catalogLog.Warn(fmt.Sprintf("Stream still running after %.0fs (stream_max_lifetime %.0fs) — killing connection. model=%s", elapsed, t.lifetime.Seconds(), model))
-			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ Response still streaming after %ds (stream_max_lifetime %ds, model: %s). Aborting...", int(elapsed), int(t.lifetime.Seconds()), model)})
-			kill.fire("lifetime", elapsed)
-			cancel()
-			return nil, c.chat.attemptError(ctx, kill, errors.New("stream lifetime exceeded"), s)
+		case now := <-w.lifeC():
+			if w.onLifetime(now) {
+				return nil, w.abandoned
+			}
 		case m := <-msgs:
+			if w.killed {
+				if m.err != nil {
+					unwindErr = streamKillCause(m.err)
+				}
+				for _, chunk := range m.chunks {
+					w.call.discard(w.attempt, chunk)
+				}
+				continue
+			}
 			if m.err != nil {
 				return nil, m.err
 			}
@@ -862,8 +880,7 @@ func (c *geminiNativeClient) consumeGeminiStream(ctx context.Context, cancel con
 				continue
 			}
 			now := time.Now()
-			lastChunk = now
-			resetTimer(staleTimer, t.stale)
+			w.chunk(now)
 			if len(m.chunks) > 0 && s.firstChunkAt.IsZero() {
 				s.firstChunkAt = now
 			}

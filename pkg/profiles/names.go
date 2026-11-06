@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Directories bootstrapped inside every new profile
@@ -242,7 +243,15 @@ func ProfileMatchesHome(ctx context.Context, name, homeDir string) bool {
 	if homeDir == "" {
 		homeDir = home.Dir(ctx)
 	}
-	return resolveLoose(expandUser(target)) == resolveLoose(expandUser(homeDir))
+	target, err = pypath.PathExpanduser(target)
+	if err != nil {
+		return false
+	}
+	homeDir, err = pypath.PathExpanduser(homeDir)
+	if err != nil {
+		return false
+	}
+	return resolveLoose(target) == resolveLoose(homeDir)
 }
 
 // Sorted directories of named profiles carrying identity, skipping tombstoned ones when liveOnly
@@ -283,16 +292,6 @@ func ListProfileNames() []string {
 		names = append(names, filepath.Base(d))
 	}
 	return names
-}
-
-// Path with a leading tilde expanded to the user home
-func expandUser(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~"+string(filepath.Separator)) || strings.HasPrefix(p, "~/") {
-		if h, err := userHome(); err == nil {
-			return filepath.Join(h, p[1:])
-		}
-	}
-	return p
 }
 
 // Absolute path with symlinks of its existing prefix resolved and the missing tail kept, like Path.resolve(strict=False)

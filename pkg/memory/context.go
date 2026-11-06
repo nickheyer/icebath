@@ -4,24 +4,20 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Python re whitespace class for str patterns, every code point str isspace accepts
 const pySpaceClass = `\t\n\x0b\f\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
 
 var (
-	fenceTagRe        = regexp.MustCompile(`(?i)</?[` + pySpaceClass + `]*memory-context[` + pySpaceClass + `]*>`)
-	internalContextRe = regexp.MustCompile(`(?i)<[` + pySpaceClass + `]*memory-context[` + pySpaceClass + `]*>(?s:.)*?</[` + pySpaceClass + `]*memory-context[` + pySpaceClass + `]*>`)
-	internalNoteRe    = regexp.MustCompile(`(?i)\[System note:[` + pySpaceClass + `]*The following is recalled memory context,[` + pySpaceClass + `]*NOT new user input\.[` + pySpaceClass + `]*Treat as (?:informational background data|authoritative reference data[^\]]*)\.\][` + pySpaceClass + `]*`)
-	recallBulletRe    = regexp.MustCompile(`^[-*+][` + pySpaceClass + `]+[^` + pySpaceClass + `]`)
+	recallBulletRe = regexp.MustCompile(`^[-*+][` + pySpaceClass + `]+[^` + pySpaceClass + `]`)
 )
 
 // Strips fence tags, injected context blocks and system notes from provider output
 func SanitizeContext(text string) string {
-	for _, re := range []*regexp.Regexp{internalContextRe, internalNoteRe, fenceTagRe} {
-		text = re.ReplaceAllLiteralString(text, "")
-	}
-	return text
+	return state.SanitizeContext(text)
 }
 
 const (

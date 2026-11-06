@@ -58,12 +58,13 @@ type HubCLI struct {
 	// GitHub repos API base and client of the publish flow
 	GitHubAPI  string
 	HTTPClient *http.Client
-	seams      hubCLISeams
+	// Source router of every hub command, nil builds the configured router as _sources does
+	Sources func() []SkillSource
+	seams   hubCLISeams
 }
 
 // Replaceable collaborators, nil fields run the real implementation
 type hubCLISeams struct {
-	sources              func() []SkillSource
 	unifiedSearch        func(ctx context.Context, query string, sources []SkillSource, sourceFilter string, limit int) []SkillMeta
 	parallelSearch       func(ctx context.Context, sources []SkillSource, query string, limits map[string]int, sourceFilter string, timeout time.Duration, onDone func(string, int)) ([]SkillMeta, *pyjson.Object, []string)
 	checkUpdates         func(ctx context.Context, name string) ([]SkillUpdateCheck, error)
@@ -71,6 +72,35 @@ type hubCLISeams struct {
 	resolveMetaAndBundle func(ctx context.Context, identifier string, sources []SkillSource) (*SkillMeta, *SkillBundle, SkillSource)
 	resolveURLBundleName func(c *pyrich.Console, b *SkillBundle, meta *SkillMeta, identifier, nameOverride string, skipConfirm bool) bool
 	recordInstall        func(ctx context.Context, kind, source string, name any, outcome string, failureClass, registry any, err error)
+	disabledSkills       func(platform string) map[string]bool
+	uninstall            func(ctx context.Context, name string, c *pyrich.Console, skipConfirm, deferCache bool) (HubOutcome, error)
+	uninstallSkill       func(name string) (bool, string, error)
+	tier1Enabled         func() bool
+	tier1Scan            func(ctx context.Context, skillDir string, timeout int) (Tier1Report, error)
+}
+
+// Uninstall command the CLI and slash dispatchers run, the real DoUninstall unless a test replaced it
+func (x *HubCLI) doUninstall(ctx context.Context, name string, c *pyrich.Console, skipConfirm, deferCache bool) (HubOutcome, error) {
+	if x.seams.uninstall != nil {
+		return x.seams.uninstall(ctx, name, c, skipConfirm, deferCache)
+	}
+	return x.DoUninstall(ctx, name, c, skipConfirm, deferCache)
+}
+
+// Removal of a hub installed skill through the hub, the real UninstallSkill unless a test replaced it
+func (x *HubCLI) uninstallSkill(name string) (bool, string, error) {
+	if x.seams.uninstallSkill != nil {
+		return x.seams.uninstallSkill(name)
+	}
+	return x.Hub.UninstallSkill(name)
+}
+
+// Disabled skill names of the scope config for the platform, an empty platform resolving from the environment
+func (x *HubCLI) disabledSkillNames(platform string) map[string]bool {
+	if x.seams.disabledSkills != nil {
+		return x.seams.disabledSkills(platform)
+	}
+	return x.S.DisabledSkillNames(platform)
 }
 
 // Hub command runner over a scope, printing to stdout
@@ -284,8 +314,8 @@ type installAttempt struct {
 }
 
 func (x *HubCLI) sources() []SkillSource {
-	if x.seams.sources != nil {
-		return x.seams.sources()
+	if x.Sources != nil {
+		return x.Sources()
 	}
 	return x.Hub.createSourceRouter(NewGitHubAuth(x.S))
 }

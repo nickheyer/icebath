@@ -45,15 +45,16 @@ var relayLogger = func() *slog.Logger { return slog.Default().With("logger", "ag
 
 // Native Relay binding surface the runtime drives, a nil function is an attribute the binding lacks
 type NemoRelay struct {
-	Scope         *NemoRelayScope
-	ScopeType     NemoRelayScopeTypes
-	GetScopeStack func(ctx context.Context) (any, error)
-	Plugin        *NemoRelayPlugin
-	Subscribers   *NemoRelaySubscribers
-	Tools         *NemoRelayTools
-	LLM           *NemoRelayLLM
-	LLMRequest    func(headers, content map[string]any) (any, error)
-	Codecs        *NemoRelayCodecs
+	Scope               *NemoRelayScope
+	ScopeType           NemoRelayScopeTypes
+	GetScopeStack       func(ctx context.Context) (any, error)
+	Plugin              *NemoRelayPlugin
+	Subscribers         *NemoRelaySubscribers
+	Tools               *NemoRelayTools
+	LLM                 *NemoRelayLLM
+	LLMRequest          func(headers, content map[string]any) (any, error)
+	Codecs              *NemoRelayCodecs
+	ToolExecutionResult func(result any) (*RelayToolExecutionResult, error)
 }
 
 // Scope stack operations of the binding
@@ -62,6 +63,7 @@ type NemoRelayScope struct {
 	Pop           func(ctx context.Context, handle any, kwargs map[string]any) (any, error)
 	PopParameters func() ([]RelayParameter, error)
 	GetHandle     func(ctx context.Context) (any, error)
+	Event         func(ctx context.Context, name string, kwargs map[string]any) (any, error)
 }
 
 // One parameter of the binding pop signature
@@ -82,14 +84,25 @@ type NemoRelayPlugin struct {
 	Validate   func(ctx context.Context, config map[string]any, additionalPluginsTOML string) (map[string]any, error)
 }
 
-// Subscriber operations of the binding
+// Subscriber operations of the binding, register, deregister, flush and flush_async
 type NemoRelaySubscribers struct {
+	Register   func(name string, callback func(event *RelayEventView)) error
+	Deregister func(name string) error
+	Flush      func() error
 	FlushAsync func(ctx context.Context) (any, error)
 }
 
-// Tool pipeline operations of the binding
+// One event a binding subscriber receives, each field the matching attribute of the binding's event object
+type RelayEventView struct {
+	Kind, Name, Category, ScopeCategory, CategoryProfile, Metadata, Data any
+}
+
+// Tool pipeline operations of the binding, request intercepts, managed execution and the manual call and call_end pair
 type NemoRelayTools struct {
 	RequestIntercepts func(ctx context.Context, toolName string, args map[string]any) (any, error)
+	Execute           func(ctx context.Context, toolName string, args any, callback RelayProviderCallback, kwargs map[string]any) (any, error)
+	Call              func(ctx context.Context, name string, args map[string]any, kwargs map[string]any) (any, error)
+	CallEnd           func(ctx context.Context, handle, result any, kwargs map[string]any) error
 }
 
 // Activation handle plugin initialization returns
@@ -1501,4 +1514,10 @@ func relayResolvePluginAwaitable(ctx context.Context, value any) (any, error) {
 		return aw(ctx)
 	}
 	return value, nil
+}
+
+// Registers an exit handler beside the Relay runtimes and returns its unregister function
+func RegisterRelayAtExit(fn func()) (unregister func()) {
+	e := relayAtExitRegister(fn)
+	return func() { relayAtExitUnregister(e) }
 }

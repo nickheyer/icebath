@@ -20,7 +20,9 @@ func withPluginCatalog(t *testing.T, toolsets []ConfigurableToolset, projected [
 		}
 		return out
 	}
-	GatewayPluginToolsets = func() ([]ConfigurableToolset, bool) { return projected, isProjected }
+	GatewayPluginToolsets = func() ([]ConfigurableToolset, map[string]bool, bool) {
+		return projected, map[string]bool{}, isProjected
+	}
 	return &discovered
 }
 

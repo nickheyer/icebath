@@ -52,6 +52,9 @@ func optText(s *string) string {
 	return *s
 }
 
+// Transcript writer of a mirrored message, a seam for the write failure tests
+var appendMirrorMessage = appendMirrorMessageSQLite
+
 // Appends a delivery mirror message to the target session transcript, false when no session matches or the write fails
 func MirrorToSession(ctx context.Context, platform, chatID, messageText string, opts MirrorOptions) bool {
 	if opts.SourceLabel == "" {
@@ -175,13 +178,19 @@ func updatedAt(e *pyjson.Object) any {
 	return ""
 }
 
+// Shared session db registry acquire and release, swapped by tests
+var (
+	mirrorAcquireDB = state.Acquire
+	mirrorReleaseDB = state.ReleaseOrClose
+)
+
 // Appends one role and content row to the session, returning the write failure
-func appendMirrorMessage(ctx context.Context, sessionID, role, content string) error {
-	db, err := state.Acquire(ctx, filepath.Join(home.Dir(ctx), "state.db"))
+func appendMirrorMessageSQLite(ctx context.Context, sessionID, role, content string) error {
+	db, err := mirrorAcquireDB(ctx, filepath.Join(home.Dir(ctx), "state.db"))
 	if err != nil {
 		return err
 	}
-	defer state.ReleaseOrClose(db)
-	_, err = db.AppendMessage(sessionID, &state.Message{Role: role, Content: content})
+	defer mirrorReleaseDB(db)
+	_, err = db.AppendMessage(ctx, sessionID, map[string]any{"role": role, "content": content}, state.AppendGuards{})
 	return err
 }

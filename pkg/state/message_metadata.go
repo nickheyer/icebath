@@ -1,6 +1,8 @@
 package state
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+
 	"reflect"
 	"strings"
 	"time"
@@ -43,13 +45,18 @@ func mappingGet(value any, key string) (any, bool) {
 		return v, ok
 	case pyObject:
 		return m.get(key)
+	case *pyjson.Object:
+		if m == nil {
+			return nil, false
+		}
+		return m.Get(key)
 	}
 	return nil, false
 }
 
 func isMapping(value any) bool {
 	switch value.(type) {
-	case map[string]any, pyObject:
+	case map[string]any, pyObject, *pyjson.Object:
 		return true
 	}
 	return false

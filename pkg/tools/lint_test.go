@@ -174,9 +174,6 @@ func TestLintCheckLintInproc(t *testing.T) {
 	if r := unreadable.checkLint("/tmp/gone.json", nil); !r.Skipped || r.Message != "Failed to read /tmp/gone.json for lint" {
 		t.Fatalf("unreadable %+v", r)
 	}
-	if hostPythonInterpreter() == "" {
-		t.Skip("no host python for the ast lint")
-	}
 	py := "x = 1\n"
 	if r := ops.checkLint("/tmp/ok.py", &py); !r.Success || r.Skipped || r.Output != "" {
 		t.Fatalf("python %+v", r)
@@ -213,9 +210,6 @@ func TestLintCheckLintDelta(t *testing.T) {
 	}
 	if r := ops.checkLintDelta("/tmp/d.json", nil, &brokenPost); r.Success || r.Message != "" {
 		t.Fatalf("no pre %+v", r)
-	}
-	if hostPythonInterpreter() == "" {
-		return
 	}
 	pyPre := "def a(:\n    pass\n"
 	pyPost := "def a(:\n    pass\n\nprint(42)\n"
@@ -1283,6 +1277,34 @@ func TestRuamelCParseUTF8Decoder(t *testing.T) {
 	} {
 		if got := ruamelUTF8DecodeError([]byte(c.in)); got != c.want {
 			t.Errorf("%q\n got  %q\n want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// Messages recorded from tools/file_operations_lint.py _lint_python_inproc under CPython 3.14
+func TestLintPythonInprocMatchesCPython(t *testing.T) {
+	cases := []struct{ content, want string }{
+		{"x = 1\n", ""},
+		{"def foo(:\n    pass\n", "SyntaxError: invalid syntax (line 1, column 9)"},
+		{"x = 1\x00\n", "SyntaxError: source code string cannot contain null bytes"},
+		{"if x:\n\ty = 1\n        z = 2\n", "TabError: inconsistent use of tabs and spaces in indentation (line 3, column 1)"},
+		{"  x = 1\n", "IndentationError: unexpected indent (line 1, column 2)"},
+		{"# -*- coding: bogus -*-\nx = 1\n", "SyntaxError: unknown encoding: bogus"},
+		{"# coding: latin-1\nx = '\xed\xb3\xa9'\n", ""},
+		{"x = '\xed\xb3\xbf'\n", "SyntaxError: Non-UTF-8 code starting with '\\xff' on line 1, but no encoding declared; see https://peps.python.org/pep-0263/ for details (line 1, column 6)"},
+		{"x = '\xed\xa0\x80'\n", "UnicodeEncodeError: 'utf-8' codec can't encode character '\\ud800' in position 5: surrogates not allowed"},
+		{"a" + strings.Repeat(" if a else a", 10000) + "\n", "MemoryError: Parser stack overflowed - Python source too complex to parse"},
+		{"s = 'abc\n", "SyntaxError: unterminated string literal (detected at line 1) (line 1, column 5)"},
+		{"x = " + strings.Repeat("(", 201) + strings.Repeat(")", 201) + "\n", "SyntaxError: too many nested parentheses (line 1, column 205)"},
+		{"x = '\u00e9'\nprint x\n", "SyntaxError: Missing parentheses in call to 'print'. Did you mean print(...)? (line 2, column 1)"},
+		{"f(**a, *b)\n", "SyntaxError: iterable argument unpacking follows keyword argument unpacking (line 1, column 6)"},
+		{"\ufeffx = 1\n", ""},
+		{"x = 0777\n", "SyntaxError: leading zeros in decimal integer literals are not permitted; use an 0o prefix for octal integers (line 1, column 5)"},
+	}
+	for _, c := range cases {
+		ok, got := lintPythonInproc(c.content)
+		if ok != (c.want == "") || got != c.want {
+			t.Errorf("%.40q: got %v %q want %q", c.content, ok, got, c.want)
 		}
 	}
 }

@@ -139,7 +139,9 @@ func (p *parser) namedExpression() *Node {
 		name := p.nameNode(ctxStore)
 		p.next()
 		v := p.expression()
-		return p.mkFrom(t, "NamedExpr", name, v)
+		n := p.mkFrom(t, "NamedExpr", name, v)
+		p.checkVersion(8, "Assignment expressions are")
+		return n
 	}
 	if p.isName() && p.tk(p.pos+1).kind == tOp && p.tk(p.pos+1).val == "=" {
 		save, fill := p.pos, p.fill
@@ -360,6 +362,9 @@ func (p *parser) binLevel(ops []string, sub func() *Node) *Node {
 		op := p.next().val
 		b := sub()
 		a = p.mkFrom(t, "BinOp", a, opNode(binOps[op]), b)
+		if op == "@" {
+			p.checkVersion(5, "The '@' operator is")
+		}
 	}
 	return a
 }
@@ -425,7 +430,9 @@ func (p *parser) awaitPrimary() *Node {
 		p.enter(2)
 		v := p.primary()
 		p.leave(2)
-		return p.mkFrom(t, "Await", v)
+		n := p.mkFrom(t, "Await", v)
+		p.checkVersion(5, "Await expressions are")
+		return n
 	}
 	return p.primary()
 }
@@ -588,6 +595,9 @@ func (p *parser) forIfClauses() []*Node {
 			ifs = append(ifs, p.disjunction())
 		}
 		out = append(out, NewNode("comprehension", target, iter, ifs, isAsync))
+		if isAsync == 1 {
+			p.checkVersion(6, "Async comprehensions are")
+		}
 	}
 	return out
 }
@@ -886,6 +896,7 @@ func (p *parser) callArgs(start *token, fn *Node, genexp bool) *Node {
 				p.next()
 				val := p.expression()
 				v = p.mkFrom(t, "NamedExpr", name, val)
+				p.checkVersion(8, "Assignment expressions are")
 			} else {
 				v = p.expression()
 				if p.isOp(":=") {

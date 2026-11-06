@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	crand "crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"time"
@@ -96,12 +95,6 @@ func NewUID() string {
 // Session identifier carrying its creation stamp
 func NewSessionID() string {
 	return NewSessionIDAt(time.Time{}, DefaultHexLen)
-}
-
-// SHA-256 hex of a prompt
-func promptHash(prompt string) string {
-	sum := sha256.Sum256([]byte(prompt))
-	return hex.EncodeToString(sum[:])
 }
 
 // Unix seconds as a float with sub second precision

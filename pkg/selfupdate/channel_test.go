@@ -382,3 +382,37 @@ func TestChannelCanaryTags(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestChannelAdoptRetiredNoneOriginalAndMissingKeys(t *testing.T) {
+	h := chHome(t)
+	root := filepath.Join(filepath.Dir(h), "install")
+	chStamp(t, root, map[string]any{"schemaVersion": 2, "updateMechanism": "self"})
+	if _, err := SetInstallChannel(context.Background(), "old-preview", root); err != nil {
+		t.Fatal(err)
+	}
+	request := map[string]any{"source": root, "home": h, "channel_retirement": map[string]any{"original": nil, "destination": "stable"}}
+	if adopted, err := AdoptRetiredChannel(context.Background(), request); err != nil || !adopted {
+		t.Fatalf("a None original adopts unconditionally %v %v", adopted, err)
+	}
+	var key *KeyError
+	if _, err := AdoptRetiredChannel(context.Background(), map[string]any{"home": h, "channel_retirement": map[string]any{"original": nil, "destination": "stable"}}); !errors.As(err, &key) || err.Error() != "'source'" {
+		t.Fatalf("missing source %v", err)
+	}
+	if _, err := AdoptRetiredChannel(context.Background(), map[string]any{"source": root, "home": h, "channel_retirement": map[string]any{"original": nil}}); !errors.As(err, &key) || key.Key != "destination" {
+		t.Fatalf("missing destination %v", err)
+	}
+}
+
+func TestChannelMetadataArgsPropagatesUnreadableConfig(t *testing.T) {
+	h := chHome(t)
+	root := filepath.Join(filepath.Dir(h), "install")
+	chStamp(t, root, map[string]any{"schemaVersion": 2, "updateMechanism": "self"})
+	os.WriteFile(filepath.Join(h, "config.yaml"), []byte("update: [broken"), 0o644)
+	var out bytes.Buffer
+	channel := "stable"
+	handled, err := HandleMetadataArgs(context.Background(), &out, false, &channel, root)
+	var exit *pm.SystemExit
+	if err == nil || errors.As(err, &exit) || IsValueError(err) || out.Len() != 0 || !strings.Contains(err.Error(), "formatting error") {
+		t.Fatalf("%v %v %q", handled, err, out.String())
+	}
+}

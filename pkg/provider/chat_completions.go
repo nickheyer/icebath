@@ -237,6 +237,12 @@ func (c *chatCompletionsClient) Complete(ctx context.Context, req *Request) (*Re
 	if err != nil {
 		return nil, err
 	}
+	stale := computeNonStreamStaleTimeout(ctx, p.settings, c.cc.provider, req, c.cc.local, false, p.estTokens, map[string]any{"extra_body": geminiPlain(p.build.extraBody)})
+	return runNonStreamRequest(ctx, req.Model, p.estTokens, stale, func(ctx context.Context) (*Response, error) { return c.completeOnce(ctx, req, p) })
+}
+
+// One blocking chat completion on the request worker
+func (c *chatCompletionsClient) completeOnce(ctx context.Context, req *Request, p *ccPrepared) (*Response, error) {
 	base, configured := c.requestTimeout(req, p.settings)
 	connect := 30 * time.Second
 	if configured {
@@ -323,6 +329,8 @@ func (c *chatCompletionsClient) streamOnce(ctx context.Context, req *Request, p 
 	s := &ccStreamState{c: c, req: req, fn: fn, estTokens: p.estTokens, tools: newCCToolCallAccumulator(), scrubber: NewStreamingThinkScrubber(),
 		contentWatch: NewRunawayStreamWatch(), reasoningWatch: NewRunawayStreamWatch(), detailWatch: NewRunawayStreamWatch(),
 		started: time.Now(), lifetimeCap: t.lifetime.Seconds()}
+	s.diag = streamCallFrom(ctx).newDiag()
+	s.wire = &FailedStreamRequest{URL: p.url, Content: p.body}
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	kill := &ccKill{}
@@ -346,6 +354,7 @@ func (c *chatCompletionsClient) streamOnce(ctx context.Context, req *Request, p 
 		data, _ := readLimited(resp.Body, ccErrorBodyLimit)
 		return nil, false, c.httpError(resp, data)
 	}
+	StreamDiagCaptureResponse(s.diag, resp)
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(ct, "application/json") && !strings.Contains(ct, "event-stream") {
 		data, err := io.ReadAll(resp.Body)
@@ -371,7 +380,7 @@ func (c *chatCompletionsClient) streamOnce(ctx context.Context, req *Request, p 
 		}
 		return final, false, c.replay(final, fn)
 	}
-	out, err := c.consumeStream(attemptCtx, cancel, kill, resp, s, t)
+	out, err := c.consumeStream(ctx, attemptCtx, cancel, kill, resp, s, t)
 	return out, s.deltasSent, err
 }
 

@@ -84,6 +84,7 @@ type serverTask struct {
 	toolTimeout        float64
 	tools              []*Tool
 	toolNames          []string
+	toolNamesSet       bool
 	rendered           *Rendered
 	config             map[string]any
 	err                error
@@ -136,6 +137,13 @@ func newServerTask(name string, env *tools.Env) *serverTask {
 		lifecycleStartedAt: now, lastToolCallAt: now, done: make(chan struct{}),
 		refreshCtx: rctx, refreshCancel: rcancel,
 	}
+}
+
+// Whether the server holds a session and finished registering its tools, an empty list included
+func (s *serverTask) registrationFinished() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.session != nil && s.toolNamesSet
 }
 
 func (s *serverTask) registeredToolNames() []string {

@@ -31,7 +31,7 @@ func seedSession(t *testing.T, db *SessionDB, sid string, contents ...string) {
 		t.Fatal(err)
 	}
 	for _, c := range contents {
-		if _, err := db.AppendMessage(sid, &Message{Role: "user", Content: c}); err != nil {
+		if _, err := db.AppendMessage(context.Background(), sid, map[string]any{"role": "user", "content": c}, AppendGuards{}); err != nil {
 			t.Fatal(err)
 		}
 	}

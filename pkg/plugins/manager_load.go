@@ -109,7 +109,7 @@ func (m *Manager) DiscoverAndLoad(ctx context.Context, force bool) {
 	}
 	loadedBefore, ok := m.discoverAndLoadLocked(ctx, force)
 	if ok {
-		m.notifyPluginLoaded(loadedBefore)
+		m.notifyPluginLoaded(ctx, loadedBefore)
 	}
 }
 
@@ -151,7 +151,7 @@ func (m *Manager) discoverAndLoadLocked(ctx context.Context, force bool) (map[st
 	m.evictStalePersistentRegistrations()
 	m.refreshSecretSourcesAfterDiscovery()
 	if force {
-		m.reRegisterConfigHooksAfterForce()
+		m.reRegisterConfigHooksAfterForce(ctx)
 	}
 	completed = true
 	return loadedBefore, true
@@ -164,14 +164,14 @@ func (m *Manager) setDiscovered(v bool) {
 }
 
 // Restores config owned shell hooks and outbound webhooks after a force clear, each guarded independently
-func (m *Manager) reRegisterConfigHooksAfterForce() {
+func (m *Manager) reRegisterConfigHooksAfterForce(ctx context.Context) {
 	s := installedServices()
 	steps := []struct {
 		label string
 		fn    func() error
-	}{{"shell-hook", nil}, {"outbound-webhook", nil}}
+	}{{"shell-hook", func() error { return reRegisterConfigHooks(ctx) }}, {"outbound-webhook", nil}}
 	if s != nil {
-		steps[0].fn, steps[1].fn = s.ReRegisterShellHooks, s.ReRegisterOutboundWebhooks
+		steps[1].fn = s.ReRegisterOutboundWebhooks
 	}
 	for _, step := range steps {
 		var err error
@@ -355,7 +355,7 @@ type loadedListener struct {
 }
 
 // Fires every plugin loaded listener with the summaries of plugins new since the sweep began
-func (m *Manager) notifyPluginLoaded(loadedBefore map[string]bool) {
+func (m *Manager) notifyPluginLoaded(ctx context.Context, loadedBefore map[string]bool) {
 	m.mu.RLock()
 	listeners := append([]*loadedListener(nil), m.pluginLoadedListeners...)
 	m.mu.RUnlock()
@@ -363,7 +363,7 @@ func (m *Manager) notifyPluginLoaded(loadedBefore map[string]bool) {
 		return
 	}
 	var summaries []map[string]any
-	for _, s := range activationSummaries(m) {
+	for _, s := range ActivationSummaries(ctx, m) {
 		if key, _ := s["key"].(string); !loadedBefore[key] {
 			summaries = append(summaries, s)
 		}
@@ -700,9 +700,17 @@ func setPortableLiveness(server string, value map[string]any) {
 // Forgets the liveness declaration of a portable MCP server
 func clearPortableLiveness(server string) { setPortableLiveness(server, nil) }
 
-// Liveness declaration of a portable MCP server, nil when it declared none
+// Copy of the liveness declaration of a portable MCP server, nil when it declared none
 func PortableLiveness(server string) map[string]any {
 	portableLivenessMu.Lock()
 	defer portableLivenessMu.Unlock()
-	return portableLiveness[server]
+	value, ok := portableLiveness[server]
+	if !ok {
+		return nil
+	}
+	copied := make(map[string]any, len(value))
+	for k, v := range value {
+		copied[k] = v
+	}
+	return copied
 }

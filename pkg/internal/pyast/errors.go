@@ -28,7 +28,11 @@ type SyntaxError struct {
 // Error renders str(exc) with the <unknown> filename ast.parse passes
 func (e *SyntaxError) Error() string {
 	if e.HasLineno || e.Lineno != 0 || e.HasText {
-		return fmt.Sprintf("%s (<unknown>, line %d)", e.Msg, e.Lineno)
+		name := e.Filename
+		if name == "" {
+			name = "<unknown>"
+		}
+		return fmt.Sprintf("%s (%s, line %d)", e.Msg, name, e.Lineno)
 	}
 	return e.Msg
 }
@@ -63,7 +67,10 @@ func nullBytesError() error {
 }
 
 // Converts CRLF and CR to LF and terminates the last line as the exec mode tokenizer input does
-func translateNewlines(src []byte) []byte {
+func translateNewlines(src []byte) []byte { return translateLines(src, true) }
+
+// Converts CRLF and CR to LF, terminating the last line only for exec input as translate_newlines
+func translateLines(src []byte, exec bool) []byte {
 	out := make([]byte, 0, len(src)+1)
 	for i := 0; i < len(src); i++ {
 		c := src[i]
@@ -75,7 +82,7 @@ func translateNewlines(src []byte) []byte {
 		}
 		out = append(out, c)
 	}
-	if len(out) == 0 || out[len(out)-1] != '\n' {
+	if exec && (len(out) == 0 || out[len(out)-1] != '\n') {
 		out = append(out, '\n')
 	}
 	return out
@@ -328,9 +335,8 @@ func decodeFailure(src []byte, text string) error {
 
 // Parses translated UTF-8 source into a Module, converting parser failures into CPython errors
 func parseBuffer(buf []byte) (*Node, error) {
-	lx := tokenize(buf)
-	p := &parser{lx: lx, toks: lx.toks, parens: map[*Node]bool{}}
-	return p.run(p.file)
+	n, _, err := parseOpts(buf, Options{})
+	return n, err
 }
 
 // Runs a start rule, turning a specific diagnostic, a stack overflow or a generic failure into the error ast.parse raises
@@ -341,16 +347,28 @@ func (p *parser) run(start func() *Node) (n *Node, err error) {
 			return
 		}
 		n = nil
+		hi := len(p.toks) + 1
 		switch e := r.(type) {
 		case *SyntaxError:
 			err = e
+			if e != p.lx.err && p.noFullTokenize {
+				hi = p.seen
+			} else if e != p.lx.err {
+				err = p.fullTokenize(e)
+			}
 		case *LimitError:
 			err = e
+			hi = p.main
 		case failSignal:
-			err = p.genericError()
+			var full bool
+			err, full = p.genericError()
+			if !full {
+				hi = p.seen
+			}
 		default:
 			panic(r)
 		}
+		p.lexWarnings(p.main, hi)
 	}()
 	if len(p.toks) == 0 && p.lx.err != nil {
 		return nil, p.lx.err
@@ -359,7 +377,7 @@ func (p *parser) run(start func() *Node) (n *Node, err error) {
 }
 
 // Error after a failed parse with no specific diagnostic, as _PyPegen_set_syntax_error
-func (p *parser) genericError() (err error) {
+func (p *parser) genericError() (err error, full bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			if e, ok := r.(*SyntaxError); ok {
@@ -380,22 +398,8 @@ func (p *parser) genericError() (err error) {
 		}
 		p.raiseLastClass("IndentationError", msg)
 	}
-	var g *SyntaxError
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				g = r.(*SyntaxError)
-			}
-		}()
-		p.raiseAt(last.l, last.c, last.el, last.ec, "invalid syntax")
-	}()
-	if p.lx.err != nil {
-		return p.lx.err
-	}
-	if end := p.toks[len(p.toks)-1]; end.kind == tError && len(p.lx.parenLine) > 0 && last.l > p.lx.parenLine[len(p.lx.parenLine)-1] {
-		p.raiseUnclosed()
-	}
-	return g
+	g := p.genericErrorOf(func() { p.raiseAt(last.l, last.c, last.el, last.ec, "invalid syntax") })
+	return p.fullTokenize(g), true
 }
 
 func (p *parser) raiseUnclosed() {

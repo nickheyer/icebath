@@ -76,10 +76,7 @@ func TestAnthropicContentBlocksSidecarIsLiveOnlyAcrossASessionReload(t *testing.
 	if err := db.CreateSession(state.NewSession{ID: "s1", Source: "cli"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.AppendMessages("s1", history); err != nil {
-		t.Fatal(err)
-	}
-	reloaded, err := db.AllMessages("s1")
+	reloaded, err := stateRoundTrip(t, db, "s1", history)
 	if err != nil || len(reloaded) != 4 {
 		t.Fatal(reloaded, err)
 	}
@@ -123,4 +120,21 @@ func TestAnthropicUnsignedOrToolFreeTurnsCarryNoOrderedSidecar(t *testing.T) {
 	if blocks, ok := anthropicLiveBlocksOf(resp.Message); !ok || len(blocks) != 2 {
 		t.Fatalf("redacted thinking with tool use keeps the ordered sidecar %v", blocks)
 	}
+}
+
+func stateRoundTrip(t *testing.T, db *state.DB, sessionID string, msgs []*state.Message) ([]*state.Message, error) {
+	t.Helper()
+	dicts := make([]map[string]any, len(msgs))
+	for i, m := range msgs {
+		dicts[i] = state.MessageToDict(m)
+	}
+	if _, err := db.AppendMessagesBatch(t.Context(), sessionID, dicts, state.AppendGuards{}, nil); err != nil {
+		return nil, err
+	}
+	rows, err := db.GetMessagesAsConversation(t.Context(), sessionID, state.ConversationOptions{})
+	out := make([]*state.Message, len(rows))
+	for i, r := range rows {
+		out[i] = state.MessageFromDict(r)
+	}
+	return out, err
 }

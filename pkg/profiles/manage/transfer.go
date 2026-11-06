@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -30,11 +31,8 @@ func insideGitCheckout(path string) bool {
 	}
 }
 
-// Account home and temp dir behind the export fallbacks, swapped by tests
-var (
-	userHomeDir = os.UserHomeDir
-	tempDir     = os.TempDir
-)
+// Temp dir behind the export fallback, swapped by tests
+var tempDir = os.TempDir
 
 // Export directory that cannot become source tree input, failing closed when every candidate is a checkout
 func profileExportDirectory() (string, error) {
@@ -46,7 +44,7 @@ func profileExportDirectory() (string, error) {
 	if uid := os.Getuid(); uid >= 0 {
 		uidSuffix = fmt.Sprintf("-%d", uid)
 	}
-	accountHome, err := userHomeDir()
+	accountHome, err := home.UserHome()
 	if err != nil {
 		return "", err
 	}

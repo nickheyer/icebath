@@ -7,8 +7,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -108,7 +110,7 @@ func TestInspectAndInstallShareOneHubSession(t *testing.T) {
 	x, _, _ := newTestCLI(t)
 	src := &metaSource{SourceBase: SourceBase{ID: "github"}, meta: &SkillMeta{Name: "example", Description: "metadata", Source: "test", Identifier: "example/id", TrustLevel: "community"},
 		bundle: &SkillBundle{Name: "example", Source: "test", Identifier: "example/id", TrustLevel: "community", Files: []BundleFile{{Path: "SKILL.md", Data: []byte("# Example")}}}}
-	x.seams.sources = func() []SkillSource { return []SkillSource{src} }
+	x.Sources = func() []SkillSource { return []SkillSource{src} }
 	if r := x.InspectSkill(context.Background(), "example/id"); r == nil || r.SkillMDPreview == nil || *r.SkillMDPreview != "# Example" {
 		t.Fatalf("%+v", r)
 	}
@@ -134,7 +136,7 @@ func TestInspectAndInstallShareOneHubSession(t *testing.T) {
 func TestDoSearchJSONEmitsFullIdentifiers(t *testing.T) {
 	x, out, stdout := newTestCLI(t)
 	x.C.Width = 40
-	x.seams.sources = func() []SkillSource { return nil }
+	x.Sources = func() []SkillSource { return nil }
 	x.seams.unifiedSearch = func(context.Context, string, []SkillSource, string, int) []SkillMeta {
 		return []SkillMeta{{Name: "get-forecast", Description: "Fetch the forecast", Source: "browse-sh", TrustLevel: "community", Identifier: "browse-sh/weather.gov/get-forecast-1uezib"}}
 	}
@@ -192,7 +194,7 @@ func TestDoUpdateLocalEdits(t *testing.T) {
 func TestInstallFetchFailureMessages(t *testing.T) {
 	x, out, _ := newTestCLI(t)
 	stale := &metaSource{SourceBase: SourceBase{ID: "skills-sh"}, meta: &SkillMeta{Identifier: "skills-sh/org/gone-skill"}}
-	x.seams.sources = func() []SkillSource { return []SkillSource{stale} }
+	x.Sources = func() []SkillSource { return []SkillSource{stale} }
 	if o, err := x.DoInstall(context.Background(), "skills-sh/org/gone-skill", HubInstallOptions{SkipConfirm: true}); err != nil || o != HubFailed {
 		t.Fatal(o, err)
 	}
@@ -214,7 +216,7 @@ func TestInstallFetchFailureMessages(t *testing.T) {
 		if metaHit {
 			src.meta = &SkillMeta{Identifier: "skills-sh/org/gone-skill"}
 		}
-		x.seams.sources = func() []SkillSource { return []SkillSource{src} }
+		x.Sources = func() []SkillSource { return []SkillSource{src} }
 		x.DoInstall(context.Background(), "skills-sh/org/gone-skill", HubInstallOptions{SkipConfirm: true})
 		s := out.String()
 		if !strings.Contains(s, "Could not download") || strings.Contains(s, "Stale index entry") || strings.Contains(s, "rate limit") != metaHit {
@@ -282,7 +284,7 @@ func TestScanGateBlocksInstallWithExitOne(t *testing.T) {
 		x, out, _ := newTestCLI(t)
 		b := &SkillBundle{Name: "risky-skill", Source: "skills-sh", Identifier: "org/repo/risky-skill", TrustLevel: "community",
 			Files: []BundleFile{{Path: "SKILL.md", Data: []byte(body)}}}
-		x.seams.sources = func() []SkillSource {
+		x.Sources = func() []SkillSource {
 			return []SkillSource{&metaSource{SourceBase: SourceBase{ID: "skills-sh"}, bundle: b}}
 		}
 		code, err := x.SkillsCommand(context.Background(), SkillsArgs{Action: "install", Identifier: "org/repo/risky-skill", Yes: true})
@@ -314,32 +316,105 @@ func TestSlashInstallAndUninstallSkipConfirm(t *testing.T) {
 	}
 }
 
-func TestCLIProviderSearchFindsMatchesBeyondGlobalWindow(t *testing.T) {
-	x, _, stdout := newTestCLI(t)
-	var skills []any
-	add := func(repo, provider, name string) {
-		m := SkillMeta{Name: name, Description: "GPU utilities", Source: "github", Identifier: repo + "/skills/" + name, TrustLevel: "trusted", Extra: objOf("provider", provider)}
-		skills = append(skills, skillMetaToDict(m))
+// Index or GitHub catalog of 60 OpenAI and 3 NVIDIA skills behind the sources seam, as the catalog fixture
+func providerCatalog(t *testing.T, x *HubCLI, param string) (SkillSource, []SkillMeta, []SkillMeta) {
+	entry := func(repo, provider, name string) SkillMeta {
+		return SkillMeta{Name: name, Description: "GPU utilities", Source: "github", Identifier: repo + "/skills/" + name, TrustLevel: "trusted", Extra: objOf("provider", provider)}
 	}
+	var others, wanted []SkillMeta
 	for i := range 60 {
-		add("openai/skills", "OpenAI", "gpu-other-"+itoa(i))
+		others = append(others, entry("openai/skills", "OpenAI", "gpu-other-"+itoa(i)))
 	}
 	for i := range 3 {
-		add("NVIDIA/skills", "NVIDIA", "gpu-target-"+itoa(i))
+		wanted = append(wanted, entry("NVIDIA/skills", "NVIDIA", "gpu-target-"+itoa(i)))
 	}
-	text, _ := pyjson.Dumps(objOf("skills", skills))
-	writeTestFile(t, x.Hub.hermesIndexCacheFile(), text)
-	src := NewHermesIndexSource(x.Hub, NewGitHubAuth(x.S))
-	x.seams.sources = func() []SkillSource { return []SkillSource{src} }
-	for _, q := range []string{"gpu", ""} {
-		stdout.Reset()
-		if code, err := x.SkillsCommand(context.Background(), SkillsArgs{Action: "search", Query: q, Source: "nvidia", Limit: 2, JSON: true}); code != 0 || err != nil {
-			t.Fatal(code, err)
+	auth := NewGitHubAuth(x.S)
+	var src SkillSource
+	if param == "index" {
+		var skills []any
+		for _, m := range append(append([]SkillMeta{}, others...), wanted...) {
+			skills = append(skills, skillMetaToDict(m))
 		}
-		var rows []map[string]string
-		json.Unmarshal(stdout.Bytes(), &rows)
-		if len(rows) != 2 || rows[0]["identifier"] != "NVIDIA/skills/skills/gpu-target-0" || rows[1]["identifier"] != "NVIDIA/skills/skills/gpu-target-1" {
-			t.Fatalf("%q %s", q, stdout.String())
+		text, _ := pyjson.Dumps(objOf("skills", skills))
+		writeTestFile(t, x.Hub.hermesIndexCacheFile(), text)
+		src = NewHermesIndexSource(x.Hub, auth)
+	} else {
+		gh := NewGitHubSource(x.Hub, auth, nil)
+		for _, tap := range gh.Taps {
+			var entries []SkillMeta
+			switch githubProviderFor(tap.Repo) {
+			case "OpenAI":
+				entries = others
+			case "NVIDIA":
+				entries = wanted
+			}
+			if err := x.Hub.cacheMetas(tapCacheKey(tap.Repo, tap.Path, tap.Bucket), entries); err != nil {
+				t.Fatal(err)
+			}
 		}
+		src = gh
+	}
+	x.Sources = func() []SkillSource { return []SkillSource{src} }
+	return src, others, wanted
+}
+
+func identifiersOf(metas []SkillMeta) []string {
+	out := []string{}
+	for _, m := range metas {
+		out = append(out, m.Identifier)
+	}
+	return out
+}
+
+func TestCLIProviderSearchFindsMatchesBeyondGlobalWindow(t *testing.T) {
+	for _, param := range []string{"index", "github"} {
+		t.Run(param, func(t *testing.T) {
+			x, _, stdout := newTestCLI(t)
+			src, others, wanted := providerCatalog(t, x, param)
+			ctx := context.Background()
+			for _, q := range []string{"gpu", ""} {
+				stdout.Reset()
+				if code, err := x.SkillsCommand(ctx, SkillsArgs{Action: "search", Query: q, Source: "nvidia", Limit: 2, JSON: true}); code != 0 || err != nil {
+					t.Fatal(code, err)
+				}
+				var rows []map[string]any
+				json.Unmarshal(stdout.Bytes(), &rows)
+				got := []string{}
+				for _, r := range rows {
+					got = append(got, r["identifier"].(string))
+				}
+				if !reflect.DeepEqual(got, identifiersOf(wanted[:2])) {
+					t.Fatalf("%q %s", q, stdout.String())
+				}
+			}
+			direct, err := src.Search(ctx, "gpu", 2)
+			if err != nil || !reflect.DeepEqual(identifiersOf(direct), identifiersOf(others[:2])) {
+				t.Fatalf("unfiltered search %v %v", identifiersOf(direct), err)
+			}
+			stdout.Reset()
+			if code, err := x.SkillsCommand(ctx, SkillsArgs{Action: "search", Query: "gpu", Source: "anthropic", Limit: 10, JSON: true}); code != 0 || err != nil {
+				t.Fatal(code, err)
+			}
+			if strings.TrimSpace(stdout.String()) != "[]" {
+				t.Fatalf("anthropic filter printed %s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestParallelProviderSearchAppliesPerSourceLimitAfterFilter(t *testing.T) {
+	for _, param := range []string{"index", "github"} {
+		t.Run(param, func(t *testing.T) {
+			x, _, _ := newTestCLI(t)
+			src, _, wanted := providerCatalog(t, x, param)
+			results, counts, timedOut := x.Hub.ParallelSearchSources(context.Background(), []SkillSource{src}, "gpu",
+				map[string]int{src.SourceID(): 2}, " NVIDIA ", 30*time.Second, nil)
+			if !reflect.DeepEqual(identifiersOf(results), identifiersOf(wanted[:2])) || len(timedOut) != 0 {
+				t.Fatalf("results %v timed out %v", identifiersOf(results), timedOut)
+			}
+			if n, _ := counts.Get(src.SourceID()); n != len(results) {
+				t.Fatalf("count %v for %d results", n, len(results))
+			}
+		})
 	}
 }

@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -86,9 +88,27 @@ func platformDefault(environ func(string) string, userHome func() (string, error
 	return pypath.PathJoin(h, dirName+suffix), nil
 }
 
+// Patched pathlib Path.home lookup, nil while the real lookup serves
+var userHomeLookup atomic.Pointer[func() (string, error)]
+
+// User home like pathlib Path.home, the patched lookup when a test replaced it
+func UserHome() (string, error) {
+	if f := userHomeLookup.Load(); f != nil {
+		return (*f)()
+	}
+	return pypath.PathHome()
+}
+
+// Serves dir as the user home like a monkeypatched Path.home and returns the restore
+func PatchUserHome(dir string) (restore func()) {
+	lookup := func() (string, error) { return dir, nil }
+	prev := userHomeLookup.Swap(&lookup)
+	return func() { userHomeLookup.Store(prev) }
+}
+
 // Platform default home of the running process
 func PlatformDefault() string {
-	p, err := platformDefault(os.Getenv, os.UserHomeDir)
+	p, err := platformDefault(os.Getenv, UserHome)
 	if err != nil {
 		return filepath.Join(".", dirName)
 	}
@@ -114,16 +134,44 @@ func Dir(ctx context.Context) string {
 	return Process()
 }
 
-// Default home of the OS account rather than of a process whose HOME points elsewhere
-func AccountDefault() string {
+// OS account home from the password database, the real home resolver where it cannot answer
+func accountHome() string {
 	if runtime.GOOS != "windows" {
-		if u, err := user.Current(); err == nil && u.HomeDir != "" {
-			if p, err := platformDefault(os.Getenv, func() (string, error) { return u.HomeDir, nil }); err == nil {
-				return p
-			}
+		if u, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil {
+			return pypath.PathStr(u.HomeDir)
 		}
 	}
-	return PlatformDefault()
+	return pypath.PathStr(RealHome(context.Background(), nil))
+}
+
+// Default home of the OS account, the process platform default when the user home resolves to the account home
+func AccountDefault() string {
+	account := accountHome()
+	if sameResolvedPath(UserHome, account) {
+		return PlatformDefault()
+	}
+	p, err := platformDefault(os.Getenv, func() (string, error) { return account, nil })
+	if err != nil {
+		return filepath.Join(".", dirName)
+	}
+	return p
+}
+
+// Reports whether the looked up home and path resolve to equal pathlib paths, false when either fails
+func sameResolvedPath(lookup func() (string, error), path string) bool {
+	h, err := lookup()
+	if err != nil {
+		return false
+	}
+	a, errA := pypath.Resolve(h)
+	b, errB := pypath.Resolve(path)
+	if errA != nil || errB != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return pystr.Lower(a) == pystr.Lower(b)
+	}
+	return a == b
 }
 
 // Root that holds home, the platform default when home lives under it, the parent of a profiles directory, or home itself
@@ -345,7 +393,11 @@ func ListProfiles(root string) []string {
 // Path relative to the user home as a tilde posix path, the path itself when outside the user home
 func Display(path string) string {
 	p := pypath.PathStr(path)
-	rel, ok := pypath.PathRelativeTo(p, pypath.Expanduser("~"))
+	h, err := UserHome()
+	if err != nil {
+		return p
+	}
+	rel, ok := pypath.PathRelativeTo(p, h)
 	if !ok {
 		return p
 	}

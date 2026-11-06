@@ -32,7 +32,7 @@ func init() {
 // Saved platform toolset problems resolved against the toolsets the saved config defines
 func platformToolsetWarnings(cfg map[string]any) ([]string, error) {
 	pt, _ := cfg["platform_toolsets"].(map[string]any)
-	return tools.ValidatePlatformToolsets(pt, tools.SavedToolsetResolver(cfg)), nil
+	return tools.ValidatePlatformToolsets(pt, tools.SavedToolsetResolver(context.Background(), cfg)), nil
 }
 
 // Skill declared config variables of every installed skill in the facade shape
@@ -108,7 +108,7 @@ func configCommandSources(h string) config.ConfigCommandSources {
 		CheckDiagnostics: config.CheckDiagnosticsSources{
 			PlatformToolsetDiagnostics: func(pt any, cfg map[string]any) []string {
 				m, _ := pt.(map[string]any)
-				return tools.ValidatePlatformToolsets(m, tools.SavedToolsetResolver(cfg))
+				return tools.ValidatePlatformToolsets(m, tools.SavedToolsetResolver(home.WithOverride(context.Background(), h), cfg))
 			},
 			DisabledPlugins:          func() map[string]bool { return plugins.DisabledPlugins(h) },
 			BundledPlatformManifests: func() ([]config.PlatformManifest, error) { return config.BundledPlatformManifests(h) },

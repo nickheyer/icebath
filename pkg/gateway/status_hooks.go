@@ -27,6 +27,15 @@ func init() {
 	h.NotifyProfilesChanged = func(name string) { NotifyMultiplexerProfilesChanged(context.Background(), name, 8*time.Second) }
 	h.RecordedServedProfiles = func() ([]string, bool, error) { return RecordedServedProfiles("") }
 	h.ExclusiveMaintenance = profilesExclusiveMaintenance
+	h.Identify = func(root string) (any, error) {
+		return controlAnswer(IdentifyGateway(root, DefaultControlClientTimeout)), nil
+	}
+	h.MigrateProfileIdentity = func(root, oldName, newName string) (any, error) {
+		return controlAnswer(MigrateGatewayProfileIdentity(root, oldName, newName, 8*time.Second)), nil
+	}
+	h.PurgeProfileIdentity = func(root, name string) (any, error) {
+		return controlAnswer(PurgeGatewayProfileIdentity(root, name, 8*time.Second)), nil
+	}
 	h.PidExists = statusPidExists
 	h.ProcessStartTime = func(pid int) (int64, bool) {
 		v, ok := GetProcessStartTime(pid).(int64)

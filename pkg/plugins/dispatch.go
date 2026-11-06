@@ -31,6 +31,9 @@ var validHooks = map[string]bool{
 	"on_kanban_dispatch_tick": true, "gateway_platform_event": true, "pre_command": true, "post_compaction": true,
 }
 
+// Hooks whose directive a shell hook has no channel to return, refused for shell registration
+var shellUnsupportedHooks = map[string]bool{"transform_api_error_classification": true}
+
 // Every lifecycle hook name a plugin may register, sorted
 func ValidHooks() []string { return sortedSet(validHooks) }
 
@@ -39,9 +42,10 @@ type HookFunc func(ctx context.Context, kwargs map[string]any) (any, error)
 
 // One registered hook callback with its identity and display name
 type hookEntry struct {
-	fn     HookFunc
-	name   string
-	module string
+	fn       HookFunc
+	name     string
+	module   string
+	shellKey *shellHookKey
 }
 
 // Timeout suppression slot of one callback on one hook

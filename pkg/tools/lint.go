@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -103,58 +104,25 @@ func lintTOMLInproc(content string) (bool, string) {
 	return true, ""
 }
 
-// Parses the stdin bytes with ast.parse and prints the SyntaxError the way the lint reports it
-const pythonLintScript = `import ast, sys
-data = sys.stdin.buffer.read()
-try:
-    ast.parse(data)
-except Exception as e:
-    if isinstance(e, SyntaxError):
-        loc = f" (line {e.lineno}, column {e.offset})" if e.lineno else ""
-        msg = f"{type(e).__name__}: {e.msg}{loc}"
-    else:
-        msg = f"{type(e).__name__}: {e}"
-    sys.stdout.buffer.write(msg.encode("utf-8", "surrogatepass"))
-    sys.stdout.flush()
-    sys.exit(3)
-`
-
-// Python syntax verdict from ast.parse of the surrogateescape encoded content in the host interpreter
+// Python syntax verdict from ast.parse of the surrogateescape encoded content as compile reports it
 func lintPythonInproc(content string) (bool, string) {
 	data, err := pystr.SurrogateEscapeEncode(content)
 	if err != nil {
 		return false, "UnicodeEncodeError: " + err.Error()
 	}
-	py := hostPythonInterpreter()
-	if py == "" {
-		return true, lintSkip
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, py, "-I", "-S", "-c", pythonLintScript)
-	cmd.Stdin = bytes.NewReader(data)
-	cmd.Env = pythonLintEnv()
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 3 {
-			return false, out.String()
+	if _, err := pyast.ParseBytes(data); err != nil {
+		var se *pyast.SyntaxError
+		if errors.As(err, &se) {
+			loc := ""
+			if se.Lineno != 0 {
+				loc = " (line " + strconv.Itoa(se.Lineno) + ", column " + strconv.Itoa(se.Offset) + ")"
+			}
+			return false, se.Class + ": " + se.Msg + loc
 		}
-		return true, lintSkip
+		le := err.(*pyast.LimitError)
+		return false, le.Class + ": " + le.Msg
 	}
 	return true, ""
-}
-
-// Minimal child environment for the parse only interpreter
-func pythonLintEnv() []string {
-	env := []string{"PATH=" + os.Getenv("PATH")}
-	for _, k := range []string{"SYSTEMROOT", "SystemRoot", "TEMP", "TMP"} {
-		if v, ok := os.LookupEnv(k); ok {
-			env = append(env, k+"="+v)
-		}
-	}
-	return env
 }
 
 // Deepest container nesting json.loads decodes before its stack guard fires

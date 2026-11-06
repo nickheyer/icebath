@@ -1,9 +1,9 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -131,16 +131,6 @@ func scanSession(r rowScanner) (*Session, error) {
 	return &s, nil
 }
 
-// Stores a prompt by hash and returns the hash, empty for an empty prompt
-func storePrompt(tx *Tx, prompt string) (string, error) {
-	if prompt == "" {
-		return "", nil
-	}
-	h := promptHash(prompt)
-	_, err := tx.Exec("INSERT OR IGNORE INTO system_prompts (hash, prompt) VALUES (?, ?)", h, prompt)
-	return h, err
-}
-
 // Drops prompts no session references
 func deleteUnreferencedPrompts(tx *Tx) error {
 	_, err := tx.Exec(deleteUnreferencedSystemPromptsSQL)
@@ -222,36 +212,6 @@ func (d *DB) ReopenSession(id string) error {
 	})
 }
 
-// Stores the system prompt a session sends
-func (d *DB) UpdateSystemPrompt(id, prompt string) error {
-	return d.write(func(tx *Tx) error {
-		hash, err := storePrompt(tx, prompt)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec("UPDATE sessions SET system_prompt_hash = ? WHERE id = ?", nullStr(hash), id); err != nil {
-			return err
-		}
-		return deleteUnreferencedPrompts(tx)
-	})
-}
-
-// Pins the tool names a session sends
-func (d *DB) UpdateSessionToolNames(id string, names []string) error {
-	var encoded any
-	if names != nil {
-		b, err := json.Marshal(names)
-		if err != nil {
-			return err
-		}
-		encoded = string(b)
-	}
-	return d.write(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE sessions SET tool_names = ? WHERE id = ?", encoded, id)
-		return err
-	})
-}
-
 // Records the model and billing route a session runs on
 func (d *DB) UpdateSessionModel(id, model, provider, baseURL string) error {
 	return d.write(func(tx *Tx) error {
@@ -296,14 +256,6 @@ func (d *DB) UpdateSessionCwd(id, cwd, repoRoot, branch string) error {
 			nullStr(cwd), nullStr(repoRoot), nullStr(branch), id)
 		return err
 	})
-}
-
-// Stamps the latest activity of a session with a short description
-func (d *DB) TouchActivity(id, description string) error {
-	return d.retryWrite(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE sessions SET last_activity_at = ?, last_activity_description = ? WHERE id = ?", now(), nullStr(description), id)
-		return err
-	}, sessionActivityWritePatienceS)
 }
 
 // Sets the archived flag of a session
@@ -562,72 +514,9 @@ func (d *DB) SessionCount(source string) (int, error) {
 	return n, err
 }
 
-// Compression chain of a session from its root to its tip
-func (d *DB) CompressionChain(id string) ([]string, error) {
-	root, err := d.ConversationRoot(id)
-	if err != nil {
-		return nil, err
-	}
-	chain := []string{root}
-	cur := root
-	seen := map[string]bool{root: true}
-	for {
-		var child string
-		err := d.read(func(q querier) error {
-			return q.QueryRow(`SELECT child.id FROM sessions child JOIN sessions parent ON parent.id = child.parent_session_id
-				WHERE parent.id = ? AND parent.end_reason = 'compression'
-				AND COALESCE(json_extract(child.model_config, '$._branched_from'), '') = ''
-				AND COALESCE(json_extract(child.model_config, '$._delegate_from'), '') = ''
-				ORDER BY child.started_at DESC LIMIT 1`, cur).Scan(&child)
-		})
-		if errors.Is(err, sql.ErrNoRows) {
-			return chain, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		if seen[child] {
-			return chain, nil
-		}
-		seen[child] = true
-		chain = append(chain, child)
-		cur = child
-	}
-}
-
 // Freshest continuation of a session, the session itself when it was never compressed away
 func (d *DB) CompressionTip(id string) (string, error) {
-	chain, err := d.CompressionChain(id)
-	if err != nil {
-		return "", err
-	}
-	return chain[len(chain)-1], nil
-}
-
-// Oldest ancestor of a session along compression continuations
-func (d *DB) ConversationRoot(id string) (string, error) {
-	cur := id
-	seen := map[string]bool{id: true}
-	for {
-		var parent string
-		err := d.read(func(q querier) error {
-			return q.QueryRow(`SELECT parent.id FROM sessions child JOIN sessions parent ON parent.id = child.parent_session_id
-				WHERE child.id = ? AND parent.end_reason = 'compression'
-				AND COALESCE(json_extract(child.model_config, '$._branched_from'), '') = ''
-				AND COALESCE(json_extract(child.model_config, '$._delegate_from'), '') = ''`, cur).Scan(&parent)
-		})
-		if errors.Is(err, sql.ErrNoRows) {
-			return cur, nil
-		}
-		if err != nil {
-			return "", err
-		}
-		if seen[parent] {
-			return cur, nil
-		}
-		seen[parent] = true
-		cur = parent
-	}
+	return d.GetCompressionTip(context.Background(), id)
 }
 
 // Deletes a session with its messages, orphaning children and removing delegate children

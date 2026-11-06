@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -253,15 +255,16 @@ func TestConnectRendersRemoteHeadersUnderTheOwnersFreshScope(t *testing.T) {
 }
 
 func TestLaunchProfileEnvOnlyCredentialSurvivesTheOwnerRebuild(t *testing.T) {
+	if os.Getenv(freshLaunchEnvChild) == "" {
+		runInFreshLaunchEnvChild(t, scopeTokenName+"=tok-from-systemd")
+		return
+	}
 	launchHome, env := managerHome(t)
 	writeEnvFile(t, launchHome, "")
-	t.Setenv(scopeTokenName, "tok-from-systemd")
-	multiplexOn(t)
-	prev := shimServesRouted
-	shimServesRouted = func(context.Context) bool { return true }
-	t.Cleanup(func() { shimServesRouted = prev })
+	provider.ActivateMultiProfileHosting()
+	t.Cleanup(func() { provider.SetMultiplexActive(false) })
 	remote, headers := headerRecordingServer(t)
-	ctx := withSecretScope(home.WithOverride(context.Background(), launchHome), profileSecretMapping(launchHome), launchHome)
+	ctx := provider.WithLaunchProfileRuntimeScope(context.Background(), launchHome)
 	srv, err := connectServer(ctx, env, "demo", &Rendered{Config: remoteEntry(remote.URL)}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -273,6 +276,17 @@ func TestLaunchProfileEnvOnlyCredentialSurvivesTheOwnerRebuild(t *testing.T) {
 	}
 	if h := headers(); len(h) == 0 || h[0] != "Bearer tok-from-systemd" || rebuilt.(map[string]any)["Authorization"] != "Bearer tok-from-systemd" {
 		t.Fatalf("connect %q rebuild %v", h, rebuilt)
+	}
+}
+
+// Reruns the calling test alone in a child process whose launch env snapshot is still uncaptured
+func runInFreshLaunchEnvChild(t *testing.T, extraEnv ...string) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.count=1", "-test.v")
+	cmd.Env = append(append(os.Environ(), freshLaunchEnvChild+"="+t.Name()), extraEnv...)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "--- PASS: "+t.Name()) {
+		t.Fatalf("fresh launch env child %v\n%s", err, out)
 	}
 }
 

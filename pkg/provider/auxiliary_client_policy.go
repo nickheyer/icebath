@@ -379,6 +379,7 @@ func auxFastModelFromCatalog(ctx context.Context, providerID string) string {
 	return ""
 }
 
+// Reports whether any needle is a substring of the text
 func auxContainsAny(s string, needles []string) bool {
 	for _, n := range needles {
 		if strings.Contains(s, n) {

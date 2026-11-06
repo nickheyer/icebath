@@ -156,7 +156,7 @@ func TestLaunchEnvironReadsTheExecTimeBlock(t *testing.T) {
 	prev := procSelfEnviron
 	t.Cleanup(func() { procSelfEnviron = prev })
 	procSelfEnviron = func() ([]byte, error) { return []byte("A=1\x00NOSEP\x00\x00B=x=y\x00C=\xff\x00"), nil }
-	want := map[string]string{"A": "1", "B": "x=y", "C": "\xed\xb3\xbf"}
+	want := map[string]string{"A": "1", "B": "x=y", "C": "\xff"}
 	if got := launchEnviron(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("launch environ %q", got)
 	}

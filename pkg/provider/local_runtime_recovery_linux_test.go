@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -22,12 +23,12 @@ func lr4ShellOwner(read *os.File) *exec.Cmd {
 // Blocks until the forked child has exec'd away from the owner shell image so its recorded executable is final
 func lr4WaitExec(t *testing.T, ownerPid, childPid int) {
 	t.Helper()
-	shell, err := psExe(ownerPid)
+	shell, err := proc.Exe(ownerPid)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		if exe, err := psExe(childPid); err == nil && exe != shell {
+		if exe, err := proc.Exe(childPid); err == nil && exe != shell {
 			return
 		}
 	}

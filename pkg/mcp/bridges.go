@@ -13,7 +13,7 @@ import (
 )
 
 // OSV malware verdict of the package an npx, uvx or pipx launch would run
-func checkPackageForMalware(command string, args []string) (string, error) {
+var checkPackageForMalware = func(command string, args []string) (string, error) {
 	return skills.CheckPackageForMalware(command, args)
 }
 
@@ -26,7 +26,7 @@ func resolveConfiguredTimeout(tree config.Tree, key string, def time.Duration) (
 }
 
 // Why the package manager ships no build of a package for this platform, empty when it ships one
-func pmMissingReason(name string) (string, error) {
+var pmMissingReason = func(name string) (string, error) {
 	pkg, err := pm.GetPackage(name)
 	if err != nil {
 		return "", err
@@ -39,27 +39,27 @@ func pmMissingReason(name string) (string, error) {
 }
 
 // Installs a package manager package when missing, naming the remedy when policy forbids it
-func pmEnsure(ctx context.Context, name string) error {
+var pmEnsure = func(ctx context.Context, name string) error {
 	_, err := pm.Ensure(ctx, name, pm.EnsureOptions{})
 	return err
 }
 
 // Package manager uv or uvx executable, empty when uv is not installed
-func pmUVLauncher(ctx context.Context, name string) (string, error) { return pm.UvLauncher(ctx, name) }
+var pmUVLauncher = func(ctx context.Context, name string) (string, error) { return pm.UvLauncher(ctx, name) }
 
 // Base env with the package manager npm and its Node composed onto PATH
-func pmNodeEnv(base map[string]string) map[string]string { return pm.EnvFor([]string{"npm"}, base) }
+var pmNodeEnv = func(base map[string]string) map[string]string { return pm.EnvFor([]string{"npm"}, base) }
 
 // Reports whether this install is a sealed Windows payload whose tools need user facing copies
-func pmUserFacingApplies(ctx context.Context) (bool, error) { return pm.UserFacingApplies(ctx) }
+var pmUserFacingApplies = func(ctx context.Context) (bool, error) { return pm.UserFacingApplies(ctx) }
 
 // Sealed payload dirs holding a package's executables
-func pmSealedDirs(ctx context.Context, name string) ([]string, error) {
+var pmSealedDirs = func(ctx context.Context, name string) ([]string, error) {
 	return pm.SealedDirs(ctx, name)
 }
 
 // Toolchain dirs swapped for the package manager copies outside a sealed payload
-func pmUserFacingCopies(ctx context.Context, dirs []string) ([]string, error) {
+var pmUserFacingCopies = func(ctx context.Context, dirs []string) ([]string, error) {
 	return pm.Copies(ctx, dirs)
 }
 
@@ -69,7 +69,7 @@ func pluginPortableServers(homeDir string) (map[string]map[string]any, error) {
 }
 
 // Binary and version of the package manager entry for a package, empty when it has no installed binary
-func pmInstalledBinary(ctx context.Context, name string) (binary, version string, err error) {
+var pmInstalledBinary = func(ctx context.Context, name string) (binary, version string, err error) {
 	installed, err := pm.Installed(ctx, name, false)
 	if err != nil || installed == nil || installed.Binary == "" {
 		return "", "", err
@@ -98,7 +98,7 @@ func boundScopeSecret(ctx context.Context, name string) (value string, found, bo
 }
 
 // Hydrates a profile's external secret sources, true once every source applied
-func hydrateSecretSources(h string) bool {
+var hydrateSecretSources = func(h string) bool {
 	provider.HydrateProfileSecretSources(h)
 	return provider.SecretHomeApplied(h)
 }

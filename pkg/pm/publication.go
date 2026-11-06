@@ -100,6 +100,19 @@ func candidateMembersFor(ctx context.Context, extraDirs []string, selection *Ena
 	return sameMemberDirs(members), nil
 }
 
+// Admitted package declaring trees of a proposed home selection, then the extra dirs that declare packages
+func CandidateMembers(ctx context.Context, extraDirs []string, proposedHome string, enabled, disabled []string) ([]string, error) {
+	members, err := candidateMembersFor(ctx, extraDirs, &EnabledPluginsOptions{ProposedHome: proposedHome, Enabled: enabled, Disabled: disabled})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(members))
+	for i, m := range members {
+		out[i] = m.Source
+	}
+	return out, nil
+}
+
 // Member dirs answering to their own trees, never nil
 func sameMemberDirs(dirs []string) []MemberDir {
 	out := make([]MemberDir, 0, len(dirs))

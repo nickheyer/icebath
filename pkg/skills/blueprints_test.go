@@ -2,7 +2,11 @@ package skills
 
 import (
 	"context"
+	"encoding/json"
+	"io/fs"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -75,6 +79,78 @@ func TestExportBlueprintRoundTrips(t *testing.T) {
 		md, _ := ExportBlueprint(job, "body", "")
 		if spec, _ := ParseBlueprint(md); spec == nil || spec.Schedule != tc.want {
 			t.Fatalf("%s", md)
+		}
+	}
+}
+
+func TestLiveDashboardFrontmatterBlueprintIsAValidInstalledBlueprint(t *testing.T) {
+	text, err := fs.ReadFile(OptionalFS(), "productivity/live-dashboard/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := ParseBlueprint(string(text))
+	if err != nil || spec == nil || spec.SkillName != "live-dashboard" {
+		t.Fatalf("blueprint %+v %v", spec, err)
+	}
+	job := BlueprintToJobSpec(spec, "")
+	skillsV, _ := job.Get("skills")
+	schedule, _ := job.Get("schedule")
+	prompt, _ := job.Get("prompt")
+	if !reflect.DeepEqual(skillsV, []any{"live-dashboard"}) && !reflect.DeepEqual(skillsV, []string{"live-dashboard"}) {
+		t.Fatalf("skills %#v", skillsV)
+	}
+	if len(strings.Fields(schedule.(string))) != 5 {
+		t.Fatalf("invalid cron expr: %v", schedule)
+	}
+	if p, _ := prompt.(string); !strings.Contains(p, "[SILENT]") || strings.Contains(p, "~/.icebath") {
+		t.Fatalf("prompt %q", p)
+	}
+}
+
+func TestOptionalCatalogFetchPreservesAUsablePropertyRecipe(t *testing.T) {
+	t.Setenv("ICEBATH_OPTIONAL_SKILLS", "")
+	h, _ := newTestHub(t)
+	src := NewOptionalSkillSource(h, anonAuth(h))
+	local, err := src.ListLocal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var match *SkillMeta
+	for i, m := range local {
+		if slices.Contains(m.Tags, "property") && slices.Contains(m.Tags, "rental") && match == nil {
+			match = &local[i]
+		}
+	}
+	if match == nil {
+		t.Fatal("Property tasks must be discoverable in the optional catalog")
+	}
+	bundle, err := src.Fetch(context.Background(), match.Identifier)
+	if err != nil || bundle == nil {
+		t.Fatalf("fetch %v %v", bundle, err)
+	}
+	home := t.TempDir()
+	s := NewScope(home, nil)
+	dest := filepath.Join(home, "skills", bundle.Name)
+	for _, f := range bundle.Files {
+		writeTestFile(t, filepath.Join(dest, filepath.FromSlash(f.Path)), string(f.Data))
+	}
+	var loaded map[string]any
+	if err := json.Unmarshal([]byte(s.SkillView(context.Background(), bundle.Name, "", "", true)), &loaded); err != nil || loaded["success"] != true {
+		t.Fatalf("skill_view %v %v", loaded, err)
+	}
+	content := loaded["content"].(string)
+	_, after, ok := strings.Cut(content, "```listing\n")
+	example, _, _ := strings.Cut(after, "```")
+	var listing map[string]any
+	if !ok || json.Unmarshal([]byte(example), &listing) != nil {
+		t.Fatalf("no listing example in\n%s", content)
+	}
+	if listing["address"] == nil || listing["address"] == "" || listing["links"] == nil {
+		t.Fatalf("listing %v", listing)
+	}
+	for _, k := range []string{"price", "beds", "baths", "size", "note", "facts", "catches", "images"} {
+		if _, ok := listing[k]; !ok {
+			t.Fatalf("listing lacks %s", k)
 		}
 	}
 }

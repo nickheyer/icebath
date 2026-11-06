@@ -145,14 +145,14 @@ func preparedMessages(n int, tag string) []map[string]any {
 }
 
 func preparedAgent(cc *fakePreparedCompressor) *AIAgent {
-	return &AIAgent{compressionEnabled: true, contextCompressor: cc, Platform: "cli"}
+	return &AIAgent{compressionEnabled: true, contextCompressor: cc, platform: "cli"}
 }
 
 func TestPreparedGatesStartNoPass(t *testing.T) {
 	cases := map[string]func(a *AIAgent, cc *fakePreparedCompressor){
 		"compression_off":     func(a *AIAgent, cc *fakePreparedCompressor) { a.compressionEnabled = false },
 		"background_fork":     func(a *AIAgent, cc *fakePreparedCompressor) { a.persistDisabled = true },
-		"codex_app_server":    func(a *AIAgent, cc *fakePreparedCompressor) { a.APIMode = "codex_app_server" },
+		"codex_app_server":    func(a *AIAgent, cc *fakePreparedCompressor) { a.apiMode = "codex_app_server" },
 		"native_compaction":   func(a *AIAgent, cc *fakePreparedCompressor) { a.codexResponsesNativeCompaction = true },
 		"micro_compact":       func(a *AIAgent, cc *fakePreparedCompressor) { cc.micro = true },
 		"awaiting_usage":      func(a *AIAgent, cc *fakePreparedCompressor) { cc.awaiting = true },
@@ -186,8 +186,8 @@ func TestPreparedGatesStartNoPass(t *testing.T) {
 
 func TestPreparedTurnEndPassSkippedWhereTheSessionEndsWithTheTurn(t *testing.T) {
 	for name, setup := range map[string]func(a *AIAgent){
-		"cron":     func(a *AIAgent) { a.Platform = "cron" },
-		"subagent": func(a *AIAgent) { a.Platform = "subagent" },
+		"cron":     func(a *AIAgent) { a.platform = "cron" },
+		"subagent": func(a *AIAgent) { a.platform = "subagent" },
 		"delegate": func(a *AIAgent) { a.delegateDepth = 1 },
 		"oneshot": func(a *AIAgent) {
 			prev := tools.ActivePolicySource

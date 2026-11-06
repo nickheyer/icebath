@@ -38,13 +38,13 @@ func CreateSurface(source string) string {
 
 // IsAttended reports whether a person reads the agent's turns, false for subagents, library callers and finite turns
 func IsAttended(a *AIAgent) bool {
-	if a == nil || a.Platform == "" || a.Platform == "subagent" {
+	if a == nil || a.platform == "" || a.platform == "subagent" {
 		return false
 	}
 	if tools.FiniteTurnRequired != nil {
-		if required, known := tools.FiniteTurnRequired(a.Env); known && required {
+		if required, known := tools.FiniteTurnRequired(a.env); known && required {
 			return false
 		}
 	}
-	return AttendedSources[provider.SessionSourceFor(a.Env, a.Platform)]
+	return AttendedSources[provider.SessionSourceFor(a.env, a.platform)]
 }

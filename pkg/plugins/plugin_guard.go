@@ -8,11 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
@@ -96,33 +97,44 @@ func finding(patternID, severity, category, file, match, description string) ski
 	return skills.Finding{PatternID: patternID, Severity: severity, Category: category, File: file, Line: 0, Match: match, Description: description}
 }
 
-var mainGuardRe = regexp.MustCompile(`^([ \t]*)if\s+(?:__name__\s*==\s*["']__main__["']|["']__main__["']\s*==\s*__name__)\s*:`)
-
-// Lines executed only by a module self test guard, none when the file is not readable Python text
-func mainGuardBodyLines(filePath string) map[int]bool {
-	data, err := os.ReadFile(filePath)
-	if err != nil || bytes.IndexByte(data, 0) >= 0 {
-		return map[int]bool{}
+// Whether an if test is the conventional module self test guard comparing __name__ with "__main__"
+func isMainGuard(n *pyast.Node) bool {
+	test := n.Child("test")
+	ops, comps := test.Children("ops"), test.Children("comparators")
+	if !test.Is("Compare") || len(ops) != 1 || !ops[0].Is("Eq") || len(comps) != 1 {
+		return false
 	}
-	text := strings.TrimPrefix(string(data), "\ufeff")
-	lines := strings.Split(text, "\n")
+	isName := func(e *pyast.Node) bool { id, _ := e.Str("id"); return e.Is("Name") && id == "__name__" }
+	isMain := func(e *pyast.Node) bool {
+		v, ok := e.Get("value").(string)
+		return e.Is("Constant") && ok && v == "__main__"
+	}
+	left, right := test.Child("left"), comps[0]
+	return isName(left) && isMain(right) || isName(right) && isMain(left)
+}
+
+// Lines executed only by a module self test guard, none for unreadable, non UTF-8 or invalid Python
+func mainGuardBodyLines(filePath string) map[int]bool {
 	out := map[int]bool{}
-	for i := 0; i < len(lines); i++ {
-		m := mainGuardRe.FindStringSubmatch(lines[i])
-		if m == nil {
+	data, err := os.ReadFile(filePath)
+	if err != nil || !utf8.Valid(data) {
+		return out
+	}
+	tree, err := pyast.Parse(strings.TrimPrefix(string(data), "\ufeff"))
+	if err != nil {
+		if le, ok := err.(*pyast.LimitError); ok {
+			panic(le)
+		}
+		return out
+	}
+	for _, n := range pyast.Walk(tree) {
+		if !n.Is("If") || !isMainGuard(n) {
 			continue
 		}
-		guardIndent := len(m[1])
-		for j := i + 1; j < len(lines); j++ {
-			trimmed := strings.TrimLeft(lines[j], " \t")
-			if trimmed == "" {
-				continue
+		for _, st := range n.Children("body") {
+			for l := st.Lineno; l <= st.EndLineno; l++ {
+				out[l] = true
 			}
-			indent := len(lines[j]) - len(trimmed)
-			if indent <= guardIndent {
-				break
-			}
-			out[j+1] = true
 		}
 	}
 	return out

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,16 +59,12 @@ func vtProbe(t *testing.T) *validationProbe {
 	return &validationProbe{Command: []string{python}, Env: os.Environ()}
 }
 
-// Every native check except the source audits that need the Python parser
+// Every native check, the source audits and isolation audit included
 func vtNativeChecks(t *testing.T, dir string, probe *validationProbe) *ValidationReport {
 	t.Helper()
-	report, manifest, err := validateManifestAndProbe(context.Background(), dir, probe)
+	report, err := validatePluginDir(context.Background(), dir, probe)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if manifest != nil {
-		checkDesktopSurface(report, dir)
-		checkLanguagePacks(report, manifest, dir)
 	}
 	return report
 }
@@ -188,7 +185,7 @@ func TestAdmissionRunsTheInstallScanner(t *testing.T) {
 	for _, w := range report.Warnings {
 		cautionWarned = cautionWarned || strings.HasPrefix(w, "security scan caution:")
 	}
-	if !report.OK() || !vtHasCheck(report, "security scan", true) || report.Checks[len(report.Checks)-1].Detail != "caution" || !cautionWarned {
+	if !report.OK() || !slices.Contains(report.Checks, ValidationCheck{Name: "security scan", OK: true, Detail: "caution"}) || !cautionWarned {
 		t.Fatalf("caution must pass with a warning: %+v %v", report.Checks, report.Warnings)
 	}
 	dangerous := vtPlugin(t, tmp, vtManifest(map[string]any{"name": "dangerous-plugin"}), "")

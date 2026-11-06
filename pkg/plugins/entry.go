@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,7 @@ func scanLevel(base, source string, skip map[string]bool, prefix string, depth i
 	}
 	children, err := os.ReadDir(base)
 	if err != nil {
-		logWarn("Skipping unreadable plugin directory "+base, "error", err)
+		logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", base, pyErrorText(err)))
 		return
 	}
 	for _, child := range children {
@@ -101,7 +102,7 @@ func scanLevel(base, source string, skip map[string]bool, prefix string, depth i
 		}
 		name, version, description, key, ok, err := readManifestInfo(d, prefix)
 		if err != nil {
-			logWarn("Skipping unreadable plugin directory "+d, "error", err)
+			logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", d, pyErrorText(err)))
 			continue
 		}
 		if !ok {
@@ -127,7 +128,7 @@ func scanLevel(base, source string, skip map[string]bool, prefix string, depth i
 	}
 }
 
-// Every plugin the loader sees in load order, compiled-in and bundled first, then the user plugins dir
+// Every plugin the loader sees in load order, compiled-in and bundled first, then user plugins, then entry points
 func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
 	seen := &entrySet{byKey: map[string]PluginEntry{}}
 	for _, m := range bundledManifests() {
@@ -143,6 +144,11 @@ func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
 		return nil, err
 	}
 	scanLevel(user, "user", nil, "", 0, seen)
+	for _, m := range discoverEntrypointManifests(context.Background()) {
+		if _, dup := seen.byKey[m.Name]; !dup {
+			seen.put(PluginEntry{Name: m.Name, Version: m.Version, Description: m.Description, Source: "entrypoint", Dir: m.Path, Key: m.Name})
+		}
+	}
 	out := make([]PluginEntry, 0, len(seen.order))
 	for _, key := range seen.order {
 		out = append(out, seen.byKey[key])

@@ -25,6 +25,7 @@ func defaultAndWorkerHomes(t *testing.T) map[string]string {
 	managerHome(t)
 	root := t.TempDir()
 	t.Setenv("HOME", root)
+	t.Cleanup(home.PatchUserHome(root))
 	def := home.PlatformDefault()
 	worker := filepath.Join(def, home.ProfilesDir, "worker")
 	if err := os.MkdirAll(worker, 0o700); err != nil {

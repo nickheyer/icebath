@@ -245,6 +245,8 @@ func anthCheckMessage(message map[string]any, toolDrop bool) error {
 
 // Streaming attempt state turning events into StreamEvents
 type anthStreamState struct {
+	diag       *StreamDiag
+	wire       *FailedStreamRequest
 	c          *anthropicClient
 	req        *Request
 	fn         StreamFunc
@@ -263,7 +265,17 @@ type anthStreamState struct {
 	started    time.Time
 	estTokens  int
 	lifetime   float64
+	// First event arrival, the post chunk phase of the wait notice
+	firstChunkAt time.Time
 }
+
+func (s *anthStreamState) monitorModel() string { return s.req.Model }
+
+func (s *anthStreamState) monitorFirstChunk() time.Time { return s.firstChunkAt }
+
+func (s *anthStreamState) monitorPromptProgress() bool { return false }
+
+func (s *anthStreamState) monitorEstTokens() int { return s.estTokens }
 
 func (s *anthStreamState) emit(ev StreamEvent) error {
 	if s.fn == nil {
@@ -412,14 +424,16 @@ func anthMarkRaw(resp *Response, key string, value any) {
 	resp.Raw, _ = json.Marshal(doc)
 }
 
-// Reads events on a goroutine and drives the stale, read and lifetime watchdogs until the stream ends
-func (c *anthropicClient) consumeStream(ctx context.Context, cancel context.CancelFunc, kill *ccKill, src anthEventSource, s *anthStreamState, t ccTimeouts) (*Response, error) {
+// Reads events on a goroutine and drives the wait monitor and the stale, read and lifetime watchdogs until the stream ends
+func (c *anthropicClient) consumeStream(requestCtx, ctx context.Context, cancel context.CancelFunc, kill *ccKill, src anthEventSource, s *anthStreamState, t ccTimeouts) (*Response, error) {
 	type eventMsg struct {
 		ev  *anthEvent
 		err error
 	}
 	events := make(chan eventMsg, 32)
+	readerDone := make(chan struct{})
 	go func() {
+		defer close(readerDone)
 		for {
 			ev, err := src.Next()
 			select {
@@ -432,42 +446,52 @@ func (c *anthropicClient) consumeStream(ctx context.Context, cancel context.Canc
 			}
 		}
 	}()
-	staleTimer := time.NewTimer(t.stale)
+	w := newStreamWatchdog(requestCtx, cancel, kill, readerDone, s.emit, func(base error) error { return Classify(c.route.Provider, c.route.Model, 0, "", base) }, s.req.Model, s.estTokens, t, s.started)
+	defer w.stop()
+	defer w.logAbnormalExit()
 	readTimer := time.NewTimer(t.read)
-	defer staleTimer.Stop()
 	defer readTimer.Stop()
-	var lifetimeC <-chan time.Time
-	if t.lifetime > 0 {
-		lifetimeTimer := time.NewTimer(t.lifetime)
-		defer lifetimeTimer.Stop()
-		lifetimeC = lifetimeTimer.C
-	}
-	lastChunk := s.started
-	model := orUnknown2(s.req.Model)
+	mon := newStreamWaitMonitor(s, c.route.BaseURL, durationSeconds(t.stale), time.Now())
+	mon.w = w
+	poll := time.NewTicker(streamMonitorPoll)
+	defer poll.Stop()
+	var unwindErr error
 	for {
 		select {
-		case <-ctx.Done():
-			return nil, c.attemptError(ctx, kill, ctx.Err(), s)
-		case <-staleTimer.C:
-			elapsed := time.Since(lastChunk).Seconds()
-			catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, t.stale.Seconds(), model, commaInt(s.estTokens)))
-			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(s.estTokens))})
-			bumpStaleStreak(ctx)
-			kill.fire("stale", elapsed)
-			cancel()
-			return nil, c.attemptError(ctx, kill, errors.New("stale stream"), s)
-		case <-readTimer.C:
+		case <-requestCtx.Done():
+			return nil, w.interrupt(time.Now(), s.deltasSent)
+		case <-w.unwound():
+			return nil, c.attemptError(requestCtx, kill, unwindErr, s)
+		case now := <-poll.C:
+			moved, err := mon.tick(now, &w.lastChunk)
+			if err != nil {
+				cancel()
+				return nil, err
+			}
+			if moved {
+				w.moved(now)
+			}
+		case now := <-w.staleC():
+			if w.onStale(now) {
+				return nil, w.abandoned
+			}
+		case <-w.readC(readTimer.C):
 			kill.fire("read", t.read.Seconds())
 			cancel()
 			return nil, c.attemptError(ctx, kill, errors.New("read timeout"), s)
-		case <-lifetimeC:
-			elapsed := time.Since(s.started).Seconds()
-			catalogLog.Warn(fmt.Sprintf("Stream still running after %.0fs (stream_max_lifetime %.0fs) — killing connection. model=%s", elapsed, t.lifetime.Seconds(), model))
-			_ = s.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ Response still streaming after %ds (stream_max_lifetime %ds, model: %s). Aborting...", int(elapsed), int(t.lifetime.Seconds()), model)})
-			kill.fire("lifetime", elapsed)
-			cancel()
-			return nil, c.attemptError(ctx, kill, errors.New("stream lifetime exceeded"), s)
+		case now := <-w.lifeC():
+			if w.onLifetime(now) {
+				return nil, w.abandoned
+			}
 		case m := <-events:
+			if w.killed {
+				if m.err != nil {
+					unwindErr = streamKillCause(m.err)
+				} else if m.ev != nil {
+					w.call.discard(w.attempt, m.ev.Payload)
+				}
+				continue
+			}
 			if m.err != nil {
 				if errors.Is(m.err, io.EOF) {
 					return s.finish(time.Since(s.started))
@@ -479,9 +503,15 @@ func (c *anthropicClient) consumeStream(ctx context.Context, cancel context.Canc
 				return nil, c.attemptError(ctx, kill, m.err, s)
 			}
 			now := time.Now()
-			lastChunk = now
+			w.chunk(now)
+			if s.firstChunkAt.IsZero() {
+				s.firstChunkAt = now
+			}
 			resetTimer(readTimer, t.read)
-			resetTimer(staleTimer, t.stale)
+			if err := s.countChunk(now, m.ev); err != nil {
+				cancel()
+				return nil, err
+			}
 			stop, err := s.handleEvent(m.ev)
 			if err != nil {
 				cancel()
@@ -530,7 +560,7 @@ func (c *anthropicClient) attemptError(ctx context.Context, kill *ccKill, err er
 		if s != nil {
 			capSeconds = s.lifetime
 		}
-		base = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: &ccTimeoutError{err: &StreamLifetimeExceededError{Elapsed: elapsed, Cap: capSeconds}, headers: headers}}
+		base = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: &ccTimeoutError{err: &StreamLifetimeExceededError{Elapsed: elapsed, Cap: capSeconds, Cause: streamKillCause(err)}, headers: headers}}
 	case "read":
 		base = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: &ccTimeoutError{err: fmt.Errorf("Read timed out after %.0fs waiting for the provider stream.", elapsed), headers: headers}}
 	default:
@@ -547,5 +577,20 @@ func (c *anthropicClient) attemptError(ctx context.Context, kill *ccKill, err er
 			}
 		}
 	}
+	if s != nil && s.wire != nil {
+		base = withWireRequest(base, s.wire)
+	}
 	return Classify(c.route.Provider, c.route.Model, 0, "", base)
+}
+
+// Counts a real event into the attempt diagnostics, notes a terminal stop reason and refreshes the activity clock
+func (s *anthStreamState) countChunk(now time.Time, ev *anthEvent) error {
+	countDiagChunk(s.diag, now, estimateChunkBytes(ev.Payload))
+	if s.diag != nil && ev.Type == "message_delta" && !s.diag.FinishReasonSeen {
+		delta, _ := ev.Payload["delta"].(map[string]any)
+		if truthy(delta["stop_reason"]) {
+			s.diag.FinishReasonSeen = true
+		}
+	}
+	return s.emit(StreamEvent{Kind: EventActivity, Text: "receiving stream response"})
 }

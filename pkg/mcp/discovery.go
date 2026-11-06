@@ -267,6 +267,7 @@ func discoverAndRegisterServer(ctx context.Context, env *tools.Env, name string,
 	}
 	srv.mu.Lock()
 	srv.toolNames = slices.Clone(names)
+	srv.toolNamesSet = true
 	srv.mu.Unlock()
 	transport := "stdio"
 	if _, ok := r.Config["url"]; ok {

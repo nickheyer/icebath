@@ -1,6 +1,9 @@
 package state
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func modelConfigDB(t *testing.T) *DB {
 	t.Helper()
@@ -72,16 +75,16 @@ func TestResolveResumeSessionIDFollowsCompressionAndContinuations(t *testing.T) 
 	if err := db.EndSession("root", "compression"); err != nil {
 		t.Fatal(err)
 	}
-	if got := db.ResolveResumeSessionID("root"); got != "child" {
+	if got, _ := db.ResolveResumeSessionID("root"); got != "child" {
 		t.Fatalf("tip without messages %q", got)
 	}
-	if _, err := db.AppendMessage("cont", &Message{Role: "user", Content: "hi"}); err != nil {
+	if _, err := db.AppendMessage(context.Background(), "cont", map[string]any{"role": "user", "content": "hi"}, AppendGuards{}); err != nil {
 		t.Fatal(err)
 	}
-	if got := db.ResolveResumeSessionID("root"); got != "cont" {
+	if got, _ := db.ResolveResumeSessionID("root"); got != "cont" {
 		t.Fatalf("deepest continuation with messages %q", got)
 	}
-	if db.ResolveResumeSessionID("") != "" {
+	if got, err := db.ResolveResumeSessionID(""); err != nil || got != "" {
 		t.Fatal("empty id")
 	}
 }

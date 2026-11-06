@@ -73,7 +73,7 @@ func (x *HubCLI) DoList(ctx context.Context, sourceFilter string, enabledOnly bo
 		}
 	}
 	rootLabels := map[int]string{TierProject: "project", TierCreateDir: "create_dir", TierExternal: "external"}
-	disabled := x.S.DisabledSkillNames("")
+	disabled := x.disabledSkillNames("")
 	title := "Installed Skills"
 	if enabledOnly {
 		title += " (enabled only)"
@@ -304,7 +304,7 @@ func (x *HubCLI) DoUninstall(ctx context.Context, name string, c *pyrich.Console
 	if !skipConfirm && !x.confirmOrCancel(c, cancelledLine, fmt.Sprintf("\n[bold]Uninstall '%s'?[/]", name)) {
 		return HubNoop, nil
 	}
-	ok, msg, err := x.Hub.UninstallSkill(name)
+	ok, msg, err := x.uninstallSkill(name)
 	if err != nil {
 		return HubNoop, err
 	}
@@ -392,7 +392,7 @@ func printDiffLine(c *pyrich.Console, line string) {
 			return
 		}
 	}
-	c.Print(line)
+	c.PrintNoHighlight(line)
 }
 
 var diffStatusLine = map[string]string{"added": "[green]+ only in your copy:[/] %s", "removed": "[red]- only in stock:[/] %s",
@@ -976,7 +976,7 @@ func (x *HubCLI) dispatchCLI(ctx context.Context, a SkillsArgs) (HubOutcome, err
 	case "audit":
 		return noop(x.DoAudit(ctx, a.Name, nil, a.Deep))
 	case "uninstall":
-		return x.DoUninstall(ctx, a.Name, nil, a.Yes, false)
+		return x.doUninstall(ctx, a.Name, nil, a.Yes, false)
 	case "reset":
 		return noop(x.DoReset(ctx, a.Name, a.Restore, nil, a.Yes, false))
 	case "list-modified":
@@ -1183,7 +1183,7 @@ func (x *HubCLI) HandleSkillsSlash(ctx context.Context, cmd string, c *pyrich.Co
 	case "audit":
 		return x.DoAudit(ctx, firstPositional(args), c, contains(args, "--deep"))
 	case "uninstall":
-		_, err := x.DoUninstall(ctx, args[0], c, true, !now)
+		_, err := x.doUninstall(ctx, args[0], c, true, !now)
 		return err
 	case "reset":
 		return x.DoReset(ctx, args[0], contains(args, "--restore"), c, true, !now)

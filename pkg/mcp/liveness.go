@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -152,8 +153,8 @@ func ParseLiveness(raw any) (Liveness, error) {
 
 // Registered liveness of a server, static when none is registered or the declaration is invalid
 func livenessFor(ctx context.Context, serverName string) Liveness {
-	raw, ok := agentPluginLiveness(ctx, serverName)
-	if !ok {
+	raw := portableLiveness(serverName)
+	if raw == nil {
 		return newLiveness("static")
 	}
 	live, err := ParseLiveness(raw)
@@ -308,7 +309,7 @@ func liveEndpoint(ctx context.Context, serverName string) (url string, headers m
 	}
 	headers = map[string]string{}
 	if token != "" {
-		tools.RegisterVaultRedactionValueIn(ctx, token)
+		registerVaultRedaction(ctx, token)
 		headers["Authorization"] = "Bearer " + token
 	}
 	return url, headers, true, nil
@@ -318,7 +319,24 @@ func liveEndpoint(ctx context.Context, serverName string) (url string, headers m
 type toolsPlatform struct{}
 
 // Declaration registry and app resolver liveness reads
-func platformApps() appPlatform { return toolsPlatform{} }
+var platformApps = func() appPlatform { return toolsPlatform{} }
+
+// Registered liveness declaration of a server from the agent plugin registry, nil when none
+var portableLiveness = plugins.PortableLiveness
+
+// Registers a live endpoint token with the vault redactor before any use
+var registerVaultRedaction = tools.RegisterVaultRedactionValueIn
+
+// Hands the tool search catalog the unavailability sentence of a declared server whose check hides it
+func init() {
+	tools.MCPUnavailableDetails = func(server string) (string, bool, bool) {
+		if platformApps().Declaration(server) == nil {
+			return "", false, false
+		}
+		_, _, sentence, ok := unavailableDetails(context.Background(), server)
+		return sentence, true, ok
+	}
+}
 
 // Installs the single hook run after every declaration registry mutation
 func onAppDeclarationChange(fn func()) { tools.SetPlatformDeclarationOnChange(fn) }

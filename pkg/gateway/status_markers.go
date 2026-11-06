@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -17,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
 const (
@@ -414,10 +416,7 @@ func WritePlannedStopMarker(targetPid int) bool {
 
 // Whether an update pause record or a recovery claim is on disk, true when the directory cannot be listed
 func updatePauseOnDisk() (bool, error) {
-	record, err := updatePauseRecordPath()
-	if err != nil {
-		return false, err
-	}
+	record := updaterecord.PauseRecordPath()
 	entries, err := os.ReadDir(pypath.PathParent(record))
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
@@ -435,17 +434,17 @@ func updatePauseOnDisk() (bool, error) {
 }
 
 // Checkpoints a consumed planned stop into a pause that appeared since the consumer first looked
-func checkpointPlannedStop(path string, record *pyjson.Object) error {
+func checkpointPlannedStop(ctx context.Context, path string, record *pyjson.Object) error {
 	paused, err := updatePauseOnDisk()
 	if err != nil || !paused {
 		return err
 	}
-	release, err := updatePauseMutex(plannedStopMutexWait)
+	_, release, err := updaterecord.PauseMutex(ctx, plannedStopMutexWait)
 	if err != nil {
 		return err
 	}
 	defer release()
-	return updatePauseMarkStopConsumed(path, record)
+	return updaterecord.MarkStopConsumed(path, record, sameHermesHome)
 }
 
 // Whether this process is being intentionally stopped, the request kept as an accepted receipt when the checkpoint fails
@@ -456,20 +455,19 @@ func ConsumePlannedStopMarkerForSelf() (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		mctx := context.Background()
 		if !paused {
-			accepted, err := updatePauseAcceptedPath(path)
-			if err != nil {
-				return false, err
-			}
-			unlinkQuietly(accepted)
+			unlinkQuietly(updaterecord.PauseAcceptedPath(path))
 		} else {
-			release, err := updatePauseMutex(plannedStopMutexWait)
+			held, release, err := updaterecord.PauseMutex(mctx, plannedStopMutexWait)
 			if err != nil {
 				return false, err
 			}
 			defer release()
+			mctx = held
 		}
-		return consumePidMarkerForSelf(path, plannedStopMarkerTTL, checkpointPlannedStop, false)
+		checkpoint := func(p string, r *pyjson.Object) error { return checkpointPlannedStop(mctx, p, r) }
+		return consumePidMarkerForSelf(path, plannedStopMarkerTTL, checkpoint, false)
 	}()
 	if err == nil {
 		return matched, nil
@@ -478,7 +476,7 @@ func ConsumePlannedStopMarkerForSelf() (bool, error) {
 		return false, err
 	}
 	slog.Warn(fmt.Sprintf("Planned-stop checkpoint skipped (%v); the stop request stays on disk", err))
-	return consumePidMarkerForSelf(plannedStopMarkerPath(), plannedStopMarkerTTL, updatePauseMarkStopAccepted, true)
+	return consumePidMarkerForSelf(plannedStopMarkerPath(), plannedStopMarkerTTL, updaterecord.MarkStopAccepted, true)
 }
 
 // Whether a live planned stop marker names this process, never unlinking a matching marker

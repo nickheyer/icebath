@@ -3,6 +3,7 @@ package pyast
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -100,6 +101,37 @@ func TestLiteralEvalMatchesCPython(t *testing.T) {
 		}
 		if got != want {
 			t.Errorf("LiteralEval(%q)\n got %s\nwant %s", firstRunes(c.Src, 40), firstRunes(got, 300), firstRunes(want, 300))
+		}
+	}
+}
+
+// Results recorded from ast.literal_eval(value.strip()) with str of each list item under CPython 3.14
+func TestLiteralStrListMatchesCPython(t *testing.T) {
+	cases := []struct {
+		src     string
+		want    []string
+		ok      bool
+		wantErr string
+	}{
+		{`["browser", "terminal"]`, []string{"browser", "terminal"}, true, ""},
+		{"['a', 1, 2.5, None, True, (1, 2), {'k': [1]}, {1}, b'x', 1j, ..., -0.0, 1e400, -3]", []string{"a", "1", "2.5", "None", "True", "(1, 2)", "{'k': [1]}", "{1}", "b'x'", "1j", "Ellipsis", "-0.0", "inf", "-3"}, true, ""},
+		{"[1, 2", nil, false, ""},
+		{"[x]", nil, false, ""},
+		{"  [ 'a' ]  \x1c", []string{"a"}, true, ""},
+		{"[{[]: 1}]", nil, false, "cannot use 'list' as a dict key (unhashable type: 'list')"},
+		{"[0x" + strings.Repeat("f", 4000) + "]", nil, false, "Exceeds the limit (4300 digits) for integer string conversio"},
+		{"{'a': 1}", nil, false, ""},
+		{"[[1, 'a'], ('b',), 'it''s']", []string{"[1, 'a']", "('b',)", "its"}, true, ""},
+		{"\t[1]", []string{"1"}, true, ""},
+	}
+	for _, c := range cases {
+		got, ok, err := LiteralStrList(c.src)
+		if (err == nil) != (c.wantErr == "") || (err != nil && !strings.HasPrefix(err.Error(), c.wantErr)) {
+			t.Errorf("%.40q: err %v want %q", c.src, err, c.wantErr)
+			continue
+		}
+		if ok != c.ok || strings.Join(got, "\x00") != strings.Join(c.want, "\x00") {
+			t.Errorf("%.40q: got %q %v want %q", c.src, got, ok, c.want)
 		}
 	}
 }

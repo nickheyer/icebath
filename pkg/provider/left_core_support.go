@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyast"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"log/slog"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -145,17 +145,19 @@ func parsePlatformToolsetsValue(value any) ([]any, bool) {
 	case []any:
 		return v, true
 	case string:
-		text := strings.TrimSpace(v)
-		if !strings.HasPrefix(text, "[") {
+		if !strings.HasPrefix(pystr.Strip(v), "[") {
 			return nil, false
 		}
-		items, ok := pyLiteralList(text)
+		items, ok, err := pyast.LiteralStrList(v)
+		if err != nil {
+			panic(err)
+		}
 		if !ok {
 			return nil, false
 		}
 		out := make([]any, len(items))
 		for i, item := range items {
-			out[i] = item.str()
+			out[i] = item
 		}
 		return out, true
 	}
@@ -166,13 +168,13 @@ func parsePlatformToolsetsValue(value any) ([]any, bool) {
 func parseConfigStringList(value any) []string {
 	switch v := value.(type) {
 	case string:
-		if text := strings.TrimSpace(v); strings.HasPrefix(text, "[") {
-			if items, ok := pyLiteralList(text); ok {
-				out := make([]string, len(items))
-				for i, item := range items {
-					out[i] = item.str()
-				}
-				return out
+		if strings.HasPrefix(pystr.Strip(v), "[") {
+			items, ok, err := pyast.LiteralStrList(v)
+			if err != nil {
+				panic(err)
+			}
+			if ok {
+				return items
 			}
 		}
 		return []string{v}
@@ -288,323 +290,4 @@ func pyStringRepr(s string) string {
 	}
 	b.WriteByte(quote)
 	return b.String()
-}
-
-// One Python literal value carrying its str and repr forms
-type pyLit struct {
-	isStr bool
-	text  string
-	repr  string
-}
-
-func (l pyLit) str() string {
-	if l.isStr {
-		return l.text
-	}
-	return l.repr
-}
-
-type pyLitParser struct {
-	s string
-	i int
-}
-
-// Items of a Python list literal as ast.literal_eval reads it, false when malformed or not a list
-func pyLiteralList(text string) ([]pyLit, bool) {
-	p := &pyLitParser{s: text}
-	p.ws()
-	if p.i >= len(p.s) || p.s[p.i] != '[' {
-		return nil, false
-	}
-	p.i++
-	items, ok := p.seq(']')
-	if !ok {
-		return nil, false
-	}
-	p.ws()
-	if p.i != len(p.s) {
-		return nil, false
-	}
-	return items, true
-}
-
-func (p *pyLitParser) ws() {
-	for p.i < len(p.s) && strings.IndexByte(" \t\n\r\f\v", p.s[p.i]) >= 0 {
-		p.i++
-	}
-}
-
-// Comma separated values up to the closing byte, a trailing comma allowed
-func (p *pyLitParser) seq(closer byte) ([]pyLit, bool) {
-	var items []pyLit
-	for {
-		p.ws()
-		if p.i < len(p.s) && p.s[p.i] == closer {
-			p.i++
-			return items, true
-		}
-		item, ok := p.value()
-		if !ok {
-			return nil, false
-		}
-		items = append(items, item)
-		p.ws()
-		if p.i >= len(p.s) {
-			return nil, false
-		}
-		switch p.s[p.i] {
-		case ',':
-			p.i++
-		case closer:
-			p.i++
-			return items, true
-		default:
-			return nil, false
-		}
-	}
-}
-
-func joinRepr(items []pyLit) string {
-	parts := make([]string, len(items))
-	for i, item := range items {
-		parts[i] = item.repr
-	}
-	return strings.Join(parts, ", ")
-}
-
-// One literal value, containers rendered through their Python repr
-func (p *pyLitParser) value() (pyLit, bool) {
-	p.ws()
-	if p.i >= len(p.s) {
-		return pyLit{}, false
-	}
-	switch c := p.s[p.i]; {
-	case c == '[':
-		p.i++
-		items, ok := p.seq(']')
-		return pyLit{repr: "[" + joinRepr(items) + "]"}, ok
-	case c == '(':
-		p.i++
-		items, ok := p.seq(')')
-		if !ok {
-			return pyLit{}, false
-		}
-		if len(items) == 1 {
-			return pyLit{repr: "(" + items[0].repr + ",)"}, true
-		}
-		return pyLit{repr: "(" + joinRepr(items) + ")"}, true
-	case c == '{':
-		return p.braces()
-	case c == '\'' || c == '"':
-		return p.stringLit(false)
-	}
-	start := p.i
-	for p.i < len(p.s) && (isPyIdentByte(p.s[p.i]) || strings.IndexByte("+-.", p.s[p.i]) >= 0) {
-		if (p.s[p.i] == '+' || p.s[p.i] == '-') && p.i > start && p.s[p.i-1] != 'e' && p.s[p.i-1] != 'E' {
-			break
-		}
-		p.i++
-	}
-	token := p.s[start:p.i]
-	if p.i < len(p.s) && (p.s[p.i] == '\'' || p.s[p.i] == '"') {
-		switch strings.ToLower(token) {
-		case "u":
-			return p.stringLit(false)
-		case "r":
-			return p.stringLit(true)
-		}
-		return pyLit{}, false
-	}
-	switch token {
-	case "True", "False", "None":
-		return pyLit{repr: token}, true
-	}
-	return pyNumberLit(token)
-}
-
-func isPyIdentByte(c byte) bool {
-	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-// Numeric literal rendered as Python repr renders the value
-func pyNumberLit(token string) (pyLit, bool) {
-	if token == "" {
-		return pyLit{}, false
-	}
-	body := strings.TrimLeft(token, "+-")
-	negative := strings.Count(token[:len(token)-len(body)], "-")%2 == 1
-	clean := strings.ReplaceAll(body, "_", "")
-	if strings.HasPrefix(body, "_") || strings.HasSuffix(body, "_") || strings.Contains(body, "__") {
-		return pyLit{}, false
-	}
-	if n, ok := new(big.Int).SetString(clean, 0); ok && !(len(clean) > 1 && clean[0] == '0' && clean[1] >= '0' && clean[1] <= '9') {
-		if negative {
-			n.Neg(n)
-		}
-		return pyLit{repr: n.String()}, true
-	}
-	if clean == "" || strings.ContainsAny(clean, "xXoObB") || strings.ContainsAny(clean, "abcdfghijklmnpqrstuvwyzABCDFGHIJKLMNPQRSTUVWYZ") {
-		return pyLit{}, false
-	}
-	f, err := strconv.ParseFloat(clean, 64)
-	if err != nil && !strings.Contains(err.Error(), "range") {
-		return pyLit{}, false
-	}
-	if negative {
-		f = -f
-	}
-	return pyLit{repr: pyFloatRepr(f)}, true
-}
-
-// Dict or set literal in source order
-func (p *pyLitParser) braces() (pyLit, bool) {
-	p.i++
-	p.ws()
-	if p.i < len(p.s) && p.s[p.i] == '}' {
-		p.i++
-		return pyLit{repr: "{}"}, true
-	}
-	var parts []string
-	isDict := false
-	for idx := 0; ; idx++ {
-		p.ws()
-		if p.i < len(p.s) && p.s[p.i] == '}' && idx > 0 {
-			p.i++
-			break
-		}
-		key, ok := p.value()
-		if !ok {
-			return pyLit{}, false
-		}
-		p.ws()
-		if idx == 0 {
-			isDict = p.i < len(p.s) && p.s[p.i] == ':'
-		}
-		if isDict {
-			if p.i >= len(p.s) || p.s[p.i] != ':' {
-				return pyLit{}, false
-			}
-			p.i++
-			val, ok := p.value()
-			if !ok {
-				return pyLit{}, false
-			}
-			parts = append(parts, key.repr+": "+val.repr)
-		} else {
-			parts = append(parts, key.repr)
-		}
-		p.ws()
-		if p.i >= len(p.s) {
-			return pyLit{}, false
-		}
-		if p.s[p.i] == ',' {
-			p.i++
-			continue
-		}
-		if p.s[p.i] != '}' {
-			return pyLit{}, false
-		}
-		p.i++
-		break
-	}
-	return pyLit{repr: "{" + strings.Join(parts, ", ") + "}"}, true
-}
-
-// Adjacent quoted string literals concatenated, escapes decoded unless raw
-func (p *pyLitParser) stringLit(raw bool) (pyLit, bool) {
-	var b strings.Builder
-	for {
-		s, ok := p.quoted(raw)
-		if !ok {
-			return pyLit{}, false
-		}
-		b.WriteString(s)
-		save := p.i
-		p.ws()
-		if p.i < len(p.s) && (p.s[p.i] == '\'' || p.s[p.i] == '"') {
-			raw = false
-			continue
-		}
-		p.i = save
-		break
-	}
-	text := b.String()
-	return pyLit{isStr: true, text: text, repr: pyStringRepr(text)}, true
-}
-
-// One quoted string, single or triple quoted
-func (p *pyLitParser) quoted(raw bool) (string, bool) {
-	q := p.s[p.i]
-	delim := string(q)
-	if strings.HasPrefix(p.s[p.i:], strings.Repeat(delim, 3)) {
-		delim = strings.Repeat(delim, 3)
-	}
-	p.i += len(delim)
-	var b strings.Builder
-	for p.i < len(p.s) {
-		if strings.HasPrefix(p.s[p.i:], delim) {
-			p.i += len(delim)
-			return b.String(), true
-		}
-		c := p.s[p.i]
-		if c == '\n' && len(delim) == 1 {
-			return "", false
-		}
-		if c != '\\' {
-			r, size := utf8.DecodeRuneInString(p.s[p.i:])
-			b.WriteRune(r)
-			p.i += size
-			continue
-		}
-		if p.i+1 >= len(p.s) {
-			return "", false
-		}
-		if raw {
-			b.WriteByte('\\')
-			b.WriteByte(p.s[p.i+1])
-			p.i += 2
-			continue
-		}
-		if !p.escape(&b) {
-			return "", false
-		}
-	}
-	return "", false
-}
-
-// Decodes one backslash escape at the cursor
-func (p *pyLitParser) escape(b *strings.Builder) bool {
-	e := p.s[p.i+1]
-	p.i += 2
-	simple := map[byte]string{'\\': "\\", '\'': "'", '"': "\"", 'n': "\n", 't': "\t", 'r': "\r", 'a': "\a", 'b': "\b", 'f': "\f", 'v': "\v", '\n': ""}
-	if out, ok := simple[e]; ok {
-		b.WriteString(out)
-		return true
-	}
-	hexLen := map[byte]int{'x': 2, 'u': 4, 'U': 8}[e]
-	if hexLen > 0 {
-		if p.i+hexLen > len(p.s) {
-			return false
-		}
-		n, err := strconv.ParseUint(p.s[p.i:p.i+hexLen], 16, 32)
-		if err != nil || n > unicode.MaxRune {
-			return false
-		}
-		b.WriteRune(rune(n))
-		p.i += hexLen
-		return true
-	}
-	if e >= '0' && e <= '7' {
-		end := p.i
-		for end < len(p.s) && end < p.i+2 && p.s[end] >= '0' && p.s[end] <= '7' {
-			end++
-		}
-		n, _ := strconv.ParseUint(p.s[p.i-1:end], 8, 32)
-		b.WriteRune(rune(n))
-		p.i = end
-		return true
-	}
-	b.WriteByte('\\')
-	b.WriteByte(e)
-	return true
 }

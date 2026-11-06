@@ -93,6 +93,9 @@ type sessionCore struct {
 	conn    SQLiteConn
 	hasConn atomic.Bool
 
+	messageColumnsMu    sync.Mutex
+	messageColumnsCache []string
+
 	poolMu           sync.Mutex
 	readPool         []SQLiteConn
 	readBudget       *pathReadBudget

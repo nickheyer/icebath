@@ -9,7 +9,7 @@ import (
 
 // One shot fact frozen on the agent at its first tool build
 func (a *AIAgent) agentIsOneshot() bool {
-	return tools.AgentIsOneshot(&a.oneshotSession, a.Env)
+	return tools.AgentIsOneshot(&a.oneshotSession, a.env)
 }
 
 // Tool schemas with delegate_task swapped for its one shot variant without live control parameters

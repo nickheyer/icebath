@@ -62,7 +62,18 @@ func (f *insightsFixture) tokens(t *testing.T, id string, u insightsUsage) {
 
 func (f *insightsFixture) msg(t *testing.T, id, role, content, toolName string, calls ...state.ToolCall) {
 	t.Helper()
-	if _, err := f.db.AppendMessage(id, &state.Message{Role: role, Content: content, ToolName: toolName, ToolCalls: calls}); err != nil {
+	fields := map[string]any{"role": role, "content": content}
+	if toolName != "" {
+		fields["tool_name"] = toolName
+	}
+	if len(calls) > 0 {
+		list := make([]any, len(calls))
+		for i, tc := range calls {
+			list[i] = state.ToolCallToDict(tc)
+		}
+		fields["tool_calls"] = list
+	}
+	if _, err := f.db.AppendMessage(context.Background(), id, fields, state.AppendGuards{}); err != nil {
 		t.Fatal(err)
 	}
 }

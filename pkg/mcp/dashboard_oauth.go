@@ -85,6 +85,12 @@ type DashboardOAuthFlow struct {
 	authorization    flowLatch
 	callbackReady    flowLatch
 	workerDone       flowLatch
+
+	// Card attempt state guarded by cardCommitGuard, the token snapshot, its commit and its failure class
+	backup          map[string][]byte
+	inheritedBackup map[string][]byte
+	committed       bool
+	failureClass    string
 }
 
 // Flow in the starting state stamped with its creation time

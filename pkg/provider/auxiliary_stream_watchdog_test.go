@@ -56,15 +56,15 @@ type auxTestAcc struct {
 	finish  string
 }
 
-func (a *auxTestAcc) Feed(chunk map[string]any) bool {
+func (a *auxTestAcc) Feed(chunk map[string]any) (bool, error) {
 	if c, ok := chunk["content"].(string); ok && c != "" {
 		a.content += c
-		return true
+		return true, nil
 	}
 	if f, ok := chunk["finish_reason"].(string); ok {
 		a.finish = f
 	}
-	return false
+	return false, nil
 }
 
 func (a *auxTestAcc) HasFinishReason() bool { return a.finish != "" }

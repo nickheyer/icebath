@@ -56,10 +56,7 @@ func TestBedrockContentBlocksSidecarIsLiveOnlyAcrossASessionReload(t *testing.T)
 	if err := db.CreateSession(state.NewSession{ID: "s1", Source: "cli"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.AppendMessages("s1", []*state.Message{history[0], resp.Message}); err != nil {
-		t.Fatal(err)
-	}
-	reloaded, err := db.AllMessages("s1")
+	reloaded, err := stateRoundTrip(t, db, "s1", []*state.Message{history[0], resp.Message})
 	if err != nil || len(reloaded) != 2 {
 		t.Fatal(reloaded, err)
 	}

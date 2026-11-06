@@ -1,12 +1,14 @@
 package skills
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -19,6 +21,107 @@ type ASTFinding struct {
 }
 
 var astIgnoredDirs = map[string]bool{"__pycache__": true, ".venv": true, "venv": true, "node_modules": true}
+
+// Python recursion limit the visitor runs under, sys.getrecursionlimit() of the interpreter
+var astScanRecursionLimit = 1000
+
+// Python frames on the stack of icebath skills audit --deep when _scan_source starts, module frame included
+const astScanBaseFrames = 9
+
+// Literal argument index, pattern id and description of each builtin whose computed argument is flagged
+var astDynamicCalls = map[string]struct {
+	arg       int
+	pid, desc string
+}{
+	"__import__": {0, "dynamic_import_computed", "__import__ with non-literal module name"},
+	"getattr":    {1, "dynamic_getattr", "getattr with non-literal attribute name"},
+}
+
+func astIsImportlib(name string) bool {
+	return name == "importlib" || strings.HasPrefix(name, "importlib.")
+}
+
+// Findings of one source text, none on a syntax, value or recursion error, MemoryError propagates as a panic
+func astScanSource(content, relPath string) []ASTFinding {
+	tree, err := pyast.Parse(content)
+	if err != nil {
+		var le *pyast.LimitError
+		if errors.As(err, &le) && le.Class == "MemoryError" {
+			panic(err)
+		}
+		return nil
+	}
+	s := &astScanner{rel: relPath}
+	s.visit(tree, astScanBaseFrames)
+	return s.findings
+}
+
+type astScanner struct {
+	rel      string
+	findings []ASTFinding
+}
+
+// Pattern hits of one node in the order the NodeVisitor methods append them
+func astNodeHits(n *pyast.Node) [][2]string {
+	var hits [][2]string
+	switch n.Type {
+	case "Call":
+		f := n.Child("func")
+		if attr, _ := f.Str("attr"); f.Is("Attribute") && attr == "import_module" {
+			hits = append(hits, [2]string{"dynamic_import", "importlib.import_module() — loads arbitrary modules at runtime"})
+		} else if id, _ := f.Str("id"); f.Is("Name") {
+			if dc, ok := astDynamicCalls[id]; ok {
+				if args := n.Children("args"); len(args) > dc.arg && !args[dc.arg].Is("Constant") {
+					hits = append(hits, [2]string{dc.pid, dc.desc})
+				}
+			}
+		}
+	case "Subscript":
+		v := n.Child("value")
+		if attr, _ := v.Str("attr"); v.Is("Attribute") && attr == "__dict__" && !n.Child("slice").Is("Constant") {
+			hits = append(hits, [2]string{"dict_access", "__dict__[<computed>] — dynamic attribute access"})
+		}
+	case "Import":
+		for _, a := range n.Children("names") {
+			if name, _ := a.Str("name"); astIsImportlib(name) {
+				hits = append(hits, [2]string{"importlib_import", "import " + name + " — enables dynamic module loading"})
+			}
+		}
+	case "ImportFrom":
+		if mod, _ := n.Str("module"); astIsImportlib(mod) {
+			hits = append(hits, [2]string{"importlib_import", "from " + mod + " import ... — enables dynamic module loading"})
+		}
+	}
+	return hits
+}
+
+// Pre-order visit counting visitor, hit and iter_fields frames, false once one passes the recursion limit
+func (s *astScanner) visit(n *pyast.Node, frames int) bool {
+	frames += 2
+	if frames > astScanRecursionLimit {
+		return false
+	}
+	if n.Is("Call", "Subscript", "Import", "ImportFrom") {
+		for _, h := range astNodeHits(n) {
+			if frames+1 > astScanRecursionLimit {
+				return false
+			}
+			s.findings = append(s.findings, ASTFinding{File: s.rel, Line: n.Lineno, PatternID: h[0], Description: h[1]})
+		}
+		if frames++; frames > astScanRecursionLimit {
+			return false
+		}
+	}
+	if frames+1 > astScanRecursionLimit {
+		return false
+	}
+	for _, c := range pyast.IterChildNodes(n) {
+		if !s.visit(c, frames) {
+			return false
+		}
+	}
+	return true
+}
 
 // Findings of one Python file read as utf-8-sig with replacement, none when it cannot be read
 func astScanFile(py, rel string) []ASTFinding {

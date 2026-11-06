@@ -7,7 +7,7 @@ import (
 
 func TestProfileCLISelectorPinsOnlyNamedProfiles(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	t.Cleanup(PatchUserHome(tmp))
 	root := filepath.Join(tmp, dirName)
 	t.Setenv(EnvHome, filepath.Join(root, ProfilesDir, "research"))
 	cases := map[string]string{

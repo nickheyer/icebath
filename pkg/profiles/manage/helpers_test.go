@@ -9,18 +9,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-// Temp HOME and default profile home with the state guard bypassed since its real root follows HOME, returning HOME
+// Temp user home and default profile home like the hermes profile_env Path.home patch, returning the user home
 func manageEnv(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("USERPROFILE", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	def := filepath.Join(tmp, ".icebath")
 	if err := os.MkdirAll(def, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(home.EnvHome, def)
-	t.Setenv("ICEBATH_STATE_DB_GUARD_BYPASS", "1")
 	profiles.ResetFileCache()
 	profiles.ResetStandaloneMemo()
 	home.ResetKeyCache()

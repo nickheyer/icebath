@@ -2,9 +2,13 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 func writeSessionsIndex(t *testing.T, h, body string) {
@@ -55,5 +59,70 @@ func TestMirrorSessionsIndexLookup(t *testing.T) {
 	defer func() { mirrorSessionsIndex = "" }()
 	if got := findMirrorSessionID(ctx, "telegram", "42", nil, nil); got != "pinned" {
 		t.Fatalf("pinned index %q", got)
+	}
+}
+
+// Records the session each mirrored write targets and fails the write when failWith is set
+func captureMirrorWrites(t *testing.T, failWith error) *[]string {
+	t.Helper()
+	var targets []string
+	prev := appendMirrorMessage
+	t.Cleanup(func() { appendMirrorMessage = prev })
+	appendMirrorMessage = func(_ context.Context, sessionID, _, _ string) error {
+		targets = append(targets, sessionID)
+		return failWith
+	}
+	return &targets
+}
+
+func TestSuccessfulMirrorUsesUserIDForGroupSession(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeSessionsIndex(t, h, `{"alice": {"session_id": "sess_alice", "origin": {"platform": "telegram", "chat_id": "-1001", "user_id": "alice"}, "updated_at": "2026-01-01T00:00:00"},
+ "bob": {"session_id": "sess_bob", "origin": {"platform": "telegram", "chat_id": "-1001", "user_id": "bob"}, "updated_at": "2026-02-01T00:00:00"}}`)
+	targets := captureMirrorWrites(t, nil)
+	if !MirrorToSession(context.Background(), "telegram", "-1001", "Hello group!", MirrorOptions{SourceLabel: "cli", UserID: strp("alice")}) {
+		t.Fatal("group mirror with a user id failed")
+	}
+	if len(*targets) != 1 || (*targets)[0] != "sess_alice" {
+		t.Fatalf("wrote to %v", *targets)
+	}
+}
+
+func TestFailedSqliteWriteReportsFalse(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeSessionsIndex(t, h, `{"k": {"session_id": "sess_1", "origin": {"platform": "telegram", "chat_id": "12345"}, "updated_at": "2026-01-01T00:00:00"}}`)
+	targets := captureMirrorWrites(t, errors.New("database is locked"))
+	if MirrorToSession(context.Background(), "telegram", "12345", "Hello!", MirrorOptions{}) {
+		t.Fatal("a failed transcript write reported success")
+	}
+	if len(*targets) != 1 || (*targets)[0] != "sess_1" {
+		t.Fatalf("wrote to %v", *targets)
+	}
+}
+
+func TestConnectionIsReleasedAfterUse(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	var acquired, released []*state.DB
+	oldAcquire, oldRelease := mirrorAcquireDB, mirrorReleaseDB
+	t.Cleanup(func() { mirrorAcquireDB, mirrorReleaseDB = oldAcquire, oldRelease })
+	mirrorAcquireDB = func(ctx context.Context, p string) (*state.DB, error) {
+		db, err := oldAcquire(ctx, p)
+		acquired = append(acquired, db)
+		return db, err
+	}
+	mirrorReleaseDB = func(db *state.DB) {
+		released = append(released, db)
+		oldRelease(db)
+	}
+	ctx := context.Background()
+	err := appendMirrorMessageSQLite(ctx, "sess_1", "assistant", "hello")
+	if err == nil || !strings.Contains(err.Error(), "FOREIGN KEY") {
+		t.Fatalf("append against the acquired handle did not run once %v", err)
+	}
+	if len(acquired) != 1 || len(released) != 1 || released[0] != acquired[0] {
+		t.Fatalf("acquired %v released %v", acquired, released)
 	}
 }

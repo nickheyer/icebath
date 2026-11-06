@@ -31,6 +31,11 @@ func registeredTaskLaunchers() []string {
 	return taskLaunchersFrom(execSchtasks)
 }
 
+// Runs schtasks.exe under the fifteen second gateway timeout
+func ExecSchtasks(args []string) (int, string, string) {
+	return execSchtasks(args, 15*time.Second)
+}
+
 // Runs schtasks.exe hidden under a hard timeout, a wedge answering code 124 with a synthetic stderr
 func execSchtasks(args []string, timeout time.Duration) (int, string, string) {
 	schtasks, ok := shutilWhich("schtasks", nil)

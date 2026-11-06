@@ -73,7 +73,7 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 	}
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		logWarn("skipping unreadable plugin directory", "path", path, "err", err)
+		logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, pyErrorText(err)))
 		return out
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
@@ -84,7 +84,7 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 		child := filepath.Join(path, e.Name())
 		cst, err := os.Stat(child)
 		if err != nil {
-			logWarn("skipping unreadable plugin directory", "path", child, "err", err)
+			logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pyErrorText(err)))
 			continue
 		}
 		if !cst.IsDir() || (depth == 0 && skipNames[e.Name()]) {

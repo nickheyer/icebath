@@ -1310,6 +1310,12 @@ func npxCachedBin(args []string) (string, []string, bool, error) {
 
 var exactVersionRe = regexp.MustCompile(`^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$`)
 
+// Ceiling on the packaged node npm install of an npx package
+var npxInstallTimeout = 600 * time.Second
+
+// Command running the packaged node npm install, the subprocess seam tests replace
+var npxInstallCommand = exec.CommandContext
+
 // Packaged node and bin script argv for npx -y pkg when the command is a sealed Windows payload's own npx
 func packagedNpxEntry(ctx context.Context, command string, args []string) (string, []string, bool, error) {
 	applies, err := pmUserFacingApplies(ctx)
@@ -1369,8 +1375,8 @@ func packagedNpxEntry(ctx context.Context, command string, args []string) (strin
 	if !(exactVersionRe.MatchString(version) && isFile()) {
 		install := []string{npmCLI, "install", "--prefix", prefix, "--no-save", "--ignore-scripts",
 			"--no-audit", "--no-fund", "--loglevel=error", spec}
-		runCtx, cancel := context.WithTimeout(ctx, 600*time.Second)
-		cmd := exec.CommandContext(runCtx, node, install...)
+		runCtx, cancel := context.WithTimeout(ctx, npxInstallTimeout)
+		cmd := npxInstallCommand(runCtx, node, install...)
 		cmd.Stdin = nil
 		var stdout, stderr strings.Builder
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr

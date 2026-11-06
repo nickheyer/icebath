@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Binds icebath memory, memory setup and memory status to the memory provider setup flow
+// Binds the memory setup, status, off and reset commands plus the curator and insights trees
 func (c *CLI) bindMemory() {
 	for _, sub := range []string{"", "setup", "status"} {
 		path := "memory"
@@ -17,6 +17,24 @@ func (c *CLI) bindMemory() {
 		}
 		c.Bind(path, func(cmd *cobra.Command, args []string) error { return runMemorySetup(cmd, sub, args) })
 	}
+	c.Bind("memory off", func(cmd *cobra.Command, args []string) error {
+		return memory.MemoryOff(cmdContext(cmd), cmd.OutOrStdout())
+	})
+	c.Bind("memory reset", func(cmd *cobra.Command, args []string) error {
+		target, _ := cmd.Flags().GetString("target")
+		yes, _ := cmd.Flags().GetBool("yes")
+		return memory.MemoryReset(cmdContext(cmd), cmd.OutOrStdout(), cmd.InOrStdin(), target, yes)
+	})
+	c.bindCurator()
+	c.bindInsights()
+}
+
+// Command context, the background context when cobra carries none
+func cmdContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
 
 // Runs one memory setup command line, a nonzero status becoming an ExitError

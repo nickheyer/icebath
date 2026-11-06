@@ -17,7 +17,7 @@ func TestSalvageTextParts(t *testing.T) {
 }
 
 func TestTryStripImagePartsFromToolMessages(t *testing.T) {
-	a := &AIAgent{Provider: " MiMo ", Model: " m1 "}
+	a := &AIAgent{provider: " MiMo ", model: " m1 "}
 	msgs := []any{
 		map[string]any{"role": "tool", "content": []any{map[string]any{"type": "image_url"}, map[string]any{"type": "text", "text": "seen"}}},
 		map[string]any{"role": "tool", "content": []any{map[string]any{"type": "input_image"}}},
@@ -32,7 +32,7 @@ func TestTryStripImagePartsFromToolMessages(t *testing.T) {
 	if _, ok := msgs[2].(map[string]any)["content"].([]any); !ok || !a.noListToolContentModels[[2]string{"mimo", "m1"}] {
 		t.Fatal("user row touched or route not remembered")
 	}
-	b := &AIAgent{Provider: "x"}
+	b := &AIAgent{provider: "x"}
 	b.tryStripImagePartsFromToolMessages([]any{}, true)
 	if len(b.noListToolContentModels) != 0 || b.tryStripImagePartsFromToolMessages("nope", false) {
 		t.Fatal("blank model recorded or non list accepted")
@@ -72,7 +72,7 @@ func TestAnthropicPreserveDots(t *testing.T) {
 		{"", "https://us-central1-aiplatform.googleapis.com/v1", false},
 	}
 	for _, c := range cases {
-		if got := (&AIAgent{Provider: c.provider, BaseURL: c.base}).anthropicPreserveDots(); got != c.want {
+		if got := (&AIAgent{provider: c.provider, baseURL: c.base}).anthropicPreserveDots(); got != c.want {
 			t.Fatalf("%s %s: %v", c.provider, c.base, got)
 		}
 	}

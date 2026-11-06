@@ -32,7 +32,7 @@ type auxAttemptSocket interface {
 
 // Accumulator a chat stream feeds, Feed reports a substantive chunk
 type auxStreamFeeder interface {
-	Feed(chunk map[string]any) bool
+	Feed(chunk map[string]any) (bool, error)
 	HasFinishReason() bool
 }
 
@@ -229,7 +229,9 @@ func auxConsumeChatStream(ctx context.Context, chunks AuxChatStream, acc auxStre
 			if err != nil {
 				return err
 			}
-			acc.Feed(chunk)
+			if _, err := acc.Feed(chunk); err != nil {
+				return err
+			}
 		}
 	}
 	watchdog := newChatStreamWatchdog(chunks, *noProgress)
@@ -240,20 +242,24 @@ func auxConsumeChatStream(ctx context.Context, chunks AuxChatStream, acc auxStre
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			if err != nil {
-				if auxIsBaseException(err) || !watchdog.Fired() {
-					return err
+			if err == nil {
+				var progress bool
+				if progress, err = acc.Feed(chunk); err == nil {
+					if progress {
+						watchdog.Progress()
+					}
+					continue
 				}
-				if !acc.HasFinishReason() {
-					timeout := watchdog.TimeoutError()
-					timeout.Err = err
-					return timeout
-				}
-				return nil
 			}
-			if acc.Feed(chunk) {
-				watchdog.Progress()
+			if auxIsBaseException(err) || !watchdog.Fired() {
+				return err
 			}
+			if !acc.HasFinishReason() {
+				timeout := watchdog.TimeoutError()
+				timeout.Err = err
+				return timeout
+			}
+			return nil
 		}
 	}()
 	if err != nil {

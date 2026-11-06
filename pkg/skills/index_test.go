@@ -461,6 +461,23 @@ func TestEveryPkgSkillsSurfaceResolvesDuplicatesLikeSkillView(t *testing.T) {
 	if strings.Join(loaded, ",") != "xdup,dup-demo" || strings.Join(missing, ",") != ambiguous {
 		t.Fatal(loaded, missing)
 	}
+	prompt, loaded, missing := s.BuildPreloadedSkillsPrompt(ctx, []string{"dup-demo", "xdup"}, "", nil)
+	if prompt == "" || strings.Join(loaded, ",") != "xdup" || FormatMissingSkills(missing) != ambiguous {
+		t.Fatal("partial preload", loaded, missing)
+	}
+	cronParts := map[string]string{}
+	for _, name := range []string{"dup-demo", "xdup"} {
+		var loaded map[string]any
+		decodeJSON(t, s.SkillView(ctx, s.NormalizeSkillLookupName(name), "", "", true), &loaded)
+		if label, ok := AmbiguousSkillLabel(name, loaded); ok {
+			cronParts[name] = label
+		} else if c, _ := loaded["content"].(string); c != "" {
+			cronParts[name] = c
+		}
+	}
+	if cronParts["dup-demo"] != ambiguous || !strings.Contains(cronParts["xdup"], "LOCAL XDUP") {
+		t.Fatal("cron skill parts", cronParts)
+	}
 	makeCmdSkill(t, ext, "other", "", "UNRELATED OTHER", "a")
 	os.Rename(filepath.Join(ext, "a", "other"), filepath.Join(ext, "a", "one"))
 	s.Config["skills"] = map[string]any{"external_dirs": []any{ext}, "disabled": []any{"a/one"}}

@@ -15,12 +15,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
-// Clean process for home resolution with HOME at tmp, the home variable unset and the warning latch reset
+// Clean process for home resolution with the user home at tmp, the home variable unset and the warning latch reset
 func hcFresh(t *testing.T) (string, *bytes.Buffer) {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("USERPROFILE", tmp)
+	t.Cleanup(PatchUserHome(tmp))
 	t.Setenv(EnvHome, "")
 	os.Unsetenv(EnvHome)
 	prevOut, prevWarned := fallbackWarnOut, profileFallbackWarned.Load()
@@ -70,6 +69,8 @@ func TestRootOfDockerProfileIsDockerRoot(t *testing.T) {
 func TestRootOfExpandedCustomProfileIsCustomRoot(t *testing.T) {
 	hcPosixOnly(t)
 	tmp, _ := hcFresh(t)
+	t.Setenv("HOME", tmp)
+	t.Cleanup(PatchUserHome(filepath.Join(tmp, "native-home")))
 	t.Setenv(EnvHome, "$"+"HOME/deployment/profiles/research")
 	if got := Root(); got != filepath.Join(tmp, "deployment") {
 		t.Fatalf("Root() = %q", got)
@@ -158,6 +159,7 @@ func TestProcessHomeFollowsTheVariable(t *testing.T) {
 func TestProcessAndContextHomesExpandEnvironmentAndUserSyntax(t *testing.T) {
 	hcPosixOnly(t)
 	tmp, _ := hcFresh(t)
+	t.Setenv("HOME", tmp)
 	for _, syntax := range []string{"$" + "HOME", "~"} {
 		processHome := filepath.Join(tmp, "process-home")
 		t.Setenv(EnvHome, syntax+"/process-home")
@@ -384,6 +386,8 @@ func TestSudoInvokerDefaultHome(t *testing.T) {
 
 func TestPinnedProcessHomeRoutesDecisions(t *testing.T) {
 	tmp, _ := hcFresh(t)
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	t.Cleanup(func() { PinProcess("", true) })
 	t.Setenv(EnvHome, filepath.Join(tmp, "launch"))
 	if ProcessPinned() || RoutingProcess() != filepath.Join(tmp, "launch") {

@@ -1,6 +1,8 @@
 package state
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,6 +70,16 @@ func (o pyJSON) encode(b *strings.Builder, v any) error {
 		fmt.Fprint(b, x)
 	case pyObject:
 		return o.encodeObject(b, x)
+	case *pyjson.Object:
+		if x == nil {
+			b.WriteString("null")
+			return nil
+		}
+		obj := make(pyObject, 0, len(x.Keys))
+		for _, k := range x.Keys {
+			obj = append(obj, pyKeyValue{k, x.Vals[k]})
+		}
+		return o.encodeObject(b, obj)
 	case map[string]any:
 		obj := make(pyObject, 0, len(x))
 		for k, val := range x {

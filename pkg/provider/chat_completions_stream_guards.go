@@ -931,7 +931,11 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 type StreamLifetimeExceededError struct {
 	Elapsed float64
 	Cap     float64
+	Cause   error
 }
+
+// Transport error of the cut attempt the cap error replaced
+func (e *StreamLifetimeExceededError) Unwrap() error { return e.Cause }
 
 func (e *StreamLifetimeExceededError) Error() string {
 	return fmt.Sprintf("Response still streaming after %.0fs, cut by agent.stream_max_lifetime (%gs). Raise agent.stream_max_lifetime, or set it to 0 to turn the cap off, if this model legitimately streams this long.", e.Elapsed, e.Cap)

@@ -3,6 +3,7 @@ package tools
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/binary"
 	"os"
@@ -48,7 +49,7 @@ func installMachine(t *testing.T) (string, InstallPlaces) {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("HOME", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	t.Setenv(home.EnvHome, active)
 	places := testPlaces([]string{filepath.Join(tmp, "state", ".machine")}, other)
 	swapForTest(t, &machinePlaces, func() InstallPlaces { return places })
@@ -705,7 +706,7 @@ func addChat(t *testing.T, h string) {
 	if err := db.CreateSession(state.NewSession{ID: "old-session", Source: "desktop"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.AppendMessage("old-session", &state.Message{Role: "user", Content: "hello"}); err != nil {
+	if _, err := db.AppendMessage(context.Background(), "old-session", map[string]any{"role": "user", "content": "hello"}, state.AppendGuards{}); err != nil {
 		t.Fatal(err)
 	}
 }

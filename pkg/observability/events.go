@@ -84,7 +84,7 @@ func DiscardCompressionAttempt(owner any) {
 }
 
 // Counts the owner's pending attempt once, a committed one also counting a compression cache break
-func FinishCompressionAttempt(ctx context.Context, owner any, commitStatus string, failureClass, contextLength, agent any) {
+func FinishCompressionAttempt(ctx context.Context, owner any, commitStatus string, failureClass, contextLength any, agent MetricsAgent) {
 	value, ok := compressionAttempts.LoadAndDelete(owner)
 	if !ok {
 		return
@@ -105,7 +105,7 @@ func FinishCompressionAttempt(ctx context.Context, owner any, commitStatus strin
 	}
 	RecordCompression(ctx, pending.trigger, outcome, pending.tokensBefore, contextLength, reason)
 	if outcome == "success" && agent != nil {
-		recordCacheBreak(ctx, agent, "compression")
+		RecordCacheBreak(ctx, agent, "compression")
 	}
 }
 
@@ -124,12 +124,10 @@ func RecordGatewaySlashCommand(ctx context.Context, command string, counted *boo
 func RecordModelSwitch(ctx context.Context, fromProvider, toProvider any, surface string, fromModel any, sessionID any) {
 	emit(ctx, ModelSwitchMark, func() map[string]string { return ModelSwitchFields(fromProvider, toProvider, surface) })
 	if pyText(fromModel) != "" {
-		recordModelFriction(ctx, "switch_away", fromProvider, fromModel)
+		RecordModelFriction(ctx, "switch_away", FrictionOptions{Provider: fromProvider, Model: fromModel})
 	}
 	if id := pyText(sessionID); id != "" {
-		if err := recordModelSwitchAfter(ctx, id); err != nil {
-			slog.Debug("Shared-metrics model_switch_after not recorded", "error", err)
-		}
+		recordModelSwitchAfter(ctx, id)
 	}
 }
 

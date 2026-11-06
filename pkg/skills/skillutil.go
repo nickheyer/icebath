@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"os"
 	"path/filepath"
@@ -233,33 +233,21 @@ func skillMatchesApps(fm map[string]any) bool {
 // Normalizes a config value that may hold a JSON array string into a string list
 func parseConfigStringList(v any) []string {
 	switch t := v.(type) {
-	case nil:
-		return nil
 	case string:
-		trimmed := strings.TrimSpace(t)
-		if strings.HasPrefix(trimmed, "[") {
-			var parsed []any
-			if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
-				out := make([]string, 0, len(parsed))
-				for _, item := range parsed {
-					out = append(out, fmString(item))
-				}
-				return out
+		if strings.HasPrefix(pystr.Strip(t), "[") {
+			items, ok, err := pyast.LiteralStrList(t)
+			if err != nil {
+				panic(err)
 			}
-			var pyStyle []any
-			if err := json.Unmarshal([]byte(strings.ReplaceAll(trimmed, "'", `"`)), &pyStyle); err == nil {
-				out := make([]string, 0, len(pyStyle))
-				for _, item := range pyStyle {
-					out = append(out, fmString(item))
-				}
-				return out
+			if ok {
+				return items
 			}
 		}
 		return []string{t}
 	case []any:
 		out := make([]string, 0, len(t))
 		for _, item := range t {
-			out = append(out, fmString(item))
+			out = append(out, pyrepr.Str(item))
 		}
 		return out
 	case []string:

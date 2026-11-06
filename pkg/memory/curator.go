@@ -1302,6 +1302,9 @@ func curatorConsolidationPass(ctx context.Context, prefix, autoSummary string, d
 	return final, meta
 }
 
+// Live curator-review background passes, joinable like the named Python daemon threads
+var curatorReviewThreads sync.WaitGroup
+
 // CuratorRunOptions are the run_curator_review keyword arguments
 type CuratorRunOptions struct {
 	OnSummary   func(string)
@@ -1400,7 +1403,11 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 	if opts.Synchronous {
 		llmPass(ctx)
 	} else {
-		go llmPass(context.WithoutCancel(ctx))
+		curatorReviewThreads.Add(1)
+		go func() {
+			defer curatorReviewThreads.Done()
+			llmPass(context.WithoutCancel(ctx))
+		}()
 	}
 	return curatorEntry("started_at", pydatetime.ISOFormatUTC(start), "auto_transitions", counts, "summary_so_far", autoSummary), nil
 }

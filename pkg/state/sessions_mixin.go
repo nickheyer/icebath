@@ -253,3 +253,84 @@ func (d *SessionDB) sessionLineageRootToTip(ctx context.Context, sessionID strin
 	}
 	return chain, nil
 }
+
+// Stores the assembled system prompt snapshot through the content addressed prompt table, nil clearing it
+func (d *SessionDB) UpdateSystemPrompt(ctx context.Context, sessionID string, systemPrompt *string) error {
+	var prompt any
+	if systemPrompt != nil {
+		prompt = *systemPrompt
+	}
+	return d.executeWrite(ctx, func(conn SQLiteConn) error {
+		hash, err := storeSystemPrompt(ctx, conn, prompt)
+		if err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, "UPDATE sessions SET system_prompt_hash = ?, system_prompt = NULL WHERE id = ?", hash, sessionID); err != nil {
+			return err
+		}
+		return deleteUnreferencedSystemPrompts(ctx, conn)
+	}, nil)
+}
+
+// Persists the JSON tools pin in the content addressed prompt table, the column holding its hash, nil clearing it
+func (d *SessionDB) UpdateSessionToolNames(sessionID string, pin any) error {
+	var payload any
+	if pin != nil {
+		text, err := pyjson.Dumps(pin)
+		if err != nil {
+			return err
+		}
+		payload = text
+	}
+	ctx := context.Background()
+	return d.executeWrite(ctx, func(conn SQLiteConn) error {
+		hash, err := storeSystemPrompt(ctx, conn, payload)
+		if err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, "UPDATE sessions SET tool_names = ? WHERE id = ?", hash, sessionID); err != nil {
+			return err
+		}
+		return deleteUnreferencedSystemPrompts(ctx, conn)
+	}, nil)
+}
+
+// Stamps durable mid turn activity without ever moving the activity clock backwards
+func (d *SessionDB) TouchSessionActivity(sessionID string, at *float64, description string, provenance ActivityProvenance) error {
+	if sessionID == "" {
+		return nil
+	}
+	when := now()
+	if at != nil {
+		when = *at
+	}
+	patience := sessionActivityWritePatienceS
+	return d.writeSQL(context.Background(),
+		"UPDATE sessions SET last_activity_at = ?, "+
+			"last_activity_description = ?, last_activity_provenance = ? "+
+			"WHERE id = ? AND (last_activity_at IS NULL OR last_activity_at < ?)",
+		[]any{when, BoundActivityDescription(description), string(NormalizeActivityProvenance(string(provenance))), sessionID, when},
+		false, &patience)
+}
+
+// Clears the activity description and provenance after a turn, skipping the write when already clear
+func (d *SessionDB) ClearSessionActivityLabels(sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	row, err := d.readOne(context.Background(),
+		"SELECT last_activity_description, last_activity_provenance FROM sessions WHERE id = ?", sessionID)
+	if err != nil {
+		row = nil
+	}
+	if row != nil {
+		desc, prov := rowValue(row, "last_activity_description"), rowValue(row, "last_activity_provenance")
+		if !pyTruthy(desc) && (!pyTruthy(prov) || prov == string(ActivityProvenanceUnknown)) {
+			return nil
+		}
+	}
+	patience := sessionActivityWritePatienceS
+	return d.writeSQL(context.Background(),
+		"UPDATE sessions SET last_activity_description = ?, last_activity_provenance = ? WHERE id = ?",
+		[]any{"", string(ActivityProvenanceUnknown), sessionID}, false, &patience)
+}

@@ -298,6 +298,13 @@ func (c *bedrockConverseClient) Complete(ctx context.Context, req *Request) (*Re
 	if err != nil {
 		return nil, err
 	}
+	est := EstimateRequestContextTokens(ctx, p.kwargs)
+	stale := computeNonStreamStaleTimeout(ctx, loadWireSettings(ctx), c.route.Provider, req, IsLocalEndpoint(c.route.BaseURL), false, est, p.kwargs)
+	return runNonStreamRequest(ctx, req.Model, est, stale, func(ctx context.Context) (*Response, error) { return c.completeOnce(ctx, p) })
+}
+
+// One blocking Converse call on the request worker
+func (c *bedrockConverseClient) completeOnce(ctx context.Context, p *bedrockConversePrepared) (*Response, error) {
 	started := time.Now()
 	result, raw, err := bedrockConverseComplete(ctx, p.region, p.kwargs)
 	if err != nil {

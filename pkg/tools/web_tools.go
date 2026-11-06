@@ -70,7 +70,7 @@ func autodetectWebBackend(env *Env) string {
 		{"parallel", webHasEnv(env, "PARALLEL_API_KEY")}, {"keenable", webHasEnv(env, "KEENABLE_API_KEY")},
 		{"firecrawl", webHasEnv(env, "FIRECRAWL_API_KEY") || webHasEnv(env, "FIRECRAWL_API_URL")},
 		{"firecrawl", firecrawlGatewayReady(env)}, {"searxng", webHasEnv(env, "SEARXNG_URL")},
-		{"brave-free", webHasEnv(env, "BRAVE_SEARCH_API_KEY")}, {"ddgs", ddgsSelected(env)},
+		{"brave-free", webHasEnv(env, "BRAVE_SEARCH_API_KEY")}, {"ddgs", ddgsPackageImportable(context.Background())},
 	}
 	for _, c := range candidates {
 		if c.available {
@@ -141,9 +141,6 @@ func getExtractBackend(env *Env) string {
 	return getWebBackend(env)
 }
 
-// ddgs runs natively, so it serves only when a web key names it
-func ddgsSelected(env *Env) bool { return webConfigSelects(env, "ddgs") }
-
 // Cheap xAI credential probe, env key then the auth store tokens, no network
 func hasXAICredentials(env *Env) bool {
 	if secretValue(env, "XAI_API_KEY") != "" {
@@ -193,7 +190,7 @@ var builtinWebAvailability = map[string]func(env *Env) bool{
 	"perplexity": func(env *Env) bool { return webHasEnv(env, "PERPLEXITY_API_KEY") || managedWebSearch(env) },
 	"searxng":    func(env *Env) bool { return webHasEnv(env, "SEARXNG_URL") },
 	"brave-free": func(env *Env) bool { return webHasEnv(env, "BRAVE_SEARCH_API_KEY") },
-	"ddgs":       func(env *Env) bool { return ddgsSelected(env) },
+	"ddgs":       func(env *Env) bool { return ddgsPackageImportable(context.Background()) },
 	"xai":        func(env *Env) bool { return hasXAICredentials(env) },
 }
 

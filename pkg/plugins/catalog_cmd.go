@@ -1251,28 +1251,38 @@ func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out
 	return &CommandExit{Code: report.ExitCode()}
 }
 
+// Package manager calls of the install deps probe, swapped by tests for a committed environment double
+var (
+	pmSyncVenv              = pm.SyncVenv
+	pmRepoRoot              = pm.RepoRoot
+	pmProjectPython         = pm.ProjectPython
+	pmSelectedVenv          = pm.SelectedVenv
+	pmVenvCommand           = pm.VenvCommand
+	pmActivationEnvironment = pm.ActivationEnvironment
+)
+
 // Syncs the plugin's declared deps and returns the committed environment interpreter the probe imports through
 func prepareValidationProbe(ctx context.Context, path string) (*validationProbe, error) {
-	if err := pm.SyncVenv(ctx, pm.SyncVenvOptions{Plugins: &pm.Candidates{Dirs: []string{path}}}); err != nil {
+	if err := pmSyncVenv(ctx, pm.SyncVenvOptions{Plugins: &pm.Candidates{Dirs: []string{path}}}); err != nil {
 		return nil, err
 	}
-	root := pm.RepoRoot()
-	python, err := pm.ProjectPython(ctx, root)
+	root := pmRepoRoot()
+	python, err := pmProjectPython(ctx, root)
 	if err != nil {
 		return nil, err
 	}
 	if st, err := os.Stat(python); err != nil || !st.Mode().IsRegular() {
 		return nil, nil
 	}
-	venv, err := pm.SelectedVenv(ctx, root)
+	venv, err := pmSelectedVenv(ctx, root)
 	if err != nil {
 		return nil, err
 	}
-	command, err := pm.VenvCommand(ctx, root, venv, nil)
+	command, err := pmVenvCommand(ctx, root, venv, nil)
 	if err != nil {
 		return nil, err
 	}
-	env, err := pm.ActivationEnvironment(ctx, root)
+	env, err := pmActivationEnvironment(ctx, root)
 	if err != nil {
 		return nil, err
 	}

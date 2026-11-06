@@ -15,6 +15,8 @@ import (
 type NemoRelayLLM struct {
 	Execute       func(ctx context.Context, operation string, request any, callback RelayProviderCallback, kwargs map[string]any) (any, error)
 	StreamExecute func(ctx context.Context, operation string, request any, provider RelayProviderStreamCallback, observe func(ctx context.Context, chunk any) error, finalizer func(ctx context.Context) (any, error), kwargs map[string]any) (any, error)
+	Call          func(ctx context.Context, name string, request any, kwargs map[string]any) (any, error)
+	CallEnd       func(ctx context.Context, handle, response any, kwargs map[string]any) error
 }
 
 // Provider callback Relay invokes with its possibly rewritten request, a RelayAwaitable result is awaited
@@ -181,4 +183,9 @@ func RelayCanonicalJSON(value any, encode func(any) any) (string, error) {
 		encode = RelayJSONable
 	}
 	return pyjson.Dumps(encode(value), pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+}
+
+// Waits up to timeout seconds for every operation lease to be released
+func (r *RelayRuntime) WaitOperationsIdle(timeout float64) bool {
+	return r.operationsIdle.Wait(timeout)
 }

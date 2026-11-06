@@ -263,11 +263,14 @@ func (c *auxOpenAIClient) CreateResponse(ctx context.Context, kwargs map[string]
 	return c.create(ctx, "responses", kwargs)
 }
 
+// SDK create boundary seam so tests record the kwargs the typed request walk receives
+var auxSDKBuildRequestFn = auxSDKBuildRequest
+
 func (c *auxOpenAIClient) create(ctx context.Context, path string, kwargs map[string]any) (any, error) {
 	if c.initErr != nil {
 		return nil, c.initErr
 	}
-	req, err := auxSDKBuildRequest(c, kwargs)
+	req, err := auxSDKBuildRequestFn(c, kwargs)
 	if err != nil {
 		return nil, err
 	}

@@ -244,3 +244,36 @@ func TestCloneHonchoForProfileRunsThePluginCLIInTheHost(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestStartupRecoveryNeverAsksADependencyQuestion(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		installs bool
+	}{{"hindsight", true}, {"someplugin", false}} {
+		h := t.TempDir()
+		writeMigrationHome(t, h, "memory:\n  provider: "+tc.name+"\n")
+		withMigrationSteps(t, catalogAll)
+		migrationSteps.interactive = func() bool { return true }
+		migrationSteps.lazyInstalls = func(context.Context) bool { return true }
+		var consents []bool
+		migrationSteps.installInto = func(_ context.Context, _ string, consent *bool) MemoryInstallFunc {
+			return func(string) (map[string]any, error) {
+				if consent == nil {
+					t.Fatal("startup install left the dependency answer to a prompt")
+				}
+				consents = append(consents, *consent)
+				return map[string]any{"ok": false}, nil
+			}
+		}
+		var said []string
+		if _, err := RecoverMemoryProviderAtStartup(home.WithOverride(context.Background(), h), tc.name, func(s string) { said = append(said, s) }); err != nil {
+			t.Fatal(err)
+		}
+		if tc.installs && (len(consents) != 1 || !consents[0]) {
+			t.Fatalf("%s consents %v", tc.name, consents)
+		}
+		if !tc.installs && (len(consents) != 0 || !strings.Contains(said[len(said)-1], "`icebath plugins install "+tc.name+"`")) {
+			t.Fatalf("%s consents %v said %v", tc.name, consents, said)
+		}
+	}
+}

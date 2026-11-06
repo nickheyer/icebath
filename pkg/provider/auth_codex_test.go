@@ -891,6 +891,7 @@ func profileEnvForTest(t *testing.T, name string) (string, string, PoolEnv) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	t.Setenv("LOCALAPPDATA", tmp)
 	t.Setenv(home.EnvHome, profile)
 	t.Setenv("CODEX_HOME", filepath.Join(tmp, "missing-codex"))

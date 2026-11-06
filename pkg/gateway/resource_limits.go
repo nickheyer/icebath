@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -143,7 +142,7 @@ func launchEnviron() map[string]string {
 		if len(entry) == 0 {
 			continue
 		}
-		if name, value, sep := strings.Cut(pystr.SurrogateEscapeDecode(entry), "="); sep {
+		if name, value, sep := strings.Cut(string(entry), "="); sep {
 			env[name] = value
 		}
 	}

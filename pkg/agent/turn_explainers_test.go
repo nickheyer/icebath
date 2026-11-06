@@ -117,7 +117,7 @@ func TestRecordFileMutationResultKeepsFirstFailureUntilALaterSuccess(t *testing.
 	explainerHome(t)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "notes.md")
-	a := &AIAgent{Env: &tools.Env{Home: os.Getenv("ICEBATH_HOME")}}
+	a := &AIAgent{env: &tools.Env{Home: os.Getenv("ICEBATH_HOME")}}
 	if err := a.recordFileMutationResult("write_file", map[string]any{"path": target}, `{"error": "denied"}`, true, ""); err != nil {
 		t.Fatal(err)
 	}

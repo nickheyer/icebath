@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Env var bounding the stream level reconnects before an error reaches the main loop
@@ -306,15 +307,20 @@ type DoOptions struct {
 	AfterWait func(ctx context.Context)
 	// Streamed assistant text so far, read by the recovery ladder
 	StreamedText func() string
+	// Forgets the text delivered during the current model response when a stream failure delivered nothing visible
+	ResetStreamDelivery func()
 	// Surfaces
 	Status       func(string)
 	BufferStatus func(string)
 	FlushStatus  func()
-	Wait         func(string)
-	Activity     func(string)
-	Verbose      func(lines ...string)
-	Warning      func(string)
-	DebugDump    func(req *Request, reason string, err error)
+	// Agent surface for stream drop warnings and connect notices, the loop's own surfaces when nil
+	DiagAgent  StreamDiagAgent
+	Wait       func(string)
+	WaitNotice func(string)
+	Activity   func(string)
+	Verbose    func(lines ...string)
+	Warning    func(string)
+	DebugDump  func(req *Request, reason string, err error)
 	// Identity
 	Home               string
 	ProfileName        string
@@ -395,6 +401,7 @@ func (e *DoError) Unwrap() error { return e.Err }
 
 type doLoop struct {
 	ctx      context.Context
+	blocking bool
 	opts     DoOptions
 	client   Client
 	req      *Request
@@ -623,7 +630,11 @@ func (l *doLoop) nousRateLimitGuard() (*DoError, bool, error) {
 }
 
 func (l *doLoop) captureSuccessHeaders(resp *Response) {
-	if l.opts.Credits != nil && resp != nil && len(resp.Headers) > 0 {
+	if l.blocking && (l.route.Mode == ModeChatCompletions || l.route.Mode == "") {
+		if resp != nil {
+			chatCompletionCapturingHeaders(l.route.Provider, l.opts.Credits, resp.Headers)
+		}
+	} else if l.opts.Credits != nil && resp != nil && len(resp.Headers) > 0 {
 		l.opts.Credits.CaptureRateLimits(resp.Headers)
 		l.opts.Credits.CaptureCredits(resp.Headers, false)
 		l.opts.Credits.CheckOpenRouterCacheStatus(resp.Headers)
@@ -795,11 +806,26 @@ func (l *doLoop) call() (*Response, time.Time, error) {
 	if err := checkStaleGiveup(l.session); err != nil {
 		return nil, time.Time{}, err
 	}
-	if l.opts.Stream != nil && !l.session.DisableStreaming {
+	l.blocking = l.opts.Stream == nil || l.session.DisableStreaming
+	if !l.blocking {
 		return l.streamWithReconnects()
 	}
-	resp, err := l.client.Complete(l.ctx, l.req)
+	resp, err := l.client.Complete(withNonStreamSurface(l.ctx, l.nonStreamSurface), l.req)
 	return resp, time.Time{}, err
+}
+
+// Routes the wait notice, activity and status lines of a blocking request to the loop surfaces
+func (l *doLoop) nonStreamSurface(ev StreamEvent) {
+	switch ev.Kind {
+	case EventWaitNotice:
+		if l.opts.WaitNotice != nil {
+			l.opts.WaitNotice(ev.Text)
+		}
+	case EventActivity:
+		l.activity(ev.Text)
+	case EventStatus:
+		l.bufferStatus(ev.Text)
+	}
 }
 
 // PartialStreamError is a stream that died after visible deltas were delivered
@@ -860,43 +886,6 @@ func isEmptyFrameError(apiErr *APIError) bool {
 
 func streamsLlamaCpp(route Route) bool {
 	return IsLlamaCppAlias(route.Provider)
-}
-
-func (l *doLoop) connectExhaustedNotice(err error, attempts int) string {
-	host := hostOfBaseURL(l.route.BaseURL)
-	if host == "" {
-		host = "the endpoint"
-	}
-	plural := "s"
-	if attempts == 1 {
-		plural = ""
-	}
-	line := fmt.Sprintf("❌ Could not open a stream to %s after %d attempt%s", host, attempts, plural)
-	size := 0
-	if raw, marshalErr := json.Marshal(requestBody(l.req)); marshalErr == nil {
-		size = len(raw)
-	}
-	if size <= 0 {
-		return line + "; the endpoint looks unreachable — try again in a moment."
-	}
-	kb := int(math.Round(float64(size) / 1024))
-	if kb < 1 {
-		kb = 1
-	}
-	line += fmt.Sprintf(" (request %d KB)", kb)
-	if size >= 256*1024 {
-		return line + "; the endpoint or a proxy in front of it may reject requests this large."
-	}
-	return line + "; the endpoint looks unreachable — try again in a moment."
-}
-
-func (l *doLoop) bufferOnce(text string) {
-	for _, existing := range l.session.retryStatusBuffer {
-		if existing == text {
-			return
-		}
-	}
-	l.bufferStatus(text)
 }
 
 // maybeDisableStreaming flips the session to non streaming for failures re streaming can only repeat
@@ -1015,8 +1004,11 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 	compatRetries := 0
 	attempt := -1
 	var firstChunk time.Time
+	call := &streamCall{inline: directAPICallFor(l.ctx, l.route.Provider, l.opts.Platform, l.route.Mode)}
+	ctx := withStreamCall(l.ctx, call)
 	for attempt < maxStreamRetries+compatRetries {
 		attempt++
+		call.start()
 		if l.ctx.Err() != nil {
 			return nil, firstChunk, l.ctx.Err()
 		}
@@ -1047,11 +1039,19 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 			}
 			return l.opts.Stream(ev)
 		}
-		resp, err := l.client.Stream(l.ctx, l.req, fn)
+		resp, err := l.client.Stream(ctx, l.req, fn)
 		if err == nil {
 			return resp, firstChunk, nil
 		}
 		if l.ctx.Err() != nil {
+			return nil, firstChunk, err
+		}
+		var abandoned *StreamAbandonedError
+		if errors.As(err, &abandoned) {
+			l.forgetInvisibleDeltas(err, &deltasSent, partialToolInFlight)
+			if deltasSent {
+				return nil, firstChunk, &PartialStreamError{Err: err}
+			}
 			return nil, firstChunk, err
 		}
 		apiErr := l.asAPIError(err)
@@ -1072,6 +1072,7 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 			l.log.Info(fmt.Sprintf("Endpoint rejected stream_options (HTTP %d); retrying without it for this session.", apiErr.StatusCode))
 			continue
 		}
+		l.forgetInvisibleDeltas(err, &deltasSent, partialToolInFlight)
 		if deltasSent {
 			if !(partialToolInFlight && isTransient && attempt < maxStreamRetries) {
 				l.log.Warn(fmt.Sprintf("Streaming failed after partial delivery, not retrying: %v", err))
@@ -1080,14 +1081,14 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 			if l.opts.Warning != nil {
 				l.opts.Warning("\n\n⚠ Connection dropped mid tool-call; reconnecting…\n\n")
 			}
-			if waitErr := l.retryAfterDrop(err, attempt, maxStreamRetries, true); waitErr != nil {
+			if waitErr := l.retryAfterDrop(err, attempt, maxStreamRetries, true, call.currentDiag()); waitErr != nil {
 				return nil, firstChunk, waitErr
 			}
 			continue
 		}
 		if isTransient || isEmptyStream {
 			if attempt < maxStreamRetries {
-				if waitErr := l.retryAfterDrop(err, attempt, maxStreamRetries, false); waitErr != nil {
+				if waitErr := l.retryAfterDrop(err, attempt, maxStreamRetries, false, call.currentDiag()); waitErr != nil {
 					return nil, firstChunk, waitErr
 				}
 				continue
@@ -1100,7 +1101,7 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 				}
 				l.bufferStatus(fmt.Sprintf("❌ %s %d attempts. The provider may be experiencing issues — try again in a moment.", what, maxStreamRetries+1))
 			} else {
-				l.bufferOnce(l.connectExhaustedNotice(err, maxStreamRetries+1))
+				BufferConnectExhaustedNotice(l.diagAgent(), err, maxStreamRetries+1, l.route.BaseURL)
 			}
 			return nil, firstChunk, err
 		}
@@ -1117,20 +1118,55 @@ func (l *doLoop) streamWithReconnects() (*Response, time.Time, error) {
 	return nil, firstChunk, errors.New("stream attempt loop ended without a response")
 }
 
-// retryAfterDrop announces a stream drop and backs off between reconnects
-func (l *doLoop) retryAfterDrop(err error, attempt, maxRetries int, midToolCall bool) error {
-	kind := "drop"
-	if midToolCall {
-		kind = "drop mid tool-call"
+// Treats a stream that delivered deltas but no visible text and no tool call as undelivered
+func (l *doLoop) forgetInvisibleDeltas(err error, deltasSent *bool, toolInFlight bool) {
+	if !*deltasSent || toolInFlight || l.visibleTextDelivered() {
+		return
 	}
-	l.log.Warn(fmt.Sprintf("Stream %s on attempt %d/%d — retrying. %s error_type=%T error=%s", kind, attempt+1, maxRetries+1, l.logContext(), err, truncate(SummarizeAPIError(err, l.route.Provider), 240)))
-	provider := l.route.Provider
-	if provider == "" {
-		provider = "provider"
+	slog.Warn(fmt.Sprintf("Stream died after deltas but before any visible text was delivered (0 chars, no tool call in flight); treating as an undelivered stream failure: %v", err))
+	if l.opts.ResetStreamDelivery != nil {
+		func() {
+			defer func() { _ = recover() }()
+			l.opts.ResetStreamDelivery()
+		}()
 	}
-	l.bufferStatus(fmt.Sprintf("⚠️ %s stream %s (%T) — attempt %d/%d dropped, reconnecting", provider, kind, err, attempt+1, maxRetries+1))
-	l.activity(fmt.Sprintf("stream retry %d/%d after %T", attempt+1, maxRetries+1, err))
+	l.streamedText = ""
+	*deltasSent = false
+}
+
+// True when visible assistant text of this response reached a stream consumer
+func (l *doLoop) visibleTextDelivered() bool {
+	text := l.streamedText
+	if l.opts.StreamedText != nil {
+		text = l.opts.StreamedText()
+	}
+	return pystr.Strip(text) != ""
+}
+
+// Announces a stream drop with the dying attempt's diagnostics and backs off before the reconnect
+func (l *doLoop) retryAfterDrop(err error, attempt, maxRetries int, midToolCall bool, diag *StreamDiag) error {
+	EmitStreamDrop(l.diagAgent(), err, attempt+1, maxRetries+1, midToolCall, diag)
 	return l.sleep(l.ctx, JitteredBackoff(attempt+1, BackoffOptions{BaseDelay: time.Second, MaxDelay: 4 * time.Second, JitterRatio: 0}))
+}
+
+// Agent surface of the stream drop and connect notices
+func (l *doLoop) diagAgent() StreamDiagAgent {
+	if l.opts.DiagAgent != nil {
+		return l.opts.DiagAgent
+	}
+	return doLoopDiagAgent{l}
+}
+
+// Stream diagnostics surface over the loop's route, status buffer and activity callbacks
+type doLoopDiagAgent struct{ l *doLoop }
+
+func (a doLoopDiagAgent) StreamProvider() string             { return a.l.route.Provider }
+func (a doLoopDiagAgent) StreamBaseURL() string              { return a.l.route.BaseURL }
+func (a doLoopDiagAgent) BufferDiagnosticStatus(text string) { a.l.bufferStatus(text) }
+func (a doLoopDiagAgent) TouchActivity(desc string)          { a.l.activity(desc) }
+func (a doLoopDiagAgent) RetryStatusMessages() []string      { return a.l.session.retryStatusBuffer }
+func (a doLoopDiagAgent) SummarizeAPIError(err error) string {
+	return SummarizeAPIError(err, a.l.route.Provider)
 }
 
 // IsLocalValidationError reports a local bug rather than a provider, transport, or stream failure

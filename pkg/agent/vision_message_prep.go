@@ -87,7 +87,7 @@ func salvageTextParts(content []any, anyDictText bool) []string {
 
 // Lowercased provider and stripped model as recorded in the list tool content rejection set
 func providerModelKey(a *AIAgent) [2]string {
-	return [2]string{pystr.Lower(pystr.Strip(a.Provider)), pystr.Strip(a.Model)}
+	return [2]string{pystr.Lower(pystr.Strip(a.provider)), pystr.Strip(a.model)}
 }
 
 // True when content is a list holding at least one image part
@@ -169,7 +169,7 @@ func (a *AIAgent) describeImageForAnthropicFallback(ctx context.Context, imageUR
 		}
 		source, cleanupPath = path, path
 	}
-	description := analyzeImageDescription(ctx, a.Env, source, analysisPrompt)
+	description := analyzeImageDescription(ctx, a.env, source, analysisPrompt)
 	if cleanupPath != "" {
 		if _, err := os.Stat(cleanupPath); err == nil {
 			_ = os.Remove(cleanupPath)
@@ -217,13 +217,13 @@ func analyzeImageDescription(ctx context.Context, env *tools.Env, source, prompt
 
 // True when the active provider and model report native vision through the config override or the probes
 func (a *AIAgent) modelSupportsVision(ctx context.Context) bool {
-	v, ok := tools.LookupSupportsVision(ctx, a.Env, pystr.Strip(a.Provider), pystr.Strip(a.Model))
+	v, ok := tools.LookupSupportsVision(ctx, a.env, pystr.Strip(a.provider), pystr.Strip(a.model))
 	return ok && v
 }
 
 // True unless the routed provider profile rejects list typed tool message content
 func (a *AIAgent) providerSupportsVisionToolMessages(ctx context.Context) bool {
-	return !provider.RoutedModelRejectsVisionToolMessages(ctx, pystr.Strip(a.Provider), pystr.Strip(a.Model))
+	return !provider.RoutedModelRejectsVisionToolMessages(ctx, pystr.Strip(a.provider), pystr.Strip(a.model))
 }
 
 // Image parts of a content list replaced by vision descriptions followed by the salvaged text
@@ -282,7 +282,7 @@ func (a *AIAgent) preprocessAnthropicContent(ctx context.Context, content any, r
 func (a *AIAgent) getTransport(apiMode string) provider.Transport {
 	mode := apiMode
 	if mode == "" {
-		mode = a.APIMode
+		mode = a.apiMode
 	}
 	if a.transportCache == nil {
 		a.transportCache = map[string]provider.Transport{}
@@ -343,7 +343,7 @@ func (a *AIAgent) toolResultContentForActiveModel(ctx context.Context, toolName 
 	}
 	if a.modelSupportsVision(ctx) {
 		if !a.providerSupportsVisionToolMessages(ctx) {
-			runAgentLog().Debug(fmt.Sprintf("Tool %s: provider %s does not accept list-type tool content — sending text summary", toolName, a.Provider))
+			runAgentLog().Debug(fmt.Sprintf("Tool %s: provider %s does not accept list-type tool content — sending text summary", toolName, a.provider))
 			return tools.MultimodalTextSummary(result)
 		}
 		key := providerModelKey(a)
@@ -364,7 +364,7 @@ func (a *AIAgent) toolResultContentForActiveModel(ctx context.Context, toolName 
 		text, _ := pyjson.Dumps(payload)
 		return text
 	}
-	runAgentLog().Warn(fmt.Sprintf("Tool %s returned image content for non-vision model %s/%s; falling back to text summary", toolName, a.Provider, a.Model))
+	runAgentLog().Warn(fmt.Sprintf("Tool %s returned image content for non-vision model %s/%s; falling back to text summary", toolName, a.provider, a.model))
 	return summary
 }
 
@@ -410,10 +410,10 @@ var preserveDotsProviders = map[string]bool{
 
 // True for anthropic compatible endpoints that keep dots in model names
 func (a *AIAgent) anthropicPreserveDots() bool {
-	if preserveDotsProviders[pystr.Lower(a.Provider)] {
+	if preserveDotsProviders[pystr.Lower(a.provider)] {
 		return true
 	}
-	base := pystr.Lower(a.BaseURL)
+	base := pystr.Lower(a.baseURL)
 	host := provider.Hostname(base)
 	return strings.Contains(host, "dashscope") ||
 		provider.HostMatches(base, "aliyuncs.com") ||
