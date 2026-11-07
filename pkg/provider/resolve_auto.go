@@ -309,6 +309,15 @@ func (r *resolver) resolveRequestedProvider(requested string) string {
 	return "auto"
 }
 
+// Explicit provider, then the config provider, then ICEBATH_INFERENCE_PROVIDER, else auto
+func ResolveRequestedProvider(ctx context.Context, h, requested string) (string, error) {
+	r, _, err := strictHomeResolver(ctx, h)
+	if err != nil {
+		return "", err
+	}
+	return r.resolveRequestedProvider(requested), nil
+}
+
 // ---- api mode detection ----
 
 var validAPIModes = map[string]bool{
@@ -554,6 +563,28 @@ func modelAPIMode(ctx context.Context, profile *perModelHookProfile, model, apiK
 		}
 	}()
 	return profile.hook(model, apiKey)
+}
+
+// Per model wire of a profile, false when it answers none and the declared mode when its hook raises
+func ProfileModelAPIMode(ctx context.Context, profile Profile, model string) (string, bool) {
+	hook := profile.APIModeForModelHook
+	if hook == nil {
+		perModelHooksMu.RLock()
+		hook = perModelHooks[profile.Name]
+		perModelHooksMu.RUnlock()
+	}
+	if hook == nil && profile.PerModelMode != nil {
+		hook = func(m, _ string) APIMode { return profile.PerModelMode(m) }
+	}
+	if hook == nil {
+		return "", false
+	}
+	declared := profile.Mode
+	if declared == "" {
+		declared = ModeChatCompletions
+	}
+	mode := modelAPIMode(ctx, &perModelHookProfile{name: profile.Name, mode: declared, hook: hook}, model, "")
+	return string(mode), mode != ""
 }
 
 // Api mode for a provider that routes per model, its hard per model wire beating a stale persisted one
@@ -811,6 +842,11 @@ func (r *resolver) hostGatedEnvKeyCandidates(baseURL string, ollama bool) []stri
 	return append(candidates, openaiKey, openrouterKey, r.hostDerivedAPIKey(baseURL))
 }
 
+// Env keys a base URL host would receive, then its host derived vendor key
+func HostGatedEnvKeyCandidates(ctx context.Context, h, baseURL string, ollama bool) []string {
+	return modelsResolver(ctxForHome(ctx, h)).hostGatedEnvKeyCandidates(baseURL, ollama)
+}
+
 // User set NOUS_INFERENCE_BASE_URL override with the trailing slash stripped
 func (r *resolver) nousInferenceEnvOverride() string {
 	return optionalBaseURLValue(r.secret("NOUS_INFERENCE_BASE_URL"))
@@ -911,6 +947,25 @@ func isPlaceholderShape(value string) bool {
 func hasUsableSecret(value string) bool {
 	cleaned := strings.TrimSpace(value)
 	return len(cleaned) >= 4 && !placeholderSecretValues[strings.ToLower(cleaned)] && !isPlaceholderShape(cleaned)
+}
+
+// First usable Anthropic credential over the registry env vars, the home dotenv beating a stale shell export
+func GetAnthropicKey(ctx context.Context) string {
+	row, err := providerConfig(ctx, "anthropic")
+	if err != nil {
+		panic(err)
+	}
+	h := home.Dir(ctx)
+	for _, name := range row.KeyEnvNames() {
+		v, err := config.GetEnvValuePreferDotenv(ctx, h, name)
+		if err != nil {
+			panic(err)
+		}
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 var knownProviderKeyPrefixes = map[string][]string{"openrouter": {"sk-or-"}}
@@ -1413,7 +1468,7 @@ var v1TailRe = regexp.MustCompile(`/v1/?$`)
 
 // Api mode and base URL for a pool entry of the provider
 func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCfg map[string]any, model, baseURL string) (APIMode, string) {
-	if provider == "actual" && strings.HasPrefix(cred.Source, "env:") {
+	if provider == "actual" && strings.HasPrefix(strings.TrimPrefix(cred.Source, "pool:"), "env:") {
 		if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
 			baseURL = cfgURL
 		}
@@ -2167,6 +2222,11 @@ func (r *resolver) ResolveRuntime(requested, explicitAPIKey, explicitBaseURL str
 		return nil, err
 	}
 	return rt, nil
+}
+
+// Resolves the runtime of a requested provider for the home with explicit endpoint overrides
+func ResolveRuntimeProvider(ctx context.Context, h, requested, targetModel, explicitBaseURL, explicitAPIKey string) (*Runtime, error) {
+	return modelsResolver(ctxForHome(ctx, h)).ResolveRuntime(requested, explicitAPIKey, explicitBaseURL, nil, targetModel)
 }
 
 // FormatRuntimeProviderError renders a resolution failure as concise user facing guidance

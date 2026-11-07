@@ -5,9 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -23,6 +26,7 @@ func resetLaunchPolicy(t *testing.T) {
 		launchEnvSnapshot.Unlock()
 		SetMultiplexActive(false)
 		launchProfilesToServe = profiles.ProfilesToServe
+		enableProfileLogRouting = logging.EnableProfileLogRouting
 	})
 }
 
@@ -97,16 +101,88 @@ func TestEagerActivation(t *testing.T) {
 	launchProfilesToServe = func(ctx context.Context, multiplex, standalone, parked bool) ([]profiles.ServedProfile, error) {
 		return []profiles.ServedProfile{{Name: "default", Home: h}}, nil
 	}
-	if ActivateMultiProfileHostingEagerly(context.Background()) || MultiplexProcess() {
+	if ok, err := ActivateMultiProfileHostingEagerly(context.Background()); ok || err != nil || MultiplexProcess() {
 		t.Fatal("single servable home never activates")
 	}
 	launchProfilesToServe = func(ctx context.Context, multiplex, standalone, parked bool) ([]profiles.ServedProfile, error) {
 		return nil, errors.New("permission denied")
 	}
-	if !ActivateMultiProfileHostingEagerly(context.Background()) || !MultiplexProcess() {
+	if ok, err := ActivateMultiProfileHostingEagerly(context.Background()); !ok || err != nil || !MultiplexProcess() {
 		t.Fatal("unreadable profiles directory fails closed")
 	}
-	if ActivateMultiProfileHostingEagerly(context.Background()) {
+	if ok, _ := ActivateMultiProfileHostingEagerly(context.Background()); ok {
 		t.Fatal("already active returns false")
+	}
+}
+
+// Fake HOME whose root home holds one named profile b, returning the b profile directory
+func twoProfileHost(t *testing.T) string {
+	t.Helper()
+	resetLaunchPolicy(t)
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "fakehome", ".icebath")
+	b := filepath.Join(root, "profiles", "b")
+	if err := os.MkdirAll(b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", filepath.Join(tmp, "fakehome"))
+	t.Setenv(home.EnvHome, root)
+	os.Unsetenv("GATEWAY_MULTIPLEX_PROFILES")
+	if !strings.HasPrefix(profiles.ProfilesRoot(), tmp) {
+		t.Fatalf("profiles root %q escapes the fake home", profiles.ProfilesRoot())
+	}
+	return b
+}
+
+func TestEagerActivationArmsForARealSecondProfile(t *testing.T) {
+	b := twoProfileHost(t)
+	os.WriteFile(filepath.Join(b, "config.yaml"), []byte("{}\n"), 0o600)
+	enableProfileLogRouting = func([]string) (bool, error) { return true, nil }
+	if ok, err := ActivateMultiProfileHostingEagerly(context.Background()); !ok || err != nil || !IsMultiplexActive(context.Background()) {
+		t.Fatalf("second profile with an identity activates, got %v %v", ok, err)
+	}
+}
+
+func TestEagerActivationRoutesLogsPerProfileHome(t *testing.T) {
+	b := twoProfileHost(t)
+	os.WriteFile(filepath.Join(b, "config.yaml"), []byte("{}\n"), 0o600)
+	var routed [][]string
+	enableProfileLogRouting = func(homes []string) (bool, error) {
+		routed = append(routed, append([]string(nil), homes...))
+		return true, nil
+	}
+	if ok, err := ActivateMultiProfileHostingEagerly(context.Background()); !ok || err != nil {
+		t.Fatalf("activation, got %v %v", ok, err)
+	}
+	if len(routed) != 1 || len(routed[0]) != 2 || !slices.Contains(routed[0], launchResolvedPath(b)) {
+		t.Fatalf("both homes routed, got %v", routed)
+	}
+}
+
+func TestEagerActivationRetiredOptOutNoLongerDisarmsTheCredentialGuard(t *testing.T) {
+	b := twoProfileHost(t)
+	os.WriteFile(filepath.Join(b, "config.yaml"), []byte("{}\n"), 0o600)
+	os.WriteFile(filepath.Join(os.Getenv(home.EnvHome), "config.yaml"), []byte("gateway:\n  multiplex_profiles: false\n"), 0o600)
+	enableProfileLogRouting = func([]string) (bool, error) { return true, nil }
+	if ok, err := ActivateMultiProfileHostingEagerly(context.Background()); !ok || err != nil || !IsMultiplexActive(context.Background()) {
+		t.Fatalf("multiplex_profiles false still activates, got %v %v", ok, err)
+	}
+}
+
+func TestEagerActivationCrashedProfileCreateShellIsNotASecondTenant(t *testing.T) {
+	b := twoProfileHost(t)
+	os.WriteFile(filepath.Join(b, ".env"), nil, 0o600)
+	if ok, err := ActivateMultiProfileHostingEagerly(context.Background()); ok || err != nil || IsMultiplexActive(context.Background()) {
+		t.Fatalf("empty .env never flips the host, got %v %v", ok, err)
+	}
+}
+
+func TestEagerActivationSurfacesALogRoutingFailure(t *testing.T) {
+	b := twoProfileHost(t)
+	os.WriteFile(filepath.Join(b, "config.yaml"), []byte("{}\n"), 0o600)
+	boom := errors.New("routing failed")
+	enableProfileLogRouting = func([]string) (bool, error) { return false, boom }
+	if ok, err := ActivateMultiProfileHostingEagerly(context.Background()); !ok || !errors.Is(err, boom) || !IsMultiplexActive(context.Background()) {
+		t.Fatalf("routing error reaches the caller after activation, got %v %v", ok, err)
 	}
 }

@@ -178,3 +178,19 @@ func TestFilePathsResolutionFailureKinds(t *testing.T) {
 		t.Fatal("policy refusals must propagate")
 	}
 }
+
+// Raw task id overrides surface their cwd and an unregistered task has none
+func TestRegisteredTaskCwdOverrideKeysByRawTaskID(t *testing.T) {
+	env, _ := newFileToolTestEnv(t)
+	workspace := t.TempDir()
+	if err := RegisterTaskEnvOverrides(env, "acp-session-7", map[string]any{"cwd": workspace}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ClearTaskEnvOverrides(env, "acp-session-7") })
+	if got := RegisteredTaskCwdOverride(env, "acp-session-7"); got != workspace {
+		t.Fatalf("override = %q, want %q", got, workspace)
+	}
+	if got := RegisteredTaskCwdOverride(env, "never-registered"); got != "" {
+		t.Fatalf("unregistered override = %q", got)
+	}
+}

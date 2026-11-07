@@ -364,6 +364,9 @@ func init() {
 		}),
 		"register_hook": hostMethod("register_hook", []pyParam{req("hook_name"), req("callback"), kwo("hold_stream", false)},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+				if c.ignoredAfterAbandonedLoad("register_hook") {
+					return nil, nil
+				}
 				cb, err := argCallable("register_hook", "callback", a["callback"])
 				if err != nil {
 					return nil, err
@@ -371,6 +374,9 @@ func init() {
 				return c.manager.trackHostedHook(c, argStr(a["hook_name"]), cb, config.PyTruthy(a["hold_stream"])), nil
 			}),
 		"register_middleware": hostMethod("register_middleware", []pyParam{req("kind"), req("callback")}, func(_ context.Context, h *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+			if c.ignoredAfterAbandonedLoad("register_middleware") {
+				return nil, nil
+			}
 			cb, err := argCallable("register_middleware", "callback", a["callback"])
 			if err != nil {
 				return nil, err

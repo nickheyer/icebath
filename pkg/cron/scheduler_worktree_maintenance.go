@@ -11,11 +11,49 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const sweepWaitSeconds = 120.0
+
+// Prunes stale worktrees and orphaned branches of one repo through the worktree_ops port, a seam the tests record
+var worktreePruneStaleWorktrees = func(ctx context.Context, repo string) error {
+	return tools.PruneStaleWorktrees(ctx, repo, 24)
+}
+
+// Installs the worktree registry recorder and the cron store readers the worktree port consults
+func init() {
+	tools.WorktreeRecordRepo = func(repoRoot string) { RecordWorktreeRepo(home.Process(), repoRoot) }
+	tools.WorktreeCronStore.JobsFile = func() string { return openCronStore(home.Process(), nil).JobsFile() }
+	tools.WorktreeCronStore.ParseJobs = func(path string) (any, error) {
+		data, _, err := parseJobsFile(path)
+		return data, err
+	}
+	tools.WorktreeCronStore.JobActive = rawJobActive
+}
+
+// Stored job dict the scheduler may fire that is not in a terminal state, read with Python truthiness
+func rawJobActive(job *pyjson.Object) bool {
+	if enabled, ok := job.Get("enabled"); ok && !pyrepr.Truthy(enabled) {
+		return false
+	}
+	state, _ := job.Get("state")
+	stateText := ""
+	if state != nil {
+		stateText = pyrepr.Str(state)
+	}
+	if pausedAt, _ := job.Get("paused_at"); pystr.Strip(stateText) == "paused" || pyrepr.Truthy(pausedAt) {
+		return false
+	}
+	text, isText := state.(string)
+	return !isText || (text != "completed" && text != "error")
+}
 
 var (
 	sweepSlot         = make(chan struct{}, 1)

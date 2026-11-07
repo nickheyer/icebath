@@ -2137,6 +2137,9 @@ func (d *dockerEnv) ExecPrefix(user string, interactive bool) ([]string, error) 
 // ContainerID exposes the live container for sibling tools
 func (d *dockerEnv) ContainerID() string { return d.containerID }
 
+// DockerExe exposes the docker binary the environment drives for sibling tools
+func (d *dockerEnv) DockerExe() string { return d.dockerExe }
+
 // ---- provider -----------------------------------------------------------------------------------
 
 type dockerBackend struct{}

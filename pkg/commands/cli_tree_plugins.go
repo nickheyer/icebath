@@ -63,9 +63,6 @@ func pluginsAction(ctx context.Context, cmd *cobra.Command, verb string, args []
 	}
 	switch verb {
 	case "":
-		if len(args) > 0 {
-			return pluginsFail(cmd, "[red]Unknown plugins action: "+args[0]+"[/red]")
-		}
 		return plugins.CmdToggle(ctx, out)
 	case "install":
 		ref, _ := flags.GetString("ref")

@@ -3,6 +3,7 @@ package pybase64
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrNonASCII is the ValueError base64.b64decode raises for a str holding non ASCII characters
@@ -140,4 +141,9 @@ func B64DecodeValidate(s string) ([]byte, error) {
 		return nil, &Error{fmt.Sprintf("Invalid base64-encoded string: number of data characters (%d) cannot be 1 more than a multiple of 4", len(out)/3*4+1)}
 	}
 	return nil, &Error{"Incorrect padding"}
+}
+
+// Decodes like base64.urlsafe_b64decode, the dash and underscore alphabet mapped onto the standard one first
+func URLSafeB64Decode(s string) ([]byte, error) {
+	return B64Decode(strings.NewReplacer("-", "+", "_", "/").Replace(s))
 }

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -563,8 +564,14 @@ func normalizeBaseURLForMatch(value any) string {
 	return strings.ToLower(strings.TrimRight(strings.TrimSpace(cfgString(value)), "/"))
 }
 
+// Exported base URL match form, trimmed, lowercased and without trailing slashes
+func NormalizeBaseURLForMatch(value any) string { return normalizeBaseURLForMatch(value) }
+
 // Endpoint compared for identity, scheme and host fold case while the path does not
 func routeKey(value any) string { return NormalizeRouteBaseURL(strings.TrimSpace(cfgString(value))) }
+
+// RouteKey is the endpoint compared for identity with scheme and host folded
+func RouteKey(value any) string { return routeKey(value) }
 
 func clean(value any) string { return strings.TrimSpace(cfgString(value)) }
 
@@ -594,6 +601,9 @@ func (r *resolver) modelCfgKeyEnvFor(modelCfg map[string]any, baseURL string) st
 func entryURL(entry map[string]any) string {
 	return firstTruthyString(entry["api"], entry["url"], entry["base_url"])
 }
+
+// Exported entry URL read, api before url before base_url
+func EntryURL(entry map[string]any) string { return entryURL(entry) }
 
 // Copies explicit boolean per model capabilities onto the runtime
 func liftModelCapabilities(entry map[string]any, model string, result map[string]any) {
@@ -779,10 +789,29 @@ func (r *resolver) getNamedCustomProvider(requestedProvider string, cfg map[stri
 	return found
 }
 
+// Named endpoint entry a provider name selects in cfg without reading credentials, nil when none matches
+func NamedCustomProviderEntry(ctx context.Context, name string, cfg map[string]any) map[string]any {
+	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(home.Dir(ctx)), home.Dir(ctx), homeCredentialSource(home.Dir(ctx))).getNamedCustomProvider(name, cfg, false)
+}
+
+// Resolved named endpoint entry with credentials, nil when no entry matches
+func NamedCustomProvider(ctx context.Context, h, name string) (map[string]any, error) {
+	r, cfg, err := strictHomeResolver(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return r.getNamedCustomProvider(name, cfg, true), nil
+}
+
 // NamedCustomProviderConfigPath is the config path of the one entry the runtime routes a provider through
 func (r *resolver) NamedCustomProviderConfigPath(requestedProvider string, cfg map[string]any) *ConfigPath {
 	_, path := r.selectNamedCustomProvider(requestedProvider, cfg, false)
 	return path
+}
+
+// Config path of the entry the active home runtime routes a provider through, reading no credential
+func NamedCustomProviderPath(ctx context.Context, name string, cfg map[string]any) *ConfigPath {
+	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(home.Dir(ctx)), home.Dir(ctx), homeCredentialSource(home.Dir(ctx))).NamedCustomProviderConfigPath(name, cfg)
 }
 
 // CustomProviderConfigPathForURL is the config path of the entry a bare custom route at a URL takes its key from

@@ -3,9 +3,12 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/spf13/cobra"
 )
 
@@ -75,7 +78,7 @@ func TestCLIPluginsTreeMatchesBuildPluginsParser(t *testing.T) {
 	}
 }
 
-// Parser half of test_plugins_update_all.py and the mutually exclusive install and enable groups
+// Parser halves of test_plugins_update_all.py and the yes-deps case with the mutually exclusive install and enable groups
 func TestPluginsArgsParse(t *testing.T) {
 	type upd struct {
 		name       string
@@ -104,15 +107,22 @@ func TestPluginsArgsParse(t *testing.T) {
 			t.Fatalf("%v parsed", argv)
 		}
 	}
+	deps, err := pmParse(t, "plugins install", []string{"plugins", "install", "x", "--yes-deps"}, func(cmd *cobra.Command, _ []string) any {
+		yes, _ := cmd.Flags().GetBool("yes-deps")
+		no, _ := cmd.Flags().GetBool("no-deps")
+		return [2]bool{yes, no}
+	})
+	if err != nil || deps != [2]bool{true, false} {
+		t.Fatalf("--yes-deps = %v %v", deps, err)
+	}
 }
 
-// The plugins_command refusals of _action_update and an unknown action, each ending with exit 1
+// The _action_update refusals end with exit 1 and an action outside the parser choices exits 2
 func TestPluginsDispatchRefusals(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for argv, want := range map[string]string{
 		"plugins update cat --yes": "Error: --yes only applies to `icebath plugins update` with no name.",
 		"plugins update --force":   "Error: --force applies to one named plugin: `icebath plugins update <name> --force`.",
-		"plugins frobnicate":       "Unknown plugins action: frobnicate",
 	} {
 		c := NewCLI()
 		var out bytes.Buffer
@@ -122,5 +132,55 @@ func TestPluginsDispatchRefusals(t *testing.T) {
 		if !errors.As(err, &exit) || exit.Code != 1 || !strings.Contains(out.String(), want) {
 			t.Fatalf("%s = %v %q", argv, err, out.String())
 		}
+	}
+	err := NewCLI().Execute([]string{"plugins", "frobnicate"})
+	var exit *ExitError
+	if !errors.As(err, &exit) || exit.Code != 2 || !strings.Contains(exit.Msg, "'frobnicate' is not a `icebath plugins` command.") {
+		t.Fatalf("frobnicate = %v", err)
+	}
+}
+
+// Every plugins verb is bound and each alias reaches the handler its _PLUGIN_ACTIONS row names
+func TestPluginsVerbsBoundAndAliasesDispatch(t *testing.T) {
+	for _, path := range NewCLI().Unbound() {
+		if path == "plugins" || strings.HasPrefix(path, "plugins ") {
+			t.Errorf("%s is unbound", path)
+		}
+	}
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"entries": [{"name": "probe", "repo": "https://github.com/owner/probe", "sha": "` + strings.Repeat("a", 40) + `", "description": "Probe catalog entry", "tier": "community"}]}`))
+	}))
+	defer srv.Close()
+	saved := plugins.LiveCatalogURL
+	plugins.LiveCatalogURL = srv.URL
+	t.Cleanup(func() { plugins.LiveCatalogURL = saved })
+	run := func(argv string) string {
+		c := NewCLI()
+		var out bytes.Buffer
+		c.find("plugins").Root().SetOut(&out)
+		c.Execute(strings.Fields(argv))
+		return out.String()
+	}
+	if got := run("plugins info probe"); !strings.Contains(got, "Probe catalog entry") || !strings.Contains(got, "github.com/owner/probe") {
+		t.Fatalf("info reached %q", got)
+	}
+	if got := run("plugins show probe"); !strings.Contains(got, "Plugin 'probe' not found.") {
+		t.Fatalf("show reached %q", got)
+	}
+	for _, group := range [][]string{{"plugins list", "plugins ls"}, {"plugins remove ghost", "plugins rm ghost", "plugins uninstall ghost"},
+		{"plugins check-updates --json", "plugins check --json"}, {"plugins search", "plugins browse"}} {
+		want := run(group[0])
+		if want == "" {
+			t.Fatalf("%s printed nothing", group[0])
+		}
+		for _, alias := range group[1:] {
+			if got := run(alias); got != want {
+				t.Fatalf("%s = %q, %s = %q", alias, got, group[0], want)
+			}
+		}
+	}
+	if got := run("plugins search"); !strings.Contains(got, "probe") {
+		t.Fatalf("search %q", got)
 	}
 }

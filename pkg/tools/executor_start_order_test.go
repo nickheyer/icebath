@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,27 +40,18 @@ func wedgedExecutor(t *testing.T, wedged string, gateS float64, batchTimeout str
 			}})
 	}
 	stop := make(chan struct{})
-	var armed atomic.Bool
-	wedgeEntered := make(chan struct{})
+	var wedgedWorker atomic.Uint64
+	var fired atomic.Bool
 	d := NewDispatcher(r)
 	d.PreToolCall = []PreToolCallHook{func(_ context.Context, _ *Env, name string, _ map[string]any, _ ToolHookIDs, _ []map[string]any) PreToolDirective {
 		if name == wedged {
-			armed.Store(true)
-		} else {
-			// Later tools reach the guardrail only after the wedged tool took the wedge, whatever the scheduler load
-			select {
-			case <-wedgeEntered:
-			case <-stop:
-			case <-time.After(10 * time.Second):
-			}
-			time.Sleep(50 * time.Millisecond)
+			wedgedWorker.Store(goroutineID())
 		}
 		return PreToolDirective{}
 	}}
 	host := &fakeExecutorHost{env: newTestToolEnv(t)}
 	host.guardHook = func() {
-		if armed.CompareAndSwap(true, false) {
-			close(wedgeEntered)
+		if wedgedWorker.Load() == goroutineID() && fired.CompareAndSwap(false, true) {
 			select {
 			case <-stop:
 			case <-time.After(30 * time.Second):
@@ -72,12 +65,28 @@ func wedgedExecutor(t *testing.T, wedged string, gateS float64, batchTimeout str
 	}, stop
 }
 
+// Id of the calling goroutine, the worker that ran the wedged tool pre call hook and then its guardrail read
+func goroutineID() uint64 {
+	var buf [64]byte
+	fields := strings.Fields(string(buf[:runtime.Stack(buf[:], false)]))
+	id, _ := strconv.ParseUint(fields[1], 10, 64)
+	return id
+}
+
 func probeCalls(names ...string) []state.ToolCall {
 	out := make([]state.ToolCall, len(names))
 	for i, n := range names {
 		out[i] = state.ToolCall{ID: "tc_" + strings.TrimPrefix(n, "tool_"), Type: "function", Function: state.ToolCallFunction{Name: n, Arguments: "{}"}}
 	}
 	return out
+}
+
+func messageTexts(messages []*state.Message) string {
+	var out []string
+	for _, m := range messages {
+		out = append(out, m.ToolCallID+"="+m.Text())
+	}
+	return strings.Join(out, " | ")
 }
 
 func stampNames(s []dispatchStamp) map[string]bool {
@@ -95,7 +104,7 @@ func TestWedgedDispatchDoesNotStarveLaterTools(t *testing.T) {
 	close(stop)
 	names := stampNames(stamps())
 	if !names["tool_b"] || !names["tool_c"] {
-		t.Fatalf("later-ordered tools were starved by the wedged dispatch: %v", names)
+		t.Fatalf("later-ordered tools were starved by the wedged dispatch: %v %s", names, messageTexts(messages))
 	}
 	for _, m := range messages {
 		if (m.ToolCallID == "tc_b" || m.ToolCallID == "tc_c") && strings.Contains(m.Text(), "timed out") {

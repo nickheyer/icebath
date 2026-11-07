@@ -272,3 +272,14 @@ func TestUnhealthyCacheExpiresAndLogsSkipOncePerMinute(t *testing.T) {
 		t.Fatal("chain label mapping")
 	}
 }
+
+func TestResolveCodexCredentialAndBaseReadsTheAuthStore(t *testing.T) {
+	ctx := auxMainTestHome(t, "")
+	auxWriteAuthJSON(t, ctx, map[string]any{"version": 1, "providers": map[string]any{
+		"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "tok-123", "refresh_token": "r-456"}}}})
+	auxFixedPoolEntry(t, false, nil)
+	token, base, err := ResolveCodexCredentialAndBase(ctx)
+	if err != nil || token != "tok-123" || base != DefaultCodexBaseURL {
+		t.Fatalf("got %q %q %v", token, base, err)
+	}
+}

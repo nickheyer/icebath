@@ -814,6 +814,11 @@ func modelConsumesThoughtSignature(model, baseURL, provider string) bool {
 		hostMatches(baseURL, "generativelanguage.googleapis.com") || hostMatches(baseURL, "aiplatform.googleapis.com")
 }
 
+// Whether a Gemini route reads the tool call extra_content thought signature, exported for the agent strict sanitizer
+func ModelConsumesThoughtSignature(model, baseURL, provider string) bool {
+	return modelConsumesThoughtSignature(model, baseURL, provider)
+}
+
 // Gemini thought signature carried by an extra_content record
 func thoughtSignature(extra any) string {
 	m, ok := extra.(map[string]any)
@@ -1368,6 +1373,11 @@ func (c *ccRoute) fixedTemperature() (omit bool, fixed *float64) {
 
 func modelForcesMaxCompletionTokens(model string) bool {
 	return hasAnyPrefix(bareModel(model), []string{"gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4"})
+}
+
+// Model whose chat completions requests must send max_completion_tokens instead of max_tokens
+func ModelForcesMaxCompletionTokens(model string) bool {
+	return modelForcesMaxCompletionTokens(model)
 }
 
 // Name of the output cap parameter the route accepts

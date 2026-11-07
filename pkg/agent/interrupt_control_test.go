@@ -344,3 +344,31 @@ func TestResponseBetweenRedirectedRestartsResetsTheBound(t *testing.T) {
 		t.Fatalf("steered %q", a.pendingSteer)
 	}
 }
+
+func TestHardInterruptReadsTheFenceAWorkerPublishes(t *testing.T) {
+	a := bareSteerAgent()
+	a.hardInterruptRequested = &pythread.Event{}
+	a.toolWorkerThreadsLock = &sync.Mutex{}
+	fences := make([]*CompressionCommitFence, 50)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range fences {
+			fences[i] = NewCompressionCommitFence()
+			reg := &commitFenceRegistration{fence: fences[i]}
+			a.registerCommitFence(reg)
+			a.unregisterCommitFence(reg)
+		}
+		last := &commitFenceRegistration{fence: NewCompressionCommitFence()}
+		a.registerCommitFence(last)
+		fences = append(fences, last.fence)
+	}()
+	for range 50 {
+		a.InterruptWith("stop", InterruptOptions{HardCancel: true})
+	}
+	<-done
+	a.InterruptWith("stop", InterruptOptions{HardCancel: true})
+	if !fences[len(fences)-1].IsCancelled() {
+		t.Fatal("the hard interrupt did not cancel the fence the worker left published")
+	}
+}

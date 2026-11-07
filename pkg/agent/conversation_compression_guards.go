@@ -87,10 +87,16 @@ func existingSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string
 	return BuildSystemPrompt(ctx, a, systemMessage)
 }
 
-// Puts the pre compression deep snapshot back into the live list when it drifted
+// Puts the pre compression deep snapshot back into the caller visible list in place when it drifted
 func restoreMessagesSnapshot(messages *[]map[string]any, snapshot []map[string]any) {
 	if snapshot != nil && !reflect.DeepEqual(*messages, snapshot) {
-		*messages = pycopy.DeepCopy(snapshot).([]map[string]any)
+		restored := pycopy.DeepCopy(snapshot).([]map[string]any)
+		if cap(*messages) >= len(restored) {
+			live := (*messages)[:len(restored)]
+			copy(live, restored)
+			restored = live
+		}
+		*messages = restored
 	}
 }
 

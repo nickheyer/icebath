@@ -178,8 +178,7 @@ func (a *AIAgent) icCodexSession() codexTurnControl {
 
 // Shuts the registered in flight request sockets, logging a failure at debug
 func (a *AIAgent) icAbortActiveRequest(reason, failureLog string) {
-	abort := a.activeRequestAbort
-	if abort == nil {
+	if a.ActiveRequestAbort() == nil {
 		return
 	}
 	defer func() {
@@ -187,12 +186,14 @@ func (a *AIAgent) icAbortActiveRequest(reason, failureLog string) {
 			runAgentLog().Debug(failureLog, "error", r)
 		}
 	}()
-	abort(reason)
+	a.abortActiveRequest(reason)
 }
 
 // Fans the tool interrupt bit out to every concurrent tool worker of this agent
 func (a *AIAgent) icSignalToolWorkers(active bool, reason string) {
-	for _, id := range a.toolWorkerIDs() {
+	ids := a.toolWorkerIDs()
+	ids = append(ids, a.toolExecutor().TrackedWorkerIDs()...)
+	for _, id := range ids {
 		tools.SetInterrupt(id, active, reason)
 	}
 }
@@ -260,7 +261,7 @@ func (a *AIAgent) InterruptWith(message string, o InterruptOptions) bool {
 	}
 	fence := func() any {
 		if o.HardCancel {
-			return a.activeCompressionCommitFence
+			return a.publishedCompressionCommitFence()
 		}
 		return nil
 	}

@@ -104,8 +104,9 @@ func ReadTextWithTimeout(env *Env, path string, timeout *float64) (string, bool,
 		err  error
 	}
 	result := make(chan readResult, 1)
+	read := ReadContextFileText
 	go func() {
-		text, err := ReadContextFileText(path)
+		text, err := read(path)
 		result <- readResult{text, err}
 	}()
 	timer := time.NewTimer(time.Duration(secs * float64(time.Second)))

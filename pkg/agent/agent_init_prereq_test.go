@@ -319,13 +319,16 @@ def register(ctx):
     ctx.register_context_engine(Hosted())
 `
 
-func TestHostedContextEngineCallsThroughAndMirrorsItsBase(t *testing.T) {
+// Temp home whose plugin host child runs the system python with the given plugin files, managers reset at cleanup
+func hostedEngineTestHome(t *testing.T, files map[string]string) context.Context {
+	t.Helper()
 	python, err := exec.LookPath("python3")
 	if err != nil {
 		t.Fatalf("python3 is required to run the plugin host child: %v", err)
 	}
 	h := filepath.Join(t.TempDir(), ".icebath")
-	for rel, body := range map[string]string{"config.yaml": "plugins:\n  isolation: host\n  enabled: []\n", "plugins/hosted_demo/__init__.py": hostedEngineSrc} {
+	files["config.yaml"] = "plugins:\n  isolation: host\n  enabled: []\n"
+	for rel, body := range files {
 		path := filepath.Join(h, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -346,7 +349,11 @@ func TestHostedContextEngineCallsThroughAndMirrorsItsBase(t *testing.T) {
 	t.Cleanup(plugins.SetHostInterpreterForTests(python))
 	plugins.ResetPluginManagersForTests()
 	t.Cleanup(plugins.ResetPluginManagersForTests)
-	ctx := home.WithOverride(context.Background(), h)
+	return home.WithOverride(context.Background(), h)
+}
+
+func TestHostedContextEngineCallsThroughAndMirrorsItsBase(t *testing.T) {
+	ctx := hostedEngineTestHome(t, map[string]string{"plugins/hosted_demo/__init__.py": hostedEngineSrc})
 	obj := plugins.LoadContextEngine(ctx, "hosted_demo")
 	if obj == nil {
 		t.Fatal("hosted engine did not load")

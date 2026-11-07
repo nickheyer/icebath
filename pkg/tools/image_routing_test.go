@@ -212,6 +212,18 @@ func TestSniffImageRoutingMime(t *testing.T) {
 	}
 }
 
+// Exported sniffer agrees with the routing sniffer on png, svg and unknown bytes
+func TestSniffImageMimeExport(t *testing.T) {
+	for _, raw := range []string{"\x89PNG\r\n\x1a\nrest", "<svg xmlns='x'></svg>", "plain"} {
+		if got, want := SniffImageMime([]byte(raw)), sniffImageRoutingMime([]byte(raw)); got != want {
+			t.Errorf("SniffImageMime(%q) = %q want %q", raw, got, want)
+		}
+	}
+	if SniffImageMime([]byte("\x89PNG\r\n\x1a\n")) != "image/png" {
+		t.Fatal("png magic not recognised")
+	}
+}
+
 func decodeDataURLImage(t *testing.T, u string) image.Image {
 	t.Helper()
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(u, "data:image/png;base64,"))

@@ -251,7 +251,7 @@ func handleMeetStatus(ctx context.Context, call *tools.Call) string {
 }
 
 // Last n of a transcript argument, nil when absent, unparsable or below one
-func lastArg(v any) *int {
+func transcriptLastArg(v any) *int {
 	if v == nil {
 		return nil
 	}
@@ -271,7 +271,7 @@ func lastArg(v any) *int {
 
 // Reads the transcript, the last n lines when last is set
 func handleMeetTranscript(ctx context.Context, call *tools.Call) string {
-	last := lastArg(call.Args["last"])
+	last := transcriptLastArg(call.Args["last"])
 	return dispatchMeet(ctx, call.Args["node"], "transcript", func(c *nodeClient) (*pyjson.Object, error) {
 		return c.transcript(last)
 	}, func() (*pyjson.Object, error) {

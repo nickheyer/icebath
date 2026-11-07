@@ -20,6 +20,16 @@ import (
 // Process wide yolo flag frozen at start so a skill cannot flip it through the environment later
 var yoloModeFrozen = truthyEnvValue(os.Getenv("ICEBATH_YOLO_MODE"))
 
+// Launch time yolo flag frozen from ICEBATH_YOLO_MODE that the agent records in its session model config
+func YoloModeFrozen() bool { return yoloModeFrozen }
+
+// Swaps the launch frozen yolo flag and returns its restore, the module attribute codex tests patch
+func SwapYoloModeFrozen(on bool) func() {
+	prev := yoloModeFrozen
+	yoloModeFrozen = on
+	return func() { yoloModeFrozen = prev }
+}
+
 // ApprovalDecision is the shared verdict every tool slice reads before running a command
 type ApprovalDecision struct {
 	Allowed bool
@@ -994,6 +1004,12 @@ var commandGate = gateSpec{noun: "command", transport: true, userApproved: true,
 	cliDenied:       "BLOCKED: User denied this command." + stopCommand + "{breaker}",
 	smartLog:        "Smart approval: auto-approved '{command}' ({description})"}
 
+// Command gate cli denied, transport denied and cli timeout texts with the description and breaker fields emptied
+func CommandGateRefusalTexts() (cliDenied, transportDenied, cliTimeout string) {
+	blank := strings.NewReplacer("{description}", "", "{breaker}", "")
+	return blank.Replace(commandGate.cliDenied), blank.Replace(commandGate.transportDenied), blank.Replace(commandGate.cliTimeout)
+}
+
 var executeCodeGate = gateSpec{noun: "code", transport: true, userApproved: true, redactCLI: true, pendingKeys: true,
 	notifyFailed:    "BLOCKED: Failed to send execute_code approval request to user. Do NOT retry.",
 	gatewayRefused:  "BLOCKED: execute_code script {reason}.{reason_addendum} The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool.{timeout_addendum}{breaker}",
@@ -1008,7 +1024,7 @@ var actionGate = gateSpec{noun: "action",
 	cliTimeout:     "BLOCKED: Action timed out without user response." + stopAction + " Silence is not consent.",
 	cliDenied:      "BLOCKED: User denied this potentially dangerous action (matched '{description}'). Do NOT retry — the user has explicitly rejected it."}
 
-// Fills the brace placeholders of a gate template
+// Substitutes each braced field name in a gate template with its value
 func formatTemplate(template string, fields map[string]string) string {
 	for k, v := range fields {
 		template = strings.ReplaceAll(template, "{"+k+"}", v)
@@ -1040,6 +1056,7 @@ type humanDecisionInput struct {
 	command, description, patternKey string
 	patternKeys                      []string
 	sessionKey                       string
+	approvalCallback                 Asker
 	isCLI, isGateway, isAsk          bool
 	smart                            bool
 	pendingBody                      func() string
@@ -1140,7 +1157,7 @@ func humanDecision(ctx context.Context, env *Env, spec gateSpec, in humanDecisio
 			}
 			return grant(decision.Choice)
 		}
-		if !shouldFallThroughToCLIApproval(in.isCLI, env != nil && env.Ask != nil, false) {
+		if !shouldFallThroughToCLIApproval(in.isCLI, resolveCLIApprovalCallback(env, in.approvalCallback) != nil, false) {
 			if !spec.pendingKeys {
 				displayCommand, displayDescription = in.command, in.description
 			}
@@ -1157,7 +1174,7 @@ func humanDecision(ctx context.Context, env *Env, spec gateSpec, in humanDecisio
 		"pattern_keys": append([]string{}, in.patternKeys...), "session_key": in.sessionKey, "surface": "cli"}
 	fireApprovalHook(env, "pre_approval_request", hookPayload)
 	choice := promptDangerousApproval(ctx, env, promptOptions{command: promptCommand, description: promptDescription,
-		allowPermanent: allowPermanent, allowSession: true, smartDenied: smartDenied})
+		allowPermanent: allowPermanent, allowSession: true, smartDenied: smartDenied, approvalCallback: in.approvalCallback})
 	post := copyMap(hookPayload)
 	post["choice"] = choice.value
 	fireApprovalHook(env, "post_approval_response", post)
@@ -1196,6 +1213,7 @@ func presence(env *Env) (isCLI, isGateway, isAsk bool) {
 // Options of the shared approval gate for a flagged action
 type approvalGateOptions struct {
 	patternKey, description, displayTarget string
+	approvalCallback                       Asker
 	subject, noun, advice                  string
 	cronDenyMessage                        string
 	singleQueryDenyMessage                 string
@@ -1260,7 +1278,31 @@ func runApprovalGate(ctx context.Context, env *Env, o approvalGateOptions) Guard
 		keys = []string{o.patternKey}
 	}
 	return humanDecision(ctx, env, actionGate, humanDecisionInput{command: o.displayTarget, description: o.description,
-		patternKey: o.patternKey, patternKeys: keys, sessionKey: sessionKey, isCLI: isCLI, isGateway: isGateway, isAsk: isAsk})
+		patternKey: o.patternKey, patternKeys: keys, sessionKey: sessionKey, approvalCallback: o.approvalCallback,
+		isCLI: isCLI, isGateway: isGateway, isAsk: isAsk})
+}
+
+// ApprovalGateOptions are the keyword arguments of the shared approval gate, ApprovalCallback overrides the session asker
+type ApprovalGateOptions struct {
+	PatternKey, Description, DisplayTarget string
+	ApprovalCallback                       Asker
+	Subject, Noun, Advice                  string
+	CronDenyMessage                        string
+	SingleQueryDenyMessage                 string
+	UnattendedDenyMessage                  string
+	AutoapproveLogPrefix                   string
+	FailClosedWhenNoHuman                  bool
+	NoHumanBlockMessage                    string
+	PatternKeys                            []string
+}
+
+// RunApprovalGate decides a flagged action through yolo, grants, unattended policy and the human prompt
+func RunApprovalGate(ctx context.Context, env *Env, o ApprovalGateOptions) GuardResult {
+	return runApprovalGate(ctx, env, approvalGateOptions{patternKey: o.PatternKey, description: o.Description,
+		displayTarget: o.DisplayTarget, approvalCallback: o.ApprovalCallback, subject: o.Subject, noun: o.Noun,
+		advice: o.Advice, cronDenyMessage: o.CronDenyMessage, singleQueryDenyMessage: o.SingleQueryDenyMessage,
+		unattendedDenyMessage: o.UnattendedDenyMessage, autoapproveLogPrefix: o.AutoapproveLogPrefix,
+		failClosedWhenNoHuman: o.FailClosedWhenNoHuman, noHumanBlockMessage: o.NoHumanBlockMessage, patternKeys: o.PatternKeys})
 }
 
 // True when the backend is isolated enough to skip dangerous command prompts

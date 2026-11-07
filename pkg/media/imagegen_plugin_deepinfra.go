@@ -90,9 +90,14 @@ func newDeepInfraImageGenProvider() *deepInfraImageGenProvider {
 			Key: "DEEPINFRA_API_KEY", Prompt: "DeepInfra API key", URL: "https://deepinfra.com/dash/api_keys"}}}
 }
 
-// Available when the DeepInfra key resolves through the secret scope
+// Available when the DeepInfra key resolves through the process secret scope
 func (p *deepInfraImageGenProvider) IsAvailable() bool {
-	return strings.TrimSpace(mustSecret(context.Background(), "DEEPINFRA_API_KEY")) != ""
+	return deepInfraKeyAvailable(context.Background())
+}
+
+// True when the DeepInfra key resolves non blank through the secret scope the context carries
+func deepInfraKeyAvailable(ctx context.Context) bool {
+	return strings.TrimSpace(mustSecret(ctx, "DEEPINFRA_API_KEY")) != ""
 }
 
 // Picker rows of the live catalog

@@ -385,3 +385,59 @@ func TestActualAliasesAndProfileMetadata(t *testing.T) {
 		t.Fatalf("api mode %q", got)
 	}
 }
+
+func TestNormalizeAuxProviderWrapsUnexported(t *testing.T) {
+	ctx := context.Background()
+	for _, name := range []string{"OpenRouter", " main ", "codex", ""} {
+		if got, want := NormalizeAuxProvider(ctx, name), auxNormalizeAuxProvider(ctx, name); got != want {
+			t.Fatalf("%q: got %q want %q", name, got, want)
+		}
+	}
+}
+
+// Temp home whose config routes the compression task to openrouter with a 45 second timeout
+func auxCompressionTaskHome(t *testing.T) context.Context {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeConfig(t, h, map[string]any{"auxiliary": map[string]any{"compression": map[string]any{
+		"provider": "openrouter", "model": "google/gemini-3-flash", "timeout": 45}}})
+	return context.Background()
+}
+
+func TestCompressionThresholdExportsFollowPolicy(t *testing.T) {
+	cases := []struct {
+		model, provider string
+		autoraise       bool
+		want            float64
+		ok              bool
+	}{
+		{"gpt-5.5", "openai-codex", true, 0.85, true},
+		{"gpt-5.5", "openai-codex", false, 0, false},
+		{"gpt-5.3-codex-spark", "openai-codex", false, 0.70, true},
+		{"arcee-ai/trinity-large-thinking", "", false, 0.75, true},
+		{"gpt-5.5", "openai", true, 0, false},
+		{"claude-sonnet-4.6", "anthropic", true, 0, false},
+	}
+	for _, tc := range cases {
+		got, ok := CompressionThresholdForModel(tc.model, tc.provider, tc.autoraise)
+		if got != tc.want || ok != tc.ok {
+			t.Fatalf("%s on %s autoraise %v gave %v %v, want %v %v", tc.model, tc.provider, tc.autoraise, got, ok, tc.want, tc.ok)
+		}
+	}
+	if !IsCodexGPT54OrGPT55("gpt-5.4-mini", "openai-codex") || IsCodexGPT54OrGPT55("gpt-5.4", "openai") || IsCodexGPT54OrGPT55("gpt-5.3", "openai-codex") {
+		t.Fatal("the 272K Codex family gate must match only gpt-5.4 to 5.6 families on the Codex OAuth route")
+	}
+	if !IsCodexSpark("gpt-5.3-codex-spark", " OpenAI-Codex ") || IsCodexSpark("gpt-5.3-codex", "openai-codex") || IsCodexSpark("gpt-5.3-codex-spark", "openrouter") {
+		t.Fatal("the spark gate must match gpt-5.3-codex-spark on the Codex OAuth route only")
+	}
+}
+
+func TestAuxiliaryTaskConfigExportReadsTheTaskBlock(t *testing.T) {
+	cfg, err := AuxiliaryTaskConfig(auxCompressionTaskHome(t), "compression")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg["provider"] != "openrouter" || cfg["model"] != "google/gemini-3-flash" {
+		t.Fatalf("task config %v", cfg)
+	}
+}

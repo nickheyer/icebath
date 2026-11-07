@@ -154,14 +154,14 @@ func TestPluginEnablePassGates(t *testing.T) {
 	ctx, _ := yamlHome(t, "")
 	resetPlatformMembers(t, t.TempDir())
 	notConfigured := NewPlatformEntry("myunconfiguredplat", "U", nil, func() bool { return true })
-	notConfigured.IsConnected = func(cfg *PlatformConfig) (bool, error) { return false, nil }
+	notConfigured.IsConnected = func(_ context.Context, cfg *PlatformConfig) (bool, error) { return false, nil }
 	notConfigured.EnvEnablementFn = func(ctx context.Context) map[string]any { return map[string]any{"some_key": "should-not-leak"} }
 	raising := NewPlatformEntry("myraisingplat", "R", nil, func() bool { return true })
-	raising.IsConnected = func(cfg *PlatformConfig) (bool, error) { return false, errors.New("boom") }
+	raising.IsConnected = func(_ context.Context, cfg *PlatformConfig) (bool, error) { return false, errors.New("boom") }
 	installable := NewPlatformEntry("myinstallableplat", "I", nil, func() bool { return false })
 	installs := 0
 	installable.EnsureDepsFn = func(ctx context.Context) (bool, error) { installs++; return true, nil }
-	installable.IsConnected = func(cfg *PlatformConfig) (bool, error) { return cfg.Extra["token"] == "t", nil }
+	installable.IsConnected = func(_ context.Context, cfg *PlatformConfig) (bool, error) { return cfg.Extra["token"] == "t", nil }
 	installable.EnvEnablementFn = func(ctx context.Context) map[string]any {
 		return map[string]any{"token": "t", "home_channel": map[string]any{"chat_id": 42, "thread_id": "7"}}
 	}

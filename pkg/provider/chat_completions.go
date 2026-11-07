@@ -324,17 +324,23 @@ func (c *chatCompletionsClient) Stream(ctx context.Context, req *Request, fn Str
 	return nil, errors.New("provider: stream attempt loop ended without a response")
 }
 
+// Fresh per attempt stream state with its watches, diagnostics and failed request record
+func (c *chatCompletionsClient) newStreamState(ctx context.Context, req *Request, p *ccPrepared, fn StreamFunc, t ccTimeouts) *ccStreamState {
+	s := &ccStreamState{c: c, req: req, fn: fn, estTokens: p.estTokens, tools: newCCToolCallAccumulator(), scrubber: NewStreamingThinkScrubber(),
+		contentWatch: NewRunawayStreamWatch(), reasoningWatch: NewRunawayStreamWatch(), detailWatch: NewRunawayStreamWatch(),
+		started: time.Now(), lifetimeCap: t.lifetime.Seconds()}
+	s.diag = streamCallFrom(ctx).newDiag()
+	s.wire = &FailedStreamRequest{URL: p.url, Content: p.body}
+	return s
+}
+
 // Runs one streaming attempt and reports whether visible deltas reached the consumer
 func (c *chatCompletionsClient) streamOnce(ctx context.Context, req *Request, p *ccPrepared, fn StreamFunc) (*Response, bool, error) {
 	if _, managed := relayCurrentSessionID(ctx); managed {
 		return chatManagedRelayStream(ctx, c, req, p, fn)
 	}
 	t := c.streamTimeouts(req, p.settings, p.estTokens)
-	s := &ccStreamState{c: c, req: req, fn: fn, estTokens: p.estTokens, tools: newCCToolCallAccumulator(), scrubber: NewStreamingThinkScrubber(),
-		contentWatch: NewRunawayStreamWatch(), reasoningWatch: NewRunawayStreamWatch(), detailWatch: NewRunawayStreamWatch(),
-		started: time.Now(), lifetimeCap: t.lifetime.Seconds()}
-	s.diag = streamCallFrom(ctx).newDiag()
-	s.wire = &FailedStreamRequest{URL: p.url, Content: p.body}
+	s := c.newStreamState(ctx, req, p, fn, t)
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	kill := &ccKill{}
@@ -389,7 +395,8 @@ func (c *chatCompletionsClient) streamOnce(ctx context.Context, req *Request, p 
 		}
 		return final, false, c.replay(final, fn)
 	}
-	out, err := c.consumeStream(ctx, attemptCtx, cancel, kill, resp, s, t)
+	s.claimWriter(ctx)
+	out, err := c.consumeStream(ctx, attemptCtx, cancel, kill, newSSEReader(resp.Body), nil, s, t)
 	return out, s.deltasSent, err
 }
 

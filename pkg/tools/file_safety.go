@@ -524,6 +524,10 @@ var jsonEscapedKeyRe = regexp.MustCompile(`(?i)(\\+)"` + jsonKeyNames + ``)
 var pythonReprFieldRe = regexp.MustCompile(`'([A-Za-z_][A-Za-z0-9_]*)'(\s*:\s*)(?:([bB]?)'((?:\\.|[^'\\])+)'|([bB]?)"((?:\\.|[^"\\])+)")`)
 var authHeaderRe = regexp.MustCompile(`(?i)((?:Proxy-)?Authorization:\s*)([A-Za-z][\w.+-]*\s+)?([^\s"']+)`)
 var secretHeaderRe = regexp.MustCompile(`(?i)((?:x-api-key|x-goog-api-key|api-key|apikey|x-api-token|x-auth-token|x-access-token)\s*:\s*)(\S+)`)
+
+// Header names that carry API credentials and are redacted from MCP displays
+var SecretHeaderNameList = []string{"x-api-key", "x-goog-api-key", "api-key", "apikey", "x-api-token", "x-auth-token", "x-access-token"}
+
 var telegramRe = regexp.MustCompile(`(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})`)
 var privateKeyRe = regexp.MustCompile(`-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----`)
 var dbConnstrRe = regexp.MustCompile(`(?i)((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^:\s]+:)([^@\s]+)(@)`)
@@ -1136,6 +1140,9 @@ func isPythonReprSecretKey(key string) bool {
 	}
 	return false
 }
+
+// Reports whether a field name denotes a secret
+func IsSecretFieldName(key string) bool { return isPythonReprSecretKey(key) }
 
 // Fully masks credential fields in Python mapping repr output
 func redactPythonReprFields(text string) string {

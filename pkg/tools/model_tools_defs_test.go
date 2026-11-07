@@ -380,7 +380,9 @@ type contextLengthCapture struct {
 func captureContextLength(t *testing.T, rtBase, rtKey string, rtErr error, answer func(q ContextLengthQuery) int) *contextLengthCapture {
 	c := &contextLengthCapture{}
 	prevRT, prevCached, prevModel := RuntimeProviderCredentials, CachedContextLength, ModelContextLength
-	t.Cleanup(func() { RuntimeProviderCredentials, CachedContextLength, ModelContextLength = prevRT, prevCached, prevModel })
+	t.Cleanup(func() {
+		RuntimeProviderCredentials, CachedContextLength, ModelContextLength = prevRT, prevCached, prevModel
+	})
 	RuntimeProviderCredentials = func(_ context.Context, _ *Env, requested, target string) (string, string, error) {
 		c.runtime = append(c.runtime, [2]string{requested, target})
 		return rtBase, rtKey, rtErr

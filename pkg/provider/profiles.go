@@ -456,13 +456,9 @@ func IsOllamaEndpoint(rawURL string) bool {
 	return false
 }
 
-// NormalizeActualBaseURL pins hosted Actual routes onto the /v1 root
+// NormalizeActualBaseURL gives hosted or loopback Actual roots their /v1 surface and the default when empty
 func NormalizeActualBaseURL(baseURL string) string {
-	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if Hostname(trimmed) != "api.actual.inc" {
-		return trimmed
-	}
-	return "https://api.actual.inc/v1"
+	return normalizeActualRuntimeBaseURL(baseURL)
 }
 
 // Hosts that accept exactly one wire protocol

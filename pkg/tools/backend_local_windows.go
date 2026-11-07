@@ -71,6 +71,9 @@ func processStartTime(pid int) (int64, bool) {
 	return creation.Nanoseconds() / 1e7, true
 }
 
+// Start time fingerprint of a live process
+func ProcessStartTime(pid int) (int64, bool) { return processStartTime(pid) }
+
 // Terminates a pid through taskkill with the start time identity guard
 func terminatePid(pid int, force bool, expectedStart string) error {
 	if force {

@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Reports whether a directory carries board.json, the identity marker a database only stub lacks
+// Reports whether a directory carries board.json, the identity marker a db-only board directory lacks
 func dirHoldsBoard(d string) bool {
 	_, err := os.Stat(pypath.PathJoin(d, "board.json"))
 	return err == nil

@@ -79,6 +79,7 @@ type Services struct {
 	GatewayRunnerRef                  func() PlatformActionRunner
 	ParseServerLiveness               func(raw any) (ServerLiveness, error)
 	DiscoverMemoryProviders           func(ctx context.Context) [][2]string
+	OutboundWebhookTargets            func(cfg map[string]any) []OutboundWebhookTarget
 }
 
 // Host rendezvous record of a running dashboard or Desktop backend, Record carried back to the rendezvous

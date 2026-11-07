@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 var bedrockLog = slog.Default()
@@ -334,17 +335,16 @@ func (t awsTotalTimeoutTransport) RoundTrip(req *http.Request) (*http.Response, 
 	return resp, nil
 }
 
-// HTTP client that SigV4 signs Mantle requests, bounded by the timeout when positive
+// HTTP client that SigV4 signs Mantle requests, each request phase bounded by the timeout when positive
 func buildBedrockOpenAIHTTPClient(ctx context.Context, region string, timeout time.Duration) (*http.Client, error) {
 	rt, err := NewBedrockOpenAISigV4Auth(ctx, region, http.DefaultTransport)
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{Transport: rt}
 	if timeout > 0 {
-		client.Timeout = timeout
+		rt = pyhttpx.TimeoutTransport(rt, timeout)
 	}
-	return client, nil
+	return &http.Client{Transport: rt}, nil
 }
 
 // ConfigureBedrockOpenAIRoute installs SigV4 on a Mantle route unless it carries a real Bedrock API key
@@ -371,6 +371,32 @@ func ConfigureBedrockOpenAIRoute(ctx context.Context, route Route, timeout time.
 	route.APIKey = "aws-sdk"
 	route.Transport = rt
 	return route, nil
+}
+
+// ConfigureBedrockOpenAIClientKwargs installs SigV4 on OpenAI client kwargs for a Mantle base url unless a real key is set
+func ConfigureBedrockOpenAIClientKwargs(ctx context.Context, clientKwargs map[string]any, timeout *float64) error {
+	baseURL, _ := clientKwargs["base_url"].(string)
+	if !isBedrockOpenAIBaseURL(baseURL) {
+		return nil
+	}
+	if key, ok := clientKwargs["api_key"].(string); ok && strings.TrimSpace(key) != "" && key != "aws-sdk" && key != "no-key-required" {
+		return nil
+	}
+	region, ok := bedrockOpenAIRegionFromBaseURL(baseURL)
+	if !ok || region == "" {
+		region = resolveBedrockRuntimeRegionCtx(ctx)
+	}
+	var limit time.Duration
+	if timeout != nil && *timeout > 0 {
+		limit = time.Duration(*timeout * float64(time.Second))
+	}
+	client, err := buildBedrockOpenAIHTTPClient(ctx, region, limit)
+	if err != nil {
+		return err
+	}
+	clientKwargs["api_key"] = "aws-sdk"
+	clientKwargs["http_client"] = client
+	return nil
 }
 
 // ---- error classification ----
@@ -585,6 +611,11 @@ const BedrockGuardrailActionField = "amazon-bedrock-guardrailAction"
 // Reports an InvokeModel reply Bedrock replaced with guardrail messaging
 func anthropicResponseGuardrailIntervened(message map[string]any) bool {
 	return strings.ToUpper(stringOf(message[BedrockGuardrailActionField])) == "INTERVENED"
+}
+
+// AnthropicResponseGuardrailIntervened reports an InvokeModel reply Bedrock replaced with guardrail messaging
+func AnthropicResponseGuardrailIntervened(message map[string]any) bool {
+	return anthropicResponseGuardrailIntervened(message)
 }
 
 // BedrockBinding is the agent state one Bedrock wire binds, the aws-sdk sentinel never a credential

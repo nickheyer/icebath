@@ -10,7 +10,7 @@ import (
 type deadConnectionAgent interface {
 	primaryClient() any
 	cachedRequestClient() any
-	replacePrimaryOpenAIClient(reason string)
+	replacePrimaryOpenAIClient(reason string) bool
 	closeCachedRequestOpenAIClient(reason string)
 }
 

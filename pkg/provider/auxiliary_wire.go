@@ -1,7 +1,9 @@
 package provider
 
+import "context"
+
 // Sanitizes Chat Completions SDK requests at the resolved client boundary, leaving native adapter replay untouched
-func auxPrepareChatMessages(client AuxClient, kwargs map[string]any) map[string]any {
+func auxPrepareChatMessages(ctx context.Context, client AuxClient, kwargs map[string]any) map[string]any {
 	sdk, ok := client.(*auxOpenAIClient)
 	if !ok || sdk == nil {
 		return kwargs
@@ -12,7 +14,7 @@ func auxPrepareChatMessages(client AuxClient, kwargs map[string]any) map[string]
 	}
 	model, _ := kwargs["model"].(string)
 	baseURL := sdk.BaseURL()
-	messages := chatCompletionsConvertMessages(shapeWireCarriers(auxMessageList(raw), model, baseURL), model, baseURL)
+	messages := chatCompletionsConvertMessages(shapeWireCarriers(ctx, auxMessageList(raw), model, baseURL, nil), model, baseURL)
 	out := make(map[string]any, len(kwargs))
 	for k, v := range kwargs {
 		out[k] = v

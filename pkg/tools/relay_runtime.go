@@ -80,8 +80,9 @@ type NemoRelayScopeTypes struct {
 
 // Plugin host operations of the binding
 type NemoRelayPlugin struct {
-	Initialize func(ctx context.Context, config map[string]any, additionalPluginsTOML string) (any, error)
-	Validate   func(ctx context.Context, config map[string]any, additionalPluginsTOML string) (map[string]any, error)
+	Initialize    func(ctx context.Context, config map[string]any, additionalPluginsTOML string) (any, error)
+	Validate      func(ctx context.Context, config map[string]any, additionalPluginsTOML string) (map[string]any, error)
+	ValidateExact func(ctx context.Context, config map[string]any) (map[string]any, error)
 }
 
 // Subscriber operations of the binding, register, deregister, flush and flush_async
@@ -169,6 +170,9 @@ var loadNemoRelay = func() (*NemoRelay, error) {
 	}
 	return load()
 }
+
+// Imports the registered native Relay binding, a No module named error when none is registered
+func LoadNemoRelay() (*NemoRelay, error) { return loadNemoRelay() }
 
 type relayLazy[T any] struct {
 	factory func(ctx context.Context) T

@@ -288,3 +288,8 @@ func unifiedDiff(a, b []string, fromfile, tofile string, n int) []string {
 	}
 	return out
 }
+
+// Lines of difflib.unified_diff over lines that keep their terminators
+func UnifiedDiff(a, b []string, fromfile, tofile string, n int) []string {
+	return unifiedDiff(a, b, fromfile, tofile, n)
+}

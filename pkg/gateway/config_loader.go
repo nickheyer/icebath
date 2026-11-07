@@ -212,6 +212,9 @@ func profileScoped(ctx context.Context) bool {
 	return provider.IsMultiplexActive(ctx) && provider.CurrentSecretScope(ctx) != nil
 }
 
+// True inside a multiplexed secondary profile's scope, for the platform adapters
+func ProfileScoped(ctx context.Context) bool { return profileScoped(ctx) }
+
 // Python membership of a key in a mapping, list element or substring of a string
 func pyContains(container any, key string) bool {
 	switch c := container.(type) {

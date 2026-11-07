@@ -248,6 +248,11 @@ func executeErrorFamily(code, family string) string {
 	return fileErrorFamilies[code]
 }
 
+// Gateway error family of a connector execute error code, empty when the code is unknown
+func ExecuteErrorFamily(code, family string) string {
+	return executeErrorFamily(code, family)
+}
+
 type wireError struct{ msg string }
 
 func (e *wireError) Error() string { return e.msg }
@@ -748,10 +753,11 @@ func ConnectorUserAgent(ctx context.Context, env *Env) (string, error) {
 }
 
 func conversationID(ctx context.Context, env *Env) string {
-	if ConnectorConversationContext != nil {
-		if v := ConnectorConversationContext(ctx); v != "" {
-			return v
-		}
+	if ConnectorConversationContext == nil {
+		panic("tools.ConnectorConversationContext is unassigned, pkg/mcp installs it at startup")
+	}
+	if v := ConnectorConversationContext(ctx); v != "" {
+		return v
 	}
 	return sessionValue(env, "id", "ICEBATH_SESSION_ID")
 }
@@ -759,7 +765,7 @@ func conversationID(ctx context.Context, env *Env) string {
 // CorrelationHeaders names the conversation, turn, and tool call once telemetry is consented
 func CorrelationHeaders(ctx context.Context, env *Env, call *CallRef) (map[string]string, error) {
 	if TelemetrySendConsented == nil {
-		return map[string]string{}, nil
+		panic("tools.TelemetrySendConsented is unassigned, pkg/mcp installs it at startup")
 	}
 	if consented, err := TelemetrySendConsented(ctx, env); err != nil || !consented {
 		return map[string]string{}, err

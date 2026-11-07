@@ -157,6 +157,9 @@ func sniffImageRoutingMime(raw []byte) string {
 	return ""
 }
 
+// Image MIME from magic bytes or an svg tag, empty when unrecognised
+func SniffImageMime(raw []byte) string { return sniffImageRoutingMime(raw) }
+
 func asciiLowerBytes(b []byte) []byte {
 	out := make([]byte, len(b))
 	for i, c := range b {

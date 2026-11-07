@@ -104,14 +104,50 @@ func (f NousSubscriptionFeatures) Items() []NousFeatureState {
 	return out
 }
 
+// Local stack probes pkg/browser and pkg/media install at init, each accessor panics when its owner never linked
+var (
+	BrowserHarnessCLI       func(env *tools.Env) []string
+	ChromiumExecutable      func(env *tools.Env, allowOverride bool) string
+	FasterWhisperImportable func() bool
+	ManagedImageRoute       func(provider, modelID any) string
+)
+
+func browserHarnessCLI(env *tools.Env) []string {
+	if BrowserHarnessCLI == nil {
+		panic("provider.BrowserHarnessCLI is not installed: pkg/browser assigns findCLI at init")
+	}
+	return BrowserHarnessCLI(env)
+}
+
+func chromiumExecutable(env *tools.Env, allowOverride bool) string {
+	if ChromiumExecutable == nil {
+		panic("provider.ChromiumExecutable is not installed: pkg/browser assigns chromiumExecutable at init")
+	}
+	return ChromiumExecutable(env, allowOverride)
+}
+
+func fasterWhisperImportable() bool {
+	if FasterWhisperImportable == nil {
+		panic("provider.FasterWhisperImportable is not installed: pkg/media assigns the faster_whisper probe at init")
+	}
+	return FasterWhisperImportable()
+}
+
+func managedImageRoute(provider, modelID any) string {
+	if ManagedImageRoute == nil {
+		panic("provider.ManagedImageRoute is not installed: pkg/media assigns managedRoute at init")
+	}
+	return ManagedImageRoute(provider, modelID)
+}
+
 var (
 	nousSubEnvValueFn    = nousSubEnvValue
 	nousSubAccountInfoFn = func(env PoolEnv, forceFresh bool) *NousPortalAccountInfo {
 		return getNousPortalAccountInfoIn(env, forceFresh, 60)
 	}
 	nousSubToolsetEnabledFn = nousSubToolsetEnabled
-	nousSubHarnessFn        = func() bool { return browserHarnessCLI() != nil }
-	nousSubChromiumFn       = func() string { return chromiumExecutable(true) }
+	nousSubHarnessFn        = func(env PoolEnv) bool { return browserHarnessCLI(nousSubToolsEnv(env)) != nil }
+	nousSubChromiumFn       = func(env PoolEnv) string { return chromiumExecutable(nousSubToolsEnv(env), true) }
 	nousSubFasterWhisperFn  = fasterWhisperImportable
 	nousSubAudioKeyFn       = func(env PoolEnv) string { return tools.ResolveOpenAIAudioAPIKey(nousSubToolsEnv(env)) }
 	nousSubDirectModalFn    = func(env PoolEnv) bool { return tools.HasDirectModalCredentials(nousSubToolsEnv(env)) }
@@ -252,14 +288,14 @@ func nousSubToolsetEnabled(env PoolEnv, cfg map[string]any, toolsetKey string) b
 }
 
 // Local browser starts when the harness exists and lightpanda or a runnable Chromium backs it
-func nousLocalBrowserRunnable(browserCfg map[string]any) bool {
-	if !nousSubHarnessFn() {
+func nousLocalBrowserRunnable(env PoolEnv, browserCfg map[string]any) bool {
+	if !nousSubHarnessFn(env) {
 		return false
 	}
 	if nousNorm(browserCfg["engine"], "auto") == "lightpanda" {
 		return true
 	}
-	return nousSubChromiumFn() != ""
+	return nousSubChromiumFn(env) != ""
 }
 
 type nousProviderLabelSet struct {
@@ -437,8 +473,8 @@ func nousBrowserFeature(env PoolEnv, browserCfg map[string]any, toolEnabled, man
 	}
 	directBrowserbase := nousSubEnvValueFn(env, "BROWSERBASE_API_KEY") != "" && nousSubEnvValueFn(env, "BROWSERBASE_PROJECT_ID") != "" && !browserGW
 	directBrowserUse := nousAnyEnv(env, "BROWSER_USE_API_KEY") && !browserGW
-	localAvailable := nousSubHarnessFn()
-	localRunnable := nousLocalBrowserRunnable(browserCfg)
+	localAvailable := nousSubHarnessFn(env)
+	localRunnable := nousLocalBrowserRunnable(env, browserCfg)
 	browserUseManaged := toolEnabled && localAvailable && managed && !directBrowserUse
 	var current string
 	var available, managedNow bool
@@ -908,4 +944,23 @@ func nousLoginOnlyPersist(env PoolEnv, out io.Writer) ([]map[string]any, error) 
 	nousSyncPoolFromAuthStore(env)
 	nousSettleAfterUpgradeFn(env, authState)
 	return handoff, nil
+}
+
+// Installs the terminal setup check reading Nous auth from the subscription features of the config
+func init() {
+	tools.NousSubscriptionAuthPresent = func(env *tools.Env, cfg map[string]any) bool {
+		return GetNousSubscriptionFeatures(toolsPoolEnv(env), cfg, false).NousAuthPresent
+	}
+}
+
+// Credential environment of a tool env, its home, secrets and logger
+func toolsPoolEnv(env *tools.Env) PoolEnv {
+	pe := credentialLifecycleEnv(context.Background(), env.Home)
+	if env.Secrets != nil {
+		pe.Secrets = env.Secrets
+	}
+	if env.Log != nil {
+		pe.Log = env.Log
+	}
+	return pe
 }

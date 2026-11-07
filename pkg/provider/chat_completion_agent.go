@@ -97,6 +97,7 @@ type ChatCompletionAgent interface {
 	CurrentAPIRequestID() string
 	IsSubagent() bool
 	FallbackIndex() int
+	CreditsCapture() *CreditsCapture
 }
 
 // RequestAbortHook is the abort callable an inline request publishes on the agent, compared by identity

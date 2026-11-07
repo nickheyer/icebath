@@ -3,6 +3,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"runtime"
@@ -124,6 +125,10 @@ type Env struct {
 	TerminalScope *TerminalScope
 	// Tool correlation ids of the call this copy was bound for
 	observability *observabilityIDs
+	// Explicit kanban selection of the schema build this copy was bound for
+	kanbanSelection *bool
+	// Synthesized from a nil env so availability checks keep bypassing the verdict cache
+	unscopedChecks bool
 }
 
 // Emit sends a progress event when the host registered a listener
@@ -172,24 +177,11 @@ func Register(d Def) {
 	Default.registerBuiltin(d, module)
 }
 
-// Register adds a tool, replacing a same toolset entry and panicking on a cross toolset shadow without override
+// Register adds a process global tool, panicking on a malformed schema and logging a refused shadow
 func (r *Registry) Register(d Def) {
-	if d.Name == "" || d.Handler == nil || d.Schema == nil {
-		panic("tools: register requires name, schema, and handler")
+	if err := r.RegisterScoped("", d); err != nil && !errors.Is(err, ErrRegistrationRejected) {
+		panic("tools: " + err.Error())
 	}
-	if d.Description == "" {
-		if s, ok := d.Schema["description"].(string); ok {
-			d.Description = s
-		}
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if prev, ok := r.tools[d.Name]; ok && prev.Toolset != d.Toolset && !d.Override {
-		panic("tools: " + d.Name + " from toolset " + d.Toolset + " would shadow toolset " + prev.Toolset)
-	}
-	copy := d
-	r.tools[d.Name] = &copy
-	r.noteSlotWrite("", d.Name)
 }
 
 // Get returns the tool with this name or nil

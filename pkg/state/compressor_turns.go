@@ -187,6 +187,9 @@ func isBlankUserTurn(message map[string]any) bool {
 	return true
 }
 
+// Empty non summary user role echo
+func IsBlankUserTurn(message map[string]any) bool { return isBlankUserTurn(message) }
+
 // User turn carrying input worth anchoring, a steer row counting as human input
 func isActionableUserTurn(message map[string]any) bool {
 	if message == nil || message["role"] != "user" {
@@ -198,6 +201,9 @@ func isActionableUserTurn(message map[string]any) bool {
 	}
 	return !isBlankUserTurn(message)
 }
+
+// User row carrying input worth anchoring
+func IsActionableUserTurn(message map[string]any) bool { return isActionableUserTurn(message) }
 
 // Internal user role scaffolding recognised by summary metadata or a recovery nudge marker
 func isSyntheticCompressionUserTurn(message map[string]any) bool {
@@ -217,6 +223,11 @@ func isSyntheticCompressionUserTurn(message map[string]any) bool {
 		}
 	}
 	return false
+}
+
+// Synthetic compression scaffolding user row such as a continuation or todo injection
+func IsSyntheticCompressionUserTurn(message map[string]any) bool {
+	return isSyntheticCompressionUserTurn(message)
 }
 
 // Actionable user turn that is not synthetic compression scaffolding

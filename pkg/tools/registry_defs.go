@@ -14,10 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-type kanbanSelectionKey struct{}
-
-// WithKanbanToolsetSelection carries whether kanban was named explicitly through one schema build
-func WithKanbanToolsetSelection(ctx context.Context, toolsets []string) context.Context {
+// Env copy telling availability checks whether kanban was named explicitly in this schema build
+func WithKanbanToolsetSelection(env *Env, toolsets []string) *Env {
 	requested := false
 	for _, t := range toolsets {
 		if t == "kanban" {
@@ -25,16 +23,20 @@ func WithKanbanToolsetSelection(ctx context.Context, toolsets []string) context.
 			break
 		}
 	}
-	return context.WithValue(ctx, kanbanSelectionKey{}, requested)
+	bound := Env{unscopedChecks: true}
+	if env != nil {
+		bound = *env
+	}
+	bound.kanbanSelection = &requested
+	return &bound
 }
 
 // KanbanToolsetRequested reports the explicit kanban selection and whether a schema build is in progress
-func KanbanToolsetRequested(ctx context.Context) (requested bool, inAssembly bool) {
-	if ctx == nil {
+func KanbanToolsetRequested(env *Env) (requested bool, inAssembly bool) {
+	if env == nil || env.kanbanSelection == nil {
 		return false, false
 	}
-	v, ok := ctx.Value(kanbanSelectionKey{}).(bool)
-	return v, ok
+	return *env.kanbanSelection, true
 }
 
 // Definitions returns OpenAI format schemas for the named tools whose check passes
@@ -81,7 +83,7 @@ func definitionDynamicOverrides(env *Env, entry *Def) (overrides map[string]any)
 	defer func() {
 		if rec := recover(); rec != nil {
 			overrides = nil
-			toolsLogger(env).Warn("dynamic schema override panicked; using static schema", "tool", entry.Name, "panic", rec)
+			toolsLogger(env).Warn(fmt.Sprintf("dynamic_schema_overrides for tool %s raised %s; using static schema", entry.Name, fmt.Sprint(rec)))
 		}
 	}()
 	return entry.DynamicSchema(env)
@@ -348,6 +350,9 @@ func isDispatcherOwnedWorkerContext(env *Env) bool {
 	return !(isDelegatedChildProcessContext(env) || sessionFlag(env, "non_dispatcher_owned", "ICEBATH_NON_DISPATCHER_OWNED_CONTEXT"))
 }
 
+// False when a kanban identity is present but this execution does not own it
+func IsDispatcherOwnedWorkerContext(env *Env) bool { return isDispatcherOwnedWorkerContext(env) }
+
 func definitionSelectionContext(env *Env) SelectionContext {
 	return SelectionContext{
 		KanbanTask:            kanbanTaskActive(env),
@@ -450,8 +455,8 @@ func (r *Registry) computeToolDefinitions(ctx context.Context, env *Env, opts De
 			definitionNotice(env, n.Text)
 		}
 	}
-	kctx := WithKanbanToolsetSelection(ctx, opts.Enabled)
-	filtered := applyDynamicSchemas(env, r.Definitions(kctx, env, toolsToInclude, opts.Quiet))
+	kenv := WithKanbanToolsetSelection(env, opts.Enabled)
+	filtered := applyDynamicSchemas(kenv, r.Definitions(ctx, kenv, toolsToInclude, opts.Quiet))
 	setLastResolvedToolNames(filtered)
 	if !opts.Quiet {
 		if len(filtered) > 0 {

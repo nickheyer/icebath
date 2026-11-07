@@ -97,6 +97,11 @@ func anthropicMaxOutput(model string) int {
 	return anthOutputLimits[bestKey]
 }
 
+// Max output tokens of an Anthropic model by its longest matching family
+func AnthropicMaxOutput(model string) int {
+	return anthropicMaxOutput(model)
+}
+
 // Value floored to a positive int, false for booleans, non numbers, non finite or non positive values
 func anthResolvePositiveMaxTokens(value any) (int, bool) {
 	var f float64
@@ -178,6 +183,9 @@ func anthSupportsFastMode(model string) bool { return IsAnthropicFastModeModel(m
 // ---- betas and identity ----
 
 const anthToolStreamingBeta = "fine-grained-tool-streaming-2025-05-14"
+
+// Anthropic beta that enables fine grained tool streaming, added for Claude over OpenRouter
+const ToolStreamingBeta = anthToolStreamingBeta
 
 // Beta headers safe on ordinary native Anthropic requests
 var anthropicCommonBetas = []string{"interleaved-thinking-2025-05-14", anthToolStreamingBeta}
@@ -1477,15 +1485,21 @@ func (c *anthropicClient) Stream(ctx context.Context, req *Request, fn StreamFun
 	return nil, errors.New("provider: anthropic stream attempt loop ended without a response")
 }
 
+// Fresh per attempt Messages stream state with its watches and diagnostics
+func (c *anthropicClient) newStreamState(ctx context.Context, req *Request, p *anthPrepared, fn StreamFunc, t ccTimeouts) *anthStreamState {
+	s := &anthStreamState{c: c, req: req, fn: fn, acc: newAnthAccumulator(), textWatch: NewRunawayStreamWatch(), thinkWatch: NewRunawayStreamWatch(),
+		toolSlots: map[int]int{}, started: time.Now(), estTokens: p.estTokens, lifetime: t.lifetime.Seconds()}
+	s.diag = streamCallFrom(ctx).newDiag()
+	return s
+}
+
 // Runs one streaming attempt and reports whether visible deltas reached the consumer
 func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthPrepared, fn StreamFunc) (*Response, bool, error) {
 	if _, managed := relayCurrentSessionID(ctx); managed {
 		return anthropicManagedRelayStream(ctx, c, req, p, fn)
 	}
 	t := c.streamTimeouts(req, p.settings, p.estTokens)
-	s := &anthStreamState{c: c, req: req, fn: fn, acc: newAnthAccumulator(), textWatch: NewRunawayStreamWatch(), thinkWatch: NewRunawayStreamWatch(),
-		toolSlots: map[int]int{}, started: time.Now(), estTokens: p.estTokens, lifetime: t.lifetime.Seconds()}
-	s.diag = streamCallFrom(ctx).newDiag()
+	s := c.newStreamState(ctx, req, p, fn, t)
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	kill := &ccKill{}
@@ -1539,6 +1553,7 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 		}
 		return final, false, c.replay(final, fn)
 	}
+	s.claimWriter(ctx)
 	out, err := c.consumeStream(ctx, attemptCtx, cancel, kill, c.transport.Events(resp), s, t)
 	return out, s.deltasSent, err
 }

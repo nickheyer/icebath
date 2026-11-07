@@ -245,6 +245,11 @@ func resolveNousRuntimeCredentials(env PoolEnv, forceRefresh bool, staleAccessTo
 	return resolveNousRuntimeCredentialsWith(env, NousResolveOptions{ForceRefresh: forceRefresh, StaleAccessToken: staleAccessToken})
 }
 
+// ResolveNousRuntimeCredentials returns the Nous runtime credentials, refreshing them when forced or stale
+func ResolveNousRuntimeCredentials(env PoolEnv, forceRefresh bool, staleAccessToken string) (map[string]any, error) {
+	return resolveNousRuntimeCredentials(env, forceRefresh, staleAccessToken)
+}
+
 // Resolves under the auth store lock, skipping the refresh POST when a peer already rotated the grant
 func resolveNousRuntimeCredentialsLocked(env PoolEnv, opts NousResolveOptions) (map[string]any, error) {
 	var run *nousRuntimeResolve

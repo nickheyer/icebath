@@ -201,3 +201,9 @@ func TestGeminiCompleteNonStreamTimeoutSpansEveryHop(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestLongDecodeStaleMultiplierExportScalesTheStaleBudget(t *testing.T) {
+	if LongDecodeStaleMultiplier(map[string]any{"extra_body": map[string]any{"max_output_tokens": 262_144}}) != 8 || LongDecodeStaleMultiplier(nil) != 1 {
+		t.Fatal("long decode multiplier")
+	}
+}

@@ -1234,6 +1234,9 @@ func imageDimensionsFromBytes(raw []byte) (int, int, bool) {
 	return 0, 0, false
 }
 
+// ImageDimensionsFromBytes is the width and height read from PNG or JPEG headers, false when unreadable
+func ImageDimensionsFromBytes(raw []byte) (int, int, bool) { return imageDimensionsFromBytes(raw) }
+
 // Longest side of a data URL or bare base64 image read from its header prefix only
 func imageMaxSideFromData(data string) (int, bool) {
 	if data == "" {
@@ -1285,6 +1288,9 @@ func imagesAllWithinManyImageLimit(datas []string) bool {
 	}
 	return true
 }
+
+// Whether every image payload fits the per image limit that applies once many images ride one request
+func ImagesAllWithinManyImageLimit(datas []string) bool { return imagesAllWithinManyImageLimit(datas) }
 
 func outboundImageBlockLimit(manyImageSafe bool) int {
 	if manyImageSafe {
@@ -1376,6 +1382,35 @@ func outboundImageRetireCount(carrierBlocksNewestFirst []int, reservedBlocks int
 		}
 	}
 	return best
+}
+
+// Count of newest image carriers to retire so the outbound request stays under the image ceilings
+func OutboundImageRetireCount(carrierBlocks []int, reservedBlocks int, carrierBytes []int, reservedBytes int, manyImageSafe bool) int {
+	return outboundImageRetireCount(carrierBlocks, reservedBlocks, carrierBytes, reservedBytes, manyImageSafe)
+}
+
+// Widens the retire count through the newest earlier retired carrier and records the carriers retired now
+func LatchedRetireCount(retire int, carrierIDsNewestFirst []string, retiredIDs map[string]bool) int {
+	if retiredIDs == nil {
+		return retire
+	}
+	total := len(carrierIDsNewestFirst)
+	for n, cid := range carrierIDsNewestFirst {
+		if cid != "" && retiredIDs[cid] {
+			retire = max(retire, total-n)
+			break
+		}
+	}
+	start := total - retire
+	if start < 0 {
+		start = max(start+total, 0)
+	}
+	for _, cid := range carrierIDsNewestFirst[min(start, total):] {
+		if cid != "" {
+			retiredIDs[cid] = true
+		}
+	}
+	return retire
 }
 
 func imageSourceData(block any) (string, bool) {

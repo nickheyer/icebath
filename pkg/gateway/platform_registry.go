@@ -34,7 +34,7 @@ type PlatformEntry struct {
 	CheckFn                    func() bool                                                                                       `py:"check_fn"`
 	ValidateConfig             func(cfg *PlatformConfig) (bool, error)                                                           `py:"validate_config"`
 	EnsureDepsFn               func(ctx context.Context) (bool, error)                                                           `py:"ensure_deps_fn"`
-	IsConnected                func(cfg *PlatformConfig) (bool, error)                                                           `py:"is_connected"`
+	IsConnected                func(ctx context.Context, cfg *PlatformConfig) (bool, error)                                      `py:"is_connected"`
 	RequiredEnv                []string                                                                                          `py:"required_env"`
 	InstallHint                string                                                                                            `py:"install_hint"`
 	SetupFn                    func(ctx context.Context) error                                                                   `py:"setup_fn"`
@@ -122,6 +122,12 @@ func (e *PlatformEntry) SetKeywords(kwargs map[string]any) error {
 		case f.Type() == reflect.TypeOf(e.ValidateConfig) && rv.Type() == reflect.TypeOf(e.ConfigConnectedFn):
 			fn := val.(func(*PlatformConfig) bool)
 			f.Set(reflect.ValueOf(func(cfg *PlatformConfig) (bool, error) { return fn(cfg), nil }))
+		case f.Type() == reflect.TypeOf(e.IsConnected) && rv.Type() == reflect.TypeOf(e.ValidateConfig):
+			fn := val.(func(*PlatformConfig) (bool, error))
+			f.Set(reflect.ValueOf(func(_ context.Context, cfg *PlatformConfig) (bool, error) { return fn(cfg) }))
+		case f.Type() == reflect.TypeOf(e.IsConnected) && rv.Type() == reflect.TypeOf(e.ConfigConnectedFn):
+			fn := val.(func(*PlatformConfig) bool)
+			f.Set(reflect.ValueOf(func(_ context.Context, cfg *PlatformConfig) (bool, error) { return fn(cfg), nil }))
 		default:
 			return &PyError{"TypeError", fmt.Sprintf("PlatformEntry %s takes %s, not %T", k, f.Type(), val)}
 		}

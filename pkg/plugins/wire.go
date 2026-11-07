@@ -28,6 +28,7 @@ const ProtocolVersion = 1
 type PluginHostError struct {
 	TypeName      string
 	RemoteMessage string
+	ExitCode      string
 }
 
 func (e *PluginHostError) Error() string {
@@ -69,7 +70,7 @@ func raiseRemote(e map[string]any) error {
 	if remoteBuiltinErrors[typeName] {
 		return &HostBuiltinError{Type: typeName, Message: message}
 	}
-	return &PluginHostError{TypeName: typeName, RemoteMessage: message}
+	return &PluginHostError{TypeName: typeName, RemoteMessage: message, ExitCode: wireStr(e["code"])}
 }
 
 // Python str() of an optional wire field, empty for null or missing

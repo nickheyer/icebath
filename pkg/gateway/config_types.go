@@ -774,14 +774,16 @@ func (c *GatewayConfig) isPlatformConnected(ctx context.Context, platform Platfo
 	if entry == nil {
 		return false
 	}
-	check := entry.IsConnected
-	if check == nil {
-		check = entry.ValidateConfig
-	}
-	if check == nil {
+	var ok bool
+	var err error
+	switch {
+	case entry.IsConnected != nil:
+		ok, err = entry.IsConnected(ctx, cfg)
+	case entry.ValidateConfig != nil:
+		ok, err = entry.ValidateConfig(cfg)
+	default:
 		return true
 	}
-	ok, err := check(cfg)
 	return err == nil && ok
 }
 
@@ -1048,7 +1050,7 @@ func LoadGatewayConfig(ctx context.Context) (*GatewayConfig, error) {
 	return cfg, nil
 }
 
-// Warns on empty tokens and disables platforms whose token is a placeholder
+// Warns on empty tokens and disables platforms whose token is a known dummy value
 func validateGatewayConfig(cfg *GatewayConfig) error {
 	type tokenPlatform struct {
 		platform Platform

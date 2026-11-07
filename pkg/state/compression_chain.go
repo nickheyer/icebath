@@ -124,3 +124,8 @@ func (d *SessionDB) isCompressionChildRow(ctx context.Context, child *pyjson.Obj
 	}
 	return pyEquals(rowValue(parent, "end_reason"), "compression"), nil
 }
+
+// Whether a child row is a genuine compression continuation, for callers outside this package
+func (d *SessionDB) IsCompressionChildRow(ctx context.Context, child *pyjson.Object) (bool, error) {
+	return d.isCompressionChildRow(ctx, child)
+}

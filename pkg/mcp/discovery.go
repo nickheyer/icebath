@@ -946,6 +946,9 @@ func IsToolParallelSafe(ctx context.Context, toolName string) bool {
 	return ok
 }
 
+// Lets the tool batch planner run calls of a parallel opted in MCP server concurrently
+func init() { tools.MCPToolParallelSafe = IsToolParallelSafe }
+
 // ServerStatus is one configured server's state for banners and the TUI
 type ServerStatus struct {
 	Name      string         `json:"name"`

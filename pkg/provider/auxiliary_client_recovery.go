@@ -236,7 +236,7 @@ func auxPrepareSameProviderRetry(ctx context.Context, prep auxSameProviderRetry,
 		}
 	} else {
 		var err error
-		retryClient, retryModel, err = auxGetCachedClient(ctx, auxCachedClientRequest{
+		retryClient, retryModel, err = auxGetCachedClientFn(ctx, auxCachedClientRequest{
 			Provider: prep.ResolvedProvider, Model: prep.ResolvedModel, AsyncMode: asyncMode, BaseURL: prep.ResolvedBaseURL,
 			APIKey: prep.ResolvedAPIKey, APIMode: prep.ResolvedAPIMode, MainRuntime: prep.MainRuntime,
 		})

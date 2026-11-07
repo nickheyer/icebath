@@ -187,6 +187,8 @@ class HostRuntime:
     def __init__(self, reader, writer):
         self.refs: dict[int, Any] = {}
         self.owners: dict[int, str] = {}
+        self.iterators: dict[int, Any] = {}
+        self.predeclared: dict[str, Any] = {}
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
         self.unload_callbacks: dict[str, list[Callable[[], Any]]] = {}
@@ -244,6 +246,21 @@ class HostRuntime:
             else:
                 # Class-level defaults too: an engine that sets ``context_length`` only later in
                 # ``update_model()`` must not read as the base-class default forever in Icebath.
+                live.append(name)
+        return {"__object__": self._remember(plugin_key, obj), "methods": methods, "live": live,
+                "type": type(obj).__name__}
+
+    def _describe_namespace(self, plugin_key: str, obj: Any) -> dict:
+        """Method table of a module or class whose functions and class methods run here, every other name read live"""
+        methods: dict[str, Any] = {}
+        live: list[str] = []
+        for name in dir(obj):
+            if name.startswith("_"):
+                continue
+            value = getattr(obj, name, None)
+            if callable(value) and not isinstance(value, type):
+                methods[name] = {"async": is_async_callable(value), "sig": describe_signature(value)}
+            else:
                 live.append(name)
         return {"__object__": self._remember(plugin_key, obj), "methods": methods, "live": live,
                 "type": type(obj).__name__}
@@ -344,6 +361,11 @@ class HostRuntime:
         def refs(obj: Any) -> Optional[dict]:
             if plugin_key.startswith(_PROFILE_CLIENT_OWNER) and _is_live_client_part(obj):
                 return self._describe_object(plugin_key, obj)
+            if plugin_key.startswith(_PROVIDER_MODULE_OWNER):
+                if isinstance(obj, (type, types.ModuleType)):
+                    return self._describe_namespace(plugin_key, obj)
+                if _is_provider_object(obj) and _is_live_client_part(obj):
+                    return self._describe_object(plugin_key, obj)
             if _provider_base(obj) is not None:  # e.g. the engine ``clone_for_agent`` returns
                 return self._describe_object(plugin_key, obj)
             return self.ref_for(plugin_key, obj, allow_objects=False)
@@ -365,7 +387,10 @@ class HostRuntime:
 
     def op_load(self, params: dict[str, Any]) -> dict[str, Any]:
         plugin_key = str(params["plugin_key"])
-        target = _import_plugin(params)
+        # A deferred platform's package imported for its tools.py is reused so its body never runs twice
+        target = self.predeclared.pop(plugin_key, None)
+        if target is None or not params.get("predeclared") or sys.modules.get(target.__name__) is not target:
+            target = _import_plugin(params)
         register = target if callable(target) and not isinstance(target, types.ModuleType) \
             else getattr(target, "register", None)
         if not callable(register):
@@ -383,6 +408,7 @@ class HostRuntime:
         plugin_key = str(params["plugin_key"])
         package = _import_plugin(params)
         self.modules[plugin_key] = package.__name__
+        self.predeclared[plugin_key] = package
         tools_module = importlib.import_module(f"{package.__name__}.tools")
         register_tools = getattr(tools_module, "register_tools", None)
         if register_tools is None:
@@ -443,6 +469,31 @@ class HostRuntime:
         collector = _CollectorContext(self, plugin_key, params, str(params["capture"]))
         instance = plugin_loader.instance_from_module(module, collector=collector, collected_attr="collected",
                                                       base_cls=base, name=str(params.get("name")), logger=logger)
+        return None if instance is None else self._describe_object(plugin_key, instance)
+
+    def op_load_computer_use_provider(self, params: dict[str, Any]) -> Any:
+        """A user computer-use provider the way ``plugins.computer_use`` loads it: load_plugin_module under the
+        synthetic user namespace, then instance_from_module over a collector keeping ``register_computer_use_provider``."""
+        from plugins import plugin_loader
+        from tools.computer_use.backend import ComputerUseProvider
+
+        class _ComputerUseProviderCollector(plugin_loader.NoopPluginContext):
+            def __init__(self):
+                self.provider = None
+
+            def register_computer_use_provider(self, provider):
+                self.provider = provider
+
+        plugin_key = str(params["plugin_key"])
+        module = plugin_loader.load_plugin_module(
+            str(params["module_name"]), Path(str(params["path"])), parents=("plugins", "plugins.computer_use"),
+            logger=logger, synthetic_namespace=params.get("synthetic_namespace") or None)
+        if module is None:
+            return None
+        self.modules[plugin_key] = module.__name__
+        instance = plugin_loader.instance_from_module(
+            module, collector=_ComputerUseProviderCollector(), collected_attr="provider", base_cls=ComputerUseProvider,
+            name=str(params["name"]), logger=logger)
         return None if instance is None else self._describe_object(plugin_key, instance)
 
     def op_load_memory_entry_point(self, params: dict[str, Any]) -> Any:
@@ -571,6 +622,17 @@ class HostRuntime:
         args, kwargs = self._decode_args(params)
         return encode({"loaded": True, "result": self._run(function(*args, **kwargs))})
 
+    def op_provider_module_import(self, params: dict[str, Any]) -> Any:
+        """Provider package the memory loader names, or one submodule of it, kept here as a live module"""
+        package = _load_provider_package(str(params["module_name"]), Path(str(params["path"])),
+                                         [str(p) for p in params.get("parents") or []],
+                                         Path(str(params["plugins_root"])), params.get("synthetic_namespace"))
+        if package is None:
+            return encode({"loaded": False})
+        submodule = str(params.get("submodule") or "")
+        target = importlib.import_module(f"{package.__name__}.{submodule}") if submodule else package
+        return encode({"loaded": True, "module": self._describe_namespace(_PROVIDER_MODULE_OWNER + package.__name__, target)})
+
     def op_asgi(self, params: dict[str, Any]) -> Any:
         """Serve one dashboard API request with the plugin's FastAPI ``router`` (loaded once)."""
         api_path = Path(str(params["dashboard_dir"])) / str(params["api_file"])
@@ -619,13 +681,15 @@ class HostRuntime:
         if obj is None:
             raise LookupError(f"plugin host object {ref} was released")
         method = str(params["method"])
-        if method.startswith("_"):
+        names = method.split(".")
+        if any(name.startswith("_") for name in names):
             raise AttributeError(method)
+        target = functools.reduce(getattr, names[:-1], obj)
         args, kwargs = self._decode_args(params, self.owners.get(ref, ""))
-        base = _provider_base(obj)
+        base = _provider_base(target)
         if base is not None:  # the ABC's annotations say what Icebath passed (``home_path: Path``)
-            args, kwargs = restore_arguments(declared_member(base, method), args, kwargs)
-        return self._encode_result(self.owners.get(ref, ""), self._run(getattr(obj, method)(*args, **kwargs)))
+            args, kwargs = restore_arguments(declared_member(base, names[-1]), args, kwargs)
+        return self._encode_result(self.owners.get(ref, ""), self._run(getattr(target, names[-1])(*args, **kwargs)))
 
     def op_obj_getattr(self, params: dict[str, Any]) -> Any:
         obj = self.refs.get(int(params["ref"]))
@@ -635,6 +699,22 @@ class HostRuntime:
         if name.startswith("_") or not hasattr(obj, name):
             return {"__missing__": name}
         return self._encode_result(self.owners.get(int(params["ref"]), ""), getattr(obj, name))
+
+    def op_obj_next(self, params: dict[str, Any]) -> Any:
+        """One step of a for loop over a host object, StopIteration answering done and each item encoded as a result"""
+        ref = int(params["ref"])
+        with self._lock:
+            obj = self.refs.get(ref)
+            if obj is None:
+                raise LookupError(f"plugin host object {ref} was released")
+            iterator = self.iterators.get(ref)
+            if iterator is None:
+                iterator = self.iterators[ref] = iter(obj)
+        try:
+            item = next(iterator)
+        except StopIteration:
+            return {"done": True}
+        return {"done": False, "item": self._encode_result(self.owners.get(ref, ""), item)}
 
     def op_event(self, params: dict[str, Any]) -> Any:
         """One is_set, set, clear, wait or reason of a host event Icebath holds a ref to."""
@@ -659,6 +739,7 @@ class HostRuntime:
             for ref in params.get("refs") or ():
                 self.refs.pop(int(ref), None)
                 self.owners.pop(int(ref), None)
+                self.iterators.pop(int(ref), None)
 
     def op_config_schema(self, params: dict[str, Any]) -> Any:
         """A memory provider's ``config_schema.py`` ``CONFIG_SCHEMA`` (user code: it runs here)."""
@@ -703,13 +784,15 @@ class HostRuntime:
 
 _HANDLERS: dict[str, Callable[[HostRuntime, dict[str, Any]], Any]] = {
     "hello": HostRuntime.op_hello, "load": HostRuntime.op_load, "load_tools": HostRuntime.op_load_tools, "load_instance": HostRuntime.op_load_instance,
+    "load_computer_use_provider": HostRuntime.op_load_computer_use_provider,
     "asgi": HostRuntime.op_asgi, "profile_call": HostRuntime.op_profile_call,
     "profile_client": HostRuntime.op_profile_client,
     "provider_entry_point_load": HostRuntime.op_provider_entry_point_load,
     "provider_entry_point_invoke": HostRuntime.op_provider_entry_point_invoke,
     "provider_module_call": HostRuntime.op_provider_module_call,
+    "provider_module_import": HostRuntime.op_provider_module_import,
     "invoke": HostRuntime.op_invoke,
-    "obj_invoke": HostRuntime.op_obj_invoke, "obj_getattr": HostRuntime.op_obj_getattr,
+    "obj_invoke": HostRuntime.op_obj_invoke, "obj_getattr": HostRuntime.op_obj_getattr, "obj_next": HostRuntime.op_obj_next,
     "obj_setattr": HostRuntime.op_obj_setattr, "unload": HostRuntime.op_unload,
     "release": HostRuntime.op_release, "event": HostRuntime.op_event, "config_schema": HostRuntime.op_config_schema,
     "load_memory_entry_point": HostRuntime.op_load_memory_entry_point, "warm_import": HostRuntime.op_warm_import,
@@ -893,8 +976,8 @@ def _import_base(ref: str) -> type:
 def _provider_base(value: Any) -> Optional[type]:
     """The provider ABC (``HOST_OBJECT_BASES``) ``value`` implements. Only an already-imported base
     can match: a plugin object subclassing it imported it."""
-    from icebath_cli.plugin_isolation import HOST_OBJECT_BASES
-    for ref in HOST_OBJECT_BASES.values():
+    from icebath_cli.plugin_isolation import HOST_OBJECT_BASES, HOST_RESULT_OBJECT_BASES
+    for ref in (*HOST_OBJECT_BASES.values(), *HOST_RESULT_OBJECT_BASES):
         module, attr = ref.split(":")
         base = getattr(sys.modules.get(module), attr, None)
         if isinstance(base, type) and isinstance(value, base):
@@ -985,6 +1068,8 @@ _PROFILE_CAPTURES: list[list[Any]] = []
 _PROFILE_CAPTURE_LOCK = threading.RLock()
 _ENTRY_POINT_PROFILE_KEY = "entrypoint:"
 _PROFILE_CLIENT_OWNER = "profile-client:"
+# Owner prefix of an imported provider module whose classes, submodules and plain instances stay here as live objects
+_PROVIDER_MODULE_OWNER = "provider-module:"
 
 
 class _capturing:

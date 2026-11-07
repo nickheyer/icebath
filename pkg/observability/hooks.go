@@ -8,6 +8,8 @@ var (
 	GatewayAdapterPlatformsHook func() []string
 	// PluginPlatformNamesHook lists the platform registry's plugin entry names, set by pkg/gateway
 	PluginPlatformNamesHook func() []string
+	// BundledPluginKeysHook lists the registry keys of the compiled in plugins, set by pkg/plugins
+	BundledPluginKeysHook func() []string
 	// BundledMemoryProvidersHook lists the bundled memory provider names, set by pkg/memory
 	BundledMemoryProvidersHook func() []string
 	// CatalogPlatformOwnerHook returns the installer recorded catalog name of the plugin registering a platform, set by pkg/gateway

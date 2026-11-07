@@ -2,7 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -353,5 +357,116 @@ func TestAuxProviderClientAuxTranslatesChatKwargsAndResponses(t *testing.T) {
 	}
 	if text.String() != "hello" {
 		t.Fatalf("streamed %q", text.String())
+	}
+}
+
+// Swaps the cached client acquisition for one fixed client and model
+func auxSwapCachedClient(t *testing.T, client AuxClient, model string) {
+	t.Helper()
+	prev := auxGetCachedClientFn
+	t.Cleanup(func() { auxGetCachedClientFn = prev })
+	auxGetCachedClientFn = func(context.Context, auxCachedClientRequest) (AuxClient, string, error) { return client, model, nil }
+}
+
+func TestKimiTemperatureOmittedAsyncCall(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeConfig(t, h, map[string]any{})
+	response := auxCallOK("ok")
+	client := &auxCallFakeClient{base: "https://api.kimi.com/coding/v1", key: "k",
+		create: func(context.Context, map[string]any) (any, error) { return response, nil }}
+	auxSwapCachedClient(t, client, "kimi-for-coding")
+	result, err := AsyncCallLLM(context.Background(), map[string]any{"task": "session_search",
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}}, "temperature": 0.1})
+	if err != nil || auxActualContent(t, result) != "ok" {
+		t.Fatalf("result %v err %v", result, err)
+	}
+	kwargs := client.sent[len(client.sent)-1]
+	if _, has := kwargs["temperature"]; has || kwargs["model"] != "kimi-for-coding" {
+		t.Fatalf("kwargs %v", kwargs)
+	}
+}
+
+func TestKimiTemperatureNonKimiModelsPreserveTemperature(t *testing.T) {
+	temp := 0.3
+	for _, model := range []string{"anthropic/claude-sonnet-4-6", "gpt-4.1", "deepseek-chat"} {
+		kwargs, err := auxBuildCallKwargs(context.Background(), "openrouter", model, []any{map[string]any{"role": "user", "content": "hello"}},
+			auxCallKwargsOptions{Temperature: &temp})
+		if err != nil || kwargs["temperature"] != 0.3 {
+			t.Fatalf("%s kwargs %v err %v", model, kwargs, err)
+		}
+	}
+}
+
+func TestAuxiliaryTaskExtraBody(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		async     bool
+		taskExtra map[string]any
+		explicit  map[string]any
+		want      map[string]any
+	}{
+		{"sync_call_merges_task_extra_body_from_config", false, map[string]any{"enable_thinking": false, "reasoning": map[string]any{"effort": "none"}},
+			map[string]any{"metadata": map[string]any{"source": "test"}},
+			map[string]any{"enable_thinking": false, "reasoning": map[string]any{"effort": "none"}, "metadata": map[string]any{"source": "test"}}},
+		{"async_call_explicit_extra_body_overrides_task_config", true, map[string]any{"enable_thinking": false},
+			map[string]any{"enable_thinking": true}, map[string]any{"enable_thinking": true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := t.TempDir()
+			t.Setenv("ICEBATH_HOME", h)
+			writeConfig(t, h, map[string]any{"auxiliary": map[string]any{"session_search": map[string]any{"extra_body": tc.taskExtra}}})
+			client := &auxCallFakeClient{base: "https://api.example.com/v1", key: "k",
+				create: func(context.Context, map[string]any) (any, error) { return auxCallOK("ok"), nil }}
+			auxSwapCachedClient(t, client, "glm-4.5-air")
+			call := CallLLM
+			if tc.async {
+				call = AsyncCallLLM
+			}
+			if _, err := call(context.Background(), map[string]any{"task": "session_search",
+				"messages": []any{map[string]any{"role": "user", "content": "hello"}}, "extra_body": tc.explicit}); err != nil {
+				t.Fatal(err)
+			}
+			body, _ := client.sent[len(client.sent)-1]["extra_body"].(map[string]any)
+			for k, v := range tc.want {
+				if fmt.Sprint(body[k]) != fmt.Sprint(v) {
+					t.Fatalf("extra_body %v, want %s=%v", body, k, v)
+				}
+			}
+		})
+	}
+}
+
+func TestAuxiliaryPoolAwarenessCallLLMRetriesNousAfter401(t *testing.T) {
+	ctx := context.Background()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeConfig(t, h, map[string]any{"auxiliary": map[string]any{"compression": map[string]any{"provider": "nous", "model": "nous-model"}}})
+	ShutdownCachedClients(ctx)
+	t.Cleanup(func() { ShutdownCachedClients(ctx) })
+	var freshCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		freshCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(auxCallOK("fresh"))
+	}))
+	t.Cleanup(srv.Close)
+	stale := &auxCallFakeClient{base: "https://inference-api.nousresearch.com/v1", key: "stale-key",
+		create: func(context.Context, map[string]any) (any, error) {
+			return nil, &AuxSDKError{Class: "APIStatusError", Message: "stale nous key", StatusCode: 401}
+		}}
+	auxSwapCachedClient(t, stale, "nous-model")
+	prevPaid, prevNous := auxNousFreshPaidAccessFn, auxResolveNousRuntimeAPIFn
+	t.Cleanup(func() { auxNousFreshPaidAccessFn, auxResolveNousRuntimeAPIFn = prevPaid, prevNous })
+	auxNousFreshPaidAccessFn = func(context.Context) bool { return false }
+	auxResolveNousRuntimeAPIFn = func(context.Context, bool, string) (string, string, bool) {
+		return "fresh-agent-key", srv.URL + "/v1", true
+	}
+	result, err := CallLLM(ctx, map[string]any{"task": "compression", "messages": []any{map[string]any{"role": "user", "content": "hi"}}})
+	if err != nil || auxActualContent(t, result) != "fresh" {
+		t.Fatalf("result %v err %v", result, err)
+	}
+	if len(stale.sent) != 1 || freshCalls.Load() != 1 {
+		t.Fatalf("stale calls %d fresh calls %d", len(stale.sent), freshCalls.Load())
 	}
 }

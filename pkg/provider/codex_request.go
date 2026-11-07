@@ -10,7 +10,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Bounds or drops an in place prompt_cache_key entry
@@ -117,6 +119,30 @@ func responsesToolRename(t map[string]any, alias string) map[string]any {
 	out["name"] = alias
 	return out
 }
+
+// Name of the web search provider the registry resolves, else the legacy search backend, err when config fails
+func activeWebSearchBackend(ctx context.Context) (string, error) {
+	env := tools.ToolEnvFrom(ctx)
+	if env == nil {
+		h := home.Dir(ctx)
+		secrets := config.NewSecrets(h)
+		tree, err := config.Load(h, secrets.Lookup())
+		if err != nil {
+			return "", err
+		}
+		env = &tools.Env{Home: h, Config: tree, Secrets: secrets}
+	}
+	if p := webSearchActiveProvider(env); p != nil {
+		return p.Name(), nil
+	}
+	return webSearchLegacyBackend(env), nil
+}
+
+// Registry resolution and legacy probe the backend lookup reads, replaced by tests
+var (
+	webSearchActiveProvider = tools.ActiveSearchProvider
+	webSearchLegacyBackend  = tools.GetSearchBackend
+)
 
 // Reports whether xAI Responses should use Grok's native web_search, failing closed to native
 func xaiPrefersNativeWebSearch(p codexParams) bool {

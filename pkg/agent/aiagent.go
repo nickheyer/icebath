@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -89,6 +90,8 @@ type AIAgent struct {
 	turnExplainersState
 	systemPromptState
 	turnContextState
+	toolExecutorState
+	chatCompletionAgentState
 	runtimeHookState
 	sessionPersistenceState
 	imageEvictionState
@@ -153,14 +156,15 @@ type AIAgent struct {
 	lmstudioLoadMode                   string
 	fastAutoSeconds                    float64
 	reasoningEchoFlag                  any
-	creditsLatch                       any
 	autoRecoveryCycles                 int
 	intentAckContinuation              bool
 	subdirectoryHints                  any
 	stream5xxProbeTS                   float64
 	todoStore                          *tools.TodoStore
 	delegationBackend                  string
+	delegationBackendSet               bool
 	delegationInline                   bool
+	delegationInlineSet                bool
 	toolSnapshotGeneration             *int64
 	toolSnapshotSelection              *string
 	stallGuards                        bool
@@ -174,7 +178,7 @@ type AIAgent struct {
 	toolStartCallback                  any
 	toolCompleteCallback               any
 	toolResultMetadataCallback         any
-	thinkingCallback                   func(string)
+	thinkingCallback                   any
 	reasoningCallback                  any
 	clarifyCallback                    any
 	readTerminalCallback               any
@@ -203,7 +207,7 @@ type AIAgent struct {
 	hardInterruptRequested             *pythread.Event
 	executionThreadID                  int64
 	interruptThreadSignalPending       bool
-	clientLock                         *sync.Mutex
+	clientLock                         *pythread.RLock
 	modelRequestActive                 *pythread.Event
 	supportsActiveTurnRedirect         bool
 	pendingSteer                       string
@@ -214,7 +218,8 @@ type AIAgent struct {
 	pendingRedirect                    string
 	toolInterruptReason                string
 	activeCompressionCommitFence       any
-	activeRequestAbort                 func(reason string)
+	compressionCommitFenceLock         sync.Mutex
+	compressionCommitFenceStack        []*commitFenceRegistration
 	rejectedThinking                   *provider.RejectedThinkingTracker
 	pendingRedirectLock                *sync.Mutex
 	toolWorkerThreads                  map[int64]bool
@@ -240,10 +245,8 @@ type AIAgent struct {
 	currentTool                        string
 	apiCallCount                       int
 	skipMCPRefresh                     bool
-	rateLimitState                     *provider.RateLimitState
-	creditsState                       *provider.CreditsState
-	creditsSessionStartMicros          *int64
-	orCacheHits                        int
+	credits                            *provider.CreditsCapture
+	creditsMu                          sync.Mutex
 	sessionMessages                    []*state.Message
 	codexReasoningReplayEnabled        bool
 	codexReasoningReplayRejected       bool
@@ -279,13 +282,11 @@ type AIAgent struct {
 	streamWriterLock                   sync.Mutex
 	streamWriterToken                  int
 	streamWriterDropped                int
-	streamOptionsUnsupported           bool
 	persistUserMessageIdx              *int
 	persistUserMessageOverride         any
 	persistUserMessageTimestamp        any
 	inflightTurnSessionID              string
 	surfaceSwitchNote                  string
-	disableStreaming                   bool
 	isSubagent                         bool
 	fallbackActivated                  bool
 	fallbackIndex                      int
@@ -350,7 +351,7 @@ type AIAgentOptions struct {
 	ToolProgressCallback               any
 	ToolStartCallback                  any
 	ToolCompleteCallback               any
-	ThinkingCallback                   func(string)
+	ThinkingCallback                   any
 	ReasoningCallback                  any
 	ClarifyCallback                    any
 	ReadTerminalCallback               any
@@ -399,6 +400,8 @@ type AIAgentOptions struct {
 	MemoryManager                      *memory.MemoryManager
 	ToolResultMetadataCallback         any
 	Env                                *tools.Env
+	// Deprecated keyword kept for compatibility, warned about and ignored
+	ToolDelay *float64
 }
 
 // RunConversationOptions are the run_conversation keywords the callers above pkg/agent pass
@@ -420,7 +423,15 @@ type RunConversationOptions struct {
 }
 
 // Builds an agent through the init_agent forwarder, runtime fields filling the route keywords like cron does
+// Python DeprecationWarning channel, recorded on the warnings logger below the default level so it stays silent
+var warnDeprecation = func(message string) {
+	slog.Default().With("logger", "py.warnings").Debug("DeprecationWarning: " + message)
+}
+
 func NewAIAgent(ctx context.Context, o AIAgentOptions) (*AIAgent, error) {
+	if o.ToolDelay != nil {
+		warnDeprecation("tool_delay is deprecated and ignored; sequential tool calls no longer sleep between executions.")
+	}
 	if rt := o.Runtime; rt != nil {
 		o.APIKey, o.BaseURL, o.Provider = rt.APIKey, rt.BaseURL, rt.Provider
 		o.RequestedProvider, o.APIMode = rt.RequestedProvider, string(rt.APIMode)
@@ -593,6 +604,14 @@ func schemaList(defs []map[string]any) []any {
 	return out
 }
 
+// Connector tools a side agent never sees, empty for every other agent
+func sideAgentToolDrops(a *AIAgent) map[string]bool {
+	if a.sideAgent {
+		return tools.SideAgentToolDrops
+	}
+	return map[string]bool{}
+}
+
 // Tool names the agent never carries, the side agent drops and the platform toolset drops
 func (a *AIAgent) ToolDrops() map[string]bool {
 	out := map[string]bool{}
@@ -607,6 +626,11 @@ func (a *AIAgent) ToolDrops() map[string]bool {
 
 // Fresh definitions as the agent carries them, drops removed and the joined delegate variant when oneshot
 func (a *AIAgent) ToolSurface(defs []map[string]any) []map[string]any {
+	return a.toolSurface(a.homeContext(), defs)
+}
+
+// Tool surface under the build context whose gateway scope freezes the inline delegation decision
+func (a *AIAgent) toolSurface(ctx context.Context, defs []map[string]any) []map[string]any {
 	drops := a.ToolDrops()
 	kept := make([]map[string]any, 0, len(defs))
 	for _, d := range defs {
@@ -614,7 +638,7 @@ func (a *AIAgent) ToolSurface(defs []map[string]any) []map[string]any {
 			kept = append(kept, d)
 		}
 	}
-	if a.agentIsOneshot() || agentJoinsDelegation(a) {
+	if a.agentIsOneshot() || tools.AgentJoinsDelegation(ctx, a) {
 		joined, err := OneshotToolSchemas(kept)
 		if err != nil {
 			panic(err)
@@ -635,7 +659,9 @@ func (a *AIAgent) MemoryProviderToolsEnabled(enabled, disabled []string, memoryT
 }
 
 // Delegation backend config.yaml has now, what a tool build reads
-func (a *AIAgent) SavedDelegationBackend() string { return savedDelegationBackend(a.homeContext()) }
+func (a *AIAgent) SavedDelegationBackend() string {
+	return tools.SavedDelegationBackend(a.homeContext())
+}
 
 func delegateDef(list []any) any {
 	for _, t := range list {
@@ -650,14 +676,14 @@ func delegateDef(list []any) any {
 func (a *AIAgent) AdoptBuiltBackend(defs []any, backend any) {
 	if reflect.DeepEqual(delegateDef(a.tools), delegateDef(defs)) {
 		name, _ := backend.(string)
-		a.delegationBackend = name
+		a.setDelegationBackend(name)
 	}
 }
 
 // Refreezes the inline delegation decision from the carried delegate_task after a pin restore
 func (a *AIAgent) AdoptSessionDelegationMode() {
 	if delegateDef(a.tools) != nil {
-		a.delegationInline = sessionJoinsDelegation(a)
+		a.SetDelegationInline(sessionJoinsDelegation(a))
 	}
 }
 

@@ -357,6 +357,9 @@ func TestRedactedReasoningRecoveryOnAgentCallPath(t *testing.T) {
 					second = &bedrockHTTPError{Code: "ValidationException", Message: bcCrossRegionRejection + " again"}
 				}
 				f := bcCallConverseFake(t, &bedrockHTTPError{Code: "ValidationException", Message: bcCrossRegionRejection}, second)
+				f.mu.Lock()
+				f.signatures["thinking"] = "sig"
+				f.mu.Unlock()
 				assistant := []any{map[string]any{"reasoningContent": map[string]any{"redactedContent": []byte("sealed")}}}
 				for _, block := range bcMaps(t, keptBlocks) {
 					assistant = append(assistant, block)

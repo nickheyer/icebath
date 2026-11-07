@@ -272,6 +272,11 @@ func loadModelMetadataDiskCache(ctx context.Context) map[string]map[string]any {
 	return out
 }
 
+// Model metadata rows of the on disk cache keyed by model id
+func LoadModelMetadataDiskCache(ctx context.Context) map[string]map[string]any {
+	return loadModelMetadataDiskCache(ctx)
+}
+
 func saveModelMetadataDiskCache(ctx context.Context, data map[string]map[string]any) {
 	if err := atomicJSONWrite(modelMetadataCachePath(ctx), data); err != nil {
 		metadataLog.Debug("failed to save OpenRouter model metadata disk cache", "error", err)

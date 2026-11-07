@@ -81,6 +81,9 @@ func isSecretPayloadKey(key string) bool {
 	return false
 }
 
+// Exported payload key secret classification
+func IsSecretPayloadKey(key string) bool { return isSecretPayloadKey(key) }
+
 // FingerprintSecretValue returns sha256 prefixed sixteen hex digest of a secret or empty for blank input
 func FingerprintSecretValue(value any) string {
 	text := stringifyAny(value)

@@ -92,6 +92,11 @@ func CurrentSurface() (string, bool) {
 func bundledPluginNames() ([]string, error) {
 	root := filepath.Join(pm.RepoRoot(), "plugins")
 	var names []string
+	if BundledPluginKeysHook != nil {
+		for _, key := range BundledPluginKeysHook() {
+			names = append(names, pystr.Lower(key[strings.LastIndex(key, "/")+1:]))
+		}
+	}
 	for _, pattern := range []string{"*/plugin.yaml", "*/*/plugin.yaml"} {
 		matches, _ := filepath.Glob(filepath.Join(root, pattern))
 		for _, m := range matches {

@@ -1701,6 +1701,9 @@ func formatProcessNotification(evt map[string]any) string {
 	return formatProcessNotificationWith(nil, evt)
 }
 
+// IMPORTANT message a background process completion queue event injects into the conversation
+func FormatProcessNotification(evt map[string]any) string { return formatProcessNotification(evt) }
+
 func formatProcessNotificationWith(env *Env, evt map[string]any) string {
 	evtType := asStr(evt["type"])
 	if evtType == "" {

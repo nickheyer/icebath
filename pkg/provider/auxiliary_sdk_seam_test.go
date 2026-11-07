@@ -30,7 +30,7 @@ func TestAuxiliaryCompletionPathHandsTheSDKOnlyThePlaceholder(t *testing.T) {
 		t.Fatalf("typed messages %v", seen[0]["messages"])
 	}
 	extra, _ := seen[0]["extra_body"].(map[string]any)
-	if !reflect.DeepEqual(extra["messages"], messages) {
+	if !reflect.DeepEqual(auxMessageList(extra["messages"]), auxMessageList(messages)) {
 		t.Fatalf("extra_body messages %v", extra["messages"])
 	}
 }

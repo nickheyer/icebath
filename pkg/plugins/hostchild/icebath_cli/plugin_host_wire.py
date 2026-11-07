@@ -385,7 +385,10 @@ class Channel:
                 if not isinstance(exc, Exception):
                     logger.warning("%s: request %s raised %s", self._name, message.get("method"),
                                    type(exc).__name__)
-                return {"id": request_id, "error": {"type": type(exc).__name__, "message": str(exc)}}
+                error = {"type": type(exc).__name__, "message": str(exc)}
+                if isinstance(exc, SystemExit):
+                    error["code"] = repr(exc.code)
+                return {"id": request_id, "error": error}
             finally:
                 _SERVING.reset(token)
 

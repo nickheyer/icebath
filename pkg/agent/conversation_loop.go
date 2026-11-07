@@ -153,7 +153,7 @@ func isInterpreterShutdownError(err error) bool {
 }
 
 type moaPreparer interface {
-	PrepareRequest(kwargs map[string]any) (map[string]any, error)
+	PrepareRequest(messages []map[string]any) (map[string]any, error)
 }
 
 type moaRebaser interface {
@@ -522,8 +522,8 @@ func usageWindowRefusal(ctx context.Context, a *AIAgent, classified *provider.Cl
 			out = UsageWindowRefusal{}
 		}
 	}()
-	st := a.creditsState
 	capture := a.creditsCapture()
+	st := capture.Credits()
 	topTier := provider.CurrentModelIsTopTier(capture)
 	stop := ""
 	if st != nil {

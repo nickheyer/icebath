@@ -47,6 +47,9 @@ func RetiredRowPayload(message map[string]any) map[string]any {
 	return payload
 }
 
+// Positive integer id of a row reference, false for anything else
+func PositiveID(value any) (int64, bool) { return positiveID(value) }
+
 // Python int above zero as int64, false for bools, floats and everything else
 func positiveID(value any) (int64, bool) {
 	var n int64

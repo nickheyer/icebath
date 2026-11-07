@@ -181,7 +181,7 @@ func pluginProbeSeed(ctx context.Context, entry *PlatformEntry) (seed map[string
 }
 
 // Connected check of an entry on a transient enabled view seeded with the env extras
-func pluginIsConfigured(entry *PlatformEntry, existingExtra, seed map[string]any) (configured bool) {
+func pluginIsConfigured(ctx context.Context, entry *PlatformEntry, existingExtra, seed map[string]any) (configured bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Debug(fmt.Sprintf("is_connected for %s raised: %v — skipping enablement", entry.Name, r))
@@ -195,7 +195,7 @@ func pluginIsConfigured(entry *PlatformEntry, existingExtra, seed map[string]any
 	}
 	view := NewPlatformConfig()
 	view.Enabled, view.Extra = true, existingExtra
-	ok, err := entry.IsConnected(view)
+	ok, err := entry.IsConnected(ctx, view)
 	if err != nil {
 		slog.Debug(fmt.Sprintf("is_connected for %s raised: %s — skipping enablement", entry.Name, err))
 		return false
@@ -238,7 +238,7 @@ func enablePluginPlatform(ctx context.Context, cfg *GatewayConfig, entry *Platfo
 		return
 	}
 	seed := pluginProbeSeed(ctx, entry)
-	if !alreadyEnabled && entry.IsConnected != nil && !pluginIsConfigured(entry, existingExtra, seed) {
+	if !alreadyEnabled && entry.IsConnected != nil && !pluginIsConfigured(ctx, entry, existingExtra, seed) {
 		return
 	}
 	if !entryDepsOK(entry) && entry.EnsureDepsFn == nil {

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // ScopeKey canonicalizes a profile home into the key scoped registrations live under
@@ -23,11 +24,11 @@ type sessionScopeCtxKey struct{}
 
 // WithSessionToolScope binds an execution owned tool overlay that reads merge over the profile registry
 func WithSessionToolScope(ctx context.Context, scope string) context.Context {
-	return context.WithValue(ctx, sessionScopeCtxKey{}, ScopeKey(scope))
+	return context.WithValue(ctx, sessionScopeCtxKey{}, scope)
 }
 
-// SessionToolScope returns the overlay key bound by WithSessionToolScope or empty
-func SessionToolScope(ctx context.Context) string {
+// CurrentSessionToolScope returns the session scope exactly as bound, empty when none is bound
+func CurrentSessionToolScope(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
@@ -35,6 +36,11 @@ func SessionToolScope(ctx context.Context) string {
 		return s
 	}
 	return ""
+}
+
+// SessionToolScope returns the overlay slot key of the bound session scope, keyed per read like registry writes
+func SessionToolScope(ctx context.Context) string {
+	return home.NormalizeScope(CurrentSessionToolScope(ctx))
 }
 
 // PluginOverridePolicy is one identity bearing operator opt in for a plugin generation
@@ -117,6 +123,11 @@ func (r *Registry) mergedTools(ctx context.Context, scope string) map[string]*De
 	defer e.mu.RUnlock()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.mergedToolsLocked(ctx, e, scope)
+}
+
+// Merged view built while the caller holds both registry locks
+func (r *Registry) mergedToolsLocked(ctx context.Context, e *registryExt, scope string) map[string]*Def {
 	out := make(map[string]*Def, len(r.tools)+8)
 	for k, v := range r.tools {
 		if r.hiddenLocked(k, v) {
@@ -345,13 +356,11 @@ func (r *Registry) PluginScopeForModule(current, module string) (string, error) 
 
 // RegisterScoped registers a plugin owned tool into a profile overlay under the override policy
 func (r *Registry) RegisterScoped(scope string, d Def) error {
-	if d.Name == "" || d.Handler == nil || d.Schema == nil {
-		return fmt.Errorf("tool %q: registration requires name, schema, and handler", d.Name)
+	if err := validateRegistrationSchema(d); err != nil {
+		return err
 	}
-	if p, ok := d.Schema["parameters"]; ok && p != nil {
-		if _, isMap := p.(map[string]any); !isMap {
-			return fmt.Errorf("tool %q: schema parameters must be an object", d.Name)
-		}
+	if d.Name == "" || d.Handler == nil {
+		return fmt.Errorf("tool %q: registration requires name, schema, and handler", d.Name)
 	}
 	if d.Description == "" {
 		if s, ok := d.Schema["description"].(string); ok {
@@ -362,6 +371,17 @@ func (r *Registry) RegisterScoped(scope string, d Def) error {
 	e := r.ext()
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	owner := ""
+	if d.Plugin != "" {
+		owner = e.pluginNamespaceOf(d.Plugin)
+	}
+	if scope == "" && owner != "" {
+		resolved, err := e.callerScopeLocked(owner, "")
+		if err != nil {
+			return err
+		}
+		scope = resolved
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	target := r.slot(scope, true)
@@ -372,23 +392,19 @@ func (r *Registry) RegisterScoped(scope string, d Def) error {
 	if existing == nil {
 		existing = r.globalLocked(d.Name)
 	}
-	owner := d.Plugin
 	denied := owner != "" && !e.overrideAllowed(scope, owner)
 	shadowsGlobal := owner != "" && scope != "" && target[d.Name] == nil && r.globalLocked(d.Name) != nil
 	if shadowsGlobal {
 		if !d.Override {
-			return fmt.Errorf("tool registration rejected: plugin %q would shadow global tool %q without override", owner, d.Name)
+			return rejectGlobalShadow(owner, d.Name)
 		}
 		if denied {
-			return fmt.Errorf("%w: plugin %q cannot override built-in tool %q without allow_tool_override", ErrOverrideDenied, owner, d.Name)
+			return &overrideDeniedError{owner: owner, name: d.Name}
 		}
 	}
 	if existing != nil && existing.Toolset != d.Toolset {
-		if !d.Override {
-			return fmt.Errorf("tool registration rejected: %q (toolset %q) would shadow existing tool from toolset %q", d.Name, d.Toolset, existing.Toolset)
-		}
-		if denied {
-			return fmt.Errorf("%w: plugin %q cannot override built-in tool %q (toolset %q)", ErrOverrideDenied, owner, d.Name, existing.Toolset)
+		if err := crossToolsetVerdict(d, owner, existing.Toolset, denied); err != nil {
+			return err
 		}
 	}
 	copy := d
@@ -405,10 +421,26 @@ func (r *Registry) RegisterScoped(scope string, d Def) error {
 
 // Deregister removes a tool from one scope under the plugin ownership rules
 func (r *Registry) Deregister(name, scope, callerPlugin string) error {
+	return r.DeregisterIn(context.Background(), name, scope, callerPlugin)
+}
+
+// DeregisterIn removes a tool, judging toolset survivors through the home and session overlays of ctx
+func (r *Registry) DeregisterIn(ctx context.Context, name, scope, callerPlugin string) error {
 	scope = ScopeKey(scope)
 	e := r.ext()
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	callerOwner := ""
+	if callerPlugin != "" {
+		callerOwner = e.pluginNamespaceOf(callerPlugin)
+	}
+	if callerOwner != "" {
+		resolved, err := e.callerScopeLocked(callerOwner, scope)
+		if err != nil {
+			return err
+		}
+		scope = resolved
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	target := r.slot(scope, false)
@@ -417,15 +449,20 @@ func (r *Registry) Deregister(name, scope, callerPlugin string) error {
 		entry = nil
 	}
 	if entry == nil {
-		if scope != "" && callerPlugin != "" && r.globalLocked(name) != nil {
-			return fmt.Errorf("scoped plugin %q cannot deregister process-global tool %q", callerPlugin, name)
+		if scope != "" && callerOwner != "" && r.globalLocked(name) != nil {
+			return &deregisterDeniedError{msg: fmt.Sprintf("Scoped plugin module %s cannot deregister process-global tool %s; register a scoped override instead.",
+				pyrepr.StrRepr(callerPlugin), pyrepr.StrRepr(name))}
 		}
 		return nil
 	}
-	if !strings.HasPrefix(entry.Toolset, "mcp-") && callerPlugin != "" {
-		same := entry.Plugin != "" && entry.Plugin == callerPlugin
-		if !same && !e.overrideAllowed(scope, callerPlugin) {
-			return fmt.Errorf("plugin %q cannot deregister tool %q (toolset %q) without allow_tool_override", callerPlugin, name, entry.Toolset)
+	if !strings.HasPrefix(entry.Toolset, "mcp-") && callerOwner != "" {
+		entryOwner := ""
+		if entry.Plugin != "" {
+			entryOwner = e.pluginNamespaceOf(entry.Plugin)
+		}
+		same := entryOwner != "" && entryOwner == callerOwner
+		if !same && !e.overrideAllowed(scope, callerOwner) {
+			return rejectForeignDeregister(callerPlugin, name, entry.Toolset)
 		}
 	}
 	delete(target, name)
@@ -433,7 +470,7 @@ func (r *Registry) Deregister(name, scope, callerPlugin string) error {
 	if scope != "" && len(target) == 0 {
 		delete(e.scoped, scope)
 	}
-	if !r.toolsetHasEntriesLocked(entry.Toolset, scope) {
+	if len(r.toolsetEntriesLocked(ctx, entry.Toolset, scope)) == 0 {
 		delete(e.toolsetChecks, entry.Toolset)
 		e.dropAliasesFor(entry.Toolset)
 	}
@@ -441,22 +478,48 @@ func (r *Registry) Deregister(name, scope, callerPlugin string) error {
 	return nil
 }
 
-func (r *Registry) toolsetHasEntriesLocked(toolset, scope string) bool {
+// Entries of one toolset in merged dict order, an empty scope merging the home and session overlays of ctx
+func (r *Registry) toolsetEntriesLocked(ctx context.Context, toolset, scope string) []*Def {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	e := r.ext()
-	for _, d := range r.tools {
-		if r.hiddenLocked(d.Name, d) {
-			continue
-		}
-		if d.Toolset == toolset {
-			return true
+	overlay := scope
+	if overlay == "" {
+		overlay = ScopeKey(home.Dir(ctx))
+	}
+	session := ""
+	if scope == "" {
+		session = SessionToolScope(ctx)
+	}
+	slotOrderMu.Lock()
+	defer slotOrderMu.Unlock()
+	var order []string
+	merged := map[string]*Def{}
+	add := func(slotScope string, slot map[string]*Def, global bool) {
+		for _, n := range r.orderedSlotNamesLocked(slotScope, slot) {
+			d := slot[n]
+			if global && r.hiddenLocked(n, d) {
+				continue
+			}
+			if _, ok := merged[n]; !ok {
+				order = append(order, n)
+			}
+			merged[n] = d
 		}
 	}
-	for _, d := range e.scoped[scope] {
-		if d.Toolset == toolset {
-			return true
+	add("", r.tools, true)
+	add(overlay, e.scoped[overlay], false)
+	if session != "" {
+		add(session, e.scoped[session], false)
+	}
+	var out []*Def
+	for _, n := range order {
+		if merged[n].Toolset == toolset {
+			out = append(out, merged[n])
 		}
 	}
-	return false
+	return out
 }
 
 // MoveToScope hands process global registrations to one profile overlay
@@ -484,6 +547,11 @@ func (r *Registry) MoveToScope(names []string, scope string) {
 
 // RestoreRegistration puts a previous entry back only while the current one is still installed
 func (r *Registry) RestoreRegistration(name string, current, previous *Def, scope string) bool {
+	return r.RestoreRegistrationIn(context.Background(), name, current, previous, scope)
+}
+
+// RestoreRegistrationIn restores like RestoreRegistration with survivors read through the overlays of ctx
+func (r *Registry) RestoreRegistrationIn(ctx context.Context, name string, current, previous *Def, scope string) bool {
 	scope = ScopeKey(scope)
 	e := r.ext()
 	e.mu.Lock()
@@ -509,20 +577,7 @@ func (r *Registry) RestoreRegistration(name string, current, previous *Def, scop
 		affected[previous.Toolset] = true
 	}
 	for ts := range affected {
-		var surviving []*Def
-		for _, d := range r.tools {
-			if r.hiddenLocked(d.Name, d) {
-				continue
-			}
-			if d.Toolset == ts {
-				surviving = append(surviving, d)
-			}
-		}
-		for _, d := range e.scoped[scope] {
-			if d.Toolset == ts {
-				surviving = append(surviving, d)
-			}
-		}
+		surviving := r.toolsetEntriesLocked(ctx, ts, scope)
 		if scope == "" {
 			var check func(*Env) bool
 			for _, d := range surviving {

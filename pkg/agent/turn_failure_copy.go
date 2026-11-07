@@ -173,7 +173,7 @@ var invalidResponseCodes = map[int64]string{
 func InvalidResponseFailureReason(response any) string {
 	var errValue any
 	if response != nil {
-		errValue = pyAttr(response, "error")
+		errValue = state.ToolCallField(response, "error")
 	}
 	var code any
 	if errValue != nil {

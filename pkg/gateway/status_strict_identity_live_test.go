@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 	if spec := os.Getenv(mallocArenaChildEnv); spec != "" && mallocArenaChild != nil {
 		os.Exit(mallocArenaChild(spec))
 	}
+	installCommandBusyPolicyDouble()
 	os.Exit(m.Run())
 }
 

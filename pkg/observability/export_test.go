@@ -60,3 +60,9 @@ func CounterRowsAfterShutdownForTest(t *testing.T, ctx context.Context) []Counte
 	ShutdownRuntimes(ctx)
 	return storedRows(t, ctx)
 }
+
+// Installed version reader that reports the branch with no commit date until the test ends
+func WithVersionBranchForTest(t *testing.T, branch *string) { withVersion(t, nil, branch) }
+
+// Code root reader that reports the directory until the test ends
+func WithProjectRootForTest(t *testing.T, root string) { withProjectRoot(t, root) }

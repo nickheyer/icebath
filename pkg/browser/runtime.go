@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -108,3 +109,5 @@ func chromiumMissingHint(env *tools.Env) string {
 	}
 	return "Chromium is not installed: run `icebath pm install chromium`."
 }
+
+func init() { provider.ChromiumExecutable = chromiumExecutable }

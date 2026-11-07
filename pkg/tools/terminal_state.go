@@ -64,6 +64,9 @@ func sessionContextValue(env *Env, name string) string {
 	return sessionValue(env, key, name)
 }
 
+// Bound session context variable for plugin sessions, the engaged session map before session values and process env
+func SessionEnv(env *Env, name string) string { return sessionContextValue(env, name) }
+
 // Active gateway or WebUI session key, empty outside sessions
 func currentSessionKey(env *Env) string {
 	return sessionContextValue(env, "ICEBATH_SESSION_KEY")
@@ -385,6 +388,11 @@ func resolveContainerTaskID(env *Env, taskID string) (string, error) {
 	return workspaceContainerKey(env, policy, profileContainerKey(containerProfile(env)), taskID), nil
 }
 
+// Exported face of the cache key mapping for pkg/codeexec
+func ResolveContainerTaskID(env *Env, taskID string) (string, error) {
+	return resolveContainerTaskID(env, taskID)
+}
+
 // WorkspaceKeyFor is the digest of a host workspace computed once when the session binds it
 func WorkspaceKeyFor(cwd string) string {
 	resolved := realPathOf(expandUser(cwd))
@@ -590,6 +598,9 @@ var envConfigFn = resolveEnvConfig
 // Resolves the terminal configuration through the seam
 func getEnvConfig(env *Env) (map[string]any, error) { return envConfigFn(env) }
 
+// Resolves the terminal backend config the terminal and file tools share
+func GetEnvConfig(env *Env) (map[string]any, error) { return getEnvConfig(env) }
+
 // Resolves the terminal configuration from the session policy
 func resolveEnvConfig(env *Env) (map[string]any, error) {
 	policy, err := terminalPolicy(env)
@@ -716,6 +727,9 @@ func dockerHasHostAccessConfig(cfg map[string]any) bool {
 	}
 	return false
 }
+
+// Reports whether a docker sandbox config exposes host paths through bind mounts
+func DockerHasHostAccess(cfg map[string]any) bool { return dockerHasHostAccessConfig(cfg) }
 
 // Short task id for log lines
 func shortTaskID(id string) string {

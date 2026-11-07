@@ -140,8 +140,8 @@ func TestSweepOrphanedSessionsAutomaticSourceScopeSparesPinnedSession(t *testing
 	db := leaseDB(t)
 	stale := ago(8)
 	sweepMake(t, db, "pinned", "cli", stale, &stale)
-	if err := db.SetPinned("pinned", true); err != nil {
-		t.Fatal(err)
+	if ok, err := db.SetSessionPinned(context.Background(), "pinned", true); err != nil || !ok {
+		t.Fatal(ok, err)
 	}
 	sweepWant(t, sweepRun(t, db, func(o *SweepOrphanedOptions) { sweepCLI(o); o.ExcludePinned = true }))
 	if guardSession(t, db, "pinned")["ended_at"] != nil {

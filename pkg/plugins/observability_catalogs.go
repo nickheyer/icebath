@@ -11,6 +11,7 @@ import (
 func init() {
 	observability.SetCatalogSource("plugin_catalog_names", pluginCatalogStems)
 	observability.SetCatalogSource("catalog_platform_names", catalogPlatformNames)
+	observability.BundledPluginKeysHook = BundledPluginKeys
 }
 
 // Lower case file stems of the in-tree plugin catalog

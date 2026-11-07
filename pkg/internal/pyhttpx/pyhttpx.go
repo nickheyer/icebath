@@ -131,8 +131,36 @@ type watchdog struct {
 	mu    sync.Mutex
 	t     *time.Timer
 	d     time.Duration
+	per   *Timeout
 	fired atomic.Bool
 	phase atomic.Value
+}
+
+// Distinct httpx.Timeout connect, read, write and pool limits, a zero limit never fires
+type Timeout struct{ Connect, Read, Write, Pool time.Duration }
+
+func (t Timeout) of(phase string) time.Duration {
+	switch phase {
+	case "connect":
+		return t.Connect
+	case "write":
+		return t.Write
+	case "read":
+		return t.Read
+	}
+	return t.Pool
+}
+
+// Watchdog arming each request phase with its own limit, starting with the pool wait
+func newPhaseWatchdog(t Timeout, cancel func()) *watchdog {
+	w := &watchdog{per: &t}
+	w.phase.Store("pool")
+	w.t = time.AfterFunc(time.Hour, func() {
+		w.fired.Store(true)
+		cancel()
+	})
+	w.reset("pool")
+	return w
 }
 
 func newWatchdog(d time.Duration, cancel func()) *watchdog {
@@ -152,8 +180,16 @@ func (w *watchdog) reset(phase string) {
 	if w.t == nil || w.fired.Load() {
 		return
 	}
+	d := w.d
+	if w.per != nil {
+		d = w.per.of(phase)
+	}
 	w.mu.Lock()
-	w.t.Reset(w.d)
+	if d > 0 {
+		w.t.Reset(d)
+	} else {
+		w.t.Stop()
+	}
 	w.mu.Unlock()
 }
 
@@ -209,8 +245,17 @@ func (b *watchedBody) Close() error {
 
 // Sends a request with httpx per phase timeouts and returns the open response stream
 func Stream(client *http.Client, req *http.Request, timeout time.Duration) (*StreamResponse, error) {
+	return streamWith(client, req, func(cancel func()) *watchdog { return newWatchdog(timeout, cancel) })
+}
+
+// Sends a request whose connect, write, read and pool phases each get their own httpx.Timeout limit
+func StreamTimeout(client *http.Client, req *http.Request, t Timeout) (*StreamResponse, error) {
+	return streamWith(client, req, func(cancel func()) *watchdog { return newPhaseWatchdog(t, cancel) })
+}
+
+func streamWith(client *http.Client, req *http.Request, watch func(cancel func()) *watchdog) (*StreamResponse, error) {
 	ctx, cancel := context.WithCancel(req.Context())
-	w := newWatchdog(timeout, cancel)
+	w := watch(cancel)
 	resp, err := client.Do(req.WithContext(w.trace(ctx)))
 	if err != nil {
 		w.stop()
@@ -229,7 +274,15 @@ func Stream(client *http.Client, req *http.Request, timeout time.Duration) (*Str
 
 // Sends a request with httpx per phase timeouts and reads the whole body
 func Do(client *http.Client, req *http.Request, timeout time.Duration) (*Response, error) {
-	s, err := Stream(client, req, timeout)
+	return readStream(Stream(client, req, timeout))
+}
+
+// Sends a request with distinct httpx.Timeout phase limits and reads the whole body
+func DoTimeout(client *http.Client, req *http.Request, t Timeout) (*Response, error) {
+	return readStream(StreamTimeout(client, req, t))
+}
+
+func readStream(s *StreamResponse, err error) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}

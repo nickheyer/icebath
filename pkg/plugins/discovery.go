@@ -147,10 +147,11 @@ func ResolveManifestWinners(manifests []*Manifest) map[string]*Manifest {
 		if shadowed, ok := winners[key]; ok && shadowed.Source == "bundled" && (m.Source == "user" || m.Source == "project") {
 			own, bundled := filepath.Base(m.Path), filepath.Base(shadowed.Path)
 			if m.Path != "" && shadowed.Path != "" && own != bundled {
-				logWarn("ignoring plugin whose manifest name is a bundled key but whose directory differs", "source", m.Source, "path", m.Path, "key", key, "dir", own, "expected", bundled)
+				logWarn(fmt.Sprintf("Ignoring %s plugin at %s: its manifest name '%s' is a bundled plugin's key but the directory is named '%s'; rename the directory to '%s' to override the bundled plugin",
+					m.Source, m.Path, key, own, bundled))
 				continue
 			}
-			logInfo("plugin shadows the bundled copy", "key", key, "path", m.Path, "source", m.Source)
+			logInfo(fmt.Sprintf("Plugin '%s' at %s (%s) shadows the bundled copy at %s", key, m.Path, m.Source, shadowed.Path))
 		}
 		winners[key] = m
 	}
@@ -196,20 +197,21 @@ func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[s
 		return ManifestGate{Action: "placeholder", Enabled: enabledFlag, Error: err, Log: log, Level: level}
 	}
 	if intersects(names, legacyRelayPluginKeys) {
-		err := "removed — Relay lifecycle is owned by icebath core; configure a standard user or system Relay plugins.toml, or use " + tools.RelayPluginsConfigEnv + " for an explicit user-file override"
-		return placeholder(err, "warn", "refusing to load removed Relay plugin "+key, false)
+		err := "removed — Relay lifecycle is owned by Icebath core; configure a standard user or system Relay plugins.toml, or use " + tools.RelayPluginsConfigEnv + " for an explicit user-file override"
+		return placeholder(err, "warn", fmt.Sprintf("Refusing to load removed Icebath Relay plugin '%s'; %s", key, err), false)
 	}
 	if intersects(names, disabled) {
 		if enabledPresent && intersects(names, enabled) {
-			return placeholder(InBothLists, "warn", "plugin "+key+" is listed in both plugins.enabled and plugins.disabled, the disable wins", false)
+			return placeholder(InBothLists, "warn", fmt.Sprintf("Plugin '%s' is listed in both plugins.enabled and plugins.disabled; the disable "+
+				"wins and it will not load — remove it from one of the two lists", key), false)
 		}
-		return placeholder("disabled via config", "debug", "skipping disabled plugin "+key, false)
+		return placeholder("disabled via config", "debug", fmt.Sprintf("Skipping disabled plugin '%s'", key), false)
 	}
 	if m.Kind == "exclusive" {
-		return placeholder("exclusive plugin — activate via <category>.provider config", "debug", "skipping exclusive plugin "+key, false)
+		return placeholder("exclusive plugin — activate via <category>.provider config", "debug", fmt.Sprintf("Skipping '%s' (exclusive, handled by category discovery)", key), false)
 	}
 	if m.Kind == "model-provider" {
-		return placeholder("", "debug", "skipping model-provider plugin "+key, true)
+		return placeholder("", "debug", fmt.Sprintf("Skipping '%s' (model-provider, handled by providers/ discovery)", key), true)
 	}
 	if m.Source == "bundled" {
 		if m.Kind == "backend" {
@@ -220,7 +222,7 @@ func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[s
 		}
 	}
 	if !enabledPresent || !intersects(names, enabled) {
-		return placeholder(fmt.Sprintf("not enabled in config (run `icebath plugins enable %s` to activate)", key), "debug", "skipping plugin "+key+" not in plugins.enabled", false)
+		return placeholder(fmt.Sprintf("not enabled in config (run `icebath plugins enable %s` to activate)", key), "debug", fmt.Sprintf("Skipping '%s' (not in plugins.enabled)", key), false)
 	}
 	if m.Source != "bundled" {
 		if removed := InstalledPluginRemoval(h, m.Name, m.Path); removed != nil {
@@ -228,8 +230,8 @@ func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[s
 			if reason == "" {
 				reason = "no reason recorded"
 			}
-			err := "removed from the icebath plugin catalog: " + reason
-			return placeholder(err, "warn", "refusing to load plugin "+key+" removed from the catalog, run icebath plugins remove", false)
+			err := "removed from the Icebath plugin catalog: " + reason
+			return placeholder(err, "warn", fmt.Sprintf("Refusing to load plugin '%s' — %s; run `icebath plugins remove`", key, err), false)
 		}
 	}
 	return ManifestGate{Action: "load"}

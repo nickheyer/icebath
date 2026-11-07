@@ -259,3 +259,21 @@ func TestOpencodeTransportRederivesPerModel(t *testing.T) {
 		t.Fatal("opencode target detection")
 	}
 }
+
+func TestResolveAuxTaskProviderExportReadsConfiguredProvider(t *testing.T) {
+	ctx := auxCompressionTaskHome(t)
+	if got := ResolveAuxTaskProvider(ctx, "compression"); got != "openrouter" {
+		t.Fatalf("configured compression provider %q", got)
+	}
+	if got := ResolveAuxTaskProvider(ctx, "title_generation"); got != "auto" {
+		t.Fatalf("an unconfigured task resolves %q, want auto", got)
+	}
+}
+
+func TestIsGeminiNativeProviderNameReadsTheNativeSet(t *testing.T) {
+	for name, want := range map[string]bool{"gemini": true, "google": true, "google-gemini": true, "google-ai-studio": true, "openrouter": false, "": false} {
+		if got := IsGeminiNativeProviderName(name); got != want {
+			t.Fatalf("%q: got %v", name, got)
+		}
+	}
+}

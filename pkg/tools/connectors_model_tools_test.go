@@ -278,8 +278,9 @@ func TestConnectorScopeControlsSchemaDiscoveryAndExecution(t *testing.T) {
 				}
 			}
 			opts := DispatchOptions{EnabledToolsets: tc.enabled, DisabledToolsets: tc.disabled}
-			if got := pyIn(name, scopedCall(t, env, "tool_search", map[string]any{"queries": []any{"send mail"}}, opts)["tools"]); got != tc.allowed {
-				t.Fatalf("tool_search lists the connector %v", got)
+			search := scopedCall(t, env, "tool_search", map[string]any{"queries": []any{"send mail"}}, opts)
+			if got := pyIn(name, search["tools"]); got != tc.allowed {
+				t.Fatalf("tool_search lists the connector %v in %v", got, search)
 			}
 			if got := pyIn(name, scopedCall(t, env, "tool_describe", map[string]any{"names": []any{name}}, opts)["tools"]); got != tc.allowed {
 				t.Fatalf("tool_describe lists the connector %v", got)

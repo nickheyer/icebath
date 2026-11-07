@@ -245,26 +245,29 @@ func anthCheckMessage(message map[string]any, toolDrop bool) error {
 
 // Streaming attempt state turning events into StreamEvents
 type anthStreamState struct {
-	diag       *StreamDiag
-	wire       *FailedStreamRequest
-	c          *anthropicClient
-	req        *Request
-	fn         StreamFunc
-	acc        *anthAccumulator
-	hasToolUse bool
-	sawEvent   bool
-	sawStop    bool
-	textWatch  *RunawayStreamWatch
-	thinkWatch *RunawayStreamWatch
-	runaway    string
-	deltasSent bool
-	toolSlots  map[int]int
-	toolNames  []string
-	headers    http.Header
-	status     int
-	started    time.Time
-	estTokens  int
-	lifetime   float64
+	diag        *StreamDiag
+	fence       any
+	writerToken int
+	relay       *anthManagedRelay
+	wire        *FailedStreamRequest
+	c           *anthropicClient
+	req         *Request
+	fn          StreamFunc
+	acc         *anthAccumulator
+	hasToolUse  bool
+	sawEvent    bool
+	sawStop     bool
+	textWatch   *RunawayStreamWatch
+	thinkWatch  *RunawayStreamWatch
+	runaway     string
+	deltasSent  bool
+	toolSlots   map[int]int
+	toolNames   []string
+	headers     http.Header
+	status      int
+	started     time.Time
+	estTokens   int
+	lifetime    float64
 	// First event arrival, the post chunk phase of the wait notice
 	firstChunkAt time.Time
 }
@@ -367,6 +370,9 @@ func (s *anthStreamState) handleEvent(ev *anthEvent) (bool, error) {
 
 // Final response of a completed or runaway cut attempt with the trailing events emitted
 func (s *anthStreamState) finish(latency time.Duration) (*Response, error) {
+	if resp, adopted, err := s.adoptRelayFinal(latency); adopted {
+		return resp, err
+	}
 	if s.runaway == "" && !s.sawStop {
 		if s.sawEvent {
 			return nil, &EmptyStreamError{Message: "Anthropic Messages stream ended before message_stop (possible upstream stream drop)."}
@@ -375,7 +381,7 @@ func (s *anthStreamState) finish(latency time.Duration) (*Response, error) {
 	}
 	if s.runaway != "" {
 		catalogLog.Warn(fmt.Sprintf("Runaway repetition detected in streamed %s; cutting the stream. model=%s", s.runaway, orUnknown2(s.c.route.Model)))
-		message, _ := s.acc.finalize(false)
+		message := s.runawayMessage()
 		message["stop_reason"] = "max_tokens"
 		resp, err := s.c.normalizeResponse(message, s.status, s.headers, latency)
 		if err != nil {
@@ -384,12 +390,8 @@ func (s *anthStreamState) finish(latency time.Duration) (*Response, error) {
 		anthMarkRaw(resp, ccRawRunaway, true)
 		return resp, s.replayTail(resp)
 	}
-	message, jsonErr := s.acc.finalize(true)
-	if jsonErr != nil {
-		s.c.markToolInputBuffered()
-		return nil, jsonErr
-	}
-	if err := anthCheckMessage(message, true); err != nil {
+	message, err := s.finalMessage()
+	if err != nil {
 		return nil, err
 	}
 	resp, err := s.c.normalizeResponse(message, s.status, s.headers, latency)
@@ -434,6 +436,7 @@ func (c *anthropicClient) consumeStream(requestCtx, ctx context.Context, cancel 
 	readerDone := make(chan struct{})
 	go func() {
 		defer close(readerDone)
+		defer releaseFrameSource(src)
 		for {
 			ev, err := src.Next()
 			select {
@@ -484,8 +487,11 @@ func (c *anthropicClient) consumeStream(requestCtx, ctx context.Context, cancel 
 				return nil, w.abandoned
 			}
 		case m := <-events:
+			var final *ccFinalError
 			if w.killed {
-				if m.err != nil {
+				if errors.As(m.err, &final) {
+					unwindErr = streamKillCause(final.err)
+				} else if m.err != nil {
 					unwindErr = streamKillCause(m.err)
 				} else if m.ev != nil {
 					w.call.discard(w.attempt, m.ev.Payload)
@@ -496,11 +502,17 @@ func (c *anthropicClient) consumeStream(requestCtx, ctx context.Context, cancel 
 				if errors.Is(m.err, io.EOF) {
 					return s.finish(time.Since(s.started))
 				}
+				if errors.As(m.err, &final) {
+					return nil, final.err
+				}
 				var pse *ProviderStreamError
 				if errors.As(m.err, &pse) {
 					return nil, c.streamError(pse)
 				}
 				return nil, c.attemptError(ctx, kill, m.err, s)
+			}
+			if !writerStillCurrent(s.fence, s.writerToken, "Anthropic streaming", s.req.Model) {
+				return s.finish(time.Since(s.started))
 			}
 			now := time.Now()
 			w.chunk(now)
@@ -522,6 +534,9 @@ func (c *anthropicClient) consumeStream(requestCtx, ctx context.Context, cancel 
 				return nil, err
 			}
 			if stop {
+				if s.relay != nil && s.sawStop && s.runaway == "" {
+					continue
+				}
 				cancel()
 				return s.finish(time.Since(s.started))
 			}

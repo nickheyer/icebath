@@ -40,6 +40,21 @@ func TestClassification(t *testing.T) {
 	}
 }
 
+func TestIsReservedMatchesCPython(t *testing.T) {
+	cases := map[string]bool{"240.0.0.1": true, "255.255.255.255": true, "::ffff:240.0.0.1": true, "::1": true,
+		"100::1": true, "2001:db8::1": false, "fe00::1": true, "fec0::1": false, "f000::1": true, "1.2.3.4": false,
+		"::": true, "fe80::1%eth0": false}
+	for text, want := range cases {
+		ip, ok := IPAddress(text)
+		if !ok {
+			t.Fatalf("parse %s", text)
+		}
+		if got := IsReserved(ip); got != want {
+			t.Errorf("IsReserved(%s) = %v, want %v", text, got, want)
+		}
+	}
+}
+
 func TestInetAton(t *testing.T) {
 	good := map[string]string{
 		"169.254.169.254": "169.254.169.254", "0xa9fea9fe": "169.254.169.254", "2852039166": "169.254.169.254",

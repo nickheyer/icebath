@@ -579,6 +579,11 @@ func buildKeepaliveHTTPClient(baseURL string, asyncMode bool, verify TLSVerify) 
 	return &http.Client{Transport: ct, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
+// BuildKeepaliveHTTPClient is the keepalive client with the environment only proxy policy, nil when it cannot be built
+func BuildKeepaliveHTTPClient(baseURL string, asyncMode bool, verify TLSVerify) *http.Client {
+	return buildKeepaliveHTTPClient(baseURL, asyncMode, verify)
+}
+
 // Races IPv6 and IPv4 on every direct transport of a ready built client, proxy pools keep their serial connect
 func enableHappyEyeballsOnClient(client *http.Client) {
 	if client == nil {
@@ -620,3 +625,6 @@ func (w safeWriter) Write(p []byte) (int, error) {
 func installSafeStdio() {
 	signal.Ignore(syscall.SIGPIPE)
 }
+
+// Ignores SIGPIPE at agent startup so a vanished stdout or stderr pipe never kills the process
+func InstallSafeStdio() { installSafeStdio() }

@@ -340,6 +340,8 @@ func (e *Executor) trackedWorkerIDs() []WorkerID {
 	return ids
 }
 
+func (e *Executor) TrackedWorkerIDs() []WorkerID { return e.trackedWorkerIDs() }
+
 // InterruptWorkers raises the interrupt bit on every tracked worker
 func (e *Executor) InterruptWorkers(reason string) {
 	e.workersMu.Lock()

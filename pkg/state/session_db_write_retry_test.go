@@ -122,3 +122,23 @@ func TestConfirmedWALFileKeepsReadPool(t *testing.T) {
 		t.Fatal("a confirmed WAL file did not enable the read pool")
 	}
 }
+
+func TestExecuteWriteCommitsThroughTheRetriedTransaction(t *testing.T) {
+	db := noMoreRowsDB(t)
+	ctx := context.Background()
+	calls := 0
+	err := db.ExecuteWrite(ctx, func(conn SQLiteConn) error {
+		calls++
+		if calls == 1 {
+			return &SQLiteError{Class: SQLiteInterfaceError, Msg: "no more rows available"}
+		}
+		_, err := conn.ExecContext(ctx, "INSERT INTO state_meta (key, value) VALUES ('ew', 'ok')")
+		return err
+	})
+	if err != nil || calls != 2 {
+		t.Fatalf("err %v calls %d", err, calls)
+	}
+	if v, ok, err := db.GetMeta(ctx, "ew"); !ok || v != "ok" || err != nil {
+		t.Fatalf("meta %q %v %v", v, ok, err)
+	}
+}

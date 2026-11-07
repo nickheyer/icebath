@@ -25,7 +25,7 @@ func buildVersion() string {
 
 // Three integer segments of a version string, nil when a segment has no leading digits
 func versionTuple(v string) []int {
-	head := strings.TrimPrefix(strings.TrimSpace(v), "v")
+	head := strings.TrimLeft(strings.TrimSpace(v), "v")
 	if i := strings.IndexAny(head, "-+"); i >= 0 {
 		head = head[:i]
 	}

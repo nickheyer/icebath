@@ -253,7 +253,7 @@ func TestSourceRetiredChannelResolvesTheQualifiedBuildBeforeCurrentStable(t *tes
 	}
 }
 
-func TestSourceRetirementRefusesToDowngradeNewerSource(t *testing.T) {
+func TestSourceRetirementRefusesDowngradingNewerSource(t *testing.T) {
 	for _, transport := range []string{"git", "shallow", "zip"} {
 		s := newChSource(t)
 		a := chPublishedTree(t)

@@ -162,3 +162,6 @@ func getpass(prompt string) (string, error) {
 	}
 	return strings.TrimSuffix(line, "\n"), nil
 }
+
+// Getpass is the echo free terminal line read with its stdin fallback
+func Getpass(prompt string) (string, error) { return getpass(prompt) }

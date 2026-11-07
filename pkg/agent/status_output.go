@@ -187,8 +187,10 @@ func (a *AIAgent) warningPresentationEnabled() (enabled bool) {
 			enabled = true
 		}
 	}()
-	return config.WarningNotificationsEnabled(platform, a.notificationConfig)
+	return warningNotificationsEnabled(a.homeContext(), platform, a.notificationConfig)
 }
+
+var warningNotificationsEnabled = config.WarningNotificationsEnabled
 
 func (a *AIAgent) emitDiagnosticStatus(text string) {
 	a.emitStatusKind("lifecycle", config.DiagnosticText(text), "_emit_status")
@@ -286,14 +288,25 @@ func (a *AIAgent) emitNoticeClear(key string) {
 }
 
 // Rewrites the live status line so a long provider wait is not an anonymous spinner
-func (a *AIAgent) emitWaitNotice(text string) {
-	a.TouchActivity(text)
-	if a.thinkingCallback != nil {
-		a.callCallback("thinking_callback", a.thinkingCallback, "_emit_wait_notice", text)
-	}
+func (a *AIAgent) emitWaitNotice(text string) { a.emitWaitNoticeValue(text) }
+
+func (a *AIAgent) emitWaitNoticeValue(text any) {
+	a.TouchActivity(statusText(text))
+	a.callCallback("thinking_callback", a.thinkingCallback, "_emit_wait_notice", text)
 }
 
-func (a *AIAgent) emitDiagnosticWait(text string) { a.emitWaitNotice(text) }
+// Carries the wait text as diagnostic text so the TUI tells a retry notice from a spinner verb
+func (a *AIAgent) emitDiagnosticWait(text string) { a.emitWaitNoticeValue(config.DiagnosticText(text)) }
+
+// Calls the thinking callback directly so a failure it raises propagates to the caller
+func (a *AIAgent) callThinking(text any) {
+	if a.thinkingCallback == nil {
+		return
+	}
+	if fn := reflect.ValueOf(a.thinkingCallback); fn.Kind() != reflect.Func || !fn.IsNil() {
+		callDynamic(fn, []any{text})
+	}
+}
 
 func (a *AIAgent) EmitWaitNotice(text string) { a.emitWaitNotice(text) }
 

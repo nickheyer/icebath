@@ -34,6 +34,9 @@ func icebathXAIUserAgent() string {
 	return "Icebath-Agent/" + icebathVersion()
 }
 
+// Stable icebath user agent for direct xAI HTTP calls
+func IcebathXAIUserAgent() string { return icebathXAIUserAgent() }
+
 // Reports whether a host is the x.ai apex or one of its subdomains
 func isXAIOriginHost(host string) bool {
 	return host == "x.ai" || strings.HasSuffix(host, ".x.ai")
@@ -100,6 +103,12 @@ func resolveExplicitXAIAPIKey(env *Env) string {
 // Bearer credentials for direct xAI endpoints, OAuth first unless an explicit API key is preferred
 func resolveXAIHTTPCredentials(env *Env, preferAPIKey bool) xaiHTTPCredentials {
 	return resolveXAIHTTPCredentialsWith(env, preferAPIKey, false, "")
+}
+
+// Provider, bearer key and base url for direct xAI calls, OAuth first unless the API key is preferred
+func ResolveXAIHTTPCredentials(env *Env, preferAPIKey bool) (provider, apiKey, baseURL string) {
+	c := resolveXAIHTTPCredentials(env, preferAPIKey)
+	return c.Provider, c.APIKey, c.BaseURL
 }
 
 // Credentials after a rejected bearer, the issuing pool entry force refreshed before any other is selected

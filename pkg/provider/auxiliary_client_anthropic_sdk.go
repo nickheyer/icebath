@@ -79,6 +79,15 @@ func buildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeo
 		betas: anthCommonBetasForBaseURL(normalized, dropContext1MBeta)}, nil
 }
 
+// Anthropic SDK client for a static key or bearer callable, nil with the error when the build fails
+func BuildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeout float64, dropContext1MBeta bool) (any, error) {
+	c, err := buildAnthropicClient(ctx, apiKey, baseURL, timeout, dropContext1MBeta)
+	if err != nil || c == nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 // Client whose default headers merge the given headers over its own, the SDK with_options call
 func (c *anthropicSDKClient) withDefaultHeaders(headers map[string]string) *anthropicSDKClient {
 	merged := map[string]string{}
@@ -116,18 +125,55 @@ func anthSDKRequest(apiKwargs map[string]any, stream bool) (map[string]any, map[
 
 // Messages call aggregated through the stream, falling back to a plain create where streaming is unavailable
 func createAnthropicMessage(ctx context.Context, client *anthropicSDKClient, apiKwargs map[string]any, onStreamEvent func(event any) error) (map[string]any, error) {
-	anthSanitizeKwargs(apiKwargs, "")
-	message, err := client.streamFinalMessage(ctx, apiKwargs, onStreamEvent)
-	if err == nil {
-		return message, nil
+	return createAnthropicMessageWith(ctx, client, apiKwargs, anthMessageCall{preferStream: true, onStreamEvent: onStreamEvent})
+}
+
+// Keyword arguments of one Messages call, the log prefix, stream preference and the two streaming callbacks
+type anthMessageCall struct {
+	logPrefix     string
+	preferStream  bool
+	onStreamEvent func(event any) error
+	onResponse    func(response any)
+}
+
+// Agent Messages call over its anthropic client with the stream preference and the response header hook
+func CreateAnthropicMessage(ctx context.Context, client any, apiKwargs map[string]any, logPrefix string, preferStream bool, onResponse func(response any)) (any, error) {
+	c, ok := client.(*anthropicSDKClient)
+	if !ok {
+		return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'messages'", client)
 	}
-	var timeout *AuxTimeoutError
-	var cancelled *AuxiliaryExplicitCancellation
-	if errors.As(err, &timeout) || errors.As(err, &cancelled) || !client.inner.transport.StreamUnavailable(err) {
-		return nil, err
+	return createAnthropicMessageWith(ctx, c, apiKwargs, anthMessageCall{logPrefix: logPrefix, preferStream: preferStream, onResponse: onResponse})
+}
+
+// Streams to the final Message when preferred, a plain create when not or when the stream is unavailable
+func createAnthropicMessageWith(ctx context.Context, client *anthropicSDKClient, apiKwargs map[string]any, call anthMessageCall) (map[string]any, error) {
+	anthSanitizeKwargs(apiKwargs, call.logPrefix)
+	if call.preferStream {
+		message, err := client.streamFinalMessage(ctx, apiKwargs, call)
+		if err == nil {
+			return message, nil
+		}
+		var timeout *AuxTimeoutError
+		var cancelled *AuxiliaryExplicitCancellation
+		if errors.As(err, &timeout) || errors.As(err, &cancelled) || !client.inner.transport.StreamUnavailable(err) {
+			return nil, err
+		}
+		slog.Debug(fmt.Sprintf("%sAnthropic Messages stream unavailable; falling back to messages.create(): %v", call.logPrefix, err))
 	}
-	slog.Debug(fmt.Sprintf("Anthropic Messages stream unavailable; falling back to messages.create(): %v", err))
 	return client.create(ctx, apiKwargs)
+}
+
+// Hands the stream's HTTP response to the hook, a failing hook only logged
+func anthOfferResponse(call anthMessageCall, resp *http.Response) {
+	if call.onResponse == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Debug(fmt.Sprintf("%son_response callback failed: %v", call.logPrefix, r))
+		}
+	}()
+	call.onResponse(resp)
 }
 
 // Posts the Messages request and returns the response with its body still open
@@ -154,12 +200,14 @@ func (c *anthropicSDKClient) post(ctx context.Context, apiKwargs map[string]any,
 }
 
 // Final Message of a streamed call, every event offered to the callback and message_stop required
-func (c *anthropicSDKClient) streamFinalMessage(ctx context.Context, apiKwargs map[string]any, onStreamEvent func(event any) error) (map[string]any, error) {
+func (c *anthropicSDKClient) streamFinalMessage(ctx context.Context, apiKwargs map[string]any, call anthMessageCall) (map[string]any, error) {
 	resp, err := c.post(ctx, apiKwargs, true)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	anthOfferResponse(call, resp)
+	onStreamEvent := call.onStreamEvent
 	events := newAnthSSEEvents(resp.Body, resp.Header)
 	acc := newAnthAccumulator()
 	var stopDetails any
@@ -190,7 +238,7 @@ func (c *anthropicSDKClient) streamFinalMessage(ctx context.Context, apiKwargs m
 			if errors.As(cbErr, &timeout) || errors.As(cbErr, &cancelled) {
 				return nil, cbErr
 			}
-			slog.Debug(fmt.Sprintf("on_stream_event callback failed: %v", cbErr))
+			slog.Debug(fmt.Sprintf("%son_stream_event callback failed: %v", call.logPrefix, cbErr))
 		}
 	}
 	if !sawStop {
@@ -247,4 +295,9 @@ func buildAnthropicBedrockClient(ctx context.Context, region string, timeout flo
 	}
 	return &anthropicSDKClient{inner: built.(*anthropicClient), baseURL: "https://bedrock-runtime." + region + ".amazonaws.com", transport: tr,
 		betas: betas}, nil
+}
+
+// BuildAnthropicBedrockClient is the Anthropic Bedrock SDK client of a region with the request timeout
+func BuildAnthropicBedrockClient(ctx context.Context, region string, timeout float64) (any, error) {
+	return buildAnthropicBedrockClient(ctx, region, timeout)
 }

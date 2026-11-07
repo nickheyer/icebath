@@ -71,7 +71,7 @@ func (a *AIAgent) latestTodoResponse(history []map[string]any) ([]any, any, bool
 		switch d := data.(type) {
 		case *pyjson.Object:
 			if v, ok := d.Get("todos"); ok {
-				if list, ok := v.([]any); ok {
+				if list, ok := pyjson.Plain(v).([]any); ok {
 					rev, has := d.Get("revision")
 					if !has {
 						rev = 1
@@ -226,7 +226,7 @@ func contentHasRealPayload(content any) bool {
 
 // Caps delegate_task calls in one turn at the concurrent children limit, other calls all kept
 func capDelegateTaskCalls(ctx context.Context, toolCalls []state.ToolCall) []state.ToolCall {
-	maxChildren := maxConcurrentChildren(ctx)
+	maxChildren := tools.MaxConcurrentChildren(ctx)
 	delegateCount := 0
 	for _, tc := range toolCalls {
 		if tc.Function.Name == "delegate_task" {
@@ -358,8 +358,10 @@ func (a *AIAgent) executeToolCalls(ctx context.Context, assistantMessage *state.
 	toolCalls := assistantMessage.ToolCalls
 	a.executingTools = true
 	err := func() error {
-		defer func() { a.executingTools = false }()
 		ctx := tools.WithConnectionSurface(ctx, agentConnectionSurface(a))
+		prevCtx := a.toolCallCtx
+		a.toolCallCtx = ctx
+		defer func() { a.executingTools, a.toolCallCtx = false, prevCtx }()
 		exec := a.toolExecutor()
 		if len(toolCalls) <= 1 {
 			return exec.ExecuteToolCallsSequential(ctx, toolCalls, messages, effectiveTaskID, true)

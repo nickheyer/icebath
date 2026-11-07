@@ -38,6 +38,9 @@ var loadCompressionConfig = func(ctx context.Context) any {
 	return map[string]any{}
 }
 
+// Effective aux compression request budget the idle window is floored at, swapped by tests
+var compressionAuxTimeout = provider.EffectiveAuxTimeout
+
 // Idle timeout and total ceiling seconds of context compression, nil config read from the config file
 func ResolveContextCompressionTimeouts(ctx context.Context, compressionCfg any) (float64, float64) {
 	idle, ceiling := DefaultContextTimeoutSeconds, DefaultContextTotalCeilingSeconds
@@ -62,7 +65,7 @@ func ResolveContextCompressionTimeouts(ctx context.Context, compressionCfg any) 
 	}
 	if idle > 0 {
 		ceiling = max(ceiling, idle)
-		if auxBudget := provider.EffectiveAuxTimeout(ctx, "compression", nil); auxBudget > 0 {
+		if auxBudget := compressionAuxTimeout(ctx, "compression", nil); auxBudget > 0 {
 			ceiling = max(ceiling, auxBudget)
 			idle = max(idle, min(auxBudget, ceiling))
 		}

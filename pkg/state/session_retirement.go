@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -958,4 +960,284 @@ func retirePrunable(ctx context.Context, conn SQLiteConn, sessionIDs []string) (
 		return nil, err
 	}
 	return quiet, nil
+}
+
+// Expired retirement predicate over a state_meta value
+const retiredExpiredSQL = "json_valid(value) AND json_extract(value, '$.retired_at') < ?"
+
+// Drops the sweep expires markers under the prefix retired before the cutoff
+func reclaimExpired(ctx context.Context, conn SQLiteConn, prefix string, cutoff float64) error {
+	_, err := conn.ExecContext(ctx, "DELETE FROM state_meta WHERE key GLOB ? AND "+retiredExpiredSQL+" AND json_extract(value, '$.expires')", prefix+"*", cutoff)
+	return err
+}
+
+// Reclaims terminal admissions, workers and sweep markers retired longer ago than olderThan, user delete fences kept
+func pruneRetiredTombstones(ctx context.Context, conn SQLiteConn, olderThan float64) error {
+	at := now()
+	for _, prefix := range []string{TerminalAdmissionPrefix, TerminalWorkerPrefix} {
+		if _, err := conn.ExecContext(ctx, "UPDATE state_meta SET value=json_set(value, '$.retired_at', ?) WHERE key GLOB ? "+
+			"AND json_valid(value) AND json_extract(value, '$.retired_at') IS NULL", at, prefix+"*"); err != nil {
+			return err
+		}
+	}
+	cutoff := at - olderThan
+	rows, err := queryObjects(ctx, conn, "SELECT key,value FROM state_meta WHERE key GLOB ? AND "+retiredExpiredSQL, TerminalAdmissionPrefix+"*", cutoff)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		decoded, err := pyjson.Loads(pyStr(rowValue(r, "value")))
+		if err != nil {
+			return err
+		}
+		row, _ := decoded.(*pyjson.Object)
+		field := func(name string) (any, error) {
+			if row == nil {
+				return nil, &pyint.Error{Kind: "TypeError", Msg: "list indices must be integers or slices, not str"}
+			}
+			v, ok := row.Get(name)
+			if !ok {
+				return nil, &pyint.Error{Kind: "KeyError", Msg: "'" + name + "'"}
+			}
+			return v, nil
+		}
+		admission, err := field("admission_id")
+		if err != nil {
+			return err
+		}
+		admissionID, isStr := admission.(string)
+		if !isStr {
+			return &pyint.Error{Kind: "TypeError", Msg: "can only concatenate str (not \"" + pyTypeName(admission) + "\") to str"}
+		}
+		var parts [3]any
+		for i, name := range []string{"principal_id", "target_session_id", "request_id"} {
+			if parts[i], err = field(name); err != nil {
+				return err
+			}
+		}
+		identity, err := terminalIdentityKey(parts[0], parts[1], parts[2])
+		if err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, "DELETE FROM state_meta WHERE key IN (?,?,?)", rowValue(r, "key"), TerminalResultPrefix+admissionID, identity); err != nil {
+			return err
+		}
+	}
+	if _, err := conn.ExecContext(ctx, "DELETE FROM state_meta WHERE key GLOB ? AND "+retiredExpiredSQL, TerminalWorkerPrefix+"*", cutoff); err != nil {
+		return err
+	}
+	for _, prefix := range []string{RetiredPrefix, RouteFencePrefix} {
+		if err := reclaimExpired(ctx, conn, prefix, cutoff); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// True when this store holds the retired marker of the session id
+func RetiredIn(ctx context.Context, conn SQLiteConn, sessionID string) (bool, error) {
+	row, err := connRow(ctx, conn, "SELECT 1 AS one FROM state_meta WHERE key=?", RetiredPrefix+sessionID)
+	return row != nil, err
+}
+
+// True when the session id was retired in this store, read through a pooled reader
+func (d *SessionDB) RetiredSession(ctx context.Context, sessionID string) (bool, error) {
+	var retired bool
+	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
+		var err error
+		retired, err = RetiredIn(ctx, conn, sessionID)
+		return err
+	})
+	return retired, err
+}
+
+// Refusal code and message for creating an explicit id that is live or retired, empty strings when the create may proceed
+func CreateConflict(ctx context.Context, conn SQLiteConn, sessionID string) (string, string, error) {
+	row, err := connRow(ctx, conn, "SELECT 1 AS one FROM sessions WHERE id=?", sessionID)
+	if err != nil {
+		return "", "", err
+	}
+	if row != nil {
+		return "session_exists", "Session already exists", nil
+	}
+	retired, err := RetiredIn(ctx, conn, sessionID)
+	if err != nil || !retired {
+		return "", "", err
+	}
+	return "session_deleted", "Session was deleted; its id cannot be reused", nil
+}
+
+// Probe over one derived session id inside the read or write that walks the generations
+type GenerationProbe func(ctx context.Context, conn SQLiteConn, sessionID string) (bool, error)
+
+// First derived generation a new request may use, skipping retired ids unless pinned and live ids spent
+func (d *SessionDB) FirstGeneration(ctx context.Context, derive func(int) string, pinned, spent GenerationProbe) (int, string, error) {
+	generation, sid := 0, ""
+	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
+		for {
+			sid = derive(generation)
+			retired, err := RetiredIn(ctx, conn, sid)
+			if err != nil {
+				return err
+			}
+			if retired {
+				if pinned != nil {
+					hold, err := pinned(ctx, conn, sid)
+					if err != nil || hold {
+						return err
+					}
+				}
+			} else if spent == nil {
+				return nil
+			} else if used, err := spent(ctx, conn, sid); err != nil || !used {
+				return err
+			}
+			generation++
+		}
+	})
+	return generation, sid, err
+}
+
+// Makes permanent every fence a walk passed before the session id, false when a passed marker was reclaimed
+func KeepPassedFences(ctx context.Context, conn SQLiteConn, derive func(int) string, sessionID string) (bool, error) {
+	for generation := 0; ; generation++ {
+		sid := derive(generation)
+		if sid == sessionID {
+			return true, nil
+		}
+		retired, err := RetiredIn(ctx, conn, sid)
+		if err != nil || !retired {
+			return false, err
+		}
+		if _, err := conn.ExecContext(ctx, "UPDATE state_meta SET value=json_remove(value, '$.expires') WHERE key=? AND json_valid(value)", RetiredPrefix+sid); err != nil {
+			return false, err
+		}
+	}
+}
+
+// Profile slot of an agent namespaced routing key, main for the launch profile and any other key shape
+func RouteNamespace(sessionKey any) string {
+	key := ""
+	if sessionKey != nil {
+		key = pyStr(sessionKey)
+	}
+	parts := strings.Split(key, ":")
+	if len(parts) > 2 && parts[0] == "agent" && parts[1] != "" {
+		return parts[1]
+	}
+	return "main"
+}
+
+// State meta key of the routing fence one profile namespace holds for a retired session
+func RouteFenceKey(namespace, sessionID string) string {
+	return RouteFencePrefix + namespace + ":" + sessionID
+}
+
+// True when a routing save must skip the entry, bound by name through routeRetiredParams
+const routeRetiredSQL = `(
+    EXISTS (SELECT 1 FROM state_meta m
+             WHERE m.key = :retired_prefix || json_extract(:entry, '$.session_id')
+               AND (:ns = 'main' OR NOT CASE WHEN json_valid(m.value)
+                                             THEN json_extract(m.value, '$.own') IS NOT NULL ELSE 0 END))
+    OR EXISTS (SELECT 1 FROM state_meta f
+                WHERE f.key = :fence_prefix || :ns || ':' || json_extract(:entry, '$.session_id')
+                  AND NOT CASE WHEN json_valid(f.value)
+                               THEN coalesce(json_extract(f.value, '$.expires')
+                                             AND json_extract(f.value, '$.retired_at') < :now - :horizon, 0)
+                               ELSE 0 END
+                  AND (:ns != 'main' OR NOT EXISTS (
+                          SELECT 1 FROM sessions s WHERE s.id = json_extract(:entry, '$.session_id')))))`
+
+// Named parameters of the retired route predicate for one entry saved at the given time
+func routeRetiredParams(sessionKey, entryJSON string, at float64) []any {
+	return []any{sql.Named("entry", entryJSON), sql.Named("ns", RouteNamespace(sessionKey)), sql.Named("now", at),
+		sql.Named("horizon", retryHorizonS), sql.Named("retired_prefix", RetiredPrefix), sql.Named("fence_prefix", RouteFencePrefix)}
+}
+
+// True when a routing save or the legacy sessions json import must skip this entry
+func (d *SessionDB) RouteRetired(ctx context.Context, sessionKey, entryJSON string) (bool, error) {
+	var retired bool
+	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
+		return conn.QueryRowContext(ctx, "SELECT "+routeRetiredSQL, routeRetiredParams(sessionKey, entryJSON, now())...).Scan(&retired)
+	})
+	return retired, err
+}
+
+// Ids among the given sessions whose own retired marker is a sweep marker that ages out
+func (d *SessionDB) ExpiringRetirements(ctx context.Context, sessionIDs []string) (map[string]bool, error) {
+	ids := make([]any, len(sessionIDs))
+	for i, sid := range sessionIDs {
+		ids[i] = sid
+	}
+	list, err := pyjson.Dumps(ids)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	err = d.readCtx(ctx, false, func(conn SQLiteConn) error {
+		rows, err := connRows(ctx, conn, "SELECT key FROM state_meta WHERE key IN (SELECT ? || value FROM json_each(?)) "+
+			"AND json_valid(value) AND json_extract(value, '$.expires')", RetiredPrefix, list)
+		for _, row := range rows {
+			out[strings.TrimPrefix(pyStr(row["key"]), RetiredPrefix)] = true
+		}
+		return err
+	})
+	return out, err
+}
+
+// Fences the retired sessions of one profile namespace in the shared routing index and drops the routes naming them
+func fenceSharedRoutes(ctx context.Context, conn SQLiteConn, namespace string, sessionIDs, expiring []string) error {
+	if err := reclaimExpired(ctx, conn, RouteFencePrefix, now()-retryHorizonS); err != nil {
+		return err
+	}
+	owned := map[string]map[string]bool{}
+	for _, sid := range sessionIDs {
+		names := map[string]bool{namespace: true}
+		row, err := connRow(ctx, conn, "SELECT 1 AS one FROM sessions WHERE id=?", sid)
+		if err != nil {
+			return err
+		}
+		if row == nil {
+			names["main"] = true
+		}
+		for name := range names {
+			if err := markRetired(ctx, conn, RouteFenceKey(name, sid), slices.Contains(expiring, sid), false); err != nil {
+				return err
+			}
+		}
+		owned[sid] = names
+	}
+	rows, err := connRows(ctx, conn, "SELECT scope,session_key,entry_json FROM gateway_routing")
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		target := entrySessionID(row["entry_json"])
+		if _, err := hashableIn(target, nil); err != nil {
+			return err
+		}
+		sid, ok := target.(string)
+		if !ok || !owned[sid][RouteNamespace(row["session_key"])] {
+			continue
+		}
+		if _, err := conn.ExecContext(ctx, "DELETE FROM gateway_routing WHERE scope=? AND session_key=?", row["scope"], row["session_key"]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// True when the principal's request already committed a mutation receipt against the session
+func (d *SessionDB) HasMutationReceipt(ctx context.Context, principalID, sessionID, requestID string) (bool, error) {
+	for _, v := range []string{principalID, sessionID, requestID} {
+		if err := runtimeText(v); err != nil {
+			return false, err
+		}
+	}
+	key, _, err := MutationReceiptKey(principalID, sessionID, requestID, "model", pyjson.NewObject(), 0, nil)
+	if err != nil {
+		return false, err
+	}
+	row, err := d.readOne(ctx, "SELECT 1 AS one FROM state_meta WHERE key=?", key)
+	return row != nil, err
 }

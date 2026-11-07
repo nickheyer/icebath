@@ -227,6 +227,9 @@ var secretConfigKeys = map[string]bool{
 	"authorization": true, "private_key": true, "bearer": true, "jwt": true,
 }
 
+// Exported lowercase config key names whose values are secrets
+var SecretConfigKeys = secretConfigKeys
+
 var (
 	secretConfigKeySuffixes = []string{"_api_key", "_token", "_secret", "_password", "_key", "_access_key"}
 	nonSecretKeySuffixes    = []string{"_url", "_host", "_user", "_id", "_domain", "_scheme"}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -119,3 +120,5 @@ func managedImageCatalog(ctx context.Context, env *tools.Env, includeKrea, inclu
 	}
 	return order, catalog, falDefaultModel
 }
+
+func init() { provider.ManagedImageRoute = managedRoute }

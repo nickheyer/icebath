@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -520,5 +522,53 @@ func TestConversationHistoryAfterCompression(t *testing.T) {
 	a.lastCompressionAttemptInPlace = &f
 	if conversationHistoryAfterCompression(a, msgs, prev) != nil {
 		t.Fatal("recorded rotation keeps a baseline")
+	}
+}
+
+func TestRecoverRotatedCompressionSessionAdoptsTheLiveChild(t *testing.T) {
+	t.Setenv("ICEBATH_SESSION_ID", "parent")
+	db := newRecoveryDB(t)
+	for _, err := range []error{
+		db.CreateSession(state.NewSession{ID: "parent", Source: "cli"}),
+		appendRecoveryRow(db, "parent", "before compression"),
+		db.EndSession("parent", "compression"),
+		db.CreateSession(state.NewSession{ID: "child", Source: "cli", ParentSessionID: "parent"}),
+		appendRecoveryRow(db, "child", "summary carried"),
+	} {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine := &recoveryEngine{ContextCompressor: newCompressorWith(t, 128_000, nil)}
+	a := &AIAgent{sessionDB: db, sessionID: "parent", platform: "telegram", cachedSystemPrompt: "stale"}
+	a.contextCompressor = engine
+	h := &sessionTagHandler{}
+	lg := logging.GetLogger("agent.test_adopt_live_child")
+	lg.SetLevel(logging.LevelDebug)
+	lg.SetPropagate(false)
+	lg.AddHandler(h)
+	t.Cleanup(func() { lg.RemoveHandler(h); lg.SetPropagate(true); logging.ClearSessionContext() })
+	got, ok := recoverRotatedCompressionSession(t.Context(), a)
+	if !ok || len(got) != 1 || got[0]["content"] != "summary carried" {
+		t.Fatalf("recovered %v %v", got, ok)
+	}
+	if a.sessionID != "child" || !a.sessionDBCreated || a.cachedSystemPrompt != "" || a.lastFlushedDBIdx != 1 {
+		t.Fatalf("agent not re-pointed: %q %v %q %d", a.sessionID, a.sessionDBCreated, a.cachedSystemPrompt, a.lastFlushedDBIdx)
+	}
+	if a.flushedDBMessageSessionID == nil || *a.flushedDBMessageSessionID != "child" || !a.flushedDBMessageIDs[rowIdentity(got[0])] {
+		t.Fatal("flush identity not seeded from the adopted rows")
+	}
+	if len(engine.starts) != 1 || engine.starts[0]["session_id"] != "child" || engine.starts[0]["old_session_id"] != "parent" ||
+		engine.starts[0]["boundary_reason"] != "compression" || engine.starts[0]["platform"] != "telegram" {
+		t.Fatalf("engine start %v", engine.starts)
+	}
+	if v := strings.TrimSpace(os.Getenv("ICEBATH_SESSION_ID")); v != "child" {
+		t.Fatalf("session context not rebound: %q", v)
+	}
+	lg.Info("after adopt")
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.tags) != 1 || h.tags[0] != " [child]" {
+		t.Fatalf("log records not tagged with the adopted session: %q", h.tags)
 	}
 }

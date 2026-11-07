@@ -363,3 +363,12 @@ func TestBedrockTransportBetasCarryContext1M(t *testing.T) {
 		}
 	}
 }
+
+func TestAnthropicResponseGuardrailIntervenedReadsTheActionField(t *testing.T) {
+	if !AnthropicResponseGuardrailIntervened(map[string]any{BedrockGuardrailActionField: "intervened"}) {
+		t.Fatal("an INTERVENED action must read as a guardrail substitution")
+	}
+	if AnthropicResponseGuardrailIntervened(map[string]any{BedrockGuardrailActionField: "NONE"}) || AnthropicResponseGuardrailIntervened(nil) {
+		t.Fatal("a reply without the INTERVENED action is ordinary model output")
+	}
+}

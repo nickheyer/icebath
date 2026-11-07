@@ -2,7 +2,9 @@ package pypath
 
 import (
 	"errors"
+	"os"
 	"runtime"
+	"strings"
 	"syscall"
 )
 
@@ -20,4 +22,19 @@ func PathlibIgnoredError(err error) bool {
 		return true
 	}
 	return false
+}
+
+// Followed stat of pathlib exists, is_file and is_dir, nil info without error where those report False
+func PathlibStat(p string) (os.FileInfo, error) {
+	if strings.ContainsRune(p, 0) {
+		return nil, nil
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		if PathlibIgnoredError(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return fi, nil
 }

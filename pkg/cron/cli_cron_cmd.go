@@ -1095,7 +1095,7 @@ func (s *Store) jobAction(ctx context.Context, w io.Writer, action, jobID, verb 
 	c := &cronjobArgs{Action: action, JobID: jobID}
 	if action == "run" {
 		c.env = &tools.Env{Values: &sync.Map{}}
-		c.env.Values.Store("session.async_delivery", false)
+		tools.DeclareStatelessChannel(c.env)
 	}
 	result := s.cronAPI(ctx, c)
 	if !pyrepr.Truthy(field(result, "success", nil)) {

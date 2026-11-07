@@ -168,6 +168,9 @@ func currentNousState(env PoolEnv) map[string]any {
 // The profile holds a guest identity
 func hasGuest(env PoolEnv) bool { return isGuestState(currentNousState(env)) }
 
+// HasGuest reports whether the stored Nous state is a guest session
+func HasGuest(env PoolEnv) bool { return hasGuest(env) }
+
 // The activity is work for the Desktop app on this machine
 func onLocalDesktopBackend(env PoolEnv) bool { return tools.ServesLocalDesktopNow(env.ctx()) }
 
@@ -189,8 +192,16 @@ func trialModel(env PoolEnv) string {
 	return ""
 }
 
+// Guest trial model while the home's Nous identity carries free inference, else empty
+func TrialModel(ctx context.Context, h string) string {
+	return trialModel(modelsPoolEnv(ctxForHome(ctx, h)))
+}
+
 // The profile's Nous identity is a guest that carries inference here
 func hasFreeTierAccount(env PoolEnv) bool { return profileFreeInferenceActive(env) }
+
+// HasFreeTierAccount reports whether the signed in Nous account has free inference active
+func HasFreeTierAccount(env PoolEnv) bool { return hasFreeTierAccount(env) }
 
 // A guest that serves connectors and managed tools only, so inference readers treat it as signed out
 func guestWithoutFreeTier(state map[string]any) bool {
@@ -405,6 +416,9 @@ func isConnectorsOnly(token string) bool {
 	}
 	return len(scopes) > 0 && !scopes[NousInferenceInvokeScope]
 }
+
+// IsConnectorsOnly reports whether the token carries only the connectors scope
+func IsConnectorsOnly(token string) bool { return isConnectorsOnly(token) }
 
 // Bearer for a connectors call, the profile token then a guest's connectors token, preferring one outliving skew
 func heldConnectorsToken(state map[string]any, skew time.Duration) string {
@@ -953,6 +967,9 @@ func guestNoticePending(env PoolEnv) bool {
 	state := currentNousState(env)
 	return freeInferenceActive(env, state) && !pyTruthy(state[GuestNoticeFlag])
 }
+
+// GuestNoticePending reports whether a guest carrying inference still owes the one time availability notice
+func GuestNoticePending(env PoolEnv) bool { return guestNoticePending(env) }
 
 // Persists the notice flag on the guest state, false when there is no guest to mark
 func markGuestNoticeShown(env PoolEnv) (bool, error) {

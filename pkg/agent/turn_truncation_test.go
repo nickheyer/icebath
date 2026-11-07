@@ -98,7 +98,9 @@ func TestStopThinkingSpinnerClearsCallback(t *testing.T) {
 }
 
 func TestShouldStreamEarlyRefusals(t *testing.T) {
-	if shouldStream(t.Context(), &AIAgent{disableStreaming: true}) {
+	off := &AIAgent{}
+	off.DisableStreaming()
+	if shouldStream(t.Context(), off) {
 		t.Fatal("disabled streaming streamed")
 	}
 	for _, base := range []string{"acp://local", "ACP+TCP://host:1"} {

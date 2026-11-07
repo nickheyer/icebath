@@ -131,7 +131,9 @@ func registerMeetCLI(parser any) {
 		return run(cmd, map[string]any{"text": a[0], "node": optional(cmd, "node", sayNode)})
 	}
 	registerNodeCLI(sub["node"])
-	root.RunE = func(*cobra.Command, []string) error { return exitErr(meetDispatch(map[string]any{"meet_command": nil})) }
+	root.RunE = func(*cobra.Command, []string) error {
+		return exitErr(meetDispatch(map[string]any{"meet_command": nil}))
+	}
 }
 
 // Registered meet handler over the parsed namespace, the exit code carried as an error

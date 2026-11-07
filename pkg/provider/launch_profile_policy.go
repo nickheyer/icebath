@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -21,6 +22,9 @@ var launchEnvSnapshot struct {
 
 // Profile listing the eager activation reads, replaced by tests that simulate an unreadable profiles directory
 var launchProfilesToServe = profiles.ProfilesToServe
+
+// Per profile log routing the eager activation turns on, replaced by tests that record the routed homes
+var enableProfileLogRouting = logging.EnableProfileLogRouting
 
 // Process env frozen as the launch profile's own, the first capture wins and later calls return a copy
 func CaptureLaunchEnv() map[string]string {
@@ -93,19 +97,19 @@ func launchResolvedPath(p string) string {
 	}
 }
 
-// Activates multi profile hosting at host startup when more than one servable home exists, true when it activated
-func ActivateMultiProfileHostingEagerly(ctx context.Context) bool {
+// Activates multi profile hosting and per home log routing when more than one servable home exists, true when it activated
+func ActivateMultiProfileHostingEagerly(ctx context.Context) (bool, error) {
 	if IsMultiplexActive(ctx) {
-		return false
+		return false, nil
 	}
 	homes, err := servableProfileHomes(ctx)
 	if err != nil {
 		slog.Warn("Could not enumerate this host's profile homes; activating multi-profile hosting fail-closed (unscoped credential reads will raise instead of borrowing the launch profile's)", "error", err)
 		ActivateMultiProfileHosting()
-		return true
+		return true, nil
 	}
 	if len(homes) < 2 {
-		return false
+		return false, nil
 	}
 	slog.Info("Multi-profile hosting activated at startup", "homes", len(homes))
 	ActivateMultiProfileHosting()
@@ -114,8 +118,10 @@ func ActivateMultiProfileHostingEagerly(ctx context.Context) bool {
 		sorted = append(sorted, h)
 	}
 	sort.Strings(sorted)
-	enableProfileLogRouting(sorted)
-	return true
+	if _, err := enableProfileLogRouting(sorted); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 // Launch profile env, frozen once multiplexing is active and the live process env before

@@ -116,3 +116,16 @@ func TestToolsConfigCategoriesListEveryProviderEnvKey(t *testing.T) {
 		t.Fatal("nous marker")
 	}
 }
+
+func TestPortableMCPServerSetExport(t *testing.T) {
+	ctx := context.Background()
+	got, want := PortableMCPServerSet(ctx), portableMCPServerNames(ctx)
+	if len(got) != len(want) {
+		t.Fatalf("PortableMCPServerSet = %v, want %v", got, want)
+	}
+	for name := range want {
+		if !got[name] {
+			t.Fatalf("PortableMCPServerSet lacks %s", name)
+		}
+	}
+}

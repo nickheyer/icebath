@@ -206,6 +206,25 @@ type FileSyncManager struct {
 	sleep        func(time.Duration)
 }
 
+// File sync manager of a remote backend environment, nil for backends that keep none
+func EnvironmentSyncManager(e Environment) *FileSyncManager {
+	switch b := e.(type) {
+	case *sshEnv:
+		return b.syncManager
+	case *modalEnv:
+		return b.syncManager
+	case *daytonaEnv:
+		b.lock.Lock()
+		defer b.lock.Unlock()
+		return b.syncManager
+	case *vercelEnv:
+		b.lock.Lock()
+		defer b.lock.Unlock()
+		return b.syncManager
+	}
+	return nil
+}
+
 // NewFileSyncManager wires the transport callbacks, bulk callbacks being optional
 func NewFileSyncManager(env *Env, getFiles func() []syncFile, upload func(string, string) error, delete func([]string) error,
 	bulkUpload func([]syncFile) error, bulkDownload func(string) error) *FileSyncManager {

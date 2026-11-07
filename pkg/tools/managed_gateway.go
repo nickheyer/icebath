@@ -38,6 +38,9 @@ func peekNousAccessToken(env *Env) string {
 	return strings.TrimSpace(NousAccount.PeekAccessToken(env))
 }
 
+// Stored Nous access token read without a refresh, empty when none
+func PeekNousAccessToken(env *Env) string { return peekNousAccessToken(env) }
+
 // Reads a Nous Subscriber access token, refreshing through the account source when needed
 func readNousAccessToken(env *Env) string {
 	if v := readUserTokenOverride(env); v != "" {

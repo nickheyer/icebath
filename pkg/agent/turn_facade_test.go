@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 func TestRelayOutcomeForFailure(t *testing.T) {
@@ -23,10 +24,11 @@ func TestRelayOutcomeForFailure(t *testing.T) {
 		{context.DeadlineExceeded, "timed_out"},
 		{&net.OpError{Op: "dial", Err: timeoutErr{}}, "timed_out"},
 		{errors.New("boom"), "failed"},
+		{fmt.Errorf("tool: %w", tools.ErrKeyboardInterrupt), "cancelled"},
 		{"panic text", "failed"},
 	}
 	for _, c := range cases {
-		if got := relayOutcomeForFailure(c.v); got != c.want {
+		if got := relayOutcomeForFailure(t.Context(), c.v); got != c.want {
 			t.Errorf("%#v: got %s want %s", c.v, got, c.want)
 		}
 	}
@@ -101,10 +103,10 @@ func TestSocketIsDeadProbe(t *testing.T) {
 
 type noClientsAgent struct{ replaced, closed int }
 
-func (n *noClientsAgent) primaryClient() any                    { return nil }
-func (n *noClientsAgent) cachedRequestClient() any              { return nil }
-func (n *noClientsAgent) replacePrimaryOpenAIClient(string)     { n.replaced++ }
-func (n *noClientsAgent) closeCachedRequestOpenAIClient(string) { n.closed++ }
+func (n *noClientsAgent) primaryClient() any                     { return nil }
+func (n *noClientsAgent) cachedRequestClient() any               { return nil }
+func (n *noClientsAgent) replacePrimaryOpenAIClient(string) bool { n.replaced++; return true }
+func (n *noClientsAgent) closeCachedRequestOpenAIClient(string)  { n.closed++ }
 
 func TestCleanupDeadConnectionsWithoutClients(t *testing.T) {
 	n := &noClientsAgent{}

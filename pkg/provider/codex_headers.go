@@ -40,6 +40,11 @@ func codexCloudflareHeaders(accessToken, baseURL string) map[string]string {
 	return headers
 }
 
+// Codex backend identity and account headers for an access token and base url
+func CodexCloudflareHeaders(accessToken, baseURL string) map[string]string {
+	return codexCloudflareHeaders(accessToken, baseURL)
+}
+
 // Workspace account and residency headers decoded from the OAuth JWT, absent on a malformed token
 func codexAccountHeaders(accessToken string) map[string]string {
 	headers := map[string]string{}
@@ -104,6 +109,11 @@ func applyRequiredCodexHeaders(headers map[string]string, accessToken, baseURL s
 		out[name] = value
 	}
 	return out
+}
+
+// ApplyRequiredCodexHeaders adds the identity headers the official Codex endpoint requires
+func ApplyRequiredCodexHeaders(headers map[string]string, accessToken, baseURL string) map[string]string {
+	return applyRequiredCodexHeaders(headers, accessToken, baseURL)
 }
 
 // Lower cased name set of a header map

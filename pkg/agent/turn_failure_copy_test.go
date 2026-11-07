@@ -115,7 +115,7 @@ func TestInvalidResponseFailureReasonReadsEmbeddedCode(t *testing.T) {
 		{fakeResponse{Error: map[string]any{"code": 524.0}}, "timeout"},
 		{fakeResponse{Error: map[string]any{"code": "abc"}}, "invalid_response"},
 		{fakeResponse{Error: map[string]any{"code": 418}}, "invalid_response"},
-		{map[string]any{"error": map[string]any{"code": 429}}, "invalid_response"},
+		{map[string]any{"error": map[string]any{"code": 429}}, "rate_limit"},
 	}
 	for _, c := range cases {
 		if got := InvalidResponseFailureReason(c.response); got != c.want {

@@ -301,3 +301,8 @@ func estimateMessageTokensCached(msg any, imageCost int) int {
 	rememberMessageTokens(key, messageTokenEntry{pins: pins, text: text, images: images})
 	return text + images*imageCost
 }
+
+// Memoized rough token weight of one message row at the given per image cost
+func EstimateMessageTokensRough(msg any, imageCost int) int {
+	return estimateMessageTokensCached(msg, imageCost)
+}

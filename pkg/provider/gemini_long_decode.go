@@ -32,6 +32,11 @@ func longDecodeStaleMultiplier(apiPayload map[string]any) int {
 	return longDecodeHops(extra["max_output_tokens"])
 }
 
+// Hop count that scales the non streaming stale budget of one api payload
+func LongDecodeStaleMultiplier(apiPayload map[string]any) int {
+	return longDecodeStaleMultiplier(apiPayload)
+}
+
 // First candidate of a Gemini payload, empty when absent
 func geminiCandidate(payload map[string]any) map[string]any {
 	candidates, _ := payload["candidates"].([]any)

@@ -233,6 +233,12 @@ func chatCompletionsSanitizeMessages(messages []map[string]any, kwargs map[strin
 	return out
 }
 
+// Transport convert_messages over message maps with only the model and base URL kwargs
+func chatCompletionsConvertMessages(messages []map[string]any, model, baseURL string) []map[string]any {
+	out, _ := chatCompletionsSanitizeMessages(messages, map[string]any{"model": model, "base_url": baseURL}).([]map[string]any)
+	return out
+}
+
 // Union of the data_use requirements the messages carry
 func dataUseOfDicts(messages []map[string]any) map[string]bool {
 	out := map[string]bool{}

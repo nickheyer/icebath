@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -256,8 +257,9 @@ func TestOpenAICustomBaseURLUsesEnvOnlyProxyClient(t *testing.T) {
 	if hc == nil || hc == http.DefaultClient {
 		t.Fatal("no keepalive client handed to the OpenAI client")
 	}
-	if want := provider.BuildKeepaliveHTTPClient(f.srv.URL+"/v1", false, provider.TLSVerify{}); want == nil {
-		t.Fatal("keepalive client unavailable without proxies")
+	want := provider.BuildKeepaliveHTTPClient(f.srv.URL+"/v1", false, provider.TLSVerify{})
+	if want == nil || reflect.TypeOf(hc.Transport) != reflect.TypeOf(want.Transport) {
+		t.Fatalf("handed %T, keepalive client %v", hc.Transport, want)
 	}
 }
 

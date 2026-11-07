@@ -415,3 +415,21 @@ func TestFailedTeardownStillSettlesTheBarrier(t *testing.T) {
 		t.Fatal("the torn down generation was lent again")
 	}
 }
+
+// Registry acquired handles report registry ownership and a direct open does not
+func TestSharedRegistryOwnedReportsRegistryHandles(t *testing.T) {
+	dir := t.TempDir()
+	shared, err := Acquire(context.Background(), filepath.Join(dir, "shared.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ReleaseOrClose(shared)
+	direct, err := Open(filepath.Join(dir, "direct.db"), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	if !shared.SharedRegistryOwned() || direct.SharedRegistryOwned() {
+		t.Fatalf("shared %v direct %v", shared.SharedRegistryOwned(), direct.SharedRegistryOwned())
+	}
+}

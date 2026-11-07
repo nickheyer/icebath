@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1325,5 +1326,31 @@ func TestHeadedWindowInLocalMode(t *testing.T) {
 		if strings.HasPrefix(arg, "--headless") {
 			t.Fatalf("argv %q", captured[0])
 		}
+	}
+}
+
+func TestRunningInstanceAnswersTheLiveChromiumOnTheDirOnly(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"webSocketDebuggerUrl": "ws://127.0.0.1/devtools/browser/source"}`))
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	port := ln.Addr().(*net.TCPAddr).Port
+	live := t.TempDir()
+	if err := os.WriteFile(filepath.Join(live, "DevToolsActivePort"), []byte(fmt.Sprintf("%d\n/devtools/browser/source\n", port)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(fmt.Sprintf("host-%d", os.Getpid()), filepath.Join(live, "SingletonLock")); err != nil {
+		t.Fatal(err)
+	}
+	if p, path, pid, ok := RunningInstance(live); !ok || p != port || path != "/devtools/browser/source" || pid != os.Getpid() {
+		t.Fatalf("live %d %q %d %v", p, path, pid, ok)
+	}
+	if _, _, _, ok := RunningInstance(t.TempDir()); ok {
+		t.Fatal("empty dir answered a running instance")
 	}
 }

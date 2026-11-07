@@ -86,7 +86,7 @@ func runCodexCompaction(t *testing.T, a *AIAgent, messages []map[string]any, for
 	t.Helper()
 	system := "system"
 	approx := 100000
-	out, prompt, err := compressContextViaCodexAppServer(context.Background(), a, messages, &system, &approx, "test", force, time.Now(), nil)
+	out, prompt, err := compressContext(context.Background(), a, messages, &system, compressContextOptions{ApproxTokens: &approx, TaskID: "test", Force: force})
 	if err != nil {
 		t.Fatalf("codex compaction: %v", err)
 	}
@@ -193,17 +193,22 @@ func TestRetiringCodexCompactionClosesAndDropsTheSession(t *testing.T) {
 }
 
 func TestResetReadDedupCachesForgetsTheScreenshotFrameOfTheSession(t *testing.T) {
+	type homeKey struct{}
 	var got []string
 	prev := ResetScreenshotDedup
-	ResetScreenshotDedup = func(sessionID string) { got = append(got, sessionID) }
+	ResetScreenshotDedup = func(ctx context.Context, sessionID string) {
+		home, _ := ctx.Value(homeKey{}).(string)
+		got = append(got, home+"/"+sessionID)
+	}
 	t.Cleanup(func() { ResetScreenshotDedup = prev })
-	resetReadDedupCaches("task", "")
-	resetReadDedupCaches("task", "sess-1")
-	if !slices.Equal(got, []string{"sess-1"}) {
+	ctx := context.WithValue(context.Background(), homeKey{}, "profile-home")
+	resetReadDedupCaches(ctx, "task", "")
+	resetReadDedupCaches(ctx, "task", "sess-1")
+	if !slices.Equal(got, []string{"profile-home/sess-1"}) {
 		t.Fatalf("screenshot resets = %v", got)
 	}
 	ResetScreenshotDedup = nil
-	resetReadDedupCaches("task", "sess-1")
+	resetReadDedupCaches(ctx, "task", "sess-1")
 }
 
 func TestSummaryAndAuxFallbackWarningsAreLatchedPerDistinctFailure(t *testing.T) {
@@ -221,5 +226,81 @@ func TestSummaryAndAuxFallbackWarningsAreLatchedPerDistinctFailure(t *testing.T)
 	warnSummaryOrAuxFallback(a)
 	if *a.lastCompressionSummaryWarning != "boom" || *a.lastAuxFallbackWarningKey != key {
 		t.Fatalf("latches moved: %v %v", *a.lastCompressionSummaryWarning, *a.lastAuxFallbackWarningKey)
+	}
+}
+
+func TestCodexAppServerCompressionFailurePreservesBookkeeping(t *testing.T) {
+	a, session, rec := newCodexCompactionAgent(t, &provider.CodexTurnResult{Error: "compact failed"}, "native")
+	var events [][2]string
+	a.statusCallback = func(kind, text string) { events = append(events, [2]string{kind, text}) }
+	a.contextCompressor.Base().LastPromptTokens = 123
+	messages := []map[string]any{{"role": "user", "content": "hi"}}
+	out, prompt := runCodexCompaction(t, a, messages, true)
+	if !sameMessageList(out, messages) || prompt != "cached prompt" || session.calls != 1 {
+		t.Fatalf("calls=%d prompt=%q", session.calls, prompt)
+	}
+	if a.contextCompressor.Base().CompressionCount != 0 || a.contextCompressor.Base().LastPromptTokens != 123 {
+		t.Fatalf("bookkeeping touched")
+	}
+	rec.mu.Lock()
+	first, last := rec.descs[0], rec.descs[len(rec.descs)-1]
+	rec.mu.Unlock()
+	if first != "context compression started" || last != "context compression failed" {
+		t.Fatalf("touches %q .. %q", first, last)
+	}
+	want := [][2]string{{"lifecycle", CompactionStatus}, {"warn", "⚠ Codex app-server compaction failed: compact failed"}}
+	if !slices.Equal(events, want) {
+		t.Fatalf("events = %v", events)
+	}
+}
+
+func TestSummaryAndAuxFallbackWarningsEmitOncePerDistinctFailure(t *testing.T) {
+	c := NewContextCompressor(context.Background(), feasibilityCompressorOptions("test-model", 100000, 0.5, "lean"))
+	a := &AIAgent{contextCompressor: c}
+	var warned []string
+	a.statusCallback = func(kind, text string) { warned = append(warned, text) }
+	c.SetLastSummaryError("boom")
+	warnSummaryOrAuxFallback(a)
+	warnSummaryOrAuxFallback(a)
+	c.lastSummaryError = nil
+	c.LastAuxModelFailureModel, c.LastAuxModelFailureError = "aux-model", "502"
+	warnSummaryOrAuxFallback(a)
+	warnSummaryOrAuxFallback(a)
+	want := []string{"⚠ Compression summary failed: boom. Inserted a fallback context marker.",
+		"ℹ Configured compression model 'aux-model' failed, so Icebath summarised with your main model instead. Check auxiliary.compression.model in your config."}
+	if !slices.Equal(warned, want) {
+		t.Fatalf("warned = %v", warned)
+	}
+}
+
+func TestCodexNativeBoundaryClearsStaleHermesFallbackStreak(t *testing.T) {
+	c := NewContextCompressor(context.Background(), feasibilityCompressorOptions("test-model", 100000, 0.5, "lean"))
+	c.fallbackCompressionStreak = 1
+	c.LastSummaryFallbackUsed = true
+	a, _, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "normal-turn-1"}, "native")
+	a.contextCompressor = c
+	turn := &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "normal-turn-1", Compacted: true}
+	if !provider.RecordCodexAppServerCompaction(a, turn, 0, false) {
+		t.Fatalf("compacted turn not recorded")
+	}
+	if c.fallbackCompressionStreak != 0 || !c.verifyCompactionClearedThreshold {
+		t.Fatalf("streak=%d verify=%v", c.fallbackCompressionStreak, c.verifyCompactionClearedThreshold)
+	}
+}
+
+func TestObservedCodexNativeCompactionEmitsTheCompactionStatus(t *testing.T) {
+	a, _, _ := newCodexCompactionAgent(t, &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "normal-turn-1"}, "native")
+	var events [][2]string
+	a.statusCallback = func(kind, text string) { events = append(events, [2]string{kind, text}) }
+	turn := &provider.CodexTurnResult{ThreadID: "thread-1", TurnID: "normal-turn-1", Compacted: true}
+	if !provider.RecordCodexAppServerCompaction(a, turn, 0, false) {
+		t.Fatalf("compacted turn not recorded")
+	}
+	if len(events) == 0 || events[0] != [2]string{"lifecycle", CompactionStatus} {
+		t.Fatalf("events = %v", events)
+	}
+	events = nil
+	if !provider.RecordCodexAppServerCompaction(a, turn, 0, true) || slices.Contains(events, [2]string{"lifecycle", CompactionStatus}) {
+		t.Fatalf("forced boundary events = %v", events)
 	}
 }

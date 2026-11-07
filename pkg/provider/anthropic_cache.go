@@ -87,6 +87,11 @@ func envelopeToolPartCacheMarkersSupported(providerName, baseURL string) bool {
 	return !isLitellmRoute(strings.ToLower(pyStripSpace(providerName)), baseURL)
 }
 
+// Reports whether the route accepts cache markers on tool parts
+func EnvelopeToolPartCacheMarkersSupported(providerName, baseURL string) bool {
+	return envelopeToolPartCacheMarkersSupported(providerName, baseURL)
+}
+
 // A request no later call can read back from cache
 func isOneShotRequest(messages []map[string]any, tools []map[string]any) bool {
 	if len(tools) > 0 {
@@ -238,6 +243,11 @@ func effectiveCacheTTL(ttl, model, providerName string) string {
 	return "1h"
 }
 
+// Cache lifetime the route honours for the configured TTL
+func EffectiveCacheTTL(ttl, model, providerName string) string {
+	return effectiveCacheTTL(ttl, model, providerName)
+}
+
 // Marks the static system prefix and optionally the full prompt, returning markers applied
 func applySystemCacheMarkers(message map[string]any, marker map[string]any, staticPrefix string, nativeAnthropic, markSuffix, fallbackToWhole bool) int {
 	content, isStr := asString(message["content"])
@@ -371,6 +381,11 @@ func stripAnthropicCacheControl(messages []map[string]any) []map[string]any {
 	return messages
 }
 
+// Removes cache control markers from the request messages
+func StripAnthropicCacheControl(messages []map[string]any) []map[string]any {
+	return stripAnthropicCacheControl(messages)
+}
+
 // Re canonicalises planner output before re planning
 func stripPriorDecoration(messages []map[string]any) []map[string]any {
 	for i, msg := range messages {
@@ -396,6 +411,11 @@ func stripAnthropicToolCacheControl(tools []map[string]any) []map[string]any {
 		cleaned = append(cleaned, copyT)
 	}
 	return cleaned
+}
+
+// Removes cache control markers from the tool schemas
+func StripAnthropicToolCacheControl(tools []map[string]any) []map[string]any {
+	return stripAnthropicToolCacheControl(tools)
 }
 
 // Wire visible cache markers in a request local plan
@@ -472,6 +492,15 @@ type cachePlanOptions struct {
 	toolPartMarkers       bool
 }
 
+// Cache layout options of one resolved request destination
+type PromptCachePlanOptions struct {
+	TTL                   string
+	NativeAnthropic       bool
+	StaticSystemPrefix    string
+	DirectNativeToolCache bool
+	ToolPartMarkers       bool
+}
+
 // Copy on write cache sections for one resolved request destination
 func buildPromptCachePlan(apiMessages []map[string]any, tools []map[string]any, opts cachePlanOptions) ([]map[string]any, []map[string]any) {
 	plannedTools := stripAnthropicToolCacheControl(tools)
@@ -498,6 +527,14 @@ func buildPromptCachePlan(apiMessages []map[string]any, tools []map[string]any, 
 	}
 	splitUnmarkedScaffolds(messages)
 	return messages, plannedTools
+}
+
+// Applies the copy on write cache sections to the request messages and tools
+func BuildPromptCachePlan(apiMessages, tools []map[string]any, o PromptCachePlanOptions) ([]map[string]any, []map[string]any) {
+	return buildPromptCachePlan(apiMessages, tools, cachePlanOptions{
+		ttl: o.TTL, nativeAnthropic: o.NativeAnthropic, staticSystemPrefix: o.StaticSystemPrefix,
+		directNativeToolCache: o.DirectNativeToolCache, toolPartMarkers: o.ToolPartMarkers,
+	})
 }
 
 // Anthropic cache markers on the system prompt and the latest cacheable messages
@@ -533,6 +570,11 @@ func applyAnthropicCacheControl(apiMessages []map[string]any, ttl string, native
 	}
 	splitUnmarkedScaffolds(messages)
 	return messages
+}
+
+// Messages with Anthropic cache_control breakpoints applied for the given ttl and layout
+func ApplyAnthropicCacheControl(apiMessages []map[string]any, ttl string, nativeAnthropic bool, staticSystemPrefix string, toolPartMarkers bool) []map[string]any {
+	return applyAnthropicCacheControl(apiMessages, ttl, nativeAnthropic, staticSystemPrefix, toolPartMarkers)
 }
 
 func modelNameSuggestsMinimaxM3(model string) bool {

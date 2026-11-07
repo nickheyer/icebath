@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -193,17 +192,6 @@ func (d *DB) ResolveSessionID(idOrPrefix string) (string, error) {
 	return "", nil
 }
 
-// Clears the end of a session so it can be resumed, dropping an automatic archive
-func (d *DB) ReopenSession(id string) error {
-	return d.write(func(tx *Tx) error {
-		if _, err := tx.Exec("UPDATE sessions SET ended_at = NULL, end_reason = NULL WHERE id = ?", id); err != nil {
-			return err
-		}
-		_, err := tx.Exec("UPDATE sessions SET archived = 0, auto_archived = 0 WHERE id = ? AND auto_archived = 1", id)
-		return err
-	})
-}
-
 // Records the model and billing route a session runs on
 func (d *DB) UpdateSessionModel(id, model, provider, baseURL string) error {
 	return d.write(func(tx *Tx) error {
@@ -213,45 +201,10 @@ func (d *DB) UpdateSessionModel(id, model, provider, baseURL string) error {
 	})
 }
 
-// Records the working directory and git facts of a session
+// Records the working directory and git facts of a session through the generation claim
 func (d *DB) UpdateSessionCwd(id, cwd, repoRoot, branch string) error {
-	return d.write(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE sessions SET cwd = ?, git_repo_root = ?, git_branch = ? WHERE id = ?",
-			nullStr(cwd), nullStr(repoRoot), nullStr(branch), id)
-		return err
-	})
-}
-
-// Sets the archived flag of a session
-func (d *DB) SetArchived(id string, archived bool) error {
-	return d.write(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE sessions SET archived = ?, auto_archived = 0 WHERE id = ?", boolInt(archived), id)
-		return err
-	})
-}
-
-// Sets the pinned flag of a session
-func (d *DB) SetPinned(id string, pinned bool) error {
-	return d.write(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE sessions SET pinned = ? WHERE id = ?", boolInt(pinned), id)
-		return err
-	})
-}
-
-// Sets the hidden flag of a session
-func (d *DB) SetHidden(id string, hidden bool) error {
-	return d.write(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE sessions SET hidden = ? WHERE id = ?", boolInt(hidden), id)
-		return err
-	})
-}
-
-// Stamps when the person last read a session
-func (d *DB) MarkRead(id string) error {
-	return d.write(func(tx *Tx) error {
-		_, err := tx.Exec("UPDATE sessions SET last_read_at = ? WHERE id = ?", now(), id)
-		return err
-	})
+	_, err := d.UpdateSessionCwdClaim(context.Background(), id, cwd, branch, repoRoot, false)
+	return err
 }
 
 func boolInt(b bool) int {
@@ -466,112 +419,9 @@ func assignValue(dest, value any) error {
 	return nil
 }
 
-// Number of sessions, every row or only those of a source
-func (d *DB) SessionCount(source string) (int, error) {
-	var n int
-	err := d.read(func(q querier) error {
-		if source == "" {
-			return q.QueryRow("SELECT COUNT(*) FROM sessions").Scan(&n)
-		}
-		return q.QueryRow("SELECT COUNT(*) FROM sessions WHERE source = ?", source).Scan(&n)
-	})
-	return n, err
-}
-
 // Freshest continuation of a session, the session itself when it was never compressed away
 func (d *DB) CompressionTip(id string) (string, error) {
 	return d.GetCompressionTip(context.Background(), id)
-}
-
-// Deletes ended sessions idle longer than the retention, returning how many went
-func (d *DB) PruneSessions(olderThan time.Duration, source string) (int, error) {
-	cutoff := now() - olderThan.Seconds()
-	count := 0
-	err := d.write(func(tx *Tx) error {
-		where := `ended_at IS NOT NULL AND pinned = 0 AND COALESCE(last_activity_at,
-			(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = sessions.id), started_at) < ?`
-		params := []any{cutoff}
-		if source != "" {
-			where += " AND source = ?"
-			params = append(params, source)
-		}
-		rows, err := tx.Query("SELECT id FROM sessions WHERE "+where, params...)
-		if err != nil {
-			return err
-		}
-		var ids []string
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			ids = append(ids, id)
-		}
-		rows.Close()
-		count = len(ids)
-		for start := 0; start < len(ids); start += 500 {
-			end := min(start+500, len(ids))
-			chunk := ids[start:end]
-			ph := placeholders(len(chunk))
-			for _, stmt := range []string{
-				"UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id IN (" + ph + ")",
-				"DELETE FROM messages WHERE session_id IN (" + ph + ")",
-				"DELETE FROM compression_locks WHERE session_id IN (" + ph + ")",
-				"DELETE FROM session_turn_leases WHERE conversation_id IN (" + ph + ")",
-				"DELETE FROM sessions WHERE id IN (" + ph + ")",
-			} {
-				if _, err := tx.Exec(stmt, args(chunk)...); err != nil {
-					return err
-				}
-			}
-		}
-		return deleteUnreferencedPrompts(tx)
-	})
-	return count, err
-}
-
-// Archives sessions idle longer than the window, pinned ones excepted, returning how many
-func (d *DB) ArchiveStaleSessions(idle time.Duration) (int, error) {
-	cutoff := now() - idle.Seconds()
-	count := 0
-	err := d.write(func(tx *Tx) error {
-		res, err := tx.Exec(`UPDATE sessions SET archived = 1, auto_archived = 1 WHERE archived = 0 AND pinned = 0
-			AND COALESCE(last_activity_at, (SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = sessions.id), started_at) < ?`, cutoff)
-		if err != nil {
-			return err
-		}
-		n, _ := res.RowsAffected()
-		count = int(n)
-		return nil
-	})
-	return count, err
-}
-
-// Reclaims free pages, blocking writers while it runs
-func (d *DB) Vacuum() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.conn == nil {
-		return &SQLiteError{Class: SQLiteProgrammingError, Msg: "Cannot operate on a closed database."}
-	}
-	_, err := d.conn.ExecContext(d.openCtx, "VACUUM")
-	return err
-}
-
-// Share of the file that is free pages
-func (d *DB) FreelistRatio() (float64, error) {
-	var pages, free int64
-	err := d.read(func(q querier) error {
-		if err := q.QueryRow("PRAGMA page_count").Scan(&pages); err != nil {
-			return err
-		}
-		return q.QueryRow("PRAGMA freelist_count").Scan(&free)
-	})
-	if err != nil || pages == 0 {
-		return 0, err
-	}
-	return float64(free) / float64(pages), nil
 }
 
 // Typed view of a session dict, nil for a missing row

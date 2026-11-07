@@ -140,7 +140,7 @@ func auxRelayHookArgs(client AuxClient, kwargs, metadata map[string]any, provide
 
 // Sends one non streaming attempt through relay with progress streaming and hard cancel isolation
 func auxRelaySyncCompletion(ctx context.Context, client AuxClient, kwargs map[string]any, provider, apiMode string, create func(ctx context.Context, request map[string]any) (any, error)) (any, error) {
-	kwargs = auxPrepareChatMessages(client, kwargs)
+	kwargs = auxPrepareChatMessages(ctx, client, kwargs)
 	record := auxRelayAuxCallContext(ctx)
 	if record == nil {
 		record = map[string]any{}
@@ -175,7 +175,7 @@ func auxRelaySyncCompletion(ctx context.Context, client AuxClient, kwargs map[st
 
 // Async twin of the relayed completion, awaiting the provider callback without thread isolation
 func auxRelayAsyncCompletion(ctx context.Context, client AuxClient, kwargs map[string]any, provider, apiMode string, create func(ctx context.Context, request map[string]any) (any, error)) (any, error) {
-	kwargs = auxPrepareChatMessages(client, kwargs)
+	kwargs = auxPrepareChatMessages(ctx, client, kwargs)
 	callback := create
 	if callback == nil {
 		callback = func(ctx context.Context, request map[string]any) (any, error) {
@@ -198,7 +198,7 @@ func auxRelayAsyncCompletion(ctx context.Context, client AuxClient, kwargs map[s
 
 // Streams one attempt through relay, a completed response from a stream ignoring client unwrapped as is
 func auxRelaySyncStream(ctx context.Context, client AuxClient, kwargs map[string]any, provider, apiMode string) (any, error) {
-	kwargs = auxPrepareChatMessages(client, kwargs)
+	kwargs = auxPrepareChatMessages(ctx, client, kwargs)
 	create := func(ctx context.Context, request map[string]any) (any, error) {
 		return client.CreateChatCompletion(ctx, BypassChatSDKRequestTransform(request, client))
 	}

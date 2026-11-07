@@ -129,6 +129,9 @@ func jsonIndent(v any) string {
 // Error text capped at the tool error budget in code points with the truncation marker appended
 func boundErrorText(text string) string { return boundModelErrorText(nil, text) }
 
+// Error text clamped to the display bound
+func BoundErrorText(text string) string { return boundErrorText(text) }
+
 // Error envelope with the error key first and extra keys sorted after it
 func toolErrorJSON(message string, extra map[string]any) string {
 	var buf bytes.Buffer
@@ -978,6 +981,9 @@ func resolveWebProvider(env *Env, configured, capability string) WebProvider {
 func activeSearchProvider(env *Env) WebProvider {
 	return resolveWebProvider(env, registryConfiguredBackend(env, "search"), "search")
 }
+
+// Web search provider the registry resolves for env, nil when none is available
+func ActiveSearchProvider(env *Env) WebProvider { return activeSearchProvider(env) }
 
 func activeExtractProvider(env *Env) WebProvider {
 	return resolveWebProvider(env, registryConfiguredBackend(env, "extract"), "extract")

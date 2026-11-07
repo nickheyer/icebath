@@ -574,6 +574,9 @@ func NewVercelSandboxEnvironment(ctx context.Context, env *Env, o VercelOptions)
 
 func (v *vercelEnv) EnvType() string { return "vercel_sandbox" }
 
+// Home directory of the sandbox user that remote media and image delivery resolve tilde paths against
+func (v *vercelEnv) RemoteHome() (string, bool) { return v.remoteHome, v.remoteHome != "" }
+
 func (v *vercelEnv) remoteIcebathDir() string {
 	return strings.TrimRight(v.remoteHome, "/") + "/.icebath"
 }

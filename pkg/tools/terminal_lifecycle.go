@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -103,6 +104,9 @@ func callInFlight(keys ...string) func() {
 	}
 }
 
+// Exported face of the in flight hold for pkg/codeexec, the returned func releases
+func CallInFlight(keys ...string) func() { return callInFlight(keys...) }
+
 // Reports whether a key is a persistent docker key bound to one session workspace
 func isWorkspaceKey(key string) bool {
 	return strings.Contains(key, ":ws:")
@@ -152,6 +156,9 @@ func cleanupInactiveEnvs(env *Env, lifetime time.Duration) {
 	}
 }
 
+// Exported face of the inactive environment sweep for pkg/codeexec
+func CleanupInactiveEnvs(env *Env, lifetime time.Duration) { cleanupInactiveEnvs(env, lifetime) }
+
 // GetActiveEnv returns the active environment of a task or nil
 func GetActiveEnv(env *Env, taskID string) (Environment, error) {
 	lookup, err := resolveContainerTaskID(env, taskID)
@@ -166,6 +173,21 @@ func GetActiveEnv(env *Env, taskID string) (Environment, error) {
 	return termPool.active[taskID], nil
 }
 
+// Active environment of the task's cache key with its activity stamped, nil when none
+func TouchTaskActivity(env *Env, taskID string) (Environment, error) {
+	effective, err := resolveContainerTaskID(env, taskID)
+	if err != nil {
+		return nil, err
+	}
+	termPool.Lock()
+	defer termPool.Unlock()
+	cached := termPool.active[effective]
+	if cached != nil {
+		termPool.lastActivity[effective] = time.Now()
+	}
+	return cached, nil
+}
+
 // Per task creation lock
 func creationLockFor(taskID string) *sync.Mutex {
 	termPool.creationMu.Lock()
@@ -176,6 +198,15 @@ func creationLockFor(taskID string) *sync.Mutex {
 		termPool.creationLocks[taskID] = l
 	}
 	return l
+}
+
+// Creation lock of the task's environment cache key
+func TaskCreationLock(env *Env, taskID string) (*sync.Mutex, error) {
+	effective, err := resolveContainerTaskID(env, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return creationLockFor(effective), nil
 }
 
 // EnsureTaskEnv lazily creates and caches the sandbox env of a task, nil on the local backend
@@ -223,11 +254,49 @@ func EnsureTaskEnv(ctx context.Context, env *Env, taskID string) (Environment, e
 		envLog(env).Warn("Lazy environment init failed", "backend", envType, "task", shortTaskID(effective), "error", err)
 		return nil, nil
 	}
-	termPool.Lock()
-	termPool.active[effective] = created
-	termPool.lastActivity[effective] = time.Now()
-	termPool.Unlock()
+	RegisterTaskEnvironment(effective, created)
 	envLog(env).Info("Environment lazily initialized", "backend", envType, "task", shortTaskID(effective))
+	return created, nil
+}
+
+// Caches an environment under its effective task id with a fresh activity stamp
+func RegisterTaskEnvironment(effectiveTaskID string, e Environment) {
+	termPool.Lock()
+	termPool.active[effectiveTaskID] = e
+	termPool.lastActivity[effectiveTaskID] = time.Now()
+	termPool.Unlock()
+}
+
+// Creates and caches the task environment execute_code shares with the terminal tool
+func CreateTaskEnvironment(ctx context.Context, env *Env, cfg map[string]any, taskID string) (Environment, error) {
+	effective, err := resolveContainerTaskID(env, taskID)
+	if err != nil {
+		return nil, err
+	}
+	envType, _ := cfg["env_type"].(string)
+	taskEnvOverrides.Lock()
+	overrides := taskEnvOverrides.m[effective]
+	taskEnvOverrides.Unlock()
+	if overrides == nil {
+		overrides = map[string]any{}
+	}
+	envLog(env).Info(fmt.Sprintf("Creating new %s environment for execute_code task %s...", envType, shortTaskID(effective)))
+	cwd, _ := overrides["cwd"].(string)
+	if cwd == "" {
+		cwd, _ = cfg["cwd"].(string)
+	}
+	timeout, _ := cfg["timeout"].(int)
+	hostCwd, err := resolveTaskHostCwd(env, cfg, taskID)
+	if err != nil {
+		return nil, err
+	}
+	created, err := createConfiguredEnv(ctx, env, cfg, envType, selectImage(envType, overrides, cfg), cwd, timeout, effective, hostCwd)
+	if err != nil {
+		return nil, err
+	}
+	RegisterTaskEnvironment(effective, created)
+	startCleanupThreadFn(env)
+	envLog(env).Info(fmt.Sprintf("%s environment ready for execute_code task %s", envType, shortTaskID(effective)))
 	return created, nil
 }
 

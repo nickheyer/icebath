@@ -18,7 +18,7 @@ var PluginSDKModules = []string{
 	"agent.context_engine", "agent.context_references", "agent.memory_provider", "agent.secret_scope", "agent.redact",
 	"agent.compression_marker", "agent.context_compressor", "agent.process_bootstrap", "agent.proxy_bypass",
 	"agent.thread_scoped_output", "agent.codex_headers", "agent.jiter_preload", "icebath_bootstrap", "utils", "providers", "providers.base",
-	"plugins.plugin_utils", "plugins.plugin_storage", "plugins.plugin_loader", "tools.lazy_deps", "cron", "cron.scheduler_provider", "icebath_constants", "tools.environments.local", "icebath_cli.plugins",
+	"plugins.plugin_utils", "plugins.plugin_storage", "plugins.plugin_loader", "tools.lazy_deps", "tools.computer_use", "tools.computer_use.backend", "cron", "cron.scheduler_provider", "icebath_constants", "tools.environments.local", "icebath_cli.plugins",
 	"icebath_cli.config", "icebath_cli.auth", "icebath_cli.version_info", "icebath_cli.urllib_security",
 	"icebath_cli.chat_catalog", "icebath_cli.env_loader",
 }

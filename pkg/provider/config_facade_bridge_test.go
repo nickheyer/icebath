@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Runs fn under a multiplex flag and, when secrets is non nil, a bound secret scope
@@ -127,5 +128,23 @@ func TestFacadeMigrationDropsOnlyLegacyRelayPluginKeys(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Fatalf("warnings %v", res.Warnings)
+	}
+}
+
+func TestExplicitToolsetKeysUnionsConfigurableAndPluginKeys(t *testing.T) {
+	prev := tools.PluginToolsetCatalog.KeysNowait
+	tools.PluginToolsetCatalog.KeysNowait = func(context.Context) map[string]bool { return map[string]bool{"myplug": true} }
+	t.Cleanup(func() { tools.PluginToolsetCatalog.KeysNowait = prev })
+	got := explicitToolsetKeys()
+	if !got["myplug"] {
+		t.Fatalf("plugin key missing from %v", got)
+	}
+	for k := range tools.ConfigurableKeys() {
+		if !got[k] {
+			t.Fatalf("configurable key %q missing", k)
+		}
+	}
+	if len(got) != len(tools.ConfigurableKeys())+1 {
+		t.Fatalf("exact union, got %d keys", len(got))
 	}
 }

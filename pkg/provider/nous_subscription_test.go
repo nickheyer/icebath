@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const subFalDefaultModel = "fal-ai/flux-2/klein/9b"
@@ -44,7 +46,7 @@ func subWebProbes(t *testing.T, vals map[string]string, toolsetKey string) PoolE
 	env := subSeams(t, subAccount(false, nil))
 	nousSubEnvValueFn = func(_ PoolEnv, name string) string { return vals[name] }
 	nousSubToolsetEnabledFn = func(_ PoolEnv, _ map[string]any, key string) bool { return key == toolsetKey }
-	nousSubHarnessFn = func() bool { return false }
+	nousSubHarnessFn = func(PoolEnv) bool { return false }
 	nousSubAudioKeyFn = func(PoolEnv) string { return "" }
 	nousSubDirectModalFn = func(PoolEnv) bool { return false }
 	return env
@@ -84,9 +86,9 @@ func TestNousSubscriptionUnconfiguredWebWithoutKeysIsUnavailable(t *testing.T) {
 
 func subBrowserProbes(t *testing.T, harness, chromium bool) PoolEnv {
 	env := subWebProbes(t, nil, "browser")
-	nousSubHarnessFn = func() bool { return harness }
+	nousSubHarnessFn = func(PoolEnv) bool { return harness }
 	nousSubGatewayReadyFn = func(PoolEnv, string) bool { return false }
-	nousSubChromiumFn = func() string {
+	nousSubChromiumFn = func(PoolEnv) string {
 		if chromium {
 			return "/pm/chromium/chrome"
 		}
@@ -121,7 +123,7 @@ func TestNousSubscriptionLoggedInEntitledAccountYieldsAStateForEveryFeature(t *t
 	env := subSeams(t, subPoolAccount())
 	nousSubGatewayReadyFn = func(PoolEnv, string) bool { return true }
 	nousSubEnvValueFn = func(PoolEnv, string) string { return "" }
-	nousSubHarnessFn = func() bool { return false }
+	nousSubHarnessFn = func(PoolEnv) bool { return false }
 	nousSubAudioKeyFn = func(PoolEnv) string { return "" }
 	nousSubDirectModalFn = func(PoolEnv) bool { return false }
 	result := GetNousSubscriptionFeatures(env, map[string]any{"model": map[string]any{"provider": "nous"}}, false)
@@ -135,24 +137,6 @@ func TestNousSubscriptionLoggedInEntitledAccountYieldsAStateForEveryFeature(t *t
 	}
 	if !result.Feature("modal").Available {
 		t.Fatalf("modal = %+v", result.Feature("modal"))
-	}
-}
-
-func TestNousSubscriptionManagedImagePartnerFollowsTheStoredModel(t *testing.T) {
-	for _, row := range []struct {
-		cfg     map[string]any
-		partner string
-	}{
-		{map[string]any{"provider": "nous", "model": "krea-2-medium"}, "Krea"},
-		{map[string]any{"model": subFalDefaultModel}, "FAL"},
-		{map[string]any{"provider": "nous", "model": "openai/gpt-image-2"}, "Nous Portal"},
-		{map[string]any{"model": "openai/gpt-image-2"}, "FAL"},
-		{map[string]any{"use_gateway": true, "model": "openai/gpt-image-2"}, "FAL"},
-		{map[string]any{"provider": "openai", "model": "gpt-image-2"}, ""},
-	} {
-		if got := ManagedImagePartner(map[string]any{"image_gen": row.cfg}); got != row.partner {
-			t.Fatalf("%v partner = %q", row.cfg, got)
-		}
 	}
 }
 
@@ -332,7 +316,7 @@ func subDefaultsFor(t *testing.T, account *NousPortalAccountInfo, cfg map[string
 	t.Setenv("FAL_KEY", "")
 	env := subSeams(t, account)
 	nousSubFalKeyFn = func(PoolEnv) bool { return false }
-	nousSubHarnessFn = func() bool { return false }
+	nousSubHarnessFn = func(PoolEnv) bool { return false }
 	return ApplyNousManagedDefaults(env, cfg, []string{toolset}, false)
 }
 
@@ -388,5 +372,24 @@ func TestNousSubscriptionConfiguredImageSectionIsLeftAlone(t *testing.T) {
 	subDefaultsFor(t, subPaid(), cfg, "image_gen")
 	if cfg["image_gen"].(map[string]any)["model"] != subFalDefaultModel {
 		t.Fatalf("image_gen = %v", cfg["image_gen"])
+	}
+}
+
+func TestNousSubscriptionAuthPresentReadsTheToolEnvHome(t *testing.T) {
+	h := t.TempDir()
+	var seen string
+	prev := nousSubAccountInfoFn
+	nousSubAccountInfoFn = func(env PoolEnv, forceFresh bool) *NousPortalAccountInfo {
+		seen = envHome(env)
+		return &NousPortalAccountInfo{LoggedIn: !forceFresh}
+	}
+	t.Cleanup(func() { nousSubAccountInfoFn = prev })
+	cfg := map[string]any{"model": map[string]any{"provider": "openrouter"}}
+	if !tools.NousSubscriptionAuthPresent(&tools.Env{Home: h}, cfg) || seen != h {
+		t.Fatalf("auth present false or home %q, want %q", seen, h)
+	}
+	nousSubAccountInfoFn = func(PoolEnv, bool) *NousPortalAccountInfo { return nil }
+	if tools.NousSubscriptionAuthPresent(&tools.Env{Home: h}, cfg) {
+		t.Fatal("no account info reported Nous auth")
 	}
 }

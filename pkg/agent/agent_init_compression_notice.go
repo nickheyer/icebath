@@ -15,9 +15,31 @@ import (
 
 // CompressionSettings is the parsed compression config section
 type CompressionSettings struct {
-	Threshold              float64
-	AutoraiseNoticeEnabled bool
-	Enabled                bool
+	Threshold                      float64
+	AutoraiseNoticeEnabled         bool
+	Enabled                        bool
+	TargetRatio                    float64
+	ProtectLast                    int
+	TailMode                       string
+	MinTailUsers                   int
+	MaxAttempts                    int
+	ProactivePruneTokens           int
+	ProactivePruneMinChars         int
+	ProactivePruneMinReclaim       int
+	ProtectFirst                   int
+	AbortOnSummaryFailure          bool
+	ModelThresholds                map[string]float64
+	ThresholdTokens                *int
+	CheckpointRequired             bool
+	InPlace                        bool
+	MicroCompact                   bool
+	MicroCompactEveryNTurns        int
+	MicroCompactDefragTokens       int
+	CodexAppServerAuto             string
+	CodexResponsesNative           bool
+	CodexResponsesCompactThreshold *int
+	IdleCompactAfterSeconds        int
+	PrepareAhead                   bool
 }
 
 // Float form of an autoraise field, the KeyError or ValueError of a missing or non numeric one

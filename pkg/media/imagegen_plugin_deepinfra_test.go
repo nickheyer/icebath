@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -80,5 +81,19 @@ func TestDeepInfraGenerateCallsOpenAIClientWithDeepInfraBaseURL(t *testing.T) {
 	os.Unsetenv("DEEPINFRA_API_KEY")
 	if res, _ := p.Generate(context.Background(), env, ImageGenRequest{Prompt: "a cat"}); res["error_type"] != "auth_required" || p.IsAvailable() {
 		t.Fatal(res)
+	}
+}
+
+func TestDeepInfraSecretScopeDecidesAvailability(t *testing.T) {
+	openAIHomeEnv(t, nil)
+	provider.SetMultiplexActive(true)
+	t.Cleanup(func() { provider.SetMultiplexActive(false) })
+	os.Unsetenv("DEEPINFRA_API_KEY")
+	if !deepInfraKeyAvailable(provider.WithSecretScope(context.Background(), map[string]string{"DEEPINFRA_API_KEY": "scoped-key"}, "")) {
+		t.Fatal("scoped key did not make DeepInfra available")
+	}
+	t.Setenv("DEEPINFRA_API_KEY", "env-other-profile")
+	if deepInfraKeyAvailable(provider.WithSecretScope(context.Background(), map[string]string{}, "")) {
+		t.Fatal("scoped miss borrowed the process environment")
 	}
 }

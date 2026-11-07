@@ -353,3 +353,14 @@ func TestIdleEntriesNeverOutnumberTheOriginalFootprint(t *testing.T) {
 		t.Fatalf("idle entries stay within 4096, got %d", memoEntries())
 	}
 }
+
+func TestEstimateRowsTokensPricesTheDurabilityMarkerOfADictRow(t *testing.T) {
+	plain := map[string]any{"role": "user", "content": "Audit the auth module."}
+	marked := map[string]any{"role": "user", "content": "Audit the auth module.", "_db_persisted": true, "_row_id": 7, "timestamp": 1.5}
+	if got := EstimateRowsTokens([]map[string]any{plain}, DefaultImageTokenCost); got != 14 {
+		t.Fatalf("plain row = %d, want 14", got)
+	}
+	if got := EstimateRowsTokens([]map[string]any{marked}, DefaultImageTokenCost); got != 19 {
+		t.Fatalf("marked row = %d, want 19", got)
+	}
+}

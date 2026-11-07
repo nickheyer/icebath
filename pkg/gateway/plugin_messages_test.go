@@ -20,7 +20,7 @@ func (s msgSource) SourceChatID() string     { return s.chat }
 
 type msgAdapter struct{ calls [][]string }
 
-func (a *msgAdapter) Send(_ context.Context, chatID, content string, metadata map[string]any) (PluginSendResult, error) {
+func (a *msgAdapter) Send(_ context.Context, chatID, content, _ string, metadata map[string]any) (PluginSendResult, error) {
 	if metadata["_interim_send"] != true {
 		panic("sealed as the turn's answer")
 	}
@@ -30,20 +30,20 @@ func (a *msgAdapter) Send(_ context.Context, chatID, content string, metadata ma
 
 type editingAdapter struct{ msgAdapter }
 
-func (a *editingAdapter) EditMessage(_ context.Context, chatID, messageID, content string) (PluginSendResult, error) {
+func (a *editingAdapter) EditMessage(_ context.Context, chatID, messageID, content string, _ bool) (PluginSendResult, error) {
 	a.calls = append(a.calls, []string{"edit", chatID, messageID, content})
 	return PluginSendResult{Success: true, MessageID: messageID}, nil
 }
 
 type raisingEditAdapter struct{ msgAdapter }
 
-func (a *raisingEditAdapter) EditMessage(context.Context, string, string, string) (PluginSendResult, error) {
+func (a *raisingEditAdapter) EditMessage(context.Context, string, string, string, bool) (PluginSendResult, error) {
 	return PluginSendResult{}, errors.New("malformed edit response")
 }
 
 type failedEditAdapter struct{ msgAdapter }
 
-func (a *failedEditAdapter) EditMessage(context.Context, string, string, string) (PluginSendResult, error) {
+func (a *failedEditAdapter) EditMessage(context.Context, string, string, string, bool) (PluginSendResult, error) {
 	return PluginSendResult{Success: false}, nil
 }
 

@@ -68,3 +68,13 @@ func TestISOFormatKeepsZoneOffset(t *testing.T) {
 		}
 	}
 }
+
+func TestISOFormatNaiveDropsZoneAndZeroMicroseconds(t *testing.T) {
+	loc := time.FixedZone("x", 3600)
+	if got := ISOFormatNaive(time.Date(2026, 1, 2, 3, 4, 5, 0, loc)); got != "2026-01-02T03:04:05" {
+		t.Fatalf("got %q", got)
+	}
+	if got := ISOFormatNaive(time.Date(2026, 1, 2, 3, 4, 5, 7000, loc)); got != "2026-01-02T03:04:05.000007" {
+		t.Fatalf("got %q", got)
+	}
+}

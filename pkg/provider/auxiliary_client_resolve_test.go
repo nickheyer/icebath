@@ -239,3 +239,14 @@ func TestUnhandledAuthTypeLogsDebugOnceNotWarning(t *testing.T) {
 		t.Fatalf("unhandled auth_type records %+v", recs)
 	}
 }
+
+func TestAuxClientEffectiveProviderReadsTheStamp(t *testing.T) {
+	c := newAuxOpenAIClient("k", "https://example.test/v1", auxOpenAIOptions{DefaultHeaders: map[string]string{"X-Title": "icebath"}})
+	c.auxSetEffectiveProvider("openrouter")
+	if got := AuxClientEffectiveProvider(c); got != "openrouter" {
+		t.Fatalf("effective provider = %q", got)
+	}
+	if AuxClientEffectiveProvider(&auxProbeClient{}) != "" {
+		t.Fatal("probe client reported a stamp")
+	}
+}

@@ -272,10 +272,11 @@ func (h *PluginHost) runStart(ctx context.Context, s *hostStart) {
 		h.starting = nil
 	}
 	h.mu.Unlock()
-	if !current || !s.resolve(ch, nil, nil) {
+	if !current {
 		return
 	}
 	logInfo(fmt.Sprintf("Plugin host started for %s (pid %d)", h.home, spawned.cmd.Process.Pid))
+	s.resolve(ch, nil, nil)
 }
 
 // Drops a failed or shut down start and kills the child it spawned, the process group included
@@ -547,7 +548,7 @@ func hostCtxMethods() []string {
 }
 
 // Imports a plugin in the child and replays its registrations onto the plugin context
-func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, entrypoint bool) (string, error) {
+func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, entrypoint, predeclared bool) (string, error) {
 	ch, err := h.ensureStarted(ctx)
 	if err != nil {
 		return "", err
@@ -559,7 +560,7 @@ func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, modu
 	h.stateMu.Unlock()
 	params := map[string]any{
 		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path, "module_name": nilIfEmpty(moduleName),
-		"entrypoint": entrypoint, "profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf),
+		"entrypoint": entrypoint, "predeclared": predeclared, "profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf),
 		"ctx_methods": anyList(hostCtxMethods()),
 	}
 	result, err := ch.Call(ctx, "load", params, 0)
@@ -1233,7 +1234,13 @@ func (o *HostedObject) HasMethod(name string) bool {
 // Async flag of a declared method
 func (o *HostedObject) MethodIsAsync(name string) bool { return o.methods[name].Async }
 
-// Calls one method of the plugin object in the child, rebuilding the result as the provider base declares it
+// Whether the proxy class attribute differs from the base attribute, true for every method the child declares
+func (o *HostedObject) OverridesBase(_ context.Context, method string) (bool, error) {
+	_, declared := o.methods[method]
+	return declared, nil
+}
+
+// Calls one method of the plugin object in the child, a dotted name reading its attribute path first as Python does
 func (o *HostedObject) Call(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error) {
 	ref, generation, err := o.addr(ctx)
 	if err != nil {
@@ -1241,6 +1248,26 @@ func (o *HostedObject) Call(ctx context.Context, method string, args []any, kwar
 	}
 	return o.host.callIn(ctx, o.liveClientBase(), "obj_invoke", map[string]any{"ref": ref, "method": method, "args": o.host.encodeArgs(nonNilArgs(args)),
 		"kwargs": o.host.encodeArgs(nonNilKwargs(kwargs))}, &generation, 0, declaredReturn(o.Base, method))
+}
+
+// Takes the next item of a for loop over the object in the child, ok false once it raises StopIteration
+func (o *HostedObject) Next(ctx context.Context) (item any, ok bool, err error) {
+	ref, generation, err := o.addr(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	raw, err := o.host.callIn(ctx, o.liveClientBase(), "obj_next", map[string]any{"ref": ref}, &generation, 0, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	step, isMap := raw.(map[string]any)
+	if !isMap {
+		return nil, false, fmt.Errorf("plugin host: obj_next answered %T instead of a step", raw)
+	}
+	if config.PyTruthy(step["done"]) {
+		return nil, false, nil
+	}
+	return step["item"], true, nil
 }
 
 // Reads an attribute, live ones from the child and the rest locally first, an absent one an AttributeError
@@ -1272,7 +1299,7 @@ func (o *HostedObject) remoteGet(ctx context.Context, name string) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	if nested, ok := value.(*HostedObject); ok && o.Base == hostedClientBase {
+	if nested, ok := value.(*HostedObject); ok && (o.Base == hostedClientBase || o.Base == hostedModuleBase) {
 		nested.slot.reload = o.attributeReload(name)
 	}
 	if m, ok := value.(map[string]any); ok && len(m) == 1 {

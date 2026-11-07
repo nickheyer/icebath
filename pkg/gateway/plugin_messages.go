@@ -24,20 +24,16 @@ type PluginLiveSession interface {
 }
 
 // Outcome of one adapter send or edit, gateway/platforms/base.py SendResult
-type PluginSendResult struct {
-	Success   bool
-	MessageID any
-	Error     any
-}
+type PluginSendResult = SendResult
 
 // Adapter send surface, gateway/platforms/base.py BasePlatformAdapter send
 type PluginMessageAdapter interface {
-	Send(ctx context.Context, chatID, content string, metadata map[string]any) (PluginSendResult, error)
+	Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (PluginSendResult, error)
 }
 
 // Adapter overriding the base edit_message, editing a sent message in place
 type PluginMessageEditor interface {
-	EditMessage(ctx context.Context, chatID, messageID, content string) (PluginSendResult, error)
+	EditMessage(ctx context.Context, chatID, messageID, content string, finalize bool) (PluginSendResult, error)
 }
 
 // Adapter declaring SUPPORTS_MESSAGE_EDITING, false refusing every edit
@@ -259,7 +255,7 @@ func sendPluginMessage(ctx context.Context, target *PostTarget, text string) (ma
 		metadata[k] = v
 	}
 	metadata["_interim_send"] = true
-	result, err := target.Adapter.Send(ctx, target.ChatID, fitPluginText(target.Adapter, target.ChatID, text), metadata)
+	result, err := target.Adapter.Send(ctx, target.ChatID, fitPluginText(target.Adapter, target.ChatID, text), "", metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +348,7 @@ func editPluginMessage(ctx context.Context, t *PostTarget, messageID, text, plug
 		return result, nil
 	}
 	if messageID != "" && supportsPluginEdit(t.Adapter) {
-		sent, err := t.Adapter.(PluginMessageEditor).EditMessage(ctx, t.ChatID, messageID, fitPluginText(t.Adapter, t.ChatID, text))
+		sent, err := t.Adapter.(PluginMessageEditor).EditMessage(ctx, t.ChatID, messageID, fitPluginText(t.Adapter, t.ChatID, text), false)
 		edited, editError := false, ""
 		if err != nil {
 			slog.Debug(fmt.Sprintf("plugin_message plugin=%s edit_message raised: %v", pluginID, err))

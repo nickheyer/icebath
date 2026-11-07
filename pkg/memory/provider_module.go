@@ -40,14 +40,51 @@ func providerModuleName(r *ProviderRegistration) string {
 	return fmt.Sprintf("%s.%s__source_%s", userMemoryNamespace, r.Name, hex.EncodeToString(sum[:])[:16])
 }
 
-// Calls a function of the installed copy of a provider package submodule, an ImportError when it is not installed
-func CallProviderModule(ctx context.Context, name, submodule, function string, args []any, kwargs map[string]any) (any, error) {
+// Installed copy of a provider package, an ImportError when it is absent or a bundled provider has no Python package
+func installedProviderPackage(ctx context.Context, name, submodule string) (*ProviderRegistration, error) {
 	r := FindProvider(ctx, nil, name)
 	if r == nil || !hasProviderDir(r) {
 		return nil, &ProviderImportError{Msg: fmt.Sprintf("memory provider '%s' is not installed", name)}
 	}
 	if r.Source == SourceBundled {
-		return nil, &ProviderImportError{Msg: fmt.Sprintf("No module named 'plugins.memory.%s.%s'", name, submodule)}
+		module := "plugins.memory." + name
+		if submodule != "" {
+			module += "." + submodule
+		}
+		return nil, &ProviderImportError{Msg: fmt.Sprintf("No module named '%s'", module)}
+	}
+	return r, nil
+}
+
+// Live module of the installed provider package or one submodule in the plugin host of the context home
+func ImportProviderModule(ctx context.Context, name, submodule string) (*plugins.HostedObject, error) {
+	return ImportProviderModuleIn(ctx, nil, name, submodule)
+}
+
+// Live module of the installed provider package or one submodule in host, the context home host when nil
+func ImportProviderModuleIn(ctx context.Context, host *plugins.PluginHost, name, submodule string) (*plugins.HostedObject, error) {
+	r, err := installedProviderPackage(ctx, name, submodule)
+	if err != nil {
+		return nil, err
+	}
+	var mod *plugins.HostedObject
+	if host == nil {
+		mod, err = plugins.ImportProviderModule(ctx, name, r.Dir, providerModuleName(r), submodule)
+	} else {
+		mod, err = host.ImportProviderModule(ctx, name, r.Dir, providerModuleName(r), submodule)
+	}
+	var builtin *plugins.HostBuiltinError
+	if errors.As(err, &builtin) && builtin.Type == "ImportError" {
+		return nil, &ProviderImportError{Msg: builtin.Message}
+	}
+	return mod, err
+}
+
+// Calls a function of the installed copy of a provider package submodule, an ImportError when it is not installed
+func CallProviderModule(ctx context.Context, name, submodule, function string, args []any, kwargs map[string]any) (any, error) {
+	r, err := installedProviderPackage(ctx, name, submodule)
+	if err != nil {
+		return nil, err
 	}
 	out, loaded, err := providerModuleCall(ctx, r.Dir, providerModuleName(r), submodule, function, args, kwargs)
 	if !loaded {

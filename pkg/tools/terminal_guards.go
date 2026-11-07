@@ -33,6 +33,9 @@ func validateWorkdir(workdir string) string {
 	return ""
 }
 
+// Workdir guard verdict, empty when the workdir is allowed
+func ValidateWorkdir(workdir string) string { return validateWorkdir(workdir) }
+
 // Log safe preview of a possibly invalid command value
 func safeCommandPreview(command any, limit int) string {
 	if command == nil {

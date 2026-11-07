@@ -18,6 +18,15 @@ func TestRedactPrefixTokens(t *testing.T) {
 	}
 }
 
+func TestPrefixPatternExportsMatchTheMatcher(t *testing.T) {
+	if len(PrefixPatterns()) != len(prefixPatterns) || PrefixPatterns()[0] != prefixPatterns[0] {
+		t.Fatalf("PrefixPatterns differs from the built in list")
+	}
+	if got := LiteralPrefix(`sk-ant-[A-Za-z0-9_\-]{10,}`); got != "sk-ant-" {
+		t.Fatalf("LiteralPrefix = %q", got)
+	}
+}
+
 func TestRedactAssignmentsAndHeaders(t *testing.T) {
 	out := RedactForEgress("OPENAI_API_KEY=abcdefghijklmnopqrstu MAX_TOKENS=100")
 	if strings.Contains(out, "abcdefghijklmnopqrstu") || !strings.Contains(out, "MAX_TOKENS=100") {

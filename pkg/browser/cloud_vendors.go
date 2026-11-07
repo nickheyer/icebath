@@ -163,6 +163,12 @@ var (
 	pendingCreateKeys = map[string]string{}
 )
 
+// Selection and managed gateway lookups of the Browser Use route, the points hermes tests patch
+var (
+	browserUseReadSelection  = tools.ReadSelection
+	browserUseResolveGateway = tools.ResolveManagedToolGateway
+)
+
 func pendingCreateKey(taskID string) string {
 	pendingCreateMu.Lock()
 	defer pendingCreateMu.Unlock()
@@ -235,14 +241,14 @@ func (p *BrowserUseBrowserProvider) configOrNoneRefresh(env *tools.Env, refreshT
 		if !refreshToken {
 			reader = tools.PeekNousAccessToken
 		}
-		gw, err := tools.ResolveManagedToolGateway(env, "browser-use", nil, reader)
+		gw, err := browserUseResolveGateway(env, "browser-use", nil, reader)
 		if err != nil || gw == nil {
 			return nil, err
 		}
 		return &cloudConfig{APIKey: gw.NousUserToken, BaseURL: strings.TrimRight(gw.GatewayOrigin, "/"), ManagedMode: true}, nil
 	}
 	apiKey := cfgOf(env).rawSecret("BROWSER_USE_API_KEY")
-	selected := tools.ReadSelection(env, "browser")
+	selected := browserUseReadSelection(env, "browser")
 	var direct *cloudConfig
 	if apiKey != "" {
 		direct = &cloudConfig{APIKey: apiKey, BaseURL: browserUseBaseURL}
@@ -262,7 +268,7 @@ func (p *BrowserUseBrowserProvider) config(env *tools.Env) (*cloudConfig, error)
 	if err != nil || c != nil {
 		return c, err
 	}
-	selected := tools.ReadSelection(env, "browser")
+	selected := browserUseReadSelection(env, "browser")
 	if selected == tools.NousManagedProvider {
 		return nil, valueError(tools.SelectionError("browser", tools.NousManagedProvider,
 			"the Nous Tool Gateway is not available (not entitled or unreachable)"))

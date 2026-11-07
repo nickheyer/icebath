@@ -66,6 +66,9 @@ var anchorImportable = func(ctx context.Context, anchor string) bool {
 	return err == nil && result.Code == 0 && pystr.Strip(result.Stdout) == "1"
 }
 
+// AnchorImportable reports whether the selected environment's interpreter finds the module through importlib find_spec
+func AnchorImportable(ctx context.Context, anchor string) bool { return anchorImportable(ctx, anchor) }
+
 // Reports every anchor of an extra importable and its platform gate admitting this machine
 func Available(ctx context.Context, extra string) (bool, error) {
 	supported, err := extraSupported(ctx, extra, nil, nil)

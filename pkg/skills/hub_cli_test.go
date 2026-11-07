@@ -418,3 +418,16 @@ func TestParallelProviderSearchAppliesPerSourceLimitAfterFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestResolvedSourcesUsesTheSourcesSeamElseTheHubRouter(t *testing.T) {
+	hub, _ := newTestHub(t)
+	x := NewHubCLI(hub.S)
+	x.Hub = hub
+	if got := x.ResolvedSources(); len(got) == 0 {
+		t.Fatal("hub router returned no sources")
+	}
+	x.Sources = func() []SkillSource { return nil }
+	if got := x.ResolvedSources(); got != nil {
+		t.Fatalf("seam result expected, got %v", got)
+	}
+}

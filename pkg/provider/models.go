@@ -797,6 +797,32 @@ func modelsResolver(ctx context.Context) *resolver {
 	return newResolver(ctx, config.Tree(modelsConfig(ctx)), config.NewSecrets(h), h, homeCredentialSource(h))
 }
 
+// Context bound to the given home, the context's own home when h is empty
+func ctxForHome(ctx context.Context, h string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if h != "" {
+		ctx = home.WithOverride(ctx, h)
+	}
+	return ctx
+}
+
+// Resolver over the home's config, failing with the read error a malformed config raises
+func strictHomeResolver(ctx context.Context, h string) (*resolver, map[string]any, error) {
+	ctx = ctxForHome(ctx, h)
+	hd := home.Dir(ctx)
+	cfg := FrozenRuntimeConfig()
+	if cfg == nil {
+		tree, err := config.Load(hd, config.NewSecrets(hd).Lookup())
+		if err != nil {
+			return nil, nil, err
+		}
+		cfg = map[string]any(tree)
+	}
+	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(hd), hd, homeCredentialSource(hd)), cfg, nil
+}
+
 // ---- per provider catalog fetchers ----
 
 type catalogFetcher func(ctx context.Context, normalized string, forceRefresh bool) (CatalogRows, bool)

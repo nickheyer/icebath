@@ -35,9 +35,7 @@ func stopThinkingSpinner(a *AIAgent, spinner tools.Spinner) tools.Spinner {
 	if spinner != nil {
 		spinner.Stop("")
 	}
-	if a.thinkingCallback != nil {
-		a.thinkingCallback("")
-	}
+	a.callThinking("")
 	return nil
 }
 
@@ -51,7 +49,7 @@ type APICallVerdict struct {
 
 // Streaming for liveness unless disabled, an ACP transport, an unopted process provider or a consumerless moa or mock
 func shouldStream(ctx context.Context, a *AIAgent) bool {
-	if a.disableStreaming {
+	if a.RetrySession().DisableStreaming {
 		return false
 	}
 	base := strings.ToLower(a.baseURL)

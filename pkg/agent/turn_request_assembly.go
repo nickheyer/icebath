@@ -36,7 +36,7 @@ func appendMoaContext(ctx context.Context, a *AIAgent, apiMessages []map[string]
 		policy = config.PyStr(moaConfig["degraded_reference_policy"])
 	}
 	moaContext, err := aggregateMoaContext(ctx, a, prompt, apiMessages, referenceModels, aggregator,
-		presetTemperature(moaConfig, "reference_temperature"), presetTemperature(moaConfig, "aggregator_temperature"), referenceTimeout, policy)
+		presetTemperature(moaConfig, "reference_temperature"), presetTemperature(moaConfig, "aggregator_temperature"), referenceTimeout, nil, policy)
 	if err != nil {
 		conversationLoopLog().Warn(fmt.Sprintf("MoA context aggregation failed: %v", err))
 		return
@@ -104,7 +104,7 @@ func prepareMoaRequest(a *AIAgent, apiMessages []map[string]any, pending map[str
 	}
 	if prepared == nil {
 		if preparer, ok := a.client.(moaPreparer); ok {
-			p, err := preparer.PrepareRequest(map[string]any{"messages": apiMessages})
+			p, err := preparer.PrepareRequest(apiMessages)
 			if err != nil {
 				return nil, apiMessages, pending, err
 			}

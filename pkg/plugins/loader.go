@@ -190,13 +190,37 @@ func guardedLoad(ctx context.Context, fn func(context.Context) (bool, error)) (o
 	return fn(ctx)
 }
 
-// Human readable load failure naming a recovered panic the way SystemExit is named
+// Human readable load failure naming a recovered panic or a hosted sys.exit the way SystemExit is named
 func loadErrorText(err error) string {
 	var p *PluginPanicError
 	if errors.As(err, &p) {
 		return fmt.Sprintf("SystemExit(%s) raised during import/register()", config.PyRepr(p.Value))
 	}
+	var exit *PluginSystemExit
+	if errors.As(err, &exit) {
+		return "SystemExit(" + exit.CodeRepr + ") raised during import/register()"
+	}
 	return err.Error()
+}
+
+// SystemExit a hosted import or register raised under in-process isolation, its code as the Python repr
+type PluginSystemExit struct{ CodeRepr string }
+
+func (e *PluginSystemExit) Error() string { return "SystemExit(" + e.CodeRepr + ")" }
+
+// Hosted import failure as an in-process load raises it, SystemExit caught by code and KeyboardInterrupt propagating
+func inProcessLoadFailure(ctx context.Context, err error) error {
+	var remote *PluginHostError
+	if !errors.As(err, &remote) || IsolationMode(ctx, nil) == IsolationHost {
+		return err
+	}
+	switch remote.TypeName {
+	case "SystemExit":
+		return &PluginSystemExit{CodeRepr: remote.ExitCode}
+	case "KeyboardInterrupt":
+		return &UserInterrupt{Err: err}
+	}
+	return err
 }
 
 // Why this icebath is not one the plugin accepts, empty when it fits
@@ -313,11 +337,11 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 			if err != nil {
 				return false, err
 			}
-			file, err := host.Load(ctx, mf, pctx, moduleName, !directory)
+			file, err := host.Load(ctx, mf, pctx, moduleName, !directory, hasPredeclared)
 			if err == nil {
 				loaded.ModuleFile = file
 			}
-			return true, err
+			return true, inProcessLoadFailure(ctx, err)
 		}
 		plugin, ok := bundledPlugin(key)
 		if !ok {

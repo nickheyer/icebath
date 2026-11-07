@@ -277,7 +277,7 @@ func ResolveVisionProviderClient(ctx context.Context, provider, model, baseURL s
 			zaiKey = route.APIKey
 		}
 		for _, zaiURL := range auxZaiOpenAIVisionURLs {
-			client, finalModel, err := auxGetCachedClient(ctx, auxCachedClientRequest{
+			client, finalModel, err := auxGetCachedClientFn(ctx, auxCachedClientRequest{
 				Provider: requested, Model: route.Model, AsyncMode: asyncMode, BaseURL: zaiURL, APIKey: zaiKey,
 				APIMode: "chat_completions", MainRuntime: runtime, IsVision: true,
 			})
@@ -290,7 +290,7 @@ func ResolveVisionProviderClient(ctx context.Context, provider, model, baseURL s
 			}
 		}
 	}
-	client, finalModel, err := auxGetCachedClient(ctx, auxCachedClientRequest{
+	client, finalModel, err := auxGetCachedClientFn(ctx, auxCachedClientRequest{
 		Provider: rawRequested, Model: route.Model, AsyncMode: asyncMode, APIMode: route.APIMode, MainRuntime: runtime, IsVision: true,
 	})
 	if err != nil {

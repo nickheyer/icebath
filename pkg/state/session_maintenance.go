@@ -114,3 +114,33 @@ func (d *SessionDB) SweepOrphanedSessions(ctx context.Context, o SweepOrphanedOp
 	}
 	return victims, nil
 }
+
+// Archives every lineage tip idle for the given days through the sweep provenance, the hidden Bot Chat exempt
+func (d *SessionDB) ArchiveStaleSessions(ctx context.Context, idleDays float64, excludePinned bool) (int, error) {
+	if idleDays < 0 || math.IsNaN(idleDays) {
+		return 0, nil
+	}
+	cutoff := now() - idleDays*86400.0
+	pinClause := ""
+	if excludePinned {
+		pinClause = "AND " + notPinnedSQL("s")
+	}
+	rows, err := d.readAll(ctx, `
+            SELECT s.id FROM sessions s
+            WHERE s.archived = 0
+              AND COALESCE(s.end_reason, '') <> 'compression'
+              `+pinClause+`
+              AND NOT (COALESCE(s.hidden, 0) <> 0 AND COALESCE(s.title, '') = ?)
+              AND `+sqlSessionLastActive("s")+` < ?
+            ORDER BY s.started_at ASC
+            `, CanonicalBotChatTitle, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	for _, row := range rows {
+		if _, err := d.autoArchiveLineage(ctx, pyStr(rowValue(row, "id"))); err != nil {
+			return 0, err
+		}
+	}
+	return len(rows), nil
+}

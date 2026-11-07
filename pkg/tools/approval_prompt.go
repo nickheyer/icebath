@@ -24,6 +24,7 @@ type promptOptions struct {
 	allowSession         bool
 	smartDenied          bool
 	title                string
+	approvalCallback     Asker
 }
 
 // One answer of the prompt, cause explains a cancelled value that never reached a human
@@ -50,6 +51,17 @@ func promptDangerousApproval(ctx context.Context, env *Env, o promptOptions) pro
 	return choice
 }
 
+// Session asker as the codex approval prompt answering once, session, always or deny, nil without an asker
+func CodexApprovalPrompt(env *Env) func(command, description string, allowPermanent bool) (string, error) {
+	if env == nil || env.Ask == nil {
+		return nil
+	}
+	return func(command, description string, allowPermanent bool) (string, error) {
+		choice := promptDangerousApproval(context.Background(), env, promptOptions{command: command, description: description, allowPermanent: allowPermanent, allowSession: true})
+		return choice.value, nil
+	}
+}
+
 // Asks through the host asker with the menu shape the caller allows
 // TerminalMenuAsker marks an asker that reads single keys from a terminal menu rather than returning a callback answer
 type TerminalMenuAsker interface {
@@ -66,7 +78,8 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 	displayCommand := redactApprovalDisplay(env, o.command, false)
 	displayDescription := redactApprovalDisplay(env, o.description, false)
 	onceOnly := o.smartDenied || !o.allowSession
-	if env == nil || env.Ask == nil {
+	asker := resolveCLIApprovalCallback(env, o.approvalCallback)
+	if asker == nil {
 		envLog(env).Warn("Dangerous-command approval requested with no approval surface registered; failing closed", "command", displayCommand, "description", displayDescription)
 		return unanswered("no approval callback is registered on this thread while prompt_toolkit owns the terminal, so the prompt could not be shown")
 	}
@@ -84,7 +97,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 	}
 	askCtx, cancel := context.WithTimeout(ctx, o.timeout)
 	defer cancel()
-	result, err := env.Ask.Ask(askCtx, []Question{{Header: header, Text: displayCommand, Choices: choices}})
+	result, err := asker.Ask(askCtx, []Question{{Header: header, Text: displayCommand, Choices: choices}})
 	if err != nil {
 		if errors.Is(askCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 			return promptChoice{value: "timeout"}
@@ -105,7 +118,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 		raw = result.Answers[0].Text
 	}
 	raw = strings.ToLower(strings.TrimSpace(raw))
-	if onceOnly && askerReadsTerminalKeys(env.Ask) {
+	if onceOnly && askerReadsTerminalKeys(asker) {
 		switch raw {
 		case "o", "once":
 			return promptChoice{value: "once"}

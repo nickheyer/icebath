@@ -161,6 +161,11 @@ func repeatRefusal(env *Env, sessionID, imageURL string) string {
 		"user. (vision.max_calls_per_image = %d; 0 = unlimited)", count, limit), map[string]any{"success": false})
 }
 
+// Refusal text for an image embedded past its repeat cap
+func RepeatRefusal(env *Env, sessionID, imageURL string) string {
+	return repeatRefusal(env, sessionID, imageURL)
+}
+
 // Counts one successful native embed for uncapped sessions
 func recordEmbed(env *Env, sessionID, imageURL string) {
 	key := visionCountKey(env, sessionID, imageURL)

@@ -361,3 +361,254 @@ func advancedReceipt(ctx context.Context, conn SQLiteConn, raw any, logicalID st
 	}
 	return receipt, candidate, nil
 }
+
+// Compression steps past the tip in order, nil when the chain leads back into the lineage or itself
+func untrackedSteps(ctx context.Context, conn SQLiteConn, tip string, lineage []any) ([]string, error) {
+	seen := map[string]bool{tip: true}
+	for _, sid := range lineage {
+		seen[pyStr(sid)] = true
+	}
+	steps := []string{}
+	current := tip
+	for {
+		chain, err := walkCompressionChain(current, func(sid string) (*pyjson.Object, error) {
+			rows, err := queryObjects(ctx, conn, chainStepSQL, sid)
+			if err != nil || len(rows) == 0 {
+				return nil, err
+			}
+			return rows[0], nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(chain) <= 1 {
+			return steps, nil
+		}
+		batch := chain[1:]
+		for _, sid := range batch {
+			if seen[sid] {
+				return nil, nil
+			}
+		}
+		for _, sid := range batch {
+			seen[sid] = true
+		}
+		steps = append(steps, batch...)
+		current = batch[len(batch)-1]
+	}
+}
+
+// Receipt lineage, the owner alone when the receipt records none
+func receiptLineage(receipt *pyjson.Object, owner any) ([]any, error) {
+	raw, has := receipt.Get("lineage")
+	if !has {
+		return []any{owner}, nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, &stateTypedError{"TypeError", "receipt lineage is not a list"}
+	}
+	return items, nil
+}
+
+// Untracked compression steps the receipt would adopt with its route entry, nil when nothing is adoptable
+func adoptableCompression(ctx context.Context, conn SQLiteConn, receipt *pyjson.Object) ([]string, *pyjson.Object, error) {
+	entry, err := receiptItem(receipt, "entry")
+	if err != nil {
+		return nil, nil, err
+	}
+	tip, err := receiptItem(entry, "session_id")
+	if err != nil {
+		return nil, nil, err
+	}
+	owner, err := receiptItem(receipt, "session_id")
+	if err != nil {
+		return nil, nil, err
+	}
+	lineage, err := receiptLineage(receipt, owner)
+	if err != nil {
+		return nil, nil, err
+	}
+	children, err := untrackedSteps(ctx, conn, pyStr(tip), lineage)
+	if err != nil || len(children) == 0 {
+		return nil, nil, err
+	}
+	route, err := receiptItem(receipt, "route")
+	if err != nil {
+		return nil, nil, err
+	}
+	principal, err := receiptItem(receipt, "principal_id")
+	if err != nil {
+		return nil, nil, err
+	}
+	identity := []any{route, owner, principal}
+	for _, childID := range children {
+		child, err := connRow(ctx, conn, "SELECT session_key,chat_id,user_id FROM sessions WHERE id=?", childID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if child == nil {
+			return nil, nil, &stateTypedError{"TypeError", "'NoneType' object is not iterable"}
+		}
+		if !pyjson.Equal([]any{child["session_key"], child["chat_id"], child["user_id"]}, identity) {
+			return nil, nil, nil
+		}
+	}
+	routed, err := routedEntry(ctx, conn, route, tip)
+	if err != nil || routed == nil {
+		return nil, nil, err
+	}
+	return children, routed, nil
+}
+
+// Records once the compression steps a receipt unaware build published past the receipt tip, while the receipt is still expected
+func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, sessionID string, expected *pyjson.Object) error {
+	return d.executeWrite(ctx, func(conn SQLiteConn) error {
+		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
+			return err
+		}
+		saved, err := connRow(ctx, conn, "SELECT value FROM state_meta WHERE key=?", LocalPolicyPrefix+sessionID)
+		if err != nil {
+			return err
+		}
+		if saved == nil {
+			return &stateTypedError{"TypeError", "'NoneType' object is not subscriptable"}
+		}
+		text, _ := saved["value"].(string)
+		decoded, err := pyjson.Loads(text)
+		if err != nil {
+			return pyValueError(err.Error())
+		}
+		var want any
+		if expected != nil {
+			want = expected
+		}
+		if !pyjson.Equal(decoded, want) {
+			return nil
+		}
+		receipt, isObj := decoded.(*pyjson.Object)
+		if !isObj {
+			return &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+		}
+		children, routed, err := adoptableCompression(ctx, conn, receipt)
+		if err != nil || children == nil {
+			return err
+		}
+		tip := children[len(children)-1]
+		entry, _ := receipt.Get("entry")
+		moved := entry.(*pyjson.Object).Copy()
+		moved.Set("session_id", tip)
+		receipt.Set("entry", moved)
+		lineage, err := receiptLineage(receipt, sessionID)
+		if err != nil {
+			return err
+		}
+		lineage = append(append([]any{}, lineage...), stringsToAny(children)...)
+		receipt.Set("lineage", lineage)
+		if _, err := validateLocalLineage(ctx, conn, receipt); err != nil {
+			return err
+		}
+		target := routed.Copy()
+		target.Set("session_id", tip)
+		return commitLocalTarget(ctx, conn, receipt, target)
+	}, nil)
+}
+
+// Publishes a reset child of a local session's live target and advances its receipt and route to it
+func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSessionID string, entry *pyjson.Object) error {
+	return d.executeWrite(ctx, func(conn SQLiteConn) error {
+		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
+			return err
+		}
+		parent, err := connRow(ctx, conn, "SELECT * FROM sessions WHERE id=?", parentSessionID)
+		if err != nil {
+			return err
+		}
+		if parent == nil || parent["end_reason"] == "compression" {
+			return runtimeRefusal("admission_conflict")
+		}
+		chatID, ok := parent["chat_id"].(string)
+		if !ok {
+			return &stateTypedError{"TypeError", "can only concatenate str (not \"NoneType\") to str"}
+		}
+		saved, err := connRow(ctx, conn, "SELECT value FROM state_meta WHERE key=?", LocalPolicyPrefix+chatID)
+		if err != nil {
+			return err
+		}
+		if saved == nil {
+			return runtimeRefusal("storage_unavailable")
+		}
+		text, _ := saved["value"].(string)
+		decoded, err := pyjson.Loads(text)
+		if err != nil {
+			return pyValueError(err.Error())
+		}
+		receipt, isObj := decoded.(*pyjson.Object)
+		if !isObj {
+			return &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+		}
+		logical, err := receiptItem(receipt, "session_id")
+		if err != nil {
+			return err
+		}
+		logicalID := pyStr(logical)
+		target, err := validateLocalLineage(ctx, conn, receipt)
+		if err != nil {
+			return err
+		}
+		if target != parentSessionID {
+			return runtimeRefusal("admission_conflict")
+		}
+		guarded := []string{logicalID}
+		if parentSessionID != logicalID {
+			guarded = append(guarded, parentSessionID)
+		}
+		if err := RequireNotExecuting(ctx, conn, guarded); err != nil {
+			return err
+		}
+		policy, err := receiptItem(receipt, "policy")
+		if err != nil {
+			return err
+		}
+		fields := map[string]any{}
+		for _, k := range []string{"source", "model", "cwd"} {
+			if fields[k], err = receiptItem(policy, k); err != nil {
+				return err
+			}
+		}
+		rawChild, err := receiptItem(entry, "session_id")
+		if err != nil {
+			return err
+		}
+		childID, ok := rawChild.(string)
+		if !ok {
+			return &stateTypedError{"TypeError", "child session id is not a str"}
+		}
+		publish := CompressionChildPublish{ParentSessionID: parentSessionID, ChildSessionID: childID,
+			Source: pyStr(fields["source"]), Model: anyStrPtr(fields["model"]), Cwd: anyStrPtr(fields["cwd"]),
+			ModelConfig: pyjson.ObjectOf("_reset_from", parentSessionID), ProfileName: anyStrPtr(parent["profile_name"])}
+		if err := d.publishChildSessionRow(ctx, conn, parent, publish); err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, "UPDATE sessions SET ended_at=?,end_reason='session_reset' WHERE id=?", now(), parentSessionID); err != nil {
+			return err
+		}
+		if err := bumpConversationGeneration(ctx, conn, parentSessionID, "session_reset"); err != nil {
+			return err
+		}
+		if err := advanceLocalTarget(ctx, conn, parentSessionID, childID, entry); err != nil {
+			return err
+		}
+		_, err = conn.ExecContext(ctx, "UPDATE sessions SET runtime_generation=runtime_generation+1 WHERE id=?", logicalID)
+		return err
+	}, nil)
+}
+
+// String pointer of a str value, nil for None or any other type
+func anyStrPtr(v any) *string {
+	s, ok := v.(string)
+	if !ok {
+		return nil
+	}
+	return &s
+}

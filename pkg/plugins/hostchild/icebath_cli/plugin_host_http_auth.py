@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 def admitted_for_sensitive_route(request) -> bool:
     """Preserve the normal guard's decision without changing unguarded plugin routes."""
+    from icebath_cli.web_server import _require_token
     try:
         _require_token(request)
     except HTTPException as exc:
@@ -11,14 +12,6 @@ def admitted_for_sensitive_route(request) -> bool:
             raise
         return False
     return True
-
-
-def _require_token(request) -> None:
-    """The dashboard guard as it decides inside the host: only an admitted principal passes."""
-    if (getattr(request.state, "native_http_principal", None)
-            or getattr(request.state, "hosted_http_authenticated", None) is True):
-        return
-    raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def with_hosted_admission(app, authenticated):

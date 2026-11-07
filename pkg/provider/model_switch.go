@@ -149,6 +149,9 @@ func checkHermesModelWarning(modelName string) string {
 	return ""
 }
 
+// Warning text for a Nous Hermes 3 or 4 model that is not agentic, empty for any other model
+func CheckHermesModelWarning(modelName string) string { return checkHermesModelWarning(modelName) }
+
 // ModelIdentity is the vendor slug and family prefix a short alias resolves against
 type ModelIdentity struct {
 	Vendor string

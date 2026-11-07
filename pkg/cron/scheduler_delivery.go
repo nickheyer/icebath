@@ -413,7 +413,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 		if err != nil {
 			return nil, err
 		}
-		suppress = !gateway.WarningNotificationsEnabled(ctx, BotChatPolicyPlatform, userCfg)
+		suppress = !config.WarningNotificationsEnabled(ctx, BotChatPolicyPlatform, userCfg)
 	}
 	runID := ""
 	if job.ExecutionID != nil && *job.ExecutionID != "" {
@@ -511,7 +511,10 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 	jobRef := jobIDOr(job, "?")
 	var errs []string
 	requested := append([]gateway.MediaRef(nil), media...)
-	media = gateway.FilterMediaDeliveryPaths(ctx, media)
+	media, filterErr := gateway.FilterMediaDeliveryPaths(ctx, media)
+	if filterErr != nil {
+		media = nil
+	}
 	kept := map[string]bool{}
 	for _, m := range media {
 		kept[m.Path] = true
@@ -1375,7 +1378,9 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	}
 	cleaned = s.redactCronPayload(cleaned, "delivery content")
 	requested := len(media)
-	media = gateway.FilterMediaDeliveryPaths(ctx, media)
+	if media, err = gateway.FilterMediaDeliveryPaths(ctx, media); err != nil {
+		return nil, err
+	}
 	var policyDropErrors []string
 	if dropped := requested - len(media); dropped > 0 {
 		policyDropErrors = []string{fmt.Sprintf("%d media attachment(s) dropped by media path policy (missing file, denied prefix, or strict-mode miss); see gateway.strict / media_delivery_allow_dirs in config.yaml", dropped)}
@@ -1395,7 +1400,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	var deliveryErrors []string
 	suppressed := 0
 	for _, target := range targets {
-		if forFailure && target.Platform != BotChatPlatform && !gateway.WarningNotificationsEnabled(ctx, target.Platform, userCfg) {
+		if forFailure && target.Platform != BotChatPlatform && !config.WarningNotificationsEnabled(ctx, target.Platform, userCfg) {
 			suppressed++
 			continue
 		}

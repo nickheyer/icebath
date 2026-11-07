@@ -193,6 +193,12 @@ func getCurrentSessionKey(env *Env, def string) string {
 	return def
 }
 
+// Session key of the call's session with the default fallback
+func CurrentSessionKey(env *Env) string { return getCurrentSessionKey(env, "default") }
+
+// Approval session key of the call's session with def as fallback, the exported face for pkg/cron and pkg/codeexec
+func CurrentSessionKeyOr(env *Env, def string) string { return getCurrentSessionKey(env, def) }
+
 // Current gateway platform from the session values with the process environment as fallback
 func getSessionPlatform(env *Env) string {
 	return sessionValue(env, "platform", "ICEBATH_SESSION_PLATFORM")
@@ -315,6 +321,9 @@ func getApprovalTimeout(env *Env) int {
 	return raw
 }
 
+// Configured approvals timeout in seconds for the gateway approval prompt
+func GetApprovalTimeout(env *Env) int { return getApprovalTimeout(env) }
+
 // One human wording for an approval timeout window shared by every surface
 func formatApprovalWindow(seconds int) string {
 	if seconds < 0 {
@@ -332,6 +341,9 @@ func formatApprovalWindow(seconds int) string {
 	}
 	return fmt.Sprintf("%d %ss", count, unit)
 }
+
+// Human wording of an approval timeout window for the gateway approval prompt
+func FormatApprovalWindow(seconds int) string { return formatApprovalWindow(seconds) }
 
 // Waited and suggested values for the approval timeout copy
 func approvalTimeoutNoticeKwargs(env *Env) map[string]any {

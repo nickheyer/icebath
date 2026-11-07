@@ -430,3 +430,11 @@ func TestRepairHealsSegmentCollisionAndRestoresAppends(t *testing.T) {
 		t.Fatalf("messages %d", n)
 	}
 }
+
+func TestForeignStateDBHoldersMethodSeesNoForeignHolderOfAPrivateStore(t *testing.T) {
+	db := usageDB(t)
+	holders, err := db.ForeignStateDBHolders()
+	if err != nil || len(holders) != 0 {
+		t.Fatalf("holders = %v, %v", holders, err)
+	}
+}

@@ -101,8 +101,8 @@ func (e *SessionExportTooLargeError) Error() string {
 
 func (e *SessionExportTooLargeError) PyTypeName() string { return "ValueError" }
 
-// Pid existence probe of lease holders, swapped by tests as hermes swaps its psutil module
-var holderPIDExists = psutilPIDExists
+// Pid existence probe of lease holders, an error being probe doubt, swapped by tests as hermes swaps psutil
+var holderPIDExists = func(pid int) (bool, error) { return psutilPIDExists(pid), nil }
 
 // Lock holder pid token of a compression lease
 var compressionHolderPIDRe = mustPyRe(`(?:^|:)pid=(\d+)(?::|$)`)
@@ -120,7 +120,8 @@ func compressionLockHolderProcessIsDead(holder string) bool {
 	if !n.IsInt64() || n.Int64() > math.MaxInt32 {
 		return false
 	}
-	return !holderPIDExists(int(n.Int64()))
+	alive, err := holderPIDExists(int(n.Int64()))
+	return err == nil && !alive
 }
 
 // Default state database path resolved at call time, a repointed DefaultDBPath winning
@@ -133,6 +134,9 @@ func defaultDBPath(ctx context.Context) string {
 	}
 	return filepath.Join(home.Dir(ctx), "state.db")
 }
+
+// State database path the session layer opens when no path is pinned
+func ResolveDefaultDBPath(ctx context.Context) string { return defaultDBPath(ctx) }
 
 // In process guard bypass and extra production roots the isolation guard denies
 var (

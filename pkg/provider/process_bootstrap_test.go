@@ -12,10 +12,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"os/signal"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -603,4 +605,22 @@ func TestSafeWriterSwallowsBrokenPipe(t *testing.T) {
 		t.Fatal("healthy writes pass through")
 	}
 	installSafeStdio()
+}
+
+func TestBuildKeepaliveHTTPClientIsTheKeepaliveBuilder(t *testing.T) {
+	keepaliveNoProxyEnv(t)
+	a := BuildKeepaliveHTTPClient("https://api.example.com/v1", false, TLSVerify{})
+	b := buildKeepaliveHTTPClient("https://api.example.com/v1", false, TLSVerify{})
+	if a == nil || keepaliveInner(t, a, "https") != keepaliveInner(t, b, "https") {
+		t.Fatal("exported builder must hand back the shared keepalive transport")
+	}
+	closeHTTPClient(a)
+	closeHTTPClient(b)
+}
+
+func TestInstallSafeStdioIgnoresBrokenPipeSignals(t *testing.T) {
+	InstallSafeStdio()
+	if !signal.Ignored(syscall.SIGPIPE) {
+		t.Fatal("SIGPIPE is still delivered after InstallSafeStdio")
+	}
 }

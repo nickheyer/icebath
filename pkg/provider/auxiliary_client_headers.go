@@ -90,6 +90,11 @@ func auxApplyUserDefaultHeaders(ctx context.Context, headers map[string]string) 
 	return merged
 }
 
+// Resolved headers with model.default_headers and model.extra_headers merged over them, user values winning
+func ApplyUserDefaultHeaders(ctx context.Context, headers map[string]string) map[string]string {
+	return auxApplyUserDefaultHeaders(ctx, headers)
+}
+
 // BuildORHeaders returns the OpenRouter headers plus response cache headers, env over config over default, nil config read from disk
 func BuildORHeaders(ctx context.Context, orConfig map[string]any) (map[string]string, error) {
 	headers := auxORHeadersBase()
@@ -246,3 +251,6 @@ func auxToOpenAIBaseURL(baseURL string) string {
 	}
 	return raw
 }
+
+// ToOpenAIBaseURL is the OpenAI compatible sibling of a dual surface Anthropic URL
+func ToOpenAIBaseURL(baseURL string) string { return auxToOpenAIBaseURL(baseURL) }

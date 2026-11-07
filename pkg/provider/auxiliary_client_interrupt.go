@@ -85,6 +85,9 @@ func auxCaptureAuxCancelCheck(ctx context.Context) AuxCancelCheck {
 	return s.cancelCheck
 }
 
+// Captures the auxiliary cancel check bound to the calling scope
+func CaptureAuxCancelCheck(ctx context.Context) AuxCancelCheck { return auxCaptureAuxCancelCheck(ctx) }
+
 // Reads a cancel source, a failing source logging at debug and reading as not cancelled
 func auxCapturedAuxCancelRequested(check AuxCancelCheck) bool {
 	requested, err := check.CancelRequested()
@@ -93,6 +96,11 @@ func auxCapturedAuxCancelRequested(check AuxCancelCheck) bool {
 		return false
 	}
 	return requested
+}
+
+// Reports whether a captured auxiliary cancel check has fired
+func CapturedAuxCancelRequested(check AuxCancelCheck) bool {
+	return auxCapturedAuxCancelRequested(check)
 }
 
 // Whether an explicit host cancel overrides the protection of the current call
@@ -168,6 +176,9 @@ func auxHook(ctx context.Context, local AuxHookLocal) func() error {
 	h, _ := ctx.Value(auxHookKey{local}).(func() error)
 	return h
 }
+
+// Forward progress hook bound to the calling scope
+func CurrentAuxProgressHook(ctx context.Context) func() error { return auxHook(ctx, AuxProgressLocal) }
 
 // AuxProgressHook installs the forward progress callback for auxiliary calls under the context
 func AuxProgressHook(ctx context.Context, hook func() error) context.Context {
@@ -284,6 +295,11 @@ func auxCurrentAuxStreamDeadline(ctx context.Context) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return read()
+}
+
+// Auxiliary stream deadline bound to the calling scope
+func CurrentAuxStreamDeadline(ctx context.Context) (time.Time, bool) {
+	return auxCurrentAuxStreamDeadline(ctx)
 }
 
 // Owner poll interval of a protected provider call

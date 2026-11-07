@@ -448,3 +448,9 @@ func jsonRoundTrip(v any) any {
 	_ = json.Unmarshal(raw, &out)
 	return out
 }
+
+func TestDefaultTerminalScopeExport(t *testing.T) {
+	if got, want := DefaultTerminalScope(), defaultTerminalScope(); !reflect.DeepEqual(got, want) || len(got) == 0 {
+		t.Fatalf("DefaultTerminalScope = %v, want %v", got, want)
+	}
+}

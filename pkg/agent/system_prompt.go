@@ -72,6 +72,7 @@ var (
 	loadSoulMDFn              = LoadSoulMD
 	buildEnvironmentHintsFn   = BuildEnvironmentHints
 	buildContextFilesPromptFn = BuildContextFilesPrompt
+	buildSkillsSystemPromptFn = (*skills.Scope).BuildSkillsSystemPrompt
 	hermesNow                 = config.TimeNow
 	hermesTimezone            = config.TimeZone
 	safeStrftime              = config.SafeStrftime
@@ -439,7 +440,7 @@ func skillsPrompt(ctx context.Context, a *AIAgent) (string, error) {
 	if len(compact) == 0 {
 		compact = nil
 	}
-	return skills.ScopeFromEnv(a.env).BuildSkillsSystemPrompt(ctx, skills.SkillsPromptOptions{
+	return buildSkillsSystemPromptFn(skills.ScopeFromEnv(a.env), ctx, skills.SkillsPromptOptions{
 		AvailableTools: a.validToolNames, AvailableToolsets: toolsets, CompactCategories: compact, SkillsDirOverride: agentSkillsDir(ctx, a),
 	})
 }

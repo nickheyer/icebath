@@ -167,6 +167,32 @@ func (r *homeScopedRegistry) items(ctx context.Context) []registryItem {
 	return out
 }
 
+// Static inference base URL of a registry row, empty for Vertex whose endpoint is computed per request
+func registryInferenceBaseURL(p *Profile) string {
+	if p.AuthType == AuthTypeVertex {
+		return ""
+	}
+	return p.BaseURL
+}
+
+// Inference base URL of a provider registry id and whether the id is registered
+func RegistryInferenceBaseURL(id string) (string, bool) {
+	row := providerRegistry().get(context.Background(), id)
+	if row == nil {
+		return "", false
+	}
+	return registryInferenceBaseURL(row), true
+}
+
+// Every provider registry entry's inference base URL in registry order
+func RegistryInferenceBaseURLs() []string {
+	var out []string
+	for _, it := range providerRegistry().items(context.Background()) {
+		out = append(out, registryInferenceBaseURL(it.Row))
+	}
+	return out
+}
+
 // Row a home whose own plugin declares the row's provider reads, cached per stored row and profile
 func homeRow(row, pp *Profile, fromProfile bool) *Profile {
 	key := [2]*Profile{row, pp}

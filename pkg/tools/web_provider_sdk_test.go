@@ -107,7 +107,9 @@ func recordParallelSleeps(t *testing.T) *[]time.Duration {
 func swapKeyless(t *testing.T, name string, search func(context.Context, string, int) *WebSearchResponse, extract func(context.Context, []string) ([]*WebPage, error)) {
 	prevS, prevE := keylessSearchers[name], keylessExtractors[name]
 	if search != nil {
-		keylessSearchers[name] = func(ctx context.Context, query string, limit int) (*WebSearchResponse, error) { return search(ctx, query, limit), nil }
+		keylessSearchers[name] = func(ctx context.Context, query string, limit int) (*WebSearchResponse, error) {
+			return search(ctx, query, limit), nil
+		}
 	}
 	if extract != nil {
 		keylessExtractors[name] = extract
@@ -693,5 +695,18 @@ func TestWebBackendSelectionForExaAndParallel(t *testing.T) {
 		if got := getWebBackend(env); got != c.want {
 			t.Fatalf("%v %v -> %q want %q", c.backend, c.keys, got, c.want)
 		}
+	}
+}
+
+func TestActiveSearchProviderAndGetSearchBackendExportTheResolvers(t *testing.T) {
+	sdkOnlyRegistry(t)
+	env := sdkProviderEnv(t, "", nil)
+	t.Setenv("EXA_API_KEY", "sk-real")
+	got, want := ActiveSearchProvider(env), activeSearchProvider(env)
+	if got == nil || want == nil || got.Name() != want.Name() {
+		t.Fatalf("exported provider %v want %v", got, want)
+	}
+	if GetSearchBackend(env) != getSearchBackend(env) {
+		t.Fatalf("exported backend %q want %q", GetSearchBackend(env), getSearchBackend(env))
 	}
 }

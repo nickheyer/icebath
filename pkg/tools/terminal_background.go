@@ -137,6 +137,9 @@ func asyncDeliverySupported(env *Env) bool {
 	return true
 }
 
+// Reports whether the bound session can receive async completion notices, the exported face for pkg/cron
+func SessionAsyncDeliverySupported(env *Env) bool { return asyncDeliverySupported(env) }
+
 func looksLikeHomebrewCIPoller(command string) bool {
 	hasGh := strings.Contains(command, "gh pr view") || strings.Contains(command, "gh pr checks")
 	hasJq := strings.Contains(command, " jq ") || strings.Contains(command, "| jq") || strings.Contains(command, "$(jq")

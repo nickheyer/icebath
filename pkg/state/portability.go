@@ -3,8 +3,12 @@ package state
 import (
 	"context"
 	"database/sql"
+	"maps"
 	"strconv"
+	"strings"
+	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -100,4 +104,110 @@ func (d *SessionDB) ListCronJobRunsFrom(ctx context.Context, jobID string, limit
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// Columns no list consumer renders, left out of the compact projection
+var sessionCompactExcluded = map[string]bool{"system_prompt": true, "system_prompt_hash": true, "git_metadata_generation": true}
+
+var (
+	sessionCompactColsMu  sync.Mutex
+	sessionCompactColsSQL string
+)
+
+// s prefixed SELECT list of every declared sessions column except the prompt storage internals
+func compactSessionCols(ctx context.Context) (string, error) {
+	sessionCompactColsMu.Lock()
+	defer sessionCompactColsMu.Unlock()
+	if sessionCompactColsSQL != "" {
+		return sessionCompactColsSQL, nil
+	}
+	tables, err := parseSchemaColumns(ctx, SchemaSQL)
+	if err != nil {
+		return "", err
+	}
+	declared, _ := rowValue(tables, "sessions").(*pyjson.Object)
+	if declared == nil {
+		return "", &pyint.Error{Kind: "KeyError", Msg: "'sessions'"}
+	}
+	var cols []string
+	for _, name := range declared.Keys {
+		if !sessionCompactExcluded[name] {
+			cols = append(cols, "s."+name)
+		}
+	}
+	sessionCompactColsSQL = strings.Join(cols, ", ")
+	return sessionCompactColsSQL, nil
+}
+
+type richRowSeams struct {
+	single func(ctx context.Context, sessionID string, compactRows bool) (*pyjson.Object, error)
+	batch  func(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*pyjson.Object, error)
+}
+
+// One session with the list enriched columns, nil when missing
+func (d *SessionDB) GetSessionRichRow(ctx context.Context, sessionID string, compactRows bool) (*pyjson.Object, error) {
+	if d.richRowSeams.single != nil {
+		return d.richRowSeams.single(ctx, sessionID, compactRows)
+	}
+	return d.readSessionRichRow(ctx, sessionID, compactRows)
+}
+
+// Reads one enriched session row through the batched fetch
+func (d *SessionDB) readSessionRichRow(ctx context.Context, sessionID string, compactRows bool) (*pyjson.Object, error) {
+	rows, err := d.getSessionRichRowsBatch(ctx, []string{sessionID}, compactRows)
+	if err != nil {
+		return nil, err
+	}
+	return rows[sessionID], nil
+}
+
+// Enriched rows of many sessions keyed by id in one round trip per chunk, missing ids absent
+func (d *SessionDB) getSessionRichRowsBatch(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*pyjson.Object, error) {
+	if d.richRowSeams.batch != nil {
+		return d.richRowSeams.batch(ctx, sessionIDs, compactRows)
+	}
+	return d.readSessionRichRowsBatch(ctx, sessionIDs, compactRows)
+}
+
+// Reads enriched rows in chunks of 900 with the prompt resolved unless compact
+func (d *SessionDB) readSessionRichRowsBatch(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*pyjson.Object, error) {
+	var ids []string
+	for _, sid := range sessionIDs {
+		if sid != "" {
+			ids = append(ids, sid)
+		}
+	}
+	result := map[string]*pyjson.Object{}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	if len(ids) > sqlInChunk {
+		for _, chunk := range idChunks(ids, sqlInChunk) {
+			part, err := d.getSessionRichRowsBatch(ctx, chunk, compactRows)
+			if err != nil {
+				return nil, err
+			}
+			maps.Copy(result, part)
+		}
+		return result, nil
+	}
+	d.FlushTokenCounts(5.0)
+	cols, prompt := "s.*", ", "+promptResolvedSQL
+	promptSelect := &prompt
+	if compactRows {
+		var err error
+		if cols, err = compactSessionCols(ctx); err != nil {
+			return nil, err
+		}
+		promptSelect = nil
+	}
+	rows, err := d.readRows(ctx, richSelect(cols, "s.id IN ("+placeholders(len(ids))+")", "", promptSelect), stringsToAny(ids)...)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		s := richRow(row)
+		result[pyStr(rowValue(s, "id"))] = s
+	}
+	return result, nil
 }

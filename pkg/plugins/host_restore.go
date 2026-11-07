@@ -110,6 +110,12 @@ var hostDeclaredReturns = map[string]map[string]string{
 		"get_automatic_compaction_status_message": "str | None", "has_content_to_compress": "bool", "on_session_start": "None",
 		"on_session_end": "None", "on_session_reset": "None", "get_tool_schemas": "list[dict[str, Any]]", "handle_tool_call": "str",
 		"get_status": "dict[str, Any]", "clone_for_agent": "'ContextEngine'", "update_model": "None"},
+	"tools.computer_use.backend:ComputerUseProvider": returnsOf(providerBaseReturns,
+		map[string]string{"create_backend": "ComputerUseBackend", "doctor": "Optional[int]"}),
+	"tools.computer_use.backend:ComputerUseBackend": {"start": "None", "stop": "None", "is_available": "bool",
+		"capture": "CaptureResult", "click": "ActionResult", "drag": "ActionResult", "scroll": "ActionResult",
+		"type_text": "ActionResult", "key": "ActionResult", "list_apps": "list[dict[str, Any]]",
+		"list_windows": "list[dict[str, Any]]", "focus_app": "ActionResult", "set_value": "ActionResult", "wait": "ActionResult"},
 	"agent.context_references:ContextReferenceProvider": {"autocomplete": "list[ContextCompletionItem]", "expand": "str | None"},
 	"agent.memory_provider:MemoryProvider": {"name": "str", "is_available": "bool", "initialize": "None",
 		"unavailable_reason": "str", "system_prompt_block": "str", "prefetch": "str", "queue_prefetch": "None",
@@ -146,6 +152,11 @@ func hostObjectBase(hint *pyHint) string {
 	}
 	for _, ref := range sortedKeys(HostObjectBases) {
 		base := HostObjectBases[ref]
+		if base[strings.LastIndex(base, ":")+1:] == hint.name {
+			return base
+		}
+	}
+	for _, base := range HostResultObjectBases {
 		if base[strings.LastIndex(base, ":")+1:] == hint.name {
 			return base
 		}

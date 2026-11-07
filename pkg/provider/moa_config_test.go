@@ -384,3 +384,10 @@ func TestMoAPresetOrderIsDefaultsThenFileOrder(t *testing.T) {
 		t.Fatalf("defaults %v", defaults)
 	}
 }
+
+func TestNormalizeMoAConfigWrapsUnexported(t *testing.T) {
+	raw := map[string]any{"default_preset": "duo", "presets": map[string]any{"duo": map[string]any{"aggregator": map[string]any{"provider": "openrouter", "model": "m"}}}}
+	if got, want := NormalizeMoAConfig(raw), normalizeMoAConfig(raw); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}

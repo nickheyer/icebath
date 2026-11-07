@@ -117,6 +117,26 @@ func TestReadTextDecodesUTF8SigWithUniversalNewlines(t *testing.T) {
 	}
 }
 
+// A reader swapped back while a timed out read still runs must not race the abandoned goroutine
+func TestReadTextWithTimeoutReaderRestoredDuringAbandonedReadIsRaceFree(t *testing.T) {
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	original := ReadContextFileText
+	ReadContextFileText = func(path string) (string, error) {
+		defer close(finished)
+		<-release
+		return "late", nil
+	}
+	timeout := 0.02
+	text, ok, err := ReadTextWithTimeout(nil, filepath.Join(t.TempDir(), "slow.md"), &timeout)
+	ReadContextFileText = original
+	close(release)
+	<-finished
+	if err != nil || ok || text != "" {
+		t.Fatalf("got %q %v %v", text, ok, err)
+	}
+}
+
 func TestFormatBackendProbe(t *testing.T) {
 	if got := formatBackendProbe("os=Linux\nkernel=6.1\n"); got != "  OS: Linux 6.1" {
 		t.Fatalf("got %q", got)

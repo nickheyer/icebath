@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -310,5 +311,119 @@ func TestCompactionDoneEdgeAndMarkerStrippedComparison(t *testing.T) {
 	swept := []map[string]any{{"role": "user", "content": "x"}}
 	if !reflect.DeepEqual(stripMarkerForComparison(live), swept) || live[0]["_db_persisted"] != true {
 		t.Fatalf("stripped %v live %v", stripMarkerForComparison(live), live)
+	}
+}
+
+func TestTimeoutStateFirstUseIsAtomic(t *testing.T) {
+	a := &AIAgent{}
+	resetFinished, markerFinished := make(chan struct{}), make(chan struct{})
+	seen := map[string]bool{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		resetContextCompressionTimeoutOutcome(a)
+		close(resetFinished)
+		<-markerFinished
+		mu.Lock()
+		seen["resetter"] = contextCompressionTimedOut(a)
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		markContextCompressionTimedOut(a)
+		close(markerFinished)
+		<-resetFinished
+		mu.Lock()
+		seen["marker"] = contextCompressionTimedOut(a)
+		mu.Unlock()
+	}()
+	wg.Wait()
+	if !reflect.DeepEqual(seen, map[string]bool{"resetter": false, "marker": true}) {
+		t.Fatalf("seen %v", seen)
+	}
+}
+
+func TestSilentWorkerTimesOutAndPreservesMessages(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{AuxiliaryTasks: func() []map[string]any { return nil }})
+	original := runnerRows("keep-me")
+	started, release := make(chan struct{}), make(chan struct{})
+	var commitAttempted atomic.Bool
+	var warnings [][3]float64
+	msgs, prompt, err := runCompressContextWithProgressTimeout(context.Background(), compressionTimeoutRun{
+		Worker: func(_ context.Context, fence *CompressionCommitFence) ([]map[string]any, string, error) {
+			close(started)
+			select {
+			case <-release:
+			case <-time.After(2 * time.Second):
+				t.Error("worker never released")
+			}
+			if !fence.BeginCommit(nil) {
+				return runnerRows("should-not-land"), "x", nil
+			}
+			defer fence.FinishCommit()
+			commitAttempted.Store(true)
+			return runnerRows("too-late"), "x", nil
+		},
+		Messages: original, SystemPromptFallback: func() string { return "fallback-prompt" },
+		IdleTimeoutSeconds: 0.05, TotalCeilingSeconds: 2,
+		OnTimeout: func(idle, waited, since float64) { warnings = append(warnings, [3]float64{idle, waited, since}) },
+	})
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("worker never started")
+	}
+	time.Sleep(150 * time.Millisecond)
+	close(release)
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline) && !commitAttempted.Load(); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil || !sameMessageList(msgs, original) || prompt != "fallback-prompt" {
+		t.Fatalf("msgs %v prompt %q err %v", msgs, prompt, err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("timeout callback should fire")
+	}
+	if commitAttempted.Load() {
+		t.Fatal("cancelled fence must block late session mutation")
+	}
+}
+
+// Worker committing one user row and prompt p
+func committingWorker(seen func(ctx context.Context)) compressionWorker {
+	return func(ctx context.Context, fence *CompressionCommitFence) ([]map[string]any, string, error) {
+		seen(ctx)
+		if !fence.BeginCommit(nil) {
+			return nil, "", nil
+		}
+		defer fence.FinishCommit()
+		return runnerRows("ok"), "p", nil
+	}
+}
+
+func TestPropagatesConversationContextIntoWorker(t *testing.T) {
+	var seen atomic.Value
+	ctx := provider.WithPortalConversationContext(context.Background(), "conv-timeout-ctx")
+	msgs, prompt, err := runCompressContextWithProgressTimeout(ctx, compressionTimeoutRun{
+		Worker:   committingWorker(func(ctx context.Context) { seen.Store(provider.PortalConversationContext(ctx)) }),
+		Messages: runnerRows("x"), SystemPromptFallback: func() string { return "fallback" }, IdleTimeoutSeconds: 1, TotalCeilingSeconds: 2,
+	})
+	if seen.Load() != "conv-timeout-ctx" || err != nil || prompt != "p" || msgs[0]["content"] != "ok" {
+		t.Fatalf("ctx %v msgs %v prompt %q err %v", seen.Load(), msgs, prompt, err)
+	}
+}
+
+func TestRunsWorkerOffCallerThread(t *testing.T) {
+	caller := pythread.GoroutineID()
+	var worker atomic.Int64
+	msgs, prompt, err := runCompressContextWithProgressTimeout(context.Background(), compressionTimeoutRun{
+		Worker:   committingWorker(func(context.Context) { worker.Store(int64(pythread.GoroutineID())) }),
+		Messages: nil, SystemPromptFallback: func() string { return "" }, IdleTimeoutSeconds: 1, TotalCeilingSeconds: 1,
+	})
+	if worker.Load() == 0 || worker.Load() == int64(caller) || err != nil || prompt != "p" || msgs[0]["content"] != "ok" {
+		t.Fatalf("worker %d caller %d msgs %v prompt %q err %v", worker.Load(), caller, msgs, prompt, err)
 	}
 }

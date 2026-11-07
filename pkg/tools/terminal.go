@@ -147,6 +147,9 @@ func errorJSON(errText string, exitCode int, status string, extra [][2]any) stri
 	return orderedJSON(append(fields, extra...))
 }
 
+// Terminal error envelope with exit code minus one and the given status
+func TerminalErrorJSON(errText, status string) string { return errorJSON(errText, -1, status, nil) }
+
 // Redacted error plus stack envelope after logging the failure
 func fatalErrorJSON(env *Env, err error) string {
 	stack := string(debug.Stack()) + fmt.Sprintf("%T: %s\n", err, err)
@@ -524,6 +527,9 @@ func runForeground(ctx context.Context, env *Env, command string, e Environment,
 
 // Floor for the pre exec guard's share of the command deadline in seconds
 const preExecGuardMinTimeoutS = 30
+
+// Minimum seconds the pre exec guard probe waits, the terminal tool floor execute_code shares
+const PreExecGuardMinTimeoutS = preExecGuardMinTimeoutS
 
 // Returns the blocked result JSON when the command must not run, lifecycle first then workdir then local guards
 func preExecBlock(ctx context.Context, env *Env, command string, e Environment, envType, cwd, workdir, sessionKey string) error {

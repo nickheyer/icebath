@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -46,6 +47,9 @@ const (
 	auxSDKUserAgent             = "icebath-agent"
 )
 
+// SDKDefaultTimeout is the OpenAI SDK default request timeout in seconds
+const SDKDefaultTimeout = auxSDKDefaultTimeout
+
 // Retry sleep seam so tests observe the SDK backoff without waiting
 var auxSDKSleep = func(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
@@ -73,6 +77,9 @@ var auxSDKDefaultHTTPClient = sync.OnceValue(func() *http.Client {
 	})}
 })
 
+// SDKDefaultHTTPClient is the shared default HTTP client of SDK clients built without a keepalive client
+func SDKDefaultHTTPClient() *http.Client { return auxSDKDefaultHTTPClient() }
+
 // OpenAI SDK chat client of an auxiliary route
 type auxOpenAIClient struct {
 	auxEffectiveStamp
@@ -88,6 +95,84 @@ type auxOpenAIClient struct {
 	httpClient     *http.Client
 	ownsHTTP       bool
 	initErr        error
+	responseHooks  []func(*http.Response)
+	responseMarks  map[string]bool
+}
+
+// Appends a response hook to the SDK client once per mark, false when the client has no SDK HTTP client
+func AddOpenAIClientResponseHook(client any, mark string, hook func(resp *http.Response)) bool {
+	var c *auxOpenAIClient
+	switch v := client.(type) {
+	case *auxOpenAIClient:
+		c = v
+	case *auxAsyncOpenAIClient:
+		if v != nil {
+			c = v.auxOpenAIClient
+		}
+	}
+	if c == nil || c.httpClient == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.responseMarks[mark] {
+		return true
+	}
+	if c.responseMarks == nil {
+		c.responseMarks = map[string]bool{}
+	}
+	c.responseMarks[mark] = true
+	hooks := make([]func(*http.Response), 0, len(c.responseHooks)+1)
+	c.responseHooks = append(append(hooks, c.responseHooks...), hook)
+	return true
+}
+
+// Runs every registered response hook on each response the transport returns, redirect hops included
+type auxResponseHookTransport struct {
+	base  http.RoundTripper
+	hooks []func(*http.Response)
+}
+
+func (t auxResponseHookTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+	for _, h := range t.hooks {
+		h(resp)
+	}
+	return resp, nil
+}
+
+// HTTP client of one request, the shared client unchanged unless response hooks are registered
+func (c *auxOpenAIClient) requestHTTPClient() *http.Client {
+	c.mu.Lock()
+	hooks := c.responseHooks
+	c.mu.Unlock()
+	if len(hooks) == 0 {
+		return c.httpClient
+	}
+	hc := *c.httpClient
+	base := hc.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	hc.Transport = auxResponseHookTransport{base: base, hooks: hooks}
+	return &hc
+}
+
+// Copy of the custom default headers a routed SDK client sends, nil when the client keeps none
+func AuxClientCustomHeaders(c AuxClient) map[string]string {
+	oc, ok := c.(*auxOpenAIClient)
+	if !ok {
+		return nil
+	}
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	if len(oc.customHeaders) == 0 {
+		return nil
+	}
+	return maps.Clone(oc.customHeaders)
 }
 
 // OpenAI SDK client with a static or callable key, the env key and base URL when none is given
@@ -143,6 +228,11 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 		c.ownsHTTP = true
 	}
 	return c
+}
+
+// NewOpenAIClient is the OpenAI SDK client with a static or callable key, the env key and base URL when none is given
+func NewOpenAIClient(apiKey any, baseURL string, opts OpenAIClientOptions) AuxClient {
+	return newAuxOpenAIClient(apiKey, baseURL, opts)
 }
 
 // Base URL with the trailing slash the SDK enforces
@@ -268,21 +358,32 @@ func (c *auxOpenAIClient) CreateResponse(ctx context.Context, kwargs map[string]
 var auxSDKBuildRequestFn = auxSDKBuildRequest
 
 func (c *auxOpenAIClient) create(ctx context.Context, path string, kwargs map[string]any) (any, error) {
+	out, _, err := c.createRaw(ctx, path, kwargs)
+	return out, err
+}
+
+// Sends one chat completions request like with_raw_response, the parsed completion and the final response headers
+func (c *auxOpenAIClient) CreateChatCompletionRaw(ctx context.Context, kwargs map[string]any) (any, http.Header, error) {
+	return c.createRaw(ctx, "chat/completions", kwargs)
+}
+
+// SDK retry loop over the attempts, returning the last attempt's result with its response headers
+func (c *auxOpenAIClient) createRaw(ctx context.Context, path string, kwargs map[string]any) (any, http.Header, error) {
 	if c.initErr != nil {
-		return nil, c.initErr
+		return nil, nil, c.initErr
 	}
 	req, err := auxSDKBuildRequestFn(c, kwargs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.path = path
 	for retries := 0; ; retries++ {
-		out, retryAfter, retry, err := c.attempt(ctx, req, retries)
+		out, headers, retry, err := c.attempt(ctx, req, retries)
 		if !retry || retries >= c.maxRetries {
-			return out, err
+			return out, headers, err
 		}
-		if err := auxSDKSleep(ctx, c.retryDelay(retries, retryAfter)); err != nil {
-			return nil, err
+		if err := auxSDKSleep(ctx, c.retryDelay(retries, headers)); err != nil {
+			return nil, nil, err
 		}
 	}
 }
@@ -357,7 +458,7 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 	}
 	c.applyHeaders(httpReq, key, r, retries)
 	idle := newAuxIdleTimer(r.timeout, r.hasTimeout, cancel)
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.requestHTTPClient().Do(httpReq)
 	idle.stop()
 	if err != nil {
 		cancel()
@@ -391,7 +492,7 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 		stream.idle = newAuxIdleTimer(r.timeout, r.hasTimeout, func() { _ = resp.Body.Close() })
 		stream.idle.stop()
 		stream.lines = bufio.NewReaderSize(resp.Body, 64*1024)
-		return stream, nil, false, nil
+		return stream, resp.Header, false, nil
 	}
 	body := &auxIdleReader{r: resp.Body, idle: newAuxIdleTimer(r.timeout, r.hasTimeout, cancel)}
 	data, err := io.ReadAll(body)
@@ -409,9 +510,9 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 	}
 	var payload any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return string(data), nil, false, nil
+		return string(data), resp.Header, false, nil
 	}
-	return payload, nil, false, nil
+	return payload, resp.Header, false, nil
 }
 
 // SDK headers, auth, organization and project, retry count, then client defaults and per request extras

@@ -408,3 +408,12 @@ func TestAuxRefreshNousRecommendedModelNoDistinctAlternative(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestAuxExcTypeNameExposesTheOutermostClass(t *testing.T) {
+	if got := AuxExcTypeName(&AuxSDKError{Class: "RateLimitError"}); got != "RateLimitError" {
+		t.Fatalf("sdk %q", got)
+	}
+	if got := AuxExcTypeName(&AuxTransportError{Class: "ConnectTimeout"}); got != "ConnectTimeout" {
+		t.Fatalf("transport %q", got)
+	}
+}

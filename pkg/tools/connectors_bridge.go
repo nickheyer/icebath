@@ -906,7 +906,13 @@ func connectorEntriesByGroup(ctx context.Context, env *Env, queries []string, ca
 		}
 		picked := map[string]pick{}
 		var order []string
-		for _, rawSlug := range asList(group["tools"]) {
+		slugs := asList(group["tools"])
+		if wire, ok := group["tools"].([]string); ok {
+			for _, slug := range wire {
+				slugs = append(slugs, slug)
+			}
+		}
+		for _, rawSlug := range slugs {
 			slug := asStr(rawSlug)
 			schema := asMap(schemas[slug])
 			if schema == nil || asStr(schema["connector"]) == "" {

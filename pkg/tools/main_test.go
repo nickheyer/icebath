@@ -28,6 +28,9 @@ func TestMain(m *testing.M) {
 	state.SecretEnvSubstrings = testSecretEnvSubstrings
 	state.SecretEnvName = testSecretEnvName
 	installContextLengthDoubles()
+	installDelegationRegistryDoubles()
+	installGitlockDoubles()
+	installWorktreeDoubles()
 	os.Exit(m.Run())
 }
 

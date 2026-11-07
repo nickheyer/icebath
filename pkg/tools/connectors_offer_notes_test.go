@@ -5,10 +5,12 @@ import (
 	"testing"
 )
 
-// Installs the offer hook doubles pkg/mcp wires in production, this binary never links pkg/mcp
+// Installs the connector hook doubles pkg/mcp wires in production with telemetry unconsented, this binary never links pkg/mcp
 func init() {
 	NoteAppConnected = func(context.Context, *Env) {}
 	NoteConnectedAppsSeen = func(context.Context, *Env, []any) {}
+	TelemetrySendConsented = func(context.Context, *Env) (bool, error) { return false, nil }
+	ConnectorConversationContext = func(context.Context) string { return "" }
 }
 
 func TestStatusReadHandsEveryListedRowToTheOfferHook(t *testing.T) {

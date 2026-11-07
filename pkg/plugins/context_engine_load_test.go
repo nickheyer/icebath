@@ -436,3 +436,26 @@ func TestHostedCronSchedulerDefaultFireReachesIcebath(t *testing.T) {
 		t.Fatalf("ops %v kwargs %v", ops, claimKwargs)
 	}
 }
+
+func TestHostedObjectOverridesBaseFollowsTheProxyClass(t *testing.T) {
+	ctx, h := engineHome(t)
+	dir := filepath.Join(h, "plugins", "legacy")
+	writeTree(t, dir, map[string]string{"__init__.py": "from cron.scheduler_provider import CronScheduler\n" +
+		"class Legacy(CronScheduler):\n    name = 'legacy'\n    def __init__(self):\n        self.fire_claimed = None\n" +
+		"    def start(self, stop_event, *, adapters=None, loop=None, interval=60):\n        return None\n" +
+		"    def fire_due(self, job_id, **kwargs):\n        return True\n" +
+		"def register(ctx):\n    ctx.register_cron_scheduler(Legacy())\n"})
+	host, err := GetPluginManager(ctx).PluginHost()
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := host.LoadInstance(ctx, dir, "_icebath_user_cron.legacy", "cron.scheduler_provider:CronScheduler", "register_cron_scheduler", nil, nil)
+	if err != nil || obj == nil {
+		t.Fatalf("load %v %v", obj, err)
+	}
+	for method, want := range map[string]bool{"fire_due": true, "start": true, "claim_fire": true, "fire_claimed": false, "name": false, "no_such_method": false} {
+		if got, err := obj.OverridesBase(ctx, method); err != nil || got != want {
+			t.Fatalf("%s overrides %v want %v err %v", method, got, want, err)
+		}
+	}
+}

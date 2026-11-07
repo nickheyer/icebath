@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 2 && os.Args[1] == cuChildEntry {
 		os.Exit(cuChild(os.Args[2], os.Args[3:]))
 	}
+	LoadCronJobsHook = testCronJobs
 	os.Exit(m.Run())
 }
 

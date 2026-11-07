@@ -110,16 +110,16 @@ func TestResolveMinimaxOAuthProbeReadsRawStateNoRefresh(t *testing.T) {
 		resolveCalled = true
 		return nil, nil
 	}
-	res, err := RegistryAuthTypeArms["oauth_minimax"](AuxProbeMode(ctx), auxResolveRequest{Provider: "minimax-oauth", Model: "MiniMax-M3"})
+	client, model, err := ResolveProviderClient(AuxProbeMode(ctx), "minimax-oauth", "MiniMax-M3", ProviderClientOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Model != "MiniMax-M3" {
-		t.Fatalf("model = %q", res.Model)
+	if model != "MiniMax-M3" {
+		t.Fatalf("model = %q", model)
 	}
-	probe, ok := res.Client.(*auxProbeClient)
+	probe, ok := client.(*auxProbeClient)
 	if !ok || probe.BaseURL() != auxMinimaxInferenceBaseURL {
-		t.Fatalf("probe mode must answer minimax-oauth with a probe client from the raw persisted state, got %#v", res.Client)
+		t.Fatalf("probe mode must answer minimax-oauth with a probe client from the raw persisted state, got %#v", client)
 	}
 	if resolveCalled || len(asked) != 1 || asked[0] != "minimax-oauth" {
 		t.Fatalf("resolver called %v, state asked %v", resolveCalled, asked)

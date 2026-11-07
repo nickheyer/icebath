@@ -45,6 +45,11 @@ func auxResolveTaskProviderModel(ctx context.Context, task any, provider, model,
 	return out
 }
 
+// Configured provider of a task with no explicit args, auto when nothing is configured
+func ResolveAuxTaskProvider(ctx context.Context, task string) string {
+	return auxResolveTaskProviderModel(ctx, task, "", "", "", nil).Provider
+}
+
 // Explicit non reasoning compression route
 type CompressionFastLane struct {
 	CertifiedNonReasoning bool
@@ -422,6 +427,9 @@ var (
 	auxNvidiaProviderNames       = map[string]bool{"nvidia": true, "nvidia-nim": true, "nim": true, "build-nvidia": true, "nemotron": true}
 	auxGeminiNativeProviderNames = map[string]bool{"gemini": true, "google": true, "google-gemini": true, "google-ai-studio": true}
 )
+
+// IsGeminiNativeProviderName reports a provider name served by the native Gemini client
+func IsGeminiNativeProviderName(name string) bool { return auxGeminiNativeProviderNames[name] }
 
 // Gemini native by provider name, else by base URL shape
 func auxIsGeminiNativeRoute(providerNorm, effectiveBase string) bool {

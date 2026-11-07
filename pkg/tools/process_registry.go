@@ -1060,6 +1060,9 @@ func sessionEnvValue(env *Env, name string) string {
 	return os.Getenv(name)
 }
 
+// Session context variable of the turn, the process env otherwise
+func SessionEnvValue(env *Env, name string) string { return sessionEnvValue(env, name) }
+
 func (r *ProcessRegistry) newSession(env *Env, command, taskID, ownerTaskID, sessionKey, cwd string) *ProcessSession {
 	s := NewProcessSession("proc_"+randomHex(6), command)
 	s.TaskID, s.OwnerTaskID, s.SessionKey, s.Cwd = taskID, ownerTaskID, sessionKey, cwd

@@ -185,7 +185,7 @@ func TestCodexSpawnEnvAndKanbanWorkerOverrides(t *testing.T) {
 	os.Unsetenv("RUST_LOG")
 	t.Setenv("ICEBATH_KANBAN_TASK", "")
 	os.Unsetenv("ICEBATH_KANBAN_TASK")
-	argv, env := codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex", CodexHome: "/tmp/codex-home", ExtraArgs: []string{"--x"}})
+	argv, env, _ := codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex", CodexHome: "/tmp/codex-home", ExtraArgs: []string{"--x"}})
 	if env["CODEX_HOME"] != "/tmp/codex-home" || env["RUST_LOG"] != "warn" || !slices.Equal(argv, []string{"codex", "app-server", "--x"}) {
 		t.Fatalf("plain spawn %v %v %v", argv, env["CODEX_HOME"], env["RUST_LOG"])
 	}
@@ -193,7 +193,7 @@ func TestCodexSpawnEnvAndKanbanWorkerOverrides(t *testing.T) {
 	t.Setenv("ICEBATH_KANBAN_DB", "/boards/main/kanban.db")
 	t.Setenv("ICEBATH_NON_DISPATCHER_OWNED_CONTEXT", "")
 	t.Setenv("ICEBATH_DELEGATED_CHILD_CONTEXT", "")
-	argv, _ = codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex"})
+	argv, _, _ = codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex"})
 	joined := strings.Join(argv, "\n")
 	for _, want := range []string{
 		`mcp_servers.icebath-tools.env.ICEBATH_KANBAN_TASK="task-1"`,
@@ -208,7 +208,7 @@ func TestCodexSpawnEnvAndKanbanWorkerOverrides(t *testing.T) {
 		}
 	}
 	t.Setenv("ICEBATH_NON_DISPATCHER_OWNED_CONTEXT", "1")
-	if argv, _ = codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex"}); len(argv) != 2 {
+	if argv, _, _ = codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex"}); len(argv) != 2 {
 		t.Fatalf("non dispatcher owned worker got overrides %v", argv)
 	}
 }
@@ -244,5 +244,18 @@ func TestCodexCloseEscalatesToTreeKillWhenRootIgnoresSigterm(t *testing.T) {
 	c.Close(200 * time.Millisecond)
 	if c.IsAlive() || time.Since(start) > 3*time.Second {
 		t.Fatalf("root survived close after %s", time.Since(start))
+	}
+}
+
+func TestCodexAppServerSpawnReturnsTheDamagedRuntimeRecordError(t *testing.T) {
+	damaged := errors.New("runtime dependency record is damaged")
+	prev := codexSpawnEnvFn
+	codexSpawnEnvFn = func(*tools.Env, bool, map[string]string) (map[string]string, error) { return nil, damaged }
+	t.Cleanup(func() { codexSpawnEnvFn = prev })
+	if argv, env, err := codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex"}); !errors.Is(err, damaged) || argv != nil || env != nil {
+		t.Fatalf("spawn = %v %v %v", argv, env, err)
+	}
+	if client, err := NewCodexAppServerClient(CodexAppServerOptions{CodexBin: "codex"}); !errors.Is(err, damaged) || client != nil {
+		t.Fatalf("client = %v %v", client, err)
 	}
 }

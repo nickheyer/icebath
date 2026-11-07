@@ -184,3 +184,43 @@ func TestAmbiguousAndUnknownNamesCannotChangeConfig(t *testing.T) {
 		t.Fatalf("config changed:\n%s", after)
 	}
 }
+
+// test_plugins_cmd_activation_keys.py test_dashboard_toggle_writes_canonical_key_and_clears_stale_aliases
+func TestDashboardToggleWritesCanonicalKeyAndClearsStaleAliases(t *testing.T) {
+	_, h := pubWorld(t)
+	previous := hostInterpreter
+	hostInterpreter = func(context.Context) (string, error) { return liveInterpreters(t)["system"], nil }
+	t.Cleanup(func() { hostInterpreter = previous })
+	ctx := homeCtx(h)
+	pubPluginTree(t, filepath.Join(h, "plugins", "obs", "zzprobe"), "name: zz-probe-manifest\nversion: '1.0'\n")
+	vtWrite(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: []\n  disabled: [obs/zzprobe]\n")
+	result, err := DashboardSetAgentPluginEnabled(ctx, "zzprobe", true)
+	if err != nil || result["ok"] != true || result["name"] != "obs/zzprobe" || result["unchanged"] != false || result["restart_required"] != true ||
+		result["gateway_reloaded"] != false {
+		t.Fatalf("enable by leaf = %v %v", result, err)
+	}
+	if m := GetPluginManager(ctx); m.pluginHostInstance != nil {
+		t.Cleanup(m.pluginHostInstance.Shutdown)
+	}
+	plugins := pubPlugins(t, h)
+	enabled, disabled := pubList(plugins, "enabled"), pubList(plugins, "disabled")
+	if strings.Join(enabled, ",") != "obs/zzprobe" || len(disabled) != 0 {
+		t.Fatalf("lists = %v %v", enabled, disabled)
+	}
+	var manifest *Manifest
+	for _, mf := range CollectDirectoryManifests(h) {
+		if mf.Name == "zz-probe-manifest" {
+			manifest = mf
+		}
+	}
+	if manifest == nil {
+		t.Fatal("zz-probe-manifest is not discovered")
+	}
+	if g := GateManifest(h, manifest, map[string]bool{}, map[string]bool{"obs/zzprobe": true}, true); g.Action != "load" {
+		t.Fatalf("gate = %+v", g)
+	}
+	again, err := DashboardSetAgentPluginEnabled(ctx, "zz-probe-manifest", true)
+	if err != nil || again["unchanged"] != true || again["restart_required"] != false {
+		t.Fatalf("enable by manifest name again = %v %v", again, err)
+	}
+}

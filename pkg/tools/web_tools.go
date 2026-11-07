@@ -129,6 +129,9 @@ func getSearchBackend(env *Env) string {
 	return getWebBackend(env)
 }
 
+// Legacy web_search backend probe for env
+func GetSearchBackend(env *Env) string { return getSearchBackend(env) }
+
 // Backend for web_extract, the pin strictly, a nous pin being managed Firecrawl
 func getExtractBackend(env *Env) string {
 	pin := configuredWebBackend(env, "extract_backend")
@@ -169,6 +172,9 @@ func hasXAICredentials(env *Env) bool {
 	}
 	return false
 }
+
+// Cheap xAI credential probe over the env key and the auth store tokens without any network call
+func HasXAICredentials(env *Env) bool { return hasXAICredentials(env) }
 
 // Built in backends and their cheap availability probes
 var builtinWebAvailability = map[string]func(env *Env) bool{

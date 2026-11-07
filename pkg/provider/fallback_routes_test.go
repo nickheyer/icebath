@@ -107,3 +107,18 @@ func TestScopedFallbackChain(t *testing.T) {
 		t.Fatalf("unusable declared falls to default: %v", got)
 	}
 }
+
+func TestResolveFallbackEntryAPIKeyExport(t *testing.T) {
+	h := runtimeConfigHome(t, "model:\n  default: m\n")
+	t.Setenv("FALLBACK_ENTRY_KEY", "  sk-from-env  ")
+	ctx := context.Background()
+	if got := ResolveFallbackEntryAPIKey(ctx, h, map[string]any{"api_key": " sk-inline ", "key_env": "FALLBACK_ENTRY_KEY"}); got != "sk-inline" {
+		t.Fatalf("inline %q", got)
+	}
+	if got := ResolveFallbackEntryAPIKey(ctx, h, map[string]any{"api_key_env": "FALLBACK_ENTRY_KEY"}); got != "sk-from-env" {
+		t.Fatalf("key env alias %q", got)
+	}
+	if got := ResolveFallbackEntryAPIKey(ctx, h, nil); got != "" {
+		t.Fatalf("nil entry %q", got)
+	}
+}

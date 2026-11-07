@@ -182,3 +182,9 @@ func TestAuthoritativeTaskStripsOnlyRouteFields(t *testing.T) {
 		t.Fatalf("a plain task name keeps its route, got %v", plain)
 	}
 }
+
+func TestAuxRouteKeysExport(t *testing.T) {
+	if !AuxRouteKeys["api_key"] || !AuxRouteKeys["base_url"] || AuxRouteKeys["timeout"] {
+		t.Fatalf("aux route keys %v", AuxRouteKeys)
+	}
+}

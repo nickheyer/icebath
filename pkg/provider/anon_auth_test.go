@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -216,5 +217,33 @@ func TestAnonMintMemoIsKeyedPerProfileHome(t *testing.T) {
 	scoped.Ctx = home.WithOverride(context.Background(), t.TempDir())
 	if mintMemoKey(env) != "" || mintMemoKey(scoped) == "" {
 		t.Fatalf("keys %q %q", mintMemoKey(env), mintMemoKey(scoped))
+	}
+}
+
+func TestTrialModelExportReadsTheHomeIdentity(t *testing.T) {
+	h := runtimeConfigHome(t, "model:\n  default: m\n")
+	ctx := context.Background()
+	if got, want := TrialModel(ctx, h), trialModel(modelsPoolEnv(ctxForHome(ctx, h))); got != want || got != "" {
+		t.Fatalf("trial model %q want empty %q", got, want)
+	}
+}
+
+func TestTrialModelExportCarriesTheClaimedWelcomeTrial(t *testing.T) {
+	_, env := installAnonPortal(t)
+	anonClaimedTrial(t, env)
+	if got := TrialModel(context.Background(), os.Getenv("ICEBATH_HOME")); got != GuestModel {
+		t.Fatalf("claimed trial model %q want %q", got, GuestModel)
+	}
+}
+
+func TestAnonAuthExportsAnswerLikeTheirOriginals(t *testing.T) {
+	env := anonPresentEnv(t)
+	if HasGuest(env) != hasGuest(env) || HasFreeTierAccount(env) != hasFreeTierAccount(env) || GuestNoticePending(env) != guestNoticePending(env) {
+		t.Fatal("an anon export disagrees with its original")
+	}
+	for _, token := range []string{"", "not-a-jwt"} {
+		if IsConnectorsOnly(token) != isConnectorsOnly(token) {
+			t.Fatalf("IsConnectorsOnly(%q) disagrees", token)
+		}
 	}
 }

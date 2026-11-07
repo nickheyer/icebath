@@ -356,3 +356,54 @@ func TestLlamacppAliasWithoutServerIsTyped(t *testing.T) {
 		t.Fatalf("explicit url wins: %+v", rt)
 	}
 }
+
+func TestNamedCustomProviderExportResolvesTheConfiguredEntry(t *testing.T) {
+	h := runtimeConfigHome(t, "model:\n  default: m\ncustom_providers:\n  - name: Local Box\n    base_url: http://10.0.0.5:8000/v1\n    api_key: sk-box\n")
+	ctx := context.Background()
+	entry, err := NamedCustomProvider(ctx, h, "local-box")
+	if err != nil || entry == nil || entry["base_url"] != "http://10.0.0.5:8000/v1" || entry["api_key"] != "sk-box" {
+		t.Fatalf("entry %v err %v", entry, err)
+	}
+	if entry, err := NamedCustomProvider(ctx, h, "nowhere"); err != nil || entry != nil {
+		t.Fatalf("unknown entry %v err %v", entry, err)
+	}
+	bad := runtimeConfigHome(t, "model: [unclosed\n")
+	if entry, err := NamedCustomProvider(ctx, bad, "local-box"); err != nil || entry != nil {
+		t.Fatalf("malformed config runs on defaults, entry %v err %v", entry, err)
+	}
+}
+
+func TestNamedCustomProviderEntry(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	cfg := map[string]any{"providers": map[string]any{"team": map[string]any{"base_url": "http://127.0.0.1:8001/v1", "api_key": "sk-team"}}}
+	entry := NamedCustomProviderEntry(context.Background(), "custom:team", cfg)
+	if entry == nil || entry["base_url"] != "http://127.0.0.1:8001/v1" {
+		t.Fatalf("entry %v", entry)
+	}
+	if got := NamedCustomProviderEntry(context.Background(), "openrouter", cfg); got != nil {
+		t.Fatalf("unknown name matched %v", got)
+	}
+}
+
+func TestEntryURLMatchFormAndNamedCustomProviderPath(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	if got := EntryURL(map[string]any{"url": "http://u/v1", "base_url": "http://b/v1"}); got != "http://u/v1" {
+		t.Fatalf("entry url %q", got)
+	}
+	if got := NormalizeBaseURLForMatch(" HTTP://Host/V1// "); got != "http://host/v1" {
+		t.Fatalf("match form %q", got)
+	}
+	cfg := map[string]any{"providers": map[string]any{"gw": map[string]any{"base_url": "http://x/v1"}}}
+	if p := NamedCustomProviderPath(context.Background(), "custom:gw", cfg); p == nil || p.Section != "providers" || p.Key != "gw" {
+		t.Fatalf("named path %+v", p)
+	}
+}
+
+func TestRouteKeyExport(t *testing.T) {
+	if got := RouteKey(" HTTP://Example.COM/V1/ "); got != routeKey(" HTTP://Example.COM/V1/ ") || got == "" {
+		t.Fatalf("RouteKey = %q", got)
+	}
+	if RouteKey(nil) != "" {
+		t.Fatal("RouteKey(nil) not empty")
+	}
+}

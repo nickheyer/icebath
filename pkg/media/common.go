@@ -379,8 +379,9 @@ func classifyTransportFailure(err error, label string, timeout time.Duration) *h
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &urlErr) && urlErr.Timeout()) {
 		return &httpFailure{Kind: "timeout", Error: fmt.Sprintf("%s image generation timed out (%ds)", label, int(timeout.Seconds())), ErrorType: "timeout"}
 	}
-	text := err.Error()
-	if strings.Contains(text, "no such host") || strings.Contains(text, "connection refused") || strings.Contains(text, "lookup ") {
+	var opErr *net.OpError
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) || (errors.As(err, &opErr) && opErr.Op == "dial") {
 		return &httpFailure{Kind: "unreachable", Error: fmt.Sprintf("%s connection error: %v", label, err), ErrorType: "connection_error"}
 	}
 	return &httpFailure{Kind: "connection", Error: fmt.Sprintf("%s connection error: %v", label, err), ErrorType: "connection_error"}

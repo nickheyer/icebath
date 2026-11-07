@@ -3,6 +3,7 @@ package observability_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -199,5 +200,52 @@ func TestScheduledTicksThatFindThePassHeldElsewhereRecordNothing(t *testing.T) {
 	}
 	if rows := observability.StoredRowsForTest(t, ctx, "icebath.curator.run.count"); len(rows) != 0 {
 		t.Fatalf("rows %v", rows)
+	}
+}
+
+// Memory provider double whose one tool returns a fixed result or raises
+type loopMemoryProvider struct {
+	memory.BaseProvider
+	name, tool, result string
+	boom               bool
+}
+
+func (p *loopMemoryProvider) Name() string                   { return p.name }
+func (p *loopMemoryProvider) Available(context.Context) bool { return true }
+func (p *loopMemoryProvider) Initialize(context.Context, string, memory.InitOptions) error {
+	return nil
+}
+func (p *loopMemoryProvider) ToolSchemas(context.Context) ([]map[string]any, error) {
+	return []map[string]any{{"name": p.tool, "description": "", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}}, nil
+}
+func (p *loopMemoryProvider) HandleToolCall(context.Context, string, map[string]any, memory.ToolCallOptions) (string, error) {
+	if p.boom {
+		return "", errors.New("secret backend detail")
+	}
+	return p.result, nil
+}
+
+func TestMemoryProviderToolsReportBoundedProviderAndOp(t *testing.T) {
+	ctx := observability.DirectRuntimeForTest(t)
+	env := loopEnv(ctx, true)
+	for _, c := range []struct {
+		p    *loopMemoryProvider
+		args map[string]any
+	}{
+		{&loopMemoryProvider{name: "honcho", tool: "honcho_search", result: `{"results": []}`}, map[string]any{"query": "q"}},
+		{&loopMemoryProvider{name: "acme-private-memory", tool: "acme_private_remember", boom: true}, map[string]any{"content": "c"}},
+	} {
+		manager := memory.NewMemoryManager(ctx, env, nil)
+		if err := manager.AddProvider(ctx, c.p); err != nil {
+			t.Fatal(err)
+		}
+		manager.HandleToolCall(ctx, c.p.tool, c.args, "")
+	}
+	want := []string{
+		memRow("add", "failed", "exception", "foreground", "plugin", "1"),
+		memRow("search", "success", "none", "foreground", "honcho", "1"),
+	}
+	if rows := memoryOpRows(t, ctx); !slices.Equal(rows, want) {
+		t.Fatalf("rows\n%v\nwant\n%v", rows, want)
 	}
 }

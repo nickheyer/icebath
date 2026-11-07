@@ -25,10 +25,14 @@ func OneshotToolSchemas(schemas []map[string]any) ([]map[string]any, error) {
 			out = append(out, tool)
 			continue
 		}
-		variant, err := tools.OneshotDelegateFunction(fn)
-		if err != nil {
-			return nil, err
+		params, hasParams := fn["parameters"].(map[string]any)
+		if !hasParams {
+			return nil, fmt.Errorf("KeyError: 'parameters'")
 		}
+		if _, hasProps := params["properties"].(map[string]any); !hasProps {
+			return nil, fmt.Errorf("KeyError: 'properties'")
+		}
+		variant := tools.OneshotDelegateFunction(fn)
 		swapped := make(map[string]any, len(tool))
 		for k, v := range tool {
 			swapped[k] = v

@@ -20,6 +20,9 @@ var compressionMarkerPrefixPattern = `(?:` + regexp.QuoteMeta(CompressionMarkerP
 var compressionMarkerRe = regexp.MustCompile(compressionMarkerPrefixPattern + ` ` + markerCountPattern + ` of ` + markerCountPattern +
 	regexp.QuoteMeta(" chars omitted here by ") + `(?:icebath's|Hermes's)` + regexp.QuoteMeta(" context compressor."))
 
+// Whether the text carries a minted compression marker first sentence
+func HasCompressionMarker(text string) bool { return compressionMarkerRe.MatchString(text) }
+
 // Python format with the comma thousands separator
 func pyCommaInt(n int) string {
 	digits := strconv.Itoa(n)
@@ -50,8 +53,14 @@ func elisionMarker(omitted, total int) string {
 	return CompressionMarkerPrefix + " " + pyCommaInt(omitted) + " of " + pyCommaInt(total) + " chars omitted here by icebath's context compressor.⟫"
 }
 
+// Intra record truncation marker naming the omitted and total character counts
+func ElisionMarker(omitted, total int) string { return elisionMarker(omitted, total) }
+
 // Widest elision marker for any text under a terabyte
 var elisionMarkerMaxLen = utf8.RuneCountInString(elisionMarker(1e12-1, 1e12-1))
+
+// Longest elision marker any count can render, in code points
+func ElisionMarkerMaxLen() int { return elisionMarkerMaxLen }
 
 // Observer of every elide limit, installed by tests only
 var elideObserver func(limit int)
@@ -73,6 +82,9 @@ func elide(text string, limit int) string {
 	return kept + elisionMarker(total-utf8.RuneCountInString(kept), total)
 }
 
+// Caps text at limit characters with the elision marker
+func Elide(text string, limit int) string { return elide(text, limit) }
+
 // Keeps head characters from the start and tail from the end with the marker between them
 func elideMiddle(text string, head, tail int) string {
 	runes := []rune(text)
@@ -82,3 +94,6 @@ func elideMiddle(text string, head, tail int) string {
 	marker := elisionMarker(len(runes)-head-tail, len(runes))
 	return string(runes[:head]) + marker + string(runes[len(runes)-tail:])
 }
+
+// Text keeping head and tail code points around an elision marker when longer than both
+func ElideMiddle(text string, head, tail int) string { return elideMiddle(text, head, tail) }

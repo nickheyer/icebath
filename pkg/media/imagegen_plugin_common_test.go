@@ -168,6 +168,16 @@ func TestPluginCommonPostJSONFailureKinds(t *testing.T) {
 	if _, f, _ := postJSON(ctx, dead, nil, nil, to, "Test", nil, false); f == nil || f.Kind != "unreachable" || f.ErrorType != "connection_error" {
 		t.Fatalf("%+v", f)
 	}
+	hang, _ := net.Listen("tcp", "127.0.0.1:0")
+	go func() {
+		if c, err := hang.Accept(); err == nil {
+			c.Close()
+		}
+	}()
+	defer hang.Close()
+	if _, f, _ := postJSON(ctx, "http://"+hang.Addr().String(), nil, nil, to, "Test", nil, false); f == nil || f.Kind != "connection" || f.ErrorType != "connection_error" {
+		t.Fatalf("connected then dropped %+v", f)
+	}
 	if _, f, err := postJSON(ctx, "nota://x", nil, nil, to, "Test", nil, false); err == nil || f != nil {
 		t.Fatalf("uncaught request error %v %v", f, err)
 	}

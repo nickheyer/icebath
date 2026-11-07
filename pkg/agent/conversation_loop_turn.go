@@ -381,6 +381,9 @@ func runIteration(ctx context.Context, a *AIAgent, s *LoopState) (string, map[st
 		}
 		return err
 	})
+	if perr != nil && tools.IsKeyboardInterrupt(ctx, perr) {
+		return "", nil, perr
+	}
 	if perr != nil {
 		v, err := a.handleOuterLoopError(ctx, perr, s.OuterErrorCount, s.APICallCount, &s.Messages, s.ConversationHistory,
 			s.TurnExitReason, s.Failed, s.FinalResponse)

@@ -23,3 +23,6 @@ func redactCDPURL(value string) string {
 		return g[1] + "://" + g[2] + ":***@"
 	})
 }
+
+// Cdp endpoint url safe to log, query credentials and userinfo passwords masked
+func RedactCDPURL(value string) string { return redactCDPURL(value) }

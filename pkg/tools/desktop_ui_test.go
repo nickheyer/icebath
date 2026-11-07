@@ -61,6 +61,9 @@ func TestDesktopEmitRoutesByWindowAndSessionScope(t *testing.T) {
 	if ok, _ := desktopEmitEvent(env, "message.reaction", nil); !ok || c.sid != "chat-9" {
 		t.Fatalf("session scoped event sid %q", c.sid)
 	}
+	if ok, err := DesktopEmitEvent(env, "message.reaction", nil); !ok || err != nil || c.sid != "chat-9" {
+		t.Fatalf("exported emit sid %q", c.sid)
+	}
 	SetDesktopEmitter(nil)
 	if ok, _ := desktopEmitEvent(env, "pane.reveal", nil); ok || DesktopAvailable() {
 		t.Fatal("no emitter must report unavailable")
@@ -74,6 +77,9 @@ func TestDesktopUserEnabledReadsDisplaySwitches(t *testing.T) {
 	}
 	if !desktopUserEnabled(env, "in_app_tours", true) {
 		t.Fatal("absent switch must keep the default")
+	}
+	if DesktopUserEnabled(env, "in_app_tips", true) || !DesktopUserEnabled(env, "in_app_tours", true) {
+		t.Fatal("exported switch read differs")
 	}
 	if !desktopUserEnabled(&Env{}, "in_app_tips", true) {
 		t.Fatal("unreadable config must keep the default")

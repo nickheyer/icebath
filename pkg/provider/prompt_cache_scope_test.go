@@ -267,3 +267,15 @@ func TestCacheScopePerResponseRunNonceIsolation(t *testing.T) {
 		}
 	}
 }
+
+func TestAnthropicPromptCachePolicyWrapsUnexported(t *testing.T) {
+	ctx := context.Background()
+	disabled := false
+	prov, base, mode, model := "anthropic", "https://api.anthropic.com", "anthropic_messages", "claude-sonnet-4"
+	dest := CacheDestination{Provider: &prov, BaseURL: &base, APIMode: &mode, Model: &model}
+	wantCache, wantNative := anthropicPromptCachePolicy(ctx, BlankCachePolicyAgent(ctx, &disabled), dest)
+	gotCache, gotNative := AnthropicPromptCachePolicy(ctx, BlankCachePolicyAgent(ctx, &disabled), dest)
+	if gotCache != wantCache || gotNative != wantNative {
+		t.Fatalf("got (%v, %v) want (%v, %v)", gotCache, gotNative, wantCache, wantNative)
+	}
+}

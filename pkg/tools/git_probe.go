@@ -183,6 +183,11 @@ func noninteractiveGitEnv(base map[string]string) map[string]string {
 	return env
 }
 
+// Environment for internal git and gh runs that never prompt, page or read user git config
+func NoninteractiveGitEnv(base map[string]string) map[string]string {
+	return noninteractiveGitEnv(base)
+}
+
 // Runs a probe child with captured pipes, nil on spawn failure or timeout
 func boundedProbeRun(argv []string, timeout time.Duration, env map[string]string, cwd string, input *string) *ProbeResult {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

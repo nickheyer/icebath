@@ -144,3 +144,23 @@ func TestAuthJSONPathFollowsTheActiveProfile(t *testing.T) {
 		t.Fatal("a patched path wins")
 	}
 }
+
+func TestApplyUserDefaultHeadersMergesModelHeaders(t *testing.T) {
+	orig := auxLoadConfigReadonlyFn
+	t.Cleanup(func() { auxLoadConfigReadonlyFn = orig })
+	auxLoadConfigReadonlyFn = func(context.Context) (config.Tree, error) {
+		return config.Tree{"model": map[string]any{"default_headers": map[string]any{"X-User": "u"}}}, nil
+	}
+	got := ApplyUserDefaultHeaders(context.Background(), map[string]string{"X-Base": "b"})
+	if got["X-User"] != "u" || got["X-Base"] != "b" {
+		t.Fatalf("merged headers = %v", got)
+	}
+}
+
+func TestToOpenAIBaseURLExportMatchesTheAuxRewrite(t *testing.T) {
+	for _, raw := range []string{"https://api.z.ai/api/anthropic", "https://api.kimi.com/coding/v1", "https://openrouter.ai/api/v1/"} {
+		if got, want := ToOpenAIBaseURL(raw), auxToOpenAIBaseURL(raw); got != want {
+			t.Fatalf("%s: got %q want %q", raw, got, want)
+		}
+	}
+}

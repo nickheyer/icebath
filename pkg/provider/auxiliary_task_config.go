@@ -128,6 +128,9 @@ var auxRouteKeys = map[string]bool{
 	"api_key_env": true, "reasoning_effort": true,
 }
 
+// Exported auxiliary route fields that travel as one unit
+var AuxRouteKeys = auxRouteKeys
+
 // Python str of a value or the empty string when the value is falsy
 func auxStrOrEmpty(v any) string {
 	if !pyrepr.Truthy(v) {

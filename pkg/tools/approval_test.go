@@ -1820,3 +1820,84 @@ func TestRuntimeDeleteFloorBlocksEvenUnderYolo(t *testing.T) {
 		t.Fatalf("normal command %+v", r)
 	}
 }
+
+func TestYoloModeFrozenReadsTheLaunchFlag(t *testing.T) {
+	restore := SwapYoloModeFrozen(true)
+	if !YoloModeFrozen() {
+		t.Fatal("frozen flag on reads off")
+	}
+	restore()
+	restore = SwapYoloModeFrozen(false)
+	defer restore()
+	if YoloModeFrozen() {
+		t.Fatal("frozen flag off reads on")
+	}
+}
+
+// Computer use style gate options with a scope key and a fail closed no human message
+func cuGateOptions(cb Asker) ApprovalGateOptions {
+	return ApprovalGateOptions{PatternKey: "cua:click:background", Description: "Allow computer_use to perform `click`?",
+		DisplayTarget: "computer_use: click element 3", ApprovalCallback: cb, Subject: "computer_use `click` requires approval",
+		Noun: "desktop actions", Advice: "Find an alternative approach that avoids driving the desktop.",
+		AutoapproveLogPrefix: "computer_use action in non-interactive non-gateway context", FailClosedWhenNoHuman: true,
+		NoHumanBlockMessage: "BLOCKED: computer_use `click` requires approval but no interactive user or gateway is present to approve it."}
+}
+
+func TestRunApprovalGateExplicitCallbackOverridesSessionAsker(t *testing.T) {
+	env := approvalTestEnv(t, "s1", nil, map[string]any{"interactive": true})
+	env.Ask = forbiddenAsker{t}
+	cb := &scriptedAsker{answer: "always"}
+	res := RunApprovalGate(context.Background(), env, cuGateOptions(cb))
+	if !res.Approved || len(cb.seen) != 1 || cb.seen[0].Text != "computer_use: click element 3" {
+		t.Fatalf("result %+v asked %+v", res, cb.seen)
+	}
+	if !IsApproved(env, "s1", "cua:click:background") || IsApproved(env, "s1", "cua:click:foreground") {
+		t.Fatalf("grant must land under the background scope key only")
+	}
+	if again := RunApprovalGate(context.Background(), env, cuGateOptions(forbiddenAsker{t})); !again.Approved {
+		t.Fatalf("cached grant must short circuit %+v", again)
+	}
+}
+
+func TestRunApprovalGateNilCallbackUsesSessionAsker(t *testing.T) {
+	env := approvalTestEnv(t, "s1", nil, map[string]any{"interactive": true})
+	asker := &scriptedAsker{answer: "deny"}
+	env.Ask = asker
+	res := RunApprovalGate(context.Background(), env, cuGateOptions(nil))
+	if res.Approved || res.Outcome != "denied" || len(asker.seen) != 1 {
+		t.Fatalf("result %+v", res)
+	}
+}
+
+func TestRunApprovalGateCLITimeoutIsNotADenial(t *testing.T) {
+	env := approvalTestEnv(t, "s1", map[string]any{"mode": "manual", "timeout": 1}, map[string]any{"interactive": true})
+	res := RunApprovalGate(context.Background(), env, cuGateOptions(&scriptedAsker{block: true}))
+	if res.Approved || res.Outcome != "timeout" || res.UserApproved || !res.Denied() ||
+		!strings.Contains(res.Message, "timed out without user response") || !strings.Contains(res.Message, "Silence is not consent") {
+		t.Fatalf("result %+v", res)
+	}
+}
+
+func TestRunApprovalGateExplicitCallbackPaintsCLIPanelInAskMode(t *testing.T) {
+	env := approvalTestEnv(t, "s1", nil, map[string]any{"interactive": true, "exec_ask": true})
+	res := RunApprovalGate(context.Background(), env, cuGateOptions(&scriptedAsker{answer: "once"}))
+	if !res.Approved || res.Status == "approval_required" {
+		t.Fatalf("explicit callback must answer instead of parking a pending approval %+v", res)
+	}
+	pending := RunApprovalGate(context.Background(), approvalTestEnv(t, "s2", nil, map[string]any{"interactive": true, "exec_ask": true}), cuGateOptions(nil))
+	if pending.Approved || pending.Status != "approval_required" {
+		t.Fatalf("without any asker the ask branch parks a pending approval %+v", pending)
+	}
+}
+
+func TestRunApprovalGateFailsClosedWithNobodyToAsk(t *testing.T) {
+	env := approvalTestEnv(t, "s1", nil, nil)
+	res := RunApprovalGate(context.Background(), env, cuGateOptions(&scriptedAsker{answer: "once"}))
+	if res.Approved || res.Message != cuGateOptions(nil).NoHumanBlockMessage || res.PatternKey != "cua:click:background" {
+		t.Fatalf("result %+v", res)
+	}
+	yolo := approvalTestEnv(t, "s1", map[string]any{"mode": "off"}, nil)
+	if got := RunApprovalGate(context.Background(), yolo, cuGateOptions(nil)); !got.Approved {
+		t.Fatalf("approvals.mode off bypasses the gate %+v", got)
+	}
+}

@@ -496,3 +496,11 @@ func TestSVLazySyncNeverCreatesTheFirstSelectionForAForeignInterpreter(t *testin
 		t.Fatal("explicit install created no selection")
 	}
 }
+
+func TestAnchorImportableExport(t *testing.T) {
+	present := map[string]bool{"faster_whisper": true}
+	peSwap(t, &anchorImportable, func(_ context.Context, anchor string) bool { return present[anchor] })
+	if !AnchorImportable(context.Background(), "faster_whisper") || AnchorImportable(context.Background(), "pilk") {
+		t.Fatal("AnchorImportable does not answer the selected environment probe")
+	}
+}

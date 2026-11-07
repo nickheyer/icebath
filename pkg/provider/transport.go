@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/state"
@@ -292,6 +293,31 @@ func (*responsesAPITransport) ExtractCacheStats(response any) map[string]int { r
 
 func (*responsesAPITransport) MapFinishReason(raw string) string {
 	return mapStopReason(responsesStopReasonMap, raw)
+}
+
+// Responses transport preflight of outgoing kwargs, an AttributeError for every transport lacking it
+func PreflightKwargs(t Transport, apiKwargs map[string]any, allowStream, dropReplayItemIDs, sanitizeHarmony bool) (map[string]any, error) {
+	if rt, ok := t.(*responsesAPITransport); ok && rt.codex != nil {
+		return rt.codex.preflightKwargs(apiKwargs, allowStream, dropReplayItemIDs, sanitizeHarmony)
+	}
+	return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'preflight_kwargs'", transportClassName(t))
+}
+
+// Python class name of a transport for the AttributeError text
+func transportClassName(t Transport) string {
+	switch t.(type) {
+	case *chatCompletionsTransport:
+		return "ChatCompletionsTransport"
+	case *anthropicMessagesTransport:
+		return "AnthropicTransport"
+	case *bedrockConverseTransport:
+		return "BedrockTransport"
+	case *responsesAPITransport:
+		return "ResponsesApiTransport"
+	case nil:
+		return "NoneType"
+	}
+	return fmt.Sprintf("%T", t)
 }
 
 type chatCompletionsTransport struct{}

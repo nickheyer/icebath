@@ -315,14 +315,16 @@ func BindSessionContext(env *Env, vars map[string]string) {
 	env.Values.Store(sessionContextEngagedKey, true)
 }
 
-// Bound session variables and whether any session was ever bound
+// Bound session variables and whether this context or the process ever bound a session
 func sessionContextState(env *Env) (map[string]string, bool) {
 	if env == nil || env.Values == nil {
-		return nil, false
+		return nil, SessionContextEngaged()
 	}
-	engaged := false
+	engaged := SessionContextEngaged()
 	if v, ok := env.Values.Load(sessionContextEngagedKey); ok {
-		engaged, _ = v.(bool)
+		if b, _ := v.(bool); b {
+			engaged = true
+		}
 	}
 	bound, _ := env.Values.Load(sessionContextValuesKey)
 	vars, _ := bound.(map[string]string)
@@ -431,11 +433,17 @@ var KanbanHomeResolver func(env *Env) string
 // Marker carrying the delegate child fence across a process spawn
 const delegatedChildEnvMarker = "ICEBATH_DELEGATED_CHILD_CONTEXT"
 
+// Env marker carrying the delegate child fence across a spawn
+const DelegatedChildEnvMarker = delegatedChildEnvMarker
+
 // Worker identity keys scrubbed from every descendant
 var kanbanEnvKeys = []string{
 	"ICEBATH_KANBAN_TASK", "ICEBATH_KANBAN_RUN_ID", "ICEBATH_KANBAN_CLAIM_LOCK",
 	"ICEBATH_KANBAN_GOAL_MODE", "ICEBATH_KANBAN_GOAL_MAX_TURNS",
 }
+
+// Worker identity keys scrubbed from the env of every descendant process
+func KanbanEnvKeys() []string { return append([]string(nil), kanbanEnvKeys...) }
 
 // Board root the fence applies to, the legacy 1 when it cannot be resolved
 func fencedKanbanRoot(env *Env) string {
@@ -476,6 +484,11 @@ func delegatedChildSubprocessEnv(env *Env, child map[string]string) map[string]s
 		return child
 	}
 	return scrubKanbanEnv(env, child)
+}
+
+// Child env for a delegated subprocess
+func DelegatedChildSubprocessEnv(env *Env, child map[string]string) map[string]string {
+	return delegatedChildSubprocessEnv(env, child)
 }
 
 // Guards shared by every spawn surface, returns the possibly new map or the damaged runtime record error
@@ -556,6 +569,11 @@ func icebathSubprocessEnv(env *Env, inheritCredentials bool, base map[string]str
 		child["PYTHONUTF8"] = "1"
 	}
 	return finalizeChildEnv(env, child)
+}
+
+// IcebathSubprocessEnvChecked returns the sanitized child environment or the damaged runtime record error
+func IcebathSubprocessEnvChecked(env *Env, inheritCredentials bool, base map[string]string) (map[string]string, error) {
+	return icebathSubprocessEnv(env, inheritCredentials, base)
 }
 
 // Current process environment as a map
@@ -685,6 +703,9 @@ func isRoutedHome(targetHome string) bool {
 	}
 	return normHomePath(left) != normHomePath(right)
 }
+
+// Reports whether a target profile home is served away from the running process home
+func IsRoutedHome(targetHome string) bool { return isRoutedHome(targetHome) }
 
 // Keys of every non managed dotenv file loaded into this process environment
 var launchDotenv = struct {
@@ -950,6 +971,9 @@ func findBash() (string, error) {
 	return "", fmt.Errorf("No shell found. icebath needs bash (Git for Windows on Windows). Install bash or Git for Windows and retry.")
 }
 
+// Bash executable the local backend runs
+func FindBash() (string, error) { return findBash() }
+
 // Well known Git for Windows bash locations
 func gitForWindowsBashCandidates() []string {
 	var out []string
@@ -1193,6 +1217,9 @@ func pathEnvKey(runEnv map[string]string) (string, bool) {
 // SessionToolchainEnviron replaces the daemon's toolchain with the bound client's, installed by the agent package
 var SessionToolchainEnviron func(env *Env, base map[string]string) map[string]string
 
+// Bound client tool environment for code execution children, installed by the agent package and nil until then
+var SessionToolEnv func(env *Env) map[string]string
+
 // BotDesktopPublishedEnv is the running Bot Desktop seat env of the profile, installed by the desktop package
 var BotDesktopPublishedEnv func(env *Env) map[string]string
 
@@ -1311,6 +1338,11 @@ func startTimeFingerprintsMatch(recorded, current int64) bool {
 		diff = -diff
 	}
 	return diff <= startTimeDriftTolerance
+}
+
+// Reports whether a recorded start time still names the same process
+func StartTimeFingerprintsMatch(recorded, current int64) bool {
+	return startTimeFingerprintsMatch(recorded, current)
 }
 
 // Local environment

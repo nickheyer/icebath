@@ -82,6 +82,9 @@ func processStartTime(pid int) (int64, bool) {
 	return 0, false
 }
 
+// Start time fingerprint of a live process
+func ProcessStartTime(pid int) (int64, bool) { return processStartTime(pid) }
+
 // Live process table as pid and parent pairs from /proc or ps
 func localProcessTable() map[int]int {
 	table := map[int]int{}

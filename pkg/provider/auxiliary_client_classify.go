@@ -59,6 +59,9 @@ func auxExcTypeName(err error) string {
 	return auxPyExceptionName(err)
 }
 
+// AuxExcTypeName exposes the Python class name of the outermost auxiliary client error
+func AuxExcTypeName(err error) string { return auxExcTypeName(err) }
+
 // Reports whether the error is an SDK error of one of the named classes
 func auxExcIsSDKClass(err error, classes ...string) bool {
 	var sdk *AuxSDKError
@@ -157,6 +160,9 @@ func auxIsConnectionError(err error) bool {
 	}
 	return auxContainsAny(strings.ToLower(err.Error()), auxConnectionErrorMarkers)
 }
+
+// Python TimeoutError, connection error check of the auxiliary client for summary failure classification
+func AuxIsConnectionError(err error) bool { return auxIsConnectionError(err) }
 
 // One off transport blip worth a same provider retry, a connection error or a pure 5xx or 408
 func auxIsTransientTransportError(err error) bool {

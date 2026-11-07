@@ -121,7 +121,7 @@ func (s *sessionSearch) tryIncrementalMergeFTS(ctx context.Context) {
 			slog.Warn(fmt.Sprintf("FTS incremental merge failed after commit: %s", errText(panicError(r))))
 		}
 	}()
-	if _, err := s.mergeFTSIncrementally(ctx, s.host.ftsMergeMaxPagesPerIndex(), nil); err != nil {
+	if _, err := sessionMergeFTSIncrementally(s, ctx, s.host.ftsMergeMaxPagesPerIndex(), nil); err != nil {
 		slog.Warn(fmt.Sprintf("FTS incremental merge failed after commit: %s", errText(err)))
 	}
 }

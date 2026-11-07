@@ -481,9 +481,12 @@ func (c *Context) SideQuestion(ctx context.Context, token, prompt string, timeou
 	return redeem(ctx, token, prompt, c.PluginID(), c.manager.home, timeout)
 }
 
+// Profile config reader of the injection gate, swapped by tests for a raising loader
+var injectionConfigLoader = loadConfig
+
 // Whether this plugin may trigger gateway session turns under its own profile config
 func (c *Context) gatewayInjectionAllowed() bool {
-	cfg, err := loadConfig(c.manager.home)
+	cfg, err := injectionConfigLoader(c.manager.home)
 	if err != nil {
 		return false
 	}
@@ -548,11 +551,9 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 	switch {
 	case keyless:
 		target["keyless"] = true
-		target["calling_session_key"] = nil
+		target["calling_session_key"] = ""
 		if s := installedServices(); s != nil && s.BoundSessionKey != nil {
-			if key := s.BoundSessionKey(ctx); key != "" {
-				target["calling_session_key"] = key
-			}
+			target["calling_session_key"] = s.BoundSessionKey(ctx)
 		}
 	case origin == nil:
 		target["session_key"] = sessionKey

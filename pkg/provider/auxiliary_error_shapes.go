@@ -68,6 +68,9 @@ func auxExcHTTPStatus(err error) int {
 	return status
 }
 
+// HTTP status carried on the error itself or on its response, zero when absent
+func ExcStatusCode(err error) int { return auxExcHTTPStatus(err) }
+
 // Parsed SDK body of an error, a decoded JSON object or the raw text, nil when the error has none
 func auxErrBody(err error) any {
 	var sdk *AuxSDKError

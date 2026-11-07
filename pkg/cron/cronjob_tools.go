@@ -633,7 +633,7 @@ func (s *Store) tryDispatchBackgroundRun(ctx context.Context, env *tools.Env, jo
 	}
 	originUISessionID := tools.SessionEnvValue(env, "ICEBATH_UI_SESSION_ID")
 	originSessionID := tools.CurrentOriginSessionID(env)
-	maxAsync := tools.MaxAsyncChildren(env)
+	maxAsync := tools.MaxAsyncChildren(ctx)
 	startedAt := time.Now()
 	var deliverRaw any = "local"
 	if claimed.Deliver != nil {

@@ -18,6 +18,9 @@ const fakeSubprocessChild = "ICEBATH_MCP_FAKE_SUBPROCESS_CHILD"
 
 // Dispatches fake subprocess modes, installs the bridge state of a bridgeless process and pins fresh launch env children
 func TestMain(m *testing.M) {
+	if os.Getenv(connectorsLoadChild) != "" {
+		os.Exit(0)
+	}
 	if mode := os.Getenv(fakeSubprocessChild); mode != "" {
 		if mode == "sleep" {
 			time.Sleep(30 * time.Second)

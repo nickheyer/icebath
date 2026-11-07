@@ -390,6 +390,15 @@ var fuzzyStrategies = []struct {
 	{"context_aware", strategyContextAware},
 }
 
+// Names of the fuzzy matcher strategies in chain order, the file edit metric's strategy vocabulary
+func FuzzyStrategyNames() []string {
+	out := make([]string, 0, len(fuzzyStrategies))
+	for _, st := range fuzzyStrategies {
+		out = append(out, st.name)
+	}
+	return out
+}
+
 // Strategies whose matches only approximately resemble old_string
 var similarityStrategies = setOf("block_anchor", "context_aware")
 
@@ -511,6 +520,11 @@ func fuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, 
 	}
 	probe.noteEditMatch("", "no_match")
 	return content, 0, "", "Could not find a match for old_string in the file"
+}
+
+// Fuzzy find and replace shared with the patch tool
+func FuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, correctionNotes *[]string) (string, int, string, string) {
+	return fuzzyFindAndReplace(content, oldString, newString, replaceAll, correctionNotes, nil)
 }
 
 // Error when a literal backslash n in the arguments stands in for a real line break in the file
@@ -842,4 +856,9 @@ func formatNoMatchHint(errText string, matchCount int, oldString, content string
 		return ""
 	}
 	return "\n\nDid you mean one of these sections?\n" + hint
+}
+
+// Did you mean hint for a plain no match error
+func FormatNoMatchHint(errText string, matchCount int, oldString, content string) string {
+	return formatNoMatchHint(errText, matchCount, oldString, content)
 }

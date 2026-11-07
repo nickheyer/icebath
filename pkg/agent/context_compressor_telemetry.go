@@ -41,7 +41,22 @@ func rowsToMessages(rows []map[string]any) []*state.Message {
 
 // Rough message only token estimate of dict rows at the learned per image price
 func estimateRowsRough(ctx context.Context, rows []map[string]any) int {
-	return compactionEstimateRough(ctx, rowsToMessages(rows))
+	return provider.EstimateRowsTokens(rows, provider.CurrentImageTokenCost(ctx))
+}
+
+// Rough request estimate of dict rows plus the system prompt and tool schemas, every priced row key counted
+func estimateRequestRowsRough(ctx context.Context, rows []map[string]any, system string, tools []map[string]any) int {
+	total := 0
+	if system != "" {
+		total = provider.EstimateTokens(system)
+	}
+	if len(rows) > 0 {
+		total += estimateRowsRough(ctx, rows)
+	}
+	if len(tools) > 0 {
+		total += provider.EstimateToolsTokens(tools)
+	}
+	return total
 }
 
 // CompressionTelemetry is the content free per attempt telemetry a compressor embeds and each phase fills

@@ -148,11 +148,11 @@ func TestBoardMetadataRoundTripListAndRemove(t *testing.T) {
 	if _, err := os.Stat(objGet(meta, "db_path").(string)); err != nil {
 		t.Fatal("board database not created", err)
 	}
-	if err := os.WriteFile(filepath.Join(BoardsRoot(), "stub-only", "kanban.db"), nil, 0o644); err == nil {
-		t.Fatal("stub dir unexpectedly present")
+	if err := os.WriteFile(filepath.Join(BoardsRoot(), "db-only", "kanban.db"), nil, 0o644); err == nil {
+		t.Fatal("db-only dir unexpectedly present")
 	}
-	os.MkdirAll(filepath.Join(BoardsRoot(), "stub-only"), 0o755)
-	os.WriteFile(filepath.Join(BoardsRoot(), "stub-only", "kanban.db"), nil, 0o644)
+	os.MkdirAll(filepath.Join(BoardsRoot(), "db-only"), 0o755)
+	os.WriteFile(filepath.Join(BoardsRoot(), "db-only", "kanban.db"), nil, 0o644)
 	boards, err := ListBoards(true)
 	if err != nil || len(boards) != 2 || objGet(boards[0], "slug") != "default" || objGet(boards[1], "slug") != "atm10_server" {
 		t.Fatal(len(boards), err)

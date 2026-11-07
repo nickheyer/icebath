@@ -52,12 +52,7 @@ func init() {
 		provider.NoteConnectedAppsSeen(connPoolEnv(ctx, env), rows)
 	}
 	tools.TelemetrySendConsented = connSendConsented
-	tools.ConnectorConversationContext = func(ctx context.Context) string {
-		if observability.ConversationContextHook == nil {
-			return ""
-		}
-		return observability.ConversationContextHook(ctx)
-	}
+	tools.ConnectorConversationContext = func(ctx context.Context) string { return observability.ConversationContextHook(ctx) }
 }
 
 // Whether the profile's raw config resolves to sending shared metrics

@@ -97,7 +97,7 @@ func configCommandSources(h string) config.ConfigCommandSources {
 			ActiveManifests:     func() []config.PluginConfigKeys { return plugins.ActiveConfigKeyManifests(h) },
 		},
 		LeftCoreTerminalKeys:    provider.LeftCoreTerminalKeys,
-		DisplayOverrideableKeys: provider.DisplayOverrideableKeys(),
+		DisplayOverrideableKeys: config.DisplayOverrideableKeys(),
 		IsEnvSettingKey:         provider.IsEnvSettingKey,
 		SaveEnvSetting:          provider.SaveEnvSetting,
 		ReadEnvSetting:          provider.ReadEnvSetting,

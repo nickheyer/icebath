@@ -62,9 +62,9 @@ func (a *AIAgent) FlushMessagesToSessionDB(messages []map[string]any) (bool, err
 	return a.flushMessagesToSessionDB(messages)
 }
 
-// Adds a usage count to the session counter its hermes attribute names
+// Adds a usage count to the session_ prefixed counter the usage key names
 func (a *AIAgent) AddSessionUsage(key string, value int) {
-	switch key {
+	switch "session_" + key {
 	case "session_prompt_tokens":
 		a.sessionPromptTokens += value
 	case "session_completion_tokens":
@@ -82,7 +82,7 @@ func (a *AIAgent) AddSessionUsage(key string, value int) {
 	case "session_reasoning_tokens":
 		a.sessionReasoningTokens += value
 	default:
-		panic("AIAgent has no session usage counter " + key)
+		panic("AIAgent has no session usage counter session_" + key)
 	}
 }
 
@@ -92,19 +92,47 @@ func (a *AIAgent) CodexContextCompressor() provider.CodexContextCompressor {
 	return cc
 }
 
-func (a *AIAgent) ToolProgressCallback() func(event, name string, preview any, args any, extra *provider.CodexToolProgressExtra) {
-	cb, _ := a.toolProgressCallback.(func(event, name string, preview any, args any, extra *provider.CodexToolProgressExtra))
-	return cb
+// Progress hook in the codex shape, an executor shaped hook adapted to it
+func (a *AIAgent) ToolProgressCallback() codexProgressFn {
+	switch cb := a.toolProgressCallback.(type) {
+	case codexProgressFn:
+		return cb
+	case toolProgressFn:
+		return func(event, name string, preview any, args any, extra *provider.CodexToolProgressExtra) {
+			p, _ := preview.(string)
+			m, _ := args.(map[string]any)
+			cb(event, name, p, m, toolProgressExtra(extra))
+		}
+	}
+	return nil
 }
 
-func (a *AIAgent) ToolStartCallback() func(callID, name string, args any) {
-	cb, _ := a.toolStartCallback.(func(callID, name string, args any))
-	return cb
+// Start hook in the codex shape, an executor shaped hook adapted to it
+func (a *AIAgent) ToolStartCallback() codexStartFn {
+	switch cb := a.toolStartCallback.(type) {
+	case codexStartFn:
+		return cb
+	case toolStartFn:
+		return func(callID, name string, args any) {
+			m, _ := args.(map[string]any)
+			cb(callID, name, m)
+		}
+	}
+	return nil
 }
 
-func (a *AIAgent) ToolCompleteCallback() func(callID, name string, args any, result string) {
-	cb, _ := a.toolCompleteCallback.(func(callID, name string, args any, result string))
-	return cb
+// Complete hook in the codex shape, an executor shaped hook adapted to it
+func (a *AIAgent) ToolCompleteCallback() codexCompleteFn {
+	switch cb := a.toolCompleteCallback.(type) {
+	case codexCompleteFn:
+		return cb
+	case toolCompleteFn:
+		return func(callID, name string, args any, result string) {
+			m, _ := args.(map[string]any)
+			cb(callID, name, m, result)
+		}
+	}
+	return nil
 }
 
 // Stream delivery method the attribute names, nil for a name the agent lacks

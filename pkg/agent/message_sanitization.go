@@ -49,6 +49,7 @@ type sanitizationState struct {
 	imageRejectingModels         map[[2]string]bool
 	reasoningRejectingRoutes     map[[3]string]map[string]bool
 	reasoningRejectionsLoadedFor string
+	reasoningRouteCache          *reasoningRouteCacheEntry
 }
 
 // Appends a closing assistant row when the transcript ends on a tool result, hidden unless a banner was given

@@ -3,11 +3,13 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -207,6 +209,9 @@ var containerBackends = map[string]bool{"docker": true, "modal": true, "daytona"
 // Every backend shipped in this package
 var builtinBackends = map[string]bool{"docker": true, "modal": true, "daytona": true, "vercel_sandbox": true, "local": true, "ssh": true, "managed_modal": true}
 
+// Every shipped terminal backend name in sorted order
+func BuiltinTerminalBackends() []string { return slices.Sorted(maps.Keys(builtinBackends)) }
+
 // Reports whether a backend has its own filesystem rooted away from the host
 func isContainerBackend(envType string) bool {
 	if containerBackends[envType] {
@@ -320,6 +325,9 @@ func realHome(env *Env, child map[string]string) string {
 func subprocessHome(env *Env, child map[string]string) string {
 	return home.SubprocessHome(visionCtx(nil, env), child)
 }
+
+// HOME a tool subprocess gets under the home mode, empty when it keeps its own
+func SubprocessHome(env *Env) string { return subprocessHome(env, map[string]string{}) }
 
 // Reports whether this process runs inside a container
 func runningInContainer() bool { return hostinfo.IsContainer() }

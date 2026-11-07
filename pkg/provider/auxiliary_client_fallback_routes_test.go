@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,5 +116,74 @@ func TestAuxMainAgentModelFallbackNoneWhenMainProviderAuto(t *testing.T) {
 	client, model, label, err := auxTryMainAgentModelFallback(context.Background(), "glm", "vision", "", "", "", FailureScope(""))
 	if err != nil || client != nil || model != "" || label != "" {
 		t.Fatalf("client %v model %q label %q err %v", client, model, label, err)
+	}
+}
+
+func TestTryPaymentFallbackCodexNotInFallbackChain(t *testing.T) {
+	ctx := context.Background()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "auto"}})
+	auxClearUnhealthy(t)
+	prev := auxProviderChainFn
+	t.Cleanup(func() { auxProviderChainFn = prev })
+	var tried []string
+	auxProviderChainFn = func() []auxProviderChainEntry {
+		var out []auxProviderChainEntry
+		for _, entry := range prev() {
+			label := entry.label
+			out = append(out, auxProviderChainEntry{label, func(context.Context) (AuxClient, string, error) {
+				tried = append(tried, label)
+				return nil, "", nil
+			}})
+		}
+		return out
+	}
+	client, model, label, err := auxTryPaymentFallback(ctx, "openrouter", "", "", "", FailureScope(""), nil)
+	if err != nil || client != nil || model != "" || label != "" {
+		t.Fatalf("payment fallback returned %v %q %q %v", client, model, label, err)
+	}
+	if fmt.Sprint(tried) != "[nous local/custom api-key]" {
+		t.Fatalf("payment fallback walked %v, Codex must never be a rung", tried)
+	}
+}
+
+func TestCallLLMUnwrapsDataEnvelope(t *testing.T) {
+	for _, asyncMode := range []bool{false, true} {
+		t.Run(fmt.Sprintf("async=%v", asyncMode), func(t *testing.T) {
+			ctx := context.Background()
+			ShutdownCachedClients(ctx)
+			t.Cleanup(func() { ShutdownCachedClients(ctx) })
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"choices": nil, "success": true, "data": map[string]any{
+					"id": "chatcmpl-env", "object": "chat.completion", "created": 1751000000, "model": "cline-pass/kimi-k2.7-code",
+					"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "unwrapped"}, "finish_reason": "stop"}},
+					"usage":   map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}})
+			}))
+			t.Cleanup(srv.Close)
+			task := "title_generation"
+			call := CallLLM
+			if asyncMode {
+				task, call = "vision", AsyncCallLLM
+			}
+			h := t.TempDir()
+			t.Setenv("ICEBATH_HOME", h)
+			writeConfig(t, h, map[string]any{"auxiliary": map[string]any{task: map[string]any{
+				"provider": "custom", "model": "cline-pass/kimi-k2.7-code", "base_url": srv.URL + "/v1", "api_key": "k"}}})
+			prev := auxTryConfiguredFallbackChainFn
+			t.Cleanup(func() { auxTryConfiguredFallbackChainFn = prev })
+			auxTryConfiguredFallbackChainFn = func(context.Context, string, string, string, string, string, FailureScope) (AuxClient, string, string, error) {
+				t.Error("an unwrapped envelope must not reach the fallback chain")
+				return nil, "", "", nil
+			}
+			resp, err := call(ctx, map[string]any{"task": task, "messages": []any{map[string]any{"role": "user", "content": "hello"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := auxActualContent(t, resp); got != "unwrapped" {
+				t.Fatalf("content %q", got)
+			}
+		})
 	}
 }

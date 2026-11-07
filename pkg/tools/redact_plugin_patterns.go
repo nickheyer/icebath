@@ -67,6 +67,9 @@ func prefixSearch(text string) bool {
 	return err == nil && ok
 }
 
+// Text carrying a known secret prefix the redaction patterns recognise, the browser url guard input
+func RedactPrefixSearch(text string) bool { return prefixSearch(text) }
+
 // Every plugin registered pattern in registration order
 func pluginPatterns() []string {
 	var out []string

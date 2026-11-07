@@ -26,7 +26,7 @@ func activePluginTree(ctx context.Context, target string, installing bool) (bool
 	if installing {
 		opts.Installing = target
 	}
-	dirs, err := pm.EnabledPluginDirs(ctx, opts)
+	dirs, err := enabledPluginDirs(ctx, opts)
 	if err != nil {
 		return false, err
 	}
@@ -91,6 +91,9 @@ func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newM
 		"new_metadata": newMetadata, "target_digest": digest,
 	}}})
 }
+
+// Effective enabled plugin trees, swapped by tests that pin the selection the way hermes patches it
+var enabledPluginDirs = pm.EnabledPluginDirs
 
 // Venv publication of a staged plugin, swapped by tests that act inside the window before its lock
 var syncVenv = pm.SyncVenv

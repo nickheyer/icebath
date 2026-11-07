@@ -402,3 +402,73 @@ func TestTimingHooksPropagateToProtectedCallWorkerThread(t *testing.T) {
 		t.Fatalf("result %v err %v seen %v", result, err, seen)
 	}
 }
+
+func TestAuxClientCustomHeadersCopiesTheSDKHeaders(t *testing.T) {
+	c := newAuxOpenAIClient("k", "https://example.test/v1", auxOpenAIOptions{DefaultHeaders: map[string]string{"X-Title": "icebath"}})
+	got := AuxClientCustomHeaders(c)
+	if got["X-Title"] != "icebath" {
+		t.Fatalf("custom headers = %v", got)
+	}
+	got["X-Title"] = "mutated"
+	if AuxClientCustomHeaders(c)["X-Title"] != "icebath" {
+		t.Fatal("custom headers were not copied")
+	}
+	if AuxClientCustomHeaders(&auxProbeClient{}) != nil {
+		t.Fatal("probe client reported headers")
+	}
+}
+
+func TestNewOpenAIClientExportBuildsTheSDKClient(t *testing.T) {
+	retries := 0
+	c, ok := NewOpenAIClient("k", "https://api.example.com/v1", OpenAIClientOptions{DefaultHeaders: map[string]string{"X-A": "b"}, MaxRetries: &retries}).(*auxOpenAIClient)
+	if !ok || c.baseURL != "https://api.example.com/v1/" || c.customHeaders["X-A"] != "b" || c.maxRetries != 0 || c.httpClient != SDKDefaultHTTPClient() {
+		t.Fatalf("client %+v", c)
+	}
+	if SDKDefaultTimeout != auxSDKDefaultTimeout || c.timeout != SDKDefaultTimeout {
+		t.Fatalf("timeout %v", c.timeout)
+	}
+}
+
+func TestAddOpenAIClientResponseHookRunsOncePerMarkOnEveryResponse(t *testing.T) {
+	served := "gpt-4o-2024-11-20"
+	completion := map[string]any{"id": "c", "object": "chat.completion", "created": 0, "model": "hermes-router",
+		"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "ok"}, "finish_reason": "stop"}}}
+	srv, _ := auxSDKServer(t, func(w http.ResponseWriter, r *http.Request) {
+		headers := map[string]string{}
+		if served != "" {
+			headers["x-litellm-model-id"] = served
+		}
+		auxSDKJSON(200, completion, headers)(w, r)
+	})
+	shared := &http.Client{}
+	c := newAuxOpenAIClient("x", srv.URL+"/v1", auxOpenAIOptions{HTTPClient: shared, MaxRetries: auxSDKRetries(0)})
+	var seen []string
+	hook := func(resp *http.Response) { seen = append(seen, resp.Header.Get("x-litellm-model-id")) }
+	if !AddOpenAIClientResponseHook(c, "served-model", hook) || !AddOpenAIClientResponseHook(c, "served-model", hook) {
+		t.Fatal("SDK client accepts the hook")
+	}
+	if len(c.responseHooks) != 1 {
+		t.Fatalf("idempotent per mark, got %d hooks", len(c.responseHooks))
+	}
+	req := map[string]any{"model": "hermes-router", "messages": []any{map[string]any{"role": "user", "content": "hi"}}}
+	if _, err := c.CreateChatCompletion(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	served = ""
+	if _, err := c.CreateChatCompletion(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || seen[0] != "gpt-4o-2024-11-20" || seen[1] != "" {
+		t.Fatalf("hook saw every response, got %q", seen)
+	}
+	if shared.Transport != nil {
+		t.Fatal("the caller's HTTP client stays untouched")
+	}
+	if AddOpenAIClientResponseHook(struct{}{}, "served-model", hook) || AddOpenAIClientResponseHook((*auxOpenAIClient)(nil), "m", hook) {
+		t.Fatal("a value without an SDK HTTP client reports false")
+	}
+	async := newAuxAsyncOpenAIClient("x", srv.URL+"/v1", auxOpenAIOptions{MaxRetries: auxSDKRetries(0)})
+	if !AddOpenAIClientResponseHook(async, "served-model", hook) {
+		t.Fatal("async SDK client accepts the hook")
+	}
+}

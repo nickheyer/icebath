@@ -526,3 +526,20 @@ func TestEndpointPricingAlreadyPerMillionIsNotInflated(t *testing.T) {
 	mustEqual(t, pricing["prompt"].(string), "0.0000006", "per token passes through")
 	mustEqual(t, pricing["request"].(string), "0.005", "request fee")
 }
+
+func TestLongestDefaultContextMatchReadsTheDefaultTable(t *testing.T) {
+	if n, ok := LongestDefaultContextMatch("anthropic/claude-opus-4-8-20260101"); !ok || n != 1000000 {
+		t.Fatalf("longest default match = %d %v", n, ok)
+	}
+	if _, ok := LongestDefaultContextMatch("no-such-model-family-xyz"); ok {
+		t.Fatal("unknown model matched the default table")
+	}
+}
+
+func TestStripProviderPrefixExportMatchesUnexported(t *testing.T) {
+	for _, m := range []string{"openrouter:anthropic/claude-sonnet-4", "qwen3:32b", "https://host:8080/m", "plain"} {
+		if got, want := StripProviderPrefix(m), stripProviderPrefix(m); got != want {
+			t.Fatalf("strip %q = %q, want %q", m, got, want)
+		}
+	}
+}

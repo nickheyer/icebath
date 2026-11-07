@@ -9,6 +9,8 @@ import (
 
 type cronRunnerDouble struct{}
 
+var _ cron.GatewayRunner = cronRunnerDouble{}
+
 func (cronRunnerDouble) AdaptersForProfile(string) any    { return nil }
 func (cronRunnerDouble) IsSharedBotSatellite(string) bool { return false }
 func (cronRunnerDouble) GatewayLoop() any                 { return nil }

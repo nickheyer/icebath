@@ -264,6 +264,12 @@ func namedCustomProviderConfigured(ctx context.Context, name, h string) bool {
 	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(h), h, nil).getNamedCustomProvider(name, cfg, true) != nil
 }
 
+// Reports whether the home's config defines a providers or custom_providers entry for the name
+func HasNamedCustomProvider(ctx context.Context, h, name string) bool {
+	ctx = ctxForHome(ctx, h)
+	return namedCustomProviderConfigured(ctx, name, home.Dir(ctx))
+}
+
 // Registered profile for a name or alias in the bound home, layer first, no discovery or rescan
 func (layer *homeLayer) lookup(n string) *Profile {
 	layer.mu.Lock()

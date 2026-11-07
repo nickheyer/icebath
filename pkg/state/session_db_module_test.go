@@ -182,3 +182,12 @@ func TestEnsureTestIsolationRefusesDeniedRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestResolveDefaultDBPathFollowsRepointedPath(t *testing.T) {
+	saved := DefaultDBPath
+	defer func() { DefaultDBPath = saved }()
+	DefaultDBPath = filepath.Join(t.TempDir(), "pinned.db")
+	if got := ResolveDefaultDBPath(context.Background()); got != DefaultDBPath {
+		t.Fatalf("got %q want %q", got, DefaultDBPath)
+	}
+}

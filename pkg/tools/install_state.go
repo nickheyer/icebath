@@ -227,6 +227,9 @@ type fileLockHolder struct {
 	depth int
 }
 
+// Reentrant cross process file lock holder
+type FileLockHolder = fileLockHolder
+
 // Takes an advisory lock file within the timeout, reentrant for the holding goroutine, stamping the holder pid
 func acquireFileLock(lockPath string, holder *fileLockHolder, timeout time.Duration, timeoutMessage string) (func(), error) {
 	gid := installGoroutineID()
@@ -291,6 +294,11 @@ func acquireFileLock(lockPath string, holder *fileLockHolder, timeout time.Durat
 		_ = f.Sync()
 		f.Close()
 	}, nil
+}
+
+// Takes the advisory lock file within the timeout and returns its release
+func AcquireFileLock(lockPath string, holder *FileLockHolder, timeout time.Duration, msg string) (func(), error) {
+	return acquireFileLock(lockPath, holder, timeout, msg)
 }
 
 // Live holder hint from the pid a holder stamped into the lock file, empty when there is none

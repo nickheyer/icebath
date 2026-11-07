@@ -17,6 +17,9 @@ type auxOpenAIOptions struct {
 	HTTPClient     *http.Client
 }
 
+// OpenAIClientOptions are the options of one OpenAI SDK client beyond its key and base URL
+type OpenAIClientOptions = auxOpenAIOptions
+
 // Keepalive client builder seam, nil when the client cannot be built and the SDK default applies
 var auxBuildKeepaliveHTTPClientFn = buildKeepaliveHTTPClient
 

@@ -71,10 +71,10 @@ func (p *HostedProfile) CreateClient(ctx context.Context, args []any, kwargs map
 	return host.objectProxy(ref, hostedClientBase, reload), nil
 }
 
-// Base nested results of a live client resolve under, empty for every other hosted object
+// Base nested results of a live client or imported module resolve under, empty for every other hosted object
 func (o *HostedObject) liveClientBase() string {
-	if o.Base == hostedClientBase {
-		return hostedClientBase
+	if o.Base == hostedClientBase || o.Base == hostedModuleBase {
+		return o.Base
 	}
 	return ""
 }

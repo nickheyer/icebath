@@ -173,7 +173,7 @@ func fnLabel(fn func(*Env) bool) string {
 
 // CheckFnCacheScope is the profile key availability verdicts are cached under, empty for the shared process cache
 func CheckFnCacheScope(env *Env) (scope string, bypass bool) {
-	if env == nil {
+	if env == nil || env.unscopedChecks {
 		return "", true
 	}
 	if !servesRoutedEnv(env) {

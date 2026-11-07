@@ -153,8 +153,11 @@ func ValidateRelayPluginPayload(ctx context.Context, payload *pyjson.Object) ([]
 	}
 	var messages []string
 	for _, d := range diagnostics {
-		diag, _ := d.(map[string]any)
-		if diag == nil || !pyrepr.Equal(diag["level"], "error") {
+		diag, ok := d.(map[string]any)
+		if !ok {
+			return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(d))}
+		}
+		if !pyrepr.Equal(diag["level"], "error") {
 			continue
 		}
 		switch {
@@ -364,3 +367,42 @@ func CmdMigrateRelay(ctx context.Context, w io.Writer, allProfiles, noValidate b
 	}
 	return nil
 }
+
+// Native Relay binding the nemo_relay import yields, a ModuleNotFoundError when no binding is registered
+func loadNemoRelayBinding() (*tools.NemoRelay, error) {
+	relay, err := tools.LoadNemoRelay()
+	var relayErr *tools.RelayError
+	switch {
+	case errors.As(err, &relayErr):
+		return nil, err
+	case err != nil:
+		return nil, &HostBuiltinError{Type: "ModuleNotFoundError", Message: err.Error()}
+	case relay == nil:
+		return nil, &HostBuiltinError{Type: "ModuleNotFoundError", Message: "No module named 'nemo_relay'"}
+	}
+	return relay, nil
+}
+
+// Relay plugin.validate_exact report of the payload alone, never layered over the ambient user config
+func relayValidateExact(ctx context.Context, relay *tools.NemoRelay, payload map[string]any) (map[string]any, error) {
+	switch {
+	case relay == nil:
+		return nil, &HostBuiltinError{Type: "ModuleNotFoundError", Message: "No module named 'nemo_relay'"}
+	case relay.Plugin == nil:
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: "'NemoRelay' object has no attribute 'plugin'"}
+	case relay.Plugin.ValidateExact == nil:
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: "'NemoRelayPlugin' object has no attribute 'validate_exact'"}
+	}
+	return relay.Plugin.ValidateExact(ctx, payload)
+}
+
+// Dotenv lines of the file as the config env reader normalizes them
+func relayEnvReadLines(path string) ([]string, error) { return config.ReadEnvLines(path) }
+
+// Rewrites the dotenv file with lines, keeping its existing mode
+func relayEnvWriteLines(path string, lines []string) error {
+	return config.WriteEnvLines(path, lines, true)
+}
+
+// Reports whether the dotenv line assigns key the way the env loader parses it
+func relayEnvLineDefinesKey(line, key string) bool { return config.EnvLineDefinesKey(line, key) }

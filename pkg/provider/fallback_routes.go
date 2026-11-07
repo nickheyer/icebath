@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 )
@@ -26,6 +27,11 @@ func (r *resolver) ResolveEntryAPIKey(entry map[string]any) string {
 		return strings.TrimSpace(r.secret(keyEnv))
 	}
 	return ""
+}
+
+// Fallback entry key, inline api_key else key_env through the home's secret scope
+func ResolveFallbackEntryAPIKey(ctx context.Context, h string, entry map[string]any) string {
+	return modelsResolver(ctxForHome(ctx, h)).ResolveEntryAPIKey(entry)
 }
 
 // EffectiveRuntimeProvider is the identity to persist for a resolved fallback entry, the configured name over bare custom

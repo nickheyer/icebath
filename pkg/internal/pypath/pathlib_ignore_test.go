@@ -33,3 +33,40 @@ func TestPathlibIgnoredError(t *testing.T) {
 		}
 	}
 }
+
+func TestPathlibStatReportsOnlyTheErrorsPathlibRaises(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "f")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := PathlibStat(file); err != nil || fi == nil || !fi.Mode().IsRegular() {
+		t.Fatalf("file stat %v %v", fi, err)
+	}
+	if fi, err := PathlibStat(dir); err != nil || fi == nil || !fi.IsDir() {
+		t.Fatalf("dir stat %v %v", fi, err)
+	}
+	for _, p := range []string{filepath.Join(dir, "missing"), filepath.Join(file, "child"), dir + "/a\x00b"} {
+		if fi, err := PathlibStat(p); fi != nil || err != nil {
+			t.Fatalf("%q: got %v %v want nil nil", p, fi, err)
+		}
+	}
+	loop := filepath.Join(dir, "loop")
+	if err := os.Symlink(loop, loop); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := PathlibStat(loop); fi != nil || err != nil {
+		t.Fatalf("symlink loop: got %v %v", fi, err)
+	}
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o700) })
+	if _, err := PathlibStat(filepath.Join(locked, "x")); !errors.Is(err, syscall.EACCES) {
+		t.Fatalf("permission denied stat error %v", err)
+	}
+}

@@ -184,7 +184,7 @@ func (s *Store) botChatLegacyDispose(ctx context.Context, path string, r *pyjson
 		if err != nil {
 			return false, err
 		}
-		if !gateway.WarningNotificationsEnabled(ctx, BotChatPolicyPlatform, userCfg) {
+		if !config.WarningNotificationsEnabled(ctx, BotChatPolicyPlatform, userCfg) {
 			r.Set("status", "suppressed")
 			r.Set("error", nil)
 			return true, nil

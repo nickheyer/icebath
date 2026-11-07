@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	placeholderGoalRe = regexp.MustCompile(`(?i)^(todo|task\s*\d+)$`)
-	templateMarkerRe  = regexp.MustCompile(`<[A-Za-z][A-Za-z0-9]*(?:[ _-][A-Za-z0-9]+)+>|\{[A-Za-z][A-Za-z0-9]*(?:[ _-][A-Za-z0-9]+)+\}`)
+	fillerGoalRe     = regexp.MustCompile(`(?i)^(todo|task\s*\d+)$`)
+	templateMarkerRe = regexp.MustCompile(`<[A-Za-z][A-Za-z0-9]*(?:[ _-][A-Za-z0-9]+)+>|\{[A-Za-z][A-Za-z0-9]*(?:[ _-][A-Za-z0-9]+)+\}`)
 )
 
 const (
@@ -48,7 +48,7 @@ func recoverTasksFromJSONString(tasks any) ([]any, string) {
 	return list, ""
 }
 
-// Batch quality gate rejecting placeholder goals, unexpanded templates and terse goals in a fan out
+// Batch quality gate rejecting filler goals, unexpanded templates and terse goals in a fan out
 func validateBatchTasks(taskList []map[string]any) string {
 	for i, task := range taskList {
 		goal := ""
@@ -56,7 +56,7 @@ func validateBatchTasks(taskList []map[string]any) string {
 			goal = pyrepr.Str(g)
 		}
 		goal = pystr.Strip(goal)
-		if placeholderGoalRe.MatchString(strings.Join(strings.Fields(strings.ToLower(goal)), " ")) {
+		if fillerGoalRe.MatchString(strings.Join(strings.Fields(strings.ToLower(goal)), " ")) {
 			return fmt.Sprintf("Task %d has a placeholder goal (%s). Replace it with a specific, self-contained description of what the subagent should accomplish.", i, pyrepr.Repr(goal))
 		}
 		if marker := templateMarkerRe.FindString(goal); marker != "" {

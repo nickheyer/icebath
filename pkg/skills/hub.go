@@ -578,6 +578,11 @@ func installedEntry(installed map[string]*pyjson.Object, identifier, source stri
 	return nil
 }
 
+// Lock entry a hub result names for callers outside the package such as the mcp catalog
+func InstalledEntry(installed map[string]*pyjson.Object, identifier, source string) *pyjson.Object {
+	return installedEntry(installed, identifier, source)
+}
+
 // Tap list of custom GitHub repo sources
 type TapsManager struct{ jsonStateFile }
 

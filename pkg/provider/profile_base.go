@@ -802,6 +802,11 @@ func refreshRouteProfiles(ctx context.Context, provider, baseURL string) []*Prof
 	return out
 }
 
+// Profiles overriding the runtime credential refresh for the route
+func RefreshRouteProfiles(ctx context.Context, providerName, baseURL string) []*Profile {
+	return refreshRouteProfiles(ctx, providerName, baseURL)
+}
+
 var errorPathWarned sync.Map
 
 // Asks the route's credential refresh profile whether a non auth error means a stale credential, a panicking hook answers false

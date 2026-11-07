@@ -320,6 +320,11 @@ func (x *HubCLI) sources() []SkillSource {
 	return x.Hub.createSourceRouter(NewGitHubAuth(x.S))
 }
 
+// Source list the CLI searches, the Sources seam when set else the hub's router
+func (x *HubCLI) ResolvedSources() []SkillSource {
+	return x.sources()
+}
+
 func (x *HubCLI) unifiedSearch(ctx context.Context, query string, sources []SkillSource, sourceFilter string, limit int) []SkillMeta {
 	if x.seams.unifiedSearch != nil {
 		return x.seams.unifiedSearch(ctx, query, sources, sourceFilter, limit)

@@ -357,6 +357,14 @@ func ISOFormatUTC(t time.Time) string {
 	return t.Format("2006-01-02T15:04:05") + "+00:00"
 }
 
+// Python datetime isoformat of a naive value from its wall clock, microseconds only when nonzero
+func ISOFormatNaive(t time.Time) string {
+	if micro := t.Nanosecond() / 1000; micro != 0 {
+		return t.Format("2006-01-02T15:04:05") + fmt.Sprintf(".%06d", micro)
+	}
+	return t.Format("2006-01-02T15:04:05")
+}
+
 // Python datetime isoformat of an aware value in its own zone, microseconds and offset seconds only when nonzero
 func ISOFormat(t time.Time) string {
 	base := t.Format("2006-01-02T15:04:05")

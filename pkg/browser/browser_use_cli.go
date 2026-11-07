@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/observability"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -162,3 +163,5 @@ func registerBrowserExecTool() {
 	tools.Register(tools.Def{Name: "browser_exec", Toolset: "browser-use", Schema: BrowserExecSchema(), Handler: handleBrowserExec,
 		Check: browserExecAvailable, DynamicSchema: BrowserExecSchemaOverrides, Emoji: "\U0001F310"})
 }
+
+func init() { provider.BrowserHarnessCLI = findCLI }

@@ -157,7 +157,7 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 			resolvedProvider = auxOrDefault(effectiveProvider, resolvedProvider)
 		}
 	} else {
-		client, finalModel, err = auxGetCachedClient(ctx, auxCachedClientRequest{Provider: resolvedProvider, Model: route.Model, AsyncMode: asyncMode,
+		client, finalModel, err = auxGetCachedClientFn(ctx, auxCachedClientRequest{Provider: resolvedProvider, Model: route.Model, AsyncMode: asyncMode,
 			BaseURL: route.BaseURL, APIKey: route.APIKey, APIMode: route.APIMode, MainRuntime: req.MainRuntime, Task: task})
 		if err != nil {
 			return auxResolvedAuxRoute{}, err
@@ -187,7 +187,7 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 			}
 			if client == nil && route.BaseURL == "" {
 				slog.Info(fmt.Sprintf("Auxiliary %s: provider %s unavailable, trying auto-detection chain", auxTaskOrCall(task), resolvedProvider))
-				client, finalModel, err = auxGetCachedClient(ctx, auxCachedClientRequest{Provider: "auto", AsyncMode: asyncMode, MainRuntime: req.MainRuntime, Task: task})
+				client, finalModel, err = auxGetCachedClientFn(ctx, auxCachedClientRequest{Provider: "auto", AsyncMode: asyncMode, MainRuntime: req.MainRuntime, Task: task})
 				if err != nil {
 					return auxResolvedAuxRoute{}, err
 				}
@@ -681,7 +681,7 @@ func auxLadderProviderFallback(ctx context.Context, yield auxLadderYield, firstE
 			}
 		}
 	} else if fbClient == nil && !explicitAuthWithTaskChain {
-		if fbClient, fbModel, fbLabel, err = auxTryMainAgentModelFallback(ctx, resolvedProvider, task, reason, chainFailedModel, route.BaseInfo, scope); err != nil {
+		if fbClient, fbModel, fbLabel, err = auxTryMainAgentModelFallbackFn(ctx, resolvedProvider, task, reason, chainFailedModel, route.BaseInfo, scope); err != nil {
 			return nil, err
 		}
 	}

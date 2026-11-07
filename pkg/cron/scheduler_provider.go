@@ -343,6 +343,9 @@ func providerFireDueAccepts(p CronScheduler, name string) bool {
 
 // Whether the provider implements the two phase fire contract instead of a legacy fire_due only override
 func providerSupportsSplitFire(p CronScheduler) bool {
+	if h, ok := p.(interface{ SupportsSplitFire() bool }); ok {
+		return h.SupportsSplitFire()
+	}
 	_, claim := p.(claimFireHook)
 	_, fired := p.(fireClaimedHook)
 	if claim || fired {
@@ -467,6 +470,20 @@ func resolveCronScheduler(s *Store) CronScheduler {
 	if provider == nil {
 		s.log.Warn(fmt.Sprintf("cron.provider '%s' not found; using built-in ticker", name))
 		return &InProcessCronScheduler{}
+	}
+	if checked, ok := provider.(checkedScheduler); ok {
+		available, err := checked.checkAvailable()
+		if err == nil && !available {
+			s.log.Warn(fmt.Sprintf("cron.provider '%s' not available; using built-in ticker", name))
+			return &InProcessCronScheduler{}
+		}
+		if err == nil {
+			_, err = checked.checkName()
+		}
+		if err != nil {
+			s.log.Warn(fmt.Sprintf("Failed to load cron.provider '%s' (%v); using built-in ticker", name, err))
+			return &InProcessCronScheduler{}
+		}
 	}
 	if !schedulerIsAvailable(provider) {
 		s.log.Warn(fmt.Sprintf("cron.provider '%s' not available; using built-in ticker", name))

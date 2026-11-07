@@ -33,6 +33,9 @@ func newContext(m *Manifest, mgr *Manager) *Context {
 	return &Context{manifest: m, manager: mgr}
 }
 
+// Plugin registration context of a manifest on a manager
+func NewPluginContext(m *Manifest, mgr *Manager) *Context { return newContext(m, mgr) }
+
 // Effective registry key used for every namespace of the plugin
 func (c *Context) PluginID() string { return c.manifest.ID() }
 
@@ -114,11 +117,17 @@ func trackCallback[T any](c *Context, kind, key string, entry *T, mapping map[st
 
 // Registers a lifecycle hook callback, hold_stream declaring the reply must not stream
 func (c *Context) RegisterHook(hookName string, fn HookFunc, holdStream bool) *Registration {
+	if c.ignoredAfterAbandonedLoad("register_hook") {
+		return nil
+	}
 	return c.manager.TrackHook(c, hookName, fn, holdStream)
 }
 
 // Registers behaviour changing middleware, unknown kinds warned about but stored
 func (c *Context) RegisterMiddleware(kind string, fn MiddlewareFunc) *Registration {
+	if c.ignoredAfterAbandonedLoad("register_middleware") {
+		return nil
+	}
 	_, name := callbackNames(fn)
 	return c.registerMiddlewareAs(kind, fn, name)
 }

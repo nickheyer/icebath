@@ -26,6 +26,9 @@ var (
 	linkLocalV4 = netip.MustParsePrefix("169.254.0.0/16")
 	linkLocalV6 = netip.MustParsePrefix("fe80::/10")
 	loopbackV4  = netip.MustParsePrefix("127.0.0.0/8")
+	reservedV4  = netip.MustParsePrefix("240.0.0.0/4")
+	reservedV6  = prefixes("::/8", "100::/8", "200::/7", "400::/6", "800::/5", "1000::/4", "4000::/3", "6000::/3", "8000::/3",
+		"a000::/3", "c000::/3", "e000::/4", "f000::/5", "f800::/6", "fe00::/9")
 )
 
 func within(ip netip.Addr, nets []netip.Prefix) bool {
@@ -71,6 +74,15 @@ func IsLinkLocal(ip netip.Addr) bool {
 		return linkLocalV4.Contains(ip)
 	}
 	return linkLocalV6.Contains(ip)
+}
+
+// Reserved classification of CPython 3.13 ipaddress, mapped IPv6 judged by its IPv4 address
+func IsReserved(ip netip.Addr) bool {
+	ip = mapped(ip)
+	if ip.Is4() {
+		return reservedV4.Contains(ip)
+	}
+	return within(ip, reservedV6)
 }
 
 // Parses an address like ipaddress.ip_address including an IPv6 scope suffix, false on ValueError

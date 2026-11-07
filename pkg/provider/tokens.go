@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -48,10 +49,12 @@ func EstimateTokens(text string) int {
 
 var imagePartTypes = map[string]bool{"image": true, "image_url": true, "input_image": true}
 
-var persistenceOnlyFields = map[string]bool{
-	"timestamp": true, "display_kind": true, "display_metadata": true, "message_uid": true,
-	"absorbed_message_uids": true, "tool_call_uids": true, "tool_call_uid": true, "token_count": true,
-}
+// Persistence only message fields of hermes plus the token_count column a stored message row carries
+var persistenceOnlyFields = func() map[string]bool {
+	fields := maps.Clone(state.PersistenceOnlyMessageFields)
+	fields["token_count"] = true
+	return fields
+}()
 
 // Replay carriers priced at zero, opaque signatures, duplicate reasoning copies and ordered sidecars
 var unpricedCoreFields = []string{"_anthropic_content_blocks", "reasoning_details", "extra_content", "bedrock_content_blocks", "data_use"}
@@ -96,7 +99,7 @@ func messageShadow(m *state.Message) (map[string]any, int) {
 	return mapShadow(row), countImageParts(row)
 }
 
-// Shadow of a message row holding only what the provider receives, image payloads replaced by a placeholder
+// Shadow of a message row holding only what the provider receives, image payloads swapped for a fixed marker
 func mapShadow(row map[string]any) map[string]any {
 	sidecar, _ := row["api_content"].(string)
 	role, _ := row["role"].(string)
@@ -217,6 +220,9 @@ func stripOpaqueReplayItems(items any) any {
 	return out
 }
 
+// Opaque replay items with encrypted payloads removed, the shape the budget estimator charges
+func StripOpaqueReplayItems(items any) any { return stripOpaqueReplayItems(items) }
+
 // Text tokens of one message with image payloads stripped, the Python str of a dict row shadow or of the value
 func estimateMessageTokensWithoutImages(msg any) int {
 	if row, ok := msg.(map[string]any); ok {
@@ -232,6 +238,11 @@ func estimateRowsTokens[R any](rows []R, imageCost int) int {
 		total += estimateMessageTokensCached(any(row), imageCost)
 	}
 	return total
+}
+
+// Memoized tokens of dict message rows with every priced key of each dict counted
+func EstimateRowsTokens(rows []map[string]any, imageCost int) int {
+	return estimateRowsTokens(rows, imageCost)
 }
 
 // Decoded JSON with numbers as Python ints or floats so their str matches the dict row

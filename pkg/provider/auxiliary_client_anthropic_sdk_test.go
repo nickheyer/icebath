@@ -222,3 +222,92 @@ func TestCreateAnthropicMessageFallsBackWhenStreamingUnsupported(t *testing.T) {
 		t.Fatalf("fallback create kept stream: %v", (*bodies)[1])
 	}
 }
+
+func TestBuildAnthropicClientExportHandsBackSDKClient(t *testing.T) {
+	var gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("x-api-key")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(auxAnthropicSSE(true)))
+	}))
+	defer srv.Close()
+	built, err := BuildAnthropicClient(context.Background(), "sk-ant-api-key", srv.URL+"/v1/", 30, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := built.(*anthropicSDKClient)
+	if !ok {
+		t.Fatalf("the export must hand back the SDK client, got %T", built)
+	}
+	defer client.Close()
+	if client.BaseURL() != srv.URL {
+		t.Fatalf("base URL %q keeps the /v1 suffix", client.BaseURL())
+	}
+	msg, err := createAnthropicMessage(context.Background(), client, map[string]any{"model": "claude-x", "max_tokens": 8,
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, _ := msg["content"].([]any)
+	if len(content) != 1 || content[0].(map[string]any)["text"] != "streamed" || gotKey != "sk-ant-api-key" {
+		t.Fatalf("message %v x-api-key %q", msg, gotKey)
+	}
+}
+
+func TestBuildAnthropicBedrockClientExportBuildsTheRegionClient(t *testing.T) {
+	got, gerr := BuildAnthropicBedrockClient(context.Background(), "us-west-2", 7)
+	want, werr := buildAnthropicBedrockClient(context.Background(), "us-west-2", 7)
+	if (gerr == nil) != (werr == nil) {
+		t.Fatalf("errors differ %v %v", gerr, werr)
+	}
+	if gerr == nil {
+		if _, ok := got.(*anthropicSDKClient); !ok || want == nil {
+			t.Fatalf("client %T", got)
+		}
+	}
+}
+
+func TestAgentCreateAnthropicMessageHonoursTheStreamPreferenceAndOffersTheResponse(t *testing.T) {
+	var streamed []bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		streamed = append(streamed, body["stream"] == true)
+		w.Header().Set("x-nous-credits-remaining-micros", "9")
+		if body["stream"] == true {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(auxAnthropicSSE(true)))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"msg_2","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[{"type":"text","text":"created"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer srv.Close()
+	client, err := buildAnthropicClient(context.Background(), "sk-ant-api-key", srv.URL, 30, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	kwargs := func() map[string]any {
+		return map[string]any{"model": "claude-sonnet-4-6", "max_tokens": 8, "messages": []any{map[string]any{"role": "user", "content": "hi"}}}
+	}
+	var seen []string
+	onResponse := func(resp any) {
+		seen = append(seen, resp.(*http.Response).Header.Get("x-nous-credits-remaining-micros"))
+		panic("hook noise is swallowed")
+	}
+	msg, err := CreateAnthropicMessage(context.Background(), client, kwargs(), "[agent] ", true, onResponse)
+	if err != nil || msg.(map[string]any)["content"].([]any)[0].(map[string]any)["text"] != "streamed" || !reflect.DeepEqual(seen, []string{"9"}) {
+		t.Fatalf("streamed message %v %v hook %v", msg, err, seen)
+	}
+	msg, err = CreateAnthropicMessage(context.Background(), client, kwargs(), "[agent] ", false, onResponse)
+	if err != nil || msg.(map[string]any)["content"].([]any)[0].(map[string]any)["text"] != "created" || len(seen) != 1 {
+		t.Fatalf("created message %v %v hook %v", msg, err, seen)
+	}
+	if !reflect.DeepEqual(streamed, []bool{true, false}) {
+		t.Fatalf("stream flags %v", streamed)
+	}
+	if _, err := CreateAnthropicMessage(context.Background(), struct{}{}, kwargs(), "", true, nil); err == nil {
+		t.Fatal("client without messages accepted")
+	}
+}

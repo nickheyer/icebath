@@ -74,6 +74,17 @@ func tbhMultiplex(t *testing.T) {
 	t.Cleanup(func() { SetMultiplexActive(false) })
 }
 
+func TestScopedCredentialReadsTheEnvSecrets(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("A2A_PORT= 9911 \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := &Env{Home: dir, Secrets: config.NewSecrets(dir)}
+	if got := ScopedCredential(env, "A2A_PORT"); got != scopedCredential(env, "A2A_PORT") || got != "9911" {
+		t.Fatalf("ScopedCredential = %q", got)
+	}
+}
+
 func TestManagedNousToolsEnabledGate(t *testing.T) {
 	tbhInstall(t, &tbhAccount{enabled: false})
 	if managedNousToolsEnabled(nil, false) {
@@ -361,5 +372,16 @@ func TestFalKeyIsConfigured(t *testing.T) {
 	t.Setenv("FAL_KEY", "   ")
 	if FalKeyIsConfigured(tbhEnv(t, "", nil)) {
 		t.Fatal("blank key counted")
+	}
+}
+
+func TestManagedNousGatewayExportsMatchTheBackendGate(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "")
+	env := &Env{Home: t.TempDir(), Config: config.Tree{}}
+	if ManagedNousToolsEnabled(env, false) != managedNousToolsEnabled(env, false) {
+		t.Fatal("managed nous gate diverges")
+	}
+	if NousToolGatewayUnavailableMessage(env, "image generation", false) != nousToolGatewayUnavailableMessage(env, "image generation", false) {
+		t.Fatal("gateway message diverges")
 	}
 }

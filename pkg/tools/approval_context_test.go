@@ -214,3 +214,15 @@ func TestSessionYoloContract(t *testing.T) {
 		t.Fatal("a later off sticks")
 	}
 }
+
+func TestApprovalTimeoutExportsMatchUnexported(t *testing.T) {
+	env := &Env{}
+	if GetApprovalTimeout(env) != getApprovalTimeout(env) {
+		t.Fatalf("GetApprovalTimeout differs")
+	}
+	for _, s := range []int{0, 1, 60, 300, 3600, 7200, 90} {
+		if FormatApprovalWindow(s) != formatApprovalWindow(s) {
+			t.Fatalf("FormatApprovalWindow(%d) differs", s)
+		}
+	}
+}

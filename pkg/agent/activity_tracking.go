@@ -91,8 +91,12 @@ func (a *AIAgent) GetActivitySummary() map[string]any {
 		provenance = string(state.ActivityProvenanceUnknown)
 	}
 	extra := pyjson.NewObject()
-	if a.currentTool != "" {
-		extra.Set("current_tool", a.currentTool)
+	lock := a.livenessActivityLock()
+	lock.Lock()
+	currentTool := a.currentTool
+	lock.Unlock()
+	if currentTool != "" {
+		extra.Set("current_tool", currentTool)
 	} else {
 		extra.Set("current_tool", nil)
 	}

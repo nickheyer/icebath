@@ -40,3 +40,24 @@ func TestInTreeCatalogFeedsTheSharedMetricsCatalogs(t *testing.T) {
 		}
 	}
 }
+
+func TestCompiledInPluginsReadAsBundledPluginNames(t *testing.T) {
+	bundledMu.Lock()
+	savedByKey, savedOrder := bundledByKey, bundledOrder
+	bundledByKey, bundledOrder = map[string]Plugin{}, nil
+	bundledMu.Unlock()
+	t.Cleanup(func() {
+		bundledMu.Lock()
+		bundledByKey, bundledOrder = savedByKey, savedOrder
+		bundledMu.Unlock()
+		observability.ResetCatalogCaches()
+	})
+	RegisterBundled(fakeBundled{Manifest{Name: "disk-cleanup"}})
+	RegisterBundled(fakeBundled{Manifest{Name: "Langfuse", Key: "observability/Langfuse"}})
+	observability.ResetCatalogCaches()
+	for raw, want := range map[string]string{"disk-cleanup": "disk-cleanup", "observability/langfuse": "langfuse", "some-private-plugin": "custom"} {
+		if got := observability.PluginMetricName(raw); got != want {
+			t.Fatalf("%s reads %s want %s", raw, got, want)
+		}
+	}
+}

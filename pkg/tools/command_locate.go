@@ -136,6 +136,9 @@ func locateCommand(name string, ctx *commandLookupContext, knownDirs []string) c
 	return commandResolution{Kind: kind, Candidates: candidates}
 }
 
+// Argv of the first present PATH candidate for a command name, nil when it is not found
+func LocateCommand(name string) []string { return locateCommand(name, nil, nil).Command() }
+
 // PATH hit for a bare name honouring an explicit search path and, on Windows, an explicit PATHEXT
 func commandWhich(name string, ctx *commandLookupContext) (string, bool) {
 	if ctx.Path != nil && *ctx.Path == "" {
@@ -427,6 +430,9 @@ func osPathExpandVars(p string) string {
 		return m[0]
 	})
 }
+
+// Expands environment references like os.path.expandvars
+func OSPathExpandVars(p string) string { return osPathExpandVars(p) }
 
 // Every match of the pattern replaced by the callback result over its submatches
 func replaceSubmatchFunc(re *regexp.Regexp, s string, fn func([]string) string) string {

@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -256,5 +258,27 @@ func TestCreateAfterDeleteRefusesWhenIdentityFilesRemain(t *testing.T) {
 				t.Fatal("leftover changed")
 			}
 		})
+	}
+}
+
+func TestDeleteThenLoggingSetupDoesNotRecreateHome(t *testing.T) {
+	tmp := manageEnv(t)
+	captureOut(t)
+	dir := createWorker(t)
+	deleteQuietly(t, "worker")
+	if pathExists(dir) || slices.Contains(namedHomes(t), "worker") {
+		t.Fatal("deleted profile still present")
+	}
+	t.Setenv(home.EnvHome, dir)
+	_, err := logging.SetupLogging(context.Background(), logging.Options{Home: dir, Force: true})
+	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "Named profile home does not exist") {
+		t.Fatalf("setup logging %v", err)
+	}
+	if pathExists(dir) {
+		t.Fatal("logging setup recreated the deleted home")
+	}
+	t.Setenv(home.EnvHome, filepath.Join(tmp, ".icebath"))
+	if slices.Contains(namedHomes(t), "worker") {
+		t.Fatal("deleted profile listed again")
 	}
 }

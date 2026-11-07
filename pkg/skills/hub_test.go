@@ -378,3 +378,27 @@ func TestInstallFromQuarantineRecordsSuccessfulInstall(t *testing.T) {
 		t.Fatalf("lock entry %v", entry)
 	}
 }
+
+func TestInstalledEntryExportMatchesDirectAndClawHubAliasKeys(t *testing.T) {
+	direct := pyjson.NewObject()
+	direct.Set("name", "direct")
+	aliased := pyjson.NewObject()
+	aliased.Set("name", "aliased")
+	alias, ok := clawhubCatalogIdentifier("@alice/weather")
+	if !ok {
+		t.Fatal("expected a clawhub catalog identifier for @alice/weather")
+	}
+	installed := map[string]*pyjson.Object{"github/x/y": direct, alias: aliased}
+	if got := InstalledEntry(installed, "github/x/y", "github"); got != direct {
+		t.Fatalf("direct key: got %v", got)
+	}
+	if got := InstalledEntry(installed, "@alice/weather", "clawhub"); got != aliased {
+		t.Fatalf("clawhub alias: got %v", got)
+	}
+	if got := InstalledEntry(installed, "@alice/weather", "github"); got != nil {
+		t.Fatalf("non clawhub miss must be nil, got %v", got)
+	}
+	if got := InstalledEntry(installed, "nobody/nothing", "clawhub"); got != nil {
+		t.Fatalf("clawhub miss must be nil, got %v", got)
+	}
+}

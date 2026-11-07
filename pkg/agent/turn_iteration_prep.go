@@ -253,7 +253,7 @@ func announceAPICall(ctx context.Context, a *AIAgent, s *LoopState) error {
 		faces, verbs := thinkingFaces(), thinkingVerbs()
 		face, verb := faces[rand.IntN(len(faces))], verbs[rand.IntN(len(verbs))]
 		if a.thinkingCallback != nil {
-			a.thinkingCallback(face + " " + verb + "...")
+			a.callThinking(face + " " + verb + "...")
 		} else if !a.hasStreamConsumers() && a.shouldStartQuietSpinner() {
 			kind := thinkingSpinnerTypes[rand.IntN(len(thinkingSpinnerTypes))]
 			s.ThinkingSpinner = startKawaiiSpinner(face+" "+verb+"...", kind, a.printFn)

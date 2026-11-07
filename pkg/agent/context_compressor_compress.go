@@ -759,8 +759,15 @@ func (c *ContextCompressor) compress(ctx context.Context, messages []map[string]
 	return c.CompressBypassingCooldown(ctx, messages, currentTokens, focusTopic, force, memoryContext, false)
 }
 
-// Prunes old tool bodies, protects head and tail, summarizes the middle and repairs tool pairs
+// Every built in compress entry, replaced by tests that patch the compressor class compress
+var compressorCompress = (*ContextCompressor).compressPass
+
 func (c *ContextCompressor) CompressBypassingCooldown(ctx context.Context, messages []map[string]any, currentTokens *int, focusTopic *string, force bool, memoryContext string, bypassCooldown bool) ([]map[string]any, error) {
+	return compressorCompress(c, ctx, messages, currentTokens, focusTopic, force, memoryContext, bypassCooldown)
+}
+
+// Prunes old tool bodies, protects head and tail, summarizes the middle and repairs tool pairs
+func (c *ContextCompressor) compressPass(ctx context.Context, messages []map[string]any, currentTokens *int, focusTopic *string, force bool, memoryContext string, bypassCooldown bool) ([]map[string]any, error) {
 	if err := raiseIfStaleAttempt(ctx, c); err != nil {
 		return nil, err
 	}

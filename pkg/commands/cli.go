@@ -178,6 +178,7 @@ func NewCLI() *CLI {
 	c.bindMoA()
 	c.bindConfig()
 	c.bindSkin()
+	c.bindHooks()
 	c.bindPlugins()
 	c.bindSkillsHub()
 	c.bindBundles()

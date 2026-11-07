@@ -2,7 +2,10 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -26,6 +29,9 @@ type summaryFake struct {
 	maxTokens                *int
 	outboundSanitized        int
 	evicted, stripped, drops int
+	kwargs                   map[string]any
+	dispatch                 func(ctx context.Context, apiKwargs map[string]any) (any, error)
+	sdkSeen                  []map[string]any
 }
 
 func (a *fakeChatAgent) s() *summaryFake {
@@ -92,12 +98,18 @@ func (a *fakeChatAgent) CloneMessageForSend(msg map[string]any) map[string]any {
 }
 func (a *fakeChatAgent) BuildAPIKwargs(apiMessages []map[string]any) (map[string]any, error) {
 	a.s().built = append(a.s().built, apiMessages)
+	if a.s().kwargs != nil {
+		return maps.Clone(a.s().kwargs), nil
+	}
 	return map[string]any{"model": a.model, "messages": apiMessages, "tools": []any{}, "tool_choice": "auto", "parallel_tool_calls": true}, nil
 }
 func (a *fakeChatAgent) SanitizeOutboundKwargs(kwargs map[string]any) { a.s().outboundSanitized++ }
 func (a *fakeChatAgent) InterruptibleAPICall(ctx context.Context, apiKwargs map[string]any) (any, error) {
 	s := a.s()
 	s.sent = append(s.sent, apiKwargs)
+	if s.dispatch != nil {
+		return s.dispatch(ctx, apiKwargs)
+	}
 	i := len(s.sent) - 1
 	if i < len(s.errs) && s.errs[i] != nil {
 		return nil, s.errs[i]
@@ -242,5 +254,119 @@ func TestHandleMaxIterationsRetriesOnceStripsThinkAndFallsBackToSiteCopy(t *test
 	final, err = HandleMaxIterations(t.Context(), failing, &history)
 	if err != nil || !strings.Contains(final, "90") || len(history) != 4 {
 		t.Fatalf("failure final %q err %v history %d", final, err, len(history))
+	}
+}
+
+func TestIterationLimitSummaryRetriesPastRouterTimeoutShim(t *testing.T) {
+	completion := func(content string, completionTokens int) map[string]any {
+		reply := chatReply(content)
+		reply["usage"] = map[string]any{"completion_tokens": completionTokens}
+		return reply
+	}
+	agent := summaryAgent(t, "chat_completions")
+	agent.baseURL, agent.model = "https://openrouter.ai/api/v1", "test/model"
+	agent.s().system = "You are helpful."
+	agent.s().replies = []any{completion(routerTimeoutShim, 0), completion("Real summary.", 3)}
+	history := []map[string]any{{"role": "user", "content": "do stuff"}}
+	final, err := HandleMaxIterations(t.Context(), agent, &history)
+	if err != nil || final != "Real summary." || len(agent.s().sent) != 2 {
+		t.Fatalf("final %q err %v calls %d", final, err, len(agent.s().sent))
+	}
+}
+
+func TestSummaryRequestSubstitutesSidecarBytes(t *testing.T) {
+	agent := summaryAgent(t, "chat_completions")
+	agent.baseURL = "https://openrouter.ai/api/v1"
+	agent.s().replies = []any{chatReply("SUMMARY")}
+	messages := []map[string]any{{"role": "user", "content": "q1", "api_content": "q1\n\nPLUGIN-CTX"}, {"role": "assistant", "content": "a1"}}
+	out, err := HandleMaxIterations(t.Context(), agent, &messages)
+	if err != nil || out != "SUMMARY" {
+		t.Fatalf("summary %q err %v", out, err)
+	}
+	sent, _ := agent.s().sent[0]["messages"].([]map[string]any)
+	var users []map[string]any
+	for _, m := range sent {
+		if _, has := m["api_content"]; has {
+			t.Fatalf("sidecar key reached the wire: %v", m)
+		}
+		if m["role"] == "user" {
+			users = append(users, m)
+		}
+	}
+	if len(users) == 0 || users[0]["content"] != "q1\n\nPLUGIN-CTX" {
+		t.Fatalf("summary request users %v", users)
+	}
+}
+
+// MoA facade double recording the messages each prepared request was built from
+type summaryMoaFacade struct{ prepared [][]map[string]any }
+
+func (f *summaryMoaFacade) PrepareRequest(messages []map[string]any) (map[string]any, error) {
+	f.prepared = append(f.prepared, messages)
+	return map[string]any{"messages": messages}, nil
+}
+
+func TestMaxIterationsSummaryKeepsTheDataUseRequirementOnTheMoaPreparedRequest(t *testing.T) {
+	agent := summaryAgent(t, "chat_completions")
+	agent.provider, agent.baseURL, agent.model = "moa", "moa://local", "review"
+	facade := &summaryMoaFacade{}
+	agent.client = facade
+	agent.s().replies = []any{chatReply("summary")}
+	messages := []map[string]any{
+		{"role": "user", "content": "read my mail"},
+		{"role": "assistant", "content": "", "tool_calls": []any{map[string]any{"id": "c1", "type": "function", "function": map[string]any{"name": "read_file", "arguments": "{}"}}}},
+		{"role": "tool", "tool_call_id": "c1", "content": "inbox", "data_use": []any{"no_training"}},
+	}
+	out, err := HandleMaxIterations(t.Context(), agent, &messages)
+	if err != nil || out != "summary" || len(facade.prepared) != 1 {
+		t.Fatalf("summary %q err %v prepared %d", out, err, len(facade.prepared))
+	}
+	found := false
+	for _, m := range facade.prepared[0] {
+		if m["role"] == "tool" {
+			found = reflect.DeepEqual(m["data_use"], []any{"no_training"})
+		}
+	}
+	if !found || agent.s().sent[0]["_moa_prepared_request"] == nil {
+		t.Fatalf("data_use lost on the MoA prepared request %v", facade.prepared[0])
+	}
+}
+
+func TestIterationSummaryPathHandsTheSDKOnlyEmptyBulkSlots(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		raw, _ := json.Marshal(chatReply("ok"))
+		_, _ = w.Write(raw)
+	}))
+	defer srv.Close()
+	client := newAuxOpenAIClient("k", srv.URL+"/v1", auxOpenAIOptions{HTTPClient: srv.Client()})
+	agent := summaryAgent(t, "chat_completions")
+	agent.provider = "p"
+	agent.s().transport = GetTransport("chat_completions")
+	messages := []any{map[string]any{"role": "user", "content": strings.Repeat("x", 4096)}}
+	tools := chatBypassWireBody()["tools"]
+	agent.s().kwargs = map[string]any{"model": "m", "messages": messages, "tools": tools}
+	agent.s().dispatch = func(ctx context.Context, request map[string]any) (any, error) {
+		return DispatchNonstreamingAPIRequest(ctx, agent, request, func(reason, kind string) (any, error) { return client, nil })
+	}
+	attempt, err := chatSummaryAttempt(t.Context(), agent, []map[string]any{{"role": "user", "content": strings.Repeat("x", 4096)}}, "req-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := attempt(t.Context(), 0); err != nil || out != "ok" {
+		t.Fatalf("summary %q %v", out, err)
+	}
+	seen := agent.s().sdkSeen
+	if len(seen) != 1 {
+		t.Fatalf("sdk calls %d", len(seen))
+	}
+	if m, _ := seen[0]["messages"].([]any); m == nil || len(m) != 0 {
+		t.Fatalf("sdk messages slot %v", seen[0]["messages"])
+	}
+	if tl, _ := seen[0]["tools"].([]any); tl == nil || len(tl) != 0 {
+		t.Fatalf("sdk tools slot %v", seen[0]["tools"])
+	}
+	if extra, _ := seen[0]["extra_body"].(map[string]any); !reflect.DeepEqual(extra["messages"], messages) {
+		t.Fatalf("extra body messages %v", seen[0]["extra_body"])
 	}
 }

@@ -448,6 +448,9 @@ func blake2bSum(data []byte, size int) []byte {
 	return out[:size]
 }
 
+// BLAKE2b digest of data with the given output size in bytes
+func Blake2bSum(data []byte, size int) []byte { return blake2bSum(data, size) }
+
 // Model ids of an api tags payload, false when the shape is not Ollama's
 func parseOllamaTags(payload any) ([]string, bool) {
 	obj, ok := payload.(map[string]any)

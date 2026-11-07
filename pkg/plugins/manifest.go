@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -280,13 +282,58 @@ func configKeyPath(item any) string {
 	return strings.Join(parts, ".")
 }
 
+const unknownFieldsWarning = "Plugin %s: unknown manifest field(s) ignored: %s (newer manifest schema or typo; plugin still loads)"
+
+// Python int of a manifest scalar, warning with the formatted repr and reporting false when it does not convert
+func manifestInt(raw any, key, warn string) (int, bool) {
+	switch v := raw.(type) {
+	case bool:
+		if v {
+			return 1, true
+		}
+		return 0, true
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		if !math.IsNaN(v) && !math.IsInf(v, 0) {
+			return int(v), true
+		}
+	case string:
+		digits := strings.TrimSpace(v)
+		body := strings.TrimLeft(digits, "+-")
+		if len(digits)-len(body) <= 1 && body != "" && !strings.HasPrefix(body, "_") && !strings.HasSuffix(body, "_") && !strings.Contains(body, "__") {
+			if n, err := strconv.ParseInt(strings.ReplaceAll(digits, "_", ""), 10, 64); err == nil {
+				return int(n), true
+			}
+		}
+	}
+	logWarn(fmt.Sprintf(warn, key, config.PyRepr(raw)))
+	return 0, false
+}
+
+// List valued manifest field, warning and yielding nothing when present with another type
+func manifestFieldList(data map[string]any, key, field, what string) []any {
+	raw := data[field]
+	if raw == nil {
+		return nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		logWarn(fmt.Sprintf("Plugin %s: %s must be %s; ignoring", key, field, what))
+		return nil
+	}
+	return items
+}
+
 // Validated config_keys of a manifest mapping
 func manifestConfigKeys(data map[string]any, key string) []string {
 	var out []string
-	for _, item := range toList(data["config_keys"]) {
+	for _, item := range manifestFieldList(data, key, "config_keys", "a list of dotted config paths") {
 		p := configKeyPath(item)
 		if p == "" {
-			slog.Warn("plugin config_keys entry must be a dotted path at least two levels deep", "plugin", key, "entry", item)
+			logWarn(fmt.Sprintf("Plugin %s: config_keys entry %s must be a dotted path at least two levels deep; skipping", key, config.PyRepr(item)))
 			continue
 		}
 		out = append(out, p)
@@ -300,12 +347,13 @@ func configSchemaEntries(key string, raw any) map[string]map[string]any {
 	for skey, spec := range asMap(raw) {
 		sm := asMap(spec)
 		if sm == nil {
-			slog.Warn("plugin config_schema entry must be a mapping", "plugin", key, "key", skey)
+			logWarn(fmt.Sprintf("Plugin %s: config_schema entry %s must be a mapping (e.g. {type: str}); skipping", key, config.PyRepr(skey)))
 			continue
 		}
 		if t, ok := sm["type"]; ok && t != nil {
 			if _, known := ConfigSchemaTypes[strings.ToLower(fmt.Sprint(t))]; !known {
-				slog.Warn("plugin config_schema key declares unknown type", "plugin", key, "key", skey, "type", t)
+				logWarn(fmt.Sprintf("Plugin %s: config_schema key %s declares unknown type %s (known: %s); type check will be skipped for it",
+					key, config.PyRepr(skey), config.PyRepr(t), strings.Join(sortedKeys(ConfigSchemaTypes), ", ")))
 			}
 		}
 		schema[skey] = sm
@@ -330,7 +378,7 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 		if m := asMap(raw); m != nil {
 			items = []any{m}
 		} else {
-			slog.Warn("plugin provides_locales must be a list of language ids", "plugin", key)
+			logWarn(fmt.Sprintf("Plugin %s: provides_locales must be a list of language ids, got %s", key, config.PyTypeName(raw)))
 			return ids, meta
 		}
 	}
@@ -343,14 +391,13 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 				entry["endonym"] = strings.TrimSpace(e)
 			}
 			if r, ok := m["rtl"]; ok {
-				b, _ := r.(bool)
-				entry["rtl"] = b
+				entry["rtl"] = config.PyTruthy(r)
 			}
 		} else {
 			lang = normalizeLanguageID(item)
 		}
 		if !isLanguageID(lang) {
-			slog.Warn("plugin ignoring invalid provides_locales entry", "plugin", key, "entry", item)
+			logWarn(fmt.Sprintf("Plugin %s: ignoring invalid provides_locales entry %s", key, config.PyRepr(item)))
 			continue
 		}
 		dup := false
@@ -360,7 +407,7 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 			}
 		}
 		if dup {
-			slog.Warn("plugin duplicate provides_locales entry", "plugin", key, "lang", lang)
+			logWarn(fmt.Sprintf("Plugin %s: duplicate provides_locales entry %s", key, config.PyRepr(lang)))
 			continue
 		}
 		ids = append(ids, lang)
@@ -391,7 +438,7 @@ func manifestKind(data map[string]any, key, dir string) string {
 		kind = strings.ToLower(strings.TrimSpace(raw))
 	}
 	if !validPluginKinds[kind] {
-		slog.Warn("plugin has unknown kind, treating as standalone", "plugin", key, "kind", data["kind"])
+		logWarn(fmt.Sprintf("Plugin %s: unknown kind '%s' (valid: %s); treating as 'standalone'", key, config.PyStr(data["kind"]), strings.Join(sortedKeys(validPluginKinds), ", ")))
 		kind = "standalone"
 	}
 	if _, declared := data["kind"]; kind == "standalone" && !declared {
@@ -489,9 +536,12 @@ func ParseManifestFile(file, dir, source, prefix string) *Manifest {
 		logWarn(fmt.Sprintf("Failed to parse %s: %v", file, err), excInfo(err)...)
 		return nil
 	}
+	if !config.PyTruthy(doc) {
+		doc = map[string]any{}
+	}
 	data := asMap(doc)
-	if doc != nil && data == nil {
-		slog.Warn("failed to parse plugin manifest, top level must be a mapping", "file", file)
+	if data == nil {
+		logWarn(fmt.Sprintf("Failed to parse %s: top level must be a mapping, got %s (#14066)", file, config.PyTypeName(doc)))
 		return nil
 	}
 	if data == nil {
@@ -526,24 +576,23 @@ func manifestFromData(data map[string]any, dir, source, prefix string) *Manifest
 	m.Kind = manifestKind(data, key, dir)
 	m.RequiresIcebath = manifestRequires(data)
 	m.Capabilities = ParseDeclaredCapabilities(data["capabilities"], name)
-	if mv, ok := data["manifest_version"]; ok {
-		if n, ok := asInt(mv); ok {
-			m.ManifestVersion = n
-		} else {
-			slog.Warn("plugin manifest_version is not an integer, treating as 1", "plugin", key, "value", mv)
-		}
+	mvRaw, ok := data["manifest_version"]
+	if !ok {
+		mvRaw = 1
+	}
+	if n, ok := manifestInt(mvRaw, key, "Plugin %s: manifest_version %s is not an integer; treating as 1"); ok {
+		m.ManifestVersion = n
 	}
 	if m.ManifestVersion > SupportedManifestVersion {
-		slog.Warn("plugin manifest_version is newer than this build supports, loading anyway", "plugin", key, "version", m.ManifestVersion)
+		logWarn(fmt.Sprintf("Plugin %s: manifest_version %d is newer than this icebath supports (%d); loading anyway and ignoring unknown fields",
+			key, m.ManifestVersion, SupportedManifestVersion))
 	}
-	if av, ok := data["api_version"]; ok && av != nil {
-		if n, ok := asInt(av); ok {
+	if av := data["api_version"]; av != nil {
+		if n, ok := manifestInt(av, key, "Plugin %s: api_version %s is not an integer; ignoring"); ok {
 			m.APIVersion = &n
-		} else {
-			slog.Warn("plugin api_version is not an integer, ignoring", "plugin", key, "value", av)
 		}
 	}
-	for _, item := range toList(data["requires_plugins"]) {
+	for _, item := range manifestFieldList(data, key, "requires_plugins", "a list") {
 		switch d := item.(type) {
 		case string:
 			m.RequiresPlugins = append(m.RequiresPlugins, PluginDependency{ID: d})
@@ -551,35 +600,42 @@ func manifestFromData(data map[string]any, dir, source, prefix string) *Manifest
 			dm := asMap(item)
 			id, _ := dm["id"].(string)
 			if dm == nil || id == "" {
-				slog.Warn("plugin requires_plugins entry must be an id string or an id mapping", "plugin", key, "entry", item)
+				logWarn(fmt.Sprintf("Plugin %s: requires_plugins entry %s must be a plugin id string or a {id, version_range} mapping; skipping", key, config.PyRepr(item)))
 				continue
 			}
-			m.RequiresPlugins = append(m.RequiresPlugins, PluginDependency{ID: id, VersionRange: scalarString(dm["version_range"])})
+			vr := ""
+			if dm["version_range"] != nil {
+				vr = config.PyStr(dm["version_range"])
+			}
+			m.RequiresPlugins = append(m.RequiresPlugins, PluginDependency{ID: id, VersionRange: vr})
 		}
 	}
-	for _, k := range []string{"pip_dependencies", "python_dependencies"} {
-		for _, item := range toList(data[k]) {
-			s, ok := item.(string)
-			if !ok || strings.TrimSpace(s) == "" {
-				slog.Warn("plugin dependency entry must be a non-empty requirement string", "plugin", key, "entry", item)
-				continue
-			}
-			m.PythonDeps = appendUnique(m.PythonDeps, strings.TrimSpace(s))
+	for _, item := range manifestFieldList(data, key, "python_dependencies", "a list of requirement strings") {
+		s, ok := item.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			logWarn(fmt.Sprintf("Plugin %s: python_dependencies entry %s must be a non-empty requirement string; skipping", key, config.PyRepr(item)))
+			continue
 		}
+		m.PythonDeps = append(m.PythonDeps, strings.TrimSpace(s))
 	}
 	m.PythonRuntime = strings.ToLower(strings.TrimSpace(scalarString(data["python_runtime"])))
 	schemaRaw := data["config_schema"]
-	if schemaRaw == nil {
-		schemaRaw = data["settings"]
-	}
 	if schemaRaw != nil && asMap(schemaRaw) == nil {
-		slog.Warn("plugin config_schema must be a mapping, ignoring", "plugin", key)
+		logWarn(fmt.Sprintf("Plugin %s: config_schema must be a mapping; ignoring", key))
 		schemaRaw = nil
 	}
 	m.ConfigSchema = configSchemaEntries(key, schemaRaw)
-	m.License = scalarString(data["license"])
-	m.Homepage = scalarString(data["homepage"])
-	m.Tags = stringList(data["tags"])
+	m.License, m.Homepage = "", ""
+	if config.PyTruthy(data["license"]) {
+		m.License = config.PyStr(data["license"])
+	}
+	if config.PyTruthy(data["homepage"]) {
+		m.Homepage = config.PyStr(data["homepage"])
+	}
+	m.Tags = []string{}
+	for _, t := range manifestFieldList(data, key, "tags", "a list") {
+		m.Tags = append(m.Tags, config.PyStr(t))
+	}
 	m.Emits = stringList(data["emits"])
 	m.Listens = stringList(data["listens"])
 	m.ProvidesLocales, m.LocaleMetadata = parseProvidesLocales(data["provides_locales"], key)
@@ -608,9 +664,9 @@ func manifestFromData(data map[string]any, dir, source, prefix string) *Manifest
 	sort.Strings(unknown)
 	if len(unknown) > 0 {
 		if m.ManifestVersion >= 2 {
-			slog.Warn("plugin unknown manifest fields ignored", "plugin", key, "fields", strings.Join(unknown, ", "))
+			logWarn(fmt.Sprintf(unknownFieldsWarning, key, strings.Join(unknown, ", ")))
 		} else {
-			slog.Debug("plugin unknown manifest fields ignored", "plugin", key, "fields", strings.Join(unknown, ", "))
+			Logger.Debug(fmt.Sprintf(unknownFieldsWarning, key, strings.Join(unknown, ", ")))
 		}
 	}
 	return m
@@ -780,13 +836,17 @@ func ResolveLoadOrder(manifests map[string]*Manifest) []string {
 			}
 			switch {
 			case resolved == "":
-				slog.Warn("plugin requires a plugin that is not enabled or installed, loading anyway", "plugin", k, "dependency", dep.ID)
+				logWarn(fmt.Sprintf("Plugin %s requires plugin '%s' which is not enabled/installed; loading anyway (probe availability at runtime via ctx.has_plugin). Run `icebath plugins enable %s` if it is installed.", k, dep.ID, dep.ID))
 			case resolved == k:
-				slog.Warn("plugin declares a dependency on itself, ignoring", "plugin", k)
+				logWarn(fmt.Sprintf("Plugin %s declares a dependency on itself; ignoring", k))
 			default:
 				edges[k][resolved] = true
 			}
 		}
+	}
+	if cycle := loadOrderCycle(keys, edges); cycle != nil {
+		logWarn(fmt.Sprintf("Plugin dependency cycle detected (%s); falling back to alphabetical load order for all plugins", strings.Join(cycle, " -> ")))
+		return keys
 	}
 	var ordered []string
 	done := map[string]bool{}
@@ -806,16 +866,68 @@ func ResolveLoadOrder(manifests map[string]*Manifest) []string {
 				ready = append(ready, k)
 			}
 		}
-		if len(ready) == 0 {
-			slog.Warn("plugin dependency cycle detected, falling back to alphabetical load order for all plugins")
-			return keys
-		}
 		for _, k := range ready {
 			done[k] = true
 		}
 		ordered = append(ordered, ready...)
 	}
 	return ordered
+}
+
+// First cycle in graphlib TopologicalSorter order, dependencies leading to dependents, closing on its first node
+func loadOrderCycle(keys []string, edges map[string]map[string]bool) []string {
+	var nodes []string
+	known := map[string]bool{}
+	successors := map[string][]string{}
+	add := func(n string) {
+		if !known[n] {
+			known[n] = true
+			nodes = append(nodes, n)
+		}
+	}
+	for _, k := range keys {
+		add(k)
+		for _, dep := range sortedKeys(edges[k]) {
+			add(dep)
+			successors[dep] = append(successors[dep], k)
+		}
+	}
+	seen := map[string]bool{}
+	stackIndex := map[string]int{}
+	var stack []string
+	var next []int
+	for _, start := range nodes {
+		if seen[start] {
+			continue
+		}
+		n := start
+		for {
+			if !seen[n] {
+				seen[n] = true
+				stackIndex[n] = len(stack)
+				stack = append(stack, n)
+				next = append(next, 0)
+			} else if i, onStack := stackIndex[n]; onStack {
+				return append(append([]string{}, stack[i:]...), n)
+			}
+			advanced := false
+			for len(stack) > 0 {
+				top := len(stack) - 1
+				if i := next[top]; i < len(successors[stack[top]]) {
+					next[top]++
+					n = successors[stack[top]][i]
+					advanced = true
+					break
+				}
+				delete(stackIndex, stack[top])
+				stack, next = stack[:top], next[:top]
+			}
+			if !advanced {
+				break
+			}
+		}
+	}
+	return nil
 }
 
 // Splits a command line into argv the way a POSIX shell lexes quotes and backslashes

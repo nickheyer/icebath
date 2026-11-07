@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -112,19 +112,27 @@ func (s settings) commandTimeout() int {
 	return v
 }
 
-// Idle seconds before a session is reaped, never under thirty, BROWSER_INACTIVITY_TIMEOUT as the legacy fallback
+// Idle seconds before a session is reaped, a configured value floored at thirty, BROWSER_INACTIVITY_TIMEOUT as the legacy default
 func (s settings) inactivityTimeout() int {
 	fallback := defaultInactivityTimeout
-	if raw := s.secret("BROWSER_INACTIVITY_TIMEOUT"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil {
-			fallback = n
+	if raw := strings.TrimSpace(s.secret("BROWSER_INACTIVITY_TIMEOUT")); raw != "" {
+		if n, ok := pyint.Parse(raw); ok && n.IsInt64() {
+			fallback = int(n.Int64())
 		}
 	}
-	v := s.section().Int("inactivity_timeout", fallback)
-	if v < 30 {
-		return 30
+	sec := s.section()
+	if !sec.Has("inactivity_timeout") {
+		return fallback
 	}
-	return v
+	v := sec.Get("inactivity_timeout")
+	if v == nil {
+		return fallback
+	}
+	n, err := pyint.Of(v)
+	if err != nil || !n.IsInt64() {
+		return fallback
+	}
+	return max(int(n.Int64()), 30)
 }
 
 // Extra Chromium flags appended to every packaged or shared profile launch
@@ -329,7 +337,7 @@ func truthy(v any) bool {
 
 // Configured CDP override without network traffic, live connect over BROWSER_CDP_URL over browser.cdp_url
 func (s settings) cdpOverrideRaw() string {
-	if live := LiveCDPOverride(s.homeKey()); live != "" {
+	if live := liveCDPOverride(s.env); live != "" {
 		return live
 	}
 	if envURL := s.secret("BROWSER_CDP_URL"); envURL != "" {

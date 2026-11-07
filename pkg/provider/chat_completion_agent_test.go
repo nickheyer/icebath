@@ -40,6 +40,7 @@ type fakeChatAgent struct {
 	verbose, interrupted, headed             bool
 	retry                                    RetrySession
 	client                                   any
+	credits                                  *CreditsCapture
 	resolve                                  func(map[string]any) (any, error)
 	create                                   func(reason string, kwargs map[string]any) (any, error)
 	onAbort                                  func(client any, reason string)
@@ -82,13 +83,14 @@ func (a *fakeChatAgent) touchCount() int {
 	defer a.mu.Unlock()
 	return len(a.touches)
 }
-func (a *fakeChatAgent) Provider() string            { return a.provider }
-func (a *fakeChatAgent) APIMode() string             { return a.apiMode }
-func (a *fakeChatAgent) BaseURL() string             { return a.baseURL }
-func (a *fakeChatAgent) Model() string               { return a.model }
-func (a *fakeChatAgent) Platform() string            { return a.plat }
-func (a *fakeChatAgent) VerboseLogging() bool        { return a.verbose }
-func (a *fakeChatAgent) RetrySession() *RetrySession { return &a.retry }
+func (a *fakeChatAgent) Provider() string                { return a.provider }
+func (a *fakeChatAgent) CreditsCapture() *CreditsCapture { return a.credits }
+func (a *fakeChatAgent) APIMode() string                 { return a.apiMode }
+func (a *fakeChatAgent) BaseURL() string                 { return a.baseURL }
+func (a *fakeChatAgent) Model() string                   { return a.model }
+func (a *fakeChatAgent) Platform() string                { return a.plat }
+func (a *fakeChatAgent) VerboseLogging() bool            { return a.verbose }
+func (a *fakeChatAgent) RetrySession() *RetrySession     { return &a.retry }
 func (a *fakeChatAgent) InterruptRequested() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -158,6 +160,7 @@ func (a *fakeChatAgent) AnthropicMessagesCreate(ctx context.Context, kw map[stri
 	return client.(chatCompletionCreator).CreateChatCompletion(ctx, kw)
 }
 func (a *fakeChatAgent) ChatCompletionCapturingHeaders(ctx context.Context, client any, kw map[string]any) (any, error) {
+	a.s().sdkSeen = append(a.s().sdkSeen, kw)
 	return client.(chatCompletionCreator).CreateChatCompletion(ctx, kw)
 }
 func (a *fakeChatAgent) CodexSilentHangHint(model any) (string, error) {

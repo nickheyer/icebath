@@ -72,6 +72,9 @@ var prefixPatterns = []string{
 	`pk-lf-[A-Za-z0-9\-]{8,}`,
 }
 
+// Every built in secret prefix pattern in registration order, the corpus egress callers test against
+func PrefixPatterns() []string { return prefixPatterns }
+
 var prefixSubstrings = literalPrefixes(prefixPatterns)
 var prefixAlternation = regexp.MustCompile(`(?:` + strings.Join(prefixPatterns, "|") + `)`)
 var prefixWhole = regexp.MustCompile(`^(?:` + strings.Join(prefixPatterns, "|") + `)$`)
@@ -85,6 +88,9 @@ func literalPrefix(pattern string) string {
 	}
 	return pattern
 }
+
+// Leading literal characters of a prefix pattern, the text a synthetic token starts with
+func LiteralPrefix(pattern string) string { return literalPrefix(pattern) }
 
 func literalPrefixes(patterns []string) []string {
 	out := make([]string, 0, len(patterns))

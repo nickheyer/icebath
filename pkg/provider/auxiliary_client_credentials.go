@@ -185,6 +185,9 @@ func auxResolveNousPoolRuntimeAPI(ctx context.Context, forceRefresh bool) (strin
 	return apiKey, baseURL, true
 }
 
+// Nous runtime credential fetch, swapped by tests the way hermes tests patch the module function
+var auxResolveNousRuntimeAPIFn = auxResolveNousRuntimeAPI
+
 // Fresh Nous runtime credentials from the pool, then the auth store with a JWT refresh
 func auxResolveNousRuntimeAPI(ctx context.Context, forceRefresh bool, staleAccessToken string) (string, string, bool) {
 	if key, base, ok := auxResolveNousPoolRuntimeAPI(ctx, forceRefresh); ok {
@@ -315,6 +318,11 @@ func auxResolveCodexCredentialAndBase(ctx context.Context) (string, string, erro
 		override = DefaultCodexBaseURL
 	}
 	return auxReadCodexSingletonToken(ctx), override, nil
+}
+
+// ResolveCodexCredentialAndBase is the Codex token and the base url of the same authority
+func ResolveCodexCredentialAndBase(ctx context.Context) (string, string, error) {
+	return auxResolveCodexCredentialAndBase(ctx)
 }
 
 // Wall clock seam of the Codex expiry check
@@ -703,7 +711,7 @@ var auxNousRateLimitRemainingFn = func(ctx context.Context, anonymous bool) (flo
 // Nous Portal client from fresh runtime credentials or the stored JWT, nil when unauthenticated or rate limited
 func auxTryNous(ctx context.Context, vision bool) (AuxClient, string, error) {
 	nous := auxReadNousAuth(ctx)
-	apiKey, baseURL, haveRuntime := auxResolveNousRuntimeAPI(ctx, false, "")
+	apiKey, baseURL, haveRuntime := auxResolveNousRuntimeAPIFn(ctx, false, "")
 	if !haveRuntime && nous == nil {
 		slog.Warn("Auxiliary Nous client unavailable: no Nous authentication found (run: icebath auth).")
 		auxMarkProviderUnhealthy(ctx, "nous", 60, "", "no Nous authentication found", slog.LevelDebug)

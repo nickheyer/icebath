@@ -338,6 +338,7 @@ func (d *Dispatcher) ApplyTransformToolResult(ctx context.Context, env *Env, ev 
 	d.mu.RLock()
 	hooks := append([]TransformToolResultHook(nil), d.TransformToolResult...)
 	d.mu.RUnlock()
+	result, found := ev.Result, false
 	for _, h := range hooks {
 		replaced, ok := func() (out string, ok bool) {
 			defer func() {
@@ -348,11 +349,11 @@ func (d *Dispatcher) ApplyTransformToolResult(ctx context.Context, env *Env, ev 
 			}()
 			return h(ctx, env, ev)
 		}()
-		if ok {
-			return replaced
+		if ok && !found {
+			result, found = replaced, true
 		}
 	}
-	return ev.Result
+	return result
 }
 
 // Resolves pre tool call hooks once into a block message and merged modify args
@@ -558,11 +559,6 @@ func (d *Dispatcher) RunToolExecutionMiddleware(ctx context.Context, env *Env, n
 	return callAt(0, args)
 }
 
-// Normalizes a handler result so hooks, budgeting, and persistence never see an unexpected shape
-func normalizeHandlerResult(env *Env, result string) string {
-	return boundJSONErrorResult(env, result)
-}
-
 // RegistryDispatch runs a registered handler with every panic returned as a JSON error
 func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result string) {
 	if scoped := EnvInTerminalScope(ctx, call.Env); scoped != call.Env {
@@ -584,7 +580,7 @@ func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result s
 			result = toolErrorJSON(SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %v", kind, rec)), nil)
 		}
 	}()
-	return normalizeHandlerResult(call.Env, entry.Handler(ctx, call))
+	return NormalizeHandlerResult(call.Env, call.Name, entry.Handler(ctx, call))
 }
 
 // Handles a bridge call returning the finished result or the underlying call to re dispatch

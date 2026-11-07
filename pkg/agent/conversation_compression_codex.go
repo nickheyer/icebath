@@ -213,7 +213,7 @@ func compressContextViaCodexAppServer(ctx context.Context, a *AIAgent, messages 
 		}
 		return nil
 	})
-	resetReadDedupCaches(taskID, a.sessionID)
+	resetReadDedupCaches(ctx, taskID, a.sessionID)
 	compressionLog().Info(fmt.Sprintf("codex app-server compaction done: session=%s thread=%s turn=%s", sid, result.ThreadID, result.TurnID))
 	prompt, err = existingSystemPrompt(ctx, a, systemMessage)
 	if err != nil {

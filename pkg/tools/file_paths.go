@@ -378,6 +378,11 @@ func registeredTaskCwdOverride(env *Env, taskID string) string {
 	return sentinelFreeAbsCwd(env, overrides["cwd"])
 }
 
+// Cwd override registered for the raw task id, empty when none is registered
+func RegisteredTaskCwdOverride(env *Env, taskID string) string {
+	return registeredTaskCwdOverride(env, taskID)
+}
+
 // Workspace root from the session cwd record, a registered override, then TERMINAL_CWD
 func authoritativeWorkspaceRootFor(env *Env, taskID string) (string, error) {
 	if recorded, ok := getSessionCwdFor(env, taskID); ok && recorded != "" {
@@ -393,6 +398,9 @@ func authoritativeWorkspaceRootFor(env *Env, taskID string) (string, error) {
 func authoritativeWorkspaceRoot(env *Env) (string, error) {
 	return authoritativeWorkspaceRootFor(env, "default")
 }
+
+// Workspace root the session treats as authoritative
+func AuthoritativeWorkspaceRoot(env *Env) (string, error) { return authoritativeWorkspaceRoot(env) }
 
 // Launch directory of the session, the process working directory when the session names none
 func processCwd(env *Env) (string, error) {
@@ -768,6 +776,9 @@ func hasTraversalComponent(p string) bool {
 	}
 	return false
 }
+
+// Reports a literal parent directory component
+func HasTraversalComponent(p string) bool { return hasTraversalComponent(p) }
 
 // Reports whether a resolution error is a filesystem or value failure rather than a policy refusal
 func isPathResolutionFailure(err error) bool {

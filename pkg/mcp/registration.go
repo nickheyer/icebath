@@ -156,12 +156,18 @@ func trackMCPToolServer(toolName, serverName string) {
 	mcpMu.Unlock()
 }
 
+// Exported tool server tracking for packages that simulate a live MCP registration
+func TrackMCPToolServer(toolName, serverName string) { trackMCPToolServer(toolName, serverName) }
+
 // Forgets the server provenance of a deregistered tool
 func forgetMCPToolServer(toolName string) {
 	mcpMu.Lock()
 	delete(mcpToolServerNames, toolName)
 	mcpMu.Unlock()
 }
+
+// Exported provenance removal paired with the exported tracking
+func ForgetMCPToolServer(toolName string) { forgetMCPToolServer(toolName) }
 
 // Connection key of a live task found by identity, else the task name's key in the current scope
 func serverKeyForTask(ctx context.Context, s *serverTask) ServerKey {

@@ -30,6 +30,15 @@ func init() {
 	})
 }
 
+// Configurable toolset keys plus plugin toolset keys, the keys that select a saved list's explicit branch
+func explicitToolsetKeys() map[string]bool {
+	keys := tools.ConfigurableKeys()
+	for k := range tools.PluginToolsetKeys(context.Background()) {
+		keys[k] = true
+	}
+	return keys
+}
+
 // Ladder collaborators provider and tools own, the facade adds its readers, writers and personality sources
 func configFacadeMigrationSources(h string) config.MigrationSources {
 	return config.MigrationSources{

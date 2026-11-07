@@ -70,6 +70,9 @@ var HostObjectBases = map[string]string{
 	"register_memory_provider":               "agent.memory_provider:MemoryProvider",
 }
 
+// Provider bases a category loader hands back as hosted objects though no ctx registration names them
+var HostResultObjectBases = []string{"tools.computer_use.backend:ComputerUseProvider", "tools.computer_use.backend:ComputerUseBackend"}
+
 // Hooks whose payload reaches hosted callbacks only as opaque values
 var HostDegradedHooks = map[string]string{
 	"pre_gateway_dispatch": "receives the live gateway runner and session store",
@@ -94,6 +97,11 @@ func hostIsolationSource() string {
 	}
 	fmt.Fprintf(&b, "HOST_REMOTE_FACADES: frozenset[str] = frozenset({%s})\n\n", strings.Join(quoted, ", "))
 	dict("HOST_OBJECT_BASES", HostObjectBases)
+	results := make([]string, len(HostResultObjectBases))
+	for i, ref := range HostResultObjectBases {
+		results[i] = config.PyRepr(ref) + ","
+	}
+	fmt.Fprintf(&b, "HOST_RESULT_OBJECT_BASES: tuple[str, ...] = (%s)\n\n", strings.Join(results, " "))
 	dict("HOST_DEGRADED_HOOKS", HostDegradedHooks)
 	fmt.Fprintf(&b, "HOST_PROCESS_ENV = %s\n", config.PyRepr(HostProcessEnv))
 	return b.String()

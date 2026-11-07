@@ -334,6 +334,11 @@ func recordCodexAppServerUsage(agent CodexRuntimeAgent, turn *CodexTurnResult, m
 	return out
 }
 
+// Folds a codex turn's token usage into the agent, compressor and session row
+func RecordCodexAppServerUsage(agent CodexRuntimeAgent, turn *CodexTurnResult, messages []map[string]any) map[string]any {
+	return recordCodexAppServerUsage(agent, turn, messages)
+}
+
 // Records a codex native compaction boundary in session counters without rewriting local transcript rows
 func recordCodexAppServerCompaction(agent CodexRuntimeAgent, turn *CodexTurnResult, approxTokens int, force bool) bool {
 	if !force && !turn.Compacted {
@@ -377,6 +382,11 @@ func recordCodexAppServerCompaction(agent CodexRuntimeAgent, turn *CodexTurnResu
 		agent.PublishProviderNativeCompaction()
 	}
 	return true
+}
+
+// Records a server side or forced codex compaction and reports whether one happened
+func RecordCodexAppServerCompaction(agent CodexRuntimeAgent, turn *CodexTurnResult, approxTokens int, force bool) bool {
+	return recordCodexAppServerCompaction(agent, turn, approxTokens, force)
 }
 
 var codexMonotonicStart = time.Now()

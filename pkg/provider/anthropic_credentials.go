@@ -946,6 +946,9 @@ func openBrowserURL(target string) error {
 	return cmd.Start()
 }
 
+// Opens a URL in the default browser through the platform opener for callers outside the package
+func OpenBrowserURL(target string) error { return openBrowserURL(target) }
+
 // Fills the buffer from the OS entropy source, panicking when the kernel refuses
 func fillRandom(buf []byte) {
 	if _, err := rand.Read(buf); err != nil {

@@ -161,6 +161,9 @@ func defaultTerminalScope() TerminalPolicy {
 	return policy
 }
 
+// DefaultTerminalScope is the tool level terminal policy with no profile config folded in
+func DefaultTerminalScope() TerminalPolicy { return defaultTerminalScope() }
+
 // Reads the profile dotenv bytes, a seam for tests that deny the read
 var readProfileEnvBytes = os.ReadFile
 

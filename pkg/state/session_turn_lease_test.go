@@ -237,7 +237,7 @@ func TestNonExpiredTurnLeaseFromDeadPidIsReclaimed(t *testing.T) {
 	}
 	var probed []int
 	prev := holderPIDExists
-	holderPIDExists = func(pid int) bool { probed = append(probed, pid); return false }
+	holderPIDExists = func(pid int) (bool, error) { probed = append(probed, pid); return false, nil }
 	t.Cleanup(func() { holderPIDExists = prev })
 	if !leaseTry(t, db, "shared", "pid=525252:turn=fresh:platform=test", 300) {
 		t.Fatal("dead holder must be reclaimed")

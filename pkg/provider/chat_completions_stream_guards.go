@@ -73,6 +73,9 @@ func flattenMessageText(content any, sep string) string {
 	return string(b)
 }
 
+// FlattenMessageText exports the visible text join of message content shapes
+func FlattenMessageText(content any, sep string) string { return flattenMessageText(content, sep) }
+
 // ---- streamed tool call accumulator ----
 
 // One assembled tool call slot of a streamed chat completion

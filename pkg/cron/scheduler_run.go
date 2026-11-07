@@ -1041,9 +1041,9 @@ type cronRunScope struct {
 	s           *Store
 	workdir     string
 	taskID      string
-	sessionVars map[string]string
 	env         *tools.Env
 	restoreGate func()
+	cronPrev    *string
 }
 
 func (s *Store) newCronRunScope(job *Job, jobID string, executionID *string) *cronRunScope {
@@ -1051,15 +1051,9 @@ func (s *Store) newCronRunScope(job *Job, jobID string, executionID *string) *cr
 	if wd := s.resolveJobWorkdir(job, jobID); wd != nil {
 		scope.workdir = *wd
 	}
-	scope.sessionVars = map[string]string{
-		"ICEBATH_SESSION_PLATFORM":       "",
-		"ICEBATH_SESSION_CHAT_ID":        "",
-		"ICEBATH_SESSION_CHAT_NAME":      "",
-		"ICEBATH_SESSION_ASYNC_DELIVERY": "",
-		"ICEBATH_SESSION_CWD":            scope.workdir,
-	}
+	tools.SetSessionVars(scope.env, tools.SessionVars{NoAsyncDelivery: true, Cwd: scope.workdir})
 	for _, name := range cronDeliveryVars {
-		scope.sessionVars[name] = ""
+		tools.RestoreSessionVar(scope.env, name, "", true)
 	}
 	run := ""
 	switch {
@@ -1079,8 +1073,10 @@ func (s *Store) newCronRunScope(job *Job, jobID string, executionID *string) *cr
 
 // Marks the context a cron session outside the dispatcher and binds MCP spend to the task
 func (c *cronRunScope) enter(ctx context.Context) context.Context {
-	c.sessionVars["ICEBATH_CRON_SESSION"] = "1"
-	tools.BindSessionContext(c.env, c.sessionVars)
+	if prev, had := tools.BoundSessionVar(c.env, "ICEBATH_CRON_SESSION"); had {
+		c.cronPrev = &prev
+	}
+	tools.RestoreSessionVar(c.env, "ICEBATH_CRON_SESSION", "1", true)
 	c.restoreGate = tools.EnterNonDispatcherOwnedContext(c.env)
 	return mcp.BindRun(ctx, c.taskID)
 }
@@ -1088,13 +1084,13 @@ func (c *cronRunScope) enter(ctx context.Context) context.Context {
 // Clears the tool cwd and every session variable the scope set
 func (c *cronRunScope) exit() {
 	tools.ClearSessionCwd(c.env, c.taskID)
-	cleared := map[string]string{}
-	for k := range c.sessionVars {
-		cleared[k] = ""
-	}
-	tools.BindSessionContext(c.env, cleared)
+	tools.ClearSessionVars(c.env)
+	tools.RestoreSessionVar(c.env, "ICEBATH_CRON_SESSION", deref(c.cronPrev), c.cronPrev != nil)
 	if c.restoreGate != nil {
 		c.restoreGate()
+	}
+	for _, name := range cronDeliveryVars {
+		tools.RestoreSessionVar(c.env, name, "", true)
 	}
 }
 
@@ -1106,10 +1102,9 @@ func (s *Store) reloadDotenvAndPublishDeliveryTarget(ctx context.Context, job *J
 	}
 	target := s.resolveDeliveryTarget(ctx, job)
 	if target != nil {
-		scope.sessionVars["ICEBATH_CRON_AUTO_DELIVER_PLATFORM"] = target.Platform
-		scope.sessionVars["ICEBATH_CRON_AUTO_DELIVER_CHAT_ID"] = target.ChatID
-		scope.sessionVars["ICEBATH_CRON_AUTO_DELIVER_THREAD_ID"] = target.ThreadID
-		tools.BindSessionContext(scope.env, scope.sessionVars)
+		tools.RestoreSessionVar(scope.env, "ICEBATH_CRON_AUTO_DELIVER_PLATFORM", target.Platform, true)
+		tools.RestoreSessionVar(scope.env, "ICEBATH_CRON_AUTO_DELIVER_CHAT_ID", target.ChatID, true)
+		tools.RestoreSessionVar(scope.env, "ICEBATH_CRON_AUTO_DELIVER_THREAD_ID", target.ThreadID, true)
 	}
 	return nil
 }

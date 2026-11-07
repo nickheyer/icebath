@@ -45,8 +45,14 @@ type compressionLockHolderReader interface {
 // Sleep between rotated parent recovery polls, a seam the tests shorten
 var compressionRecoveryPoll = 50 * time.Millisecond
 
-// Points the bound session id of the agent env at the new session
+// Points the bound session id of the agent env and the log context at the new session
 func rebindSessionContext(ctx context.Context, a *AIAgent, sessionID string) {
+	bindCurrentSessionID(ctx, a, sessionID)
+	setLoggingSessionContext(sessionID)
+}
+
+// Binds the session id the agent env and the process env resolve, the gateway set_current_session_id
+func bindCurrentSessionID(ctx context.Context, a *AIAgent, sessionID string) {
 	if a.env != nil {
 		vars := map[string]string{}
 		for _, name := range tools.SessionContextEnvVars {
@@ -60,7 +66,6 @@ func rebindSessionContext(ctx context.Context, a *AIAgent, sessionID string) {
 	if !tools.IsDelegatedChildContext(ctx) {
 		_ = os.Setenv("ICEBATH_SESSION_ID", sessionID)
 	}
-	setLoggingSessionContext(sessionID)
 }
 
 // Moves a stale contender onto the live continuation tip, nil when lineage is ambiguous or unreadable

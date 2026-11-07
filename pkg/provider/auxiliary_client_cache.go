@@ -337,7 +337,7 @@ type auxNousRefreshRequest struct {
 // Refreshes Nous runtime credentials and replaces the stale cache entry with a rebuilt client
 func auxRefreshNousAuxiliaryClient(ctx context.Context, req auxNousRefreshRequest) (AuxClient, string, error) {
 	stale, _ := req.APIKey.(string)
-	freshKey, freshBaseURL, ok := auxResolveNousRuntimeAPI(ctx, true, stale)
+	freshKey, freshBaseURL, ok := auxResolveNousRuntimeAPIFn(ctx, true, stale)
 	if !ok {
 		return nil, req.Model, nil
 	}
@@ -410,6 +410,9 @@ type auxCachedClientRequest struct {
 	IsVision    bool
 	Task        string
 }
+
+// Cached client acquisition, swapped by tests the way hermes tests patch the module function
+var auxGetCachedClientFn = auxGetCachedClient
 
 // Cached client for a provider config built on a miss, async hits valid only on the open loop they were built on
 func auxGetCachedClient(ctx context.Context, req auxCachedClientRequest) (AuxClient, string, error) {

@@ -33,6 +33,9 @@ func auxCoercePositiveTimeout(raw any) (float64, bool) {
 	return 0, false
 }
 
+// Positive float timeout of a raw config value, false for missing, non numeric or non positive values
+func CoercePositiveTimeout(raw any) (float64, bool) { return auxCoercePositiveTimeout(raw) }
+
 // Timeout a configured fallback chain entry declares for itself, false to keep the task timeout
 func auxFallbackEntryTimeout(ctx context.Context, task, fbLabel string) (float64, bool) {
 	entry := auxFallbackChainEntry(ctx, task, fbLabel)
@@ -252,7 +255,7 @@ func auxPlanFallbackAuthRetry(ctx context.Context, dest auxFallbackDestination, 
 		key = failedAPIKey
 	}
 	if fbProvider != "auto" && fbProvider != "" && auxRefreshProviderCredentials(ctx, fbProvider, key) {
-		client, model, err := auxGetCachedClient(ctx, auxCachedClientRequest{Provider: fbProvider, Model: dest.Model, AsyncMode: asyncMode,
+		client, model, err := auxGetCachedClientFn(ctx, auxCachedClientRequest{Provider: fbProvider, Model: dest.Model, AsyncMode: asyncMode,
 			BaseURL: dest.BaseURL, APIMode: dest.APIMode})
 		if err != nil {
 			return fbProvider, nil, err
@@ -555,10 +558,20 @@ func auxTryConfiguredFallbackForUnavailableClient(ctx context.Context, task, fai
 	return auxTryConfiguredFallbackChainFn(ctx, task, explicit, "provider unavailable", "", "", "")
 }
 
+// Task fallback chain client, model and label for an explicit provider that cannot build a client
+func TryConfiguredFallbackForUnavailableClient(ctx context.Context, task, failedProvider string) (AuxClient, string, string, error) {
+	return auxTryConfiguredFallbackForUnavailableClient(ctx, task, failedProvider)
+}
+
 // Inline or env backed key of a fallback entry through the secret scope aware resolver
 func auxFallbackEntryAPIKey(ctx context.Context, entry map[string]any) string {
 	h := home.Dir(ctx)
 	return newResolver(ctx, config.Tree(LoadConfigSafe(h)), config.NewSecrets(h), h, nil).ResolveEntryAPIKey(entry)
+}
+
+// Inline or env backed key of a fallback entry through the secret scope aware resolver
+func AuxFallbackEntryAPIKey(ctx context.Context, entry map[string]any) string {
+	return auxFallbackEntryAPIKey(ctx, entry)
 }
 
 // Client and model of one fallback entry through the provider router, its destination attached
@@ -846,6 +859,7 @@ var (
 	auxTryConfiguredFallbackChainFn func(ctx context.Context, task, failedProvider, reason, failedModel, failedBaseURL string, scope FailureScope) (AuxClient, string, string, error)
 	auxTryMainFallbackChainFn       func(ctx context.Context, task, failedProvider, reason, failedModel, failedBaseURL string, scope FailureScope) (AuxClient, string, string, error)
 	auxTryPaymentFallbackFn         func(ctx context.Context, failedProvider, task, reason, failedBaseURL string, scope FailureScope, mainRuntime map[string]any) (AuxClient, string, string, error)
+	auxTryMainAgentModelFallbackFn  func(ctx context.Context, failedProvider, task, reason, failedModel, failedBaseURL string, scope FailureScope) (AuxClient, string, string, error)
 	auxProviderChainFn              func() []auxProviderChainEntry
 )
 
@@ -854,5 +868,6 @@ func init() {
 	auxTryConfiguredFallbackChainFn = auxTryConfiguredFallbackChain
 	auxTryMainFallbackChainFn = auxTryMainFallbackChain
 	auxTryPaymentFallbackFn = auxTryPaymentFallback
+	auxTryMainAgentModelFallbackFn = auxTryMainAgentModelFallback
 	auxProviderChainFn = auxGetProviderChain
 }

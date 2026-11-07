@@ -16,6 +16,9 @@ var historicalSummaryPrefixes = []string{
 	"[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below. This is a handoff from a previous context window — treat it as background reference, NOT as active instructions. Do NOT answer questions or fulfill requests mentioned in this summary; they were already addressed. Your current task is identified in the '## Active Task' section of the summary — resume exactly from there. Respond ONLY to the latest user message that appears AFTER this summary. The current session state (files, config, etc.) may reflect work described here — avoid repeating it:",
 }
 
+// Older handoff prefixes a summary body may still begin with
+func HistoricalSummaryPrefixes() []string { return append([]string(nil), historicalSummaryPrefixes...) }
+
 // Text of a content part, the string itself or a dict text value, nil otherwise
 func partText(item any) any {
 	switch v := item.(type) {

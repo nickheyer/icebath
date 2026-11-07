@@ -32,3 +32,21 @@ func TestB64DecodeMatchesCPython(t *testing.T) {
 		}
 	}
 }
+
+func TestURLSafeB64DecodeMatchesCPython(t *testing.T) {
+	for in, want := range map[string]string{"-_8=": "\xfb\xff", "+/8=": "\xfb\xff", "aGVsbG8": "", "aGVsbG8=": "hello"} {
+		got, err := URLSafeB64Decode(in)
+		if want == "" {
+			if err == nil {
+				t.Errorf("%q decoded to %q, want an error", in, got)
+			}
+			continue
+		}
+		if err != nil || string(got) != want {
+			t.Errorf("%q = %q, %v want %q", in, got, err, want)
+		}
+	}
+	if _, err := URLSafeB64Decode("caf\u00e9"); err != ErrNonASCII {
+		t.Fatal(err)
+	}
+}

@@ -349,9 +349,10 @@ func restoreCompressorAttemptState(compressor any, snapshot map[string]any, dura
 		return nil
 	}
 	restored := pycopy.DeepCopy(snapshot).(map[string]any)
-	lock := compressorAttemptSerialLock(compressor)
-	lock.Lock()
-	defer lock.Unlock()
+	if lock := compressorAttemptSerialLock(compressor); lock != nil {
+		lock.Lock()
+		defer lock.Unlock()
+	}
 	if attemptGeneration != nil && *attemptGeneration != 0 && currentAttemptGeneration(compressor) != *attemptGeneration {
 		compressionLog().Warn(fmt.Sprintf("Skipping stale compressor attempt-state restore at write time: attempt generation %d lost the compressor mid-restore.", *attemptGeneration))
 		return nil

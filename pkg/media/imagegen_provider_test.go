@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"encoding/base64"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -348,6 +349,24 @@ func TestManagedRouteFollowsTheStoredModel(t *testing.T) {
 	for _, c := range cases {
 		if got := managedRoute(c.provider, c.model); got != c.want {
 			t.Fatalf("%v/%v -> %q", c.provider, c.model, got)
+		}
+	}
+}
+
+func TestNousSubscriptionManagedImagePartnerFollowsTheStoredModel(t *testing.T) {
+	for _, row := range []struct {
+		cfg     map[string]any
+		partner string
+	}{
+		{map[string]any{"provider": "nous", "model": "krea-2-medium"}, "Krea"},
+		{map[string]any{"model": "fal-ai/flux-2/klein/9b"}, "FAL"},
+		{map[string]any{"provider": "nous", "model": "openai/gpt-image-2"}, "Nous Portal"},
+		{map[string]any{"model": "openai/gpt-image-2"}, "FAL"},
+		{map[string]any{"use_gateway": true, "model": "openai/gpt-image-2"}, "FAL"},
+		{map[string]any{"provider": "openai", "model": "gpt-image-2"}, ""},
+	} {
+		if got := provider.ManagedImagePartner(map[string]any{"image_gen": row.cfg}); got != row.partner {
+			t.Fatalf("%v partner = %q", row.cfg, got)
 		}
 	}
 }

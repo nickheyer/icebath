@@ -47,6 +47,11 @@ func pyDumps(v any, o pyJSON) (string, error) {
 	return b.String(), nil
 }
 
+// json.dumps with ensure_ascii off of a state value for callers outside this package
+func DumpsUnicode(v any) (string, error) {
+	return pyDumps(v, pyJSON{allowNaN: true, itemSep: ", ", keySep: ": "})
+}
+
 // Writes one value in json.dumps form
 func (o pyJSON) encode(b *strings.Builder, v any) error {
 	switch x := v.(type) {

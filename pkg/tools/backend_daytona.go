@@ -147,6 +147,9 @@ func NewDaytonaEnvironment(ctx context.Context, env *Env, o DaytonaOptions) (*da
 
 func (d *daytonaEnv) EnvType() string { return "daytona" }
 
+// Home directory of the sandbox user that remote media and image delivery resolve tilde paths against
+func (d *daytonaEnv) RemoteHome() (string, bool) { return d.remoteHome, d.remoteHome != "" }
+
 // Uploads a single file, the remote parent created with a POSIX path
 func (d *daytonaEnv) daytonaUpload(ctx context.Context, hostPath, remotePath string) error {
 	if _, err := d.sandbox.Process.ExecuteCommand(ctx, quotedMkdirCommand([]string{path.Dir(remotePath)})); err != nil {

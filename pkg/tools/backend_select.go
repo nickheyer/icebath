@@ -55,6 +55,11 @@ func managedNousToolsEnabled(env *Env, forceFresh bool) bool {
 	return NousAccount.ManagedToolsEnabled(env, forceFresh)
 }
 
+// Whether the Nous managed tool gateway serves this session, forceFresh bypassing the cached account read
+func ManagedNousToolsEnabled(env *Env, forceFresh bool) bool {
+	return managedNousToolsEnabled(env, forceFresh)
+}
+
 // Account aware guidance for an unavailable Nous Tool Gateway path
 func nousToolGatewayUnavailableMessage(env *Env, capability string, forceFresh bool) string {
 	if capability == "" {
@@ -66,6 +71,11 @@ func nousToolGatewayUnavailableMessage(env *Env, capability string, forceFresh b
 		}
 	}
 	return capability + " is unavailable. Run `icebath model` to refresh your Nous Portal login and billing status."
+}
+
+// Message naming why the Nous tool gateway is unavailable for a capability, with the account guidance
+func NousToolGatewayUnavailableMessage(env *Env, capability string, forceFresh bool) string {
+	return nousToolGatewayUnavailableMessage(env, capability, forceFresh)
 }
 
 // NormalizeBrowserCloudProvider returns the normalized browser provider key
@@ -105,6 +115,9 @@ func scopedCredential(env *Env, name string) string {
 	}
 	return pystr.Strip(os.Getenv(name))
 }
+
+// Credential through the profile secret scope for availability checks outside the package
+func ScopedCredential(env *Env, name string) string { return scopedCredential(env, name) }
 
 // Scoped environment value when present, else the profile .env value, the get_env_value order
 func dotenvValue(env *Env, name string) string {

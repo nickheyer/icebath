@@ -1353,7 +1353,7 @@ func requiresExtendedToolDeadline(ctx context.Context, env *Env, toolName string
 }
 
 // MCPToolParallelSafe reports whether an MCP tool's server opted into parallel calls, set by pkg/mcp
-var MCPToolParallelSafe = func(toolName string) bool { return false }
+var MCPToolParallelSafe = func(ctx context.Context, toolName string) bool { return false }
 
 // Stateless catalog reads are parallel safe
 var parallelSafeBridgeLookups = map[string]bool{ToolSearchName: true, ToolDescribeName: true}
@@ -1424,7 +1424,7 @@ func batchAdmission(ctx context.Context, env *Env, call state.ToolCall, executio
 		}
 		return &BatchAdmission{Name: name, Paths: scoped, IsWriter: PathScopedWriters[name]}
 	}
-	if ParallelSafeTools[name] || parallelSafeBridgeLookups[name] || MCPToolParallelSafe(name) {
+	if ParallelSafeTools[name] || parallelSafeBridgeLookups[name] || MCPToolParallelSafe(ctx, name) {
 		return &BatchAdmission{Name: name}
 	}
 	return nil

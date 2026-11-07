@@ -448,3 +448,15 @@ func TestRegistrationHealsSharedConnectionIntoScope(t *testing.T) {
 		t.Fatal("oauth connections are never shared across profiles")
 	}
 }
+
+// Exported tracking reaches the registered server names and the exported forget removes it
+func TestExportedToolServerTrackingRoundTrip(t *testing.T) {
+	TrackMCPToolServer("mcp-export-probe_tool", "export-probe")
+	if !RegisteredServerNames()["export-probe"] {
+		t.Fatal("tracked server not registered")
+	}
+	ForgetMCPToolServer("mcp-export-probe_tool")
+	if RegisteredServerNames()["export-probe"] {
+		t.Fatal("forgotten server still registered")
+	}
+}

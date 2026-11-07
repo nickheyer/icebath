@@ -608,6 +608,9 @@ func normalizeMoAConfig(raw any) map[string]any {
 	return out
 }
 
+// Normalized moa config block with presets, default preset and settings
+func NormalizeMoAConfig(raw any) map[string]any { return normalizeMoAConfig(raw) }
+
 // Preset names of a MoA config section in listing order
 func moaPresetNames(moa any) ([]string, error) {
 	return moaPresetOrder(anyMap(normalizeMoAConfig(moa)["presets"])), nil

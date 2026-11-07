@@ -346,6 +346,9 @@ type ccStreamState struct {
 	mon                *streamWaitMonitor
 	started            time.Time
 	lifetimeCap        float64
+	fence              any
+	writerToken        int
+	relay              *ccManagedRelay
 }
 
 func (s *ccStreamState) monitorModel() string {
@@ -687,6 +690,9 @@ func assembleStreamedToolCalls(acc *ccToolCallAccumulator, finishReason string) 
 
 // Assembles the non streaming shaped response once the chunk loop ends
 func (s *ccStreamState) finish(latency time.Duration) (*Response, error) {
+	if resp, adopted, err := s.adoptRelayFinal(latency); adopted {
+		return resp, err
+	}
 	fullContent := strings.Join(s.contentParts, "")
 	fullReasoning := strings.Join(s.reasoningParts, "")
 	if fullReasoning == "" && fullContent != "" {
@@ -812,14 +818,14 @@ func resetTimer(t *time.Timer, d time.Duration) {
 }
 
 // Reads one streamed chat completion attempt from an open response through the chunk loop
-func (c *chatCompletionsClient) consumeStream(requestCtx, ctx context.Context, cancel context.CancelFunc, kill *ccKill, resp *http.Response, s *ccStreamState, t ccTimeouts) (*Response, error) {
+func (c *chatCompletionsClient) consumeStream(requestCtx, ctx context.Context, cancel context.CancelFunc, kill *ccKill, src ccFrameSource, beat <-chan bool, s *ccStreamState, t ccTimeouts) (*Response, error) {
 	frames := make(chan ccFrameMsg, 32)
 	readerDone := make(chan struct{})
 	go func() {
 		defer close(readerDone)
-		r := newSSEReader(resp.Body)
+		defer releaseFrameSource(src)
 		for {
-			f, err := r.Next()
+			f, err := src.Next()
 			msg := ccFrameMsg{frame: f, err: err}
 			select {
 			case frames <- msg:
@@ -868,9 +874,17 @@ func (c *chatCompletionsClient) consumeStream(requestCtx, ctx context.Context, c
 			if w.onLifetime(now) {
 				return nil, w.abandoned
 			}
+		case live := <-beat:
+			resetTimer(readTimer, t.read)
+			if live {
+				w.chunk(time.Now())
+			}
 		case m := <-frames:
+			var final *ccFinalError
 			if w.killed {
-				if m.err != nil {
+				if errors.As(m.err, &final) {
+					unwindErr = streamKillCause(final.err)
+				} else if m.err != nil {
 					unwindErr = streamKillCause(m.err)
 				} else if m.frame != nil {
 					w.call.discard(w.attempt, decodedFrame(m.frame.Data))
@@ -881,43 +895,24 @@ func (c *chatCompletionsClient) consumeStream(requestCtx, ctx context.Context, c
 				if errors.Is(m.err, io.EOF) {
 					return s.finish(time.Since(s.started))
 				}
+				if errors.As(m.err, &final) {
+					return nil, final.err
+				}
 				return nil, c.attemptError(ctx, kill, m.err, s)
 			}
 			resetTimer(readTimer, t.read)
-			f := m.frame
-			if f.Event == "" && f.ID == "" && f.Retry == "" && len(f.Fields) == 0 && f.Data == "" {
-				continue
-			}
-			if strings.HasPrefix(f.Data, "[DONE]") {
+			chunk, skip, err := c.decodeFrame(m.frame, s.headers)
+			if errors.Is(err, io.EOF) {
 				return s.finish(time.Since(s.started))
 			}
-			if strings.TrimSpace(f.Data) == "" {
-				return nil, c.streamError(providerStreamErrorFromNonJSON("", s.headers))
+			if err != nil {
+				return nil, err
 			}
-			var chunk map[string]any
-			if err := json.Unmarshal([]byte(f.Data), &chunk); err != nil {
-				return nil, c.streamError(providerStreamErrorFromNonJSON(f.Data, s.headers))
+			if skip {
+				continue
 			}
-			if eo := chunk["error"]; eo != nil && !detailValueEmpty(eo) {
-				if em, ok := eo.(map[string]any); ok && len(em) == 0 {
-					continue
-				}
-				payload := map[string]any{}
-				if em, ok := eo.(map[string]any); ok {
-					payload = em
-				} else {
-					payload["message"] = stringOf(eo)
-				}
-				status := statusCodeFromPayload(chunk)
-				if status == 0 {
-					status = f.StatusCode
-				}
-				return nil, c.streamError(&ProviderStreamError{StatusCode: status, Body: providerErrorBody(payload, status), RawText: f.Data, Headers: s.headers})
-			}
-			if f.Event != "" && f.Event != "error" && !strings.HasPrefix(f.Event, "response.") && !strings.HasPrefix(f.Event, "transcript.") {
-				if _, hasChoices := chunk["choices"]; !hasChoices {
-					continue
-				}
+			if !s.writerStillCurrent(chunk) {
+				return s.finish(time.Since(s.started))
 			}
 			now := time.Now()
 			w.chunk(now)
@@ -949,6 +944,45 @@ func (c *chatCompletionsClient) consumeStream(requestCtx, ctx context.Context, c
 			}
 		}
 	}
+}
+
+// Chunk of one SSE frame, skip for frames the stream ignores and io.EOF at the done marker
+func (c *chatCompletionsClient) decodeFrame(f *sseFrame, headers http.Header) (map[string]any, bool, error) {
+	if f.Event == "" && f.ID == "" && f.Retry == "" && len(f.Fields) == 0 && f.Data == "" {
+		return nil, true, nil
+	}
+	if strings.HasPrefix(f.Data, "[DONE]") {
+		return nil, false, io.EOF
+	}
+	if strings.TrimSpace(f.Data) == "" {
+		return nil, false, c.streamError(providerStreamErrorFromNonJSON("", headers))
+	}
+	var chunk map[string]any
+	if err := json.Unmarshal([]byte(f.Data), &chunk); err != nil {
+		return nil, false, c.streamError(providerStreamErrorFromNonJSON(f.Data, headers))
+	}
+	if eo := chunk["error"]; eo != nil && !detailValueEmpty(eo) {
+		if em, ok := eo.(map[string]any); ok && len(em) == 0 {
+			return nil, true, nil
+		}
+		payload := map[string]any{}
+		if em, ok := eo.(map[string]any); ok {
+			payload = em
+		} else {
+			payload["message"] = stringOf(eo)
+		}
+		status := statusCodeFromPayload(chunk)
+		if status == 0 {
+			status = f.StatusCode
+		}
+		return nil, false, c.streamError(&ProviderStreamError{StatusCode: status, Body: providerErrorBody(payload, status), RawText: f.Data, Headers: headers})
+	}
+	if f.Event != "" && f.Event != "error" && !strings.HasPrefix(f.Event, "response.") && !strings.HasPrefix(f.Event, "transcript.") {
+		if _, hasChoices := chunk["choices"]; !hasChoices {
+			return nil, true, nil
+		}
+	}
+	return chunk, false, nil
 }
 
 // Turns an in loop chunk error into the APIError shape the retry loop classifies

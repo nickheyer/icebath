@@ -135,3 +135,24 @@ func TestRetryAfterValueMatchesParseRetryAfterSeconds(t *testing.T) {
 		}
 	}
 }
+
+func TestDoTimeoutAppliesEachPhaseLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+	get := func(to Timeout) (*Response, error) {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+		return DoTimeout(srv.Client(), req, to)
+	}
+	resp, err := get(Timeout{Connect: time.Second, Read: 2 * time.Second, Write: 20 * time.Millisecond, Pool: time.Second})
+	if err != nil || string(resp.Content) != "ok" {
+		t.Fatalf("short write limit cut the read %v %v", resp, err)
+	}
+	_, err = get(Timeout{Connect: time.Second, Read: 50 * time.Millisecond, Write: time.Second, Pool: time.Second})
+	var te *TimeoutError
+	if !errors.As(err, &te) || te.Phase != "read" || err.Error() != "timed out" {
+		t.Fatalf("%T %v", err, err)
+	}
+}

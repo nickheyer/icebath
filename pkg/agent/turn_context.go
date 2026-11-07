@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -65,7 +66,6 @@ type turnContextState struct {
 	reusedResponseText                           *string
 	mutePostResponse                             bool
 	unicodeSanitizationPasses                    int
-	harnessMetricsTurn                           any
 	verificationStopNudges, preVerifyNudges      int
 	lspTurnEndNotes                              int
 	currentTurnTimestamp                         float64
@@ -461,7 +461,7 @@ func resetPerTurnAgentState(ctx context.Context, a *AIAgent) {
 	a.reusedResponseText = nil
 	a.mutePostResponse, a.unicodeSanitizationPasses = false, 0
 	a.toolGuardrailHaltDecision = nil
-	a.harnessMetricsTurn = nil
+	observability.ResetHarnessTurn(a)
 	a.iterationBudgetWarningInjected = false
 	a.runBudgetWrapupInjected, a.verificationStopNudges = false, 0
 	a.preVerifyNudges, a.lspTurnEndNotes = 0, 0
@@ -843,7 +843,7 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	if recovered, ok := recoverRotatedCompressionSession(ctx, a); ok {
 		conversationHistory = recovered
 	}
-	setLogSessionContext(a.sessionID)
+	setLoggingSessionContext(a.sessionID)
 	skills.SetCurrentWriteOrigin(a.env, pyStrOr(a.memoryWriteOrigin, "assistant_tool"))
 	skills.SetReviewAttended(a.env, a.reviewAttended)
 	a.restorePrimaryRuntime(ctx)

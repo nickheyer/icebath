@@ -22,7 +22,7 @@ func auxReplayHistory() []map[string]any {
 func TestAuxiliaryWireDropsReasoningDetailsOnlyForNonReplayingRoutes(t *testing.T) {
 	history := auxReplayHistory()
 	groq := &auxOpenAIClient{apiKey: "k", baseURL: "https://api.groq.com/openai/v1"}
-	kwargs := auxPrepareChatMessages(groq, map[string]any{"model": "qwen/qwen3.6-27b", "messages": history})
+	kwargs := auxPrepareChatMessages(context.Background(), groq, map[string]any{"model": "qwen/qwen3.6-27b", "messages": history})
 	for _, m := range kwargs["messages"].([]map[string]any) {
 		if _, ok := m["reasoning_details"]; ok {
 			t.Fatalf("groq kept reasoning_details: %v", m)
@@ -32,7 +32,7 @@ func TestAuxiliaryWireDropsReasoningDetailsOnlyForNonReplayingRoutes(t *testing.
 		t.Fatal("durable history was mutated")
 	}
 	or := &auxOpenAIClient{apiKey: "k", baseURL: "https://openrouter.ai/api/v1"}
-	kwargs = auxPrepareChatMessages(or, map[string]any{"model": "m", "messages": history})
+	kwargs = auxPrepareChatMessages(context.Background(), or, map[string]any{"model": "m", "messages": history})
 	kept := false
 	for _, m := range kwargs["messages"].([]map[string]any) {
 		if _, ok := m["reasoning_details"]; ok {
@@ -46,7 +46,7 @@ func TestAuxiliaryWireDropsReasoningDetailsOnlyForNonReplayingRoutes(t *testing.
 
 func TestAuxiliaryWireLeavesAdaptersAndMessagelessKwargs(t *testing.T) {
 	kwargs := map[string]any{"model": "m", "messages": auxReplayHistory()}
-	if got := auxPrepareChatMessages(nil, kwargs); fmt.Sprint(got) != fmt.Sprint(kwargs) {
+	if got := auxPrepareChatMessages(context.Background(), nil, kwargs); fmt.Sprint(got) != fmt.Sprint(kwargs) {
 		t.Fatalf("non SDK client changed kwargs: %v", got)
 	}
 	meta := auxRelayChatMetadata(map[string]any{"api_mode": "codex_responses", "task": "title"})

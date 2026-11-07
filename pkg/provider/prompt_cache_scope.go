@@ -514,6 +514,11 @@ func anthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, de
 	return false, false
 }
 
+// Prompt cache policy of a policy agent at one destination as should cache and native layout
+func AnthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, dest CacheDestination) (bool, bool) {
+	return anthropicPromptCachePolicy(ctx, agent, dest)
+}
+
 // ResolveAnthropicPromptCachePolicy returns should cache and native layout for the agent and destination overrides
 func ResolveAnthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, dest CacheDestination) (bool, bool) {
 	return anthropicPromptCachePolicy(ctx, agent, dest)

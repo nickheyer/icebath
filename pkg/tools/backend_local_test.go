@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Local environment without the snapshot bootstrap, like LocalEnvironment.__new__ in the hermes tests
@@ -924,5 +925,42 @@ func TestInterruptedCommandReportsNoCwd(t *testing.T) {
 	}
 	if filepath.Clean(l.Cwd()) != real {
 		t.Fatalf("interrupt moved the cwd to %q", l.Cwd())
+	}
+}
+
+func TestIsRoutedHomeSeparatesOtherHomesFromProcessHome(t *testing.T) {
+	if IsRoutedHome(home.Process()) {
+		t.Fatal("process home reported as routed")
+	}
+	if !IsRoutedHome(t.TempDir()) {
+		t.Fatal("unrelated directory not reported as routed")
+	}
+}
+
+func TestSessionToolEnvHookIsUnsetUntilInstalled(t *testing.T) {
+	if SessionToolEnv != nil {
+		t.Fatal("hook installed before the agent package sets it")
+	}
+	SessionToolEnv = func(env *Env) map[string]string { return map[string]string{"PATH": env.Home} }
+	t.Cleanup(func() { SessionToolEnv = nil })
+	if got := SessionToolEnv(&Env{Home: "/h"}); got["PATH"] != "/h" {
+		t.Fatalf("installed hook got %v", got)
+	}
+}
+
+func TestIcebathSubprocessEnvCheckedReturnsTheDamagedRecordError(t *testing.T) {
+	env := newTestToolEnv(t)
+	base := map[string]string{"OPENAI_API_KEY": "sk", "PATH": "/bin"}
+	out, err := IcebathSubprocessEnvChecked(env, false, base)
+	if err != nil || out["PATH"] != "/bin" {
+		t.Fatalf("checked env = %v %v", out, err)
+	}
+	if _, ok := out["OPENAI_API_KEY"]; ok {
+		t.Fatal("checked env kept a credential")
+	}
+	t.Setenv("VIRTUAL_ENV", damageRuntimeRecord(t))
+	t.Setenv("PYTHONPATH", "/home/user/my-lib")
+	if _, err := IcebathSubprocessEnvChecked(env, false, nil); err == nil {
+		t.Fatal("damaged runtime record swallowed")
 	}
 }

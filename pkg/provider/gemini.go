@@ -342,6 +342,9 @@ func newGeminiNativeClient(route Route) (Client, error) {
 	return c, nil
 }
 
+// NewGeminiNativeClient is the native Gemini generateContent client of a route
+func NewGeminiNativeClient(route Route) (Client, error) { return newGeminiNativeClient(route) }
+
 func (c *geminiNativeClient) Route() Route { return c.route }
 
 // Base URL and credential headers, minting the Vertex token source from the home config when the route has none

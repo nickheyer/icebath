@@ -68,6 +68,9 @@ func scopeTerminalCwd(env *Env) (string, error) {
 	return policy.Get("TERMINAL_CWD", ""), nil
 }
 
+// Scope aware TERMINAL_CWD value for plugin sessions, read through the per turn terminal scope
+func ScopeTerminalCwd(env *Env) (string, error) { return scopeTerminalCwd(env) }
+
 func existingDir(env *Env, raw, label string) string {
 	p := expandUser(raw)
 	if st, err := os.Stat(p); err == nil && st.IsDir() {

@@ -364,6 +364,11 @@ var runningInstance = func(userDataDir string) (port int, browserPath string, pi
 	return port, browserPath, pid, true
 }
 
+// Port, browser path and pid of the live Chromium already serving DevTools on the dir, for other packages
+func RunningInstance(userDataDir string) (int, string, int, bool) {
+	return runningInstance(userDataDir)
+}
+
 // A fresh dir for a throwaway profile, any dir for a shared one, without a stale DevToolsActivePort
 func prepareDir(userDataDir string, ephemeral bool) error {
 	if ephemeral {

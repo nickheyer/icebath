@@ -39,6 +39,12 @@ type sessionPersistenceState struct {
 	activeSessionTurnLeaseTTLSeconds float64
 }
 
+// Session db writes the flush makes, swapped by tests that hold a writer inside its batch
+var (
+	sessionDBAppendBatch      = (*state.SessionDB).AppendMessagesBatch
+	sessionDBFlushTokenCounts = (*state.SessionDB).FlushTokenCounts
+)
+
 func sessionPersistenceLog() *slog.Logger { return slog.Default().With("logger", "run_agent") }
 
 // Identity of a row for the flush, the map header for dicts and the pointer for live messages
@@ -469,7 +475,7 @@ func dbFlushWrite(a *AIAgent, batchRows, batchMsgs, rows []map[string]any) error
 	if ttl == 0 {
 		ttl = 300.0
 	}
-	_, err := a.sessionDB.AppendMessagesBatch(a.homeContext(), a.sessionID, batchRows, state.AppendGuards{
+	_, err := sessionDBAppendBatch(a.sessionDB, a.homeContext(), a.sessionID, batchRows, state.AppendGuards{
 		CompressionLockHolder: a.activeCompressionLockHolder, TurnLeaseHolder: a.activeSessionTurnLeaseHolder, TurnLeaseTTLSeconds: &ttl,
 	}, nil)
 	if err != nil {
@@ -616,7 +622,7 @@ func (a *AIAgent) persistSession(messages *[]*state.Message, conversationHistory
 		sessionPersistenceLog().Debug("session flush failed", "error", err)
 	}
 	if a.sessionDB != nil {
-		a.sessionDB.FlushTokenCounts(5.0)
+		sessionDBFlushTokenCounts(a.sessionDB, 5.0)
 	}
 	noteTurnPersisted(a)
 	return nil

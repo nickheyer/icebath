@@ -783,3 +783,21 @@ func TestRelayRuntimeNeverImportsGatewayRun(t *testing.T) {
 		t.Fatal(fmt.Sprint("leaked env: ", leaked))
 	}
 }
+
+func TestLoadNemoRelayReadsTheRegisteredBinding(t *testing.T) {
+	RegisterNemoRelayBinding(nil)
+	t.Cleanup(func() { RegisterNemoRelayBinding(nil) })
+	if relay, err := LoadNemoRelay(); relay != nil || err == nil || err.Error() != "No module named 'nemo_relay'" {
+		t.Fatalf("absent binding %v %v", relay, err)
+	}
+	want := &NemoRelay{Plugin: &NemoRelayPlugin{}}
+	RegisterNemoRelayBinding(func() (*NemoRelay, error) { return want, nil })
+	if relay, err := LoadNemoRelay(); relay != want || err != nil {
+		t.Fatalf("registered binding %v %v", relay, err)
+	}
+	failed := &RelayError{Class: "ImportError", Message: "libnemo_relay.so: cannot open shared object file"}
+	RegisterNemoRelayBinding(func() (*NemoRelay, error) { return nil, failed })
+	if _, err := LoadNemoRelay(); !errors.Is(err, failed) {
+		t.Fatalf("failing binding %v", err)
+	}
+}

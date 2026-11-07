@@ -53,6 +53,11 @@ func dropsReplayItemIDs(baseURL string) bool {
 	return !responsesEndpointQuirksFor(baseURL).replayItemIDs
 }
 
+// Endpoint binds replayed Responses item ids to a connection so replay must drop them
+func DropsReplayItemIDs(baseURL string) bool {
+	return dropsReplayItemIDs(baseURL)
+}
+
 // Stable identifier of the endpoint minting encrypted reasoning blobs
 func classifyResponsesIssuer(isXAI, isCodexBackend bool, baseURL string, endpoint *responsesEndpointQuirks) string {
 	endpointKind := ""
@@ -1086,6 +1091,11 @@ func classifyResponsesRoute(provider, baseURL string) responsesRouteFlags {
 	}
 }
 
+// Route is the ChatGPT codex backend by exact provider name or chatgpt.com codex path
+func ResponsesRouteIsCodexBackend(providerName, baseURL string) bool {
+	return classifyResponsesRoute(providerName, baseURL).isCodexBackend
+}
+
 // ---- preflight ----
 
 type codexPreflightCtx struct {
@@ -2026,6 +2036,11 @@ func resolveNativeCompactionCapability(model, baseURL, provider string, isCodexB
 	return isNativeCompactionModel(model, provider, baseURL) && (directDefault || isDirectOpenAIRoute(baseURL, isCodexBackend))
 }
 
+// Whether the route serves the native Responses compaction endpoint for the model
+func ResolveNativeCompactionCapability(model, baseURL, providerName string, isCodexBackend bool) bool {
+	return resolveNativeCompactionCapability(model, baseURL, providerName, isCodexBackend)
+}
+
 // True for api.openai.com or the ChatGPT Codex backend only
 func isDirectOpenAIRoute(baseURL string, isCodexBackend bool) bool {
 	if isCodexBackend {
@@ -2323,7 +2338,7 @@ func isCompactionSummaryMessage(m *state.Message) bool {
 	if m == nil {
 		return false
 	}
-	return m.CompressedSummary || isCompactionSummaryContent(m.Content)
+	return m.CompressedSummary || state.IsContextSummaryContent(m.Content)
 }
 
 // Reports whether a Responses item is a compaction summary by flag or content
@@ -2331,7 +2346,7 @@ func isCompactionSummaryItem(item map[string]any) bool {
 	if pyTruthy(item["_compressed_summary"]) {
 		return true
 	}
-	return isCompactionSummaryContent(item["content"])
+	return state.IsContextSummaryContent(item["content"])
 }
 
 func isCompactionItem(item map[string]any) bool {

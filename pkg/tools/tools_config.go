@@ -44,6 +44,9 @@ func portableMCPServerNames(ctx context.Context) (names map[string]bool) {
 	return PluginToolsetCatalog.PortableNowait(ctx)
 }
 
+// PortableMCPServerSet lists the in memory portable plugin MCP servers, the projected set first
+func PortableMCPServerSet(ctx context.Context) map[string]bool { return portableMCPServerNames(ctx) }
+
 // Toolset title without its leading emoji word for GUI surfaces, the raw stripped label otherwise
 func GUIToolsetLabel(label string) string {
 	text := pystr.Strip(label)

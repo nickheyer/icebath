@@ -100,6 +100,11 @@ func auxNormalizeAuxProvider(ctx context.Context, provider string) string {
 	return normalized
 }
 
+// Canonical auxiliary provider slug of a configured provider name
+func NormalizeAuxProvider(ctx context.Context, provider string) string {
+	return auxNormalizeAuxProvider(ctx, provider)
+}
+
 // Lowercased model slug with any vendor prefix dropped
 func bareModel(model string) string {
 	m := pystr.Lower(pystr.Strip(model))
@@ -157,6 +162,9 @@ func auxIsCodexGPT54OrGPT55(model, provider string) bool {
 	return false
 }
 
+// True for the 272K capped gpt-5.4 to 5.6 and gpt-6 families on the Codex OAuth route
+func IsCodexGPT54OrGPT55(model, provider string) bool { return auxIsCodexGPT54OrGPT55(model, provider) }
+
 // Bare model slug when the provider is the Codex OAuth route, false otherwise
 func auxCodexRouteBareModel(model, provider string) (string, bool) {
 	if pystr.Lower(pystr.Strip(provider)) != "openai-codex" {
@@ -170,6 +178,9 @@ func auxIsCodexSpark(model, provider string) bool {
 	bare, ok := auxCodexRouteBareModel(model, provider)
 	return ok && bare == "gpt-5.3-codex-spark"
 }
+
+// True for gpt-5.3-codex-spark on the Codex OAuth route
+func IsCodexSpark(model, provider string) bool { return auxIsCodexSpark(model, provider) }
 
 // True for OpenAI reasoning families that reject any temperature but the default
 func isOpenAIDefaultTemperatureOnly(model string) bool {
@@ -248,6 +259,11 @@ func auxCompressionThresholdForModel(model, provider string, allowCodexGPT55Auto
 		return auxCodexSparkCompactionThreshold, true
 	}
 	return 0, false
+}
+
+// Per model and route compaction threshold override, false when the user's value stands
+func CompressionThresholdForModel(model, provider string, allowCodexGPT55Autoraise bool) (float64, bool) {
+	return auxCompressionThresholdForModel(model, provider, allowCodexGPT55Autoraise)
 }
 
 var auxFastModelFamilies = []string{
@@ -458,6 +474,11 @@ func auxGetAuxiliaryTaskConfig(ctx context.Context, task any) (map[string]any, e
 		cfg = tree
 	}
 	return newResolver(ctx, cfg, nil, "", nil).auxiliaryTaskConfig(task, map[string]bool{}), nil
+}
+
+// Merged auxiliary task config block for a task name
+func AuxiliaryTaskConfig(ctx context.Context, task string) (map[string]any, error) {
+	return auxGetAuxiliaryTaskConfig(ctx, task)
 }
 
 var auxProviderVisionModels = map[string]string{"xiaomi": "mimo-v2.5", "zai": "glm-5.3-flash"}

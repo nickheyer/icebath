@@ -163,8 +163,11 @@ type CodexAppServerClient struct {
 }
 
 // Argv and environment of the app-server child, the kanban worker scope and sandbox overrides included
-func codexAppServerSpawn(opts CodexAppServerOptions) ([]string, map[string]string) {
-	spawnEnv := tools.IcebathSubprocessEnv(opts.ToolEnv, true, nil)
+func codexAppServerSpawn(opts CodexAppServerOptions) ([]string, map[string]string, error) {
+	spawnEnv, err := codexSpawnEnvFn(opts.ToolEnv, true, nil)
+	if err != nil {
+		return nil, nil, err
+	}
 	for k, v := range opts.Env {
 		spawnEnv[k] = v
 	}
@@ -204,15 +207,21 @@ func codexAppServerSpawn(opts CodexAppServerOptions) ([]string, map[string]strin
 	if _, ok := spawnEnv["RUST_LOG"]; !ok {
 		spawnEnv["RUST_LOG"] = "warn"
 	}
-	return argv, spawnEnv
+	return argv, spawnEnv, nil
 }
+
+// Sanitized app-server child environment builder, replaced in tests to raise the damaged record error
+var codexSpawnEnvFn = tools.IcebathSubprocessEnvChecked
 
 // Starts codex app-server and its stdout and stderr readers
 func NewCodexAppServerClient(opts CodexAppServerOptions) (*CodexAppServerClient, error) {
 	if opts.CodexBin == "" {
 		opts.CodexBin = "codex"
 	}
-	argv, spawnEnv := codexAppServerSpawn(opts)
+	argv, spawnEnv, err := codexAppServerSpawn(opts)
+	if err != nil {
+		return nil, err
+	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env = make([]string, 0, len(spawnEnv))
 	for k, v := range spawnEnv {

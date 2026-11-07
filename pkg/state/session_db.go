@@ -44,7 +44,6 @@ var (
 // Checkpoint and merge pacing, import caps, token writer idle window and quarantine lock wait
 const (
 	sessionCheckpointEveryNWrites      = 50
-	sessionFTSMergeEveryNWrites        = 1000
 	sessionFTSMergeMaxPagesPerIndex    = 500
 	sessionFTSMergeCommandsPerPass     = 4
 	importMaxSessions                  = 500
@@ -58,11 +57,13 @@ const (
 // Pause between read only open attempts after a transient disk IO error, a var tests shorten
 var readOnlyIOErrRetryBackoffS = 0.05
 
-// Tracked connection opener, pragma setup and schema init the constructor calls, vars tests replace
+// Connection opener, pragma setup, schema init and post commit FTS merge pacing, vars tests replace
 var (
-	sessionConnectTracked       = ConnectTracked
-	sessionApplyDatabasePragmas = ApplyDatabasePragmas
-	sessionInitSchema           = func(ctx context.Context, d *SessionDB) error { return d.initSchema(ctx) }
+	sessionConnectTracked              = ConnectTracked
+	sessionApplyDatabasePragmas        = ApplyDatabasePragmas
+	sessionInitSchema                  = func(ctx context.Context, d *SessionDB) error { return d.initSchema(ctx) }
+	sessionFTSMergeEveryNWrites  int64 = 1000
+	sessionMergeFTSIncrementally       = (*sessionSearch).mergeFTSIncrementally
 )
 
 // State owned producers that join automatic stale open reconciliation
@@ -96,6 +97,8 @@ type sessionCore struct {
 	messageColumnsMu    sync.Mutex
 	messageColumnsCache []string
 
+	localLineage localLineageCache
+
 	poolMu           sync.Mutex
 	readPool         []SQLiteConn
 	readBudget       *pathReadBudget
@@ -118,6 +121,8 @@ type sessionCore struct {
 	retiredGenerationCapture string
 	retireConnection         func(conn any)
 	leaseSeams               turnLeaseSeams
+	richRowSeams             richRowSeams
+	neverActiveListSeam      func(ctx context.Context, olderThanDays float64) ([]*pyjson.Object, error)
 	connectionPinned         bool
 	walLockGuard             lockGuardHeld
 
@@ -129,6 +134,9 @@ type sessionCore struct {
 
 	tokens tokenWriterState
 }
+
+// True while the process wide registry owns this handle
+func (d *SessionDB) SharedRegistryOwned() bool { return d.sharedRegistryOwned.Load() }
 
 // SQLite session store with FTS5 search, many pooled readers and one writer connection
 type SessionDB struct {
@@ -801,6 +809,11 @@ func (d *SessionDB) executeWrite(ctx context.Context, fn func(conn SQLiteConn) e
 	}
 }
 
+// Runs fn inside the retried write transaction with the default patience
+func (d *SessionDB) ExecuteWrite(ctx context.Context, fn func(conn SQLiteConn) error) error {
+	return d.executeWrite(ctx, fn, nil)
+}
+
 // One BEGIN IMMEDIATE attempt under the writer lock, rolling back when fn or the commit fails
 func (d *SessionDB) writeOnce(ctx context.Context, fn func(conn SQLiteConn) error, fnStarted *bool) error {
 	d.mu.Lock()
@@ -1287,6 +1300,9 @@ func (c *sessionCore) sleepBeforeWriteRetryJitter(deadline, patienceS float64) b
 func (c *sessionCore) foreignStateDBHolders() ([]Holder, error) {
 	return foreignStateDBHoldersOf(c.path)
 }
+
+// Foreign processes holding this store for callers outside this package
+func (c *sessionCore) ForeignStateDBHolders() ([]Holder, error) { return c.foreignStateDBHolders() }
 
 // Terminates inactive orphan desktop backends among holders of this store
 func (c *sessionCore) reapInactiveOrphanDesktopHolders(holders []Holder, minAgeSeconds float64) ([]int, error) {

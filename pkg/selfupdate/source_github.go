@@ -79,8 +79,11 @@ func pyListRepr(argv []string) string {
 	return b.String()
 }
 
+// Git runner of every source probe, swapped by tests that record the commands a check runs
+var sourceGitRun = execSourceGit
+
 // Runs argv in cwd with the probe environment and null stdin, an error when it cannot start or times out
-func sourceGitRun(ctx context.Context, argv []string, cwd string, timeout time.Duration) (*sourceGitResult, error) {
+func execSourceGit(ctx context.Context, argv []string, cwd string, timeout time.Duration) (*sourceGitResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}

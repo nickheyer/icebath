@@ -586,7 +586,7 @@ func TestCodexMigrationWorkerOverridesTargetTheMigratedServer(t *testing.T) {
 	t.Setenv("ICEBATH_KANBAN_TASK", "11111111-1111-4111-8111-111111111111")
 	t.Setenv("ICEBATH_KANBAN_RUN_ID", "42")
 	t.Setenv("ICEBATH_KANBAN_DB", filepath.Join(tmp, "board", "kanban.db"))
-	argv, _ := codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex", CodexHome: filepath.Join(tmp, "codex")})
+	argv, _, _ := codexAppServerSpawn(CodexAppServerOptions{CodexBin: "codex", CodexHome: filepath.Join(tmp, "codex")})
 	var overrides []string
 	for _, arg := range argv {
 		if strings.HasPrefix(arg, "mcp_servers.") {

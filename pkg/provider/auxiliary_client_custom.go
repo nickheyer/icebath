@@ -126,6 +126,9 @@ func auxValidateProxyEnvURLs() error {
 	return nil
 }
 
+// ValidateProxyEnvURLs fails fast on a malformed proxy env URL after normalizing the proxy variables
+func ValidateProxyEnvURLs() error { return auxValidateProxyEnvURLs() }
+
 // Rejects an http or https custom endpoint URL whose port cannot be parsed
 func auxValidateBaseURL(baseURL string) error {
 	candidate := pystr.Strip(baseURL)
@@ -142,6 +145,9 @@ func auxValidateBaseURL(baseURL string) error {
 	}
 	return nil
 }
+
+// ValidateBaseURL rejects an http or https custom endpoint URL whose port cannot be parsed
+func ValidateBaseURL(baseURL string) error { return auxValidateBaseURL(baseURL) }
 
 // Codex adapter over an SDK client or the availability probe client
 func auxWrapCodex(client AuxClient, model string) *CodexAuxiliaryClient {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math/big"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -14,8 +15,19 @@ import (
 
 // Snapshot fields of the init and switch builders and the restore reader
 type agentInitState struct {
-	credentialPoolEntryID string
-	primaryRuntime        map[string]any
+	anthropicTokenSource        *provider.TaggedTokenSource
+	bedrockRegion               string
+	bedrockGuardrailConfig      map[string]any
+	emptyGuardEnabled           *bool
+	emptyGuardCostThresholdUSD  *guardDecimal
+	emptyAttemptHistory         []emptyAttempt
+	emptyStreakCostUSD          *big.Rat
+	credentialPoolEntryID       string
+	primaryRuntime              map[string]any
+	customProviderEntries       []map[string]any
+	requestAnthropicClientCache map[string]any
+	servedModel                 *servedModelState
+	oauth1MBetaDisabled         bool
 }
 
 func (a *AIAgent) CredentialPoolEntryID() string       { return a.credentialPoolEntryID }
@@ -69,7 +81,7 @@ func snapshotPrimaryRuntime(ctx context.Context, a *AIAgent) {
 		"compressor_threshold_tokens": cc.Base().ThresholdTokens,
 	}
 	if a.apiMode == "anthropic_messages" {
-		rt["anthropic_api_key"], rt["anthropic_base_url"], rt["is_anthropic_oauth"] = a.anthropicAPIKey, a.anthropicBaseURL, a.isAnthropicOAuth
+		rt["anthropic_api_key"], rt["anthropic_base_url"], rt["is_anthropic_oauth"] = a.anthropicKeyValue(), a.anthropicBaseURL, a.isAnthropicOAuth
 	}
 	a.primaryRuntime = rt
 }
@@ -106,7 +118,7 @@ func buildPrimaryRuntimeSnapshot(ctx context.Context, a *AIAgent, apiMode string
 		"compressor_threshold_tokens": thresholdTokens,
 	}
 	if apiMode == "anthropic_messages" {
-		rt["anthropic_api_key"], rt["anthropic_base_url"], rt["is_anthropic_oauth"] = a.anthropicAPIKey, a.anthropicBaseURL, a.isAnthropicOAuth
+		rt["anthropic_api_key"], rt["anthropic_base_url"], rt["is_anthropic_oauth"] = a.anthropicKeyValue(), a.anthropicBaseURL, a.isAnthropicOAuth
 	}
 	return rt
 }
@@ -135,4 +147,12 @@ func readReasoningEchoFromConfig(ctx context.Context) bool {
 		return pyrepr.Truthy(m["reasoning_echo"])
 	}
 	return warn("AttributeError")
+}
+
+// Anthropic credential as the agent holds it, the per request token source when the route installed one
+func (a *AIAgent) anthropicKeyValue() any {
+	if a.anthropicTokenSource != nil {
+		return a.anthropicTokenSource
+	}
+	return a.anthropicAPIKey
 }

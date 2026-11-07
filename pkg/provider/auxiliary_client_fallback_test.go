@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -93,5 +94,58 @@ func TestAuxAutoRouteForwardsMainRuntimeEntraCallableIntact(t *testing.T) {
 	token, err := oc.apiKeyProvider()
 	if err != nil || token != "main-session-jwt" || calls != 1 {
 		t.Fatalf("token %q err %v calls %d", token, err, calls)
+	}
+}
+
+func TestCoercePositiveTimeoutExportReadsConfiguredTimeout(t *testing.T) {
+	cfg, err := AuxiliaryTaskConfig(auxCompressionTaskHome(t), "compression")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := CoercePositiveTimeout(cfg["timeout"]); !ok || v != 45 {
+		t.Fatalf("timeout %v %v", v, ok)
+	}
+	for _, raw := range []any{true, "30", 0, -2.5, nil} {
+		if _, ok := CoercePositiveTimeout(raw); ok {
+			t.Fatalf("%#v must not coerce to a positive timeout", raw)
+		}
+	}
+}
+
+func TestAuxFallbackEntryAPIKeyExportResolvesInlineAndEnvKeys(t *testing.T) {
+	ctx := auxCompressionTaskHome(t)
+	t.Setenv("ICEBATH_TEST_FALLBACK_KEY", "env-key-1")
+	if got := AuxFallbackEntryAPIKey(ctx, map[string]any{"provider": "custom", "api_key": "inline-key"}); got != "inline-key" {
+		t.Fatalf("inline key %q", got)
+	}
+	if got := AuxFallbackEntryAPIKey(ctx, map[string]any{"provider": "custom", "key_env": "ICEBATH_TEST_FALLBACK_KEY"}); got != "env-key-1" {
+		t.Fatalf("key_env key %q", got)
+	}
+}
+
+func TestTryConfiguredFallbackForUnavailableClientExportWalksTheChain(t *testing.T) {
+	ctx := auxChainHome(t, auxChainEntry("big-provider", "huge-1m"))
+	large := &auxFakeResponsesClient{base: "large"}
+	orig := auxResolveFallbackEntryFn
+	t.Cleanup(func() { auxResolveFallbackEntryFn = orig })
+	var calls int
+	auxResolveFallbackEntryFn = func(_ context.Context, entry map[string]any) (AuxClient, string, error) {
+		calls++
+		return large, "huge-1m", nil
+	}
+	for _, failed := range []string{"", "auto", " AUTO "} {
+		if client, _, _, _ := TryConfiguredFallbackForUnavailableClient(ctx, "compression", failed); client != nil {
+			t.Fatalf("failed provider %q must not walk the chain", failed)
+		}
+	}
+	if client, _, _, _ := TryConfiguredFallbackForUnavailableClient(ctx, "", "zai"); client != nil || calls != 0 {
+		t.Fatal("an empty task must not walk the chain")
+	}
+	client, model, label, err := TryConfiguredFallbackForUnavailableClient(ctx, "compression", "ZAI")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client != AuxClient(large) || model != "huge-1m" || !strings.Contains(label, "big-provider") {
+		t.Fatalf("client %v model %q label %q", client, model, label)
 	}
 }

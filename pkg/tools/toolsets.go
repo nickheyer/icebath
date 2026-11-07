@@ -1072,6 +1072,9 @@ func configurableKeys() map[string]bool {
 	return out
 }
 
+// Keys of every configurable toolset as a fresh set
+func ConfigurableKeys() map[string]bool { return configurableKeys() }
+
 func platformDefaultKeys() map[string]bool {
 	out := map[string]bool{}
 	for _, p := range Platforms {

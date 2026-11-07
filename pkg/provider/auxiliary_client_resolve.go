@@ -40,6 +40,14 @@ func (s *auxEffectiveStamp) auxEffectiveProvider() string {
 	return p
 }
 
+// Provider a routed auxiliary client was stamped with, empty when the client carries no stamp
+func AuxClientEffectiveProvider(c AuxClient) string {
+	if s, ok := c.(interface{ auxEffectiveProvider() string }); ok {
+		return s.auxEffectiveProvider()
+	}
+	return ""
+}
+
 func (s *auxEffectiveStamp) auxSetEffectiveProvider(p string) { s.v.Store(p) }
 
 type auxEffectiveProviderSetter interface{ auxSetEffectiveProvider(p string) }

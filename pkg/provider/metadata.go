@@ -48,6 +48,9 @@ func stripProviderPrefix(model string) string {
 	return model
 }
 
+// Model id with a known provider prefix such as openrouter or local removed
+func StripProviderPrefix(model string) string { return stripProviderPrefix(model) }
+
 // Parsed normalized url with the scheme prepended when absent, nil when empty or malformed
 func parseProbeURL(baseURL, scheme string) *url.URL {
 	normalized := normalizeBaseURL(baseURL)
@@ -386,6 +389,12 @@ func longestKeyMatch(table []contextEntry, modelLower string) (contextEntry, boo
 		}
 	}
 	return contextEntry{}, false
+}
+
+// Context length of the longest default table key contained in the lowercase model name
+func LongestDefaultContextMatch(modelLower string) (int, bool) {
+	e, ok := longestKeyMatch(defaultContextLengths, modelLower)
+	return e.ctx, ok
 }
 
 // Context length from an Ollama show payload, runtime num_ctx or GGUF training max

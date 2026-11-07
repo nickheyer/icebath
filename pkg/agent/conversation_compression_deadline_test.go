@@ -78,3 +78,42 @@ func TestEffectiveCeilingAndDeadlineScopeFollowTheFence(t *testing.T) {
 		t.Fatal("a cleared fence deadline reads live as none")
 	}
 }
+
+// Pins the aux compression request budget the resolver floors the idle window at
+func pinCompressionAuxTimeout(t *testing.T, budget float64) {
+	prev := compressionAuxTimeout
+	compressionAuxTimeout = func(context.Context, string, *float64) float64 { return budget }
+	t.Cleanup(func() { compressionAuxTimeout = prev })
+}
+
+func TestIdleIsFlooredAtTheAuxCompressionRequestBudget(t *testing.T) {
+	ctx := context.Background()
+	check := func(cfg map[string]any, wantIdle, wantCeiling float64) {
+		t.Helper()
+		if idle, ceiling := ResolveContextCompressionTimeouts(ctx, cfg); idle != wantIdle || ceiling != wantCeiling {
+			t.Fatalf("%v resolved to (%v, %v), want (%v, %v)", cfg, idle, ceiling, wantIdle, wantCeiling)
+		}
+	}
+	pinCompressionAuxTimeout(t, 300)
+	check(map[string]any{}, 300, 600)
+	check(map[string]any{"context_timeout_seconds": 900}, 900, 900)
+	pinCompressionAuxTimeout(t, 900)
+	check(map[string]any{}, 900, 900)
+	check(map[string]any{"context_timeout_seconds": 0}, 0, 600)
+}
+
+func TestZeroIdleDisablesWrapper(t *testing.T) {
+	pinCompressionAuxTimeout(t, 0)
+	idle, ceiling := ResolveContextCompressionTimeouts(context.Background(), map[string]any{"context_timeout_seconds": 0})
+	if idle != 0 || ceiling <= 0 {
+		t.Fatalf("idle %v ceiling %v", idle, ceiling)
+	}
+}
+
+func TestCeilingClampedToIdle(t *testing.T) {
+	pinCompressionAuxTimeout(t, 0)
+	idle, ceiling := ResolveContextCompressionTimeouts(context.Background(), map[string]any{"context_timeout_seconds": 90, "context_total_ceiling_seconds": 30})
+	if idle != 90 || ceiling != 90 {
+		t.Fatalf("idle %v ceiling %v", idle, ceiling)
+	}
+}

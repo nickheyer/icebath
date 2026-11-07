@@ -332,6 +332,11 @@ func windowHardStop(state *CreditsState, modelIsFree bool, modelIsTopTier *bool)
 	return fmt.Sprintf("✕ You've hit your %s limit%s · %s", GaugeLimitName(*g), resetsSuffix(g.ResetsAtMs), action), true
 }
 
+// Usage window stop line when the window blocks the request
+func WindowHardStop(state *CreditsState, modelIsFree bool, modelIsTopTier *bool) (string, bool) {
+	return windowHardStop(state, modelIsFree, modelIsTopTier)
+}
+
 // WindowStopResetsAtMs is when the allowance behind the limit line frees up
 func WindowStopResetsAtMs(state *CreditsState, modelIsTopTier *bool) *int64 {
 	if state.Unmetered {

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Swaps run_job for a canned outcome and restores it when the test ends
@@ -331,5 +332,68 @@ func TestInactivityWatchdogLoopStopsOnDoneAndFiresOnIdle(t *testing.T) {
 	close(stop)
 	if inactivityWatchdogLoop(func() (float64, error) { return 50, nil }, 10, time.Hour, stop, func() bool { return false }, nil) {
 		t.Fatal("a stopped watchdog fired")
+	}
+}
+
+// A run scope binds a blank stateless session with the workdir, marks the cron session on enter and clears it all on exit
+func TestCronRunScopeBindsAStatelessCronSessionAndClearsItOnExit(t *testing.T) {
+	s, _ := newTestStore(t)
+	t.Setenv("ICEBATH_CRON_SESSION", "")
+	os.Unsetenv("ICEBATH_CRON_SESSION")
+	workdir := t.TempDir()
+	deliver := "telegram:12345"
+	job := &Job{ID: "j1", Workdir: &workdir, Deliver: &deliver}
+	execID := "exec-1"
+	scope := s.newCronRunScope(job, "j1", &execID)
+	env := scope.env
+	if scope.taskID != "cron:j1:exec-1" {
+		t.Fatalf("task id %q", scope.taskID)
+	}
+	if tools.SessionAsyncDeliverySupported(env) {
+		t.Fatal("cron scope left async delivery supported")
+	}
+	if got := tools.ScopedSessionCwd(env); got != workdir {
+		t.Fatalf("logical cwd %q", got)
+	}
+	for _, name := range append([]string{"ICEBATH_SESSION_PLATFORM", "ICEBATH_SESSION_CHAT_ID", "ICEBATH_SESSION_KEY"}, cronDeliveryVars...) {
+		if v, had := tools.BoundSessionVar(env, name); !had || v != "" {
+			t.Fatalf("%s bound %q %v, want blank", name, v, had)
+		}
+	}
+	if _, had := tools.BoundSessionVar(env, "ICEBATH_CRON_SESSION"); had {
+		t.Fatal("cron session bound before enter")
+	}
+	prevTargets := resolveDeliveryTargets
+	resolveDeliveryTargets = func(context.Context, *Store, *Job, bool) []Target {
+		return []Target{{Platform: "telegram", ChatID: "12345", ThreadID: "7"}}
+	}
+	t.Cleanup(func() { resolveDeliveryTargets = prevTargets })
+	scope.enter(context.Background())
+	if got := tools.GetSessionEnv(env, "ICEBATH_CRON_SESSION", ""); got != "1" {
+		t.Fatalf("cron session %q inside the run", got)
+	}
+	if err := s.reloadDotenvAndPublishDeliveryTarget(context.Background(), job, scope); err != nil {
+		t.Fatal(err)
+	}
+	if p, c := tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_PLATFORM", ""), tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_CHAT_ID", ""); p != "telegram" || c != "12345" || tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_THREAD_ID", "") != "7" {
+		t.Fatalf("published target %q %q", p, c)
+	}
+	scope.exit()
+	if _, had := tools.BoundSessionVar(env, "ICEBATH_CRON_SESSION"); had {
+		t.Fatal("cron session still bound after exit")
+	}
+	for _, name := range append([]string{"ICEBATH_SESSION_PLATFORM"}, cronDeliveryVars...) {
+		if v, had := tools.BoundSessionVar(env, name); !had || v != "" {
+			t.Fatalf("%s after exit %q %v, want blank", name, v, had)
+		}
+	}
+	if !tools.SessionAsyncDeliverySupported(env) {
+		t.Fatal("exit left the async delivery declaration in place")
+	}
+	if got := tools.ScopedSessionCwd(env); got != "" {
+		t.Fatalf("logical cwd %q after exit", got)
+	}
+	if _, ok := tools.GetSessionCwd(env, scope.taskID); ok {
+		t.Fatal("task cwd kept after exit")
 	}
 }

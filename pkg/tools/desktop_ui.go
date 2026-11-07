@@ -59,6 +59,11 @@ func desktopUserEnabled(env *Env, setting string, fallback bool) bool {
 	return truthy(v)
 }
 
+// Desktop Appearance switch of the effective config for tools outside this package
+func DesktopUserEnabled(env *Env, setting string, fallback bool) bool {
+	return desktopUserEnabled(env, setting, fallback)
+}
+
 // Routes the event to the window owning the current turn, false when no emitter is installed
 func desktopEmitEvent(env *Env, event string, payload map[string]any) (bool, error) {
 	desktopEmitMu.RLock()
@@ -80,6 +85,11 @@ func desktopEmitEvent(env *Env, event string, payload map[string]any) (bool, err
 		return false, err
 	}
 	return true, nil
+}
+
+// Desktop event emission for tools outside this package
+func DesktopEmitEvent(env *Env, event string, payload map[string]any) (bool, error) {
+	return desktopEmitEvent(env, event, payload)
 }
 
 // Emits the event and returns the result JSON, the failure text, or the desktop only text

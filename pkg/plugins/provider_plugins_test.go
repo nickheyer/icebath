@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -232,5 +233,135 @@ func TestLiveCreateClientProfileWarnsOnceAndItsSiblingStaysHosted(t *testing.T) 
 	}
 	if m.pluginHostInstance != nil && m.pluginHostInstance.PID() != 0 {
 		t.Fatal("loading profile data started a plugin host")
+	}
+}
+
+const streamClientPlugin = `
+import os
+from providers import register_provider
+from providers.base import ProviderProfile
+
+class Chunk:
+    def __init__(self, i):
+        self.i = i
+    def model_dump(self, **kwargs):
+        return {"id": f"c-{self.i}", "choices": [{"delta": {"content": str(self.i)}}], "pid": os.getpid()}
+
+class Stream:
+    def __init__(self, n, fail):
+        self.left = list(range(n))
+        self.fail = fail
+    def __iter__(self):
+        return self
+    def __next__(self):
+        if not self.left:
+            if self.fail:
+                raise RuntimeError("stream broke")
+            raise StopIteration
+        return Chunk(self.left.pop(0))
+
+class Replay:
+    def __iter__(self):
+        return iter([{"n": 1}, {"n": 2}])
+
+class Completions:
+    def create(self, **kwargs):
+        if kwargs.get("replay"):
+            return Replay()
+        return Stream(kwargs.get("n", 0), kwargs.get("fail", False))
+
+class Chat:
+    def __init__(self):
+        self.completions = Completions()
+
+class Client:
+    def __init__(self):
+        self.chat = Chat()
+
+class StreamClient(ProviderProfile):
+    def create_client(self, **client_kwargs):
+        return Client()
+
+register_provider(StreamClient(name="streamer", base_url="https://stream.example/v1"))
+`
+
+// A hosted stream iterates in the child, chunks encoded as results, StopIteration ending it and raises crossing as errors
+func TestHostedIteratorNextStepsAForLoopInTheChild(t *testing.T) {
+	installLiveServices(t)
+	h, _ := liveHome(t, liveInterpreters(t)["system"], nil)
+	memoryManager(t, h)
+	pluginDir := filepath.Join(h, "plugins", "model-providers", "streamer")
+	memWrite(t, filepath.Join(pluginDir, "plugin.yaml"), "name: streamer\nkind: model-provider\n")
+	memWrite(t, filepath.Join(pluginDir, "__init__.py"), streamClientPlugin)
+	ctx := homeCtx(h)
+	profiles, err := LoadProviderPluginProfiles(ctx, pluginDir, "_icebath_user_provider_test_streamer")
+	if err != nil || len(profiles) != 1 {
+		t.Fatalf("profiles = %v %v", profiles, err)
+	}
+	client, err := profiles[0].CreateClient(ctx, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := client.Get(ctx, "chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completions, err := chat.(*HostedObject).Get(ctx, "completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := func(kwargs map[string]any) *HostedObject {
+		t.Helper()
+		out, err := completions.(*HostedObject).Call(ctx, "create", nil, kwargs)
+		stream, live := out.(*HostedObject)
+		if err != nil || !live {
+			t.Fatalf("create(%v) = %T %v %v", kwargs, out, out, err)
+		}
+		return stream
+	}
+	stream := open(map[string]any{"stream": true, "n": int64(2)})
+	for i := 0; i < 2; i++ {
+		item, ok, err := stream.Next(ctx)
+		chunk, _ := item.(Record)
+		pid, _ := chunk["pid"].(int64)
+		if err != nil || !ok || chunk["id"] != fmt.Sprintf("c-%d", i) || pid == 0 || int(pid) == os.Getpid() {
+			t.Fatalf("chunk %d = %v %v %v", i, item, ok, err)
+		}
+		choices, _ := chunk["choices"].([]any)
+		if len(choices) != 1 {
+			t.Fatalf("chunk %d choices = %v", i, chunk["choices"])
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if item, ok, err := stream.Next(ctx); err != nil || ok || item != nil {
+			t.Fatalf("exhausted stream step %d = %v %v %v", i, item, ok, err)
+		}
+	}
+	broken := open(map[string]any{"stream": true, "n": int64(1), "fail": true})
+	if _, ok, err := broken.Next(ctx); err != nil || !ok {
+		t.Fatalf("first chunk of the failing stream = %v %v", ok, err)
+	}
+	_, ok, err := broken.Next(ctx)
+	var builtin *HostBuiltinError
+	if ok || !errors.As(err, &builtin) || builtin.Type != "RuntimeError" || err.Error() != "stream broke" {
+		t.Fatalf("raising stream = %v %v", ok, err)
+	}
+	replay := open(map[string]any{"replay": true})
+	var seen []any
+	for {
+		item, ok, err := replay.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			break
+		}
+		seen = append(seen, item.(map[string]any)["n"])
+		if len(seen) > 2 {
+			t.Fatalf("iterable restarted on every step = %v", seen)
+		}
+	}
+	if fmt.Sprint(seen) != "[1 2]" {
+		t.Fatalf("iterable items = %v", seen)
 	}
 }

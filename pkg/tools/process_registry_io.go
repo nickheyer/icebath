@@ -14,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Spawn plumbing of the process registry, systemd scopes, output logs, stdin reasons, termination, wsl
@@ -227,6 +230,9 @@ func isSupervisedGatewayProcess() bool {
 	supervised, pid := SupervisedGatewayPid()
 	return supervised && pid == os.Getpid()
 }
+
+// Reports whether this process runs as the supervised gateway
+func IsSupervisedGatewayProcess() bool { return isSupervisedGatewayProcess() }
 
 // Wraps shellArgv in a transient systemd scope with its own memory accounting
 func buildSystemdScopeArgv(shellArgv []string, unitSuffix string) []string {
@@ -605,6 +611,18 @@ func (r *ProcessRegistry) terminateHostPid(env *Env, pid int, expectedStart *int
 			toolsLogger(nil).Info(fmt.Sprintf("Escalated to SIGKILL for pid %d (ignored SIGTERM within %.1fs grace)", p, grace))
 		}
 	}
+}
+
+// Terminates a host pid and its descendants after revalidating its start time, a nil env reading the process home config
+func TerminateHostPid(env *Env, pid int, expectedStart *int64) {
+	if env == nil {
+		h := home.Process()
+		env = &Env{Home: h}
+		if tree, err := config.Load(h, config.NewSecrets(h).Lookup()); err == nil {
+			env.Config = tree
+		}
+	}
+	processRegistry.terminateHostPid(env, pid, expectedStart)
 }
 
 // Pids of living non zombie descendants of a host pid

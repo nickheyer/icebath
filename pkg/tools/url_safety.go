@@ -184,6 +184,9 @@ func normalizeURLForRequest(raw string) string {
 	return out
 }
 
+// Url re quoted the way a request client sends it, path query and fragment percent encoded
+func NormalizeURLForRequest(raw string) string { return normalizeURLForRequest(raw) }
+
 // Credential bearing query parameter names, deliberately narrow
 var sensitiveQueryParamNames = map[string]bool{
 	"access_token": true, "api_key": true, "apikey": true, "auth_token": true, "authorization": true, "awsaccesskeyid": true,
@@ -219,6 +222,9 @@ func sensitiveQueryParamName(raw string) string {
 
 // Cloud metadata hostnames always blocked regardless of DNS or config toggle
 var blockedHostnames = map[string]bool{"metadata.google.internal": true, "metadata.goog": true}
+
+// Hostname on the cloud metadata blocklist the browser floor refuses before any resolution
+func IsBlockedHostname(host string) bool { return blockedHostnames[host] }
 
 var metadataV4 = []string{"169.254.169.254", "169.254.170.2", "169.254.169.253", "100.100.100.200"}
 
@@ -370,6 +376,11 @@ func urlHostname(raw string, percentDecode bool) (string, error) {
 	return normalizeHostname(host), nil
 }
 
+// Host a WHATWG client dials for the url, optionally percent decoded first, with the urlsplit ValueError
+func URLHostname(raw string, percentDecode bool) (string, error) {
+	return urlHostname(raw, percentDecode)
+}
+
 // Why another client could read a different host or port from the url, empty when unambiguous, the urlsplit ValueError returned
 func authorityAmbiguity(raw string, floor bool) (string, error) {
 	raw = strings.Trim(raw, urlEdgeWhitespace)
@@ -411,6 +422,11 @@ func authorityAmbiguity(raw string, floor bool) (string, error) {
 	return "", nil
 }
 
+// Ambiguous authority reason of an http url, the floor form keeping only host moving checks, with the urlsplit ValueError
+func AuthorityAmbiguity(raw string, floor bool) (string, error) {
+	return authorityAmbiguity(raw, floor)
+}
+
 // IP literal of a hostname, false for names
 func parseIPLiteral(hostname string) (netip.Addr, bool) {
 	addr, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(hostname, "["), "]"))
@@ -437,9 +453,15 @@ func isAlwaysBlockedIP(ip netip.Addr) bool {
 	return alwaysBlockedIPs[ip] || inAny(ip, alwaysBlockedNetworks)
 }
 
+// Address in the always blocked ranges such as cloud metadata and link local, independent of opt ins
+func IsAlwaysBlockedIP(ip netip.Addr) bool { return isAlwaysBlockedIP(ip) }
+
 func isDeclaredFakeIP(env *Env, ip netip.Addr) bool {
 	return inAny(embeddedIPv4(ip), fakeIPRanges(env))
 }
+
+// Address inside a fake ip range the proxy configuration declares for the env
+func IsDeclaredFakeIP(env *Env, ip netip.Addr) bool { return isDeclaredFakeIP(env, ip) }
 
 // Python ipaddress classification of private, loopback, link local, reserved, multicast, unspecified and CGNAT
 func isBlockedIP(ip netip.Addr) bool {
@@ -512,6 +534,9 @@ func isAlwaysBlockedURL(env *Env, raw string) bool {
 	}
 	return false
 }
+
+// Url the browser and media tools refuse whatever the private url opt in says, metadata and fake ip floors included
+func IsAlwaysBlockedURL(env *Env, raw string) bool { return isAlwaysBlockedURL(env, raw) }
 
 func allowsPrivateIPResolution(hostname, scheme string) bool {
 	return scheme == "https" && trustedPrivateIPHosts[hostname]
@@ -595,6 +620,9 @@ func isSafeURL(env *Env, raw string) bool {
 	}
 	return true
 }
+
+// Reports whether a URL targets a public host
+func IsSafeURL(env *Env, raw string) bool { return isSafeURL(env, raw) }
 
 // SSRFConnectionBlocked reports a connect time policy violation
 type SSRFConnectionBlocked struct{ msg string }
@@ -725,6 +753,11 @@ func newSSRFSafeClient(env *Env, timeout time.Duration, followRedirects bool, on
 		return nil
 	}
 	return client
+}
+
+// HTTP client that vets every connect address against SSRF rules
+func NewSSRFSafeClient(env *Env, timeout time.Duration, followRedirects bool) *http.Client {
+	return newSSRFSafeClient(env, timeout, followRedirects, nil)
 }
 
 // Logs the fail closed safety check error and refuses the url

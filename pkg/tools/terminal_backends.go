@@ -292,6 +292,11 @@ func checkRequirements(env *Env, envType string, cfg map[string]any) bool {
 	return true
 }
 
+// Reports whether the vercel sandbox backend can run, recording the reason when not
+func CheckVercelSandboxRequirements(env *Env, cfg map[string]any) bool {
+	return checkRequirements(env, "vercel_sandbox", cfg)
+}
+
 // CheckTerminalRequirements reports whether the configured backend can run, keeping the reason on failure
 func CheckTerminalRequirements(env *Env) bool {
 	cfg, err := envConfigFn(env)

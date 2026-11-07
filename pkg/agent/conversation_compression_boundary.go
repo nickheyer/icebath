@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -9,10 +10,10 @@ import (
 )
 
 // Forgets the computer use screenshot dedup of a session, assigned by the top level wiring
-var ResetScreenshotDedup func(sessionID string)
+var ResetScreenshotDedup func(ctx context.Context, sessionID string)
 
 // Starts a fresh read and skill view dedup generation after a compaction boundary
-func resetReadDedupCaches(taskID, sessionID string) {
+func resetReadDedupCaches(ctx context.Context, taskID, sessionID string) {
 	func() {
 		defer func() { _ = recover() }()
 		tools.ResetFileDedup(taskID)
@@ -20,7 +21,7 @@ func resetReadDedupCaches(taskID, sessionID string) {
 	if sessionID != "" && ResetScreenshotDedup != nil {
 		func() {
 			defer func() { _ = recover() }()
-			ResetScreenshotDedup(sessionID)
+			ResetScreenshotDedup(ctx, sessionID)
 		}()
 	}
 	func() {

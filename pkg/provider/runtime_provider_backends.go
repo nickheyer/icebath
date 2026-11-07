@@ -236,6 +236,11 @@ func isExternalProcessProvider(ctx context.Context, provider string) bool {
 	return false
 }
 
+// Provider runs as a local external process rather than an HTTP endpoint
+func IsExternalProcessProvider(ctx context.Context, provider string) bool {
+	return isExternalProcessProvider(ctx, provider)
+}
+
 // ExternalProcessLaunchEnvNames lists the env names that choose an external provider's executable or argv
 func ExternalProcessLaunchEnvNames() map[string]bool {
 	out := map[string]bool{}

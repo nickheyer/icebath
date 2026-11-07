@@ -2,15 +2,10 @@ package tools
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
-	"slices"
-	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 )
 
@@ -85,156 +80,6 @@ func rmtreeRetry(p string, op func() error) error {
 		}
 	}
 	return op()
-}
-
-// Default age floor below which git debris is presumed live
-const staleTmpPackMinAgeSeconds = 10 * 60
-
-// Temp prefixes git writes in objects/pack and renames away on success
-var tmpPackPrefixes = []string{"tmp_pack_", "tmp_idx_", "tmp_rev_", "tmp_mtimes_", ".tmp-"}
-
-// Pack directory of a checkout or a bare repository
-func gitPackDir(repoRoot string) string {
-	gitDir := filepath.Join(repoRoot, ".git")
-	if isDirFollow(gitDir) {
-		return filepath.Join(gitDir, "objects", "pack")
-	}
-	return filepath.Join(repoRoot, "objects", "pack")
-}
-
-// Names git uses as a process, plain, dashed helpers and the exe spelling, empty for anything else
-func gitProgramName(arg0 string) string {
-	name := strings.TrimSpace(arg0)
-	if i := strings.LastIndexAny(name, `\/`); i >= 0 {
-		name = name[i+1:]
-	}
-	name = strings.TrimSuffix(strings.ToLower(name), ".exe")
-	if name == "git" || strings.HasPrefix(name, "git-") {
-		return name
-	}
-	return ""
-}
-
-// Git process probe guarding the debris sweep, swapped by tests
-var checkpointGitProcRunning = gitProcRunning
-
-// Reports whether any git process may be running, answering true whenever the probe cannot tell
-func gitProcRunning(env *Env) bool {
-	if runtime.GOOS == "linux" {
-		if ents, err := os.ReadDir("/proc"); err == nil {
-			for _, e := range ents {
-				if _, err := strconv.Atoi(e.Name()); err != nil {
-					continue
-				}
-				comm, err := os.ReadFile(filepath.Join("/proc", e.Name(), "comm"))
-				if err != nil {
-					if errors.Is(err, fs.ErrNotExist) {
-						continue
-					}
-					toolsLogger(env).Debug("git process scan failed; assuming git may be running")
-					return true
-				}
-				if gitProgramName(strings.TrimRight(string(comm), "\n")) != "" {
-					return true
-				}
-			}
-			return false
-		}
-	}
-	argv := []string{"pgrep", `^git(-.*|\.exe)?$`}
-	if runtime.GOOS == "windows" {
-		argv = []string{"tasklist", "/FO", "CSV", "/NH"}
-	}
-	res, err := runCapture(nil, argv, 10*time.Second, false, nil)
-	if err != nil {
-		toolsLogger(env).Debug("git process probe failed; assuming git may be running")
-		return true
-	}
-	if runtime.GOOS == "windows" {
-		if res.Code != 0 {
-			return true
-		}
-		for _, line := range strings.Split(strings.ReplaceAll(res.Stdout, "\r\n", "\n"), "\n") {
-			if line == "" {
-				continue
-			}
-			first, _, _ := strings.Cut(line, ",")
-			if gitProgramName(strings.Trim(first, `"`)) != "" {
-				return true
-			}
-		}
-		return false
-	}
-	return res.Code != 1
-}
-
-// Removes aged debris files listed by the candidate function, skipping entirely while a git process runs
-func sweepStaleGitDebris(env *Env, directory string, candidates func() []string, minAge *int, defaultAge int, skipMsg string,
-	logRemoved func(string, int64)) []string {
-	if !isDirFollow(directory) {
-		return nil
-	}
-	if checkpointGitProcRunning(env) {
-		toolsLogger(env).Debug(skipMsg)
-		return nil
-	}
-	age := defaultAge
-	if minAge != nil {
-		age = *minAge
-	}
-	cutoff := float64(time.Now().UnixNano())/1e9 - float64(age)
-	var removed []string
-	for _, entry := range candidates() {
-		st, err := os.Stat(entry)
-		if err != nil {
-			if !checkpointPathMissing(err) {
-				toolsLogger(env).Warn(fmt.Sprintf("Could not clear %s (skipping): %v", entry, err))
-			}
-			continue
-		}
-		if !st.Mode().IsRegular() || statMtime(st) >= cutoff {
-			continue
-		}
-		if runtime.GOOS == "windows" {
-			os.Chmod(entry, 0o666)
-		}
-		if err := os.Remove(entry); err != nil {
-			toolsLogger(env).Warn(fmt.Sprintf("Could not clear %s (skipping): %v", entry, err))
-			continue
-		}
-		removed = append(removed, entry)
-		logRemoved(entry, st.Size())
-	}
-	return removed
-}
-
-// Removes aborted transfer temp packs and killed commit graph temps from a checkout or bare repository
-func clearStaleTmpPacks(env *Env, repoRoot string, minAge *int) []string {
-	packDir := gitPackDir(repoRoot)
-	graphDir := filepath.Join(filepath.Dir(packDir), "info", "commit-graphs")
-	candidates := func() []string {
-		var found []string
-		for _, spec := range []struct {
-			dir      string
-			prefixes []string
-		}{{packDir, tmpPackPrefixes}, {graphDir, []string{"tmp_graph_"}}} {
-			ents, err := os.ReadDir(spec.dir)
-			if err != nil {
-				continue
-			}
-			for _, e := range ents {
-				if slices.ContainsFunc(spec.prefixes, func(p string) bool { return strings.HasPrefix(e.Name(), p) }) {
-					found = append(found, filepath.Join(spec.dir, e.Name()))
-				}
-			}
-		}
-		return found
-	}
-	return sweepStaleGitDebris(env, packDir, candidates, minAge, staleTmpPackMinAgeSeconds,
-		"git process running; skipping tmp-pack sweep",
-		func(p string, size int64) {
-			toolsLogger(env).Info(fmt.Sprintf("Removed aborted-write git debris %s (%d bytes)", p, size))
-		})
 }
 
 // Reads a text marker as UTF-8 with an optional byte order mark, an error for undecodable bytes

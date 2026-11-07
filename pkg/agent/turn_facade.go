@@ -37,7 +37,7 @@ func (a *AIAgent) cacheScopeAgent() *provider.CacheScopeAgent {
 }
 
 // Relay outcome for an error or panic value leaving the turn, cancelled for interrupts and timed_out for timeouts
-func relayOutcomeForFailure(v any) string {
+func relayOutcomeForFailure(ctx context.Context, v any) string {
 	if _, ok := v.(plugins.UserInterrupt); ok {
 		return "cancelled"
 	}
@@ -48,7 +48,7 @@ func relayOutcomeForFailure(v any) string {
 	if !ok {
 		return "failed"
 	}
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || tools.IsKeyboardInterrupt(ctx, err) {
 		return "cancelled"
 	}
 	var timeout interface{ Timeout() bool }
@@ -92,7 +92,7 @@ func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o Run
 			if failure == nil {
 				failure = err
 			}
-			relayOutcome = relayOutcomeForFailure(failure)
+			relayOutcome = relayOutcomeForFailure(turnCtx, failure)
 			if relayTurn != nil {
 				tools.RelayCoordinator.FinishLogicalCalls(turnCtx, relayTurn, relayOutcome)
 			}
