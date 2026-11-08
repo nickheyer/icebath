@@ -140,6 +140,9 @@ const (
 	surfaceLink = "link"
 )
 
+// SurfaceCard, SurfaceSide and SurfaceLink export the connection surfaces
+const SurfaceCard, SurfaceSide, SurfaceLink = surfaceCard, surfaceSide, surfaceLink
+
 // SideAgentHint tells a delegated agent it cannot connect apps itself
 const SideAgentHint = "This app is not connected. Only the main agent can connect it, so report that back instead of trying to connect it here."
 

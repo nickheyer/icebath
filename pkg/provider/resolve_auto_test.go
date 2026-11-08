@@ -168,3 +168,11 @@ func TestGetAnthropicKeyPrefersTheHomeDotenvInRegistryOrder(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestDetectAPIModeForURLWrapperMatches(t *testing.T) {
+	for _, u := range []string{"https://api.minimax.io/anthropic", "https://openrouter.ai/api/v1", ""} {
+		if got, want := DetectAPIModeForURL(u), detectAPIModeForURL(u); got != want {
+			t.Fatalf("DetectAPIModeForURL(%q) = %q, want %q", u, got, want)
+		}
+	}
+}

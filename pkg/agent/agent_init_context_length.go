@@ -319,6 +319,10 @@ func resolveContextLength(ctx context.Context, a *AIAgent, agentCfg map[string]a
 		configContextLength = scopeContextLengthToDefaultRuntime(ctx, a, agentCfg, modelSection, customProviders, configContextLength, baseURL)
 	}
 	a.customProviderEntries = customProviders
+	a.customProviders = make([]any, len(customProviders))
+	for i, entry := range customProviders {
+		a.customProviders[i] = entry
+	}
 	a.mergeCustomProviderExtraBody(customProviders)
 	if configContextLength == nil && len(customProviders) > 0 {
 		if n := provider.CustomProviderContextLength(a.model, a.baseURL, customProviders, agentCfg); n != 0 {

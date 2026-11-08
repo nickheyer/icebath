@@ -24,6 +24,7 @@ var DelegationRegistryHooks struct {
 	DisabledPlugins func(h string) map[string]bool
 	LoadBundled     func(ctx context.Context, name string, register func(DelegationProvider)) bool
 	DiscoverPlugins func(ctx context.Context, force bool)
+	ListProviders   func(ctx context.Context) []DelegationProvider
 }
 
 var (
@@ -48,6 +49,16 @@ func bundledDelegationDisabled(ctx context.Context, name string) bool {
 	return disabled[name] || disabled["delegation/"+name]
 }
 
+// The one registrar method a bundled strategy's register call reaches, keeping the provider outside the plugin registry
+type bundledRegistrar struct{ name string }
+
+// Records the bundled provider as the first use strategy of its name
+func (r bundledRegistrar) RegisterDelegationProvider(p DelegationProvider) {
+	delegationFirstUseMu.Lock()
+	delegationFirstUse[r.name] = p
+	delegationFirstUseMu.Unlock()
+}
+
 // Bundled strategy of the name on first use, disabled plugins winning on every call
 func loadBundledDelegation(ctx context.Context, name string) DelegationProvider {
 	if !bundledDelegationNameRE.MatchString(name) || bundledDelegationDisabled(ctx, name) {
@@ -59,11 +70,7 @@ func loadBundledDelegation(ctx context.Context, name string) DelegationProvider 
 	if seen {
 		return cached
 	}
-	if !DelegationRegistryHooks.LoadBundled(ctx, name, func(p DelegationProvider) {
-		delegationFirstUseMu.Lock()
-		delegationFirstUse[name] = p
-		delegationFirstUseMu.Unlock()
-	}) {
+	if !DelegationRegistryHooks.LoadBundled(ctx, name, bundledRegistrar{name}.RegisterDelegationProvider) {
 		return nil
 	}
 	delegationFirstUseMu.Lock()

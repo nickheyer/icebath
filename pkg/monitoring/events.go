@@ -19,7 +19,7 @@ type GatewayHealthEvent struct {
 	NewState           *string
 	ExitReason         *string
 	RestartRequested   *bool
-	ActiveAgents       int
+	ActiveAgents       any
 	GatewayBusy        bool
 	GatewayDrainable   bool
 	PlatformCount      int
@@ -28,7 +28,7 @@ type GatewayHealthEvent struct {
 	InstallID          *string
 	Version            *string
 	SupervisionMode    *string
-	PID                *int
+	PID                any
 	TsNS               int64
 }
 
@@ -61,7 +61,7 @@ type CronExecutionEvent struct {
 
 // Health event with the dataclass defaults and the current nanosecond timestamp
 func NewGatewayHealthEvent(name string) GatewayHealthEvent {
-	return GatewayHealthEvent{Name: name, TsNS: time.Now().UnixNano()}
+	return GatewayHealthEvent{Name: name, ActiveAgents: 0, TsNS: time.Now().UnixNano()}
 }
 
 // Diagnostic event with unknown class, warning severity and the current nanosecond timestamp
@@ -98,7 +98,7 @@ func (e GatewayHealthEvent) ToDict() *pyjson.Object {
 		"active_agents", e.ActiveAgents, "gateway_busy", e.GatewayBusy, "gateway_drainable", e.GatewayDrainable,
 		"platform_count", e.PlatformCount, "fatal_platform_count", e.FatalPlatformCount, "profile", opt(e.Profile),
 		"install_id", opt(e.InstallID), "version", opt(e.Version), "supervision_mode", opt(e.SupervisionMode),
-		"pid", opt(e.PID), "ts_ns", e.TsNS)
+		"pid", e.PID, "ts_ns", e.TsNS)
 }
 
 func (e GatewayDiagnosticEvent) ToDict() *pyjson.Object {

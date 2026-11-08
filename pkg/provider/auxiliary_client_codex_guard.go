@@ -428,6 +428,9 @@ func auxPoolSockets(client any) []net.Conn {
 	return out
 }
 
+// PoolSockets returns the raw sockets of the client pools, only the own in flight requests on a shared pool
+func PoolSockets(client any) []net.Conn { return auxPoolSockets(client) }
+
 // Transport of an HTTP client, the default transport when none is set
 func auxClientTransport(c *http.Client) http.RoundTripper {
 	if c.Transport == nil {

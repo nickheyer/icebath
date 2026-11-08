@@ -360,3 +360,15 @@ func TestDMLDetectionFollowsCPythonLstripSQL(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenDBWithOpenerConnectsThroughTheGivenOpener(t *testing.T) {
+	opener := &trackingOpener{}
+	conn, err := OpenDB(context.Background(), filepath.Join(t.TempDir(), "x.db"), "x.db", WithWAL(false), WithOpener(opener.connect))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if len(opener.opened) != 1 || opener.opened[0] != conn {
+		t.Fatalf("opened %d connections through the opener", len(opener.opened))
+	}
+}

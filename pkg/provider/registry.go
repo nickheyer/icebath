@@ -676,6 +676,9 @@ func declaresModelProviderKind(pluginDir string) bool {
 	return false
 }
 
+// Whether a plugin manifest declares the model provider kind, the exported form plugins reach through Services
+func DeclaresModelProviderKind(pluginDir string) bool { return declaresModelProviderKind(pluginDir) }
+
 // Python str of a YAML scalar for the manifest and isolation comparisons
 func pyScalarStr(v any) string {
 	switch t := v.(type) {
@@ -989,4 +992,64 @@ var runDiscoveryStepsFn func(ctx context.Context)
 func init() {
 	scanHomeLayerFn = scanHomeLayer
 	runDiscoveryStepsFn = runDiscoverySteps
+}
+
+// Captures the process wide provider registry and returns the closure that restores it and drops the caches built over it
+func SnapshotProviderRegistryForTests() func() {
+	discoverProviders(context.Background())
+	regMu.Lock()
+	profiles := map[string]*Profile{}
+	for k, v := range regProfiles {
+		profiles[k] = v
+	}
+	order := append([]string(nil), regOrder...)
+	aliases := map[string]string{}
+	for k, v := range regAliases {
+		aliases[k] = v
+	}
+	sources := map[string]string{}
+	for k, v := range regSources {
+		sources[k] = v
+	}
+	regMu.Unlock()
+	reg := providerRegistry()
+	reg.mu.Lock()
+	keys := append([]string(nil), reg.keys...)
+	rows := map[string]*Profile{}
+	for k, v := range reg.rows {
+		rows[k] = v
+	}
+	pending := reg.syncPending
+	reg.mu.Unlock()
+	pluginMirroredMu.Lock()
+	mirrored := map[string]bool{}
+	for k, v := range pluginMirroredProviders {
+		mirrored[k] = v
+	}
+	pluginMirroredMu.Unlock()
+	return func() {
+		regMu.Lock()
+		regProfiles, regOrder, regAliases, regSources, regListCache = profiles, order, aliases, sources, nil
+		regMu.Unlock()
+		regGeneration.Add(1)
+		reg.mu.Lock()
+		reg.keys, reg.rows, reg.syncPending = keys, rows, pending
+		reg.mu.Unlock()
+		pluginMirroredMu.Lock()
+		pluginMirroredProviders = mirrored
+		pluginMirroredMu.Unlock()
+		homeLayersMu.Lock()
+		homeLayers = map[string]*homeLayer{}
+		homeLayersMu.Unlock()
+		homeRowsMu.Lock()
+		homeRows = map[[2]*Profile]*Profile{}
+		homeRowsMu.Unlock()
+		hostMemoMu.Lock()
+		hostMemo = map[hostMemoKey]hostMemoEntry{}
+		hostMemoMu.Unlock()
+		namedCustomMu.Lock()
+		namedCustomMem = map[string]*namedCustomMemo{}
+		namedCustomMu.Unlock()
+		resetCatalogTables()
+	}
 }

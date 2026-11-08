@@ -205,12 +205,18 @@ type auxCallHookArgs struct {
 	Streaming bool
 }
 
+// AuxCallHookArgs exposes the auxiliary hook arguments
+type AuxCallHookArgs = auxCallHookArgs
+
 // Reply of a native transport already normalized to message, finish reason and usage
 type auxNormalizedReply struct {
 	Message      any
 	FinishReason any
 	Usage        map[string]any
 }
+
+// AuxNormalizedReply exposes the normalized auxiliary reply
+type AuxNormalizedReply = auxNormalizedReply
 
 // Pre and post auxiliary hook pair of one attempt with the base payload built once
 type auxCallHooks struct {
@@ -219,6 +225,9 @@ type auxCallHooks struct {
 	startedAt float64
 	base      map[string]any
 }
+
+// AuxCallHooks exposes the hook pair of one auxiliary attempt
+type AuxCallHooks = auxCallHooks
 
 func auxEpochSeconds(t time.Time) float64 { return float64(t.UnixNano()) / 1e9 }
 
@@ -417,6 +426,11 @@ func startAuxCallHooks(ctx context.Context, a auxCallHookArgs) (hooks *auxCallHo
 	return h
 }
 
+// StartAuxCallHooks fires pre_auxiliary_call for one side call attempt
+func StartAuxCallHooks(ctx context.Context, a AuxCallHookArgs) *AuxCallHooks {
+	return startAuxCallHooks(ctx, a)
+}
+
 // Fires the post_auxiliary_call paired with a started attempt
 func finishAuxCallHooks(ctx context.Context, hooks *auxCallHooks, response any, callErr error, normalized *auxNormalizedReply) {
 	if hooks == nil {
@@ -428,6 +442,11 @@ func finishAuxCallHooks(ctx context.Context, hooks *auxCallHooks, response any, 
 		}
 	}()
 	hooks.post(ctx, response, callErr, normalized)
+}
+
+// FinishAuxCallHooks closes the attempt with post_auxiliary_call
+func FinishAuxCallHooks(ctx context.Context, hooks *AuxCallHooks, response any, callErr error, normalized *AuxNormalizedReply) {
+	finishAuxCallHooks(ctx, hooks, response, callErr, normalized)
 }
 
 // Runs one provider attempt between the auxiliary hook pair, reporting and returning its error

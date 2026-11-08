@@ -28,14 +28,13 @@ import (
 )
 
 const (
-	repairLockPollSeconds                     = 0.1
-	repairSnapshotMinThroughputBytesPerSecond = 10 * 1024 * 1024
-	maxPersistentRepairAttempts               = 3
-	maxMalformedBackups                       = 3
-	fingerprintSampleBytes                    = 65536
-	repairBackupMinFreeBytes                  = 256 * 1024 * 1024
-	repairBackupFreeFraction                  = 0.02
-	manualRecoverHint                         = "Free disk space, then retry (or recover manually with " +
+	repairLockPollSeconds       = 0.1
+	maxPersistentRepairAttempts = 3
+	maxMalformedBackups         = 3
+	fingerprintSampleBytes      = 65536
+	repairBackupMinFreeBytes    = 256 * 1024 * 1024
+	repairBackupFreeFraction    = 0.02
+	manualRecoverHint           = "Free disk space, then retry (or recover manually with " +
 		"`icebath sessions recover --source %s --inspect-only` first)."
 	accessRW = 4 | 2
 )
@@ -232,7 +231,7 @@ func diskBudget(dbPath, refusal string) (string, int64, int64, int64) {
 			need += sst.Size()
 		}
 	}
-	total, _, free, err := pyfs.DiskUsage(parent)
+	total, _, free, err := diskUsageFn(parent)
 	if err != nil {
 		return fail(err)
 	}
@@ -538,12 +537,12 @@ func publishBackupBundle(dbPath, staging, backupPath string) error {
 	var published []string
 	err := func() error {
 		for _, m := range append([]member{main}, side...) {
-			if err := pyfs.Copy2(m.src, m.staged); err != nil {
+			if err := copyFileFn(m.src, m.staged); err != nil {
 				return err
 			}
 		}
 		for _, m := range append(append([]member(nil), side...), main) {
-			if err := os.Rename(m.staged, m.dst); err != nil {
+			if err := replaceFileFn(m.staged, m.dst); err != nil {
 				return err
 			}
 			published = append(published, m.dst)
@@ -773,10 +772,10 @@ func copyDatabaseSnapshot(ctx context.Context, sourcePath, destinationPath strin
 	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(time.Duration(deadlineSeconds * float64(time.Second)))
+	deadline := snapshotClock().Add(time.Duration(deadlineSeconds * float64(time.Second)))
 	source := sourceConn
 	if source == nil {
-		owned, err := connectRepairDurable(ctx, sourcePath, 5.0)
+		owned, err := repairConnectFn(ctx, sourcePath, 5.0)
 		if err != nil {
 			return err
 		}
@@ -798,7 +797,7 @@ func copyDatabaseSnapshot(ctx context.Context, sourcePath, destinationPath strin
 	}
 	destination := destinationConn
 	if destination == nil {
-		owned, err := connectRepairDurable(ctx, destinationPath, 5.0)
+		owned, err := repairConnectFn(ctx, destinationPath, 5.0)
 		if err != nil {
 			return err
 		}
@@ -810,7 +809,7 @@ func copyDatabaseSnapshot(ctx context.Context, sourcePath, destinationPath strin
 		destination = owned
 	}
 	return sqliteBackup(source, destination, 256, func(int, int, int) error {
-		if !time.Now().Before(deadline) {
+		if !snapshotClock().Before(deadline) {
 			return fmt.Errorf("timed out copying SQLite repair snapshot after %ss", pyFixed0(deadlineSeconds))
 		}
 		return nil
@@ -922,7 +921,7 @@ func StateDBHasStructuralDamage(dbPath string) (bool, error) {
 
 // Probes a database on a fresh connection, returning the reason it is unhealthy or false when it opens cleanly
 func dbOpensCleanly(ctx context.Context, dbPath string) (string, bool, error) {
-	conn, err := connectRepairDurable(ctx, dbPath, 5.0)
+	conn, err := repairConnectFn(ctx, dbPath, 5.0)
 	if err != nil {
 		return "", false, err
 	}
@@ -1049,7 +1048,7 @@ func RepairStateDBSchema(ctx context.Context, dbPath string, backup bool) (*Repa
 		report.Error = fmt.Sprintf("%s does not exist", dbPath)
 		return report, nil
 	}
-	exhausted, err := persistentRepairAttemptsExhausted(dbPath)
+	exhausted, err := repairExhaustedFn(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -1057,9 +1056,9 @@ func RepairStateDBSchema(ctx context.Context, dbPath string, backup bool) (*Repa
 		return repairSkip(report, "skipped", persistentRepairExhaustedError(ctx, dbPath), nil), nil
 	}
 	result := report
-	err = crossProcessRepairLock(dbPath, func(holding bool) error {
+	err = repairLockFn(dbPath, func(holding bool) error {
 		if !holding {
-			_, sick, err := dbOpensCleanly(ctx, dbPath)
+			_, sick, err := repairProbeFn(ctx, dbPath)
 			if err != nil {
 				return err
 			}
@@ -1071,20 +1070,20 @@ func RepairStateDBSchema(ctx context.Context, dbPath string, backup bool) (*Repa
 			}
 			return nil
 		}
-		exhausted, err := persistentRepairAttemptsExhausted(dbPath)
+		exhausted, err := repairExhaustedFn(dbPath)
 		if err != nil {
 			return err
 		}
 		if exhausted {
 			repairSkip(report, "skipped", persistentRepairExhaustedError(ctx, dbPath), nil)
-		} else if held, err := liveWriterHoldsDB(ctx, dbPath); err != nil {
+		} else if held, err := repairLiveWriterFn(ctx, dbPath); err != nil {
 			return err
 		} else if held {
 			repairSkip(report, "skipped", "a live writer still holds state.db; skipped schema surgery to avoid tearing "+
 				"b-tree pages under a concurrent writer. Stop the gateway (icebath gateway stop) and retry.", nil)
 		} else {
-			beforeMode := probeJournalModeForRepair(ctx, dbPath)
-			if result, err = repairStateDBSchemaLocked(ctx, dbPath, backup, report, beforeMode); err != nil {
+			beforeMode := repairJournalProbeFn(ctx, dbPath)
+			if result, err = repairLockedFn(ctx, dbPath, backup, report, beforeMode); err != nil {
 				return err
 			}
 			if result.Repaired {
@@ -1094,7 +1093,7 @@ func RepairStateDBSchema(ctx context.Context, dbPath string, backup bool) (*Repa
 		attempted := result.repairAttempted
 		result.repairAttempted = false
 		if attempted || result.Repaired {
-			recordRepairOutcome(dbPath, result.Repaired)
+			repairRecordFn(dbPath, result.Repaired)
 		}
 		return nil
 	})
@@ -1106,7 +1105,7 @@ func RepairStateDBSchema(ctx context.Context, dbPath string, backup bool) (*Repa
 
 // On disk journal mode before surgery, empty when the file cannot be opened or probed
 func probeJournalModeForRepair(ctx context.Context, dbPath string) string {
-	conn, err := connectRepairDurable(ctx, dbPath, 5.0)
+	conn, err := repairConnectFn(ctx, dbPath, 5.0)
 	if err != nil {
 		return ""
 	}
@@ -1125,14 +1124,14 @@ func restoreJournalModeAfterRepair(ctx context.Context, dbPath, beforeMode strin
 	var err error
 	if conn == nil {
 		var owned *TrackedConn
-		if owned, err = connectRepairDurable(ctx, dbPath, 5.0); err == nil {
-			after, err = ApplyWALWithFallback(ctx, owned, label, false)
+		if owned, err = repairConnectFn(ctx, dbPath, 5.0); err == nil {
+			after, err = applyWALFn(ctx, owned, label, false)
 			if cerr := owned.Close(); err == nil {
 				err = cerr
 			}
 		}
 	} else {
-		after, err = ApplyWALWithFallback(ctx, conn, label, false)
+		after, err = applyWALFn(ctx, conn, label, false)
 	}
 	if err != nil {
 		if _, ok := sqliteClassOf(err); !ok && !isOSError(err) {
@@ -1160,50 +1159,50 @@ func noneOr(s string) string {
 // Runs the repair strategies on a scratch snapshot and promotes a success transactionally, under the repair lock
 func repairStateDBSchemaLocked(ctx context.Context, dbPath string, backup bool, report *RepairReport, journalModeBefore string) (*RepairReport, error) {
 	scratch := dbPath + ".repair-scratch"
-	if cleanupError := unlinkDBTriple(scratch); cleanupError != "" {
+	if cleanupError := repairUnlinkFn(scratch); cleanupError != "" {
 		return repairSkip(report, "aborted", "could not remove a stale repair snapshot before probing state.db: "+cleanupError, nil), nil
 	}
-	if _, sick, err := dbOpensCleanly(ctx, dbPath); err != nil {
+	if _, sick, err := repairProbeFn(ctx, dbPath); err != nil {
 		return nil, err
 	} else if !sick {
 		report.Repaired, report.Strategy = true, "already_healthy"
 		return report, nil
 	}
 	if backup {
-		bpath, backupError := backupDBFile(dbPath)
+		bpath, backupError := repairBackupFn(dbPath)
 		report.BackupPath = bpath
 		if bpath == "" {
 			return repairSkip(report, "aborted", "pre-repair backup refused; aborting schema repair to avoid "+
 				"mutating the only copy of the damaged DB: "+backupError, nil), nil
 		}
 	}
-	err := exclusiveRepairDBGuard(ctx, dbPath, func(liveGuard SQLiteConn, guardErr error) error {
+	err := repairGuardFn(ctx, dbPath, func(liveGuard SQLiteConn, guardErr error) error {
 		if liveGuard == nil {
 			repairSkip(report, "skipped", "could not acquire exclusive state.db repair ownership; skipped schema "+
 				"surgery to avoid overwriting a concurrent writer. Stop the gateway and retry: "+errText(guardErr), guardErr)
 			return nil
 		}
-		if spaceError := repairScratchSpaceError(dbPath); spaceError != "" {
+		if spaceError := repairScratchSpaceFn(dbPath); spaceError != "" {
 			repairSkip(report, "aborted", spaceError, nil)
 			return nil
 		}
-		if err := copyDatabaseSnapshot(ctx, dbPath, scratch, liveGuard, nil); err != nil {
-			unlinkDBTriple(scratch)
+		if err := repairSnapshotFn(ctx, dbPath, scratch, liveGuard, nil); err != nil {
+			repairUnlinkFn(scratch)
 			repairSkip(report, "aborted", fmt.Sprintf("could not stage a complete SQLite repair snapshot of %s: %s",
 				dbPath, errText(err)), err)
 			return nil
 		}
 		defer func() {
-			if cleanupError := unlinkDBTriple(scratch); cleanupError != "" {
+			if cleanupError := repairUnlinkFn(scratch); cleanupError != "" {
 				slog.Warn(fmt.Sprintf("Could not remove state.db repair snapshot after repair: %s", cleanupError))
 			}
 		}()
 		report.repairAttempted = true
-		if err := runRepairStrategies(ctx, scratch, report); err != nil {
+		if err := repairStrategiesFn(ctx, scratch, report); err != nil {
 			return err
 		}
 		if report.Repaired {
-			if err := copyDatabaseSnapshot(ctx, scratch, dbPath, nil, liveGuard); err != nil {
+			if err := repairSnapshotFn(ctx, scratch, dbPath, nil, liveGuard); err != nil {
 				report.Repaired, report.Strategy = false, ""
 				report.repairAttempted = repairFailureConsumesAttempt(err)
 				report.Error = fmt.Sprintf("repaired snapshot could not be promoted transactionally: %s", errText(err))
@@ -1370,7 +1369,7 @@ var repairStrategies = []repairStrategy{
 func runRepairStrategies(ctx context.Context, dbPath string, report *RepairReport) error {
 	for _, s := range repairStrategies {
 		err := func() error {
-			conn, err := connectRepairDurable(ctx, dbPath, 5.0)
+			conn, err := repairConnectFn(ctx, dbPath, 5.0)
 			if err != nil {
 				return err
 			}
@@ -1383,7 +1382,7 @@ func runRepairStrategies(ctx context.Context, dbPath string, report *RepairRepor
 		var reason string
 		var sick bool
 		if err == nil {
-			reason, sick, err = dbOpensCleanly(ctx, dbPath)
+			reason, sick, err = repairProbeFn(ctx, dbPath)
 		}
 		if err != nil {
 			if !isDatabaseError(err) {

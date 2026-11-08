@@ -89,3 +89,29 @@ func runHeldTransforms(ctx context.Context, held func(context.Context, map[strin
 func (a *AIAgent) ApplyLLMOutputTransform(finalResponse string, turnID any) (string, bool, any) {
 	return applyLLMOutputTransform(a.homeContext(), a, finalResponse, turnID, nil)
 }
+
+// Copies the review input structurally so the review never aliases the live transcript
+func cloneBackgroundReviewMessages(messages []map[string]any) []map[string]any {
+	out := make([]map[string]any, len(messages))
+	for i, m := range messages {
+		out[i], _ = cloneMessageForSend(m).(map[string]any)
+	}
+	return out
+}
+
+// Runs a held turn's transform snapshot over a result text that has not yet passed through it
+func settleHeldFinal(ctx context.Context, a *AIAgent, result map[string]any) {
+	if !a.holdStream || result == nil {
+		return
+	}
+	text, ok := result["final_response"].(string)
+	turnID := a.currentTurnID
+	if !ok || text == "" || (a.llmOutputTransform != nil && sameTurnID(a.llmOutputTransform.turnID, turnID)) {
+		return
+	}
+	final, transformed, _ := applyLLMOutputTransform(ctx, a, text, turnID, nil)
+	if e, ok := result["error"].(string); ok && e == text {
+		result["error"] = final
+	}
+	result["final_response"], result["response_transformed"], result["pre_transform_response"] = final, transformed, nil
+}

@@ -33,6 +33,8 @@ func CellLen(s string) int {
 // Console writes markup the way rich.console.Console.print does, wrapped at Width cells
 type Console struct {
 	Out io.Writer
+	// Line source of Input, standard input when nil
+	In io.Reader
 	// ANSI styling on, as for a rich console on a color terminal
 	Color bool
 	// Wrap width in cells, rich reads COLUMNS or the terminal size and falls back to 80
@@ -179,6 +181,36 @@ func (c *Console) PrintTable(t *Table) {
 // Prints a panel expanded to the console width
 func (c *Console) PrintPanel(p Panel) {
 	c.write(strings.Split(p.render(c.Color, !c.NoHighlight, c.Width), "\n"))
+}
+
+// Input prints the prompt without a newline and reads one line, io.EOF standing for EOFError
+func (c *Console) Input(prompt string) (string, error) {
+	if prompt != "" && !c.Quiet && c.Out != nil {
+		c.mu.Lock()
+		io.WriteString(c.Out, c.colorless(renderHighlighted(prompt, c.Color, !c.NoHighlight)))
+		c.mu.Unlock()
+	}
+	in := c.In
+	if in == nil {
+		in = os.Stdin
+	}
+	var line []byte
+	buf := make([]byte, 1)
+	for {
+		n, err := in.Read(buf)
+		if n == 1 {
+			if buf[0] == '\n' {
+				return strings.TrimSuffix(string(line), "\r"), nil
+			}
+			line = append(line, buf[0])
+		}
+		if err != nil {
+			if err == io.EOF && len(line) > 0 {
+				return string(line), nil
+			}
+			return string(line), err
+		}
+	}
 }
 
 var ansiRE = regexp.MustCompile("\x1b\\[[0-9;]*m")

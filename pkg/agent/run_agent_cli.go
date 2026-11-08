@@ -131,9 +131,12 @@ func pyStrListRepr(items []string) string {
 func saveSampleTrajectory(w io.Writer, a *AIAgent, result map[string]any, userQuery, model string) {
 	filename := "sample_" + uuid.NewString()[:8] + ".json"
 	messages, _ := result["messages"].([]map[string]any)
-	completed, _ := result["completed"].(bool)
+	conversations, err := a.convertToTrajectoryFormat(messages, userQuery)
+	if err != nil {
+		panic(err)
+	}
 	entry := pyjson.NewObject()
-	entry.Set("conversations", a.convertToTrajectoryFormat(messages, userQuery, completed))
+	entry.Set("conversations", conversations)
 	entry.Set("timestamp", naiveISOFormat(time.Now()))
 	entry.Set("model", model)
 	entry.Set("completed", result["completed"])

@@ -3,6 +3,8 @@ package provider
 import (
 	"encoding/binary"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 func TestImageDimensionsFromBytesReadsPNGAndJPEGHeaders(t *testing.T) {
@@ -20,5 +22,15 @@ func TestImageDimensionsFromBytesReadsPNGAndJPEGHeaders(t *testing.T) {
 	}
 	if _, _, ok := ImageDimensionsFromBytes([]byte("not an image")); ok {
 		t.Fatal("unreadable bytes reported dimensions")
+	}
+}
+
+func TestSetAnthropicLiveBlocksReplacesTheSidecar(t *testing.T) {
+	m := &state.Message{Role: "assistant"}
+	SetAnthropicLiveBlocks(m, []any{map[string]any{"type": "text", "text": "a"}})
+	SetAnthropicLiveBlocks(m, []any{map[string]any{"type": "text", "text": "b"}})
+	blocks, ok := AnthropicLiveBlocks(m)
+	if !ok || len(blocks) != 1 || blocks[0].(map[string]any)["text"] != "b" {
+		t.Fatalf("blocks %v %v", blocks, ok)
 	}
 }

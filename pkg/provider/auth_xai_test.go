@@ -224,3 +224,15 @@ func TestXAIDeviceCodeLoginSavesTokensAndSelectsProvider(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestResolveXAIOAuthRuntimeCredentialsExportedReadsStore(t *testing.T) {
+	h := newTestHome(t)
+	env := testEnv(t, h)
+	token := jwtWithClaims(map[string]any{"exp": time.Now().Unix() + 3600})
+	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"xai-oauth": map[string]any{
+		"tokens": map[string]any{"access_token": token, "refresh_token": "r0"}, "auth_mode": "oauth_pkce"}}})
+	creds, err := ResolveXAIOAuthRuntimeCredentials(env, false, false, 0)
+	if err != nil || creds["api_key"] != token || creds["base_url"] != DefaultXAIOAuthBaseURL {
+		t.Fatalf("%v %v", creds, err)
+	}
+}

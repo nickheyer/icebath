@@ -14,7 +14,7 @@ func TestBitwardenE2EThroughOrchestrator(t *testing.T) {
 	fakeBinary(t, "bws", `printf '[{"key":"ANTHROPIC_API_KEY","value":"sk-ant"},{"key":"BWS_ACCESS_TOKEN","value":"steal"}]'`)
 	RegisterSecretSource(&BitwardenSource{}, false, false, "")
 	env := MappingSourceEnvironment(map[string]string{"BWS_ACCESS_TOKEN": "0.token"})
-	report := ApplyAllSecretSources(map[string]any{"bitwarden": map[string]any{"enabled": true, "project_id": "proj", "cache_ttl_seconds": 0}}, t.TempDir(), env)
+	report := applyAllSecretSourcesForTest(t, map[string]any{"bitwarden": map[string]any{"enabled": true, "project_id": "proj", "cache_ttl_seconds": 0}}, t.TempDir(), env)
 	if env.Value("ANTHROPIC_API_KEY") != "sk-ant" || env.Value("BWS_ACCESS_TOKEN") != "0.token" || report.Provenance["ANTHROPIC_API_KEY"].Source != "bitwarden" {
 		t.Fatalf("got %v %+v", env.Snapshot(), report)
 	}
@@ -68,7 +68,7 @@ func TestMappedOpBeatsBulkBitwardenThroughOrchestrator(t *testing.T) {
 	RegisterSecretSource(&BitwardenSource{}, false, false, "")
 	RegisterSecretSource(&OnePasswordSource{}, false, false, "")
 	env := MappingSourceEnvironment(map[string]string{"BWS_ACCESS_TOKEN": "0.token"})
-	report := ApplyAllSecretSources(map[string]any{"sources": []any{"bitwarden", "onepassword"},
+	report := applyAllSecretSourcesForTest(t, map[string]any{"sources": []any{"bitwarden", "onepassword"},
 		"bitwarden":   map[string]any{"enabled": true, "project_id": "proj", "cache_ttl_seconds": 0},
 		"onepassword": map[string]any{"enabled": true, "env": map[string]any{"SHARED_KEY": "op://V/I/F"}, "cache_ttl_seconds": 0}}, t.TempDir(), env)
 	if env.Value("SHARED_KEY") != "from-1password" || env.Value("BW_ONLY") != "bw-val" {

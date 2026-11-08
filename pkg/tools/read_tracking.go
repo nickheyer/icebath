@@ -654,7 +654,10 @@ func checkFileStaleness(env *Env, path, taskID string) (string, error) {
 	return "", nil
 }
 
-// Tells the host that successful edits made earlier verification evidence stale
+// WorkspaceEditedMarker marks the verification ledger stale for edited paths, installed by the agent
+var WorkspaceEditedMarker func(env *Env, sessionID, cwd string, paths []string) error
+
+// Tells the ledger that successful edits made earlier verification evidence stale
 func markVerificationStale(env *Env, taskID, sessionID string, resolvedPaths []string) {
 	var paths []string
 	for _, p := range resolvedPaths {
@@ -690,7 +693,10 @@ func markVerificationStale(env *Env, taskID, sessionID string, resolvedPaths []s
 	if sessionID == "" {
 		sessionID = taskID
 	}
-	env.Emit(Event{Kind: "workspace_edited", TaskID: taskID, Data: map[string]any{
-		"session_id": sessionID, "cwd": cwd, "paths": paths,
-	}})
+	if WorkspaceEditedMarker == nil {
+		return
+	}
+	if err := WorkspaceEditedMarker(env, sessionID, cwd, paths); err != nil {
+		envLog(env).Debug("verification stale marker failed", "error", err)
+	}
 }

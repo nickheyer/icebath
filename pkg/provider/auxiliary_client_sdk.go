@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -175,6 +176,28 @@ func AuxClientCustomHeaders(c AuxClient) map[string]string {
 	return maps.Clone(oc.customHeaders)
 }
 
+// AuxClientDefaultHeaders is the header set an SDK client sends on every request, nil for adapters
+func AuxClientDefaultHeaders(c AuxClient) map[string]string {
+	oc, ok := c.(*auxOpenAIClient)
+	if !ok || oc == nil {
+		return nil
+	}
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	out := map[string]string{"Accept": "application/json", "Content-Type": "application/json", "User-Agent": auxSDKUserAgent}
+	if oc.apiKey != "" {
+		out["Authorization"] = "Bearer " + oc.apiKey
+	}
+	if org := os.Getenv("OPENAI_ORG_ID"); org != "" {
+		out["OpenAI-Organization"] = org
+	}
+	if project := os.Getenv("OPENAI_PROJECT_ID"); project != "" {
+		out["OpenAI-Project"] = project
+	}
+	maps.Copy(out, oc.customHeaders)
+	return out
+}
+
 // OpenAI SDK client with a static or callable key, the env key and base URL when none is given
 func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxOpenAIClient {
 	c := &auxOpenAIClient{customHeaders: map[string]string{}, customQuery: map[string]string{}, maxRetries: auxSDKDefaultMaxRetries}
@@ -273,17 +296,42 @@ func (c *auxOpenAIClient) refreshAPIKey() (string, error) {
 
 // One chat completions request split into body, headers, query and timeout
 type auxSDKRequest struct {
-	path       string
-	body       []byte
-	stream     bool
-	headers    map[string]any
-	query      map[string]string
-	timeout    float64
-	hasTimeout bool
+	path    string
+	body    []byte
+	stream  bool
+	headers map[string]any
+	query   map[string]string
+	timeout auxSDKTimeouts
+}
+
+// One httpx phase limit, a phase without a limit never times out
+type auxPhaseLimit struct {
+	d  time.Duration
+	on bool
+}
+
+// Separate httpx pool, connect, write and read limits of one request
+type auxSDKTimeouts struct{ pool, connect, write, read auxPhaseLimit }
+
+// Same limit on every phase like an httpx float or None timeout
+func auxUniformTimeouts(seconds float64, on bool) auxSDKTimeouts {
+	l := auxPhaseLimit{d: secondsDuration(seconds), on: on}
+	return auxSDKTimeouts{pool: l, connect: l, write: l, read: l}
+}
+
+// Phase limits of an httpx.Timeout value, a zero phase left without a limit
+func auxPhaseTimeouts(t pyhttpx.Timeout) auxSDKTimeouts {
+	limit := func(d time.Duration) auxPhaseLimit { return auxPhaseLimit{d: d, on: d > 0} }
+	return auxSDKTimeouts{pool: limit(t.Pool), connect: limit(t.Connect), write: limit(t.Write), read: limit(t.Read)}
+}
+
+// Connect, read, write and pool budgets in seconds as the httpx.Timeout a streamed request carries
+func sdkStreamTimeout(connect, read, write, pool float64) pyhttpx.Timeout {
+	return pyhttpx.Timeout{Connect: secondsDuration(connect), Read: secondsDuration(read), Write: secondsDuration(write), Pool: secondsDuration(pool)}
 }
 
 func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKRequest, error) {
-	r := &auxSDKRequest{path: "chat/completions", query: map[string]string{}, headers: map[string]any{}, timeout: c.timeout, hasTimeout: c.hasTimeout}
+	r := &auxSDKRequest{path: "chat/completions", query: map[string]string{}, headers: map[string]any{}, timeout: auxUniformTimeouts(c.timeout, c.hasTimeout)}
 	body := map[string]any{}
 	for k, v := range kwargs {
 		switch k {
@@ -320,17 +368,19 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 	if t, ok := kwargs["timeout"]; ok {
 		switch v := t.(type) {
 		case nil:
-			r.timeout, r.hasTimeout = 0, false
+			r.timeout = auxUniformTimeouts(0, false)
 		case float64:
-			r.timeout, r.hasTimeout = v, true
+			r.timeout = auxUniformTimeouts(v, true)
 		case float32:
-			r.timeout, r.hasTimeout = float64(v), true
+			r.timeout = auxUniformTimeouts(float64(v), true)
 		case int:
-			r.timeout, r.hasTimeout = float64(v), true
+			r.timeout = auxUniformTimeouts(float64(v), true)
 		case int64:
-			r.timeout, r.hasTimeout = float64(v), true
+			r.timeout = auxUniformTimeouts(float64(v), true)
 		case time.Duration:
-			r.timeout, r.hasTimeout = v.Seconds(), true
+			r.timeout = auxUniformTimeouts(v.Seconds(), true)
+		case pyhttpx.Timeout:
+			r.timeout = auxPhaseTimeouts(v)
 		default:
 			return nil, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", pyrepr.Repr(v))
 		}
@@ -446,20 +496,27 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 	target.RawQuery = q.Encode()
 	attemptCtx, cancel := context.WithCancel(ctx)
 	stream := &auxSDKStream{cancel: cancel}
-	attemptCtx = httptrace.WithClientTrace(attemptCtx, &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
-		stream.mu.Lock()
-		stream.conn = info.Conn
-		stream.mu.Unlock()
-	}})
+	idle := newAuxIdleTimer(r.timeout.pool, cancel)
+	attemptCtx = httptrace.WithClientTrace(attemptCtx, &httptrace.ClientTrace{
+		DNSStart:     func(httptrace.DNSStartInfo) { idle.arm(r.timeout.connect) },
+		ConnectStart: func(string, string) { idle.arm(r.timeout.connect) },
+		GotConn: func(info httptrace.GotConnInfo) {
+			stream.mu.Lock()
+			stream.conn = info.Conn
+			stream.mu.Unlock()
+			idle.arm(r.timeout.write)
+		},
+		WroteRequest: func(httptrace.WroteRequestInfo) { idle.arm(r.timeout.read) },
+	})
 	httpReq, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, target.String(), bytes.NewReader(r.body))
 	if err != nil {
+		idle.retire()
 		cancel()
 		return nil, nil, false, err
 	}
 	c.applyHeaders(httpReq, key, r, retries)
-	idle := newAuxIdleTimer(r.timeout, r.hasTimeout, cancel)
 	resp, err := c.requestHTTPClient().Do(httpReq)
-	idle.stop()
+	idle.retire()
 	if err != nil {
 		cancel()
 		if ctx.Err() != nil {
@@ -489,12 +546,12 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 	}
 	if r.stream {
 		stream.resp = resp
-		stream.idle = newAuxIdleTimer(r.timeout, r.hasTimeout, func() { _ = resp.Body.Close() })
+		stream.idle = newAuxIdleTimer(r.timeout.read, func() { _ = resp.Body.Close() })
 		stream.idle.stop()
 		stream.lines = bufio.NewReaderSize(resp.Body, 64*1024)
 		return stream, resp.Header, false, nil
 	}
-	body := &auxIdleReader{r: resp.Body, idle: newAuxIdleTimer(r.timeout, r.hasTimeout, cancel)}
+	body := &auxIdleReader{r: resp.Body, idle: newAuxIdleTimer(r.timeout.read, cancel)}
 	data, err := io.ReadAll(body)
 	body.idle.stop()
 	_ = resp.Body.Close()
@@ -629,36 +686,71 @@ func auxIsTimeoutErr(err error) bool {
 	return errors.As(err, &ne) && ne.Timeout()
 }
 
-// Read inactivity timer that runs its action once the timeout passes without progress
+// Phase inactivity timer that runs its action once the phase limit passes without progress
 type auxIdleTimer struct {
 	mu      sync.Mutex
 	t       *time.Timer
-	d       time.Duration
+	limit   auxPhaseLimit
+	action  func()
+	retired bool
 	didFire bool
 }
 
-func newAuxIdleTimer(seconds float64, enabled bool, action func()) *auxIdleTimer {
-	it := &auxIdleTimer{}
-	if !enabled {
-		return it
-	}
-	it.d = time.Duration(seconds * float64(time.Second))
-	it.t = time.AfterFunc(it.d, func() {
-		it.mu.Lock()
-		it.didFire = true
-		it.mu.Unlock()
-		action()
-	})
+func newAuxIdleTimer(limit auxPhaseLimit, action func()) *auxIdleTimer {
+	it := &auxIdleTimer{action: action}
+	it.arm(limit)
 	return it
 }
 
+func (it *auxIdleTimer) fire() {
+	it.mu.Lock()
+	it.didFire = true
+	it.mu.Unlock()
+	it.action()
+}
+
+// Restarts the countdown under the limit of the phase now running, a phase without a limit stops it
+func (it *auxIdleTimer) arm(limit auxPhaseLimit) {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	if it.retired {
+		return
+	}
+	it.limit = limit
+	if !limit.on {
+		if it.t != nil {
+			it.t.Stop()
+		}
+		return
+	}
+	if it.t == nil {
+		it.t = time.AfterFunc(limit.d, it.fire)
+		return
+	}
+	it.t.Reset(limit.d)
+}
+
 func (it *auxIdleTimer) reset() {
-	if it.t != nil {
-		it.t.Reset(it.d)
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	if it.t != nil && it.limit.on {
+		it.t.Reset(it.limit.d)
 	}
 }
 
 func (it *auxIdleTimer) stop() {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	if it.t != nil {
+		it.t.Stop()
+	}
+}
+
+// Stops the timer for good so a late phase callback never restarts it
+func (it *auxIdleTimer) retire() {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	it.retired = true
 	if it.t != nil {
 		it.t.Stop()
 	}
@@ -836,7 +928,7 @@ func (s *auxSDKStream) Next(ctx context.Context) (map[string]any, error) {
 		var data any
 		if err := json.Unmarshal([]byte(ev.data), &data); err != nil {
 			s.finish()
-			return nil, &AuxTransportError{Class: "JSONDecodeError", Message: err.Error(), Err: err}
+			return nil, &AuxTransportError{Class: "JSONDecodeError", Message: err.Error(), Err: err, Doc: ev.data}
 		}
 		m, isMap := data.(map[string]any)
 		if strings.HasPrefix(ev.event, "thread.") {
@@ -946,8 +1038,12 @@ type AuxTransportError struct {
 	Class   string
 	Message string
 	Err     error
+	Doc     string
+	Request *FailedStreamRequest
 }
 
-func (e *AuxTransportError) Error() string { return e.Message }
-func (e *AuxTransportError) Unwrap() error { return e.Err }
-func (e *AuxTransportError) Timeout() bool { return strings.HasSuffix(e.Class, "Timeout") }
+func (e *AuxTransportError) Error() string                       { return e.Message }
+func (e *AuxTransportError) Unwrap() error                       { return e.Err }
+func (e *AuxTransportError) PyTypeName() string                  { return e.Class }
+func (e *AuxTransportError) FailedRequest() *FailedStreamRequest { return e.Request }
+func (e *AuxTransportError) Timeout() bool                       { return strings.HasSuffix(e.Class, "Timeout") }

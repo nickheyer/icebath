@@ -208,6 +208,9 @@ func outputTail(s *ProcessSession, n int) string {
 	return StripANSI(tailChars(s.OutputBuffer, n))
 }
 
+// OutputTail is the last n characters of a session output buffer
+func OutputTail(s *ProcessSession, n int) string { return outputTail(s, n) }
+
 // Output sized by the session's completion_output_chars plus output_cut when trimmed
 func completionOutput(s *ProcessSession) map[string]any {
 	limit := s.CompletionOutputChars

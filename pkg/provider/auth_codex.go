@@ -387,6 +387,13 @@ var importCodexCLITokensFn = importCodexCLITokens
 // Live quota probe the persisted entry path goes through, swappable so tests script the usage endpoint
 var probeCodexQuotaRestoredFn = probeCodexQuotaRestored
 
+// SetCodexQuotaProbe swaps the live quota probe and returns the function that puts the previous one back
+func SetCodexQuotaProbe(fn func(env PoolEnv, token, baseURL string) (bool, bool)) func() {
+	prev := probeCodexQuotaRestoredFn
+	probeCodexQuotaRestoredFn = fn
+	return func() { probeCodexQuotaRestoredFn = prev }
+}
+
 // Client for Codex OAuth and probe endpoints racing address families with the proxy env normalized
 func codexHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: oauthTransport(oauthVerify{TLS: PlatformTLSConfig()})}
@@ -736,6 +743,11 @@ func resolveCodexRuntimeCredentials(env PoolEnv, opts CodexResolveOptions) (map[
 		accessToken = stripped(tokens["access_token"])
 	}
 	return codexRuntimeResult(env, accessToken, "icebath-auth-store", data.lastRefresh, ""), nil
+}
+
+// Exported Codex runtime credential resolution for the agent client refresh
+func ResolveCodexRuntimeCredentials(env PoolEnv, opts CodexResolveOptions) (map[string]any, error) {
+	return resolveCodexRuntimeCredentials(env, opts)
 }
 
 // Pool entry frozen by a 429 or quota stop rather than an auth failure

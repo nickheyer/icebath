@@ -26,6 +26,10 @@ type streamFake struct {
 	requestID                 string
 	subagent                  bool
 	fallbackIndex             int
+	streamedText              string
+	suppressed                []string
+	warnings                  bool
+	firstChunkAt              float64
 }
 
 func (a *fakeChatAgent) st() *streamFake {
@@ -80,6 +84,32 @@ func (a *fakeChatAgent) DisableStreaming()           { a.st().streamingDisabled 
 func (a *fakeChatAgent) CurrentAPIRequestID() string { return a.st().requestID }
 func (a *fakeChatAgent) IsSubagent() bool            { return a.st().subagent }
 func (a *fakeChatAgent) FallbackIndex() int          { return a.st().fallbackIndex }
+func (a *fakeChatAgent) CurrentStreamedAssistantText() string {
+	s := a.st()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.streamedText
+}
+func (a *fakeChatAgent) RouteSuppressedStreamText(text string) {
+	s := a.st()
+	s.mu.Lock()
+	s.suppressed = append(s.suppressed, text)
+	s.mu.Unlock()
+}
+func (a *fakeChatAgent) ResetStreamDeliveryTracking() {
+	s := a.st()
+	s.mu.Lock()
+	s.streamedText = ""
+	s.mu.Unlock()
+}
+func (a *fakeChatAgent) WarningPresentationEnabled() bool { return a.st().warnings }
+func (a *fakeChatAgent) LogPrefix() string                { return "" }
+func (a *fakeChatAgent) SetLastAPIFirstChunkAt(at float64) {
+	s := a.st()
+	s.mu.Lock()
+	s.firstChunkAt = at
+	s.mu.Unlock()
+}
 
 func TestStreamFinalTextReadsChoicesContentAndParts(t *testing.T) {
 	cases := []struct {

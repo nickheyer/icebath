@@ -129,8 +129,9 @@ func collapseWidths(widths []int, wrapable []bool, maxWidth int) []int {
 // Column measurement with its one cell padding on each side, clamped like rich _measure_column
 func (t *Table) measureColumn(i, maxWidth int) measurement {
 	col := t.Columns[i]
+	pad := 2 * t.pad()
 	if col.Width > 0 {
-		w := min(col.Width+2, maxWidth)
+		w := min(col.Width+pad, maxWidth)
 		return measurement{w, w}
 	}
 	cells := []string{Escape(col.Header)}
@@ -144,12 +145,12 @@ func (t *Table) measureColumn(i, maxWidth int) measurement {
 	m := measurement{0, 0}
 	for _, c := range cells {
 		cm := measureMarkup(c)
-		m.min = max(m.min, cm.min+2)
-		m.max = max(m.max, cm.max+2)
+		m.min = max(m.min, cm.min+pad)
+		m.max = max(m.max, cm.max+pad)
 	}
 	m.min, m.max = min(m.min, maxWidth), min(m.max, maxWidth)
 	if col.MaxWidth > 0 {
-		limit := col.MaxWidth + 2
+		limit := col.MaxWidth + pad
 		m.min, m.max = min(m.min, limit), min(m.max, limit)
 	}
 	return m
@@ -223,7 +224,8 @@ func cellLines(markup, style string, width int, col Column, color bool) []string
 
 // Lines of the table fitted to width cells as rich renders it on a console that wide
 func (t *Table) RenderWidth(color bool, width int) string {
-	extra := len(t.Columns) + 1
+	pad := t.pad()
+	extra := t.edgeCells()
 	widths := t.columnWidths(width - extra)
 	tableWidth := extra
 	for _, w := range widths {
@@ -236,7 +238,11 @@ func (t *Table) RenderWidth(color bool, width int) string {
 		}
 		return left + strings.Join(parts, mid) + right
 	}
+	gap := strings.Repeat(" ", pad)
 	row := func(edge string, cells []string, header bool) []string {
+		if t.NoBox {
+			edge = ""
+		}
 		split := make([][]string, len(widths))
 		height := 1
 		for i, w := range widths {
@@ -249,7 +255,7 @@ func (t *Table) RenderWidth(color bool, width int) string {
 			if header {
 				style = "bold"
 			}
-			split[i] = cellLines(text, style, w-2, col, color)
+			split[i] = cellLines(text, style, w-2*pad, col, color)
 			height = max(height, len(split[i]))
 		}
 		out := make([]string, height)
@@ -257,11 +263,11 @@ func (t *Table) RenderWidth(color bool, width int) string {
 			var b strings.Builder
 			b.WriteString(edge)
 			for i, w := range widths {
-				cell := strings.Repeat(" ", w-2)
+				cell := strings.Repeat(" ", w-2*pad)
 				if r < len(split[i]) {
 					cell = split[i][r]
 				}
-				b.WriteString(" " + cell + " " + edge)
+				b.WriteString(gap + cell + gap + edge)
 			}
 			out[r] = b.String()
 		}
@@ -276,17 +282,25 @@ func (t *Table) RenderWidth(color bool, width int) string {
 			lines = append(lines, strings.Repeat(" ", left)+l+strings.Repeat(" ", max(0, tableWidth-n-left)))
 		}
 	}
-	lines = append(lines, rule("┏", "━", "┳", "┓"))
-	headers := make([]string, len(t.Columns))
-	for i, c := range t.Columns {
-		headers[i] = Escape(c.Header)
+	if !t.NoBox {
+		lines = append(lines, rule("┏", "━", "┳", "┓"))
 	}
-	lines = append(lines, row("┃", headers, true)...)
-	lines = append(lines, rule("┡", "━", "╇", "┩"))
+	if !t.HideHeader {
+		headers := make([]string, len(t.Columns))
+		for i, c := range t.Columns {
+			headers[i] = Escape(c.Header)
+		}
+		lines = append(lines, row("┃", headers, true)...)
+		if !t.NoBox {
+			lines = append(lines, rule("┡", "━", "╇", "┩"))
+		}
+	}
 	for _, r := range t.Rows {
 		lines = append(lines, row("│", r, false)...)
 	}
-	lines = append(lines, rule("└", "─", "┴", "┘"))
+	if !t.NoBox {
+		lines = append(lines, rule("└", "─", "┴", "┘"))
+	}
 	return strings.Join(lines, "\n")
 }
 

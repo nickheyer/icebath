@@ -39,7 +39,7 @@ func historyWithCheckpoint() []*state.Message {
 	return append(msgs, &state.Message{Role: "user", Content: "follow-up after checkpoint"})
 }
 
-func TestNativePreflightIsNotOfferedOffTheResponsesRoute(t *testing.T) {
+func TestReturnsNoneWhenApiModeIsNotCodexResponses(t *testing.T) {
 	client, err := newChatCompletionsClient(Route{Provider: "openrouter", Model: "gpt-5.6", BaseURL: "https://openrouter.ai/api/v1", APIKey: "tok"})
 	if err != nil {
 		t.Fatal(err)
@@ -51,14 +51,14 @@ func TestNativePreflightIsNotOfferedOffTheResponsesRoute(t *testing.T) {
 	}
 }
 
-func TestNativePreflightIsIneligibleWhenNativeCompactionIsDisabled(t *testing.T) {
+func TestReturnsNoneWhenNativeCompactionIsDisabled(t *testing.T) {
 	ctx, estimator := nativePreflightClient(t, false)
 	if _, eligible := estimator.EstimateNativePreflightTokens(ctx, &Request{Messages: historyWithCheckpoint()}, "", nil); eligible {
 		t.Fatal("disabled native compaction leaves the generic estimate in charge")
 	}
 }
 
-func TestNativePreflightEstimateIsFarBelowTheDurableTranscript(t *testing.T) {
+func TestPrunedEstimateIsFarBelowDurableTranscript(t *testing.T) {
 	ctx, estimator := nativePreflightClient(t, true)
 	messages := historyWithCheckpoint()
 	generic := EstimateRequestTokens(ctx, messages, "", nil, true)

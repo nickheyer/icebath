@@ -24,3 +24,14 @@ func TestModelConsumesThoughtSignatureIsTheRouteSignatureRule(t *testing.T) {
 		t.Fatal("gemini model or mistral route misclassified")
 	}
 }
+
+func TestEffortLadderIndexMatchesTheLadder(t *testing.T) {
+	for _, level := range []string{"none", "high", "ultra", "bogus", ""} {
+		if EffortLadderIndex(level) != ladderIndex(level) {
+			t.Fatalf("export differs for %q", level)
+		}
+	}
+	if EffortLadderIndex("xhigh") <= EffortLadderIndex("high") || EffortLadderIndex("bogus") != -1 {
+		t.Fatal("ladder order")
+	}
+}

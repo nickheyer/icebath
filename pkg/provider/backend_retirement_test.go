@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // Swaps the registered idle proof for the test and restores it afterwards
@@ -120,5 +121,98 @@ func TestRetirementProbeFailuresAreIndeterminate(t *testing.T) {
 				t.Fatal("refused prepare left admission frozen")
 			}
 		})
+	}
+}
+
+func TestPrepareFreezesAdmissionWithoutBlockingOtherWorkLocks(t *testing.T) {
+	fence := NewRetirementFence()
+	probing, release, attempted := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	withRetirementIdleProof(t, func() (map[string]any, error) {
+		close(probing)
+		select {
+		case <-release:
+		case <-time.After(10 * time.Second):
+			panic("release never set")
+		}
+		return map[string]any{"idle": nil}, nil
+	})
+	preparing := make(chan map[string]any, 1)
+	go func() { preparing <- fence.Prepare() }()
+	arriving := make(chan bool, 1)
+	func() {
+		defer close(release)
+		select {
+		case <-probing:
+		case <-time.After(10 * time.Second):
+			t.Fatal("probe never started")
+		}
+		go func() {
+			admitted, done := fence.Work()
+			close(attempted)
+			done()
+			arriving <- admitted
+		}()
+		select {
+		case <-attempted:
+		case <-time.After(3 * time.Second):
+			t.Fatal("admission must not wait on a ledger lock held by its own caller")
+		}
+		if <-arriving {
+			t.Fatal("work admitted across the prepare freeze")
+		}
+	}()
+	if got := <-preparing; !reflect.DeepEqual(got, map[string]any{"ok": false, "idle": nil}) {
+		t.Fatalf("prepare %#v", got)
+	}
+	admitted, done := fence.Work()
+	defer done()
+	if !admitted {
+		t.Fatal("unreadable probe left a fence behind")
+	}
+}
+
+func TestProbeFailureRefusesThePermitWithoutWedgingAdmission(t *testing.T) {
+	fence := NewRetirementFence()
+	withRetirementIdleProof(t, func() (map[string]any, error) { return nil, errors.New("ledger unavailable") })
+	if got := fence.Prepare(); !reflect.DeepEqual(got, map[string]any{"ok": false, "idle": nil}) {
+		t.Fatalf("prepare %#v", got)
+	}
+	admitted, done := fence.Work()
+	defer done()
+	if !admitted {
+		t.Fatal("probe failure wedged admission")
+	}
+}
+
+func TestBackendRetirementReservesOnTheCurrentProcessFence(t *testing.T) {
+	withRetirementIdleProof(t, idleTrueProof)
+	prev := Retirement
+	t.Cleanup(func() { Retirement = prev })
+	Retirement = NewRetirementFence()
+	work := BackendRetirement()
+	if !work.Acquire() || Retirement.ActiveCount() != 1 {
+		t.Fatalf("acquire missed the process fence, active %d", Retirement.ActiveCount())
+	}
+	if got := Retirement.Prepare(); !reflect.DeepEqual(got, map[string]any{"ok": false, "idle": false}) {
+		t.Fatalf("prepare with work in flight %#v", got)
+	}
+	work.Release()
+	token, _ := Retirement.Prepare()["token"].(string)
+	if token == "" {
+		t.Fatal("idle fence refused the permit")
+	}
+	if admitted, done := work.Work(); admitted {
+		done()
+		t.Fatal("work admitted while a permit is outstanding")
+	}
+	swapped := NewRetirementFence()
+	Retirement = swapped
+	admitted, done := work.Work()
+	if !admitted || swapped.ActiveCount() != 1 {
+		t.Fatal("reservation did not follow the swapped process fence")
+	}
+	done()
+	if swapped.ActiveCount() != 0 {
+		t.Fatalf("release left %d admitted", swapped.ActiveCount())
 	}
 }

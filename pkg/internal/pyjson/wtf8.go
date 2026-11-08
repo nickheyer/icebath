@@ -55,6 +55,9 @@ func DecodeWTF8(data []byte) (any, error) { return decodeWTF8JSON(data, false, f
 // Decodes JSON with objects as insertion ordered dicts and numbers as json.Number text
 func DecodeWTF8Ordered(data []byte) (any, error) { return decodeWTF8JSON(data, true, true) }
 
+// Decodes JSON into plain maps with numbers as json.Number text so ints stay apart from floats
+func DecodeWTF8Numbers(data []byte) (any, error) { return decodeWTF8JSON(data, true, false) }
+
 // Nesting limit encoding/json enforces on arrays and objects
 const wtf8MaxJSONDepth = 10000
 

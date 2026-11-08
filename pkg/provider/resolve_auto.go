@@ -347,6 +347,9 @@ func detectAPIModeForURL(baseURL string) APIMode {
 	return ""
 }
 
+// DetectAPIModeForURL is the api mode a base url implies by its path and host, empty when none
+func DetectAPIModeForURL(baseURL string) APIMode { return detectAPIModeForURL(baseURL) }
+
 // Validated api mode from config, alias spellings canonicalized and registered dialects accepted
 func (r *resolver) parseAPIMode(raw any) APIMode {
 	s, ok := raw.(string)
@@ -361,6 +364,11 @@ func (r *resolver) parseAPIMode(raw any) APIMode {
 		return APIMode(normalized)
 	}
 	return ""
+}
+
+// ParseConfigAPIMode is the validated api_mode of a config value, empty when invalid
+func ParseConfigAPIMode(ctx context.Context, raw any) string {
+	return string(modelsResolver(ctx).parseAPIMode(raw))
 }
 
 // Api mode when no explicit mode applies, URL detection, then the declared transport, then chat
@@ -384,6 +392,11 @@ func (r *resolver) nousAnthropicWire() string {
 		return cfgString(nous["anthropic_wire"])
 	}
 	return ""
+}
+
+// NousAPIMode is the Portal wire of a model under the configured nous.anthropic_wire
+func NousAPIMode(ctx context.Context, model string) string {
+	return string(NousMode(model, modelsResolver(ctx).nousAnthropicWire()))
 }
 
 // Whether the base URL is the provider's own anthropic protocol endpoint

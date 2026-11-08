@@ -116,6 +116,12 @@ func resolveXAIHTTPCredentialsRefreshed(env *Env, apiKeyHint string) xaiHTTPCred
 	return resolveXAIHTTPCredentialsWith(env, false, true, apiKeyHint)
 }
 
+// Provider, bearer key and base url after force refreshing the pool entry that issued the hinted key
+func ResolveXAIHTTPCredentialsRefreshed(env *Env, apiKeyHint string) (provider, apiKey, baseURL string) {
+	c := resolveXAIHTTPCredentialsRefreshed(env, apiKeyHint)
+	return c.Provider, c.APIKey, c.BaseURL
+}
+
 func resolveXAIHTTPCredentialsWith(env *Env, preferAPIKey, forceRefresh bool, apiKeyHint string) xaiHTTPCredentials {
 	if preferAPIKey {
 		if explicit := strings.TrimSpace(resolveExplicitXAIAPIKey(env)); explicit != "" {

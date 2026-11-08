@@ -1,0 +1,113 @@
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/observability"
+	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/spf13/cobra"
+)
+
+// Mirrors the import time sequence of hermes_cli/main.py and then its main()
+func main() {
+	dispatchChildEntries()
+	installProcessWiring()
+	if restoreInterruptedPull() {
+		relaunchAfterRestore()
+	}
+	normalizeHomeEnv()
+	argv := os.Args[1:]
+	if argvIsGatewayRun(argv) {
+		armStartupWatchdog()
+	}
+	suppressMouseResidueEarly(argv)
+	if tryFastVersion(argv) {
+		exit(0)
+	}
+	argv = applyProfileOverride(argv)
+	home.ExportScratchTmpEnv()
+	if len(argv) > 0 && argv[0] == "pm" {
+		exit(runCLI(argv))
+	}
+	ensureBinLaunchers()
+	loadDotenv()
+	forceIPv4 := applyEarlyConfig()
+	if serverProcess(argv) {
+		applyMallocArenaMax()
+	}
+	setupLogging(argv)
+	if forceIPv4 {
+		home.ApplyIPv4Preference(true)
+	}
+	exit(run(argv))
+}
+
+// The body of main.py main(), the exit status of the dispatched command
+func run(argv []string) int {
+	setProcessTitle()
+	warnIfUnsupervisedPID1(os.Getpid())
+	advertiseAgentEnv()
+	installTruststore()
+	cleanupQuarantinedExes()
+	recoverUpdateDebtsOnStartup()
+	if firstPositional(argv) != "update" {
+		maybeRunBootBootstrap(pm.InstallRoot())
+	}
+	if problem := checkRuntime(pm.InstallRoot()); problem != "" {
+		fmt.Fprintln(os.Stderr, "⚠ "+problem)
+	}
+	for _, fast := range []func([]string) (bool, int){tryTermuxFastTUILaunch, tryTermuxFastCLILaunch, tryFastServeLaunch, tryFastChatLaunch} {
+		if handled, code := fast(argv); handled {
+			return code
+		}
+	}
+	if info := containerExecInfo(); info != nil {
+		execInContainer(info, os.Args[1:])
+		return 1
+	}
+	return runCLI(argv)
+}
+
+// Parses argv with the cobra tree and runs the bound handler, the pre run doing main()'s post parse steps
+func runCLI(argv []string) int {
+	cli := newCLI()
+	cli.Root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		return beforeDispatch(cli, cmd, args)
+	}
+	code, msg := commands.ExitCode(cli.Execute(argv))
+	if msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
+	}
+	return code
+}
+
+// Version flag, yolo chokepoint, agent startup discovery, oneshot and the process surface before a handler runs
+func beforeDispatch(cli *commands.CLI, cmd *cobra.Command, args []string) error {
+	if v, _ := cli.Root.Flags().GetBool("version"); v {
+		printVersionInfo(true)
+		return &commands.ExitError{Code: 0}
+	}
+	a := parsedArgs(cli, cmd, args)
+	if a.Yolo {
+		os.Setenv("ICEBATH_YOLO_MODE", "1")
+	}
+	prepareAgentStartup(a)
+	if a.Oneshot != "" {
+		return &commands.ExitError{Code: runOneshotFromArgs(a)}
+	}
+	if a.Command == "" {
+		observability.SetProcessSurface(nil)
+	} else {
+		observability.SetProcessSurface(a.Command)
+	}
+	return nil
+}
+
+// Runs the registered exit hooks and ends the process with code
+func exit(code int) {
+	runAtExit()
+	os.Exit(code)
+}

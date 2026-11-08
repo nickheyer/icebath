@@ -194,8 +194,11 @@ func retryInvalidResponse(ctx context.Context, a *AIAgent, s *LoopState, errorDe
 
 	soft, softCtx := classifyCodexSoftFailure(a, s.Response)
 	if soft != nil && (soft.Reason == provider.ReasonRateLimit || soft.Reason == provider.ReasonBilling || soft.IsAuth()) {
-		var recovered bool
-		recovered, s.Retry.HasRetried429 = a.recoverWithCredentialPool(ctx, nil, s.Retry.HasRetried429, soft.Reason, softCtx, soft.BillingUnverified())
+		recovered, retried429, err := a.recoverWithCredentialPool(ctx, nil, s.Retry.HasRetried429, soft.Reason, softCtx, soft.BillingUnverified())
+		if err != nil {
+			return PhaseVerdict{}, err
+		}
+		s.Retry.HasRetried429 = retried429
 		if recovered {
 			a.BufferDiagnosticStatus(fmt.Sprintf("🔄 Codex soft failure (%s) — switched to the next pool credential, retrying...", soft.Reason))
 			return PhaseVerdict{Action: "continue"}, nil

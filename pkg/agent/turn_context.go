@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/observability"
@@ -61,13 +62,17 @@ type turnContextState struct {
 	incompleteScratchpadRetries                  int
 	thinkingPrefillRetries                       int
 	postToolEmptyRetried                         bool
+	droppedToolcallRetries                       int
 	lastContentWithTools                         any
 	lastContentToolsAllHousekeeping              bool
 	reusedResponseText                           *string
+	responseWasPreviewed                         bool
+	silenceMarkerNeedsReply                      bool
 	mutePostResponse                             bool
 	unicodeSanitizationPasses                    int
 	verificationStopNudges, preVerifyNudges      int
-	lspTurnEndNotes                              int
+	lspTurnEndNotes, kanbanStopNudges            int
+	resolvedIsCoding                             *bool
 	currentTurnTimestamp                         float64
 	compressionWarning                           any
 	deferredTitleUpgrade                         any
@@ -78,6 +83,7 @@ type turnContextState struct {
 	inflightTurnStarted                          float64
 	reviewDeferCompactionBeforeFirstResponse     bool
 	turnReceivedProviderResponse                 bool
+	turnPreflightDisplaySnapshot                 *int
 	titleFailureCallback, onSessionTitle         any
 	authMode                                     string
 }
@@ -242,10 +248,10 @@ func maybeTitleSessionAtTurnStart(ctx context.Context, a *AIAgent, messages []*s
 	if failure == nil {
 		failure = a.emitAuxiliaryFailure
 	}
-	upgrade, started := maybeAutoTitle(ctx, a.sessionDB, a.sessionID, userText, autoTitleOptions{
+	upgrade, started := maybeAutoTitleFn(ctx, a.sessionDB, a.sessionID, userText, autoTitleOptions{
 		ConversationHistory: messages, FailureCallback: failure, MainRuntime: mainRuntime, TitleCallback: a.onSessionTitle,
 		RuntimeValidator: func() bool { return a.model == mainRuntime["model"] && a.provider == mainRuntime["provider"] },
-		TitlePreview:     titlePreview,
+		TitlePreview:     titlePreview, Env: a.env,
 	})
 	if upgrade != nil && !started {
 		a.deferredTitleUpgrade = upgrade
@@ -413,7 +419,7 @@ func refreshMCPToolsBetweenTurns(ctx context.Context, a *AIAgent) {
 		}
 	}()
 	mcp.AdoptLateConnections(ctx, a)
-	if !a.skipMCPRefresh && hasRegisteredMCPTools() {
+	if !a.skipMCPRefresh && mcp.HasRegisteredTools() {
 		mcp.RefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{Quiet: true, PreservePrefix: true})
 	}
 }
@@ -454,17 +460,7 @@ func bindTurnIdentity(a *AIAgent, taskID string, streamCallback func(string), pe
 
 // Resets the per turn retry counters, guardrails, budgets and scrubbers and replays pending notices
 func resetPerTurnAgentState(ctx context.Context, a *AIAgent) {
-	a.invalidToolRetries, a.invalidJSONRetries, a.emptyContentRetries = 0, 0, 0
-	a.incompleteScratchpadRetries, a.codexIncompleteRetries, a.codexReasoningOnlyStreak = 0, 0, 0
-	a.thinkingPrefillRetries, a.postToolEmptyRetried = 0, false
-	a.lastContentWithTools, a.lastContentToolsAllHousekeeping = nil, false
-	a.reusedResponseText = nil
-	a.mutePostResponse, a.unicodeSanitizationPasses = false, 0
-	a.toolGuardrailHaltDecision = nil
-	observability.ResetHarnessTurn(a)
-	a.iterationBudgetWarningInjected = false
-	a.runBudgetWrapupInjected, a.verificationStopNudges = false, 0
-	a.preVerifyNudges, a.lspTurnEndNotes = 0, 0
+	applyPerTurnResetState(a)
 	a.turnFailedFileMutations = NewFileMutationFailures()
 	a.turnFileMutationPaths = map[string]bool{}
 	a.toolGuardrails.ResetForTurn()
@@ -535,7 +531,7 @@ func stageTurnUserMessage(a *AIAgent, userMessage, persistUserMessage any, persi
 	return userMsg, pending
 }
 
-// Hydrates the todo store, usage anchor, native checkpoint and turn counters from restored history
+// Hydrates the task list store, usage anchor, native checkpoint and turn counters from restored history
 func hydrateFromHistory(ctx context.Context, a *AIAgent, history []map[string]any) {
 	if len(history) == 0 {
 		return
@@ -609,7 +605,7 @@ func ensureSessionRow(a *AIAgent, pendingCLIMessage map[string]any) {
 	persistUnderLock(a, a.ensureDBSession, "Turn-start session row creation failed for session=%s", pendingCLIMessage)
 }
 
-// Stores a vetoed prompt as the withheld placeholder, keeping the typed text only in display metadata
+// Stores a vetoed prompt as the withheld stand-in text, keeping the typed text only in display metadata
 func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.Message, typed any) {
 	content := turnUserMsg.Content
 	var withheld any
@@ -724,6 +720,7 @@ func bindInterruptScope(ctx context.Context, a *AIAgent) context.Context {
 		ctx = tools.WithWorker(ctx, id)
 	}
 	a.executionThreadID = int64(id)
+	a.executionGoroutineID.Store(pythread.GoroutineID())
 	tools.SetInterrupt(id, false, "")
 	if a.interruptRequested {
 		tools.SetInterrupt(id, true, a.toolInterruptReason)
@@ -846,7 +843,9 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	setLoggingSessionContext(a.sessionID)
 	skills.SetCurrentWriteOrigin(a.env, pyStrOr(a.memoryWriteOrigin, "assistant_tool"))
 	skills.SetReviewAttended(a.env, a.reviewAttended)
-	a.restorePrimaryRuntime(ctx)
+	if _, err := a.restorePrimaryRuntime(ctx); err != nil {
+		return nil, err
+	}
 	ctx = publishRuntimeMain(ctx, a)
 	refreshMCPToolsBetweenTurns(ctx, a)
 	userMessage, persistUserMessage := r.UserMessage, r.PersistUserMessage
@@ -1120,4 +1119,19 @@ func turnAuthorMap(author *pyjson.Object) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// Retry counters, guardrail halt, harness metrics and budget flags every turn starts from
+func applyPerTurnResetState(a *AIAgent) {
+	a.invalidToolRetries, a.invalidJSONRetries, a.emptyContentRetries = 0, 0, 0
+	a.incompleteScratchpadRetries, a.codexIncompleteRetries, a.codexReasoningOnlyStreak = 0, 0, 0
+	a.thinkingPrefillRetries, a.postToolEmptyRetried = 0, false
+	a.lastContentWithTools, a.lastContentToolsAllHousekeeping = nil, false
+	a.reusedResponseText = nil
+	a.mutePostResponse, a.unicodeSanitizationPasses = false, 0
+	a.toolGuardrailHaltDecision = nil
+	observability.ResetHarnessTurn(a)
+	a.iterationBudgetWarningInjected = false
+	a.runBudgetWrapupInjected, a.verificationStopNudges = false, 0
+	a.preVerifyNudges, a.lspTurnEndNotes = 0, 0
 }

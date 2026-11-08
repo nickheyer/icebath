@@ -482,3 +482,21 @@ func (h *recordingHandler) warnings(substr string) int {
 	}
 	return n
 }
+
+func TestProcessCreateTimeAndPidAliveMatchesWrappers(t *testing.T) {
+	identityFixture(t, map[int]float64{4242: 1000.5}, 4242)
+	if ct := ProcessCreateTime(0); ct == nil || *ct != 1000.5 {
+		t.Fatalf("self create time %v", ct)
+	}
+	if ProcessCreateTime(5151) != nil {
+		t.Fatal("absent pid has a create time")
+	}
+	birth := 1000.5
+	if alive, known := PidAliveMatches(4242, &birth, false, nil); !alive || !known {
+		t.Fatalf("live pid %v %v", alive, known)
+	}
+	other := 990.0
+	if alive, known := PidAliveMatches(4242, &other, false, nil); alive || !known {
+		t.Fatalf("recycled pid %v %v", alive, known)
+	}
+}

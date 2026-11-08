@@ -64,10 +64,12 @@ func applyBedrockBinding(ctx context.Context, a *AIAgent, baseURL string, mode p
 		return err
 	}
 	a.bedrockRegion, a.bedrockGuardrailConfig = b.Region, b.GuardrailConfig
-	a.apiKey = b.APIKey
+	a.client, a.clientKwargs = nil, map[string]any{}
+	a.apiKey, a.anthropicAPIKey = b.APIKey, b.APIKey
 	a.setBaseURL(b.BaseURL)
+	a.anthropicBaseURL = b.BaseURL
 	a.isAnthropicOAuth = b.IsOAuth
-	a.client = nil
+	a.anthropicClient = nil
 	if b.Client != nil {
 		a.anthropicClient = b.Client
 	}

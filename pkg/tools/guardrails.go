@@ -1624,18 +1624,7 @@ func PathsOverlap(left, right string) bool {
 }
 
 // IsMultimodalToolResult is true for the multimodal envelope with a content list
-func IsMultimodalToolResult(value any) bool {
-	m, ok := value.(map[string]any)
-	if !ok {
-		return false
-	}
-	flag, ok := m["_multimodal"].(bool)
-	if !ok || !flag {
-		return false
-	}
-	_, isList := m["content"].([]any)
-	return isList
-}
+func IsMultimodalToolResult(value any) bool { return state.IsMultimodalToolResult(value) }
 
 func isTextPart(p any) bool {
 	m, ok := p.(map[string]any)
@@ -1652,20 +1641,7 @@ func MultimodalTextSummary(value any) string {
 		return s
 	}
 	if IsMultimodalToolResult(value) {
-		m := value.(map[string]any)
-		if summary, ok := m["text_summary"]; ok && truthy(summary) {
-			return fmt.Sprint(summary)
-		}
-		var parts []string
-		for _, p := range m["content"].([]any) {
-			if isTextPart(p) {
-				parts = append(parts, fmt.Sprint(p.(map[string]any)["text"]))
-			}
-		}
-		if len(parts) > 0 {
-			return strings.Join(parts, "\n")
-		}
-		return "[multimodal tool result]"
+		return state.MultimodalEnvelopeSummary(value)
 	}
 	b, err := pyjson.EncodeWTF8(canonicalizable(value))
 	if err != nil {

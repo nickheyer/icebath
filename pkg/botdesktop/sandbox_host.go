@@ -215,6 +215,9 @@ func userFor(e tools.Environment) (string, error) {
 	return user, nil
 }
 
+// Desktop user of the sandbox for callers outside the package
+func UserFor(e tools.Environment) (string, error) { return userFor(e) }
+
 // HOME of the desktop user inside the sandbox, where state outliving a container stop goes
 func DesktopHome(e tools.Environment) (string, error) {
 	f := factsOf(e)

@@ -94,7 +94,7 @@ func TestSettingsOnlyBlockCodexSwitchSucceedsWithoutListing(t *testing.T) {
 }
 
 func TestModelPickWithARaisingHookGetsTheDeclaredWire(t *testing.T) {
-	RegisterProvider(Profile{Name: "respdefault", BaseURL: "https://api.respdefault.test/v1", Mode: ModeCodexResponses})
+	registerTestProfile(t, Profile{Name: "respdefault", BaseURL: "https://api.respdefault.test/v1", Mode: ModeCodexResponses})
 	RegisterPerModelAPIMode("respdefault", func(model, _ string) APIMode {
 		if strings.HasPrefix(model, "broken") {
 			panic("live catalog unavailable")

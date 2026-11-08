@@ -495,6 +495,8 @@ type SessionStore struct {
 	hasActiveProcessesFn       func(sessionKey string) (bool, error)
 	writeSessionsJSON          bool
 	dbPinned                   bool
+	localAuthorityEpoch        *int64
+	localAuthorityEpochs       map[string]int64
 	pinnedDB                   SessionStoreDB
 	dbHandleCache              *RecoverableHandleCache
 	transcriptRetryMu          sync.Mutex

@@ -64,6 +64,9 @@ func stripMdv2(text string) string {
 	return cleaned
 }
 
+// MarkdownV2 escapes and markers removed for the plain text fallback
+func StripMdv2(text string) string { return stripMdv2(text) }
+
 // Chunk marker appended to a synthesized closing fence moved onto its own line
 func separateChunkIndicatorFromFence(text string) string {
 	return telegramSub(chunkIndicatorOnFenceRE, text, func(m *regexp2.Match) string {

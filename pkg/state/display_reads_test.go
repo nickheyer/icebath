@@ -109,7 +109,12 @@ func TestCompactedToolResultPaintsOnceAsItsArchivedOriginal(t *testing.T) {
 		}
 		archiveCompact(t, db, sid, compacted, ArchiveCompactOptions{})
 		paged := displayPaged(t, db, sid)
-		for i, read := range [][]map[string]any{displayResumed(t, db, sid), paged, displayConversation(t, db, sid, ConversationOptions{IncludeCompacted: true})} {
+		anchor, _ := exactInt(paged[0]["id"])
+		around, err := db.GetSessionMessagesAround(ctx, sid, anchor, 120)
+		if err != nil || around == nil {
+			t.Fatalf("around %v %v", around, err)
+		}
+		for i, read := range [][]map[string]any{displayResumed(t, db, sid), paged, displayConversation(t, db, sid, ConversationOptions{IncludeCompacted: true}), timelineMessages(around)} {
 			if got := tools(read); len(got) != 1 || got[0] != full {
 				t.Fatalf("generation %d read %d painted %d tool bodies", generation, i, len(got))
 			}

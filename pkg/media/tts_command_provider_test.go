@@ -174,17 +174,14 @@ func TestTTSCommandConfigGetters(t *testing.T) {
 }
 
 func TestTTSShellQuoteContext(t *testing.T) {
-	for _, c := range []struct{ name, tpl, want string }{
-		{"test_bare_context", "tts {output_path}", ""},
-		{"test_inside_double_quotes", `tts "{output_path}"`, `"`},
-		{"test_escaped_double_quote_inside_double", `tts "foo \" {output_path}"`, `"`},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			if got := shellQuoteContext(c.tpl, strings.Index(c.tpl, "{output_path}")); got != c.want {
-				t.Fatalf("quote context = %q", got)
-			}
-		})
+	check := func(t *testing.T, tpl, want string) {
+		if got := shellQuoteContext(tpl, strings.Index(tpl, "{output_path}")); got != want {
+			t.Fatalf("quote context = %q", got)
+		}
 	}
+	t.Run("test_bare_context", func(t *testing.T) { check(t, "tts {output_path}", "") })
+	t.Run("test_inside_double_quotes", func(t *testing.T) { check(t, `tts "{output_path}"`, `"`) })
+	t.Run("test_escaped_double_quote_inside_double", func(t *testing.T) { check(t, `tts "foo \" {output_path}"`, `"`) })
 }
 
 func commandTemplateValues(over map[string]string) map[string]string {

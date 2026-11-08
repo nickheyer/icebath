@@ -320,7 +320,7 @@ func rewriteExecuteCode(env *tools.Env, _ map[string]any, available map[string]b
 
 func init() {
 	tools.Register(tools.Def{
-		Name: "execute_code", Toolset: "code_execution", Schema: buildExecuteCodeSchema(nil, nil, ""),
+		Name: "execute_code", Toolset: "code_execution", SchemaBuilder: func() map[string]any { return buildExecuteCodeSchema(nil, nil, "") },
 		Handler: executeCodeHandler, Check: checkSandboxRequirements, Emoji: "\U0001f40d",
 		MaxResultChars: 100_000,
 	})

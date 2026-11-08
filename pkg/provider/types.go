@@ -125,6 +125,8 @@ type Response struct {
 	Raw          json.RawMessage
 	Latency      time.Duration
 	Truncated    bool
+	// Top level completion fields the wire schema does not declare, such as an agent provider's projected rows
+	Extra map[string]any
 }
 
 // Kind of incremental stream event

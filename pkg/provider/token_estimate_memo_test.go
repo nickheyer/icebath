@@ -171,7 +171,7 @@ func compressParityHistory(rows []map[string]any) []map[string]any {
 	return append(out, shallowCopies(tail)...)
 }
 
-func TestMemoizedEstimateMatchesTheReferenceAcrossIterationsCompressionAndEdits(t *testing.T) {
+func TestParityTokenMemo(t *testing.T) {
 	rng := rand.New(rand.NewSource(1234))
 	for _, n := range []int{50, 200, 500} {
 		isolateTokenMemo(t)
@@ -314,7 +314,7 @@ func TestARunningConversationLargerThanBothBoundsNeverMissesThenShedsWhenIdle(t 
 	}
 }
 
-func TestAHitRacingEvictionNeverDropsADifferentActiveEntry(t *testing.T) {
+func TestAHitRacingEvictionNeverMakesItDropADifferentActiveEntry(t *testing.T) {
 	isolateTokenMemo(t)
 	msgTokensCacheMax = 2
 	for range 200 {
@@ -342,7 +342,7 @@ func TestAHitRacingEvictionNeverDropsADifferentActiveEntry(t *testing.T) {
 	}
 }
 
-func TestIdleEntriesNeverOutnumberTheOriginalFootprint(t *testing.T) {
+func TestIdleEntriesNeverOutnumberTheMemoMainAlwaysHad(t *testing.T) {
 	isolateTokenMemo(t)
 	now := fakeMemoClock()
 	for i := range 6000 {

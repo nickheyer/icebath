@@ -247,3 +247,26 @@ func TestAnonAuthExportsAnswerLikeTheirOriginals(t *testing.T) {
 		}
 	}
 }
+
+func TestRouteCanServeModelGatesOnlyTheWelcomeHost(t *testing.T) {
+	var welcome string
+	for host := range WelcomeHosts() {
+		welcome = "https://" + host + "/v1"
+		break
+	}
+	cases := []struct {
+		provider, baseURL, model string
+		want                     bool
+	}{
+		{"openrouter", welcome, "anthropic/claude", true},
+		{"nous", "https://inference-api.nousresearch.com/v1", "Hermes-4", true},
+		{"nous", welcome, "", true},
+		{"nous", welcome, GuestModel, true},
+		{"nous", welcome, "Hermes-4", false},
+	}
+	for _, c := range cases {
+		if got := RouteCanServeModel(c.provider, c.baseURL, c.model); got != c.want {
+			t.Errorf("RouteCanServeModel(%q, %q, %q) = %v, want %v", c.provider, c.baseURL, c.model, got, c.want)
+		}
+	}
+}

@@ -258,6 +258,18 @@ func resolveAgentNonstreamWatchdogsOf(ctx context.Context, agent ChatCompletionA
 	return w, nil
 }
 
+// NonStreamWatchdogs is the resolved idle, TTFB and stale fuses of one agent request
+type NonStreamWatchdogs struct {
+	IdleEnabled, TTFBEnabled               bool
+	IdleTimeout, TTFBTimeout, StaleTimeout float64
+}
+
+// Resolved idle, TTFB and stale fuses of an agent request for callers outside the package
+func ResolveNonstreamWatchdogs(ctx context.Context, agent ChatCompletionAgent, apiKwargs map[string]any) (NonStreamWatchdogs, error) {
+	w, err := resolveAgentNonstreamWatchdogs(ctx, agent, apiKwargs)
+	return NonStreamWatchdogs{IdleEnabled: w.idleEnabled, TTFBEnabled: w.ttfbEnabled, IdleTimeout: w.idle, TTFBTimeout: w.ttfb, StaleTimeout: w.stale}, err
+}
+
 // Wall clock and poll wait of the agent request poll loop
 var (
 	agentNonStreamClock    = time.Now

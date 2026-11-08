@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"image"
@@ -119,5 +120,27 @@ func TestStripRequestImagesAndRetryStripsOnlyTheRequestCopy(t *testing.T) {
 	}
 	if stripRequestImagesAndRetry(a, nil) {
 		t.Fatal("nil request retried")
+	}
+}
+
+func TestActivateCodexAppServerFallbackSkipsTurnsTheChainCannotTake(t *testing.T) {
+	ctx := context.Background()
+	a := &AIAgent{provider: "openai-codex", model: "gpt-5.5"}
+	if activateCodexAppServerFallback(ctx, a, map[string]any{"error": "You've hit your usage limit (429)"}) {
+		t.Fatal("no fallback configured must not activate")
+	}
+	a.fallbackChain = []map[string]any{{"provider": "openrouter", "model": "x"}}
+	for _, result := range []map[string]any{
+		{},
+		{"error": ""},
+		{"error": "rate limit exceeded", "interrupted": true},
+		{"error": "the model printed something unexpected"},
+	} {
+		if activateCodexAppServerFallback(ctx, a, result) {
+			t.Fatalf("result %v activated a fallback", result)
+		}
+	}
+	if len(a.retryStatusBuffer) != 0 {
+		t.Fatalf("buffered %v", a.retryStatusBuffer)
 	}
 }

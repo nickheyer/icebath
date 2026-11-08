@@ -131,6 +131,9 @@ func processCreateTime(pid int) *float64 {
 	return &t
 }
 
+// ProcessBirth of pid or of this process when pid is zero, nil when unreadable
+func ProcessCreateTime(pid int) *float64 { return processCreateTime(pid) }
+
 var liveBootIDOnce = sync.OnceValue(readLiveBootID)
 
 // Kernel id of the running boot on Linux, empty elsewhere or when unreadable
@@ -427,6 +430,11 @@ func pidAliveMatches(pid int, createTime *float64, strict bool, boot *float64) (
 		return createTime != nil && birth == *createTime && !identityProber.Zombie(pid), true
 	}
 	return sameIncarnation(pid, createTime, boot) && (isWindowsHost || !identityProber.Zombie(pid)), true
+}
+
+// Tri state liveness proof of pid against a recorded birth, known false when the prober cannot say
+func PidAliveMatches(pid int, createTime *float64, strict bool, boot *float64) (alive bool, known bool) {
+	return pidAliveMatches(pid, createTime, strict, boot)
 }
 
 // RegisterSelf records this process in the machine spawn ledger

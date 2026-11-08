@@ -81,3 +81,11 @@ func TestGetpassReadsTheStdinLineWithoutATerminal(t *testing.T) {
 		t.Fatalf("got %q err %v", got, err)
 	}
 }
+
+// Exported prompt is the same function the package uses internally
+func TestMaskedSecretPromptExported(t *testing.T) {
+	var f func(string) (string, error) = MaskedSecretPrompt
+	if f == nil {
+		t.Fatal("MaskedSecretPrompt is nil")
+	}
+}

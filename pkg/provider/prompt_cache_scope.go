@@ -50,6 +50,38 @@ type cacheScopeMemoKey struct {
 	hasDB     bool
 }
 
+// Session store methods the prompt cache scope reads, as the state package exposes them with a context
+type CacheScopeStore interface {
+	GetCompressionLineage(ctx context.Context, sessionID string) ([]string, error)
+	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	IsExplicitForkChild(ctx context.Context, sessionID string) (bool, error)
+	DeclaredScopeIdentity(ctx context.Context, sessionID string) (bool, string, error)
+	LatestConversationBoundary(ctx context.Context, sessionKey, source string) (int64, bool, error)
+}
+
+// CacheScopeSessionStore is the session store view the resolver reads, each lookup bound to a background context
+type CacheScopeSessionStore struct{ DB CacheScopeStore }
+
+func (c CacheScopeSessionStore) GetCompressionLineage(sessionID string) ([]string, error) {
+	return c.DB.GetCompressionLineage(context.Background(), sessionID)
+}
+
+func (c CacheScopeSessionStore) GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+	return c.DB.GetSession(ctx, sessionID)
+}
+
+func (c CacheScopeSessionStore) IsExplicitForkChild(sessionID string) (bool, error) {
+	return c.DB.IsExplicitForkChild(context.Background(), sessionID)
+}
+
+func (c CacheScopeSessionStore) DeclaredScopeIdentity(sessionID string) (bool, string, error) {
+	return c.DB.DeclaredScopeIdentity(context.Background(), sessionID)
+}
+
+func (c CacheScopeSessionStore) LatestConversationBoundary(sessionKey, source string) (int64, bool, error) {
+	return c.DB.LatestConversationBoundary(context.Background(), sessionKey, source)
+}
+
 // CacheScopeAgent carries the agent state the prompt cache scope resolution reads and memoizes
 type CacheScopeAgent struct {
 	SessionID           string

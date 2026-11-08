@@ -44,6 +44,10 @@ var anthSDKV1Suffix = regexp.MustCompile(`/v1/?$`)
 // Bearer token source of a callable key, false for a static key
 func anthSDKTokenSource(apiKey any) (func(context.Context) (string, error), bool) {
 	switch k := apiKey.(type) {
+	case *TaggedTokenSource:
+		if k != nil {
+			return k.Func(), true
+		}
 	case func(context.Context) (string, error):
 		return k, true
 	case func() (string, error):

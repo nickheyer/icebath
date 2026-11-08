@@ -294,6 +294,9 @@ func classifyWriteDenial(env *Env, path string, entry bool) string {
 	return classifyResolvedWriteDenial(env, homes, filepath.Join(resolveNonStrict(parent), leaf))
 }
 
+// IsWriteDenied reports a path on the protected credential and system write denylist
+func IsWriteDenied(env *Env, path string) bool { return classifyWriteDenial(env, path, false) != "" }
+
 // Model facing error when writes to the path are blocked, empty otherwise
 func writeDeniedError(env *Env, path, verb string, entry bool) string {
 	denial := classifyWriteDenial(env, path, entry)
@@ -319,6 +322,9 @@ func isWriteApprovalRequired(env *Env, path string) bool {
 	}
 	return false
 }
+
+// IsWriteApprovalRequired reports a path whose write needs explicit approval
+func IsWriteApprovalRequired(env *Env, path string) bool { return isWriteApprovalRequired(env, path) }
 
 // Error when a read targets a denied icebath path, empty otherwise
 func readBlockError(env *Env, path string) string {

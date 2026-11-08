@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -26,6 +27,14 @@ var (
 		return textToSpeechTool(ctx, text, outputPath)
 	}
 )
+
+// Whether the configured text to speech provider can run
+func checkTTSRequirements(ctx context.Context) bool { return media.CheckTTSRequirements(ctx) }
+
+// Speech synthesized into the output path, the text_to_speech tool result envelope
+func textToSpeechTool(ctx context.Context, text, outputPath string) (string, error) {
+	return media.TextToSpeechTool(ctx, text, outputPath)
+}
 
 // Unique temp path for gateway auto TTS, ogg for Opus voice platforms and mp3 everywhere else
 func BuildAutoTTSOutputPath(platform Platform) (string, error) {

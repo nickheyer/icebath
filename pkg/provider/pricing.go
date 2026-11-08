@@ -1214,14 +1214,7 @@ func ComputeSaleDiscount(prompt, completion string, original any) (SaleDiscount,
 
 var pricingHTTPClient = &http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return fmt.Errorf("stopped after 10 redirects")
-		}
-		if urlOrigin(req.URL.String()) != urlOrigin(via[0].URL.String()) {
-			req.Header.Del("Authorization")
-			req.Header.Del("Cookie")
-		}
-		return nil
+		return credentialRedirectPolicy(via[0].URL.String())(req, via)
 	},
 }
 

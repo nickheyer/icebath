@@ -21,10 +21,46 @@ type Table struct {
 	Title   string
 	Columns []Column
 	Rows    [][]string
+	// Header row left out as show_header=False
+	HideHeader bool
+	// Borders and separators left out as box=None, cells set apart by their padding alone
+	NoBox bool
+	// Horizontal padding on each side of a cell, the rich default of one when zero
+	PadX int
 }
 
 // Appends one row of markup cells
 func (t *Table) AddRow(cells ...string) { t.Rows = append(t.Rows, cells) }
+
+// Horizontal cell padding per side
+func (t *Table) pad() int {
+	if t.PadX > 0 {
+		return t.PadX
+	}
+	return 1
+}
+
+// Cells the vertical borders take, none without a box
+func (t *Table) edgeCells() int {
+	if t.NoBox {
+		return 0
+	}
+	return len(t.Columns) + 1
+}
+
+// RenderLines draws the table at its natural width inside another renderable
+func (t *Table) RenderLines(color bool, _ string, width int) []string {
+	return strings.Split(t.RenderWidth(color, width), "\n")
+}
+
+// MeasureMax is the natural width of the table within width cells
+func (t *Table) MeasureMax(width int) int {
+	total := t.edgeCells()
+	for _, w := range t.columnWidths(width - t.edgeCells()) {
+		total += w
+	}
+	return total
+}
 
 // Lines of the table, styled with ANSI sequences when color is true
 func (t *Table) Render(color bool) string {

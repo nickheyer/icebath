@@ -59,14 +59,13 @@ func reasoningCapsColdProcess(t *testing.T) context.Context {
 	ctx := modelsTestHome(t)
 	ResetReasoningCapsCatalogs()
 	os.Remove(reasoningCapsDiskPath())
+	prevOverride, prevBackground, prevSpawn := nousInferenceEnvOverrideFn, resolveNousRuntimeCredentialsBackgroundFn, reasoningCapsSpawn
 	nousInferenceEnvOverrideFn = func() string { return "" }
 	resolveNousRuntimeCredentialsBackgroundFn = func(context.Context) (string, string, bool) { return "", "", false }
 	reasoningCapsSpawn = func(refresh func()) { refresh() }
 	t.Cleanup(func() {
 		ResetReasoningCapsCatalogs()
-		nousInferenceEnvOverrideFn = nousInferenceEnvOverride
-		resolveNousRuntimeCredentialsBackgroundFn = resolveNousRuntimeCredentialsBackground
-		reasoningCapsSpawn = func(refresh func()) { go refresh() }
+		nousInferenceEnvOverrideFn, resolveNousRuntimeCredentialsBackgroundFn, reasoningCapsSpawn = prevOverride, prevBackground, prevSpawn
 	})
 	return ctx
 }

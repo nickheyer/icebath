@@ -11,3 +11,10 @@ func TestNewGeminiNativeClientExportNeedsAKey(t *testing.T) {
 		t.Fatalf("client %v err %v", c, err)
 	}
 }
+
+func TestNormalizeGeminiBaseURLExport(t *testing.T) {
+	in := "https://generativelanguage.googleapis.com/v1beta/openai/"
+	if got, want := NormalizeGeminiBaseURL(in), normalizeGeminiBaseURL(in); got != want {
+		t.Fatalf("NormalizeGeminiBaseURL(%q) = %q, want %q", in, got, want)
+	}
+}

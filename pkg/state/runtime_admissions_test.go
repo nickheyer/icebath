@@ -404,3 +404,38 @@ func TestResetLocalTargetRefusesExecutingWorkAndCompressedParents(t *testing.T) 
 		t.Fatal(err)
 	}
 }
+
+func TestRuntimeAdmissionExportReadsTheLiveRowAndRefusesAMissingOne(t *testing.T) {
+	ctx := context.Background()
+	db := runtimeStore(t, filepath.Join(t.TempDir(), "state.db"))
+	if err := db.CreateSession(NewSession{ID: "s", Source: "cli"}); err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := db.BeginRuntimeEpoch(ctx, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := db.AdmitSessionInput(ctx, SessionInput{Epoch: epoch, PrincipalID: "owner", SessionID: "s", RequestID: "r", Payload: admissionText("hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := row.Get("admission_id")
+	err = db.ReadCtx(ctx, func(conn SQLiteConn) error {
+		got, err := RuntimeAdmission(ctx, conn, id.(string))
+		if err != nil {
+			return err
+		}
+		if status, _ := got.Get("status"); status != "queued" {
+			t.Fatalf("status = %v", status)
+		}
+		_, err = RuntimeAdmission(ctx, conn, "missing")
+		var refusal *RuntimeStoreError
+		if !errors.As(err, &refusal) || refusal.Reason != "not_found" {
+			t.Fatalf("missing admission error = %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

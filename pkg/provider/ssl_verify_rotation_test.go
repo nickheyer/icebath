@@ -95,7 +95,7 @@ func getThrough(cfg *tls.Config, url string) (string, error) {
 	return string(body), err
 }
 
-func TestReplacedInstallEnvironmentReResolvesTheBundleInPlace(t *testing.T) {
+func TestReplacedInstallEnvironmentReResolvesCertifiInPlace(t *testing.T) {
 	_, bundle := privateTLSServer(t)
 	rotation := rotatedCABundle(t, bundle, true)
 	sink := captureSSLWarnings(t)
@@ -161,7 +161,7 @@ func TestUnrecoverableBundleHandsOverThePlatformContext(t *testing.T) {
 	}
 }
 
-func TestSubprocessVerifyBundleHandsOverABundleThatExists(t *testing.T) {
+func TestRequestsVerifyHandsOverABundleThatExists(t *testing.T) {
 	_, bundle := privateTLSServer(t)
 	rotation := rotatedCABundle(t, bundle, true)
 	got := SubprocessVerifyBundle(t.TempDir())
@@ -170,7 +170,7 @@ func TestSubprocessVerifyBundleHandsOverABundleThatExists(t *testing.T) {
 	}
 }
 
-func TestSubprocessVerifyBundleNeverHandsOverTheDeletedBundle(t *testing.T) {
+func TestRequestsVerifyNeverHandsOverTheDeletedBundle(t *testing.T) {
 	_, bundle := privateTLSServer(t)
 	rotation := rotatedCABundle(t, bundle, false)
 	reloadCABundle = func() string { return "" }
@@ -194,7 +194,7 @@ func TestRotatedProcessKeepsTrustingTheBundleItWasConfiguredWith(t *testing.T) {
 	}
 }
 
-func TestExplicitBundleWorksWithoutTheTrustStore(t *testing.T) {
+func TestExplicitBundleWorksWithoutTruststore(t *testing.T) {
 	noCAEnv(t)
 	srv, bundle := privateTLSServer(t)
 	path := filepath.Join(t.TempDir(), "provider-ca.pem")
@@ -234,7 +234,7 @@ func TestUnloadableBundleFailsEveryHandshakeUncached(t *testing.T) {
 	}
 }
 
-func TestTrustStoreFailureDegradesToTheDefaultTrustPaths(t *testing.T) {
+func TestTruststoreFailureDegradesToOpensslDefaults(t *testing.T) {
 	noCAEnv(t)
 	sink := captureSSLWarnings(t)
 	prevPool, prevBundles, prevDirs := systemCertPool, linuxRootBundles, linuxRootDirs

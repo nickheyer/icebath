@@ -53,17 +53,17 @@
 - [x] plugins/config_backends/remote/paths.py
 - [x] plugins/config_backends/remote/values.py
 
-### 3. pkg/state: 49% (33 of 67 files completed)
+### 3. pkg/state: 100% (67 of 67 files completed)
 #### SQLite session store, messages, compaction, FTS search, titles, usage, locks, repair
 - [x] hermes_cli/session_schema_history.py
 - [x] hermes_cli/sqlite_runtime.py
 - [x] hermes_cli/sqlite_safe_read.py
 - [x] hermes_cli/sqlite_util.py
 - [x] hermes_state.py
-- [ ] hermes_state_api_content.py
+- [x] hermes_state_api_content.py
 - [x] hermes_state_common.py
 - [x] hermes_state_compaction_display.py
-- [ ] hermes_state_compression.py
+- [x] hermes_state_compression.py
 - [x] hermes_state_coverage.py
 - [x] hermes_state_dbfile.py
 - [x] hermes_state_detached_results.py
@@ -76,56 +76,56 @@
 - [x] hermes_state_identity.py
 - [x] hermes_state_ids.py
 - [x] hermes_state_keys.py
-- [ ] hermes_state_local.py
-- [ ] hermes_state_local_lineage.py
-- [ ] hermes_state_local_migration.py
+- [x] hermes_state_local.py
+- [x] hermes_state_local_lineage.py
+- [x] hermes_state_local_migration.py
 - [x] hermes_state_lockguard.py
 - [x] hermes_state_lockowners.py
-- [ ] hermes_state_maintenance.py
-- [ ] hermes_state_media.py
-- [ ] hermes_state_messages.py
-- [ ] hermes_state_mutation_binding.py
-- [ ] hermes_state_mutation_branch.py
-- [ ] hermes_state_mutation_chat_pick.py
-- [ ] hermes_state_mutation_compress.py
-- [ ] hermes_state_mutation_guards.py
-- [ ] hermes_state_mutation_prepared.py
-- [ ] hermes_state_mutation_reset.py
-- [ ] hermes_state_mutation_retirement.py
-- [ ] hermes_state_mutation_transcript.py
-- [ ] hermes_state_mutations.py
+- [x] hermes_state_maintenance.py
+- [x] hermes_state_media.py
+- [x] hermes_state_messages.py
+- [x] hermes_state_mutation_binding.py
+- [x] hermes_state_mutation_branch.py
+- [x] hermes_state_mutation_chat_pick.py
+- [x] hermes_state_mutation_compress.py
+- [x] hermes_state_mutation_guards.py
+- [x] hermes_state_mutation_prepared.py
+- [x] hermes_state_mutation_reset.py
+- [x] hermes_state_mutation_retirement.py
+- [x] hermes_state_mutation_transcript.py
+- [x] hermes_state_mutations.py
 - [x] hermes_state_pidns.py
-- [ ] hermes_state_portability.py
-- [ ] hermes_state_profile_repair.py
+- [x] hermes_state_portability.py
+- [x] hermes_state_profile_repair.py
 - [x] hermes_state_prompt_refresh.py
 - [x] hermes_state_prune_rewrite.py
 - [x] hermes_state_readpool.py
-- [ ] hermes_state_reconcile.py
+- [x] hermes_state_reconcile.py
 - [x] hermes_state_registry.py
-- [ ] hermes_state_repair.py
-- [ ] hermes_state_rewind.py
-- [ ] hermes_state_runtime.py
-- [ ] hermes_state_runtime_workers.py
+- [x] hermes_state_repair.py
+- [x] hermes_state_rewind.py
+- [x] hermes_state_runtime.py
+- [x] hermes_state_runtime_workers.py
 - [x] hermes_state_schema.py
-- [ ] hermes_state_search.py
+- [x] hermes_state_search.py
 - [x] hermes_state_session_list.py
-- [ ] hermes_state_sessions.py
-- [ ] hermes_state_sessions_model_config.py
+- [x] hermes_state_sessions.py
+- [x] hermes_state_sessions_model_config.py
 - [x] hermes_state_telegram.py
-- [ ] hermes_state_terminal.py
-- [ ] hermes_state_timeline.py
-- [ ] hermes_state_titles.py
+- [x] hermes_state_terminal.py
+- [x] hermes_state_timeline.py
+- [x] hermes_state_titles.py
 - [x] hermes_state_todo.py
 - [x] hermes_state_usage.py
 - [x] hermes_state_user_copy.py
 - [x] hermes_state_wal.py
-- [ ] hermes_state_worker_compression.py
-- [ ] hermes_state_worker_context.py
-- [ ] hermes_state_worker_lifecycle.py
+- [x] hermes_state_worker_compression.py
+- [x] hermes_state_worker_context.py
+- [x] hermes_state_worker_lifecycle.py
 
-### 4. pkg/hostinfo: 85% (6 of 7 files completed)
+### 4. pkg/hostinfo: 100% (7 of 7 files completed)
 #### OS, CPU, GPU, RAM, locale and container facts for prompts and onboarding
-- [ ] hermes_platform/host/__init__.py
+- [x] hermes_platform/host/__init__.py
 - [x] hermes_platform/host/darwin_pci.py
 - [x] hermes_platform/host/facts.py
 - [x] hermes_platform/host/gpu_adapters.py
@@ -133,7 +133,7 @@
 - [x] hermes_platform/host/runtime.py
 - [x] hermes_platform/host/summary.py
 
-### 5. pkg/provider: 76% (256 of 334 files completed)
+### 5. pkg/provider: 91% (304 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
 - [x] agent/account_usage.py
 - [x] agent/account_usage_cache.py
@@ -149,7 +149,7 @@
 - [x] agent/auxiliary_async_rebuild.py
 - [x] agent/auxiliary_call_outcome.py
 - [ ] agent/auxiliary_client.py
-- [ ] agent/auxiliary_client_registry.py
+- [x] agent/auxiliary_client_registry.py
 - [x] agent/auxiliary_codex_response.py
 - [x] agent/auxiliary_error_shapes.py
 - [x] agent/auxiliary_fallback_recovery.py
@@ -164,7 +164,7 @@
 - [x] agent/auxiliary_stream_watchdog.py
 - [x] agent/auxiliary_structured_output.py
 - [x] agent/auxiliary_task_config.py
-- [ ] agent/auxiliary_unavailable.py
+- [x] agent/auxiliary_unavailable.py
 - [x] agent/auxiliary_wire.py
 - [x] agent/azure_identity_adapter.py
 - [x] agent/backend_identity.py
@@ -172,8 +172,8 @@
 - [x] agent/billing_links.py
 - [x] agent/billing_usage.py
 - [x] agent/billing_view.py
-- [ ] agent/bounded_response.py
-- [ ] agent/cache_bounds.py
+- [x] agent/bounded_response.py
+- [x] agent/cache_bounds.py
 - [x] agent/chat_completion_headers.py
 - [ ] agent/chat_completion_helpers.py
 - [x] agent/chat_completion_helpers_relay.py
@@ -182,9 +182,9 @@
 - [x] agent/chat_completion_nonstream.py
 - [x] agent/chat_completion_stream_monitor.py
 - [x] agent/chat_completion_wait_notice.py
-- [ ] agent/client_lifecycle.py
+- [x] agent/client_lifecycle.py
 - [x] agent/codex_headers.py
-- [ ] agent/codex_responses_adapter.py
+- [x] agent/codex_responses_adapter.py
 - [x] agent/codex_runtime.py
 - [x] agent/codex_runtime_history_seed.py
 - [x] agent/codex_service_tiers.py
@@ -203,17 +203,17 @@
 - [x] agent/deadline.py
 - [x] agent/empty_response_guard.py
 - [x] agent/error_classifier.py
-- [ ] agent/error_surface.py
+- [x] agent/error_surface.py
 - [x] agent/errors.py
 - [x] agent/fallback_cooldown.py
 - [x] agent/fast_mode.py
 - [x] agent/gemini_long_decode.py
 - [x] agent/gemini_native_adapter.py
 - [x] agent/gemini_schema.py
-- [ ] agent/image_eviction_policy.py
+- [x] agent/image_eviction_policy.py
 - [x] agent/image_token_cost.py
-- [ ] agent/jiter_preload.py
-- [ ] agent/lmstudio_reasoning.py
+- [x] agent/jiter_preload.py
+- [x] agent/lmstudio_reasoning.py
 - [ ] agent/model_metadata.py
 - [x] agent/model_metadata_cache.py
 - [x] agent/model_metadata_http.py
@@ -221,47 +221,47 @@
 - [x] agent/model_metadata_memo_bounds.py
 - [x] agent/model_metadata_token_memo.py
 - [x] agent/models_dev.py
-- [ ] agent/moonshot_schema.py
+- [x] agent/moonshot_schema.py
 - [x] agent/native_compaction.py
 - [x] agent/nous_rate_guard.py
-- [ ] agent/nous_wire.py
-- [ ] agent/opencode_affinity.py
+- [x] agent/nous_wire.py
+- [x] agent/opencode_affinity.py
 - [x] agent/plan_limits.py
 - [x] agent/plan_prompt.py
 - [x] agent/plan_snapshot_sync.py
 - [x] agent/portal_tags.py
 - [x] agent/prompt_cache_boundary.py
-- [ ] agent/prompt_cache_scope.py
+- [x] agent/prompt_cache_scope.py
 - [x] agent/prompt_caching.py
 - [x] agent/provider_base.py
-- [ ] agent/provider_projection.py
+- [x] agent/provider_projection.py
 - [x] agent/provider_registry.py
-- [ ] agent/provider_route_hooks.py
+- [x] agent/provider_route_hooks.py
 - [x] agent/proxy_bypass.py
-- [ ] agent/proxy_sources/iron_proxy.py
+- [x] agent/proxy_sources/iron_proxy.py
 - [x] agent/rate_limit_credits.py
 - [x] agent/rate_limit_tracker.py
 - [x] agent/reasoning_carriers.py
-- [ ] agent/reasoning_effort.py
-- [ ] agent/reasoning_params.py
-- [ ] agent/reasoning_promotion.py
-- [ ] agent/reasoning_summaries.py
+- [x] agent/reasoning_effort.py
+- [x] agent/reasoning_params.py
+- [x] agent/reasoning_promotion.py
+- [x] agent/reasoning_summaries.py
 - [x] agent/reasoning_timeouts.py
 - [x] agent/repetition_guard.py
 - [x] agent/retry_utils.py
-- [ ] agent/route_binding.py
+- [x] agent/route_binding.py
 - [x] agent/sdk_transform_bypass.py
-- [ ] agent/secret_scope.py
+- [x] agent/secret_scope.py
 - [x] agent/secret_sources/__init__.py
-- [ ] agent/secret_sources/_cache.py
+- [x] agent/secret_sources/_cache.py
 - [x] agent/secret_sources/base.py
 - [x] agent/secret_sources/bitwarden.py
 - [x] agent/secret_sources/command.py
 - [x] agent/secret_sources/onepassword.py
-- [ ] agent/secret_sources/registry.py
+- [x] agent/secret_sources/registry.py
 - [x] agent/served_model.py
-- [ ] agent/ssl_verify.py
-- [ ] agent/stream_delivery.py
+- [x] agent/ssl_verify.py
+- [x] agent/stream_delivery.py
 - [x] agent/stream_diag.py
 - [x] agent/stream_max_lifetime.py
 - [x] agent/stream_single_writer.py
@@ -278,14 +278,14 @@
 - [x] agent/transports/codex_app_server_session.py
 - [x] agent/transports/codex_event_projector.py
 - [ ] agent/transports/hermes_tools_mcp_server.py
-- [ ] agent/transports/types.py
-- [ ] agent/usage_anchor.py
+- [x] agent/transports/types.py
+- [x] agent/usage_anchor.py
 - [x] agent/usage_gauges.py
 - [x] agent/usage_pricing.py
 - [x] agent/vertex_adapter.py
 - [x] agent/web_search_provider.py
 - [x] agent/web_search_registry.py
-- [ ] hermes_cli/_secrets_common.py
+- [x] hermes_cli/_secrets_common.py
 - [x] hermes_cli/anon_auth.py
 - [x] hermes_cli/anon_challenge.py
 - [x] hermes_cli/anon_sign_in.py
@@ -321,7 +321,7 @@
 - [x] hermes_cli/free_tier_offer.py
 - [x] hermes_cli/guest_handoff.py
 - [ ] hermes_cli/left_core_migration.py
-- [ ] hermes_cli/local_runtime/__init__.py
+- [x] hermes_cli/local_runtime/__init__.py
 - [x] hermes_cli/local_runtime/binaries.py
 - [x] hermes_cli/local_runtime/bootstrap.py
 - [x] hermes_cli/local_runtime/capabilities.py
@@ -357,7 +357,7 @@
 - [ ] hermes_cli/model_setup_flows_custom.py
 - [ ] hermes_cli/model_setup_flows_local.py
 - [ ] hermes_cli/model_switch.py
-- [ ] hermes_cli/model_switch_providers.py
+- [x] hermes_cli/model_switch_providers.py
 - [x] hermes_cli/models.py
 - [x] hermes_cli/models_cache_lock.py
 - [x] hermes_cli/models_catalog_static.py
@@ -371,13 +371,13 @@
 - [x] hermes_cli/nous_auth_keepalive.py
 - [x] hermes_cli/nous_billing.py
 - [x] hermes_cli/nous_subscription.py
-- [ ] hermes_cli/onepassword_secrets_cli.py
+- [x] hermes_cli/onepassword_secrets_cli.py
 - [x] hermes_cli/partial_compress.py
-- [ ] hermes_cli/profile_channels.py
+- [x] hermes_cli/profile_channels.py
 - [ ] hermes_cli/profile_cmd.py
 - [x] hermes_cli/profile_describer.py
 - [ ] hermes_cli/profile_distribution.py
-- [ ] hermes_cli/profile_identity.py
+- [x] hermes_cli/profile_identity.py
 - [x] hermes_cli/profile_model_seed.py
 - [ ] hermes_cli/profiles.py
 - [x] hermes_cli/profiles_cache.py
@@ -389,14 +389,14 @@
 - [ ] hermes_cli/prompt_size.py
 - [x] hermes_cli/provider_catalog.py
 - [x] hermes_cli/providers.py
-- [ ] hermes_cli/proxy/adapters/__init__.py
-- [ ] hermes_cli/proxy/adapters/base.py
-- [ ] hermes_cli/proxy/adapters/nous_portal.py
-- [ ] hermes_cli/proxy/adapters/xai.py
-- [ ] hermes_cli/proxy/cli.py
-- [ ] hermes_cli/proxy/server.py
-- [ ] hermes_cli/proxy/sse_done.py
-- [ ] hermes_cli/proxy_cli.py
+- [x] hermes_cli/proxy/adapters/__init__.py
+- [x] hermes_cli/proxy/adapters/base.py
+- [x] hermes_cli/proxy/adapters/nous_portal.py
+- [x] hermes_cli/proxy/adapters/xai.py
+- [x] hermes_cli/proxy/cli.py
+- [x] hermes_cli/proxy/server.py
+- [x] hermes_cli/proxy/sse_done.py
+- [x] hermes_cli/proxy_cli.py
 - [x] hermes_cli/release_channels.py
 - [x] hermes_cli/route_identity.py
 - [x] hermes_cli/runtime_provider.py
@@ -405,7 +405,7 @@
 - [x] hermes_cli/runtime_provider_missing_key.py
 - [ ] hermes_cli/sandbox_image_switch.py
 - [x] hermes_cli/secret_prompt.py
-- [ ] hermes_cli/secrets_cli.py
+- [x] hermes_cli/secrets_cli.py
 - [x] hermes_cli/shared_profile_warning.py
 - [x] hermes_cli/status_auth.py
 - [ ] hermes_cli/subcommands/auth.py
@@ -417,13 +417,13 @@
 - [ ] hermes_cli/subcommands/model.py
 - [ ] hermes_cli/subcommands/peer.py
 - [x] hermes_cli/subcommands/profile.py
-- [ ] hermes_cli/subcommands/secrets.py
+- [x] hermes_cli/subcommands/secrets.py
 - [ ] hermes_cli/subcommands/usage.py
 - [ ] hermes_cli/subcommands/vault.py
 - [x] hermes_cli/timeouts.py
 - [x] hermes_cli/url_utils.py
-- [ ] hermes_cli/urllib_security.py
-- [ ] hermes_cli/vercel_auth.py
+- [x] hermes_cli/urllib_security.py
+- [x] hermes_cli/vercel_auth.py
 - [x] hermes_cli/welcome_trial.py
 - [x] hermes_cli/xai_retirement.py
 - [x] plugins/model-providers/actual/__init__.py
@@ -456,7 +456,7 @@
 - [x] plugins/model-providers/opencode-zen/__init__.py
 - [x] plugins/model-providers/openrouter/__init__.py
 - [x] plugins/model-providers/qwen-oauth/__init__.py
-- [ ] plugins/model-providers/router/__init__.py
+- [x] plugins/model-providers/router/__init__.py
 - [x] plugins/model-providers/solstice/__init__.py
 - [x] plugins/model-providers/solstice/auth.py
 - [x] plugins/model-providers/solstice/transport.py
@@ -470,18 +470,18 @@
 - [x] providers/__init__.py
 - [x] providers/base.py
 
-### 6. pkg/tools: 73% (205 of 279 files completed)
+### 6. pkg/tools: 75% (212 of 279 files completed)
 #### Tool registry, approval, terminal backends, file ops, search, web, vision, checkpoints
-- [ ] agent/async_utils.py
+- [x] agent/async_utils.py
 - [ ] agent/background_review.py
 - [x] agent/coding_context.py
 - [x] agent/compression_marker.py
 - [ ] agent/delegation_backends.py
-- [ ] agent/delegation_context.py
-- [ ] agent/delegation_provider.py
-- [ ] agent/delegation_registry.py
+- [x] agent/delegation_context.py
+- [x] agent/delegation_provider.py
+- [x] agent/delegation_registry.py
 - [ ] agent/display.py
-- [ ] agent/estop.py
+- [x] agent/estop.py
 - [x] agent/file_safety.py
 - [x] agent/image_routing.py
 - [ ] agent/interrupt_compat.py
@@ -498,7 +498,7 @@
 - [x] agent/redact.py
 - [x] agent/relay_cwd.py
 - [ ] agent/review_engine.py
-- [ ] agent/review_idle_queue.py
+- [x] agent/review_idle_queue.py
 - [x] agent/runtime_cwd.py
 - [x] agent/runtime_self_protection.py
 - [x] agent/search_policy.py
@@ -629,7 +629,7 @@
 - [ ] tools/delegate_tool_dispatch.py
 - [ ] tools/delegate_tool_progress.py
 - [ ] tools/delegate_tool_registry.py
-- [ ] tools/delegate_tool_results.py
+- [x] tools/delegate_tool_results.py
 - [ ] tools/delegate_tool_routes.py
 - [ ] tools/delegate_tool_tasks.py
 - [ ] tools/delegate_tool_toolsets.py
@@ -995,7 +995,7 @@
 - [x] tools/cronjob_prompt_scan.py
 - [ ] tools/cronjob_tools.py
 
-### 13. pkg/plugins: 81% (90 of 111 files completed)
+### 13. pkg/plugins: 81% (91 of 111 files completed)
 #### Plugin manifests, discovery, hooks, middleware, host wire, install, catalog, guard
 - [x] agent/plugin_live_notes.py
 - [x] agent/plugin_llm.py
@@ -1098,7 +1098,7 @@
 - [x] plugins/security-guidance/__init__.py
 - [x] plugins/security-guidance/patterns.py
 - [ ] plugins/teams_pipeline/__init__.py
-- [ ] plugins/teams_pipeline/cli.py
+- [x] plugins/teams_pipeline/cli.py
 - [ ] plugins/teams_pipeline/meetings.py
 - [x] plugins/teams_pipeline/models.py
 - [ ] plugins/teams_pipeline/pipeline.py
@@ -1147,7 +1147,7 @@
 - [x] tools/mcp_tool_server_run.py
 - [x] tools/mcp_tool_transport.py
 
-### 15. pkg/browser: 14% (9 of 61 files completed)
+### 15. pkg/browser: 18% (11 of 61 files completed)
 #### Chromium launch, CDP sessions, page tools, supervisor, cloud providers, vault
 - [ ] agent/browser_page_backend.py
 - [ ] agent/browser_page_registry.py
@@ -1188,7 +1188,7 @@
 - [ ] tools/bot_desktop/sandbox_host.py
 - [ ] tools/bot_desktop/thumbnail.py
 - [ ] tools/browser_cdp_tool.py
-- [ ] tools/browser_dialog_tool.py
+- [x] tools/browser_dialog_tool.py
 - [x] tools/browser_harness_dirs.py
 - [x] tools/browser_launcher.py
 - [x] tools/browser_launcher_holders.py
@@ -1200,7 +1200,7 @@
 - [ ] tools/browser_session_real_profile.py
 - [ ] tools/browser_session_sandbox.py
 - [ ] tools/browser_supervisor.py
-- [ ] tools/browser_supervisor_capture.py
+- [x] tools/browser_supervisor_capture.py
 - [ ] tools/browser_supervisor_dialogs.py
 - [ ] tools/browser_supervisor_frames.py
 - [x] tools/browser_tool.py
@@ -1211,15 +1211,15 @@
 - [ ] tools/browser_vault_context.py
 - [ ] tools/browser_vault_tool.py
 
-### 16. pkg/media: 24% (15 of 61 files completed)
+### 16. pkg/media: 32% (20 of 61 files completed)
 #### Image and video generation, TTS, transcription, voice mode, wake word
 - [x] agent/image_gen_provider.py
 - [x] agent/image_gen_registry.py
 - [x] agent/provider_media.py
 - [ ] agent/transcription_provider.py
 - [ ] agent/transcription_registry.py
-- [ ] agent/tts_provider.py
-- [ ] agent/tts_registry.py
+- [x] agent/tts_provider.py
+- [x] agent/tts_registry.py
 - [ ] agent/video_gen_provider.py
 - [ ] agent/video_gen_registry.py
 - [ ] agent/voice_turn_route.py
@@ -1228,7 +1228,7 @@
 - [x] plugins/image_gen/_common.py
 - [x] plugins/image_gen/deepinfra/__init__.py
 - [x] plugins/image_gen/fal/__init__.py
-- [ ] plugins/image_gen/krea/__init__.py
+- [x] plugins/image_gen/krea/__init__.py
 - [x] plugins/image_gen/meta-ai/__init__.py
 - [x] plugins/image_gen/openai-codex/__init__.py
 - [x] plugins/image_gen/openai/__init__.py
@@ -1254,8 +1254,8 @@
 - [ ] tools/transcription_streaming.py
 - [ ] tools/transcription_tools.py
 - [ ] tools/transcription_whisper_cpp.py
-- [ ] tools/tts_command_provider.py
-- [ ] tools/tts_elevenlabs_voices.py
+- [x] tools/tts_command_provider.py
+- [x] tools/tts_elevenlabs_voices.py
 - [ ] tools/tts_streaming.py
 - [x] tools/tts_text_normalize.py
 - [ ] tools/tts_tool.py
@@ -1275,7 +1275,7 @@
 - [ ] tools/wake_word_engines.py
 - [ ] tools/xai_video_tools.py
 
-### 17. pkg/agent: 33% (42 of 127 files completed)
+### 17. pkg/agent: 37% (48 of 127 files completed)
 #### Turn loop, prompt builder, compression, delegation, session search, interrupts, hooks
 - [ ] agent/acp_client.py
 - [ ] agent/acp_openai_bridge.py
@@ -1290,7 +1290,7 @@
 - [ ] agent/agent_runtime_helpers_dead_connections.py
 - [x] agent/agent_runtime_helpers_placeholders.py
 - [ ] agent/battery.py
-- [ ] agent/compaction_display.py
+- [x] agent/compaction_display.py
 - [ ] agent/compaction_events.py
 - [ ] agent/compression_automation.py
 - [ ] agent/compression_facade.py
@@ -1345,7 +1345,7 @@
 - [ ] agent/primary_runtime_snapshot.py
 - [ ] agent/prompt_builder.py
 - [ ] agent/prompt_refresh.py
-- [ ] agent/reactions.py
+- [x] agent/reactions.py
 - [x] agent/relay_compaction.py
 - [x] agent/relay_llm.py
 - [x] agent/relay_runtime.py
@@ -1367,7 +1367,7 @@
 - [ ] agent/surface_switch.py
 - [ ] agent/system_prompt.py
 - [x] agent/thinking_timeout_guidance.py
-- [ ] agent/title_generator.py
+- [x] agent/title_generator.py
 - [x] agent/trajectory.py
 - [x] agent/transcript_repair.py
 - [ ] agent/turn_api_call.py
@@ -1384,17 +1384,17 @@
 - [ ] agent/turn_final_response.py
 - [ ] agent/turn_finalizer.py
 - [ ] agent/turn_iteration_prep.py
-- [ ] agent/turn_liveness.py
+- [x] agent/turn_liveness.py
 - [ ] agent/turn_loop_errors.py
 - [ ] agent/turn_overflow.py
 - [ ] agent/turn_preflight.py
 - [x] agent/turn_preflight_gate.py
 - [ ] agent/turn_recovery.py
-- [ ] agent/turn_recovery_autorecover.py
+- [x] agent/turn_recovery_autorecover.py
 - [ ] agent/turn_recovery_codex.py
 - [ ] agent/turn_request_assembly.py
 - [ ] agent/turn_response_check.py
-- [ ] agent/turn_response_intake.py
+- [x] agent/turn_response_intake.py
 - [x] agent/turn_retry_state.py
 - [x] agent/turn_scripted_prelude.py
 - [ ] agent/turn_stop_gates.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 20% (157 of 760 files completed)
+### 24. gateway: 20% (158 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2496,7 +2496,7 @@
 - [ ] gateway/session_images.py
 - [ ] gateway/session_info_reads.py
 - [ ] gateway/session_ingress.py
-- [ ] gateway/session_ingress_burst.py
+- [x] gateway/session_ingress_burst.py
 - [ ] gateway/session_ingress_context.py
 - [ ] gateway/session_ingress_media.py
 - [ ] gateway/session_kanban.py

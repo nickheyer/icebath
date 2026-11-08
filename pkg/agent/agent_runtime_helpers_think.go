@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 var (
@@ -159,7 +160,12 @@ func (a *AIAgent) extractReasoning(resp *provider.Response) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// Value of the first truthy key in order, else the last key's value, a literal default when the last key is empty
+// ExtractReasoning is the reasoning of a dict shaped assistant message
+func (a *AIAgent) ExtractReasoning(message map[string]any) string {
+	return a.extractReasoning(&provider.Response{Message: state.MessageFromDict(message)})
+}
+
+// First truthy key value in order, else the last key value, empty text when the last key is empty
 func firstTruthyKey(m map[string]any, keys ...string) any {
 	var v any
 	for i, k := range keys {

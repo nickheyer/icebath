@@ -267,7 +267,7 @@ func hermesHomePinnedByUnit(unitPath string) (string, error) {
 
 // ICEBATH_HOME of the on disk gateway unit in system or user scope
 func hermesHomeFromSystemdUnitFile(ctx context.Context, system bool) (string, error) {
-	p, err := GetSystemdUnitPath(ctx, system)
+	p, err := systemdUnitPathOf(ctx, system)
 	if err != nil {
 		return "", err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -61,8 +62,8 @@ type SecretSourceInfo struct {
 type SecretSources interface {
 	ListPluginSources() []SecretSourceInfo
 	ResetCache(h string) error
-	LoadDotenv(h string) error
-	RefreshInstalledScope(h string) error
+	LoadDotenv(ctx context.Context, h string) error
+	RefreshInstalledScope(ctx context.Context, h string) error
 }
 
 // Platform declaration registry of portable MCP servers
@@ -149,7 +150,7 @@ func (m *Manager) discoverAndLoadLocked(ctx context.Context, force bool) (map[st
 		return nil, false
 	}
 	m.evictStalePersistentRegistrations()
-	m.refreshSecretSourcesAfterDiscovery()
+	m.refreshSecretSourcesAfterDiscovery(ctx)
 	if force {
 		m.reRegisterConfigHooksAfterForce(ctx)
 	}
@@ -187,7 +188,7 @@ func (m *Manager) reRegisterConfigHooksAfterForce(ctx context.Context) {
 }
 
 // Re-applies secret sources when a plugin source is enabled or one was removed since the last reconcile
-func (m *Manager) refreshSecretSourcesAfterDiscovery() {
+func (m *Manager) refreshSecretSourcesAfterDiscovery(ctx context.Context) {
 	s := installedServices()
 	if s == nil || s.SecretSources == nil {
 		return
@@ -230,10 +231,10 @@ func (m *Manager) refreshSecretSourcesAfterDiscovery() {
 		if err := s.SecretSources.ResetCache(h); err != nil {
 			return err
 		}
-		if err := s.SecretSources.LoadDotenv(h); err != nil {
+		if err := s.SecretSources.LoadDotenv(ctx, h); err != nil {
 			return err
 		}
-		return s.SecretSources.RefreshInstalledScope(h)
+		return s.SecretSources.RefreshInstalledScope(ctx, h)
 	})
 	if err != nil {
 		logDebug(fmt.Sprintf("secret source re-apply after discovery failed: %v", err))
@@ -517,6 +518,19 @@ func (m *Manager) ListPlugins() []map[string]any {
 			"tools": len(p.ToolsRegistered), "hooks": len(p.HooksRegistered), "middleware": len(p.MiddlewareRegistered),
 			"commands": len(p.CommandsRegistered), "error": errVal,
 		})
+	}
+	return out
+}
+
+// Keys of the enabled plugins whose manifest declares the capability, sorted
+func (m *Manager) EnabledPluginsDeclaring(capability string) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []string{}
+	for _, key := range sortedKeys(m.plugins) {
+		if p := m.plugins[key]; p.Enabled && p.Manifest != nil && slices.Contains(p.Manifest.Capabilities, capability) {
+			out = append(out, key)
+		}
 	}
 	return out
 }

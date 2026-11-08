@@ -16,3 +16,11 @@ func TestNewPluginContextRegistersHookOnManager(t *testing.T) {
 		t.Fatal("hook not removed on dispose", err)
 	}
 }
+
+func TestNewContextBindsTheManifestAndManager(t *testing.T) {
+	mgr := NewManager(t.TempDir())
+	c := NewContext(&Manifest{Name: "probe", Key: "probe"}, mgr)
+	if c.PluginID() != "probe" || c.manager != mgr {
+		t.Fatalf("context %+v", c)
+	}
+}

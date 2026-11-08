@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -567,5 +568,93 @@ func TestSafeScheduleThreadsafe(t *testing.T) {
 	pool.Shutdown(true, false)
 	if SafeScheduleThreadsafe(context.Background(), pool, func(context.Context) (any, error) { return nil, nil }, nil, "", 0) != nil {
 		t.Fatal("a shut down loop must refuse")
+	}
+}
+
+func TestNewDelegationIDWrapperShape(t *testing.T) {
+	id := NewDelegationID()
+	if !strings.HasPrefix(id, "deleg_") || len(id) != len("deleg_")+8 {
+		t.Fatalf("NewDelegationID = %q", id)
+	}
+}
+
+// Durable dispatch record of test_delegated_output_redaction.py
+func redactionTestRecord(t *testing.T, env *Env) map[string]any {
+	t.Helper()
+	record := map[string]any{
+		"delegation_id": "synthetic-delegation", "dispatched_at": asyncTimeNow(), "session_key": "agent:example:dm:route",
+		"origin_session_id": "origin-session", "parent_session_id": "parent-session", "goal": "retain the parent goal",
+		"context": "retain the parent context", "model": "test-model",
+	}
+	if err := PersistDispatch(env, record); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+// test_delegated_output_redaction.py test_old_durable_results_are_redacted_on_read_replay_and_failure_roster
+func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) {
+	env := asyncTestEnv(t)
+	record := redactionTestRecord(t, env)
+	event := map[string]any{}
+	for k, v := range record {
+		event[k] = v
+	}
+	event["type"], event["status"], event["summary"], event["error"] = "async_delegation", "failed", delegationSecret, delegationSecret
+	eventJSON, _ := pyjson.Dumps(event)
+	resultJSON, _ := pyjson.Dumps(map[string]any{"status": "failed", "summary": delegationSecret, "error": delegationSecret})
+	err := AsyncTransaction(env, func(ctx context.Context, conn state.SQLiteConn) error {
+		_, err := asyncExec(ctx, conn, "UPDATE async_delegations SET state='failed',completed_at=?,event_json=?,result_json=?", asyncTimeNow(), eventJSON, resultJSON)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := GetDurableDelegation(env, "synthetic-delegation")
+	if err != nil || stored == nil {
+		t.Fatalf("stored %v %v", stored, err)
+	}
+	if text, _ := pyjson.Dumps(stored["result"]); strings.Contains(text, delegationSecret) {
+		t.Fatalf("stored result %s", text)
+	}
+	target := newEventQueue()
+	if n, err := RestoreUndeliveredCompletions(env, target); n != 1 || err != nil {
+		t.Fatalf("restored %d %v", n, err)
+	}
+	replay, _ := target.GetNowait()
+	if replay["restored"] != true || replay["session_key"] != record["session_key"] {
+		t.Fatalf("replay %v", replay)
+	}
+	if text, _ := pyjson.Dumps(replay); strings.Contains(text, delegationSecret) {
+		t.Fatalf("replay %s", text)
+	}
+	failures, err := FailedDelegationsForSession(env, "", "parent-session", 20, nil)
+	if err != nil || len(failures) != 1 || failures[0]["goal"] != record["goal"] {
+		t.Fatalf("failures %v %v", failures, err)
+	}
+	if text, _ := pyjson.Dumps(failures); strings.Contains(text, delegationSecret) {
+		t.Fatalf("failures %s", text)
+	}
+}
+
+// The exported completion push keeps the opt out copy in process while the durable row stays forced
+func TestPushCompletionEventExportHonoursOptOutOnlyInProcess(t *testing.T) {
+	env := asyncTestEnv(t)
+	env.Secrets = config.NewSecrets(env.Home)
+	if err := env.Secrets.Set("ICEBATH_REDACT_SECRETS", "false"); err != nil {
+		t.Fatal(err)
+	}
+	record := redactionTestRecord(t, env)
+	PushCompletionEvent(env, record, map[string]any{"status": "completed", "summary": delegationSecret}, "completed")
+	evt, ok := DefaultProcessRegistry().CompletionQueue.GetNowait()
+	if !ok || evt["summary"] != delegationSecret {
+		t.Fatalf("in process event %v", evt)
+	}
+	var eventJSON, resultJSON string
+	err := AsyncTransaction(env, func(ctx context.Context, conn state.SQLiteConn) error {
+		return conn.QueryRowContext(ctx, "SELECT event_json,result_json FROM async_delegations").Scan(&eventJSON, &resultJSON)
+	})
+	if err != nil || strings.Contains(eventJSON+resultJSON, delegationSecret) {
+		t.Fatalf("durable row %s %s %v", eventJSON, resultJSON, err)
 	}
 }

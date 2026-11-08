@@ -93,6 +93,9 @@ func s6Running() bool {
 	return strings.TrimSpace(strings.ToValidUTF8(string(raw), "�")) == "s6-svscan" && isDirPath(s6BaseDir)
 }
 
+// S6Running reports whether s6-svscan is PID 1 with its base directory present
+func S6Running() bool { return s6Running() }
+
 func isDirPath(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.IsDir()

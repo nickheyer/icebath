@@ -47,14 +47,14 @@ func writeTestFile(t *testing.T, path string, raw []byte) {
 	}
 }
 
-func TestSecretCachesLiveAtTheTopOfTheProfileHome(t *testing.T) {
+func TestCachesLiveAtTheTopOfTheProfileHome(t *testing.T) {
 	h := t.TempDir()
 	if bwsStore.Disk.Path(h) != filepath.Join(h, "bws_cache.json") || encryptedBwsCachePath(h) != filepath.Join(h, "bws_cache.enc.json") || opStore.Disk.Path(h) != filepath.Join(h, "op_cache.json") {
 		t.Fatal("every secret cache sits at the top of the home")
 	}
 }
 
-func TestSecretCacheWriteLandsInTheProfileHomeAtModeSixHundred(t *testing.T) {
+func TestAWriteLandsInTheProfileHome(t *testing.T) {
 	h := t.TempDir()
 	NewSecretDiskCache("probe.json").Write("k", CachedFetch{Secrets: map[string]string{"A": "b"}, FetchedAt: nowEpoch()}, 60, h)
 	if got := cachedSecretsAt(t, filepath.Join(h, "probe.json")); got["A"] != "b" || len(got) != 1 {
@@ -68,7 +68,7 @@ func TestSecretCacheWriteLandsInTheProfileHomeAtModeSixHundred(t *testing.T) {
 	}
 }
 
-func TestSecretCacheFirstReadDeletesAPreviousCopyUnread(t *testing.T) {
+func TestTheFirstReadDeletesAPreviousCopyUnread(t *testing.T) {
 	h := t.TempDir()
 	previous := previousSecretCache(t, h, "probe.json")
 	writeTestFile(t, previous, secretCachePayload(t, "k", map[string]string{"A": "b"}))
@@ -80,7 +80,7 @@ func TestSecretCacheFirstReadDeletesAPreviousCopyUnread(t *testing.T) {
 	}
 }
 
-func TestSecretCacheCurrentWinsAndThePreviousCopyIsRemoved(t *testing.T) {
+func TestACurrentCacheWinsAndThePreviousCopyIsRemoved(t *testing.T) {
 	h := t.TempDir()
 	writeTestFile(t, filepath.Join(h, "probe.json"), secretCachePayload(t, "k", map[string]string{"A": "current"}))
 	previous := previousSecretCache(t, h, "probe.json")
@@ -94,7 +94,7 @@ func TestSecretCacheCurrentWinsAndThePreviousCopyIsRemoved(t *testing.T) {
 	}
 }
 
-func TestSecretCacheWriteDeletesAPreviousCopy(t *testing.T) {
+func TestAWriteDeletesAPreviousCopy(t *testing.T) {
 	h := t.TempDir()
 	previous := previousSecretCache(t, h, "probe.json")
 	writeTestFile(t, previous, secretCachePayload(t, "k", map[string]string{"A": "previous"}))
@@ -104,7 +104,7 @@ func TestSecretCacheWriteDeletesAPreviousCopy(t *testing.T) {
 	}
 }
 
-func TestSecretCachePreviousSymlinkIsRemovedAndItsTargetKept(t *testing.T) {
+func TestAPreviousSymlinkIsRemovedAndItsTargetKept(t *testing.T) {
 	h := t.TempDir()
 	target := filepath.Join(h, "workspace", "leak.json")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -127,7 +127,7 @@ func TestSecretCachePreviousSymlinkIsRemovedAndItsTargetKept(t *testing.T) {
 	}
 }
 
-func TestSecretCachePreviousDirectoryIsLeftAlone(t *testing.T) {
+func TestAPreviousDirectoryIsLeftAlone(t *testing.T) {
 	h := t.TempDir()
 	inner := filepath.Join(previousSecretCache(t, h, "probe.json"), "inner")
 	if err := os.MkdirAll(inner, 0o755); err != nil {
@@ -142,7 +142,7 @@ func TestSecretCachePreviousDirectoryIsLeftAlone(t *testing.T) {
 	}
 }
 
-func TestSecretCacheClearRemovesBothLocations(t *testing.T) {
+func TestClearRemovesBothLocations(t *testing.T) {
 	h := t.TempDir()
 	writeTestFile(t, filepath.Join(h, "probe.json"), secretCachePayload(t, "k", map[string]string{"A": "b"}))
 	previous := previousSecretCache(t, h, "probe.json")

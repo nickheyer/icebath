@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -273,5 +274,58 @@ func TestCompressionLockAcquireRefreshReleaseAndReclaim(t *testing.T) {
 	profileExec(t, db, "UPDATE compression_locks SET expires_at = ? WHERE session_id = ?", now()-1, "s")
 	if !db.TryAcquireCompressionLock("s", mine, 300) {
 		t.Fatal("expired lock not reclaimed")
+	}
+}
+
+func TestSetWallClockStampsLeaseExpiryFromTheInstalledClock(t *testing.T) {
+	db, _ := leasePair(t)
+	restore := SetWallClock(func() float64 { return 5000.0 })
+	if !leaseTry(t, db, "shared", "h", 10) {
+		restore()
+		t.Fatal("lease not acquired")
+	}
+	restore()
+	expiry, err := db.SessionTurnLeaseExpiresAt("shared", "h")
+	if err != nil || expiry == nil || *expiry != 5010.0 {
+		t.Fatalf("expiry %v err %v", expiry, err)
+	}
+	if now() < 1e9 {
+		t.Fatalf("restore left the fake clock installed %v", now())
+	}
+}
+
+func TestSetWriteRetrySleepRunsBetweenLockRetries(t *testing.T) {
+	db, _ := leasePair(t)
+	if !leaseTry(t, db, "shared", "h", 60) {
+		t.Fatal("lease not acquired")
+	}
+	raw, err := sql.Open("sqlite", db.path+"?_pragma=busy_timeout(0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	conn, err := raw.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(context.Background(), "BEGIN IMMEDIATE"); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	db.SetWriteRetrySleep(func(deadline, patienceS float64) bool {
+		calls++
+		if calls == 1 {
+			if _, err := conn.ExecContext(context.Background(), "ROLLBACK"); err != nil {
+				t.Error(err)
+			}
+		}
+		return db.SleepBeforeWriteRetryJitter(deadline, patienceS)
+	})
+	defer db.SetWriteRetrySleep(nil)
+	patience := 5.0
+	ok, err := db.RefreshSessionTurnLease("shared", "h", 60, &patience)
+	if err != nil || !ok || calls == 0 {
+		t.Fatalf("refresh %v err %v retry sleeps %d", ok, err, calls)
 	}
 }

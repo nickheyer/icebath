@@ -1,10 +1,15 @@
 package commands
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // NeutralPersonalityNames are the names that mean no personality overlay
@@ -99,6 +104,82 @@ func DescribePersonality(value any, width int) string {
 		return string(r[:width]) + "..."
 	}
 	return preview
+}
+
+// Canonical lower case form of a personality name, empty for every neutral spelling
+func NormalizePersonalityName(value any) string {
+	name := ""
+	if value != nil && pyrepr.Truthy(value) {
+		name = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	}
+	if NeutralPersonalityNames[name] {
+		return ""
+	}
+	return name
+}
+
+// UnknownPersonalityError is the ValueError raised for a name no personality carries
+type UnknownPersonalityError struct{ Msg string }
+
+func (e *UnknownPersonalityError) Error() string { return e.Msg }
+
+// Python exception class name the error stands for
+func (e *UnknownPersonalityError) PyTypeName() string { return "ValueError" }
+
+// Canonical name and rendered prompt of a requested personality, neutral names resolving to empty
+func ResolvePersonality(value any, cfg config.Tree) (string, string, error) {
+	name := NormalizePersonalityName(value)
+	if name == "" {
+		return "", "", nil
+	}
+	personalities := AvailablePersonalities(cfg)
+	def, ok := personalities[name]
+	if !ok {
+		names := make([]string, 0, len(personalities))
+		for n := range personalities {
+			names = append(names, "`"+n+"`")
+		}
+		sort.Strings(names)
+		return "", "", &UnknownPersonalityError{Msg: fmt.Sprintf("Unknown personality: `%s`.\n\nAvailable: `none`, %s", strings.TrimSpace(pyrepr.Str(value)), strings.Join(names, ", "))}
+	}
+	return name, RenderPersonalityPrompt(def), nil
+}
+
+// Selected display.personality name when it names a known personality, empty otherwise
+func ActivePersonalityName(cfg map[string]any) string {
+	tree := config.Tree(cfg)
+	name := NormalizePersonalityName(tree.Get("display.personality"))
+	if name == "" {
+		return ""
+	}
+	if _, ok := AvailablePersonalities(tree)[name]; ok {
+		return name
+	}
+	return ""
+}
+
+// Session overlay prompt, the active personality render or else the user owned agent.system_prompt
+func ResolveEphemeralSystemPrompt(cfg map[string]any) string {
+	tree := config.Tree(cfg)
+	if name := ActivePersonalityName(cfg); name != "" {
+		return RenderPersonalityPrompt(AvailablePersonalities(tree)[name])
+	}
+	return PromptText(tree.Get("agent.system_prompt"))
+}
+
+// Writes the canonical name to display.personality of the home config, false on any failure
+func PersistPersonality(ctx context.Context, value any) bool {
+	name := NormalizePersonalityName(value)
+	h := home.Dir(ctx)
+	configPath := home.ConfigPath(h)
+	if _, err := home.Mkdir(h); err != nil {
+		return false
+	}
+	if err := config.WriteConfigKey(ctx, configPath, "display.personality", name); err != nil {
+		return false
+	}
+	_ = os.Chmod(configPath, 0o600)
+	return true
 }
 
 // Built in personalities overlaid by root then agent level user definitions, later wins

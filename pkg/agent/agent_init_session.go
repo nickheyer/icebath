@@ -301,7 +301,7 @@ func applyAgentSection(a *AIAgent, agentCfg map[string]any) {
 	}
 	guardEnabled, guardThreshold := resolveGuardSettings(section["empty_response_guard"])
 	a.emptyGuardEnabled, a.emptyGuardCostThresholdUSD = &guardEnabled, &guardThreshold
-	a.intentAckContinuation = pyrepr.Truthy(cfgValue(section, "intent_ack_continuation", "auto"))
+	a.intentAckContinuation = cfgValue(section, "intent_ack_continuation", "auto")
 	verbosity := strings.ToLower(strings.TrimSpace(cfgText(section["text_verbosity"])))
 	if verbosity != "" && verbosity != "low" && verbosity != "medium" && verbosity != "high" {
 		runAgentLog().Warn(fmt.Sprintf("Unknown agent.text_verbosity %s; expected low, medium or high — ignoring", pyrepr.Repr(verbosity)))

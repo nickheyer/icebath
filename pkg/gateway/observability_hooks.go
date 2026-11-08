@@ -13,6 +13,7 @@ import (
 
 func init() {
 	observability.ConnectedPlatformsHook = connectedPlatformCount
+	observability.RuntimeHomeOfSourceHook = runtimeHomeOfSource
 	observability.SetCatalogSource("bundled_platform_names", bundledPlatformNames)
 }
 
@@ -48,4 +49,13 @@ func bundledPlatformNames() ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// Runtime profile home pinned on a message source's routing identity, false when none is pinned
+func runtimeHomeOfSource(source any) (string, bool) {
+	s, _ := source.(*SessionSource)
+	if identity := IdentityOf(s); identity != nil {
+		return identity.RuntimeHome, true
+	}
+	return "", false
 }

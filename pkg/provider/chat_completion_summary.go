@@ -36,6 +36,11 @@ type moaAggregatorSlotHolder interface {
 	LastAggregatorSlot() map[string]any
 }
 
+// IterationSummaryAPIMessages are the wire ready summary messages the agent's request builder produces
+func IterationSummaryAPIMessages(agent ChatCompletionAgent, messages []map[string]any) []map[string]any {
+	return iterationSummaryAPIMessages(agent, messages)
+}
+
 // Wire ready summary messages built like the main loop request, sidecars substituted and scaffolding swept
 func iterationSummaryAPIMessages(agent ChatCompletionAgent, messages []map[string]any) []map[string]any {
 	needsSanitize := agent.ShouldSanitizeToolCalls()

@@ -515,6 +515,9 @@ func releaseLspClients(wtPath string) {
 	lsp.ReleaseWorkspace(wtPath)
 }
 
+// ReleaseLspClients stops the language servers rooted at a worktree before its removal
+func ReleaseLspClients(wtPath string) { releaseLspClients(wtPath) }
+
 // Outcome of archiving then removing one tree
 type ArchiveRemoval struct {
 	Ref        string

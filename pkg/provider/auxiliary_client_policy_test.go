@@ -441,3 +441,39 @@ func TestAuxiliaryTaskConfigExportReadsTheTaskBlock(t *testing.T) {
 		t.Fatalf("task config %v", cfg)
 	}
 }
+
+func TestExportedFixedTemperatureAndPortalWire(t *testing.T) {
+	if omit, _, err := FixedTemperatureForModel("kimi-k2", "", ""); err != nil || !omit {
+		t.Fatal("kimi omits temperature")
+	}
+	if ReasoningOfConfig(nil) != nil || ReasoningOfConfig(map[string]any{"effort": "high"}).Effort != "high" {
+		t.Fatal("reasoning of config")
+	}
+	if s, ok := ValidatedOpenRouterProviderSort(" Price "); !ok || s != "price" {
+		t.Fatal("sort")
+	}
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	ctx := context.Background()
+	if NousAPIMode(ctx, "anthropic/claude") != "chat_completions" || ParseConfigAPIMode(ctx, "responses") != "codex_responses" || GetNamedCustomProvider(ctx, "nope") != nil {
+		t.Fatal("portal wire, api mode or named provider")
+	}
+	if CarrierRecord(ctx, map[string]any{}) != nil {
+		t.Fatal("empty carrier record")
+	}
+	if _, ok := AnthropicLiveBlocks(nil); ok {
+		t.Fatal("nil message blocks")
+	}
+}
+
+func TestAuxModelForProviderReadsTheFastTierOnlyWhenPreferred(t *testing.T) {
+	ctx := contextWithTempHome(t)
+	old := auxFastModelFromCatalogFn
+	auxFastModelFromCatalogFn = func(context.Context, string) string { return "fast-tier-model" }
+	t.Cleanup(func() { auxFastModelFromCatalogFn = old })
+	if got := AuxModelForProvider(ctx, "anthropic", true); got != "fast-tier-model" {
+		t.Fatalf("prefer fast got %q", got)
+	}
+	if got := AuxModelForProvider(ctx, "anthropic", false); got != auxGetAuxModelForProvider(ctx, "anthropic") || got == "fast-tier-model" {
+		t.Fatalf("plain got %q", got)
+	}
+}

@@ -70,6 +70,11 @@ func anthModelMatches(model string, lists ...[]string) bool {
 	return false
 }
 
+// Claude model that always thinks and rejects a thinking disable
+func IsMandatoryThinkingClaude(model string) bool {
+	return anthModelMatches(model, anthMandatoryThinkingClaude)
+}
+
 // Max output tokens per model family, longest substring match wins
 var anthOutputLimits = map[string]int{
 	"claude-fable": 128_000, "claude-sonnet-5": 128_000, "claude-opus-4-8": 128_000,

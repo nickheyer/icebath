@@ -30,7 +30,7 @@ func anchorImageHistory(n int) []*state.Message {
 	return append(msgs, anchorMsg("assistant", "done looking"))
 }
 
-func TestUsageAnchorPlusSmallDelta(t *testing.T) {
+func TestAnchorArithmeticAnchorPlusSmallDelta(t *testing.T) {
 	messages := anchorImageHistory(10)
 	anchor := CaptureUsageAnchor(50_000, 250, messages)
 	if anchor == nil || anchor.PromptTokens != 50_000 || anchor.BaseCount != len(messages) {
@@ -44,7 +44,7 @@ func TestUsageAnchorPlusSmallDelta(t *testing.T) {
 	}
 }
 
-func TestUsageAnchorImageHeavyDivergenceEliminated(t *testing.T) {
+func TestAnchorArithmeticImageHeavyDivergenceEliminated(t *testing.T) {
 	messages := anchorImageHistory(10)
 	anchor := CaptureUsageAnchor(12_000, 100, messages)
 	messages = append(messages, anchorMsg("assistant", "reply"), anchorMsg("user", "ok"))
@@ -55,7 +55,7 @@ func TestUsageAnchorImageHeavyDivergenceEliminated(t *testing.T) {
 	}
 }
 
-func TestUsageAnchorNoUsageReturnsNone(t *testing.T) {
+func TestAnchorArithmeticNoUsageReturnsNone(t *testing.T) {
 	messages := []*state.Message{anchorMsg("user", "hi")}
 	if CaptureUsageAnchor(0, 0, messages) != nil || CaptureUsageAnchor(nil, nil, messages) != nil || CaptureUsageAnchor("garbage", 1, messages) != nil {
 		t.Fatal("unusable usage must not anchor")
@@ -63,21 +63,32 @@ func TestUsageAnchorNoUsageReturnsNone(t *testing.T) {
 	if CaptureUsageAnchor("12", "3", nil) != nil || CaptureUsageAnchor("12", "-3", messages).CompletionTokens != 0 {
 		t.Fatal("integer text parses and an empty transcript never anchors")
 	}
+}
+
+func TestAnchorArithmeticMissingAnchorFallsBack(t *testing.T) {
 	if _, ok := AnchoredContextTokens(context.Background(), anchorImageHistory(2), nil, true); ok {
 		t.Fatal("missing anchor falls back")
 	}
 }
 
-func TestUsageAnchorInvalidationFailsClosed(t *testing.T) {
+func TestAnchorInvalidationCompactionRewriteFailsClosed(t *testing.T) {
 	messages := anchorImageHistory(4)
 	anchor := CaptureUsageAnchor(30_000, 50, messages)
 	if _, ok := AnchoredContextTokens(context.Background(), []*state.Message{anchorMsg("user", "summary handoff"), anchorMsg("assistant", "[compressed summary]")}, anchor, true); ok {
 		t.Fatal("compaction rewrite")
 	}
+}
+
+func TestAnchorInvalidationMiddleSpliceShiftsBaseAndFailsClosed(t *testing.T) {
+	messages := anchorImageHistory(4)
+	anchor := CaptureUsageAnchor(30_000, 50, messages)
 	spliced := append([]*state.Message{messages[0], anchorMsg("assistant", "[marker]")}, messages[5:]...)
 	if _, ok := AnchoredContextTokens(context.Background(), spliced, anchor, true); ok {
 		t.Fatal("middle splice")
 	}
+}
+
+func TestAnchorInvalidationPrefixRewritePreservingBaseMessageFailsClosed(t *testing.T) {
 	plain := anchorPlainHistory()
 	pa := CaptureUsageAnchor(30_000, 50, plain)
 	last := *plain[3]
@@ -88,7 +99,7 @@ func TestUsageAnchorInvalidationFailsClosed(t *testing.T) {
 	}
 }
 
-func TestUsageAnchorReloadedTranscriptWithSameContentStillMatches(t *testing.T) {
+func TestAnchorInvalidationReloadedTranscriptWithSameContentStillMatches(t *testing.T) {
 	messages := anchorImageHistory(4)
 	anchor := CaptureUsageAnchor(30_000, 50, messages)
 	var reloaded, edited []*state.Message
@@ -132,7 +143,7 @@ func (s *anchorStore) GetModelConfigValue(id, key string) (any, bool, error) {
 	return v, ok, nil
 }
 
-func TestUsageAnchorPersistAndRestoreAcrossProcesses(t *testing.T) {
+func TestAnchorInvalidationPersistAndRestoreAcrossProcesses(t *testing.T) {
 	store := &anchorStore{rows: map[string]map[string]any{}}
 	messages := anchorPlainHistory()
 	first := &UsageAnchorState{SessionID: "s1", Store: store}

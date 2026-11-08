@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -128,5 +129,19 @@ func TestHardenGitArgvInsertsAfterDiffSubcommandOnly(t *testing.T) {
 	}
 	if got := strings.Join(hardenGitArgv([]string{"status", "--porcelain"}), " "); got != "status --porcelain" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestHardenGitArgvWrapperMatches(t *testing.T) {
+	args := []string{"worktree", "add", "x"}
+	if got, want := HardenGitArgv(args), hardenGitArgv(args); !reflect.DeepEqual(got, want) {
+		t.Fatalf("HardenGitArgv = %v, want %v", got, want)
+	}
+}
+
+func TestNoninteractiveRepoGitEnvWrapperMatches(t *testing.T) {
+	dir := t.TempDir()
+	if got, want := NoninteractiveRepoGitEnv(dir, map[string]string{"A": "1"}), noninteractiveRepoGitEnv(dir, map[string]string{"A": "1"}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("NoninteractiveRepoGitEnv = %v, want %v", got, want)
 	}
 }

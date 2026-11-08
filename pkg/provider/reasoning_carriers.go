@@ -84,6 +84,11 @@ func carrierRecord(ctx context.Context, assistantMessage map[string]any) map[str
 	return record
 }
 
+// CarrierRecord is the private reasoning_details record of one response message, nil when it carries nothing
+func CarrierRecord(ctx context.Context, assistantMessage map[string]any) map[string]any {
+	return carrierRecord(ctx, assistantMessage)
+}
+
 type streamCarriers struct {
 	opaqueKeys, textKeys []string
 	signature            string

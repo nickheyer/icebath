@@ -205,6 +205,9 @@ func isOAuthToken(key string) bool {
 	return strings.HasPrefix(key, "sk-ant-") || strings.HasPrefix(key, "eyJ") || strings.HasPrefix(key, "cc-")
 }
 
+// IsOAuthToken reports an OAuth or setup token shape rather than a Console API key
+func IsOAuthToken(key string) bool { return isOAuthToken(key) }
+
 func isNativeAnthropicHost(baseURL string) bool {
 	text := strings.TrimSpace(baseURL)
 	return text == "" || baseURLHostname(text) == "api.anthropic.com"

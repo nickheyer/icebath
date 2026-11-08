@@ -60,3 +60,16 @@ func TestProfileDeclaresItsRegistryRowShapeAndPlace(t *testing.T) {
 		t.Fatalf("lmstudio row missing: %v", ids)
 	}
 }
+
+func TestCanonicalRegistryRowsExportMatchesTheUnexportedRows(t *testing.T) {
+	ctx := context.Background()
+	got, want := CanonicalRegistryRows(ctx), canonicalRegistryRows(ctx)
+	if len(got) == 0 || len(got) != len(want) {
+		t.Fatalf("rows %d vs %d", len(got), len(want))
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("row %d differs: %s vs %s", i, got[i].Name, want[i].Name)
+		}
+	}
+}

@@ -340,3 +340,8 @@ func noninteractiveRepoGitEnv(cwd string, base map[string]string) map[string]str
 	env["GIT_CONFIG_COUNT"] = strconv.Itoa(start + offset)
 	return env
 }
+
+// NoninteractiveRepoGitEnv hardens git for one repository, nil when filter discovery cannot be trusted
+func NoninteractiveRepoGitEnv(cwd string, base map[string]string) map[string]string {
+	return noninteractiveRepoGitEnv(cwd, base)
+}

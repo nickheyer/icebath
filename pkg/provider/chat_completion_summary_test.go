@@ -42,6 +42,18 @@ func (a *fakeChatAgent) s() *summaryFake {
 }
 func (a *fakeChatAgent) MaxIterations() int         { return a.s().maxIter }
 func (a *fakeChatAgent) SuppressStatusOutput() bool { return a.s().suppress }
+func (a *fakeChatAgent) EmitWarning(text string) {
+	a.mu.Lock()
+	a.warnings = append(a.warnings, text)
+	a.mu.Unlock()
+}
+
+func (a *fakeChatAgent) BufferStatus(text string) {
+	a.mu.Lock()
+	a.bufferedStatuses = append(a.bufferedStatuses, text)
+	a.mu.Unlock()
+}
+
 func (a *fakeChatAgent) SafePrint(text string, diagnostic bool) {
 	a.s().printed = append(a.s().printed, text)
 }

@@ -94,6 +94,9 @@ func setAnthropicLiveBlocks(m *state.Message, blocks []any) {
 	runtime.AddCleanup(m, func(k weak.Pointer[state.Message]) { anthropicLiveBlocks.Delete(k) }, key)
 }
 
+// SetAnthropicLiveBlocks replaces the ordered Messages block sidecar of a live message
+func SetAnthropicLiveBlocks(m *state.Message, blocks []any) { setAnthropicLiveBlocks(m, blocks) }
+
 // Ordered Messages block sidecar of a live message, absent for a message reloaded from the session store
 func anthropicLiveBlocksOf(m *state.Message) ([]any, bool) {
 	if m == nil {
@@ -106,6 +109,9 @@ func anthropicLiveBlocksOf(m *state.Message) ([]any, bool) {
 	blocks, ok := v.([]any)
 	return blocks, ok && len(blocks) > 0
 }
+
+// AnthropicLiveBlocks is the live ordered Messages content block sidecar of a message, false when it has none
+func AnthropicLiveBlocks(m *state.Message) ([]any, bool) { return anthropicLiveBlocksOf(m) }
 
 // OpenAI shaped dict of a transcript row with its stored carriers verbatim and the live ordered sidecar
 func messageToDict(m *state.Message) map[string]any {
@@ -1435,6 +1441,9 @@ type imageRef struct {
 	data string
 	ok   bool
 }
+
+// EvictOldScreenshots is the wire pass retiring screenshot payloads past the per request image limit
+func EvictOldScreenshots(result []map[string]any) { evictOldScreenshots(result) }
 
 // Retires screenshot payloads once the request would cross the API per request image limit
 func evictOldScreenshots(result []map[string]any) {

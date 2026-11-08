@@ -52,18 +52,22 @@ func TestMissingBundleUnderACertEnvVarSharesThePlatformContext(t *testing.T) {
 	}
 }
 
-func TestInsecureDisablesVerificationAndBeatsABundle(t *testing.T) {
+func TestInsecureDisablesVerification(t *testing.T) {
 	noCAEnv(t)
 	for _, v := range []any{false, "false", "0", "no", "off", "FALSE"} {
 		if verify := ResolveTLSVerify(nil, "", v, ""); !verify.Insecure || !verify.Config.InsecureSkipVerify {
 			t.Fatalf("%v disables verification", v)
 		}
 	}
-	if !ResolveTLSVerify(nil, DefaultCABundlePath(), false, "").Insecure {
-		t.Fatal("insecure beats an explicit bundle")
-	}
 	if ResolveTLSVerify(nil, "", true, "").Insecure || ResolveTLSVerify(nil, "", "yes", "").Insecure {
 		t.Fatal("truthy values keep verification")
+	}
+}
+
+func TestInsecureBeatsAnExplicitBundle(t *testing.T) {
+	noCAEnv(t)
+	if !ResolveTLSVerify(nil, DefaultCABundlePath(), false, "").Insecure {
+		t.Fatal("insecure beats an explicit bundle")
 	}
 }
 
@@ -128,17 +132,17 @@ func base64Lines(raw []byte) string {
 	return lines.String()
 }
 
-func TestSubprocessVerifyBundleKeepsOwnOverridesAndHandsOverThePlatformStore(t *testing.T) {
+func TestRequestsVerifyKeepsRequestsOwnCaOverrides(t *testing.T) {
 	noCAEnv(t)
-	t.Setenv("REQUESTS_CA_BUNDLE", "/corp/proxy-ca.pem")
-	if SubprocessVerifyBundle(t.TempDir()) != "" {
-		t.Fatal("an operator override keeps the child's own default")
+	if _, ok := importCABundle(); !ok {
+		t.Skip("no CA bundle on this host to freeze")
 	}
-	os.Unsetenv("REQUESTS_CA_BUNDLE")
-	h := t.TempDir()
-	bundle := SubprocessVerifyBundle(h)
-	if bundle == "" || !fileExists(bundle) {
-		t.Fatalf("a bundle that exists must be handed over, got %q", bundle)
+	if got := SubprocessVerifyBundle(t.TempDir()); got != "" {
+		t.Fatalf("a healthy install keeps the child's own default, got %q", got)
+	}
+	t.Setenv("REQUESTS_CA_BUNDLE", "/corp/proxy-ca.pem")
+	if got := SubprocessVerifyBundle(t.TempDir()); got != "" {
+		t.Fatalf("an operator override keeps the child's own default, got %q", got)
 	}
 }
 

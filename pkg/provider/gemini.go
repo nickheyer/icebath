@@ -101,6 +101,9 @@ func normalizeGeminiBaseURL(baseURL string) string {
 	return trimmed + "/v1beta"
 }
 
+// NormalizeGeminiBaseURL strips the OpenAI compatibility suffix and trailing slashes from a Gemini base URL
+func NormalizeGeminiBaseURL(baseURL string) string { return normalizeGeminiBaseURL(baseURL) }
+
 // GeminiDefaultMaxOutputTokens is the maxOutputTokens the native adapter sends when no cap is set
 const GeminiDefaultMaxOutputTokens = geminiDefaultMaxOutputTokens
 
@@ -784,8 +787,7 @@ func (c *geminiNativeClient) streamRequest(ctx context.Context, p *geminiPrepare
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := readLimited(resp.Body, ccErrorBodyLimit)
-		return nil, c.httpError(p, resp.StatusCode, resp.Header.Clone(), string(body))
+		return nil, c.httpError(p, resp.StatusCode, resp.Header.Clone(), ReadStreamingErrorBody(resp, DefaultErrorBodyMaxBytes, DefaultErrorBodyTimeout))
 	}
 	if !send(geminiStreamMsg{headers: resp.Header.Clone(), status: resp.StatusCode}) {
 		return nil, nil

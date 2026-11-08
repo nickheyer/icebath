@@ -287,6 +287,9 @@ func PluginKey(pluginDir string) string {
 	return filepath.Base(pluginDir)
 }
 
+// Grant store key of a plugin directory, the key plugins remove forgets its sign ins under
+func PluginOAuthKey(pluginDir string) string { return PluginKey(pluginDir) }
+
 // Authorize and token hosts in order without repeats
 func pluginOAuthIdPHosts(c OAuthClient) string {
 	var hosts []string

@@ -69,6 +69,21 @@ func routeSupportedEfforts(provider, model, apiMode string) []string {
 	return openAICompatWireEfforts
 }
 
+// Picker label of a ladder level, the level itself when the route sends it verbatim, else what it sends
+func effortDisplayLabel(effort, provider, model, apiMode string) string {
+	requested := strings.ToLower(strings.TrimSpace(effort))
+	clamped := clampEffort(requested, routeSupportedEfforts(provider, model, apiMode), nil)
+	if requested == "" || clamped == requested {
+		return requested
+	}
+	return fmt.Sprintf("%s (sends %s on this route)", requested, clamped)
+}
+
+// EffortDisplayLabel is the picker and reasoning status label for a level on a route
+func EffortDisplayLabel(effort, provider, model, apiMode string) string {
+	return effortDisplayLabel(effort, provider, model, apiMode)
+}
+
 // Turn effort from an explicit reasoning setting clamped to the route, nil leaves codex's default
 func codexTurnEffort(agent CodexRuntimeAgent, model string) *string {
 	rc := agent.ReasoningConfig()

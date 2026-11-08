@@ -16,3 +16,6 @@ func detachAttr(breakaway bool) *syscall.SysProcAttr {
 	}
 	return &syscall.SysProcAttr{CreationFlags: flags}
 }
+
+// DetachAttr is the detached child attribute set, a hidden console process group on Windows
+func DetachAttr(breakaway bool) *syscall.SysProcAttr { return detachAttr(breakaway) }

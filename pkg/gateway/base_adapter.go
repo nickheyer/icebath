@@ -68,6 +68,7 @@ type AdapterTraits struct {
 	ServesProfilePrefix          bool
 	RequiresEditFinalize         bool
 	SupportsMessageEditing       bool
+	SerialReceiveLoop            bool
 	MaxMessageLength             int
 	AckEmoji                     string
 	OkEmoji                      string
@@ -270,6 +271,7 @@ type BasePlatformAdapter struct {
 	backgroundTasks         map[*adapterTask]struct{}
 	expectedCancelledTasks  map[*adapterTask]struct{}
 	parkedNoticeSentAt      map[parkedNoticeKey]float64
+	busyIngress             busyIngressState
 }
 
 // One detached fatal error handler run kept reachable until it finishes

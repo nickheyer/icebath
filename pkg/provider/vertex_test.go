@@ -606,3 +606,21 @@ func TestVertexAnthropicTransportPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestVertexGetConfigExportedResolvesProfileHome(t *testing.T) {
+	vertexIsolate(t)
+	var calls int32
+	srv := vertexTokenServer(t, &calls, 3600)
+	sa := filepath.Join(t.TempDir(), "sa.json")
+	vertexWriteSA(t, sa, srv.URL, "proj", nil)
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	if token, base := VertexGetConfig(context.Background()); token != "" || base != "" {
+		t.Fatalf("no credentials must resolve empty, got %q %q", token, base)
+	}
+	os.WriteFile(filepath.Join(h, ".env"), []byte("VERTEX_CREDENTIALS_PATH="+sa+"\nVERTEX_REGION=europe-west4\n"), 0o600)
+	token, base := VertexGetConfig(context.Background())
+	if token == "" || base != buildVertexBaseURL("proj", "europe-west4") {
+		t.Fatalf("token %q base %q", token, base)
+	}
+}

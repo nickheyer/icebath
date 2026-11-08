@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -1140,7 +1141,7 @@ func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content s
 		if t.threadID != "" {
 			thread = strPtr(t.threadID)
 		}
-		r, err := gateway.SendToPlatform(sendCtx, t.platform, t.pconfig, t.chatID, content, thread, media)
+		r, err := messagetools.SendToPlatform(sendCtx, t.platform, t.pconfig, t.chatID, content, messagetools.SendOptions{ThreadID: thread, MediaFiles: media})
 		ch <- outcome{r, err}
 	}()
 	var o outcome
@@ -1426,7 +1427,11 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 			continue
 		}
 		if target.Platform == "local" {
-			if localErr := gateway.DeliverToLocalChat(ctx, s.home, target.ChatID, cleaned, forFailure); localErr != nil {
+			localErr, err := gateway.DeliverToLocalChat(ctx, s.home, target.ChatID, cleaned, forFailure)
+			if err != nil {
+				return nil, err
+			}
+			if localErr != nil {
 				deliveryErrors = append(deliveryErrors, *localErr)
 			}
 			continue

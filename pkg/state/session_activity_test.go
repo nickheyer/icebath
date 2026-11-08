@@ -50,3 +50,12 @@ func TestAwakeIdleMeterSubtractsHostSleep(t *testing.T) {
 		t.Fatalf("idle after renewed activity %v", got)
 	}
 }
+
+func TestNewAwakeIdleMeterWithClocksReadsTheGivenClocks(t *testing.T) {
+	wall, mono := 500.0, 10.0
+	m := NewAwakeIdleMeterWithClocks(func() float64 { return wall }, func() float64 { return mono })
+	wall, mono = 1400.0, 20.0
+	if got := m.Measure(900); got != 10 {
+		t.Fatalf("awake idle through the given clocks %v", got)
+	}
+}

@@ -181,6 +181,13 @@ func materializeHostChild() (string, error) {
 // Interpreter that runs the host child, swapped by tests for the system python3
 var hostInterpreter = pluginInterpreter
 
+// SwapHostInterpreter points host children at another interpreter resolver and returns the restore
+func SwapHostInterpreter(fn func(context.Context) (string, error)) func() {
+	previous := hostInterpreter
+	hostInterpreter = fn
+	return func() { hostInterpreter = previous }
+}
+
 // PYTHONPATH of a host child, the resource root and the plugin SDK ahead of the inherited path
 func hostPythonPath(ctx context.Context, inherited string) (string, error) {
 	root, err := materializeHostChild()

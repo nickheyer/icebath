@@ -206,8 +206,9 @@ func TestLimitResetCopyNamesLocalTimeAndWait(t *testing.T) {
 	if got := LimitResetCopy(past, &now); got != "" {
 		t.Fatalf("passed: %q", got)
 	}
+	prevNow := failureCopyNow
 	failureCopyNow = func() float64 { return now }
-	t.Cleanup(func() { failureCopyNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 } })
+	t.Cleanup(func() { failureCopyNow = prevNow })
 	if got := LimitResetCopy(now+30, nil); !strings.HasSuffix(got, "(in 1m).") {
 		t.Fatalf("default clock: %q", got)
 	}

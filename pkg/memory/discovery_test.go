@@ -225,3 +225,11 @@ func TestDisabledUserProviderIsFoundButNeverLoaded(t *testing.T) {
 		t.Fatal("parked provider loaded")
 	}
 }
+
+// Exported provider probe agrees with the internal one on an empty directory
+func TestDefinesMemoryProviderExported(t *testing.T) {
+	dir := t.TempDir()
+	if DefinesMemoryProvider(dir) != definesMemoryProvider(dir) || DefinesMemoryProvider(dir) {
+		t.Fatal("empty dir defines a memory provider")
+	}
+}

@@ -146,6 +146,11 @@ func resolveCustomProvider(name string, customProviders []any) *ProviderDef {
 	return nil
 }
 
+// Provider definition a name selects from the legacy custom_providers list
+func ResolveCustomProvider(name string, customProviders []any) *ProviderDef {
+	return resolveCustomProvider(name, customProviders)
+}
+
 // ---- credential ownership of custom entries (agent/custom_entry_pool.py) ----
 
 var declaredCredentialKeys = []string{"api_key", "key_env", "api_key_env", "key_cmd"}
@@ -277,6 +282,14 @@ func customEntryForEndpoint(baseURL, providerName string, cfg map[string]any) *n
 		}
 	}
 	return nil
+}
+
+// CustomEntryForEndpoint is the normalized name and entry of the custom provider owning a base url
+func CustomEntryForEndpoint(baseURL, providerName string, cfg map[string]any) (string, map[string]any, bool) {
+	if m := customEntryForEndpoint(baseURL, providerName, cfg); m != nil {
+		return m.name, m.entry, true
+	}
+	return "", nil, false
 }
 
 // Pool keys to try for a custom endpoint, durable slug then legacy custom name
@@ -789,6 +802,11 @@ func (r *resolver) getNamedCustomProvider(requestedProvider string, cfg map[stri
 	return found
 }
 
+// GetNamedCustomProvider is the named endpoint entry with credentials resolved, nil when none matches
+func GetNamedCustomProvider(ctx context.Context, name string) map[string]any {
+	return modelsResolver(ctx).getNamedCustomProvider(name, nil, true)
+}
+
 // Named endpoint entry a provider name selects in cfg without reading credentials, nil when none matches
 func NamedCustomProviderEntry(ctx context.Context, name string, cfg map[string]any) map[string]any {
 	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(home.Dir(ctx)), home.Dir(ctx), homeCredentialSource(home.Dir(ctx))).getNamedCustomProvider(name, cfg, false)
@@ -1277,6 +1295,11 @@ func (r *resolver) expandDirectAPIAlias(provider, existingBase string) (string, 
 	return "custom", base
 }
 
+// Provider openai expanded onto custom plus the configured OpenAI endpoint, other providers unchanged
+func ExpandDirectAPIAlias(ctx context.Context, provider, existingBase string) (string, string) {
+	return modelsResolver(ctx).expandDirectAPIAlias(provider, existingBase)
+}
+
 // Bare custom plus an explicit base URL, such as a model_aliases direct alias
 func (r *resolver) resolveDirectAliasRuntime(requestedProvider, explicitAPIKey, explicitBaseURL string) *Runtime {
 	baseURL := strings.TrimRight(strings.TrimSpace(explicitBaseURL), "/")
@@ -1324,6 +1347,11 @@ func opencodeFamilyForCustom(requestedProvider, baseURL string) string {
 		return "opencode-zen"
 	}
 	return ""
+}
+
+// OpencodeFamilyForCustom is the OpenCode family by provider name or opencode.ai host, empty for none
+func OpencodeFamilyForCustom(requestedProvider, baseURL string) string {
+	return opencodeFamilyForCustom(requestedProvider, baseURL)
 }
 
 // Runtime for a llamacpp alias, a bare custom direct alias, or a configured custom entry

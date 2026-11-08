@@ -1144,7 +1144,7 @@ func (p *Pool) codexQuotaRestoredUpstream(entry PooledCredential, held bool) boo
 			token = entry.AccessToken
 		}
 	}
-	restored, known := probeCodexQuotaRestored(p.env, token, codexPoolRouteBaseURL(p.env, entry.BaseURL))
+	restored, known := probeCodexQuotaRestoredFn(p.env, token, codexPoolRouteBaseURL(p.env, entry.BaseURL))
 	return known && restored
 }
 

@@ -2,68 +2,21 @@ package agent
 
 import (
 	"context"
-	"errors"
-	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Python ValueError reasons a retry refuses with before any destructive mutation
 var (
-	ErrRetryNonText        = errors.New("retry does not support non-text content")
-	ErrRetryMediaPart      = errors.New("retry does not support media or unknown content parts")
-	ErrRetryAnnotatedPart  = errors.New("retry cannot losslessly flatten annotated text parts")
-	ErrRetryPartWithoutTxt = errors.New("retry text parts must contain text")
-	ErrRetryNoText         = errors.New("retry found no text to send")
+	ErrRetryNonText        = state.ErrRetryNonText
+	ErrRetryMediaPart      = state.ErrRetryMediaPart
+	ErrRetryAnnotatedPart  = state.ErrRetryAnnotatedPart
+	ErrRetryPartWithoutTxt = state.ErrRetryPartWithoutTxt
+	ErrRetryNoText         = state.ErrRetryNoText
 )
 
-var retryTextPartTypes = map[any]bool{"text": true, "input_text": true, "output_text": true}
-
 // Lossless retry text of live user content, media and annotated or unknown parts failing closed
-func RetryableUserText(content any) (string, error) {
-	var parts []any
-	switch c := content.(type) {
-	case string:
-		parts = []any{c}
-	case []any:
-		parts = c
-	case []map[string]any:
-		for _, p := range c {
-			parts = append(parts, p)
-		}
-	default:
-		return "", ErrRetryNonText
-	}
-	var chunks strings.Builder
-	for _, part := range parts {
-		if s, ok := part.(string); ok {
-			chunks.WriteString(s)
-			continue
-		}
-		p, ok := part.(map[string]any)
-		if !ok {
-			return "", ErrRetryNonText
-		}
-		if !retryTextPartTypes[p["type"]] {
-			return "", ErrRetryMediaPart
-		}
-		for k := range p {
-			if k != "type" && k != "text" {
-				return "", ErrRetryAnnotatedPart
-			}
-		}
-		text, isStr := p["text"].(string)
-		if !isStr {
-			return "", ErrRetryPartWithoutTxt
-		}
-		chunks.WriteString(text)
-	}
-	text := chunks.String()
-	if pystr.Strip(text) == "" {
-		return "", ErrRetryNoText
-	}
-	return text, nil
-}
+func RetryableUserText(content any) (string, error) { return state.RetryableUserText(content) }
 
 // Summarizable middle boundaries, an older assistant or tool bridge keeping the newest user ask out of the merge slot
 func (c *ContextCompressor) compressWindow(messages []map[string]any) (int, int) {

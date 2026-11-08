@@ -259,6 +259,11 @@ func vertexGetConfig(ctx context.Context, e vertexEnv, explicitPath, region stri
 	return token, buildVertexBaseURL(project, e.region(ctx, region))
 }
 
+// Access token and base URL for the active profile, both empty when either cannot be resolved
+func VertexGetConfig(ctx context.Context) (string, string) {
+	return vertexGetConfig(ctx, vertexHomeEnv(ctx), "", "")
+}
+
 // Base URL from loadable credentials and a resolvable project without minting a token
 func vertexGetBaseURL(ctx context.Context, e vertexEnv, explicitPath, region string) string {
 	path := vertexResolveCredentialsPathFn(ctx, e, explicitPath)

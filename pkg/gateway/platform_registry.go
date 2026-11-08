@@ -28,51 +28,51 @@ type EnvValueRule struct {
 
 // Metadata and factory of one platform adapter, py tags naming the keyword each field takes
 type PlatformEntry struct {
-	Name                       string                                                                                            `py:"name"`
-	Label                      string                                                                                            `py:"label"`
-	AdapterFactory             AdapterFactory                                                                                    `py:"adapter_factory"`
-	CheckFn                    func() bool                                                                                       `py:"check_fn"`
-	ValidateConfig             func(cfg *PlatformConfig) (bool, error)                                                           `py:"validate_config"`
-	EnsureDepsFn               func(ctx context.Context) (bool, error)                                                           `py:"ensure_deps_fn"`
-	IsConnected                func(ctx context.Context, cfg *PlatformConfig) (bool, error)                                      `py:"is_connected"`
-	RequiredEnv                []string                                                                                          `py:"required_env"`
-	InstallHint                string                                                                                            `py:"install_hint"`
-	SetupFn                    func(ctx context.Context) error                                                                   `py:"setup_fn"`
-	Source                     string                                                                                            `py:"source"`
-	PluginName                 string                                                                                            `py:"plugin_name"`
-	AllowedUsersEnv            string                                                                                            `py:"allowed_users_env"`
-	AllowAllEnv                string                                                                                            `py:"allow_all_env"`
-	MaxMessageLength           int                                                                                               `py:"max_message_length"`
-	PIISafe                    bool                                                                                              `py:"pii_safe"`
-	Emoji                      string                                                                                            `py:"emoji"`
-	AllowUpdateCommand         bool                                                                                              `py:"allow_update_command"`
-	PlatformHint               string                                                                                            `py:"platform_hint"`
-	EnvEnablementFn            func(ctx context.Context) map[string]any                                                          `py:"env_enablement_fn"`
-	ApplyYAMLConfigFn          func(yamlCfg, block map[string]any) (map[string]any, error)                                       `py:"apply_yaml_config_fn"`
-	CronDeliverEnvVar          string                                                                                            `py:"cron_deliver_env_var"`
-	ParseTargetRefFn           func(ref string) (chatID string, threadID *string, ok bool)                                       `py:"parse_target_ref_fn"`
-	ValidateTargetRefFn        func(ref string) any                                                                              `py:"validate_target_ref_fn"`
-	SendMessageHandler         func(ctx context.Context, pconfig map[string]any, chatID, message string, extra any) (any, error) `py:"send_message_handler"`
-	StandaloneSenderFn         func(ctx context.Context, kwargs map[string]any) (map[string]any, error)                          `py:"standalone_sender_fn"`
-	TrustedInbound             bool                                                                                              `py:"trusted_inbound"`
-	DisplayTier                string                                                                                            `py:"display_tier"`
-	DisplayOverrides           map[string]any                                                                                    `py:"display_overrides"`
-	SharedEnvPrefixes          []string                                                                                          `py:"shared_env_prefixes"`
-	ConfigConnectedFn          func(cfg *PlatformConfig) bool                                                                    `py:"config_connected_fn"`
-	AllowBotsEnv               string                                                                                            `py:"allow_bots_env"`
-	OwnPolicyEnv               []string                                                                                          `py:"own_policy_env"`
-	GroupAllowedChatsEnv       string                                                                                            `py:"group_allowed_chats_env"`
-	AllowlistSuppressesPairing bool                                                                                              `py:"allowlist_suppresses_pairing"`
-	TargetRefSyntaxFn          func(ref string) any                                                                              `py:"target_ref_syntax_fn"`
-	StandaloneSend             any                                                                                               `py:"standalone_send"`
-	DashboardLabel             string                                                                                            `py:"dashboard_label"`
-	DashboardDescription       string                                                                                            `py:"dashboard_description"`
-	DocsURL                    string                                                                                            `py:"docs_url"`
-	DashboardEnvVars           []string                                                                                          `py:"dashboard_env_vars"`
-	DashboardRequiredEnv       []string                                                                                          `py:"dashboard_required_env"`
-	EnvValueRules              map[string]EnvValueRule                                                                           `py:"env_value_rules"`
-	EnvOverrides               []EnvStep                                                                                         `py:"env_overrides"`
-	EnvEnableCredentials       []string                                                                                          `py:"env_enable_credentials"`
+	Name                       string                                                                                                                       `py:"name"`
+	Label                      string                                                                                                                       `py:"label"`
+	AdapterFactory             AdapterFactory                                                                                                               `py:"adapter_factory"`
+	CheckFn                    func() bool                                                                                                                  `py:"check_fn"`
+	ValidateConfig             func(cfg *PlatformConfig) (bool, error)                                                                                      `py:"validate_config"`
+	EnsureDepsFn               func(ctx context.Context) (bool, error)                                                                                      `py:"ensure_deps_fn"`
+	IsConnected                func(ctx context.Context, cfg *PlatformConfig) (bool, error)                                                                 `py:"is_connected"`
+	RequiredEnv                []string                                                                                                                     `py:"required_env"`
+	InstallHint                string                                                                                                                       `py:"install_hint"`
+	SetupFn                    func(ctx context.Context) error                                                                                              `py:"setup_fn"`
+	Source                     string                                                                                                                       `py:"source"`
+	PluginName                 string                                                                                                                       `py:"plugin_name"`
+	AllowedUsersEnv            string                                                                                                                       `py:"allowed_users_env"`
+	AllowAllEnv                string                                                                                                                       `py:"allow_all_env"`
+	MaxMessageLength           int                                                                                                                          `py:"max_message_length"`
+	PIISafe                    bool                                                                                                                         `py:"pii_safe"`
+	Emoji                      string                                                                                                                       `py:"emoji"`
+	AllowUpdateCommand         bool                                                                                                                         `py:"allow_update_command"`
+	PlatformHint               string                                                                                                                       `py:"platform_hint"`
+	EnvEnablementFn            func(ctx context.Context) map[string]any                                                                                     `py:"env_enablement_fn"`
+	ApplyYAMLConfigFn          func(yamlCfg, block map[string]any) (map[string]any, error)                                                                  `py:"apply_yaml_config_fn"`
+	CronDeliverEnvVar          string                                                                                                                       `py:"cron_deliver_env_var"`
+	ParseTargetRefFn           func(ref string) (chatID string, threadID *string, ok bool)                                                                  `py:"parse_target_ref_fn"`
+	ValidateTargetRefFn        func(ref string) any                                                                                                         `py:"validate_target_ref_fn"`
+	SendMessageHandler         func(ctx context.Context, args map[string]any, chatID, platformName string, pconfig *PlatformConfig) (map[string]any, error) `py:"send_message_handler"`
+	StandaloneSenderFn         func(ctx context.Context, kwargs map[string]any) (map[string]any, error)                                                     `py:"standalone_sender_fn"`
+	TrustedInbound             bool                                                                                                                         `py:"trusted_inbound"`
+	DisplayTier                string                                                                                                                       `py:"display_tier"`
+	DisplayOverrides           map[string]any                                                                                                               `py:"display_overrides"`
+	SharedEnvPrefixes          []string                                                                                                                     `py:"shared_env_prefixes"`
+	ConfigConnectedFn          func(cfg *PlatformConfig) bool                                                                                               `py:"config_connected_fn"`
+	AllowBotsEnv               string                                                                                                                       `py:"allow_bots_env"`
+	OwnPolicyEnv               []string                                                                                                                     `py:"own_policy_env"`
+	GroupAllowedChatsEnv       string                                                                                                                       `py:"group_allowed_chats_env"`
+	AllowlistSuppressesPairing bool                                                                                                                         `py:"allowlist_suppresses_pairing"`
+	TargetRefSyntaxFn          func(ref string) any                                                                                                         `py:"target_ref_syntax_fn"`
+	StandaloneSend             *StandaloneSendPolicy                                                                                                        `py:"standalone_send"`
+	DashboardLabel             string                                                                                                                       `py:"dashboard_label"`
+	DashboardDescription       string                                                                                                                       `py:"dashboard_description"`
+	DocsURL                    string                                                                                                                       `py:"docs_url"`
+	DashboardEnvVars           []string                                                                                                                     `py:"dashboard_env_vars"`
+	DashboardRequiredEnv       []string                                                                                                                     `py:"dashboard_required_env"`
+	EnvValueRules              map[string]EnvValueRule                                                                                                      `py:"env_value_rules"`
+	EnvOverrides               []EnvStep                                                                                                                    `py:"env_overrides"`
+	EnvEnableCredentials       []string                                                                                                                     `py:"env_enable_credentials"`
 }
 
 // Entry with the dataclass defaults, plugin source, plug emoji and the update command allowed

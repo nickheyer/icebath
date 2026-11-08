@@ -493,6 +493,11 @@ func resolveXAIOAuthRuntimeCredentials(env PoolEnv, forceRefresh, refreshIfExpir
 	}, nil
 }
 
+// Exported xAI OAuth runtime credential resolution for the agent client refresh
+func ResolveXAIOAuthRuntimeCredentials(env PoolEnv, forceRefresh, refreshIfExpiring bool, refreshSkew time.Duration) (map[string]any, error) {
+	return resolveXAIOAuthRuntimeCredentials(env, forceRefresh, refreshIfExpiring, refreshSkew)
+}
+
 // XAILoginArgs are the xAI login flags
 type XAILoginArgs struct {
 	Timeout   time.Duration

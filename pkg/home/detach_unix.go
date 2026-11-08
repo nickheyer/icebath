@@ -6,3 +6,6 @@ import "syscall"
 
 // New session so the prune outlives the launching command and its terminal
 func detachAttr(bool) *syscall.SysProcAttr { return &syscall.SysProcAttr{Setsid: true} }
+
+// DetachAttr is the detached child attribute set, a new session outside Windows
+func DetachAttr(breakaway bool) *syscall.SysProcAttr { return detachAttr(breakaway) }

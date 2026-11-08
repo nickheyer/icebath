@@ -151,7 +151,7 @@ func (r *Registry) Snapshot(ctx context.Context, scope string) []*Def {
 	m := r.mergedTools(ctx, scope)
 	out := make([]*Def, 0, len(m))
 	for _, d := range m {
-		out = append(out, d)
+		out = append(out, d.resolveSchema())
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -159,6 +159,11 @@ func (r *Registry) Snapshot(ctx context.Context, scope string) []*Def {
 
 // Lookup finds a tool through the session overlay, the profile overlay, then the global map
 func (r *Registry) Lookup(ctx context.Context, scope, name string) *Def {
+	return r.lookupEntry(ctx, scope, name).resolveSchema()
+}
+
+// Raw entry through the session overlay, the profile overlay, then the global map
+func (r *Registry) lookupEntry(ctx context.Context, scope, name string) *Def {
 	e := r.ext()
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -186,6 +191,11 @@ func (r *Registry) Entry(ctx context.Context, env *Env, name string) *Def {
 
 // SnapshotRegistration returns one slot's own entry without any global fallback
 func (r *Registry) SnapshotRegistration(scope, name string) *Def {
+	return r.registrationEntry(scope, name).resolveSchema()
+}
+
+// Raw entry of one slot without any global fallback
+func (r *Registry) registrationEntry(scope, name string) *Def {
 	e := r.ext()
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -356,13 +366,17 @@ func (r *Registry) PluginScopeForModule(current, module string) (string, error) 
 
 // RegisterScoped registers a plugin owned tool into a profile overlay under the override policy
 func (r *Registry) RegisterScoped(scope string, d Def) error {
-	if err := validateRegistrationSchema(d); err != nil {
+	lazy := d.Schema == nil && d.SchemaBuilder != nil
+	if err := validateRegistrationSchema(d); !lazy && err != nil {
 		return err
 	}
 	if d.Name == "" || d.Handler == nil {
 		return fmt.Errorf("tool %q: registration requires name, schema, and handler", d.Name)
 	}
-	if d.Description == "" {
+	d.schemaOnce = nil
+	if lazy {
+		d.schemaOnce = new(sync.Once)
+	} else if d.Description == "" {
 		if s, ok := d.Schema["description"].(string); ok {
 			d.Description = s
 		}

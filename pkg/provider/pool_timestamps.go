@@ -107,6 +107,13 @@ func IsExpiring(expiresAt any, skew time.Duration) bool {
 
 var nowFunc = time.Now
 
+// SetPoolClock swaps the pool wall clock and returns the function that puts the previous one back
+func SetPoolClock(fn func() time.Time) func() {
+	prev := nowFunc
+	nowFunc = fn
+	return func() { nowFunc = prev }
+}
+
 func nowEpoch() float64 { return float64(nowFunc().UnixNano()) / 1e9 }
 
 // utcNowZ formats the current UTC time with a trailing Z

@@ -22,6 +22,14 @@ func (e *AuxSDKError) Error() string { return e.Message }
 
 func (e *AuxSDKError) Unwrap() error { return e.Err }
 
+// Python exception class the SDK raised, APIError when unclassified
+func (e *AuxSDKError) PyTypeName() string {
+	if e.Class == "" {
+		return "APIError"
+	}
+	return e.Class
+}
+
 // AuxRuntimeError is a Python RuntimeError raised by the auxiliary client, carrying an HTTP 200 provider error object
 type AuxRuntimeError struct {
 	Message       string

@@ -668,3 +668,9 @@ func TestAnthropicUnsupportedInlineImageSubtypeDowngradesToText(t *testing.T) {
 		t.Fatalf("svg downgrade or jpg normalize wrong: %v", blocks)
 	}
 }
+
+func TestIsOAuthTokenSeparatesSetupTokensFromConsoleKeys(t *testing.T) {
+	if !IsOAuthToken("sk-ant-oat01-abcdef1234567890") || IsOAuthToken("sk-ant-api03-abcdef1234567890") || IsOAuthToken("") {
+		t.Fatal("token shape misread")
+	}
+}

@@ -456,3 +456,28 @@ func TestCoerceIntKeepsPythonIntsPastTheGoIntRange(t *testing.T) {
 		t.Fatalf("negative max age %v", gw.SessionStoreMaxAgeDays)
 	}
 }
+
+func TestMessagingPlatformLabelsCoverMembersBundledDirsAndAliases(t *testing.T) {
+	bundled := t.TempDir()
+	for dir, manifest := range map[string]string{"a2a": "name: a2a-platform\n", "irc": "name: IRC\n"} {
+		os.MkdirAll(filepath.Join(bundled, "platforms", dir), 0o755)
+		os.WriteFile(filepath.Join(bundled, "platforms", dir, "plugin.yaml"), []byte(manifest), 0o600)
+	}
+	resetPlatformMembers(t, bundled)
+	labels := MessagingPlatformLabels()
+	set := map[string]bool{}
+	for i, l := range labels {
+		if set[l] {
+			t.Fatalf("duplicate label %q", l)
+		}
+		set[l] = true
+		if i > 0 && labels[i-1] > l {
+			t.Fatalf("labels not sorted: %v", labels)
+		}
+	}
+	for _, want := range []string{string(PlatformTelegram), string(PlatformLocal), string(PlatformWhatsAppCloud), "a2a", "irc", "a2a-platform"} {
+		if !set[want] {
+			t.Fatalf("missing %q in %v", want, labels)
+		}
+	}
+}

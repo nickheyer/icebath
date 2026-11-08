@@ -135,3 +135,17 @@ func TestParseEnvironBlockFollowsPsutil(t *testing.T) {
 		}
 	}
 }
+
+func TestBootTimePrecedesThisProcessAndNow(t *testing.T) {
+	boot, err := BootTime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	birth, err := Birth(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boot <= 0 || boot > birth+1 || boot > float64(time.Now().Unix())+1 {
+		t.Fatalf("boot %v birth %v", boot, birth)
+	}
+}

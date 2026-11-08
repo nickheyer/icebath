@@ -610,7 +610,7 @@ func RecordReplyContent(ctx context.Context, agent ReplyAgent, response any, ass
 		return
 	}
 	scratch := agent.MetricsScratch()
-	if latched, ok := scratch.Load(harnessReplyKey); ok && latched != nil && latched == response {
+	if latched, ok := scratch.Load(harnessReplyKey); ok && latched != nil && sameObject(latched, response) {
 		scratch.Delete(harnessReplyKey)
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/builtin/delegationdefault"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -20,6 +21,8 @@ func TestMain(m *testing.M) {
 	home.DispatchScratchPruneEntry()
 	dispatchTrajectoryChild()
 	dispatchLifecycleChild()
+	dispatchVerifyRunChild()
+	dispatchProviderClientSleepChild()
 	state.SecretEnvSubstrings = testSecretEnvSubstrings
 	state.SecretEnvName = func(name string) bool {
 		upper := strings.ToUpper(name)
@@ -36,6 +39,25 @@ func TestMain(m *testing.M) {
 	provider.GatewayHooks.PlatformEnabled = func(map[string]any) (bool, string) { return false, "" }
 	provider.GatewayHooks.ServesHome = func(string) bool { return false }
 	tools.ProfileSecrets = providerProfileSecrets{}
+	if tools.ConfigEnvTableKeys == nil {
+		tools.ConfigEnvTableKeys = func() []string { return nil }
+		tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
+	}
+	if tools.AsyncDelegationOwnerProbes.PidExists == nil {
+		tools.AsyncDelegationOwnerProbes.PidExists = func(int) bool { return false }
+		tools.AsyncDelegationOwnerProbes.ProcessStartTime = func(int) (int64, bool) { return 0, false }
+	}
+	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{
+		CatalogEntry:     func(string) (string, bool) { return "", false },
+		Install:          func(context.Context, string, bool) (map[string]any, error) { return nil, nil },
+		LoadError:        func(string) string { return "" },
+		RefreshBoundHome: func() {},
+		DependencyHomes:  func() []string { return nil },
+		AuxiliaryTasks:   func() []map[string]any { return nil },
+	})
+	if tools.DelegationRegistryHooks.GetProvider == nil {
+		installDefaultDelegationRegistry()
+	}
 	realAgentSetupLogging = agentSetupLogging
 	agentSetupLogging = func(context.Context, string) error { return nil }
 	os.Exit(m.Run())
@@ -54,4 +76,19 @@ func (providerProfileSecrets) BuildProfileSecretScope(h string) map[string]strin
 }
 func (providerProfileSecrets) CurrentSecretScope(ctx context.Context) map[string]string {
 	return provider.CurrentSecretScope(ctx)
+}
+
+// Delegation registry double serving only the bundled default backend, as a fresh install does
+func installDefaultDelegationRegistry() {
+	def := delegationdefault.NewDefaultDelegationProvider()
+	tools.DelegationRegistryHooks.GetProvider = func(_ context.Context, name string) tools.DelegationProvider {
+		if name == def.Name() {
+			return def
+		}
+		return nil
+	}
+	tools.DelegationRegistryHooks.DisabledPlugins = func(string) map[string]bool { return map[string]bool{} }
+	tools.DelegationRegistryHooks.LoadBundled = func(context.Context, string, func(tools.DelegationProvider)) bool { return false }
+	tools.DelegationRegistryHooks.DiscoverPlugins = func(context.Context, bool) {}
+	tools.DelegationRegistryHooks.ListProviders = func(context.Context) []tools.DelegationProvider { return []tools.DelegationProvider{def} }
 }

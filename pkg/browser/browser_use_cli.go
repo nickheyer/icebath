@@ -131,7 +131,7 @@ func BrowserExecSchemaOverrides(env *tools.Env) map[string]any {
 }
 
 // Browser harness importable, never launching or opening sockets
-func browserExecAvailable(env *tools.Env) bool { return findCLI(env) != nil }
+var browserExecAvailable = func(env *tools.Env) bool { return findCLI(env) != nil }
 
 // Runs browser_exec counted against the backend that served it, a raised error reaching the dispatcher
 func handleBrowserExec(ctx context.Context, call *tools.Call) string {

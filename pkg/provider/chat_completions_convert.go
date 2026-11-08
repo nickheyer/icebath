@@ -290,6 +290,9 @@ func ladderIndex(level string) int {
 	return -1
 }
 
+// EffortLadderIndex is the position of a reasoning effort on the ladder, -1 when absent
+func EffortLadderIndex(level string) int { return ladderIndex(level) }
+
 func containsStr(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {
@@ -1103,6 +1106,11 @@ func chatToolRename(t map[string]any, alias string) map[string]any {
 	return nt
 }
 
+// RenameToolSearchBridgeForXAI aliases the tool_search bridge declaration xAI reserves, with the alias to original map
+func RenameToolSearchBridgeForXAI(tools []map[string]any) ([]map[string]any, map[string]string) {
+	return aliasReservedTools(tools, []string{"tool_search"}, chatToolName, chatToolRename)
+}
+
 // Tool schemas shaped for the route, with the alias map the response normalizer reverses
 func (c *ccRoute) convertTools(tools []map[string]any) ([]map[string]any, map[string]string) {
 	if len(tools) == 0 {
@@ -1322,13 +1330,18 @@ func sanitizeMoonshotToolParameters(params any) map[string]any {
 }
 
 func sanitizeMoonshotTools(tools []map[string]any) []map[string]any {
+	if len(tools) == 0 {
+		return tools
+	}
 	out := make([]map[string]any, 0, len(tools))
+	anyChange := false
 	for _, tool := range tools {
 		fn, ok := tool["function"].(map[string]any)
 		if !ok {
 			out = append(out, tool)
 			continue
 		}
+		anyChange = true
 		nf := make(map[string]any, len(fn))
 		for k, v := range fn {
 			nf[k] = v
@@ -1340,6 +1353,9 @@ func sanitizeMoonshotTools(tools []map[string]any) []map[string]any {
 		}
 		nt["function"] = nf
 		out = append(out, nt)
+	}
+	if !anyChange {
+		return tools
 	}
 	return out
 }
@@ -2772,4 +2788,9 @@ func validatedOpenRouterProviderSort(raw any) (string, bool) {
 	}
 	slog.Warn(fmt.Sprintf("Ignoring invalid OpenRouter provider.sort value %s (allowed: latency, price, throughput)", pyrepr.Repr(raw)))
 	return "", false
+}
+
+// ValidatedOpenRouterProviderSort is the normalized provider.sort value, false when absent or invalid
+func ValidatedOpenRouterProviderSort(raw any) (string, bool) {
+	return validatedOpenRouterProviderSort(raw)
 }

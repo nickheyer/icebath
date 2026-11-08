@@ -237,3 +237,15 @@ func TestActualRouteAndHostMandateUseExactHostnames(t *testing.T) {
 		t.Fatal("real endpoints must be mandated")
 	}
 }
+
+func TestDetermineModeCtxMatchesTheContextFreeResolution(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range [][3]string{{"anthropic", "", "claude-fable-5.1"}, {"openrouter", "https://openrouter.ai/api/v1", "a/b"}, {"bedrock", "", "m"}, {"nous", "", "anthropic/claude-fable-5.1"}} {
+		if got, want := DetermineModeCtx(ctx, c[0], c[1], c[2], "native"), DetermineMode(c[0], c[1], c[2], "native"); got != want {
+			t.Fatalf("%v: %s want %s", c, got, want)
+		}
+	}
+	if DetermineModeCtx(ctx, "anthropic", "", "claude-fable-5.1", "") != ModeAnthropicMessages {
+		t.Fatal("anthropic transport")
+	}
+}

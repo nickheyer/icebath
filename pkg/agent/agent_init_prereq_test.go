@@ -171,7 +171,8 @@ func TestCompressionSummaryShowsTheAutoraiseNoticeOncePerProfile(t *testing.T) {
 func TestSnapshotPrimaryRuntimeRecordsRouteAndCompressorState(t *testing.T) {
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	cc := NewContextCompressor(ctx, DefaultContextCompressorOptions("cm"))
-	cc.Base().ContextLength, cc.Base().ThresholdTokens = 128000, 100000
+	cc.SetContextLength(128000)
+	cc.SetThresholdTokens(100000)
 	a := &AIAgent{model: "m", provider: "anthropic", requestedProvider: "anthropic", apiMode: "anthropic_messages", apiKey: "k",
 		clientKwargs: map[string]any{"api_key": "k"}, requestOverrides: map[string]any{"x": 1}, contextCompressor: cc,
 		anthropicAPIKey: "ak", anthropicBaseURL: "https://api.anthropic.com", reasoningEchoFlag: true}

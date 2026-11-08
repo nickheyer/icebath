@@ -23,8 +23,16 @@ type tracedStatement struct {
 // Connection recording every statement SQLite prepared and ran, the set_trace_callback view, exposing the raw handle
 type statementTracer struct {
 	SQLiteConn
-	mu  *sync.Mutex
-	log *[]tracedStatement
+	mu     *sync.Mutex
+	log    *[]tracedStatement
+	before func(query string)
+}
+
+// Runs the before hook of the tracer when one is installed
+func (s *statementTracer) starting(query string) {
+	if s.before != nil {
+		s.before(query)
+	}
 }
 
 func (s *statementTracer) record(query string, args []any) {
@@ -34,6 +42,7 @@ func (s *statementTracer) record(query string, args []any) {
 }
 
 func (s *statementTracer) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	s.starting(query)
 	res, err := s.SQLiteConn.ExecContext(ctx, query, args...)
 	if err == nil {
 		s.record(query, args)
@@ -42,6 +51,7 @@ func (s *statementTracer) ExecContext(ctx context.Context, query string, args ..
 }
 
 func (s *statementTracer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	s.starting(query)
 	rows, err := s.SQLiteConn.QueryContext(ctx, query, args...)
 	if err == nil {
 		s.record(query, args)
@@ -50,6 +60,7 @@ func (s *statementTracer) QueryContext(ctx context.Context, query string, args .
 }
 
 func (s *statementTracer) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	s.starting(query)
 	row := s.SQLiteConn.QueryRowContext(ctx, query, args...)
 	if row.Err() == nil {
 		s.record(query, args)
@@ -75,6 +86,10 @@ var indexChoiceReaders = map[string]func(ctx context.Context, db *SessionDB) ([]
 	"sidebar": func(ctx context.Context, db *SessionDB) ([]*pyjson.Object, error) {
 		limit := 2
 		return db.ListSessionsRich(ctx, ListSessionsRichOptions{Limit: &limit, OrderByLastActive: true, IncludePinned: true})
+	},
+	"session_search": func(ctx context.Context, db *SessionDB) ([]*pyjson.Object, error) {
+		limit := 2
+		return db.ListRecentSessionsBounded(ctx, RecentSessionsBoundedOptions{Limit: &limit})
 	},
 	"telegram_unlinked": func(ctx context.Context, db *SessionDB) ([]*pyjson.Object, error) {
 		return db.ListUnlinkedTelegramSessionsForUser(ctx, "u", "", 2)

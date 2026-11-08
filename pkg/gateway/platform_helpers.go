@@ -480,6 +480,18 @@ func IsTableRow(line string) bool { return strings.Contains(pystr.Strip(line), "
 // Stripped cells of a markdown table row
 func SplitMarkdownTableRow(line string) []string { return splitTableRow(line) }
 
+// Cells between the optional outer pipes of a table row, each stripped
+func splitTableRow(row string) []string {
+	s := pystr.Strip(row)
+	s = strings.TrimPrefix(s, "|")
+	s = strings.TrimSuffix(s, "|")
+	cells := strings.Split(s, "|")
+	for i, c := range cells {
+		cells[i] = pystr.Strip(c)
+	}
+	return cells
+}
+
 func pyreMatch(re *regexp2.Regexp, s string) bool {
 	m, err := re.FindStringMatch(s)
 	return err == nil && m != nil && m.RuneIndex == 0

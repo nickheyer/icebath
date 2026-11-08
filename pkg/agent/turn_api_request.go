@@ -162,7 +162,7 @@ func buildAPIRequest(ctx context.Context, a *AIAgent, s *LoopState) error {
 	}
 	firePreAPIRequestHook(ctx, a, s, s.APIKwargs, mapRows(s.APIMessages), s.LLMMiddlewareTrace)
 	if config.EnvVarEnabled("ICEBATH_DUMP_REQUESTS") {
-		a.dumpAPIRequestDebug(s.APIKwargs, "preflight")
+		a.dumpAPIRequestDebug(s.APIKwargs, "preflight", nil)
 	}
 	if s.MoaPreparedRequest != nil && a.provider == "moa" {
 		if moaClientConsumesPreparedRequest(a.client) {

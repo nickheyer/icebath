@@ -63,6 +63,11 @@ func newAwakeIdleMeter(wallNow, monoNow func() float64) *AwakeIdleMeter {
 	return &AwakeIdleMeter{wallNow: wallNow, monoNow: monoNow, wall: wallNow(), mono: monoNow()}
 }
 
+// Meter reading the given wall and monotonic clocks
+func NewAwakeIdleMeterWithClocks(wallNow, monoNow func() float64) *AwakeIdleMeter {
+	return newAwakeIdleMeter(wallNow, monoNow)
+}
+
 // Wall clock idle seconds minus the host sleep observed since the last activity
 func (m *AwakeIdleMeter) Measure(idleS float64) float64 {
 	wall, mono := m.wallNow(), m.monoNow()

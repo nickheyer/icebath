@@ -142,6 +142,7 @@ func (p *bootPlane) env(idp bool) map[string]string {
 
 // Temp profile home served by a fresh remote backend with the deployment in the process env
 func setupBootPlane(t *testing.T, idp bool) *bootPlane {
+	restoreProcessEnv(t)
 	p := newBootPlane(t)
 	p.home = filepath.Join(t.TempDir(), "home")
 	if err := os.MkdirAll(p.home, 0o755); err != nil {

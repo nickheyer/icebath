@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"net/http"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -29,4 +30,22 @@ func (a *AIAgent) creditsCapture() *provider.CreditsCapture {
 		a.credits.SessionID = a.sessionID
 	}
 	return a.credits
+}
+
+// Headers of a response value, nil when there is nothing to parse
+func responseHeaders(response any) http.Header {
+	switch r := response.(type) {
+	case *http.Response:
+		if r != nil {
+			return r.Header
+		}
+	case http.Header:
+		return r
+	}
+	return nil
+}
+
+// Captures rate limit and credits state from Anthropic Messages response headers
+func (a *AIAgent) captureAnthropicResponseHeaders(response any) {
+	a.creditsCapture().CaptureAnthropicResponseHeaders(responseHeaders(response))
 }

@@ -23,6 +23,12 @@ func TestDatabasesParseLikeNssFiles(t *testing.T) {
 	if _, err := Getpwuid(7); err == nil || err.Error() != "getpwuid(): uid not found: 7" {
 		t.Fatal(err)
 	}
+	if p, err := Getpwnam("nick"); err != nil || p.UID != 1000 || p.Dir != "/home/nick" {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if _, err := Getpwnam("ghost"); err == nil || err.Error() != "getpwnam(): name not found: 'ghost'" {
+		t.Fatal(err)
+	}
 	if g, err := Getgrgid(10); err != nil || g.Name != "wheel" || len(g.Mem) != 2 || g.Mem[1] != "nick" {
 		t.Fatalf("%+v %v", g, err)
 	}

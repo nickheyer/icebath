@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 
@@ -281,3 +282,34 @@ func OrchestratorEnabled(ctx context.Context) bool {
 func InheritMCPToolsets(ctx context.Context) bool {
 	return isTruthyValue(LoadDelegationConfig(ctx)["inherit_mcp_toolsets"], true)
 }
+
+// DelegationValueError is the ValueError a delegation credential or route resolver refuses a task with
+type DelegationValueError struct{ Message string }
+
+func (e *DelegationValueError) Error() string { return e.Message }
+
+// RequirePinnedCommand refuses a pinned ACP transport command that is not on PATH
+func RequirePinnedCommand(command, message string) error {
+	if command == "" {
+		return nil
+	}
+	if _, err := exec.LookPath(command); err != nil {
+		return &DelegationValueError{Message: message}
+	}
+	return nil
+}
+
+// CredentialBundle builds the child credential map every delegation credential branch returns
+func CredentialBundle(model, providerName, baseURL, apiKey, apiMode, requestOverrides any, extra map[string]any) map[string]any {
+	out := map[string]any{
+		"model": model, "provider": providerName, "base_url": baseURL, "api_key": apiKey, "api_mode": apiMode,
+		"request_overrides": requestOverrides,
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
+}
+
+// ResolvedReasoning is a route's final reasoning config used as is, nil standing for the route's own default
+type ResolvedReasoning struct{ Config map[string]any }

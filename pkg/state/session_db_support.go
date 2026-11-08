@@ -53,9 +53,6 @@ var (
 	repairAttemptMu      sync.Mutex
 )
 
-// Seconds a repair waits for the cross process schema surgery lock
-const repairLockTimeoutSeconds = 120.0
-
 // Reports whether close time checkpoints can be switched off, always true on the linked SQLite
 var closeTimeCheckpointConfigurable = func() bool {
 	return sqlite3.SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE != 0

@@ -80,7 +80,7 @@ func credString(creds map[string]any, key string) string {
 func TaskServiceTier(word string, creds map[string]any, parent DelegateRouteAgent) (map[string]any, error) {
 	tier, err := DelegateServiceTierHooks.ParseExactServiceTier(word)
 	if err != nil || (tier != "" && !DelegateServiceTierHooks.IsStaticTier(tier)) {
-		return nil, fmt.Errorf("Unknown service_tier '%s'. Use normal, fast, or ultrafast.", word)
+		return nil, &DelegationValueError{Message: fmt.Sprintf("Unknown service_tier '%s'. Use normal, fast, or ultrafast.", word)}
 	}
 	attr := func(get func(DelegateRouteAgent) string) string {
 		if parent == nil {
@@ -114,7 +114,7 @@ func TaskServiceTier(word string, creds map[string]any, parent DelegateRouteAgen
 			return nil, err
 		}
 		if len(offered) == 0 {
-			return nil, fmt.Errorf("service_tier '%s' is not available for model '%s' on provider '%s'. Omit service_tier or choose a model/provider that offers it.", word, shownRoute(model, parent), shownRoute(providerName, parent))
+			return nil, &DelegationValueError{Message: fmt.Sprintf("service_tier '%s' is not available for model '%s' on provider '%s'. Omit service_tier or choose a model/provider that offers it.", word, shownRoute(model, parent), shownRoute(providerName, parent))}
 		}
 		fast = offered
 	}

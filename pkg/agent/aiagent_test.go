@@ -95,8 +95,9 @@ func TestAdoptBuiltBackendOnlyForTheCarriedDelegateDef(t *testing.T) {
 
 func TestTouchActivityStampsUnderTheLock(t *testing.T) {
 	a := &AIAgent{turnLivenessAbortClaim: "claim"}
+	prevWall := activityWallNow
 	activityWallNow = func() float64 { return 42.5 }
-	t.Cleanup(func() { activityWallNow = func() float64 { return 0 } })
+	t.Cleanup(func() { activityWallNow = prevWall })
 	a.touchActivity(strings.Repeat("d", 400), "compression", false)
 	if a.turnLivenessActivityGeneration != 1 || a.lastActivityTS != 42.5 || a.turnLivenessAbortClaim != nil {
 		t.Fatalf("stamp %d %v %v", a.turnLivenessActivityGeneration, a.lastActivityTS, a.turnLivenessAbortClaim)

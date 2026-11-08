@@ -159,6 +159,9 @@ func TestCustomProviderSlugAndAliases(t *testing.T) {
 	if p := resolveCustomProvider("sec", list); p == nil || p.ID != "custom:sec" {
 		t.Fatalf("provider key alias: %+v", p)
 	}
+	if p := ResolveCustomProvider("Second", list); p == nil || p.BaseURL != "https://s/v1" {
+		t.Fatalf("exported resolver: %+v", p)
+	}
 }
 
 func TestCustomEntryOwnership(t *testing.T) {
@@ -332,7 +335,7 @@ func TestExpandDirectAPIAlias(t *testing.T) {
 	}
 }
 
-func TestLlamacppAliasWithoutServerIsTyped(t *testing.T) {
+func TestLlamacppDeadServerRaisesFriendlyError(t *testing.T) {
 	r := testResolver(t, map[string]any{"local_runtime": map[string]any{"enabled": true}}, &fakeCreds{}, "")
 	_, err := r.ResolveRuntime("llamacpp", "", "", nil, "")
 	var lr *LocalRuntimeUnavailableError
@@ -405,5 +408,31 @@ func TestRouteKeyExport(t *testing.T) {
 	}
 	if RouteKey(nil) != "" {
 		t.Fatal("RouteKey(nil) not empty")
+	}
+}
+
+func TestExpandDirectAPIAliasReadsTheLiveConfig(t *testing.T) {
+	ctx := contextWithTempHome(t)
+	t.Setenv("OPENAI_BASE_URL", "")
+	if p, b := ExpandDirectAPIAlias(ctx, "openai", ""); p != "custom" || b != OpenAIBaseURL {
+		t.Fatalf("got %q %q", p, b)
+	}
+	if p, b := ExpandDirectAPIAlias(ctx, "openai", "https://mine/v1"); p != "custom" || b != "https://mine/v1" {
+		t.Fatalf("existing base: %q %q", p, b)
+	}
+	if p, b := ExpandDirectAPIAlias(ctx, "deepseek", ""); p != "deepseek" || b != "" {
+		t.Fatalf("non alias: %q %q", p, b)
+	}
+}
+
+func TestCustomEntryForEndpointWrapper(t *testing.T) {
+	cfg := map[string]any{"providers": map[string]any{"plain": map[string]any{"api": "http://127.0.0.1:1/v1"}}}
+	name, entry, ok := CustomEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg)
+	match := customEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg)
+	if !ok || match == nil || name != match.name || entry["api"] != match.entry["api"] {
+		t.Fatalf("CustomEntryForEndpoint = %q %v %v", name, entry, ok)
+	}
+	if _, _, ok := CustomEntryForEndpoint("", "", cfg); ok {
+		t.Fatal("empty base url matched")
 	}
 }

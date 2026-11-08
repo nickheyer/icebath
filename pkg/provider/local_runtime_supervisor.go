@@ -65,6 +65,9 @@ func localRuntimeStatePath() string {
 	return filepath.Join(RuntimesRoot(), "server.json")
 }
 
+// LocalRuntimeStatePath is the supervisor state file of the managed local runtime
+func LocalRuntimeStatePath() string { return localRuntimeStatePath() }
+
 // Router status values of a model holding a loaded child
 func lrIsResident(status any) bool {
 	s, ok := status.(string)

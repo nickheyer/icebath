@@ -212,6 +212,9 @@ func argFloat(v any, def float64) float64 {
 	return def
 }
 
+// ArgFloat reads a plugin argument the way float() does, def when it does not convert
+func ArgFloat(v any, def float64) float64 { return argFloat(v, def) }
+
 // Callable argument of a registrar, a TypeError naming the parameter when the plugin passed something else
 func argCallable(method, param string, v any) (*HostedCallable, error) {
 	f, ok := v.(*HostedCallable)
@@ -429,7 +432,7 @@ func init() {
 			return c.HasCapability(ctx, argStr(a["capability"])), nil
 		}),
 		"side_question": hostMethod("side_question", []pyParam{req("token"), req("prompt"), kwo("timeout", 15.0)}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-			answer, err := c.SideQuestion(ctx, argStr(a["token"]), argStr(a["prompt"]), argFloat(a["timeout"], 15.0))
+			answer, err := c.SideQuestion(ctx, a["token"], a["prompt"], a["timeout"])
 			if err != nil || answer == nil {
 				return nil, err
 			}

@@ -781,7 +781,11 @@ func compressionTipOn(ctx context.Context, conn SQLiteConn, sessionID string) (s
 
 // Deepest descendant with messages along the newest plain continuation children, the input when a lookup fails
 func (d *SessionDB) ResolveResumeSessionID(sessionID string) (string, error) {
-	ctx := context.Background()
+	return d.resolveResumeSessionIDCtx(context.Background(), sessionID)
+}
+
+// Resume target resolved with the reads of ctx
+func (d *SessionDB) resolveResumeSessionIDCtx(ctx context.Context, sessionID string) (string, error) {
 	if sessionID == "" {
 		return sessionID, nil
 	}
@@ -968,7 +972,12 @@ func (d *SessionDB) GetAncestorDisplayPrefix(ctx context.Context, sessionID stri
 
 // Lineage root of a session id, the id itself when it has no recorded chain
 func (d *SessionDB) GetConversationRoot(sessionID string) (string, error) {
-	chain, err := d.sessionLineageRootToTip(context.Background(), sessionID)
+	return d.conversationRootCtx(context.Background(), sessionID)
+}
+
+// Conversation root resolved with the reads of ctx
+func (d *SessionDB) conversationRootCtx(ctx context.Context, sessionID string) (string, error) {
+	chain, err := d.sessionLineageRootToTip(ctx, sessionID)
 	if err != nil {
 		return "", err
 	}

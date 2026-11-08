@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/state"
 	"reflect"
 	"testing"
 )
@@ -49,5 +50,51 @@ func TestStringArgumentsUnchanged(t *testing.T) {
 	msg, _, err := normalizeCodexResponse(codexFunctionCallResponse(`{"query": "test"}`), "codex_backend", "", true)
 	if err != nil || len(msg.ToolCalls) != 1 || msg.ToolCalls[0].Arguments != `{"query": "test"}` {
 		t.Fatalf("msg %+v err %v", msg, err)
+	}
+}
+
+func TestExportedResponsesRouteAndCompactionGate(t *testing.T) {
+	r := ClassifyResponsesRoute("openai-codex", "https://chatgpt.com/backend-api/codex")
+	if !r.IsCodexBackend() || r.IsXAI() || ClassifyResponsesRoute("", "https://api.x.ai/v1").IsXAI() != true {
+		t.Fatal("route flags")
+	}
+	g := NativeCompactionGate{RuntimeCapability: true, Configured: true, CompressionEnabled: true, Model: "gpt-5.6", Provider: "openai", BaseURL: "https://api.openai.com/v1"}
+	if got := NativeCompactionContextManagement(g, ClassifyResponsesRoute("openai", g.BaseURL)); len(got) != 1 || got[0]["type"] != "compaction" {
+		t.Fatalf("payload %v", got)
+	}
+	g.Configured = false
+	if NativeCompactionContextManagement(g, ClassifyResponsesRoute("openai", g.BaseURL)) != nil {
+		t.Fatal("unconfigured route sent compaction")
+	}
+	if c, i := SplitResponsesToolID("call_a|fc_b"); c != "call_a" || i != "fc_b" {
+		t.Fatal("split")
+	}
+	if DeriveResponsesFunctionCallID("call_x", "") != "fc_x" {
+		t.Fatal("derive")
+	}
+	if OpencodeFamilyForCustom("opencode-go", "") != opencodeFamilyForCustom("opencode-go", "") {
+		t.Fatal("opencode family")
+	}
+}
+
+func TestNativeResponsesReplayInputKeepsTheCompactionCheckpoint(t *testing.T) {
+	msgs := []*state.Message{
+		state.MessageFromDict(map[string]any{"role": "user", "content": "hi"}),
+		state.MessageFromDict(map[string]any{"role": "assistant", "content": "ok", "codex_reasoning_items": []any{
+			map[string]any{"type": "compaction", "id": "cmp_1", "encrypted_content": "enc"}}}),
+	}
+	route := ClassifyResponsesRoute("openai-codex", "https://chatgpt.com/backend-api/codex")
+	items, err := NativeResponsesReplayInput(msgs, route, "https://chatgpt.com/backend-api/codex", "gpt-5.5", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := chatMessagesToResponsesInput(codexMsgsOf(msgs), codexConvertOptions{replayEncryptedReasoning: true,
+		currentIssuerKind:  classifyResponsesIssuer(false, true, "https://chatgpt.com/backend-api/codex", &route.flags.endpoint),
+		currentIssuerModel: wireModelIdentity("gpt-5.5"), nativeCompactionEligible: true, dropReplayItemIDs: !route.flags.endpoint.replayItemIDs})
+	if err != nil || !reflect.DeepEqual(items, want) {
+		t.Fatalf("items %v want %v err %v", items, want, err)
+	}
+	if !HasCompactionCheckpoint(items) {
+		t.Fatalf("checkpoint dropped %v", items)
 	}
 }

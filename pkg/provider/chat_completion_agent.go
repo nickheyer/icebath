@@ -65,6 +65,8 @@ type ChatCompletionAgent interface {
 	MaxIterations() int
 	SuppressStatusOutput() bool
 	SafePrint(text string, diagnostic bool)
+	EmitWarning(text string)
+	BufferStatus(text string)
 	ShouldSanitizeToolCalls() bool
 	CopyReasoningContentForAPI(src, dst map[string]any)
 	SanitizeToolCallsForStrictAPI(msg map[string]any, model string)
@@ -98,6 +100,12 @@ type ChatCompletionAgent interface {
 	IsSubagent() bool
 	FallbackIndex() int
 	CreditsCapture() *CreditsCapture
+	CurrentStreamedAssistantText() string
+	RouteSuppressedStreamText(text string)
+	ResetStreamDeliveryTracking()
+	WarningPresentationEnabled() bool
+	LogPrefix() string
+	SetLastAPIFirstChunkAt(at float64)
 }
 
 // RequestAbortHook is the abort callable an inline request publishes on the agent, compared by identity
@@ -321,7 +329,7 @@ func agentRequestSurface(agent ChatCompletionAgent) func(StreamEvent) {
 	}
 }
 
-// Runs the agent's blocking call on the calling goroutine with a heartbeat, a one shot stale kill and a socket backstop
+// Runs the agent's blocking call on the calling goroutine with a heartbeat, one shot stale kill and socket backstop
 func DirectAPICall(ctx context.Context, agent ChatCompletionAgent, apiKwargs map[string]any) (resp any, err error) {
 	if err := checkStaleGiveup(agent.RetrySession()); err != nil {
 		return nil, err

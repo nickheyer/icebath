@@ -75,8 +75,8 @@ func (a *AIAgent) foldMoAUsage(canonical provider.CanonicalUsage) (any, provider
 	}
 	if c, ok := client.(moaTraceClient); ok {
 		var fallback *string
-		if a.currentStreamedAssistantText != "" {
-			text := a.currentStreamedAssistantText
+		if a.currentStreamedAssistantText() != "" {
+			text := a.currentStreamedAssistantText()
 			fallback = &text
 		}
 		if err := c.ConsumeAndSaveTrace(a.sessionID, fallback); err != nil {
@@ -188,7 +188,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	if anchorPrompt == 0 {
 		anchorPrompt = aggregator.PromptTokens()
 	}
-	a.calibrateFromUsage(messages, anchorPrompt)
+	a.calibrateFromUsage(ctx, messages, anchorPrompt)
 	if anchor := provider.CaptureUsageAnchor(anchorPrompt, aggregator.OutputTokens, messages); anchor != nil {
 		a.setUsageAnchor(anchor, apiCallCount == 1)
 	}
@@ -207,7 +207,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	a.lastPromptSizeTokens = anchorPrompt
 
 	if p, ok := compressor.(contextProbeTracker); ok && p.ContextProbed() {
-		length := compressor.Base().ContextLength
+		length := engineContextLength(compressor)
 		if p.ContextProbePersistable() {
 			provider.SaveProviderContextLength(ctx, a.model, a.baseURL, length, a.provider)
 			a.safePrint(fmt.Sprintf("%s💾 Cached context length: %s tokens for %s", a.logPrefix, groupedInt(length), a.model), false)
@@ -244,7 +244,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	log.Info(fmt.Sprintf("API call #%d: model=%s provider=%s in=%d out=%d total=%d latency=%.1fs%s%s",
 		a.sessionAPICalls, a.model, providerName, promptTokens, completionTokens, totalTokens, apiDuration, cachePct, ident))
 	if a.sessionAPICalls == 1 && a.provider == "nous" {
-		a.maybeSwitchWireAfterFirstResponse(ctx, response, a.sessionAPICalls)
+		maybeSwitchWireAfterFirstResponse(a, ctx, response, a.sessionAPICalls)
 	}
 
 	costModel, costProvider, costBaseURL := a.model, a.provider, a.baseURL

@@ -19,6 +19,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
+// Maintenance purpose a browse schema catch up holder publishes
+const browseReconcilePurpose = "browse_schema_reconcile"
+
 // A profile home whose gateway.lock another holder owns
 type OwnershipConflict struct {
 	Msg       string

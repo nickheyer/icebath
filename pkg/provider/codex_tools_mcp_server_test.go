@@ -18,21 +18,27 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-func TestCodexToolsSignatureFromSchema(t *testing.T) {
-	sig, annots := codexToolsSignatureFromSchema(map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}}, "required": []any{"query"}})
-	if len(sig.Params) != 1 || sig.Params[0].Name != "query" || annots["query"] != "str" || !sig.Params[0].Required || sig.ReturnAnnotation != "str" {
-		t.Fatalf("simple required %+v %v", sig, annots)
-	}
-	sig, annots = codexToolsSignatureFromSchema(map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}, "_internal": map[string]any{"type": "string"}}, "required": []any{"query", "_internal"}})
-	if _, ok := annots["_internal"]; ok || len(sig.Params) != 1 || sig.Params[0].Name != "query" {
-		t.Fatalf("private params %+v %v", sig, annots)
-	}
-	_, annots = codexToolsSignatureFromSchema(map[string]any{"type": "object", "properties": map[string]any{"s": map[string]any{"type": "string"}, "i": map[string]any{"type": "integer"},
-		"n": map[string]any{"type": "number"}, "b": map[string]any{"type": "boolean"}, "a": map[string]any{"type": "array"}, "o": map[string]any{"type": "object"}}, "required": []any{"s", "i", "n", "b", "a", "o"}})
-	if !reflect.DeepEqual(annots, map[string]string{"s": "str", "i": "int", "n": "float", "b": "bool", "a": "list", "o": "dict"}) {
-		t.Fatalf("all json types %v", annots)
-	}
-	_, annots = codexToolsSignatureFromSchema(map[string]any{"properties": map[string]any{"limit": map[string]any{"type": "integer"}, "blob": map[string]any{}}})
+func TestSignatureFromSchema(t *testing.T) {
+	t.Run("test_simple_required_string_param", func(t *testing.T) {
+		sig, annots := codexToolsSignatureFromSchema(map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}}, "required": []any{"query"}})
+		if len(sig.Params) != 1 || sig.Params[0].Name != "query" || annots["query"] != "str" || !sig.Params[0].Required || sig.ReturnAnnotation != "str" {
+			t.Fatalf("simple required %+v %v", sig, annots)
+		}
+	})
+	t.Run("test_skip_private_params", func(t *testing.T) {
+		sig, annots := codexToolsSignatureFromSchema(map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}, "_internal": map[string]any{"type": "string"}}, "required": []any{"query", "_internal"}})
+		if _, ok := annots["_internal"]; ok || len(sig.Params) != 1 || sig.Params[0].Name != "query" {
+			t.Fatalf("private params %+v %v", sig, annots)
+		}
+	})
+	t.Run("test_all_json_types", func(t *testing.T) {
+		_, annots := codexToolsSignatureFromSchema(map[string]any{"type": "object", "properties": map[string]any{"s": map[string]any{"type": "string"}, "i": map[string]any{"type": "integer"},
+			"n": map[string]any{"type": "number"}, "b": map[string]any{"type": "boolean"}, "a": map[string]any{"type": "array"}, "o": map[string]any{"type": "object"}}, "required": []any{"s", "i", "n", "b", "a", "o"}})
+		if !reflect.DeepEqual(annots, map[string]string{"s": "str", "i": "int", "n": "float", "b": "bool", "a": "list", "o": "dict"}) {
+			t.Fatalf("all json types %v", annots)
+		}
+	})
+	_, annots := codexToolsSignatureFromSchema(map[string]any{"properties": map[string]any{"limit": map[string]any{"type": "integer"}, "blob": map[string]any{}}})
 	if annots["limit"] != "Optional[int]" || annots["blob"] != "Optional[Any]" {
 		t.Fatalf("optional %v", annots)
 	}
@@ -41,7 +47,7 @@ func TestCodexToolsSignatureFromSchema(t *testing.T) {
 	}
 }
 
-func TestCodexToolsExposedToolsAreSafeSubset(t *testing.T) {
+func TestModuleSurfaceExposedToolsAreSafeSubset(t *testing.T) {
 	for _, forbidden := range []string{"terminal", "shell", "read_file", "write_file", "patch", "search_files", "process"} {
 		if slices.Contains(codexToolsExposedTools, forbidden) {
 			t.Fatalf("%s must not be exposed through the codex callback because codex has a builtin equivalent", forbidden)
@@ -49,7 +55,7 @@ func TestCodexToolsExposedToolsAreSafeSubset(t *testing.T) {
 	}
 }
 
-func TestCodexToolsEveryExposedToolIsACoreRegisteredTool(t *testing.T) {
+func TestModuleSurfaceEveryExposedToolIsACoreRegisteredTool(t *testing.T) {
 	registered := tools.Default.Names()
 	var missing []string
 	for _, name := range codexToolsExposedTools {
@@ -75,23 +81,30 @@ func withCodexToolsBuild(t *testing.T, build func() (codexToolsRunner, error)) {
 	t.Setenv("ICEBATH_REDACT_SECRETS", "")
 }
 
-func TestCodexToolsMainExitStatuses(t *testing.T) {
+func TestMainExitStatuses(t *testing.T) {
+	t.Run("test_main_returns_2_when_mcp_unavailable", func(t *testing.T) {
+		withCodexToolsBuild(t, func() (codexToolsRunner, error) { return nil, &CodexToolsImportError{Msg: "mcp not installed"} })
+		if rc := RunCodexToolsMCPServer([]string{"--verbose"}); rc != 2 {
+			t.Fatalf("unavailable rc %d", rc)
+		}
+	})
+	t.Run("test_main_handles_keyboard_interrupt", func(t *testing.T) {
+		withCodexToolsBuild(t, func() (codexToolsRunner, error) {
+			return codexToolsFakeRunner{func() error { return errCodexToolsInterrupted }}, nil
+		})
+		if rc := RunCodexToolsMCPServer(nil); rc != 0 {
+			t.Fatalf("keyboard interrupt rc %d", rc)
+		}
+	})
+	t.Run("test_main_returns_1_on_runtime_error", func(t *testing.T) {
+		withCodexToolsBuild(t, func() (codexToolsRunner, error) {
+			return codexToolsFakeRunner{func() error { return errors.New("boom") }}, nil
+		})
+		if rc := RunCodexToolsMCPServer(nil); rc != 1 {
+			t.Fatalf("runtime error rc %d", rc)
+		}
+	})
 	withCodexToolsBuild(t, func() (codexToolsRunner, error) { return nil, &CodexToolsImportError{Msg: "mcp not installed"} })
-	if rc := RunCodexToolsMCPServer([]string{"--verbose"}); rc != 2 {
-		t.Fatalf("unavailable rc %d", rc)
-	}
-	codexToolsBuildServer = func() (codexToolsRunner, error) {
-		return codexToolsFakeRunner{func() error { return errCodexToolsInterrupted }}, nil
-	}
-	if rc := RunCodexToolsMCPServer(nil); rc != 0 {
-		t.Fatalf("keyboard interrupt rc %d", rc)
-	}
-	codexToolsBuildServer = func() (codexToolsRunner, error) {
-		return codexToolsFakeRunner{func() error { return errors.New("boom") }}, nil
-	}
-	if rc := RunCodexToolsMCPServer(nil); rc != 1 {
-		t.Fatalf("runtime error rc %d", rc)
-	}
 	codexToolsBuildServer = func() (codexToolsRunner, error) {
 		return codexToolsFakeRunner{func() error { panic(errors.New("crash")) }}, nil
 	}

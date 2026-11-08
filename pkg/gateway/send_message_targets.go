@@ -30,6 +30,13 @@ var HomeChannelEnvOverrides = map[string]string{"email": "EMAIL_HOME_ADDRESS"}
 // Channel directory lookup, a variable so tests can answer it
 var resolveChannelNameFn = resolveChannelName
 
+// Replaces the channel directory lookup and returns the one it replaced
+func SetResolveChannelNameFn(fn func(ctx context.Context, platformName, name string) (string, error)) func(context.Context, string, string) (string, error) {
+	prev := resolveChannelNameFn
+	resolveChannelNameFn = fn
+	return prev
+}
+
 // Declared native target syntax parser of a platform, discovering plugins first when the name is unknown
 func targetSyntaxFn(ctx context.Context, platformName string) func(ref string) any {
 	if !Registry.IsRegistered(ctx, platformName) {
@@ -65,6 +72,11 @@ func parseTargetRef(ctx context.Context, platformName, targetRef string) (chatID
 		return &ref, nil, true
 	}
 	return nil, nil, false
+}
+
+// Chat id, thread id and explicitness of a target ref under the platform rules
+func ParseTargetRef(ctx context.Context, platformName, targetRef string) (chatID, threadID *string, explicit bool) {
+	return parseTargetRef(ctx, platformName, targetRef)
 }
 
 // Error naming an unregistered plugin platform with its install command when it left core

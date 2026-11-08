@@ -250,7 +250,7 @@ func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o Run
 	a.lastCompactionInPlace, a.lastCompressionAttemptRecorded = false, false
 	a.lastCompressionAttemptInPlace = nil
 	beginFastModeTurn(a, o.ConversationHistory)
-	if err := a.tryRefreshEnvClientCredentials(ctx); err != nil {
+	if _, err := a.tryRefreshEnvClientCredentials(ctx); err != nil {
 		conversationLoopLog().Debug("per-turn env credential refresh failed", "error", err)
 	}
 	held := plugins.HeldStreamTransforms(ctx)
@@ -276,14 +276,16 @@ func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o Run
 		return nil, err
 	}
 	ctx = tc.Ctx
-	tc.ActiveSystemPrompt = beginVoiceTurnRoute(ctx, a, tc.Messages, tc.ActiveSystemPrompt)
+	if tc.ActiveSystemPrompt, err = beginVoiceTurnRoute(ctx, a, tc.Messages, tc.ActiveSystemPrompt); err != nil {
+		return nil, err
+	}
 
 	a.deliveredInterimTexts = map[string]bool{}
 	a.incrementalPersistenceFailed = false
 	a.lastPersistenceErrorCause = nil
 	a.compressionAdoptionFailed = false
 	a.ephemeralReasoningOff = false
-	a.authPoolRefreshCounts = map[string]int{}
+	a.authPoolRefreshCounts = map[string]*provider.AuthEpisode{}
 	a.lastTurnUsage = nil
 
 	maxAttempts := a.maxCompressionAttempts
@@ -396,13 +398,16 @@ func runIteration(ctx context.Context, a *AIAgent, s *LoopState) (string, map[st
 	return verdict.Action, verdict.Result, nil
 }
 
+// Inner conversation loop the facade runs, swapped by tests that drive the facade with a fake loop
+var conversationLoopRun = runConversationLoop
+
 // Runs one turn and stamps the current turn boundary beside the exact messages it addresses
-func runConversationLoop(ctx context.Context, a *AIAgent, userMessage string, o RunConversationOptions, effectiveTaskID string) (map[string]any, error) {
+func runConversationLoop(ctx context.Context, a *AIAgent, userMessage any, o RunConversationOptions, effectiveTaskID string) (map[string]any, error) {
 	a.turnUserIntervened = false
 	result, err := func() (map[string]any, error) {
 		restoreImages := tools.NativeTurnImages(a.env, userMessage)
 		defer restoreImages()
-		defer endVoiceTurnRoute(a)
+		defer endVoiceTurnRoute(ctx, a)
 		return runConversationTurn(ctx, a, userMessage, o, effectiveTaskID)
 	}()
 	if err != nil {
@@ -475,7 +480,7 @@ func redactDisplayMetadata(a *AIAgent, metadata map[string]any) map[string]any {
 	return out
 }
 
-// Appends the failed turn boundary when a failed turn left its durable tail open, in place and in the session DB
+// Appends the failed turn boundary when a failed turn left its durable tail open, live and in the session DB
 func closeDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {

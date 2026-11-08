@@ -137,6 +137,9 @@ func definesMemoryProvider(path string) bool {
 	return false
 }
 
+// Whether a plugin directory defines a memory provider, the exported form plugins reach through Services
+func DefinesMemoryProvider(path string) bool { return definesMemoryProvider(path) }
+
 // One external provider root with the discovery source it stands for
 type providerSourceDir struct{ dir, source string }
 

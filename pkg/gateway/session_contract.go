@@ -2,6 +2,9 @@ package gateway
 
 import "context"
 
+// Subprotocol of the authenticated local WebSocket family, apart from the legacy Desktop API contract
+const CanonicalGatewayProtocol = "icebath-gateway-v1"
+
 // Execution states a session handle reports
 const (
 	ExecutionIdle     = "idle"

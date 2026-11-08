@@ -194,3 +194,12 @@ func TestRegisteredTaskCwdOverrideKeysByRawTaskID(t *testing.T) {
 		t.Fatalf("unregistered override = %q", got)
 	}
 }
+
+// Exported conversion agrees with the internal one on a drive path and a plain path
+func TestMSYSToWindowsPathExported(t *testing.T) {
+	for _, p := range []string{"/c/Users/me", "relative/dir"} {
+		if MSYSToWindowsPath(p) != msysToWindowsPath(p) {
+			t.Fatalf("%s diverged", p)
+		}
+	}
+}

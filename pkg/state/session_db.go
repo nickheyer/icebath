@@ -99,6 +99,10 @@ type sessionCore struct {
 
 	localLineage localLineageCache
 
+	traceMu     sync.Mutex
+	traceFn     func(sql string)
+	tracedConns map[SQLiteConn]bool
+
 	poolMu           sync.Mutex
 	readPool         []SQLiteConn
 	readBudget       *pathReadBudget
@@ -279,6 +283,7 @@ func (c *sessionCore) setConnLocked(conn SQLiteConn) {
 
 // Closes conn and logs a failing close at warning level, never swallowing it silently
 func (c *sessionCore) closeConnLogged(conn SQLiteConn, label string) {
+	c.forgetTraced(conn)
 	if err := conn.Close(); err != nil {
 		slog.Warn(fmt.Sprintf("%s close failed for %s: %s", label, pathlibStr(c.path), errText(err)))
 	}
@@ -306,7 +311,7 @@ func (d *SessionDB) openWriter(ctx context.Context) error {
 		d.setConnLocked(nil)
 		d.mu.Unlock()
 		closeConnectionQuietly(conn)
-		report, rerr := RepairStateDBSchema(ctx, d.path, true)
+		report, rerr := openRepairFn(ctx, d.path, true)
 		if rerr != nil {
 			return rerr
 		}
@@ -464,7 +469,7 @@ func (d *SessionDB) openWriterConn(ctx context.Context) (SQLiteConn, error) {
 		return nil, err
 	}
 	setup := func() error {
-		mode, err := ApplyWALWithFallback(ctx, conn, "state.db", false)
+		mode, err := applyWALFn(ctx, conn, "state.db", false)
 		if err != nil {
 			return err
 		}
@@ -545,7 +550,7 @@ func secondsToDuration(s float64) time.Duration {
 	return time.Duration(s * float64(time.Second))
 }
 
-// Fresh read only connection under a read permit, nil when WAL is off, the pool closed, backing off or at capacity
+// Fresh read only connection under a read permit, nil when WAL is off, pool closed, backing off or full
 func (d *SessionDB) getReadConn(ctx context.Context) (SQLiteConn, error) {
 	if !d.walActive.Load() || d.isReadOnly {
 		return nil, nil
@@ -646,14 +651,33 @@ func (d *SessionDB) checkoutReadConn(ctx context.Context) (SQLiteConn, error) {
 	return d.getReadConn(ctx)
 }
 
+type readConnOverrideKey struct{}
+
+// Context whose SessionDB reads run on conn, the receipt transaction view of the compression snapshot
+func withReadConn(ctx context.Context, conn SQLiteConn) context.Context {
+	return context.WithValue(ctx, readConnOverrideKey{}, conn)
+}
+
+// Connection the context pins reads to, nil when reads use the pool
+func readConnOf(ctx context.Context) SQLiteConn {
+	conn, _ := ctx.Value(readConnOverrideKey{}).(SQLiteConn)
+	return conn
+}
+
 // Runs fn on a pooled read connection without the writer lock under WAL, otherwise on the writer connection under it
 func (d *SessionDB) readCtx(ctx context.Context, reopen bool, fn func(conn SQLiteConn) error) error {
+	if pinned := readConnOf(ctx); pinned != nil {
+		return fn(pinned)
+	}
 	conn, err := d.checkoutReadConn(ctx)
 	if err != nil {
 		return err
 	}
 	if conn != nil {
-		ferr := fn(conn)
+		ferr := d.applyTrace(conn)
+		if ferr == nil {
+			ferr = fn(conn)
+		}
 		returned := false
 		d.readConnsMu.Lock()
 		if !d.readConnsClosed {
@@ -692,6 +716,11 @@ func (d *SessionDB) readCtx(ctx context.Context, reopen bool, fn func(conn SQLit
 		_, _ = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", previousMS))
 	}()
 	return fn(conn)
+}
+
+// Runs fn on a read connection of the store, the hermes _read_ctx
+func (d *SessionDB) ReadCtx(ctx context.Context, fn func(conn SQLiteConn) error) error {
+	return d.readCtx(ctx, false, fn)
 }
 
 // Reopens the writer after close raced a live caller, refusing a read only, quarantined or replaced handle, caller holds mu
@@ -911,6 +940,9 @@ func (d *SessionDB) readAll(ctx context.Context, query string, args ...any) ([]*
 
 // Runs an idempotent read through readCtx, replaying a transient disk IO error on the same connection within budget
 func (d *SessionDB) readRetryingIOErr(ctx context.Context, fn func(conn SQLiteConn) error) error {
+	if readConnOf(ctx) != nil {
+		return d.readCtx(ctx, true, fn)
+	}
 	for attempt := 0; ; attempt++ {
 		err := d.readCtx(ctx, true, fn)
 		if err == nil {
@@ -1296,6 +1328,11 @@ func (c *sessionCore) sleepBeforeWriteRetryJitter(deadline, patienceS float64) b
 	return true
 }
 
+// Jittered write retry sleep that ignores any installed override
+func (c *sessionCore) SleepBeforeWriteRetryJitter(deadline, patienceS float64) bool {
+	return c.sleepBeforeWriteRetryJitter(deadline, patienceS)
+}
+
 // Foreign processes holding this store or its WAL sidecars
 func (c *sessionCore) foreignStateDBHolders() ([]Holder, error) {
 	return foreignStateDBHoldersOf(c.path)
@@ -1423,8 +1460,13 @@ func (c *sessionCore) closeHandle() error {
 // Path of the database file
 func (c *sessionCore) dbPath() string { return c.path }
 
-// Path of the database file
-func (c *sessionCore) Path() string { return c.path }
+// Path of the database file, empty for a handle with no backing store
+func (c *sessionCore) Path() string {
+	if c == nil {
+		return ""
+	}
+	return c.path
+}
 
 // Reports a handle opened read only
 func (c *sessionCore) readOnly() bool { return c.isReadOnly }

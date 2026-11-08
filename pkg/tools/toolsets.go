@@ -282,6 +282,9 @@ func orderedToolsetNames() []string {
 	return out
 }
 
+// OrderedStaticToolsetNames lists the static toolset table in definition order
+func OrderedStaticToolsetNames() []string { return orderedToolsetNames() }
+
 func staticToolset(name string) (Toolset, bool) {
 	toolsetsMu.RLock()
 	defer toolsetsMu.RUnlock()
@@ -293,6 +296,9 @@ func staticToolset(name string) (Toolset, bool) {
 	spec.Includes = append([]string{}, spec.Includes...)
 	return spec, true
 }
+
+// StaticToolset is the static table entry of a toolset with copied tool and include lists
+func StaticToolset(name string) (Toolset, bool) { return staticToolset(name) }
 
 func staticToolsetNames() []string {
 	toolsetsMu.RLock()

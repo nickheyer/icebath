@@ -204,3 +204,6 @@ func browserBackendName(env *tools.Env, localEngine string) (string, error) {
 	}
 	return "local", nil
 }
+
+// Whether browser.headed asks for a visible window
+func isHeadedMode(env *tools.Env) bool { return cfgOf(env).headed() }

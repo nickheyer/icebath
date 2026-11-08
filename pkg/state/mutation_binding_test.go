@@ -118,33 +118,65 @@ func TestLabelsThatMustNotMap(t *testing.T) {
 	}
 }
 
-func TestHistoryLoginLabelRows(t *testing.T) {
+// Desktop row stamped with a provider user label or the exact login subject
+func labelledRow(t *testing.T, db *SessionDB, id, userID string) {
+	t.Helper()
+	if err := db.CreateSession(NewSession{ID: id, Source: "desktop", UserID: userID}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Fails unless the subject is refused on the row with permission_denied
+func requireHistoryRefusal(t *testing.T, ctx context.Context, db *SessionDB, subject, row string, claim bool) {
+	t.Helper()
+	if _, err := authorizeAs(ctx, db, subject, row, claim); refusalReason(t, err) != "permission_denied" {
+		t.Fatalf("%s on %s: %v", subject, row, err)
+	}
+}
+
+// Fails unless the subject is admitted on the row
+func requireHistoryAdmission(t *testing.T, ctx context.Context, db *SessionDB, subject, row string) {
+	t.Helper()
+	if ok, err := authorizeAs(ctx, db, subject, row, false); err != nil || !ok {
+		t.Fatalf("%s on %s: %v %v", subject, row, ok, err)
+	}
+}
+
+func TestADesktopLabelledRowTakesItsLogin(t *testing.T) {
 	ctx, db := historyDB(t)
-	for id, user := range map[string]any{"desktop-row": "basic:e2e", "mallory-row": "basic:mallory", "subject-row": historyLogin, "unowned-row": nil, "alice-row": "basic:alice"} {
-		profileExec(t, db, "INSERT INTO sessions(id,source,user_id,started_at) VALUES(?,'desktop',?,?)", id, user, now())
-	}
-	for _, c := range []struct {
-		name, subject, row string
-		refused            bool
-	}{
-		{"a desktop labelled row takes its login", historyLogin, "desktop-row", false},
-		{"a foreign account still refused", historyLogin, "mallory-row", true},
-		{"the exact subject still matches", historyLogin, "subject-row", false},
-		{"an issuer bearing login cannot touch the labelled row", `auth:v1:["basic","https://idp.example","e2e"]`, "desktop-row", true},
-		{"an unowned row still admits any local actor", historyLogin, "unowned-row", false},
-	} {
-		ok, err := authorizeAs(ctx, db, c.subject, c.row, false)
-		if c.refused && refusalReason(t, err) != "permission_denied" || !c.refused && (err != nil || !ok) {
-			t.Fatalf("%s: %v %v", c.name, ok, err)
-		}
-	}
-	bob, alice := `auth:v1:["basic","","bob"]`, `auth:v1:["basic","","alice"]`
-	if _, err := authorizeAs(ctx, db, bob, "alice-row", true); refusalReason(t, err) != "permission_denied" {
-		t.Fatalf("forwarded bob: %v", err)
-	}
-	if ok, err := authorizeAs(ctx, db, alice, "alice-row", false); err != nil || !ok {
-		t.Fatalf("alice: %v %v", ok, err)
-	}
+	labelledRow(t, db, "desktop-row", "basic:e2e")
+	requireHistoryAdmission(t, ctx, db, historyLogin, "desktop-row")
+}
+
+func TestAForeignAccountStillRefused(t *testing.T) {
+	ctx, db := historyDB(t)
+	labelledRow(t, db, "mallory-row", "basic:mallory")
+	requireHistoryRefusal(t, ctx, db, historyLogin, "mallory-row", false)
+}
+
+func TestTheExactSubjectStillMatches(t *testing.T) {
+	ctx, db := historyDB(t)
+	labelledRow(t, db, "subject-row", historyLogin)
+	requireHistoryAdmission(t, ctx, db, historyLogin, "subject-row")
+}
+
+func TestAnIssuerBearingLoginCannotTouchTheLabelledRow(t *testing.T) {
+	ctx, db := historyDB(t)
+	labelledRow(t, db, "desktop-row", "basic:e2e")
+	requireHistoryRefusal(t, ctx, db, `auth:v1:["basic","https://idp.example","e2e"]`, "desktop-row", false)
+}
+
+func TestAnUnownedRowStillAdmitsAnyLocalActor(t *testing.T) {
+	ctx, db := historyDB(t)
+	labelledRow(t, db, "unowned-row", "")
+	requireHistoryAdmission(t, ctx, db, historyLogin, "unowned-row")
+}
+
+func TestAForwardedBobCannotMutateARowBoundToAlice(t *testing.T) {
+	ctx, db := historyDB(t)
+	labelledRow(t, db, "alice-row", "basic:alice")
+	requireHistoryRefusal(t, ctx, db, `auth:v1:["basic","","bob"]`, "alice-row", true)
+	requireHistoryAdmission(t, ctx, db, `auth:v1:["basic","","alice"]`, "alice-row")
 }
 
 func TestAuthorizeHistoryClaimsOnceAndRoutedRowsAreNeverHistory(t *testing.T) {

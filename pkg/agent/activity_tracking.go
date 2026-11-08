@@ -18,8 +18,13 @@ var (
 	activityMonoNow      = func() float64 { return time.Since(activityProcessStart).Seconds() }
 )
 
-// Lock guarding the activity clock and its generation counter
-func (a *AIAgent) livenessActivityLock() *sync.Mutex { return &a.turnLivenessActivityLock }
+// Lock guarding the activity clock and generation counter, the installed locker when one is set
+func (a *AIAgent) livenessActivityLock() sync.Locker {
+	if a.turnLivenessActivityLocker != nil {
+		return a.turnLivenessActivityLocker
+	}
+	return &a.turnLivenessActivityLock
+}
 
 // Stamps the activity clock without provenance or a forced persist
 func (a *AIAgent) TouchActivity(desc string) { a.touchActivity(desc, "", false) }

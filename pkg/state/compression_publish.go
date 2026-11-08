@@ -175,49 +175,8 @@ func (d *SessionDB) ReopenOrphanedCompressionSession(ctx context.Context, sessio
 	}
 	reopened := false
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
-		reopened = false
-		ended, err := connRow(ctx, conn, endedRowSQL, sessionID)
-		if err != nil || !endedByCompression(ended) {
-			return err
-		}
-		child, err := connRow(ctx, conn, "\n                SELECT 1 AS one\n                FROM sessions\n                WHERE parent_session_id = ?\n                "+
-			nonContinuationChild+"\n                LIMIT 1\n                ", sessionID, sessionID, sessionID, sessionID)
-		if err != nil || child != nil {
-			return err
-		}
-		current := now()
-		lock, err := connRow(ctx, conn, compressionLockRowSQL, sessionID)
-		if err != nil {
-			return err
-		}
-		if lock != nil {
-			expiresAt := lock["expires_at"]
-			if expiresAt == nil {
-				return nil
-			}
-			exp, err := pyint.Float(expiresAt)
-			if err != nil {
-				return err
-			}
-			if exp >= current {
-				return nil
-			}
-			res, err := conn.ExecContext(ctx, "DELETE FROM compression_locks WHERE session_id = ? AND holder = ? AND expires_at = ?",
-				sessionID, lock["holder"], expiresAt)
-			if err != nil {
-				return err
-			}
-			if n, err := res.RowsAffected(); err != nil || n != 1 {
-				return err
-			}
-		}
-		res, err := conn.ExecContext(ctx, "UPDATE sessions SET ended_at = NULL, end_reason = NULL "+
-			"WHERE id = ? AND ended_at IS NOT NULL AND end_reason = 'compression'", sessionID)
-		if err != nil {
-			return err
-		}
-		n, err := res.RowsAffected()
-		reopened = n == 1
+		var err error
+		reopened, err = reopenOnConnection(ctx, conn, sessionID)
 		return err
 	}, nil)
 	return reopened, err

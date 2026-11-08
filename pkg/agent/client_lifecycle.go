@@ -266,6 +266,10 @@ func (a *AIAgent) ensurePrimaryOpenAIClient(ctx context.Context, reason string) 
 	return newClient, nil
 }
 
+func (a *AIAgent) EnsurePrimaryOpenAIClient(ctx context.Context, reason string) (any, error) {
+	return a.ensurePrimaryOpenAIClient(ctx, reason)
+}
+
 // True when the chat messages or Responses input still carry a native image part
 func apiKwargsHaveImageParts(apiKwargs map[string]any) bool {
 	var containsImage func(v any) bool

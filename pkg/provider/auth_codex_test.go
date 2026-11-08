@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1213,5 +1214,30 @@ func TestReadOnlyResolverNeverProbesOrMutatesAnExhaustedPool(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(h, "auth.lock")); err == nil {
 		t.Fatal("a read only resolve materialised auth.lock")
+	}
+}
+
+func TestSetCodexQuotaProbeSwapsAndRestoresTheProbe(t *testing.T) {
+	restore := SetCodexQuotaProbe(func(PoolEnv, string, string) (bool, bool) { return true, true })
+	restored, known := probeCodexQuotaRestoredFn(PoolEnv{}, "token", "https://chatgpt.com/backend-api/codex")
+	restore()
+	if !restored || !known {
+		t.Fatalf("probe %v %v", restored, known)
+	}
+	if reflect.ValueOf(probeCodexQuotaRestoredFn).Pointer() != reflect.ValueOf(probeCodexQuotaRestored).Pointer() {
+		t.Fatal("previous probe not restored")
+	}
+}
+
+func TestResolveCodexRuntimeCredentialsExportedMatchesInternal(t *testing.T) {
+	h, env := codexTestEnv(t)
+	writeAuthStore(t, h, map[string]any{
+		"version": 1, "providers": map[string]any{},
+		"credential_pool": map[string]any{"openai-codex": []any{map[string]any{
+			"source": "device_code", "access_token": "pool-fallback-token", "refresh_token": "pool-refresh", "last_status": "ok", "auth_type": "oauth"}}},
+	})
+	resolved, err := ResolveCodexRuntimeCredentials(env, CodexResolveOptions{SkipExpiringRefresh: true})
+	if err != nil || resolved["api_key"] != "pool-fallback-token" || resolved["source"] != "credential_pool" {
+		t.Fatalf("%v %v", resolved, err)
 	}
 }

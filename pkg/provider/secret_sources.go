@@ -403,14 +403,22 @@ func ResolveCacheHome(homePath string) string {
 
 // CurrentCachePath is the home level cache file, deleting a legacy copy under cache first
 func CurrentCachePath(h, name string) string {
-	_ = os.Remove(filepath.Join(h, "cache", name))
+	unlinkCacheEntry(filepath.Join(h, "cache", name))
 	return filepath.Join(h, name)
 }
 
 // RemoveCacheFile deletes the cache file and any legacy copy
 func RemoveCacheFile(h, name string) {
-	_ = os.Remove(filepath.Join(h, name))
-	_ = os.Remove(filepath.Join(h, "cache", name))
+	unlinkCacheEntry(filepath.Join(h, name))
+	unlinkCacheEntry(filepath.Join(h, "cache", name))
+}
+
+// Unlinks a file or symlink the way Path.unlink does, a directory at the path is left alone
+func unlinkCacheEntry(path string) {
+	if info, err := os.Lstat(path); err != nil || info.IsDir() {
+		return
+	}
+	_ = os.Remove(path)
 }
 
 // CachedFetchFromPayload decodes a secrets and fetched_at object, only string pairs survive
@@ -862,8 +870,11 @@ type ApplyReport struct {
 func (r *ApplyReport) AppliedAny() bool { return len(r.Provenance) > 0 }
 
 // Runs the fetch under a wall clock budget, a source that blows it is reported as a timeout
-func fetchWithTimeout(source SecretSource, cfg map[string]any, homePath string, environ *SourceEnvironment) *SecretFetchResult {
-	timeout := SecretSourceFetchTimeout(cfg)
+func fetchWithTimeout(source SecretSource, cfg map[string]any, homePath string, environ *SourceEnvironment) (*SecretFetchResult, error) {
+	timeout, err := secretSourceTimeout(source, cfg)
+	if err != nil {
+		return nil, err
+	}
 	done := make(chan *SecretFetchResult, 1)
 	go func() {
 		defer func() {
@@ -876,14 +887,14 @@ func fetchWithTimeout(source SecretSource, cfg map[string]any, homePath string, 
 	select {
 	case result := <-done:
 		if result == nil {
-			return NewSecretFetchResult().Fail("fetch returned nothing instead of a FetchResult", SecretErrorInternal)
+			return NewSecretFetchResult().Fail("fetch returned nothing instead of a FetchResult", SecretErrorInternal), nil
 		}
 		if result.Secrets == nil {
 			result.Secrets = map[string]string{}
 		}
-		return result
+		return result, nil
 	case <-time.After(timeout):
-		return NewSecretFetchResult().Fail(fmt.Sprintf("fetch exceeded %.0fs budget — startup continued without this source (raise secrets.%s.timeout_seconds if the backend is just slow)", timeout.Seconds(), source.Spec().Name), SecretErrorTimeout)
+		return NewSecretFetchResult().Fail(fmt.Sprintf("fetch exceeded %.0fs budget — startup continued without this source (raise secrets.%s.timeout_seconds if the backend is just slow)", timeout.Seconds(), source.Spec().Name), SecretErrorTimeout), nil
 	}
 }
 
@@ -934,7 +945,12 @@ func orderedEnabledSecretSources(secretsCfg map[string]any, scope string) []Secr
 	}
 	var enabled []SecretSource
 	for _, n := range order {
-		if SecretSourceEnabled(secretsSection(secretsCfg, n)) {
+		on, err := secretSourceIsEnabled(byName[n], secretsSection(secretsCfg, n))
+		if err != nil {
+			slog.Default().Warn(fmt.Sprintf("Secret source '%s' is_enabled() raised; skipping", n), "err", err)
+			continue
+		}
+		if on {
 			enabled = append(enabled, byName[n])
 		}
 	}
@@ -1007,7 +1023,7 @@ func (a *secretApplier) applySource(source SecretSource, cfg map[string]any, res
 	if !result.OK() {
 		return
 	}
-	override := SecretSourceOverrideExisting(spec, cfg)
+	override := secretSourceOverrides(source, cfg)
 	names := make([]string, 0, len(result.Secrets))
 	for n := range result.Secrets {
 		names = append(names, n)
@@ -1059,7 +1075,7 @@ func (a *secretApplier) tryApply(sr *SourceReport, spec SecretSourceSpec, overri
 }
 
 // ApplyAllSecretSources fetches from every enabled source and applies the merged result to the environment
-func ApplyAllSecretSources(secretsCfg map[string]any, homePath string, environ *SourceEnvironment) *ApplyReport {
+func ApplyAllSecretSources(secretsCfg map[string]any, homePath string, environ *SourceEnvironment) (*ApplyReport, error) {
 	if environ == nil {
 		environ = ProcessSourceEnvironment()
 	}
@@ -1069,7 +1085,7 @@ func ApplyAllSecretSources(secretsCfg map[string]any, homePath string, environ *
 	}
 	enabled := orderedEnabledSecretSources(secretsCfg, homePath)
 	if len(enabled) == 0 {
-		return report
+		return report, nil
 	}
 	preserve := map[string]bool{}
 	if raw, ok := secretsCfg["preserve_existing"].([]any); ok {
@@ -1103,9 +1119,12 @@ func ApplyAllSecretSources(secretsCfg map[string]any, homePath string, environ *
 	protected := map[string]string{}
 	for _, source := range ordered {
 		cfg := secretsSection(secretsCfg, source.Spec().Name)
-		result := fetchWithTimeout(source, cfg, homePath, environ)
+		result, err := fetchWithTimeout(source, cfg, homePath, environ)
+		if err != nil {
+			return nil, err
+		}
 		fetches = append(fetches, fetched{source, cfg, result})
-		for v := range SecretSourceProtectedEnvVars(source.Spec(), cfg) {
+		for v := range secretSourceProtected(source, cfg) {
 			if _, has := protected[v]; !has {
 				protected[v] = source.Spec().Name
 			}
@@ -1123,5 +1142,5 @@ func ApplyAllSecretSources(secretsCfg map[string]any, homePath string, environ *
 	for _, f := range fetches {
 		applier.applySource(f.source, f.cfg, f.result, profile, suppliedDirectly)
 	}
-	return report
+	return report, nil
 }

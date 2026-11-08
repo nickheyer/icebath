@@ -113,6 +113,11 @@ type turnLeaseSeams struct {
 	sleepRetry func(deadline, patienceS float64) bool
 }
 
+// Installs the sleep every write of this store runs between lock retries, nil restoring the jittered sleep
+func (d *SessionDB) SetWriteRetrySleep(fn func(deadline, patienceS float64) bool) {
+	d.leaseSeams.sleepRetry = fn
+}
+
 // Conversation key the turn lease of a session is stored under
 func (d *SessionDB) sessionTurnLeaseKey(ctx context.Context, sessionID string) (string, error) {
 	if d.leaseSeams.key != nil {

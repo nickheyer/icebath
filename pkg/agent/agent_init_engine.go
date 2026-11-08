@@ -373,6 +373,7 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	}
 	agentCfg := loadAgentConfig(ctx)
 	applyDisplayConfig(a, agentCfg, o.Platform)
+	a.skipMemory = o.SkipMemory
 	initMemory(ctx, a, agentCfg, o.SkipMemory, o.Platform, o.MemoryManager)
 	applyAgentSection(a, agentCfg)
 	cs, err := parseCompressionConfig(a, agentCfg)

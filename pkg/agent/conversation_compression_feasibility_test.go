@@ -159,7 +159,7 @@ func TestWarningStoredForGatewayReplay(t *testing.T) {
 	_ = checkCompressionModelFeasibility(context.Background(), a)
 	var got []any
 	a.statusCallback = func(kind string, msg any) { got = append(got, kind, msg) }
-	replayCompressionWarning(a)
+	a.replayCompressionWarning()
 	if len(got) != 2 || got[0] != "lifecycle" {
 		t.Fatalf("replayed %v", got)
 	}
@@ -174,7 +174,7 @@ func TestNoReplayWhenNoWarning(t *testing.T) {
 	_ = checkCompressionModelFeasibility(context.Background(), a)
 	calls := 0
 	a.statusCallback = func(string, any) { calls++ }
-	replayCompressionWarning(a)
+	a.replayCompressionWarning()
 	if calls != 0 || a.compressionWarning != nil {
 		t.Fatalf("calls=%d warning=%v", calls, a.compressionWarning)
 	}

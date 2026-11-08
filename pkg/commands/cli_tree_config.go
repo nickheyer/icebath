@@ -133,7 +133,7 @@ func configShowSources(ctx context.Context, h string) (config.ShowSources, error
 		},
 		EnvFile:           func() (map[string]string, error) { return config.LoadEnvFile(home.EnvPath(h)), nil },
 		AnthropicKey:      func() string { return provider.GetAnthropicKey(ctx) },
-		ActivePersonality: ActivePersonalityName,
+		ActivePersonality: func(cfg map[string]any) (string, error) { return ActivePersonalityName(cfg), nil },
 		SkillSettings:     skills.SkillSettingsForShow,
 		MaskSecret:        config.MaskSecret,
 		RedactConfigValue: config.RedactConfigValue,

@@ -241,6 +241,11 @@ func resolveNousRuntimeCredentialsWith(env PoolEnv, opts NousResolveOptions) (ma
 	return result, nil
 }
 
+// ResolveNousRuntimeCredentialsWith resolves Nous runtime credentials under explicit timeout, TLS and refresh options
+func ResolveNousRuntimeCredentialsWith(env PoolEnv, opts NousResolveOptions) (map[string]any, error) {
+	return resolveNousRuntimeCredentialsWith(env, opts)
+}
+
 func resolveNousRuntimeCredentials(env PoolEnv, forceRefresh bool, staleAccessToken string) (map[string]any, error) {
 	return resolveNousRuntimeCredentialsWith(env, NousResolveOptions{ForceRefresh: forceRefresh, StaleAccessToken: staleAccessToken})
 }

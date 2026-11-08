@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ProfileContextLengthHook is a profile qualified context bound, zero declines
@@ -549,6 +550,12 @@ func GetModelContextLength(ctx context.Context, req ContextLengthRequest) int {
 	}
 	warnContextLengthFallback(model, baseURL)
 	return DefaultFallbackContext
+}
+
+// Context window the tool search gate sizes against, the full resolver over the routed provider credentials
+func ToolModelContextLength(ctx context.Context, q tools.ContextLengthQuery) int {
+	return GetModelContextLength(ctx, ContextLengthRequest{Model: q.Model, BaseURL: q.BaseURL, APIKey: q.APIKey,
+		Provider: q.Provider, ConfigContextLength: q.ConfigContextLength})
 }
 
 // Context window of a model on a base url with the key the route carries

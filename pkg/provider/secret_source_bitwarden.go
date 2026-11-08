@@ -60,6 +60,12 @@ func FindBws(installIfMissing bool) string {
 	return ""
 }
 
+// Binary lookup and fetch seams of the Bitwarden source, the module attributes hermes tests patch
+var (
+	findBws               = FindBws
+	fetchBitwardenSecrets = FetchBitwardenSecrets
+)
+
 // InstallBws is the explicit setup or repair install of the pinned bws binary
 func InstallBws() (string, error) { return pmEnsure("bws", true) }
 
@@ -364,7 +370,7 @@ func (s *BitwardenSource) Fetch(cfg map[string]any, homePath string, environ *So
 	if v, ok := cfg["auto_install"]; ok {
 		autoInstall = truthyAny(v)
 	}
-	binary := FindBws(autoInstall)
+	binary := findBws(autoInstall)
 	result.BinaryPath = binary
 	if binary == "" {
 		return result.Fail("bws binary not available and auto-install is disabled.  Run `icebath secrets bitwarden setup` to install.", SecretErrorBinaryMissing)
@@ -374,7 +380,7 @@ func (s *BitwardenSource) Fetch(cfg map[string]any, homePath string, environ *So
 	if _, ok := cfg["cache_ttl_seconds"]; !ok {
 		ttl = 300
 	}
-	secrets, warnings, err := FetchBitwardenSecrets(BitwardenFetchOptions{AccessToken: accessToken, ProjectID: projectID, Binary: binary,
+	secrets, warnings, err := fetchBitwardenSecrets(BitwardenFetchOptions{AccessToken: accessToken, ProjectID: projectID, Binary: binary,
 		CacheTTL: ttl, UseCache: true, ServerURL: strings.TrimSpace(anyString(cfg["server_url"])), HomePath: homePath,
 		EncryptedCacheEnabled: truthyAny(encryptedCfg["enabled"]), EncryptedCacheMaxStale: CoerceFloat(encryptedCfg["max_stale_seconds"], 0), Environ: environ})
 	if err != nil {

@@ -72,6 +72,9 @@ func casefold(s string) string {
 	return b.String()
 }
 
+// Casefold is Python str.casefold for profile name comparisons outside the package
+func Casefold(s string) string { return casefold(s) }
+
 // Case folded copy of path parts
 func foldParts(parts []string) []string {
 	out := make([]string, len(parts))

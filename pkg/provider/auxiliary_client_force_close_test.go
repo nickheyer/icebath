@@ -187,3 +187,25 @@ func TestForceCloseTCPSocketsClearsTimeoutBeforeShutdown(t *testing.T) {
 		t.Fatal("a hung read must notice the shutdown")
 	}
 }
+
+func TestPoolSocketsMatchesTheForceCloseSweep(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	defer srv.Close()
+	hc := &http.Client{Transport: auxTrackPoolConns(&http.Transport{})}
+	resp, err := hc.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	socks := PoolSockets(hc)
+	if len(socks) != 1 || len(auxPoolSockets(hc)) != 1 {
+		t.Fatalf("sockets %d", len(socks))
+	}
+	if _, ok := socks[0].(*net.TCPConn); !ok {
+		t.Fatalf("raw TCP socket expected, got %T", socks[0])
+	}
+	if PoolSockets(nil) != nil {
+		t.Fatal("a nil client has no sockets")
+	}
+}

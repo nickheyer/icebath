@@ -38,6 +38,9 @@ type Def struct {
 	Timeout       time.Duration
 	Override      bool
 	Plugin        string
+	// Builds Schema on the first registry read when Schema is nil, deferring config reads past init
+	SchemaBuilder func() map[string]any
+	schemaOnce    *sync.Once
 }
 
 // Call is one tool invocation with its arguments and session environment
@@ -187,8 +190,27 @@ func (r *Registry) Register(d Def) {
 // Get returns the tool with this name or nil
 func (r *Registry) Get(name string) *Def {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.globalLocked(name)
+	d := r.globalLocked(name)
+	r.mu.RUnlock()
+	return d.resolveSchema()
+}
+
+// Runs a deferred schema builder once and fills the description, panicking on a malformed schema like Register
+func (d *Def) resolveSchema() *Def {
+	if d == nil || d.schemaOnce == nil {
+		return d
+	}
+	d.schemaOnce.Do(func() {
+		schema := d.SchemaBuilder()
+		if err := validateRegistrationSchema(Def{Name: d.Name, Schema: schema}); err != nil {
+			panic("tools: " + err.Error())
+		}
+		d.Schema = schema
+		if s, ok := schema["description"].(string); ok && d.Description == "" {
+			d.Description = s
+		}
+	})
+	return d
 }
 
 // Names lists registered tool names sorted

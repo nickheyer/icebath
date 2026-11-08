@@ -536,6 +536,11 @@ func entriesForRoute(baseURL string, customProviders []map[string]any, cfg map[s
 	return out
 }
 
+// EntriesForRoute exposes the route entry match to the agent capability checks
+func EntriesForRoute(baseURL string, customProviders []map[string]any, cfg map[string]any) []map[string]any {
+	return entriesForRoute(baseURL, customProviders, cfg)
+}
+
 // CustomProviderAPIMode is the canonical api_mode of the first custom entry serving the base URL or empty
 func CustomProviderAPIMode(baseURL string, customProviders []map[string]any, cfg map[string]any) string {
 	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {

@@ -678,5 +678,24 @@ func (c *chatCompletionsClient) normalizeResponse(payload map[string]any, status
 		requestID = headerRequestID(headers)
 	}
 	return &Response{Message: message, FinishReason: finish, Usage: usage, Model: model, Provider: c.route.Provider, RequestID: requestID,
-		StatusCode: status, Headers: headers, Raw: raw, Latency: latency, Truncated: finish == "length"}, nil
+		StatusCode: status, Headers: headers, Raw: raw, Latency: latency, Truncated: finish == "length", Extra: ccExtraFields(payload)}, nil
+}
+
+// Top level fields of the chat completion object the SDK model does not declare
+var ccDeclaredCompletionKeys = map[string]bool{"id": true, "choices": true, "created": true, "model": true, "object": true,
+	"service_tier": true, "system_fingerprint": true, "usage": true}
+
+// Undeclared top level payload fields kept as attributes of the response, nil when there are none
+func ccExtraFields(payload map[string]any) map[string]any {
+	var extra map[string]any
+	for k, v := range payload {
+		if ccDeclaredCompletionKeys[k] || strings.HasPrefix(k, "_") {
+			continue
+		}
+		if extra == nil {
+			extra = map[string]any{}
+		}
+		extra[k] = v
+	}
+	return extra
 }

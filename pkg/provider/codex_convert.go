@@ -600,6 +600,9 @@ func splitResponsesToolID(raw string) (string, string) {
 	return value, ""
 }
 
+// SplitResponsesToolID splits a stored tool id into the call id and the response item id
+func SplitResponsesToolID(raw string) (string, string) { return splitResponsesToolID(raw) }
+
 // Non blank call id from the explicit id, the embedded id, the canonical fc suffix, or a deterministic hash
 func resolveCallID(rawCallID, rawItemID, fnName, arguments string, index int, canonicalizeFC bool) string {
 	embeddedCallID, embeddedItemID := splitResponsesToolID(rawItemID)
@@ -648,6 +651,11 @@ func deriveResponsesFunctionCallID(callID, responseItemID string) string {
 	}
 	sum := sha1.Sum([]byte(seed))
 	return "fc_" + hex.EncodeToString(sum[:])[:24]
+}
+
+// DeriveResponsesFunctionCallID is the valid Responses function_call id starting with fc_
+func DeriveResponsesFunctionCallID(callID, responseItemID string) string {
+	return deriveResponsesFunctionCallID(callID, responseItemID)
 }
 
 var validToolNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
@@ -1072,6 +1080,16 @@ func chatMessagesToResponsesInput(msgs []*codexMsg, opts codexConvertOptions) ([
 	return prunePreCheckpointItems(items, retainedUserMessageTokenBudget, retainedSummaryTokenBudget, true, sources), nil
 }
 
+// NativeResponsesReplayInput is the Responses input a native compaction eligible route replays for the messages
+func NativeResponsesReplayInput(msgs []*state.Message, route ResponsesRoute, baseURL, model string, replayEncryptedReasoning bool) ([]map[string]any, error) {
+	endpoint := route.flags.endpoint
+	return chatMessagesToResponsesInput(codexMsgsOf(msgs), codexConvertOptions{
+		isXAI: route.flags.isXAI, dropReplayItemIDs: !endpoint.replayItemIDs, replayEncryptedReasoning: replayEncryptedReasoning,
+		currentIssuerKind:  classifyResponsesIssuer(route.flags.isXAI, route.flags.isCodexBackend, baseURL, &endpoint),
+		currentIssuerModel: wireModelIdentity(model), nativeCompactionEligible: true,
+	})
+}
+
 // Which special Responses route a client talks to
 type responsesRouteFlags struct {
 	isCodexBackend bool
@@ -1095,6 +1113,20 @@ func classifyResponsesRoute(provider, baseURL string) responsesRouteFlags {
 func ResponsesRouteIsCodexBackend(providerName, baseURL string) bool {
 	return classifyResponsesRoute(providerName, baseURL).isCodexBackend
 }
+
+// ResponsesRoute is the classified Responses route of a provider and base URL
+type ResponsesRoute struct{ flags responsesRouteFlags }
+
+// ClassifyResponsesRoute classifies the Responses route with exact host or subdomain checks
+func ClassifyResponsesRoute(provider, baseURL string) ResponsesRoute {
+	return ResponsesRoute{classifyResponsesRoute(provider, baseURL)}
+}
+
+func (r ResponsesRoute) IsCodexBackend() bool { return r.flags.isCodexBackend }
+func (r ResponsesRoute) IsXAI() bool          { return r.flags.isXAI }
+
+// True when the endpoint profile gates reasoning through its reasoning payload
+func (r ResponsesRoute) ProfileReasoning() bool { return r.flags.endpoint.profileReasoning }
 
 // ---- preflight ----
 
@@ -2149,6 +2181,24 @@ func nativeCompactionContextManagement(in nativeCompactionInputs) []map[string]a
 		return nil
 	}
 	return []map[string]any{{"type": "compaction", "compact_threshold": resolveCompactThreshold(in.compactThreshold, in.localTriggerTokens)}}
+}
+
+// NativeCompactionGate is the agent state the native compaction payload gates on
+type NativeCompactionGate struct {
+	RuntimeCapability, Configured, CompressionEnabled, CheckpointRequired, TrustedProxy bool
+	Model, Provider, BaseURL                                                            string
+	LocalTriggerTokens, CompactThreshold                                                any
+}
+
+// NativeCompactionContextManagement is the context_management payload of the route, nil when it must not be sent
+func NativeCompactionContextManagement(g NativeCompactionGate, route ResponsesRoute) []map[string]any {
+	endpoint := route.flags.endpoint
+	return nativeCompactionContextManagement(nativeCompactionInputs{
+		runtimeCapability: g.RuntimeCapability, configured: g.Configured, compressionEnabled: g.CompressionEnabled,
+		checkpointRequired: g.CheckpointRequired, model: g.Model, provider: g.Provider, baseURL: g.BaseURL, trustedProxy: g.TrustedProxy,
+		localTriggerTokens: g.LocalTriggerTokens, compactThreshold: g.CompactThreshold, isCodexBackend: route.flags.isCodexBackend,
+		isXAI: route.flags.isXAI, endpoint: &endpoint,
+	})
 }
 
 // Retention cost of one carried over text, never zero

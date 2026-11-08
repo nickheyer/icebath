@@ -89,6 +89,20 @@ func Getpwuid(uid int) (Passwd, error) {
 	return Passwd{}, &KeyError{fmt.Sprintf("getpwuid(): uid not found: %d", uid)}
 }
 
+// First account named name, the KeyError when none matches
+func Getpwnam(name string) (Passwd, error) {
+	all, err := Getpwall()
+	if err != nil {
+		return Passwd{}, err
+	}
+	for _, p := range all {
+		if p.Name == name {
+			return p, nil
+		}
+	}
+	return Passwd{}, &KeyError{"getpwnam(): name not found: '" + name + "'"}
+}
+
 // First group with gid and its member list, the KeyError when none matches
 func Getgrgid(gid int) (Group, error) {
 	rows, err := records(groupPath, 4)

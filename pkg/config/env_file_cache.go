@@ -23,6 +23,15 @@ var (
 	parseEnvText      = ParseEnv
 )
 
+// SwapParseEnvText installs the dotenv parser the memo calls and returns the one it replaced
+func SwapParseEnvText(fn func(string) map[string]string) func(string) map[string]string {
+	envFileCacheMu.Lock()
+	defer envFileCacheMu.Unlock()
+	previous := parseEnvText
+	parseEnvText = fn
+	return previous
+}
+
 // InvalidateEnvFileCache drops one path from the dotenv memo, every path when the path is empty
 func InvalidateEnvFileCache(path string) {
 	envFileCacheMu.Lock()
@@ -59,8 +68,9 @@ func LoadEnvFile(path string) map[string]string {
 			return maps.Clone(memo.values)
 		}
 	}
+	parse := parseEnvText
 	envFileCacheMu.Unlock()
-	values := parseEnvText(DecodeEnvBytes(raw))
+	values := parse(DecodeEnvBytes(raw))
 	envFileCacheMu.Lock()
 	defer envFileCacheMu.Unlock()
 	memo := &envFileMemo{path: path, raw: raw, values: maps.Clone(values)}

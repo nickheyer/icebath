@@ -88,6 +88,11 @@ func RuntimeEntryOwner(provider, requestedProvider, baseURL string, cfg map[stri
 
 // LoadRuntimePool is the pool for a runtime identity, entry scoped for a custom runtime
 func LoadRuntimePool(env PoolEnv, provider, baseURL, requestedProvider string, snapshot map[string]any) *Pool {
+	return LoadRuntimePoolWith(env, LoadPool, provider, baseURL, requestedProvider, snapshot)
+}
+
+// LoadRuntimePoolWith is LoadRuntimePool reading the resolved pool key through load
+func LoadRuntimePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider, baseURL, requestedProvider string, snapshot map[string]any) *Pool {
 	cfg := env.config()
 	custom, name := customIdentity(provider, requestedProvider)
 	if !custom {
@@ -95,7 +100,7 @@ func LoadRuntimePool(env PoolEnv, provider, baseURL, requestedProvider string, s
 		if key == "" {
 			return nil
 		}
-		return LoadPool(env, key)
+		return load(env, key)
 	}
 	var owner map[string]any
 	if snapshot != nil {
@@ -125,5 +130,5 @@ func LoadRuntimePool(env PoolEnv, provider, baseURL, requestedProvider string, s
 	if match != nil {
 		entry = match.entry
 	}
-	return EntryScopedPool(LoadPool(env, key), key, entry)
+	return EntryScopedPool(load(env, key), key, entry)
 }

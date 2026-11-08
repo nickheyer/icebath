@@ -33,6 +33,9 @@ var windowsBinLaunchers = []string{"icebath", "icebath-acp"}
 // Subcommand each published command runs on the install binary
 var entryPoints = map[string][]string{"icebath": nil, "icebath-acp": {"acp"}}
 
+// Number of commands every install publishes
+func EntryPointCount() int { return len(entryPoints) }
+
 var isWindows = func() bool { return runtime.GOOS == "windows" }
 
 // Result of a PATH exposure pass
@@ -122,6 +125,9 @@ func resolveInstallBinary(root string) string {
 	}
 	return ""
 }
+
+// Install binary of a tree when present as a regular file, empty for an externally owned runtime
+func ResolveInstallBinary(root string) string { return resolveInstallBinary(root) }
 
 // Writes through a pid suffixed staging name and renames so a concurrent start never sees a torn launcher
 func writeAtomic(target string, write func(staging string) error) string {

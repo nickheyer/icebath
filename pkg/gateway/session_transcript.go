@@ -824,6 +824,28 @@ func isPyValueError(err error) bool {
 	return errors.As(err, &typed) && typed.PyTypeName() == "ValueError"
 }
 
+// Store rewind of a user turn, the AttributeError hermes raises for a store without one
+func rewindUserTurn(ctx context.Context, db SessionStoreDB, sessionID string, userOrdinal int, requireRetryable, requireComposite bool) (*rewindOutcome, error) {
+	rewinder, ok := db.(interface {
+		RewindUserTurn(context.Context, string, int, state.RewindUserTurnOptions) (*state.RewindOutcome, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'rewind_user_turn'", db)
+	}
+	out, err := rewinder.RewindUserTurn(ctx, sessionID, userOrdinal,
+		state.RewindUserTurnOptions{RequireRetryable: requireRetryable, RequireComposite: requireComposite})
+	if err != nil {
+		return nil, err
+	}
+	return &rewindOutcome{RewoundCount: out.RewoundCount, TurnsUndone: out.TurnsUndone, LiveText: out.LiveText}, nil
+}
+
+// Whether a rewind failed because its target is not a rewindable user turn
+func isRewindTargetUnavailable(err error) bool {
+	var unavailable *state.RewindTargetUnavailableError
+	return errors.As(err, &unavailable)
+}
+
 // Backs up n user turns by soft delete, nil without a store or rewindable turn, a replay policy ValueError raised
 func (s *SessionStore) RewindSession(ctx context.Context, sessionID string, n int, requireRetryableComposite bool) (map[string]any, error) {
 	db := s.dbForSessionID(ctx, sessionID)

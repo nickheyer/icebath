@@ -466,3 +466,17 @@ func TestLSPCommandContextReportsTheProfileService(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func TestLSPDeferredExportedPostTrackAndSettle(t *testing.T) {
+	owner := "S-exported"
+	token := LSPDeferredTrackPending(owner)
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		LSPDeferredPost(owner, "/repo/x.py", "MOCK001 late", nil)
+		LSPDeferredSettled(owner, token)
+	}()
+	notes := LSPSettleForAgent(owner, "", 5*time.Second)
+	if len(notes) != 1 || notes[0].Path != "/repo/x.py" || notes[0].Text != "MOCK001 late" {
+		t.Fatalf("%+v", notes)
+	}
+}

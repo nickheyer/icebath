@@ -35,6 +35,7 @@ func TestResponsesUpgradeIsSkippedByACPSchemeNotVendorSlug(t *testing.T) {
 
 func TestResponsesUpgradeIsSkippedForExternalProcessProfileOnAnyBaseURL(t *testing.T) {
 	ctx := context.Background()
+	t.Cleanup(provider.SnapshotProviderRegistryForTests())
 	provider.RegisterProvider(provider.Profile{Name: "routing-test-process-acp", AuthType: provider.AuthTypeExternalProcess})
 	a := routingAgent("routing-test-process-acp", "https://proxy.example.invalid/v1")
 	a.finalizeRouting(ctx, "")

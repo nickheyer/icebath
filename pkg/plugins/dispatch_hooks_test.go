@@ -391,3 +391,12 @@ func TestHeldTransformsSnapshotAndRun(t *testing.T) {
 		t.Fatalf("%q %v", out, failed)
 	}
 }
+
+func TestErrorTypeNameNamesTheRaisedClass(t *testing.T) {
+	for want, err := range map[string]error{"ValueError": &HostBuiltinError{Type: "ValueError", Message: "x"},
+		"KeyError": &PluginHostError{TypeName: "KeyError"}, "PluginHostUnavailable": &PluginHostUnavailable{Reason: "gone"}} {
+		if got := ErrorTypeName(err); got != want {
+			t.Fatalf("ErrorTypeName(%T) = %q want %q", err, got, want)
+		}
+	}
+}

@@ -33,7 +33,7 @@ type Services struct {
 	DelegationBackends                func(c *Context) any
 	CurrentCronExecution              func(ctx context.Context) any
 	CallMCPTool                       func(ctx context.Context, server, tool string, timeout float64, args map[string]any) (string, error)
-	RedeemSideQuestion                func(ctx context.Context, token, prompt, pluginID, h string, timeout float64) (*string, error)
+	RedeemSideQuestion                func(ctx context.Context, token, prompt any, pluginID, h string, timeout any) (*string, error)
 	BoundSessionKey                   func(ctx context.Context) string
 	ResolveBuiltinCommand             func(name string) bool
 	DispatchTool                      func(ctx context.Context, scope, toolName string, args, kwargs map[string]any) (string, error)

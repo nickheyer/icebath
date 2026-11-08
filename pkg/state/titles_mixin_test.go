@@ -227,6 +227,9 @@ func TestSetTitleProvenancePrecedence(t *testing.T) {
 	if got, err := titles.SetAutoTitle(ctx, "odd", "Generated", "llm"); err != nil || !got {
 		t.Fatalf("llm outranks unknown: %v %v", got, err)
 	}
+	if got, err := titles.SetAutoTitleContext(ctx, "odd", "Regenerated", "derived"); err != nil || got {
+		t.Fatalf("context write keeps precedence: %v %v", got, err)
+	}
 	_, err = titles.SetSessionTitle(ctx, "s", strings.Repeat("y", 101))
 	wantValueError(t, err, "Title too long (101 chars, max 100)")
 }

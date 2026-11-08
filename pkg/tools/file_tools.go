@@ -1101,6 +1101,11 @@ func writeFileTool(ctx context.Context, env *Env, path, content, taskID string, 
 	return out
 }
 
+// WriteFileTool exposes the write_file tool entry to packages that drive it directly
+func WriteFileTool(ctx context.Context, env *Env, path, content, taskID string, crossProfile bool, sessionID string) string {
+	return writeFileTool(ctx, env, path, content, taskID, crossProfile, sessionID)
+}
+
 func writeFileToolErr(ctx context.Context, env *Env, path, content, taskID string, crossProfile bool, sessionID string) (string, error) {
 	msg, err := checkSensitivePath(env, path, taskID)
 	if err != nil {

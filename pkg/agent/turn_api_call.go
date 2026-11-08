@@ -211,7 +211,7 @@ func (a *AIAgent) handleAPIInterrupt(retry *TurnRetryState, spinner tools.Spinne
 	a.vprint(a.logPrefix+"⚡ Interrupted during API call.", true, false)
 	interrupted = true
 	a.dropTrailingEmptyResponseScaffolding(messages)
-	partial := pystr.Strip(a.stripThinkBlocks(a.currentStreamedAssistantText))
+	partial := pystr.Strip(a.stripThinkBlocks(a.currentStreamedAssistantText()))
 	switch {
 	case partial != "" && provider.IsRunawayRepetition(partial):
 		appendLiveMessage(messages, HiddenInterruptPlaceholderRow())

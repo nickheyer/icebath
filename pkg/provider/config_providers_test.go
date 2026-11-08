@@ -334,3 +334,14 @@ func TestAPIKeyProvidersExposeACredentialEnvVar(t *testing.T) {
 		t.Fatal("tab mapping")
 	}
 }
+
+func TestEntriesForRouteMatchesOnlyTheNormalizedRoute(t *testing.T) {
+	entries := []map[string]any{{"name": "local", "base_url": "http://localhost:8000/v1/"}, {"name": "other", "base_url": "http://example.com/v1"}}
+	got := EntriesForRoute("http://localhost:8000/v1", entries, nil)
+	if len(got) != 1 || got[0]["name"] != "local" {
+		t.Fatalf("EntriesForRoute = %v", got)
+	}
+	if got := EntriesForRoute("", entries, nil); len(got) != 0 {
+		t.Fatalf("blank base url matched %v", got)
+	}
+}

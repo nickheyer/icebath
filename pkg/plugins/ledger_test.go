@@ -147,3 +147,25 @@ func TestHoldStreamOnlyOnTransformHook(t *testing.T) {
 		t.Fatal("disposed hook still held")
 	}
 }
+
+func TestExportedLedgerViewsAndEvictionPass(t *testing.T) {
+	m := NewManager(t.TempDir())
+	c := newContext(&Manifest{Name: "auth"}, m)
+	released := 0
+	plain := c.track("thing", "plain", func() error { return nil }, false)
+	persistent := c.track("dashboard_auth", "drop", func() error { released++; return nil }, true)
+	if order := m.RegistrationOrder(); len(order) != 1 || order[0] != plain {
+		t.Fatalf("registration order %v", order)
+	}
+	if owned := m.OwnedRegistrations("auth"); len(owned) != 2 || owned[1] != persistent {
+		t.Fatalf("owned %v", owned)
+	}
+	m.Unload(nil)
+	if parked := m.PersistentCarryover(); len(parked) != 1 || parked[0] != persistent || released != 0 {
+		t.Fatalf("parked %v released %d", parked, released)
+	}
+	m.EvictStalePersistentRegistrations()
+	if released != 1 || len(m.PersistentCarryover()) != 0 || len(m.OwnedRegistrations("auth")) != 0 {
+		t.Fatalf("eviction released %d", released)
+	}
+}

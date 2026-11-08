@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/monitoring"
 )
 
 // Persists the latest status snapshot on one background goroutine, newer submissions replacing the pending one
@@ -459,7 +460,7 @@ func WriteRuntimeStatus(u RuntimeStatusUpdate, reloadExisting bool, waitTimeout 
 	writer := runtimeStatusWriterLocked()
 	generation := writer.Submit(path, payload)
 	runtimeStatusStateMu.Unlock()
-	emitRuntimeStatusTransitionQuietly(previous, payload)
+	emitRuntimeStatusTransition(previous, payload)
 	return writer.Wait(generation, waitTimeout)
 }
 
@@ -473,14 +474,18 @@ func PublishRuntimeStatus(u RuntimeStatusUpdate) (int, error) {
 	}
 	generation := runtimeStatusWriterLocked().Submit(path, payload)
 	runtimeStatusStateMu.Unlock()
-	emitRuntimeStatusTransitionQuietly(previous, payload)
+	emitRuntimeStatusTransition(previous, payload)
 	return generation, nil
 }
 
 // Reports a status transition to monitoring, a failure of the observer never reaching the writer
-func emitRuntimeStatusTransitionQuietly(previous, payload *pyjson.Object) {
-	_ = emitRuntimeStatusTransition(previous, payload)
+func emitRuntimeStatusTransition(previous, payload *pyjson.Object) {
+	defer func() { _ = recover() }()
+	monitoring.EmitRuntimeStatusTransition(previous, payload)
 }
+
+// Exposes the active agents contract to gateway health monitoring
+func init() { monitoring.GatewayParseActiveAgents = ParseActiveAgents }
 
 // Reads gateway_state.json of this process home, or of another home when path is set
 func ReadRuntimeStatus(path string) *pyjson.Object {

@@ -135,6 +135,30 @@ func (m *Manager) evictStalePersistentRegistrations() {
 	m.disposeRegistrations(stale)
 }
 
+// Disposes parked persistent handles whose plugin did not re-register, the forced rediscovery eviction pass
+func (m *Manager) EvictStalePersistentRegistrations() { m.evictStalePersistentRegistrations() }
+
+// Registrations enrolled in reverse order teardown, in registration order
+func (m *Manager) RegistrationOrder() []*Registration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]*Registration(nil), m.registrationOrder...)
+}
+
+// Persistent handles the last unload all parked for the rediscovery eviction pass
+func (m *Manager) PersistentCarryover() []*Registration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]*Registration(nil), m.persistentCarryover...)
+}
+
+// Registrations the ownership ledger attributes to one plugin key
+func (m *Manager) OwnedRegistrations(pluginKey string) []*Registration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]*Registration(nil), m.ownershipLedger[pluginKey]...)
+}
+
 // Removes the last identical element of a registration list
 func removeIdentity[T any](values []*T, target *T) ([]*T, bool) {
 	for i := len(values) - 1; i >= 0; i-- {

@@ -594,6 +594,17 @@ func admitPluginProvider(pp Profile) {
 	}
 }
 
+// Drops the canonical row tables so the next read rebuilds them from the registered profiles
+func resetCatalogTables() {
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	catalogOnce = sync.Once{}
+	catalogBuilt = false
+	catalogAliasMu.Lock()
+	catalogAliasMemo = nil
+	catalogAliasMu.Unlock()
+}
+
 // CanonicalProviders returns the full row table including hidden plugin profiles
 func CanonicalProviders() []CanonicalProviderEntry {
 	catalogOnce.Do(buildCatalogTables)

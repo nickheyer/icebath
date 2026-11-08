@@ -108,7 +108,7 @@ func TestSameNameIsIsolatedByProfile(t *testing.T) {
 		t.Fatal("each scope sees its own source")
 	}
 	env := MappingSourceEnvironment(map[string]string{})
-	report := ApplyAllSecretSources(map[string]any{"profile_secret": map[string]any{"enabled": true}}, homeB, env)
+	report := applyAllSecretSourcesForTest(t, map[string]any{"profile_secret": map[string]any{"enabled": true}}, homeB, env)
 	if len(report.Sources) != 1 || report.Sources[0].Result.Secrets["B"] != "b" || env.Value("B") != "b" {
 		t.Fatalf("home B applies its own source: %+v", report)
 	}
@@ -119,7 +119,7 @@ func TestDisabledSourcesDoNotRun(t *testing.T) {
 	src := makeSource("dummy", "mapped", map[string]string{"A": "1"})
 	RegisterSecretSource(src, false, false, "")
 	env := MappingSourceEnvironment(map[string]string{})
-	report := ApplyAllSecretSources(map[string]any{"dummy": map[string]any{"enabled": false}}, t.TempDir(), env)
+	report := applyAllSecretSourcesForTest(t, map[string]any{"dummy": map[string]any{"enabled": false}}, t.TempDir(), env)
 	if src.calls != 0 || len(report.Sources) != 0 || len(env.Snapshot()) != 0 {
 		t.Fatal("disabled sources never run")
 	}
@@ -129,7 +129,7 @@ func TestAppliesSecretsAndRecordsProvenance(t *testing.T) {
 	cleanRegistry(t)
 	RegisterSecretSource(makeSource("dummy", "mapped", map[string]string{"API_KEY": "v1"}), false, false, "")
 	env := MappingSourceEnvironment(map[string]string{})
-	report := ApplyAllSecretSources(map[string]any{"dummy": map[string]any{"enabled": true}}, t.TempDir(), env)
+	report := applyAllSecretSourcesForTest(t, map[string]any{"dummy": map[string]any{"enabled": true}}, t.TempDir(), env)
 	p := report.Provenance["API_KEY"]
 	if env.Value("API_KEY") != "v1" || p.Source != "dummy" || p.Shape != "mapped" || p.OverrodeEnv {
 		t.Fatalf("provenance wrong: %+v", p)
@@ -145,7 +145,7 @@ func TestMappedBeatsBulkFirstClaimWinsAndProtected(t *testing.T) {
 	RegisterSecretSource(bulk, false, false, "")
 	RegisterSecretSource(mapped, false, false, "")
 	env := MappingSourceEnvironment(map[string]string{"TOKEN_ENV": "boot", "EXISTING": "old"})
-	report := ApplyAllSecretSources(map[string]any{"sources": []any{"bulk", "mapped"}, "bulk": map[string]any{"enabled": true}, "mapped": map[string]any{"enabled": true}}, t.TempDir(), env)
+	report := applyAllSecretSourcesForTest(t, map[string]any{"sources": []any{"bulk", "mapped"}, "bulk": map[string]any{"enabled": true}, "mapped": map[string]any{"enabled": true}}, t.TempDir(), env)
 	if env.Value("SHARED") != "from-mapped" || env.Value("BULK_ONLY") != "b" || env.Value("TOKEN_ENV") != "boot" || env.Value("EXISTING") != "override" {
 		t.Fatalf("precedence wrong: %v", env.Snapshot())
 	}
@@ -160,7 +160,7 @@ func TestPreserveExistingBeatsOverride(t *testing.T) {
 	src.spec.OverrideExistingDefault = true
 	RegisterSecretSource(src, false, false, "")
 	env := MappingSourceEnvironment(map[string]string{"KEEP": "old", "REPLACE": "old"})
-	ApplyAllSecretSources(map[string]any{"preserve_existing": []any{"KEEP"}, "vault": map[string]any{"enabled": true}}, t.TempDir(), env)
+	applyAllSecretSourcesForTest(t, map[string]any{"preserve_existing": []any{"KEEP"}, "vault": map[string]any{"enabled": true}}, t.TempDir(), env)
 	if env.Value("KEEP") != "old" || env.Value("REPLACE") != "new" {
 		t.Fatalf("preserve_existing wrong: %v", env.Snapshot())
 	}
@@ -173,7 +173,7 @@ func TestFailedSourceDoesNotBlockOthers(t *testing.T) {
 	RegisterSecretSource(broken, false, false, "")
 	RegisterSecretSource(makeSource("works", "mapped", map[string]string{"K": "v"}), false, false, "")
 	env := MappingSourceEnvironment(map[string]string{})
-	report := ApplyAllSecretSources(map[string]any{"broken": map[string]any{"enabled": true}, "works": map[string]any{"enabled": true}}, t.TempDir(), env)
+	report := applyAllSecretSourcesForTest(t, map[string]any{"broken": map[string]any{"enabled": true}, "works": map[string]any{"enabled": true}}, t.TempDir(), env)
 	if env.Value("K") != "v" {
 		t.Fatal("the working source applies")
 	}
@@ -192,7 +192,7 @@ func TestFetchTimeoutIsEnforced(t *testing.T) {
 		return NewSecretFetchResult()
 	}
 	RegisterSecretSource(slow, false, false, "")
-	report := ApplyAllSecretSources(map[string]any{"slow": map[string]any{"enabled": true, "timeout_seconds": 0.2}}, t.TempDir(), MappingSourceEnvironment(map[string]string{}))
+	report := applyAllSecretSourcesForTest(t, map[string]any{"slow": map[string]any{"enabled": true, "timeout_seconds": 0.2}}, t.TempDir(), MappingSourceEnvironment(map[string]string{}))
 	if len(report.Sources) != 1 || report.Sources[0].Result.ErrorKind != SecretErrorTimeout {
 		t.Fatalf("timeout expected: %+v", report.Sources)
 	}
@@ -202,7 +202,7 @@ func TestMalformedSecretsCfgShapesAreSafe(t *testing.T) {
 	cleanRegistry(t)
 	RegisterSecretSource(makeSource("dummy", "mapped", map[string]string{"K": "v"}), false, false, "")
 	for _, cfg := range []map[string]any{nil, {}, {"dummy": "not-a-dict"}, {"sources": "junk"}} {
-		if ApplyAllSecretSources(cfg, t.TempDir(), MappingSourceEnvironment(map[string]string{})) == nil {
+		if applyAllSecretSourcesForTest(t, cfg, t.TempDir(), MappingSourceEnvironment(map[string]string{})) == nil {
 			t.Fatal("report expected")
 		}
 	}
@@ -214,7 +214,7 @@ func TestProfileAliasHydratesCanonicalName(t *testing.T) {
 	homePath := filepath.Join(t.TempDir(), "profiles", "team-b")
 	_ = os.MkdirAll(homePath, 0o700)
 	env := MappingSourceEnvironment(map[string]string{})
-	report := ApplyAllSecretSources(map[string]any{"vault": map[string]any{"enabled": true}}, homePath, env)
+	report := applyAllSecretSourcesForTest(t, map[string]any{"vault": map[string]any{"enabled": true}}, homePath, env)
 	if env.Value("OPENAI_API_KEY") != "sk-b" || report.Provenance["OPENAI_API_KEY"].Source != "vault" {
 		t.Fatalf("alias expected: %v", env.Snapshot())
 	}
@@ -325,7 +325,7 @@ func conformance(t *testing.T, source SecretSource) {
 	if !RegisterSecretSource(source, false, false, "") {
 		t.Fatal("registers")
 	}
-	report := ApplyAllSecretSources(map[string]any{spec.Name: map[string]any{"enabled": true}}, homePath, MappingSourceEnvironment(map[string]string{}))
+	report := applyAllSecretSourcesForTest(t, map[string]any{spec.Name: map[string]any{"enabled": true}}, homePath, MappingSourceEnvironment(map[string]string{}))
 	found := false
 	for _, s := range report.Sources {
 		if s.Name == spec.Name {
@@ -440,4 +440,14 @@ func registerBuiltinSources() {
 	for _, s := range []SecretSource{&BitwardenSource{}, &OnePasswordSource{}, &CommandSource{}} {
 		RegisterSecretSource(s, false, true, "")
 	}
+}
+
+// Applies every enabled source and fails the test when the apply raised
+func applyAllSecretSourcesForTest(t *testing.T, secretsCfg map[string]any, homePath string, environ *SourceEnvironment) *ApplyReport {
+	t.Helper()
+	report, err := ApplyAllSecretSources(secretsCfg, homePath, environ)
+	if err != nil {
+		t.Fatalf("apply raised %v", err)
+	}
+	return report
 }

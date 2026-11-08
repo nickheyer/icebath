@@ -38,7 +38,7 @@ func cFuncPointer[T any](f T) uintptr {
 func driverHandles(driverConn any) (uintptr, *libc.TLS, error) {
 	v := reflect.ValueOf(driverConn)
 	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct || v.Elem().Type().PkgPath() != "modernc.org/sqlite" {
-		return 0, nil, errors.New("progress handler needs a modernc.org/sqlite connection")
+		return 0, nil, errors.New("a modernc.org/sqlite driver connection is required")
 	}
 	db, tls := v.Elem().FieldByName("db"), v.Elem().FieldByName("tls")
 	if !db.IsValid() || db.Kind() != reflect.Uintptr || !tls.IsValid() || tls.Type() != reflect.TypeFor[*libc.TLS]() {

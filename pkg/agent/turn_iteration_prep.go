@@ -250,13 +250,21 @@ func announceAPICall(ctx context.Context, a *AIAgent, s *LoopState) error {
 			pystr.GroupThousands(int64(s.ApproxTokens)), pystr.GroupThousands(int64(s.TotalChars))), false, false)
 		a.vprint(fmt.Sprintf("%s   🔧 Available tools: %d", a.logPrefix, toolCount), false, false)
 	} else {
-		faces, verbs := thinkingFaces(), thinkingVerbs()
-		face, verb := faces[rand.IntN(len(faces))], verbs[rand.IntN(len(verbs))]
+		faces, err := thinkingFaces(ctx)
+		if err != nil {
+			return err
+		}
+		face := faces[rand.IntN(len(faces))]
+		verbs, err := thinkingVerbs(ctx)
+		if err != nil {
+			return err
+		}
+		verb := verbs[rand.IntN(len(verbs))]
 		if a.thinkingCallback != nil {
 			a.callThinking(face + " " + verb + "...")
 		} else if !a.hasStreamConsumers() && a.shouldStartQuietSpinner() {
 			kind := thinkingSpinnerTypes[rand.IntN(len(thinkingSpinnerTypes))]
-			s.ThinkingSpinner = startKawaiiSpinner(face+" "+verb+"...", kind, a.printFn)
+			s.ThinkingSpinner = startKawaiiSpinner(ctx, face+" "+verb+"...", kind, a.printFn)
 		}
 	}
 	if a.verboseLogging {

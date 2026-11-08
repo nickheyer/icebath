@@ -375,3 +375,16 @@ func TestLiveHostPluginCanLaunchStatusAndSteerSubagent(t *testing.T) {
 		t.Fatalf("result %+v", r)
 	}
 }
+
+func TestSubagentParentRefResolvesUntilCollected(t *testing.T) {
+	parent := &fakeParent{session: "weak"}
+	var live any = parent
+	ctx := BindSubagentParentRef(context.Background(), func() any { return live })
+	if GetActiveSubagentParent(ctx) != parent {
+		t.Fatal("bound ref does not resolve to its parent")
+	}
+	live = nil
+	if GetActiveSubagentParent(ctx) != nil {
+		t.Fatal("a collected parent still resolves")
+	}
+}

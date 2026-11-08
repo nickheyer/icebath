@@ -246,7 +246,7 @@ func moaReferenceMetricsForHook(a *AIAgent) (out any) {
 
 // Appends a provider safe checkpoint and the user correction so role alternation and cached rows hold
 func applyActiveTurnRedirect(a *AIAgent, messages *[]*state.Message, text string) {
-	visible := strings.TrimSpace(a.stripThinkBlocks(a.currentStreamedAssistantText))
+	visible := strings.TrimSpace(a.stripThinkBlocks(a.currentStreamedAssistantText()))
 	checkpointParts := []string{interruptScaffoldMarker}
 	if provider.IsRunawayRepetition(visible) {
 		checkpointParts = append(checkpointParts, provider.RepetitionLoopInterrupted)
@@ -264,7 +264,7 @@ func applyActiveTurnRedirect(a *AIAgent, messages *[]*state.Message, text string
 		}
 	}
 	appendLiveMessage(messages, map[string]any{"role": "user", "content": text, "api_content": correction})
-	a.currentStreamedAssistantText = ""
+	a.setCurrentStreamedAssistantText("")
 	a.streamNeedsBreak = true
 }
 

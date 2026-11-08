@@ -14,12 +14,12 @@ func registerSendTargetEntry(t *testing.T, name string, resolved string, resolve
 	entry := NewPlatformEntry(name, name, nil, func() bool { return true })
 	Registry.register(entry, CurrentScopeKey(ctx))
 	t.Cleanup(func() { _, _ = Registry.Unregister(ctx, name, CurrentScopeKey(ctx)) })
-	stubChannelDirectory(t, resolved, resolveErr)
+	patchChannelDirectory(t, resolved, resolveErr)
 	return entry
 }
 
 // Answers every channel directory lookup with the given name or error for one test
-func stubChannelDirectory(t *testing.T, resolved string, resolveErr error) {
+func patchChannelDirectory(t *testing.T, resolved string, resolveErr error) {
 	saved := resolveChannelNameFn
 	t.Cleanup(func() { resolveChannelNameFn = saved })
 	resolveChannelNameFn = func(context.Context, string, string) (string, error) { return resolved, resolveErr }
@@ -95,7 +95,7 @@ func TestTargetSyntaxParserRunsFirstAndNotExplicitSkipsGenericRules(t *testing.T
 
 func TestUnresolvedBuiltinTargetKeepsDirectoryErrorUnlessPassedThrough(t *testing.T) {
 	ctx := context.Background()
-	stubChannelDirectory(t, "", nil)
+	patchChannelDirectory(t, "", nil)
 	chatID, _, errText := ResolveSendTarget(ctx, "telegram", "missing-room", false)
 	if chatID != "" || !strings.Contains(errText, "missing-room") || !strings.HasSuffix(errText, "Use send_message(action='list') to see available targets.") {
 		t.Fatal(chatID, errText)
@@ -104,14 +104,14 @@ func TestUnresolvedBuiltinTargetKeepsDirectoryErrorUnlessPassedThrough(t *testin
 	if errText != "" || chatID != "ops-room" || threadID != nil {
 		t.Fatal(chatID, threadID, errText)
 	}
-	stubChannelDirectory(t, "", errors.New("directory unreadable"))
+	patchChannelDirectory(t, "", errors.New("directory unreadable"))
 	if _, _, errText := ResolveSendTarget(ctx, "telegram", "ops-room", false); errText != "Could not resolve 'ops-room' on telegram. Try using a numeric channel ID instead." {
 		t.Fatal(errText)
 	}
 }
 
 func TestResolvedDirectoryNameIsReparsedForThreads(t *testing.T) {
-	stubChannelDirectory(t, "-100:42", nil)
+	patchChannelDirectory(t, "-100:42", nil)
 	entry := registerSendTargetEntry(t, "threadchat", "-100:42", nil)
 	entry.TargetRefSyntaxFn = RegexGroupsParser(`(-\d+):(\d+)`, true)
 	chatID, threadID, errText := ResolveSendTarget(context.Background(), "threadchat", "General", false)
@@ -199,12 +199,27 @@ func TestPluginParserAndValidatorOutcomes(t *testing.T) {
 
 func TestUnknownPlatformThatLeftCoreNamesItsInstallCommand(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	stubChannelDirectory(t, "", nil)
+	patchChannelDirectory(t, "", nil)
 	_, _, errText := ResolveSendTarget(context.Background(), "homeassistant", "living room", false)
 	if !strings.Contains(errText, "unregistered plugin platform: homeassistant") || !strings.Contains(errText, "`icebath plugins install homeassistant`") {
 		t.Fatal(errText)
 	}
 	if got := UnknownPlatformError(context.Background(), "nosuchplatform"); got != "Unknown or unregistered plugin platform: nosuchplatform" {
 		t.Fatal(got)
+	}
+}
+
+func TestParseTargetRefExportedMatchesRules(t *testing.T) {
+	chat, thread, explicit := ParseTargetRef(context.Background(), "photon", "+15551234567")
+	if !explicit || chat == nil || *chat != "+15551234567" || thread != nil {
+		t.Fatalf("chat=%v thread=%v explicit=%v", chat, thread, explicit)
+	}
+}
+
+func TestSetResolveChannelNameFnSwapsLookup(t *testing.T) {
+	prev := SetResolveChannelNameFn(func(context.Context, string, string) (string, error) { return "C1", nil })
+	defer SetResolveChannelNameFn(prev)
+	if got, err := resolveChannelNameFn(context.Background(), "slack", "general"); err != nil || got != "C1" {
+		t.Fatalf("got=%q err=%v", got, err)
 	}
 }

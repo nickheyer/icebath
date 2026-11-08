@@ -71,6 +71,9 @@ func hardenGitArgv(args []string) []string {
 	return out
 }
 
+// HardenGitArgv prefixes internal git arguments with the hook and fsmonitor disabling overrides
+func HardenGitArgv(args []string) []string { return hardenGitArgv(args) }
+
 // Executable path for a command searched along an explicit PATH value, empty when absent
 func whichInPath(cmd, pathValue string) string {
 	if strings.ContainsAny(cmd, `/`+string(os.PathSeparator)) {

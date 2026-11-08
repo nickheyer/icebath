@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestCAKeyCreatedWith0600(t *testing.T) {
+func TestCaKeyCreatedWith0o600(t *testing.T) {
 	_, p := ironHome(t)
 	fakeBinary(t, "openssl", `if [ "$1" = genrsa ]; then
   out=""; for a in "$@"; do if [ "$prev" = "-out" ]; then out="$a"; fi; prev="$a"; done
@@ -36,7 +36,7 @@ fi`)
 	}
 }
 
-func TestEnsureAuditLogCreatesAndTightens(t *testing.T) {
+func TestEnsureAuditLogCreatesWith0o600(t *testing.T) {
 	audit := filepath.Join(t.TempDir(), "audit.log")
 	if err := EnsureAuditLog(audit); err != nil {
 		t.Fatal(err)
@@ -44,6 +44,10 @@ func TestEnsureAuditLogCreatesAndTightens(t *testing.T) {
 	if info, _ := os.Stat(audit); info.Mode().Perm() != 0o600 {
 		t.Fatal("created 0600")
 	}
+}
+
+func TestEnsureAuditLogTightensExistingPerms(t *testing.T) {
+	audit := filepath.Join(t.TempDir(), "audit.log")
 	_ = os.WriteFile(audit, []byte("preexisting content\n"), 0o644)
 	_ = os.Chmod(audit, 0o644)
 	if err := EnsureAuditLog(audit); err != nil {
@@ -51,6 +55,23 @@ func TestEnsureAuditLogCreatesAndTightens(t *testing.T) {
 	}
 	if info, _ := os.Stat(audit); info.Mode().Perm() != 0o600 {
 		t.Fatal("existing perms tightened")
+	}
+}
+
+func TestProxyStateDirIs0o700(t *testing.T) {
+	_, p := ironHome(t)
+	if info, err := os.Stat(ironStateDir(t, p)); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("state dir perms %v %v", info, err)
+	}
+}
+
+func TestManagementTokenIsPrivate(t *testing.T) {
+	_, p := ironHome(t)
+	if _, err := p.EnsureManagementToken(false); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(p.managementTokenPath()); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("management token perms %v %v", info, err)
 	}
 }
 

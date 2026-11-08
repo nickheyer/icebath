@@ -267,3 +267,17 @@ func TestEverythingIsANoOpWhileDisabled(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestReplyFinishLatchMatchesTheSameMapResponse(t *testing.T) {
+	_, ctx := directRuntime(t)
+	agent := harnessAgent("")
+	first := map[string]any{"choices": []any{}}
+	RecordReplyFinish(ctx, agent, first, "length")
+	RecordReplyContent(ctx, agent, first, map[string]any{"content": "half"})
+	RecordReplyContent(ctx, agent, map[string]any{"choices": []any{}}, map[string]any{"content": "hello"})
+	route := "model=anthropic/claude-sonnet,provider=openrouter"
+	want := rowSet("issue=none,"+route+"|1", "issue=truncated_length,"+route+"|1")
+	if got := effRows(t, ctx, ModelReplyIssueMetric); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%v", got)
+	}
+}

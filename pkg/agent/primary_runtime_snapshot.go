@@ -77,8 +77,8 @@ func snapshotPrimaryRuntime(ctx context.Context, a *AIAgent) {
 		"compressor_base_url":         engineAttrOr(cc, "base_url", a.baseURL),
 		"compressor_api_key":          engineAttrOr(cc, "api_key", ""),
 		"compressor_provider":         engineAttrOr(cc, "provider", a.provider),
-		"compressor_context_length":   cc.Base().ContextLength,
-		"compressor_threshold_tokens": cc.Base().ThresholdTokens,
+		"compressor_context_length":   engineContextLength(cc),
+		"compressor_threshold_tokens": engineThresholdTokens(cc),
 	}
 	if a.apiMode == "anthropic_messages" {
 		rt["anthropic_api_key"], rt["anthropic_base_url"], rt["is_anthropic_oauth"] = a.anthropicKeyValue(), a.anthropicBaseURL, a.isAnthropicOAuth
@@ -99,7 +99,7 @@ func buildPrimaryRuntimeSnapshot(ctx context.Context, a *AIAgent, apiMode string
 	}
 	contextLength, thresholdTokens := 0, 0
 	if cc != nil {
-		contextLength, thresholdTokens = cc.Base().ContextLength, cc.Base().ThresholdTokens
+		contextLength, thresholdTokens = engineContextLength(cc), engineThresholdTokens(cc)
 	}
 	rt := map[string]any{
 		"model": a.model, "provider": a.provider, "requested_provider": a.requestedProvider,

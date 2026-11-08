@@ -45,3 +45,6 @@ func TestLocalRuntimeSupervisorReapsOwnedJobEvenAfterRouterExit(t *testing.T) {
 		t.Fatal("stop left the job open")
 	}
 }
+
+// Windows suites start no fake llama-server link so this binary never runs under that name
+func dispatchFakeLlamaServerEntry() {}

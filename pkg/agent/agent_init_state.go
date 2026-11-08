@@ -60,8 +60,9 @@ func initTurnState(a *AIAgent, runBudgetSeconds any) {
 func setStreamStateDefaults(a *AIAgent) {
 	a.streamContextScrubber = memory.NewStreamingContextScrubber()
 	a.streamThinkScrubber = provider.NewStreamingThinkScrubber()
-	a.currentStreamedAssistantText = ""
+	a.setCurrentStreamedAssistantText("")
 	a.deliveredInterimTexts = map[string]bool{}
+	a.streamWriterLock, a.streamWriterTLS = &sync.Mutex{}, &pythread.Local{}
 	a.anthropicImageFallbackCache = map[string]string{}
 }
 

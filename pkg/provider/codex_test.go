@@ -383,7 +383,7 @@ func harmonyKwargs(tools []map[string]any) map[string]any {
 		"tools": jsonList(tools), "store": false}
 }
 
-func TestCodexAPIPreflightSanitizesListValuesInToolSchemas(t *testing.T) {
+func TestCodexApiPreflightSanitizesTupleValuesInToolSchemas(t *testing.T) {
 	kwargs := harmonyKwargs([]map[string]any{{"type": "function", "name": "choose_mode", "parameters": map[string]any{
 		"type": "object", "properties": map[string]any{"mode": map[string]any{"type": "string", "enum": []string{harmonyToken("call"), "plain"}}}}}})
 	normalized, err := preflightCodexAPIKwargs(kwargs, false, false, true)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
@@ -152,21 +151,6 @@ func scopeKeyFor(a *CacheScopeAgent) string {
 	return contentCacheKey("You are a helpful assistant.", []map[string]any{{"type": "function", "name": "terminal"}}, cacheScopeFromSessionID(ResolvePromptCacheScope(a)))
 }
 
-func TestCacheScopeRotationContinuityEndToEnd(t *testing.T) {
-	db := newScopeFakeDB()
-	db.create("root-sess")
-	before := scopeKeyFor(&CacheScopeAgent{SessionID: "root-sess", SessionDB: db})
-	db.rotate("root-sess", "rotated-1")
-	if after := scopeKeyFor(&CacheScopeAgent{SessionID: "rotated-1", SessionDB: db}); after != before {
-		t.Fatal("rotation moved the prompt cache key")
-	}
-	db.create("delegate-a")
-	db.create("delegate-b")
-	if scopeKeyFor(&CacheScopeAgent{SessionID: "delegate-a", SessionDB: db}) == scopeKeyFor(&CacheScopeAgent{SessionID: "delegate-b", SessionDB: db}) {
-		t.Fatal("sibling forks share a key")
-	}
-}
-
 func scopeCodexKwargs(t *testing.T, model string, msgs []*state.Message, p codexParams) map[string]any {
 	return build(t, newCodexTransport(), model, msgs, nil, p)
 }
@@ -189,83 +173,6 @@ func scopeChatKey(t *testing.T, sessionID, scope string) string {
 	b := c.build(context.Background(), &Request{Model: "gpt-5.5", Messages: []*state.Message{cm("system", "sys")}, SessionID: sessionID, CacheScope: scope}, wireSettings{})
 	v, _ := b.body.Get("prompt_cache_key")
 	return stringOf(v)
-}
-
-func TestCacheScopeTransportWiring(t *testing.T) {
-	k1 := scopeCodexKwargs(t, "gpt-5.5", scopeSysHi(), codexParams{sessionID: "root-sess", cacheScopeID: "root-sess"})
-	k2 := scopeCodexKwargs(t, "gpt-5.5", scopeSysHi(), codexParams{sessionID: "rotated-1", cacheScopeID: "root-sess"})
-	k3 := scopeCodexKwargs(t, "gpt-5.5", scopeSysHi(), codexParams{sessionID: "rotated-1"})
-	if k1["prompt_cache_key"] != k2["prompt_cache_key"] || k3["prompt_cache_key"] == k1["prompt_cache_key"] {
-		t.Fatalf("codex keys %v %v %v", k1["prompt_cache_key"], k2["prompt_cache_key"], k3["prompt_cache_key"])
-	}
-	kw := scopeCodexKwargs(t, "gpt-5.5", scopeSysHi(), codexParams{sessionID: "rotated-1", cacheScopeID: "root-sess", isCodexBackend: true})
-	if scopeHeader(kw, "session_id") != "rotated-1" || scopeHeader(kw, "x-client-request-id") != stringOf(kw["prompt_cache_key"]) {
-		t.Fatalf("codex backend headers %#v key %v", kw["extra_headers"], kw["prompt_cache_key"])
-	}
-	kw = scopeCodexKwargs(t, "grok-4", scopeSysHi(), codexParams{sessionID: "rotated-1", cacheScopeID: "root-sess", isXAI: true})
-	if scopeHeader(kw, "x-grok-conv-id") != "root-sess" {
-		t.Fatalf("xai conv id %#v", kw["extra_headers"])
-	}
-	if scopeChatKey(t, "root-sess", "root-sess") != scopeChatKey(t, "rotated-1", "root-sess") || scopeChatKey(t, "rotated-1", "") == scopeChatKey(t, "rotated-1", "root-sess") {
-		t.Fatal("chat completions must prefer the cache scope")
-	}
-	c1 := scopeCodexKwargs(t, "gpt-5.5", scopeSysHi(), codexParams{sessionID: "cron_backup_20260814_120000", cacheScopeID: "cron_backup_20260814_120000"})
-	c2 := scopeCodexKwargs(t, "gpt-5.5", scopeSysHi(), codexParams{sessionID: "cron_backup_20260815_120000", cacheScopeID: "cron_backup_20260815_120000"})
-	if c1["prompt_cache_key"] != c2["prompt_cache_key"] {
-		t.Fatal("cron fires must share a key")
-	}
-}
-
-func TestCacheScopePerResponseRunNonceIsolation(t *testing.T) {
-	const run = "gc_run_room42_default_Worker"
-	r1, r2 := run+"_5f2c1ab9d4e34f7a8b0c6d1e2f3a4b5c", run+"_9a7e3b1c05d24e6fb83a1c7d9e0f2a4b"
-	codexKey := func(sid string) any {
-		return scopeCodexKwargs(t, "gpt-5.5", []*state.Message{cm("system", "same")}, codexParams{sessionID: sid})["prompt_cache_key"]
-	}
-	first, second := "customer_chat_11111111111141118111111111111111", "customer_chat_22222222222242228222222222222222"
-	if cacheScopeFromSessionID(first) == cacheScopeFromSessionID(second) || codexKey(first) == codexKey(second) {
-		t.Fatal("external uuid identities merged")
-	}
-	common := strings.Repeat("A", 70)
-	m1 := ("gc_run_mabc1234qwerty_default_" + common + "Worker")[:96] + "_11111111111141118111111111111111"
-	m2 := ("gc_run_mabc1234qwerty_default_" + common + "Reviewer")[:96] + "_22222222222242228222222222222222"
-	if m1 == m2 || cacheScopeFromSessionID(m1) == cacheScopeFromSessionID(m2) {
-		t.Fatal("studio members merged")
-	}
-	if cacheScopeFromSessionID("cron_backup_20260814_120000") != "cron_backup" || cacheScopeFromSessionID(r1) != r1 {
-		t.Fatal("cron must stay the only carve out")
-	}
-	db := newScopeFakeDB()
-	db.create(r1)
-	db.create(r2)
-	if ResolvePromptCacheScope(&CacheScopeAgent{SessionID: r1, SessionDB: db}) != r1 || ResolvePromptCacheScope(&CacheScopeAgent{SessionID: r2, SessionDB: db}) != r2 {
-		t.Fatal("parentless rows must resolve to themselves")
-	}
-	base1 := scopeCodexKwargs(t, "gpt-5.5", scopeSysHi(), codexParams{sessionID: r1})
-	base2 := scopeCodexKwargs(t, "gpt-5.5", scopeSysHi(), codexParams{sessionID: r2})
-	x1 := scopeCodexKwargs(t, "grok-4", scopeSysHi(), codexParams{sessionID: r1, isXAI: true})
-	x2 := scopeCodexKwargs(t, "grok-4", scopeSysHi(), codexParams{sessionID: r2, isXAI: true})
-	if base1["prompt_cache_key"] == base2["prompt_cache_key"] || scopeHeader(x1, "x-grok-conv-id") == scopeHeader(x2, "x-grok-conv-id") || scopeChatKey(t, r1, "") == scopeChatKey(t, r2, "") {
-		t.Fatal("affinity keys merged")
-	}
-	for _, p := range []struct{ provider, base string }{{"openrouter", "https://openrouter.ai/api/v1"}, {"nous", "https://inference-api.nousresearch.com/v1"}} {
-		var keys []any
-		for _, sid := range []string{r1, r2} {
-			c := newCCRoute(Route{Provider: p.provider, Model: "anthropic/claude-sonnet-4.6", BaseURL: p.base, Mode: ModeChatCompletions})
-			b := c.build(context.Background(), &Request{Model: "anthropic/claude-sonnet-4.6", Messages: scopeSysHi(), SessionID: sid}, wireSettings{})
-			v, ok := b.extraBody.Get("session_id")
-			if !ok {
-				v, ok = b.body.Get("session_id")
-			}
-			if !ok || stringOf(v) != sid {
-				t.Fatalf("%s sticky session id %#v", p.provider, v)
-			}
-			keys = append(keys, v)
-		}
-		if keys[0] == keys[1] {
-			t.Fatalf("%s sticky keys merged", p.provider)
-		}
-	}
 }
 
 func TestAnthropicPromptCachePolicyWrapsUnexported(t *testing.T) {

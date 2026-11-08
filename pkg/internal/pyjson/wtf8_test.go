@@ -552,3 +552,15 @@ func compactText(v any) string {
 }
 
 var wtf8BenchArgs = []byte(`{"path": "/home/user/project/src/main.go", "old_string": "func main() {\n\tfmt.Println(\"hello, world\")\n}\n", "new_string": "func main() {\n\tfmt.Println(\"héllo, wörld ✓\")\n\tos.Exit(0)\n}\n", "replace_all": false, "context": {"lines": [1, 2, 3, 4, 5], "note": "` + strings.Repeat("plain text ", 120) + `"}}`)
+
+func TestJSONDecodeWTF8NumbersKeepsIntText(t *testing.T) {
+	v, err := DecodeWTF8Numbers([]byte(`{"exit_code":1,"ratio":1.0,"nested":[2e3,"\udc80"]}`))
+	m, ok := v.(map[string]any)
+	if err != nil || !ok || m["exit_code"] != json.Number("1") || m["ratio"] != json.Number("1.0") ||
+		!reflect.DeepEqual(m["nested"], []any{json.Number("2e3"), "\xed\xb2\x80"}) {
+		t.Fatalf("%#v %v", v, err)
+	}
+	if _, err := DecodeWTF8Numbers([]byte(`{"a":`)); err == nil {
+		t.Fatal("truncated document decoded")
+	}
+}

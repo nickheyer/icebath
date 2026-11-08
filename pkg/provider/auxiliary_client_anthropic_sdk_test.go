@@ -311,3 +311,20 @@ func TestAgentCreateAnthropicMessageHonoursTheStreamPreferenceAndOffersTheRespon
 		t.Fatal("client without messages accepted")
 	}
 }
+
+func TestAnthSDKTokenSourceMintsThroughATaggedSource(t *testing.T) {
+	src := TagCredentialSource(func(context.Context) (string, error) { return "tagged-token", nil }, CredentialSourceMinimaxOAuth)
+	fn, ok := anthSDKTokenSource(src)
+	if !ok {
+		t.Fatal("a tagged source is a bearer callable")
+	}
+	if tok, err := fn(context.Background()); err != nil || tok != "tagged-token" {
+		t.Fatalf("minted %q %v", tok, err)
+	}
+	if _, ok := anthSDKTokenSource((*TaggedTokenSource)(nil)); ok {
+		t.Fatal("a nil tagged source is no callable")
+	}
+	if _, ok := anthSDKTokenSource("sk-ant"); ok {
+		t.Fatal("a static key is no callable")
+	}
+}

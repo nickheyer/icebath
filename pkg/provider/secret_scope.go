@@ -220,8 +220,7 @@ func (s *SecretScope) servesRouted() bool {
 // Secret resolves an env var name through the scope, failing closed under multiplexing with no scope
 func (s *SecretScope) Secret(name string) (string, bool, error) {
 	if IsGlobalEnv(name) {
-		v, ok := os.LookupEnv(name)
-		return v, ok, nil
+		return environOr(name)
 	}
 	if s != nil && s.Mapping != nil {
 		s.mu.Lock()
@@ -233,8 +232,7 @@ func (s *SecretScope) Secret(name string) (string, bool, error) {
 		if s.servesRouted() {
 			return "", false, nil
 		}
-		v, ok = os.LookupEnv(name)
-		return v, ok, nil
+		return environOr(name)
 	}
 	if MultiplexProcess() || (s != nil && s.multiplex) {
 		if s != nil && s.launchBody != nil {
@@ -246,6 +244,11 @@ func (s *SecretScope) Secret(name string) (string, bool, error) {
 				"This credential read must run inside a WithSecretScope context (the per-turn / per-adapter profile scope). "+
 				"Reading the process environment here would risk leaking another profile's value.")
 	}
+	return environOr(name)
+}
+
+// Process environment value of a name with whether it is set, an unset read handing back the default
+func environOr(name string) (string, bool, error) {
 	v, ok := os.LookupEnv(name)
 	return v, ok, nil
 }
@@ -287,13 +290,16 @@ func GetSecretStr(ctx context.Context, name, def string) string {
 // SecretSourceLabel is the " (from X)" suffix naming the external source that supplied the env var
 func SecretSourceLabel(h, name string) string { return FormatSecretSourceSuffix(h, name) }
 
+// External secret source reader of the profile scope, the module attribute hermes tests patch
+var secretSourceValues = SecretSourceValues
+
 // BuildProfileSecretScope assembles a profile's secrets from .env, its secret sources and the managed env
 func BuildProfileSecretScope(h string) map[string]string {
 	secrets := config.LoadEnvFile(filepath.Join(h, ".env"))
 	if secrets == nil {
 		secrets = map[string]string{}
 	}
-	for k, v := range SecretSourceValues(h) {
+	for k, v := range secretSourceValues(h) {
 		if !IsGlobalEnv(k) {
 			secrets[k] = v
 		}

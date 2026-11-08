@@ -570,3 +570,6 @@ func shutdownParallelPools() {
 		p.Shutdown(true)
 	}
 }
+
+// ShutdownParallelPools is the atexit teardown of every parallel pool for the binary's exit path
+func ShutdownParallelPools() { shutdownParallelPools() }

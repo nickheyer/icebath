@@ -255,6 +255,11 @@ func (t *sessionTitles) SetAutoTitle(ctx context.Context, sessionID, title, sour
 	return t.setSessionTitle(ctx, sessionID, title, source)
 }
 
+// Provenance checked automatic title write of the titles port, reachable although the DB level setter shadows it
+func (t *sessionTitles) SetAutoTitleContext(ctx context.Context, sessionID, title, source string) (bool, error) {
+	return t.SetAutoTitle(ctx, sessionID, title, source)
+}
+
 // Text of a nullable column value, false for NULL
 func optionalText(v any) (string, bool) {
 	switch x := v.(type) {

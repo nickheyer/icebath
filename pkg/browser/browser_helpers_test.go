@@ -27,6 +27,12 @@ func TestMain(m *testing.M) {
 	}
 	removeRoot := openRootPipe()
 	claimPrivateDir = func(string) bool { return false }
+	if tools.ConfigEnvTableKeys == nil {
+		tools.ConfigEnvTableKeys = func() []string { return nil }
+	}
+	if tools.RegisteredAdapterSecretEnv == nil {
+		tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
+	}
 	code := m.Run()
 	removeRoot()
 	os.Exit(code)

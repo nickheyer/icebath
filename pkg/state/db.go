@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -99,7 +100,20 @@ func NewSessionID() string {
 
 // Unix seconds as a float with sub second precision
 func now() float64 {
-	return float64(time.Now().UnixNano()) / 1e9
+	return (*wallClock.Load())()
+}
+
+var wallClock atomic.Pointer[func() float64]
+
+func init() {
+	system := func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+	wallClock.Store(&system)
+}
+
+// Installs the wall clock store timestamps read and returns the restore of the previous one
+func SetWallClock(fn func() float64) func() {
+	prev := wallClock.Swap(&fn)
+	return func() { wallClock.Store(prev) }
 }
 
 // Values of a string list as bound parameters

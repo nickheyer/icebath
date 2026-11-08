@@ -229,8 +229,8 @@ func hydrateProfileSecretSourcesLocked(h string) map[string]string {
 		envBefore[k] = v
 	}
 	environ := MappingSourceEnvironment(local)
-	report := ApplyAllSecretSources(cfg, h, environ)
-	if len(report.Sources) == 0 {
+	report, err := ApplyAllSecretSources(cfg, h, environ)
+	if err != nil || len(report.Sources) == 0 {
 		return map[string]string{}
 	}
 	refuseProtectedEnvFromSources(report, configBackendView(h), envBefore, environ, h)
@@ -542,8 +542,8 @@ func ApplyExternalSecretSources(h string) {
 		staged[k] = v
 	}
 	stagedEnv := MappingSourceEnvironment(staged)
-	report := ApplyAllSecretSources(cfg, h, stagedEnv)
-	if len(report.Sources) == 0 {
+	report, err := ApplyAllSecretSources(cfg, h, stagedEnv)
+	if err != nil || len(report.Sources) == 0 {
 		return
 	}
 	refuseProtectedEnvFromSources(report, backendBefore, environBefore, stagedEnv, "")
@@ -642,5 +642,5 @@ func secretRemediationHint(sourceName string, kind SecretErrorKind, secretsCfg m
 	if source == nil {
 		return ""
 	}
-	return strings.TrimSpace(SecretSourceRemediation(source.Spec(), kind, secretsSection(secretsCfg, sourceName)))
+	return secretSourceRemediation(source, kind, secretsSection(secretsCfg, sourceName))
 }

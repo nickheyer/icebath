@@ -8,6 +8,9 @@ func auxAsyncAPIKey(sync AuxClient) any {
 	return sync.APIKey()
 }
 
+// AuxClientCredential is the rotating key source of an SDK client when it has one, else its static key
+func AuxClientCredential(c AuxClient) any { return auxAsyncAPIKey(c) }
+
 // Copy of the default headers the sync SDK client was built with, empty for adapters
 func auxConfiguredDefaultHeaders(sync AuxClient) map[string]string {
 	out := map[string]string{}

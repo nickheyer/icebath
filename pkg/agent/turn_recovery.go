@@ -381,3 +381,22 @@ func stripRequestImagesAndRetry(a *AIAgent, apiMessages *[]any) bool {
 	}
 	return false
 }
+
+// Failover reasons that move the turn onto the configured fallback chain eagerly
+var rateLimitReasons = map[provider.FailoverReason]bool{
+	provider.ReasonRateLimit: true, provider.ReasonBilling: true, provider.ReasonUpstreamRateLimit: true,
+}
+
+// Activates the configured fallback when a codex app server turn failed on a billing or rate limit verdict
+func activateCodexAppServerFallback(ctx context.Context, a *AIAgent, result map[string]any) bool {
+	errV := result["error"]
+	if !pyTruthy(errV) || pyTruthy(result["interrupted"]) || !a.hasPendingFallback() {
+		return false
+	}
+	classified := provider.ClassifyError(provider.ClassifyInput{Err: errors.New(pyStr(errV)), Provider: a.provider, Model: a.model})
+	if !rateLimitReasons[classified.Reason] {
+		return false
+	}
+	a.BufferDiagnosticStatus(provider.EagerFallbackStatus(classified, classified.Reason == provider.ReasonUpstreamRateLimit, false))
+	return a.tryActivateFallback(ctx, classified.Reason)
+}

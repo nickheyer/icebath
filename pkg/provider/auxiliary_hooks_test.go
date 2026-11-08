@@ -135,3 +135,15 @@ func TestAuxiliaryHooksBadRetryCountSkipsThePair(t *testing.T) {
 		t.Fatalf("payload build failure is fail open, fired %v", *fired)
 	}
 }
+
+func TestAuxiliaryHooksExportedPairFiresPreAndPost(t *testing.T) {
+	fired := auxRecordHooks(t, nil)
+	hooks := StartAuxCallHooks(context.Background(), auxHookArgs("plugin_side_question", map[string]any{}))
+	if hooks == nil || len(*fired) != 1 || (*fired)[0].name != "pre_auxiliary_call" {
+		t.Fatalf("pre %v", *fired)
+	}
+	FinishAuxCallHooks(context.Background(), hooks, nil, &InterruptedError{Message: "side question cancelled"}, nil)
+	if len(*fired) != 2 || (*fired)[1].payload["error_type"] != "InterruptedError" {
+		t.Fatalf("post %v", *fired)
+	}
+}

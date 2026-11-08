@@ -22,3 +22,12 @@ func TestResolveXAIHTTPCredentialsExportSplitsTheCredentials(t *testing.T) {
 		t.Fatalf("xai credentials %q %q %q", p, k, u)
 	}
 }
+
+func TestResolveXAIHTTPCredentialsRefreshedExportSplitsTheCredentials(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "")
+	env := &Env{Home: t.TempDir(), Config: config.Tree{}}
+	c := resolveXAIHTTPCredentialsRefreshed(env, "hint")
+	if p, k, u := ResolveXAIHTTPCredentialsRefreshed(env, "hint"); p != c.Provider || k != c.APIKey || u != c.BaseURL {
+		t.Fatalf("refreshed xai credentials %q %q %q", p, k, u)
+	}
+}

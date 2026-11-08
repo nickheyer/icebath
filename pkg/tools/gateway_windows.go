@@ -99,6 +99,11 @@ func windowsConsoleCodePages() []int {
 	return pages
 }
 
+// Text of captured schtasks or whoami bytes decoded through this console's code pages
+func DecodeSchtasksBytes(data []byte) (string, error) {
+	return decodeSchtasksOutput(data, windowsConsoleCodePages(), consoleCodePageDecoder)
+}
+
 // CPython codec for a code page, else the Windows code page codec when the OS can encode with it
 func consoleCodePageDecoder(cp int) codePageDecoder {
 	if dec := pyCodePageDecoder(cp); dec != nil {

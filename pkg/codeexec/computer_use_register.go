@@ -11,7 +11,10 @@ const computerUseToolDescription = "Universal desktop control via cua-driver (ma
 	"etc.). Background computer-use: does NOT steal the user's cursor " +
 	"or keyboard focus."
 
-func init() { registerComputerUseTool() }
+func init() {
+	registerComputerUseTool()
+	tools.ReleaseComputerUseSession = ReleaseComputerUseSession
+}
 
 // Registers computer_use in its own toolset with the schema, the active provider check and the handler
 func registerComputerUseTool() {

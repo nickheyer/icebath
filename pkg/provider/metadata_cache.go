@@ -31,7 +31,7 @@ const endpointProbeTTL = 3600 * time.Second
 const endpointProbeFailureTTL = 300 * time.Second
 
 // Window during which later probes to a connect timed out host short circuit
-const endpointBlackholeTTL = 30 * time.Second
+var endpointBlackholeTTL = 30 * time.Second
 
 // Disk TTL of successful local endpoint probes
 const localProbeDiskTTL = 300 * time.Second
@@ -311,17 +311,7 @@ func rememberEndpointModels(key endpointMemoKey, cache map[string]map[string]any
 	memoLock.Lock()
 	defer memoLock.Unlock()
 	now := wallNow()
-	for k, stamp := range endpointModelMetadataCacheTime {
-		if now.Sub(stamp) >= endpointModelCacheTTL {
-			delete(endpointModelMetadataCache, k)
-			delete(endpointModelMetadataCacheTime, k)
-		}
-	}
-	for k := range endpointModelMetadataCache {
-		if _, stamped := endpointModelMetadataCacheTime[k]; !stamped {
-			delete(endpointModelMetadataCache, k)
-		}
-	}
+	DropExpired(endpointModelMetadataCache, endpointModelMetadataCacheTime, endpointModelCacheTTL, now)
 	endpointModelMetadataCache[key] = cache
 	endpointModelMetadataCacheTime[key] = now
 	return cache
@@ -329,18 +319,8 @@ func rememberEndpointModels(key endpointMemoKey, cache map[string]map[string]any
 
 // Evicts the stalest codex token entry from both context memos before a new key is stored
 func boundCodexCaches(cacheKey string) {
-	if _, has := codexOAuthContextCache[cacheKey]; has || len(codexOAuthContextCache) < codexCacheMax {
-		return
-	}
-	oldest, oldestAt := "", time.Time{}
-	first := true
-	for k, entry := range codexOAuthContextCache {
-		if first || entry.at.Before(oldestAt) {
-			oldest, oldestAt, first = k, entry.at, false
-		}
-	}
-	delete(codexOAuthContextCache, oldest)
-	delete(codexOAuthMaxContextCache, oldest)
+	EvictOldest(codexOAuthContextCache, cacheKey, func(entry codexContextCacheEntry) time.Time { return entry.at }, codexCacheMax,
+		func(k string) { delete(codexOAuthMaxContextCache, k) })
 }
 
 func contextCachePath(ctx context.Context) string {
@@ -348,7 +328,10 @@ func contextCachePath(ctx context.Context) string {
 }
 
 // Atomic yaml write of the context cache document
-func writeContextCache(ctx context.Context, cache map[string]int, bedrockConfirmed map[string]any) error {
+// Context cache writer, a seam the read only cache tests fail on purpose
+var writeContextCache = writeContextCacheDocument
+
+func writeContextCacheDocument(ctx context.Context, cache map[string]int, bedrockConfirmed map[string]any) error {
 	document := map[string]any{"context_lengths": cache}
 	if len(bedrockConfirmed) > 0 {
 		document["bedrock_confirmed_v1"] = bedrockConfirmed

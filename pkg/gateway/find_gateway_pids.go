@@ -665,10 +665,7 @@ func ownedGatewayPID(ctx context.Context, pidFile, ownHome string) (int, bool) {
 
 // Ownership ladder cheapest proof first, dialling the control socket only for the host pid
 func pidOwnedByHome(ctx context.Context, pidFile string, pid int, ownHome string) (bool, error) {
-	record, err := readHostRecord(roleGateway, false)
-	if err != nil {
-		return false, err
-	}
+	record := readHostRecord(roleGateway, false)
 	isHost := record != nil && record.PID == pid && recordNamesLiveOwner(record)
 	if isHost {
 		same, err := sameHermesHome(hostRecordHome(record), ownHome)
@@ -685,10 +682,7 @@ func pidOwnedByHome(ctx context.Context, pidFile string, pid int, ownHome string
 	}
 	if isHost {
 		invalidateHostGatewayCache()
-		owner, err := hostGateway()
-		if err != nil {
-			return false, err
-		}
+		owner := hostGateway()
 		if owner != nil && owner.PID == pid && owner.ServedKnown {
 			return sameHermesHome(owner.Home, ownHome)
 		}

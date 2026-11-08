@@ -57,11 +57,9 @@ func auxMinimaxSeams(t *testing.T) {
 	t.Helper()
 	auxLoggedMinimaxAbsentKeys.clear()
 	auxLoggedMinimaxUnexpectedKeys.clear()
+	prevCredentials, prevAuthState := auxMinimaxRuntimeCredentialsFn, auxProviderAuthStateFn
 	t.Cleanup(func() {
-		auxMinimaxRuntimeCredentialsFn = resolveMinimaxOAuthRuntimeCredentialsWith
-		auxProviderAuthStateFn = func(env PoolEnv, provider string) (map[string]any, error) {
-			return env.Store.GetProviderAuthState(provider)
-		}
+		auxMinimaxRuntimeCredentialsFn, auxProviderAuthStateFn = prevCredentials, prevAuthState
 		auxLoggedMinimaxAbsentKeys.clear()
 		auxLoggedMinimaxUnexpectedKeys.clear()
 	})

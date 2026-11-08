@@ -20,6 +20,8 @@ const unknownKeyNotice = "not a recognized config key"
 // Home with an empty .env and the given JSON config, facade output captured
 func moaKeysHome(t *testing.T, data map[string]any) (string, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
+	restoreProcessEnv(t)
+	hermeticEnv(t)
 	h := filepath.Join(t.TempDir(), "icebath")
 	if err := os.MkdirAll(h, 0o755); err != nil {
 		t.Fatal(err)

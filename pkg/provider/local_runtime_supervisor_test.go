@@ -226,7 +226,7 @@ func lr5WriteCurrentProcessState(t *testing.T, baseURL, apiKey string) {
 	lr5Touch(t, localRuntimeStatePath(), string(raw))
 }
 
-func TestLocalRuntimeTouchGenerateIsTheReadinessProof(t *testing.T) {
+func TestTouchGenerateIsTheReadinessProof(t *testing.T) {
 	st := lr5StartFake(t)
 	sup := lr5Sup(t, st.port)
 	if !sup.TouchGenerate("m", 300*time.Second) {
@@ -238,7 +238,7 @@ func TestLocalRuntimeTouchGenerateIsTheReadinessProof(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeTouchGenerateScansReasoningContent(t *testing.T) {
+func TestTouchGenerateScansReasoningContent(t *testing.T) {
 	st := lr5StartFake(t)
 	sup := lr5Sup(t, st.port)
 	st.set(func() { st.chatAnswer = "" })
@@ -251,7 +251,7 @@ func TestLocalRuntimeTouchGenerateScansReasoningContent(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeEnsureModelReadyUnknownModelRaises(t *testing.T) {
+func TestEnsureModelReadyUnknownModelRaises(t *testing.T) {
 	st := lr5StartFake(t)
 	st.set(func() { st.models = lr5Models([2]string{"present", "unloaded"}) })
 	sup := lr5Sup(t, st.port)
@@ -262,7 +262,7 @@ func TestLocalRuntimeEnsureModelReadyUnknownModelRaises(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeIsIdleRequiresNoBusySlotsAndZeroProcessing(t *testing.T) {
+func TestIsIdleRequiresNoBusySlotsAndZeroProcessing(t *testing.T) {
 	st := lr5StartFake(t)
 	sup := lr5Sup(t, st.port)
 	st.set(func() {
@@ -285,7 +285,7 @@ func TestLocalRuntimeIsIdleRequiresNoBusySlotsAndZeroProcessing(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeBaseURLDialsLoopbackIPNeverLocalhost(t *testing.T) {
+func TestBaseURLDialsLoopbackIPNeverLocalhost(t *testing.T) {
 	sup := lr5Sup(t, 9999)
 	if !strings.Contains(sup.BaseURL(), "127.0.0.1") || strings.Contains(sup.BaseURL(), "localhost") {
 		t.Fatal(sup.BaseURL())
@@ -294,7 +294,7 @@ func TestLocalRuntimeBaseURLDialsLoopbackIPNeverLocalhost(t *testing.T) {
 
 func lr5Now(v float64) *float64 { return &v }
 
-func TestLocalRuntimeIdleSweepUnloadsIdleModels(t *testing.T) {
+func TestIdleSweepUnloadsIdleModels(t *testing.T) {
 	st := lr5StartFake(t)
 	st.set(func() { st.models = lr5Models([2]string{"model-a", "loaded"}, [2]string{"model-b", "loaded"}) })
 	sup := lr5Sup(t, st.port)
@@ -312,7 +312,7 @@ func TestLocalRuntimeIdleSweepUnloadsIdleModels(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeIdleSweepBusyModelResetsClock(t *testing.T) {
+func TestIdleSweepBusyModelResetsClock(t *testing.T) {
 	st := lr5StartFake(t)
 	st.set(func() { st.models = lr5Models([2]string{"side-m", "loaded"}) })
 	sup := lr5Sup(t, st.port)
@@ -328,7 +328,7 @@ func TestLocalRuntimeIdleSweepBusyModelResetsClock(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeIdleSweepProbeFailureKeepsClock(t *testing.T) {
+func TestIdleSweepProbeFailureKeepsClock(t *testing.T) {
 	st := lr5StartFake(t)
 	st.set(func() { st.models = lr5Models([2]string{"stuck-m", "loaded"}) })
 	sup := lr5Sup(t, st.port)
@@ -344,7 +344,7 @@ func TestLocalRuntimeIdleSweepProbeFailureKeepsClock(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeIdleSweepBusyAfterProbeFailureStillResetsClock(t *testing.T) {
+func TestIdleSweepBusyAfterProbeFailureStillResetsClock(t *testing.T) {
 	st := lr5StartFake(t)
 	st.set(func() { st.models = lr5Models([2]string{"m", "loaded"}) })
 	sup := lr5Sup(t, st.port)
@@ -360,7 +360,7 @@ func TestLocalRuntimeIdleSweepBusyAfterProbeFailureStillResetsClock(t *testing.T
 	}
 }
 
-func TestLocalRuntimeStagedModelsRequiresEverySplitPart(t *testing.T) {
+func TestStagedModelsRequiresEverySplitPart(t *testing.T) {
 	lr5Home(t)
 	mdir := localModelsDir()
 	for _, name := range []string{"Single-Q4_K_M.gguf", "Whole-Q4-00001-of-00002.gguf", "Whole-Q4-00002-of-00002.gguf", "Partial-Q4-00001-of-00003.gguf"} {
@@ -371,7 +371,7 @@ func TestLocalRuntimeStagedModelsRequiresEverySplitPart(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeBootstrapSkipsBootWithNoStagedModels(t *testing.T) {
+func TestBootstrapSkipsBootWithNoStagedModels(t *testing.T) {
 	lr5Home(t)
 	lr5ResetBoot(t)
 	called := false
@@ -385,7 +385,7 @@ func TestLocalRuntimeBootstrapSkipsBootWithNoStagedModels(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeEndpointIdentityStableAcrossSupervisorInstances(t *testing.T) {
+func TestEndpointIdentityStableAcrossSupervisorInstances(t *testing.T) {
 	h := lr5Home(t)
 	port, err := lrFreePort()
 	if err != nil {
@@ -409,7 +409,7 @@ func TestLocalRuntimeEndpointIdentityStableAcrossSupervisorInstances(t *testing.
 	}
 }
 
-func TestLocalRuntimeBootstrapDisabledIsNoop(t *testing.T) {
+func TestBootstrapDisabledIsNoop(t *testing.T) {
 	lr5Home(t)
 	lr5ResetBoot(t)
 	for _, cfg := range []map[string]any{{"local_runtime": map[string]any{"enabled": false}}, {}, nil} {
@@ -419,7 +419,7 @@ func TestLocalRuntimeBootstrapDisabledIsNoop(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeBootstrapReusesRunningServer(t *testing.T) {
+func TestBootstrapReusesRunningServer(t *testing.T) {
 	lr5Home(t)
 	lr5ResetBoot(t)
 	st := lr5StartFake(t)
@@ -432,7 +432,7 @@ func TestLocalRuntimeBootstrapReusesRunningServer(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeBootstrapFailureNeverRaises(t *testing.T) {
+func TestBootstrapFailureNeverRaises(t *testing.T) {
 	lr5Home(t)
 	lr5ResetBoot(t)
 	bootNvidiaQuery = func() (*NvidiaGPUQuery, error) { return nil, nil }
@@ -444,7 +444,7 @@ func TestLocalRuntimeBootstrapFailureNeverRaises(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeEnsureLocalRuntimeSerializesRacingCallers(t *testing.T) {
+func TestEnsureLocalRuntimeSerializesRacingCallers(t *testing.T) {
 	dir := t.TempDir()
 	lr5Home(t)
 	lr5ResetBoot(t)
@@ -482,7 +482,7 @@ func TestLocalRuntimeEnsureLocalRuntimeSerializesRacingCallers(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeEnsureLocalRuntimeProceedsWhenBootLockIsUnwritable(t *testing.T) {
+func TestEnsureLocalRuntimeProceedsWhenBootLockIsUnwritable(t *testing.T) {
 	h := lr5Home(t)
 	lr5ResetBoot(t)
 	lr5Touch(t, filepath.Join(localModelsDir(), "tiny-Q4_K_M.gguf"), "")
@@ -498,7 +498,7 @@ func TestLocalRuntimeEnsureLocalRuntimeProceedsWhenBootLockIsUnwritable(t *testi
 	}
 }
 
-func TestLocalRuntimeBootPricesTheEngineItServes(t *testing.T) {
+func TestBootPricesTheEngineItServes(t *testing.T) {
 	dir := t.TempDir()
 	lr5Home(t)
 	lr5ResetBoot(t)
@@ -541,7 +541,7 @@ func TestLocalRuntimeBootPricesTheEngineItServes(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeAutoVendorDetectionUsesHostGPUClass(t *testing.T) {
+func TestAutoVendorDetectionUsesHostGPUClass(t *testing.T) {
 	lr5ResetBoot(t)
 	bootNvidiaQuery = func() (*NvidiaGPUQuery, error) { return nil, nil }
 	for _, tc := range []struct{ class, want string }{{"intel", "intel"}, {"amd", "amd"}, {"none", ""}, {"unknown", ""}} {
@@ -784,5 +784,12 @@ func TestLocalRuntimeModelsAndRuntimesResolveToTheSharedRoot(t *testing.T) {
 	}
 	if localRuntimeStatePath() != filepath.Join(root, "runtimes", "llamacpp", "server.json") || localAssetsDir() != filepath.Join(root, "models", "assets") {
 		t.Fatal(localRuntimeStatePath(), localAssetsDir())
+	}
+}
+
+func TestLocalRuntimeStatePathIsServerJSONUnderRuntimesRoot(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	if got, want := LocalRuntimeStatePath(), filepath.Join(RuntimesRoot(), "server.json"); got != want {
+		t.Fatalf("state path %q, want %q", got, want)
 	}
 }

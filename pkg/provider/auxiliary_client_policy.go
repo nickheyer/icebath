@@ -247,6 +247,11 @@ func auxFixedTemperatureForModel(model, baseURL, provider string) (omit bool, fi
 	return false, nil, nil
 }
 
+// FixedTemperatureForModel is the omit flag or fixed temperature a route sends for the model
+func FixedTemperatureForModel(model, baseURL, provider string) (omit bool, fixed *float64, err error) {
+	return auxFixedTemperatureForModel(model, baseURL, provider)
+}
+
 // Per model and route compaction threshold override, false when the user's value stands
 func auxCompressionThresholdForModel(model, provider string, allowCodexGPT55Autoraise bool) (float64, bool) {
 	if auxIsArceeTrinityThinking(model) {
@@ -432,6 +437,11 @@ func auxAuxModelForProvider(ctx context.Context, providerID string, preferFast b
 		}
 	}
 	return picked
+}
+
+// Cheap auxiliary model of a provider, the live catalog fast tier first when preferFast is set
+func AuxModelForProvider(ctx context.Context, providerID string, preferFast bool) string {
+	return auxAuxModelForProvider(ctx, providerID, preferFast)
 }
 
 var auxAPIKeyProviderAuxModelsFallback = map[string]string{

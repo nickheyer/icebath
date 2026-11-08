@@ -594,3 +594,6 @@ func cleanupInvalidPidPath(p string, cleanupStale bool) {
 	clearRunningPidCache()
 	_ = os.Remove(p)
 }
+
+// Parsed gateway.lock record at a path for callers outside this package, nil when absent or unreadable
+func ReadGatewayLockRecord(p string) *pyjson.Object { return readGatewayLockRecord(p) }

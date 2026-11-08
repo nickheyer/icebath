@@ -125,3 +125,26 @@ func TestInvalidateEnvFileCacheDropsOnePathOrAll(t *testing.T) {
 		t.Fatalf("every path is dropped, got %d parses", *calls)
 	}
 }
+
+func TestSwapParseEnvTextReturnsThePreviousParser(t *testing.T) {
+	InvalidateEnvFileCache("")
+	seen := 0
+	previous := SwapParseEnvText(func(text string) map[string]string {
+		seen++
+		return ParseEnv(text)
+	})
+	t.Cleanup(func() {
+		SwapParseEnvText(previous)
+		InvalidateEnvFileCache("")
+	})
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("A=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadEnvFile(path); got["A"] != "1" || seen != 1 {
+		t.Fatalf("got %v after %d parses", got, seen)
+	}
+	if restored := SwapParseEnvText(previous); restored == nil {
+		t.Fatal("the swapped in parser was not handed back")
+	}
+}

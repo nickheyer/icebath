@@ -386,9 +386,6 @@ func logEmptyNonFinalHeal(ctx context.Context, logSessionID string, healed int) 
 	now := time.Since(monotonicStart).Seconds()
 	emptyHealLogLock.Lock()
 	st := emptyHealLogState[key]
-	if i := slices.Index(emptyHealLogOrder, key); i >= 0 {
-		emptyHealLogOrder = slices.Delete(emptyHealLogOrder, i, i+1)
-	}
 	delete(emptyHealLogState, key)
 	if st == nil || now-st.windowStart > emptyHealWindowS {
 		prior := st
@@ -397,13 +394,7 @@ func logEmptyNonFinalHeal(ctx context.Context, logSessionID string, healed int) 
 			st.totalEvents, st.totalHealed = prior.totalEvents, prior.totalHealed
 		}
 	}
-	emptyHealLogState[key] = st
-	emptyHealLogOrder = append(emptyHealLogOrder, key)
-	for len(emptyHealLogState) > emptyHealMaxSessions {
-		stale := emptyHealLogOrder[0]
-		emptyHealLogOrder = emptyHealLogOrder[1:]
-		delete(emptyHealLogState, stale)
-	}
+	provider.PublishLRU(emptyHealLogState, &emptyHealLogOrder, key, st, emptyHealMaxSessions)
 	st.count++
 	st.totalEvents++
 	st.totalHealed += healed

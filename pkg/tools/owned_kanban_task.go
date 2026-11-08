@@ -4,6 +4,9 @@ import (
 	"context"
 	"os"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type toolEnvKey struct{}
@@ -28,4 +31,41 @@ func OwnedKanbanTask(ctx context.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK"))
+}
+
+// Whether an explicit kanban board argument must still resolve through the dispatcher env pins
+func ExplicitBoardIntentIsPinned(ctx context.Context) bool {
+	if IsDelegatedChildContext(ctx) || os.Getenv(delegatedChildEnvMarker) != "" {
+		return true
+	}
+	return pystr.Strip(os.Getenv("ICEBATH_KANBAN_TASK")) != ""
+}
+
+// Whether kanban mutations at path are denied, always in a delegate child and under the fence otherwise
+func KanbanPathIsFenced(ctx context.Context, path string) bool {
+	if IsDelegatedChildContext(ctx) {
+		return true
+	}
+	marker := os.Getenv(delegatedChildEnvMarker)
+	if marker == "" {
+		return false
+	}
+	if marker == "1" {
+		return true
+	}
+	target, err := pypath.Resolve(pypath.Expanduser(path))
+	if err != nil {
+		return true
+	}
+	if pinned := pystr.Strip(os.Getenv("ICEBATH_KANBAN_DB")); pinned != "" {
+		if p, err := pypath.Resolve(pypath.Expanduser(pinned)); err != nil || p == target {
+			return true
+		}
+	}
+	root, err := pypath.Resolve(pypath.Expanduser(marker))
+	if err != nil {
+		return true
+	}
+	_, under := relativeTo(target, root)
+	return under
 }

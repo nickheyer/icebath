@@ -19,10 +19,18 @@ func TestMain(m *testing.M) {
 	if os.Getenv(lockHolderEnv) == "1" {
 		os.Exit(runGatewayLockHolder())
 	}
+	if mode := os.Getenv(hostChildEnv); mode != "" {
+		os.Exit(runHostRendezvousChild(mode))
+	}
 	if spec := os.Getenv(mallocArenaChildEnv); spec != "" && mallocArenaChild != nil {
 		os.Exit(mallocArenaChild(spec))
 	}
+	installChildEnvSourcesDouble()
+	if code, ok := dispatchUnmanagedSpawnTestModes(); ok {
+		os.Exit(code)
+	}
 	installCommandBusyPolicyDouble()
+	installS6SupervisorDouble()
 	os.Exit(m.Run())
 }
 

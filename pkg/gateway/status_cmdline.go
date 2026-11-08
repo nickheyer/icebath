@@ -273,10 +273,7 @@ func commandLineBelongsToProfile(command, profileHome string) bool {
 
 // Whether the one host gateway with this pid serves the profile of home, false when the host is unknown
 func hostGatewayServesHome(pid int, profileHome string) bool {
-	owner, err := hostGateway()
-	if err != nil {
-		return false
-	}
+	owner := hostGateway()
 	return owner != nil && owner.PID == pid && owner.Serves(hostProfileNameForHome(profileHome))
 }
 

@@ -15,6 +15,7 @@ import (
 
 func credentialLifecycleHome(t *testing.T) string {
 	t.Helper()
+	restoreProcessEnv(t)
 	h := filepath.Join(t.TempDir(), "cred_home")
 	if err := os.MkdirAll(h, 0o700); err != nil {
 		t.Fatal(err)

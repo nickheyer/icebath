@@ -575,3 +575,16 @@ func slicesContainsAny(list []any, want string) bool {
 	}
 	return false
 }
+
+func TestResolveNonstreamWatchdogsExportsTheResolvedFuses(t *testing.T) {
+	agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
+	got, err := ResolveNonstreamWatchdogs(context.Background(), agent, map[string]any{"model": "gpt-5.5", "input": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner, _ := resolveAgentNonstreamWatchdogsOf(context.Background(), agent, map[string]any{"model": "gpt-5.5", "input": "hi"})
+	want := NonStreamWatchdogs{IdleEnabled: inner.idleEnabled, TTFBEnabled: inner.ttfbEnabled, IdleTimeout: inner.idle, TTFBTimeout: inner.ttfb, StaleTimeout: inner.stale}
+	if got != want || !got.TTFBEnabled || !got.IdleEnabled {
+		t.Fatalf("got %+v want %+v", got, want)
+	}
+}

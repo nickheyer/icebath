@@ -50,13 +50,6 @@ func modelsGetJSON(ctx context.Context, rawURL string, timeout time.Duration, he
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	origin := urlOrigin(rawURL)
-	private := map[string]bool{"authorization": true, "cookie": true, "proxy-authorization": true}
-	for name := range headers {
-		if lower := strings.ToLower(name); lower != "accept" && lower != "user-agent" && lower != "accept-encoding" {
-			private[lower] = true
-		}
-	}
 	var transport http.RoundTripper = &http.Transport{
 		Proxy:               probeProxyFromEnvironment,
 		DialContext:         (&net.Dialer{Timeout: timeout}).DialContext,
@@ -68,19 +61,9 @@ func modelsGetJSON(ctx context.Context, rawURL string, timeout time.Duration, he
 		transport = modelsTransport
 	}
 	client := &http.Client{
-		Transport: transport,
-		Timeout:   timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-			if urlOrigin(req.URL.String()) != origin {
-				for name := range private {
-					req.Header.Del(name)
-				}
-			}
-			return nil
-		},
+		Transport:     transport,
+		Timeout:       timeout,
+		CheckRedirect: credentialRedirectPolicy(rawURL),
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {

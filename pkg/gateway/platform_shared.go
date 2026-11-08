@@ -228,3 +228,22 @@ func CoercePort(value any, def int) int {
 	}
 	return int(n.Int64())
 }
+
+// Host and port the api_server platform binds, platform extra winning over the API_SERVER env fallbacks
+func APIServerListenAddress(extra map[string]any) (any, int) {
+	host, ok := extra["host"]
+	if !ok {
+		host = "127.0.0.1"
+		if v, set := os.LookupEnv("API_SERVER_HOST"); set {
+			host = v
+		}
+	}
+	rawPort, ok := extra["port"]
+	if !ok || rawPort == nil {
+		rawPort = "8642"
+		if v, set := os.LookupEnv("API_SERVER_PORT"); set {
+			rawPort = v
+		}
+	}
+	return host, CoercePort(rawPort, 8642)
+}

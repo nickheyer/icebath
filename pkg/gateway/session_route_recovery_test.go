@@ -43,3 +43,11 @@ func TestMessagingPlatformAndRowSource(t *testing.T) {
 	}()
 	rowSource(ctx, row("origin_json", "[1]", "chat_id", "1"), PlatformTelegram, "")
 }
+
+func TestIsMessagingPlatformSourceExcludesLocalAPIAndUnknownLabels(t *testing.T) {
+	for label, want := range map[string]bool{"telegram": true, "discord": true, "local": false, "api_server": false, "nope": false, "": false} {
+		if got := IsMessagingPlatformSource(label); got != want {
+			t.Errorf("%q: got %v want %v", label, got, want)
+		}
+	}
+}

@@ -19,6 +19,7 @@ type openDBConfig struct {
 	synchronousFull bool
 	walLockRetries  int
 	initialize      func(ctx context.Context, conn SQLiteConn) error
+	connect         SQLiteOpener
 }
 
 // Adjusts one setting of an OpenDB call
@@ -44,6 +45,9 @@ func WithInitialize(fn func(ctx context.Context, conn SQLiteConn) error) OpenDBO
 	return func(c *openDBConfig) { c.initialize = fn }
 }
 
+// Opens the raw connection through open instead of the package connector
+func WithOpener(open SQLiteOpener) OpenDBOption { return func(c *openDBConfig) { c.connect = open } }
+
 // Connector OpenDB resolves at call time so descriptor leak tests can track every connection it makes
 var openDBConnect SQLiteOpener = ConnectSQLite
 
@@ -52,14 +56,14 @@ var openDBSleep = time.Sleep
 
 // Opens path with its parent created, applies the pragma stack and initialize, closing the connection on any failure
 var OpenDB = func(ctx context.Context, path, dbLabel string, opts ...OpenDBOption) (SQLiteConn, error) {
-	cfg := openDBConfig{busyTimeoutMS: 5000, wal: true, walLockRetries: 1}
+	cfg := openDBConfig{busyTimeoutMS: 5000, wal: true, walLockRetries: 1, connect: openDBConnect}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return nil, err
 	}
-	conn, err := openDBConnect(path, SQLiteConfig{Timeout: float64(cfg.busyTimeoutMS) / 1000})
+	conn, err := cfg.connect(path, SQLiteConfig{Timeout: float64(cfg.busyTimeoutMS) / 1000})
 	if err != nil {
 		return nil, err
 	}

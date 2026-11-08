@@ -40,7 +40,7 @@ func (h agentExecutorHost) Interrupt(message, toolReason string) {
 
 // Progress hook in the executor shape, a codex shaped hook adapted to it
 func (h agentExecutorHost) ToolProgressCallback() toolProgressFn {
-	switch cb := h.toolProgressCallback.(type) {
+	switch cb := progressFn(h.toolProgressCallback).(type) {
 	case toolProgressFn:
 		return cb
 	case codexProgressFn:
@@ -193,12 +193,16 @@ func (a *AIAgent) ShouldStartQuietSpinner() bool { return a.shouldStartQuietSpin
 
 // Started dots spinner on the agent printer behind a random waiting face
 func (a *AIAgent) StartSpinner(label string) tools.Spinner {
-	faces := waitingFaces()
-	return startKawaiiSpinner(faces[rand.IntN(len(faces))]+" "+label, "dots", a.printFn)
+	ctx := a.homeContext()
+	faces, err := waitingFaces(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return startKawaiiSpinner(ctx, faces[rand.IntN(len(faces))]+" "+label, "dots", a.printFn)
 }
 
 func (a *AIAgent) CuteToolMessage(name string, args map[string]any, duration float64, result any) string {
-	return getCuteToolMessage(name, args, duration, result)
+	return getCuteToolMessage(a.homeContext(), a.env, name, args, duration, result)
 }
 
 // Interrupt bit read under the lock its publisher holds

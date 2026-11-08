@@ -51,10 +51,13 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+// Temp home env with no inherited session id, the one agent init publishes restored after the test
 func promptTestEnv(t *testing.T) *tools.Env {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
+	t.Setenv("ICEBATH_SESSION_ID", "")
+	os.Unsetenv("ICEBATH_SESSION_ID")
 	return &tools.Env{Home: h}
 }
 

@@ -504,3 +504,12 @@ func TestAnchorImportableExport(t *testing.T) {
 		t.Fatal("AnchorImportable does not answer the selected environment probe")
 	}
 }
+
+func TestExtraSupportedExport(t *testing.T) {
+	ctx := context.Background()
+	got, err := ExtraSupported(ctx, "no-such-extra-for-export-test")
+	want, werr := extraSupported(ctx, "no-such-extra-for-export-test", nil, nil)
+	if got != want || (err == nil) != (werr == nil) {
+		t.Fatalf("ExtraSupported = %v, %v; want %v, %v", got, err, want, werr)
+	}
+}

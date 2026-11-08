@@ -107,9 +107,9 @@ func (p *falImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 
 // Compiled in image_gen backend plugin registering one provider
 type imageGenBackendPlugin struct {
-	name, key, author, description string
-	requiresEnv                    []string
-	provider                       func() ImageGenProvider
+	name, key, author, description, version string
+	requiresEnv                             []string
+	provider                                func() ImageGenProvider
 }
 
 func (b imageGenBackendPlugin) Manifest() plugins.Manifest {
@@ -124,7 +124,11 @@ func (b imageGenBackendPlugin) Manifest() plugins.Manifest {
 	if author == "" {
 		author = "NousResearch"
 	}
-	return plugins.Manifest{Name: b.name, Version: "1.0.0", Description: b.description, Author: author, Kind: "backend",
+	version := b.version
+	if version == "" {
+		version = "1.0.0"
+	}
+	return plugins.Manifest{Name: b.name, Version: version, Description: b.description, Author: author, Kind: "backend",
 		Source: "bundled", Key: "image_gen/" + key, RequiresEnv: env}
 }
 

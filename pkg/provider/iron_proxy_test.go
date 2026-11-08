@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -73,9 +74,9 @@ func TestManagementTokenPathIsSingleAuthority(t *testing.T) {
 	}
 }
 
-func TestBuildProxyConfigCustomAllowedHostsAndNoAuditPath(t *testing.T) {
+func TestBuildProxyConfigCustomAllowedHosts(t *testing.T) {
 	_, p := ironHome(t)
-	cfg := p.BuildProxyConfig(IronProxyConfigOptions{Mappings: []TokenMapping{sampleMapping("OPENAI_API_KEY")}, CACert: "/ca.crt", CAKey: "/ca.key", AllowedHosts: []string{"custom-host.test"}, AuditLog: "/audit.log", HTTPListen: []string{"127.0.0.1:9090"}})
+	cfg := p.BuildProxyConfig(IronProxyConfigOptions{Mappings: []TokenMapping{sampleMapping("OPENAI_API_KEY")}, CACert: "/ca.crt", CAKey: "/ca.key", AllowedHosts: []string{"custom-host.test"}, HTTPListen: []string{"127.0.0.1:9090"}})
 	domains := cfg["transforms"].([]any)[0].(map[string]any)["config"].(map[string]any)["domains"].([]any)
 	joined := make([]string, 0, len(domains))
 	for _, d := range domains {
@@ -83,9 +84,6 @@ func TestBuildProxyConfigCustomAllowedHostsAndNoAuditPath(t *testing.T) {
 	}
 	if !containsString(joined, "custom-host.test") || !containsString(joined, "openrouter.ai") {
 		t.Fatalf("custom hosts plus the mapping hosts expected: %v", joined)
-	}
-	if _, has := cfg["log"].(map[string]any)["audit_path"]; has {
-		t.Fatal("v0.39 rejects log.audit_path")
 	}
 	proxy := cfg["proxy"].(map[string]any)
 	if proxy["tunnel_listen"] != "127.0.0.1:9090" || proxy["http_listen"] != "127.0.0.1:9091" || cfg["management"].(map[string]any)["listen"] != "127.0.0.1:9092" {
@@ -279,6 +277,50 @@ func TestGetStatusProbesConfiguredBindHost(t *testing.T) {
 	status := p.GetStatus()
 	if status.TunnelPort != port || !status.Listening || status.PID != pid || status.CACertPath == "" || status.ConfigPath == "" || !status.Configured() {
 		t.Fatalf("got %+v", status)
+	}
+}
+
+func TestAuditLogKwargDoesNotInjectAuditPathV039(t *testing.T) {
+	_, p := ironHome(t)
+	cfg := p.BuildProxyConfig(IronProxyConfigOptions{Mappings: []TokenMapping{sampleMapping("OPENROUTER_API_KEY")}, CACert: "/ca.crt", CAKey: "/ca.key", AuditLog: "/audit.log", HTTPListen: []string{"127.0.0.1:9090"}})
+	if _, has := cfg["log"].(map[string]any)["audit_path"]; has {
+		t.Fatal("iron-proxy v0.39 has no log.audit_path field; emitting it breaks startup")
+	}
+}
+
+func TestPartialBitwardenSecretsRaiseWithoutFallback(t *testing.T) {
+	_, p := ironHome(t)
+	if _, err := p.WriteMappings([]TokenMapping{sampleMapping("OPENROUTER_API_KEY")}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENROUTER_API_KEY", "sk-host")
+	t.Setenv("BWS_ACCESS_TOKEN", "tok")
+	previous := ironBitwardenModule
+	ironBitwardenModule = func() (func(BitwardenFetchOptions) (map[string]string, []string, error), error) {
+		return func(BitwardenFetchOptions) (map[string]string, []string, error) { return map[string]string{}, nil, nil }, nil
+	}
+	t.Cleanup(func() { ironBitwardenModule = previous })
+	_, err := p.buildProxySubprocessEnv(nil, true, map[string]any{"project_id": "proj", "access_token_env": "BWS_ACCESS_TOKEN"})
+	if err == nil || !strings.Contains(err.Error(), "did not return secrets") {
+		t.Fatalf("strict default raises: %v", err)
+	}
+}
+
+func TestBitwardenImporterrorRaiseWithoutFallback(t *testing.T) {
+	_, p := ironHome(t)
+	if _, err := p.WriteMappings([]TokenMapping{sampleMapping("OPENROUTER_API_KEY")}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENROUTER_API_KEY", "sk-host")
+	t.Setenv("BWS_ACCESS_TOKEN", "tok")
+	previous := ironBitwardenModule
+	ironBitwardenModule = func() (func(BitwardenFetchOptions) (map[string]string, []string, error), error) {
+		return nil, errors.New("bws SDK not installed")
+	}
+	t.Cleanup(func() { ironBitwardenModule = previous })
+	_, err := p.buildProxySubprocessEnv(nil, true, map[string]any{"project_id": "proj", "access_token_env": "BWS_ACCESS_TOKEN"})
+	if err == nil || !strings.Contains(err.Error(), "Bitwarden refresh module unavailable") {
+		t.Fatalf("a missing refresh module raises without fallback: %v", err)
 	}
 }
 

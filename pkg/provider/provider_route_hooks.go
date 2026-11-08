@@ -2,8 +2,10 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 )
@@ -123,12 +125,15 @@ func callProfileHook(ctx context.Context, p *Profile, hook string, args []any, k
 	defer func() {
 		if r := recover(); r != nil {
 			if e, ok := r.(error); ok {
-				err = e
+				err = &hookPanicError{err: e, stack: string(debug.Stack())}
 			} else {
-				err = fmt.Errorf("%v", r)
+				err = &hookPanicError{err: fmt.Errorf("%v", r), stack: string(debug.Stack())}
 			}
 		}
 	}()
+	if !profileOverrides(p, hook) {
+		return baseHookAnswer(hook), nil
+	}
 	switch hook {
 	case "client_headers":
 		return headersAnswer(p.ClientHeadersHook(hookStr(b["base_url"]), hookStr(b["api_key"]), hookBool(b["has_images"]))), nil
@@ -183,6 +188,21 @@ func headersAnswer(m map[string]string) any {
 		return nil
 	}
 	return m
+}
+
+// Answer of the base profile for a hook it does not override, the hermes ProviderProfile default body
+func baseHookAnswer(hook string) any {
+	switch hook {
+	case "request_headers":
+		return map[string]string{}
+	case "replay_message_carriers":
+		return map[string]any{}
+	case "replays_function_thought_signature", "is_stale_credential_error":
+		return false
+	case "credential_refresh_notice":
+		return ""
+	}
+	return nil
 }
 
 // Stable text of hook arguments for the pure hook memo, false for an argument with no stable value
@@ -243,7 +263,7 @@ func askHook(ctx context.Context, p *Profile, hook string, args []any, kwargs ma
 	if !ok1 || !ok2 {
 		return callProfileHook(ctx, p, hook, args, kwargs)
 	}
-	key := fmt.Sprintf("%d|%p|%s|%s|%s", RegistryGeneration(), p, hook, frozenArgs, frozenKw)
+	key := fmt.Sprintf("%d|%s|%s|%s|%s", RegistryGeneration(), profileIdentity(p), hook, frozenArgs, frozenKw)
 	routePureMemoMu.Lock()
 	answer, hit := routePureMemo[key]
 	routePureMemoMu.Unlock()
@@ -282,12 +302,18 @@ func hookFailures(scope any) map[string]bool {
 	return f
 }
 
-func stickyHookKey(p *Profile, hook string) (string, string) {
-	name := p.Name
-	if name == "" {
-		name = "?"
+// Name of a profile as the hermes name attribute, a question mark for an unnamed one
+func profileIdentity(p *Profile) string {
+	if p == nil || p.Name == "" {
+		return "?"
 	}
-	return fmt.Sprintf("%p|%s|%s", p, name, hook), name + "|" + hook
+	return p.Name
+}
+
+// Sticky failure key of a profile's hook within the registry generation that holds the profile object
+func stickyHookKey(p *Profile, hook string) (string, string) {
+	name := profileIdentity(p)
+	return fmt.Sprintf("%d|%s|%s", RegistryGeneration(), name, hook), name + "|" + hook
 }
 
 // HookFailed reports whether the profile's hook already failed in scope so asking answers the fallback
@@ -333,9 +359,28 @@ func AskProfile(ctx context.Context, p *Profile, hook string, fallback any, scop
 	routeWarnedMu.Unlock()
 	if warn {
 		slog.Warn(fmt.Sprintf("provider %s: %s hook failed (%s: %v); using the generic answer for the rest of the session",
-			strings.SplitN(warnKey, "|", 2)[0], hook, pyTypeNameOfError(err), err))
+			strings.SplitN(warnKey, "|", 2)[0], hook, pyTypeNameOfError(err), err), "exc_info", hookTraceback(err))
 	}
 	return fallback
+}
+
+// Panic raised inside a profile hook with the goroutine stack at the raise, the hermes traceback
+type hookPanicError struct {
+	err   error
+	stack string
+}
+
+func (e *hookPanicError) Error() string { return e.err.Error() }
+
+func (e *hookPanicError) Unwrap() error { return e.err }
+
+// Stack of a hook panic for the warning's exc_info, empty for an error returned without a panic
+func hookTraceback(err error) string {
+	var p *hookPanicError
+	if errors.As(err, &p) {
+		return p.stack
+	}
+	return ""
 }
 
 var errorPathHookWarned sync.Map

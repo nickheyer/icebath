@@ -286,6 +286,9 @@ func auxAffordableMaxTokensFromError(err error) (int, bool) {
 	return capped, true
 }
 
+// AffordableMaxTokensFromError is the affordable output budget a credit limited 402 names, false without one
+func AffordableMaxTokensFromError(err error) (int, bool) { return auxAffordableMaxTokensFromError(err) }
+
 // Credit aware create, a 402 naming an affordable budget retries once with that lower cap
 func auxCreateWithProgress(ctx context.Context, client AuxClient, kwargs map[string]any, task string, forceStream bool) (any, error) {
 	resp, err := auxCreateWithProgressOnce(ctx, client, kwargs, task, forceStream)

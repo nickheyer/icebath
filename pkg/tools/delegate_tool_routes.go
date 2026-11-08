@@ -91,6 +91,11 @@ func declaredDelegationParameters(p DelegationProvider, config map[string]any) (
 	return accepted
 }
 
+// DeclaredDelegationParameters lists a provider's task parameters minus malformed or reserved names
+func DeclaredDelegationParameters(p DelegationProvider, config map[string]any) map[string]map[string]any {
+	return declaredDelegationParameters(p, config)
+}
+
 // Extra task properties and description addendum of the active provider, none when it cannot be resolved
 func SchemaExtension(ctx context.Context, config map[string]any) (map[string]map[string]any, string) {
 	p, err := activeDelegationProvider(ctx, config)
@@ -127,6 +132,11 @@ func delegationParamError(index int, name string, value any, schema map[string]a
 	return fmt.Sprintf("Task %d: '%s' must be one of %s (got %s).", index, name, strings.Join(parts, ", "), pyrepr.Repr(value))
 }
 
+// DelegationParamError returns the enum violation text of one task parameter, empty when allowed
+func DelegationParamError(index int, name string, value any, schema map[string]any) string {
+	return delegationParamError(index, name, value, schema)
+}
+
 // Route keys of a provider answer, a route error when the answer is not a mapping
 func cleanDelegationRoute(providerName string, route any) (map[string]any, error) {
 	m, ok := route.(map[string]any)
@@ -140,4 +150,9 @@ func cleanDelegationRoute(providerName string, route any) (map[string]any, error
 		}
 	}
 	return out, nil
+}
+
+// CleanDelegationRoute keeps the route keys of a provider answer, a route error when it is not a mapping
+func CleanDelegationRoute(providerName string, route any) (map[string]any, error) {
+	return cleanDelegationRoute(providerName, route)
 }

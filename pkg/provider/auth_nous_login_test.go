@@ -166,6 +166,12 @@ func formatFloat10(f float64) string {
 func loginPickerIDs(t *testing.T, freeTier bool, pricing PricingTable, allowed map[string]bool) []string {
 	t.Helper()
 	h := newTestHome(t)
+	pricingFn, freeFn, policyFn, recommendedFn := nousLoginPricingFn, nousLoginFreeTierFn, nousLoginPolicyAllowedFn, fetchNousRecommendedModelsFn
+	curatedFn, entitlementFn, promptFn := nousLoginCuratedIDsFn, nousEntitlementMessageFn, nousPromptModelSelectionFn
+	t.Cleanup(func() {
+		nousLoginPricingFn, nousLoginFreeTierFn, nousLoginPolicyAllowedFn, fetchNousRecommendedModelsFn = pricingFn, freeFn, policyFn, recommendedFn
+		nousLoginCuratedIDsFn, nousEntitlementMessageFn, nousPromptModelSelectionFn = curatedFn, entitlementFn, promptFn
+	})
 	nousLoginPricingFn = func(ctx context.Context) PricingTable { return pricing }
 	nousLoginFreeTierFn = func(ctx context.Context) bool { return freeTier }
 	nousLoginPolicyAllowedFn = func(ctx context.Context) (map[string]bool, bool) { return allowed, allowed != nil }

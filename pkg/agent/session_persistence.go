@@ -12,16 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-var ephemeralScaffoldingFlags = []string{
-	"_empty_recovery_synthetic", "_empty_terminal_sentinel", "_thinking_prefill", "_verification_stop_synthetic",
-	"_pre_verify_synthetic", "_kanban_stop_synthetic", "_dropped_toolcall_nudge",
-}
-
 var (
-	persistImagePartTypes = map[string]bool{"image": true, "image_url": true, "input_image": true}
 	rowReasoningKeys      = []string{"reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items"}
 	sessionFilenameUnsafe = regexp.MustCompile(`[^\p{L}\p{N}_-]`)
 )
@@ -62,18 +55,7 @@ func rowIdentity(v any) any {
 }
 
 // Reports internal recovery scaffolding that must never reach the durable transcript
-func isEphemeralScaffolding(msg any) bool {
-	m, ok := msg.(map[string]any)
-	if !ok {
-		return false
-	}
-	for _, flag := range ephemeralScaffoldingFlags {
-		if pyTruthy(m[flag]) {
-			return true
-		}
-	}
-	return false
-}
+func isEphemeralScaffolding(msg any) bool { return state.IsEphemeralScaffolding(msg) }
 
 // Path safe component for a session id, hashed when sanitizing changed it so distinct ids never collide
 func safeSessionFilenameComponent(sessionID any) string {
@@ -147,52 +129,7 @@ func summaryDisplayKind(msg map[string]any) any {
 }
 
 // Text only db projection, multimodal envelopes as their summary and images as screenshot markers
-func durableContent(content any) any {
-	if tools.IsMultimodalToolResult(content) {
-		return tools.MultimodalTextSummary(content)
-	}
-	parts, ok := content.([]any)
-	if !ok {
-		return content
-	}
-	var txt []string
-	for _, p := range parts {
-		part, ok := p.(map[string]any)
-		if !ok {
-			continue
-		}
-		kind, _ := part["type"].(string)
-		switch {
-		case kind == "text":
-			text, has := part["text"]
-			if !has {
-				text = ""
-			}
-			txt = append(txt, pyrepr.Str(text))
-		case persistImagePartTypes[kind]:
-			txt = append(txt, imageMarker(part))
-		}
-	}
-	if len(txt) == 0 {
-		return nil
-	}
-	return strings.Join(txt, "\n")
-}
-
-// Screenshot marker carrying a caller chosen detail so a replay rebuilds the part the live turn sent
-func imageMarker(part map[string]any) string {
-	detail := part["detail"]
-	if !pyTruthy(detail) {
-		detail = nil
-		if url, ok := part["image_url"].(map[string]any); ok {
-			detail = url["detail"]
-		}
-	}
-	if s, ok := detail.(string); ok && (s == "low" || s == "high" || s == "auto") {
-		return "[screenshot detail=" + s + "]"
-	}
-	return "[screenshot]"
-}
+func durableContent(content any) any { return state.DurableContent(content) }
 
 // Takes the reentrant persistence lock and returns its release, a no op for agents built without one
 func persistLock(a *AIAgent) func() {
@@ -726,11 +663,16 @@ func (a *AIAgent) getMessagesUpToLastAssistant(messages []*state.Message) []*sta
 }
 
 // Appends the conversation trajectory to its JSONL file when trajectories are saved
-func (a *AIAgent) saveTrajectory(messages []map[string]any, userQuery string, completed bool) {
+func (a *AIAgent) saveTrajectory(messages []map[string]any, userQuery string, completed bool) error {
 	if !a.saveTrajectories {
-		return
+		return nil
 	}
-	SaveTrajectory(a.convertToTrajectoryFormat(messages, userQuery, completed), a.model, completed, "")
+	trajectory, err := a.convertToTrajectoryFormat(messages, userQuery)
+	if err != nil {
+		return err
+	}
+	SaveTrajectory(trajectory, a.model, completed, "")
+	return nil
 }
 
 // AdoptUnansweredTurn restages the unanswered tail user row of a dispatcher re-run as this turn's message

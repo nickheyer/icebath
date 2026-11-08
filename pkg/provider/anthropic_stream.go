@@ -88,6 +88,9 @@ func (e *anthEventOrderError) Error() string {
 	return fmt.Sprintf("Unexpected event order, got %s before \"message_start\"", e.Type)
 }
 
+// Python exception class the SDK raises for an out of order stream event
+func (e *anthEventOrderError) PyTypeName() string { return "RuntimeError" }
+
 // Rebuilds an Anthropic Message from stream events
 type anthAccumulator struct {
 	started     bool

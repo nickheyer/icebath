@@ -410,3 +410,27 @@ func TestServiceManagerHooksInstalledForProfiles(t *testing.T) {
 		t.Fatalf("manager %#v", mgr)
 	}
 }
+
+func TestS6RunningFollowsProcCommAndBaseDir(t *testing.T) {
+	root := t.TempDir()
+	comm := filepath.Join(root, "comm")
+	base := filepath.Join(root, "basedir")
+	oldP, oldB := s6ProcRoot, s6BaseDir
+	t.Cleanup(func() { s6ProcRoot, s6BaseDir = oldP, oldB })
+	s6ProcRoot, s6BaseDir = comm, base
+	if S6Running() {
+		t.Fatal("missing comm reads as running")
+	}
+	os.WriteFile(comm, []byte("s6-svscan\n"), 0o644)
+	if S6Running() {
+		t.Fatal("missing base dir reads as running")
+	}
+	os.Mkdir(base, 0o755)
+	if !S6Running() {
+		t.Fatal("s6-svscan with base dir must read as running")
+	}
+	os.WriteFile(comm, []byte("systemd\n"), 0o644)
+	if S6Running() {
+		t.Fatal("another pid 1 reads as running")
+	}
+}

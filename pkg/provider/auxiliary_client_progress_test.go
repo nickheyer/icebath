@@ -85,6 +85,15 @@ func TestAuxAffordableExtraction(t *testing.T) {
 	}
 }
 
+func TestAffordableMaxTokensFromErrorMatchesTheAuxiliaryParse(t *testing.T) {
+	if n, ok := AffordableMaxTokensFromError(auxExc(auxOpenrouter402, 402)); !ok || n != 7117-64 {
+		t.Fatalf("budget %d %v", n, ok)
+	}
+	if _, ok := AffordableMaxTokensFromError(auxExc("Error code: 402 - insufficient funds", 402)); ok {
+		t.Fatal("plain exhaustion")
+	}
+}
+
 // Client that 402s while the cap exceeds the affordable budget
 func auxFlakyClient(affordable int, always bool, message string) *auxScriptedClient {
 	return &auxScriptedClient{create: func(kwargs map[string]any) (any, error) {

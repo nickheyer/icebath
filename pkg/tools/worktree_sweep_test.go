@@ -276,3 +276,7 @@ func TestArchiveDirtyFalseKeepsTheClassicNeverDeleteDirtyPruner(t *testing.T) {
 		t.Fatalf("archives %v", a)
 	}
 }
+
+func TestReleaseLspClientsWrapperNeverPanics(t *testing.T) {
+	ReleaseLspClients(t.TempDir())
+}

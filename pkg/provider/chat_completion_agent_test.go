@@ -61,6 +61,7 @@ type fakeChatAgent struct {
 	anthropicCreate                          func(reason string) (any, error)
 	codexToken                               any
 	notices, diagWaits                       []string
+	warnings, bufferedStatuses               []string
 	aAborts, aCloses                         []clientCall
 	sum                                      *summaryFake
 	strm                                     *streamFake

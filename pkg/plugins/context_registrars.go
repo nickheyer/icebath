@@ -464,7 +464,7 @@ func (c *Context) HasCapability(ctx context.Context, capability string) bool {
 const sideQuestionCapability = "llm.side_question"
 
 // Asks the session agent about the turn that just ended, nil without the side question capability
-func (c *Context) SideQuestion(ctx context.Context, token, prompt string, timeout float64) (*string, error) {
+func (c *Context) SideQuestion(ctx context.Context, token, prompt, timeout any) (*string, error) {
 	cfg, err := loadConfig(c.manager.home)
 	if err != nil || !CapabilityGranted(cfg, c.PluginID(), sideQuestionCapability) {
 		if !c.sideQuestionDenialLogged.Swap(true) {
@@ -472,7 +472,7 @@ func (c *Context) SideQuestion(ctx context.Context, token, prompt string, timeou
 		}
 		return nil, nil
 	}
-	redeem, err := needService("RedeemSideQuestion", func(s *Services) func(context.Context, string, string, string, string, float64) (*string, error) {
+	redeem, err := needService("RedeemSideQuestion", func(s *Services) func(context.Context, any, any, string, string, any) (*string, error) {
 		return s.RedeemSideQuestion
 	})
 	if err != nil {

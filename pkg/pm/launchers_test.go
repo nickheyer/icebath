@@ -290,3 +290,20 @@ func TestLaunchersCmdWrapperNamesItsBinary(t *testing.T) {
 		t.Fatalf("binary %q", got)
 	}
 }
+
+func TestResolveInstallBinaryAndEntryPointCountExported(t *testing.T) {
+	root := t.TempDir()
+	if got := ResolveInstallBinary(root); got != "" {
+		t.Fatalf("empty tree resolved %q", got)
+	}
+	bin := filepath.Join(root, installBinaryName())
+	if err := os.WriteFile(bin, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveInstallBinary(root); got != bin {
+		t.Fatalf("got %q want %q", got, bin)
+	}
+	if EntryPointCount() != 2 {
+		t.Fatal(EntryPointCount())
+	}
+}

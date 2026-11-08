@@ -180,6 +180,7 @@ func TestHomePluginClaimingTheAliasWinsOverTheBundledOne(t *testing.T) {
 // Registers a profile the way plugin discovery does, the registry and the auth mirror restored afterwards
 func registerPluginForTest(t *testing.T, p Profile) Profile {
 	t.Helper()
+	snapshotProviderRegistry(t)
 	RegisterProvider(p)
 	registerPluginProvider(context.Background(), &p)
 	return p

@@ -60,6 +60,26 @@ var (
 	durationUnitSeconds = map[string]float64{"h": 3600, "m": 60, "s": 1, "ms": 0.001}
 )
 
+// ZAIPolicyNote is the status suffix naming a Z.AI Coding overload backoff policy, empty for any other policy
+func ZAIPolicyNote(policy string) string { return zaiPolicyNotes[policy] }
+
+// NonretryableLabel names a non retryable reason in the fallback status line, false for an unlabelled reason
+func NonretryableLabel(reason FailoverReason) (string, bool) {
+	l, ok := nonretryableLabels[reason]
+	return l, ok
+}
+
+// LadderReason reports a transient transport verdict the post exhaustion recovery ladder may wait out
+func LadderReason(reason FailoverReason) bool { return ladderReasons[reason] }
+
+// LadderStopHint names how a platform stops a ladder wait, the send stop hint for an unlisted platform
+func LadderStopHint(platform string) string {
+	if hint, ok := ladderStopHints[strings.ToLower(platform)]; ok {
+		return hint
+	}
+	return ladderDefaultStopHint
+}
+
 const ladderDefaultStopHint = "send /stop to cancel"
 
 // Free tier rate limit copy for the chat and the card
@@ -859,7 +879,7 @@ func (e *PartialStreamError) Error() string {
 
 func (e *PartialStreamError) Unwrap() error { return e.Err }
 
-// Length truncated stub for a stream that died after delivering text, empty and terminal on a context overflow
+// Length truncated response for a stream that died after delivering text, empty and terminal on a context overflow
 func (l *doLoop) partialStreamStub(partial *PartialStreamError) *Response {
 	text := l.streamedText
 	if l.opts.StreamedText != nil {
@@ -895,13 +915,13 @@ func (l *doLoop) partialStreamStub(partial *PartialStreamError) *Response {
 	if cl != nil && cl.Reason == ReasonContextOverflow {
 		l.log.Warn(fmt.Sprintf("Partial stream ended on a context-overflow error after %d chars; NOT seeding a continuation stub (transcript is already over budget): %v",
 			utf8.RuneCountInString(partialText), partial.Err))
-		return buildPartialStreamStub(l.route, "", "", model, nil, names, partialStubOptions{overflowTerminal: true, apiMode: l.route.Mode})
+		return buildPartialStreamStub(l.route, "", "", model, nil, names, partialStreamStubOptions{overflowTerminal: true, apiMode: l.route.Mode})
 	}
 	if len(names) == 0 {
 		l.log.Warn(fmt.Sprintf("Partial stream delivered before error; returning length-truncated stub with %d chars of recovered content so the loop can continue from where the stream died: %v",
 			utf8.RuneCountInString(partialText), partial.Err))
 	}
-	stub := buildPartialStreamStub(l.route, partialText, "", model, nil, names, partialStubOptions{apiMode: l.route.Mode})
+	stub := buildPartialStreamStub(l.route, partialText, "", model, nil, names, partialStreamStubOptions{apiMode: l.route.Mode})
 	if cl != nil && cl.Reason == ReasonContentPolicyBlocked {
 		anthMarkRaw(stub, ccRawContentFilter, true)
 	}
@@ -1488,6 +1508,10 @@ func eagerFallbackStatus(cl *Classified, isUpstream, isTransport bool) string {
 	return "⚠️ Rate limited — switching to fallback provider..."
 }
 
+func EagerFallbackStatus(cl *Classified, isUpstream, isTransport bool) string {
+	return eagerFallbackStatus(cl, isUpstream, isTransport)
+}
+
 // handleError recovers from one failed attempt in the hermes order and reports whether the loop continues
 func (l *doLoop) handleError(err error, start time.Time) (*DoError, bool, error) {
 	if l.opts.RecoverBeforeClassification != nil && l.opts.RecoverBeforeClassification(l.ctx, l.st, err) {
@@ -1961,6 +1985,11 @@ func welcomeTierGuidance(cl *Classified, model string, inChat, door bool) string
 	return ""
 }
 
+// WelcomeTierGuidance is the copy for a parsed Nous free tier refusal, empty for every other error
+func WelcomeTierGuidance(cl *Classified, model string, inChat, door bool) string {
+	return welcomeTierGuidance(cl, model, inChat, door)
+}
+
 var welcomeSurfaceKinds = map[string]string{"rate_limited": "rate_limited", "at_capacity": "at_capacity", "admission_closed": "at_capacity", "model_not_free": "model_not_free", "feature_not_free": "model_not_free"}
 
 func welcomeSurfaceKind(cl *Classified) string {
@@ -1990,6 +2019,9 @@ func welcomeSurfaceKind(cl *Classified) string {
 	}
 	return "route"
 }
+
+// WelcomeSurfaceKind is the free tier card kind of a refusal, empty for every other error
+func WelcomeSurfaceKind(cl *Classified) string { return welcomeSurfaceKind(cl) }
 
 func (l *doLoop) welcomeOutageCopy(cl *Classified) string {
 	if l.onFreeModel() && (cl.Reason == ReasonTimeout || cl.Reason == ReasonOverloaded || cl.Reason == ReasonServerError) {

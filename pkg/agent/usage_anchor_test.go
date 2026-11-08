@@ -67,7 +67,7 @@ func codexAnchorTurn(usage bool) *provider.CodexTurnResult {
 	return &provider.CodexTurnResult{TokenUsageLast: obj}
 }
 
-func TestCodexTurnUsageSetsAnchor(t *testing.T) {
+func TestCodexAppServerAnchorTurnUsageSetsAnchor(t *testing.T) {
 	rows := anchorHistoryWithImages(10)
 	a := &AIAgent{provider: "openai", model: "codex-test-model"}
 	provider.RecordCodexAppServerUsage(a, codexAnchorTurn(true), rows)
@@ -83,7 +83,7 @@ func TestCodexTurnUsageSetsAnchor(t *testing.T) {
 	}
 }
 
-func TestCodexUsageLessTurnKeepsPreviousAnchor(t *testing.T) {
+func TestCodexAppServerAnchorUsageLessTurnKeepsPreviousAnchor(t *testing.T) {
 	rows := anchorHistoryWithImages(2)
 	prior := provider.CaptureUsageAnchor(9_000, 50, rowsToMessages(rows))
 	a := &AIAgent{provider: "openai", model: "codex-test-model", usageAnchor: prior}

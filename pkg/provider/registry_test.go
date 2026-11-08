@@ -440,3 +440,25 @@ func TestHasNamedCustomProviderExportReadsTheHomeConfig(t *testing.T) {
 		t.Fatal("malformed config reported a named provider")
 	}
 }
+
+// Exported manifest probe agrees with the internal one on a directory without a manifest
+func TestDeclaresModelProviderKindExported(t *testing.T) {
+	dir := t.TempDir()
+	if DeclaresModelProviderKind(dir) != declaresModelProviderKind(dir) || DeclaresModelProviderKind(dir) {
+		t.Fatal("empty plugin dir declared a model provider")
+	}
+}
+
+func TestSnapshotProviderRegistryForTestsRestoresRegistryAndCatalog(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	restore := SnapshotProviderRegistryForTests()
+	RegisterProvider(Profile{Name: "snapshot-probe", AuthType: AuthTypeAPIKey, KeyEnv: []string{"SNAPSHOT_PROBE_API_KEY"}})
+	SyncPluginProviderCatalog()
+	if _, ok := ProfileFor("snapshot-probe"); !ok || !IsCanonicalProvider("snapshot-probe") {
+		t.Fatal("the probe profile never reached the registry and the picker rows")
+	}
+	restore()
+	if _, ok := ProfileFor("snapshot-probe"); ok || IsCanonicalProvider("snapshot-probe") {
+		t.Fatal("the restored registry still carries the probe profile")
+	}
+}

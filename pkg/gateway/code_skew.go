@@ -19,7 +19,7 @@ var codeSkewFingerprint = func() (fp string, ok bool) {
 			fp, ok = "", false
 		}
 	}()
-	return readGitRevisionFingerprint(pm.RepoRoot())
+	return pm.ReadGitRevisionFingerprint(pm.RepoRoot())
 }
 
 // Snapshots the checkout revision at gateway startup once

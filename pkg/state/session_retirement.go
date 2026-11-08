@@ -180,6 +180,9 @@ func loadTerminalResult(text string) (any, error) {
 	return obj, nil
 }
 
+// Decodes a stored terminal result, unwrapping only an exact encoded envelope
+func LoadTerminalResult(text string) (any, error) { return loadTerminalResult(text) }
+
 // State meta key holding the terminal admission id of one principal request
 func terminalIdentityKey(principalID, sessionID, requestID any) (string, error) {
 	fp, err := AdmissionFingerprint(pyStr(sessionID), map[string]any{"principal": principalID, "request": requestID})
@@ -331,7 +334,7 @@ func (d *SessionDB) collectRetiredSpillover(ctx context.Context) error {
 }
 
 // Releases retired media no admission or retained transcript row owns and drops collected candidates
-func (d *SessionDB) collectRetiredMedia(ctx context.Context) error {
+func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 	requireHook(ReleaseUnheldMedia != nil, "ReleaseUnheldMedia", "gateway release_unheld_media")
 	if err := d.collectRetiredSpillover(ctx); err != nil {
 		return err

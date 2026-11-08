@@ -27,6 +27,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"gopkg.in/yaml.v3"
 )
 
@@ -424,8 +425,8 @@ func (p IronProxy) configListen(section string, configPath string, keys ...strin
 	if err != nil {
 		return "", 0, false
 	}
-	var data map[string]any
-	if yaml.Unmarshal(raw, &data) != nil {
+	data, ok := ironYAMLLoad(raw)
+	if !ok {
 		return "", 0, false
 	}
 	block, _ := data[section].(map[string]any)
@@ -435,6 +436,15 @@ func (p IronProxy) configListen(section string, configPath string, keys ...strin
 		}
 	}
 	return "", 0, false
+}
+
+// YAML mapping of a proxy state document, false when it does not parse as one
+func ironYAMLLoad(raw []byte) (map[string]any, bool) {
+	var data map[string]any
+	if yaml.Unmarshal(raw, &data) != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 func (p IronProxy) readManagementListen(configPath string) (string, int, bool) {
@@ -999,32 +1009,17 @@ func (p IronProxy) StartProxy(opts IronProxyStartOptions) (IronProxyStatus, erro
 		_ = os.Remove(pidfile)
 		return fmt.Errorf("%sLast log lines:\n%s", msg, tail)
 	}
-	interrupts := make(chan os.Signal, 1)
-	if runtime.GOOS != "windows" {
-		signal.Notify(interrupts, syscall.SIGINT, syscall.SIGTERM)
-		defer signal.Stop(interrupts)
-	}
+	interrupts, stopGuard := interruptGuard()
+	defer stopGuard()
 	probeHost, tunnelPort := p.probeTarget()
-	deadline := time.Now().Add(ironStartupGrace)
-	listening := false
-	for {
-		select {
-		case <-exited:
-			return IronProxyStatus{}, abort(fmt.Sprintf("iron-proxy exited immediately (code %d). ", cmd.ProcessState.ExitCode()), false)
-		case <-interrupts:
-			killAndWait(cmd, 2*time.Second)
-			_ = os.Remove(pidfile)
-			return IronProxyStatus{}, errors.New("interrupted while waiting for iron-proxy to start")
-		default:
-		}
-		if portListening(probeHost, tunnelPort) {
-			listening = true
-			break
-		}
-		if time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	listening, died, interrupted := awaitListening(exited, interrupts, probeHost, tunnelPort)
+	if died {
+		return IronProxyStatus{}, abort(fmt.Sprintf("iron-proxy exited immediately (code %d). ", cmd.ProcessState.ExitCode()), false)
+	}
+	if interrupted {
+		killAndWait(cmd, 2*time.Second)
+		_ = os.Remove(pidfile)
+		return IronProxyStatus{}, errors.New("interrupted while waiting for iron-proxy to start")
 	}
 	select {
 	case <-exited:
@@ -1036,6 +1031,37 @@ func (p IronProxy) StartProxy(opts IronProxyStartOptions) (IronProxyStatus, erro
 	}
 	p.log().Info(fmt.Sprintf("Started iron-proxy pid=%d config=%s", cmd.Process.Pid, cfg))
 	return p.GetStatus(), nil
+}
+
+// Routes SIGINT and SIGTERM to the returned channel on POSIX, the stop handing the signals back
+func interruptGuard() (<-chan os.Signal, func()) {
+	interrupts := make(chan os.Signal, 1)
+	if runtime.GOOS == "windows" {
+		return interrupts, func() {}
+	}
+	signal.Notify(interrupts, syscall.SIGINT, syscall.SIGTERM)
+	return interrupts, func() { signal.Stop(interrupts) }
+}
+
+// Polls until host port accepts or the grace lapses, a dead child or an interrupt ending the wait first
+func awaitListening(exited <-chan error, interrupts <-chan os.Signal, host string, port int) (listening, died, interrupted bool) {
+	deadline := time.Now().Add(ironStartupGrace)
+	for {
+		select {
+		case <-exited:
+			return false, true, false
+		case <-interrupts:
+			return false, false, true
+		default:
+		}
+		if portListening(host, port) {
+			return true, false, false
+		}
+		if !time.Now().Before(deadline) {
+			return false, false, false
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // Spawns the daemon with output appended to the private log, our handle closes after the start
@@ -1173,8 +1199,21 @@ func (p IronProxy) bitwardenShortfall(allowEnvFallback bool, errText, warning st
 	return nil
 }
 
+// Bitwarden refresh module the proxy start resolves lazily, an error standing for the import failing
+var ironBitwardenModule = func() (func(BitwardenFetchOptions) (map[string]string, []string, error), error) {
+	return fetchBitwardenSecrets, nil
+}
+
 // Overwrites the needed names with fresh uncached BWS values, only mapped names are injected
 func (p IronProxy) refreshSecretsFromBitwarden(env map[string]string, needed map[string]bool, bitwardenConfig map[string]any, allowEnvFallback bool) error {
+	fetch, importErr := ironBitwardenModule()
+	if importErr != nil {
+		return p.bitwardenShortfall(allowEnvFallback,
+			"Bitwarden refresh module unavailable at proxy start (credential_source=bitwarden with "+
+				"proxy.allow_env_fallback: false).  Either fix the import, switch to credential_source: env, or set "+
+				"`proxy.allow_env_fallback: true` to opt into the legacy fallback behaviour.",
+			fmt.Sprintf("Bitwarden refresh module unavailable at proxy start, falling back to parent env (allow_env_fallback=true): %s", pyrepr.ExceptionMessage(importErr)))
+	}
 	tokenEnv := anyString(bitwardenConfig["access_token_env"])
 	if tokenEnv == "" {
 		tokenEnv = "BWS_ACCESS_TOKEN"
@@ -1186,7 +1225,7 @@ func (p IronProxy) refreshSecretsFromBitwarden(env map[string]string, needed map
 			"credential_source=bitwarden but the access-token env or project_id is empty.  Either set both, switch to credential_source: env, or set `proxy.allow_env_fallback: true` to opt into the legacy fallback behaviour.",
 			"credential_source=bitwarden but access-token env or project_id is empty — proxy will fall back to parent env (allow_env_fallback=true).")
 	}
-	secrets, warnings, err := FetchBitwardenSecrets(BitwardenFetchOptions{AccessToken: accessToken, ProjectID: projectID, CacheTTL: 0, UseCache: false})
+	secrets, warnings, err := fetch(BitwardenFetchOptions{AccessToken: accessToken, ProjectID: projectID, CacheTTL: 0, UseCache: false})
 	if err != nil {
 		return err
 	}

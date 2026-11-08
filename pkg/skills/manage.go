@@ -1233,5 +1233,8 @@ func init() {
 		dir, _ := ScopeFromEnv(env).FindSkill(name)
 		return dir
 	}
+	tools.ResolveSkillDir = func(env *tools.Env, name, category string) string {
+		return ScopeFromEnv(env).ResolveSkillDir(name, category)
+	}
 	tools.SkillLocks = skillLockSource{}
 }

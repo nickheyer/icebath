@@ -417,6 +417,9 @@ func fileToDataURL(env *Env, path string) (string, bool, error) {
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(raw), true, nil
 }
 
+// FileToDataURL is the native size base64 data URL of a local image, false when the attachment is skipped
+func FileToDataURL(env *Env, path string) (string, bool, error) { return fileToDataURL(env, path) }
+
 // BuildNativeContentParts returns the user turn content parts and the unreadable local paths
 func BuildNativeContentParts(env *Env, userText string, imagePaths, imageURLs []string) ([]any, []string, error) {
 	skipped := []string{}

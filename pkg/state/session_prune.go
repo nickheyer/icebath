@@ -38,6 +38,22 @@ type PruneFilters struct {
 // Case insensitive substring LIKE pattern with wildcards escaped
 func pruneLike(value string) string { return "%" + EscapeLike(pystr.Lower(value)) + "%" }
 
+// Clauses and params of the cwd prefix filter, the shared prefix clause over alias s
+func cwdPrefixFilter(value string) ([]string, []any) {
+	clause, params := cwdPrefixClause(value)
+	return []string{clause}, params
+}
+
+// Builder of a one clause filter binding the value after an optional conversion
+func pruneOne(clause string, conv func(string) string) func(string) ([]string, []any) {
+	return func(v string) ([]string, []any) {
+		if conv != nil {
+			v = conv(v)
+		}
+		return []string{clause}, []any{v}
+	}
+}
+
 // Age of a state_meta timestamp, false when unset or corrupt
 func secondsSince(now float64, raw string, ok bool) (float64, bool) {
 	if !ok || raw == "" {
@@ -68,11 +84,9 @@ func pruneFilterWhere(f PruneFilters) (string, []any) {
 	}
 	str := func(v, clause string, conv func(string) string) {
 		if v != "" {
-			if conv != nil {
-				v = conv(v)
-			}
-			clauses = append(clauses, clause)
-			params = append(params, v)
+			c, p := pruneOne(clause, conv)(v)
+			clauses = append(clauses, c...)
+			params = append(params, p...)
 		}
 	}
 	if f.LastActiveBefore != nil {
@@ -86,9 +100,9 @@ func pruneFilterWhere(f PruneFilters) (string, []any) {
 	str(f.TitleLike, `LOWER(COALESCE(s.title, '')) LIKE ? ESCAPE '\'`, pruneLike)
 	str(f.EndReason, "s.end_reason = ?", nil)
 	if f.CwdPrefix != "" {
-		c, v := cwdPrefixClause(f.CwdPrefix)
-		clauses = append(clauses, c)
-		params = append(params, v...)
+		c, p := cwdPrefixFilter(f.CwdPrefix)
+		clauses = append(clauses, c...)
+		params = append(params, p...)
 	}
 	num(f.MinMessages, "s.message_count >= ?")
 	num(f.MaxMessages, "s.message_count <= ?")
@@ -262,7 +276,7 @@ func (d *SessionDB) PruneEmptyGhostSessions(ctx context.Context, sessionsDir str
 		return 0, err
 	}
 	d.EmitSessionDeleted(ctx, removed, "ghost_prune", "", sessionsDir)
-	if err := d.collectRetiredMedia(ctx); err != nil {
+	if err := d.CollectRetiredMedia(ctx); err != nil {
 		return 0, err
 	}
 	for _, sid := range removed {
@@ -399,7 +413,7 @@ func (d *SessionDB) PruneSessions(ctx context.Context, o PruneSessionsOptions) (
 	if count > 0 {
 		d.EmitSessionDeleted(ctx, removed, "prune", "", o.SessionsDir)
 	}
-	if err := d.collectRetiredMedia(ctx); err != nil {
+	if err := d.CollectRetiredMedia(ctx); err != nil {
 		return 0, err
 	}
 	for _, sid := range removed {

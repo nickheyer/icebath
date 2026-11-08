@@ -207,6 +207,12 @@ func cleanupSingleSession(env *tools.Env, key string) error {
 	return nil
 }
 
+// Installs the browser cleanup and headed mode hooks the agent close path calls
+func init() {
+	tools.CleanupBrowser = cleanupBrowser
+	tools.IsHeadedMode = isHeadedMode
+}
+
 // Closes every session serving the task, its local sidecar and its served profile tagged keys
 func cleanupBrowser(env *tools.Env, taskID string) error {
 	task := taskID
@@ -255,7 +261,7 @@ func cleanupProfileBrowsers(env *tools.Env, homeKey string) error {
 	}
 	log := cfgOf(env).logger()
 	bestEffort(log, "CDP supervisor stop", func() error { supervisorStopHome(homeKey); return nil })
-	bestEffort(log, "Browser Use harness daemon stop", func() error { stopHarnessDaemons(homeKey); return nil })
+	bestEffort(log, "Browser Use harness daemon stop", func() error { stopHarnessDaemons(env, homeKey); return nil })
 	resetCaches(homeKey)
 	return nil
 }
@@ -270,7 +276,7 @@ func cleanupAllBrowsers(env *tools.Env) {
 		bestEffort(log, "browser cleanup for "+key, func() error { return cleanupSingleSession(sessionOwnerEnv(env, key), key) })
 	}
 	bestEffort(log, "CDP supervisor stop", func() error { supervisorStopAll(); return nil })
-	bestEffort(log, "Browser Use harness daemon stop", func() error { stopHarnessDaemons(""); return nil })
+	bestEffort(log, "Browser Use harness daemon stop", func() error { stopHarnessDaemons(env, ""); return nil })
 	bestEffort(log, "Chromium stop", func() error { stopAllBrowsers(); return nil })
 	bestEffort(log, "Lightpanda stop", func() error { stopAllLightpanda(env); return nil })
 	resetCaches("")

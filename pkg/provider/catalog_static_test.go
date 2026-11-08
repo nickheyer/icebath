@@ -13,17 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Drops the canonical row tables so the next read rebuilds them from the profiles
-func resetCatalogTables() {
-	catalogMu.Lock()
-	defer catalogMu.Unlock()
-	catalogOnce = sync.Once{}
-	catalogBuilt = false
-	catalogAliasMu.Lock()
-	catalogAliasMemo = nil
-	catalogAliasMu.Unlock()
-}
-
 var testCodexModels = []string{"gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.1-codex"}
 
 // Fresh curated table and models.dev state against an empty temp home

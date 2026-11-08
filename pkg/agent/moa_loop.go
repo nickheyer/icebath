@@ -1938,7 +1938,7 @@ func buildMoaFacade(ctx context.Context, a *AIAgent, presetName any) *MoAClient 
 		for out, src := range spec.extra {
 			extra[out] = kwargs[src]
 		}
-		switch cb := a.toolProgressCallback.(type) {
+		switch cb := progressFn(a.toolProgressCallback).(type) {
 		case func(event, name, preview string, args map[string]any, extra map[string]any):
 			preview, _ := secondary.(string)
 			cb(event, primary, preview, nil, extra)

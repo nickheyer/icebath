@@ -1379,6 +1379,9 @@ func processAccountingLines(r map[string]any) []string {
 	return lines
 }
 
+// ProcessAccountingLines are the runtime truth lines about one result entry background processes
+func ProcessAccountingLines(r map[string]any) []string { return processAccountingLines(r) }
+
 // Self contained re injection for an async delegation completion
 func formatAsyncDelegation(env *Env, evt map[string]any) string {
 	delegID := valueOr(evt, "delegation_id", "unknown")

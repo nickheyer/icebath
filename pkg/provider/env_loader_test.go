@@ -33,6 +33,27 @@ func envLoaderUnset(t *testing.T, names ...string) {
 	}
 }
 
+// Puts the whole process environment back to its contents at call time once the test ends
+func restoreProcessEnv(t *testing.T) {
+	t.Helper()
+	before := os.Environ()
+	t.Cleanup(func() {
+		keep := map[string]bool{}
+		for _, kv := range before {
+			k, v, _ := strings.Cut(kv, "=")
+			keep[k] = true
+			if cur, ok := os.LookupEnv(k); !ok || cur != v {
+				_ = os.Setenv(k, v)
+			}
+		}
+		for _, kv := range os.Environ() {
+			if k, _, _ := strings.Cut(kv, "="); !keep[k] {
+				_ = os.Unsetenv(k)
+			}
+		}
+	})
+}
+
 // Fresh publish record and warn once sets, no updater skip and a bridge that does nothing
 func envLoaderIsolate(t *testing.T) {
 	t.Helper()
@@ -450,9 +471,20 @@ func seedTerminalHome(t *testing.T, configYAML, envText string) string {
 		writeEnvBytes(t, filepath.Join(h, ".env"), []byte(envText))
 	}
 	t.Setenv("ICEBATH_HOME", h)
+	envLoaderUnsetTerminalBridge(t)
 	terminalConfigBridgeFn = applyTerminalConfigToEnv
 	config.ResetCache()
 	return h
+}
+
+// Unsets every env var the terminal config bridge writes and restores each after the test
+func envLoaderUnsetTerminalBridge(t *testing.T) {
+	t.Helper()
+	names := []string{"TERMINAL_DOCKER_IMAGE_PINNED"}
+	for _, pair := range config.TerminalConfigEnvMap {
+		names = append(names, pair[1])
+	}
+	envLoaderUnset(t, names...)
 }
 
 func TestEnvLoaderConfigYAMLTerminalBackendOverridesStaleEnv(t *testing.T) {

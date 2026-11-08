@@ -2,11 +2,13 @@ package agent
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
+	"weak"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -25,74 +27,79 @@ const toolCallArgumentsCorruptionMarker = "[icebath-agent: tool call arguments w
 
 // AIAgent is the tool calling agent runner, hermes attribute names kept as unexported fields
 type AIAgent struct {
-	provider                     string
-	requestedProvider            string
-	model                        string
-	baseURL                      string
-	baseURLLower                 string
-	baseURLHostname              string
-	apiMode                      string
-	apiKey                       string
-	acpCommand                   string
-	acpArgs                      []string
-	platform                     string
-	env                          *tools.Env
-	tools                        []any
-	validToolNames               map[string]bool
-	contextEngineToolNames       map[string]bool
-	forceASCIIPayload            bool
-	sessionID                    string
-	parentSessionID              string
-	sessionDB                    *state.DB
-	sessionDBCreated             bool
-	ownsSessionDB                bool
-	persistDisabled              bool
-	endSessionOnClose            bool
-	memoryProviderShutdown       bool
-	cachedConversationRoot       string
-	dbFlushScanPrefix            any
-	streamedAssistantTextParts   []string
-	relayPendingTurnID           string
-	cacheScope                   *provider.CacheScopeAgent
-	inheritedCacheScope          string
-	promptCacheForkTag           string
-	requestClientCache           map[string]any
-	sessionInitModelConfig       map[string]any
-	sessionCwd                   string
-	sessionStart                 time.Time
-	client                       any
-	clientKwargs                 map[string]any
-	anthropicClient              any
-	anthropicAPIKey              string
-	anthropicBaseURL             string
-	isAnthropicOAuth             bool
-	credentialPool               *provider.Pool
-	customProviders              []any
-	apiMaxRetries                int
-	contextCompressor            ContextEngine
-	currentStreamedAssistantText string
-	lastTurnUsage                map[string]any
-	lastPromptSizeTokens         int
-	logPrefix                    string
-	logPrefixChars               int
-	logsDir                      string
-	turnRouteTask                string
-	verboseLogging               bool
-	quietMode                    bool
-	suppressStatusOutput         bool
-	maxIterations                int
-	iterationBudget              *IterationBudget
-	budgetWarningRatio           float64
-	runBudgetSeconds             float64
-	checkpointMgr                *tools.CheckpointManager
+	provider                         string
+	requestedProvider                string
+	model                            string
+	baseURL                          string
+	baseURLLower                     string
+	baseURLHostname                  string
+	apiMode                          string
+	apiKey                           string
+	acpCommand                       string
+	acpArgs                          []string
+	platform                         string
+	env                              *tools.Env
+	tools                            []any
+	validToolNames                   map[string]bool
+	contextEngineToolNames           map[string]bool
+	forceASCIIPayload                bool
+	bedrockConverseFallbackAttempted bool
+	nousModelSwitch                  *[2]string
+	sessionID                        string
+	parentSessionID                  string
+	sessionDB                        *state.DB
+	sessionDBCreated                 bool
+	ownsSessionDB                    bool
+	persistDisabled                  bool
+	endSessionOnClose                bool
+	memoryProviderShutdown           bool
+	cachedConversationRoot           string
+	dbFlushScanPrefix                any
+	streamedAssistantTextParts       []string
+	relayPendingTurnID               string
+	cacheScope                       *provider.CacheScopeAgent
+	inheritedCacheScope              string
+	promptCacheForkTag               string
+	requestClientCache               map[string]any
+	sessionInitModelConfig           map[string]any
+	sessionCwd                       string
+	sessionStart                     time.Time
+	client                           any
+	clientKwargs                     map[string]any
+	anthropicClient                  any
+	anthropicAPIKey                  string
+	anthropicBaseURL                 string
+	isAnthropicOAuth                 bool
+	credentialPool                   *provider.Pool
+	customProviders                  []any
+	apiMaxRetries                    int
+	contextCompressor                ContextEngine
+	streamDeliveryState
+	imageReplayState
+	lastTurnUsage        map[string]any
+	lastPromptSizeTokens int
+	logPrefix            string
+	logPrefixChars       int
+	logsDir              string
+	turnRouteTask        string
+	verboseLogging       bool
+	quietMode            bool
+	suppressStatusOutput bool
+	maxIterations        int
+	iterationBudget      *IterationBudget
+	budgetWarningRatio   float64
+	runBudgetSeconds     float64
+	checkpointMgr        *tools.CheckpointManager
 	visionPrepState
 	sanitizationState
 	turnExplainersState
+	voiceTurnRouteFields
 	systemPromptState
 	turnContextState
 	toolExecutorState
 	chatCompletionAgentState
 	runtimeHookState
+	turnLeaseState
 	sessionPersistenceState
 	imageEvictionState
 	compressionAttemptState
@@ -100,6 +107,12 @@ type AIAgent struct {
 	conversationCompressionState
 	statusOutputState
 	agentInitState
+	credentialRefreshState
+	apiKwargsState
+	fallbackWalkState
+	primaryRestoreState
+	skillsIndexDeltaState
+	backgroundReviewState
 	passSessionID                      bool
 	skipContextFiles                   bool
 	loadSoulIdentity                   bool
@@ -157,7 +170,7 @@ type AIAgent struct {
 	fastAutoSeconds                    float64
 	reasoningEchoFlag                  any
 	autoRecoveryCycles                 int
-	intentAckContinuation              bool
+	intentAckContinuation              any
 	subdirectoryHints                  any
 	stream5xxProbeTS                   float64
 	todoStore                          *tools.TodoStore
@@ -225,7 +238,22 @@ type AIAgent struct {
 	toolWorkerThreads                  map[int64]bool
 	toolWorkerThreadsLock              *sync.Mutex
 	delegateDepth                      int
+	delegateParentRef                  weak.Pointer[AIAgent]
+	delegateProfileHome                string
+	delegateSavedToolNames             []string
+	handedOffProcesses                 []map[string]any
 	subagentID                         string
+	parentSubagentID                   string
+	delegateRole                       string
+	skipMemory                         bool
+	delegateOutputSchema               any
+	subagentFinalizationMu             sync.Mutex
+	delegateImages                     []string
+	liveTranscriptPath                 string
+	delegateRoute                      *pyjson.Object
+	delegationID                       string
+	progressIdentityRef                map[string]any
+	oneshotChildrenSpawned             int64
 	activeChildren                     []*AIAgent
 	activeChildrenLock                 *sync.Mutex
 	backgroundReviewAgent              *AIAgent
@@ -240,6 +268,7 @@ type AIAgent struct {
 	lastActivityDesc                   string
 	lastActivityProvenance             state.ActivityProvenance
 	turnLivenessActivityLock           sync.Mutex
+	turnLivenessActivityLocker         sync.Locker
 	turnLivenessActivityGeneration     int64
 	turnLivenessAbortClaim             any
 	currentTool                        string
@@ -279,7 +308,7 @@ type AIAgent struct {
 	streamContextScrubber              *memory.StreamingContextScrubber
 	streamThinkScrubber                *provider.StreamingThinkScrubber
 	deliveredInterimTexts              map[string]bool
-	streamWriterLock                   sync.Mutex
+	streamWriterLock                   *sync.Mutex
 	streamWriterToken                  int
 	streamWriterDropped                int
 	persistUserMessageIdx              *int
@@ -312,7 +341,9 @@ type AIAgent struct {
 	incrementalPersistenceFailed       bool
 	lastPersistenceErrorCause          any
 	compressionAdoptionFailed          bool
-	authPoolRefreshCounts              map[string]int
+	authPoolRefreshCounts              map[string]*provider.AuthEpisode
+	credentialPoolRevertID             string
+	entitlementRejectedModels          map[[2]string]bool
 	currentAPIRequestID                string
 	turnUserIntervened                 bool
 	sanitizeArgsCursor                 map[string]any
@@ -692,14 +723,18 @@ func (a *AIAgent) MessageAgentToolSchema() map[string]any { return messageAgentT
 
 // Claims the delta sink for a stream attempt, superseding every earlier claim
 func (a *AIAgent) ClaimStreamWriter() int {
+	a.ensureStreamWriterState()
 	a.streamWriterLock.Lock()
-	defer a.streamWriterLock.Unlock()
 	a.streamWriterToken++
-	return a.streamWriterToken
+	token := a.streamWriterToken
+	a.streamWriterLock.Unlock()
+	a.streamWriterTLS.Set(token)
+	return token
 }
 
 // Whether no newer stream attempt claimed the sink since the token was issued
 func (a *AIAgent) StreamWriterIsCurrent(token int) bool {
+	a.ensureStreamWriterState()
 	a.streamWriterLock.Lock()
 	defer a.streamWriterLock.Unlock()
 	return token == a.streamWriterToken

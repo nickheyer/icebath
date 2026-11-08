@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Process admission fence a Desktop backend closes before it retires
@@ -30,6 +32,17 @@ var RetirementIdleProof func() (map[string]any, error)
 
 // Fence every source of new work in this process reserves admission through
 var Retirement = NewRetirementFence()
+
+// Process fence handed to work sources, read at each call so a swapped fence takes effect like the module attribute
+func BackendRetirement() tools.RetirementWork { return processRetirement{} }
+
+type processRetirement struct{}
+
+func (processRetirement) Work() (bool, func()) { return Retirement.Work() }
+
+func (processRetirement) Acquire() bool { return Retirement.Acquire() }
+
+func (processRetirement) Release() { Retirement.Release() }
 
 // Fresh open fence with no permit and no admitted work
 func NewRetirementFence() *RetirementFence {

@@ -176,6 +176,11 @@ func asyncTransaction(env *Env, body func(ctx context.Context, conn state.SQLite
 	return state.Transaction(ctx, conn, false, func(c state.SQLiteConn) error { return body(ctx, c) })
 }
 
+// Runs body in one ledger transaction, exported for delegation lifecycle callers
+func AsyncTransaction(env *Env, body func(ctx context.Context, conn state.SQLiteConn) error) error {
+	return asyncTransaction(env, body)
+}
+
 // Every row of a query as raw column values
 func asyncQueryAll(ctx context.Context, conn state.SQLiteConn, query string, args ...any) ([][]any, error) {
 	rows, err := conn.QueryContext(ctx, query, args...)
@@ -433,6 +438,9 @@ func persistDispatch(env *Env, record map[string]any) error {
 	}
 	return pruneDurableRecords(env)
 }
+
+// Writes the running row of a fresh dispatch, exported for delegation lifecycle callers
+func PersistDispatch(env *Env, record map[string]any) error { return persistDispatch(env, record) }
 
 // Bounds terminal ledger history, deleting delivered rows first
 func pruneDurableRecords(env *Env) error {
@@ -1510,6 +1518,9 @@ func HasLiveForSession(sessionKey, originUISessionID, parentSessionID string) bo
 
 func newDelegationID() string { return "deleg_" + asyncUUIDHex()[:8] }
 
+// NewDelegationID is a fresh async delegation id
+func NewDelegationID() string { return newDelegationID() }
+
 // Drops the oldest completed records beyond the retention cap, caller holds the records lock
 func pruneCompletedLocked() {
 	type entry struct {
@@ -2003,6 +2014,11 @@ func pushCompletionEvent(env *Env, record, result map[string]any, status string)
 			"only (a restart may report this unit as unknown): %s", label, asyncText(record["delegation_id"]), err))
 	}
 	DefaultProcessRegistry().CompletionQueue.Put(evt)
+}
+
+// Pushes the completion event and its durable row, exported for delegation lifecycle callers
+func PushCompletionEvent(env *Env, record, result map[string]any, status string) {
+	pushCompletionEvent(env, record, result, status)
 }
 
 func asyncValueOr(m map[string]any, key string, def any) any {

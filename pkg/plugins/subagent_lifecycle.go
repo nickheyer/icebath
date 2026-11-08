@@ -284,8 +284,22 @@ func BindSubagentParent(ctx context.Context, parent any) context.Context {
 	return context.WithValue(ctx, activeParentKey{}, parent)
 }
 
-// Parent agent bound to this execution context, nil when none
-func GetActiveSubagentParent(ctx context.Context) any { return ctx.Value(activeParentKey{}) }
+// Resolver of a weakly held parent agent, nil once the agent is collected
+type SubagentParentRef func() any
+
+// Context carrying a weakly held parent so a context outliving the turn never pins the agent
+func BindSubagentParentRef(ctx context.Context, ref SubagentParentRef) context.Context {
+	return context.WithValue(ctx, activeParentKey{}, ref)
+}
+
+// Parent agent bound to this execution context, nil when none or collected
+func GetActiveSubagentParent(ctx context.Context) any {
+	v := ctx.Value(activeParentKey{})
+	if ref, ok := v.(SubagentParentRef); ok {
+		return ref()
+	}
+	return v
+}
 
 func strp(s string) *string { return &s }
 

@@ -5,7 +5,6 @@ package provider
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -31,8 +30,6 @@ func TestLocalRuntimeSupervisorHelper(t *testing.T) {
 	switch os.Getenv(lr5RoleEnv) {
 	case "":
 		return
-	case "llama":
-		lr5FakeLlamaServer(flag.Args())
 	case "crashing-router":
 		lr3Record(root, "crashing-router")
 		_ = lr3HelperCmd(root, "grandchild").Start()
@@ -127,16 +124,28 @@ func lr5FakeLlamaServer(args []string) {
 	os.Exit(7)
 }
 
-// Executable script that runs this test binary as the fake llama-server
-func lr5LlamaScript(t *testing.T) string {
+// Fake llama-server link to this test binary, spawned without an exec chain the spawn record could race
+func lr5LlamaLink(t *testing.T) string {
 	t.Helper()
-	script := filepath.Join(t.TempDir(), "engine", "llama-server")
-	body := fmt.Sprintf("#!/bin/sh\n%s=llama exec %s -test.run='^TestLocalRuntimeSupervisorHelper$' -test.v=false -- \"$@\"\n", lr5RoleEnv, strconv.Quote(os.Args[0]))
-	lr5Touch(t, script, body)
-	if err := os.Chmod(script, 0o755); err != nil {
+	self, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
-	return script
+	link := filepath.Join(t.TempDir(), "engine", "llama-server")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(self, link); err != nil {
+		t.Fatal(err)
+	}
+	return link
+}
+
+// Serves as the fake llama-server when the fixture link starts this test binary under that name
+func dispatchFakeLlamaServerEntry() {
+	if filepath.Base(os.Args[0]) == "llama-server" {
+		lr5FakeLlamaServer(os.Args[1:])
+	}
 }
 
 func lr5ResetSupervisorSeams(t *testing.T) {
@@ -543,7 +552,7 @@ func TestLocalRuntimeManagedServerBootsServesRestartsAndStops(t *testing.T) {
 	lr5Home(t)
 	lr5ResetBoot(t)
 	lr5ResetSupervisorSeams(t)
-	script := lr5LlamaScript(t)
+	script := lr5LlamaLink(t)
 	lr5Touch(t, filepath.Join(localModelsDir(), "tiny-Q4_K_M.gguf"), "")
 	bootInstalledEngine = func(context.Context, string) (*Engine, error) {
 		return &Engine{Backend: "cpu", Tag: "b1", Binary: script}, nil

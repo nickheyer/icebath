@@ -244,6 +244,11 @@ func routeCanServeModel(provider, baseURL, model string) bool {
 	return model == "" || model == GuestModel
 }
 
+// RouteCanServeModel reports whether the route may carry the model, false only for a welcome host off the guest model
+func RouteCanServeModel(provider, baseURL, model string) bool {
+	return routeCanServeModel(provider, baseURL, model)
+}
+
 // The request went to the free tier host on a free tier credential
 func OnFreeModel(provider, apiKey, baseURL string) bool {
 	return RouteIsWelcomeHost(baseURL) && IsAnonymousRequest(provider, apiKey)

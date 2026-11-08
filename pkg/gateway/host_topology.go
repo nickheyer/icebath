@@ -62,9 +62,9 @@ func launchedByOtherTenant(ownerHome, ourHome string) (bool, error) {
 
 // Topology from the host record when it positively names a live owner of this tenant
 func topologyFromHostRecord() (*HostGatewayTopology, error) {
-	record, err := readHostRecord(roleGateway, false)
-	if err != nil || record == nil || record.PID == 0 {
-		return nil, err
+	record := readHostRecord(roleGateway, false)
+	if record == nil || record.PID == 0 {
+		return nil, nil
 	}
 	if record.CreateTime == nil || !recordNamesLiveOwner(record) {
 		return nil, nil

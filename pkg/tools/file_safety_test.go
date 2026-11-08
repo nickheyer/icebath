@@ -37,3 +37,15 @@ func TestResolveActiveProfileName(t *testing.T) {
 		}
 	})
 }
+
+func TestIsWriteDeniedAndApprovalExports(t *testing.T) {
+	env := &Env{Home: t.TempDir()}
+	for _, p := range []string{"/etc/shadow", filepath.Join(env.Home, ".env"), filepath.Join(t.TempDir(), "note.mp3")} {
+		if got, want := IsWriteDenied(env, p), classifyWriteDenial(env, p, false) != ""; got != want {
+			t.Fatalf("IsWriteDenied(%q) = %v, want %v", p, got, want)
+		}
+		if got, want := IsWriteApprovalRequired(env, p), isWriteApprovalRequired(env, p); got != want {
+			t.Fatalf("IsWriteApprovalRequired(%q) = %v, want %v", p, got, want)
+		}
+	}
+}

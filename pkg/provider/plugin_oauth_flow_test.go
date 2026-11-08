@@ -614,7 +614,7 @@ func TestRevokedGrantKeepsNoTokensAndUninstallDropsTheGrant(t *testing.T) {
 		t.Fatal("sign in under the display name failed")
 	}
 	// The grant half of plugins_cmd_remove._remove_user_plugin, keyed by directory rather than manifest name
-	if err := ForgetPluginGrants(PluginKey(filepath.Join(f.h, "plugins", "voice-dir"))); err != nil {
+	if err := ForgetPluginGrants(PluginOAuthKey(filepath.Join(f.h, "plugins", "voice-dir"))); err != nil {
 		t.Fatal(err)
 	}
 	if f.grant("voice-dir:google") != nil {

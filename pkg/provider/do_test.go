@@ -657,3 +657,64 @@ func TestFormatDurationCompactAndResetHint(t *testing.T) {
 		t.Fatalf("no reset hint expected, got %q", hint)
 	}
 }
+
+func TestEagerFallbackStatusNamesTheFallbackCause(t *testing.T) {
+	upstream := &Classified{Reason: ReasonUpstreamRateLimit, Context: map[string]any{"upstream_provider": "deepinfra"}}
+	if got := EagerFallbackStatus(upstream, true, false); got != "⚠️ Upstream deepinfra rate-limited — switching to fallback model..." {
+		t.Fatalf("upstream = %q", got)
+	}
+	if got := EagerFallbackStatus(&Classified{Reason: ReasonBilling}, false, false); got != "⚠️ Billing or credits exhausted — switching to fallback provider..." {
+		t.Fatalf("billing = %q", got)
+	}
+	if got := EagerFallbackStatus(&Classified{Reason: ReasonTimeout}, false, true); got != "⚠️ Provider unreachable — switching to fallback provider..." {
+		t.Fatalf("transport = %q", got)
+	}
+	if got := EagerFallbackStatus(&Classified{Reason: ReasonRateLimit}, false, false); got != "⚠️ Rate limited — switching to fallback provider..." {
+		t.Fatalf("rate limit = %q", got)
+	}
+}
+
+func TestNonretryableLabelNamesOnlyLabelledReasons(t *testing.T) {
+	if label, ok := NonretryableLabel(ReasonContentPolicyBlocked); !ok || label != "The provider's safety filter refused this request" {
+		t.Fatalf("content policy label %q %v", label, ok)
+	}
+	if label, ok := NonretryableLabel(ReasonUnknown); ok || label != "" {
+		t.Fatalf("unknown reason labelled %q", label)
+	}
+}
+
+func TestZAIPolicyNoteNamesOnlyZAIPolicies(t *testing.T) {
+	if got := ZAIPolicyNote("zai_coding_overload_long"); got != " (Z.AI Coding overload adaptive long backoff)" {
+		t.Fatalf("long note %q", got)
+	}
+	if got := ZAIPolicyNote("default"); got != "" {
+		t.Fatalf("default note %q", got)
+	}
+}
+
+func TestLadderReasonAndStopHintExports(t *testing.T) {
+	for reason, want := range map[FailoverReason]bool{ReasonOverloaded: true, ReasonServerError: true, ReasonTimeout: true, ReasonAuth: false, ReasonContextOverflow: false} {
+		if LadderReason(reason) != want {
+			t.Fatalf("%s: want %v", reason, want)
+		}
+	}
+	for platform, want := range map[string]string{"CLI": "press Esc to stop", "api_server": "cancel the request to stop", "cron": "", "telegram": "send /stop to cancel", "": "send /stop to cancel"} {
+		if got := LadderStopHint(platform); got != want {
+			t.Fatalf("%q: got %q want %q", platform, got, want)
+		}
+	}
+}
+
+func TestWelcomeTierGuidanceAndSurfaceKindReadTheParsedRefusal(t *testing.T) {
+	refused := &Classified{Context: map[string]any{"welcome_refusal": WelcomeRefusal{Reason: "admission_closed"}}}
+	if WelcomeSurfaceKind(refused) != "at_capacity" || WelcomeTierGuidance(refused, "m", true, true) != welcomeTierGuidance(refused, "m", true, true) {
+		t.Fatal("refusal kind or copy misread")
+	}
+	route := &Classified{Context: map[string]any{"welcome_route": "tier_disabled"}}
+	if WelcomeSurfaceKind(route) != "disabled" || WelcomeTierGuidance(route, "m", false, true) == "" {
+		t.Fatal("route refusal misread")
+	}
+	if plain := (&Classified{}); WelcomeSurfaceKind(plain) != "" || WelcomeTierGuidance(plain, "m", true, true) != "" {
+		t.Fatal("plain error read as a free tier refusal")
+	}
+}

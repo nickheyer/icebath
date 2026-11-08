@@ -472,3 +472,32 @@ func TestAddOpenAIClientResponseHookRunsOncePerMarkOnEveryResponse(t *testing.T)
 		t.Fatal("async SDK client accepts the hook")
 	}
 }
+
+func TestAuxClientDefaultHeadersAndCredentialExports(t *testing.T) {
+	t.Setenv("OPENAI_ORG_ID", "org-1")
+	t.Setenv("OPENAI_PROJECT_ID", "")
+	static := newAuxOpenAIClient("sk-static", "http://h/v1", auxOpenAIOptions{DefaultHeaders: map[string]string{"User-Agent": "KimiCLI/1.0", "X-Extra": "1"}})
+	got := AuxClientDefaultHeaders(static)
+	want := map[string]string{"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "KimiCLI/1.0",
+		"Authorization": "Bearer sk-static", "OpenAI-Organization": "org-1", "X-Extra": "1"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("default headers: got %v want %v", got, want)
+	}
+	if AuxClientDefaultHeaders(nil) != nil {
+		t.Fatal("adapter must have no default headers")
+	}
+	if key, ok := AuxClientCredential(static).(string); !ok || key != "sk-static" {
+		t.Fatalf("static credential: %v", AuxClientCredential(static))
+	}
+	rotating := newAuxOpenAIClient(func() (string, error) { return "minted", nil }, "http://h/v1", auxOpenAIOptions{})
+	src, ok := AuxClientCredential(rotating).(func() (string, error))
+	if !ok {
+		t.Fatalf("rotating credential: %T", AuxClientCredential(rotating))
+	}
+	if key, _ := src(); key != "minted" {
+		t.Fatalf("minted %q", key)
+	}
+	if _, ok := AuxClientDefaultHeaders(rotating)["Authorization"]; ok {
+		t.Fatal("a key provider client has no static Authorization header")
+	}
+}

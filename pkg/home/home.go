@@ -29,6 +29,9 @@ const EnvSuffix = "ICEBATH_DATA_DIR_SUFFIX"
 // Directory name under the user home on POSIX systems
 const dirName = ".icebath"
 
+// DirName is the dot directory name of a default home
+const DirName = dirName
+
 // Directory holding named profiles under the root home
 const ProfilesDir = "profiles"
 

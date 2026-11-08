@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
+	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 var attachmentRefRE = regexp.MustCompile(`(?i)^(?:@(?:image|file|url):[^\n]+\n?)+`)
@@ -109,6 +110,7 @@ type MessageEvent struct {
 	MediaFilenames      []string
 
 	gatewayAccepted        bool
+	OnCommit               func()
 	admittedBeforeDrain    bool
 	notificationReplyMuted *bool
 	pendingSTTText         *string
@@ -117,6 +119,7 @@ type MessageEvent struct {
 	activeTurnToken        any
 	markerReleased         *InterruptEvent
 	heartbeatSessionID     *string
+	busyArrival            *observability.Arrival
 
 	lastChunkLen int
 }

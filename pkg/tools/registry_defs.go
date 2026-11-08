@@ -312,6 +312,13 @@ func setLastResolvedToolNames(defs []map[string]any) {
 	toolDefsCacheMu.Unlock()
 }
 
+// RestoreLastResolvedToolNames puts back a saved resolved tool name list after a child build replaced it
+func RestoreLastResolvedToolNames(names []string) {
+	toolDefsCacheMu.Lock()
+	lastResolvedToolNames = append([]string(nil), names...)
+	toolDefsCacheMu.Unlock()
+}
+
 // Memoized list unless missing or past its verdict expiry, caller holds the lock
 func liveToolDefsEntry(key string) ([]map[string]any, bool) {
 	entry, ok := toolDefsCache[key]

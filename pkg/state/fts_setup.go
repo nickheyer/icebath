@@ -336,12 +336,18 @@ func (f *sessionFTSSetup) dropAllFTSTriggers(ctx context.Context, conn SQLiteCon
 	return nil
 }
 
-// Probes an FTS table as queryable, absent, or degraded when its module, tokenizer or content is unusable
-func (f *sessionFTSSetup) ftsTableProbe(ctx context.Context, conn SQLiteConn, table string) (ftsTableStatus, error) {
+// Statement probing an FTS table for a usable row shape, a var the stale recovery tests patch
+var ftsProbeExec = func(ctx context.Context, conn SQLiteConn, table string) error {
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s LIMIT 0", table))
 	if err == nil {
 		err = rows.Close()
 	}
+	return err
+}
+
+// Probes an FTS table as queryable, absent, or degraded when its module, tokenizer or content is unusable
+func (f *sessionFTSSetup) ftsTableProbe(ctx context.Context, conn SQLiteConn, table string) (ftsTableStatus, error) {
+	err := ftsProbeExec(ctx, conn, table)
 	if err == nil {
 		return ftsTableStatusQueryable, nil
 	}

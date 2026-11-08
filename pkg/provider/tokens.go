@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -346,26 +348,96 @@ func EstimateMessagesTokens(msgs []*state.Message, imageCost int, chargeStaleThi
 }
 
 // Rough token estimate of tool schemas from their names, descriptions and parameters
+// Tool schema estimates keyed by the identity of the tools list, bounded with oldest first eviction
+type toolsTokensEntry struct {
+	count       int
+	first, last string
+	tokens      int
+}
+
+const toolsTokensCacheMax = 256
+
+var (
+	toolsTokensMu    sync.Mutex
+	toolsTokensCache = map[uintptr]toolsTokensEntry{}
+	toolsTokensOrder []uintptr
+)
+
+// Name of a tool schema for the cache signature, empty when it has none
+func toolNameForCache(tool map[string]any) string {
+	if tool == nil {
+		return ""
+	}
+	if fn, ok := tool["function"].(map[string]any); ok {
+		if name, isStr := fn["name"].(string); isStr {
+			return name
+		}
+	}
+	name, _ := tool["name"].(string)
+	return name
+}
+
+// Compact JSON of a schema the way json.dumps renders it with ensure_ascii off
+func compactSchemaJSON(v any) (string, error) {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(b.String(), "\n"), nil
+}
+
+// Rough token estimate of tool schemas, names, descriptions and parameters JSON, memoised per tools list
 func EstimateToolsTokens(tools []map[string]any) int {
+	if len(tools) == 0 {
+		return 0
+	}
+	key := reflect.ValueOf(tools).Pointer()
+	signature := toolsTokensEntry{count: len(tools), first: toolNameForCache(tools[0]), last: toolNameForCache(tools[len(tools)-1])}
+	toolsTokensMu.Lock()
+	cached, ok := toolsTokensCache[key]
+	toolsTokensMu.Unlock()
+	if ok && cached.count == signature.count && cached.first == signature.first && cached.last == signature.last {
+		return cached.tokens
+	}
 	chars := 0
 	for _, tool := range tools {
+		if tool == nil {
+			continue
+		}
 		src := tool
 		if fn, ok := tool["function"].(map[string]any); ok {
 			src = fn
 		}
-		chars += len(stringOf(src["name"])) + len(stringOf(src["description"]))
+		for _, field := range []string{"name", "description"} {
+			if s, isStr := src[field].(string); isStr {
+				chars += utf8.RuneCountInString(s)
+			}
+		}
 		params := src["parameters"]
-		if params == nil {
+		if !pyTruthy(params) {
 			params = map[string]any{}
 		}
-		b, err := json.Marshal(params)
-		if err != nil {
-			chars += len(stringOf(params))
-			continue
+		if text, err := compactSchemaJSON(params); err == nil {
+			chars += utf8.RuneCountInString(text)
+		} else {
+			chars += utf8.RuneCountInString(stringOf(params))
 		}
-		chars += len(b)
 	}
-	return (chars + 3) / 4
+	signature.tokens = (chars + 3) / 4
+	toolsTokensMu.Lock()
+	defer toolsTokensMu.Unlock()
+	if _, present := toolsTokensCache[key]; !present {
+		if len(toolsTokensCache) >= toolsTokensCacheMax {
+			oldest := toolsTokensOrder[0]
+			toolsTokensOrder = toolsTokensOrder[1:]
+			delete(toolsTokensCache, oldest)
+		}
+		toolsTokensOrder = append(toolsTokensOrder, key)
+	}
+	toolsTokensCache[key] = signature
+	return signature.tokens
 }
 
 // Rough token estimate of a whole request, system prompt plus messages plus tool schemas

@@ -71,27 +71,29 @@ func TestTTSRegistryRegistration(t *testing.T) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	for _, builtin := range names {
-		t.Run("test_rejects_builtin_shadow_with_warning/"+builtin, func(t *testing.T) {
-			resetTTSRegistry(t)
-			var buf bytes.Buffer
-			saved := ttsRegistryLog
-			ttsRegistryLog = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
-			t.Cleanup(func() { ttsRegistryLog = saved })
-			if err := RegisterTTSProvider(newFakeTTSProvider(builtin), ""); err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Contains(buf.Bytes(), []byte(builtin)) || !bytes.Contains(buf.Bytes(), []byte("level=WARN")) {
-				t.Fatalf("warning log = %q", buf.String())
-			}
-			if GetTTSProvider(context.Background(), builtin, "") != nil {
-				t.Fatal("builtin name registered")
-			}
-			if len(ListTTSProviders(context.Background(), "")) != 0 {
-				t.Fatal("list_providers not empty")
-			}
-		})
-	}
+	t.Run("test_rejects_builtin_shadow_with_warning", func(t *testing.T) {
+		for _, builtin := range names {
+			t.Run(builtin, func(t *testing.T) {
+				resetTTSRegistry(t)
+				var buf bytes.Buffer
+				saved := ttsRegistryLog
+				ttsRegistryLog = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+				t.Cleanup(func() { ttsRegistryLog = saved })
+				if err := RegisterTTSProvider(newFakeTTSProvider(builtin), ""); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Contains(buf.Bytes(), []byte(builtin)) || !bytes.Contains(buf.Bytes(), []byte("level=WARN")) {
+					t.Fatalf("warning log = %q", buf.String())
+				}
+				if GetTTSProvider(context.Background(), builtin, "") != nil {
+					t.Fatal("builtin name registered")
+				}
+				if len(ListTTSProviders(context.Background(), "")) != 0 {
+					t.Fatal("list_providers not empty")
+				}
+			})
+		}
+	})
 }
 
 func TestTTSRegistryLookup(t *testing.T) {
@@ -157,13 +159,15 @@ func TestTTSResolveOutputFormat(t *testing.T) {
 		formats = append(formats, f)
 	}
 	sort.Strings(formats)
-	for _, valid := range formats {
-		t.Run("test_valid_passes_through/"+valid, func(t *testing.T) {
-			if got := ResolveTTSOutputFormat(valid); got != valid {
-				t.Fatalf("resolve_output_format(%q) = %q", valid, got)
-			}
-		})
-	}
+	t.Run("test_valid_passes_through", func(t *testing.T) {
+		for _, valid := range formats {
+			t.Run(valid, func(t *testing.T) {
+				if got := ResolveTTSOutputFormat(valid); got != valid {
+					t.Fatalf("resolve_output_format(%q) = %q", valid, got)
+				}
+			})
+		}
+	})
 	t.Run("test_non_string_returns_default", func(t *testing.T) {
 		if ResolveTTSOutputFormat(123) != DefaultTTSOutputFormat || ResolveTTSOutputFormat([]any{}) != DefaultTTSOutputFormat {
 			t.Fatal("non string format not defaulted")

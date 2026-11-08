@@ -30,7 +30,7 @@ func (a *AIAgent) SetSessionCost(status, source string) {
 	a.sessionCostStatus, a.sessionCostSource = status, source
 }
 func (a *AIAgent) SetLastCompactionInPlace(on bool)            { a.lastCompactionInPlace = on }
-func (a *AIAgent) SetCurrentStreamedAssistantText(t string)    { a.currentStreamedAssistantText = t }
+func (a *AIAgent) SetCurrentStreamedAssistantText(t string)    { a.setCurrentStreamedAssistantText(t) }
 func (a *AIAgent) CompressionCheckpointRequired() bool         { return a.compressionCheckpointRequired }
 func (a *AIAgent) SetUsageAnchor(anchor *provider.UsageAnchor) { a.setUsageAnchor(anchor, false) }
 func (a *AIAgent) EmitCompactionStatus()                       { a.emitCompactionStatus() }
@@ -94,7 +94,7 @@ func (a *AIAgent) CodexContextCompressor() provider.CodexContextCompressor {
 
 // Progress hook in the codex shape, an executor shaped hook adapted to it
 func (a *AIAgent) ToolProgressCallback() codexProgressFn {
-	switch cb := a.toolProgressCallback.(type) {
+	switch cb := progressFn(a.toolProgressCallback).(type) {
 	case codexProgressFn:
 		return cb
 	case toolProgressFn:
@@ -142,6 +142,8 @@ func (a *AIAgent) StreamDeltaHook(attr string) func(text string) {
 		return a.fireStreamDelta
 	case "_fire_reasoning_delta":
 		return a.fireReasoningDelta
+	case "_fire_streamed_codex_commentary":
+		return a.fireStreamedCodexCommentary
 	}
 	return nil
 }

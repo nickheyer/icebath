@@ -20,6 +20,9 @@ func serviceDefinitionHomes(definition string) []string {
 	return homes
 }
 
+// Every home a gateway service definition sets, for the service writers outside this package
+func ServiceDefinitionHomes(definition string) []string { return serviceDefinitionHomes(definition) }
+
 // Scripts a definition starts by their quoted absolute paths, each once in first seen order
 func serviceDefinitionLaunchers(definition string) []string {
 	var found []string

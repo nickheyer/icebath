@@ -794,7 +794,7 @@ func openaiDiscoveryBaseURL(ctx context.Context, provider string) string {
 // Runtime resolver over the bound home's config, secrets and credential store
 func modelsResolver(ctx context.Context) *resolver {
 	h := home.Dir(ctx)
-	return newResolver(ctx, config.Tree(modelsConfig(ctx)), config.NewSecrets(h), h, homeCredentialSource(h))
+	return newResolver(ctx, config.Tree(modelsConfig(ctx)), config.NewSecrets(h), h, homeCredentialSourceIn(ctx, h))
 }
 
 // Context bound to the given home, the context's own home when h is empty
@@ -820,7 +820,7 @@ func strictHomeResolver(ctx context.Context, h string) (*resolver, map[string]an
 		}
 		cfg = map[string]any(tree)
 	}
-	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(hd), hd, homeCredentialSource(hd)), cfg, nil
+	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(hd), hd, homeCredentialSourceIn(ctx, hd)), cfg, nil
 }
 
 // ---- per provider catalog fetchers ----

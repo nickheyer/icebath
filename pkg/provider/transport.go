@@ -320,7 +320,17 @@ func transportClassName(t Transport) string {
 	return fmt.Sprintf("%T", t)
 }
 
-type chatCompletionsTransport struct{}
+// Chat completions transport holding the alias map of the last request it built, nil when none was recorded
+type chatCompletionsTransport struct{ lastWireAliases map[string]string }
+
+// WireAliasTransport records the tool names a request aliased so the response normalizer reverses only those
+type WireAliasTransport interface {
+	SetLastWireAliases(aliases map[string]string)
+}
+
+func (t *chatCompletionsTransport) SetLastWireAliases(aliases map[string]string) {
+	t.lastWireAliases = aliases
+}
 
 func (chatCompletionsTransport) APIMode() string { return string(ModeChatCompletions) }
 
@@ -335,9 +345,9 @@ func (chatCompletionsTransport) BuildKwargs(model string, messages []map[string]
 	return chatCompletionsBuildKwargs(model, messages, tools, params)
 }
 
-func (chatCompletionsTransport) NormalizeResponse(response any, kwargs map[string]any) (*Response, error) {
+func (t chatCompletionsTransport) NormalizeResponse(response any, kwargs map[string]any) (*Response, error) {
 	payload, _ := response.(map[string]any)
-	c := &chatCompletionsClient{route: Route{Provider: kwargString(kwargs, "provider"), Model: kwargString(kwargs, "model"), BaseURL: kwargString(kwargs, "base_url")}}
+	c := &chatCompletionsClient{route: Route{Provider: kwargString(kwargs, "provider"), Model: kwargString(kwargs, "model"), BaseURL: kwargString(kwargs, "base_url")}, lastAliases: t.lastWireAliases}
 	return c.normalizeResponse(payload, 200, nil, 0)
 }
 

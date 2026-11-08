@@ -1,46 +1,22 @@
 package agent
 
 import (
-	"errors"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // ErrUserTurnIndex and ErrNotUserOriginatedTurn are the IndexError and ValueError of the rewind helper
 var (
-	ErrUserTurnIndex         = errors.New("user turn index is outside the transcript")
-	ErrNotUserOriginatedTurn = errors.New("selected row is not a user-originated turn")
+	ErrUserTurnIndex         = state.ErrUserTurnIndex
+	ErrNotUserOriginatedTurn = state.ErrNotUserOriginatedTurn
 )
 
 // Live human authored projection of a user row, nil when the row carries none
-func UserOriginatedTurnView(message any) map[string]any {
-	m, ok := message.(map[string]any)
-	if !ok {
-		return nil
-	}
-	_, live := state.SplitUserOriginatedTurn(m)
-	return live
-}
+func UserOriginatedTurnView(message any) map[string]any { return state.UserOriginatedTurnView(message) }
 
 // Rewind prefix and canonical live view for index, a composite carrier keeping its handoff at the head
 func HistoryBeforeUserOriginatedTurn(messages []map[string]any, index int) ([]map[string]any, map[string]any, error) {
-	if index < 0 || index >= len(messages) {
-		return nil, nil, ErrUserTurnIndex
-	}
-	handoff, live := state.SplitUserOriginatedTurn(messages[index])
-	if live == nil {
-		return nil, nil, ErrNotUserOriginatedTurn
-	}
-	live["content"] = state.TypedPromptContent(live["content"], messages[index])
-	prefix := make([]map[string]any, 0, index+1)
-	for _, m := range messages[:index] {
-		prefix = append(prefix, freshShallowCopy(m))
-	}
-	if handoff != nil {
-		prefix = append(prefix, handoff)
-	}
-	return prefix, live, nil
+	return state.HistoryBeforeUserOriginatedTurn(messages, index)
 }
 
 // Summary bearing row that still carries a live user ask

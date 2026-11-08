@@ -111,6 +111,11 @@ func lspDeferredPost(owner, path, text string, baseline *string) {
 	}
 }
 
+// LSPDeferredPost queues a finished verdict for the owner under the path
+func LSPDeferredPost(owner, path, text string, baseline *string) {
+	lspDeferredPost(owner, path, text, baseline)
+}
+
 // Withdraws the owner's undelivered note for a path so a newer edit of the file takes it over
 func lspDeferredTake(owner, path string) *lspNote {
 	if owner == "" {
@@ -178,6 +183,9 @@ func lspDeferredTrackPending(owner string) any {
 	return token
 }
 
+// LSPDeferredTrackPending marks a check running for the owner and returns its settle token
+func LSPDeferredTrackPending(owner string) any { return lspDeferredTrackPending(owner) }
+
 // Drops a settled check and wakes every turn end waiting on the owner
 func lspDeferredSettled(owner string, token any) {
 	lspDeferred.mu.Lock()
@@ -191,6 +199,9 @@ func lspDeferredSettled(owner string, token any) {
 	close(lspDeferred.settled)
 	lspDeferred.settled = make(chan struct{})
 }
+
+// LSPDeferredSettled marks the owner check of the token finished and wakes waiters
+func LSPDeferredSettled(owner string, token any) { lspDeferredSettled(owner, token) }
 
 // Distinct non empty owners of an agent, session first then task
 func lspAgentOwners(sessionID, taskID string) []string {

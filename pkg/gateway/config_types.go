@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -361,6 +362,30 @@ func scanBundledPluginPlatforms() (map[string]bool, map[string]string) {
 		}
 	}
 	return names, aliases
+}
+
+// MessagingPlatformLabels is every shipped platform value plus bundled plugin platform names and aliases
+func MessagingPlatformLabels() []string {
+	bundled, aliases := scanBundledPluginPlatforms()
+	seen := map[string]bool{}
+	var out []string
+	add := func(label string) {
+		if !seen[label] {
+			seen[label] = true
+			out = append(out, label)
+		}
+	}
+	for _, p := range builtinPlatforms {
+		add(string(p))
+	}
+	for name := range bundled {
+		add(name)
+	}
+	for alias := range aliases {
+		add(alias)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Default destination of a platform, thread routing to the topic where it was set
@@ -727,6 +752,7 @@ type GatewayConfig struct {
 	Streaming                    StreamingConfig
 	SessionStoreMaxAgeDays       *big.Int
 	ProfileRoutes                []*ProfileRoute
+	runtimeProfileHomes          *[]profiles.ServedProfile
 }
 
 // Gateway config with the dataclass defaults for the home in ctx

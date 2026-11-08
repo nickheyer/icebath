@@ -452,6 +452,11 @@ func determineModeCtx(ctx context.Context, providerName, baseURL, model, nousWir
 	return ModeChatCompletions
 }
 
+// DetermineModeCtx is DetermineMode resolving the route and the provider table under ctx
+func DetermineModeCtx(ctx context.Context, providerName, baseURL, model, nousWire string) APIMode {
+	return determineModeCtx(ctx, providerName, baseURL, model, nousWire)
+}
+
 // Distinct registry row for an exact id whose alias collapse would merge several registry providers
 func lossyAliasRegistryPdef(ctx context.Context, raw, canonical string) *ProviderDef {
 	reg := providerRegistry()

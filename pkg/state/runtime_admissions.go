@@ -84,6 +84,11 @@ func runtimeAdmission(ctx context.Context, conn SQLiteConn, admissionID string) 
 	return row, nil
 }
 
+// Live admission row else its retired tombstone, refused not found when neither exists
+func RuntimeAdmission(ctx context.Context, conn SQLiteConn, admissionID string) (*pyjson.Object, error) {
+	return runtimeAdmission(ctx, conn, admissionID)
+}
+
 // Retires the workers the admission's generation owns on its logical owner and its current physical transcript
 func retireAdmissionWorkers(ctx context.Context, conn SQLiteConn, row *pyjson.Object, ownerEpoch any) error {
 	lineageText, _ := rowValue(row, "lineage_json").(string)

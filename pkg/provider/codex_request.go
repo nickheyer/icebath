@@ -302,6 +302,11 @@ func resolveReasoning(model string, p codexParams) (string, bool) {
 	return clampEffort(effort, supported, nil), enabled
 }
 
+// Clamped effort and enabled flag a Responses route sends, empty effort when the route takes no reasoning field
+func ResolveResponsesReasoning(ctx context.Context, model, providerName, baseURL string, isCodexBackend, isXAI, disabled bool, effort string) (string, bool) {
+	return resolveReasoning(model, codexParams{ctx: ctx, provider: providerName, baseURL: baseURL, isCodexBackend: isCodexBackend, isXAI: isXAI, reasoning: reasoningCfg{set: true, disabled: disabled, effort: effort}})
+}
+
 var extendedPromptCacheModels = []string{
 	"gpt-5.5-pro", "gpt-5.5", "gpt-5.4", "gpt-5.2",
 	"gpt-5.1-codex-max", "gpt-5.1-codex-mini", "gpt-5.1-chat-latest", "gpt-5.1-codex", "gpt-5.1",
@@ -830,7 +835,8 @@ func (t *codexTransport) normalizeResponse(resp map[string]any, issuerKind, issu
 		if id == "" {
 			id = name
 		}
-		out.ToolCalls = append(out.ToolCalls, state.ToolCall{ID: id, Type: "function", Function: state.ToolCallFunction{Name: name, Arguments: tc.Arguments}})
+		out.ToolCalls = append(out.ToolCalls, state.ToolCall{ID: id, Type: "function", Function: state.ToolCallFunction{Name: name, Arguments: tc.Arguments},
+			Extra: map[string]any{"call_id": tc.CallID, "response_item_id": tc.ResponseItemID}})
 	}
 	out.CodexReasoningItems = encodeCodexItems(msg.ReasoningItems)
 	out.CodexMessageItems = encodeCodexItems(msg.MessageItems)

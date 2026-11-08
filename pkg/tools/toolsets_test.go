@@ -137,3 +137,18 @@ func TestSessionPlatformToolDropsDefaultRegistry(t *testing.T) {
 		t.Fatal("manage_catalog dropped on desktop")
 	}
 }
+
+func TestStaticToolsetWrappersMatchTheTable(t *testing.T) {
+	names := OrderedStaticToolsetNames()
+	if !reflect.DeepEqual(names, orderedToolsetNames()) || len(names) == 0 {
+		t.Fatalf("ordered names = %v", names)
+	}
+	spec, ok := StaticToolset("web")
+	want, _ := staticToolset("web")
+	if !ok || !reflect.DeepEqual(spec, want) {
+		t.Fatalf("StaticToolset(web) = %v %v", spec, ok)
+	}
+	if _, ok := StaticToolset("no-such-toolset"); ok {
+		t.Fatal("unknown toolset resolved")
+	}
+}

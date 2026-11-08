@@ -678,13 +678,6 @@ func localCatalogDo(ctx context.Context, method, rawURL string, body []byte, tim
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	origin := urlOrigin(rawURL)
-	private := map[string]bool{"authorization": true, "cookie": true, "proxy-authorization": true}
-	for name := range headers {
-		if lower := strings.ToLower(name); lower != "accept" && lower != "user-agent" && lower != "accept-encoding" {
-			private[lower] = true
-		}
-	}
 	if transport == nil {
 		transport = modelsTransport
 	}
@@ -702,15 +695,7 @@ func localCatalogDo(ctx context.Context, method, rawURL string, body []byte, tim
 			if !follow {
 				return http.ErrUseLastResponse
 			}
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-			if urlOrigin(req.URL.String()) != origin {
-				for name := range private {
-					req.Header.Del(name)
-				}
-			}
-			return nil
+			return credentialRedirectPolicy(rawURL)(req, via)
 		},
 	}
 	var reader io.Reader

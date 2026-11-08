@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 
@@ -317,32 +316,14 @@ func auxStreamControlFlow(err error) bool {
 
 // Folds a Codex event stream into the final Responses object, logging a failing event hook unless it is control flow
 func auxConsumeCodexEventStream(ctx context.Context, stream AuxChatStream, model string, onEvent func(event any) error) (map[string]any, error) {
-	assembler := newCodexAssembler(model)
-	for {
+	next := func(ctx context.Context) (any, error) {
 		event, err := stream.Next(ctx)
-		if errors.Is(err, io.EOF) {
-			break
-		}
 		if err != nil {
 			return nil, err
 		}
-		if onEvent != nil {
-			if hookErr := onEvent(event); hookErr != nil {
-				if auxStreamControlFlow(hookErr) {
-					return nil, hookErr
-				}
-				slog.Debug("Codex stream on_event hook raised", "error", hookErr)
-			}
-		}
-		done, err := assembler.feed(event)
-		if err != nil {
-			return nil, err
-		}
-		if done {
-			break
-		}
+		return event, nil
 	}
-	return assembler.result()
+	return consumeCodexEventStream(ctx, next, model, codexConsumeOptions{onEvent: onEvent})
 }
 
 // Streams one Codex Responses request under the progress guard and shapes the result like chat completions

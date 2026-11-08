@@ -253,7 +253,7 @@ func ensureCompressionFeasibilityChecked(ctx context.Context, a *AIAgent, estima
 }
 
 // Resends the stored compression warning to the status callback as a classified diagnostic
-func replayCompressionWarning(a *AIAgent) {
+func (a *AIAgent) replayCompressionWarning() {
 	msg, _ := a.compressionWarning.(string)
 	if msg == "" || a.statusCallback == nil {
 		return

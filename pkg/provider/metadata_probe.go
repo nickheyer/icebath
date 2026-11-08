@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,36 +77,11 @@ func metadataTLSConfig(ctx context.Context, baseURL string) (*tls.Config, error)
 		return nil, nil
 	}
 	settings := CustomProviderTLSSettings(baseURL, nil, cfg)
-	if settings.CACert == "" && !settings.HasVerify {
-		return nil, nil
+	var sslVerify any
+	if settings.HasVerify {
+		sslVerify = settings.Verify
 	}
-	out := &tls.Config{}
-	if settings.HasVerify && !settings.Verify {
-		out.InsecureSkipVerify = true
-	}
-	if settings.CACert != "" {
-		pem, err := os.ReadFile(settings.CACert)
-		if err != nil {
-			return nil, fmt.Errorf("ssl_ca_cert for %s: %w", baseURL, err)
-		}
-		pool, perr := x509.SystemCertPool()
-		if perr != nil || pool == nil {
-			pool = x509.NewCertPool()
-		}
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("ssl_ca_cert for %s holds no certificate: %s", baseURL, settings.CACert)
-		}
-		out.RootCAs = pool
-	}
-	return out, nil
-}
-
-func urlOrigin(raw string) string {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host)
+	return ResolveTLSVerify(nil, settings.CACert, sslVerify, baseURL).Config, nil
 }
 
 // Proxy for a probe request read from the environment on every call
@@ -166,13 +140,7 @@ func newProbeClient(ctx context.Context, baseURL string, headers map[string]stri
 	return &probeClient{ctx: ctx, headers: headers, connect: connect, read: read, tls: tlsCfg, tlsErr: err}
 }
 
-func (c *probeClient) httpClient(origin string) *http.Client {
-	private := map[string]bool{"authorization": true, "cookie": true, "proxy-authorization": true}
-	for name := range c.headers {
-		if lower := strings.ToLower(name); lower != "accept" && lower != "user-agent" {
-			private[lower] = true
-		}
-	}
+func (c *probeClient) httpClient(target string) *http.Client {
 	var transport http.RoundTripper = &http.Transport{
 		Proxy:                 probeProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: c.connect}).DialContext,
@@ -184,18 +152,8 @@ func (c *probeClient) httpClient(origin string) *http.Client {
 		transport = metadataTransport
 	}
 	return &http.Client{
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-			if urlOrigin(req.URL.String()) != origin {
-				for name := range private {
-					req.Header.Del(name)
-				}
-			}
-			return nil
-		},
+		Transport:     transport,
+		CheckRedirect: credentialRedirectPolicy(target),
 	}
 }
 
@@ -233,7 +191,7 @@ func (c *probeClient) do(method, rawURL string, params map[string]string, body [
 	for k, v := range extra {
 		req.Header.Set(k, v)
 	}
-	resp, err := c.httpClient(origin).Do(req)
+	resp, err := c.httpClient(target).Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && !isConnectTimeout(err) && c.ctx.Err() == nil {
 			return nil, &DeadlineExpiredError{Label: "model metadata " + origin, After: probeTotalDeadline}

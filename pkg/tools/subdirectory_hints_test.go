@@ -551,3 +551,11 @@ func TestSubdirectoryHintsNavTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestSubdirectoryHintTrackerWorkingDirReportsTheRoot(t *testing.T) {
+	dir := t.TempDir()
+	tr := NewSubdirectoryHintTrackerFor(&Env{Home: t.TempDir()}, dir, true)
+	if got := tr.WorkingDir(); got != tr.workingDir || got == "" {
+		t.Fatalf("WorkingDir = %q, want %q", got, tr.workingDir)
+	}
+}

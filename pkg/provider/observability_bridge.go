@@ -15,6 +15,25 @@ func noteProviderSetupSaved() { observability.NoteProviderSetupSaved() }
 // Every FailoverReason the classifier returns, the model error class vocabulary
 var failoverReasons = []FailoverReason{ReasonAuth, ReasonAuthPermanent, ReasonBilling, ReasonRateLimit, ReasonUpstreamRateLimit, ReasonUpstreamBlocked, ReasonOverloaded, ReasonServerError, ReasonTimeout, ReasonSSLCertVerification, ReasonContextOverflow, ReasonPayloadTooLarge, ReasonImageTooLarge, ReasonImageCorrupt, ReasonModelNotFound, ReasonProviderPolicyBlocked, ReasonDataPolicyDenied, ReasonContentPolicyBlocked, ReasonModelEntitlement, ReasonIncompleteResponse, ReasonFormatError, ReasonRoleAlternation, ReasonInvalidEncryptedContent, ReasonMultimodalToolContent, ReasonReasoningMandatory, ReasonThinkingSignature, ReasonLongContextTier, ReasonOAuthLongContextBetaForbid, ReasonLlamaCppGrammarPattern, ReasonCancelled, ReasonUnknown}
 
+// FailoverReason enum construction by value, false for a value outside the enum
+func ParseFailoverReason(value any) (FailoverReason, bool) {
+	var raw string
+	switch v := value.(type) {
+	case FailoverReason:
+		raw = string(v)
+	case string:
+		raw = v
+	default:
+		return "", false
+	}
+	for _, r := range failoverReasons {
+		if string(r) == raw {
+			return r, true
+		}
+	}
+	return "", false
+}
+
 // Installs the provider hooks the shared metrics contract and setup classifier read
 func init() {
 	observability.FailoverReasonsHook = func() []string {

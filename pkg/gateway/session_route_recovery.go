@@ -16,6 +16,12 @@ func messagingPlatform(ctx context.Context, label any) (Platform, bool) {
 	return platform, true
 }
 
+// IsMessagingPlatformSource reports whether a row source label names a messaging platform, for the state wiring
+func IsMessagingPlatformSource(source string) bool {
+	_, ok := messagingPlatform(context.Background(), source)
+	return ok
+}
+
 // Source from the row persisted origin, else from its columns, nil when the row has no chat id
 func rowSource(ctx context.Context, row *pyjson.Object, platform Platform, profile string) *SessionSource {
 	raw, _ := row.Get("origin_json")

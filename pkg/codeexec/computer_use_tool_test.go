@@ -287,3 +287,9 @@ func TestSummarizeActionPrompts(t *testing.T) {
 		t.Fatal("scroll axes not independent")
 	}
 }
+
+func TestReleaseComputerUseSessionHookReleasesNothingUnowned(t *testing.T) {
+	if tools.ReleaseComputerUseSession(context.Background(), "never-started-session") {
+		t.Fatal("a session without a backend reported a release")
+	}
+}

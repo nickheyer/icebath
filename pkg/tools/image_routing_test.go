@@ -343,3 +343,13 @@ func TestDecodeICO(t *testing.T) {
 		t.Fatal("ico not transcoded")
 	}
 }
+
+func TestExportedFileToDataURLMatchesTheModuleHelper(t *testing.T) {
+	env, dir := imageRoutingEnv(t), t.TempDir()
+	path := writeRoutingFile(t, filepath.Join(dir, "ok.png"), routingPNG)
+	got, ok, err := FileToDataURL(env, path)
+	want, wantOK, wantErr := fileToDataURL(env, path)
+	if got != want || ok != wantOK || err != wantErr || !ok {
+		t.Fatalf("FileToDataURL %q %v %v", got, ok, err)
+	}
+}

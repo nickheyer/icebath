@@ -1,0 +1,30 @@
+package main
+
+// Links every package whose init registers a hook, builtin plugin or platform adapter into the binary
+import (
+	_ "github.com/nickheyer/icebath/pkg/builtin"
+	_ "github.com/nickheyer/icebath/pkg/builtin/achievements"
+	_ "github.com/nickheyer/icebath/pkg/builtin/delegationdefault"
+	_ "github.com/nickheyer/icebath/pkg/builtin/diskcleanup"
+	_ "github.com/nickheyer/icebath/pkg/builtin/securityguidance"
+	_ "github.com/nickheyer/icebath/pkg/builtin/teamspipeline"
+	_ "github.com/nickheyer/icebath/pkg/config/remote"
+	_ "github.com/nickheyer/icebath/pkg/gateway/messagetools"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/bluebubbles"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/dingtalk"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/discord"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/email"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/feishu"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/mattermost"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/qqbot"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/signal"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/sms"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/wecom"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/weixin"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/whatsappcloud"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/yuanbao"
+	_ "github.com/nickheyer/icebath/pkg/profiles/manage"
+	_ "github.com/nickheyer/icebath/pkg/vxl"
+)

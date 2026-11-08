@@ -59,6 +59,9 @@ func maskedSecretPrompt(prompt string) (string, error) {
 	return maskedSecretPromptMask(prompt, "*")
 }
 
+// Masked terminal prompt for a secret value, the exported form plugins reach through Services
+func MaskedSecretPrompt(prompt string) (string, error) { return maskedSecretPrompt(prompt) }
+
 // Masked secret prompt with a chosen mask, raw terminal failures falling back to getpass
 func maskedSecretPromptMask(prompt, mask string) (string, error) {
 	stdin, stdout := secretPromptStdin(), secretPromptStdout()

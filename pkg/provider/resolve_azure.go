@@ -155,11 +155,16 @@ type AzureDetector struct {
 	UserAgent string
 }
 
-func (d *AzureDetector) client() *http.Client {
+// Sends through the credential safe opener, an injected client standing as the installed policy
+func (d *AzureDetector) open(req *http.Request) (*http.Response, error) {
 	if d != nil && d.Client != nil {
-		return d.Client
+		opener, err := secureOpenerFromPolicy(&Opener{Transport: d.Client.Transport}, req.URL.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		return opener.Open(req, azureDetectTimeout)
 	}
-	return &http.Client{Timeout: azureDetectTimeout}
+	return OpenCredentialedURL(req, azureDetectTimeout, nil, nil)
 }
 
 func (d *AzureDetector) userAgent() string {
@@ -224,7 +229,7 @@ func (d *AzureDetector) httpGetJSON(ctx context.Context, target, apiKey string, 
 	if err != nil {
 		return 0, nil
 	}
-	resp, err := d.client().Do(req)
+	resp, err := d.open(req)
 	if err != nil {
 		slog.Default().Debug(fmt.Sprintf("azure_detect: GET %s failed: %v", target, err))
 		return 0, nil
@@ -311,7 +316,7 @@ func (d *AzureDetector) probeAnthropicMessages(ctx context.Context, baseURL, api
 	}
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("content-type", "application/json")
-	resp, err := d.client().Do(req)
+	resp, err := d.open(req)
 	if err != nil {
 		return false
 	}

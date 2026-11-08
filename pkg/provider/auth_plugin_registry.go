@@ -405,6 +405,9 @@ func canonicalRegistryRows(ctx context.Context) []*Profile {
 	return out
 }
 
+// CanonicalRegistryRows is the PROVIDER_REGISTRY values of the bound home for callers outside the package
+func CanonicalRegistryRows(ctx context.Context) []*Profile { return canonicalRegistryRows(ctx) }
+
 // Registry row for an id, re-syncing plugin profiles once on a miss
 func registryLookup(ctx context.Context, providerID string) *Profile {
 	if ctx == nil {

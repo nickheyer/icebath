@@ -212,6 +212,9 @@ func errorTypeName(err error) string {
 	return name
 }
 
+// Python exception class name of an error a plugin call returned
+func ErrorTypeName(err error) string { return errorTypeName(err) }
+
 // Calls one hook callback with its own payload copy and awaits an awaitable result
 func invokeHookCallback(ctx context.Context, cb *hookEntry, kwargs map[string]any) (any, error) {
 	v, err := guardedValue(func() (any, error) { return cb.fn(ctx, copyKwargs(kwargs)) })

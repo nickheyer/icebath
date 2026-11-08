@@ -179,7 +179,9 @@ func (d *SessionDB) EnsureSession(n NewSession) error {
 
 // Session row by id with resolved prompt columns after the queued token deltas land, nil when absent
 func (d *SessionDB) GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
-	d.FlushForRead(ctx)
+	if readConnOf(ctx) == nil {
+		d.FlushForRead(ctx)
+	}
 	row, err := d.readOne(ctx, "SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved, "+
 		"COALESCE(tp.prompt, s.tool_names) AS _tool_names_resolved "+
 		"FROM sessions s LEFT JOIN system_prompts sp ON sp.hash = s.system_prompt_hash "+
@@ -188,6 +190,20 @@ func (d *SessionDB) GetSession(ctx context.Context, sessionID string) (*pyjson.O
 		return nil, err
 	}
 	return sessionRowDict(row), nil
+}
+
+// Newest main loop model route of a session as one per call tuple, nil when none was recorded
+func (d *SessionDB) GetRecentSessionModelRoute(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+	d.FlushForRead(ctx)
+	return d.readOne(ctx, `SELECT model, billing_provider, billing_base_url, billing_mode,
+                      api_call_count
+                 FROM session_model_usage
+                WHERE session_id = ?
+                  AND task = ''
+                  AND model <> 'unknown'
+                  AND billing_provider <> ''
+                ORDER BY last_seen DESC, rowid DESC
+                LIMIT 1`, sessionID)
 }
 
 // Tolerant model_config decode, JSON text or an object copied, anything else empty

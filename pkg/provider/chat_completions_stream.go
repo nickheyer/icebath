@@ -151,14 +151,14 @@ const ccRawContentFilter = "_content_filter_terminated"
 const ccRawOverflowTerminal = "_overflow_terminal"
 
 // How a partial stream stub is tagged, its wire shape following the api mode
-type partialStubOptions struct {
+type partialStreamStubOptions struct {
 	overflowTerminal bool
 	cleanEOF         bool
 	apiMode          APIMode
 }
 
 // Stub response for a stream that ended without a finish reason after delivering content
-func buildPartialStreamStub(route Route, content, reasoning, model string, usage *Usage, droppedToolNames []string, o partialStubOptions) *Response {
+func buildPartialStreamStub(route Route, content, reasoning, model string, usage *Usage, droppedToolNames []string, o partialStreamStubOptions) *Response {
 	var dropped any
 	if len(droppedToolNames) > 0 {
 		dropped = droppedToolNames
@@ -310,6 +310,7 @@ func commaInt(n int) string {
 // Live state of one streamed chat completion attempt
 type ccStreamState struct {
 	c                  *chatCompletionsClient
+	extra              map[string]any
 	diag               *StreamDiag
 	wire               *FailedStreamRequest
 	req                *Request
@@ -491,6 +492,12 @@ func (s *ccStreamState) choicelessChunk(chunk map[string]any) error {
 
 // Folds one decoded chunk into the accumulators and emits its deltas, true once the stream must stop
 func (s *ccStreamState) handleChunk(chunk map[string]any) (bool, error) {
+	for k, v := range ccExtraFields(chunk) {
+		if s.extra == nil {
+			s.extra = map[string]any{}
+		}
+		s.extra[k] = v
+	}
 	if m := stringOf(chunk["model"]); m != "" {
 		s.modelName = m
 	}
@@ -725,11 +732,11 @@ func (s *ccStreamState) finish(latency time.Duration) (*Response, error) {
 			dropped = append(dropped, name)
 		}
 		catalogLog.Warn(fmt.Sprintf("Clean EOF, no finish_reason: server ended the stream (no transport exception) while a tool call's arguments were still incomplete (tools=%v). The server or a proxy closed the stream cleanly; not an output-length truncation.", dropped))
-		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, dropped, partialStubOptions{cleanEOF: true}), nil
+		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, dropped, partialStreamStubOptions{cleanEOF: true}), nil
 	}
 	if finishReason == "" && (len(s.contentParts) > 0 || len(s.reasoningParts) > 0) && s.tools.Len() == 0 && s.usage == nil {
 		catalogLog.Warn("Clean EOF, no finish_reason: server ended the stream (no transport exception) after delivering text with no tool calls. The server or a proxy closed the stream cleanly.")
-		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, nil, partialStubOptions{cleanEOF: true}), nil
+		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, nil, partialStreamStubOptions{cleanEOF: true}), nil
 	}
 	effective := finishReason
 	if truncated {
@@ -773,6 +780,11 @@ func (s *ccStreamState) finish(latency time.Duration) (*Response, error) {
 	}
 	payload := map[string]any{"id": responseID, "model": model, "usage": s.usage, "provider": s.upstreamProvider,
 		"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": effective}}}
+	for k, v := range s.extra {
+		if _, declared := payload[k]; !declared {
+			payload[k] = v
+		}
+	}
 	if s.runaway != "" {
 		payload[ccRawRunaway] = true
 		catalogLog.Warn(fmt.Sprintf("Stream cut: the %s turned into a runaway repetition loop (model=%s, provider=%s).", s.runaway, model, orUnknown2(s.c.route.Provider)))

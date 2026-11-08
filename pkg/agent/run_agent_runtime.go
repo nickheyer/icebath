@@ -22,8 +22,8 @@ func quietly(fn func() error) {
 }
 
 // True when an automatic background review targets the managed local runtime under defer auto
-func reviewShouldDefer(a *AIAgent, taskCfg map[string]any) bool {
-	return reviewDeferMode(taskCfg) == "auto" && reviewTargetsManagedLocal(a, taskCfg)
+func reviewShouldDefer(ctx context.Context, a *AIAgent, taskCfg map[string]any) bool {
+	return reviewDeferMode(taskCfg) == "auto" && reviewTargetsManagedLocal(ctx, a, taskCfg)
 }
 
 // StreamErrorEvent is a provider error synthesized from a standalone Responses type error SSE frame
@@ -384,6 +384,8 @@ func (a *AIAgent) isCodexBackend() bool {
 		strings.Contains(a.baseURLLower, "/backend-api/codex")
 }
 
+func (a *AIAgent) IsCodexBackend() bool { return a.isCodexBackend() }
+
 // True for GPT 5 family models that chat completions rejects, vendor prefix stripped
 func modelRequiresResponsesAPI(model string) bool {
 	lower := strings.ToLower(model)
@@ -471,6 +473,11 @@ func pyIntCoerce(v any) (int, bool) {
 // True when text remains once reasoning blocks are stripped
 func (a *AIAgent) hasContentAfterThinkBlock(content string) bool {
 	return content != "" && strings.TrimSpace(a.stripThinkBlocks(content)) != ""
+}
+
+// HasContentAfterThinkBlock reports visible text left once reasoning blocks are stripped
+func (a *AIAgent) HasContentAfterThinkBlock(content string) bool {
+	return a.hasContentAfterThinkBlock(content)
 }
 
 // Heuristic for visible assistant text that looks intentionally finished

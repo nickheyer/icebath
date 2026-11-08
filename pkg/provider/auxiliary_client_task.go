@@ -310,10 +310,9 @@ type auxSemEntry struct {
 }
 
 var (
-	auxSemMu             sync.Mutex
-	auxSyncSemaphores    = map[auxSemKey]auxSemEntry{}
-	auxAsyncSemaphores   = map[any]map[auxSemKey]auxSemEntry{}
-	auxAsyncSemLoopOrder []any
+	auxSemMu           sync.Mutex
+	auxSyncSemaphores  = map[auxSemKey]auxSemEntry{}
+	auxAsyncSemaphores = map[any]map[auxSemKey]auxSemEntry{}
 )
 
 // Positive max_concurrency of a task, false when unset, malformed or the vision task
@@ -363,29 +362,17 @@ func auxAcquireAsyncAuxSemaphore(ctx context.Context, task string) (*auxSemaphor
 	if loop == nil {
 		return nil, nil
 	}
+	tables := LiveLoopTable(auxAsyncSemaphores, loop, &auxSemMu, auxSameObject, auxLoopClosed,
+		func() map[auxSemKey]auxSemEntry { return map[auxSemKey]auxSemEntry{} })
 	auxSemMu.Lock()
 	defer auxSemMu.Unlock()
-	return auxCachedSemaphoreLocked(auxLiveLoopTableLocked(loop), auxSemKey{home.Key(home.Dir(ctx)), task}, limit), nil
+	return auxCachedSemaphoreLocked(tables, auxSemKey{home.Key(home.Dir(ctx)), task}, limit), nil
 }
 
-// Table of a loop, tables of loops closed since the last call dropped, the caller holding the semaphore lock
-func auxLiveLoopTableLocked(loop any) map[auxSemKey]auxSemEntry {
-	kept := auxAsyncSemLoopOrder[:0]
-	for _, other := range auxAsyncSemLoopOrder {
-		if b, ok := other.(auxBoundLoop); ok && !auxSameObject(other, loop) && b.IsClosed() {
-			delete(auxAsyncSemaphores, other)
-			continue
-		}
-		kept = append(kept, other)
-	}
-	auxAsyncSemLoopOrder = kept
-	table, ok := auxAsyncSemaphores[loop]
-	if !ok {
-		table = map[auxSemKey]auxSemEntry{}
-		auxAsyncSemaphores[loop] = table
-		auxAsyncSemLoopOrder = append(auxAsyncSemLoopOrder, loop)
-	}
-	return table
+// Whether a table key is a bound loop that has closed, so its table can never run again
+func auxLoopClosed(other any) bool {
+	b, ok := other.(auxBoundLoop)
+	return ok && b.IsClosed()
 }
 
 // Drops every cached semaphore
@@ -394,7 +381,6 @@ func auxResetAuxSemaphores() {
 	defer auxSemMu.Unlock()
 	clear(auxSyncSemaphores)
 	clear(auxAsyncSemaphores)
-	auxAsyncSemLoopOrder = nil
 }
 
 // True when a profile payload carries a reasoning wire control at any depth
@@ -581,7 +567,7 @@ func auxMergeAuxExtraBody(ctx context.Context, extraBody map[string]any, project
 		}
 	}
 	if r, ok := merged["reasoning"].(map[string]any); ok {
-		merged["reasoning"] = clampReasoningConfigDict(r)
+		merged["reasoning"] = clampReasoningConfigDict(r, openAICompatWireEfforts)
 	}
 	if auxNousProviderNames[providerNorm] {
 		if _, ok := merged["tags"]; !ok {
@@ -676,7 +662,7 @@ func auxBuildCallKwargs(ctx context.Context, provider, model string, messages an
 		return nil, err
 	}
 	reasoningConfig, _ = floored.(map[string]any)
-	reasoningConfig = clampReasoningConfigDict(reasoningConfig)
+	reasoningConfig = clampReasoningConfigDict(reasoningConfig, openAICompatWireEfforts)
 	projection := auxProjectProviderProfile(ctx, provider, providerNorm, model, effectiveBase, reasoningConfig, auxDataUseRequirement(messages))
 	for k, v := range projection.TopLevel {
 		kwargs[k] = v

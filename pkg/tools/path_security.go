@@ -15,6 +15,9 @@ func hasUnsafePathChars(path string) bool {
 	return unsafePathCharsRe.MatchString(path)
 }
 
+// HasUnsafePathChars reports control characters or line separators in a path
+func HasUnsafePathChars(path string) bool { return hasUnsafePathChars(path) }
+
 // Error text when a path does not resolve inside root with symlinks and dot dot followed, empty otherwise
 func ValidateWithinDir(path, root string) string {
 	resolved := realPath(path)

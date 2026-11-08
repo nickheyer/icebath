@@ -297,10 +297,19 @@ func writeMultipartValue(w *multipart.Writer, key string, v any) error {
 	return w.WriteField(key, pyrepr.Str(v))
 }
 
-// Sends one SDK request with the default retries, timeouts and status error classes
+// Sends one images POST and parses its 2xx body as an ImagesResponse
 func (c *openAIClient) post(ctx context.Context, path string, body func() (io.Reader, string, error)) (*openAIImagesResponse, error) {
+	resp, raw, err := c.send(ctx, http.MethodPost, path, nil, body)
+	if err != nil {
+		return nil, err
+	}
+	return parseOpenAIImagesResponse(resp.Header, raw), nil
+}
+
+// Sends one SDK request with the default retries, timeouts and status error classes, returning the 2xx response
+func (c *openAIClient) send(ctx context.Context, method, path string, header http.Header, body func() (io.Reader, string, error)) (*http.Response, []byte, error) {
 	for retries := 0; ; retries++ {
-		resp, raw, err := c.attempt(ctx, path, retries, body)
+		resp, raw, err := c.attempt(ctx, method, path, header, retries, body)
 		remaining := c.MaxRetries - retries
 		if err != nil {
 			if remaining > 0 && ctx.Err() == nil {
@@ -308,25 +317,29 @@ func (c *openAIClient) post(ctx context.Context, path string, body func() (io.Re
 					continue
 				}
 			}
-			return nil, err
+			return nil, nil, err
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return parseOpenAIImagesResponse(resp.Header, raw), nil
+			return resp, raw, nil
 		}
 		if remaining > 0 && openAIShouldRetry(resp) {
 			if serr := openAISleep(ctx, openAIRetryDelay(c.MaxRetries, remaining, resp.Header)); serr == nil {
 				continue
 			}
 		}
-		return nil, openAIStatusError(resp, raw)
+		return nil, nil, openAIStatusError(resp, raw)
 	}
 }
 
 // One HTTP attempt with the connect, write, read and per chunk timeouts of the SDK default Timeout
-func (c *openAIClient) attempt(ctx context.Context, path string, retries int, body func() (io.Reader, string, error)) (*http.Response, []byte, error) {
-	reader, ctype, err := body()
-	if err != nil {
-		return nil, nil, err
+func (c *openAIClient) attempt(ctx context.Context, method, path string, header http.Header, retries int, body func() (io.Reader, string, error)) (*http.Response, []byte, error) {
+	var reader io.Reader
+	var ctype string
+	if body != nil {
+		var err error
+		if reader, ctype, err = body(); err != nil {
+			return nil, nil, err
+		}
 	}
 	actx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -340,12 +353,17 @@ func (c *openAIClient) attempt(ctx context.Context, path string, retries int, bo
 		WroteRequest:         func(httptrace.WroteRequestInfo) { timer.Reset(c.Timeout) },
 		GotFirstResponseByte: func() { timer.Reset(c.Timeout) },
 	}
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(actx, trace), http.MethodPost, c.endpoint(path), reader)
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(actx, trace), method, c.endpoint(path), reader)
 	if err != nil {
 		return nil, nil, &openAIError{Class: "APIConnectionError", Message: "Connection error.", Err: err}
 	}
 	req.Header = c.headers(retries)
-	req.Header.Set("Content-Type", ctype)
+	if ctype != "" {
+		req.Header.Set("Content-Type", ctype)
+	}
+	for k, v := range header {
+		req.Header[k] = v
+	}
 	transportErr := func(err error) error {
 		mu.Lock()
 		defer mu.Unlock()

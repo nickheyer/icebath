@@ -204,3 +204,27 @@ func TestParallelPoolCapsWorkersAndDrainsOnShutdown(t *testing.T) {
 		t.Fatalf("peak %d done %d", peak.Load(), done.Load())
 	}
 }
+
+func TestShutdownParallelPoolsWaitsForQueuedWorkAndForgetsEveryPool(t *testing.T) {
+	s, _ := newTestStore(t)
+	pool := s.getParallelPool(nil)
+	done := make(chan struct{})
+	if _, err := pool.Submit(func() { close(done) }); err != nil {
+		t.Fatal(err)
+	}
+	ShutdownParallelPools()
+	select {
+	case <-done:
+	default:
+		t.Fatal("shutdown returned before the queued task ran")
+	}
+	parallelPools.Lock()
+	remaining := len(parallelPools.pools)
+	parallelPools.Unlock()
+	if remaining != 0 {
+		t.Fatalf("%d pools kept after shutdown", remaining)
+	}
+	if _, err := pool.Submit(func() {}); err == nil {
+		t.Fatal("a shut down pool must refuse new work")
+	}
+}

@@ -514,6 +514,10 @@ func (c *ContextCompressor) SetCompressionCount(n int) { c.ContextEngineBase.Com
 
 func (c *ContextCompressor) SetLastCompressionRoughTokens(n int) { c.lastCompressionRoughTokens = n }
 
+func (c *ContextCompressor) LastCompressionRoughTokens() int { return c.lastCompressionRoughTokens }
+
+func (c *ContextCompressor) SummaryTargetRatio() float64 { return c.summaryTargetRatio }
+
 func (c *ContextCompressor) SetLastUsage(promptTokens, completionTokens int) {
 	c.LastPromptTokens, c.LastCompletionTokens = promptTokens, completionTokens
 }
@@ -665,4 +669,15 @@ func (c *ContextCompressor) cloneForAgent() ContextEngine {
 	}
 	clone.preparedCompaction = nil
 	return &clone
+}
+
+// True when the window came from a provider error or probe step since the last usage record
+func (c *ContextCompressor) ContextProbed() bool { return c.contextProbed }
+
+// True when the probed window is provider confirmed and belongs in the persistent cache
+func (c *ContextCompressor) ContextProbePersistable() bool { return c.contextProbePersistable }
+
+// Clears both probe flags once the usage record has handled them
+func (c *ContextCompressor) ResetContextProbe() {
+	c.contextProbed, c.contextProbePersistable = false, false
 }

@@ -34,6 +34,14 @@ func NewParentCopy(text, forced string) any {
 	return &ParentCopy{Text: text, Forced: forced}
 }
 
+// Carrier itself for the opt out parent copy so persistent sinks still find its forced text, the forced text otherwise
+func projectParentCopy(pc *ParentCopy, force bool) any {
+	if force {
+		return pc.Forced
+	}
+	return pc
+}
+
 // Scrubbed child produced string, force false honouring the user opt out while vault values stay scrubbed
 func RedactChildText(env *Env, text any, force bool) (out string) {
 	if pc, ok := text.(*ParentCopy); ok {
@@ -93,7 +101,9 @@ func redactChildValueAt(env *Env, value any, force bool, depth int) any {
 		return RedactionUnavailable
 	}
 	switch v := value.(type) {
-	case string, *ParentCopy:
+	case *ParentCopy:
+		return projectParentCopy(v, force)
+	case string:
 		return RedactChildText(env, v, force)
 	case *pyjson.Object, map[string]any:
 		keys, get, _ := delegationObject(v)
@@ -105,7 +115,7 @@ func redactChildValueAt(env *Env, value any, force bool, depth int) any {
 			if s, ok := item.(string); ok {
 				cleaned = redactDelegationField(env, k, s, force)
 			} else if pc, ok := item.(*ParentCopy); ok {
-				cleaned = RedactChildText(env, pc, force)
+				cleaned = projectParentCopy(pc, force)
 			} else {
 				cleaned = redactChildValueAt(env, item, force, depth+1)
 			}
@@ -155,7 +165,7 @@ func delegationObject(v any) ([]string, func(string) any, bool) {
 // Summary redacted per value when structured so JSON delimiters survive, wrapper text getting the text pass
 func redactDelegationSummary(env *Env, summary any, structured, force bool) any {
 	if pc, ok := summary.(*ParentCopy); ok {
-		return RedactChildText(env, pc, force)
+		return projectParentCopy(pc, force)
 	}
 	if s, ok := summary.(string); ok && structured {
 		candidate := ExtractJSONCandidate(s)
@@ -183,6 +193,11 @@ func redactDelegationSummary(env *Env, summary any, structured, force bool) any 
 		}
 	}
 	return RedactChildValue(env, summary, force)
+}
+
+// Summary redacted per value when structured, exported for the delegation result pipeline
+func RedactSummary(env *Env, summary any, structured, force bool) any {
+	return redactDelegationSummary(env, summary, structured, force)
 }
 
 // Text of a summary value with a parent copy compared by its text the way a str subclass compares
@@ -233,7 +248,7 @@ func RedactChildResult(env *Env, result any, outputSchema any, force bool) any {
 	if hasValid && !pyrepr.Equal(summaryComparable(cleaned.Vals["summary"]), summaryComparable(get("summary"))) {
 		valid, errs := false, []string{"The redacted summary has not been validated against the original output_schema."}
 		if isJSONObject(outputSchema) {
-			summary, _ := cleaned.Vals["summary"].(string)
+			summary, _ := summaryComparable(cleaned.Vals["summary"]).(string)
 			v, e, err := ValidateOutput(summary, outputSchema)
 			if err != nil {
 				errs = []string{"Output validation was unavailable after secret redaction."}

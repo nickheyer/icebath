@@ -278,8 +278,8 @@ func reasoningConfigDict(v any) map[string]any {
 	return nil
 }
 
-// Config with its effort clamped onto the OpenAI compatible wire vocabulary, the same dict when unchanged
-func clampReasoningConfigDict(rc map[string]any) map[string]any {
+// Config with its effort clamped onto the supported wire vocabulary, the same dict when unchanged
+func clampReasoningConfigDict(rc map[string]any, supported []string) map[string]any {
 	if rc == nil {
 		return nil
 	}
@@ -289,7 +289,7 @@ func clampReasoningConfigDict(rc map[string]any) map[string]any {
 	}
 	clamped := effort
 	if effort != "" {
-		clamped = clampEffort(effort, openAICompatWireEfforts, nil)
+		clamped = clampEffort(effort, supported, nil)
 	}
 	if clamped == effort {
 		return rc
@@ -326,6 +326,9 @@ func reasoningPtrOfDict(rc map[string]any) *Reasoning {
 	}
 	return &r
 }
+
+// ReasoningOfConfig is the hook reasoning value of a reasoning config dict, nil when the config is unset
+func ReasoningOfConfig(rc map[string]any) *Reasoning { return reasoningPtrOfDict(rc) }
 
 // Output cap raised to the Gemini published ceiling when thinking would exhaust it, unchanged otherwise
 func raiseGeminiThinkingMaxTokensAny(model string, rc map[string]any, requested any) any {
@@ -534,7 +537,7 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 	sanitized = swapDeveloperRole(sanitized, modelLower)
 	api := baseKwargs(model, sanitized, tools, params, nil)
 	isKimi := kwargBool(params, "is_kimi", false)
-	rc := clampReasoningConfigDict(reasoningConfigDict(params["reasoning_config"]))
+	rc := clampReasoningConfigDict(reasoningConfigDict(params["reasoning_config"]), openAICompatWireEfforts)
 	applyMaxTokens(api, model, rc, params, 0)
 	enabled, hasEnabled := rc["enabled"].(bool)
 	thinkingOff := hasEnabled && !enabled
@@ -630,7 +633,7 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 func buildKwargsFromProfile(profile *Profile, model string, sanitized []map[string]any, tools []map[string]any, params map[string]any) map[string]any {
 	sanitized = swapDeveloperRole(profile.PrepareMessages(sanitized), strings.ToLower(model))
 	api := baseKwargs(model, sanitized, tools, params, profile)
-	rc := clampReasoningConfigDict(reasoningConfigDict(params["reasoning_config"]))
+	rc := clampReasoningConfigDict(reasoningConfigDict(params["reasoning_config"]), openAICompatWireEfforts)
 	applyMaxTokens(api, model, rc, params, profile.GetMaxTokens(model))
 	reasoning := reasoningPtrOfDict(rc)
 	extrasCtx := map[string]any{

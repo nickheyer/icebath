@@ -148,6 +148,9 @@ func taskXMLLeafValues(text string) map[string]string {
 	return values
 }
 
+// Namespace agnostic leaf path to text map of a task XML for the gateway drift check, nil when unparsable
+func TaskXMLLeafValues(text string) map[string]string { return taskXMLLeafValues(text) }
+
 // Reports whether an element name carries no prefix or a namespace declared in scope
 func xmlNameBound(name xml.Name, scope map[string]bool) bool {
 	return name.Space == "" || scope[name.Space]

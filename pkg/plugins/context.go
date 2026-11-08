@@ -33,6 +33,9 @@ func newContext(m *Manifest, mgr *Manager) *Context {
 	return &Context{manifest: m, manager: mgr}
 }
 
+// NewContext binds a registration context to a manifest on a manager
+func NewContext(m *Manifest, mgr *Manager) *Context { return newContext(m, mgr) }
+
 // Plugin registration context of a manifest on a manager
 func NewPluginContext(m *Manifest, mgr *Manager) *Context { return newContext(m, mgr) }
 

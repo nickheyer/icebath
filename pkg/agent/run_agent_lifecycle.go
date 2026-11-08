@@ -46,8 +46,8 @@ func (a *AIAgent) spawnBackgroundReviewWith(ctx context.Context, messagesSnapsho
 		messagesSnapshot: cloneBackgroundReviewMessages(messagesSnapshot), reviewMemory: reviewMemory,
 		reviewSkills: reviewSkills, focus: focus, taskCfg: taskCfg, explicit: explicit,
 	}
-	if focus == nil && !explicit && reviewShouldDefer(a, taskCfg) {
-		enqueueIdleReview(a, reviewQueueKey(a), kw)
+	if focus == nil && !explicit && reviewShouldDefer(ctx, a, taskCfg) {
+		enqueueIdleReview(ctx, a, reviewQueueKey(a), kw)
 		return
 	}
 	a.spawnBackgroundReviewNow(ctx, kw)
@@ -74,13 +74,13 @@ func (a *AIAgent) spawnBackgroundReviewNow(ctx context.Context, kw backgroundRev
 	threadCtx := context.WithoutCancel(ctx)
 	go func() {
 		target(threadCtx)
-		a.maybeRequeuePreemptedReview(run, next)
+		a.maybeRequeuePreemptedReview(threadCtx, run, next)
 	}()
 	ok = true
 }
 
 // Requeues an automatic managed local review a live turn preempted, bounded by the attempt cap
-func (a *AIAgent) maybeRequeuePreemptedReview(run *backgroundReviewRun, kw backgroundReviewKwargs) {
+func (a *AIAgent) maybeRequeuePreemptedReview(ctx context.Context, run *backgroundReviewRun, kw backgroundReviewKwargs) {
 	defer func() {
 		if r := recover(); r != nil {
 			runAgentLog().Debug(fmt.Sprintf("Preempted-review requeue failed: %v", r))
@@ -93,10 +93,10 @@ func (a *AIAgent) maybeRequeuePreemptedReview(run *backgroundReviewRun, kw backg
 		runAgentLog().Info(fmt.Sprintf("Preempted background review dropped after %d requeues", reviewRequeueMaxAttempts))
 		return
 	}
-	if !reviewShouldDefer(a, kw.taskCfg) {
+	if !reviewShouldDefer(ctx, a, kw.taskCfg) {
 		return
 	}
-	enqueueIdleReview(a, reviewQueueKey(a), kw)
+	enqueueIdleReview(ctx, a, reviewQueueKey(a), kw)
 }
 
 // Ends the memory provider session and shuts providers down once, then notifies the context engine

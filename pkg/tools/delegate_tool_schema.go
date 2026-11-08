@@ -42,6 +42,9 @@ const (
 	delegateDescriptionTail = "- Children inherit the parent model unless pinned via delegation.provider / delegation.model in config.yaml."
 )
 
+// OneshotDescriptionDelivery exports the joined delivery paragraph of a one shot delegate_task
+const OneshotDescriptionDelivery = oneshotDescriptionDelivery
+
 // Arguments of tools/delegate_tool.py delegate_task, nil fields standing for Python None
 type DelegateTaskRequest struct {
 	Goal, Context, Tasks, MaxIterations, Role         any
@@ -267,6 +270,9 @@ func stripModelHiddenTaskFields(tasks any) any {
 	}
 	return out
 }
+
+// StripModelHiddenTaskFields exports stripModelHiddenTaskFields
+func StripModelHiddenTaskFields(tasks any) any { return stripModelHiddenTaskFields(tasks) }
 
 func init() {
 	Register(Def{

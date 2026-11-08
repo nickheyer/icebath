@@ -25,7 +25,7 @@ func (a *AIAgent) cacheScopeAgent() *provider.CacheScopeAgent {
 	s.Provider, s.Model, s.BaseURL = a.provider, a.model, a.baseURL
 	s.SessionDB = nil
 	if a.sessionDB != nil {
-		s.SessionDB = a.sessionDB
+		s.SessionDB = provider.CacheScopeSessionStore{DB: a.sessionDB}
 	}
 	s.CompressionCount = func() int {
 		if a.contextCompressor == nil {
@@ -58,8 +58,13 @@ func relayOutcomeForFailure(ctx context.Context, v any) string {
 	return "failed"
 }
 
-// RunConversation admits one turn under the durable session lease and relay scopes, then runs the conversation loop
-func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o RunConversationOptions) (result map[string]any, err error) {
+// RunConversation admits one text turn under the durable session lease and relay scopes
+func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o RunConversationOptions) (map[string]any, error) {
+	return a.RunConversationContent(ctx, userMessage, o)
+}
+
+// RunConversationContent admits one turn of text or content parts, then runs the conversation loop
+func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o RunConversationOptions) (result map[string]any, err error) {
 	ctx = withLifecycleEnv(ctx, a.env)
 	cancelBackgroundReviewForLiveTurn(a)
 	effectiveTaskID := o.TaskID
@@ -172,16 +177,15 @@ func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o Run
 	turnCtx = provider.WithPortalAffinityScope(turnCtx, provider.DeclaredConversationScopeSafe(a.cacheScopeAgent()))
 	turnCtx = provider.SetAccountingContext(turnCtx, provider.AuxUsageRecorderFor(a.sessionDB), a.sessionID)
 	result, err = func() (map[string]any, error) {
-		loopCtx, unbind := bindSubagentParent(turnCtx, a)
-		defer unbind()
+		loopCtx := bindSubagentParent(turnCtx, a)
 		loopCtx, _ = provider.ScopedRuntimeMain(loopCtx, map[string]any{})
 		loopCtx, untrack := trackInInterruptScope(loopCtx, a)
 		defer untrack()
 		if lease != nil {
-			lease.Start()
+			lease.Start(loopCtx)
 			defer lease.StopRefresher()
 		}
-		return runConversationLoop(loopCtx, a, userMessage, o, effectiveTaskID)
+		return conversationLoopRun(loopCtx, a, userMessage, o, effectiveTaskID)
 	}()
 	if err != nil {
 		return nil, err

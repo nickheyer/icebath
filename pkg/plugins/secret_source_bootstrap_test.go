@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,13 +13,16 @@ type ssbOrchestrator struct {
 	reset, load, refresh int
 }
 
-func (o *ssbOrchestrator) ListPluginSources() []SecretSourceInfo { return o.sources }
-func (o *ssbOrchestrator) ResetCache(string) error               { o.reset++; return nil }
-func (o *ssbOrchestrator) LoadDotenv(string) error               { o.load++; return nil }
-func (o *ssbOrchestrator) RefreshInstalledScope(string) error    { o.refresh++; return nil }
+func (o *ssbOrchestrator) ListPluginSources() []SecretSourceInfo    { return o.sources }
+func (o *ssbOrchestrator) ResetCache(string) error                  { o.reset++; return nil }
+func (o *ssbOrchestrator) LoadDotenv(context.Context, string) error { o.load++; return nil }
+func (o *ssbOrchestrator) RefreshInstalledScope(context.Context, string) error {
+	o.refresh++
+	return nil
+}
 
 // Source whose activation follows the base enabled key
-func ssbStub(name string) SecretSourceInfo {
+func ssbBaseSource(name string) SecretSourceInfo {
 	return SecretSourceInfo{Name: name, IsEnabled: func(cfg map[string]any) (bool, error) {
 		on, _ := cfg["enabled"].(bool)
 		return on, nil
@@ -46,7 +50,7 @@ func ssbRefresh(t *testing.T, secrets map[string]any, sources ...SecretSourceInf
 	previous := installedServices()
 	InstallServices(&Services{SecretSources: o})
 	t.Cleanup(func() { InstallServices(previous) })
-	NewManager(dir).refreshSecretSourcesAfterDiscovery()
+	NewManager(dir).refreshSecretSourcesAfterDiscovery(context.Background())
 	return o
 }
 
@@ -64,7 +68,7 @@ func TestRefreshSecretSourcesNoopWhenOnlyBuiltins(t *testing.T) {
 }
 
 func TestRefreshSecretSourcesRepullsWhenPluginEnabled(t *testing.T) {
-	if o := ssbRefresh(t, map[string]any{"myvault": map[string]any{"enabled": true}}, ssbStub("myvault")); o.reset != 1 || o.load != 1 {
+	if o := ssbRefresh(t, map[string]any{"myvault": map[string]any{"enabled": true}}, ssbBaseSource("myvault")); o.reset != 1 || o.load != 1 {
 		t.Fatalf("reset %d load %d", o.reset, o.load)
 	}
 }

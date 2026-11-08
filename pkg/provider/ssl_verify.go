@@ -40,6 +40,9 @@ var linuxRootDirs = []string{"/etc/ssl/certs", "/etc/pki/tls/certs", "/system/et
 
 var systemCertPool = x509.SystemCertPool
 
+// Roots of the OS store as the stdlib context enumerates them, a seam the tests stand a store in for
+var platformStoreCertificates = platformRootCertificates
+
 // InstallTrustStore loads the OS trust store once, false when no platform root could be read
 func InstallTrustStore() bool {
 	trustMu.Lock()
@@ -115,7 +118,7 @@ func sharedTLSConfig(caPath string, union bool) *tls.Config {
 	}
 	var pool *x509.CertPool
 	if caPath != "" && !union {
-		pool = x509.NewCertPool()
+		pool = stdlibTrustPool()
 	} else {
 		pool = platformRoots.Clone()
 	}
@@ -134,6 +137,9 @@ func sharedTLSConfig(caPath string, union bool) *tls.Config {
 }
 
 var errNoCertificateFound = errors.New("[X509: NO_CERTIFICATE_OR_CRL_FOUND] no certificate or crl found")
+
+// Trust pool with no injected platform verifier, so an explicit bundle replaces OS trust instead of falling back to it
+func stdlibTrustPool() *x509.CertPool { return x509.NewCertPool() }
 
 // Fails every handshake with the load error and stays uncached so the next client retries the bundle
 func failedTLSConfig(err error) *tls.Config {
@@ -258,7 +264,7 @@ func PlatformStoreBundle(h string) string {
 			return platformBundle
 		}
 	}
-	certs := platformRootCertificates()
+	certs := platformStoreCertificates()
 	if len(certs) == 0 {
 		return ""
 	}
@@ -331,6 +337,9 @@ func SubprocessVerifyBundle(h string) string {
 	if os.Getenv("REQUESTS_CA_BUNDLE") != "" || os.Getenv("CURL_CA_BUNDLE") != "" {
 		return ""
 	}
+	if frozen, ok := importCABundle(); ok && fileExists(frozen) {
+		return ""
+	}
 	if bundle := DefaultCABundlePath(); bundle != "" {
 		return bundle
 	}
@@ -340,6 +349,9 @@ func SubprocessVerifyBundle(h string) string {
 				return candidate
 			}
 		}
+	}
+	if live, ok := searchCABundle(); ok {
+		return live
 	}
 	return PlatformStoreBundle(h)
 }

@@ -200,6 +200,13 @@ func (t *SubdirectoryHintTracker) RebindWorkingDir(workingDir string) {
 	t.anchor()
 }
 
+// WorkingDir is the directory the tracker treats as the session root
+func (t *SubdirectoryHintTracker) WorkingDir() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.workingDir
+}
+
 // Formatted hint text of directories this call visits for the first time, false when there is none
 func (t *SubdirectoryHintTracker) CheckToolCall(toolName string, toolArgs map[string]any) (string, bool) {
 	if !t.enabled || safeWorkerEnabled() {

@@ -167,6 +167,11 @@ func extraSupported(ctx context.Context, extra string, environment map[string]st
 	return evaluateGate(ctx, marker, environment), nil
 }
 
+// ExtraSupported reports an extra installable on this machine, an installed anchor set beating its platform gate
+func ExtraSupported(ctx context.Context, extra string) (bool, error) {
+	return extraSupported(ctx, extra, nil, nil)
+}
+
 // The one command users run for a missing extra
 func InstallHint(extra string) string { return "icebath pm install --extra " + extra }
 

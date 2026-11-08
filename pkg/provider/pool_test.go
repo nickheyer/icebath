@@ -1348,7 +1348,7 @@ func writeCodexStore(t *testing.T, h string, singletonTokens map[string]any, las
 		"credential_pool": map[string]any{"openai-codex": []any{seeded, manualRow}}})
 }
 
-func stubCodexRefresh(t *testing.T, minted, mintedRT string, posted *[]string) {
+func scriptCodexRefresh(t *testing.T, minted, mintedRT string, posted *[]string) {
 	t.Helper()
 	prev := tokensSingletonProviders["openai-codex"]
 	spec := prev
@@ -1368,7 +1368,7 @@ func TestIndependentManualAccountRefreshesWithItsOwnPair(t *testing.T) {
 	writeCodexStore(t, h, map[string]any{"access_token": aAT, "refresh_token": "rt-A"}, isoAt(now-3600), map[string]any{"access_token": bAT, "refresh_token": "rt-B", "last_refresh": isoAt(now - 7200)})
 	var posted []string
 	bNew := codexPoolJWT("acct-B", "user-B", now+8*3600)
-	stubCodexRefresh(t, bNew, "rt-B2", &posted)
+	scriptCodexRefresh(t, bNew, "rt-B2", &posted)
 	pool := LoadPool(testEnv(t, h), "openai-codex")
 	manual, _ := entryByID(pool, "manual")
 	refreshed, ok := pool.refreshEntry(manual, false, "", false)
@@ -1435,5 +1435,18 @@ func TestMultiEntryPoolStillRotatesToHealthySibling(t *testing.T) {
 	next, ok := pool.MarkExhaustedAndRotate(RotationRequest{StatusCode: 429, ErrorContext: map[string]any{"reason": "usage_limit_reached", "reset_at": nowEpoch() + 95.5*3600}, CredentialID: "codex-1"})
 	if !ok || next.ID != "codex-2" {
 		t.Fatalf("healthy sibling expected: %+v", next)
+	}
+}
+
+func TestSetPoolClockSwapsAndRestoresTheWallClock(t *testing.T) {
+	fixed := time.Unix(1_700_000_000, 0)
+	restore := SetPoolClock(func() time.Time { return fixed })
+	if nowEpoch() != 1_700_000_000 {
+		restore()
+		t.Fatalf("clock %v", nowEpoch())
+	}
+	restore()
+	if time.Since(nowFunc()) > time.Minute {
+		t.Fatal("previous clock not restored")
 	}
 }

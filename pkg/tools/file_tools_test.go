@@ -153,3 +153,14 @@ func installScriptedFileOps(t *testing.T, env *Env, ops *scriptedFileOps, termin
 	}
 	t.Cleanup(func() { getFileOps = prev })
 }
+
+func TestWriteFileToolWritesThroughTheToolEntry(t *testing.T) {
+	env, ws := newFileToolTestEnv(t)
+	p := filepath.Join(ws, "exported.txt")
+	if w := ftDecode(t, WriteFileTool(context.Background(), env, p, "data\n", "t1", false, "")); w["error"] != nil {
+		t.Fatalf("write %v", w)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "data\n" {
+		t.Fatalf("disk %q", b)
+	}
+}

@@ -18,7 +18,7 @@ func resetMultiplex(t *testing.T) {
 
 func secretOf(ctx context.Context, name string) (string, bool, error) { return GetSecret(ctx, name) }
 
-func TestSecretScopeReadsEnviron(t *testing.T) {
+func TestMultiplexInactiveBackwardCompatReadsEnviron(t *testing.T) {
 	resetMultiplex(t)
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	v, ok, err := secretOf(context.Background(), "ANTHROPIC_API_KEY")
@@ -27,7 +27,7 @@ func TestSecretScopeReadsEnviron(t *testing.T) {
 	}
 }
 
-func TestSecretScopeMissingReturnsDefault(t *testing.T) {
+func TestMultiplexInactiveBackwardCompatMissingReturnsDefault(t *testing.T) {
 	resetMultiplex(t)
 	os.Unsetenv("NOPE_KEY")
 	if _, ok, _ := secretOf(context.Background(), "NOPE_KEY"); ok {
@@ -38,7 +38,16 @@ func TestSecretScopeMissingReturnsDefault(t *testing.T) {
 	}
 }
 
-func TestUnscopedReadRaisesUnderMultiplex(t *testing.T) {
+func TestMultiplexInactiveBackwardCompatNoRaiseWithoutScope(t *testing.T) {
+	resetMultiplex(t)
+	t.Setenv("SOME_KEY", "")
+	os.Unsetenv("SOME_KEY")
+	if v, ok, err := secretOf(context.Background(), "SOME_KEY"); ok || err != nil || v != "" {
+		t.Fatalf("got %q %t %v", v, ok, err)
+	}
+}
+
+func TestMultiplexActiveFailClosedUnscopedReadRaises(t *testing.T) {
 	resetMultiplex(t)
 	t.Setenv("ANTHROPIC_API_KEY", "sk-leaky")
 	SetMultiplexActive(true)
@@ -322,11 +331,14 @@ func TestRelayRoutingStampsAndAuthMaterial(t *testing.T) {
 	}
 }
 
-func TestUnscopedSecretErrorSignature(t *testing.T) {
+func TestUnscopedSecretErrorSignatureNamedSecretLeadsTheUserSentence(t *testing.T) {
 	err := NewUnscopedSecretError("SURPLUS_API_KEY", "get_secret('SURPLUS_API_KEY') with no scope")
-	if err.SecretName != "SURPLUS_API_KEY" || !contains(err.Error(), "SURPLUS_API_KEY") || err.DeveloperDetail == "" {
+	if err.SecretName != "SURPLUS_API_KEY" || !contains(err.Error(), "SURPLUS_API_KEY") || err.DeveloperDetail != "get_secret('SURPLUS_API_KEY') with no scope" {
 		t.Fatalf("named secret leads the user sentence: %+v", err)
 	}
+}
+
+func TestUnscopedSecretErrorSignatureLegacySingleMessagePositionalIsTheDeveloperDetail(t *testing.T) {
 	legacy := NewUnscopedSecretError("get_secret('X') called with no profile secret scope active.", "")
 	if legacy.SecretName != "" || !hasPrefix(legacy.DeveloperDetail, "get_secret('X')") || contains(legacy.Error(), "get_secret") {
 		t.Fatalf("legacy positional detail must not be read as a name: %+v", legacy)

@@ -26,6 +26,7 @@ type chatCompletionAgentState struct {
 	activeRequestAbort            atomic.Pointer[provider.RequestAbortHook]
 	requestStateMu                sync.Mutex
 	activeCodexStreamRequestToken any
+	codexStreamedTextParts        []string
 	codexOnFirstDelta             func()
 	wireReasoningConfig           map[string]any
 	reasoningEffortRejected       bool
@@ -251,6 +252,43 @@ func (a *AIAgent) BuildAPIKwargs(apiMessages []map[string]any) (map[string]any, 
 
 func (a *AIAgent) SanitizeOutboundKwargs(kwargs map[string]any) { a.sanitizeOutboundKwargs(kwargs) }
 
+func (a *AIAgent) CurrentStreamedAssistantText() string { return a.currentStreamedAssistantText() }
+func (a *AIAgent) ResetStreamDeliveryTracking()         { a.resetStreamDeliveryTracking() }
+func (a *AIAgent) WarningPresentationEnabled() bool     { return a.warningPresentationEnabled() }
+func (a *AIAgent) SetLastAPIFirstChunkAt(at float64)    { a.lastAPIFirstChunkAt = &at }
+func (a *AIAgent) LastAPIFirstChunkAt() *float64        { return a.lastAPIFirstChunkAt }
+func (a *AIAgent) HasInterimAssistantCallback() bool    { return a.interimAssistantCallback != nil }
+
+// Starts an empty streamed text list for the next Codex Responses request
+func (a *AIAgent) ResetCodexStreamedTextParts() {
+	a.requestStateMu.Lock()
+	defer a.requestStateMu.Unlock()
+	a.codexStreamedTextParts = []string{}
+}
+
+func (a *AIAgent) AppendCodexStreamedTextPart(text string) {
+	a.requestStateMu.Lock()
+	defer a.requestStateMu.Unlock()
+	a.codexStreamedTextParts = append(a.codexStreamedTextParts, text)
+}
+
+// Copy of the text parts the current Codex Responses request streamed
+func (a *AIAgent) CodexStreamedTextParts() []string {
+	a.requestStateMu.Lock()
+	defer a.requestStateMu.Unlock()
+	return append([]string(nil), a.codexStreamedTextParts...)
+}
+
+// Hands tool call turn text to the display delta callback for reasoning tag extraction unless a plugin holds the reply
+func (a *AIAgent) RouteSuppressedStreamText(text string) {
+	if a.streamDeltaCallback == nil || a.holdStream {
+		return
+	}
+	if callQuietly(a.streamDeltaCallback, text) {
+		a.recordStreamedAssistantText(text)
+	}
+}
+
 func (a *AIAgent) InterruptibleAPICall(ctx context.Context, apiKwargs map[string]any) (any, error) {
 	return a.interruptibleAPICall(ctx, apiKwargs)
 }
@@ -322,7 +360,11 @@ func (a *AIAgent) WantsReasoningDeltas() bool {
 	return a.reasoningCallback != nil || a.streamDeltaCallback != nil
 }
 
-func (a *AIAgent) DisableStreaming()           { a.RetrySession().DisableStreaming = true }
+func (a *AIAgent) DisableStreaming() { a.RetrySession().DisableStreaming = true }
+
+func (a *AIAgent) EmitWarning(text string) { a.emitWarning(text) }
+
+func (a *AIAgent) BufferStatus(text string)    { a.bufferStatus(text) }
 func (a *AIAgent) CurrentAPIRequestID() string { return a.currentAPIRequestID }
 func (a *AIAgent) IsSubagent() bool            { return a.isSubagent }
 func (a *AIAgent) FallbackIndex() int          { return a.fallbackIndex }

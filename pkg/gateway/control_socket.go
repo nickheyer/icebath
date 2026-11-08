@@ -15,3 +15,9 @@ func fitsSunPath(path string) (bool, error) {
 	}
 	return len(path) <= maxUnixPath, nil
 }
+
+// Whether value is the namespaced auth v1 login form, the only identity a same user peer may forward a ticket for
+func structuredLoginSubject(value string) bool {
+	_, ok := ParseAuthenticatedSubject(value)
+	return ok
+}

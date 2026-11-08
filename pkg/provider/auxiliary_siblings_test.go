@@ -300,3 +300,23 @@ func TestRecordAuxUsageExcludesMoATasks(t *testing.T) {
 		t.Fatalf("rows %v", db.rows)
 	}
 }
+
+func TestExportedManagedLocalWrappersMatchTheStateFile(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	auxResetManagedLocalCache()
+	t.Cleanup(auxResetManagedLocalCache)
+	if ManagedLocalNetloc() != "" || IsManagedLocalEndpoint("http://127.0.0.1:18080/v1") {
+		t.Fatal("absent state file reported a managed endpoint")
+	}
+	auxResetManagedLocalCache()
+	path := LocalRuntimeStatePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"base_url": "http://127.0.0.1:18080/v1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ManagedLocalNetloc() != "127.0.0.1:18080" || !IsManagedLocalEndpoint("http://127.0.0.1:18080/v1") {
+		t.Fatal("managed endpoint wrappers")
+	}
+}

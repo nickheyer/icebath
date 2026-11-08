@@ -146,6 +146,11 @@ func truncateWithFooter(env *Env, content, u string, charLimit int) (string, boo
 	return modelText + "\n" + strings.Join(footer, "\n"), true
 }
 
+// Head and tail window with a stored copy footer, exported for truncation footer callers
+func TruncateWithFooter(env *Env, content, u string, charLimit int) (string, bool) {
+	return truncateWithFooter(env, content, u, charLimit)
+}
+
 var unambiguousBinaryKinds = []string{"SQLite", "ZIP", "gzip", "bzip2", "xz", "7-Zip", "ELF", "Mach-O", "PNG", "JPEG", "GIF", "TIFF", "FLAC", "Ogg"}
 
 // Magic byte type name when a fetched body is a raw binary file, compared NUL stripped on both sides

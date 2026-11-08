@@ -30,6 +30,13 @@ func homeCredentialSource(h string) CredentialSource {
 	return newHomeCredentials(homePoolEnv(h))
 }
 
+// Credential source for home h whose secret reads follow the profile scope the context carries
+func homeCredentialSourceIn(ctx context.Context, h string) CredentialSource {
+	env := homePoolEnv(h)
+	env.Ctx = ctx
+	return newHomeCredentials(env)
+}
+
 // Exported credential source for home h so other packages resolve runtimes the way the provider does
 func HomeCredentialSource(h string) CredentialSource { return homeCredentialSource(h) }
 
@@ -37,6 +44,9 @@ func HomeCredentialSource(h string) CredentialSource { return homeCredentialSour
 func homePoolEnv(h string) PoolEnv {
 	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Config: ConfigLoader(h)}
 }
+
+// HomePoolEnv is the pool environment of home h for callers outside the package
+func HomePoolEnv(h string) PoolEnv { return homePoolEnv(h) }
 
 // Composite credential source over a pool environment, the store and secrets filled from the process home when unset
 func newHomeCredentials(env PoolEnv) *homeCredentials {

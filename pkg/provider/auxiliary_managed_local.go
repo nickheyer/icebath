@@ -30,6 +30,9 @@ func auxManagedLocalNetloc() string {
 	return auxManagedLocalCached
 }
 
+// ManagedLocalNetloc is the cached host and port of the managed llama-server, empty without one
+func ManagedLocalNetloc() string { return auxManagedLocalNetloc() }
+
 // Netloc of the state file base_url, empty for a missing file, bad JSON, or a non object document
 func auxReadManagedLocalNetloc() string {
 	raw, err := os.ReadFile(localRuntimeStatePath())
@@ -91,6 +94,9 @@ func auxIsManagedLocalEndpoint(baseURL string) bool {
 	}
 	return strings.ToLower(parts.netloc) == managed
 }
+
+// IsManagedLocalEndpoint reports whether a base URL targets the llama-server this install manages
+func IsManagedLocalEndpoint(baseURL string) bool { return auxIsManagedLocalEndpoint(baseURL) }
 
 // Drops the cached managed endpoint so the next read consults the state file
 func auxResetManagedLocalCache() {

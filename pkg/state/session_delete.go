@@ -317,7 +317,7 @@ func (d *SessionDB) DeleteSession(ctx context.Context, sessionID string, o Delet
 	if deleted {
 		d.EmitSessionDeleted(ctx, removed, "delete", sessionID, o.SessionsDir)
 	}
-	if err := d.collectRetiredMedia(ctx); err != nil {
+	if err := d.CollectRetiredMedia(ctx); err != nil {
 		return false, err
 	}
 	for _, sid := range removed {
@@ -439,7 +439,7 @@ func (d *SessionDB) DeleteSessionIfEmpty(ctx context.Context, sessionID, session
 	if deleted {
 		d.EmitSessionDeleted(ctx, []string{sessionID}, "empty_sweep", "", sessionsDir)
 	}
-	if err := d.collectRetiredMedia(ctx); err != nil {
+	if err := d.CollectRetiredMedia(ctx); err != nil {
 		return false, err
 	}
 	if deleted {
@@ -589,7 +589,7 @@ func (d *SessionDB) DeleteSessions(ctx context.Context, sessionIDs []string, o D
 		}
 		d.EmitSessionDeleted(ctx, removed, "delete", primary, o.SessionsDir)
 	}
-	if err := d.collectRetiredMedia(ctx); err != nil {
+	if err := d.CollectRetiredMedia(ctx); err != nil {
 		return 0, err
 	}
 	for _, sid := range removed {
@@ -640,7 +640,7 @@ func (d *SessionDB) DeleteEmptySessions(ctx context.Context, sessionsDir string)
 	if count > 0 {
 		d.EmitSessionDeleted(ctx, removed, "empty_sweep", "", sessionsDir)
 	}
-	if err := d.collectRetiredMedia(ctx); err != nil {
+	if err := d.CollectRetiredMedia(ctx); err != nil {
 		return 0, err
 	}
 	for _, sid := range removed {

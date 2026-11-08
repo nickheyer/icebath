@@ -50,6 +50,9 @@ func msysToWindowsPath(p string) string {
 	return strings.ToUpper(m[1]) + ":" + tail
 }
 
+// Windows form of an MSYS style drive path, the exported form the binary uses for chat --in
+func MSYSToWindowsPath(p string) string { return msysToWindowsPath(p) }
+
 // Home directory of the OS user, empty when unknown
 func userHomeDir() string {
 	h, err := os.UserHomeDir()
