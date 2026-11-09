@@ -587,6 +587,9 @@ func sizefmtBytes(n int64) string {
 	return fmt.Sprintf("%.1f TB", size/1024.0)
 }
 
+// SizefmtBytes exports the human readable byte count for the context reference blocks
+func SizefmtBytes(n int64) string { return sizefmtBytes(n) }
+
 // Names the opt out when checkpoints are on and the store sits at or above its cap, empty otherwise
 func CheckpointFootprintNotice(env *Env) string {
 	cfg, err := checkpointConfigSection(env)

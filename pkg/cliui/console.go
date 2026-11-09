@@ -81,12 +81,21 @@ func (c *Console) stdinTTY() bool {
 	return fileIsTerminal(c.In)
 }
 
+// Reports whether the input stream is a terminal, the isatty of sys.stdin
+func (c *Console) StdinIsTTY() bool { return c.stdinTTY() }
+
 func (c *Console) stdoutTTY() bool {
 	if c.StdoutTTY != nil {
 		return c.StdoutTTY()
 	}
 	return fileIsTerminal(c.Out)
 }
+
+// Reports whether the output stream is a terminal, the isatty of sys.stdout
+func (c *Console) StdoutIsTTY() bool { return c.stdoutTTY() }
+
+// Size reports the terminal rows and columns of the output
+func (c *Console) Size() (int, int, error) { return c.termSize() }
 
 func (c *Console) termSize() (int, int, error) {
 	if c.TermSize != nil {
@@ -108,6 +117,9 @@ func (c *Console) secretPrompt() func(string) (string, error) {
 	defer defaultMu.Unlock()
 	return secretPromptFn
 }
+
+// MaskedSecret reads one hidden value through the masked secret prompt
+func (c *Console) MaskedSecret(prompt string) (string, error) { return c.secretPrompt()(prompt) }
 
 // Single reader of one input stream shared by every console over it
 type inputPump struct {

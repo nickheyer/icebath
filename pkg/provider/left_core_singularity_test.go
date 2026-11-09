@@ -6,10 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Fresh attempt memo, no TERMINAL_ENV, and an empty managed dir, returning the managed dir
@@ -35,7 +37,7 @@ func singularityFresh(t *testing.T) (string, string) {
 	return tmp, managed
 }
 
-func TestLeftCoreSingularityInUseIsTheConfiguredBackend(t *testing.T) {
+func TestSingularityInUseIsTheConfiguredBackend(t *testing.T) {
 	rows := []struct {
 		env, cfg string
 		inUse    bool
@@ -55,7 +57,7 @@ func TestLeftCoreSingularityInUseIsTheConfiguredBackend(t *testing.T) {
 	}
 }
 
-func TestLeftCoreSingularityTheManagedEnvBeatsTheHomesEnv(t *testing.T) {
+func TestTheManagedEnvBeatsTheHomesEnvAsInLoadHermesDotenv(t *testing.T) {
 	rows := []struct {
 		homeEnv, managedEnv string
 		inUse               bool
@@ -73,7 +75,7 @@ func TestLeftCoreSingularityTheManagedEnvBeatsTheHomesEnv(t *testing.T) {
 	}
 }
 
-func TestLeftCoreSingularityDotenvReferencesResolveAsInLoadDotenv(t *testing.T) {
+func TestDotenvReferencesResolveAsInLoadHermesDotenv(t *testing.T) {
 	for i, env := range []string{
 		"HPC_BACKEND=singularity\nTERMINAL_ENV=${HPC_BACKEND}\n",
 		"TERMINAL_ENV=${SITE_BACKEND}\n",
@@ -89,7 +91,7 @@ func TestLeftCoreSingularityDotenvReferencesResolveAsInLoadDotenv(t *testing.T) 
 	}
 }
 
-func TestLeftCoreSingularityProcessEnvBackendCountsOnlyForTheLaunchHome(t *testing.T) {
+func TestProcessEnvBackendCountsOnlyForTheLaunchHome(t *testing.T) {
 	tmp, _ := singularityFresh(t)
 	launch := leftCoreHome(t, tmp, "home", "", "")
 	secondary := leftCoreHome(t, tmp, filepath.Join("profiles", "work"), "", "")
@@ -102,7 +104,7 @@ func TestLeftCoreSingularityProcessEnvBackendCountsOnlyForTheLaunchHome(t *testi
 	}
 }
 
-func TestLeftCoreSingularityAHomeGetsThePluginOnce(t *testing.T) {
+func TestASingularityHomeGetsThePluginOnce(t *testing.T) {
 	tmp, _ := singularityFresh(t)
 	h := leftCoreHome(t, tmp, "home", "", "terminal:\n  backend: singularity\n  singularity_image: docker://python:3.12\n")
 	var calls, said []string
@@ -125,15 +127,69 @@ func TestLeftCoreSingularityAHomeGetsThePluginOnce(t *testing.T) {
 	}
 }
 
-func TestLeftCoreSingularityWithoutThePluginTheBackendHintNamesTheInstallCommand(t *testing.T) {
+// Terminal backend stand in a plugin would register under a name core gave up
+type standInTerminalBackend struct{ name string }
+
+func (b *standInTerminalBackend) Name() string                           { return b.name }
+func (b *standInTerminalBackend) DisplayName() string                    { return b.name }
+func (b *standInTerminalBackend) Description() string                    { return "" }
+func (b *standInTerminalBackend) EnvDescription() string                 { return "" }
+func (b *standInTerminalBackend) IsRemote() bool                         { return false }
+func (b *standInTerminalBackend) IsContainer() bool                      { return false }
+func (b *standInTerminalBackend) SkipContainerGuards() bool              { return false }
+func (b *standInTerminalBackend) CachePathBase() string                  { return "" }
+func (b *standInTerminalBackend) DefaultCwd() string                     { return "" }
+func (b *standInTerminalBackend) StripEnvKeys() []string                 { return nil }
+func (b *standInTerminalBackend) SessionIsolatedWhenNonpersistent() bool { return false }
+func (b *standInTerminalBackend) SupportsStreams() bool                  { return false }
+func (b *standInTerminalBackend) IsAvailable() bool                      { return true }
+func (b *standInTerminalBackend) CheckRequirements(*tools.Env, map[string]any) error {
+	return nil
+}
+func (b *standInTerminalBackend) Probe() (string, string)               { return "ok", "" }
+func (b *standInTerminalBackend) SetupInstructions(*tools.Env) []string { return nil }
+func (b *standInTerminalBackend) DoctorChecks() []tools.DoctorCheck     { return nil }
+func (b *standInTerminalBackend) CreateEnvironment(context.Context, *tools.Env, tools.CreateOptions) (tools.Environment, error) {
+	return nil, nil
+}
+
+func TestTheBackendNameIsFreeForThePlugin(t *testing.T) {
+	previous := tools.SnapshotTerminalBackend("singularity")
+	stand := &standInTerminalBackend{"singularity"}
+	if err := tools.RegisterTerminalBackend(stand); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if !tools.RestoreTerminalBackend("singularity", stand, previous) {
+			t.Fatal("restore refused")
+		}
+	}()
+	if got := tools.GetTerminalBackend("singularity"); got != tools.BackendProvider(stand) {
+		t.Fatalf("got %#v", got)
+	}
+}
+
+func TestWithoutThePluginTheBackendErrorNamesTheInstallCommand(t *testing.T) {
 	tmp, _ := singularityFresh(t)
 	h := leftCoreHome(t, tmp, "home", "", "")
 	t.Setenv(home.EnvHome, h)
 	home.ResetKeyCache()
 	t.Cleanup(home.ResetKeyCache)
-	hint := TerminalBackendInstallHint(context.Background(), "singularity")
-	if !strings.Contains(hint, "moved out of core into the 'singularity' plugin") || !strings.Contains(hint, "icebath plugins install singularity") {
-		t.Fatal(hint)
+	prevHint := tools.TerminalBackendInstallHint
+	tools.TerminalBackendInstallHint = func(backend string) string { return TerminalBackendInstallHint(context.Background(), backend) }
+	t.Cleanup(func() { tools.TerminalBackendInstallHint = prevHint })
+	t.Setenv("TERMINAL_ENV", "singularity")
+	env := &tools.Env{Home: h, Values: &sync.Map{}}
+	if tools.CheckTerminalRequirements(env) {
+		t.Fatal("an unknown backend passes the requirements check")
+	}
+	reason := tools.TerminalBackendUnavailableReason()
+	if !strings.Contains(reason, "moved out of core into the 'singularity' plugin") || !strings.Contains(reason, "icebath plugins install singularity") {
+		t.Fatal(reason)
+	}
+	_, err := tools.CreateTaskEnvironment(context.Background(), env, map[string]any{"env_type": "singularity", "image": "", "cwd": "/root", "timeout": 10}, "task")
+	if err == nil || !strings.Contains(err.Error(), "icebath plugins install singularity") {
+		t.Fatal(err)
 	}
 	if hint := TerminalBackendInstallHint(context.Background(), "acmebox"); hint != "" {
 		t.Fatal(hint)

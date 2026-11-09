@@ -44,3 +44,6 @@ func isRateLimitedAuthError(err error) bool {
 	authErr, ok := err.(*AuthError)
 	return ok && !authErr.ReloginRequired && authErr.Code == CodexRateLimitedCode
 }
+
+// IsRateLimitedAuthError reports an auth failure that is upstream rate limiting rather than a credential problem
+func IsRateLimitedAuthError(err error) bool { return isRateLimitedAuthError(err) }

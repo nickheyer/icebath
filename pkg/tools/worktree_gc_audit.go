@@ -33,6 +33,9 @@ const gcMaxCherryAhead = 50
 // Stderr of a git call whose repository filter discovery failed
 const gitFilterDiscoveryFailed = "git filter discovery failed"
 
+// GitFilterDiscoveryFailed is the stderr text of a refused git call whose repo filters could not be read
+const GitFilterDiscoveryFailed = gitFilterDiscoveryFailed
+
 // Verdicts the reclaim removes
 var gcReapVerdicts = map[string]bool{"reap": true, "reap-archive": true, "reap-keep-branch": true}
 

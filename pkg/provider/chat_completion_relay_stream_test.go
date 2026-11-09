@@ -253,3 +253,18 @@ func TestStreamReasoningDetailsSurviveReplayThroughTheRelayCollector(t *testing.
 		}
 	}
 }
+
+func TestNewRelayChatAccumulatorFoldsRelayedChunks(t *testing.T) {
+	acc := NewRelayChatAccumulator()
+	acc.Observe(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"role": "assistant", "content": "hel"}}}})
+	acc.Observe(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"content": "lo"}, "finish_reason": "stop"}}})
+	out := acc.Finalize()
+	choices, _ := out["choices"].([]any)
+	if len(choices) != 1 {
+		t.Fatalf("choices %v", out)
+	}
+	msg, _ := choices[0].(map[string]any)["message"].(map[string]any)
+	if msg["content"] != "hello" || choices[0].(map[string]any)["finish_reason"] != "stop" {
+		t.Fatalf("finalized %v", out)
+	}
+}

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -34,23 +35,11 @@ func yesFlag(cmd *cobra.Command, help string) {
 func jsonFlag(cmd *cobra.Command, help string) { bf(cmd, "json", "", help) }
 
 // ImportSource is one agent whose setup the migrate command can import
-type ImportSource struct {
-	Name    string
-	Label   string
-	Dirs    []string
-	Flags   []string
-	Exports []string
-}
+// ImportSource is one importer the migrate command offers, the plugins table
+type ImportSource = plugins.ImportSource
 
 // ImportSources lists the importers the migrate command offers
-var ImportSources = []ImportSource{
-	{Name: "openclaw", Label: "OpenClaw", Dirs: []string{".openclaw", ".clawdbot", ".moltbot"}, Flags: []string{"--migrate-secrets"}},
-	{Name: "claude-code", Label: "Claude Code", Dirs: []string{".claude"}},
-	{Name: "codex", Label: "Codex CLI", Dirs: []string{".codex"}},
-	{Name: "cursor", Label: "Cursor", Dirs: []string{".cursor"}},
-	{Name: "grok-bot", Label: "Grok Bot", Dirs: []string{"Library/Application Support/Grok Bot", "/Applications/Grok Bot.app", "Applications/Grok Bot.app", ".config/Grok Bot", "AppData/Roaming/Grok Bot", "AppData/Local/Programs/Grok Bot"}, Exports: []string{"Downloads/grok-bot-export*"}},
-	{Name: "openbot", Label: "OpenBot", Dirs: []string{"Library/Application Support/OpenBot", ".config/OpenBot", "AppData/Roaming/OpenBot"}},
-}
+var ImportSources = plugins.ImportSources
 
 const forceServedProfileHelp = "Start a separate gateway for this profile even when the default multiplexer already serves it (not recommended: two pollers on one bot token, port conflicts)"
 

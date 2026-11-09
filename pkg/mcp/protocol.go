@@ -18,7 +18,7 @@ const LatestHandshakeVersion = "2025-11-25"
 const probeProtocolVersion = "2025-03-26"
 
 // ClientName is the clientInfo name every server sees
-const ClientName = "icebath"
+const ClientName = "icebath-agent"
 
 // ClientVersion is the clientInfo version, set by the binary at startup
 var ClientVersion = "dev"

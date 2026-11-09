@@ -34,6 +34,7 @@ type fakeExecutorHost struct {
 	persistFail atomic.Bool
 	currentTool []string
 	sessionID   string
+	recallDB    *state.DB
 	progress    string
 	guardOnce   sync.Once
 	guard       *ToolCallGuardrailController
@@ -45,16 +46,17 @@ type fakeExecutorHost struct {
 	steerHook   func(*[]*state.Message, int)
 }
 
-func (h *fakeExecutorHost) Env() *Env                       { return h.env }
-func (h *fakeExecutorHost) SessionID() string               { return h.sessionID }
-func (h *fakeExecutorHost) TurnID() string                  { return "" }
-func (h *fakeExecutorHost) APIRequestID() string            { return "" }
-func (h *fakeExecutorHost) ValidToolNames() map[string]bool { return nil }
-func (h *fakeExecutorHost) EnabledToolsets() []string       { return h.enabled }
-func (h *fakeExecutorHost) DisabledToolsets() []string      { return h.disabled }
-func (h *fakeExecutorHost) ContextLength() int              { return h.ctxLength }
-func (h *fakeExecutorHost) QuietMode() bool                 { return h.quiet == nil || *h.quiet }
-func (h *fakeExecutorHost) VerboseLogging() bool            { return false }
+func (h *fakeExecutorHost) Env() *Env                                    { return h.env }
+func (h *fakeExecutorHost) SessionID() string                            { return h.sessionID }
+func (h *fakeExecutorHost) SessionDBForRecall(context.Context) *state.DB { return h.recallDB }
+func (h *fakeExecutorHost) TurnID() string                               { return "" }
+func (h *fakeExecutorHost) APIRequestID() string                         { return "" }
+func (h *fakeExecutorHost) ValidToolNames() map[string]bool              { return nil }
+func (h *fakeExecutorHost) EnabledToolsets() []string                    { return h.enabled }
+func (h *fakeExecutorHost) DisabledToolsets() []string                   { return h.disabled }
+func (h *fakeExecutorHost) ContextLength() int                           { return h.ctxLength }
+func (h *fakeExecutorHost) QuietMode() bool                              { return h.quiet == nil || *h.quiet }
+func (h *fakeExecutorHost) VerboseLogging() bool                         { return false }
 func (h *fakeExecutorHost) ToolProgressMode() string {
 	if h.progress == "" {
 		return "off"

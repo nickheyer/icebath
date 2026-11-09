@@ -406,6 +406,15 @@ var discoveryWaveTimeout = 120 * time.Second
 // Discovery pass the register entry point runs, swapped by tests that adopt servers in place of connecting
 var discoveryPass = runDiscoveryPass
 
+// Pass budget of one wave per connect batch, capped so a slow pass never outlives the lock waiter
+func discoveryPassTimeout(servers, limit int) time.Duration {
+	if limit == 0 {
+		limit = max(servers, 1)
+	}
+	waves := max(1, (servers+limit-1)/limit)
+	return min(time.Duration(waves)*discoveryWaveTimeout, discoveryPassMax)
+}
+
 // Runs one bounded discovery pass on the MCP loop with the caller's interrupt parked, clearing stale connecting marks when it dies early
 func runDiscoveryPass(ctx context.Context, env *tools.Env, fresh map[string]*Rendered) error {
 	worker := tools.WorkerOf(ctx)
@@ -413,12 +422,7 @@ func runDiscoveryPass(ctx context.Context, env *tools.Env, fresh map[string]*Ren
 		tools.SetInterrupt(worker, false, "")
 		defer tools.SetInterrupt(worker, true, "")
 	}
-	limit := discoveryConnectConcurrency(ctx, env)
-	if limit == 0 {
-		limit = max(len(fresh), 1)
-	}
-	waves := max(1, (len(fresh)+limit-1)/limit)
-	timeout := min(time.Duration(waves)*discoveryWaveTimeout, discoveryPassMax)
+	timeout := discoveryPassTimeout(len(fresh), discoveryConnectConcurrency(ctx, env))
 	_, err := runOnLoop(ctx, timeout, func(c context.Context) (struct{}, error) {
 		discoverAll(c, env, fresh)
 		return struct{}{}, nil
@@ -518,6 +522,10 @@ func Connect(ctx context.Context, env *tools.Env, servers map[string]*Rendered) 
 	if SafeWorkerEnabled != nil && SafeWorkerEnabled(ctx) {
 		return []string{}, nil
 	}
+	if !ensureMCPSDK() {
+		mcpLogger().Debug("MCP SDK not available -- skipping explicit MCP registration")
+		return []string{}, nil
+	}
 	raw := map[string]any{}
 	for name, r := range servers {
 		raw[name] = r.Config
@@ -604,6 +612,10 @@ func ConnectAll(ctx context.Context, env *tools.Env, allowed []string) ([]string
 			mcpLogger().Debug("No MCP servers in --toolsets filter; skipping MCP load entirely")
 			return []string{}, nil
 		}
+	}
+	if !ensureMCPSDK() {
+		mcpLogger().Debug("MCP SDK not available -- skipping MCP tool discovery")
+		return []string{}, nil
 	}
 	cookie := acquireDiscoveryLockWithRetry(ctx)
 	defer cookie.Release()
@@ -1076,6 +1088,9 @@ type ToolSummary struct {
 
 // Probe connects each enabled server, lists its tools and disconnects, registering nothing and omitting failed servers
 func Probe(ctx context.Context, env *tools.Env) map[string][]ToolSummary {
+	if !ensureMCPSDK() {
+		return map[string][]ToolSummary{}
+	}
 	enabled := map[string]*Rendered{}
 	for name, r := range ownerServerConfigs(ctx, env) {
 		if ServerEnabled(r.Config) {

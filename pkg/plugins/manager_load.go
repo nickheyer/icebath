@@ -68,7 +68,7 @@ type SecretSources interface {
 
 // Platform declaration registry of portable MCP servers
 type PlatformDeclarations interface {
-	Register(name string, app, requires map[string]any)
+	Register(name string, app, requires map[string]any) error
 	Unregister(name string)
 }
 
@@ -169,22 +169,12 @@ func (m *Manager) setDiscovered(v bool) {
 
 // Restores config owned shell hooks and outbound webhooks after a force clear, each guarded independently
 func (m *Manager) reRegisterConfigHooksAfterForce(ctx context.Context) {
-	s := installedServices()
 	steps := []struct {
 		label string
 		fn    func() error
-	}{{"shell-hook", func() error { return reRegisterConfigHooks(ctx) }}, {"outbound-webhook", nil}}
-	if s != nil {
-		steps[1].fn = s.ReRegisterOutboundWebhooks
-	}
+	}{{"shell-hook", func() error { return reRegisterConfigHooks(ctx) }}, {"outbound-webhook", func() error { return ReRegisterOutboundWebhooks(ctx) }}}
 	for _, step := range steps {
-		var err error
-		if step.fn == nil {
-			err = &ServiceMissingError{Name: step.label}
-		} else {
-			err = callGuarded(step.fn)
-		}
-		if err != nil {
+		if err := callGuarded(step.fn); err != nil {
 			logDebug(fmt.Sprintf("force-reload %s re-register skipped: %v", step.label, err))
 		}
 	}

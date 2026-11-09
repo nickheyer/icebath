@@ -36,34 +36,7 @@ func TestKimiPluginProfilesMatchUpstreamRegistration(t *testing.T) {
 	}
 }
 
-func TestKimiReasoningWireShape(t *testing.T) {
-	p := bundledPluginProfile(t, "kimi-coding")
-	enabled := map[string]any{"thinking": map[string]any{"type": "enabled"}}
-	eb, tl := p.BuildAPIKwargsExtras(nil, map[string]any{})
-	assertExtras(t, "nil", eb, tl, enabled, map[string]any{})
-	for effort, want := range map[string]string{"low": "low", "minimal": "low", "medium": "high", "high": "high", "xhigh": "max", "max": "max", "ultra": "max"} {
-		eb, tl := p.BuildAPIKwargsExtras(effortCfg(effort), map[string]any{})
-		assertExtras(t, effort, eb, tl, map[string]any{}, map[string]any{"reasoning_effort": want})
-	}
-	for _, r := range []*Reasoning{{Enabled: bptr(true)}, effortCfg(""), effortCfg("garbage")} {
-		eb, tl := p.BuildAPIKwargsExtras(r, map[string]any{})
-		assertExtras(t, r.Effort, eb, tl, enabled, map[string]any{})
-	}
-	eb, tl = p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{})
-	assertExtras(t, "disabled", eb, tl, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
-	for _, r := range []*Reasoning{nil, {Enabled: bptr(true)}, effortCfg("high"), effortCfg("garbage"), {Enabled: bptr(false)}, {Enabled: bptr(false), Effort: "low"}} {
-		eb, tl := p.BuildAPIKwargsExtras(r, map[string]any{})
-		if _, both := eb["thinking"]; both && tl["reasoning_effort"] != nil {
-			t.Fatalf("both emitted for %#v", r)
-		}
-	}
-	eb, tl = p.BuildAPIKwargsExtras(nil, map[string]any{"model": "kimi-K2.6"})
-	assertExtras(t, "k2 keep", eb, tl, map[string]any{"thinking": map[string]any{"type": "enabled", "keep": "all"}}, map[string]any{})
-	eb, _ = p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{"model": "kimi-k2.6"})
-	assertExtras(t, "k2 disabled", eb, map[string]any{}, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
-}
-
-func TestKimiMalformedBaseURLIsUnconfirmedAndFiltersK3(t *testing.T) {
+func TestKimiModelDiscoveryMalformedBaseUrlIsUnconfirmedAndFiltersK3(t *testing.T) {
 	fake := func(context.Context, string, string, time.Duration) ([]string, bool) {
 		return []string{"k3", "kimi-k2.6"}, true
 	}

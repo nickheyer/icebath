@@ -1450,3 +1450,26 @@ func TestSetPoolClockSwapsAndRestoresTheWallClock(t *testing.T) {
 		t.Fatal("previous clock not restored")
 	}
 }
+
+func TestActiveLeasesCopiesTheLiveCounts(t *testing.T) {
+	pool := NewPool(testEnv(t, t.TempDir()), "openai", []PooledCredential{
+		{Provider: "openai", ID: "a", Label: "a", AuthType: "api_key", Priority: 0, Source: "env:A", AccessToken: "key-a"},
+		{Provider: "openai", ID: "b", Label: "b", AuthType: "api_key", Priority: 0, Source: "env:B", AccessToken: "key-b"},
+	})
+	if _, ok := pool.AcquireLease("a"); !ok {
+		t.Fatal("lease refused")
+	}
+	if _, ok := pool.AcquireLease("a"); !ok {
+		t.Fatal("second lease refused")
+	}
+	counts := pool.ActiveLeases()
+	counts["b"] = 9
+	if live := pool.ActiveLeases(); live["a"] != 2 || live["b"] != 0 || len(live) != 1 {
+		t.Fatalf("live leases %v", live)
+	}
+	pool.ReleaseLease("a")
+	pool.ReleaseLease("a")
+	if live := pool.ActiveLeases(); len(live) != 0 {
+		t.Fatalf("leases after release %v", live)
+	}
+}

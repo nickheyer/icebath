@@ -54,7 +54,7 @@ func lnMtimes(t *testing.T, paths ...string) []int64 {
 	return out
 }
 
-func TestLaunchersRepairOnlyPreservesMissingAndForeignCommands(t *testing.T) {
+func TestExposeCliRepairOnlyPreservesMissingAndForeignCommands(t *testing.T) {
 	for _, icebath := range []string{"missing", "foreign"} {
 		t.Run(icebath, func(t *testing.T) {
 			userHome, root := lnFakeInstall(t)
@@ -126,7 +126,7 @@ func TestLaunchersRepairOnlyPreservesMissingAndForeignCommands(t *testing.T) {
 	}
 }
 
-func TestLaunchersWritesAllThreeWrappersFresh(t *testing.T) {
+func TestExposeCliWritesAllThreeWrappersFresh(t *testing.T) {
 	userHome, root := lnFakeInstall(t)
 	result := lnExpose(t, true)
 	written := append([]string{}, result.Written...)
@@ -143,7 +143,7 @@ func TestLaunchersWritesAllThreeWrappersFresh(t *testing.T) {
 	}
 }
 
-func TestLaunchersLeavesAnotherInstallsWrapperAlone(t *testing.T) {
+func TestExposeCliLeavesAnotherInstallsWrapperAlone(t *testing.T) {
 	userHome, _ := lnFakeInstall(t)
 	wrapperDir := filepath.Join(userHome, ".local", "bin")
 	if err := os.MkdirAll(wrapperDir, 0o777); err != nil {
@@ -164,7 +164,7 @@ func TestLaunchersLeavesAnotherInstallsWrapperAlone(t *testing.T) {
 	}
 }
 
-func TestLaunchersConfigGateDisables(t *testing.T) {
+func TestExposeCliConfigGateDisables(t *testing.T) {
 	lnFakeInstall(t)
 	if err := os.WriteFile(filepath.Join(home.Dir(context.Background()), "config.yaml"), []byte("cli:\n  expose_on_path: false\n"), 0o666); err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestLaunchersConfigGateDisables(t *testing.T) {
 	}
 }
 
-func TestLaunchersTreeWithoutBinarySkips(t *testing.T) {
+func TestExposeCliSealedTreeWithoutVenvSkips(t *testing.T) {
 	userHome, _ := lnFakeInstall(t)
 	bare := filepath.Join(userHome, "sealed")
 	if err := os.MkdirAll(bare, 0o777); err != nil {
@@ -187,7 +187,7 @@ func TestLaunchersTreeWithoutBinarySkips(t *testing.T) {
 	}
 }
 
-func TestLaunchersBundledTreeSkipsBundleOwnsLaunchers(t *testing.T) {
+func TestExposeCliBundledTreeSkipsBundleOwnsLaunchers(t *testing.T) {
 	for _, create := range []bool{true, false} {
 		if create && runtime.GOOS != "linux" {
 			continue
@@ -305,5 +305,14 @@ func TestResolveInstallBinaryAndEntryPointCountExported(t *testing.T) {
 	}
 	if EntryPointCount() != 2 {
 		t.Fatal(EntryPointCount())
+	}
+}
+
+func TestStageLauncherAndWindowsBinLaunchersExports(t *testing.T) {
+	if names := WindowsBinLaunchers(); len(names) != len(windowsBinLaunchers) || names[0] != windowsBinLaunchers[0] {
+		t.Fatalf("names %v", names)
+	}
+	if path := StageLauncher("icebath", t.TempDir(), t.TempDir()); path != "" {
+		t.Fatalf("a root without an install binary staged %q", path)
 	}
 }

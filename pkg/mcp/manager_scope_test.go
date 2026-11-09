@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestStatusScopedShutdownClearsOnlyItsConnectionStatus(t *testing.T) {
+func TestMCPStatusScopedShutdownClearsOnlyItsConnectionStatus(t *testing.T) {
 	resetLedgers(t)
 	k := func(n string) ServerKey { return ServerKey{Name: n} }
 	t0, t1 := time.Unix(1, 0), time.Unix(2, 0)
@@ -48,7 +48,7 @@ func TestStatusScopedShutdownClearsOnlyItsConnectionStatus(t *testing.T) {
 	}
 }
 
-func TestRegisterClearsStaleConnectingOnTimeout(t *testing.T) {
+func TestRegisterMcpServersClearsStaleConnectingOnTimeout(t *testing.T) {
 	_, env := managerHome(t)
 	prev := discoveryWaveTimeout
 	discoveryWaveTimeout = 300 * time.Millisecond

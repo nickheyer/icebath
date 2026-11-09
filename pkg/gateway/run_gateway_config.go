@@ -41,6 +41,11 @@ func loadGatewayConfig(ctx context.Context, configPath string) (cfg map[string]a
 	return loaded
 }
 
+// Effective gateway config.yaml mapping for the CLI packages, empty on any failure
+func LoadGatewayConfigMap(ctx context.Context, configPath string) map[string]any {
+	return loadGatewayConfig(ctx, configPath)
+}
+
 // Profile model of a config or the gateway config, else the claimed welcome trial model
 func resolveGatewayModel(ctx context.Context, cfg map[string]any) string {
 	if cfg == nil {

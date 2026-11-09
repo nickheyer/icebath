@@ -267,3 +267,16 @@ func TestVenvPrefixOfFindsPyvenvCfg(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectVenvDirExport(t *testing.T) {
+	root := t.TempDir()
+	if dir, err := ProjectVenvDir(root); err != nil || dir != "" {
+		t.Fatalf("no venv %q %v", dir, err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".venv"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if dir, err := ProjectVenvDir(root); err != nil || dir != filepath.Join(root, ".venv") {
+		t.Fatalf("dot venv %q %v", dir, err)
+	}
+}

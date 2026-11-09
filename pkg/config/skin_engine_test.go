@@ -165,3 +165,16 @@ func TestBrandingHelpersAndConfigInit(t *testing.T) {
 		t.Fatal(GetActiveSkinName(ctx), GetActivePromptSymbol(ctx, "❯"))
 	}
 }
+
+func TestInstallSkinColorFilterWrapsEveryColorRead(t *testing.T) {
+	InstallSkinColorFilter(strings.ToLower)
+	t.Cleanup(func() { InstallSkinColorFilter(nil) })
+	skin := &SkinConfig{Colors: map[string]any{"banner_title": "#FF0000"}}
+	if skin.GetColor("banner_title", "") != "#ff0000" || skin.GetColor("missing", "#ABCDEF") != "#abcdef" {
+		t.Fatal(skin.GetColor("banner_title", ""), skin.GetColor("missing", "#ABCDEF"))
+	}
+	InstallSkinColorFilter(nil)
+	if skin.GetColor("banner_title", "") != "#FF0000" {
+		t.Fatal("a removed filter must leave colors untouched")
+	}
+}

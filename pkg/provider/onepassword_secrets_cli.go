@@ -16,9 +16,10 @@ const opDocsURL = "https://developer.1password.com/docs/cli/get-started/"
 
 // Version probe, binary lookup and cache clearer of the op CLI, the attributes hermes tests patch
 var (
-	opVersion              = cliVersion
-	findOp                 = FindOp
-	clearOnePasswordCaches = ClearOnePasswordCaches
+	opVersion               = cliVersion
+	findOp                  = FindOp
+	fetchOnePasswordSecrets = FetchOnePasswordSecrets
+	clearOnePasswordCaches  = ClearOnePasswordCaches
 )
 
 // The onepassword section of the loaded config

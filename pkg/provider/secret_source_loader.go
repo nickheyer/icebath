@@ -37,6 +37,8 @@ var (
 	warnedCredentialKeys = map[string]bool{}
 	// Writes secret source status lines, replaced in tests
 	secretStatusPrint = func(line string) { fmt.Fprintln(os.Stderr, line) }
+	// Orchestrated apply pass seam, the registry apply_all hermes tests patch
+	applyAllSecretSourcesFn = ApplyAllSecretSources
 )
 
 func homeKey(h string) string {
@@ -229,7 +231,7 @@ func hydrateProfileSecretSourcesLocked(h string) map[string]string {
 		envBefore[k] = v
 	}
 	environ := MappingSourceEnvironment(local)
-	report, err := ApplyAllSecretSources(cfg, h, environ)
+	report, err := applyAllSecretSourcesFn(cfg, h, environ)
 	if err != nil || len(report.Sources) == 0 {
 		return map[string]string{}
 	}
@@ -542,7 +544,7 @@ func ApplyExternalSecretSources(h string) {
 		staged[k] = v
 	}
 	stagedEnv := MappingSourceEnvironment(staged)
-	report, err := ApplyAllSecretSources(cfg, h, stagedEnv)
+	report, err := applyAllSecretSourcesFn(cfg, h, stagedEnv)
 	if err != nil || len(report.Sources) == 0 {
 		return
 	}

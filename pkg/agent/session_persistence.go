@@ -565,6 +565,11 @@ func (a *AIAgent) persistSession(messages *[]*state.Message, conversationHistory
 	return nil
 }
 
+// Writes the unpersisted transcript messages to the session store, resumed history identity skipped
+func (a *AIAgent) PersistSession(messages *[]*state.Message, conversationHistory []*state.Message) error {
+	return a.persistSession(messages, conversationHistory)
+}
+
 // Pops empty response retry scaffolding from the tail, keeping the tool rows already saved before it
 func (a *AIAgent) dropTrailingEmptyResponseScaffolding(messages *[]*state.Message) {
 	for len(*messages) > 0 {

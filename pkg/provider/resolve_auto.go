@@ -213,6 +213,11 @@ func optionalBaseURLValue(value string) string {
 
 var localModelHosts = map[string]bool{"localhost": true, "127.0.0.1": true}
 
+// Model name of a local server at baseURL when exactly one model is loaded, empty otherwise
+func AutoDetectLocalModel(ctx context.Context, baseURL string) string {
+	return (&resolver{ctx: ctx, http: &http.Client{}}).autoDetectLocalModel(baseURL)
+}
+
 // Queries a local server for its model name when exactly one model is loaded
 func (r *resolver) autoDetectLocalModel(baseURL string) string {
 	if baseURL == "" {
@@ -996,6 +1001,9 @@ func matchesKeyPrefix(providerID, val string) bool {
 func looksLikeOpenRouterKey(value string) bool {
 	return matchesKeyPrefix("openrouter", strings.TrimSpace(value))
 }
+
+// Reports whether a credential has the sk-or- shape of an OpenRouter key
+func LooksLikeOpenRouterKey(value string) bool { return looksLikeOpenRouterKey(value) }
 
 // The value stripped when it is a usable prefix valid secret, empty after warning on a prefix mismatch
 func usableDeclaredSecret(providerID, value, source string) string {
@@ -2257,6 +2265,9 @@ func primaryFailureWording(err *AuthError) (string, string) {
 	}
 	return "auth failed", "Primary auth failed"
 }
+
+// PrimaryFailureWording returns the log phrase and user phrase of a primary provider failure that triggers the fallback chain
+func PrimaryFailureWording(err *AuthError) (string, string) { return primaryFailureWording(err) }
 
 // ResolveRuntimeWithFallback resolves the primary and walks the fallback chain on a credential failure
 func (r *resolver) ResolveRuntimeWithFallback(requested, targetModel, explicitBaseURL, explicitAPIKey string) (*Runtime, map[string]any, error) {

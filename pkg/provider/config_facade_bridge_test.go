@@ -148,3 +148,14 @@ func TestExplicitToolsetKeysUnionsConfigurableAndPluginKeys(t *testing.T) {
 		t.Fatalf("exact union, got %d keys", len(got))
 	}
 }
+
+func TestConfigFacadeStampHooksAndBrowserEnvSourcesExports(t *testing.T) {
+	hooks := ConfigFacadeStampHooks()
+	if hooks.RecordCoreUse == nil || hooks.AdoptAgentBrowserEnv == nil || hooks.WorkerSnapshotActive == nil {
+		t.Fatal("stamp hooks incomplete")
+	}
+	sources := ConfigFacadeBrowserEnvSources(t.TempDir())
+	if sources.HomeDotenv == nil || sources.IsLaunchHome == nil || sources.PMStoreRoots == nil || sources.DeferStartupNotice == nil {
+		t.Fatal("browser env sources incomplete")
+	}
+}

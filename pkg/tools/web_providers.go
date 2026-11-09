@@ -34,6 +34,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/providerregistry"
 )
 
 // Every vendor here caps max_results at 20 server side
@@ -814,16 +815,40 @@ func (b *baseWebProvider) Extract(ctx context.Context, env *Env, urls []string, 
 	return nil, fmt.Errorf("%s does not support extract (override supports_extract)", b.name)
 }
 
-var webRegistry = struct {
-	mu        sync.RWMutex
-	providers map[string]WebProvider
-}{providers: map[string]WebProvider{}}
+var webRegistryLog = slog.Default().With("logger", "agent.web_search_registry")
 
-// RegisterWebProvider adds or replaces a web provider by name
+// Web search providers by name, the global layer plus one layer per profile scope
+var webRegistry = providerregistry.New[WebProvider](providerregistry.Options{Label: "Web", ProviderCls: "WebSearchProvider", Logger: webRegistryLog})
+
+// RegisterWebProvider adds or replaces a web provider by name in the global layer
 func RegisterWebProvider(p WebProvider) {
-	webRegistry.mu.Lock()
-	defer webRegistry.mu.Unlock()
-	webRegistry.providers[p.Name()] = p
+	if err := webRegistry.Register(p, ""); err != nil {
+		panic(err)
+	}
+}
+
+// RegisterWebProviderScoped adds or replaces a web provider in one profile scope, empty for the global layer
+func RegisterWebProviderScoped(p WebProvider, scope string) error {
+	return webRegistry.Register(p, scope)
+}
+
+// Untyped view of the web search registry the plugin context register_web_search_provider drives
+func WebSearchRegistryScoped() providerregistry.ScopedRegistry { return webRegistry.Scoped() }
+
+// Generation pair of the web search registry for the scope env reads
+func WebSearchRegistryGeneration(env *Env) providerregistry.Generation {
+	return webRegistry.RegistryGeneration(context.Background(), webScope(env))
+}
+
+// Clears every web provider registration, for tests only
+func ResetWebRegistryForTests() { webRegistry.ResetForTests() }
+
+// Profile scope the env reads registrations under, the active home when env names none
+func webScope(env *Env) string {
+	if env == nil {
+		return ""
+	}
+	return env.Home
 }
 
 // Normalized plugin key comparison form
@@ -846,33 +871,30 @@ func webPluginDisabled(env *Env, name string) bool {
 	return false
 }
 
-// Registered provider by name, nil when unknown or disabled in config
+// Registered provider by name in the env scope then globally, nil when unknown or disabled in config
 func webProvider(env *Env, name string) WebProvider {
 	if name == "" || webPluginDisabled(env, name) {
 		return nil
 	}
-	webRegistry.mu.RLock()
-	defer webRegistry.mu.RUnlock()
-	return webRegistry.providers[name]
+	return webRegistry.GetProvider(context.Background(), name, webScope(env))
 }
 
-// Every enabled registered provider sorted by name
+// GetWebProvider is the registry get_provider read of the env scope, nil when unknown or disabled in config
+func GetWebProvider(env *Env, name string) WebProvider { return webProvider(env, name) }
+
+// Every enabled provider visible in the env scope sorted by name
 func listWebProviders(env *Env) []WebProvider {
-	webRegistry.mu.RLock()
-	names := make([]string, 0, len(webRegistry.providers))
-	for n := range webRegistry.providers {
-		names = append(names, n)
-	}
-	webRegistry.mu.RUnlock()
-	sort.Strings(names)
-	out := make([]WebProvider, 0, len(names))
-	for _, n := range names {
-		if p := webProvider(env, n); p != nil {
+	out := []WebProvider{}
+	for _, p := range webRegistry.ListProviders(context.Background(), webScope(env)) {
+		if !webPluginDisabled(env, p.Name()) {
 			out = append(out, p)
 		}
 	}
 	return out
 }
+
+// ListWebProviders is the registry list_providers read of the env scope
+func ListWebProviders(env *Env) []WebProvider { return listWebProviders(env) }
 
 // Plugin key of a disabled bundled web plugin that would have served the configured backend
 func disabledWebPluginFor(env *Env, configured, capability string) string {

@@ -236,3 +236,11 @@ func TestPluginsStatePMReadsTheLocalSelection(t *testing.T) {
 		t.Fatalf("absent home %v %v", config, err)
 	}
 }
+
+func TestDependencyHomesExportsTheUnion(t *testing.T) {
+	root, profile := wsHomes(t)
+	homes, err := DependencyHomes(context.Background())
+	if err != nil || !reflect.DeepEqual(homes, []string{root, profile}) {
+		t.Fatalf("homes %v %v", homes, err)
+	}
+}

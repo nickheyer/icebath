@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/providerregistry"
 )
 
 // Characters a shell word may hold without quoting
@@ -285,46 +288,69 @@ type CreateOptions struct {
 	ProbeOnly       bool
 }
 
-// Registered backends by lower case name
-var backendRegistry = struct {
+// Backends shipped in this package by lower case name
+var builtinBackendProviders = struct {
 	sync.RWMutex
 	providers map[string]BackendProvider
 }{providers: map[string]BackendProvider{}}
 
-// RegisterTerminalBackend adds a backend, refusing names reserved by the built in environments
-func RegisterTerminalBackend(p BackendProvider) error {
-	name := strings.ToLower(strings.TrimSpace(p.Name()))
-	if builtinBackends[name] {
-		return fmt.Errorf("Terminal backend name '%s' is reserved for the built-in %s backend and cannot be registered by a plugin", name, name)
-	}
-	backendRegistry.Lock()
-	defer backendRegistry.Unlock()
-	backendRegistry.providers[name] = p
-	return nil
+var terminalEnvRegistryLog = slog.Default().With("logger", "agent.terminal_env_registry")
+
+// Python ValueError a plugin raises by taking a name owned by an in tree backend
+func rejectBuiltinBackendCollision(name string) error {
+	return &providerregistry.ValueError{Message: fmt.Sprintf("Terminal backend name '%s' is reserved for the built-in %s backend and cannot be registered by a plugin", name, name)}
+}
+
+// Plugin terminal backends by lower case name, the global layer plus one layer per profile scope
+var terminalEnvRegistry = providerregistry.New[BackendProvider](providerregistry.Options{
+	Label: "Terminal environment", ProviderCls: "TerminalEnvironmentProvider", Logger: terminalEnvRegistryLog,
+	Normalize: providerregistry.LowerKey, BuiltinNames: builtinBackends, OnBuiltinCollision: rejectBuiltinBackendCollision,
+})
+
+// RegisterTerminalBackend adds a plugin backend to the global layer, refusing names reserved by the built in environments
+func RegisterTerminalBackend(p BackendProvider) error { return terminalEnvRegistry.Register(p, "") }
+
+// RegisterTerminalBackendScoped adds a plugin backend to one profile scope, empty for the global layer
+func RegisterTerminalBackendScoped(p BackendProvider, scope string) error {
+	return terminalEnvRegistry.Register(p, scope)
 }
 
 // Registers a backend shipped in this package under its reserved name
 func registerBuiltinBackend(p BackendProvider) {
-	backendRegistry.Lock()
-	defer backendRegistry.Unlock()
-	backendRegistry.providers[strings.ToLower(strings.TrimSpace(p.Name()))] = p
+	builtinBackendProviders.Lock()
+	defer builtinBackendProviders.Unlock()
+	builtinBackendProviders.providers[strings.ToLower(strings.TrimSpace(p.Name()))] = p
 }
 
-// GetTerminalBackend returns the registered backend or nil
+// Backend shipped in this package under a reserved name, nil for every other name
+func builtinBackend(name string) BackendProvider {
+	builtinBackendProviders.RLock()
+	defer builtinBackendProviders.RUnlock()
+	return builtinBackendProviders.providers[strings.ToLower(strings.TrimSpace(name))]
+}
+
+// GetTerminalBackend returns the built in backend of a name, else the plugin backend of the active scope, else nil
 func GetTerminalBackend(name string) BackendProvider {
-	backendRegistry.RLock()
-	defer backendRegistry.RUnlock()
-	return backendRegistry.providers[strings.ToLower(strings.TrimSpace(name))]
+	return GetTerminalBackendScoped(context.Background(), name, "")
 }
 
-// TerminalBackendNames lists every registered backend name sorted
+// Built in backend of a name, else the plugin backend registered in scope then globally, nil when absent
+func GetTerminalBackendScoped(ctx context.Context, name, scope string) BackendProvider {
+	if p := builtinBackend(name); p != nil {
+		return p
+	}
+	return terminalEnvRegistry.GetProvider(ctx, name, scope)
+}
+
+// TerminalBackendNames lists every built in and active scope plugin backend name sorted
 func TerminalBackendNames() []string {
-	backendRegistry.RLock()
-	defer backendRegistry.RUnlock()
-	names := make([]string, 0, len(backendRegistry.providers))
-	for n := range backendRegistry.providers {
+	builtinBackendProviders.RLock()
+	names := make([]string, 0, len(builtinBackendProviders.providers))
+	for n := range builtinBackendProviders.providers {
 		names = append(names, n)
 	}
+	builtinBackendProviders.RUnlock()
+	names = append(names, PluginBackendNames(context.Background(), "")...)
 	sort.Strings(names)
 	return names
 }

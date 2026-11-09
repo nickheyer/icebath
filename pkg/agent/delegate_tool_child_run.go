@@ -215,7 +215,13 @@ func signalChildStop(child *AIAgent, reason, toolReason string) {
 	delegateQuiet("", func() { RequestHardInterrupt(child, reason, toolReason) })
 }
 
-func diagSection(label string, produce func() ([]string, error)) []string {
+// One diagnostic section, a failing producer rendered as its labelled error line like the hermes except branch
+func diagSection(label string, produce func() ([]string, error)) (lines []string) {
+	defer func() {
+		if r := recover(); r != nil {
+			lines = []string{"  " + label + fmt.Sprint(r) + ">"}
+		}
+	}()
 	lines, err := produce()
 	if err != nil {
 		return []string{"  " + label + err.Error() + ">"}
@@ -516,9 +522,12 @@ func (h *childHeartbeat) tick() bool {
 	if desc == "" {
 		return false
 	}
-	delegateQuiet("", func() { h.parent.TouchActivity(desc) })
+	delegateQuiet("", func() { childHeartbeatTouchFn(h.parent, desc) })
 	return true
 }
+
+// Parent activity touch of a heartbeat, swapped by tests that count the touches
+var childHeartbeatTouchFn = func(parent *AIAgent, desc string) { parent.TouchActivity(desc) }
 
 // Registers the live child in the subagent registry and returns its id, empty when it has none
 func registerChild(ctx context.Context, child, parent *AIAgent, goal, ownerSessionID string, ownerTransport, ownerSessionRecord any) string {
@@ -576,7 +585,7 @@ func deferCloseAfterTimeout(child *AIAgent, done <-chan struct{}) {
 	}()
 	drainOnce := func(phase string) {
 		delegateQuiet(fmt.Sprintf("Timed-out child transport drain (%s) failed", phase), func() {
-			child.drainTransportsAfterAbandonment("delegate_timeout_" + phase)
+			drainChildTransportsFn(child, "delegate_timeout_"+phase)
 		})
 	}
 	drainOnce("immediate")
@@ -588,6 +597,12 @@ func deferCloseAfterTimeout(child *AIAgent, done <-chan struct{}) {
 		}
 	})
 }
+
+// Inactivity cap of one child, swapped by tests that pin a cap below the configured floor
+var childTimeoutFn = tools.ChildTimeout
+
+// Transport drain of a timed out child, swapped by tests that settle a blocked worker read themselves
+var drainChildTransportsFn = func(child *AIAgent, reason string) int { return child.drainTransportsAfterAbandonment(reason) }
 
 // Child conversation and credential swap of the child run, swapped by tests that observe the scope they run in
 var (
@@ -901,6 +916,9 @@ func isImageURL(ref string) bool {
 	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "data:image/")
 }
 
+// Image input mode of the child route, swapped by tests that force native or text forwarding
+var decideImageInputModeFn = tools.DecideImageInputMode
+
 // First user message of a child forwarding images, content parts for a vision child else hint lines
 func buildChildGoalMessage(ctx context.Context, goal string, images []string, child *AIAgent) (msg any) {
 	defer func() {
@@ -925,7 +943,7 @@ func buildChildGoalMessage(ctx context.Context, goal string, images []string, ch
 			paths = append(paths, s)
 		}
 	}
-	mode := tools.DecideImageInputMode(ctx, child.env, child.provider, child.model, child.requestedProvider)
+	mode := decideImageInputModeFn(ctx, child.env, child.provider, child.model, child.requestedProvider)
 	if mode == "native" {
 		parts, skipped, err := tools.BuildNativeContentParts(child.env, goal, paths, urls)
 		if err != nil {
@@ -1130,7 +1148,7 @@ type childOutcome struct {
 // Runs the child's conversation on a worker goroutine, the result or a failure entry with its deferred close flag
 func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 	child, taskIndex := r.child, r.taskIndex
-	childTimeout := tools.ChildTimeout(r.ctx)
+	childTimeout := childTimeoutFn(r.ctx)
 	approval := tools.SubagentApprovalCallback(r.ctx)
 	var userMessage any = r.goal
 	if len(child.delegateImages) > 0 {

@@ -83,6 +83,12 @@ func icebathDirs(env *Env) []string {
 	return out
 }
 
+// IcebathDirs exports the resolved active home and root pair for the context reference guards
+func IcebathDirs(env *Env) []string { return icebathDirs(env) }
+
+// HomeCredentialDirs exports the credential directories under the user home the read guards refuse
+func HomeCredentialDirs() []string { return append([]string(nil), homeCredentialDirs...) }
+
 // Reports whether a raw path uses the Windows NT or device namespace
 func isNTNamespacePath(path string) bool {
 	s := strings.ReplaceAll(path, "/", `\`)
@@ -95,6 +101,9 @@ func isNTNamespacePath(path string) bool {
 	}
 	return false
 }
+
+// IsNTNamespacePath exports the raw Windows namespace check for callers that must never resolve the path
+func IsNTNamespacePath(path string) bool { return isNTNamespacePath(path) }
 
 // Error for an NT or device namespace path, empty otherwise
 func ntNamespaceError(path, verb string) string {

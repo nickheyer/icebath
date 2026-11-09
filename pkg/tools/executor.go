@@ -198,6 +198,7 @@ func inlineToolExecutor(name string) InlineToolExecutor {
 type ExecutorHost interface {
 	Env() *Env
 	SessionID() string
+	SessionDBForRecall(ctx context.Context) *state.DB
 	TurnID() string
 	APIRequestID() string
 	ValidToolNames() map[string]bool
@@ -379,6 +380,11 @@ type ToolCallRef struct {
 	TaskID  string
 	CallID  string
 	Trace   []map[string]any
+}
+
+// Middleware input carrying this call's name, args, ids and trace
+func (r *ToolCallRef) middlewareKwargs() managedInput {
+	return managedInput{name: r.Name, args: r.Args, taskID: r.TaskID, toolCallID: r.CallID, trace: r.Trace}
 }
 
 // Emits the one terminal post tool call for this call
@@ -1264,14 +1270,19 @@ type skipOptions struct {
 	hasFlushStage      bool
 }
 
+// Function name of a tool call, tool when the call carries none
+func tcName(tc state.ToolCall) string {
+	if tc.Function.Name == "" {
+		return "tool"
+	}
+	return tc.Function.Name
+}
+
 // Appends one tool result per unstarted call so the assistant turn never lacks matching results
 func (e *Executor) appendSkippedToolResults(ctx context.Context, messages *[]*state.Message, toolCalls []state.ToolCall, taskID string, opts skipOptions) bool {
 	wording := InterruptSkipWording(e.Host.ToolInterruptReason())
 	for _, tc := range toolCalls {
-		name := tc.Function.Name
-		if name == "" {
-			name = "tool"
-		}
+		name := tcName(tc)
 		result := strings.ReplaceAll(opts.content, "{name}", name)
 		*messages = append(*messages, MakeToolResultMessage(name, result, state.CoalesceToolCallID(tc), "none"))
 		if opts.hookErrorType != "" {
@@ -1441,11 +1452,12 @@ func (b *concurrentBatch) dispatchWorker(ctx context.Context, index int, ref *To
 	blocked, dispatched := false, false
 	var dataUse []string
 	var result string
-	managed, err := e.runToolExecutionMiddleware(ctx, managedInput{name: ref.Name, args: ref.Args, taskID: ref.TaskID, toolCallID: ref.CallID,
-		execute: func(ctx context.Context, next map[string]any) (string, error) {
-			return e.invokeTool(ctx, ref.Name, next, ref.RawArgs, ref.TaskID, ref.CallID, b.messages, ref.Trace)
-		},
-		scopeBlock: scopeBlock, displayIndex: index + 1, trace: ref.Trace, beginExecution: startGate.advance, gate: b.authGate})
+	in := ref.middlewareKwargs()
+	in.execute = func(ctx context.Context, next map[string]any) (string, error) {
+		return e.invokeTool(ctx, ref.Name, next, ref.RawArgs, ref.TaskID, ref.CallID, b.messages, ref.Trace)
+	}
+	in.scopeBlock, in.displayIndex, in.beginExecution, in.gate = scopeBlock, index+1, startGate.advance, b.authGate
+	managed, err := e.runToolExecutionMiddleware(ctx, in)
 	if errors.Is(err, errBatchAbandoned) {
 		toolsLogger(e.Host.Env()).Info("tool abandoned at start-order gate; skipping dispatch", "tool", ref.Name)
 		return nil
@@ -1617,6 +1629,29 @@ func waitAll(ctx context.Context, done []chan struct{}, timeout time.Duration) {
 	}
 }
 
+// Terminal post tool call for a worker the sequential runner gave up on and its cancelled or timed out result
+func (e *Executor) abandonedSequentialResult(ctx context.Context, ref *ToolCallRef, message string, durationMs int, status, errorType, errorMessage string, cancelled bool) *ManagedToolResult {
+	e.emitPost(ctx, ref, message, durationMs, status, errorType, errorMessage, nil)
+	return &ManagedToolResult{Result: message, Args: ref.Args, Trace: ref.Trace, Dispatched: true, Cancelled: cancelled, TimedOut: !cancelled}
+}
+
+// Starts every runnable slot on a bounded goroutine, returning the done channels in submit order
+func (b *concurrentBatch) submitAll(ctx context.Context, runnable []int, maxWorkers int) []chan struct{} {
+	sem := make(chan struct{}, maxWorkers)
+	done := make([]chan struct{}, len(runnable))
+	for submitIndex, i := range runnable {
+		ch := make(chan struct{})
+		done[submitIndex] = ch
+		go func(index, order int, ch chan struct{}) {
+			defer close(ch)
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			b.runWorker(ctx, index, order)
+		}(i, submitIndex, ch)
+	}
+	return done
+}
+
 // Dispatches the runnable calls on bounded goroutines and waits for the batch
 func (b *concurrentBatch) run(ctx context.Context) error {
 	var runnable []int
@@ -1634,19 +1669,7 @@ func (b *concurrentBatch) run(ctx context.Context) error {
 	for k, i := range runnable {
 		names[k] = b.parsed[i].Name
 	}
-	maxWorkers := maxWorkersForToolBatch(b.exec.Host.Env(), names)
-	sem := make(chan struct{}, maxWorkers)
-	done := make([]chan struct{}, len(runnable))
-	for submitIndex, i := range runnable {
-		ch := make(chan struct{})
-		done[submitIndex] = ch
-		go func(index, order int, ch chan struct{}) {
-			defer close(ch)
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			b.runWorker(ctx, index, order)
-		}(i, submitIndex, ch)
-	}
+	done := b.submitAll(ctx, runnable, maxWorkersForToolBatch(b.exec.Host.Env(), names))
 	abandoned, err := b.awaitCompletion(ctx, done, runnable, deadline, hasDeadline)
 	if abandoned {
 		b.gate.Abandon()
@@ -2061,13 +2084,11 @@ func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in 
 		}
 		message = fmt.Sprintf("[Tool execution cancelled — %s was abandoned: %s]", in.name, reason)
 		toolsLogger(env).Info("sequential tool abandoned", "tool", in.name, "reason", reason, "seconds", fmt.Sprintf("%.1f", time.Since(started).Seconds()))
-		e.emitPost(ctx, ref, message, int(time.Since(started).Milliseconds()), "cancelled", "tool_interrupted", "Tool execution cancelled: "+reason, nil)
-		managed = &ManagedToolResult{Result: message, Args: ref.Args, Trace: ref.Trace, Dispatched: true, Cancelled: true}
+		managed = e.abandonedSequentialResult(ctx, ref, message, int(time.Since(started).Milliseconds()), "cancelled", "tool_interrupted", "Tool execution cancelled: "+reason, true)
 	} else {
 		message = fmt.Sprintf("Error executing tool '%s': timed out after %.1fs", in.name, timeout.Seconds())
 		toolsLogger(env).Warn("sequential tool timed out", "tool", in.name, "seconds", fmt.Sprintf("%.1f", timeout.Seconds()))
-		e.emitPost(ctx, ref, message, int(timeout.Milliseconds()), "timeout", "tool_timeout", message, nil)
-		managed = &ManagedToolResult{Result: message, Args: ref.Args, Trace: ref.Trace, Dispatched: true, TimedOut: true}
+		managed = e.abandonedSequentialResult(ctx, ref, message, int(timeout.Milliseconds()), "timeout", "tool_timeout", message, false)
 	}
 	if prepared != nil {
 		prepared.batch.close()
@@ -2098,8 +2119,9 @@ func (e *Executor) runSequentialCall(ctx context.Context, dispatch *sequentialDi
 	host := e.Host
 	var spinnerResult any
 	var raised error
-	managed, err := e.runSequentialToolExecutionMiddleware(ctx, managedInput{name: ref.Name, args: ref.Args, taskID: ref.TaskID, toolCallID: ref.CallID,
-		execute: dispatch.execute, scopeBlock: scopeBlock, displayIndex: displayIndex, trace: dispatch.trace}, prepared)
+	in := ref.middlewareKwargs()
+	in.execute, in.scopeBlock, in.displayIndex, in.trace = dispatch.execute, scopeBlock, displayIndex, dispatch.trace
+	managed, err := e.runSequentialToolExecutionMiddleware(ctx, in, prepared)
 	switch {
 	case err == nil:
 		ref.Args = managed.Args

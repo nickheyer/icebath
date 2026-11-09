@@ -133,7 +133,7 @@
 - [x] hermes_platform/host/runtime.py
 - [x] hermes_platform/host/summary.py
 
-### 5. pkg/provider: 91% (305 of 334 files completed)
+### 5. pkg/provider: 98% (328 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
 - [x] agent/account_usage.py
 - [x] agent/account_usage_cache.py
@@ -148,7 +148,7 @@
 - [x] agent/aux_accounting.py
 - [x] agent/auxiliary_async_rebuild.py
 - [x] agent/auxiliary_call_outcome.py
-- [ ] agent/auxiliary_client.py
+- [x] agent/auxiliary_client.py
 - [x] agent/auxiliary_client_registry.py
 - [x] agent/auxiliary_codex_response.py
 - [x] agent/auxiliary_error_shapes.py
@@ -175,7 +175,7 @@
 - [x] agent/bounded_response.py
 - [x] agent/cache_bounds.py
 - [x] agent/chat_completion_headers.py
-- [ ] agent/chat_completion_helpers.py
+- [x] agent/chat_completion_helpers.py
 - [x] agent/chat_completion_helpers_relay.py
 - [x] agent/chat_completion_helpers_tool_calls.py
 - [x] agent/chat_completion_local.py
@@ -293,7 +293,7 @@
 - [x] hermes_cli/auth.py
 - [x] hermes_cli/auth_codex.py
 - [x] hermes_cli/auth_codex_browser.py
-- [ ] hermes_cli/auth_commands.py
+- [x] hermes_cli/auth_commands.py
 - [x] hermes_cli/auth_constants.py
 - [x] hermes_cli/auth_device_flow.py
 - [x] hermes_cli/auth_error_copy.py
@@ -314,13 +314,13 @@
 - [x] hermes_cli/codex_runtime_plugin_migration.py
 - [x] hermes_cli/codex_runtime_switch.py
 - [x] hermes_cli/credential_lifecycle.py
-- [ ] hermes_cli/env_loader.py
+- [x] hermes_cli/env_loader.py
 - [x] hermes_cli/fallback_cmd.py
 - [x] hermes_cli/fallback_config.py
 - [x] hermes_cli/free_tier_bootstrap.py
 - [x] hermes_cli/free_tier_offer.py
 - [x] hermes_cli/guest_handoff.py
-- [ ] hermes_cli/left_core_migration.py
+- [x] hermes_cli/left_core_migration.py
 - [x] hermes_cli/local_runtime/__init__.py
 - [x] hermes_cli/local_runtime/binaries.py
 - [x] hermes_cli/local_runtime/bootstrap.py
@@ -349,13 +349,13 @@
 - [x] hermes_cli/model_picker_usage.py
 - [x] hermes_cli/model_search.py
 - [x] hermes_cli/model_selection_guards.py
-- [ ] hermes_cli/model_setup.py
-- [ ] hermes_cli/model_setup_flows.py
-- [ ] hermes_cli/model_setup_flows_azure.py
-- [ ] hermes_cli/model_setup_flows_bedrock.py
-- [ ] hermes_cli/model_setup_flows_common.py
-- [ ] hermes_cli/model_setup_flows_custom.py
-- [ ] hermes_cli/model_setup_flows_local.py
+- [x] hermes_cli/model_setup.py
+- [x] hermes_cli/model_setup_flows.py
+- [x] hermes_cli/model_setup_flows_azure.py
+- [x] hermes_cli/model_setup_flows_bedrock.py
+- [x] hermes_cli/model_setup_flows_common.py
+- [x] hermes_cli/model_setup_flows_custom.py
+- [x] hermes_cli/model_setup_flows_local.py
 - [ ] hermes_cli/model_switch.py
 - [x] hermes_cli/model_switch_providers.py
 - [x] hermes_cli/models.py
@@ -374,9 +374,9 @@
 - [x] hermes_cli/onepassword_secrets_cli.py
 - [x] hermes_cli/partial_compress.py
 - [x] hermes_cli/profile_channels.py
-- [ ] hermes_cli/profile_cmd.py
+- [x] hermes_cli/profile_cmd.py
 - [x] hermes_cli/profile_describer.py
-- [ ] hermes_cli/profile_distribution.py
+- [x] hermes_cli/profile_distribution.py
 - [x] hermes_cli/profile_identity.py
 - [x] hermes_cli/profile_model_seed.py
 - [ ] hermes_cli/profiles.py
@@ -408,18 +408,18 @@
 - [x] hermes_cli/secrets_cli.py
 - [x] hermes_cli/shared_profile_warning.py
 - [x] hermes_cli/status_auth.py
-- [ ] hermes_cli/subcommands/auth.py
-- [ ] hermes_cli/subcommands/egress.py
-- [ ] hermes_cli/subcommands/fallback.py
-- [ ] hermes_cli/subcommands/login.py
-- [ ] hermes_cli/subcommands/logout.py
-- [ ] hermes_cli/subcommands/moa.py
-- [ ] hermes_cli/subcommands/model.py
+- [x] hermes_cli/subcommands/auth.py
+- [x] hermes_cli/subcommands/egress.py
+- [x] hermes_cli/subcommands/fallback.py
+- [x] hermes_cli/subcommands/login.py
+- [x] hermes_cli/subcommands/logout.py
+- [x] hermes_cli/subcommands/moa.py
+- [x] hermes_cli/subcommands/model.py
 - [ ] hermes_cli/subcommands/peer.py
 - [x] hermes_cli/subcommands/profile.py
 - [x] hermes_cli/subcommands/secrets.py
-- [ ] hermes_cli/subcommands/usage.py
-- [ ] hermes_cli/subcommands/vault.py
+- [x] hermes_cli/subcommands/usage.py
+- [x] hermes_cli/subcommands/vault.py
 - [x] hermes_cli/timeouts.py
 - [x] hermes_cli/url_utils.py
 - [x] hermes_cli/urllib_security.py
@@ -470,10 +470,10 @@
 - [x] providers/__init__.py
 - [x] providers/base.py
 
-### 6. pkg/tools: 95% (267 of 279 files completed)
+### 6. pkg/tools: 98% (275 of 279 files completed)
 #### Tool registry, approval, terminal backends, file ops, search, web, vision, checkpoints
 - [x] agent/async_utils.py
-- [ ] agent/background_review.py
+- [x] agent/background_review.py
 - [x] agent/coding_context.py
 - [x] agent/compression_marker.py
 - [x] agent/delegation_backends.py
@@ -510,13 +510,13 @@
 - [x] agent/thread_scoped_output.py
 - [x] agent/tool_call_batches.py
 - [x] agent/tool_dispatch_helpers.py
-- [ ] agent/tool_executor.py
+- [x] agent/tool_executor.py
 - [x] agent/tool_guardrails.py
 - [x] agent/tool_progress_relay.py
 - [x] agent/tool_result_classification.py
 - [x] agent/verification_evidence.py
 - [x] agent/verification_stop.py
-- [ ] hermes_cli/_launchers.py
+- [x] hermes_cli/_launchers.py
 - [x] hermes_cli/approval_mode.py
 - [x] hermes_cli/approval_transport.py
 - [x] hermes_cli/approvals_suggest.py
@@ -567,7 +567,7 @@
 - [x] hermes_platform/resolver/base.py
 - [x] hermes_platform/resolver/core.py
 - [x] hermes_platform/resolver/known_dirs.py
-- [ ] model_tools.py
+- [x] model_tools.py
 - [x] plugins/web/_common.py
 - [x] plugins/web/brave_free/__init__.py
 - [x] plugins/web/brave_free/provider.py
@@ -606,7 +606,7 @@
 - [x] tools/approval_smart.py
 - [x] tools/approval_yolo.py
 - [x] tools/arg_coercion.py
-- [ ] tools/async_delegation.py
+- [x] tools/async_delegation.py
 - [x] tools/async_delegation_recovery_hints.py
 - [x] tools/async_delegation_worker.py
 - [x] tools/binary_extensions.py
@@ -623,7 +623,7 @@
 - [x] tools/credential_files.py
 - [x] tools/daemon_pool.py
 - [x] tools/debug_helpers.py
-- [ ] tools/delegate_tool.py
+- [x] tools/delegate_tool.py
 - [x] tools/delegate_tool_child_run.py
 - [x] tools/delegate_tool_config.py
 - [x] tools/delegate_tool_dispatch.py
@@ -702,10 +702,10 @@
 - [x] tools/read_preview_tool.py
 - [x] tools/read_terminal_tool.py
 - [x] tools/read_window_tool.py
-- [ ] tools/registry.py
+- [x] tools/registry.py
 - [x] tools/schema_sanitizer.py
 - [x] tools/self_repo_guard.py
-- [ ] tools/session_search_tool.py
+- [x] tools/session_search_tool.py
 - [x] tools/set_theme_tool.py
 - [x] tools/shell_heredoc.py
 - [x] tools/spill_safety.py
@@ -1109,7 +1109,7 @@
 - [x] tools/plugin_guard.py
 - [x] tools/plugin_guard_context.py
 
-### 14. pkg/mcp: 97% (34 of 35 files completed)
+### 14. pkg/mcp: 100% (35 of 35 files completed)
 #### MCP sessions, transports, OAuth, config, server lifecycle, tool registration, catalog
 - [x] hermes_cli/mcp_catalog.py
 - [x] hermes_cli/mcp_config.py
@@ -1126,7 +1126,7 @@
 - [x] tools/mcp_oauth_manager.py
 - [x] tools/mcp_oauth_provider.py
 - [x] tools/mcp_schema_cache.py
-- [ ] tools/mcp_tool.py
+- [x] tools/mcp_tool.py
 - [x] tools/mcp_tool_agent.py
 - [x] tools/mcp_tool_common.py
 - [x] tools/mcp_tool_config.py
@@ -1898,7 +1898,7 @@
 - [ ] tools/computer_use/tool.py
 - [ ] tools/computer_use_tool.py
 
-### 21. pkg/app: 5% (4 of 71 files completed)
+### 21. pkg/app: 9% (7 of 71 files completed)
 #### Interactive TUI session driver, docks, streaming, modals, desktop app
 - [ ] hermes_cli/banner.py
 - [ ] hermes_cli/bundled_app.py
@@ -1911,7 +1911,7 @@
 - [ ] hermes_cli/cli_chat_turn_mixin.py
 - [ ] hermes_cli/cli_commands_mixin.py
 - [ ] hermes_cli/cli_commands_session_tools.py
-- [ ] hermes_cli/cli_config_load.py
+- [x] hermes_cli/cli_config_load.py
 - [ ] hermes_cli/cli_enter_burst.py
 - [ ] hermes_cli/cli_footer_split.py
 - [ ] hermes_cli/cli_info_lines.py
@@ -1952,7 +1952,7 @@
 - [ ] hermes_cli/desktop_plugin_install.py
 - [ ] hermes_cli/desktop_release_holders.py
 - [ ] hermes_cli/desktop_update_verify.py
-- [ ] hermes_cli/focus_view.py
+- [x] hermes_cli/focus_view.py
 - [ ] hermes_cli/gui_uninstall.py
 - [ ] hermes_cli/linux_desktop_entry.py
 - [ ] hermes_cli/macos_tcc_anchor.py
@@ -1969,10 +1969,10 @@
 - [ ] hermes_cli/suggestions_cmd.py
 - [ ] hermes_cli/terminal_breadcrumbs.py
 - [ ] hermes_cli/terminal_notify.py
-- [ ] hermes_cli/tips.py
+- [x] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 8% (13 of 161 files completed)
+### 22. cmd/icebath: 8% (14 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -2060,7 +2060,7 @@
 - [ ] hermes_cli/status_bar_git.py
 - [ ] hermes_cli/status_report.py
 - [ ] hermes_cli/stderr_timestamp.py
-- [ ] hermes_cli/stdio.py
+- [x] hermes_cli/stdio.py
 - [ ] hermes_cli/subcommands/__init__.py
 - [ ] hermes_cli/subcommands/_shared.py
 - [ ] hermes_cli/subcommands/browser.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 20% (158 of 760 files completed)
+### 24. gateway: 20% (159 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2733,7 +2733,7 @@
 - [ ] hermes_cli/ssh_workspace_fs.py
 - [ ] hermes_cli/staged_uploads.py
 - [ ] hermes_cli/steward.py
-- [ ] hermes_cli/stream_json.py
+- [x] hermes_cli/stream_json.py
 - [ ] hermes_cli/subcommands/acp.py
 - [ ] hermes_cli/subcommands/connectors.py
 - [ ] hermes_cli/subcommands/dashboard.py

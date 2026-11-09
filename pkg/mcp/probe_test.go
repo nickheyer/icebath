@@ -24,14 +24,16 @@ func probeHome(t *testing.T, servers map[string]any) *tools.Env {
 	return &tools.Env{Home: h}
 }
 
-func TestProbeReturnsEmptyWhenNoServerIsEnabled(t *testing.T) {
-	env := probeHome(t, map[string]any{})
-	if got := Probe(context.Background(), env); len(got) != 0 {
-		t.Fatalf("got %v", got)
+// test_mcp_probe.py TestProbeMcpServerTools test_returns_empty_when_mcp_not_available
+func TestProbeMcpServerToolsReturnsEmptyWhenMcpNotAvailable(t *testing.T) {
+	env := probeHome(t, map[string]any{"github": map[string]any{"command": mockBinary(t), "connect_timeout": 5}})
+	closeSDKGate(t)
+	if got := Probe(context.Background(), env); len(got) != 0 || serverSpawned("github") {
+		t.Fatalf("got %v spawned %v", got, serverSpawned("github"))
 	}
 }
 
-func TestProbeFailedServerOmittedFromResults(t *testing.T) {
+func TestProbeMcpServerToolsFailedServerOmittedFromResults(t *testing.T) {
 	env := probeHome(t, map[string]any{
 		"github": map[string]any{"command": mockBinary(t), "connect_timeout": 5},
 		"broken": map[string]any{"command": filepath.Join(t.TempDir(), "nonexistent"), "connect_timeout": 5},
@@ -51,7 +53,7 @@ func TestProbeFailedServerOmittedFromResults(t *testing.T) {
 	}
 }
 
-func TestProbeSkipsDisabledServers(t *testing.T) {
+func TestProbeMcpServerToolsSkipsDisabledServers(t *testing.T) {
 	rec := filepath.Join(t.TempDir(), "disabled.log")
 	env := probeHome(t, map[string]any{
 		"github":       map[string]any{"command": mockBinary(t), "connect_timeout": 5},

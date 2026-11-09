@@ -100,6 +100,14 @@ func bindHostCommands(cli *commands.CLI) {
 	}
 }
 
+// Argparse dest value of a subcommand word, None when the group ran bare
+func nilWhenEmpty(word string) any {
+	if word == "" {
+		return nil
+	}
+	return word
+}
+
 // Flag values of a cobra command as the argparse namespace the group handlers read
 func namespace(cli *commands.CLI, cmd *cobra.Command, path string, args []string) map[string]any {
 	return cli.Namespace(cmd, args)
@@ -110,11 +118,23 @@ func acpGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path s
 }
 
 func approvalsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return tools.ApprovalsCommand(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout(), cmd.ErrOrStderr())
+	ns := namespace(cli, cmd, path, args)
+	ns["approvals_command"] = nilWhenEmpty(secondWord(path))
+	return tools.ApprovalsCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
+// Runs icebath auth with the subcommand under its argparse dest and --type under auth_type
 func authGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return provider.AuthCommand(ctx, provider.HomePoolEnv(home.Dir(ctx)), namespace(cli, cmd, path, args), cmd.OutOrStdout(), cmd.ErrOrStderr())
+	ns := namespace(cli, cmd, path, args)
+	ns["auth_action"] = nil
+	if words := strings.Fields(path); len(words) > 1 {
+		ns["auth_action"] = words[1]
+	}
+	if v, ok := ns["type"]; ok {
+		ns["auth_type"] = v
+		delete(ns, "type")
+	}
+	return provider.AuthCommand(ctx, provider.HomePoolEnv(home.Dir(ctx)), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func backupGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -162,7 +182,9 @@ func completionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command,
 }
 
 func connectorsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return mcp.ConnectorsCommand(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["connectors_action"] = nilWhenEmpty(secondWord(path))
+	return mcp.ConnectorsCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func consoleGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -170,7 +192,9 @@ func consoleGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pa
 }
 
 func curatorGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return memory.CuratorCommand(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["curator_command"] = nilWhenEmpty(secondWord(path))
+	return memory.CuratorCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
 func dashboardGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -248,7 +272,9 @@ func gatewayGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pa
 }
 
 func journeyGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return memory.JourneyCommand(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["journey_action"] = nilWhenEmpty(secondWord(path))
+	return memory.JourneyCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
 func kanbanGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -268,8 +294,14 @@ func logsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path 
 		Level: nsString(ns, "level"), Session: nsString(ns, "session"), Since: nsString(ns, "since"), Component: nsString(ns, "component")})
 }
 
+// Runs icebath migrate with the subtype under migrate_type and an importer name also under migrate_agent
 func migrateGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return state.MigrateCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["migrate_type"] = nilWhenEmpty(secondWord(path))
+	if agent, ok := ns["migrate_type"].(string); ok && plugins.IsImportSourceName(agent) {
+		ns["migrate_agent"] = agent
+	}
+	return plugins.MigrateCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func modelGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -312,7 +344,9 @@ func portalGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 }
 
 func projectGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return tools.ProjectsCommand(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["project_action"] = nilWhenEmpty(secondWord(path))
+	return tools.ProjectsCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func promptSizeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -378,9 +412,9 @@ func cmdSetup(a *chatArgs) int {
 	return provider.RunSetupWizard(context.Background(), map[string]any{})
 }
 
-// Resume shortcut, hermes_cli/subcommands/sessions.py resume
+// Lifts the emergency stop, hermes_cli/subcommands/pause.py cmd_resume
 func cmdResume(ctx context.Context, cmd *cobra.Command, args []string) (int, error) {
-	return state.ResumeCommand(ctx, home.Dir(ctx), args, cmd.OutOrStdout())
+	return tools.ResumeCommand(ctx, home.Dir(ctx), args, cmd.OutOrStdout())
 }
 
 func slackGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -392,7 +426,9 @@ func statusGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 }
 
 func toolsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return tools.CmdTools(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["tools_action"] = nilWhenEmpty(secondWord(path))
+	return tools.CmdTools(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
 func uninstallGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -437,7 +473,7 @@ func vaultGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path
 }
 
 func verifyGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return plugins.RunVerifyCommand(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout()), nil
+	return plugins.RunVerifyCommand(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
 }
 
 func webappGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

@@ -101,6 +101,7 @@ type childBuildSpec struct {
 	RoutingCfg               map[string]any
 	OverrideReasoningEffort  any
 	ProfileHome              string
+	Toolsets                 []string
 }
 
 // Profile home of the live transcripts from the parent's session db path, empty for the ambient resolve
@@ -350,6 +351,9 @@ func oneshotSpawnBudget(ctx context.Context, parent *AIAgent, requested int) str
 
 func delegateToolError(msg string) string { return tools.ErrorResult(errors.New(msg)) }
 
+// Live transcript creator of a batch, swapped by tests that lose a writer
+var createLiveTranscriptsFn = createLiveTranscripts
+
 // Spawns children for a goal or task batch, or runs a list, steer or stop control action
 func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (string, error) {
 	if parent == nil {
@@ -450,7 +454,7 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 	}
 	overallStart := time.Now()
 	liveHome := parentLiveHome(parent)
-	liveDelegID, liveWriters, livePaths := createLiveTranscripts(ctx, taskList, kwargs["context"], creds["model"], creds["provider"], liveHome)
+	liveDelegID, liveWriters, livePaths := createLiveTranscriptsFn(ctx, taskList, kwargs["context"], creds["model"], creds["provider"], liveHome)
 	if len(refused) > 0 {
 		settleRefusedTranscripts(refused, liveDelegID, liveWriters, liveHome)
 	}

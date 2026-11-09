@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestLazyCheckFnPassesForLazyRegisteredServer(t *testing.T) {
+func TestLazyFirstUseConnectCheckFnPassesForLazyRegisteredServer(t *testing.T) {
 	_, env := managerHome(t)
 	key := ServerKey{Name: "playwright"}
 	mcpMu.Lock()
@@ -22,7 +22,7 @@ func TestLazyCheckFnPassesForLazyRegisteredServer(t *testing.T) {
 	}
 }
 
-func TestLazyCheckFnFailsForUnknownServer(t *testing.T) {
+func TestLazyFirstUseConnectCheckFnFailsForUnknownServer(t *testing.T) {
 	_, env := managerHome(t)
 	if makeCheckFn("nope")(env) {
 		t.Fatal("an unknown server must fail its check")

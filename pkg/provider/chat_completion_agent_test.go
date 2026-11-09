@@ -189,29 +189,7 @@ func stallingChatClient(a *fakeChatAgent) *fakeChatClient {
 	return c
 }
 
-func TestInlineCodexKeepsTheLargeContextStaleFloorAndLocalKeepsItsBudget(t *testing.T) {
-	t.Setenv("ICEBATH_CODEX_HARD_TIMEOUT_SECONDS", "1500")
-	kw := map[string]any{"model": "gpt-5.5", "input": []any{map[string]any{"role": "user", "content": strings.Repeat("x ", 60000)}}}
-	hosted := &fakeChatAgent{provider: "openai-codex", apiMode: "codex_responses", baseURL: "https://chatgpt.com/backend-api/codex", plat: "cron",
-		resolve: func(map[string]any) (any, error) { return 90.0, nil }}
-	if !ShouldUseDirectAPICall(t.Context(), hosted.provider, hosted.plat, ModeCodexResponses) {
-		t.Fatal("cron codex must run inline")
-	}
-	if got, err := ResolveDirectStaleTimeout(t.Context(), hosted, kw); err != nil || got < 600 {
-		t.Fatalf("hosted %v %v", got, err)
-	}
-	local := &fakeChatAgent{provider: "custom", apiMode: "codex_responses", baseURL: "http://127.0.0.1:8080/v1", plat: "cron",
-		resolve: func(map[string]any) (any, error) { return 3000.0, nil }}
-	if got, err := ResolveDirectStaleTimeout(t.Context(), local, kw); err != nil || got != 3000 {
-		t.Fatalf("local %v %v", got, err)
-	}
-	fakeAgent := &fakeChatAgent{apiMode: "chat_completions", resolve: func(map[string]any) (any, error) { return true, nil }}
-	if got, _ := ResolveDirectStaleTimeout(t.Context(), fakeAgent, kw); got <= 1e300 {
-		t.Fatalf("non numeric budget must disarm, got %v", got)
-	}
-}
-
-func TestRetryAfterAnInlineWatchdogKillGetsAFreshClientAndSucceeds(t *testing.T) {
+func TestRetryAfterAWatchdogKillGetsAFreshPoolAndSucceeds(t *testing.T) {
 	a := cronChatAgent(0.2)
 	stallingChatClient(a)
 	_, err := DirectAPICall(t.Context(), a, map[string]any{"model": "m", "messages": []any{}})
@@ -267,7 +245,7 @@ func TestTimerFiringBeforeClientRegistrationFailsTheDispatch(t *testing.T) {
 	}
 }
 
-func TestDirectStaleResolverErrorPropagates(t *testing.T) {
+func TestResolverExceptionPropagatesInsteadOfDisarmingTheWatchdog(t *testing.T) {
 	a := cronChatAgent(0.2)
 	a.resolve = func(map[string]any) (any, error) { return nil, errors.New("resolver regression") }
 	a.create = func(string, map[string]any) (any, error) {
@@ -279,7 +257,7 @@ func TestDirectStaleResolverErrorPropagates(t *testing.T) {
 	}
 }
 
-func TestDirectAPICallHeartbeatStopsOnError(t *testing.T) {
+func TestDirectApiCallHeartbeatStopsOnException(t *testing.T) {
 	prev := directAPIActivityHeartbeat
 	directAPIActivityHeartbeat = 50 * time.Millisecond
 	t.Cleanup(func() { directAPIActivityHeartbeat = prev })
@@ -303,7 +281,7 @@ func TestDirectAPICallHeartbeatStopsOnError(t *testing.T) {
 	}
 }
 
-func TestDirectAPICallInterruptAbortsTheActiveClientAndRaises(t *testing.T) {
+func TestDirectApiCallInterruptAbortsActiveClientAndRaises(t *testing.T) {
 	a := cronChatAgent(nil)
 	ready := make(chan struct{})
 	release := make(chan struct{})
@@ -338,6 +316,9 @@ func TestDirectAPICallInterruptAbortsTheActiveClientAndRaises(t *testing.T) {
 	var ie *InterruptedError
 	if !errors.As(err, &ie) || err.Error() != "Agent interrupted during API call" || a.retry.StaleStreak() != 0 {
 		t.Fatalf("err %v", err)
+	}
+	if a.ActiveRequestAbort() != nil {
+		t.Fatal("the abort hook must be unregistered after the call")
 	}
 }
 

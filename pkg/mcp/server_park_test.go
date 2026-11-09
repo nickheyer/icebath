@@ -114,7 +114,23 @@ func TestParkRecordsReasonAndProvenSessionClearsIt(t *testing.T) {
 	}
 }
 
-func TestLoopNotRunningPathClearsCooldownState(t *testing.T) {
+// test_mcp_bridge_single_failure.py TestShutdownClearsCooldownState test_fast_path_clears_cooldown_state
+func TestShutdownClearsCooldownStateFastPathClearsCooldownState(t *testing.T) {
+	_, _ = managerHome(t)
+	ctx := context.Background()
+	ensureMCPLoop()
+	mcpMu.Lock()
+	recordConnectFailure(ctx, "bad")
+	mcpMu.Unlock()
+	ShutdownMCPServers(ctx, nil, nil, time.Second)
+	mcpMu.Lock()
+	defer mcpMu.Unlock()
+	if len(serverConnectRetryAfter) != 0 || len(serverConnectFailures) != 0 {
+		t.Fatalf("cooldown state survived the fast path %v %v", serverConnectRetryAfter, serverConnectFailures)
+	}
+}
+
+func TestShutdownClearsCooldownStateLoopNotRunningPathClearsCooldownState(t *testing.T) {
 	_, env := managerHome(t)
 	ctx := context.Background()
 	mcpMu.Lock()

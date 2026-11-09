@@ -55,3 +55,8 @@ func nousPortalTags(ctx context.Context, sessionID string) []string {
 	}
 	return tags
 }
+
+// Exported fresh Nous Portal tag list for packages that assert the tags an agent request carries
+func NousPortalTags(ctx context.Context, sessionID string) []string {
+	return nousPortalTags(ctx, sessionID)
+}

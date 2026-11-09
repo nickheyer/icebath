@@ -103,6 +103,12 @@ func newRelayChatAccumulator() *relayChatAccumulator {
 	return &relayChatAccumulator{tools: newCCToolCallAccumulator(), role: "assistant"}
 }
 
+// RelayChatAccumulator folds relayed chat completion chunks into one response payload
+type RelayChatAccumulator = relayChatAccumulator
+
+// NewRelayChatAccumulator is an empty accumulator ready to observe relayed chunks
+func NewRelayChatAccumulator() *RelayChatAccumulator { return newRelayChatAccumulator() }
+
 // Python list extend items of a value, a dict yielding its keys and a string its characters
 func relayExtendItems(v any) []any {
 	switch t := v.(type) {

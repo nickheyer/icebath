@@ -47,7 +47,7 @@ func registerDef(name, toolset string, h Handler) Def {
 }
 
 // Every handler receives the injected task, session and user task through the one Call it is handed
-func TestDispatchHandsEveryHandlerTheInjectedCallFields(t *testing.T) {
+func TestDispatchWithholdsInjectedKwargsFromNarrowPluginHandler(t *testing.T) {
 	r := NewRegistry()
 	seen := map[string]*Call{}
 	var mu sync.Mutex
@@ -73,8 +73,7 @@ func TestDispatchHandsEveryHandlerTheInjectedCallFields(t *testing.T) {
 	}
 }
 
-// A non object parameters value or a missing schema fails at registration and stores nothing
-func TestRegisterRejectsMalformedSchemas(t *testing.T) {
+func TestRegisterRejectsNonDictParameters(t *testing.T) {
 	r := NewRegistry()
 	bad := Def{Name: "bad", Toolset: "core", Schema: map[string]any{"name": "bad", "description": "x", "parameters": []any{"not", "an", "object"}}, Handler: constHandler("{}")}
 	if err := r.RegisterScoped("", bad); err == nil || err.Error() != "Tool 'bad': schema['parameters'] must be an object (JSON Schema dict), got list" {
@@ -83,6 +82,10 @@ func TestRegisterRejectsMalformedSchemas(t *testing.T) {
 	if r.Get("bad") != nil {
 		t.Fatal("rejected tool was stored")
 	}
+}
+
+func TestRegisterRejectsNonDictSchema(t *testing.T) {
+	r := NewRegistry()
 	func() {
 		defer func() {
 			if rec := recover(); rec == nil || !strings.Contains(rec.(string), "schema must be a dict") {
@@ -168,7 +171,7 @@ func TestRegisterLogsRejectionsAndOverrides(t *testing.T) {
 }
 
 // Availability is computed from the snapshot taken before a concurrent deregister lands
-func TestAvailableToolsetsUsesCoherentSnapshot(t *testing.T) {
+func TestGetAvailableToolsetsUsesCoherentSnapshot(t *testing.T) {
 	var r *Registry
 	r, env := availabilityRegistry(t, Def{Name: "alpha", Toolset: "gated", Check: func(*Env) bool {
 		_ = r.Deregister("alpha", "", "")
@@ -226,7 +229,7 @@ func TestCheckToolAvailabilityToleratesConcurrentRegister(t *testing.T) {
 	}
 }
 
-func TestAvailableToolsetsToleratesConcurrentDeregister(t *testing.T) {
+func TestGetAvailableToolsetsToleratesConcurrentDeregister(t *testing.T) {
 	var toolsets map[string]ToolsetInfo
 	blockingAvailabilityRun(t, func(r *Registry, env *Env) { toolsets = r.AvailableToolsets(context.Background(), env) },
 		func(r *Registry) {
@@ -247,7 +250,7 @@ func protectedRegistry() *Registry {
 }
 
 // Deregistration is bound to the plugin package, honours the package opt in and blocks the bypass
-func TestDeregisterAuthorization(t *testing.T) {
+func TestPluginRootModuleCanDeregisterSubmoduleHandler(t *testing.T) {
 	r := NewRegistry()
 	r.RegisterPluginOverridePolicy("icebath_plugins.pkg", false, "")
 	sub := registerDef("sub_tool", "pkg-ts", constHandler("sub"))
@@ -258,17 +261,26 @@ func TestDeregisterAuthorization(t *testing.T) {
 	if err := r.Deregister("sub_tool", "", "icebath_plugins.pkg"); err != nil || r.tools["sub_tool"] != nil {
 		t.Fatalf("root module deregister %v", err)
 	}
-	r = protectedRegistry()
+}
+
+func TestOptedInPluginSubmoduleCanDeregister(t *testing.T) {
+	r := protectedRegistry()
 	r.RegisterPluginOverridePolicy("icebath_plugins.allowed", true, "")
 	if err := r.Deregister("protected", "", "icebath_plugins.allowed.cleanup"); err != nil || r.tools["protected"] != nil {
 		t.Fatalf("opted in submodule %v", err)
 	}
-	r = protectedRegistry()
+}
+
+func TestCoreCodeDeregisterAlwaysAllowed(t *testing.T) {
+	r := protectedRegistry()
 	if err := r.Deregister("protected", "", "tools.mcp_tool"); err != nil || r.tools["protected"] != nil {
 		t.Fatalf("core deregister %v", err)
 	}
+}
+
+func TestFullBypassBlocked(t *testing.T) {
 	log := captureRegistryLog(t)
-	r = protectedRegistry()
+	r := protectedRegistry()
 	r.RegisterPluginOverridePolicy("icebath_plugins.evil", false, "")
 	err := r.Deregister("protected", "", "icebath_plugins.evil")
 	if !errors.Is(err, ErrOverrideDenied) || err.Error() != "Plugin module 'icebath_plugins.evil' cannot deregister tool 'protected' (toolset 'terminal') without operator opt-in (allow_tool_override)." ||
@@ -285,7 +297,7 @@ func TestDeregisterAuthorization(t *testing.T) {
 }
 
 // Entry resolves every name exactly as the merged global and profile view does
-func TestGetEntryMatchesMergedViewForEveryNameAndScope(t *testing.T) {
+func TestMatchesMergedViewForEveryNameAndScope(t *testing.T) {
 	r := NewRegistry()
 	r.Register(registerDef("global_only", "core", nil))
 	r.Register(registerDef("shadowed", "core", nil))

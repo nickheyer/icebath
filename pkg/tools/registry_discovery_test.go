@@ -45,7 +45,7 @@ func mustDiscover(t *testing.T, toolsDir string) []string {
 	return names
 }
 
-func TestDiscoverySkipsMCPToolEvenIfItRegisters(t *testing.T) {
+func TestSkipsMcpToolEvenIfItRegisters(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	toolsDir := filepath.Join(t.TempDir(), "tools")
 	writeDiscoveryFile(t, filepath.Join(toolsDir, "__init__.py"), "")
@@ -56,14 +56,14 @@ func TestDiscoverySkipsMCPToolEvenIfItRegisters(t *testing.T) {
 	}
 }
 
-func TestDiscoveryPackageToolPyIsImportedUnderItsDottedName(t *testing.T) {
+func TestPackageToolPyIsImportedUnderItsDottedName(t *testing.T) {
 	toolsDir, _ := makeDiscoveryPkg(t, true)
 	if got := mustDiscover(t, toolsDir); !reflect.DeepEqual(got, []string{"tools.connectors.tool"}) {
 		t.Fatalf("got %v", got)
 	}
 }
 
-func TestDiscoveryPackageSiblingsAreLibrariesNotScanned(t *testing.T) {
+func TestPackageSiblingsAreLibrariesNotScanned(t *testing.T) {
 	toolsDir, pkg := makeDiscoveryPkg(t, true)
 	writeDiscoveryFile(t, filepath.Join(pkg, "operation.py"), registeringSource)
 	if got := mustDiscover(t, toolsDir); !reflect.DeepEqual(got, []string{"tools.connectors.tool"}) {
@@ -71,7 +71,7 @@ func TestDiscoveryPackageSiblingsAreLibrariesNotScanned(t *testing.T) {
 	}
 }
 
-func TestDiscoveryPackageWithoutInitIsSkippedLoudly(t *testing.T) {
+func TestPackageWithoutInitIsSkippedLoudly(t *testing.T) {
 	toolsDir, _ := makeDiscoveryPkg(t, false)
 	var buf bytes.Buffer
 	prev := slog.Default()
@@ -85,7 +85,7 @@ func TestDiscoveryPackageWithoutInitIsSkippedLoudly(t *testing.T) {
 	}
 }
 
-func TestDiscoveryCacheRoundTripsTheNestedVerdict(t *testing.T) {
+func TestCacheRoundTripsTheNestedVerdict(t *testing.T) {
 	toolsDir, pkg := makeDiscoveryPkg(t, true)
 	mustDiscover(t, toolsDir)
 	tool := filepath.Join(pkg, "tool.py")

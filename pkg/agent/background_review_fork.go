@@ -363,10 +363,13 @@ func isolateForkEnv(fork *AIAgent) {
 	fork.env = &env
 }
 
+// Client release of a review fork, replaced by tests observing the fork's cleanup
+var releaseForkClientsFn = func(ctx context.Context, fork *AIAgent) { fork.ReleaseClients(ctx) }
+
 // Releases only the fork's clients, never the session bound resources it shares with the parent
 func releaseForkClients(ctx context.Context, reviewAgent *AIAgent) {
 	defer func() { _ = recover() }()
-	reviewAgent.ReleaseClients(ctx)
+	releaseForkClientsFn(ctx, reviewAgent)
 }
 
 // Records a one shot fork's usage under task against the session and releases its clients, returning the usage

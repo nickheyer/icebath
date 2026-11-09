@@ -907,3 +907,6 @@ func formatAuthError(err *AuthError) string {
 	}
 	return err.Error()
 }
+
+// FormatAuthError maps an auth failure onto concise user facing guidance
+func FormatAuthError(err *AuthError) string { return formatAuthError(err) }

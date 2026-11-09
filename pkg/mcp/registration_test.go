@@ -183,7 +183,7 @@ func TestRegistrationUtilityCapabilityGating(t *testing.T) {
 	}
 }
 
-func TestRegistrationUtilityToolsRegistered(t *testing.T) {
+func TestUtilityToolRegistrationUtilityToolsRegistered(t *testing.T) {
 	env, ctx := regSetup(t)
 	s := regServer(env, "fs", capsOf(true, true), regTool("read_file", nil))
 	names := mustRegister(t, ctx, s, map[string]any{})
@@ -230,27 +230,31 @@ func TestRegistrationSelectiveToolLoading(t *testing.T) {
 func TestRegistrationBuiltinCollisionGuard(t *testing.T) {
 	env, ctx := regSetup(t)
 	logs := captureLogs(t)
-	registerForTest(t, "mcp__abc__search", "web")
-	got := mustRegister(t, ctx, regServer(env, "abc", capsOf(false, false), regTool("search", nil)), map[string]any{})
-	if len(got) != 0 || tools.Default.ToolsetForTool(ctx, "", "mcp__abc__search") != "web" {
-		t.Fatalf("built-in must be preserved, got %v", got)
-	}
-	if logs.count("collides with built-in tool in toolset 'web'") != 1 {
-		t.Fatalf("logs: %s", logs.text())
-	}
-	def := testToolDef("mcp__srv__do_thing", "mcp-old")
-	def.Schema = map[string]any{"name": "mcp__srv__do_thing", "description": "From another MCP server"}
-	tools.Default.Remove(def.Name)
-	tools.Default.Register(def)
-	t.Cleanup(func() { tools.Default.Remove(def.Name) })
-	got = mustRegister(t, ctx, regServer(env, "srv", capsOf(false, false), regTool("do_thing", nil)), map[string]any{})
-	entry := tools.Default.Lookup(ctx, "", "mcp__srv__do_thing")
-	if len(got) != 0 || entry == nil || entry.Toolset != "mcp-old" || entry.Schema["description"] != "From another MCP server" {
-		t.Fatalf("existing MCP owner must be preserved, got %v", got)
-	}
-	if logs.count("already owned by MCP toolset 'mcp-old'") != 1 {
-		t.Fatalf("logs: %s", logs.text())
-	}
+	t.Run("test_mcp_tool_skipped_when_builtin_exists", func(t *testing.T) {
+		registerForTest(t, "mcp__abc__search", "web")
+		got := mustRegister(t, ctx, regServer(env, "abc", capsOf(false, false), regTool("search", nil)), map[string]any{})
+		if len(got) != 0 || tools.Default.ToolsetForTool(ctx, "", "mcp__abc__search") != "web" {
+			t.Fatalf("built-in must be preserved, got %v", got)
+		}
+		if logs.count("collides with built-in tool in toolset 'web'") != 1 {
+			t.Fatalf("logs: %s", logs.text())
+		}
+	})
+	t.Run("test_mcp_tool_rejected_when_collision_is_another_mcp", func(t *testing.T) {
+		def := testToolDef("mcp__srv__do_thing", "mcp-old")
+		def.Schema = map[string]any{"name": "mcp__srv__do_thing", "description": "From another MCP server"}
+		tools.Default.Remove(def.Name)
+		tools.Default.Register(def)
+		t.Cleanup(func() { tools.Default.Remove(def.Name) })
+		got := mustRegister(t, ctx, regServer(env, "srv", capsOf(false, false), regTool("do_thing", nil)), map[string]any{})
+		entry := tools.Default.Lookup(ctx, "", "mcp__srv__do_thing")
+		if len(got) != 0 || entry == nil || entry.Toolset != "mcp-old" || entry.Schema["description"] != "From another MCP server" || tools.Default.ToolsetForTool(ctx, "", "mcp__srv__do_thing") != "mcp-old" {
+			t.Fatalf("existing MCP owner must be preserved, got %v", got)
+		}
+		if logs.count("already owned by MCP toolset 'mcp-old'") != 1 {
+			t.Fatalf("logs: %s", logs.text())
+		}
+	})
 }
 
 func TestRegistrationNameCollisions(t *testing.T) {
@@ -271,6 +275,35 @@ func TestRegistrationNameCollisions(t *testing.T) {
 	if out := resolveNameCollisions("srv", dup); len(out) != 1 {
 		t.Fatalf("exact duplicates keep one, got %d", len(out))
 	}
+	for _, name := range got {
+		tools.Default.Remove(name)
+	}
+	t.Run("test_same_server_normalization_collision_skips_all_ambiguous_tools", func(t *testing.T) {
+		s := regServer(env, "srv", capsOf(false, false), regTool("read-file", nil), regTool("read_file", nil), regTool("safe_tool", nil))
+		got := mustRegister(t, ctx, s, map[string]any{"tools": map[string]any{"resources": false, "prompts": false}})
+		defer func() {
+			for _, name := range got {
+				tools.Default.Remove(name)
+			}
+		}()
+		if !slices.Equal(got, []string{"mcp__srv__safe_tool"}) || tools.Default.Lookup(ctx, "", "mcp__srv__read_file") != nil || tools.Default.Lookup(ctx, "", "mcp__srv__safe_tool") == nil {
+			t.Fatalf("registered %v", got)
+		}
+	})
+	t.Run("test_native_tool_wins_over_generated_utility_on_collision", func(t *testing.T) {
+		native := &Tool{Name: "read_resource", Description: "Native read-resource tool", InputSchema: map[string]any{"type": "object"}}
+		s := regServer(env, "srv", capsOf(true, false), native, regTool("safe_tool", nil))
+		got := mustRegister(t, ctx, s, map[string]any{"tools": map[string]any{"prompts": false}})
+		defer func() {
+			for _, name := range got {
+				tools.Default.Remove(name)
+			}
+		}()
+		entry := tools.Default.Lookup(ctx, "", "mcp__srv__read_resource")
+		if !slices.Contains(got, "mcp__srv__read_resource") || !slices.Contains(got, "mcp__srv__safe_tool") || entry == nil || entry.Description != "Native read-resource tool" {
+			t.Fatalf("registered %v entry %+v", got, entry)
+		}
+	})
 }
 
 func TestRegistrationDeregisterAllScopes(t *testing.T) {

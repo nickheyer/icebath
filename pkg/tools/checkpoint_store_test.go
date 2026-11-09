@@ -241,7 +241,7 @@ func TestCheckpointFormatSingleDirectoryViewUnchanged(t *testing.T) {
 	}
 }
 
-func TestCheckpointRelativeFileCheckpointUsesTaskWorkspace(t *testing.T) {
+func TestRelativeFileCheckpointUsesTaskWorkspace(t *testing.T) {
 	f := newCPFixture(t)
 	processCwd := filepath.Join(f.tmp, "opt", "icebath")
 	workspace := filepath.Join(f.tmp, "opt", "data", "workspace")
@@ -257,7 +257,7 @@ func TestCheckpointRelativeFileCheckpointUsesTaskWorkspace(t *testing.T) {
 	}
 }
 
-func TestCheckpointContainerBackendTaskLeavesHostStoreUntouched(t *testing.T) {
+func TestContainerBackendTaskLeavesHostStoreUntouched(t *testing.T) {
 	f := newCPFixture(t)
 	m := f.enabled()
 	hostFile := filepath.Join(f.tmp, "workspace", "project", "a.txt")

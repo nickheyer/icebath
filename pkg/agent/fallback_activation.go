@@ -19,6 +19,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
+// Provider client resolver the fallback walk binds candidates through
+var agentResolveProviderClient = provider.ResolveProviderClient
+
 // Cooldown armed after a non rate limit failure walked the whole chain
 const fallbackExhaustedCooldownSeconds = 5.0
 
@@ -154,7 +157,7 @@ func (a *AIAgent) rebindFallbackCredentialPool(ctx context.Context, fbProvider, 
 				chatCompletionHelpersLog().Debug(fmt.Sprintf("Fallback to %s/%s: could not attach credential pool: %v", fbProvider, fbModel, r))
 			}
 		}()
-		if pool := provider.LoadPool(agentPoolEnv(ctx), fbProvider); pool != nil && pool.HasCredentials() {
+		if pool := agentLoadPool(agentPoolEnv(ctx), fbProvider); pool != nil && pool.HasCredentials() {
 			a.credentialPool = pool
 			chatCompletionHelpersLog().Info(fmt.Sprintf("Fallback to %s/%s: attached fallback credential pool", fbProvider, fbModel))
 		}
@@ -197,7 +200,7 @@ func (a *AIAgent) candidatePoolExhausted(ctx context.Context, fbProvider, fbMode
 					ok = false
 				}
 			}()
-			return provider.LoadPool(agentPoolEnv(ctx), fbProvider), true
+			return agentLoadPool(agentPoolEnv(ctx), fbProvider), true
 		}()
 		if !ok {
 			return false
@@ -383,7 +386,7 @@ func (a *AIAgent) bindRouteEntry(ctx context.Context, entry map[string]any, prov
 	if apiKeyHint != "" {
 		keyHint = apiKeyHint
 	}
-	client, _, err := provider.ResolveProviderClient(ctx, providerName, model, provider.ProviderClientOptions{
+	client, _, err := agentResolveProviderClient(ctx, providerName, model, provider.ProviderClientOptions{
 		RawCodex: true, ExplicitBaseURL: baseURLHint, ExplicitAPIKey: keyHint, APIMode: apiMode})
 	if err != nil {
 		return "", "", false, err

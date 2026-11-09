@@ -376,35 +376,60 @@ func TestLoopHomeOverridePropagation(t *testing.T) {
 
 func TestLoopInterruptTimeoutAndStop(t *testing.T) {
 	isolateHome(t)
-	if _, err := runOnLoop(context.Background(), time.Second, func(context.Context) (int, error) { return 1, nil }); err == nil || err.Error() != "MCP event loop is not running" {
-		t.Fatalf("dead loop %v", err)
-	}
+	t.Run("test_dead_loop_closes_passed_coroutine", func(t *testing.T) {
+		invoked := false
+		if _, err := runOnLoop(context.Background(), time.Second, func(context.Context) (int, error) { invoked = true; return 1, nil }); err == nil || err.Error() != "MCP event loop is not running" || invoked {
+			t.Fatalf("dead loop %v invoked %v", err, invoked)
+		}
+	})
 	ensureMCPLoop()
-	cancelled := make(chan struct{})
-	worker := tools.NewWorkerID()
-	ctx := tools.WithWorker(context.Background(), worker)
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		tools.SetInterrupt(worker, true, "")
-	}()
-	_, err := runOnLoop(ctx, 10*time.Second, func(c context.Context) (string, error) {
-		<-c.Done()
-		close(cancelled)
-		return "", c.Err()
+	t.Run("test_scheduler_failure_closes_factory_coroutine", func(t *testing.T) {
+		l := runningLoop()
+		l.mu.Lock()
+		l.closed = true
+		l.mu.Unlock()
+		defer func() {
+			l.mu.Lock()
+			l.closed = false
+			l.mu.Unlock()
+		}()
+		invoked := false
+		if _, err := runOnLoop(context.Background(), time.Second, func(context.Context) (int, error) { invoked = true; return 1, nil }); err == nil || err.Error() != "MCP event loop unavailable (failed to schedule)" || invoked {
+			t.Fatalf("scheduler down %v invoked %v", err, invoked)
+		}
 	})
-	tools.SetInterrupt(worker, false, "")
-	if !errors.Is(err, ErrInterrupted) || err.Error() != "User sent a new message" {
-		t.Fatalf("interrupt %v", err)
-	}
-	<-cancelled
-	_, err = runOnLoop(context.Background(), 200*time.Millisecond, func(c context.Context) (int, error) {
-		<-c.Done()
-		return 0, c.Err()
+	t.Run("test_interrupt_cancels_waiting_mcp_call", func(t *testing.T) {
+		cancelled := make(chan struct{})
+		worker := tools.NewWorkerID()
+		ctx := tools.WithWorker(context.Background(), worker)
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			tools.SetInterrupt(worker, true, "")
+		}()
+		_, err := runOnLoop(ctx, 10*time.Second, func(c context.Context) (string, error) {
+			<-c.Done()
+			close(cancelled)
+			return "", c.Err()
+		})
+		tools.SetInterrupt(worker, false, "")
+		if !errors.Is(err, ErrInterrupted) || err.Error() != "User sent a new message" {
+			t.Fatalf("interrupt %v", err)
+		}
+		<-cancelled
 	})
-	var te *LoopTimeoutError
-	if !errors.As(err, &te) || !strings.Contains(err.Error(), "(configured timeout: 0.2s)") || !strings.HasPrefix(err.Error(), "MCP call timed out after 0.") {
-		t.Fatalf("timeout %v", err)
-	}
+	t.Run("test_timeout_reports_elapsed_and_configured_timeout", func(t *testing.T) {
+		cancelled := make(chan struct{})
+		_, err := runOnLoop(context.Background(), 200*time.Millisecond, func(c context.Context) (int, error) {
+			<-c.Done()
+			close(cancelled)
+			return 0, c.Err()
+		})
+		var te *LoopTimeoutError
+		if !errors.As(err, &te) || !strings.Contains(err.Error(), "(configured timeout: 0.2s)") || !strings.HasPrefix(err.Error(), "MCP call timed out after 0.") {
+			t.Fatalf("timeout %v", err)
+		}
+		<-cancelled
+	})
 	mcpMu.Lock()
 	mcpServers[ServerKey{Name: "live"}] = nil
 	mcpMu.Unlock()
@@ -580,6 +605,25 @@ func TestCommonSessionHelpers(t *testing.T) {
 			t.Fatalf("%q sanitized %q", in, got)
 		}
 	}
+	t.Run("test_strips_credentials", func(t *testing.T) {
+		for _, c := range [][2]string{
+			{"Error with ghp_abc123def456", "Error with [REDACTED]"}, {"key sk-projABC123xyz", "key [REDACTED]"},
+			{"key sk-sp-ABCDEFGH12345678.abcdefgh_XYZ-0987.", "key [REDACTED]."}, {"Authorization: Bearer eyJabc123def", "Authorization: [REDACTED]"},
+			{"url?token=secret123", "url?[REDACTED]"}} {
+			if got := sanitizeError(c[0]); got != c[1] {
+				t.Fatalf("%q sanitized %q", c[0], got)
+			}
+		}
+		multi := sanitizeError("ghp_abc123 and sk-projXyz789 and token=foo")
+		if strings.Contains(multi, "ghp_") || strings.Contains(multi, "sk-") || strings.Contains(multi, "token=") || strings.Count(multi, "[REDACTED]") != 3 {
+			t.Fatalf("several credentials %q", multi)
+		}
+	})
+	t.Run("test_no_credentials_unchanged", func(t *testing.T) {
+		if got := sanitizeError("normal error message"); got != "normal error message" {
+			t.Fatalf("plain message changed %q", got)
+		}
+	})
 	type emptyErr struct{ error }
 	if got := excStr(emptyErr{errors.New("")}); got == "" || excStr(errors.New("  ")) == "" || excStr(errors.New("real")) != "real" {
 		t.Fatalf("excStr %q", got)

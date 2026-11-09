@@ -196,6 +196,11 @@ func sessionMessageDicts(messages []*state.Message) []map[string]any {
 	return out
 }
 
+// SessionMessageDicts returns the session messages as plain row maps
+func SessionMessageDicts(messages []*state.Message) []map[string]any {
+	return sessionMessageDicts(messages)
+}
+
 // Prints the deduplicated review summary and forwards it to the background review callback
 func publishReviewSummary(ctx context.Context, a *AIAgent, actions []string) {
 	var unique []string

@@ -152,6 +152,8 @@ func streamRejectsStreamOptions(err error) bool {
 	return strings.Contains(text, "stream_options") && anyIn(text, []string{"extra", "not supported", "unrecognized", "unexpected", "unknown"})
 }
 
+var waitStreamRetryBackoffFn = waitStreamRetryBackoff
+
 // Sleeps the backoff in 100ms steps, returning as soon as the agent is interrupted
 func waitStreamRetryBackoff(agent ChatCompletionAgent, delay time.Duration) {
 	deadline := time.Now().Add(max(delay, 0))
@@ -264,7 +266,7 @@ func (c *streamingCall) retryAfterDrop(err error, attempt, maxRetries int, midTo
 	}
 	c.cancelCurrentStreamAttempt(reason)
 	_ = c.clients.closeOnce(reason, c.worker)
-	waitStreamRetryBackoff(c.agent, JitteredBackoff(attempt+1, BackoffOptions{BaseDelay: time.Second, MaxDelay: 4 * time.Second, JitterRatio: 0}))
+	waitStreamRetryBackoffFn(c.agent, JitteredBackoff(attempt+1, BackoffOptions{BaseDelay: time.Second, MaxDelay: 4 * time.Second, JitterRatio: 0}))
 	c.touchChunkClock()
 }
 

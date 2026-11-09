@@ -306,11 +306,20 @@ func userTurnIndices(messages []map[string]any) []int {
 	return out
 }
 
+// Indices of the user originated turns of a history, the gateway session store's rewind addressing
+func UserTurnIndices(messages []map[string]any) []int { return userTurnIndices(messages) }
+
 // Content projected as the durable row stores it so a warm row and its durable twin compare equal
 func rewindComparisonContent(message map[string]any) any {
 	role, _ := message["role"].(string)
 	return loadedViewContent(role, DurableContent(message["content"]))
 }
+
+// Durable projection of a message's content for the warm versus live rewind comparison
+func RewindComparisonContent(message map[string]any) any { return rewindComparisonContent(message) }
+
+// Refusal text of a rewind whose warm view diverged from the durable rows
+func RewindHistoryChanged() string { return rewindHistoryChanged }
 
 // Plans the rewind to just before a user turn, every read and check made and nothing written
 func (d *SessionDB) PlanUserTurnRewind(ctx context.Context, sessionID string, userOrdinal int, o RewindUserTurnOptions) (*RewindPlan, error) {

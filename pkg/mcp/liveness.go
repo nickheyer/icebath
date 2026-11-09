@@ -342,11 +342,16 @@ func init() {
 func onAppDeclarationChange(fn func()) { tools.SetPlatformDeclarationOnChange(fn) }
 
 // Registered declaration of a server, nil when none
-func (toolsPlatform) Declaration(serverName string) *AppDeclaration {
+func (p toolsPlatform) Declaration(serverName string) *AppDeclaration {
 	decl := tools.LookupPlatformDeclaration(serverName)
 	if decl == nil {
 		return nil
 	}
+	return p.declarationOf(decl)
+}
+
+// Liveness view of a parsed platform declaration
+func (toolsPlatform) declarationOf(decl *tools.PlatformDeclaration) *AppDeclaration {
 	gpu := ""
 	if g := decl.RequiredGPU(); g != nil {
 		gpu = *g

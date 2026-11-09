@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1131,15 +1132,27 @@ func noticeLines(env *Env, results []map[string]any) []string {
 	return append([]string{""}, notice...)
 }
 
+// Result entries of an event as maps, live pyjson objects and decoded maps alike, other items dropped
 func resultList(v any) []map[string]any {
 	out := []map[string]any{}
 	switch list := v.(type) {
 	case []map[string]any:
 		return list
+	case []*pyjson.Object:
+		for _, item := range list {
+			if item != nil {
+				out = append(out, item.Vals)
+			}
+		}
 	case []any:
 		for _, item := range list {
-			if m, ok := item.(map[string]any); ok {
+			switch m := item.(type) {
+			case map[string]any:
 				out = append(out, m)
+			case *pyjson.Object:
+				if m != nil {
+					out = append(out, m.Vals)
+				}
 			}
 		}
 	}

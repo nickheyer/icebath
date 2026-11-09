@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -181,26 +180,6 @@ func TestSameProviderSwitchOnSessionOnlyCustomEndpointKeepsEndpoint(t *testing.T
 		CurrentBaseURL: "http://10.0.0.5:8000/v1", CurrentAPIKey: "session-secret"})
 	if !res.Success || res.BaseURL != "http://10.0.0.5:8000/v1" || res.APIKey != "session-secret" {
 		t.Fatalf("result %+v", res)
-	}
-}
-
-func TestLegacySentinelCatalogStillResolves(t *testing.T) {
-	var catalog []string
-	models := map[string]any{"__discovered_model_catalog__": true}
-	for i := 1; i <= 8; i++ {
-		id := "omlx-model-" + string(rune('0'+i))
-		catalog = append(catalog, id)
-		models[id] = map[string]any{}
-	}
-	entry := map[string]any{"name": "Local MLX", "base_url": "http://127.0.0.1:8000/v1", "model": "omlx-model-1", "models": models}
-	if !entryModelsDiscovered(entry) {
-		t.Fatal("legacy sentinel not read as a discovered catalog")
-	}
-	if modelsConfigIsAllowlist(models, entryModelsDiscovered(entry)) {
-		t.Fatal("legacy sentinel read as an allowlist")
-	}
-	if got := declaredModelIDs(models); !reflect.DeepEqual(got, catalog) {
-		t.Fatalf("declared %v", got)
 	}
 }
 

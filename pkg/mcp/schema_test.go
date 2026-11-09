@@ -14,7 +14,7 @@ func mcpTool(name, description string, schema map[string]any) *Tool {
 	return &Tool{Name: name, Description: description, InputSchema: schema}
 }
 
-func TestConvertsMCPToolToSchema(t *testing.T) {
+func TestSchemaConversionConvertsMcpToolToHermesSchema(t *testing.T) {
 	s := convertToolSchema("filesystem", mcpTool("read_file", "Read a file", nil))
 	if s["name"] != "mcp__filesystem__read_file" || s["description"] != "Read a file" {
 		t.Fatalf("schema %v", s)
@@ -54,38 +54,42 @@ func TestDefinitionsAsPropertyNameIsPreserved(t *testing.T) {
 }
 
 func TestPropertiesMapEntriesNamedLikeKeywordsAreNotRepaired(t *testing.T) {
-	n := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{
-		"file_id":    map[string]any{"type": "string"},
-		"properties": map[string]any{"type": "object", "properties": map[string]any{"title": map[string]any{"type": "string"}}},
-	}})
-	props := n["properties"].(map[string]any)
-	if len(props) != 2 || props["properties"].(map[string]any)["type"] != "object" {
-		t.Fatalf("props %v", props)
-	}
-	if !reflect.DeepEqual(props["properties"].(map[string]any)["properties"], map[string]any{"title": map[string]any{"type": "string"}}) {
-		t.Fatalf("nested props %v", props["properties"])
-	}
-	nested := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{"condition_items": map[string]any{
-		"type": "object", "properties": map[string]any{"properties": map[string]any{"type": "string"}, "value": map[string]any{"type": "string"}}}}})
-	if inner := nested["properties"].(map[string]any)["condition_items"].(map[string]any)["properties"].(map[string]any); len(inner) != 2 {
-		t.Fatalf("inner %v", inner)
-	}
-	defs := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}},
-		"$defs": map[string]any{"properties": map[string]any{"type": "string"}}})
-	if d := defs["$defs"].(map[string]any); len(d) != 1 || d["properties"] == nil {
-		t.Fatalf("defs %v", d)
-	}
-	req := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{
-		"table": map[string]any{"type": "string"}, "required": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}})
-	if p := req["properties"].(map[string]any); len(p) != 2 || !reflect.DeepEqual(p["required"], map[string]any{"type": "array", "items": map[string]any{"type": "string"}}) {
-		t.Fatalf("required named property %v", p)
-	}
-	if !reflect.DeepEqual(req["required"], []any{}) {
-		t.Fatalf("required keyword %v", req["required"])
-	}
+	t.Run("test_properties_map_entry_named_properties_is_not_injected_with_type", func(t *testing.T) {
+		n := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{
+			"file_id":    map[string]any{"type": "string"},
+			"properties": map[string]any{"type": "object", "properties": map[string]any{"title": map[string]any{"type": "string"}}},
+		}})
+		props := n["properties"].(map[string]any)
+		if len(props) != 2 || props["properties"].(map[string]any)["type"] != "object" {
+			t.Fatalf("props %v", props)
+		}
+		if !reflect.DeepEqual(props["properties"].(map[string]any)["properties"], map[string]any{"title": map[string]any{"type": "string"}}) {
+			t.Fatalf("nested props %v", props["properties"])
+		}
+		nested := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{"condition_items": map[string]any{
+			"type": "object", "properties": map[string]any{"properties": map[string]any{"type": "string"}, "value": map[string]any{"type": "string"}}}}})
+		if inner := nested["properties"].(map[string]any)["condition_items"].(map[string]any)["properties"].(map[string]any); len(inner) != 2 {
+			t.Fatalf("inner %v", inner)
+		}
+		defs := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}},
+			"$defs": map[string]any{"properties": map[string]any{"type": "string"}}})
+		if d := defs["$defs"].(map[string]any); len(d) != 1 || d["properties"] == nil {
+			t.Fatalf("defs %v", d)
+		}
+	})
+	t.Run("test_properties_map_entry_named_required_is_not_injected_with_type", func(t *testing.T) {
+		req := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{
+			"table": map[string]any{"type": "string"}, "required": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}})
+		if p := req["properties"].(map[string]any); len(p) != 2 || !reflect.DeepEqual(p["required"], map[string]any{"type": "array", "items": map[string]any{"type": "string"}}) {
+			t.Fatalf("required named property %v", p)
+		}
+		if !reflect.DeepEqual(req["required"], []any{}) {
+			t.Fatalf("required keyword %v", req["required"])
+		}
+	})
 }
 
-func TestNormalizedSchemaKeepsRequiredAsList(t *testing.T) {
+func TestSchemaConversionNormalizedMcpSchemaKeepsRequiredAsList(t *testing.T) {
 	stale := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{"stale"}})
 	partial := normalizeInputSchema(map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"},
 		"path": map[string]any{"type": "string"}}, "required": []any{"command", "path", "missing_entry"}})
@@ -103,7 +107,7 @@ func TestNormalizedSchemaKeepsRequiredAsList(t *testing.T) {
 	}
 }
 
-func TestOptionalNullableFieldCollapses(t *testing.T) {
+func TestSchemaConversionOptionalNullableFieldIsCollapsedToNonNullSchema(t *testing.T) {
 	s := normalizeInputSchema(map[string]any{"type": "object", "required": []any{"command"}, "properties": map[string]any{
 		"command": map[string]any{"type": "string"},
 		"workdir": map[string]any{"anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "null"}}, "default": nil, "description": "Optional working directory"},
@@ -118,9 +122,22 @@ func TestOptionalNullableFieldCollapses(t *testing.T) {
 }
 
 func TestNamesSanitizedAndClamped(t *testing.T) {
-	if got := convertToolSchema("my-server", mcpTool("get-sum", "", nil))["name"]; got != "mcp__my_server__get_sum" {
-		t.Fatalf("sanitized %v", got)
-	}
+	t.Run("test_hyphens_sanitized_to_underscores", func(t *testing.T) {
+		got, _ := convertToolSchema("my-server", mcpTool("get-sum", "", nil))["name"].(string)
+		if got != "mcp__my_server__get_sum" || strings.Contains(got, "-") {
+			t.Fatalf("sanitized %v", got)
+		}
+	})
+	t.Run("test_long_names_are_clamped_to_64_chars", func(t *testing.T) {
+		server := "agent_plugin_my_server_997167c9__my_server"
+		schema := convertToolSchema(server, mcpTool("reply_communication_todo", "", nil))
+		other := convertToolSchema(server, mcpTool("reply_communication_task", "", nil))
+		name, _ := schema["name"].(string)
+		otherName, _ := other["name"].(string)
+		if len(name) > 64 || len(otherName) > 64 || name == otherName || name != PrefixedToolName(server, "reply_communication_todo") {
+			t.Fatalf("clamped %q %q", name, otherName)
+		}
+	})
 	logs := captureLogs(t)
 	clampedWarnedMu.Lock()
 	clampedWarned = map[string]bool{}

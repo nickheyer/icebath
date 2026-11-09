@@ -42,6 +42,11 @@ var profileRuntimeScope = func(ctx context.Context, profileHome string, hydrateS
 	return tools.WithProfileTerminalScope(ctx, profileHome, nil)
 }
 
+// Profile scoped context for the relay and CLI packages, the launch profile's runtime scope under multiplex
+func ProfileRuntimeScope(ctx context.Context, profileHome string, hydrateSecrets bool) context.Context {
+	return profileRuntimeScope(ctx, profileHome, hydrateSecrets)
+}
+
 // Hydrates and loads one profile's secrets under its home override
 func loadProfileSecretScope(ctx context.Context, profileHome string) map[string]string {
 	ctx = home.WithOverride(ctx, profileHome)

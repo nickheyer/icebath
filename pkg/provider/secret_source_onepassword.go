@@ -356,7 +356,7 @@ func (s *OnePasswordSource) Fetch(cfg map[string]any, homePath string, environ *
 		return result
 	}
 	binaryPath := anyString(cfg["binary_path"])
-	binary := FindOp(binaryPath)
+	binary := findOp(binaryPath)
 	result.BinaryPath = binary
 	if binary == "" {
 		return result.Fail(opMissingBinaryError(binaryPath), SecretErrorBinaryMissing)
@@ -369,7 +369,7 @@ func (s *OnePasswordSource) Fetch(cfg map[string]any, homePath string, environ *
 	if _, ok := cfg["cache_ttl_seconds"]; !ok {
 		ttl = 300
 	}
-	secrets, fetchWarnings, err := FetchOnePasswordSecrets(OnePasswordFetchOptions{References: references, Account: anyString(cfg["account"]),
+	secrets, fetchWarnings, err := fetchOnePasswordSecrets(OnePasswordFetchOptions{References: references, Account: anyString(cfg["account"]),
 		TokenEnv: SecretSourceTokenEnv(s.Spec(), cfg), Binary: binary, UseCache: true, CacheTTL: ttl, HomePath: homePath, Environ: environ})
 	if err != nil {
 		return result.Fail(err.Error(), classifyOpError(err.Error()))

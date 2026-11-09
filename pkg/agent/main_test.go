@@ -48,18 +48,22 @@ func TestMain(m *testing.M) {
 		tools.AsyncDelegationOwnerProbes.ProcessStartTime = func(int) (int64, bool) { return 0, false }
 	}
 	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{
-		CatalogEntry:     func(string) (string, bool) { return "", false },
-		Install:          func(context.Context, string, bool) (map[string]any, error) { return nil, nil },
-		LoadError:        func(string) string { return "" },
-		RefreshBoundHome: func() {},
-		DependencyHomes:  func() []string { return nil },
-		AuxiliaryTasks:   func() []map[string]any { return nil },
+		CatalogEntry:    func(string) (string, bool) { return "", false },
+		Install:         func(context.Context, string, bool) (map[string]any, error) { return nil, nil },
+		LoadError:       func(string) string { return "" },
+		DependencyHomes: func() ([]string, error) { return nil, nil },
+		AuxiliaryTasks:  func() []map[string]any { return nil },
 	})
 	if tools.DelegationRegistryHooks.GetProvider == nil {
 		installDefaultDelegationRegistry()
 	}
+	if SessionSteerAuthority == nil {
+		SessionSteerAuthority = func(context.Context, string) (any, any) { return nil, nil }
+	}
 	realAgentSetupLogging = agentSetupLogging
 	agentSetupLogging = func(context.Context, string) error { return nil }
+	dispatchDelegationRecoveryChild()
+	dispatchAsyncOwnerDeathChild()
 	os.Exit(m.Run())
 }
 

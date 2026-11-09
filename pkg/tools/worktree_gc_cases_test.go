@@ -539,3 +539,12 @@ func TestExternalTreesMissingRegistrationFlaggedAndPruned(t *testing.T) {
 		}
 	}
 }
+
+func TestGitFilterDiscoveryFailedExportMatchesTheRefusalText(t *testing.T) {
+	if GitFilterDiscoveryFailed != gitFilterDiscoveryFailed {
+		t.Fatalf("GitFilterDiscoveryFailed = %q", GitFilterDiscoveryFailed)
+	}
+	if GitFilterDiscoveryFailed != "git filter discovery failed" {
+		t.Fatalf("GitFilterDiscoveryFailed = %q", GitFilterDiscoveryFailed)
+	}
+}

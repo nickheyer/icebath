@@ -35,3 +35,12 @@ func TestEffortLadderIndexMatchesTheLadder(t *testing.T) {
 		t.Fatal("ladder order")
 	}
 }
+
+func TestStripStrayAndUnterminatedToolCallWrappers(t *testing.T) {
+	if got := StripStrayToolCallClosers("a</tool_call> b</function>\tc"); got != "a bc" {
+		t.Fatalf("got %q", got)
+	}
+	if got := StripUnterminatedToolCalls("keep\n<tool_call>{\"name\""); got != "keep" {
+		t.Fatalf("got %q", got)
+	}
+}

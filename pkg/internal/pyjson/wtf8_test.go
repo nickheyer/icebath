@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -439,11 +440,12 @@ func TestJSONEncodeWTF8ReflectionEncoderMatchesEncodingJSON(t *testing.T) {
 		}
 		want := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 		want = bytes.ReplaceAll(bytes.ReplaceAll(want, []byte(`\u2028`), []byte("\u2028")), []byte(`\u2029`), []byte("\u2029"))
+		want = canonicalJSONNumbers(want)
 		e := &wtf8EncodeState{}
-		if err := e.marshal(v); err != nil || !bytes.Equal(e.buf, want) {
+		if err := e.marshal(v); err != nil || !bytes.Equal(canonicalJSONNumbers(e.buf), want) {
 			t.Fatalf("%d reflection encoder\n got %s %v\nwant %s", i, e.buf, err, want)
 		}
-		if got, err := EncodeWTF8(v); err != nil || !bytes.Equal(got, want) {
+		if got, err := EncodeWTF8(v); err != nil || !bytes.Equal(canonicalJSONNumbers(got), want) {
 			t.Fatalf("%d pooled path %s %v", i, got, err)
 		}
 	}
@@ -451,8 +453,6 @@ func TestJSONEncodeWTF8ReflectionEncoderMatchesEncodingJSON(t *testing.T) {
 		v    any
 		want string
 	}{
-		{math.NaN(), "json: unsupported value: NaN"},
-		{math.Inf(-1), "json: unsupported value: -Inf"},
 		{make(chan int), "json: unsupported type: chan int"},
 		{map[[2]int]int{{1, 2}: 3}, "json: unsupported type: map[[2]int]int"},
 		{json.Number("x1"), `json: invalid number literal "x1"`},
@@ -562,5 +562,81 @@ func TestJSONDecodeWTF8NumbersKeepsIntText(t *testing.T) {
 	}
 	if _, err := DecodeWTF8Numbers([]byte(`{"a":`)); err == nil {
 		t.Fatal("truncated document decoded")
+	}
+}
+
+// Rewrites every number token of a JSON text to one float32 rounded form so Python and Go digits compare equal
+func canonicalJSONNumbers(text []byte) []byte {
+	out := make([]byte, 0, len(text))
+	inString := false
+	for i := 0; i < len(text); {
+		c := text[i]
+		if inString {
+			out = append(out, c)
+			if c == '\\' && i+1 < len(text) {
+				out = append(out, text[i+1])
+				i += 2
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			i++
+			continue
+		}
+		if c == '"' {
+			inString = true
+			out = append(out, c)
+			i++
+			continue
+		}
+		if c == '-' || (c >= '0' && c <= '9') {
+			j := i
+			for j < len(text) && strings.IndexByte("-+.eE0123456789", text[j]) >= 0 {
+				j++
+			}
+			f, err := strconv.ParseFloat(string(text[i:j]), 64)
+			if err != nil {
+				panic(err)
+			}
+			out = strconv.AppendFloat(out, float64(float32(f)), 'g', -1, 64)
+			i = j
+			continue
+		}
+		out = append(out, c)
+		i++
+	}
+	return out
+}
+
+// json.dumps float text, float repr digits for finite values and NaN or the infinities spelled out
+func TestJSONEncodeWTF8FloatsMatchJSONDumps(t *testing.T) {
+	cases := []struct {
+		v    any
+		want string
+	}{
+		{1.0, "1.0"}, {0.0, "0.0"}, {math.Copysign(0, -1), "-0.0"}, {123456789.0, "123456789.0"}, {0.5, "0.5"}, {1.5, "1.5"},
+		{1e21, "1e+21"}, {1e20, "1e+20"}, {1e16, "1e+16"}, {1e15, "1000000000000000.0"}, {1e-7, "1e-07"}, {1e-6, "1e-06"},
+		{0.0001, "0.0001"}, {0.00001, "1e-05"}, {float32(0.1), "0.10000000149011612"}, {math.NaN(), "NaN"},
+		{math.Inf(1), "Infinity"}, {math.Inf(-1), "-Infinity"},
+		{struct {
+			Arr    [2]float32 `json:"arr"`
+			Floats []float64  `json:"floats"`
+		}{[2]float32{1.5, 1e-7}, []float64{1e20, 1e21, 0.000001, 0.0000001}}, `{"arr":[1.5,1.0000000116860974e-07],"floats":[1e+20,1e+21,1e-06,1e-07]}`},
+		{map[string]any{"cost_usd": 0.0, "n": 3}, `{"cost_usd":0.0,"n":3}`},
+	}
+	for _, tc := range cases {
+		got, err := EncodeWTF8(tc.v)
+		if err != nil || string(got) != tc.want {
+			t.Fatalf("%#v: %s %v, want %s", tc.v, got, err, tc.want)
+		}
+	}
+	for _, v := range []any{math.NaN(), math.Inf(1), []any{math.Inf(-1)}} {
+		if _, err := EncodeWTF8ASCII(v); !errors.Is(err, ErrOutOfRange) {
+			t.Fatalf("%#v ascii wire form %v", v, err)
+		}
+	}
+	if got, err := EncodeWTF8ASCII(map[string]any{"x": 2.5, "s": "\u00e9"}); err != nil || string(got) != `{"s":"\u00e9","x":2.5}` {
+		t.Fatalf("ascii %s %v", got, err)
 	}
 }

@@ -76,6 +76,9 @@ func inheritParentEndpoint(parent *AIAgent, surfaceBaseURL string, surfaceAPIKey
 }
 
 // Loaded pool of a key when it holds credentials
+// Pool loader of the child routes, swapped by tests that script or forbid a pool load
+var loadedPoolFn = loadedPool
+
 func loadedPool(ctx context.Context, key string) *provider.Pool {
 	pool := provider.LoadPool(agentPoolEnv(ctx), key)
 	if pool != nil && pool.HasCredentials() {
@@ -134,7 +137,7 @@ func resolveChildCredentialPool(ctx context.Context, effectiveProvider string, p
 		if _, entry, ok := provider.CustomEntryForEndpoint(effectiveBaseURL, effectiveRequestedProvider, cfg); ok {
 			owner = entry
 		}
-		return provider.EntryScopedPool(loadedPool(ctx, childKey), childKey, owner)
+		return provider.EntryScopedPool(loadedPoolFn(ctx, childKey), childKey, owner)
 	}
 	if effectiveProvider == parentProvider {
 		if parentPool == nil {
@@ -145,7 +148,7 @@ func resolveChildCredentialPool(ctx context.Context, effectiveProvider string, p
 		}
 		delegateLog().Debug(fmt.Sprintf("Parent %s pool has no entry for child endpoint %s; not sharing it", effectiveProvider, effectiveBaseURL))
 	}
-	loaded := loadedPool(ctx, effectiveProvider)
+	loaded := loadedPoolFn(ctx, effectiveProvider)
 	if loaded != nil && effectiveBaseURL != "" && !poolServesEndpoint(loaded, effectiveProvider, effectiveBaseURL) {
 		return nil
 	}
@@ -222,7 +225,7 @@ func directEndpointCredentials(ctx context.Context, v delegationValues, explicit
 	}
 	var requestOverrides map[string]any
 	if v.providerName != "" {
-		runtime, err := provider.ResolveRuntimeProvider(ctx, home.Dir(ctx), v.providerName, v.model, "", "")
+		runtime, err := resolveRuntimeProviderFn(ctx, home.Dir(ctx), v.providerName, v.model, "", "")
 		if err != nil {
 			delegateLog().Debug(fmt.Sprintf("delegation.base_url: runtime resolution for provider '%s' failed; proceeding without request_overrides: %v",
 				v.providerName, err))
@@ -240,7 +243,7 @@ func directEndpointCredentials(ctx context.Context, v delegationValues, explicit
 // Runtime provider branch, the full bundle through the runtime provider system
 func runtimeProviderCredentials(ctx context.Context, v delegationValues, explicitRequestOverrides map[string]any) (map[string]any, error) {
 	configured := v.providerName
-	runtime, err := provider.ResolveRuntimeProvider(ctx, home.Dir(ctx), configured, v.model, "", "")
+	runtime, err := resolveRuntimeProviderFn(ctx, home.Dir(ctx), configured, v.model, "", "")
 	if err != nil {
 		return nil, &tools.DelegationValueError{Message: fmt.Sprintf("Cannot resolve delegation provider '%s': %v. "+
 			"Check that the provider is configured (API key set, valid provider name), "+

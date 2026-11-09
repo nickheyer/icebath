@@ -558,14 +558,18 @@ func TestSDKProviderRouting(t *testing.T) {
 
 // Registry holding only the exa and parallel providers for the test
 func sdkOnlyRegistry(t *testing.T) {
-	webRegistry.mu.Lock()
-	saved := webRegistry.providers
-	webRegistry.providers = map[string]WebProvider{"exa": saved["exa"], "parallel": saved["parallel"]}
-	webRegistry.mu.Unlock()
+	saved := webRegistry.ListProviders(context.Background(), "")
+	ResetWebRegistryForTests()
+	for _, p := range saved {
+		if p.Name() == "exa" || p.Name() == "parallel" {
+			RegisterWebProvider(p)
+		}
+	}
 	t.Cleanup(func() {
-		webRegistry.mu.Lock()
-		webRegistry.providers = saved
-		webRegistry.mu.Unlock()
+		ResetWebRegistryForTests()
+		for _, p := range saved {
+			RegisterWebProvider(p)
+		}
 	})
 }
 

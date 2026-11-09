@@ -42,7 +42,7 @@ func exampleDeclaration(t *testing.T, dir string) *tools.PlatformDeclaration {
 }
 
 // Answers every plugin liveness lookup with raw until the test ends
-func stubPortableLiveness(t *testing.T, raw map[string]any) {
+func fakePortableLiveness(t *testing.T, raw map[string]any) {
 	t.Helper()
 	prev := portableLiveness
 	portableLiveness = func(string) map[string]any { return raw }
@@ -73,7 +73,7 @@ func writeRuntime(t *testing.T, path string, doc map[string]any) {
 }
 
 func TestLivenessInvalidRegisteredDeclarationDegradesToStatic(t *testing.T) {
-	stubPortableLiveness(t, map[string]any{"kind": "server_json"})
+	fakePortableLiveness(t, map[string]any{"kind": "server_json"})
 	if got := livenessFor(context.Background(), "example-server").Kind; got != "static" {
 		t.Fatal(got)
 	}
@@ -84,7 +84,7 @@ func TestLivenessLiveEndpointReloadsFileAndRegistersTokenBeforeUse(t *testing.T)
 	dir := t.TempDir()
 	runtime := filepath.Join(dir, "server.json")
 	registerDeclaration(t, "example-server", exampleDeclaration(t, dir))
-	stubPortableLiveness(t, serverJSONLiveness(runtime))
+	fakePortableLiveness(t, serverJSONLiveness(runtime))
 	calls := recordVaultRedactions(t)
 	logs := captureLogs(t)
 	writeRuntime(t, runtime, map[string]any{"http": "http://127.0.0.1:1111", "token": "first-secret", "pid": os.Getpid()})
@@ -110,7 +110,7 @@ func TestLivenessRuntimeFileWithoutTokenConnectsWithoutAuthorization(t *testing.
 	dir := t.TempDir()
 	runtime := filepath.Join(dir, "server.json")
 	registerDeclaration(t, "example-server", exampleDeclaration(t, dir))
-	stubPortableLiveness(t, serverJSONLiveness(runtime))
+	fakePortableLiveness(t, serverJSONLiveness(runtime))
 	calls := recordVaultRedactions(t)
 	writeRuntime(t, runtime, map[string]any{"http": "http://127.0.0.1:3333", "pid": os.Getpid()})
 	url, headers, ok, err := liveEndpoint(context.Background(), "example-server")
@@ -126,7 +126,7 @@ func TestLivenessMissingRuntimeFileNeverFallsBack(t *testing.T) {
 	isolateHome(t)
 	dir := t.TempDir()
 	registerDeclaration(t, "example-server", exampleDeclaration(t, dir))
-	stubPortableLiveness(t, serverJSONLiveness(filepath.Join(dir, "missing.json")))
+	fakePortableLiveness(t, serverJSONLiveness(filepath.Join(dir, "missing.json")))
 	_, _, _, err := liveEndpoint(context.Background(), "example-server")
 	var unavailable *LiveEndpointUnavailableError
 	if !errors.As(err, &unavailable) {
@@ -137,7 +137,7 @@ func TestLivenessMissingRuntimeFileNeverFallsBack(t *testing.T) {
 func TestLivenessHydratedErrorShapeForRegisteredDeclaration(t *testing.T) {
 	_, env := managerHome(t)
 	registerDeclaration(t, "example-server", exampleDeclaration(t, t.TempDir()))
-	stubPortableLiveness(t, map[string]any{"kind": "static"})
+	fakePortableLiveness(t, map[string]any{"kind": "static"})
 	srv, errText := acquireCallServer(context.Background(), env, "example-server", 0)
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(errText), &payload); err != nil || srv != nil {
@@ -152,7 +152,7 @@ func TestLivenessHydratedErrorShapeForRegisteredDeclaration(t *testing.T) {
 
 func TestLivenessConnectedInteractiveSessionServerIsOfferableFromAServiceSession(t *testing.T) {
 	registerDeclaration(t, "example-server", exampleDeclaration(t, t.TempDir()))
-	stubPortableLiveness(t, map[string]any{"kind": "interactive_session"})
+	fakePortableLiveness(t, map[string]any{"kind": "interactive_session"})
 	t.Cleanup(hostinfo.PinInteractiveSession(false))
 	if !declaredAppOfferable("example-server") {
 		t.Fatal("a connected interactive session server must stay offerable from a service session")
@@ -175,7 +175,7 @@ func TestLivenessRunningAppWithLiveEndpointReportsTheMissingConnection(t *testin
 		return fixedProbePlatform{prev(), AppProbe{Running: &running, EndpointPresent: true}}
 	}
 	t.Cleanup(func() { platformApps = prev })
-	stubPortableLiveness(t, map[string]any{"kind": "server_json", "path": filepath.Join(dir, "runtime.json")})
+	fakePortableLiveness(t, map[string]any{"kind": "server_json", "path": filepath.Join(dir, "runtime.json")})
 	registerDeclaration(t, "example-server", exampleDeclaration(t, dir))
 	current := livenessStatus(context.Background(), "example-server")
 	if current == nil || current.State != "icebath_not_connected" {
@@ -189,7 +189,7 @@ func TestLivenessRunningAppWithLiveEndpointReportsTheMissingConnection(t *testin
 }
 
 func TestLivenessStaticLivenessCannotClaimTheAppIsNotRunning(t *testing.T) {
-	stubPortableLiveness(t, map[string]any{"kind": "static"})
+	fakePortableLiveness(t, map[string]any{"kind": "static"})
 	registerDeclaration(t, "example-server", exampleDeclaration(t, t.TempDir()))
 	current := livenessStatus(context.Background(), "example-server")
 	if current == nil || current.State != "icebath_not_connected" {
@@ -203,7 +203,7 @@ func TestLivenessStaticLivenessCannotClaimTheAppIsNotRunning(t *testing.T) {
 
 func TestLivenessGPURequirementHidesAConnectedServerAndSaysWhichGPU(t *testing.T) {
 	t.Cleanup(hostinfo.PinGPUClass("intel"))
-	stubPortableLiveness(t, nil)
+	fakePortableLiveness(t, nil)
 	decl, err := tools.ParsePlatformDeclaration("RTX Tool", nil, map[string]any{"gpu": "nvidia"}, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -238,11 +238,11 @@ func registerHiddenTool(t *testing.T, name, toolset string) {
 	t.Cleanup(func() { _ = tools.Default.Deregister(name, "", "") })
 }
 
-func TestLivenessCatalogHiddenDeclaredServerAppearsInListingAndEmptySummary(t *testing.T) {
+func TestHiddenDeclaredServerAppearsInListingAndEmptySummary(t *testing.T) {
 	_, env := managerHome(t)
 	server, toolName := "example-hidden", "mcp__example-hidden__inspect"
 	registerDeclaration(t, server, executableDeclaration(t, "Example App", filepath.Join(t.TempDir(), "missing-app")))
-	stubPortableLiveness(t, map[string]any{"kind": "static"})
+	fakePortableLiveness(t, map[string]any{"kind": "static"})
 	registerHiddenTool(t, toolName, "mcp-"+server)
 	ctx := context.Background()
 	first, firstForm := tools.BuildCatalogListingWithForm(ctx, env, nil, 4000)
@@ -270,7 +270,7 @@ func TestLivenessCatalogHiddenDeclaredServerAppearsInListingAndEmptySummary(t *t
 	}
 }
 
-func TestLivenessCatalogHiddenUndeclaredServerIsAbsent(t *testing.T) {
+func TestHiddenUndeclaredServerIsAbsent(t *testing.T) {
 	_, env := managerHome(t)
 	registerHiddenTool(t, "mcp__plain-hidden__inspect", "mcp-plain-hidden")
 	listing, form := tools.BuildCatalogListingWithForm(context.Background(), env, nil, 4000)

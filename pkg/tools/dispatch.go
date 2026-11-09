@@ -691,33 +691,11 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 	if AgentLoopTools[name] {
 		return toolErrorJSON(name+" must be handled by the agent loop", nil)
 	}
-	if !opts.SkipPreToolCallHook {
-		block, modified := d.dispatchPreToolCallHooks(ctx, env, name, args, ids, trace, opts)
-		if modified != nil {
-			args = modified
-			resolved.Args = args
-		}
-		if block != "" {
-			return emit(toolErrorJSON(block, nil), "blocked", "plugin_block", block, 0)
-		}
-	}
-	if d.EditApproval != nil {
-		block, err := func() (block string, err error) {
-			defer func() {
-				if rec := recover(); rec != nil {
-					err = fmt.Errorf("edit approval guard panicked: %v", rec)
-				}
-			}()
-			return d.EditApproval(ctx, env, name, args)
-		}()
-		if err != nil {
-			toolsLogger(env).Debug("ACP edit approval guard error", "error", err)
-			if name == "write_file" || name == "patch" {
-				return emit(toolErrorJSON("Edit approval denied: approval guard failed", nil), "blocked", "edit_approval_error", "", 0)
-			}
-		} else if block != "" {
-			return emit(block, "blocked", "edit_approval_denied", "", 0)
-		}
+	var guard *dispatchBlock
+	args, guard = d.preDispatchGuards(ctx, env, name, args, ids, trace, opts)
+	resolved.Args = args
+	if guard != nil {
+		return emit(guard.result, "blocked", guard.errorType, guard.errorMessage, 0)
 	}
 	if !readSearchTools[name] {
 		taskID := call.TaskID
@@ -740,6 +718,43 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 	durationMS := elapsedMS()
 	emit(result, "", "", "", durationMS)
 	return d.ApplyTransformToolResult(ctx, env, PostToolCallEvent{ToolName: name, Args: args, Result: result, IDs: ids, DurationMS: durationMS})
+}
+
+// Result and observer fields of a call refused before dispatch
+type dispatchBlock struct {
+	result, errorType, errorMessage string
+}
+
+// Plugin pre tool call hooks then the ACP edit approval, the args possibly rewritten and the block when one refuses
+func (d *Dispatcher) preDispatchGuards(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, trace []map[string]any, opts DispatchOptions) (map[string]any, *dispatchBlock) {
+	if !opts.SkipPreToolCallHook {
+		block, modified := d.dispatchPreToolCallHooks(ctx, env, name, args, ids, trace, opts)
+		if modified != nil {
+			args = modified
+		}
+		if block != "" {
+			return args, &dispatchBlock{result: toolErrorJSON(block, nil), errorType: "plugin_block", errorMessage: block}
+		}
+	}
+	if d.EditApproval != nil {
+		block, err := func() (block string, err error) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					err = fmt.Errorf("edit approval guard panicked: %v", rec)
+				}
+			}()
+			return d.EditApproval(ctx, env, name, args)
+		}()
+		if err != nil {
+			toolsLogger(env).Debug("ACP edit approval guard error", "error", err)
+			if name == "write_file" || name == "patch" {
+				return args, &dispatchBlock{result: toolErrorJSON("Edit approval denied: approval guard failed", nil), errorType: "edit_approval_error"}
+			}
+		} else if block != "" {
+			return args, &dispatchBlock{result: block, errorType: "edit_approval_denied"}
+		}
+	}
+	return args, nil
 }
 
 // Runs the registry handler through execution middleware with the approval observability context bound

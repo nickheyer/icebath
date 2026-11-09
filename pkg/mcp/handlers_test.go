@@ -215,9 +215,11 @@ func TestToolHandlerNotConnectedStrikes(t *testing.T) {
 func TestCheckFunction(t *testing.T) {
 	resetLedgers(t)
 	check := makeCheckFn("srv")
-	if check(&tools.Env{}) {
-		t.Fatal("disconnected server reported available")
-	}
+	t.Run("test_disconnected_returns_false", func(t *testing.T) {
+		if check(&tools.Env{}) {
+			t.Fatal("disconnected server reported available")
+		}
+	})
 	handlerServer(t, "srv", nil)
 	if !makeCheckFn("srv")(&tools.Env{}) {
 		t.Fatal("connected server reported unavailable")
@@ -229,17 +231,20 @@ func TestCheckFunction(t *testing.T) {
 	if !check(&tools.Env{}) {
 		t.Fatal("lazy server reported unavailable")
 	}
-	recycled := newServerTask("srv", &tools.Env{})
-	recycled.mu.Lock()
-	recycled.recycledReason = "idle"
-	recycled.mu.Unlock()
-	mcpMu.Lock()
-	delete(lazyServerConfigs, ServerKey{Name: "srv"})
-	mcpServers[ServerKey{Name: "srv"}] = recycled
-	mcpMu.Unlock()
-	if !check(&tools.Env{}) {
-		t.Fatal("recycled stdio server reported unavailable")
-	}
+	t.Run("test_recycled_stdio_server_remains_available_for_lazy_reconnect", func(t *testing.T) {
+		recycled := newServerTask("srv", &tools.Env{})
+		recycled.mu.Lock()
+		recycled.config = map[string]any{"command": "npx"}
+		recycled.recycledReason = "idle_timeout_seconds"
+		recycled.mu.Unlock()
+		mcpMu.Lock()
+		delete(lazyServerConfigs, ServerKey{Name: "srv"})
+		mcpServers[ServerKey{Name: "srv"}] = recycled
+		mcpMu.Unlock()
+		if !check(&tools.Env{}) {
+			t.Fatal("recycled stdio server reported unavailable")
+		}
+	})
 }
 
 func TestUtilityHandlers(t *testing.T) {
@@ -258,15 +263,19 @@ func TestUtilityHandlers(t *testing.T) {
 		return map[string]any{"contents": []any{map[string]any{"uri": "file:///a.txt", "text": "body"}}}, nil
 	})
 	ctx := context.Background()
-	out := makeListResourcesHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{}, Env: &tools.Env{}})
-	if want := `{"resources":[{"uri":"file:///a.txt","name":"a","mimeType":"text/plain"},{"uri":"file:///b","name":"b","description":"bee"}]}`; out != want {
-		t.Fatalf("list_resources %s", out)
-	}
-	out = makeGetPromptHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{"name": "p", "arguments": map[string]any{"who": "bob"}}, Env: &tools.Env{}})
-	if want := `{"messages":[{"role":"user","content":"hi bob"},{"role":"assistant","content":"type='image' data='AAA' mime_type='image/png' annotations=None meta=None"}],"description":"greeting"}`; out != want {
-		t.Fatalf("get_prompt %s", out)
-	}
-	out = makeListPromptsHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{}, Env: &tools.Env{}})
+	t.Run("test_list_resources_success", func(t *testing.T) {
+		out := makeListResourcesHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{}, Env: &tools.Env{}})
+		if want := `{"resources":[{"uri":"file:///a.txt","name":"a","mimeType":"text/plain"},{"uri":"file:///b","name":"b","description":"bee"}]}`; out != want {
+			t.Fatalf("list_resources %s", out)
+		}
+	})
+	t.Run("test_get_prompt_success", func(t *testing.T) {
+		out := makeGetPromptHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{"name": "p", "arguments": map[string]any{"who": "bob"}}, Env: &tools.Env{}})
+		if want := `{"messages":[{"role":"user","content":"hi bob"},{"role":"assistant","content":"type='image' data='AAA' mime_type='image/png' annotations=None meta=None"}],"description":"greeting"}`; out != want {
+			t.Fatalf("get_prompt %s", out)
+		}
+	})
+	out := makeListPromptsHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{}, Env: &tools.Env{}})
 	if want := `{"prompts":[{"name":"p","arguments":[{"name":"who","required":true},{"name":"tone","required":null}]}]}`; out != want {
 		t.Fatalf("list_prompts %s", out)
 	}
@@ -347,7 +356,9 @@ func TestTrustGateArgumentsBoundedAndEscaped(t *testing.T) {
 	}
 }
 
-func TestCircuitBreakerApplicationErrorsOpenAndCooldown(t *testing.T) {
+// Opens the breaker of srv with three application errors, returning the handler, transport and a clock advance
+func openBreakerByToolErrors(t *testing.T) (tools.Handler, *handlerTransport, func(time.Duration), string) {
+	t.Helper()
 	_, tr := handlerServer(t, "srv", func(string, map[string]any) (any, error) {
 		return map[string]any{"content": []any{map[string]any{"type": "text", "text": "bad args"}}, "isError": true}, nil
 	})
@@ -360,10 +371,24 @@ func TestCircuitBreakerApplicationErrorsOpenAndCooldown(t *testing.T) {
 		h(context.Background(), toolCall(nil))
 	}
 	out := h(context.Background(), toolCall(nil))
-	if !strings.Contains(out, "MCP server 'srv' rejected the last 3 calls (it is reachable") || !strings.Contains(out, "Paused for ~60s") || tr.count(methodToolsCall) != 3 {
+	return h, tr, func(d time.Duration) { now = now.Add(d) }, out
+}
+
+// test_mcp_circuit_breaker.py test_breaker_opened_by_tool_errors_says_rejected_not_unreachable
+func TestBreakerOpenedByToolErrorsSaysRejectedNotUnreachable(t *testing.T) {
+	_, tr, _, out := openBreakerByToolErrors(t)
+	if !strings.Contains(out, "MCP server 'srv' rejected the last 3 calls (it is reachable") || strings.Contains(out, "unreachable") || !strings.Contains(out, "Paused for ~60s") || tr.count(methodToolsCall) != 3 {
 		t.Fatalf("open breaker %s calls %d", out, tr.count(methodToolsCall))
 	}
-	now = now.Add(61 * time.Second)
+}
+
+// test_mcp_circuit_breaker.py test_circuit_breaker_half_opens_after_cooldown
+func TestCircuitBreakerHalfOpensAfterCooldown(t *testing.T) {
+	h, tr, advance, _ := openBreakerByToolErrors(t)
+	if tr.count(methodToolsCall) != 3 {
+		t.Fatalf("open breaker still forwards calls %d", tr.count(methodToolsCall))
+	}
+	advance(61 * time.Second)
 	h(context.Background(), toolCall(nil))
 	if tr.count(methodToolsCall) != 4 {
 		t.Fatal("half open breaker did not probe")
@@ -385,7 +410,7 @@ func TestCircuitBreakerTransportFailuresReadUnreachable(t *testing.T) {
 	}
 }
 
-func TestSessionExpiredReadOnlyReplays(t *testing.T) {
+func sessionExpiredReadOnlyReplays(t *testing.T) {
 	srv, _ := handlerServer(t, "srv", func(string, map[string]any) (any, error) { return nil, ErrSessionExpired })
 	makeHTTP(srv)
 	toolReadOnlyHints[ServerKey{Name: "srv"}] = map[string]bool{"read": true}
@@ -396,7 +421,12 @@ func TestSessionExpiredReadOnlyReplays(t *testing.T) {
 	}
 }
 
-func TestSessionExpiredWriteIsNotReplayed(t *testing.T) {
+func TestSessionExpiredRetryOnlyForReadOnlyTools(t *testing.T) {
+	t.Run("write_is_not_replayed", sessionExpiredWriteIsNotReplayed)
+	t.Run("read_only_replays", sessionExpiredReadOnlyReplays)
+}
+
+func sessionExpiredWriteIsNotReplayed(t *testing.T) {
 	srv, _ := handlerServer(t, "srv", func(string, map[string]any) (any, error) { return nil, ErrSessionExpired })
 	makeHTTP(srv)
 	calls := 0
@@ -427,7 +457,7 @@ func TestToolHandler401RecoversAndRetries(t *testing.T) {
 	}
 }
 
-func TestToolHandler401UnrecoverableNeedsReauth(t *testing.T) {
+func TestCallToolHandlerReturnsNeedsReauthOnUnrecoverable401(t *testing.T) {
 	handlerServer(t, "srv", func(string, map[string]any) (any, error) { return nil, &HTTPStatusError{Status: 401} })
 	prev := oauthHandle401
 	t.Cleanup(func() { oauthHandle401 = prev })
@@ -441,7 +471,7 @@ func TestToolHandler401UnrecoverableNeedsReauth(t *testing.T) {
 	}
 }
 
-func TestStdioDeadBeforeDispatchRespawnsAndRetries(t *testing.T) {
+func TestPrecallDeadChildrenRespawnAndRetry(t *testing.T) {
 	srv, tr := handlerServer(t, "srv", func(string, map[string]any) (any, error) { return textResult("never"), nil })
 	srv.mu.Lock()
 	srv.stdioChildPIDs = []int{1 << 30}

@@ -182,7 +182,7 @@ func utf32LE(s string) []byte {
 	return out
 }
 
-func TestEnvLoaderRecoveredUpdateRetrySkipsExternalSecretSources(t *testing.T) {
+func TestRecoveredUpdateRetrySkipsExternalSecretSources(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -200,7 +200,7 @@ func TestEnvLoaderRecoveredUpdateRetrySkipsExternalSecretSources(t *testing.T) {
 	}
 }
 
-func TestEnvLoaderUTF8BOMDoesNotMangleFirstKey(t *testing.T) {
+func TestUTF8BOMDoesNotMangleFirstKey(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -214,7 +214,7 @@ func TestEnvLoaderUTF8BOMDoesNotMangleFirstKey(t *testing.T) {
 	expectUnset(t, "\ufeffFIRST_KEY")
 }
 
-func TestEnvLoaderBOMFirstKeyIsSeenByInstallerAndScrubAlike(t *testing.T) {
+func TestBOMFirstKeyIsSeenByInstallerAndScrubAlike(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -251,7 +251,7 @@ func TestEnvLoaderBOMFirstKeyIsSeenByInstallerAndScrubAlike(t *testing.T) {
 	}
 }
 
-func TestEnvLoaderUTF8BOMPlusInvalidUTF8PreservesFirstKey(t *testing.T) {
+func TestUTF8BOMPlusInvalidUTF8PreservesFirstKey(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -265,7 +265,7 @@ func TestEnvLoaderUTF8BOMPlusInvalidUTF8PreservesFirstKey(t *testing.T) {
 	expectUnset(t, "\ufeffANTHROPIC_API_KEY")
 }
 
-func TestEnvLoaderLatin1FallbackStreamHonorsOverride(t *testing.T) {
+func TestLatin1FallbackStreamHonorsOverride(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -284,7 +284,7 @@ func TestEnvLoaderLatin1FallbackStreamHonorsOverride(t *testing.T) {
 	expectEnv(t, "LATIN1_VALUE", "café")
 }
 
-func TestEnvLoaderLatin1FallbackStreamPreservesInterpolation(t *testing.T) {
+func TestLatin1FallbackStreamPreservesInterpolation(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -298,7 +298,7 @@ func TestEnvLoaderLatin1FallbackStreamPreservesInterpolation(t *testing.T) {
 	expectEnv(t, "LATIN1_VALUE", "café")
 }
 
-func TestEnvLoaderUTF16LEBOMPreservesNonASCIIValues(t *testing.T) {
+func TestUTF16LEBOMPreservesNonASCIIValues(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -318,7 +318,7 @@ func TestEnvLoaderUTF16LEBOMPreservesNonASCIIValues(t *testing.T) {
 	}
 }
 
-func TestEnvLoaderUTF32LEBOMLeavesFileUntouched(t *testing.T) {
+func TestUTF32LEBOMLeavesFileUntouched(t *testing.T) {
 	envLoaderIsolate(t)
 	logs := captureEnvLoaderLog(t)
 	envFile := filepath.Join(t.TempDir(), ".env")
@@ -333,7 +333,7 @@ func TestEnvLoaderUTF32LEBOMLeavesFileUntouched(t *testing.T) {
 	}
 }
 
-func TestEnvLoaderUTF32WarningFiresOncePerPath(t *testing.T) {
+func TestUTF32WarningFiresOncePerPath(t *testing.T) {
 	envLoaderIsolate(t)
 	logs := captureEnvLoaderLog(t)
 	envFile := filepath.Join(t.TempDir(), ".env")
@@ -350,7 +350,7 @@ func TestEnvLoaderUTF32WarningFiresOncePerPath(t *testing.T) {
 	}
 }
 
-func TestEnvLoaderPlainUTF8Regression(t *testing.T) {
+func TestPlainUTF8EnvRegression(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -367,7 +367,7 @@ func TestEnvLoaderPlainUTF8Regression(t *testing.T) {
 	}
 }
 
-func TestEnvLoaderCP1252RegressionDoesNotCrash(t *testing.T) {
+func TestCP1252EnvRegressionDoesNotCrash(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envFile := filepath.Join(h, ".env")
@@ -384,7 +384,7 @@ func TestEnvLoaderCP1252RegressionDoesNotCrash(t *testing.T) {
 	}
 }
 
-func TestEnvLoaderKnownKeysAbsentFromUserEnvAreCleared(t *testing.T) {
+func TestKnownKeysAbsentFromUserEnvAreCleared(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("OPENAI_BASE_URL=https://profile.example/v1\n"))
@@ -399,7 +399,7 @@ func TestEnvLoaderKnownKeysAbsentFromUserEnvAreCleared(t *testing.T) {
 	expectEnv(t, "MY_SHELL_ONLY_VAR", "keep-me")
 }
 
-func TestEnvLoaderEmptyAssignmentInUserEnvIsPreserved(t *testing.T) {
+func TestEmptyAssignmentInUserEnvIsPreserved(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("ICEBATH_ACP_AUTH_METHOD=\n"))
@@ -410,7 +410,7 @@ func TestEnvLoaderEmptyAssignmentInUserEnvIsPreserved(t *testing.T) {
 	expectUnset(t, "COPILOT_CLI_PATH")
 }
 
-func TestEnvLoaderNoUserEnvDoesNotClearAnything(t *testing.T) {
+func TestNoUserEnvDoesNotClearAnything(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	t.Setenv("ICEBATH_ACP_AUTH_METHOD", "cursor_login")
@@ -420,20 +420,26 @@ func TestEnvLoaderNoUserEnvDoesNotClearAnything(t *testing.T) {
 	expectEnv(t, "PATH", "/usr/bin:/bin")
 }
 
-func TestEnvLoaderKnownKeyExplicitlySetInUserEnvIsKept(t *testing.T) {
-	for _, line := range []string{"ICEBATH_ACP_AUTH_METHOD=claude_code_cli\n", "export ICEBATH_ACP_AUTH_METHOD=claude_code_cli\n"} {
-		t.Run(strings.Fields(line)[0], func(t *testing.T) {
-			root := envLoaderRoot(t)
-			h := envLoaderProfile(t, root, "hermes")
-			writeEnvBytes(t, filepath.Join(h, ".env"), []byte(line))
-			t.Setenv("ICEBATH_ACP_AUTH_METHOD", "cursor_login")
-			mustLoad(t, DotenvLoadOptions{Home: h})
-			expectEnv(t, "ICEBATH_ACP_AUTH_METHOD", "claude_code_cli")
-		})
-	}
+// Inherited routing key survives the scrub when the profile .env defines it as line
+func knownKeyDefinedInUserEnvIsKept(t *testing.T, line string) {
+	t.Helper()
+	root := envLoaderRoot(t)
+	h := envLoaderProfile(t, root, "hermes")
+	writeEnvBytes(t, filepath.Join(h, ".env"), []byte(line))
+	t.Setenv("ICEBATH_ACP_AUTH_METHOD", "cursor_login")
+	mustLoad(t, DotenvLoadOptions{Home: h})
+	expectEnv(t, "ICEBATH_ACP_AUTH_METHOD", "claude_code_cli")
 }
 
-func TestEnvLoaderShellExportedCredentialsSurviveCleanup(t *testing.T) {
+func TestKnownKeyExplicitlySetInUserEnvIsKept(t *testing.T) {
+	knownKeyDefinedInUserEnvIsKept(t, "ICEBATH_ACP_AUTH_METHOD=claude_code_cli\n")
+}
+
+func TestExportPrefixedKnownKeyInUserEnvIsKept(t *testing.T) {
+	knownKeyDefinedInUserEnvIsKept(t, "export ICEBATH_ACP_AUTH_METHOD=claude_code_cli\n")
+}
+
+func TestShellExportedCredentialsSurviveCleanup(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("SOME_OTHER_KEY=x\n"))
@@ -449,7 +455,7 @@ func TestEnvLoaderShellExportedCredentialsSurviveCleanup(t *testing.T) {
 	expectUnset(t, "ICEBATH_ACP_AUTH_METHOD")
 }
 
-func TestEnvLoaderCleanupScopeIsTheProfileManagedSet(t *testing.T) {
+func TestCleanupScopeIsTheProfileManagedSet(t *testing.T) {
 	for _, key := range profileManagedEnvKeys() {
 		for _, suffix := range []string{"_API_KEY", "_TOKEN", "_SECRET"} {
 			if strings.HasSuffix(key, suffix) {
@@ -487,28 +493,28 @@ func envLoaderUnsetTerminalBridge(t *testing.T) {
 	envLoaderUnset(t, names...)
 }
 
-func TestEnvLoaderConfigYAMLTerminalBackendOverridesStaleEnv(t *testing.T) {
+func TestConfigYAMLTerminalBackendOverridesStaleEnv(t *testing.T) {
 	h := seedTerminalHome(t, "terminal:\n  backend: local\n", "TERMINAL_ENV=docker\n")
 	envLoaderUnset(t, "TERMINAL_ENV")
 	mustLoad(t, DotenvLoadOptions{Home: h})
 	expectEnv(t, "TERMINAL_ENV", "local")
 }
 
-func TestEnvLoaderConfigYAMLTerminalBackendOverridesStaleShell(t *testing.T) {
+func TestConfigYAMLTerminalBackendOverridesStaleShell(t *testing.T) {
 	h := seedTerminalHome(t, "terminal:\n  backend: local\n", "")
 	t.Setenv("TERMINAL_ENV", "docker")
 	mustLoad(t, DotenvLoadOptions{Home: h})
 	expectEnv(t, "TERMINAL_ENV", "local")
 }
 
-func TestEnvLoaderNoTerminalSectionLeavesEnvValueAlone(t *testing.T) {
+func TestNoTerminalSectionLeavesEnvValueAlone(t *testing.T) {
 	h := seedTerminalHome(t, "display:\n  streaming: true\n", "TERMINAL_ENV=docker\n")
 	envLoaderUnset(t, "TERMINAL_ENV")
 	mustLoad(t, DotenvLoadOptions{Home: h})
 	expectEnv(t, "TERMINAL_ENV", "docker")
 }
 
-func TestEnvLoaderConfigYAMLTerminalOmittedKeyDoesNotClearEnv(t *testing.T) {
+func TestConfigYAMLTerminalOmittedKeyDoesNotClearEnv(t *testing.T) {
 	h := seedTerminalHome(t, "terminal:\n  timeout: 600\n", "TERMINAL_ENV=docker\n")
 	envLoaderUnset(t, "TERMINAL_ENV", "TERMINAL_TIMEOUT")
 	mustLoad(t, DotenvLoadOptions{Home: h})
@@ -516,7 +522,7 @@ func TestEnvLoaderConfigYAMLTerminalOmittedKeyDoesNotClearEnv(t *testing.T) {
 	expectEnv(t, "TERMINAL_TIMEOUT", "600")
 }
 
-func TestEnvLoaderOtherProfileHomeDoesNotBridgeProcessConfig(t *testing.T) {
+func TestOtherProfileHomeDoesNotBridgeProcessConfig(t *testing.T) {
 	root := envLoaderRoot(t)
 	processHome := envLoaderProfile(t, root, "process-home")
 	writeEnvBytes(t, filepath.Join(processHome, "config.yaml"), []byte("terminal:\n  backend: local\n"))
@@ -532,7 +538,7 @@ func TestEnvLoaderOtherProfileHomeDoesNotBridgeProcessConfig(t *testing.T) {
 	expectEnv(t, "TERMINAL_ENV", "docker")
 }
 
-func TestEnvLoaderParentInjectedDashboardSessionTokenSurvivesDotenv(t *testing.T) {
+func TestParentInjectedDashboardSessionTokenSurvivesDotenv(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("ICEBATH_DASHBOARD_SESSION_TOKEN=persisted-token\nICEBATH_DASHBOARD_PUBLIC_URL=http://127.0.0.1:1\n"))
@@ -545,7 +551,7 @@ func TestEnvLoaderParentInjectedDashboardSessionTokenSurvivesDotenv(t *testing.T
 	expectEnv(t, "ICEBATH_DASHBOARD_SESSION_TOKEN", "link-token")
 }
 
-func TestEnvLoaderDotenvPublishedDashboardSessionTokenStillReloads(t *testing.T) {
+func TestDotenvPublishedDashboardSessionTokenStillReloads(t *testing.T) {
 	root := envLoaderRoot(t)
 	h := envLoaderProfile(t, root, "hermes")
 	envLoaderUnset(t, "ICEBATH_DASHBOARD_SESSION_TOKEN")
@@ -867,7 +873,7 @@ func reloadRestoreHome(t *testing.T, envText, preserve string) string {
 	return h
 }
 
-func TestEnvLoaderSourceSecretSurvivesSecondLoad(t *testing.T) {
+func TestSourceSecretSurvivesSecondLoadHermesDotenv(t *testing.T) {
 	h := reloadRestoreHome(t, "GLM_API_KEY=__BITWARDEN_MANAGED__\n", "")
 	registerFakeBulkSource(t, map[string]string{"GLM_API_KEY": "vault-value"}, true)
 	mustLoad(t, DotenvLoadOptions{Home: h})
@@ -876,7 +882,7 @@ func TestEnvLoaderSourceSecretSurvivesSecondLoad(t *testing.T) {
 	expectEnv(t, "GLM_API_KEY", "vault-value")
 }
 
-func TestEnvLoaderReloadRestoreKeepsDotenvPrecedence(t *testing.T) {
+func TestReloadRestoreKeepsDotenvPrecedence(t *testing.T) {
 	for _, tc := range []struct {
 		override bool
 		preserve string

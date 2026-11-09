@@ -58,6 +58,21 @@ func relayOutcomeForFailure(ctx context.Context, v any) string {
 	return "failed"
 }
 
+// Relay conversation and turn coordination the live turn wrapper drives
+type relayTurnCoordinator interface {
+	AcquireConversation(ctx context.Context, o tools.RelayConversation) *tools.ConversationLease
+	BeginTurn(ctx context.Context, lease *tools.ConversationLease, turnID, taskID string, metadata map[string]any) (*tools.RelayTurnContext, error)
+	FinishLogicalCalls(ctx context.Context, turn *tools.RelayTurnContext, outcome string)
+	EndTurn(ctx context.Context, turn *tools.RelayTurnContext, outcome string)
+	ReleaseConversation(lease *tools.ConversationLease)
+}
+
+// Relay coordinator of a live turn, replaced by tests recording the relay calls
+var relayCoordinatorFn = func() relayTurnCoordinator { return tools.RelayCoordinator }
+
+// Task run start of a live turn, replaced by tests recording its position among the relay calls
+var startTaskRunFn = observability.StartTaskRun
+
 // RunConversation admits one text turn under the durable session lease and relay scopes
 func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o RunConversationOptions) (map[string]any, error) {
 	return a.RunConversationContent(ctx, userMessage, o)
@@ -83,6 +98,7 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	if platform == "subagent" {
 		relayParentSessionID = a.parentSessionID
 	}
+	coord := relayCoordinatorFn()
 	var relayLease *tools.ConversationLease
 	var relayTurn *tools.RelayTurnContext
 	var lease turnLease
@@ -99,7 +115,7 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 			}
 			relayOutcome = relayOutcomeForFailure(turnCtx, failure)
 			if relayTurn != nil {
-				tools.RelayCoordinator.FinishLogicalCalls(turnCtx, relayTurn, relayOutcome)
+				coord.FinishLogicalCalls(turnCtx, relayTurn, relayOutcome)
 			}
 			if taskStarted && !taskFinished {
 				taskFinished = true
@@ -126,11 +142,11 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 					quietly(func() error { noteReviewTurnFinished(); return nil })
 				}()
 				if relayLease != nil {
-					tools.RelayCoordinator.ReleaseConversation(relayLease)
+					coord.ReleaseConversation(relayLease)
 				}
 			}()
 			if relayTurn != nil {
-				tools.RelayCoordinator.EndTurn(turnCtx, relayTurn, relayOutcome)
+				coord.EndTurn(turnCtx, relayTurn, relayOutcome)
 			}
 		}()
 		if r != nil {
@@ -157,7 +173,7 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	lease = admission.lease
 	o.ConversationHistory = admission.conversationHistory
 	sessionCwd, turnCwd := resolveRelayScopeCwds(a, effectiveTaskID, sessionID, platform)
-	relayLease = tools.RelayCoordinator.AcquireConversation(ctx, tools.RelayConversation{
+	relayLease = coord.AcquireConversation(ctx, tools.RelayConversation{
 		ProfileKey: tools.CurrentRelayProfileKey(ctx), SessionID: sessionID, Platform: platform,
 		ParentSessionID: relayParentSessionID, Model: a.model, SessionCwd: sessionCwd, TurnCwd: turnCwd,
 	})
@@ -165,12 +181,12 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	if len(o.RelayMetadata) > 0 {
 		metadata = o.RelayMetadata
 	}
-	relayTurn, err = tools.RelayCoordinator.BeginTurn(ctx, relayLease, relayTurnID, effectiveTaskID, metadata)
+	relayTurn, err = coord.BeginTurn(ctx, relayLease, relayTurnID, effectiveTaskID, metadata)
 	if err != nil {
 		return nil, err
 	}
 	if relayTurn == nil || relayTurn.RelayEnabled() {
-		observability.StartTaskRun(ctx, a.env, sessionID, effectiveTaskID, platform, a.parentSessionID)
+		startTaskRunFn(ctx, a.env, sessionID, effectiveTaskID, platform, a.parentSessionID)
 		taskStarted = true
 	}
 	turnCtx = provider.WithPortalConversationContext(turnCtx, a.conversationRootID())
@@ -198,7 +214,7 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	default:
 		relayOutcome = "success"
 	}
-	tools.RelayCoordinator.FinishLogicalCalls(turnCtx, relayTurn, relayOutcome)
+	coord.FinishLogicalCalls(turnCtx, relayTurn, relayOutcome)
 	if taskStarted {
 		taskFinished = true
 		observability.FinishTaskRun(turnCtx, sessionID, effectiveTaskID, platform, result, nil)

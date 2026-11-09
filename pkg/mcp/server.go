@@ -306,6 +306,8 @@ func pyOSErrorName(err error) string {
 		return "ConnectionError"
 	case *probeTimeoutError:
 		return "TimeoutError"
+	case *sdkImportError:
+		return "ImportError"
 	case *fs.PathError, *os.SyscallError, *os.LinkError, *exec.Error, syscall.Errno:
 	default:
 		switch {
@@ -528,17 +530,21 @@ func (s *serverTask) failInflightCalls(reason string) {
 	}
 }
 
-// True when every stdio child spawned for the current transport has exited
+// Liveness probe of one tracked child pid, nil when this host has no probe support
+var childPidProbe = func(pid int) (bool, error) { return pidExists(pid), nil }
+
+// True when every stdio child spawned for the current transport has exited, false when liveness is unknown
 func (s *serverTask) stdioChildrenDead() bool {
 	s.mu.Lock()
 	pids := append([]int(nil), s.stdioChildPIDs...)
 	http := s.isHTTPLocked()
 	s.mu.Unlock()
-	if len(pids) == 0 || http {
+	if len(pids) == 0 || http || childPidProbe == nil {
 		return false
 	}
 	for _, pid := range pids {
-		if pidExists(pid) {
+		alive, err := childPidProbe(pid)
+		if err != nil || alive {
 			return false
 		}
 	}
@@ -574,6 +580,14 @@ func (s *serverTask) scheduleToolsRefresh() {
 			mcpLogger().Error(fmt.Sprintf("MCP server '%s': dynamic tool refresh failed: %s", s.name, excStr(err)))
 		}
 	})
+}
+
+// Timer the lifecycle wait arms for one keepalive or recycle interval, nil for an open ended wait
+var lifecycleTimer = func(d time.Duration) <-chan time.Time {
+	if d < 0 {
+		return nil
+	}
+	return time.After(d)
 }
 
 // Serves until shutdown, reconnect or a stdio recycle, keeping remote sessions alive with periodic probes
@@ -627,10 +641,7 @@ func (s *serverTask) waitForLifecycleEvent(ctx context.Context, sessionDone <-ch
 				close(ch)
 			}(rpcIdle)
 		}
-		var timer <-chan time.Time
-		if timeout >= 0 {
-			timer = time.After(timeout)
-		}
+		timer := lifecycleTimer(timeout)
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()

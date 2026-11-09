@@ -33,7 +33,7 @@ func (h *captureHandler) atLevel(level slog.Level, needles ...string) (match, ot
 	return match, other
 }
 
-func TestServerStdioHangingInitializeIsBounded(t *testing.T) {
+func TestStdioInitializeTimeoutHangingInitializeIsBoundedNotLeaked(t *testing.T) {
 	isolateHome(t)
 	s := mockStdioTask(t, "leak-guard", map[string]any{"MOCK_MCP_HANG_INIT": "1"})
 	s.rendered.Config["connect_timeout"] = 0.2
@@ -79,7 +79,7 @@ func TestServerStdioReplacesInvalidUTF8(t *testing.T) {
 	}
 }
 
-func TestServerRetryAttemptsLogDebugTransitionsWarn(t *testing.T) {
+func TestRetryAttemptsLogDebugTransitionsWarn(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -103,7 +103,7 @@ func TestServerRetryAttemptsLogDebugTransitionsWarn(t *testing.T) {
 	}
 }
 
-func TestServerInitialRetryAttemptsLogDebug(t *testing.T) {
+func TestInitialRetryAttemptsLogDebug(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)

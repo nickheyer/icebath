@@ -23,6 +23,7 @@ func testSecretEnvName(name string) bool {
 // Dispatches the child modes, installs the secret env doubles, then runs the suite
 func TestMain(m *testing.M) {
 	home.DispatchScratchPruneEntry()
+	asyncDelegationChildEntry()
 	DispatchDDGSWorkerEntry()
 	DispatchCommitGraphRefreshEntry()
 	ptyTestHelperEntry()
@@ -32,6 +33,7 @@ func TestMain(m *testing.M) {
 	installDelegationRegistryDoubles()
 	installGitlockDoubles()
 	installWorktreeDoubles()
+	installProfileStoreDoubles()
 	os.Exit(m.Run())
 }
 

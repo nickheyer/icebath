@@ -327,7 +327,7 @@ func migrationProfileHomes(t *testing.T, names ...string) []string {
 
 func TestUpdateAsksOnceAndNamesEachProfile(t *testing.T) {
 	homes := migrationProfileHomes(t, "work-a", "work-b")
-	withPluginManagerHooks(t, provider.PluginManagerHooks{DependencyHomes: func() []string { return homes }})
+	withPluginManagerHooks(t, provider.PluginManagerHooks{DependencyHomes: func() ([]string, error) { return homes, nil }})
 	migrationSteps.interactive = func() bool { return true }
 	migrationSteps.installInto = func(ctx context.Context, h string, _ *bool) MemoryInstallFunc {
 		return func(name string) (map[string]any, error) {
@@ -350,7 +350,10 @@ func TestUpdateAsksOnceAndNamesEachProfile(t *testing.T) {
 			prompts = append(prompts, prompt)
 			return tc.answer, nil
 		})
-		got := MigrateAllMemoryHomes(context.Background(), func(s string) { said = append(said, s) })
+		got, err := MigrateAllMemoryHomes(context.Background(), func(s string) { said = append(said, s) })
+		if err != nil {
+			t.Fatal(err)
+		}
 		restore()
 		if strings.Join(got, ",") != strings.Join(tc.want, ",") || len(prompts) != 1 {
 			t.Fatalf("%s got %v prompts %v said %q", tc.answer, got, prompts, said)
@@ -384,7 +387,7 @@ func TestUnattendedUpdateRefusalInOneProfileDoesNotSkipTheOthers(t *testing.T) {
 	migrationSteps.lazyInstalls = func(ctx context.Context) bool { return home.Dir(ctx) == work }
 	migrationSteps.installInto = memoryInstallInto
 	withPluginManagerHooks(t, provider.PluginManagerHooks{
-		DependencyHomes: func() []string { return []string{def, work} },
+		DependencyHomes: func() ([]string, error) { return []string{def, work}, nil },
 		Install: func(ctx context.Context, name string, consent bool) (map[string]any, error) {
 			if !consent {
 				return map[string]any{"ok": false, "error": "dependency install skipped (non-interactive)"}, nil
@@ -396,7 +399,10 @@ func TestUnattendedUpdateRefusalInOneProfileDoesNotSkipTheOthers(t *testing.T) {
 		},
 	})
 	var said []string
-	got := MigrateAllMemoryHomes(context.Background(), func(s string) { said = append(said, s) })
+	got, err := MigrateAllMemoryHomes(context.Background(), func(s string) { said = append(said, s) })
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 1 || got[0] != "twin" {
 		t.Fatalf("got %v said %q", got, said)
 	}

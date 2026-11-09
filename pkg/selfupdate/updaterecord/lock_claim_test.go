@@ -610,3 +610,19 @@ func TestLockDeadMarkerOverAHeldCheckoutLockIsHeldNeverReclaimed(t *testing.T) {
 		t.Fatalf("%+v", lock.Holder)
 	}
 }
+
+func TestAcquireAndReleaseCheckoutExports(t *testing.T) {
+	root := t.TempDir()
+	refused, err := AcquireCheckout(root)
+	if err != nil || refused != nil {
+		t.Fatalf("acquire %v %v", refused, err)
+	}
+	held, err := HoldsCheckoutLock(root)
+	if err != nil || !held {
+		t.Fatalf("held %v %v", held, err)
+	}
+	ReleaseCheckout()
+	if held, _ := HoldsCheckoutLock(root); held {
+		t.Fatal("lock still held after release")
+	}
+}

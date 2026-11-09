@@ -10,8 +10,6 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Windows grants execute to any existing file
@@ -25,25 +23,31 @@ func pathNormcase(path string) string {
 	return strings.ToLower(strings.ReplaceAll(path, "/", `\`))
 }
 
-// Default root a new console resolves from the user's own environment block, false when unreadable
-func newConsoleRoot() (string, bool) {
+// Environment of a new console of this user from CreateEnvironmentBlock, false when unreadable
+func consoleEnvironment() (map[string]string, bool) {
 	var token windows.Token
 	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY|windows.TOKEN_DUPLICATE, &token); err != nil {
-		return "", false
+		return nil, false
 	}
 	defer token.Close()
-	block, err := token.Environ(false)
-	if err != nil {
-		return "", false
+	var block *uint16
+	if err := windows.CreateEnvironmentBlock(&block, token, false); err != nil {
+		return nil, false
 	}
-	environ := map[string]string{}
-	for _, entry := range block {
-		name, value, _ := strings.Cut(entry, "=")
-		if name != "" {
-			environ[strings.ToUpper(name)] = value
+	defer windows.DestroyEnvironmentBlock(block)
+	return readEnvironmentBlock(environmentBlockUnits(block)), true
+}
+
+// Copies a double NUL terminated UTF-16 block into a slice holding its final empty entry
+func environmentBlockUnits(block *uint16) []uint16 {
+	var out []uint16
+	for p := unsafe.Pointer(block); ; p = unsafe.Add(p, 2) {
+		unit := *(*uint16)(p)
+		out = append(out, unit)
+		if unit == 0 && (len(out) == 1 || out[len(out)-2] == 0) {
+			return out
 		}
 	}
-	return home.RootForEnvironment(environ), true
 }
 
 // Puts entry first on the User PATH keeping the stored value kind, reporting present or added

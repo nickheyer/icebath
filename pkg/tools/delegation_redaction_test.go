@@ -33,3 +33,15 @@ func TestRedactSummaryProjectsStructuredPlainAndParentCopySummaries(t *testing.T
 		t.Fatal("absent summary changed")
 	}
 }
+
+func TestRedactChildValueRedactsStringMapsPerValue(t *testing.T) {
+	secret := "sk-proj-" + strings.Repeat("a", 40)
+	got := RedactChildValue(nil, map[string]string{"0": "tail with OPENAI_API_KEY=" + secret + " inside", "1": "plain tail"}, true)
+	m, ok := got.(map[string]any)
+	if !ok || len(m) != 2 || m["1"] != "plain tail" {
+		t.Fatalf("got %#v", got)
+	}
+	if first, _ := m["0"].(string); strings.Contains(first, secret) || !strings.Contains(first, "tail with") {
+		t.Fatalf("value not redacted %q", first)
+	}
+}

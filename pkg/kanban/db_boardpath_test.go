@@ -224,3 +224,17 @@ func TestNormalizeReasoningEffortAndSkills(t *testing.T) {
 		t.Fatal(newTaskID(), hostPrefix())
 	}
 }
+
+func TestNormalizeBoardSlugExport(t *testing.T) {
+	slug := "  My-Board "
+	if got, err := NormalizeBoardSlug(&slug); err != nil || got != "my-board" {
+		t.Fatalf("got %q %v", got, err)
+	}
+	if got, err := NormalizeBoardSlug(nil); err != nil || got != "" {
+		t.Fatalf("nil slug %q %v", got, err)
+	}
+	bad := "-nope"
+	if _, err := NormalizeBoardSlug(&bad); err == nil {
+		t.Fatal("invalid slug accepted")
+	}
+}

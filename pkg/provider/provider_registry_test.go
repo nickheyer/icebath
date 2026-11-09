@@ -289,24 +289,24 @@ func TestProviderRegistryGenerationBumps(t *testing.T) {
 	gen := func(s string) ProviderRegistryGeneration { return registry.RegistryGeneration(ctx, s) }
 	p, q := &prSample{"x"}, &prSample{"y"}
 	_ = registry.Register(p, "")
-	if gen("") != (ProviderRegistryGeneration{1, 0}) {
+	if gen("") != (ProviderRegistryGeneration{Global: 1, Scoped: 0}) {
 		t.Fatalf("global register %v", gen(""))
 	}
 	_ = registry.Register(q, scope)
-	if gen(scope) != (ProviderRegistryGeneration{1, 1}) || gen("") != (ProviderRegistryGeneration{1, 1}) {
+	if gen(scope) != (ProviderRegistryGeneration{Global: 1, Scoped: 1}) || gen("") != (ProviderRegistryGeneration{Global: 1, Scoped: 1}) {
 		t.Fatalf("scoped register %v %v", gen(scope), gen(""))
 	}
-	if registry.RestoreRegistration("x", q, nil, "") || gen(scope) != (ProviderRegistryGeneration{1, 1}) {
+	if registry.RestoreRegistration("x", q, nil, "") || gen(scope) != (ProviderRegistryGeneration{Global: 1, Scoped: 1}) {
 		t.Fatal("refused restore bumped")
 	}
-	if !registry.RestoreRegistration("y", q, nil, scope) || gen(scope) != (ProviderRegistryGeneration{1, 2}) {
+	if !registry.RestoreRegistration("y", q, nil, scope) || gen(scope) != (ProviderRegistryGeneration{Global: 1, Scoped: 2}) {
 		t.Fatalf("scoped restore %v", gen(scope))
 	}
-	if !registry.RestoreRegistration("x", p, nil, "") || gen(scope) != (ProviderRegistryGeneration{2, 2}) {
+	if !registry.RestoreRegistration("x", p, nil, "") || gen(scope) != (ProviderRegistryGeneration{Global: 2, Scoped: 2}) {
 		t.Fatalf("global restore %v", gen(scope))
 	}
 	registry.ResetForTests()
-	if gen(scope) != (ProviderRegistryGeneration{3, 0}) {
+	if gen(scope) != (ProviderRegistryGeneration{Global: 3, Scoped: 0}) {
 		t.Fatalf("reset %v", gen(scope))
 	}
 }
@@ -404,7 +404,7 @@ func TestProviderRegistryExport(t *testing.T) {
 		t.Fatal("scoped providers hook")
 	}
 	if api.GetProvider(ctx, "y", scope) != q || !slices.Equal(api.ListProviders(ctx, scope), []*prSample{p, q}) ||
-		api.SnapshotRegistration("y", scope) != q || api.RegistryGeneration(ctx, scope) != (ProviderRegistryGeneration{1, 1}) {
+		api.SnapshotRegistration("y", scope) != q || api.RegistryGeneration(ctx, scope) != (ProviderRegistryGeneration{Global: 1, Scoped: 1}) {
 		t.Fatal("bound reads")
 	}
 	if !api.RestoreRegistration("y", q, nil, scope) {

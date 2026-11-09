@@ -134,23 +134,35 @@ func wantNames(t *testing.T, got map[string]bool, want ...string) {
 	}
 }
 
-func TestQuietDefinitionsNeverAliasTheMemo(t *testing.T) {
+// Memo entry the quiet definitions path cached, exactly one entry expected
+func cachedQuietDefs(t *testing.T) []map[string]any {
+	t.Helper()
+	toolDefsCacheMu.Lock()
+	defer toolDefsCacheMu.Unlock()
+	if len(toolDefsCache) != 1 {
+		t.Fatalf("cache entries %d", len(toolDefsCache))
+	}
+	for _, e := range toolDefsCache {
+		return e.defs
+	}
+	return nil
+}
+
+func TestFirstUncachedCallReturnsFreshList(t *testing.T) {
 	r, st, env := memoRegistry(t)
 	st.setUp(true)
 	first := r.ToolDefinitions(context.Background(), env, DefinitionOptions{Enabled: memoBoth, Quiet: true, SkipToolSearchAssembly: true})
-	toolDefsCacheMu.Lock()
-	if len(toolDefsCache) != 1 {
-		toolDefsCacheMu.Unlock()
-		t.Fatalf("cache entries %d", len(toolDefsCache))
-	}
-	var cached []map[string]any
-	for _, e := range toolDefsCache {
-		cached = e.defs
-	}
-	toolDefsCacheMu.Unlock()
+	cached := cachedQuietDefs(t)
 	if len(first) != 2 || &first[0] == &cached[0] {
 		t.Fatalf("first uncached call aliases the memo: %d defs", len(first))
 	}
+}
+
+func TestCacheHitReturnsFreshList(t *testing.T) {
+	r, st, env := memoRegistry(t)
+	st.setUp(true)
+	first := r.ToolDefinitions(context.Background(), env, DefinitionOptions{Enabled: memoBoth, Quiet: true, SkipToolSearchAssembly: true})
+	cached := cachedQuietDefs(t)
 	first = append(first[:0], map[string]any{"type": "function", "function": map[string]any{"name": "memory"}})
 	second := r.ToolDefinitions(context.Background(), env, DefinitionOptions{Enabled: memoBoth, Quiet: true, SkipToolSearchAssembly: true})
 	if len(second) != 2 || &second[0] == &cached[0] || &second[0] == &first[0] {
@@ -159,7 +171,7 @@ func TestQuietDefinitionsNeverAliasTheMemo(t *testing.T) {
 	wantNames(t, bridgeDefNames(r, env, memoBoth), memoMail, memoAnchor)
 }
 
-func TestQuietDefinitionsMemoEvictsOldestAtCapacity(t *testing.T) {
+func TestCacheBoundedByEviction(t *testing.T) {
 	r, _, env := memoRegistry(t)
 	for i := range toolDefsCacheMax {
 		r.ToolDefinitions(context.Background(), env, DefinitionOptions{Enabled: []string{fmt.Sprintf("fake_toolset_%d", i)}, Quiet: true})
@@ -216,7 +228,7 @@ func TestConcurrentCapacityMissesEvictAtomically(t *testing.T) {
 	}
 }
 
-func TestExplicitInvalidationReachesTheQuietMemo(t *testing.T) {
+func TestReporterReproducerExplicitInvalidationReachesQuietMemo(t *testing.T) {
 	r, st, env := memoRegistry(t)
 	wantNames(t, bridgeDefNames(r, env, []string{"mcp-probe-mail"}))
 	st.setUp(true)
@@ -406,7 +418,7 @@ func codexModelEnv(overrides map[string]any) *Env {
 	return &Env{Config: config.Tree{"model": model}}
 }
 
-func TestActiveContextLengthPassesRuntimeProviderBaseURLAndKey(t *testing.T) {
+func TestPassesProviderBaseUrlAndKeyFromRuntime(t *testing.T) {
 	c := captureContextLength(t, "https://chatgpt.com/backend-api/codex", "tok-live", nil, func(ContextLengthQuery) int { return 272_000 })
 	if got := resolveActiveContextLength(context.Background(), codexModelEnv(nil)); got != 272_000 {
 		t.Fatalf("context length %d", got)
@@ -417,7 +429,7 @@ func TestActiveContextLengthPassesRuntimeProviderBaseURLAndKey(t *testing.T) {
 	}
 }
 
-func TestActiveContextLengthOfflineCredentialFailureUsesConfigValues(t *testing.T) {
+func TestOfflineCredentialFailureDegradesToConfigValues(t *testing.T) {
 	c := captureContextLength(t, "", "", errors.New("no credentials"), func(ContextLengthQuery) int { return 272_000 })
 	env := codexModelEnv(map[string]any{"base_url": "https://chatgpt.com/backend-api/codex"})
 	if got := resolveActiveContextLength(context.Background(), env); got != 272_000 {
@@ -428,7 +440,7 @@ func TestActiveContextLengthOfflineCredentialFailureUsesConfigValues(t *testing.
 	}
 }
 
-func TestActiveContextLengthWithoutProviderSkipsRuntimeResolution(t *testing.T) {
+func TestNoProviderConfiguredSkipsRuntimeResolution(t *testing.T) {
 	c := captureContextLength(t, "x", "y", nil, func(ContextLengthQuery) int { return 200_000 })
 	env := &Env{Config: config.Tree{"model": map[string]any{"model": "some-model"}}}
 	if got := resolveActiveContextLength(context.Background(), env); got != 200_000 {
@@ -439,7 +451,7 @@ func TestActiveContextLengthWithoutProviderSkipsRuntimeResolution(t *testing.T) 
 	}
 }
 
-func TestActiveContextLengthConfigValueStillShortCircuits(t *testing.T) {
+func TestConfigContextLengthStillShortCircuits(t *testing.T) {
 	c := captureContextLength(t, "https://chatgpt.com/backend-api/codex", "tok", nil, func(q ContextLengthQuery) int { return q.ConfigContextLength })
 	if got := resolveActiveContextLength(context.Background(), codexModelEnv(map[string]any{"context_length": 150_000})); got != 150_000 {
 		t.Fatalf("context length %d", got)
@@ -449,7 +461,7 @@ func TestActiveContextLengthConfigValueStillShortCircuits(t *testing.T) {
 	}
 }
 
-func TestDispatcherOwnedWorkerFollowsTheNonOwnedMarker(t *testing.T) {
+func TestToolsetForceAddSuppressed(t *testing.T) {
 	t.Setenv("ICEBATH_KANBAN_TASK", "t_worker")
 	os.Unsetenv("ICEBATH_NON_DISPATCHER_OWNED_CONTEXT")
 	env := &Env{Values: &sync.Map{}}

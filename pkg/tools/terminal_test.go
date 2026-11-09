@@ -137,11 +137,7 @@ func degradedEnv(t *testing.T) *Env {
 	if err := RegisterTerminalBackend(unreachableBackend{name: "deadbox"}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		backendRegistry.Lock()
-		delete(backendRegistry.providers, "deadbox")
-		backendRegistry.Unlock()
-	})
+	t.Cleanup(func() { RestoreTerminalBackend("deadbox", SnapshotTerminalBackend("deadbox"), nil) })
 	cfg := localTestConfig(t.TempDir(), map[string]any{"env_type": "deadbox"})
 	envConfigFn = func(*Env) (map[string]any, error) { return cfg, nil }
 	return env
@@ -683,11 +679,7 @@ func registerTestBackend(t *testing.T, p BackendProvider) {
 	if err := RegisterTerminalBackend(p); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		backendRegistry.Lock()
-		delete(backendRegistry.providers, strings.ToLower(p.Name()))
-		backendRegistry.Unlock()
-	})
+	t.Cleanup(func() { RestoreTerminalBackend(p.Name(), SnapshotTerminalBackend(p.Name()), nil) })
 }
 
 func TestBackendRequirementFailureCapturesReason(t *testing.T) {

@@ -69,6 +69,11 @@ func worktreeGitQuiet(args []string, cwd string, timeout time.Duration, log stri
 	}
 }
 
+// WorktreeGitQuiet runs git swallowing every error, logging it at debug under the given prefix
+func WorktreeGitQuiet(args []string, cwd string, timeout time.Duration, log string, env map[string]string) {
+	worktreeGitQuiet(args, cwd, timeout, log, env)
+}
+
 // Non blank non comment entries of the repository worktreeinclude file, empty when absent
 func worktreeincludeEntries(repoRoot string) []string {
 	p := filepath.Join(repoRoot, ".worktreeinclude")
@@ -157,6 +162,11 @@ func worktreeHasUnpushedCommits(worktreePath string, timeout time.Duration) bool
 	}
 	unpushed, ok, err := worktreeGitOut(append([]string{"log", "--oneline", "HEAD", "--not"}, baseline...), worktreePath, timeout)
 	return err != nil || !ok || unpushed != ""
+}
+
+// WorktreeHasUnpushedCommits reports commits the worktree branch has not pushed
+func WorktreeHasUnpushedCommits(worktreePath string, timeout time.Duration) bool {
+	return worktreeHasUnpushedCommits(worktreePath, timeout)
 }
 
 // Copies the files and links the directories .worktreeinclude lists into the worktree, escaping entries skipped
@@ -277,10 +287,20 @@ func worktreeIsDirty(worktreePath, repoRoot string, timeout time.Duration) bool 
 	return false
 }
 
+// WorktreeIsDirty reports uncommitted work in a worktree
+func WorktreeIsDirty(worktreePath, repoRoot string, timeout time.Duration) bool {
+	return worktreeIsDirty(worktreePath, repoRoot, timeout)
+}
+
 // Whether the repository is a shallow clone, false when git cannot tell
 func repoIsShallow(repoPath string, timeout time.Duration) bool {
 	out, ok, err := worktreeGitOut([]string{"rev-parse", "--is-shallow-repository"}, repoPath, timeout)
 	return err == nil && ok && out == "true"
+}
+
+// RepoIsShallow reports a shallow clone whose unpushed verdict is unreliable
+func RepoIsShallow(repoPath string, timeout time.Duration) bool {
+	return repoIsShallow(repoPath, timeout)
 }
 
 // Blobless unshallow so history verdicts hold, a plain unshallow when filters are refused, reports non shallow after

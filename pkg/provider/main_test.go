@@ -17,6 +17,7 @@ func TestMain(m *testing.M) {
 	installLocalStackProbeDoubles()
 	installSpilloverWiring()
 	DispatchCodexToolsMCPServerEntry()
+	dispatchLeftCoreAgentStartEntry()
 	os.Exit(m.Run())
 }
 

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"math"
 	"math/bits"
 	"reflect"
@@ -377,19 +378,23 @@ func (d *wtf8JSONDecoder) array() (any, bool) {
 	}
 }
 
-// Encodes like encoding/json without HTML escaping, surrogates written as code points like json.dumps with ensure_ascii false
-func EncodeWTF8(v any) ([]byte, error) {
+// Encodes like json.dumps with ensure_ascii false, encoding/json value shapes without HTML escaping and surrogates as code points
+func EncodeWTF8(v any) ([]byte, error) { return encodeWTF8(v, true) }
+
+// Pooled encode run, NaN and the infinities written when allowed and refused with the json.dumps ValueError otherwise
+func encodeWTF8(v any, allowNaN bool) ([]byte, error) {
 	e := wtf8EncodePool.Get().(*wtf8EncodeState)
 	defer wtf8EncodePool.Put(e)
+	e.allowNaN = allowNaN
 	if err := e.marshal(v); err != nil {
 		return nil, err
 	}
 	return append([]byte(nil), e.buf...), nil
 }
 
-// Encodes like EncodeWTF8 with every non ASCII character escaped the way json.dumps with ensure_ascii writes it
+// Encodes the requests json= wire form, every non ASCII character escaped and out of range floats refused
 func EncodeWTF8ASCII(v any) ([]byte, error) {
-	out, err := EncodeWTF8(v)
+	out, err := encodeWTF8(v, false)
 	if err != nil {
 		return nil, err
 	}
@@ -505,6 +510,7 @@ type wtf8EncodeState struct {
 	buf      []byte
 	ptrLevel uint
 	ptrSeen  map[any]struct{}
+	allowNaN bool
 }
 
 // Pointer depth past which the encoder starts checking for cycles, as encoding/json does
@@ -663,10 +669,8 @@ func newWTF8TypeEncoder(t reflect.Type, allowAddr bool) wtf8EncoderFunc {
 		return wtf8IntEncoder
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		return wtf8UintEncoder
-	case reflect.Float32:
-		return wtf8FloatEncoder(32)
-	case reflect.Float64:
-		return wtf8FloatEncoder(64)
+	case reflect.Float32, reflect.Float64:
+		return wtf8EncodeFloat
 	case reflect.String:
 		return wtf8StringEncoder
 	case reflect.Interface:
@@ -786,29 +790,26 @@ func wtf8UintEncoder(e *wtf8EncodeState, v reflect.Value, quoted bool) {
 	e.quote(quoted)
 }
 
-// Float in the ES6 number to string form encoding/json writes, refusing NaN and infinities
-func wtf8FloatEncoder(bits int) wtf8EncoderFunc {
-	return func(e *wtf8EncodeState, v reflect.Value, quoted bool) {
-		f := v.Float()
-		if math.IsInf(f, 0) || math.IsNaN(f) {
-			e.fail(&json.UnsupportedValueError{Value: v, Str: strconv.FormatFloat(f, 'g', -1, bits)})
-		}
-		e.quote(quoted)
-		abs := math.Abs(f)
-		format := byte('f')
-		if abs != 0 && (bits == 64 && (abs < 1e-6 || abs >= 1e21) || bits == 32 && (float32(abs) < 1e-6 || float32(abs) >= 1e21)) {
-			format = 'e'
-		}
-		e.buf = strconv.AppendFloat(e.buf, f, format, -1, bits)
-		if format == 'e' {
-			n := len(e.buf)
-			if n >= 4 && e.buf[n-4] == 'e' && e.buf[n-3] == '-' && e.buf[n-2] == '0' {
-				e.buf[n-2] = e.buf[n-1]
-				e.buf = e.buf[:n-1]
-			}
-		}
-		e.quote(quoted)
+// Float as json.dumps writes it, float repr digits with NaN and the infinities spelled out unless NaN is refused
+func wtf8EncodeFloat(e *wtf8EncodeState, v reflect.Value, quoted bool) {
+	f := v.Float()
+	var text string
+	switch {
+	case math.IsNaN(f):
+		text = "NaN"
+	case math.IsInf(f, 1):
+		text = "Infinity"
+	case math.IsInf(f, -1):
+		text = "-Infinity"
+	default:
+		text = pyrepr.Float(f)
 	}
+	if text != pyrepr.Float(f) && !e.allowNaN {
+		e.fail(fmt.Errorf("%w: %s", ErrOutOfRange, pyrepr.Float(f)))
+	}
+	e.quote(quoted)
+	e.buf = append(e.buf, text...)
+	e.quote(quoted)
 }
 
 func wtf8StringEncoder(e *wtf8EncodeState, v reflect.Value, quoted bool) {

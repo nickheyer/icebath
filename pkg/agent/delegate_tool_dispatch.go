@@ -276,7 +276,7 @@ func executeAndAggregate(ctx context.Context, batch *delegateBatch, honorParentI
 	} else {
 		runChildrenParallel(ctx, batch, &results, honorParentInterrupt)
 	}
-	finalizeChildResults(ctx, results, batch.TaskList, batch.Children, batch.Parent)
+	finalizeChildResultsFn(ctx, results, batch.TaskList, batch.Children, batch.Parent)
 	totalDuration := math.Round(time.Since(batch.OverallStart).Seconds()*100) / 100
 	for _, entry := range results {
 		idx, isInt := entryValue(entry, "task_index").(int)
@@ -607,6 +607,9 @@ func restoreParentCancellation(unit *delegateBatch) {
 func (b *delegateBatch) ownerKwargs() (ownerSessionID string, ownerTransport, ownerSessionRecord any) {
 	return b.Origin.UISessionID, b.Origin.OwnerTransport, b.Origin.OwnerSessionRecord
 }
+
+// Host owned finalization of a finished batch, swapped by tests that hold the owner inside that window
+var finalizeChildResultsFn = finalizeChildResults
 
 // Async registry entry of one unit, swapped by tests that read the dispatch payload
 var dispatchAsyncDelegationBatchFn = tools.DispatchAsyncDelegationBatch

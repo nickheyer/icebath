@@ -291,7 +291,7 @@ func init() {
 				Goal: args["goal"], Context: args["context"], Tasks: stripModelHiddenTaskFields(args["tasks"]),
 				MaxIterations: args["max_iterations"], Role: args["role"], Background: &background,
 				OutputSchema: args["output_schema"], Images: args["images"], Action: args["action"],
-				SubagentID: args["subagent_id"], Message: args["message"], ParentAgent: nil,
+				SubagentID: args["subagent_id"], Message: args["message"], ParentAgent: ParentAgentFrom(ctx),
 			})
 		},
 		Check:         checkDelegateRequirements,

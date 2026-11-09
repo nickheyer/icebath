@@ -181,6 +181,7 @@ func NewCLI() *CLI {
 {{end}}`)
 	c.Root = root
 	root.Args = c.groupArgs()
+	root.FParseErrWhitelist.UnknownFlags = true
 	root.RunE = func(cmd *cobra.Command, args []string) error { return c.dispatch("chat", cmd, args) }
 	c.addRootFlags(root)
 	c.addChat(root)
@@ -476,6 +477,7 @@ func (c *CLI) finishAll(cmd *cobra.Command) {
 	} else if cmd.Args == nil {
 		if cmd.HasSubCommands() {
 			cmd.Args = c.groupArgs()
+			cmd.FParseErrWhitelist.UnknownFlags = true
 		} else {
 			cmd.Args = cobra.NoArgs
 		}

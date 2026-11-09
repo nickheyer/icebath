@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -35,7 +36,6 @@ func hooksCLIHome(t *testing.T, cfgYAML string) (string, context.Context) {
 	if prev != nil {
 		s = *prev
 	}
-	s.OutboundWebhookTargets = func(map[string]any) []OutboundWebhookTarget { return nil }
 	InstallServices(&s)
 	t.Cleanup(func() { InstallServices(prev) })
 	return tmp, homeCtx(h)
@@ -228,12 +228,9 @@ func TestHooksCommandUsageUnknownAndOutboundTargets(t *testing.T) {
 	if out := runHooks(t, ctx, HooksArgs{Action: "ls"}); !strings.HasPrefix(out, "No shell hooks or outbound webhooks configured") {
 		t.Fatalf("empty list output:\n%s", out)
 	}
-	s := *installedServices()
-	s.OutboundWebhookTargets = func(map[string]any) []OutboundWebhookTarget {
-		return []OutboundWebhookTarget{{Label: "audit", URL: "https://example.test/hook", Events: []string{"pre_tool_call", "post_tool_call"},
-			Matcher: "terminal", Timeout: 10}}
-	}
-	InstallServices(&s)
+	writeFile(t, filepath.Join(home.Dir(ctx), "config.yaml"), "hooks:\n  outbound:\n    - name: audit\n      url: https://example.test/hook\n"+
+		"      events: [pre_tool_call, post_tool_call]\n      matcher: terminal\n      timeout: 10\n")
+	config.ResetCache()
 	out := runHooks(t, ctx, HooksArgs{Action: "list"})
 	want := "No shell hooks configured in ~/.icebath/config.yaml.\nConfigured outbound webhooks (1 total):\n\n  - audit\n" +
 		"      url:     https://example.test/hook\n      events:  pre_tool_call, post_tool_call matcher='terminal' (timeout=10s, UNSIGNED)\n\n"

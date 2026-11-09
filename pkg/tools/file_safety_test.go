@@ -63,3 +63,17 @@ func TestExportedRedactionHelpersMatchTheirPrivateForms(t *testing.T) {
 		t.Fatal("MaskDisplaySecret")
 	}
 }
+
+func TestFileSafetyExportsReadTheGuardTables(t *testing.T) {
+	h := t.TempDir()
+	dirs := IcebathDirs(&Env{Home: h})
+	if len(dirs) == 0 || dirs[0] != resolveNonStrict(h) {
+		t.Fatalf("dirs %v", dirs)
+	}
+	if !slices.Contains(HomeCredentialDirs(), ".ssh") || !slices.Contains(HomeCredentialDirs(), ".config/gcloud") {
+		t.Fatal(HomeCredentialDirs())
+	}
+	if !IsNTNamespacePath(`\??\C:\x`) || !IsNTNamespacePath(`\\?\UNC\server\share`) || IsNTNamespacePath("/tmp/x") {
+		t.Fatal("namespace check must follow the raw string rule")
+	}
+}

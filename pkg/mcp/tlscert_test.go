@@ -80,7 +80,7 @@ func caBundle(t *testing.T, srv *httptest.Server) string {
 	return path
 }
 
-func TestResolveClientCertReturnsNilWhenUnset(t *testing.T) {
+func TestResolveClientCertReturnsNoneWhenUnset(t *testing.T) {
 	for _, cfg := range []map[string]any{{}, {"url": "https://x"}} {
 		if c, err := resolveClientCert("srv", cfg["client_cert"], cfg["client_key"]); c != nil || err != nil {
 			t.Fatalf("%v gave %v %v", cfg, c, err)
@@ -123,7 +123,7 @@ func TestResolveClientCertRejectsNonRegularFile(t *testing.T) {
 	}
 }
 
-func TestHTTPClientCertForwardedToTheTLSHandshake(t *testing.T) {
+func TestHTTPClientCertCertForwardedToAsyncClient(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -147,7 +147,7 @@ func TestHTTPClientCertForwardedToTheTLSHandshake(t *testing.T) {
 	}
 }
 
-func TestHTTPClientCertMissingFileSurfacesClearError(t *testing.T) {
+func TestHTTPClientCertMissingCertFileSurfacesClearError(t *testing.T) {
 	isolateHome(t)
 	s, r := httpTask(t, "remote", map[string]any{"url": "https://example.com/mcp", "client_cert": filepath.Join(t.TempDir(), "nope.pem")})
 	_, err := s.runHTTP(t.Context(), r)
@@ -159,7 +159,7 @@ func TestHTTPClientCertMissingFileSurfacesClearError(t *testing.T) {
 	}
 }
 
-func TestSSEClientWithDefaultTLSVerifiesTheServer(t *testing.T) {
+func TestSSEClientCertFactoryAlwaysInjectedWithDefaultTls(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -176,7 +176,7 @@ func TestSSEClientWithDefaultTLSVerifiesTheServer(t *testing.T) {
 	}
 }
 
-func TestSSEClientCertForwardedToTheTLSHandshake(t *testing.T) {
+func TestSSEClientCertFactoryInjectedWhenCertSet(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -193,7 +193,7 @@ func TestSSEClientCertForwardedToTheTLSHandshake(t *testing.T) {
 	}
 }
 
-func TestSSEClientForwardsCustomCABundle(t *testing.T) {
+func TestSSEClientCertFactoryForwardsCustomCaBundle(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)

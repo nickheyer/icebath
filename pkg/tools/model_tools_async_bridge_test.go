@@ -45,7 +45,7 @@ func returnsWithin(t *testing.T, limit time.Duration, what string, fn func()) {
 	}
 }
 
-func TestCachedTransportSurvivesBetweenDispatches(t *testing.T) {
+func TestCachedTransportSurvivesBetweenCalls(t *testing.T) {
 	var newConns atomic.Int32
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok") }))
 	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
@@ -94,7 +94,7 @@ func TestCachedTransportSurvivesBetweenDispatches(t *testing.T) {
 	client.CloseIdleConnections()
 }
 
-func TestConcurrentWorkersKeepDistinctPerCallState(t *testing.T) {
+func TestConcurrentWorkersReuseDistinctLoops(t *testing.T) {
 	type seen struct {
 		worker               WorkerID
 		callID, boundCallID  string
@@ -167,7 +167,7 @@ func TestConcurrentWorkersKeepDistinctPerCallState(t *testing.T) {
 	}
 }
 
-func TestDispatchFromInsideAnotherHandlerDoesNotBlock(t *testing.T) {
+func TestRunAsyncFromAsyncContext(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register(handlerDef("simple_probe", func(context.Context, *Call) string { return `{"value": 42}` }))
 	reg.Register(handlerDef("outer_probe", func(ctx context.Context, call *Call) string {
@@ -201,7 +201,7 @@ func TestDispatchFromInsideAnotherHandlerDoesNotBlock(t *testing.T) {
 	}
 }
 
-func TestTimedOutHandlerDoesNotBlockCallerReturn(t *testing.T) {
+func TestTimeoutUsesNonblockingExecutorShutdown(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	var started atomic.Int32
@@ -240,7 +240,7 @@ func TestTimedOutHandlerDoesNotBlockCallerReturn(t *testing.T) {
 	}
 }
 
-func TestTimedOutHandlerContextIsCancelled(t *testing.T) {
+func TestTimeoutCancelsCoroutineInWorkerLoop(t *testing.T) {
 	cancelObserved := make(chan string, 2)
 	e, _, _ := registryExecutor(t, handlerDef("cancellable_probe", func(ctx context.Context, call *Call) string {
 		select {
@@ -291,7 +291,7 @@ func blueSquareDataURL(t *testing.T) string {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
-func TestConsecutiveImageDispatchesKeepTheAuxClientAlive(t *testing.T) {
+func TestConsecutiveImageDispatchesKeepTheLoopAlive(t *testing.T) {
 	aux := &fakeVisionAux{reply: func(int, []*state.Message, AuxOptions) (string, error) { return "A cat sitting on a chair.", nil }}
 	env := visionEnv(t, aux)
 	d := NewDispatcher(Default)

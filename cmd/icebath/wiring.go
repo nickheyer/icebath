@@ -97,7 +97,7 @@ func installProcessWiring() {
 	agent.ResetScreenshotDedup = codeexec.ResetScreenshotDedup
 	tools.DiagnosticProcessEvent = agent.DiagnosticProcessEvent
 	tools.MediaDeliveryPathValidator = mediaDeliveryPathValidator
-	tools.TerminalBackendInstallHint = func(backend string) string { return provider.ProviderInstallHint(context.Background(), backend) }
+	tools.TerminalBackendInstallHint = func(backend string) string { return provider.TerminalBackendInstallHint(context.Background(), backend) }
 	tools.GitlockRunGit = selfupdate.GitlockRunGit
 	tools.AsyncDelegationOwnerProbes.PidExists = kanban.GatewayStatusProbes.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime
@@ -111,6 +111,7 @@ func installProcessWiring() {
 	}
 	tools.ModelContextLength = provider.ToolModelContextLength
 	tools.AllSkillNames = skills.AllSkillNames
+	tools.ProjectBoardWorkdirBinder = bindProjectBoardWorkdir
 	observability.SkillSourceIDAliasesHook = skills.SourceIDAliases
 	provider.InstallPluginManagerHooks(pluginManagerHooks())
 	plugins.InstallServices(pluginServices())
@@ -207,20 +208,11 @@ func pluginServices() *plugins.Services {
 			"delegation_provider":           agent.DelegationScopedRegistry(),
 			"login_backend":                 browser.LoginBackendScopedRegistry(),
 		},
-		BuiltinAuxTaskKeys:        provider.BuiltinAuxTaskKeys,
-		RegisterRedactionPatterns: tools.RegisterRedactionPatterns,
-		PluginSDK:                 pluginSDK,
-		BuildPluginBlueprint:      cron.BuildPluginBlueprint,
-		SecretSources:             provider.PluginSecretSources(),
-		ReRegisterOutboundWebhooks: func() error {
-			ctx := context.Background()
-			cfg, err := config.Load(home.Dir(ctx), nil)
-			if err != nil {
-				return err
-			}
-			agent.RegisterOutboundWebhooksFromConfig(ctx, map[string]any(cfg))
-			return nil
-		},
+		BuiltinAuxTaskKeys:         provider.BuiltinAuxTaskKeys,
+		RegisterRedactionPatterns:  tools.RegisterRedactionPatterns,
+		PluginSDK:                  pluginSDK,
+		BuildPluginBlueprint:       cron.BuildPluginBlueprint,
+		SecretSources:              provider.PluginSecretSources(),
 		PlatformDeclarations:       agent.PlatformDeclarationsService(),
 		OAuthSurface:               provider.OAuthSurface,
 		OAuthAdmissionProblems:     provider.OAuthAdmissionProblems,
@@ -263,7 +255,6 @@ func pluginServices() *plugins.Services {
 			}
 			return out
 		},
-		OutboundWebhookTargets: agent.OutboundWebhookTargets,
 	}
 	gateway.InstallPluginServices(s)
 	return s
@@ -322,7 +313,8 @@ func runAtExit() {
 	run(func() { mcp.ShutdownMCPServers(context.Background(), nil, nil, 15*time.Second) })
 	run(func() { provider.ShutdownCachedClients(context.Background()) })
 	run(func() { provider.ShutdownLocalRuntime() })
-	run(func() { gateway.ShutdownRelayMetricsRuntimes() })
+	run(func() { plugins.FlushOutboundWebhooks(5 * time.Second) })
+	run(func() { observability.ShutdownRuntimes(context.Background()) })
 	run(gateway.HostRendezvousAtExit)
 	run(logging.Shutdown)
 	for _, s := range []*os.File{os.Stdout, os.Stderr} {
@@ -385,4 +377,17 @@ func failoverReason(value any) (any, bool) {
 		return nil, false
 	}
 	return r, true
+}
+
+// Points a bound kanban board's default workdir at the project's primary repo, hermes_cli/projects_cmd.py _cmd_bind_board
+func bindProjectBoardWorkdir(ctx context.Context, board, primaryPath string) error {
+	slug, err := kanban.NormalizeBoardSlug(&board)
+	if err != nil || slug == "" {
+		return err
+	}
+	if slug != kanban.DefaultBoard && !kanban.BoardExists(&slug) {
+		return nil
+	}
+	_, err = kanban.WriteBoardMetadata(ctx, &slug, kanban.BoardMetadataUpdate{DefaultWorkdir: &primaryPath})
+	return err
 }

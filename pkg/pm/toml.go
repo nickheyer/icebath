@@ -28,6 +28,9 @@ func tomlLoads(text string) (*OrderedObject, error) {
 	return orderTOML(plain, "", order).(*OrderedObject), nil
 }
 
+// TOMLLoads exports tomlLoads
+func TOMLLoads(text string) (*OrderedObject, error) { return tomlLoads(text) }
+
 // First appearance order of every table's keys, keyed by table path with array elements indexed
 func tomlKeyOrder(data []byte) map[string][]string {
 	order := map[string][]string{}

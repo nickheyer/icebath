@@ -696,6 +696,11 @@ func auxBuildCallKwargs(ctx context.Context, provider, model string, messages an
 	return MergeSessionAffinityHeaders(ctx, kwargs, provider, opts.BaseURL, sessionID), nil
 }
 
+// AuxCallKwargs is the auxiliary chat completions request for one provider and model routed at baseURL
+func AuxCallKwargs(ctx context.Context, provider, model string, messages any, baseURL string) (map[string]any, error) {
+	return auxBuildCallKwargs(ctx, provider, model, messages, auxCallKwargsOptions{BaseURL: baseURL})
+}
+
 // Union of data_use over messages, what the receiving model must guarantee
 func auxDataUseRequirement(messages any) map[string]bool {
 	out := map[string]bool{}

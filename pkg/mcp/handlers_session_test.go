@@ -49,7 +49,7 @@ func TestSessionExpiredRetryWaitsForNewSession(t *testing.T) {
 	}
 }
 
-func TestSessionExpiredHandlerWithoutLoop(t *testing.T) {
+func TestSessionExpiredHandlerReturnsNoneWithoutLoop(t *testing.T) {
 	handlerServer(t, "srv-noloop", nil)
 	withoutLoop(t)
 	expired := errors.New("Invalid or expired session")
@@ -63,7 +63,7 @@ func TestSessionExpiredHandlerWithoutLoop(t *testing.T) {
 	}
 }
 
-func TestSessionExpiredHandlerWithoutServerRecord(t *testing.T) {
+func TestSessionExpiredHandlerReturnsNoneWithoutServerRecord(t *testing.T) {
 	resetLedgers(t)
 	resetHandlerLedgers(t)
 	ensureMCPLoop()
@@ -74,7 +74,7 @@ func TestSessionExpiredHandlerWithoutServerRecord(t *testing.T) {
 	}
 }
 
-func TestSessionExpiredNonToolHandlersReconnect(t *testing.T) {
+func TestNonToolHandlersAlsoReconnectOnSessionExpired(t *testing.T) {
 	for _, tc := range []struct {
 		label   string
 		factory func(string, float64) tools.Handler
@@ -125,7 +125,7 @@ func TestToolIsReadOnlyFailsSafe(t *testing.T) {
 	}
 }
 
-func TestSessionExpiredHandlerRebuildsConfiguredServerTransport(t *testing.T) {
+func TestCallToolHandlerRebuildsConfiguredServerTransport(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		config map[string]any

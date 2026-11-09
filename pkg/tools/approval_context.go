@@ -23,8 +23,8 @@ var ApprovalHookInvoker func(hookName string, payload map[string]any) error
 // ViewerTurnHasApprover reports whether the executing viewer turn has a subscriber holding session approve
 var ViewerTurnHasApprover func(env *Env) bool
 
-// FiniteTurnRequired reports the admitted turn's finite flag and whether one is known
-var FiniteTurnRequired func(env *Env) (bool, bool)
+// FiniteTurnRequired reports the admitted turn's finite flag and whether one is known, the env flag by default
+var FiniteTurnRequired func(env *Env) (bool, bool) = FiniteTurnFlag
 
 // RoomApprovalMode reports a hosted room execution policy's approval mode when one governs the turn
 var RoomApprovalMode func(env *Env) (string, bool)

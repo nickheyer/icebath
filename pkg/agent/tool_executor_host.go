@@ -158,8 +158,11 @@ func toolSearchScopedNames(a *AIAgent) map[string]bool {
 	return tools.ToolSearchScopedNames(a.toolContext(), agentExecutorHost{a})
 }
 
-func (a *AIAgent) Env() *tools.Env          { return a.env }
-func (a *AIAgent) TurnID() string           { return a.currentTurnID }
+func (a *AIAgent) Env() *tools.Env { return a.env }
+func (a *AIAgent) TurnID() string  { return a.currentTurnID }
+
+// Task id of the running turn, empty between turns
+func (a *AIAgent) TaskID() string           { return a.currentTaskID }
 func (a *AIAgent) APIRequestID() string     { return a.currentAPIRequestID }
 func (a *AIAgent) QuietMode() bool          { return a.quietMode }
 func (a *AIAgent) VerboseLogging() bool     { return a.verboseLogging }
@@ -248,8 +251,10 @@ func recordGuardrailWarnings(a *AIAgent, d tools.ToolGuardrailDecision, stallKin
 	observability.RecordGuardrailWarnings(a.toolContext(), a, &d, stallKind)
 }
 
+// Records the tool result for observability, then repaints automation cards a tool moved mid turn
 func (a *AIAgent) NoteToolResult(name, toolCallID, result, persisted string) {
 	observability.NoteToolResult(a.toolContext(), a, name, toolCallID, result, persisted)
+	a.publishControlIfChanged()
 }
 
 // Efficiency rows of the finished batch through their dict views

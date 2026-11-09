@@ -988,6 +988,9 @@ func SweepOrphanedCompletions(env *Env, q *EventQueue, now *float64) (int, error
 	return restored, err
 }
 
+// Orphan sweep the throttle runs, replaced by tests counting sweeps per home
+var asyncSweepOrphanedFn = SweepOrphanedCompletions
+
 // Runs the orphan sweep at most once per interval per home on the monotonic clock, never failing the loop
 func MaybeSweepOrphanedCompletions(env *Env, q *EventQueue, now *float64) int {
 	homeKey := home.Key(envHome(env))
@@ -1008,7 +1011,7 @@ func MaybeSweepOrphanedCompletions(env *Env, q *EventQueue, now *float64) int {
 				err = fmt.Errorf("%v", r)
 			}
 		}()
-		return SweepOrphanedCompletions(env, q, nil)
+		return asyncSweepOrphanedFn(env, q, nil)
 	}()
 	if err != nil {
 		asyncLog().Debug("Orphaned async delegation sweep failed", "error", err)
@@ -1620,6 +1623,9 @@ func asyncDispatch(ctx context.Context, env *Env, d AsyncDispatch) (map[string]a
 	return asyncDispatchAdmitted(ctx, env, d)
 }
 
+// Executor the dispatch submits to, replaced by tests pinning a pool so a unit stays queued
+var asyncGetExecutorFn = asyncGetExecutor
+
 // Shared dispatch core, the capacity check and record insert under one lock hold so the cap is never exceeded
 func asyncDispatchAdmitted(ctx context.Context, env *Env, d AsyncDispatch) (map[string]any, error) {
 	if _, err := workerLedger(); err != nil {
@@ -1725,7 +1731,7 @@ func asyncDispatchAdmitted(ctx context.Context, env *Env, d AsyncDispatch) (map[
 	if err := persistDispatch(env, m); err != nil {
 		return nil, err
 	}
-	executor := asyncGetExecutor(max(d.MaxAsyncChildren, liveUnits))
+	executor := asyncGetExecutorFn(max(d.MaxAsyncChildren, liveUnits))
 	delegationID := d.DelegationID
 	worker := func(wctx context.Context, wenv *Env) (any, error) {
 		result := map[string]any{}
@@ -1941,6 +1947,9 @@ func asyncFinalize(env *Env, delegationID string, result map[string]any, resultF
 	asyncRecordsMu.Unlock()
 }
 
+// Terminal durable write of a completion, replaced by tests standing in for a locked ledger
+var asyncPersistCompletionFn = persistCompletion
+
 // Pushes the async_delegation completion event onto the shared completion queue and its durable row
 func pushCompletionEvent(env *Env, record, result map[string]any, status string) {
 	result = asyncMap(RedactChildResult(env, result, nil, false))
@@ -2009,7 +2018,7 @@ func pushCompletionEvent(env *Env, record, result map[string]any, status string)
 			evt[k] = v
 		}
 	}
-	if err := persistCompletion(env, asyncCopyMap(evt), result); err != nil {
+	if err := asyncPersistCompletionFn(env, asyncCopyMap(evt), result); err != nil {
 		asyncLog().Error(fmt.Sprintf("Async delegation%s %s: durable completion write failed; delivering in-memory "+
 			"only (a restart may report this unit as unknown): %s", label, asyncText(record["delegation_id"]), err))
 	}

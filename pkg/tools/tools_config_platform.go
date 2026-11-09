@@ -166,6 +166,11 @@ func enabledPluginToolsets(cfg config.Tree, platform string, names []string, plu
 	return out
 }
 
+// EnabledPluginToolsets is the exported plugin toolset resolver for the migration tests of other packages
+func EnabledPluginToolsets(cfg config.Tree, platform string, names []string, pluginKeys map[string]bool) map[string]bool {
+	return enabledPluginToolsets(cfg, platform, names, pluginKeys)
+}
+
 // Whether a non compressor context engine is configured
 func contextEngineActive(cfg config.Tree) bool {
 	ctxCfg := cfg["context"]

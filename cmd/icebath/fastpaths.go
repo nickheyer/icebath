@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/agent"
 	"log/slog"
 	"os"
 
@@ -277,7 +276,9 @@ func prepareAgentStartup(a *chatArgs) {
 	if a.AcceptHooks && a.Command == "gateway" {
 		plugins.AcceptShellHooksForProcess()
 	}
-	agent.RegisterOutboundWebhooksFromConfig(ctx, map[string]any(cfg))
+	if _, err := plugins.RegisterOutboundWebhooksFromConfig(ctx, map[string]any(cfg)); err != nil {
+		slog.Debug(fmt.Sprintf("outbound-webhook registration failed at CLI startup: %v", err))
+	}
 }
 
 // The process wide tool environment of the bound home

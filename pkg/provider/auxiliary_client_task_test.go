@@ -279,3 +279,16 @@ func TestIsGeminiNativeProviderNameReadsTheNativeSet(t *testing.T) {
 		}
 	}
 }
+
+func TestAuxCallKwargsCarriesTheRuntimeMainSessionHeader(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	ctx := SetRuntimeMain(t.Context(), "opencode-go", "glm-5", RuntimeMainOptions{BaseURL: "https://opencode.ai/zen/go/v1", SessionID: "sess-wrap-1"})
+	kwargs, err := AuxCallKwargs(ctx, "opencode-go", "glm-5", []any{map[string]any{"role": "user", "content": "hi"}}, "https://opencode.ai/zen/go/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers, _ := kwargs["extra_headers"].(map[string]any)
+	if headers[OpencodeSessionHeader] != "sess-wrap-1" {
+		t.Fatalf("extra_headers %v", kwargs["extra_headers"])
+	}
+}

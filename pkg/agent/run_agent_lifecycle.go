@@ -53,6 +53,9 @@ func (a *AIAgent) spawnBackgroundReviewWith(ctx context.Context, messagesSnapsho
 	a.spawnBackgroundReviewNow(ctx, kw)
 }
 
+// Starts the review worker goroutine, replaced by tests that capture or run the worker inline
+var startReviewWorker = func(fn func()) { go fn() }
+
 // Starts the review fork goroutine, requeueing a preempted deferred review and finishing the run on spawn failure
 func (a *AIAgent) spawnBackgroundReviewNow(ctx context.Context, kw backgroundReviewKwargs) {
 	run := prepareBackgroundReviewRun(a)
@@ -72,10 +75,10 @@ func (a *AIAgent) spawnBackgroundReviewNow(ctx context.Context, kw backgroundRev
 	next := kw
 	next.requeueAttempts = kw.requeueAttempts + 1
 	threadCtx := context.WithoutCancel(ctx)
-	go func() {
+	startReviewWorker(func() {
 		target(threadCtx)
 		a.maybeRequeuePreemptedReview(threadCtx, run, next)
-	}()
+	})
 	ok = true
 }
 

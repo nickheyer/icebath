@@ -39,6 +39,9 @@ func rowsToMessages(rows []map[string]any) []*state.Message {
 	return out
 }
 
+// RowsToMessages converts plain conversation rows into session messages
+func RowsToMessages(rows []map[string]any) []*state.Message { return rowsToMessages(rows) }
+
 // Rough message only token estimate of dict rows at the learned per image price
 func estimateRowsRough(ctx context.Context, rows []map[string]any) int {
 	return provider.EstimateRowsTokens(rows, provider.CurrentImageTokenCost(ctx))

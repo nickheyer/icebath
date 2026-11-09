@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,11 +10,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pylaunch"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -29,6 +34,9 @@ func UpdateMechanisms() []string { return append([]string(nil), updateMechanisms
 
 // Commands every install publishes, in publication order
 var windowsBinLaunchers = []string{"icebath", "icebath-acp"}
+
+// WindowsBinLaunchers lists the launcher names the managed bin directory publishes
+func WindowsBinLaunchers() []string { return append([]string(nil), windowsBinLaunchers...) }
 
 // Subcommand each published command runs on the install binary
 var entryPoints = map[string][]string{"icebath": nil, "icebath-acp": {"acp"}}
@@ -203,6 +211,9 @@ func stageLauncher(name, root, outDir string) string {
 	return path
 }
 
+// StageLauncher exports stageLauncher
+func StageLauncher(name, root, outDir string) string { return stageLauncher(name, root, outDir) }
+
 // Removes copies an earlier publication renamed aside
 func collectRetired(exe string) {
 	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), globEscape(filepath.Base(exe))+"*.deleteme"))
@@ -249,7 +260,8 @@ func launcherBinary(target string) string {
 		return ""
 	}
 	if strings.EqualFold(filepath.Ext(target), ".exe") {
-		return target
+		interpreter, _ := pylaunch.ExeInterpreter(data)
+		return interpreter
 	}
 	if strictUTF8(data) != nil {
 		return ""
@@ -394,11 +406,49 @@ func publishConveniences(root, outDir string, names []string, create bool) ([]pu
 	return published, nil
 }
 
+// Own command already bound to a live binary of another install, kept so a foreign launch never rebinds it
+func keptSharedLauncher(name, local, own string) string {
+	if own == "" {
+		return ""
+	}
+	candidates := []string{filepath.Join(local, name)}
+	if isWindows() {
+		candidates = []string{filepath.Join(local, name+".exe"), filepath.Join(local, name+".cmd")}
+	}
+	var dead []string
+	for _, target := range candidates {
+		if !isRegularFile(target) && !isSymlink(target) {
+			continue
+		}
+		binary := launcherBinary(target)
+		if binary == "" || resolvePath(binary) == resolvePath(own) {
+			continue
+		}
+		if !isRegularFile(binary) {
+			dead = append(dead, target)
+			continue
+		}
+		for _, stale := range dead {
+			_ = os.Remove(stale)
+		}
+		return target
+	}
+	return ""
+}
+
 // Publishes the install's own commands then conveniences in outDir, empty when any own command failed
 func EnsureInstallLaunchers(ctx context.Context, repoRoot, outDir string) ([]string, error) {
 	root := resolvePath(repoRoot)
+	own := resolveInstallBinary(root)
+	owner := isHomeInstall(ctx, root)
 	var written []string
 	for _, name := range windowsBinLaunchers {
+		if !owner {
+			if kept := keptSharedLauncher(name, root, own); kept != "" {
+				written = append(written, kept)
+				continue
+			}
+		}
 		if path := stageLauncher(name, root, root); path != "" {
 			written = append(written, path)
 		}
@@ -449,7 +499,7 @@ func ExposeCLI(ctx context.Context, projectRoot string, create bool) (ExposeResu
 	}
 	root := resolvePath(projectRoot)
 	if isWindows() {
-		return exposeWindowsUserBin(ctx, root, create), nil
+		return exposeUserBin(ctx, root, create), nil
 	}
 	if create {
 		disabled, err := exposeOnPathDisabled(ctx)
@@ -639,11 +689,57 @@ func exposeWindowsUserBin(ctx context.Context, root string, create bool) ExposeR
 	if !ownsUserPath(filepath.Dir(directory)) {
 		return ExposeResult{OK: true, Skipped: "User PATH belongs to the home new consoles use", Written: names}
 	}
-	state, err := registerWindowsUserPath(directory)
+	state, err := registerUserPath(directory)
 	if err != nil {
 		return fail(err)
 	}
 	return ExposeResult{OK: true, Path: state, Written: names}
+}
+
+// Windows user bin exposure and User PATH registration, swapped by tests
+var (
+	exposeUserBin    = exposeWindowsUserBin
+	registerUserPath = registerWindowsUserPath
+)
+
+// InlineStringLiteral keeps inline Python source intact through Windows PowerShell's native argv quoting, repr elsewhere
+func InlineStringLiteral(value string) string {
+	if !isWindows() {
+		return pyrepr.StrRepr(value)
+	}
+	escaped := pycodecs.UnicodeEscape(value)
+	return "'" + strings.NewReplacer("'", `\x27`, `"`, `\x22`).Replace(escaped) + "'"
+}
+
+// ExeIsVenvBound reports a launcher exe embedding the venv interpreter of the pre pm installer, which must be replaced
+func ExeIsVenvBound(exe, venvDir string) bool {
+	if venvDir == "" {
+		return false
+	}
+	data, err := os.ReadFile(exe)
+	if err != nil {
+		return false
+	}
+	for _, interpreter := range []string{
+		filepath.Join(venvDir, "Scripts", "icebath.exe"), filepath.Join(venvDir, "Scripts", "icebath-acp.exe"),
+		filepath.Join(venvDir, "Scripts", "python.exe"), filepath.Join(venvDir, "bin", "python3"),
+		filepath.Join(venvDir, "bin", "icebath"), filepath.Join(venvDir, "bin", "icebath-acp"),
+	} {
+		if bytes.Contains(data, []byte(interpreter)) || bytes.Contains(data, utf16LEBytes(interpreter)) {
+			return true
+		}
+	}
+	return false
+}
+
+// UTF-16 little endian bytes of s
+func utf16LEBytes(s string) []byte {
+	units := utf16.Encode([]rune(s))
+	out := make([]byte, 0, len(units)*2)
+	for _, u := range units {
+		out = append(out, byte(u), byte(u>>8))
+	}
+	return out
 }
 
 // Reports whether new consoles resolve this home so its commands may go on the User PATH

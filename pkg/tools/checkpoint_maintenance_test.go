@@ -418,3 +418,9 @@ func TestCheckpointSizefmtBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestSizefmtBytesExportsTheHumanSize(t *testing.T) {
+	if SizefmtBytes(0) != sizefmtBytes(0) || SizefmtBytes(1536) != sizefmtBytes(1536) {
+		t.Fatal("the export must read the same formatter")
+	}
+}

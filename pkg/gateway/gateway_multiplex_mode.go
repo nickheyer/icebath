@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -41,6 +42,25 @@ func ExplicitMultiplexFlag(ctx context.Context, defaultHome string) (*bool, erro
 		parsed = pyrepr.Truthy(value)
 	}
 	return &parsed, nil
+}
+
+// Whether the default profile's gateway serves every profile, the live record first then any explicit flag
+func DefaultGatewayMultiplexes(ctx context.Context, defaultHome string) (bool, error) {
+	if defaultHome == "" {
+		defaultHome = home.Root()
+	}
+	recorded, known, err := RecordedServedProfiles(defaultHome)
+	if err != nil {
+		return false, err
+	}
+	if known {
+		return len(recorded) > 0, nil
+	}
+	flag, err := ExplicitMultiplexFlag(ctx, defaultHome)
+	if err != nil {
+		return false, err
+	}
+	return flag != nil, nil
 }
 
 // How boot reads an explicit flag, true final and the retired false settling like unset

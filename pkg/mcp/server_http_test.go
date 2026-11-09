@@ -64,10 +64,12 @@ func TestServerPreflightContentType(t *testing.T) {
 		_, _ = w.Write([]byte("<html></html>"))
 	}))
 	defer html.Close()
-	err := s.preflightContentType(ctx, html.URL, nil, true, nil, nil, 5*time.Second, false)
-	if err == nil || !strings.Contains(err.Error(), "returned Content-Type 'text/html', not an MCP response") {
-		t.Fatalf("HTML endpoint: %v", err)
-	}
+	t.Run("test_non_mcp_content_type_raises", func(t *testing.T) {
+		err := s.preflightContentType(ctx, html.URL, nil, true, nil, nil, 5*time.Second, false)
+		if err == nil || !strings.Contains(err.Error(), "returned Content-Type 'text/html', not an MCP response") {
+			t.Fatalf("HTML endpoint: %v", err)
+		}
+	})
 	var methods []string
 	headThenGet := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		methods = append(methods, r.Method)
@@ -139,7 +141,7 @@ func TestServerHTTPEndToEndConnectsAndShutsDown(t *testing.T) {
 	}
 }
 
-func TestServerSSEFallbackBothFailResetsLatch(t *testing.T) {
+func TestBothTransportsFailingNamesBothAndSuggestsConfig(t *testing.T) {
 	isolateHome(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)

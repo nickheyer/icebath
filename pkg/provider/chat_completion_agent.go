@@ -329,6 +329,9 @@ func agentRequestSurface(agent ChatCompletionAgent) func(StreamEvent) {
 	}
 }
 
+// Stale watchdog timer seam the inline call tests swap the way hermes tests patch threading.Timer
+var directWatchdogArmFn = time.AfterFunc
+
 // Runs the agent's blocking call on the calling goroutine with a heartbeat, one shot stale kill and socket backstop
 func DirectAPICall(ctx context.Context, agent ChatCompletionAgent, apiKwargs map[string]any) (resp any, err error) {
 	if err := checkStaleGiveup(agent.RetrySession()); err != nil {
@@ -374,7 +377,7 @@ func DirectAPICall(ctx context.Context, agent ChatCompletionAgent, apiKwargs map
 	var watchdog *time.Timer
 	fired := make(chan struct{})
 	if !math.IsInf(staleTimeout, 0) && !math.IsNaN(staleTimeout) && staleTimeout > 0 {
-		watchdog = time.AfterFunc(secondsDuration(staleTimeout), func() {
+		watchdog = directWatchdogArmFn(secondsDuration(staleTimeout), func() {
 			defer close(fired)
 			r.onStale()
 		})
@@ -496,6 +499,9 @@ func ReasoningConfigForWire(ctx context.Context, agent ChatCompletionAgent) map[
 	return cfg
 }
 
+// Model capability seam the unset effort tests swap the way hermes tests patch get_model_capabilities
+var modelsDevCapabilitiesFn = ModelsDevCapabilities
+
 // Profile default reasoning for an unset effort on chat completions, nil when the model or local server cannot reason
 func UnsetReasoningDefault(ctx context.Context, agent ChatCompletionAgent) (out map[string]any) {
 	if agent.APIMode() != string(ModeChatCompletions) {
@@ -519,7 +525,7 @@ func UnsetReasoningDefault(ctx context.Context, agent ChatCompletionAgent) (out 
 	var supports *bool
 	func() {
 		defer func() { _ = recover() }()
-		if caps, ok := ModelsDevCapabilities(ctx, provider, model, false); ok {
+		if caps, ok := modelsDevCapabilitiesFn(ctx, provider, model, false); ok {
 			supports = caps.SupportsReasoning
 		}
 	}()

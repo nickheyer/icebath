@@ -53,15 +53,22 @@ func TestGetDefinitionsReturnsOpenAIFormat(t *testing.T) {
 }
 
 // A toolset without a check is available, a failing check hides it, a panicking handler returns an error
-func TestToolsetAvailability(t *testing.T) {
-	r, env := availabilityRegistry(t, Def{Name: "t", Toolset: "free"}, Def{Name: "l", Toolset: "locked", Check: func(*Env) bool { return false }},
-		Def{Name: "bad", Toolset: "s", Handler: func(context.Context, *Call) string { panic(&RuntimeError{msg: "boom"}) }})
+func TestNoCheckFnIsAvailable(t *testing.T) {
+	r, env := availabilityRegistry(t, Def{Name: "t", Toolset: "free"})
 	if !r.IsToolsetAvailable(context.Background(), env, "free") {
 		t.Fatal("toolset without a check is unavailable")
 	}
+}
+
+func TestCheckFnControlsAvailability(t *testing.T) {
+	r, env := availabilityRegistry(t, Def{Name: "t", Toolset: "locked", Check: func(*Env) bool { return false }})
 	if r.IsToolsetAvailable(context.Background(), env, "locked") {
 		t.Fatal("failing check left the toolset available")
 	}
+}
+
+func TestHandlerExceptionReturnsError(t *testing.T) {
+	r, env := availabilityRegistry(t, Def{Name: "bad", Toolset: "s", Handler: func(context.Context, *Call) string { panic(&RuntimeError{msg: "boom"}) }})
 	result := decodeModelToolsResult(t, NewDispatcher(r).RegistryDispatch(context.Background(), &Call{Name: "bad", Args: map[string]any{}, Env: env}))
 	if msg, _ := result["error"].(string); !strings.Contains(msg, "RuntimeError") {
 		t.Fatalf("error %v", result)
@@ -73,13 +80,15 @@ type RuntimeError struct{ msg string }
 
 func (e *RuntimeError) Error() string { return e.msg }
 
-// A panicking check reads as unavailable in both availability views
-func TestCheckFnPanicIsCaughtByAvailabilityViews(t *testing.T) {
+func TestIsToolsetAvailableCatchesException(t *testing.T) {
 	r, env := availabilityRegistry(t, Def{Name: "t", Toolset: "broken", Check: func(*Env) bool { panic("division by zero") }})
 	if r.IsToolsetAvailable(context.Background(), env, "broken") {
 		t.Fatal("panicking check left the toolset available")
 	}
-	r, env = availabilityRegistry(t, Def{Name: "a", Toolset: "works", Check: func(*Env) bool { return true }},
+}
+
+func TestCheckToolAvailabilitySurvivesRaisingCheck(t *testing.T) {
+	r, env := availabilityRegistry(t, Def{Name: "a", Toolset: "works", Check: func(*Env) bool { return true }},
 		Def{Name: "b", Toolset: "crashes", Check: func(*Env) bool { panic("division by zero") }})
 	available, unavailable := r.CheckToolAvailability(context.Background(), env)
 	if !reflect.DeepEqual(available, []string{"works"}) || !reflect.DeepEqual(unavailableNames(unavailable), []string{"crashes"}) {
@@ -87,8 +96,7 @@ func TestCheckFnPanicIsCaughtByAvailabilityViews(t *testing.T) {
 	}
 }
 
-// A mixed toolset is available when one general tool passes and unavailable when every tool is gated
-func TestToolsetAvailabilityAggregation(t *testing.T) {
+func TestMixedToolsetAvailableWhenGeneralToolPasses(t *testing.T) {
 	r, env := availabilityRegistry(t, Def{Name: "read_terminal", Toolset: "terminal", Check: func(*Env) bool { return false }},
 		Def{Name: "terminal", Toolset: "terminal", Check: func(*Env) bool { return true }}, Def{Name: "process", Toolset: "terminal"})
 	available, unavailable := r.CheckToolAvailability(context.Background(), env)
@@ -96,9 +104,12 @@ func TestToolsetAvailabilityAggregation(t *testing.T) {
 		!r.AvailableToolsets(context.Background(), env)["terminal"].Available {
 		t.Fatalf("available %v unavailable %v", available, unavailable)
 	}
-	r, env = availabilityRegistry(t, Def{Name: "read_terminal", Toolset: "terminal", Check: func(*Env) bool { return false }},
+}
+
+func TestMixedToolsetUnavailableWhenEveryToolIsGated(t *testing.T) {
+	r, env := availabilityRegistry(t, Def{Name: "read_terminal", Toolset: "terminal", Check: func(*Env) bool { return false }},
 		Def{Name: "terminal", Toolset: "terminal", Check: func(*Env) bool { return false }})
-	available, unavailable = r.CheckToolAvailability(context.Background(), env)
+	available, unavailable := r.CheckToolAvailability(context.Background(), env)
 	if len(available) != 0 || !reflect.DeepEqual(unavailableNames(unavailable), []string{"terminal"}) {
 		t.Fatalf("available %v unavailable %v", available, unavailable)
 	}

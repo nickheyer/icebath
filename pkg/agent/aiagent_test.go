@@ -253,3 +253,50 @@ func TestEnsureDBSessionCreatesTheRowOnce(t *testing.T) {
 		t.Fatalf("origin %v", origin)
 	}
 }
+
+func TestSetStreamDeltaAndToolProgressCallbacksInstallTheSlots(t *testing.T) {
+	a := &AIAgent{}
+	var got []string
+	a.SetStreamDeltaCallback(func(text string) { got = append(got, text) })
+	a.SetToolProgressCallback(func(event, name, preview string, args map[string]any, extra map[string]any) {
+		got = append(got, event+":"+name)
+	})
+	if !callQuietly(a.streamDeltaCallback, "hi") {
+		t.Fatal("stream delta callback not installed")
+	}
+	callToolProgress(a, "tool.started", "read_file", "p")
+	if strings.Join(got, ",") != "hi,tool.started:read_file" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestSessionMessagesTaskIDAndPersistSessionAccessorsReadTheAgentSlots(t *testing.T) {
+	a := &AIAgent{}
+	a.currentTaskID = "task-1"
+	a.sessionMessages = []*state.Message{{Role: "user", Content: "hi"}}
+	if a.TaskID() != "task-1" || len(a.SessionMessages()) != 1 || a.SessionMessages()[0].Role != "user" {
+		t.Fatalf("accessors %q %v", a.TaskID(), a.SessionMessages())
+	}
+	msgs := a.SessionMessages()
+	if err := a.PersistSession(&msgs, nil); err != nil {
+		t.Fatalf("persist without a store: %v", err)
+	}
+}
+
+func TestQuietAgentSettersReplaceTheStdoutCallbacks(t *testing.T) {
+	a := &AIAgent{toolProgressMode: "all", printFn: func(string) {}}
+	a.SetQuietMode(true)
+	a.SetSuppressStatusOutput(true)
+	a.SetToolGenCallback(nil)
+	a.SetReasoningCallback(nil)
+	a.SetToolStartCallback(nil)
+	a.SetToolCompleteCallback(nil)
+	a.SetToolProgressMode("off")
+	a.SetPrintFn(nil)
+	if !a.quietMode || !a.suppressStatusOutput || a.toolProgressMode != "off" || a.printFn != nil {
+		t.Fatalf("quiet setters did not land: %+v", a)
+	}
+	if a.toolGenCallback != nil || a.reasoningCallback != nil || a.toolStartCallback != nil || a.toolCompleteCallback != nil {
+		t.Fatal("callbacks must be cleared")
+	}
+}

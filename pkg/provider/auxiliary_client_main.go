@@ -65,6 +65,12 @@ var (
 	auxReadMainBaseURL  = func(ctx context.Context) string { return auxReadMainField(ctx, "base_url", false, false) }
 )
 
+// AuxReadMainProvider exports the main provider reader for the plugin LLM facade
+func AuxReadMainProvider(ctx context.Context) string { return auxReadMainProvider(ctx) }
+
+// AuxReadMainModel exports the main model reader for the plugin LLM facade
+func AuxReadMainModel(ctx context.Context) string { return auxReadMainModel(ctx) }
+
 // Aggregator provider and model of a MoA preset, empty when the preset cannot be resolved
 func auxResolveMoaAggregator(ctx context.Context, presetName string) (string, string) {
 	var cfg config.Tree

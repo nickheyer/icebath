@@ -62,6 +62,9 @@ func normalizeBoardSlug(slug *string) (string, error) {
 	return s, nil
 }
 
+// NormalizeBoardSlug exports normalizeBoardSlug
+func NormalizeBoardSlug(slug *string) (string, error) { return normalizeBoardSlug(slug) }
+
 // Normalized slug or the default board
 func slugOrDefault(board *string) (string, error) {
 	s, err := normalizeBoardSlug(board)

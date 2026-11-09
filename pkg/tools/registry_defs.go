@@ -493,14 +493,14 @@ func (r *Registry) computeToolDefinitions(ctx context.Context, env *Env, opts De
 	return filtered
 }
 
-// Active model's context length for the tool search gate, zero when unresolvable
-func resolveActiveContextLength(ctx context.Context, env *Env) int {
+// Model id and model section of the env config, the id empty when unset
+func activeModelConfig(env *Env) (string, map[string]any) {
 	if env == nil || env.Config == nil {
-		return 0
+		return "", nil
 	}
 	modelCfg, _ := env.Config.Get("model").(map[string]any)
 	if modelCfg == nil {
-		return 0
+		return "", nil
 	}
 	rawModelID := modelCfg["model"]
 	if rawModelID == nil || rawModelID == "" {
@@ -514,7 +514,12 @@ func resolveActiveContextLength(ctx context.Context, env *Env) int {
 	default:
 		modelID = fmt.Sprint(t)
 	}
-	modelID = strings.TrimSpace(modelID)
+	return strings.TrimSpace(modelID), modelCfg
+}
+
+// Active model's context length for the tool search gate, zero when unresolvable
+func resolveActiveContextLength(ctx context.Context, env *Env) int {
+	modelID, modelCfg := activeModelConfig(env)
 	if modelID == "" {
 		return 0
 	}

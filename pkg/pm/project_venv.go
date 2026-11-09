@@ -77,6 +77,9 @@ func projectVenvDir(root string) (string, error) {
 	return running, nil
 }
 
+// ProjectVenvDir exports projectVenvDir
+func ProjectVenvDir(root string) (string, error) { return projectVenvDir(root) }
+
 // pathlib equality, the str form on POSIX and its lowercase on Windows
 func samePurePath(a, b string) bool {
 	a, b = pypath.PathStr(a), pypath.PathStr(b)

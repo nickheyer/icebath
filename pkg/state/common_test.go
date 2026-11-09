@@ -390,3 +390,14 @@ func TestScaffoldLikePatternsCarryNoWildcards(t *testing.T) {
 		t.Fatal("non scaffolding is untouched")
 	}
 }
+
+func TestBoundaryEndReasonsIsACopy(t *testing.T) {
+	got := BoundaryEndReasons()
+	if len(got) != len(boundaryEndReasons) || !got["new_session"] || !got["session_reset"] || got["compression"] {
+		t.Fatalf("boundary reasons %v", got)
+	}
+	got["compression"] = true
+	if boundaryEndReasons["compression"] {
+		t.Fatal("the exported copy must not alias the package set")
+	}
+}

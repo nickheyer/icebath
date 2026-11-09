@@ -397,12 +397,12 @@ func armStartupWatchdog() {
 
 // Puts the old tree back after an update killed mid swap, true when a restore happened
 func restoreInterruptedPull() bool {
-	return pm.RestoreInterruptedPull(pm.RepoRoot())
+	return selfupdate.RestoreInterruptedPull(context.Background(), pm.RepoRoot(), false)
 }
 
 // Re executes the command once the restore landed
 func relaunchAfterRestore() {
-	exit(pm.RelaunchAfterRestore(os.Args))
+	exit(selfupdate.RelaunchAfterRestore(os.Args))
 }
 
 // Re stages the Windows bin launchers from the default root, inaction everywhere else
@@ -410,7 +410,7 @@ func ensureBinLaunchers() {
 	if runtime.GOOS != "windows" {
 		return
 	}
-	pm.EnsureWindowsBinLaunchers(pm.RepoRoot())
+	selfupdate.EnsureWindowsBinLaunchers(pm.RepoRoot(), nil, nil)
 }
 
 // Sweeps stale quarantined Windows executables from earlier updates
@@ -418,7 +418,7 @@ func cleanupQuarantinedExes() {
 	if runtime.GOOS != "windows" {
 		return
 	}
-	pm.CleanupQuarantinedExes(pm.RepoRoot(), "")
+	selfupdate.CleanupQuarantinedExes(context.Background(), pm.RepoRoot(), "")
 }
 
 // Reports a fleet restart a previous update still owes and recovers gateways a killed update paused
@@ -432,12 +432,12 @@ func recoverUpdateDebtsOnStartup() {
 
 // Runs the boot bootstrap when the install identity changed since the last recorded run
 func maybeRunBootBootstrap(projectRoot string) {
-	pm.MaybeRunBootBootstrap(context.Background(), projectRoot)
+	selfupdate.MaybeRunBootBootstrap(context.Background(), projectRoot)
 }
 
 // One passive PM verdict on every dispatch, the problem text or empty
 func checkRuntime(installRoot string) string {
-	return pm.CheckRuntime(context.Background(), installRoot)
+	return selfupdate.CheckRuntime(context.Background(), installRoot)
 }
 
 func containsArg(argv []string, want string) bool {

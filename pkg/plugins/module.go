@@ -46,7 +46,6 @@ type Services struct {
 	PluginSDK                         func(ctx context.Context, home, op string, args []any, kwargs map[string]any) (any, error)
 	BuildPluginBlueprint              func(pluginName, key string, spec BlueprintSpec) (string, any, error)
 	SecretSources                     SecretSources
-	ReRegisterOutboundWebhooks        func() error
 	PlatformDeclarations              PlatformDeclarations
 	OAuthSurface                      func(manifest map[string]any) map[string]bool
 	OAuthAdmissionProblems            func(manifest map[string]any, pluginDir string) []string
@@ -79,7 +78,6 @@ type Services struct {
 	GatewayRunnerRef                  func() PlatformActionRunner
 	ParseServerLiveness               func(raw any) (ServerLiveness, error)
 	DiscoverMemoryProviders           func(ctx context.Context) [][2]string
-	OutboundWebhookTargets            func(cfg map[string]any) []OutboundWebhookTarget
 }
 
 // Host rendezvous record of a running dashboard or Desktop backend, Record carried back to the rendezvous
@@ -116,6 +114,9 @@ func InstallServices(s *Services) { services.Store(s) }
 
 // Installed collaborator set, nil before the wiring runs
 func installedServices() *Services { return services.Load() }
+
+// InstalledServices exports the installed collaborator set so other packages' tests can restore it
+func InstalledServices() *Services { return installedServices() }
 
 // Error naming a collaborator the wiring never installed
 type ServiceMissingError struct{ Name string }

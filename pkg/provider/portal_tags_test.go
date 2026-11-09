@@ -71,3 +71,10 @@ func TestPortalConversationContextWinsOverSessionID(t *testing.T) {
 		t.Fatalf("affinity scope not published")
 	}
 }
+
+func TestNousPortalTagsExportedMatchesUnexported(t *testing.T) {
+	ctx := WithPortalConversationContext(context.Background(), "conv-9")
+	if got, want := strings.Join(NousPortalTags(ctx, "sess-1"), ","), strings.Join(nousPortalTags(ctx, "sess-1"), ","); got != want || !strings.Contains(got, "conversation=conv-9") {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}

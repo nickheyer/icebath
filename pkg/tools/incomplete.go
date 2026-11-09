@@ -8,6 +8,7 @@ func init() {
 	registerXSearchTool()
 	registerTodoTool()
 	registerClarifyTool()
+	registerSessionSearchTool()
 	registerDesktopUITools()
 	registerProjectTools()
 	registerSetupBeatTool()

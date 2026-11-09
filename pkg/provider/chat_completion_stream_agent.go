@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -204,6 +205,8 @@ type bedrockStreamOutcome struct {
 }
 
 // Runs the stream on a worker through Relay while the poll loop applies the interrupt and the event gap watchdog
+var recordInterruptedProviderWaitFn = recordInterruptedProviderWait
+
 func runBedrockStream(ctx context.Context, r bedrockStreamRun) (*bedrockStreamOutcome, error) {
 	started := time.Now()
 	var lastEvent atomic.Int64
@@ -251,7 +254,7 @@ wait:
 		case <-poll.C:
 		}
 		if r.interrupted() {
-			recordInterruptedProviderWait(ctx, time.Since(started).Seconds(), responseStarted.Load())
+			recordInterruptedProviderWaitFn(ctx, time.Since(started).Seconds(), responseStarted.Load())
 			cancel()
 			joinWorkerForRelayTeardown(ctx, done, "Bedrock streaming")
 			return nil, r.interruptErr(false)
@@ -262,7 +265,7 @@ wait:
 		}
 	}
 	if r.interrupted() {
-		recordInterruptedProviderWait(ctx, time.Since(started).Seconds(), responseStarted.Load())
+		recordInterruptedProviderWaitFn(ctx, time.Since(started).Seconds(), responseStarted.Load())
 		return nil, r.interruptErr(true)
 	}
 	if res.err != nil {
@@ -278,7 +281,15 @@ wait:
 
 // Opens the Relay stream over ConverseStream, the IAM fallback answered by converse inside the same attempt
 func runBedrockStreamWorker(ctx context.Context, r bedrockStreamRun, cb bedrockStreamCallbacks, out *bedrockStreamOutcome, outMu *sync.Mutex) error {
-	var eventsMu sync.Mutex
+	var eventsMu, bodiesMu sync.Mutex
+	var bodies []io.Closer
+	defer func() {
+		bodiesMu.Lock()
+		defer bodiesMu.Unlock()
+		for _, body := range bodies {
+			_ = body.Close()
+		}
+	}()
 	var intercepted []any
 	writerToken := 0
 	factory := func(ctx context.Context, request map[string]any) (any, error) {
@@ -302,6 +313,9 @@ func runBedrockStreamWorker(ctx context.Context, r bedrockStreamRun, cb bedrockS
 		outMu.Lock()
 		out.headers, out.status = resp.Header.Clone(), resp.StatusCode
 		outMu.Unlock()
+		bodiesMu.Lock()
+		bodies = append(bodies, resp.Body)
+		bodiesMu.Unlock()
 		go func() {
 			<-ctx.Done()
 			_ = resp.Body.Close()

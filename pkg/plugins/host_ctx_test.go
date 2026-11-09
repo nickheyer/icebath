@@ -31,3 +31,27 @@ func TestSwapHostInterpreterRestoresTheResolver(t *testing.T) {
 		t.Fatal("resolver not restored")
 	}
 }
+
+func TestBindHostCallExportsThePythonKeywordBinding(t *testing.T) {
+	params := []HostParam{HostReq("name"), HostKwo("session_key", ""), HostKwo("apply_now", false)}
+	bound, _, err := BindHostCall("DelegationBackends", "set_global_backend", params, []any{"local"}, map[string]any{"apply_now": true})
+	if err != nil || bound["name"] != "local" || bound["session_key"] != "" || bound["apply_now"] != true {
+		t.Fatalf("bound %v %v", bound, err)
+	}
+	if _, _, err := BindHostCall("DelegationBackends", "set_global_backend", params, nil, nil); err == nil {
+		t.Fatal("a missing required argument is a TypeError")
+	}
+	if _, _, err := BindHostCall("DelegationBackends", "set_global_backend", params, []any{"local", "extra"}, nil); err == nil {
+		t.Fatal("a keyword only parameter refuses a positional value")
+	}
+}
+
+func TestInstalledServicesExportsTheProcessSet(t *testing.T) {
+	previous := InstalledServices()
+	t.Cleanup(func() { InstallServices(previous) })
+	s := &Services{}
+	InstallServices(s)
+	if InstalledServices() != s {
+		t.Fatal("the exported accessor must read the installed set")
+	}
+}

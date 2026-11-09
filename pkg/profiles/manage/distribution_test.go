@@ -116,7 +116,7 @@ func TestManifestParsingFullManifest(t *testing.T) {
 	}
 }
 
-func TestManifestRoundtripWriteRead(t *testing.T) {
+func TestManifestParsingRoundtripWriteRead(t *testing.T) {
 	dir := t.TempDir()
 	m := &profiles.DistributionManifest{Name: "rt", Version: "1.0.0", Description: "roundtrip",
 		EnvRequires: []profiles.EnvRequirement{profiles.NewEnvRequirement("FOO", "foo")}}
@@ -160,7 +160,7 @@ func TestManifestRejectsMalformedShapes(t *testing.T) {
 	}
 }
 
-func TestVersionRequiresMatrix(t *testing.T) {
+func TestVersionRequiresCheckMatrix(t *testing.T) {
 	cases := []struct {
 		spec, cur string
 		ok        bool
@@ -593,60 +593,88 @@ func TestInstallRejectsSymlinkedDistributionFiles(t *testing.T) {
 func TestNestedUserOwnedExcludeNotFiltered(t *testing.T) {
 	tmp, _ := distEnv(t)
 	owned := append(slices.Clone(DefaultDistOwned), "assets")
-	staged := makeStagingDir(t, tmp, "src", &profiles.DistributionManifest{Name: "nested_bin", Version: "0.1.0", DistributionOwned: owned})
-	writeFile(t, filepath.Join(staged, "assets", "bin", "tool.py"), "# tool\n")
-	plan := mustInstall(t, staged, "nested_bin", false)
-	if !exists(filepath.Join(plan.TargetDir, "assets", "bin", "tool.py")) {
-		t.Fatal("nested bin dropped")
-	}
-
-	staged = makeStagingDir(t, tmp, "top", nil)
-	writeFile(t, filepath.Join(staged, "bin", "shipped_binary"), "x")
-	writeFile(t, filepath.Join(staged, "logs", "shipped.log"), "y\n")
-	plan = mustInstall(t, staged, "top_filter", false)
-	if exists(filepath.Join(plan.TargetDir, "bin")) || exists(filepath.Join(plan.TargetDir, "logs", "shipped.log")) {
-		t.Fatal("top level user owned entries copied")
-	}
-
-	staged = makeStagingDir(t, tmp, "coexist", &profiles.DistributionManifest{Name: "coexist", Version: "0.1.0", DistributionOwned: owned})
-	writeFile(t, filepath.Join(staged, "bin", "top.sh"), "# top\n")
-	writeFile(t, filepath.Join(staged, "assets", "bin", "helper.py"), "# helper\n")
-	plan = mustInstall(t, staged, "coexist", false)
-	if exists(filepath.Join(plan.TargetDir, "bin")) || !exists(filepath.Join(plan.TargetDir, "assets", "bin", "helper.py")) {
-		t.Fatal("nested and top level filtering mixed up")
-	}
+	t.Run("test_nested_bin_dir_is_preserved", func(t *testing.T) {
+		staged := makeStagingDir(t, tmp, "src", &profiles.DistributionManifest{Name: "nested_bin", Version: "0.1.0", DistributionOwned: owned})
+		writeFile(t, filepath.Join(staged, "assets", "bin", "tool.py"), "# tool\n")
+		plan := mustInstall(t, staged, "nested_bin", false)
+		if !exists(filepath.Join(plan.TargetDir, "assets", "bin")) || !exists(filepath.Join(plan.TargetDir, "assets", "bin", "tool.py")) {
+			t.Fatal("nested bin/ was dropped")
+		}
+	})
+	t.Run("test_top_level_user_owned_still_skipped", func(t *testing.T) {
+		staged := makeStagingDir(t, tmp, "top", nil)
+		writeFile(t, filepath.Join(staged, "bin", "shipped_binary"), "x")
+		writeFile(t, filepath.Join(staged, "logs", "shipped.log"), "y\n")
+		plan := mustInstall(t, staged, "top_filter", false)
+		if exists(filepath.Join(plan.TargetDir, "bin")) {
+			t.Fatal("top-level bin/ should be filtered")
+		}
+		if exists(filepath.Join(plan.TargetDir, "logs", "shipped.log")) {
+			t.Fatal("staged logs/ content should not leak into target")
+		}
+	})
+	t.Run("test_both_nested_and_top_level_coexist", func(t *testing.T) {
+		staged := makeStagingDir(t, tmp, "coexist", &profiles.DistributionManifest{Name: "coexist", Version: "0.1.0", DistributionOwned: owned})
+		writeFile(t, filepath.Join(staged, "bin", "top.sh"), "# top\n")
+		writeFile(t, filepath.Join(staged, "assets", "bin", "helper.py"), "# helper\n")
+		plan := mustInstall(t, staged, "coexist", false)
+		if exists(filepath.Join(plan.TargetDir, "bin")) || !exists(filepath.Join(plan.TargetDir, "assets", "bin", "helper.py")) {
+			t.Fatal("nested and top level filtering mixed up")
+		}
+	})
 }
 
-func TestInstallStampsAndUpdateRefreshesInstalledAt(t *testing.T) {
+func TestInstalledAtStamp(t *testing.T) {
 	tmp, _ := distEnv(t)
-	staged := makeStagingDir(t, tmp, "src", nil)
-	plan := mustInstall(t, staged, "demo", false)
-	first, _ := profiles.ReadManifest(plan.TargetDir)
-	at := first.InstalledAt
-	if len(at) < 4 || !strings.Contains(at, "T") || !strings.HasSuffix(at, "+00:00") || strings.Trim(at[:4], "0123456789") != "" {
-		t.Fatal(at)
-	}
-	old := distNow
-	distNow = func() time.Time { return time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC) }
-	t.Cleanup(func() { distNow = old })
-	if _, err := UpdateDistribution(context.Background(), "demo", false); err != nil {
-		t.Fatal(err)
-	}
-	refreshed, _ := profiles.ReadManifest(plan.TargetDir)
-	if refreshed.InstalledAt != "2099-01-01T00:00:00+00:00" {
-		t.Fatal(refreshed.InstalledAt)
-	}
+	t.Run("test_install_stamps_installed_at", func(t *testing.T) {
+		staged := makeStagingDir(t, tmp, "src", nil)
+		plan := mustInstall(t, staged, "stamped", false)
+		mf, _ := profiles.ReadManifest(plan.TargetDir)
+		at := mf.InstalledAt
+		if at == "" {
+			t.Fatal("installed_at should be set after install")
+		}
+		if len(at) < 4 || strings.Trim(at[:4], "0123456789") != "" || !strings.Contains(at, "T") || !strings.HasSuffix(at, "+00:00") {
+			t.Fatal(at)
+		}
+	})
+	t.Run("test_update_refreshes_installed_at", func(t *testing.T) {
+		staged := makeStagingDir(t, tmp, "src2", nil)
+		plan := mustInstall(t, staged, "demo", false)
+		first, _ := profiles.ReadManifest(plan.TargetDir)
+		old := distNow
+		distNow = func() time.Time { return time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC) }
+		t.Cleanup(func() { distNow = old })
+		if _, err := UpdateDistribution(context.Background(), "demo", false); err != nil {
+			t.Fatal(err)
+		}
+		refreshed, _ := profiles.ReadManifest(plan.TargetDir)
+		if refreshed.InstalledAt != "2099-01-01T00:00:00+00:00" || refreshed.InstalledAt == first.InstalledAt {
+			t.Fatal(refreshed.InstalledAt)
+		}
+	})
 }
 
 func TestInstalledDistributionShowsInList(t *testing.T) {
 	tmp, _ := distEnv(t)
 	staged := makeStagingDir(t, tmp, "src", &profiles.DistributionManifest{Name: "telem", Version: "1.2.3"})
 	mustInstall(t, staged, "telem", false)
-	if _, err := CreateProfile(context.Background(), "brokenmeta", CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	broken, _ := profiles.GetProfileDir("brokenmeta")
-	writeFile(t, filepath.Join(broken, "distribution.yaml"), "not: [a, valid, mapping\n")
+	t.Run("test_malformed_manifest_does_not_break_list", func(t *testing.T) {
+		if _, err := CreateProfile(context.Background(), "brokenmeta", CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		broken, _ := profiles.GetProfileDir("brokenmeta")
+		writeFile(t, filepath.Join(broken, "distribution.yaml"), "not: [a, valid, mapping\n")
+		rows, err := ListProfiles(context.Background(), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rows {
+			if r.Name == "brokenmeta" && r.DistributionName != nil {
+				t.Fatalf("%+v", r)
+			}
+		}
+	})
 	rows, err := ListProfiles(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
@@ -671,7 +699,7 @@ func TestInstalledDistributionShowsInList(t *testing.T) {
 	}
 }
 
-func TestBadProfileNameRaisesValueError(t *testing.T) {
+func TestBadProfileNameRaisesValueerrorNotTraceback(t *testing.T) {
 	tmp, _ := distEnv(t)
 	staged := makeStagingDir(t, tmp, "bad", &profiles.DistributionManifest{Name: "Invalid Name With Spaces", Version: "0.1.0"})
 	_, err := PlanInstall(context.Background(), staged, filepath.Join(tmp, "work"), "")
@@ -712,23 +740,51 @@ func TestManifestFileModes(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission bits")
 	}
-	dir := t.TempDir()
-	mf := filepath.Join(dir, "distribution.yaml")
-	if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "fresh", Version: "1.0.0"}); err != nil {
-		t.Fatal(err)
-	}
-	if st, _ := os.Stat(mf); st.Mode().Perm() != 0o644 {
-		t.Fatalf("new manifest created as %o", st.Mode().Perm())
-	}
-	if err := os.Chmod(mf, 0o640); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "modes", Version: "2.0.0"}); err != nil {
-		t.Fatal(err)
-	}
-	if st, _ := os.Stat(mf); st.Mode().Perm() != 0o640 {
-		t.Fatalf("mode changed to %o", st.Mode().Perm())
-	}
+	t.Run("test_existing_file_mode_is_preserved", func(t *testing.T) {
+		dir := t.TempDir()
+		mf := filepath.Join(dir, "distribution.yaml")
+		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "modes", Version: "1.0.0"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(mf, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "modes", Version: "2.0.0"}); err != nil {
+			t.Fatal(err)
+		}
+		if st, _ := os.Stat(mf); st.Mode().Perm() != 0o644 {
+			t.Fatalf("mode changed to %o", st.Mode().Perm())
+		}
+	})
+	t.Run("test_created_file_mode_is_not_tightened", func(t *testing.T) {
+		dir := t.TempDir()
+		mf := filepath.Join(dir, "distribution.yaml")
+		if exists(mf) {
+			t.Fatal("manifest present before the write")
+		}
+		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "fresh", Version: "1.0.0"}); err != nil {
+			t.Fatal(err)
+		}
+		if st, _ := os.Stat(mf); st.Mode().Perm() != 0o644 {
+			t.Fatalf("new manifest created as %o", st.Mode().Perm())
+		}
+	})
+	t.Run("a tightened existing mode is kept", func(t *testing.T) {
+		dir := t.TempDir()
+		mf := filepath.Join(dir, "distribution.yaml")
+		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "fresh", Version: "1.0.0"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(mf, 0o640); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "modes", Version: "2.0.0"}); err != nil {
+			t.Fatal(err)
+		}
+		if st, _ := os.Stat(mf); st.Mode().Perm() != 0o640 {
+			t.Fatalf("mode changed to %o", st.Mode().Perm())
+		}
+	})
 }
 
 func TestCronMergeErrorsBecomeDistributionErrors(t *testing.T) {

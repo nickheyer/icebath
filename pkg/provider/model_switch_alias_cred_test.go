@@ -59,14 +59,14 @@ func switchFromOpenRouterToTheta(t *testing.T, alias map[string]string) (ModelSw
 
 func TestModelSwitchUsesAliasCredential(t *testing.T) {
 	newTestHome(t)
-	t.Run("alias api key is sent to alias host", func(t *testing.T) {
+	t.Run("test_alias_api_key_is_sent_to_alias_host", func(t *testing.T) {
 		res, probe := switchFromOpenRouterToTheta(t, map[string]string{"model": "theta-1", "provider": "custom",
 			"base_url": aliasCredHost, "api_key": "sk-theta-ALIAS-SECRET"})
 		if res.BaseURL != aliasCredHost || res.APIKey != "sk-theta-ALIAS-SECRET" || probe.apiKey != "sk-theta-ALIAS-SECRET" {
 			t.Fatalf("result %+v probe %+v", res, probe)
 		}
 	})
-	t.Run("alias key env is sent to alias host", func(t *testing.T) {
+	t.Run("test_alias_key_env_is_sent_to_alias_host", func(t *testing.T) {
 		t.Setenv("THETA_API_KEY", "sk-theta-FROM-ENV")
 		res, _ := switchFromOpenRouterToTheta(t, map[string]string{"model": "theta-1", "provider": "custom",
 			"base_url": aliasCredHost, "key_env": "THETA_API_KEY"})
@@ -74,19 +74,19 @@ func TestModelSwitchUsesAliasCredential(t *testing.T) {
 			t.Fatalf("result %+v", res)
 		}
 	})
-	t.Run("default provider key never reaches the alias host", func(t *testing.T) {
+	t.Run("test_default_provider_key_never_reaches_the_alias_host", func(t *testing.T) {
 		res, probe := switchFromOpenRouterToTheta(t, map[string]string{"model": "theta-1", "provider": "custom", "base_url": aliasCredHost})
 		if res.BaseURL != aliasCredHost || res.APIKey == aliasCredDefaultSecret || probe.apiKey == aliasCredDefaultSecret || probe.baseURL != aliasCredHost {
 			t.Fatalf("result %+v probe %+v", res, probe)
 		}
 	})
-	t.Run("same host alias still resolves that host key", func(t *testing.T) {
+	t.Run("test_same_host_alias_still_resolves_that_host_key", func(t *testing.T) {
 		res, _ := switchFromOpenRouterToTheta(t, map[string]string{"model": "theta-1", "provider": "custom", "base_url": "https://openrouter.ai/api/v1"})
 		if res.APIKey != aliasCredDefaultSecret {
 			t.Fatalf("result %+v", res)
 		}
 	})
-	t.Run("ollama cloud alias resolves ollama api key", func(t *testing.T) {
+	t.Run("test_ollama_cloud_alias_resolves_ollama_api_key", func(t *testing.T) {
 		t.Setenv("OLLAMA_API_KEY", "sk-ollama-KEY")
 		res, _ := switchFromOpenRouterToTheta(t, map[string]string{"model": "qwen3.5:397b", "provider": "custom", "base_url": "https://ollama.com/v1"})
 		if res.APIKey != "sk-ollama-KEY" {
@@ -98,48 +98,56 @@ func TestModelSwitchUsesAliasCredential(t *testing.T) {
 func TestSessionKeyIsHostScoped(t *testing.T) {
 	newTestHome(t)
 	alias := map[string]string{"model": "theta-1", "provider": "custom", "base_url": "https://myhost.test/v1"}
-	if res, _ := switchToThetaAlias(t, "ollama-launch", "m", "https://myhost.test/v1", "sk-session-KEY", alias); res.APIKey != "sk-session-KEY" {
-		t.Fatalf("same host alias dropped the session key %+v", res)
-	}
-	if res, _ := switchToThetaAlias(t, "ollama-launch", "m", "https://elsewhere.test/v1", "sk-session-KEY", alias); res.APIKey == "sk-session-KEY" {
-		t.Fatalf("different host alias kept the session key %+v", res)
-	}
+	t.Run("test_same_host_alias_keeps_the_session_key", func(t *testing.T) {
+		if res, _ := switchToThetaAlias(t, "ollama-launch", "m", "https://myhost.test/v1", "sk-session-KEY", alias); res.APIKey != "sk-session-KEY" {
+			t.Fatalf("same host alias dropped the session key %+v", res)
+		}
+	})
+	t.Run("test_different_host_alias_drops_the_session_key", func(t *testing.T) {
+		if res, _ := switchToThetaAlias(t, "ollama-launch", "m", "https://elsewhere.test/v1", "sk-session-KEY", alias); res.APIKey == "sk-session-KEY" {
+			t.Fatalf("different host alias kept the session key %+v", res)
+		}
+	})
 }
 
 func TestBuiltinProviderKeysDoNotLeak(t *testing.T) {
 	newTestHome(t)
-	for _, tc := range []struct{ provider, envVar, sessionBaseURL string }{
-		{"anthropic", "ANTHROPIC_API_KEY", "https://api.anthropic.com"},
-		{"openai", "OPENAI_API_KEY", "https://api.openai.com/v1"},
-	} {
-		t.Run(tc.provider, func(t *testing.T) {
-			secret := "sk-" + tc.provider + "-SECRET"
-			t.Setenv(tc.envVar, secret)
-			res, probe := switchToThetaAlias(t, tc.provider, "m", tc.sessionBaseURL, secret,
-				map[string]string{"model": "theta-1", "provider": "custom", "base_url": aliasCredHost})
-			if res.BaseURL != aliasCredHost || res.APIKey == secret || probe.apiKey == secret {
-				t.Fatalf("result %+v probe %+v", res, probe)
-			}
-		})
-	}
+	t.Run("test_builtin_provider_key_not_forwarded_to_alias_host", func(t *testing.T) {
+		for _, tc := range []struct{ provider, envVar, sessionBaseURL string }{
+			{"anthropic", "ANTHROPIC_API_KEY", "https://api.anthropic.com"},
+			{"openai", "OPENAI_API_KEY", "https://api.openai.com/v1"},
+		} {
+			t.Run(tc.provider, func(t *testing.T) {
+				secret := "sk-" + tc.provider + "-SECRET"
+				t.Setenv(tc.envVar, secret)
+				res, probe := switchToThetaAlias(t, tc.provider, "m", tc.sessionBaseURL, secret,
+					map[string]string{"model": "theta-1", "provider": "custom", "base_url": aliasCredHost})
+				if res.BaseURL != aliasCredHost || res.APIKey == secret || probe.apiKey == secret {
+					t.Fatalf("result %+v probe %+v", res, probe)
+				}
+			})
+		}
+	})
 }
 
 func TestProviderLabelCannotSelectAKeyForAnArbitraryHost(t *testing.T) {
 	newTestHome(t)
-	for _, tc := range []struct{ provider, envVar string }{
-		{"anthropic", "ANTHROPIC_API_KEY"}, {"openai", "OPENAI_API_KEY"}, {"openrouter", "OPENROUTER_API_KEY"},
-	} {
-		t.Run(tc.provider, func(t *testing.T) {
-			secret := "sk-" + tc.provider + "-SECRET"
-			t.Setenv(tc.envVar, secret)
-			res, probe := switchToThetaAlias(t, "openrouter", "m", "https://openrouter.ai/api/v1", "sk-session",
-				map[string]string{"model": "c", "provider": tc.provider, "base_url": "https://evil.test/v1"})
-			if res.APIKey == secret || (probe.called && probe.apiKey == secret) {
-				t.Fatalf("result %+v probe %+v", res, probe)
-			}
-		})
-	}
-	t.Run("authoritative host still resolves its vendor key", func(t *testing.T) {
+	t.Run("test_builtin_label_does_not_pull_that_providers_key_to_a_foreign_host", func(t *testing.T) {
+		for _, tc := range []struct{ provider, envVar string }{
+			{"anthropic", "ANTHROPIC_API_KEY"}, {"openai", "OPENAI_API_KEY"}, {"openrouter", "OPENROUTER_API_KEY"},
+		} {
+			t.Run(tc.provider, func(t *testing.T) {
+				secret := "sk-" + tc.provider + "-SECRET"
+				t.Setenv(tc.envVar, secret)
+				res, probe := switchToThetaAlias(t, "openrouter", "m", "https://openrouter.ai/api/v1", "sk-session",
+					map[string]string{"model": "c", "provider": tc.provider, "base_url": "https://evil.test/v1"})
+				if res.APIKey == secret || (probe.called && probe.apiKey == secret) {
+					t.Fatalf("result %+v probe %+v", res, probe)
+				}
+			})
+		}
+	})
+	t.Run("test_authoritative_host_still_resolves_its_vendor_key", func(t *testing.T) {
 		t.Setenv("ANTHROPIC_API_KEY", "sk-anthropic-SECRET")
 		res, _ := switchToThetaAlias(t, "openrouter", "m", "https://openrouter.ai/api/v1", "sk-session",
 			map[string]string{"model": "c", "provider": "anthropic", "base_url": "https://api.anthropic.com/v1"})
@@ -156,26 +164,30 @@ func TestSessionCredentialIsScopedToTheOrigin(t *testing.T) {
 			map[string]string{"model": "m2", "provider": "custom", "base_url": aliasURL})
 		return res
 	}
-	for _, tc := range [][3]string{
-		{"http://api.example.com/v1", "https://api.example.com/v1", "https to http"},
-		{"https://api.example.com:8443/v1", "https://api.example.com/v1", "port change"},
-		{"http://api.example.com:8080/v1", "https://api.example.com/v1", "scheme and port"},
-		{"https://other.example.com/v1", "https://api.example.com/v1", "cross host"},
-	} {
-		t.Run(tc[2], func(t *testing.T) {
-			if res := sw(t, tc[0], tc[1]); res.APIKey == "sk-SESSION-SECRET" {
-				t.Fatalf("session credential followed the origin change %+v", res)
-			}
-		})
-	}
-	for _, url := range []string{"https://api.example.com/v1", "http://127.0.0.1:11434/v1", "http://localhost:8080/v1"} {
-		t.Run(url, func(t *testing.T) {
-			if res := sw(t, url, url); res.APIKey != "sk-SESSION-SECRET" {
-				t.Fatalf("same origin dropped the session credential %+v", res)
-			}
-		})
-	}
-	t.Run("default port and explicit port", func(t *testing.T) {
+	t.Run("test_origin_change_drops_the_session_credential", func(t *testing.T) {
+		for _, tc := range [][3]string{
+			{"http://api.example.com/v1", "https://api.example.com/v1", "https to http"},
+			{"https://api.example.com:8443/v1", "https://api.example.com/v1", "port change"},
+			{"http://api.example.com:8080/v1", "https://api.example.com/v1", "scheme and port"},
+			{"https://other.example.com/v1", "https://api.example.com/v1", "cross host"},
+		} {
+			t.Run(tc[2], func(t *testing.T) {
+				if res := sw(t, tc[0], tc[1]); res.APIKey == "sk-SESSION-SECRET" {
+					t.Fatalf("session credential followed the origin change %+v", res)
+				}
+			})
+		}
+	})
+	t.Run("test_same_origin_keeps_the_session_credential", func(t *testing.T) {
+		for _, url := range []string{"https://api.example.com/v1", "http://127.0.0.1:11434/v1", "http://localhost:8080/v1"} {
+			t.Run(url, func(t *testing.T) {
+				if res := sw(t, url, url); res.APIKey != "sk-SESSION-SECRET" {
+					t.Fatalf("same origin dropped the session credential %+v", res)
+				}
+			})
+		}
+	})
+	t.Run("test_default_port_and_explicit_port_are_the_same_origin", func(t *testing.T) {
 		if res := sw(t, "https://api.example.com:443/v1", "https://api.example.com/v1"); res.APIKey != "sk-SESSION-SECRET" {
 			t.Fatalf("result %+v", res)
 		}
@@ -199,7 +211,7 @@ func TestSwitchModelSurfacesAmbiguityMessage(t *testing.T) {
 
 func TestSwitchModelDirectAliasOverride(t *testing.T) {
 	emptyRuntime := &Runtime{Provider: "custom", APIMode: "openai_compat"}
-	t.Run("uses alias base url", func(t *testing.T) {
+	t.Run("test_switch_model_uses_alias_base_url", func(t *testing.T) {
 		ctx, _ := switchAliasHome(t, "")
 		fakeSwitchPipeline(t, true)
 		fakeSwitchRuntime(t, emptyRuntime, nil)
@@ -209,7 +221,7 @@ func TestSwitchModelDirectAliasOverride(t *testing.T) {
 			t.Fatalf("result %+v", res)
 		}
 	})
-	t.Run("alias without api key gets the no key marker", func(t *testing.T) {
+	t.Run("test_switch_model_alias_no_api_key_gets_default", func(t *testing.T) {
 		ctx, _ := switchAliasHome(t, "")
 		fakeSwitchPipeline(t, true)
 		fakeSwitchRuntime(t, emptyRuntime, nil)
@@ -247,13 +259,13 @@ func explicitSwitchToProviderB(t *testing.T, explicit, extraCfg string, aliases 
 
 func TestExplicitProviderAliasOwnership(t *testing.T) {
 	aAlias := NamedDirectAlias{"a-alias", DirectAlias{Model: "shared-model", Provider: "custom", BaseURL: "https://alias-host.example.com/v1", APIKey: "sk-alias-host"}}
-	t.Run("never adopts alias bound to another provider", func(t *testing.T) {
+	t.Run("test_explicit_provider_never_adopts_alias_bound_to_another_provider", func(t *testing.T) {
 		res := explicitSwitchToProviderB(t, "provider-b", "", aAlias)
 		if !res.Success || res.TargetProvider != "provider-b" || res.BaseURL != "https://api-b.example.com/v1" || res.APIKey != "sk-provider-b" || res.ResolvedViaAlias != "" {
 			t.Fatalf("result %+v", res)
 		}
 	})
-	t.Run("prefers its own alias for a shared model", func(t *testing.T) {
+	t.Run("test_explicit_provider_prefers_its_own_alias_for_a_shared_model", func(t *testing.T) {
 		res := explicitSwitchToProviderB(t, "provider-b", "", aAlias,
 			NamedDirectAlias{"b-alias", DirectAlias{Model: "shared-model", Provider: "Provider-B", BaseURL: "https://api-b.example.com/v2"}})
 		if !res.Success || res.ResolvedViaAlias != "b-alias" || res.BaseURL != "https://api-b.example.com/v2" || res.APIKey == "sk-alias-host" {
@@ -263,13 +275,13 @@ func TestExplicitProviderAliasOwnership(t *testing.T) {
 	corpAlias := NamedDirectAlias{"corp-alias", DirectAlias{Model: "shared-model", Provider: "corp-llm", BaseURL: "https://corp.example.com/v2", APIKey: "sk-corp-alias"}}
 	providerAAlias := NamedDirectAlias{"a-alias", DirectAlias{Model: "shared-model", Provider: "provider-a", BaseURL: "https://alias-host.example.com/v1", APIKey: "sk-alias-host"}}
 	corpEntry := "custom_providers:\n  - name: corp-llm\n    base_url: https://corp.example.com/v1\n    api_key: sk-corp\n"
-	t.Run("keeps alias owned by legacy custom provider", func(t *testing.T) {
+	t.Run("test_explicit_provider_keeps_alias_owned_by_legacy_custom_provider", func(t *testing.T) {
 		res := explicitSwitchToProviderB(t, "corp-llm", corpEntry, providerAAlias, corpAlias)
 		if !res.Success || res.TargetProvider != "custom:corp-llm" || res.ResolvedViaAlias != "corp-alias" || res.BaseURL != "https://corp.example.com/v2" || res.APIKey != "sk-corp-alias" {
 			t.Fatalf("result %+v", res)
 		}
 	})
-	t.Run("implicit switch prefers alias of current legacy custom provider", func(t *testing.T) {
+	t.Run("test_implicit_switch_prefers_alias_of_current_legacy_custom_provider", func(t *testing.T) {
 		cfg := "model:\n  provider: custom:corp-llm\n  default: old-model\nproviders:\n  provider-a:\n    base_url: https://api-a.example.com/v1\n" + corpEntry
 		res := switchSharedModel(t, cfg, SwitchModelOptions{CurrentProvider: "custom:corp-llm",
 			CurrentBaseURL: "https://corp.example.com/v1", CurrentAPIKey: "sk-corp"}, providerAAlias, corpAlias)

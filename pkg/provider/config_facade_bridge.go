@@ -96,6 +96,14 @@ func configFacadeStampHooks() config.StampHooks {
 	}
 }
 
+// ConfigFacadeStampHooks exports configFacadeStampHooks
+func ConfigFacadeStampHooks() config.StampHooks { return configFacadeStampHooks() }
+
+// ConfigFacadeBrowserEnvSources is the browser env adoption source set of configFacadeMigrationSources
+func ConfigFacadeBrowserEnvSources(h string) config.BrowserEnvSources {
+	return configFacadeMigrationSources(h).Browser
+}
+
 // Env names outside the optional catalog that reload_env still removes when the .env drops them
 func configFacadeExtraEnvKeys() []string {
 	out := make([]string, 0, len(extraEnvKeys))

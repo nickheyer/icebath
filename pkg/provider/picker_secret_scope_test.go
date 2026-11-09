@@ -10,32 +10,41 @@ import (
 func TestPickerKeyEnvScope(t *testing.T) {
 	newTestHome(t)
 	ctx := context.Background()
-	read := func(ctx context.Context, name string) string {
+	read := func(t *testing.T, ctx context.Context, name string) string {
+		t.Helper()
 		v, err := scopedKeyEnv(ctx, name)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return v
 	}
-	t.Setenv("ACME_KEY", "from-environment")
-	if got := read(ctx, "ACME_KEY"); got != "from-environment" {
-		t.Fatalf("unscoped %q", got)
-	}
-	t.Setenv("ACME_KEY", "other-profile-key")
-	if got := read(WithSecretScope(ctx, map[string]string{"ACME_KEY": "this-profile-key"}, ""), "ACME_KEY"); got != "this-profile-key" {
-		t.Fatalf("installed scope %q", got)
-	}
-	if got := read(ctx, "ACME_KEY"); got != "other-profile-key" {
-		t.Fatalf("after scope reset %q", got)
-	}
-	unsetEnvForTest(t, "ACME_KEY")
-	if read(ctx, "ACME_KEY") != "" || read(ctx, "") != "" {
-		t.Fatal("absent key or empty name resolved")
-	}
-	t.Setenv("ACME_KEY", "  padded  ")
-	if got := read(ctx, "ACME_KEY"); got != "padded" {
-		t.Fatalf("stripped %q", got)
-	}
+	t.Run("test_unscoped_read_matches_the_process_environment", func(t *testing.T) {
+		t.Setenv("ACME_KEY", "from-environment")
+		if got := read(t, ctx, "ACME_KEY"); got != "from-environment" {
+			t.Fatalf("unscoped %q", got)
+		}
+	})
+	t.Run("test_installed_scope_wins_over_the_process_environment", func(t *testing.T) {
+		t.Setenv("ACME_KEY", "other-profile-key")
+		if got := read(t, WithSecretScope(ctx, map[string]string{"ACME_KEY": "this-profile-key"}, ""), "ACME_KEY"); got != "this-profile-key" {
+			t.Fatalf("installed scope %q", got)
+		}
+		if got := read(t, ctx, "ACME_KEY"); got != "other-profile-key" {
+			t.Fatalf("after scope reset %q", got)
+		}
+	})
+	t.Run("test_absent_key_and_empty_name_resolve_empty", func(t *testing.T) {
+		unsetEnvForTest(t, "ACME_KEY")
+		if read(t, ctx, "ACME_KEY") != "" || read(t, ctx, "") != "" {
+			t.Fatal("absent key or empty name resolved")
+		}
+	})
+	t.Run("test_value_is_stripped", func(t *testing.T) {
+		t.Setenv("ACME_KEY", "  padded  ")
+		if got := read(t, ctx, "ACME_KEY"); got != "padded" {
+			t.Fatalf("stripped %q", got)
+		}
+	})
 }
 
 // Switches to the acme user provider recording the key handed to runtime resolution and the probe
@@ -58,19 +67,21 @@ func switchToAcme(t *testing.T, ctx context.Context, userCfg map[string]any) (ru
 }
 
 func TestSwitchModelKeyEnvScope(t *testing.T) {
-	for name, cfg := range map[string]map[string]any{
-		"key env":          {"base_url": "https://api.acme.test/v1", "key_env": "ACME_KEY"},
-		"dollar expansion": {"base_url": "https://api.acme.test/v1", "api_key": "${ACME_KEY}"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctx, _ := switchAliasHome(t, "")
-			t.Setenv("ACME_KEY", "other-profile-key")
-			scoped := WithSecretScope(ctx, map[string]string{"ACME_KEY": "this-profile-key"}, "")
-			if key, _ := switchToAcme(t, scoped, cfg); key != "this-profile-key" {
-				t.Fatalf("runtime key %q", key)
-			}
-		})
+	scopedSwitch := func(t *testing.T, cfg map[string]any) {
+		t.Helper()
+		ctx, _ := switchAliasHome(t, "")
+		t.Setenv("ACME_KEY", "other-profile-key")
+		scoped := WithSecretScope(ctx, map[string]string{"ACME_KEY": "this-profile-key"}, "")
+		if key, _ := switchToAcme(t, scoped, cfg); key != "this-profile-key" {
+			t.Fatalf("runtime key %q", key)
+		}
 	}
+	t.Run("test_key_env_read_honors_installed_scope", func(t *testing.T) {
+		scopedSwitch(t, map[string]any{"base_url": "https://api.acme.test/v1", "key_env": "ACME_KEY"})
+	})
+	t.Run("test_dollar_var_expansion_honors_installed_scope", func(t *testing.T) {
+		scopedSwitch(t, map[string]any{"base_url": "https://api.acme.test/v1", "api_key": "${ACME_KEY}"})
+	})
 }
 
 func writeAcmeRelayDotenv(t *testing.T, h, value string) {

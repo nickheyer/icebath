@@ -115,8 +115,9 @@ func TestSessionContextPredicates(t *testing.T) {
 	if isInteractiveCLI(env) {
 		t.Fatal("reset interactive flag")
 	}
+	prev := FiniteTurnRequired
 	FiniteTurnRequired = func(*Env) (bool, bool) { return true, true }
-	defer func() { FiniteTurnRequired = nil }()
+	defer func() { FiniteTurnRequired = prev }()
 	if !isSingleQueryApprovalContext(env) {
 		t.Fatal("finite turn is single query")
 	}

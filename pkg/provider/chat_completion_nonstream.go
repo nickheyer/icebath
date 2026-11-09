@@ -96,6 +96,9 @@ func (w *nonStreamWaiter) poll(now float64, s nonStreamSnapshot) {
 	w.emitWaitNotice(now-w.callStart, w.polls%100 == 0, s)
 }
 
+// Watchdog deadline seam the wait notice tests swap the way hermes tests patch codex_watchdog_deadline
+var codexWatchdogDeadlineFn = CodexWatchdogDeadline
+
 // Clears a notice once this request shows activity and posts one neutral notice per silence of sixty seconds
 func (w *nonStreamWaiter) emitWaitNotice(elapsed float64, heartbeat bool, s nonStreamSnapshot) {
 	defer func() {
@@ -144,7 +147,7 @@ func (w *nonStreamWaiter) emitWaitNotice(elapsed float64, heartbeat bool, s nonS
 	case s.lastEvent != nil:
 		phase = "post_event"
 	}
-	watchdog := CodexWatchdogDeadline(CodexWatchdogClock{StaleTimeout: w.wd.stale, TTFBEnabled: w.wd.ttfbEnabled, TTFBTimeout: w.wd.ttfb,
+	watchdog := codexWatchdogDeadlineFn(CodexWatchdogClock{StaleTimeout: w.wd.stale, TTFBEnabled: w.wd.ttfbEnabled, TTFBTimeout: w.wd.ttfb,
 		LastEventTS: s.lastEvent, LastProgressTS: s.lastProgress, RetryStartedTS: s.retryStarted, CallStart: w.callStart,
 		IdleEnabled: w.wd.idleEnabled, IdleTimeout: w.wd.idle, IdleRequiresProgress: w.wd.idleRequiresProgress,
 		ProgressTimeout: w.wd.progress, Elapsed: elapsed})

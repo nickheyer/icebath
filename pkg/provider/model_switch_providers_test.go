@@ -43,6 +43,9 @@ func pickerTestHome(t *testing.T, live func(apiKey, baseURL string) ([]string, b
 	curatedNousModelIDsFn = func(context.Context) []string { return []string{} }
 	pickerOllamaCloudFn = func(context.Context, OllamaCloudFetch) []string { return nil }
 	pickerPrefetchFn = func(context.Context, []string) {}
+	savedOllama := fetchOllamaLocalModelsFn
+	t.Cleanup(func() { fetchOllamaLocalModelsFn = savedOllama })
+	fetchOllamaLocalModelsFn = func(context.Context, string, time.Duration, map[string]string) ([]string, bool) { return nil, false }
 	return context.Background(), calls
 }
 
@@ -84,7 +87,7 @@ func userConfigRows(rows []map[string]any) []map[string]any {
 	return out
 }
 
-func TestUserProviderRowListsEveryDeclaredModel(t *testing.T) {
+func TestListAuthenticatedProvidersIncludesFullModelsListFromUserProviders(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "local-ollama", MaxModels: intPtr(50),
 		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "api": "http://localhost:11434/v1",
@@ -98,7 +101,7 @@ func TestUserProviderRowListsEveryDeclaredModel(t *testing.T) {
 	}
 }
 
-func TestUserProviderRowEnumeratesDictModels(t *testing.T) {
+func TestListAuthenticatedProvidersEnumeratesDictFormatModels(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "local-ollama", MaxModels: intPtr(50),
 		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "api": "http://localhost:11434/v1",
@@ -113,7 +116,7 @@ func TestUserProviderRowEnumeratesDictModels(t *testing.T) {
 	}
 }
 
-func TestUserProviderRowPrefersLiveModels(t *testing.T) {
+func TestListAuthenticatedProvidersUsesLiveModelsForUserProvider(t *testing.T) {
 	ctx, calls := pickerTestHome(t, func(string, string) ([]string, bool) {
 		return []string{"old-configured-model", "new-live-model"}, true
 	})
@@ -132,7 +135,7 @@ func TestUserProviderRowPrefersLiveModels(t *testing.T) {
 	}
 }
 
-func TestUserProviderRowAcceptsBaseURLAndSingularModel(t *testing.T) {
+func TestListAuthenticatedProvidersAcceptsBaseUrlAndSingularModel(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "custom", MaxModels: intPtr(50),
 		UserProviders: map[string]any{"custom": map[string]any{"base_url": "http://example.com/v1", "model": "gpt-5.4",
@@ -146,7 +149,7 @@ func TestUserProviderRowAcceptsBaseURLAndSingularModel(t *testing.T) {
 	}
 }
 
-func TestUserProviderRowSplitsCommaDefaultModelChain(t *testing.T) {
+func TestListAuthenticatedProvidersSplitsCommaDefaultModelChain(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	chain := "deepseek-v4-flash, deepseek-v4-pro, glm-5.2, deepseek-v4-flash"
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "volcengine-agent-plan", MaxModels: intPtr(50),
@@ -158,7 +161,7 @@ func TestUserProviderRowSplitsCommaDefaultModelChain(t *testing.T) {
 	}
 }
 
-func TestUserAndCustomProviderOverlapYieldsOneRow(t *testing.T) {
+func TestListAuthenticatedProvidersDedupesWhenUserAndCustomOverlap(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "custom", MaxModels: intPtr(50),
 		UserProviders: map[string]any{"custom": map[string]any{"base_url": "http://example.com/v1", "model": "gpt-5.4",
@@ -175,7 +178,7 @@ func TestUserAndCustomProviderOverlapYieldsOneRow(t *testing.T) {
 	}
 }
 
-func TestNoDuplicateLabelsAcrossProviderSchemas(t *testing.T) {
+func TestListAuthenticatedProvidersNoDuplicateLabelsAcrossSchemas(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	user := map[string]any{}
 	var custom []any
@@ -194,7 +197,7 @@ func TestNoDuplicateLabelsAcrossProviderSchemas(t *testing.T) {
 	}
 }
 
-func TestCustomEntryOnEnvOverriddenBuiltinEndpointIsHidden(t *testing.T) {
+func TestListAuthenticatedProvidersDedupHonorsBaseUrlEnvOverride(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	t.Setenv("DASHSCOPE_API_KEY", "sk-test")
 	t.Setenv("DASHSCOPE_BASE_URL", "https://custom-dashscope.example.com/v1")
@@ -214,7 +217,7 @@ func TestCustomEntryOnEnvOverriddenBuiltinEndpointIsHidden(t *testing.T) {
 	}
 }
 
-func TestSectionThreeProbesKeylessEndpointWithoutModels(t *testing.T) {
+func TestSection3ProbesNoKeyEndpointWithoutExplicitModels(t *testing.T) {
 	ctx, calls := pickerTestHome(t, func(string, string) ([]string, bool) {
 		return []string{"live-model-1", "live-model-2", "live-model-3"}, true
 	})
@@ -229,26 +232,52 @@ func TestSectionThreeProbesKeylessEndpointWithoutModels(t *testing.T) {
 	}
 }
 
-func TestCurrentCustomModelLeadsOnlyTheCurrentRow(t *testing.T) {
+func TestCurrentCustomModelIsSurfacedInBuiltinProviderRow(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	t.Setenv("OPENROUTER_API_KEY", "sk-test")
-	t.Setenv("NOUS_API_KEY", "sk-test")
 	cachedProviderModelIDsFn = func(_ context.Context, slug string, _ CachedModelsOptions) []string {
 		if slug == "openrouter" {
 			return []string{"anthropic/claude-opus-4.8", "openai/gpt-5.5"}
 		}
-		return []string{"curated/one"}
+		return []string{}
 	}
 	custom := "some-vendor/totally-custom-model-v9"
-	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "openrouter", CurrentModel: custom})
+	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "openrouter", CurrentModel: custom, UserProviders: map[string]any{}, CustomProviders: []any{}})
 	row := pickerRow(rows, "openrouter")
-	if row == nil || rowModels(row)[0] != custom || row["total_models"] != 3 {
+	if row == nil || !anyListContains(row["models"].([]any), custom) || rowModels(row)[0] != custom || row["total_models"] != 3 {
 		t.Fatalf("openrouter row %v", row)
 	}
+}
+
+func TestCurrentCustomModelNotLeakedIntoOtherProviderRows(t *testing.T) {
+	ctx, _ := pickerTestHome(t, nil)
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+	t.Setenv("NOUS_API_KEY", "sk-test")
+	cachedProviderModelIDsFn = func(context.Context, string, CachedModelsOptions) []string { return []string{"curated/one"} }
+	custom := "some-vendor/totally-custom-model-v9"
+	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "openrouter", CurrentModel: custom, UserProviders: map[string]any{}, CustomProviders: []any{}})
 	for _, r := range rows {
 		if r["slug"] != "openrouter" && r["is_current"] != true && anyListContains(r["models"].([]any), custom) {
 			t.Fatalf("leaked into %v", r["slug"])
 		}
+	}
+}
+
+func TestSection3ProbesNoKeyEndpointWithSingularDefaultModel(t *testing.T) {
+	ctx, calls := pickerTestHome(t, func(string, string) ([]string, bool) {
+		return []string{"live-model-1", "live-model-2", "live-model-3"}, true
+	})
+	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "local-ollama", MaxModels: intPtr(50), CustomProviders: []any{},
+		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "api": "http://localhost:11434/v1", "default_model": "llama3"}}})
+	if len(*calls) == 0 {
+		t.Fatal("singular default_model must not suppress live discovery")
+	}
+	if (*calls)[0].apiKey != "" {
+		t.Fatalf("calls %+v", *calls)
+	}
+	row := pickerRow(rows, "local-ollama")
+	if !reflect.DeepEqual(rowModels(row), []string{"live-model-1", "live-model-2", "live-model-3"}) || row["total_models"] != 3 {
+		t.Fatalf("row %v", row)
 	}
 }
 
@@ -402,7 +431,7 @@ func TestDefaultCallersKeepTheFastBudgetCoupling(t *testing.T) {
 	}
 }
 
-func TestExplicitFastProbeStillCutsTheBudget(t *testing.T) {
+func TestExplicitFastProbeTrueStillCutsTheBudget(t *testing.T) {
 	yes := true
 	if row := slowEndpointRows(t, &yes); !reflect.DeepEqual(rowModels(row), []string{"kept-model"}) {
 		t.Fatalf("row %v", row)

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestToolHandlerRecycledStdioReconnectsLazily(t *testing.T) {
+func TestToolHandlerRecycledStdioServerReconnectsLazilyOnToolCall(t *testing.T) {
 	srv, _ := handlerServer(t, "test_srv", func(string, map[string]any) (any, error) { return textResult("stale"), nil })
 	srv.setSession(nil)
 	srv.mu.Lock()

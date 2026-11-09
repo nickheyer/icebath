@@ -210,8 +210,9 @@ func (s *terminalSlot) run(ctx context.Context) {
 	}
 	ref := s.parsed.Ref(s.batch.taskID)
 	dispatch := e.resolveSequentialDispatch(wctx, ref, s.batch.messages)
-	s.res.managed, s.res.err = e.runToolExecutionMiddleware(wctx, managedInput{name: ref.Name, args: ref.Args, taskID: ref.TaskID, toolCallID: ref.CallID,
-		execute: dispatch.execute, scopeBlock: s.parsed.ScopeBlock, displayIndex: s.index + 1, trace: ref.Trace, gate: s.batch.authGate, slot: s})
+	in := ref.middlewareKwargs()
+	in.execute, in.scopeBlock, in.displayIndex, in.gate, in.slot = dispatch.execute, s.parsed.ScopeBlock, s.index+1, s.batch.authGate, s
+	s.res.managed, s.res.err = e.runToolExecutionMiddleware(wctx, in)
 }
 
 type pendingPrepared struct {

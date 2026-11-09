@@ -52,7 +52,7 @@ func mockServersYAML(t *testing.T, names ...string) string {
 	return b.String()
 }
 
-func TestManagerConnectCooldownDoublesToCap(t *testing.T) {
+func TestConnectCooldownHelpersFailureArmsExponentialBackoff(t *testing.T) {
 	isolateHome(t)
 	now := time.Unix(1000, 0)
 	managerNow = func() time.Time { return now }
@@ -153,25 +153,34 @@ func TestDiscoveryCrossProcessLock(t *testing.T) {
 	dir := isolateHome(t)
 	logs := captureLogs(t)
 	ctx := home.WithOverride(context.Background(), dir)
-	cookie := acquireDiscoveryLockWithRetry(ctx)
-	if cookie == nil {
-		t.Fatal("free lock must be acquired")
-	}
-	sleeps := 0
-	discoveryLockSleep = func() { sleeps++ }
-	t.Cleanup(func() { discoveryLockSleep = func() { time.Sleep(discoveryLockRetryDelay) } })
-	if got := acquireDiscoveryLockWithRetry(ctx); got != nil {
-		t.Fatal("held lock must fall back to unguarded")
-	}
-	if sleeps != discoveryLockMaxRetries || logs.count("still held after 620 retries") != 1 {
-		t.Fatalf("slept %d times, logs %s", sleeps, logs.text())
-	}
-	cookie.Release()
-	again := acquireDiscoveryLockWithRetry(ctx)
-	if again == nil {
-		t.Fatal("released lock must be acquirable")
-	}
-	again.Release()
+	t.Run("test_lock_acquired_path", func(t *testing.T) {
+		cookie := acquireDiscoveryLockWithRetry(ctx)
+		if cookie == nil {
+			t.Fatal("free lock must be acquired")
+		}
+		cookie.Release()
+		again := acquireDiscoveryLockWithRetry(ctx)
+		if again == nil {
+			t.Fatal("released lock must be acquirable")
+		}
+		again.Release()
+	})
+	t.Run("test_lock_held_retries_exhausted_fallback", func(t *testing.T) {
+		held := acquireDiscoveryLockWithRetry(ctx)
+		if held == nil {
+			t.Fatal("free lock must be acquired")
+		}
+		defer held.Release()
+		sleeps := 0
+		discoveryLockSleep = func() { sleeps++ }
+		t.Cleanup(func() { discoveryLockSleep = func() { time.Sleep(discoveryLockRetryDelay) } })
+		if got := acquireDiscoveryLockWithRetry(ctx); got != nil {
+			t.Fatal("held lock must fall back to unguarded")
+		}
+		if sleeps != discoveryLockMaxRetries || logs.count("still held after 620 retries") != 1 {
+			t.Fatalf("slept %d times, logs %s", sleeps, logs.text())
+		}
+	})
 }
 
 func TestDiscoveryConcurrencyConfig(t *testing.T) {
@@ -192,7 +201,7 @@ func TestDiscoveryConcurrencyConfig(t *testing.T) {
 	}
 }
 
-func TestRegisterConnectsNewServersIdempotently(t *testing.T) {
+func TestRegisterMcpServersConnectsNewServers(t *testing.T) {
 	_, env := managerHome(t)
 	logs := captureLogs(t)
 	ctx := context.Background()
@@ -217,7 +226,7 @@ func TestRegisterConnectsNewServersIdempotently(t *testing.T) {
 	}
 }
 
-func TestRegisterSkipsServersAlreadyConnecting(t *testing.T) {
+func TestRegisterMcpServersSkipsServersAlreadyConnecting(t *testing.T) {
 	_, env := managerHome(t)
 	mcpMu.Lock()
 	serverConnecting[ServerKey{Name: "busy"}] = struct{}{}
@@ -317,6 +326,41 @@ func TestStatusStatesAndScopeVisibility(t *testing.T) {
 	if len(Status(ctx, env, map[string]*Rendered{}, true)) != 0 {
 		t.Fatal("empty configuration reports nothing")
 	}
+	t.Run("test_status_distinguishes_configured_connecting_failed_and_disabled", func(t *testing.T) {
+		if c := got["conf"]; c.Status != "configured" || c.Connected || c.Disabled {
+			t.Fatalf("configured %+v", c)
+		}
+		if got["busy"].Status != "connecting" || got["err"].Status != "failed" || got["err"].Error != "boom" || got["off"].Status != "disabled" || !got["off"].Disabled {
+			t.Fatalf("states %+v", got)
+		}
+	})
+	t.Run("test_status_ignores_a_runtime_owned_by_another_profile", func(t *testing.T) {
+		foreign := newServerTask("shared", env)
+		foreign.session = &Session{}
+		foreign.toolNames = []string{"secret_tool"}
+		key := ServerKey{Scope: "/other", Name: "shared"}
+		mcpMu.Lock()
+		mcpServers[key] = foreign
+		serverScopeKeys[key] = "/other"
+		mcpMu.Unlock()
+		t.Cleanup(func() {
+			mcpMu.Lock()
+			delete(mcpServers, key)
+			delete(serverScopeKeys, key)
+			mcpMu.Unlock()
+		})
+		shared := map[string]*Rendered{"shared": {Config: map[string]any{"command": "shared-mcp"}}}
+		st := Status(scoped, env, shared, true)
+		if len(st) != 1 || st[0].Status != "configured" || st[0].Tools != 0 {
+			t.Fatalf("scoped %+v", st)
+		}
+		mcpMu.Lock()
+		delete(serverScopeKeys, key)
+		mcpMu.Unlock()
+		if st = Status(scoped, env, shared, true); len(st) != 1 || st[0].Status != "configured" {
+			t.Fatalf("unscoped %+v", st)
+		}
+	})
 }
 
 func TestServerReconnectingPredicate(t *testing.T) {
@@ -343,7 +387,8 @@ func TestServerReconnectingPredicate(t *testing.T) {
 	}
 }
 
-func TestLazyRegistersFromCacheAndConnectsOnFirstUse(t *testing.T) {
+// test_mcp_lazy_start.py TestLazyMcpRegistration test_registers_from_cache_without_connect and the first use cases
+func TestLazyMcpRegistrationRegistersFromCacheWithoutConnect(t *testing.T) {
 	_, env := managerHome(t)
 	logs := captureLogs(t)
 	ctx := context.Background()
@@ -359,27 +404,40 @@ func TestLazyRegistersFromCacheAndConnectsOnFirstUse(t *testing.T) {
 	mcpMu.Lock()
 	_, live := mcpServers[ServerKey{Name: "lz"}]
 	mcpMu.Unlock()
-	if live || Status(ctx, env, map[string]*Rendered{"lz": r}, true)[0].Status != "lazy" {
+	if live {
 		t.Fatal("a lazy server must not spawn at registration")
 	}
+	t.Run("test_lazy_registration_reports_lazy_with_cached_tools_not_failed", func(t *testing.T) {
+		if st := Status(ctx, env, map[string]*Rendered{"lz": r}, true)[0]; st.Status != "lazy" {
+			t.Fatalf("status %+v", st)
+		}
+	})
 	if _, err := Connect(ctx, env, map[string]*Rendered{"lz": r}); err != nil {
 		t.Fatal(err)
 	}
-	srv := getConnectedServerForCall(ctx, env, "lz")
-	if srv == nil || srv.currentSession() == nil {
-		t.Fatal("first use must connect the lazy server")
-	}
+	t.Run("test_tool_handler_lazy_connects_on_first_call", func(t *testing.T) {
+		srv := getConnectedServerForCall(ctx, env, "lz")
+		if srv == nil || srv.currentSession() == nil {
+			t.Fatal("first use must connect the lazy server")
+		}
+	})
 	mcpMu.Lock()
 	_, stillLazy := lazyServerConfigs[ServerKey{Name: "lz"}]
 	_, ghostKept := mcpToolServerNames["mcp__lz__ghost"]
-	phantom := !ghostKept
 	mcpMu.Unlock()
-	if stillLazy || !phantom || logs.count("deregistered 1 phantom cached tool(s)") != 1 {
-		t.Fatalf("lazy state %v phantom %v logs %s", stillLazy, phantom, logs.text())
-	}
+	t.Run("test_lazy_connect_success_clears_lazy_state", func(t *testing.T) {
+		if stillLazy {
+			t.Fatal("a connected lazy server keeps its lazy registration")
+		}
+	})
+	t.Run("test_lazy_connect_deregisters_phantom_cached_tools", func(t *testing.T) {
+		if ghostKept || logs.count("deregistered 1 phantom cached tool(s)") != 1 {
+			t.Fatalf("phantom kept %v logs %s", ghostKept, logs.text())
+		}
+	})
 }
 
-func TestLazyConnectFailureRecordsCooldown(t *testing.T) {
+func TestLazyFirstUseConnectLazyConnectFailureRecordsCooldown(t *testing.T) {
 	dir, env := managerHome(t)
 	ctx := context.Background()
 	key := ServerKey{Name: "lf"}
@@ -400,7 +458,7 @@ func TestLazyConnectFailureRecordsCooldown(t *testing.T) {
 	}
 }
 
-func TestReconcileTearsDownDroppedAndForgetsLazy(t *testing.T) {
+func TestReconcileTearsDownServerDroppedFromConfig(t *testing.T) {
 	_, env := managerHome(t)
 	ctx := context.Background()
 	writeServersConfig(t, mockServersYAML(t, "keep", "drop"))
@@ -428,6 +486,14 @@ func TestReconcileTearsDownDroppedAndForgetsLazy(t *testing.T) {
 	if dropLive || !freshLive {
 		t.Fatal("reconcile must tear down the dropped server and connect the new one")
 	}
+	t.Run("test_disabled_lazy_and_connecting_entries", func(t *testing.T) {
+		if _, lazyGone := lazyServerConfigs[ServerKey{Name: "gone"}]; lazyGone || len(lazyServerToolNames[ServerKey{Name: "gone"}]) != 0 {
+			t.Fatal("a lazy entry dropped from config must be forgotten with its tool names")
+		}
+		if _, stillConnecting := serverConnecting[ServerKey{Name: "mid"}]; !stillConnecting {
+			t.Fatal("an entry still connecting is pending, not torn down")
+		}
+	})
 }
 
 func TestRestartOnlyWhenResolvedInputsChange(t *testing.T) {
@@ -493,7 +559,9 @@ func TestRegisterServedProfileWithoutMultiplexGetsItsOwnConnection(t *testing.T)
 	}
 }
 
-func TestRegisterFailingServerBacksOffThenRetries(t *testing.T) {
+// Connects a missing binary once so its first failure arms the cooldown, returning the entry and a clock advance
+func failingServerFixture(t *testing.T) (context.Context, map[string]*Rendered, func(time.Duration)) {
+	t.Helper()
 	dir, env := managerHome(t)
 	now := time.Now()
 	managerNow = func() time.Time { return now }
@@ -514,10 +582,25 @@ func TestRegisterFailingServerBacksOffThenRetries(t *testing.T) {
 	mcpMu.Lock()
 	recordConnectFailure(ctx, "bad")
 	mcpMu.Unlock()
+	return ctx, bad, func(d time.Duration) { now = now.Add(d) }
+}
+
+// test_mcp_bridge_single_failure.py TestRegisterMcpServersIsolation test_failing_server_skipped_on_second_pass
+func TestRegisterMcpServersIsolationFailingServerSkippedOnSecondPass(t *testing.T) {
+	ctx, bad, _ := failingServerFixture(t)
 	if len(selectNewServers(ctx, bad)) != 0 {
 		t.Fatal("a server inside its cooldown is skipped")
 	}
-	now = now.Add(connectRetryMaxBackoff + time.Second)
+	ShutdownMCPServers(ctx, nil, nil, time.Second)
+}
+
+// test_mcp_bridge_single_failure.py TestRegisterMcpServersIsolation test_cooldown_expiry_allows_retry
+func TestRegisterMcpServersIsolationCooldownExpiryAllowsRetry(t *testing.T) {
+	ctx, bad, advance := failingServerFixture(t)
+	if len(selectNewServers(ctx, bad)) != 0 {
+		t.Fatal("a server inside its cooldown is skipped")
+	}
+	advance(connectRetryMaxBackoff + time.Second)
 	if _, ok := selectNewServers(ctx, bad)["bad"]; !ok {
 		t.Fatal("an expired cooldown allows a retry")
 	}

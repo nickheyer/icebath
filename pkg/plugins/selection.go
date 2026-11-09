@@ -101,6 +101,11 @@ func unknownPluginMessage(name string, downloadedOnly bool) string {
 		"To add one: `icebath plugins install <owner/repo>`.", name, scope)
 }
 
+// UnknownPluginMessage is the exported no plugin named message for the migration tests of other packages
+func UnknownPluginMessage(name string, downloadedOnly bool) string {
+	return unknownPluginMessage(name, downloadedOnly)
+}
+
 // Frozen old updater entry that stops for relaunch instead of writing a raw plugin selection
 func saveEnabledSet(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
 

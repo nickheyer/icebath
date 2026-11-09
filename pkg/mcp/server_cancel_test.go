@@ -33,14 +33,14 @@ func finishesWithin(t *testing.T, what string, done <-chan struct{}) {
 	}
 }
 
-func TestServerCancelledTaskIsNotSwallowedByRetry(t *testing.T) {
+func TestCancelledErrorPropagationCancelledErrorIsNotSwallowedByExceptException(t *testing.T) {
 	s := startHanging(t, "cancel-test")
 	time.Sleep(50 * time.Millisecond)
 	s.cancelTask()
 	finishesWithin(t, "run", s.done)
 }
 
-func TestServerShutdownCompletesPromptlyWhenTaskIsCancelled(t *testing.T) {
+func TestCancelledErrorPropagationShutdownCompletesPromptlyWhenTaskIsCancelled(t *testing.T) {
 	s := startHanging(t, "shutdown-cancel-test")
 	shutdownWait = 50 * time.Millisecond
 	time.Sleep(50 * time.Millisecond)

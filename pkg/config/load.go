@@ -161,6 +161,9 @@ func valueOrEmpty(v any) any {
 	return v
 }
 
+// Canonicalizes the model section of a parsed config document the way every load and save does
+func NormalizeRootModelKeys(doc map[string]any) map[string]any { return normalizeModelKeys(doc) }
+
 // Document with root provider, base_url, context_length and api_base folded into the model section
 func normalizeModelKeys(doc map[string]any) map[string]any {
 	modelIn := doc["model"]

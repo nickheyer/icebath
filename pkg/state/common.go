@@ -185,6 +185,15 @@ var resetEndReasonsSQL = quotedSQLList(resetEndReasons)
 // Deliberate conversation boundaries a compression rotation never heals
 var boundaryEndReasons = setOf(append([]string{"new_session"}, resetEndReasons...)...)
 
+// BoundaryEndReasons is a copy of the deliberate conversation boundary end reasons
+func BoundaryEndReasons() map[string]bool {
+	out := make(map[string]bool, len(boundaryEndReasons))
+	for k := range boundaryEndReasons {
+		out[k] = true
+	}
+	return out
+}
+
 // Accidental end reasons recovery treats as resumable
 var recoverableEndReasons = []string{"agent_close", "ws_orphan_reap", "superseded_by_resume", "startup_orphan_reap"}
 

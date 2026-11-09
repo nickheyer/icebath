@@ -44,8 +44,8 @@ func asyncTestEnv(t *testing.T) *Env {
 	resetAsyncDelegationForTests()
 	drainCompletionQueue()
 	t.Cleanup(func() {
-		deadline := time.Now().Add(2 * time.Second)
-		for AsyncDelegationActiveCount() > 0 && time.Now().Before(deadline) {
+		deadline := time.Now().Add(5 * time.Second)
+		for asyncLiveRecordCount() > 0 && time.Now().Before(deadline) {
 			time.Sleep(20 * time.Millisecond)
 		}
 		resetAsyncDelegationForTests()
@@ -82,7 +82,7 @@ func runnerOf(out map[string]any) func(context.Context, *Env) (map[string]any, e
 	return func(context.Context, *Env) (map[string]any, error) { return out, nil }
 }
 
-func TestAsyncCompletionEventLandsOnSharedQueueWithSessionKey(t *testing.T) {
+func TestCompletionEventLandsOnSharedQueueWithSessionKey(t *testing.T) {
 	env := asyncTestEnv(t)
 	res, err := DispatchAsyncDelegationUnit(context.Background(), env, AsyncDispatch{
 		Goal: "compute X", Context: ptr("some context"), Toolsets: []string{"web", "file"}, Role: "leaf",
@@ -104,7 +104,7 @@ func TestAsyncCompletionEventLandsOnSharedQueueWithSessionKey(t *testing.T) {
 	}
 }
 
-func TestAsyncDispatchRejectedAtCapacity(t *testing.T) {
+func TestDispatchRejectedAtCapacity(t *testing.T) {
 	env := asyncTestEnv(t)
 	gate := make(chan struct{})
 	defer close(gate)
@@ -124,7 +124,7 @@ func TestAsyncDispatchRejectedAtCapacity(t *testing.T) {
 	}
 }
 
-func TestAsyncStalledRunnerIsInterruptedThenFinalized(t *testing.T) {
+func TestStalledRunnerIsInterruptedThenFinalized(t *testing.T) {
 	env := asyncTestEnv(t)
 	prevInterval, prevIdle, prevGrace := asyncStaleCheckInterval, asyncStaleIdleSeconds, asyncStallGraceSeconds
 	asyncStaleCheckInterval, asyncStaleIdleSeconds, asyncStallGraceSeconds = 20*time.Millisecond, 0.05, 0.05

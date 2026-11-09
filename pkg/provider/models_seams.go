@@ -27,6 +27,9 @@ var (
 	customEndpointFingerprintFn              func(apiKey any, apiMode string, headers map[string]string) string
 	fetchAPIModelsFn                         func(ctx context.Context, apiKey, baseURL string, timeout time.Duration, apiMode string, headers map[string]string) ([]string, bool)
 	spawnSWRRefreshFn                        func(ctx context.Context, cacheKey string, refresh func() (map[string]any, bool))
+	shouldUseOllamaNativeCatalogFn           func(ctx context.Context, provider, baseURL string, headers map[string]string) bool
+	getOllamaNativeHeadersFn                 func(ctx context.Context, baseURL string, apiKey any) map[string]string
+	fetchOllamaLocalModelsFn                 func(ctx context.Context, baseURL string, timeout time.Duration, headers map[string]string) ([]string, bool)
 	azureFoundryRuntimeFn                    func(ctx context.Context, normalized string, modelCfg map[string]any) (*Runtime, error)
 	azureProbeOpenAIModelsFn                 func(ctx context.Context, baseURL, apiKey string, tokenProvider func(context.Context) (string, error)) (bool, []string)
 	providerAuthStatusFn                     func(ctx context.Context, provider string) (bool, bool)
@@ -70,6 +73,9 @@ func bindModelsSeams() {
 	customEndpointFingerprintFn = customEndpointFingerprint
 	fetchAPIModelsFn = FetchAPIModels
 	spawnSWRRefreshFn = spawnSWRRefresh
+	shouldUseOllamaNativeCatalogFn = shouldUseOllamaNativeCatalog
+	getOllamaNativeHeadersFn = getOllamaNativeHeaders
+	fetchOllamaLocalModelsFn = FetchOllamaLocalModels
 	azureFoundryRuntimeFn = func(ctx context.Context, normalized string, modelCfg map[string]any) (*Runtime, error) {
 		return modelsResolver(ctx).resolveAzureFoundryRuntime(normalized, modelCfg, "", nil, "", "")
 	}

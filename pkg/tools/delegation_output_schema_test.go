@@ -18,33 +18,29 @@ func addressSchema(t *testing.T) any {
 }
 
 // test_delegate_output_schema.py TestValidateOutput
-func TestValidateOutputAgainstAddressSchema(t *testing.T) {
+func TestValidateOutput(t *testing.T) {
 	schema := addressSchema(t)
-	for _, tc := range []struct {
-		name, text string
-		ok         bool
-		mention    string
-	}{
-		{"valid_json_matching_schema", `{"city": "Berlin"}`, true, ""},
-		{"json_violating_schema_reports_errors", `{"zip": "10115"}`, false, "city"},
-		{"non_json_text_reports_parse_error", "I could not produce JSON, sorry.", false, ""},
-		{"code_fenced_json_is_accepted", "```json\n{\"city\": \"Oslo\"}\n```", true, ""},
-		{"json_embedded_in_prose_is_extracted", "Here is the result:\n{\"city\": \"Lima\"}\nHope that helps!", true, ""},
-		{"empty_text_is_invalid", "", false, ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ok, errs, err := ValidateOutput(tc.text, schema)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if ok != tc.ok || (ok && len(errs) != 0) || (!ok && len(errs) == 0) {
-				t.Fatalf("ok %v errors %q", ok, errs)
-			}
-			if tc.mention != "" && !strings.Contains(strings.Join(errs, "\n"), tc.mention) {
-				t.Fatalf("errors %q miss %q", errs, tc.mention)
-			}
-		})
+	check := func(t *testing.T, text string, wantOK bool, mention string) {
+		t.Helper()
+		ok, errs, err := ValidateOutput(text, schema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok != wantOK || (ok && len(errs) != 0) || (!ok && len(errs) == 0) {
+			t.Fatalf("ok %v errors %q", ok, errs)
+		}
+		if mention != "" && !strings.Contains(strings.Join(errs, "\n"), mention) {
+			t.Fatalf("errors %q miss %q", errs, mention)
+		}
 	}
+	t.Run("test_valid_json_matching_schema", func(t *testing.T) { check(t, `{"city": "Berlin"}`, true, "") })
+	t.Run("test_json_violating_schema_reports_errors", func(t *testing.T) { check(t, `{"zip": "10115"}`, false, "city") })
+	t.Run("test_non_json_text_reports_parse_error", func(t *testing.T) { check(t, "I could not produce JSON, sorry.", false, "") })
+	t.Run("test_code_fenced_json_is_accepted", func(t *testing.T) { check(t, "```json\n{\"city\": \"Oslo\"}\n```", true, "") })
+	t.Run("test_json_embedded_in_prose_is_extracted", func(t *testing.T) {
+		check(t, "Here is the result:\n{\"city\": \"Lima\"}\nHope that helps!", true, "")
+	})
+	t.Run("test_empty_text_is_invalid", func(t *testing.T) { check(t, "", false, "") })
 	_, errs, _ := ValidateOutput(`{"zip": 5, "tags": [1]}`, schema)
 	if strings.Join(errs, "|") != "$: 'city' is a required property|$.zip: 5 is not of type 'string'" {
 		t.Fatalf("rendered errors %q", errs)
@@ -55,17 +51,33 @@ func TestValidateOutputAgainstAddressSchema(t *testing.T) {
 }
 
 // test_delegate_output_schema.py TestPromptPlumbing
-func TestOutputContractAndRetryMessage(t *testing.T) {
-	out := AppendOutputContract("base context", addressSchema(t))
-	if !strings.Contains(out, "base context") || !strings.Contains(out, "OUTPUT CONTRACT") || !strings.Contains(out, `"city"`) {
-		t.Fatalf("contract %q", out)
+func TestPromptPlumbing(t *testing.T) {
+	t.Run("test_contract_block_carries_schema", func(t *testing.T) {
+		out := AppendOutputContract("base context", addressSchema(t))
+		if !strings.Contains(out, "base context") || !strings.Contains(out, "OUTPUT CONTRACT") || !strings.Contains(out, `"city"`) {
+			t.Fatalf("contract %q", out)
+		}
+		if AppendOutputContract("  ", map[string]any{})[:15] != "OUTPUT CONTRACT" {
+			t.Fatal("blank context keeps a leading separator")
+		}
+	})
+	t.Run("test_retry_message_carries_verbatim_errors", func(t *testing.T) {
+		msg := BuildRetryMessage([]string{"'city' is a required property"})
+		if !strings.Contains(msg, "'city' is a required property") || !strings.Contains(msg, "JSON") {
+			t.Fatalf("retry %q", msg)
+		}
+	})
+}
+
+// test_delegate_output_schema.py TestToolSchemaSurface test_output_schema_advertised_per_task_only
+func TestOutputSchemaAdvertisedPerTaskOnly(t *testing.T) {
+	props := DelegateTaskSchema["parameters"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := props["output_schema"]; ok {
+		t.Fatal("legacy top level output_schema advertised")
 	}
-	if AppendOutputContract("  ", map[string]any{})[:15] != "OUTPUT CONTRACT" {
-		t.Fatal("blank context keeps a leading separator")
-	}
-	msg := BuildRetryMessage([]string{"'city' is a required property"})
-	if !strings.Contains(msg, "'city' is a required property") || !strings.Contains(msg, "JSON") {
-		t.Fatalf("retry %q", msg)
+	taskProps := props["tasks"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	if taskProps["output_schema"].(map[string]any)["type"] != "object" {
+		t.Fatalf("task output_schema %v", taskProps["output_schema"])
 	}
 }
 

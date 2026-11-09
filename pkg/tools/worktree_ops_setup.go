@@ -61,6 +61,9 @@ func maintainPackHealth(repoRoot string) {
 	}
 }
 
+// MaintainPackHealth repacks a repository once its refs are final
+func MaintainPackHealth(repoRoot string) { maintainPackHealth(repoRoot) }
+
 // Pack health pass returning the first failure instead of logging it
 func maintainPackHealthErr(repoRoot string) error {
 	gitDir, err := commonGitDir(repoRoot)

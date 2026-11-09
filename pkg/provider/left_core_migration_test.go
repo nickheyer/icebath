@@ -20,10 +20,9 @@ func testPluginManagerHooks() PluginManagerHooks {
 		Install: func(context.Context, string, bool) (map[string]any, error) {
 			return nil, errors.New("provider tests install no plugins")
 		},
-		LoadError:        func(string) string { return "" },
-		RefreshBoundHome: func() {},
-		DependencyHomes:  func() []string { return nil },
-		AuxiliaryTasks:   func() []map[string]any { return nil },
+		LoadError:       func(string) string { return "" },
+		DependencyHomes: func() ([]string, error) { return nil, nil },
+		AuxiliaryTasks:  func() []map[string]any { return nil },
 	}
 }
 
@@ -81,7 +80,7 @@ func mkPluginDir(t *testing.T, h, plugin string) {
 	}
 }
 
-func TestLeftCoreMigrateHomeInstallsTheCatalogPluginOnce(t *testing.T) {
+func TestMigrateHomeInstallsTheCatalogPluginOnce(t *testing.T) {
 	h := leftCoreHome(t, t.TempDir(), "home", "HASS_TOKEN=abc\n", "")
 	var calls, said []string
 	install := func(name string) (map[string]any, error) {
@@ -119,7 +118,7 @@ func TestLeftCoreMigrationKeepsAToolsetOffWhereCoreHadItOff(t *testing.T) {
 	}
 }
 
-func TestLeftCoreMigrateHomeReportsAFailedInstallWithTheCommand(t *testing.T) {
+func TestMigrateHomeReportsAFailedInstallWithTheCommand(t *testing.T) {
 	h := leftCoreHome(t, t.TempDir(), "home", "HASS_TOKEN=abc\n", "")
 	var said []string
 	got := MigrateLeftCoreHome(context.Background(), h, func(string) (map[string]any, error) {
@@ -131,7 +130,7 @@ func TestLeftCoreMigrateHomeReportsAFailedInstallWithTheCommand(t *testing.T) {
 	}
 }
 
-func TestLeftCoreHomeWithoutHomeassistantGetsNothingAndNoNotice(t *testing.T) {
+func TestHomeWithoutHomeassistantGetsNothingAndNoNotice(t *testing.T) {
 	h := leftCoreHome(t, t.TempDir(), "home", "OPENAI_API_KEY=sk\n", "")
 	var said []string
 	got := MigrateLeftCoreHome(context.Background(), h, func(string) (map[string]any, error) {
@@ -143,7 +142,7 @@ func TestLeftCoreHomeWithoutHomeassistantGetsNothingAndNoNotice(t *testing.T) {
 	}
 }
 
-func TestLeftCoreAPresentPluginIsLeftAlone(t *testing.T) {
+func TestADisabledOrPresentPluginIsLeftAlone(t *testing.T) {
 	h := leftCoreHome(t, t.TempDir(), "home", "HASS_TOKEN=abc\n", "")
 	mkPluginDir(t, h, "homeassistant")
 	got := MigrateLeftCoreHome(context.Background(), h, func(string) (map[string]any, error) {
@@ -155,7 +154,7 @@ func TestLeftCoreAPresentPluginIsLeftAlone(t *testing.T) {
 	}
 }
 
-func TestLeftCoreMCPServeIsNeverInstalledAutomatically(t *testing.T) {
+func TestMCPServeIsNeverInstalledAutomatically(t *testing.T) {
 	h := leftCoreHome(t, t.TempDir(), "home", "", "mcp_servers:\n  icebath:\n    command: icebath\n    args: [mcp, serve]\n")
 	var installs []string
 	got := MigrateLeftCoreHome(context.Background(), h, func(name string) (map[string]any, error) {
@@ -221,7 +220,7 @@ func TestLeftCoreReplacedToolsetsTurnOffEverywhere(t *testing.T) {
 	}
 }
 
-func TestLeftCoreSpotifyInUseIsAStoredLoginOrTheToolset(t *testing.T) {
+func TestSpotifyInUseIsAStoredLoginOrTheToolset(t *testing.T) {
 	cases := []struct {
 		auth, cfg string
 		inUse     bool
@@ -243,7 +242,7 @@ func TestLeftCoreSpotifyInUseIsAStoredLoginOrTheToolset(t *testing.T) {
 	}
 }
 
-func TestLeftCoreOldSpotifyCommandsPointAtThePlugin(t *testing.T) {
+func TestOldSpotifyCommandsPointAtThePlugin(t *testing.T) {
 	h, ctx := leftCoreProfileHome(t)
 	hint := MovedCommandHint(ctx, "icebath auth", "spotify", "status")
 	if !strings.Contains(hint, "`icebath auth status spotify` is now `icebath spotify status`") || !strings.Contains(hint, "plugins install spotify") {
@@ -277,7 +276,7 @@ func TestLeftCoreOldMCPServeSpellingNamesThePluginCommand(t *testing.T) {
 	}
 }
 
-func TestLeftCoreLangfuseInUseIsTheBundledPluginEnabled(t *testing.T) {
+func TestLangfuseInUseIsTheBundledPluginEnabled(t *testing.T) {
 	cases := []struct {
 		cfg, managed string
 		inUse        bool
@@ -509,7 +508,7 @@ func TestLeftCoreSingularityAndImportsInUseFromTheirConfig(t *testing.T) {
 	}
 }
 
-func TestLeftCoreAnAppendRacingAClaimIsDeliveredNotLost(t *testing.T) {
+func TestAnAppendRacingAClaimIsDeliveredNotLost(t *testing.T) {
 	h := t.TempDir()
 	queueLeftCoreNotice(h, "first")
 	opened, goOn := make(chan struct{}), make(chan struct{})
@@ -546,9 +545,22 @@ func TestLeftCoreAnAppendRacingAClaimIsDeliveredNotLost(t *testing.T) {
 
 func TestPluginHooksReturnsInstalledHooks(t *testing.T) {
 	withPluginHooks(t, func(h *PluginManagerHooks) {
-		h.DependencyHomes = func() []string { return []string{"/profiles/coder"} }
+		h.DependencyHomes = func() ([]string, error) { return []string{"/profiles/coder"}, nil }
 	})
-	if got := PluginHooks().DependencyHomes(); len(got) != 1 || got[0] != "/profiles/coder" {
+	if got, err := PluginHooks().DependencyHomes(); err != nil || len(got) != 1 || got[0] != "/profiles/coder" {
 		t.Fatal(got)
+	}
+}
+
+func TestIsTruthyValueAcceptsTheFlagSpellings(t *testing.T) {
+	for _, v := range []any{"1", "true", "yes", "on", true} {
+		if !IsTruthyValue(v) {
+			t.Fatalf("%v should be truthy", v)
+		}
+	}
+	for _, v := range []any{"0", "false", "", nil, "off"} {
+		if IsTruthyValue(v) {
+			t.Fatalf("%v should be falsy", v)
+		}
 	}
 }

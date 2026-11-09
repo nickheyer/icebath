@@ -10,18 +10,25 @@ import (
 )
 
 // Session ids reach the registry handler on the standard path and on the execute_code path
-func TestDispatchForwardsSessionIDOnStandardAndExecuteCodePaths(t *testing.T) {
-	for _, tc := range []struct{ name, session string }{{"web_search", "sess-abc"}, {"execute_code", "sess-xyz"}} {
-		t.Run(tc.name, func(t *testing.T) {
-			var seen *Call
-			d, _, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string { seen = call; return `{"result": "ok"}` }, tc.name)
-			d.DispatchWith(WithDispatcher(context.Background(), d), &Call{Name: tc.name, Args: map[string]any{"query": "test"}, TaskID: "t1", SessionID: tc.session, Env: env},
-				DispatchOptions{SkipPreToolCallHook: true})
-			if seen == nil || seen.SessionID != tc.session || seen.TaskID != "t1" {
-				t.Fatalf("handler saw %+v", seen)
-			}
-		})
+// Dispatches one call with a session id and returns what the handler saw
+func sessionForwardingCall(t *testing.T, tool, session string) *Call {
+	t.Helper()
+	var seen *Call
+	d, _, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string { seen = call; return `{"result": "ok"}` }, tool)
+	d.DispatchWith(WithDispatcher(context.Background(), d), &Call{Name: tool, Args: map[string]any{"query": "test"}, TaskID: "t1", SessionID: session, Env: env},
+		DispatchOptions{SkipPreToolCallHook: true})
+	if seen == nil || seen.SessionID != session || seen.TaskID != "t1" {
+		t.Fatalf("handler saw %+v", seen)
 	}
+	return seen
+}
+
+func TestStandardPathForwardsSessionId(t *testing.T) {
+	sessionForwardingCall(t, "web_search", "sess-abc")
+}
+
+func TestExecuteCodePathForwardsSessionId(t *testing.T) {
+	sessionForwardingCall(t, "execute_code", "sess-xyz")
 }
 
 // Dispatcher with one fixed result tool and the given transform and post hooks
@@ -130,22 +137,39 @@ func previewUnwrap(t *testing.T, scope []string) (string, string) {
 	return name, block
 }
 
-// Session gated GUI tools fail fast naming the desktop surface outside a desktop session
-func TestPreviewScopeGate(t *testing.T) {
-	for _, name := range []string{"drive_preview", "desktop_preview"} {
-		if err := strings.ToLower(previewBridgeError(t, name, previewTUIScope)); !strings.Contains(err, "desktop") || strings.Contains(err, "use tool_search to find") {
-			t.Fatalf("%s bridge in tui scope: %q", name, err)
-		}
+func TestBridgeTuiScopeNamesTheGuiSurface(t *testing.T) {
+	err := strings.ToLower(previewBridgeError(t, "drive_preview", previewTUIScope))
+	if !strings.Contains(err, "desktop") || strings.Contains(err, "use tool_search to find") {
+		t.Fatalf("bridge in tui scope: %q", err)
 	}
+}
+
+func TestBridgeTuiScopeDesktopPreviewNamesTheGuiSurface(t *testing.T) {
+	err := strings.ToLower(previewBridgeError(t, "desktop_preview", previewTUIScope))
+	if !strings.Contains(err, "desktop") || strings.Contains(err, "use tool_search to find") {
+		t.Fatalf("bridge in tui scope: %q", err)
+	}
+}
+
+func TestUnwrapTuiScopeNamesTheGuiSurface(t *testing.T) {
 	if _, block := previewUnwrap(t, previewTUIScope); !strings.Contains(strings.ToLower(block), "desktop") || strings.Contains(strings.ToLower(block), "use tool_search to find") {
 		t.Fatalf("unwrap in tui scope: %q", block)
 	}
+}
+
+func TestBridgeDesktopScopeStillReachesTheTool(t *testing.T) {
 	if err := previewBridgeError(t, "drive_preview", previewDesktopScope); !strings.Contains(strings.ToLower(err), "desktop") {
 		t.Fatalf("bridge in desktop scope: %q", err)
 	}
+}
+
+func TestUnwrapDesktopScopeNotBlockedThroughTheDispatcher(t *testing.T) {
 	if name, block := previewUnwrap(t, previewDesktopScope); block != "" || name != "drive_preview" {
 		t.Fatalf("unwrap in desktop scope blocked %q as %q", block, name)
 	}
+}
+
+func TestAbsentNonSurfaceCoreToolReportsUnavailability(t *testing.T) {
 	if err := previewBridgeError(t, "computer_use", previewTUIScope); !strings.Contains(err, "not available in this execution context") {
 		t.Fatalf("absent core tool: %q", err)
 	}

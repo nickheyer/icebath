@@ -16,13 +16,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// Seconds a live turn waits for the review to acknowledge its cancellation, a test shortens it
+var backgroundReviewCancelTimeoutSeconds = 2.0
+
 const (
-	backgroundReviewCancelTimeoutSeconds = 2.0
-	reviewSupersededMessage              = "superseded by a new live turn"
-	reviewSupersededToolReason           = "background review superseded"
-	reviewMaxInputTokensCap              = 600_000
-	reviewInputContextFraction           = 0.75
-	reviewMaxInputTokensFallback         = 120_000
+	reviewSupersededMessage      = "superseded by a new live turn"
+	reviewSupersededToolReason   = "background review superseded"
+	reviewMaxInputTokensCap      = 600_000
+	reviewInputContextFraction   = 0.75
+	reviewMaxInputTokensFallback = 120_000
 )
 
 // Per agent review notice latches and prompt overrides keyed by prompt name
@@ -139,6 +141,9 @@ func interruptBackgroundReview(reviewAgent any, message, toolReason string) {
 	}()
 }
 
+// Waits for the review's request exit event, replaced by tests observing the wait
+var awaitReviewAck = func(run *backgroundReviewRun, timeout float64) bool { return run.requestDone.Wait(timeout) }
+
 // Cancels the running review for a new live turn and waits briefly for its acknowledgement
 func cancelBackgroundReviewForLiveTurn(a *AIAgent) {
 	a.CancelBackgroundReview(reviewSupersededMessage, reviewSupersededToolReason)
@@ -166,7 +171,7 @@ func (a *AIAgent) CancelBackgroundReview(message, toolReason string) {
 	if run == nil {
 		return
 	}
-	if !run.requestDone.Wait(backgroundReviewCancelTimeoutSeconds) {
+	if !awaitReviewAck(run, backgroundReviewCancelTimeoutSeconds) {
 		backgroundReviewLog().Warn(fmt.Sprintf("Background review did not acknowledge cancellation within %.1fs; proceeding (%s)",
 			backgroundReviewCancelTimeoutSeconds, message))
 	}

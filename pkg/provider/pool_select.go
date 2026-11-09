@@ -446,6 +446,17 @@ func (p *Pool) acquireLeaseUnderLock(credentialID string) (string, bool, []Poole
 	return chosen.ID, true, pending
 }
 
+// ActiveLeases copies the live lease count per credential id for tests and diagnostics
+func (p *Pool) ActiveLeases() map[string]int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make(map[string]int, len(p.activeLeases))
+	for k, v := range p.activeLeases {
+		out[k] = v
+	}
+	return out
+}
+
 // ReleaseLease drops one soft lease on the entry
 func (p *Pool) ReleaseLease(credentialID string) {
 	p.mu.Lock()

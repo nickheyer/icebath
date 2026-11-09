@@ -828,6 +828,13 @@ func EnsureBuiltinSecretSources() {
 	}
 }
 
+// BuiltinSecretSourcesLoaded reports whether the bundled sources were registered in this process
+func BuiltinSecretSourcesLoaded() bool {
+	secretRegistryMu.Lock()
+	defer secretRegistryMu.Unlock()
+	return builtinSourcesReady
+}
+
 // ResetSecretRegistryForTests empties the registry
 func ResetSecretRegistryForTests() {
 	secretRegistryMu.Lock()

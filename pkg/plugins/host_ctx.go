@@ -143,6 +143,20 @@ func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[str
 	return bound, extra, nil
 }
 
+// HostParam is one Python parameter of a host facade method another package implements
+type HostParam = pyParam
+
+// HostReq is a required positional or keyword parameter of a host facade method
+func HostReq(name string) HostParam { return req(name) }
+
+// HostKwo is a keyword only parameter of a host facade method with its default
+func HostKwo(name string, def any) HostParam { return kwo(name, def) }
+
+// BindHostCall exports the Python keyword binding of a host facade method for facades other packages implement
+func BindHostCall(owner, method string, params []HostParam, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
+	return bindPyOn(owner, method, params, args, kwargs)
+}
+
 // Marker default of an optional parameter the call did not pass
 type unsetDefault struct{}
 

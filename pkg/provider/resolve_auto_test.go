@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,5 +176,28 @@ func TestDetectAPIModeForURLWrapperMatches(t *testing.T) {
 		if got, want := DetectAPIModeForURL(u), detectAPIModeForURL(u); got != want {
 			t.Fatalf("DetectAPIModeForURL(%q) = %q, want %q", u, got, want)
 		}
+	}
+}
+
+func TestAutoDetectLocalModelReadsTheSingleLoadedModel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"data":[{"id":"local-llama"}]}`))
+	}))
+	defer srv.Close()
+	if got := AutoDetectLocalModel(context.Background(), srv.URL); got != "local-llama" {
+		t.Fatalf("got %q", got)
+	}
+	if got := AutoDetectLocalModel(context.Background(), ""); got != "" {
+		t.Fatalf("empty base url gave %q", got)
+	}
+}
+
+func TestLooksLikeOpenRouterKeyMatchesThePrefix(t *testing.T) {
+	if !LooksLikeOpenRouterKey("sk-or-v1-abc") || LooksLikeOpenRouterKey("sk-proj-abc") || LooksLikeOpenRouterKey("") {
+		t.Fatal("prefix check wrong")
 	}
 }

@@ -241,6 +241,9 @@ func pyInt(v any) int {
 	return 0
 }
 
+// Turn context builder of the loop, replaced by tests that stop a live turn at that boundary
+var buildTurnContextFn = buildTurnContext
+
 // Runs one complete turn with tool calling until a phase ends it, returning the result dict
 func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o RunConversationOptions, taskID string) (map[string]any, error) {
 	moaConfig, persistUserMessage := o.MoaConfig, o.PersistUserMessage
@@ -261,7 +264,7 @@ func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o Run
 		}
 	}
 
-	tc, err := buildTurnContext(ctx, a, TurnContextRequest{
+	tc, err := buildTurnContextFn(ctx, a, TurnContextRequest{
 		UserMessage: userMessage, SystemMessage: o.SystemMessage, ConversationHistory: o.ConversationHistory, TaskID: taskID,
 		StreamCallback: o.StreamCallback, PersistUserMessage: persistUserMessage, PersistUserTimestamp: o.PersistUserTimestamp,
 		PersistUserDisplayKind: o.PersistUserDisplayKind, PersistUserDisplayMetadata: o.PersistUserDisplayMetadata,

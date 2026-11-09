@@ -21,7 +21,7 @@ func TestMigrateAllLeftCoreHomesSharesDependencyAnswersAcrossAGroup(t *testing.T
 	defer restore()
 	var installedIn []string
 	withPluginHooks(t, func(h *PluginManagerHooks) {
-		h.DependencyHomes = func() []string { return homes }
+		h.DependencyHomes = func() ([]string, error) { return homes, nil }
 		h.Install = func(ctx context.Context, name string, _ bool) (map[string]any, error) {
 			if ok, reason := plugins.ConsentPythonDeps(ctx, name, []string{"hass-client"}, plugins.NewConsole(io.Discard), false); !ok {
 				return map[string]any{"ok": false, "error": reason}, nil
@@ -31,7 +31,10 @@ func TestMigrateAllLeftCoreHomesSharesDependencyAnswersAcrossAGroup(t *testing.T
 			return map[string]any{"ok": true}, nil
 		}
 	})
-	got := MigrateAllLeftCoreHomes(context.Background(), func(string) {})
+	got, err := MigrateAllLeftCoreHomes(context.Background(), func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !slices.Equal(got, []string{"homeassistant", "homeassistant"}) || !slices.Equal(installedIn, homes) {
 		t.Fatalf("installed %v in %v", got, installedIn)
 	}

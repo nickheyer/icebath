@@ -82,7 +82,7 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 	subagentID := fmt.Sprintf("sa-%d-%s", spec.TaskIndex, strings.ReplaceAll(uuid.NewString(), "-", "")[:8])
 	parentSubagentID := parent.subagentID
 	delegationCfg := tools.LoadDelegationConfig(ctx)
-	childToolsets, childDisabled := resolveChildToolsets(ctx, parent, nil, effectiveRole)
+	childToolsets, childDisabled := resolveChildToolsets(ctx, parent, spec.Toolsets, effectiveRole)
 	childPrompt := buildChildSystemPrompt(ctx, parent.env, childStrArg(spec.Context), resolveWorkspaceHint(parent), effectiveRole, maxSpawn, childDepth)
 	parentAPIKey := parent.apiKey
 	if parentAPIKey == "" && parent.clientKwargs != nil {

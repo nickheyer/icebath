@@ -23,12 +23,11 @@ import (
 
 // PluginManagerHooks are the plugin manager entry points the plugins package installs into this package
 type PluginManagerHooks struct {
-	CatalogEntry     func(name string) (string, bool)
-	Install          func(ctx context.Context, name string, consent bool) (map[string]any, error)
-	LoadError        func(plugin string) string
-	RefreshBoundHome func()
-	DependencyHomes  func() []string
-	AuxiliaryTasks   func() []map[string]any
+	CatalogEntry    func(name string) (string, bool)
+	Install         func(ctx context.Context, name string, consent bool) (map[string]any, error)
+	LoadError       func(plugin string) string
+	DependencyHomes func() ([]string, error)
+	AuxiliaryTasks  func() []map[string]any
 }
 
 var pluginManagerHooks atomic.Pointer[PluginManagerHooks]
@@ -125,8 +124,15 @@ func PluginHomeLabel(h string) string {
 	return h
 }
 
-func interactiveTerminal() bool {
+var interactiveTerminal = func() bool {
 	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
+}
+
+// SwapLeftCoreTableForTests replaces the rows and returns the restore of the previous table
+func SwapLeftCoreTableForTests(rows []LeftCoreFeature) func() {
+	prev := leftCoreTable
+	leftCoreTable = rows
+	return func() { leftCoreTable = prev }
 }
 
 // Dependency consent without a terminal comes from the lazy install policy of the home in ctx

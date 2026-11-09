@@ -62,6 +62,8 @@ var (
 	pickerFetchModelsDevFn    = FetchModelsDev
 	pickerOllamaCloudFn       = FetchOllamaCloudModels
 	pickerLMStudioFn          = FetchLMStudioModels
+	pickerDiscoverEndpointFn  = discoverEndpointModels
+	pickerSaveDiscoveredFn    = saveDiscoveredModelsToConfig
 	pickerNousModelIDsFn      = nousPickerModelIDs
 	pickerListAuthenticatedFn = ListAuthenticatedProviders
 	pickerOpenRouterModelsFn  = FetchOpenRouterModels
@@ -207,7 +209,7 @@ func fetchPickerLiveModels(ctx context.Context, apiKey any, apiURL, nativeProvid
 	}
 	key := modelsMaterializeProbeAPIKey(ctx, apiKey)
 	candidate := map[string]string{}
-	for k, v := range getOllamaNativeHeaders(ctx, apiURL, key) {
+	for k, v := range getOllamaNativeHeadersFn(ctx, apiURL, key) {
 		candidate[k] = v
 	}
 	drop := func(pred func(string) bool) {
@@ -241,7 +243,7 @@ func fetchPickerLiveModels(ctx context.Context, apiKey any, apiURL, nativeProvid
 	if len(candidate) > 0 {
 		candidateOrNil = candidate
 	}
-	useNative := shouldUseOllamaNativeCatalog(ctx, nativeProvider, apiURL, candidateOrNil)
+	useNative := shouldUseOllamaNativeCatalogFn(ctx, nativeProvider, apiURL, candidateOrNil)
 	resolved := headers
 	if useNative {
 		resolved = candidateOrNil
@@ -250,7 +252,7 @@ func fetchPickerLiveModels(ctx context.Context, apiKey any, apiURL, nativeProvid
 		}
 		nativeURL := apiURL
 		probe := func() (CatalogRows, bool) {
-			models, ok := FetchOllamaLocalModels(ctx, nativeURL, timeout, resolved)
+			models, ok := fetchOllamaLocalModelsFn(ctx, nativeURL, timeout, resolved)
 			if !ok {
 				return CatalogRows{}, false
 			}
@@ -1053,7 +1055,7 @@ func (b *pickerBuild) endpointIsCurrent(slug string, aliases map[string]bool, ur
 // Probe policy of sections three and four, returning models, ok, native empty and whether it probed live
 func (b *pickerBuild) discoverEndpoint(apiKey any, apiURL, nativeProvider string, hasExplicitModels bool, headers map[string]string, apiMode string, discoveryAllowed, isCurrent bool) ([]string, bool, bool, bool) {
 	probeLive := discoveryAllowed && (pyTruthy(apiKey) || !hasExplicitModels) && b.canProbeCustom(isCurrent)
-	models, ok, nativeEmpty := discoverEndpointModels(b.ctx, apiKey, apiURL, nativeProvider, hasExplicitModels, headers, apiMode,
+	models, ok, nativeEmpty := pickerDiscoverEndpointFn(b.ctx, apiKey, apiURL, nativeProvider, hasExplicitModels, headers, apiMode,
 		probeLive, discoveryAllowed, b.resolvedFastCustomProbe())
 	return models, ok, nativeEmpty, probeLive
 }
@@ -1393,7 +1395,7 @@ func lapBareCustomRow(b *pickerBuild, customProviders []any) {
 	if defaultModel != "" {
 		models = []string{defaultModel}
 	}
-	discovered, ok, nativeEmpty := discoverEndpointModels(b.ctx, "", apiURL, "custom", false, nil, "",
+	discovered, ok, nativeEmpty := pickerDiscoverEndpointFn(b.ctx, "", apiURL, "custom", false, nil, "",
 		b.refresh || (b.probeCurrentCustomProvider && isCurrent), true, b.resolvedFastCustomProbe())
 	if ok {
 		models = discovered
@@ -1498,7 +1500,7 @@ func lapCustomProviderRows(b *pickerBuild, customProviders []any) error {
 			grp.models = discovered
 			if probed {
 				identity := grp.credentialIdentity
-				saveDiscoveredModelsToConfig(b.ctx, grp.apiURL, discovered, grp.apiMode, headers, &identity)
+				pickerSaveDiscoveredFn(b.ctx, grp.apiURL, discovered, grp.apiMode, headers, &identity)
 			}
 		}
 		b.addEndpointRow(slug, grp.name, grp.apiURL, nonNilStrings(grp.models), isCurrent, nativeEmpty, "user-config", nil)

@@ -30,6 +30,9 @@ func gitRepoRoot() string {
 	return normalizeGitBashPath(out)
 }
 
+// GitRepoRoot returns the repository root of the working directory, empty outside a repository
+func GitRepoRoot() string { return gitRepoRoot() }
+
 // Path components the way pathlib keeps them, empty and dot parts dropped, the anchor kept
 func purePathParts(p string) []string {
 	if runtime.GOOS == "windows" {

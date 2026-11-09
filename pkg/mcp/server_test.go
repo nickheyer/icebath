@@ -89,7 +89,7 @@ func taskDone(s *serverTask) bool {
 	}
 }
 
-func TestServerShutdownWinsWhenBothSet(t *testing.T) {
+func TestWaitForLifecycleEventShutdownWinsWhenBothSet(t *testing.T) {
 	isolateHome(t)
 	s := newServerTask("x", nil)
 	s.shutdownEv.Set()
@@ -100,17 +100,24 @@ func TestServerShutdownWinsWhenBothSet(t *testing.T) {
 	}
 }
 
-func TestServerReconnectOrReraise(t *testing.T) {
+func TestReconnectOrReraiseGroupLiveSessionTransientDropReconnects(t *testing.T) {
 	isolateHome(t)
-	s := newServerTask("x", nil)
-	drop := &sessionDropError{err: errors.New("stream closed")}
-	if _, err := s.reconnectOrReraise(context.Background(), drop); err == nil {
-		t.Fatal("a drop before readiness must re-raise for backoff")
-	}
+	s := newServerTask("t", nil)
 	s.ready.Set()
+	drop := &sessionDropError{err: errors.New("sse stream dropped")}
 	if reason, err := s.reconnectOrReraise(context.Background(), drop); err != nil || reason != "reconnect" {
 		t.Fatalf("live session drop: reason=%q err=%v", reason, err)
 	}
+}
+
+func TestReconnectOrReraiseGroupNoLiveSessionReraisesForBackoff(t *testing.T) {
+	isolateHome(t)
+	s := newServerTask("t", nil)
+	drop := &sessionDropError{err: errors.New("handshake")}
+	if _, err := s.reconnectOrReraise(context.Background(), drop); !errors.Is(err, drop.err) {
+		t.Fatalf("a drop before readiness must re-raise for backoff, got %v", err)
+	}
+	s.ready.Set()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := s.reconnectOrReraise(ctx, drop); err == nil {
@@ -122,7 +129,7 @@ func TestServerReconnectOrReraise(t *testing.T) {
 	}
 }
 
-func TestServerProvenClearsBudget(t *testing.T) {
+func TestMarkSessionProvenProvenClearsBudget(t *testing.T) {
 	isolateHome(t)
 	s := newServerTask("x", nil)
 	s.reconnectRetries = 4
@@ -138,7 +145,7 @@ func TestServerProvenClearsBudget(t *testing.T) {
 	}
 }
 
-func TestServerFlappingTransportParksWithinBudget(t *testing.T) {
+func TestFlappingTransportReachesParkWithinBudget(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -160,7 +167,7 @@ func TestServerFlappingTransportParksWithinBudget(t *testing.T) {
 	}
 }
 
-func TestServerProvenSessionDoesNotBurnBudget(t *testing.T) {
+func TestProvenSessionDoesNotBurnBudget(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -182,7 +189,7 @@ func TestServerProvenSessionDoesNotBurnBudget(t *testing.T) {
 	}
 }
 
-func TestServerReconnectCounterResetsAfterSuccessfulSession(t *testing.T) {
+func TestReconnectCounterResetsAfterSuccessfulSession(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -207,7 +214,7 @@ func TestServerReconnectCounterResetsAfterSuccessfulSession(t *testing.T) {
 	}
 }
 
-func TestServerReconnectCounterStillParksOnConsecutiveFailures(t *testing.T) {
+func TestReconnectCounterStillParksOnConsecutiveFailures(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -293,16 +300,21 @@ func writeServersConfig(t *testing.T, body string) {
 	}
 }
 
-func TestServerParkedSelfProbeRevivesWithoutBrowser(t *testing.T) {
+func TestSelfProbeRevivalRunsWithInteractiveOauthSuppressed(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
 	writeServersConfig(t, "  probe:\n    command: fake\n")
 	maxInitialConnectRetries = 0
 	parkedRetryInterval = 20 * time.Millisecond
-	var interactiveOnProbe atomic.Int32
+	var interactiveOnProbe, interactiveOnFirst atomic.Int32
 	s, _ := runnerTask(t, "probe", nil, func(s *serverTask, ctx context.Context, call int) (string, error) {
 		if call == 1 {
+			if isInteractive(ctx) {
+				interactiveOnFirst.Store(1)
+			} else {
+				interactiveOnFirst.Store(2)
+			}
 			return "", errors.New("connection refused")
 		}
 		if isInteractive(ctx) {
@@ -315,8 +327,11 @@ func TestServerParkedSelfProbeRevivesWithoutBrowser(t *testing.T) {
 		return s.finishLifecycleWait(), nil
 	})
 	logs := captureLogs(t)
-	_ = s.start(context.Background(), s.rendered)
+	_ = s.start(ForceInteractiveOAuth(context.Background()), s.rendered)
 	waitUntil(t, "self-probe never revived the parked server", func() bool { return interactiveOnProbe.Load() != 0 && !s.parked() })
+	if interactiveOnFirst.Load() != 1 {
+		t.Fatal("the attended initial connect lost its interactive OAuth")
+	}
 	if interactiveOnProbe.Load() != 2 {
 		t.Fatal("an unattended self-probe left interactive OAuth enabled")
 	}
@@ -326,7 +341,7 @@ func TestServerParkedSelfProbeRevivesWithoutBrowser(t *testing.T) {
 	s.shutdown(context.Background())
 }
 
-func TestServerParkedProbeSkipsDisabledEntry(t *testing.T) {
+func TestParkedSelfProbeSkipsDisabledOrDeletedEntry(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
@@ -356,25 +371,32 @@ func TestServerParkedProbeSkipsDisabledEntry(t *testing.T) {
 	if infos != 1 {
 		t.Fatalf("pause announced %d times at info", infos)
 	}
-	s.reconnect.Set()
-	waitUntil(t, "explicit reconnect did not revive the disabled entry", func() bool { return calls.Load() == 2 })
+	deletedAt := logs.count("pausing the self-probe")
+	writeServersConfig(t, "")
+	waitUntil(t, "pause never announced for the deleted entry", func() bool { return logs.count("pausing the self-probe") >= deletedAt+2 })
+	if calls.Load() != 1 {
+		t.Fatalf("self-probe rebuilt a deleted server: %d calls", calls.Load())
+	}
+	writeServersConfig(t, "  off:\n    command: fake\n")
+	waitUntil(t, "the re-enabled entry was never probed again", func() bool { return calls.Load() == 2 })
 	s.shutdown(context.Background())
 }
 
-func TestServerParkLogDedupe(t *testing.T) {
+// test_mcp_park_log_dedupe.py test_park_for_a_different_reason_warns_again
+func TestParkForADifferentReasonWarnsAgain(t *testing.T) {
 	isolateHome(t)
-	s := newServerTask("x", nil)
+	s := newServerTask("t", nil)
 	logs := captureLogs(t)
-	s.logPark("MCP server 'x' parked: boom")
+	s.logPark("MCP server 't' parked: ConnectionError: refused")
 	s.wasParked = true
-	s.logPark("MCP server 'x' parked: boom")
-	s.logPark("MCP server 'x' parked: boom")
-	s.logPark("MCP server 'x' parked: auth")
+	s.logPark("MCP server 't' parked: ConnectionError: refused")
+	s.logPark("MCP server 't' parked: OAuthError: token revoked")
+	s.logPark("MCP server 't' parked: OAuthError: token revoked")
 	var levels []slog.Level
 	for _, r := range logs.all() {
 		levels = append(levels, r.level)
 	}
-	want := []slog.Level{slog.LevelWarn, slog.LevelDebug, slog.LevelDebug, slog.LevelWarn}
+	want := []slog.Level{slog.LevelWarn, slog.LevelDebug, slog.LevelWarn, slog.LevelDebug}
 	if len(levels) != len(want) {
 		t.Fatalf("levels %v", levels)
 	}
@@ -385,7 +407,7 @@ func TestServerParkLogDedupe(t *testing.T) {
 	}
 }
 
-func TestServerParkAfterRevivalWarnsAgain(t *testing.T) {
+func TestParkAfterRevivalWarnsAgain(t *testing.T) {
 	isolateHome(t)
 	s := newServerTask("x", nil)
 	logs := captureLogs(t)
@@ -429,7 +451,7 @@ func TestServerStdioChildrenDead(t *testing.T) {
 	}
 }
 
-func TestServerStdioDeadChildBeforeProofReconnects(t *testing.T) {
+func TestExpiredProofWithDeadStdioChildrenReconnects(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	keepaliveDefault = 20 * time.Millisecond
@@ -443,6 +465,13 @@ func TestServerStdioDeadChildBeforeProofReconnects(t *testing.T) {
 	if s.sessionProven || logs.count("stdio child exited before the session proved healthy") != 1 {
 		t.Fatalf("proven=%v logs=%s", s.sessionProven, logs.text())
 	}
+}
+
+func TestExpiredProofWithLiveStdioChildrenStillProves(t *testing.T) {
+	isolateHome(t)
+	fastServerTimings(t)
+	keepaliveDefault = 20 * time.Millisecond
+	s := newServerTask("x", nil)
 	s.stdioChildPIDs = []int{os.Getpid()}
 	go func() {
 		time.Sleep(60 * time.Millisecond)

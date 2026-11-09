@@ -140,6 +140,12 @@ func redactChildValueAt(env *Env, value any, force bool, depth int) any {
 			out[i] = RedactChildText(env, item, force)
 		}
 		return out
+	case map[string]string:
+		out := make(map[string]any, len(v))
+		for k, item := range v {
+			out[RedactChildText(env, k, force)] = redactDelegationField(env, k, item, force)
+		}
+		return out
 	case nil, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, json.Number, *big.Int:
 		return v
 	}

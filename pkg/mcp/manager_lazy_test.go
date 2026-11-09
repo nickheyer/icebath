@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestLazyCacheMissFallsBackToEagerConnect(t *testing.T) {
+func TestLazyMcpRegistrationCacheMissFallsBackToEagerConnect(t *testing.T) {
 	_, env := managerHome(t)
 	ctx := context.Background()
 	names, err := Connect(ctx, env, map[string]*Rendered{"lz": mockEntry(t, map[string]any{"lazy": true})})
@@ -23,7 +23,7 @@ func TestLazyCacheMissFallsBackToEagerConnect(t *testing.T) {
 	}
 }
 
-func TestLazyNonLazyServerNeverTouchesCache(t *testing.T) {
+func TestLazyMcpRegistrationNonLazyServerNeverTouchesCache(t *testing.T) {
 	_, env := managerHome(t)
 	ctx := context.Background()
 	r := mockEntry(t, nil)

@@ -181,6 +181,9 @@ func isTruthyValue(v any) bool {
 	return pyTruthy(v)
 }
 
+// Reports whether a config or env value spells a truthy flag the way is_truthy_value does
+func IsTruthyValue(v any) bool { return isTruthyValue(v) }
+
 // Raw config.yaml of a home, empty when missing, unreadable or not a mapping
 func leftCoreReadConfig(h string) map[string]any {
 	doc, err := config.ReadDocument(home.ConfigPath(h))
@@ -603,12 +606,15 @@ func ProviderInstallHint(ctx context.Context, name string) string {
 			f.Label, f.Plugin, strings.ReplaceAll(command, " install ", " enable "))
 	}
 	cause := ""
-	if loadErr := leftCoreHooks().LoadError(f.Plugin); loadErr != "" {
+	if loadErr := leftCoreLoadError(f); loadErr != "" {
 		cause = " (" + loadErr + ")"
 	}
 	return fmt.Sprintf("%s moved out of core into the '%s' plugin, which is installed but failed to load%s: run `%s`, "+
 		"or see `icebath logs` for the cause.", f.Label, f.Plugin, cause, strings.ReplaceAll(command, " install ", " update "))
 }
+
+// Error the feature's provider plugin raised on import in the active home, else empty
+func leftCoreLoadError(f *LeftCoreFeature) string { return leftCoreHooks().LoadError(f.Plugin) }
 
 func leftCoreProviderInstallHint(name string) string {
 	return ProviderInstallHint(context.Background(), name)
@@ -1230,8 +1236,7 @@ func leftCoreRecordMigration(h string, f *LeftCoreFeature) error {
 		leftCoreMark(cfg, leftCoreScopedKey, f)
 	}
 	if created {
-		cfg["_config_version"] = config.Version
-		noteFirstStamp(h, map[string]any{}, cfg)
+		leftCoreStampCreated(h, cfg)
 	}
 	return config.SaveUser(h, cfg)
 }
@@ -1277,6 +1282,12 @@ func leftCorePending(ctx context.Context, h string, say func(string), processEnv
 		out = append(out, f)
 	}
 	return out
+}
+
+// Stamps the config.yaml the conversion creates as current with its rows in use noted
+func leftCoreStampCreated(h string, cfg map[string]any) {
+	cfg["_config_version"] = config.Version
+	noteFirstStamp(h, map[string]any{}, cfg)
 }
 
 // Tells a home that uses a feature its stamp says it never ran in core where the feature went
@@ -1344,7 +1355,7 @@ func leftCoreInstallOne(h string, f *LeftCoreFeature, install func(string) (map[
 		result = map[string]any{"ok": false, "error": err.Error()}
 	}
 	if pyTruthy(result["ok"]) {
-		leftCoreHooks().RefreshBoundHome()
+		RefreshBoundHome(home.WithOverride(context.Background(), h))
 		if err := leftCoreRecordMigration(h, f); err != nil {
 			slog.Default().Debug("left-core install marker not written", "home", h, "error", err)
 		}
@@ -1370,8 +1381,8 @@ func MigrateLeftCoreHome(ctx context.Context, h string, install func(string) (ma
 	return installed
 }
 
-// MigrateAllLeftCoreHomes migrates every profile home sharing the install, grouped by plugin and consent
-func MigrateAllLeftCoreHomes(ctx context.Context, say func(string)) []string {
+// MigrateAllLeftCoreHomes migrates every profile home sharing the install, grouped by plugin and consent, the enumeration error unhandled like Python
+func MigrateAllLeftCoreHomes(ctx context.Context, say func(string)) ([]string, error) {
 	labelled := func(h string) func(string) {
 		return func(message string) {
 			say(fmt.Sprintf("  [%s] %s", PluginHomeLabel(h), strings.TrimLeft(message, " \t\n\r\v\f")))
@@ -1387,7 +1398,11 @@ func MigrateAllLeftCoreHomes(ctx context.Context, say func(string)) []string {
 	}
 	index := map[groupKey]int{}
 	var groups []*group
-	for _, h := range leftCoreHooks().DependencyHomes() {
+	homes, err := leftCoreHooks().DependencyHomes()
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range homes {
 		features := leftCorePending(ctx, h, labelled(h), isLaunchHome(h), false)
 		consent := len(features) > 0 && homeConsent(h)
 		for _, f := range features {
@@ -1443,7 +1458,7 @@ func MigrateAllLeftCoreHomes(ctx context.Context, say func(string)) []string {
 			break
 		}
 	}
-	return installed
+	return installed, nil
 }
 
 // Live gateway serving the home, which loaded its platforms before this install

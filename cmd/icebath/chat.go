@@ -717,7 +717,11 @@ func startChatBackgroundPrefetch() {
 
 // Runs the interactive chat CLI or the TUI, hermes_cli/main.py cmd_chat
 func cmdChat(a *chatArgs) int {
-	if app.StreamJSONRequested(a.OutputFormat) || bypassChatLaunch(a) {
+	streamJSON, code := app.StreamJSONRequested(app.StreamJSONArgs{OutputFormat: a.OutputFormat, Query: a.Query, QueryFile: a.QueryFile, TUI: a.TUI, Quiet: &a.Quiet})
+	if code != 0 {
+		return code
+	}
+	if streamJSON || bypassChatLaunch(a) {
 		return launchGatewayChat(a)
 	}
 	applySafeMode(a)

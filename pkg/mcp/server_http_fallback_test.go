@@ -164,7 +164,7 @@ func httpTask(t *testing.T, name string, cfg map[string]any) (*serverTask, *Rend
 	return s, r
 }
 
-func TestServerSSEOnlyServerConnectsViaFallback(t *testing.T) {
+func TestSseOnlyServerConnectsViaFallback(t *testing.T) {
 	cases := map[string]http.HandlerFunc{"400": rejectWith(400, "", ""), "405": rejectWith(405, "", ""), "opaque": opaqueInternalError}
 	for label, reject := range cases {
 		t.Run(label, func(t *testing.T) {
@@ -190,7 +190,7 @@ func TestServerSSEOnlyServerConnectsViaFallback(t *testing.T) {
 	}
 }
 
-func TestServerNoSSEFallbackOnReconnectTimeoutOrServerError(t *testing.T) {
+func TestNoFallbackOnReconnectTimeoutOrServerError(t *testing.T) {
 	hang := func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)
 		<-r.Context().Done()
@@ -229,7 +229,7 @@ func TestServerNoSSEFallbackOnReconnectTimeoutOrServerError(t *testing.T) {
 	}
 }
 
-func TestServerOpaqueRejectionReportsStatusAndBody(t *testing.T) {
+func TestOpaqueSdkRejectionIsReportedWithTheServersStatusAndBody(t *testing.T) {
 	isolateHome(t)
 	resetLedgers(t)
 	body := `{"jsonrpc":"2.0","error":{"code":-32020,"message":"Unsupported MCP-Protocol-Version"}}`
@@ -271,7 +271,7 @@ func TestServerOpaqueRejectionReportsStatusAndBody(t *testing.T) {
 	}
 }
 
-func TestServerOpaqueRejectionWithoutFallbackSurfacesStatus(t *testing.T) {
+func TestOpaqueRejectionWithoutFallbackSurfacesTheStatus(t *testing.T) {
 	isolateHome(t)
 	resetLedgers(t)
 	srv := legacySSEServer(t, rejectWith(503, "text/plain", "upstream down"))
@@ -312,22 +312,27 @@ func contentTypeServer(t *testing.T, contentType string, body string, methods *[
 	return srv
 }
 
-func TestServerPreflightValidAndMissingContentTypesPass(t *testing.T) {
+func TestValidMcpContentTypesPass(t *testing.T) {
 	isolateHome(t)
 	s := newServerTask("probe_srv", nil)
-	for _, ct := range []string{"application/json", "application/json; charset=utf-8", "text/event-stream", "TEXT/EVENT-STREAM", ""} {
-		body := "{}"
-		if ct == "" {
-			body = ""
-		}
-		srv := contentTypeServer(t, ct, body, nil)
+	for _, ct := range []string{"application/json", "application/json; charset=utf-8", "text/event-stream", "TEXT/EVENT-STREAM"} {
+		srv := contentTypeServer(t, ct, "{}", nil)
 		if err := s.preflightContentType(context.Background(), srv.URL+"/mcp", nil, true, nil, nil, 5*time.Second, false); err != nil {
 			t.Fatalf("%q must pass: %v", ct, err)
 		}
 	}
 }
 
-func TestServerPreflightOAuthHTMLRaisesWithoutSkip(t *testing.T) {
+func TestMissingContentTypePasses(t *testing.T) {
+	isolateHome(t)
+	s := newServerTask("probe_srv", nil)
+	srv := contentTypeServer(t, "", "", nil)
+	if err := s.preflightContentType(context.Background(), srv.URL+"/mcp", nil, true, nil, nil, 5*time.Second, false); err != nil {
+		t.Fatalf("a missing content type must pass: %v", err)
+	}
+}
+
+func TestOauthServerHtmlResponseRaisesWithoutSkip(t *testing.T) {
 	isolateHome(t)
 	s := newServerTask("hospitable", nil)
 	srv := contentTypeServer(t, "text/html; charset=UTF-8", "<html>x</html>", nil)
@@ -347,31 +352,39 @@ func shutdownAtTransport(t *testing.T, name string, cfg map[string]any) (*server
 	})
 }
 
-func TestServerRunSkipsPreflightForOAuthAndSkipFlag(t *testing.T) {
+// Runs an HTML endpoint under the extra config keys and asserts the preflight never fired while the transport ran once
+func runSkipsPreflight(t *testing.T, name string, extra map[string]any) {
+	t.Helper()
 	isolateHome(t)
 	resetLedgers(t)
 	fastServerTimings(t)
 	startTestLoop(t)
 	var methods []string
 	srv := contentTypeServer(t, "text/html; charset=UTF-8", "<html>x</html>", &methods)
-	for name, extra := range map[string]map[string]any{"hospitable-test": {"auth": "oauth"}, "skip-preflight-test": {"skip_preflight": true}} {
-		cfg := map[string]any{"url": srv.URL + "/mcp"}
-		for k, v := range extra {
-			cfg[k] = v
-		}
-		s, calls := shutdownAtTransport(t, name, cfg)
-		_ = s.start(context.Background(), s.rendered)
-		waitUntil(t, "run loop never ended", func() bool { return taskDone(s) })
-		if calls.Load() != 1 || len(methods) != 0 {
-			t.Fatalf("%s: transport calls %d, preflight requests %v", name, calls.Load(), methods)
-		}
+	cfg := map[string]any{"url": srv.URL + "/mcp"}
+	for k, v := range extra {
+		cfg[k] = v
 	}
-	s, calls := shutdownAtTransport(t, "guarded", map[string]any{"url": srv.URL + "/mcp"})
-	err := s.start(context.Background(), s.rendered)
+	s, calls := shutdownAtTransport(t, name, cfg)
+	_ = s.start(context.Background(), s.rendered)
+	waitUntil(t, "run loop never ended", func() bool { return taskDone(s) })
+	if calls.Load() != 1 || len(methods) != 0 {
+		t.Fatalf("%s: transport calls %d, preflight requests %v", name, calls.Load(), methods)
+	}
+	guarded, guardedCalls := shutdownAtTransport(t, "guarded", map[string]any{"url": srv.URL + "/mcp"})
+	err := guarded.start(context.Background(), guarded.rendered)
 	var nonMCP *NonMCPEndpointError
-	if !errors.As(err, &nonMCP) || calls.Load() != 0 || len(methods) == 0 {
-		t.Fatalf("an unguarded HTML endpoint must fail the preflight: %v calls=%d methods=%v", err, calls.Load(), methods)
+	if !errors.As(err, &nonMCP) || guardedCalls.Load() != 0 || len(methods) == 0 {
+		t.Fatalf("an unguarded HTML endpoint must fail the preflight: %v calls=%d methods=%v", err, guardedCalls.Load(), methods)
 	}
+}
+
+func TestRunSkipsPreflightForOauth(t *testing.T) {
+	runSkipsPreflight(t, "hospitable-test", map[string]any{"auth": "oauth"})
+}
+
+func TestRunSkipsPreflightWhenSkipPreflightSet(t *testing.T) {
+	runSkipsPreflight(t, "skip-preflight-test", map[string]any{"skip_preflight": true})
 }
 
 // Origin answering every method with a 302 to target and a target recording each request's headers
@@ -423,7 +436,7 @@ func assertNoCredentials(t *testing.T, seen []http.Header) {
 	}
 }
 
-func TestServerRunStrictRedirectHeadersReachesPreflight(t *testing.T) {
+func TestRunStrictRedirectHeadersReachesPreflightBoundary(t *testing.T) {
 	isolateHome(t)
 	resetLedgers(t)
 	fastServerTimings(t)
@@ -436,7 +449,7 @@ func TestServerRunStrictRedirectHeadersReachesPreflight(t *testing.T) {
 	assertNoCredentials(t, seen())
 }
 
-func TestServerStreamableHTTPStripsCredentialsOnRedirect(t *testing.T) {
+func TestStreamableHttpClientStripsCredentialsOnRedirect(t *testing.T) {
 	isolateHome(t)
 	origin, seen := redirectPair(t)
 	tr, err := StartStreamableHTTP(HTTPOptions{URL: origin + "/mcp", Headers: map[string]string{"Authorization": "Bearer s3cr3t", "X-API-Key": "k3y"},

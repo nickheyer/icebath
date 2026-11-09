@@ -1,11 +1,12 @@
 package provider
 
-import "github.com/nickheyer/icebath/pkg/internal/pystr"
+import (
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/providerregistry"
+)
 
 // Abstract identity every registered provider implements, the stable lowercase config key value
-type NamedProvider interface {
-	Name() string
-}
+type NamedProvider = providerregistry.NamedProvider
 
 // Identity and icebath tools picker metadata common to every pluggable backend provider
 type ProviderBase interface {

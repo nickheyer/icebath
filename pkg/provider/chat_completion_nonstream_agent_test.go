@@ -97,92 +97,6 @@ func anyContains(list []string, want string) bool {
 	return false
 }
 
-func TestAgentNonStreamTTFBKillCarriesTheSilentHangHint(t *testing.T) {
-	agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-	t.Setenv(CodexTTFBTimeoutEnv, "0.4")
-	agent.hint = func(model any) (string, error) { return "Silent hang hint for " + model.(string), nil }
-	agent.codexStream = func(ctx context.Context, kw map[string]any) (any, error) {
-		<-ctx.Done()
-		return nil, errors.New("connection closed")
-	}
-	_, err := InterruptibleAPICall(t.Context(), agent, map[string]any{"model": "gpt-5.5", "input": "hi"})
-	var te *TimeoutPhaseError
-	if !errors.As(err, &te) || !strings.Contains(err.Error(), "Silent hang hint for gpt-5.5") || !strings.Contains(err.Error(), "TTFB threshold") {
-		t.Fatalf("err %v", err)
-	}
-	if aborts := agent.reasons(&agent.aborts); len(aborts) != 1 || aborts[0] != "codex_ttfb_kill" {
-		t.Fatalf("aborts %v", aborts)
-	}
-	if !anyContains(agent.snapshotStrings(&agent.statuses), "Silent hang hint for gpt-5.5") {
-		t.Fatalf("statuses %v", agent.statuses)
-	}
-	if !anyContains(agent.snapshotStrings(&agent.diagWaits), "no response from provider in 0s") {
-		t.Fatalf("diag waits %v", agent.diagWaits)
-	}
-}
-
-func TestAgentNonStreamInstallsAndRetiresTheCodexRequestToken(t *testing.T) {
-	agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-	t.Setenv(CodexTTFBTimeoutEnv, "1")
-	var seen atomic.Value
-	agent.codexStream = func(ctx context.Context, kw map[string]any) (any, error) {
-		token := agent.ActiveCodexStreamRequestToken()
-		seen.Store(token != nil && token == CodexWatchdogStateFrom(ctx).Token)
-		deadline := time.Now().Add(30 * time.Second)
-		for time.Now().Before(deadline) {
-			if agent.ActiveCodexStreamRequestToken() == nil {
-				return nil, errors.New("retired worker stream ended without terminal")
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		return nil, errors.New("test timed out waiting for retirement")
-	}
-	_, err := InterruptibleAPICall(t.Context(), agent, map[string]any{"model": "gpt-5.5", "input": "hi"})
-	if ok, _ := seen.Load().(bool); !ok {
-		t.Fatal("the request token must be installed before the worker runs")
-	}
-	if err == nil || !strings.Contains(err.Error(), "TTFB") || strings.Contains(err.Error(), "retired worker") {
-		t.Fatalf("err %v", err)
-	}
-	if aborts := agent.reasons(&agent.aborts); len(aborts) != 1 || aborts[0] != "codex_ttfb_kill" {
-		t.Fatalf("aborts %v", aborts)
-	}
-	if agent.ActiveCodexStreamRequestToken() != nil {
-		t.Fatal("the kill must retire the token")
-	}
-}
-
-func TestAgentNonStreamDoesNotKillWhileEventsFlow(t *testing.T) {
-	agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-	t.Setenv(CodexTTFBTimeoutEnv, "0.4")
-	sentinel := &struct{ ok bool }{true}
-	agent.codexStream = func(ctx context.Context, kw map[string]any) (any, error) {
-		state := CodexWatchdogStateFrom(ctx)
-		for i := 0; i < 8; i++ {
-			now := epochSeconds(time.Now())
-			state.Mu.Lock()
-			state.LastEventTs, state.LastProgressTs = &now, &now
-			state.Mu.Unlock()
-			time.Sleep(100 * time.Millisecond)
-		}
-		return sentinel, nil
-	}
-	agent.retry.staleStreak.Store(2)
-	resp, err := InterruptibleAPICall(t.Context(), agent, map[string]any{"model": "gpt-5.5", "input": "hi"})
-	if err != nil || resp != sentinel {
-		t.Fatalf("resp %v err %v", resp, err)
-	}
-	if aborts := agent.reasons(&agent.aborts); len(aborts) != 0 {
-		t.Fatalf("aborts %v", aborts)
-	}
-	if closes := agent.reasons(&agent.closes); len(closes) != 1 || closes[0] != "request_complete" {
-		t.Fatalf("closes %v", closes)
-	}
-	if agent.retry.StaleStreak() != 0 || agent.ActiveCodexStreamRequestToken() != nil {
-		t.Fatalf("streak %d token %v", agent.retry.StaleStreak(), agent.ActiveCodexStreamRequestToken())
-	}
-}
-
 // Wraps the resolver so the implicit policy keeps its branches while the test scales time
 func shortenAgentWatchdogs(t *testing.T, edit func(*agentNonstreamWatchdogs)) {
 	prev := resolveAgentNonstreamWatchdogs
@@ -192,97 +106,6 @@ func shortenAgentWatchdogs(t *testing.T, edit func(*agentNonstreamWatchdogs)) {
 		return w, err
 	}
 	t.Cleanup(func() { resolveAgentNonstreamWatchdogs = prev })
-}
-
-func TestAgentNonStreamLifecycleOnlyStreamHitsTheProgressBudget(t *testing.T) {
-	agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-	agent.resolve = func(map[string]any) (any, error) { return 900.0, nil }
-	shortenAgentWatchdogs(t, func(w *agentNonstreamWatchdogs) { w.idle, w.ttfb, w.progress = 2, 0.9, 0.9 })
-	agent.codexStream = func(ctx context.Context, kw map[string]any) (any, error) {
-		state := CodexWatchdogStateFrom(ctx)
-		for ctx.Err() == nil {
-			now := epochSeconds(time.Now())
-			state.Mu.Lock()
-			state.LastEventTs = &now
-			state.Mu.Unlock()
-			time.Sleep(50 * time.Millisecond)
-		}
-		return nil, ctx.Err()
-	}
-	started := time.Now()
-	_, err := InterruptibleAPICall(t.Context(), agent, map[string]any{"model": "gpt-5.6-sol", "input": strings.Repeat("x", 40004)})
-	if err == nil || !strings.Contains(err.Error(), "no substantive model progress") || time.Since(started) > 3*time.Second {
-		t.Fatalf("err %v after %v", err, time.Since(started))
-	}
-	if aborts := agent.reasons(&agent.aborts); len(aborts) != 1 || aborts[0] != "codex_progress_kill" {
-		t.Fatalf("aborts %v", aborts)
-	}
-}
-
-func TestAgentNonStreamIdleKillScopesToThePhase(t *testing.T) {
-	for _, mode := range []string{"initial_gap", "stall"} {
-		t.Run(mode, func(t *testing.T) {
-			agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-			agent.resolve = func(map[string]any) (any, error) { return 900.0, nil }
-			t.Setenv(CodexTTFBTimeoutEnv, "2")
-			t.Setenv(CodexTTFBStrictEnv, "1")
-			shortenAgentWatchdogs(t, func(w *agentNonstreamWatchdogs) { w.idle = 0.8 })
-			agent.codexStream = func(ctx context.Context, kw map[string]any) (any, error) {
-				state := CodexWatchdogStateFrom(ctx)
-				mark := func(progress bool) {
-					now := epochSeconds(time.Now())
-					state.Mu.Lock()
-					state.LastEventTs = &now
-					if progress {
-						state.LastProgressTs = &now
-					}
-					state.Mu.Unlock()
-				}
-				mark(false)
-				if mode == "initial_gap" {
-					time.Sleep(1500 * time.Millisecond)
-					mark(true)
-					return "done", nil
-				}
-				mark(true)
-				<-ctx.Done()
-				return nil, ctx.Err()
-			}
-			resp, err := InterruptibleAPICall(t.Context(), agent, map[string]any{"model": "gpt-5.6-sol", "input": strings.Repeat("x", 40004)})
-			aborts := agent.reasons(&agent.aborts)
-			if mode == "initial_gap" {
-				if err != nil || resp != "done" || len(aborts) != 0 {
-					t.Fatalf("resp %v err %v aborts %v", resp, err, aborts)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), "after model progress began") || len(aborts) != 1 || aborts[0] != "codex_stream_idle_kill" {
-				t.Fatalf("err %v aborts %v", err, aborts)
-			}
-		})
-	}
-}
-
-func TestAgentNonStreamHardCeilingReclaimsASilentStall(t *testing.T) {
-	agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-	agent.resolve = func(map[string]any) (any, error) { return 0.6, nil }
-	shortenAgentWatchdogs(t, func(w *agentNonstreamWatchdogs) { w.stale, w.ttfbEnabled = 0.6, false })
-	agent.hint = func(any) (string, error) { return "", nil }
-	agent.codexStream = func(ctx context.Context, kw map[string]any) (any, error) {
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}
-	started := time.Now()
-	_, err := InterruptibleAPICall(t.Context(), agent, map[string]any{"model": "gpt-5.5", "input": strings.Repeat("x", 40004)})
-	if err == nil || !strings.Contains(err.Error(), "timed out after") || !strings.Contains(err.Error(), "with no response") || time.Since(started) > 3*time.Second {
-		t.Fatalf("err %v", err)
-	}
-	if aborts := agent.reasons(&agent.aborts); len(aborts) != 1 || aborts[0] != "stale_call_kill" {
-		t.Fatalf("aborts %v", aborts)
-	}
-	if agent.retry.StaleStreak() != 1 || !anyContains(agent.snapshotStrings(&agent.statuses), "Aborting call.") {
-		t.Fatalf("streak %d statuses %v", agent.retry.StaleStreak(), agent.statuses)
-	}
 }
 
 func TestAgentNonStreamStaleCloseIsSingleOwner(t *testing.T) {
@@ -337,7 +160,7 @@ func TestAgentNonStreamBreakerShortCircuitsAndSuccessResets(t *testing.T) {
 	}
 }
 
-func TestAgentNonStreamInterruptAbortsAndSwallowsTheWorkerError(t *testing.T) {
+func TestNonStreamingCancelDoesNotSurfaceNetworkError(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -403,97 +226,9 @@ func moaHeartbeatAgent(t *testing.T) (*fakeChatAgent, any) {
 	return agent, response
 }
 
-func TestAgentNonStreamMoaHeartbeatSurvivesAnInfiniteStaleTimeout(t *testing.T) {
-	agent, response := moaHeartbeatAgent(t)
-	result, err := InterruptibleAPICall(t.Context(), agent, map[string]any{"model": "openai-xai-wide"})
-	if err != nil || result != response {
-		t.Fatalf("result %v err %v", result, err)
-	}
-	notices := agent.snapshotStrings(&agent.notices)
-	if len(notices) != 1 || !strings.Contains(notices[0], "waiting on openai-xai-wide") || strings.Contains(notices[0], "auto-reconnect") {
-		t.Fatalf("notices %q", notices)
-	}
-}
-
 type panickingNoticeAgent struct{ *fakeChatAgent }
 
 func (panickingNoticeAgent) EmitWaitNotice(string) { panic("format failure") }
-
-func TestAgentNonStreamWaitNoticeFailureDoesNotAbortTheRequest(t *testing.T) {
-	agent, response := moaHeartbeatAgent(t)
-	result, err := InterruptibleAPICall(t.Context(), panickingNoticeAgent{agent}, map[string]any{"model": "openai-xai-wide"})
-	if err != nil || result != response {
-		t.Fatalf("result %v err %v", result, err)
-	}
-}
-
-func TestAgentNonstreamWatchdogPolicy(t *testing.T) {
-	cases := []struct {
-		provider, baseURL string
-		chars             int
-		idleEnv           *string
-		idleOn, progress  bool
-	}{
-		{"openai-codex", "https://chatgpt.com/backend-api/codex", 40004, nil, true, true},
-		{"openai-codex", "https://chatgpt.com/backend-api/codex", 40004, strPtr("2"), true, false},
-		{"openai-codex", "https://chatgpt.com/backend-api/codex", 40000, nil, true, false},
-		{"xai-oauth", "https://api.x.ai/v1", 40004, nil, true, false},
-		{"openai-codex", "https://chatgpt.com/backend-api/codex", 40004, strPtr(""), true, true},
-		{"openai-codex", "https://chatgpt.com/backend-api/codex", 40004, strPtr("invalid"), true, true},
-		{"openai-codex", "https://chatgpt.com/backend-api/codex", 40004, strPtr("0"), false, false},
-	}
-	for i, c := range cases {
-		agent := agentFormCodexAgent(t, c.provider, c.baseURL)
-		if c.idleEnv != nil {
-			t.Setenv(CodexEventStaleTimeoutEnv, *c.idleEnv)
-		}
-		w, err := resolveAgentNonstreamWatchdogsOf(t.Context(), agent, map[string]any{"model": "gpt-5.6-sol", "input": strings.Repeat("x", c.chars)})
-		if err != nil || w.estTokens != c.chars/4 || w.idleEnabled != c.idleOn || w.idleRequiresProgress != c.progress || (w.progress > 0) != c.progress {
-			t.Fatalf("case %d %+v %v", i, w, err)
-		}
-	}
-	t.Run("local ttfb uses the local stale ceiling", func(t *testing.T) {
-		local := agentFormCodexAgent(t, "custom", "http://127.0.0.1:11434/v1")
-		hosted := agentFormCodexAgent(t, "custom", "https://api.example.com/v1")
-		t.Setenv(LocalStreamStaleTimeoutEnv, "600")
-		kw := map[string]any{"model": "qwen3-27b", "input": "hi"}
-		if w, _ := resolveAgentNonstreamWatchdogsOf(t.Context(), local, kw); w.ttfb != 600 {
-			t.Fatalf("local %v", w.ttfb)
-		}
-		if w, _ := resolveAgentNonstreamWatchdogsOf(t.Context(), hosted, kw); w.ttfb != 120 {
-			t.Fatalf("hosted %v", w.ttfb)
-		}
-		t.Setenv(CodexTTFBTimeoutEnv, "45")
-		if w, _ := resolveAgentNonstreamWatchdogsOf(t.Context(), local, kw); w.ttfb != 45 {
-			t.Fatalf("explicit %v", w.ttfb)
-		}
-	})
-	t.Run("large request keeps the scaled ttfb unless capped", func(t *testing.T) {
-		agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-		agent.reasoning = map[string]any{"enabled": false}
-		kw := map[string]any{"model": "gpt-5.5", "input": strings.Repeat("x", 440000)}
-		w, _ := resolveAgentNonstreamWatchdogsOf(t.Context(), agent, kw)
-		if w.estTokens <= 100000 || !w.ttfbEnabled || w.ttfb != 180 {
-			t.Fatalf("%+v", w)
-		}
-		t.Setenv(CodexTTFBMaxEnv, "90")
-		if w, _ := resolveAgentNonstreamWatchdogsOf(t.Context(), agent, kw); w.ttfb != 90 {
-			t.Fatalf("cap %v", w.ttfb)
-		}
-	})
-	t.Run("high effort floors ttfb and idle", func(t *testing.T) {
-		agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-		agent.reasoning = map[string]any{"enabled": true, "effort": " XHigh "}
-		w, _ := resolveAgentNonstreamWatchdogsOf(t.Context(), agent, map[string]any{"model": "gpt-5.5", "input": "hi"})
-		if w.ttfb != HighEffortSilenceFloorSeconds || w.idle != HighEffortSilenceFloorSeconds {
-			t.Fatalf("%+v", w)
-		}
-		agent.apiMode = "chat_completions"
-		if w, _ := resolveAgentNonstreamWatchdogsOf(t.Context(), agent, map[string]any{"model": "gpt-5.5", "input": "hi"}); w.codex || w.ttfbEnabled || w.idleEnabled {
-			t.Fatalf("non codex %+v", w)
-		}
-	})
-}
 
 type fakeStreamHandle struct{ closed atomic.Int32 }
 

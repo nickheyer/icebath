@@ -17,13 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// One hooks.outbound target as the hooks list command prints it
-type OutboundWebhookTarget struct {
-	Label, URL, Matcher, Secret string
-	Events                      []string
-	Timeout                     int
-}
-
 // Parsed icebath hooks arguments, Action empty when no subcommand was given
 type HooksArgs struct {
 	Action, Event, ForTool, PayloadFile, Command string
@@ -58,11 +51,10 @@ func hooksList(ctx context.Context, _ HooksArgs, w io.Writer) error {
 		return err
 	}
 	specs := IterConfiguredShellHooks(cfg)
-	s := installedServices()
-	if s == nil || s.OutboundWebhookTargets == nil {
-		return &ServiceMissingError{Name: "OutboundWebhookTargets"}
+	outbound, err := IterConfiguredOutboundWebhooks(cfg)
+	if err != nil {
+		return err
 	}
-	outbound := s.OutboundWebhookTargets(cfg)
 	if len(specs) == 0 && len(outbound) == 0 {
 		fmt.Fprintln(w, "No shell hooks or outbound webhooks configured in ~/.icebath/config.yaml.")
 		fmt.Fprintln(w, "See `icebath hooks --help` or")
@@ -118,7 +110,7 @@ func hooksList(ctx context.Context, _ HooksArgs, w io.Writer) error {
 			if target.Secret != "" {
 				signed = "signed"
 			}
-			fmt.Fprintf(w, "  - %s\n", target.Label)
+			fmt.Fprintf(w, "  - %s\n", target.Label())
 			fmt.Fprintf(w, "      url:     %s\n", target.URL)
 			fmt.Fprintf(w, "      events:  %s%s (timeout=%ds, %s)\n", strings.Join(target.Events, ", "), hookMatcherPart(target.Matcher), target.Timeout, signed)
 		}

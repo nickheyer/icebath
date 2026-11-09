@@ -2,8 +2,8 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -133,6 +133,13 @@ type HostedBackend interface {
 	RunsInPluginHost() bool
 }
 
+// Error refusing to run commands in a backend whose environments the plugin host cannot hand over
+func HostedBackendRefusal(envType string) error {
+	return fmt.Errorf("terminal.backend is %s, a plugin that runs in the plugin host (plugins.isolation: host), "+
+		"and the host cannot hand its environment to Icebath, so commands cannot run in it. Set "+
+		"plugins.isolation: in_process to use this backend.", envType)
+}
+
 // StampSandboxHome records the provider declared home on this environment
 func (b *baseEnv) StampSandboxHome(home string) {
 	b.mu.Lock()
@@ -168,17 +175,8 @@ func terminalBackendInstallHint(backend string) string {
 	return TerminalBackendInstallHint(backend)
 }
 
-// Registered backend names that are not built in
-func pluginBackendNames() []string {
-	var out []string
-	for _, n := range TerminalBackendNames() {
-		if !builtinBackends[n] {
-			out = append(out, n)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
+// Registered plugin backend names of the active scope, sorted
+func pluginBackendNames() []string { return PluginBackendNames(context.Background(), "") }
 
 // Unknown environment type error naming every usable backend
 func unknownBackendError(envType string) error {
@@ -228,9 +226,7 @@ func createEnvironment(ctx context.Context, env *Env, envType, image, cwd string
 		return nil, unknownBackendError(envType)
 	}
 	if hosted, ok := provider.(HostedBackend); ok && hosted.RunsInPluginHost() {
-		return nil, fmt.Errorf("terminal.backend is %s, a plugin that runs in the plugin host (plugins.isolation: host), "+
-			"and the host cannot hand its environment to Icebath, so commands cannot run in it. Set "+
-			"plugins.isolation: in_process to use this backend.", envType)
+		return nil, HostedBackendRefusal(envType)
 	}
 	cc := map[string]any{}
 	for k, v := range containerConfig {
@@ -286,6 +282,9 @@ func checkRequirements(env *Env, envType string, cfg map[string]any) bool {
 	if err := provider.CheckRequirements(env, cfg); err != nil {
 		if builtinBackends[envType] {
 			return rejectBackend(env, err.Error())
+		}
+		if errors.Is(err, ErrBackendRequirementsNotMet) {
+			return rejectBackend(env, fmt.Sprintf("the '%s' plugin backend reported its requirements are not met", envType))
 		}
 		return rejectBackend(env, fmt.Sprintf("the '%s' plugin backend reported its requirements are not met: %s", envType, err.Error()))
 	}

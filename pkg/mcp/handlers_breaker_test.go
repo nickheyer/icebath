@@ -49,7 +49,7 @@ func TestCircuitBreakerReopensOnProbeFailure(t *testing.T) {
 	}
 }
 
-func TestCircuitBreakerHalfOpenDeadSessionRequestsReconnect(t *testing.T) {
+func TestHalfOpenProbeOnDeadSessionRequestsReconnect(t *testing.T) {
 	srv, _ := handlerServer(t, "srv", nil)
 	srv.setSession(nil)
 	now := breakerClock(t)
@@ -61,7 +61,7 @@ func TestCircuitBreakerHalfOpenDeadSessionRequestsReconnect(t *testing.T) {
 	}
 }
 
-func TestCircuitBreakerHalfOpenDeadSessionRecoversAfterReconnect(t *testing.T) {
+func TestHalfOpenDeadSessionRecoversAfterReconnect(t *testing.T) {
 	srv, _ := handlerServer(t, "srv", nil)
 	srv.setSession(nil)
 	now := breakerClock(t)

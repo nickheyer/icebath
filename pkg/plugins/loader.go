@@ -579,7 +579,9 @@ func (m *Manager) registerPortableMCP(mf *Manifest, pkg *AgentPluginPackage) (er
 			if decls == nil {
 				return &ServiceMissingError{Name: "PlatformDeclarations"}
 			}
-			decls.Register(internal, decl.App, decl.Requires)
+			if err := decls.Register(internal, decl.App, decl.Requires); err != nil {
+				return err
+			}
 			setPortableLiveness(internal, decl.Liveness)
 		}
 	}

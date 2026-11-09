@@ -255,6 +255,20 @@ func SteerSubagent(subagentID, text string, ownerSessionID *string, ownerTranspo
 		delegateLog().Debug(fmt.Sprintf("steer_subagent(%s) failed: '%s' object has no attribute 'steer'", subagentID, pyrepr.TypeName(agent)))
 		return false
 	}
+	return steerQuietly(subagentID, steerable, text)
+}
+
+// Steer call of a live child, a panic inside the child's steer degrading to false like the hermes except branch
+func steerQuietly(subagentID string, steerable interface{ Steer(text string) bool }, text string) (accepted bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			if isUserInterruptPanic(r) {
+				panic(r)
+			}
+			delegateLog().Debug(fmt.Sprintf("steer_subagent(%s) failed: %v", subagentID, r))
+			accepted = false
+		}
+	}()
 	return steerable.Steer(text)
 }
 

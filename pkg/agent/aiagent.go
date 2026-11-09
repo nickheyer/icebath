@@ -114,6 +114,7 @@ type AIAgent struct {
 	primaryRestoreState
 	skillsIndexDeltaState
 	backgroundReviewState
+	cliFlagsState
 	passSessionID                      bool
 	skipContextFiles                   bool
 	loadSoulIdentity                   bool
@@ -356,6 +357,39 @@ type AIAgent struct {
 	codexReasoningOnlyStreak           int
 	metricsScratch                     sync.Map
 }
+
+// Installs the display delta callback streamed assistant text reaches
+func (a *AIAgent) SetStreamDeltaCallback(cb any) { a.streamDeltaCallback = cb }
+
+// Installs the tool progress callback tool started and completed events reach
+func (a *AIAgent) SetToolProgressCallback(cb any) { a.toolProgressCallback = cb }
+
+// SetQuietMode toggles the quiet mode that silences stdout chrome
+func (a *AIAgent) SetQuietMode(on bool) { a.quietMode = on }
+
+// SetSuppressStatusOutput toggles suppression of status line output
+func (a *AIAgent) SetSuppressStatusOutput(on bool) { a.suppressStatusOutput = on }
+
+// SetToolGenCallback replaces the tool generation callback
+func (a *AIAgent) SetToolGenCallback(cb any) { a.toolGenCallback = cb }
+
+// SetReasoningCallback replaces the reasoning callback
+func (a *AIAgent) SetReasoningCallback(cb any) { a.reasoningCallback = cb }
+
+// SetToolStartCallback replaces the tool start callback
+func (a *AIAgent) SetToolStartCallback(cb any) { a.toolStartCallback = cb }
+
+// SetToolCompleteCallback replaces the tool complete callback
+func (a *AIAgent) SetToolCompleteCallback(cb any) { a.toolCompleteCallback = cb }
+
+// SetToolProgressMode replaces the tool progress display mode
+func (a *AIAgent) SetToolProgressMode(mode string) { a.toolProgressMode = mode }
+
+// SetPrintFn replaces the status print function
+func (a *AIAgent) SetPrintFn(fn func(string)) { a.printFn = fn }
+
+// Transcript messages of the live session, refreshed every turn by persistence
+func (a *AIAgent) SessionMessages() []*state.Message { return a.sessionMessages }
 
 // AIAgentOptions are the AIAgent constructor keywords, nil and zero values standing for None
 type AIAgentOptions struct {

@@ -310,7 +310,7 @@ func TestStartupDiscoveryRegisteredServers(t *testing.T) {
 	}
 }
 
-func TestStartupAuthParkedOAuthServerIgnoresDiscoveryUntilCredentialsChange(t *testing.T) {
+func TestAuthParkedOauthServerIgnoresDiscoveryUntilCredentialsChange(t *testing.T) {
 	dir := isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)

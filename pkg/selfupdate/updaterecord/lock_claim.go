@@ -666,6 +666,12 @@ func releaseCheckout() {
 	}
 }
 
+// ReleaseCheckout exports releaseCheckout
+func ReleaseCheckout() { releaseCheckout() }
+
+// AcquireCheckout exports acquireCheckout
+func AcquireCheckout(installRoot string) (*UpdateHolder, error) { return acquireCheckout(installRoot) }
+
 // Descriptors an update tree child inherits so the checkout stays locked while it runs, POSIX only
 func CheckoutLockFiles(installRoot string) ([]*os.File, error) {
 	if runtime.GOOS == "windows" {

@@ -52,6 +52,9 @@ func optionalString(s *string) any {
 	return *s
 }
 
+// SessionDBForRecall is the executor host view of the recall database
+func (a *AIAgent) SessionDBForRecall(ctx context.Context) *state.DB { return a.getSessionDBForRecall(ctx) }
+
 // Session DB for recall, acquiring the shared default state DB when none was passed and persistence is enabled
 func (a *AIAgent) getSessionDBForRecall(ctx context.Context) *state.DB {
 	if a.persistDisabled {

@@ -93,6 +93,9 @@ type EventQueue struct {
 
 func newEventQueue() *EventQueue { return &EventQueue{notEmpty: make(chan struct{})} }
 
+// NewEventQueue is an empty completion queue for callers outside the package that restore events into one
+func NewEventQueue() *EventQueue { return newEventQueue() }
+
 // Put appends an event and wakes waiters
 func (q *EventQueue) Put(evt map[string]any) {
 	q.mu.Lock()
@@ -1727,6 +1730,11 @@ func (r *ProcessRegistry) WaitForPendingCompletions(ctx context.Context, env *En
 // Linger for one shot exits with pending notify_on_complete processes, zero disables
 func (r *ProcessRegistry) oneshotCompletionWaitSeconds(env *Env) float64 {
 	return configSeconds(env, "oneshot_completion_wait_seconds", 600.0)
+}
+
+// OneshotCompletionWaitSeconds returns the configured one shot completion linger budget in seconds
+func OneshotCompletionWaitSeconds(env *Env) float64 {
+	return DefaultProcessRegistry().oneshotCompletionWaitSeconds(env)
 }
 
 // Skips a completion the CLI agent already has this turn

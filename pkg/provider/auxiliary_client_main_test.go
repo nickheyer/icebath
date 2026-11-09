@@ -264,3 +264,18 @@ func TestBypassChatSDKRequestTransform(t *testing.T) {
 		t.Fatal("escape hatch keeps the typed path")
 	}
 }
+
+func TestAuxReadMainReadersExportTheConfiguredRoute(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model:\n  provider: openrouter\n  default: acme/forge\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if got := AuxReadMainProvider(ctx); got != "openrouter" {
+		t.Fatalf("provider %q", got)
+	}
+	if got := AuxReadMainModel(ctx); got != "acme/forge" {
+		t.Fatalf("model %q", got)
+	}
+}

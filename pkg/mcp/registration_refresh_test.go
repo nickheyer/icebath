@@ -249,7 +249,7 @@ func TestMessageHandlerIgnoresExceptionsAndOtherMessages(t *testing.T) {
 	}
 }
 
-func TestLazyCacheLoadPathRunsDescriptionScan(t *testing.T) {
+func TestCacheLoadDescriptionScanScanRunsOnCacheLoadPath(t *testing.T) {
 	ctx, env := refreshEnv(t)
 	logs := captureLogs(t)
 	entry := map[string]any{"fingerprint": "abc", "utility_tools": []any{}, "tools": []any{map[string]any{

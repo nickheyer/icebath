@@ -451,3 +451,18 @@ func applyAllSecretSourcesForTest(t *testing.T, secretsCfg map[string]any, homeP
 	}
 	return report
 }
+
+func TestBuiltinSecretSourcesLoadedFollowsTheRegistry(t *testing.T) {
+	ResetSecretRegistryForTests()
+	t.Cleanup(ResetSecretRegistryForTests)
+	if BuiltinSecretSourcesLoaded() {
+		t.Fatal("fresh registry reports the bundled sources loaded")
+	}
+	cfg := map[string]any{"bitwarden": map[string]any{"enabled": true, "project_id": "p"}}
+	if _, err := ApplyAllSecretSources(cfg, t.TempDir(), MappingSourceEnvironment(nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !BuiltinSecretSourcesLoaded() {
+		t.Fatal("an apply pass did not load the bundled sources")
+	}
+}

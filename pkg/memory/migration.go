@@ -158,8 +158,8 @@ func memoryInstallInto(ctx context.Context, h string, consent *bool) MemoryInsta
 	}
 }
 
-// Migrates every profile home sharing the environment grouped by provider and consent, the installed names
-func MigrateAllMemoryHomes(ctx context.Context, say func(string)) []string {
+// Migrates every profile home sharing the environment grouped by provider and consent, the enumeration error unhandled like Python
+func MigrateAllMemoryHomes(ctx context.Context, say func(string)) ([]string, error) {
 	labelled := func(h string) func(string) {
 		return func(message string) {
 			say(fmt.Sprintf("  [%s] %s", provider.PluginHomeLabel(h), pystr.Lstrip(message)))
@@ -171,7 +171,11 @@ func MigrateAllMemoryHomes(ctx context.Context, say func(string)) []string {
 	}
 	var groups []*group
 	index := map[[2]string]*group{}
-	for _, h := range provider.PluginHooks().DependencyHomes() {
+	homes, err := provider.PluginHooks().DependencyHomes()
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range homes {
 		name, err := pendingMemoryProvider(ctx, h, labelled(h))
 		if err != nil {
 			slog.Default().Debug(fmt.Sprintf("memory provider migration skipped for %s: %s", h, err.Error()))
@@ -229,7 +233,7 @@ func MigrateAllMemoryHomes(ctx context.Context, say func(string)) []string {
 			break
 		}
 	}
-	return installed
+	return installed, nil
 }
 
 // Agent init recovery of a configured provider that resolved nowhere, once per process per home and name

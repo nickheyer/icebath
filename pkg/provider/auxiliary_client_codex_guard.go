@@ -375,6 +375,16 @@ func auxTrackPoolConns(t *http.Transport) *http.Transport {
 	return t
 }
 
+// TrackPoolConns tracks the transport's pool and seeds it with conns for tests that sweep a known socket
+func TrackPoolConns(t *http.Transport, conns ...net.Conn) *http.Transport {
+	tracked := auxTrackPoolConns(t)
+	set, _ := auxPoolConnSets.Load(tracked)
+	for _, c := range conns {
+		set.add(c)
+	}
+	return tracked
+}
+
 // Innermost connection under TLS and pool wrappers, the identity of one socket
 func auxRawConn(conn net.Conn) net.Conn {
 	for {

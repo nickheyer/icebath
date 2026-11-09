@@ -8,13 +8,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Python ValueError an auxiliary adapter raises for a request its route refuses
-type ValueError struct{ Message string }
-
-func (e *ValueError) Error() string { return e.Message }
+type ValueError = providerregistry.ValueError
 
 // SDK client the Codex adapter drives, chat completions plus the Responses create call
 type auxResponsesClient interface {

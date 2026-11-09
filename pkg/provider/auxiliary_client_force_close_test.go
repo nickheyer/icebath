@@ -209,3 +209,11 @@ func TestPoolSocketsMatchesTheForceCloseSweep(t *testing.T) {
 		t.Fatal("a nil client has no sockets")
 	}
 }
+
+func TestTrackPoolConnsSeedsTheSweep(t *testing.T) {
+	sock := &fcFakeConn{}
+	client := &http.Client{Transport: TrackPoolConns(&http.Transport{}, sock)}
+	if n := ForceCloseTCPSockets(client); n != 1 || len(sock.calls) != 2 || sock.calls[0] != "shutdown_read" || sock.calls[1] != "shutdown_write" {
+		t.Fatalf("count %d calls %v", n, sock.calls)
+	}
+}

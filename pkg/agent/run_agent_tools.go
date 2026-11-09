@@ -389,9 +389,12 @@ func (a *AIAgent) executeToolCalls(ctx context.Context, assistantMessage *state.
 	return nil
 }
 
+// Delegate tool entry of the dispatch site, swapped by tests that read the forwarded keywords
+var delegateTaskFn = delegateTask
+
 // Single delegate_task dispatch site mapping the schema fields onto the delegate tool keywords
 func (a *AIAgent) DispatchDelegateTask(ctx context.Context, args map[string]any) (string, error) {
-	return delegateTask(ctx, a, map[string]any{
+	return delegateTaskFn(ctx, a, map[string]any{
 		"goal": args["goal"], "context": args["context"], "tasks": tools.StripModelHiddenTaskFields(args["tasks"]),
 		"max_iterations": args["max_iterations"], "role": args["role"], "background": !(a.delegateDepth > 0),
 		"images": args["images"], "action": args["action"], "subagent_id": args["subagent_id"], "message": args["message"],

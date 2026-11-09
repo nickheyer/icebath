@@ -249,7 +249,7 @@ func (s *serverTask) serveTransport(ctx context.Context, open func() (Transport,
 
 // Reconnects at once after a live remote session dropped, re-raising during shutdown or before readiness
 func (s *serverTask) reconnectOrReraise(ctx context.Context, drop *sessionDropError) (string, error) {
-	if s.shutdownEv.IsSet() || ctx.Err() != nil || !s.ready.IsSet() {
+	if s.shutdownEv.IsSet() || ctx.Err() != nil || !s.ready.IsSet() || isProcessExit(drop.err) || firstProcessExitLeaf(drop.err) != nil || carriesCancellation(drop.err) {
 		return "", drop.err
 	}
 	mcpLogger().Debug(fmt.Sprintf("MCP server '%s': transport TaskGroup exited after a live session (%s) — reconnecting immediately instead of backing off", s.name, excStr(drop.err)))
@@ -331,6 +331,9 @@ func (s *serverTask) runStdio(ctx context.Context, r *Rendered) (string, error) 
 	cfg := r.Config
 	if v, ok := cfg["identity_header"]; ok && v != nil {
 		mcpLogger().Warn(fmt.Sprintf("MCP server '%s': identity_header is only supported on HTTP/SSE transports — ignored for stdio servers", s.name))
+	}
+	if !ensureMCPSDK() {
+		return "", &sdkImportError{msg: fmt.Sprintf("MCP server '%s' requires the 'mcp' Python SDK, but it is not installed. Run `icebath setup` to install MCP support, then retry.", s.name)}
 	}
 	if !pyTruthy(cfg["command"]) {
 		return "", fmt.Errorf("MCP server '%s' has no 'command' in config", s.name)
@@ -479,6 +482,10 @@ func (s *serverTask) buildOAuthAuth(ctx context.Context, url string, cfg map[str
 
 // Runs one Streamable HTTP or SSE transport with the HTTP to SSE fallback on an initial rejection
 func (s *serverTask) runHTTP(ctx context.Context, r *Rendered) (string, error) {
+	ensureMCPSDK()
+	if !httpTransportAvailable() {
+		return "", &sdkImportError{msg: fmt.Sprintf("MCP server '%s' requires HTTP transport but mcp.client.streamable_http is not available. Upgrade the mcp package to get HTTP support.", s.name)}
+	}
 	cfg := r.Config
 	inputs, configured, err := connectInputs(ctx, s.env, s.name, r)
 	if err != nil {

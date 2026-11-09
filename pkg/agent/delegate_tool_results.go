@@ -920,7 +920,7 @@ func runChildLifecycle(ctx context.Context, taskIndex int, goal string, child, p
 		taskList = append(taskList, map[string]any{"goal": ""})
 	}
 	taskList = append(taskList, task)
-	finalizeChildResults(ctx, []*pyjson.Object{result}, taskList, []delegateChild{{Index: taskIndex, Task: task, Child: child}}, parent)
+	finalizeChildResultsFn(ctx, []*pyjson.Object{result}, taskList, []delegateChild{{Index: taskIndex, Task: task, Child: child}}, parent)
 	return result
 }
 

@@ -742,6 +742,14 @@ var strayToolCloserRe = regexp.MustCompile(`(?i)</(?:tool_call|function)>[ \t\r]
 var unterminatedToolCallRe = regexp.MustCompile(`(?is)(?:^|\n)[ \t]*<tool_call>.*$`)
 var inlineThinkRe = regexp.MustCompile(`(?is)<(?:` + thinkTagAlt + `)>(.*?)</(?:` + thinkTagAlt + `)>`)
 
+// StripStrayToolCallClosers drops orphan tool_call and function closing tags
+func StripStrayToolCallClosers(s string) string { return strayToolCloserRe.ReplaceAllString(s, "") }
+
+// StripUnterminatedToolCalls drops a tool_call opened on its own line and never closed
+func StripUnterminatedToolCalls(s string) string {
+	return unterminatedToolCallRe.ReplaceAllString(s, "")
+}
+
 // StripThinkBlocks removes reasoning blocks and stray tool call XML from assistant text
 func StripThinkBlocks(content string) string {
 	if content == "" {

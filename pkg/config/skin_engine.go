@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -35,12 +36,28 @@ type SkinConfig struct {
 	CustomCSS   string
 }
 
-// Color under key as text, fallback when the skin lacks it
-func (s *SkinConfig) GetColor(key, fallback string) string {
-	if v, ok := s.Colors[key]; ok {
-		return PyStr(v)
+// Filter every GetColor result passes through, the classic CLI light mode remap
+var skinColorFilter atomic.Pointer[func(string) string]
+
+// InstallSkinColorFilter routes every GetColor result through fn, nil removing the filter
+func InstallSkinColorFilter(fn func(string) string) {
+	if fn == nil {
+		skinColorFilter.Store(nil)
+		return
 	}
-	return fallback
+	skinColorFilter.Store(&fn)
+}
+
+// Color under key as text, fallback when the skin lacks it, both through the installed filter
+func (s *SkinConfig) GetColor(key, fallback string) string {
+	value := fallback
+	if v, ok := s.Colors[key]; ok {
+		value = PyStr(v)
+	}
+	if f := skinColorFilter.Load(); f != nil {
+		return (*f)(value)
+	}
+	return value
 }
 
 // Branding string under key, fallback when the skin lacks it

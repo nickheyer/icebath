@@ -56,6 +56,19 @@ func groupMembers(err error) []error {
 	return out
 }
 
+// Reports a group or leaf carrying a task cancellation, the CancelledError a transport drop must re-raise
+func carriesCancellation(err error) bool {
+	if subs := groupMembers(err); subs != nil {
+		for _, sub := range subs {
+			if carriesCancellation(sub) {
+				return true
+			}
+		}
+		return false
+	}
+	return errors.Is(err, context.Canceled)
+}
+
 // Reports a KeyboardInterrupt or SystemExit style error that ends the process
 func isProcessExit(err error) bool {
 	name := errTypeName(err)

@@ -15,7 +15,7 @@ func executable(path string) bool { return unix.Access(path, unix.X_OK) == nil }
 func pathNormcase(path string) string { return path }
 
 // No console environment block exists outside Windows
-func newConsoleRoot() (string, bool) { return "", false }
+func consoleEnvironment() (map[string]string, bool) { return nil, false }
 
 // The User PATH lives in the Windows registry
 func registerWindowsUserPath(string) (string, error) {

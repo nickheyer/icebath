@@ -12,41 +12,59 @@ type sanitizeProbeError struct{ msg string }
 
 func (e *sanitizeProbeError) Error() string { return e.msg }
 
-func TestSanitizeToolErrorStripsFramingTokens(t *testing.T) {
+func TestStripsToolCallTags(t *testing.T) {
 	out := SanitizeToolError("bad <tool_call>injected</tool_call> happened")
 	if strings.Contains(out, "<tool_call>") || strings.Contains(out, "</tool_call>") || !strings.Contains(out, "bad injected happened") {
 		t.Fatalf("tool_call tags %q", out)
 	}
+}
+
+func TestStripsRoleTags(t *testing.T) {
 	for _, tag := range []string{"system", "assistant", "user", "result", "response", "output", "input"} {
 		if out := SanitizeToolError("prefix <" + tag + ">hi</" + tag + "> suffix"); strings.Contains(out, "<"+tag+">") || strings.Contains(out, "</"+tag+">") {
 			t.Fatalf("failed to strip <%s> from %q", tag, out)
 		}
 	}
+}
+
+func TestUnrelatedXmlKept(t *testing.T) {
 	if out := SanitizeToolError("Error parsing <ParseError>line 5</ParseError>"); !strings.Contains(out, "<ParseError>") {
 		t.Fatalf("unrelated xml stripped %q", out)
 	}
+}
+
+func TestStripsCdata(t *testing.T) {
 	if out := SanitizeToolError("error: <![CDATA[malicious]]> here"); strings.Contains(out, "<![CDATA[") || strings.Contains(out, "]]>") {
 		t.Fatalf("cdata kept %q", out)
 	}
+}
+
+func TestStripsLeadingFenceWithLang(t *testing.T) {
 	if out := SanitizeToolError("```json\n{\"x\": 1}"); strings.HasPrefix(strings.ReplaceAll(out, "[TOOL_ERROR] ", ""), "```") {
 		t.Fatalf("leading fence with language kept %q", out)
 	}
+}
+
+func TestStripsBareFence(t *testing.T) {
 	if out := SanitizeToolError("```\nstuff"); strings.Contains(strings.Split(out, "\n")[0], "```") {
 		t.Fatalf("bare fence kept %q", out)
 	}
 }
 
-func TestSanitizeToolErrorCapsAndWraps(t *testing.T) {
+func TestCapsLongInput(t *testing.T) {
 	body := strings.TrimPrefix(SanitizeToolError(strings.Repeat("A", toolErrorMaxLen*2)), "[TOOL_ERROR] ")
 	if pystr.Len(body) != toolErrorMaxLen || !strings.HasSuffix(body, "...") {
 		t.Fatalf("capped body length %d", pystr.Len(body))
 	}
+}
+
+func TestWrapsWithPrefix(t *testing.T) {
 	if out := SanitizeToolError("oh no"); !strings.HasPrefix(out, "[TOOL_ERROR] ") {
 		t.Fatalf("envelope %q", out)
 	}
 }
 
-func TestHandleFunctionCallExceptionPathErrorIsSanitized(t *testing.T) {
+func TestExceptionPathErrorIsSanitized(t *testing.T) {
 	d, _, env := modelToolsDispatcher(t, func(context.Context, *Call) string {
 		panic(&sanitizeProbeError{"<tool_call>injected</tool_call> boom"})
 	}, "boom_probe")

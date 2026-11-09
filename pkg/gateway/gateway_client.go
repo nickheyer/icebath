@@ -394,6 +394,23 @@ func (c *GatewayClient) Close() error {
 	return err
 }
 
+// Event frames read off the socket, the client.events queue of the thin client
+func (c *GatewayClient) EventQueue() *EventQueue { return c.Events }
+
+// Requests still waiting for an answer
+func (c *GatewayClient) PendingCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.pending)
+}
+
+// Writes one raw frame on the socket, the websocket.send of a server request reply
+func (c *GatewayClient) SendFrame(text string) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.socket.Send(text)
+}
+
 // Pending answer key of a frame id, matching integral floats and booleans as Python dict keys do
 func frameID(v any) (int64, bool) {
 	switch x := v.(type) {

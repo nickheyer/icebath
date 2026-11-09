@@ -539,7 +539,7 @@ func twoLockedRoots(t *testing.T, lockedNames ...string) ([]string, []string) {
 	return roots, locked
 }
 
-func TestSearchMultiRootReportsEverySkippedPath(t *testing.T) {
+func TestMultiRootSearchReportsEverySkippedPath(t *testing.T) {
 	requireUnreadableDirs(t)
 	for _, engine := range []string{"rg", "grep"} {
 		for _, target := range []string{"content", "files"} {
@@ -582,7 +582,7 @@ func TestSearchMultiRootReportsEverySkippedPath(t *testing.T) {
 	}
 }
 
-func TestSearchMultiRootSkippedDirNameWithCommaSurvivesMerge(t *testing.T) {
+func TestMultiRootSkippedDirNameWithCommaSurvivesMerge(t *testing.T) {
 	requireUnreadableDirs(t)
 	for _, engine := range []string{"rg", "grep"} {
 		t.Run(engine, func(t *testing.T) {

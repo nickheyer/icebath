@@ -60,7 +60,7 @@ func decodeModelToolsResult(t *testing.T, s string) map[string]any {
 	return out
 }
 
-func TestHandleFunctionCallAgentLoopToolsReturnError(t *testing.T) {
+func TestAgentLoopToolReturnsError(t *testing.T) {
 	d, _, env := modelToolsDispatcher(t, nil)
 	for name := range AgentLoopTools {
 		if _, ok := decodeModelToolsResult(t, d.Dispatch(context.Background(), &Call{Name: name, Env: env}))["error"]; !ok {
@@ -142,7 +142,7 @@ type interruptRaised struct{}
 func (interruptRaised) Error() string { return "interrupted" }
 func (interruptRaised) Unwrap() error { return ErrKeyboardInterrupt }
 
-func TestExecutionFailureEmitsTerminalToolHookAndKeyboardInterruptEscapesMiddleware(t *testing.T) {
+func TestRegistryExceptionEmitsTerminalToolHook(t *testing.T) {
 	ran := false
 	d, log, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string { ran = true; return `{"ok":true}` }, "web_search")
 	d.ToolExecutionMiddleware = append(d.ToolExecutionMiddleware, func(ctx context.Context, env *Env, name string, args, originalArgs map[string]any, ids ToolHookIDs, next func(map[string]any) (string, error)) (string, error) {
@@ -155,6 +155,13 @@ func TestExecutionFailureEmitsTerminalToolHookAndKeyboardInterruptEscapesMiddlew
 	if len(log.post) != 1 || log.post[0].Status != "error" || log.post[0].ErrorType != "interruptRaised" || log.post[0].DurationMS < 0 {
 		t.Fatalf("post %+v", log.post)
 	}
+}
+
+func TestKeyboardInterruptEscapesMiddleware(t *testing.T) {
+	d, _, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string { return `{"ok":true}` }, "web_search")
+	d.ToolExecutionMiddleware = append(d.ToolExecutionMiddleware, func(ctx context.Context, env *Env, name string, args, originalArgs map[string]any, ids ToolHookIDs, next func(map[string]any) (string, error)) (string, error) {
+		return "", interruptRaised{}
+	})
 	ctx, cancel := context.WithCancelCause(context.Background())
 	cancel(ErrKeyboardInterrupt)
 	_, err := d.RunToolExecutionMiddleware(ctx, env, "web_search", map[string]any{}, nil, ToolHookIDs{}, func(map[string]any) (string, error) {
@@ -180,37 +187,49 @@ func TestACPEditDenialEmitsBlockedTerminalToolHook(t *testing.T) {
 	}
 }
 
-func TestPreToolCallBlockReturnsErrorSkipsDispatchAndReadLoopNotification(t *testing.T) {
-	for _, tool := range []string{"read_file", "web_search"} {
-		d, log, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string {
-			t.Fatal("dispatch should not run when blocked")
-			return ""
-		}, tool)
-		d.PreToolCall = append(d.PreToolCall, func(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, trace []map[string]any) PreToolDirective {
-			return PreToolDirective{Action: "block", Message: "Blocked by policy"}
-		})
-		td := taskData("t1-blocked")
-		readTrackerLock.Lock()
-		td.consecutive = 3
-		readTrackerLock.Unlock()
-		out := decodeModelToolsResult(t, d.Dispatch(context.Background(), &Call{Name: tool, Args: map[string]any{"path": "test.txt"}, TaskID: "t1-blocked", Env: env}))
-		if !reflect.DeepEqual(out, map[string]any{"error": "Blocked by policy"}) {
-			t.Fatalf("result %v", out)
-		}
-		ev := log.post[0]
-		if ev.Status != "blocked" || ev.ErrorType != "plugin_block" || ev.ErrorMessage != "Blocked by policy" || ev.DurationMS != 0 {
-			t.Fatalf("post %+v", ev)
-		}
-		readTrackerLock.Lock()
-		if td.consecutive != 3 {
-			t.Fatalf("blocked %s call notified the read loop tracker", tool)
-		}
-		readTrackerLock.Unlock()
-		ClearFileOpsCache("t1-blocked")
+// Dispatches tool under a blocking pre tool call hook with a primed read loop tracker
+func blockedToolDispatch(t *testing.T, tool string) (map[string]any, *hookLog, *taskTracker) {
+	t.Helper()
+	d, log, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string {
+		t.Fatal("dispatch should not run when blocked")
+		return ""
+	}, tool)
+	d.PreToolCall = append(d.PreToolCall, func(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, trace []map[string]any) PreToolDirective {
+		return PreToolDirective{Action: "block", Message: "Blocked by policy"}
+	})
+	td := taskData("t1-blocked")
+	readTrackerLock.Lock()
+	td.consecutive = 3
+	readTrackerLock.Unlock()
+	t.Cleanup(func() { ClearFileOpsCache("t1-blocked") })
+	out := decodeModelToolsResult(t, d.Dispatch(context.Background(), &Call{Name: tool, Args: map[string]any{"path": "test.txt"}, TaskID: "t1-blocked", Env: env}))
+	return out, log, td
+}
+
+func TestBlockedToolReturnsErrorAndSkipsDispatch(t *testing.T) {
+	out, log, _ := blockedToolDispatch(t, "read_file")
+	if !reflect.DeepEqual(out, map[string]any{"error": "Blocked by policy"}) {
+		t.Fatalf("result %v", out)
+	}
+	ev := log.post[0]
+	if ev.Status != "blocked" || ev.ErrorType != "plugin_block" || ev.ErrorMessage != "Blocked by policy" || ev.DurationMS != 0 {
+		t.Fatalf("post %+v", ev)
 	}
 }
 
-func TestInvalidPreToolCallDirectivesDoNotBlock(t *testing.T) {
+func TestBlockedToolSkipsReadLoopNotification(t *testing.T) {
+	out, _, td := blockedToolDispatch(t, "web_search")
+	if !reflect.DeepEqual(out, map[string]any{"error": "Blocked by policy"}) {
+		t.Fatalf("result %v", out)
+	}
+	readTrackerLock.Lock()
+	defer readTrackerLock.Unlock()
+	if td.consecutive != 3 {
+		t.Fatal("blocked call notified the read loop tracker")
+	}
+}
+
+func TestInvalidHookReturnsDoNotBlock(t *testing.T) {
 	d, _, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string { return `{"ok": true}` }, "read_file")
 	d.PreToolCall = append(d.PreToolCall, func(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, trace []map[string]any) PreToolDirective {
 		return PreToolDirective{Action: "block"}
@@ -300,29 +319,37 @@ func TestObserverFieldsRenderErrorValuesLikePythonStr(t *testing.T) {
 	}
 }
 
-func TestToolCallBridgeBadArgsError(t *testing.T) {
+func TestToolCallBadArgsError(t *testing.T) {
 	d, _, env := modelToolsDispatcher(t, nil)
 	if out := decodeModelToolsResult(t, d.Dispatch(context.Background(), &Call{Name: "tool_call", Args: map[string]any{}, Env: env})); out["error"] == nil || out["error"] == "" {
 		t.Fatalf("result %v", out)
 	}
 }
 
-func TestDisabledPlatformBundlePreservesCoreAndRemovesOwnTools(t *testing.T) {
-	ctx := context.Background()
-	env := &Env{Home: t.TempDir()}
-	names := func(enabled, disabled []string) map[string]bool {
-		out := map[string]bool{}
-		for _, td := range Default.ToolDefinitions(ctx, env, DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: true, ContextLength: 200000}) {
-			out[toolDefName(td)] = true
-		}
-		return out
+// Quiet tool definition names of a toolset grant
+func bundleToolNames(t *testing.T, enabled, disabled []string) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for _, td := range Default.ToolDefinitions(context.Background(), &Env{Home: t.TempDir()}, DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: true, ContextLength: 200000}) {
+		out[toolDefName(td)] = true
 	}
-	if a, b := names([]string{"icebath-telegram"}, nil), names([]string{"icebath-telegram"}, []string{"icebath-yuanbao"}); !reflect.DeepEqual(a, b) {
+	return out
+}
+
+func TestDisablingPlatformBundlePreservesCoreTools(t *testing.T) {
+	if a, b := bundleToolNames(t, []string{"icebath-telegram"}, nil), bundleToolNames(t, []string{"icebath-telegram"}, []string{"icebath-yuanbao"}); !reflect.DeepEqual(a, b) {
 		t.Fatalf("tools lost after disabling icebath-yuanbao %v %v", a, b)
 	}
-	if names([]string{"icebath-discord"}, []string{"icebath-discord"})["discord"] {
+}
+
+func TestDisablingPlatformBundleRemovesOwnTools(t *testing.T) {
+	if bundleToolNames(t, []string{"icebath-discord"}, []string{"icebath-discord"})["discord"] {
 		t.Fatal("discord survived disabling its bundle")
 	}
+}
+
+func TestDisablingBrowserKeepsWebSearchWhenWebEnabled(t *testing.T) {
+	ctx := context.Background()
 	browser := map[string]bool{}
 	for _, n := range Default.ResolveToolset(ctx, "", "browser") {
 		browser[n] = true
@@ -335,11 +362,17 @@ func TestDisabledPlatformBundlePreservesCoreAndRemovesOwnTools(t *testing.T) {
 			t.Fatalf("%s lacks web_search", ts)
 		}
 	}
-	if got := Default.BundleNonCoreTools(ctx, "", "icebath-does-not-exist"); len(got) != 0 {
+}
+
+func TestBundleNonCoreToolsUnknownFallsBack(t *testing.T) {
+	if got := Default.BundleNonCoreTools(context.Background(), "", "icebath-does-not-exist"); len(got) != 0 {
 		t.Fatalf("unknown bundle %v", got)
 	}
-	baseline := names(nil, nil)
-	noCoding := names(nil, []string{"coding"})
+}
+
+func TestDisablingCodingPreservesCoreButAtomicDisablesStillRemove(t *testing.T) {
+	baseline := bundleToolNames(t, nil, nil)
+	noCoding := bundleToolNames(t, nil, []string{"coding"})
 	present := 0
 	for _, n := range []string{"terminal", "read_file", "write_file", "web_search", "execute_code"} {
 		if baseline[n] {
@@ -352,7 +385,7 @@ func TestDisabledPlatformBundlePreservesCoreAndRemovesOwnTools(t *testing.T) {
 	if present == 0 {
 		t.Fatal("no probed core tools present in baseline")
 	}
-	if names(nil, []string{"terminal"})["terminal"] || names(nil, []string{"file"})["write_file"] {
+	if bundleToolNames(t, nil, []string{"terminal"})["terminal"] || bundleToolNames(t, nil, []string{"file"})["write_file"] {
 		t.Fatal("atomic toolset disable did not remove its tools")
 	}
 }
@@ -403,39 +436,53 @@ func TestToolCallRejectsOutOfScopeAndUnwrapsInScope(t *testing.T) {
 	}
 }
 
-func TestBrowserRewritersNameRetrievalAndVisionToolsOnlyWhenPresent(t *testing.T) {
-	defs := func(head map[string]any, names ...string) []map[string]any {
-		out := []map[string]any{head}
-		for _, n := range names {
-			out = append(out, toolDef(n, n+".", nil))
-		}
-		return out
+// Tool definitions led by head followed by bare named tools
+func rewriterDefs(head map[string]any, names ...string) []map[string]any {
+	out := []map[string]any{head}
+	for _, n := range names {
+		out = append(out, toolDef(n, n+".", nil))
 	}
-	described := func(rendered []map[string]any, name string) (string, bool) {
-		for _, td := range rendered {
-			if toolDefName(td) == name {
-				return toolDefDescription(td), true
-			}
+	return out
+}
+
+// Description of the named tool after the dynamic schema pass, false when the pass dropped it
+func rewrittenDescription(rendered []map[string]any, name string) (string, bool) {
+	for _, td := range rendered {
+		if toolDefName(td) == name {
+			return toolDefDescription(td), true
 		}
-		return "", false
 	}
+	return "", false
+}
+
+func TestSilentWithoutWebTools(t *testing.T) {
 	cdp := toolDef("browser_cdp", "Send a raw Chrome DevTools Protocol command.", nil)
-	if desc, _ := described(applyDynamicSchemas(nil, defs(cdp, "terminal")), "browser_cdp"); strings.Contains(desc, "web_extract") || strings.Contains(desc, "web_search") {
-		t.Fatalf("cdp description names an absent web tool %q", desc)
+	execDef := toolDef("browser_exec", "Run Python against the page."+ScreenshotsDetached, nil)
+	for _, td := range applyDynamicSchemas(nil, []map[string]any{execDef, cdp, toolDef("terminal", "terminal.", nil)}) {
+		if desc := toolDefDescription(td); strings.Contains(desc, "web_search") || strings.Contains(desc, "web_extract") {
+			t.Fatalf("%s names an absent web tool %q", toolDefName(td), desc)
+		}
 	}
-	if desc, _ := described(applyDynamicSchemas(nil, defs(cdp, "terminal", "web_extract")), "browser_cdp"); !strings.HasSuffix(desc, " The web_extract tool is available for fetching CDP documentation URLs.") {
+}
+
+func TestBrowserCdpNamesWebExtractOnlyWhenPresent(t *testing.T) {
+	cdp := toolDef("browser_cdp", "Send a raw Chrome DevTools Protocol command.", nil)
+	if desc, _ := rewrittenDescription(applyDynamicSchemas(nil, rewriterDefs(cdp, "terminal", "web_extract")), "browser_cdp"); !strings.HasSuffix(desc, " The web_extract tool is available for fetching CDP documentation URLs.") {
 		t.Fatalf("cdp description without the web_extract pointer %q", desc)
 	}
-	if _, kept := described(applyDynamicSchemas(nil, defs(toolDef("browser_exec", "Run Python."+ScreenshotsDetached, nil), "web_search")), "browser_exec"); kept {
+	if _, kept := rewrittenDescription(applyDynamicSchemas(nil, rewriterDefs(toolDef("browser_exec", "Run Python."+ScreenshotsDetached, nil), "web_search")), "browser_exec"); kept {
 		t.Fatal("browser_exec kept in a session without terminal")
 	}
+}
+
+func TestBrowserExecPointsAtVisionAnalyzeOnlyWhenTheSessionHasIt(t *testing.T) {
 	for _, native := range []bool{false, true} {
 		header := "Run Python against the page." + ScreenshotsDetached
 		if native {
 			header = "Run Python against the page. Screenshots arrive in the result."
 		}
 		for _, names := range [][]string{{"terminal"}, {"terminal", "vision_analyze"}} {
-			desc, _ := described(applyDynamicSchemas(nil, defs(toolDef("browser_exec", header, nil), names...)), "browser_exec")
+			desc, _ := rewrittenDescription(applyDynamicSchemas(nil, rewriterDefs(toolDef("browser_exec", header, nil), names...)), "browser_exec")
 			want := !native && len(names) == 2
 			if strings.Contains(desc, "pass its capture_screenshot() path to vision_analyze") != want {
 				t.Fatalf("native %v names %v description %q", native, names, desc)

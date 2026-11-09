@@ -333,3 +333,16 @@ func TestRewindToMessage(t *testing.T) {
 		t.Fatalf("inactive target %v", err)
 	}
 }
+
+func TestExportedRewindHelpersMatchTheirPackageTwins(t *testing.T) {
+	history := []map[string]any{{"role": "user", "content": "one"}, {"role": "assistant", "content": "a1"}, {"role": "user", "content": "two"}}
+	if got := UserTurnIndices(history); !slices.Equal(got, userTurnIndices(history)) || !slices.Equal(got, []int{0, 2}) {
+		t.Fatalf("user indices %v", got)
+	}
+	if got := RewindComparisonContent(history[2]); got != rewindComparisonContent(history[2]) || got != "two" {
+		t.Fatalf("comparison content %v", got)
+	}
+	if RewindHistoryChanged() != rewindHistoryChanged {
+		t.Fatal("history changed text")
+	}
+}

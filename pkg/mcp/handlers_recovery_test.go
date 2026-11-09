@@ -61,7 +61,7 @@ func TestToolHandler401RecoveryRaisingNeedsReauth(t *testing.T) {
 	}
 }
 
-func TestToolHandlerNonAuthErrorStillGeneric(t *testing.T) {
+func TestCallToolHandlerNonAuthErrorStillGeneric(t *testing.T) {
 	handlerServer(t, "srv", func(string, map[string]any) (any, error) { return nil, errors.New("unrelated") })
 	out := decodeResult(t, makeToolHandler("srv", "tool1", 10, false)(context.Background(), toolCall(map[string]any{"arg": "v"})))
 	if _, reauth := out["needs_reauth"]; reauth || out["error"] == nil || out["error"] == "" {
@@ -69,7 +69,7 @@ func TestToolHandlerNonAuthErrorStillGeneric(t *testing.T) {
 	}
 }
 
-func TestStdioMidcallChildExitReconnectsWithoutReplay(t *testing.T) {
+func TestMidcallChildExitReconnectsWithoutReplay(t *testing.T) {
 	var effects atomic.Int32
 	srv, tr := handlerServer(t, "srv-midcall", nil)
 	setChildPIDs(srv, os.Getpid())
@@ -98,7 +98,7 @@ func TestStdioMidcallChildExitReconnectsWithoutReplay(t *testing.T) {
 	}
 }
 
-func TestStdioSDKFirstTransportCloseMidcallIsUncertainWithoutReplay(t *testing.T) {
+func TestSdkFirstTransportCloseMidcallIsUncertainWithoutReplay(t *testing.T) {
 	var effects atomic.Int32
 	srv, _ := handlerServer(t, "srv-sdk-first", func(string, map[string]any) (any, error) {
 		effects.Add(1)
@@ -124,7 +124,7 @@ func shortRespawnWait(t *testing.T) {
 	t.Cleanup(func() { stdioRespawnWait = prev })
 }
 
-func TestStdioDeadChildNeverReturningIsNotReportedAsTimeout(t *testing.T) {
+func TestDeadChildNeverReturningIsNotReportedAsATimeout(t *testing.T) {
 	shortRespawnWait(t)
 	srv, tr := handlerServer(t, "srv-gone", func(string, map[string]any) (any, error) { return textResult("ok"), nil })
 	setChildPIDs(srv, 1<<30)
@@ -144,7 +144,7 @@ func TestStdioDeadChildNeverReturningIsNotReportedAsTimeout(t *testing.T) {
 	}
 }
 
-func TestStdioChildDyingAgainAfterRespawnDoesNotHotCycle(t *testing.T) {
+func TestChildDyingAgainAfterRespawnDoesNotHotCycle(t *testing.T) {
 	shortRespawnWait(t)
 	var called atomic.Int32
 	respond := func(method string, _ map[string]any) (any, error) {

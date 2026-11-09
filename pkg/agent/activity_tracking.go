@@ -76,8 +76,11 @@ func (a *AIAgent) persistSessionActivityIfDue() {
 
 // Clears mid turn activity labels and their durable copy, keeping the activity timestamp
 func (a *AIAgent) resetActivityLabelsAfterTurn() {
+	lock := a.livenessActivityLock()
+	lock.Lock()
 	a.lastActivityDesc = ""
 	a.lastActivityProvenance = state.ActivityProvenanceUnknown
+	lock.Unlock()
 	if a.sessionID == "" || a.sessionDB == nil {
 		return
 	}
@@ -86,20 +89,21 @@ func (a *AIAgent) resetActivityLabelsAfterTurn() {
 
 // Diagnostic activity snapshot with the current tool, call count and iteration budget
 func (a *AIAgent) GetActivitySummary() map[string]any {
+	lock := a.livenessActivityLock()
+	lock.Lock()
 	var at *float64
 	if a.lastActivityTS != 0 {
 		ts := a.lastActivityTS
 		at = &ts
 	}
 	provenance := string(a.lastActivityProvenance)
+	desc := a.lastActivityDesc
+	currentTool := a.currentTool
+	lock.Unlock()
 	if provenance == "" {
 		provenance = string(state.ActivityProvenanceUnknown)
 	}
 	extra := pyjson.NewObject()
-	lock := a.livenessActivityLock()
-	lock.Lock()
-	currentTool := a.currentTool
-	lock.Unlock()
 	if currentTool != "" {
 		extra.Set("current_tool", currentTool)
 	} else {
@@ -107,7 +111,11 @@ func (a *AIAgent) GetActivitySummary() map[string]any {
 	}
 	extra.Set("api_call_count", a.apiCallCount)
 	extra.Set("max_iterations", a.maxIterations)
-	extra.Set("budget_used", a.iterationBudget.Used())
-	extra.Set("budget_max", a.iterationBudget.MaxTotal)
-	return BuildActivitySnapshot(at, a.lastActivityDesc, provenance, nil, extra).Vals
+	budgetUsed, budgetMax := 0, 0
+	if a.iterationBudget != nil {
+		budgetUsed, budgetMax = a.iterationBudget.Used(), a.iterationBudget.MaxTotal
+	}
+	extra.Set("budget_used", budgetUsed)
+	extra.Set("budget_max", budgetMax)
+	return BuildActivitySnapshot(at, desc, provenance, nil, extra).Vals
 }

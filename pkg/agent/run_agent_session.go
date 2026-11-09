@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"unsafe"
@@ -196,9 +197,22 @@ func (a *AIAgent) resetSessionState(previousMessages []map[string]any, oldSessio
 	}
 }
 
-// Model config of the lazily created session row with a live yolo toggle folded in
+// Model config of the lazily created session row with a live yolo toggle folded in, a one turn pick keeping the session's own level
 func (a *AIAgent) sessionRowModelConfig() map[string]any {
-	return tools.WithSessionYolo(a.sessionInitModelConfig, a.sessionID)
+	cfg := a.sessionInitModelConfig
+	if a.oneTurn && a.oneTurnSessionReasoningSet && cfg != nil {
+		cfg = maps.Clone(cfg)
+		cfg["reasoning_config"] = a.oneTurnSessionReasoning
+	}
+	return tools.WithSessionYolo(cfg, a.sessionID)
+}
+
+// Model the session row records, the route before a one turn pick when one is pending
+func (a *AIAgent) sessionRowModel() string {
+	if a.oneTurn && a.oneTurnSessionModel != "" {
+		return a.oneTurnSessionModel
+	}
+	return a.model
 }
 
 // Creates the session row on first use, a failure leaving it for the next turn to retry
@@ -213,7 +227,7 @@ func (a *AIAgent) ensureDBSession() error {
 		displayName = a.userName
 	}
 	err := a.sessionDB.CreateSession(state.NewSession{
-		ID: a.sessionID, Source: source, Model: a.model, ModelConfig: a.sessionRowModelConfig(),
+		ID: a.sessionID, Source: source, Model: a.sessionRowModel(), ModelConfig: a.sessionRowModelConfig(),
 		SystemPrompt: a.cachedSystemPrompt, UserID: a.userID, SessionKey: a.gatewaySessionKey, ChatID: a.chatID,
 		ChatType: a.chatType, ThreadID: a.threadID, DisplayName: displayName, OriginJSON: gatewayOriginJSON(ctx, a),
 		ParentSessionID: a.parentSessionID, Cwd: launchCwdForSession(source),

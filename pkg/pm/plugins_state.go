@@ -188,6 +188,9 @@ func dependencyHomes(ctx context.Context) ([]string, error) {
 	return homes, nil
 }
 
+// DependencyHomes exports the dependency home union for the plugin manager hooks of provider resolution
+func DependencyHomes(ctx context.Context) ([]string, error) { return dependencyHomes(ctx) }
+
 // Every home's plugins dir with its ordered enabled names, the active memory provider joining its home's list
 func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]HomePlugins, error) {
 	homes, err := dependencyHomes(ctx)
