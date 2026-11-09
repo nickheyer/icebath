@@ -460,3 +460,6 @@ func bedrockTransportFinishReason(stopReason string) string {
 	}
 	return "stop"
 }
+
+// Converse call seam the auxiliary shim wire tests capture
+var callBedrockConverseFn = callBedrockConverse

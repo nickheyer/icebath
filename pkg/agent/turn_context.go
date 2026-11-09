@@ -184,8 +184,14 @@ func popTurnNote(slot *string) string {
 func consumeGatewayTurnContextNotes(a *AIAgent) string {
 	return popTurnNote(&a.gatewayTurnContextNotes)
 }
-func consumeSurfaceSwitchNote(a *AIAgent) string { return popTurnNote(&a.surfaceSwitchNote) }
-func consumeSkillsIndexNote(a *AIAgent) string   { return popTurnNote(&a.skillsIndexNoteText) }
+
+// GatewayTurnContextNotes is the pending gateway note text the next user turn carries
+func (a *AIAgent) GatewayTurnContextNotes() string { return a.gatewayTurnContextNotes }
+
+// SetGatewayTurnContextNotes replaces the pending gateway note text
+func (a *AIAgent) SetGatewayTurnContextNotes(notes string) { a.gatewayTurnContextNotes = notes }
+func consumeSurfaceSwitchNote(a *AIAgent) string           { return popTurnNote(&a.surfaceSwitchNote) }
+func consumeSkillsIndexNote(a *AIAgent) string             { return popTurnNote(&a.skillsIndexNoteText) }
 
 // Appends must deliver notes as a text part on a multimodal user content list, true when appended
 func appendNotesToMultimodalContent(content *any, notes string) bool {
@@ -722,7 +728,7 @@ func bindInterruptScope(ctx context.Context, a *AIAgent) context.Context {
 	a.executionThreadID = int64(id)
 	a.executionGoroutineID.Store(pythread.GoroutineID())
 	tools.SetInterrupt(id, false, "")
-	if a.interruptRequested {
+	if a.interruptRequested.Load() {
 		tools.SetInterrupt(id, true, a.toolInterruptReason)
 	} else {
 		a.interruptMessage = ""

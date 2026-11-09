@@ -49,3 +49,30 @@ func TestAtomicJSONWriteModeForcesThePrivateMode(t *testing.T) {
 		t.Fatalf("temp files left %v", left)
 	}
 }
+
+func TestReadJSONOrEmptyDegradesToAnEmptyObject(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.json")
+	if err := os.WriteFile(good, []byte("\ufeff{\"trees\": {\"a\": 1}}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadJSONOrEmpty(good); len(got) != 1 || got["trees"] == nil {
+		t.Fatalf("got %v", got)
+	}
+	bad := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(bad, []byte("[1, 2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{bad, filepath.Join(dir, "missing.json")} {
+		if got := ReadJSONOrEmpty(p); len(got) != 0 {
+			t.Fatalf("%s: got %v", p, got)
+		}
+	}
+	list := filepath.Join(dir, "list.json")
+	if err := os.WriteFile(list, []byte("[1]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadJSONOrEmpty(list); len(got) != 0 {
+		t.Fatalf("list: got %v", got)
+	}
+}

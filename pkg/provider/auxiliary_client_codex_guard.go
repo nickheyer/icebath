@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -85,7 +87,7 @@ func newAuxCodexStreamGuard(ctx context.Context, client any, totalTimeout float6
 		g.noProgressTimeout = min(g.noProgressTimeout, totalTimeout)
 		ceilingInput = totalTimeout
 	}
-	g.hardDeadline = g.start.Add(auxSeconds(auxStreamTotalCeiling(ceilingInput)))
+	g.hardDeadline = g.start.Add(auxSeconds(auxStreamTotalCeilingFn(ceilingInput)))
 	if host, ok := auxCurrentAuxStreamDeadline(ctx); ok && host.Before(g.hardDeadline) {
 		g.hardDeadline = host
 	}
@@ -222,9 +224,12 @@ func (g *auxCodexStreamGuard) watchdogFire() {
 	g.closeClientOnTimeout(false)
 }
 
+// Watchdog timer constructor the fd ownership tests swap for one that never fires
+var auxArmTimerFn = time.AfterFunc
+
 func (g *auxCodexStreamGuard) armTimer(delay time.Duration) {
 	g.timerMu.Lock()
-	g.timer = time.AfterFunc(delay, g.watchdogFire)
+	g.timer = auxArmTimerFn(delay, g.watchdogFire)
 	g.timerMu.Unlock()
 }
 
@@ -297,9 +302,22 @@ type auxPooledConn struct {
 	net.Conn
 	set  *auxConnSet
 	once sync.Once
+	cut  atomic.Bool
 }
 
 func (c *auxPooledConn) NetConn() net.Conn { return c.Conn }
+
+// Marks the connection cut so every later read fails and the transport never pools it again
+func (c *auxPooledConn) cutAttempt() { c.cut.Store(true) }
+
+// Delivers bytes until the attempt is cut, failing every read afterwards
+func (c *auxPooledConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if c.cut.Load() {
+		return 0, auxErrAttemptCut
+	}
+	return n, err
+}
 
 func (c *auxPooledConn) Close() error {
 	err := c.Conn.Close()
@@ -492,4 +510,29 @@ func auxRouteAndTransports[K comparable](route http.RoundTripper, transports map
 		out = append(out, t)
 	}
 	return out
+}
+
+// Guard start seam the stream guard tests swap
+var auxCodexGuardBeginFn = (*auxCodexStreamGuard).begin
+
+// Attempt stream whose end or failure after the watchdog fired reads as the guard's timeout
+type auxGuardedCodexStream struct {
+	AuxChatStream
+	guard *auxCodexStreamGuard
+}
+
+func (g *auxCodexStreamGuard) wrapStream(stream AuxChatStream) AuxChatStream {
+	return &auxGuardedCodexStream{AuxChatStream: stream, guard: g}
+}
+
+func (s *auxGuardedCodexStream) Next(ctx context.Context) (map[string]any, error) {
+	event, err := s.AuxChatStream.Next(ctx)
+	if err != nil && s.guard.timedOut.Load() {
+		cause := err
+		if errors.Is(err, io.EOF) {
+			cause = nil
+		}
+		return nil, &AuxTimeoutError{Message: s.guard.timeoutMessage(), Err: cause}
+	}
+	return event, err
 }

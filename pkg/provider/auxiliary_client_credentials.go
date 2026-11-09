@@ -317,13 +317,19 @@ func auxResolveCodexCredentialAndBase(ctx context.Context) (string, string, erro
 	if override == "" {
 		override = DefaultCodexBaseURL
 	}
-	return auxReadCodexSingletonToken(ctx), override, nil
+	return auxReadCodexSingletonTokenFn(ctx), override, nil
 }
 
 // ResolveCodexCredentialAndBase is the Codex token and the base url of the same authority
 func ResolveCodexCredentialAndBase(ctx context.Context) (string, string, error) {
 	return auxResolveCodexCredentialAndBase(ctx)
 }
+
+// Registry rows and the auth.json Codex token reader, swapped by tests the way hermes tests patch them
+var (
+	auxRegistryRowsFn            = canonicalRegistryRows
+	auxReadCodexSingletonTokenFn = auxReadCodexSingletonToken
+)
 
 // Wall clock seam of the Codex expiry check
 var auxCodexNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
@@ -385,7 +391,7 @@ func auxJWTExp(token string) (float64, bool) {
 // Wire client of the first healthy API key provider with credentials and a known auxiliary model
 func auxResolveAPIKeyProvider(ctx context.Context) (AuxClient, string, error) {
 	env := modelsPoolEnv(ctx)
-	for _, pconfig := range canonicalRegistryRows(ctx) {
+	for _, pconfig := range auxRegistryRowsFn(ctx) {
 		providerID := pconfig.Name
 		if pconfig.AuthType != AuthTypeAPIKey {
 			continue
@@ -707,6 +713,9 @@ var auxNousRateLimitRemainingFn = func(ctx context.Context, anonymous bool) (flo
 	remaining, ok := guard.Remaining()
 	return remaining.Seconds(), ok
 }
+
+// Nous route seam tests swap the way hermes tests patch _try_nous
+var auxTryNousFn = auxTryNous
 
 // Nous Portal client from fresh runtime credentials or the stored JWT, nil when unauthenticated or rate limited
 func auxTryNous(ctx context.Context, vision bool) (AuxClient, string, error) {

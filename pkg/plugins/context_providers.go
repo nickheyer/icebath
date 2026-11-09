@@ -176,5 +176,9 @@ func (c *Context) RegisterTranscriptionProvider(p any) (*Registration, error) {
 
 // Registers a delegation provider matched by delegation.backend
 func (c *Context) RegisterDelegationProvider(p any) (*Registration, error) {
+	if c.delegationSink != nil {
+		c.delegationSink(p)
+		return nil, nil
+	}
 	return c.RegisterProvider("delegation_provider", p)
 }

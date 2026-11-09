@@ -204,6 +204,11 @@ func buildDelegateDynamicSchemaOverrides(env *Env) map[string]any {
 	return map[string]any{"description": description, "parameters": params}
 }
 
+// Exported buildDelegateDynamicSchemaOverrides
+func BuildDelegateDynamicSchemaOverrides(env *Env) map[string]any {
+	return buildDelegateDynamicSchemaOverrides(env)
+}
+
 var liveControlParams = map[string]bool{"action": true, "subagent_id": true, "message": true}
 
 // Built delegate_task definition without live control for a one shot session whose children join in the call

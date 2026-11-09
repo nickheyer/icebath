@@ -225,7 +225,7 @@ func auxNamedCustomAPIKey(ctx context.Context, entry map[string]any, provider, c
 
 // Bedrock client by model family, Anthropic SDK, Mantle Responses or Converse, nil without AWS credentials
 func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex bool) (AuxClient, string) {
-	if !hasAWSCredentials(true) {
+	if !auxHasAWSCredentialsFn(true) {
 		slog.Debug("resolve_provider_client: bedrock requested but no AWS credentials found")
 		return nil, ""
 	}
@@ -408,7 +408,7 @@ func auxRouteOrWarn(ctx context.Context, req auxResolveRequest, client AuxClient
 
 // Full auto detection chain with the selected provider stamped on the client
 func auxResolveAutoBranch(ctx context.Context, req auxResolveRequest) (auxResolveResult, error) {
-	client, resolved, effective, err := auxResolveAutoRoute(ctx, req.MainRuntime, req.Task)
+	client, resolved, effective, err := auxResolveAutoRouteFn(ctx, req.MainRuntime, req.Task)
 	if err != nil || client == nil {
 		return auxResolveResult{}, err
 	}
@@ -448,7 +448,7 @@ func auxResolveNousBranch(ctx context.Context, req auxResolveRequest) (auxResolv
 	for _, v := range auxProviderVisionModels {
 		vision = vision || (model != "" && model == v)
 	}
-	client, def, err := auxTryNous(ctx, vision)
+	client, def, err := auxTryNousFn(ctx, vision)
 	if err != nil {
 		return auxResolveResult{}, err
 	}
@@ -486,7 +486,7 @@ func auxResolveOpenAICodexBranch(ctx context.Context, req auxResolveRequest) (au
 		raw := auxCreateOpenAIClient(ctx, token, baseURL, auxOpenAIOptions{DefaultHeaders: codexCloudflareHeaders(token, baseURL)})
 		return auxResolveResult{Client: raw, Model: auxNormalizeResolvedModel(model, req.Provider)}, nil
 	}
-	client, def, err := auxBuildCodexClient(ctx, model)
+	client, def, err := auxBuildCodexClientFn(ctx, model)
 	if err != nil {
 		return auxResolveResult{}, err
 	}
@@ -495,7 +495,7 @@ func auxResolveOpenAICodexBranch(ctx context.Context, req auxResolveRequest) (au
 
 // xAI Grok OAuth over the Responses API
 func auxResolveXAIOAuthBranch(ctx context.Context, req auxResolveRequest) (auxResolveResult, error) {
-	client, def, err := auxBuildXaiOAuthAuxClient(ctx, req.Model)
+	client, def, err := auxBuildXaiOAuthAuxClientFn(ctx, req.Model)
 	if err != nil {
 		return auxResolveResult{}, err
 	}
@@ -538,7 +538,7 @@ func auxResolveCustomBranch(ctx context.Context, req auxResolveRequest) (auxReso
 				customKey = scoped
 			}
 			if !auxTruthyKey(customKey) {
-				mainKey, err := auxReadMainAPIKeyIfSameOrigin(ctx, customBase)
+				mainKey, err := auxReadMainAPIKeyIfSameOriginFn(ctx, customBase)
 				if err != nil {
 					return auxResolveResult{}, err
 				}
@@ -788,7 +788,7 @@ func auxResolveAPIKeyBranch(ctx context.Context, req auxResolveRequest, pconfig 
 	if req.ExplicitBaseURL != "" && provider != "actual" {
 		baseURL = auxToOpenAIBaseURL(strings.TrimRight(strings.TrimSpace(req.ExplicitBaseURL), "/"))
 	}
-	finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(req.Model, auxGetAuxModelForProvider(ctx, provider)), provider)
+	finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(req.Model, auxGetAuxModelForProviderFn(ctx, provider)), provider)
 	if profileClient := auxAPIKeyProfileSuppliedClient(ctx, provider, apiKey, baseURL); profileClient != nil {
 		slog.Debug(fmt.Sprintf("resolve_provider_client: %s native client from provider profile (%s)", provider, finalModel))
 		return auxRouteClient(ctx, req, profileClient, finalModel), nil
@@ -974,7 +974,7 @@ func auxResolveProviderClient(ctx context.Context, provider, model string, opts 
 		explicitBase, explicitKey = localBase, localKey
 	}
 	if model == "" && provider != "auto" && !(provider == "nous" && opts.IsVision) {
-		model = auxGetAuxModelForProvider(ctx, provider)
+		model = auxGetAuxModelForProviderFn(ctx, provider)
 		if model == "" {
 			model = auxReadMainModelForAux(ctx)
 		}
@@ -1005,8 +1005,11 @@ func GetTextAuxiliaryClient(ctx context.Context, task string, mainRuntime map[st
 	if task != "" {
 		taskArg = task
 	}
-	route := auxResolveTaskProviderModel(ctx, taskArg, "", "", "", nil)
+	route := auxResolveTaskProviderModelFn(ctx, taskArg, "", "", "", nil)
 	return ResolveProviderClient(ctx, route.Provider, route.Model, ProviderClientOptions{
 		ExplicitBaseURL: route.BaseURL, ExplicitAPIKey: route.APIKey, APIMode: route.APIMode, MainRuntime: mainRuntime,
 	})
 }
+
+// AWS credential presence seam the bedrock resolution tests swap
+var auxHasAWSCredentialsFn = hasAWSCredentials

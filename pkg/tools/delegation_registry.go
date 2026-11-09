@@ -78,6 +78,18 @@ func loadBundledDelegation(ctx context.Context, name string) DelegationProvider 
 	return delegationFirstUse[name]
 }
 
+// Exported loadBundledDelegation
+func LoadBundledDelegation(ctx context.Context, name string) DelegationProvider {
+	return loadBundledDelegation(ctx, name)
+}
+
+// Forgets every first use bundled strategy, the hermes _first_use reset of tests
+func ResetDelegationFirstUse() {
+	delegationFirstUseMu.Lock()
+	delegationFirstUse = map[string]DelegationProvider{}
+	delegationFirstUseMu.Unlock()
+}
+
 // Provider availability with a panicking provider reported unavailable at debug level
 func delegationAvailable(p DelegationProvider) (available bool) {
 	if p == nil {

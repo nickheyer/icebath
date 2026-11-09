@@ -469,8 +469,11 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 		MaxChildren: maxChildren, LiveDelegID: liveDelegID, LiveWriters: liveWriters, LivePaths: livePaths, Origin: origin,
 		OverallStart: overallStart, LiveHome: liveHome, Refused: refused,
 	}
-	return runDelegateBatch(ctx, batch, background)
+	return runDelegateBatchFn(ctx, batch, background)
 }
+
+// Batch runner of delegate_task, swapped by tests that read the built batch
+var runDelegateBatchFn = runDelegateBatch
 
 // Whether the carried delegate_task is the joined variant so top level delegations join inside the call
 func sessionJoinsDelegation(a *AIAgent) bool {

@@ -91,7 +91,7 @@ func GetAvailableVisionBackends(ctx context.Context) ([]string, error) {
 		var client AuxClient
 		var err error
 		if slices.Contains(auxVisionAutoProviderOrder, mainProvider) {
-			client, _, err = auxResolveStrictVisionBackend(ctx, mainProvider, "")
+			client, _, err = auxResolveStrictVisionBackendFn(ctx, mainProvider, "")
 		} else {
 			client, _, err = auxResolveProviderClientFn(ctx, mainProvider, auxReadMainModel(ctx), ProviderClientOptions{})
 		}
@@ -106,7 +106,7 @@ func GetAvailableVisionBackends(ctx context.Context) ([]string, error) {
 		if slices.Contains(available, p) {
 			continue
 		}
-		client, _, err := auxResolveStrictVisionBackend(ctx, p, "")
+		client, _, err := auxResolveStrictVisionBackendFn(ctx, p, "")
 		if err != nil {
 			return nil, err
 		}
@@ -145,7 +145,7 @@ func auxVisionMainProviderClient(ctx context.Context, mainProvider, mainModel st
 		if pick == "" {
 			pick = providerVisionDefault
 		}
-		syncClient, defaultModel, err := auxResolveStrictVisionBackend(ctx, mainProvider, pick)
+		syncClient, defaultModel, err := auxResolveStrictVisionBackendFn(ctx, mainProvider, pick)
 		if err != nil || syncClient == nil {
 			return nil, "", err
 		}
@@ -222,7 +222,7 @@ func auxVisionAutoRoute(ctx context.Context, runtime map[string]any, resolvedMod
 		if candidate == mainProvider {
 			continue
 		}
-		syncClient, defaultModel, err := auxResolveStrictVisionBackend(ctx, candidate, "")
+		syncClient, defaultModel, err := auxResolveStrictVisionBackendFn(ctx, candidate, "")
 		if err != nil {
 			return "", nil, "", err
 		}
@@ -241,7 +241,7 @@ var auxZaiOpenAIVisionURLs = []string{"https://open.bigmodel.cn/api/paas/v4", "h
 // ResolveVisionProviderClient resolves the provider, client and model vision tasks use, empty provider and model for None
 func ResolveVisionProviderClient(ctx context.Context, provider, model, baseURL string, apiKey any, asyncMode bool, mainRuntime map[string]any) (string, AuxClient, string, error) {
 	runtime := auxNormalizeMainRuntime(ctx, mainRuntime)
-	route := auxResolveTaskProviderModel(ctx, "vision", provider, model, baseURL, apiKey)
+	route := auxResolveTaskProviderModelFn(ctx, "vision", provider, model, baseURL, apiKey)
 	rawRequested := route.Provider
 	requested := auxNormalizeVisionProvider(ctx, rawRequested)
 	if route.BaseURL != "" {
@@ -264,7 +264,7 @@ func ResolveVisionProviderClient(ctx context.Context, provider, model, baseURL s
 		return auxVisionAutoRoute(ctx, runtime, route.Model, route.APIMode, asyncMode)
 	}
 	if slices.Contains(auxVisionAutoProviderOrder, requested) {
-		syncClient, defaultModel, err := auxResolveStrictVisionBackend(ctx, requested, route.Model)
+		syncClient, defaultModel, err := auxResolveStrictVisionBackendFn(ctx, requested, route.Model)
 		if err != nil {
 			return "", nil, "", err
 		}
@@ -319,3 +319,6 @@ func auxPyStrOr(v any, fallback string) string {
 	}
 	return fallback
 }
+
+// Strict vision backend seam the vision auto route tests swap
+var auxResolveStrictVisionBackendFn = auxResolveStrictVisionBackend

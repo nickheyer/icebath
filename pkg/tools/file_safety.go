@@ -551,6 +551,16 @@ var sensitiveQueryParams = setOf(
 	"code", "signature", "x-amz-signature", "x-goog-signature", "sig",
 )
 
+// Sorted names of the sensitive URL query parameters
+func SensitiveQueryParamNames() []string {
+	names := make([]string, 0, len(sensitiveQueryParams))
+	for name := range sensitiveQueryParams {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 var pythonReprSecretKeys = setOf(
 	"access_token", "refresh_token", "id_token", "auth_token", "token", "api_key", "apikey", "client_secret",
 	"secret", "password", "passwd", "private_key", "credential", "credentials", "authorization", "bearer",
@@ -757,6 +767,11 @@ func maskSecret(value string, head, tail, floor int) string {
 		return "***"
 	}
 	return pystr.FromRunes(runes[:head]) + "..." + pystr.FromRunes(runes[len(runes)-tail:])
+}
+
+// Exported maskSecret
+func MaskDisplaySecret(value string, head, tail, floor int) string {
+	return maskSecret(value, head, tail, floor)
 }
 
 func maskToken(token string) string {

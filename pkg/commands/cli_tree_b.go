@@ -110,6 +110,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	suggest := c.newCmd(approvals, "suggest", "Propose command_allowlist entries from past approvals",
 		"Scan the session database for dangerous-classified commands that ran with user approval, rank the recurring patterns, and print a numbered allowlist proposal. Nothing is written unless --apply is given. Destructive classes (recursive delete, sudo, disk writes, credential edits, ...) are never proposed.")
 	sf(suggest, "apply", "", "", "Merge the numbered proposals (from a prior run) into command_allowlist in config.yaml")
+	dest(suggest, "apply", "apply_indices")
 	jsonFlag(suggest, "Emit machine-readable JSON instead of human-readable text")
 	inf(suggest, "days", "", 90, "How far back to scan session history (default: 90; 0 = all)")
 	inf(suggest, "min-count", "", 2, "Minimum approval count for a pattern to be proposed (default: 2)")
@@ -119,7 +120,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 		"Evaluate a command against the REAL runtime approval guards — hardline blocklist, user approvals.deny rules, dangerous-pattern detection, allowlist, yolo/off bypass — and print the verdict, the matching rule, and the normalized-command trace, without executing the command, prompting anyone, or persisting anything. Exit codes: 0 allow, 2 ask-approval, 3 deny (hardline or user deny rule). Tip: use `--` before the command so its own flags aren't parsed: icebath approvals test -- rm -rf ./build")
 	sf(apTest, "env-type", "", "local", "Terminal backend type to evaluate against (default: local; isolated container backends like docker skip the guards)")
 	jsonFlag(apTest, "Emit machine-readable JSON instead of human-readable text")
-	c.pos(apTest, pRem("command"))
+	c.pos(apTest, pRem("command_words").withMetavar("command"))
 
 	dump := c.newCmd(root, "dump", "Dump setup summary for support/debugging",
 		"Output a compact, plain-text summary of your Icebath setup that can be copy-pasted into Discord/GitHub for support context")
@@ -143,7 +144,8 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	sf(backup, "output", "o", "", "Output path for the zip file (default: ~/icebath-backup-<timestamp>.zip)")
 	bf(backup, "quick", "q", "Quick snapshot: only critical state files (config, state.db, .env, auth, cron)")
 	sf(backup, "label", "l", "", "Label for the snapshot (only used with --quick)")
-	backup.Flags().UintP("keep", "k", 3, "After a full backup, delete older icebath-backup-*.zip files in the output directory beyond the newest N (default 3; 0 keeps everything)")
+	backup.Flags().VarP(newNonNegativeKeep(3), "keep", "k", "After a full backup, delete older icebath-backup-*.zip files in the output directory beyond the newest N (default 3; 0 keeps everything)")
+	backup.SetFlagErrorFunc(argparseFlagError)
 
 	checkpoints := c.newCmd(root, "checkpoints", "Inspect / prune / clear ~/.icebath/checkpoints/",
 		"Manage the filesystem checkpoint store — the shadow git repo icebath uses to snapshot working directories before write_file/patch/terminal calls. Lets you see how much space checkpoints occupy, force a prune, or wipe the base.")

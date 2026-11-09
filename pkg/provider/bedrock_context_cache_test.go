@@ -46,7 +46,7 @@ func TestFailureMemoRetryScopeAndExpiry(t *testing.T) {
 	for _, baseURL := range bedrockBaseURLs {
 		for _, retry := range []string{"ttl", "invalidate", "restart", "profile", "endpoint"} {
 			h := bedrockIsolatedEnv(t)
-			calls := bedrockStubProbe(t, 0, 96_000)
+			calls := bedrockFakeProbe(t, 0, 96_000)
 			ctx := context.Background()
 			if bedrockResolve(ctx, grokBedrockModel, baseURL) != 500_000 || bedrockResolve(ctx, grokBedrockModel, baseURL) != 500_000 {
 				t.Fatalf("%s/%s: the static table must answer after a failed probe", baseURL, retry)
@@ -100,7 +100,7 @@ func TestFailureMemoRetryScopeAndExpiry(t *testing.T) {
 
 func TestUnknownModelFallbackAndHostInference(t *testing.T) {
 	bedrockIsolatedEnv(t)
-	bedrockStubProbe(t, 0)
+	bedrockFakeProbe(t, 0)
 	ctx := context.Background()
 	baseURL := "https://bedrock-runtime.us-east-1.amazonaws.com"
 	if got := GetModelContextLength(ctx, ContextLengthRequest{Model: "unknown.future-model", BaseURL: baseURL}); got != BedrockDefaultContextLength {
@@ -118,7 +118,7 @@ func TestReadonlyLegacyCacheDoesNotResetProbeCooldown(t *testing.T) {
 	for _, baseURL := range bedrockBaseURLs {
 		h := bedrockIsolatedEnv(t)
 		writeBedrockCacheDocument(t, h, map[string]any{"context_lengths": map[string]any{contextCacheKey(grokBedrockModel, bedrockCacheURL(baseURL)): 128_000}})
-		calls := bedrockStubProbe(t, 0)
+		calls := bedrockFakeProbe(t, 0)
 		previous := writeContextCache
 		writeContextCache = func(context.Context, map[string]int, map[string]any) error { return errors.New("read-only") }
 		t.Cleanup(func() { writeContextCache = previous })
@@ -136,7 +136,7 @@ func TestReadonlyLegacyCacheDoesNotResetProbeCooldown(t *testing.T) {
 func TestProvenanceIsBackwardReadableAndGenericWritesClearIt(t *testing.T) {
 	for _, rewrite := range []int{0, 96_000, 120_000} {
 		h := bedrockIsolatedEnv(t)
-		bedrockStubProbe(t, 96_000, 110_000)
+		bedrockFakeProbe(t, 96_000, 110_000)
 		ctx := context.Background()
 		model, baseURL := "xai.grok-4.6", "https://bedrock-runtime.us-east-1.amazonaws.com"
 		if got := GetModelContextLength(ctx, ContextLengthRequest{Model: model, BaseURL: baseURL}); got != 96_000 {
@@ -169,7 +169,7 @@ func TestMalformedLengthsDoNotBlockProviderPersistence(t *testing.T) {
 	for _, lengths := range []any{true, []any{128_000}, "bad"} {
 		h := bedrockIsolatedEnv(t)
 		writeBedrockCacheDocument(t, h, map[string]any{"context_lengths": lengths})
-		bedrockStubProbe(t, 96_000)
+		bedrockFakeProbe(t, 96_000)
 		ctx := context.Background()
 		if got := bedrockResolve(ctx, "xai.grok-4.6", ""); got != 96_000 {
 			t.Fatalf("%v: resolved %d", lengths, got)
@@ -185,7 +185,7 @@ func TestMalformedOrMismatchedProvenanceRequiresRevalidation(t *testing.T) {
 		h := bedrockIsolatedEnv(t)
 		key := contextCacheKey("xai.grok-4.6", "bedrock://")
 		writeBedrockCacheDocument(t, h, map[string]any{"context_lengths": map[string]any{key: 96_000}, "bedrock_confirmed_v1": map[string]any{key: marker}})
-		calls := bedrockStubProbe(t, 100_000)
+		calls := bedrockFakeProbe(t, 100_000)
 		if got := bedrockResolve(context.Background(), "xai.grok-4.6", ""); got != 100_000 {
 			t.Fatalf("marker %v: resolved %d", marker, got)
 		}
@@ -197,7 +197,7 @@ func TestMalformedOrMismatchedProvenanceRequiresRevalidation(t *testing.T) {
 
 func TestContextLocalProfileMemosDoNotCrossAndExpiredRowsArePruned(t *testing.T) {
 	h := bedrockIsolatedEnv(t)
-	calls := bedrockStubProbe(t, 0, 0, 96_000)
+	calls := bedrockFakeProbe(t, 0, 0, 96_000)
 	ctx := context.Background()
 	if got := bedrockResolve(ctx, grokBedrockModel, ""); got != 500_000 {
 		t.Fatalf("resolved %d", got)

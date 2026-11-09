@@ -23,6 +23,7 @@ type auxCallRequest struct {
 	MaxTokens                      any
 	Tools                          any
 	Timeout                        *float64
+	TimeoutText                    string
 	ExtraBody                      map[string]any
 	ReasoningConfig                map[string]any
 	ExtraHeaders                   map[string]string
@@ -104,6 +105,9 @@ func auxParseCallKwargs(fn string, kwargs map[string]any, sync bool) (auxCallReq
 	if req.Timeout, err = auxFloatKwarg("timeout", kwargs["timeout"]); err != nil {
 		return req, err
 	}
+	if kwargs["timeout"] != nil {
+		req.TimeoutText = pyrepr.Str(kwargs["timeout"])
+	}
 	return req, nil
 }
 
@@ -142,13 +146,13 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 		if !auxKeyTruthy(apiKey) {
 			apiKey = req.APIKey
 		}
-		effectiveProvider, client, finalModel, err = ResolveVisionProviderClient(ctx, provider, model, baseURL, apiKey, asyncMode, req.MainRuntime)
+		effectiveProvider, client, finalModel, err = auxResolveVisionProviderClientFn(ctx, provider, model, baseURL, apiKey, asyncMode, req.MainRuntime)
 		if err != nil {
 			return auxResolvedAuxRoute{}, err
 		}
 		if client == nil && resolvedProvider != "auto" && route.BaseURL == "" {
 			slog.Warn(fmt.Sprintf("Vision provider %s unavailable, falling back to auto vision backends", resolvedProvider))
-			effectiveProvider, client, finalModel, err = ResolveVisionProviderClient(ctx, "auto", route.Model, "", nil, asyncMode, req.MainRuntime)
+			effectiveProvider, client, finalModel, err = auxResolveVisionProviderClientFn(ctx, "auto", route.Model, "", nil, asyncMode, req.MainRuntime)
 			if err != nil {
 				return auxResolvedAuxRoute{}, err
 			}
@@ -180,7 +184,7 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 				}
 				client, finalModel = fbClient, fbModel
 				if asyncMode {
-					client, finalModel = auxToAsyncClient(ctx, fbClient, fbModel, task == "vision")
+					client, finalModel = auxToAsyncClientFn(ctx, fbClient, fbModel, task == "vision")
 				}
 				resolvedProvider = auxOrDefault(fbLabel, resolvedProvider)
 				effectiveProvider = resolvedProvider
@@ -203,24 +207,25 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 }
 
 type auxPreparedAuxRequest struct {
-	Client             AuxClient
-	FinalModel         string
-	Kwargs             map[string]any
-	ResolvedProvider   string
-	RequestProvider    string
-	ResolvedModel      string
-	ResolvedBaseURL    string
-	ResolvedAPIKey     any
-	ResolvedAPIMode    string
-	EffectiveTimeout   float64
-	EffectiveExtraBody map[string]any
-	BaseInfo           string
+	Client               AuxClient
+	FinalModel           string
+	Kwargs               map[string]any
+	ResolvedProvider     string
+	RequestProvider      string
+	ResolvedModel        string
+	ResolvedBaseURL      string
+	ResolvedAPIKey       any
+	ResolvedAPIMode      string
+	EffectiveTimeout     float64
+	EffectiveTimeoutText string
+	EffectiveExtraBody   map[string]any
+	BaseInfo             string
 }
 
 // Route and client resolved, the route published and the request kwargs built for one call
 func auxPrepareAuxRequest(ctx context.Context, req auxCallRequest, asyncMode bool) (auxPreparedAuxRequest, error) {
 	task := req.Task
-	route := auxResolveTaskProviderModel(ctx, auxTaskArg(task), req.Provider, req.Model, req.BaseURL, req.APIKey)
+	route := auxResolveTaskProviderModelFn(ctx, auxTaskArg(task), req.Provider, req.Model, req.BaseURL, req.APIKey)
 	if req.APIMode != "" {
 		route.APIMode = req.APIMode
 	}
@@ -240,10 +245,14 @@ func auxPrepareAuxRequest(ctx context.Context, req auxCallRequest, asyncMode boo
 	}
 	client, finalModel := resolved.Client, resolved.FinalModel
 	effectiveTimeout := EffectiveAuxTimeout(ctx, task, req.Timeout)
+	timeoutText := req.TimeoutText
+	if req.Timeout == nil || timeoutText == "" {
+		timeoutText = pyrepr.Str(effectiveTimeout)
+	}
 	var noProgressTimeout *float64
 	switch client.(type) {
 	case *CodexAuxiliaryClient, *AsyncCodexAuxiliaryClient:
-		v := auxGetTaskNoProgressTimeout(ctx, task)
+		v := auxGetTaskNoProgressTimeoutFn(ctx, task)
 		noProgressTimeout = &v
 	}
 	requestProvider := auxOrDefault(resolved.EffectiveProvider, resolved.ResolvedProvider)
@@ -287,7 +296,7 @@ func auxPrepareAuxRequest(ctx context.Context, req auxCallRequest, asyncMode boo
 	}
 	return auxPreparedAuxRequest{Client: client, FinalModel: finalModel, Kwargs: kwargs, ResolvedProvider: resolved.ResolvedProvider,
 		RequestProvider: requestProvider, ResolvedModel: route.Model, ResolvedBaseURL: route.BaseURL, ResolvedAPIKey: route.APIKey,
-		ResolvedAPIMode: route.APIMode, EffectiveTimeout: effectiveTimeout, EffectiveExtraBody: extraBody, BaseInfo: baseInfo}, nil
+		ResolvedAPIMode: route.APIMode, EffectiveTimeout: effectiveTimeout, EffectiveTimeoutText: timeoutText, EffectiveExtraBody: extraBody, BaseInfo: baseInfo}, nil
 }
 
 type auxLadderStep struct {
@@ -296,6 +305,13 @@ type auxLadderStep struct {
 }
 
 type auxLadderYield func(step auxLadderStep) (any, error)
+
+// Vision resolution, response validation and async wrapping, swapped by tests the way hermes tests patch them
+var (
+	auxResolveVisionProviderClientFn = ResolveVisionProviderClient
+	auxValidateLLMResponseFn         = auxValidateLLMResponse
+	auxToAsyncClientFn               = auxToAsyncClient
+)
 
 // Credential, refresh and provider fallback collaborators of the recovery ladder, swapped by tests
 var (
@@ -366,6 +382,7 @@ type auxLadderRoute struct {
 	MainRuntime      map[string]any
 	RouteInfo        map[string]string
 	Timeout          float64
+	TimeoutText      string
 }
 
 // Copy of kwargs without temperature, nil when it was not sent
@@ -648,7 +665,7 @@ func auxLadderProviderFallback(ctx context.Context, yield auxLadderYield, firstE
 	}
 	if reason == "request timed out" {
 		stalled := strings.Contains(firstErr.Error(), "Auxiliary chat stream")
-		detail := fmt.Sprintf("timed out after %ss", pyrepr.Str(route.Timeout))
+		detail := fmt.Sprintf("timed out after %ss", auxOrDefault(route.TimeoutText, pyrepr.Str(route.Timeout)))
 		knob := "timeout"
 		if stalled {
 			detail, knob = firstErr.Error(), "no_progress_timeout"
@@ -737,7 +754,7 @@ func auxRecoveryLadder(ctx context.Context, firstErr error, req auxPreparedAuxRe
 		route := auxLadderRoute{Client: req.Client, Task: task, Tag: tag, AsyncMode: asyncMode, BaseInfo: req.BaseInfo,
 			ResolvedProvider: req.ResolvedProvider, ResolvedModel: req.ResolvedModel, ResolvedBaseURL: req.ResolvedBaseURL,
 			ResolvedAPIKey: req.ResolvedAPIKey, ResolvedAPIMode: req.ResolvedAPIMode, FinalModel: req.FinalModel,
-			MainRuntime: mainRuntime, RouteInfo: routeInfo}
+			MainRuntime: mainRuntime, RouteInfo: routeInfo, TimeoutText: req.EffectiveTimeoutText}
 		if timeout != nil {
 			route.Timeout = *timeout
 		}
@@ -990,7 +1007,7 @@ func auxCallImpl(ctx context.Context, req auxCallRequest, asyncMode bool) (any, 
 		if _, codex := client.(*CodexAuxiliaryClient); codex && task == "moa_aggregator" {
 			return client.CreateChatCompletion(ctx, kwargs)
 		}
-		return auxRelaySyncStream(ctx, client, kwargs, requestProvider, prep.ResolvedAPIMode)
+		return auxRelaySyncStreamFn(ctx, client, kwargs, requestProvider, prep.ResolvedAPIMode)
 	}
 	forceStream := auxProviderRequiresStream(ctx, auxOrDefault(prep.BaseInfo, prep.ResolvedBaseURL))
 	primary := func(validateProvider, validateBaseURL string) (any, error) {
@@ -1001,14 +1018,14 @@ func auxCallImpl(ctx context.Context, req auxCallRequest, asyncMode bool) (any, 
 				return auxAcreateWithProgress(ctx, client, request, task, forceStream)
 			})
 		} else {
-			resp, err = auxRelaySyncCompletion(ctx, client, kwargs, requestProvider, prep.ResolvedAPIMode, func(ctx context.Context, request map[string]any) (any, error) {
+			resp, err = auxRelaySyncCompletionFn(ctx, client, kwargs, requestProvider, prep.ResolvedAPIMode, func(ctx context.Context, request map[string]any) (any, error) {
 				return auxCreateWithProgress(ctx, client, request, task, forceStream)
 			})
 		}
 		if err != nil {
 			return nil, err
 		}
-		return auxValidateLLMResponse(ctx, resp, task, validateProvider, validateBaseURL)
+		return auxValidateLLMResponseFn(ctx, resp, task, validateProvider, validateBaseURL)
 	}
 	resp, firstErr := primary(requestProvider, prep.BaseInfo)
 	if firstErr == nil {
@@ -1039,12 +1056,12 @@ func auxCallImpl(ctx context.Context, req auxCallRequest, asyncMode bool) (any, 
 			if asyncMode {
 				resp, err = auxRelayAsyncCompletion(ctx, stepClient, stepKwargs, prep.ResolvedProvider, prep.ResolvedAPIMode, nil)
 			} else {
-				resp, err = auxRelaySyncCompletion(ctx, stepClient, stepKwargs, prep.ResolvedProvider, prep.ResolvedAPIMode, nil)
+				resp, err = auxRelaySyncCompletionFn(ctx, stepClient, stepKwargs, prep.ResolvedProvider, prep.ResolvedAPIMode, nil)
 			}
 			if err != nil {
 				return nil, err
 			}
-			return auxValidateLLMResponse(ctx, resp, task, "", "")
+			return auxValidateLLMResponseFn(ctx, resp, task, "", "")
 		case "retry_same_provider":
 			r := retry
 			r.ResolvedProvider, _ = step.Args[0].(string)
@@ -1058,7 +1075,7 @@ func auxCallImpl(ctx context.Context, req auxCallRequest, asyncMode bool) (any, 
 		fbModel, _ := step.Args[1].(string)
 		fbLabel, _ := step.Args[2].(string)
 		if asyncMode {
-			fbClient, _ = auxToAsyncClient(ctx, fbClient, fbModel, task == "vision")
+			fbClient, _ = auxToAsyncClientFn(ctx, fbClient, fbModel, task == "vision")
 		}
 		return auxCallFallbackCandidate(ctx, fbClient, fbModel, fbLabel, candidate, asyncMode)
 	}

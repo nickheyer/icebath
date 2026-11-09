@@ -14,7 +14,7 @@ import (
 // Reports whether a base URL is OpenAI's own Codex backend rather than a proxy
 func isOfficialCodexBaseURL(baseURL string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
-	if err != nil || parsed.Scheme != "https" || parsed.Hostname() != "chatgpt.com" {
+	if err != nil || parsed.Scheme != "https" || !strings.EqualFold(parsed.Hostname(), "chatgpt.com") {
 		return false
 	}
 	if port := parsed.Port(); port != "" && port != "443" {

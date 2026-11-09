@@ -144,7 +144,7 @@ func TestCodexOAuthContextLengthFallbackTableBaseSlugStays272k(t *testing.T) {
 
 func TestBedrockContextCachePersistenceFailedProbeIsMemoisedUntilTheTtlLapses(t *testing.T) {
 	bedrockIsolatedEnv(t)
-	calls := bedrockStubProbe(t, 0, 1_000_000)
+	calls := bedrockFakeProbe(t, 0, 1_000_000)
 	ctx := context.Background()
 	model := "amazon.future-model-v1:0"
 	for range 2 {

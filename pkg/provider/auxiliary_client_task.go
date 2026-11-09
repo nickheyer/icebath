@@ -45,9 +45,12 @@ func auxResolveTaskProviderModel(ctx context.Context, task any, provider, model,
 	return out
 }
 
+// Task route resolution, swapped by tests the way hermes tests patch the module function
+var auxResolveTaskProviderModelFn = auxResolveTaskProviderModel
+
 // Configured provider of a task with no explicit args, auto when nothing is configured
 func ResolveAuxTaskProvider(ctx context.Context, task string) string {
-	return auxResolveTaskProviderModel(ctx, task, "", "", "", nil).Provider
+	return auxResolveTaskProviderModelFn(ctx, task, "", "", "", nil).Provider
 }
 
 // Explicit non reasoning compression route
@@ -491,6 +494,9 @@ func auxRoutesToCustomEndpoint(ctx context.Context, providerNorm string) bool {
 }
 
 // Provider profile extra_body and kwargs projection, whatever was built before a raise kept
+// Projection seam the call kwargs builder goes through, replaced by tests
+var auxProjectProviderProfileFn = auxProjectProviderProfile
+
 func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, model, effectiveBase string, reasoningConfig map[string]any, dataUse map[string]bool) auxProfileProjection {
 	p := auxProfileProjection{Body: map[string]any{}, ReasoningExtra: map[string]any{}, TopLevel: map[string]any{}}
 	if err := auxRecoverRaise(func() {
@@ -663,7 +669,7 @@ func auxBuildCallKwargs(ctx context.Context, provider, model string, messages an
 	}
 	reasoningConfig, _ = floored.(map[string]any)
 	reasoningConfig = clampReasoningConfigDict(reasoningConfig, openAICompatWireEfforts)
-	projection := auxProjectProviderProfile(ctx, provider, providerNorm, model, effectiveBase, reasoningConfig, auxDataUseRequirement(messages))
+	projection := auxProjectProviderProfileFn(ctx, provider, providerNorm, model, effectiveBase, reasoningConfig, auxDataUseRequirement(messages))
 	for k, v := range projection.TopLevel {
 		kwargs[k] = v
 	}

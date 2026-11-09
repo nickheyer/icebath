@@ -26,7 +26,7 @@ type auxTestEvent struct{ set atomic.Bool }
 
 func (e *auxTestEvent) IsSet() bool { return e.set.Load() }
 
-func TestAuxInterruptProtectionIsReentrant(t *testing.T) {
+func TestAuxInterruptProtectionContextManagerIsReentrant(t *testing.T) {
 	base := context.Background()
 	outer := AuxInterruptProtection(base, true, nil, nil)
 	if !auxInterruptProtected(outer) {
@@ -44,7 +44,7 @@ func TestAuxInterruptProtectionIsReentrant(t *testing.T) {
 	}
 }
 
-func TestAuxInterruptProtectionRestoresOnError(t *testing.T) {
+func TestAuxInterruptProtectionRestoresOnException(t *testing.T) {
 	base := context.Background()
 	run := func(ctx context.Context) error { return errors.New("boom") }
 	if err := run(AuxInterruptProtection(base, true, nil, nil)); err == nil {
@@ -96,7 +96,7 @@ func TestCancellationDecisionLinearizesCancelAgainstTimeout(t *testing.T) {
 	}
 }
 
-func TestAuxProgressHookInstalledAndRestored(t *testing.T) {
+func TestAuxProgressHookHookInstalledAndRestored(t *testing.T) {
 	ticks := 0
 	base := context.Background()
 	auxNotifyAuxProgress(AuxProgressHook(base, func() error { ticks++; return nil }))
@@ -343,19 +343,24 @@ func TestExtractURLQueryParams(t *testing.T) {
 
 func TestProbeModeIsScopedReentrantAndPerCallChain(t *testing.T) {
 	base := context.Background()
-	if auxProbeActive(base) {
-		t.Fatal("inactive outside a probe")
-	}
-	outer := AuxProbeMode(base)
-	if !auxProbeActive(AuxProbeMode(outer)) || !auxProbeActive(outer) {
-		t.Fatal("nested scopes stay active")
-	}
-	seen := make(chan bool)
-	go func() { seen <- auxProbeActive(context.Background()) }()
-	if <-seen {
-		t.Fatal("another call chain never sees the probe scope")
-	}
-	_, err := (&auxProbeClient{}).CreateChatCompletion(outer, nil)
+	t.Run("test_probe_mode_is_scoped_and_reentrant", func(t *testing.T) {
+		if auxProbeActive(base) {
+			t.Fatal("inactive outside a probe")
+		}
+		outer := AuxProbeMode(base)
+		if !auxProbeActive(AuxProbeMode(outer)) || !auxProbeActive(outer) {
+			t.Fatal("nested scopes stay active")
+		}
+	})
+	t.Run("test_probe_mode_is_thread_local", func(t *testing.T) {
+		outer := AuxProbeMode(base)
+		seen := make(chan bool)
+		go func() { seen <- auxProbeActive(context.Background()) }()
+		if <-seen || !auxProbeActive(outer) {
+			t.Fatal("another call chain never sees the probe scope")
+		}
+	})
+	_, err := (&auxProbeClient{}).CreateChatCompletion(AuxProbeMode(base), nil)
 	if err == nil || !strings.Contains(err.Error(), "availability checks only") {
 		t.Fatalf("probe client must fail loudly on runtime use, got %v", err)
 	}
@@ -376,7 +381,7 @@ func TestResolveAuxVerifySSLVerifyFalse(t *testing.T) {
 	}
 }
 
-func TestProbeModeReturnsProbeClientWithoutBuildingAClient(t *testing.T) {
+func TestAuxProbeModeProbeModeReturnsStubWithoutOpenaiImport(t *testing.T) {
 	built := false
 	prev := auxBuildKeepaliveHTTPClientFn
 	auxBuildKeepaliveHTTPClientFn = func(string, bool, TLSVerify) *http.Client { built = true; return nil }
@@ -385,5 +390,21 @@ func TestProbeModeReturnsProbeClientWithoutBuildingAClient(t *testing.T) {
 	probe, ok := client.(*auxProbeClient)
 	if !ok || probe.APIKey() != "k" || probe.BaseURL() != "https://x.invalid/v1" || built {
 		t.Fatalf("probe mode must return the probe client without building a client, got %T built %v", client, built)
+	}
+}
+
+type auxCancelCheckFunc func() (bool, error)
+
+func (f auxCancelCheckFunc) CancelRequested() (bool, error) { return f() }
+
+func TestAuxInterruptProtectionNestedProtectionPreservesExplicitCancelCheck(t *testing.T) {
+	base := context.Background()
+	outer := AuxInterruptProtection(base, true, auxCancelCheckFunc(func() (bool, error) { return true, nil }), nil)
+	inner := AuxInterruptProtection(outer, true, nil, nil)
+	if !auxInterruptProtected(inner) || !auxInterruptCancelRequested(inner) {
+		t.Fatal("the nested scope must inherit the explicit cancel check")
+	}
+	if auxInterruptCancelRequested(base) {
+		t.Fatal("outside every scope no cancel is requested")
 	}
 }

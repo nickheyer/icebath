@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -158,6 +159,73 @@ func worktreeHasUnpushedCommits(worktreePath string, timeout time.Duration) bool
 	return err != nil || !ok || unpushed != ""
 }
 
+// Copies the files and links the directories .worktreeinclude lists into the worktree, escaping entries skipped
+func copyWorktreeIncludes(repoRoot, wtPath string) {
+	entries := worktreeincludeEntries(repoRoot)
+	if len(entries) == 0 {
+		return
+	}
+	log := toolsLogger(nil)
+	repoResolved, err := pypath.Realpath(repoRoot, pypath.Lax)
+	if err != nil {
+		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+		return
+	}
+	wtResolved, err := pypath.Realpath(wtPath, pypath.Lax)
+	if err != nil {
+		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+		return
+	}
+	for _, entry := range entries {
+		src, dst := filepath.Join(repoRoot, entry), filepath.Join(wtPath, entry)
+		srcResolved, err1 := pypath.Realpath(src, pypath.Lax)
+		dstResolved, err2 := pypath.Realpath(dst, pypath.Lax)
+		if err1 != nil || err2 != nil {
+			log.Debug(fmt.Sprintf("Skipping invalid .worktreeinclude entry: %s", entry))
+			continue
+		}
+		if _, inside := pypath.PathRelativeTo(srcResolved, repoResolved); !inside {
+			log.Warn(fmt.Sprintf("Skipping .worktreeinclude entry outside repo root: %s", entry))
+			continue
+		}
+		if _, inside := pypath.PathRelativeTo(dstResolved, wtResolved); !inside {
+			log.Warn(fmt.Sprintf("Skipping .worktreeinclude entry that escapes worktree: %s", entry))
+			continue
+		}
+		st, err := os.Stat(src)
+		if err != nil {
+			continue
+		}
+		if st.Mode().IsRegular() {
+			if err := os.MkdirAll(filepath.Dir(dst), 0o777); err == nil {
+				err = pyshutil.Copy2(src, dst)
+			}
+			if err != nil {
+				log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+				return
+			}
+			continue
+		}
+		if _, exists := os.Lstat(dst); !st.IsDir() || exists == nil {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o777); err != nil {
+			log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+			return
+		}
+		if err := os.Symlink(srcResolved, dst); err != nil {
+			if runtime.GOOS != "windows" {
+				log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+				return
+			}
+			log.Info(fmt.Sprintf(".worktreeinclude: symlink failed (%s) \u2014 falling back to copytree on Windows.", pypath.OSErrorText(err)))
+			if err := pyshutil.CopyTree(srcResolved, dst, true, false); err != nil {
+				log.Warn(fmt.Sprintf(".worktreeinclude: copy fallback also failed for %s -> %s: %s", src, dst, err))
+			}
+		}
+	}
+}
+
 // Relative worktreeinclude entries of the tree that are symlinks back to the same entry of the main checkout
 func includeSymlinkPaths(worktreePath, repoRoot string) map[string]bool {
 	paths := map[string]bool{}
@@ -271,8 +339,8 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 	return deepened
 }
 
-// Retained git cherry verdicts kept on disk
-const worktreeMergeCacheMax = 1000
+// Retained git cherry verdicts kept on disk, the module attribute hermes tests patch
+var worktreeMergeCacheMax = 1000
 
 // Insertion ordered verdict map with dict update semantics
 type mergeVerdicts struct {
@@ -305,7 +373,8 @@ func (m *mergeVerdicts) update(o *mergeVerdicts) {
 	}
 }
 
-func worktreeMergeCachePath() string {
+// Path of the patch equivalence verdict cache of the active profile, swapped by tests
+var worktreeMergeCachePath = func() string {
 	return filepath.Join(home.Process(), "cache", "worktree_merge_verdicts.json")
 }
 
@@ -519,8 +588,15 @@ func retainWorktreeForSession(repoRoot, worktreePath, sessionID, dbPath string) 
 	return r.Returncode == 0
 }
 
+// Native path identity of a spelling, the os.path.normcase hermes tests patch
+var insideTreeNormcase = pypath.Normcase
+
+// Core count the classification pool is sized from, the os.cpu_count hermes tests patch
+var worktreeCPUCount = runtime.NumCPU
+
+// Comparable key of a path under the native identity with forward slashes and no trailing slash
 func insideTreeKey(value string) string {
-	return strings.TrimRight(strings.ReplaceAll(pypath.Normcase(value), `\`, "/"), "/")
+	return strings.TrimRight(strings.ReplaceAll(insideTreeNormcase(value), `\`, "/"), "/")
 }
 
 // Reports whether cwd is the tree or under it by native path identity of its spelling and its resolved form
@@ -924,7 +1000,7 @@ func classifyPruneCandidates(repoRoot string, candidates []pruneCandidate) []pru
 		return pruneVerdict{c, "reap", lockState}
 	}
 	verdicts := make([]pruneVerdict, len(candidates))
-	workers := max(1, min(8, runtime.NumCPU(), len(candidates)))
+	workers := max(1, min(8, worktreeCPUCount(), len(candidates)))
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 	for i, c := range candidates {

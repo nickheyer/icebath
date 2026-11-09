@@ -54,7 +54,7 @@ func hintCall(tr *SubdirectoryHintTracker, tool string, args map[string]any) (st
 	return tr.CheckToolCall(tool, args)
 }
 
-func TestSubdirectoryHintsDiscoversClaudeMD(t *testing.T) {
+func TestSubdirectoryHintTrackerDiscoversClaudeMD(t *testing.T) {
 	p := hintProject(t)
 	got, ok := hintCall(NewSubdirectoryHintTracker(p, true), "read_file", map[string]any{"path": filepath.Join(p, "frontend", "index.ts")})
 	if !ok || !strings.Contains(got, "Frontend rules") {
@@ -62,14 +62,14 @@ func TestSubdirectoryHintsDiscoversClaudeMD(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsDisabledTrackerNeverInjects(t *testing.T) {
+func TestSubdirectoryHintTrackerDisabledTrackerNeverInjectsHints(t *testing.T) {
 	p := hintProject(t)
 	if got, ok := hintCall(NewSubdirectoryHintTracker(p, false), "read_file", map[string]any{"path": filepath.Join(p, "frontend", "index.ts")}); ok {
 		t.Fatalf("disabled tracker injected %q", got)
 	}
 }
 
-func TestSubdirectoryHintsNoDuplicateLoading(t *testing.T) {
+func TestSubdirectoryHintTrackerNoDuplicateLoading(t *testing.T) {
 	p := hintProject(t)
 	tr := NewSubdirectoryHintTracker(p, true)
 	if _, ok := hintCall(tr, "read_file", map[string]any{"path": filepath.Join(p, "frontend", "a.ts")}); !ok {
@@ -80,7 +80,7 @@ func TestSubdirectoryHintsNoDuplicateLoading(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsBareDirectoryAfterNavigationCommandIsAPath(t *testing.T) {
+func TestSubdirectoryHintTrackerBareDirectoryAfterNavigationCommandIsAPath(t *testing.T) {
 	for _, command := range []string{"cd backend && ls", "pushd backend", "echo start; cd backend; ls", "cd backend;ls"} {
 		p := hintProject(t)
 		got, ok := hintCall(NewSubdirectoryHintTracker(p, true), "terminal", map[string]any{"command": command})
@@ -90,7 +90,7 @@ func TestSubdirectoryHintsBareDirectoryAfterNavigationCommandIsAPath(t *testing.
 	}
 }
 
-func TestSubdirectoryHintsCdAsAnArgumentOrAQuotedOtherNameIsNotNavigation(t *testing.T) {
+func TestSubdirectoryHintTrackerCdAsAnArgumentOrAQuotedOtherNameIsNotNavigation(t *testing.T) {
 	for _, command := range []string{"echo cd backend", "printf '%s %s' cd backend", "cd 'backend;'"} {
 		p := hintProject(t)
 		if got, ok := hintCall(NewSubdirectoryHintTracker(p, true), "terminal", map[string]any{"command": command}); ok {
@@ -99,7 +99,7 @@ func TestSubdirectoryHintsCdAsAnArgumentOrAQuotedOtherNameIsNotNavigation(t *tes
 	}
 }
 
-func TestSubdirectoryHintsRelativePath(t *testing.T) {
+func TestSubdirectoryHintTrackerRelativePath(t *testing.T) {
 	p := hintProject(t)
 	got, ok := hintCall(NewSubdirectoryHintTracker(p, true), "read_file", map[string]any{"path": "frontend/index.ts"})
 	if !ok || !strings.Contains(got, "Frontend rules") {
@@ -107,7 +107,7 @@ func TestSubdirectoryHintsRelativePath(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsWorkdirArg(t *testing.T) {
+func TestSubdirectoryHintTrackerWorkdirArg(t *testing.T) {
 	p := hintProject(t)
 	got, ok := hintCall(NewSubdirectoryHintTracker(p, true), "terminal", map[string]any{"command": "ls", "workdir": filepath.Join(p, "frontend")})
 	if !ok || !strings.Contains(got, "Frontend rules") {
@@ -115,7 +115,7 @@ func TestSubdirectoryHintsWorkdirArg(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsTruncationOfLargeHints(t *testing.T) {
+func TestSubdirectoryHintTrackerTruncationOfLargeHints(t *testing.T) {
 	tmp := hintTempDir(t)
 	sub := filepath.Join(tmp, "bigdir")
 	body := "HEAD-MARKER " + strings.Repeat("x", maxHintChars+5_000) + " TAIL-MARKER"
@@ -145,7 +145,7 @@ func TestSubdirectoryHintsTruncationOfLargeHints(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsAreaFileUnderCeilingIsDeliveredWhole(t *testing.T) {
+func TestSubdirectoryHintTrackerAreaFileUnderCeilingIsDeliveredWhole(t *testing.T) {
 	tmp := hintTempDir(t)
 	sub := filepath.Join(tmp, "gateway")
 	body := "# Gateway rules\n" + strings.Repeat("- rule\n", 1500)
@@ -156,7 +156,7 @@ func TestSubdirectoryHintsAreaFileUnderCeilingIsDeliveredWhole(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsEmptyArgs(t *testing.T) {
+func TestSubdirectoryHintTrackerEmptyArgs(t *testing.T) {
 	p := hintProject(t)
 	tr := NewSubdirectoryHintTracker(p, true)
 	if _, ok := hintCall(tr, "read_file", map[string]any{}); ok {
@@ -167,7 +167,7 @@ func TestSubdirectoryHintsEmptyArgs(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsTimeoutSkipsSlowHintFiles(t *testing.T) {
+func TestSubdirectoryHintTrackerTimeoutSkipsSlowHintFiles(t *testing.T) {
 	p := hintProject(t)
 	backend := filepath.Join(p, "backend")
 	writeHintFile(t, filepath.Join(backend, "AGENTS.md"), "Backend-specific instructions")
@@ -216,7 +216,7 @@ func denyHintStat(t *testing.T, deny func(string) bool) {
 	t.Cleanup(func() { hintPathStat = prev })
 }
 
-func TestSubdirectoryHintsLoadHintsPermissionErrorOnIsFile(t *testing.T) {
+func TestPermissionErrorHandlingLoadHintsPermissionErrorOnIsFile(t *testing.T) {
 	tmp := hintTempDir(t)
 	tr := NewSubdirectoryHintTracker(tmp, true)
 	restricted := filepath.Join(tmp, "restricted")
@@ -227,7 +227,7 @@ func TestSubdirectoryHintsLoadHintsPermissionErrorOnIsFile(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsCheckToolCallSurvivesInaccessiblePath(t *testing.T) {
+func TestPermissionErrorHandlingCheckToolCallSurvivesInaccessiblePath(t *testing.T) {
 	p := hintProject(t)
 	tr := NewSubdirectoryHintTracker(p, true)
 	denyHintStat(t, func(s string) bool { return strings.Contains(s, "backend") && !strings.Contains(s, "src") })
@@ -236,7 +236,7 @@ func TestSubdirectoryHintsCheckToolCallSurvivesInaccessiblePath(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsIsValidSubdirRejectsSiblingDir(t *testing.T) {
+func TestOutsideWorkspaceRejectionIsValidSubdirRejectsSiblingDir(t *testing.T) {
 	p := hintProject(t)
 	outside := filepath.Join(filepath.Dir(p), ".test-codex")
 	if err := os.MkdirAll(outside, 0o755); err != nil {
@@ -247,7 +247,7 @@ func TestSubdirectoryHintsIsValidSubdirRejectsSiblingDir(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsSymlinkedDuplicateNotReinjected(t *testing.T) {
+func TestContentDeduplicationSymlinkedDuplicateNotReinjected(t *testing.T) {
 	tmp := hintTempDir(t)
 	real, mirror := filepath.Join(tmp, "real"), filepath.Join(tmp, "mirror")
 	writeHintFile(t, filepath.Join(real, "AGENTS.md"), "Shared workspace instructions")
@@ -267,7 +267,7 @@ func TestSubdirectoryHintsSymlinkedDuplicateNotReinjected(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsIdenticalCopyNotReinjected(t *testing.T) {
+func TestContentDeduplicationIdenticalCopyNotReinjected(t *testing.T) {
 	tmp := hintTempDir(t)
 	writeHintFile(t, filepath.Join(tmp, "a", "AGENTS.md"), "Same content")
 	writeHintFile(t, filepath.Join(tmp, "b", "AGENTS.md"), "Same content")
@@ -280,7 +280,7 @@ func TestSubdirectoryHintsIdenticalCopyNotReinjected(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsDifferingContentStillInjected(t *testing.T) {
+func TestContentDeduplicationDifferingContentStillInjected(t *testing.T) {
 	tmp := hintTempDir(t)
 	writeHintFile(t, filepath.Join(tmp, "a", "AGENTS.md"), "Alpha rules")
 	writeHintFile(t, filepath.Join(tmp, "b", "AGENTS.md"), "Beta rules")
@@ -292,7 +292,7 @@ func TestSubdirectoryHintsDifferingContentStillInjected(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsWorkingDirContentSeeded(t *testing.T) {
+func TestContentDeduplicationWorkingDirContentSeeded(t *testing.T) {
 	tmp := hintTempDir(t)
 	writeHintFile(t, filepath.Join(tmp, "AGENTS.md"), "Root instructions")
 	writeHintFile(t, filepath.Join(tmp, "elsewhere", "AGENTS.md"), "Root instructions")
@@ -301,7 +301,7 @@ func TestSubdirectoryHintsWorkingDirContentSeeded(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsExcludedDirectorySkipped(t *testing.T) {
+func TestExcludedDirectoriesExcludedDirectorySkipped(t *testing.T) {
 	names := make([]string, 0, len(SearchPruneDirNames))
 	for name := range SearchPruneDirNames {
 		names = append(names, name)
@@ -317,7 +317,7 @@ func TestSubdirectoryHintsExcludedDirectorySkipped(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsExcludedAncestorBlocksDescendant(t *testing.T) {
+func TestExcludedDirectoriesExcludedAncestorBlocksDescendant(t *testing.T) {
 	tmp := hintTempDir(t)
 	deep := filepath.Join(tmp, "backups", "2026", "proj")
 	writeHintFile(t, filepath.Join(deep, "AGENTS.md"), "Archived")
@@ -326,7 +326,7 @@ func TestSubdirectoryHintsExcludedAncestorBlocksDescendant(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsWorkingDirInsideExcludedNameStillWorks(t *testing.T) {
+func TestExcludedDirectoriesWorkingDirInsideExcludedNameStillWorks(t *testing.T) {
 	root := filepath.Join(hintTempDir(t), "vendor", "myproject")
 	writeHintFile(t, filepath.Join(root, "pkg", "AGENTS.md"), "Package rules")
 	got, ok := hintCall(NewSubdirectoryHintTracker(root, true), "read_file", map[string]any{"path": filepath.Join(root, "pkg", "f.py")})
@@ -335,7 +335,7 @@ func TestSubdirectoryHintsWorkingDirInsideExcludedNameStillWorks(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsNormalDirectoryUnaffected(t *testing.T) {
+func TestExcludedDirectoriesNormalDirectoryUnaffected(t *testing.T) {
 	tmp := hintTempDir(t)
 	writeHintFile(t, filepath.Join(tmp, "backend", "AGENTS.md"), "Backend rules")
 	got, ok := hintCall(NewSubdirectoryHintTracker(tmp, true), "read_file", map[string]any{"path": filepath.Join(tmp, "backend", "f.py")})
@@ -344,7 +344,7 @@ func TestSubdirectoryHintsNormalDirectoryUnaffected(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsAgentsOverrideWinsInSubdirectory(t *testing.T) {
+func TestExcludedDirectoriesAgentsOverrideMdWinsInSubdirectory(t *testing.T) {
 	tmp := hintTempDir(t)
 	sub := filepath.Join(tmp, "backend")
 	writeHintFile(t, filepath.Join(sub, "AGENTS.md"), "Committed backend rules")
@@ -355,7 +355,7 @@ func TestSubdirectoryHintsAgentsOverrideWinsInSubdirectory(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsEscapingOrDeniedSymlinkIsNeverInjected(t *testing.T) {
+func TestSymlinkedHintTargetsEscapingOrDeniedSymlinkIsNeverInjected(t *testing.T) {
 	tmp := hintTempDir(t)
 	outside, workspace := filepath.Join(tmp, "outside"), filepath.Join(tmp, "workspace")
 	writeHintFile(t, filepath.Join(outside, "secret.md"), "OUTSIDE-MARKER-9f3a")
@@ -388,7 +388,7 @@ func TestSubdirectoryHintsEscapingOrDeniedSymlinkIsNeverInjected(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsInTreeHintFilesStillLoad(t *testing.T) {
+func TestSymlinkedHintTargetsInTreeHintFilesStillLoad(t *testing.T) {
 	workspace := filepath.Join(hintTempDir(t), "workspace")
 	docs, linked, plain := filepath.Join(workspace, "docs"), filepath.Join(workspace, "linked"), filepath.Join(workspace, "plain")
 	writeHintFile(t, filepath.Join(docs, "AGENTS.md"), "Shared in-tree instructions")
@@ -438,7 +438,7 @@ func hintHomeTree(t *testing.T) string {
 	return h
 }
 
-func TestSubdirectoryHintsHomeCwdNeverInjectsSubtreeHints(t *testing.T) {
+func TestHomeWorkingDirGuardHomeCwdNeverInjectsSubtreeHints(t *testing.T) {
 	h := hintHomeTree(t)
 	tr := NewSubdirectoryHintTracker(h, true)
 	if got, ok := hintCall(tr, "read_file", map[string]any{"path": filepath.Join(h, ".icebath", "skills", "s1", "x.py")}); ok {
@@ -449,14 +449,14 @@ func TestSubdirectoryHintsHomeCwdNeverInjectsSubtreeHints(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsHomeGuardBlocksDirectLoadPath(t *testing.T) {
+func TestHomeWorkingDirGuardHomeGuardBlocksDirectLoadPath(t *testing.T) {
 	h := hintHomeTree(t)
 	if got, ok := NewSubdirectoryHintTracker(h, true).loadHintsForDirectory(filepath.Join(h, "notes")); ok {
 		t.Fatalf("direct home load injected %q", got)
 	}
 }
 
-func TestSubdirectoryHintsSessionWorkspaceAdoptionRebindsDiscovery(t *testing.T) {
+func TestHomeWorkingDirGuardSessionWorkspaceAdoptionRebindsDiscovery(t *testing.T) {
 	h := hintHomeTree(t)
 	project := filepath.Join(h, "projects", "app")
 	writeHintFile(t, filepath.Join(project, "src", "AGENTS.md"), "App src rules")
@@ -474,7 +474,7 @@ func TestSubdirectoryHintsSessionWorkspaceAdoptionRebindsDiscovery(t *testing.T)
 	}
 }
 
-func TestSubdirectoryHintsReboundTrackerStaysInsideTheProject(t *testing.T) {
+func TestHomeWorkingDirGuardReboundTrackerStaysInsideTheProject(t *testing.T) {
 	h := hintHomeTree(t)
 	project := filepath.Join(h, "projects", "app2")
 	writeHintFile(t, filepath.Join(project, "AGENTS.md"), "App2 rules")
@@ -485,7 +485,7 @@ func TestSubdirectoryHintsReboundTrackerStaysInsideTheProject(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsRealProjectCwdKeepsDiscovery(t *testing.T) {
+func TestHomeWorkingDirGuardRealProjectCwdKeepsDiscovery(t *testing.T) {
 	h := hintHomeTree(t)
 	project := filepath.Join(h, "projects", "app3")
 	writeHintFile(t, filepath.Join(project, "pkg", "AGENTS.md"), "Package rules")
@@ -495,7 +495,7 @@ func TestSubdirectoryHintsRealProjectCwdKeepsDiscovery(t *testing.T) {
 	}
 }
 
-func TestSubdirectoryHintsTildeApproximatelyInCommandDoesNotCrash(t *testing.T) {
+func TestSubdirectoryHintTrackerTildeRobustnessTildeApproximatelyInCommandDoesNotCrash(t *testing.T) {
 	tr := NewSubdirectoryHintTracker(hintTempDir(t), true)
 	cmd := "cat > out.md <<EOF\nSegment size signal: ~500-700 agencies in DACH region.\nCVE volume: ~45,000 disclosed in 2025.\nFounder blended rate: ~80/hr.\nEOF"
 	if got, ok := hintCall(tr, "terminal", map[string]any{"command": cmd}); ok {

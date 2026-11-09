@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -47,5 +48,18 @@ func TestIsWriteDeniedAndApprovalExports(t *testing.T) {
 		if got, want := IsWriteApprovalRequired(env, p), isWriteApprovalRequired(env, p); got != want {
 			t.Fatalf("IsWriteApprovalRequired(%q) = %v, want %v", p, got, want)
 		}
+	}
+}
+
+func TestExportedRedactionHelpersMatchTheirPrivateForms(t *testing.T) {
+	if CanonicalURLParamName("Api%5Fkey") != canonicalURLParamName("Api%5Fkey") || CanonicalURLParamName("X-Amz-Signature") != "x-amz-signature" {
+		t.Fatal("CanonicalURLParamName")
+	}
+	names := SensitiveQueryParamNames()
+	if len(names) != len(sensitiveQueryParams) || !slices.IsSorted(names) || !slices.Contains(names, "api_key") {
+		t.Fatalf("SensitiveQueryParamNames %v", names)
+	}
+	if MaskDisplaySecret("sk-proj-1234567890", 4, 4, 12) != maskSecret("sk-proj-1234567890", 4, 4, 12) || MaskDisplaySecret("short", 4, 4, 12) != "***" || MaskDisplaySecret("", 4, 4, 12) != "" {
+		t.Fatal("MaskDisplaySecret")
 	}
 }

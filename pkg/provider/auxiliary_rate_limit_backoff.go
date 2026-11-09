@@ -80,7 +80,7 @@ func auxRateLimitRetryRungs(yield auxLadderYield, firstErr error, client AuxClie
 			break
 		}
 		slog.Info(fmt.Sprintf("Auxiliary %s: rate limited (attempt %d/%d); retrying after %.2fs", label, attempt, auxRateLimitRetries, wait.Seconds()))
-		if _, werr := yield(auxLadderStep{Kind: "wait", Args: []any{wait}}); werr != nil {
+		if _, werr := yield(auxLadderStep{Kind: "wait", Args: []any{wait.Seconds()}}); werr != nil {
 			return nil, nil, werr
 		}
 		resp, accepted, raised := auxRung(yield, auxLadderStep{Kind: "call", Args: []any{client, kwargs}}, auxCredentialRungAccepts)

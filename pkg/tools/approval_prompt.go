@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -232,13 +233,68 @@ const maxActiveTransportWorkers = 8
 
 var transportWorkerSlots = make(chan struct{}, maxActiveTransportWorkers)
 
+// Wait tuning of the transport host loop, the hermes poll_interval, on_poll and is_interrupted arguments
+type transportWait struct {
+	pollInterval  time.Duration
+	onPoll        func()
+	isInterrupted func() bool
+}
+
+// Clock of the transport host and its workers, swapped by tests while earlier workers may still stamp results
+var transportClock atomic.Pointer[func() time.Time]
+
+// Current time of the transport clock
+func transportNow() time.Time {
+	if fn := transportClock.Load(); fn != nil {
+		return (*fn)()
+	}
+	return time.Now()
+}
+
+// Replaces the transport clock and returns the previous one, nil standing for the real clock
+func swapTransportClock(fn func() time.Time) func() time.Time {
+	var prev *func() time.Time
+	if fn == nil {
+		prev = transportClock.Swap(nil)
+	} else {
+		prev = transportClock.Swap(&fn)
+	}
+	if prev == nil {
+		return nil
+	}
+	return *prev
+}
+
+// Redactor of the request text shown through a transport, swapped by tests for a failing redactor
+var approvalRequestRedactor = func(env *Env, text string) (string, error) {
+	return redactApprovalDisplay(env, text, true), nil
+}
+
+// Deny result carrying a failure code
+func transportDeny(failure string) approvalTransportResult {
+	return approvalTransportResult{choice: "deny", failure: failure}
+}
+
+// Runs the poll callback, a panic inside it only logged at debug level
+func pollTransport(onPoll func()) {
+	if onPoll == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			envLog(nil).Debug("Approval transport poll callback failed", "error", fmt.Sprint(r))
+		}
+	}()
+	onPoll()
+}
+
 // Runs a transport on a bounded worker and validates its decision against the request and deadline
-func invokeApprovalTransport(ctx context.Context, present ApprovalPresentFunc, req ApprovalRequest, timeout time.Duration, onPoll func()) approvalTransportResult {
+func invokeApprovalTransport(ctx context.Context, present ApprovalPresentFunc, req ApprovalRequest, timeout time.Duration, wait transportWait) approvalTransportResult {
 	select {
 	case transportWorkerSlots <- struct{}{}:
 	default:
 		envLog(nil).Warn("Approval transport worker capacity exhausted")
-		return approvalTransportResult{choice: "deny", failure: "busy"}
+		return transportDeny("busy")
 	}
 	type outcome struct {
 		decision    ApprovalTransportDecision
@@ -249,45 +305,50 @@ func invokeApprovalTransport(ctx context.Context, present ApprovalPresentFunc, r
 	if timeout < 0 {
 		timeout = 0
 	}
-	deadline := time.Now().Add(timeout)
+	deadline := transportNow().Add(timeout)
 	workerCtx, cancelWorker := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelWorker()
 	go func() {
 		defer func() { <-transportWorkerSlots }()
 		defer func() {
 			if r := recover(); r != nil {
-				results <- outcome{err: fmt.Errorf("transport panic: %v", r), completedAt: time.Now()}
+				results <- outcome{err: fmt.Errorf("transport panic: %v", r), completedAt: transportNow()}
 			}
 		}()
 		decision, err := present(workerCtx, req)
-		results <- outcome{decision: decision, err: err, completedAt: time.Now()}
+		results <- outcome{decision: decision, err: err, completedAt: transportNow()}
 	}()
-	var got outcome
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	expiry := time.NewTimer(time.Until(deadline))
-	defer expiry.Stop()
-wait:
-	for {
-		select {
-		case <-ctx.Done():
-			cancelWorker()
-			envLog(nil).Info("Approval transport wait interrupted", "request_id", req.RequestID)
-			return approvalTransportResult{choice: "deny", failure: "interrupted"}
-		case <-expiry.C:
-			cancelWorker()
-			envLog(nil).Warn("Approval transport timed out", "request_id", req.RequestID)
-			return approvalTransportResult{choice: "deny", failure: "timeout"}
-		case got = <-results:
-			break wait
-		case <-ticker.C:
-			if onPoll != nil {
-				onPoll()
-			}
-		}
+	poll := wait.pollInterval
+	if poll <= 0 {
+		poll = time.Second
 	}
-	cancelWorker()
+	poll = max(poll, time.Millisecond)
+	var got outcome
+	for {
+		if ctx.Err() != nil || (wait.isInterrupted != nil && wait.isInterrupted()) {
+			envLog(nil).Info("Approval transport wait interrupted", "request_id", req.RequestID)
+			return transportDeny("interrupted")
+		}
+		remaining := deadline.Sub(transportNow())
+		if remaining <= 0 {
+			envLog(nil).Warn("Approval transport timed out", "request_id", req.RequestID)
+			return transportDeny("timeout")
+		}
+		timer := time.NewTimer(min(poll, remaining))
+		select {
+		case got = <-results:
+			timer.Stop()
+		case <-ctx.Done():
+			timer.Stop()
+			continue
+		case <-timer.C:
+			pollTransport(wait.onPoll)
+			continue
+		}
+		break
+	}
 	if failure := validateTransportDecision(got.decision, got.err, got.completedAt, deadline, req); failure != "" {
-		return approvalTransportResult{choice: "deny", failure: failure}
+		return transportDeny(failure)
 	}
 	return approvalTransportResult{choice: got.decision.Choice}
 }
@@ -302,6 +363,10 @@ func validateTransportDecision(decision ApprovalTransportDecision, err error, co
 	if err != nil {
 		log.Warn("Approval transport failed", "request_id", req.RequestID)
 		return "error"
+	}
+	if decision.RequestID == "" && decision.RequestDigest == "" {
+		log.Warn("Approval transport returned an invalid decision type")
+		return "invalid"
 	}
 	if decision.RequestID != req.RequestID || decision.RequestDigest != req.Digest {
 		log.Warn("Approval transport returned a stale or mismatched decision")
@@ -350,8 +415,15 @@ func presentWithSelectedTransport(ctx context.Context, env *Env, r transportRequ
 		return transportAttempt{selected: true, choice: "deny", failure: "unavailable", fallback: fallback, name: name}
 	}
 	timeout := time.Duration(getApprovalTimeout(env)) * time.Second
-	req, err := newApprovalRequest(redactApprovalDisplay(env, r.command, true), redactApprovalDisplay(env, r.description, true),
-		r.patternKey, r.patternKeys, r.sessionKey, r.surface, r.allowSession, r.allowPermanent, timeout.Seconds())
+	command, err := approvalRequestRedactor(env, r.command)
+	var description string
+	if err == nil {
+		description, err = approvalRequestRedactor(env, r.description)
+	}
+	var req ApprovalRequest
+	if err == nil {
+		req, err = newApprovalRequest(command, description, r.patternKey, r.patternKeys, r.sessionKey, r.surface, r.allowSession, r.allowPermanent, timeout.Seconds())
+	}
 	if err != nil {
 		log.Warn("Could not build redacted plugin approval request")
 		return transportAttempt{selected: true, choice: "deny", failure: "error", name: name}
@@ -362,7 +434,8 @@ func presentWithSelectedTransport(ctx context.Context, env *Env, r transportRequ
 	fireApprovalHook(env, "pre_approval_request", hookPayload)
 	human := humanInputRequest(env, "approval", req.Command, r.sessionKey)
 	release := humanWaitWindow(env, r.sessionKey)
-	result := invokeApprovalTransport(ctx, registered.Present, req, timeout, activityHeartbeat(env, "waiting for plugin approval transport"))
+	result := invokeApprovalTransport(ctx, registered.Present, req, timeout, transportWait{
+		onPoll: activityHeartbeat(env, "waiting for plugin approval transport"), isInterrupted: func() bool { return IsInterrupted(ctx) }})
 	release()
 	outcome := result.choice
 	if result.failure != "" {

@@ -6,35 +6,37 @@ import (
 )
 
 func TestGetTaskMaxConcurrency(t *testing.T) {
-	cases := []struct {
-		yaml, task string
-		want       int
-		ok         bool
-	}{
-		{"auxiliary:\n  vision:\n    max_concurrency: 1\n", "vision", 0, false},
-		{"auxiliary:\n  compression:\n    max_concurrency: 3\n", "compression", 3, true},
-		{"auxiliary:\n  compression:\n    max_concurrency: not-a-number\n", "compression", 0, false},
-		{"auxiliary:\n  compression:\n    max_concurrency: 0\n", "compression", 0, false},
-		{"auxiliary:\n  compression:\n    max_concurrency: -2\n", "compression", 0, false},
-	}
-	for _, c := range cases {
-		got, ok, err := auxGetTaskMaxConcurrency(auxMainTestHome(t, c.yaml), c.task)
-		if err != nil || got != c.want || ok != c.ok {
-			t.Fatalf("%q %s: got %d %v %v", c.yaml, c.task, got, ok, err)
+	check := func(yaml, task string, want int, ok bool) func(t *testing.T) {
+		return func(t *testing.T) {
+			got, gotOK, err := auxGetTaskMaxConcurrency(auxMainTestHome(t, yaml), task)
+			if err != nil || got != want || gotOK != ok {
+				t.Fatalf("%q %s: got %d %v %v", yaml, task, got, gotOK, err)
+			}
 		}
 	}
+	t.Run("test_does_not_reuse_vision_cpu_limit_for_llm_calls", check("auxiliary:\n  vision:\n    max_concurrency: 1\n", "vision", 0, false))
+	t.Run("test_returns_int_when_configured", check("auxiliary:\n  compression:\n    max_concurrency: 3\n", "compression", 3, true))
+	t.Run("test_returns_none_for_non_numeric", check("auxiliary:\n  compression:\n    max_concurrency: not-a-number\n", "compression", 0, false))
+	t.Run("test_returns_none_for_zero_or_negative", func(t *testing.T) {
+		check("auxiliary:\n  compression:\n    max_concurrency: 0\n", "compression", 0, false)(t)
+		check("auxiliary:\n  compression:\n    max_concurrency: -2\n", "compression", 0, false)(t)
+	})
 }
 
 func TestSemaphoreCacheSyncAsyncAndRebuild(t *testing.T) {
 	auxResetAuxSemaphores()
 	t.Cleanup(auxResetAuxSemaphores)
-	if s, err := auxAcquireSyncAuxSemaphore(auxMainTestHome(t, ""), "title_generation"); s != nil || err != nil {
-		t.Fatalf("unset limit gave %v %v", s, err)
-	}
+	t.Run("test_sync_returns_none_when_unset", func(t *testing.T) {
+		if s, err := auxAcquireSyncAuxSemaphore(auxMainTestHome(t, ""), "title_generation"); s != nil || err != nil {
+			t.Fatalf("unset limit gave %v %v", s, err)
+		}
+	})
 	ctx := auxMainTestHome(t, "auxiliary:\n  compression:\n    max_concurrency: 2\n")
-	if s, _ := auxAcquireAsyncAuxSemaphore(ctx, "compression"); s != nil {
-		t.Fatal("async semaphore without a running loop")
-	}
+	t.Run("test_async_returns_none_with_no_running_loop", func(t *testing.T) {
+		if s, _ := auxAcquireAsyncAuxSemaphore(ctx, "compression"); s != nil {
+			t.Fatal("async semaphore without a running loop")
+		}
+	})
 	s1, _ := auxAcquireSyncAuxSemaphore(ctx, "compression")
 	s2, _ := auxAcquireSyncAuxSemaphore(ctx, "compression")
 	if s1 == nil || s1 != s2 || s1.limit != 2 {

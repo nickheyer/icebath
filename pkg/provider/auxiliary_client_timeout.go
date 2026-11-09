@@ -67,3 +67,6 @@ func EffectiveAuxTimeout(ctx context.Context, task string, timeout *float64) flo
 	}
 	return effective
 }
+
+// Task window seam the stream watchdog tests swap
+var auxGetTaskNoProgressTimeoutFn = auxGetTaskNoProgressTimeout

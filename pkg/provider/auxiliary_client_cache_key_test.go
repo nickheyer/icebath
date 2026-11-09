@@ -10,7 +10,7 @@ import (
 )
 
 // Swaps the provider client resolver for a scripted one counting its calls
-func auxStubResolveProviderClient(t *testing.T, build func(provider, model string, opts ProviderClientOptions) (AuxClient, string)) *int {
+func auxFakeResolveProviderClient(t *testing.T, build func(provider, model string, opts ProviderClientOptions) (AuxClient, string)) *int {
 	t.Helper()
 	calls := 0
 	prev := auxResolveProviderClientFn
@@ -84,7 +84,7 @@ func TestCallableRuntimeAPIKeysAreSecretFreeDiscriminators(t *testing.T) {
 	}
 }
 
-func TestClientCacheKeyIsScopedPerProfileHomeAndModel(t *testing.T) {
+func TestClientCacheKeyIsScopedPerProfileHome(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
 	a, b := t.TempDir(), t.TempDir()
 	ka, _, _ := auxClientCacheKeyFor(home.WithOverride(ctx, a), "nous", false, "https://inf.example", nil, "", nil, false, "", "m")
@@ -154,10 +154,10 @@ func TestCleanupAndShutdownCloseSemantics(t *testing.T) {
 	}
 }
 
-func TestSameKeyReplacesStaleLoopEntryAndLoopsIsolate(t *testing.T) {
+func TestClientCacheBoundedGrowthSameKeyReplacesStaleLoopEntry(t *testing.T) {
 	auxIsolateClientCache(t)
 	ctx := auxMainTestHome(t, "")
-	calls := auxStubResolveProviderClient(t, func(provider, model string, _ ProviderClientOptions) (AuxClient, string) {
+	calls := auxFakeResolveProviderClient(t, func(provider, model string, _ ProviderClientOptions) (AuxClient, string) {
 		return &auxCloseCounter{}, "new-model"
 	})
 	oldLoop := &auxTestLoop{closed: true}
@@ -181,7 +181,7 @@ func TestSameKeyReplacesStaleLoopEntryAndLoopsIsolate(t *testing.T) {
 func TestProbeClientsAreNeverCachedAndSlashModelsKeepOpenRouterOnly(t *testing.T) {
 	auxIsolateClientCache(t)
 	ctx := auxMainTestHome(t, "")
-	auxStubResolveProviderClient(t, func(provider, model string, _ ProviderClientOptions) (AuxClient, string) {
+	auxFakeResolveProviderClient(t, func(provider, model string, _ ProviderClientOptions) (AuxClient, string) {
 		return &auxProbeClient{baseURL: "https://api.gmi.ai/v1"}, "gmi-default"
 	})
 	if _, m, _ := auxGetCachedClient(AuxProbeMode(ctx), auxCachedClientRequest{Provider: "gmi", Model: "org/slash"}); m != "org/slash" || len(auxClientCache) != 0 {

@@ -11,27 +11,29 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-func TestToOpenAIBaseURLRewritesDualSurfaceHosts(t *testing.T) {
-	cases := [][2]string{
-		{"https://api.minimax.io/anthropic", "https://api.minimax.io/v1"},
-		{"https://api.minimax.chat/anthropic", "https://api.minimax.chat/v1"},
-		{"https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic", "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"},
-		{"https://gateway.example.com/api.minimax.io/anthropic", "https://gateway.example.com/api.minimax.io/anthropic"},
-		{"https://api.minimaxi.com/anthropic", "https://api.minimaxi.com/v1"},
-		{"https://minimax.io.evil.example.com/anthropic", "https://minimax.io.evil.example.com/anthropic"},
-		{"https://api.z.ai/api/anthropic", "https://api.z.ai/api/coding/paas/v4"},
-		{"https://open.bigmodel.cn/api/anthropic", "https://open.bigmodel.cn/api/coding/paas/v4"},
-		{"https://gateway.example.com/proxy/bigmodel-fallback/anthropic", "https://gateway.example.com/proxy/bigmodel-fallback/anthropic"},
-		{"https://gateway.example.com/api.z.ai-mirror/anthropic", "https://gateway.example.com/api.z.ai-mirror/anthropic"},
-		{"https://api.kimi.com/coding", "https://api.kimi.com/coding/v1"},
-		{"https://gateway.example.com/api.kimi.com/coding", "https://gateway.example.com/api.kimi.com/coding"},
-		{"", ""},
-	}
-	for _, tc := range cases {
-		if got := auxToOpenAIBaseURL(tc[0]); got != tc[1] {
-			t.Fatalf("%q got %q want %q", tc[0], got, tc[1])
+func TestToOpenaiBaseUrl(t *testing.T) {
+	check := func(in, want string) func(t *testing.T) {
+		return func(t *testing.T) {
+			if got := auxToOpenAIBaseURL(in); got != want {
+				t.Fatalf("%q got %q want %q", in, got, want)
+			}
 		}
 	}
+	t.Run("test_minimax_global_anthropic_suffix_replaced", check("https://api.minimax.io/anthropic", "https://api.minimax.io/v1"))
+	t.Run("test_minimax_chat_host_rewritten", check("https://api.minimax.chat/anthropic", "https://api.minimax.chat/v1"))
+	t.Run("test_anthropic_only_custom_gateway_kept", check("https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic", "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"))
+	t.Run("test_marker_in_path_does_not_false_positive", check("https://gateway.example.com/api.minimax.io/anthropic", "https://gateway.example.com/api.minimax.io/anthropic"))
+	t.Run("test_minimax_cn_api_prefix_host_rewritten", check("https://api.minimaxi.com/anthropic", "https://api.minimaxi.com/v1"))
+	t.Run("test_lookalike_host_suffix_not_matched", check("https://minimax.io.evil.example.com/anthropic", "https://minimax.io.evil.example.com/anthropic"))
+	t.Run("test_zai_anthropic_routes_to_coding_plan_openai_endpoint", check("https://api.z.ai/api/anthropic", "https://api.z.ai/api/coding/paas/v4"))
+	t.Run("test_bigmodel_anthropic_routes_to_coding_plan_openai_endpoint", check("https://open.bigmodel.cn/api/anthropic", "https://open.bigmodel.cn/api/coding/paas/v4"))
+	t.Run("test_bigmodel_marker_in_path_does_not_false_positive", check("https://gateway.example.com/proxy/bigmodel-fallback/anthropic", "https://gateway.example.com/proxy/bigmodel-fallback/anthropic"))
+	t.Run("test_zai_marker_in_path_does_not_false_positive", check("https://gateway.example.com/api.z.ai-mirror/anthropic", "https://gateway.example.com/api.z.ai-mirror/anthropic"))
+	t.Run("test_kimi_coding_host_rewritten", check("https://api.kimi.com/coding", "https://api.kimi.com/coding/v1"))
+	t.Run("test_kimi_marker_in_path_does_not_false_positive", check("https://gateway.example.com/some/api.kimi.com-proxy/coding", "https://gateway.example.com/some/api.kimi.com-proxy/coding"))
+	t.Run("test_none", check("", ""))
+}
+func TestToOpenAIBaseURLActualBaseURLsNormalizeThroughTheActualProvider(t *testing.T) {
 	if auxToOpenAIBaseURL("https://api.actual.inc/v1/") != NormalizeActualBaseURL("https://api.actual.inc/v1") {
 		t.Fatal("actual base urls normalize through the actual provider")
 	}
@@ -46,44 +48,65 @@ func auxORHeadersEnv(t *testing.T) {
 
 func TestBuildORHeadersConfigAndEnvPrecedence(t *testing.T) {
 	auxORHeadersEnv(t)
-	h, err := BuildORHeaders(context.Background(), map[string]any{"response_cache": true, "response_cache_ttl": -5})
-	if err != nil || h["X-OpenRouter-Cache"] != "true" || h["X-OpenRouter-Cache-TTL"] != "" {
-		t.Fatalf("negative ttl %v %v", h, err)
-	}
-	cfg := map[string]any{"response_cache": true, "response_cache_ttl": 600}
-	h1, _ := BuildORHeaders(context.Background(), cfg)
-	h2, _ := BuildORHeaders(context.Background(), cfg)
-	h1["X"] = "mutated"
-	delete(h1, "X")
-	if !reflect.DeepEqual(h1, h2) || h1["X-OpenRouter-Cache-TTL"] != "600" {
-		t.Fatalf("fresh equal dicts %v %v", h1, h2)
-	}
-	h1["only-here"] = "1"
-	if _, shared := h2["only-here"]; shared {
-		t.Fatal("each call returns its own map")
-	}
-	oldLoad := auxLoadConfigReadonlyFn
-	auxLoadConfigReadonlyFn = func(context.Context) (config.Tree, error) { return nil, errors.New("boom") }
-	h, err = BuildORHeaders(context.Background(), nil)
-	auxLoadConfigReadonlyFn = oldLoad
-	if err != nil || h["HTTP-Referer"] == "" || h["X-OpenRouter-Categories"] != "productivity,cli-agent" || h["X-OpenRouter-Cache"] != "" {
-		t.Fatalf("disk default %v", h)
-	}
-	for _, ttl := range []string{"0", "86401", "abc", "-1", "12.5"} {
-		t.Setenv("ICEBATH_OPENROUTER_CACHE", "1")
-		t.Setenv("ICEBATH_OPENROUTER_CACHE_TTL", ttl)
-		h, err = BuildORHeaders(context.Background(), map[string]any{})
+	t.Run("test_ttl_negative", func(t *testing.T) {
+		h, err := BuildORHeaders(context.Background(), map[string]any{"response_cache": true, "response_cache_ttl": -5})
 		if err != nil || h["X-OpenRouter-Cache"] != "true" || h["X-OpenRouter-Cache-TTL"] != "" {
-			t.Fatalf("ttl %q kept %v %v", ttl, h, err)
+			t.Fatalf("negative ttl %v %v", h, err)
 		}
-	}
-	for _, ttl := range []string{"1", "300", "86400"} {
-		t.Setenv("ICEBATH_OPENROUTER_CACHE", "yes")
-		t.Setenv("ICEBATH_OPENROUTER_CACHE_TTL", ttl)
-		if h, _ := BuildORHeaders(context.Background(), map[string]any{}); h["X-OpenRouter-Cache-TTL"] != ttl {
-			t.Fatalf("ttl %q got %v", ttl, h)
+	})
+	t.Run("test_returns_fresh_dict", func(t *testing.T) {
+		cfg := map[string]any{"response_cache": true, "response_cache_ttl": 600}
+		h1, _ := BuildORHeaders(context.Background(), cfg)
+		h2, _ := BuildORHeaders(context.Background(), cfg)
+		if !reflect.DeepEqual(h1, h2) || h1["X-OpenRouter-Cache-TTL"] != "600" {
+			t.Fatalf("fresh equal dicts %v %v", h1, h2)
 		}
-	}
+		h1["only-here"] = "1"
+		if _, shared := h2["only-here"]; shared {
+			t.Fatal("each call returns its own map")
+		}
+	})
+	t.Run("test_none_config_load_config_fails_gracefully", func(t *testing.T) {
+		oldLoad := auxLoadConfigReadonlyFn
+		t.Cleanup(func() { auxLoadConfigReadonlyFn = oldLoad })
+		auxLoadConfigReadonlyFn = func(context.Context) (config.Tree, error) { return nil, errors.New("boom") }
+		h, err := BuildORHeaders(context.Background(), nil)
+		if err != nil || h["HTTP-Referer"] == "" || h["X-OpenRouter-Categories"] != "productivity,cli-agent" || h["X-OpenRouter-Cache"] != "" {
+			t.Fatalf("disk default %v", h)
+		}
+	})
+	t.Run("test_invalid_env_ttl_dropped", func(t *testing.T) {
+		for _, ttl := range []string{"0", "86401", "abc", "-1", "12.5"} {
+			t.Setenv("ICEBATH_OPENROUTER_CACHE", "1")
+			t.Setenv("ICEBATH_OPENROUTER_CACHE_TTL", ttl)
+			h, err := BuildORHeaders(context.Background(), map[string]any{})
+			if err != nil || h["X-OpenRouter-Cache"] != "true" || h["X-OpenRouter-Cache-TTL"] != "" {
+				t.Fatalf("ttl %q kept %v %v", ttl, h, err)
+			}
+		}
+	})
+	t.Run("test_valid_env_ttl_boundaries", func(t *testing.T) {
+		for _, ttl := range []string{"1", "300", "86400"} {
+			t.Setenv("ICEBATH_OPENROUTER_CACHE", "yes")
+			t.Setenv("ICEBATH_OPENROUTER_CACHE_TTL", ttl)
+			if h, _ := BuildORHeaders(context.Background(), map[string]any{}); h["X-OpenRouter-Cache-TTL"] != ttl {
+				t.Fatalf("ttl %q got %v", ttl, h)
+			}
+		}
+	})
+	t.Run("test_no_env_vars_falls_through_to_config", func(t *testing.T) {
+		for _, name := range []string{"ICEBATH_OPENROUTER_CACHE", "ICEBATH_OPENROUTER_CACHE_TTL"} {
+			if prev, had := os.LookupEnv(name); had {
+				t.Cleanup(func() { os.Setenv(name, prev) })
+				os.Unsetenv(name)
+			}
+		}
+		h, err := BuildORHeaders(context.Background(), map[string]any{"response_cache": true, "response_cache_ttl": 600})
+		if err != nil || h["X-OpenRouter-Cache"] != "true" || h["X-OpenRouter-Cache-TTL"] != "600" {
+			t.Fatalf("config controls %v %v", h, err)
+		}
+	})
+	t.Setenv("ICEBATH_OPENROUTER_CACHE", "yes")
 	t.Setenv("ICEBATH_OPENROUTER_CACHE_TTL", "²")
 	if _, err := BuildORHeaders(context.Background(), map[string]any{}); err == nil || err.Error() != "invalid literal for int() with base 10: '²'" {
 		t.Fatalf("superscript ttl err %v", err)

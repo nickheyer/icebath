@@ -227,7 +227,7 @@ func (l *durableTurnLease) interruptTurn(message string) {
 	}
 	l.interruptMessage = message
 	if _, err := l.publishInterrupt(message, InterruptOptions{HardCancel: true, ToolReason: reasonLeaseLost}); err != nil {
-		l.agent.interruptRequested = true
+		l.agent.interruptRequested.Store(true)
 		l.agent.interruptMessage = message
 		l.agent.toolInterruptReason = reasonLeaseLost
 	}
@@ -277,7 +277,7 @@ func (l *durableTurnLease) ClearInterrupt() {
 	if a.interruptMessage != message {
 		return
 	}
-	a.interruptRequested = false
+	a.interruptRequested.Store(false)
 	a.interruptMessage = ""
 	if a.hardInterruptRequested != nil {
 		a.hardInterruptRequested.Clear()
@@ -414,7 +414,7 @@ func admitDurableTurnLease(ctx context.Context, a *AIAgent, sessionID, relayTurn
 		}
 		return nil
 	}
-	wait.ShouldAbort = func() (bool, error) { return a.interruptRequested, nil }
+	wait.ShouldAbort = func() (bool, error) { return a.interruptRequested.Load(), nil }
 	authorityFloor := leaseWallNow()
 	acquired, err := db.AcquireSessionTurnLease(sessionID, holder, wait)
 	if err != nil {
@@ -509,7 +509,7 @@ func carryUnadmittedUserMessage(result map[string]any, userMessage any, persistU
 // Early result of a turn that never held the lease, an interrupt notice or a retryable busy failure
 func leaseNotAcquiredResult(a *AIAgent, sessionID string, conversationHistory []map[string]any, waited bool) map[string]any {
 	messages := append([]map[string]any{}, conversationHistory...)
-	if a.interruptRequested {
+	if a.interruptRequested.Load() {
 		runAgentLog().Info("session turn lease wait aborted by interrupt: " + sessionID)
 		hardInterrupted := a.hardInterruptRequested != nil && a.hardInterruptRequested.IsSet()
 		final := "Stopped before this turn started. Your message was not processed."
@@ -526,7 +526,7 @@ func leaseNotAcquiredResult(a *AIAgent, sessionID string, conversationHistory []
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					a.interruptRequested = false
+					a.interruptRequested.Store(false)
 					a.interruptMessage = ""
 				}
 			}()

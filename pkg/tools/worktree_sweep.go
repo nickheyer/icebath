@@ -526,10 +526,13 @@ type ArchiveRemoval struct {
 	WhyKept    string
 }
 
+// Snapshot step of every archive, the worktree_archive attribute hermes tests patch
+var snapshotWorktreeFn = SnapshotWorktree
+
 // Snapshots the tree then removes it unless it changed, is in use or holds what the archive lacks
 func ArchiveThenRemove(repoRoot, path, reason string, maxUntrackedMB float64, unlock bool, remoteHeads func() (map[string]string, bool), keepBranch bool, excludePids []int) (*ArchiveRemoval, error) {
 	started := nowSeconds()
-	arc, err := SnapshotWorktree(repoRoot, path, reason, maxUntrackedMB)
+	arc, err := snapshotWorktreeFn(repoRoot, path, reason, maxUntrackedMB)
 	if err != nil {
 		return nil, err
 	}

@@ -244,11 +244,11 @@ func (a *AIAgent) InterruptWith(message string, o InterruptOptions) bool {
 		}
 	}
 	publish := func() {
-		if !(o.ToolReason == reasonGatewayShutdown && a.interruptRequested && UserInterruptReasons[a.toolInterruptReason]) {
+		if !(o.ToolReason == reasonGatewayShutdown && a.interruptRequested.Load() && UserInterruptReasons[a.toolInterruptReason]) {
 			a.interruptMessage = message
 			a.toolInterruptReason = toolInterruptReason
 		}
-		a.interruptRequested = true
+		a.interruptRequested.Store(true)
 		a.turnUserIntervened = true
 		mode := "soft"
 		if o.HardCancel {
@@ -364,7 +364,7 @@ func (a *AIAgent) clearInterruptWith(preserveRedirect, hardCancel bool) bool {
 		unlock()
 		return false
 	}
-	a.interruptRequested = false
+	a.interruptRequested.Store(false)
 	a.interruptMessage = ""
 	a.toolInterruptReason = ""
 	if a.hardInterruptRequested != nil {
@@ -414,7 +414,7 @@ func (a *AIAgent) Redirect(text string) bool {
 	}
 	if s := a.icCodexSession(); s != nil {
 		unlock := icLock(a.pendingRedirectLock)
-		interrupted := a.interruptRequested
+		interrupted := a.interruptRequested.Load()
 		unlock()
 		if interrupted {
 			return false
@@ -444,7 +444,7 @@ func (a *AIAgent) Redirect(text string) bool {
 		return false
 	}
 	existing := a.pendingRedirect
-	if a.interruptRequested && existing == "" {
+	if a.interruptRequested.Load() && existing == "" {
 		unlock()
 		return false
 	}
@@ -453,7 +453,7 @@ func (a *AIAgent) Redirect(text string) bool {
 	} else {
 		a.pendingRedirect = cleaned
 	}
-	a.interruptRequested = true
+	a.interruptRequested.Store(true)
 	a.interruptMessage = ""
 	a.turnUserIntervened = true
 	unlock()

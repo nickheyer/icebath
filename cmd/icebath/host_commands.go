@@ -141,7 +141,12 @@ func browserGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pa
 }
 
 func checkpointsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return tools.CheckpointsCommand(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["checkpoints_command"] = nil
+	if words := strings.Fields(path); len(words) > 1 {
+		ns["checkpoints_command"] = words[1]
+	}
+	return tools.CheckpointsCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
 func codexRuntimeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -448,7 +453,12 @@ func whatsappCloudGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Comma
 }
 
 func worktreeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return tools.WorktreeCommand(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["worktree_action"] = nil
+	if words := strings.Fields(path); len(words) > 1 {
+		ns["worktree_action"] = words[1]
+	}
+	return tools.WorktreeCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
 // Exits 1 when stdin is not a terminal, curses and input prompts spin on a pipe

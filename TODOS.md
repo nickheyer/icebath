@@ -133,7 +133,7 @@
 - [x] hermes_platform/host/runtime.py
 - [x] hermes_platform/host/summary.py
 
-### 5. pkg/provider: 91% (304 of 334 files completed)
+### 5. pkg/provider: 91% (305 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
 - [x] agent/account_usage.py
 - [x] agent/account_usage_cache.py
@@ -214,7 +214,7 @@
 - [x] agent/image_token_cost.py
 - [x] agent/jiter_preload.py
 - [x] agent/lmstudio_reasoning.py
-- [ ] agent/model_metadata.py
+- [x] agent/model_metadata.py
 - [x] agent/model_metadata_cache.py
 - [x] agent/model_metadata_http.py
 - [x] agent/model_metadata_llamacpp.py
@@ -470,40 +470,40 @@
 - [x] providers/__init__.py
 - [x] providers/base.py
 
-### 6. pkg/tools: 75% (212 of 279 files completed)
+### 6. pkg/tools: 95% (267 of 279 files completed)
 #### Tool registry, approval, terminal backends, file ops, search, web, vision, checkpoints
 - [x] agent/async_utils.py
 - [ ] agent/background_review.py
 - [x] agent/coding_context.py
 - [x] agent/compression_marker.py
-- [ ] agent/delegation_backends.py
+- [x] agent/delegation_backends.py
 - [x] agent/delegation_context.py
 - [x] agent/delegation_provider.py
 - [x] agent/delegation_registry.py
-- [ ] agent/display.py
+- [x] agent/display.py
 - [x] agent/estop.py
 - [x] agent/file_safety.py
 - [x] agent/image_routing.py
-- [ ] agent/interrupt_compat.py
+- [x] agent/interrupt_compat.py
 - [x] agent/interrupt_control.py
-- [ ] agent/interrupt_scope.py
-- [ ] agent/markdown_tables.py
-- [ ] agent/onboarding.py
+- [x] agent/interrupt_scope.py
+- [x] agent/markdown_tables.py
+- [x] agent/onboarding.py
 - [x] agent/onboarding_first_tasks.py
 - [x] agent/onboarding_flow.py
 - [x] agent/onboarding_record.py
-- [ ] agent/onboarding_session.py
+- [x] agent/onboarding_session.py
 - [x] agent/onboarding_text.py
 - [x] agent/process_bootstrap.py
 - [x] agent/redact.py
 - [x] agent/relay_cwd.py
-- [ ] agent/review_engine.py
+- [x] agent/review_engine.py
 - [x] agent/review_idle_queue.py
 - [x] agent/runtime_cwd.py
 - [x] agent/runtime_self_protection.py
 - [x] agent/search_policy.py
 - [x] agent/subagent_lifecycle.py
-- [ ] agent/subdirectory_hints.py
+- [x] agent/subdirectory_hints.py
 - [x] agent/terminal_approval_batch.py
 - [x] agent/terminal_env_provider.py
 - [x] agent/terminal_env_registry.py
@@ -512,21 +512,21 @@
 - [x] agent/tool_dispatch_helpers.py
 - [ ] agent/tool_executor.py
 - [x] agent/tool_guardrails.py
-- [ ] agent/tool_progress_relay.py
+- [x] agent/tool_progress_relay.py
 - [x] agent/tool_result_classification.py
-- [ ] agent/verification_evidence.py
-- [ ] agent/verification_stop.py
+- [x] agent/verification_evidence.py
+- [x] agent/verification_stop.py
 - [ ] hermes_cli/_launchers.py
-- [ ] hermes_cli/approval_mode.py
-- [ ] hermes_cli/approval_transport.py
+- [x] hermes_cli/approval_mode.py
+- [x] hermes_cli/approval_transport.py
 - [x] hermes_cli/approvals_suggest.py
 - [x] hermes_cli/approvals_test.py
 - [x] hermes_cli/archive_safe.py
-- [ ] hermes_cli/checkpoints.py
+- [x] hermes_cli/checkpoints.py
 - [ ] hermes_cli/cli_commands_worktree.py
-- [ ] hermes_cli/dump.py
-- [ ] hermes_cli/git_pack_tidy.py
-- [ ] hermes_cli/gitlock.py
+- [x] hermes_cli/dump.py
+- [x] hermes_cli/git_pack_tidy.py
+- [x] hermes_cli/gitlock.py
 - [x] hermes_cli/input_sanitize.py
 - [x] hermes_cli/install_state.py
 - [x] hermes_cli/onboarding_due.py
@@ -537,29 +537,29 @@
 - [x] hermes_cli/pty_session.py
 - [x] hermes_cli/setup_terminal.py
 - [x] hermes_cli/sizefmt.py
-- [ ] hermes_cli/subcommands/approvals.py
-- [ ] hermes_cli/subcommands/backup.py
-- [ ] hermes_cli/subcommands/checkpoints.py
-- [ ] hermes_cli/subcommands/import_cmd.py
-- [ ] hermes_cli/subcommands/migrate.py
-- [ ] hermes_cli/subcommands/security.py
-- [ ] hermes_cli/subcommands/worktree.py
+- [x] hermes_cli/subcommands/approvals.py
+- [x] hermes_cli/subcommands/backup.py
+- [x] hermes_cli/subcommands/checkpoints.py
+- [x] hermes_cli/subcommands/import_cmd.py
+- [x] hermes_cli/subcommands/migrate.py
+- [x] hermes_cli/subcommands/security.py
+- [x] hermes_cli/subcommands/worktree.py
 - [x] hermes_cli/tool_availability_notices.py
 - [ ] hermes_cli/tools_config.py
 - [ ] hermes_cli/tools_config_post_setup.py
 - [ ] hermes_cli/tools_config_providers.py
 - [x] hermes_cli/toolset_scope.py
 - [x] hermes_cli/toolset_validation.py
-- [ ] hermes_cli/tui_worktree_resume.py
+- [x] hermes_cli/tui_worktree_resume.py
 - [x] hermes_cli/win_pty_bridge.py
-- [ ] hermes_cli/worktree_archive.py
-- [ ] hermes_cli/worktree_cmd.py
-- [ ] hermes_cli/worktree_exit.py
-- [ ] hermes_cli/worktree_gc.py
-- [ ] hermes_cli/worktree_ops.py
+- [x] hermes_cli/worktree_archive.py
+- [x] hermes_cli/worktree_cmd.py
+- [x] hermes_cli/worktree_exit.py
+- [x] hermes_cli/worktree_gc.py
+- [x] hermes_cli/worktree_ops.py
 - [x] hermes_cli/worktree_registry.py
-- [ ] hermes_cli/worktree_retention.py
-- [ ] hermes_cli/worktree_sweep.py
+- [x] hermes_cli/worktree_retention.py
+- [x] hermes_cli/worktree_sweep.py
 - [x] hermes_platform/declaration.py
 - [x] hermes_platform/resolver/__init__.py
 - [x] hermes_platform/resolver/app.py
@@ -593,7 +593,7 @@
 - [x] plugins/web/tavily/provider.py
 - [x] plugins/web/xai/__init__.py
 - [x] plugins/web/xai/provider.py
-- [ ] tools/__init__.py
+- [x] tools/__init__.py
 - [x] tools/annotate_preview_tool.py
 - [x] tools/ansi_strip.py
 - [x] tools/approval.py
@@ -607,8 +607,8 @@
 - [x] tools/approval_yolo.py
 - [x] tools/arg_coercion.py
 - [ ] tools/async_delegation.py
-- [ ] tools/async_delegation_recovery_hints.py
-- [ ] tools/async_delegation_worker.py
+- [x] tools/async_delegation_recovery_hints.py
+- [x] tools/async_delegation_worker.py
 - [x] tools/binary_extensions.py
 - [x] tools/budget_config.py
 - [x] tools/checkpoint_maintenance.py
@@ -622,25 +622,25 @@
 - [x] tools/close_terminal_tool.py
 - [x] tools/credential_files.py
 - [x] tools/daemon_pool.py
-- [ ] tools/debug_helpers.py
+- [x] tools/debug_helpers.py
 - [ ] tools/delegate_tool.py
-- [ ] tools/delegate_tool_child_run.py
-- [ ] tools/delegate_tool_config.py
-- [ ] tools/delegate_tool_dispatch.py
-- [ ] tools/delegate_tool_progress.py
-- [ ] tools/delegate_tool_registry.py
+- [x] tools/delegate_tool_child_run.py
+- [x] tools/delegate_tool_config.py
+- [x] tools/delegate_tool_dispatch.py
+- [x] tools/delegate_tool_progress.py
+- [x] tools/delegate_tool_registry.py
 - [x] tools/delegate_tool_results.py
-- [ ] tools/delegate_tool_routes.py
-- [ ] tools/delegate_tool_tasks.py
-- [ ] tools/delegate_tool_toolsets.py
-- [ ] tools/delegate_tool_tuning.py
-- [ ] tools/delegation_live_log.py
-- [ ] tools/delegation_output_schema.py
-- [ ] tools/delegation_redaction.py
+- [x] tools/delegate_tool_routes.py
+- [x] tools/delegate_tool_tasks.py
+- [x] tools/delegate_tool_toolsets.py
+- [x] tools/delegate_tool_tuning.py
+- [x] tools/delegation_live_log.py
+- [x] tools/delegation_output_schema.py
+- [x] tools/delegation_redaction.py
 - [x] tools/drive_preview_tool.py
 - [x] tools/env_passthrough.py
 - [x] tools/env_probe.py
-- [ ] tools/environments/__init__.py
+- [x] tools/environments/__init__.py
 - [x] tools/environments/base.py
 - [x] tools/environments/base_output.py
 - [x] tools/environments/base_session_env.py
@@ -675,12 +675,12 @@
 - [x] tools/focus_pane_tool.py
 - [x] tools/fuzzy_match.py
 - [x] tools/hook_output_spill.py
-- [ ] tools/human_input_hooks.py
+- [x] tools/human_input_hooks.py
 - [x] tools/image_source.py
 - [x] tools/interpreter_shutdown.py
 - [x] tools/interrupt.py
 - [x] tools/open_preview_tool.py
-- [ ] tools/openrouter_client.py
+- [x] tools/openrouter_client.py
 - [x] tools/patch_parser.py
 - [x] tools/path_security.py
 - [x] tools/preview_tool.py
@@ -708,8 +708,8 @@
 - [ ] tools/session_search_tool.py
 - [x] tools/set_theme_tool.py
 - [x] tools/shell_heredoc.py
-- [ ] tools/spill_safety.py
-- [ ] tools/subagent_worktree.py
+- [x] tools/spill_safety.py
+- [x] tools/subagent_worktree.py
 - [x] tools/terminal_hints.py
 - [x] tools/terminal_scope.py
 - [x] tools/terminal_tool.py
@@ -721,7 +721,7 @@
 - [x] tools/terminal_tool_macos_open.py
 - [x] tools/terminal_tool_result.py
 - [x] tools/terminal_tool_sudo.py
-- [ ] tools/thread_context.py
+- [x] tools/thread_context.py
 - [x] tools/threat_patterns.py
 - [x] tools/tip_tool.py
 - [x] tools/todo_tool.py
@@ -1972,7 +1972,7 @@
 - [ ] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 6% (11 of 161 files completed)
+### 22. cmd/icebath: 8% (13 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -1991,7 +1991,7 @@
 - [ ] hermes_cli/data_cleanup.py
 - [ ] hermes_cli/data_cleanup_holders.py
 - [ ] hermes_cli/debug.py
-- [ ] hermes_cli/debug_redaction.py
+- [x] hermes_cli/debug_redaction.py
 - [ ] hermes_cli/diagnostics_upload.py
 - [ ] hermes_cli/doctor.py
 - [ ] hermes_cli/doctor_config.py
@@ -2001,7 +2001,7 @@
 - [ ] hermes_cli/doctor_report.py
 - [ ] hermes_cli/doctor_state.py
 - [ ] hermes_cli/doctor_tools.py
-- [ ] hermes_cli/git_commit_graph.py
+- [x] hermes_cli/git_commit_graph.py
 - [ ] hermes_cli/init_command.py
 - [ ] hermes_cli/install_identity.py
 - [ ] hermes_cli/inventory.py

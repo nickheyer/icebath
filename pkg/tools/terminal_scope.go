@@ -387,6 +387,23 @@ func EnvInTerminalScope(ctx context.Context, env *Env) *Env {
 	return scoped
 }
 
+// Copy of env re-homed at h with its config, secrets, the context terminal scope and shared session values
+func EnvForProfileHome(ctx context.Context, env *Env, h string) *Env {
+	scoped := &Env{}
+	if env != nil {
+		*scoped = *env
+	}
+	scoped.Home, scoped.profileHome = h, h
+	scoped.Secrets = config.NewSecrets(h)
+	if tree, err := config.LoadReadonly(ctx, h, scoped.Secrets.Lookup()); err == nil {
+		scoped.Config = tree
+	} else {
+		scoped.Config = nil
+	}
+	scoped.TerminalScope = GetTerminalScope(ctx)
+	return scoped
+}
+
 // Cached policy with the inputs it was built from
 type scopeCacheEntry struct {
 	policy    TerminalPolicy

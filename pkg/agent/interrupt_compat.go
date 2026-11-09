@@ -16,6 +16,15 @@ type interruptWithReason interface {
 // Legacy interrupt ABI of third party agents and old doubles
 type interruptMessageOnly interface{ Interrupt(message string) }
 
+// Reports whether the stop callable the agent exposes takes the tool reason keyword
+func acceptsToolReason(agent any) bool {
+	switch agent.(type) {
+	case hardInterruptWithReason, interruptWithReason:
+		return true
+	}
+	return false
+}
+
 // Hard stop of any agent value, falling back to the legacy interrupt and false when neither exists
 func RequestHardInterruptOf(agent any, message, toolReason *string) bool {
 	if agent == nil {
@@ -29,7 +38,7 @@ func RequestHardInterruptOf(agent any, message, toolReason *string) bool {
 		msg = *message
 	}
 	reason := ""
-	if toolReason != nil {
+	if toolReason != nil && acceptsToolReason(agent) {
 		reason = *toolReason
 	}
 	switch target := agent.(type) {
@@ -47,14 +56,17 @@ func RequestHardInterruptOf(agent any, message, toolReason *string) bool {
 	return true
 }
 
-// Hard stop of an agent with an optional message and tool reason, empty strings standing for none
-func RequestHardInterrupt(a *AIAgent, reason, toolReason string) bool {
-	var message, category *string
-	if reason != "" {
-		message = &reason
+// Hard stop of an AIAgent, empty strings standing for the absent message and tool reason, false for a nil agent
+func RequestHardInterrupt(agent *AIAgent, message, toolReason string) bool {
+	if agent == nil {
+		return false
+	}
+	var msg, reason *string
+	if message != "" {
+		msg = &message
 	}
 	if toolReason != "" {
-		category = &toolReason
+		reason = &toolReason
 	}
-	return RequestHardInterruptOf(a, message, category)
+	return RequestHardInterruptOf(agent, msg, reason)
 }

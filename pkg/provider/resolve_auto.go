@@ -2317,17 +2317,7 @@ var localServerAliases = map[string]bool{"ollama": true, "vllm": true, "llamacpp
 
 // True when a first class provider keeps its identity alongside an explicit base URL
 func (r *resolver) preserveProviderWithBaseURL(provider string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(provider))
-	if normalized == "" || normalized == "auto" || normalized == "custom" || strings.HasPrefix(normalized, "custom:") {
-		return false
-	}
-	if localServerAliases[normalized] {
-		return true
-	}
-	if _, ok := registryProfileCtx(r.ctx, authNormalizeProvider(normalized)); ok {
-		return true
-	}
-	return r.HasNamedCustomProvider(normalized)
+	return auxPreserveProviderWithBaseURL(r.ctx, provider)
 }
 
 // Resolves an explicit provider moa to its preset's aggregator slot

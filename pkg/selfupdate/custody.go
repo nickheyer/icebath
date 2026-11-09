@@ -443,6 +443,9 @@ func PopenPostCommit(ctx context.Context, argv []string, label string, opts Chil
 	return child.cmd, nil
 }
 
+// Custody runner of an updater git outside the owner watched path, the update_custody.run hermes tests spy on
+var runInCustody = Run
+
 // Runs git in the updater's custody, the lock files only into local mutators, a partial clone prefetched first
 func RunGit(ctx context.Context, gitCmd, args []string, opts ChildOptions) (*CompletedProcess, error) {
 	argv := updaterecord.GitArgv(gitCmd, args)
@@ -455,7 +458,7 @@ func RunGit(ctx context.Context, gitCmd, args []string, opts ChildOptions) (*Com
 	if !custodyWindows() && custodyHeld() && opts.Attr == nil && custodyDeathSignal() == nil {
 		return runOwnerWatched(ctx, argv, custodyKwargs(mutator, opts), !mutator)
 	}
-	return Run(ctx, argv, mutator, opts)
+	return runInCustody(ctx, argv, mutator, opts)
 }
 
 // Whether the repository has a promisor remote recorded in its common config

@@ -82,7 +82,7 @@ func TestModelsListMaxModelLen(t *testing.T) {
 	mustEqual(t, queryLocalContextLength(ctx, "omnicoder-9b", "http://localhost:1234", ""), 131072, "list match")
 }
 
-func TestModelsListModelNotFoundReturnsZero(t *testing.T) {
+func TestQueryLocalContextLengthModelsListModelsListModelNotFoundReturnsNone(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	seedServerType("http://localhost:1234", "")
 	ft.on("GET", "http://127.0.0.1:1234/v1/models", 200, map[string]any{"data": []any{map[string]any{"id": "other-model", "max_model_len": 4096}, map[string]any{"id": "yet-another-model", "max_model_len": 8192}}})
@@ -116,7 +116,7 @@ func TestContextLengthFromModelPayload(t *testing.T) {
 	}
 }
 
-func TestAnthropicProxyListPrefersMaxInputTokens(t *testing.T) {
+func TestQueryLocalContextLengthAnthropicProxyModelsListPrefersMaxInputTokens(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	seedServerType("http://127.0.0.1:47821", "")
 	ft.on("GET", "http://127.0.0.1:47821/v1/models", 200, map[string]any{"data": []any{
@@ -145,7 +145,7 @@ func TestLmstudioNativeAPIBaseURLIsNotDoubled(t *testing.T) {
 	mustEqual(t, ft.urls()[0], "http://127.0.0.1:1234/api/v1/models", "first url")
 }
 
-func TestDetectLocalServerTypePassesBearerToken(t *testing.T) {
+func TestDetectLocalServerTypeAuthPassesBearerTokenToProbeRequests(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(r *http.Request) (*http.Response, error) {
 		return jsonResponse(nil, 200, map[string]any{}, nil), nil
@@ -160,7 +160,7 @@ func TestDetectLocalServerTypePassesBearerToken(t *testing.T) {
 	mustEqual(t, ft.urls()[0], "http://127.0.0.1:1234/api/v1/models", "not doubled")
 }
 
-func TestDetectLocalServerTypeLocalhostResolvedToIPv4(t *testing.T) {
+func TestDetectLocalServerTypeLocalhostIPv4LocalhostResolvedToIPv4(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(r *http.Request) (*http.Response, error) {
 		return jsonResponse(nil, 404, map[string]any{}, nil), nil
@@ -200,7 +200,7 @@ func TestDetectLocalServerTypeWaterfall(t *testing.T) {
 	mustEqual(t, ft.count(), 4, "verdict cached after one waterfall")
 }
 
-func TestFetchEndpointModelMetadataUsesNativeModelsEndpointOnly(t *testing.T) {
+func TestFetchEndpointModelMetadataLmStudioUsesNativeModelsEndpointOnly(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	seedServerType("http://localhost:1234/v1", "lm-studio")
 	ft.on("GET", "http://localhost:1234/api/v1/models", 200, map[string]any{"models": []any{map[string]any{"key": "lmstudio-community/Qwen3.5-27B-GGUF/Qwen3.5-27B-Q8_0.gguf", "id": "lmstudio-community/Qwen3.5-27B-GGUF/Qwen3.5-27B-Q8_0.gguf", "max_context_length": 1_048_576, "loaded_instances": []any{map[string]any{"config": map[string]any{"context_length": 131072}}}}}})
@@ -218,7 +218,7 @@ func TestFetchEndpointModelMetadataUsesNativeModelsEndpointOnly(t *testing.T) {
 	mustEqual(t, intOrDefault(got["publisher/model-a"]["context_length"], 0), 65536, "entry")
 }
 
-func TestConnectionErrorReturnsZero(t *testing.T) {
+func TestQueryLocalContextLengthNetworkErrorConnectionErrorReturnsNone(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	seedServerType("http://localhost:11434/v1", "")
 	ft.handle = func(r *http.Request) (*http.Response, error) { return nil, errors.New("Connection refused") }
@@ -256,7 +256,7 @@ func TestLocalEndpointStaleCacheReconciledFromLiveProbe(t *testing.T) {
 	}
 }
 
-func TestLocalEndpointServerReturnsNoneFallsBackToTopTier(t *testing.T) {
+func TestGetModelContextLengthLocalFallbackLocalEndpointServerReturnsNoneFallsBackTo2m(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.on("GET", OpenRouterModelsURL, 200, map[string]any{"data": []any{}})
 	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "omnicoder-9b", BaseURL: "http://localhost:11434/v1"}), ContextProbeTiers[0], "fallback")

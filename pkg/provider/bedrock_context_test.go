@@ -8,7 +8,7 @@ import (
 )
 
 // Probe and region seams with a scripted probe answer sequence, returning the probe call log
-func bedrockStubProbe(t *testing.T, answers ...int) *[]string {
+func bedrockFakeProbe(t *testing.T, answers ...int) *[]string {
 	calls := &[]string{}
 	prevProbe, prevRegion := bedrockProbeFn, resolveBedrockRegionFn
 	bedrockProbeFn = func(_ context.Context, model, region string) int {
@@ -28,7 +28,7 @@ func bedrockStubProbe(t *testing.T, answers ...int) *[]string {
 
 func TestBedrockClaude46IgnoresStale200kCache(t *testing.T) {
 	bedrockIsolatedEnv(t)
-	bedrockStubProbe(t, 0)
+	bedrockFakeProbe(t, 0)
 	base := "https://bedrock-runtime.us-east-2.amazonaws.com"
 	ctx := context.Background()
 	SaveContextLength(ctx, "us.anthropic.claude-sonnet-4-6", base, 200_000, "")
@@ -37,9 +37,9 @@ func TestBedrockClaude46IgnoresStale200kCache(t *testing.T) {
 	}
 }
 
-func TestBedrockFailedProbeDoesNotPersistStaticFallback(t *testing.T) {
+func TestBedrockContextCachePersistenceFailedProbeDoesNotPersistStaticFallback(t *testing.T) {
 	bedrockIsolatedEnv(t)
-	calls := bedrockStubProbe(t, 0)
+	calls := bedrockFakeProbe(t, 0)
 	ctx := context.Background()
 	model := "amazon.future-model-v1:0"
 	if got := GetModelContextLength(ctx, ContextLengthRequest{Model: model, Provider: "bedrock"}); got != BedrockDefaultContextLength {
@@ -58,7 +58,7 @@ func TestBedrockFailedProbeDoesNotPersistStaticFallback(t *testing.T) {
 
 func TestBedrockFailedProbeIsMemoisedUntilTheTTLLapses(t *testing.T) {
 	bedrockIsolatedEnv(t)
-	calls := bedrockStubProbe(t, 0, 1_000_000)
+	calls := bedrockFakeProbe(t, 0, 1_000_000)
 	ctx := context.Background()
 	model := "amazon.future-model-v1:0"
 	req := ContextLengthRequest{Model: model, Provider: "bedrock"}

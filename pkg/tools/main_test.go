@@ -24,6 +24,7 @@ func testSecretEnvName(name string) bool {
 func TestMain(m *testing.M) {
 	home.DispatchScratchPruneEntry()
 	DispatchDDGSWorkerEntry()
+	DispatchCommitGraphRefreshEntry()
 	ptyTestHelperEntry()
 	state.SecretEnvSubstrings = testSecretEnvSubstrings
 	state.SecretEnvName = testSecretEnvName

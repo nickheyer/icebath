@@ -66,6 +66,9 @@ func intArg(v any, def int) int {
 	return def
 }
 
+// Agent constructor of a child, swapped by tests that read the resolved construction options
+var newChildAIAgentFn = NewAIAgent
+
 // Builds without running a child agent for one task, its route overrides replacing parent inheritance
 func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error) {
 	parent := spec.Parent
@@ -95,6 +98,10 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 	progressCB := buildChildProgressCallback(spec.TaskIndex, goal, parent, spec.TaskCount, subagentID, parentSubagentID,
 		&depth, relayModel, childToolsets, sessionRef, sessionRefMu)
 	buildCtx := delegatedProfileScope(ctx, spec.ProfileHome)
+	var childEnv *tools.Env
+	if spec.ProfileHome != "" {
+		childEnv = tools.EnvForProfileHome(buildCtx, parent.env, spec.ProfileHome)
+	}
 	var apiMode *string
 	if spec.OverrideAPIMode != nil {
 		m := pyrepr.Str(spec.OverrideAPIMode)
@@ -141,6 +148,9 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 		}
 	}
 	o.SessionDB, o.ParentSessionID, o.RequestOverrides = childDB, parentSID, requestOverrides
+	if childEnv != nil {
+		o.Env = childEnv
+	}
 	o.ToolProgressCallback = progressCB
 	o.LoadSoulIdentity = spec.ProfileHome != ""
 	child, err := func() (child *AIAgent, err error) {
@@ -152,7 +162,7 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 				panic(r)
 			}
 		}()
-		child, err = NewAIAgent(tools.WithDelegatedChildContext(buildCtx, true), o)
+		child, err = newChildAIAgentFn(tools.WithDelegatedChildContext(buildCtx, true), o)
 		if err != nil && childDB != nil {
 			delegateQuiet("", func() { state.ReleaseOrClose(childDB) })
 		}

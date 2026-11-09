@@ -26,3 +26,9 @@ func TestSystemAndMachineMatchUname(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseNamesTheKernelOrProductRelease(t *testing.T) {
+	if Release() == "" {
+		t.Fatal("empty release")
+	}
+}

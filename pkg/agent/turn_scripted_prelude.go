@@ -52,7 +52,7 @@ func runScriptedPrelude(ctx context.Context, a *AIAgent, s *LoopState, prelude P
 	defer prelude.Close()
 	var verdict *PhaseVerdict
 	var result *string
-	for !a.interruptRequested {
+	for !a.interruptRequested.Load() {
 		step, ok := prelude.Next(result)
 		if !ok {
 			break

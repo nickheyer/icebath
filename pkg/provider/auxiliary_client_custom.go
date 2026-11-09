@@ -189,7 +189,9 @@ func auxTryCustomEndpoint(ctx context.Context) (AuxClient, string, error) {
 	case "anthropic_messages":
 		real, err := auxBuildAnthropicClientFn(ctx, key, base, 0, false)
 		if err != nil {
-			return nil, "", err
+			slog.Warn("Custom endpoint declares api_mode=anthropic_messages but the " +
+				"anthropic SDK is not installed — falling back to OpenAI-wire.")
+			return auxCreateOpenAIClient(ctx, key, cleanBase, opts), model, nil
 		}
 		isOAuth := AnthropicRouteIsOAuth(ctx, base, key, nil, "")
 		return newAnthropicAuxiliaryClientFrom(real, model, key, base, isOAuth), model, nil
@@ -216,6 +218,12 @@ func auxBuildXaiOAuthAuxClient(ctx context.Context, model string) (AuxClient, st
 	real := auxCreateOpenAIClient(ctx, apiKey, baseURL, auxOpenAIOptions{DefaultHeaders: tools.XAIDefaultHeaders()})
 	return auxWrapCodex(real, model), model, nil
 }
+
+// Codex and xAI OAuth builders, swapped by tests the way hermes tests patch the module functions
+var (
+	auxBuildCodexClientFn       = auxBuildCodexClient
+	auxBuildXaiOAuthAuxClientFn = auxBuildXaiOAuthAuxClient
+)
 
 // Profile scoped Codex base URL override without a trailing slash
 func auxCodexBaseURLOverride(ctx context.Context) (string, error) {
@@ -409,7 +417,7 @@ type auxProviderChainEntry struct {
 func auxGetProviderChain() []auxProviderChainEntry {
 	return []auxProviderChainEntry{
 		{"openrouter", func(ctx context.Context) (AuxClient, string, error) { return auxTryOpenrouter(ctx, nil, "", "") }},
-		{"nous", func(ctx context.Context) (AuxClient, string, error) { return auxTryNous(ctx, false) }},
+		{"nous", func(ctx context.Context) (AuxClient, string, error) { return auxTryNousFn(ctx, false) }},
 		{"local/custom", auxTryCustomEndpoint},
 		{"api-key", auxResolveAPIKeyProvider},
 	}

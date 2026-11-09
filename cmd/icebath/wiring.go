@@ -104,6 +104,8 @@ func installProcessWiring() {
 	tools.AsyncDelegationRetirement = provider.BackendRetirement()
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	tools.RuntimeProviderCredentials = provider.ToolRuntimeCredentials
+	tools.VisionCapabilities = provider.VisionCapabilities{}
+	agent.InstallDelegationRegistryHooks()
 	tools.CachedContextLength = func(ctx context.Context, modelID, baseURL string) (int, bool) {
 		return provider.GetCachedContextLength(ctx, modelID, baseURL, false)
 	}

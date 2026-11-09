@@ -570,6 +570,13 @@ func RefreshAnthropicOAuthPure(env PoolEnv, refreshToken string, useJSON bool) (
 	return oauthTokenState(result, refreshToken), nil
 }
 
+// Claude Code credential read, pure OAuth refresh and credential write, swapped by tests the way hermes tests patch them
+var (
+	readClaudeCodeCredentialsFn  = ReadClaudeCodeCredentials
+	refreshAnthropicOAuthPureFn  = RefreshAnthropicOAuthPure
+	writeClaudeCodeCredentialsFn = WriteClaudeCodeCredentials
+)
+
 // Refreshes an expired Claude Code token under the path keyed lock, adopting an already rotated one first
 func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 	refreshTimeout := envFloat("ICEBATH_ANTHROPIC_REFRESH_TIMEOUT_SECONDS", 20)
@@ -584,7 +591,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 		return ""
 	}
 	defer unlock()
-	current := ReadClaudeCodeCredentials(env)
+	current := readClaudeCodeCredentialsFn(env)
 	if current == nil {
 		current = map[string]any{}
 	}
@@ -615,7 +622,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 		env.log().Debug("Claude Code refresh token was already rejected as terminally invalid - not replaying it")
 		return ""
 	}
-	refreshed, err := RefreshAnthropicOAuthPure(env, refreshToken, false)
+	refreshed, err := refreshAnthropicOAuthPureFn(env, refreshToken, false)
 	if err != nil {
 		if IsTerminalAnthropicRefreshError(err) {
 			spentRotationMu.Lock()
@@ -628,7 +635,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 		return ""
 	}
 	ms, _ := anyFloat(refreshed["expires_at_ms"])
-	if err := WriteClaudeCodeCredentials(env, anyString(refreshed["access_token"]), anyString(refreshed["refresh_token"]), int64(ms), nil, refreshToken); err != nil {
+	if err := writeClaudeCodeCredentialsFn(env, anyString(refreshed["access_token"]), anyString(refreshed["refresh_token"]), int64(ms), nil, refreshToken); err != nil {
 		env.log().Error(fmt.Sprintf("Anthropic OAuth refresh rotated the single-use token but could not commit it to %s (%v) — treating the refresh as failed; run 'icebath auth add anthropic' to give Icebath its own login", credPath, err))
 		MarkRotationConsumedUncommitted(credPath, refreshToken, anyString(creds["accessToken"]), anyString(current["accessToken"]), anyString(current["refreshToken"]))
 		return ""

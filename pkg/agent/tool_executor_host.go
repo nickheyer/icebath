@@ -208,7 +208,7 @@ func (a *AIAgent) CuteToolMessage(name string, args map[string]any, duration flo
 // Interrupt bit read under the lock its publisher holds
 func (a *AIAgent) Interrupted() bool {
 	defer icLock(a.pendingRedirectLock)()
-	return a.interruptRequested
+	return a.interruptRequested.Load()
 }
 
 func (a *AIAgent) ToolInterruptReason() string {

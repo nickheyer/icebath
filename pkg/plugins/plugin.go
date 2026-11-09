@@ -90,6 +90,9 @@ func bundledPlugin(key string) (Plugin, bool) {
 	return p, ok
 }
 
+// Exported bundledPlugin
+func BundledPlugin(key string) (Plugin, bool) { return bundledPlugin(key) }
+
 // Profile-local plugin install metadata keyed by plugin directory name
 func readInstallMetadata(h string) (map[string]any, error) {
 	path := filepath.Join(home.PluginsDir(h), ".install-metadata.json")

@@ -245,12 +245,13 @@ func TestTimeoutAndInterruptEarlyResults(t *testing.T) {
 	}
 
 	b, _ := leaseAgent(stores, newLeaseFakeDB(true, false))
-	b.interruptRequested, b.interruptMessage = true, "stop"
+	b.interruptRequested.Store(true)
+	b.interruptMessage = "stop"
 	early = admitLease(t, b, nil).earlyResult
 	if early["interrupted"] != true || early["interrupt_message"] != "stop" {
 		t.Fatalf("interrupt early result %v", early)
 	}
-	if b.interruptRequested || b.interruptMessage != "" {
+	if b.interruptRequested.Load() || b.interruptMessage != "" {
 		t.Fatal("the early return left the interrupt set for the next turn")
 	}
 }
@@ -258,7 +259,7 @@ func TestTimeoutAndInterruptEarlyResults(t *testing.T) {
 func TestInterruptBeforeAnyWaitDoesNotBlameAnotherProcess(t *testing.T) {
 	stores := useLeaseStores(t)
 	a, _ := leaseAgent(stores, newLeaseFakeDB(true, false))
-	a.interruptRequested = true
+	a.interruptRequested.Store(true)
 	reply, _ := admitLease(t, a, nil).earlyResult["final_response"].(string)
 	if strings.Contains(reply, "another Icebath process") || !strings.Contains(reply, "not processed") {
 		t.Fatalf("reply %q", reply)
@@ -266,7 +267,7 @@ func TestInterruptBeforeAnyWaitDoesNotBlameAnotherProcess(t *testing.T) {
 	held := newLeaseFakeDB(true, false)
 	held.onAcquire = func(o state.TurnLeaseWait) { _ = o.OnWait(0.5) }
 	b, statuses := leaseAgent(stores, held)
-	b.interruptRequested = true
+	b.interruptRequested.Store(true)
 	reply, _ = admitLease(t, b, nil).earlyResult["final_response"].(string)
 	if !strings.Contains(reply, "another Icebath process") {
 		t.Fatalf("reply %q", reply)

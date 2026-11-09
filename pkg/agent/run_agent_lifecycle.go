@@ -299,7 +299,7 @@ func (a *AIAgent) finalizeOwnedSessionRow() {
 }
 
 // True when an interrupt has been requested
-func (a *AIAgent) IsInterrupted() bool { return a.interruptRequested }
+func (a *AIAgent) IsInterrupted() bool { return a.interruptRequested.Load() }
 
 // Session lineage root id for Portal usage attribution, empty for None
 func (a *AIAgent) conversationRootID() string {

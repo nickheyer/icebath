@@ -134,3 +134,6 @@ func auxReadMainAPIKeyIfSameOrigin(ctx context.Context, auxBaseURL string) (any,
 	}
 	return auxReadMainAPIKey(ctx), nil
 }
+
+// Same origin main key reader the keyless local lane tests swap
+var auxReadMainAPIKeyIfSameOriginFn = auxReadMainAPIKeyIfSameOrigin

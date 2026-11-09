@@ -55,3 +55,27 @@ func atomicJSONText(data any, opts []pyjson.Option) (string, error) {
 	}
 	return text, nil
 }
+
+// JSON object at path as a map, empty when the file is missing, unreadable, malformed or not an object
+func ReadJSONOrEmpty(path string) map[string]any {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return map[string]any{}
+	}
+	text := strings.TrimPrefix(string(raw), "\ufeff")
+	parsed, err := pyjson.Loads(text)
+	if err != nil {
+		return map[string]any{}
+	}
+	switch v := parsed.(type) {
+	case *pyjson.Object:
+		out := make(map[string]any, len(v.Keys))
+		for _, k := range v.Keys {
+			out[k] = v.Vals[k]
+		}
+		return out
+	case map[string]any:
+		return v
+	}
+	return map[string]any{}
+}

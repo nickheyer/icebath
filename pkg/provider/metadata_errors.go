@@ -15,6 +15,9 @@ func contextCacheKey(model, baseURL string) string {
 	return model + "@" + strings.TrimRight(baseURL, "/")
 }
 
+// Exported cache key for tests of other packages
+func ContextCacheKey(model, baseURL string) string { return contextCacheKey(model, baseURL) }
+
 // SaveContextLength persists a discovered window under model at base url, source marks Bedrock provenance
 func SaveContextLength(ctx context.Context, model, baseURL string, length int, source string) {
 	if length <= 0 {
@@ -105,6 +108,13 @@ var (
 	bedrockProbeFailureCache = map[bedrockProbeKey]time.Time{}
 )
 
+// Empties the failed probe memo, the in memory state a process restart drops
+func ResetBedrockProbeFailureCache() {
+	bedrockProbeFailureMu.Lock()
+	clear(bedrockProbeFailureCache)
+	bedrockProbeFailureMu.Unlock()
+}
+
 // Drops a stale entry, its in memory probe memos and the file rows under the cache lock
 func invalidateCachedContextLength(ctx context.Context, model, baseURL string) {
 	key := contextCacheKey(model, baseURL)
@@ -122,6 +132,11 @@ func invalidateCachedContextLength(ctx context.Context, model, baseURL string) {
 	}
 	bedrockProbeFailureMu.Unlock()
 	dropContextCacheRows(ctx, []string{key, model + "@" + baseURL, key + "/"}, key)
+}
+
+// Exported invalidation for tests of other packages
+func InvalidateCachedContextLength(ctx context.Context, model, baseURL string) {
+	invalidateCachedContextLength(ctx, model, baseURL)
 }
 
 // GetNextProbeTier returns the next lower probe tier, false at the minimum

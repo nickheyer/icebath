@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"sync"
@@ -108,20 +109,42 @@ func invalidateCachedSudoOnAuthFailure(env *Env, scope, command, output string) 
 	return true
 }
 
-// Asks the user for a sudo password through the host form, empty on skip, timeout or error
+// Asks the user for a sudo password through the host form or the terminal, empty on skip, timeout or error
 func promptForSudoPassword(ctx context.Context, env *Env, command string, timeout time.Duration) string {
+	human := humanInputRequest(env, "sudo", command, "")
 	if env == nil || env.Ask == nil {
-		return readHiddenPasswordFromTTY(timeout)
+		password, done := readHiddenPasswordFromTTY(timeout)
+		switch {
+		case !done:
+			human.finish(env, "timeout")
+		case password != "":
+			human.finish(env, "provided")
+		default:
+			human.finish(env, "skipped")
+		}
+		return password
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	release := humanWaitWindow(env, "")
 	result, err := env.Ask.Ask(ctx, []Question{{
 		Header: "Sudo password required",
 		Text:   "The command `" + command + "` needs sudo. Enter the password (hidden), or submit an empty answer to skip (the command fails gracefully).",
 	}})
-	if err != nil || len(result.Answers) == 0 {
+	release()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			human.finish(env, "timeout")
+		} else {
+			human.finish(env, "error")
+		}
 		return ""
 	}
+	if len(result.Answers) == 0 || result.Answers[0].Text == "" {
+		human.finish(env, "skipped")
+		return ""
+	}
+	human.finish(env, "provided")
 	return result.Answers[0].Text
 }
 

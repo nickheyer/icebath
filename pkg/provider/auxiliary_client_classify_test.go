@@ -100,7 +100,7 @@ func TestAuxIsRateLimitTimeoutConnectionError(t *testing.T) {
 	}
 }
 
-func TestAuxOpenrouterLimit403IsBillingForMainLoopAndAuxLadder(t *testing.T) {
+func TestOpenrouterLimit403IsBillingForMainLoopAndAuxLadder(t *testing.T) {
 	for _, body := range []string{
 		"Error code: 403 - {'error': {'message': 'Budget limit exceeded (monthly limit). Contact your org admin.', 'code': 403}}",
 		"Error code: 403 - {'error': {'message': 'Key limit exceeded (total limit). Contact your org admin.', 'code': 403}}",
@@ -120,7 +120,7 @@ func TestAuxOpenrouterLimit403IsBillingForMainLoopAndAuxLadder(t *testing.T) {
 	}
 }
 
-func TestAuxAbsentCredentialsQuarantineIsDebugAndNamesTheRealReason(t *testing.T) {
+func TestAbsentCredentialsQuarantineIsDebugAndNamesTheRealReason(t *testing.T) {
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	auxResetAuxUnhealthyCache()
 	t.Cleanup(auxResetAuxUnhealthyCache)
@@ -152,7 +152,7 @@ func TestAuxProfileScopedUnhealthyMarksFollowRoutedHome(t *testing.T) {
 	}
 }
 
-func TestAuxReasoningEffortNoneUnsupportedReversedWording(t *testing.T) {
+func TestReasoningEffortNoneUnsupportedReversedWording(t *testing.T) {
 	bad := func(msg string) error { return auxExc(msg, 400) }
 	if !auxIsReasoningFieldRejection(bad("Error code: 400 - reasoning_effort 'none' unsupported; use minimal|low|medium|high|xhigh")) {
 		t.Fatal("reversed wording fires")
@@ -201,30 +201,34 @@ func TestAuxIsStructuredOutputRejection(t *testing.T) {
 }
 
 func TestAuxIsUnsupportedTemperatureError(t *testing.T) {
-	for _, msg := range []string{
-		"HTTP 400: Unsupported parameter: temperature",
-		"Error code: 400 - {'error': {'message': \"Unsupported parameter: 'temperature'\"}}",
-		"Error code: 400 - {'error': {'code': 'unsupported_parameter', 'param': 'temperature'}}",
-		"Provider returned error: temperature is not supported for this model",
-		"this model does not support temperature",
-		"temperature: unknown parameter",
-		"unrecognized request argument supplied: temperature",
-	} {
-		if !auxIsUnsupportedParameterError(errors.New(msg), "temperature") {
-			t.Fatalf("should match %q", msg)
+	t.Run("test_matches_real_provider_messages", func(t *testing.T) {
+		for _, msg := range []string{
+			"HTTP 400: Unsupported parameter: temperature",
+			"Error code: 400 - {'error': {'message': \"Unsupported parameter: 'temperature'\"}}",
+			"Error code: 400 - {'error': {'code': 'unsupported_parameter', 'param': 'temperature'}}",
+			"Provider returned error: temperature is not supported for this model",
+			"this model does not support temperature",
+			"temperature: unknown parameter",
+			"unrecognized request argument supplied: temperature",
+		} {
+			if !auxIsUnsupportedParameterError(errors.New(msg), "temperature") {
+				t.Fatalf("should match %q", msg)
+			}
 		}
-	}
-	for _, msg := range []string{
-		"HTTP 400: Invalid value: 'tool'. Supported values are: 'assistant'...",
-		"max_tokens is too large for this model",
-		"Rate limit exceeded",
-		"Connection reset by peer",
-		"temperature must be between 0 and 2",
-	} {
-		if auxIsUnsupportedParameterError(errors.New(msg), "temperature") {
-			t.Fatalf("should not match %q", msg)
+	})
+	t.Run("test_does_not_match_unrelated_errors", func(t *testing.T) {
+		for _, msg := range []string{
+			"HTTP 400: Invalid value: 'tool'. Supported values are: 'assistant'...",
+			"max_tokens is too large for this model",
+			"Rate limit exceeded",
+			"Connection reset by peer",
+			"temperature must be between 0 and 2",
+		} {
+			if auxIsUnsupportedParameterError(errors.New(msg), "temperature") {
+				t.Fatalf("should not match %q", msg)
+			}
 		}
-	}
+	})
 	if auxIsUnsupportedParameterError(errors.New("unsupported"), "") {
 		t.Fatal("an empty parameter never matches")
 	}
@@ -329,7 +333,7 @@ func TestAuxEvictCachedClientsIsProfileAndProviderScoped(t *testing.T) {
 	}
 }
 
-func TestAuxEvictCachedClientInstanceWalksAsyncWrapper(t *testing.T) {
+func TestAuxiliaryClientPoisonedCacheEvictionEvictCachedClientInstanceWalksAsyncWrapper(t *testing.T) {
 	auxIsolateClientCache(t)
 	real := &auxOpenAIClient{}
 	sync := NewCodexAuxiliaryClient(real, "gpt-5")
@@ -371,7 +375,7 @@ func TestAuxProviderForHostTablesAndCredsHaveAPIKey(t *testing.T) {
 	}
 }
 
-func TestAuxUnhealthyTTLExpiryEvictsAndCustomURLIdentity(t *testing.T) {
+func TestAuxUnhealthyCacheTtlExpiryEvicts(t *testing.T) {
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	auxResetAuxUnhealthyCache()
 	t.Cleanup(auxResetAuxUnhealthyCache)

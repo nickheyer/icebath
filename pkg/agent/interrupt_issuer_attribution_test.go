@@ -22,7 +22,7 @@ func TestSystemProducerIsRecordedAndLoggedAtPublication(t *testing.T) {
 	defer slog.SetDefault(prev)
 	a := bareIssuerAgent()
 	a.HardInterrupt("Cron job timed out (inactivity)", "cron inactivity watchdog")
-	if !a.interruptRequested {
+	if !a.interruptRequested.Load() {
 		t.Fatal("interrupt not requested")
 	}
 	if got := interruptIssuer(a); got != "cron_inactivity_watchdog" {
@@ -50,7 +50,7 @@ func TestHumanStopsHaveNoSystemIssuer(t *testing.T) {
 	}
 	a.clearInterrupt(false)
 	a.HardInterrupt("", "")
-	if !a.interruptRequested {
+	if !a.interruptRequested.Load() {
 		t.Fatal("hard stop not requested")
 	}
 	if got := interruptIssuer(a); got != "" {

@@ -9,7 +9,7 @@ import (
 
 func TestToolModelContextLengthRoutesTheQueryThroughTheResolver(t *testing.T) {
 	bedrockIsolatedEnv(t)
-	bedrockStubProbe(t, 0)
+	bedrockFakeProbe(t, 0)
 	ctx := context.Background()
 	base := "https://bedrock-runtime.us-east-2.amazonaws.com"
 	SaveContextLength(ctx, "us.anthropic.claude-sonnet-4-6", base, 200_000, "")

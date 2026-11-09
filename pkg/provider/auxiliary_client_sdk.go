@@ -995,7 +995,8 @@ func (s *auxSDKStream) auxPinAttempt(onRelease func()) func() {
 		conn, released := s.conn, s.released
 		s.mu.Unlock()
 		if !released && conn != nil {
-			auxShutdownConn(conn)
+			auxCutAttemptConn(conn)
+			auxChatShutdownSocketFn(conn)
 		}
 	}
 }
@@ -1047,3 +1048,29 @@ func (e *AuxTransportError) Unwrap() error                       { return e.Err 
 func (e *AuxTransportError) PyTypeName() string                  { return e.Class }
 func (e *AuxTransportError) FailedRequest() *FailedStreamRequest { return e.Request }
 func (e *AuxTransportError) Timeout() bool                       { return strings.HasSuffix(e.Class, "Timeout") }
+
+// Attempt socket shutdown seam the late watchdog timer test pauses
+var auxChatShutdownSocketFn = auxShutdownConn
+
+// Error every read of a cut attempt connection returns
+var auxErrAttemptCut = errors.New("auxiliary attempt connection cut by its stream watchdog")
+
+// Implemented by dialed connection wrappers that can refuse every later byte
+type auxCuttableConn interface{ cutAttempt() }
+
+// Cuts the wrapped attempt connection under any TLS layer so a delayed shutdown never reaches a pooled reuse
+func auxCutAttemptConn(conn net.Conn) {
+	for {
+		switch c := conn.(type) {
+		case auxCuttableConn:
+			c.cutAttempt()
+			return
+		case *tls.Conn:
+			conn = c.NetConn()
+		case interface{ NetConn() net.Conn }:
+			conn = c.NetConn()
+		default:
+			return
+		}
+	}
+}

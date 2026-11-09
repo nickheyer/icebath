@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -105,8 +106,8 @@ func TestInheritedHardInterruptBypassesLegacySubclassOverride(t *testing.T) {
 	if !RequestHardInterruptOf(agent, strp("stop now"), nil) {
 		t.Fatal("subclass reported unsupported")
 	}
-	if len(agent.legacyCalls) != 0 || !agent.hardInterruptRequested.IsSet() || !agent.interruptRequested || agent.interruptMessage != "stop now" {
-		t.Fatalf("legacy %v hard %v requested %v message %q", agent.legacyCalls, agent.hardInterruptRequested.IsSet(), agent.interruptRequested, agent.interruptMessage)
+	if len(agent.legacyCalls) != 0 || !agent.hardInterruptRequested.IsSet() || !agent.interruptRequested.Load() || agent.interruptMessage != "stop now" {
+		t.Fatalf("legacy %v hard %v requested %v message %q", agent.legacyCalls, agent.hardInterruptRequested.IsSet(), agent.interruptRequested.Load(), agent.interruptMessage)
 	}
 }
 
@@ -130,5 +131,24 @@ func TestInterruptScopeCancelsAgentsThatStartAfterTheCancel(t *testing.T) {
 	want := []string{"Console command cancelled"}
 	if !reflect.DeepEqual(early.stops, want) || !reflect.DeepEqual(late.stops, want) || len(unscoped.stops) != 0 {
 		t.Fatalf("early %v late %v unscoped %v", early.stops, late.stops, unscoped.stops)
+	}
+}
+
+func TestTuiSubagentInterruptIsAnExplicitHardStop(t *testing.T) {
+	agent := &modernInterruptAgent{}
+	subagentID := "sa-hard-stop-test"
+	activeSubagentsMu.Lock()
+	activeSubagents.set(subagentID, map[string]any{"agent": agent})
+	activeSubagentsMu.Unlock()
+	defer func() {
+		activeSubagentsMu.Lock()
+		activeSubagents.pop(subagentID)
+		activeSubagentsMu.Unlock()
+	}()
+	if !InterruptSubagent(subagentID) {
+		t.Fatal("running subagent reported missing")
+	}
+	if len(agent.calls) != 1 || agent.calls[0][0] != "hard" || !strings.Contains(agent.calls[0][1], subagentID) {
+		t.Fatalf("calls %v", agent.calls)
 	}
 }

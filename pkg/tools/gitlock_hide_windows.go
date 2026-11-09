@@ -12,6 +12,9 @@ func windowsHideAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: gitlockCreateNoWindow}
 }
 
+// WindowsHideAttr is the console hiding attribute set, the windows_hide_flags creation flags
+func WindowsHideAttr() *syscall.SysProcAttr { return windowsHideAttr() }
+
 // Copy of attr with the console hiding flag added to its creation flags
 func mergeHideAttr(attr *syscall.SysProcAttr) *syscall.SysProcAttr {
 	merged := *attr

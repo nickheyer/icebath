@@ -36,4 +36,5 @@ func installLocalStackProbeDoubles() {
 	ChromiumExecutable = func(*tools.Env, bool) string { return "" }
 	FasterWhisperImportable = func() bool { return false }
 	ManagedImageRoute = func(any, any) string { return "" }
+	tools.VisionCapabilities = VisionCapabilities{}
 }

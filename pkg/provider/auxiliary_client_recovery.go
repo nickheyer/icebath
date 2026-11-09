@@ -230,7 +230,7 @@ func auxPrepareSameProviderRetry(ctx context.Context, prep auxSameProviderRetry,
 	var retryModel, effectiveProvider string
 	if prep.Task == "vision" {
 		var err error
-		effectiveProvider, retryClient, retryModel, err = ResolveVisionProviderClient(ctx, prep.ResolvedProvider, prep.FinalModel, prep.ResolvedBaseURL, prep.ResolvedAPIKey, asyncMode, nil)
+		effectiveProvider, retryClient, retryModel, err = auxResolveVisionProviderClientFn(ctx, prep.ResolvedProvider, prep.FinalModel, prep.ResolvedBaseURL, prep.ResolvedAPIKey, asyncMode, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -291,11 +291,11 @@ func auxRetrySameProviderSync(ctx context.Context, prep auxSameProviderRetry) (a
 	if err != nil {
 		return nil, err
 	}
-	out, err := auxRelaySyncCompletion(ctx, client, kwargs, prep.ResolvedProvider, prep.ResolvedAPIMode, nil)
+	out, err := auxRelaySyncCompletionFn(ctx, client, kwargs, prep.ResolvedProvider, prep.ResolvedAPIMode, nil)
 	if err != nil {
 		return nil, err
 	}
-	return auxValidateLLMResponse(ctx, out, prep.Task, "", "")
+	return auxValidateLLMResponseFn(ctx, out, prep.Task, "", "")
 }
 
 // Validated response of a rebuilt async client retry through the relayed async completion
@@ -308,7 +308,7 @@ func auxRetrySameProviderAsync(ctx context.Context, prep auxSameProviderRetry) (
 	if err != nil {
 		return nil, err
 	}
-	return auxValidateLLMResponse(ctx, out, prep.Task, "", "")
+	return auxValidateLLMResponseFn(ctx, out, prep.Task, "", "")
 }
 
 // Codex runtime resolver seam forcing a token refresh

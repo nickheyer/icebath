@@ -82,30 +82,29 @@ func TestResolveCodexCredentialTokenFromAuthStore(t *testing.T) {
 	}
 }
 
+// Pool only xAI OAuth credentials under an env base URL override, the expected base URL asserted
+func auxXaiPoolOnlyCase(t *testing.T, envBase, want string) {
+	t.Helper()
+	ctx := auxMainTestHome(t, "")
+	auxWriteAuthJSON(t, ctx, map[string]any{"version": 1, "providers": map[string]any{}})
+	t.Setenv("ICEBATH_XAI_BASE_URL", envBase)
+	t.Setenv("XAI_BASE_URL", "")
+	pool := LoadPool(modelsPoolEnv(ctx), "xai-oauth")
+	if _, err := pool.AddEntry(PooledCredential{Provider: "xai-oauth", ID: "xai123", Label: "pool-only", AuthType: AuthTypeOAuth,
+		Source: "manual:xai_pkce", AccessToken: "pool-access-token", RefreshToken: "pool-refresh-token", BaseURL: DefaultXAIOAuthBaseURL}); err != nil {
+		t.Fatal(err)
+	}
+	key, base, ok := auxResolveXaiOAuthForAux(ctx)
+	if !ok || key != "pool-access-token" || base != want {
+		t.Fatalf("got %q %q %v", key, base, ok)
+	}
+}
+
 func TestResolveXaiOAuthForAuxReadsPoolOnlyCredentials(t *testing.T) {
-	cases := []struct {
-		name, envBase, want string
-	}{
-		{"uses pool backed credentials without singleton", "", DefaultXAIOAuthBaseURL},
-		{"pool backed credentials honor base url env override", "https://example.x.ai/v1/", "https://example.x.ai/v1"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := auxMainTestHome(t, "")
-			auxWriteAuthJSON(t, ctx, map[string]any{"version": 1, "providers": map[string]any{}})
-			t.Setenv("ICEBATH_XAI_BASE_URL", tc.envBase)
-			t.Setenv("XAI_BASE_URL", "")
-			pool := LoadPool(modelsPoolEnv(ctx), "xai-oauth")
-			if _, err := pool.AddEntry(PooledCredential{Provider: "xai-oauth", ID: "xai123", Label: "pool-only", AuthType: AuthTypeOAuth,
-				Source: "manual:xai_pkce", AccessToken: "pool-access-token", RefreshToken: "pool-refresh-token", BaseURL: DefaultXAIOAuthBaseURL}); err != nil {
-				t.Fatal(err)
-			}
-			key, base, ok := auxResolveXaiOAuthForAux(ctx)
-			if !ok || key != "pool-access-token" || base != tc.want {
-				t.Fatalf("got %q %q %v", key, base, ok)
-			}
-		})
-	}
+	t.Run("test_uses_pool_backed_credentials_without_singleton", func(t *testing.T) { auxXaiPoolOnlyCase(t, "", DefaultXAIOAuthBaseURL) })
+	t.Run("test_pool_backed_credentials_honor_base_url_env_override", func(t *testing.T) {
+		auxXaiPoolOnlyCase(t, "https://example.x.ai/v1/", "https://example.x.ai/v1")
+	})
 }
 
 func TestTryOpenrouterPoolExhaustedFallsBackToEnv(t *testing.T) {
@@ -121,35 +120,75 @@ func TestTryOpenrouterPoolExhaustedFallsBackToEnv(t *testing.T) {
 	}
 }
 
-func TestTryOpenrouterPaidLaneGuard(t *testing.T) {
-	cases := []struct {
-		name      string
-		aux       map[string]any
-		model     string
-		wantModel string
-	}{
-		{"free only allows builtin default model", map[string]any{"free_only": true}, "", auxOpenRouterModel},
-		{"free only skips paid configured model", map[string]any{"free_only": true, "openrouter_model": "google/gemini-3.6-flash"}, "", ""},
-		{"free only allows free model", map[string]any{"free_only": true, "openrouter_model": "nvidia/nemotron-3-ultra-550b-a55b:free"}, "",
-			"nvidia/nemotron-3-ultra-550b-a55b:free"},
-		{"configured model overrides hardcoded default", map[string]any{"openrouter_model": "some/vendor-model"}, "", "some/vendor-model"},
-		{"explicit caller model respects free only", map[string]any{"free_only": true}, "google/gemini-3.6-flash", ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := auxMainTestHome(t, "")
-			t.Setenv("OPENROUTER_API_KEY", "or-key")
-			auxFixedPoolEntry(t, false, nil)
-			auxFixedConfig(t, map[string]any{"auxiliary": tc.aux})
-			client, model, err := auxTryOpenrouter(ctx, nil, tc.model, "")
-			if err != nil || model != tc.wantModel || (client == nil) != (tc.wantModel == "") {
-				t.Fatalf("got %v %q %v", client, model, err)
-			}
-		})
+// Runs the OpenRouter lane under a pool free home, an env key and the given auxiliary config
+func auxPaidLaneCase(t *testing.T, aux map[string]any, model, wantModel string) {
+	t.Helper()
+	ctx := auxMainTestHome(t, "")
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	auxFixedPoolEntry(t, false, nil)
+	auxFixedConfig(t, map[string]any{"auxiliary": aux})
+	client, got, err := auxTryOpenrouter(ctx, nil, model, "")
+	if err != nil || got != wantModel || (client == nil) != (wantModel == "") {
+		t.Fatalf("got %v %q %v", client, got, err)
 	}
 }
 
-func TestTryOpenrouterPaidLaneWarnsOnce(t *testing.T) {
+func TestOpenRouterPaidLaneGuardFreeOnlyAllowsBuiltinDefaultModel(t *testing.T) {
+	auxPaidLaneCase(t, map[string]any{"free_only": true}, "", auxOpenRouterModel)
+}
+
+func TestOpenRouterPaidLaneGuardFreeOnlySkipsPaidConfiguredModel(t *testing.T) {
+	auxPaidLaneCase(t, map[string]any{"free_only": true, "openrouter_model": "google/gemini-3.6-flash"}, "", "")
+}
+
+func TestOpenRouterPaidLaneGuardFreeOnlyAllowsFreeModel(t *testing.T) {
+	auxPaidLaneCase(t, map[string]any{"free_only": true, "openrouter_model": "nvidia/nemotron-3-ultra-550b-a55b:free"}, "", "nvidia/nemotron-3-ultra-550b-a55b:free")
+}
+
+func TestOpenRouterPaidLaneGuardConfiguredModelOverridesHardcodedDefault(t *testing.T) {
+	auxPaidLaneCase(t, map[string]any{"openrouter_model": "some/vendor-model"}, "", "some/vendor-model")
+}
+
+func TestOpenRouterPaidLaneGuardExplicitCallerModelRespectsFreeOnly(t *testing.T) {
+	auxPaidLaneCase(t, map[string]any{"free_only": true}, "google/gemini-3.6-flash", "")
+}
+
+func TestOpenRouterPaidLaneGuardResolverForwardsExplicitFreeModelToGate(t *testing.T) {
+	ctx := auxMainTestHome(t, "")
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	auxFixedPoolEntry(t, false, nil)
+	auxFixedConfig(t, map[string]any{"auxiliary": map[string]any{"free_only": true}})
+	client, model, err := ResolveProviderClient(ctx, "openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free", ProviderClientOptions{})
+	if err != nil || client == nil || model != "nvidia/nemotron-3-ultra-550b-a55b:free" {
+		t.Fatalf("got %v %q %v", client, model, err)
+	}
+}
+
+func TestOpenRouterPaidLaneGuardFreeOnlyGateDoesNotMarkOpenrouterUnhealthy(t *testing.T) {
+	ctx := auxMainTestHome(t, "")
+	auxClearUnhealthy(t)
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	auxFixedPoolEntry(t, false, nil)
+	auxFixedConfig(t, map[string]any{"auxiliary": map[string]any{"free_only": true}})
+	client, model, err := ResolveProviderClient(ctx, "openrouter", "google/gemini-3.6-flash", ProviderClientOptions{})
+	if err != nil || client != nil || model != "" {
+		t.Fatalf("got %v %q %v", client, model, err)
+	}
+	if auxIsProviderUnhealthy(ctx, "openrouter", "") {
+		t.Fatal("free_only gate marked openrouter unhealthy")
+	}
+}
+
+func TestOpenRouterPaidLaneGuardIsFreeModel(t *testing.T) {
+	for model, want := range map[string]bool{"nvidia/nemotron-3-ultra-550b-a55b:free": true, "stealth/ox-alpha": true,
+		"google/gemini-3.6-flash": false, "my-stealth/model": false, "": false} {
+		if auxIsFreeModel(model) != want {
+			t.Fatalf("%q free %v", model, !want)
+		}
+	}
+}
+
+func TestOpenRouterPaidLaneGuardPaidLaneWarnsOnce(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
 	paid := "google/gemini-3.6-flash"
 	auxPaidLaneWarnedMu.Lock()

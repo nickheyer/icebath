@@ -63,7 +63,7 @@ func appendNoticeToContent(msg *state.Message, notice string) bool {
 
 // Appends the opt in one shot iteration budget checkpoint to the newest unpersisted tool result
 func maybeInjectIterationBudgetWarning(a *AIAgent, messages []*state.Message) bool {
-	if a.interruptRequested {
+	if a.interruptRequested.Load() {
 		return false
 	}
 	ratio, haveRatio := a.budgetWarningRatio, a.budgetWarningRatio != 0
@@ -293,7 +293,7 @@ func beginIteration(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict
 	if a.checkpointMgr != nil {
 		a.checkpointMgr.NewTurn()
 	}
-	if a.interruptRequested {
+	if a.interruptRequested.Load() {
 		s.Interrupted = true
 		if issuer := interruptIssuer(a); issuer != "" {
 			s.TurnExitReason = "interrupted_by_system(" + issuer + ")"

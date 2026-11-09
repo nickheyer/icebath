@@ -114,6 +114,9 @@ func (m *Manager) DiscoverAndLoad(ctx context.Context, force bool) {
 	}
 }
 
+// Marks the manager discovered without a sweep, the hermes test pin of a zero plugin runtime
+func (m *Manager) MarkDiscoveredForTests() { m.setDiscovered(true) }
+
 // Locked sweep body, false when nothing ran, safe mode skipped it or an interrupt cancelled it
 func (m *Manager) discoverAndLoadLocked(ctx context.Context, force bool) (map[string]bool, bool) {
 	ctx, unlock := m.lockDiscovery(ctx)
@@ -419,14 +422,17 @@ func (m *Manager) GetApprovalTransport(ctx context.Context, name string) *tools.
 	return registered
 }
 
+// Transport of the env's profile after the lazy discovery a first approval needs, the hermes approval_prompt seam
+func resolveRegisteredApprovalTransport(env *tools.Env, name string) (*tools.RegisteredApprovalTransport, error) {
+	ctx := context.Background()
+	if env != nil && env.Home != "" {
+		ctx = home.WithOverride(ctx, env.Home)
+	}
+	return deliveryManager(ctx).GetApprovalTransport(ctx, name), nil
+}
+
 func init() {
-	tools.RegisterApprovalTransportResolver(func(env *tools.Env, name string) (*tools.RegisteredApprovalTransport, error) {
-		ctx := context.Background()
-		if env != nil && env.Home != "" {
-			ctx = home.WithOverride(ctx, env.Home)
-		}
-		return GetPluginManager(ctx).GetApprovalTransport(ctx, name), nil
-	})
+	tools.RegisterApprovalTransportResolver(resolveRegisteredApprovalTransport)
 }
 
 // Whether config enables a portable package with MCP servers, probed without loading plugins

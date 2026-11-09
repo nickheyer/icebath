@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"weak"
 
@@ -215,7 +216,7 @@ type AIAgent struct {
 	trimAfterToolBatch                 bool
 	toolGuardrails                     *tools.ToolCallGuardrailController
 	toolGuardrailHaltDecision          *tools.ToolGuardrailDecision
-	interruptRequested                 bool
+	interruptRequested                 atomic.Bool
 	interruptMessage                   string
 	hardInterruptRequested             *pythread.Event
 	executionThreadID                  int64
@@ -527,9 +528,12 @@ func (a *AIAgent) StreamProvider() string            { return a.provider }
 func (a *AIAgent) StreamBaseURL() string             { return a.baseURL }
 func (a *AIAgent) ToolEnv() *tools.Env               { return a.env }
 func (a *AIAgent) EnabledToolsets() []string         { return a.enabledToolsets }
-func (a *AIAgent) DisabledToolsets() []string        { return a.disabledToolsets }
-func (a *AIAgent) DelegationBackend() string         { return a.delegationBackend }
-func (a *AIAgent) IsOneshot() bool                   { return a.agentIsOneshot() }
+
+// SessionDB is the session store the agent persists turns into, nil before one is attached
+func (a *AIAgent) SessionDB() *state.DB       { return a.sessionDB }
+func (a *AIAgent) DisabledToolsets() []string { return a.disabledToolsets }
+func (a *AIAgent) DelegationBackend() string  { return a.delegationBackend }
+func (a *AIAgent) IsOneshot() bool            { return a.agentIsOneshot() }
 func (a *AIAgent) ToolSearchScopedNames() map[string]bool {
 	return toolSearchScopedNames(a)
 }

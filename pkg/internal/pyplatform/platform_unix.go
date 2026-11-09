@@ -23,3 +23,12 @@ func machine() string {
 	_, m, _ := uname()
 	return m
 }
+
+// Release field of uname, empty when the kernel refuses
+func release() string {
+	var u unix.Utsname
+	if err := unix.Uname(&u); err != nil {
+		return ""
+	}
+	return unix.ByteSliceToString(u.Release[:])
+}

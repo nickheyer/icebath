@@ -63,7 +63,7 @@ func bedrockConverseOnce(t *testing.T) (*awsServiceClient, error) {
 	return c, c.doJSON(context.Background(), "Converse", http.MethodPost, bedrockModelPath(bedrockRetryModel, "converse"), nil, in, &out)
 }
 
-func TestBedrockHungConverseFailsAfterOneReadTimeout(t *testing.T) {
+func TestHungConverseFailsAfterOneReadTimeoutNotFive(t *testing.T) {
 	s := newBedrockRefusingServer(t, "hang")
 	bedrockWriteConfig(t, bedrockHomeOf(t), "providers:\n  bedrock:\n    request_timeout_seconds: 0.5\n")
 	_, err := bedrockConverseOnce(t)
@@ -79,7 +79,7 @@ func TestBedrockHungConverseFailsAfterOneReadTimeout(t *testing.T) {
 	}
 }
 
-func TestBedrockThrottleReachesTheAgentRetryLoopOnFirstRefusal(t *testing.T) {
+func TestThrottleReachesHermesRetryLoopOnFirstRefusalWithDefaultTimeouts(t *testing.T) {
 	s := newBedrockRefusingServer(t, "throttle")
 	c, err := bedrockConverseOnce(t)
 	var svc *AWSServiceError

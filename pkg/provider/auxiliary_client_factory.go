@@ -57,7 +57,7 @@ type AuxChatStream interface {
 }
 
 // Default substantive progress window of a streamed auxiliary call in seconds
-const auxStreamNoProgressTimeoutSeconds = 60.0
+var auxStreamNoProgressTimeoutSeconds = 60.0
 
 type auxProbeKey struct{}
 

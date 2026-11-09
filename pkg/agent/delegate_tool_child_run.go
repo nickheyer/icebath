@@ -166,7 +166,7 @@ func attachChild(parent, child *AIAgent) {
 	if lock != nil {
 		lock.Unlock()
 	}
-	if !parent.interruptRequested {
+	if !parent.interruptRequested.Load() {
 		return
 	}
 	message := parent.interruptMessage
@@ -546,6 +546,9 @@ func registerChild(ctx context.Context, child, parent *AIAgent, goal, ownerSessi
 	return subagentID
 }
 
+// Isolated worktree creator of the child run, swapped by tests that seed a worktree
+var createIsolatedWorktreeFn = createIsolatedWorktree
+
 // Own git worktree for the child when isolation is on and the backend is local, nil otherwise
 func createIsolatedWorktree(ctx context.Context, parent *AIAgent, parentTaskID, subagentID string) (info map[string]string) {
 	if !tools.WorktreeIsolation(ctx) {
@@ -586,6 +589,16 @@ func deferCloseAfterTimeout(child *AIAgent, done <-chan struct{}) {
 	})
 }
 
+// Child conversation and credential swap of the child run, swapped by tests that observe the scope they run in
+var (
+	runChildConversationFn = func(ctx context.Context, child *AIAgent, userMessage any, o RunConversationOptions) (map[string]any, error) {
+		return child.RunConversationContent(ctx, userMessage, o)
+	}
+	swapChildCredentialFn = func(ctx context.Context, child *AIAgent, leased provider.PooledCredential) (bool, error) {
+		return child.swapCredential(ctx, leased)
+	}
+)
+
 // Leases and binds a credential serving the child's endpoint from its pool
 func leaseChildCredential(ctx context.Context, child *AIAgent) (*provider.Pool, string) {
 	pool := child.credentialPool
@@ -624,7 +637,7 @@ func leaseChildCredential(ctx context.Context, child *AIAgent) (*provider.Pool, 
 			}
 		}
 		if leased != nil {
-			if _, err := child.swapCredential(scoped, *leased); err != nil {
+			if _, err := swapChildCredentialFn(scoped, child, *leased); err != nil {
 				panic(err)
 			}
 		}
@@ -675,7 +688,7 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 			}
 		}()
 		runCtx := tools.WithDelegatedChildContext(childProfileScope(ctx, child), true)
-		out, err := child.RunConversationContent(runCtx, tools.BuildRetryMessage(errs), RunConversationOptions{TaskID: childTaskID, StreamCallback: relay})
+		out, err := runChildConversationFn(runCtx, child, tools.BuildRetryMessage(errs), RunConversationOptions{TaskID: childTaskID, StreamCallback: relay})
 		if err != nil {
 			delegateLog().Warn(fmt.Sprintf("Subagent %d schema-retry turn failed: %v", taskIndex, err))
 			return
@@ -1035,7 +1048,7 @@ func (r *childRun) seedWorkspace() {
 		tools.RecordSessionCwd(r.child.env, r.childTaskID, parentCwd)
 		tools.RegisterContainerAlias(r.childTaskID, r.parentTaskID)
 	})
-	r.worktreeInfo = createIsolatedWorktree(r.ctx, r.parent, r.parentTaskID, r.subagentID)
+	r.worktreeInfo = createIsolatedWorktreeFn(r.ctx, r.parent, r.parentTaskID, r.subagentID)
 	if r.worktreeInfo != nil {
 		delegateQuiet("worktree cwd seed failed: %v", func() {
 			tools.RecordSessionCwd(r.child.env, r.childTaskID, r.worktreeInfo["path"])
@@ -1143,7 +1156,7 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 			defer func() { child.env = saved }()
 		}
 		runCtx := tools.WithDelegatedChildContext(childProfileScope(context.WithoutCancel(r.ctx), child), true)
-		outcome.result, outcome.err = child.RunConversationContent(runCtx, userMessage, RunConversationOptions{TaskID: r.childTaskID, StreamCallback: r.relayText})
+		outcome.result, outcome.err = runChildConversationFn(runCtx, child, userMessage, RunConversationOptions{TaskID: r.childTaskID, StreamCallback: r.relayText})
 	}()
 	settled := r.heartbeat.settled
 	go func() {

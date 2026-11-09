@@ -17,13 +17,35 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
-// Installs a plain git runner as the updater runner the process wiring assigns
+// Installs a plain git runner as the updater runner and the serve obligation hooks the process wiring assigns
 func installGitlockDoubles() {
 	GitlockRunGit = func(ctx context.Context, gitCmd, args []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
 		return gitlockSubprocessRun(ctx, append(slices.Clone(gitCmd), args...), o)
 	}
+	isReminder := func(row any) bool {
+		m, ok := row.(map[string]any)
+		return ok && (m["kind"] == "serve" || m["kind"] == "dashboard") && m["supervisor"] == "manual-serve"
+	}
+	rows := func(v any) []any {
+		items, _ := v.([]any)
+		return items
+	}
+	updaterecord.SetServeObligationHooks(updaterecord.ServeObligationHooks{
+		IsReminderRow: isReminder,
+		RetainReceiptManualServes: func(_ context.Context, receipt map[string]any) []any {
+			pending := []any{}
+			plan, _ := receipt["plan"].(map[string]any)
+			for _, row := range slices.Concat(rows(plan["runtimes"]), rows(receipt["pending_manual_serves"]), rows(receipt["carried_manual_serves"])) {
+				if isReminder(row) {
+					pending = append(pending, row)
+				}
+			}
+			return pending
+		},
+	})
 }
 
 // Environment of the fixture git calls, global and system config ignored
@@ -152,11 +174,11 @@ func TestClearRemovesAllStaleLockKinds(t *testing.T) {
 }
 
 // The gitlock half of the graph refresh case, the debris sweep and both guard refusals
-func TestObjectStoreSweepClearsDebrisLeavesIndexLockAndKeepsLocksWhileAGitRuns(t *testing.T) {
+func TestGraphRefreshClearsObjectStoreDebrisAndLeavesTheIndexLock(t *testing.T) {
 	repo := glRepo(t)
 	gitDir := filepath.Join(repo, ".git")
 	var debris []string
-	for _, rel := range []string{"info/commit-graph.lock", "info/commit-graphs/commit-graph-chain.lock",
+	for _, rel := range []string{"info/commit-graph.lock", "info/commit-graphs/commit-graph-chain.lock", "info/commit-graphs/tmp_graph_x1",
 		"pack/multi-pack-index.lock", "pack/multi-pack-index.d/multi-pack-index-chain.lock"} {
 		debris = append(debris, filepath.Join(gitDir, "objects", filepath.FromSlash(rel)))
 	}
@@ -164,12 +186,18 @@ func TestObjectStoreSweepClearsDebrisLeavesIndexLockAndKeepsLocksWhileAGitRuns(t
 	for _, p := range append(slices.Clone(debris), filepath.Join(gitDir, "index.lock")) {
 		glTouch(t, p, glStale)
 	}
-	ClearStaleObjectStoreLocks(gitDir)
+	if err := refreshCommitGraph(repo, gitDir); err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range debris {
 		if pathExists(p) {
 			t.Fatal(p)
 		}
 	}
+	if !pathExists(filepath.Join(gitDir, "index.lock")) {
+		t.Fatal("index.lock removed")
+	}
+	glGit(t, repo, "commit-graph", "verify")
 	if got := ClearStaleGitLocks(repo, nil); !slices.Equal(got, []string{filepath.Join(gitDir, "index.lock")}) {
 		t.Fatalf("index lock sweep %v", got)
 	}
@@ -180,25 +208,46 @@ func TestObjectStoreSweepClearsDebrisLeavesIndexLockAndKeepsLocksWhileAGitRuns(t
 	if len(dashed) == 0 {
 		t.Skip("this git ships no dashed executables")
 	}
-	glTouch(t, lock, glStale)
-	live := exec.Command(dashed[0], "--batch")
-	stdin, _ := live.StdinPipe()
-	if err := live.Start(); err != nil {
+	blind := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(blind, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ClearStaleObjectStoreLocks(gitDir)
-	stdin.Close()
-	live.Wait()
-	if !pathExists(lock) {
-		t.Fatal("dashed git running: lock removed")
+	for _, tool := range []string{"git", "nice"} {
+		path, err := exec.LookPath(tool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(path, filepath.Join(blind, tool)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	prevPsutil := gitlockPsutil
-	gitlockPsutil = false
-	t.Cleanup(func() { gitlockPsutil = prevPsutil })
-	t.Setenv("PATH", t.TempDir())
-	ClearStaleObjectStoreLocks(gitDir)
-	if !pathExists(lock) {
-		t.Fatal("no process list: lock removed")
+	stamp := filepath.Join(gitDir, commitGraphFreshStamp)
+	for _, tc := range []string{"dashed git running", "no process list"} {
+		glGit(t, repo, "-c", "maintenance.auto=false", "-c", "gc.auto=0", "commit", "-q", "--allow-empty", "-m", tc)
+		glTouch(t, lock, glStale)
+		os.Remove(stamp)
+		if tc == "dashed git running" {
+			live := exec.Command(dashed[0], "--batch")
+			stdin, _ := live.StdinPipe()
+			if err := live.Start(); err != nil {
+				t.Fatal(err)
+			}
+			refreshCommitGraph(repo, gitDir)
+			stdin.Close()
+			live.Wait()
+		} else {
+			prevPsutil := gitlockPsutil
+			gitlockPsutil = false
+			t.Cleanup(func() { gitlockPsutil = prevPsutil })
+			t.Setenv("PATH", blind)
+			refreshCommitGraph(repo, gitDir)
+		}
+		if !pathExists(lock) {
+			t.Fatalf("%s: lock removed", tc)
+		}
+		if pathExists(stamp) {
+			t.Fatalf("%s: fresh stamp written", tc)
+		}
 	}
 }
 
@@ -478,7 +527,7 @@ func TestSparesFreshDebrisAndRealPacks(t *testing.T) {
 	}
 }
 
-func TestSkipsTmpPackSweepWhileGitIsRunning(t *testing.T) {
+func TestSkipsSweepWhileGitIsRunning(t *testing.T) {
 	repo, pack := glPackRepo(t)
 	glGuard(t, true)
 	p := filepath.Join(pack, "tmp_pack_old")

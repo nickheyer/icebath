@@ -11,13 +11,13 @@ import (
 )
 
 // Recovery pool double recording every rotation request
-type auxStubRecoveryPool struct{ rotations []RotationRequest }
+type auxFakeRecoveryPool struct{ rotations []RotationRequest }
 
-func (p *auxStubRecoveryPool) HasCredentials() bool { return true }
-func (p *auxStubRecoveryPool) TryRefreshCurrent() (PooledCredential, bool) {
+func (p *auxFakeRecoveryPool) HasCredentials() bool { return true }
+func (p *auxFakeRecoveryPool) TryRefreshCurrent() (PooledCredential, bool) {
 	return PooledCredential{}, false
 }
-func (p *auxStubRecoveryPool) MarkExhaustedAndRotate(req RotationRequest) (PooledCredential, bool) {
+func (p *auxFakeRecoveryPool) MarkExhaustedAndRotate(req RotationRequest) (PooledCredential, bool) {
 	p.rotations = append(p.rotations, req)
 	return PooledCredential{ID: "next"}, true
 }
@@ -55,33 +55,42 @@ func TestAuxAuthRefreshProviderForRoute(t *testing.T) {
 	}
 }
 
-func TestAuxXaiOAuth403AuthError(t *testing.T) {
-	cases := []struct {
-		err  error
-		want bool
-	}{
-		{auxExc("Error code: 403 - {'code': 'The caller does not have permission to execute the specified operation', 'error': 'The OAuth2 access token could not be validated. [WKE=unauthenticated:bad-credentials]'}", 403), true},
-		{auxExc("Error code: 403 - unauthenticated:bad-credentials", 0), true},
-		{auxExc("Error code: 403 - rate limit exceeded", 403), false},
-		{auxExc("unauthenticated request", 0), false},
-	}
-	for _, c := range cases {
-		if got := auxIsAuthError(c.err); got != c.want {
-			t.Fatalf("%v: got %v", c.err, got)
+func TestIsAuthErrorXaiOauth403(t *testing.T) {
+	check := func(err error, want bool) func(t *testing.T) {
+		return func(t *testing.T) {
+			if got := auxIsAuthError(err); got != want {
+				t.Fatalf("%v: got %v", err, got)
+			}
 		}
 	}
+	t.Run("test_xai_403_bad_credentials_is_auth_error", check(auxExc("Error code: 403 - {'code': 'The caller does not have permission to execute the specified operation', 'error': 'The OAuth2 access token could not be validated. [WKE=unauthenticated:bad-credentials]'}", 403), true))
+	t.Run("test_xai_403_bad_credentials_without_status_code", check(auxExc("Error code: 403 - unauthenticated:bad-credentials", 0), true))
+	t.Run("test_generic_403_is_not_auth_error", check(auxExc("Error code: 403 - rate limit exceeded", 403), false))
+	t.Run("test_unauthenticated_without_bad_credentials_is_not_auth_error", check(auxExc("unauthenticated request", 0), false))
 }
 
-func TestAuxRecoverablePoolProviderXaiOAuth(t *testing.T) {
+func TestRecoverablePoolProviderXaiOAuth(t *testing.T) {
 	ctx := auxRecoveryHome(t, "")
-	if got, _ := auxRecoverablePoolProvider(ctx, "xai-oauth", nil, nil); got != "xai-oauth" {
-		t.Fatalf("explicit: %q", got)
-	}
-	if got, _ := auxRecoverablePoolProvider(ctx, "auto", auxBareClient{base: "https://api.x.ai/v1/"}, nil); got != "xai-oauth" {
-		t.Fatalf("host match: %q", got)
-	}
-	if got, _ := auxRecoverablePoolProvider(ctx, "auto", auxBareClient{base: "https://unknown.example.com/v1/"}, nil); got != "" {
-		t.Fatalf("unknown host: %q", got)
+	t.Run("test_explicit_xai_oauth_provider", func(t *testing.T) {
+		if got, _ := auxRecoverablePoolProvider(ctx, "xai-oauth", nil, nil); got != "xai-oauth" {
+			t.Fatalf("explicit: %q", got)
+		}
+	})
+	t.Run("test_api_x_ai_host_match", func(t *testing.T) {
+		if got, _ := auxRecoverablePoolProvider(ctx, "auto", auxBareClient{base: "https://api.x.ai/v1/"}, nil); got != "xai-oauth" {
+			t.Fatalf("host match: %q", got)
+		}
+	})
+	t.Run("test_auto_with_unknown_host_returns_none", func(t *testing.T) {
+		if got, _ := auxRecoverablePoolProvider(ctx, "auto", auxBareClient{base: "https://unknown.example.com/v1/"}, nil); got != "" {
+			t.Fatalf("unknown host: %q", got)
+		}
+	})
+}
+
+func TestRefreshProviderCredentialsXaiOAuthUnknownProviderReturnsFalse(t *testing.T) {
+	if auxRefreshProviderCredentials(auxRecoveryHome(t, ""), "unknown-provider-xyz", "") {
+		t.Fatal("an unknown provider must fall through to False")
 	}
 }
 
@@ -115,7 +124,7 @@ func TestAuxRefreshProviderCredentialsFailures(t *testing.T) {
 	}
 }
 
-func TestAuxUpstreamCapacity429IsNotACredentialToBench(t *testing.T) {
+func TestUpstreamCapacity429IsNotACredentialToBench(t *testing.T) {
 	ctx := auxRecoveryHome(t, "")
 	cases := []struct {
 		body    string
@@ -136,7 +145,7 @@ func TestAuxUpstreamCapacity429IsNotACredentialToBench(t *testing.T) {
 		if got := ClassifyError(ClassifyInput{Err: exc, Status: 429, Body: c.body}); got.Reason != wantReason {
 			t.Fatalf("classifier reason %v want %v", got.Reason, wantReason)
 		}
-		pool := &auxStubRecoveryPool{}
+		pool := &auxFakeRecoveryPool{}
 		prev := auxRecoveryPoolFn
 		auxRecoveryPoolFn = func(context.Context, string, string) (auxRecoveryPool, error) { return pool, nil }
 		recovered := auxRecoverProviderPool(ctx, "openrouter", exc, "sk-failed")
@@ -167,7 +176,7 @@ func auxSeedPool(t *testing.T, ctx context.Context, provider string, tokens []st
 	}
 }
 
-func TestAuxPoolCacheHintFollowsRotation(t *testing.T) {
+func TestPoolCacheHintFollowsRotationDuringPerModelCooldown(t *testing.T) {
 	ctx := auxRecoveryHome(t, "")
 	auxSeedPool(t, ctx, "anthropic", []string{"tok-old"}, "claude-sonnet-4-5")
 	before := auxPoolCacheHint(ctx, "anthropic", nil)
@@ -178,7 +187,7 @@ func TestAuxPoolCacheHintFollowsRotation(t *testing.T) {
 	}
 }
 
-func TestAuxSiblingEntryRotationDoesNotChurnSelectedEntryKey(t *testing.T) {
+func TestSiblingEntryRotationDoesNotChurnSelectedEntryKey(t *testing.T) {
 	ctx := auxRecoveryHome(t, "")
 	auxSeedPool(t, ctx, "anthropic", []string{"tok-a1", "tok-b1"}, "")
 	first := auxPoolCacheHint(ctx, "anthropic", nil)

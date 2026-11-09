@@ -288,6 +288,19 @@ type keepaliveConn struct {
 	net.Conn
 	once    sync.Once
 	release func()
+	cut     atomic.Bool
+}
+
+// Marks the connection cut so every later read fails and the transport never pools it again
+func (c *keepaliveConn) cutAttempt() { c.cut.Store(true) }
+
+// Delivers bytes until the attempt is cut, failing every read afterwards
+func (c *keepaliveConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if c.cut.Load() {
+		return 0, auxErrAttemptCut
+	}
+	return n, err
 }
 
 func (c *keepaliveConn) Write(p []byte) (int, error) {

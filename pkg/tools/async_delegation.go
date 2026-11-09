@@ -2430,3 +2430,35 @@ func (asyncDelegationLedger) MarkCopyHeld(id string)           { MarkCopyHeld(id
 func (asyncDelegationLedger) UnmarkCopyHeld(id string)         { UnmarkCopyHeld(id) }
 
 func init() { AsyncDelegationLedger = asyncDelegationLedger{} }
+
+// Clears every registry, fence, offer and hold and tears down the executor and stale monitor
+func ResetAsyncDelegationForTests() {
+	asyncExecutorMu.Lock()
+	if asyncExecutor != nil {
+		asyncExecutor.Shutdown(false, false)
+	}
+	asyncExecutor, asyncExecutorMax = nil, 0
+	asyncExecutorMu.Unlock()
+	asyncMonitorMu.Lock()
+	stop, done := asyncMonitorStop, asyncMonitorDone
+	asyncMonitorStop, asyncMonitorDone = nil, nil
+	asyncMonitorMu.Unlock()
+	if stop != nil {
+		close(stop)
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+	}
+	asyncRecordsMu.Lock()
+	asyncRecords, asyncRecordOrder = map[string]*asyncRecord{}, nil
+	asyncRefused, asyncRefusedBy = map[any]map[asyncSelector]bool{}, map[asyncSelector]map[any]bool{}
+	asyncRecordsMu.Unlock()
+	asyncOrphanMu.Lock()
+	asyncOffered, asyncStartupReplay = map[[2]string]bool{}, map[string]bool{}
+	asyncLastOrphanTick, asyncReofferedAt = map[string]float64{}, map[[2]string]float64{}
+	asyncOrphanMu.Unlock()
+	asyncHeldMu.Lock()
+	asyncHeldCopies = map[string]int{}
+	asyncHeldMu.Unlock()
+}

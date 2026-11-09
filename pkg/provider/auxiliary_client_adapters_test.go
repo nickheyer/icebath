@@ -72,49 +72,57 @@ func auxUserHi() []any { return []any{map[string]any{"role": "user", "content": 
 
 func TestCodexAdapterReasoningTranslation(t *testing.T) {
 	ctx := context.Background()
-	adapter, client := newAuxCodexTestAdapter("https://chatgpt.com/backend-api/codex/", "gpt-5.3-codex")
-	if _, err := adapter.create(ctx, map[string]any{"messages": auxUserHi(), "extra_body": map[string]any{"reasoning": map[string]any{"effort": "low"}}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := client.captured["reasoning"]; !reflect.DeepEqual(got, map[string]any{"effort": "low", "summary": "auto"}) {
-		t.Fatalf("low effort %v", got)
-	}
-	adapter, client = newAuxCodexTestAdapter("https://api.openai.com/v1/", "gpt-5.3-codex")
-	if _, err := adapter.create(ctx, map[string]any{"messages": auxUserHi(), "extra_body": map[string]any{"reasoning": map[string]any{"enabled": false}}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := client.captured["reasoning"]; !reflect.DeepEqual(got, map[string]any{"effort": "none"}) {
-		t.Fatalf("disabled reasoning %v", got)
-	}
-	if _, has := client.captured["include"]; has {
-		t.Fatal("disabled reasoning sent include")
-	}
-	adapter, client = newAuxCodexTestAdapter("https://api.openai.com/v1/", "gpt-4o-mini")
-	if _, err := adapter.create(ctx, map[string]any{"model": "gpt-4o-mini", "messages": auxUserHi(), "extra_body": map[string]any{"reasoning": map[string]any{"effort": "medium"}}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, has := client.captured["reasoning"]; has {
-		t.Fatal("chat era model got a reasoning field")
-	}
-	adapter, client = newAuxCodexTestAdapter("https://chatgpt.com/backend-api/codex/", "gpt-5.3-codex")
-	if _, err := adapter.create(ctx, map[string]any{"messages": auxUserHi()}); err != nil {
-		t.Fatal(err)
-	}
-	_, hasReasoning := client.captured["reasoning"]
-	_, hasInclude := client.captured["include"]
-	if hasReasoning || hasInclude {
-		t.Fatalf("no extra_body sent reasoning keys %v", client.captured)
-	}
-	adapter, client = newAuxCodexTestAdapter("https://chatgpt.com/backend-api/codex/", "gpt-5.3-codex")
-	if _, err := adapter.create(ctx, map[string]any{"messages": auxUserHi(), "extra_body": map[string]any{"reasoning": map[string]any{"effort": nil}}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := client.captured["reasoning"]; !reflect.DeepEqual(got, map[string]any{"effort": "medium", "summary": "auto"}) {
-		t.Fatalf("null effort %v", got)
-	}
-	if got := client.captured["include"]; !reflect.DeepEqual(got, []any{"reasoning.encrypted_content"}) {
-		t.Fatalf("null effort include %v", got)
-	}
+	t.Run("test_reasoning_effort_low_passed_through", func(t *testing.T) {
+		adapter, client := newAuxCodexTestAdapter("https://chatgpt.com/backend-api/codex/", "gpt-5.3-codex")
+		if _, err := adapter.create(ctx, map[string]any{"messages": auxUserHi(), "extra_body": map[string]any{"reasoning": map[string]any{"effort": "low"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if got := client.captured["reasoning"]; !reflect.DeepEqual(got, map[string]any{"effort": "low", "summary": "auto"}) {
+			t.Fatalf("low effort %v", got)
+		}
+	})
+	t.Run("test_disabled_reasoning_is_sent_as_none_and_chat_era_models_get_no_field", func(t *testing.T) {
+		adapter, client := newAuxCodexTestAdapter("https://api.openai.com/v1/", "gpt-5.3-codex")
+		if _, err := adapter.create(ctx, map[string]any{"messages": auxUserHi(), "extra_body": map[string]any{"reasoning": map[string]any{"enabled": false}}}); err != nil {
+			t.Fatal(err)
+		}
+		if got := client.captured["reasoning"]; !reflect.DeepEqual(got, map[string]any{"effort": "none"}) {
+			t.Fatalf("disabled reasoning %v", got)
+		}
+		if _, has := client.captured["include"]; has {
+			t.Fatal("disabled reasoning sent include")
+		}
+		adapter, client = newAuxCodexTestAdapter("https://api.openai.com/v1/", "gpt-4o-mini")
+		if _, err := adapter.create(ctx, map[string]any{"model": "gpt-4o-mini", "messages": auxUserHi(), "extra_body": map[string]any{"reasoning": map[string]any{"effort": "medium"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, has := client.captured["reasoning"]; has {
+			t.Fatal("chat era model got a reasoning field")
+		}
+	})
+	t.Run("test_no_extra_body_means_no_reasoning_keys", func(t *testing.T) {
+		adapter, client := newAuxCodexTestAdapter("https://chatgpt.com/backend-api/codex/", "gpt-5.3-codex")
+		if _, err := adapter.create(ctx, map[string]any{"messages": auxUserHi()}); err != nil {
+			t.Fatal(err)
+		}
+		_, hasReasoning := client.captured["reasoning"]
+		_, hasInclude := client.captured["include"]
+		if hasReasoning || hasInclude {
+			t.Fatalf("no extra_body sent reasoning keys %v", client.captured)
+		}
+	})
+	t.Run("test_reasoning_effort_null_falls_back_to_medium", func(t *testing.T) {
+		adapter, client := newAuxCodexTestAdapter("https://chatgpt.com/backend-api/codex/", "gpt-5.3-codex")
+		if _, err := adapter.create(ctx, map[string]any{"messages": auxUserHi(), "extra_body": map[string]any{"reasoning": map[string]any{"effort": nil}}}); err != nil {
+			t.Fatal(err)
+		}
+		if got := client.captured["reasoning"]; !reflect.DeepEqual(got, map[string]any{"effort": "medium", "summary": "auto"}) {
+			t.Fatalf("null effort %v", got)
+		}
+		if got := client.captured["include"]; !reflect.DeepEqual(got, []any{"reasoning.encrypted_content"}) {
+			t.Fatalf("null effort include %v", got)
+		}
+	})
 }
 
 func TestCodexAdapterServiceTier(t *testing.T) {

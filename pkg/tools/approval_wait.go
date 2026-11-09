@@ -461,13 +461,24 @@ func humanInputIdentity(env *Env) map[string]any {
 		"session_key": getCurrentSessionKey(env, ""), "platform": platform}
 }
 
+// Force redacted prompt for hook payloads, empty when redaction fails so raw text never reaches a plugin
+func humanInputRedacted(env *Env, text string) (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			envLog(env).Debug("human-input hook prompt redaction failed", "error", fmt.Sprint(r))
+			out = ""
+		}
+	}()
+	return redactApprovalDisplay(env, text, true)
+}
+
 // Fires the request hook for a human prompt and returns the handle to resolve it
 func humanInputRequest(env *Env, kind, prompt, sessionKey string) *humanInputHandle {
 	payload := map[string]any{"kind": kind, "request_id": newRequestID()}
 	for k, v := range humanInputIdentity(env) {
 		payload[k] = v
 	}
-	payload["prompt"] = redactApprovalDisplay(env, prompt, true)
+	payload["prompt"] = humanInputRedacted(env, prompt)
 	if sessionKey != "" {
 		payload["session_key"] = sessionKey
 	}

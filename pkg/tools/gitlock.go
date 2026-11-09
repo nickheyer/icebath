@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Age past which a lock is presumed abandoned, a healthy fetch completes in minutes
@@ -93,19 +94,6 @@ func withHideFlags(attr *syscall.SysProcAttr) *syscall.SysProcAttr {
 	return mergeHideAttr(attr)
 }
 
-// Names git uses as a process, plain, dashed helpers and the exe spelling, empty for anything else
-func gitProgramName(arg0 string) string {
-	name := strings.TrimSpace(arg0)
-	if i := strings.LastIndexAny(name, `\/`); i >= 0 {
-		name = name[i+1:]
-	}
-	name = strings.TrimSuffix(strings.ToLower(name), ".exe")
-	if name == "git" || strings.HasPrefix(name, "git-") {
-		return name
-	}
-	return ""
-}
-
 // Reports whether any git process may be running, answering true whenever the probe cannot tell
 func gitProcRunning(env *Env) bool {
 	if !gitlockWindows && gitlockPsutil {
@@ -126,7 +114,7 @@ func gitProcRunning(env *Env) bool {
 		}
 		for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(res.Stdout), false) {
 			first, _, _ := strings.Cut(line, ",")
-			if gitProgramName(strings.Trim(first, `"`)) != "" {
+			if pm.GitProgram(strings.Trim(first, `"`)) != "" {
 				return true
 			}
 		}
@@ -151,7 +139,7 @@ func psutilGitRunning(env *Env) bool {
 			toolsLogger(env).Debug("git process scan failed; assuming git may be running")
 			return true
 		}
-		if gitProgramName(name) != "" {
+		if pm.GitProgram(name) != "" {
 			return true
 		}
 	}

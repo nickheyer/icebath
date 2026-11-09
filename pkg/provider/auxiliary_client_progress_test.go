@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -67,19 +66,31 @@ func auxChunk(delta map[string]any, finish any, usage any) map[string]any {
 
 const auxOpenrouter402 = "Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 7117. To increase, visit https://openrouter.ai/settings/credits and add more credits', 'code': 402}}"
 
-func TestAuxAffordableExtraction(t *testing.T) {
+func TestAffordableExtractionExtractsBudgetMinusMargin(t *testing.T) {
 	if n, ok := auxAffordableMaxTokensFromError(auxExc(auxOpenrouter402, 402)); !ok || n != 7117-64 {
 		t.Fatalf("budget minus margin %d %v", n, ok)
 	}
+}
+
+func TestAffordableExtractionPlainExhaustionReturnsNone(t *testing.T) {
 	if _, ok := auxAffordableMaxTokensFromError(auxExc("Error code: 402 - insufficient funds", 402)); ok {
 		t.Fatal("plain exhaustion")
 	}
+}
+
+func TestAffordableExtractionTinyBudgetTreatedAsExhaustion(t *testing.T) {
 	if _, ok := auxAffordableMaxTokensFromError(auxExc("You requested up to 65536 tokens, but can only afford 100.", 402)); ok {
 		t.Fatal("tiny budget is exhaustion")
 	}
+}
+
+func TestAffordableExtractionNonPaymentErrorReturnsNone(t *testing.T) {
 	if _, ok := auxAffordableMaxTokensFromError(&AuxTimeoutError{Message: "Codex auxiliary Responses stream stalled: no new output for 60.0s"}); ok {
 		t.Fatal("non payment error")
 	}
+}
+
+func TestAffordableExtractionCommaGroupedCount(t *testing.T) {
 	if n, ok := auxAffordableMaxTokensFromError(auxExc("can only afford 12,345 tokens", 402)); !ok || n != 12345-64 {
 		t.Fatalf("comma grouped %d", n)
 	}
@@ -109,9 +120,15 @@ func auxFlakyClient(affordable int, always bool, message string) *auxScriptedCli
 	}}
 }
 
-func TestAuxCreateWithProgressAffordableRetry(t *testing.T) {
-	ctx := home.WithOverride(context.Background(), t.TempDir())
+// Home override and OpenRouter key the affordable retry cases run under
+func auxAffordableRetryCtx(t *testing.T) context.Context {
+	t.Helper()
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+	return home.WithOverride(context.Background(), t.TempDir())
+}
+
+func TestCreateWithProgressAffordableRetryUncapped402RetriesOnceWithAffordableCap(t *testing.T) {
+	ctx := auxAffordableRetryCtx(t)
 	msgs := []any{map[string]any{"role": "user", "content": "summarize"}}
 	client := auxFlakyClient(7117, false, auxOpenrouter402)
 	resp, err := auxCreateWithProgress(ctx, client, map[string]any{"model": "google/gemini-3.6-flash", "messages": msgs}, "compression", false)
@@ -121,15 +138,30 @@ func TestAuxCreateWithProgressAffordableRetry(t *testing.T) {
 	if auxField(auxField(resp.(map[string]any)["choices"].([]any)[0], "message", nil), "content", nil) != "summary" {
 		t.Fatalf("resp %v", resp)
 	}
-	client = auxFlakyClient(100, false, auxOpenrouter402)
+}
+
+func TestCreateWithProgressAffordableRetryAlreadyAffordableCapDoesNotSpin(t *testing.T) {
+	ctx := auxAffordableRetryCtx(t)
+	msgs := []any{map[string]any{"role": "user", "content": "x"}}
+	client := auxFlakyClient(100, false, auxOpenrouter402)
 	if _, err := auxCreateWithProgress(ctx, client, map[string]any{"model": "m", "max_tokens": 5000, "messages": msgs}, "compression", false); err == nil || len(client.calls) != 1 {
 		t.Fatal("an affordable cap does not spin")
 	}
-	client = auxFlakyClient(0, true, "Error code: 402 - insufficient funds")
+}
+
+func TestCreateWithProgressAffordableRetryPlainExhaustion402IsNotRetried(t *testing.T) {
+	ctx := auxAffordableRetryCtx(t)
+	msgs := []any{map[string]any{"role": "user", "content": "x"}}
+	client := auxFlakyClient(0, true, "Error code: 402 - insufficient funds")
 	if _, err := auxCreateWithProgress(ctx, client, map[string]any{"model": "m", "messages": msgs}, "compression", false); err == nil || len(client.calls) != 1 {
 		t.Fatal("plain exhaustion is not retried")
 	}
-	client = auxFlakyClient(0, true, auxOpenrouter402)
+}
+
+func TestCreateWithProgressAffordableRetryRetry402SurfacesWithoutSpinning(t *testing.T) {
+	ctx := auxAffordableRetryCtx(t)
+	msgs := []any{map[string]any{"role": "user", "content": "x"}}
+	client := auxFlakyClient(0, true, auxOpenrouter402)
 	if _, err := auxCreateWithProgress(ctx, client, map[string]any{"model": "m", "messages": msgs}, "compression", false); err == nil || len(client.calls) != 2 {
 		t.Fatal("the retry 402 surfaces")
 	}
@@ -144,29 +176,38 @@ func auxEnvelopeData(content string) map[string]any {
 }
 
 func TestAuxDataEnvelopeUnwrap(t *testing.T) {
-	got, err := auxUnwrapDataEnvelope(map[string]any{"data": auxEnvelopeData("unwrapped"), "success": true}, "vision")
-	m, _ := got.(map[string]any)
-	if err != nil || m["model"] != "cline-pass/kimi-k2.7-code" || m["created"] != float64(1751000000) || auxField(m["usage"], "total_tokens", nil) != float64(15) {
-		t.Fatalf("validated unwrap %v %v", got, err)
-	}
-	loose := map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "hi"}}}}
-	got, _ = auxUnwrapDataEnvelope(map[string]any{"data": loose}, "")
-	m, _ = got.(map[string]any)
-	if m["object"] != "chat.completion" || m["id"] != "" || auxField(m["choices"].([]any)[0], "finish_reason", nil) != "stop" {
-		t.Fatalf("namespace unwrap %v", got)
-	}
-	_, err = auxUnwrapDataEnvelope(map[string]any{"choices": nil, "success": false, "data": map[string]any{"error": map[string]any{"message": "upstream provider rejected the request", "code": "bad_model"}}}, "vision")
-	var re *AuxRuntimeError
-	if !errors.As(err, &re) || re.Message != "Auxiliary vision: provider returned error envelope: upstream provider rejected the request" {
-		t.Fatalf("error envelope %v", err)
-	}
-	normal := map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "hi"}}}}
-	for _, resp := range []map[string]any{normal, {"choices": []any{}}, {"choices": nil, "success": true, "data": map[string]any{"no": "choices"}}} {
-		got, err := auxUnwrapDataEnvelope(resp, "")
-		if err != nil || !auxSameObject(got, resp) {
-			t.Fatalf("unchanged %v", resp)
+	t.Run("test_unwrap_envelope_via_model_validate", func(t *testing.T) {
+		got, err := auxUnwrapDataEnvelope(map[string]any{"data": auxEnvelopeData("unwrapped"), "success": true}, "vision")
+		m, _ := got.(map[string]any)
+		if err != nil || m["model"] != "cline-pass/kimi-k2.7-code" || m["created"] != float64(1751000000) || auxField(m["usage"], "total_tokens", nil) != float64(15) {
+			t.Fatalf("validated unwrap %v %v", got, err)
 		}
-	}
+		if auxField(m["choices"].([]any)[0].(map[string]any)["message"], "content", nil) != "unwrapped" {
+			t.Fatalf("content %v", got)
+		}
+		loose := map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "hi"}}}}
+		got, _ = auxUnwrapDataEnvelope(map[string]any{"data": loose}, "")
+		m, _ = got.(map[string]any)
+		if m["object"] != "chat.completion" || m["id"] != "" || auxField(m["choices"].([]any)[0], "finish_reason", nil) != "stop" {
+			t.Fatalf("namespace unwrap %v", got)
+		}
+	})
+	t.Run("test_error_envelope_raises_provider_message", func(t *testing.T) {
+		_, err := auxUnwrapDataEnvelope(map[string]any{"choices": nil, "success": false, "data": map[string]any{"error": map[string]any{"message": "upstream provider rejected the request", "code": "bad_model"}}}, "vision")
+		var re *AuxRuntimeError
+		if !errors.As(err, &re) || re.Message != "Auxiliary vision: provider returned error envelope: upstream provider rejected the request" {
+			t.Fatalf("error envelope %v", err)
+		}
+	})
+	t.Run("test_non_envelope_responses_unchanged", func(t *testing.T) {
+		normal := map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "hi"}}}}
+		for _, resp := range []map[string]any{normal, {"choices": []any{}}, {"choices": nil, "success": true, "data": map[string]any{"no": "choices"}}} {
+			got, err := auxUnwrapDataEnvelope(resp, "")
+			if err != nil || !auxSameObject(got, resp) {
+				t.Fatalf("unchanged %v", resp)
+			}
+		}
+	})
 }
 
 func TestAuxRecoverAndExtractResponseText(t *testing.T) {
@@ -183,55 +224,7 @@ func TestAuxRecoverAndExtractResponseText(t *testing.T) {
 	}
 }
 
-func TestAuxCreateWithProgressStreamsUnderAHook(t *testing.T) {
-	ticks := 0
-	ctx := AuxProgressHook(context.Background(), func() error { ticks++; return nil })
-	chunks := []map[string]any{
-		{"id": nil, "model": nil, "choices": []any{}, "usage": nil},
-		auxChunk(map[string]any{"content": "", "reasoning": "", "tool_calls": []any{map[string]any{"index": 0, "id": nil, "function": map[string]any{"name": nil, "arguments": ""}}}}, nil, nil),
-		auxChunk(map[string]any{"reasoning": "thinking..."}, nil, nil),
-		auxChunk(map[string]any{"content": "Hello "}, nil, nil),
-		auxChunk(map[string]any{"content": "world"}, "stop", map[string]any{"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}),
-	}
-	client := auxFakeStreamingClient(nil, chunks, nil)
-	got, err := auxCreateWithProgress(ctx, client, map[string]any{"model": "m1", "messages": []any{}, "timeout": 30}, "", false)
-	if err != nil || client.calls[0]["stream"] != true {
-		t.Fatalf("err %v", err)
-	}
-	choice := got.(map[string]any)["choices"].([]any)[0].(map[string]any)
-	msg := choice["message"].(map[string]any)
-	if msg["content"] != "Hello world" || msg["reasoning"] != "thinking..." || choice["finish_reason"] != "stop" || auxField(got.(map[string]any)["usage"], "total_tokens", nil) != 7 || ticks != 3 {
-		t.Fatalf("msg %v ticks %d", msg, ticks)
-	}
-	ticks = 0
-	client = auxFakeStreamingClient(nil, []map[string]any{auxChunk(map[string]any{"reasoning_content": "thinking..."}, "stop", nil)}, nil)
-	got, _ = auxCreateWithProgress(ctx, client, map[string]any{"model": "m1", "messages": []any{}, "timeout": 30}, "", false)
-	if auxField(auxField(got.(map[string]any)["choices"].([]any)[0], "message", nil), "reasoning", nil) != "thinking..." || ticks != 1 {
-		t.Fatalf("reasoning content ticks %d", ticks)
-	}
-}
-
-func TestAuxCreateWithProgressCompleteResponseAndPlainFallback(t *testing.T) {
-	ticks := 0
-	ctx := AuxProgressHook(context.Background(), func() error { ticks++; return nil })
-	complete := map[string]any{"id": "r1", "choices": []any{map[string]any{"message": map[string]any{"content": "done"}}}}
-	client := &auxScriptedClient{create: func(map[string]any) (any, error) { return complete, nil }}
-	got, _ := auxCreateWithProgress(ctx, client, map[string]any{"model": "m1", "messages": []any{}}, "", false)
-	if client.calls[0]["stream"] != true || !auxSameObject(got, complete) || ticks != 1 {
-		t.Fatalf("complete response ticks %d", ticks)
-	}
-	client = auxFakeStreamingClient(complete, nil, &AuxSDKError{Class: "RuntimeError", Message: "stream is not supported by this model"})
-	got, _ = auxCreateWithProgress(ctx, client, map[string]any{"model": "m1", "messages": []any{}}, "", false)
-	if _, has := client.calls[1]["stream"]; !auxSameObject(got, complete) || len(client.calls) != 2 || has {
-		t.Fatalf("plain fallback %v", client.calls)
-	}
-	client = auxFakeStreamingClient(complete, nil, &AuxSDKError{Class: "RuntimeError", Message: "stream is not supported by this model"})
-	if _, err := auxCreateWithProgress(context.Background(), client, map[string]any{"model": "m1"}, "", true); err == nil || len(client.calls) != 1 {
-		t.Fatal("force stream surfaces the rejection")
-	}
-}
-
-func TestAuxDispatchOnlyAuthFailureDoesNotTickProgress(t *testing.T) {
+func TestCreateWithProgressDispatchOnlyAuthFailureDoesNotTickProgress(t *testing.T) {
 	progress, dispatches := 0, 0
 	ctx := AuxProgressHook(context.Background(), func() error { progress++; return nil })
 	ctx = AuxThreadLocalHook(ctx, AuxDispatchLocal, func() error { dispatches++; return nil })
@@ -241,32 +234,6 @@ func TestAuxDispatchOnlyAuthFailureDoesNotTickProgress(t *testing.T) {
 	}
 	if dispatches != 1 || progress != 0 || len(client.calls) != 1 {
 		t.Fatalf("dispatches %d progress %d", dispatches, progress)
-	}
-	client = auxFakeStreamingClient(nil, nil, auxExc("unauthorized", 401))
-	if _, err := auxAcreateWithProgress(ctx, client, map[string]any{"model": "m1"}, "", false); err == nil || dispatches != 2 || progress != 0 {
-		t.Fatal("async auth failure surfaces without progress")
-	}
-}
-
-func TestAuxAggregateChatStreamReassemblesToolCallsAndCloses(t *testing.T) {
-	stream := &auxSliceStream{chunks: []map[string]any{
-		auxChunk(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "call_1", "function": map[string]any{"name": "do_thing", "arguments": `{"a"`}}}}, nil, nil),
-		auxChunk(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": nil, "function": map[string]any{"name": nil, "arguments": ": 1}"}}}}, "tool_calls", nil),
-	}}
-	got, err := auxAggregateChatStream(context.Background(), stream, "", nil, nil)
-	if err != nil || !stream.closed {
-		t.Fatalf("err %v closed %v", err, stream.closed)
-	}
-	choice := got.(map[string]any)["choices"].([]any)[0].(map[string]any)
-	calls := choice["message"].(map[string]any)["tool_calls"].([]any)
-	fn := calls[0].(map[string]any)["function"].(map[string]any)
-	if len(calls) != 1 || fn["name"] != "do_thing" || fn["arguments"] != `{"a": 1}` || choice["finish_reason"] != "tool_calls" {
-		t.Fatalf("calls %v", calls)
-	}
-	async := &auxSliceStream{chunks: []map[string]any{auxChunk(map[string]any{"content": "ok"}, "stop", nil)}}
-	got, err = auxAcreateWithStream(context.Background(), &auxScriptedClient{create: func(map[string]any) (any, error) { return async, nil }}, map[string]any{"model": "m"})
-	if err != nil || !async.closed || auxField(auxField(got.(map[string]any)["choices"].([]any)[0], "message", nil), "content", nil) != "ok" {
-		t.Fatalf("async aggregation %v %v", got, err)
 	}
 }
 
@@ -293,22 +260,6 @@ func TestAuxStreamAccumulatorCeilingAndHostDeadline(t *testing.T) {
 	}
 }
 
-func TestAuxProviderRequiresStream(t *testing.T) {
-	prev := auxLoadConfigFn
-	t.Cleanup(func() { auxLoadConfigFn = prev })
-	auxLoadConfigFn = func(context.Context) (config.Tree, error) {
-		return config.Tree{"auxiliary": map[string]any{"stream_only_base_urls": []any{" Gateway.Example ", "", 3}}}, nil
-	}
-	ctx := context.Background()
-	if auxProviderRequiresStream(ctx, "") || !auxProviderRequiresStream(ctx, "https://copilot.tencent.com/v1") || !auxProviderRequiresStream(ctx, "https://api.gateway.example/v1") || auxProviderRequiresStream(ctx, "https://api.openai.com/v1") {
-		t.Fatal("stream only markers")
-	}
-	auxLoadConfigFn = func(context.Context) (config.Tree, error) { return config.Tree{"auxiliary": nil}, nil }
-	if auxProviderRequiresStream(ctx, "https://api.gateway.example/v1") {
-		t.Fatal("a null auxiliary section reads as no markers")
-	}
-}
-
 func TestAuxStreamRequestPlan(t *testing.T) {
 	kw, model, ceiling := auxStreamRequestPlan(map[string]any{"model": "m", "timeout": 200}, &auxScriptedClient{base: "https://api.example.com/v1"})
 	if kw["stream"] != true || model != "m" || ceiling != 800 || auxField(kw["stream_options"], "include_usage", nil) != true {
@@ -316,5 +267,12 @@ func TestAuxStreamRequestPlan(t *testing.T) {
 	}
 	if _, _, c := auxStreamRequestPlan(map[string]any{"timeout": "soon"}, nil); c != 600 {
 		t.Fatalf("unparsable timeout gives the floor %v", c)
+	}
+}
+
+func TestNewAuxChatStreamAccumulatorWrapsTheConstructor(t *testing.T) {
+	acc := NewAuxChatStreamAccumulator(context.Background(), "m", nil)
+	if acc == nil || acc.respModel != "m" {
+		t.Fatalf("accumulator %+v", acc)
 	}
 }

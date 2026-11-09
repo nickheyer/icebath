@@ -110,26 +110,40 @@ func TestDeepSeekAuxModel(t *testing.T) {
 	}
 }
 
-func TestFireworksAttributionMatchesCanonicalValues(t *testing.T) {
+func TestFireworksHeadersAttributionMatchesCanonicalHermesValues(t *testing.T) {
 	p := registeredProfile(t, "fireworks")
 	headers, base := p.DefaultHeaders(), auxORHeadersBase()
 	if headers["HTTP-Referer"] != base["HTTP-Referer"] || headers["X-Title"] != base["X-Title"] {
 		t.Fatalf("headers %v base %v", headers, base)
 	}
-	if headers["User-Agent"] != UserAgent("IcebathAgent") {
+}
+
+func TestFireworksHeadersUserAgentIdentifiesHermes(t *testing.T) {
+	p := registeredProfile(t, "fireworks")
+	if headers := p.DefaultHeaders(); headers["User-Agent"] != UserAgent("IcebathAgent") {
 		t.Fatalf("user agent %q", headers["User-Agent"])
 	}
 }
 
-func TestFireworksModelDefaultsArePayAsYouGo(t *testing.T) {
+// Fails unless the model is a direct pay as you go catalog id on the standard tier
+func auxRequirePaygFireworksModel(t *testing.T, m string) {
+	t.Helper()
+	if !strings.HasPrefix(m, "accounts/fireworks/models/") || strings.Contains(m, "/routers/") || strings.Contains(strings.ToLower(m), "turbo") {
+		t.Fatalf("not a pay as you go model %q", m)
+	}
+}
+
+func TestFireworksModelDefaultsAuxModelIsPaygModelNotRouter(t *testing.T) {
+	auxRequirePaygFireworksModel(t, registeredProfile(t, "fireworks").DefaultAuxModel)
+}
+
+func TestFireworksModelDefaultsFallbackModelsArePaygModelsNotRouters(t *testing.T) {
 	p := registeredProfile(t, "fireworks")
 	if len(p.FallbackModels) == 0 {
 		t.Fatal("expected curated fallbacks")
 	}
-	for _, m := range append([]string{p.DefaultAuxModel}, p.FallbackModels...) {
-		if !strings.HasPrefix(m, "accounts/fireworks/models/") || strings.Contains(m, "/routers/") || strings.Contains(strings.ToLower(m), "turbo") {
-			t.Fatalf("not a pay as you go model %q", m)
-		}
+	for _, m := range p.FallbackModels {
+		auxRequirePaygFireworksModel(t, m)
 	}
 }
 

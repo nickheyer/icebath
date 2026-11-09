@@ -154,6 +154,9 @@ func currentProfileName(ctx context.Context) (string, error) {
 	return ProfileSuffix(ctx)
 }
 
+// Exported currentProfileName
+func CurrentProfileName(ctx context.Context) (string, error) { return currentProfileName(ctx) }
+
 // --profile flag for a profiles child of the default root, empty for the root or any other home
 func profileArg(ctx context.Context, icebathHome, defaultRoot string) (string, error) {
 	if icebathHome == "" {

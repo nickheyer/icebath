@@ -11,12 +11,7 @@ import (
 // Clears the process worker policy and runtime marks for one test and again afterwards
 func freshWorkerPolicy(t *testing.T) {
 	t.Helper()
-	reset := func() {
-		workerPolicy.Store(nil)
-		runtimeImportsMu.Lock()
-		runtimeImports = map[string]bool{}
-		runtimeImportsMu.Unlock()
-	}
+	reset := ResetWorkerPolicyForTests
 	reset()
 	t.Cleanup(reset)
 }

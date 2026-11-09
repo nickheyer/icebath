@@ -12,7 +12,7 @@ import (
 var nousPolicyCurated = []string{"vendor/allowed", "vendor/blocked"}
 
 // Org policy seam admitting only allowed, nil for an ungoverned org
-func stubNousPolicy(t *testing.T, allowed map[string]bool) {
+func fakeNousPolicy(t *testing.T, allowed map[string]bool) {
 	t.Helper()
 	prev := nousPolicyAllowedIDsFn
 	nousPolicyAllowedIDsFn = func(context.Context, bool) (map[string]bool, bool) { return allowed, allowed != nil }
@@ -56,7 +56,7 @@ func nousPolicyPickerRow(t *testing.T, allowed map[string]bool, pricing PricingT
 	t.Helper()
 	h := newTestHome(t)
 	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"nous": map[string]any{"access_token": "tok"}}})
-	stubNousPolicy(t, allowed)
+	fakeNousPolicy(t, allowed)
 	prevCurated, prevPricing, prevTier, prevUnion := curatedNousModelIDsFn, pickerNousPricingFn, checkNousFreeTierFn, unionPortalPaidFn
 	t.Cleanup(func() {
 		curatedNousModelIDsFn, pickerNousPricingFn, checkNousFreeTierFn, unionPortalPaidFn = prevCurated, prevPricing, prevTier, prevUnion
@@ -126,7 +126,7 @@ func nousPolicyCatalog(t *testing.T, catalog []string) {
 
 func TestAuxiliaryFastModelHiddenModelIsNotSelected(t *testing.T) {
 	newTestHome(t)
-	stubNousPolicy(t, map[string]bool{"vendor/allowed": true})
+	fakeNousPolicy(t, map[string]bool{"vendor/allowed": true})
 	prevFamilies, prevExclude := auxFastModelFamilies, auxFastModelExclude
 	t.Cleanup(func() { auxFastModelFamilies, auxFastModelExclude = prevFamilies, prevExclude })
 	auxFastModelFamilies, auxFastModelExclude = []string{"vendor/"}, nil
@@ -136,7 +136,7 @@ func TestAuxiliaryFastModelHiddenModelIsNotSelected(t *testing.T) {
 	}
 }
 
-func TestPolicyNoticeIsShownOnLogin(t *testing.T) {
+func TestPolicyNoticeIsShownLoginPrintsIt(t *testing.T) {
 	prev := nousPolicyPresentFn
 	nousPolicyPresentFn = func(context.Context) (bool, bool) { return true, true }
 	t.Cleanup(func() { nousPolicyPresentFn = prev })
@@ -152,7 +152,7 @@ func nousAuxFallback(t *testing.T, allowed map[string]bool, recommended string) 
 	t.Helper()
 	newTestHome(t)
 	snapshotProviderRegistry(t)
-	stubNousPolicy(t, allowed)
+	fakeNousPolicy(t, allowed)
 	nousPolicyCatalog(t, []string{"vendor/allowed-large"})
 	base, _ := GetProviderProfile(context.Background(), "nous")
 	base.DefaultAuxModel = ""
@@ -161,19 +161,19 @@ func nousAuxFallback(t *testing.T, allowed map[string]bool, recommended string) 
 	return auxAuxModelForProvider(context.Background(), "nous", true)
 }
 
-func TestAuxFallbackBlockedRecommendationIsNotUsed(t *testing.T) {
+func TestAuxFallbackRespectsPolicyBlockedRecommendationIsNotUsed(t *testing.T) {
 	if got := nousAuxFallback(t, map[string]bool{"vendor/allowed-large": true}, "vendor/blocked-haiku"); got != "" {
 		t.Fatalf("picked %q", got)
 	}
 }
 
-func TestAuxFallbackAllowedRecommendationStillUsed(t *testing.T) {
+func TestAuxFallbackRespectsPolicyAllowedRecommendationStillUsed(t *testing.T) {
 	if got := nousAuxFallback(t, map[string]bool{"vendor/allowed-large": true, "vendor/ok-haiku": true}, "vendor/ok-haiku"); got != "vendor/ok-haiku" {
 		t.Fatalf("picked %q", got)
 	}
 }
 
-func TestAuxFallbackUngovernedOrgIsUnaffected(t *testing.T) {
+func TestAuxFallbackRespectsPolicyUngovernedOrgIsUnaffected(t *testing.T) {
 	if got := nousAuxFallback(t, nil, "vendor/anything"); got != "vendor/anything" {
 		t.Fatalf("picked %q", got)
 	}

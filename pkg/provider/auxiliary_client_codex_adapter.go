@@ -140,7 +140,8 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 		toolDefs, _ = tools.StripPatternAndFormat(copied)
 		toolDefs, _ = tools.StripSlashEnum(toolDefs)
 	}
-	wireTools, wireAliases := aliasWireTools(responsesTools(toolDefs), codexParams{ctx: ctx, provider: auxClientEffectiveProvider(a.client), baseURL: host, isXAI: isXAI})
+	wireTools, wireAliases := aliasWireTools(responsesTools(toolDefs), codexParams{ctx: ctx, provider: auxClientEffectiveProvider(a.client), baseURL: host, isXAI: isXAI,
+		webSearchBackend: func() (string, error) { return activeWebSearchBackend(ctx) }})
 	renamed := map[string]string{}
 	for alias, original := range wireAliases {
 		renamed[original] = alias
@@ -359,7 +360,7 @@ func (a *auxCodexCompletionsAdapter) create(ctx context.Context, kwargs map[stri
 		slog.Debug(fmt.Sprintf("Codex auxiliary Responses API call failed: %v", cause))
 		return cause
 	}
-	if err := guard.begin(); err != nil {
+	if err := auxCodexGuardBeginFn(guard); err != nil {
 		return nil, fail(err)
 	}
 	streamKwargs := make(map[string]any, len(resp)+1)
@@ -387,7 +388,7 @@ func (a *auxCodexCompletionsAdapter) create(ctx context.Context, kwargs map[stri
 			guard.releaseStream(eventStream)
 			return nil, fail(&AuxRuntimeError{Message: "Codex auxiliary Responses stream did not return a final response"})
 		}
-		final, err = auxConsumeCodexEventStream(ctx, stream, issuerModel, guard.onEvent)
+		final, err = auxConsumeCodexEventStreamFn(ctx, guard.wrapStream(stream), issuerModel, guard.onEvent)
 		guard.releaseStream(eventStream)
 		if err != nil {
 			return nil, fail(err)
@@ -497,3 +498,6 @@ type AsyncCodexAuxiliaryClient struct{ auxAsyncAuxiliaryClientBase }
 func NewAsyncCodexAuxiliaryClient(sync *CodexAuxiliaryClient) *AsyncCodexAuxiliaryClient {
 	return &AsyncCodexAuxiliaryClient{newAuxAsyncAuxiliaryClientBase(sync)}
 }
+
+// Event stream consumer seam the fence update tests swap
+var auxConsumeCodexEventStreamFn = auxConsumeCodexEventStream

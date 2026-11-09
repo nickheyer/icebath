@@ -91,6 +91,14 @@ func bindWorkerPolicy(safeMode, ignoreUserConfig bool, cfg map[string]any) (*Saf
 	return policy, nil
 }
 
+// Clears the process worker policy and runtime marks, the seam hermes tests reach by replacing _policy
+func ResetWorkerPolicyForTests() {
+	workerPolicy.Store(nil)
+	runtimeImportsMu.Lock()
+	runtimeImports = map[string]bool{}
+	runtimeImportsMu.Unlock()
+}
+
 // Bound policy of this process, panicking when it was inherited across a fork
 func currentSafeWorkerPolicy() *SafeWorkerPolicy {
 	policy := workerPolicy.Load()

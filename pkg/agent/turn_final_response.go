@@ -21,7 +21,7 @@ func (a *AIAgent) SetSilenceMarkerNeedsReply(v bool) { a.silenceMarkerNeedsReply
 
 // True when a bare silence marker should yield to the reply written beside a housekeeping round
 func bareMarkerAfterReply(a *AIAgent, final string, truncatedParts []TruncatedPart, promoted string) bool {
-	if !a.silenceMarkerNeedsReply || len(truncatedParts) > 0 || promoted != "" || a.interruptRequested {
+	if !a.silenceMarkerNeedsReply || len(truncatedParts) > 0 || promoted != "" || a.interruptRequested.Load() {
 		return false
 	}
 	reply := housekeepingReplyLine(a)
@@ -212,7 +212,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	}
 
 	transformed := false
-	if !a.interruptRequested {
+	if !a.interruptRequested.Load() {
 		final, transformed, _ = applyLLMOutputTransform(ctx, a, final, a.currentTurnID, nil)
 	}
 	if transformed {

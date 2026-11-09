@@ -163,7 +163,7 @@ func (w *ChatStreamWatchdog) TimeoutError() *AuxTimeoutError {
 
 // Inter chunk and first token windows for a streamed attempt, both capped at the request timeout
 func auxChatStreamWindows(ctx context.Context, client AuxClient, kwargs map[string]any, task string) auxStreamWindows {
-	window := auxGetTaskNoProgressTimeout(ctx, task)
+	window := auxGetTaskNoProgressTimeoutFn(ctx, task)
 	if window == 0 {
 		window = auxStreamNoProgressTimeoutSeconds
 	}
@@ -172,7 +172,7 @@ func auxChatStreamWindows(ctx context.Context, client AuxClient, kwargs map[stri
 	if client != nil {
 		baseURL = client.BaseURL()
 	}
-	if !IsLocalEndpoint(baseURL) {
+	if !auxIsLocalEndpointFn(baseURL) {
 		provider := ""
 		if relay := auxRelayAuxCallContext(ctx); relay != nil {
 			if p, ok := relay["stream_provider"].(string); ok {
@@ -270,3 +270,6 @@ func auxConsumeChatStream(ctx context.Context, chunks AuxChatStream, acc auxStre
 	}
 	return nil
 }
+
+// Local endpoint seam the stream watchdog tests swap
+var auxIsLocalEndpointFn = IsLocalEndpoint

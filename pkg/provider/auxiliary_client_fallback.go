@@ -254,7 +254,7 @@ func auxPlanFallbackAuthRetry(ctx context.Context, dest auxFallbackDestination, 
 	if fbProvider == "anthropic" {
 		key = failedAPIKey
 	}
-	if fbProvider != "auto" && fbProvider != "" && auxRefreshProviderCredentials(ctx, fbProvider, key) {
+	if fbProvider != "auto" && fbProvider != "" && auxRefreshProviderCredentialsFn(ctx, fbProvider, key) {
 		client, model, err := auxGetCachedClientFn(ctx, auxCachedClientRequest{Provider: fbProvider, Model: dest.Model, AsyncMode: asyncMode,
 			BaseURL: dest.BaseURL, APIMode: dest.APIMode})
 		if err != nil {
@@ -298,14 +298,14 @@ func auxCallFallbackCandidate(ctx context.Context, fbClient AuxClient, fbModel, 
 				resp, err = auxRelayAsyncCompletion(ctx, c, kw, d.Provider, d.APIMode, nil)
 			} else {
 				forceStream := auxProviderRequiresStream(ctx, d.BaseURL)
-				resp, err = auxRelaySyncCompletion(ctx, c, kw, d.Provider, d.APIMode, func(ctx context.Context, request map[string]any) (any, error) {
+				resp, err = auxRelaySyncCompletionFn(ctx, c, kw, d.Provider, d.APIMode, func(ctx context.Context, request map[string]any) (any, error) {
 					return auxCreateWithProgress(ctx, c, request, task, forceStream)
 				})
 			}
 			if err != nil {
 				return nil, err
 			}
-			return auxValidateLLMResponse(ctx, resp, task, "", "")
+			return auxValidateLLMResponseFn(ctx, resp, task, "", "")
 		}
 		if asyncMode {
 			return SendWithParameterRungsAsync(ctx, send, client, kwargs, task)
@@ -428,7 +428,7 @@ func auxTryMainAgentModelFallback(ctx context.Context, failedProvider, task, rea
 		auxLogSkipUnhealthy(ctx, mainProvider, task, mainBaseURL)
 		return nil, "", "", nil
 	}
-	client, resolvedModel, err := ResolveProviderClient(ctx, mainProvider, mainModel, ProviderClientOptions{})
+	client, resolvedModel, err := auxResolveProviderClientFn(ctx, mainProvider, mainModel, ProviderClientOptions{})
 	if err != nil || client == nil {
 		return nil, "", "", nil
 	}
@@ -764,7 +764,7 @@ func auxTryMainProviderRoute(ctx context.Context, t auxMainTarget) (AuxClient, s
 		auxLogSkipUnhealthy(ctx, label, "", healthBaseURL)
 		return nil, "", "", nil
 	}
-	client, resolved, err := ResolveProviderClient(ctx, resolvedProvider, t.Model, ProviderClientOptions{
+	client, resolved, err := auxResolveProviderClientFn(ctx, resolvedProvider, t.Model, ProviderClientOptions{
 		ExplicitBaseURL: explicitBaseURL, ExplicitAPIKey: explicitAPIKey, APIMode: t.APIMode})
 	if err != nil || client == nil {
 		return nil, "", "", err
@@ -871,3 +871,6 @@ func init() {
 	auxTryMainAgentModelFallbackFn = auxTryMainAgentModelFallback
 	auxProviderChainFn = auxGetProviderChain
 }
+
+// Auto route seam the cached auto route test swaps
+var auxResolveAutoRouteFn = auxResolveAutoRoute

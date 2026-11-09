@@ -7,8 +7,11 @@ import (
 	"time"
 )
 
-// Prints the sudo password box and reads one hidden line from the controlling terminal, empty on skip or timeout
-func readHiddenPasswordFromTTY(timeout time.Duration) string {
+// Hidden line reader of the controlling terminal, swapped by tests that hold the read open
+var readHiddenLineFn = readHiddenLine
+
+// Prints the sudo password box and reads one hidden line from the controlling terminal, false when the wait timed out
+func readHiddenPasswordFromTTY(timeout time.Duration) (string, bool) {
 	os.Setenv("ICEBATH_SPINNER_PAUSE", "1")
 	defer os.Unsetenv("ICEBATH_SPINNER_PAUSE")
 	time.Sleep(200 * time.Millisecond)
@@ -28,7 +31,8 @@ func readHiddenPasswordFromTTY(timeout time.Duration) string {
 	fmt.Print("  Password (hidden): ")
 	flushStdout()
 	done := make(chan string, 1)
-	go func() { done <- readHiddenLine() }()
+	read := readHiddenLineFn
+	go func() { done <- read() }()
 	closeWindow := humanWaitWindow(nil, "")
 	var password string
 	select {
@@ -38,7 +42,7 @@ func readHiddenPasswordFromTTY(timeout time.Duration) string {
 		closeWindow()
 		fmt.Print("\n  \u23f1 Timeout - continuing without sudo\n    (Press Enter to dismiss)\n\n")
 		flushStdout()
-		return ""
+		return "", false
 	}
 	if password != "" {
 		fmt.Print("\n  \u2713 Password received (cached for this session)\n\n")
@@ -46,5 +50,5 @@ func readHiddenPasswordFromTTY(timeout time.Duration) string {
 		fmt.Print("\n  \u23ed Skipped - continuing without sudo\n\n")
 	}
 	flushStdout()
-	return password
+	return password, true
 }

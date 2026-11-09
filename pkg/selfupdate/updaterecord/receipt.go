@@ -151,6 +151,22 @@ func stateOf(ctx context.Context) *receiptState {
 	return defaultReceiptState
 }
 
+// Open receipt of the context's scope, nil when none has begun
+func CurrentReceipt(ctx context.Context) *UpdateReceipt {
+	st := stateOf(ctx)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.current
+}
+
+// Forgets the open receipt of the context's scope the way the hermes tests reset _current
+func ClearCurrentReceipt(ctx context.Context) {
+	st := stateOf(ctx)
+	st.mu.Lock()
+	st.current = nil
+	st.mu.Unlock()
+}
+
 func withState(ctx context.Context, st *receiptState) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -467,6 +483,9 @@ func receiptDir(ctx context.Context) string {
 	return filepath.Join(home.LogsDir(home.RootOf(home.Dir(ctx))), "update_receipts")
 }
 
+// Exported receiptDir
+func ReceiptDir(ctx context.Context) string { return receiptDir(ctx) }
+
 // Root store then the profile's own when a named profile makes them differ
 func receiptDirs(ctx context.Context) []string {
 	root := receiptDir(ctx)
@@ -478,6 +497,9 @@ func receiptDirs(ctx context.Context) []string {
 	}
 	return []string{root, profile}
 }
+
+// Exported receiptDirs
+func ReceiptDirs(ctx context.Context) []string { return receiptDirs(ctx) }
 
 // Replaces latest.json in every store a reader of this home consults
 func writeLatest(ctx context.Context, payload []byte) error {
@@ -491,6 +513,9 @@ func writeLatest(ctx context.Context, payload []byte) error {
 	}
 	return nil
 }
+
+// Exported writeLatest
+func WriteLatest(ctx context.Context, payload []byte) error { return writeLatest(ctx, payload) }
 
 // Archive file of one run, named at begin so the running and terminal records coincide
 func runFile(directory string, data *pyjson.Object) string {
@@ -511,6 +536,9 @@ func runFile(directory string, data *pyjson.Object) string {
 		pyrepr.Str(pid), pyrepr.Str(data.Vals["update_id"]))
 	return filepath.Join(directory, name)
 }
+
+// Exported runFile
+func RunFile(directory string, data *pyjson.Object) string { return runFile(directory, data) }
 
 // Directory entries matching a glob pattern in directory order, regular files and others alike
 func globDir(directory, pattern string) ([]string, error) {
@@ -544,6 +572,9 @@ func loadJSONFile(path string) (any, error) {
 	return v, nil
 }
 
+// Exported loadJSONFile
+func LoadReceiptFile(path string) (any, error) { return loadJSONFile(path) }
+
 // Indented receipt payload with a trailing newline, str for anything JSON cannot encode
 func receiptPayload(data any, indent bool) ([]byte, error) {
 	opts := []pyjson.Option{pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil })}
@@ -559,6 +590,9 @@ func receiptPayload(data any, indent bool) ([]byte, error) {
 	}
 	return []byte(text), nil
 }
+
+// Exported receiptPayload
+func ReceiptPayload(data any, indent bool) ([]byte, error) { return receiptPayload(data, indent) }
 
 // The run's own archive path and record in the root store in key order, never latest.json
 func ReadRunRecord(ctx context.Context, updateID string) (string, *pyjson.Object, bool) {
@@ -652,6 +686,9 @@ func ownerAlive(record *pyjson.Object) bool {
 	}
 	return false
 }
+
+// Exported ownerAlive
+func OwnerAlive(record *pyjson.Object) bool { return ownerAlive(record) }
 
 // Paths under directory matching pattern ordered by modification time, oldest first
 func byMtime(paths []string) ([]string, error) {
@@ -1474,6 +1511,9 @@ func readLatestReceipt(ctx context.Context) *pyjson.Object {
 	m, _ := v.(*pyjson.Object)
 	return m
 }
+
+// Exported readLatestReceipt keeping the ordered object
+func LatestReceiptObject(ctx context.Context) *pyjson.Object { return readLatestReceipt(ctx) }
 
 // Most recent update receipt across the stores of this home, nil when none parses
 func ReadLatestReceipt(ctx context.Context) map[string]any {

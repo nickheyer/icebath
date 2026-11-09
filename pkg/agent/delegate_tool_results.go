@@ -904,6 +904,7 @@ func finalizeChildResults(ctx context.Context, results []*pyjson.Object, taskLis
 // Child runner and child builder of delegate_task, swapped by tests the way the Python facade is patched
 var (
 	runSingleChildFn                  = runSingleChild
+	buildChildAgentFn                 = buildChildAgent
 	buildChildPreservingParentToolsFn = buildChildPreservingParentTools
 )
 
@@ -935,7 +936,7 @@ func buildChildPreservingParentTools(ctx context.Context, spec childBuildSpec) (
 	}
 	child, err := func() (*AIAgent, error) {
 		defer tools.RestoreLastResolvedToolNames(parentToolNames)
-		return buildChildAgent(ctx, spec)
+		return buildChildAgentFn(ctx, spec)
 	}()
 	childConstructionMu.Unlock()
 	if err != nil {

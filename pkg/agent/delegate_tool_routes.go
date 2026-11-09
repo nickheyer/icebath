@@ -54,7 +54,11 @@ func delegatedProfileScope(ctx context.Context, h string) context.Context {
 	if routed {
 		ctx = provider.WithMultiplexContext(ctx, true)
 	}
-	return tools.WithProfileTerminalScope(ctx, h, nil)
+	ctx = tools.WithProfileTerminalScope(ctx, h, nil)
+	if bound := tools.ToolEnvFrom(ctx); bound != nil {
+		ctx = tools.WithToolEnv(ctx, tools.EnvForProfileHome(ctx, bound, h))
+	}
+	return ctx
 }
 
 // Profile scope a built child's own work runs in, unchanged for a child without a profile route
@@ -114,6 +118,9 @@ func refuseUnderWorkerSnapshot(ctx context.Context, h string) error {
 	return nil
 }
 
+// Runtime provider resolver of a profile route, swapped by tests counting resolutions
+var resolveRuntimeProviderFn = provider.ResolveRuntimeProvider
+
 // The profile's own primary route resolved inside its scope with its own keys, fallback chain and reasoning
 func profileRoute(ctx context.Context, h string) (*tools.TaskRoute, error) {
 	if err := refuseUnderWorkerSnapshot(ctx, h); err != nil {
@@ -132,7 +139,7 @@ func profileRoute(ctx context.Context, h string) (*tools.TaskRoute, error) {
 	if err != nil {
 		return nil, err
 	}
-	rt, err := provider.ResolveRuntimeProvider(scoped, home.Dir(scoped), request.requested, request.targetModel,
+	rt, err := resolveRuntimeProviderFn(scoped, home.Dir(scoped), request.requested, request.targetModel,
 		request.explicitBaseURL, request.explicitAPIKey)
 	if err != nil {
 		return nil, routeError("Profile at %s has no usable model provider: %s", h, err)
@@ -354,6 +361,9 @@ func routeOneTask(ctx context.Context, p tools.DelegationProvider, declared map[
 	return nil, routeError("Task %d: delegation backend '%s' failed: %s", index, p.Name(), reason)
 }
 
+// Provider the delegation section selects, the hermes _active_provider seam tests patch
+var activeDelegationProviderFn = tools.GetActiveDelegationProvider
+
 // One task route per task from the session's pinned or configured backend, a refusal text when it cannot run
 func resolveTaskRoutes(ctx context.Context, taskList []map[string]any, cfg map[string]any, parent *AIAgent) ([]*tools.TaskRoute, string, error) {
 	var backendAgent tools.DelegationBackendAgent
@@ -364,7 +374,7 @@ func resolveTaskRoutes(ctx context.Context, taskList []map[string]any, cfg map[s
 		cfg = maps.Clone(cfg)
 		cfg["backend"] = pinned
 	}
-	p, err := tools.GetActiveDelegationProvider(ctx, cfg)
+	p, err := activeDelegationProviderFn(ctx, cfg)
 	if err != nil {
 		return nil, err.Error(), nil
 	}

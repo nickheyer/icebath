@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -19,6 +21,9 @@ type relayLLMFakeHandle struct {
 	name string
 	seq  int
 }
+
+// Stable identity of the handle the runtime keys deferred scope outputs by
+func (h *relayLLMFakeHandle) UUID() any { return fmt.Sprintf("%s-%d", h.name, h.seq) }
 
 type relayLLMFakePop struct {
 	handle *relayLLMFakeHandle
@@ -50,6 +55,7 @@ type relayLLMFake struct {
 	requestIntercepts []relayLLMFakeRequestIntercept
 	streamIntercepts  []relayLLMFakeStreamIntercept
 	subscribers       []relayLLMFakeSubscriber
+	scopeStarts       map[*relayLLMFakeHandle]map[string]any
 	relay             *tools.NemoRelay
 }
 
@@ -59,7 +65,7 @@ type relayLLMFakeSubscriber struct {
 }
 
 func newRelayLLMFake() *relayLLMFake {
-	f := &relayLLMFake{}
+	f := &relayLLMFake{scopeStarts: map[*relayLLMFakeHandle]map[string]any{}}
 	f.relay = &tools.NemoRelay{
 		Scope:         &tools.NemoRelayScope{Push: f.push, Pop: f.pop, GetHandle: func(context.Context) (any, error) { return f.top(), nil }},
 		ScopeType:     tools.NemoRelayScopeTypes{Agent: "agent", Function: "function"},
@@ -184,12 +190,20 @@ func relayLLMFakeStrip(v any, lossy bool) any {
 	return v
 }
 
-func (f *relayLLMFake) push(_ context.Context, name string, _ any, _ map[string]any) (any, error) {
+// Pushes a scope handle, a function scope remembering its kwargs and emitting its start event
+func (f *relayLLMFake) push(_ context.Context, name string, scopeType any, kwargs map[string]any) (any, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.seq++
 	h := &relayLLMFakeHandle{name: name, seq: f.seq}
 	f.stack = append(f.stack, h)
+	function := scopeType == "function"
+	if function {
+		f.scopeStarts[h] = kwargs
+	}
+	f.mu.Unlock()
+	if function {
+		f.emit(&tools.RelayEventView{Kind: "scope", Category: "function", Name: name, ScopeCategory: "start", Metadata: kwargs["metadata"], Data: kwargs["input"]})
+	}
 	return h, nil
 }
 
@@ -197,13 +211,25 @@ func (f *relayLLMFake) pop(_ context.Context, handle any, kwargs map[string]any)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	h, _ := handle.(*relayLLMFakeHandle)
-	for i := len(f.stack) - 1; i >= 0; i-- {
-		if f.stack[i] == h {
-			f.stack = append(f.stack[:i], f.stack[i+1:]...)
-			break
-		}
+	if len(f.stack) == 0 || f.stack[len(f.stack)-1] != h {
+		return nil, &tools.RelayError{Class: "RuntimeError", Message: "scope handle is not at the top of the stack"}
 	}
+	f.stack = f.stack[:len(f.stack)-1]
 	f.pops = append(f.pops, relayLLMFakePop{handle: h, output: kwargs["output"]})
+	start, ok := f.scopeStarts[h]
+	delete(f.scopeStarts, h)
+	f.mu.Unlock()
+	if ok {
+		metadata := map[string]any{}
+		if m, _ := start["metadata"].(map[string]any); m != nil {
+			maps.Copy(metadata, m)
+		}
+		if m, _ := kwargs["metadata"].(map[string]any); m != nil {
+			maps.Copy(metadata, m)
+		}
+		f.emit(&tools.RelayEventView{Kind: "scope", Category: "function", Name: h.name, ScopeCategory: "end", Metadata: metadata, Data: kwargs["output"]})
+	}
+	f.mu.Lock()
 	return nil, nil
 }
 

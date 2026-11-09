@@ -132,6 +132,8 @@ type Env struct {
 	kanbanSelection *bool
 	// Synthesized from a nil env so availability checks keep bypassing the verdict cache
 	unscopedChecks bool
+	// Profile home a routed scope bound this env to, the context home override of hermes
+	profileHome string
 }
 
 // Emit sends a progress event when the host registered a listener

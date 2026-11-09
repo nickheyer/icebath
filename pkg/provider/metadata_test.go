@@ -209,7 +209,7 @@ func TestCodexProxyRouteExplicitContextLengthOverrideStillWins(t *testing.T) {
 	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "gpt-6-astra", BaseURL: "http://127.0.0.1:8317/v1", Provider: "custom:codex-proxy", CustomProviders: custom}), 321_000, "override")
 }
 
-func TestStripProviderPrefix(t *testing.T) {
+func TestStripProviderPrefixKnownProviderPrefixIsStripped(t *testing.T) {
 	metaTest(t)
 	cases := map[string]string{
 		"local:my-model": "my-model", "openrouter:anthropic/claude-sonnet-4": "anthropic/claude-sonnet-4",
@@ -273,7 +273,7 @@ func TestFetchModelMetadataCanonicalSlugAliasing(t *testing.T) {
 	mustEqual(t, intOrDefault(got["anthropic/claude-3.5-sonnet"]["context_length"], 0), 200000, "canonical")
 }
 
-func TestContextProbeTiersDescending(t *testing.T) {
+func TestContextProbeTiersTiersDescending(t *testing.T) {
 	for i := 0; i+1 < len(ContextProbeTiers); i++ {
 		if ContextProbeTiers[i] <= ContextProbeTiers[i+1] {
 			t.Fatal("tiers must descend")
@@ -288,7 +288,7 @@ func TestContextProbeTiersDescending(t *testing.T) {
 	}
 }
 
-func TestParseContextLimitFromError(t *testing.T) {
+func TestParseContextLimitFromErrorVllmDelimiterVariants(t *testing.T) {
 	cases := map[string]int{
 		"max_model_len 32768": 32768, "max_model_len: 32768": 32768, "max_model_len=32768": 32768, "max_model_len (32768)": 32768, "max_model_len is 32768": 32768,
 		"maximum model length 131072": 131072, "maximum model length is 131072": 131072, "maximum model length: 131072": 131072,
@@ -466,7 +466,7 @@ func TestGenericPreCatalogStaleGuard(t *testing.T) {
 	}
 }
 
-func TestFallbackWarningEmittedOnFallback(t *testing.T) {
+func TestFallbackWarningWarningEmittedOnFallback(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	buf := captureMetadataLog(t)
 	ft.on("GET", OpenRouterModelsURL, 200, map[string]any{"data": []any{}})
@@ -480,7 +480,7 @@ func TestFallbackWarningEmittedOnFallback(t *testing.T) {
 	mustEqual(t, strings.Count(out, "falling back"), 1, "deduped")
 }
 
-func TestFallbackWarningEmittedOnCustomEndpointFallback(t *testing.T) {
+func TestFallbackWarningWarningEmittedOnCustomEndpointFallback(t *testing.T) {
 	ctx, _, _ := metaTest(t)
 	buf := captureMetadataLog(t)
 	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "totally-unknown-model-xyz", BaseURL: "http://192.168.1.50:8080/v1"}), DefaultFallbackContext, "custom fallback")
@@ -500,7 +500,7 @@ func TestNoWarningWhenCached(t *testing.T) {
 	}
 }
 
-func TestOpenRouterRoutingVariantMatchesBaseButRealSKUKeepsOwnWindow(t *testing.T) {
+func TestOpenRouterRoutingVariantContextLengthVariantMatchesBaseButRealSKUKeepsOwnWindow(t *testing.T) {
 	ctx, _, _ := metaTest(t)
 	seedOpenRouterCatalog(map[string]map[string]any{
 		"x-ai/grok-4.6": {"context_length": 2_000_000}, "thinkingmachines/inkling": {"context_length": 1_000_000}, "thinkingmachines/inkling:free": {"context_length": 64_000},

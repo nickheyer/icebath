@@ -20,7 +20,7 @@ func auxSentHas(sent []map[string]any, field string) []bool {
 	return out
 }
 
-func TestAuxStructuredParamRejectionStripsReasoningEffortOnRetry(t *testing.T) {
+func TestStructuredParamRejectionStripsReasoningEffortOnRetry(t *testing.T) {
 	client := &auxCallFakeClient{base: "https://api.example/v1", create: func(_ context.Context, kwargs map[string]any) (any, error) {
 		body := map[string]any{}
 		for k, v := range kwargs {
@@ -52,7 +52,7 @@ func TestAuxStructuredParamRejectionStripsReasoningEffortOnRetry(t *testing.T) {
 	}
 }
 
-func TestAuxFallbackCandidateRecoversFromRejectedTemperature(t *testing.T) {
+func TestFallbackCandidateRecoversFromRejectedTemperature(t *testing.T) {
 	client := auxRejectingClient("temperature")
 	temp := 0.3
 	resp, err := auxCallFallbackCandidate(context.Background(), client, "relay-model-x", "fallback_chain[0](openai)", auxFallbackRequest{
@@ -69,7 +69,7 @@ func TestAuxFallbackCandidateRecoversFromRejectedTemperature(t *testing.T) {
 	}
 }
 
-func TestAuxAutoRouteForwardsMainRuntimeEntraCallableIntact(t *testing.T) {
+func TestResolveProviderClientAzureFoundryAutoRouteForwardsMainRuntimeEntraCallableIntact(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "azure-foundry", "base_url": "https://r.openai.azure.com/openai/v1",

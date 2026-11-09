@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -123,6 +124,26 @@ func normalizeRegisteredProfile(p *Profile) {
 
 // RegisterProvider registers a profile process wide by name and aliases, later registrations replacing earlier ones
 func RegisterProvider(p Profile) { registerProcessWide(p, "runtime") }
+
+// UnregisterProvider drops a runtime registered profile and its aliases, the restore step of a test registration
+func UnregisterProvider(name string) {
+	regGeneration.Add(1)
+	regMu.Lock()
+	defer regMu.Unlock()
+	p, ok := regProfiles[name]
+	if !ok {
+		return
+	}
+	delete(regProfiles, name)
+	delete(regSources, name)
+	for _, a := range p.Aliases {
+		if regAliases[a] == name {
+			delete(regAliases, a)
+		}
+	}
+	regOrder = slices.DeleteFunc(regOrder, func(n string) bool { return n == name })
+	regListCache = nil
+}
 
 // Registers one bundled plugin profile process wide with the bundled source
 func registerBundledProvider(p Profile) { registerProcessWide(p, "bundled") }

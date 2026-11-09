@@ -75,7 +75,7 @@ func auxNousIsTheOnlyWorkingProvider(t *testing.T, persisted string) *auxCallFak
 	return nous
 }
 
-func TestAuxSelectedMainProviderDownRefusesToGuessAnotherAccount(t *testing.T) {
+func TestSelectedMainProviderDownRefusesToGuessAnotherAccount(t *testing.T) {
 	for _, persisted := range []string{"xai-oauth", "auto"} {
 		t.Run(persisted, func(t *testing.T) {
 			auxNousIsTheOnlyWorkingProvider(t, persisted)
@@ -91,7 +91,7 @@ func TestAuxSelectedMainProviderDownRefusesToGuessAnotherAccount(t *testing.T) {
 	}
 }
 
-func TestAuxQuarantinedFallbackHandsOverToTheNextConfiguredEntry(t *testing.T) {
+func TestQuarantinedFallbackHandsOverToTheNextConfiguredEntry(t *testing.T) {
 	auxSwapFallbackSeams(t)
 	healthy := &auxCallFakeClient{}
 	auxTryConfiguredFallbackChainFn = func(context.Context, string, string, string, string, string, FailureScope) (AuxClient, string, string, error) {
@@ -112,7 +112,7 @@ func TestAuxQuarantinedFallbackHandsOverToTheNextConfiguredEntry(t *testing.T) {
 	}
 }
 
-func TestAuxNoSelectedMainProviderStillDiscovers(t *testing.T) {
+func TestNoSelectedMainProviderStillDiscovers(t *testing.T) {
 	nous := auxNousIsTheOnlyWorkingProvider(t, "auto")
 	client, model, label, err := auxResolveAutoRoute(context.Background(), map[string]any{"provider": "auto"}, "compression")
 	if err != nil || client != AuxClient(nous) || model != "nous-model" || label != "nous" {
@@ -149,7 +149,7 @@ func auxRejectingClient(fields ...string) *auxCallFakeClient {
 	}}
 }
 
-func TestAuxPrimaryRungsChainInProviderOrderAndStripEachFieldOnce(t *testing.T) {
+func TestPrimaryRungsChainInProviderOrderAndStripEachFieldOnce(t *testing.T) {
 	auxFreshFloors(t)
 	client := auxRejectingClient("reasoning_effort", "temperature", "max_tokens")
 	kwargs := map[string]any{"model": "m", "messages": []any{}, "temperature": 0.3, "max_tokens": 64, "reasoning_effort": "none"}
@@ -210,7 +210,7 @@ type auxTestCancelEvent struct{ set atomic.Bool }
 
 func (e *auxTestCancelEvent) IsSet() bool { return e.set.Load() }
 
-func TestAuxCancelledAttemptDoesNotCloseOrFailConcurrentSharedClientCall(t *testing.T) {
+func TestCancelledAttemptDoesNotCloseOrFailConcurrentSharedClientCall(t *testing.T) {
 	aStarted, aRelease := make(chan struct{}), make(chan struct{})
 	bStarted, bRelease := make(chan struct{}), make(chan struct{})
 	var aOnce, bOnce sync.Once
@@ -368,7 +368,7 @@ func auxSwapCachedClient(t *testing.T, client AuxClient, model string) {
 	auxGetCachedClientFn = func(context.Context, auxCachedClientRequest) (AuxClient, string, error) { return client, model, nil }
 }
 
-func TestKimiTemperatureOmittedAsyncCall(t *testing.T) {
+func TestKimiTemperatureOmittedAsyncCallOmitsTemperature(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	writeConfig(t, h, map[string]any{})
@@ -387,7 +387,7 @@ func TestKimiTemperatureOmittedAsyncCall(t *testing.T) {
 	}
 }
 
-func TestKimiTemperatureNonKimiModelsPreserveTemperature(t *testing.T) {
+func TestKimiTemperatureOmittedNonKimiModelsPreserveTemperature(t *testing.T) {
 	temp := 0.3
 	for _, model := range []string{"anthropic/claude-sonnet-4-6", "gpt-4.1", "deepseek-chat"} {
 		kwargs, err := auxBuildCallKwargs(context.Background(), "openrouter", model, []any{map[string]any{"role": "user", "content": "hello"}},
@@ -398,43 +398,39 @@ func TestKimiTemperatureNonKimiModelsPreserveTemperature(t *testing.T) {
 	}
 }
 
-func TestAuxiliaryTaskExtraBody(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		async     bool
-		taskExtra map[string]any
-		explicit  map[string]any
-		want      map[string]any
-	}{
-		{"sync_call_merges_task_extra_body_from_config", false, map[string]any{"enable_thinking": false, "reasoning": map[string]any{"effort": "none"}},
-			map[string]any{"metadata": map[string]any{"source": "test"}},
-			map[string]any{"enable_thinking": false, "reasoning": map[string]any{"effort": "none"}, "metadata": map[string]any{"source": "test"}}},
-		{"async_call_explicit_extra_body_overrides_task_config", true, map[string]any{"enable_thinking": false},
-			map[string]any{"enable_thinking": true}, map[string]any{"enable_thinking": true}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			h := t.TempDir()
-			t.Setenv("ICEBATH_HOME", h)
-			writeConfig(t, h, map[string]any{"auxiliary": map[string]any{"session_search": map[string]any{"extra_body": tc.taskExtra}}})
-			client := &auxCallFakeClient{base: "https://api.example.com/v1", key: "k",
-				create: func(context.Context, map[string]any) (any, error) { return auxCallOK("ok"), nil }}
-			auxSwapCachedClient(t, client, "glm-4.5-air")
-			call := CallLLM
-			if tc.async {
-				call = AsyncCallLLM
-			}
-			if _, err := call(context.Background(), map[string]any{"task": "session_search",
-				"messages": []any{map[string]any{"role": "user", "content": "hello"}}, "extra_body": tc.explicit}); err != nil {
-				t.Fatal(err)
-			}
-			body, _ := client.sent[len(client.sent)-1]["extra_body"].(map[string]any)
-			for k, v := range tc.want {
-				if fmt.Sprint(body[k]) != fmt.Sprint(v) {
-					t.Fatalf("extra_body %v, want %s=%v", body, k, v)
-				}
-			}
-		})
+// Runs one call_llm extra body merge against a fake cached client and checks the merged body keys
+func auxTaskExtraBodyCase(t *testing.T, async bool, taskExtra, explicit, want map[string]any) {
+	t.Helper()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeConfig(t, h, map[string]any{"auxiliary": map[string]any{"session_search": map[string]any{"extra_body": taskExtra}}})
+	client := &auxCallFakeClient{base: "https://api.example.com/v1", key: "k",
+		create: func(context.Context, map[string]any) (any, error) { return auxCallOK("ok"), nil }}
+	auxSwapCachedClient(t, client, "glm-4.5-air")
+	call := CallLLM
+	if async {
+		call = AsyncCallLLM
 	}
+	if _, err := call(context.Background(), map[string]any{"task": "session_search",
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}}, "extra_body": explicit}); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := client.sent[len(client.sent)-1]["extra_body"].(map[string]any)
+	for k, v := range want {
+		if fmt.Sprint(body[k]) != fmt.Sprint(v) {
+			t.Fatalf("extra_body %v, want %s=%v", body, k, v)
+		}
+	}
+}
+
+func TestAuxiliaryTaskExtraBodySyncCallMergesTaskExtraBodyFromConfig(t *testing.T) {
+	auxTaskExtraBodyCase(t, false, map[string]any{"enable_thinking": false, "reasoning": map[string]any{"effort": "none"}},
+		map[string]any{"metadata": map[string]any{"source": "test"}},
+		map[string]any{"enable_thinking": false, "reasoning": map[string]any{"effort": "none"}, "metadata": map[string]any{"source": "test"}})
+}
+
+func TestAuxiliaryTaskExtraBodyAsyncCallExplicitExtraBodyOverridesTaskConfig(t *testing.T) {
+	auxTaskExtraBodyCase(t, true, map[string]any{"enable_thinking": false}, map[string]any{"enable_thinking": true}, map[string]any{"enable_thinking": true})
 }
 
 func TestAuxiliaryPoolAwarenessCallLLMRetriesNousAfter401(t *testing.T) {

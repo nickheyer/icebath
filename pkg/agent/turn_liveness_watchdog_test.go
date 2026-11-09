@@ -166,8 +166,8 @@ func TestWatchdogDoesNotFireWhileTurnStillMakingProgress(t *testing.T) {
 		}
 		return map[string]any{"final_response": "done", "messages": history, "api_calls": 1, "completed": true}
 	})
-	if result["completed"] != true || result["interrupted"] == true || a.interruptRequested {
-		t.Fatalf("result %v interrupted %v", result, a.interruptRequested)
+	if result["completed"] != true || result["interrupted"] == true || a.interruptRequested.Load() {
+		t.Fatalf("result %v interrupted %v", result, a.interruptRequested.Load())
 	}
 	if watchdogFired(records(), "") {
 		t.Fatal("the watchdog fired on a progressing turn")
@@ -248,7 +248,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesDuringWarning(t *testing.T) {
 			a.TouchActivity("still alive")
 			time.Sleep(20 * time.Millisecond)
 		}
-		requested = a.interruptRequested
+		requested = a.interruptRequested.Load()
 		return map[string]any{"final_response": "recovered", "messages": history, "api_calls": 1, "completed": true}
 	})
 	if time.Since(start) >= 10*time.Second || requested {
@@ -292,7 +292,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesAfterRevalidation(t *testing.T)
 		}
 		return map[string]any{"final_response": "recovered", "messages": history, "api_calls": 1, "completed": true}
 	})
-	if _, ok := injected.Load(1); !ok || result["completed"] != true || result["interrupted"] == true || requested || a.interruptRequested {
+	if _, ok := injected.Load(1); !ok || result["completed"] != true || result["interrupted"] == true || requested || a.interruptRequested.Load() {
 		t.Fatalf("result %v requested %v", result, requested)
 	}
 	assertDeclinedTurnKeptItsLease(t, db, records())
@@ -343,7 +343,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesInsideInterruptPublication(t *t
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
-		requested, hardEvent = a.interruptRequested, a.hardInterruptRequested.IsSet()
+		requested, hardEvent = a.interruptRequested.Load(), a.hardInterruptRequested.IsSet()
 		toolSignal, message = a.interruptThreadSignalPending, a.interruptMessage
 		return map[string]any{"final_response": "recovered", "messages": history, "api_calls": 1, "completed": true}
 	})
@@ -383,8 +383,8 @@ func TestWatchdogDeclinesAbortWhenInterruptPublishRaises(t *testing.T) {
 	if _, ok := raised.Load("raised"); !ok || result["completed"] != true || result["interrupted"] == true {
 		t.Fatalf("result %v", result)
 	}
-	if a.interruptRequested || a.interruptMessage != "" {
-		t.Fatalf("exception fallback mutated interrupt state %v %q", a.interruptRequested, a.interruptMessage)
+	if a.interruptRequested.Load() || a.interruptMessage != "" {
+		t.Fatalf("exception fallback mutated interrupt state %v %q", a.interruptRequested.Load(), a.interruptMessage)
 	}
 	assertDeclinedTurnKeptItsLease(t, db, records())
 }
@@ -441,8 +441,8 @@ func TestDeclinedAbortDoesNotCancelPendingCompressionCommit(t *testing.T) {
 	}
 	lock.releasePark.Set()
 	<-done
-	if ret || a.interruptRequested || a.hardInterruptRequested.IsSet() {
-		t.Fatalf("interrupt should have declined ret %v requested %v", ret, a.interruptRequested)
+	if ret || a.interruptRequested.Load() || a.hardInterruptRequested.IsSet() {
+		t.Fatalf("interrupt should have declined ret %v requested %v", ret, a.interruptRequested.Load())
 	}
 	if !fence.BeginCommit(nil) {
 		t.Fatal("declined liveness abort left the pending compression fence cancelled")

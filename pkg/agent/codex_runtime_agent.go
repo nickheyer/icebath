@@ -10,7 +10,7 @@ func (a *AIAgent) CachedSystemPrompt() string                        { return a.
 func (a *AIAgent) SessionCwd() string                                { return a.sessionCwd }
 func (a *AIAgent) ShowCommentary() bool                              { return a.showCommentary }
 func (a *AIAgent) HoldStream() bool                                  { return a.holdStream }
-func (a *AIAgent) InterruptRequested() bool                          { return a.interruptRequested }
+func (a *AIAgent) InterruptRequested() bool                          { return a.interruptRequested.Load() }
 func (a *AIAgent) ClearInterrupt()                                   { a.clearInterrupt(false) }
 func (a *AIAgent) ItersSinceSkill() int                              { return a.itersSinceSkill }
 func (a *AIAgent) SetItersSinceSkill(n int)                          { a.itersSinceSkill = n }

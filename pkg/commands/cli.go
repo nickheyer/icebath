@@ -64,6 +64,21 @@ type posSpec struct {
 	Choices  []string
 	Default  string
 	Help     string
+	Metavar  string
+}
+
+// Same positional shown under another name in usage and errors, the argparse metavar
+func (s posSpec) withMetavar(metavar string) posSpec {
+	s.Metavar = metavar
+	return s
+}
+
+// Name usage, help and error messages show for the positional
+func (s posSpec) display() string {
+	if s.Metavar != "" {
+		return s.Metavar
+	}
+	return s.Name
 }
 
 // Same positional carrying the help line the positional arguments section shows
@@ -436,15 +451,15 @@ func (c *CLI) finishAll(cmd *cobra.Command) {
 		for i, s := range specs {
 			switch {
 			case s.Remain:
-				parts = append(parts, "[-- "+s.Name+"...]")
+				parts = append(parts, "[-- "+s.display()+"...]")
 			case s.Variadic && s.Optional:
-				parts = append(parts, "["+s.Name+" ...]")
+				parts = append(parts, "["+s.display()+" ...]")
 			case s.Variadic:
-				parts = append(parts, s.Name+" ["+s.Name+" ...]")
+				parts = append(parts, s.display()+" ["+s.display()+" ...]")
 			case s.Optional:
-				parts = append(parts, "["+s.Name+"]")
+				parts = append(parts, "["+s.display()+"]")
 			default:
-				parts = append(parts, s.Name)
+				parts = append(parts, s.display())
 			}
 			if s.Remain && i == 0 {
 				cmd.Flags().SetInterspersed(false)
@@ -477,14 +492,14 @@ func (c *CLI) finishAll(cmd *cobra.Command) {
 func positionalHelp(specs []posSpec) string {
 	width := 0
 	for _, s := range specs {
-		if s.Help != "" && len(s.Name) > width {
-			width = len(s.Name)
+		if s.Help != "" && len(s.display()) > width {
+			width = len(s.display())
 		}
 	}
 	var rows []string
 	for _, s := range specs {
 		if s.Help != "" {
-			rows = append(rows, "  "+s.Name+strings.Repeat(" ", width-len(s.Name))+"   "+s.Help)
+			rows = append(rows, "  "+s.display()+strings.Repeat(" ", width-len(s.display()))+"   "+s.Help)
 		}
 	}
 	return strings.Join(rows, "\n")
@@ -508,7 +523,7 @@ func (c *CLI) positionalArgs(specs []posSpec) cobra.PositionalArgs {
 			var missing []string
 			for i := len(args); i < len(specs); i++ {
 				if !specs[i].Optional {
-					missing = append(missing, specs[i].Name)
+					missing = append(missing, specs[i].display())
 				}
 			}
 			return fmt.Errorf("the following arguments are required: %s", strings.Join(missing, ", "))
@@ -525,11 +540,11 @@ func (c *CLI) positionalArgs(specs []posSpec) cobra.PositionalArgs {
 				break
 			}
 			if len(s.Choices) > 0 && !contains(s.Choices, a) {
-				return fmt.Errorf("argument %s: invalid choice: '%s' (choose from %s)", s.Name, a, quotedList(s.Choices))
+				return fmt.Errorf("argument %s: invalid choice: '%s' (choose from %s)", s.display(), a, quotedList(s.Choices))
 			}
 			if s.Int {
 				if _, err := strconv.Atoi(a); err != nil {
-					return fmt.Errorf("argument %s: invalid int value: '%s'", s.Name, a)
+					return fmt.Errorf("argument %s: invalid int value: '%s'", s.display(), a)
 				}
 			}
 		}

@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -341,12 +340,22 @@ func TestProfileForHostMatchesClaimedHostsExactOrSubdomain(t *testing.T) {
 	}
 }
 
-func TestClaimedHostsDriveURLInference(t *testing.T) {
+func TestClaimedHostsDriveUrlInferenceAndAuxRouting(t *testing.T) {
 	hostSeamProfile(t)
 	for _, u := range []string{"https://api.business.fake-llm.test/v1", "https://catalog.fake-meta.test/inference"} {
 		if got := inferProviderFromBaseURL(u); got != hostSeamName {
 			t.Fatalf("_infer_provider_from_url(%q) = %q", u, got)
 		}
+	}
+	ctx := context.Background()
+	if got := auxProviderForHost(ctx, "https://api.fake-llm.test/v1", auxPoolProviderByHost); got != hostSeamName {
+		t.Fatalf("pool routing for the claimed host = %q", got)
+	}
+	if got := auxProviderForHost(ctx, "https://api.fake-llm.test/v1", auxAuthRefreshProviderByHost); got != hostSeamName {
+		t.Fatalf("auth refresh routing for the claimed host = %q", got)
+	}
+	if got := auxProviderForHost(ctx, "https://catalog.fake-meta.test", auxPoolProviderByHost); got != "" {
+		t.Fatalf("credential routing followed a metadata only claim: %q", got)
 	}
 }
 
@@ -378,13 +387,7 @@ func TestProfileForHostAnswersFollowRegistryChanges(t *testing.T) {
 }
 
 // Drops one registration the way the Python cleanup pops _REGISTRY and clears the list cache
-func unregisterTestProvider(name string) {
-	regMu.Lock()
-	delete(regProfiles, name)
-	regOrder = slices.DeleteFunc(slices.Clone(regOrder), func(n string) bool { return n == name })
-	regListCache = nil
-	regMu.Unlock()
-}
+func unregisterTestProvider(name string) { UnregisterProvider(name) }
 
 const fakeHint = "Run `fake-cli login` to sign in."
 

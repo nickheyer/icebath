@@ -281,7 +281,7 @@ func auxBorrowedMainCredentialKey(ctx context.Context, provider, baseURL string,
 	if auxTruthy(auxNormalizeAPIKey(apiKey)) {
 		return auxCacheTuple(), nil, nil
 	}
-	borrowed, err := auxReadMainAPIKeyIfSameOrigin(ctx, strings.TrimSpace(auxToOpenAIBaseURL(baseURL)))
+	borrowed, err := auxReadMainAPIKeyIfSameOriginFn(ctx, strings.TrimSpace(auxToOpenAIBaseURL(baseURL)))
 	if err != nil {
 		return "", nil, err
 	}
@@ -334,6 +334,9 @@ type auxNousRefreshRequest struct {
 	LookupTask    string
 }
 
+// OpenAI client factory of the Nous refresh, swapped by the end to end eviction tests
+var auxCreateOpenAIClientFn = auxCreateOpenAIClient
+
 // Refreshes Nous runtime credentials and replaces the stale cache entry with a rebuilt client
 func auxRefreshNousAuxiliaryClient(ctx context.Context, req auxNousRefreshRequest) (AuxClient, string, error) {
 	stale, _ := req.APIKey.(string)
@@ -341,12 +344,12 @@ func auxRefreshNousAuxiliaryClient(ctx context.Context, req auxNousRefreshReques
 	if !ok {
 		return nil, req.Model, nil
 	}
-	syncClient := auxCreateOpenAIClient(ctx, freshKey, freshBaseURL, auxOpenAIOptions{})
+	syncClient := auxCreateOpenAIClientFn(ctx, freshKey, freshBaseURL, auxOpenAIOptions{})
 	var currentLoop any
 	client, finalModel := syncClient, req.Model
 	if req.AsyncMode {
 		currentLoop = auxCurrentEventLoop(ctx)
-		client, finalModel = auxToAsyncClient(ctx, syncClient, req.Model, req.IsVision)
+		client, finalModel = auxToAsyncClientFn(ctx, syncClient, req.Model, req.IsVision)
 	}
 	key, retained, err := auxClientCacheKeyFor(ctx, req.CacheProvider, req.AsyncMode, req.BaseURL, req.APIKey, req.APIMode, req.MainRuntime, req.IsVision, req.LookupTask, req.LookupModel)
 	if err != nil {

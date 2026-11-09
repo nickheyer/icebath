@@ -105,8 +105,8 @@ func TestRedirectRejectsWhenNoTurnIsActive(t *testing.T) {
 func TestRedirectCancelsOnlyAnActiveModelRequest(t *testing.T) {
 	a := bareSteerAgent()
 	a.modelRequestActive.Set()
-	if !a.Redirect("use Postgres") || a.pendingRedirect != "use Postgres" || !a.interruptRequested || a.interruptMessage != "" {
-		t.Fatalf("redirect %q interrupted %v", a.pendingRedirect, a.interruptRequested)
+	if !a.Redirect("use Postgres") || a.pendingRedirect != "use Postgres" || !a.interruptRequested.Load() || a.interruptMessage != "" {
+		t.Fatalf("redirect %q interrupted %v", a.pendingRedirect, a.interruptRequested.Load())
 	}
 }
 
@@ -124,7 +124,7 @@ func TestMultipleRedirectsPreserveMessageBoundaries(t *testing.T) {
 func TestHardInterruptWinsOverNewRedirect(t *testing.T) {
 	a := bareSteerAgent()
 	a.modelRequestActive.Set()
-	a.interruptRequested = true
+	a.interruptRequested.Store(true)
 	if a.Redirect("too late") || a.pendingRedirect != "" {
 		t.Fatal("redirect accepted over a pending stop")
 	}
@@ -161,8 +161,8 @@ func TestHardStopWinsConcurrentRedirect(t *testing.T) {
 	go func() { defer done.Done(); start.Wait(); a.Interrupt("stop requested") }()
 	start.Done()
 	done.Wait()
-	if !a.interruptRequested || a.interruptMessage != "stop requested" || a.pendingRedirect != "" {
-		t.Fatalf("interrupted %v message %q redirect %q", a.interruptRequested, a.interruptMessage, a.pendingRedirect)
+	if !a.interruptRequested.Load() || a.interruptMessage != "stop requested" || a.pendingRedirect != "" {
+		t.Fatalf("interrupted %v message %q redirect %q", a.interruptRequested.Load(), a.interruptMessage, a.pendingRedirect)
 	}
 }
 
@@ -190,7 +190,7 @@ func TestCodexAppServerHardStopReachesNativeSession(t *testing.T) {
 func TestRedirectDuringToolExecutionUsesSafeSteerBoundary(t *testing.T) {
 	a := bareSteerAgent()
 	a.executingTools = true
-	if !a.Redirect("also check migrations") || a.pendingRedirect != "" || a.pendingSteer != "also check migrations" || a.interruptRequested {
+	if !a.Redirect("also check migrations") || a.pendingRedirect != "" || a.pendingSteer != "also check migrations" || a.interruptRequested.Load() {
 		t.Fatalf("redirect %q steer %q", a.pendingRedirect, a.pendingSteer)
 	}
 }
@@ -216,7 +216,7 @@ func TestConcurrentSteerCallsPreserveAllText(t *testing.T) {
 
 func TestHardCancelDropsPendingSteer(t *testing.T) {
 	a := bareSteerAgent()
-	a.interruptRequested = true
+	a.interruptRequested.Store(true)
 	a.Steer("will be dropped")
 	a.pendingRedirect = "also drop this"
 	a.clearInterruptWith(false, true)
@@ -227,7 +227,7 @@ func TestHardCancelDropsPendingSteer(t *testing.T) {
 
 func TestSoftClearPreservesPendingSteer(t *testing.T) {
 	a := bareSteerAgent()
-	a.interruptRequested = true
+	a.interruptRequested.Store(true)
 	a.Steer("must survive the rebuild")
 	a.pendingRedirect = "correction"
 	a.clearInterrupt(true)
@@ -270,7 +270,8 @@ func TestInterruptExitReasonNamesTheSystemIssuer(t *testing.T) {
 		"turn liveness watchdog":   "interrupted_by_system(turn_liveness_watchdog)",
 	}
 	for reason, want := range cases {
-		a := &AIAgent{interruptRequested: true, toolInterruptReason: reason, quietMode: true}
+		a := &AIAgent{toolInterruptReason: reason, quietMode: true}
+		a.interruptRequested.Store(true)
 		s := &LoopState{OriginalUserMessage: "hi", TurnExitReason: "unknown"}
 		v, err := beginIteration(context.Background(), a, s)
 		if err != nil || v.Action != "break" || !s.Interrupted || s.TurnExitReason != want {

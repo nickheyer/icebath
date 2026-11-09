@@ -140,7 +140,8 @@ func TestInterruptibleBackoffSleepHonoursRedirectAndAbort(t *testing.T) {
 	t.Cleanup(func() { recoverySleep = saved })
 
 	a := newFixtureAgent(t, AIAgentOptions{BaseURL: "https://openrouter.ai/api/v1", Model: "test/model"})
-	a.interruptRequested, a.pendingRedirect = true, "use the other file"
+	a.interruptRequested.Store(true)
+	a.pendingRedirect = "use the other file"
 	retry := &TurnRetryState{}
 	msgs := []*state.Message{{Role: "user", Content: "go"}}
 	result, err := interruptibleBackoffSleep(context.Background(), a, 30, retry, &msgs, nil, 2, "abort", "stopped", "retry backoff (1/3)")
@@ -148,7 +149,8 @@ func TestInterruptibleBackoffSleepHonoursRedirectAndAbort(t *testing.T) {
 		t.Fatalf("redirect: %v %v %+v %q", result, err, retry, a.pendingRedirect)
 	}
 
-	a.interruptRequested, a.pendingRedirect = true, ""
+	a.interruptRequested.Store(true)
+	a.pendingRedirect = ""
 	msgs = []*state.Message{{Role: "user", Content: "go"}, {Role: "tool", Content: "out", ToolCallID: "c1"}}
 	result, err = interruptibleBackoffSleep(context.Background(), a, 30, &TurnRetryState{}, &msgs, nil, 2, "abort", "Operation interrupted during retry.", "retry backoff (1/3)")
 	if err != nil || result["interrupted"] != true || result["final_response"] != "Operation interrupted during retry." || result["api_calls"] != 2 {

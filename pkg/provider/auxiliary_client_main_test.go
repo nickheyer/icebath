@@ -76,28 +76,38 @@ func TestTryAnthropicPoolExhaustedFallsBackToEnv(t *testing.T) {
 	})
 }
 
-func TestTryAnthropicBaseURLHostValidation(t *testing.T) {
+// Runs auxTryAnthropic against a config base_url and checks the builder received the expected one
+func auxHostValidationCase(t *testing.T, base, want string) {
+	t.Helper()
 	absent := func(context.Context, string) (bool, *PooledCredential) { return false, nil }
-	cases := []struct{ name, base, want string }{
-		{"openrouter_base_url_does_not_leak_into_auxiliary", "https://openrouter.ai/api/v1", "https://api.anthropic.com"},
-		{"anthropic_default_host_is_preserved", "https://api.anthropic.com", "https://api.anthropic.com"},
-		{"openai_base_url_does_not_leak", "https://api.openai.com/v1", "https://api.anthropic.com"},
-		{"anthropic_suffix_gateway_base_url_is_applied", "https://gateway.example.com/anthropic", "https://gateway.example.com/anthropic"},
-		{"anthropic_host_with_path_is_preserved", "https://api.anthropic.com/v1/messages", "https://api.anthropic.com/v1/messages"},
+	ctx := auxMainTestHome(t, "model:\n  provider: anthropic\n  model: claude-haiku-4-5-20251001\n  base_url: "+base+"\n")
+	captured := auxFakeAnthropicBuild(t, absent, "***")
+	if client, _, err := auxTryAnthropic(ctx, nil, ""); client == nil || err != nil {
+		t.Fatalf("got (%v, %v)", client, err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := auxMainTestHome(t, "model:\n  provider: anthropic\n  model: claude-haiku-4-5-20251001\n  base_url: "+tc.base+"\n")
-			captured := auxFakeAnthropicBuild(t, absent, "***")
-			if client, _, err := auxTryAnthropic(ctx, nil, ""); client == nil || err != nil {
-				t.Fatalf("got (%v, %v)", client, err)
-			}
-			if captured[1] != tc.want {
-				t.Fatalf("base %v, want %s", captured[1], tc.want)
-			}
-		})
+	if captured[1] != want {
+		t.Fatalf("base %v, want %s", captured[1], want)
 	}
+}
+
+func TestTryAnthropicBaseURLHostValidation(t *testing.T) {
+	t.Run("test_openrouter_base_url_does_not_leak_into_auxiliary", func(t *testing.T) {
+		auxHostValidationCase(t, "https://openrouter.ai/api/v1", "https://api.anthropic.com")
+	})
+	t.Run("test_anthropic_default_host_is_preserved", func(t *testing.T) {
+		auxHostValidationCase(t, "https://api.anthropic.com", "https://api.anthropic.com")
+	})
+	t.Run("test_openai_base_url_does_not_leak", func(t *testing.T) {
+		auxHostValidationCase(t, "https://api.openai.com/v1", "https://api.anthropic.com")
+	})
+	t.Run("test_anthropic_suffix_gateway_base_url_is_applied", func(t *testing.T) {
+		auxHostValidationCase(t, "https://gateway.example.com/anthropic", "https://gateway.example.com/anthropic")
+	})
+	t.Run("test_anthropic_host_with_path_is_preserved", func(t *testing.T) {
+		auxHostValidationCase(t, "https://api.anthropic.com/v1/messages", "https://api.anthropic.com/v1/messages")
+	})
 	t.Run("explicit_foreign_base_url_is_refused", func(t *testing.T) {
+		absent := func(context.Context, string) (bool, *PooledCredential) { return false, nil }
 		ctx := auxMainTestHome(t, "")
 		captured := auxFakeAnthropicBuild(t, absent, "***")
 		client, model, err := auxTryAnthropic(ctx, "explicit", "https://evil.example.com/v1")
@@ -107,7 +117,7 @@ func TestTryAnthropicBaseURLHostValidation(t *testing.T) {
 	})
 }
 
-func TestValidateProxyEnvURLs(t *testing.T) {
+func TestProxyEnvRejectsMalformedPort(t *testing.T) {
 	for _, key := range auxProxyEnvKeys {
 		t.Run(key, func(t *testing.T) {
 			for _, other := range auxProxyEnvKeys {
@@ -125,7 +135,7 @@ func TestValidateProxyEnvURLs(t *testing.T) {
 	}
 }
 
-func TestValidateBaseURL(t *testing.T) {
+func TestBaseUrlAcceptsValid(t *testing.T) {
 	for _, u := range []string{"https://api.example.com/v1", "http://127.0.0.1:6153/v1", "acp://copilot", ""} {
 		if err := auxValidateBaseURL(u); err != nil {
 			t.Fatalf("%q: %v", u, err)

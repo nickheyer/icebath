@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Host abort that Python raises as a BaseException outside the Exception hierarchy
@@ -38,7 +40,7 @@ func auxIsCancellation(err error) bool {
 
 // True for errors Python raises outside the Exception hierarchy
 func auxIsBaseException(err error) bool {
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, tools.ErrKeyboardInterrupt) {
 		return true
 	}
 	var be auxBaseException

@@ -8,7 +8,7 @@ import (
 )
 
 // Windows reaps through retained job handles and never walks the process table by binary
-func TestLocalRuntimeReapOrphansKillsOnlyOurParentlessBinaries(t *testing.T) {
+func TestReapOrphansKillsOnlyOurParentlessBinaries(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "llama-server.exe")
 	lr5Touch(t, exe, "")

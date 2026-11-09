@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"github.com/nickheyer/icebath/pkg/tools"
 	"os"
 	"strings"
 	"testing"
@@ -23,6 +24,7 @@ func TestMain(m *testing.M) {
 		os.Exit(cuChild(os.Args[2], os.Args[3:]))
 	}
 	LoadCronJobsHook = testCronJobs
+	tools.GitlockRunGit = GitlockRunGit
 	os.Exit(m.Run())
 }
 

@@ -569,3 +569,50 @@ func TestReceiptRefusedReceiptSurvivesWithItsSteps(t *testing.T) {
 		t.Fatalf("payload %v", payload)
 	}
 }
+
+func TestExportedReceiptStoreWrappersAnswerLikeTheirPrivateForms(t *testing.T) {
+	ctx, h := rcHome(t)
+	if ReceiptDir(ctx) != receiptDir(ctx) || !strings.HasPrefix(ReceiptDir(ctx), h) {
+		t.Fatalf("ReceiptDir %q", ReceiptDir(ctx))
+	}
+	if !reflect.DeepEqual(ReceiptDirs(ctx), receiptDirs(ctx)) {
+		t.Fatal("ReceiptDirs")
+	}
+	if CurrentReceipt(ctx) != nil {
+		t.Fatal("a fresh scope has no receipt")
+	}
+	BeginUpdateReceipt(ctx, nil, "")
+	current := CurrentReceipt(ctx)
+	if current == nil || current.Data.Vals["outcome"] != "running" {
+		t.Fatalf("current %+v", current)
+	}
+	if RunFile(ReceiptDir(ctx), current.Data) != runFile(receiptDir(ctx), current.Data) {
+		t.Fatal("RunFile")
+	}
+	payload, err := ReceiptPayload(current.Data, false)
+	if err != nil || strings.HasSuffix(string(payload), "\n") {
+		t.Fatalf("payload %q %v", payload, err)
+	}
+	if err := WriteLatest(ctx, append(payload, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadReceiptFile(filepath.Join(ReceiptDir(ctx), "latest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, ok := loaded.(*pyjson.Object)
+	if !ok || obj.Vals["update_id"] != current.CorrelationID {
+		t.Fatalf("loaded %v", loaded)
+	}
+	latest := LatestReceiptObject(ctx)
+	if latest == nil || latest.Vals["update_id"] != current.CorrelationID {
+		t.Fatalf("latest %v", latest)
+	}
+	if OwnerAlive(latest) != ownerAlive(latest) || !OwnerAlive(latest) {
+		t.Fatal("this process owns the running receipt")
+	}
+	ClearCurrentReceipt(ctx)
+	if CurrentReceipt(ctx) != nil {
+		t.Fatal("cleared")
+	}
+}

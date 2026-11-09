@@ -163,7 +163,7 @@ func auxRelaySyncCompletion(ctx context.Context, client AuxClient, kwargs map[st
 	}
 	modelName := auxRelayModelName(kwargs, fallbackModel)
 	out, err := runWithAuxHooks(ctx, func() (any, error) {
-		return relayExecuteCurrent(ctx, kwargs, func(ctx context.Context, request map[string]any) (any, error) {
+		return relayExecuteCurrentFn(ctx, kwargs, func(ctx context.Context, request map[string]any) (any, error) {
 			return auxRunProtectedSyncProviderCall(ctx, callback, request)
 		}, providerName, modelName, auxRelayChatMetadata(metadata), true)
 	}, auxRelayHookArgs(client, kwargs, metadata, providerName, modelName, false))
@@ -188,7 +188,7 @@ func auxRelayAsyncCompletion(ctx context.Context, client AuxClient, kwargs map[s
 	}
 	modelName := auxRelayModelName(kwargs, fallbackModel)
 	out, err := runWithAuxHooks(ctx, func() (any, error) {
-		return relayExecuteCurrent(ctx, kwargs, callback, providerName, modelName, auxRelayChatMetadata(metadata), true)
+		return relayExecuteCurrentAsyncFn(ctx, kwargs, callback, providerName, modelName, auxRelayChatMetadata(metadata), true)
 	}, auxRelayHookArgs(client, kwargs, metadata, providerName, modelName, false))
 	if err != nil {
 		auxNoteRelayAuxiliaryError(ctx, err)
@@ -239,7 +239,7 @@ func auxCompleteRelayAuxiliaryCall(ctx context.Context, outcome, errorClass stri
 	if v := record["response_model"]; v != nil {
 		responseModel = pyrepr.Str(v)
 	}
-	return relayCompleteLogicalCall(ctx, auxRelayField(record, "request_id", ""), outcome,
+	return relayCompleteLogicalCallFn(ctx, auxRelayField(record, "request_id", ""), outcome,
 		auxRelayField(record, "model", "unknown"), auxRelayField(record, "provider", "auxiliary"), responseModel, errorClass)
 }
 
@@ -264,3 +264,18 @@ func auxFailRelayAuxiliaryCall(ctx context.Context, err error) {
 		slog.Warn("Relay auxiliary failure finalization failed", "error", ferr)
 	}
 }
+
+// Managed sync stream seam the MoA bypass test swaps
+var auxRelaySyncStreamFn = auxRelaySyncStream
+
+// Managed sync completion seam the auto route hook test swaps
+var auxRelaySyncCompletionFn = auxRelaySyncCompletion
+
+// Current turn execute seam the relay identity tests swap
+var relayExecuteCurrentFn = relayExecuteCurrent
+
+// Async current turn execute seam the inherited adapter test swaps
+var relayExecuteCurrentAsyncFn = relayExecuteCurrentAsync
+
+// Logical call completion seam the relay identity tests swap
+var relayCompleteLogicalCallFn = relayCompleteLogicalCall

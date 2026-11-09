@@ -7,6 +7,8 @@ const (
 )
 
 // Absolute wall clock bound of a streamed auxiliary call, zero standing for an unset timeout
+var auxStreamTotalCeilingFn = auxStreamTotalCeiling
+
 func auxStreamTotalCeiling(effectiveTimeout float64) float64 {
 	return max(auxStreamCeilingFloorSeconds, auxStreamCeilingMultiplier*effectiveTimeout)
 }

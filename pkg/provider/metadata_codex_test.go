@@ -211,7 +211,7 @@ func Test900kEligibilityTable(t *testing.T) {
 	}
 }
 
-func TestEndpointAuthFailureStopsAfterFirstCandidate(t *testing.T) {
+func TestFetchEndpointModelMetadataAuthFailureStopsAfterFirstCandidate(t *testing.T) {
 	for _, status := range []int{401, 403} {
 		ctx, ft, _ := metaTest(t)
 		ft.handle = func(r *http.Request) (*http.Response, error) {
@@ -228,7 +228,7 @@ func TestEndpointAuthFailureStopsAfterFirstCandidate(t *testing.T) {
 	}
 }
 
-func TestEndpointNotFoundStillTriesAlternateCandidate(t *testing.T) {
+func TestFetchEndpointModelMetadataNotFoundStillTriesAlternateCandidate(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.on("GET", "https://custom.example/v1/models", 404, map[string]any{})
 	ft.on("GET", "https://custom.example/models", 200, map[string]any{"data": []any{map[string]any{"id": "test/model", "context_length": 32768}}})

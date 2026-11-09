@@ -45,7 +45,7 @@ func TestCompressionThresholdForCodexGPT55(t *testing.T) {
 	}
 }
 
-func TestCodex900kVariantsKeepGlobalThreshold(t *testing.T) {
+func Test900kVariantsKeepGlobalThreshold(t *testing.T) {
 	for _, model := range []string{"gpt-5.6-sol-900k", "gpt-5.6-terra-900k", "gpt-5.6-luna-900k", "gpt-5.4-900k", "gpt-daybreak-blue-latest-900k", "openai/gpt-5.6-sol-900k"} {
 		if auxIsCodexGPT54OrGPT55(model, "openai-codex") {
 			t.Errorf("%q matched", model)

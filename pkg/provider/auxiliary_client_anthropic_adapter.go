@@ -45,6 +45,9 @@ func auxTranslateAnthropicResponseFormat(anthropicKwargs map[string]any, respons
 // Messages create seam the tests swap to capture the translated api kwargs
 var auxCreateAnthropicMessageFn = createAnthropicMessage
 
+// Anthropic kwargs builder the adapter goes through, replaced by tests
+var auxAnthBuildKwargsFn = anthBuildKwargs
+
 // Translates chat completions kwargs into one Anthropic Messages request
 type auxAnthropicCompletionsAdapter struct {
 	client  *anthropicSDKClient
@@ -111,7 +114,7 @@ func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[
 	if err != nil {
 		return nil, err
 	}
-	anthropicKwargs, err := anthBuildKwargs(anthBuildInput{
+	anthropicKwargs, err := auxAnthBuildKwargsFn(anthBuildInput{
 		model: model, messages: messages, tools: toolDefs, maxTokens: maxTokens,
 		reasoning: anthReasoningFromRequest(reasoningFromConfig(reasoningCfg)), toolChoice: auxAnthropicToolChoice(kwargs["tool_choice"]),
 		isOAuth: a.isOAuth, baseURL: a.baseURL,
@@ -203,7 +206,7 @@ func newAnthropicAuxiliaryClientFrom(realClient *anthropicSDKClient, model strin
 
 // Builds the Anthropic SDK client for the key and base URL and wraps it
 func NewAnthropicAuxiliaryClient(ctx context.Context, model string, apiKey any, baseURL string, isOAuth bool) (*AnthropicAuxiliaryClient, error) {
-	real, err := buildAnthropicClient(ctx, apiKey, baseURL, 0, false)
+	real, err := auxBuildAnthropicClientFn(ctx, apiKey, baseURL, 0, false)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +309,7 @@ func (a *auxBedrockCompletionsAdapter) create(ctx context.Context, kwargs map[st
 		}
 		in.MaxTokens = &v
 	}
-	result, err := callBedrockConverse(ctx, a.region, in)
+	result, err := callBedrockConverseFn(ctx, a.region, in)
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +448,7 @@ func auxMaybeWrapAnthropic(ctx context.Context, client AuxClient, model string, 
 			return client, nil
 		}
 	}
-	real, err := buildAnthropicClient(ctx, apiKey, baseURL, 0, false)
+	real, err := auxBuildAnthropicClientFn(ctx, apiKey, baseURL, 0, false)
 	if err != nil {
 		slog.Warn(fmt.Sprintf("Failed to build Anthropic client for %s (%v) — falling back to OpenAI-wire client.", baseURL, err))
 		return client, nil

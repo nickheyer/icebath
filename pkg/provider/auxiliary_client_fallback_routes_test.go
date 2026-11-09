@@ -28,7 +28,7 @@ func auxClearUnhealthy(t *testing.T) {
 	})
 }
 
-func TestAuxExpiredCodexOpenRouterWins(t *testing.T) {
+func TestExpiredCodexFallbackExpiredCodexOpenrouterWins(t *testing.T) {
 	auxClearUnhealthy(t)
 	enc := base64.RawURLEncoding
 	payload, _ := json.Marshal(map[string]any{"exp": time.Now().Unix() - 3600})
@@ -53,7 +53,7 @@ func TestAuxExpiredCodexOpenRouterWins(t *testing.T) {
 	}
 }
 
-func TestAuxTryPaymentFallbackSkipsFailedProvider(t *testing.T) {
+func TestTryPaymentFallbackSkipsFailedProvider(t *testing.T) {
 	nous := auxNousIsTheOnlyWorkingProvider(t, "auto")
 	client, model, label, err := auxTryPaymentFallback(context.Background(), "openrouter", "compression", "payment error", "", FailureScope(""), nil)
 	if err != nil || client != nous || model != "nous-model" || label != "nous" {
@@ -61,7 +61,7 @@ func TestAuxTryPaymentFallbackSkipsFailedProvider(t *testing.T) {
 	}
 }
 
-func TestAuxPaymentFallbackSkipsUnhealthy(t *testing.T) {
+func TestAuxUnhealthyCachePaymentFallbackSkipsUnhealthy(t *testing.T) {
 	auxSwapFallbackSeams(t)
 	auxClearUnhealthy(t)
 	ctx := context.Background()
@@ -86,7 +86,7 @@ func TestAuxPaymentFallbackSkipsUnhealthy(t *testing.T) {
 	}
 }
 
-func TestAuxFallbackEntryOpenAICodexUsesOAuthPoolWithoutInlineKey(t *testing.T) {
+func TestAuxiliaryFallbackLayeringFallbackEntryOpenaiCodexUsesOauthPoolWithoutInlineKey(t *testing.T) {
 	auxClearUnhealthy(t)
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	saved := auxSelectPoolEntryFn
@@ -148,9 +148,11 @@ func TestTryPaymentFallbackCodexNotInFallbackChain(t *testing.T) {
 	}
 }
 
-func TestCallLLMUnwrapsDataEnvelope(t *testing.T) {
-	for _, asyncMode := range []bool{false, true} {
-		t.Run(fmt.Sprintf("async=%v", asyncMode), func(t *testing.T) {
+// Sync or async call_llm unwrapping the data envelope a local gateway serves
+func auxCallLLMUnwrapsEnvelopeCase(t *testing.T, asyncMode bool) {
+	t.Helper()
+	{
+		{
 			ctx := context.Background()
 			ShutdownCachedClients(ctx)
 			t.Cleanup(func() { ShutdownCachedClients(ctx) })
@@ -184,6 +186,11 @@ func TestCallLLMUnwrapsDataEnvelope(t *testing.T) {
 			if got := auxActualContent(t, resp); got != "unwrapped" {
 				t.Fatalf("content %q", got)
 			}
-		})
+		}
 	}
+}
+
+func TestCallLLMUnwrapsDataEnvelope(t *testing.T) {
+	t.Run("test_call_llm_unwraps_data_envelope", func(t *testing.T) { auxCallLLMUnwrapsEnvelopeCase(t, false) })
+	t.Run("test_async_call_llm_unwraps_data_envelope", func(t *testing.T) { auxCallLLMUnwrapsEnvelopeCase(t, true) })
 }

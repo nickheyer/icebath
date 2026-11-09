@@ -507,6 +507,12 @@ func ResolveAWSAuthEnvVar() string { return resolveAWSAuthEnvVar() }
 // Shared config region lookup, replaced by tests
 var resolveBedrockRegionFn = resolveBedrockRegionLive
 
+// Installs a region lookup for tests of other packages and returns the previous one
+func SwapResolveBedrockRegion(fn func() string) (prev func() string) {
+	prev, resolveBedrockRegionFn = resolveBedrockRegionFn, fn
+	return prev
+}
+
 // AWS_REGION then AWS_DEFAULT_REGION then the shared config profile region then us-east-1
 func resolveBedrockRegionLive() string {
 	for _, name := range []string{"AWS_REGION", "AWS_DEFAULT_REGION"} {
@@ -991,6 +997,12 @@ var (
 
 // Live context probe, replaced by tests
 var bedrockProbeFn = probeBedrockContextLengthLive
+
+// Installs a context probe for tests of other packages and returns the previous one
+func SwapBedrockProbe(fn func(context.Context, string, string) int) (prev func(context.Context, string, string) int) {
+	prev, bedrockProbeFn = bedrockProbeFn, fn
+	return prev
+}
 
 // Probed window of a model in a region, zero when the probe could not determine one
 func probeBedrockContextLength(ctx context.Context, model, region string) int {

@@ -415,6 +415,9 @@ func auxGetAuxModelForProvider(ctx context.Context, providerID string) string {
 	return auxAuxModelForProvider(ctx, providerID, false)
 }
 
+// Provider aux model lookup, swapped by tests the way hermes tests patch the module function
+var auxGetAuxModelForProviderFn = auxGetAuxModelForProvider
+
 // Auxiliary model ladder whose live catalog fast tier runs only when the caller opts in
 func auxAuxModelForProvider(ctx context.Context, providerID string, preferFast bool) string {
 	profile, hasProfile := GetProviderProfile(ctx, providerID)

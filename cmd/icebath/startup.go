@@ -42,6 +42,7 @@ func dispatchChildEntries() {
 	gateway.DispatchSystemdStopMarkEntry()
 	gateway.DispatchCgroupCleanupEntry()
 	tools.DispatchDDGSWorkerEntry()
+	tools.DispatchCommitGraphRefreshEntry()
 	provider.DispatchCodexToolsMCPServerEntry()
 	cron.DispatchExternalWorkerEntry()
 }

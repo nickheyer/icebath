@@ -226,3 +226,10 @@ func TestApprovalTimeoutExportsMatchUnexported(t *testing.T) {
 		}
 	}
 }
+
+func TestGetApprovalModeExportedMatchesThePrivateReader(t *testing.T) {
+	env := &Env{Home: t.TempDir(), Config: config.Tree{"approvals": map[string]any{"mode": "smart"}}}
+	if GetApprovalMode(env) != getApprovalMode(env) || GetApprovalMode(env) != "smart" {
+		t.Fatalf("GetApprovalMode %q", GetApprovalMode(env))
+	}
+}

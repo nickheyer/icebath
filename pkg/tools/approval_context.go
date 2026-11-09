@@ -303,6 +303,9 @@ func getApprovalMode(env *Env) string {
 	return normalizeApprovalMode(mode)
 }
 
+// Exported getApprovalMode for the approvals command of other packages
+func GetApprovalMode(env *Env) string { return getApprovalMode(env) }
+
 // Configured approvals.timeout in seconds, default 300, clamped to the platform safe maximum
 func getApprovalTimeout(env *Env) int {
 	raw := 300

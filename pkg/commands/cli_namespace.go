@@ -15,7 +15,11 @@ func (c *CLI) Namespace(cmd *cobra.Command, args []string) map[string]any {
 		if f.Name == "help" {
 			return
 		}
-		ns[strings.ReplaceAll(f.Name, "-", "_")] = flagValue(f)
+		key := strings.ReplaceAll(f.Name, "-", "_")
+		if d := f.Annotations["dest"]; len(d) > 0 {
+			key = d[0]
+		}
+		ns[key] = flagValue(f)
 	})
 	specs := c.positionals[cmd]
 	for i, s := range specs {

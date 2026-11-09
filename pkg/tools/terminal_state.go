@@ -77,10 +77,13 @@ func currentSessionProfile(env *Env) string {
 	return sessionContextValue(env, "ICEBATH_SESSION_PROFILE")
 }
 
-// Home routed for this session when it is not the launch home, empty otherwise
+// Home a scope bound this env to, else its own home when routed off the launch home, empty otherwise
 func homeOverride(env *Env) string {
 	if env == nil || strings.TrimSpace(env.Home) == "" {
 		return ""
+	}
+	if env.profileHome != "" {
+		return env.profileHome
 	}
 	if isRoutedHome(env.Home) {
 		return env.Home
@@ -328,7 +331,7 @@ func dockerSessionIsolationEnabled(env *Env) (bool, error) {
 // Key for a session less task serving a routed profile home, empty otherwise
 func routedHomeTaskKey(env *Env, profileScoped bool) string {
 	override := homeOverride(env)
-	if override == "" {
+	if override == "" || !isRoutedHome(override) {
 		return ""
 	}
 	if profileScoped {

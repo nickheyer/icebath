@@ -80,7 +80,7 @@ func newCodexOpenRouterAgent(t *testing.T) *AIAgent {
 	t.Helper()
 	a := newFixtureAgent(t, AIAgentOptions{APIKey: "test-key", BaseURL: "https://openrouter.ai/api/v1", Model: "test/model"})
 	a.apiMode = "codex_responses"
-	a.interruptRequested = false
+	a.interruptRequested.Store(false)
 	return a
 }
 
@@ -117,7 +117,7 @@ func TestCodexSingleWriterCodexStreamClaimsWriterAndStopsWhenSuperseded(t *testi
 
 func TestCodexSingleWriterCodexInterruptClosesStreamWithoutDrainingProvider(t *testing.T) {
 	a := newCodexOpenRouterAgent(t)
-	a.streamDeltaCallback = func(string) { a.interruptRequested = true }
+	a.streamDeltaCallback = func(string) { a.interruptRequested.Store(true) }
 	a.streamCallback = nil
 	stream := &codexAgentStream{labels: []string{"first", "lookahead", "terminal"}, events: []map[string]any{
 		{"type": "response.output_text.delta", "delta": "first", "item_id": "i1"},
@@ -143,7 +143,7 @@ func TestCodexStreamCallbacksCodexTextDeltaFiresCallback(t *testing.T) {
 			mu.Unlock()
 		}})
 	a.apiMode = "codex_responses"
-	a.interruptRequested = false
+	a.interruptRequested.Store(false)
 	stream := &codexAgentStream{events: []map[string]any{
 		{"type": "response.created"},
 		{"type": "response.output_text.delta", "delta": "Hello from Codex!"},

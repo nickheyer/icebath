@@ -356,7 +356,7 @@ func auxStreamRequestPlan(kwargs map[string]any, client AuxClient) (map[string]a
 			timeout = f
 		}
 	}
-	return stream, model, auxStreamTotalCeiling(timeout)
+	return stream, model, auxStreamTotalCeilingFn(timeout)
 }
 
 // Errors a streamed request surfaces unchanged instead of retrying without streaming
@@ -446,6 +446,11 @@ func newAuxChatStreamAccumulator(ctx context.Context, model string, totalCeiling
 	started := promptReadingNow()
 	return &auxChatStreamAccumulator{ctx: ctx, started: started, promptReading: NewPromptReadingClock(started), totalCeiling: totalCeiling,
 		toolCalls: map[int]*auxToolCallAcc{}, respID: "", respModel: model}
+}
+
+// NewAuxChatStreamAccumulator is the exported form of the chat stream accumulator constructor
+func NewAuxChatStreamAccumulator(ctx context.Context, model string, totalCeiling *float64) *auxChatStreamAccumulator {
+	return newAuxChatStreamAccumulator(ctx, model, totalCeiling)
 }
 
 // Timeout past the total ceiling or the host deadline, explicit cancellation on a host hard cancel

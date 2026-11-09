@@ -26,6 +26,13 @@ type Context struct {
 	sideQuestionDenialLogged atomic.Bool
 	collector                *memoryCollector
 	engineCollector          *engineCollector
+	delegationSink           func(provider any)
+}
+
+// Context whose register_delegation_provider hands the provider to sink instead of the registry, the hermes bundled registrar
+func (c *Context) WithDelegationSink(sink func(provider any)) *Context {
+	c.delegationSink = sink
+	return c
 }
 
 // Context bound to one manifest and the manager loading it

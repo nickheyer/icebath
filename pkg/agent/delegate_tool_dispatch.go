@@ -44,7 +44,8 @@ func goalOf(task map[string]any) string { return pyrepr.Str(task["goal"]) }
 
 // Runs one child of the batch under the originating session's steer and stop authority
 func (b *delegateBatch) runChild(ctx context.Context, c delegateChild) *pyjson.Object {
-	return runSingleChildFn(ctx, c.Index, goalOf(c.Task), c.Child, b.Parent, b.Origin.UISessionID, b.Origin.OwnerTransport, b.Origin.OwnerSessionRecord)
+	ownerSessionID, ownerTransport, ownerSessionRecord := b.ownerKwargs()
+	return runSingleChildFn(ctx, c.Index, goalOf(c.Task), c.Child, b.Parent, ownerSessionID, ownerTransport, ownerSessionRecord)
 }
 
 // Prints the batch tag once so interleaved slot lines are attributable
@@ -577,7 +578,7 @@ func dispatchUnit(ctx context.Context, unit *delegateBatch, unitID, slotKey, ses
 		s := unit.Parent.sessionID
 		parentSID = &s
 	}
-	return tools.DispatchAsyncDelegationBatch(ctx, unit.Parent.env, tools.AsyncDispatch{
+	return dispatchAsyncDelegationBatchFn(ctx, unit.Parent.env, tools.AsyncDispatch{
 		Goals: goals, IsBatch: true, Context: contextText, Role: unit.TopRole, Model: model,
 		Runner: func(rctx context.Context, _ *tools.Env) (map[string]any, error) {
 			return objectMap(executeAndAggregate(rctx, unit, false)), nil
@@ -601,6 +602,14 @@ func restoreParentCancellation(unit *delegateBatch) {
 		attachChild(unit.Parent, c.Child)
 	}
 }
+
+// Steer and stop authority of the originating session, passed to every child run
+func (b *delegateBatch) ownerKwargs() (ownerSessionID string, ownerTransport, ownerSessionRecord any) {
+	return b.Origin.UISessionID, b.Origin.OwnerTransport, b.Origin.OwnerSessionRecord
+}
+
+// Async registry entry of one unit, swapped by tests that read the dispatch payload
+var dispatchAsyncDelegationBatchFn = tools.DispatchAsyncDelegationBatch
 
 // Dispatches the call as independent async units, running inline when detached delivery is impossible
 func dispatchBackground(ctx context.Context, batch *delegateBatch) string {

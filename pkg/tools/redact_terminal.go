@@ -47,6 +47,9 @@ func canonicalURLParamName(name string) string {
 	return strings.ReplaceAll(folded, "-", "_")
 }
 
+// Exported canonicalURLParamName
+func CanonicalURLParamName(name string) string { return canonicalURLParamName(name) }
+
 // Strict egress boundary redaction of URL credentials in absolute, relative and network references
 func redactStrictURLCredentials(text string) string {
 	text = strictURLParamRe.ReplaceAllStringFunc(text, func(m string) string {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -232,5 +233,16 @@ func TestLaunchdPlistPathUsesAccountHomeAndFallsBackToRealHome(t *testing.T) {
 	t.Setenv("ICEBATH_REAL_HOME", filepath.Join(tmp, "real"))
 	if p, _ := GetLaunchdPlistPath(ctx); p != filepath.Join(tmp, "real", "Library", "LaunchAgents", "ai.icebath.gateway-coder.plist") {
 		t.Fatalf("fallback plist %q", p)
+	}
+}
+
+func TestCurrentProfileNameExportedMatchesThePrivateReader(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	ctx := home.WithOverride(context.Background(), h)
+	got, err := CurrentProfileName(ctx)
+	want, wantErr := currentProfileName(ctx)
+	if got != want || (err == nil) != (wantErr == nil) || got == "" {
+		t.Fatalf("CurrentProfileName %q %v want %q %v", got, err, want, wantErr)
 	}
 }
