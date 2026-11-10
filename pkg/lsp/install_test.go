@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -52,6 +53,29 @@ func TestInstallPythonServerUsesPMToolEnvironment(t *testing.T) {
 	}
 	if status, err := DetectStatus(rt, "fake-lsp"); err != nil || status != "installed" {
 		t.Fatalf("status %q %v", status, err)
+	}
+}
+
+func TestFindNodeExecutableReadsTheInstalledBinaryHook(t *testing.T) {
+	rt, _, _ := testRuntime(t)
+	store := t.TempDir()
+	node := filepath.Join(store, "node")
+	if err := os.WriteFile(node, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	rt.InstalledBinary = func(name string) (string, bool) {
+		asked = append(asked, name)
+		return node, name == "node"
+	}
+	if got, err := FindNodeExecutable(rt, "node"); err != nil || got != node {
+		t.Fatalf("node = %q, %v", got, err)
+	}
+	if got, err := FindNodeExecutable(rt, "npx"); err != nil || got != "" {
+		t.Fatalf("npx = %q, %v", got, err)
+	}
+	if !reflect.DeepEqual(asked, []string{"node", "npm"}) {
+		t.Fatalf("asked %v", asked)
 	}
 }
 

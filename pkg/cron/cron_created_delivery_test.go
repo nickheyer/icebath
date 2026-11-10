@@ -97,7 +97,7 @@ func TestNonPushSessionStampsNoOriginAndGetsCreationNotice(t *testing.T) {
 
 func TestExplicitEmptyToolsetsPersist(t *testing.T) {
 	s, _ := newTestStore(t)
-	job, err := s.createJob(CreateJobOptions{Prompt: strPtr("daily digest"), Schedule: "every 1h", EnabledToolsets: []any{}})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strPtr("daily digest"), Schedule: "every 1h", EnabledToolsets: []any{}})
 	if err != nil || job.EnabledToolsets == nil || len(job.EnabledToolsets) != 0 {
 		t.Fatalf("created %+v %v", job, err)
 	}
@@ -105,11 +105,11 @@ func TestExplicitEmptyToolsetsPersist(t *testing.T) {
 	if got := mustJob(t, reopened, job.ID); got.EnabledToolsets == nil || len(got.EnabledToolsets) != 0 {
 		t.Fatalf("reloaded %v", got.EnabledToolsets)
 	}
-	plain, _ := s.createJob(CreateJobOptions{Prompt: strPtr("daily digest"), Schedule: "every 1h"})
+	plain, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: strPtr("daily digest"), Schedule: "every 1h"})
 	if plain.EnabledToolsets != nil {
 		t.Fatalf("absent toolsets %v", plain.EnabledToolsets)
 	}
-	updated, err := s.updateJob(plain.ID, map[string]any{"enabled_toolsets": []any{}})
+	updated, err := s.updateJob(context.Background(), plain.ID, map[string]any{"enabled_toolsets": []any{}})
 	if err != nil || updated.EnabledToolsets == nil || len(updated.EnabledToolsets) != 0 {
 		t.Fatalf("updated %v %v", updated, err)
 	}
@@ -132,7 +132,7 @@ func TestNoteFireForwardFailure(t *testing.T) {
 		return mustCreate(t, s, CreateJobOptions{Prompt: strPtr("Daily invoice triage"), Schedule: "every 1h"})
 	}
 	job := mk()
-	if ok, err := s.noteFireForwardFailure(job.ID, "gateway unreachable"); !ok || err != nil {
+	if ok, err := s.noteFireForwardFailure(ctx, job.ID, "gateway unreachable"); !ok || err != nil {
 		t.Fatalf("stamp %v %v", ok, err)
 	}
 	stamp := mustJob(t, s, job.ID).LastFireError
@@ -142,21 +142,21 @@ func TestNoteFireForwardFailure(t *testing.T) {
 	if _, err := ParseISO(stamp.At); err != nil {
 		t.Fatalf("at %q: %v", stamp.At, err)
 	}
-	if ok, _ := s.noteFireForwardFailure("nope", "gateway unreachable"); ok {
+	if ok, _ := s.noteFireForwardFailure(ctx, "nope", "gateway unreachable"); ok {
 		t.Fatal("unknown job stamped")
 	}
-	s.noteFireForwardFailure(job.ID, "first miss")
-	s.noteFireForwardFailure(job.ID, "second miss")
+	s.noteFireForwardFailure(ctx, job.ID, "first miss")
+	s.noteFireForwardFailure(ctx, job.ID, "second miss")
 	if d := mustJob(t, s, job.ID).LastFireError.Detail; d != "second miss" {
 		t.Fatalf("latest %q", d)
 	}
 	cleared := mk()
-	s.noteFireForwardFailure(cleared.ID, "gateway unreachable")
+	s.noteFireForwardFailure(ctx, cleared.ID, "gateway unreachable")
 	if ok, _ := s.markJobRun(ctx, cleared.ID, true, MarkOptions{}); !ok || mustJob(t, s, cleared.ID).LastFireError != nil {
 		t.Fatal("success kept the stamp")
 	}
 	kept := mk()
-	s.noteFireForwardFailure(kept.ID, "gateway unreachable")
+	s.noteFireForwardFailure(ctx, kept.ID, "gateway unreachable")
 	if ok, _ := s.markJobRun(ctx, kept.ID, false, MarkOptions{Error: strPtr("boom")}); !ok {
 		t.Fatal("mark failed run")
 	}

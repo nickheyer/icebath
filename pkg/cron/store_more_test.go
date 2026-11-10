@@ -63,10 +63,10 @@ func TestLateEnvRepointScopesStorePublicIoAfterLateEnvRepointLeavesOldFileUntouc
 	late := cronStoreFrom(context.Background())
 	job, _ := jobFromMap(map[string]any{"id": "lateenvjob01", "name": "late-env", "prompt": nil, "schedule_display": nil,
 		"schedule": map[string]any{"kind": "interval", "minutes": 60, "display": "every 60m"}, "enabled": true})
-	if err := late.SaveJobs([]*Job{job}, nil, false); err != nil {
+	if err := late.SaveJobs(context.Background(), []*Job{job}, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	loaded, _ := cronStoreFrom(context.Background()).LoadJobs()
+	loaded, _ := cronStoreFrom(context.Background()).LoadJobs(context.Background())
 	if ids := jobIDs(loaded); len(ids) != 1 || ids[0] != "lateenvjob01" {
 		t.Fatalf("loaded %v", ids)
 	}
@@ -146,7 +146,7 @@ func TestEnsureCronDirWidenedEnsureCronDirScriptsDirUnderNamedProfileFailsClosed
 func TestCronFilePermissions(t *testing.T) {
 	s, _ := newTestStore(t)
 	os.RemoveAll(s.cronDir)
-	if err := s.ensureDirs(); err != nil {
+	if err := s.ensureDirs(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	for _, dir := range []string{s.cronDir, s.outputDir} {
@@ -154,7 +154,7 @@ func TestCronFilePermissions(t *testing.T) {
 			t.Fatalf("%s mode %v", dir, st.Mode().Perm())
 		}
 	}
-	if err := s.SaveJobs([]*Job{{ID: "test-job", Name: "test"}}, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{{ID: "test-job", Name: "test"}}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := os.Stat(s.jobsFile); st.Mode().Perm() != 0o600 {
@@ -170,7 +170,7 @@ func TestCronFilePermissions(t *testing.T) {
 	if st, _ := os.Stat(filepath.Dir(path)); st.Mode().Perm() != 0o700 {
 		t.Fatalf("job output dir mode %v", st.Mode().Perm())
 	}
-	s.secureFile("/nonexistent/path/file.json")
+	s.secureFile(context.Background(), "/nonexistent/path/file.json")
 }
 
 func TestSecureDirKeepsOperatorModeInContainer(t *testing.T) {
@@ -180,12 +180,12 @@ func TestSecureDirKeepsOperatorModeInContainer(t *testing.T) {
 	t.Setenv("ICEBATH_CONTAINER", "1")
 	t.Setenv("ICEBATH_HOME_MODE", "")
 	os.Unsetenv("ICEBATH_HOME_MODE")
-	s.ensureDirs()
+	s.ensureDirs(context.Background())
 	if st, _ := os.Stat(s.cronDir); st.Mode().Perm() != 0o755 {
 		t.Fatalf("container mode overridden %v", st.Mode().Perm())
 	}
 	t.Setenv("ICEBATH_HOME_MODE", "0701")
-	s.ensureDirs()
+	s.ensureDirs(context.Background())
 	if st, _ := os.Stat(s.cronDir); st.Mode().Perm() != 0o701 {
 		t.Fatalf("explicit home mode ignored %v", st.Mode().Perm())
 	}
@@ -221,11 +221,11 @@ func seedPrompt(prompt string) []*Job { return []*Job{{ID: "seed", Prompt: promp
 
 func TestRootWriterRestoresPreviousOwner(t *testing.T) {
 	s, _ := newTestStore(t)
-	if err := s.SaveJobs(seedPrompt("hello"), nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), seedPrompt("hello"), nil, false); err != nil {
 		t.Fatal(err)
 	}
 	calls := poseAsRoot(t, nil)
-	if err := s.SaveJobs(seedPrompt("updated"), nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), seedPrompt("updated"), nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(*calls) != 1 || (*calls)[0] != (chownCall{s.jobsFile, 1000, 1000}) {
@@ -235,7 +235,7 @@ func TestRootWriterRestoresPreviousOwner(t *testing.T) {
 
 func TestUnprivilegedWriterNeverChowns(t *testing.T) {
 	s, _ := newTestStore(t)
-	s.SaveJobs(seedPrompt("hello"), nil, false)
+	s.SaveJobs(context.Background(), seedPrompt("hello"), nil, false)
 	saved := ownership
 	t.Cleanup(func() { ownership = saved })
 	ownership.chown = func(string, int, int) error {
@@ -245,19 +245,19 @@ func TestUnprivilegedWriterNeverChowns(t *testing.T) {
 	if os.Geteuid() == 0 {
 		ownership.euid = func() int { return 1000 }
 	}
-	if err := s.SaveJobs(seedPrompt("updated"), nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), seedPrompt("updated"), nil, false); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestChownFailureNeverBreaksSave(t *testing.T) {
 	s, buf := newTestStore(t)
-	s.SaveJobs(seedPrompt("hello"), nil, false)
+	s.SaveJobs(context.Background(), seedPrompt("hello"), nil, false)
 	poseAsRoot(t, &os.PathError{Op: "chown", Path: s.jobsFile, Err: os.ErrPermission})
-	if err := s.SaveJobs(seedPrompt("updated"), nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), seedPrompt("updated"), nil, false); err != nil {
 		t.Fatal(err)
 	}
-	jobs, _ := s.LoadJobs()
+	jobs, _ := s.LoadJobs(context.Background())
 	if jobs[0].Prompt != "updated" {
 		t.Fatalf("prompt %q", jobs[0].Prompt)
 	}
@@ -287,10 +287,10 @@ func watchdog(t *testing.T, s *Store) *Job {
 func TestStaleEmptySavePreservesConcurrentNoAgentCreate(t *testing.T) {
 	s := newScriptStore(t)
 	job := watchdog(t, s)
-	if err := s.SaveJobs(nil, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	left, _ := s.LoadJobs()
+	left, _ := s.LoadJobs(context.Background())
 	if len(left) != 1 || left[0].ID != job.ID || !left[0].NoAgent || deref(left[0].Script) != "watch.sh" {
 		t.Fatalf("no agent create lost %+v", left)
 	}
@@ -299,10 +299,10 @@ func TestStaleEmptySavePreservesConcurrentNoAgentCreate(t *testing.T) {
 func TestRemoveOtherJobPreservesConcurrentCreate(t *testing.T) {
 	s := newScriptStore(t)
 	agent := mustCreate(t, s, CreateJobOptions{Prompt: prompt("hello"), Schedule: "every 5m", Name: prompt("agent"), Deliver: prompt("local")})
-	s.SaveJobs(nil, []string{agent.ID}, false)
+	s.SaveJobs(context.Background(), nil, []string{agent.ID}, false)
 	dog := watchdog(t, s)
-	s.SaveJobs(nil, []string{agent.ID}, false)
-	left, _ := s.LoadJobs()
+	s.SaveJobs(context.Background(), nil, []string{agent.ID}, false)
+	left, _ := s.LoadJobs(context.Background())
 	if ids := sortedIDs(left); len(ids) != 1 || ids[0] != dog.ID {
 		t.Fatalf("left %v", ids)
 	}
@@ -314,14 +314,14 @@ func TestIntentionalRemoveAndReplaceStillDelete(t *testing.T) {
 	if ok, err := s.removeJob(t.Context(), job.ID); !ok || err != nil {
 		t.Fatalf("remove = %v, %v", ok, err)
 	}
-	if j, _ := s.getJob(job.ID); j != nil {
+	if j, _ := s.getJob(context.Background(), job.ID); j != nil {
 		t.Fatal("removed job still stored")
 	}
 	watchdog(t, s)
-	if err := s.SaveJobs(nil, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	if left, _ := s.LoadJobs(); len(left) != 0 {
+	if left, _ := s.LoadJobs(context.Background()); len(left) != 0 {
 		t.Fatalf("replace kept %v", jobIDs(left))
 	}
 }
@@ -330,7 +330,7 @@ func TestMergeDoesNotMutateCallerList(t *testing.T) {
 	s := newScriptStore(t)
 	watchdog(t, s)
 	mine := make([]*Job, 0, 4)
-	if err := s.SaveJobs(mine, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), mine, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	for i, j := range mine[:cap(mine)] {
@@ -342,24 +342,24 @@ func TestMergeDoesNotMutateCallerList(t *testing.T) {
 
 func TestNestedCreateSurvivesOuterStaleSave(t *testing.T) {
 	s, _ := newTestStore(t)
-	if err := s.SaveJobs([]*Job{{ID: "aaaaaaaaaaaa", Name: "a"}}, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{{ID: "aaaaaaaaaaaa", Name: "a"}}, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	var created *Job
-	err := s.withJobsLock(func(tx *jobsTx) error {
-		stale, err := s.loadJobs(tx)
+	err := s.withJobsLock(context.Background(), func(tx *jobsTx) error {
+		stale, err := s.loadJobs(context.Background(), tx)
 		if err != nil {
 			return err
 		}
-		if created, err = s.createJobTx(tx, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 5m", Name: prompt("nested"), Deliver: prompt("local")}); err != nil {
+		if created, err = s.createJobTx(context.Background(), tx, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 5m", Name: prompt("nested"), Deliver: prompt("local")}); err != nil {
 			return err
 		}
-		return s.saveJobsLocked(tx, stale, nil, false)
+		return s.saveJobsLocked(context.Background(), tx, stale, nil, false)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	left, _ := s.LoadJobs()
+	left, _ := s.LoadJobs(context.Background())
 	ids := sortedIDs(left)
 	if !containsString(ids, created.ID) || !containsString(ids, "aaaaaaaaaaaa") {
 		t.Fatalf("nested create clobbered %v", ids)
@@ -376,7 +376,7 @@ var idKeyedJobs = map[string]any{"jobs": map[string]any{
 func TestJobsJsonIdKeyedMapListJobsSurvivesIdKeyedMap(t *testing.T) {
 	s, _ := newTestStore(t)
 	writeJobsFile(t, s, idKeyedJobs)
-	jobs, err := s.listJobs(true)
+	jobs, err := s.listJobs(context.Background(), true)
 	if ids := sortedIDs(jobs); err != nil || len(ids) != 2 || ids[0] != "cron1234abcd" || ids[1] != "cron5678efgh" {
 		t.Fatalf("list %v, %v", ids, err)
 	}
@@ -386,7 +386,7 @@ func TestJobsJsonIdKeyedMapNonDictListEntriesDoNotStopHealthyJobsFiring(t *testi
 	s, logs := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("keep me"), Schedule: "every 1h", Name: prompt("survivor")})
 	addJunk := func() {
-		jobs, _ := s.LoadJobs()
+		jobs, _ := s.LoadJobs(context.Background())
 		jobs[0].NextRunAt = strPtr(FormatISO(s.clk.now().Add(-5e9)))
 		seedJobs(t, s, jobToMap(t, jobs[0]))
 		raw, _ := os.ReadFile(s.jobsFile)
@@ -400,18 +400,18 @@ func TestJobsJsonIdKeyedMapNonDictListEntriesDoNotStopHealthyJobsFiring(t *testi
 		parsed, lenient, err := real(path)
 		if !raced {
 			raced = true
-			if _, err := s.updateJob(job.ID, map[string]any{"name": "raced"}); err != nil {
+			if _, err := s.updateJob(context.Background(), job.ID, map[string]any{"name": "raced"}); err != nil {
 				t.Errorf("racing update: %v", err)
 			}
 		}
 		return parsed, lenient, err
 	}
-	listed, _ := s.listJobs(true)
+	listed, _ := s.listJobs(context.Background(), true)
 	jobsFileParser = real
 	if ids := jobIDs(listed); len(ids) != 1 || ids[0] != job.ID {
 		t.Fatalf("listed %v", ids)
 	}
-	disk, _ := s.LoadJobs()
+	disk, _ := s.LoadJobs(context.Background())
 	if len(disk) != 1 || disk[0].ID != job.ID || disk[0].Name != "raced" {
 		t.Fatalf("racing write lost %+v", disk)
 	}
@@ -428,7 +428,7 @@ func TestJobsJsonIdKeyedMapNonDictListEntriesDoNotStopHealthyJobsFiring(t *testi
 	}{{[]any{nil, "***", 42}, "Skipping 3 non-object"}, {nil, "Replacing invalid"}, {"not-a-list", "Replacing invalid"}} {
 		writeJobsFile(t, s, map[string]any{"jobs": tc.bad})
 		logs.Reset()
-		if loaded, err := s.LoadJobs(); err != nil || len(loaded) != 0 {
+		if loaded, err := s.LoadJobs(context.Background()); err != nil || len(loaded) != 0 {
 			t.Fatalf("%v loaded %v %v", tc.bad, jobIDs(loaded), err)
 		}
 		if ids := diskJobIDs(t, s); len(ids) != 0 {

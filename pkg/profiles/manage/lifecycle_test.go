@@ -54,7 +54,7 @@ func TestCreateProfileSeedsPlaceholderEnvFile(t *testing.T) {
 	if st, _ := os.Stat(env); st.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o", st.Mode().Perm())
 	}
-	if !strings.HasPrefix(readText(t, filepath.Join(dir, "SOUL.md")), "You are icebath") {
+	if !strings.HasPrefix(readText(t, filepath.Join(dir, "SOUL.md")), "You are Icebath Agent") {
 		t.Fatal("default soul not seeded")
 	}
 	for _, sub := range profiles.ProfileDirs {

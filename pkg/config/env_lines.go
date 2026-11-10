@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"os"
 	"runtime"
 	"strings"
@@ -12,15 +13,15 @@ import (
 func ReadEnvLines(path string) ([]string, error) { return readSanitizedEnvLines(path) }
 
 // Replaces a dotenv file with lines verbatim, keeping its mode when asked or securing it under the process home
-func WriteEnvLines(path string, lines []string, preserveMode bool) error {
-	return writeEnvLinesMode("", path, lines, preserveMode)
+func WriteEnvLines(ctx context.Context, path string, lines []string, preserveMode bool) error {
+	return writeEnvLinesMode(ctx, "", path, lines, preserveMode)
 }
 
 // Reports whether a dotenv line assigns key in exactly the shapes the env loader parses
 func EnvLineDefinesKey(line, key string) bool { return envLineDefines(line, key) }
 
 // Replaces a dotenv file through a staged temp beside its resolved target, keeping the prior mode or securing it
-func writeEnvLinesMode(h, path string, lines []string, preserveMode bool) error {
+func writeEnvLinesMode(ctx context.Context, h, path string, lines []string, preserveMode bool) error {
 	var mode os.FileMode
 	keep := false
 	if preserveMode {
@@ -54,6 +55,6 @@ func writeEnvLinesMode(h, path string, lines []string, preserveMode bool) error 
 		_ = os.Chmod(path, mode)
 		return nil
 	}
-	SecureFile(h, path)
+	SecureFile(ctx, h, path)
 	return nil
 }

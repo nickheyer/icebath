@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -66,7 +67,7 @@ func TestOutageEntersOnceAndRecoversThroughAnySave(t *testing.T) {
 	if !OutageCovers(s.cronDir, 1200, 0) || OutageCovers(s.cronDir, 900, 60) {
 		t.Fatal("live outage window")
 	}
-	if err := s.SaveJobs(nil, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if DegradedRecord(s.cronDir) != nil || len(DegradedRecords()) != 0 {
@@ -80,7 +81,7 @@ func TestOutageEntersOnceAndRecoversThroughAnySave(t *testing.T) {
 	if rec := DegradedRecord(s.cronDir); rec.Since != 1000 {
 		t.Fatalf("re entry within the window restarted since %v", rec.Since)
 	}
-	s.SaveJobs(nil, nil, false)
+	s.SaveJobs(context.Background(), nil, nil, false)
 	storeHealthEndRecoveryWindow(s, s.cronDir)
 	if OutageCovers(s.cronDir, 1200, 0) {
 		t.Fatal("window survived the scan save")
@@ -136,15 +137,15 @@ func TestRecheckIdleClearsARecoveredStore(t *testing.T) {
 	storeHealthNoteUnwritable(s, enospc, "x", "claim")
 	*probe = enospc
 	*mono += ProbeIntervalSeconds
-	if err := s.recheckIdle(); err != nil || DegradedRecord(s.cronDir) == nil {
+	if err := s.recheckIdle(context.Background()); err != nil || DegradedRecord(s.cronDir) == nil {
 		t.Fatalf("failing probe cleared the store: %v", err)
 	}
-	if err := s.recheckIdle(); err != nil {
+	if err := s.recheckIdle(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	*probe = nil
 	*mono += ProbeIntervalSeconds
-	if err := s.recheckIdle(); err != nil || DegradedRecord(s.cronDir) != nil {
+	if err := s.recheckIdle(context.Background()); err != nil || DegradedRecord(s.cronDir) != nil {
 		t.Fatalf("passing probe left the store degraded: %v", err)
 	}
 	if strings.Join(*events, ",") != "unwritable,recovered" {
@@ -157,7 +158,7 @@ func TestProbeStoreFindsUnwritableTargets(t *testing.T) {
 	if err := ProbeStore(filepath.Join(s.home, "missing")); err != nil {
 		t.Fatalf("missing dir probed: %v", err)
 	}
-	if err := s.SaveJobs([]*Job{{ID: "a"}}, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{{ID: "a"}}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := ProbeStore(s.cronDir); err != nil || ProbeReport(s.cronDir) != nil {

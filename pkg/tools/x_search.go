@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // x_search defaults and limits
@@ -210,17 +212,17 @@ func validateDateRange(fromDate, toDate string) error {
 }
 
 // Content entries of every message item in a Responses payload
-func messageContents(payload map[string]any) []map[string]any {
-	var out []map[string]any
-	items, _ := payload["output"].([]any)
+func messageContents(payload *pyjson.Object) []*pyjson.Object {
+	var out []*pyjson.Object
+	items, _ := payload.Vals["output"].([]any)
 	for _, it := range items {
-		item := dictOrNil(it)
-		if item["type"] != "message" {
+		item, ok := it.(*pyjson.Object)
+		if !ok || item.Vals["type"] != "message" {
 			continue
 		}
-		contents, _ := item["content"].([]any)
+		contents, _ := item.Vals["content"].([]any)
 		for _, c := range contents {
-			if m := dictOrNil(c); m != nil {
+			if m, ok := c.(*pyjson.Object); ok {
 				out = append(out, m)
 			}
 		}
@@ -228,21 +230,29 @@ func messageContents(payload map[string]any) []map[string]any {
 	return out
 }
 
+// Stripped str(x or "") of a decoded value
+func strOrEmptyStripped(v any) string {
+	if !pyrepr.Truthy(v) {
+		return ""
+	}
+	return pystr.Strip(pyrepr.Str(v))
+}
+
 // Answer text from output_text, else the joined message text parts
-func extractResponseText(payload map[string]any) string {
-	if s := strings.TrimSpace(pyStrOrEmpty(falsyNil(payload["output_text"]))); s != "" {
+func extractResponseText(payload *pyjson.Object) string {
+	if s := strOrEmptyStripped(payload.Vals["output_text"]); s != "" {
 		return s
 	}
 	var parts []string
 	for _, c := range messageContents(payload) {
-		if t := c["type"]; t != "output_text" && t != "text" {
+		if t := c.Vals["type"]; t != "output_text" && t != "text" {
 			continue
 		}
-		if p := strings.TrimSpace(pyStrOrEmpty(falsyNil(c["text"]))); p != "" {
+		if p := strOrEmptyStripped(c.Vals["text"]); p != "" {
 			parts = append(parts, p)
 		}
 	}
-	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+	return pystr.Strip(strings.Join(parts, "\n\n"))
 }
 
 // Nil for Python falsy values so str(x or "") renders empty
@@ -270,16 +280,16 @@ func getOr(m map[string]any, key string, def any) any {
 }
 
 // url_citation annotations of every message content
-func extractInlineCitations(payload map[string]any) []inlineCitation {
+func extractInlineCitations(payload *pyjson.Object) []inlineCitation {
 	out := []inlineCitation{}
 	for _, content := range messageContents(payload) {
-		anns, _ := content["annotations"].([]any)
+		anns, _ := content.Vals["annotations"].([]any)
 		for _, a := range anns {
-			m := dictOrNil(a)
-			if m["type"] != "url_citation" {
+			m, ok := a.(*pyjson.Object)
+			if !ok || m.Vals["type"] != "url_citation" {
 				continue
 			}
-			out = append(out, inlineCitation{URL: getOr(m, "url", ""), Title: getOr(m, "title", ""), StartIndex: m["start_index"], EndIndex: m["end_index"]})
+			out = append(out, inlineCitation{URL: m.GetOr("url", ""), Title: m.GetOr("title", ""), StartIndex: m.Vals["start_index"], EndIndex: m.Vals["end_index"]})
 		}
 	}
 	return out
@@ -372,7 +382,7 @@ type xSearchFailure struct {
 
 // Structured failure with the Python exception class name
 func xSearchErrorJSON(message, errorType string) string {
-	return jsonCompact(xSearchFailure{Success: false, Provider: "xai", Tool: "x_search", Error: message, ErrorType: errorType})
+	return JSON(xSearchFailure{Success: false, Provider: "xai", Tool: "x_search", Error: message, ErrorType: errorType})
 }
 
 // Transport failure class of a request error, ReadTimeout and ConnectTimeout told apart from ConnectionError
@@ -569,29 +579,19 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 		log.Error("x_search failed", "error", err)
 		return xSearchErrorJSON(err.Error(), "RuntimeError")
 	}
-	var decoded any
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	if err := dec.Decode(&decoded); err != nil {
-		msg := err.Error()
-		if _, perr := pyjson.Loads(string(raw)); perr != nil {
-			msg = perr.Error()
-		}
-		log.Error("x_search failed", "error", msg)
-		return xSearchErrorJSON(msg, "JSONDecodeError")
+	decoded, err := pyjson.LoadsBytes(raw)
+	if err != nil {
+		log.Error("x_search failed", "error", err)
+		return xSearchErrorJSON(err.Error(), "JSONDecodeError")
 	}
-	data, ok := decoded.(map[string]any)
+	data, ok := decoded.(*pyjson.Object)
 	if !ok {
-		typeName := "NoneType"
-		if v, perr := pyjson.Loads(string(raw)); perr == nil {
-			typeName = pyJSONTypeName(v)
-		}
-		msg := fmt.Sprintf("'%s' object has no attribute 'get'", typeName)
+		msg := fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
 		log.Error("x_search failed", "error", msg)
 		return xSearchErrorJSON(msg, "AttributeError")
 	}
 	citations := []any{}
-	if list, ok := falsyNil(data["citations"]).([]any); ok {
+	if list, ok := data.Vals["citations"].([]any); ok && len(list) > 0 {
 		citations = list
 	}
 	inline := extractInlineCitations(data)
@@ -602,7 +602,7 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 		reason := "no citations returned despite filters: " + strings.Join(active, ", ")
 		result.DegradedReason = &reason
 	}
-	return jsonCompact(result)
+	return JSON(result)
 }
 
 var xSearchSchema = map[string]any{

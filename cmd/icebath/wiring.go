@@ -129,8 +129,8 @@ func rawConfigTree(ctx context.Context) config.Tree {
 }
 
 // Cron job id and name pairs of a home in load order for the update drain report
-func loadCronJobsForDrainReport(h string) ([][2]string, error) {
-	jobs, err := cron.LoadJobsForHome(h)
+func loadCronJobsForDrainReport(ctx context.Context, h string) ([][2]string, error) {
+	jobs, err := cron.LoadJobsForHome(ctx, h)
 	if err != nil {
 		return nil, err
 	}

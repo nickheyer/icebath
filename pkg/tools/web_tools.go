@@ -400,7 +400,7 @@ func WebSearchTool(ctx context.Context, env *Env, query string, limitArg any) st
 	}
 	debug := map[string]any{"parameters": map[string]any{"query": query, "limit": limit}, "error": nil, "results_count": 0, "original_response_size": 0, "final_response_size": 0}
 	if IsInterrupted(ctx) {
-		return toolErrorJSON("Interrupted", map[string]any{"success": false})
+		return toolErrorJSON("Interrupted", Dict("success", false))
 	}
 	call := webCallContext{ctx, env}
 	ensureWebPluginsLoaded(ctx, env)
@@ -414,13 +414,13 @@ func WebSearchTool(ctx context.Context, env *Env, query string, limitArg any) st
 			errText := strictSelectionError(env, "search", backend)
 			debug["error"] = errText
 			finishWebDebug(env, "web_search_tool", debug, "")
-			return jsonIndent(map[string]any{"success": false, "error": errText})
+			return jsonIndent(Dict("success", false, "error", errText))
 		}
 		provider = activeSearchProvider(env)
 	}
 	var response any
 	if provider == nil {
-		response = map[string]any{"success": false, "error": noProviderError(env, "search", "No web search provider configured. Run `icebath tools` to set one up.")}
+		response = Dict("success", false, "error", noProviderError(env, "search", "No web search provider configured. Run `icebath tools` to set one up."))
 	} else {
 		envLog(env).Info("Web search", "provider", provider.Name(), "query", query, "limit", limit)
 		resp, err := memoizedSearch(call, provider, query, limit)
@@ -480,7 +480,7 @@ func validateExtractURLs(items []any) validatedExtract {
 		normalized := normalizeURLForRequest(u)
 		for _, candidate := range []string{u, unquoteLoose(u), normalized, unquoteLoose(normalized)} {
 			if prefixSearch(candidate) {
-				out.blocked = jsonCompact(map[string]any{"success": false, "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."})
+				out.blocked = JSONASCII(Dict("success", false, "error", "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."))
 				return out
 			}
 		}
@@ -539,14 +539,14 @@ func resolveExtractProvider(env *Env, backend string) (WebProvider, string) {
 		return provider, ""
 	}
 	if provider != nil {
-		return nil, jsonCompact(map[string]any{"success": false, "error": provider.DisplayName() + " is a search-only backend and cannot extract URL content. Set web.extract_backend to " + extractBackendsHint})
+		return nil, JSON(Dict("success", false, "error", provider.DisplayName()+" is a search-only backend and cannot extract URL content. Set web.extract_backend to "+extractBackendsHint))
 	}
 	if backend != "" && SelectionExists(env, "web") {
-		return nil, jsonCompact(map[string]any{"success": false, "error": strictSelectionError(env, "extract", backend)})
+		return nil, JSON(Dict("success", false, "error", strictSelectionError(env, "extract", backend)))
 	}
 	provider = activeExtractProvider(env)
 	if provider == nil {
-		return nil, jsonCompact(map[string]any{"success": false, "error": noProviderError(env, "extract", "No web extract provider configured. Set web.extract_backend to "+extractBackendsHint)})
+		return nil, JSON(Dict("success", false, "error", noProviderError(env, "extract", "No web extract provider configured. Set web.extract_backend to "+extractBackendsHint)))
 	}
 	return provider, ""
 }
@@ -820,13 +820,13 @@ func WebExtractTool(ctx context.Context, env *Env, items []any, format string, c
 	}
 	envLog(env).Info("Extracted content", "pages", len(results))
 	debug["pages_extracted"] = len(results)
-	debug["original_response_size"] = len(jsonCompact(map[string]any{"results": trimResults(results)}))
+	debug["original_response_size"] = len(JSONASCII(Dict("results", trimResults(results))))
 	debug["processing_applied"] = append(debug["processing_applied"].([]any), "truncate_and_store")
 	truncateResults(env, results, effectiveCharLimit(env, charLimit), debug)
 	trimmed := trimResults(results)
 	resultJSON := toolErrorJSON("Content was inaccessible or not found", nil)
 	if len(trimmed) > 0 {
-		resultJSON = jsonIndent(map[string]any{"results": trimmed})
+		resultJSON = jsonIndent(Dict("results", trimmed))
 	}
 	cleaned := ConvertBase64ImagesToLinks(resultJSON)
 	debug["final_response_size"] = len([]rune(cleaned))

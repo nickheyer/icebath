@@ -491,16 +491,72 @@ func DelegatedChildSubprocessEnv(env *Env, child map[string]string) map[string]s
 	return delegatedChildSubprocessEnv(env, child)
 }
 
+// Insertion order of a child env dict, rebuilt as each build stage drops and adds names
+type envOrder struct{ keys []string }
+
+// Order seeded with the names of the process environment in the order the system lists them
+func environOrder() *envOrder {
+	o := &envOrder{}
+	seen := map[string]bool{}
+	for _, kv := range os.Environ() {
+		if i := strings.IndexByte(kv, '='); i > 0 && !seen[kv[:i]] {
+			seen[kv[:i]] = true
+			o.keys = append(o.keys, kv[:i])
+		}
+	}
+	return o
+}
+
+// Records one stage, dropped names leave, the added names join in their order, other new names sorted after
+func (o *envOrder) note(child map[string]string, added ...string) {
+	if o == nil {
+		return
+	}
+	kept := make([]string, 0, len(child))
+	seen := make(map[string]bool, len(child))
+	for _, k := range o.keys {
+		if _, ok := child[k]; ok && !seen[k] {
+			seen[k] = true
+			kept = append(kept, k)
+		}
+	}
+	for _, k := range added {
+		if _, ok := child[k]; ok && !seen[k] {
+			seen[k] = true
+			kept = append(kept, k)
+		}
+	}
+	rest := make([]string, 0, len(child)-len(kept))
+	for k := range child {
+		if !seen[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	o.keys = append(kept, rest...)
+}
+
+// Names the profile home stage inserts, in the order hermes assigns them
+func profileHomeEnvOrder() []string {
+	names := append([]string{"ICEBATH_HOME", "ICEBATH_REAL_HOME", "HOME"}, home.ScratchTmpEnvVars...)
+	return append(names, home.ScratchDirMarkerEnv)
+}
+
 // Guards shared by every spawn surface, returns the possibly new map or the damaged runtime record error
-func finalizeChildEnv(env *Env, child map[string]string) (map[string]string, error) {
+func finalizeChildEnv(env *Env, child map[string]string, order *envOrder) (map[string]string, error) {
 	applyProfileHome(env, child)
+	order.note(child, profileHomeEnvOrder()...)
 	injectSessionContextEnv(env, child)
+	order.note(child, SessionContextEnvVars...)
 	if err := stripIcebathOwnedPythonpathAndRuntimeMarkers(child); err != nil {
 		return nil, err
 	}
 	StripSupervisedProcessIdentity(child)
 	applyWindowsMsysBashEnvDefaults(child)
-	return delegatedChildSubprocessEnv(env, child), nil
+	order.note(child, "MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL")
+	out := delegatedChildSubprocessEnv(env, child)
+	order.note(out)
+	return out, nil
 }
 
 // One source of a scrubbed env and whether forced names unwrap from it
@@ -510,12 +566,13 @@ type envPart struct {
 }
 
 // Filters every part into one env, rewrites PATH and applies the shared guards
-func scrubbedEnv(env *Env, parts []envPart, pluginStrip map[string]bool, fixPath func(string) string) (map[string]string, error) {
+func scrubbedEnv(env *Env, parts []envPart, pluginStrip map[string]bool, fixPath func(string) string, order *envOrder) (map[string]string, error) {
 	out := map[string]string{}
 	for _, p := range parts {
 		if err := filterSecretEnv(env, p.items, out, p.unwrapForce, pluginStrip); err != nil {
 			return nil, err
 		}
+		order.note(out)
 	}
 	present := map[string]bool{}
 	for k := range out {
@@ -526,15 +583,17 @@ func scrubbedEnv(env *Env, parts []envPart, pluginStrip map[string]bool, fixPath
 			out[k] = v
 		}
 	}
+	order.note(out)
 	if pathKey, ok := pathEnvKey(out); ok {
 		out[pathKey] = prependIcebathBinDir(fixPath(out[pathKey]))
+		order.note(out, pathKey)
 	}
-	return finalizeChildEnv(env, out)
+	return finalizeChildEnv(env, out, order)
 }
 
 // SanitizeSubprocessEnv filters managed secrets from a background, PTY, worker or script child environment
 func SanitizeSubprocessEnv(env *Env, base, extra map[string]string) (map[string]string, error) {
-	return scrubbedEnv(env, []envPart{{base, false}, {extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p })
+	return scrubbedEnv(env, []envPart{{base, false}, {extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p }, nil)
 }
 
 // Env with the user's tools first on PATH for background commands
@@ -568,7 +627,7 @@ func icebathSubprocessEnv(env *Env, inheritCredentials bool, base map[string]str
 	if _, ok := child["PYTHONUTF8"]; !ok {
 		child["PYTHONUTF8"] = "1"
 	}
-	return finalizeChildEnv(env, child)
+	return finalizeChildEnv(env, child, nil)
 }
 
 // IcebathSubprocessEnvChecked returns the sanitized child environment or the damaged runtime record error
@@ -576,12 +635,14 @@ func IcebathSubprocessEnvChecked(env *Env, inheritCredentials bool, base map[str
 	return icebathSubprocessEnv(env, inheritCredentials, base)
 }
 
-// Current process environment as a map
+// Current process environment as a map, the first entry of a repeated name winning as in os.environ
 func environMap() map[string]string {
 	out := map[string]string{}
 	for _, kv := range os.Environ() {
 		if i := strings.IndexByte(kv, '='); i > 0 {
-			out[kv[:i]] = kv[i+1:]
+			if _, dup := out[kv[:i]]; !dup {
+				out[kv[:i]] = kv[i+1:]
+			}
 		}
 	}
 	return out
@@ -615,15 +676,42 @@ type SubprocessEnvOptions struct {
 	StripLaunchProfile bool
 }
 
+// ChildEnv is a child process environment with its names in the insertion order of the hermes dict
+type ChildEnv struct {
+	Keys []string
+	Vars map[string]string
+}
+
+// Environ lists the entries as NAME=value in dict order, the order execve receives them
+func (c *ChildEnv) Environ() []string {
+	out := make([]string, 0, len(c.Keys))
+	for _, k := range c.Keys {
+		out = append(out, k+"="+c.Vars[k])
+	}
+	return out
+}
+
 // BuildSubprocessEnv is the single factory for child process environments
 func BuildSubprocessEnv(ctx context.Context, env *Env, o SubprocessEnvOptions) (map[string]string, error) {
+	child, err := BuildSubprocessEnvOrdered(ctx, env, o)
+	if err != nil {
+		return nil, err
+	}
+	return child.Vars, nil
+}
+
+// BuildSubprocessEnvOrdered builds the child environment and keeps the insertion order of its names
+func BuildSubprocessEnvOrdered(ctx context.Context, env *Env, o SubprocessEnvOptions) (*ChildEnv, error) {
 	child := map[string]string{}
+	order := &envOrder{}
 	if o.Base != nil {
 		for k, v := range o.Base {
 			child[k] = v
 		}
+		order.note(child)
 	} else {
 		child = environMap()
+		order = environOrder()
 	}
 	if o.StripLaunchProfile {
 		StripLaunchProfileEnv(env, child, "")
@@ -631,20 +719,30 @@ func BuildSubprocessEnv(ctx context.Context, env *Env, o SubprocessEnvOptions) (
 			for k, v := range profileSecrets().CurrentSecretScope(ctx) {
 				child[k] = v
 			}
+			order.note(child)
 			RestoreManagedEnv(child)
 		}
+		order.note(child)
 	}
 	if o.ScrubSecrets {
-		return SanitizeSubprocessEnv(env, child, o.Extra)
+		out, err := scrubbedEnv(env, []envPart{{child, false}, {o.Extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p }, order)
+		if err != nil {
+			return nil, err
+		}
+		return &ChildEnv{Keys: order.keys, Vars: out}, nil
 	}
 	if o.InheritProfileHome {
 		applyProfileHome(env, child)
+		order.note(child, profileHomeEnvOrder()...)
 	}
 	for k, v := range o.Extra {
 		child[k] = v
 	}
+	order.note(child)
 	StripSupervisedProcessIdentity(child)
-	return delegatedChildSubprocessEnv(env, child), nil
+	out := delegatedChildSubprocessEnv(env, child)
+	order.note(out)
+	return &ChildEnv{Keys: order.keys, Vars: out}, nil
 }
 
 // ServedProfileChildEnv builds the env of a child acting for the active or a routed profile
@@ -666,7 +764,7 @@ func ServedProfileChildEnv(ctx context.Context, env *Env, base map[string]string
 	}
 	if target != "" {
 		child["ICEBATH_HOME"] = target
-		home.ApplyScratchTmpEnv(child)
+		home.ApplyScratchTmpEnv(WithEnvHome(ctx, env), child)
 		if isRoutedHome(target) {
 			StripLaunchProfileEnv(env, child, target)
 			scrubCredentials(env, child, false)
@@ -691,7 +789,7 @@ func ServedProfileChildEnv(ctx context.Context, env *Env, base map[string]string
 
 // HostGatewayChildEnv is the env of the host gateway with the default profile's secrets
 func HostGatewayChildEnv(ctx context.Context, env *Env, base map[string]string) (map[string]string, error) {
-	return ServedProfileChildEnv(ctx, env, base, home.AccountDefault(), true)
+	return ServedProfileChildEnv(ctx, env, base, home.AccountDefault(WithEnvHome(ctx, env)), true)
 }
 
 // Reports whether targetHome is not the launch home of this process
@@ -1234,7 +1332,7 @@ func makeRunEnv(env *Env, childEnv map[string]string) (map[string]string, error)
 	}
 	runEnv, err := scrubbedEnv(env, []envPart{{base, true}}, map[string]bool{}, func(p string) string {
 		return userToolsFirst(appendMissingSanePathEntries(env, p))
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}

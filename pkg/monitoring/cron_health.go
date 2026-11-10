@@ -1,6 +1,7 @@
 package monitoring
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math"
@@ -37,7 +38,7 @@ type CronJobHealth struct {
 // CronHealthSources are the cron readers pkg/cron registers in init, each fail open on its own
 type CronHealthSources struct {
 	Now                    func() time.Time
-	LoadJobs               func() ([]CronJobHealth, error)
+	LoadJobs               func(ctx context.Context) ([]CronJobHealth, error)
 	TickerHeartbeatAge     func() (*float64, error)
 	TickerSuccessAge       func() (*float64, error)
 	CatchUpOccurrenceCount func() (int, error)
@@ -216,8 +217,8 @@ func isOverdue(job CronJobHealth, now time.Time) bool {
 }
 
 // Enabled and overdue job gauges
-func jobMetrics(src CronHealthSources, metrics *[]GatewayMetric) error {
-	jobs, err := src.LoadJobs()
+func jobMetrics(ctx context.Context, src CronHealthSources, metrics *[]GatewayMetric) error {
+	jobs, err := src.LoadJobs(ctx)
 	if err != nil {
 		return err
 	}
@@ -239,8 +240,8 @@ func jobMetrics(src CronHealthSources, metrics *[]GatewayMetric) error {
 }
 
 // Age gauge clamped at zero, omitted when the reader has no value
-func freshnessMetric(name string, reader func(CronHealthSources) (*float64, error)) func(CronHealthSources, *[]GatewayMetric) error {
-	return func(src CronHealthSources, metrics *[]GatewayMetric) error {
+func freshnessMetric(name string, reader func(CronHealthSources) (*float64, error)) func(context.Context, CronHealthSources, *[]GatewayMetric) error {
+	return func(_ context.Context, src CronHealthSources, metrics *[]GatewayMetric) error {
 		v, err := reader(src)
 		if err != nil {
 			return err
@@ -253,8 +254,8 @@ func freshnessMetric(name string, reader func(CronHealthSources) (*float64, erro
 }
 
 // Gauge carrying the reader value as is
-func singleMetric(name string, reader func(CronHealthSources) (any, error)) func(CronHealthSources, *[]GatewayMetric) error {
-	return func(src CronHealthSources, metrics *[]GatewayMetric) error {
+func singleMetric(name string, reader func(CronHealthSources) (any, error)) func(context.Context, CronHealthSources, *[]GatewayMetric) error {
+	return func(_ context.Context, src CronHealthSources, metrics *[]GatewayMetric) error {
 		v, err := reader(src)
 		if err != nil {
 			return err
@@ -265,7 +266,7 @@ func singleMetric(name string, reader func(CronHealthSources) (any, error)) func
 }
 
 type metricGroup struct {
-	build   func(CronHealthSources, *[]GatewayMetric) error
+	build   func(context.Context, CronHealthSources, *[]GatewayMetric) error
 	failure string
 }
 
@@ -297,23 +298,23 @@ var metricGroups = []metricGroup{
 }
 
 // Runs one group, turning an error or panic into a debug log line
-func runMetricGroup(g metricGroup, src CronHealthSources, metrics *[]GatewayMetric) {
+func runMetricGroup(ctx context.Context, g metricGroup, src CronHealthSources, metrics *[]GatewayMetric) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Debug(fmt.Sprintf("%s: %v", g.failure, r))
 		}
 	}()
-	if err := g.build(src, metrics); err != nil {
+	if err := g.build(ctx, src, metrics); err != nil {
 		slog.Debug(fmt.Sprintf("%s: %v", g.failure, err))
 	}
 }
 
 // Scheduler freshness, job, running and store gauges with no events
-func BuildCronHealthSnapshot() CronHealthSnapshot {
+func BuildCronHealthSnapshot(ctx context.Context) CronHealthSnapshot {
 	src := currentCronSources()
 	metrics := []GatewayMetric{}
 	for _, g := range metricGroups {
-		runMetricGroup(g, src, &metrics)
+		runMetricGroup(ctx, g, src, &metrics)
 	}
 	return CronHealthSnapshot{Metrics: metrics, Events: []CronExecutionEvent{}}
 }

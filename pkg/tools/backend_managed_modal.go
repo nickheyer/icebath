@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var managedModalTerminalStatuses = map[string]bool{"completed": true, "failed": true, "cancelled": true, "timeout": true}
@@ -133,14 +133,21 @@ func (m *managedModalEnv) request(method, path string, body any, connect, read t
 
 // Prefix plus the gateway error, message, code or body text, else the HTTP status
 func managedModalFormatError(prefix string, resp *http.Response, data []byte) string {
-	var payload map[string]any
-	if err := json.Unmarshal(data, &payload); err == nil && payload != nil {
-		for _, key := range []string{"error", "message", "code"} {
-			if s, ok := payload[key].(string); ok && s != "" {
+	if decoded, err := pyjson.LoadsBytes(data); err == nil {
+		if payload, ok := decoded.(*pyjson.Object); ok {
+			var message any
+			for _, key := range []string{"error", "message", "code"} {
+				if message = payload.Vals[key]; pyrepr.Truthy(message) {
+					break
+				}
+			}
+			if s, ok := message.(string); ok && s != "" {
 				return prefix + ": " + s
 			}
+			if text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false)); err == nil {
+				return prefix + ": " + text
+			}
 		}
-		return prefix + ": " + jsonCompact(payload)
 	}
 	if text := strings.TrimSpace(string(data)); text != "" {
 		return prefix + ": " + text
@@ -190,9 +197,15 @@ func (m *managedModalEnv) createSandbox() (string, error) {
 	if resp.StatusCode >= 400 {
 		return "", errors.New(managedModalFormatError("Managed Modal create failed", resp, data))
 	}
-	var body map[string]any
-	json.Unmarshal(data, &body)
-	id, _ := body["id"].(string)
+	decoded, err := pyjson.LoadsBytes(data)
+	if err != nil {
+		return "", err
+	}
+	body, ok := decoded.(*pyjson.Object)
+	if !ok {
+		return "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+	}
+	id, _ := body.Vals["id"].(string)
 	if id == "" {
 		return "", errors.New("Managed Modal create did not return a sandbox id")
 	}
@@ -225,10 +238,18 @@ func (m *managedModalEnv) Execute(ctx context.Context, command string, opts Exec
 	if resp.StatusCode >= 400 {
 		return managedModalResult(managedModalFormatError("Managed Modal exec failed", resp, data), 1), nil
 	}
-	var body map[string]any
-	if err := json.Unmarshal(data, &body); err != nil || body == nil {
+	decoded, err := pyjson.LoadsBytes(data)
+	if err != nil {
 		return managedModalResult("Managed Modal exec failed: "+err.Error(), 1), nil
 	}
+	if decoded == nil {
+		return managedModalResult(managedModalFormatError("Managed Modal exec failed", resp, data), 1), nil
+	}
+	started, ok := decoded.(*pyjson.Object)
+	if !ok {
+		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+	}
+	body := started.Vals
 	if final := managedModalResultFromBody(body); final != nil {
 		return final, nil
 	}
@@ -266,11 +287,15 @@ func (m *managedModalEnv) pollExec(execID string) *ExecResult {
 	if resp.StatusCode >= 400 {
 		return managedModalResult(managedModalFormatError("Managed Modal exec poll failed", resp, data), 1)
 	}
-	var body map[string]any
-	if err := json.Unmarshal(data, &body); err != nil {
+	decoded, err := pyjson.LoadsBytes(data)
+	if err != nil {
 		return managedModalResult("Managed Modal exec failed: "+err.Error(), 1)
 	}
-	return managedModalResultFromBody(body)
+	body, ok := decoded.(*pyjson.Object)
+	if !ok {
+		return managedModalResult("Managed Modal exec failed: '"+pyrepr.TypeName(decoded)+"' object has no attribute 'get'", 1)
+	}
+	return managedModalResultFromBody(body.Vals)
 }
 
 func (m *managedModalEnv) cancelExec(execID string) {

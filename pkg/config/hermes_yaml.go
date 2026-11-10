@@ -135,7 +135,7 @@ func checkSafeTags(n *yaml.Node, seen map[*yaml.Node]bool) error {
 	return nil
 }
 
-// Turns a sequence of one item mappings into a mapping for omap or a list of key value lists for pairs
+// Turns a sequence of one item mappings into an omap mapping or a pairs list of key value lists
 func orderedPairsNode(n *yaml.Node, context string, omap bool) error {
 	if n.Kind != yaml.SequenceNode {
 		return &YAMLError{fmt.Errorf("yaml: line %d: %s expected a sequence, but found %s", n.Line, context, yamlNodeID(n))}

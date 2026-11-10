@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
@@ -306,7 +308,7 @@ func storeHealthEndRecoveryWindow(s *Store, cronDir string) {
 }
 
 // Re probes a degraded store on an idle tick and rewrites jobs.json once the probe passes to end the outage
-func (s *Store) recheckIdle() error {
+func (s *Store) recheckIdle(ctx context.Context) error {
 	key := storeHealthKey(s.cronDir)
 	storeHealth.Lock()
 	record := storeHealth.degraded[key]
@@ -319,12 +321,12 @@ func (s *Store) recheckIdle() error {
 	storeHealth.Unlock()
 	probeErr := storeHealthHooks.probe(s.cronDir)
 	if probeErr == nil {
-		err := s.withJobsLock(func(tx *jobsTx) error {
-			jobs, err := s.loadJobs(tx)
+		err := s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+			jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 			if err != nil {
 				return err
 			}
-			return s.saveJobsLocked(tx, jobs, nil, false)
+			return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 		})
 		if err == nil {
 			return nil

@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -67,8 +69,8 @@ func writeAdmissionJournal(path string, record any) error {
 }
 
 // Pauses the job for an unverified admission and records that exact pause on the fire journal
-func (s *Store) pauseForUnknown(jobID, executionID, reason string) error {
-	paused, err := s.pauseJob(jobID, &reason)
+func (s *Store) pauseForUnknown(ctx context.Context, jobID, executionID, reason string) error {
+	paused, err := s.pauseJob(home.WithOverride(ctx, s.home), jobID, &reason)
 	if err != nil {
 		return err
 	}
@@ -105,12 +107,12 @@ func (e *pyTypeError) Error() string         { return e.msg }
 func (e *pyTypeError) ExceptionName() string { return "TypeError" }
 
 // Resumes the job only while it is still held by exactly the recorded pause
-func (s *Store) liftPause(jobID string, pause any) error {
+func (s *Store) liftPause(ctx context.Context, jobID string, pause any) error {
 	identity, ok := pause.(*pyjson.Object)
 	if !ok {
 		return nil
 	}
-	job, err := s.getJob(jobID)
+	job, err := s.getJob(home.WithOverride(ctx, s.home), jobID)
 	if err != nil || job == nil || job.State != "paused" {
 		return err
 	}
@@ -119,7 +121,7 @@ func (s *Store) liftPause(jobID string, pause any) error {
 	if !pyrepr.Equal(strOrNull(job.PausedAt), at) || !pyrepr.Equal(strOrNull(job.PausedReason), reason) {
 		return nil
 	}
-	if _, err := s.resumeJob(jobID); err != nil && isOSError(err) {
+	if _, err := s.resumeJob(home.WithOverride(ctx, s.home), jobID); err != nil && isOSError(err) {
 		return err
 	}
 	return nil

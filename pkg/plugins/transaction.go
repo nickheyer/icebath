@@ -265,7 +265,7 @@ func updatePlugin(ctx context.Context, target string, opts updatePluginOptions) 
 				return "", &PluginOperationError{Msg: "Update feed must select a commit or the recorded Git source."}
 			}
 			if floor, ok := feed["min_icebath"]; ok {
-				if err := checkManifestVersion(h, map[string]any{"requires_icebath": floor}, name); err != nil {
+				if err := checkManifestVersion(ctx, h, map[string]any{"requires_icebath": floor}, name); err != nil {
 					return "", err
 				}
 			}
@@ -376,7 +376,7 @@ func stageAndPublishUpdate(ctx context.Context, h, target, staged, source, feedR
 	if _, statErr := os.Lstat(newTarget); newTarget != target && statErr == nil {
 		return "", &PluginOperationError{Msg: fmt.Sprintf("The updated plugin renamed itself to '%s', but that plugin already exists.", installedName)}
 	}
-	if err := checkManifestVersion(h, manifest, installedName); err != nil {
+	if err := checkManifestVersion(ctx, h, manifest, installedName); err != nil {
 		return "", err
 	}
 	if _, err := scanMergedTree(h, staged, source, merged, scanOptions{Force: opts.Force, ScanDecision: opts.ScanDecision,

@@ -430,7 +430,7 @@ func isOSError(err error) bool {
 }
 
 // Merges a shipped cron store into home by job id, new jobs paused and a bad job refusing the merge
-func mergeCronStore(src, home string) error {
+func mergeCronStore(ctx context.Context, src, home string) error {
 	dest := filepath.Join(append([]string{home}, cronStoreRel...)...)
 	h := profiles.CronDistributionHooks
 	if h.LoadJobs == nil || h.ImportJobDefinitions == nil {
@@ -442,18 +442,18 @@ func mergeCronStore(src, home string) error {
 		}
 		return distErr("Could not merge cron jobs into %s: %v", dest, err)
 	}
-	shipped, err := loadShippedCronJobs(src, h.LoadJobs, wrap)
+	shipped, err := loadShippedCronJobs(ctx, src, h.LoadJobs, wrap)
 	if err != nil {
 		return err
 	}
-	if err := h.ImportJobDefinitions(home, shipped, "Installed from a profile distribution; review it, then resume."); err != nil {
+	if err := h.ImportJobDefinitions(ctx, home, shipped, "Installed from a profile distribution; review it, then resume."); err != nil {
 		return wrap(err)
 	}
 	return nil
 }
 
 // Jobs of a shipped cron store keyed by id, loaded from a scratch store removed before returning
-func loadShippedCronJobs(src string, load func(home string) ([]any, error), wrap func(error) error) (_ *pyjson.Object, err error) {
+func loadShippedCronJobs(ctx context.Context, src string, load func(ctx context.Context, home string) ([]any, error), wrap func(error) error) (_ *pyjson.Object, err error) {
 	tmp, err := os.MkdirTemp("", "icebath_dist_cron_")
 	if err != nil {
 		return nil, err
@@ -465,7 +465,7 @@ func loadShippedCronJobs(src string, load func(home string) ([]any, error), wrap
 	if err := pyfs.Copy2(src, filepath.Join(tmp, "cron", "jobs.json")); err != nil {
 		return nil, err
 	}
-	jobs, err := load(tmp)
+	jobs, err := load(ctx, tmp)
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -698,7 +698,7 @@ func copyDistPayload(ctx context.Context, staged, target string, m *profiles.Dis
 		if _, err := realDir(target, cronStoreRel[:1]); err != nil {
 			return err
 		}
-		if err := mergeCronStore(store, target); err != nil {
+		if err := mergeCronStore(ctx, store, target); err != nil {
 			return err
 		}
 	}

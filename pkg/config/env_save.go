@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"io"
 	"os"
 	"path/filepath"
@@ -19,11 +20,11 @@ import (
 var EnvRefusalOut io.Writer = os.Stderr
 
 // Package manager owning the install from ICEBATH_MANAGED or the home marker, empty when unmanaged
-func ManagedSystem(h string) string { return home.ManagedSystem(h) }
+func ManagedSystem(ctx context.Context, h string) string { return home.ManagedSystem(ctx, h) }
 
 // User facing refusal for an action on a package manager managed install
-func FormatManagedMessage(h, action string) string {
-	system := ManagedSystem(h)
+func FormatManagedMessage(ctx context.Context, h, action string) string {
+	system := ManagedSystem(ctx, h)
 	if system == "" {
 		system = "a package manager"
 	}
@@ -31,9 +32,9 @@ func FormatManagedMessage(h, action string) string {
 }
 
 // Refusal text when a managed install or an administrator pinned key forbids writing key, empty when allowed
-func EnvWriteRefusal(h, key, action string) string {
-	if ManagedSystem(h) != "" {
-		return FormatManagedMessage(h, action+" "+key)
+func EnvWriteRefusal(ctx context.Context, h, key, action string) string {
+	if ManagedSystem(ctx, h) != "" {
+		return FormatManagedMessage(ctx, h, action+" "+key)
 	}
 	if IsEnvManaged(key) {
 		source := "the managed scope"
@@ -95,7 +96,7 @@ var EnvWriterLaunchDenylist = func() map[string]bool { return map[string]bool{} 
 // Name used for env policy comparisons, upper cased under the Windows policy
 func envVarPolicyName(key string) string {
 	if envPolicyWindows {
-		return strings.ToUpper(key)
+		return pystr.Upper(key)
 	}
 	return key
 }
@@ -129,7 +130,7 @@ func SaveEnvValue(h, key, value string) error {
 
 // Saves one .env assignment, matching export lines too, and publishes it to the scope or process env
 func SaveEnvValueContext(ctx context.Context, h, key, value string) error {
-	if envWriteBlocked(h, key, "set") {
+	if envWriteBlocked(ctx, h, key, "set") {
 		return nil
 	}
 	if err := ValidateEnvNameForWrite(key); err != nil {
@@ -137,7 +138,7 @@ func SaveEnvValueContext(ctx context.Context, h, key, value string) error {
 	}
 	value = strings.ReplaceAll(strings.ReplaceAll(value, "\n", ""), "\r", "")
 	value = CheckNonASCIICredential(key, value)
-	if err := EnsureIcebathHome(h); err != nil {
+	if err := EnsureIcebathHome(ctx, h); err != nil {
 		return err
 	}
 	path := home.EnvPath(h)
@@ -162,7 +163,7 @@ func SaveEnvValueContext(ctx context.Context, h, key, value string) error {
 			}
 			lines = append(lines, assignment)
 		}
-		return writeEnvLinesMode(h, path, lines, exists)
+		return writeEnvLinesMode(ctx, h, path, lines, exists)
 	})
 	if err != nil {
 		return err

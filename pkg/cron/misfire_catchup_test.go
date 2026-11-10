@@ -61,7 +61,7 @@ func (p *misfireRecordingProvider) firedIDs() []string {
 // Rewinds a job's next run into the past, the missed fires of a parked external trigger
 func parkInPast(t *testing.T, s *Store, jobID string, minutes float64) {
 	t.Helper()
-	jobs, err := s.LoadJobs()
+	jobs, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func parkInPast(t *testing.T, s *Store, jobID string, minutes float64) {
 			j.NextRunAt = &at
 		}
 	}
-	if err := s.SaveJobs(jobs, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), jobs, nil, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -80,7 +80,7 @@ func parkInPast(t *testing.T, s *Store, jobID string, minutes float64) {
 func misfireFixture(t *testing.T) (*Store, context.Context, *Job) {
 	t.Helper()
 	s, _ := newTestStore(t)
-	job, err := s.createJob(CreateJobOptions{Prompt: strPtr("p"), Schedule: "every 1h"})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strPtr("p"), Schedule: "every 1h"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestFireOverdueJobs(t *testing.T) {
 	t.Run("test_paused_job_not_fired", func(t *testing.T) {
 		s, ctx, job := misfireFixture(t)
 		parkInPast(t, s, job.ID, 30)
-		if _, err := s.pauseJob(job.ID, nil); err != nil {
+		if _, err := s.pauseJob(ctx, job.ID, nil); err != nil {
 			t.Fatal(err)
 		}
 		if n := overdueFired(t, ctx, newMisfireRecordingProvider()); n != 0 {
@@ -166,7 +166,7 @@ func TestFireOverdueJobs(t *testing.T) {
 		if n := overdueFired(t, ctx, provider); n != 1 || !provider.waitFired(5*time.Second) {
 			t.Fatal(n)
 		}
-		stamped, err := s.getJob(job.ID)
+		stamped, err := s.getJob(ctx, job.ID)
 		if err != nil || stamped == nil || stamped.NextRunAt == nil || *stamped.NextRunAt <= FormatISO(s.clk.now()) {
 			t.Fatalf("stamped %+v %v", stamped, err)
 		}
@@ -195,7 +195,7 @@ func TestFireOverdueJobs(t *testing.T) {
 			return tools.CheckPaused(context.Background(), component, log)
 		})
 		parkInPast(t, s, job.ID, 30)
-		parked, err := s.getJob(job.ID)
+		parked, err := s.getJob(ctx, job.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -205,7 +205,7 @@ func TestFireOverdueJobs(t *testing.T) {
 		if n := overdueFired(t, ctx, provider); n != 0 || len(provider.firedIDs()) != 0 {
 			t.Fatal(n, provider.firedIDs())
 		}
-		if after, _ := s.getJob(job.ID); deref(after.NextRunAt) != deref(parked.NextRunAt) {
+		if after, _ := s.getJob(ctx, job.ID); deref(after.NextRunAt) != deref(parked.NextRunAt) {
 			t.Fatalf("next run moved %v %v", deref(after.NextRunAt), deref(parked.NextRunAt))
 		}
 		tools.Disengage(context.Background())

@@ -80,7 +80,7 @@ func TestStaleInflightSweep(t *testing.T) {
 	})
 	t.Run("pending sentinel released when submit hung and young one kept", func(t *testing.T) {
 		s := sweepStore(t)
-		created, err := s.createJob(CreateJobOptions{Prompt: strp("p"), Schedule: "every 60m", Name: strp("hung")})
+		created, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strp("p"), Schedule: "every 60m", Name: strp("hung")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,14 +90,14 @@ func TestStaleInflightSweep(t *testing.T) {
 		if len(got) != 1 || got[0] != created.ID || !isJobRunning(s, "young") {
 			t.Fatal(got)
 		}
-		after, _ := s.getJob(created.ID)
+		after, _ := s.getJob(context.Background(), created.ID)
 		if after == nil || after.LastStatus == nil || *after.LastStatus != "error" {
 			t.Fatal("forced release must fail the run", after)
 		}
 	})
 	t.Run("finite repeat job released without mark job run", func(t *testing.T) {
 		s := sweepStore(t)
-		created, err := s.createJob(CreateJobOptions{Prompt: strp("p"), Schedule: "every 60m", Name: strp("finite"), Repeat: 1})
+		created, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strp("p"), Schedule: "every 60m", Name: strp("finite"), Repeat: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +105,7 @@ func TestStaleInflightSweep(t *testing.T) {
 		if got := s.sweepStaleInflight([]*Job{created}); len(got) != 1 || isJobRunning(s, created.ID) {
 			t.Fatal(got)
 		}
-		after, _ := s.getJob(created.ID)
+		after, _ := s.getJob(context.Background(), created.ID)
 		if after.LastStatus != nil {
 			t.Fatal("finite repeat job was marked")
 		}

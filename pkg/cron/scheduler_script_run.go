@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -653,7 +654,7 @@ func (s *Store) runJobScriptWithClaimHeartbeat(ctx context.Context, job *Job, sc
 			case <-stop:
 				return
 			case <-time.After(time.Duration(runClaimHeartbeatSeconds * float64(time.Second))):
-				if _, err := cronHeartbeatRunClaim(s, jobID, owner); err != nil {
+				if _, err := cronHeartbeatRunClaim(s, home.WithOverride(ctx, s.home), jobID, owner); err != nil {
 					s.log.Debug(fmt.Sprintf("Job '%s': script run_claim heartbeat failed", jobID), "error", err)
 				}
 			}

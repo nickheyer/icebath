@@ -59,8 +59,8 @@ func exitInvalid(msg string) error {
 }
 
 // Prints the managed install refusal for an action to standard error
-func ManagedError(h, action string) {
-	fmt.Fprintln(FacadeNoticeOut, FormatManagedMessage(h, action))
+func ManagedError(ctx context.Context, h, action string) {
+	fmt.Fprintln(FacadeNoticeOut, FormatManagedMessage(ctx, h, action))
 }
 
 var (
@@ -466,7 +466,7 @@ func touchSkinFile(h, key string, value any) {
 
 // Writes the raw user config, reporting the change to the saved observer when one is installed
 func writeUserConfig(ctx context.Context, h, configPath string, userConfig map[string]any) error {
-	if err := EnsureIcebathHome(h); err != nil {
+	if err := EnsureIcebathHome(ctx, h); err != nil {
 		return err
 	}
 	facadeMu.RLock()
@@ -503,8 +503,8 @@ func printUnknownKeyNotice(key, suggestion string) {
 
 // Sets a dotted config key, routing env shaped keys to .env and refusing wrong shapes, managed and locked keys
 func SetConfigValue(ctx context.Context, h, key, value string, force bool, src ConfigCommandSources) error {
-	if ManagedSystem(h) != "" {
-		ManagedError(h, "set configuration values")
+	if ManagedSystem(ctx, h) != "" {
+		ManagedError(ctx, h, "set configuration values")
 		return nil
 	}
 	if key != strings.TrimFunc(key, isPySpace) || strings.TrimFunc(key, isPySpace) == "" {
@@ -698,8 +698,8 @@ func GetConfigValue(ctx context.Context, h, key string, asJSON, raw bool, src Co
 
 // Removes a user set config or .env value, refusing managed and locked keys
 func UnsetConfigValue(ctx context.Context, h, key string, src ConfigCommandSources) error {
-	if ManagedSystem(h) != "" {
-		ManagedError(h, "unset configuration values")
+	if ManagedSystem(ctx, h) != "" {
+		ManagedError(ctx, h, "unset configuration values")
 		return nil
 	}
 	if err := exitIfKeyManaged(ctx, h, key, "unset"); err != nil {
@@ -962,7 +962,7 @@ func cmdConfigMigrate(ctx context.Context, h string) error {
 	if err != nil {
 		return err
 	}
-	current, latest, err := CheckConfigVersion(h, true)
+	current, latest, err := CheckConfigVersion(ctx, h, true)
 	if err != nil {
 		return err
 	}
@@ -1025,7 +1025,7 @@ func cmdConfigMigrate(ctx context.Context, h string) error {
 // Non interactive report of missing and stale configuration
 func cmdConfigCheck(ctx context.Context, h string, src ConfigCommandSources) error {
 	printBanner("\U0001f4cb Configuration Status")
-	current, latest, err := CheckConfigVersion(h, true)
+	current, latest, err := CheckConfigVersion(ctx, h, true)
 	if err != nil {
 		return err
 	}
@@ -1043,7 +1043,7 @@ func cmdConfigCheck(ctx context.Context, h string, src ConfigCommandSources) err
 		{"Required", RequiredEnvVars, SortedEnvNames(RequiredEnvVars), func(n string, _ EnvVar) string {
 			return colorize("    ✗ "+n+" (missing)", ansiRed)
 		}},
-		{"Optional", OptionalEnvVars, optionalEnvVarNames(), func(n string, i EnvVar) string {
+		{"Optional", OptionalEnvVars.Copy(), OptionalEnvVars.Names(), func(n string, i EnvVar) string {
 			return colorize("    ○ "+n+toolsSuffix(i, " → {}"), ansiDim)
 		}},
 	}

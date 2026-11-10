@@ -12,6 +12,7 @@ import (
 )
 
 func init() {
+	armProviderEnv(config.OptionalEnvVars, config.StaticCoreEnvNames())
 	config.RegisterConfigFacade(config.FacadeHooks{
 		ApplyUserMoAPresets: ApplyUserMoAPresets,
 		SkipDeepMerge:       SkipDeepMerge,
@@ -110,6 +111,11 @@ func configFacadeExtraEnvKeys() []string {
 	out := make([]string, 0, len(extraEnvKeys))
 	for name := range extraEnvKeys {
 		out = append(out, name)
+	}
+	for _, name := range leftCoreProfileEnv() {
+		if !extraEnvKeys[name] {
+			out = append(out, name)
+		}
 	}
 	return out
 }

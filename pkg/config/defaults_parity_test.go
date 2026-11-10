@@ -1028,3 +1028,13 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 		t.Errorf("schema version %v, want 52", Defaults()["_config_version"])
 	}
 }
+
+func TestConfigDefaultsHaveNoGatewayServiceKey(t *testing.T) {
+	gateway, ok := Defaults()["gateway"].(map[string]any)
+	if !ok {
+		t.Fatal("the defaults carry a gateway mapping")
+	}
+	if _, has := gateway["service"]; has {
+		t.Fatal("gateway.service (the SCM posture key) must stay removed")
+	}
+}

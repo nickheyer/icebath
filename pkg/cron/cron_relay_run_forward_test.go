@@ -169,7 +169,7 @@ func TestTriggerJobPromptStamp(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()
 	job := mustCreate(t, s, CreateJobOptions{Prompt: strPtr("daily report"), Schedule: "0 9 * * *", Name: strPtr("stamp-test")})
-	triggered, err := s.triggerJob(job.ID, "just EU today")
+	triggered, err := s.triggerJob(ctx, job.ID, "just EU today")
 	if err != nil || deref(triggered.ManualRunPrompt) != "just EU today" || deref(triggered.ManualRunAt) != deref(triggered.NextRunAt) {
 		t.Fatalf("triggered %+v %v", triggered, err)
 	}
@@ -178,8 +178,8 @@ func TestTriggerJobPromptStamp(t *testing.T) {
 		t.Fatalf("stamp kept %+v", after)
 	}
 	other := mustCreate(t, s, CreateJobOptions{Prompt: strPtr("daily report"), Schedule: "0 9 * * *", Name: strPtr("stamp-test-2")})
-	s.triggerJob(other.ID, "first context")
-	if re, _ := s.triggerJob(other.ID, ""); re.ManualRunPrompt != nil {
+	s.triggerJob(ctx, other.ID, "first context")
+	if re, _ := s.triggerJob(ctx, other.ID, ""); re.ManualRunPrompt != nil {
 		t.Fatalf("stale stamp %v", *re.ManualRunPrompt)
 	}
 }

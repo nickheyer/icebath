@@ -253,7 +253,7 @@ func TestGoodBackupIsWrittenOnlyForTheActiveHome(t *testing.T) {
 // Backup path of a config, failing the test when the backend selection errors
 func mustBackup(t *testing.T, path, reason string, keep int) string {
 	t.Helper()
-	dest, err := BackupConfig(path, reason, keep)
+	dest, err := BackupConfig(context.Background(), path, reason, keep)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,23 +266,23 @@ func TestBackupCallersPropagateAnUnavailableBackend(t *testing.T) {
 	os.WriteFile(path, []byte("model: [unterminated\n"), 0o600)
 	t.Setenv(BackendEnv, "bogus")
 	var unavailable *ConfigBackendUnavailable
-	if got, err := BackupConfig(path, "test", DefaultBackupKeep); got != "" || !errors.As(err, &unavailable) {
+	if got, err := BackupConfig(context.Background(), path, "test", DefaultBackupKeep); got != "" || !errors.As(err, &unavailable) {
 		t.Fatalf("backup %q %v", got, err)
 	}
-	if got, err := LoadNewestGoodBackup(path); got != nil || !errors.As(err, &unavailable) {
+	if got, err := LoadNewestGoodBackup(context.Background(), path); got != nil || !errors.As(err, &unavailable) {
 		t.Fatalf("good backup %v %v", got, err)
 	}
 	quietParseFailures(t)
-	if err := WarnConfigParseFailure(path, fmt.Errorf("bad yaml"), "defaults"); !errors.As(err, &unavailable) {
+	if err := WarnConfigParseFailure(context.Background(), path, fmt.Errorf("bad yaml"), "defaults"); !errors.As(err, &unavailable) {
 		t.Fatalf("parse warning %v", err)
 	}
-	if _, err := recoverUserRaw(path, fmt.Errorf("bad yaml")); !errors.As(err, &unavailable) {
+	if _, err := recoverUserRaw(context.Background(), path, fmt.Errorf("bad yaml")); !errors.As(err, &unavailable) {
 		t.Fatalf("recovery %v", err)
 	}
-	if _, err := lastKnownGoodFallback(path, nil, fmt.Errorf("bad yaml"), processLookup); !errors.As(err, &unavailable) {
+	if _, err := lastKnownGoodFallback(context.Background(), path, nil, fmt.Errorf("bad yaml"), processLookup); !errors.As(err, &unavailable) {
 		t.Fatalf("last known good %v", err)
 	}
-	if _, err := dockerBackupExisting(path); !errors.As(err, &unavailable) {
+	if _, err := dockerBackupExisting(context.Background(), path); !errors.As(err, &unavailable) {
 		t.Fatalf("docker backups %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(h, "backups")); !os.IsNotExist(err) {

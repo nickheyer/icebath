@@ -65,7 +65,7 @@ func TestRelayEnvBridgesKeepTheEnvFileMode(t *testing.T) {
 	if !relayEnvLineDefinesKey(lines[1], "B") || relayEnvLineDefinesKey(lines[0], "B") {
 		t.Fatalf("defines key")
 	}
-	if err := relayEnvWriteLines(path, []string{"# migrated\n", "C=3\n"}); err != nil {
+	if err := relayEnvWriteLines(context.Background(), path, []string{"# migrated\n", "C=3\n"}); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(path)

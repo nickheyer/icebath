@@ -25,7 +25,7 @@ func lenientCSVRows(text string) ([][]string, error) {
 
 // Registered scheduled task owning home, verified against its definition and this account
 func windowsExistingService(ctx context.Context, h string, deadline float64) (*ExistingService, error) {
-	suffix, err := ServiceSuffix(h)
+	suffix, err := ServiceSuffix(ctx, h)
 	if err != nil {
 		return nil, err
 	}

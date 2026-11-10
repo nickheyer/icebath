@@ -153,13 +153,7 @@ func buildSwitchedClient(ctx context.Context, a *AIAgent, newProvider, apiKey, b
 	if cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv); err != nil {
 		agentRuntimeHelpersLog().Debug("custom-provider TLS resolution skipped on switch_model")
 	} else {
-		tls := provider.CustomProviderTLSSettings(effectiveBase, provider.CompatibleCustomProviders(cfg), nil)
-		if tls.CACert != "" {
-			a.clientKwargs["ssl_ca_cert"] = tls.CACert
-		}
-		if tls.HasVerify {
-			a.clientKwargs["ssl_verify"] = tls.Verify
-		}
+		provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, effectiveBase, provider.CompatibleCustomProviders(cfg), nil)
 	}
 	if hasTimeout {
 		a.clientKwargs["timeout"] = timeout

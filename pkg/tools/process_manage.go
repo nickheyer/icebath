@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -109,26 +108,27 @@ func redactProcessResult(env *Env, result map[string]any) map[string]any {
 }
 
 // Lists the task's processes plus the session scoped ones sharing the gateway session key
-func listProcesses(ctx context.Context, env *Env, taskID string) map[string]any {
+func listProcesses(ctx context.Context, env *Env, taskID string) *pyjson.Object {
 	sessionKey := getCurrentSessionKey(env, "")
-	processes := []map[string]any{}
-	for _, p := range processRegistry.ListSessions(WithEnvHome(ctx, env), env, taskID, sessionKey, true) {
-		processes = append(processes, redactProcessResult(env, p))
+	processes := []*pyjson.Object{}
+	for _, p := range processRegistry.listSessionDicts(WithEnvHome(ctx, env), env, taskID, sessionKey, true) {
+		redactProcessResult(env, p.Vals)
+		processes = append(processes, p)
 	}
-	return map[string]any{"processes": processes}
+	return Dict("processes", processes)
 }
 
 // Session actions with their handler and whether the result carries output to redact
 type processAction struct {
-	run    func(ctx context.Context, env *Env, sid string, args map[string]any) map[string]any
+	run    func(ctx context.Context, env *Env, sid string, args map[string]any) *pyjson.Object
 	redact bool
 }
 
 var sessionActions = map[string]processAction{
-	"poll": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
-		return processRegistry.Poll(WithEnvHome(ctx, env), env, sid)
+	"poll": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+		return processRegistry.pollDict(WithEnvHome(ctx, env), env, sid)
 	}, true},
-	"log": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
+	"log": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
 		var offset *int
 		if n, ok := asIntValue(a["offset"]); ok && a["offset"] != nil {
 			offset = &n
@@ -137,26 +137,26 @@ var sessionActions = map[string]processAction{
 		if n, ok := asIntValue(a["limit"]); ok && a["limit"] != nil {
 			limit = n
 		}
-		return processRegistry.ReadLog(env, sid, offset, limit)
+		return processRegistry.readLogDict(env, sid, offset, limit)
 	}, true},
-	"wait": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
+	"wait": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
 		var timeout *int
 		if n, ok := asIntValue(a["timeout"]); ok && a["timeout"] != nil {
 			timeout = &n
 		}
-		return processRegistry.Wait(ctx, env, sid, timeout)
+		return processRegistry.waitDict(ctx, env, sid, timeout)
 	}, true},
-	"kill": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
-		return processRegistry.KillProcess(WithEnvHome(ctx, env), env, sid, "process.kill", true)
+	"kill": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+		return processRegistry.killDict(WithEnvHome(ctx, env), env, sid, "process.kill", true)
 	}, true},
-	"write": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
-		return processRegistry.WriteStdin(env, sid, pyStrOrEmpty(a["data"]))
+	"write": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+		return processRegistry.writeStdinDict(env, sid, pyStrOrEmpty(a["data"]))
 	}, false},
-	"submit": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
-		return processRegistry.SubmitStdin(env, sid, pyStrOrEmpty(a["data"]))
+	"submit": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+		return processRegistry.submitStdinDict(env, sid, pyStrOrEmpty(a["data"]))
 	}, false},
-	"close": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
-		return processRegistry.CloseStdin(env, sid)
+	"close": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+		return processRegistry.closeStdinDict(env, sid)
 	}, false},
 }
 
@@ -164,47 +164,43 @@ var sessionActions = map[string]processAction{
 const maxHandoffsPerChild = 3
 
 // Transfers a running background process from a subagent to its parent agent
-func handoffProcess(env *Env, sessionID string, args map[string]any, taskID string) map[string]any {
+func handoffProcess(env *Env, sessionID string, args map[string]any, taskID string) *pyjson.Object {
 	var child SubagentHandoff
 	if SubagentHandoffResolver != nil {
 		child = SubagentHandoffResolver(taskID)
 	}
 	if child == nil || child.ParentSessionID() == "" && child.ParentOwner() == "" {
-		return map[string]any{"error": "handoff is only available to a running subagent with a live parent; you are not one."}
+		return Dict("error", "handoff is only available to a running subagent with a live parent; you are not one.")
 	}
 	parentOwner := child.ParentOwner()
 	if parentOwner == "" {
-		return map[string]any{"error": "parent has no process owner id yet; retry after the parent's turn has started."}
+		return Dict("error", "parent has no process owner id yet; retry after the parent's turn has started.")
 	}
 	if len(child.HandedOff()) >= maxHandoffsPerChild {
-		return map[string]any{"error": fmt.Sprintf("handoff cap reached (%d per subagent); wait on or kill the rest yourself.", maxHandoffsPerChild)}
+		return Dict("error", fmt.Sprintf("handoff cap reached (%d per subagent); wait on or kill the rest yourself.", maxHandoffsPerChild))
 	}
 	note := strings.TrimSpace(pyStrOrEmpty(args["data"]))
 	if note == "" {
-		return map[string]any{"error": "handoff requires `data`: one sentence saying what the process is for and what the parent should do with its result."}
+		return Dict("error", "handoff requires `data`: one sentence saying what the process is for and what the parent should do with its result.")
 	}
 	toTaskID, err := resolveContainerTaskID(env, parentOwner)
 	if err != nil {
-		return map[string]any{"error": err.Error()}
+		return Dict("error", err.Error())
 	}
 	s := processRegistry.TransferOwnership(env, sessionID, taskID, parentOwner, toTaskID, child.ParentSessionID(), note)
 	if s == nil {
-		return map[string]any{"error": fmt.Sprintf("cannot hand off %s: not a running process you own (already exited? read its result with poll/log and report it instead).", sessionID)}
+		return Dict("error", fmt.Sprintf("cannot hand off %s: not a running process you own (already exited? read its result with poll/log and report it instead).", sessionID))
 	}
 	child.AppendHandoff(map[string]any{"session_id": s.ID, "command": s.Command, "note": note})
-	return map[string]any{
-		"status": "handed_off", "session_id": s.ID, "command": s.Command,
-		"note": "Your parent now owns this process and will receive its completion; you will not. Mention the handoff in your final answer.",
-	}
+	return Dict(
+		"status", "handed_off", "session_id", s.ID, "command", s.Command,
+		"note", "Your parent now owns this process and will receive its completion; you will not. Mention the handoff in your final answer.",
+	)
 }
 
 // JSON without HTML escaping, the ensure_ascii false dump the model reads
 func processJSON(v any) string {
-	b, err := pyjson.EncodeWTF8(v)
-	if err != nil {
-		return ErrorResult(err)
-	}
-	return string(b)
+	return JSON(v)
 }
 
 // Dispatches one process_manage call
@@ -221,21 +217,21 @@ func handleProcess(ctx context.Context, call *Call) string {
 	}
 	if action == "handoff" {
 		if sessionID == "" {
-			return ErrorResult(errors.New("session_id is required for handoff"))
+			return toolErrorJSON("session_id is required for handoff", nil)
 		}
 		return processJSON(handoffProcess(env, sessionID, args, call.TaskID))
 	}
 	if entry, ok := sessionActions[action]; ok {
 		if sessionID == "" {
-			return ErrorResult(fmt.Errorf("session_id is required for %s", action))
+			return toolErrorJSON(fmt.Sprintf("session_id is required for %s", action), nil)
 		}
 		result := applyWaitPollPolicy(ctx, env, action, sessionID, entry.run(ctx, env, sessionID, args))
 		if entry.redact {
-			result = redactProcessResult(env, result)
+			redactProcessResult(env, result.Vals)
 		}
 		return processJSON(result)
 	}
-	return ErrorResult(fmt.Errorf("Unknown process action: %s. Use: list, poll, log, wait, kill, write, submit, close, handoff", action))
+	return toolErrorJSON(fmt.Sprintf("Unknown process action: %s. Use: list, poll, log, wait, kill, write, submit, close, handoff", action), nil)
 }
 
 func init() {

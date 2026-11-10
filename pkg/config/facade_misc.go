@@ -88,7 +88,7 @@ func RequireParseableUserConfig(ctx context.Context, h string, ignoreUserConfig 
 		}
 		parseErr = fmt.Errorf("top-level YAML value must be a mapping, got %s", PyTypeName(data))
 	}
-	backup, berr := BackupConfig(configPath, "corrupt", DefaultBackupKeep)
+	backup, berr := BackupConfig(ctx, configPath, "corrupt", DefaultBackupKeep)
 	if berr != nil {
 		return berr
 	}
@@ -130,7 +130,7 @@ func SeedConfigFile(ctx context.Context, h, configPath, template string) (bool, 
 		if err := os.Chtimes(configPath, info.ModTime(), info.ModTime()); err != nil {
 			return false, err
 		}
-		SecureFile(h, configPath)
+		SecureFile(ctx, h, configPath)
 		return true, nil
 	}
 	return false, SaveConfig(ctx, h, map[string]any(Defaults()), SaveOptions{})
@@ -152,8 +152,8 @@ var runEditor = func(editor, path string) error {
 
 // Opens the config file in the user editor, seeding a missing file first
 func EditConfig(ctx context.Context, h string) error {
-	if ManagedSystem(h) != "" {
-		ManagedError(h, "edit configuration")
+	if ManagedSystem(ctx, h) != "" {
+		ManagedError(ctx, h, "edit configuration")
 		return nil
 	}
 	files, err := SupportsFileTooling(ctx)

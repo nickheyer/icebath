@@ -51,7 +51,7 @@ func addZonedJob(t *testing.T, s *Store, schedule string, timezone any, grace an
 
 func storedJob(t *testing.T, s *Store, id string) *Job {
 	t.Helper()
-	jobs, err := s.LoadJobs()
+	jobs, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestNullAndAbsentAreTheSameJob(t *testing.T) {
 func TestClearingThePinThroughUpdateDropsTheKey(t *testing.T) {
 	s, _, _ := laStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("p"), Schedule: weekday9AM, Model: "fixture", Deliver: prompt("local"), Timezone: "Asia/Hong_Kong"})
-	if _, err := s.updateJob(job.ID, map[string]any{"timezone": ""}); err != nil {
+	if _, err := s.updateJob(context.Background(), job.ID, map[string]any{"timezone": ""}); err != nil {
 		t.Fatal(err)
 	}
 	if _, has := rawStoredRows(t, s)[0]["timezone"]; has {
@@ -241,7 +241,7 @@ func TestChangingThePinRecomputesTheStoredInstant(t *testing.T) {
 	s, _, _ := laStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("p"), Schedule: weekday9AM, Model: "fixture", Deliver: prompt("local"), Timezone: "America/New_York"})
 	before := deref(storedJob(t, s, job.ID).NextRunAt)
-	if _, err := s.updateJob(job.ID, map[string]any{"timezone": "Asia/Hong_Kong"}); err != nil {
+	if _, err := s.updateJob(context.Background(), job.ID, map[string]any{"timezone": "Asia/Hong_Kong"}); err != nil {
 		t.Fatal(err)
 	}
 	after := storedJob(t, s, job.ID).NextRunAt
@@ -321,7 +321,7 @@ func TestZeroGraceSkipsOutrightWhenCatchUpIsDisabled(t *testing.T) {
 
 func TestGraceIsRefusedOnANonCronSchedule(t *testing.T) {
 	s, _, _ := laStore(t)
-	_, err := s.createJob(CreateJobOptions{Prompt: prompt("p"), Schedule: "every 5m", Model: "fixture", Deliver: prompt("local"), GraceMinutes: 30})
+	_, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("p"), Schedule: "every 5m", Model: "fixture", Deliver: prompt("local"), GraceMinutes: 30})
 	if err == nil || !strings.Contains(err.Error(), "grace_minutes only applies to cron") {
 		t.Fatalf("err %v", err)
 	}

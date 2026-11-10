@@ -188,7 +188,7 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 func (s *Store) recordFireOwnershipLost(ctx context.Context, job *Job, fireOwner *string, executionID string) error {
 	ledger := openExecutionsLedger(s)
 	if fireOwner != nil {
-		owns, err := s.heartbeatFireClaim(job.ID, *fireOwner)
+		owns, err := s.heartbeatFireClaim(home.WithOverride(ctx, s.home), job.ID, *fireOwner)
 		if err != nil {
 			return err
 		}
@@ -307,7 +307,7 @@ func (f *fireOwnership) lost(ctx context.Context) bool {
 		return false
 	}
 	latched := f.claimLost != nil && f.claimLost.IsSet()
-	owns, err := f.s.heartbeatFireClaim(f.job.ID, *f.owner)
+	owns, err := f.s.heartbeatFireClaim(ctx, f.job.ID, *f.owner)
 	if err != nil {
 		f.s.log.Debug(fmt.Sprintf("Job '%s': fire_claim ownership validation failed", f.job.ID), "error", err)
 		return latched
@@ -544,7 +544,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 	fail := func(cause error, contained bool) (bool, error) {
 		var unknown *CronExecutionUnknown
 		if errors.As(cause, &unknown) {
-			if perr := s.pauseForUnknown(job.ID, executionID, cause.Error()); perr != nil {
+			if perr := s.pauseForUnknown(home.WithOverride(ctx, s.home), job.ID, executionID, cause.Error()); perr != nil {
 				s.log.Error(fmt.Sprintf("Cron %s pause for unknown admission failed: %v", job.ID, perr))
 			}
 			if _, gerr := ledger.GiveUp(ctx, executionID, cause.Error()); gerr != nil {

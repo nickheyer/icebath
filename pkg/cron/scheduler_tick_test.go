@@ -15,8 +15,8 @@ import (
 func makeTickDue(t *testing.T, s *Store, id string) string {
 	t.Helper()
 	due := FormatISO(s.clk.now().Add(-30 * time.Second))
-	err := s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+	err := s.withJobsLock(context.Background(), func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(context.Background(), tx)
 		if err != nil {
 			return err
 		}
@@ -25,7 +25,7 @@ func makeTickDue(t *testing.T, s *Store, id string) string {
 				j.NextRunAt = &due
 			}
 		}
-		return s.saveJobsLocked(tx, jobs, nil, false)
+		return s.saveJobsLocked(context.Background(), tx, jobs, nil, false)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func stubGateway(t *testing.T, state, reason string) *int {
 }
 
 func tickStoredJob(t *testing.T, s *Store, id string) *Job {
-	jobs, err := s.LoadJobs()
+	jobs, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

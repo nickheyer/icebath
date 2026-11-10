@@ -66,7 +66,7 @@ type ConsentChatArgs struct {
 }
 
 var (
-	consentIsManaged        = func(h string) bool { return config.ManagedSystem(h) != "" }
+	consentIsManaged        = func(ctx context.Context, h string) bool { return config.ManagedSystem(ctx, h) != "" }
 	recordSendConsentChange = RecordSendConsentChange
 	consentConsole          = cliui.Default
 	consentFlushStdin       = func() { cliui.Default().FlushStdin() }
@@ -143,8 +143,8 @@ func SetAnswer(target map[string]any, enabled, send bool) {
 // Writes the answer to the raw config.yaml, reconciles send windows and purges receipts on an opt out
 func SaveConsent(ctx context.Context, enabled, send bool, cfg map[string]any) error {
 	h := home.Dir(ctx)
-	if consentIsManaged(h) {
-		config.ManagedError(h, "save configuration")
+	if consentIsManaged(ctx, h) {
+		config.ManagedError(ctx, h, "save configuration")
 		return nil
 	}
 	send = enabled && send
@@ -169,7 +169,7 @@ func SaveConsent(ctx context.Context, enabled, send bool, cfg map[string]any) er
 
 // Writes only the raw user config and records the move away from defaults as a recorded raw write
 func writeUserConfig(ctx context.Context, h, configPath string, userConfig map[string]any) error {
-	if err := config.EnsureIcebathHome(h); err != nil {
+	if err := config.EnsureIcebathHome(ctx, h); err != nil {
 		return err
 	}
 	before, readErr := config.ReadUserConfigRaw(ctx, configPath)
@@ -261,7 +261,7 @@ func promptAborted(err error) bool {
 
 // Offers consent at the end of every setup flow to a terminal user whose profile never answered
 func OfferConsentIfUndecided(ctx context.Context, cfg map[string]any) error {
-	if consentIsManaged(home.Dir(ctx)) || setupIsNoninteractive() || !streamIsTerminal(consentConsole().StdinTTY, consentConsole().In) {
+	if consentIsManaged(ctx, home.Dir(ctx)) || setupIsNoninteractive() || !streamIsTerminal(consentConsole().StdinTTY, consentConsole().In) {
 		return nil
 	}
 	st, err := currentState(ctx)
@@ -293,7 +293,7 @@ func OfferConsentBeforeChat(ctx context.Context, args ConsentChatArgs) {
 		return
 	}
 	c := consentConsole()
-	if !(streamIsTerminal(c.StdinTTY, c.In) && streamIsTerminal(c.StdoutTTY, c.Out)) || consentIsManaged(home.Dir(ctx)) {
+	if !(streamIsTerminal(c.StdinTTY, c.In) && streamIsTerminal(c.StdoutTTY, c.Out)) || consentIsManaged(ctx, home.Dir(ctx)) {
 		return
 	}
 	st, err := currentState(ctx)

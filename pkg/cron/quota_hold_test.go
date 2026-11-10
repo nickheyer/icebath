@@ -164,7 +164,7 @@ func TestQuotaHoldParksPastWindowSurvivesStaleRearmAndClearsOnModelReach(t *test
 	if _, leaked := rawStoredRecord(t, s, job.ID)["_quota_hold_seconds"]; leaked {
 		t.Fatal("the transient hold seconds were persisted")
 	}
-	if _, err := s.updateJob(job.ID, map[string]any{"last_run_at": FormatISO(now.Add(-2 * time.Hour))}); err != nil {
+	if _, err := s.updateJob(context.Background(), job.ID, map[string]any{"last_run_at": FormatISO(now.Add(-2 * time.Hour))}); err != nil {
 		t.Fatal(err)
 	}
 	j = mustGet(t, s, job.ID)
@@ -189,7 +189,7 @@ func TestQuotaHoldParksPastWindowSurvivesStaleRearmAndClearsOnModelReach(t *test
 	if mustGet(t, s, job.ID).QuotaHoldUntil == nil {
 		t.Fatal("second hold not stamped")
 	}
-	j, err := s.updateJob(job.ID, map[string]any{"schedule": "every 15m"})
+	j, err := s.updateJob(context.Background(), job.ID, map[string]any{"schedule": "every 15m"})
 	if err != nil {
 		t.Fatal(err)
 	}

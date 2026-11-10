@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,7 @@ func TestInitializeHomeReplacesUnwritableSoulSymlink(t *testing.T) {
 			if err := os.Symlink(filepath.Join(h, tc.target), soul); err != nil {
 				t.Fatal(err)
 			}
-			if err := InitializeHome(h, soulTestSubdirs, map[string]bool{}); err != nil {
+			if err := InitializeHome(context.Background(), h, soulTestSubdirs, map[string]bool{}); err != nil {
 				t.Fatal(err)
 			}
 			if st, _ := os.Lstat(soul); st.Mode()&os.ModeSymlink != 0 {
@@ -51,10 +52,10 @@ func TestSoulSymlinkToCustomizedFileIsLeftAlone(t *testing.T) {
 	if err := os.Symlink(target, soul); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureDefaultSoulMD(h); err != nil {
+	if err := ensureDefaultSoulMD(context.Background(), h); err != nil {
 		t.Fatal(err)
 	}
-	if err := InitializeHome(h, soulTestSubdirs, map[string]bool{}); err != nil {
+	if err := InitializeHome(context.Background(), h, soulTestSubdirs, map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := os.Lstat(soul); st.Mode()&os.ModeSymlink == 0 {
@@ -69,10 +70,10 @@ func TestSoulSymlinkToCustomizedFileIsLeftAlone(t *testing.T) {
 func TestEnsureDefaultSoulWritesThroughAWorkingLinkAndSkipsUndecodableFiles(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "seeded.md")
-	os.WriteFile(target, []byte("\uFEFF"+DefaultIdentity+"\r\n"), 0o644)
+	os.WriteFile(target, []byte("\uFEFF"+legacyTemplateSouls[2]+"\r\n"), 0o644)
 	soul := filepath.Join(dir, "SOUL.md")
 	os.Symlink(target, soul)
-	if err := ensureDefaultSoulMD(dir); err != nil {
+	if err := ensureDefaultSoulMD(context.Background(), dir); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := os.Lstat(soul); st.Mode()&os.ModeSymlink == 0 {
@@ -83,7 +84,7 @@ func TestEnsureDefaultSoulWritesThroughAWorkingLinkAndSkipsUndecodableFiles(t *t
 	}
 	other := t.TempDir()
 	os.WriteFile(filepath.Join(other, "SOUL.md"), []byte{0xff, 0xfe}, 0o644)
-	if err := ensureDefaultSoulMD(other); err != nil {
+	if err := ensureDefaultSoulMD(context.Background(), other); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(filepath.Join(other, "SOUL.md")); string(got) != "\xff\xfe" {

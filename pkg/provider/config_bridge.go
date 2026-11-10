@@ -15,8 +15,8 @@ func configStructureIssueLines(cfg map[string]any) []string {
 }
 
 // Managed install or administrator pin refusal for writing an env key, empty when allowed
-func envWriteRefusal(h, key, action string) string {
-	return config.EnvWriteRefusal(h, key, action)
+func envWriteRefusal(ctx context.Context, h, key, action string) string {
+	return config.EnvWriteRefusal(ctx, h, key, action)
 }
 
 // Records every left core version in use into a first stamped config and adopts its browser env

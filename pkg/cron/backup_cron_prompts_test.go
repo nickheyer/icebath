@@ -149,7 +149,7 @@ func TestConcurrentCronEditsSurviveRecovery(t *testing.T) {
 			fired = append(fired, "fired")
 			s := openCronStore(h, nil)
 			prompt, name := "New prompt.", "new"
-			created, cerr := s.createJob(CreateJobOptions{Prompt: &prompt, Schedule: "every 1h", Name: &name})
+			created, cerr := s.createJob(context.Background(), CreateJobOptions{Prompt: &prompt, Schedule: "every 1h", Name: &name})
 			if cerr != nil {
 				t.Fatal(cerr)
 			}
@@ -161,10 +161,10 @@ func TestConcurrentCronEditsSurviveRecovery(t *testing.T) {
 			if perr != nil {
 				t.Fatal(perr)
 			}
-			if _, uerr := s.updateJob("a", map[string]any{"schedule": every2h}); uerr != nil {
+			if _, uerr := s.updateJob(context.Background(), "a", map[string]any{"schedule": every2h}); uerr != nil {
 				t.Fatal(uerr)
 			}
-			if _, uerr := s.updateJob("b", map[string]any{"prompt": "User rewrote b."}); uerr != nil {
+			if _, uerr := s.updateJob(context.Background(), "b", map[string]any{"prompt": "User rewrote b."}); uerr != nil {
 				t.Fatal(uerr)
 			}
 		}

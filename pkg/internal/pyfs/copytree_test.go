@@ -4,8 +4,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCopyTreeKeepsLinksAppliesIgnoreAndMergesExisting(t *testing.T) {
@@ -102,5 +104,44 @@ func TestCopyTreeAbortableStopsAtTheIgnoreError(t *testing.T) {
 	}
 	if err := CopyTreeAbortable(src, filepath.Join(t.TempDir(), "ok"), false, false, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCopy2KeepsTheAccessTimeApartFromTheModificationTime(t *testing.T) {
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "src.txt"), filepath.Join(dir, "dst.txt")
+	if err := os.WriteFile(src, []byte("payload"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	accessed, modified := time.Now().Add(time.Hour).Truncate(time.Second), time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(src, accessed, modified); err != nil {
+		t.Fatal(err)
+	}
+	if err := Copy2(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(dst)
+	if err != nil || !fi.ModTime().Equal(modified) {
+		t.Fatalf("modification time %v %v", fi, err)
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o640 {
+		t.Fatalf("mode %v", fi.Mode().Perm())
+	}
+	if got := identityAccessTime(t, dst); !got.Equal(accessed) {
+		t.Fatalf("access time %v, the source had %v", got, accessed)
+	}
+	if data, _ := os.ReadFile(dst); string(data) != "payload" {
+		t.Fatalf("content %q", data)
+	}
+	if err := Copy2(src, src); err == nil {
+		t.Fatal("copying a file onto itself is refused")
+	}
+	sub := filepath.Join(dir, "sub")
+	os.Mkdir(sub, 0o755)
+	if err := Copy2(src, sub); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(sub, "src.txt")); string(data) != "payload" {
+		t.Fatalf("copy into a directory %q", data)
 	}
 }

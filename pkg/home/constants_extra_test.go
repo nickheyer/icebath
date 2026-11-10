@@ -272,7 +272,7 @@ func TestScratchExportUsesTheProcessHomeSilently(t *testing.T) {
 	os.MkdirAll(filepath.Join(h, "profiles", "coder"), 0o755)
 	os.WriteFile(filepath.Join(h, "active_profile"), []byte("coder\n"), 0o644)
 	env := map[string]string{"PATH": "/usr/bin:/bin"}
-	if !ApplyScratchTmpEnv(env) || env["TMPDIR"] != filepath.Join(h, "cache", "scratch") {
+	if !ApplyScratchTmpEnv(context.Background(), env) || env["TMPDIR"] != filepath.Join(h, "cache", "scratch") {
 		t.Fatalf("env = %v", env)
 	}
 	if strings.Contains(buf.String(), "ICEBATH_HOME fallback") {
@@ -288,7 +288,7 @@ func TestExplicitHomeScratchDirNeverReadsTheEffectiveHome(t *testing.T) {
 	profile := filepath.Join(h, "profiles", "coder")
 	os.MkdirAll(profile, 0o755)
 	os.WriteFile(filepath.Join(h, "active_profile"), []byte("coder\n"), 0o644)
-	scratch := EnsureScratchDir(profile)
+	scratch := EnsureScratchDir(context.Background(), profile)
 	if scratch != filepath.Join(profile, "cache", "scratch") {
 		t.Fatalf("scratch = %q", scratch)
 	}
@@ -500,7 +500,7 @@ func TestPackagedDirsHonorWrappersThenDefaultThenHome(t *testing.T) {
 func TestNodeLayoutHelpers(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	nodeDir := filepath.Join(tmp, "node")
-	dirs := NodeDirs(tmp)
+	dirs := NodeDirs(context.Background(), tmp)
 	names := CandidateNodeCommandNames(filepath.Join("x", "npm"))
 	if runtime.GOOS == "windows" {
 		if dirs[0] != nodeDir || dirs[1] != filepath.Join(nodeDir, "bin") {
@@ -520,17 +520,17 @@ func TestNodeLayoutHelpers(t *testing.T) {
 	if got := CandidateNodeCommandNames("node.exe"); len(got) != 1 || got[0] != "node.exe" {
 		t.Fatalf("dotted names = %v", got)
 	}
-	if ManagedNodeTreePresent(tmp) {
+	if ManagedNodeTreePresent(context.Background(), tmp) {
 		t.Fatal("empty home reports a node tree")
 	}
 	os.MkdirAll(dirs[0], 0o755)
 	os.MkdirAll(dirs[1], 0o755)
 	os.Mkdir(filepath.Join(dirs[0], CandidateNodeCommandNames("npx")[0]), 0o755)
-	if ManagedNodeTreePresent(tmp) {
+	if ManagedNodeTreePresent(context.Background(), tmp) {
 		t.Fatal("a directory named npx is not a node tree")
 	}
 	os.WriteFile(filepath.Join(dirs[1], CandidateNodeCommandNames("node")[0]), nil, 0o644)
-	if !ManagedNodeTreePresent(tmp) {
+	if !ManagedNodeTreePresent(context.Background(), tmp) {
 		t.Fatal("node file not detected")
 	}
 }

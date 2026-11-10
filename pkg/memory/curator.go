@@ -87,9 +87,9 @@ type CuratorReviewResult struct {
 
 // CuratorHooks is the cron and agent access the curator reaches, installed by pkg/cron and pkg/agent in init
 var CuratorHooks struct {
-	ReferencedSkillNames func(home string) (map[string]bool, error)
-	RewriteSkillRefs     func(home string, consolidated *pyjson.Object, pruned []string) (CuratorCronRewriteReport, error)
-	UpdateJobs           func(home string, update func(jobs []any) (bool, error)) error
+	ReferencedSkillNames func(ctx context.Context, home string) (map[string]bool, error)
+	RewriteSkillRefs     func(ctx context.Context, home string, consolidated *pyjson.Object, pruned []string) (CuratorCronRewriteReport, error)
+	UpdateJobs           func(ctx context.Context, home string, update func(jobs []any) (bool, error)) error
 	RunReview            func(ctx context.Context, req CuratorReviewRequest) (*CuratorReviewResult, error)
 }
 
@@ -347,7 +347,7 @@ func curatorCronReferencedSkills(ctx context.Context) map[string]bool {
 	var refs map[string]bool
 	err := errCronNotLinked
 	if CuratorHooks.ReferencedSkillNames != nil {
-		refs, err = CuratorHooks.ReferencedSkillNames(home.Dir(ctx))
+		refs, err = CuratorHooks.ReferencedSkillNames(ctx, home.Dir(ctx))
 	}
 	if err != nil {
 		curatorLog().Debug(fmt.Sprintf("Curator could not read cron skill references: %v", err))
@@ -876,7 +876,7 @@ func curatorRewriteCronRefs(ctx context.Context, consolidated, pruned []*pyjson.
 	err := errCronNotLinked
 	var rep CuratorCronRewriteReport
 	if CuratorHooks.RewriteSkillRefs != nil {
-		rep, err = CuratorHooks.RewriteSkillRefs(home.Dir(ctx), cmap, names)
+		rep, err = CuratorHooks.RewriteSkillRefs(ctx, home.Dir(ctx), cmap, names)
 	}
 	if err != nil {
 		curatorLog().Debug(fmt.Sprintf("Curator cron skill rewrite failed: %v", err))

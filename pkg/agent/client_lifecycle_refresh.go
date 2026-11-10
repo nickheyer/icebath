@@ -185,13 +185,7 @@ func (a *AIAgent) reapplyRouteClientConfig(ctx context.Context, routeChanged boo
 	delete(a.clientKwargs, "ssl_verify")
 	delete(a.clientKwargs, "ssl_ca_cert")
 	cfg := provider.LoadConfigSafe(home.Dir(ctx))
-	tls := provider.CustomProviderTLSSettings(a.baseURL, provider.CompatibleCustomProviders(cfg), cfg)
-	if tls.CACert != "" {
-		a.clientKwargs["ssl_ca_cert"] = tls.CACert
-	}
-	if tls.HasVerify {
-		a.clientKwargs["ssl_verify"] = tls.Verify
-	}
+	provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, a.baseURL, provider.CompatibleCustomProviders(cfg), cfg)
 	return a.applyClientHeadersForBaseURL(ctx, a.baseURL, !routeChanged)
 }
 

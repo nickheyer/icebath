@@ -36,7 +36,9 @@ func (TerminalEnvironmentProviderDefaults) IsRemote() bool { return true }
 func (TerminalEnvironmentProviderDefaults) IsContainer() bool { return true }
 
 // Dangerous command approval is skipped exactly when the backend is a container
-func (d TerminalEnvironmentProviderDefaults) SkipContainerGuards() bool { return d.self().IsContainer() }
+func (d TerminalEnvironmentProviderDefaults) SkipContainerGuards() bool {
+	return d.self().IsContainer()
+}
 
 // Host paths remain correct for synced cache files
 func (TerminalEnvironmentProviderDefaults) CachePathBase() string { return "" }

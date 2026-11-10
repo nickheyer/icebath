@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -160,12 +161,12 @@ func createJobOptionsFromSpec(spec *pyjson.Object) (CreateJobOptions, error) {
 }
 
 // Persists one job and registers its first trigger with the active provider
-func (s *Store) createJobWithSchedulerRegistration(spec *pyjson.Object) (*Job, error) {
+func (s *Store) createJobWithSchedulerRegistration(ctx context.Context, spec *pyjson.Object) (*Job, error) {
 	opts, err := createJobOptionsFromSpec(spec)
 	if err != nil {
 		return nil, err
 	}
-	job, err := s.createJob(opts)
+	job, err := s.createJob(home.WithOverride(ctx, s.home), opts)
 	if err != nil {
 		return nil, err
 	}

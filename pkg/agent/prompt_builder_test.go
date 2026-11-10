@@ -234,7 +234,7 @@ func TestEmptyDirLoadsSeededGlobalSoul(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Project Context") || !strings.Contains(out, "You are icebath") {
+	if !strings.Contains(out, "Project Context") || !strings.Contains(out, "You are Icebath Agent") {
 		t.Fatalf("seeded soul prompt %q", out)
 	}
 }

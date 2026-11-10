@@ -7,11 +7,13 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -176,7 +178,7 @@ func (b FileBackend) ConfigPath(home string) string {
 	if b.explicit != "" {
 		return b.explicit
 	}
-	return filepath.Join(home, ConfigFilename)
+	return pypath.PathJoin(home, ConfigFilename)
 }
 
 func (b FileBackend) ReadUserDoc(ctx context.Context, home string) (any, error) {
@@ -252,7 +254,7 @@ func (FileBackend) DoctorWarnings(context.Context, string) []DoctorWarning { ret
 
 // The file backend persists migrations to the file and refuses an in memory apply
 func (FileBackend) ApplyInMemory(context.Context, string, map[string]any) error {
-	return errors.New("the file backend persists migrations to config.yaml")
+	return &RuntimeError{Msg: "the file backend persists migrations to config.yaml"}
 }
 
 func (b FileBackend) Describe(_ context.Context, home string) string { return b.ConfigPath(home) }
@@ -361,7 +363,7 @@ func GetConfigBackend(ctx context.Context) (ConfigBackend, error) {
 	if err := ensureBootstrapEnv(ctx); err != nil {
 		return nil, err
 	}
-	kind := strings.ToLower(strings.TrimSpace(os.Getenv(BackendEnv)))
+	kind := pystr.Lower(pystr.Strip(os.Getenv(BackendEnv)))
 	if kind == "" {
 		kind = "file"
 	}
@@ -370,16 +372,18 @@ func GetConfigBackend(ctx context.Context) (ConfigBackend, error) {
 
 // Backend and home serving a config path, a home config.yaml through the selected backend
 func route(ctx context.Context, configPath string) (ConfigBackend, string, error) {
-	if filepath.Base(configPath) == ConfigFilename {
+	path := pypath.PathStr(configPath)
+	if pypath.PathName(path) == ConfigFilename {
 		backend, err := GetConfigBackend(ctx)
-		return backend, filepath.Dir(configPath), err
+		return backend, pypath.PathParent(path), err
 	}
-	return FileBackend{explicit: configPath}, filepath.Dir(configPath), nil
+	return FileBackend{explicit: path}, pypath.PathParent(path), nil
 }
 
 // Local file backend of a path whichever backend is selected, for the PM dependency runtime
 func LocalFileLayer(configPath string) (ConfigBackend, string) {
-	return FileBackend{explicit: configPath}, filepath.Dir(configPath)
+	path := pypath.PathStr(configPath)
+	return FileBackend{explicit: path}, pypath.PathParent(path)
 }
 
 // Parsed root of a config file, nil when empty

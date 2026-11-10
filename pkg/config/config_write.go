@@ -47,7 +47,7 @@ func RequireReadableConfigBeforeWrite(ctx context.Context, configPath string) (m
 		if IsOSError(err) {
 			return nil, RefuseOverwrite(configPath, "cannot be read", err, fixPerms)
 		}
-		if werr := WarnConfigParseFailure(configPath, err, "refuse-write"); werr != nil {
+		if werr := WarnConfigParseFailure(ctx, configPath, err, "refuse-write"); werr != nil {
 			return nil, werr
 		}
 		return nil, RefuseOverwrite(configPath, "has a formatting error", err,
@@ -60,7 +60,7 @@ func RequireReadableConfigBeforeWrite(ctx context.Context, configPath string) (m
 	if !ok {
 		kind := PyTypeName(loaded)
 		terr := fmt.Errorf("top-level YAML must be a mapping, got %s", kind)
-		if werr := WarnConfigParseFailure(configPath, terr, "refuse-write"); werr != nil {
+		if werr := WarnConfigParseFailure(ctx, configPath, terr, "refuse-write"); werr != nil {
 			return nil, werr
 		}
 		return nil, RefuseOverwrite(configPath, "must start with settings names, but its top level is a "+kind, terr,

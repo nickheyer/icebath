@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 )
@@ -46,7 +47,7 @@ func PluginDeclaredConfigKeys(manifests []PluginConfigKeys) map[string]bool {
 	for _, m := range manifests {
 		for _, path := range m.ConfigKeys {
 			if InDefaultConfig(path) {
-				slog.Debug("config_keys ignoring a defaults key", "path", path, "plugin", m.Name)
+				slog.Debug(fmt.Sprintf("config_keys: ignoring %s from plugin %s (a DEFAULT_CONFIG key)", path, m.Name))
 				continue
 			}
 			keys[path] = true

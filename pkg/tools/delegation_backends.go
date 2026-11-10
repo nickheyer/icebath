@@ -113,8 +113,8 @@ func PinnedBackend(a DelegationBackendAgent) string {
 // Persists delegation.backend to the profile config, queueing a next turn rebuild of the session when asked
 func SetGlobalBackend(ctx context.Context, name, sessionKey string, applyNow bool) error {
 	h := home.Dir(ctx)
-	if config.ManagedSystem(h) != "" {
-		return &DelegationBackendError{Kind: "PermissionError", Message: config.FormatManagedMessage(h, "set delegation.backend")}
+	if config.ManagedSystem(ctx, h) != "" {
+		return &DelegationBackendError{Kind: "PermissionError", Message: config.FormatManagedMessage(ctx, h, "set delegation.backend")}
 	}
 	if applyNow && sessionKey == "" {
 		return &DelegationBackendError{Kind: "ValueError", Message: "No session to apply the switch to: apply_now needs the command's session_key."}

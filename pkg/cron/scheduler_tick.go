@@ -121,12 +121,12 @@ func (s *Store) acquireTickLockOrDegrade() (*os.File, error) {
 }
 
 // Persists the recurring advance before any run, dropping the recurring jobs when the store refuses it
-func (s *Store) advanceOrDropRecurring(due []*Job) ([]*Job, error) {
+func (s *Store) advanceOrDropRecurring(ctx context.Context, due []*Job) ([]*Job, error) {
 	ids := make([]string, len(due))
 	for i, j := range due {
 		ids[i] = j.ID
 	}
-	_, err := s.advanceNextRuns(ids)
+	_, err := s.advanceNextRuns(home.WithOverride(ctx, s.home), ids)
 	if err == nil {
 		return due, nil
 	}
@@ -193,7 +193,7 @@ func (s *Store) tickAdmitted(ctx context.Context, o tickOptions) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	s.sweepStaleInflightForTick(due)
+	s.sweepStaleInflightForTick(home.WithOverride(ctx, s.home), due)
 	if o.Headless {
 		if due, err = refuseAgentJobsWithoutGateway(ctx, s, due); err != nil {
 			return 0, err
@@ -203,7 +203,7 @@ func (s *Store) tickAdmitted(ctx context.Context, o tickOptions) (int, error) {
 		if o.Verbose {
 			s.log.Info(fmt.Sprintf("%s - No jobs due", s.clk.now().Format("15:04:05")))
 		}
-		if err := s.recheckIdle(); err != nil {
+		if err := s.recheckIdle(home.WithOverride(ctx, s.home)); err != nil {
 			return 0, err
 		}
 		s.sweepMCPOrphans()
@@ -216,7 +216,7 @@ func (s *Store) tickAdmitted(ctx context.Context, o tickOptions) (int, error) {
 	if o.Verbose {
 		s.log.Info(fmt.Sprintf("%s - %d job(s) due", s.clk.now().Format("15:04:05"), len(due)))
 	}
-	if due, err = s.advanceOrDropRecurring(due); err != nil {
+	if due, err = s.advanceOrDropRecurring(home.WithOverride(ctx, s.home), due); err != nil {
 		return 0, err
 	}
 	if len(due) == 0 {
@@ -288,7 +288,7 @@ func (s *Store) maybeReapDeadOwners(ctx context.Context) {
 }
 
 // Force releases leaked in flight claims before the dedup guard, every job when one in flight is not due
-func (s *Store) sweepStaleInflightForTick(due []*Job) {
+func (s *Store) sweepStaleInflightForTick(ctx context.Context, due []*Job) {
 	local := home.Key(s.Home())
 	inflight.Lock()
 	inflightIDs := map[string]bool{}
@@ -310,7 +310,7 @@ func (s *Store) sweepStaleInflightForTick(due []*Job) {
 	}
 	for id := range inflightIDs {
 		if !dueIDs[id] {
-			if all, err := s.LoadJobs(); err == nil {
+			if all, err := s.LoadJobs(home.WithOverride(ctx, s.home)); err == nil {
 				sweep = all
 			}
 			break
@@ -431,7 +431,7 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 		if job.Kind() != "once" {
 			return
 		}
-		if _, err := s.clearRunClaim(jobID); err != nil {
+		if _, err := s.clearRunClaim(home.WithOverride(ctx, s.home), jobID); err != nil {
 			s.log.Warn(fmt.Sprintf("Could not clear run_claim for job '%s' after dispatch "+
 				"failure: %s (claim will expire at TTL)", label, err))
 		}

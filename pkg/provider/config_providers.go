@@ -3,6 +3,7 @@ package provider
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"os"
 	"regexp"
@@ -12,7 +13,9 @@ import (
 	"sync"
 
 	"context"
+
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Alias spellings of api_mode accepted from older configs mapped onto the canonical transport names
@@ -29,8 +32,8 @@ var trueWords = map[string]bool{"true": true, "1": true, "yes": true, "on": true
 
 // CanonicalAPIMode maps alias spellings onto the canonical transport name and passes unknown values through
 func CanonicalAPIMode(apiMode string) string {
-	cleaned := strings.TrimSpace(apiMode)
-	if canon, ok := apiModeAliases[strings.ToLower(cleaned)]; ok {
+	cleaned := pystr.Strip(apiMode)
+	if canon, ok := apiModeAliases[pystr.Lower(cleaned)]; ok {
 		return canon
 	}
 	return cleaned
@@ -470,8 +473,8 @@ func CompatibleCustomProviders(cfg map[string]any) []map[string]any {
 	if raw, ok := cfg["custom_providers"]; ok && raw != nil {
 		list, isList := asList(raw)
 		if !isList {
-			slog.Default().Warn(fmt.Sprintf("custom_providers is a %T, expected a list — skipping legacy entries; "+
-				"'providers:' entries are still used. Move provider configs to the 'providers:' section.", raw))
+			slog.Default().Warn(fmt.Sprintf("custom_providers is a %s, expected a list — skipping legacy entries; "+
+				"'providers:' entries are still used. Move provider configs to the 'providers:' section.", config.PyTypeName(raw)))
 		}
 		legacy = list
 	}
@@ -616,6 +619,17 @@ func CustomProviderTLSSettings(baseURL string, customProviders []map[string]any,
 	return TLSSettings{}
 }
 
+// Attaches the TLS knobs of the entry serving the base URL to OpenAI client kwargs
+func ApplyCustomProviderTLSToClientKwargs(clientKwargs map[string]any, baseURL string, customProviders []map[string]any, cfg map[string]any) {
+	tls := CustomProviderTLSSettings(baseURL, customProviders, cfg)
+	if tls.CACert != "" {
+		clientKwargs["ssl_ca_cert"] = tls.CACert
+	}
+	if tls.HasVerify {
+		clientKwargs["ssl_verify"] = tls.Verify
+	}
+}
+
 // NormalizeExtraHeaders renders a raw extra_headers mapping as string pairs, dropping nil values
 func NormalizeExtraHeaders(extraHeaders any) map[string]string {
 	if typed, ok := extraHeaders.(map[string]string); ok {
@@ -726,11 +740,12 @@ func CustomProviderModelCapability(model, baseURL, capability string, customProv
 }
 
 // IsProviderEnabled reports whether a providers block is enabled, with only an explicit false hiding it
-func IsProviderEnabled(providerCfg map[string]any) bool {
-	if providerCfg == nil {
+func IsProviderEnabled(providerCfg any) bool {
+	block, isMap := providerCfg.(map[string]any)
+	if !isMap {
 		return true
 	}
-	flag, ok := providerCfg["enabled"]
+	flag, ok := block["enabled"]
 	if !ok {
 		return true
 	}
@@ -738,7 +753,7 @@ func IsProviderEnabled(providerCfg map[string]any) bool {
 	case bool:
 		return f
 	case string:
-		return !falseWords[strings.ToLower(strings.TrimSpace(f))]
+		return !falseWords[pystr.Lower(pystr.Strip(f))]
 	}
 	return truthy(flag)
 }
@@ -746,18 +761,41 @@ func IsProviderEnabled(providerCfg map[string]any) bool {
 // ---- provider profile env var entries (config_provider_env) ----
 
 var (
-	providerEnvMu       sync.Mutex
-	providerEnvCatalog  map[string]config.EnvVar
-	providerEnvNames    = map[string]bool{}
-	staticEnvNames      map[string]bool
-	staticEnvNamesOnce  sync.Once
-	providerEnvFillOnce sync.Once
+	providerEnvMu         sync.Mutex
+	providerEnvCatalog    []config.NamedEnvVar
+	providerEnvCatalogSet bool
+	providerEnvNames      = map[string]bool{}
+	providerEnvStatic     = map[string]bool{}
+	providerEnvTable      = config.OptionalEnvVars
+	providerEnvBundled    = BundledProfiles
 )
+
+// Records the names core declares and arms the table so its first read adds the bundled provider entries
+func armProviderEnv(table *config.OptionalEnvTable, static map[string]bool) {
+	providerEnvMu.Lock()
+	providerEnvStatic = maps.Clone(static)
+	providerEnvMu.Unlock()
+	table.Arm(ProviderEnvEntries, publishProviderEnvNames)
+}
+
+// Adds the names of entries a fill or a sync put in the table to the provider declared names
+func publishProviderEnvNames(entries []config.NamedEnvVar) {
+	providerEnvMu.Lock()
+	defer providerEnvMu.Unlock()
+	for _, e := range entries {
+		providerEnvNames[e.Name] = true
+	}
+}
 
 // Names config declared before any platform manifest or provider profile entry was added
 func staticDeclaredEnvNames() map[string]bool {
-	staticEnvNamesOnce.Do(func() { staticEnvNames = config.StaticCoreEnvNames() })
-	return staticEnvNames
+	providerEnvMu.Lock()
+	defer providerEnvMu.Unlock()
+	out := make(map[string]bool, len(providerEnvStatic))
+	for name := range providerEnvStatic {
+		out[name] = true
+	}
+	return out
 }
 
 // Key env names then the base URL env name, the order the env_vars tuple of the profile lists them
@@ -769,20 +807,19 @@ func profileEnvVars(p Profile) []string {
 	return out
 }
 
-// Entries for the api_key profiles' env vars minus skipped names, first profile to declare a name wins
-func providerEnvEntriesFor(profiles []Profile, skip map[string]bool) map[string]config.EnvVar {
-	entries := map[string]config.EnvVar{}
+// Entries for the api_key profiles' env vars minus skipped names in profile order, first profile to declare a name wins
+func providerEnvEntriesFor(profiles []Profile, skip map[string]bool) []config.NamedEnvVar {
+	var entries []config.NamedEnvVar
+	seen := map[string]bool{}
 	for _, p := range profiles {
 		if p.AuthType != AuthTypeAPIKey {
 			continue
 		}
 		for _, v := range profileEnvVars(p) {
-			if skip[v] {
+			if skip[v] || seen[v] {
 				continue
 			}
-			if _, has := entries[v]; has {
-				continue
-			}
+			seen[v] = true
 			isKey := !(strings.HasSuffix(v, "_BASE_URL") || strings.HasSuffix(v, "_URL"))
 			label := p.Label()
 			entry := config.EnvVar{Category: "provider", Advanced: true, Password: isKey, URL: p.SignupURL}
@@ -793,61 +830,56 @@ func providerEnvEntriesFor(profiles []Profile, skip map[string]bool) map[string]
 				entry.Description = label + " base URL override"
 				entry.Prompt = label + " base URL (leave empty for default)"
 			}
-			entries[v] = entry
+			entries = append(entries, config.NamedEnvVar{Name: v, Entry: entry})
 		}
 	}
 	return entries
 }
 
-// ProviderEnvEntries returns the bundled provider profiles' env var entries, computed once and config free
-func ProviderEnvEntries() map[string]config.EnvVar {
+// ProviderEnvEntries returns the bundled provider profiles' env entries in profile order, computed once and config free
+func ProviderEnvEntries() []config.NamedEnvVar {
 	providerEnvMu.Lock()
-	defer providerEnvMu.Unlock()
-	if providerEnvCatalog == nil {
-		providerEnvCatalog = providerEnvEntriesFor(BundledProfiles(), staticDeclaredEnvNames())
-	}
-	out := make(map[string]config.EnvVar, len(providerEnvCatalog))
-	for k, v := range providerEnvCatalog {
-		out[k] = v
-	}
-	return out
-}
-
-// FillProviderEnvVars adds the provider profile entries to the config table once, core entries winning
-func FillProviderEnvVars() {
-	providerEnvFillOnce.Do(func() {
-		entries := ProviderEnvEntries()
-		providerEnvMu.Lock()
+	if providerEnvCatalogSet {
 		defer providerEnvMu.Unlock()
-		for name, entry := range entries {
-			if _, has := config.OptionalEnvVars[name]; has && staticDeclaredEnvNames()[name] {
-				continue
-			}
-			config.OptionalEnvVars[name] = entry
-			providerEnvNames[name] = true
-		}
-	})
-}
-
-// SyncRegisteredProviders adds the env vars of provider profiles registered after the bundled set
-func SyncRegisteredProviders(profiles []Profile) {
-	FillProviderEnvVars()
+		return slices.Clone(providerEnvCatalog)
+	}
+	bundled, static := providerEnvBundled, providerEnvStatic
+	providerEnvMu.Unlock()
+	entries := providerEnvEntriesFor(bundled(), static)
 	providerEnvMu.Lock()
 	defer providerEnvMu.Unlock()
+	providerEnvCatalog, providerEnvCatalogSet = entries, true
+	return slices.Clone(providerEnvCatalog)
+}
+
+// FillProviderEnvVars reads the table once so its armed provider fill has run
+func FillProviderEnvVars() {
+	providerEnvMu.Lock()
+	table := providerEnvTable
+	providerEnvMu.Unlock()
+	table.Has("")
+}
+
+// SyncRegisteredProviders adds the env vars of the process wide plugin provider profiles discovery registered
+func SyncRegisteredProviders(profiles []Profile) {
+	providerEnvMu.Lock()
 	skip := map[string]bool{}
-	for name := range staticDeclaredEnvNames() {
+	for name := range providerEnvStatic {
 		skip[name] = true
 	}
 	for name := range providerEnvNames {
 		skip[name] = true
 	}
-	for name := range providerEnvCatalog {
-		skip[name] = true
+	for _, e := range providerEnvCatalog {
+		skip[e.Name] = true
 	}
-	for name, entry := range providerEnvEntriesFor(profiles, skip) {
-		config.OptionalEnvVars[name] = entry
-		providerEnvNames[name] = true
+	table := providerEnvTable
+	providerEnvMu.Unlock()
+	entries := providerEnvEntriesFor(profiles, skip)
+	for _, e := range entries {
+		table.Set(e.Name, e.Entry)
 	}
+	publishProviderEnvNames(entries)
 }
 
 // CoreDeclaredEnvNames lists every name core declares, static entries plus provider profile entries
@@ -856,7 +888,7 @@ func CoreDeclaredEnvNames() map[string]bool {
 	providerEnvMu.Lock()
 	defer providerEnvMu.Unlock()
 	out := map[string]bool{}
-	for name := range staticDeclaredEnvNames() {
+	for name := range providerEnvStatic {
 		out[name] = true
 	}
 	for name := range providerEnvNames {
@@ -920,7 +952,7 @@ func IsSetupHiddenEnv(name string) bool {
 // IsRegisteredEnvName reports whether icebath itself enumerates the variable name
 func IsRegisteredEnvName(name string) bool {
 	FillProviderEnvVars()
-	if _, ok := config.OptionalEnvVars[name]; ok {
+	if config.OptionalEnvVars.Has(name) {
 		return true
 	}
 	if extraEnvKeys[name] {
@@ -968,7 +1000,7 @@ func dropConfigYAMLCopies(ctx context.Context, h, key string) (bool, error) {
 // SaveEnvSetting writes an environment setting to .env and drops stale config.yaml copies
 func SaveEnvSetting(ctx context.Context, h, key, value string) error {
 	upper := strings.ToUpper(key)
-	if refusal := envWriteRefusal(h, upper, "set"); refusal != "" {
+	if refusal := envWriteRefusal(ctx, h, upper, "set"); refusal != "" {
 		return fmt.Errorf("%s", refusal)
 	}
 	if err := config.SaveEnvValue(h, upper, value); err != nil {
@@ -981,7 +1013,7 @@ func SaveEnvSetting(ctx context.Context, h, key, value string) error {
 // RemoveEnvSetting removes the .env entry and any stale config.yaml copy and reports whether either existed
 func RemoveEnvSetting(ctx context.Context, h, key string) (bool, error) {
 	upper := strings.ToUpper(key)
-	if refusal := envWriteRefusal(h, upper, "remove"); refusal != "" {
+	if refusal := envWriteRefusal(ctx, h, upper, "remove"); refusal != "" {
 		return false, fmt.Errorf("%s", refusal)
 	}
 	removed, err := config.RemoveHomeEnvValue(context.Background(), h, upper)
@@ -1102,7 +1134,7 @@ func ProviderCatalog() []ProviderDescriptor {
 			label = entry.Slug
 		}
 		if signup == "" && len(apiKeyVars) > 0 {
-			signup = config.OptionalEnvVars[apiKeyVars[0]].URL
+			signup = config.OptionalEnvVars.Entry(apiKeyVars[0]).URL
 		}
 		if desc == "" {
 			desc = entry.TUIDesc

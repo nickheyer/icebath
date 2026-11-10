@@ -1,6 +1,7 @@
 package home
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,7 +14,7 @@ func TestScratchEnvFollowsHomeAndRespectsUserTmpdir(t *testing.T) {
 	tmp := t.TempDir()
 	homeA, homeB := filepath.Join(tmp, "a"), filepath.Join(tmp, "b")
 	env := map[string]string{"ICEBATH_HOME": homeA}
-	if !ApplyScratchTmpEnv(env) {
+	if !ApplyScratchTmpEnv(context.Background(), env) {
 		t.Fatal("unset temp vars must be written")
 	}
 	scratchA := filepath.Join(homeA, "cache", "scratch")
@@ -26,11 +27,11 @@ func TestScratchEnvFollowsHomeAndRespectsUserTmpdir(t *testing.T) {
 		t.Fatal("scratch dir not created")
 	}
 	env["ICEBATH_HOME"] = homeB
-	if !ApplyScratchTmpEnv(env) || env["TMPDIR"] != filepath.Join(homeB, "cache", "scratch") {
+	if !ApplyScratchTmpEnv(context.Background(), env) || env["TMPDIR"] != filepath.Join(homeB, "cache", "scratch") {
 		t.Fatalf("a child under another home must get that home's scratch, got %q", env["TMPDIR"])
 	}
 	user := map[string]string{"ICEBATH_HOME": homeA, "TMPDIR": "/var/folders/zz"}
-	if ApplyScratchTmpEnv(user) || user["TMPDIR"] != "/var/folders/zz" {
+	if ApplyScratchTmpEnv(context.Background(), user) || user["TMPDIR"] != "/var/folders/zz" {
 		t.Fatal("a user set TMPDIR must be respected")
 	}
 	if _, ok := user[ScratchDirMarkerEnv]; ok {
@@ -66,10 +67,10 @@ func TestBootHookAndEnvHandThePruneToOneChild(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	scratch := filepath.Join(h, "cache", "scratch")
 	env := map[string]string{"ICEBATH_HOME": h}
-	if !ApplyScratchTmpEnv(env) || env["TMPDIR"] != scratch {
+	if !ApplyScratchTmpEnv(context.Background(), env) || env["TMPDIR"] != scratch {
 		t.Fatalf("TMPDIR %q", env["TMPDIR"])
 	}
-	EnsureScratchDir("")
+	EnsureScratchDir(context.Background(), "")
 	if len(*spawned) != 1 || (*spawned)[0] != scratch {
 		t.Fatalf("spawned %v", *spawned)
 	}

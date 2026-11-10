@@ -3,6 +3,7 @@ package cron
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 var ledgerDeliveryOutcome = map[string]string{"delivered": "delivered", "suppressed": "suppressed", "failed": "failed", "unknown": "failed"}
@@ -17,8 +18,8 @@ func (s *Store) settleJobRecord(ctx context.Context, jobID, executionID string, 
 		return false, nil
 	}
 	applied := false
-	err = s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+	err = s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
@@ -43,7 +44,7 @@ func (s *Store) settleJobRecord(ctx context.Context, jobID, executionID string, 
 				return nil
 			}
 			job.LastStatus, job.LastDeliveryError = status, deliveryError
-			return s.saveJobsLocked(tx, jobs, nil, false)
+			return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 		}
 		return nil
 	})

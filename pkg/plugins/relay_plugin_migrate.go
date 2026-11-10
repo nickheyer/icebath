@@ -269,7 +269,7 @@ func MigrateProfileRelayEnv(ctx context.Context, homeDir string, validate bool) 
 		}
 		newLines = append(newLines, tools.RelayPluginsConfigEnv+"="+config.QuoteEnvValue(tomlPath)+"\n")
 	}
-	if err := relayEnvWriteLines(envPath, newLines); err != nil {
+	if err := relayEnvWriteLines(ctx, envPath, newLines); err != nil {
 		return nil, err
 	}
 	result.TOMLPath = tomlPath
@@ -400,8 +400,8 @@ func relayValidateExact(ctx context.Context, relay *tools.NemoRelay, payload map
 func relayEnvReadLines(path string) ([]string, error) { return config.ReadEnvLines(path) }
 
 // Rewrites the dotenv file with lines, keeping its existing mode
-func relayEnvWriteLines(path string, lines []string) error {
-	return config.WriteEnvLines(path, lines, true)
+func relayEnvWriteLines(ctx context.Context, path string, lines []string) error {
+	return config.WriteEnvLines(ctx, path, lines, true)
 }
 
 // Reports whether the dotenv line assigns key the way the env loader parses it

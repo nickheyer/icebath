@@ -156,7 +156,7 @@ func pyStrOf(v any) string {
 func TestBackgroundClaimLostReportsWithoutDispatch(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := bgJob(t, s, "bg run", "")
-	if _, err := s.pauseJob(job.ID, nil); err != nil {
+	if _, err := s.pauseJob(context.Background(), job.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	rec := installDispatch(t, "dispatched")

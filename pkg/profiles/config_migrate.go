@@ -19,7 +19,7 @@ func MigrateProfileConfigIfOutdated(ctx context.Context, profileDir string) erro
 		return err
 	}
 	scoped := home.WithOverride(ctx, profileDir)
-	current, latest, err := config.CheckConfigVersion(profileDir, false)
+	current, latest, err := config.CheckConfigVersion(ctx, profileDir, false)
 	if err == nil && current < latest {
 		_, _ = config.MigrateConfig(scoped, profileDir, false, true)
 	}

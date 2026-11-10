@@ -133,7 +133,7 @@ func TestReachingTheModelResetsLadderAndOneshotsNeverRetry(t *testing.T) {
 	}
 	once := mustCreate(t, s, CreateJobOptions{Prompt: prompt("one shot"), Schedule: FormatISO(time.Now().UTC().Add(time.Minute))})
 	markUnreachable(t, s, once.ID)
-	remaining, err := s.getJob(once.ID)
+	remaining, err := s.getJob(context.Background(), once.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

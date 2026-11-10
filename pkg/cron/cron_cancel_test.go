@@ -161,19 +161,19 @@ func TestACancelLandsOnAFilesystemWithoutHardLinks(t *testing.T) {
 func TestStoppingALadderRerunDoesNotSpendAnotherRepeat(t *testing.T) {
 	s := newClockStore(t, nil, time.UTC)
 	ctx := context.Background()
-	job, err := s.createJob(CreateJobOptions{Prompt: strPtr("ping"), Schedule: "every 1h", Deliver: strPtr("local"), Repeat: 2})
+	job, err := s.createJob(ctx, CreateJobOptions{Prompt: strPtr("ping"), Schedule: "every 1h", Deliver: strPtr("local"), Repeat: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, err := s.LoadJobs()
+	stored, err := s.LoadJobs(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stored[0].Repeat.Completed = 1
-	if err := s.SaveJobs(stored, nil, false); err != nil {
+	if err := s.SaveJobs(ctx, stored, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	current, err := s.getJob(job.ID)
+	current, err := s.getJob(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestStoppingALadderRerunDoesNotSpendAnotherRepeat(t *testing.T) {
 	if err := s.finishCancelledRun(ctx, &rerun, fire, nil); err != nil {
 		t.Fatal(err)
 	}
-	after, err := s.getJob(job.ID)
+	after, err := s.getJob(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestOverlappingCancelRequestsKeepTheFirstReason(t *testing.T) {
 func TestAMissedRowDoesNotHideALiveRun(t *testing.T) {
 	s := newClockStore(t, nil, time.UTC)
 	ctx := context.Background()
-	job, err := s.createJob(CreateJobOptions{Prompt: strPtr("long"), Schedule: "every 1h", Deliver: strPtr("local")})
+	job, err := s.createJob(ctx, CreateJobOptions{Prompt: strPtr("long"), Schedule: "every 1h", Deliver: strPtr("local")})
 	if err != nil {
 		t.Fatal(err)
 	}

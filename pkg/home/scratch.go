@@ -41,23 +41,26 @@ func CaptureScratchPruneSpawns() (*[]string, func()) {
 func ResetScratchPruneLatch() { scratchPrunedOnce.Store(false) }
 
 // Creates and secures the scratch dir of h or the active home and starts its hourly detached prune
-func EnsureScratchDir(h string) string { return scratchDir(h, true) }
+func EnsureScratchDir(ctx context.Context, h string) string { return scratchDir(ctx, h, true) }
 
 // Scratch dir of h, created and permissioned where the filesystem allows, a creation failure ignored
-func scratchDir(h string, prune bool) string {
+func scratchDir(ctx context.Context, h string, prune bool) string {
 	base := h
 	if base == "" {
-		base = Dir(context.Background())
+		base = Dir(ctx)
 	}
 	scratch := ScratchDir(base)
 	if pathMkdir(scratch, 0o777, true, true) == nil && runtime.GOOS != "windows" {
-		ApplySecureDirPolicy(scratch, base)
+		ApplySecureDirPolicy(ctx, scratch, base)
 	}
 	if prune {
 		pruneScratchDirOnce(scratch)
 	}
 	return scratch
 }
+
+// Scratch dir of h, created and permissioned with no prune handed to a child
+func ScratchDirWithoutPrune(ctx context.Context, h string) string { return scratchDir(ctx, h, false) }
 
 // Starts at most one detached prune per process and per hour across processes through the stamp file
 func pruneScratchDirOnce(scratch string) {
@@ -88,20 +91,20 @@ func touchFile(path string) error {
 }
 
 // Removes scratch entries idle for maxIdleHours after reaping what runs in them, logging to logs/scratch-prune.log
-func PruneScratchDir(scratch string, maxIdleHours float64) (int, error) {
+func PruneScratchDir(ctx context.Context, scratch string, maxIdleHours float64) (int, error) {
 	root := scratch
 	if root == "" {
-		root = scratchDir("", false)
+		root = scratchDir(ctx, "", false)
 	}
 	logFile := pypath.PathJoin(pypath.PathParent(pypath.PathParent(root)), "logs", "scratch-prune.log")
 	return PruneIdleEntries(root, maxIdleHours, map[string]bool{scratchPruneStamp: true}, logFile)
 }
 
 // Total lstat bytes of every non directory os.walk lists under the scratch dir, zero when unreadable
-func ScratchDirUsageBytes(scratch string) int64 {
+func ScratchDirUsageBytes(ctx context.Context, scratch string) int64 {
 	root := scratch
 	if root == "" {
-		root = scratchDir("", false)
+		root = scratchDir(ctx, "", false)
 	}
 	var total int64
 	stack := []string{root}

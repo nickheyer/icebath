@@ -871,7 +871,7 @@ func TestMemoryHandlerPersistsWithContentPrecedenceAndMirrorsThroughTheManager(t
 		t.Fatal(len(manager.calls))
 	}
 	last := manager.calls[3]
-	if last.taskID != "task-1" || last.toolCallID != "call-1" || last.args["target"] != "user" || !strings.Contains(last.result, `"success":true`) {
+	if last.taskID != "task-1" || last.toolCallID != "call-1" || last.args["target"] != "user" || !strings.Contains(last.result, `"success": true`) {
 		t.Fatal(last)
 	}
 }

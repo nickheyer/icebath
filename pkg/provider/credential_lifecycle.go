@@ -218,7 +218,7 @@ func SaveProviderEnvCredential(ctx context.Context, h, envVar, value string) (Pr
 		ctx = context.Background()
 	}
 	// A locked key fails here because the env refusal would otherwise return like a success
-	if err := config.RequireEnvWritable(h, envVar, "set"); err != nil {
+	if err := config.RequireEnvWritable(ctx, h, envVar, "set"); err != nil {
 		return ProviderEnvCredentialSave{}, err
 	}
 	oldValue := config.LoadEnv(h)[envVar]
@@ -253,7 +253,7 @@ func RemoveProviderEnvCredential(ctx context.Context, h, envVar string) (Provide
 		ctx = context.Background()
 	}
 	// Before the pool prune and mirror scrub so a refused remove leaves the other stores alone
-	if err := config.RequireEnvWritable(h, envVar, "remove"); err != nil {
+	if err := config.RequireEnvWritable(ctx, h, envVar, "remove"); err != nil {
 		return ProviderEnvCredentialRemoval{}, err
 	}
 	oldValue := config.LoadEnv(h)[envVar]

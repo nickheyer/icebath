@@ -95,7 +95,7 @@ func (c *Context) SetConfig(ctx context.Context, key string, value any) error {
 	if err != nil {
 		return err
 	}
-	return SavePluginSetting(home.Dir(ctx), c.PluginID(), segments, value)
+	return SavePluginSetting(ctx, home.Dir(ctx), c.PluginID(), segments, value)
 }
 
 // Profile scoped durable JSON state of this plugin under the context profile

@@ -55,7 +55,7 @@ func TestTheJobListStillShowsALiveRunBehindARefusedTrigger(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	listed, err := s.listJobs(true)
+	listed, err := s.listJobs(ctx, true)
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("listed %v %v", jobIDs(listed), err)
 	}
@@ -65,7 +65,7 @@ func TestTheJobListStillShowsALiveRunBehindARefusedTrigger(t *testing.T) {
 	if _, err := l.Finish(ctx, live, true, nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	if listed, _ := s.listJobs(true); listed[0].LiveExecution != nil {
+	if listed, _ := s.listJobs(ctx, true); listed[0].LiveExecution != nil {
 		t.Fatalf("finished run still live %v", listed[0].LiveExecution)
 	}
 }

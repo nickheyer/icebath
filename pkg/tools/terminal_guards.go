@@ -85,7 +85,7 @@ func pyRepr(s string) string {
 
 // Guard result envelope with exit code 1, the error and the status
 func blockedJSON(errText, status string) string {
-	return JSON(map[string]any{"output": "", "exit_code": 1, "error": errText, "status": status})
+	return JSON(Dict("output", "", "exit_code", 1, "error", errText, "status", status))
 }
 
 var (

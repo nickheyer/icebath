@@ -1156,7 +1156,7 @@ func (p *RetainDBProvider) HandleToolCall(ctx context.Context, toolName string, 
 	if err != nil {
 		return toolError(err.Error(), nil), nil
 	}
-	return tools.JSON(result), nil
+	return tools.JSONASCII(result), nil
 }
 
 func argOr(args map[string]any, key string, def any) any {

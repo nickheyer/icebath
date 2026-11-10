@@ -369,7 +369,7 @@ func refuseIncompatibleCatalogEntry(ctx context.Context, entry *PluginCatalogEnt
 		return err
 	}
 	if reason := catalogIcebathError(entry); reason != "" {
-		update, err := config.RecommendedUpdateCommand(home.Dir(ctx))
+		update, err := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
 		if err != nil {
 			return err
 		}
@@ -820,7 +820,7 @@ func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]a
 		return &RepinResult{Sha: entry.Sha, InstalledName: filepath.Base(target), Warnings: []string{}}, nil
 	}
 	if held := catalogIcebathError(entry); held != "" {
-		update, err := config.RecommendedUpdateCommand(h)
+		update, err := config.RecommendedUpdateCommand(ctx, h)
 		if err != nil {
 			return nil, err
 		}
@@ -1192,7 +1192,7 @@ func CmdInfo(ctx context.Context, name string, out io.Writer) error {
 		console.Print("")
 	}
 	if held := catalogIcebathError(entry); held != "" {
-		update, err := config.RecommendedUpdateCommand(home.Dir(ctx))
+		update, err := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
 		if err != nil {
 			return err
 		}

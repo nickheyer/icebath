@@ -377,7 +377,7 @@ func ForeignSystemdUnitHome(ctx context.Context, system bool) (string, error) {
 	if unit == mine {
 		return "", nil
 	}
-	if def, err := pypath.Resolve(home.AccountDefault()); err == nil && mine == def {
+	if def, err := pypath.Resolve(home.AccountDefault(ctx)); err == nil && mine == def {
 		return "", nil
 	}
 	return unitHome, nil

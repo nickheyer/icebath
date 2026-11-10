@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
 )
 
@@ -372,6 +374,73 @@ func TestQuickReplyKeysPerLocale(t *testing.T) {
 			if c.got != c.want {
 				t.Fatalf("%s check %d got %q want %q", lang, i, c.got, c.want)
 			}
+		}
+	}
+}
+
+func TestCLIExecQuickCommandMappingRunsItsKeysInFileOrder(t *testing.T) {
+	ctx := quickTestContext(t)
+	env := quickToolEnv()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	text := "quick_commands:\n  shout:\n    type: exec\n    command:\n      echo zeta-first: 1\n      alpha: 2\n"
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := config.LoadYAMLFileReadonly(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := config.AsMap(config.AsMap(config.AsMap(config.AsMap(doc)["quick_commands"])["shout"])["command"])
+	if keys := config.MappingKeys(command); len(keys) != 2 || keys[0] != "echo zeta-first" || keys[1] != "alpha" {
+		t.Fatalf("mapping keys %v", keys)
+	}
+	got, err := RunCLIExecQuickCommand(ctx, env, command)
+	if err != nil || got != (CLIQuickReply{"zeta-first", CLIQuickOutput}) {
+		t.Fatalf("reply %+v err %v", got, err)
+	}
+}
+
+func TestQuickChildEnvKeepsTheInsertionOrderOfItsNames(t *testing.T) {
+	ctx := quickTestContext(t)
+	t.Setenv("ZED_ORDER_PROBE", "1")
+	t.Setenv("ALPHA_ORDER_PROBE", "2")
+	t.Setenv("MID_ORDER_PROBE", "3")
+	child, err := quickChildEnv(ctx, quickToolEnv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	position := map[string]int{}
+	for i, k := range child.Keys {
+		position[k] = i
+	}
+	if len(position) != len(child.Keys) || len(child.Keys) != len(child.Vars) {
+		t.Fatalf("keys %d positions %d vars %d", len(child.Keys), len(position), len(child.Vars))
+	}
+	zed, alpha, mid := position["ZED_ORDER_PROBE"], position["ALPHA_ORDER_PROBE"], position["MID_ORDER_PROBE"]
+	if child.Vars["ZED_ORDER_PROBE"] != "1" || !(zed < alpha && alpha < mid) {
+		t.Fatalf("probe positions %d %d %d", zed, alpha, mid)
+	}
+	inherited := []string{}
+	seen := map[string]bool{}
+	for _, kv := range os.Environ() {
+		name := kv[:strings.IndexByte(kv, '=')]
+		if _, kept := child.Vars[name]; kept && !seen[name] {
+			seen[name] = true
+			inherited = append(inherited, name)
+		}
+	}
+	if !reflect.DeepEqual(child.Keys[:len(inherited)], inherited) {
+		t.Fatalf("inherited names %v, want the process order %v", child.Keys[:len(inherited)], inherited)
+	}
+	for _, name := range child.Keys[len(inherited):] {
+		if seen[name] {
+			t.Fatalf("%s listed twice", name)
+		}
+	}
+	list := quickEnvList(child)
+	for i, k := range child.Keys {
+		if list[i] != k+"="+child.Vars[k] {
+			t.Fatalf("entry %d is %q", i, list[i])
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"io"
 	"log/slog"
 	"net/http"
@@ -2053,7 +2054,7 @@ func (r *resolver) raiseIfProviderDisabled(requestedProvider string) error {
 	}
 	block, ok := provs[requestedProvider].(map[string]any)
 	if ok && !IsProviderEnabled(block) {
-		return fmt.Errorf("provider %q is disabled in config (providers.%s.enabled: false)", requestedProvider, requestedProvider)
+		return &ValueError{Message: fmt.Sprintf("provider %s is disabled in config (providers.%s.enabled: false)", pyrepr.StrRepr(requestedProvider), requestedProvider)}
 	}
 	return nil
 }

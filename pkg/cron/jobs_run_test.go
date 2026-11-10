@@ -20,7 +20,7 @@ func naiveAgo(d time.Duration) string {
 
 func mustGet(t *testing.T, s *Store, id string) *Job {
 	t.Helper()
-	job, err := s.getJob(id)
+	job, err := s.getJob(context.Background(), id)
 	if err != nil || job == nil {
 		t.Fatalf("getJob(%s) = %v, %v", id, job, err)
 	}
@@ -46,14 +46,14 @@ func mustDue(t *testing.T, s *Store) []*Job {
 // Rewrites every stored record through fn and saves the result
 func editJobs(t *testing.T, s *Store, fn func(j *Job)) {
 	t.Helper()
-	jobs, err := s.LoadJobs()
+	jobs, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, j := range jobs {
 		fn(j)
 	}
-	if err := s.SaveJobs(jobs, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), jobs, nil, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -89,7 +89,7 @@ func TestMarkJobRunRepeatLimitRetainsCompletedRecord(t *testing.T) {
 	s, _ := newTestStore(t)
 	once := mustCreate(t, s, CreateJobOptions{Prompt: prompt("Once"), Schedule: "in 30m", Repeat: 1})
 	mustMark(t, s, once.ID, true, MarkOptions{})
-	got, _ := s.getJob(once.ID)
+	got, _ := s.getJob(context.Background(), once.ID)
 	if got == nil {
 		t.Fatal("completed one-shot was deleted from jobs.json")
 	}
@@ -112,7 +112,7 @@ func TestMarkJobRunCompletedOneshotVisibleInList(t *testing.T) {
 	s, _ := newTestStore(t)
 	listed := mustCreate(t, s, CreateJobOptions{Prompt: prompt("Once"), Schedule: "in 30m", Repeat: 1})
 	mustMark(t, s, listed.ID, true, MarkOptions{DeliveryError: prompt("send failed: 502")})
-	all, _ := s.listJobs(true)
+	all, _ := s.listJobs(context.Background(), true)
 	var seen *Job
 	for _, j := range all {
 		if j.ID == listed.ID {
@@ -122,7 +122,7 @@ func TestMarkJobRunCompletedOneshotVisibleInList(t *testing.T) {
 	if seen == nil || seen.State != "completed" || deref(seen.LastDeliveryError) != "send failed: 502" || deref(seen.LastStatus) != "delivery_failed" {
 		t.Fatalf("completed one shot missing from list %+v", seen)
 	}
-	enabled, _ := s.listJobs(false)
+	enabled, _ := s.listJobs(context.Background(), false)
 	if containsString(jobIDs(enabled), listed.ID) {
 		t.Fatal("completed one shot listed as enabled")
 	}
@@ -238,7 +238,7 @@ func TestMarkJobRunRecurringCronNotDisabledWhenCroniterMissing(t *testing.T) {
 	}
 	editJobs(t, s, func(j *Job) { j.Schedule.Expr = "" })
 	mustMark(t, s, job.ID, true, MarkOptions{})
-	got, _ := s.getJob(job.ID)
+	got, _ := s.getJob(context.Background(), job.ID)
 	if got == nil {
 		t.Fatal("recurring cron job was deleted")
 	}
@@ -280,7 +280,7 @@ func TestAdvanceNextRunAdvancesIntervalJob(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("Recurring check"), Schedule: "every 1h"})
 	editJobs(t, s, func(j *Job) { j.NextRunAt = strPtr(naiveAgo(5 * time.Minute)) })
-	if ok, err := s.advanceNextRun(job.ID); !ok || err != nil {
+	if ok, err := s.advanceNextRun(context.Background(), job.ID); !ok || err != nil {
 		t.Fatalf("advance = %v, %v", ok, err)
 	}
 	if !inFuture(t, s, mustGet(t, s, job.ID).NextRunAt) {
@@ -292,7 +292,7 @@ func TestAdvanceNextRunSkipsOneshotJob(t *testing.T) {
 	s, _ := newTestStore(t)
 	once := mustCreate(t, s, CreateJobOptions{Prompt: prompt("Run once"), Schedule: "in 30m"})
 	before := mustGet(t, s, once.ID).NextRunAt
-	if ok, err := s.advanceNextRun(once.ID); ok || err != nil {
+	if ok, err := s.advanceNextRun(context.Background(), once.ID); ok || err != nil {
 		t.Fatalf("one shot advanced %v %v", ok, err)
 	}
 	if after := mustGet(t, s, once.ID).NextRunAt; deref(after) != deref(before) {
@@ -307,7 +307,7 @@ func TestAdvanceNextRunCrashSafetyScenario(t *testing.T) {
 	if due := mustDue(t, s); len(due) != 1 {
 		t.Fatalf("due before %d", len(due))
 	}
-	s.advanceNextRun(crash.ID)
+	s.advanceNextRun(context.Background(), crash.ID)
 	if _, ok, err := s.claimJobForFire(context.Background(), crash.ID, FireClaimOptions{}); !ok || err != nil {
 		t.Fatalf("claim = %v, %v", ok, err)
 	}
@@ -360,7 +360,7 @@ func TestGetDueJobsLongExecutionDoesNotPerpetuallyDefer(t *testing.T) {
 func TestGetDueJobsIdlessJobDoesNotCrashOrBlockSiblingJobs(t *testing.T) {
 	s, _ := newTestStore(t)
 	healthy := mustCreate(t, s, CreateJobOptions{Prompt: prompt("Healthy"), Schedule: "every 1h"})
-	jobs, _ := s.LoadJobs()
+	jobs, _ := s.LoadJobs(context.Background())
 	jobs[0].NextRunAt = strPtr(naiveAgo(35 * time.Minute))
 	seed := []map[string]any{jobToMap(t, jobs[0]), {"name": "idless-job", "schedule": map[string]any{"kind": "cron", "expr": "0 4 * * *"},
 		"enabled": true, "no_agent": true, "next_run_at": nil}}
@@ -443,7 +443,7 @@ func TestGetDueJobsRunClaimHeartbeatKeepsLongRunClaimedPastTtl(t *testing.T) {
 	}
 	at = t0.Add(time.Duration((ttl - 60) * float64(time.Second)))
 	owner := mustGet(t, s, "slowrun").RunClaim.By
-	if ok, _ := s.heartbeatRunClaim("slowrun", owner); !ok {
+	if ok, _ := s.heartbeatRunClaim(context.Background(), "slowrun", owner); !ok {
 		t.Fatal("heartbeat refused the live owner")
 	}
 	at = t0.Add(time.Duration((ttl + 10) * float64(time.Second)))
@@ -464,7 +464,7 @@ func TestHeartbeatRunClaimRejectsReplacedOwner(t *testing.T) {
 	original := FormatISO(time.Now().UTC())
 	seedJobs(t, s, map[string]any{"id": "reclaimed", "name": "R", "prompt": "x", "schedule": map[string]any{"kind": "once", "run_at": future},
 		"next_run_at": future, "enabled": true, "state": "scheduled", "run_claim": map[string]any{"at": original, "by": "new-owner"}})
-	if ok, _ := s.heartbeatRunClaim("reclaimed", "old-owner"); ok {
+	if ok, _ := s.heartbeatRunClaim(context.Background(), "reclaimed", "old-owner"); ok {
 		t.Fatal("stale owner refreshed a newer claim")
 	}
 	if c := mustGet(t, s, "reclaimed").RunClaim; c == nil || *c != (Claim{At: original, By: "new-owner"}) {
@@ -566,7 +566,7 @@ func TestClaimDispatchClaimIncrementsAndPersists(t *testing.T) {
 	if ok, err := s.claimDispatch(context.Background(), "os1"); !ok || err != nil {
 		t.Fatalf("first claim refused %v", err)
 	}
-	if jobs, _ := s.LoadJobs(); jobs[0].Repeat.Completed != 1 {
+	if jobs, _ := s.LoadJobs(context.Background()); jobs[0].Repeat.Completed != 1 {
 		t.Fatalf("completed %d", jobs[0].Repeat.Completed)
 	}
 }
@@ -577,7 +577,7 @@ func TestClaimDispatchAlreadyDispatchedOneshotIsRemoved(t *testing.T) {
 	if ok, _ := s.claimDispatch(context.Background(), "os1"); ok {
 		t.Fatal("already dispatched one shot claimed again")
 	}
-	if jobs, _ := s.LoadJobs(); len(jobs) != 0 {
+	if jobs, _ := s.LoadJobs(context.Background()); len(jobs) != 0 {
 		t.Fatalf("dispatched one shot kept %v", jobIDs(jobs))
 	}
 }
@@ -588,11 +588,11 @@ func TestClaimDispatchMarkJobRunDoesNotDoubleCountPreclaimedOneshot(t *testing.T
 	if ok, _ := s.claimDispatch(context.Background(), "os1"); !ok {
 		t.Fatal("first claim refused")
 	}
-	if jobs, _ := s.LoadJobs(); jobs[0].Repeat.Completed != 1 {
+	if jobs, _ := s.LoadJobs(context.Background()); jobs[0].Repeat.Completed != 1 {
 		t.Fatalf("completed %d", jobs[0].Repeat.Completed)
 	}
 	mustMark(t, s, "os1", true, MarkOptions{})
-	jobs, _ := s.LoadJobs()
+	jobs, _ := s.LoadJobs(context.Background())
 	if len(jobs) != 1 || jobs[0].Repeat.Completed != 1 || jobs[0].State != "completed" || jobs[0].Enabled {
 		t.Fatalf("pre claimed one shot double counted %+v", jobs)
 	}
@@ -606,7 +606,7 @@ func TestClaimDispatchGetDueJobsRemovesStaleMaxedOneshot(t *testing.T) {
 	if due := mustDue(t, s); len(due) != 0 {
 		t.Fatalf("maxed one shot due %v", jobIDs(due))
 	}
-	if jobs, _ := s.LoadJobs(); len(jobs) != 0 {
+	if jobs, _ := s.LoadJobs(context.Background()); len(jobs) != 0 {
 		t.Fatalf("stale maxed one shot kept %v", jobIDs(jobs))
 	}
 }
@@ -619,7 +619,7 @@ func TestAdvanceNextRunsBatchAdvancesRecurringSkipsOneshots(t *testing.T) {
 	}
 	one = append(one, mustCreate(t, s, CreateJobOptions{Prompt: prompt("one"), Schedule: "in 30m"}).ID)
 	editJobs(t, s, func(j *Job) { j.NextRunAt = strPtr(naiveAgo(5 * time.Minute)) })
-	n, err := s.advanceNextRuns(append(append([]string{}, rec...), one...))
+	n, err := s.advanceNextRuns(context.Background(), append(append([]string{}, rec...), one...))
 	if err != nil || n != len(rec) {
 		t.Fatalf("advanced %d, %v", n, err)
 	}
@@ -652,7 +652,7 @@ func TestCompletedOneshotRetentionSweepSweepPrunesOldCompletedOneshot(t *testing
 	s, _ := newTestStore(t)
 	old := completedOneshot(t, s, 30*24*time.Hour)
 	mustDue(t, s)
-	if j, _ := s.getJob(old); j != nil {
+	if j, _ := s.getJob(context.Background(), old); j != nil {
 		t.Fatal("old completed one shot kept")
 	}
 }

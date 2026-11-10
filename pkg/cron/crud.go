@@ -331,11 +331,11 @@ func normalizeRepeatValue(repeat any) (*int, error) {
 }
 
 // Runs fn on the first record with the id under the jobs lock, found false when no record matches
-func withJob[T any](s *Store, jobID string, fn func(tx *jobsTx, jobs []*Job, i int, job *Job) (T, error)) (T, bool, error) {
+func withJob[T any](ctx context.Context, s *Store, jobID string, fn func(tx *jobsTx, jobs []*Job, i int, job *Job) (T, error)) (T, bool, error) {
 	var out T
 	found := false
-	err := s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+	err := s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
@@ -573,10 +573,12 @@ type CreateJobOptions struct {
 }
 
 // Creates and stores a job, validating every knob before anything is written
-func (s *Store) createJob(o CreateJobOptions) (*Job, error) { return s.createJobTx(nil, o) }
+func (s *Store) createJob(ctx context.Context, o CreateJobOptions) (*Job, error) {
+	return s.createJobTx(home.WithOverride(ctx, s.home), nil, o)
+}
 
 // Creates a job inside the held jobs lock section tx, taking the lock itself when tx is nil
-func (s *Store) createJobTx(tx *jobsTx, o CreateJobOptions) (*Job, error) {
+func (s *Store) createJobTx(ctx context.Context, tx *jobsTx, o CreateJobOptions) (*Job, error) {
 	if o.PausedReason != nil && !o.Paused {
 		return nil, errors.New("paused_reason requires paused=True.")
 	}
@@ -701,16 +703,16 @@ func (s *Store) createJobTx(tx *jobsTx, o CreateJobOptions) (*Job, error) {
 		job.State, job.PausedAt, job.PausedReason, job.NextRunAt = "paused", strPtr(now), &reason, nil
 	}
 	insert := func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+		jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
-		return s.saveJobsLocked(tx, append(jobs, job), nil, false)
+		return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, append(jobs, job), nil, false)
 	}
 	if tx != nil {
 		err = insert(tx)
 	} else {
-		err = s.withJobsLock(insert)
+		err = s.withJobsLock(home.WithOverride(ctx, s.home), insert)
 	}
 	if err != nil {
 		return nil, err
@@ -719,8 +721,8 @@ func (s *Store) createJobTx(tx *jobsTx, o CreateJobOptions) (*Job, error) {
 }
 
 // Job by exact id in read safe form, nil when absent
-func (s *Store) getJob(jobID string) (*Job, error) {
-	jobs, err := s.loadJobs(nil)
+func (s *Store) getJob(ctx context.Context, jobID string) (*Job, error) {
+	jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -733,19 +735,19 @@ func (s *Store) getJob(jobID string) (*Job, error) {
 }
 
 // Job of a reference in the cron store of h, the ambient home when h is empty
-func ResolveJobRef(h string, ref string) (*Job, error) {
+func ResolveJobRef(ctx context.Context, h string, ref string) (*Job, error) {
 	if h == "" {
 		h = home.Dir(context.Background())
 	}
-	return openCronStore(h, time.Now).resolveJobRef(ref)
+	return openCronStore(h, time.Now).resolveJobRef(ctx, ref)
 }
 
 // Job by id, then by case insensitive name, an ambiguous name failing rather than picking one
-func (s *Store) resolveJobRef(ref string) (*Job, error) {
+func (s *Store) resolveJobRef(ctx context.Context, ref string) (*Job, error) {
 	if ref == "" {
 		return nil, nil
 	}
-	jobs, err := s.loadJobs(nil)
+	jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -775,8 +777,8 @@ func (s *Store) resolveJobRef(ref string) (*Job, error) {
 }
 
 // Read safe jobs with their latest and live executions, disabled ones only when asked
-func (s *Store) listJobs(includeDisabled bool) ([]*Job, error) {
-	raw, err := s.loadJobs(nil)
+func (s *Store) listJobs(ctx context.Context, includeDisabled bool) ([]*Job, error) {
+	raw, err := s.loadJobs(home.WithOverride(ctx, s.home), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1102,11 +1104,11 @@ func hasAnyKey(m map[string]any, keys ...string) bool {
 }
 
 // Updates a job by id, refreshing derived schedule fields, and returns its read safe form
-func (s *Store) updateJob(jobID string, updates map[string]any) (*Job, error) {
+func (s *Store) updateJob(ctx context.Context, jobID string, updates map[string]any) (*Job, error) {
 	if _, bad := updates["id"]; bad {
 		return nil, errors.New("Cron job field(s) cannot be updated: id")
 	}
-	out, _, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (*Job, error) {
+	out, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (*Job, error) {
 		if err := s.rederiveRepeatForScheduleChange(job, updates); err != nil {
 			return nil, err
 		}
@@ -1179,7 +1181,7 @@ func (s *Store) updateJob(jobID string, updates map[string]any) (*Job, error) {
 			return nil, err
 		}
 		jobs[i] = updated
-		if err := s.saveJobsLocked(tx, jobs, nil, false); err != nil {
+		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 			return nil, err
 		}
 		return normalizeJobRecord(updated), nil
@@ -1195,18 +1197,18 @@ func nonEmpty(p *string) *string {
 }
 
 // Pauses a job by id or name without deleting it
-func (s *Store) pauseJob(ref string, reason *string) (*Job, error) {
-	job, err := s.resolveJobRef(ref)
+func (s *Store) pauseJob(ctx context.Context, ref string, reason *string) (*Job, error) {
+	job, err := s.resolveJobRef(home.WithOverride(ctx, s.home), ref)
 	if err != nil || job == nil {
 		return nil, err
 	}
-	return s.updateJob(job.ID, map[string]any{"enabled": false, "state": "paused",
+	return s.updateJob(home.WithOverride(ctx, s.home), job.ID, map[string]any{"enabled": false, "state": "paused",
 		"paused_at": s.clk.nowISO(), "paused_reason": skillAny(reason)})
 }
 
 // Resumes a paused job, keeping an occurrence that elapsed while paused as the due instant
-func (s *Store) resumeJob(ref string) (*Job, error) {
-	job, err := s.resolveJobRef(ref)
+func (s *Store) resumeJob(ctx context.Context, ref string) (*Job, error) {
+	job, err := s.resolveJobRef(home.WithOverride(ctx, s.home), ref)
 	if err != nil || job == nil {
 		return nil, err
 	}
@@ -1232,13 +1234,13 @@ func (s *Store) resumeJob(ref string) (*Job, error) {
 		return nil, fmt.Errorf("Cannot resume: one-shot time %s is in the past (grace window: %ds) and will never fire.",
 			runAt, oneshotGraceSeconds)
 	}
-	return s.updateJob(job.ID, map[string]any{"enabled": true, "state": "scheduled",
+	return s.updateJob(home.WithOverride(ctx, s.home), job.ID, map[string]any{"enabled": true, "state": "scheduled",
 		"paused_at": nil, "paused_reason": nil, "next_run_at": skillAny(next)})
 }
 
 // Schedules a job for the next tick with an optional one fire prompt addition
-func (s *Store) triggerJob(ref string, extraPrompt string) (*Job, error) {
-	job, err := s.resolveJobRef(ref)
+func (s *Store) triggerJob(ctx context.Context, ref string, extraPrompt string) (*Job, error) {
+	job, err := s.resolveJobRef(home.WithOverride(ctx, s.home), ref)
 	if err != nil || job == nil {
 		return nil, err
 	}
@@ -1252,14 +1254,14 @@ func (s *Store) triggerJob(ref string, extraPrompt string) (*Job, error) {
 	if extraPrompt != "" {
 		prompt = extraPrompt
 	}
-	return s.updateJob(job.ID, map[string]any{"enabled": true, "state": "scheduled", "paused_at": nil,
+	return s.updateJob(home.WithOverride(ctx, s.home), job.ID, map[string]any{"enabled": true, "state": "scheduled", "paused_at": nil,
 		"paused_reason": nil, "next_run_at": manual, "manual_run_at": manual,
 		restoreKey: skillAny(extraFireRestoreTarget(job)), "manual_run_prompt": prompt})
 }
 
 // Re-arms a completed one shot as an explicit new occurrence
 func (s *Store) rearmOneshot(ctx context.Context, ref string, runAt any) (*Job, error) {
-	jobRef, err := s.resolveJobRef(ref)
+	jobRef, err := s.resolveJobRef(home.WithOverride(ctx, s.home), ref)
 	if err != nil || jobRef == nil {
 		return nil, err
 	}
@@ -1285,7 +1287,7 @@ func (s *Store) rearmOneshot(ctx context.Context, ref string, runAt any) (*Job, 
 		return nil, oneshotPastGraceError(shown)
 	}
 	ttl := s.oneshotRunClaimTTL(ctx)
-	out, _, err := withJob(s, jobRef.ID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (*Job, error) {
+	out, _, err := withJob(home.WithOverride(ctx, s.home), s, jobRef.ID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (*Job, error) {
 		now := s.clk.now()
 		if claimIsLive(s, job.RunClaim, now, ttl) {
 			return nil, &ValueError{"Cannot re-arm one-shot over a live run claim."}
@@ -1304,7 +1306,7 @@ func (s *Store) rearmOneshot(ctx context.Context, ref string, runAt any) (*Job, 
 		job.RunClaim, job.FireClaim = nil, nil
 		activateJobRecord(job)
 		job.NextRunAt = next
-		if err := s.saveJobsLocked(tx, jobs, nil, false); err != nil {
+		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 			return nil, err
 		}
 		return normalizeJobRecord(job), nil
@@ -1314,14 +1316,14 @@ func (s *Store) rearmOneshot(ctx context.Context, ref string, runAt any) (*Job, 
 
 // Removes a job by id or name with its output, notepad and fence, stopping a live run started elsewhere
 func (s *Store) removeJob(ctx context.Context, ref string) (bool, error) {
-	job, err := s.resolveJobRef(ref)
+	job, err := s.resolveJobRef(home.WithOverride(ctx, s.home), ref)
 	if err != nil || job == nil {
 		return false, err
 	}
 	id := job.ID
 	removed := false
-	err = s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+	err = s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
@@ -1338,7 +1340,7 @@ func (s *Store) removeJob(ctx context.Context, ref string) (bool, error) {
 		if err != nil {
 			return err
 		}
-		if err := s.saveJobsLocked(tx, kept, []string{id}, false); err != nil {
+		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, kept, []string{id}, false); err != nil {
 			return err
 		}
 		removed = true
@@ -1366,12 +1368,12 @@ func (s *Store) removeJob(ctx context.Context, ref string) (bool, error) {
 }
 
 // Sets or clears the preflight alert marker and returns its prior value
-func (s *Store) setPreflightAlerted(jobID string, value bool) (bool, error) {
-	prior, _, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
+func (s *Store) setPreflightAlerted(ctx context.Context, jobID string, value bool) (bool, error) {
+	prior, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
 		prior := job.PreflightAlerted
 		job.PreflightAlerted = value
 		if prior != value {
-			return prior, s.saveJobsLocked(tx, jobs, nil, false)
+			return prior, s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 		}
 		return prior, nil
 	})
@@ -1379,21 +1381,21 @@ func (s *Store) setPreflightAlerted(jobID string, value bool) (bool, error) {
 }
 
 // Marks the job preflight alerted and reports whether it already was
-func (s *Store) markPreflightAlerted(jobID string) (bool, error) {
-	return s.setPreflightAlerted(jobID, true)
+func (s *Store) markPreflightAlerted(ctx context.Context, jobID string) (bool, error) {
+	return s.setPreflightAlerted(home.WithOverride(ctx, s.home), jobID, true)
 }
 
 // Clears the preflight alert marker once the config validates again
-func (s *Store) clearPreflightAlerted(jobID string) error {
-	_, err := s.setPreflightAlerted(jobID, false)
+func (s *Store) clearPreflightAlerted(ctx context.Context, jobID string) error {
+	_, err := s.setPreflightAlerted(home.WithOverride(ctx, s.home), jobID, false)
 	return err
 }
 
 // Records that a scheduled fire could not be handed to the runner
-func (s *Store) noteFireForwardFailure(jobID, detail string) (bool, error) {
-	ok, _, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
+func (s *Store) noteFireForwardFailure(ctx context.Context, jobID, detail string) (bool, error) {
+	ok, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
 		job.LastFireError = &Stamp{At: s.clk.nowISO(), Detail: firstRunes(detail, maxFireForwardFailureDetail)}
-		return true, s.saveJobsLocked(tx, jobs, nil, false)
+		return true, s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 	})
 	return ok, err
 }

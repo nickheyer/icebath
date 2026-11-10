@@ -42,6 +42,7 @@ func isolatedAuthRegistry(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ClearDashboardAuthProviders()
+	prevServices := plugins.InstalledServices()
 	plugins.InstallServices(&plugins.Services{
 		DashboardAuth: DashboardAuthRegistryService(),
 		HostObject: func(kind string, obj any) (string, bool) {
@@ -56,7 +57,7 @@ func isolatedAuthRegistry(t *testing.T) *bytes.Buffer {
 	plugins.Logger = slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	t.Cleanup(func() {
 		plugins.Logger = prevLogger
-		plugins.InstallServices(nil)
+		plugins.InstallServices(prevServices)
 		ClearDashboardAuthProviders()
 	})
 	return buf

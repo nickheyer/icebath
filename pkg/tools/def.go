@@ -145,18 +145,30 @@ func (e *Env) Emit(ev Event) {
 	}
 }
 
-// JSON encodes a tool result as the string returned to the model
+// JSON encodes a tool result as json.dumps does with ensure_ascii off and its default separators
 func JSON(v any) string {
-	b, err := pyjson.EncodeWTF8(v)
+	b, err := pyjson.EncodeWTF8Python(v)
 	if err != nil {
 		return ErrorResult(err)
 	}
 	return string(b)
 }
 
+// JSONASCII encodes a tool result as json.dumps does with every default, non ASCII text escaped
+func JSONASCII(v any) string {
+	b, err := pyjson.EncodeWTF8PythonASCII(v)
+	if err != nil {
+		return ErrorResult(err)
+	}
+	return string(b)
+}
+
+// Dict builds a Python dict from alternating keys and values, kept in the order given
+func Dict(kv ...any) *pyjson.Object { return pyjson.ObjectOf(kv...) }
+
 // ErrorResult formats an error as the JSON object the model reads
 func ErrorResult(err error) string {
-	b, _ := pyjson.EncodeWTF8(map[string]any{"error": err.Error()})
+	b, _ := pyjson.EncodeWTF8Python(Dict("error", err.Error()))
 	return string(b)
 }
 

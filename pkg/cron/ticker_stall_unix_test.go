@@ -3,6 +3,7 @@
 package cron
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 func TestBoundedJobsLockLockAcquisitionTimesOutAndDegrades(t *testing.T) {
 	s, buf := newTestStore(t)
-	if err := s.ensureDirs(); err != nil {
+	if err := s.ensureDirs(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	shortLockTimeout(t, time.Second)
@@ -29,7 +30,7 @@ func TestBoundedJobsLockLockAcquisitionTimesOutAndDegrades(t *testing.T) {
 	start := time.Now()
 	entered := false
 	buf.Reset()
-	if err := s.withJobsLock(func(tx *jobsTx) error { entered = true; return nil }); err != nil {
+	if err := s.withJobsLock(context.Background(), func(tx *jobsTx) error { entered = true; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	elapsed := time.Since(start)

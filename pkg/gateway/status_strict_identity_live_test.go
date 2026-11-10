@@ -29,6 +29,7 @@ func TestMain(m *testing.M) {
 		os.Exit(mallocArenaChild(spec))
 	}
 	installChildEnvSourcesDouble()
+	installPluginServicesDouble()
 	if code, ok := dispatchUnmanagedSpawnTestModes(); ok {
 		os.Exit(code)
 	}

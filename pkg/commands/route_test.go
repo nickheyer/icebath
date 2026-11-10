@@ -60,7 +60,7 @@ func TestRouterQuickAliasRedispatchesTheTarget(t *testing.T) {
 		"b":     map[string]any{"type": "exec", "command": "echo b"},
 		"loop1": map[string]any{"type": "alias", "target": "/loop2"},
 		"loop2": map[string]any{"type": "alias", "target": "loop1 more"},
-		"Kq": map[string]any{"type": "alias", "target": "/status"},
+		"Kq":    map[string]any{"type": "alias", "target": "/status"},
 		"kq":    map[string]any{"type": "alias", "target": "/status"},
 	})
 	r := rt.Route(ctx, "/st  Foo Bar ")

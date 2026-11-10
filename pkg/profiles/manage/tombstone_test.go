@@ -81,7 +81,7 @@ func TestTombstonedHomeIsNotBootstrapped(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", dir)
-	err := config.EnsureIcebathHome(dir)
+	err := config.EnsureIcebathHome(context.Background(), dir)
 	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "Named profile home does not exist") {
 		t.Fatalf("ensure home: %v", err)
 	}

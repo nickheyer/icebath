@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 )
 
@@ -62,7 +63,7 @@ type processSpawner interface {
 	AnyRunning(pred func(*ProcessSession) bool) bool
 	ArmHeartbeat(s *ProcessSession, seconds int) int
 	AddPendingWatcher(watcher map[string]any)
-	RequestCloseTerminal(env *Env, sessionID string) map[string]any
+	RequestCloseTerminal(env *Env, sessionID string) *pyjson.Object
 }
 
 // registryAdapter exposes the process wide registry through the spawner surface
@@ -96,7 +97,7 @@ func (a registryAdapter) AddPendingWatcher(watcher map[string]any) {
 	a.r.PendingWatchers = append(a.r.PendingWatchers, watcher)
 }
 
-func (a registryAdapter) RequestCloseTerminal(env *Env, sessionID string) map[string]any {
+func (a registryAdapter) RequestCloseTerminal(env *Env, sessionID string) *pyjson.Object {
 	return a.r.RequestCloseTerminal(env, sessionID)
 }
 
@@ -178,7 +179,7 @@ func spawnTracked(ctx context.Context, env *Env, e Environment, envType, command
 }
 
 // Drops the notification flags on finite sessions and stamps routing otherwise
-func applyAsyncSupport(env *Env, s *ProcessSession, result map[string]any, notifyOnComplete bool, watchPatterns []string) (bool, []string) {
+func applyAsyncSupport(env *Env, s *ProcessSession, result *pyjson.Object, notifyOnComplete bool, watchPatterns []string) (bool, []string) {
 	if !notifyOnComplete && len(watchPatterns) == 0 {
 		return notifyOnComplete, watchPatterns
 	}
@@ -186,8 +187,8 @@ func applyAsyncSupport(env *Env, s *ProcessSession, result map[string]any, notif
 		stampGatewayRouting(env, s)
 		return notifyOnComplete, watchPatterns
 	}
-	result["notify_on_complete"] = false
-	result["notify_unsupported"] = asyncUnsupportedNote
+	result.Set("notify_on_complete", false)
+	result.Set("notify_unsupported", asyncUnsupportedNote)
 	envLog(env).Info("background proc async delivery unsupported on this session, notify flags disabled", "session_id", s.ID)
 	return false, nil
 }
@@ -227,40 +228,40 @@ func spawnBackgroundProcess(ctx context.Context, env *Env, e Environment, req ba
 	effectiveCwd := resolveCommandCwd(env, req.workdir, req.cwd, req.sessionKey, req.envType, mounted, e)
 	s, err := spawnTracked(ctx, env, e, req.envType, req.command, effectiveCwd, req.effectiveTaskID, req.taskID, req.sessionKey, req.effectivePty, req.persistOnRelease)
 	if err != nil {
-		return JSON(map[string]any{"output": "", "exit_code": -1,
-			"error": redactTerminalErrorText(env, fmt.Sprintf("Failed to start background process: %s", err))})
+		return JSON(Dict("output", "", "exit_code", -1,
+			"error", redactTerminalErrorText(env, fmt.Sprintf("Failed to start background process: %s", err))))
 	}
-	result := map[string]any{"output": "Background process started", "session_id": s.ID, "pid": s.Pid, "exit_code": 0, "error": nil}
+	result := Dict("output", "Background process started", "session_id", s.ID, "pid", s.Pid, "exit_code", 0, "error", nil)
 	if req.persistOnRelease {
-		result["persist_on_release"] = true
+		result.Set("persist_on_release", true)
 	}
 	if req.approvalNote != "" {
-		result["approval"] = req.approvalNote
+		result.Set("approval", req.approvalNote)
 	}
 	if req.ptyDisabledReason != "" {
-		result["pty_note"] = req.ptyDisabledReason
+		result.Set("pty_note", req.ptyDisabledReason)
 	}
 	if req.autoBackgrounded {
-		result["auto_backgrounded"] = autoBackgroundNote
+		result.Set("auto_backgrounded", autoBackgroundNote)
 	} else if !req.notifyOnComplete && len(req.watchPatterns) == 0 {
-		result["hint"] = silentBackgroundHint
+		result.Set("hint", silentBackgroundHint)
 	}
 	if req.command != "" && looksLikeHomebrewCIPoller(req.command) {
-		if existing, _ := result["hint"].(string); existing != "" {
-			result["hint"] = existing + "\n\n" + homebrewCIPollerHint
+		if existing, _ := result.Vals["hint"].(string); existing != "" {
+			result.Set("hint", existing+"\n\n"+homebrewCIPollerHint)
 		} else {
-			result["hint"] = homebrewCIPollerHint
+			result.Set("hint", homebrewCIPollerHint)
 		}
 	}
 	notify, watch := applyAsyncSupport(env, s, result, req.notifyOnComplete, req.watchPatterns)
 	watch, conflict := resolveNotificationFlagConflict(notify, watch, true)
 	if conflict != "" {
 		envLog(env).Warn("background proc flag conflict", "session_id", s.ID, "note", conflict)
-		result["watch_patterns_ignored"] = conflict
+		result.Set("watch_patterns_ignored", conflict)
 	}
 	if notify {
 		s.NotifyOnComplete = true
-		result["notify_on_complete"] = true
+		result.Set("notify_on_complete", true)
 		if req.completionOutputChars != 0 {
 			s.CompletionOutputChars = req.completionOutputChars
 		}
@@ -268,17 +269,17 @@ func spawnBackgroundProcess(ctx context.Context, env *Env, e Environment, req ba
 			registerCompletionWatcher(s, req.sessionKey)
 		}
 		if IsDelegatedChildContext(ctx) {
-			result["notify_on_complete"] = false
-			result["subagent_note"] = subagentNotifyNote
+			result.Set("notify_on_complete", false)
+			result.Set("subagent_note", subagentNotifyNote)
 		} else if req.heartbeatSeconds != 0 {
-			result["heartbeat_seconds"] = terminalRegistry().ArmHeartbeat(s, req.heartbeatSeconds)
+			result.Set("heartbeat_seconds", terminalRegistry().ArmHeartbeat(s, req.heartbeatSeconds))
 		}
 	} else if req.heartbeatSeconds != 0 {
-		result["heartbeat_ignored"] = "heartbeat needs notify=true delivery, which this session cannot receive"
+		result.Set("heartbeat_ignored", "heartbeat needs notify=true delivery, which this session cannot receive")
 	}
 	if len(watch) > 0 {
 		s.WatchPatterns = append([]string(nil), watch...)
-		result["watch_patterns"] = s.WatchPatterns
+		result.Set("watch_patterns", s.WatchPatterns)
 	}
 	return JSON(result)
 }

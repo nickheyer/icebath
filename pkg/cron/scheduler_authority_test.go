@@ -33,7 +33,7 @@ func fireCanonical(t *testing.T, s *Store, jobID, eid string, retire bool) {
 
 func TestCompletionIDsRetireWithTheirJournal(t *testing.T) {
 	s, _ := newTestStore(t)
-	job, err := s.createJob(CreateJobOptions{Prompt: prompt("report"), Schedule: "every 1m", Deliver: strp("local")})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("report"), Schedule: "every 1m", Deliver: strp("local")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestCompletionIDsRetireWithTheirJournal(t *testing.T) {
 	for n := 0; n < 64; n++ {
 		fireCanonical(t, s, job.ID, "run-"+strconv.Itoa(n), true)
 	}
-	got, _ := s.getJob(job.ID)
+	got, _ := s.getJob(context.Background(), job.ID)
 	if !reflect.DeepEqual(got.CanonicalCompletions, []string{"pending", "run-63"}) {
 		t.Fatal(got.CanonicalCompletions)
 	}
@@ -49,7 +49,7 @@ func TestCompletionIDsRetireWithTheirJournal(t *testing.T) {
 	if ok, err := s.markJobRun(context.Background(), job.ID, true, MarkOptions{ExecutionID: strp("pending")}); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
-	if again, _ := s.getJob(job.ID); again.Repeat.Completed != completed {
+	if again, _ := s.getJob(context.Background(), job.ID); again.Repeat.Completed != completed {
 		t.Fatal(again.Repeat.Completed, completed)
 	}
 }
@@ -63,11 +63,11 @@ func TestJournalPathHashesTheJSONPairUnderTheHome(t *testing.T) {
 
 func TestPauseForUnknownRecordsAndLiftPauseResumesOnlyThatPause(t *testing.T) {
 	s, _ := newTestStore(t)
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h"})
 	journal := s.journalPath(job.ID, "e1")
 	_ = os.MkdirAll(filepath.Dir(journal), 0o700)
 	_ = os.WriteFile(journal, []byte("\ufeff{\"params\": {\"job_id\": \""+job.ID+"\"}, \"receipt\": null}"), 0o600)
-	if err := s.pauseForUnknown(job.ID, "e1", "unverified admission"); err != nil {
+	if err := s.pauseForUnknown(context.Background(), job.ID, "e1", "unverified admission"); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(journal)
@@ -80,36 +80,36 @@ func TestPauseForUnknownRecordsAndLiftPauseResumesOnlyThatPause(t *testing.T) {
 	if st, _ := os.Stat(journal); st.Mode().Perm() != 0o600 {
 		t.Fatal(st.Mode())
 	}
-	if err := s.liftPause(job.ID, true); err != nil {
+	if err := s.liftPause(context.Background(), job.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if j, _ := s.getJob(job.ID); j.State != "paused" {
+	if j, _ := s.getJob(context.Background(), job.ID); j.State != "paused" {
 		t.Fatal("a non dict identity never lifts")
 	}
 	reason := "operator hold"
-	if _, err := s.pauseJob(job.ID, &reason); err != nil {
+	if _, err := s.pauseJob(context.Background(), job.ID, &reason); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.liftPause(job.ID, pause); err != nil {
+	if err := s.liftPause(context.Background(), job.ID, pause); err != nil {
 		t.Fatal(err)
 	}
-	if j, _ := s.getJob(job.ID); j.State != "paused" {
+	if j, _ := s.getJob(context.Background(), job.ID); j.State != "paused" {
 		t.Fatal("an operator pause must not be lifted")
 	}
 	r2 := "unverified admission"
-	if err := s.pauseForUnknown(job.ID, "e1", r2); err != nil {
+	if err := s.pauseForUnknown(context.Background(), job.ID, "e1", r2); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ = os.ReadFile(journal)
 	decoded, _ = pyjson.Loads(string(raw))
 	pause, _ = decoded.(*pyjson.Object).Get("pause_recorded")
-	if err := s.liftPause(job.ID, pause); err != nil {
+	if err := s.liftPause(context.Background(), job.ID, pause); err != nil {
 		t.Fatal(err)
 	}
-	if j, _ := s.getJob(job.ID); j.State != "scheduled" || j.PausedReason != nil {
+	if j, _ := s.getJob(context.Background(), job.ID); j.State != "scheduled" || j.PausedReason != nil {
 		t.Fatalf("%+v", j)
 	}
-	if err := s.pauseForUnknown(job.ID, "no-journal", "r"); err != nil {
+	if err := s.pauseForUnknown(context.Background(), job.ID, "no-journal", "r"); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -29,7 +29,7 @@ func errorRecoveries() int {
 
 func wedgeJob(t *testing.T, s *Store, id string, nextRun, lastRun time.Time) {
 	t.Helper()
-	if _, err := s.updateJob(id, map[string]any{
+	if _, err := s.updateJob(context.Background(), id, map[string]any{
 		"next_run_at": isoUTC(nextRun), "last_status": "error",
 		"last_error": "EAGAIN [Errno 11] Resource temporarily unavailable", "last_run_at": isoUTC(lastRun),
 	}); err != nil {
@@ -161,7 +161,7 @@ func TestPersistedStaleErrorRecoveryLiveFireClaimFromOtherProcessNotRearmed(t *t
 	persistStaleError(t, s, id, 110*time.Minute)
 	now := time.Now().UTC()
 	stamp := func(at time.Time) string { return at.Format("2006-01-02T15:04:05.000000") + "+00:00" }
-	if _, err := s.updateJob(id, map[string]any{"fire_claim": map[string]any{"at": stamp(now), "by": "other-host:deadbeef"}}); err != nil {
+	if _, err := s.updateJob(context.Background(), id, map[string]any{"fire_claim": map[string]any{"at": stamp(now), "by": "other-host:deadbeef"}}); err != nil {
 		t.Fatal(err)
 	}
 	job := mustGet(t, s, id)
@@ -173,7 +173,7 @@ func TestPersistedStaleErrorRecoveryLiveFireClaimFromOtherProcessNotRearmed(t *t
 		t.Fatalf("a job with a live fire_claim held by another process must not be re-armed, got %v", latest)
 	}
 	expired := stamp(now.Add(-(FireClaimTTLSeconds + 1) * time.Second))
-	if _, err := s.updateJob(id, map[string]any{"fire_claim": map[string]any{"at": expired, "by": "other-host:deadbeef"}}); err != nil {
+	if _, err := s.updateJob(context.Background(), id, map[string]any{"fire_claim": map[string]any{"at": expired, "by": "other-host:deadbeef"}}); err != nil {
 		t.Fatal(err)
 	}
 	if !s.jobIsStaleErrorRecurring(mustGet(t, s, id), job.Schedule, now) {
@@ -199,7 +199,7 @@ func TestIntentionalRemoveStillDeletes(t *testing.T) {
 	if removed, err := s.removeJob(context.Background(), job.ID); err != nil || !removed {
 		t.Fatalf("removed %v %v", removed, err)
 	}
-	if got, err := s.getJob(job.ID); err != nil || got != nil {
+	if got, err := s.getJob(context.Background(), job.ID); err != nil || got != nil {
 		t.Fatalf("job %+v %v", got, err)
 	}
 }
@@ -207,7 +207,7 @@ func TestIntentionalRemoveStillDeletes(t *testing.T) {
 func TestReplaceFlagAllowsWholesaleRewrite(t *testing.T) {
 	s, _ := newTestStore(t)
 	watchdogJob(t, s)
-	if err := s.SaveJobs([]*Job{}, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{}, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if stored := storedJobs(t, s); len(stored) != 0 {

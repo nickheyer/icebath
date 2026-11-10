@@ -640,3 +640,28 @@ func TestJSONEncodeWTF8FloatsMatchJSONDumps(t *testing.T) {
 		t.Fatalf("ascii %s %v", got, err)
 	}
 }
+
+func TestEncodeWTF8PythonMatchesJSONDumpsText(t *testing.T) {
+	v := NewObject()
+	v.Set("a", 1)
+	inner := NewObject()
+	inner.Set("c", "x, y: z\"q\\")
+	inner.Set("d", []any{})
+	v.Set("b", []any{1, 2.0, inner})
+	v.Set("e", map[string]any{})
+	v.Set("f", "\x7fé\U0001f600")
+	v.Set("g", nil)
+	v.Set("h", true)
+	v.Set("i", []any{[]any{}, []any{map[string]any{}}})
+	unicodeWant := "{\"a\": 1, \"b\": [1, 2.0, {\"c\": \"x, y: z\\\"q\\\\\", \"d\": []}], \"e\": {}, \"f\": \"\x7f\xc3\xa9\xf0\x9f\x98\x80\", \"g\": null, \"h\": true, \"i\": [[], [{}]]}"
+	asciiWant := `{"a": 1, "b": [1, 2.0, {"c": "x, y: z\"q\\", "d": []}], "e": {}, "f": "` + "\\u007f\\u00e9\\ud83d\\ude00" + `", "g": null, "h": true, "i": [[], [{}]]}`
+	if got, err := EncodeWTF8Python(v); err != nil || string(got) != unicodeWant {
+		t.Fatalf("ensure_ascii False %q %v", got, err)
+	}
+	if got, err := EncodeWTF8PythonASCII(v); err != nil || string(got) != asciiWant {
+		t.Fatalf("defaults\n%s\n%s %v", got, asciiWant, err)
+	}
+	if got, err := EncodeWTF8ASCII("\x7f"); err != nil || string(got) != `"\u007f"` {
+		t.Fatalf("DEL %q %v", got, err)
+	}
+}

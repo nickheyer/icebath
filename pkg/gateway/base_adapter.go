@@ -235,6 +235,7 @@ type BasePlatformAdapter struct {
 	platformLockScope             string
 	platformLockIdentity          string
 
+	textBatchMu           sync.Mutex
 	pendingTextBatches    map[string]*MessageEvent
 	pendingTextBatchTasks map[string]*adapterTask
 
@@ -449,11 +450,13 @@ func (b *BasePlatformAdapter) FormatToolEvent(ctx context.Context, event StreamE
 	env := mediaToolsEnv(ctx)
 	emoji, tool := tools.GetToolEmoji(env, ev.ToolName, "⚙️"), ev.ToolName
 	if mode == "verbose" && len(ev.Args) > 0 {
-		argsStr := tools.VerboseToolArgsText(ev.Args, previewMaxLen, b.Traits.SupportsCodeBlocks)
 		keys := []any{}
+		ordered := pyjson.NewObject()
 		for _, k := range ev.OrderedArgKeys() {
 			keys = append(keys, k)
+			ordered.Set(k, ev.Args[k])
 		}
+		argsStr := tools.VerboseToolArgsText(ordered, previewMaxLen, b.Traits.SupportsCodeBlocks)
 		return i18n.T(ctx, "gateway.progress.tool_verbose", "", map[string]any{"emoji": emoji, "tool": tool,
 			"keys": keys, "args": argsStr}), true
 	}

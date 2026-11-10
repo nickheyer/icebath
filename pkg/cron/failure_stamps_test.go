@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -93,7 +94,7 @@ func TestLastFailureStampDeliveryFailureKeepsItsOwnChannel(t *testing.T) {
 
 func noteForwardFailure(t *testing.T, s *Store, id, detail string) bool {
 	t.Helper()
-	ok, err := s.noteFireForwardFailure(id, detail)
+	ok, err := s.noteFireForwardFailure(context.Background(), id, detail)
 	if err != nil {
 		t.Fatal(err)
 	}

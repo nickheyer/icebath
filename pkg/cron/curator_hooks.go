@@ -1,21 +1,23 @@
 package cron
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
 )
 
 // Installs the cron skill reference reader, rewriter and locked job updater the curator calls
 func init() {
-	memory.CuratorHooks.ReferencedSkillNames = func(h string) (map[string]bool, error) {
-		return openCronStore(h, time.Now).referencedSkillNames(), nil
+	memory.CuratorHooks.ReferencedSkillNames = func(ctx context.Context, h string) (map[string]bool, error) {
+		return openCronStore(h, time.Now).referencedSkillNames(ctx), nil
 	}
-	memory.CuratorHooks.RewriteSkillRefs = func(h string, consolidated *pyjson.Object, pruned []string) (memory.CuratorCronRewriteReport, error) {
-		report, err := openCronStore(h, time.Now).rewriteSkillRefs(consolidated, pruned)
+	memory.CuratorHooks.RewriteSkillRefs = func(ctx context.Context, h string, consolidated *pyjson.Object, pruned []string) (memory.CuratorCronRewriteReport, error) {
+		report, err := openCronStore(h, time.Now).rewriteSkillRefs(ctx, consolidated, pruned)
 		if err != nil {
 			return memory.CuratorCronRewriteReport{}, err
 		}
@@ -25,15 +27,15 @@ func init() {
 		}
 		return out, nil
 	}
-	memory.CuratorHooks.UpdateJobs = func(h string, update func(jobs []any) (bool, error)) error {
-		return openCronStore(h, time.Now).updateRawJobs(update)
+	memory.CuratorHooks.UpdateJobs = func(ctx context.Context, h string, update func(jobs []any) (bool, error)) error {
+		return openCronStore(h, time.Now).updateRawJobs(ctx, update)
 	}
 }
 
 // Hands the stored jobs as Python dicts to update under the jobs lock and saves them when it reports a change
-func (s *Store) updateRawJobs(update func(jobs []any) (bool, error)) error {
-	return s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+func (s *Store) updateRawJobs(ctx context.Context, update func(jobs []any) (bool, error)) error {
+	return s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
@@ -73,7 +75,7 @@ func (s *Store) updateRawJobs(update func(jobs []any) (bool, error)) error {
 				removed = append(removed, job.ID)
 			}
 		}
-		return s.saveJobsLocked(tx, next, removed, false)
+		return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, next, removed, false)
 	})
 }
 

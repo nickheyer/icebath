@@ -12,8 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -88,8 +90,8 @@ func checkpointDefault(name string) any {
 }
 
 // Writes the running process metadata to the checkpoint file atomically under the file lock
-func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []map[string]any) {
-	entries := []map[string]any{}
+func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*pyjson.Object) {
+	entries := []*pyjson.Object{}
 	r.mu.Lock()
 	for _, s := range orderedSessions(r.running, func(s *ProcessSession) int64 { return s.runSeq }) {
 		s.mu.Lock()
@@ -100,26 +102,26 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []map[string]an
 		if s.HostStartTime == nil && s.PidScope == "host" && s.Pid != 0 {
 			s.HostStartTime = safeHostStartTime(s.Pid)
 		}
-		entry := map[string]any{"session_id": s.ID}
+		entry := pyjson.ObjectOf("session_id", s.ID)
 		for _, f := range checkpointFields {
-			entry[f] = s.field(f)
+			entry.Set(f, s.field(f))
 		}
 		s.mu.Unlock()
-		entry["command"] = RedactSensitiveTextWith(env, s.Command, RedactOptions{CodeFile: true})
+		entry.Set("command", RedactSensitiveTextWith(env, s.Command, RedactOptions{CodeFile: true}))
 		owner := s.OwnerTaskID
 		if owner == "" {
 			owner = s.TaskID
 		}
-		entry["owner_task_id"] = owner
+		entry.Set("owner_task_id", owner)
 		entries = append(entries, entry)
 	}
 	if len(extraEntries) > 0 {
 		tracked := map[string]bool{}
 		for _, item := range entries {
-			tracked[asStr(item["session_id"])] = true
+			tracked[asStr(item.Vals["session_id"])] = true
 		}
 		for _, item := range extraEntries {
-			if !tracked[asStr(item["session_id"])] {
+			if !tracked[asStr(item.Vals["session_id"])] {
 				entries = append(entries, item)
 			}
 		}
@@ -141,24 +143,43 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []map[string]an
 		return
 	}
 	defer unlock()
-	entries = append(entries, r.foreignHandoffs(env, path, known)...)
+	foreign, err := r.foreignHandoffs(env, path, known)
+	if err != nil {
+		toolsLogger(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
+		return
+	}
+	entries = append(entries, foreign...)
 	if err := procAtomicJSONWrite(path, entries, 0o644, false); err != nil {
 		toolsLogger(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
 	}
 }
 
 // On disk worker handoffs this registry never tracked whose log still decides an outcome
-func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[string]bool) []map[string]any {
-	onDisk, ok := readCheckpointEntries(path)
+func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[string]bool) ([]*pyjson.Object, error) {
+	onDisk, ok := readCheckpointValue(path)
 	if !ok {
-		return nil
+		return nil, nil
 	}
-	out := []map[string]any{}
-	for _, entry := range onDisk {
-		if known[asStr(entry["session_id"])] {
+	items, err := checkpointItems(onDisk)
+	if err != nil {
+		return nil, err
+	}
+	out := []*pyjson.Object{}
+	for _, item := range items {
+		entry, ok := item.(*pyjson.Object)
+		if !ok {
 			continue
 		}
-		log := adoptableLog(env, entry["output_log"])
+		switch id := entry.Vals["session_id"].(type) {
+		case string:
+			if known[id] {
+				continue
+			}
+		case []any, *pyjson.Object:
+			name := pyrepr.TypeName(id)
+			return nil, &pyjson.TypeError{Msg: fmt.Sprintf("cannot use '%s' as a set element (unhashable type: '%s')", name, name)}
+		}
+		log := adoptableLog(env, entry.Vals["output_log"])
 		if log == "" {
 			continue
 		}
@@ -169,16 +190,16 @@ func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[strin
 			out = append(out, entry)
 			continue
 		}
-		pid, _ := asIntValue(entry["pid"])
+		pid, _ := asIntValue(entry.Vals["pid"])
 		if r.detachedHostFate(pid, entryInt64Ptr(entry, "host_start_time")) == "running" {
 			out = append(out, entry)
 		}
 	}
-	return out
+	return out, nil
 }
 
-func entryInt64Ptr(entry map[string]any, key string) *int64 {
-	n, ok := asIntValue(entry[key])
+func entryInt64Ptr(entry *pyjson.Object, key string) *int64 {
+	n, ok := asIntValue(entry.Vals[key])
 	if !ok {
 		return nil
 	}
@@ -186,58 +207,88 @@ func entryInt64Ptr(entry map[string]any, key string) *int64 {
 	return &v
 }
 
-// Checkpoint entries from disk, false when missing or unreadable
-func readCheckpointEntries(path string) ([]map[string]any, bool) {
+// Decoded JSON value of the checkpoint file read as strict utf-8-sig text, false when unreadable or malformed
+func readCheckpointValue(path string) (any, bool) {
 	data, err := os.ReadFile(path)
+	if err != nil || !utf8.Valid(data) {
+		return nil, false
+	}
+	parsed, err := pyjson.Loads(strings.TrimPrefix(string(data), "\xEF\xBB\xBF"))
 	if err != nil {
 		return nil, false
 	}
-	var parsed []any
-	dec := json.NewDecoder(strings.NewReader(strings.TrimPrefix(string(data), "\xEF\xBB\xBF")))
-	dec.UseNumber()
-	if err := dec.Decode(&parsed); err != nil {
-		return nil, false
-	}
-	out := []map[string]any{}
-	for _, item := range parsed {
-		if m, ok := item.(map[string]any); ok {
-			out = append(out, m)
+	return parsed, true
+}
+
+// AttributeError a checkpoint item that is not a dict raises when its get method is looked up
+type checkpointItemError struct{ msg string }
+
+func (e *checkpointItemError) Error() string { return e.msg }
+
+// Python class name of the error
+func (e *checkpointItemError) PyTypeName() string { return "AttributeError" }
+
+// Items a for loop yields over a decoded JSON value, the TypeError of a value that is not iterable
+func checkpointItems(v any) ([]any, error) {
+	switch t := v.(type) {
+	case []any:
+		return t, nil
+	case *pyjson.Object:
+		keys := make([]any, len(t.Keys))
+		for i, k := range t.Keys {
+			keys[i] = k
 		}
+		return keys, nil
+	case string:
+		runes := pystr.Runes(t)
+		chars := make([]any, len(runes))
+		for i, r := range runes {
+			chars[i] = pystr.FromRunes([]rune{r})
+		}
+		return chars, nil
 	}
-	return out, true
+	return nil, &pyjson.TypeError{Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
 }
 
 // RecoverFromCheckpoint probes the checkpointed pids at startup and re adopts the live ones as detached sessions
-func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) int {
+func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (int, error) {
 	r.jobsOutliveHost = true
 	path := checkpointPathFn(env)
 	if _, err := os.Stat(path); err != nil {
-		return 0
+		return 0, nil
 	}
-	entries, ok := readCheckpointEntries(path)
+	value, ok := readCheckpointValue(path)
 	if !ok {
-		return 0
+		return 0, nil
+	}
+	items, err := checkpointItems(value)
+	if err != nil {
+		return 0, err
 	}
 	recovered := 0
-	unresolvedScopeEntries := []map[string]any{}
-	for _, entry := range entries {
-		pid, _ := asIntValue(entry["pid"])
+	unresolvedScopeEntries := []*pyjson.Object{}
+	for _, item := range items {
+		entry, ok := item.(*pyjson.Object)
+		if !ok {
+			return 0, &checkpointItemError{fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(item))}
+		}
+		pid, _ := asIntValue(entry.Vals["pid"])
 		pidScope := "host"
-		if v, ok := entry["pid_scope"]; ok {
+		if v, ok := entry.Vals["pid_scope"]; ok {
 			pidScope = asStr(v)
 		}
 		if pid == 0 {
 			continue
 		}
-		sessionID := asStr(entry["session_id"])
+		sessionID := asStr(entry.Vals["session_id"])
 		r.mu.Lock()
 		_, alreadyTracked := r.running[sessionID]
 		r.mu.Unlock()
 		if alreadyTracked {
 			continue
 		}
-		command := asStr(entry["command"])
-		if _, ok := entry["command"]; !ok {
+		command := asStr(entry.Vals["command"])
+		if _, ok := entry.Vals["command"]; !ok {
 			command = "unknown"
 		}
 		if pidScope != "host" {
@@ -245,7 +296,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) i
 			continue
 		}
 		fate := r.detachedHostFate(pid, entryInt64Ptr(entry, "host_start_time"))
-		log := adoptableLog(env, entry["output_log"])
+		log := adoptableLog(env, entry.Vals["output_log"])
 		if log != "" {
 			fate = "running"
 		}
@@ -258,7 +309,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) i
 			continue
 		}
 		if fate != "running" {
-			if unit := asStr(entry["systemd_unit"]); unit != "" && !stopSystemdUnit(unit) {
+			if unit := asStr(entry.Vals["systemd_unit"]); unit != "" && !stopSystemdUnit(unit) {
 				toolsLogger(env).Warn(fmt.Sprintf("Could not reap persisted scope %s for dead wrapper pid %d; retaining checkpoint entry for the next startup", unit, pid))
 				unresolvedScopeEntries = append(unresolvedScopeEntries, entry)
 			}
@@ -266,19 +317,19 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) i
 		}
 		s := NewProcessSession(sessionID, command)
 		for _, f := range checkpointFields {
-			value, ok := entry[f]
+			value, ok := entry.Vals[f]
 			if !ok {
 				value = checkpointDefault(f)
 			}
 			s.setField(f, value)
 		}
 		s.Command = command
-		owner := asStr(entry["owner_task_id"])
+		owner := asStr(entry.Vals["owner_task_id"])
 		if owner == "" {
-			owner = asStr(entry["task_id"])
+			owner = asStr(entry.Vals["task_id"])
 		}
 		s.OwnerTaskID = owner
-		if _, ok := entry["started_at"]; !ok {
+		if _, ok := entry.Vals["started_at"]; !ok {
 			s.StartedAt = nowSeconds()
 		}
 		s.OutputLog = log
@@ -308,7 +359,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) i
 		}
 	}
 	r.writeCheckpoint(env, unresolvedScopeEntries)
-	return recovered
+	return recovered, nil
 }
 
 // Tails the session's output log until its process ends, the spawner reading the exit from its handle
@@ -446,14 +497,14 @@ func resultPaths(env *Env) []string {
 // Writes the session's durable receipt with its output and command redacted
 func saveCompletedResult(ctx context.Context, env *Env, s *ProcessSession) {
 	s.mu.Lock()
-	record := map[string]any{}
+	record := pyjson.NewObject()
 	for _, key := range resultFields {
-		record[key] = s.field(key)
+		record.Set(key, s.field(key))
 	}
-	record["output"] = tailChars(s.OutputBuffer, MaxOutputChars)
+	output := tailChars(s.OutputBuffer, MaxOutputChars)
 	s.mu.Unlock()
-	record["output"] = RedactTerminalCommandOutput(env, asStr(record["output"]), s.Command, true)
-	record["command"] = RedactSensitiveTextWith(env, s.Command, RedactOptions{CodeFile: true, Force: true})
+	record.Set("output", RedactTerminalCommandOutput(env, output, s.Command, true))
+	record.Set("command", RedactSensitiveTextWith(env, s.Command, RedactOptions{CodeFile: true, Force: true}))
 	directory := processResultsDir(env)
 	if _, err := home.Mkdir(WithEnvHome(ctx, env), directory); err != nil {
 		toolsLogger(env).Warn(fmt.Sprintf("Could not retain completed process result %s", s.ID), "error", err)
@@ -874,7 +925,7 @@ func (r *ProcessRegistry) promoteNotify(env *Env, s *ProcessSession) {
 }
 
 // Post processes one process_manage session action result, promoting a silent process to notify_on_complete
-func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string, result map[string]any) map[string]any {
+func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string, result *pyjson.Object) *pyjson.Object {
 	if result == nil || !waitPolicyEnabled(env) {
 		return result
 	}
@@ -885,12 +936,12 @@ func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string
 	running := false
 	switch action {
 	case "wait":
-		running = result["status"] == "timeout"
+		running = result.Vals["status"] == "timeout"
 	case "poll":
-		running = result["status"] == "running"
+		running = result.Vals["status"] == "running"
 	}
 	if !running {
-		if (action != "wait" && action != "poll") || result["status"] != "interrupted" {
+		if (action != "wait" && action != "poll") || result.Vals["status"] != "interrupted" {
 			waitPolicyForget(s.ID)
 		}
 		return result
@@ -905,24 +956,24 @@ func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string
 		if !processRegistry.claimNotifyIfRunning(s) {
 			waitPolicyForget(s.ID)
 			if action == "poll" {
-				return processRegistry.Poll(WithEnvHome(ctx, env), env, sessionID)
+				return processRegistry.pollDict(WithEnvHome(ctx, env), env, sessionID)
 			}
-			return processRegistry.Wait(ctx, env, sessionID, procIntPtr(5))
+			return processRegistry.waitDict(ctx, env, sessionID, procIntPtr(5))
 		}
 		processRegistry.promoteNotify(env, s)
 	}
 	note := fmt.Sprintf(waitPolicyStopNote, s.ID)
-	result["notify_on_complete"] = true
+	result.Set("notify_on_complete", true)
 	if action == "wait" {
-		clamp := asStr(result["timeout_note"])
+		clamp := asStr(result.Vals["timeout_note"])
 		if strings.HasPrefix(clamp, "Requested wait") {
 			clamp = strings.SplitN(clamp, ". Wait window", 2)[0] + ". "
 		} else {
 			clamp = ""
 		}
-		result["timeout_note"] = clamp + note
+		result.Set("timeout_note", clamp+note)
 	} else {
-		result["note"] = note
+		result.Set("note", note)
 	}
 	return result
 }

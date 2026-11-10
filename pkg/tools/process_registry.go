@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -168,8 +169,8 @@ func (q *EventQueue) waitNotEmpty(timeout time.Duration) {
 	}
 }
 
-func notFoundResult(sessionID string) map[string]any {
-	return map[string]any{"status": "not_found", "error": "No process with ID " + sessionID}
+func notFoundResult(sessionID string) *pyjson.Object {
+	return Dict("status", "not_found", "error", "No process with ID "+sessionID)
 }
 
 // Last n characters of s
@@ -215,15 +216,15 @@ func outputTail(s *ProcessSession, n int) string {
 func OutputTail(s *ProcessSession, n int) string { return outputTail(s, n) }
 
 // Output sized by the session's completion_output_chars plus output_cut when trimmed
-func completionOutput(s *ProcessSession) map[string]any {
+func completionOutput(s *ProcessSession) *pyjson.Object {
 	limit := s.CompletionOutputChars
 	if limit == 0 {
 		limit = CompletionOutputChars
 	}
 	cut := utf8.RuneCountInString(s.OutputBuffer) - limit
-	out := map[string]any{"output": outputTail(s, limit)}
+	out := Dict("output", outputTail(s, limit))
 	if cut > 0 {
-		out["output_cut"] = cut
+		out.Set("output_cut", cut)
 	}
 	return out
 }
@@ -1604,10 +1605,10 @@ func (r *ProcessRegistry) publishFinished(s *ProcessSession, wasRunning, fromRea
 			notification["handoff_note"] = s.HandoffNote
 		}
 		s.mu.Lock()
-		for k, v := range exitFields(s) {
+		for k, v := range exitFields(s).Vals {
 			notification[k] = v
 		}
-		for k, v := range completionOutput(s) {
+		for k, v := range completionOutput(s).Vals {
 			notification[k] = v
 		}
 		s.mu.Unlock()
@@ -1618,10 +1619,10 @@ func (r *ProcessRegistry) publishFinished(s *ProcessSession, wasRunning, fromRea
 }
 
 // Exit code, completion reason and termination source, read under the session lock
-func exitFields(s *ProcessSession) map[string]any {
-	return map[string]any{
-		"exit_code": s.field("exit_code"), "completion_reason": s.CompletionReason, "termination_source": s.TerminationSource,
-	}
+func exitFields(s *ProcessSession) *pyjson.Object {
+	return Dict(
+		"exit_code", s.field("exit_code"), "completion_reason", s.CompletionReason, "termination_source", s.TerminationSource,
+	)
 }
 
 // Closes a finished session's pipe and PTY handles, idempotent
@@ -1966,16 +1967,16 @@ func (r *ProcessRegistry) reconcileLocalExit(ctx context.Context, s *ProcessSess
 }
 
 // Session id, command and running or exited status, read under the session lock
-func statusHead(s *ProcessSession) map[string]any {
+func statusHead(s *ProcessSession) *pyjson.Object {
 	status := "running"
 	if s.Exited {
 		status = "exited"
 	}
-	return map[string]any{"session_id": s.ID, "command": s.Command, "status": status}
+	return Dict("session_id", s.ID, "command", s.Command, "status", status)
 }
 
-// Poll checks status and returns the new output preview of a background process
-func (r *ProcessRegistry) Poll(ctx context.Context, env *Env, sessionID string) map[string]any {
+// Ordered dict form of the exported method result, keys in the order hermes inserts them
+func (r *ProcessRegistry) pollDict(ctx context.Context, env *Env, sessionID string) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	if s == nil || r.uncollectedGone(s) {
 		return notFoundResult(sessionID)
@@ -1985,29 +1986,29 @@ func (r *ProcessRegistry) Poll(ctx context.Context, env *Env, sessionID string) 
 	preview := outputTail(s, 1000)
 	exited, finalizing := s.Exited, readerFinalizing(s)
 	result := statusHead(s)
+	var exit *pyjson.Object
 	if exited {
-		for k, v := range exitFields(s) {
-			result[k] = v
-		}
+		exit = exitFields(s)
 	}
 	s.mu.Unlock()
-	result["pid"] = s.field("pid")
-	result["uptime_seconds"] = int(nowSeconds() - s.StartedAt)
-	result["output_preview"] = preview
+	result.Set("pid", s.field("pid"))
+	result.Set("uptime_seconds", int(nowSeconds()-s.StartedAt))
+	result.Set("output_preview", preview)
 	if exited {
+		dictUpdate(result, exit)
 		if !finalizing {
 			r.markPollObserved(sessionID)
 		}
 	}
 	if s.Detached && s.OutputLog == "" {
-		result["detached"] = true
-		result["note"] = "Process recovered after restart -- output history unavailable"
+		result.Set("detached", true)
+		result.Set("note", "Process recovered after restart -- output history unavailable")
 	}
 	return result
 }
 
-// ReadLog returns the full output paged by lines
-func (r *ProcessRegistry) ReadLog(env *Env, sessionID string, offset *int, limit int) map[string]any {
+// Ordered dict form of the exported method result, keys in the order hermes inserts them
+func (r *ProcessRegistry) readLogDict(env *Env, sessionID string, offset *int, limit int) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	if s == nil {
 		return notFoundResult(sessionID)
@@ -2034,9 +2035,9 @@ func (r *ProcessRegistry) ReadLog(env *Env, sessionID string, offset *int, limit
 		selected = lines[start:stop]
 		observedCompletionOutput = total == 0 || (len(selected) > 0 && stop == total)
 	}
-	result["output"] = strings.Join(selected, "\n")
-	result["total_lines"] = total
-	result["showing"] = fmt.Sprintf("%d lines", len(selected))
+	result.Set("output", strings.Join(selected, "\n"))
+	result.Set("total_lines", total)
+	result.Set("showing", fmt.Sprintf("%d lines", len(selected)))
 	if exited && observedCompletionOutput && !finalizing {
 		r.markConsumed(sessionID)
 	}
@@ -2075,8 +2076,8 @@ func sliceIndices(start, stop, n int) (int, int) {
 	return a, b
 }
 
-// Wait blocks until the process exits, the timeout elapses, an interrupt lands or a yield releases it
-func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, timeout *int) map[string]any {
+// Ordered dict form of the exported method result, keys in the order hermes inserts them
+func (r *ProcessRegistry) waitDict(ctx context.Context, env *Env, sessionID string, timeout *int) *pyjson.Object {
 	maxTimeout := 180
 	if raw := os.Getenv("TERMINAL_TIMEOUT"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil {
@@ -2084,7 +2085,7 @@ func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, 
 		}
 	}
 	if timeout != nil && *timeout <= 0 {
-		return map[string]any{"status": "error", "error": fmt.Sprintf("timeout must be positive (got %d)", *timeout)}
+		return Dict("status", "error", "error", fmt.Sprintf("timeout must be positive (got %d)", *timeout))
 	}
 	timeoutNote := ""
 	effective := maxTimeout
@@ -2106,7 +2107,7 @@ func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, 
 			return notFoundResult(sessionID)
 		}
 		r.reconcileLocalExit(WithEnvHome(ctx, env), s)
-		var result map[string]any
+		var result *pyjson.Object
 		s.mu.Lock()
 		exited := s.Exited && !readerFinalizing(s)
 		if exited {
@@ -2117,16 +2118,16 @@ func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, 
 		if exited {
 			r.markConsumed(sessionID)
 		} else if IsInterrupted(ctx) {
-			result = map[string]any{"status": "interrupted", "command": s.Command, "output": tail,
-				"note": "User sent a new message -- wait interrupted"}
+			result = Dict("status", "interrupted", "command", s.Command, "output", tail,
+				"note", "User sent a new message -- wait interrupted")
 		} else if ConsumeYield(WorkerOf(ctx)) {
-			result = map[string]any{"status": "interrupted", "command": s.Command, "output": tail,
-				"process_running": true,
-				"note":            "User sent a new message -- wait released; the process is still running and you will be notified on exit. Respond to the user now."}
+			result = Dict("status", "interrupted", "command", s.Command, "output", tail,
+				"process_running", true,
+				"note", "User sent a new message -- wait released; the process is still running and you will be notified on exit. Respond to the user now.")
 		}
 		if result != nil {
 			if timeoutNote != "" {
-				result["timeout_note"] = timeoutNote
+				result.Set("timeout_note", timeoutNote)
 			}
 			return result
 		}
@@ -2139,7 +2140,7 @@ func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, 
 	s.mu.Lock()
 	tail := outputTail(s, 1000)
 	s.mu.Unlock()
-	result := map[string]any{"status": "timeout", "command": s.Command, "output": tail, "process_running": true}
+	result := Dict("status", "timeout", "command", s.Command, "output", tail, "process_running", true)
 	baseNote := fmt.Sprintf("Wait window of %ds elapsed — the process is still running. This is not an error.", effective)
 	if s.StartedAt != 0 {
 		baseNote += fmt.Sprintf(" Uptime: %ds.", int(nowSeconds()-s.StartedAt))
@@ -2150,27 +2151,23 @@ func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, 
 		baseNote += " Poll again later or use terminal(background=true, notify_on_complete=true) next time for automatic notification."
 	}
 	if timeoutNote != "" {
-		result["timeout_note"] = timeoutNote + ". " + baseNote
+		result.Set("timeout_note", timeoutNote+". "+baseNote)
 	} else {
-		result["timeout_note"] = baseNote
+		result.Set("timeout_note", baseNote)
 	}
 	return result
 }
 
 // Result for an exited session with exit metadata and the completion sized output tail
-func exitSnapshot(s *ProcessSession, status string) map[string]any {
-	result := map[string]any{"status": status, "command": s.Command}
-	for k, v := range exitFields(s) {
-		result[k] = v
-	}
-	for k, v := range completionOutput(s) {
-		result[k] = v
-	}
+func exitSnapshot(s *ProcessSession, status string) *pyjson.Object {
+	result := Dict("status", status, "command", s.Command)
+	dictUpdate(result, exitFields(s))
+	dictUpdate(result, completionOutput(s))
 	return result
 }
 
-// KillProcess kills a background process and returns its output snapshot
-func (r *ProcessRegistry) KillProcess(ctx context.Context, env *Env, sessionID, source string, consumeOutput bool) map[string]any {
+// Ordered dict form of the exported method result, keys in the order hermes inserts them
+func (r *ProcessRegistry) killDict(ctx context.Context, env *Env, sessionID, source string, consumeOutput bool) *pyjson.Object {
 	if source == "" {
 		source = "process.kill"
 	}
@@ -2185,7 +2182,7 @@ func (r *ProcessRegistry) KillProcess(ctx context.Context, env *Env, sessionID, 
 		finalizing := readerFinalizing(s)
 		s.mu.Unlock()
 		if !scopeStopped {
-			result["scope_stop_failed"] = s.SystemdUnit
+			result.Set("scope_stop_failed", s.SystemdUnit)
 		}
 		if consumeOutput && !finalizing {
 			r.markConsumed(sessionID)
@@ -2210,21 +2207,21 @@ func (r *ProcessRegistry) KillProcess(ctx context.Context, env *Env, sessionID, 
 		}
 		alive := strings.Join(parts, ", ")
 		toolsLogger(env).Warn(fmt.Sprintf("Kill incomplete for %s: %d process(es) still alive (%s) — session kept running", s.ID, len(survivors), alive))
-		return map[string]any{
-			"status":     "error",
-			"error":      fmt.Sprintf("Kill incomplete: %d process(es) still alive (%s); session running", len(survivors), alive),
-			"session_id": s.ID, "survivors": survivors, "process_running": true,
-		}
+		return Dict(
+			"status", "error",
+			"error", fmt.Sprintf("Kill incomplete: %d process(es) still alive (%s); session running", len(survivors), alive),
+			"session_id", s.ID, "survivors", survivors, "process_running", true,
+		)
 	}
 	if !scopeStopped {
 		s.mu.Lock()
 		rootExited := s.Exited
 		s.mu.Unlock()
 		toolsLogger(env).Warn(fmt.Sprintf("Kill incomplete for %s: systemd scope %s did not stop", s.ID, s.SystemdUnit))
-		return map[string]any{
-			"status": "error", "error": fmt.Sprintf("Kill incomplete: systemd scope %s did not stop", s.SystemdUnit),
-			"session_id": s.ID, "scope_stop_failed": s.SystemdUnit, "process_running": !rootExited,
-		}
+		return Dict(
+			"status", "error", "error", fmt.Sprintf("Kill incomplete: systemd scope %s did not stop", s.SystemdUnit),
+			"session_id", s.ID, "scope_stop_failed", s.SystemdUnit, "process_running", !rootExited,
+		)
 	}
 	s.mu.Lock()
 	output := completionOutput(s)
@@ -2235,15 +2232,13 @@ func (r *ProcessRegistry) KillProcess(ctx context.Context, env *Env, sessionID, 
 	s.ExitCode = procIntPtr(-15)
 	s.CompletionReason = "killed"
 	s.TerminationSource = source
-	result := map[string]any{"status": "killed", "session_id": s.ID, "completion_reason": s.CompletionReason, "termination_source": s.TerminationSource}
+	result := Dict("status", "killed", "session_id", s.ID, "completion_reason", s.CompletionReason, "termination_source", s.TerminationSource)
 	s.mu.Unlock()
 	if !r.moveToFinished(WithEnvHome(ctx, env), s, false) {
 		saveCompletedResult(WithEnvHome(ctx, env), env, s)
 	}
 	r.writeCheckpoint(env, nil)
-	for k, v := range output {
-		result[k] = v
-	}
+	dictUpdate(result, output)
 	return result
 }
 
@@ -2260,7 +2255,7 @@ func (r *ProcessRegistry) stopScope(s *ProcessSession) bool {
 }
 
 // Delivers the kill via PTY, local tree, sandbox exec or recovered host pid, a result when it cannot proceed
-func (r *ProcessRegistry) signalKill(env *Env, s *ProcessSession, sessionID string, consumeOutput bool) map[string]any {
+func (r *ProcessRegistry) signalKill(env *Env, s *ProcessSession, sessionID string, consumeOutput bool) *pyjson.Object {
 	switch {
 	case s.pty != nil:
 		s.pty.Terminate(true)
@@ -2279,46 +2274,44 @@ func (r *ProcessRegistry) signalKill(env *Env, s *ProcessSession, sessionID stri
 			}
 			r.closeReusedDetached(s)
 			s.mu.Lock()
-			result := map[string]any{"status": "already_exited", "exit_code": s.field("exit_code")}
+			result := Dict("status", "already_exited", "exit_code", s.field("exit_code"))
 			s.mu.Unlock()
-			for k, v := range output {
-				result[k] = v
-			}
+			dictUpdate(result, output)
 			if !scopeStopped {
-				result["scope_stop_failed"] = s.SystemdUnit
+				result.Set("scope_stop_failed", s.SystemdUnit)
 			}
 			return result
 		}
 		r.terminateHostPid(s.env, s.Pid, nil)
 	default:
-		return map[string]any{
-			"status": "error",
-			"error":  "Recovered process cannot be killed after restart because its original runtime handle is no longer available",
-		}
+		return Dict(
+			"status", "error",
+			"error", "Recovered process cannot be killed after restart because its original runtime handle is no longer available",
+		)
 	}
 	return nil
 }
 
 // Runs the PTY op under PTY mode, else the pipe op, returning ok on success
-func (r *ProcessRegistry) stdinOp(env *Env, sessionID string, ptyOp func(*ptyProcess) error, pipeOp func(*ExecProcess) error, ok map[string]any) map[string]any {
+func (r *ProcessRegistry) stdinOp(env *Env, sessionID string, ptyOp func(*ptyProcess) error, pipeOp func(*ExecProcess) error, ok *pyjson.Object) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	if s == nil {
 		return notFoundResult(sessionID)
 	}
 	if s.isExited() {
-		return map[string]any{"status": "already_exited", "error": alreadyExitedError(s)}
+		return Dict("status", "already_exited", "error", alreadyExitedError(s))
 	}
 	var err error
 	switch {
 	case s.pty != nil:
 		err = ptyOp(s.pty)
 	case s.Process == nil || s.Process.stdinDone == nil:
-		return map[string]any{"status": "error", "error": stdinUnavailableError(s)}
+		return Dict("status", "error", "error", stdinUnavailableError(s))
 	default:
 		err = pipeOp(s.Process)
 	}
 	if err != nil {
-		return map[string]any{"status": "error", "error": err.Error()}
+		return Dict("status", "error", "error", err.Error())
 	}
 	return ok
 }
@@ -2326,8 +2319,8 @@ func (r *ProcessRegistry) stdinOp(env *Env, sessionID string, ptyOp func(*ptyPro
 // Pipe stdin of a tracked process is handed to the child at spawn and closed after its data, so a write cannot reach it
 var errPipeStdinClosed = errors.New("stdin pipe is closed")
 
-// WriteStdin sends raw data to a running process's stdin without a newline
-func (r *ProcessRegistry) WriteStdin(env *Env, sessionID, data string) map[string]any {
+// Ordered dict form of the exported method result, keys in the order hermes inserts them
+func (r *ProcessRegistry) writeStdinDict(env *Env, sessionID, data string) *pyjson.Object {
 	return r.stdinOp(env, sessionID,
 		func(p *ptyProcess) error {
 			if isWindowsHost {
@@ -2340,11 +2333,11 @@ func (r *ProcessRegistry) WriteStdin(env *Env, sessionID, data string) map[strin
 			return p.Write(raw)
 		},
 		func(p *ExecProcess) error { return errPipeStdinClosed },
-		map[string]any{"status": "ok", "bytes_written": pystr.Len(data)})
+		Dict("status", "ok", "bytes_written", pystr.Len(data)))
 }
 
-// SubmitStdin sends data plus Enter, CR on a POSIX PTY, CRLF on a Windows PTY, LF on a pipe
-func (r *ProcessRegistry) SubmitStdin(env *Env, sessionID, data string) map[string]any {
+// Ordered dict form of the exported method result, keys in the order hermes inserts them
+func (r *ProcessRegistry) submitStdinDict(env *Env, sessionID, data string) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	enter := "\n"
 	if s != nil && s.pty != nil {
@@ -2353,25 +2346,25 @@ func (r *ProcessRegistry) SubmitStdin(env *Env, sessionID, data string) map[stri
 			enter = "\r\n"
 		}
 	}
-	return r.WriteStdin(env, sessionID, data+enter)
+	return r.writeStdinDict(env, sessionID, data+enter)
 }
 
 // RequestCloseTerminal asks the desktop GUI to close the process's read only terminal tab
-func (r *ProcessRegistry) RequestCloseTerminal(env *Env, sessionID string) map[string]any {
+func (r *ProcessRegistry) RequestCloseTerminal(env *Env, sessionID string) *pyjson.Object {
 	if r.OnClose == nil {
-		return map[string]any{"status": "error", "error": "close_terminal is only available in the icebath desktop app."}
+		return Dict("status", "error", "error", "close_terminal is only available in the icebath desktop app.")
 	}
 	if err := r.OnClose(r.Get(env, sessionID), sessionID); err != nil {
-		return map[string]any{"status": "error", "error": err.Error()}
+		return Dict("status", "error", "error", err.Error())
 	}
-	return map[string]any{
-		"status": "ok", "closed": sessionID,
-		"note": "Closed the read-only terminal tab. The process was not killed; its output remains available and the user can reopen the tab from the status stack.",
-	}
+	return Dict(
+		"status", "ok", "closed", sessionID,
+		"note", "Closed the read-only terminal tab. The process was not killed; its output remains available and the user can reopen the tab from the status stack.",
+	)
 }
 
-// CloseStdin sends EOF to a running process without killing it
-func (r *ProcessRegistry) CloseStdin(env *Env, sessionID string) map[string]any {
+// Ordered dict form of the exported method result, keys in the order hermes inserts them
+func (r *ProcessRegistry) closeStdinDict(env *Env, sessionID string) *pyjson.Object {
 	s := r.Get(env, sessionID)
 	msg := "stdin closed"
 	if s != nil && s.pty != nil {
@@ -2380,7 +2373,59 @@ func (r *ProcessRegistry) CloseStdin(env *Env, sessionID string) map[string]any 
 	return r.stdinOp(env, sessionID,
 		func(p *ptyProcess) error { return p.SendEOF() },
 		func(p *ExecProcess) error { return nil },
-		map[string]any{"status": "ok", "message": msg})
+		Dict("status", "ok", "message", msg))
+}
+
+// Merges the items of src into dst the way dict.update does
+func dictUpdate(dst, src *pyjson.Object) {
+	for _, k := range src.Keys {
+		dst.Set(k, src.Vals[k])
+	}
+}
+
+// Poll checks status and returns the new output preview of a background process
+func (r *ProcessRegistry) Poll(ctx context.Context, env *Env, sessionID string) map[string]any {
+	return r.pollDict(ctx, env, sessionID).Vals
+}
+
+// ReadLog returns the full output paged by lines
+func (r *ProcessRegistry) ReadLog(env *Env, sessionID string, offset *int, limit int) map[string]any {
+	return r.readLogDict(env, sessionID, offset, limit).Vals
+}
+
+// Wait blocks until the process exits, the timeout elapses, an interrupt lands or a yield releases it
+func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, timeout *int) map[string]any {
+	return r.waitDict(ctx, env, sessionID, timeout).Vals
+}
+
+// KillProcess kills a background process and returns its output snapshot
+func (r *ProcessRegistry) KillProcess(ctx context.Context, env *Env, sessionID, source string, consumeOutput bool) map[string]any {
+	return r.killDict(ctx, env, sessionID, source, consumeOutput).Vals
+}
+
+// WriteStdin sends raw data to a running process's stdin without a newline
+func (r *ProcessRegistry) WriteStdin(env *Env, sessionID, data string) map[string]any {
+	return r.writeStdinDict(env, sessionID, data).Vals
+}
+
+// SubmitStdin sends data plus Enter, CR on a POSIX PTY, CRLF on a Windows PTY, LF on a pipe
+func (r *ProcessRegistry) SubmitStdin(env *Env, sessionID, data string) map[string]any {
+	return r.submitStdinDict(env, sessionID, data).Vals
+}
+
+// CloseStdin sends EOF to a running process without killing it
+func (r *ProcessRegistry) CloseStdin(env *Env, sessionID string) map[string]any {
+	return r.closeStdinDict(env, sessionID).Vals
+}
+
+// ListSessions lists running and recently finished processes for a task and or session key
+func (r *ProcessRegistry) ListSessions(ctx context.Context, env *Env, taskID, sessionKey string, includeRetained bool) []map[string]any {
+	dicts := r.listSessionDicts(ctx, env, taskID, sessionKey, includeRetained)
+	out := make([]map[string]any, len(dicts))
+	for i, d := range dicts {
+		out[i] = d.Vals
+	}
+	return out
 }
 
 // CountRunning is the running count for status bar polling
@@ -2390,8 +2435,8 @@ func (r *ProcessRegistry) CountRunning() int {
 	return len(r.running)
 }
 
-// ListSessions lists running and recently finished processes for a task and or session key
-func (r *ProcessRegistry) ListSessions(ctx context.Context, env *Env, taskID, sessionKey string, includeRetained bool) []map[string]any {
+// Ordered dict form of the exported method result, keys in the order hermes inserts them
+func (r *ProcessRegistry) listSessionDicts(ctx context.Context, env *Env, taskID, sessionKey string, includeRetained bool) []*pyjson.Object {
 	order := []string{}
 	sessions := map[string]*ProcessSession{}
 	add := func(s *ProcessSession) {
@@ -2429,7 +2474,7 @@ func (r *ProcessRegistry) ListSessions(ctx context.Context, env *Env, taskID, se
 		}
 		all = kept
 	}
-	result := []map[string]any{}
+	result := []*pyjson.Object{}
 	for _, s := range all {
 		r.reconcileLocalExit(WithEnvHome(ctx, env), s)
 		s.mu.Lock()
@@ -2437,38 +2482,38 @@ func (r *ProcessRegistry) ListSessions(ctx context.Context, env *Env, taskID, se
 		if s.Exited {
 			status = "exited"
 		}
-		entry := map[string]any{
-			"session_id": s.ID, "command": headChars(s.Command, 200), "cwd": s.field("cwd"), "pid": s.field("pid"),
-			"owner_task_id":  s.OwnerTaskID,
-			"started_at":     time.Unix(int64(s.StartedAt), 0).Local().Format("2006-01-02T15:04:05"),
-			"uptime_seconds": int(nowSeconds() - s.StartedAt), "status": status,
-			"output_preview": tailChars(s.OutputBuffer, 200),
-		}
+		entry := Dict(
+			"session_id", s.ID, "command", headChars(s.Command, 200), "cwd", s.field("cwd"), "pid", s.field("pid"),
+			"owner_task_id", s.OwnerTaskID,
+			"started_at", time.Unix(int64(s.StartedAt), 0).Local().Format("2006-01-02T15:04:05"),
+			"uptime_seconds", int(nowSeconds()-s.StartedAt), "status", status,
+			"output_preview", tailChars(s.OutputBuffer, 200),
+		)
 		if taskID != "" && sessionKey != "" && s.OwnerTaskID != taskID && s.SessionKey == sessionKey {
-			entry["session_scoped"] = true
+			entry.Set("session_scoped", true)
 		}
 		if s.WslChain {
-			entry["wsl_chain"] = true
-			entry["wsl_note"] = wslChainNote
+			entry.Set("wsl_chain", true)
+			entry.Set("wsl_note", wslChainNote)
 		}
 		if len(s.WatchPatterns) > 0 && !s.watchDisabled {
-			entry["watch_patterns"] = append([]string{}, s.WatchPatterns...)
-			entry["watch_hit"] = s.watchHits > 0
+			entry.Set("watch_patterns", append([]string{}, s.WatchPatterns...))
+			entry.Set("watch_hit", s.watchHits > 0)
 		}
 		if s.NotifyOnComplete {
-			entry["notify_on_complete"] = true
+			entry.Set("notify_on_complete", true)
 		}
 		if s.PersistOnRelease {
-			entry["persist_on_release"] = true
+			entry.Set("persist_on_release", true)
 		}
 		if s.Exited {
-			entry["exit_code"] = s.field("exit_code")
-			entry["exited_at"] = s.ExitedAt
-			entry["completion_reason"] = s.CompletionReason
+			entry.Set("exit_code", s.field("exit_code"))
+			entry.Set("exited_at", s.ExitedAt)
+			entry.Set("completion_reason", s.CompletionReason)
 		}
 		s.mu.Unlock()
 		if s.Detached {
-			entry["detached"] = true
+			entry.Set("detached", true)
 		}
 		result = append(result, entry)
 	}

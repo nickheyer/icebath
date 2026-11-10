@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,8 +27,8 @@ const nixUpdateMsg = "Update Icebath through the Nix source that installed it " 
 	"(e.g. nix profile upgrade, or update your flake input and rebuild with nixos-rebuild or home-manager switch)"
 
 // Upgrade guidance for a nix managed install, empty when no nix system manages it
-func GetManagedUpdateCommand(h string) string {
-	if nixManagedSystems[ManagedSystem(h)] {
+func GetManagedUpdateCommand(ctx context.Context, h string) string {
+	if nixManagedSystems[ManagedSystem(ctx, h)] {
 		return nixUpdateMsg
 	}
 	return ""
@@ -83,7 +84,7 @@ func installCodeRoot() string {
 var runningInContainer = hostinfo.IsContainer
 
 // Install method from the code stamp, a home stamp, the managed marker, the nix store or a git checkout
-func DetectInstallMethod(h, projectRoot string) (string, error) {
+func DetectInstallMethod(ctx context.Context, h, projectRoot string) (string, error) {
 	root := projectRoot
 	if root == "" {
 		root = installCodeRoot()
@@ -99,7 +100,7 @@ func DetectInstallMethod(h, projectRoot string) (string, error) {
 	if method != "" && !(method == "docker" && !runningInContainer()) {
 		return method, nil
 	}
-	if managed := ManagedSystem(h); managed != "" {
+	if managed := ManagedSystem(ctx, h); managed != "" {
 		return strings.ReplaceAll(strings.ToLower(managed), " ", "-"), nil
 	}
 	if resolved, err := pyResolve(root); err == nil && resolved != nixStore {
@@ -148,11 +149,11 @@ func RecommendedUpdateCommandForMethod(method string) string {
 }
 
 // Update command for this install, the managed guidance winning over a stale code stamp
-func RecommendedUpdateCommand(h string) (string, error) {
-	if cmd := GetManagedUpdateCommand(h); cmd != "" {
+func RecommendedUpdateCommand(ctx context.Context, h string) (string, error) {
+	if cmd := GetManagedUpdateCommand(ctx, h); cmd != "" {
 		return cmd, nil
 	}
-	method, err := DetectInstallMethod(h, installCodeRoot())
+	method, err := DetectInstallMethod(ctx, h, installCodeRoot())
 	if err != nil {
 		return "", err
 	}

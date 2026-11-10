@@ -22,7 +22,7 @@ func claimStoreAt(t *testing.T, home string) *Store {
 }
 
 func swapScriptHeartbeatSeams(t *testing.T, run func(s *Store, ctx context.Context, scriptPath, workdir string, cancel CancelSource, interpreter *string) (bool, string, error),
-	beat func(s *Store, jobID, owner string) (bool, error)) {
+	beat func(s *Store, ctx context.Context, jobID, owner string) (bool, error)) {
 	t.Helper()
 	prevRun, prevBeat, prevEvery := cronRunJobScript, cronHeartbeatRunClaim, runClaimHeartbeatSeconds
 	t.Cleanup(func() {
@@ -81,14 +81,14 @@ func TestLongRunningScriptRefreshesOwnedClaimInProfileStore(t *testing.T) {
 					}
 					return true, c.output, nil
 				},
-				func(s *Store, jobID, owner string) (bool, error) {
-					updated, err := s.heartbeatRunClaim(jobID, owner)
+				func(s *Store, _ context.Context, jobID, owner string) (bool, error) {
+					updated, err := s.heartbeatRunClaim(context.Background(), jobID, owner)
 					once.Do(func() {
 						clock.Lock()
 						current = originalTime.Add(ttl + 10*time.Second)
 						clock.Unlock()
 						scanDue, scanErr = s.getDueJobs(context.Background())
-						job, _ := s.getJob(jobID)
+						job, _ := s.getJob(context.Background(), jobID)
 						recordPresent = job != nil
 						close(heartbeatSeen)
 					})
@@ -138,8 +138,8 @@ func TestScriptHeartbeatUsesCapturedClaimOwner(t *testing.T) {
 			}
 			return true, "done", nil
 		},
-		func(s *Store, jobID, owner string) (bool, error) {
-			updated, err := s.heartbeatRunClaim(jobID, owner)
+		func(s *Store, _ context.Context, jobID, owner string) (bool, error) {
+			updated, err := s.heartbeatRunClaim(context.Background(), jobID, owner)
 			seen.Lock()
 			owners, refreshed = append(owners, owner), append(refreshed, updated)
 			seen.Unlock()
@@ -174,7 +174,7 @@ func TestScriptRunWithoutAnOwnedOneShotClaimStartsNoHeartbeat(t *testing.T) {
 			time.Sleep(60 * time.Millisecond)
 			return true, "ran", nil
 		},
-		func(*Store, string, string) (bool, error) {
+		func(*Store, context.Context, string, string) (bool, error) {
 			mu.Lock()
 			beats++
 			mu.Unlock()

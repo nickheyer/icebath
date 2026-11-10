@@ -513,7 +513,7 @@ func curatorRestoreCronSkillLinks(ctx context.Context, snapDir string) *pyjson.O
 	report.Set("attempted", true)
 	restored, unchanged := []any{}, 0
 	liveIDs := map[string]bool{}
-	err = CuratorHooks.UpdateJobs(home.Dir(ctx), func(jobs []any) (bool, error) {
+	err = CuratorHooks.UpdateJobs(ctx, home.Dir(ctx), func(jobs []any) (bool, error) {
 		changed := false
 		for _, live := range jobs {
 			jid, ok := curatorGetOr(live, "id", nil).(string)

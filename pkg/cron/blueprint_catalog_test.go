@@ -221,11 +221,11 @@ func TestPriceWatchFillsAndPersistsWithChosenCadence(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		created, err := s.createJob(opts)
+		created, err := s.createJob(context.Background(), opts)
 		if err != nil {
 			t.Fatal(err)
 		}
-		saved, err := s.getJob(created.ID)
+		saved, err := s.getJob(context.Background(), created.ID)
 		if err != nil || saved == nil {
 			t.Fatalf("saved %v %v", saved, err)
 		}

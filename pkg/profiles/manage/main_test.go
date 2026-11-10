@@ -16,7 +16,7 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == mcpStdioFixtureArg {
 		os.Exit(runMCPStdioFixture(os.Stdin, os.Stdout))
 	}
-	home.DispatchScratchPruneEntry()
+	home.DispatchScratchPruneEntry(context.Background())
 	installGatewayFixtures()
 	os.Exit(m.Run())
 }

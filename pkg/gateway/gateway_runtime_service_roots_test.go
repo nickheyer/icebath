@@ -26,7 +26,7 @@ func TestRequestedServiceNameDoesNotBorrowCallersHome(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("ICEBATH_HOME", filepath.Join(tmp, ".icebath"))
-			if got, err := ServiceSuffix(requested); err != nil || got != installed {
+			if got, err := ServiceSuffix(context.Background(), requested); err != nil || got != installed {
 				t.Fatalf("%q %q %v", got, installed, err)
 			}
 		})

@@ -325,7 +325,7 @@ func ReloadEnv(h string) (int, error) {
 	hk := hooks()
 	known := map[string]bool{}
 	if hk.DotenvUnreadable == nil || !hk.DotenvUnreadable(home.EnvPath(h)) {
-		for name := range OptionalEnvVars {
+		for _, name := range OptionalEnvVars.Names() {
 			known[name] = true
 		}
 		if hk.ExtraEnvKeys != nil {

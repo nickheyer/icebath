@@ -163,7 +163,7 @@ func tipTool(env *Env, text, selector, title, side string) string {
 	if !ok {
 		return toolErrorJSON("tip is only available in the Icebath desktop app.", nil)
 	}
-	return jsonCompact(map[string]any{"success": true, "selector": selector})
+	return JSON(Dict("success", true, "selector", selector))
 }
 
 var tipSchema = map[string]any{

@@ -117,10 +117,13 @@ func TestEnqueueThenFlushDeliversMergedTextOnce(t *testing.T) {
 	a := newBatchAdapter()
 	close(a.release)
 	ctx := context.Background()
-	if err := a.EnqueueTextEvent(ctx, batchEvent("part one")); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.EnqueueTextEvent(ctx, batchEvent("part two")); err != nil {
+	err := a.RunLoopTurn(ctx, func(ctx context.Context) error {
+		if err := a.EnqueueTextEvent(ctx, batchEvent("part one")); err != nil {
+			return err
+		}
+		return a.EnqueueTextEvent(ctx, batchEvent("part two"))
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	wctx, cancel := context.WithTimeout(ctx, 5*time.Second)

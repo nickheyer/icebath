@@ -250,7 +250,7 @@ func (s *Store) handOffPrimaryRoutedRun(ctx context.Context, job *Job, extraProm
 	if extraPrompt != nil {
 		extra = *extraPrompt
 	}
-	updated, err := s.triggerJob(job.ID, extra)
+	updated, err := s.triggerJob(home.WithOverride(ctx, s.home), job.ID, extra)
 	if err != nil {
 		return "", err
 	}
@@ -294,7 +294,7 @@ func (s *Store) claimForManualRun(ctx context.Context, jobID, logLabel string) (
 		return claimed, nil
 	}
 	if err == nil {
-		refreshed, gerr := s.getJob(jobID)
+		refreshed, gerr := s.getJob(home.WithOverride(ctx, s.home), jobID)
 		if gerr == nil {
 			reason := "Job is already being fired by the scheduler; not run again."
 			if refreshed == nil {
@@ -412,7 +412,7 @@ func (s *Store) runClaimedJob(ctx context.Context, job *Job, extraPrompt *string
 	if err != nil {
 		return fail(err)
 	}
-	refreshed, err := s.getJob(jobID)
+	refreshed, err := s.getJob(home.WithOverride(ctx, s.home), jobID)
 	if err != nil {
 		return fail(err)
 	}
@@ -450,7 +450,7 @@ func (s *Store) runClaimedJob(ctx context.Context, job *Job, extraPrompt *string
 // ExecuteJobForEvent fires an existing job for an external event through the manual run body
 func ExecuteJobForEvent(ctx context.Context, h, jobRef string, extraPrompt *string) (map[string]any, error) {
 	s := openCronStore(h, nil)
-	job, err := s.resolveJobRef(jobRef)
+	job, err := s.resolveJobRef(home.WithOverride(ctx, s.home), jobRef)
 	var amb *AmbiguousJobReferenceError
 	if errors.As(err, &amb) {
 		return map[string]any{"claimed": false, "success": false, "error": amb.Error()}, nil
@@ -581,7 +581,7 @@ func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *
 // Async delegation completion block of a finished background manual run
 func (s *Store) manualRunCompletion(ctx context.Context, res *manualRunResult, jobID, jobName, deliver string, startedAt time.Time, executionID *string) *pyjson.Object {
 	duration := math.Round(time.Since(startedAt).Seconds()*100) / 100
-	refreshed, _ := s.getJob(jobID)
+	refreshed, _ := s.getJob(home.WithOverride(ctx, s.home), jobID)
 	result := "FAILED"
 	if res.Success {
 		result = "ok"
@@ -758,7 +758,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 			if !pyrepr.Truthy(a.ContextFrom) {
 				return "", nil
 			}
-			return s.validateContextFromRefs(refsList(a.ContextFrom))
+			return s.validateContextFromRefs(home.WithOverride(ctx, s.home), refsList(a.ContextFrom))
 		},
 	}
 	for _, check := range checks {
@@ -812,7 +812,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 		spec.Set("paused", pausedValue)
 		spec.Set("paused_reason", a.PausedReason)
 	}
-	job, err := s.createJobWithSchedulerRegistration(spec)
+	job, err := s.createJobWithSchedulerRegistration(home.WithOverride(ctx, s.home), spec)
 	var regErr *CronSchedulerRegistrationError
 	if errors.As(err, &regErr) {
 		partial := regErr.ToDict()
@@ -847,7 +847,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 }
 
 func (s *Store) actionList(ctx context.Context, a *cronjobArgs) (string, error) {
-	jobs, err := s.listJobs(a.IncludeDisabled)
+	jobs, err := s.listJobs(home.WithOverride(ctx, s.home), a.IncludeDisabled)
 	if err != nil {
 		return "", err
 	}
@@ -886,8 +886,8 @@ func (s *Store) jobStateResult(updated *Job) string {
 }
 
 // Formatted job reread so the response reflects the post run fields
-func (s *Store) refreshedJobView(jobID string) (*pyjson.Object, error) {
-	job, err := s.getJob(jobID)
+func (s *Store) refreshedJobView(ctx context.Context, jobID string) (*pyjson.Object, error) {
+	job, err := s.getJob(home.WithOverride(ctx, s.home), jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -916,7 +916,7 @@ func (s *Store) actionRun(ctx context.Context, job *Job, a *cronjobArgs) (string
 	bg := s.tryDispatchBackgroundRun(ctx, a.env, job, a.SessionID, extraPrompt)
 	if bg != nil && bg.Dispatched != nil && *bg.Dispatched {
 		s.notifyProviderJobsChanged()
-		result, err := s.refreshedJobView(jobID)
+		result, err := s.refreshedJobView(home.WithOverride(ctx, s.home), jobID)
 		if err != nil {
 			return "", err
 		}
@@ -939,7 +939,7 @@ func (s *Store) actionRun(ctx context.Context, job *Job, a *cronjobArgs) (string
 	if execResult.Claimed {
 		s.notifyProviderJobsChanged()
 	}
-	result, err := s.refreshedJobView(jobID)
+	result, err := s.refreshedJobView(home.WithOverride(ctx, s.home), jobID)
 	if err != nil {
 		return "", err
 	}
@@ -1094,7 +1094,7 @@ func (s *Store) updateContextFrom(ctx context.Context, job *Job, a *cronjobArgs,
 		refs = applyContinuity(refs, pyrepr.Truthy(a.Continuity))
 	}
 	if len(refs) > 0 {
-		msg, err := s.validateContextFromRefs(toAnyList(refs))
+		msg, err := s.validateContextFromRefs(home.WithOverride(ctx, s.home), toAnyList(refs))
 		if err != nil || msg != "" {
 			return msg, err
 		}
@@ -1196,7 +1196,7 @@ func (s *Store) actionUpdate(ctx context.Context, job *Job, a *cronjobArgs) (str
 	if len(updates) == 0 {
 		return cronToolError("No updates provided.", nil), nil
 	}
-	updated, err := s.updateJob(job.ID, updates)
+	updated, err := s.updateJob(home.WithOverride(ctx, s.home), job.ID, updates)
 	if err != nil {
 		return "", err
 	}
@@ -1214,8 +1214,8 @@ func (s *Store) actionCancel(ctx context.Context, job *Job, a *cronjobArgs) (str
 }
 
 // Job for a reference or the JSON error naming the ambiguity or the miss
-func (s *Store) resolveJobOrError(jobID string) (*Job, string, error) {
-	job, err := s.resolveJobRef(jobID)
+func (s *Store) resolveJobOrError(ctx context.Context, jobID string) (*Job, string, error) {
+	job, err := s.resolveJobRef(home.WithOverride(ctx, s.home), jobID)
 	var amb *AmbiguousJobReferenceError
 	if errors.As(err, &amb) {
 		matches := make([]any, 0, len(amb.Matches))
@@ -1260,7 +1260,7 @@ func (s *Store) cronjob(ctx context.Context, a *cronjobArgs) (out string) {
 		if !pyrepr.Truthy(a.JobID) {
 			return cronToolError(fmt.Sprintf("job_id is required for action '%s'", normalized), nil)
 		}
-		job, errJSON, rerr := s.resolveJobOrError(pyrepr.Str(a.JobID))
+		job, errJSON, rerr := s.resolveJobOrError(home.WithOverride(ctx, s.home), pyrepr.Str(a.JobID))
 		if rerr != nil {
 			return cronToolError(rerr.Error(), nil)
 		}
@@ -1276,12 +1276,12 @@ func (s *Store) cronjob(ctx context.Context, a *cronjobArgs) (out string) {
 			text, err = s.actionRun(ctx, job, a)
 		case "pause":
 			var updated *Job
-			if updated, err = s.pauseJob(job.ID, argPtr(a.Reason)); err == nil {
+			if updated, err = s.pauseJob(home.WithOverride(ctx, s.home), job.ID, argPtr(a.Reason)); err == nil {
 				text = s.jobStateResult(updated)
 			}
 		case "resume":
 			var updated *Job
-			if updated, err = s.resumeJob(job.ID); err == nil {
+			if updated, err = s.resumeJob(home.WithOverride(ctx, s.home), job.ID); err == nil {
 				text = s.jobStateResult(updated)
 			}
 		case "cancel":

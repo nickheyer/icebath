@@ -59,6 +59,17 @@ func serveWitness(t *testing.T, network, address string, answer bool) net.Listen
 	return ln
 }
 
+// Home directly under the temp root, short enough for a unix socket path like the hermes fixture
+func shortHome(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "hwg-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 // Points the tick socket at a short path inside dir
 func shortTickSocket(t *testing.T, dir string) string {
 	sock := filepath.Join(dir, "t.sock")
@@ -72,7 +83,7 @@ func fp(v float64) *float64 { return &v }
 
 func TestProbeGatewayLoopLivenessHeartbeatRules(t *testing.T) {
 	ctx := context.Background()
-	h := t.TempDir()
+	h := shortHome(t)
 	shortTickSocket(t, h)
 	opts := LoopLivenessOptions{Home: h, TickTimeoutS: 0.05}
 	if got := ProbeGatewayLoopLiveness(ctx, 4242, opts); got != GatewayLoopUnknown {
@@ -120,7 +131,7 @@ func TestLoopTickWitnessContract(t *testing.T) {
 		return LoopLivenessOptions{Home: h, TickTimeoutS: 0.05, TickGapS: fp(0)}
 	}
 	t.Run("answering witness beats a stale file", func(t *testing.T) {
-		h := t.TempDir()
+		h := shortHome(t)
 		serveWitness(t, "unix", shortTickSocket(t, h), true)
 		writeAgedHeartbeat(t, h, 4242, 600, map[string]any{"loop_tick_socket": true})
 		if got := ProbeGatewayLoopLiveness(ctx, 4242, opts(h)); got != GatewayLoopAlive {
@@ -128,7 +139,7 @@ func TestLoopTickWitnessContract(t *testing.T) {
 		}
 	})
 	t.Run("true wedge requires sustained silence", func(t *testing.T) {
-		h := t.TempDir()
+		h := shortHome(t)
 		serveWitness(t, "unix", shortTickSocket(t, h), false)
 		writeAgedHeartbeat(t, h, 4242, 600, map[string]any{"loop_tick_socket": true})
 		if got := ProbeGatewayLoopLiveness(ctx, 4242, opts(h)); got != GatewayLoopWedged {
@@ -136,7 +147,7 @@ func TestLoopTickWitnessContract(t *testing.T) {
 		}
 	})
 	t.Run("single silent probe is not destructive", func(t *testing.T) {
-		h := t.TempDir()
+		h := shortHome(t)
 		serveWitness(t, "unix", shortTickSocket(t, h), false)
 		writeAgedHeartbeat(t, h, 4242, 600, map[string]any{"loop_tick_socket": true})
 		old := lifecycleProbeTickSocketOnce
@@ -154,7 +165,7 @@ func TestLoopTickWitnessContract(t *testing.T) {
 		}
 	})
 	t.Run("witness vanishing mid window is unknown", func(t *testing.T) {
-		h := t.TempDir()
+		h := shortHome(t)
 		shortTickSocket(t, h)
 		writeAgedHeartbeat(t, h, 4242, 600, map[string]any{"loop_tick_socket": true})
 		old := lifecycleProbeTickSocketOnce
@@ -172,7 +183,7 @@ func TestLoopTickWitnessContract(t *testing.T) {
 		}
 	})
 	t.Run("armed witness unreachable and unarmed witness are unknown", func(t *testing.T) {
-		h := t.TempDir()
+		h := shortHome(t)
 		shortTickSocket(t, h)
 		writeAgedHeartbeat(t, h, 4242, 600, map[string]any{"loop_tick_socket": true})
 		if got := ProbeGatewayLoopLiveness(ctx, 4242, opts(h)); got != GatewayLoopUnknown {
@@ -184,7 +195,7 @@ func TestLoopTickWitnessContract(t *testing.T) {
 		}
 	})
 	t.Run("fresh file with a silent node is unknown", func(t *testing.T) {
-		h := t.TempDir()
+		h := shortHome(t)
 		serveWitness(t, "unix", shortTickSocket(t, h), false)
 		writeAgedHeartbeat(t, h, 4242, 5, nil)
 		if got := ProbeGatewayLoopLiveness(ctx, 4242, opts(h)); got != GatewayLoopUnknown {
@@ -195,7 +206,7 @@ func TestLoopTickWitnessContract(t *testing.T) {
 
 func TestLoopTickTCPWitness(t *testing.T) {
 	ctx := context.Background()
-	h := t.TempDir()
+	h := shortHome(t)
 	shortTickSocket(t, h)
 	o := LoopLivenessOptions{Home: h, TickTimeoutS: 0.05, TickGapS: fp(0)}
 	answering := serveWitness(t, "tcp", "127.0.0.1:0", true)

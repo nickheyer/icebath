@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -189,15 +190,15 @@ func (s *Store) checkMonitor(ctx context.Context, job *Job) (MonitorOutcome, err
 			"The monitored source's output changed since the last run.\n\n" +
 			"### Diff (previous → current)\n\n```diff\n" + buildMonitorDiff(oldOutput, output) + "\n```\n\n" + current
 	}
-	s.persistMonitorState(job.ID, newHash, output)
+	s.persistMonitorState(home.WithOverride(ctx, s.home), job.ID, newHash, output)
 	return MonitorOutcome{OK: true, Changed: true, FirstRun: firstRun, ContextBlock: &block}, nil
 }
 
 // Writes the snapshot and stores the new hash with its change time on the job
-func (s *Store) persistMonitorState(jobID, newHash, output string) {
+func (s *Store) persistMonitorState(ctx context.Context, jobID, newHash, output string) {
 	s.writeLastMonitorOutput(jobID, output)
 	state := map[string]any{"last_output_hash": newHash, "last_changed_at": FormatISO(s.clk.now())}
-	if _, err := s.updateJob(jobID, map[string]any{"monitor_state": state}); err != nil {
+	if _, err := s.updateJob(home.WithOverride(ctx, s.home), jobID, map[string]any{"monitor_state": state}); err != nil {
 		s.log.Warn(fmt.Sprintf("Monitor: failed to persist state for %s: %v", pyrepr.Repr(jobID), err))
 	}
 }

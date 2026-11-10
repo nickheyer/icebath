@@ -71,7 +71,7 @@ func TestGLMSuffixCollisionNotSplit(t *testing.T) {
 func TestSanitizeEnvFileKeepsValueSemanticsAndCleanFiles(t *testing.T) {
 	for _, text := range []string{"FAL_KEY=good\nOPENROUTER_API_KEY=valFIRECRAWL_API_KEY=val2\n", "GOOD_KEY=good\nOTHER_KEY=other\n"} {
 		h, _, _ := caseHome(t, "", text)
-		fixes, err := SanitizeEnvFile(h)
+		fixes, err := SanitizeEnvFile(context.Background(), h)
 		data, _ := os.ReadFile(home.EnvPath(h))
 		if err != nil || fixes != 0 || string(data) != text {
 			t.Fatalf("fixes %d err %v content %q", fixes, err, data)
@@ -101,7 +101,7 @@ func TestLoadedVersionIsLatestWhileTheFileReadsLegacy(t *testing.T) {
 	if v := loadCase(t, h)["_config_version"]; !pyEq(v, latestConfigVersion()) {
 		t.Fatalf("loaded version %v", v)
 	}
-	if cur, latest, err := CheckConfigVersion(h, false); err != nil || cur != 0 || latest != latestConfigVersion() {
+	if cur, latest, err := CheckConfigVersion(context.Background(), h, false); err != nil || cur != 0 || latest != latestConfigVersion() {
 		t.Fatalf("check %d %d %v", cur, latest, err)
 	}
 }

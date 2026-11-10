@@ -25,7 +25,7 @@ type SkinArgs struct {
 
 // Name of the skin display.skin selects, default when unset or empty
 func activeSkinFromConfig(ctx context.Context) (string, error) {
-	cfg, err := LoadContext(ctx, home.Dir(ctx), EnvRefLookup)
+	cfg, err := LoadContext(ctx, home.Dir(ctx), EnvRefLookupContext(ctx))
 	if err != nil {
 		return "", err
 	}
@@ -148,7 +148,10 @@ func skinList(ctx context.Context, stdout io.Writer) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		source, _ := pyrepr.Format(s.Source, "<8")
+		source, err := pyrepr.Format(s.Source, "<8")
+		if err != nil {
+			return 0, err
+		}
 		fmt.Fprintf(stdout, "%s %s %s %s\n", mark, name, source, pyrepr.Str(s.Description))
 	}
 	return 0, nil

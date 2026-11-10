@@ -30,7 +30,7 @@ func distEnv(t *testing.T) (string, *[]cronImportCall) {
 	h := &profiles.CronDistributionHooks
 	old := *h
 	t.Cleanup(func() { *h = old })
-	h.LoadJobs = func(home string) ([]any, error) {
+	h.LoadJobs = func(_ context.Context, home string) ([]any, error) {
 		data, err := os.ReadFile(filepath.Join(home, "cron", "jobs.json"))
 		if err != nil {
 			return nil, err
@@ -42,7 +42,7 @@ func distEnv(t *testing.T) (string, *[]cronImportCall) {
 		jobs, _ := store["jobs"].([]any)
 		return jobs, nil
 	}
-	h.ImportJobDefinitions = func(home string, shipped *pyjson.Object, reason string) error {
+	h.ImportJobDefinitions = func(_ context.Context, home string, shipped *pyjson.Object, reason string) error {
 		*calls = append(*calls, cronImportCall{home, reason, append([]string(nil), shipped.Keys...)})
 		jobs := []any{}
 		for _, k := range shipped.Keys {
@@ -791,7 +791,9 @@ func TestCronMergeErrorsBecomeDistributionErrors(t *testing.T) {
 	tmp, _ := distEnv(t)
 	staged := makeStagingDir(t, tmp, "src", nil)
 	h := &profiles.CronDistributionHooks
-	h.ImportJobDefinitions = func(string, *pyjson.Object, string) error { return errors.New("cron job 'daily': bad schedule") }
+	h.ImportJobDefinitions = func(context.Context, string, *pyjson.Object, string) error {
+		return errors.New("cron job 'daily': bad schedule")
+	}
 	_, err := InstallDistribution(context.Background(), staged, "cronbad", false, false)
 	wantDistError(t, err, "Could not merge cron jobs into ")
 	if !strings.Contains(err.Error(), "cron job 'daily': bad schedule") {
@@ -801,7 +803,7 @@ func TestCronMergeErrorsBecomeDistributionErrors(t *testing.T) {
 	if exists(filepath.Join(target, "SOUL.md")) {
 		t.Fatal("payload written after a refused cron merge")
 	}
-	h.ImportJobDefinitions = func(string, *pyjson.Object, string) error {
+	h.ImportJobDefinitions = func(context.Context, string, *pyjson.Object, string) error {
 		return &os.PathError{Op: "open", Path: "x", Err: os.ErrPermission}
 	}
 	_, err = InstallDistribution(context.Background(), staged, "cronbad", true, false)

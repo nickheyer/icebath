@@ -84,8 +84,8 @@ func chronosFixture(t *testing.T) (*ChronosCronScheduler, *fakeChronosClient, *S
 
 func chronosJobs(t *testing.T, jobs ...*Job) {
 	t.Helper()
-	patchChronos(t, &chronosLoadJobs, func(*Store) ([]*Job, error) { return jobs, nil })
-	patchChronos(t, &chronosGetJob, func(_ *Store, id string) (*Job, error) {
+	patchChronos(t, &chronosLoadJobs, func(context.Context, *Store) ([]*Job, error) { return jobs, nil })
+	patchChronos(t, &chronosGetJob, func(_ context.Context, _ *Store, id string) (*Job, error) {
 		for _, j := range jobs {
 			if j.ID == id {
 				return j, nil
@@ -300,7 +300,7 @@ func TestExternalProviderStartRecoversInterruptedRecords(t *testing.T) {
 		events = append(events, "recover")
 		return 0, nil
 	})
-	patchChronos(t, &chronosLoadJobs, func(*Store) ([]*Job, error) {
+	patchChronos(t, &chronosLoadJobs, func(context.Context, *Store) ([]*Job, error) {
 		events = append(events, "reconcile")
 		return nil, nil
 	})

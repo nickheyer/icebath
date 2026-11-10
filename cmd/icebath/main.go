@@ -34,7 +34,7 @@ func main() {
 		exit(0)
 	}
 	argv = applyProfileOverride(argv)
-	home.ExportScratchTmpEnv()
+	home.ExportScratchTmpEnv(context.Background())
 	if len(argv) > 0 && argv[0] == "pm" {
 		exit(runCLI(argv))
 	}

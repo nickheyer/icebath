@@ -38,14 +38,14 @@ func pinPair(j *Job) [2]string {
 
 func TestPinnedTrueLocksThenPinnedFalseReleases(t *testing.T) {
 	s, _ := pinStore(t, "main-model", "openrouter")
-	unpinned, err := s.createJob(CreateJobOptions{Prompt: prompt("do a thing"), Schedule: "every 1 hour"})
+	unpinned, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("do a thing"), Schedule: "every 1 hour"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if unpinned.Model != nil || unpinned.Provider != nil {
 		t.Fatalf("unpinned job carries a pin %v", pinPair(unpinned))
 	}
-	locked, err := s.updateJob(unpinned.ID, map[string]any{"pinned": true})
+	locked, err := s.updateJob(context.Background(), unpinned.ID, map[string]any{"pinned": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,14 +60,14 @@ func TestPinnedTrueLocksThenPinnedFalseReleases(t *testing.T) {
 		t.Fatalf("pinned is derived and never stored: %s", raw)
 	}
 	writePinConfig(t, s, "model:\n  default: newer-model\n")
-	renamed, err := s.updateJob(locked.ID, map[string]any{"name": "renamed"})
+	renamed, err := s.updateJob(context.Background(), locked.ID, map[string]any{"name": "renamed"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if deref(renamed.Model) != "main-model" {
 		t.Fatalf("locked job followed the main model to %q", deref(renamed.Model))
 	}
-	released, err := s.updateJob(locked.ID, map[string]any{"pinned": false})
+	released, err := s.updateJob(context.Background(), locked.ID, map[string]any{"pinned": false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestPinnedTrueLocksThenPinnedFalseReleases(t *testing.T) {
 
 func TestPinnedNeverOverridesAnExplicitModel(t *testing.T) {
 	s, calls := pinStore(t, "main-model", "openrouter")
-	job, err := s.createJob(CreateJobOptions{Prompt: prompt("do a thing"), Schedule: "every 1 hour", Model: "my-model", Provider: "nous", Pinned: true})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("do a thing"), Schedule: "every 1 hour", Model: "my-model", Provider: "nous", Pinned: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestPinnedNeverOverridesAnExplicitModel(t *testing.T) {
 	if *calls != 0 {
 		t.Fatalf("resolver called %d times for an explicit model", *calls)
 	}
-	still, err := s.updateJob(job.ID, map[string]any{"pinned": true, "model": "other-model"})
+	still, err := s.updateJob(context.Background(), job.ID, map[string]any{"pinned": true, "model": "other-model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,11 +112,11 @@ func TestCronPinRefusesInsteadOfDroppingTheLock(t *testing.T) {
 	if !errors.As(err, &unavailable) {
 		t.Fatalf("refusal lost its cause %T", err)
 	}
-	_, err = s.createJob(CreateJobOptions{Prompt: prompt("report"), Schedule: "every 1h", Deliver: prompt("local"), Pinned: true})
+	_, err = s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("report"), Schedule: "every 1h", Deliver: prompt("local"), Pinned: true})
 	if err == nil || !strings.Contains(err.Error(), "cannot pin") {
 		t.Fatalf("create did not refuse: %v", err)
 	}
-	if jobs, err := s.listJobs(true); err != nil || len(jobs) != 0 {
+	if jobs, err := s.listJobs(context.Background(), true); err != nil || len(jobs) != 0 {
 		t.Fatalf("refused create stored %d jobs (%v)", len(jobs), err)
 	}
 }

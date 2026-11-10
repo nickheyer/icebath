@@ -1,6 +1,7 @@
 package home
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,7 +19,7 @@ const testModeEnv = "ICEBATH_HOME_TEST_MODE"
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
-	DispatchScratchPruneEntry()
+	DispatchScratchPruneEntry(context.Background())
 	if mode := os.Getenv(testModeEnv); mode != "" {
 		os.Exit(runTestMode(mode, os.Args[1:]))
 	}
@@ -31,7 +32,7 @@ func runTestMode(mode string, args []string) int {
 	case "sleep":
 		time.Sleep(60 * time.Second)
 	case "launch":
-		if st, err := os.Stat(EnsureScratchDir(args[0])); err != nil || !st.IsDir() {
+		if st, err := os.Stat(EnsureScratchDir(context.Background(), args[0])); err != nil || !st.IsDir() {
 			return 1
 		}
 	case "wrap", "shell":
@@ -54,7 +55,7 @@ func runTestMode(mode string, args []string) int {
 		time.Sleep(60 * time.Second)
 	case "export", "tempdir":
 		if mode == "export" {
-			ExportScratchTmpEnv()
+			ExportScratchTmpEnv(context.Background())
 		}
 		dir, err := pypath.Gettempdir()
 		if err != nil {
@@ -154,7 +155,7 @@ func scratchPruneSpawns(t *testing.T) *[]string {
 // Scratch dir of h created without starting a prune
 func testScratch(t *testing.T, h string) string {
 	t.Helper()
-	dir := scratchDir(h, false)
+	dir := scratchDir(context.Background(), h, false)
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		t.Fatalf("scratch dir %s not created: %v", dir, err)
 	}
@@ -196,7 +197,7 @@ func pruneLog(t *testing.T, h string) string {
 // Runs a prune of scratch and fails unless it removed want entries
 func mustPrune(t *testing.T, scratch string, want int) {
 	t.Helper()
-	got, err := PruneScratchDir(scratch, ScratchMaxIdleHours)
+	got, err := PruneScratchDir(context.Background(), scratch, ScratchMaxIdleHours)
 	if err != nil || got != want {
 		t.Fatalf("PruneScratchDir = %d, %v, want %d", got, err, want)
 	}

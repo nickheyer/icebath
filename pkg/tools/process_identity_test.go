@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Process facts from a table of pid to birth, with denied and zombie pids
@@ -498,5 +500,66 @@ func TestProcessCreateTimeAndPidAliveMatchesWrappers(t *testing.T) {
 	other := 990.0
 	if alive, known := PidAliveMatches(4242, &other, false, nil); alive || !known {
 		t.Fatalf("recycled pid %v %v", alive, known)
+	}
+}
+
+func TestLedgerRewriteKeepsRowOrderAndNumberTypes(t *testing.T) {
+	_, ledger := identityFixture(t, map[int]float64{400: 2.0, 999: 50.0}, 999)
+	onDisk := `[{"zeta": 1, "pid": 400, "create_time": 2.0, "purpose": "serve", "extra": 1e2, "argv": "a<b é"}, 7]`
+	if err := os.WriteFile(ledger, []byte(onDisk), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
+		t.Fatal("register_self failed")
+	}
+	raw, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := "[\n  {\n    \"zeta\": 1,\n    \"pid\": 400,\n    \"create_time\": 2.0,\n    \"purpose\": \"serve\",\n    \"extra\": 100.0,\n    \"argv\": \"a<b \\u00e9\"\n  },\n  {\n    \"pid\": 999,\n"
+	if !strings.HasPrefix(string(raw), kept) {
+		t.Fatalf("kept row rewritten as\n%s", raw)
+	}
+	var order []string
+	for _, line := range strings.Split(string(raw)[len(kept)-len("    \"pid\": 999,\n"):], "\n") {
+		if name, _, ok := strings.Cut(strings.TrimPrefix(line, "    \""), "\": "); ok && strings.HasPrefix(line, "    \"") {
+			order = append(order, name)
+		}
+	}
+	want := "pid create_time purpose install spawner_pid spawner_create registered_at argv host port profile icebath_home isolated boot_start spawner_boot boot_id"
+	if got := strings.Join(order, " "); got != want {
+		t.Fatalf("new row key order %q, want %q", got, want)
+	}
+}
+
+func TestValidLockfilePayloadComparesNumbersAsPythonDoes(t *testing.T) {
+	own := strings.Repeat("a", 32)
+	body := func(schema, protocol, pid, port, profile string) any {
+		v, err := pyjson.Loads(`{"schemaVersion": ` + schema + `, "protocolVersion": ` + protocol + `, "ownershipId": "` + own +
+			`", "spawnNonce": "0123456789abcdef", "tokenFingerprint": "` + strings.Repeat("b", 32) + `", "pid": ` + pid + `, "port": ` + port +
+			`, "profile": ` + profile + `, "hermesPath": "p", "hermesHome": "h", "logPath": "/x/` + own + `/0123456789abcdef.log", "startedAt": "t"}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	for _, c := range []struct {
+		schema, protocol, pid, port, profile string
+		want                                 bool
+	}{
+		{"2", "1", "7", "80", `"p"`, true},
+		{"2.0", "true", "7", "80", `"p"`, true},
+		{"2", "1", "7.0", "80", `"p"`, false},
+		{"2", "1", "true", "80", `"p"`, true},
+		{"2", "1", "7", "80.0", `"p"`, false},
+		{"3", "1", "7", "80", `"p"`, false},
+		{"2", "1", "7", "false", `"p"`, true},
+		{"2", "1", "7", "80", `"` + strings.Repeat("é", 600) + `"`, true},
+		{"2", "1", "7", "80", `"` + strings.Repeat("a", 1025) + `"`, false},
+		{"2e0", "1.0", "7", "80", `"p"`, true},
+	} {
+		if got := validLockfilePayload(body(c.schema, c.protocol, c.pid, c.port, c.profile), own); got != c.want {
+			t.Errorf("schema %s protocol %s pid %s port %s profile of %d bytes: %v, want %v", c.schema, c.protocol, c.pid, c.port, len(c.profile), got, c.want)
+		}
 	}
 }

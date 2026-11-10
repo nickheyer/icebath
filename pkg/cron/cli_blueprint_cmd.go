@@ -255,7 +255,7 @@ func HandleBlueprintCommand(ctx context.Context, h, args string, origin map[stri
 	if err != nil {
 		return BlueprintCommandResult{}, err
 	}
-	job, err := openCronStore(h, nil).createJobWithSchedulerRegistration(spec)
+	job, err := openCronStore(h, nil).createJobWithSchedulerRegistration(ctx, spec)
 	var regErr *CronSchedulerRegistrationError
 	if errors.As(err, &regErr) {
 		return BlueprintCommandResult{Text: regErr.UserMessage()}, nil

@@ -27,7 +27,7 @@ var (
 )
 
 // Installed by cmd/icebath, returns the id and name of every job in the cron store of a home in load order
-var LoadCronJobsHook func(h string) ([][2]string, error)
+var LoadCronJobsHook func(ctx context.Context, h string) ([][2]string, error)
 
 func init() {
 	gateway.DrainProgressReporterHook = func(ctx context.Context, h string, budgetS float64) func() {
@@ -67,7 +67,7 @@ func cronJobName(ctx context.Context, jobID, h string) string {
 	if load == nil {
 		panic("selfupdate: cmd/icebath must install LoadCronJobsHook over the cron store")
 	}
-	jobs, err := load(h)
+	jobs, err := load(ctx, h)
 	if err != nil {
 		return ""
 	}

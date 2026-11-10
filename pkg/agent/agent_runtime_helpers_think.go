@@ -14,38 +14,12 @@ import (
 )
 
 var (
-	toolCallTagNames      = []string{"tool_call", "tool_calls", "tool_result", "function_call", "function_calls"}
-	thinkTagAlternation   = strings.Join(provider.ThinkTagNames, "|")
-	toolCallTagAltern     = strings.Join(toolCallTagNames, "|")
 	droppedFlattenTypes   = map[string]bool{"thinking": true, "reasoning": true, "redacted_thinking": true}
-	thinkStripPatterns    = buildThinkStripPatterns()
+	thinkStripPatterns    = provider.ThinkStripPatterns
 	inlineReasoningBlocks = buildInlineReasoningPatterns()
 )
 
-const (
-	toolTagNSPrefix = `(?:[\w.-]+:)?`
-	dotallNoCase    = regexp2.Singleline | regexp2.IgnoreCase
-)
-
-// Ordered strip passes of closed pairs, tool call blocks, named functions, unterminated and orphan tags
-func buildThinkStripPatterns() []*regexp2.Regexp {
-	var out []*regexp2.Regexp
-	for _, name := range provider.ThinkTagNames {
-		out = append(out, regexp2.MustCompile(`<`+name+`>.*?</`+name+`>`, dotallNoCase))
-	}
-	for _, name := range toolCallTagNames {
-		out = append(out, regexp2.MustCompile(`<`+toolTagNSPrefix+name+`\b[^>]*>.*?</`+toolTagNSPrefix+name+`>`, dotallNoCase))
-	}
-	return append(out,
-		regexp2.MustCompile(`(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*<function\b[^>]*\bname\s*=[^>]*>(?:(?:(?!</function>).)*)</function>`, dotallNoCase),
-		regexp2.MustCompile(`(?:^|\n)[ \t]*<(?:`+thinkTagAlternation+`)\b[^>]*>.*$`, dotallNoCase),
-		regexp2.MustCompile(`</?(?:`+thinkTagAlternation+`)>\s*`, regexp2.IgnoreCase),
-		regexp2.MustCompile(`</(?:`+toolTagNSPrefix+`(?:`+toolCallTagAltern+`|function))>\s*`, regexp2.IgnoreCase),
-		regexp2.MustCompile(`(?:^|\n)[ \t]*<`+toolTagNSPrefix+`(?:`+toolCallTagAltern+`)\b[^>]*>.*$`+
-			`|(?:^|\n)[ \t]*[\w.:-]*</?arg_(?:key|value)\b[^\n]*`+
-			`|(?:^|\n)[^\n<]*</arg_(?:key|value)>[ \t\r]*(?=\n|$)`, dotallNoCase),
-	)
-}
+const dotallNoCase = regexp2.Singleline | regexp2.IgnoreCase
 
 // One capture pattern per reasoning tag for inline reasoning embedded in string content
 func buildInlineReasoningPatterns() []*regexp2.Regexp {

@@ -93,7 +93,7 @@ func TestListCarriesSchemaFieldsWithCurrentValuesAndNoSecretValues(t *testing.T)
 
 func TestSettingsWritesThePluginNamespaceAndRefusesSecretsAndBadTypes(t *testing.T) {
 	h, dir := settingsHome(t)
-	written, err := SavePluginSettings(h, "demo-plugin", dir, []PluginSettingValue{
+	written, err := SavePluginSettings(context.Background(), h, "demo-plugin", dir, []PluginSettingValue{
 		{"api_url", "https://real.invalid"}, {"retries", 2}, {"mode", "careful"}})
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestSettingsWritesThePluginNamespaceAndRefusesSecretsAndBadTypes(t *testing
 		t.Fatal(fields)
 	}
 	for _, bad := range []PluginSettingValue{{"api_key", "leak"}, {"retries", "two"}, {"mode", "reckless"}, {"unknown", 1}, {"retries", true}} {
-		if _, err := SavePluginSettings(h, "demo-plugin", dir, []PluginSettingValue{bad}); err == nil {
+		if _, err := SavePluginSettings(context.Background(), h, "demo-plugin", dir, []PluginSettingValue{bad}); err == nil {
 			t.Fatalf("%v accepted", bad)
 		}
 	}
@@ -136,14 +136,14 @@ func TestPortablePluginJSONSchemaListsAndSavesLikeANativeOne(t *testing.T) {
 	if fields["api_key"]["type"] != "secret" || fields["api_key"]["env"] != "PORTABLE_DEMO_KEY" {
 		t.Fatal(fields["api_key"])
 	}
-	written, err := SavePluginSettings(h, "portable-demo", dir, []PluginSettingValue{{"show_chip", false}})
+	written, err := SavePluginSettings(context.Background(), h, "portable-demo", dir, []PluginSettingValue{{"show_chip", false}})
 	if err != nil || !reflect.DeepEqual(written, []string{"show_chip"}) {
 		t.Fatal(written, err)
 	}
 	if got := pluginSettingsEntry(loadConfigOrEmpty(h), "portable-demo")["settings"]; !reflect.DeepEqual(got, map[string]any{"show_chip": false}) {
 		t.Fatalf("%#v", got)
 	}
-	if _, err := SavePluginSettings(h, "portable-demo", dir, []PluginSettingValue{{"api_key", "leak"}}); err == nil {
+	if _, err := SavePluginSettings(context.Background(), h, "portable-demo", dir, []PluginSettingValue{{"api_key", "leak"}}); err == nil {
 		t.Fatal("secret accepted")
 	}
 }

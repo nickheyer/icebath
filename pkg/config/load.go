@@ -429,5 +429,5 @@ func EnsureHome(ctx context.Context, h string) error {
 	if err := SecureEnvFile(env); err != nil {
 		return err
 	}
-	return ensureDefaultSoulMD(h)
+	return ensureDefaultSoulMD(ctx, h)
 }

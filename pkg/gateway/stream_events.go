@@ -26,9 +26,10 @@ type Commentary struct {
 type ToolCallChunk struct {
 	ToolName string
 	Preview  *string
-	Args     map[string]any
-	ArgKeys  []string
-	Index    int
+	// Values as Python holds them, int64 for an int and float64 for a float
+	Args    map[string]any
+	ArgKeys []string
+	Index   int
 }
 
 // ToolCallFinished closes a tool call with its wall clock duration and whether it returned

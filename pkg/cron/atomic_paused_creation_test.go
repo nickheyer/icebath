@@ -10,7 +10,7 @@ import (
 func TestPausedCreationIsInertUntilOperatorAction(t *testing.T) {
 	s, _ := newTestStore(t)
 	var registered []string
-	provider := &registeringProvider{name: "stub", register: func(job *Job) error {
+	provider := &registeringProvider{name: "registering", register: func(job *Job) error {
 		registered = append(registered, job.ID)
 		return nil
 	}}
@@ -60,7 +60,7 @@ func TestPausedCreationIsInertUntilOperatorAction(t *testing.T) {
 	if _, won, err := s.claimJobForFire(context.Background(), jobID, FireClaimOptions{}); won || err != nil {
 		t.Fatalf("paused creation claimed %v %v", won, err)
 	}
-	resumed, err := s.resumeJob(jobID)
+	resumed, err := s.resumeJob(context.Background(), jobID)
 	if err != nil || !resumed.Enabled || resumed.NextRunAt == nil || resumed.PausedReason != nil {
 		t.Fatalf("resumed %+v %v", resumed, err)
 	}
@@ -81,7 +81,7 @@ func TestInvalidCreationIsRejectedWithoutWrites(t *testing.T) {
 		if result := dispatchCronjob(t, s, args); result["success"] != false {
 			t.Fatalf("%v accepted %v", flags, result)
 		}
-		if jobs, _ := s.LoadJobs(); len(jobs) != 0 {
+		if jobs, _ := s.LoadJobs(context.Background()); len(jobs) != 0 {
 			t.Fatalf("%v wrote %v", flags, jobIDs(jobs))
 		}
 	}
@@ -92,7 +92,7 @@ func TestInvalidCreationIsRejectedWithoutWrites(t *testing.T) {
 	if err != nil || code != 1 {
 		t.Fatalf("cmd_cron create = %d %v %s", code, err, out.String())
 	}
-	if jobs, _ := s.LoadJobs(); len(jobs) != 0 {
+	if jobs, _ := s.LoadJobs(context.Background()); len(jobs) != 0 {
 		t.Fatalf("cmd_cron wrote %v", jobIDs(jobs))
 	}
 }

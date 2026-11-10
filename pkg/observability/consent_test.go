@@ -32,7 +32,7 @@ func consentTerminal(t *testing.T, ask func(title string, items []cliui.RadioIte
 		StdinTTY: func() bool { return true }, StdoutTTY: func() bool { return true }}
 	consentConsole = func() *cliui.Console { return console }
 	consentFlushStdin = func() {}
-	consentIsManaged = func(string) bool { return false }
+	consentIsManaged = func(context.Context, string) bool { return false }
 	consentRadiolist = func(_ context.Context, title string, items []cliui.RadioItem, _ int, opts cliui.RadiolistOptions) (int, error) {
 		return ask(title, items, opts), nil
 	}
@@ -54,7 +54,7 @@ func TestEveryOptOutAnswerPurgesPendingReceipts(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", m.home)
 	savedManaged, savedRecord := consentIsManaged, recordSendConsentChange
 	t.Cleanup(func() { consentIsManaged, recordSendConsentChange = savedManaged, savedRecord })
-	consentIsManaged = func(string) bool { return false }
+	consentIsManaged = func(context.Context, string) bool { return false }
 	recordSendConsentChange = func(context.Context, bool) {}
 	purgePendingUpdates = realPurgePendingUpdates
 	install := parkReceipt(t, m.home, installReceipt(nil))

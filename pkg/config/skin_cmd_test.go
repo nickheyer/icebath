@@ -50,7 +50,7 @@ func runSkinSet(t *testing.T, ctx context.Context, key, value string) (int, stri
 
 const oasisSkin = "name: oasis\ncolors:\n  background: \"#08201f\"\n  banner_title: \"#f2dfb3\"\n"
 
-func TestSkinSetEditsActiveUserSkinInPlacePreservingEverythingElse(t *testing.T) {
+func TestSetEditsActiveUserSkinInPlacePreservingEverythingElse(t *testing.T) {
 	ctx, dir := skinCmdHome(t, "oasis")
 	os.WriteFile(filepath.Join(dir, "oasis.yaml"), []byte(oasisSkin), 0o644)
 	if code, _, _ := runSkinSet(t, ctx, "ui_tool", "#00FFFF"); code != 0 {
@@ -69,7 +69,7 @@ func TestSkinSetEditsActiveUserSkinInPlacePreservingEverythingElse(t *testing.T)
 	}
 }
 
-func TestSkinSetForksABuiltinWithoutInventingABackground(t *testing.T) {
+func TestSetForksABuiltinWithoutInventingABackground(t *testing.T) {
 	ctx, dir := skinCmdHome(t, "default")
 	code, out, _ := runSkinSet(t, ctx, "ui_tool", "#00FFFF")
 	if code != 0 {
@@ -102,7 +102,7 @@ func TestSkinSetForksABuiltinWithoutInventingABackground(t *testing.T) {
 	}
 }
 
-func TestSkinSetRejectsNonHex(t *testing.T) {
+func TestSetRejectsNonHex(t *testing.T) {
 	ctx, _ := skinCmdHome(t, "default")
 	code, _, errOut := runSkinSet(t, ctx, "ui_tool", "teal")
 	if code != 1 || errOut != "✗ 'teal' is not a #rrggbb hex color\n" {
@@ -110,7 +110,7 @@ func TestSkinSetRejectsNonHex(t *testing.T) {
 	}
 }
 
-func TestSkinSetPersistsTheSkinDurably(t *testing.T) {
+func TestSetPersistsTheSkinDurably(t *testing.T) {
 	ctx, dir := skinCmdHome(t, "oasis")
 	path := filepath.Join(dir, "oasis.yaml")
 	os.WriteFile(path, []byte(oasisSkin), 0o644)
@@ -136,7 +136,7 @@ func TestSkinSetPersistsTheSkinDurably(t *testing.T) {
 	}
 }
 
-func TestSkinSetPreservesASymlinkedSkinFile(t *testing.T) {
+func TestSetPreservesASymlinkedSkinFile(t *testing.T) {
 	ctx, dir := skinCmdHome(t, "oasis")
 	realDir := filepath.Join(filepath.Dir(dir), "dotfiles")
 	os.MkdirAll(realDir, 0o755)

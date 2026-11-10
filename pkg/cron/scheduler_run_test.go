@@ -55,7 +55,7 @@ func runOneJobRun(t *testing.T, s *Store, name, deliver string) (*Job, *Job, boo
 	if err != nil {
 		t.Fatalf("runOneJob: %v", err)
 	}
-	got, err := s.getJob(job.ID)
+	got, err := s.getJob(context.Background(), job.ID)
 	if err != nil || got == nil {
 		t.Fatalf("getJob: %v", err)
 	}

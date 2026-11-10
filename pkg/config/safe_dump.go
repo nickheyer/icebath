@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math"
@@ -98,11 +99,13 @@ func AtomicYAMLWrite(ctx context.Context, path string, data any, extra string) e
 
 // Represented node of the safe representer, a scalar, sequence or mapping with alternating keys and values
 type dumpNode struct {
-	kind  byte
-	isStr bool
-	value string
-	items []*dumpNode
-	flow  bool
+	kind    byte
+	isStr   bool
+	value   string
+	items   []*dumpNode
+	flow    bool
+	tag     string
+	literal bool
 }
 
 // Identity of a map or list, the Python id that makes a second occurrence an alias
@@ -169,7 +172,7 @@ func sortedReflectKeys(rv reflect.Value) []any {
 	return out
 }
 
-// Sorts str or int keys the way Python sorted does, leaving a mix of kinds in place as the TypeError path does
+// Sorts str or int keys as Python sorted does, a mix of kinds staying in place like the TypeError path
 func sortPyKeys(keys []any) {
 	ints := make([]*big.Int, len(keys))
 	allStr, allInt := true, true
@@ -503,6 +506,12 @@ func (e *safeEmitter) expectNode(n *dumpNode, root, seq, mapping, simpleKey bool
 	}
 	switch n.kind {
 	case 's':
+		if n.tag != "" {
+			e.writeIndicator(n.tag, true, false, false)
+			if e.seqCtx && e.flowLevel() == 0 {
+				e.noNewline = true
+			}
+		}
 		e.increaseIndent(true, false, false)
 		e.processScalar(n)
 		e.popIndent()
@@ -642,9 +651,13 @@ func (e *safeEmitter) expectBlockMapping(n *dumpNode) {
 	e.popIndent()
 }
 
-// Whether a key fits the simple form, its five character str or int tag plus its text under 128 on one line
+// Whether a key fits the simple form, its tag and text under 128 characters on one line
 func (e *safeEmitter) checkSimpleKey(n *dumpNode) bool {
-	length := len("!!str") + len([]rune(n.value))
+	tag := "!!str"
+	if n.tag != "" {
+		tag = n.tag
+	}
+	length := len(tag) + len([]rune(n.value))
 	return length < safeMaxSimpleKey && !analyzeScalar([]rune(n.value), e.allowUnicode).multiline
 }
 
@@ -752,6 +765,14 @@ func (e *safeEmitter) processScalar(n *dumpNode) {
 	if e.seqCtx && e.flowLevel() == 0 {
 		e.writeIndent()
 	}
+	if n.literal {
+		if e.flowLevel() == 0 && !e.simpleKey {
+			e.writeLiteral(s)
+		} else {
+			e.writeDouble(s, split)
+		}
+		return
+	}
 	switch {
 	case implicit && !(e.simpleKey && (a.empty || a.multiline)) && plainOK:
 		e.writePlain(s, split)
@@ -762,6 +783,107 @@ func (e *safeEmitter) processScalar(n *dumpNode) {
 	default:
 		e.writeDouble(s, split)
 	}
+}
+
+// Chomping and indentation hints of a block scalar with the indent a root scalar needs and its chomping indicator
+func (e *safeEmitter) blockHints(s []rune) (string, int, string) {
+	if len(s) == 0 {
+		return "", 0, ""
+	}
+	indent, hints, indicator := 0, "", ""
+	if s[0] == ' ' || isBreakRune(s[0]) {
+		indent, hints = 2, "2"
+	} else if e.rootCtx {
+		text := string(s)
+		position := -1
+		for _, end := range []string{"---", "..."} {
+			for pos := 0; position == -1; pos++ {
+				at := strings.Index(text[pos:], end)
+				if at == -1 {
+					break
+				}
+				pos += at
+				if pos != 0 && text[pos-1] != '\n' {
+					continue
+				}
+				if next := pos + len(end); next < len(text) && strings.IndexByte(" \r\n", text[next]) >= 0 {
+					position = pos
+				}
+			}
+			if position != -1 {
+				break
+			}
+		}
+		if position != -1 {
+			indent = 2
+		}
+	}
+	if last := s[len(s)-1]; !isBreakRune(last) {
+		indicator = "-"
+	} else if len(s) == 1 || isBreakRune(s[len(s)-2]) {
+		indicator = "+"
+	}
+	return hints + indicator, indent, indicator
+}
+
+// Writes a literal block scalar line by line the way write_literal does
+func (e *safeEmitter) writeLiteral(s []rune) {
+	hints, indent, indicator := e.blockHints(s)
+	e.writeIndicator("|"+hints, true, false, false)
+	if indicator == "+" {
+		e.openEnded = true
+	}
+	e.writeLineBreak("")
+	breaks, start := true, 0
+	for end := 0; end <= len(s); end++ {
+		has := end < len(s)
+		var ch rune
+		if has {
+			ch = s[end]
+		}
+		if breaks {
+			if !has || !isBreakRune(ch) {
+				for _, br := range s[start:end] {
+					if br == '\n' {
+						e.writeLineBreak("")
+					} else {
+						e.writeLineBreak(string(br))
+					}
+				}
+				if has {
+					if e.rootCtx {
+						pad := indent
+						if !e.indentNone {
+							pad += e.indent
+						}
+						e.out.WriteString(strings.Repeat(" ", pad))
+					} else {
+						e.writeIndent()
+					}
+				}
+				start = end
+			}
+		} else if !has || isBreakRune(ch) {
+			e.out.WriteString(string(s[start:end]))
+			if !has {
+				e.writeLineBreak("")
+			}
+			start = end
+		}
+		if has {
+			breaks = isBreakRune(ch)
+		}
+	}
+}
+
+// Base64 text of bytes as a binary tagged literal block node, the 76 column lines base64 encodebytes writes
+func representBinaryAsLiteralBlock(data []byte) (*dumpNode, error) {
+	var b strings.Builder
+	for start := 0; start < len(data); start += 57 {
+		b.WriteString(base64.StdEncoding.EncodeToString(data[start:min(start+57, len(data))]))
+		b.WriteByte('\n')
+	}
+	return &dumpNode{kind: 's', value: b.String(), tag: "!!binary", literal: true}, nil
 }
 
 func (e *safeEmitter) writePlain(s []rune, split bool) {

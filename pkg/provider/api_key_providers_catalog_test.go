@@ -262,7 +262,7 @@ func TestDeepInfraProfileRegisteredWithAliasAndAux(t *testing.T) {
 	if !slices.ContainsFunc(CanonicalProviders(), func(e CanonicalProviderEntry) bool { return e.Slug == "deepinfra" }) {
 		t.Fatal("deepinfra missing from the canonical providers")
 	}
-	if !config.OptionalEnvVars["DEEPINFRA_API_KEY"].Password || config.OptionalEnvVars["DEEPINFRA_BASE_URL"].Password {
+	if !config.OptionalEnvVars.Entry("DEEPINFRA_API_KEY").Password || config.OptionalEnvVars.Entry("DEEPINFRA_BASE_URL").Password {
 		t.Fatal("deepinfra env var password flags")
 	}
 	if auxGetAuxModelForProvider(context.Background(), "deepinfra") == "" {

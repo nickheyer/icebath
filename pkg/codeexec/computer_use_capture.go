@@ -411,14 +411,14 @@ func multimodalCaptureEnvelope(v *captureView, summary string) *pyjson.Object {
 // Creates a media cache dir owner only unless the install is managed, falling back to a plain mkdir
 func secureDirPolicy(ctx context.Context, env *tools.Env, cacheDir string) error {
 	h := envHome(env)
-	if home.ManagedSystem(h) != "" {
+	if home.ManagedSystem(tools.WithEnvHome(ctx, env), h) != "" {
 		return os.MkdirAll(cacheDir, 0o777)
 	}
 	if _, err := home.MakeUserDir(tools.WithEnvHome(ctx, env), cacheDir, 0o700, true, true); err != nil {
 		slog.Debug(fmt.Sprintf("computer_use: cache dir creation failed for %s: %v", cacheDir, err))
 		return os.MkdirAll(cacheDir, 0o777)
 	}
-	config.SecureDir(h, cacheDir)
+	config.SecureDir(tools.WithEnvHome(ctx, env), h, cacheDir)
 	return nil
 }
 

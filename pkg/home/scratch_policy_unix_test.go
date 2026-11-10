@@ -3,6 +3,7 @@
 package home
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -162,12 +163,12 @@ func TestScratchDirPermissionPolicy(t *testing.T) {
 func TestManagedSystemMarkers(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_MANAGED", "")
-	if got := ManagedSystem(h); got != "" {
+	if got := ManagedSystem(context.Background(), h); got != "" {
 		t.Fatalf("unmanaged home reported %q", got)
 	}
 	for env, want := range map[string]string{"true": "nixos", "YES": "nixos", "false": "", "off": "", "brew": "", "Homebrew": "", " nix ": "nix"} {
 		t.Setenv("ICEBATH_MANAGED", env)
-		if got := ManagedSystem(h); got != want {
+		if got := ManagedSystem(context.Background(), h); got != want {
 			t.Fatalf("ICEBATH_MANAGED=%q gave %q, want %q", env, got, want)
 		}
 	}

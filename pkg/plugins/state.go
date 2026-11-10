@@ -88,8 +88,8 @@ func pluginSettingsEntry(cfg any, pluginID string) map[string]any {
 }
 
 // Writes one value under plugins.entries.<id>.settings atomically, refusing managed installs and keys
-func SavePluginSetting(h, pluginID string, segments []string, value any) error {
-	if config.ManagedSystem(h) != "" {
+func SavePluginSetting(ctx context.Context, h, pluginID string, segments []string, value any) error {
+	if config.ManagedSystem(ctx, h) != "" {
 		return &PluginPermissionError{Msg: "Plugin settings cannot be changed in a managed install"}
 	}
 	fullPath := append([]string{"plugins", "entries", pluginID, "settings"}, segments...)

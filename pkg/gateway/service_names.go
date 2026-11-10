@@ -73,9 +73,9 @@ func profileNameFromHome(resolvedHome, def string) string {
 }
 
 // Resolved account native default home plus the sudo invoker native default when root under sudo
-func nativeServiceHomes() (map[string]bool, error) {
+func nativeServiceHomes(ctx context.Context) (map[string]bool, error) {
 	homes := map[string]bool{}
-	for _, h := range []string{home.AccountDefault(), home.SudoInvokerDefaultHome()} {
+	for _, h := range []string{home.AccountDefault(ctx), home.SudoInvokerDefaultHome()} {
 		if h == "" {
 			continue
 		}
@@ -110,7 +110,7 @@ func bareUnitPinnedHome(ctx context.Context) (string, error) {
 
 // Whether the resolved home owns the bare service name
 func homeOwnsBareServiceName(ctx context.Context, resolvedHome string) (bool, error) {
-	native, err := nativeServiceHomes()
+	native, err := nativeServiceHomes(ctx)
 	if err != nil {
 		return false, err
 	}

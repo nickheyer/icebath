@@ -1,6 +1,7 @@
 package home
 
 import (
+	"context"
 	"os"
 	"runtime"
 
@@ -27,7 +28,7 @@ func SocketSafeTmpdir() (string, error) {
 }
 
 // Points TMPDIR, TMP and TEMP in env at the scratch dir of its ICEBATH_HOME unless the user set them
-func ApplyScratchTmpEnv(env map[string]string) bool {
+func ApplyScratchTmpEnv(ctx context.Context, env map[string]string) bool {
 	ours := env[ScratchDirMarkerEnv]
 	for _, key := range ScratchTmpEnvVars {
 		if v := pystr.Strip(env[key]); v != "" && v != ours {
@@ -43,7 +44,7 @@ func ApplyScratchTmpEnv(env map[string]string) bool {
 			return false
 		}
 	}
-	scratch := EnsureScratchDir(base)
+	scratch := EnsureScratchDir(ctx, base)
 	for _, key := range ScratchTmpEnvVars {
 		env[key] = scratch
 	}
@@ -52,14 +53,14 @@ func ApplyScratchTmpEnv(env map[string]string) bool {
 }
 
 // Boot hook pointing this process temp vars at its scratch dir, rerun after anything re-homes the process
-func ExportScratchTmpEnv() bool {
+func ExportScratchTmpEnv(ctx context.Context) bool {
 	env := map[string]string{}
 	for _, key := range append([]string{ScratchDirMarkerEnv, "ICEBATH_HOME"}, ScratchTmpEnvVars...) {
 		if v, ok := os.LookupEnv(key); ok {
 			env[key] = v
 		}
 	}
-	if !ApplyScratchTmpEnv(env) {
+	if !ApplyScratchTmpEnv(ctx, env) {
 		return false
 	}
 	for _, key := range append([]string{ScratchDirMarkerEnv}, ScratchTmpEnvVars...) {

@@ -38,7 +38,7 @@ func TestCompletedOneshotTriggerIsRefusedAndDiskRecordIsUnchanged(t *testing.T) 
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("done"), Schedule: "in 30m", Name: strPtr("done"), Repeat: 1})
 	mustMark(t, s, job.ID, true, MarkOptions{})
 	before := rawStoredRows(t, s)
-	_, err := s.triggerJob(job.ID, "")
+	_, err := s.triggerJob(context.Background(), job.ID, "")
 	wantErrorNaming(t, err, "terminal")
 	if after := rawStoredRows(t, s); !reflect.DeepEqual(after, before) {
 		t.Fatalf("store changed\nbefore %v\nafter  %v", before, after)
@@ -52,7 +52,7 @@ func TestExhaustedRecurringJobTriggerIsRefused(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("done"), Schedule: "every 1h", Repeat: 1})
 	mustMark(t, s, job.ID, true, MarkOptions{})
-	_, err := s.triggerJob(job.ID, "")
+	_, err := s.triggerJob(context.Background(), job.ID, "")
 	wantErrorNaming(t, err, "terminal")
 }
 
@@ -63,10 +63,10 @@ func TestWedgedClaimedOneshotRemainsTriggerable(t *testing.T) {
 	record.RunClaim = &Claim{At: isoNowUTC(0), By: "dead-worker"}
 	record.State, record.Enabled = "scheduled", true
 	record.NextRunAt = strPtr(isoNowUTC(-time.Minute))
-	if err := s.SaveJobs([]*Job{record}, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{record}, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	triggered, err := s.triggerJob(job.ID, "")
+	triggered, err := s.triggerJob(context.Background(), job.ID, "")
 	if err != nil || triggered.State != "scheduled" || !triggered.Enabled {
 		t.Fatalf("triggered %+v %v", triggered, err)
 	}
@@ -75,10 +75,10 @@ func TestWedgedClaimedOneshotRemainsTriggerable(t *testing.T) {
 func TestPausedJobRunOverrideRemainsAllowed(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("paused"), Schedule: "every 1h"})
-	if _, err := s.pauseJob(job.ID, nil); err != nil {
+	if _, err := s.pauseJob(context.Background(), job.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	triggered, err := s.triggerJob(job.ID, "")
+	triggered, err := s.triggerJob(context.Background(), job.ID, "")
 	if err != nil || triggered.State != "scheduled" || !triggered.Enabled {
 		t.Fatalf("triggered %+v %v", triggered, err)
 	}
@@ -92,7 +92,7 @@ func TestTerminalJobsAreNotDueOrAdvanced(t *testing.T) {
 	if due := mustDue(t, s); len(due) != 0 {
 		t.Fatalf("due %v", jobIDs(due))
 	}
-	if advanced, err := s.advanceNextRun(job.ID); err != nil || advanced {
+	if advanced, err := s.advanceNextRun(context.Background(), job.ID); err != nil || advanced {
 		t.Fatalf("advanced %v %v", advanced, err)
 	}
 	if after := rawStoredRows(t, s); !reflect.DeepEqual(after, before) {
@@ -104,9 +104,9 @@ func TestUpdateCannotReactivateTerminalRecord(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("done"), Schedule: "in 30m", Repeat: 1})
 	mustMark(t, s, job.ID, true, MarkOptions{})
-	_, err := s.updateJob(job.ID, map[string]any{"enabled": true})
+	_, err := s.updateJob(context.Background(), job.ID, map[string]any{"enabled": true})
 	wantErrorNaming(t, err, "terminal")
-	_, err = s.updateJob(job.ID, map[string]any{"schedule": "every 1h"})
+	_, err = s.updateJob(context.Background(), job.ID, map[string]any{"schedule": "every 1h"})
 	wantErrorNaming(t, err, "terminal")
 }
 
@@ -139,7 +139,7 @@ func TestRearmRefusesRecurringAndLiveClaim(t *testing.T) {
 	oneshot := mustCreate(t, s, CreateJobOptions{Prompt: prompt("claimed"), Schedule: "in 30m"})
 	record := mustGet(t, s, oneshot.ID)
 	record.RunClaim = &Claim{At: isoNowUTC(0), By: "live"}
-	if err := s.SaveJobs([]*Job{record}, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{record}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.rearmOneshot(context.Background(), oneshot.ID, future)
@@ -176,7 +176,7 @@ func TestRecurringJobStuckInErrorStateIsRecoverableDueScanSelfHealsNextRunAt(t *
 
 func TestRecurringJobStuckInErrorStateIsRecoverableResumeJobRecoversErrorState(t *testing.T) {
 	s, job := stuckRecurring(t)
-	resumed, err := s.resumeJob(job.ID)
+	resumed, err := s.resumeJob(context.Background(), job.ID)
 	if err != nil || resumed == nil || resumed.State != "scheduled" || !resumed.Enabled || resumed.NextRunAt == nil {
 		t.Fatalf("resumed %+v %v", resumed, err)
 	}
@@ -192,14 +192,14 @@ func TestRecurringJobStuckInErrorStateIsRecoverableClaimJobForFireRecoversErrorS
 
 func TestRecurringJobStuckInErrorStateIsRecoverableAdvanceNextRunsRecoversErrorState(t *testing.T) {
 	s, job := stuckRecurring(t)
-	if advanced, err := s.advanceNextRuns([]string{job.ID}); err != nil || advanced != 1 {
+	if advanced, err := s.advanceNextRuns(context.Background(), []string{job.ID}); err != nil || advanced != 1 {
 		t.Fatalf("advanced %d %v", advanced, err)
 	}
 }
 
 func TestRecurringJobStuckInErrorStateIsRecoverablePauseJobNowWorksOnErrorState(t *testing.T) {
 	s, job := stuckRecurring(t)
-	paused, err := s.pauseJob(job.ID, nil)
+	paused, err := s.pauseJob(context.Background(), job.ID, nil)
 	if err != nil || paused == nil || paused.State != "paused" || paused.Enabled {
 		t.Fatalf("paused %+v %v", paused, err)
 	}
@@ -212,12 +212,12 @@ func TestRecurringJobStuckInErrorStateIsRecoverableCompletedOneshotStillBlockedO
 	if state := mustGet(t, s, job.ID).State; state != "completed" {
 		t.Fatalf("state %q", state)
 	}
-	_, err := s.resumeJob(job.ID)
+	_, err := s.resumeJob(context.Background(), job.ID)
 	wantErrorNaming(t, err, "terminal")
 	if claimed, ok, err := s.claimJobForFire(context.Background(), job.ID, FireClaimOptions{}); err != nil || ok || claimed != nil {
 		t.Fatalf("claimed %+v %v %v", claimed, ok, err)
 	}
-	if advanced, err := s.advanceNextRuns([]string{job.ID}); err != nil || advanced != 0 {
+	if advanced, err := s.advanceNextRuns(context.Background(), []string{job.ID}); err != nil || advanced != 0 {
 		t.Fatalf("advanced %d %v", advanced, err)
 	}
 	if due := mustDue(t, s); len(due) != 0 {

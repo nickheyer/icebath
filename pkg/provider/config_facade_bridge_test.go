@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -91,18 +90,10 @@ func TestCoreDeclaredEnvNamesExcludePlatformInjection(t *testing.T) {
 }
 
 func TestStaticDeclaredEnvNamesSkipPlatformInjectedNames(t *testing.T) {
-	prevNames := staticEnvNames
-	staticEnvNamesOnce, staticEnvNames = sync.Once{}, nil
-	config.OptionalEnvVars["CHATX_INJECTED_SIGNING_SECRET"] = config.EnvVar{Password: true, Category: "messaging"}
-	t.Cleanup(func() {
-		delete(config.OptionalEnvVars, "CHATX_INJECTED_SIGNING_SECRET")
-		staticEnvNamesOnce, staticEnvNames = sync.Once{}, prevNames
-		if prevNames != nil {
-			staticEnvNamesOnce.Do(func() {})
-		}
-	})
+	config.OptionalEnvVars.Set("CHATX_INJECTED_SIGNING_SECRET", config.EnvVar{Password: true, Category: "messaging"})
+	t.Cleanup(func() { config.OptionalEnvVars.Delete("CHATX_INJECTED_SIGNING_SECRET") })
 	got, want := staticDeclaredEnvNames(), config.StaticCoreEnvNames()
-	if got["CHATX_INJECTED_SIGNING_SECRET"] || !maps.Equal(got, want) {
+	if got["CHATX_INJECTED_SIGNING_SECRET"] || len(got) == 0 || !maps.Equal(got, want) {
 		t.Fatalf("static names %d, core %d, injected %v", len(got), len(want), got["CHATX_INJECTED_SIGNING_SECRET"])
 	}
 }

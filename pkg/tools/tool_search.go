@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // The connector search route answers 7 use cases per request and fails on 8 or more
@@ -500,7 +502,7 @@ func toolSearchClipDescription(text string, cap int) string {
 }
 
 // One record for the shared tools map carrying required names for trivial calls
-func toolSearchSharedToolRecord(entry CatalogEntry) map[string]any {
+func toolSearchSharedToolRecord(entry CatalogEntry) *pyjson.Object {
 	required := []any{}
 	if fn, ok := entry.Schema["function"].(map[string]any); ok {
 		if params, ok := fn["parameters"].(map[string]any); ok {
@@ -510,8 +512,8 @@ func toolSearchSharedToolRecord(entry CatalogEntry) map[string]any {
 					if !ok {
 						continue
 					}
-					if len(s) > 64 {
-						s = s[:64]
+					if runes := pystr.Runes(s); len(runes) > 64 {
+						s = pystr.FromRunes(runes[:64])
 					}
 					required = append(required, s)
 					if len(required) == 32 {
@@ -521,24 +523,24 @@ func toolSearchSharedToolRecord(entry CatalogEntry) map[string]any {
 			}
 		}
 	}
-	return map[string]any{"source": entry.Source, "source_name": entry.SourceName,
-		"description": toolSearchClipDescription(entry.Description, 500), "required": required}
+	return Dict("source", entry.Source, "source_name", entry.SourceName,
+		"description", toolSearchClipDescription(entry.Description, 500), "required", required)
 }
 
 // Deterministic summaries of connected and declared unavailable sources
-func toolSearchAvailableSourceSummary(ctx context.Context, env *Env, catalog []CatalogEntry) []map[string]any {
+func toolSearchAvailableSourceSummary(ctx context.Context, env *Env, catalog []CatalogEntry) []*pyjson.Object {
 	counts := map[string]int{}
 	for _, entry := range catalog {
 		counts[catalogListingGroupLabel(entry.SourceName)]++
 	}
-	rows := make([]map[string]any, 0, len(counts))
+	rows := make([]*pyjson.Object, 0, len(counts))
 	for _, name := range sortedStringKeys(counts) {
-		rows = append(rows, map[string]any{"name": name, "tool_count": counts[name]})
+		rows = append(rows, Dict("name", name, "tool_count", counts[name]))
 	}
 	for _, hidden := range HiddenDeclaredSources(ctx, env) {
-		rows = append(rows, map[string]any{"name": hidden.Name, "tool_count": hidden.ToolCount, "unavailable": hidden.Unavailable})
+		rows = append(rows, Dict("name", hidden.Name, "tool_count", hidden.ToolCount, "unavailable", hidden.Unavailable))
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i]["name"].(string) < rows[j]["name"].(string) })
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Vals["name"].(string) < rows[j].Vals["name"].(string) })
 	return rows
 }
 
@@ -619,48 +621,48 @@ func DispatchToolSearch(ctx context.Context, env *Env, args map[string]any, curr
 	if connectionsInScope(currentToolDefs) {
 		remoteEntries, hostedFailure = connectorEntriesByGroup(ctx, env, queries, call)
 	}
-	results := make([]map[string]any, 0, len(queries))
-	toolsMap := map[string]any{}
+	results := make([]*pyjson.Object, 0, len(queries))
+	toolsMap := Dict()
 	availableSources := toolSearchAvailableSourceSummary(ctx, env, catalog)
 	for position, query := range queries {
 		corpus := append(append([]CatalogEntry{}, catalog...), remoteEntries[position]...)
 		hits := SearchCatalog(corpus, query, limit, nil)
 		matches := make([]any, 0, len(hits))
 		for _, h := range hits {
-			if _, seen := toolsMap[h.Name]; !seen {
-				toolsMap[h.Name] = toolSearchSharedToolRecord(h)
+			if _, seen := toolsMap.Get(h.Name); !seen {
+				toolsMap.Set(h.Name, toolSearchSharedToolRecord(h))
 			}
 			matches = append(matches, h.Name)
 		}
-		group := map[string]any{"query": query, "matches": matches}
+		group := Dict("query", query, "matches", matches)
 		if len(matches) == 0 && len(availableSources) > 0 {
-			group["available_sources"] = availableSources
-			group["hint"] = "This query returned no lexical matches, but the sources above " +
-				"are connected and their tools remain available. Retry " +
-				"tool_search with the service name plus a concrete action or " +
-				"object before concluding the capability is unavailable."
+			group.Set("available_sources", availableSources)
+			group.Set("hint", "This query returned no lexical matches, but the sources above "+
+				"are connected and their tools remain available. Retry "+
+				"tool_search with the service name plus a concrete action or "+
+				"object before concluding the capability is unavailable.")
 		}
 		results = append(results, group)
 	}
 	remoteCount := 0
-	for name := range toolsMap {
+	for _, name := range toolsMap.Keys {
 		if IsConnectorName(name) {
 			remoteCount++
 		}
 	}
-	payload := map[string]any{"queries": queries, "total_available": len(catalog) + remoteCount,
-		"results": results, "tools": toolsMap}
+	payload := Dict("queries", queries, "total_available", len(catalog)+remoteCount,
+		"results", results, "tools", toolsMap)
 	if hostedFailure != "" {
-		payload["connectors"] = connectorsUnavailable(env, hostedFailure, "searched", nil)
+		payload.Set("connectors", connectorsUnavailable(env, hostedFailure, "searched", nil))
 	}
 	outcome := "no_hits"
 	if hostedFailure != "" {
 		outcome = "connector_unavailable"
-	} else if len(toolsMap) > 0 {
+	} else if toolsMap.Len() > 0 {
 		outcome = "hits"
 	}
-	toolSearchRecordMetric(ctx, env, currentToolDefs, catalog, len(toolsMap), outcome)
-	return jsonCompact(payload)
+	toolSearchRecordMetric(ctx, env, currentToolDefs, catalog, toolsMap.Len(), outcome)
+	return JSON(payload)
 }
 
 // Emits one icebath.tool_search.count metric event naming the corpora read, never the query
@@ -694,9 +696,9 @@ func DispatchToolDescribe(ctx context.Context, env *Env, args map[string]any, cu
 		}
 	}
 	remoteSchemas, hostedFailure := connectorRemoteSchemasFor(ctx, env, names, currentToolDefs, call)
-	tools := map[string]any{}
+	tools := Dict()
 	var notFound, undescribed []string
-	errors := map[string]any{}
+	errors := Dict()
 	sessionNames := SessionToolNames(currentToolDefs)
 	deferTools := LoadToolSearchConfig(env).EffectiveDeferTools()
 	scope := newSearchScope(ctx, env)
@@ -710,7 +712,7 @@ func DispatchToolDescribe(ctx context.Context, env *Env, args map[string]any, cu
 				params = map[string]any{}
 			}
 			desc, _ := fn["description"].(string)
-			tools[name] = map[string]any{"description": desc, "parameters": params}
+			tools.Set(name, Dict("description", desc, "parameters", params))
 		case remote && remoteFn != nil:
 			params, _ := remoteFn["parameters"]
 			if params == nil {
@@ -720,7 +722,7 @@ func DispatchToolDescribe(ctx context.Context, env *Env, args map[string]any, cu
 			if d, ok := remoteFn["description"]; ok && d != nil {
 				desc = fmt.Sprint(d)
 			}
-			tools[name] = map[string]any{"description": desc, "parameters": params}
+			tools.Set(name, Dict("description", desc, "parameters", params))
 		case IsConnectorName(name):
 			if hostedFailure != "" {
 				undescribed = append(undescribed, name)
@@ -729,26 +731,26 @@ func DispatchToolDescribe(ctx context.Context, env *Env, args map[string]any, cu
 			}
 		default:
 			if unavailable := SessionUnavailableError(ctx, env, name, sessionNames); unavailable != "" {
-				errors[name] = unavailable
+				errors.Set(name, unavailable)
 			} else if scope.entry(name) != nil && !IsDeferrableToolName(ctx, env, name, deferTools) {
-				errors[name] = NotDeferrableError(ctx, env, name, sessionNames)
+				errors.Set(name, NotDeferrableError(ctx, env, name, sessionNames))
 			} else {
 				notFound = append(notFound, name)
 			}
 		}
 	}
-	result := map[string]any{"tools": tools}
+	result := Dict("tools", tools)
 	if len(notFound) > 0 {
-		result["not_found"] = notFound
-		result["hint"] = "Names in not_found are not currently available. Re-run tool_search to refresh."
+		result.Set("not_found", notFound)
+		result.Set("hint", "Names in not_found are not currently available. Re-run tool_search to refresh.")
 	}
-	if len(errors) > 0 {
-		result["errors"] = errors
+	if errors.Len() > 0 {
+		result.Set("errors", errors)
 	}
 	if hostedFailure != "" {
-		result["connectors"] = connectorsUnavailable(env, hostedFailure, "described", undescribed)
+		result.Set("connectors", connectorsUnavailable(env, hostedFailure, "described", undescribed))
 	}
-	return jsonCompact(result)
+	return JSON(result)
 }
 
 // ScopedDeferrableNames is the universe tool_call may reach in this session's pre assembly defs

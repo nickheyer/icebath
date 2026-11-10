@@ -76,7 +76,7 @@ func TestInstalledServiceStartIsNonmutatingAndFailedManagerNeverSpawns(t *testin
 	h := filepath.Join(tmp, "profile")
 	os.Mkdir(h, 0o700)
 	t.Setenv("ICEBATH_HOME", h)
-	suffix, err := ServiceSuffix(h)
+	suffix, err := ServiceSuffix(context.Background(), h)
 	if err != nil {
 		t.Fatal(err)
 	}

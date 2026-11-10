@@ -21,11 +21,11 @@ var (
 )
 
 // Package manager owning the install from ICEBATH_MANAGED or the home marker, empty when unmanaged
-func ManagedSystem(h string) string {
+func ManagedSystem(ctx context.Context, h string) string {
 	marker := pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_MANAGED")))
 	set := marker != ""
 	if h == "" {
-		h = Dir(context.Background())
+		h = Dir(ctx)
 	}
 	if path := pypath.PathJoin(h, ".managed"); !set {
 		if pathExists(path) {
@@ -107,8 +107,8 @@ func chownToIcebathUID(path string) {
 }
 
 // Owner only directory unless the home is managed, a container keeps its modes, or ICEBATH_HOME_MODE names one
-func ApplySecureDirPolicy(path, h string) {
-	if ManagedSystem(h) != "" {
+func ApplySecureDirPolicy(ctx context.Context, path, h string) {
+	if ManagedSystem(ctx, h) != "" {
 		return
 	}
 	explicit := pystr.Strip(os.Getenv("ICEBATH_HOME_MODE"))

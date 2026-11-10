@@ -304,7 +304,7 @@ func settingsValueTyped(kind string, v any) bool {
 }
 
 // Validates every edit against the schema then writes each one, returning the keys written in order
-func SavePluginSettings(h, pluginID, pluginDir string, values []PluginSettingValue) ([]string, error) {
+func SavePluginSettings(ctx context.Context, h, pluginID, pluginDir string, values []PluginSettingValue) ([]string, error) {
 	schema := map[string]map[string]any{}
 	for _, item := range manifestSettingsSchema(pluginDir) {
 		schema[item.key] = item.spec
@@ -347,7 +347,7 @@ func SavePluginSettings(h, pluginID, pluginDir string, values []PluginSettingVal
 	}
 	keys := []string{}
 	for _, p := range plan {
-		if err := SavePluginSetting(h, pluginID, p.segments, p.value); err != nil {
+		if err := SavePluginSetting(ctx, h, pluginID, p.segments, p.value); err != nil {
 			return nil, err
 		}
 		keys = append(keys, p.key)

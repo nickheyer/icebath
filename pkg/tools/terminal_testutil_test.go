@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Environment double whose Execute is a closure, with the hermes test attribute shape
@@ -166,8 +168,8 @@ func (f *fakeSpawner) AddPendingWatcher(w map[string]any) {
 	f.pending = append(f.pending, w)
 	f.mu.Unlock()
 }
-func (f *fakeSpawner) RequestCloseTerminal(*Env, string) map[string]any {
-	return map[string]any{"status": "requested"}
+func (f *fakeSpawner) RequestCloseTerminal(*Env, string) *pyjson.Object {
+	return Dict("status", "requested")
 }
 
 // Hermes shaped minimal config dict for the local backend

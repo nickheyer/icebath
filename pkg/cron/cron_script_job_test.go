@@ -12,7 +12,7 @@ import (
 
 func TestJobScriptFieldCreateJobWithScript(t *testing.T) {
 	s := scriptStore(t)
-	job, err := s.createJob(CreateJobOptions{Prompt: strPtr("Analyze the data"), Schedule: "every 30m", Script: "/path/to/monitor.py"})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strPtr("Analyze the data"), Schedule: "every 30m", Script: "/path/to/monitor.py"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,14 +26,14 @@ func TestJobScriptFieldCreateJobWithScript(t *testing.T) {
 
 func TestJobScriptFieldUpdateJobAddScript(t *testing.T) {
 	s := scriptStore(t)
-	job, err := s.createJob(CreateJobOptions{Prompt: strPtr("Hello"), Schedule: "every 1h"})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strPtr("Hello"), Schedule: "every 1h"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Script != nil {
 		t.Fatalf("fresh job carries a script %q", *job.Script)
 	}
-	updated, err := s.updateJob(job.ID, map[string]any{"script": "/new/script.py"})
+	updated, err := s.updateJob(context.Background(), job.ID, map[string]any{"script": "/new/script.py"})
 	if err != nil || updated == nil || deref(updated.Script) != "/new/script.py" {
 		t.Fatalf("got %v %v", updated, err)
 	}

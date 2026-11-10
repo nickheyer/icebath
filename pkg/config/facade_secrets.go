@@ -68,8 +68,8 @@ func publishEnvValue(ctx context.Context, key string, value *string) {
 }
 
 // Prints the .env write refusal for key and reports whether the write is blocked
-func envWriteBlocked(h, key, action string) bool {
-	refusal := EnvWriteRefusal(h, key, action)
+func envWriteBlocked(ctx context.Context, h, key, action string) bool {
+	refusal := EnvWriteRefusal(ctx, h, key, action)
 	if refusal != "" {
 		fmt.Fprintln(EnvRefusalOut, refusal)
 	}
@@ -77,8 +77,8 @@ func envWriteBlocked(h, key, action string) bool {
 }
 
 // Error carrying the refusal when the .env write lock forbids key
-func RequireEnvWritable(h, key, action string) error {
-	if refusal := EnvWriteRefusal(h, key, action); refusal != "" {
+func RequireEnvWritable(ctx context.Context, h, key, action string) error {
+	if refusal := EnvWriteRefusal(ctx, h, key, action); refusal != "" {
 		return errors.New(refusal)
 	}
 	return nil
@@ -94,7 +94,7 @@ func managedSource(filename string) string {
 
 // Removes key from the home .env and the published env, reporting whether a line defined it
 func RemoveHomeEnvValue(ctx context.Context, h, key string) (bool, error) {
-	if envWriteBlocked(h, key, "remove") {
+	if envWriteBlocked(ctx, h, key, "remove") {
 		return false, nil
 	}
 	if !envVarNameRe.MatchString(key) {
@@ -121,7 +121,7 @@ func RemoveHomeEnvValue(ctx context.Context, h, key string) (bool, error) {
 		if !found {
 			return nil
 		}
-		return writeEnvLinesMode(h, path, kept, true)
+		return writeEnvLinesMode(ctx, h, path, kept, true)
 	})
 	if err != nil {
 		return false, err
@@ -332,35 +332,4 @@ func redactEnabled(ctx context.Context) bool {
 		return true
 	}
 	return fn(ctx)
-}
-
-// Optional env names in the config_defaults OPTIONAL_ENV_VARS declaration order
-var optionalEnvDeclOrder = []string{
-	"NOUS_BASE_URL", "ICEBATH_ANON_API_SECRET", "OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "GEMINI_BASE_URL",
-	"VERTEX_CREDENTIALS_PATH", "XAI_API_KEY", "XAI_BASE_URL", "NVIDIA_API_KEY", "NVIDIA_BASE_URL", "LM_API_KEY", "LM_BASE_URL",
-	"GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY", "GLM_BASE_URL", "KIMI_API_KEY", "KIMI_BASE_URL", "KIMI_CN_API_KEY",
-	"STEPFUN_API_KEY", "STEPFUN_BASE_URL", "ARCEEAI_API_KEY", "ARCEE_BASE_URL", "GMI_API_KEY", "GMI_BASE_URL", "ACTUAL_API_KEY",
-	"FIREWORKS_API_KEY", "MINIMAX_API_KEY", "MINIMAX_BASE_URL", "MINIMAX_CN_API_KEY", "MINIMAX_CN_BASE_URL", "DEEPSEEK_API_KEY",
-	"DEEPSEEK_BASE_URL", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL", "ICEBATH_QWEN_BASE_URL", "OPENCODE_ZEN_API_KEY",
-	"COMMANDCODE_API_KEY", "OPENCODE_ZEN_BASE_URL", "OPENCODE_GO_API_KEY", "OPENCODE_GO_BASE_URL", "HF_TOKEN", "HF_BASE_URL",
-	"OLLAMA_API_KEY", "OLLAMA_BASE_URL", "XIAOMI_API_KEY", "XIAOMI_BASE_URL", "UPSTAGE_API_KEY", "UPSTAGE_BASE_URL", "AWS_REGION",
-	"AWS_PROFILE", "AZURE_FOUNDRY_API_KEY", "AZURE_FOUNDRY_BASE_URL", "EXA_API_KEY", "PARALLEL_API_KEY", "FIRECRAWL_API_KEY",
-	"FIRECRAWL_API_URL", "FIRECRAWL_GATEWAY_URL", "TOOL_GATEWAY_URL", "CONNECTOR_GATEWAY_URL", "TOOL_GATEWAY_DOMAIN",
-	"TOOL_GATEWAY_SCHEME", "TOOL_GATEWAY_USER_TOKEN", "TAVILY_API_KEY", "PERPLEXITY_API_KEY", "KEENABLE_API_KEY", "SEARXNG_URL",
-	"BRAVE_SEARCH_API_KEY", "BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID", "BROWSER_USE_API_KEY", "FIRECRAWL_BROWSER_TTL",
-	"FAL_KEY", "KREA_API_KEY", "VOICE_TOOLS_OPENAI_KEY", "ELEVENLABS_API_KEY", "MISTRAL_API_KEY", "PORCUPINE_ACCESS_KEY",
-	"GITHUB_TOKEN", "NOTION_API_KEY", "LINEAR_API_KEY", "AIRTABLE_API_KEY", "TENOR_API_KEY", "HONCHO_API_KEY", "HONCHO_BASE_URL",
-	"HINDSIGHT_API_KEY", "HINDSIGHT_API_URL", "SUPERMEMORY_API_KEY", "MEM0_API_KEY", "RETAINDB_API_KEY", "RETAINDB_BASE_URL",
-	"BRV_API_KEY", "OPENVIKING_API_KEY", "OPENVIKING_ENDPOINT", "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USERS", "TELEGRAM_PROXY",
-	"DISCORD_BOT_TOKEN", "DISCORD_ALLOWED_USERS", "DISCORD_REPLY_TO_MODE", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN",
-	"SLACK_ALLOWED_USERS", "MATTERMOST_URL", "MATTERMOST_TOKEN", "MATTERMOST_ALLOWED_USERS", "MATTERMOST_REQUIRE_MENTION",
-	"MATTERMOST_FREE_RESPONSE_CHANNELS", "MATRIX_HOMESERVER", "MATRIX_ACCESS_TOKEN", "MATRIX_USER_ID", "MATRIX_ALLOWED_USERS",
-	"MATRIX_REQUIRE_MENTION", "MATRIX_FREE_RESPONSE_ROOMS", "MATRIX_AUTO_THREAD", "MATRIX_DM_AUTO_THREAD", "MATRIX_DEVICE_ID",
-	"MATRIX_RECOVERY_KEY", "BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD", "BLUEBUBBLES_ALLOWED_USERS",
-	"BLUEBUBBLES_ALLOW_ALL_USERS", "QQ_APP_ID", "QQ_CLIENT_SECRET", "QQ_ALLOWED_USERS", "QQ_GROUP_ALLOWED_USERS",
-	"QQ_ALLOW_ALL_USERS", "QQBOT_HOME_CHANNEL", "QQBOT_HOME_CHANNEL_NAME", "QQ_SANDBOX", "IRC_SERVER", "IRC_CHANNEL",
-	"IRC_NICKNAME", "IRC_SERVER_PASSWORD", "IRC_NICKSERV_PASSWORD", "GATEWAY_ALLOW_ALL_USERS", "API_SERVER_ENABLED",
-	"API_SERVER_KEY", "API_SERVER_PORT", "API_SERVER_HOST", "API_SERVER_MODEL_NAME", "GATEWAY_PROXY_URL", "GATEWAY_PROXY_KEY",
-	"WEBHOOK_ENABLED", "WEBHOOK_PORT", "WEBHOOK_SECRET", "SUDO_PASSWORD", "ICEBATH_PREFILL_MESSAGES_FILE",
-	"ICEBATH_EPHEMERAL_SYSTEM_PROMPT",
 }

@@ -57,7 +57,7 @@ func TestClaimUnknownJobReturnsFalse(t *testing.T) {
 func TestClaimPausedJobReturnsFalse(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 5m", Name: prompt("p")})
-	if _, err := s.pauseJob(job.ID, nil); err != nil {
+	if _, err := s.pauseJob(context.Background(), job.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := tryClaimFire(t, s, job.ID, FireClaimOptions{}); ok {
@@ -68,7 +68,7 @@ func TestClaimPausedJobReturnsFalse(t *testing.T) {
 func TestManualClaimStillRefusesAPausedJob(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 5m", Name: prompt("mp")})
-	if _, err := s.pauseJob(job.ID, nil); err != nil {
+	if _, err := s.pauseJob(context.Background(), job.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := tryClaimFire(t, s, job.ID, FireClaimOptions{Manual: true}); ok {
@@ -82,7 +82,7 @@ func TestManualClaimStillRefusesAPausedJob(t *testing.T) {
 func TestForcedClaimAtomicallyResumesPausedJob(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 5m", Name: prompt("manual")})
-	if _, err := s.pauseJob(job.ID, nil); err != nil {
+	if _, err := s.pauseJob(context.Background(), job.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := tryClaimFire(t, s, job.ID, FireClaimOptions{Force: true}); !ok {
@@ -127,14 +127,14 @@ func TestFireClaimHeartbeatRefreshesOnlyExpectedOwner(t *testing.T) {
 	tryClaimFire(t, s, job.ID, FireClaimOptions{})
 	claimed := *mustGet(t, s, job.ID).FireClaim
 	setNow(s, parseInstant(t, &claimed.At).Add(30*time.Second))
-	if ok, err := s.heartbeatFireClaim(job.ID, claimed.By); err != nil || !ok {
+	if ok, err := s.heartbeatFireClaim(context.Background(), job.ID, claimed.By); err != nil || !ok {
 		t.Fatalf("owner heartbeat %v %v", ok, err)
 	}
 	refreshed := mustGet(t, s, job.ID).FireClaim
 	if refreshed.At == claimed.At || refreshed.By != claimed.By {
 		t.Fatalf("refreshed %+v from %+v", refreshed, claimed)
 	}
-	if ok, err := s.heartbeatFireClaim(job.ID, "replacement-owner"); err != nil || ok {
+	if ok, err := s.heartbeatFireClaim(context.Background(), job.ID, "replacement-owner"); err != nil || ok {
 		t.Fatalf("foreign heartbeat %v %v", ok, err)
 	}
 }
@@ -152,7 +152,7 @@ func TestReclaimedFireUsesNewOwnerToken(t *testing.T) {
 	if replacement.By == original.By {
 		t.Fatal("reclaim reused the owner token")
 	}
-	if ok, _ := s.heartbeatFireClaim(job.ID, original.By); ok {
+	if ok, _ := s.heartbeatFireClaim(context.Background(), job.ID, original.By); ok {
 		t.Fatal("old owner refreshed the replacement claim")
 	}
 	if got := *mustGet(t, s, job.ID).FireClaim; got != replacement {
@@ -376,8 +376,8 @@ func TestHeartbeatDoesNotWaitOnTheFenceItsOwnRunHolds(t *testing.T) {
 		})
 	}()
 	<-held
-	ok, err := s.heartbeatFireClaim(job.ID, owner)
-	foreign, ferr := s.heartbeatFireClaim(job.ID, "replacement-owner")
+	ok, err := s.heartbeatFireClaim(context.Background(), job.ID, owner)
+	foreign, ferr := s.heartbeatFireClaim(context.Background(), job.ID, "replacement-owner")
 	close(release)
 	if err != nil || !ok {
 		t.Fatalf("owner heartbeat while fenced %v %v", ok, err)

@@ -54,7 +54,7 @@ func fireOccurrenceChild(ctx context.Context, s *Store, mode string) error {
 		return err
 	}
 	provider := &InProcessCronScheduler{}
-	jobs, err := s.LoadJobs()
+	jobs, err := s.LoadJobs(ctx)
 	if err != nil {
 		return err
 	}

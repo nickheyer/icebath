@@ -27,7 +27,7 @@ func TestCronFilePermissionsEnsureDirsSets0700(t *testing.T) {
 	if err := os.MkdirAll(s.Home(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ensureDirs(); err != nil {
+	if err := s.ensureDirs(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if cron, output := modeOf(t, s.cronDir), modeOf(t, s.outputDir); cron != 0o700 || output != 0o700 {
@@ -37,7 +37,7 @@ func TestCronFilePermissionsEnsureDirsSets0700(t *testing.T) {
 
 func TestCronFilePermissionsSaveJobsSets0600(t *testing.T) {
 	s, _ := newTestStore(t)
-	if err := s.SaveJobs([]*Job{{ID: "test", Prompt: "hello"}}, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{{ID: "test", Prompt: "hello"}}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if mode := modeOf(t, s.JobsFile()); mode != 0o600 {
@@ -61,7 +61,7 @@ func TestCronFilePermissionsSaveJobOutputSets0600(t *testing.T) {
 
 func TestSecureHelpersSecureFileNonexistentNoError(t *testing.T) {
 	s, _ := newTestStore(t)
-	s.secureFile("/nonexistent/path/file.json")
+	s.secureFile(context.Background(), "/nonexistent/path/file.json")
 }
 
 func TestSecureHelpersSecureDirPreservesOperatorModeInContainer(t *testing.T) {
@@ -76,12 +76,12 @@ func TestSecureHelpersSecureDirPreservesOperatorModeInContainer(t *testing.T) {
 	t.Setenv("ICEBATH_CONTAINER", "1")
 	t.Setenv("ICEBATH_HOME_MODE", "")
 	os.Unsetenv("ICEBATH_HOME_MODE")
-	config.SecureDir(s.Home(), d)
+	config.SecureDir(context.Background(), s.Home(), d)
 	if mode := modeOf(t, d); mode != 0o755 {
 		t.Fatalf("operator mode replaced by %o", mode)
 	}
 	t.Setenv("ICEBATH_HOME_MODE", "0701")
-	config.SecureDir(s.Home(), d)
+	config.SecureDir(context.Background(), s.Home(), d)
 	if mode := modeOf(t, d); mode != 0o701 {
 		t.Fatalf("explicit mode not applied, got %o", mode)
 	}
@@ -89,7 +89,7 @@ func TestSecureHelpersSecureDirPreservesOperatorModeInContainer(t *testing.T) {
 
 func TestSaveJobsOwnershipPreservationSaveStillEnforces0600(t *testing.T) {
 	s, _ := newTestStore(t)
-	if err := s.SaveJobs([]*Job{{ID: "seed", Prompt: "hello"}}, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{{ID: "seed", Prompt: "hello"}}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if mode := modeOf(t, s.JobsFile()); mode != 0o600 {

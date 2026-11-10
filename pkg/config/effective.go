@@ -34,22 +34,22 @@ func effectiveOf(raw map[string]any, lookup Lookup) (map[string]any, error) {
 }
 
 // Last good raw user mapping after a parse failure, this process first, then the newest good backup, else empty
-func recoverUserRaw(configPath string, readErr error) (map[string]any, error) {
+func recoverUserRaw(ctx context.Context, configPath string, readErr error) (map[string]any, error) {
 	loadCacheMu.Lock()
 	raw := lastGoodUserRaw[configPath]
 	loadCacheMu.Unlock()
 	fallback := "last-known-good"
 	if raw == nil {
 		var err error
-		if raw, err = loadNewestGoodBackupFn(configPath); err != nil {
+		if raw, err = loadNewestGoodBackupFn(ctx, configPath); err != nil {
 			return nil, err
 		}
 		fallback = "last-known-good-backup"
 	}
 	if raw == nil {
-		return map[string]any{}, WarnConfigParseFailure(configPath, readErr, "defaults")
+		return map[string]any{}, WarnConfigParseFailure(ctx, configPath, readErr, "defaults")
 	}
-	if err := WarnConfigParseFailure(configPath, readErr, fallback); err != nil {
+	if err := WarnConfigParseFailure(ctx, configPath, readErr, fallback); err != nil {
 		return nil, err
 	}
 	return Clone(raw).(map[string]any), nil
@@ -104,7 +104,7 @@ func loadUserEffective(ctx context.Context, configPath string, lookup Lookup, fa
 			if failClosed || errors.As(rerr, &exit) {
 				return nil, rerr
 			}
-			if raw, err = recoverUserRaw(configPath, rerr); err != nil {
+			if raw, err = recoverUserRaw(ctx, configPath, rerr); err != nil {
 				return nil, err
 			}
 			recovered = true
@@ -117,7 +117,7 @@ func loadUserEffective(ctx context.Context, configPath string, lookup Lookup, fa
 			lastGoodUserRaw[configPath] = Clone(raw).(map[string]any)
 			loadCacheMu.Unlock()
 			if configPath == home.ConfigPath(home.Dir(ctx)) {
-				if _, err := BackupConfig(configPath, "good", DefaultBackupKeep); err != nil {
+				if _, err := BackupConfig(ctx, configPath, "good", DefaultBackupKeep); err != nil {
 					return nil, err
 				}
 			}

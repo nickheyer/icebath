@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"sort"
 	"strings"
 	"syscall"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Shell argv for the gateway command in a new session, start_new_session making the shell its group leader
@@ -71,32 +71,8 @@ func finishProgram(prog quickProgram, cwd string, env []string) (quickProgram, e
 	return prog, nil
 }
 
-// Environment entries in the order the process environment lists them, keys it lacks appended sorted
-func quickEnvList(env map[string]string) []string {
-	out := make([]string, 0, len(env))
-	seen := map[string]bool{}
-	for _, kv := range os.Environ() {
-		i := strings.IndexByte(kv, '=')
-		if i <= 0 || seen[kv[:i]] {
-			continue
-		}
-		if v, ok := env[kv[:i]]; ok {
-			seen[kv[:i]] = true
-			out = append(out, kv[:i]+"="+v)
-		}
-	}
-	rest := make([]string, 0, len(env)-len(seen))
-	for k := range env {
-		if !seen[k] {
-			rest = append(rest, k)
-		}
-	}
-	sort.Strings(rest)
-	for _, k := range rest {
-		out = append(out, k+"="+env[k])
-	}
-	return out
-}
+// Environment entries in the insertion order of the build_subprocess_env dict, as execve receives them
+func quickEnvList(env *tools.ChildEnv) []string { return env.Environ() }
 
 // Inherited stdin, none when descriptor zero is closed so the child starts without one as Popen leaves it
 func quickStdin() (*os.File, func()) {

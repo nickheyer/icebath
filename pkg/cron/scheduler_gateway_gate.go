@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -40,13 +41,13 @@ func gatewayUnavailable(ctx context.Context, h string) (string, bool) {
 }
 
 // Stamps last_fire_error and drops the dispatch marks the due scan wrote for refused jobs
-func (s *Store) noteFireRefused(jobIDs []string, detail string) error {
+func (s *Store) noteFireRefused(ctx context.Context, jobIDs []string, detail string) error {
 	ids := map[string]bool{}
 	for _, id := range jobIDs {
 		ids[id] = true
 	}
-	return s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+	return s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
@@ -60,7 +61,7 @@ func (s *Store) noteFireRefused(jobIDs []string, detail string) error {
 				job.RunClaim = nil
 			}
 		}
-		return s.saveJobsLocked(tx, jobs, nil, false)
+		return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 	})
 }
 
@@ -83,7 +84,7 @@ func refuseAgentJobsWithoutGateway(ctx context.Context, s *Store, due []*Job) ([
 	if !held {
 		return due, nil
 	}
-	if err := s.noteFireRefused(agentIDs, "Skipped: "+hint); err != nil {
+	if err := s.noteFireRefused(home.WithOverride(ctx, s.home), agentIDs, "Skipped: "+hint); err != nil {
 		return nil, err
 	}
 	s.log.Warn(fmt.Sprintf("Cron tick for %s skipped %d agent job(s) (%s): %s", h, len(agentIDs), strings.Join(agentIDs, ", "), hint))

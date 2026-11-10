@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,7 +74,7 @@ func TestCreateJobWorkdirWorkdirStoredWhenSet(t *testing.T) {
 
 func TestCreateJobWorkdirCreateRejectsInvalidWorkdir(t *testing.T) {
 	s, _ := newTestStore(t)
-	if job, err := s.createJob(CreateJobOptions{Prompt: prompt("hello"), Schedule: "every 1h", Workdir: "not/absolute"}); err == nil {
+	if job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("hello"), Schedule: "every 1h", Workdir: "not/absolute"}); err == nil {
 		t.Fatalf("relative workdir accepted %+v", job)
 	}
 }
@@ -100,7 +101,7 @@ func TestUpdateJobWorkdirClearWorkdirWithNone(t *testing.T) {
 func TestUpdateJobWorkdirUpdateRejectsInvalidWorkdir(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h"})
-	if updated, err := s.updateJob(job.ID, map[string]any{"workdir": "nope/relative"}); err == nil {
+	if updated, err := s.updateJob(context.Background(), job.ID, map[string]any{"workdir": "nope/relative"}); err == nil {
 		t.Fatalf("relative workdir accepted %+v", updated)
 	}
 }

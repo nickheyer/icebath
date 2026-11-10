@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -111,6 +112,7 @@ func ManagedDotenvKeys() []string {
 	for k := range managedDotenvKeys {
 		out = append(out, k)
 	}
+	sort.Strings(out)
 	return out
 }
 

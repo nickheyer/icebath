@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -83,7 +84,7 @@ func pyStrerror(errno syscall.Errno) string {
 }
 
 // Ensures a home directory exists and is private without materialising a missing link target
-func ensureDirectory(path string, create, secure bool, h string) error {
+func ensureDirectory(ctx context.Context, path string, create, secure bool, h string) error {
 	links := directoryLinks(path)
 	details := make([]string, 0, len(links))
 	fail := func(err error) error {
@@ -116,18 +117,18 @@ func ensureDirectory(path string, create, secure bool, h string) error {
 		return fail(&fs.PathError{Op: "stat", Path: "Required directory does not exist: " + path, Err: syscall.ENOENT})
 	}
 	if secure && len(operatorOwnedLinks(links, h)) == 0 {
-		SecureDir(h, path)
+		SecureDir(ctx, h, path)
 	}
 	return nil
 }
 
 // Creates the home skeleton, private unless managed, and seeds the default soul
-func InitializeHome(h string, subdirs []string, ensured map[string]bool) error {
-	managed := ManagedSystem(h) != ""
+func InitializeHome(ctx context.Context, h string, subdirs []string, ensured map[string]bool) error {
+	managed := ManagedSystem(ctx, h) != ""
 	restore := setManagedUmask(managed)
 	err := func() error {
 		defer restore()
-		if err := ensureDirectory(h, !managed, !managed, h); err != nil {
+		if err := ensureDirectory(ctx, h, !managed, !managed, h); err != nil {
 			return err
 		}
 		required := subdirs
@@ -135,16 +136,16 @@ func InitializeHome(h string, subdirs []string, ensured map[string]bool) error {
 			required = []string{"cron", "sessions", "logs", "memories"}
 		}
 		for _, sub := range required {
-			if err := ensureDirectory(filepath.Join(h, filepath.FromSlash(sub)), !managed, !managed, h); err != nil {
+			if err := ensureDirectory(ctx, filepath.Join(h, filepath.FromSlash(sub)), !managed, !managed, h); err != nil {
 				return err
 			}
 		}
 		if managed {
-			if err := ensureDirectory(filepath.Join(h, "logs", "curator"), true, false, h); err != nil {
+			if err := ensureDirectory(ctx, filepath.Join(h, "logs", "curator"), true, false, h); err != nil {
 				return err
 			}
 		}
-		if err := ensureDefaultSoulMD(h); err != nil {
+		if err := ensureDefaultSoulMD(ctx, h); err != nil {
 			return &HomeInitializationError{Message: fmt.Sprintf("Cannot initialize Icebath home %s: %s. "+
 				"Check storage availability and access permissions.", h, pyOSErrorText(err)), Err: err}
 		}
@@ -161,7 +162,7 @@ func InitializeHome(h string, subdirs []string, ensured map[string]bool) error {
 }
 
 // Ensures the home skeleton once per home path, refusing a deleted named profile
-func EnsureIcebathHome(h string) error {
+func EnsureIcebathHome(ctx context.Context, h string) error {
 	if err := home.AssertProfileLive(h); err != nil {
 		return err
 	}
@@ -172,7 +173,7 @@ func EnsureIcebathHome(h string) error {
 			return nil
 		}
 	}
-	return InitializeHome(h, HomeSubdirs, homeEnsured)
+	return InitializeHome(ctx, h, HomeSubdirs, homeEnsured)
 }
 
 // Config issue for a load failure, storage problems kept apart from a broken config file
@@ -194,11 +195,11 @@ func containerOrChmodSkipped() bool {
 }
 
 // Owner only directory unless managed, container defaults or ICEBATH_HOME_MODE say otherwise
-func SecureDir(h, path string) { home.ApplySecureDirPolicy(path, h) }
+func SecureDir(ctx context.Context, h, path string) { home.ApplySecureDirPolicy(ctx, path, h) }
 
 // Owner only config file unless managed or in a container
-func SecureFile(h, path string) {
-	if ManagedSystem(h) != "" || containerOrChmodSkipped() {
+func SecureFile(ctx context.Context, h, path string) {
+	if ManagedSystem(ctx, h) != "" || containerOrChmodSkipped() {
 		return
 	}
 	if _, err := os.Stat(path); err == nil {

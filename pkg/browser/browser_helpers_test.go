@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -15,7 +16,7 @@ var extraChildModes = map[string]func() int{}
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
-	home.DispatchScratchPruneEntry()
+	home.DispatchScratchPruneEntry(context.Background())
 	if mode := os.Getenv(childModeEnv); mode != "" {
 		os.Unsetenv(childModeEnv)
 		if err := exitWithRoot(); err != nil {

@@ -183,12 +183,14 @@ func TestWebhookCronJobSubscribe(t *testing.T) {
 	dir := webhookHome(t)
 	prev := webhookCronJobRef
 	t.Cleanup(func() { webhookCronJobRef = prev })
-	webhookCronJobRef = func(h, ref string) (*cron.Job, error) { return &cron.Job{ID: "job-abc123", Name: ref}, nil }
+	webhookCronJobRef = func(_ context.Context, h, ref string) (*cron.Job, error) {
+		return &cron.Job{ID: "job-abc123", Name: ref}, nil
+	}
 	runWebhookCmd(t, WebhookArgs{Action: "subscribe", Name: "ev", CronJob: "sweeper"})
 	if routeField(t, dir, "ev", "cron_job") != "job-abc123" {
 		t.Fatal("job id not stored")
 	}
-	webhookCronJobRef = func(h, ref string) (*cron.Job, error) { return nil, nil }
+	webhookCronJobRef = func(_ context.Context, h, ref string) (*cron.Job, error) { return nil, nil }
 	if code, _, _ := runWebhookCmd(t, WebhookArgs{Action: "subscribe", Name: "ev2", CronJob: "nope"}); code != 1 {
 		t.Fatal("unknown job accepted")
 	}
@@ -300,7 +302,7 @@ func TestWebhookFailedTargetLookupPreservesRoute(t *testing.T) {
 			if !bytes.Equal(before, after) {
 				t.Fatal("failed lookup rewrote the subscriptions")
 			}
-			if job, err := cron.ResolveJobRef(root, "daily"); err != nil || job == nil || job.ID != "default-job" {
+			if job, err := cron.ResolveJobRef(context.Background(), root, "daily"); err != nil || job == nil || job.ID != "default-job" {
 				t.Fatalf("default store job=%v err=%v", job, err)
 			}
 			if _, err := os.Stat(webhooksubs.Path(coder)); err == nil {

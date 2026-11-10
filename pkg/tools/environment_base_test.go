@@ -1087,3 +1087,21 @@ func TestSandboxDirHonoursOverride(t *testing.T) {
 		t.Fatal("sandbox dir must be created")
 	}
 }
+
+func TestUpdateJSONStoreKeepsStoredNumberTypesAndOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snapshots.json")
+	if err := os.WriteFile(path, []byte(`{"zeta": 1, "alpha": 1.0, "big": 1e2, "nested": {"y": [1, 1.0], "x": -0.0}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := envUpdateJSONStore(context.Background(), path, func(m *pyjson.Object) { m.Set("task", "é<") }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "{\n  \"zeta\": 1,\n  \"alpha\": 1.0,\n  \"big\": 100.0,\n  \"nested\": {\n    \"y\": [\n      1,\n      1.0\n    ],\n    \"x\": -0.0\n  },\n  \"task\": \"é<\"\n}"
+	if string(got) != want {
+		t.Fatalf("store rewritten as\n%s\nwant\n%s", got, want)
+	}
+}

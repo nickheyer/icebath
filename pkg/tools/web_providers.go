@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -109,7 +108,7 @@ func argL(args map[string]any, key string) []any {
 	return nil
 }
 
-// Compact JSON without HTML escaping, mirroring ensure_ascii false output
+// Text of json.dumps with ensure_ascii off and separators comma and colon without spaces
 func jsonCompact(v any) string {
 	b, err := pyjson.EncodeWTF8(v)
 	if err != nil {
@@ -133,24 +132,15 @@ func boundErrorText(text string) string { return boundModelErrorText(nil, text) 
 // Error text clamped to the display bound
 func BoundErrorText(text string) string { return boundErrorText(text) }
 
-// Error envelope with the error key first and extra keys sorted after it
-func toolErrorJSON(message string, extra map[string]any) string {
-	var buf bytes.Buffer
-	buf.WriteString(`{"error":`)
-	buf.WriteString(jsonCompact(boundErrorText(message)))
-	keys := make([]string, 0, len(extra))
-	for k := range extra {
-		keys = append(keys, k)
+// Error envelope with the bounded error first and the extra keys after it in their own order
+func toolErrorJSON(message string, extra *pyjson.Object) string {
+	out := Dict("error", boundErrorText(message))
+	if extra != nil {
+		for _, k := range extra.Keys {
+			out.Set(k, extra.Vals[k])
+		}
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		buf.WriteString(",")
-		buf.WriteString(jsonCompact(k))
-		buf.WriteString(":")
-		buf.WriteString(jsonCompact(extra[k]))
-	}
-	buf.WriteString("}")
-	return buf.String()
+	return JSON(out)
 }
 
 // Secret from the .env layer and process environment, trimmed
@@ -399,13 +389,6 @@ func decodePyJSON(text string) (any, error) {
 	return pyjson.Plain(v), nil
 }
 
-// Decodes JSON text keeping numbers as float64
-func decodeJSON(text string) (any, error) {
-	var v any
-	err := json.Unmarshal([]byte(text), &v)
-	return v, err
-}
-
 // Joined string list from a decoded JSON list
 func joinStrings(v any, sep string) string {
 	parts := []string{}
@@ -478,7 +461,7 @@ func (r *WebSearchResponse) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString(`{"success":` + strconv.FormatBool(r.Success))
 	if r.Data != nil {
-		b, err := json.Marshal(r.Data)
+		b, err := pyjson.EncodeWTF8(r.Data)
 		if err != nil {
 			return nil, err
 		}

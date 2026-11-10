@@ -83,7 +83,7 @@ func framedArchive(prompt, response string) string {
 
 func TestNonemptyNotepadRenderedIntoPrompt(t *testing.T) {
 	s := promptStore(t)
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
 	n := openNotepad(s)
 	mustSetNote(t, n, job.ID, "last_seen_id", "8842")
 	mustSetNote(t, n, job.ID, "watchlist", "alpha, beta")
@@ -97,7 +97,7 @@ func TestNonemptyNotepadRenderedIntoPrompt(t *testing.T) {
 
 func TestEmptyNotepadPromptByteStable(t *testing.T) {
 	s := promptStore(t)
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
 	baseline := mustPrompt(t, s, job, buildPromptOptions{})
 	n := openNotepad(s)
 	mustSetNote(t, n, "ffffffffffff", "k", "other job data")
@@ -112,7 +112,7 @@ func TestEmptyNotepadPromptByteStable(t *testing.T) {
 
 func TestNotepadReadFailureDoesNotBreakPrompt(t *testing.T) {
 	s := promptStore(t)
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
 	saved := notepadLister
 	notepadLister = func(*Notepad, string) ([]*pyjson.Object, error) { return nil, errors.New("db unavailable") }
 	t.Cleanup(func() { notepadLister = saved })
@@ -175,7 +175,7 @@ func TestAuditOnlyHistoryIsEmptyButErrorsRemainContext(t *testing.T) {
 
 func TestLongPromptArchiveKeepsResponse(t *testing.T) {
 	s := promptStore(t)
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Run the daily check"), Schedule: "0 8 * * *", ContextFrom: "self"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Run the daily check"), Schedule: "0 8 * * *", ContextFrom: "self"})
 	writeArchive(t, s, job.ID, "2026-09-19_08-00-00.md", "# Cron Job: probe\n\n## Prompt\n\n"+strings.Repeat("SKILL LINE\n", 1800)+"\n\n## Response\n\nCONCLUSION-MARKER-42\n", 0)
 	out := mustPrompt(t, s, job, buildPromptOptions{})
 	if !strings.Contains(out, "CONCLUSION-MARKER-42") || strings.Contains(out, "SKILL LINE") {
@@ -185,7 +185,7 @@ func TestLongPromptArchiveKeepsResponse(t *testing.T) {
 
 func TestSilentResponseFallsThroughToOlderArchive(t *testing.T) {
 	s := promptStore(t)
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Report"), Schedule: "0 8 * * *", ContextFrom: "self"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Report"), Schedule: "0 8 * * *", ContextFrom: "self"})
 	writeArchive(t, s, job.ID, "2026-09-18_08-00-00.md", "# Cron Job: probe\n\n## Prompt\n\ndo the thing\n\n## Response\n\nOLDER-REAL-ANSWER\n", 1)
 	writeArchive(t, s, job.ID, "2026-09-19_08-00-00.md", "# Cron Job: probe\n\n## Prompt\n\ndo the thing\n\n## Response\n\n[SILENT]\n", 2)
 	out, injected, err := s.injectContextFrom(job, "Report")
@@ -196,7 +196,7 @@ func TestSilentResponseFallsThroughToOlderArchive(t *testing.T) {
 
 func TestHeadinglessArchiveInjectsWholeDocument(t *testing.T) {
 	s := promptStore(t)
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Report"), Schedule: "0 8 * * *", ContextFrom: "self"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Report"), Schedule: "0 8 * * *", ContextFrom: "self"})
 	writeArchive(t, s, job.ID, "2026-09-19_08-00-00.md", "\n\nplain script payload\nline two\n\n", 0)
 	out, injected, _ := s.injectContextFrom(job, "Report")
 	if !injected || !strings.Contains(out, "```\nplain script payload\nline two\n```") {
@@ -207,7 +207,7 @@ func TestHeadinglessArchiveInjectsWholeDocument(t *testing.T) {
 func TestWriterReaderPreserveResponseWithNestedFrames(t *testing.T) {
 	s := promptStore(t)
 	answer := "\u6458\u8981 before heading\r\n\r\n## Response\nsubsection\n**Response Characters:** 4\n## Response\n\nbody\n\n  "
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Original prompt noise\r\n**Response Characters:** 4\n## Response\n\nbody"), Schedule: "0 8 * * *", ContextFrom: "self"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Original prompt noise\r\n**Response Characters:** 4\n## Response\n\nbody"), Schedule: "0 8 * * *", ContextFrom: "self"})
 	if _, err := s.SaveJobOutput(context.Background(), job.ID, framedArchive(job.Prompt, answer)); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestTruncatedOuterFrameCannotPromoteAQuotedInnerFrame(t *testing.T) {
 	s := promptStore(t)
 	quoted, suffix := "QUOTED INNER ANSWER", "\nThis tail will be lost."
 	answer := "Outer response introduction\n" + fmt.Sprintf("**Response Characters:** %d\n## Response\n\n%s", len(quoted), quoted) + suffix
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Report"), Schedule: "0 8 * * *", ContextFrom: "self"})
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Report"), Schedule: "0 8 * * *", ContextFrom: "self"})
 	complete := framedArchive(job.Prompt, answer)
 	if !strings.HasSuffix(complete, suffix+"\n") {
 		t.Fatal(complete)
@@ -416,9 +416,9 @@ func TestGuardJobCredentialExfilAndBlockAndPause(t *testing.T) {
 	if err := s.guardJobCredentialExfil(&Job{ID: "j"}); err == nil || err.Error() != "Cron job 'j' blocked for safety: off origin" {
 		t.Fatal(err)
 	}
-	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h"})
-	out := s.blockAndPauseJob(job.ID, "nm", "bad pair")
-	got, _ := s.getJob(job.ID)
+	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h"})
+	out := s.blockAndPauseJob(context.Background(), job.ID, "nm", "bad pair")
+	got, _ := s.getJob(context.Background(), job.ID)
 	if out.Success || out.Error == nil || *out.Error != "bad pair" || !strings.Contains(out.Output, "**Status:** blocked (unrunnable job) \u2014 auto-paused\n\nbad pair\n") || out.FinalResponse != "\u26a0 Cron job 'nm' was auto-paused\n\nbad pair" || got.PausedReason == nil || *got.PausedReason != "Auto-paused by scheduler: bad pair" {
 		t.Fatalf("%+v %+v", out, got)
 	}

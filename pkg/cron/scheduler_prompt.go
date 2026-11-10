@@ -14,6 +14,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -566,10 +567,10 @@ func (s *Store) guardJobCredentialExfil(job *Job) error {
 }
 
 // Fails a run closed and pauses the job so an unrunnable job cannot refire every tick
-func (s *Store) blockAndPauseJob(jobID, jobName, reason string) jobRunOutcome {
+func (s *Store) blockAndPauseJob(ctx context.Context, jobID, jobName, reason string) jobRunOutcome {
 	s.log.Error(fmt.Sprintf("Job '%s': %s", jobID, reason))
 	pauseReason := "Auto-paused by scheduler: " + reason
-	if _, err := s.pauseJob(jobID, &pauseReason); err != nil {
+	if _, err := s.pauseJob(home.WithOverride(ctx, s.home), jobID, &pauseReason); err != nil {
 		s.log.Error(fmt.Sprintf("Job '%s': failed to auto-pause unrunnable job: %v", jobID, err))
 	}
 	nowISO := config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S")

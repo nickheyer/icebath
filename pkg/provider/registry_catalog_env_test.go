@@ -149,8 +149,8 @@ func coldDiscoveryCompletion(t *testing.T) map[string]any {
 		RegisterProvider(Profile{Name: "epplug", AuthType: AuthTypeAPIKey, KeyEnv: []string{"EPPLUG_API_KEY"}})
 	}
 	discoverProviders(ctx)
-	_, ep := config.OptionalEnvVars["EPPLUG_API_KEY"]
-	_, homeVar := config.OptionalEnvVars["HOMEPLUG_API_KEY"]
+	ep := config.OptionalEnvVars.Has("EPPLUG_API_KEY")
+	homeVar := config.OptionalEnvVars.Has("HOMEPLUG_API_KEY")
 	return map[string]any{"reads": reads.list(), "ep": ep, "home": homeVar, "scanned": append([]string{}, *loads...)}
 }
 
@@ -180,7 +180,7 @@ func coldSafeWorkerCatalog(t *testing.T, role string) map[string]any {
 	}
 	present := []string{}
 	for _, v := range declared {
-		if _, ok := config.OptionalEnvVars[v]; ok {
+		if config.OptionalEnvVars.Has(v) {
 			present = append(present, v)
 		}
 	}

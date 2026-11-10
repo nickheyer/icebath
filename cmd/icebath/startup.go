@@ -35,7 +35,7 @@ var version string
 
 // Hidden child modes a re-executed binary dispatches before anything else, the Python child entry scripts
 func dispatchChildEntries(ctx context.Context) {
-	home.DispatchScratchPruneEntry()
+	home.DispatchScratchPruneEntry(ctx)
 	googlemeet.DispatchMeetBotEntry(ctx)
 	botdesktop.DispatchIdleWatchEntry()
 	gateway.DispatchStderrTimestampEntry()
@@ -203,7 +203,7 @@ func printVersionInfo(checkUpdates bool) {
 	root := pm.RepoRoot()
 	fmt.Println("Install directory: " + root)
 	ctx := context.Background()
-	method, err := config.DetectInstallMethod(home.Dir(ctx), root)
+	method, err := config.DetectInstallMethod(ctx, home.Dir(ctx), root)
 	if err != nil {
 		method = readInstallMethodStamp()
 	}
@@ -218,7 +218,7 @@ func printVersionInfo(checkUpdates bool) {
 	if err != nil || status == nil {
 		return
 	}
-	command, _ := config.RecommendedUpdateCommand(home.Dir(ctx))
+	command, _ := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
 	behind, _ := status.Get("behind")
 	rollback, _ := status.Get("rollback")
 	sourceVersion, _ := status.Get("sourceVersion")

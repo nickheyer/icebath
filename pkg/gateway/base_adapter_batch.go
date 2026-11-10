@@ -37,8 +37,25 @@ func SpawnAdapterTask(ctx context.Context, fn func(ctx context.Context) error) *
 	return spawnAdapterTask(ctx, fn)
 }
 
+type loopTurnKey struct{}
+
+// Runs fn as one uninterrupted stretch of adapter code, what a coroutine runs between two awaits
+func (b *BasePlatformAdapter) RunLoopTurn(ctx context.Context, fn func(ctx context.Context) error) error {
+	if ctx.Value(loopTurnKey{}) == b {
+		return fn(ctx)
+	}
+	b.textBatchMu.Lock()
+	defer b.textBatchMu.Unlock()
+	return fn(context.WithValue(ctx, loopTurnKey{}, b))
+}
+
 // Buffers a text event into the pending batch of its key and restarts the flush timer
 func (b *BasePlatformAdapter) EnqueueTextEvent(ctx context.Context, event *MessageEvent) error {
+	return b.RunLoopTurn(ctx, func(ctx context.Context) error { return b.enqueueTextEvent(ctx, event) })
+}
+
+// Enqueue body, run inside a loop turn so no flush task interleaves with it
+func (b *BasePlatformAdapter) enqueueTextEvent(ctx context.Context, event *MessageEvent) error {
 	if b.dropUnresolved(ctx, event) {
 		return nil
 	}
@@ -68,7 +85,8 @@ func (b *BasePlatformAdapter) EnqueueTextEvent(ctx context.Context, event *Messa
 	if prior := tasks[key]; prior != nil && !prior.finished() {
 		prior.cancel()
 	}
-	tasks[key] = spawnAdapterTask(ctx, func(tctx context.Context) error { return self.FlushTextBatch(tctx, key) })
+	taskCtx := context.WithValue(ctx, loopTurnKey{}, nil)
+	tasks[key] = spawnAdapterTask(taskCtx, func(tctx context.Context) error { return self.FlushTextBatch(tctx, key) })
 	return nil
 }
 
@@ -119,23 +137,26 @@ func (b *BasePlatformAdapter) FlushTextBatch(ctx context.Context, key string) er
 		}
 		b.mu.Unlock()
 	}()
-	b.mu.Lock()
-	pending := b.pendingTextBatches[key]
-	b.mu.Unlock()
-	timer := time.NewTimer(secondsDuration(self.TextBatchDelayFor(pending)))
+	b.textBatchMu.Lock()
+	delay := self.TextBatchDelayFor(b.PendingTextBatch(key))
+	b.textBatchMu.Unlock()
+	timer := time.NewTimer(secondsDuration(delay))
 	defer timer.Stop()
 	select {
 	case <-timer.C:
 	case <-ctx.Done():
 		return nil
 	}
+	b.textBatchMu.Lock()
 	b.mu.Lock()
 	owner := b.pendingTextBatchTasks[key]
 	b.mu.Unlock()
 	if owner != nil && owner != current {
+		b.textBatchMu.Unlock()
 		return nil
 	}
 	event := self.PopTextBatch(key)
+	b.textBatchMu.Unlock()
 	if event == nil {
 		return nil
 	}

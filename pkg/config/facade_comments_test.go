@@ -99,7 +99,7 @@ func TestEveryWriterPreservesCommentsConfigUnset(t *testing.T) {
 	}
 }
 
-func TestEveryWriterPreservesCommentsSaveConfig(t *testing.T) {
+func TestEveryWriterPreservesCommentsSaveConfigPluginEnableAndMemoryProvider(t *testing.T) {
 	h, path := commentedHome(t)
 	cfg, err := Load(h, facadeLookup)
 	if err != nil {
@@ -128,7 +128,7 @@ func TestEveryWriterPreservesCommentsSaveConfig(t *testing.T) {
 func TestEveryWriterPreservesCommentsMigrationVersionBump(t *testing.T) {
 	h, path := commentedHome(t)
 	registerMigrationFacade(t)
-	_, latest, err := CheckConfigVersion(h, false)
+	_, latest, err := CheckConfigVersion(context.Background(), h, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestEveryWriterPreservesCommentsMigrationVersionBump(t *testing.T) {
 	}
 }
 
-func TestEveryWriterPreservesCommentsAtomicConfigWrite(t *testing.T) {
+func TestEveryWriterPreservesCommentsAtomicConfigWriteDirect(t *testing.T) {
 	h, path := commentedHome(t)
 	raw, err := ReadUserConfigRaw(context.Background(), path)
 	if err != nil {

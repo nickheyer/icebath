@@ -152,5 +152,5 @@ func ApplySubprocessHomeEnv(ctx context.Context, env map[string]string) {
 	if h := SubprocessHome(ctx, env); h != "" {
 		env["HOME"] = h
 	}
-	ApplyScratchTmpEnv(env)
+	ApplyScratchTmpEnv(ctx, env)
 }

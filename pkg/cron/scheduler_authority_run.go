@@ -325,7 +325,7 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 		}
 	}
 	if state["status"] == "missing" {
-		current, err := s.getJob(jobID)
+		current, err := s.getJob(home.WithOverride(ctx, s.home), jobID)
 		if err != nil {
 			return err
 		}
@@ -339,7 +339,7 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 	if state["status"] != "terminal" {
 		if pr, _ := record.Get("pause_recorded"); state["status"] == "unknown" && !pyTruthy(pr) {
 			reason := "Canonical cron unknown; no automatic re-execution"
-			paused, err := s.pauseJob(jobID, &reason)
+			paused, err := s.pauseJob(home.WithOverride(ctx, s.home), jobID, &reason)
 			if err != nil {
 				return err
 			}
@@ -375,7 +375,7 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 	}
 	if finished {
 		pr, _ := record.Get("pause_recorded")
-		return s.liftPause(jobID, pr)
+		return s.liftPause(home.WithOverride(ctx, s.home), jobID, pr)
 	}
 	return nil
 }

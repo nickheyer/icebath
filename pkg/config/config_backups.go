@@ -3,7 +3,7 @@ package config
 import (
 	"bytes"
 	"context"
-	"io"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,13 +11,16 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 )
 
 // Backups a config writer keeps per reason
 const DefaultBackupKeep = 5
 
 var legacySiblingGlobs = []string{"config.yaml.bak.[0-9]*", "config.yaml.corrupt.*.bak", "config.yaml.bak-pre-migrate-*"}
+
+// Local time stamp a backup name ends with, the time.strftime call hermes tests replace
+var backupTimestamp = func() string { return time.Now().Format("20060102-150405") }
 
 // Directory holding the dated config backups beside a config file
 func BackupsDir(configPath string) string {
@@ -47,8 +50,8 @@ func ListConfigBackups(configPath, reason string) []string {
 }
 
 // Copies config into the backups dir, empty when skipped or failed, errors when no backend serves config
-func BackupConfig(configPath, reason string, keep int) (string, error) {
-	files, err := SupportsFileTooling(context.Background())
+func BackupConfig(ctx context.Context, configPath, reason string, keep int) (string, error) {
+	files, err := SupportsFileTooling(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -61,10 +64,10 @@ func BackupConfig(configPath, reason string, keep int) (string, error) {
 	}
 	root := BackupsDir(configPath)
 	fail := func(err error) string {
-		slog.Warn("Could not back up config", "path", configPath, "reason", reason, "error", err)
+		slog.Warn(fmt.Sprintf("Could not back up %s (%s): %s", configPath, reason, pyOSErrorString(err)))
 		return ""
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o777); err != nil {
 		return fail(err), nil
 	}
 	sweepLegacySiblings(configPath, root)
@@ -82,51 +85,29 @@ func BackupConfig(configPath, reason string, keep int) (string, error) {
 			return "", nil
 		}
 	}
-	dest := filepath.Join(root, filepath.Base(configPath)+"."+reason+"."+time.Now().Format("20060102-150405"))
+	dest := filepath.Join(root, filepath.Base(configPath)+"."+reason+"."+backupTimestamp())
 	if _, err := os.Lstat(dest); err == nil {
 		return "", nil
 	}
-	if err := copyPreservingTimes(configPath, dest, st); err != nil {
+	if err := pyshutil.Copy2(configPath, dest); err != nil {
 		return fail(err), nil
 	}
 	all := append([]string{dest}, existing...)
-	if keep < len(all) {
-		for _, stale := range all[max(keep, 0):] {
-			if err := os.Remove(stale); err != nil && !os.IsNotExist(err) {
-				return fail(err), nil
-			}
+	start := keep
+	if start < 0 {
+		start = max(len(all)+start, 0)
+	}
+	for _, stale := range all[min(start, len(all)):] {
+		if err := os.Remove(stale); err != nil && !os.IsNotExist(err) {
+			return fail(err), nil
 		}
 	}
 	return dest, nil
 }
 
-// Copies a file with its mode and modification time as shutil copy2 does
-func copyPreservingTimes(src, dest string, st os.FileInfo) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, st.Mode().Perm())
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(dest, st.Mode().Perm()); err != nil {
-		return err
-	}
-	return os.Chtimes(dest, st.ModTime(), st.ModTime())
-}
-
 // Raw mapping of the newest good backup, nil when absent, unreadable, not a mapping or the backend has no files
-func LoadNewestGoodBackup(configPath string) (map[string]any, error) {
-	files, err := SupportsFileTooling(context.Background())
+func LoadNewestGoodBackup(ctx context.Context, configPath string) (map[string]any, error) {
+	files, err := SupportsFileTooling(ctx)
 	if err != nil || !files {
 		return nil, err
 	}
@@ -137,14 +118,14 @@ func LoadNewestGoodBackup(configPath string) (map[string]any, error) {
 	data, err := os.ReadFile(newest[0])
 	var doc any
 	if err == nil {
-		err = yaml.Unmarshal(data, &doc)
+		doc, err = FastSafeLoad(data)
 	}
 	if err != nil {
-		slog.Warn("Last-known-good backup is unreadable", "path", newest[0], "error", err)
+		slog.Warn(fmt.Sprintf("Last-known-good backup %s is unreadable: %s", newest[0], pyOSErrorString(err)))
 		return nil, nil
 	}
-	if m := AsMap(doc); m != nil {
-		return normalizeMaps(m).(map[string]any), nil
+	if m, ok := doc.(map[string]any); ok {
+		return m, nil
 	}
 	return nil, nil
 }
@@ -159,7 +140,7 @@ func sweepLegacySiblings(configPath, root string) {
 				continue
 			}
 			if err := os.Rename(old, filepath.Join(root, filepath.Base(old))); err != nil {
-				slog.Debug("Could not move legacy backup", "path", old, "error", err)
+				slog.Debug(fmt.Sprintf("Could not move legacy backup %s: %s", old, pyOSErrorString(err)))
 			}
 		}
 	}

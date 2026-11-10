@@ -219,9 +219,9 @@ var (
 	inventorySystemdOwnerForPid  = gateway.SystemdOwnerForPid
 	inventoryReadImageProvenance = func() *ImageProvenance { return ReadImageProvenance("") }
 	inventoryDetectInstallMethod = func(ctx context.Context) (string, error) {
-		return config.DetectInstallMethod(home.Dir(ctx), fleetProjectRoot())
+		return config.DetectInstallMethod(ctx, home.Dir(ctx), fleetProjectRoot())
 	}
-	inventoryManagedSystem = func(ctx context.Context) string { return config.ManagedSystem(home.Dir(ctx)) }
+	inventoryManagedSystem = func(ctx context.Context) string { return config.ManagedSystem(ctx, home.Dir(ctx)) }
 )
 
 // How a live gateway pid is supervised, from the service pid sets

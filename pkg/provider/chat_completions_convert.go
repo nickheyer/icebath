@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dlclark/regexp2/v2"
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -733,30 +734,70 @@ var thinkTagAlt = func() string {
 	return strings.Join(parts, "|")
 }()
 
-var closedThinkRe = regexp.MustCompile(`(?is)<(` + thinkTagAlt + `)>.*?</(?:` + thinkTagAlt + `)>[ \t\r]*\n?`)
-var unterminatedThinkRe = regexp.MustCompile(`(?is)(?:^|\n)[ \t]*<(?:` + thinkTagAlt + `)>.*$`)
-var orphanThinkRe = regexp.MustCompile(`(?i)</?(?:` + thinkTagAlt + `)>[ \t\r]*`)
-var toolCallBlockRe = regexp.MustCompile(`(?is)<tool_call>.*?</tool_call>[ \t\r]*\n?`)
-var namedFunctionBlockRe = regexp.MustCompile(`(?is)(?:^|\n)[ \t]*<function\s*=\s*[^>]+>.*?</function>[ \t\r]*\n?`)
-var strayToolCloserRe = regexp.MustCompile(`(?i)</(?:tool_call|function)>[ \t\r]*`)
-var unterminatedToolCallRe = regexp.MustCompile(`(?is)(?:^|\n)[ \t]*<tool_call>.*$`)
+// Tool call wrapper tag names of the strip passes, an XML namespace prefix allowed before each
+const (
+	toolCallTagAlt  = `tool_call|tool_calls|tool_result|function_call|function_calls`
+	toolTagNSPrefix = `(?:[\w.-]+:)?`
+)
+
+// Orphan tool call or function closing tag with the whitespace after it
+var StrayToolCallCloserPattern = regexp2.MustCompile(`</(?:`+toolTagNSPrefix+`(?:`+toolCallTagAlt+`|function))>\s*`, regexp2.IgnoreCase)
+
+// Tool call opened on its own line and never closed, and cut arg_key or arg_value lines
+var UnterminatedToolCallPattern = regexp2.MustCompile(`(?:^|\n)[ \t]*<`+toolTagNSPrefix+`(?:`+toolCallTagAlt+`)\b[^>]*>.*$`+
+	`|(?:^|\n)[ \t]*[\w.:-]*</?arg_(?:key|value)\b[^\n]*`+
+	`|(?:^|\n)[^\n<]*</arg_(?:key|value)>[ \t\r]*(?=\n|$)`, regexp2.Singleline|regexp2.IgnoreCase)
+
+// Ordered strip passes of closed pairs, tool call blocks, named functions, unterminated and orphan tags, stray closers
+var ThinkStripPatterns = func() []*regexp2.Regexp {
+	const dotallNoCase = regexp2.Singleline | regexp2.IgnoreCase
+	var out []*regexp2.Regexp
+	for _, name := range ThinkTagNames {
+		out = append(out, regexp2.MustCompile(`<`+name+`>.*?</`+name+`>`, dotallNoCase))
+	}
+	for _, name := range strings.Split(toolCallTagAlt, "|") {
+		out = append(out, regexp2.MustCompile(`<`+toolTagNSPrefix+name+`\b[^>]*>.*?</`+toolTagNSPrefix+name+`>`, dotallNoCase))
+	}
+	return append(out,
+		regexp2.MustCompile(`(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*<function\b[^>]*\bname\s*=[^>]*>(?:(?:(?!</function>).)*)</function>`, dotallNoCase),
+		regexp2.MustCompile(`(?:^|\n)[ \t]*<(?:`+strings.Join(ThinkTagNames, "|")+`)\b[^>]*>.*$`, dotallNoCase),
+		regexp2.MustCompile(`</?(?:`+strings.Join(ThinkTagNames, "|")+`)>\s*`, regexp2.IgnoreCase),
+		StrayToolCallCloserPattern,
+		UnterminatedToolCallPattern,
+	)
+}()
+
 var inlineThinkRe = regexp.MustCompile(`(?is)<(?:` + thinkTagAlt + `)>(.*?)</(?:` + thinkTagAlt + `)>`)
 
 // StripStrayToolCallClosers drops orphan tool_call and function closing tags
-func StripStrayToolCallClosers(s string) string { return strayToolCloserRe.ReplaceAllString(s, "") }
+func StripStrayToolCallClosers(s string) string {
+	out, err := StrayToolCallCloserPattern.Replace(s, "", -1, -1)
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
 
 // StripUnterminatedToolCalls drops a tool_call opened on its own line and never closed
 func StripUnterminatedToolCalls(s string) string {
-	return unterminatedToolCallRe.ReplaceAllString(s, "")
+	out, err := UnterminatedToolCallPattern.Replace(s, "", -1, -1)
+	if err != nil {
+		panic(err)
+	}
+	return out
 }
 
 // StripThinkBlocks removes reasoning blocks and stray tool call XML from assistant text
 func StripThinkBlocks(content string) string {
-	if content == "" {
-		return ""
-	}
-	for _, re := range []*regexp.Regexp{closedThinkRe, toolCallBlockRe, namedFunctionBlockRe, unterminatedThinkRe, orphanThinkRe, strayToolCloserRe, unterminatedToolCallRe} {
-		content = re.ReplaceAllString(content, "")
+	for _, re := range ThinkStripPatterns {
+		if content == "" {
+			break
+		}
+		out, err := re.Replace(content, "", -1, -1)
+		if err != nil {
+			panic(err)
+		}
+		content = out
 	}
 	return content
 }

@@ -15,11 +15,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -79,26 +83,19 @@ func (p UIPreferences) Dict() *pyjson.Object {
 // Preferences file of the root home, a profile home naming its root, resolved through symlinks
 func UIPreferencesStorePath(ctx context.Context, root string) string {
 	if root == "" {
-		h, _ := filepath.Abs(home.Dir(ctx))
-		if strings.ToLower(filepath.Base(filepath.Dir(h))) == "profiles" {
-			h = filepath.Dir(filepath.Dir(h))
+		h, err := pypath.Abspath(home.Dir(ctx))
+		if err != nil {
+			panic(err)
 		}
-		root = resolveNonStrict(h)
+		base := h
+		if parent := pypath.PathParent(h); pystr.Lower(pypath.PathName(parent)) == "profiles" {
+			base = pypath.PathParent(parent)
+		}
+		if root, err = pypath.Resolve(base); err != nil {
+			panic(err)
+		}
 	}
-	return filepath.Join(root, UIPreferencesStoreName)
-}
-
-// Absolute path with every existing prefix resolved through symlinks like a non strict resolve
-func resolveNonStrict(p string) string {
-	p, _ = filepath.Abs(p)
-	if resolved, err := filepath.EvalSymlinks(p); err == nil {
-		return resolved
-	}
-	parent := filepath.Dir(p)
-	if parent == p {
-		return p
-	}
-	return filepath.Join(resolveNonStrict(parent), filepath.Base(p))
+	return pypath.PathJoin(root, UIPreferencesStoreName)
 }
 
 func emptyPreferences() UIPreferences {
@@ -158,8 +155,8 @@ func readPreferencesFile(path string) (UIPreferences, bool, error) {
 		return UIPreferences{}, false, &PreferencesBusy{Message: "preferences store is unreadable: " + pyOSErrorString(err)}
 	}
 	data = []byte(strings.TrimPrefix(string(data), "\uFEFF"))
-	if !utf8.Valid(data) {
-		return UIPreferences{}, false, fmt.Errorf("'utf-8' codec can't decode the preferences store %s", path)
+	if derr := pyUTF8DecodeError(data); derr != nil {
+		return UIPreferences{}, false, derr
 	}
 	doc, err := pyjson.Loads(string(data))
 	obj, isObj := doc.(*pyjson.Object)
@@ -215,24 +212,55 @@ func tokenHex8() string {
 	return hex.EncodeToString(b)
 }
 
-// Reports whether the lock directory owner file still names token
-func ownsPreferencesLock(lockDir, token string) bool {
-	data, err := os.ReadFile(filepath.Join(lockDir, "owner"))
-	return err == nil && strings.TrimPrefix(string(data), "\uFEFF") == token
+// File inside the lock directory that names the holder
+func preferencesOwnerFile(lockDir string) string { return pypath.PathJoin(lockDir, "owner") }
+
+// Reports whether the owner file still names token, an unreadable file no and an undecodable one the decode error
+func ownsPreferencesLock(lockDir, token string) (bool, error) {
+	data, err := os.ReadFile(preferencesOwnerFile(lockDir))
+	if err != nil {
+		return false, nil
+	}
+	data = []byte(strings.TrimPrefix(string(data), "\uFEFF"))
+	if derr := pyUTF8DecodeError(data); derr != nil {
+		return false, derr
+	}
+	return string(data) == token, nil
 }
 
-// Removes a lock whose directory is older than the stale limit so a dead writer never wedges writes
-func breakPreferencesLockIfStale(lockDir string) {
-	fi, err := os.Stat(lockDir)
-	if err != nil || time.Since(fi.ModTime()) <= uiPreferencesLockStale {
-		return
+// Removes the lock only while it still names token, a failed removal left for the stale check
+func releasePreferencesLock(lockDir, token string) error {
+	owns, err := ownsPreferencesLock(lockDir, token)
+	if err != nil || !owns {
+		return err
 	}
-	os.Remove(filepath.Join(lockDir, "owner"))
-	os.Remove(lockDir)
+	if pypath.Unlink(preferencesOwnerFile(lockDir)) == nil {
+		_ = syscall.Rmdir(lockDir)
+	}
+	return nil
+}
+
+// Removes a lock older than the stale limit, a missing lock ignored and any other stat failure returned
+func breakPreferencesLockIfStale(lockDir string) error {
+	fi, err := os.Stat(lockDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if time.Since(fi.ModTime()) <= uiPreferencesLockStale {
+		return nil
+	}
+	if err := pypath.Unlink(preferencesOwnerFile(lockDir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	_ = syscall.Rmdir(lockDir)
+	return nil
 }
 
 // Takes the store lock directory shared with the desktop writer, returning the still ours check and release
-func lockPreferencesStore(path string) (func() bool, func(), error) {
+func lockPreferencesStore(path string) (func() (bool, error), func() error, error) {
 	lockDir := path + ".lock"
 	token := strconv.Itoa(os.Getpid()) + "-" + tokenHex8()
 	deadline := time.Now().Add(uiPreferencesLockWait)
@@ -246,26 +274,27 @@ func lockPreferencesStore(path string) (func() bool, func(), error) {
 			uiPreferencesThreadLock.Unlock()
 			return nil, nil, err
 		}
-		breakPreferencesLockIfStale(lockDir)
+		if err := breakPreferencesLockIfStale(lockDir); err != nil {
+			uiPreferencesThreadLock.Unlock()
+			return nil, nil, err
+		}
 		if time.Now().After(deadline) {
 			uiPreferencesThreadLock.Unlock()
 			return nil, nil, &PreferencesBusy{Message: "preferences store is busy"}
 		}
 		time.Sleep(uiPreferencesLockPoll)
 	}
-	release := func() {
-		if ownsPreferencesLock(lockDir, token) {
-			if os.Remove(filepath.Join(lockDir, "owner")) == nil {
-				os.Remove(lockDir)
-			}
-		}
-		uiPreferencesThreadLock.Unlock()
+	release := func() error {
+		defer uiPreferencesThreadLock.Unlock()
+		return releasePreferencesLock(lockDir, token)
 	}
-	if err := os.WriteFile(filepath.Join(lockDir, "owner"), []byte(token), 0o666); err != nil {
-		release()
+	if err := os.WriteFile(preferencesOwnerFile(lockDir), []byte(token), 0o666); err != nil {
+		if rerr := release(); rerr != nil {
+			return nil, nil, rerr
+		}
 		return nil, nil, err
 	}
-	return func() bool { return ownsPreferencesLock(lockDir, token) }, release, nil
+	return func() (bool, error) { return ownsPreferencesLock(lockDir, token) }, release, nil
 }
 
 // Values after changes, a seed only adding keys the store lacks
@@ -289,24 +318,9 @@ func mergePreferences(current *pyjson.Object, changes []UIPreferenceChange, seed
 	return values
 }
 
-// Copies a corrupt store aside with its mode and times like shutil copy2
+// Copies a corrupt store aside under a millisecond stamped name with its mode and both times like shutil copy2
 func copyPreferencesAside(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	fi, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	dest := fmt.Sprintf("%s.corrupt-%d", path, time.Now().UnixMilli())
-	if err := os.WriteFile(dest, data, fi.Mode().Perm()); err != nil {
-		return err
-	}
-	if err := os.Chmod(dest, fi.Mode().Perm()); err != nil {
-		return err
-	}
-	return os.Chtimes(dest, fi.ModTime(), fi.ModTime())
+	return pyshutil.Copy2(path, fmt.Sprintf("%s.corrupt-%d", path, time.Now().UnixMilli()))
 }
 
 // Python json dump with two space indents, ASCII escapes only when the text holds lone surrogates
@@ -324,21 +338,25 @@ func dumpPreferencesDoc(doc *pyjson.Object) ([]byte, error) {
 }
 
 // Merges changes per key under the store lock and returns the resulting snapshot
-func WritePreferences(ctx context.Context, changes []UIPreferenceChange, seed bool, path string) (UIPreferences, error) {
+func WritePreferences(ctx context.Context, changes []UIPreferenceChange, seed bool, path string) (snap UIPreferences, err error) {
 	if err := validatePreferenceChanges(changes); err != nil {
 		return UIPreferences{}, err
 	}
 	if path == "" {
 		path = UIPreferencesStorePath(ctx, "")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+	if err := home.PathMkdir(pypath.PathParent(path), 0o777, true, true); err != nil {
 		return UIPreferences{}, err
 	}
 	stillOurs, release, err := lockPreferencesStore(path)
 	if err != nil {
 		return UIPreferences{}, err
 	}
-	defer release()
+	defer func() {
+		if rerr := release(); rerr != nil {
+			snap, err = UIPreferences{}, rerr
+		}
+	}()
 	current, corrupt, err := readPreferencesFile(path)
 	if err != nil {
 		return UIPreferences{}, err
@@ -359,7 +377,11 @@ func WritePreferences(ctx context.Context, changes []UIPreferenceChange, seed bo
 	if generation == "" {
 		generation = tokenHex8()
 	}
-	if !stillOurs() {
+	ours, err := stillOurs()
+	if err != nil {
+		return UIPreferences{}, err
+	}
+	if !ours {
 		return UIPreferences{}, &PreferencesBusy{Message: "preferences store lock was taken over"}
 	}
 	if corrupt {

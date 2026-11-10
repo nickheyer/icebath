@@ -121,7 +121,7 @@ func TestAcceptSuggestionCreatesJobAndMarksAccepted(t *testing.T) {
 	s, _ := newTestStore(t)
 	testScheduler.registered = nil
 	addTestSuggestion(t, s, "acc", "My Job", "catalog", "0 9 * * *")
-	job, err := s.AcceptSuggestion("1", map[string]any{"platform": "telegram", "chat_id": "5"})
+	job, err := s.AcceptSuggestion(context.Background(), "1", map[string]any{"platform": "telegram", "chat_id": "5"})
 	if err != nil || job == nil {
 		t.Fatal(job, err)
 	}
@@ -134,7 +134,7 @@ func TestAcceptSuggestionCreatesJobAndMarksAccepted(t *testing.T) {
 	if pendingCount(t, s) != 0 {
 		t.Fatal("still pending")
 	}
-	if again, err := s.AcceptSuggestion("acc", nil); again != nil || err != nil {
+	if again, err := s.AcceptSuggestion(context.Background(), "acc", nil); again != nil || err != nil {
 		t.Fatal(again, err)
 	}
 }
@@ -144,9 +144,9 @@ func TestSuggestionRegistrationFailureMarksAccepted(t *testing.T) {
 	rec := addTestSuggestion(t, s, "registration-failed", "My Job", "catalog", "0 9 * * *")
 	failure := &CronSchedulerRegistrationError{Job: &Job{ID: "job123", Name: "My Job"}, Cause: errors.New("private detail")}
 	prev := acceptCreateJob
-	acceptCreateJob = func(*Store, *pyjson.Object) (*Job, error) { return nil, failure }
+	acceptCreateJob = func(context.Context, *Store, *pyjson.Object) (*Job, error) { return nil, failure }
 	t.Cleanup(func() { acceptCreateJob = prev })
-	_, err := s.AcceptSuggestion(rec.Vals["id"].(string), nil)
+	_, err := s.AcceptSuggestion(context.Background(), rec.Vals["id"].(string), nil)
 	var regErr *CronSchedulerRegistrationError
 	if !errors.As(err, &regErr) {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestSuggestionRegistrationFailureMarksAccepted(t *testing.T) {
 	if pendingCount(t, s) != 0 {
 		t.Fatal("still pending")
 	}
-	if again, err := s.AcceptSuggestion(rec.Vals["id"].(string), nil); again != nil || err != nil {
+	if again, err := s.AcceptSuggestion(context.Background(), rec.Vals["id"].(string), nil); again != nil || err != nil {
 		t.Fatal(again, err)
 	}
 }
@@ -167,7 +167,7 @@ func TestSchedulerRegistrationFailureKeepsSavedJob(t *testing.T) {
 	spec.Set("prompt", "p")
 	spec.Set("schedule", "every 1h")
 	spec.Set("name", "Reg")
-	_, err := s.createJobWithSchedulerRegistration(spec)
+	_, err := s.createJobWithSchedulerRegistration(context.Background(), spec)
 	var regErr *CronSchedulerRegistrationError
 	if !errors.As(err, &regErr) {
 		t.Fatal(err)
@@ -182,17 +182,17 @@ func TestSchedulerRegistrationFailureKeepsSavedJob(t *testing.T) {
 	if d.Vals["job_id"] != regErr.Job.ID || d.Vals["job_saved"] != true || d.Vals["scheduler_registered"] != false || d.Vals["retry_create"] != false {
 		t.Fatal(d)
 	}
-	jobs, _ := s.LoadJobs()
+	jobs, _ := s.LoadJobs(context.Background())
 	if len(jobs) != 1 {
 		t.Fatal(len(jobs))
 	}
 	bad := pyjson.NewObject()
 	bad.Set("prompt", "p")
 	bad.Set("bogus", 1)
-	if _, err := s.createJobWithSchedulerRegistration(bad); err == nil || err.Error() != "TypeError: create_job() got an unexpected keyword argument 'bogus'" {
+	if _, err := s.createJobWithSchedulerRegistration(context.Background(), bad); err == nil || err.Error() != "TypeError: create_job() got an unexpected keyword argument 'bogus'" {
 		t.Fatal(err)
 	}
-	if _, err := s.createJobWithSchedulerRegistration(pyjson.NewObject()); err == nil || err.Error() != "TypeError: create_job() missing 2 required positional arguments: 'prompt' and 'schedule'" {
+	if _, err := s.createJobWithSchedulerRegistration(context.Background(), pyjson.NewObject()); err == nil || err.Error() != "TypeError: create_job() missing 2 required positional arguments: 'prompt' and 'schedule'" {
 		t.Fatal(err)
 	}
 }
@@ -213,9 +213,9 @@ func TestGetSuggestionByIDIndexTitleAndClearResolved(t *testing.T) {
 		t.Fatal("dismiss b")
 	}
 	prev := acceptCreateJob
-	acceptCreateJob = func(*Store, *pyjson.Object) (*Job, error) { return &Job{ID: "j"}, nil }
+	acceptCreateJob = func(context.Context, *Store, *pyjson.Object) (*Job, error) { return &Job{ID: "j"}, nil }
 	t.Cleanup(func() { acceptCreateJob = prev })
-	if job, err := s.AcceptSuggestion("1", nil); job == nil || err != nil {
+	if job, err := s.AcceptSuggestion(context.Background(), "1", nil); job == nil || err != nil {
 		t.Fatal(job, err)
 	}
 	if removed, err := s.ClearResolvedSuggestions(); removed != 1 || err != nil {

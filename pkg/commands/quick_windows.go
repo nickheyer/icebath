@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ComSpec command line for the gateway string, bytes refused as Popen refuses them on Windows
@@ -82,7 +83,8 @@ func finishProgram(prog quickProgram, cwd string, env []string) (quickProgram, e
 }
 
 // Environment block entries sorted case insensitively by name as CreateProcess wants them
-func quickEnvList(env map[string]string) []string {
+func quickEnvList(child *tools.ChildEnv) []string {
+	env := child.Vars
 	keys := make([]string, 0, len(env))
 	for k := range env {
 		keys = append(keys, k)

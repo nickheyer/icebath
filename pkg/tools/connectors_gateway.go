@@ -3,10 +3,10 @@ package tools
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -494,6 +495,70 @@ type PlannedCall struct {
 	Connector string
 	Tool      string
 	Arguments map[string]any
+	Typed     *pyjson.Object
+}
+
+// Arguments for the wire, the handler shaped tree given the key order and number types of the typed one
+func wireTyped(plain, typed any) any {
+	switch p := plain.(type) {
+	case map[string]any:
+		o := pyjson.NewObject()
+		t, _ := typed.(*pyjson.Object)
+		if t != nil {
+			for _, k := range t.Keys {
+				if v, has := p[k]; has {
+					o.Set(k, wireTyped(v, t.Vals[k]))
+				}
+			}
+		}
+		for _, k := range sortedConnectorKeys(p) {
+			if _, done := o.Get(k); !done {
+				o.Set(k, wireTyped(p[k], nil))
+			}
+		}
+		return o
+	case []any:
+		t, _ := typed.([]any)
+		out := make([]any, len(p))
+		for i := range p {
+			var tv any
+			if i < len(t) {
+				tv = t[i]
+			}
+			out[i] = wireTyped(p[i], tv)
+		}
+		return out
+	case float64:
+		switch tv := typed.(type) {
+		case int64:
+			if float64(tv) == p {
+				return tv
+			}
+		case *big.Int:
+			if f, _ := new(big.Float).SetInt(tv).Float64(); f == p {
+				return tv
+			}
+		}
+	}
+	return plain
+}
+
+// String list as the JSON array a wire model dump holds
+func wireStrings(items []string) []any {
+	out := make([]any, len(items))
+	for i, s := range items {
+		out[i] = s
+	}
+	return out
+}
+
+// One call of an execute request body in the field order of the hermes wire model
+func wireExecuteCall(plan PlannedCall) *pyjson.Object {
+	var typed any
+	if plan.Typed != nil {
+		typed = plan.Typed
+	}
+	return pyjson.ObjectOf("connector", plan.Connector, "tool", plan.Tool, "arguments", wireTyped(plan.Arguments, typed))
 }
 
 // Partition splits a batch into local calls, remote connector calls, and per entry errors
@@ -628,25 +693,19 @@ func FillRemoteFailure(planned []PlannedCall, message, code string) []map[string
 }
 
 // AssembleResults orders entries by position and fills unclaimed slots with errors
-func AssembleResults(total int, groups ...[]map[string]any) map[string]any {
+func AssembleResults(total int, groups ...[]*pyjson.Object) *pyjson.Object {
 	if total < 0 {
 		total = 0
 	}
-	slots := make([]map[string]any, total)
+	slots := make([]*pyjson.Object, total)
 	for _, group := range groups {
 		for _, entry := range group {
-			idx, ok := entry["index"].(int)
-			if !ok {
-				if f, isF := entry["index"].(float64); isF {
-					idx, ok = int(f), true
-				}
+			idx, ok := entry.Vals["index"].(int)
+			if n, isInt := entry.Vals["index"].(int64); isInt {
+				idx, ok = int(n), true
 			}
 			if ok && idx >= 0 && idx < len(slots) && slots[idx] == nil {
-				copied := map[string]any{}
-				for k, v := range entry {
-					copied[k] = v
-				}
-				slots[idx] = copied
+				slots[idx] = entry.Copy()
 			}
 		}
 	}
@@ -654,14 +713,14 @@ func AssembleResults(total int, groups ...[]map[string]any) map[string]any {
 	errorCount := 0
 	for position, entry := range slots {
 		if entry == nil {
-			entry = connectorErrorEntry(position, "", "PROVIDER_ERROR", "No result was produced for this call.")
+			entry = modelEntry(connectorErrorEntry(position, "", "PROVIDER_ERROR", "No result was produced for this call."))
 		}
-		if _, has := entry["error"]; has {
+		if _, has := entry.Get("error"); has {
 			errorCount++
 		}
 		merged = append(merged, entry)
 	}
-	return map[string]any{"results": merged, "success_count": len(merged) - errorCount, "error_count": errorCount, "total_count": len(merged)}
+	return pyjson.ObjectOf("results", merged, "success_count", len(merged)-errorCount, "error_count", errorCount, "total_count", len(merged))
 }
 
 // ---- identity -----------------------------------------------------------------------------------
@@ -1040,6 +1099,7 @@ var legacyExecuteOrigins = struct {
 
 type connectorReply struct {
 	payload   any
+	typed     any
 	status    int
 	requestID string
 	route     string
@@ -1137,11 +1197,11 @@ func (c *ConnectorClient) send(ctx context.Context, method, u string, body any, 
 	}
 	var reader io.Reader
 	if body != nil {
-		data, err := json.Marshal(body)
+		text, err := pyjson.Dumps(body, pyjson.AllowNaN(false))
 		if err != nil {
 			return nil, err
 		}
-		reader = bytes.NewReader(data)
+		reader = bytes.NewReader([]byte(text))
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -1166,11 +1226,68 @@ func (c *ConnectorClient) send(ctx context.Context, method, u string, body any, 
 }
 
 func safeJSON(r *connectorHTTPResponse) any {
-	v, err := decodeJSON(string(r.body))
+	v, err := pyjson.LoadsBytes(r.body)
 	if err != nil {
 		return string(r.body)
 	}
+	return pyjson.WTF8Shape(v)
+}
+
+// Body as json.loads returns it, ordered objects and Python number types, nil when it is not JSON
+func typedJSON(r *connectorHTTPResponse) any {
+	v, err := pyjson.LoadsBytes(r.body)
+	if err != nil {
+		return nil
+	}
 	return v
+}
+
+// Value under the keys of nested decoded objects, nil when a step is not an object or lacks the key
+func typedAt(v any, keys ...string) any {
+	for _, k := range keys {
+		o, ok := v.(*pyjson.Object)
+		if !ok {
+			return nil
+		}
+		v = o.Vals[k]
+	}
+	return v
+}
+
+var modelEntryKeys = []string{"index", "name", "response", "error", "account", "data_use"}
+var modelErrorKeys = []string{"code", "message", "connector", "connect_card_available", "connect_url", "hint", "connection_id", "family"}
+
+// Mapping with the named keys first in that order and every other key after them sorted
+func orderedObject(m map[string]any, order ...string) *pyjson.Object {
+	o := pyjson.NewObject()
+	for _, k := range order {
+		if v, ok := m[k]; ok {
+			o.Set(k, v)
+		}
+	}
+	for _, k := range sortedConnectorKeys(m) {
+		if _, done := o.Get(k); !done {
+			o.Set(k, m[k])
+		}
+	}
+	return o
+}
+
+// Batch entry and its error payload in the key order hermes builds them
+func modelEntry(entry map[string]any) *pyjson.Object {
+	o := orderedObject(entry, modelEntryKeys...)
+	if e, ok := entry["error"].(map[string]any); ok {
+		o.Set("error", orderedObject(e, modelErrorKeys...))
+	}
+	return o
+}
+
+func modelEntries(entries []map[string]any) []*pyjson.Object {
+	out := make([]*pyjson.Object, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, modelEntry(e))
+	}
+	return out
 }
 
 func (c *ConnectorClient) request(ctx context.Context, method, path string, body any, timeout time.Duration, idempotencyKey string, retries int) (*connectorReply, error) {
@@ -1188,7 +1305,7 @@ func (c *ConnectorClient) request(ctx context.Context, method, path string, body
 			continue
 		}
 		if resp.status >= 200 && resp.status < 300 {
-			return &connectorReply{payload: safeJSON(resp), status: resp.status, requestID: resp.requestID, route: route}, nil
+			return &connectorReply{payload: safeJSON(resp), typed: typedJSON(resp), status: resp.status, requestID: resp.requestID, route: route}, nil
 		}
 		gerr := ParseGatewayError(resp.status, safeJSON(resp), resp.header)
 		if gerr.RequestID == "" {
@@ -1234,15 +1351,15 @@ func (c *ConnectorClient) checked(reply *connectorReply, what string, parse func
 
 // Search runs connector use case queries
 func (c *ConnectorClient) Search(ctx context.Context, queries []map[string]any) (map[string]any, error) {
-	wireQueries := make([]map[string]any, 0, len(queries))
+	wireQueries := make([]any, 0, len(queries))
 	for _, q := range queries {
-		row := map[string]any{"useCase": asStr(q["use_case"])}
+		row := pyjson.ObjectOf("useCase", asStr(q["use_case"]))
 		if kf := asStr(q["known_fields"]); kf != "" {
-			row["knownFields"] = kf
+			row.Set("knownFields", kf)
 		}
 		wireQueries = append(wireQueries, row)
 	}
-	reply, err := c.post(ctx, connectorSearchPath, map[string]any{"queries": wireQueries}, connectorSearchTimeout, "", 0)
+	reply, err := c.post(ctx, connectorSearchPath, pyjson.ObjectOf("queries", wireQueries), connectorSearchTimeout, "", 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1255,7 +1372,7 @@ func (c *ConnectorClient) Search(ctx context.Context, queries []map[string]any) 
 
 // Schemas fetches the input schemas of vendor slugs
 func (c *ConnectorClient) Schemas(ctx context.Context, tools []string) (map[string]any, error) {
-	reply, err := c.post(ctx, connectorSchemasPath, map[string]any{"tools": tools}, connectorSchemasTimeout, "", connectorMaxRetries)
+	reply, err := c.post(ctx, connectorSchemasPath, pyjson.ObjectOf("tools", wireStrings(tools)), connectorSchemasTimeout, "", connectorMaxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -1278,21 +1395,21 @@ type ConnectionsRequest struct {
 
 // Connections starts authorizations, never retried because the gateway cannot deduplicate them
 func (c *ConnectorClient) Connections(ctx context.Context, req ConnectionsRequest) (map[string]any, error) {
-	body := map[string]any{"connectors": req.Connectors, "reinitiate": req.Reinitiate}
+	body := pyjson.ObjectOf("connectors", wireStrings(req.Connectors), "reinitiate", req.Reinitiate)
 	if req.Alias != "" {
-		body["alias"] = req.Alias
+		body.Set("alias", req.Alias)
 	}
 	if req.ConnectionID != "" {
-		body["connectionId"] = req.ConnectionID
+		body.Set("connectionId", req.ConnectionID)
 	}
 	if req.ReturnTo != "" {
-		body["returnTo"] = req.ReturnTo
+		body.Set("returnTo", req.ReturnTo)
 	}
 	if req.Op != "" {
-		body["op"] = req.Op
+		body.Set("op", req.Op)
 	}
 	if c.initiator != "" {
-		body["initiator"] = c.initiator
+		body.Set("initiator", c.initiator)
 	}
 	reply, err := c.post(ctx, connectorConnectionsPath, body, connectorDefaultTimeout, "", 0)
 	if err != nil {
@@ -1360,7 +1477,7 @@ func (c *ConnectorClient) AccountStatus(ctx context.Context, connectionID string
 
 // StageFile mints a presigned upload for one file input
 func (c *ConnectorClient) StageFile(ctx context.Context, toolkit, tool, filename, mimetype string, size int) (map[string]any, error) {
-	body := map[string]any{"toolkit": toolkit, "tool": tool, "filename": filename, "mimetype": mimetype, "size": size}
+	body := pyjson.ObjectOf("toolkit", toolkit, "tool", tool, "filename", filename, "mimetype", mimetype, "size", size)
 	reply, err := c.post(ctx, connectorFileUploadPath, body, connectorDefaultTimeout, "", 0)
 	if err != nil {
 		return nil, err
@@ -1568,13 +1685,12 @@ func retryWait(status int, headers http.Header) (float64, bool) {
 }
 
 func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall, returnTo, op string) (map[string]any, bool, error) {
-	call := map[string]any{"connector": plan.Connector, "tool": plan.Tool, "arguments": plan.Arguments}
-	body := map[string]any{"call": call}
+	body := pyjson.ObjectOf("call", wireExecuteCall(plan))
 	if returnTo != "" {
-		body["returnTo"] = returnTo
+		body.Set("returnTo", returnTo)
 	}
 	if op != "" {
-		body["op"] = op
+		body.Set("op", op)
 	}
 	u, err := c.url(connectorExecutePath)
 	if err != nil {
@@ -1596,7 +1712,9 @@ func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall, retu
 			if err != nil {
 				return nil, false, err
 			}
-			return resultDict(parsed.(map[string]any)), true, nil
+			result := resultDict(parsed.(map[string]any))
+			result["data"] = typedAt(typedJSON(resp), "result", "data")
+			return result, true, nil
 		}
 		failure := callFailure(payload)
 		code := ""
@@ -1631,16 +1749,16 @@ func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall, retu
 }
 
 func (c *ConnectorClient) executeLegacy(ctx context.Context, planned []PlannedCall, returnTo, op string) ([]map[string]any, error) {
-	tools := make([]map[string]any, 0, len(planned))
+	tools := make([]any, 0, len(planned))
 	for _, plan := range planned {
-		tools = append(tools, map[string]any{"connector": plan.Connector, "tool": plan.Tool, "arguments": plan.Arguments})
+		tools = append(tools, wireExecuteCall(plan))
 	}
-	body := map[string]any{"tools": tools}
+	body := pyjson.ObjectOf("tools", tools)
 	if returnTo != "" {
-		body["returnTo"] = returnTo
+		body.Set("returnTo", returnTo)
 	}
 	if op != "" {
-		body["op"] = op
+		body.Set("op", op)
 	}
 	reply, err := c.post(ctx, connectorExecutePath, body, connectorExecuteTimeout, uuid.NewString(), connectorMaxRetries)
 	if err != nil {
@@ -1670,9 +1788,14 @@ func (c *ConnectorClient) executeLegacy(ctx context.Context, planned []PlannedCa
 	if !logged {
 		c.log(reply, "")
 	}
+	typedResults, _ := typedAt(reply.typed, "results").([]any)
 	out := make([]map[string]any, 0, len(results))
-	for _, r := range results {
-		out = append(out, resultDict(r))
+	for i, r := range results {
+		result := resultDict(r)
+		if i < len(typedResults) {
+			result["data"] = typedAt(typedResults[i], "data")
+		}
+		out = append(out, result)
 	}
 	return out, nil
 }

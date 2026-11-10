@@ -115,7 +115,7 @@ func (s *Store) advanceAfterRun(job *Job, now string, ladderRung bool) error {
 // Records a finished run under the fire fence, false when the fence, the job or the claim owner is lost
 func (s *Store) markJobRun(ctx context.Context, jobID string, success bool, o MarkOptions) (bool, error) {
 	return s.underFireFence(ctx, jobID, func(ctx context.Context) (bool, error) {
-		ok, found, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
+		ok, found, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
 			if o.ExecutionID != nil && containsString(job.CanonicalCompletions, *o.ExecutionID) {
 				return true, nil
 			}
@@ -155,7 +155,7 @@ func (s *Store) markJobRun(ctx context.Context, jobID string, success bool, o Ma
 			} else {
 				quotaHoldClearState(job)
 			}
-			return true, s.saveJobsLocked(tx, jobs, nil, false)
+			return true, s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 		})
 		if err == nil && !found {
 			s.log.Warn(fmt.Sprintf("mark_job_run: job_id %s not found, skipping save", jobID))
@@ -166,7 +166,7 @@ func (s *Store) markJobRun(ctx context.Context, jobID string, success bool, o Ma
 
 // Claims a finite one shot dispatch before execution so a dying tick cannot lose or repeat it
 func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
-	claimed, found, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
+	claimed, found, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
 		repeat := job.Repeat
 		if repeat == nil {
 			repeat = &Repeat{}
@@ -181,14 +181,14 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 		if completed >= times {
 			if job.LastRunAt != nil {
 				completeJobRecord(job)
-				if err := s.saveJobsLocked(tx, jobs, nil, false); err != nil {
+				if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 					return false, err
 				}
 				s.log.Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) — marking completed", label, completed, times))
 				return false, nil
 			}
 			kept := append(append([]*Job{}, jobs[:i]...), jobs[i+1:]...)
-			if err := s.saveJobsLocked(tx, kept, []string{jobID}, false); err != nil {
+			if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, kept, []string{jobID}, false); err != nil {
 				return false, err
 			}
 			writeWedged(home.WithOverride(ctx, s.home), s, job)
@@ -197,7 +197,7 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 		}
 		repeat.Completed = completed + 1
 		job.Repeat = repeat
-		if err := s.saveJobsLocked(tx, jobs, nil, false); err != nil {
+		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 			return false, err
 		}
 		s.log.Debug(fmt.Sprintf("Job '%s': claimed dispatch %d/%d", label, repeat.Completed, times))
@@ -212,28 +212,28 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 }
 
 // Refreshes a claim stamp only while the expected owner still holds it
-func (s *Store) refreshClaim(tx *jobsTx, jobs []*Job, claim *Claim, owner string) (bool, error) {
+func (s *Store) refreshClaim(ctx context.Context, tx *jobsTx, jobs []*Job, claim *Claim, owner string) (bool, error) {
 	if claim == nil || claim.By != owner {
 		return false, nil
 	}
 	claim.At = s.clk.nowISO()
-	return true, s.saveJobsLocked(tx, jobs, nil, false)
+	return true, s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 }
 
 // Keeps a live one shot run claim fresh for its owner
-func (s *Store) heartbeatRunClaim(jobID, owner string) (bool, error) {
-	ok, _, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
+func (s *Store) heartbeatRunClaim(ctx context.Context, jobID, owner string) (bool, error) {
+	ok, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
 		if job.Kind() != "once" {
 			return false, nil
 		}
-		return s.refreshClaim(tx, jobs, job.RunClaim, owner)
+		return s.refreshClaim(home.WithOverride(ctx, s.home), tx, jobs, job.RunClaim, owner)
 	})
 	return ok, err
 }
 
 // Clears a one shot run claim when dispatch fails, keeping only an outage marker
-func (s *Store) clearRunClaim(jobID string) (bool, error) {
-	ok, _, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
+func (s *Store) clearRunClaim(ctx context.Context, jobID string) (bool, error) {
+	ok, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
 		claim := job.RunClaim
 		if job.Kind() != "once" || claim == nil || *claim == (Claim{Outage: true}) {
 			return false, nil
@@ -243,19 +243,19 @@ func (s *Store) clearRunClaim(jobID string) (bool, error) {
 		} else {
 			job.RunClaim = nil
 		}
-		return true, s.saveJobsLocked(tx, jobs, nil, false)
+		return true, s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 	})
 	return ok, err
 }
 
 // Advances next_run_at of every listed recurring job with one load and at most one save
-func (s *Store) advanceNextRuns(jobIDs []string) (int, error) {
+func (s *Store) advanceNextRuns(ctx context.Context, jobIDs []string) (int, error) {
 	if len(jobIDs) == 0 {
 		return 0, nil
 	}
 	advanced := 0
-	err := s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+	err := s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
@@ -275,7 +275,7 @@ func (s *Store) advanceNextRuns(jobIDs []string) (int, error) {
 			}
 		}
 		if advanced > 0 {
-			return s.saveJobsLocked(tx, jobs, nil, false)
+			return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
 		}
 		return nil
 	})
@@ -283,8 +283,8 @@ func (s *Store) advanceNextRuns(jobIDs []string) (int, error) {
 }
 
 // Advances one recurring job before it runs so a crash cannot re-fire it
-func (s *Store) advanceNextRun(jobID string) (bool, error) {
-	n, err := s.advanceNextRuns([]string{jobID})
+func (s *Store) advanceNextRun(ctx context.Context, jobID string) (bool, error) {
+	n, err := s.advanceNextRuns(home.WithOverride(ctx, s.home), []string{jobID})
 	return n >= 1, err
 }
 
@@ -315,7 +315,7 @@ func (s *Store) claimJobForFire(ctx context.Context, jobID string, o FireClaimOp
 	}
 	var won *Job
 	ok, err := s.underFireFence(ctx, jobID, func(ctx context.Context) (bool, error) {
-		claimed, _, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
+		claimed, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
 			if isTerminalJob(job) && !isRecoverableErrorJob(job) {
 				return false, nil
 			}
@@ -345,7 +345,7 @@ func (s *Store) claimJobForFire(ctx context.Context, jobID string, o FireClaimOp
 					}
 					if next != nil && *next != "" {
 						job.NextRunAt = next
-						if err := s.saveJobsLocked(tx, jobs, nil, false); err != nil {
+						if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 							return false, err
 						}
 					}
@@ -368,7 +368,7 @@ func (s *Store) claimJobForFire(ctx context.Context, jobID string, o FireClaimOp
 					job.NextRunAt = next
 				}
 			}
-			if err := s.saveJobsLocked(tx, jobs, nil, false); err != nil {
+			if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 				return false, err
 			}
 			won = job.Clone()
@@ -384,9 +384,9 @@ func (s *Store) claimJobForFire(ctx context.Context, jobID string, o FireClaimOp
 }
 
 // Refreshes an active fire claim for its owner without taking the fire fence
-func (s *Store) heartbeatFireClaim(jobID, owner string) (bool, error) {
-	ok, _, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
-		return s.refreshClaim(tx, jobs, job.FireClaim, owner)
+func (s *Store) heartbeatFireClaim(ctx context.Context, jobID, owner string) (bool, error) {
+	ok, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
+		return s.refreshClaim(home.WithOverride(ctx, s.home), tx, jobs, job.FireClaim, owner)
 	})
 	return ok, err
 }

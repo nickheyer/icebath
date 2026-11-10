@@ -132,7 +132,7 @@ func TestMissingUserHomeRaisesLikePathHome(t *testing.T) {
 	if got := ProfileNameFor("/x/profiles/coder"); got != "" {
 		t.Fatalf("ProfileNameFor swallowed nothing: %q", got)
 	}
-	if ApplyScratchTmpEnv(map[string]string{}) {
+	if ApplyScratchTmpEnv(context.Background(), map[string]string{}) {
 		t.Fatal("ApplyScratchTmpEnv pointed the temp vars at a home it could not resolve")
 	}
 	h := t.TempDir()
@@ -156,12 +156,12 @@ func TestManagedSystemReadsTheMarkerLikeReadText(t *testing.T) {
 	cases := map[string]string{"NIX\x1c": "nix", "\u0130": "i\u0307", "guix\r\n": "guix", "nix\rdev": "nix\ndev", "\x1c\r\n": "nixos"}
 	for body, want := range cases {
 		writeText(t, filepath.Join(h, ".managed"), body)
-		if got := ManagedSystem(h); got != want {
+		if got := ManagedSystem(context.Background(), h); got != want {
 			t.Errorf("ManagedSystem(%q) = %q, want %q", body, got, want)
 		}
 	}
 	t.Setenv("ICEBATH_MANAGED", "\x1cHomebrew")
-	if got := ManagedSystem(h); got != "" {
+	if got := ManagedSystem(context.Background(), h); got != "" {
 		t.Errorf("ignored manager = %q", got)
 	}
 }
@@ -171,7 +171,7 @@ func TestManagedSystemOfTheActiveHomeWarnsLikeGetHermesHome(t *testing.T) {
 		tmp, buf := hcFresh(t)
 		writeText(t, filepath.Join(tmp, ".icebath", "active_profile"), "coder\n")
 		t.Setenv("ICEBATH_MANAGED", env)
-		ManagedSystem("")
+		ManagedSystem(context.Background(), "")
 		if !strings.Contains(buf.String(), "[ICEBATH_HOME fallback]") {
 			t.Fatalf("ICEBATH_MANAGED=%q: no fallback warning, got %q", env, buf.String())
 		}
@@ -193,7 +193,7 @@ func TestApplyScratchTmpEnvKeepsAScratchDirItCouldNotCreate(t *testing.T) {
 	writeText(t, file, "")
 	h := filepath.Join(file, "home")
 	env := map[string]string{EnvHome: h}
-	if !ApplyScratchTmpEnv(env) {
+	if !ApplyScratchTmpEnv(context.Background(), env) {
 		t.Fatal("get_scratch_dir swallows the mkdir OSError, the vars are still rewritten")
 	}
 	if env["TMPDIR"] != filepath.Join(h, "cache", "scratch") {
@@ -205,7 +205,7 @@ func TestEnsureScratchDirOfTheActiveHomeWarnsLikeGetHermesHome(t *testing.T) {
 	scratchPruneSpawns(t)
 	tmp, buf := hcFresh(t)
 	writeText(t, filepath.Join(tmp, ".icebath", "active_profile"), "coder\n")
-	if got := EnsureScratchDir(""); got != filepath.Join(tmp, ".icebath", "cache", "scratch") {
+	if got := EnsureScratchDir(context.Background(), ""); got != filepath.Join(tmp, ".icebath", "cache", "scratch") {
 		t.Fatalf("scratch = %q", got)
 	}
 	if !strings.Contains(buf.String(), "[ICEBATH_HOME fallback]") {
@@ -217,7 +217,7 @@ func TestPruneScratchDirLogsBesideTheHomeOfATrailingSeparator(t *testing.T) {
 	h := t.TempDir()
 	scratch := testScratch(t, h)
 	idleEntry(t, scratch, "old")
-	if n, err := PruneScratchDir(scratch+string(filepath.Separator), ScratchMaxIdleHours); err != nil || n != 1 {
+	if n, err := PruneScratchDir(context.Background(), scratch+string(filepath.Separator), ScratchMaxIdleHours); err != nil || n != 1 {
 		t.Fatalf("PruneScratchDir = %d, %v", n, err)
 	}
 	if !strings.Contains(pruneLog(t, h), "old") {
@@ -237,7 +237,7 @@ func TestScratchDirUsageBytesWalksALinkedRoot(t *testing.T) {
 	if err := os.Symlink(filepath.Join(real, "a"), filepath.Join(real, "dirlink")); err != nil {
 		t.Fatal(err)
 	}
-	if got := ScratchDirUsageBytes(link); got != 7 {
+	if got := ScratchDirUsageBytes(context.Background(), link); got != 7 {
 		t.Fatalf("usage through a linked root = %d, want 7", got)
 	}
 }

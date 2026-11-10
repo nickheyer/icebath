@@ -282,7 +282,7 @@ func TestEnqueueDuringRetentionNeverRecreatesDeliveredRequest(t *testing.T) {
 
 func TestDrainedOutcomeSettlesLedgerAndCurrentJobOnly(t *testing.T) {
 	s, q, ctx := pointDeliveryDB(t)
-	job, err := s.createJob(CreateJobOptions{Prompt: strp("p"), Schedule: "every 1h", Deliver: strp("local")})
+	job, err := s.createJob(ctx, CreateJobOptions{Prompt: strp("p"), Schedule: "every 1h", Deliver: strp("local")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,14 +296,14 @@ func TestDrainedOutcomeSettlesLedgerAndCurrentJobOnly(t *testing.T) {
 	if _, err := ledger.Finish(ctx, execID, true, nil, &queued, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+	if err := s.withJobsLock(ctx, func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(ctx, tx)
 		if err != nil {
 			return err
 		}
 		status := "delivery_queued"
 		jobs[0].LastStatus, jobs[0].CanonicalCompletions = &status, []string{execID}
-		return s.saveJobsLocked(tx, jobs, nil, false)
+		return s.saveJobsLocked(ctx, tx, jobs, nil, false)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestDrainedOutcomeSettlesLedgerAndCurrentJobOnly(t *testing.T) {
 	if mustDrain(t, q, ctx, recorder(&sends, &refusal)) != 1 {
 		t.Fatal("drain")
 	}
-	saved, _ := s.getJob(job.ID)
+	saved, _ := s.getJob(ctx, job.ID)
 	if saved.LastStatus == nil || *saved.LastStatus != "delivery_failed" || saved.LastDeliveryError == nil || *saved.LastDeliveryError != "chat not found" {
 		t.Fatal(saved.LastStatus, saved.LastDeliveryError)
 	}

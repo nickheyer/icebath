@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -45,7 +46,7 @@ func TestMissedPolicyPreservesGraceAndManual(t *testing.T) {
 			if !reflect.DeepEqual(due, want) {
 				t.Fatalf("due %v want %v", due, want)
 			}
-			jobs, _ := s.LoadJobs()
+			jobs, _ := s.LoadJobs(context.Background())
 			for _, j := range jobs {
 				if j.Prompt == "stale" {
 					if at, ok := s.clk.parseAware(deref(j.NextRunAt), nil); !ok || !at.After(now) {

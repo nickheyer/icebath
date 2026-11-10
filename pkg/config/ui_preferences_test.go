@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -207,5 +208,119 @@ func TestOnlyDesktopStringKeysAreStored(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatal("refused write created the store")
 		}
+	}
+}
+
+func TestAnUndecodableStoreRaisesThePythonDecodeError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), UIPreferencesStoreName)
+	os.WriteFile(path, []byte("\xef\xbb\xbf{\"values\": \"\xff\"}"), 0o600)
+	_, err := ReadPreferences(context.Background(), path)
+	var busy *PreferencesBusy
+	if err == nil || errors.As(err, &busy) || err.Error() != "'utf-8' codec can't decode byte 0xff in position 12: invalid start byte" {
+		t.Fatalf("read %v", err)
+	}
+	if _, err := WritePreferences(context.Background(), []UIPreferenceChange{{Key: UIPreferenceKeyPrefixes[0] + "theme", Value: "dark"}}, false, path); err == nil ||
+		err.Error() != "'utf-8' codec can't decode byte 0xff in position 12: invalid start byte" {
+		t.Fatalf("write %v", err)
+	}
+	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the lock is released when the read raises, stat %v", err)
+	}
+}
+
+func TestACorruptStoreIsCopiedAsideWithItsModeAndBothTimes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), UIPreferencesStoreName)
+	os.WriteFile(path, []byte("{not json"), 0o640)
+	accessed, modified := time.Now().Add(time.Hour).Truncate(time.Second), time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(path, accessed, modified); err != nil {
+		t.Fatal(err)
+	}
+	key := UIPreferenceKeyPrefixes[0] + "theme"
+	if _, err := WritePreferences(context.Background(), []UIPreferenceChange{{Key: key, Value: "dark"}}, false, path); err != nil {
+		t.Fatal(err)
+	}
+	asides, _ := filepath.Glob(path + ".corrupt-*")
+	if len(asides) != 1 {
+		t.Fatalf("asides %v", asides)
+	}
+	data, _ := os.ReadFile(asides[0])
+	fi, err := os.Stat(asides[0])
+	if err != nil || string(data) != "{not json" || !fi.ModTime().Equal(modified) {
+		t.Fatalf("aside %q %v %v", data, fi, err)
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o640 {
+		t.Fatalf("aside mode %v", fi.Mode().Perm())
+	}
+	if got := fileAccessTime(t, asides[0]); !got.Equal(accessed) {
+		t.Fatalf("aside access time %v, the source had %v", got, accessed)
+	}
+	if !reflect.DeepEqual(storedPrefValues(t, path), map[string]any{key: "dark"}) {
+		t.Fatal("the store was replaced after the copy")
+	}
+}
+
+func TestStaleLockChecksFollowThePythonErrorClasses(t *testing.T) {
+	dir := t.TempDir()
+	if err := breakPreferencesLockIfStale(filepath.Join(dir, "absent.lock")); err != nil {
+		t.Fatalf("a missing lock is no failure, got %v", err)
+	}
+	blocker := filepath.Join(dir, "file")
+	os.WriteFile(blocker, nil, 0o600)
+	if err := breakPreferencesLockIfStale(filepath.Join(blocker, "x.lock")); err == nil || errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a stat failure other than a missing lock is returned, got %v", err)
+	}
+	old := time.Now().Add(-2 * uiPreferencesLockStale)
+	stale := filepath.Join(dir, "stale.lock")
+	os.MkdirAll(filepath.Join(stale, "owner"), 0o700)
+	os.Chtimes(stale, old, old)
+	if err := breakPreferencesLockIfStale(stale); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(filepath.Join(stale, "owner")); err != nil || !fi.IsDir() {
+		t.Fatalf("an owner that is a directory cannot be unlinked, so the lock stays: %v", err)
+	}
+	dead := filepath.Join(dir, "dead.lock")
+	os.MkdirAll(dead, 0o700)
+	os.WriteFile(filepath.Join(dead, "owner"), []byte("1-aa"), 0o600)
+	os.Chtimes(dead, old, old)
+	if err := breakPreferencesLockIfStale(dead); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dead); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a dead writer's lock is removed, stat %v", err)
+	}
+	fresh := filepath.Join(dir, "fresh.lock")
+	os.MkdirAll(fresh, 0o700)
+	os.WriteFile(filepath.Join(fresh, "owner"), []byte("2-bb"), 0o600)
+	if err := breakPreferencesLockIfStale(fresh); err != nil {
+		t.Fatal(err)
+	}
+	if owns, err := ownsPreferencesLock(fresh, "2-bb"); !owns || err != nil {
+		t.Fatalf("a fresh lock stays with its owner, got %v %v", owns, err)
+	}
+	if owns, err := ownsPreferencesLock(fresh, "other"); owns || err != nil {
+		t.Fatalf("another token does not own it, got %v %v", owns, err)
+	}
+	os.WriteFile(filepath.Join(fresh, "owner"), []byte("\xff"), 0o600)
+	if owns, err := ownsPreferencesLock(fresh, "2-bb"); owns || err == nil ||
+		err.Error() != "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte" {
+		t.Fatalf("an undecodable owner file raises, got %v %v", owns, err)
+	}
+	if owns, err := ownsPreferencesLock(filepath.Join(dir, "absent.lock"), "x"); owns || err != nil {
+		t.Fatalf("an unreadable owner file is not ours, got %v %v", owns, err)
+	}
+}
+
+func TestStorePathKeepsPathlibSemanticsForProfilesAndLinks(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real-root")
+	os.MkdirAll(filepath.Join(real, "Profiles", "coder"), 0o755)
+	t.Setenv("ICEBATH_HOME", filepath.Join(real, "Profiles", "coder"))
+	resolved, _ := filepath.EvalSymlinks(real)
+	if got := UIPreferencesStorePath(context.Background(), ""); got != filepath.Join(resolved, UIPreferencesStoreName) {
+		t.Fatalf("a profiles directory in another case still names its root, got %s", got)
+	}
+	if got := UIPreferencesStorePath(context.Background(), filepath.FromSlash("given/../root")); got != filepath.FromSlash("given/../root/"+UIPreferencesStoreName) {
+		t.Fatalf("a given root is joined as it stands, got %s", got)
 	}
 }

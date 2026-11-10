@@ -12,12 +12,12 @@ import (
 
 func reasoningJob(t *testing.T, s *Store, effort any) (*Job, error) {
 	t.Helper()
-	return s.createJob(CreateJobOptions{Prompt: strPtr("say hi"), Schedule: "every 1h", ReasoningEffort: effort})
+	return s.createJob(context.Background(), CreateJobOptions{Prompt: strPtr("say hi"), Schedule: "every 1h", ReasoningEffort: effort})
 }
 
 func storedJobs(t *testing.T, s *Store) []*Job {
 	t.Helper()
-	jobs, err := s.listJobs(true)
+	jobs, err := s.listJobs(context.Background(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,15 +46,15 @@ func TestJobStoreReasoningEffort(t *testing.T) {
 	}
 	s, _ := newTestStore(t)
 	job, _ := reasoningJob(t, s, nil)
-	if up, err := s.updateJob(job.ID, map[string]any{"reasoning_effort": "xhigh"}); err != nil || deref(up.ReasoningEffort) != "xhigh" || deref(storedJobs(t, s)[0].ReasoningEffort) != "xhigh" {
+	if up, err := s.updateJob(context.Background(), job.ID, map[string]any{"reasoning_effort": "xhigh"}); err != nil || deref(up.ReasoningEffort) != "xhigh" || deref(storedJobs(t, s)[0].ReasoningEffort) != "xhigh" {
 		t.Fatalf("update %v %v", up, err)
 	}
 	pinned, _ := reasoningJob(t, s, "high")
-	if up, err := s.updateJob(pinned.ID, map[string]any{"reasoning_effort": ""}); err != nil || up.ReasoningEffort != nil {
+	if up, err := s.updateJob(context.Background(), pinned.ID, map[string]any{"reasoning_effort": ""}); err != nil || up.ReasoningEffort != nil {
 		t.Fatalf("clear %v %v", up, err)
 	}
 	kept, _ := reasoningJob(t, s, "high")
-	if _, err := s.updateJob(kept.ID, map[string]any{"reasoning_effort": "warp9"}); err == nil {
+	if _, err := s.updateJob(context.Background(), kept.ID, map[string]any{"reasoning_effort": "warp9"}); err == nil {
 		t.Fatal("garbage update accepted")
 	}
 	if got := mustJob(t, s, kept.ID).ReasoningEffort; deref(got) != "high" {

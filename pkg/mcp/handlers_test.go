@@ -265,26 +265,26 @@ func TestUtilityHandlers(t *testing.T) {
 	ctx := context.Background()
 	t.Run("test_list_resources_success", func(t *testing.T) {
 		out := makeListResourcesHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{}, Env: &tools.Env{}})
-		if want := `{"resources":[{"uri":"file:///a.txt","name":"a","mimeType":"text/plain"},{"uri":"file:///b","name":"b","description":"bee"}]}`; out != want {
+		if want := `{"resources": [{"uri": "file:///a.txt", "name": "a", "mimeType": "text/plain"}, {"uri": "file:///b", "name": "b", "description": "bee"}]}`; out != want {
 			t.Fatalf("list_resources %s", out)
 		}
 	})
 	t.Run("test_get_prompt_success", func(t *testing.T) {
 		out := makeGetPromptHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{"name": "p", "arguments": map[string]any{"who": "bob"}}, Env: &tools.Env{}})
-		if want := `{"messages":[{"role":"user","content":"hi bob"},{"role":"assistant","content":"type='image' data='AAA' mime_type='image/png' annotations=None meta=None"}],"description":"greeting"}`; out != want {
+		if want := `{"messages": [{"role": "user", "content": "hi bob"}, {"role": "assistant", "content": "type='image' data='AAA' mime_type='image/png' annotations=None meta=None"}], "description": "greeting"}`; out != want {
 			t.Fatalf("get_prompt %s", out)
 		}
 	})
 	out := makeListPromptsHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{}, Env: &tools.Env{}})
-	if want := `{"prompts":[{"name":"p","arguments":[{"name":"who","required":true},{"name":"tone","required":null}]}]}`; out != want {
+	if want := `{"prompts": [{"name": "p", "arguments": [{"name": "who", "required": true}, {"name": "tone", "required": null}]}]}`; out != want {
 		t.Fatalf("list_prompts %s", out)
 	}
 	out = makeReadResourceHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{"uri": "file:///a.txt"}, Env: &tools.Env{}})
-	if out != `{"result":"body"}` {
+	if out != `{"result": "body"}` {
 		t.Fatalf("read_resource %s", out)
 	}
 	out = makeReadResourceHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{}, Env: &tools.Env{}})
-	if out != `{"error":"Missing required parameter 'uri'"}` {
+	if out != `{"error": "Missing required parameter 'uri'"}` {
 		t.Fatalf("missing uri %s", out)
 	}
 	out = makeGetPromptHandler("srv", 30)(ctx, &tools.Call{Args: map[string]any{"name": "p", "arguments": map[string]any{"who": 3.0}}, Env: &tools.Env{}})

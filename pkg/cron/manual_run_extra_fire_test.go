@@ -48,7 +48,7 @@ func fire(t *testing.T, s *Store, id string, o FireClaimOptions) {
 
 func mustTrigger(t *testing.T, s *Store, id string) {
 	t.Helper()
-	if _, err := s.triggerJob(id, ""); err != nil {
+	if _, err := s.triggerJob(context.Background(), id, ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -142,7 +142,7 @@ func TestForwardedRecurringRunSurvivesTheTickAdvance(t *testing.T) {
 	if !reflect.DeepEqual(due, []string{job.ID}) {
 		t.Fatalf("due = %v", due)
 	}
-	if _, err := s.advanceNextRuns(due); err != nil {
+	if _, err := s.advanceNextRuns(context.Background(), due); err != nil {
 		t.Fatal(err)
 	}
 	fire(t, s, job.ID, FireClaimOptions{})
@@ -203,7 +203,7 @@ func TestTriggerLandingDuringAManualRunSurvivesItsCompletion(t *testing.T) {
 	*cur = cur.Add(10 * time.Second)
 	mustTrigger(t, s, job.ID)
 	*cur = cur.Add(10 * time.Second)
-	if ok, err := s.heartbeatFireClaim(job.ID, claimed.FireClaim.By); err != nil || !ok {
+	if ok, err := s.heartbeatFireClaim(context.Background(), job.ID, claimed.FireClaim.By); err != nil || !ok {
 		t.Fatalf("heartbeat = %v %v", ok, err)
 	}
 	markOwned(t, s, job.ID, true, claimed.FireClaim.By, MarkOptions{})
@@ -240,7 +240,7 @@ func TestQuotaHoldOnAManualRunDelaysAQueuedRunNowWithoutSpendingTheSchedule(t *t
 	if !reflect.DeepEqual(due, []string{job.ID}) {
 		t.Fatalf("delayed run-now not due: %v", due)
 	}
-	if _, err := s.advanceNextRuns(due); err != nil {
+	if _, err := s.advanceNextRuns(context.Background(), due); err != nil {
 		t.Fatal(err)
 	}
 	fire(t, s, job.ID, FireClaimOptions{})

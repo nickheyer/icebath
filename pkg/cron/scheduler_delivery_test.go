@@ -220,7 +220,7 @@ func TestCorruptLegacyRecordIsIsolatedAndDueJobStillFires(t *testing.T) {
 	if err != nil || ran != 1 {
 		t.Fatal(ran, err)
 	}
-	got, err := s.getJob(job.ID)
+	got, err := s.getJob(context.Background(), job.ID)
 	if err != nil || got == nil || got.LastStatus == nil || *got.LastStatus != "ok" {
 		t.Fatalf("job %+v %v", got, err)
 	}

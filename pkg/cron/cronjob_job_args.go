@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -548,12 +549,12 @@ func applyContinuity(contextFrom any, continuity bool) []string {
 }
 
 // Error text when a non self context ref names a missing job
-func (s *Store) validateContextFromRefs(refs []any) (string, error) {
+func (s *Store) validateContextFromRefs(ctx context.Context, refs []any) (string, error) {
 	for _, ref := range refs {
 		if str, ok := ref.(string); ok && strings.ToLower(strings.TrimSpace(str)) == "self" {
 			continue
 		}
-		job, err := s.getJob(pyrepr.Str(ref))
+		job, err := s.getJob(home.WithOverride(ctx, s.home), pyrepr.Str(ref))
 		if err != nil {
 			return "", err
 		}

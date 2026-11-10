@@ -3,7 +3,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -327,11 +326,11 @@ func portalJSON(resp *http.Response) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var v any
-	if err := json.Unmarshal(data, &v); err != nil {
+	v, err := pyjson.LoadsBytes(data)
+	if err != nil {
 		return nil, err
 	}
-	return v, nil
+	return pyjson.WTF8Shape(v), nil
 }
 
 func portalSafeJSON(resp *http.Response) any {

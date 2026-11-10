@@ -667,7 +667,7 @@ var recommendedUpdateCommandForMethod = config.RecommendedUpdateCommandForMethod
 
 // Repair hint naming what icebath update can do for this install type
 func walResetRepairHint(ctx context.Context) string {
-	method, err := detectInstallMethod(home.Dir(ctx), config.GetProjectRoot())
+	method, err := detectInstallMethod(ctx, home.Dir(ctx), config.GetProjectRoot())
 	if err != nil {
 		return "install a Python build bundled with SQLite 3.51.3+ (or backports 3.50.7 / 3.44.6) and restart icebath"
 	}

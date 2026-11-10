@@ -1,7 +1,9 @@
 package cron
 
 import (
+	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"strings"
 
@@ -40,9 +42,9 @@ func (s *Store) canonicalSkillRef(raw string) string {
 }
 
 // Skill names referenced by any job including paused ones, empty when the store is unreadable
-func (s *Store) referencedSkillNames() map[string]bool {
+func (s *Store) referencedSkillNames(ctx context.Context) map[string]bool {
 	out := map[string]bool{}
-	jobs, err := s.loadJobs(nil)
+	jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), nil)
 	if err != nil {
 		s.log.Debug(fmt.Sprintf("referenced_skill_names: failed to load cron jobs: %v", err))
 		return out
@@ -58,7 +60,7 @@ func (s *Store) referencedSkillNames() map[string]bool {
 }
 
 // Maps consolidated skill names onto their umbrella and drops pruned ones in every job, keeping order
-func (s *Store) rewriteSkillRefs(consolidated *pyjson.Object, pruned []string) (SkillRefRewriteReport, error) {
+func (s *Store) rewriteSkillRefs(ctx context.Context, consolidated *pyjson.Object, pruned []string) (SkillRefRewriteReport, error) {
 	if consolidated == nil {
 		consolidated = pyjson.NewObject()
 	}
@@ -72,8 +74,8 @@ func (s *Store) rewriteSkillRefs(consolidated *pyjson.Object, pruned []string) (
 	if len(consolidated.Keys) == 0 && len(prunedSet) == 0 {
 		return report, nil
 	}
-	err := s.withJobsLock(func(tx *jobsTx) error {
-		jobs, err := s.loadJobs(tx)
+	err := s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
@@ -115,7 +117,7 @@ func (s *Store) rewriteSkillRefs(consolidated *pyjson.Object, pruned []string) (
 		}
 		report.JobsUpdated, report.JobsScanned = len(report.Rewrites), len(jobs)
 		if len(report.Rewrites) > 0 {
-			if err := s.saveJobsLocked(tx, jobs, nil, false); err != nil {
+			if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 				return err
 			}
 			s.log.Info(fmt.Sprintf("Curator rewrote skill references in %d cron job(s)", len(report.Rewrites)))

@@ -328,13 +328,7 @@ func executeAndAggregate(ctx context.Context, batch *delegateBatch, honorParentI
 	return combined
 }
 
-func dumpsResult(v any) string {
-	b, err := pyjson.EncodeWTF8(v)
-	if err != nil {
-		return tools.ErrorResult(err)
-	}
-	return string(b)
-}
+func dumpsResult(v any) string { return tools.JSON(v) }
 
 // Runs the batch inline and explains why it was not detached
 func runSyncWithNote(ctx context.Context, batch *delegateBatch, note string) string {

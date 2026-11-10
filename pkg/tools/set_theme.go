@@ -24,8 +24,8 @@ func accentError(accent string) string {
 	if containsString(accentSwatches, accent) || accent == themeAccent || hexColorRe.MatchString(accent) {
 		return ""
 	}
-	return jsonCompact(map[string]any{"success": false, "error": fmt.Sprintf("Unknown accent %s: use a swatch id, 'theme' or #rrggbb.", pyRepr(accent)),
-		"available": append(enumValues(accentSwatches), themeAccent)})
+	return JSON(Dict("success", false, "error", fmt.Sprintf("Unknown accent %s: use a swatch id, 'theme' or #rrggbb.", pyRepr(accent)),
+		"available", append(enumValues(accentSwatches), themeAccent)))
 }
 
 // Applies the given appearance values, or shows one picker card and waits for the pick
@@ -52,7 +52,7 @@ func setThemeTool(env *Env, accent, mode, layout, picker *string) string {
 		return toolErrorJSON("Pass at least one of accent, mode or layout, or picker to let the user choose.", nil)
 	}
 	if m, ok := values["mode"].(string); ok && !containsString(themeModes, m) {
-		return jsonCompact(map[string]any{"success": false, "error": fmt.Sprintf("Unknown mode %s.", pyRepr(m)), "available": enumValues(themeModes)})
+		return JSON(Dict("success", false, "error", fmt.Sprintf("Unknown mode %s.", pyRepr(m)), "available", enumValues(themeModes)))
 	}
 	if a, ok := values["accent"].(string); ok {
 		if msg := accentError(a); msg != "" {
@@ -67,7 +67,7 @@ func themeReply(reply map[string]any, err error) string {
 	if err != nil {
 		return toolErrorJSON(err.Error(), nil)
 	}
-	return jsonCompact(reply)
+	return JSON(reply)
 }
 
 var setThemeSchema = map[string]any{

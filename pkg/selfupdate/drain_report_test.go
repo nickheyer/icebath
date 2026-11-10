@@ -109,7 +109,7 @@ func TestDrainReporterWaitsOneIntervalAndIsInstalledForTheGateway(t *testing.T) 
 }
 
 // Id and name pairs of the jobs file under h, the cron store double TestMain installs
-func testCronJobs(h string) ([][2]string, error) {
+func testCronJobs(ctx context.Context, h string) ([][2]string, error) {
 	raw, err := os.ReadFile(filepath.Join(h, "cron", "jobs.json"))
 	if err != nil {
 		return nil, err

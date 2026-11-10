@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -13,7 +14,7 @@ func TestRawJobsUpdateKeepsAbsentSkillKeysAbsent(t *testing.T) {
 	if err := os.WriteFile(s.jobsFile, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := s.updateRawJobs(func(jobs []any) (bool, error) {
+	err := s.updateRawJobs(context.Background(), func(jobs []any) (bool, error) {
 		one, two := jobs[0].(*pyjson.Object), jobs[1].(*pyjson.Object)
 		if _, ok := one.Get("skill"); ok {
 			t.Errorf("job-1 handed a skill key %v", one.Keys)

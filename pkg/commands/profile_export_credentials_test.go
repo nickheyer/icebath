@@ -3,6 +3,7 @@ package commands
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -130,7 +131,7 @@ func TestCredentialExclusionNamedExportShipsNoCredentialStoreOrCopyOfOne(t *test
 	snap := owedStep(t, func() (string, error) { return backup.CreateQuickSnapshot(nil, profileDir, nil, nil) })
 	copies = append(copies, filepath.Join(profileDir, "state-snapshots", snap))
 	copies = append(copies, owedStep(t, func() (string, error) {
-		return config.BackupConfig(filepath.Join(profileDir, "config.yaml"), "setup", 5)
+		return config.BackupConfig(context.Background(), filepath.Join(profileDir, "config.yaml"), "setup", 5)
 	}))
 	baks, err := selfupdate.BackupExisting([]string{filepath.Join(profileDir, ".env"), filepath.Join(profileDir, "config.yaml")})
 	if err != nil {

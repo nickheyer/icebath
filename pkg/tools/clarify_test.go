@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -158,10 +159,10 @@ func TestGatewayClarifyTextCoercion(t *testing.T) {
 	}
 	multi := RegisterGatewayClarify("c2", "s2", "Pick", []string{"a", "b", "c"}, true)
 	defer ClearClarifySession("s2")
-	if v, ok, _ := clarifyCoerceTextDetailed(multi, "1 3"); !ok || v != `["a","c"]` {
+	if v, ok, _ := clarifyCoerceTextDetailed(multi, "1 3"); !ok || v != `["a", "c"]` {
 		t.Fatal(v)
 	}
-	if v, ok, _ := clarifyCoerceTextDetailed(multi, "b, a, b"); !ok || v != `["b","a"]` {
+	if v, ok, _ := clarifyCoerceTextDetailed(multi, "b, a, b"); !ok || v != `["b", "a"]` {
 		t.Fatal(v)
 	}
 	if _, ok, reason := clarifyCoerceTextDetailed(multi, "1,9"); ok || reason != "invalid_selection" {
@@ -228,5 +229,16 @@ func TestResolveClarifyTimeout(t *testing.T) {
 	}
 	if ResolveClarifyTimeout(config.Tree{"clarify": map[string]any{"timeout": nil}, "agent": map[string]any{"clarify_timeout": -5}}) != -5 {
 		t.Fatal("null legacy falls through")
+	}
+}
+
+func TestClarifyCleanAnswerPrintsDecodedItemsAsPythonStr(t *testing.T) {
+	got := clarifyCleanAnswer(`[1, 1.0, "a (Recommended)", true, null, "  ", {"k": 1.0}, 1e2]`, true)
+	want := []string{"1", "1.0", "a", "True", "None", "{'k': 1.0}", "100.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("multi answer %#v, want %#v", got, want)
+	}
+	if got := clarifyCleanAnswer("\x1c b (recommended)\x1f", false); got != "b" {
+		t.Fatalf("single answer %q", got)
 	}
 }

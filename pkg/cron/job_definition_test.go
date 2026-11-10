@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -62,7 +63,7 @@ func TestImportJobDefinitionsSeedsNewIdsPausedAndNamesRefusals(t *testing.T) {
 	kept := mustCreate(t, s, CreateJobOptions{Prompt: prompt("mine"), Schedule: "every 1h", Deliver: prompt("local")})
 	shipped := pyjson.NewObject()
 	shipped.Set("newjob", map[string]any{"name": "fresh", "prompt": "hello", "schedule": map[string]any{"kind": "interval", "minutes": 30, "display": "every 30m"}})
-	if err := s.importJobDefinitions(shipped, "review first"); err != nil {
+	if err := s.importJobDefinitions(context.Background(), shipped, "review first"); err != nil {
 		t.Fatal(err)
 	}
 	fresh := mustGet(t, s, "newjob")
@@ -74,7 +75,7 @@ func TestImportJobDefinitionsSeedsNewIdsPausedAndNamesRefusals(t *testing.T) {
 	}
 	bad := pyjson.NewObject()
 	bad.Set(kept.ID, map[string]any{"name": "broken", "schedule": "not a schedule"})
-	err := s.importJobDefinitions(bad, "review first")
+	err := s.importJobDefinitions(context.Background(), bad, "review first")
 	if err == nil || !strings.HasPrefix(err.Error(), "cron job 'broken': ") {
 		t.Fatalf("refusal %v", err)
 	}
@@ -111,7 +112,7 @@ func TestImportKeepsALocalJobShippedAsNull(t *testing.T) {
 	local := mustCreate(t, s, CreateJobOptions{Prompt: prompt("mine"), Schedule: "every 1h"})
 	shipped := pyjson.NewObject()
 	shipped.Set(local.ID, nil)
-	if err := s.importJobDefinitions(shipped, "review"); err != nil {
+	if err := s.importJobDefinitions(context.Background(), shipped, "review"); err != nil {
 		t.Fatal(err)
 	}
 	if got := mustGet(t, s, local.ID); got.Prompt != "mine" || !got.Enabled {
@@ -119,7 +120,7 @@ func TestImportKeepsALocalJobShippedAsNull(t *testing.T) {
 	}
 	orphan := pyjson.NewObject()
 	orphan.Set("ghost", nil)
-	if err := s.importJobDefinitions(orphan, "review"); err == nil || err.Error() != "argument of type 'NoneType' is not iterable" {
+	if err := s.importJobDefinitions(context.Background(), orphan, "review"); err == nil || err.Error() != "argument of type 'NoneType' is not iterable" {
 		t.Fatalf("unmatched null record %v", err)
 	}
 }

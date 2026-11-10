@@ -480,6 +480,11 @@ var findNodeExecutable = func(rt *Runtime, command string) (string, error) {
 	return "", nil
 }
 
+// Managed node, npm or npx or a caller owned tool path, empty when PM has not installed it
+func FindNodeExecutable(rt *Runtime, command string) (string, error) {
+	return findNodeExecutable(rt, command)
+}
+
 // Installs with the configured Node package manager into the staging tree and links its binary
 func installNpm(rt *Runtime, pkg, binName string, extraPkgs []string) (string, error) {
 	pm := nodePackageManager(rt)

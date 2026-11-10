@@ -308,7 +308,7 @@ func mergeUserConfig(ctx context.Context, path string, cfg map[string]any) (map[
 	}
 	merged := DeepMerge(cfg, user)
 	applyUserMoAPresets(merged, user)
-	if _, err := BackupConfig(path, "good", DefaultBackupKeep); err != nil {
+	if _, err := BackupConfig(ctx, path, "good", DefaultBackupKeep); err != nil {
 		return nil, err
 	}
 	return merged, nil
@@ -336,13 +336,13 @@ func mergeManagedOverlay(expanded map[string]any) (map[string]any, map[string]an
 }
 
 // Last good config served after a parse failure, nil when there is none and defaults apply
-func lastKnownGoodFallback(path string, sig []any, readErr error, lookup Lookup) (Tree, error) {
+func lastKnownGoodFallback(ctx context.Context, path string, sig []any, readErr error, lookup Lookup) (Tree, error) {
 	loadCacheMu.Lock()
 	lkg := lastExpanded[path]
 	loadCacheMu.Unlock()
 	fallback := "last-known-good"
 	if lkg == nil {
-		rawGood, gerr := loadNewestGoodBackupFn(path)
+		rawGood, gerr := loadNewestGoodBackupFn(ctx, path)
 		if gerr != nil {
 			return nil, gerr
 		}
@@ -361,7 +361,7 @@ func lastKnownGoodFallback(path string, sig []any, readErr error, lookup Lookup)
 	if lkg == nil {
 		fallback = "defaults"
 	}
-	if err := WarnConfigParseFailure(path, readErr, fallback); err != nil {
+	if err := WarnConfigParseFailure(ctx, path, readErr, fallback); err != nil {
 		return nil, err
 	}
 	if lkg == nil {
@@ -407,7 +407,7 @@ func loadConfigImpl(ctx context.Context, h string, lookup Lookup, wantDeepcopy b
 	}
 	ctx, unlock := LockConfig(ctx)
 	defer unlock()
-	if err := EnsureIcebathHome(h); err != nil {
+	if err := EnsureIcebathHome(ctx, h); err != nil {
 		return nil, err
 	}
 	userSig, sig, err := loadConfigCacheSig(ctx, path)
@@ -425,7 +425,7 @@ func loadConfigImpl(ctx context.Context, h string, lookup Lookup, wantDeepcopy b
 			if errors.As(rerr, &exit) {
 				return nil, rerr
 			}
-			lkg, lerr := lastKnownGoodFallback(path, sig, rerr, lookup)
+			lkg, lerr := lastKnownGoodFallback(ctx, path, sig, rerr, lookup)
 			if lerr != nil || lkg != nil {
 				return copyIfWanted(lkg, wantDeepcopy), lerr
 			}
@@ -543,7 +543,7 @@ func readRawConfigImpl(ctx context.Context, h string) (map[string]any, error) {
 		if errors.As(err, &exit) {
 			return nil, err
 		}
-		if werr := WarnConfigParseFailure(path, err, "defaults"); werr != nil {
+		if werr := WarnConfigParseFailure(ctx, path, err, "defaults"); werr != nil {
 			return nil, werr
 		}
 		failed := map[string]any{}

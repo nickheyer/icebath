@@ -192,7 +192,7 @@ func TestV50DropsTirithKeysAndEnablesNothing(t *testing.T) {
 	}
 }
 
-func TestV48StaleDefaultIsDroppedAndAUserPinSurvives(t *testing.T) {
+func TestStaleDefaultIsDroppedAndAUserPinSurvives(t *testing.T) {
 	h := writeMigrationHome(t, t.TempDir(), map[string]any{"_config_version": 46, "terminal": map[string]any{
 		"backend": "docker", "docker_image": LegacySandboxImage, "daytona_image": LegacySandboxImages[1],
 		"singularity_image": "docker://" + LegacySandboxImage, "modal_image": "ghcr.io/me/custom:1",
@@ -217,7 +217,7 @@ func TestV48StaleDefaultIsDroppedAndAUserPinSurvives(t *testing.T) {
 	}
 }
 
-func TestV49SeededDefaultRuntimeIsDroppedEverywhereAndAUserPinSurvives(t *testing.T) {
+func TestSeededDefaultRuntimeIsDroppedEverywhereAndAUserPinSurvives(t *testing.T) {
 	t.Setenv("TERMINAL_VERCEL_RUNTIME", "")
 	os.Unsetenv("TERMINAL_VERCEL_RUNTIME")
 	run := func(h, runtime string) (map[string]any, string) {

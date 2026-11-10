@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -638,5 +639,86 @@ func TestManagedModalStdinPayloadEscapesSurrogatesLikeRequests(t *testing.T) {
 	}
 	if !bytes.Contains(body, []byte(`"stdinData":"caf\u00e9 \udcff<"`)) {
 		t.Fatalf("body %s", body)
+	}
+}
+
+func TestManagedModalFormatErrorPicksAndDumpsAsPythonDoes(t *testing.T) {
+	resp := &http.Response{StatusCode: 500}
+	for body, want := range map[string]string{
+		`{"error": {"x": 1}, "message": "boom", "n": 1.0, "i": 1}`: `x: {"error": {"x": 1}, "message": "boom", "n": 1.0, "i": 1}`,
+		`{"code": 7, "b": 1e2, "a": "é<"}`:                         `x: {"code": 7, "b": 100.0, "a": "é<"}`,
+		`{"error": "", "message": "m"}`:                            "x: m",
+		`{"error": 0, "message": null, "code": "E1"}`:              "x: E1",
+		`null`:     "x: null",
+		`[1, 1.0]`: "x: [1, 1.0]",
+	} {
+		if got := managedModalFormatError("x", resp, []byte(body)); got != want {
+			t.Errorf("body %s: %q, want %q", body, got, want)
+		}
+	}
+}
+
+func TestManagedModalBodiesThatAreNotObjectsAnswerAsHermesDoes(t *testing.T) {
+	var create, start, poll string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/sandboxes":
+			io.WriteString(w, create)
+		case r.URL.Path == "/v1/sandboxes/sb1/execs":
+			body := start
+			if body == "echo" {
+				var sent map[string]any
+				json.NewDecoder(r.Body).Decode(&sent)
+				body = `{"execId": "` + sent["execId"].(string) + `", "status": "running"}`
+			}
+			io.WriteString(w, body)
+		case strings.HasPrefix(r.URL.Path, "/v1/sandboxes/sb1/execs/") && r.Method == "GET":
+			io.WriteString(w, poll)
+		}
+	}))
+	defer srv.Close()
+	env := remoteTestEnv(t)
+	m := &managedModalEnv{gatewayOrigin: srv.URL, userToken: "tok", taskID: "task-1", image: "img", kwargs: map[string]any{},
+		idempotency: "idem", connectTO: time.Second, pollReadTO: time.Second, cancelReadTO: time.Second}
+	m.stdinMode = "payload"
+	initBaseEnv(&m.baseEnv, m, env, "/root", 30, nil, true)
+	for body, want := range map[string]string{
+		"not json":      "Expecting value: line 1 column 1 (char 0)",
+		`[1]`:           "'list' object has no attribute 'get'",
+		`{"id": 7}`:     "Managed Modal create did not return a sandbox id",
+		`{"id": "sb1"}`: "",
+	} {
+		create = body
+		_, err := m.createSandbox()
+		if got := fmt.Sprint(err); (want == "" && err != nil) || (want != "" && got != want) {
+			t.Errorf("create body %s: %v, want %q", body, err, want)
+		}
+	}
+	m.sandboxID = "sb1"
+	for body, want := range map[string]string{
+		"null":     "Managed Modal exec failed: null",
+		"not json": "Managed Modal exec failed: Expecting value: line 1 column 1 (char 0)",
+	} {
+		start = body
+		res, err := m.Execute(context.Background(), "echo hi", ExecOptions{})
+		if err != nil || res.Output != want || res.ReturnCode != 1 {
+			t.Errorf("start body %s: %+v %v, want %q", body, res, err, want)
+		}
+	}
+	start = `"text"`
+	if res, err := m.Execute(context.Background(), "echo hi", ExecOptions{}); res != nil || fmt.Sprint(err) != "'str' object has no attribute 'get'" {
+		t.Errorf("start body of a string: %+v %v", res, err)
+	}
+	start = "echo"
+	for body, want := range map[string]string{
+		`[1.0]`: "Managed Modal exec failed: 'list' object has no attribute 'get'",
+		`null`:  "Managed Modal exec failed: 'NoneType' object has no attribute 'get'",
+		`{"a":`: "Managed Modal exec failed: Expecting value: line 1 column 6 (char 5)",
+	} {
+		poll = body
+		res, err := m.Execute(context.Background(), "echo hi", ExecOptions{})
+		if err != nil || res.Output != want || res.ReturnCode != 1 {
+			t.Errorf("poll body %s: %+v %v, want %q", body, res, err, want)
+		}
 	}
 }

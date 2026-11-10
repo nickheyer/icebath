@@ -32,8 +32,8 @@ type streamExpect struct {
 	Extracted          map[string]pyOutcome `json:"extracted"`
 }
 
-// Archive recorded with a legacy Zstandard v0.5 frame, checked by its own test
-const legacyZstdCase = "zstd-v05magic-first.zip"
+// Archives recorded with a legacy Zstandard v0.5 magic, checked by their own test
+var legacyZstdCases = map[string]bool{"zstd-v05magic-first.zip": true, "zstd-v05corpus-first.zip": true}
 
 func loadStreamExpect(t *testing.T) map[string]streamExpect {
 	t.Helper()
@@ -140,7 +140,7 @@ func TestStreamMembersMatchCPython(t *testing.T) {
 	expect := loadStreamExpect(t)
 	names := make([]string, 0, len(expect))
 	for name := range expect {
-		if name != legacyZstdCase {
+		if !legacyZstdCases[name] {
 			names = append(names, name)
 		}
 	}

@@ -1,6 +1,7 @@
 package home
 
 import (
+	"context"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -65,7 +66,7 @@ func TestAccountDefaultComparesTheResolvedUserHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	restore := PatchUserHome(filepath.Join(tmp, "elsewhere"))
-	if got := AccountDefault(); got != accountDefault {
+	if got := AccountDefault(context.Background()); got != accountDefault {
 		t.Fatalf("foreign user home AccountDefault() = %q want %q", got, accountDefault)
 	}
 	restore()
@@ -74,7 +75,7 @@ func TestAccountDefaultComparesTheResolvedUserHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer PatchUserHome(link)()
-	if got := AccountDefault(); got != PlatformDefault() || got != platformBase(link) {
+	if got := AccountDefault(context.Background()); got != PlatformDefault() || got != platformBase(link) {
 		t.Fatalf("same resolved user home AccountDefault() = %q want %q", got, PlatformDefault())
 	}
 }

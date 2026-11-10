@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -23,7 +24,7 @@ func makeClaimedOneshot(t *testing.T, s *Store, claimed bool) *Job {
 
 func clearClaim(t *testing.T, s *Store, id string) bool {
 	t.Helper()
-	ok, err := s.clearRunClaim(id)
+	ok, err := s.clearRunClaim(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestOneShotGraceDueScanStaleWithClaimSkippedButRecordKept(t *testing.T) {
 func TestOneShotGraceDueScanRetriggeredStaleOneshotIsDue(t *testing.T) {
 	s := graceStore(t)
 	seedJobs(t, s, graceOneshot("stale", graceFixedNow.Add(-3*time.Hour), 0, nil))
-	if _, err := s.triggerJob("stale", ""); err != nil {
+	if _, err := s.triggerJob(context.Background(), "stale", ""); err != nil {
 		t.Fatal(err)
 	}
 	if due := mustDue(t, s); !reflect.DeepEqual(jobIDs(due), []string{"stale"}) {

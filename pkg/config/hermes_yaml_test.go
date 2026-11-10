@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"sync"
@@ -382,5 +383,78 @@ func TestSafeDumpMatchesTheRuamelEmitter(t *testing.T) {
 		if err != nil || string(got) != c.want {
 			t.Errorf("case %d = %q %v\nwant %q", i, got, err, c.want)
 		}
+	}
+}
+
+func TestSafeDumpWritesBytesAsBinaryLiteralBlocks(t *testing.T) {
+	all := make([]byte, 256)
+	for i := range all {
+		all[i] = byte(i)
+	}
+	block := SafeDumpOptions{AllowUnicode: true, Width: 80}
+	flow := SafeDumpOptions{AllowUnicode: true, Width: 80, DefaultFlowStyle: true}
+	sorted := SafeDumpOptions{AllowUnicode: true, Width: 80, SortKeys: true}
+	cases := []struct {
+		name string
+		data any
+		opts SafeDumpOptions
+		want string
+	}{
+		{"top", []byte("hello"), block, "!!binary |\naGVsbG8=\n"},
+		{"empty", []byte{}, block, "!!binary |\n"},
+		{"in map", yamlDict("a", []byte("hello"), "b", 1), block, "a: !!binary |\n  aGVsbG8=\nb: 1\n"},
+		{"in list", []any{[]byte("hi"), "x"}, block, "  - !!binary |\n    aGk=\n  - x\n"},
+		{"every byte", yamlDict("k", yamlDict("blob", all)), block, "k:\n  blob: !!binary |\n    AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4\n    OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3Bx\n    cnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmq\n    q6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj\n    5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/w==\n"},
+		{"two lines", yamlDict("data", make([]byte, 100), "after", "z"), block, "data: !!binary |\n  AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n  AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\nafter: z\n"},
+		{"flow", yamlDict("a", []any{[]byte("hi"), 1}), flow, "{a: [!!binary \"aGk=\\n\", 1]}\n"},
+		{"one full line", bytes.Repeat([]byte("A"), 57), block, "!!binary |\nQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB\n"},
+		{"one byte over a line", bytes.Repeat([]byte("A"), 58), block, "!!binary |\nQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB\nQQ==\n"},
+		{"nested lists", yamlDict("l", []any{[]any{[]byte("ab")}, yamlDict("x", []byte("cd"))}), block, "l:\n  -   - !!binary |\n        YWI=\n  - x: !!binary |\n      Y2Q=\n"},
+		{"empty in map", yamlDict("a", []byte{}, "b", 2), block, "a: !!binary |\nb: 2\n"},
+		{"empty in list", []any{[]byte{}, "x"}, block, "  - !!binary |\n  - x\n"},
+		{"empty in flow", yamlDict("a", []any{[]byte{}}), flow, "{a: [!!binary \"\"]}\n"},
+		{"list then key", yamlDict("a", []any{[]byte("hi")}, "z", 1), block, "a:\n  - !!binary |\n    aGk=\nz: 1\n"},
+		{"map in list", []any{yamlDict("a", []byte("hi"), "b", 2), 3}, block, "  - a: !!binary |\n      aGk=\n    b: 2\n  - 3\n"},
+		{"sixty bytes", yamlDict("a", bytes.Repeat([]byte("x"), 60)), block, "a: !!binary |\n  eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4\n  eHh4\n"},
+		{"document marker bytes", []byte("---\n"), block, "!!binary |\nLS0tCg==\n"},
+		{"sorted keys", yamlDict("b", []byte("1"), "a", []byte("2")), sorted, "a: !!binary |\n  Mg==\nb: !!binary |\n  MQ==\n"},
+	}
+	for _, c := range cases {
+		got, err := SafeDumpWith(c.data, c.opts)
+		if err != nil || string(got) != c.want {
+			t.Errorf("%s = %q %v\nwant %q", c.name, got, err, c.want)
+		}
+	}
+	emit := func(root *dumpNode, opts SafeDumpOptions) string {
+		e := newSafeEmitter(opts, root)
+		e.document(root)
+		return e.out.String()
+	}
+	binary := func(data string) *dumpNode {
+		n, err := representBinaryAsLiteralBlock([]byte(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	one := func() *dumpNode { return &dumpNode{kind: 's', value: "1"} }
+	keyed := func(key *dumpNode, flow bool) *dumpNode {
+		return &dumpNode{kind: 'm', items: []*dumpNode{key, one()}, flow: flow}
+	}
+	for name, c := range map[string]struct {
+		root *dumpNode
+		opts SafeDumpOptions
+		want string
+	}{
+		"bytes key":       {keyed(binary("k"), false), block, "? !!binary |\n  aw==\n: 1\n"},
+		"empty bytes key": {keyed(binary(""), false), block, "!!binary \"\": 1\n"},
+		"flow bytes key":  {keyed(binary("k"), true), flow, "{? !!binary \"aw==\\n\" : 1}\n"},
+	} {
+		if got := emit(c.root, c.opts); got != c.want {
+			t.Errorf("%s = %q\nwant %q", name, got, c.want)
+		}
+	}
+	if _, err := SafeDumpWith(yamlDict("a", json.RawMessage("x")), block); err == nil || !strings.Contains(err.Error(), "cannot represent an object") {
+		t.Errorf("a named byte slice is no bytes object, got %v", err)
 	}
 }

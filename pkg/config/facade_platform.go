@@ -378,21 +378,20 @@ func injectPlatformPluginEnvVars(h string) (map[string]bool, error) {
 			return nil, err
 		}
 		for _, e := range entries {
-			if _, ok := OptionalEnvVars[e.name]; ok {
+			if OptionalEnvVars.Has(e.name) {
 				continue
 			}
 			category := "messaging"
 			if PyTruthy(e.meta["category"]) {
 				category = PyStr(e.meta["category"])
 			}
-			OptionalEnvVars[e.name] = EnvVar{
+			OptionalEnvVars.Set(e.name, EnvVar{
 				Description: firstNonEmpty(pyOrEmpty(e.meta["description"]), PyStr(label)+" configuration"),
 				Prompt:      firstNonEmpty(pyOrEmpty(e.meta["prompt"]), e.name),
 				URL:         pyOrEmpty(e.meta["url"]),
 				Password:    e.isSecret,
 				Category:    category,
-			}
-			optionalEnvDeclOrder = append(optionalEnvDeclOrder, e.name)
+			})
 		}
 	}
 	if !bundledOK {
@@ -403,8 +402,8 @@ func injectPlatformPluginEnvVars(h string) (map[string]bool, error) {
 
 // Names core declares before any platform manifest is read, a manifest never reclassifies one
 var staticCoreEnvNames = func() map[string]bool {
-	out := make(map[string]bool, len(OptionalEnvVars))
-	for name := range OptionalEnvVars {
+	out := map[string]bool{}
+	for _, name := range OptionalEnvVars.RawNames() {
 		out[name] = true
 	}
 	return out

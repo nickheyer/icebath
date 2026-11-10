@@ -185,7 +185,7 @@ func TestSanitizeEnvFileCountsChangedLinesAndKeepsNormalizedFiles(t *testing.T) 
 	h, _ := facadeHome(t, "")
 	envPath := filepath.Join(h, ".env")
 	os.WriteFile(envPath, []byte("A=1\r\n  B=2  \n# keep  \nC=3"), 0o600)
-	fixes, err := SanitizeEnvFile(h)
+	fixes, err := SanitizeEnvFile(context.Background(), h)
 	if err != nil || fixes != 2 {
 		t.Fatalf("fixes %d err %v", fixes, err)
 	}
@@ -193,7 +193,7 @@ func TestSanitizeEnvFileCountsChangedLinesAndKeepsNormalizedFiles(t *testing.T) 
 	if string(data) != "A=1\nB=2\n# keep  \nC=3\n" {
 		t.Fatalf("sanitized %q", data)
 	}
-	if fixes, _ := SanitizeEnvFile(h); fixes != 0 {
+	if fixes, _ := SanitizeEnvFile(context.Background(), h); fixes != 0 {
 		t.Fatalf("second pass fixes %d", fixes)
 	}
 }

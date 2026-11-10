@@ -103,7 +103,7 @@ func TestCronComputeNextRunUsesLastRunAtCronUsesLastRunAtForEvery6hSchedule(t *t
 	}
 }
 
-// Start instants of the duration DST cases, each a zone, a wall clock and its fold, the patched now carrying the zone
+// Start instants of the duration DST cases, each a zone, a wall clock and its fold
 var durationStarts = []struct {
 	zone, wall string
 	fold       int

@@ -472,14 +472,14 @@ func getUpdateResult(timeout time.Duration) *int64 {
 func formatUpdateNotice(ctx context.Context, behind int64) (string, error) {
 	h := home.Dir(ctx)
 	if behind > 0 {
-		command, err := bannerRecommendedUpdate(h)
+		command, err := bannerRecommendedUpdate(ctx, h)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("[bold yellow]⚠ %d %s behind[/][dim yellow] — run [bold]%s[/bold] to update[/]", behind, plural(int(behind), "commit"), command), nil
 	}
 	suffix := ""
-	if managed := bannerManagedUpdate(h); managed != "" {
+	if managed := bannerManagedUpdate(ctx, h); managed != "" {
 		suffix = "[dim yellow] — run [bold]" + managed + "[/bold][/]"
 	}
 	return "[bold yellow]⚠ update available[/]" + suffix, nil

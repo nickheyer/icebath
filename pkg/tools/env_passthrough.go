@@ -94,7 +94,8 @@ func buildProviderEnvBlocklist() map[string]bool {
 	for _, n := range awsSDKCredentialEnvVars {
 		blocked[n] = true
 	}
-	for name, meta := range config.OptionalEnvVars {
+	for _, item := range config.OptionalEnvVars.Items() {
+		name, meta := item.Name, item.Entry
 		switch {
 		case meta.Category == "provider":
 			blocked[name] = true
@@ -115,7 +116,8 @@ func buildAdapterSecretEnv() map[string]bool {
 	for _, n := range staticAdapterSecretEnv {
 		names[n] = true
 	}
-	for name, meta := range config.OptionalEnvVars {
+	for _, item := range config.OptionalEnvVars.Items() {
+		name, meta := item.Name, item.Entry
 		if meta.Category == "messaging" && meta.Password {
 			names[strings.ToUpper(name)] = true
 		}

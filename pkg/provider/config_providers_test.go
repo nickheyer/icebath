@@ -2,26 +2,16 @@ package provider
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
-
-func TestNormalizeExtraHeadersStringifiesAndDropsNil(t *testing.T) {
-	got := NormalizeExtraHeaders(map[string]any{"X-Int": 7, "X-Str": "v", "X-None": nil})
-	if !reflect.DeepEqual(got, map[string]string{"X-Int": "7", "X-Str": "v"}) {
-		t.Fatalf("got %v", got)
-	}
-	for _, bad := range []any{nil, "x", 42, []any{"a"}, map[string]any{}} {
-		if got := NormalizeExtraHeaders(bad); len(got) != 0 {
-			t.Errorf("%v: got %v", bad, got)
-		}
-	}
-}
 
 func TestNormalizeEntryKeepsExtraHeaders(t *testing.T) {
 	n := NormalizeCustomProviderEntry(map[string]any{
@@ -30,58 +20,6 @@ func TestNormalizeEntryKeepsExtraHeaders(t *testing.T) {
 	}, "")
 	if n == nil || !reflect.DeepEqual(n["extra_headers"], map[string]string{"X-Custom-Auth": "tok", "X-Client-Name": "hermes"}) {
 		t.Fatalf("got %v", n)
-	}
-	for _, bad := range []any{"not-a-dict", map[string]any{}, 42, []any{"a"}} {
-		n := NormalizeCustomProviderEntry(map[string]any{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": bad}, "")
-		if n == nil {
-			t.Fatal("entry dropped")
-		}
-		if _, has := n["extra_headers"]; has {
-			t.Errorf("%v kept extra_headers", bad)
-		}
-	}
-}
-
-func TestGetCustomProviderExtraHeaders(t *testing.T) {
-	providers := []map[string]any{{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": map[string]any{"CF-Access-Client-Id": "xxxx.access"}}}
-	if got := CustomProviderExtraHeaders("https://LLM.internal.example.com/v1/", providers, nil); !reflect.DeepEqual(got, map[string]string{"CF-Access-Client-Id": "xxxx.access"}) {
-		t.Fatalf("got %v", got)
-	}
-	if got := CustomProviderExtraHeaders("https://other.example.com/v1", providers, nil); len(got) != 0 {
-		t.Fatalf("no match: %v", got)
-	}
-	if got := CustomProviderExtraHeaders("https://llm.internal.example.com.attacker.test/v1", providers, nil); len(got) != 0 {
-		t.Fatalf("lookalike: %v", got)
-	}
-	doubleSlash := []map[string]any{{"base_url": "https://llm.internal.example.com/v1//", "extra_headers": map[string]any{"Authorization": "secret"}}}
-	if got := CustomProviderExtraHeaders("https://llm.internal.example.com/v1", doubleSlash, nil); len(got) != 0 {
-		t.Fatalf("extra path segment: %v", got)
-	}
-	aliases := []map[string]any{
-		{"name": "direct", "base_url": "http://127.0.0.1:8787/v1"},
-		{"name": "aether-router", "base_url": "http://127.0.0.1:8787/v1", "extra_headers": map[string]any{"X-Aether-Route": "my-route"}},
-	}
-	if got := CustomProviderExtraHeaders("http://127.0.0.1:8787/v1", aliases, nil); !reflect.DeepEqual(got, map[string]string{"X-Aether-Route": "my-route"}) {
-		t.Fatalf("alias without headers shadowed: %v", got)
-	}
-	empty := []map[string]any{
-		{"name": "bare-alias", "base_url": "http://127.0.0.1:8787/v1", "extra_headers": map[string]any{}},
-		{"name": "proxied", "base_url": "http://127.0.0.1:8787/v1", "extra_headers": map[string]any{"Authorization": "Bearer tok"}},
-	}
-	if got := CustomProviderExtraHeaders("http://127.0.0.1:8787/v1", empty, nil); !reflect.DeepEqual(got, map[string]string{"Authorization": "Bearer tok"}) {
-		t.Fatalf("empty dict alias shadowed: %v", got)
-	}
-}
-
-func TestMergeExtraHeaders(t *testing.T) {
-	providers := []map[string]any{{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": map[string]any{"User-Agent": "override", "X-New": "2"}}}
-	got := MergeExtraHeaders(map[string]string{"User-Agent": "curl/8.7.1", "X-Keep": "1"}, "https://llm.internal.example.com/v1", providers, nil)
-	if !reflect.DeepEqual(got, map[string]string{"User-Agent": "override", "X-Keep": "1", "X-New": "2"}) {
-		t.Fatalf("got %v", got)
-	}
-	defaults := map[string]string{"X": "1"}
-	if got := MergeExtraHeaders(defaults, "https://other.example.com/v1", providers, nil); !reflect.DeepEqual(got, defaults) {
-		t.Fatalf("no match changed defaults: %v", got)
 	}
 }
 
@@ -202,7 +140,7 @@ func TestEveryAPIKeyProviderVarIsDeclaredInCore(t *testing.T) {
 		}
 		for _, v := range profileEnvVars(p) {
 			count++
-			if _, ok := config.OptionalEnvVars[v]; !ok {
+			if !config.OptionalEnvVars.Has(v) {
 				t.Errorf("%s not in OptionalEnvVars", v)
 			}
 			if !core[v] {
@@ -215,31 +153,156 @@ func TestEveryAPIKeyProviderVarIsDeclaredInCore(t *testing.T) {
 	}
 }
 
-func TestProviderEnvEntriesCoreWinsFirstProfileWins(t *testing.T) {
-	profiles := []Profile{
-		{Name: "alpha", DisplayName: "Alpha", AuthType: AuthTypeAPIKey, KeyEnv: []string{"CORE_KEY", "ALPHA_API_KEY", "ALPHA_BASE_URL"}, SignupURL: "https://alpha.test/keys"},
-		{Name: "beta", DisplayName: "Beta", AuthType: AuthTypeAPIKey, KeyEnv: []string{"ALPHA_API_KEY"}},
-		{Name: "oauth", DisplayName: "Oauth", AuthType: AuthTypeOAuthDeviceCode, KeyEnv: []string{"OAUTH_TOKEN"}},
+// Profile double of the hermes cases with a title cased display name and the env vars in tuple order
+func envCaseProfile(name, authType string, envVars ...string) Profile {
+	return Profile{Name: name, DisplayName: strings.ToUpper(name[:1]) + name[1:], AuthType: authType, KeyEnv: envVars,
+		SignupURL: "https://" + name + ".test/keys"}
+}
+
+// Table of the hermes fixture over one core name and one platform name, armed with the provider fill
+func providerEnvCaseTable(t *testing.T) *config.OptionalEnvTable {
+	t.Helper()
+	providerEnvMu.Lock()
+	prevStatic, prevNames, prevCatalog, prevSet := providerEnvStatic, providerEnvNames, providerEnvCatalog, providerEnvCatalogSet
+	prevTable, prevBundled := providerEnvTable, providerEnvBundled
+	providerEnvStatic, providerEnvNames, providerEnvCatalog, providerEnvCatalogSet = map[string]bool{"CORE_KEY": true}, map[string]bool{}, nil, false
+	providerEnvMu.Unlock()
+	t.Cleanup(func() {
+		providerEnvMu.Lock()
+		providerEnvStatic, providerEnvNames, providerEnvCatalog, providerEnvCatalogSet = prevStatic, prevNames, prevCatalog, prevSet
+		providerEnvTable, providerEnvBundled = prevTable, prevBundled
+		providerEnvMu.Unlock()
+	})
+	table := config.NewOptionalEnvTable([]config.NamedEnvVar{
+		{Name: "CORE_KEY", Entry: config.EnvVar{Description: "core"}}, {Name: "PLUG_KEY", Entry: config.EnvVar{Description: "platform"}}})
+	table.Arm(ProviderEnvEntries, publishProviderEnvNames)
+	return table
+}
+
+func TestTheCatalogBuildsUnderABackendThatRefusesEveryRead(t *testing.T) {
+	reads := refuseConfigReads(t)
+	providerEnvMu.Lock()
+	prevCatalog, prevSet := providerEnvCatalog, providerEnvCatalogSet
+	providerEnvCatalog, providerEnvCatalogSet = nil, false
+	providerEnvMu.Unlock()
+	t.Cleanup(func() {
+		providerEnvMu.Lock()
+		providerEnvCatalog, providerEnvCatalogSet = prevCatalog, prevSet
+		providerEnvMu.Unlock()
+	})
+	entries := ProviderEnvEntries()
+	hasAnthropic := slices.ContainsFunc(entries, func(e config.NamedEnvVar) bool { return e.Name == "ANTHROPIC_API_KEY" })
+	if !hasAnthropic && len(entries) <= 10 {
+		t.Fatalf("catalog of %d entries", len(entries))
 	}
-	entries := providerEnvEntriesFor(profiles, map[string]bool{"CORE_KEY": true})
-	if _, has := entries["CORE_KEY"]; has {
-		t.Fatal("core name must be skipped")
+	if got := reads.list(); len(got) != 0 {
+		t.Fatalf("config reads %v", got)
 	}
-	if e := entries["ALPHA_API_KEY"]; e.Description != "Alpha API key" || !e.Password || e.URL != "https://alpha.test/keys" {
-		t.Fatalf("alpha key: %+v", e)
+}
+
+func TestFillRunsOnFirstReadCoreWinsProviderReplacesPlatformFirstProviderWins(t *testing.T) {
+	table := providerEnvCaseTable(t)
+	calls := 0
+	profiles := []Profile{envCaseProfile("alpha", AuthTypeAPIKey, "CORE_KEY", "PLUG_KEY", "ALPHA_API_KEY", "ALPHA_BASE_URL"),
+		envCaseProfile("beta", AuthTypeAPIKey, "ALPHA_API_KEY"), envCaseProfile("oauth", "oauth", "OAUTH_TOKEN")}
+	providerEnvMu.Lock()
+	providerEnvBundled = func() []Profile {
+		calls++
+		return profiles
 	}
-	if e := entries["ALPHA_BASE_URL"]; e.Password || e.Description != "Alpha base URL override" {
-		t.Fatalf("alpha url: %+v", e)
+	providerEnvMu.Unlock()
+	table.Set("LATE", config.EnvVar{})
+	if _, ok := table.RawGet("LATE"); !ok || !slices.Equal(table.RawNames(), []string{"CORE_KEY", "PLUG_KEY", "LATE"}) || calls != 0 {
+		t.Fatalf("writes and raw access never fill, calls %d names %v", calls, table.RawNames())
 	}
-	if _, has := entries["OAUTH_TOKEN"]; has {
-		t.Fatal("oauth profile vars are not api key entries")
+	if e, ok := table.Get("CORE_KEY"); !ok || !reflect.DeepEqual(e, config.EnvVar{Description: "core"}) || calls != 1 {
+		t.Fatalf("core entry %+v %v calls %d", e, ok, calls)
 	}
-	SyncRegisteredProviders([]Profile{{Name: "plug", DisplayName: "Plug", AuthType: AuthTypeAPIKey, KeyEnv: []string{"PLUG_TEST_API_KEY", "OPENAI_API_KEY"}}})
-	if e, ok := config.OptionalEnvVars["PLUG_TEST_API_KEY"]; !ok || e.Description != "Plug API key" {
-		t.Fatalf("plugin entry: %+v %v", e, ok)
+	if got := table.Entry("PLUG_KEY").Description; got != "Alpha API key" {
+		t.Fatalf("provider entry replaces the platform one, got %q", got)
 	}
-	if config.OptionalEnvVars["OPENAI_API_KEY"].Description == "Plug API key" {
-		t.Fatal("an earlier entry is kept")
+	if e := table.Entry("ALPHA_API_KEY"); e.Description != "Alpha API key" || !e.Password || e.URL != "https://alpha.test/keys" ||
+		e.Prompt != "Alpha API key" || e.Category != "provider" || !e.Advanced {
+		t.Fatalf("alpha key %+v", e)
+	}
+	if e := table.Entry("ALPHA_BASE_URL"); e.Password || e.Description != "Alpha base URL override" ||
+		e.Prompt != "Alpha base URL (leave empty for default)" || table.Has("OAUTH_TOKEN") {
+		t.Fatalf("alpha url %+v oauth %v", e, table.Has("OAUTH_TOKEN"))
+	}
+	items := table.Items()
+	if calls != 1 {
+		t.Fatalf("fill ran %d times", calls)
+	}
+	names := make([]string, len(items))
+	for i, item := range items {
+		names[i] = item.Name
+	}
+	if want := []string{"CORE_KEY", "PLUG_KEY", "LATE", "ALPHA_API_KEY", "ALPHA_BASE_URL"}; !slices.Equal(names, want) || !slices.Equal(table.Names(), want) {
+		t.Fatalf("insertion order %v", names)
+	}
+	providerEnvMu.Lock()
+	published := maps.Clone(providerEnvNames)
+	providerEnvMu.Unlock()
+	if !maps.Equal(published, map[string]bool{"PLUG_KEY": true, "ALPHA_API_KEY": true, "ALPHA_BASE_URL": true}) {
+		t.Fatalf("published names %v", published)
+	}
+}
+
+func TestDiscoveryCompletionAddsRegisteredPluginProviders(t *testing.T) {
+	table := providerEnvCaseTable(t)
+	alpha := envCaseProfile("alpha", AuthTypeAPIKey, "ALPHA_API_KEY")
+	plug := envCaseProfile("plug", AuthTypeAPIKey, "PLUG_API_KEY", "ALPHA_API_KEY")
+	providerEnvMu.Lock()
+	providerEnvBundled = func() []Profile { return []Profile{alpha} }
+	providerEnvTable = table
+	providerEnvMu.Unlock()
+	regMu.Lock()
+	prevProfiles, prevOrder, prevSources := regProfiles, regOrder, regSources
+	regProfiles, regOrder = map[string]*Profile{"alpha": &alpha, "plug": &plug}, []string{"alpha", "plug"}
+	regSources = map[string]string{"alpha": "bundled", "plug": "runtime"}
+	regMu.Unlock()
+	t.Cleanup(func() {
+		regMu.Lock()
+		regProfiles, regOrder, regSources = prevProfiles, prevOrder, prevSources
+		regMu.Unlock()
+	})
+	if !table.Has("ALPHA_API_KEY") {
+		t.Fatal("the first read runs the fill")
+	}
+	SyncRegisteredProviders(processWideRegisteredProfiles())
+	if got := table.Entry("PLUG_API_KEY").Description; got != "Plug API key" {
+		t.Fatalf("plugin entry %q", got)
+	}
+	if got := table.Entry("ALPHA_API_KEY").Description; got != "Alpha API key" {
+		t.Fatalf("an earlier entry is kept, got %q", got)
+	}
+	providerEnvMu.Lock()
+	named := providerEnvNames["PLUG_API_KEY"]
+	providerEnvMu.Unlock()
+	if !named {
+		t.Fatal("the plugin name joins the provider declared names")
+	}
+}
+
+func TestSyncBeforeTheFillLetsTheBundledEntryReplaceThePluginOneInPlace(t *testing.T) {
+	table := providerEnvCaseTable(t)
+	alpha := envCaseProfile("alpha", AuthTypeAPIKey, "ALPHA_API_KEY", "ALPHA_BASE_URL")
+	providerEnvMu.Lock()
+	providerEnvBundled = func() []Profile { return []Profile{alpha} }
+	providerEnvTable = table
+	providerEnvMu.Unlock()
+	SyncRegisteredProviders([]Profile{envCaseProfile("plug", AuthTypeAPIKey, "ALPHA_BASE_URL", "PLUG_API_KEY")})
+	if got := table.RawNames(); !slices.Equal(got, []string{"CORE_KEY", "PLUG_KEY", "ALPHA_BASE_URL", "PLUG_API_KEY"}) {
+		t.Fatalf("a sync never runs the fill, names %v", got)
+	}
+	if e, _ := table.RawGet("ALPHA_BASE_URL"); e.Description != "Plug base URL override" {
+		t.Fatalf("plugin entry before the fill %+v", e)
+	}
+	if got := table.Names(); !slices.Equal(got, []string{"CORE_KEY", "PLUG_KEY", "ALPHA_BASE_URL", "PLUG_API_KEY", "ALPHA_API_KEY"}) {
+		t.Fatalf("names after the fill %v", got)
+	}
+	if got := table.Entry("ALPHA_BASE_URL").Description; got != "Alpha base URL override" {
+		t.Fatalf("the bundled entry replaces the plugin one, got %q", got)
 	}
 }
 

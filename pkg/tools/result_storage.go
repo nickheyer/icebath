@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -21,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	_ "modernc.org/sqlite"
 )
@@ -331,43 +331,35 @@ func GeneratePreview(content string, maxChars int) (string, bool) {
 
 // Rewrites an MCP handler result envelope into the text it wraps with metadata appended
 func pageableText(content string) string {
-	var payload map[string]any
-	dec := json.NewDecoder(strings.NewReader(content))
-	if err := dec.Decode(&payload); err != nil || payload == nil || len(payload) == 0 {
+	decoded, err := pyjson.Loads(content)
+	if err != nil {
 		return content
 	}
-	if _, trailing := dec.Token(); trailing == nil {
+	payload, ok := decoded.(*pyjson.Object)
+	if !ok || payload.Len() == 0 {
 		return content
 	}
-	for k := range payload {
+	extras := pyjson.NewObject()
+	for _, k := range payload.Keys {
 		if !mcpEnvelopeKeys[k] {
 			return content
 		}
+		if k != "result" {
+			extras.Set(k, payload.Vals[k])
+		}
 	}
-	text, ok := payload["result"].(string)
+	text, ok := payload.Vals["result"].(string)
 	if !ok || text == "" {
 		return content
 	}
-	extras := map[string]any{}
-	for k, v := range payload {
-		if k != "result" {
-			extras[k] = v
-		}
-	}
-	if len(extras) == 0 {
+	if extras.Len() == 0 {
 		return text
 	}
-	metadata := jsonIndentOne(extras)
-	return fmt.Sprintf("%s\n\n%s\n%s\n%s\n", text, envelopeMetadataTag, metadata, envelopeMetadataClosingTag)
-}
-
-// One space indented JSON with sorted keys and no HTML escaping
-func jsonIndentOne(v any) string {
-	b, err := pyjson.EncodeWTF8Indent(v, "", " ")
+	metadata, err := pyjson.Dumps(extras, pyjson.EnsureASCII(false), pyjson.Indent(1), pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
 	if err != nil {
-		return ErrorResult(err)
+		return text
 	}
-	return string(b)
+	return fmt.Sprintf("%s\n\n%s\n%s\n%s\n", text, envelopeMetadataTag, metadata, envelopeMetadataClosingTag)
 }
 
 // Shell command creating the directory owner only on a shared host

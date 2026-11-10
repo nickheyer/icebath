@@ -226,9 +226,9 @@ func asIntValue0(v any) int {
 func trimResults(results []*WebPage) []any {
 	out := make([]any, 0, len(results))
 	for _, r := range results {
-		row := map[string]any{"url": r.URL, "title": r.Title, "content": r.Content, "error": emptyAsNull(r.Error)}
+		row := Dict("url", r.URL, "title", r.Title, "content", r.Content, "error", emptyAsNull(r.Error))
 		if r.BlockedByPolicy != nil {
-			row["blocked_by_policy"] = r.BlockedByPolicy
+			row.Set("blocked_by_policy", r.BlockedByPolicy)
 		}
 		out = append(out, row)
 	}

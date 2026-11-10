@@ -130,7 +130,7 @@ func TestProjectToolActions(t *testing.T) {
 	if sw["success"] != true || moved != "task-2:Work" {
 		t.Fatal(sw, moved)
 	}
-	if r := projectFail("x"); !strings.Contains(r, `"success":false`) {
+	if r := projectFail("x"); r != `{"success": false, "error": "x"}` {
 		t.Fatal(r)
 	}
 }

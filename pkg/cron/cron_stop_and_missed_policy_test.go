@@ -131,7 +131,7 @@ func TestOneShotPastGraceSkipsByDefaultAndFiresOnceWhenOptedIn(t *testing.T) {
 	if got := jobIDs(mustDue(t, s)); strings.Join(got, ",") != kept.ID {
 		t.Fatalf("due %v", got)
 	}
-	if job, err := s.getJob(skipped.ID); err != nil || job != nil {
+	if job, err := s.getJob(context.Background(), skipped.ID); err != nil || job != nil {
 		t.Fatalf("expired one shot kept %v %v", job, err)
 	}
 	if got := ledgerStatuses(t, s, skipped.ID); strings.Join(got, ",") != "missed" {
@@ -144,7 +144,7 @@ func TestOneShotPastGraceSkipsByDefaultAndFiresOnceWhenOptedIn(t *testing.T) {
 
 func TestCatchUpRejectsNonBoolean(t *testing.T) {
 	s, _ := newTestStore(t)
-	_, err := s.createJob(CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h", Deliver: prompt("local"), CatchUp: "sometimes"})
+	_, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h", Deliver: prompt("local"), CatchUp: "sometimes"})
 	if err == nil || !strings.Contains(err.Error(), "catch_up") {
 		t.Fatalf("err %v", err)
 	}

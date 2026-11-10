@@ -291,8 +291,8 @@ func SaveConfig(ctx context.Context, h string, cfg map[string]any, opts SaveOpti
 }
 
 func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts SaveOptions) (map[string]any, map[string]any, bool, error) {
-	if ManagedSystem(h) != "" {
-		fmt.Fprintln(FacadeNoticeOut, FormatManagedMessage(h, "save configuration"))
+	if ManagedSystem(ctx, h) != "" {
+		fmt.Fprintln(FacadeNoticeOut, FormatManagedMessage(ctx, h, "save configuration"))
 		return nil, nil, false, nil
 	}
 	path := home.ConfigPath(h)
@@ -300,7 +300,7 @@ func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts Sa
 		return nil, nil, false, err
 	}
 	cfg = stripManagedKeysForSave(cfg)
-	if err := EnsureIcebathHome(h); err != nil {
+	if err := EnsureIcebathHome(ctx, h); err != nil {
 		return nil, nil, false, err
 	}
 	raw, err := KeepingReadBase(ctx, func() (map[string]any, error) { return RequireReadableConfigBeforeWrite(ctx, path) })
@@ -354,7 +354,7 @@ func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts Sa
 	if err := AtomicConfigReplace(ctx, h, path, normalized, commentedSectionsForSave(normalized)); err != nil {
 		return nil, nil, false, err
 	}
-	SecureFile(h, path)
+	SecureFile(ctx, h, path)
 	loadCacheMu.Lock()
 	delete(rawCache, path)
 	lastExpanded[path] = Clone(current).(map[string]any)

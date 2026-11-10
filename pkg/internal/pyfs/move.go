@@ -2,10 +2,12 @@ package pyfs
 
 import (
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
+	"runtime"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 )
 
 // shutil.Error raised for a move whose destination exists or lies inside the source
@@ -13,19 +15,30 @@ type MoveError struct{ Msg string }
 
 func (e *MoveError) Error() string { return e.Msg }
 
-// Moves a file or tree like shutil.move, renaming when possible and copying then deleting across devices
+// PermissionError raised for a tree that is immutable or that macOS will not let the caller empty
+type MovePermissionError struct{ Msg string }
+
+func (e *MovePermissionError) Error() string { return e.Msg }
+
+// Lets errors.Is match the permission class
+func (e *MovePermissionError) Unwrap() error { return os.ErrPermission }
+
+// Python class name of the error
+func (e *MovePermissionError) PyTypeName() string { return "PermissionError" }
+
+// Moves a file or tree like shutil.move with copy2, the result empty for the same file rename
 func Move(src, dst string) (string, error) {
 	realDst := dst
 	if st, err := os.Stat(dst); err == nil && st.IsDir() {
 		if sameFile(src, dst) && !isLink(src) {
-			return dst, os.Rename(src, dst)
+			return "", osRename(src, dst)
 		}
-		realDst = filepath.Join(dst, filepath.Base(strings.TrimRight(src, string(os.PathSeparator))))
-		if _, err := os.Lstat(realDst); err == nil {
+		realDst = pypath.Join(dst, moveBasename(src))
+		if _, err := os.Stat(realDst); err == nil {
 			return "", &MoveError{fmt.Sprintf("Destination path '%s' already exists", realDst)}
 		}
 	}
-	if err := os.Rename(src, realDst); err == nil {
+	if err := osRename(src, realDst); err == nil {
 		return realDst, nil
 	}
 	if isLink(src) {
@@ -36,21 +49,66 @@ func Move(src, dst string) (string, error) {
 		if err := os.Symlink(target, realDst); err != nil {
 			return "", err
 		}
-		return realDst, os.Remove(src)
-	}
-	if st, err := os.Stat(src); err == nil && st.IsDir() {
-		if destInSrc(src, dst) {
-			return "", &MoveError{fmt.Sprintf("Cannot move a directory '%s' into itself '%s'.", src, dst)}
-		}
-		if err := copyTree(src, realDst); err != nil {
+		if err := unlinkOnly(src); err != nil {
 			return "", err
 		}
-		return realDst, os.RemoveAll(src)
+		return realDst, nil
 	}
-	if err := copyFile2(src, realDst); err != nil {
+	if st, err := os.Stat(src); err == nil && st.IsDir() {
+		inside, err := destInSrc(src, dst)
+		if err != nil {
+			return "", err
+		}
+		if inside {
+			return "", &MoveError{fmt.Sprintf("Cannot move a directory '%s' into itself '%s'.", src, dst)}
+		}
+		refused, err := moveRefused(src)
+		if err != nil {
+			return "", err
+		}
+		if refused {
+			return "", &MovePermissionError{fmt.Sprintf("Cannot move the non-empty directory '%s': Lacking write permission to '%s'.", src, src)}
+		}
+		if err := CopyTree(src, realDst, true, false, nil); err != nil {
+			return "", err
+		}
+		if err := pyshutil.Rmtree(src); err != nil {
+			return "", err
+		}
+		return realDst, nil
+	}
+	if err := pyshutil.Copy2(src, realDst); err != nil {
 		return "", err
 	}
-	return realDst, os.Remove(src)
+	if err := unlinkOnly(src); err != nil {
+		return "", err
+	}
+	return realDst, nil
+}
+
+// Last component of a path after its trailing separators are dropped
+func moveBasename(p string) string {
+	seps := string(os.PathSeparator)
+	if runtime.GOOS == "windows" {
+		seps = `\/`
+	}
+	return pypath.Basename(strings.TrimRight(p, seps))
+}
+
+// Whether the tree is immutable, or on macOS holds entries the caller may not remove
+func moveRefused(src string) (bool, error) {
+	immutable, err := isImmutable(src)
+	if err != nil || immutable {
+		return immutable, err
+	}
+	if Access(src, 2) {
+		return false, nil
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return false, err
+	}
+	return len(entries) > 0 && runtime.GOOS == "darwin", nil
 }
 
 // Reports whether both paths name the same file
@@ -66,10 +124,16 @@ func isLink(p string) bool {
 	return err == nil && st.Mode()&os.ModeSymlink != 0
 }
 
-// Reports whether dst lies inside src after absolutizing both
-func destInSrc(src, dst string) bool {
-	s, _ := filepath.Abs(src)
-	d, _ := filepath.Abs(dst)
+// Reports whether dst lies inside src once both are resolved through symlinks
+func destInSrc(src, dst string) (bool, error) {
+	s, err := pypath.Realpath(src, pypath.Lax)
+	if err != nil {
+		return false, err
+	}
+	d, err := pypath.Realpath(dst, pypath.Lax)
+	if err != nil {
+		return false, err
+	}
 	sep := string(os.PathSeparator)
 	if !strings.HasSuffix(s, sep) {
 		s += sep
@@ -77,69 +141,5 @@ func destInSrc(src, dst string) bool {
 	if !strings.HasSuffix(d, sep) {
 		d += sep
 	}
-	return strings.HasPrefix(d, s)
-}
-
-// Copies a tree keeping symlinks as links and file data, modes and times like copytree with copy2
-func copyTree(src, dst string) error {
-	st, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dst, st.Mode().Perm()); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		s, d := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
-		switch {
-		case isLink(s):
-			target, err := os.Readlink(s)
-			if err != nil {
-				return err
-			}
-			if err := os.Symlink(target, d); err != nil {
-				return err
-			}
-		case e.IsDir():
-			if err := copyTree(s, d); err != nil {
-				return err
-			}
-		default:
-			if err := copyFile2(s, d); err != nil {
-				return err
-			}
-		}
-	}
-	os.Chmod(dst, st.Mode().Perm())
-	return os.Chtimes(dst, st.ModTime(), st.ModTime())
-}
-
-// Copies file data, permission bits and modification time like shutil.copy2
-func copyFile2(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	st, err := in.Stat()
-	if err != nil {
-		return err
-	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, st.Mode().Perm())
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	os.Chmod(dst, st.Mode().Perm())
-	return os.Chtimes(dst, st.ModTime(), st.ModTime())
+	return strings.HasPrefix(d, s), nil
 }

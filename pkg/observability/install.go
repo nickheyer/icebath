@@ -61,7 +61,7 @@ func DetectClientInstallMethod(ctx context.Context) (string, error) {
 	if mechanism, ok := pm.ReadInstallStamp(root).Get("updateMechanism"); ok && mechanism == "microsoft-store" {
 		return "microsoft-store", nil
 	}
-	return config.DetectInstallMethod(home.Dir(ctx), root)
+	return config.DetectInstallMethod(ctx, home.Dir(ctx), root)
 }
 
 // Channel this install follows from its packaged channel, channel record or checkout branch

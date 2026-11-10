@@ -129,9 +129,9 @@ func restoreDegradedPrompts(jobs []any, snapPrompts map[string]string, apply boo
 }
 
 // Restores degraded prompts against the live jobs read under the cron jobs lock
-func restoreUnderCronLock(h string, snapPrompts map[string]string) ([]string, error) {
+func restoreUnderCronLock(ctx context.Context, h string, snapPrompts map[string]string) ([]string, error) {
 	var restored []string
-	err := openCronStore(h, nil).updateRawJobs(func(jobs []any) (bool, error) {
+	err := openCronStore(h, nil).updateRawJobs(ctx, func(jobs []any) (bool, error) {
 		restored = restoreDegradedPrompts(jobs, snapPrompts, true)
 		return len(restored) > 0, nil
 	})
@@ -160,7 +160,7 @@ func RestoreCronPromptFieldsIfDegraded(ctx context.Context, h, snapshotID string
 	if liveDoc == nil || len(restoreDegradedPrompts(cronJobsList(liveDoc), snapPrompts, false)) == 0 {
 		return nil, nil
 	}
-	restoredIDs, err := restoreUnderCronLock(h, snapPrompts)
+	restoredIDs, err := restoreUnderCronLock(ctx, h, snapPrompts)
 	if err != nil {
 		slog.Error(fmt.Sprintf("Cron job prompts were degraded during update but auto-restore failed: %s", err))
 		return nil, nil

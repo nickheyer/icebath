@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -65,7 +66,7 @@ func TestMatchingNextRunStillFires(t *testing.T) {
 func TestManualTriggerBypassesStaleScheduleGuard(t *testing.T) {
 	s, _ := staleEditStore(t, saturday0700.Add(30*time.Second))
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "0 7 * * 1-5", Name: prompt("manual")})
-	triggered, err := s.triggerJob(job.ID, "")
+	triggered, err := s.triggerJob(context.Background(), job.ID, "")
 	if err != nil || triggered == nil {
 		t.Fatalf("trigger %v %v", triggered, err)
 	}
@@ -85,7 +86,7 @@ func TestDelayedManualTriggerIsNotCountedAsCatchUp(t *testing.T) {
 	trigger := saturday0700.Add(30 * time.Second)
 	s, now := staleEditStore(t, trigger)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "0 7 * * 1-5", Name: prompt("delayed")})
-	if _, err := s.triggerJob(job.ID, ""); err != nil {
+	if _, err := s.triggerJob(context.Background(), job.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	*now = trigger.Add(5 * time.Hour)
@@ -103,7 +104,7 @@ func TestManualTriggerSurvivesTimezoneChangeBeforeTick(t *testing.T) {
 	s, now := staleEditStore(t, trigger)
 	s.clk.zoneFn = func() *time.Location { return trigger.Location() }
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "0 7 * * 1-5", Name: prompt("tz-manual")})
-	if _, err := s.triggerJob(job.ID, ""); err != nil {
+	if _, err := s.triggerJob(context.Background(), job.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	*now = scan

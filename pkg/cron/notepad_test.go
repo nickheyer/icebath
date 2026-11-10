@@ -153,11 +153,11 @@ func TestNotepadProfileOverrideRoutesWritesToCurrentHome(t *testing.T) {
 func TestRemoveJobClearsNotepad(t *testing.T) {
 	s, _ := newTestStore(t)
 	n := openNotepad(s)
-	job, err := s.createJob(CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := s.createJob(CreateJobOptions{Prompt: prompt("Other job"), Schedule: "every 2h"})
+	other, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Other job"), Schedule: "every 2h"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestRemoveJobClearsNotepad(t *testing.T) {
 
 func TestRemoveJobSurvivesNotepadFailure(t *testing.T) {
 	s, _ := newTestStore(t)
-	job, err := s.createJob(CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestRemoveJobSurvivesNotepadFailure(t *testing.T) {
 	if ok, err := s.removeJob(context.Background(), job.ID); err != nil || !ok {
 		t.Fatalf("remove %v %v", ok, err)
 	}
-	if got, err := s.getJob(job.ID); err != nil || got != nil {
+	if got, err := s.getJob(context.Background(), job.ID); err != nil || got != nil {
 		t.Fatalf("job survived removal %v %v", got, err)
 	}
 }

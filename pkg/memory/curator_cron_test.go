@@ -95,7 +95,7 @@ func TestCuratorUnresolvableCronReferenceIsKeptVerbatim(t *testing.T) {
 	_, h := memory.CurTestHome(t, nil)
 	outside := filepath.Join(t.TempDir(), "elsewhere", "some-skill")
 	cronWriteJobs(t, h, cronJob(outside))
-	names, err := memory.CuratorHooks.ReferencedSkillNames(h)
+	names, err := memory.CuratorHooks.ReferencedSkillNames(context.Background(), h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestCuratorRollbackRestoresCronSkillLinks(t *testing.T) {
 	consolidated := pyjson.NewObject()
 	consolidated.Set("alpha", "umbrella")
 	consolidated.Set("beta", "umbrella")
-	if _, err := memory.CuratorHooks.RewriteSkillRefs(h, consolidated, nil); err != nil {
+	if _, err := memory.CuratorHooks.RewriteSkillRefs(ctx, h, consolidated, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := cronAsStrings(cronLoadJobs(t, h)[0]["skills"]); got != `["umbrella"]` {

@@ -523,14 +523,14 @@ func TestEarlyReturnStillClosesConnection(t *testing.T) {
 func TestJobListingExposesLatestExecution(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()
-	job, err := s.createJob(CreateJobOptions{Prompt: strPtr("audit me"), Schedule: "every 1h", Name: strPtr("audit")})
+	job, err := s.createJob(ctx, CreateJobOptions{Prompt: strPtr("audit me"), Schedule: "every 1h", Name: strPtr("audit")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	l := openExecutionsLedger(s)
 	record := mustLedger(t)(l.Create(ctx, job.ID, "builtin", nil))
 	mustLedger(t)(l.MarkRunning(ctx, recText(record, "id")))
-	listed, err := s.listJobs(true)
+	listed, err := s.listJobs(ctx, true)
 	if err != nil || len(listed) != 1 || listed[0].LatestExecution["id"] != record["id"] || listed[0].LatestExecution["status"] != "running" {
 		t.Fatalf("listed %v %v", listed, err)
 	}

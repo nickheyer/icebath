@@ -1,6 +1,7 @@
 package home
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -16,24 +17,39 @@ import (
 func TestEnsureScratchDirHandsThePruneToOneChildPerProcess(t *testing.T) {
 	spawned := scratchPruneSpawns(t)
 	launch := filepath.Join(t.TempDir(), "launch")
-	scratch := EnsureScratchDir(launch)
+	scratch := EnsureScratchDir(context.Background(), launch)
 	if scratch != filepath.Join(launch, "cache", "scratch") {
 		t.Fatalf("EnsureScratchDir = %q", scratch)
 	}
 	if st, err := os.Stat(scratch); err != nil || !st.IsDir() {
 		t.Fatalf("scratch dir missing: %v", err)
 	}
-	EnsureScratchDir(launch)
+	EnsureScratchDir(context.Background(), launch)
 	if len(*spawned) != 1 || (*spawned)[0] != scratch {
 		t.Fatalf("spawned %v, want one prune of %s", *spawned, scratch)
 	}
 	scratchPrunedOnce.Store(false)
 	routed := filepath.Join(t.TempDir(), "routed")
-	if got := EnsureScratchDir(routed); got != filepath.Join(routed, "cache", "scratch") {
+	if got := EnsureScratchDir(context.Background(), routed); got != filepath.Join(routed, "cache", "scratch") {
 		t.Fatalf("routed scratch = %q", got)
 	}
 	if len(*spawned) != 2 || (*spawned)[1] != filepath.Join(routed, "cache", "scratch") {
 		t.Fatalf("spawned %v", *spawned)
+	}
+}
+
+func TestScratchDirWithoutPruneCreatesTheDirAndSpawnsNoChild(t *testing.T) {
+	spawned := scratchPruneSpawns(t)
+	h := filepath.Join(t.TempDir(), "launch")
+	scratch := ScratchDirWithoutPrune(t.Context(), h)
+	if scratch != filepath.Join(h, "cache", "scratch") {
+		t.Fatalf("scratch = %q", scratch)
+	}
+	if st, err := os.Stat(scratch); err != nil || !st.IsDir() {
+		t.Fatalf("scratch dir missing: %v", err)
+	}
+	if len(*spawned) != 0 {
+		t.Fatalf("spawned %v, want none", *spawned)
 	}
 }
 
@@ -42,13 +58,13 @@ func TestPruneStampThrottlesAcrossProcesses(t *testing.T) {
 	h := t.TempDir()
 	scratch := testScratch(t, h)
 	writeText(t, filepath.Join(scratch, scratchPruneStamp), "")
-	EnsureScratchDir(h)
+	EnsureScratchDir(context.Background(), h)
 	if len(*spawned) != 0 {
 		t.Fatalf("a fresh stamp must throttle the prune, spawned %v", *spawned)
 	}
 	scratchPrunedOnce.Store(false)
 	age(t, 2, filepath.Join(scratch, scratchPruneStamp))
-	EnsureScratchDir(h)
+	EnsureScratchDir(context.Background(), h)
 	st, _ := os.Stat(filepath.Join(scratch, scratchPruneStamp))
 	if len(*spawned) != 1 || time.Since(st.ModTime()) > time.Minute {
 		t.Fatalf("a stale stamp must be touched and the prune spawned, spawned %v", *spawned)
@@ -139,7 +155,7 @@ func TestLineageRoundTripsThroughItsEncoding(t *testing.T) {
 func TestDetachedPassFailureIsOneLogLine(t *testing.T) {
 	h := t.TempDir()
 	scratch := testScratch(t, h)
-	if code := RunScratchPrune([]string{scratch, "x:1.0"}); code != 0 {
+	if code := RunScratchPrune(context.Background(), []string{scratch, "x:1.0"}); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
 	if log := pruneLog(t, h); !strings.Contains(log, "scratch prune: detached pass failed (ValueError: \"invalid literal for int() with base 10: 'x'\")") {
@@ -197,10 +213,10 @@ func TestScratchDirUsageBytesCountsFiles(t *testing.T) {
 	scratch := testScratch(t, t.TempDir())
 	writeText(t, filepath.Join(scratch, "a", "b"), "12345")
 	writeText(t, filepath.Join(scratch, "c"), "123")
-	if got := ScratchDirUsageBytes(scratch); got != 8 {
+	if got := ScratchDirUsageBytes(context.Background(), scratch); got != 8 {
 		t.Fatalf("usage %d, want 8", got)
 	}
-	if got := ScratchDirUsageBytes(filepath.Join(scratch, "missing")); got != 0 {
+	if got := ScratchDirUsageBytes(context.Background(), filepath.Join(scratch, "missing")); got != 0 {
 		t.Fatalf("missing dir usage %d", got)
 	}
 }

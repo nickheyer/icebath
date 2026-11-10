@@ -278,13 +278,7 @@ func applyOpenAIHeaderPolicy(ctx context.Context, a *AIAgent, kwargs map[string]
 	if cpBaseURL == "" {
 		cpBaseURL = a.baseURL
 	}
-	tls := provider.CustomProviderTLSSettings(cpBaseURL, entries, cfg)
-	if tls.CACert != "" {
-		kwargs["ssl_ca_cert"] = tls.CACert
-	}
-	if tls.HasVerify {
-		kwargs["ssl_verify"] = tls.Verify
-	}
+	provider.ApplyCustomProviderTLSToClientKwargs(kwargs, cpBaseURL, entries, cfg)
 	if extra := provider.CustomProviderExtraHeaders(cpBaseURL, entries, cfg); len(extra) > 0 {
 		merged := stringHeaders(kwargs["default_headers"])
 		if merged == nil {

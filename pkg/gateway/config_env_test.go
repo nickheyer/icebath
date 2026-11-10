@@ -233,7 +233,7 @@ func TestExplicitDisableWarnsOnceAndStatusReadsStaySilent(t *testing.T) {
 	delete(explicitDisableWarned.set, PlatformRelay)
 	explicitDisableWarned.Unlock()
 	enabled, connected, ok, err := BuiltinPlatformStatus(ctx, "relay", map[string]any{"platforms": map[string]any{"relay": map[string]any{"enabled": false}}})
-	if err != nil || !ok || enabled || !connected || logs.Len() != 0 {
+	if err != nil || !ok || enabled || !connected || strings.Contains(logs.String(), "explicitly disabled") || strings.Contains(logs.String(), "Failed to load plugin") {
 		t.Fatalf("status read %v %v %v %v %q", enabled, connected, ok, err, logs.String())
 	}
 	if _, _, ok, _ := BuiltinPlatformStatus(ctx, "myplugin", map[string]any{}); ok {

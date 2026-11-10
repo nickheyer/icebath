@@ -143,7 +143,7 @@ func TestBlueprintCommandFillCreatesJob(t *testing.T) {
 	if !strings.Contains(res.Text, "Scheduled") || res.AgentSeed != nil {
 		t.Fatalf("%+v", res)
 	}
-	jobs, err := s.LoadJobs()
+	jobs, err := s.LoadJobs(context.Background())
 	if err != nil || len(jobs) != 1 {
 		t.Fatalf("jobs=%v err=%v", jobs, err)
 	}

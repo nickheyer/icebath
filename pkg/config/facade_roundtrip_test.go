@@ -497,11 +497,11 @@ func TestP4EnvParserSanitizerAndWriterRoundTrip(t *testing.T) {
 			if again := LoadEnv(h); !roundtrip.Equal(rtAnyMap(again), rtAnyMap(first)) {
 				t.Fatalf("[seed=%d] load_env() is not a pure function of the file", seed)
 			}
-			if _, err := SanitizeEnvFile(h); err != nil {
+			if _, err := SanitizeEnvFile(context.Background(), h); err != nil {
 				t.Fatal(err)
 			}
 			sanitized := readText(envPath)
-			if n, err := SanitizeEnvFile(h); err != nil || n != 0 || readText(envPath) != sanitized {
+			if n, err := SanitizeEnvFile(context.Background(), h); err != nil || n != 0 || readText(envPath) != sanitized {
 				t.Fatalf("[seed=%d] sanitize is not a fixed point (%d, %v)", seed, n, err)
 			}
 			parsed := LoadEnv(h)

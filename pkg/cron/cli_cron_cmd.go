@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -511,7 +512,7 @@ func (s *Store) probeThenListJobs(ctx context.Context, w io.Writer, includeDisab
 	if report != nil {
 		printStoreUnwritable(w, report, brief)
 	}
-	jobs, err := s.listJobs(includeDisabled)
+	jobs, err := s.listJobs(home.WithOverride(ctx, s.home), includeDisabled)
 	if err != nil {
 		if report == nil || !isOSError(err) {
 			return report, nil, err
@@ -894,7 +895,7 @@ func (s *Store) cronDoctorIssuesForJob(job *pyjson.Object) ([]string, error) {
 
 // Read only cron health checks with a shell friendly status
 func (s *Store) cronDoctor(ctx context.Context, w io.Writer) (int, error) {
-	jobs, err := s.listJobs(false)
+	jobs, err := s.listJobs(home.WithOverride(ctx, s.home), false)
 	if err != nil {
 		return 0, err
 	}
@@ -1025,7 +1026,7 @@ func strOrNil(p *string) any {
 
 // Updates a job through the cronjob tool, resolving skill replacement, additions and removals
 func (s *Store) cronEdit(ctx context.Context, w io.Writer, a *CronArgs) (int, error) {
-	job, err := s.resolveJobRef(a.JobID)
+	job, err := s.resolveJobRef(home.WithOverride(ctx, s.home), a.JobID)
 	var amb *AmbiguousJobReferenceError
 	if errors.As(err, &amb) {
 		say(w, color(amb.Error(), cliui.Red))

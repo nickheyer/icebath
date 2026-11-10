@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -126,7 +127,7 @@ func TestGithubExemptionAbuse(t *testing.T) {
 
 func storedKnobs(t *testing.T, s *Store) *Job {
 	t.Helper()
-	jobs, err := s.listJobs(true)
+	jobs, err := s.listJobs(context.Background(), true)
 	if err != nil || len(jobs) == 0 {
 		t.Fatalf("stored %v %v", jobs, err)
 	}

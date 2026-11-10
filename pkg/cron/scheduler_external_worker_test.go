@@ -262,7 +262,7 @@ func TestLaunchExternalWorkerHandsAScriptJobToARealWorkerThatAcknowledges(t *tes
 	if err := os.WriteFile(filepath.Join(scripts, "w.sh"), []byte("#!/bin/sh\necho handed off\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	job, err := s.createJob(CreateJobOptions{Schedule: "every 5m", Script: "w.sh", NoAgent: true})
+	job, err := s.createJob(ctx, CreateJobOptions{Schedule: "every 5m", Script: "w.sh", NoAgent: true})
 	if err != nil {
 		t.Fatal(err)
 	}

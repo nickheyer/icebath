@@ -32,30 +32,30 @@ func wantErrContains(t *testing.T, err error, sub string) {
 
 func TestMonitorCreateAndUpdateInvariants(t *testing.T) {
 	s, _ := newTestStore(t)
-	_, err := s.createJob(CreateJobOptions{Prompt: strp("p"), Schedule: "every 5m", MonitorScript: "mon.sh", MonitorURL: "https://example.com/status"})
+	_, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strp("p"), Schedule: "every 5m", MonitorScript: "mon.sh", MonitorURL: "https://example.com/status"})
 	wantErrContains(t, err, "monitor_script and monitor_url")
 	writeMonitorScript(t, s, "w.sh", "echo hi\n")
 	writeMonitorScript(t, s, "mon.sh", "echo stable\n")
-	_, err = s.createJob(CreateJobOptions{Schedule: "every 5m", Script: "w.sh", NoAgent: true, MonitorScript: "w.sh"})
+	_, err = s.createJob(context.Background(), CreateJobOptions{Schedule: "every 5m", Script: "w.sh", NoAgent: true, MonitorScript: "w.sh"})
 	wantErrContains(t, err, "no_agent")
-	mon, err := s.createJob(CreateJobOptions{Prompt: strp("React to the change"), Schedule: "every 5m", MonitorScript: "mon.sh", Deliver: strp("local")})
+	mon, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strp("React to the change"), Schedule: "every 5m", MonitorScript: "mon.sh", Deliver: strp("local")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.updateJob(mon.ID, map[string]any{"no_agent": true, "script": "w.sh"})
+	_, err = s.updateJob(context.Background(), mon.ID, map[string]any{"no_agent": true, "script": "w.sh"})
 	wantErrContains(t, err, "no_agent")
-	_, err = s.updateJob(mon.ID, map[string]any{"monitor_url": "https://example.com/status"})
+	_, err = s.updateJob(context.Background(), mon.ID, map[string]any{"monitor_url": "https://example.com/status"})
 	wantErrContains(t, err, "mutually exclusive")
-	noAgent, err := s.createJob(CreateJobOptions{Schedule: "every 5m", Script: "w.sh", NoAgent: true, Deliver: strp("local")})
+	noAgent, err := s.createJob(context.Background(), CreateJobOptions{Schedule: "every 5m", Script: "w.sh", NoAgent: true, Deliver: strp("local")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.updateJob(noAgent.ID, map[string]any{"monitor_script": "mon.sh"})
+	_, err = s.updateJob(context.Background(), noAgent.ID, map[string]any{"monitor_script": "mon.sh"})
 	wantErrContains(t, err, "no_agent")
-	if _, err := s.updateJob(mon.ID, map[string]any{"monitor_script": "", "no_agent": true, "script": "w.sh"}); err != nil {
+	if _, err := s.updateJob(context.Background(), mon.ID, map[string]any{"monitor_script": "", "no_agent": true, "script": "w.sh"}); err != nil {
 		t.Fatal(err)
 	}
-	reloaded, _ := s.getJob(mon.ID)
+	reloaded, _ := s.getJob(context.Background(), mon.ID)
 	if reloaded.MonitorScript != nil || !reloaded.NoAgent {
 		t.Fatal(reloaded.MonitorScript, reloaded.NoAgent)
 	}
@@ -79,7 +79,7 @@ func TestMonitorHashAndDiffCap(t *testing.T) {
 func TestCheckMonitorBaselineSuppressionDiffAndFailure(t *testing.T) {
 	s, _ := newTestStore(t)
 	writeMonitorScript(t, s, "mon.sh", "echo 'state A'\n")
-	job, err := s.createJob(CreateJobOptions{Prompt: strp("Summarize what changed"), Model: "test-model", Schedule: "every 5m", MonitorScript: "mon.sh", Deliver: strp("local")})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strp("Summarize what changed"), Model: "test-model", Schedule: "every 5m", MonitorScript: "mon.sh", Deliver: strp("local")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestCheckMonitorBaselineSuppressionDiffAndFailure(t *testing.T) {
 		t.Fatal(out, err)
 	}
 	reopened := openCronStore(s.home, nil)
-	job, _ = reopened.getJob(job.ID)
+	job, _ = reopened.getJob(ctx, job.ID)
 	if job.MonitorState == nil || job.MonitorState.LastOutputHash == "" || job.MonitorState.LastChangedAt == "" {
 		t.Fatal(job.MonitorState)
 	}
@@ -110,13 +110,13 @@ func TestCheckMonitorBaselineSuppressionDiffAndFailure(t *testing.T) {
 			t.Fatal(want, *out.ContextBlock)
 		}
 	}
-	job, _ = reopened.getJob(job.ID)
+	job, _ = reopened.getJob(ctx, job.ID)
 	stored = job.MonitorState.LastOutputHash
 	writeMonitorScript(t, s, "mon.sh", "echo boom >&2\nexit 3\n")
 	if out, err = reopened.checkMonitor(ctx, job); err != nil || out.OK || out.Error == nil {
 		t.Fatal("failure must be an error, not a change", out, err)
 	}
-	if job, _ = reopened.getJob(job.ID); job.MonitorState.LastOutputHash != stored {
+	if job, _ = reopened.getJob(ctx, job.ID); job.MonitorState.LastOutputHash != stored {
 		t.Fatal("failed source touched the stored hash")
 	}
 }

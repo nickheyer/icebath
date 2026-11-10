@@ -9,6 +9,9 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Child half of the readopt tests, a process that only sleeps
@@ -198,7 +201,7 @@ func TestProcessCheckpointRecoverReattachesLivePidWhenStartProbeFails(t *testing
 		"pid_scope": "host", "host_start_time": *start, "task_id": "t1", "notify_on_complete": true,
 	}})
 	cpFailStartProbe(t)
-	recovered := r.RecoverFromCheckpoint(context.Background(), env)
+	recovered, _ := r.RecoverFromCheckpoint(context.Background(), env)
 	polled := r.Poll(context.Background(), env, "proc_recover_live")
 	if recovered != 1 || !cpStillRunning(proc) || polled["status"] != "running" || len(cpCompletions(r)) != 0 {
 		t.Fatalf("live recovery wrong: recovered=%d poll=%v", recovered, polled)
@@ -226,7 +229,7 @@ func TestProcessCheckpointRecoverDoesNotKillAReusedPid(t *testing.T) {
 		stopped = append(stopped, unit)
 		return true
 	})
-	if recovered := r.RecoverFromCheckpoint(context.Background(), env); recovered != 0 {
+	if recovered, err := r.RecoverFromCheckpoint(context.Background(), env); recovered != 0 || err != nil {
 		t.Fatalf("reused pid adopted: %d", recovered)
 	}
 	if !cpStillRunning(proc) || r.Get(env, "proc_recover_reused") != nil || len(stopped) != 0 || len(cpCompletions(r)) != 0 {
@@ -285,13 +288,13 @@ func TestProcessCheckpointOwnerWriteKeepsALiveWorkerHandoff(t *testing.T) {
 	ownerReg.mu.Unlock()
 	ownerReg.writeCheckpoint(env, nil)
 
-	entries, ok := readCheckpointEntries(checkpoint)
+	value, ok := readCheckpointValue(checkpoint)
 	if !ok {
 		t.Fatal("checkpoint unreadable")
 	}
 	ids := map[string]bool{}
-	for _, e := range entries {
-		ids[asStr(e["session_id"])] = true
+	for _, e := range value.([]any) {
+		ids[asStr(e.(*pyjson.Object).Vals["session_id"])] = true
 	}
 	if len(ids) != 2 || !ids["proc_owner"] || !ids["proc_worker"] {
 		t.Fatalf("handoff dropped or dead entry kept: %v", ids)
@@ -301,7 +304,7 @@ func TestProcessCheckpointOwnerWriteKeepsALiveWorkerHandoff(t *testing.T) {
 	successor.mu.Lock()
 	successor.insertRunning(s)
 	successor.mu.Unlock()
-	if recovered := successor.RecoverFromCheckpoint(context.Background(), env); recovered != 1 {
+	if recovered, err := successor.RecoverFromCheckpoint(context.Background(), env); recovered != 1 || err != nil {
 		t.Fatalf("worker handoff not adopted: %d", recovered)
 	}
 	adopted := successor.Get(env, "proc_worker")
@@ -317,5 +320,87 @@ func TestProcessCheckpointOwnerWriteKeepsALiveWorkerHandoff(t *testing.T) {
 	case <-adopted.readerDone:
 	case <-time.After(15 * time.Second):
 		t.Fatal("log reader of the adopted worker never finished")
+	}
+}
+
+func TestCheckpointRewriteKeepsForeignEntryOrderAndNumberTypes(t *testing.T) {
+	env, checkpoint := cpProcEnv(t)
+	logs := processOutputDir(env)
+	os.MkdirAll(logs, 0o755)
+	log := filepath.Join(logs, "proc_w.log")
+	os.WriteFile(log, []byte("done\n"), 0o644)
+	os.WriteFile(exitPathOf(log), []byte("0"), 0o644)
+	quoted, err := pyjson.Dumps(log, pyjson.EnsureASCII(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	onDisk := `[{"zeta": 1, "session_id": "proc_w", "ratio": 1.0, "big": 1e2, "neg": -0.0, "command": "a<b>&c é", "pid": 7, "output_log": ` + quoted + `, "nested": {"y": 1, "x": [1.0, 2]}}, 5, "text"]`
+	if err := os.WriteFile(checkpoint, []byte(onDisk), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	NewProcessRegistry().writeCheckpoint(env, nil)
+	got, err := os.ReadFile(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "[\n  {\n    \"zeta\": 1,\n    \"session_id\": \"proc_w\",\n    \"ratio\": 1.0,\n    \"big\": 100.0,\n    \"neg\": -0.0,\n    \"command\": \"a<b>&c é\",\n    \"pid\": 7,\n    \"output_log\": " + quoted + ",\n    \"nested\": {\n      \"y\": 1,\n      \"x\": [\n        1.0,\n        2\n      ]\n    }\n  }\n]"
+	if string(got) != want {
+		t.Fatalf("checkpoint rewrite\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestMalformedCheckpointFailsAsHermesDoes(t *testing.T) {
+	cases := []struct{ text, recoverErr, writeErr string }{
+		{`{"a":1}`, "AttributeError: 'str' object has no attribute 'get'", ""},
+		{`"abc"`, "AttributeError: 'str' object has no attribute 'get'", ""},
+		{`5`, "TypeError: 'int' object is not iterable", "TypeError: 'int' object is not iterable"},
+		{`1.5`, "TypeError: 'float' object is not iterable", "TypeError: 'float' object is not iterable"},
+		{`true`, "TypeError: 'bool' object is not iterable", "TypeError: 'bool' object is not iterable"},
+		{`null`, "TypeError: 'NoneType' object is not iterable", "TypeError: 'NoneType' object is not iterable"},
+		{`[1]`, "AttributeError: 'int' object has no attribute 'get'", ""},
+		{`[null]`, "AttributeError: 'NoneType' object has no attribute 'get'", ""},
+		{`["s"]`, "AttributeError: 'str' object has no attribute 'get'", ""},
+		{`[[1]]`, "AttributeError: 'list' object has no attribute 'get'", ""},
+		{`[true]`, "AttributeError: 'bool' object has no attribute 'get'", ""},
+		{`[1.5]`, "AttributeError: 'float' object has no attribute 'get'", ""},
+		{`{}`, "", ""},
+		{`""`, "", ""},
+		{`[]`, "", ""},
+		{`[{"pid": 0}, 7]`, "AttributeError: 'int' object has no attribute 'get'", ""},
+		{`[{"session_id": [1]}]`, "", "TypeError: cannot use 'list' as a set element (unhashable type: 'list')"},
+		{`[{"session_id": {"k": 1}}]`, "", "TypeError: cannot use 'dict' as a set element (unhashable type: 'dict')"},
+	}
+	describe := func(err error) string {
+		if err == nil {
+			return ""
+		}
+		return pyrepr.TypeName(err) + ": " + err.Error()
+	}
+	for _, c := range cases {
+		env, checkpoint := cpProcEnv(t)
+		if err := os.WriteFile(checkpoint, []byte(c.text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r := NewProcessRegistry()
+		_, werr := r.foreignHandoffs(env, checkpoint, map[string]bool{"a": true})
+		if got := describe(werr); got != c.writeErr {
+			t.Errorf("%s foreign handoffs %q, want %q", c.text, got, c.writeErr)
+		}
+		r.writeCheckpoint(env, nil)
+		after, _ := os.ReadFile(checkpoint)
+		want := "[]"
+		if c.writeErr != "" {
+			want = c.text
+		}
+		if string(after) != want {
+			t.Errorf("%s checkpoint after the write %q, want %q", c.text, after, want)
+		}
+		if err := os.WriteFile(checkpoint, []byte(c.text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		recovered, rerr := NewProcessRegistry().RecoverFromCheckpoint(context.Background(), env)
+		if got := describe(rerr); got != c.recoverErr || recovered != 0 {
+			t.Errorf("%s recover %d %q, want %q", c.text, recovered, got, c.recoverErr)
+		}
 	}
 }

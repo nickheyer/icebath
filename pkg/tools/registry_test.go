@@ -70,7 +70,7 @@ func TestShortMessageUnchanged(t *testing.T) {
 }
 
 func TestExtraKwargsPreserved(t *testing.T) {
-	if out := decodeRegistryResult(t, toolErrorJSON("bad input", map[string]any{"success": false})); out["error"] != "bad input" || out["success"] != false {
+	if out := decodeRegistryResult(t, toolErrorJSON("bad input", Dict("success", false))); out["error"] != "bad input" || out["success"] != false {
 		t.Fatalf("extra kwargs %v", out)
 	}
 }

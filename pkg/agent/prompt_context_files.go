@@ -325,7 +325,7 @@ func LoadSoulMD(ctx context.Context, env *tools.Env, contextLength *int, homeOve
 	if config.SafeWorkerEnabled() {
 		return "", false
 	}
-	if err := config.EnsureIcebathHome(agentHome(env)); err != nil {
+	if err := config.EnsureIcebathHome(tools.WithEnvHome(ctx, env), agentHome(env)); err != nil {
 		slog.Debug(fmt.Sprintf("Could not ensure ICEBATH_HOME before loading SOUL.md: %v", err))
 	}
 	soulHome := homeOverride

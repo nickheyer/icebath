@@ -454,3 +454,59 @@ func TestSwapConfigVersionAndFileReadUserDocReachTheFacadeReaders(t *testing.T) 
 		t.Fatal("read seam not restored")
 	}
 }
+
+func TestFileBackendRefusesAnInMemoryApplyWithARuntimeError(t *testing.T) {
+	err := FileBackend{}.ApplyInMemory(context.Background(), "/h", map[string]any{"a": 1})
+	var rt *RuntimeError
+	if !errors.As(err, &rt) || rt.Msg != "the file backend persists migrations to config.yaml" {
+		t.Fatalf("error %T %v", err, err)
+	}
+	if !isRuntimeError(err) {
+		t.Fatal("the config command must turn the refusal into a clean message")
+	}
+}
+
+func TestBackendKindIsStrippedAndLoweredLikePythonStr(t *testing.T) {
+	backendHome(t)
+	ctx := context.Background()
+	for _, raw := range []string{"\x1c\x1dFILE\x1e\x1f", " File\u0085", " \tfile\n"} {
+		t.Setenv(BackendEnv, raw)
+		if b, err := GetConfigBackend(ctx); err != nil || b.Name() != "file" {
+			t.Fatalf("%q: %v %v", raw, b, err)
+		}
+	}
+	t.Setenv(BackendEnv, "\x1fREMOTEΣ\x1c")
+	var unavailable *ConfigBackendUnavailable
+	_, err := GetConfigBackend(ctx)
+	want := "ICEBATH_CONFIG_BACKEND='remoteς' is not a config backend this build provides (expected 'file' or 'remote')."
+	if !errors.As(err, &unavailable) || unavailable.Message != want {
+		t.Fatalf("final sigma selector %v", err)
+	}
+}
+
+func TestRoutingKeepsParentSegmentsLikePathlib(t *testing.T) {
+	backendHome(t)
+	ctx := context.Background()
+	dotted := filepath.FromSlash("base/link/../config.yaml")
+	parent := filepath.FromSlash("base/link/..")
+	b, h, err := route(ctx, dotted)
+	if err != nil || b.Name() != "file" || h != parent || b.(FileBackend).ConfigPath(h) != dotted {
+		t.Fatalf("home route %v %q %q %v", b, h, b.(FileBackend).ConfigPath(h), err)
+	}
+	other := filepath.FromSlash("base/link/../import.yaml")
+	b, h, err = route(ctx, other)
+	if err != nil || h != parent || b.(FileBackend).ConfigPath("ignored") != other {
+		t.Fatalf("explicit route %q %q %v", h, b.(FileBackend).ConfigPath("ignored"), err)
+	}
+	b, h = LocalFileLayer(dotted)
+	if h != parent || b.(FileBackend).ConfigPath("ignored") != dotted {
+		t.Fatalf("local layer %q %q", h, b.(FileBackend).ConfigPath("ignored"))
+	}
+	b, h = LocalFileLayer(filepath.FromSlash("base//link/./config.yaml"))
+	if want := filepath.FromSlash("base/link"); h != want || b.(FileBackend).ConfigPath("ignored") != filepath.Join(want, "config.yaml") {
+		t.Fatalf("collapsed separators %q %q", h, b.(FileBackend).ConfigPath("ignored"))
+	}
+	if got := (FileBackend{}).ConfigPath(parent); got != dotted {
+		t.Fatalf("home config path %q", got)
+	}
+}

@@ -37,7 +37,7 @@ func dispatchCronjob(t *testing.T, s *Store, args map[string]any) map[string]any
 
 func mustJob(t *testing.T, s *Store, id string) *Job {
 	t.Helper()
-	job, err := s.getJob(id)
+	job, err := s.getJob(context.Background(), id)
 	if err != nil || job == nil {
 		t.Fatalf("job %s: %v %v", id, job, err)
 	}

@@ -509,7 +509,7 @@ func TestActualSetupKeepsProviderSettingsInYaml(t *testing.T) {
 					t.Fatalf("actual profile %+v", p)
 				}
 				for _, name := range []string{"ACTUAL_BASE_URL", "ACTUAL_API_MODE"} {
-					if _, held := config.OptionalEnvVars[name]; held {
+					if config.OptionalEnvVars.Has(name) {
 						t.Fatalf("%s is an optional env var", name)
 					}
 				}

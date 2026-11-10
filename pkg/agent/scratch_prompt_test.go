@@ -20,10 +20,10 @@ func TestBootHookAndPromptHandThePruneToOneChild(t *testing.T) {
 	t.Setenv(home.EnvHome, launch)
 	scratch := filepath.Join(launch, "cache", "scratch")
 	env := map[string]string{home.EnvHome: launch}
-	if !home.ApplyScratchTmpEnv(env) {
+	if !home.ApplyScratchTmpEnv(context.Background(), env) {
 		t.Fatal("boot hook did not point the temp vars at the scratch dir")
 	}
-	hints, err := localHostHints(&tools.Env{Home: home.Dir(context.Background()), Cwd: tmp})
+	hints, err := localHostHints(context.Background(), &tools.Env{Home: home.Dir(context.Background()), Cwd: tmp})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestBootHookAndPromptHandThePruneToOneChild(t *testing.T) {
 	home.ResetScratchPruneLatch()
 	routed := filepath.Join(tmp, "routed")
 	ctx := home.WithOverride(context.Background(), routed)
-	if got := home.EnsureScratchDir(home.Dir(ctx)); got != filepath.Join(routed, "cache", "scratch") {
+	if got := home.EnsureScratchDir(ctx, home.Dir(ctx)); got != filepath.Join(routed, "cache", "scratch") {
 		t.Fatalf("routed scratch %q", got)
 	}
 	if !reflect.DeepEqual(*spawned, []string{scratch, filepath.Join(routed, "cache", "scratch")}) {

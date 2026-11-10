@@ -381,6 +381,44 @@ func (d *wtf8JSONDecoder) array() (any, bool) {
 // Encodes like json.dumps with ensure_ascii false, encoding/json value shapes without HTML escaping and surrogates as code points
 func EncodeWTF8(v any) ([]byte, error) { return encodeWTF8(v, true) }
 
+// Text of json.dumps with ensure_ascii false and the default comma space and colon space separators
+func EncodeWTF8Python(v any) ([]byte, error) {
+	out, err := encodeWTF8(v, true)
+	if err != nil {
+		return nil, err
+	}
+	return SpaceSeparators(out), nil
+}
+
+// Text of json.dumps with every default, characters outside space to tilde escaped and separators spaced
+func EncodeWTF8PythonASCII(v any) ([]byte, error) {
+	out, err := encodeWTF8(v, true)
+	if err != nil {
+		return nil, err
+	}
+	return SpaceSeparators(EscapeNonASCII(out)), nil
+}
+
+// Adds the space json.dumps writes after each item comma and key colon of compact JSON text
+func SpaceSeparators(compact []byte) []byte {
+	res := make([]byte, 0, len(compact)+len(compact)/8)
+	inString := false
+	for i := 0; i < len(compact); i++ {
+		c := compact[i]
+		res = append(res, c)
+		switch {
+		case inString && c == '\\' && i+1 < len(compact):
+			i++
+			res = append(res, compact[i])
+		case c == '"':
+			inString = !inString
+		case !inString && (c == ',' || c == ':'):
+			res = append(res, ' ')
+		}
+	}
+	return res
+}
+
 // Pooled encode run, NaN and the infinities written when allowed and refused with the json.dumps ValueError otherwise
 func encodeWTF8(v any, allowNaN bool) ([]byte, error) {
 	e := wtf8EncodePool.Get().(*wtf8EncodeState)
@@ -409,7 +447,7 @@ func EscapeNonASCII(out []byte) []byte {
 		res = append(res, '\\', 'u', hex[u>>12&0xF], hex[u>>8&0xF], hex[u>>4&0xF], hex[u&0xF])
 	}
 	for i := 0; i < len(out); {
-		if out[i] < utf8.RuneSelf {
+		if out[i] < 0x7f {
 			res = append(res, out[i])
 			i++
 			continue

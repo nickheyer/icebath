@@ -59,8 +59,8 @@ func subprocessTimedOut(err error) bool {
 }
 
 // Host service suffix of the requested home, empty for the native default and a path hash for a foreign root
-func ServiceSuffix(h string) (string, error) {
-	def, err := pypath.Resolve(home.AccountDefault())
+func ServiceSuffix(ctx context.Context, h string) (string, error) {
+	def, err := pypath.Resolve(home.AccountDefault(ctx))
 	if err != nil {
 		return "", err
 	}
@@ -177,7 +177,7 @@ func systemdExistingService(ctx context.Context, h string, deadline float64) (*E
 	if S6Running() {
 		return nil, runtimeStartError("external_supervisor")
 	}
-	suffix, err := ServiceSuffix(h)
+	suffix, err := ServiceSuffix(ctx, h)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +324,7 @@ func s6ExistingService(ctx context.Context, h string, deadline float64) (*Existi
 
 // Loaded or installed launchd job for home in one domain, bootstrapping only an existing plist
 func launchdExistingService(ctx context.Context, h string, deadline float64) (*ExistingService, error) {
-	suffix, err := ServiceSuffix(h)
+	suffix, err := ServiceSuffix(ctx, h)
 	if err != nil {
 		return nil, err
 	}

@@ -256,23 +256,11 @@ func finalizeForegroundResult(ctx context.Context, env *Env, command string, res
 	return orderedJSON(fields)
 }
 
-// Encodes key value pairs as a JSON object keeping their order
+// Encodes key value pairs as json.dumps writes a dict of them with ensure_ascii off
 func orderedJSON(fields [][2]any) string {
-	var b strings.Builder
-	b.WriteByte('{')
-	for i, kv := range fields {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		key, _ := pyjson.EncodeWTF8(kv[0])
-		val, err := pyjson.EncodeWTF8(kv[1])
-		if err != nil {
-			val, _ = pyjson.EncodeWTF8(fmt.Sprint(kv[1]))
-		}
-		b.Write(key)
-		b.WriteByte(':')
-		b.Write(val)
+	out := pyjson.NewObject()
+	for _, kv := range fields {
+		out.Set(kv[0].(string), kv[1])
 	}
-	b.WriteByte('}')
-	return b.String()
+	return JSON(out)
 }

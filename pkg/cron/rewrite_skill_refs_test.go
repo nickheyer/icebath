@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"os"
 	"reflect"
 	"testing"
@@ -19,7 +20,7 @@ func skillJob(t *testing.T, s *Store, o CreateJobOptions) *Job {
 
 func rewriteRefs(t *testing.T, s *Store, consolidated *pyjson.Object, pruned ...string) SkillRefRewriteReport {
 	t.Helper()
-	report, err := s.rewriteSkillRefs(consolidated, pruned)
+	report, err := s.rewriteSkillRefs(context.Background(), consolidated, pruned)
 	if err != nil {
 		t.Fatal(err)
 	}

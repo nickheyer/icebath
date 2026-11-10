@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 )
 
 // Failures gathered by a tree copy as source, destination and reason triples
@@ -26,13 +27,8 @@ func (e *CopyTreeError) Error() string {
 // Names of a directory listing a tree copy skips
 type IgnoreFunc func(dir string, names []string) map[string]bool
 
-// Copies file data, permission bits and times into dst or into dst when it is a directory
-func Copy2(src, dst string) error {
-	if st, err := os.Stat(dst); err == nil && st.IsDir() {
-		dst = filepath.Join(dst, filepath.Base(src))
-	}
-	return copyFile2(src, dst)
-}
+// shutil.copy2 into dst or into dst when it is a directory, content, mode, both times and xattrs
+func Copy2(src, dst string) error { return pyshutil.Copy2(src, dst) }
 
 // Names of a directory listing a tree copy skips, or an error that stops the whole copy
 type IgnoreErrFunc func(dir string, names []string) (map[string]bool, error)

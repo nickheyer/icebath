@@ -28,7 +28,7 @@ import (
 func init() {
 	skills.RegisterCronBlueprintHooks(
 		func(ctx context.Context, jobSpec *pyjson.Object) (map[string]any, error) {
-			job, err := openCronStore(home.Dir(ctx), time.Now).createJobWithSchedulerRegistration(jobSpec)
+			job, err := openCronStore(home.Dir(ctx), time.Now).createJobWithSchedulerRegistration(ctx, jobSpec)
 			if err != nil {
 				return nil, err
 			}
@@ -340,12 +340,12 @@ func (s *Store) DismissSuggestion(ref string) (bool, error) {
 }
 
 // Job creator of an accepted suggestion, the scheduler registered create by default
-var acceptCreateJob = func(s *Store, spec *pyjson.Object) (*Job, error) {
-	return s.createJobWithSchedulerRegistration(spec)
+var acceptCreateJob = func(ctx context.Context, s *Store, spec *pyjson.Object) (*Job, error) {
+	return s.createJobWithSchedulerRegistration(home.WithOverride(ctx, s.home), spec)
 }
 
 // Creates the job of a pending suggestion, merging origin, and marks the suggestion accepted
-func (s *Store) AcceptSuggestion(ref string, origin map[string]any) (*Job, error) {
+func (s *Store) AcceptSuggestion(ctx context.Context, ref string, origin map[string]any) (*Job, error) {
 	rec, err := s.GetSuggestion(ref)
 	if err != nil {
 		return nil, err
@@ -381,7 +381,7 @@ func (s *Store) AcceptSuggestion(ref string, origin map[string]any) (*Job, error
 			spec.Set("origin", origin)
 		}
 	}
-	job, err := acceptCreateJob(s, spec)
+	job, err := acceptCreateJob(home.WithOverride(ctx, s.home), s, spec)
 	if err != nil {
 		var regErr *CronSchedulerRegistrationError
 		if errors.As(err, &regErr) {

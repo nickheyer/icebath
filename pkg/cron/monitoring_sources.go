@@ -21,9 +21,9 @@ func init() {
 	}
 	monitoring.SetCronHealthSources(monitoring.CronHealthSources{
 		Now: func() time.Time { return active().clk.now() },
-		LoadJobs: func() ([]monitoring.CronJobHealth, error) {
+		LoadJobs: func(ctx context.Context) ([]monitoring.CronJobHealth, error) {
 			s := active()
-			jobs, err := s.LoadJobs()
+			jobs, err := s.LoadJobs(home.WithOverride(ctx, s.home))
 			if err != nil {
 				return nil, err
 			}

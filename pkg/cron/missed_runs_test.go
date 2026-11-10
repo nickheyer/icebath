@@ -91,7 +91,7 @@ func TestExpiredOneshotRetiredWithDiagnostic(t *testing.T) {
 	if due := mustDue(t, s); len(due) != 0 {
 		t.Fatalf("expired one shots fired %v", jobIDs(due))
 	}
-	if j, _ := s.getJob("late1"); j != nil {
+	if j, _ := s.getJob(context.Background(), "late1"); j != nil {
 		t.Fatal("expired one shot kept")
 	}
 	mustGet(t, s, "late2")

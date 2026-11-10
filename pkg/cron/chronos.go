@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -23,8 +24,10 @@ var (
 		}
 		return ""
 	}
-	chronosLoadJobs      = func(s *Store) ([]*Job, error) { return s.LoadJobs() }
-	chronosGetJob        = func(s *Store, jobID string) (*Job, error) { return s.getJob(jobID) }
+	chronosLoadJobs = func(ctx context.Context, s *Store) ([]*Job, error) { return s.LoadJobs(home.WithOverride(ctx, s.home)) }
+	chronosGetJob   = func(ctx context.Context, s *Store, jobID string) (*Job, error) {
+		return s.getJob(home.WithOverride(ctx, s.home), jobID)
+	}
 	chronosFallbackStart = func(ctx context.Context, stop <-chan struct{}, o StartOptions) {
 		(&InProcessCronScheduler{}).Start(ctx, stop, o)
 	}
@@ -288,7 +291,7 @@ func (c *ChronosCronScheduler) fetchArmed() ([]string, map[string]*string, error
 
 // Arms every enabled unpaused job whose armed fire time differs and cancels armed orphans
 func (c *ChronosCronScheduler) Reconcile() error {
-	jobs, err := chronosLoadJobs(c.s)
+	jobs, err := chronosLoadJobs(c.startCtx, c.s)
 	if err != nil {
 		return err
 	}
@@ -308,7 +311,7 @@ func (c *ChronosCronScheduler) Reconcile() error {
 		if cur, ok := observed[jobID]; ok && cur != nil && *cur == fireAt {
 			continue
 		}
-		job, err := chronosGetJob(c.s, jobID)
+		job, err := chronosGetJob(c.startCtx, c.s, jobID)
 		if err != nil {
 			return err
 		}
@@ -333,7 +336,7 @@ func (c *ChronosCronScheduler) FireClaimed(ctx context.Context, job *Job, o Fire
 	if err != nil || !ran {
 		return ran, err
 	}
-	current, err := chronosGetJob(c.s, job.ID)
+	current, err := chronosGetJob(ctx, c.s, job.ID)
 	if err != nil {
 		return ran, err
 	}

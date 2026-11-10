@@ -103,16 +103,16 @@ func TestAnOccurrenceDroppedAfterDowntimeIsOneMissedRow(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(s.Home(), "config.yaml"), []byte("cron:\n  catch_up_missed: false\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.createJob(CreateJobOptions{Prompt: strPtr("secret prompt"), Schedule: "every 1h", Model: "fixture", Deliver: strPtr("local")}); err != nil {
+	if _, err := s.createJob(context.Background(), CreateJobOptions{Prompt: strPtr("secret prompt"), Schedule: "every 1h", Model: "fixture", Deliver: strPtr("local")}); err != nil {
 		t.Fatal(err)
 	}
-	stored, err := s.LoadJobs()
+	stored, err := s.LoadJobs(context.Background())
 	if err != nil || len(stored) != 1 {
 		t.Fatalf("stored %v %v", stored, err)
 	}
 	stale := FormatISO(s.clk.now().Add(-4 * time.Hour))
 	stored[0].NextRunAt = &stale
-	if err := s.SaveJobs(stored, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), stored, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()

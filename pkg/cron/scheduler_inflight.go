@@ -160,16 +160,16 @@ func sortedInflightKeys(set map[inflightKey]bool) []inflightKey {
 }
 
 // Job ids in flight longer than their stale allowance, the runs a restart drain skips
-func (s *Store) getWedgedJobIDs() map[string]bool {
+func (s *Store) getWedgedJobIDs(ctx context.Context) map[string]bool {
 	out := map[string]bool{}
-	for k := range s.wedgedInflightKeys() {
+	for k := range s.wedgedInflightKeys(home.WithOverride(ctx, s.home)) {
 		out[k.JobID] = true
 	}
 	return out
 }
 
 // In flight keys older than the larger of twice their interval and the configured floor
-func (s *Store) wedgedInflightKeys() map[inflightKey]bool {
+func (s *Store) wedgedInflightKeys(ctx context.Context) map[inflightKey]bool {
 	now := inflightEpoch()
 	inflight.Lock()
 	ages := map[inflightKey]float64{}
@@ -197,7 +197,7 @@ func (s *Store) wedgedInflightKeys() map[inflightKey]bool {
 	}
 	if len(unresolved) > 0 {
 		byID := map[string]*Job{}
-		if jobs, err := s.LoadJobs(); err == nil {
+		if jobs, err := s.LoadJobs(home.WithOverride(ctx, s.home)); err == nil {
 			for _, j := range jobs {
 				byID[j.ID] = j
 			}
@@ -237,8 +237,8 @@ type RestartWaitCounts struct {
 }
 
 // Disjoint per key counts of runs a restart waits on, skips as wedged, or leaves to their own scope
-func (s *Store) getRestartWaitCronCounts() RestartWaitCounts {
-	wedged := s.wedgedInflightKeys()
+func (s *Store) getRestartWaitCronCounts(ctx context.Context) RestartWaitCounts {
+	wedged := s.wedgedInflightKeys(home.WithOverride(ctx, s.home))
 	inflight.Lock()
 	all := inflightKeysLocked()
 	restartSafe := map[inflightKey]bool{}

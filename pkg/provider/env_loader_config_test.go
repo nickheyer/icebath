@@ -14,7 +14,7 @@ func envLoaderReloadHome(t *testing.T) (string, string) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	names := configFacadeExtraEnvKeys()
-	for name := range config.OptionalEnvVars {
+	for _, name := range config.OptionalEnvVars.Names() {
 		names = append(names, name)
 	}
 	for _, name := range names {

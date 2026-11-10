@@ -59,7 +59,7 @@ func checkpointEntry(t *testing.T, pid int) string {
 // Whether pid is gone or a zombie awaiting its parent
 func goneOrZombie(pid int) bool { return !proc.Exists(pid) || proc.Zombie(pid) }
 
-func TestPruneKeepsEntryARegisteredHermesProcessWorksInButReapsOrphans(t *testing.T) {
+func TestPruneKeepsEntryOfACheckpointedPidAndReapsItsOrphans(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("orphan reparenting is a POSIX process model")
 	}
@@ -124,7 +124,7 @@ func TestPruneKeepsEntryThePruningSessionsOwnLineageWorksIn(t *testing.T) {
 	}
 }
 
-func TestPruneOwnerLookupSurvivesSymlinkedScratchAndDropsOrphanedMCPHelpers(t *testing.T) {
+func TestPruneReadsBothLedgersThroughASymlinkedScratch(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX symlinked scratch")
 	}

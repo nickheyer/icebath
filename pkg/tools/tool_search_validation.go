@@ -122,8 +122,8 @@ func validationPath(instanceLocation string) string {
 }
 
 func validationError(message, path, constraint string, parameters any) string {
-	return toolErrorJSON(message, map[string]any{"path": path, "constraint": constraint, "parameters": parameters,
-		"hint": "Retry tool_call with 'arguments' matching the parameters schema above."})
+	return toolErrorJSON(message, Dict("path", path, "constraint", constraint, "parameters", parameters,
+		"hint", "Retry tool_call with 'arguments' matching the parameters schema above."))
 }
 
 // Weak keywords lose relevance ties the way jsonschema best_match treats anyOf and oneOf

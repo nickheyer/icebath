@@ -21,10 +21,10 @@ const dockerBackupReason = "pre-docker-migrate"
 type dockerBackup struct{ original, backup string }
 
 // Snapshots each file into backups/config, reusing an identical existing snapshot
-func dockerBackupExisting(paths ...string) ([]dockerBackup, error) {
+func dockerBackupExisting(ctx context.Context, paths ...string) ([]dockerBackup, error) {
 	var out []dockerBackup
 	for _, path := range paths {
-		dest, err := BackupConfig(path, dockerBackupReason, DefaultBackupKeep)
+		dest, err := BackupConfig(ctx, path, dockerBackupReason, DefaultBackupKeep)
 		if err != nil {
 			return nil, err
 		}
@@ -80,10 +80,10 @@ func DockerConfigMigrate(ctx context.Context, h string) error {
 		fmt.Fprintln(FacadeStdout, "[config-migrate] ICEBATH_SKIP_CONFIG_MIGRATION is set; skipping config migration")
 		return nil
 	}
-	if _, err := StampMissingConfig(h, facadeStampHooks()); err != nil {
+	if _, err := StampMissingConfig(ctx, h, facadeStampHooks()); err != nil {
 		return err
 	}
-	stamp, latest, err := dockerReadStamp(h, true)
+	stamp, latest, err := dockerReadStamp(ctx, h, true)
 	var invalid *InvalidUserConfigError
 	if errors.As(err, &invalid) {
 		fmt.Fprintf(FacadeNoticeOut, "[config-migrate] WARNING: %v; leaving config.yaml untouched\n", err)
@@ -103,7 +103,7 @@ func DockerConfigMigrate(ctx context.Context, h string) error {
 		fmt.Fprintf(FacadeNoticeOut, "[config-migrate] WARNING: %s\n", SupportFloorMessage(h))
 		return nil
 	}
-	backups, err := dockerBackupExisting(home.ConfigPath(h), home.EnvPath(h))
+	backups, err := dockerBackupExisting(ctx, home.ConfigPath(h), home.EnvPath(h))
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func DockerConfigMigrate(ctx context.Context, h string) error {
 		}
 		return errors.Join(err, rerr)
 	}
-	post, _, err := CheckConfigVersion(h, false)
+	post, _, err := CheckConfigVersion(ctx, h, false)
 	if err != nil {
 		return err
 	}

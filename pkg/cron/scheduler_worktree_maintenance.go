@@ -147,7 +147,7 @@ func (s *Store) worktreeMaintenanceRepos(ctx context.Context) []string {
 			repos[root] = true
 		}
 	}
-	if jobs, err := s.LoadJobs(); err == nil {
+	if jobs, err := s.LoadJobs(home.WithOverride(ctx, s.home)); err == nil {
 		for _, job := range jobs {
 			workdir := ""
 			if job.Workdir != nil {

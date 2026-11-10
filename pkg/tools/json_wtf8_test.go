@@ -15,10 +15,10 @@ func TestJSONEncodeWTF8SlowPathKeepsSurrogatesInsideStructs(t *testing.T) {
 		t.Fatalf("%q %v", got, err)
 	}
 	d := toDict(r)
-	if c, _ := d.Get("content"); c != "1|a\xed\xb2\x80b" || JSON(d) != want {
+	if c, _ := d.Get("content"); c != "1|a\xed\xb2\x80b" || JSON(d) != string(pyjson.SpaceSeparators([]byte(want))) {
 		t.Fatalf("toDict %#v %s", c, JSON(d))
 	}
-	if got := ErrorResult(errors.New("x\xed\xa0\x80<")); got != "{\"error\":\"x\xed\xa0\x80<\"}" {
+	if got := ErrorResult(errors.New("x\xed\xa0\x80<")); got != "{\"error\": \"x\xed\xa0\x80<\"}" {
 		t.Fatalf("error result %q", got)
 	}
 }

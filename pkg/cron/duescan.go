@@ -440,7 +440,7 @@ func (s *Store) sweepCompletedOneshots(raw []*Job, now time.Time, removed *[]str
 // Jobs due now, collapsing a stale recurring backlog into one fire and persisting every repair
 func (s *Store) getDueJobs(ctx context.Context) ([]*Job, error) {
 	var due []*Job
-	err := s.withJobsLock(func(tx *jobsTx) error {
+	err := s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
 		var err error
 		due, err = s.getDueJobsLocked(ctx, tx)
 		return err
@@ -449,7 +449,7 @@ func (s *Store) getDueJobs(ctx context.Context) ([]*Job, error) {
 }
 
 func (s *Store) getDueJobsLocked(ctx context.Context, tx *jobsTx) ([]*Job, error) {
-	raw, err := s.loadJobs(tx)
+	raw, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +504,7 @@ func (s *Store) getDueJobsLocked(ctx context.Context, tx *jobsTx) ([]*Job, error
 		if len(sc.removed) > 0 {
 			removed = sc.removed
 		}
-		if err := s.saveJobsLocked(tx, sc.rawJobs, removed, false); err != nil {
+		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, sc.rawJobs, removed, false); err != nil {
 			if isOSError(err) {
 				storeHealthNoteUnwritable(s, err, "due-scan repairs not persisted", "scan")
 				return due, nil

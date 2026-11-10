@@ -123,7 +123,7 @@ func gateOrStage(ctx context.Context, env *tools.Env, store *Store, summary, det
 		return unmatched, class, nil
 	}
 	record := tools.StageWrite(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory, payload, summary+": "+runePrefix(detail, 120), tools.CurrentOrigin(env))
-	return tools.JSON(map[string]any{"success": true, "staged": true, "pending_id": record["id"], "message": decision.Message}), "staged", nil
+	return tools.JSON(tools.Dict("success", true, "staged", true, "pending_id", record["id"], "message", decision.Message)), "staged", nil
 }
 
 // Gates one mutating op, or a whole batch as a single unit when operations is set
@@ -185,12 +185,12 @@ func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, act
 	}
 	summary := runePrefix(fmt.Sprintf("background review consolidation (%s on %s): %s", kind, target, detail), 200)
 	record := tools.StageWrite(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory, payload, summary, tools.CurrentOrigin(env))
-	return tools.JSON(map[string]any{
-		"success": true, "staged": true, "proposal_staged": true, "pending_id": record["id"],
-		"message": "Background review may not delete memory entries unattended. The proposed " +
-			kind + " was staged for your approval — " +
+	return tools.JSON(tools.Dict(
+		"success", true, "staged", true, "proposal_staged", true, "pending_id", record["id"],
+		"message", "Background review may not delete memory entries unattended. The proposed "+
+			kind+" was staged for your approval — "+
 			"review it with /memory pending (approve to apply, discard to drop).",
-	}), "staged", nil
+	)), "staged", nil
 }
 
 // Replays a staged write bypassing the gate, destructive ops applying only to their pinned entry

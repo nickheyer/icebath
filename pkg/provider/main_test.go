@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -15,11 +16,12 @@ import (
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	dispatchFakeLlamaServerEntry()
-	home.DispatchScratchPruneEntry()
+	home.DispatchScratchPruneEntry(context.Background())
 	installLocalStackProbeDoubles()
 	installSpilloverWiring()
 	DispatchCodexToolsMCPServerEntry()
 	dispatchLeftCoreAgentStartEntry()
+	dispatchMoAPresetProbeEntry()
 	os.Exit(m.Run())
 }
 

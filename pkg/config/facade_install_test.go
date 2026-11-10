@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"maps"
@@ -30,89 +31,139 @@ func TestOldUpdaterShimsDoNoWork(t *testing.T) {
 	}
 }
 
-func TestRecommendedUpdateCommandDefaultsToIcebathUpdate(t *testing.T) {
+func TestRecommendedUpdateCommandDefaultsToHermesUpdate(t *testing.T) {
 	h := installHome(t)
 	tree := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tree, ".install_method"), []byte("git\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_INSTALL_ROOT", tree)
-	if got, err := RecommendedUpdateCommand(h); err != nil || got != "icebath update" {
+	if got, err := RecommendedUpdateCommand(context.Background(), h); err != nil || got != "icebath update" {
 		t.Fatalf("got %q %v", got, err)
 	}
+}
+
+func TestGetManagedSystemFalseValues(t *testing.T) {
 	for _, v := range []string{"false", "0", "no", "off", "FALSE"} {
-		t.Setenv("ICEBATH_MANAGED", v)
-		if ManagedSystem(h) != "" {
-			t.Fatalf("%s must opt out", v)
+		h := installHome(t)
+		tree := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tree, ".install_method"), []byte("git\n"), 0o644); err != nil {
+			t.Fatal(err)
 		}
-		if got, _ := RecommendedUpdateCommand(h); got != "icebath update" {
-			t.Fatalf("%s: got %q", v, got)
+		t.Setenv("ICEBATH_INSTALL_ROOT", tree)
+		t.Setenv("ICEBATH_MANAGED", v)
+		if got := ManagedSystem(context.Background(), h); got != "" {
+			t.Fatalf("%s names the managing system %q", v, got)
+		}
+		if got, err := RecommendedUpdateCommand(context.Background(), h); err != nil || got != "icebath update" {
+			t.Fatalf("%s: got %q %v", v, got, err)
 		}
 	}
 }
 
 func TestManagedInstallShapes(t *testing.T) {
-	h := installHome(t)
-	for env, want := range map[string]string{"nixos": "nixos", "home-manager": "home-manager", "HOME-MANAGER": "home-manager",
-		"true": "nixos", "1": "nixos", "brew": "", "homebrew": ""} {
-		t.Setenv("ICEBATH_MANAGED", env)
-		if got := ManagedSystem(h); got != want {
-			t.Fatalf("env %q: got %q want %q", env, got, want)
+	ctx := context.Background()
+	t.Run("test_env_var_names_the_managing_system", func(t *testing.T) {
+		for _, tc := range []struct {
+			env  string
+			set  bool
+			want string
+		}{
+			{"nixos", true, "nixos"}, {"home-manager", true, "home-manager"}, {"HOME-MANAGER", true, "home-manager"},
+			{"true", true, "nixos"}, {"1", true, "nixos"}, {"brew", true, ""}, {"homebrew", true, ""}, {"", false, ""},
+		} {
+			h := installHome(t)
+			if tc.set {
+				t.Setenv("ICEBATH_MANAGED", tc.env)
+			} else {
+				os.Unsetenv("ICEBATH_MANAGED")
+			}
+			if got := ManagedSystem(ctx, h); got != tc.want {
+				t.Fatalf("env %q: got %q want %q", tc.env, got, tc.want)
+			}
 		}
-	}
-	os.Unsetenv("ICEBATH_MANAGED")
-	if ManagedSystem(h) != "" || GetManagedUpdateCommand(h) != "" {
-		t.Fatal("unmanaged install must offer no update command")
-	}
-	marker := filepath.Join(h, ".managed")
-	for text, want := range map[string]string{"home-manager": "home-manager", "nixos": "nixos", "": "nixos"} {
-		if err := os.WriteFile(marker, []byte(text), 0o644); err != nil {
+	})
+	t.Run("test_marker_file_names_the_managing_system", func(t *testing.T) {
+		for _, tc := range [][2]string{{"home-manager", "home-manager"}, {"nixos", "nixos"}, {"", "nixos"}} {
+			h := installHome(t)
+			if err := os.WriteFile(filepath.Join(h, ".managed"), []byte(tc[0]), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			os.Unsetenv("ICEBATH_MANAGED")
+			if got := ManagedSystem(ctx, h); got != tc[1] {
+				t.Fatalf("marker %q: got %q want %q", tc[0], got, tc[1])
+			}
+		}
+	})
+	t.Run("test_env_var_wins_over_the_marker", func(t *testing.T) {
+		h := installHome(t)
+		if err := os.WriteFile(filepath.Join(h, ".managed"), []byte("nixos"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got := ManagedSystem(h); got != want {
-			t.Fatalf("marker %q: got %q want %q", text, got, want)
+		t.Setenv("ICEBATH_MANAGED", "home-manager")
+		if got := ManagedSystem(ctx, h); got != "home-manager" {
+			t.Fatalf("got %q", got)
 		}
-	}
-	t.Setenv("ICEBATH_MANAGED", "home-manager")
-	if ManagedSystem(h) != "home-manager" {
-		t.Fatal("the env var wins over the marker")
-	}
-	os.Remove(marker)
-	for _, managed := range []string{"nixos", "home-manager"} {
-		t.Setenv("ICEBATH_MANAGED", managed)
-		tree := t.TempDir()
-		msg := FormatManagedMessage(h, "set model")
-		if !strings.Contains(msg, managed) || !strings.Contains(msg, "set model") || GetManagedUpdateCommand(h) == "" {
-			t.Fatalf("%s: %q", managed, msg)
+	})
+	t.Run("test_managed_install_names_its_system_and_offers_an_update", func(t *testing.T) {
+		for _, managed := range []string{"nixos", "home-manager"} {
+			h := installHome(t)
+			t.Setenv("ICEBATH_MANAGED", managed)
+			tree := t.TempDir()
+			msg := FormatManagedMessage(ctx, h, "set model")
+			if !strings.Contains(msg, managed) || !strings.Contains(msg, "set model") {
+				t.Fatalf("%s: message %q", managed, msg)
+			}
+			if GetManagedUpdateCommand(ctx, h) == "" {
+				t.Fatalf("%s: no update command", managed)
+			}
+			if got, err := DetectInstallMethod(ctx, h, tree); err != nil || got != managed {
+				t.Fatalf("%s: detect %q %v", managed, got, err)
+			}
+			if got, err := RecommendedUpdateCommand(ctx, h); err != nil || got == "icebath update" {
+				t.Fatalf("%s: recommended %q %v", managed, got, err)
+			}
 		}
-		if got, err := DetectInstallMethod(h, tree); err != nil || got != managed {
-			t.Fatalf("%s: detect %q %v", managed, got, err)
+	})
+	t.Run("test_a_stamp_can_name_every_managed_system", func(t *testing.T) {
+		for _, managed := range []string{"nixos", "home-manager"} {
+			h := installHome(t)
+			os.Unsetenv("ICEBATH_MANAGED")
+			tree := t.TempDir()
+			if err := os.WriteFile(filepath.Join(tree, ".install_method"), []byte(managed+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := DetectInstallMethod(ctx, h, tree); err != nil || got != managed {
+				t.Fatalf("stamp %s: got %q %v", managed, got, err)
+			}
 		}
-		if got, _ := RecommendedUpdateCommand(h); got == "icebath update" {
-			t.Fatalf("%s: a managed install must not advise icebath update", managed)
+	})
+	t.Run("test_unmanaged_install_offers_no_update_command", func(t *testing.T) {
+		h := installHome(t)
+		os.Unsetenv("ICEBATH_MANAGED")
+		if got := GetManagedUpdateCommand(ctx, h); got != "" {
+			t.Fatalf("update command %q", got)
 		}
-	}
-	os.Unsetenv("ICEBATH_MANAGED")
-	for _, managed := range []string{"nixos", "home-manager"} {
-		tree := t.TempDir()
-		if err := os.WriteFile(filepath.Join(tree, ".install_method"), []byte(managed+"\n"), 0o644); err != nil {
+	})
+	t.Run("test_unreadable_marker_still_reports_managed", func(t *testing.T) {
+		h := installHome(t)
+		marker := filepath.Join(h, ".managed")
+		if err := os.WriteFile(marker, []byte("home-manager"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if got, _ := DetectInstallMethod(h, tree); got != managed {
-			t.Fatalf("stamp %s: got %q", managed, got)
+		if err := os.Chmod(marker, 0); err != nil {
+			t.Fatal(err)
 		}
-	}
-	if err := os.WriteFile(marker, []byte("home-manager"), 0o000); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chmod(marker, 0o600)
-	if f, err := os.Open(marker); err == nil {
-		f.Close()
-		t.Skip("running as a user that ignores file modes")
-	}
-	if ManagedSystem(h) == "" {
-		t.Fatal("an unreadable marker still reports managed")
-	}
+		defer os.Chmod(marker, 0o600)
+		os.Unsetenv("ICEBATH_MANAGED")
+		if f, err := os.Open(marker); err == nil {
+			f.Close()
+			t.Skip("running as a user that ignores file modes (for example root)")
+		}
+		if ManagedSystem(ctx, h) == "" {
+			t.Fatal("an unreadable marker no longer reports managed")
+		}
+	})
 }
 
 func TestDetectInstallMethodOrder(t *testing.T) {
@@ -126,34 +177,34 @@ func TestDetectInstallMethodOrder(t *testing.T) {
 	}
 	write(filepath.Join(code, ".install_method"), "\xef\xbb\xbfGIT\n")
 	write(filepath.Join(h, ".install_method"), "docker\n")
-	if got, _ := DetectInstallMethod(h, code); got != "git" {
+	if got, _ := DetectInstallMethod(context.Background(), h, code); got != "git" {
 		t.Fatalf("code stamp must win, got %q", got)
 	}
 	prev := runningInContainer
 	t.Cleanup(func() { runningInContainer = prev })
 	bare := t.TempDir()
 	runningInContainer = func() bool { return false }
-	if got, _ := DetectInstallMethod(h, bare); got != "unknown" {
+	if got, _ := DetectInstallMethod(context.Background(), h, bare); got != "unknown" {
 		t.Fatalf("a home docker stamp outside a container is ignored, got %q", got)
 	}
 	runningInContainer = func() bool { return true }
-	if got, _ := DetectInstallMethod(h, bare); got != "docker" {
+	if got, _ := DetectInstallMethod(context.Background(), h, bare); got != "docker" {
 		t.Fatalf("a home docker stamp inside a container counts, got %q", got)
 	}
 	os.Remove(filepath.Join(h, ".install_method"))
 	if err := os.Mkdir(filepath.Join(bare, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := DetectInstallMethod(h, bare); got != "git" {
+	if got, _ := DetectInstallMethod(context.Background(), h, bare); got != "git" {
 		t.Fatalf("a container without a stamp is not docker, got %q", got)
 	}
 	worktree := t.TempDir()
 	write(filepath.Join(worktree, ".git"), "gitdir: /src/.git/worktrees/x\n")
-	if got, _ := DetectInstallMethod(h, worktree); got != "git" {
+	if got, _ := DetectInstallMethod(context.Background(), h, worktree); got != "git" {
 		t.Fatalf("a gitdir pointer file is a checkout, got %q", got)
 	}
 	write(filepath.Join(worktree, ".install_method"), "pip\n")
-	if got, _ := DetectInstallMethod(h, worktree); got != "git" {
+	if got, _ := DetectInstallMethod(context.Background(), h, worktree); got != "git" {
 		t.Fatalf("an unsupported stamp is ignored, got %q", got)
 	}
 	store := t.TempDir()
@@ -164,15 +215,15 @@ func TestDetectInstallMethodOrder(t *testing.T) {
 	if err := os.MkdirAll(pkg, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := DetectInstallMethod(h, pkg); got != "nix" {
+	if got, _ := DetectInstallMethod(context.Background(), h, pkg); got != "nix" {
 		t.Fatalf("a tree under the nix store is nix, got %q", got)
 	}
-	if got, _ := DetectInstallMethod(h, store); got != "unknown" {
+	if got, _ := DetectInstallMethod(context.Background(), h, store); got != "unknown" {
 		t.Fatalf("the store root itself is not an install, got %q", got)
 	}
 	bad := t.TempDir()
 	write(filepath.Join(bad, ".install_method"), "\xffgit")
-	if _, err := DetectInstallMethod(h, bad); err == nil || !strings.Contains(err.Error(), "invalid start byte") {
+	if _, err := DetectInstallMethod(context.Background(), h, bad); err == nil || !strings.Contains(err.Error(), "invalid start byte") {
 		t.Fatalf("undecodable stamp must raise, got %v", err)
 	}
 }
@@ -226,7 +277,7 @@ func userPlatformPlugin(t *testing.T, h, name, secret string) {
 // Registers core declared names for the platform secret readers and restores the env table afterwards
 func platformTestHooks(t *testing.T, core ...string) {
 	t.Helper()
-	prevHooks, prevVars, prevOrder, prevBundled := hooks(), maps.Clone(OptionalEnvVars), slices.Clone(optionalEnvDeclOrder), bundledPlatformSecretEnvs
+	prevHooks, prevVars, prevBundled := hooks(), OptionalEnvVars.Snapshot(), bundledPlatformSecretEnvs
 	names := StaticCoreEnvNames()
 	for _, n := range core {
 		names[n] = true
@@ -236,7 +287,8 @@ func platformTestHooks(t *testing.T, core ...string) {
 	RegisterConfigFacade(withCore)
 	t.Cleanup(func() {
 		RegisterConfigFacade(prevHooks)
-		OptionalEnvVars, optionalEnvDeclOrder, bundledPlatformSecretEnvs = prevVars, prevOrder, prevBundled
+		OptionalEnvVars.Restore(prevVars)
+		bundledPlatformSecretEnvs = prevBundled
 	})
 }
 
@@ -254,20 +306,20 @@ func TestUserPlatformPluginsInjectEnvMetadataButNonPlatformsDoNot(t *testing.T) 
 		t.Fatal(err)
 	}
 	want := EnvVar{Description: "Token for the demo platform", Prompt: "Demo token", URL: "https://example.invalid/demo", Password: true, Category: "messaging"}
-	if got := OptionalEnvVars["DEMO_PLATFORM_TOKEN"]; got.Description != want.Description || got.Prompt != want.Prompt ||
+	if got := OptionalEnvVars.Entry("DEMO_PLATFORM_TOKEN"); got.Description != want.Description || got.Prompt != want.Prompt ||
 		got.URL != want.URL || !got.Password || got.Category != want.Category {
 		t.Fatalf("got %+v", got)
 	}
-	if OptionalEnvVars["DEMO_PLATFORM_ROOM"].Password || !OptionalEnvVars["NESTED_PLATFORM_SECRET"].Password {
+	if OptionalEnvVars.Entry("DEMO_PLATFORM_ROOM").Password || !OptionalEnvVars.Entry("NESTED_PLATFORM_SECRET").Password {
 		t.Fatal("password flags")
 	}
-	if OptionalEnvVars["NESTED_PLATFORM_SECRET"].Description != "nested-platform configuration" {
-		t.Fatalf("label falls back to the manifest name, got %q", OptionalEnvVars["NESTED_PLATFORM_SECRET"].Description)
+	if OptionalEnvVars.Entry("NESTED_PLATFORM_SECRET").Description != "nested-platform configuration" {
+		t.Fatalf("label falls back to the manifest name, got %q", OptionalEnvVars.Entry("NESTED_PLATFORM_SECRET").Description)
 	}
-	if _, ok := OptionalEnvVars["IGNORE_ME_TOKEN"]; ok {
+	if OptionalEnvVars.Has("IGNORE_ME_TOKEN") {
 		t.Fatal("a non platform flat plugin declares nothing")
 	}
-	names := optionalEnvVarNames()
+	names := OptionalEnvVars.Names()
 	if i := slices.Index(names, "DEMO_PLATFORM_TOKEN"); i < 0 || names[i+1] != "DEMO_PLATFORM_ROOM" {
 		t.Fatal("injected names keep manifest order")
 	}
@@ -357,11 +409,11 @@ func TestUnreadableBundledManifestFailsThePolicyInsteadOfDroppingIt(t *testing.T
 	writeManifest(t, filepath.Join(bundled, "platforms", "teams"), "name: teams\nrequires_env:\n  - TEAMS_CLIENT_SECRET\n  - OPENAI_API_KEY\n"+
 		"optional_env:\n  - name: TEAMS_WEBHOOK_KEY\n    category: tool\n  - name: TEAMS_TENANT\n")
 	secrets, err := injectPlatformPluginEnvVars(h)
-	if err != nil || !maps.Equal(secrets, map[string]bool{"TEAMS_CLIENT_SECRET": true}) {
-		t.Fatalf("bundled secrets %v %v", secrets, err)
+	if err != nil || !maps.Equal(secrets, map[string]bool{"TEAMS_CLIENT_SECRET": true, "OPENAI_API_KEY": true}) {
+		t.Fatalf("the startup read subtracts the static names only, got %v %v", secrets, err)
 	}
 	bundledPlatformSecretEnvs = secrets
-	if got, err := PlatformManifestSecretEnvs(h, PlatformSourceBundled, true); err != nil || !maps.Equal(got, secrets) {
+	if got, err := PlatformManifestSecretEnvs(h, PlatformSourceBundled, true); err != nil || !maps.Equal(got, map[string]bool{"TEAMS_CLIENT_SECRET": true}) {
 		t.Fatalf("got %v %v", got, err)
 	}
 	manifests, err := BundledPlatformManifests(h)

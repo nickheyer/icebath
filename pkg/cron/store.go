@@ -111,7 +111,7 @@ func (s *Store) JobsFile() string { return s.jobsFile }
 func (s *Store) OutputDir() string { return s.outputDir }
 
 // Serializes a load modify save section in process and across processes through cron/.jobs.lock
-func (s *Store) withJobsLock(fn func(tx *jobsTx) error) error {
+func (s *Store) withJobsLock(ctx context.Context, fn func(tx *jobsTx) error) error {
 	jobsDirLocksMu.Lock()
 	mu := jobsDirLocks[s.cronDir]
 	if mu == nil {
@@ -121,7 +121,7 @@ func (s *Store) withJobsLock(fn func(tx *jobsTx) error) error {
 	jobsDirLocksMu.Unlock()
 	mu.Lock()
 	defer mu.Unlock()
-	lockFile, err := s.openJobsLock()
+	lockFile, err := s.openJobsLock(home.WithOverride(ctx, s.home))
 	if err != nil {
 		s.log.Warn(fmt.Sprintf("jobs.json cross-process lock unavailable (%s); proceeding with in-process lock only", pypath.OSErrorText(err)))
 	}
@@ -132,8 +132,8 @@ func (s *Store) withJobsLock(fn func(tx *jobsTx) error) error {
 }
 
 // Opens and flocks .jobs.lock, nil without error when the bounded wait timed out
-func (s *Store) openJobsLock() (*os.File, error) {
-	if err := s.ensureDirs(); err != nil {
+func (s *Store) openJobsLock(ctx context.Context) (*os.File, error) {
+	if err := s.ensureDirs(home.WithOverride(ctx, s.home)); err != nil {
 		return nil, err
 	}
 	path := filepath.Join(s.cronDir, ".jobs.lock")
@@ -182,7 +182,7 @@ func (s *Store) fireJobLock(ctx context.Context, jobID string, fn func(ctx conte
 	defer func() { <-local }()
 	acquired := false
 	var lockFile *os.File
-	if err := s.ensureDirs(); err != nil {
+	if err := s.ensureDirs(home.WithOverride(ctx, s.home)); err != nil {
 		s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
 	} else {
 		path := filepath.Join(s.cronDir, ".fire-"+uuid5URLHex(key)+".lock")
@@ -253,8 +253,8 @@ func (s *Store) fireClaimFence(ctx context.Context, jobID, expectedOwner string,
 			return fn(ctx, false)
 		}
 		owns := false
-		err := s.withJobsLock(func(tx *jobsTx) error {
-			jobs, err := s.loadJobs(tx)
+		err := s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+			jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 			if err != nil {
 				return err
 			}
@@ -299,7 +299,7 @@ func (s *Store) selfRemovalDeliveryAllowed(ctx context.Context, tx *jobsTx, jobI
 	if marker == nil || marker.jobID != jobID || !marker.removed {
 		return false, nil
 	}
-	jobs, err := s.loadJobs(tx)
+	jobs, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 	if err != nil {
 		return false, err
 	}
@@ -352,20 +352,22 @@ func ensureCronDir(dir string) error {
 }
 
 // Cron and output directories exist with owner only permissions
-func (s *Store) ensureDirs() error {
+func (s *Store) ensureDirs(ctx context.Context) error {
 	if err := ensureCronDir(s.cronDir); err != nil {
 		return err
 	}
 	if err := ensureCronDir(s.outputDir); err != nil {
 		return err
 	}
-	config.SecureDir(s.home, s.cronDir)
-	config.SecureDir(s.home, s.outputDir)
+	config.SecureDir(home.WithOverride(ctx, s.home), s.home, s.cronDir)
+	config.SecureDir(home.WithOverride(ctx, s.home), s.home, s.outputDir)
 	return nil
 }
 
 // Owner only file through the shared config rules
-func (s *Store) secureFile(path string) { config.SecureFile(s.home, path) }
+func (s *Store) secureFile(ctx context.Context, path string) {
+	config.SecureFile(home.WithOverride(ctx, s.home), s.home, path)
+}
 
 // Process identity and chown calls ownership restoration uses, swapped by tests posing as root
 var ownership = struct {
@@ -446,8 +448,8 @@ func entryWord(n int, one, many string) string {
 }
 
 // Loads every job, auto repairing malformed shapes under the jobs lock and persisting the repair
-func (s *Store) loadJobs(tx *jobsTx) ([]*Job, error) {
-	if err := s.ensureDirs(); err != nil {
+func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
+	if err := s.ensureDirs(home.WithOverride(ctx, s.home)); err != nil {
 		return nil, err
 	}
 	pre := statStamp(s.jobsFile)
@@ -551,9 +553,9 @@ func (s *Store) loadJobs(tx *jobsTx) ([]*Job, error) {
 	if repair != "" {
 		if tx == nil {
 			var out []*Job
-			err := s.withJobsLock(func(tx *jobsTx) error {
+			err := s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
 				var err error
-				out, err = s.loadJobs(tx)
+				out, err = s.loadJobs(home.WithOverride(ctx, s.home), tx)
 				return err
 			})
 			return out, err
@@ -566,7 +568,7 @@ func (s *Store) loadJobs(tx *jobsTx) ([]*Job, error) {
 			_, readable := s.peekJobsUnlocked()
 			replace = !readable
 		}
-		if err := s.saveJobsLocked(tx, jobs, nil, replace); err != nil {
+		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, replace); err != nil {
 			if !isOSError(err) {
 				return nil, err
 			}
@@ -756,8 +758,8 @@ func (s *Store) stageJobsPayload(jobs []*Job) (string, error) {
 var jobsPayloadStager = (*Store).stageJobsPayload
 
 // Saves every job with the shrink merge guard unless replace, caller holding the jobs lock
-func (s *Store) saveJobsLocked(tx *jobsTx, jobs []*Job, removedIDs []string, replace bool) error {
-	if err := s.ensureDirs(); err != nil {
+func (s *Store) saveJobsLocked(ctx context.Context, tx *jobsTx, jobs []*Job, removedIDs []string, replace bool) error {
+	if err := s.ensureDirs(home.WithOverride(ctx, s.home)); err != nil {
 		return err
 	}
 	var before os.FileInfo
@@ -796,7 +798,7 @@ func (s *Store) saveJobsLocked(tx *jobsTx, jobs []*Job, removedIDs []string, rep
 			return err
 		}
 		pyfs.FsyncDirectory(filepath.Dir(replaced))
-		s.secureFile(s.jobsFile)
+		s.secureFile(home.WithOverride(ctx, s.home), s.jobsFile)
 		s.preserveFileOwnership(s.jobsFile, before)
 		tx.recordLoadStamp(nil)
 		storeHealthNoteWritable(s, filepath.Dir(s.jobsFile))
@@ -806,16 +808,20 @@ func (s *Store) saveJobsLocked(tx *jobsTx, jobs []*Job, removedIDs []string, rep
 }
 
 // LoadJobs returns every job, repairing malformed stores
-func (s *Store) LoadJobs() ([]*Job, error) { return s.loadJobs(nil) }
+func (s *Store) LoadJobs(ctx context.Context) ([]*Job, error) {
+	return s.loadJobs(home.WithOverride(ctx, s.home), nil)
+}
 
 // SaveJobs writes jobs under the lock, removedIDs naming deliberate deletes and replace skipping the merge
-func (s *Store) SaveJobs(jobs []*Job, removedIDs []string, replace bool) error {
-	return s.withJobsLock(func(tx *jobsTx) error { return s.saveJobsLocked(tx, jobs, removedIDs, replace) })
+func (s *Store) SaveJobs(ctx context.Context, jobs []*Job, removedIDs []string, replace bool) error {
+	return s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, removedIDs, replace)
+	})
 }
 
 // Atomic owner only marker write whose failures are swallowed so markers never break a tick
 func (s *Store) writeMarker(ctx context.Context, name, text, prefix string) {
-	if s.ensureDirs() != nil {
+	if s.ensureDirs(home.WithOverride(ctx, s.home)) != nil {
 		return
 	}
 	pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.home), filepath.Join(s.cronDir, name), text, prefix, 0o600)
@@ -986,7 +992,7 @@ func (s *Store) pruneJobOutput(dir string, keep int64) int {
 
 // SaveJobOutput writes one run's output as a timestamped markdown file and prunes older ones
 func (s *Store) SaveJobOutput(ctx context.Context, jobID, output string) (string, error) {
-	if err := s.ensureDirs(); err != nil {
+	if err := s.ensureDirs(home.WithOverride(ctx, s.home)); err != nil {
 		return "", err
 	}
 	dir, err := s.jobOutputDir(jobID)
@@ -996,12 +1002,12 @@ func (s *Store) SaveJobOutput(ctx context.Context, jobID, output string) (string
 	if err := ensureCronDir(dir); err != nil {
 		return "", err
 	}
-	config.SecureDir(s.home, dir)
+	config.SecureDir(home.WithOverride(ctx, s.home), s.home, dir)
 	file := filepath.Join(dir, s.clk.now().Format("2006-01-02_15-04-05")+".md")
 	if err := pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.home), file, output, ".output_", 0o600); err != nil {
 		return "", err
 	}
-	s.secureFile(file)
+	s.secureFile(home.WithOverride(ctx, s.home), file)
 	s.pruneJobOutput(dir, s.cronOutputKeep())
 	return file, nil
 }

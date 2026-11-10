@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -96,7 +97,7 @@ func TestWriteEnvLinesKeepsModeAndSymlinkTarget(t *testing.T) {
 	if err := os.Chmod(path, 0o640); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteEnvLines(path, []string{"  X=1", "Y=2\n"}, true); err != nil {
+	if err := WriteEnvLines(context.Background(), path, []string{"  X=1", "Y=2\n"}, true); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(path); string(b) != "  X=1Y=2\n" {
@@ -105,10 +106,10 @@ func TestWriteEnvLinesKeepsModeAndSymlinkTarget(t *testing.T) {
 	if info, _ := os.Stat(path); info.Mode().Perm() != 0o640 {
 		t.Fatalf("preserved mode = %o, want 640", info.Mode().Perm())
 	}
-	if err := WriteEnvLines(path, []string{"Z=3\n"}, false); err != nil {
+	if err := WriteEnvLines(context.Background(), path, []string{"Z=3\n"}, false); err != nil {
 		t.Fatal(err)
 	}
-	if info, _ := os.Stat(path); !containerOrChmodSkipped() && ManagedSystem("") == "" && info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(path); !containerOrChmodSkipped() && ManagedSystem(context.Background(), "") == "" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("secured mode = %o, want 600", info.Mode().Perm())
 	}
 
@@ -127,7 +128,7 @@ func TestWriteEnvLinesKeepsModeAndSymlinkTarget(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteEnvLines(link, []string{"B=2\n"}, true); err != nil {
+	if err := WriteEnvLines(context.Background(), link, []string{"B=2\n"}, true); err != nil {
 		t.Fatal(err)
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
@@ -148,7 +149,7 @@ func TestWriteEnvLinesKeepsModeAndSymlinkTarget(t *testing.T) {
 		}
 	}
 
-	if err := WriteEnvLines(filepath.Join(dir, "absent", ".env"), []string{"A=1\n"}, true); !errors.Is(err, fs.ErrNotExist) {
+	if err := WriteEnvLines(context.Background(), filepath.Join(dir, "absent", ".env"), []string{"A=1\n"}, true); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("missing parent error = %v, want FileNotFoundError", err)
 	}
 }

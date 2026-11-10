@@ -217,7 +217,7 @@ func buildChildEnv(ctx context.Context, env *tools.Env, spec childEnvSpec) (map[
 	home.ApplySubprocessHomeEnv(ctx, child)
 	if override := home.Override(ctx); override != "" {
 		child["ICEBATH_HOME"] = override
-		home.ApplyScratchTmpEnv(child)
+		home.ApplyScratchTmpEnv(tools.WithEnvHome(ctx, env), child)
 	}
 	rt, err := runtimeInterpreter(ctx, env)
 	if err != nil {

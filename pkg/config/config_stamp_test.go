@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -31,15 +32,15 @@ func writeConfig(t *testing.T, h string, data string) string {
 func TestCheckConfigVersionUsesRawOnDiskVersion(t *testing.T) {
 	h := t.TempDir()
 	writeConfig(t, h, "model: {}\n")
-	cur, latest, err := CheckConfigVersion(h, false)
+	cur, latest, err := CheckConfigVersion(context.Background(), h, false)
 	if err != nil || cur != 0 || latest != Version {
 		t.Fatalf("got %d %d %v", cur, latest, err)
 	}
 	writeConfig(t, h, "_config_version: 7\n")
-	if cur, _, _ := CheckConfigVersion(h, false); cur != 7 {
+	if cur, _, _ := CheckConfigVersion(context.Background(), h, false); cur != 7 {
 		t.Fatalf("stamped = %d", cur)
 	}
-	if cur, latest, _ := CheckConfigVersion(t.TempDir(), false); cur != latest {
+	if cur, latest, _ := CheckConfigVersion(context.Background(), t.TempDir(), false); cur != latest {
 		t.Fatalf("missing file = %d %d", cur, latest)
 	}
 }
@@ -58,12 +59,12 @@ func TestStrictCheckRejectsInvalidConfig(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			h := t.TempDir()
 			writeConfig(t, h, c.data)
-			_, _, err := CheckConfigVersion(h, true)
+			_, _, err := CheckConfigVersion(context.Background(), h, true)
 			var inv *InvalidUserConfigError
 			if !errors.As(err, &inv) || !strings.Contains(err.Error(), c.match) {
 				t.Fatalf("strict err = %v", err)
 			}
-			cur, latest, err := CheckConfigVersion(h, false)
+			cur, latest, err := CheckConfigVersion(context.Background(), h, false)
 			if err != nil || cur != c.tolerant || latest != Version {
 				t.Fatalf("tolerant = %d %d %v", cur, latest, err)
 			}
@@ -121,13 +122,13 @@ func TestNoteFirstStampRecordsEveryLeftCoreVersion(t *testing.T) {
 func TestStampMissingConfigWritesOnlyWhenBrowserEnvMoves(t *testing.T) {
 	t.Setenv("ICEBATH_MANAGED", "")
 	h := t.TempDir()
-	if wrote, err := StampMissingConfig(h, (&stampRecorder{}).hooks()); wrote || err != nil {
+	if wrote, err := StampMissingConfig(context.Background(), h, (&stampRecorder{}).hooks()); wrote || err != nil {
 		t.Fatalf("nothing to adopt wrote %v %v", wrote, err)
 	}
 	if _, err := os.Stat(filepath.Join(h, "config.yaml")); !os.IsNotExist(err) {
 		t.Fatal("config.yaml created without browser settings")
 	}
-	if wrote, err := StampMissingConfig(h, (&stampRecorder{adopted: []string{"m"}}).hooks()); !wrote || err != nil {
+	if wrote, err := StampMissingConfig(context.Background(), h, (&stampRecorder{adopted: []string{"m"}}).hooks()); !wrote || err != nil {
 		t.Fatalf("adopting wrote %v %v", wrote, err)
 	}
 	data, _ := os.ReadFile(filepath.Join(h, "config.yaml"))
@@ -138,12 +139,12 @@ func TestStampMissingConfigWritesOnlyWhenBrowserEnvMoves(t *testing.T) {
 	if st, _ := os.Stat(filepath.Join(h, "config.yaml")); st.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o", st.Mode().Perm())
 	}
-	if wrote, _ := StampMissingConfig(h, (&stampRecorder{adopted: []string{"m"}}).hooks()); wrote {
+	if wrote, _ := StampMissingConfig(context.Background(), h, (&stampRecorder{adopted: []string{"m"}}).hooks()); wrote {
 		t.Fatal("existing config restamped")
 	}
 	managed := t.TempDir()
 	t.Setenv("ICEBATH_MANAGED", "nixos")
-	if wrote, _ := StampMissingConfig(managed, (&stampRecorder{adopted: []string{"m"}}).hooks()); wrote {
+	if wrote, _ := StampMissingConfig(context.Background(), managed, (&stampRecorder{adopted: []string{"m"}}).hooks()); wrote {
 		t.Fatal("managed home stamped")
 	}
 }
@@ -153,7 +154,7 @@ func TestParseFailureProbeTracksTheBrokenBytes(t *testing.T) {
 	h := t.TempDir()
 	path := writeConfig(t, h, "model: [unterminated\n")
 	if _, err := ReadDocument(path); err != nil {
-		if werr := WarnConfigParseFailure(path, err, "defaults"); werr != nil {
+		if werr := WarnConfigParseFailure(context.Background(), path, err, "defaults"); werr != nil {
 			t.Fatal(werr)
 		}
 	}
@@ -181,7 +182,7 @@ func TestTransientReadErrorIsNotACorruptConfig(t *testing.T) {
 	readErr := &os.PathError{Op: "open", Path: path, Err: syscall.EMFILE}
 	saved := readFailureBytes
 	readFailureBytes = func(string) ([]byte, error) { return nil, readErr }
-	if werr := WarnConfigParseFailure(path, readErr, "defaults"); werr != nil {
+	if werr := WarnConfigParseFailure(context.Background(), path, readErr, "defaults"); werr != nil {
 		t.Fatal(werr)
 	}
 	if _, ok := ActiveConfigParseFailure(h); !ok {
@@ -256,7 +257,7 @@ func TestBackupConfigDedupesSweepsAndPrunes(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(BackupsDir(path), "config.yaml.bak.1")); err != nil {
 		t.Fatal("legacy sibling not swept")
 	}
-	if got, err := LoadNewestGoodBackup(path); err != nil || got["a"] != 1 {
+	if got, err := LoadNewestGoodBackup(context.Background(), path); err != nil || got["a"] != 1 {
 		t.Fatalf("good backup = %v", got)
 	}
 	os.WriteFile(filepath.Join(BackupsDir(path), "config.yaml.good.20000101-000000"), []byte("a: 0\n"), 0o600)

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -328,9 +330,9 @@ func memorySchemaOverrides(env *tools.Env) map[string]any {
 
 // Error envelope with the bounded message and extra fields
 func toolError(message string, extra map[string]any) string {
-	data := map[string]any{"error": boundErrorText(message)}
-	for k, v := range extra {
-		data[k] = v
+	data := tools.Dict("error", boundErrorText(message))
+	for _, k := range slices.Sorted(maps.Keys(extra)) {
+		data.Set(k, extra[k])
 	}
 	return tools.JSON(data)
 }
@@ -412,7 +414,7 @@ func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, ta
 		content = newText
 	}
 	if targetErr := memoryTargetError(store, target, operations); targetErr != nil {
-		return "rejected", tools.JSON(targetErr.Data), targetErr.FailureClass, nil
+		return "rejected", tools.JSONASCII(targetErr.Data), targetErr.FailureClass, nil
 	}
 	name := target.(string)
 	if pyTruthy(operations) {
@@ -494,12 +496,12 @@ func validateSingleOp(store *Store, action, target string, content, oldText any)
 		return toolError("Content is required for 'add' action.", map[string]any{"success": false}), "missing_content"
 	}
 	if (action == "remove" || action == "patch") && !pyTruthy(oldText) {
-		return tools.JSON(map[string]any{
-			"success": false,
-			"error": fmt.Sprintf("'%s' needs old_text -- a short unique substring of the entry "+
+		return tools.JSON(tools.Dict(
+			"success", false,
+			"error", fmt.Sprintf("'%s' needs old_text -- a short unique substring of the entry "+
 				"to %s. None was provided. Reissue the %s with old_text "+
 				"set to part of one of the current_entries below.", action, action, action),
-			"current_entries": store.Entries(target), "usage": store.Usage(target)}), "missing_old_text"
+			"current_entries", store.Entries(target), "usage", store.Usage(target))), "missing_old_text"
 	}
 	if action == "patch" && !pyTruthy(content) {
 		return toolError("content (the new text for the old_text span) is required for 'patch' action. "+

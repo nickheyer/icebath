@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -353,6 +354,12 @@ func TestExpandLocalToolBatches(t *testing.T) {
 	blocks := provider["anthropic_content_blocks"].([]any)
 	if len(blocks) != 2 || blocks[1].(map[string]any)["id"] != expanded[1].ID {
 		t.Fatalf("blocks %v", blocks)
+	}
+	for i, block := range blocks {
+		input, err := pyjson.Dumps(block.(map[string]any)["input"], pyjson.EnsureASCII(false))
+		if err != nil || input != expanded[i].Function.Arguments {
+			t.Fatalf("block %d input %q %v, want the child arguments %q", i, input, err, expanded[i].Function.Arguments)
+		}
 	}
 	single := segTC(ToolCallName, `{"calls":[{"name":"mcp_a","arguments":{}}]}`, "c1")
 	if out := ExpandLocalToolBatches([]state.ToolCall{single}, nil); len(out) != 1 {

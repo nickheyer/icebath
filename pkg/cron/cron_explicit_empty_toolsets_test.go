@@ -1,6 +1,9 @@
 package cron
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestCreatePersistsExplicitEmptyAllowlistAndSurvivesReload(t *testing.T) {
 	s, _ := newTestStore(t)
@@ -8,7 +11,7 @@ func TestCreatePersistsExplicitEmptyAllowlistAndSurvivesReload(t *testing.T) {
 	if job.EnabledToolsets == nil || len(job.EnabledToolsets) != 0 {
 		t.Fatalf("created enabled_toolsets %#v", job.EnabledToolsets)
 	}
-	reloaded, err := openCronStore(s.home, nil).getJob(job.ID)
+	reloaded, err := openCronStore(s.home, nil).getJob(context.Background(), job.ID)
 	if err != nil || reloaded == nil || reloaded.EnabledToolsets == nil || len(reloaded.EnabledToolsets) != 0 {
 		t.Fatalf("reloaded enabled_toolsets %#v %v", reloaded, err)
 	}

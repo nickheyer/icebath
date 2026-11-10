@@ -217,7 +217,7 @@ func embedderEnvironmentHint(env *tools.Env) (string, error) {
 }
 
 // Host OS, home, cwd and scratch block for a local backend, plus the bash hint on native Windows
-func localHostHints(env *tools.Env) ([]string, error) {
+func localHostHints(ctx context.Context, env *tools.Env) ([]string, error) {
 	isWSL := hostinfo.IsWSL()
 	userHome, err := os.UserHomeDir()
 	if err != nil {
@@ -229,7 +229,7 @@ func localHostHints(env *tools.Env) ([]string, error) {
 	} else if refusal := (*tools.TerminalPolicyUnavailable)(nil); errors.As(err, &refusal) {
 		return nil, err
 	}
-	lines = append(lines, "Scratch directory: "+home.EnsureScratchDir(agentHome(env))+" (TMPDIR points here; write temporary files "+
+	lines = append(lines, "Scratch directory: "+home.EnsureScratchDir(tools.WithEnvHome(ctx, env), agentHome(env))+" (TMPDIR points here; write temporary files "+
 		"and probes there, never under the system temp dir; entries idle for 24h are pruned)")
 	if !(runtime.GOOS == "windows" && !isWSL) {
 		return []string{strings.Join(lines, "\n")}, nil
@@ -258,7 +258,7 @@ func BuildEnvironmentHints(ctx context.Context, env *tools.Env) (string, error) 
 		}
 		hints = []string{hint}
 	} else {
-		if hints, err = localHostHints(env); err != nil {
+		if hints, err = localHostHints(tools.WithEnvHome(ctx, env), env); err != nil {
 			return "", err
 		}
 		hints = append(hints, botScreenHint(env))

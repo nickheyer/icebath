@@ -162,7 +162,7 @@ func TestUnreadableConfigServesOneCachedFallbackUntilItReads(t *testing.T) {
 	ResetCache()
 	rebuilds := 0
 	prev := loadNewestGoodBackupFn
-	loadNewestGoodBackupFn = func(p string) (map[string]any, error) { rebuilds++; return prev(p) }
+	loadNewestGoodBackupFn = func(ctx context.Context, p string) (map[string]any, error) { rebuilds++; return prev(ctx, p) }
 	t.Cleanup(func() { loadNewestGoodBackupFn = prev })
 	denyConfigReads(t, path)
 	for range 5 {
@@ -322,7 +322,7 @@ func TestValidateLoadedConfigStructureReportsStorageFailures(t *testing.T) {
 	}
 }
 
-func TestReloadEnvKeepsKnownKeysWhenUserEnvIsUnreadable(t *testing.T) {
+func TestReloadKeepsKnownKeysWhenUserEnvIsUnreadable(t *testing.T) {
 	h, _ := facadeHome(t, "")
 	env := filepath.Join(h, ".env")
 	os.WriteFile(env, []byte("OPENAI_API_KEY=from-file\n"), 0o600)
@@ -341,15 +341,22 @@ func TestReloadEnvKeepsKnownKeysWhenUserEnvIsUnreadable(t *testing.T) {
 	}
 }
 
-func TestReloadEnvStillRemovesKeysAReadableEnvDropped(t *testing.T) {
+func TestReloadStillRemovesKeysAReadableEnvDropped(t *testing.T) {
 	h, _ := facadeHome(t, "")
 	os.WriteFile(filepath.Join(h, ".env"), []byte("ANTHROPIC_API_KEY=from-file\n"), 0o600)
-	for name := range OptionalEnvVars {
+	for _, name := range OptionalEnvVars.Names() {
 		if _, set := os.LookupEnv(name); set {
 			t.Setenv(name, "")
 			os.Unsetenv(name)
 		}
 	}
+	prev := hooks()
+	withExtra := prev
+	withExtra.ExtraEnvKeys = func() []string {
+		return []string{"OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN"}
+	}
+	RegisterConfigFacade(withExtra)
+	t.Cleanup(func() { RegisterConfigFacade(prev) })
 	t.Setenv("OPENAI_API_KEY", "stale")
 	t.Setenv("ANTHROPIC_API_KEY", "stale")
 	if n, err := ReloadEnv(h); n != 2 || err != nil {

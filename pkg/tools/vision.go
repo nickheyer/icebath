@@ -854,7 +854,7 @@ func tooLargeMessage(imageDataURL string) string {
 
 // Tool error with success false
 func visionToolError(msg string) string {
-	return toolErrorJSON(msg, map[string]any{"success": false})
+	return toolErrorJSON(msg, Dict("success", false))
 }
 
 // Fast path for vision capable main models, a multimodal envelope on success or a JSON error

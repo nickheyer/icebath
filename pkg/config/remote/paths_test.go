@@ -99,41 +99,64 @@ func TestFixtureVersionIsOneThisRunnerReads(t *testing.T) {
 	}
 }
 
-func TestPathVectors(t *testing.T) {
-	var vectors struct {
-		Valid []struct {
-			Encoded  string   `json:"encoded"`
-			Segments []string `json:"segments"`
-		} `json:"valid"`
-		Invalid []string `json:"invalid"`
-		Covers  []struct {
-			Lock   string `json:"lock"`
-			Path   string `json:"path"`
-			Covers bool   `json:"covers"`
-		} `json:"covers"`
-	}
+type pathVectors struct {
+	Valid []struct {
+		Encoded  string   `json:"encoded"`
+		Segments []string `json:"segments"`
+	} `json:"valid"`
+	Invalid []string `json:"invalid"`
+	Covers  []struct {
+		Lock   string `json:"lock"`
+		Path   string `json:"path"`
+		Covers bool   `json:"covers"`
+	} `json:"covers"`
+}
+
+func loadPathVectors(t *testing.T) pathVectors {
+	t.Helper()
+	var vectors pathVectors
 	loadVector(t, "config-paths.json", &vectors)
-	for _, v := range vectors.Valid {
+	if len(vectors.Valid) == 0 || len(vectors.Invalid) == 0 || len(vectors.Covers) == 0 {
+		t.Fatalf("config-paths.json holds %d valid, %d invalid and %d coverage vectors", len(vectors.Valid), len(vectors.Invalid), len(vectors.Covers))
+	}
+	return vectors
+}
+
+func TestValidPathsRoundTrip(t *testing.T) {
+	for _, v := range loadPathVectors(t).Valid {
 		if got := Encode(v.Segments); got != v.Encoded {
-			t.Errorf("encode %v = %q", v.Segments, got)
+			t.Errorf("encode %v = %q, want %q", v.Segments, got, v.Encoded)
 		}
 		if got, err := Decode(v.Encoded); err != nil || !slices.Equal(got, v.Segments) {
-			t.Errorf("decode %q = %v %v", v.Encoded, got, err)
+			t.Errorf("decode %q = %v %v, want %v", v.Encoded, got, err, v.Segments)
 		}
 	}
-	for _, encoded := range vectors.Invalid {
+}
+
+func TestInvalidPathsRejected(t *testing.T) {
+	for _, encoded := range loadPathVectors(t).Invalid {
 		var perr *PathError
 		if _, err := Decode(encoded); !errors.As(err, &perr) {
-			t.Errorf("decode %q accepted", encoded)
+			t.Errorf("decode %q gave %v, want a PathError", encoded, err)
 		}
 	}
-	for _, v := range vectors.Covers {
+}
+
+func TestLockCoverage(t *testing.T) {
+	for _, v := range loadPathVectors(t).Covers {
 		lock, lerr := Decode(v.Lock)
 		path, perr := Decode(v.Path)
-		if lerr != nil || perr != nil || Covers(lock, path) != v.Covers {
-			t.Errorf("covers %q %q", v.Lock, v.Path)
+		if lerr != nil || perr != nil {
+			t.Errorf("decode %q %v, %q %v", v.Lock, lerr, v.Path, perr)
+			continue
+		}
+		if got := Covers(lock, path); got != v.Covers {
+			t.Errorf("covers(%q, %q) = %v, want %v", v.Lock, v.Path, got, v.Covers)
 		}
 	}
+}
+
+func TestDottedKeysAndTheFirstCoveringLock(t *testing.T) {
 	if !slices.Equal(FromDotted(`a\x.b`), []string{`a\x`, "b"}) || !slices.Equal(FromDotted(`a\.b.c`), []string{"a.b", "c"}) {
 		t.Error("dotted keys split")
 	}

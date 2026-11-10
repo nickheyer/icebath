@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,21 +24,21 @@ func wScriptStore(t *testing.T) *Store {
 
 func mustRejectCreate(t *testing.T, s *Store, o CreateJobOptions, want string) {
 	t.Helper()
-	if job, err := s.createJob(o); err == nil || !strings.Contains(err.Error(), want) {
+	if job, err := s.createJob(context.Background(), o); err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("create %+v = %+v %v, want %q", o, job, err, want)
 	}
 }
 
 func mustRejectUpdate(t *testing.T, s *Store, id string, updates map[string]any, want string) {
 	t.Helper()
-	if job, err := s.updateJob(id, updates); err == nil || !strings.Contains(err.Error(), want) {
+	if job, err := s.updateJob(context.Background(), id, updates); err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("update %v = %+v %v, want %q", updates, job, err, want)
 	}
 }
 
 func mustUpdate(t *testing.T, s *Store, id string, updates map[string]any) *Job {
 	t.Helper()
-	job, err := s.updateJob(id, updates)
+	job, err := s.updateJob(context.Background(), id, updates)
 	if err != nil || job == nil {
 		t.Fatalf("update %v = %+v %v", updates, job, err)
 	}
@@ -170,7 +171,7 @@ func legacyEmptyJob(t *testing.T, s *Store) *Job {
 func TestPauseJobStillWorksOnAnAlreadyEmptyJob(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := legacyEmptyJob(t, s)
-	if paused, err := s.pauseJob(job.ID, prompt("empty payload")); err != nil || paused == nil {
+	if paused, err := s.pauseJob(context.Background(), job.ID, prompt("empty payload")); err != nil || paused == nil {
 		t.Fatalf("pause = %+v %v", paused, err)
 	}
 	if stored := mustGet(t, s, job.ID); stored.Enabled || stored.State != "paused" {

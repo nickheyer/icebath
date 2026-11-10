@@ -46,6 +46,15 @@ func (t TodoItem) asMap() map[string]any {
 	return m
 }
 
+// Item dict in the key order hermes builds it, parent last when set
+func (t TodoItem) asDict() *pyjson.Object {
+	d := Dict("id", t.ID, "content", t.Content, "status", t.Status)
+	if t.Parent != "" {
+		d.Set("parent", t.Parent)
+	}
+	return d
+}
+
 // TodoStore is the in memory revisioned task list, one per agent session
 type TodoStore struct {
 	mu       sync.Mutex
@@ -422,7 +431,7 @@ func todoTool(store *TodoStore, todos any, merge bool) string {
 			return toolErrorJSON(err.Error(), nil)
 		}
 	}
-	summary := map[string]any{"total": len(items)}
+	summary := Dict("total", len(items))
 	for _, status := range []string{"pending", "in_progress", "completed", "cancelled"} {
 		n := 0
 		for _, it := range items {
@@ -430,9 +439,13 @@ func todoTool(store *TodoStore, todos any, merge bool) string {
 				n++
 			}
 		}
-		summary[status] = n
+		summary.Set(status, n)
 	}
-	return jsonCompact(map[string]any{"todos": todoItemsJSON(items), "revision": store.Revision(), "summary": summary})
+	rows := make([]any, len(items))
+	for i, it := range items {
+		rows[i] = it.asDict()
+	}
+	return JSON(Dict("todos", rows, "revision", store.Revision(), "summary", summary))
 }
 
 var todoSchema = map[string]any{

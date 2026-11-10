@@ -16,7 +16,7 @@ import (
 
 func cliCreate(t *testing.T, s *Store, o CreateJobOptions) *Job {
 	t.Helper()
-	job, err := s.createJob(o)
+	job, err := s.createJob(context.Background(), o)
 	if err != nil {
 		t.Fatal(err)
 	}

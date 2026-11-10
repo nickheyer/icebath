@@ -225,7 +225,7 @@ func (s *Store) runNoAgentJob(ctx context.Context, job *Job, jobID, jobName stri
 		scriptPath = *job.Script
 	}
 	if pystr.Strip(scriptPath) == "" {
-		return s.blockAndPauseJob(jobID, jobName, noAgentWithoutScriptError)
+		return s.blockAndPauseJob(home.WithOverride(ctx, s.home), jobID, jobName, noAgentWithoutScriptError)
 	}
 	workdir := ""
 	if wd := s.resolveJobWorkdir(job, jobID); wd != nil {
@@ -417,20 +417,20 @@ func (s *Store) preflightOrBlock(ctx context.Context, job *Job, jobID, jobName s
 		}
 		reason = r
 		if reason == "" && job.PreflightAlerted {
-			_ = s.clearPreflightAlerted(jobID)
+			_ = s.clearPreflightAlerted(home.WithOverride(ctx, s.home), jobID)
 		}
 	}()
 	if reason == "" {
 		return nil
 	}
-	out := s.blockedConfigResult(jobID, jobName, reason)
+	out := s.blockedConfigResult(home.WithOverride(ctx, s.home), jobID, jobName, reason)
 	return &out
 }
 
 // Blocked configuration outcome for the reason, alerting once per job
-func (s *Store) blockedConfigResult(jobID, jobName, reason string) jobRunOutcome {
+func (s *Store) blockedConfigResult(ctx context.Context, jobID, jobName, reason string) jobRunOutcome {
 	s.log.Warn(fmt.Sprintf("Job '%s' (ID: %s): BLOCKED by pre-dispatch config validation — %s (no LLM call was made)", jobName, jobID, reason))
-	alreadyAlerted, err := s.markPreflightAlerted(jobID)
+	alreadyAlerted, err := s.markPreflightAlerted(home.WithOverride(ctx, s.home), jobID)
 	if err != nil {
 		s.log.Debug(fmt.Sprintf("Job '%s': could not persist preflight alert marker", jobID), "error", err)
 		alreadyAlerted = false
@@ -725,7 +725,7 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 			return
 		}
 		lastClaimHeartbeat = mono
-		if _, err := s.heartbeatRunClaim(jobID, runClaimOwner); err != nil {
+		if _, err := s.heartbeatRunClaim(home.WithOverride(ctx, s.home), jobID, runClaimOwner); err != nil {
 			s.log.Debug(fmt.Sprintf("Job '%s': run_claim heartbeat failed", jobName), "error", err)
 		}
 	}
@@ -977,7 +977,7 @@ func (s *Store) prepareJobPrompt(ctx context.Context, job *Job, jobID, jobName s
 		return &out, "", nil
 	}
 	if jobPayloadIsEmpty(job) {
-		out := s.blockAndPauseJob(jobID, jobName, emptyPayloadError)
+		out := s.blockAndPauseJob(home.WithOverride(ctx, s.home), jobID, jobName, emptyPayloadError)
 		return &out, "", nil
 	}
 	early, monitorContext, err := s.applyMonitorGate(ctx, job, jobID, jobName)
@@ -1154,7 +1154,7 @@ func (s *Store) resolveCronAgentSetup(ctx context.Context, job *Job, jobID, jobN
 	s.initCronMCPTools(ctx, jobID)
 	if s.cronPreflightEnabled(cfg) {
 		if reason := s.emptyRequestedMCPToolsets(ctx, job, cfg); reason != "" {
-			out := s.blockedConfigResult(jobID, jobName, reason)
+			out := s.blockedConfigResult(home.WithOverride(ctx, s.home), jobID, jobName, reason)
 			setup.blocked = &out
 		}
 	}
@@ -1448,7 +1448,7 @@ func (s *Store) runWithFireClaimHeartbeat(ctx context.Context, job *Job, run fun
 			s.log.Warn(fmt.Sprintf("Job '%s': failed to close unstarted execution ledger row", jobID), "error", err)
 		}
 	}
-	owns, err := s.heartbeatFireClaim(jobID, owner)
+	owns, err := s.heartbeatFireClaim(home.WithOverride(ctx, s.home), jobID, owner)
 	if err != nil {
 		s.log.Warn(fmt.Sprintf("Job '%s': initial fire_claim validation failed", jobID), "error", err)
 		finishUnstarted("Fire claim ownership could not be validated before execution started.")
@@ -1472,7 +1472,7 @@ func (s *Store) runWithFireClaimHeartbeat(ctx context.Context, job *Job, run fun
 	finished := startHeartbeatThread(func() {
 		lastConfirmed := monoNow()
 		for !wait(runClaimHeartbeatSeconds) {
-			ok, herr := s.heartbeatFireClaim(jobID, owner)
+			ok, herr := s.heartbeatFireClaim(home.WithOverride(ctx, s.home), jobID, owner)
 			if herr == nil && !ok {
 				if allowed, _ := s.selfRemovalDeliveryAllowed(ctx, nil, jobID); allowed {
 					continue
@@ -1481,7 +1481,7 @@ func (s *Store) runWithFireClaimHeartbeat(ctx context.Context, job *Job, run fun
 					lastConfirmed = monoNow()
 					continue
 				}
-				if again, aerr := s.heartbeatFireClaim(jobID, owner); aerr == nil && again {
+				if again, aerr := s.heartbeatFireClaim(home.WithOverride(ctx, s.home), jobID, owner); aerr == nil && again {
 					lastConfirmed = monoNow()
 					continue
 				} else if aerr != nil {

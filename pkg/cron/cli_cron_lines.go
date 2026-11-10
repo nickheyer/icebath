@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -280,7 +281,7 @@ func (s *Store) cronEditLines(ctx context.Context, _ string, opts *cronFlags) ([
 		return []string{cliT(ctx, "cron.usage_edit")}, nil
 	}
 	jobID := opts.positionals[0]
-	existing, err := s.getJob(jobID)
+	existing, err := s.getJob(home.WithOverride(ctx, s.home), jobID)
 	if err != nil {
 		return nil, err
 	}

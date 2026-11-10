@@ -578,11 +578,7 @@ func toDict(v any) *pyjson.Object {
 
 // Compact JSON of an ordered result object
 func dictJSON(o *pyjson.Object) string {
-	b, err := o.MarshalJSON()
-	if err != nil {
-		return ErrorResult(err)
-	}
-	return string(b)
+	return JSON(o)
 }
 
 // Error envelope with a bounded message and extra keys in the given order
@@ -842,7 +838,7 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 			out := newDict()
 			out.Set("success", false)
 			out.Set("note", fmt.Sprintf("'%s' is %s, not a regular file — reading it would block indefinitely, so no read was attempted. Use terminal utilities if you need to interact with it.", path, kind))
-			return dictJSON(out), nil
+			return JSONASCII(out), nil
 		}
 	}
 	if blockErr := readBlockError(env, resolved); blockErr != "" {

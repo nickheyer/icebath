@@ -266,14 +266,14 @@ func readJSONFile(path string) any {
 }
 
 // Fields explaining why this install cannot self update from git, nil when it can
-func unsupportedReason(stamp *pyjson.Object, root, h string, explicitRoot bool, embedded string) *pyjson.Object {
+func unsupportedReason(ctx context.Context, stamp *pyjson.Object, root, h string, explicitRoot bool, embedded string) *pyjson.Object {
 	if stampGet(stamp, "source") == "commit-build" {
 		return pyjson.ObjectOf("reason", "commit-build", "message", CommitBuildUpdateMessage)
 	}
 	payload := stampGet(stamp, "payload")
 	bundled := payload == "bundled" || payload == "light" || payload == "runtime"
 	if !bundled && !explicitRoot {
-		if method, err := config.DetectInstallMethod(h, root); err == nil && (method == "docker" || method == "apt") {
+		if method, err := config.DetectInstallMethod(ctx, h, root); err == nil && (method == "docker" || method == "apt") {
 			bundled = true
 		}
 	}
@@ -737,7 +737,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	}
 	h := resolvedPath(homePath)
 	result := pyjson.ObjectOf("supported", false, "icebathRoot", root, "behind", nil, "commits", []any{})
-	if unsupported := unsupportedReason(pm.ReadInstallStamp(root), root, h, opts.InstallRoot != "", embedded); unsupported != nil {
+	if unsupported := unsupportedReason(ctx, pm.ReadInstallStamp(root), root, h, opts.InstallRoot != "", embedded); unsupported != nil {
 		merged := result.Copy()
 		merged.Update(unsupported)
 		return merged, nil

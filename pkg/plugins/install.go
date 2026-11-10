@@ -209,12 +209,12 @@ func promptPluginEnvVars(ctx context.Context, h string, manifest map[string]any,
 }
 
 // Refuses a manifest needing a newer manifest version or core than this installer
-func checkManifestVersion(h string, manifest map[string]any, pluginName string) error {
+func checkManifestVersion(ctx context.Context, h string, manifest map[string]any, pluginName string) error {
 	reason, err := pm.ManifestVersionError(manifest, pluginName)
 	if err != nil || reason == "" {
 		return err
 	}
-	update, err := config.RecommendedUpdateCommand(h)
+	update, err := config.RecommendedUpdateCommand(ctx, h)
 	if err != nil {
 		return err
 	}
@@ -506,7 +506,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 	if err != nil {
 		return "", &PluginOperationError{Msg: err.Error(), FailureClass: "manifest_invalid"}
 	}
-	if err := checkManifestVersion(h, manifest, pluginName); err != nil {
+	if err := checkManifestVersion(ctx, h, manifest, pluginName); err != nil {
 		return "", err
 	}
 	prior, _ := oldMetadata[pluginName].(map[string]any)

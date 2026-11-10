@@ -125,6 +125,7 @@ func TestToolHookInATickedJobSeesItsExecutionAndNoneOutside(t *testing.T) {
 	cron.InstallCronOwner(t)
 	cron.UseRealTickSeams(t)
 	cron.UseRealDelivery(t)
+	t.Cleanup(cron.ShutdownParallelPools)
 	ctx := context.Background()
 	if _, err := cron.TickSyncForHome(ctx, home); err != nil {
 		t.Fatal(err)

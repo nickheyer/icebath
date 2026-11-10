@@ -41,6 +41,26 @@ func registerMigrationFacade(t *testing.T) {
 	})
 }
 
+func TestMigrationFacadeSourcesCarryTheFacadeReadersAndWriters(t *testing.T) {
+	h, path, _ := caseHome(t, "_config_version: 30\nagent:\n  max_turns: 60\n", "")
+	src := MigrationFacadeSources(t.Context(), h)
+	if src.Persist == nil || src.ReadRaw == nil || src.GetEnvValue == nil || src.GetEnvValuePreferDotenv == nil ||
+		src.SaveEnvValue == nil || src.RemoveEnvValue == nil || src.Out != FacadeStdout {
+		t.Fatalf("facade collaborators missing: %+v", src)
+	}
+	raw, err := src.ReadRaw(h)
+	if err != nil || !pyEq(Tree(raw).Get("agent.max_turns"), 60) {
+		t.Fatalf("raw read %v %v", raw, err)
+	}
+	raw["_config_version"] = 31
+	if err := src.Persist(h, raw); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); !strings.Contains(string(data), "_config_version: 31") {
+		t.Fatalf("persisted %q", data)
+	}
+}
+
 // Runs migrate_config non interactively for one home and returns its results and stdout
 func migrateConfigHome(t *testing.T, h string, quiet bool) (*MigrationResults, string) {
 	t.Helper()
@@ -119,7 +139,7 @@ func TestConfigSeededFromTheTemplateReadsAsCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(path, data, 0o600)
-	current, latest, err := CheckConfigVersion(h, true)
+	current, latest, err := CheckConfigVersion(context.Background(), h, true)
 	if err != nil || current != latest {
 		t.Fatalf("template reads %d of %d, %v", current, latest, err)
 	}

@@ -1,11 +1,13 @@
 package cron
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -23,14 +25,14 @@ var JobDefinitionFields = []string{
 // Installs the cron store access the profile distribution installer reaches through hooks
 func init() {
 	profiles.CronDistributionHooks.LoadJobs = distributionLoadJobs
-	profiles.CronDistributionHooks.ImportJobDefinitions = func(home string, shipped *pyjson.Object, pausedReason string) error {
-		return openCronStore(home, nil).importJobDefinitions(shipped, pausedReason)
+	profiles.CronDistributionHooks.ImportJobDefinitions = func(ctx context.Context, home string, shipped *pyjson.Object, pausedReason string) error {
+		return openCronStore(home, nil).importJobDefinitions(ctx, shipped, pausedReason)
 	}
 }
 
 // Jobs of the store under home as plain decoded records
-func distributionLoadJobs(home string) ([]any, error) {
-	jobs, err := openCronStore(home, nil).LoadJobs()
+func distributionLoadJobs(ctx context.Context, home string) ([]any, error) {
+	jobs, err := openCronStore(home, nil).LoadJobs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -257,10 +259,10 @@ func (s *Store) mergeOrName(local *Job, authored any) (*Job, error) {
 }
 
 // Merges shipped job id to authored record into this store under its lock, new ids arriving paused
-func (s *Store) importJobDefinitions(shipped *pyjson.Object, pausedReason string) error {
+func (s *Store) importJobDefinitions(ctx context.Context, shipped *pyjson.Object, pausedReason string) error {
 	now := FormatISO(s.clk.now())
-	return s.withJobsLock(func(tx *jobsTx) error {
-		locals, err := s.loadJobs(tx)
+	return s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
+		locals, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
 		if err != nil {
 			return err
 		}
@@ -309,6 +311,6 @@ func (s *Store) importJobDefinitions(shipped *pyjson.Object, pausedReason string
 			}
 			merged = append(merged, job)
 		}
-		return s.saveJobsLocked(tx, merged, nil, false)
+		return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, merged, nil, false)
 	})
 }

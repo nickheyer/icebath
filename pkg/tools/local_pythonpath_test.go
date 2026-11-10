@@ -472,7 +472,7 @@ func damageRuntimeRecord(t *testing.T) string {
 // Every env builder hands the damaged runtime dependency record error to its caller like the propagated RuntimeError
 func TestBuildersPropagateDamagedRuntimeRecord(t *testing.T) {
 	builders := map[string]func(env *Env) (map[string]string, error){
-		"finalizeChildEnv": func(env *Env) (map[string]string, error) { return finalizeChildEnv(env, environMap()) },
+		"finalizeChildEnv": func(env *Env) (map[string]string, error) { return finalizeChildEnv(env, environMap(), nil) },
 		"makeRunEnv":       func(env *Env) (map[string]string, error) { return makeRunEnv(env, map[string]string{}) },
 		"SanitizeSubprocessEnv": func(env *Env) (map[string]string, error) {
 			return SanitizeSubprocessEnv(env, environMap(), nil)

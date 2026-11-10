@@ -218,9 +218,9 @@ func BundledSkillsDir(ctx context.Context, def string) string {
 }
 
 // Historical managed Node directories of a home, bin first on POSIX and the node dir first on Windows
-func NodeDirs(h string) []string {
+func NodeDirs(ctx context.Context, h string) []string {
 	if h == "" {
-		h = Dir(context.Background())
+		h = Dir(ctx)
 	}
 	nodeDir := pypath.PathJoin(h, "node")
 	if runtime.GOOS == "windows" {
@@ -254,8 +254,8 @@ func IsExecutableFile(path string) bool {
 }
 
 // Reports whether a legacy managed Node tree with node, npm or npx sits in the home
-func ManagedNodeTreePresent(h string) bool {
-	for _, dir := range NodeDirs(h) {
+func ManagedNodeTreePresent(ctx context.Context, h string) bool {
+	for _, dir := range NodeDirs(ctx, h) {
 		for _, c := range []string{"node", "npm", "npx"} {
 			for _, name := range CandidateNodeCommandNames(c) {
 				if st, err := os.Stat(pypath.PathJoin(dir, name)); err == nil && st.Mode().IsRegular() {

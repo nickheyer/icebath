@@ -135,7 +135,7 @@ func stalledDockerMigration(t *testing.T, fail error) {
 	t.Helper()
 	prevStamp, prevMigrate := dockerReadStamp, dockerMigrateConfig
 	t.Cleanup(func() { dockerReadStamp, dockerMigrateConfig = prevStamp, prevMigrate })
-	dockerReadStamp = func(string, bool) (*int, int, error) { v := 12; return &v, latestConfigVersion(), nil }
+	dockerReadStamp = func(context.Context, string, bool) (*int, int, error) { v := 12; return &v, latestConfigVersion(), nil }
 	dockerMigrateConfig = func(_ context.Context, h string, _, _ bool) (*MigrationResults, error) {
 		os.WriteFile(home.ConfigPath(h), []byte("gateway: {}\n"), 0o644)
 		os.WriteFile(home.EnvPath(h), nil, 0o644)

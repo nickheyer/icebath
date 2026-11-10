@@ -158,7 +158,7 @@ func repeatRefusal(env *Env, sessionID, imageURL string) string {
 	return toolErrorJSON(fmt.Sprintf("vision_analyze refused: this image has already been loaded into context %d time(s) "+
 		"in this session (region crops of the same file count too), and every native load re-sends "+
 		"the full image on each later API call. Answer from what you can already see, or ask the "+
-		"user. (vision.max_calls_per_image = %d; 0 = unlimited)", count, limit), map[string]any{"success": false})
+		"user. (vision.max_calls_per_image = %d; 0 = unlimited)", count, limit), Dict("success", false))
 }
 
 // Refusal text for an image embedded past its repeat cap
@@ -272,7 +272,7 @@ func nativeTurnDuplicate(env *Env, imageURL string, region any) string {
 	if !keys[visionImageKey(env, imageURL)] {
 		return ""
 	}
-	return jsonCompact(alreadyInContextResult{Success: true, AlreadyInContext: true,
+	return JSONASCII(alreadyInContextResult{Success: true, AlreadyInContext: true,
 		Message: "This image is already attached natively to the current user message — you can see it " +
 			"now. Answer with your built-in vision; pass a `region` to zoom into part of it."})
 }

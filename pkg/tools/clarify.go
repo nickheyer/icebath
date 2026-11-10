@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -41,9 +43,9 @@ func MarkRecommended(choices []string) []string {
 
 // StripRecommended removes the recommendation label so presentation never leaks into user_response
 func StripRecommended(text string) string {
-	stripped := strings.TrimSpace(text)
+	stripped := pystr.Strip(text)
 	if strings.HasSuffix(strings.ToLower(stripped), strings.ToLower(clarifyRecommended)) {
-		return strings.TrimSpace(stripped[:len(stripped)-len(clarifyRecommended)])
+		return pystr.Strip(stripped[:len(stripped)-len(clarifyRecommended)])
 	}
 	return stripped
 }
@@ -51,12 +53,12 @@ func StripRecommended(text string) string {
 // Strips presentation from a locked answer, a multi select answer being a list, a JSON array string, or one typed answer
 func clarifyCleanAnswer(raw any, multi bool) any {
 	if !multi {
-		return StripRecommended(fmt.Sprint(raw))
+		return StripRecommended(pyrepr.Str(raw))
 	}
 	var items []any
 	switch v := raw.(type) {
 	case string:
-		decoded, err := pyjson.DecodeWTF8([]byte(v))
+		decoded, err := pyjson.Loads(v)
 		if parsed, isList := decoded.([]any); err == nil && isList {
 			items = parsed
 		} else {
@@ -73,8 +75,8 @@ func clarifyCleanAnswer(raw any, multi bool) any {
 	}
 	out := []string{}
 	for _, item := range items {
-		if strings.TrimSpace(fmt.Sprint(item)) != "" {
-			out = append(out, StripRecommended(fmt.Sprint(item)))
+		if text := pyrepr.Str(item); pystr.Strip(text) != "" {
+			out = append(out, StripRecommended(text))
 		}
 	}
 	return out
@@ -208,13 +210,13 @@ func clarifyResult(normalized []clarifyQuestion, reply ClarifyReply, shown []cla
 		if entry.ChoicesOffered != nil {
 			offered = entry.ChoicesOffered
 		}
-		responses = append(responses, map[string]any{"question": entry.Question, "choices_offered": offered, "status": status, "user_response": value})
+		responses = append(responses, Dict("question", entry.Question, "choices_offered", offered, "status", status, "user_response", value))
 	}
-	result := map[string]any{"responses": responses, "outcome": reply.Outcome}
+	result := Dict("responses", responses, "outcome", reply.Outcome)
 	if reply.Notice != "" {
-		result["notice"] = reply.Notice
+		result.Set("notice", reply.Notice)
 	}
-	return jsonCompact(result)
+	return JSON(result)
 }
 
 // Raw choice for a display copy, the value itself when unmapped

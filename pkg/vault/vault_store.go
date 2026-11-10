@@ -271,7 +271,7 @@ func (s *VaultStore) ensureDir() error {
 	if _, err := home.MakeUserDir(s.ctx, s.base, 0o700, true, true); err != nil {
 		return err
 	}
-	config.SecureDir(s.home, s.base)
+	config.SecureDir(s.ctx, s.home, s.base)
 	return nil
 }
 

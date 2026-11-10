@@ -25,7 +25,7 @@ var (
 	lockFile  = pyfs.LockFile
 	chown     = os.Chown
 	geteuid   = os.Geteuid
-	isManaged = func(ctx context.Context) bool { return home.ManagedSystem(home.Dir(ctx)) != "" }
+	isManaged = func(ctx context.Context) bool { return home.ManagedSystem(ctx, home.Dir(ctx)) != "" }
 )
 
 var (

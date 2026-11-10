@@ -422,7 +422,7 @@ func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *t
 	if now != nil {
 		at = *now
 	}
-	jobs, err := s.LoadJobs()
+	jobs, err := s.LoadJobs(home.WithOverride(ctx, s.home))
 	if err != nil {
 		return 0, err
 	}

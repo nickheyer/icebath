@@ -798,9 +798,9 @@ func installProviderKey(r *installRoot) (bool, error) {
 		if value == "" || installIgnoredEnvKeys[key] {
 			continue
 		}
-		spec, ok := config.OptionalEnvVars[key]
+		spec, ok := config.OptionalEnvVars.Get(key)
 		if !ok && strings.HasPrefix(key, "HERMES_") {
-			spec, ok = config.OptionalEnvVars["ICEBATH_"+strings.TrimPrefix(key, "HERMES_")]
+			spec, ok = config.OptionalEnvVars.Get("ICEBATH_" + strings.TrimPrefix(key, "HERMES_"))
 		}
 		if ok && installUserEnvCategories[spec.Category] {
 			return true, nil

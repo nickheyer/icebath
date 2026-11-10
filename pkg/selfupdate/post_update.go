@@ -58,9 +58,13 @@ func bootHomeStepsOf(steps []PostUpdateStep) []PostUpdateStep {
 
 // Collaborators of the config migration step, the module attributes hermes tests patch
 var (
-	stampMissingConfigFn     = func(h string) (bool, error) { return config.StampMissingConfig(h, provider.ConfigFacadeStampHooks()) }
-	readConfigVersionStampFn = func(h string) (*int, int, error) { return config.ReadConfigVersionStamp(h, false) }
-	checkConfigVersionFn     = func(h string) (int, int, error) { return config.CheckConfigVersion(h, false) }
+	stampMissingConfigFn = func(ctx context.Context, h string) (bool, error) {
+		return config.StampMissingConfig(ctx, h, provider.ConfigFacadeStampHooks())
+	}
+	readConfigVersionStampFn = func(ctx context.Context, h string) (*int, int, error) {
+		return config.ReadConfigVersionStamp(ctx, h, false)
+	}
+	checkConfigVersionFn     = func(ctx context.Context, h string) (int, int, error) { return config.CheckConfigVersion(ctx, h, false) }
 	agentBrowserEnvPendingFn = func(h string) bool {
 		return config.AgentBrowserEnvPending(h, provider.ConfigFacadeBrowserEnvSources(h))
 	}
@@ -173,10 +177,10 @@ func restoreBackups(backups []backupPair) []string {
 // Migrates config.yaml to the current schema non interactively, backups restored when the version does not advance
 func StepMigrateConfig(ctx context.Context) (map[string]any, error) {
 	h := home.Dir(ctx)
-	if _, err := stampMissingConfigFn(h); err != nil {
+	if _, err := stampMissingConfigFn(ctx, h); err != nil {
 		return nil, err
 	}
-	stamp, latest, err := readConfigVersionStampFn(h)
+	stamp, latest, err := readConfigVersionStampFn(ctx, h)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +204,7 @@ func StepMigrateConfig(ctx context.Context) (map[string]any, error) {
 		restoreBackups(backups)
 		return nil, err
 	}
-	post, _, err := checkConfigVersionFn(h)
+	post, _, err := checkConfigVersionFn(ctx, h)
 	if err != nil {
 		return nil, err
 	}

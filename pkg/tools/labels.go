@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"path"
 	"regexp"
@@ -11,6 +10,10 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -1107,16 +1110,11 @@ func BuildToolLabel(env *Env, toolName string, args map[string]any, maxLen *int)
 	return verb
 }
 
-// VerboseToolArgsText renders compact JSON of the args capped at maxLen, in a code block with real line breaks
-func VerboseToolArgsText(args map[string]any, maxLen int, codeBlock bool) string {
-	pythonVerboseToolArgsDumps(args)
-	b, err := json.Marshal(args)
-	text := string(b)
-	if err != nil {
-		text = fmt.Sprint(args)
-	}
-	if runes := []rune(text); maxLen > 0 && len(runes) > maxLen {
-		text = string(runes[:maxLen-3]) + "..."
+// VerboseToolArgsText renders the typed ordered args as json.dumps does, capped at maxLen, code blocked with real line breaks
+func VerboseToolArgsText(args *pyjson.Object, maxLen int, codeBlock bool) string {
+	text := pyDumps(args, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	if maxLen > 0 && len(pystr.Runes(text)) > maxLen {
+		text = pystr.Slice(text, 0, maxLen-3) + "..."
 	}
 	if !codeBlock || strings.Contains(text, "```") {
 		return text

@@ -23,7 +23,7 @@ func issuesWhere(issues []ConfigIssue, keep func(ConfigIssue) bool) []ConfigIssu
 	return out
 }
 
-func TestValidationCustomProvidersDictInsteadOfList(t *testing.T) {
+func TestCustomProvidersValidationDictInsteadOfList(t *testing.T) {
 	issues := validate(map[string]any{
 		"custom_providers": map[string]any{
 			"name": "Generativelanguage.googleapis.com", "base_url": "https://generativelanguage.googleapis.com/v1beta",
@@ -39,7 +39,7 @@ func TestValidationCustomProvidersDictInsteadOfList(t *testing.T) {
 	}
 }
 
-func TestValidationCustomProvidersScalarNamesKeyAndType(t *testing.T) {
+func TestCustomProvidersValidationScalarIsAnErrorNamingKeyAndType(t *testing.T) {
 	issues := validate(map[string]any{"custom_providers": "oops", "model": map[string]any{"provider": "openrouter"}})
 	if len(issuesWhere(issues, func(i ConfigIssue) bool {
 		return i.Severity == "error" && strings.HasPrefix(i.Message, "custom_providers is a str") && strings.Contains(i.Message, "list")
@@ -53,7 +53,7 @@ func TestValidationCustomProvidersScalarNamesKeyAndType(t *testing.T) {
 	}
 }
 
-func TestValidationCustomProvidersDictMisplacedFields(t *testing.T) {
+func TestCustomProvidersValidationDictDetectsMisplacedFields(t *testing.T) {
 	issues := validate(map[string]any{"custom_providers": map[string]any{"name": "test", "base_url": "https://example.com", "api_key": "xxx"}})
 	misplaced := issuesWhere(issues, func(i ConfigIssue) bool {
 		return i.Severity == "warning" && strings.Contains(i.Message, "custom_providers entry fields")
@@ -66,14 +66,14 @@ func TestValidationCustomProvidersDictMisplacedFields(t *testing.T) {
 	}
 }
 
-func TestValidationCustomProvidersListEntryNotDict(t *testing.T) {
+func TestCustomProvidersValidationListEntryNotDict(t *testing.T) {
 	issues := validate(map[string]any{"custom_providers": []any{"not-a-dict"}, "model": map[string]any{"provider": "custom"}})
 	if len(issuesWhere(issues, func(i ConfigIssue) bool { return strings.Contains(i.Message, "not a dict") })) == 0 {
 		t.Fatalf("issues = %+v", issues)
 	}
 }
 
-func TestValidationCustomProvidersWithModelSection(t *testing.T) {
+func TestMissingModelSectionCustomProvidersWithModel(t *testing.T) {
 	issues := validate(map[string]any{
 		"custom_providers": []any{map[string]any{"name": "test", "base_url": "https://example.com/v1"}},
 		"model":            map[string]any{"provider": "custom", "default": "test-model"},
@@ -83,13 +83,16 @@ func TestValidationCustomProvidersWithModelSection(t *testing.T) {
 	}
 }
 
-func TestValidationVoiceSubmitMode(t *testing.T) {
+func TestVoiceSubmitModeValidationDirectAndDraftAreValid(t *testing.T) {
 	for _, mode := range []string{"direct", "draft"} {
 		issues := validate(map[string]any{"voice": map[string]any{"submit_mode": mode}})
 		if len(issuesWhere(issues, func(i ConfigIssue) bool { return strings.Contains(i.Message, "voice.submit_mode") })) != 0 {
 			t.Fatalf("%s flagged: %+v", mode, issues)
 		}
 	}
+}
+
+func TestVoiceSubmitModeValidationInvalidModeIsReported(t *testing.T) {
 	issues := validate(map[string]any{"voice": map[string]any{"submit_mode": "refine"}})
 	if len(issuesWhere(issues, func(i ConfigIssue) bool {
 		return i.Severity == "error" && strings.Contains(i.Message, "voice.submit_mode") &&
@@ -103,7 +106,7 @@ func tzIssues(cfg map[string]any) []ConfigIssue {
 	return issuesWhere(validate(cfg), func(i ConfigIssue) bool { return strings.Contains(i.Message, "timezone") })
 }
 
-func TestValidationTimezoneInvalidOrNonString(t *testing.T) {
+func TestTimezoneValidationInvalidOrNonStringZoneIsAnError(t *testing.T) {
 	if _, err := time.LoadLocation("Etc/UTC"); err != nil {
 		t.Skip("no tz database on this host")
 	}
@@ -118,7 +121,7 @@ func TestValidationTimezoneInvalidOrNonString(t *testing.T) {
 	}
 }
 
-func TestValidationTimezoneValidBlankMissingOrUnverifiable(t *testing.T) {
+func TestTimezoneValidationValidBlankMissingOrUnverifiableZoneIsSilent(t *testing.T) {
 	for _, cfg := range []map[string]any{{"timezone": "Asia/Tokyo"}, {}, {"timezone": ""}, {"timezone": "   "}, {"timezone": nil}} {
 		cfg["model"] = map[string]any{"provider": "nous"}
 		if got := tzIssues(cfg); len(got) != 0 {
@@ -133,7 +136,7 @@ func TestValidationTimezoneValidBlankMissingOrUnverifiable(t *testing.T) {
 	}
 }
 
-func TestValidationProviderLikeUnknownRootKeepsMisplacedMessage(t *testing.T) {
+func TestUnknownTopLevelKeysProviderLikeUnknownRootKeepsMisplacedMessage(t *testing.T) {
 	issues := validate(map[string]any{"base_url": "https://example.com/v1", "api_key": "secret"})
 	misplaced := issuesWhere(issues, func(i ConfigIssue) bool {
 		return i.Severity == "warning" && strings.Contains(i.Message, "looks misplaced")
@@ -145,7 +148,7 @@ func TestValidationProviderLikeUnknownRootKeepsMisplacedMessage(t *testing.T) {
 	}
 }
 
-func TestValidationQuotedListInContainerSlotFlaggedWithRemedy(t *testing.T) {
+func TestQuotedContainerValuesQuotedListInContainerSlotIsFlaggedWithRemedy(t *testing.T) {
 	issues := validate(map[string]any{
 		"plugins":       map[string]any{"enabled": `["a","b"]`},
 		"model_catalog": map[string]any{"excluded_providers": `["openai-api"]`},
@@ -162,7 +165,7 @@ func TestValidationQuotedListInContainerSlotFlaggedWithRemedy(t *testing.T) {
 	}
 }
 
-func TestValidationStringTypedAndTolerantSlotsNotFlagged(t *testing.T) {
+func TestQuotedContainerValuesStringTypedAndTolerantSlotsAreNotFlagged(t *testing.T) {
 	issues := validate(map[string]any{
 		"approvals": map[string]any{"mode": "[off]"},
 		"model":     "gpt-4o",

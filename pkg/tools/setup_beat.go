@@ -199,9 +199,9 @@ func onbUnlistedSuggestions(env *Env, args map[string]any) string {
 	if len(unlisted) == 0 {
 		return ""
 	}
-	return jsonCompact(map[string]any{"error": "not connectors here", "reminder": fmt.Sprintf(
+	return JSON(Dict("error", "not connectors here", "reminder", fmt.Sprintf(
 		"No card shown: %s cannot be connected here. Do not mention them as connections.%s Then call setup_beat(beat=\"connectors\", suggest=[...]) again, or without suggest when none fits.",
-		strings.Join(unlisted, ", "), onbSuggestFrom(slugs))})
+		strings.Join(unlisted, ", "), onbSuggestFrom(slugs))))
 }
 
 // SuggestedOnboardingName is the OS account's real name for the name card only
@@ -258,9 +258,9 @@ func setupBeatTool(ctx context.Context, env *Env, db *state.DB, sessionID, toolC
 		}
 		if beat == "" {
 			if OnboardingActive(record) {
-				return jsonCompact(map[string]any{"next": "done", "reminder": OnboardingFinishReminder(record)})
+				return JSONASCII(Dict("next", "done", "reminder", OnboardingFinishReminder(record)))
 			}
-			return jsonCompact(map[string]any{"error": onboardingEndedText})
+			return JSONASCII(Dict("error", onboardingEndedText))
 		}
 	}
 	if SetupBeatCard == nil {

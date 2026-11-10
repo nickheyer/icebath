@@ -12,7 +12,7 @@ import (
 // Repair hint with the install method and its update command pinned
 func hintFor(t *testing.T, method string) string {
 	t.Helper()
-	pinVar(t, &detectInstallMethod, func(string, string) (string, error) { return method, nil })
+	pinVar(t, &detectInstallMethod, func(context.Context, string, string) (string, error) { return method, nil })
 	pinVar(t, &recommendedUpdateCommandForMethod, func(m string) string { return "CMD-" + m })
 	return walResetRepairHint(context.Background())
 }
@@ -32,7 +32,7 @@ func TestWALResetRepairHintPerInstallMethod(t *testing.T) {
 }
 
 func TestHintFallsBackWhenDetectionFails(t *testing.T) {
-	pinVar(t, &detectInstallMethod, func(string, string) (string, error) { return "", errors.New("boom") })
+	pinVar(t, &detectInstallMethod, func(context.Context, string, string) (string, error) { return "", errors.New("boom") })
 	if hint := walResetRepairHint(context.Background()); !strings.Contains(hint, "SQLite 3.51.3+") {
 		t.Fatalf("fallback hint = %q", hint)
 	}

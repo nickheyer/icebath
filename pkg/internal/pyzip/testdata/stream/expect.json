@@ -1444,6 +1444,2721 @@
    "result": null
   }
  },
+ "zstd-blkrep-cut00008-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-cut00010-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-cut00082-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-cut00156-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-flip00008b0-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-flip00013b4-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blkrep-flip00028b7-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blkrep-flip00032b1-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blkrep-flip00039b5-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-flip00052b0-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-flip00059b2-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-flip00100b2-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-flip00107b1-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blkrep-flip00111b1-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-flip00128b7-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blkrep-flip00129b5-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blksmall-cut00008-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-cut00010-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-cut00110-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-cut00212-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00016b6-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "6887461eee5471a26c8a5c2e107608cb94d4bdd82f32a8ad8f7cf78b124de504",
+    "size": 300
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "6887461eee5471a26c8a5c2e107608cb94d4bdd82f32a8ad8f7cf78b124de504",
+    "size": 300
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-blksmall-flip00025b6-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00037b6-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blksmall-flip00051b0-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00054b1-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00092b5-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00100b6-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00134b7-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00136b5-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00137b5-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00160b6-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksmall-flip00204b0-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksum-cut00008-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksum-cut00010-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksum-cut01417-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blksum-cut02826-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "6be03ffce01c7d351820e232bc8e0c469cb6d2d0be71c705c0528ca32e2d349b",
+    "size": 6000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "6be03ffce01c7d351820e232bc8e0c469cb6d2d0be71c705c0528ca32e2d349b",
+    "size": 6000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-blksum-flip00614b1-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip00662b1-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip00801b7-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip01113b5-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip01333b3-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip01369b6-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip01552b2-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip01708b3-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip01708b6-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blksum-flip01926b6-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blksum-flip02268b7-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blksum-flip02369b2-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-blktext-cut00008-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-cut00010-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-cut01386-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-cut02764-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip00278b0-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip00836b0-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip00941b2-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip01113b3-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip01319b5-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip01650b5-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip01725b3-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blktext-flip01817b5-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip01878b1-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
+ "zstd-blktext-flip02422b6-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip02424b6-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-blktext-flip02594b7-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Data corruption detected"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Data corruption detected"
+  }
+ },
  "zstd-empty-all.zip": {
   "extractall": {
    "class": "BadZipFile",
@@ -2190,6 +4905,49 @@
   "testzip": {
    "class": "ZstdError",
    "msg": "Unable to decompress Zstandard data: Unknown frame descriptor"
+  }
+ },
+ "zstd-v05corpus-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Unsupported frame parameter"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Unsupported frame parameter"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Unsupported frame parameter"
   }
  },
  "zstd-v05magic-first.zip": {

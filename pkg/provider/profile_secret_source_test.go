@@ -31,6 +31,23 @@ func TestProfileSecretSourceReadsProfileAndBoundScopes(t *testing.T) {
 	}
 }
 
+func TestManagedDotenvKeysListInSortedOrder(t *testing.T) {
+	secretSourceCacheMu.Lock()
+	prev := managedDotenvKeys
+	managedDotenvKeys = map[string]bool{"ZETA_KEY": true, "ALPHA_KEY": true, "MID_KEY": true, "BETA_KEY": true}
+	secretSourceCacheMu.Unlock()
+	t.Cleanup(func() {
+		secretSourceCacheMu.Lock()
+		managedDotenvKeys = prev
+		secretSourceCacheMu.Unlock()
+	})
+	for range 20 {
+		if got := ManagedDotenvKeys(); !reflect.DeepEqual(got, []string{"ALPHA_KEY", "BETA_KEY", "MID_KEY", "ZETA_KEY"}) {
+			t.Fatalf("keys %v", got)
+		}
+	}
+}
+
 func TestToolRuntimeCredentialsResolveTheRequestedRoute(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)

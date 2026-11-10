@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // One captured x_search request
@@ -206,7 +208,7 @@ func TestXSearchStructuredHTTPError(t *testing.T) {
 	if r["success"] != false || r["provider"] != "xai" || r["tool"] != "x_search" || r["error_type"] != "HTTPError" || r["error"] != "forbidden: x_search is not enabled for this model" {
 		t.Fatalf("%v", r)
 	}
-	if !strings.HasPrefix(raw, `{"success":false,"provider":"xai","tool":"x_search","error":`) {
+	if raw != `{"success": false, "provider": "xai", "tool": "x_search", "error": "forbidden: x_search is not enabled for this model", "error_type": "HTTPError"}` {
 		t.Fatalf("key order %q", raw)
 	}
 	stubXSearchHTTP(t, func(n int, req *http.Request) (*http.Response, error) {
@@ -367,5 +369,25 @@ func TestXSearchRegistered(t *testing.T) {
 	tool := (*captured)[0].body["tools"].([]any)[0].(map[string]any)
 	if tool["excluded_x_handles"].([]any)[0] != "spam" || tool["enable_video_understanding"] != true {
 		t.Fatalf("handler args %v", tool)
+	}
+}
+
+func TestXSearchPassesProviderNumbersAndKeyOrderThrough(t *testing.T) {
+	env := xsEnv(t)
+	t.Setenv("XAI_API_KEY", "xai-test-key")
+	stubXSearchHTTP(t, func(n int, req *http.Request) (*http.Response, error) {
+		return xsResponse(req, 200, `{"output_text": 12.50, "citations":[{"z": 1, "a": 1.0}, 1e2, "u"], "output":[{"type":"message","content":[{"type":"output_text","text":"t","annotations":[{"type":"url_citation","url":{"b":1,"a":1.0},"start_index":1,"end_index":2.0}]}]}]}`), nil
+	})
+	decoded, err := pyjson.Loads(xSearchTool(context.Background(), env, "q", nil, nil, "", "", false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pyjson.Dumps(decoded, pyjson.EnsureASCII(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"answer": "12.5", "citations": [{"z": 1, "a": 1.0}, 100.0, "u"], "inline_citations": [{"url": {"b": 1, "a": 1.0}, "title": "", "start_index": 1, "end_index": 2.0}], "degraded": false, "degraded_reason": null}`
+	if !strings.HasSuffix(got, want) {
+		t.Fatalf("result %s\nwant suffix %s", got, want)
 	}
 }

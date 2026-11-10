@@ -180,14 +180,14 @@ func looksLikeImage(data []byte) bool {
 
 // Creates a media cache directory 0700 under the secure dir policy, plain mkdir for managed installs
 func secureMediaCacheDir(ctx context.Context, h, dir string) error {
-	if home.ManagedSystem(h) != "" {
+	if home.ManagedSystem(ctx, h) != "" {
 		return os.MkdirAll(dir, 0o777)
 	}
 	if _, err := home.MakeUserDir(ctx, dir, 0o700, true, true); err != nil {
 		slog.Debug(fmt.Sprintf("media cache dir creation failed for %s: %v", dir, err))
 		return os.MkdirAll(dir, 0o777)
 	}
-	config.SecureDir(h, dir)
+	config.SecureDir(ctx, h, dir)
 	return nil
 }
 

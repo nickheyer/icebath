@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
 	"sync"
@@ -329,8 +328,7 @@ func clarifyCoerceMultiSelectText(entry *ClarifyEntry, text string) (string, boo
 	if len(selected) == 0 {
 		return "", false
 	}
-	raw, _ := json.Marshal(selected)
-	return string(raw), true
+	return JSON(selected), true
 }
 
 // AttemptClarifyTextResponse tries to resolve the oldest pending clarify from typed text and reports the outcome

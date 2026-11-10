@@ -52,7 +52,7 @@ func (c *ownerLatchCancel) Reason() string { return "" }
 func init() {
 	gateway.SetCronOwnerHooks(&gateway.CronOwnerHooks{
 		GetJob: func(ctx context.Context, jobID string) (*pyjson.Object, error) {
-			job, err := ownerStore(ctx).getJob(jobID)
+			job, err := ownerStore(ctx).getJob(ctx, jobID)
 			if err != nil || job == nil {
 				return nil, err
 			}

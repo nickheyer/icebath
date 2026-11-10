@@ -191,13 +191,18 @@ func migrationSources(ctx context.Context, h string) MigrationSources {
 	return src
 }
 
+// Ladder collaborators of a home as the migration facade assembles them
+func MigrationFacadeSources(ctx context.Context, h string) MigrationSources {
+	return migrationSources(ctx, h)
+}
+
 // Migrates the config to the latest version, prompting for missing env and skill settings when interactive
 func MigrateConfig(ctx context.Context, h string, interactive, quiet bool) (*MigrationResults, error) {
 	results := &MigrationResults{EnvAdded: []string{}, ConfigAdded: []string{}, Warnings: []string{}}
-	if _, err := StampMissingConfig(h, facadeStampHooks()); err != nil {
+	if _, err := StampMissingConfig(ctx, h, facadeStampHooks()); err != nil {
 		return nil, err
 	}
-	stamp, latest, err := ReadConfigVersionStamp(h, true)
+	stamp, latest, err := ReadConfigVersionStamp(ctx, h, true)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +210,7 @@ func MigrateConfig(ctx context.Context, h string, interactive, quiet bool) (*Mig
 	if stamp != nil {
 		current = *stamp
 	}
-	if fixes, err := SanitizeEnvFile(h); err == nil && fixes > 0 && !quiet {
+	if fixes, err := SanitizeEnvFile(ctx, h); err == nil && fixes > 0 && !quiet {
 		fmt.Fprintf(FacadeStdout, "  ✓ Normalized .env line formatting (%d line(s) changed)\n", fixes)
 	}
 	hasExplicit := stamp != nil
@@ -381,7 +386,7 @@ func offerNewOptionalEnvVars(ctx context.Context, h string, current, latest int,
 		if err != nil {
 			return err
 		}
-		if _, known := OptionalEnvVars[name]; v == "" && known {
+		if known := OptionalEnvVars.Has(name); v == "" && known {
 			unset = append(unset, name)
 		}
 	}
@@ -390,13 +395,13 @@ func offerNewOptionalEnvVars(ctx context.Context, h string, current, latest int,
 	}
 	items := make([]string, 0, len(unset))
 	for _, name := range unset {
-		items = append(items, name+" — "+OptionalEnvVars[name].Description)
+		items = append(items, name+" — "+OptionalEnvVars.Entry(name).Description)
 	}
 	if !offerList(fmt.Sprintf("\n  %d new optional key(s) in this update:", len(unset)), items, "  Configure new keys? [y/N]: ") {
 		return nil
 	}
 	for _, name := range unset {
-		info := OptionalEnvVars[name]
+		info := OptionalEnvVars.Entry(name)
 		fmt.Fprintf(FacadeStdout, "  %s\n", firstNonEmpty(info.Description, name))
 		if info.URL != "" {
 			fmt.Fprintf(FacadeStdout, "  Get your key at: %s\n", info.URL)
@@ -464,26 +469,6 @@ func offerSkillConfigVars(ctx context.Context, h string, missing []SkillConfigVa
 
 const skillConfigPrefix = "skills.config"
 
-// Optional env catalog names in config_defaults declaration order, names it does not declare follow sorted
-func optionalEnvVarNames() []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, name := range optionalEnvDeclOrder {
-		if _, ok := OptionalEnvVars[name]; ok && !seen[name] {
-			seen[name] = true
-			out = append(out, name)
-		}
-	}
-	var rest []string
-	for name := range OptionalEnvVars {
-		if !seen[name] {
-			rest = append(rest, name)
-		}
-	}
-	slices.Sort(rest)
-	return append(out, rest...)
-}
-
 // Env variables with no value in the scoped process env or the home .env, required ones first
 func GetMissingEnvVars(ctx context.Context, h string, requiredOnly bool) ([]MissingEnvVar, error) {
 	type group struct {
@@ -493,7 +478,7 @@ func GetMissingEnvVars(ctx context.Context, h string, requiredOnly bool) ([]Miss
 	}
 	groups := []group{{RequiredEnvVars, SortedEnvNames(RequiredEnvVars), true}}
 	if !requiredOnly {
-		groups = append(groups, group{OptionalEnvVars, optionalEnvVarNames(), false})
+		groups = append(groups, group{OptionalEnvVars.Copy(), OptionalEnvVars.Names(), false})
 	}
 	var out []MissingEnvVar
 	for _, g := range groups {
@@ -641,7 +626,7 @@ func withEnvWriteLock(path string, fn func() error) error {
 }
 
 // Rewrites the home .env with normalized line formatting and returns how many lines changed
-func SanitizeEnvFile(h string) (int, error) {
+func SanitizeEnvFile(ctx context.Context, h string) (int, error) {
 	path := home.EnvPath(h)
 	if _, err := os.Stat(path); err != nil {
 		return 0, nil
@@ -669,7 +654,7 @@ func SanitizeEnvFile(h string) (int, error) {
 				}
 			}
 		}
-		return writeEnvLinesMode(h, path, sanitized, false)
+		return writeEnvLinesMode(ctx, h, path, sanitized, false)
 	})
 	if err == nil && fixes > 0 {
 		InvalidateEnvCache()

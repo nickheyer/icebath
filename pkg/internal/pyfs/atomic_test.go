@@ -55,7 +55,7 @@ func TestMoveIntoExistingDirAndRefusesCollision(t *testing.T) {
 	if _, err := Move(src, dst); err == nil || err.Error() != "Destination path '"+filepath.Join(dst, "a")+"' already exists" {
 		t.Fatalf("collision %v", err)
 	}
-	if err := copyTree(filepath.Join(dst, "a"), filepath.Join(dir, "copy")); err != nil {
+	if err := CopyTree(filepath.Join(dst, "a"), filepath.Join(dir, "copy"), true, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "copy", "sub", "f")); string(b) != "x" {

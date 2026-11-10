@@ -14,7 +14,7 @@ import (
 func diagnosticJob(t *testing.T, s *Store) *Job {
 	t.Helper()
 	prompt, deliver := "Check status", "local"
-	job, err := s.createJob(CreateJobOptions{Prompt: &prompt, Schedule: "every 1h", Model: "local-probe", Deliver: &deliver})
+	job, err := s.createJob(context.Background(), CreateJobOptions{Prompt: &prompt, Schedule: "every 1h", Model: "local-probe", Deliver: &deliver})
 	if err != nil {
 		t.Fatal(err)
 	}

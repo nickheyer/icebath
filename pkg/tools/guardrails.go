@@ -203,11 +203,11 @@ func ShapeFailureError(data map[string]any) string {
 	}
 	if first, ok := errs[0].(map[string]any); ok {
 		if msg := first["message"]; truthy(msg) {
-			return fmt.Sprint(msg)
+			return pyrepr.Str(msg)
 		}
-		return jsonCompact(first)
+		return pyrepr.Str(first)
 	}
-	return fmt.Sprint(errs[0])
+	return pyrepr.Str(errs[0])
 }
 
 // FileMutationResultLanded is true when a file mutation result proves the write landed
@@ -913,7 +913,11 @@ func (c *ToolCallGuardrailController) checkLoopCap(toolName string, args map[str
 
 // ToolguardSyntheticResult builds the synthetic tool content for a blocked call
 func ToolguardSyntheticResult(d ToolGuardrailDecision) string {
-	return jsonCompact(map[string]any{"error": d.Message, "guardrail": d.ToMetadata()})
+	meta := Dict("action", d.Action, "code", d.Code, "message", d.Message, "tool_name", d.ToolName, "count", d.Count)
+	if d.Signature != nil {
+		meta.Set("signature", Dict("tool_name", d.Signature.ToolName, "args_hash", d.Signature.ArgsHash))
+	}
+	return JSON(Dict("error", d.Message, "guardrail", meta))
 }
 
 // AppendToolguardGuidance appends runtime guidance to the current tool result content
@@ -1183,11 +1187,11 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 	return expanded
 }
 
+// Typed and ordered json.loads of a split child's arguments, the input its replayed content block carries
 func decodedArguments(call state.ToolCall) any {
-	pythonTypedBatchChildInput(call)
-	v, err := pyjson.DecodeWTF8([]byte(call.Function.Arguments))
+	v, err := pyjson.Loads(call.Function.Arguments)
 	if err != nil {
-		return map[string]any{}
+		panic(fmt.Sprintf("split tool call batch child carries arguments that are not JSON: %v", err))
 	}
 	return v
 }

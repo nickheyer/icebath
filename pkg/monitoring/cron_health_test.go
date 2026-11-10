@@ -1,6 +1,7 @@
 package monitoring
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -89,7 +90,7 @@ func TestCronHealthSnapshotGroupsFailOpenAndCountOverdue(t *testing.T) {
 	neg := -2.0
 	SetCronHealthSources(CronHealthSources{
 		Now: func() time.Time { return now },
-		LoadJobs: func() ([]CronJobHealth, error) {
+		LoadJobs: func(_ context.Context) ([]CronJobHealth, error) {
 			grace := func() int { return 120 }
 			return []CronJobHealth{
 				{Enabled: true, NextRunAt: "2026-07-24T11:00:00", HasSchedule: true, GraceSeconds: grace},
@@ -107,7 +108,7 @@ func TestCronHealthSnapshotGroupsFailOpenAndCountOverdue(t *testing.T) {
 	defer SetCronHealthSources(CronHealthSources{})
 	got := map[string]any{}
 	var order []string
-	for _, m := range BuildCronHealthSnapshot().Metrics {
+	for _, m := range BuildCronHealthSnapshot(context.Background()).Metrics {
 		got[m.Name] = m.Value
 		order = append(order, m.Name)
 	}

@@ -92,7 +92,7 @@ func TestLoadJobsAcceptsUTF8BOM(t *testing.T) {
 	s, _ := newTestStore(t)
 	b, _ := json.Marshal(map[string]any{"jobs": []any{intervalJob("bomjob01", "bom-test", 60)}})
 	os.WriteFile(s.jobsFile, append([]byte("\xef\xbb\xbf"), b...), 0o600)
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ var idKeyedPayload = map[string]any{
 func TestJobsJsonIdKeyedMapLoadJobsFlattensIdKeyedMap(t *testing.T) {
 	s, _ := newTestStore(t)
 	writeJobsFile(t, s, idKeyedPayload)
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestJobsJsonIdKeyedMapLoadJobsFlattensIdKeyedMap(t *testing.T) {
 func TestJobsJsonIdKeyedMapIdKeyedMapRepairedToListOnDisk(t *testing.T) {
 	s, _ := newTestStore(t)
 	writeJobsFile(t, s, idKeyedPayload)
-	if _, err := s.LoadJobs(); err != nil {
+	if _, err := s.LoadJobs(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"cron1234abcd", "cron5678efgh"}
@@ -133,7 +133,7 @@ func TestJobsJsonIdKeyedMapIdKeyedMapRepairedToListOnDisk(t *testing.T) {
 	if !reflect.DeepEqual(disk, want) {
 		t.Fatalf("disk %v", disk)
 	}
-	reloaded, _ := s.LoadJobs()
+	reloaded, _ := s.LoadJobs(context.Background())
 	if !reflect.DeepEqual(sortedIDs(reloaded), want) {
 		t.Fatalf("reloaded %v", jobIDs(reloaded))
 	}
@@ -142,7 +142,7 @@ func TestJobsJsonIdKeyedMapIdKeyedMapRepairedToListOnDisk(t *testing.T) {
 func TestEmptyIDKeyedMapReturnsEmptyList(t *testing.T) {
 	s, _ := newTestStore(t)
 	writeJobsFile(t, s, map[string]any{"jobs": map[string]any{}})
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil || len(loaded) != 0 {
 		t.Fatalf("loaded %v %v", jobIDs(loaded), err)
 	}
@@ -154,7 +154,7 @@ func TestMapValueWithoutInlineIDAdoptsKey(t *testing.T) {
 		"cronkeyonly1":     intervalJob("", "keyed only", 15),
 		"cron-ignored-key": intervalJob("croninline99", "inline id wins", 5),
 	}})
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestNonDictMapValuesSkippedWithWarning(t *testing.T) {
 		"junk-number": 42,
 		"junk-null":   nil,
 	}})
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestNonDictMapValuesSkippedWithWarning(t *testing.T) {
 	if !strings.Contains(logs.String(), "non-dict") {
 		t.Fatalf("no non-dict warning in %s", logs)
 	}
-	listed, err := s.listJobs(true)
+	listed, err := s.listJobs(context.Background(), true)
 	if err != nil || !reflect.DeepEqual(jobIDs(listed), []string{"goodjob1"}) {
 		t.Fatalf("listed %v %v", jobIDs(listed), err)
 	}
@@ -202,7 +202,7 @@ func TestNonDictMapValuesSkippedWithWarning(t *testing.T) {
 func TestNonObjectListEntriesDroppedAndScalarJobsFieldReplaced(t *testing.T) {
 	s, logs := newTestStore(t)
 	writeJobsFile(t, s, map[string]any{"jobs": []any{intervalJob("keep1", "keep", 60), nil, "i am not a job", 42}})
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil || !reflect.DeepEqual(jobIDs(loaded), []string{"keep1"}) {
 		t.Fatalf("loaded %v %v", jobIDs(loaded), err)
 	}
@@ -213,7 +213,7 @@ func TestNonObjectListEntriesDroppedAndScalarJobsFieldReplaced(t *testing.T) {
 		t.Fatal("raw junk value logged")
 	}
 	writeJobsFile(t, s, map[string]any{"jobs": 7})
-	loaded, err = s.LoadJobs()
+	loaded, err = s.LoadJobs(context.Background())
 	if err != nil || len(loaded) != 0 {
 		t.Fatalf("scalar jobs field: %v %v", jobIDs(loaded), err)
 	}
@@ -228,7 +228,7 @@ func TestNonObjectListEntriesDroppedAndScalarJobsFieldReplaced(t *testing.T) {
 func TestLoadJobsRepairsControlCharactersAndBareList(t *testing.T) {
 	s, logs := newTestStore(t)
 	os.WriteFile(s.jobsFile, []byte("{\"jobs\": [{\"id\": \"ctl1\", \"prompt\": \"line\tone\"}]}"), 0o600)
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil || len(loaded) != 1 || loaded[0].Prompt != "line\tone" {
 		t.Fatalf("loaded %v %v", jobIDs(loaded), err)
 	}
@@ -240,12 +240,12 @@ func TestLoadJobsRepairsControlCharactersAndBareList(t *testing.T) {
 		t.Fatalf("control character not escaped on disk: %s", raw)
 	}
 	os.WriteFile(s.jobsFile, []byte(`[{"id": "bare1"}]`), 0o600)
-	loaded, err = s.LoadJobs()
+	loaded, err = s.LoadJobs(context.Background())
 	if err != nil || !reflect.DeepEqual(jobIDs(loaded), []string{"bare1"}) || !strings.Contains(logs.String(), "bare list wrapped as dict") {
 		t.Fatalf("bare list %v %v", jobIDs(loaded), err)
 	}
 	os.WriteFile(s.jobsFile, []byte(`"nope"`), 0o600)
-	if _, err := s.LoadJobs(); err == nil || err.Error() != "Cron database corrupted: expected {'jobs': [...]}, got str" {
+	if _, err := s.LoadJobs(context.Background()); err == nil || err.Error() != "Cron database corrupted: expected {'jobs': [...]}, got str" {
 		t.Fatalf("scalar store: %v", err)
 	}
 }
@@ -253,7 +253,7 @@ func TestLoadJobsRepairsControlCharactersAndBareList(t *testing.T) {
 func TestLoadJobsNormalizesRepeatCompleted(t *testing.T) {
 	s, logs := newTestStore(t)
 	os.WriteFile(s.jobsFile, []byte(`{"jobs": [{"id": "a", "repeat": {"times": 3, "completed": -4}}, {"id": "b", "repeat": {"times": null, "completed": "x"}}, {"id": "c", "repeat": {"times": 2, "completed": 1.9}}]}`), 0o600)
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,11 +266,11 @@ func TestLoadJobsNormalizesRepeatCompleted(t *testing.T) {
 func TestSaveKeepsLoadedKeyOrderAndPythonFloats(t *testing.T) {
 	s, _ := newTestStore(t)
 	os.WriteFile(s.jobsFile, []byte(`{"jobs": [{"zeta_custom": 1, "prompt": "p", "id": "k1", "last_dispatch": {"scheduled_at": "a", "dispatched_at": "b", "lateness_seconds": 12.0, "kind": "on_time"}}]}`), 0o600)
-	loaded, err := s.LoadJobs()
+	loaded, err := s.LoadJobs(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveJobs(loaded, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), loaded, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(s.jobsFile)
@@ -349,21 +349,21 @@ func TestOutputRetentionReadsConfig(t *testing.T) {
 func TestSiblingWriteInsideSectionIsMerged(t *testing.T) {
 	s, _ := newTestStore(t)
 	seed := &Job{ID: "aaaaaaaaaaaa", Name: "watchdog", Enabled: true}
-	if err := s.SaveJobs([]*Job{seed}, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{seed}, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	err := s.withJobsLock(func(tx *jobsTx) error {
-		current, err := s.loadJobs(tx)
+	err := s.withJobsLock(context.Background(), func(tx *jobsTx) error {
+		current, err := s.loadJobs(context.Background(), tx)
 		if err != nil {
 			return err
 		}
 		writeJobsFile(t, s, map[string]any{"jobs": []any{map[string]any{"id": "aaaaaaaaaaaa", "name": "watchdog"}, map[string]any{"id": "bbbbbbbbbbbb", "name": "b"}}})
-		return s.saveJobsLocked(tx, current, nil, false)
+		return s.saveJobsLocked(context.Background(), tx, current, nil, false)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, _ := s.LoadJobs()
+	loaded, _ := s.LoadJobs(context.Background())
 	if !reflect.DeepEqual(sortedIDs(loaded), []string{"aaaaaaaaaaaa", "bbbbbbbbbbbb"}) {
 		t.Fatalf("ids %v", jobIDs(loaded))
 	}
@@ -372,21 +372,21 @@ func TestSiblingWriteInsideSectionIsMerged(t *testing.T) {
 func TestSaveRemovedIDsDropDiskJobs(t *testing.T) {
 	s, _ := newTestStore(t)
 	writeJobsFile(t, s, map[string]any{"jobs": []any{map[string]any{"id": "a"}, map[string]any{"id": "b"}}})
-	if err := s.SaveJobs([]*Job{}, []string{"a"}, false); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{}, []string{"a"}, false); err != nil {
 		t.Fatal(err)
 	}
-	loaded, _ := s.LoadJobs()
+	loaded, _ := s.LoadJobs(context.Background())
 	if !reflect.DeepEqual(jobIDs(loaded), []string{"b"}) {
 		t.Fatalf("ids %v", jobIDs(loaded))
 	}
 	payload := []*Job{}
-	if err := s.SaveJobs(payload, nil, false); err != nil || len(payload) != 0 {
+	if err := s.SaveJobs(context.Background(), payload, nil, false); err != nil || len(payload) != 0 {
 		t.Fatalf("caller payload mutated %v %v", payload, err)
 	}
-	if err := s.SaveJobs(nil, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	if loaded, _ := s.LoadJobs(); len(loaded) != 0 {
+	if loaded, _ := s.LoadJobs(context.Background()); len(loaded) != 0 {
 		t.Fatalf("replace kept %v", jobIDs(loaded))
 	}
 }
@@ -395,24 +395,24 @@ func TestSaveOverCorruptStoreFailsClosed(t *testing.T) {
 	s, _ := newTestStore(t)
 	corrupt := []byte(`{"jobs": [{"id": "ccc`)
 	os.WriteFile(s.jobsFile, corrupt, 0o600)
-	err := s.SaveJobs([]*Job{{ID: "aaaaaaaaaaaa", Name: "a"}}, nil, false)
+	err := s.SaveJobs(context.Background(), []*Job{{ID: "aaaaaaaaaaaa", Name: "a"}}, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
 		t.Fatalf("err %v", err)
 	}
 	if b, _ := os.ReadFile(s.jobsFile); !bytes.Equal(b, corrupt) {
 		t.Fatalf("corrupt bytes touched: %s", b)
 	}
-	if err := s.SaveJobs([]*Job{{ID: "aaaaaaaaaaaa", Name: "a"}}, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{{ID: "aaaaaaaaaaaa", Name: "a"}}, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	if loaded, _ := s.LoadJobs(); !reflect.DeepEqual(jobIDs(loaded), []string{"aaaaaaaaaaaa"}) {
+	if loaded, _ := s.LoadJobs(context.Background()); !reflect.DeepEqual(jobIDs(loaded), []string{"aaaaaaaaaaaa"}) {
 		t.Fatalf("ids %v", jobIDs(loaded))
 	}
-	if _, err := s.LoadJobs(); err != nil {
+	if _, err := s.LoadJobs(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(s.jobsFile, corrupt, 0o600)
-	if _, err := s.LoadJobs(); err == nil || !strings.HasPrefix(err.Error(), "Cron database corrupted and unrepairable: ") {
+	if _, err := s.LoadJobs(context.Background()); err == nil || !strings.HasPrefix(err.Error(), "Cron database corrupted and unrepairable: ") {
 		t.Fatalf("load of corrupt store: %v", err)
 	}
 }
@@ -426,7 +426,7 @@ func TestSymlinkedStoreSavesByRenameNotInPlaceCopy(t *testing.T) {
 		t.Skip("symlinks unavailable")
 	}
 	before, _ := os.Stat(filepath.Join(realDir, "jobs.json"))
-	if err := s.SaveJobs([]*Job{{ID: "a", Prompt: "x", Enabled: true}}, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{{ID: "a", Prompt: "x", Enabled: true}}, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := os.Lstat(s.jobsFile); st.Mode()&os.ModeSymlink == 0 {
@@ -436,14 +436,14 @@ func TestSymlinkedStoreSavesByRenameNotInPlaceCopy(t *testing.T) {
 	if os.SameFile(before, after) {
 		t.Fatal("store rewritten in place instead of renamed")
 	}
-	if loaded, _ := s.LoadJobs(); !reflect.DeepEqual(jobIDs(loaded), []string{"a"}) {
+	if loaded, _ := s.LoadJobs(context.Background()); !reflect.DeepEqual(jobIDs(loaded), []string{"a"}) {
 		t.Fatalf("ids %v", jobIDs(loaded))
 	}
 }
 
 func TestCronDirsAndStoreAreOwnerOnly(t *testing.T) {
 	s, _ := newTestStore(t)
-	if err := s.SaveJobs([]*Job{{ID: "a"}}, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{{ID: "a"}}, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	for path, want := range map[string]os.FileMode{s.cronDir: 0o700, s.outputDir: 0o700, s.jobsFile: 0o600} {
@@ -512,7 +512,7 @@ func TestTickerMarkersRoundTrip(t *testing.T) {
 func TestFireClaimFenceChecksOwnerAndSelfRemoval(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := &Job{ID: "fire1", Enabled: true, FireClaim: &Claim{At: "2026-01-01T00:00:00+00:00", By: "owner-a"}}
-	if err := s.SaveJobs([]*Job{job}, nil, true); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{job}, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	check := func(ctx context.Context, id, owner string) bool {
@@ -556,7 +556,7 @@ func TestCronLockHelperProcess(t *testing.T) {
 	if role == "blocker" {
 		os.WriteFile(filepath.Join(dir, "blocker_started"), []byte("1"), 0o600)
 	}
-	s.withJobsLock(func(*jobsTx) error {
+	s.withJobsLock(context.Background(), func(*jobsTx) error {
 		if role == "blocker" {
 			os.WriteFile(filepath.Join(dir, "blocker_acquired"), []byte("1"), 0o600)
 			return nil

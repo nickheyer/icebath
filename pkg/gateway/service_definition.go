@@ -108,10 +108,10 @@ func appendNodeDirForService(ctx context.Context, entries []string, hermesRoot s
 			entries = append(entries, entry)
 		}
 	}
-	if len(managed) > 0 || !home.ManagedNodeTreePresent(h) {
+	if len(managed) > 0 || !home.ManagedNodeTreePresent(ctx, h) {
 		return entries
 	}
-	for _, dir := range home.NodeDirs(h) {
+	for _, dir := range home.NodeDirs(ctx, h) {
 		if isDirSafe(dir) && !slices.Contains(entries, dir) {
 			entries = append(entries, dir)
 		}

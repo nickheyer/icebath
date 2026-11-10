@@ -76,7 +76,7 @@ func TestStructuredContentArbitration(t *testing.T) {
 	if got["result"] != "Retrieved 1 chats (offset 0, limit 1)" || !reflect.DeepEqual(got["structuredContent"], structured) {
 		t.Fatalf("summary plus data %v", got)
 	}
-	if raw := RenderCallToolResult(context.Background(), nil, &CallToolResult{Content: []*ContentBlock{textBlock("just text")}}, "s", nil); raw != `{"result":"just text"}` {
+	if raw := RenderCallToolResult(context.Background(), nil, &CallToolResult{Content: []*ContentBlock{textBlock("just text")}}, "s", nil); raw != `{"result": "just text"}` {
 		t.Fatalf("text only wire %s", raw)
 	}
 	status := map[string]any{"status": "ok"}
@@ -105,10 +105,10 @@ func TestMetaSurfacing(t *testing.T) {
 		}
 	}
 	raw := RenderCallToolResult(context.Background(), nil, &CallToolResult{Content: []*ContentBlock{textBlock("done")}, StructuredContent: map[string]any{"ok": true}, Meta: map[string]any{"com.example/k": "v"}}, "s", nil)
-	if raw != `{"result":"done","structuredContent":{"ok":true},"_meta":{"com.example/k":"v"}}` {
+	if raw != `{"result": "done", "structuredContent": {"ok": true}, "_meta": {"com.example/k": "v"}}` {
 		t.Fatalf("key order %s", raw)
 	}
-	if raw := RenderCallToolResult(context.Background(), nil, &CallToolResult{Meta: map[string]any{"com.example/k": "v"}}, "s", nil); raw != `{"_meta":{"com.example/k":"v"},"result":""}` {
+	if raw := RenderCallToolResult(context.Background(), nil, &CallToolResult{Meta: map[string]any{"com.example/k": "v"}}, "s", nil); raw != `{"_meta": {"com.example/k": "v"}, "result": ""}` {
 		t.Fatalf("empty text order %s", raw)
 	}
 	for key, want := range map[string]bool{"modelcontextprotocol.io/x": true, "mcp.dev/x": true, "tools.mcp.com/x": true,

@@ -30,7 +30,7 @@ func TestForeignProcessTickPersistsOwningProfileOffset(t *testing.T) {
 	ctx := home.WithOverride(context.Background(), profileA)
 	s := cronStoreFrom(withCronStore(ctx, openCronStore(profileA, nil)))
 	mustCreate(t, s, CreateJobOptions{Name: prompt("daily-2pm"), Prompt: prompt("x"), Schedule: "0 14 * * *"})
-	jobs, err := s.LoadJobs()
+	jobs, err := s.LoadJobs(ctx)
 	if err != nil || len(jobs) != 1 {
 		t.Fatalf("jobs %v %v", jobIDs(jobs), err)
 	}

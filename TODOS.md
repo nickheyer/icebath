@@ -924,7 +924,7 @@
 - [x] tools/skill_ledger.py
 - [x] tools/skill_usage.py
 
-### 12. pkg/cron: 57% (39 of 68 files completed)
+### 12. pkg/cron: 58% (40 of 68 files completed)
 #### Job store, schedules, due scan, scheduler, delivery, blueprints, cronjob tool
 - [x] agent/periodic_scheduler.py
 - [x] agent/sleep_clock.py
@@ -943,7 +943,7 @@
 - [x] cron/extra_fire.py
 - [ ] cron/incidents.py
 - [x] cron/job_definition.py
-- [ ] cron/jobs.py
+- [x] cron/jobs.py
 - [x] cron/jobs_invariants.py
 - [x] cron/jobs_model_pin.py
 - [x] cron/jobs_oneshot_diagnostics.py

@@ -23,7 +23,7 @@ func (l *fakeLease) Release() error { l.released.Store(true); return nil }
 // Installs doubles for the cmd/icebath wiring hooks the chat path reaches
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
-	home.DispatchScratchPruneEntry()
+	home.DispatchScratchPruneEntry(context.Background())
 	TryAcquireActiveSession = func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, string, error) {
 		return &fakeLease{}, "", nil
 	}

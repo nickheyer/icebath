@@ -138,7 +138,7 @@ func TestSkippedOneshotSurvivesRecoveryByAnySave(t *testing.T) {
 		if row != nil {
 			jobs = append(jobs, jobFromRow(t, row))
 		}
-		if err := s.SaveJobs(jobs, nil, false); err != nil {
+		if err := s.SaveJobs(context.Background(), jobs, nil, false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -166,7 +166,7 @@ func TestSkippedOneshotSurvivesRecoveryByAnySave(t *testing.T) {
 	if due := mustDue(t, s); !reflect.DeepEqual(jobIDs(due), []string{"once"}) {
 		t.Fatalf("after the claim expired due %v", jobIDs(due))
 	}
-	if _, err := s.clearRunClaim("once"); err != nil {
+	if _, err := s.clearRunClaim(context.Background(), "once"); err != nil {
 		t.Fatal(err)
 	}
 	if due := mustDue(t, s); !reflect.DeepEqual(jobIDs(due), []string{"once"}) {
@@ -287,7 +287,7 @@ func TestIdleTickReprobesADegradedStoreAndClearsIt(t *testing.T) {
 	s, _, _, mono, probe, _ := saveFailureStore(t)
 	*mono = 0
 	*probe = enospc
-	if err := s.SaveJobs([]*Job{}, nil, false); err != nil {
+	if err := s.SaveJobs(context.Background(), []*Job{}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	storeHealthNoteUnwritable(s, enospc, "x", "scan")

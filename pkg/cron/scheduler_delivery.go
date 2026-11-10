@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -686,7 +687,7 @@ func cronDeliveryNotifyEnabled(cfg config.Tree) bool {
 }
 
 // Persists the unverified targets and the queued Bot Chat receipts when either changed
-func (s *Store) recordDeliveryVerification(job *Job, unverified []string) {
+func (s *Store) recordDeliveryVerification(ctx context.Context, job *Job, unverified []string) {
 	var newValue []string
 	if len(unverified) > 0 {
 		newValue = append([]string(nil), unverified...)
@@ -732,7 +733,7 @@ func (s *Store) recordDeliveryVerification(job *Job, unverified []string) {
 	if _, ok := values["last_delivery_queued"]; ok {
 		job.LastDeliveryQueued = want
 	}
-	if _, err := s.updateJob(job.ID, values); err != nil {
+	if _, err := s.updateJob(home.WithOverride(ctx, s.home), job.ID, values); err != nil {
 		s.log.Debug(fmt.Sprintf("Job '%s': could not record delivery verification: %v", job.ID, err))
 	}
 }
@@ -1326,12 +1327,12 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	job.run.notificationAllTargetsSuppressed = false
 	targets := resolveDeliveryTargets(ctx, s, job, forFailure)
 	if len(targets) == 0 {
-		s.recordDeliveryVerification(job, nil)
+		s.recordDeliveryVerification(home.WithOverride(ctx, s.home), job, nil)
 		return s.unresolvedDeliveryOutcome(job, forFailure), nil
 	}
 	external := os.Getenv(externalWorkerEnv)
 	if external != "" && adapters == nil && job.ExecutionID != nil && external == *job.ExecutionID && anyNonBotChat(targets) {
-		s.recordDeliveryVerification(job, nil)
+		s.recordDeliveryVerification(home.WithOverride(ctx, s.home), job, nil)
 		q := openDeliveryQueue(s)
 		errText, err := q.EnqueueAndWait(ctx, external, job, content, forFailure, nil)
 		if err != nil {
@@ -1344,7 +1345,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 		if status != nil && status["status"] == "suppressed" {
 			job.run.notificationAllTargetsSuppressed = true
 		}
-		refreshed, err := s.getJob(job.ID)
+		refreshed, err := s.getJob(home.WithOverride(ctx, s.home), job.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -1451,7 +1452,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	} else {
 		deliveryErrors = append(deliveryErrors, policyDropErrors...)
 	}
-	s.recordDeliveryVerification(job, unverified)
+	s.recordDeliveryVerification(home.WithOverride(ctx, s.home), job, unverified)
 	if len(deliveryErrors) == 0 {
 		return nil, nil
 	}

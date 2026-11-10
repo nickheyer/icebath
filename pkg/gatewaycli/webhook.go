@@ -229,7 +229,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		route.Set("mirror_to_session", true)
 	}
 	if cronJob := pystr.Strip(args.CronJob); cronJob != "" {
-		job, err := resolveRouteCronJob(h, profile, cronJob)
+		job, err := resolveRouteCronJob(ctx, h, profile, cronJob)
 		var ambiguous *cron.AmbiguousJobReferenceError
 		if errors.As(err, &ambiguous) {
 			fmt.Fprintf(w, "Error: %s\n", err.Error())
@@ -311,15 +311,15 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 }
 
 // Resolves a cron reference in the route profile store, the caller home for the default profile
-func resolveRouteCronJob(h string, profile any, reference string) (*cron.Job, error) {
+func resolveRouteCronJob(ctx context.Context, h string, profile any, reference string) (*cron.Job, error) {
 	if pyrepr.Equal(profile, "default") {
-		return webhookCronJobRef(h, reference)
+		return webhookCronJobRef(ctx, h, reference)
 	}
 	dir, err := profiles.GetProfileDir(pyrepr.Str(profile))
 	if err != nil {
 		return nil, err
 	}
-	return webhookCronJobRef(dir, reference)
+	return webhookCronJobRef(ctx, dir, reference)
 }
 
 // Route as a dict or the AttributeError a get on another type raises

@@ -1,6 +1,7 @@
 package home
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,10 +25,10 @@ const ScratchPruneEntry = "__icebath_scratch_prune__"
 var pruneEntryDispatched atomic.Bool
 
 // Runs the prune and exits when argv carries the entry, otherwise records that this binary handles it
-func DispatchScratchPruneEntry() {
+func DispatchScratchPruneEntry(ctx context.Context) {
 	pruneEntryDispatched.Store(true)
 	if len(os.Args) > 1 && os.Args[1] == ScratchPruneEntry {
-		os.Exit(RunScratchPrune(os.Args[2:]))
+		os.Exit(RunScratchPrune(ctx, os.Args[2:]))
 	}
 }
 
@@ -96,7 +97,7 @@ func decodeLineage(text string) ([]lineageEntry, error) {
 }
 
 // Detached child entry running one prune of the scratch dir while sparing the launcher ancestry
-func RunScratchPrune(args []string) int {
+func RunScratchPrune(ctx context.Context, args []string) int {
 	if len(args) < 2 {
 		fmt.Fprintf(os.Stderr, "%s takes the scratch dir and the launcher lineage\n", ScratchPruneEntry)
 		return 1
@@ -112,7 +113,7 @@ func RunScratchPrune(args []string) int {
 			}
 			launcherLineage, launcherLineageKnown = chain, true
 		}
-		_, err := PruneScratchDir(scratch, ScratchMaxIdleHours)
+		_, err := PruneScratchDir(ctx, scratch, ScratchMaxIdleHours)
 		return err
 	}()
 	if err != nil {

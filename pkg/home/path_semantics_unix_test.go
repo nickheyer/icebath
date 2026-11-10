@@ -3,6 +3,7 @@
 package home
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -48,7 +49,7 @@ func TestHomeModeParsesLikePythonIntBaseEight(t *testing.T) {
 		isolatePolicyEnv(t, tmp)
 		t.Setenv("ICEBATH_HOME_MODE", text)
 		dir := mkdirs(t, filepath.Join(tmp, "d"), 0o755)
-		ApplySecureDirPolicy(dir, tmp)
+		ApplySecureDirPolicy(context.Background(), dir, tmp)
 		if got := sMode(t, dir); got != want {
 			t.Errorf("ICEBATH_HOME_MODE=%q gave %o, want %o", text, got, want)
 		}
@@ -56,7 +57,7 @@ func TestHomeModeParsesLikePythonIntBaseEight(t *testing.T) {
 	tmp := t.TempDir()
 	isolatePolicyEnv(t, tmp)
 	t.Setenv("ICEBATH_HOME_MODE", "0o77777777777")
-	panicsWithOverflow(t, "Python int too large to convert to C int", func() { ApplySecureDirPolicy(tmp, tmp) })
+	panicsWithOverflow(t, "Python int too large to convert to C int", func() { ApplySecureDirPolicy(context.Background(), tmp, tmp) })
 }
 
 func TestIcebathUIDGIDConvertLikeOsChown(t *testing.T) {
@@ -68,7 +69,7 @@ func TestIcebathUIDGIDConvertLikeOsChown(t *testing.T) {
 		swap(t, &chownPath, func(p string, u, g int) error { calls = append(calls, call{u, g}); return nil })
 		t.Setenv("ICEBATH_UID", uid)
 		t.Setenv("ICEBATH_GID", gid)
-		ApplySecureDirPolicy(mkdirs(t, filepath.Join(tmp, "d"), 0), tmp)
+		ApplySecureDirPolicy(context.Background(), mkdirs(t, filepath.Join(tmp, "d"), 0), tmp)
 		return calls
 	}
 	if got := run("1_000", "\u0663"); len(got) != 1 || got[0] != (call{1000, 3}) {
@@ -92,7 +93,7 @@ func TestScratchUsageCountsEveryNonDirectoryLstat(t *testing.T) {
 	if err := os.Symlink("missing-target", filepath.Join(root, "dangling")); err != nil {
 		t.Fatal(err)
 	}
-	if got := ScratchDirUsageBytes(root); got != 3+int64(len("missing-target")) {
+	if got := ScratchDirUsageBytes(context.Background(), root); got != 3+int64(len("missing-target")) {
 		t.Fatalf("usage = %d", got)
 	}
 }

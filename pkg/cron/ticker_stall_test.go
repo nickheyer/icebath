@@ -10,9 +10,9 @@ import (
 func TestBoundedJobsLockReentrantNestingStillWorks(t *testing.T) {
 	s, _ := newTestStore(t)
 	var nested *Job
-	err := s.withJobsLock(func(tx *jobsTx) error {
+	err := s.withJobsLock(context.Background(), func(tx *jobsTx) error {
 		var err error
-		nested, err = s.createJobTx(tx, CreateJobOptions{Prompt: strPtr("x"), Schedule: "every 1h"})
+		nested, err = s.createJobTx(context.Background(), tx, CreateJobOptions{Prompt: strPtr("x"), Schedule: "every 1h"})
 		return err
 	})
 	if err != nil || nested == nil {
@@ -71,7 +71,7 @@ func TestFutureDatedClaimsExpiredFireClaimIsReclaimable(t *testing.T) {
 func TestHonestRunSkipMessagesPausedJobNotReportedAsAlreadyFiring(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Name: strPtr("paused job"), Schedule: "0 7 * * *", Prompt: strPtr("x")})
-	if _, err := s.pauseJob(job.ID, nil); err != nil {
+	if _, err := s.pauseJob(context.Background(), job.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	res := s.executeJobNow(context.Background(), mustJob(t, s, job.ID), nil)

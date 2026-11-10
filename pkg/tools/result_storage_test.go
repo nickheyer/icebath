@@ -295,6 +295,10 @@ func TestCleanupSpilloverCache(t *testing.T) {
 }
 
 func TestPageableText(t *testing.T) {
+	typed := pageableText(`{"result": "t", "_meta": {"z": [1, 1.0, 1e2, -0.0, 12345678901234567890123]}, "structuredContent": {"n": 1, "f": 1.0}}`)
+	if want := "t\n\n<mcp-result-metadata>\n{\n \"_meta\": {\n  \"z\": [\n   1,\n   1.0,\n   100.0,\n   -0.0,\n   12345678901234567890123\n  ]\n },\n \"structuredContent\": {\n  \"f\": 1.0,\n  \"n\": 1\n }\n}\n</mcp-result-metadata>\n"; typed != want {
+		t.Fatalf("typed metadata %q, want %q", typed, want)
+	}
 	if pageableText(`{"result": "line one\nline two"}`) != "line one\nline two" {
 		t.Fatal("single envelope")
 	}

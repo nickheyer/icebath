@@ -495,8 +495,8 @@ func TestWelcomeBannerMatchesTheReferenceRendering(t *testing.T) {
 			bannerMCPConfigured = func(context.Context) bool { return len(sc.MCP) > 0 }
 			bannerMoAAggregator = func(context.Context, string) (string, error) { return sc.Agg, nil }
 			bannerMCPStatus = func(context.Context) []mcp.ServerStatus { return sc.MCP }
-			bannerRecommendedUpdate = func(string) (string, error) { return "icebath update", nil }
-			bannerManagedUpdate = func(string) string { return "nix profile upgrade icebath" }
+			bannerRecommendedUpdate = func(context.Context, string) (string, error) { return "icebath update", nil }
+			bannerManagedUpdate = func(context.Context, string) string { return "nix profile upgrade icebath" }
 			bannerTerminalColumns = func() int { return c.Width }
 			defs := make([]any, len(sc.Tools))
 			for i, name := range sc.Tools {
@@ -651,8 +651,8 @@ func TestPrefetchUpdateCheckDeliversBehindAndSkipsInsideTests(t *testing.T) {
 	if behind := getUpdateResult(5 * time.Second); behind == nil || *behind != 4 {
 		t.Fatalf("behind %v", behind)
 	}
-	bannerRecommendedUpdate = func(string) (string, error) { return "icebath update", nil }
-	bannerManagedUpdate = func(string) string { return "" }
+	bannerRecommendedUpdate = func(context.Context, string) (string, error) { return "icebath update", nil }
+	bannerManagedUpdate = func(context.Context, string) string { return "" }
 	ctx := context.Background()
 	if notice, err := formatUpdateNotice(ctx, 1); err != nil || notice != "[bold yellow]⚠ 1 commit behind[/][dim yellow] — run [bold]icebath update[/bold] to update[/]" {
 		t.Fatalf("notice %q %v", notice, err)

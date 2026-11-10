@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 )
 
 func cronHealthMetric(name string) any {
-	for _, m := range monitoring.BuildCronHealthSnapshot().Metrics {
+	for _, m := range monitoring.BuildCronHealthSnapshot(context.Background()).Metrics {
 		if m.Name == name {
 			return m.Value
 		}

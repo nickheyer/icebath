@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -757,6 +758,9 @@ func recordDataUse(ctx context.Context, requires []string) {
 // Routes one connector call through the gateway and returns the model facing JSON
 func dispatchConnectorCall(ctx context.Context, env *Env, call *Call) (string, error) {
 	partition := PartitionCalls([]any{map[string]any{"name": call.Name, "arguments": call.Args}})
+	for i := range partition.Remote {
+		partition.Remote[i].Typed = orderedArgsObject(call.RawArgs, call.Args)
+	}
 	entries := RunRemote(ctx, env, partition.Remote, call.ToolCallID, call.TurnID, call.TaskID)
 	if len(entries) == 0 {
 		return toolErrorJSON("Malformed connector tool name; expected connectors__<connector>__{tool}.", nil), nil
@@ -765,13 +769,14 @@ func dispatchConnectorCall(ctx context.Context, env *Env, call *Call) (string, e
 	if du, ok := entry["data_use"].([]string); ok {
 		recordDataUse(ctx, du)
 	}
-	out := map[string]any{}
-	for _, key := range []string{"response", "error", "account"} {
-		if v, ok := entry[key]; ok {
-			out[key] = v
+	ordered := modelEntry(entry)
+	out := pyjson.NewObject()
+	for _, key := range ordered.Keys {
+		if key == "response" || key == "error" || key == "account" {
+			out.Set(key, ordered.Vals[key])
 		}
 	}
-	return jsonCompact(out), nil
+	return JSON(out), nil
 }
 
 // Dispatches a connector only batch entry by entry through the normal policy pipeline
@@ -791,15 +796,21 @@ func dispatchConnectorBatch(ctx context.Context, d *Dispatcher, call *Call, call
 		}
 		return toolErrorJSON(localBatchError(first.Vals["name"], arguments, len(calls)), nil)
 	}
-	entries := append([]map[string]any{}, partition.Errors...)
+	typed, _ := NormalizeToolCallEntries(coercePythonToolArgs(ctx, d.Registry, call.Env, call.Name, pythonCallArgs(call)))
+	entries := modelEntries(partition.Errors)
 	for offset, plan := range partition.Remote {
 		if IsInterrupted(ctx) {
-			entries = append(entries, FillRemoteFailure(partition.Remote[offset:], "Stopped by the user before this call was made.", "INTERRUPTED")...)
+			entries = append(entries, modelEntries(FillRemoteFailure(partition.Remote[offset:], "Stopped by the user before this call was made.", "INTERRUPTED"))...)
 			break
 		}
 		inner := *call
 		inner.Name = plan.Name
 		inner.Args = plan.Arguments
+		if len(typed) == len(calls) {
+			if raw, err := pyjson.Dumps(typed[plan.Position].Arguments, pyjson.EnsureASCII(false)); err == nil {
+				inner.RawArgs = raw
+			}
+		}
 		if call.ToolCallID != "" {
 			inner.ToolCallID = fmt.Sprintf("%s#%d", call.ToolCallID, plan.Position)
 		}
@@ -811,46 +822,45 @@ func dispatchConnectorBatch(ctx context.Context, d *Dispatcher, call *Call, call
 		entryOpts.Trace = append([]map[string]any(nil), opts.Trace...)
 		payload := d.DispatchWith(ctx, &inner, entryOpts)
 		var value any = payload
-		if decoded, err := decodeJSON(payload); err == nil {
+		if decoded, err := pyjson.Loads(payload); err == nil {
 			value = decoded
 		}
-		entry := map[string]any{"index": plan.Position, "name": plan.Name}
-		vm := asMap(value)
-		if vm != nil {
-			if errVal, has := vm["error"]; has {
-				if em := asMap(errVal); em != nil {
-					entry["error"] = em
-				} else {
-					entry["error"] = map[string]any{"code": "TOOL_ERROR", "message": asStr(errVal)}
-				}
-			} else if resp, has := vm["response"]; has {
-				entry["response"] = resp
+		entry := pyjson.ObjectOf("index", plan.Position, "name", plan.Name)
+		vm, isDict := value.(*pyjson.Object)
+		if !isDict {
+			vm = pyjson.NewObject()
+		}
+		if errVal, has := vm.Get("error"); has {
+			if em, ok := errVal.(*pyjson.Object); ok {
+				entry.Set("error", em)
 			} else {
-				entry["response"] = vm
+				entry.Set("error", pyjson.ObjectOf("code", "TOOL_ERROR", "message", pyrepr.Str(errVal)))
 			}
-			if a := asStr(vm["account"]); a != "" {
-				entry["account"] = a
-			}
+		} else if isDict {
+			entry.Set("response", vm.GetOr("response", vm))
 		} else {
-			entry["response"] = value
+			entry.Set("response", value)
+		}
+		if pyrepr.Truthy(vm.Vals["account"]) {
+			entry.Set("account", vm.Vals["account"])
 		}
 		entries = append(entries, entry)
 	}
-	return jsonCompact(AssembleResults(len(calls), entries))
+	return JSON(AssembleResults(len(calls), entries))
 }
 
 // ---- search -------------------------------------------------------------------------------------
 
 // The connectors field explaining why hosted tools could not be searched or described
-func connectorsUnavailable(env *Env, failure, verb string, names []string) map[string]any {
+func connectorsUnavailable(env *Env, failure, verb string, names []string) *pyjson.Object {
 	if failure == connectorNotSetUp {
 		hint := connectorNotSetUpMsg + " Hosted apps (Gmail, Calendar, Notion and more) are then searchable. If the request is better served by the tools above, use those instead."
 		if last := guestSetupFailure(env); last != "" {
 			hint += " The last attempt failed, so tell the user before retrying: " + last
 		}
-		field := map[string]any{"status": connectorNotSetUp, "hint": hint}
+		field := Dict("status", connectorNotSetUp, "hint", hint)
 		if len(names) > 0 {
-			field["names"] = names
+			field.Set("names", names)
 		}
 		return field
 	}
@@ -858,9 +868,9 @@ func connectorsUnavailable(env *Env, failure, verb string, names []string) map[s
 	if failure == connectorSignInExpired {
 		hint += " The user must sign in to Nous again."
 	}
-	field := map[string]any{"status": "unavailable", "reason": failure, "hint": hint}
+	field := Dict("status", "unavailable", "reason", failure, "hint", hint)
 	if len(names) > 0 {
-		field["names"] = names
+		field.Set("names", names)
 	}
 	return field
 }

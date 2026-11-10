@@ -580,7 +580,7 @@ func (p *ByteRoverProvider) HandleToolCall(ctx context.Context, toolName string,
 		return "", err
 	}
 	if result.Success {
-		return tools.JSON(onOK(result.Output)), nil
+		return tools.JSONASCII(onOK(result.Output)), nil
 	}
 	if result.Error == "" {
 		return toolError(failMsg, nil), nil

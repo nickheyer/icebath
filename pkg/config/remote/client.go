@@ -6,15 +6,19 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -24,8 +28,10 @@ const (
 	DefaultURL  = "https://config-config.nousresearch.com"
 	URLEnv      = "ICEBATH_CONFIG_REMOTE_URL"
 	InstanceEnv = "ICEBATH_CONFIG_INSTANCE_ID"
-	httpTimeout = 15 * time.Second
 )
+
+// Bound on one plane request, shortened by tests that drive the timeout paths
+var httpTimeout = 15 * time.Second
 
 // One plane answer, HasRetryAfter set when a Retry-After header parsed as a number
 type Response struct {
@@ -59,7 +65,7 @@ func (e *TransportError) Error() string { return e.Message }
 
 // Configured plane origin and path prefix with trailing slashes dropped
 func BaseURL() string {
-	u := strings.TrimSpace(os.Getenv(URLEnv))
+	u := pystr.Strip(os.Getenv(URLEnv))
 	if u == "" {
 		u = DefaultURL
 	}
@@ -69,7 +75,7 @@ func BaseURL() string {
 // Plane URL without user info for messages, describe and provenance
 func ShownURL() string { return DisplayURL(BaseURL()) }
 
-func InstanceID() string { return strings.TrimSpace(os.Getenv(InstanceEnv)) }
+func InstanceID() string { return pystr.Strip(os.Getenv(InstanceEnv)) }
 
 // Strict UTF-8 JSON in Python json.loads shapes with objects as string keyed maps
 func loadJSON(raw []byte) (any, error) {
@@ -128,24 +134,58 @@ func parseRetryAfter(value string) (float64, bool) {
 	if value == "" {
 		return 0, false
 	}
-	s := pystr.Strip(value)
-	low := strings.ToLower(strings.TrimLeft(s, "+-"))
-	if strings.HasPrefix(low, "0x") || strings.Contains(s, "__") || strings.HasPrefix(s, "_") || strings.HasSuffix(s, "_") {
-		return 0, false
-	}
-	for i := 1; i < len(s)-1; i++ {
-		if s[i] == '_' && !(isDigit(s[i-1]) && isDigit(s[i+1])) {
-			return 0, false
-		}
-	}
-	f, err := strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
-	if err != nil && !errors.Is(err, strconv.ErrRange) {
+	f, err := pyint.ParseFloat(value)
+	if err != nil {
 		return 0, false
 	}
 	return f, true
 }
 
-func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+// Body that ended before its declared length, the http.client.IncompleteRead no transport handler catches
+type IncompleteRead struct {
+	Partial     int
+	Expected    int64
+	HasExpected bool
+}
+
+func (e *IncompleteRead) Error() string {
+	if e.HasExpected {
+		return fmt.Sprintf("IncompleteRead(%d bytes read, %d more expected)", e.Partial, e.Expected)
+	}
+	return fmt.Sprintf("IncompleteRead(%d bytes read)", e.Partial)
+}
+
+// How far one request got, read when its failure is worded
+type requestPhase struct {
+	tlsStarted atomic.Bool
+	connected  atomic.Bool
+}
+
+// Context that records the TLS handshake start and the connection handed to the request
+func (p *requestPhase) trace(ctx context.Context) context.Context {
+	return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		TLSHandshakeStart: func() { p.tlsStarted.Store(true) },
+		GotConn:           func(httptrace.GotConnInfo) { p.connected.Store(true) },
+	})
+}
+
+// Text of the urllib or socket error CPython 3.14 raises for a failure at the phase the request reached
+func (p *requestPhase) reason(err error, https bool) string {
+	var netErr net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+		switch {
+		case !p.connected.Load() && p.tlsStarted.Load():
+			return "_ssl.c:1064: The handshake operation timed out"
+		case p.connected.Load() && https:
+			return "The read operation timed out"
+		}
+		return "timed out"
+	}
+	if p.connected.Load() && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
+		return "Remote end closed connection without response"
+	}
+	return pyhttpx.OSErrorText(err)
+}
 
 // Plane bearer of home, resolved only once the plane destination passed the policy
 func Bearer(ctx context.Context, home string) (string, error) {
@@ -175,10 +215,12 @@ func Request(ctx context.Context, method, home, profile, etag string, body any, 
 		}
 		reader = strings.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, target, reader)
+	phase := &requestPhase{}
+	req, err := http.NewRequestWithContext(phase.trace(ctx), method, target, reader)
 	if err != nil {
 		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %v", method, target, err)}
 	}
+	https := req.URL.Scheme == "https"
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("X-Hermes-Instance-Id", InstanceID())
 	req.Header.Set("Accept", "application/json")
@@ -194,12 +236,15 @@ func Request(ctx context.Context, method, home, profile, etag string, body any, 
 		if errors.As(err, &derr) {
 			return Response{}, err
 		}
-		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %v", method, target, err)}
+		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %s", method, target, phase.reason(err, https))}
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return Response{}, &IncompleteRead{Partial: len(raw), Expected: resp.ContentLength - int64(len(raw)), HasExpected: resp.ContentLength >= 0}
+	}
 	if err != nil {
-		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %v", method, target, err)}
+		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %s", method, target, phase.reason(err, https))}
 	}
 	out := Response{Status: resp.StatusCode, Body: parseBody(raw), ETag: resp.Header.Get("ETag")}
 	out.RetryAfter, out.HasRetryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -241,7 +240,7 @@ func diagSizes(child *AIAgent) []string {
 		if child.tools == nil {
 			return nil, nil
 		}
-		b, err := json.Marshal(child.tools)
+		b, err := pyjson.EncodeWTF8PythonASCII(child.tools)
 		if err != nil {
 			return nil, err
 		}

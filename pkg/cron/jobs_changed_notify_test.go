@@ -60,12 +60,12 @@ func TestNotifyHelperCallsProviderOnJobsChanged(t *testing.T) {
 func TestCreateRegistersFirstTriggerWithActiveProvider(t *testing.T) {
 	s, _ := newTestStore(t)
 	var registered []*Job
-	provider := &registeringProvider{name: "stub", register: func(job *Job) error {
+	provider := &registeringProvider{name: "registering", register: func(job *Job) error {
 		registered = append(registered, job)
 		return nil
 	}}
 	patchChronos(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
-	job, err := s.createJobWithSchedulerRegistration(notifySpec())
+	job, err := s.createJobWithSchedulerRegistration(context.Background(), notifySpec())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,12 +78,12 @@ func TestCreateFailurePreservesJobAndHidesProviderDetails(t *testing.T) {
 	s, _ := newTestStore(t)
 	provider := &registeringProvider{name: "failing", register: failRegistration}
 	patchChronos(t, &schedulerResolver, func(*Store) CronScheduler { return provider })
-	_, err := s.createJobWithSchedulerRegistration(notifySpec())
+	_, err := s.createJobWithSchedulerRegistration(context.Background(), notifySpec())
 	var regErr *CronSchedulerRegistrationError
 	if !errors.As(err, &regErr) {
 		t.Fatalf("error %T %v", err, err)
 	}
-	stored, err2 := s.getJob(regErr.Job.ID)
+	stored, err2 := s.getJob(context.Background(), regErr.Job.ID)
 	if err2 != nil || stored == nil {
 		t.Fatalf("stored %v %v", stored, err2)
 	}

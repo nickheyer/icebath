@@ -170,8 +170,8 @@ func RunCLIExecQuickCommand(ctx context.Context, env *tools.Env, command any) (C
 }
 
 // Child env of build_subprocess_env with its defaults, secrets scrubbed and the profile home bridged
-func quickChildEnv(ctx context.Context, env *tools.Env) (map[string]string, error) {
-	return tools.BuildSubprocessEnv(ctx, env, tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
+func quickChildEnv(ctx context.Context, env *tools.Env) (*tools.ChildEnv, error) {
+	return tools.BuildSubprocessEnvOrdered(ctx, env, tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
 }
 
 func gatewayQuickError(ctx context.Context, msg string) string {
@@ -247,7 +247,7 @@ type quickProc struct {
 }
 
 // Opens the pipes, converts the args, then spawns with the inherited stdin, every error text being the Python one
-func startQuickProc(build func() (quickProgram, error), cwd string, env map[string]string) (*quickProc, error) {
+func startQuickProc(build func() (quickProgram, error), cwd string, env *tools.ChildEnv) (*quickProc, error) {
 	outR, outW, err := os.Pipe()
 	if err != nil {
 		return nil, pyError(pyOSErrorText(err))
@@ -363,10 +363,10 @@ type pyError string
 
 func (e pyError) Error() string { return string(e) }
 
-// Items list() yields for a config value that is neither str nor bytes, mapping keys in sorted order
+// Items list() yields for a config value that is neither str nor bytes, mapping keys in file order
 func pyListItems(v any) ([]any, error) {
 	if m := config.AsMap(v); m != nil {
-		keys := config.SortedKeys(m)
+		keys := config.MappingKeys(m)
 		items := make([]any, len(keys))
 		for i, k := range keys {
 			items[i] = k

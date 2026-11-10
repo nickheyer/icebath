@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -21,7 +22,7 @@ func failEmptyResponse(d *runDelivery, finalResponse string) {
 // Shutdown already advanced this run, records the failed notice without spending another fire
 func (s *Store) finishInterruptedRun(ctx context.Context, job *Job, executionID string, deliveryError *string) error {
 	if deliveryError != nil && *deliveryError != "" {
-		if _, err := s.updateJob(job.ID, map[string]any{"last_delivery_error": *deliveryError}); err != nil {
+		if _, err := s.updateJob(home.WithOverride(ctx, s.home), job.ID, map[string]any{"last_delivery_error": *deliveryError}); err != nil {
 			s.log.Debug(fmt.Sprintf("Failed recording delivery_error for interrupted job %s: %v", job.ID, err))
 		}
 	}
@@ -52,7 +53,7 @@ func classifyDeliveryOutcome(deliveryError *string, shouldDeliver, unresolvedOri
 func (s *Store) finishCompletedRun(ctx context.Context, d *runDelivery, fireOwner *string, executionID string, recovered bool) (bool, error) {
 	job := d.job
 	if !d.shouldDeliver && pyTruthy(job.LastDeliveryQueued) {
-		if _, err := s.updateJob(job.ID, map[string]any{"last_delivery_queued": nil}); err != nil {
+		if _, err := s.updateJob(home.WithOverride(ctx, s.home), job.ID, map[string]any{"last_delivery_queued": nil}); err != nil {
 			return false, err
 		}
 		job.LastDeliveryQueued = nil

@@ -23,6 +23,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Spawn tags, the machine wide spawn ledger, the Windows job object and the POSIX owner death supervisor
@@ -272,36 +274,35 @@ type LedgerEntry struct {
 	BootID        *string  `json:"boot_id"`
 }
 
-// Row map of the entry in the ledger's JSON shape, built without a JSON round trip so invalid bytes survive
-func (e LedgerEntry) asMap() map[string]any {
-	m := map[string]any{
-		"pid": e.Pid, "create_time": nil, "purpose": e.Purpose, "install": e.Install, "spawner_pid": nil,
-		"spawner_create": nil, "registered_at": e.RegisteredAt, "argv": e.Argv, "host": e.Host, "port": nil,
-		"profile": e.Profile, "icebath_home": e.IcebathHome, "isolated": e.Isolated, "boot_start": nil,
-		"spawner_boot": nil, "boot_id": nil,
-	}
+// Row of the entry in the ledger's JSON shape and dataclass field order, built without a JSON round trip
+func (e LedgerEntry) asObject() *pyjson.Object {
+	o := pyjson.ObjectOf(
+		"pid", e.Pid, "create_time", nil, "purpose", e.Purpose, "install", e.Install, "spawner_pid", nil,
+		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", e.Argv, "host", e.Host, "port", nil,
+		"profile", e.Profile, "icebath_home", e.IcebathHome, "isolated", e.Isolated, "boot_start", nil,
+		"spawner_boot", nil, "boot_id", nil)
 	if e.CreateTime != nil {
-		m["create_time"] = *e.CreateTime
+		o.Set("create_time", *e.CreateTime)
 	}
 	if e.SpawnerPid != nil {
-		m["spawner_pid"] = *e.SpawnerPid
+		o.Set("spawner_pid", *e.SpawnerPid)
 	}
 	if e.SpawnerCreate != nil {
-		m["spawner_create"] = *e.SpawnerCreate
+		o.Set("spawner_create", *e.SpawnerCreate)
 	}
 	if e.Port != nil {
-		m["port"] = *e.Port
+		o.Set("port", *e.Port)
 	}
 	if e.BootStart != nil {
-		m["boot_start"] = *e.BootStart
+		o.Set("boot_start", *e.BootStart)
 	}
 	if e.SpawnerBoot != nil {
-		m["spawner_boot"] = *e.SpawnerBoot
+		o.Set("spawner_boot", *e.SpawnerBoot)
 	}
 	if e.BootID != nil {
-		m["boot_id"] = *e.BootID
+		o.Set("boot_id", *e.BootID)
 	}
-	return m
+	return o
 }
 
 // Machine root ledger path shared by every profile of this install
@@ -322,11 +323,11 @@ func entryInt(entry map[string]any, key string) (int, bool) {
 		return v, true
 	case int64:
 		return int(v), true
-	case float64:
-		if v == math.Trunc(v) && !strings.Contains(fmt.Sprint(v), ".") {
-			return int(v), true
+	case bool:
+		if v {
+			return 1, true
 		}
-		return 0, false
+		return 0, true
 	}
 	return 0, false
 }
@@ -353,31 +354,29 @@ func entryFloat(entry map[string]any, key string) *float64 {
 }
 
 // Entries list, empty for a missing or blank file, nil for a corrupt one
-func readLedger(path string) ([]map[string]any, bool) {
+func readLedger(path string) ([]*pyjson.Object, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return []map[string]any{}, true
+			return []*pyjson.Object{}, true
 		}
 		return nil, false
 	}
 	text := strings.TrimPrefix(string(data), "\xEF\xBB\xBF")
 	if strings.TrimSpace(text) == "" {
-		return []map[string]any{}, true
+		return []*pyjson.Object{}, true
 	}
-	var parsed any
-	dec := json.NewDecoder(strings.NewReader(text))
-	dec.UseNumber()
-	if err := dec.Decode(&parsed); err != nil {
+	parsed, err := pyjson.Loads(text)
+	if err != nil {
 		return nil, false
 	}
 	list, ok := parsed.([]any)
 	if !ok {
 		return nil, false
 	}
-	out := make([]map[string]any, 0, len(list))
+	out := make([]*pyjson.Object, 0, len(list))
 	for _, item := range list {
-		if m, ok := item.(map[string]any); ok {
+		if m, ok := item.(*pyjson.Object); ok {
 			out = append(out, m)
 		}
 	}
@@ -385,7 +384,7 @@ func readLedger(path string) ([]map[string]any, bool) {
 }
 
 // Ledger entries, false after parking a corrupt file, caller holds the ledger lock
-func readLedgerOrQuarantine(path string) ([]map[string]any, bool) {
+func readLedgerOrQuarantine(path string) ([]*pyjson.Object, bool) {
 	entries, ok := readLedger(path)
 	if !ok {
 		parked := path + ".corrupt"
@@ -584,15 +583,15 @@ func appendLedgerEntry(ctx context.Context, entry LedgerEntry) bool {
 		defer unlock()
 	}
 	entries, _ := readLedgerOrQuarantine(path)
-	pruned := make([]map[string]any, 0, len(entries)+1)
+	pruned := make([]*pyjson.Object, 0, len(entries)+1)
 	for _, e := range entries {
-		pid, ok := entryInt(e, "pid")
-		if !ok || pid == entry.Pid || !EntryStillRunning(e) {
+		pid, ok := entryInt(e.Vals, "pid")
+		if !ok || pid == entry.Pid || !EntryStillRunning(e.Vals) {
 			continue
 		}
 		pruned = append(pruned, e)
 	}
-	pruned = append(pruned, entry.asMap())
+	pruned = append(pruned, entry.asObject())
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		identityLogger().Debug("spawn ledger write failed", "error", err)
 		return false
@@ -606,20 +605,14 @@ func appendLedgerEntry(ctx context.Context, entry LedgerEntry) bool {
 
 // Writes data as indented JSON through a private temp file and an atomic rename
 func procAtomicJSONWrite(path string, data any, mode os.FileMode, ensureASCII bool) error {
-	var body []byte
-	if ensureASCII {
-		var b strings.Builder
-		if err := procEncodeJSON(&b, data, 0); err != nil {
-			return err
-		}
-		body = []byte(b.String())
-	} else {
-		var err error
-		body, err = json.MarshalIndent(data, "", "  ")
-		if err != nil {
-			return err
-		}
+	text, err := pyjson.Dumps(data, pyjson.Indent(2), pyjson.EnsureASCII(ensureASCII))
+	if err == nil && !ensureASCII && !utf8.ValidString(text) {
+		text, err = pyjson.Dumps(data, pyjson.Indent(2), pyjson.EnsureASCII(true))
 	}
+	if err != nil {
+		return err
+	}
+	body := []byte(text)
 	dir := filepath.Dir(path)
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	tmp, err := os.CreateTemp(dir, "."+stem+"_*")
@@ -647,85 +640,6 @@ func procAtomicJSONWrite(path string, data any, mode os.FileMode, ensureASCII bo
 	if err := os.Rename(tmpName, path); err != nil {
 		os.Remove(tmpName)
 		return err
-	}
-	return nil
-}
-
-// Encodes a JSON value with two space indentation, ASCII escapes and surrogate escaped invalid bytes
-func procEncodeJSON(b *strings.Builder, v any, depth int) error {
-	pad := strings.Repeat("  ", depth)
-	switch x := v.(type) {
-	case nil:
-		b.WriteString("null")
-	case bool:
-		if x {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-	case int:
-		b.WriteString(strconv.Itoa(x))
-	case int64:
-		b.WriteString(strconv.FormatInt(x, 10))
-	case float64:
-		if x == math.Trunc(x) && math.Abs(x) < 1e16 {
-			b.WriteString(strconv.FormatFloat(x, 'f', 1, 64))
-		} else {
-			b.WriteString(strconv.FormatFloat(x, 'g', -1, 64))
-		}
-	case json.Number:
-		b.WriteString(x.String())
-	case string:
-		writeASCIIJSONString(b, x)
-	case []map[string]any:
-		items := make([]any, len(x))
-		for i, m := range x {
-			items[i] = m
-		}
-		return procEncodeJSON(b, items, depth)
-	case []any:
-		if len(x) == 0 {
-			b.WriteString("[]")
-			return nil
-		}
-		b.WriteString("[\n")
-		for i, item := range x {
-			b.WriteString(pad + "  ")
-			if err := procEncodeJSON(b, item, depth+1); err != nil {
-				return err
-			}
-			if i < len(x)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-		b.WriteString(pad + "]")
-	case map[string]any:
-		if len(x) == 0 {
-			b.WriteString("{}")
-			return nil
-		}
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		b.WriteString("{\n")
-		for i, k := range keys {
-			b.WriteString(pad + "  ")
-			writeASCIIJSONString(b, k)
-			b.WriteString(": ")
-			if err := procEncodeJSON(b, x[k], depth+1); err != nil {
-				return err
-			}
-			if i < len(keys)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-		b.WriteString(pad + "}")
-	default:
-		return fmt.Errorf("procEncodeJSON: unsupported value %T", v)
 	}
 	return nil
 }
@@ -806,7 +720,8 @@ func LedgerEntries(opts LedgerOptions) []map[string]any {
 		return []map[string]any{}
 	}
 	out := []map[string]any{}
-	for _, e := range entries {
+	for _, row := range entries {
+		e := row.Vals
 		if !opts.AllInstalls && e["install"] != wantInstall {
 			continue
 		}
@@ -930,13 +845,12 @@ func isLowerHex(value any, length int) bool {
 
 // Validates a parsed backend lock body against the Desktop writer's schema
 func validLockfilePayload(parsed any, ownershipID string) bool {
-	m, ok := parsed.(map[string]any)
+	obj, ok := parsed.(*pyjson.Object)
 	if !ok {
 		return false
 	}
-	schema, ok1 := entryInt(m, "schemaVersion")
-	protocol, ok2 := entryInt(m, "protocolVersion")
-	if !ok1 || !ok2 || schema != backendLockSchemaVersion || protocol != backendLockProtocol || m["ownershipId"] != ownershipID {
+	m := obj.Vals
+	if !pyjson.Equal(m["schemaVersion"], int64(backendLockSchemaVersion)) || !pyjson.Equal(m["protocolVersion"], int64(backendLockProtocol)) || m["ownershipId"] != ownershipID {
 		return false
 	}
 	if !isLowerHex(m["spawnNonce"], 16) || !isLowerHex(m["tokenFingerprint"], 32) {
@@ -955,7 +869,7 @@ func validLockfilePayload(parsed any, ownershipID string) bool {
 				return false
 			}
 		}
-		if len(s) > 1024 {
+		if pystr.Len(s) > 1024 {
 			return false
 		}
 	}
@@ -986,16 +900,14 @@ func ReadValidBackendLock(lockPath string) map[string]any {
 	if n > 65536 {
 		return nil
 	}
-	var parsed any
-	dec := json.NewDecoder(strings.NewReader(string(buf[:n])))
-	dec.UseNumber()
-	if err := dec.Decode(&parsed); err != nil {
+	parsed, err := pyjson.LoadsBytes(buf[:n])
+	if err != nil {
 		return nil
 	}
 	if !validLockfilePayload(parsed, ownershipID) {
 		return nil
 	}
-	return parsed.(map[string]any)
+	return parsed.(*pyjson.Object).Vals
 }
 
 // Every directory the Desktop may have written an SSH backend lock under

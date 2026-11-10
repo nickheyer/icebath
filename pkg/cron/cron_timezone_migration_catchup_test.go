@@ -74,7 +74,7 @@ func TestLegacyOffsetCatchupFiresAtMostOnce(t *testing.T) {
 	if !containsString(jobIDs(mustDue(t, s)), jid) {
 		t.Fatal("legacy offset occurrence was not due")
 	}
-	if ok, err := s.advanceNextRun(jid); !ok || err != nil {
+	if ok, err := s.advanceNextRun(context.Background(), jid); !ok || err != nil {
 		t.Fatalf("advance %v %v", ok, err)
 	}
 	if _, won, err := s.claimJobForFire(context.Background(), jid, FireClaimOptions{}); !won || err != nil {

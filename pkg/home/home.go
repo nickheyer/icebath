@@ -156,18 +156,18 @@ func Dir(ctx context.Context) string {
 }
 
 // OS account home from the password database, the real home resolver where it cannot answer
-func accountHome() string {
+func accountHome(ctx context.Context) string {
 	if runtime.GOOS != "windows" {
 		if u, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil {
 			return pypath.PathStr(u.HomeDir)
 		}
 	}
-	return pypath.PathStr(RealHome(context.Background(), nil))
+	return pypath.PathStr(RealHome(ctx, nil))
 }
 
 // Default home of the OS account, the process platform default when the user home resolves to the account home
-func AccountDefault() string {
-	account := accountHome()
+func AccountDefault(ctx context.Context) string {
+	account := accountHome(ctx)
 	if sameResolvedPath(UserHome, account) {
 		return PlatformDefault()
 	}

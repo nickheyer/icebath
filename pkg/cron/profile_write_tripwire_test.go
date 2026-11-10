@@ -175,13 +175,13 @@ func exerciseCronStore(t *testing.T, w *profileTripwire, ctx context.Context) {
 	s := cronStoreFrom(ctx)
 	job := &Job{ID: "tripwire-job", Name: "tripwire", Prompt: "noop", Enabled: true,
 		Schedule: &Schedule{Kind: "interval", Minutes: 60, HasMinutes: true, Display: "every 60m"}}
-	if err := s.SaveJobs([]*Job{job}, nil, false); err != nil {
+	if err := s.SaveJobs(ctx, []*Job{job}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(w.profile, "cron", "jobs.json")); err != nil {
 		t.Fatalf("the jobs save did not write the active profile's cron/jobs.json: %v", err)
 	}
-	loaded, err := cronStoreFrom(ctx).LoadJobs()
+	loaded, err := cronStoreFrom(ctx).LoadJobs(ctx)
 	if err != nil || !reflect.DeepEqual(jobIDs(loaded), []string{"tripwire-job"}) {
 		t.Fatalf("the jobs load did not read back from the active profile's store: %v %v", jobIDs(loaded), err)
 	}

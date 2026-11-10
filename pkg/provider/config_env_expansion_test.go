@@ -13,7 +13,9 @@ func TestExpansionUnderProfileScope(t *testing.T) {
 		wasActive := MultiplexProcess()
 		SetMultiplexActive(true)
 		t.Cleanup(func() { SetMultiplexActive(wasActive) })
-		expand := func(ctx context.Context, s string) string { return config.ExpandString(s, config.EnvRefLookupContext(ctx)) }
+		expand := func(ctx context.Context, s string) string {
+			return config.ExpandString(s, config.EnvRefLookupContext(ctx))
+		}
 		other := WithSecretScope(context.Background(), map[string]string{"OTHER_KEY": "x"}, "")
 		if got := expand(other, "${MATRIX_ACCESS_TOKEN}"); got != "${MATRIX_ACCESS_TOKEN}" {
 			t.Fatalf("bare ref %q", got)

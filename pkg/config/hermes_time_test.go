@@ -192,7 +192,7 @@ func TestConcurrentProfileResolutionNeverMixesZones(t *testing.T) {
 	}
 }
 
-func TestTimezoneHonorsManagedScope(t *testing.T) {
+func TestTimezoneHonorsManaged(t *testing.T) {
 	freshTimezone(t)
 	t.Setenv("TZ", "")
 	root := t.TempDir()

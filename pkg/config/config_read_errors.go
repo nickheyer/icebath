@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -130,7 +131,7 @@ func failureVersion(path string) (string, error) {
 }
 
 // Records a config parse failure and warns once per signature, errors when the corrupt backup has no backend
-func WarnConfigParseFailure(configPath string, err error, fallback string) error {
+func WarnConfigParseFailure(ctx context.Context, configPath string, err error, fallback string) error {
 	parseFailureMu.Lock()
 	key := configPath + "|0:0"
 	if sig, serr := configStatVersion(configPath); serr == nil {
@@ -148,7 +149,7 @@ func WarnConfigParseFailure(configPath string, err error, fallback string) error
 	backup := ""
 	if !IsOSError(err) {
 		var berr error
-		if backup, berr = BackupConfig(configPath, "corrupt", DefaultBackupKeep); berr != nil {
+		if backup, berr = BackupConfig(ctx, configPath, "corrupt", DefaultBackupKeep); berr != nil {
 			return berr
 		}
 	}

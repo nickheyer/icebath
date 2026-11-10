@@ -26,7 +26,7 @@ func newClockStore(t *testing.T, now *time.Time, zone *time.Location) *Store {
 
 func mustCreate(t *testing.T, s *Store, o CreateJobOptions) *Job {
 	t.Helper()
-	job, err := s.createJob(o)
+	job, err := s.createJob(context.Background(), o)
 	if err != nil {
 		t.Fatalf("createJob(%+v): %v", o, err)
 	}
@@ -340,7 +340,7 @@ func TestJobCRUDCreateAndGet(t *testing.T) {
 	if job.ID == "" || job.Prompt != "Check server status" || !job.Enabled || job.Schedule.Kind != "interval" {
 		t.Fatalf("created = %+v", job)
 	}
-	if fetched, _ := s.getJob(job.ID); fetched == nil || fetched.Prompt != "Check server status" {
+	if fetched, _ := s.getJob(context.Background(), job.ID); fetched == nil || fetched.Prompt != "Check server status" {
 		t.Fatal("get lost the job")
 	}
 }
@@ -349,7 +349,7 @@ func TestJobCRUDListJobs(t *testing.T) {
 	s, _ := newTestStore(t)
 	mustCreate(t, s, CreateJobOptions{Prompt: prompt("Job 1"), Schedule: "every 1h"})
 	mustCreate(t, s, CreateJobOptions{Prompt: prompt("Job 2"), Schedule: "every 2h"})
-	if jobs, err := s.listJobs(false); err != nil || len(jobs) != 2 {
+	if jobs, err := s.listJobs(context.Background(), false); err != nil || len(jobs) != 2 {
 		t.Fatalf("list = %d %v", len(jobs), err)
 	}
 }
@@ -360,7 +360,7 @@ func TestJobCRUDRemoveJob(t *testing.T) {
 	if ok, err := s.removeJob(context.Background(), job.ID); !ok || err != nil {
 		t.Fatalf("remove = %v %v", ok, err)
 	}
-	if fetched, _ := s.getJob(job.ID); fetched != nil {
+	if fetched, _ := s.getJob(context.Background(), job.ID); fetched != nil {
 		t.Fatal("removed job still present")
 	}
 }
@@ -384,7 +384,7 @@ func TestJobCRUDRepeatStringFormsCoerced(t *testing.T) {
 			t.Fatalf("repeat %q = %v", tc.in, job.Repeat.Times)
 		}
 	}
-	if _, err := s.createJob(CreateJobOptions{Prompt: prompt("Bad"), Schedule: "every 1h", Repeat: "banana"}); err == nil || !strings.Contains(err.Error(), "Invalid repeat") {
+	if _, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Bad"), Schedule: "every 1h", Repeat: "banana"}); err == nil || !strings.Contains(err.Error(), "Invalid repeat") {
 		t.Fatalf("banana accepted: %v", err)
 	}
 }
@@ -394,18 +394,18 @@ func TestJobCRUDUpdateRepeatStringFormsCoerced(t *testing.T) {
 	ctx := context.Background()
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("t"), Schedule: "every 1h", Repeat: 2})
 	mustMark(t, s, job.ID, true, MarkOptions{})
-	updated, err := s.updateJob(job.ID, map[string]any{"repeat": "forever"})
+	updated, err := s.updateJob(ctx, job.ID, map[string]any{"repeat": "forever"})
 	if err != nil || updated.Repeat.Times != nil || updated.Repeat.Completed != 1 {
 		t.Fatalf("update forever = %+v %v", updated.Repeat, err)
 	}
 	if _, err := s.markJobRun(ctx, job.ID, true, MarkOptions{}); err != nil {
 		t.Fatalf("mark after forever: %v", err)
 	}
-	updated, err = s.updateJob(job.ID, map[string]any{"repeat": map[string]any{"times": "3"}})
+	updated, err = s.updateJob(ctx, job.ID, map[string]any{"repeat": map[string]any{"times": "3"}})
 	if err != nil || updated.Repeat.Times == nil || *updated.Repeat.Times != 3 || updated.Repeat.Completed != 2 {
 		t.Fatalf("update dict = %+v %v", updated.Repeat, err)
 	}
-	if _, err := s.updateJob(job.ID, map[string]any{"repeat": "banana"}); err == nil || !strings.Contains(err.Error(), "Invalid repeat") {
+	if _, err := s.updateJob(ctx, job.ID, map[string]any{"repeat": "banana"}); err == nil || !strings.Contains(err.Error(), "Invalid repeat") {
 		t.Fatalf("update banana accepted: %v", err)
 	}
 }
@@ -420,7 +420,7 @@ func TestInvalidRepeatCompletedIsNormalized(t *testing.T) {
 		os.WriteFile(s.jobsFile, completedRe.ReplaceAll(raw, []byte(`"completed": `+value)), 0o600)
 	}
 	completed := func() int {
-		j, _ := s.getJob(job.ID)
+		j, _ := s.getJob(ctx, job.ID)
 		return j.Repeat.Completed
 	}
 	setCompleted("null")
@@ -429,7 +429,7 @@ func TestInvalidRepeatCompletedIsNormalized(t *testing.T) {
 		t.Fatalf("null completed then run = %d", completed())
 	}
 	setCompleted("null")
-	if u, _ := s.updateJob(job.ID, map[string]any{"repeat": map[string]any{"times": 5}}); u.Repeat.Completed != 0 {
+	if u, _ := s.updateJob(ctx, job.ID, map[string]any{"repeat": map[string]any{"times": 5}}); u.Repeat.Completed != 0 {
 		t.Fatalf("update over null completed = %d", u.Repeat.Completed)
 	}
 	for _, tc := range []struct {
@@ -450,12 +450,12 @@ func TestJobCRUDOneshotTurnedRecurringBecomesForever(t *testing.T) {
 	if job.Repeat.Times == nil || *job.Repeat.Times != 1 {
 		t.Fatalf("one-shot repeat = %+v", job.Repeat)
 	}
-	updated, err := s.updateJob(job.ID, map[string]any{"schedule": "every 15m"})
+	updated, err := s.updateJob(context.Background(), job.ID, map[string]any{"schedule": "every 15m"})
 	if err != nil || updated.Schedule.Kind != "interval" || updated.Repeat.Times != nil {
 		t.Fatalf("once to recurring = %+v %v", updated, err)
 	}
 	explicit := mustCreate(t, s, CreateJobOptions{Prompt: prompt("poll"), Schedule: "in 15m"})
-	if u, err := s.updateJob(explicit.ID, map[string]any{"schedule": "every 15m", "repeat": 3}); err != nil || u.Repeat.Times == nil || *u.Repeat.Times != 3 {
+	if u, err := s.updateJob(context.Background(), explicit.ID, map[string]any{"schedule": "every 15m", "repeat": 3}); err != nil || u.Repeat.Times == nil || *u.Repeat.Times != 3 {
 		t.Fatalf("explicit repeat lost %v", err)
 	}
 }
@@ -466,7 +466,7 @@ func TestJobCRUDRecurringTurnedOneshotBecomesOnce(t *testing.T) {
 	if rec.Repeat.Times != nil {
 		t.Fatalf("recurring repeat = %+v", rec.Repeat)
 	}
-	u, err := s.updateJob(rec.ID, map[string]any{"schedule": "in 15m"})
+	u, err := s.updateJob(context.Background(), rec.ID, map[string]any{"schedule": "in 15m"})
 	if err != nil || u.Schedule.Kind != "once" || u.Repeat.Times == nil || *u.Repeat.Times != 1 {
 		t.Fatalf("recurring to once = %+v %v", u, err)
 	}
@@ -475,11 +475,11 @@ func TestJobCRUDRecurringTurnedOneshotBecomesOnce(t *testing.T) {
 func TestRejectsStalePastOneshotAtCreation(t *testing.T) {
 	now := time.Date(2026, 3, 18, 4, 30, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
-	_, err := s.createJob(CreateJobOptions{Prompt: prompt("Too late"), Schedule: FormatISO(now.Add(-5 * time.Minute))})
+	_, err := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Too late"), Schedule: FormatISO(now.Add(-5 * time.Minute))})
 	if err == nil || !strings.Contains(err.Error(), "past and cannot be scheduled") {
 		t.Fatalf("stale one-shot accepted: %v", err)
 	}
-	if jobs, _ := s.LoadJobs(); len(jobs) != 0 {
+	if jobs, _ := s.LoadJobs(context.Background()); len(jobs) != 0 {
 		t.Fatal("rejected job was stored")
 	}
 }
@@ -499,7 +499,7 @@ func TestUpdateJobUpdateName(t *testing.T) {
 	if job.Name != "Old Name" {
 		t.Fatalf("created name %q", job.Name)
 	}
-	updated, err := s.updateJob(job.ID, map[string]any{"name": "New Name"})
+	updated, err := s.updateJob(context.Background(), job.ID, map[string]any{"name": "New Name"})
 	if err != nil || updated == nil || updated.Name != "New Name" || updated.Prompt != "Check server status" || updated.ID != job.ID ||
 		!reflect.DeepEqual(updated.Schedule, job.Schedule) {
 		t.Fatalf("updated = %+v %v", updated, err)
