@@ -75,6 +75,26 @@ func checkGitCount(ctx context.Context, args []string, cwd, git string) (int64, 
 	return value.Int64(), true
 }
 
+// Stripped stdout of a read only git query in root within five seconds, empty when git failed
+func GitStdout(args []string, root string) string {
+	out, _ := GitStdoutWithin(context.Background(), args, root, 5*time.Second)
+	return out
+}
+
+// Stripped stdout of a read only git query in root within the timeout, false when git failed
+func GitStdoutWithin(ctx context.Context, args []string, root string, timeout time.Duration) (string, bool) {
+	result := checkGitRun(ctx, args, root, timeout, "git")
+	if result == nil || result.ReturnCode != 0 {
+		return "", false
+	}
+	return pystr.Strip(result.Stdout), true
+}
+
+// Integer a successful count style git query in root prints, false when git failed or printed no integer
+func GitCount(ctx context.Context, args []string, root string) (int64, bool) {
+	return checkGitCount(ctx, args, root, "git")
+}
+
 // Remote tip of branch, whether the remote confirmed it absent, and why no tip could be read
 func branchTip(ctx context.Context, repository, branch, root, git, remote string) (string, bool, string) {
 	failure := ""

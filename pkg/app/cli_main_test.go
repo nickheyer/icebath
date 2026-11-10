@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // fakeLease is the active session slot the tests hand the CLI
@@ -19,6 +21,7 @@ func (l *fakeLease) Release() error { l.released.Store(true); return nil }
 
 // Installs doubles for the cmd/icebath wiring hooks the chat path reaches
 func TestMain(m *testing.M) {
+	home.DispatchScratchPruneEntry()
 	TryAcquireActiveSession = func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, string, error) {
 		return &fakeLease{}, "", nil
 	}
@@ -27,10 +30,11 @@ func TestMain(m *testing.M) {
 	StopWakeWordListening = func(owner any) {}
 	SecurityAdvisoriesStartupBanner = func(ctx context.Context) string { return "" }
 	SelectProviderAndModel = func(ctx context.Context) error { return nil }
+	installAgentWiring()
 	os.Exit(m.Run())
 }
 
-// Serves one chat completions answer and counts the provider calls
+// Serves one chat completions answer and counts the turn calls, session title requests answered uncounted
 func chatCompletionsServer(t *testing.T, answer string) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
@@ -40,12 +44,33 @@ func chatCompletionsServer(t *testing.T, answer string) (*httptest.Server, *atom
 			_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": []any{map[string]any{"id": "test/model", "object": "model"}}})
 			return
 		}
-		_, _ = io.ReadAll(r.Body)
+		raw, _ := io.ReadAll(r.Body)
 		if r.URL.Path != "/v1/chat/completions" {
 			http.NotFound(w, r)
 			return
 		}
-		calls.Add(1)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		if !strings.Contains(string(raw), "You name chat sessions") {
+			calls.Add(1)
+		}
+		if body["stream"] == true {
+			chunk := func(delta map[string]any, finish any, usage map[string]any) string {
+				row := map[string]any{"id": "chatcmpl-main", "object": "chat.completion.chunk", "created": 1, "model": "test/model",
+					"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
+				if usage != nil {
+					row["usage"] = usage
+				}
+				line, _ := json.Marshal(row)
+				return "data: " + string(line) + "\n\n"
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, chunk(map[string]any{"role": "assistant", "content": answer}, nil, nil))
+			_, _ = io.WriteString(w, chunk(map[string]any{}, "stop", map[string]any{"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}))
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "chatcmpl-main", "object": "chat.completion", "model": "test/model",
 			"usage":   map[string]any{"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
 			"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": answer, "tool_calls": nil}, "finish_reason": "stop"}}})
@@ -110,8 +135,8 @@ func TestMainQuietSingleQueryFailedTurnExitsOne(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
-	if strings.TrimSpace(out.String()) != "" {
-		t.Fatalf("stdout %q must stay clean on a failed quiet turn", out.String())
+	if !strings.Contains(out.String(), "rejected the request and retrying won't help") || !strings.Contains(out.String(), "model not supported") {
+		t.Fatalf("stdout %q lacks the failure copy the agent returns as its final response", out.String())
 	}
 }
 

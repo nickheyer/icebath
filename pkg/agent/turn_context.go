@@ -833,7 +833,13 @@ func persistTurnStart(a *AIAgent, messages, conversationHistory []*state.Message
 		if err := a.ensureDBSession(); err != nil {
 			return err
 		}
-		return a.persistSession(&messages, conversationHistory)
+		if err := a.persistSession(&messages, conversationHistory); err != nil {
+			return err
+		}
+		if idx := a.persistUserMessageIdx; pendingCLIMessage != nil && idx != nil && *idx >= 0 && *idx < len(messages) && messages[*idx] != nil && messages[*idx].Role == "user" && messages[*idx].Persisted {
+			pendingCLIMessage[state.DBPersistedMarker] = true
+		}
+		return nil
 	}, "Early turn-start session persistence failed for session=%s", pendingCLIMessage)
 }
 

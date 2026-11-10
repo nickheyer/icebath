@@ -27,6 +27,37 @@ type Table struct {
 	NoBox bool
 	// Horizontal padding on each side of a cell, the rich default of one when zero
 	PadX int
+	// Outer padding dropped and padding between columns collapsed with no box or header, as Table.grid
+	Grid bool
+}
+
+// Grid of columns set apart by padX cells, as Table.grid(padding=(0, padX))
+func NewGrid(padX int, columns ...Column) *Table {
+	return &Table{Columns: columns, HideHeader: true, NoBox: true, PadX: padX, Grid: true}
+}
+
+// Cells of padding left of a column, none for the first grid column or a collapsed grid gap
+func (t *Table) padLeft(i int) int {
+	if t.Grid {
+		return 0
+	}
+	return t.pad()
+}
+
+// Cells of padding right of a column, none for the last grid column
+func (t *Table) padRight(i int) int {
+	if t.Grid && i == len(t.Columns)-1 {
+		return 0
+	}
+	return t.pad()
+}
+
+// Padding rich adds to a fixed, minimum or maximum column width, collapsed for grid columns after the first
+func (t *Table) paddingWidth(i int) int {
+	if t.Grid && i > 0 {
+		return t.pad()
+	}
+	return 2 * t.pad()
 }
 
 // Appends one row of markup cells
@@ -49,8 +80,8 @@ func (t *Table) edgeCells() int {
 }
 
 // RenderLines draws the table at its natural width inside another renderable
-func (t *Table) RenderLines(color bool, _ string, width int) []string {
-	return strings.Split(t.RenderWidth(color, width), "\n")
+func (t *Table) RenderLines(color bool, system string, width int) []string {
+	return strings.Split(t.renderWidth(color, system, width), "\n")
 }
 
 // MeasureMax is the natural width of the table within width cells

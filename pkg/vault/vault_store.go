@@ -1000,3 +1000,6 @@ func ScrubSecretFromText(text string, secret *pyjson.Object) string {
 	}
 	return passwordEchoRE.ReplaceAllString(scrubbed, "${1}[REDACTED]")
 }
+
+// ConfiguredKeyStorage is the vault.key_storage setting of a home, file when unset
+func ConfiguredKeyStorage(ctx context.Context, h string) string { return configuredKeyStorage(ctx, h) }

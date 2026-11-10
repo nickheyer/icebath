@@ -71,8 +71,8 @@ func textwrapSplitChunks(text string, o TextwrapOptions) []string {
 	last := 0
 	m, _ := re.FindStringMatch(text)
 	for m != nil {
-		start := runeIndexToByte(text, m.Index)
-		end := runeIndexToByte(text, m.Index+m.Length)
+		start := runeIndexToByte(text, m.RuneIndex)
+		end := runeIndexToByte(text, m.RuneIndex+m.RuneLength)
 		pieces = append(pieces, text[last:start], m.GroupByNumber(1).String())
 		last = end
 		m, _ = re.FindNextMatch(m)

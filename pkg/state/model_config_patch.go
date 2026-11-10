@@ -86,3 +86,8 @@ func (d *DB) ModelConfigValue(sessionID, key string) (any, bool) {
 	}
 	return parseModelConfigValue(rowValue(session, "model_config")).Get(key)
 }
+
+// SessionYoloEnabled reads the persisted approval bypass of a session row, false on any parse failure
+func SessionYoloEnabled(sessionMeta map[string]any) bool {
+	return pyTruthy(ParseModelConfig(sessionMeta["model_config"])["yolo_mode"])
+}

@@ -100,16 +100,27 @@ func Escape(markup string) string {
 func Plain(markup string) string { return Render(markup, false) }
 
 // Text of console markup, ANSI styled for the terminal color system when color is true, panicking with a MarkupError as rich raises
-func Render(markup string, color bool) string {
+func Render(markup string, color bool) string { return RenderSystem(markup, color, "") }
+
+// Color system a render uses, the one given or the terminal's own when none is given
+func resolveSystem(system string) string {
+	if system == "" {
+		return TermColorSystem()
+	}
+	return system
+}
+
+// Text of console markup styled for the named color system, the terminal's own when system is empty
+func RenderSystem(markup string, color bool, system string) string {
 	if !color {
 		return plainMarkup(markup)
 	}
 	plain, spans := mustMarkupText(markup)
-	return renderSpans(plain, spans, TermColorSystem())
+	return renderSpans(plain, spans, resolveSystem(system))
 }
 
 // Markup rendered as Console.render_str does, the repr highlighter spans laid under the markup spans when highlight is true
-func renderHighlighted(markup string, color, highlight bool) string {
+func renderHighlighted(markup string, color, highlight bool, system string) string {
 	if !color {
 		return plainMarkup(markup)
 	}
@@ -117,7 +128,7 @@ func renderHighlighted(markup string, color, highlight bool) string {
 	if highlight {
 		spans = append(reprSpans(plain), spans...)
 	}
-	return renderSpans(plain, spans, TermColorSystem())
+	return renderSpans(plain, spans, resolveSystem(system))
 }
 
 func plainMarkup(markup string) string {

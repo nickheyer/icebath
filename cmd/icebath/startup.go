@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/app"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/app"
 
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/botdesktop"
@@ -23,12 +24,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
-	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Release date of this build, hermes_cli.__release_date__
-const releaseDate = "2026.9.24"
 
 // Version the build stamps through ldflags, empty for a source build
 var version string
@@ -193,62 +192,8 @@ func tryFastVersion(argv []string) bool {
 	return true
 }
 
-// Version label the startup banner title shows, hermes_cli/banner.py format_banner_version_label
-func bannerVersionLabel() string {
-	info, _ := updaterecord.GetVersionInfo()
-	root := pm.RepoRoot()
-	stamp := pm.ReadInstallStamp(root)
-	stampStr := func(key string) string {
-		if stamp == nil {
-			return ""
-		}
-		v, _ := stamp.Get(key)
-		s, _ := v.(string)
-		return s
-	}
-	if stampStr("distribution") == "desktop-app" {
-		label := "Icebath Agent v" + info.DerivedVersion
-		if stampStr("source") == "commit-build" {
-			commit := stampStr("commit")
-			if len(commit) > 12 {
-				commit = commit[:12]
-			}
-			return label + " · commit-build · " + commit
-		}
-		if tag := stampStr("tag"); tag != "" {
-			if selfupdate.IsCanaryTag(tag) {
-				return label + " · canary"
-			}
-			return label + " · stable"
-		}
-		if stampStr("payload") == "bootstrap" {
-			return label + " · installer"
-		}
-		return label
-	}
-	base := fmt.Sprintf("Icebath Agent v%s (%s)", info.DerivedVersion, releaseDate)
-	ctx := context.Background()
-	cfg, _ := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	channel, err := selfupdate.ResolveUpdateChannel(map[string]any(cfg), root)
-	if err == nil && channel != "main" {
-		if head := selfupdate.GitStdout([]string{"rev-parse", "HEAD"}, root); head != "" {
-			return base + " · " + channel + " · local " + head[:min(12, len(head))]
-		}
-		return base + " · " + channel
-	}
-	state := app.GitBannerState()
-	if state == nil {
-		return base
-	}
-	if state.Ahead <= 0 || state.Upstream == state.Local {
-		return base + " · upstream " + state.Upstream
-	}
-	word := "commit"
-	if state.Ahead != 1 {
-		word = "commits"
-	}
-	return fmt.Sprintf("%s · upstream %s · local %s (+%d carried %s)", base, state.Upstream, state.Local, state.Ahead, word)
-}
+// Version label the startup banner title shows
+func bannerVersionLabel() string { return app.FormatBannerVersionLabel(context.Background()) }
 
 // The canonical icebath --version output, hermes_cli/_startup_fast.py print_fast_version_info
 func printVersionInfo(checkUpdates bool) {

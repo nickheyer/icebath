@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"log/slog"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -139,6 +141,111 @@ func persistLock(a *AIAgent) func() {
 	}
 	lock.Lock()
 	return lock.Unlock
+}
+
+// Stages the CLI user row of the next turn under the persist lock, clearing the previous turn overrides first
+func (a *AIAgent) StagePendingCLIUserMessage(staged map[string]any, appendToTranscript func()) {
+	defer persistLock(a)()
+	a.persistUserMessageIdx = nil
+	a.persistUserMessageOverride = nil
+	a.persistUserMessageTimestamp = nil
+	a.pendingCLIUserMessage = staged
+	if appendToTranscript != nil {
+		appendToTranscript()
+	}
+}
+
+// Staged CLI user row awaiting its turn, nil once the turn adopted or dropped it
+func (a *AIAgent) PendingCLIUserMessage() map[string]any {
+	defer persistLock(a)()
+	staged, _ := a.pendingCLIUserMessage.(map[string]any)
+	return staged
+}
+
+// Persist index, clean message override and timestamp override the running turn staged, each nil when unset
+func (a *AIAgent) PersistUserMessageStaging() (idx *int, override, timestamp any) {
+	defer persistLock(a)()
+	return a.persistUserMessageIdx, a.persistUserMessageOverride, a.persistUserMessageTimestamp
+}
+
+// Flushes the live transcript plus an accepted but unflushed CLI input before the session ends, true when it ran
+func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHistory func() []map[string]any) bool {
+	defer persistLock(a)()
+	cliHistory := readCLIHistory()
+	live := a.sessionMessages
+	var rows []map[string]any
+	var keys []any
+	if live == nil {
+		for _, row := range cliHistory {
+			rows, keys = append(rows, row), append(keys, rowIdentity(row))
+		}
+	} else {
+		for _, m := range live {
+			if m != nil {
+				rows, keys = append(rows, state.MessageToDict(m)), append(keys, m)
+			}
+		}
+	}
+	pending, _ := a.pendingCLIUserMessage.(map[string]any)
+	pendingKey := rowIdentity(pending)
+	staged := pending != nil && !pyTruthy(pending[state.DBPersistedMarker]) && !slices.Contains(keys, pendingKey)
+	if staged {
+		rows, keys = append(rows, pending), append(keys, pendingKey)
+	}
+	if len(rows) == 0 {
+		return false
+	}
+	history := cliHistory
+	switch n := len(history); {
+	case n > 0 && pending != nil && rowIdentity(history[n-1]) == pendingKey:
+		history = history[:n-1]
+	case live == nil:
+		history = nil
+	}
+	if a.cachedSystemPrompt == "" {
+		if err := restoreOrBuildSystemPrompt(ctx, a, nil, history); err != nil {
+			sessionPersistenceLog().Debug("Could not build system prompt during CLI close", "error", err)
+			return false
+		}
+	}
+	if a.cachedSystemPrompt == "" {
+		return false
+	}
+	if err := a.ensureDBSession(); err != nil {
+		sessionPersistenceLog().Debug(fmt.Sprintf("Could not persist active CLI session before close: %s", err))
+		return false
+	}
+	for len(rows) > 0 {
+		last := rows[len(rows)-1]
+		if !(pyTruthy(last["_empty_recovery_synthetic"]) || pyTruthy(last["_empty_terminal_sentinel"])) {
+			break
+		}
+		rows, keys = rows[:len(rows)-1], keys[:len(keys)-1]
+	}
+	historyKeys := map[any]bool{}
+	for _, row := range history {
+		if key := rowIdentity(row); key != nil {
+			historyKeys[key] = true
+		}
+	}
+	if _, err := a.flushRowsUnlocked(rows, keys, historyKeys, 1); err != nil {
+		sessionPersistenceLog().Debug("session flush failed", "error", err)
+	}
+	persisted := make([]*state.Message, len(rows))
+	for i, row := range rows {
+		if m, isLive := keys[i].(*state.Message); isLive {
+			*m = *state.MessageFromDict(row)
+			persisted[i] = m
+			continue
+		}
+		persisted[i] = state.MessageFromDict(row)
+	}
+	a.sessionMessages = persisted
+	if a.sessionDB != nil {
+		sessionDBFlushTokenCounts(a.sessionDB, 5.0)
+	}
+	noteTurnPersisted(a)
+	return true
 }
 
 // Restages the unanswered tail user row as this turn's message when only failed tool scaffolding follows it

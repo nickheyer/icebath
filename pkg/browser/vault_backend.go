@@ -178,17 +178,17 @@ var vaultCfgFn = vaultCfg
 
 // Identity and constructor of one external password manager backend
 type externalLoginBackend struct {
-	name, prefix string
-	new          func(ctx context.Context, cfg map[string]any) LoginBackend
+	name, prefix, displayName string
+	new                       func(ctx context.Context, cfg map[string]any) LoginBackend
 }
 
 // The external manager backends in their hermes order, 1Password then Bitwarden
 func externalBackendClasses() []externalLoginBackend {
 	return []externalLoginBackend{
-		{name: "onepassword", prefix: "op:", new: func(ctx context.Context, cfg map[string]any) LoginBackend {
+		{name: "onepassword", prefix: "op:", displayName: "1Password", new: func(ctx context.Context, cfg map[string]any) LoginBackend {
 			return NewOnePasswordLoginBackend(ctx, cfg)
 		}},
-		{name: "bitwarden", prefix: "bw:", new: func(ctx context.Context, cfg map[string]any) LoginBackend { return NewBitwardenLoginBackend(ctx, cfg) }},
+		{name: "bitwarden", prefix: "bw:", displayName: "Bitwarden", new: func(ctx context.Context, cfg map[string]any) LoginBackend { return NewBitwardenLoginBackend(ctx, cfg) }},
 	}
 }
 

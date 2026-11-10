@@ -201,3 +201,24 @@ func TestParseTagsForms(t *testing.T) {
 		}
 	}
 }
+
+func TestSecretCaptureCallbackReadsBackTheInstalledCallback(t *testing.T) {
+	SetSecretCaptureCallback(nil)
+	if SecretCaptureCallback() != nil {
+		t.Fatal("no surface installed a callback")
+	}
+	called := false
+	SetSecretCaptureCallback(func(string, string, map[string]any) (map[string]any, error) {
+		called = true
+		return nil, nil
+	})
+	t.Cleanup(func() { SetSecretCaptureCallback(nil) })
+	cb := SecretCaptureCallback()
+	if cb == nil {
+		t.Fatal("the installed callback must read back")
+	}
+	_, _ = cb("NAME", "prompt", nil)
+	if !called {
+		t.Fatal("the getter returned another callback")
+	}
+}

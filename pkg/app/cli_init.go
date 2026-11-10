@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -107,7 +108,7 @@ func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 	c.heldStatusLines = []string{}
 	c.streamTableBuf = []string{}
 	c.inStreamTable = false
-	c.pendingEditSnapshots = map[string]any{}
+	c.pendingEditSnapshots = map[string]*tools.LocalEditSnapshot{}
 	c.lastInputModeRecovery, c.lastTermiosDriftCheck = nil, nil
 	c.inputModeRecoveryNoticeShown, c.termiosDriftNoticeShown = false, false
 }
@@ -413,14 +414,15 @@ func (c *CLI) initUIState() {
 	c.clarifyPrefill = ""
 	c.sudoState, c.modalInputSnapshot, c.approvalState = nil, nil, nil
 	c.slashConfirmState, c.modelPickerState = nil, nil
-	c.clarifyDeadline, c.sudoDeadline, c.approvalDeadline, c.slashConfirmDeadline = 0, 0, 0, 0
+	c.clarifyDeadline = new(float64)
+	c.sudoDeadline, c.approvalDeadline, c.slashConfirmDeadline = 0, 0, 0
 	c.composerPlaceholder = getRandomComposerHint(c.ctx)
 	c.commandPaletteState, c.secretState = nil, nil
 	c.pendingResumeSessions = nil
 	c.pendingAgentSeed = nil
 	c.secretDeadline = 0
 	c.toolStartTime = 0
-	c.pendingToolInfo = map[string][][2]string{}
+	c.pendingToolInfo = map[string][]map[string]any{}
 	c.spinnerText, c.commandStatus = "", ""
 	c.lastScrollbackTool = ""
 	c.commandRunning, c.commandBlocksInput = false, false
@@ -430,8 +432,8 @@ func (c *CLI) initUIState() {
 	c.petEnabled, c.petAnimRunning = false, false
 	c.petCols = 18
 	c.petScale = 0.7
-	c.petFramesCache = map[string]any{}
-	c.petKittyCache = map[string]any{}
+	c.petFramesCache = map[string][][][]pet.Cell{}
+	c.petKittyCache = map[string]*petKittyEntry{}
 	c.petKittyImageID, c.petFrameIdx = 0, 0
 	c.petCfgChecked, c.petEventUntil = 0, 0
 	c.petEvent = ""

@@ -357,3 +357,28 @@ func TestStateRowsMatchPythonJSONLayout(t *testing.T) {
 		t.Fatalf("loop coercion %#v %v", loop, err)
 	}
 }
+
+func TestGoalManagerReadsTheSessionGoal(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	ctx := context.Background()
+	m := NewGoalManager(ctx, "goal-manager-session", 0)
+	if m.DefaultMaxTurns != DefaultGoalMaxTurns || m.State() != nil || m.IsActive() || m.HasGoal() || m.HasContract() {
+		t.Fatalf("a session without a goal read as %+v", m)
+	}
+	st := NewGoalState("ship it")
+	st.TurnsUsed, st.MaxTurns = 3, 20
+	SaveGoal(ctx, "goal-manager-session", st)
+	if m.IsActive() {
+		t.Fatal("the manager must keep its loaded state until refreshed")
+	}
+	m.Refresh()
+	if !m.IsActive() || !m.HasGoal() || m.State().TurnsUsed != 3 || m.State().MaxTurns != 20 {
+		t.Fatalf("refreshed state %+v", m.State())
+	}
+	st.Status = "paused"
+	SaveGoal(ctx, "goal-manager-session", st)
+	m.Refresh()
+	if m.IsActive() || !m.HasGoal() {
+		t.Fatal("a paused goal is a goal that is not active")
+	}
+}

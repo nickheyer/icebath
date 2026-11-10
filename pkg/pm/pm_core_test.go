@@ -245,3 +245,16 @@ func TestArchGuardSeesEmulatedX64PEOnWin32Arm64(t *testing.T) {
 	writeFile(t, bin, x64PE, 0o666)
 	sttMachine(t, bin, "win32-arm64", false, true)
 }
+
+func TestPatchRepoRootSwapsAndRestoresTheBinaryTree(t *testing.T) {
+	before := RepoRoot()
+	dir := t.TempDir()
+	restore := PatchRepoRoot(dir)
+	if RepoRoot() != dir {
+		t.Fatalf("patched root %q", RepoRoot())
+	}
+	restore()
+	if RepoRoot() != before {
+		t.Fatalf("restored root %q want %q", RepoRoot(), before)
+	}
+}

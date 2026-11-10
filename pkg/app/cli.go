@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -25,15 +27,63 @@ var cliLogger = slog.Default().With("logger", "cli")
 
 // inputQueue is the unbounded FIFO the composer, interrupt and pending input paths share
 type inputQueue struct {
-	mu    sync.Mutex
-	items []any
+	mu     sync.Mutex
+	items  []any
+	notify chan struct{}
 }
 
-// Appends one item at the tail
+// Appends one item at the tail and wakes a blocked getter
 func (q *inputQueue) Put(item any) {
 	q.mu.Lock()
 	q.items = append(q.items, item)
+	notify := q.waker()
 	q.mu.Unlock()
+	select {
+	case notify <- struct{}{}:
+	default:
+	}
+}
+
+// Wake channel of the queue, created on first use with the lock held
+func (q *inputQueue) waker() chan struct{} {
+	if q.notify == nil {
+		q.notify = make(chan struct{}, 1)
+	}
+	return q.notify
+}
+
+// Removes and returns the head item, waiting up to the timeout for one to arrive
+func (q *inputQueue) Get(timeout time.Duration) (any, bool) {
+	deadline := time.Now().Add(timeout)
+	for {
+		q.mu.Lock()
+		if len(q.items) > 0 {
+			item := q.items[0]
+			q.items = q.items[1:]
+			notify := q.waker()
+			more := len(q.items) > 0
+			q.mu.Unlock()
+			if more {
+				select {
+				case notify <- struct{}{}:
+				default:
+				}
+			}
+			return item, true
+		}
+		notify := q.waker()
+		q.mu.Unlock()
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, false
+		}
+		timer := time.NewTimer(remaining)
+		select {
+		case <-notify:
+			timer.Stop()
+		case <-timer.C:
+		}
+	}
 }
 
 // Removes and returns the head item, false when the queue is empty
@@ -115,6 +165,9 @@ func (e *syncEvent) Wait(timeout time.Duration) bool {
 	}
 }
 
+// keyboardInterrupt is the panic that unwinds a turn when a shutdown signal cancelled the turn context
+type keyboardInterrupt struct{}
+
 // voiceInputMessage marks transcribed input so the concise voice prefix never applies to typed text
 type voiceInputMessage struct{ Text string }
 
@@ -135,6 +188,8 @@ func (m *seededQueryMessage) String() string { return m.Text }
 
 // chatTurn holds the per turn state the chat phases and the agent worker share
 type chatTurn struct {
+	mu                    sync.Mutex
+	workerID              atomic.Uint64
 	result                map[string]any
 	muteNotificationReply bool
 	useStreamingTTS       bool
@@ -189,7 +244,7 @@ type CLI struct {
 	inlineDiffsEnabled           bool
 	turnSummaryEnabled           bool
 	spinnerTokenFlowEnabled      bool
-	turnSummaryCollector         any
+	turnSummaryCollector         *agent.TurnSummaryCollector
 	turnSummaryStart             float64
 	turnTokenBaseline            int
 	interactiveTurn              bool
@@ -204,7 +259,28 @@ type CLI struct {
 	heldStatusLines              []string
 	streamTableBuf               []string
 	inStreamTable                bool
-	pendingEditSnapshots         map[string]any
+	streamMu                     sync.Mutex
+	streamPrefilt                string
+	streamMidLine                bool
+	streamTextANSI               string
+	inReasoningBlock             bool
+	reasoningBoxOpened           bool
+	reasoningBuf                 string
+	reasoningStartedAt           float64
+	reasoningShownThisTurn       bool
+	pendingCreditNotices         [][2]string
+	toolGenAnnounced             map[string]bool
+	runningToolLabels            map[string][]string
+	longToolHintFired            bool
+	lastTurnFailed               bool
+	pendingModelSwitchNote       string
+	pendingSkillsReloadNote      string
+	pendingMoaConfig             map[string]any
+	pendingMoaDisableAfterTurn   bool
+	pendingMoaRestoreModel       map[string]string
+	emitStreamTextHook           func(string)
+	streamReasoningDeltaHook     func(string)
+	pendingEditSnapshots         map[string]*tools.LocalEditSnapshot
 	lastInputModeRecovery        *float64
 	lastTermiosDriftCheck        *float64
 	inputModeRecoveryNoticeShown bool
@@ -265,7 +341,7 @@ type CLI struct {
 	activeAgentRouteSignature  string
 	agent                      *agent.AIAgent
 	toolCallbacksInstalled     bool
-	app                        any
+	app                        tuiApplication
 	conversationHistory        []map[string]any
 	sessionStart               time.Time
 	promptStartTime            *float64
@@ -298,34 +374,34 @@ type CLI struct {
 	deleteSessionOnExit             bool
 	pendingRelaunch                 []string
 	lastCtrlCTime                   float64
-	clarifyState                    any
-	clarifyMultiBase                any
+	clarifyState                    *clarifyModalState
+	clarifyMultiBase                *[]string
 	clarifyFreetext                 bool
 	clarifyPrefill                  string
-	sudoState                       any
-	modalInputSnapshot              any
-	approvalState                   any
-	slashConfirmState               any
+	sudoState                       *sudoModalState
+	modalInputSnapshot              *modalInputSnapshot
+	approvalState                   *approvalModalState
+	slashConfirmState               *slashConfirmModalState
 	modelPickerState                any
-	clarifyDeadline                 float64
+	clarifyDeadline                 *float64
 	sudoDeadline                    float64
 	approvalDeadline                float64
 	slashConfirmDeadline            float64
 	approvalLock                    sync.Mutex
 	composerPlaceholder             string
-	commandPaletteState             any
-	secretState                     any
+	commandPaletteState             *commandPaletteModalState
+	secretState                     *secretModalState
 	pendingResumeSessions           []map[string]any
 	pendingAgentSeed                any
 	secretDeadline                  float64
 	toolStartTime                   float64
-	pendingToolInfo                 map[string][][2]string
+	pendingToolInfo                 map[string][]map[string]any
 	spinnerText                     string
 	commandStatus                   string
 	lastScrollbackTool              string
 	commandRunning                  bool
 	commandBlocksInput              bool
-	petRenderer                     any
+	petRenderer                     *pet.Renderer
 	petAnimRunning                  bool
 	petAnimStop                     chan struct{}
 	petSlug                         string
@@ -333,8 +409,17 @@ type CLI struct {
 	petEnabled                      bool
 	petCols                         int
 	petScale                        float64
-	petFramesCache                  map[string]any
-	petKittyCache                   map[string]any
+	petFramesCache                  map[string][][][]pet.Cell
+	petKittyCache                   map[string]*petKittyEntry
+	petAnimDone                     chan struct{}
+	statusBarTitleSessionID         string
+	statusBarTitleCache             string
+	statusBarTitleCheckedAt         float64
+	statusBarFieldSet               map[string]bool
+	statusBarFieldSetLoaded         bool
+	voiceRecordKeyDisplayCache      string
+	goalManager                     *agent.GoalManager
+	automationStale                 bool
 	petKittyImageID                 int
 	petFrameIdx                     int
 	petLock                         sync.Mutex
@@ -389,6 +474,16 @@ type CLI struct {
 	turnCtx                         context.Context
 	turnCancel                      context.CancelFunc
 	signalStop                      func()
+	uiMu                            sync.Mutex
+	connectionState                 any
+	tui                             tuiRunState
+	subagentMonitor                 *subagentMonitor
+}
+
+// petKittyEntry is one cached kitty payload of a pet state with the image id it was encoded for
+type petKittyEntry struct {
+	payload *pet.KittyPayload
+	imageID int
 }
 
 // skillsPromptResult is the (prompt, loaded names, missing names) triple a skills preload renders
@@ -430,7 +525,7 @@ var (
 	outputHistorySuppressed                  bool
 	outputHistoryMaxLines                    = 200
 	outputHistory                            []any
-	activeTUIApp                             any
+	activeTUIApp                             tuiApplication
 	activeTUIAppMu                           sync.Mutex
 	osExit                                   = os.Exit
 	StopWakeWordListening                    func(owner any)
@@ -581,13 +676,13 @@ func markSessionHandedOff(sessionID string) {
 }
 
 // Returns the active TUI application when run owns the screen, nil otherwise
-func tuiApp() any {
+func tuiApp() tuiApplication {
 	activeTUIAppMu.Lock()
 	defer activeTUIAppMu.Unlock()
 	return activeTUIApp
 }
 
-func setTUIApp(app any) {
+func setTUIApp(app tuiApplication) {
 	activeTUIAppMu.Lock()
 	activeTUIApp = app
 	activeTUIAppMu.Unlock()
@@ -695,7 +790,7 @@ func SaveConfigValue(ctx context.Context, keyPath string, value any) bool {
 	return true
 }
 
-// Turns moa:<preset> into the moa provider with the preset as model, anything else unchanged
+// Turns a moa prefixed model into the moa provider with the preset after the prefix as model, anything else unchanged
 func normalizeMoaModel(model string) (string, string) {
 	trimmed := strings.TrimSpace(model)
 	if strings.HasPrefix(strings.ToLower(trimmed), "moa:") {

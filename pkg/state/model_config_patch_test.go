@@ -81,3 +81,14 @@ func TestArchiveModelConfigPatchRollsBackWithTranscript(t *testing.T) {
 		t.Fatalf("model config %v", got)
 	}
 }
+
+func TestSessionYoloEnabledReadsThePersistedFlag(t *testing.T) {
+	if !SessionYoloEnabled(map[string]any{"model_config": `{"yolo_mode": true}`}) || !SessionYoloEnabled(map[string]any{"model_config": map[string]any{"yolo_mode": true}}) {
+		t.Fatal("a persisted flag must read as enabled")
+	}
+	for _, meta := range []map[string]any{nil, {}, {"model_config": nil}, {"model_config": "{not json"}, {"model_config": `{"yolo_mode": false}`}, {"model_config": `[1]`}} {
+		if SessionYoloEnabled(meta) {
+			t.Fatalf("%v must not enable the bypass", meta)
+		}
+	}
+}

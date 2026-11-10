@@ -1,4 +1,4 @@
-package plugins
+package provider
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 type agentImportHarness struct {
@@ -63,7 +63,7 @@ func newAgentImportHarness(t *testing.T) *agentImportHarness {
 		}
 		return h.childCode, nil
 	}
-	restore := provider.WithSetupOutput(io.Discard)
+	restore := WithSetupOutput(io.Discard)
 	t.Cleanup(restore)
 	return h
 }
@@ -154,7 +154,7 @@ func TestARefusedEnableSkipsTheImportAndSetupGoesOn(t *testing.T) {
 	}
 	agentImportEnable = func(ctx context.Context, name string, out io.Writer) error {
 		h.calls = append(h.calls, "enable|"+name)
-		return &AdmissionRefused{Msg: "dependency conflict"}
+		return &plugins.AdmissionRefused{Msg: "dependency conflict"}
 	}
 	if got := offer(t, h); got != "" {
 		t.Fatalf("got %q", got)
@@ -169,16 +169,16 @@ func TestSetupMenuShowsWhatWasFoundWithTheQuestion(t *testing.T) {
 	for _, d := range []string{".openclaw", ".claude", ".codex"} {
 		h.mkdir(t, d)
 	}
-	agentImportAsk = provider.PromptYesNo
+	agentImportAsk = PromptYesNo
 	var menus []string
-	restore := provider.StubSetupRadiolist(func(question string, choices []string, def int, description string) int {
+	restore := StubSetupRadiolist(func(question string, choices []string, def int, description string) int {
 		menus = append(menus, question+"|"+strings.Join(choices, ",")+"|"+strings.Join(strings.Fields(description), " "))
 		return 1
 	})
 	defer restore()
 	var got string
 	var err error
-	provider.SetupNavigationScope(func() { got, err = OfferAgentImport(context.Background(), h.icebathHome, true) })
+	SetupNavigationScope(func() { got, err = OfferAgentImport(context.Background(), h.icebathHome, true) })
 	if err != nil || got != "" {
 		t.Fatalf("got %q err %v", got, err)
 	}
@@ -237,7 +237,7 @@ func TestIcebathMigrateNamesAnAgentInstallsThePluginAndForwardsItsFlags(t *testi
 func TestMigrateWithoutATypeAndNothingFoundListsTheImporters(t *testing.T) {
 	h := newAgentImportHarness(t)
 	var out bytes.Buffer
-	restore := provider.WithSetupOutput(&out)
+	restore := WithSetupOutput(&out)
 	defer restore()
 	code, err := MigrateCommand(context.Background(), h.icebathHome, map[string]any{"migrate_type": nil}, &out, io.Discard)
 	if err != nil || code != 0 {
@@ -259,7 +259,7 @@ func TestMigrateUnknownTypePrintsUsage(t *testing.T) {
 
 func TestMigrateXaiDryRunReportsIssuesWithoutWriting(t *testing.T) {
 	h := newAgentImportHarness(t)
-	body := "model:\n  default: grok-3\n  provider: xai\n"
+	body := "principal:\n  provider: xai\n  model: grok-3\n"
 	path := filepath.Join(h.icebathHome, "config.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -281,7 +281,7 @@ func TestMigrateXaiDryRunReportsIssuesWithoutWriting(t *testing.T) {
 func TestMigrateXaiApplyRewritesConfigAndBacksItUp(t *testing.T) {
 	h := newAgentImportHarness(t)
 	path := filepath.Join(h.icebathHome, "config.yaml")
-	if err := os.WriteFile(path, []byte("model:\n  default: grok-3\n  provider: xai\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("principal:\n  provider: xai\n  model: grok-3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer

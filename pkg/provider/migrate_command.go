@@ -1,4 +1,4 @@
-package plugins
+package provider
 
 import (
 	"context"
@@ -9,14 +9,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 // MigrateCommand dispatches icebath migrate, hermes_cli/migrate.py cmd_migrate with the xai, relay and agent subtypes
 func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io.Writer) (code int, err error) {
-	restore := provider.WithSetupOutput(w)
+	restore := WithSetupOutput(w)
 	defer restore()
-	defer provider.RecoverSetupExit(&code)
+	defer RecoverSetupExit(&code)
 	migrateType := ""
 	if pyrepr.Truthy(ns["migrate_type"]) {
 		migrateType = pyrepr.Str(ns["migrate_type"])
@@ -25,7 +25,7 @@ func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io
 	case migrateType == "xai":
 		return cmdMigrateXai(ctx, h, ns, w, errw)
 	case migrateType == "relay":
-		if err := CmdMigrateRelay(ctx, w, nsVerifyBool(ns, "all_profiles"), nsVerifyBool(ns, "no_validate")); err != nil {
+		if err := plugins.CmdMigrateRelay(ctx, w, nsFlag(ns, "all_profiles"), nsFlag(ns, "no_validate")); err != nil {
 			return 1, err
 		}
 		return 0, nil
@@ -46,14 +46,14 @@ var agentImportFlags = [][2]string{{"dry_run", "--dry-run"}, {"overwrite", "--ov
 func cmdMigrateAgent(ctx context.Context, h string, ns map[string]any) (int, error) {
 	var extra []string
 	for _, pair := range agentImportFlags {
-		if nsVerifyBool(ns, pair[0]) {
+		if nsFlag(ns, pair[0]) {
 			extra = append(extra, pair[1])
 		}
 	}
 	if pyrepr.Truthy(ns["source"]) {
 		extra = append(extra, "--source", expandUserPath(pyrepr.Str(ns["source"])))
 	}
-	for _, name := range nsVerifyStrings(ns, "bot") {
+	for _, name := range nsStringsOf(ns, "bot") {
 		extra = append(extra, "--bot", name)
 	}
 	agent := pyrepr.Str(ns["migrate_agent"])
@@ -71,15 +71,15 @@ func migrateFail(errw io.Writer, message string) (int, error) {
 
 // Runs the xAI May 15 model migration in dry run or apply mode
 func cmdMigrateXai(ctx context.Context, h string, ns map[string]any, w, errw io.Writer) (int, error) {
-	apply := nsVerifyBool(ns, "apply")
-	noBackup := nsVerifyBool(ns, "no_backup")
+	apply := nsFlag(ns, "apply")
+	noBackup := nsFlag(ns, "no_backup")
 	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
 	if err != nil {
 		return 1, err
 	}
-	issues := provider.FindRetiredXAIRefs(map[string]any(tree))
+	issues := FindRetiredXAIRefs(map[string]any(tree))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, cliui.Color(fmt.Sprintf("◆ xAI Model Retirement Migration (%s)", provider.XAIRetirementDate), cliui.Cyan, cliui.Bold))
+	fmt.Fprintln(w, cliui.Color(fmt.Sprintf("◆ xAI Model Retirement Migration (%s)", XAIRetirementDate), cliui.Cyan, cliui.Bold))
 	fmt.Fprintln(w)
 	if len(issues) == 0 {
 		fmt.Fprintf(w, "  %s No retired xAI models in config — nothing to migrate.\n", cliui.Color("✓", cliui.Green))
@@ -88,10 +88,10 @@ func cmdMigrateXai(ctx context.Context, h string, ns map[string]any, w, errw io.
 	fmt.Fprintf(w, "  Found %d retired xAI model reference(s):\n", len(issues))
 	fmt.Fprintln(w)
 	for _, issue := range issues {
-		fmt.Fprintf(w, "    %s %s\n", cliui.Color("⚠", cliui.Yellow), provider.FormatRetirementIssue(issue))
+		fmt.Fprintf(w, "    %s %s\n", cliui.Color("⚠", cliui.Yellow), FormatRetirementIssue(issue))
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "    %s Migration guide: %s\n", cliui.Color("→", cliui.Cyan), provider.XAIMigrationGuideURL)
+	fmt.Fprintf(w, "    %s Migration guide: %s\n", cliui.Color("→", cliui.Cyan), XAIMigrationGuideURL)
 	fmt.Fprintln(w)
 	configPath := filepath.Join(h, "config.yaml")
 	if !apply {
@@ -103,7 +103,7 @@ func cmdMigrateXai(ctx context.Context, h string, ns map[string]any, w, errw io.
 	if err != nil || !exists {
 		return migrateFail(errw, fmt.Sprintf("Could not locate config.yaml (looked at: %s)", configPath))
 	}
-	result, err := provider.ApplyXAIRetirementMigration(ctx, configPath, issues, !noBackup)
+	result, err := ApplyXAIRetirementMigration(ctx, configPath, issues, !noBackup)
 	if err != nil {
 		return migrateFail(errw, fmt.Sprintf("Migration failed: %s", pyrepr.ExceptionMessage(err)))
 	}
@@ -118,4 +118,19 @@ func cmdMigrateXai(ctx context.Context, h string, ns map[string]any, w, errw io.
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, cliui.Color("Run `icebath doctor` to confirm no retired xAI models remain.", cliui.Dim))
 	return 0, nil
+}
+
+// String list of a namespace value, a Go or decoded list
+func nsStringsOf(ns map[string]any, key string) []string {
+	switch v := ns[key].(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			out = append(out, pyrepr.Str(item))
+		}
+		return out
+	}
+	return nil
 }

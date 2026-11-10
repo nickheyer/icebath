@@ -23,6 +23,7 @@ var holderFlags struct {
 
 func init() {
 	updaterecord.SetRuntimeHostMatcher(isRuntimeHost)
+	gateway.HolderSubcommand = hermesHolderSubcommand
 }
 
 // Installs the top level parser's value consuming option strings, called by the command tree

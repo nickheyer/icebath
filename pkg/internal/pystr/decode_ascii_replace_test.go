@@ -22,3 +22,12 @@ func TestDecodeUTF8SigIgnoreStripsTheBOMAndDropsInvalidBytes(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+func TestDecodeUTF8SigReplaceStripsTheBOMAndMarksInvalidBytes(t *testing.T) {
+	if got := DecodeUTF8SigReplace([]byte{0xEF, 0xBB, 0xBF, 'K', '=', 'v', 0xff, '\n'}); got != "K=v�\n" {
+		t.Fatalf("%q", got)
+	}
+	if got := DecodeUTF8SigReplace([]byte("plain")); got != "plain" {
+		t.Fatalf("%q", got)
+	}
+}

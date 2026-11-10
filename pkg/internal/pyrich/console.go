@@ -47,7 +47,9 @@ type Console struct {
 	NoHighlight bool
 	// Colors dropped while attributes and links stay, as Console(no_color=True) or a non empty NO_COLOR
 	NoColor bool
-	mu      sync.Mutex
+	// Forced color system truecolor, 256 or standard as Console(color_system=...), the terminal's own when empty
+	ColorSystem string
+	mu          sync.Mutex
 }
 
 // Console over a writer, styled and animated only when the writer is a terminal
@@ -98,6 +100,9 @@ func (c *Console) write(lines []string) {
 		io.WriteString(c.Out, c.colorless(l)+"\n")
 	}
 }
+
+// Color system the console renders styles for
+func (c *Console) system() string { return resolveSystem(c.ColorSystem) }
 
 // Rendered output with color codes removed when the console is in no color mode
 func (c *Console) colorless(rendered string) string {
@@ -159,35 +164,35 @@ func attributeCodes(seq string) string {
 // Prints markup wrapped at the console width, an empty call printing a blank line
 func (c *Console) Print(markup ...string) {
 	text := strings.Join(markup, " ")
-	c.write(WrapStyled(renderHighlighted(text, c.Color, !c.NoHighlight), c.Width, true))
+	c.write(WrapStyled(renderHighlighted(text, c.Color, !c.NoHighlight, c.system()), c.Width, true))
 }
 
 // Prints markup wrapped at the console width with repr highlighting off, as print(..., highlight=False)
 func (c *Console) PrintNoHighlight(markup ...string) {
 	text := strings.Join(markup, " ")
-	c.write(WrapStyled(renderHighlighted(text, c.Color, false), c.Width, true))
+	c.write(WrapStyled(renderHighlighted(text, c.Color, false, c.system()), c.Width, true))
 }
 
 // Prints markup on unwrapped lines, as print(..., soft_wrap=True)
 func (c *Console) PrintSoft(markup string) {
-	c.write([]string{renderHighlighted(markup, c.Color, !c.NoHighlight)})
+	c.write([]string{renderHighlighted(markup, c.Color, !c.NoHighlight, c.system())})
 }
 
 // Prints a table fitted to the console width
 func (c *Console) PrintTable(t *Table) {
-	c.write(strings.Split(t.RenderWidth(c.Color, c.Width), "\n"))
+	c.write(strings.Split(t.renderWidth(c.Color, c.system(), c.Width), "\n"))
 }
 
 // Prints a panel expanded to the console width
 func (c *Console) PrintPanel(p Panel) {
-	c.write(strings.Split(p.render(c.Color, !c.NoHighlight, c.Width), "\n"))
+	c.write(strings.Split(p.render(c.Color, c.system(), c.Width), "\n"))
 }
 
 // Input prints the prompt without a newline and reads one line, io.EOF standing for EOFError
 func (c *Console) Input(prompt string) (string, error) {
 	if prompt != "" && !c.Quiet && c.Out != nil {
 		c.mu.Lock()
-		io.WriteString(c.Out, c.colorless(renderHighlighted(prompt, c.Color, !c.NoHighlight)))
+		io.WriteString(c.Out, c.colorless(renderHighlighted(prompt, c.Color, !c.NoHighlight, c.system())))
 		c.mu.Unlock()
 	}
 	in := c.In
@@ -420,7 +425,7 @@ func WrapStyled(rendered string, width int, fold bool) []string {
 
 // Cut of a styled line to width cells, overflow ellipsis ending in a horizontal ellipsis
 func truncateStyled(line string, width int, overflow string) string {
-	runes, tail := splitStyled(line)
+	runes, _ := splitStyled(line)
 	if CellLen(plainOf(runes, 0, len(runes))) <= width {
 		return line
 	}
@@ -433,12 +438,20 @@ func truncateStyled(line string, width int, overflow string) string {
 		cells += widthCond.RuneWidth(runes[n].r)
 		n++
 	}
-	out := joinStyled(runes[:n], "", [][2]int{{0, n}})[0]
-	if overflow == "ellipsis" && limit >= 0 {
-		out += "…"
+	kept := append([]styledRune(nil), runes[:n]...)
+	next := n
+	if cells < limit && n < len(runes) {
+		kept = append(kept, styledRune{r: ' ', prefix: runes[n].prefix})
+		next = n + 1
 	}
-	_ = tail
-	return out
+	if overflow == "ellipsis" && limit >= 0 {
+		prefix := ""
+		if next < len(runes) {
+			prefix = runes[next].prefix
+		}
+		kept = append(kept, styledRune{r: '…', prefix: prefix})
+	}
+	return joinStyled(kept, "", [][2]int{{0, len(kept)}})[0]
 }
 
 // Rich status spinner shown on a terminal while work runs, erased when stopped
@@ -470,7 +483,7 @@ func (c *Console) Status(markup string) *Status {
 			text := s.text
 			s.mu.Unlock()
 			c.mu.Lock()
-			fmt.Fprintf(c.Out, "\r\x1b[2K%s %s", c.colorless(Render("[green]"+spinnerFrames[i%len(spinnerFrames)]+"[/]", c.Color)), c.colorless(Render(text, c.Color)))
+			fmt.Fprintf(c.Out, "\r\x1b[2K%s %s", c.colorless(RenderSystem("[green]"+spinnerFrames[i%len(spinnerFrames)]+"[/]", c.Color, c.system())), c.colorless(Render(text, c.Color)))
 			c.mu.Unlock()
 			select {
 			case <-s.stop:

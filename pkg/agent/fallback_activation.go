@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -32,6 +33,25 @@ type fallbackWalkState struct {
 	unavailableFallbackKeys map[[3]string]bool
 	providerFallbackActive  bool
 	providerFallbackRoute   [2]string
+}
+
+// Replaces the fallback chain with the configured one unless a cooldown holds the agent on an activated fallback
+func (a *AIAgent) ApplyFallbackChain(chain []map[string]any) {
+	if a == nil {
+		return
+	}
+	newChain := append([]map[string]any{}, chain...)
+	if a.fallbackActivated && a.rateLimitedUntil > pythread.Monotonic() {
+		return
+	}
+	oldChain := a.fallbackChain
+	a.fallbackChain = newChain
+	if !a.fallbackActivated {
+		a.fallbackIndex = 0
+	}
+	if !reflect.DeepEqual(newChain, append([]map[string]any{}, oldChain...)) {
+		clear(a.unavailableFallbackKeys)
+	}
 }
 
 // Rewrites the last Model and Provider lines of the cached prompt after a provider switch

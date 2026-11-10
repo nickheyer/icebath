@@ -14,7 +14,7 @@ func measureMarkup(markup string) measurement {
 	for _, line := range strings.Split(plain, "\n") {
 		m.max = max(m.max, CellLen(line))
 	}
-	words := strings.FieldsFunc(plain, unicode.IsSpace)
+	words := strings.FieldsFunc(plain, pyIsSpace)
 	if len(words) == 0 {
 		m.min = m.max
 	}
@@ -23,6 +23,9 @@ func measureMarkup(markup string) measurement {
 	}
 	return m
 }
+
+// True for the characters Python str.split treats as whitespace, the information separators included
+func pyIsSpace(r rune) bool { return (r >= 0x1c && r <= 0x1f) || unicode.IsSpace(r) }
 
 // Rich ratio_reduce, taking total cells from values in proportion to ratios within maximums
 func ratioReduce(total int, ratios, maximums, values []int) []int {
@@ -129,9 +132,9 @@ func collapseWidths(widths []int, wrapable []bool, maxWidth int) []int {
 // Column measurement with its one cell padding on each side, clamped like rich _measure_column
 func (t *Table) measureColumn(i, maxWidth int) measurement {
 	col := t.Columns[i]
-	pad := 2 * t.pad()
+	pad := t.padLeft(i) + t.padRight(i)
 	if col.Width > 0 {
-		w := min(col.Width+pad, maxWidth)
+		w := min(col.Width+t.paddingWidth(i), maxWidth)
 		return measurement{w, w}
 	}
 	cells := []string{Escape(col.Header)}
@@ -150,7 +153,7 @@ func (t *Table) measureColumn(i, maxWidth int) measurement {
 	}
 	m.min, m.max = min(m.min, maxWidth), min(m.max, maxWidth)
 	if col.MaxWidth > 0 {
-		limit := col.MaxWidth + pad
+		limit := col.MaxWidth + t.paddingWidth(i)
 		m.min, m.max = min(m.min, limit), min(m.max, limit)
 	}
 	return m
@@ -192,7 +195,7 @@ func (t *Table) columnWidths(maxWidth int) []int {
 }
 
 // Styled lines of one cell wrapped into width cells and justified
-func cellLines(markup, style string, width int, col Column, color bool) []string {
+func cellLines(markup, style string, width int, col Column, color bool, system string) []string {
 	if style != "" {
 		markup = "[" + style + "]" + markup + "[/" + style + "]"
 	}
@@ -200,7 +203,7 @@ func cellLines(markup, style string, width int, col Column, color bool) []string
 	if overflow == "" {
 		overflow = "ellipsis"
 	}
-	rendered := Render(markup, color)
+	rendered := RenderSystem(markup, color, system)
 	var lines []string
 	if col.NoWrap {
 		lines = strings.Split(rendered, "\n")
@@ -223,8 +226,10 @@ func cellLines(markup, style string, width int, col Column, color bool) []string
 }
 
 // Lines of the table fitted to width cells as rich renders it on a console that wide
-func (t *Table) RenderWidth(color bool, width int) string {
-	pad := t.pad()
+func (t *Table) RenderWidth(color bool, width int) string { return t.renderWidth(color, "", width) }
+
+// Lines of the table fitted to width cells with styles rendered for the named color system
+func (t *Table) renderWidth(color bool, system string, width int) string {
 	extra := t.edgeCells()
 	widths := t.columnWidths(width - extra)
 	tableWidth := extra
@@ -238,7 +243,6 @@ func (t *Table) RenderWidth(color bool, width int) string {
 		}
 		return left + strings.Join(parts, mid) + right
 	}
-	gap := strings.Repeat(" ", pad)
 	row := func(edge string, cells []string, header bool) []string {
 		if t.NoBox {
 			edge = ""
@@ -255,7 +259,7 @@ func (t *Table) RenderWidth(color bool, width int) string {
 			if header {
 				style = "bold"
 			}
-			split[i] = cellLines(text, style, w-2*pad, col, color)
+			split[i] = cellLines(text, style, w-t.padLeft(i)-t.padRight(i), col, color, system)
 			height = max(height, len(split[i]))
 		}
 		out := make([]string, height)
@@ -263,11 +267,12 @@ func (t *Table) RenderWidth(color bool, width int) string {
 			var b strings.Builder
 			b.WriteString(edge)
 			for i, w := range widths {
-				cell := strings.Repeat(" ", w-2*pad)
+				left, right := t.padLeft(i), t.padRight(i)
+				cell := strings.Repeat(" ", w-left-right)
 				if r < len(split[i]) {
 					cell = split[i][r]
 				}
-				b.WriteString(gap + cell + gap + edge)
+				b.WriteString(strings.Repeat(" ", left) + cell + strings.Repeat(" ", right) + edge)
 			}
 			out[r] = b.String()
 		}
@@ -275,7 +280,7 @@ func (t *Table) RenderWidth(color bool, width int) string {
 	}
 	var lines []string
 	if t.Title != "" {
-		for _, l := range WrapStyled(Render("[italic]"+t.Title+"[/italic]", color), tableWidth, true) {
+		for _, l := range WrapStyled(RenderSystem("[italic]"+t.Title+"[/italic]", color, system), tableWidth, true) {
 			l = strings.TrimRightFunc(l, unicode.IsSpace)
 			n := CellLen(ansiRE.ReplaceAllString(l, ""))
 			left := max(0, (tableWidth-n)/2)
@@ -311,19 +316,42 @@ type Panel struct {
 	Fit bool
 	// Renderable drawn in place of Body when set, as a Markdown body
 	Content Renderable
+	// Horizontal padding inside the border on each side, the rich default of one when zero
+	PadX int
+	// Box drawn around the body, horizontals for rules above and below only, rounded when empty
+	Box string
+	// Side the title sits on in the top border, left or right, centered when empty
+	TitleAlign string
+	// Style laid under the border, the padding and the body, as Panel(style=...)
+	Style string
+	// Vertical then horizontal padding replacing PadX when set, as Panel(padding=(v, h))
+	Padding *[2]int
+	// Outer width capped at the console width, the console width when zero
+	Width int
+}
+
+// Cells of padding between the border and the body on each side
+func (p Panel) pad() int {
+	if p.Padding != nil {
+		return max(0, p.Padding[1])
+	}
+	if p.PadX > 0 {
+		return p.PadX
+	}
+	return 1
 }
 
 // Width a fitted panel takes, the body measure plus padding widened for the title and capped at width
 func (p Panel) fitWidth(color bool, width int) int {
 	child := width - 2
 	if p.Content != nil {
-		child = min(p.Content.MeasureMax(width-2)+2, width-2)
+		child = min(p.Content.MeasureMax(width-2)+2*p.pad(), width-2)
 	} else {
 		longest := 0
 		for _, l := range strings.Split(Render(p.Body, color), "\n") {
 			longest = max(longest, CellLen(ansiRE.ReplaceAllString(l, "")))
 		}
-		child = min(min(longest, width-2)+2, width-2)
+		child = min(min(longest, width-2)+2*p.pad(), width-2)
 	}
 	if p.Title != "" {
 		child = min(width-2, max(child, CellLen(Plain(strings.ReplaceAll(p.Title, "\n", " ")))+4))
@@ -332,47 +360,104 @@ func (p Panel) fitWidth(color bool, width int) int {
 }
 
 // Lines of the panel at width cells
-func (p Panel) Render(color bool, width int) string { return p.render(color, true, width) }
+func (p Panel) Render(color bool, width int) string { return p.render(color, "", width) }
 
-// Panel lines with the body repr highlighted when highlight is true, as a console prints a Panel
-func (p Panel) render(color, highlight bool, width int) string {
-	border := func(s string) string {
-		if p.BorderStyle == "" || !color {
+// Panel lines as a console prints a Panel, the body never repr highlighted
+func (p Panel) render(color bool, system string, width int) string {
+	if p.Width > 0 {
+		width = min(width, p.Width)
+	}
+	base, _ := ParseStyle(p.Style)
+	styled := base != (Style{})
+	borderStyle := base
+	if bs, err := ParseStyle(p.BorderStyle); err == nil {
+		borderStyle = base.Add(bs)
+	}
+	under := func(s string) string {
+		if s == "" || !styled || !color {
 			return s
 		}
-		return Render("["+p.BorderStyle+"]"+Escape(s)+"[/]", color)
+		return base.Render(s, resolveSystem(system))
+	}
+	border := func(s string) string {
+		if s == "" || !color || (p.BorderStyle == "" && !styled) {
+			return s
+		}
+		if styled {
+			return borderStyle.Render(s, resolveSystem(system))
+		}
+		return RenderSystem("["+p.BorderStyle+"]"+Escape(s)+"[/]", color, system)
+	}
+	left, right, bottomLeft, bottomRight, side := "╭", "╮", "╰", "╯", "│"
+	if p.Box == "horizontals" {
+		left, right, bottomLeft, bottomRight, side = " ", " ", " ", " ", " "
 	}
 	edge := func(left, right, title string) string {
 		if title == "" || width <= 4 {
 			return border(left + strings.Repeat("─", max(0, width-2)) + right)
 		}
 		text := " " + strings.ReplaceAll(title, "\n", " ") + " "
-		rendered := truncateStyled(Render(text, color), width-4, "ellipsis")
-		n := CellLen(ansiRE.ReplaceAllString(rendered, ""))
+		if p.BorderStyle != "" {
+			text = "[" + p.BorderStyle + "]" + text + "[/]"
+		}
+		rendered := truncateStyled(RenderSystem(text, color, system), width-4, "fold")
+		if styled && color {
+			rendered = decodeANSILine(rendered).over(base).render(color, resolveSystem(system))
+		}
+		n := CellLen(oscRE.ReplaceAllString(ansiRE.ReplaceAllString(rendered, ""), ""))
 		excess := width - 4 - n
 		l := excess / 2
-		return border(left+"─"+strings.Repeat("─", l)) + rendered + border(strings.Repeat("─", excess-l)+"─"+right)
+		switch p.TitleAlign {
+		case "left":
+			l = 0
+		case "right":
+			l = excess
+		}
+		return border(left+"─") + border(strings.Repeat("─", l)) + rendered + border(strings.Repeat("─", excess-l)) + border("─"+right)
 	}
 	if p.Fit {
 		width = p.fitWidth(color, width)
 	}
-	inner := max(1, width-4)
-	lines := []string{edge("╭", "╮", p.Title)}
-	body := WrapStyled(renderHighlighted(p.Body, color, highlight), inner, true)
+	gap := strings.Repeat(" ", p.pad())
+	inner := max(1, width-2-2*p.pad())
+	padY := 0
+	if p.Padding != nil {
+		padY = max(0, p.Padding[0])
+	}
+	blank := border(side) + under(strings.Repeat(" ", max(0, width-2))) + border(side)
+	lines := []string{edge(left, right, p.Title)}
+	for range padY {
+		lines = append(lines, blank)
+	}
+	body := WrapStyled(renderHighlighted(p.Body, color, false, system), inner, true)
 	if p.Content != nil {
-		system := ""
+		contentSystem := ""
 		if color {
-			system = TermColorSystem()
+			contentSystem = resolveSystem(system)
 		}
-		body = p.Content.RenderLines(color, system, inner)
+		body = p.Content.RenderLines(color, contentSystem, inner)
+		if sr, ok := p.Content.(spanRenderable); ok && styled {
+			body = body[:0]
+			for _, l := range sr.spanLines(inner, false) {
+				body = append(body, l.over(base).render(color, contentSystem))
+			}
+		}
 	}
 	for _, l := range body {
 		if p.Content == nil {
 			l = truncateStyled(l, inner, "ellipsis")
 		}
+		if styled && color {
+			if _, spans := p.Content.(spanRenderable); !spans {
+				l = decodeANSILine(l).over(base).render(color, resolveSystem(system))
+			}
+		}
 		pad := strings.Repeat(" ", max(0, inner-CellLen(oscRE.ReplaceAllString(ansiRE.ReplaceAllString(l, ""), ""))))
-		lines = append(lines, border("│")+" "+l+pad+" "+border("│"))
+		lines = append(lines, border(side)+under(gap)+l+under(pad)+under(gap)+border(side))
 	}
-	lines = append(lines, edge("╰", "╯", p.Subtitle))
+	for range padY {
+		lines = append(lines, blank)
+	}
+	lines = append(lines, edge(bottomLeft, bottomRight, p.Subtitle))
 	return strings.Join(lines, "\n")
 }

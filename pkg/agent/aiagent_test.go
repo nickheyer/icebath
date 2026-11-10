@@ -1,12 +1,15 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/observability"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -298,5 +301,125 @@ func TestQuietAgentSettersReplaceTheStdoutCallbacks(t *testing.T) {
 	}
 	if a.toolGenCallback != nil || a.reasoningCallback != nil || a.toolStartCallback != nil || a.toolCompleteCallback != nil {
 		t.Fatal("callbacks must be cleared")
+	}
+}
+
+func TestNotificationAccessorsReadTheBoundTurnState(t *testing.T) {
+	a := &AIAgent{}
+	if a.MuteNotificationReply() || a.NotificationConfig() != nil {
+		t.Fatal("a fresh agent mutes nothing and binds no config")
+	}
+	restore := a.NotificationPolicySnapshot("cli", map[string]any{"display": map[string]any{}})
+	if a.NotificationConfig() == nil {
+		t.Fatal("the bound config must read back")
+	}
+	restore()
+	_, unmute := a.NotificationTurn(context.Background(), true, "s1")
+	if !a.MuteNotificationReply() {
+		t.Fatal("a muted turn must read as muted")
+	}
+	unmute()
+	if a.MuteNotificationReply() || a.NotificationConfig() != nil {
+		t.Fatal("restores must clear the turn state")
+	}
+}
+
+func TestEmitNoticeReachesTheNoticeCallback(t *testing.T) {
+	var got []provider.AgentNotice
+	a := &AIAgent{noticeCallback: func(n provider.AgentNotice) { got = append(got, n) }}
+	a.EmitNotice(provider.AgentNotice{Level: "warn", Text: "careful"})
+	if len(got) != 1 || got[0].Text != "careful" || got[0].Level != "warn" {
+		t.Fatalf("notice callback saw %+v", got)
+	}
+}
+
+func TestApplyFallbackChainSkipsWhileCooldownHoldsFallback(t *testing.T) {
+	live := []map[string]any{{"provider": "deepseek", "model": "deepseek-v4-flash"}}
+	a := &AIAgent{fallbackChain: live, fallbackIndex: 1, fallbackActivated: true}
+	a.rateLimitedUntil = pythread.Monotonic() + 30
+	a.ApplyFallbackChain([]map[string]any{{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"}})
+	if len(a.fallbackChain) != 1 || a.fallbackChain[0]["provider"] != "deepseek" || a.fallbackIndex != 1 || !a.fallbackActivated {
+		t.Fatalf("a live fallback activation was clobbered: %v index %d", a.fallbackChain, a.fallbackIndex)
+	}
+}
+
+func TestApplyFallbackChainReplacesTheChainOnThePrimary(t *testing.T) {
+	a := &AIAgent{fallbackChain: []map[string]any{{"provider": "deepseek", "model": "m"}}, fallbackIndex: 1}
+	a.unavailableFallbackKeys = map[[3]string]bool{{"deepseek", "m", ""}: true}
+	next := []map[string]any{{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"}}
+	a.ApplyFallbackChain(next)
+	if len(a.fallbackChain) != 1 || a.fallbackChain[0]["provider"] != "openrouter" || a.fallbackIndex != 0 || len(a.unavailableFallbackKeys) != 0 {
+		t.Fatalf("chain %v index %d memo %v", a.fallbackChain, a.fallbackIndex, a.unavailableFallbackKeys)
+	}
+	if got := a.FallbackModel(); got == nil || got["provider"] != "openrouter" {
+		t.Fatalf("first entry %v", got)
+	}
+	a.unavailableFallbackKeys[[3]string{"openrouter", "x", ""}] = true
+	a.ApplyFallbackChain(next)
+	if len(a.unavailableFallbackKeys) != 1 {
+		t.Fatal("an unchanged chain must keep the unavailability memo")
+	}
+	a.ApplyFallbackChain(nil)
+	if len(a.fallbackChain) != 0 || a.FallbackModel() != nil {
+		t.Fatalf("a removed chain left %v", a.fallbackChain)
+	}
+}
+
+func TestStagePendingCLIUserMessageClearsThePreviousTurnOverrides(t *testing.T) {
+	idx := 3
+	a := &AIAgent{persistUserMessageIdx: &idx, persistUserMessageOverride: "old", persistUserMessageTimestamp: 1.5}
+	staged := map[string]any{"role": "user", "content": "hi"}
+	appended := false
+	a.StagePendingCLIUserMessage(staged, func() { appended = true })
+	if a.persistUserMessageIdx != nil || a.persistUserMessageOverride != nil || a.persistUserMessageTimestamp != nil {
+		t.Fatal("the previous turn overrides must be cleared")
+	}
+	if got, _ := a.pendingCLIUserMessage.(map[string]any); got == nil || got["content"] != "hi" || !appended {
+		t.Fatalf("staged %v appended %v", a.pendingCLIUserMessage, appended)
+	}
+	if got := a.PendingCLIUserMessage(); got == nil || got["role"] != "user" {
+		t.Fatalf("pending accessor %v", got)
+	}
+	if i, o, ts := a.PersistUserMessageStaging(); i != nil || o != nil || ts != nil {
+		t.Fatalf("staging accessor %v %v %v", i, o, ts)
+	}
+}
+
+func TestActiveChildInterruptsReportsEachChildFlag(t *testing.T) {
+	quiet, cut := &AIAgent{}, &AIAgent{}
+	cut.interruptRequested.Store(true)
+	a := &AIAgent{activeChildren: []*AIAgent{quiet, cut}, activeChildrenLock: &sync.Mutex{}}
+	if got := a.ActiveChildInterrupts(); len(got) != 2 || got[0] || !got[1] {
+		t.Fatalf("flags %v", got)
+	}
+}
+
+func TestStatusBarUsageReportsCountersAndContextOccupancy(t *testing.T) {
+	a := &AIAgent{sessionInputTokens: 7, sessionOutputTokens: 3, sessionPromptTokens: 12, sessionCacheReadTokens: 5, sessionAPICalls: 2,
+		apiLatencyHistory: []float64{1.5, 2.5}, apiOutputHistory: []int{30, 90}}
+	usage := a.StatusBarUsage(context.Background())
+	if usage.HasCompressor || usage.Counters["session_prompt_tokens"] != 12 || usage.Counters["session_api_calls"] != 2 || len(usage.LatencyHistory) != 2 {
+		t.Fatalf("usage without an engine %+v", usage)
+	}
+	pin := 200000
+	compressor := &ContextCompressor{configContextLength: &pin}
+	compressor.LastPromptTokens, compressor.lastRealPromptTokens = 50000, 50000
+	compressor.ContextEngineBase.ContextLength, compressor.ContextEngineBase.CompressionCount = 200000, 3
+	a.contextCompressor = compressor
+	usage = a.StatusBarUsage(context.Background())
+	if !usage.HasCompressor || usage.ContextTokens != 50000 || usage.ContextLength != 200000 || usage.ContextPercent == nil || *usage.ContextPercent != 25 ||
+		usage.ContextEstimated || !usage.ContextPinned || usage.Compressions != 3 {
+		t.Fatalf("usage %+v", usage)
+	}
+	compressor.LastPromptTokens = -1
+	if got := a.StatusBarUsage(context.Background()); got.ContextTokens != 0 {
+		t.Fatalf("the post compression sentinel leaked as %d tokens", got.ContextTokens)
+	}
+	compressor.LastPromptTokens, compressor.lastRealPromptTokens = 60000, 50000
+	if got := a.StatusBarUsage(context.Background()); !got.ContextEstimated {
+		t.Fatal("a local seed that differs from the provider reading must read as estimated")
+	}
+	if _, ok := a.TodoItems(); ok {
+		t.Fatal("an agent without a todo store reports none")
 	}
 }

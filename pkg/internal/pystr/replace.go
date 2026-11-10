@@ -34,6 +34,11 @@ func DecodeASCIIReplace(b []byte) string {
 	return string(out)
 }
 
+// Decodes utf-8-sig with errors replace, the BOM stripped and each undecodable run shown as U+FFFD
+func DecodeUTF8SigReplace(b []byte) string {
+	return DecodeUTF8Replace(bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF}))
+}
+
 // Decodes utf-8-sig with errors ignore, the BOM stripped and every undecodable byte run dropped
 func DecodeUTF8SigIgnore(b []byte) string {
 	b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})

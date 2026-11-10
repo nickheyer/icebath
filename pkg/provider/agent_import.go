@@ -1,4 +1,4 @@
-package plugins
+package provider
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -58,15 +58,17 @@ type FoundImportSource struct {
 
 // Seams of the import step the tests replace with recorders
 var (
-	agentImportAsk       = provider.PromptYesNo
-	agentImportChecklist = provider.PromptChecklist
+	agentImportAsk       = PromptYesNo
+	agentImportChecklist = PromptChecklist
 	agentImportInstall   = func(ctx context.Context, name string, out io.Writer) error {
 		enable := true
-		return CmdInstall(ctx, InstallCommandOptions{Identifier: name, Enable: &enable, Brief: true}, out)
+		return plugins.CmdInstall(ctx, plugins.InstallCommandOptions{Identifier: name, Enable: &enable, Brief: true}, out)
 	}
-	agentImportEnable = func(ctx context.Context, name string, out io.Writer) error { return CmdEnable(ctx, name, nil, out) }
+	agentImportEnable = func(ctx context.Context, name string, out io.Writer) error {
+		return plugins.CmdEnable(ctx, name, nil, out)
+	}
 	agentImportUpdate = func(ctx context.Context, name string, out io.Writer) error {
-		return CmdUpdate(ctx, name, false, false, out)
+		return plugins.CmdUpdate(ctx, name, false, false, out)
 	}
 	agentImportRunChild = runAgentImportChild
 	agentImportSelfExe  = os.Executable
@@ -74,7 +76,7 @@ var (
 )
 
 // Writer the plugin commands of the import step print on
-func agentImportOut() io.Writer { return provider.SetupOutput() }
+func agentImportOut() io.Writer { return SetupOutput() }
 
 func userHome() string {
 	h, err := os.UserHomeDir()
@@ -92,7 +94,7 @@ func expandUserPath(p string) string {
 	return p
 }
 
-func isDir(p string) bool {
+func agentImportIsDir(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.IsDir()
 }
@@ -108,7 +110,7 @@ func DetectImportSources() []FoundImportSource {
 			if !filepath.IsAbs(d) {
 				p = filepath.Join(home, d)
 			}
-			if isDir(p) {
+			if agentImportIsDir(p) {
 				where = p
 				break
 			}
@@ -133,14 +135,14 @@ func DetectImportSources() []FoundImportSource {
 // OfferAgentImport offers to import the agents found on this computer and returns the labels whose import changed config.yaml or .env
 func OfferAgentImport(ctx context.Context, icebathHome string, fromSetup bool) (string, error) {
 	var found []FoundImportSource
-	if !provider.IsNoninteractive() {
+	if !IsNoninteractive() {
 		found = DetectImportSources()
 	}
 	if len(found) == 0 {
 		return "", nil
 	}
 	home := userHome()
-	provider.PrintSetupHeader("Coming from another agent?", true)
+	PrintSetupHeader("Coming from another agent?", true)
 	where := make([]string, 0, len(found))
 	labels := make([]string, 0, len(found))
 	for _, f := range found {
@@ -155,7 +157,7 @@ func OfferAgentImport(ctx context.Context, icebathHome string, fromSetup bool) (
 		"Icebath can bring over its settings, memories, skills and MCP servers.",
 		"You'll see a preview and confirm before anything changes."}
 	for _, line := range contextLines {
-		provider.SetupInfo(line)
+		SetupInfo(line)
 	}
 	names := "any of them"
 	if len(found) <= 2 {
@@ -168,7 +170,7 @@ func OfferAgentImport(ctx context.Context, icebathHome string, fromSetup bool) (
 		}
 	}
 	if !agentImportAsk(fmt.Sprintf("Import your setup from %s?", names), true, strings.Join(wrapped, "\n")) {
-		provider.SetupInfo(fmt.Sprintf("Skipped. Import later with: icebath plugins install %s, then icebath import-agent", AgentImportersPlugin))
+		SetupInfo(fmt.Sprintf("Skipped. Import later with: icebath plugins install %s, then icebath import-agent", AgentImportersPlugin))
 		return "", nil
 	}
 	picked := pickImportSources(found)
@@ -225,7 +227,7 @@ func pickImportSources(found []FoundImportSource) []ImportSource {
 	}
 	picked := agentImportChecklist("Which agents should Icebath import from?", labels, pre)
 	if len(picked) == 0 {
-		provider.SetupInfo("Nothing selected, so nothing was imported.")
+		SetupInfo("Nothing selected, so nothing was imported.")
 	}
 	out := make([]ImportSource, 0, len(picked))
 	for _, i := range picked {
@@ -236,9 +238,9 @@ func pickImportSources(found []FoundImportSource) []ImportSource {
 
 // The plugin installed and enabled in the home, installed from the catalog when missing, else enabled
 func ensureAgentImportersPlugin(ctx context.Context, icebathHome string) (bool, error) {
-	present := provider.PluginPresent(AgentImportersPlugin, icebathHome)
+	present := PluginPresent(AgentImportersPlugin, icebathHome)
 	if !present {
-		provider.SetupInfo(nil, fmt.Sprintf("Importing is done by the '%s' plugin from the Icebath plugin catalog. Installing it now...", AgentImportersPlugin))
+		SetupInfo(nil, fmt.Sprintf("Importing is done by the '%s' plugin from the Icebath plugin catalog. Installing it now...", AgentImportersPlugin))
 	}
 	var err error
 	if present {
@@ -246,19 +248,19 @@ func ensureAgentImportersPlugin(ctx context.Context, icebathHome string) (bool, 
 	} else {
 		err = agentImportInstall(ctx, AgentImportersPlugin, agentImportOut())
 	}
-	var exit *CommandExit
-	var refused *AdmissionRefused
+	var exit *plugins.CommandExit
+	var refused *plugins.AdmissionRefused
 	if err != nil && !errors.As(err, &exit) && !errors.As(err, &refused) {
 		return false, err
 	}
-	if err == nil && provider.PluginPresent(AgentImportersPlugin, icebathHome) {
+	if err == nil && PluginPresent(AgentImportersPlugin, icebathHome) {
 		return true, nil
 	}
 	verb, action := "installed", "install"
 	if present {
 		verb, action = "enabled", "enable"
 	}
-	provider.SetupWarning(fmt.Sprintf("The '%s' plugin could not be %s, so nothing was imported. Try again later with: icebath plugins %s %s",
+	SetupWarning(fmt.Sprintf("The '%s' plugin could not be %s, so nothing was imported. Try again later with: icebath plugins %s %s",
 		AgentImportersPlugin, verb, action, AgentImportersPlugin))
 	return false, nil
 }
@@ -289,7 +291,7 @@ func runAgentImport(ctx context.Context, source ImportSource, icebathHome string
 
 // Runs icebath import-agent for the source in a child process and returns its exit code, an argparse refusal retried after a plugin update
 func agentImportChild(ctx context.Context, source ImportSource, icebathHome string, extraArgs []string, fromSetup bool) (int, error) {
-	provider.PrintSetupHeader("Importing from "+source.Label, true)
+	PrintSetupHeader("Importing from "+source.Label, true)
 	resolved, err := pypath.Resolve(icebathHome)
 	if err != nil {
 		resolved = icebathHome
@@ -325,9 +327,9 @@ func agentImportChild(ctx context.Context, source ImportSource, icebathHome stri
 		}
 	}
 	if returncode == 2 {
-		provider.SetupWarning(fmt.Sprintf("The %s import did not run. If the error names an invalid choice or unrecognized arguments, update the plugin first: icebath plugins update %s", source.Label, AgentImportersPlugin))
+		SetupWarning(fmt.Sprintf("The %s import did not run. If the error names an invalid choice or unrecognized arguments, update the plugin first: icebath plugins update %s", source.Label, AgentImportersPlugin))
 	} else if returncode != 0 {
-		provider.SetupWarning(fmt.Sprintf("The %s import stopped with errors; see the report above.", source.Label))
+		SetupWarning(fmt.Sprintf("The %s import stopped with errors; see the report above.", source.Label))
 	}
 	return returncode, nil
 }
@@ -353,9 +355,9 @@ func runAgentImportChild(argv []string, env map[string]string) (int, error) {
 
 // Brings the installed plugin to the catalog's current pin, false when that update failed
 func updateAgentImportersPlugin(ctx context.Context, source ImportSource) bool {
-	provider.SetupInfo(nil, fmt.Sprintf("Your '%s' plugin predates the %s importer. Updating it...", AgentImportersPlugin, source.Label))
+	SetupInfo(nil, fmt.Sprintf("Your '%s' plugin predates the %s importer. Updating it...", AgentImportersPlugin, source.Label))
 	err := agentImportUpdate(ctx, AgentImportersPlugin, agentImportOut())
-	var exit *CommandExit
+	var exit *plugins.CommandExit
 	if errors.As(err, &exit) {
 		return false
 	}
@@ -366,7 +368,7 @@ func updateAgentImportersPlugin(ctx context.Context, source ImportSource) bool {
 func MigrateFromAgents(ctx context.Context, icebathHome, sourceName string, extraArgs []string) (int, error) {
 	if sourceName == "" {
 		found := DetectImportSources()
-		if len(found) > 0 && !provider.IsNoninteractive() {
+		if len(found) > 0 && !IsNoninteractive() {
 			if _, err := OfferAgentImport(ctx, icebathHome, false); err != nil {
 				return 0, err
 			}
@@ -384,7 +386,7 @@ func MigrateFromAgents(ctx context.Context, icebathHome, sourceName string, extr
 		for _, s := range ImportSources {
 			commands = append(commands, "icebath migrate "+s.Name)
 		}
-		provider.SetupInfo(text + "Import one with: " + strings.Join(commands, ", "))
+		SetupInfo(text + "Import one with: " + strings.Join(commands, ", "))
 		return 0, nil
 	}
 	var source *ImportSource

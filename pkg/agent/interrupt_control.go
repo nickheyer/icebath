@@ -529,3 +529,16 @@ func (a *AIAgent) WithdrawSteer(ticket any) bool {
 	a.setSteerParts(kept)
 	return true
 }
+
+// Interrupt flags of the live child agents in start order, for the CLI interrupt debug log
+func (a *AIAgent) ActiveChildInterrupts() []bool {
+	if a.activeChildrenLock != nil {
+		a.activeChildrenLock.Lock()
+		defer a.activeChildrenLock.Unlock()
+	}
+	out := make([]bool, len(a.activeChildren))
+	for i, child := range a.activeChildren {
+		out[i] = child.interruptRequested.Load()
+	}
+	return out
+}

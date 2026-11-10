@@ -150,7 +150,7 @@ func (t styledText) expandTabs(size int) styledText {
 }
 
 // Lines of the text wrapped at width and justified, as rich Text.wrap with fold overflow
-func (t styledText) wrap(width int, justify string, padStyle Style) []styledText {
+func (t styledText) wrap(width int, justify string, padStyle Style, noWrap bool) []styledText {
 	var out []styledText
 	plain := []rune(t.plain())
 	start := 0
@@ -160,7 +160,10 @@ func (t styledText) wrap(width int, justify string, padStyle Style) []styledText
 		}
 		line := t.slice(start, i).expandTabs(8)
 		start = i + 1
-		offsets := DivideLine(line.plain(), width, true)
+		var offsets []int
+		if !noWrap {
+			offsets = DivideLine(line.plain(), width, true)
+		}
 		bounds := append(append([]int{0}, offsets...), line.runeLen())
 		for k := 0; k+1 < len(bounds); k++ {
 			piece := line.slice(bounds[k], bounds[k+1])
@@ -172,18 +175,26 @@ func (t styledText) wrap(width int, justify string, padStyle Style) []styledText
 				}
 				piece = piece.slice(0, n-min(ws, n-width))
 			}
+			crop := func(p styledText) styledText {
+				if noWrap {
+					return p
+				}
+				return p.crop(width)
+			}
 			switch justify {
 			case "left":
-				piece = piece.crop(width).padTo(width, padStyle)
+				if !noWrap {
+					piece = piece.crop(width).padTo(width, padStyle)
+				}
 			case "center":
-				piece = piece.rstrip().crop(width)
-				left := (width - CellLen(piece.plain())) / 2
+				piece = crop(piece.rstrip())
+				left := max(0, width-CellLen(piece.plain())) / 2
 				piece = styledText{}.add(strings.Repeat(" ", left), padStyle).join(piece).padTo(width, padStyle)
 			case "right":
-				piece = piece.rstrip().crop(width)
-				piece = styledText{}.add(strings.Repeat(" ", width-CellLen(piece.plain())), padStyle).join(piece)
+				piece = crop(piece.rstrip())
+				piece = styledText{}.add(strings.Repeat(" ", max(0, width-CellLen(piece.plain()))), padStyle).join(piece)
 			}
-			out = append(out, piece.crop(width))
+			out = append(out, crop(piece))
 		}
 	}
 	return out
@@ -606,10 +617,10 @@ func (e *mdElem) onChildClose(child *mdElem) bool {
 }
 
 // Lines of child renderables cropped and padded to width with the base style applied, as rich render_lines
-func renderAll(elems []*mdElem, width int, base Style) []styledText {
+func renderAll(elems []*mdElem, width int, base Style, noWrap bool) []styledText {
 	var out []styledText
 	for _, el := range elems {
-		lines, _ := el.render(width)
+		lines, _ := el.render(width, noWrap)
 		for _, l := range lines {
 			line := styledText{}
 			for _, s := range l.crop(width) {
@@ -634,21 +645,21 @@ func prefixed(lines []styledText, first, rest span) []styledText {
 }
 
 // Lines of one element at width and whether its last line stays open for the next renderable
-func (e *mdElem) render(width int) ([]styledText, bool) {
+func (e *mdElem) render(width int, noWrap bool) ([]styledText, bool) {
 	switch e.kind {
 	case "paragraph":
-		return e.text.wrap(width, e.justify, Style{}), false
+		return e.text.wrap(width, e.justify, Style{}, noWrap), false
 	case "heading":
 		justify := "left"
 		if e.tag == "h1" {
 			justify = "center"
 		}
-		return e.text.wrap(width, justify, Style{}), false
+		return e.text.wrap(width, justify, Style{}, noWrap), false
 	case "code":
 		return syntaxLines(strings.TrimRightFunc(e.text.plain(), unicode.IsSpace), e.lexer, width), false
 	case "quote":
 		pad := span{"▌ ", e.style}
-		return prefixed(renderAll(e.elements, width-4, e.style), pad, pad), false
+		return prefixed(renderAll(e.elements, width-4, e.style, noWrap), pad, pad), false
 	case "hr":
 		rule := styledText{}.add(strings.Repeat("-", width+1), markdownTheme["markdown.hr"]).crop(width)
 		return []styledText{rule, nil}, false
@@ -659,12 +670,12 @@ func (e *mdElem) render(width int) ([]styledText, bool) {
 		last := e.start + len(e.elements)
 		for i, item := range e.elements {
 			if !e.ordered {
-				out = append(out, prefixed(renderAll(item.elements, width-3, item.style), span{" • ", bullet}, span{"   ", bullet})...)
+				out = append(out, prefixed(renderAll(item.elements, width-3, item.style, noWrap), span{" • ", bullet}, span{"   ", bullet})...)
 				continue
 			}
 			nw := len(strconv.Itoa(last)) + 2
 			numeral := fmt.Sprintf("%*d ", nw-1, e.start+i)
-			out = append(out, prefixed(renderAll(item.elements, width-nw, item.style), span{numeral, number}, span{strings.Repeat(" ", nw), number})...)
+			out = append(out, prefixed(renderAll(item.elements, width-nw, item.style, noWrap), span{numeral, number}, span{strings.Repeat(" ", nw), number})...)
 		}
 		return out, false
 	case "image":
@@ -790,7 +801,7 @@ func (e *mdElem) renderTable(maxWidth int) []styledText {
 			if j == "default" {
 				j = "left"
 			}
-			lines := cell.wrap(cw, j, base)
+			lines := cell.wrap(cw, j, base, false)
 			for k := range lines {
 				lines[k] = lines[k].padTo(cw, base).add(strings.Repeat(" ", padRight(i)), base)
 			}
@@ -920,7 +931,7 @@ func syntaxLines(code, lexerName string, width int) []styledText {
 		if i < len(runes) && runes[i] != '\n' {
 			continue
 		}
-		for _, w := range highlighted.slice(start, i).wrap(codeWidth, "left", bg) {
+		for _, w := range highlighted.slice(start, i).wrap(codeWidth, "left", bg, false) {
 			out = append(out, styledText{}.add(pad.text, pad.style).join(w.padTo(codeWidth, bg)).add(pad.text, pad.style))
 		}
 		start = i + 1
@@ -950,7 +961,7 @@ func (t styledText) expandTabsPerLine(size int) string {
 }
 
 // Lines the markdown renders at width as rich prints it, image lines running into the next renderable
-func (m *Markdown) lines(width int) []styledText {
+func (m *Markdown) lines(width int, noWrap bool) []styledText {
 	c := &mdContext{styles: []Style{{}}}
 	var out []styledText
 	open, newLine := false, false
@@ -1019,7 +1030,7 @@ func (m *Markdown) lines(width int) []styledText {
 					if newLine {
 						lineBreak()
 					}
-					emit(el.render(width))
+					emit(el.render(width, noWrap))
 				}
 			} else if t.nesting == 0 {
 				c.stack = c.stack[:len(c.stack)-1]
@@ -1028,7 +1039,7 @@ func (m *Markdown) lines(width int) []styledText {
 					if newLine && t.typ != "inline" {
 						lineBreak()
 					}
-					emit(el.render(width))
+					emit(el.render(width, noWrap))
 				}
 			}
 			if t.nesting <= 0 {
@@ -1043,7 +1054,7 @@ func (m *Markdown) lines(width int) []styledText {
 // Rendered lines at width, each cropped to width as a console renders them
 func (m *Markdown) RenderLines(color bool, system string, width int) []string {
 	var out []string
-	for _, l := range m.lines(width) {
+	for _, l := range m.lines(width, false) {
 		out = append(out, l.crop(width).render(color, system))
 	}
 	return out

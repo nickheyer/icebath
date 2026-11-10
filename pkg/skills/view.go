@@ -96,6 +96,13 @@ func SetSecretCaptureCallback(cb SecretCaptureFunc) {
 	secretCaptureMu.Unlock()
 }
 
+// SecretCaptureCallback returns the process wide secret capture callback, nil when no surface installed one
+func SecretCaptureCallback() SecretCaptureFunc {
+	secretCaptureMu.RLock()
+	defer secretCaptureMu.RUnlock()
+	return secretCaptureCallback
+}
+
 // Binds a secret capture callback for one turn, winning over the process wide callback
 func WithTurnSecretCapture(ctx context.Context, cb SecretCaptureFunc) context.Context {
 	return context.WithValue(ctx, turnSecretCaptureKey{}, cb)

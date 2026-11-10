@@ -220,6 +220,11 @@ func getServicePIDs(ctx context.Context, allProfiles bool) ([]int, error) {
 	return out, nil
 }
 
+// Pids of the systemd and launchd gateway services, the whole fleet with allProfiles
+func GetServicePIDs(ctx context.Context, allProfiles bool) ([]int, error) {
+	return getServicePIDs(ctx, allProfiles)
+}
+
 // MainPID of every unit of one systemd scope matching pattern, a missing binary or timeout skips the scope
 func collectSystemdScopePIDs(ctx context.Context, scope []string, pattern string, pids map[int]bool) error {
 	skip := func(err error) bool { return errors.Is(err, ErrCommandNotFound) || errors.Is(err, ErrCommandTimeout) }

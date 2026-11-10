@@ -283,6 +283,9 @@ func (a *AIAgent) emitNotice(notice provider.AgentNotice) {
 	a.callCallback("notice_callback", a.noticeCallback, "_emit_notice", notice)
 }
 
+// Sends one out of band notice to the notice callback, a failing callback only logged
+func (a *AIAgent) EmitNotice(notice provider.AgentNotice) { a.emitNotice(notice) }
+
 func (a *AIAgent) emitNoticeClear(key string) {
 	a.callCallback("notice_clear_callback", a.noticeClearCallback, "_emit_notice_clear", key)
 }

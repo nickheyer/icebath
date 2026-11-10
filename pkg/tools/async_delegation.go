@@ -1519,6 +1519,11 @@ func HasLiveForSession(sessionKey, originUISessionID, parentSessionID string) bo
 	return len(sessionRecords(asyncLiveStates, sessionKey, originUISessionID, parentSessionID)) > 0
 }
 
+// Number of live async delegation batches a parent session spawned
+func LiveDelegationBatches(parentSessionID string) int {
+	return len(sessionRecords(asyncLiveStates, "", "", parentSessionID))
+}
+
 func newDelegationID() string { return "deleg_" + asyncUUIDHex()[:8] }
 
 // NewDelegationID is a fresh async delegation id

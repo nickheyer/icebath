@@ -24,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/vault"
 	"github.com/spf13/cobra"
 )
 
@@ -298,10 +297,10 @@ func logsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path 
 func migrateGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	ns := namespace(cli, cmd, path, args)
 	ns["migrate_type"] = nilWhenEmpty(secondWord(path))
-	if agent, ok := ns["migrate_type"].(string); ok && plugins.IsImportSourceName(agent) {
+	if agent, ok := ns["migrate_type"].(string); ok && provider.IsImportSourceName(agent) {
 		ns["migrate_agent"] = agent
 	}
-	return plugins.MigrateCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
+	return provider.MigrateCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func modelGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -468,8 +467,19 @@ func usageGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path
 	return provider.UsageCommand(ctx, provider.HomePoolEnv(home.Dir(ctx)), namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
+// Runs icebath vault with the subcommand under vault_action and key migrate under vault_key_action
 func vaultGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return vault.VaultCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	words := strings.Fields(path)
+	ns["vault_action"] = nil
+	ns["vault_key_action"] = nil
+	if len(words) > 1 {
+		ns["vault_action"] = words[1]
+	}
+	if len(words) > 2 && words[1] == "key" {
+		ns["vault_key_action"] = words[2]
+	}
+	return browser.VaultCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 }
 
 func verifyGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

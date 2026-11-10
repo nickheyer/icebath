@@ -57,6 +57,11 @@ func Main(ctx context.Context, o MainOptions) (code int) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
+			if _, interrupted := r.(keyboardInterrupt); interrupted {
+				fmt.Fprintln(stderrWriter(), "KeyboardInterrupt")
+				code = 130
+				return
+			}
 			exit, ok := r.(singleQueryExit)
 			if !ok {
 				panic(r)
@@ -115,6 +120,7 @@ func splitToolsetsArg(raw string) []string {
 
 // NewCLI builds the classic CLI with CLI args winning over config and resume restoring history from SQLite
 func NewCLI(ctx context.Context, o CLIOptions) (*CLI, error) {
+	ctx = tools.WithThreadLocals(ctx)
 	env := tools.ToolEnvFrom(ctx)
 	if env == nil {
 		cwd, _ := os.Getwd()

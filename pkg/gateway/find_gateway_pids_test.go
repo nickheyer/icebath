@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const gatewayStubScript = `touch "$STUB_READY"
+const gatewayStandInScript = `touch "$STANDIN_READY"
 parent=$PPID
 i=0
 while [ "$(ps -o ppid= -p $$ | tr -d ' ')" = "$parent" ] && [ $i -lt 1200 ]; do sleep 0.1; i=$((i+1)); done
@@ -26,7 +26,7 @@ func TestScanClaimsABareGatewayOnlyForTheHomeItsEnvironmentNames(t *testing.T) {
 	homeA, homeB := filepath.Join(tmp, "home-a"), filepath.Join(tmp, "home-b")
 	mkdirAllT(t, homeA, homeB, filepath.Join(tmp, "bin"))
 	script := filepath.Join(tmp, "bin", "icebath")
-	if err := os.WriteFile(script, []byte(gatewayStubScript), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte(gatewayStandInScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	ready := filepath.Join(tmp, "gateway.ready")
@@ -34,7 +34,7 @@ func TestScanClaimsABareGatewayOnlyForTheHomeItsEnvironmentNames(t *testing.T) {
 	t.Cleanup(func() { servicePIDsHook, homeForPIDHook = oldService, oldHome })
 	servicePIDsHook = func(context.Context, bool) ([]int, error) { return nil, nil }
 	cmd := exec.Command("/bin/sh", script, "gateway", "run")
-	cmd.Env = append(os.Environ(), "ICEBATH_HOME="+homeA, "STUB_READY="+ready)
+	cmd.Env = append(os.Environ(), "ICEBATH_HOME="+homeA, "STANDIN_READY="+ready)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestScanClaimsABareGatewayOnlyForTheHomeItsEnvironmentNames(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	for !fileExists(ready) {
 		if time.Now().After(deadline) {
-			t.Fatal("gateway stub never came up")
+			t.Fatal("stand in gateway never came up")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -190,7 +190,7 @@ func TestServicePIDsReadSystemdMainPIDsAndLaunchdFleet(t *testing.T) {
 	if pids, err := getServicePIDs(ctx, false); err != nil || !slices.Equal(pids, []int{77}) {
 		t.Fatalf("launchd own label %v %v", pids, err)
 	}
-	if pids, err := getServicePIDs(ctx, true); err != nil || !slices.Equal(pids, []int{77, 88}) {
+	if pids, err := GetServicePIDs(ctx, true); err != nil || !slices.Equal(pids, []int{77, 88}) {
 		t.Fatalf("launchd fleet %v %v", pids, err)
 	}
 }
@@ -229,7 +229,7 @@ func TestProcessListingParsers(t *testing.T) {
 	t.Cleanup(func() { scanPPID = old })
 	scanPPID = func(pid int) (int, bool) { return map[int]int{20: 10, 30: 1}[pid], pid != 10 }
 	if got := filterVenvLauncherStubs([]int{10, 20, 30}); !slices.Equal(got, []int{20, 30}) {
-		t.Fatalf("stub filter %v", got)
+		t.Fatalf("stand in filter %v", got)
 	}
 }
 

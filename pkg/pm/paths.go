@@ -41,6 +41,13 @@ var repoRoot = func() string {
 // Tree the running binary lives in
 func RepoRoot() string { return repoRoot() }
 
+// Makes dir the tree the running binary reports until the returned restore runs
+func PatchRepoRoot(dir string) func() {
+	saved := repoRoot
+	repoRoot = func() string { return dir }
+	return func() { repoRoot = saved }
+}
+
 // Tree whose install stamp belongs to this process, the steward override or the binary dir
 func InstallRoot() string {
 	if env := os.Getenv(EnvInstallRoot); env != "" {

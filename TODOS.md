@@ -1275,7 +1275,7 @@
 - [ ] tools/wake_word_engines.py
 - [ ] tools/xai_video_tools.py
 
-### 17. pkg/agent: 37% (48 of 127 files completed)
+### 17. pkg/agent: 38% (49 of 127 files completed)
 #### Turn loop, prompt builder, compression, delegation, session search, interrupts, hooks
 - [ ] agent/acp_client.py
 - [ ] agent/acp_openai_bridge.py
@@ -1289,7 +1289,7 @@
 - [ ] agent/agent_runtime_helpers.py
 - [ ] agent/agent_runtime_helpers_dead_connections.py
 - [x] agent/agent_runtime_helpers_placeholders.py
-- [ ] agent/battery.py
+- [x] agent/battery.py
 - [x] agent/compaction_display.py
 - [ ] agent/compaction_events.py
 - [ ] agent/compression_automation.py
@@ -1809,10 +1809,10 @@
 - [x] impeccable/skill/scripts/live-browser.js
 - [x] impeccable/skill/scripts/modern-screenshot.umd.js
 
-### 19. pkg/kanban: 1% (1 of 59 files completed)
+### 19. pkg/kanban: 5% (3 of 59 files completed)
 #### Boards, worker swarm, task dispatch, hosted rooms, PR acceptance
 - [ ] agent/kanban_stop.py
-- [ ] agent/kanban_turn_recovery.py
+- [x] agent/kanban_turn_recovery.py
 - [ ] gateway/hosted_room_attachments.py
 - [ ] gateway/hosted_room_authority_history.py
 - [ ] gateway/hosted_room_discussion.py
@@ -1852,7 +1852,7 @@
 - [ ] hermes_cli/kanban_parser.py
 - [ ] hermes_cli/kanban_pr_acceptance.py
 - [ ] hermes_cli/kanban_pr_acceptance_store.py
-- [ ] hermes_cli/kanban_resume_guard.py
+- [x] hermes_cli/kanban_resume_guard.py
 - [ ] hermes_cli/kanban_specify.py
 - [ ] hermes_cli/kanban_swarm.py
 - [ ] hermes_cli/kanban_transfer.py
@@ -1898,21 +1898,21 @@
 - [ ] tools/computer_use/tool.py
 - [ ] tools/computer_use_tool.py
 
-### 21. pkg/app: 9% (7 of 71 files completed)
+### 21. pkg/app: 28% (20 of 71 files completed)
 #### Interactive TUI session driver, docks, streaming, modals, desktop app
-- [ ] hermes_cli/banner.py
+- [x] hermes_cli/banner.py
 - [ ] hermes_cli/bundled_app.py
 - [ ] hermes_cli/callbacks.py
 - [x] hermes_cli/chat_catalog.py
 - [ ] hermes_cli/cli_agent_setup_mixin.py
-- [ ] hermes_cli/cli_auto_maintenance.py
+- [x] hermes_cli/cli_auto_maintenance.py
 - [ ] hermes_cli/cli_billing_mixin.py
-- [ ] hermes_cli/cli_chat_error_copy.py
-- [ ] hermes_cli/cli_chat_turn_mixin.py
+- [x] hermes_cli/cli_chat_error_copy.py
+- [x] hermes_cli/cli_chat_turn_mixin.py
 - [ ] hermes_cli/cli_commands_mixin.py
 - [ ] hermes_cli/cli_commands_session_tools.py
 - [x] hermes_cli/cli_config_load.py
-- [ ] hermes_cli/cli_enter_burst.py
+- [x] hermes_cli/cli_enter_burst.py
 - [ ] hermes_cli/cli_footer_split.py
 - [ ] hermes_cli/cli_info_lines.py
 - [ ] hermes_cli/cli_init_mixin.py
@@ -1921,24 +1921,24 @@
 - [ ] hermes_cli/cli_model_switch_mixin.py
 - [ ] hermes_cli/cli_modern_layout.py
 - [x] hermes_cli/cli_output.py
-- [ ] hermes_cli/cli_panel.py
+- [x] hermes_cli/cli_panel.py
 - [ ] hermes_cli/cli_process_dock.py
 - [ ] hermes_cli/cli_process_notifications.py
-- [ ] hermes_cli/cli_render.py
+- [x] hermes_cli/cli_render.py
 - [ ] hermes_cli/cli_session_dock.py
 - [ ] hermes_cli/cli_session_mixin.py
 - [ ] hermes_cli/cli_session_switch.py
 - [ ] hermes_cli/cli_shutdown.py
 - [ ] hermes_cli/cli_single_query.py
 - [ ] hermes_cli/cli_snapshot.py
-- [ ] hermes_cli/cli_status_bar_mixin.py
-- [ ] hermes_cli/cli_stream_mixin.py
+- [x] hermes_cli/cli_status_bar_mixin.py
+- [x] hermes_cli/cli_stream_mixin.py
 - [ ] hermes_cli/cli_subagent_monitor.py
-- [ ] hermes_cli/cli_terminal_input.py
+- [x] hermes_cli/cli_terminal_input.py
 - [ ] hermes_cli/cli_terminal_mixin.py
 - [ ] hermes_cli/cli_tui_mixin.py
 - [ ] hermes_cli/cli_tui_runtime_mixin.py
-- [ ] hermes_cli/cli_tui_wrap.py
+- [x] hermes_cli/cli_tui_wrap.py
 - [ ] hermes_cli/cli_voice_mixin.py
 - [ ] hermes_cli/clipboard.py
 - [x] hermes_cli/colors.py
@@ -1960,7 +1960,7 @@
 - [ ] hermes_cli/main_desktop_apparmor.py
 - [ ] hermes_cli/main_desktop_tcc.py
 - [ ] hermes_cli/oneshot.py
-- [ ] hermes_cli/pt_input_extras.py
+- [x] hermes_cli/pt_input_extras.py
 - [ ] hermes_cli/quiet_single_query.py
 - [ ] hermes_cli/session_export.py
 - [ ] hermes_cli/session_export_html.py
@@ -1968,11 +1968,11 @@
 - [ ] hermes_cli/session_recap.py
 - [ ] hermes_cli/suggestions_cmd.py
 - [ ] hermes_cli/terminal_breadcrumbs.py
-- [ ] hermes_cli/terminal_notify.py
+- [x] hermes_cli/terminal_notify.py
 - [x] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 8% (14 of 161 files completed)
+### 22. cmd/icebath: 11% (18 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -2057,7 +2057,7 @@
 - [ ] hermes_cli/source_stamp.py
 - [ ] hermes_cli/stale_modules.py
 - [ ] hermes_cli/status.py
-- [ ] hermes_cli/status_bar_git.py
+- [x] hermes_cli/status_bar_git.py
 - [ ] hermes_cli/status_report.py
 - [ ] hermes_cli/stderr_timestamp.py
 - [x] hermes_cli/stdio.py
@@ -2093,8 +2093,8 @@
 - [ ] hermes_cli/update_cmd_config.py
 - [x] hermes_cli/update_cmd_drain_report.py
 - [ ] hermes_cli/update_cmd_fleet.py
-- [ ] hermes_cli/update_cmd_fleet_checkout.py
-- [ ] hermes_cli/update_cmd_fleet_gatewayless.py
+- [x] hermes_cli/update_cmd_fleet_checkout.py
+- [x] hermes_cli/update_cmd_fleet_gatewayless.py
 - [ ] hermes_cli/update_cmd_fleet_unit_budget.py
 - [ ] hermes_cli/update_cmd_fleet_verify.py
 - [ ] hermes_cli/update_cmd_git.py
@@ -2120,7 +2120,7 @@
 - [x] hermes_cli/update_proxy_env.py
 - [x] hermes_cli/update_receipt.py
 - [ ] hermes_cli/update_restart_recovery.py
-- [ ] hermes_cli/update_serve_obligations.py
+- [x] hermes_cli/update_serve_obligations.py
 - [ ] hermes_cli/update_serve_resume.py
 - [ ] hermes_cli/update_stage.py
 - [ ] hermes_cli/update_windows_acl.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 20% (159 of 760 files completed)
+### 24. gateway: 21% (160 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2685,7 +2685,7 @@
 - [ ] hermes_cli/goal_command.py
 - [ ] hermes_cli/goals.py
 - [ ] hermes_cli/heartbeat.py
-- [ ] hermes_cli/image_provenance.py
+- [x] hermes_cli/image_provenance.py
 - [ ] hermes_cli/journey.py
 - [ ] hermes_cli/main_container.py
 - [x] hermes_cli/observability/__init__.py

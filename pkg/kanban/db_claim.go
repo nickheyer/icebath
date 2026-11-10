@@ -439,7 +439,7 @@ func ReleaseStaleClaims(ctx context.Context, conn state.SQLiteConn, signalFn Sig
 			}
 			continue
 		}
-		termination := terminateReclaimedWorker(pid, claimLock, signalFn, startedAt)
+		termination := terminateReclaimedWorkerFn(pid, claimLock, signalFn, startedAt)
 		if workerSurvivedTermination(termination) {
 			if err := deferReclaimForLiveWorker(ctx, conn, taskID, claimLock, now, termination, "ttl_expired_worker_alive"); err != nil {
 				return reclaimed, err
@@ -549,7 +549,7 @@ func ReclaimTask(ctx context.Context, conn state.SQLiteConn, taskID string, reas
 		return false, nil
 	}
 	prevLock := cellOptStr(row.Get("claim_lock"))
-	termination := terminateReclaimedWorker(row.Get("worker_pid"), prevLock, signalFn, row.Get("worker_started_at"))
+	termination := terminateReclaimedWorkerFn(row.Get("worker_pid"), prevLock, signalFn, row.Get("worker_started_at"))
 	released := false
 	err = WriteTxn(ctx, conn, false, func() error {
 		retryStatus, err := retryStatusForRun(ctx, conn, taskID, nil)

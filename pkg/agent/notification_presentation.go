@@ -45,6 +45,12 @@ func (a *AIAgent) NotificationPolicySnapshot(platform string, cfg map[string]any
 	return func() { a.notificationPlatform, a.notificationConfig = savedPlatform, savedConfig }
 }
 
+// Reports whether the running notification turn mutes its reply on every surface
+func (a *AIAgent) MuteNotificationReply() bool { return a.muteNotificationReply }
+
+// Foreground notification config bound for the running turn, nil outside one
+func (a *AIAgent) NotificationConfig() map[string]any { return a.notificationConfig }
+
 type presentationSnapshot struct {
 	streamDelta, interimAssistant, reasoning, toolProgress, toolStart, toolComplete, toolGen any
 	reaction                                                                                 func(string)

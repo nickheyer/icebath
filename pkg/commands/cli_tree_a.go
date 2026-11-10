@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -36,10 +36,10 @@ func jsonFlag(cmd *cobra.Command, help string) { bf(cmd, "json", "", help) }
 
 // ImportSource is one agent whose setup the migrate command can import
 // ImportSource is one importer the migrate command offers, the plugins table
-type ImportSource = plugins.ImportSource
+type ImportSource = provider.ImportSource
 
 // ImportSources lists the importers the migrate command offers
-var ImportSources = plugins.ImportSources
+var ImportSources = provider.ImportSources
 
 const forceServedProfileHelp = "Start a separate gateway for this profile even when the default multiplexer already serves it (not recommended: two pollers on one bot token, port conflicts)"
 

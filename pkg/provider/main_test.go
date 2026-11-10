@@ -38,4 +38,6 @@ func installLocalStackProbeDoubles() {
 	FasterWhisperImportable = func() bool { return false }
 	ManagedImageRoute = func(any, any) string { return "" }
 	tools.VisionCapabilities = VisionCapabilities{}
+	tools.ConfigEnvTableKeys = func() []string { return nil }
+	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
 }

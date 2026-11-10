@@ -123,11 +123,37 @@ func bicubicFilter(x float64) float64 {
 
 const pilPrecisionBits = 32 - 8 - 2
 
-// Fixed point bicubic weights and source bounds per output index over the box span
-func pilCoeffs(inSize int, in0, in1 float64, outSize int) ([]int, [][]int32) {
+// pilFilter is one Pillow resampling kernel with the radius it reaches
+type pilFilter struct {
+	kernel  func(float64) float64
+	support float64
+}
+
+var (
+	pilBicubic = pilFilter{bicubicFilter, 2.0}
+	pilLanczos = pilFilter{lanczosFilter, 3.0}
+)
+
+// Pillow truncated sinc kernel over three lobes
+func lanczosFilter(x float64) float64 {
+	sinc := func(v float64) float64 {
+		if v == 0 {
+			return 1
+		}
+		v *= math.Pi
+		return math.Sin(v) / v
+	}
+	if -3.0 <= x && x < 3.0 {
+		return sinc(x) * sinc(x/3)
+	}
+	return 0
+}
+
+// Fixed point kernel weights and source bounds per output index over the box span
+func pilCoeffs(inSize int, in0, in1 float64, outSize int, filter pilFilter) ([]int, [][]int32) {
 	scale := (in1 - in0) / float64(outSize)
 	filterscale := max(scale, 1.0)
-	support := 2.0 * filterscale
+	support := filter.support * filterscale
 	bounds := make([]int, 2*outSize)
 	weights := make([][]int32, outSize)
 	for xx := 0; xx < outSize; xx++ {
@@ -138,7 +164,7 @@ func pilCoeffs(inSize int, in0, in1 float64, outSize int) ([]int, [][]int32) {
 		k := make([]float64, max(xmax, 0))
 		ww := 0.0
 		for x := range k {
-			k[x] = bicubicFilter((float64(x+xmin) - center + 0.5) * ss)
+			k[x] = filter.kernel((float64(x+xmin) - center + 0.5) * ss)
 			ww += k[x]
 		}
 		fixed := make([]int32, len(k))
@@ -171,11 +197,29 @@ func pilClip8(in int64) uint8 {
 
 // Two pass Pillow resample of a box of the source, horizontal pass first over the rows the vertical pass reads
 func pilResample(img *image.NRGBA, xsize, ysize int, box [4]float64) *image.NRGBA {
+	return pilResampleWith(img, xsize, ysize, box, pilBicubic)
+}
+
+// Resize copies an RGBA image to w by h with the Lanczos kernel the way Image.resize does for alpha images
+func ResizeLanczos(img *image.NRGBA, w, h int) *image.NRGBA {
+	inW, inH := img.Rect.Dx(), img.Rect.Dy()
+	if w == inW && h == inH {
+		out := image.NewNRGBA(image.Rect(0, 0, inW, inH))
+		for y := 0; y < inH; y++ {
+			copy(out.Pix[y*out.Stride:y*out.Stride+4*inW], img.Pix[y*img.Stride:y*img.Stride+4*inW])
+		}
+		return out
+	}
+	return unpremultiply(pilResampleWith(premultiply(img), w, h, [4]float64{0, 0, float64(inW), float64(inH)}, pilLanczos))
+}
+
+// Two pass Pillow resample of a box of the source with the given kernel
+func pilResampleWith(img *image.NRGBA, xsize, ysize int, box [4]float64, filter pilFilter) *image.NRGBA {
 	inW, inH := img.Rect.Dx(), img.Rect.Dy()
 	needH := xsize != inW || box[0] != 0 || box[2] != float64(xsize)
 	needV := ysize != inH || box[1] != 0 || box[3] != float64(ysize)
-	hb, hw := pilCoeffs(inW, box[0], box[2], xsize)
-	vb, vw := pilCoeffs(inH, box[1], box[3], ysize)
+	hb, hw := pilCoeffs(inW, box[0], box[2], xsize, filter)
+	vb, vw := pilCoeffs(inH, box[1], box[3], ysize, filter)
 	yFirst, yLast := vb[0], vb[2*ysize-2]+vb[2*ysize-1]
 	cur := img
 	if needH {

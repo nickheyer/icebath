@@ -124,7 +124,12 @@ func runKanbanGoalLoopChat(c *CLI, firstResponse string) error {
 		cliLogger.Info(msg)
 		fmt.Fprintln(c.console.Out, msg)
 	}
-	return runKanbanGoalLoopQ(c, firstResponse, func(p string) map[string]any { return map[string]any{"response": c.chat(p, nil)} }, log)
+	return runKanbanGoalLoopQ(c, firstResponse, func(p string) map[string]any {
+		if response, ok := c.chat(p, nil, false); ok {
+			return map[string]any{"response": response}
+		}
+		return map[string]any{"response": nil}
+	}, log)
 }
 
 // Keeps the CLI session id in sync when mid run compression rotated the agent's session
@@ -202,8 +207,11 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 			}
 			syncCLISessionIDFromAgent(c)
 		}
-		kanban.RecoverFailedKanbanTurns(c.ctx, quietRecoverTurn, func() map[string]any { return result },
-			func(msg string) { fmt.Fprintln(stderrWriter(), msg) })
+		if _, rerr := kanban.RecoverFailedKanbanTurns(c.ctx, quietRecoverTurn, func() map[string]any { return result },
+			func(msg string) { fmt.Fprintln(stderrWriter(), msg) }); rerr != nil {
+			fmt.Fprintln(stderrWriter(), rerr.Error())
+			exitSingleQuery(1)
+		}
 		reportTurn := func(res map[string]any) {
 			errText := "agent turn did not run"
 			reply := ""
@@ -273,6 +281,10 @@ func historyOf(result map[string]any) []map[string]any {
 	case []map[string]any:
 		if len(msgs) > 0 {
 			return msgs
+		}
+	case []*state.Message:
+		if len(msgs) > 0 {
+			return agent.SessionMessageDicts(msgs)
 		}
 	case []any:
 		out := make([]map[string]any, 0, len(msgs))
@@ -458,9 +470,12 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON 
 	}
 	c.showSecurityAdvisories()
 	c.singleQueryTurnAuthor = takeTurnAuthorFromProcessEnv()
-	response := c.chat(query, images)
-	kanban.RecoverFailedKanbanTurns(c.ctx, func(nudge string) { response = c.chat(nudge, nil) },
-		func() map[string]any { return c.lastTurnResult }, func(msg string) { fmt.Fprintln(stderrWriter(), msg) })
+	response, _ := c.chat(query, images, false)
+	if _, rerr := kanban.RecoverFailedKanbanTurns(c.ctx, func(nudge string) { response, _ = c.chat(nudge, nil, false) },
+		func() map[string]any { return c.lastTurnResult }, func(msg string) { fmt.Fprintln(stderrWriter(), msg) }); rerr != nil {
+		fmt.Fprintln(stderrWriter(), rerr.Error())
+		exitSingleQuery(1)
+	}
 	if os.Getenv("ICEBATH_KANBAN_GOAL_MODE") == "1" && singleQueryExitCode(c.lastTurnResult, false, false) == 0 {
 		if err := runKanbanGoalLoopChat(c, response); err != nil {
 			cliLogger.Debug(fmt.Sprintf("kanban goal loop failed: %v", err))
