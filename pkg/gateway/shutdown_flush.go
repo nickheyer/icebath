@@ -35,7 +35,7 @@ func defaultShutdownFlushDir(ctx context.Context) (string, error) {
 	if err := home.AssertProfileLive(flushDir); err != nil {
 		return "", err
 	}
-	if _, err := home.MakeUserDir(flushDir, 0o700, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, flushDir, 0o700, true, true); err != nil {
 		return "", err
 	}
 	if runtime.GOOS != "windows" {
@@ -47,9 +47,9 @@ func defaultShutdownFlushDir(ctx context.Context) (string, error) {
 }
 
 // Atomically writes one private uniquely named recovery payload and fsyncs its directory entry
-func writeFlushPayload(flushDir string, payload *pyjson.Object) (string, error) {
+func writeFlushPayload(ctx context.Context, flushDir string, payload *pyjson.Object) (string, error) {
 	finalPath := pypath.PathJoin(flushDir, "pending-"+flushUUIDHex()+".json")
-	if err := config.AtomicJSONWriteMode(finalPath, payload, 0o600, pyjson.Indent(2),
+	if err := config.AtomicJSONWriteMode(ctx, finalPath, payload, 0o600, pyjson.Indent(2),
 		pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil })); err != nil {
 		return "", err
 	}
@@ -74,7 +74,7 @@ type flushField struct {
 }
 
 // Serialises and writes one pending value, false when nothing was written
-func flushValue(flushDir, kind, sessionKey string, value any, extra ...flushField) bool {
+func flushValue(ctx context.Context, flushDir, kind, sessionKey string, value any, extra ...flushField) bool {
 	serialised, ok := serialiseFlushValue(value)
 	if !ok {
 		return false
@@ -85,7 +85,7 @@ func flushValue(flushDir, kind, sessionKey string, value any, extra ...flushFiel
 		payload.Set(f.key, f.value)
 	}
 	payload.Set("data", serialised)
-	if _, err := writeFlushPayload(flushDir, payload); err != nil {
+	if _, err := writeFlushPayload(ctx, flushDir, payload); err != nil {
 		slog.Debug(fmt.Sprintf("Failed to flush %s message for %s: %v", kind, sessionKey, err))
 		return false
 	}
@@ -120,7 +120,7 @@ func FlushPendingValuesToFile(ctx context.Context, pending map[string]any, reaso
 		if value == nil {
 			continue
 		}
-		if flushValue(flushDir, "pending", sessionKey, value, flushField{"reason", reason}, flushField{"ts", ts}) {
+		if flushValue(ctx, flushDir, "pending", sessionKey, value, flushField{"reason", reason}, flushField{"ts", ts}) {
 			flushed++
 		}
 	}
@@ -149,7 +149,7 @@ func FlushOverflowToFile(ctx context.Context, overflowBySession map[string][]any
 			if value == nil {
 				continue
 			}
-			if flushValue(flushDir, "overflow", sessionKey, value, flushField{"reason", reason}, flushField{"ts", ts},
+			if flushValue(ctx, flushDir, "overflow", sessionKey, value, flushField{"reason", reason}, flushField{"ts", ts},
 				flushField{"seq", seq}) {
 				flushed++
 			}

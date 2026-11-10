@@ -130,7 +130,7 @@ func TestExtractFallbackFromModelCfg(t *testing.T) {
 
 func writeConfig(t *testing.T, h string, doc map[string]any) {
 	t.Helper()
-	if err := config.SaveUser(h, doc); err != nil {
+	if err := config.SaveUser(context.Background(), h, doc); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -173,7 +173,7 @@ func pickerWriting(h string, model map[string]any, extra map[string]any) func() 
 		for k, v := range extra {
 			doc[k] = v
 		}
-		return config.SaveUser(h, doc)
+		return config.SaveUser(context.Background(), h, doc)
 	}
 }
 
@@ -183,7 +183,7 @@ func TestFallbackAddAppendsNewEntry(t *testing.T) {
 	store := NewStore(h)
 	picked := map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6", "base_url": "https://openrouter.ai/api/v1", "api_mode": "chat_completions"}
 	var out bytes.Buffer
-	if err := FallbackAdd(&out, h, store, pickerWriting(h, picked, nil)); err != nil {
+	if err := FallbackAdd(context.Background(), &out, h, store, pickerWriting(h, picked, nil)); err != nil {
 		t.Fatal(err)
 	}
 	cfg := readConfig(t, h)
@@ -208,7 +208,7 @@ func TestFallbackAddRejectsSameAsPrimary(t *testing.T) {
 	h := t.TempDir()
 	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "openrouter", "default": "gpt-5.4"}})
 	var out bytes.Buffer
-	if err := FallbackAdd(&out, h, NewStore(h), pickerWriting(h, map[string]any{"provider": "openrouter", "default": "gpt-5.4"}, nil)); err != nil {
+	if err := FallbackAdd(context.Background(), &out, h, NewStore(h), pickerWriting(h, map[string]any{"provider": "openrouter", "default": "gpt-5.4"}, nil)); err != nil {
 		t.Fatal(err)
 	}
 	cfg := readConfig(t, h)
@@ -227,7 +227,7 @@ func TestFallbackAddPreservesPrimaryWhenPickerChangesIt(t *testing.T) {
 	custom := []any{map[string]any{"name": "Picker-created endpoint", "base_url": "https://picker.example/v1", "model": "picker-model"}}
 	picked := map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6", "base_url": "https://openrouter.ai/api/v1", "api_mode": "chat_completions"}
 	var out bytes.Buffer
-	if err := FallbackAdd(&out, h, NewStore(h), pickerWriting(h, picked, map[string]any{"custom_providers": custom})); err != nil {
+	if err := FallbackAdd(context.Background(), &out, h, NewStore(h), pickerWriting(h, picked, map[string]any{"custom_providers": custom})); err != nil {
 		t.Fatal(err)
 	}
 	cfg := readConfig(t, h)
@@ -286,7 +286,7 @@ func TestPickerFailureRestoresPersistedPrimaryWithoutMaskingError(t *testing.T) 
 		return pickerErr
 	}
 	var out bytes.Buffer
-	err := FallbackAdd(&out, h, NewStore(h), failing)
+	err := FallbackAdd(context.Background(), &out, h, NewStore(h), failing)
 	if !errors.Is(err, pickerErr) {
 		t.Fatalf("picker error must surface: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestFallbackRemoveSelectedEntry(t *testing.T) {
 	writeConfig(t, h, map[string]any{"fallback_providers": []any{
 		map[string]any{"provider": "openrouter", "model": "gpt-5.4"}, map[string]any{"provider": "nous", "model": "Hermes-4"}, map[string]any{"provider": "anthropic", "model": "claude-sonnet-4-6"}}})
 	var out bytes.Buffer
-	if err := FallbackRemove(&out, h, func(prompt string, options []string, def int) int {
+	if err := FallbackRemove(context.Background(), &out, h, func(prompt string, options []string, def int) int {
 		if len(options) != 4 || options[3] != "Cancel" {
 			t.Fatalf("options %v", options)
 		}
@@ -320,7 +320,7 @@ func TestFallbackRemoveSelectedEntry(t *testing.T) {
 		t.Fatalf("chain %v", chain)
 	}
 	out.Reset()
-	if err := FallbackRemove(&out, h, func(string, []string, int) int { return -1 }); err != nil || !strings.Contains(out.String(), "Cancelled — no change.") {
+	if err := FallbackRemove(context.Background(), &out, h, func(string, []string, int) int { return -1 }); err != nil || !strings.Contains(out.String(), "Cancelled — no change.") {
 		t.Fatalf("cancel %q %v", out.String(), err)
 	}
 }
@@ -329,7 +329,7 @@ func TestFallbackClearWithConfirmation(t *testing.T) {
 	h := t.TempDir()
 	writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "gpt-5.4"}, map[string]any{"provider": "nous", "model": "Hermes-4"}}})
 	var out bytes.Buffer
-	if err := FallbackClear(&out, h, func(string) (string, error) { return "y", nil }); err != nil {
+	if err := FallbackClear(context.Background(), &out, h, func(string) (string, error) { return "y", nil }); err != nil {
 		t.Fatal(err)
 	}
 	if chain := readConfig(t, h)["fallback_providers"].([]any); len(chain) != 0 {
@@ -337,7 +337,7 @@ func TestFallbackClearWithConfirmation(t *testing.T) {
 	}
 	writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "gpt-5.4"}}})
 	out.Reset()
-	if err := FallbackClear(&out, h, func(string) (string, error) { return "", errors.New("EOF") }); err != nil || !strings.Contains(out.String(), "Cancelled.") {
+	if err := FallbackClear(context.Background(), &out, h, func(string) (string, error) { return "", errors.New("EOF") }); err != nil || !strings.Contains(out.String(), "Cancelled.") {
 		t.Fatalf("eof cancel %q %v", out.String(), err)
 	}
 	if chain := readConfig(t, h)["fallback_providers"].([]any); len(chain) != 1 {
@@ -346,7 +346,7 @@ func TestFallbackClearWithConfirmation(t *testing.T) {
 }
 
 func TestUnknownFallbackSubcommand(t *testing.T) {
-	err := RunFallbackCommand("nope", FallbackCommandIO{Out: &bytes.Buffer{}, Home: t.TempDir()})
+	err := RunFallbackCommand(context.Background(), "nope", FallbackCommandIO{Out: &bytes.Buffer{}, Home: t.TempDir()})
 	var unknown *UnknownFallbackSubcommandError
 	if !errors.As(err, &unknown) || unknown.Sub != "nope" || !strings.Contains(err.Error(), "Use one of: list, add, remove, clear") {
 		t.Fatalf("err %v", err)
@@ -451,14 +451,14 @@ func TestFallbackEntryFormatting(t *testing.T) {
 func TestRestoreModelCfgWritesUserFile(t *testing.T) {
 	h := t.TempDir()
 	writeConfig(t, h, map[string]any{"model": "changed", "theme": "x"})
-	if err := RestoreModelCfg(h, map[string]any{"provider": "nous", "default": "Hermes-4"}); err != nil {
+	if err := RestoreModelCfg(context.Background(), h, map[string]any{"provider": "nous", "default": "Hermes-4"}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := readConfig(t, h)
 	if cfg["model"].(map[string]any)["provider"] != "nous" || cfg["theme"] != "x" {
 		t.Fatalf("cfg %v", cfg)
 	}
-	if err := RestoreModelCfg(h, nil); err != nil {
+	if err := RestoreModelCfg(context.Background(), h, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, has := readConfig(t, h)["model"]; has {

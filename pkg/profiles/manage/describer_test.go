@@ -56,7 +56,7 @@ func TestDescriberRefusesJSONShapedReplyThatDoesNotParse(t *testing.T) {
 	} {
 		dir := describerProfile(t, raw)
 		prev, auto := "previous", true
-		if err := profiles.WriteProfileMeta(dir, profiles.MetaUpdate{Description: &prev, DescriptionAuto: &auto}); err != nil {
+		if err := profiles.WriteProfileMeta(context.Background(), dir, profiles.MetaUpdate{Description: &prev, DescriptionAuto: &auto}); err != nil {
 			t.Fatal(err)
 		}
 		before, _ := os.ReadFile(filepath.Join(dir, "profile.yaml"))
@@ -83,7 +83,7 @@ func TestDescriberStillAcceptsPlainProseFallback(t *testing.T) {
 func TestDescriberRefusesToOverwriteUserAuthored(t *testing.T) {
 	dir := describerProfile(t, `{"description": "new"}`)
 	curated, auto := "curated", false
-	if err := profiles.WriteProfileMeta(dir, profiles.MetaUpdate{Description: &curated, DescriptionAuto: &auto}); err != nil {
+	if err := profiles.WriteProfileMeta(context.Background(), dir, profiles.MetaUpdate{Description: &curated, DescriptionAuto: &auto}); err != nil {
 		t.Fatal(err)
 	}
 	if out := describe(t, false); out.OK {
@@ -111,7 +111,7 @@ func TestDescriberSkillSamplingAndListing(t *testing.T) {
 		t.Fatalf("sample = %v", got)
 	}
 	curated, auto := "curated", false
-	profiles.WriteProfileMeta(dir, profiles.MetaUpdate{Description: &curated, DescriptionAuto: &auto})
+	profiles.WriteProfileMeta(context.Background(), dir, profiles.MetaUpdate{Description: &curated, DescriptionAuto: &auto})
 	namedProfile(t, tmp, "other")
 	all, err := ListDescribableProfiles(context.Background(), false)
 	if err != nil || !containsAll(all, "default", "myprof", "other") {

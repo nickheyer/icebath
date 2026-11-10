@@ -109,10 +109,10 @@ func redactProcessResult(env *Env, result map[string]any) map[string]any {
 }
 
 // Lists the task's processes plus the session scoped ones sharing the gateway session key
-func listProcesses(env *Env, taskID string) map[string]any {
+func listProcesses(ctx context.Context, env *Env, taskID string) map[string]any {
 	sessionKey := getCurrentSessionKey(env, "")
 	processes := []map[string]any{}
-	for _, p := range processRegistry.ListSessions(env, taskID, sessionKey, true) {
+	for _, p := range processRegistry.ListSessions(WithEnvHome(ctx, env), env, taskID, sessionKey, true) {
 		processes = append(processes, redactProcessResult(env, p))
 	}
 	return map[string]any{"processes": processes}
@@ -126,7 +126,7 @@ type processAction struct {
 
 var sessionActions = map[string]processAction{
 	"poll": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
-		return processRegistry.Poll(env, sid)
+		return processRegistry.Poll(WithEnvHome(ctx, env), env, sid)
 	}, true},
 	"log": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
 		var offset *int
@@ -147,7 +147,7 @@ var sessionActions = map[string]processAction{
 		return processRegistry.Wait(ctx, env, sid, timeout)
 	}, true},
 	"kill": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
-		return processRegistry.KillProcess(env, sid, "process.kill", true)
+		return processRegistry.KillProcess(WithEnvHome(ctx, env), env, sid, "process.kill", true)
 	}, true},
 	"write": {func(ctx context.Context, env *Env, sid string, a map[string]any) map[string]any {
 		return processRegistry.WriteStdin(env, sid, pyStrOrEmpty(a["data"]))
@@ -217,7 +217,7 @@ func handleProcess(ctx context.Context, call *Call) string {
 		sessionID = pyStr(v)
 	}
 	if action == "list" {
-		return processJSON(listProcesses(env, call.TaskID))
+		return processJSON(listProcesses(WithEnvHome(ctx, env), env, call.TaskID))
 	}
 	if action == "handoff" {
 		if sessionID == "" {

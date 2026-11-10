@@ -291,30 +291,26 @@ func TestDeadExeNeverShadowsKeptCmd(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("LOCALAPPDATA", filepath.Join(tmp, "local"))
 	t.Setenv("USERPROFILE", tmp)
-	defaultBinary := filepath.Join(tmp, "default", "install", installBinaryName())
-	mustWrite(t, defaultBinary, "MZ default install\n", 0o755)
-	repo := filepath.Join(tmp, "checkout")
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o777); err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(t, filepath.Join(repo, "install-stamp.json"), `{"updateMechanism": "self"}`, 0o644)
+	t.Setenv(EnvRuntimeDir, "")
+	os.Unsetenv(EnvRuntimeDir)
+	defaultStore := filepath.Join(tmp, "default", "tools")
+	mustWrite(t, filepath.Join(defaultStore, "python-default", "python.exe"), "", 0o755)
+	mustWrite(t, filepath.Join(tmp, "temp", "tools", "python-temp", "python.exe"), "", 0o755)
+	repo := fakeCheckout(t, filepath.Join(tmp, "checkout"))
+	local := checkoutLauncherDir(repo)
 	gone := filepath.Join(tmp, "gone", "python.exe")
-	writeDistlibExe(t, filepath.Join(repo, "icebath.exe"), gone, repo)
-	mustWrite(t, filepath.Join(repo, "icebath.cmd"), "@echo off\r\n\""+defaultBinary+"\" %*\r\n", 0o644)
-	if launcherBinary(filepath.Join(repo, "icebath.exe")) != gone {
-		t.Fatalf("dead exe reads %q", launcherBinary(filepath.Join(repo, "icebath.exe")))
+	writeDistlibExe(t, filepath.Join(local, "icebath.exe"), gone, repo)
+	mustWrite(t, filepath.Join(local, "icebath.cmd"), "@echo off\r\n@rem icebath-store \""+defaultStore+"\"\r\n\""+filepath.Join(repo, installBinaryName())+"\" %*\r\n", 0o644)
+	if launcherBinary(filepath.Join(local, "icebath.exe")) != gone || launcherStore(filepath.Join(local, "icebath.exe")) != gone {
+		t.Fatalf("dead exe reads %q", launcherStore(filepath.Join(local, "icebath.exe")))
 	}
 	t.Setenv(home.EnvHome, filepath.Join(tmp, "temp"))
-	written, err := EnsureInstallLaunchers(context.Background(), repo, repo)
+	written, err := EnsureInstallLaunchers(context.Background(), repo, local)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
-	for _, path := range written {
-		names = append(names, path)
-	}
-	if !contains(names, filepath.Join(repo, "icebath.cmd")) || lexists(filepath.Join(repo, "icebath.exe")) {
-		t.Fatalf("written %v exe present %v", written, lexists(filepath.Join(repo, "icebath.exe")))
+	if !contains(written, filepath.Join(local, "icebath.cmd")) || lexists(filepath.Join(local, "icebath.exe")) {
+		t.Fatalf("written %v exe present %v", written, lexists(filepath.Join(local, "icebath.exe")))
 	}
 }
 
@@ -420,7 +416,10 @@ func TestRepinWithoutDistlibRetiresStaleNativeLauncher(t *testing.T) {
 					t.Fatalf("stale launcher printed %q", line)
 				}
 			}
-			result := stageLauncher("icebath", repo, out)
+			result, err := stageLauncher(context.Background(), "icebath", repo, out)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if tc.running {
 				_ = stdin.Close()
 				if err := process.Wait(); err != nil {
@@ -433,7 +432,7 @@ func TestRepinWithoutDistlibRetiresStaleNativeLauncher(t *testing.T) {
 			if !strings.Contains(mustRead(t, result), filepath.Join(repo, installBinaryName())) {
 				t.Fatalf("cmd %q", mustRead(t, result))
 			}
-			if stageLauncher("icebath", repo, out) != result {
+			if again, err := stageLauncher(context.Background(), "icebath", repo, out); err != nil || again != result {
 				t.Fatal("republication after the run failed")
 			}
 			leftovers, _ := filepath.Glob(filepath.Join(out, "icebath.exe*.deleteme"))

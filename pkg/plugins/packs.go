@@ -618,7 +618,7 @@ type PackInstallResult struct {
 }
 
 // Seeds plugins.entries keys of a plugin that are not set yet, user values always winning
-func seedPluginConfig(h, pluginID string, seed map[string]any, console *Console) error {
+func seedPluginConfig(ctx context.Context, h, pluginID string, seed map[string]any, console *Console) error {
 	seed, err := ValidateConfigSeed(pluginID, seed)
 	if err != nil {
 		return err
@@ -663,7 +663,7 @@ func seedPluginConfig(h, pluginID string, seed map[string]any, console *Console)
 	if !wrote {
 		return nil
 	}
-	if err := saveUserConfig(h, doc); err != nil {
+	if err := saveUserConfig(ctx, h, doc); err != nil {
 		return err
 	}
 	console.Print(fmt.Sprintf("[dim]  Seeded plugins.entries.%s from pack.[/dim]", pluginID))
@@ -729,7 +729,7 @@ func InstallPackPlugins(ctx context.Context, pack *PluginPack, resolved []Resolv
 			seed = pack.seedFor(rp.Entry.Name)
 		}
 		if len(seed) > 0 {
-			if err := seedPluginConfig(h, installedName, seed, console); err != nil {
+			if err := seedPluginConfig(ctx, h, installedName, seed, console); err != nil {
 				pe, ok := err.(*PackError)
 				if !ok {
 					return results, err

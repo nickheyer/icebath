@@ -42,7 +42,7 @@ var (
 	bootNvidiaQuery       = func() (*NvidiaGPUQuery, error) { return CachedNvidiaGPUQuery(hwGPUQueryTTLSeconds) }
 	bootGPUClass          = hostinfo.GPUClass
 	bootInstalledEngine   = func(ctx context.Context, backend string) (*Engine, error) { return InstalledEngine(ctx, backend, true) }
-	bootStartSupervisor   = func(s *LlamaServerSupervisor) error { return s.Start(120 * time.Second) }
+	bootStartSupervisor   = func(ctx context.Context, s *LlamaServerSupervisor) error { return s.Start(ctx, 120*time.Second) }
 	bootStateEndpoint     = func(ctx context.Context) (bool, error) { _, _, ok, err := stateEndpoint(home.Dir(ctx)); return ok, err }
 	bootPresetsStaleFn    = presetsStale
 	bootAdmittedModelsMax = admittedModelsMax
@@ -581,7 +581,7 @@ func bootServe(ctx context.Context, section map[string]any) (*LlamaServerSupervi
 	if err != nil {
 		return nil, err
 	}
-	if err := bootStartSupervisor(sup); err != nil {
+	if err := bootStartSupervisor(ctx, sup); err != nil {
 		_ = sup.Stop()
 		return nil, err
 	}

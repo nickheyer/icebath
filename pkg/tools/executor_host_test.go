@@ -119,7 +119,7 @@ func (h *fakeExecutorHost) AppendGuardrailObservation(_ string, _ map[string]any
 	return result
 }
 func (h *fakeExecutorHost) RecordFileMutationResult(string, map[string]any, string, bool, string) {}
-func (h *fakeExecutorHost) ObserveOnboardingResult(_ string, _ map[string]any, result string) string {
+func (h *fakeExecutorHost) ObserveOnboardingResult(ctx context.Context, _ string, _ map[string]any, result string) string {
 	return result
 }
 func (h *fakeExecutorHost) ObserveToolOutcome(string, bool)                 {}

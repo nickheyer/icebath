@@ -149,7 +149,6 @@ type backupFile struct{ abs, rel string }
 // Every file a full backup holds in walk order, recording pruned directories when asked
 func iterBackupFiles(root, outPath string, skippedDirs map[string]bool) []backupFile {
 	var out []backupFile
-	outResolved, outErr := pypath.Resolve(outPath)
 	pyfs.Walk(root, false, func(dirpath string, dirnames, filenames []string) []string {
 		relDir, _ := pypath.PathRelativeTo(dirpath, root)
 		relDir = pypath.PathStr(relDir)
@@ -180,8 +179,8 @@ func iterBackupFiles(root, outPath string, skippedDirs map[string]bool) []backup
 			if shouldExclude(rel) || isNonRegularPath(fpath) {
 				continue
 			}
-			if outErr == nil {
-				if resolved, err := pypath.Resolve(fpath); err == nil && resolved == outResolved {
+			if resolved, err := pypath.Resolve(fpath); err == nil {
+				if outResolved, err := pypath.Resolve(outPath); err == nil && resolved == outResolved {
 					continue
 				}
 			}

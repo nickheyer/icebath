@@ -6,11 +6,20 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// KanbanActivityHook is the kanban worker heartbeat and comment injection pkg/kanban installs, nil when unlinked
-var KanbanActivityHook func(a *AIAgent)
+// Mirrors agent activity onto the board of a dispatched kanban worker, then folds new operator notes into the turn
+var kanbanActivityBridge = func(a *AIAgent) {
+	ctx := tools.WithToolEnv(a.homeContext(), a.env)
+	if a.delegateDepth > 0 {
+		ctx = tools.WithDelegatedChildContext(ctx, true)
+	}
+	kanban.HeartbeatCurrentWorkerFromEnv(ctx)
+	kanban.InjectNewCommentsFromEnv(ctx, a)
+}
 
 var (
 	activityProcessStart = time.Now()
@@ -40,10 +49,10 @@ func (a *AIAgent) touchActivity(desc string, provenance string, forcePersist boo
 	a.lastActivityProvenance = resolved
 	a.turnLivenessAbortClaim = nil
 	lock.Unlock()
-	if os.Getenv("ICEBATH_KANBAN_TASK") != "" && KanbanActivityHook != nil {
+	if os.Getenv("ICEBATH_KANBAN_TASK") != "" {
 		func() {
 			defer func() { _ = recover() }()
-			KanbanActivityHook(a)
+			kanbanActivityBridge(a)
 		}()
 	}
 	if forcePersist || IsTerminalCompressionProvenance(string(resolved)) {

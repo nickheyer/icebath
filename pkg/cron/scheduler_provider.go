@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -48,8 +49,6 @@ type FireOptions struct {
 	Force    bool
 	Manual   bool
 	Cancel   <-chan struct{}
-	// Per fire context appended to the stored prompt, never persisted
-	ExtraPrompt *string
 }
 
 // Inputs the ticker passes to one tick of a store
@@ -226,7 +225,7 @@ func schedulerRecoverInterrupted(ctx context.Context, p CronScheduler) (int, err
 	if h, ok := p.(recoverHook); ok {
 		return h.RecoverInterrupted(ctx)
 	}
-	return openExecutionsLedger(cronStoreFrom(ctx)).RecoverInterrupted(ctx)
+	return recoverInterruptedExecutions(ctx, cronStoreFrom(ctx))
 }
 
 // Converges the external registry toward jobs.json, nothing by default
@@ -246,7 +245,7 @@ func schedulerFireDue(ctx context.Context, p CronScheduler, jobID string, o Fire
 	if err != nil || claimed == nil {
 		return false, err
 	}
-	return schedulerFireClaimed(ctx, p, claimed, o)
+	return schedulerFireClaimed(ctx, p, claimed, FireOptions{Adapters: o.Adapters, Loop: o.Loop})
 }
 
 // Durably claims one fire and creates its audit attempt before the transport acknowledges
@@ -263,35 +262,63 @@ var (
 	baseFireClaimed = defaultFireClaimed
 )
 
+// Store claim and ledger attempt the base claim reaches, the cron.jobs and cron.executions attributes tests patch
+var (
+	providerClaimJobForFire = (*Store).claimJobForFire
+	providerCreateExecution = func(ctx context.Context, s *Store, jobID, source string) (map[string]any, error) {
+		return openExecutionsLedger(s).Create(ctx, jobID, source, nil)
+	}
+)
+
 func defaultClaimFire(ctx context.Context, p CronScheduler, jobID string, force, manual bool) (*Job, error) {
 	return claimFireForSource(ctx, p.Name(), jobID, force, manual)
+}
+
+// Error form of a recovered panic value, the value itself when it already is one
+func recoveredError(r any) error {
+	if err, ok := r.(error); ok {
+		return err
+	}
+	return fmt.Errorf("%v", r)
 }
 
 // Creates the audit attempt under source, claims the fire and stamps the attempt on the snapshot
 func claimFireForSource(ctx context.Context, source, jobID string, force, manual bool) (*Job, error) {
 	s := cronStoreFrom(ctx)
 	ledger := openExecutionsLedger(s)
-	execution, err := ledger.Create(ctx, jobID, source, nil)
+	execution, err := providerCreateExecution(ctx, s, jobID, source)
 	if err != nil {
 		return nil, err
 	}
 	executionID := config.PyStr(execution["id"])
-	claimed, ok, err := func() (job *Job, ok bool, err error) {
+	var claimed *Job
+	var ok bool
+	var claimErr error
+	panicked, raised := func() (panicked bool, raised any) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("%v", r)
+				panicked, raised = true, r
 			}
 		}()
-		job, ok, err = s.claimJobForFire(ctx, jobID, FireClaimOptions{Force: force, Manual: manual})
-		if err == nil && ok && job != nil {
-			err = ledger.SetOccurrence(ctx, executionID, job.ScheduledInstant)
+		claimed, ok, claimErr = providerClaimJobForFire(s, ctx, jobID, FireClaimOptions{Force: force, Manual: manual})
+		if claimErr == nil && ok && claimed != nil {
+			claimErr = ledger.SetOccurrence(ctx, executionID, claimed.ScheduledInstant)
 		}
-		return job, ok, err
+		return false, nil
 	}()
-	if err != nil {
-		reason := fmt.Sprintf("Fire claim failed before dispatch: %s: %v", cronExceptionName(err), err)
-		_, _ = ledger.Finish(ctx, executionID, false, &reason, nil, false)
-		return nil, err
+	if panicked || claimErr != nil {
+		cause := claimErr
+		if panicked {
+			cause = recoveredError(raised)
+		}
+		reason := fmt.Sprintf("Fire claim failed before dispatch: %s: %v", cronExceptionName(cause), cause)
+		if _, err := ledger.Finish(ctx, executionID, false, &reason, nil, false); err != nil {
+			return nil, err
+		}
+		if panicked {
+			panic(raised)
+		}
+		return nil, claimErr
 	}
 	if !ok || claimed == nil {
 		reason := "Fire claim was not acquired"
@@ -311,7 +338,7 @@ func schedulerFireClaimed(ctx context.Context, p CronScheduler, job *Job, o Fire
 }
 
 func defaultFireClaimed(ctx context.Context, p CronScheduler, job *Job, o FireOptions) (bool, error) {
-	if _, err := runOneJobSeam(ctx, cronStoreFrom(ctx), job, runOneJobOptions{Adapters: o.Adapters, Loop: o.Loop, Cancel: o.Cancel, Verbose: true}); err != nil {
+	if _, err := runOneJobSeam(ctx, cronStoreFrom(ctx), job, runOneJobOptions{Adapters: o.Adapters, Loop: o.Loop, Cancel: o.Cancel}); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -335,7 +362,7 @@ func providerFireDueAccepts(p CronScheduler, name string) bool {
 		return false
 	}
 	switch name {
-	case "adapters", "loop", "force", "manual":
+	case "job_id", "adapters", "loop", "force", "manual":
 		return true
 	}
 	return false
@@ -379,17 +406,17 @@ var estopCheckPaused func(component string, log *slog.Logger) bool
 func RegisterEstopCheck(fn func(component string, log *slog.Logger) bool) { estopCheckPaused = fn }
 
 // Fires jobs whose external fire never arrived once the misfire grace passed, returning how many dispatched
-func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *time.Time) int {
+func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *time.Time) (int, error) {
 	s := cronStoreFrom(ctx)
 	if estopCheckPaused != nil && estopCheckPaused("cron-misfire", s.log) {
-		return 0
+		return 0, nil
 	}
 	if _, builtin := p.(*InProcessCronScheduler); builtin {
-		return 0
+		return 0, nil
 	}
 	grace := s.misfireGraceMinutes()
 	if grace <= 0 {
-		return 0
+		return 0, nil
 	}
 	at := s.clk.now()
 	if now != nil {
@@ -397,8 +424,7 @@ func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *t
 	}
 	jobs, err := s.LoadJobs()
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Misfire catch-up could not load jobs: %v", err))
-		return 0
+		return 0, err
 	}
 	fired := 0
 	for _, job := range jobs {
@@ -430,14 +456,22 @@ func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *t
 		if claimed == nil {
 			continue
 		}
-		go func(claimed *Job) {
-			if _, err := schedulerFireClaimed(context.WithoutCancel(ctx), p, claimed, FireOptions{Adapters: o.Adapters, Loop: o.Loop}); err != nil {
-				s.log.Warn(fmt.Sprintf("Misfire fire for job %s failed: %v", claimed.ID, err))
-			}
-		}(claimed)
+		go runMisfireFire(context.WithoutCancel(ctx), p, claimed, o, "cron-misfire-"+string([]rune(job.ID)[:min(12, len([]rune(job.ID)))]))
 		fired++
 	}
-	return fired
+	return fired, nil
+}
+
+// Runs one claimed misfire fire off the caller, an escaping failure printed as threading.excepthook prints it
+func runMisfireFire(ctx context.Context, p CronScheduler, claimed *Job, o FireOptions, thread string) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "Exception in thread %s:\n%v\n%s", thread, r, debug.Stack())
+		}
+	}()
+	if _, err := schedulerFireClaimed(ctx, p, claimed, FireOptions{Adapters: o.Adapters, Loop: o.Loop}); err != nil {
+		fmt.Fprintf(os.Stderr, "Exception in thread %s:\n%s: %v\n", thread, cronExceptionName(err), err)
+	}
 }
 
 // Python format of a float with zero decimals, round half to even like %.0f
@@ -462,35 +496,53 @@ func resolveCronScheduler(s *Store) CronScheduler {
 	if name == "" || name == "builtin" || name == "in-process" || name == "inprocess" {
 		return &InProcessCronScheduler{}
 	}
+	provider, warning := s.loadConfiguredScheduler(name)
+	if provider != nil {
+		return provider
+	}
+	s.log.Warn(warning)
+	return &InProcessCronScheduler{}
+}
+
+// Loaded, available provider of the name, else the warning naming why the built in ticker stays
+func (s *Store) loadConfiguredScheduler(name string) (provider CronScheduler, warning string) {
+	failed := func(err any) (CronScheduler, string) {
+		return nil, fmt.Sprintf("Failed to load cron.provider '%s' (%v); using built-in ticker", name, err)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			provider, warning = failed(r)
+		}
+	}()
 	provider, err := loadCronScheduler(s, name)
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Failed to load cron.provider '%s' (%v); using built-in ticker", name, err))
-		return &InProcessCronScheduler{}
+		return failed(err)
 	}
 	if provider == nil {
-		s.log.Warn(fmt.Sprintf("cron.provider '%s' not found; using built-in ticker", name))
-		return &InProcessCronScheduler{}
+		return nil, fmt.Sprintf("cron.provider '%s' not found; using built-in ticker", name)
 	}
-	if checked, ok := provider.(checkedScheduler); ok {
-		available, err := checked.checkAvailable()
-		if err == nil && !available {
-			s.log.Warn(fmt.Sprintf("cron.provider '%s' not available; using built-in ticker", name))
-			return &InProcessCronScheduler{}
+	checked, hosted := provider.(checkedScheduler)
+	available := false
+	if hosted {
+		if available, err = checked.checkAvailable(); err != nil {
+			return failed(err)
 		}
-		if err == nil {
-			_, err = checked.checkName()
-		}
-		if err != nil {
-			s.log.Warn(fmt.Sprintf("Failed to load cron.provider '%s' (%v); using built-in ticker", name, err))
-			return &InProcessCronScheduler{}
-		}
+	} else {
+		available = schedulerIsAvailable(provider)
 	}
-	if !schedulerIsAvailable(provider) {
-		s.log.Warn(fmt.Sprintf("cron.provider '%s' not available; using built-in ticker", name))
-		return &InProcessCronScheduler{}
+	if !available {
+		return nil, fmt.Sprintf("cron.provider '%s' not available; using built-in ticker", name)
 	}
-	s.log.Info("Using cron scheduler provider: " + provider.Name())
-	return provider
+	label := ""
+	if hosted {
+		if label, err = checked.checkName(); err != nil {
+			return failed(err)
+		}
+	} else {
+		label = provider.Name()
+	}
+	s.log.Info("Using cron scheduler provider: " + label)
+	return provider, ""
 }
 
 // Resolver the create and notify paths go through, swapped by tests for a recording provider
@@ -535,6 +587,9 @@ func waitTick(stop <-chan struct{}, d float64) bool {
 	}
 }
 
+// Wait between ticker cycles, the stop event wait hermes tests replace to run one cycle
+var tickerWait = waitTick
+
 func stopped(stop <-chan struct{}) bool {
 	select {
 	case <-stop:
@@ -548,7 +603,7 @@ func stopped(stop <-chan struct{}) bool {
 func containedTick(ctx context.Context, s *Store, o tickOptions) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("%v", r)
+			err = recoveredError(r)
 		}
 	}()
 	_, err = tickHook(ctx, s, o)
@@ -559,7 +614,13 @@ func containedTick(ctx context.Context, s *Store, o tickOptions) (err error) {
 var tickHook = schedulerTick
 
 // Seam over the monotonic clock the ticker schedules against
-var tickerMonotonic = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+var tickerMonotonic = func() float64 { return time.Since(tickerClockStart).Seconds() }
+
+// Origin of the ticker monotonic clock
+var tickerClockStart = time.Now()
+
+// Ticker liveness marker write, the cron.jobs record_ticker_heartbeat attribute tests patch
+var recordTickerHeartbeat = (*Store).RecordTickerHeartbeat
 
 // Ticks the process home every interval until stopped, recording heartbeat, error and backoff
 func (p *InProcessCronScheduler) Start(ctx context.Context, stop <-chan struct{}, o StartOptions) {
@@ -577,33 +638,39 @@ func (p *InProcessCronScheduler) Start(ctx context.Context, stop <-chan struct{}
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				s.log.Error(fmt.Sprintf("Cron startup recovery error: %v", r))
-				s.guardedStoreWrite("startup error", func() { s.RecordTickerError(fmt.Sprintf("RuntimeError: %v", r)) })
+				err := recoveredError(r)
+				s.log.Error(fmt.Sprintf("Cron startup recovery error: %v", err))
+				s.guardedStoreWrite("startup error", func() { s.RecordTickerError(home.WithOverride(ctx, s.home), tickErrorText(err)) })
 			}
 		}()
 		recovered, err := schedulerRecoverInterrupted(ctx, p)
 		if err != nil {
 			s.log.Error(fmt.Sprintf("Cron startup recovery error: %v", err))
-			s.guardedStoreWrite("startup error", func() { s.RecordTickerError(tickErrorText(err)) })
+			s.guardedStoreWrite("startup error", func() { s.RecordTickerError(home.WithOverride(ctx, s.home), tickErrorText(err)) })
 			return
 		}
 		if recovered > 0 {
 			s.log.Warn(fmt.Sprintf("Marked %d interrupted cron execution(s) unknown after restart", recovered))
 		}
-		s.RecordTickerHeartbeat(false)
+		recordTickerHeartbeat(s, home.WithOverride(ctx, s.home), false)
 	}()
 	failures := 0
 	next := tickerMonotonic()
 	for !stopped(stop) {
 		ok := false
-		var err error
-		if o.CanDispatch != nil && !o.CanDispatch() {
-			s.log.Debug("Cron dispatch paused while gateway drains existing work")
-			err = s.noteHeld(nil)
-		} else {
+		err := func() (err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = recoveredError(r)
+				}
+			}()
+			if o.CanDispatch != nil && !o.CanDispatch() {
+				s.log.Debug("Cron dispatch paused while gateway drains existing work")
+				return s.noteHeld(home.WithOverride(ctx, s.home), nil)
+			}
 			s.noteDispatching()
-			err = containedTick(ctx, s, tickOptions{Verbose: false, Adapters: o.Adapters, Loop: o.Loop, Sync: false, CanDispatch: o.CanDispatch})
-		}
+			return containedTick(ctx, s, tickOptions{Verbose: false, Adapters: o.Adapters, Loop: o.Loop, Sync: false, CanDispatch: o.CanDispatch})
+		}()
 		if err == nil {
 			ok = true
 		} else {
@@ -613,10 +680,10 @@ func (p *InProcessCronScheduler) Start(ctx context.Context, stop <-chan struct{}
 			} else {
 				s.log.Error(fmt.Sprintf("Cron tick error: %v", err))
 			}
-			s.guardedStoreWrite("tick error", func() { s.RecordTickerError(tickErrorText(err)) })
+			s.guardedStoreWrite("tick error", func() { s.RecordTickerError(home.WithOverride(ctx, s.home), tickErrorText(err)) })
 			failures = noteTickFailure(err, failures)
 		}
-		s.guardedStoreWrite("heartbeat", func() { s.RecordTickerHeartbeat(ok) })
+		s.guardedStoreWrite("heartbeat", func() { recordTickerHeartbeat(s, home.WithOverride(ctx, s.home), ok) })
 		if ok {
 			s.guardedStoreWrite("error clear", s.ClearTickerError)
 			failures = 0
@@ -627,7 +694,7 @@ func (p *InProcessCronScheduler) Start(ctx context.Context, stop <-chan struct{}
 		if next < now {
 			next = now + wait
 		}
-		if waitTick(stop, math.Max(0, next-now)) {
+		if tickerWait(stop, math.Max(0, next-now)) {
 			return
 		}
 	}
@@ -639,11 +706,11 @@ func (s *Store) tickAdaptersFor(ctx context.Context, o StartOptions, name *strin
 		return o.Adapters
 	}
 	var tickAdapters any = map[string]any{}
-	if v, ok := o.ProfileAdapters[*name]; ok && config.PyTruthy(v) {
+	if v, ok := o.ProfileAdapters[*name]; ok && pyTruthy(v) {
 		tickAdapters = v
 	}
 	owned := o.ProfileBotPlatforms[*name]
-	if !hasCredentialPlatform(tickAdapters, owned) && config.PyTruthy(o.Adapters) {
+	if !hasCredentialPlatform(tickAdapters, owned) && pyTruthy(o.Adapters) {
 		return newSharedRouteAdapters(o.Adapters, primaryProfileRoutesForCurrentHome(ctx))
 	}
 	return tickAdapters
@@ -684,7 +751,7 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 			if recovered > 0 {
 				s.log.Warn(fmt.Sprintf("Marked %d interrupted cron execution(s) for profile at %s", recovered, e.Home))
 			}
-			ps.RecordTickerHeartbeat(false)
+			recordTickerHeartbeat(ps, home.WithOverride(pctx, ps.home), false)
 		}()
 	}
 	failures := 0
@@ -698,7 +765,7 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					err := fmt.Errorf("%v", r)
+					err := recoveredError(r)
 					s.log.Error(fmt.Sprintf("Cron profile enumeration error: %v", err))
 					tickErr = tickErrorText(err)
 					failures = noteTickFailure(err, failures)
@@ -724,7 +791,7 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					err := fmt.Errorf("%v", r)
+					err := recoveredError(r)
 					s.log.Error(fmt.Sprintf("Cron tick error: %v", err))
 					tickErr = tickErrorText(err)
 					failures = noteTickFailure(err, failures)
@@ -736,7 +803,7 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 				for _, e := range cycle {
 					hs = append(hs, e.Home)
 				}
-				if err := noteHeldProfiles(hs); err != nil {
+				if err := noteHeldProfiles(home.WithOverride(ctx, s.home), hs); err != nil {
 					s.log.Error(fmt.Sprintf("Cron tick error: %v", err))
 					tickErr = tickErrorText(err)
 					failures = noteTickFailure(err, failures)
@@ -744,9 +811,16 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 				return
 			}
 			for _, e := range cycle {
-				pctx, ps := s.profileCronScope(ctx, e.Home)
-				ps.noteDispatching()
-				err := containedTick(pctx, ps, tickOptions{Verbose: false, Adapters: s.tickAdaptersFor(pctx, o, e.Name), Loop: o.Loop, Sync: false, CanDispatch: o.CanDispatch})
+				err := func() (err error) {
+					defer func() {
+						if r := recover(); r != nil {
+							err = recoveredError(r)
+						}
+					}()
+					pctx, ps := s.profileCronScope(ctx, e.Home)
+					ps.noteDispatching()
+					return containedTick(pctx, ps, tickOptions{Verbose: false, Adapters: s.tickAdaptersFor(pctx, o, e.Name), Loop: o.Loop, Sync: false, CanDispatch: o.CanDispatch})
+				}()
 				if err == nil {
 					continue
 				}
@@ -770,14 +844,14 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 			_, ps := s.profileCronScope(ctx, e.Home)
 			perr, failed := profileErrors[e.Home]
 			homeOK := tickErr == "" && !failed
-			ps.guardedStoreWrite("heartbeat", func() { ps.RecordTickerHeartbeat(homeOK) })
+			ps.guardedStoreWrite("heartbeat", func() { recordTickerHeartbeat(ps, home.WithOverride(ctx, ps.home), homeOK) })
 			switch {
 			case homeOK:
 				ps.guardedStoreWrite("error clear", ps.ClearTickerError)
 			case failed:
-				ps.guardedStoreWrite("tick error", func() { ps.RecordTickerError(perr) })
+				ps.guardedStoreWrite("tick error", func() { ps.RecordTickerError(home.WithOverride(ctx, ps.home), perr) })
 			case tickErr != "":
-				ps.guardedStoreWrite("tick error", func() { ps.RecordTickerError(tickErr) })
+				ps.guardedStoreWrite("tick error", func() { ps.RecordTickerError(home.WithOverride(ctx, ps.home), tickErr) })
 			}
 		}
 		if ok {
@@ -789,7 +863,7 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 		if next < now {
 			next = now + wait
 		}
-		if waitTick(stop, math.Max(0, next-now)) {
+		if tickerWait(stop, math.Max(0, next-now)) {
 			return
 		}
 	}

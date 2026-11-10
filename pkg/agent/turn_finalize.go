@@ -558,7 +558,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 	guardedCleanup("save_trajectory", func() error {
 		return a.saveTrajectory(messagesToRows(s.Messages), provider.SummarizeUserMessageForLog(s.UserMessage, " "), completed)
 	}, &cleanupErrors)
-	guardedCleanup("cleanup_task_resources", func() error { a.cleanupTaskResources(taskID); return nil }, &cleanupErrors)
+	guardedCleanup("cleanup_task_resources", func() error { a.cleanupTaskResources(tools.WithEnvHome(ctx, a.env), taskID); return nil }, &cleanupErrors)
 	guardedCleanup("persist_session", func() error {
 		dropTranscriptScaffolding(a, &s.Messages)
 		var recovered bool

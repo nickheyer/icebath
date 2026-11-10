@@ -130,7 +130,7 @@ func (o *ProfileOwnership) Homes() []string {
 }
 
 // Reserves every home all or nothing, purpose marking a maintenance holder in the lock record
-func (o *ProfileOwnership) Reserve(homes []string, purpose string) error {
+func (o *ProfileOwnership) Reserve(ctx context.Context, homes []string, purpose string) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	set := map[string]bool{}
@@ -151,7 +151,7 @@ func (o *ProfileOwnership) Reserve(homes []string, purpose string) error {
 		if o.handles.Has(h) {
 			continue
 		}
-		if err := o.reserveOne(h, purpose); err != nil {
+		if err := o.reserveOne(ctx, h, purpose); err != nil {
 			for i := len(added) - 1; i >= 0; i-- {
 				o.releaseLocked(added[i])
 			}
@@ -162,8 +162,8 @@ func (o *ProfileOwnership) Reserve(homes []string, purpose string) error {
 	return nil
 }
 
-func (o *ProfileOwnership) reserveOne(h, purpose string) error {
-	if _, err := home.MakeUserDir(h, 0o700, true, true); err != nil {
+func (o *ProfileOwnership) reserveOne(ctx context.Context, h, purpose string) error {
+	if _, err := home.MakeUserDir(ctx, h, 0o700, true, true); err != nil {
 		return err
 	}
 	path := pypath.PathJoin(h, gatewayLockFilename)
@@ -307,12 +307,12 @@ const (
 )
 
 // Homes another holder has right now, each probed alone and released at once
-func conflictingHomes(homes []string) []string {
+func conflictingHomes(ctx context.Context, homes []string) []string {
 	var out []string
 	for _, h := range homes {
 		probe := NewProfileOwnership()
 		var conflict *OwnershipConflict
-		if err := probe.Reserve([]string{h}, ""); errors.As(err, &conflict) {
+		if err := probe.Reserve(ctx, []string{h}, ""); errors.As(err, &conflict) {
 			out = append(out, h)
 		}
 		probe.Close()
@@ -321,7 +321,7 @@ func conflictingHomes(homes []string) []string {
 }
 
 // Reserves homes, retrying while every contender is transient, until wait passes or cancel closes
-func ReserveWaitingOutTransientHolders(ownership *ProfileOwnership, homes []string, wait time.Duration, cancel <-chan struct{}) error {
+func ReserveWaitingOutTransientHolders(ctx context.Context, ownership *ProfileOwnership, homes []string, wait time.Duration, cancel <-chan struct{}) error {
 	if cancel == nil {
 		cancel = make(chan struct{})
 	}
@@ -346,10 +346,10 @@ func ReserveWaitingOutTransientHolders(ownership *ProfileOwnership, homes []stri
 		for _, h := range ownership.Homes() {
 			before[h] = true
 		}
-		err := ownership.Reserve(homes, "")
+		err := ownership.Reserve(ctx, homes, "")
 		var conflict *OwnershipConflict
 		if errors.As(err, &conflict) {
-			conflicting := conflictingHomes(homes)
+			conflicting := conflictingHomes(ctx, homes)
 			var holders []string
 			for _, h := range conflicting {
 				if MaintenanceHolder(h, browseReconcilePurpose) != nil || LockRecordUnpublished(h) {
@@ -436,7 +436,7 @@ func ExclusiveMaintenance(ctx context.Context, homes []string, purpose string) (
 			}
 		}
 	}
-	if err := owner.Reserve(homes, purpose); err != nil {
+	if err := owner.Reserve(ctx, homes, purpose); err != nil {
 		releaseNew()
 		var conflict *OwnershipConflict
 		if errors.As(err, &conflict) {

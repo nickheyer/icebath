@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // fakeLease is the active session slot the tests hand the CLI
@@ -21,6 +22,7 @@ func (l *fakeLease) Release() error { l.released.Store(true); return nil }
 
 // Installs doubles for the cmd/icebath wiring hooks the chat path reaches
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry()
 	TryAcquireActiveSession = func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, string, error) {
 		return &fakeLease{}, "", nil
@@ -192,7 +194,7 @@ func TestNormalizeMoaModelSelectsTheVirtualProvider(t *testing.T) {
 
 func TestReadTurnReportRejectsOtherPids(t *testing.T) {
 	path := t.TempDir() + "/report.json"
-	writeTurnReport(path, 3, "boom", "reply")
+	writeTurnReport(context.Background(), path, 3, "boom", "reply")
 	if got := readTurnReport(path, os.Getpid()); got == nil || got["exit_code"].(float64) != 3 || got["reply"] != "reply" {
 		t.Fatalf("got %v", got)
 	}

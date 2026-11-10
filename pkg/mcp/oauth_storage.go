@@ -39,7 +39,7 @@ func refreshLockPath(path string) string { return path + ".refresh.lock" }
 // Takes the cross process refresh fence, polling a non blocking lock until the timeout and failing closed
 func acquireRefreshFence(ctx context.Context, path string, timeout time.Duration) (*os.File, error) {
 	lockPath := refreshLockPath(path)
-	if _, err := home.Mkdir(filepath.Dir(lockPath)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(lockPath)); err != nil {
 		return nil, &RefreshFenceTimeout{fmt.Sprintf("refresh fence unavailable (%s): %v", filepath.Base(lockPath), err)}
 	}
 	secureParentDir(lockPath)
@@ -120,8 +120,8 @@ func readOAuthJSON(path string) any {
 }
 
 // Writes OAuth state at 0600 from creation under a 0700 parent inside a live home
-func writeOAuthJSON(path string, data any) error {
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+func writeOAuthJSON(ctx context.Context, path string, data any) error {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
 	secureParentDir(path)
@@ -301,7 +301,7 @@ func (s *TokenStorage) GetTokens() (*OAuthToken, error) {
 }
 
 // Persists tokens with an absolute expiry and the bound issuer stamped
-func (s *TokenStorage) SetTokens(t *OAuthToken) error {
+func (s *TokenStorage) SetTokens(ctx context.Context, t *OAuthToken) error {
 	payload := t.dump()
 	if t.ExpiresIn != nil {
 		payload.set("expires_at", oauthNow()+float64(*t.ExpiresIn))
@@ -313,7 +313,7 @@ func (s *TokenStorage) SetTokens(t *OAuthToken) error {
 		s.loadedIssuer = bound
 	}
 	s.mu.Unlock()
-	if err := writeOAuthJSON(s.TokensPath(), payload); err != nil {
+	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.TokensPath(), payload); err != nil {
 		return err
 	}
 	mcpLogger().Debug(fmt.Sprintf("OAuth tokens saved for %s", s.serverName))
@@ -328,13 +328,13 @@ func (s *TokenStorage) BindIssuer(issuer string) {
 }
 
 // Backfills the issuer onto a token file written before issuer binding existed
-func (s *TokenStorage) StampIssuer(issuer string) {
+func (s *TokenStorage) StampIssuer(ctx context.Context, issuer string) {
 	obj, ok := readOAuthJSON(s.TokensPath()).(*jsonObject)
 	if !ok || jsonTruthy(obj.get("hermes_issuer")) {
 		return
 	}
 	obj.set("hermes_issuer", issuer)
-	if err := writeOAuthJSON(s.TokensPath(), obj); err != nil {
+	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.TokensPath(), obj); err != nil {
 		mcpLogger().Debug(fmt.Sprintf("Could not stamp issuer on tokens for %s: %v", s.serverName, err))
 		return
 	}
@@ -342,7 +342,7 @@ func (s *TokenStorage) StampIssuer(issuer string) {
 }
 
 // Drops the refresh token and its issuer record from disk, keeping the access token
-func (s *TokenStorage) StripRefreshToken() {
+func (s *TokenStorage) StripRefreshToken(ctx context.Context) {
 	obj, ok := readOAuthJSON(s.TokensPath()).(*jsonObject)
 	if !ok || !jsonTruthy(obj.get("refresh_token")) {
 		return
@@ -350,7 +350,7 @@ func (s *TokenStorage) StripRefreshToken() {
 	obj.pop("refresh_token")
 	obj.pop("hermes_issuer")
 	s.setLoadedIssuer("")
-	if err := writeOAuthJSON(s.TokensPath(), obj); err != nil {
+	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.TokensPath(), obj); err != nil {
 		mcpLogger().Warn(fmt.Sprintf("Could not strip refresh token for %s: %v", s.serverName, err))
 		return
 	}
@@ -369,7 +369,7 @@ func coerceSecretAuthMethod(m map[string]any) bool {
 }
 
 // Stored client registration, persisting a coerced auth method so later flows skip the coercion
-func (s *TokenStorage) GetClientInfo() (*OAuthClientInfo, error) {
+func (s *TokenStorage) GetClientInfo(ctx context.Context) (*OAuthClientInfo, error) {
 	coerced := false
 	model, err := s.loadModel(s.ClientInfoPath(), "client info", func(m map[string]any) error {
 		coerced = coerceSecretAuthMethod(m)
@@ -380,7 +380,7 @@ func (s *TokenStorage) GetClientInfo() (*OAuthClientInfo, error) {
 	}
 	info := model.(*OAuthClientInfo)
 	if coerced {
-		if err := writeOAuthJSON(s.ClientInfoPath(), info.dump()); err != nil {
+		if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.ClientInfoPath(), info.dump()); err != nil {
 			return nil, err
 		}
 	}
@@ -388,12 +388,12 @@ func (s *TokenStorage) GetClientInfo() (*OAuthClientInfo, error) {
 }
 
 // Persists the client registration with the secret auth method coercion applied
-func (s *TokenStorage) SetClientInfo(info *OAuthClientInfo) error {
+func (s *TokenStorage) SetClientInfo(ctx context.Context, info *OAuthClientInfo) error {
 	data := info.dump()
 	if coerceSecretAuthMethod(data.toMap()) {
 		data.set("token_endpoint_auth_method", "client_secret_post")
 	}
-	if err := writeOAuthJSON(s.ClientInfoPath(), data); err != nil {
+	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.ClientInfoPath(), data); err != nil {
 		return err
 	}
 	mcpLogger().Debug(fmt.Sprintf("OAuth client info saved for %s", s.serverName))
@@ -401,8 +401,8 @@ func (s *TokenStorage) SetClientInfo(info *OAuthClientInfo) error {
 }
 
 // Persists server metadata so a restarted process can refresh without rediscovery
-func (s *TokenStorage) SaveOAuthMetadata(md *OAuthMetadata) error {
-	if err := writeOAuthJSON(s.MetaPath(), md.dump()); err != nil {
+func (s *TokenStorage) SaveOAuthMetadata(ctx context.Context, md *OAuthMetadata) error {
+	if err := writeOAuthJSON(home.WithOverride(ctx, s.homeDir), s.MetaPath(), md.dump()); err != nil {
 		return err
 	}
 	mcpLogger().Debug(fmt.Sprintf("OAuth metadata saved for %s", s.serverName))
@@ -419,9 +419,9 @@ func (s *TokenStorage) LoadOAuthMetadata() *OAuthMetadata {
 }
 
 // Durably records that this server refused the CIMD document
-func (s *TokenStorage) MarkCIMDRejected() {
+func (s *TokenStorage) MarkCIMDRejected(ctx context.Context) {
 	path := s.CIMDRejectedPath()
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(home.WithOverride(ctx, s.homeDir), filepath.Dir(path)); err != nil {
 		mcpLogger().Debug(fmt.Sprintf("Could not record CIMD rejection at %s: %v", path, err))
 		return
 	}
@@ -467,7 +467,7 @@ func (s *TokenStorage) Snapshot() map[string][]byte {
 }
 
 // Reverts to a snapshot, skipped when asked to keep newer state another writer produced
-func (s *TokenStorage) Restore(snap map[string][]byte, onlyIfAbsent bool) error {
+func (s *TokenStorage) Restore(ctx context.Context, snap map[string][]byte, onlyIfAbsent bool) error {
 	if onlyIfAbsent {
 		for _, p := range s.statePaths() {
 			if _, err := os.Stat(p); err == nil {
@@ -483,7 +483,7 @@ func (s *TokenStorage) Restore(snap map[string][]byte, onlyIfAbsent bool) error 
 		return nil
 	}
 	dir := oauthTokenDir(s.homeDir)
-	if _, err := home.Mkdir(dir); err != nil {
+	if _, err := home.Mkdir(home.WithOverride(ctx, s.homeDir), dir); err != nil {
 		return err
 	}
 	for name, data := range snap {

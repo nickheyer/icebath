@@ -918,7 +918,7 @@ func (c *CLI) consolePrint(markup string) {
 		chatConsolePrint(markup)
 		return
 	}
-	fmt.Fprintln(c.console.Out, pyrich.Render(markup, c.console.ShouldUseColor()))
+	(&pyrich.Console{Out: c.console.Out, Color: c.console.ShouldUseColor(), Terminal: c.console.StdoutIsTTY(), Width: terminalColumns()}).Print(markup)
 }
 
 // Closes open blocks once and announces the tool whose arguments the model began generating

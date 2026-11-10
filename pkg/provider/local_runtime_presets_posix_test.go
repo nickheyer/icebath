@@ -3,6 +3,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -27,7 +28,7 @@ func TestLocalRuntimeSupervisorWithPresetsDoesNotScanUnadmittedFiles(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sup.spawn(); err != nil {
+	if err := sup.spawn(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	_ = sup.Stop()
@@ -71,7 +72,7 @@ func lr6NewRouter(t *testing.T, path, status string) *lr6Router {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sup.spawn(); err != nil {
+	if err := sup.spawn(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sup.Stop() })

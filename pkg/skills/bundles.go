@@ -317,7 +317,7 @@ func (s *Scope) BundlePathFor(name string) (string, error) {
 }
 
 // Writes a bundle atomically keeping an existing file's mode and owner, then refreshes the cache
-func (s *Scope) SaveBundle(name string, skills []string, description, instruction string, overwrite bool) (string, error) {
+func (s *Scope) SaveBundle(ctx context.Context, name string, skills []string, description, instruction string, overwrite bool) (string, error) {
 	name = pystr.Strip(name)
 	if name == "" {
 		return "", &BundleError{"ValueError", "Bundle name is required"}
@@ -339,7 +339,7 @@ func (s *Scope) SaveBundle(name string, skills []string, description, instructio
 	if statErr == nil && !overwrite {
 		return "", &BundleError{"FileExistsError", "Bundle already exists at " + path}
 	}
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(home.WithOverride(ctx, s.Home), filepath.Dir(path)); err != nil {
 		return "", err
 	}
 	payload := map[string]any{"name": name, "skills": cleaned}
@@ -356,9 +356,9 @@ func (s *Scope) SaveBundle(name string, skills []string, description, instructio
 		return "", err
 	}
 	if statErr == nil {
-		err = pyfs.AtomicWriteTextMode(path, string(text), ".tmp_", st.Mode().Perm())
+		err = pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.Home), path, string(text), ".tmp_", st.Mode().Perm())
 	} else {
-		err = pyfs.AtomicWriteText(path, string(text), ".tmp_")
+		err = pyfs.AtomicWriteText(home.WithOverride(ctx, s.Home), path, string(text), ".tmp_")
 	}
 	if err != nil {
 		return "", err

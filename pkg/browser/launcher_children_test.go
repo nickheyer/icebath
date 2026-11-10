@@ -49,7 +49,7 @@ func runChildMode(mode string) int {
 		env := childEnv()
 		fmt.Println(defaultUserDataDir("slow", cfgOf(env).homeKey()))
 		needsChromiumSandboxBypass = func() bool { return false }
-		launchChromium(env, "slow", LaunchOptions{Executable: os.Getenv("CHILD_EXE"), Ephemeral: true, Headed: boolp(false),
+		launchChromium(context.Background(), env, "slow", LaunchOptions{Executable: os.Getenv("CHILD_EXE"), Ephemeral: true, Headed: boolp(false),
 			ProcEnv: environ(), Timeout: durp(300 * time.Second), SandboxBypass: true})
 		return 0
 	case "prepare-dir":
@@ -195,7 +195,7 @@ func runProfileUser() int {
 			return 0, "", 0, false
 		}
 	}
-	b, err := launchChromium(env, "profile:"+udd, LaunchOptions{Executable: exe, UserDataDir: udd, Headed: boolp(false),
+	b, err := launchChromium(context.Background(), env, "profile:"+udd, LaunchOptions{Executable: exe, UserDataDir: udd, Headed: boolp(false),
 		ProcEnv: environ(), Timeout: durp(30 * time.Second), SandboxBypass: true})
 	owned := map[bool]string{true: "True", false: "False"}[b != nil && b.Owned]
 	switch {
@@ -207,7 +207,7 @@ func runProfileUser() int {
 		fmt.Printf("ERR %s\n", err)
 	}
 	stdin.ReadString('\n')
-	stopAllBrowsers()
+	stopAllBrowsers(context.Background())
 	return 0
 }
 
@@ -256,7 +256,7 @@ func launcherTestEnv(t *testing.T) *tools.Env {
 	pin(t, &needsChromiumSandboxBypass, func() bool { return false })
 	pin(t, &launcherChromiumArgs, func(*tools.Env) []string { return nil })
 	t.Cleanup(func() {
-		stopAllBrowsers()
+		stopAllBrowsers(context.Background())
 		launcherMu.Lock()
 		servedHomes = map[string]bool{}
 		autoinstallAttempted = false
@@ -275,7 +275,7 @@ func homeRecords(t *testing.T, env *tools.Env) string {
 }
 
 func launchShared(env *tools.Env, exe, udd string) (*LaunchedBrowser, string) {
-	return launchChromium(env, "profile:"+udd, LaunchOptions{Executable: exe, UserDataDir: udd, Headed: boolp(false),
+	return launchChromium(context.Background(), env, "profile:"+udd, LaunchOptions{Executable: exe, UserDataDir: udd, Headed: boolp(false),
 		ProcEnv: environ(), Timeout: durp(30 * time.Second), SandboxBypass: true})
 }
 
@@ -285,7 +285,7 @@ func launchEphemeral(env *tools.Env, key string, opts LaunchOptions) (*LaunchedB
 	if opts.ProcEnv == nil {
 		opts.ProcEnv = environ()
 	}
-	return launchChromium(env, key, opts)
+	return launchChromium(context.Background(), env, key, opts)
 }
 
 func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {

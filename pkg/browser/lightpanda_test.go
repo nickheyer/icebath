@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -165,7 +166,7 @@ func launchFakeLightpanda(t *testing.T, env *tools.Env, child *fakeLightpanda, r
 		}
 		return child, nil
 	})
-	out.server, out.err = launchLightpanda(env, "lp_test", block)
+	out.server, out.err = launchLightpanda(context.Background(), env, "lp_test", block)
 	return out
 }
 
@@ -175,7 +176,7 @@ func TestLightpandaLaunchMissingBinaryReturnsInstallHint(t *testing.T) {
 	}
 	env, _ := isolateLightpanda(t)
 	pin(t, &lightpandaFindBinary, func(*tools.Env) string { return "" })
-	server, err := launchLightpanda(env, "lp_test", false)
+	server, err := launchLightpanda(context.Background(), env, "lp_test", false)
 	if server != nil || !strings.Contains(err, "browser.engine") || !strings.Contains(err, lightpandaInstallURL) {
 		t.Fatalf("server %v err %q", server, err)
 	}
@@ -326,7 +327,7 @@ func TestLightpandaSpawnFailureIsReported(t *testing.T) {
 	pin(t, &lightpandaPopen, func([]string, *os.File, map[string]string) (lightpandaChild, error) {
 		return nil, errors.New("exec format error")
 	})
-	server, err := launchLightpanda(env, "lp_test", false)
+	server, err := launchLightpanda(context.Background(), env, "lp_test", false)
 	if server != nil || !strings.Contains(err, "exec format error") {
 		t.Fatalf("err %q", err)
 	}
@@ -340,7 +341,7 @@ func seedLightpanda(t *testing.T, env *tools.Env, name string, alive bool) *Ligh
 	}
 	start := int64(111)
 	server := &LightpandaServer{SessionName: name, Port: 43111, proc: newFakeLightpanda(777, exit), LogPath: name + ".log", StartTime: &start}
-	writeLightpandaRecord(env, server)
+	writeLightpandaRecord(context.Background(), env, server)
 	lightpandaMu.Lock()
 	lightpandaNames = append(lightpandaNames, name)
 	lightpandaByKey[name] = server
@@ -559,7 +560,7 @@ func TestLightpandaOrphanSweepMidRecordWriteKeepsTheLiveRecord(t *testing.T) {
 		}
 	}()
 	for range 200 {
-		writeLightpandaRecord(env, server)
+		writeLightpandaRecord(context.Background(), env, server)
 	}
 	stop.Store(true)
 	<-done

@@ -420,13 +420,13 @@ func TestThreadTrackerMarkOffLoop(t *testing.T) {
 		entered.Add(2)
 		release := make(chan struct{})
 		prev := helpersAtomicJSONWrite
-		helpersAtomicJSONWrite = func(p string, data any) error {
+		helpersAtomicJSONWrite = func(ctx context.Context, p string, data any) error {
 			entered.Done()
 			select {
 			case <-release:
 			case <-time.After(time.Second):
 			}
-			return prev(p, data)
+			return prev(ctx, p, data)
 		}
 		t.Cleanup(func() { helpersAtomicJSONWrite = prev })
 		var wg sync.WaitGroup

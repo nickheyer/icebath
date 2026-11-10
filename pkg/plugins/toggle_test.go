@@ -209,7 +209,7 @@ func TestProviderDiscovery(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv(home.EnvHome, h)
 	vtWrite(t, filepath.Join(h, "config.yaml"), "context:\n  engine: compressor\n")
-	if err := saveContextEngine(h, "lcm"); err != nil || getCurrentContextEngine(h) != "lcm" {
+	if err := saveContextEngine(context.Background(), h, "lcm"); err != nil || getCurrentContextEngine(h) != "lcm" {
 		t.Fatalf("save context engine %v %s", err, getCurrentContextEngine(h))
 	}
 	saved := toggleContextEngines

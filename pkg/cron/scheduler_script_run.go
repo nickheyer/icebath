@@ -10,17 +10,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -47,13 +48,17 @@ with open(script, "rb") as f:
 exec(code, main.__dict__)
 `
 
-var cronInterpreterImageRe = regexp.MustCompile(`^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?$`)
-
-// Kill paths a test swaps to observe which one a timeout or cancel reaches
+// Kill paths, spawn, interpreter and bash lookups, script run and claim refresh a test swaps
 var (
+	cronStartScript            = startCronScript
+	cronSysExecutable          = cronHostPython
 	cronKillProcessTree        = provider.KillProcessTree
-	cronTerminateScriptProcess = func(s *Store, p *cronScriptProcess) { s.terminateCronScriptProcess(p) }
-	cronTerminateScriptTree    = func(s *Store, p *cronScriptProcess) { s.terminateCronScriptTree(p) }
+	cronTerminateScriptProcess = func(s *Store, p *cronScriptProcess) error { return s.terminateCronScriptProcess(p) }
+	cronTerminateScriptTree    = func(s *Store, p *cronScriptProcess) error { return s.terminateCronScriptTree(p) }
+	cronWhich                  = pyshutil.Which
+	cronBashFallback           = "/bin/bash"
+	cronRunJobScript           = (*Store).runJobScript
+	cronHeartbeatRunClaim      = (*Store).heartbeatRunClaim
 )
 
 // Any float the value converts to, the parse a zero meaning unlimited timeout uses
@@ -70,58 +75,24 @@ func (s *Store) getSessionDBTimeout(ctx context.Context) float64 {
 	return 10.0
 }
 
-// Lowercased keys and stripped values of a venv pyvenv.cfg, empty when unreadable
-func readWindowsPyvenvCfg(venvDir string) map[string]string {
+// Lowercased keys and stripped values of a venv pyvenv.cfg, empty when unreadable, an error for bytes that are not UTF-8
+func readWindowsPyvenvCfg(venvDir string) (map[string]string, error) {
 	out := map[string]string{}
 	data, err := os.ReadFile(filepath.Join(venvDir, "pyvenv.cfg"))
 	if err != nil {
-		return out
+		return out, nil
 	}
-	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
-	for _, raw := range pystr.Splitlines(pystr.DecodeUTF8Replace(data), false) {
+	text, err := pystr.DecodeUTF8SigFile(data)
+	if err != nil {
+		return nil, err
+	}
+	for _, raw := range pystr.Splitlines(text, false) {
 		key, value, found := strings.Cut(raw, "=")
 		if found {
 			out[pystr.Lower(pystr.Strip(key))] = pystr.Strip(value)
 		}
 	}
-	return out
-}
-
-// Path.exists semantics, missing for ENOENT ENOTDIR EBADF ELOOP and an error for any other stat failure
-func pathlibStat(p string) (fs.FileInfo, bool, error) {
-	info, err := os.Stat(p)
-	if err == nil {
-		return info, true, nil
-	}
-	if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.EBADF) || errors.Is(err, syscall.ELOOP) || errors.Is(err, fs.ErrNotExist) {
-		return nil, false, nil
-	}
-	return nil, false, err
-}
-
-// Path.relative_to over resolved paths
-func pathIsRelativeTo(p, base string) bool {
-	if p == base {
-		return true
-	}
-	if !strings.HasSuffix(base, string(filepath.Separator)) {
-		base += string(filepath.Separator)
-	}
-	return strings.HasPrefix(p, base)
-}
-
-// Path.expanduser, false where pathlib raises for an undeterminable home
-func pathlibExpanduser(p string) (string, bool) {
-	expanded := pypath.Expanduser(p)
-	if strings.HasPrefix(p, "~") && strings.HasPrefix(expanded, "~") {
-		return "", false
-	}
-	return expanded, true
-}
-
-// Path.resolve, absolute and with every existing link followed
-func pathlibResolve(p string) (string, error) {
-	return pypath.Realpath(p, pypath.Lax)
+	return out, nil
 }
 
 // Script path confined to the profile scripts folder, or the refusal the run reports
@@ -130,33 +101,33 @@ func (s *Store) resolveJobScriptPath(scriptPath string) (string, string, error) 
 	if err := ensureCronDir(scriptsDir); err != nil {
 		return "", "", err
 	}
-	scriptsDirResolved, err := pathlibResolve(scriptsDir)
+	scriptsDirResolved, err := pypath.Resolve(scriptsDir)
 	if err != nil {
 		return "", "", err
 	}
 	if strings.IndexByte(scriptPath, 0) >= 0 {
 		return "", "Blocked: script path contains a NUL byte: " + pyrepr.StrRepr(scriptPath), nil
 	}
-	raw, ok := pathlibExpanduser(scriptPath)
-	if !ok {
+	raw, err := pypath.PathExpanduser(scriptPath)
+	if err != nil {
 		return "", "Blocked: script path is not a valid filesystem path: " + pyrepr.StrRepr(scriptPath), nil
 	}
 	target := raw
-	if !filepath.IsAbs(raw) {
-		target = filepath.Join(scriptsDir, raw)
+	if !pypath.IsAbs(raw) {
+		target = pypath.PathJoin(scriptsDir, raw)
 	}
-	path, err := pathlibResolve(target)
+	path, err := pypath.Resolve(target)
 	if err != nil {
 		return "", "", err
 	}
-	if !pathIsRelativeTo(path, scriptsDirResolved) {
+	if _, inside := pypath.PathRelativeTo(path, scriptsDirResolved); !inside {
 		return "", fmt.Sprintf("Blocked: script path resolves outside the scripts directory (%s): %s", scriptsDirResolved, pyrepr.StrRepr(scriptPath)), nil
 	}
-	info, exists, err := pathlibStat(path)
+	info, err := pypath.PathlibStat(path)
 	if err != nil {
 		return "", "", err
 	}
-	if !exists {
+	if info == nil {
 		return "", fmt.Sprintf("Script not found: %s. Cron scripts are looked up only in this profile's folder "+
 			"(%s); if the job was copied from another profile, copy the script "+
 			"there too, or edit the job with `icebath cron edit`.", path, scriptsDirResolved), nil
@@ -168,41 +139,46 @@ func (s *Store) resolveJobScriptPath(scriptPath string) (string, string, error) 
 }
 
 // Absolute Python interpreter a job names, or the refusal for a bare, missing, non executable or non Python path
-func resolveCronInterpreter(interpreter string) (string, string) {
+func resolveCronInterpreter(interpreter string) (string, string, error) {
 	raw := pystr.Strip(interpreter)
-	resolved, ok := pathlibExpanduser(raw)
-	if !ok {
-		return "", fmt.Sprintf("Unable to resolve interpreter path %s: Could not determine home directory.", pyrepr.StrRepr(raw))
+	unresolvable := func(text string) (string, string, error) {
+		return "", fmt.Sprintf("Unable to resolve interpreter path %s: %s", pyrepr.StrRepr(raw), text), nil
 	}
-	if !filepath.IsAbs(resolved) {
+	resolved, err := pypath.PathExpanduser(raw)
+	if err != nil {
+		return unresolvable(err.Error())
+	}
+	if !pypath.IsAbs(resolved) {
 		return "", fmt.Sprintf("Interpreter must be an absolute or ~-prefixed path (got %s). "+
-			"Bare names like 'python3' are not stable across PATH changes.", pyrepr.StrRepr(raw))
+			"Bare names like 'python3' are not stable across PATH changes.", pyrepr.StrRepr(raw)), nil
 	}
-	resolved = filepath.Clean(resolved)
+	if strings.IndexByte(resolved, 0) >= 0 {
+		return "", "", &pypath.ValueError{Msg: "stat: embedded null character in path"}
+	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return "", "Interpreter not found: " + raw
+			return "", "Interpreter not found: " + raw, nil
 		}
-		return "", fmt.Sprintf("Unable to resolve interpreter path %s: %s", pyrepr.StrRepr(raw), pypath.OSErrorText(err))
+		return unresolvable(pypath.OSErrorText(err))
 	}
-	target, err := pathlibResolve(resolved)
+	target, err := pypath.Resolve(resolved)
 	if err != nil {
-		return "", fmt.Sprintf("Unable to resolve interpreter path %s: %s", pyrepr.StrRepr(raw), pypath.OSErrorText(err))
+		return unresolvable(pypath.OSErrorText(err))
 	}
-	names := []string{pystr.Lower(filepath.Base(resolved)), pystr.Lower(filepath.Base(target))}
+	names := []string{pystr.Lower(pypath.PathName(resolved)), pystr.Lower(pypath.PathName(target))}
 	if !info.Mode().IsRegular() {
-		return "", "Interpreter path is not a file: " + resolved
+		return "", "Interpreter path is not a file: " + resolved, nil
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
-		return "", "Interpreter is not executable: " + resolved
+		return "", "Interpreter is not executable: " + resolved, nil
 	}
 	for _, name := range names {
-		if !cronInterpreterImageRe.MatchString(name) || strings.HasPrefix(name, "pythonw") {
-			return "", "Interpreter must be a Python executable (python, python3, python3.12, ...): " + resolved
+		if !tools.InterpreterImageMatch(name) || strings.HasPrefix(name, "pythonw") {
+			return "", "Interpreter must be a Python executable (python, python3, python3.12, ...): " + resolved, nil
 		}
 	}
-	return resolved, ""
+	return resolved, "", nil
 }
 
 // First python3 or python on PATH, the interpreter a non managed install runs scripts on
@@ -228,7 +204,7 @@ func posixCronScriptArgv(ctx context.Context, script string) ([]string, map[stri
 		return nil, nil, err
 	}
 	if resident == nil {
-		python, err := cronHostPython()
+		python, err := cronSysExecutable()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -249,12 +225,16 @@ func windowsCronPythonInvocation(ctx context.Context, pythonExe string) (string,
 	if runtime.GOOS != "windows" {
 		return pythonExe, map[string]string{}, nil
 	}
-	interpreter := pythonExe
-	venvDir := filepath.Dir(filepath.Dir(interpreter))
+	interpreter := pypath.PathStr(pythonExe)
+	venvDir := pypath.PathParent(pypath.PathParent(interpreter))
 	overlay := map[string]string{}
-	if strings.ToLower(filepath.Base(interpreter)) == "pythonw.exe" {
-		sibling := filepath.Join(filepath.Dir(interpreter), "python.exe")
-		if _, err := os.Stat(sibling); err == nil {
+	if pystr.Lower(pypath.PathName(interpreter)) == "pythonw.exe" {
+		sibling := pypath.PathJoin(pypath.PathParent(interpreter), "python.exe")
+		info, err := pypath.PathlibStat(sibling)
+		if err != nil {
+			return "", nil, err
+		}
+		if info != nil {
 			interpreter = sibling
 		}
 	}
@@ -276,13 +256,24 @@ func windowsCronPythonInvocation(ctx context.Context, pythonExe string) (string,
 			return resident.Python, map[string]string{"PYTHONPATH": strings.Join([]string{repo, site}, string(os.PathListSeparator))}, nil
 		}
 	}
-	cfg := readWindowsPyvenvCfg(venvDir)
+	cfg, err := readWindowsPyvenvCfg(venvDir)
+	if err != nil {
+		return "", nil, err
+	}
 	homeDir := cfg["home"]
-	sitePackages := filepath.Join(venvDir, "Lib", "site-packages")
+	sitePackages := pypath.PathJoin(venvDir, "Lib", "site-packages")
 	if _, isUV := cfg["uv"]; isUV && homeDir != "" {
-		basePython := filepath.Join(homeDir, "python.exe")
-		if _, err := os.Stat(basePython); err == nil {
-			if _, err := os.Stat(sitePackages); err == nil {
+		basePython := pypath.PathJoin(homeDir, "python.exe")
+		baseInfo, err := pypath.PathlibStat(basePython)
+		if err != nil {
+			return "", nil, err
+		}
+		if baseInfo != nil {
+			siteInfo, err := pypath.PathlibStat(sitePackages)
+			if err != nil {
+				return "", nil, err
+			}
+			if siteInfo != nil {
 				interpreter = basePython
 				overlay["VIRTUAL_ENV"] = venvDir
 				entries := []string{repo, sitePackages}
@@ -298,10 +289,10 @@ func windowsCronPythonInvocation(ctx context.Context, pythonExe string) (string,
 
 // Base interpreter argv that runs a script after site.addsitedir so editable installs import
 func (s *Store) windowsCronBootstrapArgv(pythonExe string, overlay map[string]string, scriptPath string) []string {
-	sitePackages := filepath.Join(overlay["VIRTUAL_ENV"], "Lib", "site-packages")
+	sitePackages := pypath.PathJoin(overlay["VIRTUAL_ENV"], "Lib", "site-packages")
 	for _, item := range strings.Split(overlay["PYTHONPATH"], string(os.PathListSeparator)) {
-		if filepath.Base(item) == "site-packages" {
-			sitePackages = item
+		if pypath.PathName(item) == "site-packages" {
+			sitePackages = pypath.PathStr(item)
 			break
 		}
 	}
@@ -321,24 +312,26 @@ func (s *Store) windowsCronBootstrapArgv(pythonExe string, overlay map[string]st
 
 // Argv and env overlay by extension, bash for sh scripts, else the job interpreter or the install Python
 func (s *Store) scriptArgv(ctx context.Context, path string, interpreter *string) ([]string, map[string]string, string, error) {
-	suffix := strings.ToLower(filepath.Ext(path))
+	suffix := pystr.Lower(pypath.PathSuffix(path))
 	if suffix == ".sh" || suffix == ".bash" {
-		bash, err := exec.LookPath("bash")
-		if err != nil {
-			bash = ""
-			if info, statErr := os.Stat("/bin/bash"); statErr == nil && info.Mode().IsRegular() {
-				bash = "/bin/bash"
+		bash, found := cronWhich("bash", nil)
+		if !found {
+			if info, statErr := os.Stat(cronBashFallback); statErr == nil && info.Mode().IsRegular() {
+				bash, found = cronBashFallback, true
 			}
 		}
-		if bash == "" {
+		if !found {
 			return nil, map[string]string{}, fmt.Sprintf("Cannot run .sh/.bash script %s: bash not found on PATH. "+
 				"On Windows, install Git for Windows (which ships Git Bash) "+
-				"or rewrite the script as Python (.py).", pyrepr.StrRepr(filepath.Base(path))), nil
+				"or rewrite the script as Python (.py).", pyrepr.StrRepr(pypath.PathName(path))), nil
 		}
 		return []string{bash, path}, map[string]string{}, "", nil
 	}
 	if interpreter != nil && pystr.Strip(*interpreter) != "" {
-		pythonExe, refusal := resolveCronInterpreter(*interpreter)
+		pythonExe, refusal, err := resolveCronInterpreter(*interpreter)
+		if err != nil {
+			return nil, nil, "", err
+		}
 		if pythonExe == "" {
 			return nil, map[string]string{}, refusal, nil
 		}
@@ -348,7 +341,7 @@ func (s *Store) scriptArgv(ctx context.Context, path string, interpreter *string
 		argv, overlay, err := posixCronScriptArgv(ctx, path)
 		return argv, overlay, "", err
 	}
-	host, err := cronHostPython()
+	host, err := cronSysExecutable()
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -437,31 +430,35 @@ func startCronScript(argv []string, dir string, env map[string]string) (*cronScr
 	return p, nil
 }
 
-// Hard stop of the script and every child it spawned, then reaped within a bounded wait
-func (s *Store) terminateCronScriptProcess(p *cronScriptProcess) {
+// Hard stop of the script and every child it spawned, a script that outlives the kill reported as TimeoutExpired
+func (s *Store) terminateCronScriptProcess(p *cronScriptProcess) error {
 	if p.poll() {
-		return
+		return nil
 	}
 	terminateCronScriptGroup(p)
-	if !p.wait(time.Second) {
-		p.cmd.Process.Kill()
-		p.wait(time.Second)
+	if p.wait(time.Second) {
+		return nil
 	}
+	p.cmd.Process.Kill()
+	if p.wait(time.Second) {
+		return nil
+	}
+	seconds := 1.0
+	return &pysubprocess.TimeoutExpired{Cmd: p.cmd.Args, TimeoutFloat: &seconds}
 }
 
 // Kills the whole tree through the provider walk, falling back to the process group path
-func (s *Store) terminateCronScriptTree(p *cronScriptProcess) {
+func (s *Store) terminateCronScriptTree(p *cronScriptProcess) error {
 	if p.poll() {
-		return
+		return nil
 	}
-	fallback := func(reason string) {
+	fallback := func(reason string) error {
 		s.log.Warn(reason + "; falling back to process-group termination")
-		cronTerminateScriptProcess(s, p)
+		return cronTerminateScriptProcess(s, p)
 	}
 	pid := p.cmd.Process.Pid
 	if pid <= 0 {
-		fallback(fmt.Sprintf("Cron script tree-kill received invalid pid %d", pid))
-		return
+		return fallback(fmt.Sprintf("Cron script tree-kill received invalid pid %d", pid))
 	}
 	signalled, panicked := func() (ok bool, failed bool) {
 		defer func() {
@@ -472,13 +469,12 @@ func (s *Store) terminateCronScriptTree(p *cronScriptProcess) {
 		return cronKillProcessTree(pid, 0), false
 	}()
 	if panicked {
-		fallback(fmt.Sprintf("Cron script tree-kill failed for pid %d", pid))
-		return
+		return fallback(fmt.Sprintf("Cron script tree-kill failed for pid %d", pid))
 	}
 	if signalled {
-		return
+		return nil
 	}
-	fallback(fmt.Sprintf("Cron script tree-kill reported no signal for pid %d", pid))
+	return fallback(fmt.Sprintf("Cron script tree-kill reported no signal for pid %d", pid))
 }
 
 // Reaps a terminated script within bounds, abandoning pipes a surviving descendant keeps open
@@ -494,11 +490,26 @@ func drainScriptPipes(p *cronScriptProcess) {
 	p.wait(5 * time.Second)
 }
 
-// Text mode decode of captured output, invalid bytes replaced and newlines universal
-func scriptText(b []byte) string {
-	text := pystr.DecodeUTF8Replace(b)
+// Text mode decode of captured output in the locale encoding, UTF-8 on Windows, bad bytes replaced and newlines universal
+func scriptText(b []byte) (string, error) {
+	encoding := "utf-8"
+	if runtime.GOOS != "windows" {
+		encoding = pycodecs.LocaleEncoding()
+	}
+	text, err := pycodecs.DecodeReplace(b, encoding)
+	if err != nil {
+		return "", err
+	}
 	text = strings.ReplaceAll(text, "\r\n", "\n")
-	return strings.ReplaceAll(text, "\r", "\n")
+	return strings.ReplaceAll(text, "\r", "\n"), nil
+}
+
+// Python str of an error the script run reports, OS failures in their errno form
+func scriptErrorText(err error) string {
+	if pypath.IsOSError(err) {
+		return pypath.OSErrorText(err)
+	}
+	return err.Error()
 }
 
 // Redacts both streams, a failing redactor replacing both with the failure marker
@@ -525,9 +536,18 @@ func (s *Store) runJobScript(ctx context.Context, scriptPath, workdir string, ca
 	scriptTimeout := s.getScriptTimeout(ctx)
 	ok, output, err := s.runResolvedScript(ctx, path, workdir, cancel, interpreter, scriptTimeout)
 	if err != nil {
-		return false, "Script execution failed: " + err.Error(), nil
+		return false, "Script execution failed: " + scriptErrorText(err), nil
 	}
 	return ok, output, nil
+}
+
+// Tool environment of the store home, flagged multiplex when the fire runs under multiplex semantics
+func (s *Store) scriptToolEnv(ctx context.Context) *tools.Env {
+	env := &tools.Env{Home: s.Home(), Values: &sync.Map{}}
+	if provider.IsMultiplexActive(ctx) {
+		env.Values.Store("session.multiplex", true)
+	}
+	return env
 }
 
 // Body of the script run whose errors become the execution failure text
@@ -539,7 +559,7 @@ func (s *Store) runResolvedScript(ctx context.Context, path, workdir string, can
 	if argv == nil {
 		return false, refusal, nil
 	}
-	env, err := tools.BuildSubprocessEnv(ctx, &tools.Env{Home: s.Home()}, tools.SubprocessEnvOptions{StripLaunchProfile: true})
+	env, err := tools.BuildSubprocessEnv(ctx, s.scriptToolEnv(ctx), tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true, StripLaunchProfile: true})
 	if err != nil {
 		return false, "", err
 	}
@@ -550,20 +570,24 @@ func (s *Store) runResolvedScript(ctx context.Context, path, workdir string, can
 	if dir == "" {
 		dir = filepath.Dir(path)
 	}
-	proc, err := startCronScript(argv, dir, env)
+	proc, err := cronStartScript(argv, dir, env)
 	if err != nil {
 		return false, "", err
 	}
 	deadline := time.Now().Add(time.Duration(scriptTimeout) * time.Second)
 	for {
 		if cancel != nil && cancel.IsSet() {
-			cronTerminateScriptTree(s, proc)
+			if err := cronTerminateScriptTree(s, proc); err != nil {
+				return false, "", err
+			}
 			drainScriptPipes(proc)
 			return false, "Script cancelled: " + cancelReason(cancel), nil
 		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			cronTerminateScriptTree(s, proc)
+			if err := cronTerminateScriptTree(s, proc); err != nil {
+				return false, "", err
+			}
 			drainScriptPipes(proc)
 			return false, fmt.Sprintf("Script timed out after %ds: %s", scriptTimeout, path), nil
 		}
@@ -577,9 +601,15 @@ func (s *Store) runResolvedScript(ctx context.Context, path, workdir string, can
 			break
 		}
 	}
-	stdout := pystr.Strip(scriptText(proc.outBuf.Bytes()))
-	stderr := pystr.Strip(scriptText(proc.errBuf.Bytes()))
-	stdout, stderr = s.redactScriptOutput(stdout, stderr)
+	stdout, err := scriptText(proc.outBuf.Bytes())
+	if err != nil {
+		return false, "", err
+	}
+	stderr, err := scriptText(proc.errBuf.Bytes())
+	if err != nil {
+		return false, "", err
+	}
+	stdout, stderr = s.redactScriptOutput(pystr.Strip(stdout), pystr.Strip(stderr))
 	if code := cronScriptReturnCode(proc.state); code != 0 {
 		parts := []string{fmt.Sprintf("Script exited with code %d", code)}
 		if stderr != "" {
@@ -593,10 +623,20 @@ func (s *Store) runResolvedScript(ctx context.Context, path, workdir string, can
 	return true, stdout, nil
 }
 
+// Runs a heartbeat loop on its own goroutine, the returned channel closing once the loop returns
+func startHeartbeatThread(loop func()) <-chan struct{} {
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		loop()
+	}()
+	return finished
+}
+
 // Runs the script while heartbeating an owned one shot claim so a long script keeps its claim
 func (s *Store) runJobScriptWithClaimHeartbeat(ctx context.Context, job *Job, scriptPath, workdir string, cancel CancelSource) (bool, string, error) {
 	run := func() (bool, string, error) {
-		return s.runJobScript(ctx, scriptPath, workdir, cancel, job.Interpreter)
+		return cronRunJobScript(s, ctx, scriptPath, workdir, cancel, job.Interpreter)
 	}
 	owner := ""
 	if job.RunClaim != nil {
@@ -607,22 +647,18 @@ func (s *Store) runJobScriptWithClaimHeartbeat(ctx context.Context, job *Job, sc
 	}
 	jobID := job.ID
 	stop := make(chan struct{})
-	finished := make(chan struct{})
-	go func() {
-		defer close(finished)
-		ticker := time.NewTicker(time.Duration(runClaimHeartbeatSeconds * float64(time.Second)))
-		defer ticker.Stop()
+	finished := startHeartbeatThread(func() {
 		for {
 			select {
 			case <-stop:
 				return
-			case <-ticker.C:
-				if _, err := s.heartbeatRunClaim(jobID, owner); err != nil {
+			case <-time.After(time.Duration(runClaimHeartbeatSeconds * float64(time.Second))):
+				if _, err := cronHeartbeatRunClaim(s, jobID, owner); err != nil {
 					s.log.Debug(fmt.Sprintf("Job '%s': script run_claim heartbeat failed", jobID), "error", err)
 				}
 			}
 		}
-	}()
+	})
 	defer func() {
 		close(stop)
 		select {

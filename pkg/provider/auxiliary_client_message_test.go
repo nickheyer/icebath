@@ -2,6 +2,25 @@ package provider
 
 import "testing"
 
+func TestFirstChoiceMessageIndexesChoicesLikePython(t *testing.T) {
+	msg := map[string]any{"content": "hi"}
+	if got, err := FirstChoiceMessage(map[string]any{"choices": []any{map[string]any{"message": msg}}}); err != nil || got.(map[string]any)["content"] != "hi" {
+		t.Fatalf("message %#v %v", got, err)
+	}
+	for _, c := range []struct {
+		resp any
+		want string
+	}{
+		{"text", "'str' object has no attribute 'choices'"},
+		{map[string]any{"choices": []any{}}, "list index out of range"},
+		{map[string]any{"choices": []any{map[string]any{}}}, "'dict' object has no attribute 'message'"},
+	} {
+		if _, err := FirstChoiceMessage(c.resp); err == nil || err.Error() != c.want {
+			t.Fatalf("FirstChoiceMessage(%#v) error %v", c.resp, err)
+		}
+	}
+}
+
 func TestExtractContentOrReasoningOrderAndCap(t *testing.T) {
 	resp := map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "<think>plan</think>  Final answer "}}}}
 	if got := ExtractContentOrReasoning(resp, -1); got != "Final answer" {

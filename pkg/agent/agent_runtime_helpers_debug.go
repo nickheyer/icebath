@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -86,7 +87,7 @@ func (a *AIAgent) liveClientAPIKey() (key string) {
 }
 
 // Writes the redacted request body and error to a session request dump file, empty on failure
-func (a *AIAgent) dumpAPIRequestDebug(apiKwargs map[string]any, reason string, apiErr error) (path string) {
+func (a *AIAgent) dumpAPIRequestDebug(ctx context.Context, apiKwargs map[string]any, reason string, apiErr error) (path string) {
 	defer func() {
 		if r := recover(); r != nil {
 			if isUserInterruptPanic(r) {
@@ -98,7 +99,7 @@ func (a *AIAgent) dumpAPIRequestDebug(apiKwargs map[string]any, reason string, a
 			path = ""
 		}
 	}()
-	written, err := a.writeAPIRequestDump(apiKwargs, reason, apiErr)
+	written, err := a.writeAPIRequestDump(tools.WithEnvHome(ctx, a.env), apiKwargs, reason, apiErr)
 	if err != nil {
 		panic(err)
 	}
@@ -106,7 +107,7 @@ func (a *AIAgent) dumpAPIRequestDebug(apiKwargs map[string]any, reason string, a
 }
 
 // Builds, redacts and atomically writes the request dump, echoing it to stdout when asked
-func (a *AIAgent) writeAPIRequestDump(apiKwargs map[string]any, reason string, apiErr error) (string, error) {
+func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]any, reason string, apiErr error) (string, error) {
 	body := map[string]any{}
 	if copied, ok := pycopy.DeepCopy(apiKwargs).(map[string]any); ok {
 		for k, v := range copied {
@@ -154,7 +155,7 @@ func (a *AIAgent) writeAPIRequestDump(apiKwargs map[string]any, reason string, a
 	if err != nil {
 		return "", err
 	}
-	if err := config.AtomicJSONWriteWith(dumpFile, redacted, pyjson.Default(str)); err != nil {
+	if err := config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, a.env), dumpFile, redacted, pyjson.Default(str)); err != nil {
 		return "", err
 	}
 	a.vprint(a.logPrefix+"🧾 Request debug dump written to: "+dumpFile, false, false)

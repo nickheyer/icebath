@@ -208,7 +208,7 @@ func readCheckpointEntries(path string) ([]map[string]any, bool) {
 }
 
 // RecoverFromCheckpoint probes the checkpointed pids at startup and re adopts the live ones as detached sessions
-func (r *ProcessRegistry) RecoverFromCheckpoint(env *Env) int {
+func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) int {
 	r.jobsOutliveHost = true
 	path := checkpointPathFn(env)
 	if _, err := os.Stat(path); err != nil {
@@ -286,7 +286,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(env *Env) int {
 		s.env = env
 		s.finishInit()
 		if s.OutputLog != "" {
-			r.trackStarted(s, func() { r.logReaderLoop(s) })
+			r.trackStarted(s, func() { r.logReaderLoop(WithEnvHome(ctx, env), s) })
 		} else {
 			r.mu.Lock()
 			r.insertRunning(s)
@@ -312,7 +312,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(env *Env) int {
 }
 
 // Tails the session's output log until its process ends, the spawner reading the exit from its handle
-func (r *ProcessRegistry) logReaderLoop(s *ProcessSession) {
+func (r *ProcessRegistry) logReaderLoop(ctx context.Context, s *ProcessSession) {
 	decoder := &utf8Decoder{}
 	proc := s.Process
 	s.readerSelectable = true
@@ -366,7 +366,7 @@ func (r *ProcessRegistry) logReaderLoop(s *ProcessSession) {
 		stream.Close()
 	}
 	if proc != nil {
-		r.finishReader(s, decoder, ingest, "Log",
+		r.finishReader(WithEnvHome(ctx, s.env), s, decoder, ingest, "Log",
 			func() error { _, err := proc.Wait(0); return err },
 			func() *int {
 				code, done := proc.Poll()
@@ -382,10 +382,10 @@ func (r *ProcessRegistry) logReaderLoop(s *ProcessSession) {
 	}
 	code, ok := recordedExitCode(s.OutputLog)
 	if !ok {
-		r.finishExited(s, procIntPtr(-1), "lost", "backend_lost", true)
+		r.finishExited(WithEnvHome(ctx, s.env), s, procIntPtr(-1), "lost", "backend_lost", true)
 		return
 	}
-	r.finishExited(s, &code, "exited", "", true)
+	r.finishExited(WithEnvHome(ctx, s.env), s, &code, "exited", "", true)
 }
 
 // Completed process receipts, profile local and bounded
@@ -444,7 +444,7 @@ func resultPaths(env *Env) []string {
 }
 
 // Writes the session's durable receipt with its output and command redacted
-func saveCompletedResult(env *Env, s *ProcessSession) {
+func saveCompletedResult(ctx context.Context, env *Env, s *ProcessSession) {
 	s.mu.Lock()
 	record := map[string]any{}
 	for _, key := range resultFields {
@@ -455,7 +455,7 @@ func saveCompletedResult(env *Env, s *ProcessSession) {
 	record["output"] = RedactTerminalCommandOutput(env, asStr(record["output"]), s.Command, true)
 	record["command"] = RedactSensitiveTextWith(env, s.Command, RedactOptions{CodeFile: true, Force: true})
 	directory := processResultsDir(env)
-	if _, err := home.Mkdir(directory); err != nil {
+	if _, err := home.Mkdir(WithEnvHome(ctx, env), directory); err != nil {
 		toolsLogger(env).Warn(fmt.Sprintf("Could not retain completed process result %s", s.ID), "error", err)
 		return
 	}
@@ -905,7 +905,7 @@ func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string
 		if !processRegistry.claimNotifyIfRunning(s) {
 			waitPolicyForget(s.ID)
 			if action == "poll" {
-				return processRegistry.Poll(env, sessionID)
+				return processRegistry.Poll(WithEnvHome(ctx, env), env, sessionID)
 			}
 			return processRegistry.Wait(ctx, env, sessionID, procIntPtr(5))
 		}

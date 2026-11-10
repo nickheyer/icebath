@@ -24,7 +24,7 @@ func TestSharedWarningChildProcess(t *testing.T) {
 	if install == "" {
 		return
 	}
-	if !tools.RegisterSelf("serve", install, nil) {
+	if !tools.RegisterSelf(context.Background(), "serve", install, nil) {
 		fmt.Println("register failed")
 		os.Exit(3)
 	}

@@ -73,8 +73,8 @@ func (c *CLI) tuiInitRunState() {
 
 	sig, _ := config.ConfigVersionOrNone(c.ctx, home.ConfigPath(home.Dir(c.ctx)))
 	c.tui.configSig = sig
-	c.tui.configMCPServers, _ = c.config["mcp_servers"].(map[string]any)
-	if c.tui.configMCPServers == nil {
+	c.tui.configMCPServers = c.config["mcp_servers"]
+	if !pyrepr.Truthy(c.tui.configMCPServers) {
 		c.tui.configMCPServers = map[string]any{}
 	}
 	c.tui.lastConfigCheck = 0

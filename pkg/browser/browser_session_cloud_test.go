@@ -2,6 +2,7 @@ package browser
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -389,7 +390,7 @@ func TestIsHeadedModeConfigTrue(t *testing.T) {
 	if !tools.IsHeadedMode(env) || tools.IsHeadedMode(&tools.Env{}) {
 		t.Fatal("browser.headed true is not what the installed hook reports")
 	}
-	if err := tools.CleanupBrowser(&tools.Env{}, "task-none"); err != nil {
+	if err := tools.CleanupBrowser(context.Background(), &tools.Env{}, "task-none"); err != nil {
 		t.Fatalf("cleanup of a task without sessions failed %v", err)
 	}
 }

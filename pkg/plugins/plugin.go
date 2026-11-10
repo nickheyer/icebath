@@ -51,6 +51,25 @@ func RegisterBundled(p Plugin) {
 	bundledOrder = append(bundledOrder, key)
 }
 
+// Adds compiled-in plugins for a caller outside the package until the returned restore drops them again
+func SwapBundled(add ...Plugin) (restore func()) {
+	bundledMu.Lock()
+	savedByKey := make(map[string]Plugin, len(bundledByKey))
+	for k, v := range bundledByKey {
+		savedByKey[k] = v
+	}
+	savedOrder := append([]string(nil), bundledOrder...)
+	bundledMu.Unlock()
+	for _, p := range add {
+		RegisterBundled(p)
+	}
+	return func() {
+		bundledMu.Lock()
+		bundledByKey, bundledOrder = savedByKey, savedOrder
+		bundledMu.Unlock()
+	}
+}
+
 // Registry keys of every compiled-in plugin in registration order
 func BundledPluginKeys() []string {
 	bundledMu.RLock()

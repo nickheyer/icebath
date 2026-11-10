@@ -16,22 +16,20 @@ import (
 func TestEnsureScratchDirHandsThePruneToOneChildPerProcess(t *testing.T) {
 	spawned := scratchPruneSpawns(t)
 	launch := filepath.Join(t.TempDir(), "launch")
-	scratch, err := EnsureScratchDir(launch)
-	if err != nil || scratch != filepath.Join(launch, "cache", "scratch") {
-		t.Fatalf("EnsureScratchDir = %q, %v", scratch, err)
+	scratch := EnsureScratchDir(launch)
+	if scratch != filepath.Join(launch, "cache", "scratch") {
+		t.Fatalf("EnsureScratchDir = %q", scratch)
 	}
 	if st, err := os.Stat(scratch); err != nil || !st.IsDir() {
 		t.Fatalf("scratch dir missing: %v", err)
 	}
-	if _, err := EnsureScratchDir(launch); err != nil {
-		t.Fatal(err)
-	}
+	EnsureScratchDir(launch)
 	if len(*spawned) != 1 || (*spawned)[0] != scratch {
 		t.Fatalf("spawned %v, want one prune of %s", *spawned, scratch)
 	}
 	scratchPrunedOnce.Store(false)
 	routed := filepath.Join(t.TempDir(), "routed")
-	if got, _ := EnsureScratchDir(routed); got != filepath.Join(routed, "cache", "scratch") {
+	if got := EnsureScratchDir(routed); got != filepath.Join(routed, "cache", "scratch") {
 		t.Fatalf("routed scratch = %q", got)
 	}
 	if len(*spawned) != 2 || (*spawned)[1] != filepath.Join(routed, "cache", "scratch") {
@@ -44,24 +42,20 @@ func TestPruneStampThrottlesAcrossProcesses(t *testing.T) {
 	h := t.TempDir()
 	scratch := testScratch(t, h)
 	writeText(t, filepath.Join(scratch, scratchPruneStamp), "")
-	if _, err := EnsureScratchDir(h); err != nil {
-		t.Fatal(err)
-	}
+	EnsureScratchDir(h)
 	if len(*spawned) != 0 {
 		t.Fatalf("a fresh stamp must throttle the prune, spawned %v", *spawned)
 	}
 	scratchPrunedOnce.Store(false)
 	age(t, 2, filepath.Join(scratch, scratchPruneStamp))
-	if _, err := EnsureScratchDir(h); err != nil {
-		t.Fatal(err)
-	}
+	EnsureScratchDir(h)
 	st, _ := os.Stat(filepath.Join(scratch, scratchPruneStamp))
 	if len(*spawned) != 1 || time.Since(st.ModTime()) > time.Minute {
 		t.Fatalf("a stale stamp must be touched and the prune spawned, spawned %v", *spawned)
 	}
 }
 
-func TestShortLivedProcessStillCompletesItsDuePrune(t *testing.T) {
+func TestAShortLivedProcessStillCompletesItsDuePrune(t *testing.T) {
 	tmp := t.TempDir()
 	launch, routed := filepath.Join(tmp, "launch"), filepath.Join(tmp, "routed")
 	kept := idleEntry(t, testScratch(t, launch), "launch-lane")
@@ -99,7 +93,7 @@ func TestShortLivedProcessStillCompletesItsDuePrune(t *testing.T) {
 	}
 }
 
-func TestLauncherAncestryStampIsBootRelativeForNonUTF8Name(t *testing.T) {
+func TestLauncherAncestryStampIsBootRelativeEvenForANonUtf8Name(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("procfs start ticks and a writable comm are Linux facts")
 	}

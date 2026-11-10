@@ -82,7 +82,7 @@ func declDeclined(t *testing.T, root string) map[string]bool {
 	return declined
 }
 
-func TestDeclinedWithoutDropsARecordedExtraFromEveryLaterSelection(t *testing.T) {
+func TestWithoutDropsARecordedExtraFromEveryLaterSelection(t *testing.T) {
 	declSynced(t)
 	ctx := context.Background()
 	if code, err := CmdInstall(ctx, InstallArgs{Without: []string{"matrix"}}); code != 0 || err != nil {
@@ -109,7 +109,7 @@ func TestDeclinedWithoutDropsARecordedExtraFromEveryLaterSelection(t *testing.T)
 	}
 }
 
-func TestDeclinedExtraOptsADroppedExtraBackIn(t *testing.T) {
+func TestExtraOptsADroppedExtraBackIn(t *testing.T) {
 	declSynced(t)
 	ctx := context.Background()
 	if _, err := recordDeclinedExtras(ctx, []string{"matrix"}, nil, nil, ""); err != nil {
@@ -123,7 +123,7 @@ func TestDeclinedExtraOptsADroppedExtraBackIn(t *testing.T) {
 	}
 }
 
-func TestDeclinedWithoutRefusesAnExtraTheDefaultSyncSelectsAnyway(t *testing.T) {
+func TestWithoutRefusesAnExtraTheDefaultSyncSelectsAnyway(t *testing.T) {
 	_, calls := declSynced(t)
 	var out bytes.Buffer
 	code, err := CmdInstall(withSyncOutput(context.Background(), &out), InstallArgs{Without: []string{"web"}})
@@ -219,7 +219,7 @@ func declWatchLock(t *testing.T, asked func()) *declHolders {
 	return h
 }
 
-func TestDeclinedSyncQueuedBehindAnOptInKeepsTheExtra(t *testing.T) {
+func TestASyncQueuedBehindAnOptInKeepsTheExtra(t *testing.T) {
 	b := declBlockingSetup(t)
 	main := declAs("main")
 	if err := syncVenv(main, SyncVenvOptions{Extras: []string{"all"}, Explicit: true}); err != nil {
@@ -276,7 +276,7 @@ func TestDeclinedSyncQueuedBehindAnOptInKeepsTheExtra(t *testing.T) {
 	}
 }
 
-func TestDeclinedWithoutDuringAnOptInSyncStaysRecorded(t *testing.T) {
+func TestWithoutDuringAnOptInSyncStaysRecorded(t *testing.T) {
 	b := declBlockingSetup(t)
 	settled := make(chan struct{})
 	var once sync.Once
@@ -316,7 +316,7 @@ func TestDeclinedWithoutDuringAnOptInSyncStaysRecorded(t *testing.T) {
 	}
 }
 
-func TestDeclinedWithoutAfterAFailedFirstMigrationKeepsTheOtherLegacyExtras(t *testing.T) {
+func TestWithoutAfterAFailedFirstMigrationKeepsTheOtherLegacyExtras(t *testing.T) {
 	root, calls := declSynced(t)
 	peSwap(t, &cliInstallDefaults, func(context.Context, []string, bool) error { return nil })
 	declLegacyVenv(t, root)

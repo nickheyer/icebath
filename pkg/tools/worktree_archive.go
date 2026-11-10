@@ -701,10 +701,10 @@ type RestoredArchive struct {
 }
 
 // Installed by pkg/cron at init over RecordWorktreeRepo of the active home, panics when unassigned
-var WorktreeRecordRepo func(repoRoot string)
+var WorktreeRecordRepo func(ctx context.Context, repoRoot string)
 
 // Recreates the archived tree at its original path or target with its exact files and index
-func RestoreArchive(repoRoot, name, target string) (*RestoredArchive, error) {
+func RestoreArchive(ctx context.Context, repoRoot, name, target string) (*RestoredArchive, error) {
 	arc, err := FindArchive(repoRoot, name)
 	if err != nil {
 		return nil, err
@@ -781,7 +781,7 @@ func RestoreArchive(repoRoot, name, target string) (*RestoredArchive, error) {
 	if _, err := archiveRun([]string{"update-index", "-q", "--refresh"}, dest, wenv, 0, nil); err != nil {
 		return nil, err
 	}
-	WorktreeRecordRepo(repoRoot)
+	WorktreeRecordRepo(ctx, repoRoot)
 	skipped, _ := arc.Meta.Get("skipped_untracked")
 	if !pyTruthy(skipped) {
 		skipped = []any{}

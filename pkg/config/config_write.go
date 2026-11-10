@@ -25,7 +25,7 @@ var yaml11AmbiguousWords = map[string]bool{
 func RequireReadableConfigBeforeWrite(ctx context.Context, configPath string) (map[string]any, error) {
 	if configPath == "" {
 		if snapshot := WorkerConfigSnapshot(); snapshot != nil {
-			return snapshot, nil
+			return Clone(snapshot).(map[string]any), nil
 		}
 		configPath = home.ConfigPath(home.Dir(ctx))
 	}
@@ -69,58 +69,46 @@ func RequireReadableConfigBeforeWrite(ctx context.Context, configPath string) (m
 	return m, nil
 }
 
-// Document node of a YAML file loaded for a round trip edit, an empty mapping when missing or blank
+// Document node of a YAML file loaded through the round trip editor, an empty mapping when missing or blank
 func roundtripLoad(path string) (*yaml.Node, []byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, nil, err
 	}
-	var doc yaml.Node
-	if len(data) > 0 {
-		if err := yaml.Unmarshal(data, &doc); err != nil {
-			return nil, nil, err
-		}
+	doc, err := NewRoundtripYAML().Load(data)
+	if err != nil {
+		return nil, nil, err
 	}
-	if doc.Kind == 0 || len(doc.Content) == 0 || (doc.Content[0].Kind == yaml.ScalarNode && doc.Content[0].Tag == "!!null") {
-		return &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode, Tag: "!!map"}}}, nil, nil
+	blank := doc.Node == nil || len(doc.Node.Content) == 0 || (doc.Node.Content[0].Kind == yaml.ScalarNode && doc.Node.Content[0].Tag == "!!null")
+	if _, err := doc.Root(); err != nil {
+		return nil, nil, err
 	}
-	if doc.Content[0].Kind != yaml.MappingNode {
-		var root any
-		_ = doc.Content[0].Decode(&root)
-		return nil, nil, fmt.Errorf("top-level YAML must be a mapping, got %s", PyTypeName(root))
+	if blank {
+		return doc.Node, nil, nil
 	}
-	return &doc, data, nil
+	return doc.Node, data, nil
 }
 
-// Writes a round trip document with two space indents, untouched source lines verbatim and optional trailing content
-func roundtripDump(path string, doc *yaml.Node, source []byte, extra string) error {
+// Writes a round trip document through the editor with optional trailing content via an atomic replace
+func roundtripDump(ctx context.Context, path string, doc *yaml.Node, source []byte, extra string) error {
 	var buf strings.Builder
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(doc); err != nil {
+	if err := NewRoundtripYAML().Dump(&RoundtripDoc{Node: doc, Source: source}, &buf); err != nil {
 		return err
 	}
-	if err := enc.Close(); err != nil {
-		return err
-	}
-	text := buf.String()
-	if len(source) > 0 {
-		text = restoreSourceLines(source, doc, text)
-	}
-	return atomicPreservingWrite(path, []byte(text+extra), "."+strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))+"_")
+	return atomicPreservingWrite(ctx, path, []byte(buf.String()+extra), "."+strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))+"_")
 }
 
 // Flushes a written temp file to disk before the replace, swapped by tests counting syncs
 var fsyncFile = (*os.File).Sync
 
 // Replaces the symlink resolved target through a synced temp file keeping its mode and owner
-func atomicPreservingWrite(path string, data []byte, prefix string) error {
-	return atomicWriteMode(path, data, prefix, 0, false)
+func atomicPreservingWrite(ctx context.Context, path string, data []byte, prefix string) error {
+	return atomicWriteMode(ctx, path, data, prefix, 0, false)
 }
 
 // Atomic replace of the symlink resolved target, the forced mode when set, else the existing or umask mode
-func atomicWriteMode(path string, data []byte, prefix string, forced os.FileMode, force bool) error {
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+func atomicWriteMode(ctx context.Context, path string, data []byte, prefix string, forced os.FileMode, force bool) error {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
 	target := path
@@ -179,7 +167,7 @@ func rtNode(value any, quote yaml.Style) (*yaml.Node, error) {
 	switch v := value.(type) {
 	case map[string]any:
 		node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-		for _, k := range SortedKeys(v) {
+		for _, k := range MappingKeys(v) {
 			child, err := rtNode(v[k], quote)
 			if err != nil {
 				return nil, err
@@ -283,8 +271,8 @@ func mappingDelete(node *yaml.Node, key string) {
 }
 
 // Sets one dotted key in a YAML file keeping comments, order and quoting, nil removing the key
-func atomicRoundtripYAMLUpdate(path, keyPath string, value any) error {
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+func atomicRoundtripYAMLUpdate(ctx context.Context, path, keyPath string, value any) error {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
 	doc, source, err := roundtripLoad(path)
@@ -326,12 +314,12 @@ func atomicRoundtripYAMLUpdate(path, keyPath string, value any) error {
 		current = current.Content[idx]
 		i += consumed
 	}
-	return roundtripDump(path, doc, source, "")
+	return roundtripDump(ctx, path, doc, source, "")
 }
 
 // Persists a whole config state onto the file, reassigning only changed nodes and deleting absent keys
 func atomicRoundtripYAMLSave(ctx context.Context, path string, state map[string]any, extraOnCreate string) error {
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
 	if _, err := RequireReadableConfigBeforeWrite(ctx, path); err != nil {
@@ -354,7 +342,7 @@ func atomicRoundtripYAMLSave(ctx context.Context, path string, state map[string]
 	if creating {
 		extra = extraOnCreate
 	}
-	return roundtripDump(path, doc, source, extra)
+	return roundtripDump(ctx, path, doc, source, extra)
 }
 
 // Merges src onto a mapping node, appending new keys and deleting keys src lacks
@@ -373,7 +361,7 @@ func rtMerge(dst *yaml.Node, src map[string]any) error {
 			return err
 		}
 	}
-	for _, key := range SortedKeys(src) {
+	for _, key := range MappingKeys(src) {
 		if seen[key] {
 			continue
 		}

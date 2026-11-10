@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Sticky active profile name of root, the process root when empty, default when unset or unreadable
@@ -26,7 +27,7 @@ func GetActiveProfile(root string) string {
 	if !utf8.Valid(data) {
 		return "default"
 	}
-	name := strings.TrimSpace(string(data))
+	name := pystr.Strip(pystr.TranslateNewlines(string(data)))
 	if name == "" {
 		return "default"
 	}
@@ -78,7 +79,7 @@ func GetActiveProfileName(ctx context.Context) string {
 	root := resolveLoose(ProfilesRoot())
 	if rel, err := filepath.Rel(root, resolved); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
 		parts := strings.Split(rel, string(filepath.Separator))
-		if len(parts) == 1 && home.ProfileIDRe.MatchString(parts[0]) {
+		if len(parts) == 1 && matchesProfileID(parts[0]) {
 			return parts[0]
 		}
 	}
@@ -89,7 +90,7 @@ func GetActiveProfileName(ctx context.Context) string {
 func CurrentProfileName(ctx context.Context) string {
 	if home.Override(ctx) == "" {
 		for _, env := range []string{"ICEBATH_PROFILE_NAME", "ICEBATH_PROFILE"} {
-			if v := strings.TrimSpace(os.Getenv(env)); v != "" {
+			if v := pystr.Strip(os.Getenv(env)); v != "" {
 				return v
 			}
 		}
@@ -99,7 +100,7 @@ func CurrentProfileName(ctx context.Context) string {
 
 // Root named by an exported home, the grandparent of a profile shaped value, defaultRoot when unset
 func ProfileRootForEnvHome(envHome, defaultRoot string) string {
-	envHome = strings.TrimSpace(envHome)
+	envHome = pystr.Strip(envHome)
 	if envHome == "" {
 		return defaultRoot
 	}

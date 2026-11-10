@@ -2,6 +2,7 @@ package profiles
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -225,14 +226,14 @@ func pyExcText(err error) string {
 }
 
 // Atomically writes distribution.yaml, keeping an existing file's mode and creating a new one 0644
-func WriteManifest(profileDir string, manifest *DistributionManifest) (string, error) {
+func WriteManifest(ctx context.Context, profileDir string, manifest *DistributionManifest) (string, error) {
 	path := filepath.Join(profileDir, ManifestFilename)
 	if _, err := os.Stat(path); err == nil {
-		return path, config.AtomicYAMLWrite(path, manifest.ToDict(), "")
+		return path, config.AtomicYAMLWrite(ctx, path, manifest.ToDict(), "")
 	}
 	text, err := config.SafeDump(manifest.ToDict())
 	if err != nil {
 		return path, err
 	}
-	return path, pyfs.AtomicWriteTextMode(path, string(text), ".distribution_", 0o644)
+	return path, pyfs.AtomicWriteTextMode(ctx, path, string(text), ".distribution_", 0o644)
 }

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -79,7 +80,7 @@ func TestDumpAPIRequestDebugWritesARedactedDump(t *testing.T) {
 	logs := t.TempDir()
 	a := &AIAgent{logsDir: logs, sessionID: "../evil", baseURL: "https://api.example.com/v1/", apiMode: "chat_completions"}
 	apiErr := &provider.APIError{StatusCode: 400, Body: `{"error": {"message": "bad"}}`, RequestID: "req_1"}
-	path := a.dumpAPIRequestDebug(map[string]any{"model": "m", "timeout": 5.0, "skip": nil,
+	path := a.dumpAPIRequestDebug(context.Background(), map[string]any{"model": "m", "timeout": 5.0, "skip": nil,
 		"messages": []any{map[string]any{"role": "user", "content": "key sk-abcdefghijklmnopqrstuvwxyz0123456789"}}}, "max_retries_exhausted", apiErr)
 	if path == "" || filepath.Dir(path) != logs || !strings.HasPrefix(filepath.Base(path), "request_dump_") {
 		t.Fatalf("path %q", path)
@@ -109,7 +110,7 @@ func TestDumpAPIRequestDebugWritesARedactedDump(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.logsDir = blocker
-	if got := a.dumpAPIRequestDebug(map[string]any{"odd": make(chan int)}, "x", errors.New("e")); got != "" {
+	if got := a.dumpAPIRequestDebug(context.Background(), map[string]any{"odd": make(chan int)}, "x", errors.New("e")); got != "" {
 		t.Fatalf("an unwritable dump reports no file, got %q", got)
 	}
 }

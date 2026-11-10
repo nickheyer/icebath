@@ -290,7 +290,7 @@ func treeKillLightpanda(pid int, expectedStart *int64) (err error) {
 	return nil
 }
 
-func writeLightpandaRecord(env *tools.Env, server *LightpandaServer) {
+func writeLightpandaRecord(ctx context.Context, env *tools.Env, server *LightpandaServer) {
 	var start any
 	if server.StartTime != nil {
 		start = *server.StartTime
@@ -299,7 +299,7 @@ func writeLightpandaRecord(env *tools.Env, server *LightpandaServer) {
 		"start_time", start, "started_at", float64(time.Now().UnixNano())/1e9)
 	dir, err := lightpandaStateDir(env)
 	if err == nil {
-		err = config.AtomicJSONWriteWith(filepath.Join(dir, server.SessionName+".json"), record)
+		err = config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, env), filepath.Join(dir, server.SessionName+".json"), record)
 	}
 	if err != nil {
 		lightpandaLogger(env).Debug(fmt.Sprintf("could not write lightpanda record for %s: %s", server.SessionName, pypath.OSErrorText(err)))
@@ -328,7 +328,7 @@ func popenLightpanda(argv []string, logFile *os.File, procEnv map[string]string)
 }
 
 // Starts lightpanda serve on a free loopback port and returns it once json/version answers
-func launchLightpanda(env *tools.Env, sessionName string, blockPrivateNetworks bool) (*LightpandaServer, string) {
+func launchLightpanda(ctx context.Context, env *tools.Env, sessionName string, blockPrivateNetworks bool) (*LightpandaServer, string) {
 	binary := lightpandaFindBinary(env)
 	if binary == "" {
 		if runtime.GOOS == "windows" {
@@ -392,7 +392,7 @@ func launchLightpanda(env *tools.Env, sessionName string, blockPrivateNetworks b
 		time.Sleep(lightpandaPollInterval)
 	}
 	server := &LightpandaServer{SessionName: sessionName, Port: port, proc: child, LogPath: logPath, StartTime: lightpandaStartTime(child.pid())}
-	writeLightpandaRecord(env, server)
+	writeLightpandaRecord(tools.WithEnvHome(ctx, env), env, server)
 	lightpandaMu.Lock()
 	if _, ok := lightpandaByKey[sessionName]; !ok {
 		lightpandaNames = append(lightpandaNames, sessionName)

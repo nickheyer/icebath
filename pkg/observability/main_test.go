@@ -6,11 +6,13 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Dispatches the scratch prune entry and installs empty gateway and profile secret sources the terminal tool reads
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry()
 	tools.ConfigEnvTableKeys = func() []string { return nil }
 	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }

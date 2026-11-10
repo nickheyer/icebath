@@ -766,7 +766,7 @@ func RestoreAuthActiveProvider(store *Store, value any, present bool) error {
 }
 
 // RestoreModelCfg puts the user config model section back to a captured snapshot
-func RestoreModelCfg(h string, modelBefore any) error {
+func RestoreModelCfg(ctx context.Context, h string, modelBefore any) error {
 	doc, err := config.ReadUser(h)
 	if err != nil {
 		return err
@@ -775,13 +775,13 @@ func RestoreModelCfg(h string, modelBefore any) error {
 	if modelBefore != nil {
 		doc["model"] = config.Clone(modelBefore)
 	}
-	return config.SaveUser(h, doc)
+	return config.SaveUser(ctx, h, doc)
 }
 
 // RestorePrimaryRoute attempts both halves of the temporary picker route restoration
-func RestorePrimaryRoute(h string, store *Store, modelBefore, activeBefore any, activePresent bool) error {
+func RestorePrimaryRoute(ctx context.Context, h string, store *Store, modelBefore, activeBefore any, activePresent bool) error {
 	var errs []error
-	if err := RestoreModelCfg(h, modelBefore); err != nil {
+	if err := RestoreModelCfg(ctx, h, modelBefore); err != nil {
 		errs = append(errs, err)
 	}
 	if err := RestoreAuthActiveProvider(store, activeBefore, activePresent); err != nil {
@@ -900,7 +900,7 @@ func FallbackList(w io.Writer, h string) error {
 }
 
 // FallbackAdd runs the model picker, restores the primary route, then appends the pick to the chain
-func FallbackAdd(w io.Writer, h string, store *Store, picker func() error) error {
+func FallbackAdd(ctx context.Context, w io.Writer, h string, store *Store, picker func() error) error {
 	before, err := config.ReadUser(h)
 	if err != nil {
 		return err
@@ -915,20 +915,20 @@ func FallbackAdd(w io.Writer, h string, store *Store, picker func() error) error
 	}
 	fmt.Fprint(w, "\n  Adding a fallback provider.  The picker below is the same one used by\n  `icebath model` — select the provider + model you want as a fallback.\n\n")
 	if err := picker(); err != nil {
-		if restoreErr := RestorePrimaryRoute(h, store, modelBefore, activeBefore, activePresent); restoreErr != nil {
+		if restoreErr := RestorePrimaryRoute(ctx, h, store, modelBefore, activeBefore, activePresent); restoreErr != nil {
 			return errors.Join(err, fmt.Errorf("Could not fully restore the primary route after fallback selection failed: %v", restoreErr))
 		}
 		return err
 	}
 	after, err := config.ReadUser(h)
 	if err != nil {
-		if restoreErr := RestorePrimaryRoute(h, store, modelBefore, activeBefore, activePresent); restoreErr != nil {
+		if restoreErr := RestorePrimaryRoute(ctx, h, store, modelBefore, activeBefore, activePresent); restoreErr != nil {
 			return errors.Join(err, fmt.Errorf("Could not fully restore the primary route after fallback selection failed: %v", restoreErr))
 		}
 		return err
 	}
 	newEntry, _ := ExtractFallbackFromModelCfg(after["model"])
-	if err := RestorePrimaryRoute(h, store, modelBefore, activeBefore, activePresent); err != nil {
+	if err := RestorePrimaryRoute(ctx, h, store, modelBefore, activeBefore, activePresent); err != nil {
 		return err
 	}
 	if newEntry == nil {
@@ -949,7 +949,7 @@ func FallbackAdd(w io.Writer, h string, store *Store, picker func() error) error
 		fmt.Fprintf(w, "\n  %s is already in the fallback chain — skipped.\n", FormatFallbackEntry(newEntry))
 		return nil
 	}
-	if err := config.SaveUser(h, final); err != nil {
+	if err := config.SaveUser(ctx, h, final); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "\n  Added fallback: %s\n", FormatFallbackEntry(newEntry))
@@ -959,7 +959,7 @@ func FallbackAdd(w io.Writer, h string, store *Store, picker func() error) error
 }
 
 // FallbackRemove lets the chooser pick an entry, minus one cancels, and removes it from the chain
-func FallbackRemove(w io.Writer, h string, choose func(prompt string, options []string, def int) int) error {
+func FallbackRemove(ctx context.Context, w io.Writer, h string, choose func(prompt string, options []string, def int) int) error {
 	doc, chain, err := loadChain(w, h, "  No fallback providers configured — nothing to remove.")
 	if err != nil || chain == nil {
 		return err
@@ -977,7 +977,7 @@ func FallbackRemove(w io.Writer, h string, choose func(prompt string, options []
 	removed := chain[idx]
 	chain = append(chain[:idx:idx], chain[idx+1:]...)
 	WriteFallbackChain(doc, chain)
-	if err := config.SaveUser(h, doc); err != nil {
+	if err := config.SaveUser(ctx, h, doc); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "\n  Removed fallback: %s\n", FormatFallbackEntry(removed))
@@ -990,7 +990,7 @@ func FallbackRemove(w io.Writer, h string, choose func(prompt string, options []
 }
 
 // FallbackClear empties the chain after a y or yes confirmation, an input error cancels
-func FallbackClear(w io.Writer, h string, confirm func(prompt string) (string, error)) error {
+func FallbackClear(ctx context.Context, w io.Writer, h string, confirm func(prompt string) (string, error)) error {
 	doc, chain, err := loadChain(w, h, "  No fallback providers configured — nothing to clear.")
 	if err != nil || chain == nil {
 		return err
@@ -1009,7 +1009,7 @@ func FallbackClear(w io.Writer, h string, confirm func(prompt string) (string, e
 		return nil
 	}
 	WriteFallbackChain(doc, nil)
-	if err := config.SaveUser(h, doc); err != nil {
+	if err := config.SaveUser(ctx, h, doc); err != nil {
 		return err
 	}
 	fmt.Fprint(w, "\n  Fallback chain cleared.\n\n")
@@ -1034,16 +1034,16 @@ type FallbackCommandIO struct {
 }
 
 // RunFallbackCommand dispatches icebath fallback [list|ls|add|remove|rm|clear]
-func RunFallbackCommand(sub string, cio FallbackCommandIO) error {
+func RunFallbackCommand(ctx context.Context, sub string, cio FallbackCommandIO) error {
 	switch sub {
 	case "", "list", "ls":
 		return FallbackList(cio.Out, cio.Home)
 	case "add":
-		return FallbackAdd(cio.Out, cio.Home, cio.Store, cio.Picker)
+		return FallbackAdd(ctx, cio.Out, cio.Home, cio.Store, cio.Picker)
 	case "remove", "rm":
-		return FallbackRemove(cio.Out, cio.Home, cio.Choose)
+		return FallbackRemove(ctx, cio.Out, cio.Home, cio.Choose)
 	case "clear":
-		return FallbackClear(cio.Out, cio.Home, cio.Confirm)
+		return FallbackClear(ctx, cio.Out, cio.Home, cio.Confirm)
 	}
 	return &UnknownFallbackSubcommandError{Sub: sub}
 }

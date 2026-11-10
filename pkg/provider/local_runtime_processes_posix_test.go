@@ -3,6 +3,7 @@
 package provider
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,7 @@ func lr3EnvEchoCmd(name string) *exec.Cmd {
 
 // Spawns the router as an owned child and idles until killed
 func lr3OwnerRole(root string) {
-	if _, err := SpawnServer(lr3HelperCmd(root, "router"), true); err != nil {
+	if _, err := SpawnServer(context.Background(), lr3HelperCmd(root, "router"), true); err != nil {
 		os.Exit(3)
 	}
 	for {

@@ -515,8 +515,16 @@ func TimezoneMigrationCatchupStats() map[string]any {
 		"recent": append([]map[string]any{}, timezoneMigrationCatchupsRecent...)}
 }
 
+// Next run computation every caller reaches, the compute_next_run module attribute tests patch
+var computeNextRunFn = (*Store).computeNextRunFor
+
 // Next run instant as ISO text, nil when the schedule has no further runs
 func (s *Store) computeNextRun(sched *Schedule, lastRunAt *string, timezone *string) (*string, error) {
+	return computeNextRunFn(s, sched, lastRunAt, timezone)
+}
+
+// Next run instant of the schedule after lastRunAt or now in the job zone, nil when it has no further runs
+func (s *Store) computeNextRunFor(sched *Schedule, lastRunAt *string, timezone *string) (*string, error) {
 	now := s.clk.now()
 	if sched == nil || (sched.Kind == "" && sched.Raw != "") {
 		return nil, nil

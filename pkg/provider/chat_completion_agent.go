@@ -52,7 +52,7 @@ type ChatCompletionAgent interface {
 	CredentialPoolEnv() PoolEnv
 	ToolEnv() *tools.Env
 	IsHeadedMode() (bool, error)
-	CleanupBrowser(taskID string) error
+	CleanupBrowser(ctx context.Context, taskID string) error
 	CreateRequestAnthropicClient(reason string) (any, error)
 	AbortRequestAnthropicClient(client any, reason string) error
 	CloseRequestAnthropicClient(client any, reason string) error
@@ -564,16 +564,16 @@ func RebindFallbackCredentialPool(agent ChatCompletionAgent, fbProvider, fbModel
 }
 
 // Per turn VM and browser cleanup that leaves persistent terminals and headed browsers to their idle reapers
-func CleanupTaskResources(agent ChatCompletionAgent, taskID string) {
+func CleanupTaskResources(ctx context.Context, agent ChatCompletionAgent, taskID string) {
 	type step struct {
 		label, skipWhat string
 		skip            func() (bool, error)
-		cleanup         func() error
+		cleanup         func(ctx context.Context) error
 	}
 	steps := []step{
 		{"VM", "cleanup_vm for persistent env", func() (bool, error) { return tools.IsPersistentEnv(agent.ToolEnv(), taskID) },
-			func() error { tools.CleanupVM(agent.ToolEnv(), taskID, false); return nil }},
-		{"browser", "cleanup_browser for headed session", agent.IsHeadedMode, func() error { return agent.CleanupBrowser(taskID) }},
+			func(_ context.Context) error { tools.CleanupVM(agent.ToolEnv(), taskID, false); return nil }},
+		{"browser", "cleanup_browser for headed session", agent.IsHeadedMode, func(ctx context.Context) error { return agent.CleanupBrowser(ctx, taskID) }},
 	}
 	for _, s := range steps {
 		err := func() (err error) {
@@ -592,7 +592,7 @@ func CleanupTaskResources(agent ChatCompletionAgent, taskID string) {
 				}
 				return nil
 			}
-			return s.cleanup()
+			return s.cleanup(ctx)
 		}()
 		if err != nil && agent.VerboseLogging() {
 			nonStreamLog.Warn(fmt.Sprintf("Failed to cleanup %s for task %s: %s", s.label, taskID, err))

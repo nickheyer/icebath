@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -291,27 +292,20 @@ func TestChronosIsSplitFireCapable(t *testing.T) {
 	}
 }
 
-func TestChronosExternalProviderStartRecoversInterruptedRecords(t *testing.T) {
+func TestExternalProviderStartRecoversInterruptedRecords(t *testing.T) {
 	prov, _, s, _ := chronosFixture(t)
-	l := openExecutionsLedger(s)
 	ctx := context.Background()
-	rec, err := l.Create(ctx, "restart-job", "builtin", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := l.MarkRunning(ctx, recText(rec, "id")); err != nil {
-		t.Fatal(err)
-	}
-	patchChronos(t, &executionProcessID, "replacement-gateway")
-	patchChronos(t, &ledgerPidExists, func(int) bool { return false })
 	var events []string
+	patchChronos(t, &recoverInterruptedExecutions, func(context.Context, *Store) (int, error) {
+		events = append(events, "recover")
+		return 0, nil
+	})
 	patchChronos(t, &chronosLoadJobs, func(*Store) ([]*Job, error) {
-		got, _ := l.Get(ctx, recText(rec, "id"))
-		events = append(events, "reconcile:"+recText(got, "status"))
+		events = append(events, "reconcile")
 		return nil, nil
 	})
 	prov.Start(withCronStore(ctx, s), make(chan struct{}), StartOptions{})
-	if len(events) != 1 || events[0] != "reconcile:unknown" {
+	if !reflect.DeepEqual(events, []string{"recover", "reconcile"}) {
 		t.Fatalf("recover must run before reconcile: %v", events)
 	}
 }

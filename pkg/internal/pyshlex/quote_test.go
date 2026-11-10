@@ -22,3 +22,20 @@ func TestQuoteMatchesShlexQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestJoinMatchesShlexJoin(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"/usr/bin/python3", "-m", "playwright", "install-deps", "chromium"}, "/usr/bin/python3 -m playwright install-deps chromium"},
+		{[]string{"/opt/my env/python", "-c", "print('x')"}, `'/opt/my env/python' -c 'print('"'"'x'"'"')'`},
+		{[]string{"", "a b"}, "'' 'a b'"},
+	}
+	for _, c := range cases {
+		if got := Join(c.args); got != c.want {
+			t.Errorf("Join(%q) = %q, want %q", c.args, got, c.want)
+		}
+	}
+}

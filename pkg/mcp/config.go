@@ -487,7 +487,7 @@ func getStderrLog(ctx context.Context) *os.File {
 	}
 	logDir := home.LogsDir(h)
 	var fh *os.File
-	_, err := home.Mkdir(logDir)
+	_, err := home.Mkdir(ctx, logDir)
 	if err == nil {
 		fh, err = os.OpenFile(filepath.Join(logDir, "mcp-stderr.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	}

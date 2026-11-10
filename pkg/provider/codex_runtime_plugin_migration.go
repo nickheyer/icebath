@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -592,12 +593,12 @@ func codexBuildToolsMCPEntry() *pyjson.Object {
 }
 
 // Atomic rewrite of config.toml carrying an existing file's permission bits and owner across
-func codexWriteAtomic(target, text string) error {
+func codexWriteAtomic(ctx context.Context, target, text string) error {
 	if st, err := os.Stat(target); err == nil {
 		mode := st.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
-		return pyfs.AtomicWriteTextMode(target, text, ".config.toml.", mode)
+		return pyfs.AtomicWriteTextMode(ctx, target, text, ".config.toml.", mode)
 	}
-	return pyfs.AtomicWriteText(target, text, ".config.toml.")
+	return pyfs.AtomicWriteText(ctx, target, text, ".config.toml.")
 }
 
 // Codex home of the options, else CODEX_HOME, else the user's .codex directory
@@ -617,7 +618,7 @@ func codexMigrationHome(opts CodexMigrateOptions) (string, error) {
 }
 
 // Projects the Icebath mcp_servers, installed codex plugins and the tools server into the managed block of codex config.toml
-func MigrateCodexRuntimePlugins(cfg map[string]any, opts CodexMigrateOptions) (*CodexMigrationReport, error) {
+func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts CodexMigrateOptions) (*CodexMigrationReport, error) {
 	report := &CodexMigrationReport{DryRun: opts.DryRun, SkippedKeysPerServer: map[string][]string{}}
 	codexHome, err := codexMigrationHome(opts)
 	if err != nil {
@@ -744,7 +745,7 @@ func MigrateCodexRuntimePlugins(cfg map[string]any, opts CodexMigrateOptions) (*
 		report.Errors = append(report.Errors, fmt.Sprintf("could not write %s: %s", target, pyfs.OSErrorText(err)))
 		return report, nil
 	}
-	if err := codexWriteAtomic(target, newText); err != nil {
+	if err := codexWriteAtomic(ctx, target, newText); err != nil {
 		report.Errors = append(report.Errors, fmt.Sprintf("could not write %s: %s", target, pyfs.OSErrorText(err)))
 		return report, nil
 	}

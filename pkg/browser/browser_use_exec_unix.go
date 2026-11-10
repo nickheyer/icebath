@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,7 +19,7 @@ import (
 func killCLIProcessGroup(pid int) { _ = syscall.Kill(-pid, syscall.SIGKILL) }
 
 // Owns the published harness daemon when it is this user's session leading daemon spawned by this process
-func ownHarnessDaemon(penv map[string]string) daemonOwnership {
+func ownHarnessDaemon(ctx context.Context, penv map[string]string) daemonOwnership {
 	if isWorkerProcess() {
 		return ownNever
 	}
@@ -67,6 +68,6 @@ func ownHarnessDaemon(penv map[string]string) daemonOwnership {
 	if !tools.SpawnedByThisProcess(pid) {
 		return ownNever
 	}
-	recordOwnedDaemon(daemon, pid)
+	recordOwnedDaemon(ctx, daemon, pid)
 	return ownOwned
 }

@@ -237,7 +237,7 @@ func CmdAdopt(ctx context.Context, name string, out io.Writer) error {
 		return err
 	}
 	metadata[filepath.Base(target)] = map[string]any{"pinned": false, "revision": revision, "source": source}
-	if err := writeInstallMetadata(h, metadata); err != nil {
+	if err := writeInstallMetadata(ctx, h, metadata); err != nil {
 		return err
 	}
 	shown := revision[:min(12, len(revision))]
@@ -290,7 +290,7 @@ func CmdTrustUpdateURL(ctx context.Context, name string, out io.Writer) error {
 	}
 	row["update_url"] = claimed
 	rows[filepath.Base(target)] = row
-	if err := writeInstallMetadata(h, rows); err != nil {
+	if err := writeInstallMetadata(ctx, h, rows); err != nil {
 		return err
 	}
 	shownOld, shownNew := "(none)", "(none)"

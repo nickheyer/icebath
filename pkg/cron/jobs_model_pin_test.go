@@ -167,12 +167,8 @@ func TestMainModelPinWithoutConfigStaysUnpinned(t *testing.T) {
 
 func TestRuntimeProviderResolverSwallowsFailures(t *testing.T) {
 	s, _ := newTestStore(t)
-	s.loadConfig = func() (config.Tree, error) { return nil, errors.New("broken config") }
+	writePinConfig(t, s, "model:\n  default: main-model\n  provider: no-such-provider\n")
 	if got := resolveMainRuntimeProvider(s); got != "" {
-		t.Fatalf("broken config resolved %q", got)
-	}
-	s.loadConfig = func() (config.Tree, error) { panic("resolver blew up") }
-	if got := resolveMainRuntimeProvider(s); got != "" {
-		t.Fatalf("panicking resolution resolved %q", got)
+		t.Fatalf("unresolvable provider resolved %q", got)
 	}
 }

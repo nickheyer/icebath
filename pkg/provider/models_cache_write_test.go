@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,7 @@ func TestAtomicCacheWriteAllowsLiveProfileHome(t *testing.T) {
 	}
 	t.Setenv(home.EnvHome, def)
 	cachePath := filepath.Join(worker, "cache", "models.json")
-	if err := modelsWriteJSONCache(cachePath, map[string]any{"cached": true}, pyjson.Indent(2)); err != nil {
+	if err := modelsWriteJSONCache(context.Background(), cachePath, map[string]any{"cached": true}, pyjson.Indent(2)); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(cachePath); string(b) != "{\n  \"cached\": true\n}" {
@@ -33,7 +34,7 @@ func TestAtomicCacheWriteAllowsLiveProfileHome(t *testing.T) {
 
 func TestAtomicCacheWriteAllowsUnrelatedProfilesPath(t *testing.T) {
 	cachePath := filepath.Join(t.TempDir(), "custom", "profiles", "cache", "models.json")
-	if err := modelsWriteJSONCache(cachePath, map[string]any{"cached": true}, pyjson.Indent(2)); err != nil {
+	if err := modelsWriteJSONCache(context.Background(), cachePath, map[string]any{"cached": true}, pyjson.Indent(2)); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(cachePath); string(b) != "{\n  \"cached\": true\n}" {
@@ -50,7 +51,7 @@ func TestLateReasoningCapsSaveDoesNotRecreateDeletedHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(home.EnvHome, worker)
-	(&capsCatalog{url: "https://example.test/v1/models"}).saveDisk(map[string]reasoningCaps{"example/model": {known: true, supports: true}})
+	(&capsCatalog{url: "https://example.test/v1/models"}).saveDisk(context.Background(), map[string]reasoningCaps{"example/model": {known: true, supports: true}})
 	if _, err := os.Stat(worker); !os.IsNotExist(err) {
 		t.Fatalf("a late save recreated the deleted profile home: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestReasoningCapsSaveWritesCompactJSONThroughTheCacheWriter(t *testing.T) {
 	if err := os.WriteFile(reasoningCapsDiskPath(), []byte(`{"z":{"ts":1,"caps":{}},"a":{"ts":2,"caps":{}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	(&capsCatalog{url: "https://example.test/v1/models"}).saveDisk(map[string]reasoningCaps{"example/model": {known: true, supports: true, supportedEfforts: []string{"low", "high"}}})
+	(&capsCatalog{url: "https://example.test/v1/models"}).saveDisk(context.Background(), map[string]reasoningCaps{"example/model": {known: true, supports: true, supportedEfforts: []string{"low", "high"}}})
 	b, err := os.ReadFile(reasoningCapsDiskPath())
 	if err != nil {
 		t.Fatal(err)

@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -34,7 +34,7 @@ func (c *CLI) goalMaxTurns() int {
 }
 
 // Goal manager bound to the current session id, rebuilt after the session changed, nil without a session
-func (c *CLI) getGoalManager() *agent.GoalManager {
+func (c *CLI) getGoalManager() *goals.GoalManager {
 	c.uiMu.Lock()
 	sessionID, existing := c.sessionID, c.goalManager
 	c.uiMu.Unlock()
@@ -44,7 +44,7 @@ func (c *CLI) getGoalManager() *agent.GoalManager {
 	if existing != nil && existing.SessionID == sessionID {
 		return existing
 	}
-	manager := agent.NewGoalManager(c.ctx, sessionID, c.goalMaxTurns())
+	manager := goals.NewGoalManager(c.ctx, sessionID, int64(c.goalMaxTurns()))
 	c.uiMu.Lock()
 	c.goalManager = manager
 	c.uiMu.Unlock()

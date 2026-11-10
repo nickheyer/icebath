@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func perplexityP() *perplexityProvider { return webProvider(nil, "perplexity").(*perplexityProvider) }
@@ -34,7 +35,11 @@ func TestPerplexitySearchDispatchMapsSearchAPIShape(t *testing.T) {
 		writeVendorJSON(w, 200, `{"results":[{"title":"Bloom filter","url":"https://en.wikipedia.org/wiki/Bloom_filter","snippet":"space-efficient probabilistic structure","date":"2004-04-17"}],"id":"abc"}`)
 	})
 	env := httpxProviderEnv(t, "PERPLEXITY_API_KEY=pplx-test\nPERPLEXITY_BASE_URL="+srv.URL+"/\n", map[string]any{"web.search_backend": "perplexity"})
-	out := mustJSONMap(WebSearchTool(context.Background(), env, "bloom filter", 3))
+	decoded, err := pyjson.Loads(WebSearchTool(context.Background(), env, "bloom filter", 3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := decoded.(*pyjson.Object)
 	c := calls()[0]
 	if c.path != "/search" || c.header.Get("Authorization") != "Bearer pplx-test" {
 		t.Fatalf("%+v", c)
@@ -44,8 +49,9 @@ func TestPerplexitySearchDispatchMapsSearchAPIShape(t *testing.T) {
 	if c.body["query"] != "bloom filter" || n < 1 || n > 20 || c.body["search_context_size"] != "low" || c.body["search_type"] != nil {
 		t.Fatalf("%v", c.body)
 	}
-	web := out["data"].(map[string]any)["web"].([]any)
-	if out["success"] != true || jsonCompact(web[0]) != `{"description":"space-efficient probabilistic structure","position":1,"title":"Bloom filter","url":"https://en.wikipedia.org/wiki/Bloom_filter"}` {
+	web := out.Vals["data"].(*pyjson.Object).Vals["web"].([]any)
+	want := pyjson.ObjectOf("title", "Bloom filter", "url", "https://en.wikipedia.org/wiki/Bloom_filter", "description", "space-efficient probabilistic structure", "position", int64(1))
+	if out.Vals["success"] != true || !pyjson.Equal(web[0], want) {
 		t.Fatalf("%v", out)
 	}
 	if perplexityDefaultBaseURL != "https://api.perplexity.ai" {

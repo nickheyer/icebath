@@ -186,7 +186,7 @@ func TestGraphRefreshClearsObjectStoreDebrisAndLeavesTheIndexLock(t *testing.T) 
 	for _, p := range append(slices.Clone(debris), filepath.Join(gitDir, "index.lock")) {
 		glTouch(t, p, glStale)
 	}
-	if err := refreshCommitGraph(repo, gitDir); err != nil {
+	if err := refreshCommitGraph(context.Background(), repo, gitDir); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range debris {
@@ -232,7 +232,7 @@ func TestGraphRefreshClearsObjectStoreDebrisAndLeavesTheIndexLock(t *testing.T) 
 			if err := live.Start(); err != nil {
 				t.Fatal(err)
 			}
-			refreshCommitGraph(repo, gitDir)
+			refreshCommitGraph(context.Background(), repo, gitDir)
 			stdin.Close()
 			live.Wait()
 		} else {
@@ -240,7 +240,7 @@ func TestGraphRefreshClearsObjectStoreDebrisAndLeavesTheIndexLock(t *testing.T) 
 			gitlockPsutil = false
 			t.Cleanup(func() { gitlockPsutil = prevPsutil })
 			t.Setenv("PATH", blind)
-			refreshCommitGraph(repo, gitDir)
+			refreshCommitGraph(context.Background(), repo, gitDir)
 		}
 		if !pathExists(lock) {
 			t.Fatalf("%s: lock removed", tc)

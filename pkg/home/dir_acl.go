@@ -163,8 +163,8 @@ func grant(path string, isDir bool, expected string, links subtreeLinks) (bool, 
 }
 
 // Path and each ancestor strictly below the process home, outermost first, empty off the home
-func componentsBelowHome(path string) []string {
-	h, err := pypath.Abspath(Dir(context.Background()))
+func componentsBelowHome(ctx context.Context, path string) []string {
+	h, err := pypath.Abspath(Dir(ctx))
 	if err != nil {
 		return nil
 	}
@@ -186,8 +186,8 @@ func componentsBelowHome(path string) []string {
 }
 
 // Real home path plus the relative parts, empty for a path off the home
-func expectedFinal(path string) (string, error) {
-	components := componentsBelowHome(path)
+func expectedFinal(ctx context.Context, path string) (string, error) {
+	components := componentsBelowHome(ctx, path)
 	if len(components) == 0 {
 		return "", nil
 	}
@@ -217,19 +217,19 @@ func warnRefused(path string, err error) {
 }
 
 // Gives the user an inheriting full control ACE on path when elevated, true when the grant took
-func GrantUserAccess(path string, elevated, repairChildren bool) bool {
+func GrantUserAccess(ctx context.Context, path string, elevated, repairChildren bool) bool {
 	if !elevated {
 		return false
 	}
 	target := pypath.PathStr(path)
 	expected := ""
 	owed, err := func() (bool, error) {
-		for _, component := range componentsBelowHome(target) {
+		for _, component := range componentsBelowHome(ctx, target) {
 			if IsReparsePoint(component) {
 				return false, &ReparsePointRefused{fmt.Sprintf("%s is a junction, symlink or other reparse point", component)}
 			}
 		}
-		exp, err := expectedFinal(target)
+		exp, err := expectedFinal(ctx, target)
 		if err != nil {
 			return false, err
 		}
@@ -423,11 +423,11 @@ func identity(path string) (aclIdentity, bool) {
 }
 
 // pathlib mkdir that keeps a directory an elevated Windows process creates usable by the same user unelevated
-func MakeUserDir(path string, mode os.FileMode, parents, existOK bool) (string, error) {
-	return makeUserDir(path, mode, parents, existOK, ProcessIsElevated())
+func MakeUserDir(ctx context.Context, path string, mode os.FileMode, parents, existOK bool) (string, error) {
+	return makeUserDir(ctx, path, mode, parents, existOK, ProcessIsElevated())
 }
 
-func makeUserDir(path string, mode os.FileMode, parents, existOK, elevated bool) (string, error) {
+func makeUserDir(ctx context.Context, path string, mode os.FileMode, parents, existOK, elevated bool) (string, error) {
 	target := pypath.PathStr(path)
 	if !elevated {
 		return target, pathMkdir(target, mode, parents, existOK)
@@ -439,7 +439,7 @@ func makeUserDir(path string, mode os.FileMode, parents, existOK, elevated bool)
 	if err := pathMkdir(target, mode, parents, existOK); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			if st, serr := os.Stat(target); serr == nil && st.IsDir() && !IsReparsePoint(target) {
-				grantDirs(target, []string{target}, nil)
+				grantDirs(ctx, target, []string{target}, nil)
 			}
 		}
 		return target, err
@@ -453,7 +453,7 @@ func makeUserDir(path string, mode os.FileMode, parents, existOK, elevated bool)
 			fresh[created[i]] = true
 		}
 	}
-	grantDirs(target, toGrant, fresh)
+	grantDirs(ctx, target, toGrant, fresh)
 	return target, nil
 }
 
@@ -463,9 +463,9 @@ func pathExists(p string) bool {
 }
 
 // Grants every fresh directory and each existing one once per object identity, nothing past a link
-func grantDirs(target string, toGrant []string, fresh map[string]bool) {
+func grantDirs(ctx context.Context, target string, toGrant []string, fresh map[string]bool) {
 	seen := map[string]bool{}
-	for _, component := range append(componentsBelowHome(target), toGrant...) {
+	for _, component := range append(componentsBelowHome(ctx, target), toGrant...) {
 		if seen[component] {
 			continue
 		}
@@ -486,7 +486,7 @@ func grantDirs(target string, toGrant []string, fresh map[string]bool) {
 		if !fresh[directory] && done {
 			continue
 		}
-		if grantUserAccessFn(directory, true, !fresh[directory]) {
+		if grantUserAccessFn(ctx, directory, true, !fresh[directory]) {
 			grantedMu.Lock()
 			grantedDirs[key] = true
 			grantedMu.Unlock()
@@ -514,6 +514,11 @@ func pathMkdir(p string, mode os.FileMode, parents, existOK bool) error {
 		return err
 	}
 	return nil
+}
+
+// pathlib Path.mkdir with its parents and exist_ok handling
+func PathMkdir(p string, mode os.FileMode, parents, existOK bool) error {
+	return pathMkdir(p, mode, parents, existOK)
 }
 
 // One line repair for a directory this process may not use

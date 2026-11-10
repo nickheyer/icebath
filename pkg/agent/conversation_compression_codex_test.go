@@ -70,15 +70,15 @@ func newCodexCompactionAgent(t *testing.T, result *provider.CodexTurnResult, aut
 	prev := codexCompactionSession
 	codexCompactionSession = func(*AIAgent) codexThreadCompactor { return session }
 	rec := &touchRecorder{}
-	prevHook := KanbanActivityHook
-	KanbanActivityHook = func(agent *AIAgent) {
+	prevHook := kanbanActivityBridge
+	kanbanActivityBridge = func(agent *AIAgent) {
 		rec.mu.Lock()
 		rec.descs = append(rec.descs, agent.lastActivityDesc)
 		rec.provenances = append(rec.provenances, agent.lastActivityProvenance)
 		rec.mu.Unlock()
 	}
 	t.Setenv("ICEBATH_KANBAN_TASK", "codex-compaction")
-	t.Cleanup(func() { codexCompactionSession, KanbanActivityHook = prev, prevHook })
+	t.Cleanup(func() { codexCompactionSession, kanbanActivityBridge = prev, prevHook })
 	return a, session, rec
 }
 

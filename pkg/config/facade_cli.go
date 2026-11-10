@@ -8,14 +8,16 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf16"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,9 +35,9 @@ type ConfigCommandSources struct {
 	LeftCoreTerminalKeys    map[string]string
 	DisplayOverrideableKeys map[string]bool
 	IsEnvSettingKey         func(key string) bool
-	SaveEnvSetting          func(h, key, value string) error
+	SaveEnvSetting          func(ctx context.Context, h, key, value string) error
 	ReadEnvSetting          func(h, key string) (string, bool)
-	RemoveEnvSetting        func(h, key string) (bool, error)
+	RemoveEnvSetting        func(ctx context.Context, h, key string) (bool, error)
 	DropStaleModelRoute     func(modelCfg map[string]any, provider string, cfg map[string]any) (map[string]any, bool)
 	Language                LanguageCatalog
 	Show                    func(ctx context.Context, h string) (ShowSources, error)
@@ -276,35 +278,41 @@ func defaultValueForKey(key string) any {
 	return node
 }
 
-var pyIntRe = regexp.MustCompile(`^[+-]?(\d(_?\d)*)$`)
-
-// Integer for a clean Python int literal, signs, whitespace and digit underscores allowed
+// Integer for a clean Python int literal, signs, whitespace, digit underscores and digits of any script allowed
 func coerceInt(value string) (any, bool) {
-	s := strings.TrimFunc(value, isPySpace)
-	if !pyIntRe.MatchString(s) {
+	n, ok := pyint.Parse(value)
+	if !ok {
 		return nil, false
 	}
-	digits := strings.ReplaceAll(s, "_", "")
-	if n, err := strconv.ParseInt(digits, 10, 64); err == nil {
-		return int(n), true
-	}
-	return nil, false
+	return pyint.Native(n), true
 }
 
-var pyFloatRe = regexp.MustCompile(`^[+-]?((\d(_?\d)*)?\.?(\d(_?\d)*)?([eE][+-]?\d(_?\d)*)?|inf|infinity|nan)$`)
+// Decimal text of a float literal the way Decimal reads it, digits folded to ASCII and underscores dropped
+func decimalLiteral(value string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimPrefix(strings.TrimFunc(value, isPySpace), "+") {
+		switch {
+		case r == '_':
+		case r > unicode.MaxASCII && unicode.Is(unicode.Nd, r):
+			start := r
+			for unicode.Is(unicode.Nd, start-1) {
+				start--
+			}
+			b.WriteByte(byte('0' + (r-start)%10))
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
 
 // Float only when the conversion keeps the literal's decimal value, NaN and infinities rejected
 func coerceFloat(value string) (any, bool) {
-	s := strings.TrimFunc(value, isPySpace)
-	if !pyFloatRe.MatchString(strings.ToLower(s)) || !strings.ContainsAny(s, "0123456789") {
-		return nil, false
-	}
-	clean := strings.ReplaceAll(s, "_", "")
-	f, err := strconv.ParseFloat(clean, 64)
+	f, err := pyint.ParseFloat(value)
 	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil, false
 	}
-	literal, ok := new(big.Rat).SetString(strings.TrimPrefix(clean, "+"))
+	literal, ok := new(big.Rat).SetString(decimalLiteral(value))
 	shortest, ok2 := new(big.Rat).SetString(strconv.FormatFloat(f, 'g', -1, 64))
 	if !ok || !ok2 || literal.Cmp(shortest) != 0 {
 		return nil, false
@@ -321,7 +329,7 @@ func coerceConfigSetValue(key, value string) (any, error) {
 		return value, nil
 	}
 	stripped := strings.TrimFunc(value, isPySpace)
-	if v, ok := scalarWords[strings.ToLower(stripped)]; ok {
+	if v, ok := scalarWords[pystr.Lower(stripped)]; ok {
 		return v, nil
 	}
 	if v, ok := coerceInt(stripped); ok {
@@ -520,7 +528,7 @@ func SetConfigValue(ctx context.Context, h, key, value string, force bool, src C
 		return nil
 	}
 	if src.IsEnvSettingKey(key) {
-		if err := src.SaveEnvSetting(h, key, value); err != nil {
+		if err := src.SaveEnvSetting(ctx, h, key, value); err != nil {
 			return exitInvalid("✗ " + err.Error())
 		}
 		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", strings.ToUpper(key), home.EnvPath(h))
@@ -571,7 +579,8 @@ func SetConfigValue(ctx context.Context, h, key, value string, force bool, src C
 	}
 	if err := Tree(userConfig).Set(key, coerced); err != nil {
 		var phantom *PhantomKeyError
-		if errors.As(err, &phantom) {
+		var pathErr *PathError
+		if errors.As(err, &phantom) || (errors.As(err, &pathErr) && pathErr.Kind == "ValueError") {
 			return exitInvalid("✗ " + err.Error())
 		}
 		return err
@@ -653,7 +662,7 @@ func GetConfigValue(ctx context.Context, h, key string, asJSON, raw bool, src Co
 	default:
 		legacy := legacyGatewayPlatformsKey(key)
 		key, _ = redirectPlatformDisplayKey(key, src)
-		cfg, err := LoadContext(ctx, h, envRefLookup)
+		cfg, err := LoadContext(ctx, h, EnvRefLookupContext(ctx))
 		if err != nil {
 			return err
 		}
@@ -712,7 +721,7 @@ func UnsetConfigValue(ctx context.Context, h, key string, src ConfigCommandSourc
 		return nil
 	}
 	if src.IsEnvSettingKey(key) {
-		found, err := src.RemoveEnvSetting(h, key)
+		found, err := src.RemoveEnvSetting(ctx, h, key)
 		if err != nil {
 			return exitInvalid("✗ " + err.Error())
 		}
@@ -921,13 +930,12 @@ func usageExit(u configUsage) error {
 	return &ConfigExit{Code: 1}
 }
 
-// Runs a config writer, a write guard error becoming a clean status 1 message
+// Runs a config writer, only a RuntimeError class refusal becoming a clean status 1 message
 func runWriteCommand(err error) error {
-	var exit *ConfigExit
-	if err == nil || errors.As(err, &exit) {
-		return err
+	if err != nil && isRuntimeError(err) {
+		return exitInvalid("✗ " + err.Error())
 	}
-	return exitInvalid("✗ " + err.Error())
+	return err
 }
 
 func toolsSuffix(info EnvVar, format string) string {
@@ -950,7 +958,7 @@ func cmdConfigMigrate(ctx context.Context, h string) error {
 	if err != nil {
 		return err
 	}
-	missingConfig, err := GetMissingConfigFields(ctx, h, envRefLookup)
+	missingConfig, err := GetMissingConfigFields(ctx, h, EnvRefLookupContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -1054,7 +1062,7 @@ func cmdConfigCheck(ctx context.Context, h string, src ConfigCommandSources) err
 			}
 		}
 	}
-	missingConfig, err := GetMissingConfigFields(ctx, h, envRefLookup)
+	missingConfig, err := GetMissingConfigFields(ctx, h, EnvRefLookupContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -1104,41 +1112,53 @@ const configUsageText = `Available commands:
   icebath config path      Show config file path
   icebath config env-path  Show .env file path`
 
+// Prints a resolved config value, the get usage when no key is given
+func cmdConfigGet(ctx context.Context, h string, args ConfigArgs, src ConfigCommandSources) error {
+	if args.Key == "" {
+		return usageExit(usageGet)
+	}
+	return GetConfigValue(ctx, h, args.Key, args.JSON, args.Raw, src)
+}
+
+// Sets a config value, the set usage when the key or value is missing
+func cmdConfigSet(ctx context.Context, h string, args ConfigArgs, src ConfigCommandSources) error {
+	if args.Key == "" || args.Value == nil {
+		return usageExit(usageSet)
+	}
+	return runWriteCommand(SetConfigValue(ctx, h, args.Key, *args.Value, args.Force, src))
+}
+
+// Removes a config value, the unset usage when no key is given
+func cmdConfigUnset(ctx context.Context, h string, args ConfigArgs, src ConfigCommandSources) error {
+	if args.Key == "" {
+		return usageExit(usageUnset)
+	}
+	return runWriteCommand(UnsetConfigValue(ctx, h, args.Key, src))
+}
+
+// Prints every config section through the show screen
+func cmdConfigShow(ctx context.Context, h string, src ConfigCommandSources) error {
+	show, err := src.Show(ctx, h)
+	if err != nil {
+		return err
+	}
+	return ShowConfig(FacadeStdout, show)
+}
+
 // Runs one config subcommand, a backend write refusal printed as an error with status 1
 func ConfigCommand(ctx context.Context, h string, args ConfigArgs, src ConfigCommandSources) error {
 	var handler func() error
 	switch args.Command {
 	case "", "show":
-		handler = func() error {
-			show, err := src.Show(ctx, h)
-			if err != nil {
-				return err
-			}
-			return ShowConfig(FacadeStdout, show)
-		}
+		handler = func() error { return cmdConfigShow(ctx, h, src) }
 	case "edit":
 		handler = func() error { return EditConfig(ctx, h) }
 	case "get":
-		handler = func() error {
-			if args.Key == "" {
-				return usageExit(usageGet)
-			}
-			return GetConfigValue(ctx, h, args.Key, args.JSON, args.Raw, src)
-		}
+		handler = func() error { return cmdConfigGet(ctx, h, args, src) }
 	case "set":
-		handler = func() error {
-			if args.Key == "" || args.Value == nil {
-				return usageExit(usageSet)
-			}
-			return runWriteCommand(SetConfigValue(ctx, h, args.Key, *args.Value, args.Force, src))
-		}
+		handler = func() error { return cmdConfigSet(ctx, h, args, src) }
 	case "unset":
-		handler = func() error {
-			if args.Key == "" {
-				return usageExit(usageUnset)
-			}
-			return runWriteCommand(UnsetConfigValue(ctx, h, args.Key, src))
-		}
+		handler = func() error { return cmdConfigUnset(ctx, h, args, src) }
 	case "path":
 		handler = func() error { fmt.Fprintln(FacadeStdout, home.ConfigPath(h)); return nil }
 	case "env-path":

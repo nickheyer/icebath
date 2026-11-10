@@ -400,13 +400,13 @@ func RefuseForeignSystemdUnit(ctx context.Context, action string, system bool) e
 }
 
 // Writes the planned stop marker for pid or the recorded gateway pid, swallowing every failure
-func markPlannedStop(pid int, havePid bool) {
+func markPlannedStop(ctx context.Context, pid int, havePid bool) {
 	defer func() { _ = recover() }()
 	if !havePid {
 		pid, havePid = lifecycleRunningPidNoCleanup()
 	}
 	if havePid {
-		lifecycleWritePlannedStop(pid)
+		lifecycleWritePlannedStop(ctx, pid)
 	}
 }
 
@@ -450,7 +450,7 @@ func SystemdStop(ctx context.Context, system bool) error {
 	if err := lifecycleSyncHome(ctx, system); err != nil {
 		return err
 	}
-	markPlannedStop(0, false)
+	markPlannedStop(ctx, 0, false)
 	name, err := lifecycleServiceName(ctx)
 	if err != nil {
 		return err

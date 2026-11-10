@@ -2,6 +2,7 @@ package commands
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -92,5 +93,22 @@ func TestSmallSubcommandParsersMatchTheirHermesShapes(t *testing.T) {
 		if c.find("migrate "+src.Name) == nil {
 			t.Fatalf("migrate %s missing", src.Name)
 		}
+	}
+}
+
+// import takes the zipfile positional and the force flag of the hermes import parser
+func TestImportParserTakesTheZipfileAndForce(t *testing.T) {
+	ns, err := bNamespace(t, "import", []string{"import", "backup.zip"})
+	if err != nil || ns["zipfile"] != "backup.zip" || ns["force"] != false {
+		t.Fatalf("defaults %v %v", ns, err)
+	}
+	for _, flag := range []string{"-f", "--force"} {
+		ns, err = bNamespace(t, "import", []string{"import", flag, "backup.zip"})
+		if err != nil || ns["zipfile"] != "backup.zip" || ns["force"] != true {
+			t.Fatalf("%s %v %v", flag, ns, err)
+		}
+	}
+	if _, err := bNamespace(t, "import", []string{"import"}); err == nil || !strings.Contains(err.Error(), "zipfile") {
+		t.Fatalf("missing zipfile: %v", err)
 	}
 }

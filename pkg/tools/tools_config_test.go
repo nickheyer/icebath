@@ -26,7 +26,14 @@ func withPluginCatalog(t *testing.T, toolsets []ConfigurableToolset, projected [
 	return &discovered
 }
 
-func TestToolsConfigEffectiveConfigurableToolsetsDedupesBundledPlugins(t *testing.T) {
+func TestGetEffectiveConfigurableToolsetsDedupesBundledPlugins(t *testing.T) {
+	keys := map[string]bool{}
+	for _, ts := range EffectiveConfigurableToolsets(context.Background()) {
+		if keys[ts.Key] {
+			t.Fatalf("duplicate toolset keys in effective list: %s", ts.Key)
+		}
+		keys[ts.Key] = true
+	}
 	discovered := withPluginCatalog(t, []ConfigurableToolset{{Key: "web", Label: "dup"}, {Key: "dplat", Label: "🔌 Dplat"}, {Key: "dplat", Label: "again"}}, nil, false)
 	all := EffectiveConfigurableToolsets(context.Background())
 	seen := map[string]bool{}

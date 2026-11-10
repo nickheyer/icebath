@@ -66,7 +66,7 @@ func (h *toolRoundValidationHost) PartialExit(finalResponse string) map[string]a
 }
 
 func (h *toolRoundValidationHost) CleanupTaskResources() {
-	h.a.cleanupTaskResources(h.s.EffectiveTaskID)
+	h.a.cleanupTaskResources(h.ctx, h.s.EffectiveTaskID)
 }
 
 func (h *toolRoundValidationHost) RecordToolCallQuality(toolCalls []state.ToolCall, repaired map[int]bool) {

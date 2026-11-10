@@ -1094,17 +1094,14 @@ func iterSkillIndexFiles(skillsDir string, filename string) []string {
 	return matches
 }
 
-// Walks a tree following symlinked directories once each, pruning children through the callback
+// Directory listing the skill tree walk reads, os.scandir in the hermes walk, swapped by tests
+var walkReadDir = os.ReadDir
+
+// Walks a tree through every symlinked directory path like os.walk with followlinks, pruning children through the callback
 func walkFollowingLinks(root string, prune func(dir string, dirs []string, hasSkillMD bool) []string, visit func(dir string, files []string)) {
-	seen := map[string]bool{}
 	var walk func(dir string)
 	walk = func(dir string) {
-		real := resolvePath(dir)
-		if seen[real] {
-			return
-		}
-		seen[real] = true
-		entries, err := os.ReadDir(dir)
+		entries, err := walkReadDir(dir)
 		if err != nil {
 			return
 		}

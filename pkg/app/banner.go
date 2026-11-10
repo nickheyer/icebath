@@ -771,7 +771,7 @@ func saveBannerSnapshot(ctx context.Context, toolDefs any, enabledToolsets []str
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return false, err
 		}
-		return true, config.AtomicJSONWriteMode(path, payload, 0o600)
+		return true, config.AtomicJSONWriteMode(ctx, path, payload, 0o600)
 	}, false)
 }
 

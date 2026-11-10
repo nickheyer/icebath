@@ -78,7 +78,7 @@ func catNoSigning(t *testing.T) {
 // The shipped lockfile
 func catLock() *Lockfile { return NewLockfile(LockfilePath()) }
 
-func TestCatPythonPackageURLCarriesReleaseTag(t *testing.T) {
+func TestPythonPackageURLCarriesReleaseTag(t *testing.T) {
 	python := catPackage(t, "python")
 	url, err := python.FetchURL("3.14.7+20260901", "win32-arm64")
 	if err != nil {
@@ -89,7 +89,7 @@ func TestCatPythonPackageURLCarriesReleaseTag(t *testing.T) {
 	dsWantInstallError(t, err, "")
 }
 
-func TestCatPythonStageDropsUnloadableX64VCRuntimeOnArm64(t *testing.T) {
+func TestPythonStageDropsUnloadableX64VCRuntimeOnArm64(t *testing.T) {
 	catNoSigning(t)
 	staged := t.TempDir()
 	writeFile(t, filepath.Join(staged, "python.exe"), []byte("launcher"), 0o666)
@@ -106,7 +106,7 @@ func TestCatPythonStageDropsUnloadableX64VCRuntimeOnArm64(t *testing.T) {
 	}
 }
 
-func TestCatPythonStageKeepsVCRuntimesOnOtherTargets(t *testing.T) {
+func TestPythonStageKeepsVCRuntimesOnOtherTargets(t *testing.T) {
 	catNoSigning(t)
 	staged := t.TempDir()
 	writeFile(t, filepath.Join(staged, "python.exe"), []byte("launcher"), 0o666)
@@ -119,7 +119,7 @@ func TestCatPythonStageKeepsVCRuntimesOnOtherTargets(t *testing.T) {
 	}
 }
 
-func TestCatWindowsPythonAlsoAnswersToPython3(t *testing.T) {
+func TestWindowsPythonAlsoAnswersToPython3(t *testing.T) {
 	for _, target := range []string{"win32-x64", "win32-arm64"} {
 		t.Run(target, func(t *testing.T) {
 			catNoSigning(t)
@@ -146,7 +146,7 @@ func TestCatWindowsPythonAlsoAnswersToPython3(t *testing.T) {
 	}
 }
 
-func TestCatPython3AliasIsWindowsOnly(t *testing.T) {
+func TestPython3AliasIsWindowsOnly(t *testing.T) {
 	catNoSigning(t)
 	python := catPackage(t, "python")
 	staged := t.TempDir()
@@ -162,20 +162,20 @@ func TestCatPython3AliasIsWindowsOnly(t *testing.T) {
 	}
 }
 
-func TestCatVerifyMissingBinaryReportsPathAndListing(t *testing.T) {
+func TestVerifyMissingBinaryReportsPathAndListing(t *testing.T) {
 	entry := filepath.Join(t.TempDir(), "entry")
 	sttMkdir(t, filepath.Join(entry, "bin"))
 	writeFile(t, filepath.Join(entry, "doc"), []byte("x"), 0o666)
 	catContains(t, catFakeTool(false, nil).Verify(entry, catTarget(t)), "bin/faketool", "missing", "doc")
 }
 
-func TestCatVerifyProbeFailureReportsReason(t *testing.T) {
+func TestVerifyProbeFailureReportsReason(t *testing.T) {
 	entry := filepath.Join(t.TempDir(), "entry")
 	writeFile(t, filepath.Join(entry, "bin", "faketool"), []byte("\x00\x01 not an executable"), 0o666)
 	catContains(t, catFakeTool(true, nil).Verify(entry, catTarget(t)), "--version")
 }
 
-func TestCatProbeArgsOverrideUsedByVerify(t *testing.T) {
+func TestProbeArgsOverrideUsedByVerify(t *testing.T) {
 	entry := filepath.Join(t.TempDir(), "entry")
 	writeFile(t, filepath.Join(entry, "bin", "faketool"), []byte("\x00\x01 not an executable"), 0o666)
 	reason := catFakeTool(true, []string{"-version"}).Verify(entry, catTarget(t))
@@ -185,7 +185,7 @@ func TestCatProbeArgsOverrideUsedByVerify(t *testing.T) {
 	}
 }
 
-func TestCatFfmpegBinaryRelFollowsTheBuildSource(t *testing.T) {
+func TestFfmpegBinaryRelFollowsTheBuildSource(t *testing.T) {
 	ffmpeg := catPackage(t, "ffmpeg")
 	entry := t.TempDir()
 	writeFile(t, filepath.Join(entry, "ffmpeg"), []byte("x"), 0o666)
@@ -203,10 +203,10 @@ func TestCatFfmpegBinaryRelFollowsTheBuildSource(t *testing.T) {
 	}
 }
 
-func TestCatVerifyArchMismatchReportsTarget(t *testing.T) {
+func TestVerifyArchMismatchReportsTarget(t *testing.T) {
 	target := catTarget(t)
 	wrong := uint16(0x8664)
-	if strings.HasSuffix(target, "-x64") || strings.Contains(target, "-x64-") {
+	if target[strings.LastIndex(target, "-")+1:] == "x64" {
 		wrong = 0xAA64
 	}
 	buf := append([]byte("MZ"), make([]byte, 0x3E)...)
@@ -371,7 +371,7 @@ func TestCatLlamacppBackendsHavePinsForTheirSupportedTargets(t *testing.T) {
 	}
 }
 
-func TestCatTermuxHasNoPMBrowserDefault(t *testing.T) {
+func TestTermuxHasNoPMBrowserDefault(t *testing.T) {
 	isolateHome(t)
 	names := catLock().Names()
 	linux, err := DefaultPackages(context.Background(), names, "linux-x64", map[string]bool{})
@@ -387,7 +387,7 @@ func TestCatTermuxHasNoPMBrowserDefault(t *testing.T) {
 	}
 }
 
-func TestCatDefaultInstallCarriesTheComputerUseDriverWhereverItBuilds(t *testing.T) {
+func TestDefaultInstallCarriesTheComputerUseDriverWhereverItBuilds(t *testing.T) {
 	isolateHome(t)
 	lock := catLock()
 	driver := catPackage(t, "cua-driver")
@@ -465,7 +465,7 @@ func TestCatChromiumEnvRefusesAnEntryWithoutItsExecutable(t *testing.T) {
 	dsWantInstallError(t, err, "Chromium executable missing under")
 }
 
-func TestCatMacOSCuaSelectsBundleBinaryAndPreservesSignature(t *testing.T) {
+func TestMacOSCuaSelectsBundleBinaryAndPreservesSignature(t *testing.T) {
 	for _, target := range []string{"darwin-arm64", "darwin-x64"} {
 		t.Run(target, func(t *testing.T) {
 			p := catPackage(t, "cua-driver")
@@ -514,7 +514,7 @@ func TestCatMacOSCuaSelectsBundleBinaryAndPreservesSignature(t *testing.T) {
 	}
 }
 
-func TestCatWindowsCuaKeepsUIAccessAndCursorHelpers(t *testing.T) {
+func TestWindowsCuaKeepsUIAccessAndCursorHelpers(t *testing.T) {
 	p := catPackage(t, "cua-driver")
 	tmp := t.TempDir()
 	var members []member
@@ -556,7 +556,7 @@ func TestCatCuaDriverProbeNeverMintsTelemetryState(t *testing.T) {
 	}
 }
 
-func TestCatDmgbuildStagesPairedRuntimeAndStaysOutOfPayload(t *testing.T) {
+func TestDmgbuildStagesPairedRuntimeAndStaysOutOfPayload(t *testing.T) {
 	for target, cpu := range map[string]uint32{"darwin-arm64": 0x0100000C, "darwin-x64": 0x01000007} {
 		t.Run(target, func(t *testing.T) {
 			p := catPackage(t, "dmgbuild")
@@ -574,6 +574,10 @@ func TestCatDmgbuildStagesPairedRuntimeAndStaysOutOfPayload(t *testing.T) {
 			}
 			if base := p.Base(); !base.Internal || base.OnPath() {
 				t.Fatal("dmgbuild must be internal and off PATH")
+			}
+			bundled, err := bundlePackageNames()
+			if err != nil || slices.Contains(bundled, "dmgbuild") {
+				t.Fatalf("dmgbuild is part of the payload %v %v", bundled, err)
 			}
 			for _, other := range AllTargets {
 				if !strings.HasPrefix(other, "darwin-") && p.MissingReason(other) == "" {
@@ -632,7 +636,7 @@ func catFacts(t *testing.T, store *Store, name, entry string) *Facts {
 	return facts
 }
 
-func TestCatArm64WindowsRipgrepStagesPythonsVCRuntimeBesideRg(t *testing.T) {
+func TestArm64WindowsRipgrepStagesPythonsVCRuntimeBesideRg(t *testing.T) {
 	tmp := t.TempDir()
 	store := NewStore(filepath.Join(tmp, "store"))
 	vcRuntime := filepath.Join(store.Entry("python-1"), "vcruntime140.dll")
@@ -655,7 +659,7 @@ func TestCatArm64WindowsRipgrepStagesPythonsVCRuntimeBesideRg(t *testing.T) {
 	}
 }
 
-func TestCatPythonInstallsBeforeRipgrepSoStagingCanReadIt(t *testing.T) {
+func TestPythonInstallsBeforeRipgrepSoStagingCanReadIt(t *testing.T) {
 	order, err := Walk([]string{"ripgrep"})
 	if err != nil {
 		t.Fatal(err)

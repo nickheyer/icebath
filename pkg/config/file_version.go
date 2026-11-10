@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -12,8 +11,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Age under which a stat signature cannot rule out a same tick write after the stat
@@ -104,25 +101,9 @@ func fileCacheVersionOf(path string, fi os.FileInfo, alwaysDigest bool) []any {
 	return []any{sig[0], sig[1], sig[2], sig[3], digest}
 }
 
-// Parsed YAML root of bytes, nil for an empty document, mappings string keyed
+// Parsed YAML root of bytes under the shared safe_load policy, nil for an empty document, mappings string keyed
 func FastSafeLoad(data []byte) (any, error) {
-	var node yaml.Node
-	if err := yaml.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &node); err != nil {
-		return nil, err
-	}
-	var doc any
-	if len(node.Content) > 0 {
-		resolveYAML11(&node, false)
-		if err := yaml11TimestampError(&node); err != nil {
-			return nil, err
-		}
-		if err := node.Decode(&doc); err != nil {
-			return nil, err
-		}
-	}
-	doc = normalizeMaps(doc)
-	recordNodeOrder(&node, doc)
-	return doc, nil
+	return loadYAMLDocument(data)
 }
 
 type yamlFileCacheEntry struct {

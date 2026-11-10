@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"os"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -35,15 +35,11 @@ func resolveMainRuntimeProvider(s *Store) (name string) {
 			name = ""
 		}
 	}()
-	cfg, err := s.loadConfig()
-	if err != nil {
+	rt, err := provider.ResolveRuntimeProvider(context.Background(), s.home, "", "", "", "")
+	if err != nil || rt == nil {
 		return ""
 	}
-	route, err := provider.Resolve(context.Background(), cfg, config.NewSecrets(s.home), s.home, provider.HomeCredentialSource(s.home), provider.Overrides{})
-	if err != nil {
-		return ""
-	}
-	return route.Provider
+	return rt.Provider
 }
 
 // Main agent provider and model a pinned job locks onto, both nil when no model is configured
@@ -77,7 +73,7 @@ func mainModelPin(s *Store) (*string, *string, error) {
 	}
 	prov := normalizeOptionalText(pinRuntimeProvider(s), false)
 	if prov != nil {
-		lowered := strings.ToLower(*prov)
+		lowered := pystr.Lower(*prov)
 		prov = &lowered
 	}
 	return prov, model, nil

@@ -170,7 +170,7 @@ func TestLeftCoreRecordMigrationConvertsTheScopeOnceAndMarksTheInstall(t *testin
 	h := leftCoreHome(t, t.TempDir(), "home", "", "platform_toolsets:\n  telegram: [web]\n")
 	mkPluginDir(t, h, "homeassistant")
 	f := leftCoreFeatureByPlugin("homeassistant")
-	if err := leftCoreRecordMigration(h, f); err != nil {
+	if err := leftCoreRecordMigration(context.Background(), h, f); err != nil {
 		t.Fatal(err)
 	}
 	cfg := leftCoreReadConfig(h)
@@ -185,10 +185,10 @@ func TestLeftCoreRecordMigrationConvertsTheScopeOnceAndMarksTheInstall(t *testin
 	}
 	cfg["platform_toolsets"] = map[string]any{"telegram": []any{"web", "homeassistant"}}
 	cfg["known_plugin_toolsets"] = map[string]any{"acp": []any{"homeassistant"}, "webhook": []any{"homeassistant"}}
-	if err := config.SaveUser(h, cfg); err != nil {
+	if err := config.SaveUser(context.Background(), h, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if err := leftCoreRecordMigration(h, f); err != nil {
+	if err := leftCoreRecordMigration(context.Background(), h, f); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := anyMap(leftCoreReadConfig(h)["known_plugin_toolsets"])["telegram"]; ok {

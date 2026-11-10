@@ -124,7 +124,7 @@ func TestCatalogMandatoryModelGetsTheFloorOnTheFirstRequest(t *testing.T) {
 	auxFreshFloors(t)
 	ctx := reasoningCapsColdProcess(t)
 	reasoningCapsOffline(t)
-	if !seedReasoningCaps(openRouterCatalogURL, auxFloorCatalog) {
+	if !seedReasoningCaps(ctx, openRouterCatalogURL, auxFloorCatalog) {
 		t.Fatal("seed failed")
 	}
 	floor := map[string]any{"enabled": true, "effort": ReasoningFloorEffort}

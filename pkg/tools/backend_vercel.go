@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -476,17 +477,17 @@ func (c *vercelClient) runCommand(ctx context.Context, sessionID, command string
 // Per profile snapshot store keyed by task id
 func vercelSnapshotStore(env *Env) string { return filepath.Join(env.Home, vercelSnapshotStoreName) }
 
-func vercelStoreSnapshot(env *Env, taskID, snapshotID string) {
+func vercelStoreSnapshot(ctx context.Context, env *Env, taskID, snapshotID string) {
 	if taskID != "" && snapshotID != "" {
-		envUpdateJSONStore(vercelSnapshotStore(env), func(s map[string]any) { s[taskID] = snapshotID })
+		envUpdateJSONStore(WithEnvHome(ctx, env), vercelSnapshotStore(env), func(s *pyjson.Object) { s.Set(taskID, snapshotID) })
 	}
 }
 
 // Drops the stored id for the task only while it still equals the snapshot id
-func vercelDeleteSnapshot(env *Env, taskID, snapshotID string) {
-	envUpdateJSONStore(vercelSnapshotStore(env), func(s map[string]any) {
-		if taskID != "" && s[taskID] == snapshotID {
-			delete(s, taskID)
+func vercelDeleteSnapshot(ctx context.Context, env *Env, taskID, snapshotID string) {
+	envUpdateJSONStore(WithEnvHome(ctx, env), vercelSnapshotStore(env), func(s *pyjson.Object) {
+		if taskID != "" && s.Vals[taskID] == snapshotID {
+			s.Delete(taskID)
 		}
 	})
 }
@@ -585,7 +586,7 @@ func (v *vercelEnv) remoteIcebathDir() string {
 func (v *vercelEnv) createSandbox(ctx context.Context) (vercelSession, error) {
 	snapshotID := ""
 	if v.persistent && v.taskID != "" {
-		snapshotID, _ = envLoadJSONStore(vercelSnapshotStore(v.env))[v.taskID].(string)
+		snapshotID, _ = envLoadJSONStore(vercelSnapshotStore(v.env)).Vals[v.taskID].(string)
 	}
 	if snapshotID != "" {
 		session, err := retryVercelCall(v.env, "sandbox restore", vercelCreateRetryAttempts, func() (vercelSession, error) {
@@ -595,7 +596,7 @@ func (v *vercelEnv) createSandbox(ctx context.Context) (vercelSession, error) {
 			return session, nil
 		}
 		envLog(v.env).Warn("Vercel: failed to restore snapshot; falling back to a fresh sandbox", "snapshot", snapshotID, "task", v.taskID, "error", err)
-		vercelDeleteSnapshot(v.env, v.taskID, snapshotID)
+		vercelDeleteSnapshot(ctx, v.env, v.taskID, snapshotID)
 	}
 	return retryVercelCall(v.env, "sandbox create", vercelCreateRetryAttempts, func() (vercelSession, error) {
 		return v.client.createSession(ctx, v.createParams, "")
@@ -709,7 +710,7 @@ func (v *vercelEnv) snapshotSandbox(session *vercelSession) {
 		envLog(v.env).Warn("Vercel: filesystem snapshot did not return a snapshot id", "task", v.taskID)
 		return
 	}
-	vercelStoreSnapshot(v.env, v.taskID, snapshotID)
+	vercelStoreSnapshot(ctx, v.env, v.taskID, snapshotID)
 	envLog(v.env).Info("Vercel: saved filesystem snapshot", "snapshot", snapshotID, "task", v.taskID)
 }
 

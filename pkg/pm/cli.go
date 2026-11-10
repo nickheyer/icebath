@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,9 +16,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
-	"github.com/mattn/go-isatty"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // LockArgs are pm lock's arguments, a nil Name or Version when not given
@@ -81,7 +82,7 @@ func CmdLock(ctx context.Context, args LockArgs) (int, error) {
 func relockProject(ctx context.Context, root string) (int, error) {
 	out := SyncOutput(ctx)
 	fmt.Fprintln(out, "→ Checking uv.lock…")
-	err := CheckProjectLock(ctx, CheckProjectLockOptions{Source: root, Explicit: true, Quiet: true})
+	err := pmCheckProjectLock(ctx, CheckProjectLockOptions{Source: root, Explicit: true, Quiet: true})
 	var install *InstallError
 	switch {
 	case err == nil:
@@ -96,7 +97,7 @@ func relockProject(ctx context.Context, root string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := LockProject(ctx, LockProjectOptions{Source: root, Explicit: true}); err != nil {
+	if err := pmLockProject(ctx, LockProjectOptions{Source: root, Explicit: true}); err != nil {
 		if errors.As(err, &install) {
 			fmt.Fprintf(out, "✗ uv.lock refresh failed: %s\n", err)
 			return 1, nil
@@ -144,35 +145,49 @@ func lockedExtras(root string) (map[string]bool, error) {
 	if !ok {
 		return map[string]bool{}, nil
 	}
-	project, ok := pyproject.Get("project")
-	if !ok {
-		return map[string]bool{}, nil
+	project, err := tomlIndex(pyproject, "project")
+	var name any
+	if err == nil {
+		name, err = tomlIndex(project, "name")
 	}
-	table, isTable := project.(*OrderedObject)
-	if !isTable {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", tomlTypeName(project))}
-	}
-	name, ok := table.Get("name")
-	if !ok {
-		return map[string]bool{}, nil
-	}
-	packages, _ := lock.Get("package")
-	rows, _ := packages.([]any)
-	for _, row := range rows {
-		pkg, isTable := row.(*OrderedObject)
-		if !isTable {
-			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", tomlTypeName(row))}
+	if err != nil {
+		if errorClass(err) == "KeyError" {
+			return map[string]bool{}, nil
 		}
-		if got, _ := pkg.Get("name"); got != name {
+		return nil, err
+	}
+	packages, _ := tomlGet(lock, "package", []any{})
+	rows, err := tomlIter(packages)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		got, err := tomlGet(row, "name", nil)
+		if err != nil {
+			return nil, err
+		}
+		if !tomlEqual(got, name) {
 			continue
 		}
+		metadata, err := tomlGet(row, "metadata", NewOrderedObject())
+		if err != nil {
+			return nil, err
+		}
+		provides, err := tomlGet(metadata, "provides-extras", []any{})
+		if err != nil {
+			return nil, err
+		}
+		items, err := tomlIter(provides)
+		if err != nil {
+			return nil, err
+		}
 		extras := map[string]bool{}
-		metadata, _ := pkg.Get("metadata")
-		if meta, ok := metadata.(*OrderedObject); ok {
-			provides, _ := meta.Get("provides-extras")
-			list, _ := provides.([]any)
-			for _, extra := range list {
-				extras[pyrepr.Str(extra)] = true
+		for _, item := range items {
+			if err := tomlUnhashable(item); err != nil {
+				return nil, err
+			}
+			if extra, ok := item.(string); ok {
+				extras[extra] = true
 			}
 		}
 		return extras, nil
@@ -201,7 +216,7 @@ func newOptInExtras(root string, before map[string]bool) ([]string, error) {
 // Resolves and hashes every target's archives for a tool version and writes the pin
 func pinTool(ctx context.Context, args LockArgs) (int, error) {
 	out := SyncOutput(ctx)
-	lockfile := currentLockfile()
+	lockfile := updateLockfile()
 	name, version := *args.Name, *args.Version
 	p, err := GetPackage(name)
 	if err != nil {
@@ -214,7 +229,7 @@ func pinTool(ctx context.Context, args LockArgs) (int, error) {
 			return nil, err
 		}
 		if digest == "" {
-			if digest, err = HashURL(url); err != nil {
+			if digest, err = updateHashURL(url); err != nil {
 				return nil, err
 			}
 		}
@@ -248,7 +263,7 @@ func pinTool(ctx context.Context, args LockArgs) (int, error) {
 		}
 		targets = append(targets, target)
 		urls[target] = list
-		distinct[strings.Join(list, "\x00")+"\x01"+fmt.Sprint(len(list))] = true
+		distinct[fmt.Sprintf("%q", list)] = true
 	}
 	artifacts := map[string]any{}
 	if len(distinct) == 1 {
@@ -284,7 +299,7 @@ var (
 	enableVT         = enableVTProcessing
 	streamIsTerminal = func(w io.Writer) bool {
 		f, ok := w.(*os.File)
-		return ok && f != nil && isatty.IsTerminal(f.Fd())
+		return ok && f != nil && fileIsTTY(f)
 	}
 	stderrStream   = func() io.Writer { return os.Stderr }
 	progressStream = defaultProgressStream
@@ -369,8 +384,32 @@ var (
 	cliInstallNames    = installNamesFor
 	cliInstallDefaults = installDefaults
 	installActivate    = Activate
-	installSyncVenv    = syncVenv
+	installSyncVenv    func(ctx context.Context, opts SyncVenvOptions) error
 )
+
+// Binds the venv sync step at init because ensure reaches it through the same seam
+func init() { installSyncVenv = syncVenv }
+
+// Facades of the pm package the commands call, replaced by tests the way Python patches the pm module
+var (
+	pmCheckProjectLock  = CheckProjectLock
+	pmLockProject       = LockProject
+	pmEnsureEnvironment = EnsureEnvironment
+)
+
+// InstallCommandSteps are the tool install, PATH activation and venv sync steps the install command runs
+type InstallCommandSteps struct {
+	InstallNames func(ctx context.Context, names []string, target *string, verify bool) (int, error)
+	Activate     func(ctx context.Context, allowIncomplete bool) ([]string, error)
+	SyncVenv     func(ctx context.Context, opts SyncVenvOptions) error
+}
+
+// Replaces the install command steps until the returned restore runs
+func SwapInstallCommandSteps(steps InstallCommandSteps) func() {
+	names, activate, sync := cliInstallNames, installActivate, installSyncVenv
+	cliInstallNames, installActivate, installSyncVenv = steps.InstallNames, steps.Activate, steps.SyncVenv
+	return func() { cliInstallNames, installActivate, installSyncVenv = names, activate, sync }
+}
 
 // uncaughtError carries an exception the int returning installNames cannot return up to Main
 type uncaughtError struct{ err error }
@@ -569,7 +608,7 @@ func installPythonEnvironments(ctx context.Context, extras []string, sync bool, 
 		}
 	}
 	if testEnvironment != nil && failed == 0 {
-		err := CheckProjectLock(ctx, CheckProjectLockOptions{Source: RepoRoot(), Explicit: true})
+		err := pmCheckProjectLock(ctx, CheckProjectLockOptions{Source: RepoRoot(), Explicit: true})
 		if err == nil {
 			_, err = EnsureTestenv(ctx, RepoRoot(), ParseTestExtras(*testEnvironment))
 		}
@@ -607,7 +646,7 @@ func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 		fmt.Fprintf(out, "✗ %s\n", errText)
 		return 1, nil
 	}
-	lockfile := currentLockfile()
+	lockfile := updateLockfile()
 	names := args.Names
 	if len(args.Names) == 0 && len(extras) == 0 {
 		if names, err = SourceInstallPackages(lockfile.Names()); err != nil {
@@ -693,7 +732,7 @@ func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 // Prints the composed package exports of names, never the caller's environment
 func CmdEnv(ctx context.Context, names []string) (int, error) {
 	if len(names) == 0 {
-		names = currentLockfile().Names()
+		names = updateLockfile().Names()
 	}
 	env, err := envFor(ctx, names, map[string]string{})
 	if err != nil {
@@ -710,7 +749,7 @@ func CmdEnv(ctx context.Context, names []string) (int, error) {
 // Checks every locked package's installed state, verification and digest, then the uv cache
 func CmdDoctor(ctx context.Context, repair bool) (int, error) {
 	out := SyncOutput(ctx)
-	lockfile := currentLockfile()
+	lockfile := updateLockfile()
 	if _, err := storeFacts(ctx); err != nil {
 		return 0, err
 	}
@@ -963,7 +1002,7 @@ func latestReceiptDocument(ctx context.Context) (any, bool) {
 	if err != nil || !utf8.Valid(data) {
 		return nil, false
 	}
-	doc, err := loadOrderedJSON(data)
+	doc, err := loadOrderedJSON(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
 	if err != nil {
 		return nil, false
 	}
@@ -993,29 +1032,24 @@ func extraRequirements(project string, extras []string) ([]string, error) {
 	if err := strictUTF8(data); err != nil {
 		return nil, &PyError{Class: "ValueError", Message: err.Error()}
 	}
-	declared, err := tomlLoads(string(data))
+	declared, err := tomlLoads(universalNewlines(string(data)))
 	if err != nil {
 		return nil, err
 	}
-	projectTable, err := tomlGet(declared, "project", nil)
+	projectTable, err := tomlIndex(declared, "project")
 	if err != nil {
 		return nil, err
 	}
-	nameValue, err := tomlGet(projectTable, "name", nil)
+	nameValue, err := tomlIndex(projectTable, "name")
 	if err != nil {
 		return nil, err
-	}
-	name, ok := nameValue.(string)
-	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: "first argument must be string or compiled pattern"}
 	}
 	table, err := tomlGet(projectTable, "optional-dependencies", NewOrderedObject())
 	if err != nil {
 		return nil, err
 	}
-	declaredExtras, _ := table.(*OrderedObject)
-	own := regexp.MustCompile(`\A(?:` + regexp.QuoteMeta(name) + `\[([^\]]+)\])\z`)
 	var requirements []string
+	var own *regexp.Regexp
 	pending, seen := append([]string{}, extras...), map[string]bool{}
 	for len(pending) > 0 {
 		extra := pending[len(pending)-1]
@@ -1023,18 +1057,34 @@ func extraRequirements(project string, extras []string) ([]string, error) {
 		if seen[extra] {
 			continue
 		}
-		var listed any
-		found := false
-		if declaredExtras != nil {
-			listed, found = declaredExtras.Get(extra)
+		found, err := tomlContains(table, extra)
+		if err != nil {
+			return nil, err
 		}
 		if !found {
 			return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("%s is not an extra declared in %s", pyrepr.StrRepr(extra), path)}
 		}
 		seen[extra] = true
-		rows, _ := listed.([]any)
+		listed, err := tomlIndex(table, extra)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := tomlIter(listed)
+		if err != nil {
+			return nil, err
+		}
 		for _, row := range rows {
-			requirement := pyrepr.Str(row)
+			if own == nil {
+				name, ok := nameValue.(string)
+				if !ok {
+					return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("decoding to str: need a bytes-like object, %s found", tomlTypeName(nameValue))}
+				}
+				own = regexp.MustCompile(`\A(?:` + regexp.QuoteMeta(name) + `\[([^\]]+)\])\z`)
+			}
+			requirement, ok := row.(string)
+			if !ok {
+				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'replace'", tomlTypeName(row))}
+			}
 			if m := own.FindStringSubmatch(strings.ReplaceAll(requirement, " ", "")); m != nil {
 				pending = append(pending, strings.Split(m[1], ",")...)
 			} else {
@@ -1066,7 +1116,7 @@ func CmdEnvironment(ctx context.Context, args EnvironmentArgs) (int, error) {
 				return "", err
 			}
 		}
-		return EnsureEnvironment(quiet, EnsureEnvironmentOptions{Name: args.Name, Requirements: requirements, Explicit: true})
+		return pmEnsureEnvironment(quiet, EnsureEnvironmentOptions{Name: args.Name, Requirements: requirements, Explicit: true})
 	}()
 	if err != nil {
 		var install *InstallError
@@ -1154,21 +1204,21 @@ func isDirPath(path string) bool {
 	return err == nil && st.IsDir()
 }
 
-// Sorts sibling names the way Python sorts their paths, case folded on Windows
+// Sorts sibling names the way Python sorts their paths, by code point and lowercased on Windows
 func sortPathNames(names []string) {
 	sort.SliceStable(names, func(i, j int) bool {
 		if runtime.GOOS == "windows" {
-			return strings.ToLower(names[i]) < strings.ToLower(names[j])
+			return pystr.Lower(names[i]) < pystr.Lower(names[j])
 		}
-		return names[i] < names[j]
+		return tarNameLess(names[i], names[j])
 	})
 }
 
-// Reports whether two paths are equal as Python Path objects compare
+// Reports whether two paths are equal as Python Path objects compare, lowercased on Windows
 func samePath(a, b string) bool {
-	a, b = filepath.Clean(a), filepath.Clean(b)
+	a, b = pypath.PurePathStr(a), pypath.PurePathStr(b)
 	if runtime.GOOS == "windows" {
-		return strings.EqualFold(a, b)
+		return pystr.Lower(a) == pystr.Lower(b)
 	}
 	return a == b
 }

@@ -101,7 +101,7 @@ func curBackdate(t *testing.T, ctx context.Context, name string, days, useCount 
 		rec.Set(k, v)
 	}
 	data.Set(name, rec)
-	if !scope.SaveUsage(data) {
+	if !scope.SaveUsage(ctx, data) {
 		t.Fatal("save usage failed")
 	}
 }

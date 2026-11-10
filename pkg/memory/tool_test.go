@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -52,7 +53,7 @@ func TestMemoryToolMissingActionAndOperationsReturnsActionableError(t *testing.T
 func TestMemoryToolReplaceIsRefusedAndPointsAtPatch(t *testing.T) {
 	s := newTestStore(t)
 	env := testEnv(t)
-	must(t)(s.Add("memory", "Jeff drinks tea; prefers Rust; lives in Portland"))
+	must(t)(s.Add(context.Background(), "memory", "Jeff drinks tea; prefers Rust; lives in Portland"))
 	single := callTool(t, env, s, "replace", "memory", "Jeff drinks coffee", "tea", nil, nil)
 	batch := callTool(t, env, s, nil, "memory", nil, nil, nil, ops(
 		map[string]any{"action": "add", "content": "new fact"},
@@ -69,7 +70,7 @@ func TestMemoryToolReplaceIsRefusedAndPointsAtPatch(t *testing.T) {
 
 func TestMemoryToolNewTextAliasForContentOnPatch(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", "fact A"))
+	must(t)(s.Add(context.Background(), "memory", "fact A"))
 	r := callTool(t, testEnv(t), s, "patch", "memory", nil, "fact A", "fact A refined", nil)
 	if !ok(r) || !containsString(s.Entries("memory"), "fact A refined") || containsString(s.Entries("memory"), "fact A") {
 		t.Fatal(r, s.Entries("memory"))
@@ -94,8 +95,8 @@ func TestMemoryToolContentWinsWhenBothContentAndNewTextSet(t *testing.T) {
 
 func TestMemoryBatchAddAndRemoveAtomic(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", "stale one"))
-	must(t)(s.Add("memory", "stale two"))
+	must(t)(s.Add(context.Background(), "memory", "stale one"))
+	must(t)(s.Add(context.Background(), "memory", "stale two"))
 	r := callTool(t, testEnv(t), s, nil, "memory", nil, nil, nil, ops(
 		map[string]any{"action": "remove", "old_text": "stale one"},
 		map[string]any{"action": "remove", "old_text": "stale two"},
@@ -108,7 +109,7 @@ func TestMemoryBatchAddAndRemoveAtomic(t *testing.T) {
 
 func TestMemoryBatchNewTextAliasForContent(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", "old entry"))
+	must(t)(s.Add(context.Background(), "memory", "old entry"))
 	r := callTool(t, testEnv(t), s, nil, "memory", nil, nil, nil, ops(
 		map[string]any{"action": "patch", "old_text": "old entry", "new_text": "updated entry"},
 		map[string]any{"action": "add", "new_text": "batched via new_text"}))
@@ -120,7 +121,7 @@ func TestMemoryBatchNewTextAliasForContent(t *testing.T) {
 
 func TestMemoryBatchDuplicateAddIsNoopNotFailure(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", "already here"))
+	must(t)(s.Add(context.Background(), "memory", "already here"))
 	r := callTool(t, testEnv(t), s, nil, "memory", nil, nil, nil, ops(
 		map[string]any{"action": "add", "content": "already here"},
 		map[string]any{"action": "add", "content": "brand new"}))
@@ -158,7 +159,7 @@ func reviewEnv(t *testing.T, attended bool) *tools.Env {
 func TestBackgroundReviewRemoveStagedNotApplied(t *testing.T) {
 	s := newTestStore(t)
 	env := reviewEnv(t, false)
-	must(t)(s.Add("memory", "never create records without permission"))
+	must(t)(s.Add(context.Background(), "memory", "never create records without permission"))
 	r := callTool(t, env, s, "remove", "memory", nil, "without permission", nil, nil)
 	if !ok(r) || r["staged"] != true || r["proposal_staged"] != true || r["pending_id"] == "" {
 		t.Fatal(r)
@@ -174,7 +175,7 @@ func TestBackgroundReviewRemoveStagedNotApplied(t *testing.T) {
 
 func TestBackgroundReviewPatchStaged(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", "entry the fork must not rewrite"))
+	must(t)(s.Add(context.Background(), "memory", "entry the fork must not rewrite"))
 	r := callTool(t, reviewEnv(t, false), s, "patch", "memory", "rewritten by fork", "entry the fork", nil, nil)
 	if r["staged"] != true || r["proposal_staged"] != true || !containsString(s.Entries("memory"), "entry the fork must not rewrite") {
 		t.Fatal(r)
@@ -183,7 +184,7 @@ func TestBackgroundReviewPatchStaged(t *testing.T) {
 
 func TestBackgroundReviewBatchContainingRemoveStagedWhole(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", "rule one"))
+	must(t)(s.Add(context.Background(), "memory", "rule one"))
 	r := callTool(t, reviewEnv(t, false), s, nil, "memory", nil, nil, nil, ops(
 		map[string]any{"action": "remove", "old_text": "rule one"},
 		map[string]any{"action": "add", "content": "fork consolidation"}))
@@ -202,7 +203,7 @@ func TestBackgroundReviewAddStillAllowed(t *testing.T) {
 
 func TestBackgroundReviewForegroundRemoveUnaffected(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", "entry a supervised turn may remove"))
+	must(t)(s.Add(context.Background(), "memory", "entry a supervised turn may remove"))
 	r := callTool(t, testEnv(t), s, "remove", "memory", nil, "supervised turn", nil, nil)
 	if !ok(r) || containsString(s.Entries("memory"), "entry a supervised turn may remove") {
 		t.Fatal(r)
@@ -211,7 +212,7 @@ func TestBackgroundReviewForegroundRemoveUnaffected(t *testing.T) {
 
 func TestBackgroundReviewAttendedKeepsFullOperationSet(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", "entry an explicit refine may rewrite"))
+	must(t)(s.Add(context.Background(), "memory", "entry an explicit refine may rewrite"))
 	r := callTool(t, reviewEnv(t, true), s, "patch", "memory", "rewritten by refine", "entry an explicit refine may rewrite", nil, nil)
 	if !ok(r) || !containsString(s.Entries("memory"), "rewritten by refine") {
 		t.Fatal(r)
@@ -222,7 +223,7 @@ const packedEntry = "todo: item A; item B; item C"
 
 func packedStore(t *testing.T) *Store {
 	s := newTestStore(t)
-	must(t)(s.Add("memory", packedEntry))
+	must(t)(s.Add(context.Background(), "memory", packedEntry))
 	return s
 }
 
@@ -261,7 +262,7 @@ func TestPatchUnmatchedAndMultiEntryMatchFailWithoutWrite(t *testing.T) {
 	if r := callTool(t, testEnv(t), s, "patch", "memory", nil, "item Z", "whatever", nil); r["success"] != false || !equalStrings(s.Entries("memory"), []string{packedEntry}) {
 		t.Fatal(r)
 	}
-	must(t)(s.Add("memory", "also mentions item B elsewhere"))
+	must(t)(s.Add(context.Background(), "memory", "also mentions item B elsewhere"))
 	if r := callTool(t, testEnv(t), s, "patch", "memory", nil, "item B", "x", nil); r["success"] != false || !equalStrings(s.Entries("memory"), []string{packedEntry, "also mentions item B elsewhere"}) {
 		t.Fatal(r)
 	}
@@ -269,7 +270,7 @@ func TestPatchUnmatchedAndMultiEntryMatchFailWithoutWrite(t *testing.T) {
 
 func TestPatchStoreMethod(t *testing.T) {
 	s := packedStore(t)
-	if r := must(t)(s.Patch("memory", "item B", "item B done", nil)); !ok(r) || !equalStrings(s.Entries("memory"), []string{"todo: item A; item B done; item C"}) {
+	if r := must(t)(s.Patch(context.Background(), "memory", "item B", "item B done", nil)); !ok(r) || !equalStrings(s.Entries("memory"), []string{"todo: item A; item B done; item C"}) {
 		t.Fatal(r)
 	}
 }
@@ -277,9 +278,9 @@ func TestPatchStoreMethod(t *testing.T) {
 func TestPatchRejectsASpanRepeatedWithinTheEntry(t *testing.T) {
 	s := NewStore(t.TempDir(), 500, DefaultUserCharLimit, true, true)
 	entry := "Jeff drinks tea in the morning; his wife drinks tea at night"
-	must(t)(s.Add("memory", entry))
-	single := must(t)(s.Patch("memory", "tea", "coffee", nil))
-	batch := must(t)(s.ApplyBatch("memory", []map[string]any{{"action": "patch", "old_text": "tea", "content": "coffee"}}))
+	must(t)(s.Add(context.Background(), "memory", entry))
+	single := must(t)(s.Patch(context.Background(), "memory", "tea", "coffee", nil))
+	batch := must(t)(s.ApplyBatch(context.Background(), "memory", []map[string]any{{"action": "patch", "old_text": "tea", "content": "coffee"}}))
 	for _, r := range []map[string]any{single, batch} {
 		if ok(r) || !strings.Contains(errText(r), "appears 2 times") {
 			t.Fatal(r)
@@ -288,7 +289,7 @@ func TestPatchRejectsASpanRepeatedWithinTheEntry(t *testing.T) {
 	if !equalStrings(s.Entries("memory"), []string{entry}) {
 		t.Fatal(s.Entries("memory"))
 	}
-	if r := must(t)(s.Patch("memory", "drinks tea in the morning", "drinks coffee in the morning", nil)); !ok(r) {
+	if r := must(t)(s.Patch(context.Background(), "memory", "drinks tea in the morning", "drinks coffee in the morning", nil)); !ok(r) {
 		t.Fatal(r)
 	}
 	if !equalStrings(s.Entries("memory"), []string{"Jeff drinks coffee in the morning; his wife drinks tea at night"}) {
@@ -299,15 +300,15 @@ func TestPatchRejectsASpanRepeatedWithinTheEntry(t *testing.T) {
 // One patch through the single store call or a one op batch
 func patchShape(s *Store, shape, oldText, content string) (Result, error) {
 	if shape == "single" {
-		return s.Patch("memory", oldText, content, nil)
+		return s.Patch(context.Background(), "memory", oldText, content, nil)
 	}
-	return s.ApplyBatch("memory", []map[string]any{{"action": "patch", "old_text": oldText, "content": content}})
+	return s.ApplyBatch(context.Background(), "memory", []map[string]any{{"action": "patch", "old_text": oldText, "content": content}})
 }
 
 func TestPatchRejectsAnOverlappingRepeat(t *testing.T) {
 	for _, shape := range []string{"single", "batch"} {
 		s := NewStore(t.TempDir(), 500, DefaultUserCharLimit, true, true)
-		must(t)(s.Add("memory", "Timeout 1000 ms"))
+		must(t)(s.Add(context.Background(), "memory", "Timeout 1000 ms"))
 		r := must(t)(patchShape(s, shape, "00", "5"))
 		if ok(r) || !strings.Contains(errText(r), "appears 2 times") || !equalStrings(s.Entries("memory"), []string{"Timeout 1000 ms"}) {
 			t.Fatal(shape, r)
@@ -323,7 +324,7 @@ func TestPatchSpansKeepTheirWhitespace(t *testing.T) {
 	for _, shape := range []string{"single", "batch"} {
 		for _, c := range cases {
 			s := NewStore(t.TempDir(), 500, DefaultUserCharLimit, true, true)
-			must(t)(s.Add("memory", c[0]))
+			must(t)(s.Add(context.Background(), "memory", c[0]))
 			if r := must(t)(patchShape(s, shape, c[1], c[2])); !ok(r) || !equalStrings(s.Entries("memory"), []string{c[3]}) {
 				t.Fatal(shape, c, r, s.Entries("memory"))
 			}
@@ -333,7 +334,7 @@ func TestPatchSpansKeepTheirWhitespace(t *testing.T) {
 
 func TestPatchBatchReportsTheEntryEachPatchProduced(t *testing.T) {
 	s := packedStore(t)
-	r := must(t)(s.ApplyBatch("memory", []map[string]any{
+	r := must(t)(s.ApplyBatch(context.Background(), "memory", []map[string]any{
 		{"action": "patch", "old_text": "item B", "content": "item B done"},
 		{"action": "patch", "old_text": "item C", "content": "item C done"},
 	}))
@@ -349,14 +350,14 @@ func TestPatchBatchReportsTheEntryEachPatchProduced(t *testing.T) {
 
 func TestPatchOpInBatchWithNewText(t *testing.T) {
 	s := packedStore(t)
-	if r := must(t)(s.ApplyBatch("memory", []map[string]any{{"action": "patch", "old_text": "item B", "new_text": "item B done"}})); !ok(r) || !equalStrings(s.Entries("memory"), []string{"todo: item A; item B done; item C"}) {
+	if r := must(t)(s.ApplyBatch(context.Background(), "memory", []map[string]any{{"action": "patch", "old_text": "item B", "new_text": "item B done"}})); !ok(r) || !equalStrings(s.Entries("memory"), []string{"todo: item A; item B done; item C"}) {
 		t.Fatal(r)
 	}
 }
 
 func TestPatchOpWithoutContentPointsAtALongerSpan(t *testing.T) {
 	s := packedStore(t)
-	r := must(t)(s.ApplyBatch("memory", []map[string]any{{"action": "patch", "old_text": "item B", "content": ""}}))
+	r := must(t)(s.ApplyBatch(context.Background(), "memory", []map[string]any{{"action": "patch", "old_text": "item B", "content": ""}}))
 	if ok(r) || !strings.Contains(errText(r), "patch a longer span") || !equalStrings(s.Entries("memory"), []string{packedEntry}) {
 		t.Fatal(r)
 	}
@@ -379,13 +380,13 @@ func callRoute(t *testing.T, route string, env *tools.Env, s *Store, args map[st
 		if err != nil {
 			t.Fatal(err)
 		}
-		return must(t)(s.ApplyBatch(target, list))
+		return must(t)(s.ApplyBatch(context.Background(), target, list))
 	case "replay":
 		payload := map[string]any{"action": "batch"}
 		for k, v := range args {
 			payload[k] = v
 		}
-		return must(t)(ApplyMemoryPending(payload, s))
+		return must(t)(ApplyMemoryPending(context.Background(), payload, s))
 	}
 	env.Values.Store(ManagerValuesKey, NewStoreManager(s))
 	var out map[string]any
@@ -399,11 +400,11 @@ func callRoute(t *testing.T, route string, env *tools.Env, s *Store, args map[st
 // Store in the environment home seeded with one fact per target
 func seededStore(t *testing.T, env *tools.Env) *Store {
 	s := NewStore(filepath.Join(env.Home, "memories"), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
-	if err := s.LoadFromDisk(); err != nil {
+	if err := s.LoadFromDisk(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	for _, target := range []string{"memory", "user"} {
-		if r := must(t)(s.Add(target, "Existing "+target+" fact")); !ok(r) {
+		if r := must(t)(s.Add(context.Background(), target, "Existing "+target+" fact")); !ok(r) {
 			t.Fatal(r)
 		}
 	}
@@ -427,7 +428,7 @@ func TestInvalidTargetsLeaveFilesAndPendingQueueUnchanged(t *testing.T) {
 				for _, target := range []string{"memory", "user"} {
 					before[target], _ = os.ReadFile(s.PathFor(target))
 				}
-				if err := config.SetKey(env.Home, "memory.write_approval", origin != "direct"); err != nil {
+				if err := config.SetKey(context.Background(), env.Home, "memory.write_approval", origin != "direct"); err != nil {
 					t.Fatal(err)
 				}
 				if origin != "direct" {
@@ -474,7 +475,7 @@ func TestNestedTargetMatchingTheCallIsAccepted(t *testing.T) {
 				t.Fatal(route, nested, r)
 			}
 			fresh := NewStore(s.Dir, DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
-			fresh.LoadFromDisk()
+			fresh.LoadFromDisk(context.Background())
 			if !equalStrings(fresh.Entries("user"), []string{"Existing user fact", "Fact"}) {
 				t.Fatal(fresh.Entries("user"))
 			}
@@ -513,7 +514,7 @@ func TestMissingTargetCanBeCorrectedWithoutWritingToTheOtherStore(t *testing.T) 
 				t.Fatal(r)
 			}
 			fresh := NewStore(s.Dir, DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
-			fresh.LoadFromDisk()
+			fresh.LoadFromDisk(context.Background())
 			if !equalStrings(fresh.Entries(target), []string{"Existing " + target + " fact", "User prefers metric units"}) {
 				t.Fatal(fresh.Entries(target))
 			}
@@ -601,8 +602,8 @@ func TestAdvertisedOneItemRemoveDeletesTheLastEntryButAMultiOpBatchCannotEmpty(t
 
 func TestOneItemAddThatOverflowsReturnsTheLiveEntries(t *testing.T) {
 	s := NewStore(t.TempDir(), 60, 300, true, true)
-	s.LoadFromDisk()
-	must(t)(s.Add("memory", "written by another session after load"))
+	s.LoadFromDisk(context.Background())
+	must(t)(s.Add(context.Background(), "memory", "written by another session after load"))
 	r := registryCall(t, s, map[string]any{"target": "memory", "operations": []any{map[string]any{"action": "add", "content": strings.Repeat("x", 40)}}})
 	if r["success"] != false {
 		t.Fatal(r)
@@ -620,7 +621,7 @@ func TestOneItemRemoveOrDuplicateAddWorksOnAStoreAlreadyOverALoweredCap(t *testi
 	facts := []string{strings.Repeat("a", 50), strings.Repeat("b", 50), strings.Repeat("c", 50)}
 	os.WriteFile(filepath.Join(dir, "MEMORY.md"), []byte(strings.Join(facts, EntryDelimiter)), 0o644)
 	s := NewStore(dir, 100, 300, true, true)
-	s.LoadFromDisk()
+	s.LoadFromDisk(context.Background())
 	if r := registryCall(t, s, map[string]any{"target": "memory", "operations": []any{map[string]any{"action": "add", "content": facts[1]}}}); !ok(r) {
 		t.Fatal(r)
 	}
@@ -634,7 +635,7 @@ func TestOneItemRemoveOrDuplicateAddWorksOnAStoreAlreadyOverALoweredCap(t *testi
 
 func TestBackgroundReviewOneItemRemoveOfTheLastEntryIsStaged(t *testing.T) {
 	s := newTestStore(t)
-	must(t)(s.Add("user", "Name: Alice"))
+	must(t)(s.Add(context.Background(), "user", "Name: Alice"))
 	r := callTool(t, reviewEnv(t, false), s, nil, "user", nil, nil, nil, ops(map[string]any{"action": "remove", "old_text": "Alice"}))
 	if r["staged"] != true || !equalStrings(s.Entries("user"), []string{"Name: Alice"}) {
 		t.Fatal(r)
@@ -646,8 +647,8 @@ func TestMemoryToolRegisteredAndStoreWritesUnderThePlatformLock(t *testing.T) {
 		t.Fatal("memory tool not registered")
 	}
 	s := NewStore(t.TempDir(), 200, 200, true, true)
-	s.LoadFromDisk()
-	if r := must(t)(s.Add("memory", "fact learned during import fallback test")); !ok(r) {
+	s.LoadFromDisk(context.Background())
+	if r := must(t)(s.Add(context.Background(), "memory", "fact learned during import fallback test")); !ok(r) {
 		t.Fatal(r)
 	}
 }
@@ -655,10 +656,10 @@ func TestMemoryToolRegisteredAndStoreWritesUnderThePlatformLock(t *testing.T) {
 // Memory section flags written to the environment home config
 func writeMemoryConfig(t *testing.T, env *tools.Env, memoryEnabled, userEnabled any) {
 	t.Helper()
-	if err := config.SetKey(env.Home, "memory.memory_enabled", memoryEnabled); err != nil {
+	if err := config.SetKey(context.Background(), env.Home, "memory.memory_enabled", memoryEnabled); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.SetKey(env.Home, "memory.user_profile_enabled", userEnabled); err != nil {
+	if err := config.SetKey(context.Background(), env.Home, "memory.user_profile_enabled", userEnabled); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -774,7 +775,7 @@ func TestBuiltinMemoryUnreadableConfigFailsOpen(t *testing.T) {
 // Store with independent enable flags in a temp dir
 func gatedStore(t *testing.T, memoryEnabled, userEnabled bool) *Store {
 	s := NewStore(t.TempDir(), 500, 500, memoryEnabled, userEnabled)
-	s.LoadFromDisk()
+	s.LoadFromDisk(context.Background())
 	return s
 }
 
@@ -798,7 +799,7 @@ func TestMemoryOnlyRejectsUserProfileWrite(t *testing.T) {
 
 func TestStagedWriteCannotBypassTargetGate(t *testing.T) {
 	s := gatedStore(t, false, true)
-	r := must(t)(ApplyMemoryPending(map[string]any{"action": "add", "target": "memory", "content": "fact"}, s))
+	r := must(t)(ApplyMemoryPending(context.Background(), map[string]any{"action": "add", "target": "memory", "content": "fact"}, s))
 	if r["success"] != false || r["target"] != "memory" {
 		t.Fatal(r)
 	}
@@ -877,19 +878,19 @@ func TestMemoryHandlerPersistsWithContentPrecedenceAndMirrorsThroughTheManager(t
 
 func TestManagerForRegistersAStoreOnlyManagerOnce(t *testing.T) {
 	env := testEnv(t)
-	first := ManagerFor(env)
+	first := ManagerFor(context.Background(), env)
 	if first.Store() == nil || first.Store().Dir != filepath.Join(env.Home, "memories") {
 		t.Fatal(first.Store())
 	}
-	if ManagerFor(env) != first {
+	if ManagerFor(context.Background(), env) != first {
 		t.Fatal("manager rebuilt")
 	}
 	off := testEnv(t)
 	off.Config = config.Tree{"memory": map[string]any{"memory_enabled": false, "user_profile_enabled": false}}
-	if ManagerFor(off).Store() != nil {
+	if ManagerFor(context.Background(), off).Store() != nil {
 		t.Fatal("store built with both stores disabled")
 	}
-	r := callTool(t, off, ManagerFor(off).Store(), "add", "memory", "x", nil, nil, nil)
+	r := callTool(t, off, ManagerFor(context.Background(), off).Store(), "add", "memory", "x", nil, nil, nil)
 	if r["success"] != false || !strings.Contains(errText(r), "not available") {
 		t.Fatal(r)
 	}

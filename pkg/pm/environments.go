@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -82,9 +82,9 @@ func RecordActivationInputs(stamps string, mtimes map[string]int64, projectRoot 
 
 // Environment a sealed payload ships beside its tree, empty when there is none
 func PayloadVenv(projectRoot string) (string, error) {
-	manifest, payloadRoot, ok := payloadManifest(resolvePath(projectRoot))
-	if !ok {
-		return "", nil
+	manifest, payloadRoot, ok, err := payloadManifest(resolvePath(projectRoot))
+	if err != nil || !ok {
+		return "", err
 	}
 	venv, _ := manifest["venv"].(string)
 	if venv == "" {
@@ -95,9 +95,9 @@ func PayloadVenv(projectRoot string) (string, error) {
 
 // Launcher a sealed payload records for the icebath command, empty when none is recorded
 func payloadIcebathCommand(root string) (string, error) {
-	manifest, payloadRoot, ok := payloadManifest(root)
-	if !ok {
-		return "", nil
+	manifest, payloadRoot, ok, err := payloadManifest(root)
+	if err != nil || !ok {
+		return "", err
 	}
 	rt, _ := manifest["runtime"].(map[string]any)
 	commands, _ := rt["commands"].(map[string]any)
@@ -217,7 +217,10 @@ func recordedVenv(ctx context.Context, projectRoot string) (string, error) {
 	if !ok {
 		return "", &PyError{Class: "RuntimeError", Message: "invalid dependency environment path"}
 	}
-	environment := resolvePath(text)
+	environment, err := pathResolve(text)
+	if err != nil {
+		return "", err
+	}
 	generations := resolvePath(filepath.Join(InstallStateDir(ctx, projectRoot), "environments"))
 	if !isRelativeTo(environment, generations) || !isRegularFile(filepath.Join(environment, "pyvenv.cfg")) {
 		return "", &PyError{Class: "RuntimeError", Message: "dependency environment is missing or outside this install: " + environment}
@@ -236,9 +239,9 @@ func ProjectPython(ctx context.Context, projectRoot string) (string, error) {
 
 // Sealed payload interpreter that enters venvs through the venv entry script, empty for Termux and other trees
 func payloadStorePython(root string) (string, error) {
-	manifest, payloadRoot, ok := payloadManifest(root)
-	if !ok {
-		return "", nil
+	manifest, payloadRoot, ok, err := payloadManifest(root)
+	if err != nil || !ok {
+		return "", err
 	}
 	target := ""
 	if v, present := manifest["target"]; present {
@@ -325,7 +328,7 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	sortPathNames(names)
 	for _, name := range names {
 		if a, b, found, err := parse(strings.TrimPrefix(name, "python")); err != nil || found {
 			return a, b, found, err
@@ -381,6 +384,9 @@ func importPathEntries() []string {
 	return append([]string{}, importPath.entries...)
 }
 
+// ImportPathEntries exports importPathEntries
+func ImportPathEntries() []string { return importPathEntries() }
+
 // Directory of the resolved running executable, what this process runs from
 var processPrefix = func() (string, error) {
 	exe, err := os.Executable()
@@ -402,14 +408,19 @@ func runningFromSelectedEnvironment(ctx context.Context, projectRoot string) (bo
 		return false, "", err
 	}
 	selected, err := SelectedVenv(ctx, projectRoot)
-	if err != nil {
-		return false, prefix, nil
+	var site, resolved string
+	if err == nil {
+		site, err = SitePackages(selected)
 	}
-	site, err := SitePackages(selected)
-	if err != nil {
-		return false, prefix, nil
+	if err == nil {
+		resolved, err = pathResolve(site)
 	}
-	resolved := resolvePath(site)
+	if err != nil {
+		if pyOSRuntimeOrValueError(err) {
+			return false, prefix, nil
+		}
+		return false, prefix, err
+	}
 	for _, entry := range importPathEntries() {
 		if entry != "" && resolvePath(entry) == resolved {
 			return true, prefix, nil
@@ -514,13 +525,24 @@ func ActivateDependencies(ctx context.Context, projectRoot string) error {
 	}
 	root := resolvePath(projectRoot)
 	importPath.Lock()
-	entries := []string{root, selected}
+	var kept []string
 	for _, entry := range importPath.entries {
-		base := filepath.Base(entry)
-		if base == "site-packages" || base == "dist-packages" || resolvePath(entry) == root || resolvePath(entry) == resolvePath(selected) {
+		if name := pypath.PathName(entry); name == "site-packages" || name == "dist-packages" || resolvePath(entry) == root {
 			continue
 		}
-		entries = append(entries, entry)
+		kept = append(kept, entry)
+	}
+	kept, err := addSiteDir(kept, selected, nil)
+	if err != nil {
+		importPath.entries = kept
+		importPath.Unlock()
+		return err
+	}
+	entries := []string{root, selected}
+	for _, entry := range kept {
+		if resolvePath(entry) != resolvePath(selected) {
+			entries = append(entries, entry)
+		}
 	}
 	importPath.entries = entries
 	importPath.Unlock()
@@ -535,7 +557,11 @@ func ActivateDependencies(ctx context.Context, projectRoot string) error {
 		commandDir = filepath.Join(root, ".icebath", "bin")
 	}
 	directories := []string{commandDir}
-	if _, _, sealed := payloadManifest(root); !(runtime.GOOS == "windows" && sealed) {
+	_, _, sealed, err := payloadManifest(root)
+	if err != nil {
+		return err
+	}
+	if !(runtime.GOOS == "windows" && sealed) {
 		directories = append(directories, VenvBinDir(environment, runtime.GOOS == "windows"))
 	}
 	var prefix []string
@@ -550,7 +576,7 @@ func ActivateDependencies(ctx context.Context, projectRoot string) error {
 	return nil
 }
 
-// Ordered environment, names matched case insensitively on Windows the way os environ matches them
+// Ordered environment whose names match exactly the way a Python dict holds them
 type environList struct {
 	keys   []string
 	values map[string]string
@@ -559,7 +585,7 @@ type environList struct {
 // Index of a name in the list, minus one when absent
 func (e *environList) find(name string) int {
 	for i, key := range e.keys {
-		if key == name || runtime.GOOS == "windows" && strings.EqualFold(key, name) {
+		if key == name {
 			return i
 		}
 	}
@@ -568,11 +594,9 @@ func (e *environList) find(name string) int {
 
 // Sets a name in place or appends it
 func (e *environList) set(name, value string) {
-	if i := e.find(name); i >= 0 {
-		e.values[e.keys[i]] = value
-		return
+	if e.find(name) < 0 {
+		e.keys = append(e.keys, name)
 	}
-	e.keys = append(e.keys, name)
 	e.values[name] = value
 }
 
@@ -593,41 +617,127 @@ func (e *environList) entries() []string {
 	return out
 }
 
-// Composed map ordered by the process environ, keys the environ lacks following in sorted order
-func orderedEnv(env map[string]string) *environList {
+// Process environment in order as Python os environ holds it, first occurrence kept and names uppercased on Windows
+func pyEnvironOrdered() *environList {
 	list := &environList{values: map[string]string{}}
-	seen := map[string]bool{}
 	for _, kv := range os.Environ() {
-		key, _, _ := strings.Cut(kv, "=")
-		if value, ok := env[key]; ok && !seen[key] {
-			seen[key] = true
-			list.keys = append(list.keys, key)
-			list.values[key] = value
+		if runtime.GOOS == "windows" && strings.HasPrefix(kv, "=") {
+			continue
 		}
-	}
-	for _, key := range sortedKeys(env) {
-		if !seen[key] {
-			list.keys = append(list.keys, key)
-			list.values[key] = env[key]
+		key, value, found := strings.Cut(kv, "=")
+		if !found {
+			continue
+		}
+		if runtime.GOOS == "windows" {
+			key = pystr.Upper(key)
+		}
+		if list.find(key) < 0 {
+			list.set(key, value)
 		}
 	}
 	return list
 }
 
-// Environment of the installed PM packages with the committed site packages and the activation sentinel
-func ActivationEnvironment(ctx context.Context, projectRoot string) ([]string, error) {
-	composed, err := envFor(ctx, AllPackages(), nil)
+// Recorded environment diffs of the installed packages of names, dependencies first in the order env_for composes them
+func installedEnvDiffs(ctx context.Context, names []string) ([]EnvDiff, error) {
+	lockfile := currentLockfile()
+	target, err := CurrentTarget()
 	if err != nil {
 		return nil, err
 	}
+	var diffs []EnvDiff
+	for _, name := range names {
+		chain, err := Walk([]string{name})
+		var unknown *UnknownPackageError
+		if errors.As(err, &unknown) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range chain {
+			if p.Base().Internal {
+				continue
+			}
+			loc, err := InstalledLocation(ctx, p, lockfile, target, LocationOptions{})
+			if err != nil {
+				return nil, err
+			}
+			if loc != nil {
+				diffs = append(diffs, loc.Facts.EnvFor(p.Base().Name, loc.Store.Root))
+			}
+		}
+	}
+	return diffs, nil
+}
+
+// Python compose_env over the process environment, each diff read in the sorted key order facts json stores
+func composeEnviron(diffs []EnvDiff) *environList {
+	env := pyEnvironOrdered()
+	var pathDirs []string
+	for i := len(diffs) - 1; i >= 0; i-- {
+		if value, ok := diffs[i]["PATH"]; ok {
+			for _, d := range envDirs(value) {
+				if n := Native(d); !slices.Contains(pathDirs, n) {
+					pathDirs = append(pathDirs, n)
+				}
+			}
+		}
+	}
+	for _, diff := range diffs {
+		for _, key := range sortedKeys(diff) {
+			if key != "PATH" {
+				env.set(key, Native(pyrepr.Str(diff[key])))
+			}
+		}
+	}
+	if len(pathDirs) > 0 {
+		key := "PATH"
+		for _, k := range env.keys {
+			if pystr.Upper(k) == "PATH" {
+				key = k
+				break
+			}
+		}
+		value := strings.Join(pathDirs, string(os.PathListSeparator))
+		if existing := env.values[key]; existing != "" {
+			value += string(os.PathListSeparator) + existing
+		}
+		env.set(key, value)
+	}
+	return env
+}
+
+// Reports a failure an except clause naming OSError, RuntimeError and ValueError catches, subclasses included
+func pyOSRuntimeOrValueError(err error) bool {
+	if pypath.IsOSError(err) {
+		return true
+	}
+	switch errorClass(err) {
+	case "OSError", "FileNotFoundError", "FileExistsError", "PermissionError", "RuntimeError", "InstallError", "ResolutionConflict",
+		"DownloadError", "DownloadPaused", "HashError", "_RangeError", "DownloadTransportError", "ValueError", "UnicodeDecodeError":
+		return true
+	}
+	return false
+}
+
+// Environment of the installed PM packages with the committed site packages and the activation sentinel
+func ActivationEnvironment(ctx context.Context, projectRoot string) ([]string, error) {
+	diffs, err := installedEnvDiffs(ctx, AllPackages())
+	if err != nil {
+		return nil, err
+	}
+	env := composeEnviron(diffs)
 	environment, err := CommittedVenv(ctx, projectRoot)
 	if err != nil {
 		return nil, err
 	}
-	env := orderedEnv(composed)
 	env.pop("PYTHONHOME")
 	env.pop("VIRTUAL_ENV")
-	pythonPath := resolvePath(projectRoot)
+	pythonPath, err := pathResolve(projectRoot)
+	if err != nil {
+		return nil, err
+	}
 	if environment != "" {
 		site, err := SitePackages(environment)
 		if err != nil {

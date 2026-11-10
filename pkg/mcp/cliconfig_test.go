@@ -52,7 +52,7 @@ func assertFullyRedacted(t *testing.T, text string) {
 func seedServers(t *testing.T, servers map[string]any) string {
 	t.Helper()
 	h := isolateHome(t)
-	if err := config.SaveUser(h, map[string]any{"mcp_servers": servers}); err != nil {
+	if err := config.SaveUser(context.Background(), h, map[string]any{"mcp_servers": servers}); err != nil {
 		t.Fatal(err)
 	}
 	return h
@@ -613,5 +613,11 @@ func TestMCPCmdDispatcherNoActionShowsUsage(t *testing.T) {
 	}
 	if !strings.Contains(ui.out.String(), "Commands:") || !strings.Contains(ui.out.String(), "icebath mcp reauth <name> | --all") {
 		t.Fatal(ui.out.String())
+	}
+}
+
+func TestProbeSingleServerForwardsAnUnlaunchableCommandFailure(t *testing.T) {
+	if _, err := ProbeSingleServer(context.Background(), &tools.Env{}, "gone", map[string]any{"command": "/nonexistent/mcp-binary"}); err == nil {
+		t.Fatal("unlaunchable server probed")
 	}
 }

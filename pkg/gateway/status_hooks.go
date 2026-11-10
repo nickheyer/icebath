@@ -15,7 +15,7 @@ func init() {
 	h := &profiles.GatewayStatusHooks
 	h.ProfileRunning = func(profileDir string) bool {
 		return ResolveGatewayLiveness(LivenessOptions{ProfileDir: profileDir, NoCache: true,
-			PidProbe: func(p string) (int, bool, error) { return GetRunningPid(p, false) }}).Running
+			PidProbe: func(p string) (int, bool, error) { return statusGetRunningPid(p, false) }}).Running
 	}
 	h.ServesNamedProfile = func(name string) bool {
 		served, err := namedProfileServed(name)

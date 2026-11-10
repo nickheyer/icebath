@@ -88,7 +88,55 @@ func TestPubHelperProcess(t *testing.T) {
 			}
 		}
 		os.Exit(0)
+	case "staged-publish":
+		os.Exit(pubStagedPublishChild(t, args))
+	case "recover":
+		ctx := context.Background()
+		held, release, err := RuntimeLock(ctx, args["project"], WaitForever)
+		if err == nil && !held {
+			err = fmt.Errorf("runtime lock not held")
+		}
+		for i := 0; err == nil && i < 2; i++ {
+			err = recoverPublication(ctx, args["project"])
+		}
+		if release != nil {
+			release()
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %s\n", errorClass(err), err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
+}
+
+// Publishes one staged plugin as its own process, then records a committed selection and exits as asked
+func pubStagedPublishChild(t *testing.T, args map[string]string) int {
+	wsHost(t, "")
+	ctx := context.Background()
+	var data map[string]any
+	err := json.Unmarshal([]byte(args["plugin"]), &data)
+	var staged *StagedPlugin
+	if err == nil {
+		staged, err = newStagedPlugin(ctx, data)
+	}
+	if err == nil {
+		err = staged.Publish(ctx, args["project"])
+	}
+	if err == nil && args["committed"] == "true" {
+		var facts *Facts
+		if facts, err = NewFacts(EnvironmentRuntimeFactsPath(ctx, args["project"]), false); err == nil {
+			err = facts.RecordState("venv", "new", []string{}, "", "")
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %s\n", errorClass(err), err)
+		return 1
+	}
+	if args["exit"] == "17" {
+		return 17
+	}
+	return 0
 }
 
 // Command re-executing this test binary as the publication helper child in a mode with string arguments

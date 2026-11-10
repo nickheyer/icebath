@@ -58,7 +58,7 @@ func ValidateServiceProfileName(name string) error {
 type ServiceManager interface {
 	Kind() string
 	Start(name string) error
-	Stop(name string) error
+	Stop(ctx context.Context, name string) error
 	Restart(name string) error
 	IsRunning(name string) (bool, error)
 	SupportsRuntimeRegistration() bool
@@ -116,7 +116,7 @@ type hostServiceManager struct {
 
 func (m *hostServiceManager) Kind() string                           { return m.kind }
 func (m *hostServiceManager) Start(string) error                     { return m.start() }
-func (m *hostServiceManager) Stop(string) error                      { return m.stop() }
+func (m *hostServiceManager) Stop(context.Context, string) error     { return m.stop() }
 func (m *hostServiceManager) Restart(string) error                   { return m.restart() }
 func (m *hostServiceManager) IsRunning(string) (bool, error)         { return m.running() }
 func (m *hostServiceManager) SupportsRuntimeRegistration() bool      { return false }
@@ -329,7 +329,7 @@ func runS6(timeout time.Duration, check bool, cmd string, args ...string) (s6Res
 
 // Hands a path to the icebath service account, ignoring a permission refusal
 func chownIcebath(path string) error {
-	if err := os.Lchown(path, icebathUID, icebathGID); err != nil && !errors.Is(err, fs.ErrPermission) {
+	if err := lchown(path, icebathUID, icebathGID); err != nil && !errors.Is(err, fs.ErrPermission) {
 		return err
 	}
 	return nil
@@ -542,9 +542,9 @@ func (m *S6ServiceManager) supervisedPID(name string) int {
 	return pid
 }
 
-func (m *S6ServiceManager) Stop(name string) error {
+func (m *S6ServiceManager) Stop(ctx context.Context, name string) error {
 	if pid := m.supervisedPID(name); pid != 0 {
-		writePlannedStop(pid)
+		writePlannedStop(ctx, pid)
 	}
 	if err := m.runSvc("-d", "stop", name); err != nil {
 		return err

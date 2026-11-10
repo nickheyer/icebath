@@ -489,6 +489,13 @@ var lookupHostIPs = func(ctx context.Context, hostname string) ([]netip.Addr, er
 	return out, nil
 }
 
+// SwapLookupHostIPs installs a resolver for the safety checks and returns the restore, the getaddrinfo patch of hermes tests
+func SwapLookupHostIPs(fn func(ctx context.Context, hostname string) ([]netip.Addr, error)) (restore func()) {
+	prev := lookupHostIPs
+	lookupHostIPs = fn
+	return func() { lookupHostIPs = prev }
+}
+
 // Reports whether the url targets the always blocked cloud metadata floor
 func isAlwaysBlockedURL(env *Env, raw string) bool {
 	log := envLog(env)

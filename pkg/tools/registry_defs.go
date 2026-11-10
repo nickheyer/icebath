@@ -360,11 +360,11 @@ func isDispatcherOwnedWorkerContext(env *Env) bool {
 // False when a kanban identity is present but this execution does not own it
 func IsDispatcherOwnedWorkerContext(env *Env) bool { return isDispatcherOwnedWorkerContext(env) }
 
-func definitionSelectionContext(env *Env) SelectionContext {
+func definitionSelectionContext(ctx context.Context, env *Env) SelectionContext {
 	return SelectionContext{
 		KanbanTask:            kanbanTaskActive(env),
-		DelegatedChild:        isDelegatedChildProcessContext(env),
-		DispatcherOwnedWorker: isDispatcherOwnedWorkerContext(env),
+		DelegatedChild:        DelegatedChildProcessActive(ctx, env),
+		DispatcherOwnedWorker: DispatcherOwnedWorkerActive(ctx, env),
 	}
 }
 
@@ -374,7 +374,7 @@ func toolDefsCacheKey(ctx context.Context, r *Registry, env *Env, opts Definitio
 	if bypass {
 		return ""
 	}
-	sel := definitionSelectionContext(env)
+	sel := definitionSelectionContext(ctx, env)
 	enabled := "<nil>"
 	if opts.Enabled != nil {
 		enabled = strings.Join(sortedSet(toSet(opts.Enabled)), ",")
@@ -456,7 +456,7 @@ func definitionNotice(env *Env, text string) {
 
 // Uncached implementation of the definition build in hermes order
 func (r *Registry) computeToolDefinitions(ctx context.Context, env *Env, opts DefinitionOptions) []map[string]any {
-	toolsToInclude, notices := r.SelectToolNames(ctx, env, opts.Enabled, opts.Disabled, definitionSelectionContext(env))
+	toolsToInclude, notices := r.SelectToolNames(ctx, env, opts.Enabled, opts.Disabled, definitionSelectionContext(ctx, env))
 	if !opts.Quiet {
 		for _, n := range notices {
 			definitionNotice(env, n.Text)

@@ -18,7 +18,7 @@ func DivertSessionTranscriptJSONL(ctx context.Context, sessionID string, message
 		return "", nil
 	}
 	sessionsDir := filepath.Join(home.Dir(ctx), "sessions")
-	if _, err := home.MakeUserDir(sessionsDir, 0o777, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, sessionsDir, 0o777, true, true); err != nil {
 		return "", err
 	}
 	path := filepath.Join(sessionsDir, sid+".jsonl")

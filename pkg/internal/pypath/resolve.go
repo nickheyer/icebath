@@ -61,7 +61,7 @@ func unencodableComponent(p string) error {
 		if _, err := pystr.SurrogateEscapeEncode(newpath + name); err != nil {
 			return err
 		}
-		return &ValueError{Msg: "embedded null byte"}
+		return &ValueError{Msg: "lstat: embedded null character in path"}
 	}
 	return nil
 }

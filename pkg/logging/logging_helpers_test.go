@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // Home ICEBATH_HOME named when TestMain started, before any test touched logging
@@ -25,6 +26,7 @@ var earlySlog = slog.Default()
 var secretPattern = regexp.MustCompile(`sk-[A-Za-z0-9_-]{10,}`)
 
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	dir, err := os.MkdirTemp("", "icebath-logging-home-")
 	if err != nil {
 		panic(err)

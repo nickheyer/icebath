@@ -116,7 +116,7 @@ func (a *fakeChatAgent) ClearCredentialPool()                      { a.pool, a.p
 func (a *fakeChatAgent) CredentialPoolEnv() PoolEnv                { return PoolEnv{} }
 func (a *fakeChatAgent) ToolEnv() *tools.Env                       { return nil }
 func (a *fakeChatAgent) IsHeadedMode() (bool, error)               { return a.headed, nil }
-func (a *fakeChatAgent) CleanupBrowser(taskID string) error {
+func (a *fakeChatAgent) CleanupBrowser(ctx context.Context, taskID string) error {
 	a.browserCleaned = append(a.browserCleaned, taskID)
 	return a.browserErr
 }
@@ -416,17 +416,17 @@ func TestCleanupTaskResourcesSkipsHeadedBrowsersAndLogsFailures(t *testing.T) {
 	nonStreamLog = slog.Default()
 	t.Cleanup(func() { nonStreamLog = prev })
 	a := &fakeChatAgent{headed: true, verbose: true}
-	CleanupTaskResources(a, "t1")
+	CleanupTaskResources(context.Background(), a, "t1")
 	if len(a.browserCleaned) != 0 {
 		t.Fatal("headed browser must be left to the reaper")
 	}
 	a = &fakeChatAgent{verbose: true, browserErr: errors.New("boom")}
-	CleanupTaskResources(a, "t2")
+	CleanupTaskResources(context.Background(), a, "t2")
 	if len(a.browserCleaned) != 1 || logCount(logs, "Failed to cleanup browser for task t2: boom") != 1 {
 		t.Fatalf("cleaned %v", a.browserCleaned)
 	}
 	a = &fakeChatAgent{browserErr: errors.New("quiet")}
-	CleanupTaskResources(a, "t3")
+	CleanupTaskResources(context.Background(), a, "t3")
 	if logCount(logs, "Failed to cleanup browser for task t3") != 0 {
 		t.Fatal("failures log only under verbose logging")
 	}

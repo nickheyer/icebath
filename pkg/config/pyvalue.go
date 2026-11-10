@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"reflect"
 	"regexp"
 	"sort"
@@ -133,7 +134,7 @@ func PyTypeName(v any) string {
 		return "bool"
 	case string:
 		return "str"
-	case int, int64, uint64, int32:
+	case int, int64, uint64, int32, *big.Int:
 		return "int"
 	case float64, float32:
 		return "float"

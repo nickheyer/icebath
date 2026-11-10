@@ -334,15 +334,21 @@ func TestToolCallIDHelpers(t *testing.T) {
 }
 
 func TestExpandLocalToolBatches(t *testing.T) {
-	batch := segTC(ToolCallName, `{"calls":[{"name":"mcp_a","arguments":{"x":1}},{"name":"mcp_b","arguments":{}}]}`, "call_parent")
+	batch := segTC(ToolCallName, `{"calls": [{"name": "mcp_a", "arguments": {"y": 1.0, "x": 1}}, {"name": "mcp_b", "arguments": {}}]}`, "call_parent")
 	plain := segTC("read_file", `{"path":"a"}`, "call_plain")
 	provider := map[string]any{"anthropic_content_blocks": []any{map[string]any{"type": "tool_use", "id": "call_parent", "input": map[string]any{}}}}
 	expanded := ExpandLocalToolBatches([]state.ToolCall{batch, plain}, provider)
 	if len(expanded) != 3 || expanded[0].ID != "call_parent" || expanded[2].ID != "call_plain" {
 		t.Fatalf("expanded %v", expanded)
 	}
-	if !strings.Contains(expanded[1].Function.Arguments, `"mcp_b"`) || expanded[1].Function.Name != ToolCallName {
+	if expanded[0].Function.Arguments != `{"calls": [{"name": "mcp_a", "arguments": {"y": 1.0, "x": 1}}]}` || expanded[0].Function.Name != ToolCallName {
+		t.Fatalf("first child %v", expanded[0])
+	}
+	if expanded[1].Function.Arguments != `{"calls": [{"name": "mcp_b", "arguments": {}}]}` || expanded[1].Function.Name != ToolCallName {
 		t.Fatalf("child %v", expanded[1])
+	}
+	if want := DeterministicCallID(ToolCallName, "call_parent"+expanded[1].Function.Arguments, 1); expanded[1].ID != want {
+		t.Fatalf("child id %q, want %q", expanded[1].ID, want)
 	}
 	blocks := provider["anthropic_content_blocks"].([]any)
 	if len(blocks) != 2 || blocks[1].(map[string]any)["id"] != expanded[1].ID {

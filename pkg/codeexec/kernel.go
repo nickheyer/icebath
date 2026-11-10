@@ -582,7 +582,7 @@ func (k *sessionKernel) spawn(ctx context.Context, env *tools.Env, childPython, 
 	hideConsoleWindow(cmd)
 	closeParentHandle := parentProcessHandle(childEnv, cmd)
 	cmd.Env = envList(childEnv)
-	err = spawnOwned(cmd, "code-kernel")
+	err = spawnOwned(tools.WithEnvHome(ctx, env), cmd, "code-kernel")
 	closeParentHandle()
 	closeFiles(stdinR, stdoutW, stderrW)
 	if err != nil {

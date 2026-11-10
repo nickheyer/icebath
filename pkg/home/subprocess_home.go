@@ -135,7 +135,7 @@ func SubprocessHome(ctx context.Context, env map[string]string) string {
 	if mode == "real" {
 		return repaired
 	}
-	if profile != "" && detectContainer() {
+	if profile != "" && isContainer() {
 		return profile
 	}
 	if current == "" || isProfileHome(current, profile) {

@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"io"
 	"os"
 	"os/exec"
@@ -16,6 +18,7 @@ import (
 const lockHolderEnv = "ICEBATH_GATEWAY_TEST_LOCK_HOLDER"
 
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	if os.Getenv(lockHolderEnv) == "1" {
 		os.Exit(runGatewayLockHolder())
 	}
@@ -36,11 +39,11 @@ func TestMain(m *testing.M) {
 
 // Takes the runtime lock, writes the pid file, prints the pid and holds both until stdin closes
 func runGatewayLockHolder() int {
-	if !AcquireGatewayRuntimeLock() {
+	if !AcquireGatewayRuntimeLock(context.Background()) {
 		fmt.Fprintln(os.Stderr, "could not acquire gateway.lock")
 		return 1
 	}
-	if err := WritePidFile(); err != nil {
+	if err := WritePidFile(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

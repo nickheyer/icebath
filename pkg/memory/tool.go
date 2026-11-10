@@ -54,7 +54,7 @@ func (m *storeManager) NotifyMemoryToolWrite(result string, args map[string]any,
 }
 
 // Session Manager from the environment, registering a store only manager when the host registered none
-func ManagerFor(env *tools.Env) Manager {
+func ManagerFor(ctx context.Context, env *tools.Env) Manager {
 	if env != nil && env.Values != nil {
 		if v, ok := env.Values.Load(ManagerValuesKey); ok {
 			if m, ok := v.(Manager); ok {
@@ -62,7 +62,7 @@ func ManagerFor(env *tools.Env) Manager {
 			}
 		}
 	}
-	m := NewStoreManager(sessionStore(env))
+	m := NewStoreManager(sessionStore(tools.WithEnvHome(ctx, env), env))
 	if env != nil && env.Values != nil {
 		if actual, _ := env.Values.LoadOrStore(ManagerValuesKey, m); actual != nil {
 			if am, ok := actual.(Manager); ok {
@@ -74,7 +74,7 @@ func ManagerFor(env *tools.Env) Manager {
 }
 
 // Built in store the agent creates at init from the session config, nil when both stores are disabled
-func sessionStore(env *tools.Env) *Store {
+func sessionStore(ctx context.Context, env *tools.Env) *Store {
 	var tree config.Tree
 	if env != nil {
 		tree = env.Config
@@ -89,7 +89,7 @@ func sessionStore(env *tools.Env) *Store {
 		store = NewStore(home.MemoriesDir(envHome(env)), DefaultMemoryCharLimit, DefaultUserCharLimit, memoryEnabled, userEnabled)
 	}
 	store.Log = envLog(env)
-	if err := store.LoadFromDisk(); err != nil {
+	if err := store.LoadFromDisk(tools.WithEnvHome(ctx, env)); err != nil {
 		store.log().Debug("Memory store load failed at session start", "error", err)
 	}
 	return store
@@ -116,7 +116,7 @@ func sectionValue(section map[string]any, key string, fallback any) any {
 }
 
 // Fresh on disk store with configured limits and flags for contexts with no live agent, defaults when config fails
-func LoadOnDiskStore(env *tools.Env) (*Store, error) {
+func LoadOnDiskStore(ctx context.Context, env *tools.Env) (*Store, error) {
 	var store *Store
 	if tree, err := config.Load(envHome(env), configLookup(env)); err == nil {
 		store, _ = storeFromSection(env, builtinMemoryConfig(tree))
@@ -125,7 +125,7 @@ func LoadOnDiskStore(env *tools.Env) (*Store, error) {
 		store = NewStore(home.MemoriesDir(envHome(env)), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
 	}
 	store.Log = envLog(env)
-	if err := store.LoadFromDisk(); err != nil {
+	if err := store.LoadFromDisk(tools.WithEnvHome(ctx, env)); err != nil {
 		return nil, err
 	}
 	return store, nil
@@ -429,13 +429,13 @@ func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, ta
 		if err != nil {
 			return "", "", "", err
 		}
-		if denied, class, err := backgroundDeleteGate(env, store, nil, list, name, nil, nil); err != nil || denied != "" {
+		if denied, class, err := backgroundDeleteGate(tools.WithEnvHome(ctx, env), env, store, nil, list, name, nil, nil); err != nil || denied != "" {
 			return "rejected", denied, class, err
 		}
 		if gated, class, err := applyWriteGate(ctx, env, store, "batch", name, nil, nil, list); err != nil || gated != "" {
 			return "rejected", gated, class, err
 		}
-		res, err := store.ApplyBatch(name, ops)
+		res, err := store.ApplyBatch(tools.WithEnvHome(ctx, env), name, ops)
 		if err != nil {
 			return "", "", "", err
 		}
@@ -458,13 +458,13 @@ func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, ta
 	if msg, class := validateSingleOp(store, verb, name, content, oldText); msg != "" {
 		return "rejected", msg, class, nil
 	}
-	if denied, class, err := backgroundDeleteGate(env, store, verb, nil, name, content, oldText); err != nil || denied != "" {
+	if denied, class, err := backgroundDeleteGate(tools.WithEnvHome(ctx, env), env, store, verb, nil, name, content, oldText); err != nil || denied != "" {
 		return "rejected", denied, class, err
 	}
 	if gated, class, err := applyWriteGate(ctx, env, store, verb, name, content, oldText, nil); err != nil || gated != "" {
 		return "rejected", gated, class, err
 	}
-	res, err := storeCall(store, verb, name, content, oldText, nil)
+	res, err := storeCall(tools.WithEnvHome(ctx, env), store, verb, name, content, oldText, nil)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -509,14 +509,14 @@ func validateSingleOp(store *Store, action, target string, content, oldText any)
 }
 
 // Runs one store action, the staged replay passing the pinned entry it was reviewed against
-func storeCall(store *Store, action, target string, content, oldText, matchedEntry any) (Result, error) {
+func storeCall(ctx context.Context, store *Store, action, target string, content, oldText, matchedEntry any) (Result, error) {
 	switch action {
 	case "add":
 		text, err := strMethodArg(content)
 		if err != nil {
 			return Result{}, err
 		}
-		return store.Add(target, text)
+		return store.Add(ctx, target, text)
 	case "replace":
 		text, err := strMethodArg(content)
 		if err != nil {
@@ -526,13 +526,13 @@ func storeCall(store *Store, action, target string, content, oldText, matchedEnt
 		if err != nil {
 			return Result{}, err
 		}
-		return store.Replace(target, old, text, matchedEntry)
+		return store.Replace(ctx, target, old, text, matchedEntry)
 	case "remove":
 		old, err := strMethodArg(oldText)
 		if err != nil {
 			return Result{}, err
 		}
-		return store.Remove(target, old, matchedEntry)
+		return store.Remove(ctx, target, old, matchedEntry)
 	}
 	old, err := strMethodArg(oldText)
 	if err != nil {
@@ -542,7 +542,7 @@ func storeCall(store *Store, action, target string, content, oldText, matchedEnt
 	if content != nil {
 		text = pyStr(content)
 	}
-	return store.Patch(target, old, text, matchedEntry)
+	return store.Patch(ctx, target, old, text, matchedEntry)
 }
 
 // Gate summary and detail text of one single op
@@ -703,7 +703,7 @@ func memoryHandler(ctx context.Context, call *tools.Call) string {
 	if !present {
 		action = ""
 	}
-	manager := ManagerFor(call.Env)
+	manager := ManagerFor(tools.WithEnvHome(ctx, call.Env), call.Env)
 	result := MemoryTool(ctx, call.Env, manager.Store(), action, args["target"], args["content"], args["old_text"], args["new_text"], args["operations"])
 	manager.NotifyMemoryToolWrite(result, args, call.TaskID, call.ToolCallID)
 	return result

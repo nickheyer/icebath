@@ -53,13 +53,13 @@ func TestUpdateBestInMinor(t *testing.T) {
 	}
 }
 
-// Package stub answering canned candidates per target
-type peStubPackage struct {
+// Package answering canned candidates per target
+type peCannedPackage struct {
 	BasePackage
 	latest map[string][]string
 }
 
-func (p *peStubPackage) LatestVersions(target, locked string) ([]string, error) {
+func (p *peCannedPackage) LatestVersions(target, locked string) ([]string, error) {
 	return p.latest[target], nil
 }
 
@@ -84,7 +84,7 @@ func TestUpdateResolvePackageDecisions(t *testing.T) {
 		{"semver", [][2]any{{"a", []string{"26.8.1"}}, {"b", []string{}}}, "26.7.0", "26.8.1", map[string]string{"a": "26.8.1"}, true, ""},
 	}
 	for i, c := range cases {
-		p := &peStubPackage{BasePackage: BasePackage{Name: "node", VersionStyle: c.style}, latest: map[string][]string{}}
+		p := &peCannedPackage{BasePackage: BasePackage{Name: "node", VersionStyle: c.style}, latest: map[string][]string{}}
 		var targets []string
 		for _, cand := range c.candidates {
 			p.latest[cand[0].(string)] = cand[1].([]string)
@@ -197,10 +197,10 @@ func peForbidUpdateMutation(t *testing.T) {
 		return 1, "", nil
 	})
 	peSwap(t, &updateLockProject, func(context.Context, LockProjectOptions) error { fail("a lock refresh"); return nil })
-	peSwap(t, &updateSyncVenvStep, func(context.Context, io.Writer) (bool, error) { fail("a venv sync"); return false, nil })
+	peSwap(t, &installSyncVenv, func(context.Context, SyncVenvOptions) error { fail("a venv sync"); return nil })
 }
 
-func TestUpdateFailedResolutionStopsEveryApplyPath(t *testing.T) {
+func TestFailedResolutionStopsEveryApplyPath(t *testing.T) {
 	for _, check := range []bool{true, false} {
 		for _, mixed := range []bool{true, false} {
 			t.Run(fmt.Sprint(check, mixed), func(t *testing.T) {
@@ -235,7 +235,7 @@ func TestUpdateFailedResolutionStopsEveryApplyPath(t *testing.T) {
 	}
 }
 
-func TestUpdateCurrentAndManualResultsAreSuccessfulWithoutWrites(t *testing.T) {
+func TestCurrentAndManualResultsAreSuccessfulWithoutWrites(t *testing.T) {
 	for _, versions := range [][]string{{"1.0"}, {}} {
 		t.Run(fmt.Sprint(len(versions)), func(t *testing.T) {
 			tmp := isolateHome(t)
@@ -285,7 +285,7 @@ func peDecision(name, version string) *Resolved {
 		PerTarget: []TargetVersion{{target, version}}, ArtifactUpdates: map[string][]string{}}
 }
 
-func TestUpdateOneFailingPinDoesNotBlockTheRest(t *testing.T) {
+func TestOneFailingPinDoesNotBlockTheRest(t *testing.T) {
 	lock, _, _ := pePinIsolation(t)
 	ctx := context.Background()
 	var out bytes.Buffer
@@ -312,7 +312,7 @@ func TestUpdateOneFailingPinDoesNotBlockTheRest(t *testing.T) {
 	}
 }
 
-func TestUpdateAllPinsFailingLeavesLockfileUntouched(t *testing.T) {
+func TestAllPinsFailingLeavesLockfileUntouched(t *testing.T) {
 	lock, _, _ := pePinIsolation(t)
 	before := peRead(t, lock.Path)
 	var out bytes.Buffer
@@ -578,17 +578,32 @@ func peUVRepin(t *testing.T, lock *Lockfile) int {
 	return rc
 }
 
-func TestUpdateUVRepinRegeneratesInstallerPins(t *testing.T) {
-	root, lock := peBootstrapCheckout(t)
-	if rc := peUVRepin(t, lock); rc != 0 {
-		t.Fatalf("rc %d", rc)
+func TestUVRepinRegeneratesInstallerPins(t *testing.T) {
+	bump := func(t *testing.T, lock *Lockfile) int {
+		name, version := "uv", "99.0.0"
+		rc, err := CmdLock(withSyncOutput(context.Background(), io.Discard), LockArgs{Name: &name, Version: &version})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rc
 	}
-	if code, out := peFragmentsCheck(t, root); code != 0 {
-		t.Fatalf("fragments stale: %s", out)
+	for _, c := range []struct {
+		id    string
+		repin func(*testing.T, *Lockfile) int
+	}{{"update", peUVRepin}, {"bump", bump}} {
+		t.Run(c.id, func(t *testing.T) {
+			root, lock := peBootstrapCheckout(t)
+			if rc := c.repin(t, lock); rc != 0 {
+				t.Fatalf("rc %d", rc)
+			}
+			if code, out := peFragmentsCheck(t, root); code != 0 {
+				t.Fatalf("fragments stale: %s", out)
+			}
+		})
 	}
 }
 
-func TestUpdateRetryWithCurrentPinsRepairsFragmentsAFailedRunLeftStale(t *testing.T) {
+func TestRetryWithCurrentPinsRepairsFragmentsAFailedRunLeftStale(t *testing.T) {
 	root, lock := peBootstrapCheckout(t)
 	regenerate := updateRegenerate
 	peSwap(t, &updateRegenerate, func(context.Context, *Lockfile) (int, error) { return 1, nil })
@@ -604,5 +619,19 @@ func TestUpdateRetryWithCurrentPinsRepairsFragmentsAFailedRunLeftStale(t *testin
 	}
 	if code, out := peFragmentsCheck(t, root); code != 0 {
 		t.Fatalf("fragments stale: %s", out)
+	}
+}
+
+func TestExportedSwapUpdateResolution(t *testing.T) {
+	resolved := &Resolved{Name: "python"}
+	restore := SwapUpdateResolution(func(Package, []string, *string, map[string]any) (*Resolved, error) { return resolved, nil },
+		func(Package, *Resolved, map[string]any) (map[string]any, error) {
+			return map[string]any{"pinned": true}, nil
+		})
+	got, _ := updateResolvePackage(nil, nil, nil, nil)
+	pinned, _ := updatePinArtifacts(nil, nil, nil)
+	restore()
+	if got != resolved || pinned["pinned"] != true {
+		t.Fatalf("swapped resolution %v %v", got, pinned)
 	}
 }

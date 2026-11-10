@@ -145,6 +145,16 @@ func backupExisting(paths []string) ([]backupPair, error) {
 	return backups, nil
 }
 
+// Backup copies of the regular files among paths for callers outside the package, in path order
+func BackupExisting(paths []string) ([]string, error) {
+	pairs, err := backupExisting(paths)
+	out := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		out = append(out, p.backup)
+	}
+	return out, err
+}
+
 // Puts every backup that still exists back over its original, the restored originals returned
 func restoreBackups(backups []backupPair) []string {
 	var restored []string

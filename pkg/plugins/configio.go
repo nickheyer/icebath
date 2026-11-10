@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,12 +39,12 @@ func readUserConfig(h string) (map[string]any, error) {
 }
 
 // Writes the raw user configuration document of a home
-func saveUserConfig(h string, doc map[string]any) error {
-	return config.SaveUser(h, doc)
+func saveUserConfig(ctx context.Context, h string, doc map[string]any) error {
+	return config.SaveUser(ctx, h, doc)
 }
 
 // Rewrites the user config of a home under one process wide lock
-func updateUserConfig(h string, mutate func(doc map[string]any) error) error {
+func updateUserConfig(ctx context.Context, h string, mutate func(doc map[string]any) error) error {
 	configWriteMu.Lock()
 	defer configWriteMu.Unlock()
 	doc, err := readUserConfig(h)
@@ -53,7 +54,7 @@ func updateUserConfig(h string, mutate func(doc map[string]any) error) error {
 	if err := mutate(doc); err != nil {
 		return err
 	}
-	return saveUserConfig(h, doc)
+	return saveUserConfig(ctx, h, doc)
 }
 
 // The plugins section of a config document, empty when absent

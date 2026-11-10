@@ -24,3 +24,6 @@ func platformCodePage(mod string) string {
 
 // locale.getencoding on Windows, the ANSI code page
 func LocaleEncoding() string { return "cp" + strconv.Itoa(int(windows.GetACP())) }
+
+// locale.getencoding with the UTF-8 mode ignored, the same ANSI code page on Windows
+func GetEncoding() string { return LocaleEncoding() }

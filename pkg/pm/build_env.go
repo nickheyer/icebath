@@ -100,6 +100,17 @@ func argparseTheme(stdout io.Writer) argTheme {
 		label: "\x1b[1;33m", reset: "\x1b[0m"}
 }
 
+// Color codes of the argparse theme for one stream, all empty when the stream shows no color
+type ArgparseColors struct {
+	Usage, Prog, Heading, SummaryLong, SummaryShort, SummaryLabel, LongOption, ShortOption, Label, Reset string
+}
+
+// ArgparseThemeFor exports argparseTheme
+func ArgparseThemeFor(stdout io.Writer) ArgparseColors {
+	t := argparseTheme(stdout)
+	return ArgparseColors{t.usage, t.prog, t.heading, t.summaryLong, t.summaryShort, t.summaryLabel, t.longOption, t.shortOption, t.label, t.reset}
+}
+
 // Reports whether Python would color output on this stream, its environment overrides first
 func canColorize(stdout io.Writer) bool {
 	switch os.Getenv("PYTHON_COLORS") {
@@ -127,6 +138,9 @@ func decoloredLen(s string) int { return utf8.RuneCountInString(ansiSGR.ReplaceA
 
 // Formatter width argparse uses, the terminal columns less two
 func argparseWidth() int { return terminalColumns() - 2 }
+
+// ArgparseWidth exports argparseWidth
+func ArgparseWidth() int { return argparseWidth() }
 
 // Option invocation for usage and help, metavar the dest upper cased
 func (o argOption) metavar() string { return strings.ToUpper(o.dest) }

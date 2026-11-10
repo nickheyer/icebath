@@ -130,3 +130,19 @@ func TestExportLeavesTheBotDesktopBrowserProfileOut(t *testing.T) {
 		})
 	}
 }
+
+func TestSwapExistingProfileDirRoutesTheExportSource(t *testing.T) {
+	tmp := manageEnv(t)
+	captureOut(t)
+	src := filepath.Join(tmp, "elsewhere")
+	writeFile(t, filepath.Join(src, "SOUL.md"), "routed\n")
+	restore := SwapExistingProfileDir(func(string) (string, string, error) { return "routed", src, nil })
+	archive, err := ExportProfile("anything", filepath.Join(tmp, "routed.tar.gz"), nil)
+	restore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files, _ := archiveMembers(t, archive); files["routed/SOUL.md"] != "routed\n" {
+		t.Fatalf("%v", files)
+	}
+}

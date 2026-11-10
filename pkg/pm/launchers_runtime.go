@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -46,6 +47,32 @@ func InstallationCommand(repoRoot string, args []string, opts LaunchCommandOptio
 	}
 	command := append([]string{binary}, opts.Subcommand...)
 	return append(command, args...)
+}
+
+// Launcher steps before the bootstrap, argv returned without a runtime command's leading home pin and whether it had one
+func LauncherStart(repoRoot string, args []string) ([]string, bool) {
+	os.Unsetenv("PYTHONHOME")
+	os.Unsetenv("PYTHONPATH")
+	pinned := len(args) > 1 && (args[1] == PinDefaultHomeFlag || strings.HasPrefix(args[1], PinDefaultHomeFlag+"="))
+	rest := args
+	if pinned {
+		os.Unsetenv("VIRTUAL_ENV")
+		if value, ok := strings.CutPrefix(args[1], PinDefaultHomeFlag+"="); ok && os.Getenv(home.EnvHome) == "" {
+			os.Setenv(home.EnvHome, value)
+		}
+		rest = append([]string{args[0]}, args[2:]...)
+	}
+	importPath.Lock()
+	importPath.entries = append([]string{resolvePath(repoRoot)}, importPath.entries...)
+	importPath.Unlock()
+	return rest, pinned
+}
+
+// Pins an unset ICEBATH_HOME to the install's default root, the home every launch of an install command settles on
+func PinLauncherHome() {
+	if os.Getenv(home.EnvHome) == "" {
+		os.Setenv(home.EnvHome, home.Root())
+	}
 }
 
 const runtimeCommandUsage = "usage: icebath --print-runtime-command [-h] [--module MODULE] ...\n"

@@ -197,7 +197,7 @@ func TestBundleCarriesItsTypedKeys(t *testing.T) {
 
 func TestSaveAndDeleteBundle(t *testing.T) {
 	s, dir, _ := bundlesEnv(t)
-	path, err := s.SaveBundle("test-bundle", []string{"s1", "s2"}, "d", "i", false)
+	path, err := s.SaveBundle(context.Background(), "test-bundle", []string{"s1", "s2"}, "d", "i", false)
 	if err != nil || filepath.Dir(path) != dir {
 		t.Fatalf("save %q %v", path, err)
 	}
@@ -208,19 +208,19 @@ func TestSaveAndDeleteBundle(t *testing.T) {
 	if raw, _ := os.ReadFile(path); string(raw) != want {
 		t.Fatalf("content %q", raw)
 	}
-	if _, err := s.SaveBundle("test-bundle", []string{"s3"}, "", "", false); err == nil || err.(*BundleError).Class != "FileExistsError" {
+	if _, err := s.SaveBundle(context.Background(), "test-bundle", []string{"s3"}, "", "", false); err == nil || err.(*BundleError).Class != "FileExistsError" {
 		t.Fatalf("exists %v", err)
 	}
-	s.SaveBundle("dup", []string{"s1"}, "", "", false)
+	s.SaveBundle(context.Background(), "dup", []string{"s1"}, "", "", false)
 	os.Chmod(filepath.Join(dir, "dup.yaml"), 0o600)
-	s.SaveBundle("dup", []string{"s2"}, "", "", true)
+	s.SaveBundle(context.Background(), "dup", []string{"s2"}, "", "", true)
 	if info, ok, _ := s.GetBundle("dup"); !ok || !reflect.DeepEqual(info["skills"], []any{"s2"}) {
 		t.Fatalf("overwrite %v", info)
 	}
 	if st, _ := os.Stat(filepath.Join(dir, "dup.yaml")); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("mode not preserved %v", st.Mode())
 	}
-	s.SaveBundle("doomed", []string{"s1"}, "", "", false)
+	s.SaveBundle(context.Background(), "doomed", []string{"s1"}, "", "", false)
 	if _, ok, _ := s.GetBundle("doomed"); !ok {
 		t.Fatal("doomed missing")
 	}
@@ -238,7 +238,7 @@ func TestSaveAndDeleteBundle(t *testing.T) {
 		skills []string
 		msg    string
 	}{{" ", []string{"a"}, "Bundle name is required"}, {"x", []string{" "}, "Bundle must reference at least one skill"}, {"!!!", []string{"a"}, "Bundle name '!!!' normalizes to an empty slug"}} {
-		if _, err := s.SaveBundle(tc.name, tc.skills, "", "", false); err == nil || err.(*BundleError).Class != "ValueError" || err.Error() != tc.msg {
+		if _, err := s.SaveBundle(context.Background(), tc.name, tc.skills, "", "", false); err == nil || err.(*BundleError).Class != "ValueError" || err.Error() != tc.msg {
 			t.Fatalf("%q %v", tc.name, err)
 		}
 	}
@@ -337,7 +337,7 @@ func TestWriteLandingDuringScanIsPickedUpNextCall(t *testing.T) {
 
 func TestBundleOverwriteNeverExposesAPartialFile(t *testing.T) {
 	s, _, _ := bundlesEnv(t)
-	if _, err := s.SaveBundle("alpha", []string{"old-skill"}, "", "", false); err != nil {
+	if _, err := s.SaveBundle(context.Background(), "alpha", []string{"old-skill"}, "", "", false); err != nil {
 		t.Fatal(err)
 	}
 	target, _ := s.BundlePathFor("alpha")
@@ -370,11 +370,11 @@ func TestBundleOverwriteNeverExposesAPartialFile(t *testing.T) {
 		if i%2 == 1 {
 			skills = []string{"old-skill"}
 		}
-		if _, err := s.SaveBundle("alpha", skills, "", "", true); err != nil {
+		if _, err := s.SaveBundle(context.Background(), "alpha", skills, "", "", true); err != nil {
 			t.Fatal(err)
 		}
 	}
-	s.SaveBundle("alpha", []string{"new-skill"}, "", "", true)
+	s.SaveBundle(context.Background(), "alpha", []string{"new-skill"}, "", "", true)
 	close(stop)
 	<-done
 	for _, v := range seen {

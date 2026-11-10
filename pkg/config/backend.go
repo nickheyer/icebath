@@ -157,12 +157,12 @@ func (FileBackend) WritePath(ctx context.Context, path string, changes Changes) 
 		}
 	}
 	for _, kv := range changes.Set {
-		if err := atomicRoundtripYAMLUpdate(path, kv.Key, kv.Value); err != nil {
+		if err := atomicRoundtripYAMLUpdate(ctx, path, kv.Key, kv.Value); err != nil {
 			return err
 		}
 	}
 	for _, key := range changes.Unset {
-		if err := atomicRoundtripYAMLUpdate(path, key, nil); err != nil {
+		if err := atomicRoundtripYAMLUpdate(ctx, path, key, nil); err != nil {
 			return err
 		}
 	}
@@ -179,8 +179,20 @@ func (b FileBackend) ConfigPath(home string) string {
 	return filepath.Join(home, ConfigFilename)
 }
 
-func (b FileBackend) ReadUserDoc(_ context.Context, home string) (any, error) {
+func (b FileBackend) ReadUserDoc(ctx context.Context, home string) (any, error) {
+	return fileReadUserDoc(b, ctx, home)
+}
+
+// File layer user document read, the FileBackend.read_user_doc attribute hermes tests replace
+var fileReadUserDoc = func(b FileBackend, _ context.Context, home string) (any, error) {
 	return b.ReadPath(b.ConfigPath(home))
+}
+
+// Replaces the file layer user document read until the returned restore runs
+func SwapFileReadUserDoc(f func(b FileBackend, ctx context.Context, home string) (any, error)) (restore func()) {
+	old := fileReadUserDoc
+	fileReadUserDoc = f
+	return func() { fileReadUserDoc = old }
 }
 
 func (b FileBackend) ReadUserDocReadonly(_ context.Context, home string) (any, error) {
@@ -390,11 +402,23 @@ func ReadConfigDocReadonly(ctx context.Context, configPath string) (any, error) 
 
 // Cache signature of a config file, the stat error when it cannot be stat'ed
 func ConfigVersion(ctx context.Context, configPath string) ([]any, error) {
+	return configVersionFn(ctx, configPath)
+}
+
+// Config version answer, the config_version module function hermes tests replace
+var configVersionFn = func(ctx context.Context, configPath string) ([]any, error) {
 	backend, h, err := route(ctx, configPath)
 	if err != nil {
 		return nil, err
 	}
 	return backend.Version(ctx, h)
+}
+
+// Replaces the config version answer until the returned restore runs
+func SwapConfigVersion(f func(ctx context.Context, configPath string) ([]any, error)) (restore func()) {
+	old := configVersionFn
+	configVersionFn = f
+	return func() { configVersionFn = old }
 }
 
 // Signature for a parse cache that also changes on a same tick same size rewrite

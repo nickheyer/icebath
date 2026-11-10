@@ -32,14 +32,20 @@ func (e *CalledProcessError) Error() string {
 
 // Failure subprocess.run raises after killing a command that outlived its timeout
 type TimeoutExpired struct {
-	Cmd     []string
-	Timeout int
-	Stdout  []byte
-	Stderr  []byte
+	Cmd          []string
+	Timeout      int
+	TimeoutFloat *float64
+	Stdout       []byte
+	Stderr       []byte
 }
 
+// Message with the timeout printed as Python prints the int or the float the caller passed
 func (e *TimeoutExpired) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", cmdRepr(e.Cmd), strconv.Itoa(e.Timeout))
+	seconds := strconv.Itoa(e.Timeout)
+	if e.TimeoutFloat != nil {
+		seconds = pyrepr.Repr(*e.TimeoutFloat)
+	}
+	return fmt.Sprintf("Command '%s' timed out after %s seconds", cmdRepr(e.Cmd), seconds)
 }
 
 func cmdRepr(cmd []string) string {

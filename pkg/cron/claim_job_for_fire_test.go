@@ -47,17 +47,29 @@ func TestClaimOneshotCannotBeDoubleClaimed(t *testing.T) {
 	}
 }
 
-func TestClaimUnknownAndPausedJobs(t *testing.T) {
+func TestClaimUnknownJobReturnsFalse(t *testing.T) {
 	s, _ := newTestStore(t)
 	if _, ok := tryClaimFire(t, s, "nope-does-not-exist", FireClaimOptions{}); ok {
 		t.Fatal("unknown job claimed")
 	}
+}
+
+func TestClaimPausedJobReturnsFalse(t *testing.T) {
+	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 5m", Name: prompt("p")})
 	if _, err := s.pauseJob(job.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := tryClaimFire(t, s, job.ID, FireClaimOptions{}); ok {
 		t.Fatal("paused job claimed")
+	}
+}
+
+func TestManualClaimStillRefusesAPausedJob(t *testing.T) {
+	s, _ := newTestStore(t)
+	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 5m", Name: prompt("mp")})
+	if _, err := s.pauseJob(job.ID, nil); err != nil {
+		t.Fatal(err)
 	}
 	if _, ok := tryClaimFire(t, s, job.ID, FireClaimOptions{Manual: true}); ok {
 		t.Fatal("manual claim resumed a paused job")
@@ -253,7 +265,7 @@ func TestSameProcessFireFenceRefusesSecondClaimAfterTimeout(t *testing.T) {
 	}
 }
 
-func TestSameContextFireFenceReentrancyPreservesOwnership(t *testing.T) {
+func TestSameThreadFireFenceReentrancyPreservesOwnership(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 5m", Name: prompt("local-fence-reentrant")})
 	done := make(chan [2]bool, 1)
@@ -304,8 +316,8 @@ func TestClaimSecondsBeforeTheSlotOwnsItOnce(t *testing.T) {
 	slotAt := parseInstant(t, slot)
 	setNow(s, slotAt.Add(-2*time.Second))
 	claimed, ok := tryClaimFire(t, s, job.ID, FireClaimOptions{})
-	if !ok || deref(claimed.ScheduledInstant) != deref(scheduledInstant(s, slot)) {
-		t.Fatalf("early fire carried %v want %v", claimed.ScheduledInstant, scheduledInstant(s, slot))
+	if !ok || deref(claimed.ScheduledInstant) != deref(scheduledInstant(slot)) {
+		t.Fatalf("early fire carried %v want %v", claimed.ScheduledInstant, scheduledInstant(slot))
 	}
 	ctx := context.Background()
 	ledger := openExecutionsLedger(s)

@@ -77,7 +77,7 @@ func installHubSkill(t *testing.T, dir, name string) string {
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: "+name+"\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := x.Hub.LockFile("").RecordInstall(name, "github", "o/r/"+name, "community", "safe", "h", name, []string{"SKILL.md"}, nil, nil); err != nil {
+	if err := x.Hub.LockFile("").RecordInstall(context.Background(), name, "github", "o/r/"+name, "community", "safe", "h", name, []string{"SKILL.md"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	return skillDir

@@ -133,7 +133,7 @@
 - [x] hermes_platform/host/runtime.py
 - [x] hermes_platform/host/summary.py
 
-### 5. pkg/provider: 98% (328 of 334 files completed)
+### 5. pkg/provider: 100% (334 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
 - [x] agent/account_usage.py
 - [x] agent/account_usage_cache.py
@@ -277,7 +277,7 @@
 - [x] agent/transports/codex_app_server.py
 - [x] agent/transports/codex_app_server_session.py
 - [x] agent/transports/codex_event_projector.py
-- [ ] agent/transports/hermes_tools_mcp_server.py
+- [x] agent/transports/hermes_tools_mcp_server.py
 - [x] agent/transports/types.py
 - [x] agent/usage_anchor.py
 - [x] agent/usage_gauges.py
@@ -356,7 +356,7 @@
 - [x] hermes_cli/model_setup_flows_common.py
 - [x] hermes_cli/model_setup_flows_custom.py
 - [x] hermes_cli/model_setup_flows_local.py
-- [ ] hermes_cli/model_switch.py
+- [x] hermes_cli/model_switch.py
 - [x] hermes_cli/model_switch_providers.py
 - [x] hermes_cli/models.py
 - [x] hermes_cli/models_cache_lock.py
@@ -379,14 +379,14 @@
 - [x] hermes_cli/profile_distribution.py
 - [x] hermes_cli/profile_identity.py
 - [x] hermes_cli/profile_model_seed.py
-- [ ] hermes_cli/profiles.py
+- [x] hermes_cli/profiles.py
 - [x] hermes_cli/profiles_cache.py
 - [x] hermes_cli/profiles_config.py
 - [x] hermes_cli/profiles_honcho.py
 - [x] hermes_cli/profiles_initialization.py
 - [x] hermes_cli/profiles_remove.py
 - [x] hermes_cli/profiles_service_cleanup.py
-- [ ] hermes_cli/prompt_size.py
+- [x] hermes_cli/prompt_size.py
 - [x] hermes_cli/provider_catalog.py
 - [x] hermes_cli/providers.py
 - [x] hermes_cli/proxy/adapters/__init__.py
@@ -403,7 +403,7 @@
 - [x] hermes_cli/runtime_provider_backends.py
 - [x] hermes_cli/runtime_provider_custom.py
 - [x] hermes_cli/runtime_provider_missing_key.py
-- [ ] hermes_cli/sandbox_image_switch.py
+- [x] hermes_cli/sandbox_image_switch.py
 - [x] hermes_cli/secret_prompt.py
 - [x] hermes_cli/secrets_cli.py
 - [x] hermes_cli/shared_profile_warning.py
@@ -415,7 +415,7 @@
 - [x] hermes_cli/subcommands/logout.py
 - [x] hermes_cli/subcommands/moa.py
 - [x] hermes_cli/subcommands/model.py
-- [ ] hermes_cli/subcommands/peer.py
+- [x] hermes_cli/subcommands/peer.py
 - [x] hermes_cli/subcommands/profile.py
 - [x] hermes_cli/subcommands/secrets.py
 - [x] hermes_cli/subcommands/usage.py
@@ -470,7 +470,7 @@
 - [x] providers/__init__.py
 - [x] providers/base.py
 
-### 6. pkg/tools: 98% (275 of 279 files completed)
+### 6. pkg/tools: 100% (279 of 279 files completed)
 #### Tool registry, approval, terminal backends, file ops, search, web, vision, checkpoints
 - [x] agent/async_utils.py
 - [x] agent/background_review.py
@@ -523,7 +523,7 @@
 - [x] hermes_cli/approvals_test.py
 - [x] hermes_cli/archive_safe.py
 - [x] hermes_cli/checkpoints.py
-- [ ] hermes_cli/cli_commands_worktree.py
+- [x] hermes_cli/cli_commands_worktree.py
 - [x] hermes_cli/dump.py
 - [x] hermes_cli/git_pack_tidy.py
 - [x] hermes_cli/gitlock.py
@@ -545,9 +545,9 @@
 - [x] hermes_cli/subcommands/security.py
 - [x] hermes_cli/subcommands/worktree.py
 - [x] hermes_cli/tool_availability_notices.py
-- [ ] hermes_cli/tools_config.py
-- [ ] hermes_cli/tools_config_post_setup.py
-- [ ] hermes_cli/tools_config_providers.py
+- [x] hermes_cli/tools_config.py
+- [x] hermes_cli/tools_config_post_setup.py
+- [x] hermes_cli/tools_config_providers.py
 - [x] hermes_cli/toolset_scope.py
 - [x] hermes_cli/toolset_validation.py
 - [x] hermes_cli/tui_worktree_resume.py
@@ -752,14 +752,14 @@
 - [x] toolset_distributions.py
 - [x] toolsets.py
 
-### 7. pkg/pm: 85% (52 of 61 files completed)
+### 7. pkg/pm: 98% (60 of 61 files completed)
 #### Tool package manager, downloads, store, lockfile, uv runtimes, plugin dependencies, CLI
 - [x] hermes_cli/_scan_venv_blockers.py
 - [x] hermes_cli/managed_uv.py
 - [x] hermes_cli/npm_engine.py
 - [x] hermes_cli/runtime_state.py
 - [ ] hermes_cli/venv_sync.py
-- [ ] pm/__init__.py
+- [x] pm/__init__.py
 - [x] pm/_marker_eval.py
 - [x] pm/_uv.py
 - [x] pm/_venv_entry.py
@@ -768,21 +768,21 @@
 - [x] pm/build_env.py
 - [x] pm/build_operations.py
 - [x] pm/carried_extras.py
-- [ ] pm/cli.py
-- [ ] pm/client.py
+- [x] pm/cli.py
+- [x] pm/client.py
 - [x] pm/defaults.py
 - [x] pm/download_state.py
 - [x] pm/downloader.py
 - [x] pm/environment.py
-- [ ] pm/environments.py
+- [x] pm/environments.py
 - [x] pm/environments_adopt.py
 - [x] pm/extras.py
 - [x] pm/features.py
 - [x] pm/filesystem.py
 - [x] pm/index_config.py
-- [ ] pm/install.py
+- [x] pm/install.py
 - [x] pm/install_states.py
-- [ ] pm/launch.py
+- [x] pm/launch.py
 - [x] pm/libatomic.py
 - [x] pm/lock.py
 - [x] pm/native_build.py
@@ -793,11 +793,11 @@
 - [x] pm/paths.py
 - [x] pm/pip_check.py
 - [x] pm/plugin_declarations.py
-- [ ] pm/plugin_eviction.py
+- [x] pm/plugin_eviction.py
 - [x] pm/plugin_inputs.py
 - [x] pm/plugins_state.py
 - [x] pm/progress.py
-- [ ] pm/publication.py
+- [x] pm/publication.py
 - [x] pm/receipt.py
 - [x] pm/recovery.py
 - [x] pm/registry.py
@@ -833,19 +833,19 @@
 - [x] agent/lsp/sync_diagnostics.py
 - [x] agent/lsp/workspace.py
 
-### 9. pkg/commands: 57% (8 of 14 files completed)
+### 9. pkg/commands: 92% (13 of 14 files completed)
 #### Slash command table, dispatch, completion, help, cobra CLI tree
-- [ ] hermes_cli/_parser.py
+- [x] hermes_cli/_parser.py
 - [x] hermes_cli/bang_shell.py
-- [ ] hermes_cli/cli_info_mixin.py
+- [x] hermes_cli/cli_info_mixin.py
 - [x] hermes_cli/cli_unknown_command.py
 - [x] hermes_cli/commands.py
 - [x] hermes_cli/commands_completion.py
 - [x] hermes_cli/commands_platforms.py
-- [ ] hermes_cli/completion.py
+- [x] hermes_cli/completion.py
 - [x] hermes_cli/personality.py
-- [ ] hermes_cli/slash_exec.py
-- [ ] hermes_cli/source_completion.py
+- [x] hermes_cli/slash_exec.py
+- [x] hermes_cli/source_completion.py
 - [x] hermes_cli/subcommands/completion.py
 - [ ] hermes_cli/update_completion.py
 - [x] tools/slash_confirm.py
@@ -924,7 +924,7 @@
 - [x] tools/skill_ledger.py
 - [x] tools/skill_usage.py
 
-### 12. pkg/cron: 41% (28 of 68 files completed)
+### 12. pkg/cron: 57% (39 of 68 files completed)
 #### Job store, schedules, due scan, scheduler, delivery, blueprints, cronjob tool
 - [x] agent/periodic_scheduler.py
 - [x] agent/sleep_clock.py
@@ -932,28 +932,28 @@
 - [x] cron/blueprint_catalog.py
 - [x] cron/blueprint_plugins.py
 - [ ] cron/bot_chat_legacy.py
-- [ ] cron/cancellation.py
+- [x] cron/cancellation.py
 - [x] cron/constants.py
 - [ ] cron/delivery_outcome.py
 - [ ] cron/delivery_queue.py
-- [ ] cron/dispatch_hold.py
+- [x] cron/dispatch_hold.py
 - [x] cron/env_settings.py
-- [ ] cron/execution_identity.py
-- [ ] cron/executions.py
-- [ ] cron/extra_fire.py
+- [x] cron/execution_identity.py
+- [x] cron/executions.py
+- [x] cron/extra_fire.py
 - [ ] cron/incidents.py
 - [x] cron/job_definition.py
 - [ ] cron/jobs.py
 - [x] cron/jobs_invariants.py
-- [ ] cron/jobs_model_pin.py
+- [x] cron/jobs_model_pin.py
 - [x] cron/jobs_oneshot_diagnostics.py
 - [x] cron/jobs_time.py
 - [x] cron/lifecycle_guard.py
-- [ ] cron/missed_runs.py
+- [x] cron/missed_runs.py
 - [ ] cron/monitor.py
 - [x] cron/notepad.py
-- [ ] cron/occurrences.py
-- [ ] cron/quota_hold.py
+- [x] cron/occurrences.py
+- [x] cron/quota_hold.py
 - [ ] cron/scheduler.py
 - [ ] cron/scheduler_authority.py
 - [ ] cron/scheduler_bookkeeping.py
@@ -967,8 +967,8 @@
 - [ ] cron/scheduler_ownership.py
 - [ ] cron/scheduler_preflight.py
 - [x] cron/scheduler_prompt.py
-- [ ] cron/scheduler_provider.py
-- [ ] cron/scheduler_script.py
+- [x] cron/scheduler_provider.py
+- [x] cron/scheduler_script.py
 - [ ] cron/scheduler_thread.py
 - [ ] cron/scheduler_tick.py
 - [ ] cron/scheduler_worker_env.py
@@ -1809,7 +1809,7 @@
 - [x] impeccable/skill/scripts/live-browser.js
 - [x] impeccable/skill/scripts/modern-screenshot.umd.js
 
-### 19. pkg/kanban: 5% (3 of 59 files completed)
+### 19. pkg/kanban: 10% (6 of 59 files completed)
 #### Boards, worker swarm, task dispatch, hosted rooms, PR acceptance
 - [ ] agent/kanban_stop.py
 - [x] agent/kanban_turn_recovery.py
@@ -1860,9 +1860,9 @@
 - [ ] hermes_cli/kanban_worker_log.py
 - [x] hermes_cli/kanban_workflow.py
 - [ ] plugins/kanban/dashboard/plugin_api.py
-- [ ] tools/kanban_tools.py
-- [ ] tools/kanban_tools_schemas.py
-- [ ] tools/kanban_toolset_context.py
+- [x] tools/kanban_tools.py
+- [x] tools/kanban_tools_schemas.py
+- [x] tools/kanban_toolset_context.py
 - [ ] tui_gateway/hosted_room_driver.py
 - [ ] tui_gateway/hosted_room_member_activity.py
 - [ ] tui_gateway/hosted_room_peer_http.py
@@ -1972,7 +1972,7 @@
 - [x] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 11% (18 of 161 files completed)
+### 22. cmd/icebath: 13% (21 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -1983,8 +1983,8 @@
 - [ ] hermes_cli/_startup_fast.py
 - [ ] hermes_cli/_subprocess_compat.py
 - [ ] hermes_cli/_update_takeover.py
-- [ ] hermes_cli/backup.py
-- [ ] hermes_cli/backup_restore.py
+- [x] hermes_cli/backup.py
+- [x] hermes_cli/backup_restore.py
 - [x] hermes_cli/backup_sqlite.py
 - [ ] hermes_cli/boot_bootstrap.py
 - [ ] hermes_cli/build_info.py
@@ -2026,7 +2026,7 @@
 - [ ] hermes_cli/old_updater_main.py
 - [ ] hermes_cli/post_update.py
 - [ ] hermes_cli/projects_cmd.py
-- [ ] hermes_cli/prune_advisor.py
+- [x] hermes_cli/prune_advisor.py
 - [ ] hermes_cli/psutil_android.py
 - [ ] hermes_cli/relaunch.py
 - [ ] hermes_cli/runtime_readiness.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 21% (160 of 760 files completed)
+### 24. gateway: 21% (161 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2683,7 +2683,7 @@
 - [ ] hermes_cli/gateway_windows.py
 - [ ] hermes_cli/gateway_windows_legacy.py
 - [ ] hermes_cli/goal_command.py
-- [ ] hermes_cli/goals.py
+- [x] hermes_cli/goals.py
 - [ ] hermes_cli/heartbeat.py
 - [x] hermes_cli/image_provenance.py
 - [ ] hermes_cli/journey.py

@@ -36,9 +36,11 @@ func cmdSources() config.ConfigCommandSources {
 		IsEnvSettingKey: func(key string) bool {
 			return !strings.Contains(key, ".") && key == strings.ToUpper(key) && !config.IsEnvConfigKey(key)
 		},
-		SaveEnvSetting: func(h, key, value string) error { return config.SaveEnvValue(h, strings.ToUpper(key), value) },
+		SaveEnvSetting: func(_ context.Context, h, key, value string) error {
+			return config.SaveEnvValue(h, strings.ToUpper(key), value)
+		},
 		ReadEnvSetting: func(h, key string) (string, bool) { v, ok := config.LoadEnv(h)[strings.ToUpper(key)]; return v, ok },
-		RemoveEnvSetting: func(h, key string) (bool, error) {
+		RemoveEnvSetting: func(_ context.Context, h, key string) (bool, error) {
 			return config.RemoveHomeEnvValue(context.Background(), h, key)
 		},
 		DropStaleModelRoute: func(map[string]any, string, map[string]any) (map[string]any, bool) { return nil, false },

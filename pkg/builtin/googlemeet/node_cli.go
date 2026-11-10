@@ -103,14 +103,14 @@ func nodeCommand(ns map[string]any) int {
 		}
 		return 0
 	case "approve":
-		if err := reg.add(nsStr(ns, "name"), nsStr(ns, "url"), nsStr(ns, "token")); err != nil {
+		if err := reg.add(ctx, nsStr(ns, "name"), nsStr(ns, "url"), nsStr(ns, "token")); err != nil {
 			fmt.Fprintf(cliErr, "ValueError: %v\n", err)
 			return 1
 		}
 		fmt.Fprintf(cliOut, "approved node %s at %s\n", pyrepr.StrRepr(nsStr(ns, "name")), nsStr(ns, "url"))
 		return 0
 	case "remove":
-		ok, err := reg.remove(nsStr(ns, "name"))
+		ok, err := reg.remove(ctx, nsStr(ns, "name"))
 		if err != nil {
 			fmt.Fprintln(cliErr, err)
 			return 1
@@ -163,7 +163,7 @@ func nodePing(reg *nodeRegistry, name string) int {
 func nodeRun(ctx context.Context, ns map[string]any) int {
 	host, port := nsStr(ns, "host"), ns["port"].(int)
 	server := newNodeServer(ctx, host, port, "", nsStr(ns, "display_name"))
-	token, err := server.ensureToken()
+	token, err := server.ensureToken(ctx)
 	if err != nil {
 		fmt.Fprintf(cliErr, "%s: %v\n", pyExcName(err), err)
 		return 1

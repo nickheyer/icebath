@@ -133,16 +133,34 @@ func UnrenameToolArgs(paramsSchema any, args any, rootSchema any) any {
 		return args
 	}
 	props, ok := resolved["properties"].(map[string]any)
-	argMap, isMap := args.(map[string]any)
-	if !ok || !isMap {
+	if !ok {
+		return args
+	}
+	var keys []string
+	var vals map[string]any
+	switch a := args.(type) {
+	case map[string]any:
+		vals = a
+		for key := range a {
+			keys = append(keys, key)
+		}
+	case *pyjson.Object:
+		if a == nil {
+			return args
+		}
+		keys, vals = a.Keys, a.Vals
+	default:
 		return args
 	}
 	reverse := map[string]string{}
 	for orig, renamed := range schemaRenamePropertyKeys(props, "<unrename>") {
 		reverse[renamed] = orig
 	}
-	out := make(map[string]any, len(argMap))
-	for key, value := range argMap {
+	_, isOrdered := args.(*pyjson.Object)
+	out := make(map[string]any, len(vals))
+	outOrdered := pyjson.NewObject()
+	for _, key := range keys {
+		value := vals[key]
 		orig := key
 		if o, ok := reverse[key]; ok {
 			orig = o
@@ -153,14 +171,14 @@ func UnrenameToolArgs(paramsSchema any, args any, rootSchema any) any {
 				sub = r
 			}
 		}
-		if vm, ok := value.(map[string]any); ok && len(sub) > 0 {
-			value = UnrenameToolArgs(sub, vm, root)
+		if coerceIsDict(value) && len(sub) > 0 {
+			value = UnrenameToolArgs(sub, value, root)
 		} else if vl, ok := value.([]any); ok {
 			if items, ok := sub["items"].(map[string]any); ok {
 				rebuilt := make([]any, len(vl))
 				for i, item := range vl {
-					if im, ok := item.(map[string]any); ok {
-						rebuilt[i] = UnrenameToolArgs(items, im, root)
+					if coerceIsDict(item) {
+						rebuilt[i] = UnrenameToolArgs(items, item, root)
 					} else {
 						rebuilt[i] = item
 					}
@@ -169,12 +187,44 @@ func UnrenameToolArgs(paramsSchema any, args any, rootSchema any) any {
 			}
 		}
 		out[orig] = value
+		outOrdered.Set(orig, value)
+	}
+	if isOrdered {
+		return outOrdered
 	}
 	return out
 }
 
+// JSON reader coercion parses strings with, the DecodeWTF8 shapes for handlers or Python values for the bridge
+type coerceDecoder func(text string) (any, error)
+
+// Decodes into the shapes tool handlers read, every number a float64 and every dict a plain map
+func wtf8CoerceDecoder(text string) (any, error) { return pyjson.DecodeWTF8([]byte(text)) }
+
+// Decodes the way Python json.loads does, ints and floats apart and dicts in key order
+func pythonCoerceDecoder(text string) (any, error) { return pyjson.Loads(text) }
+
+// Reports a Python dict, a plain map or an ordered object
+func coerceIsDict(v any) bool {
+	switch v.(type) {
+	case map[string]any, *pyjson.Object:
+		return true
+	}
+	return false
+}
+
 // CoerceToolArgs repairs string typed args against the tool's JSON Schema keeping originals on failure
 func CoerceToolArgs(ctx context.Context, r *Registry, env *Env, toolName string, args map[string]any) map[string]any {
+	return coerceToolArgsWith(ctx, r, env, toolName, args, wtf8CoerceDecoder)
+}
+
+// Coerces args holding Python values, decoded JSON strings kept as Python ints, floats and ordered dicts
+func coercePythonToolArgs(ctx context.Context, r *Registry, env *Env, toolName string, args map[string]any) map[string]any {
+	return coerceToolArgsWith(ctx, r, env, toolName, args, pythonCoerceDecoder)
+}
+
+// Coercion loop of coerce_tool_args parsing JSON strings with the given reader
+func coerceToolArgsWith(ctx context.Context, r *Registry, env *Env, toolName string, args map[string]any, decode coerceDecoder) map[string]any {
 	if len(args) == 0 {
 		return args
 	}
@@ -208,7 +258,7 @@ func CoerceToolArgs(ctx context.Context, r *Registry, env *Env, toolName string,
 		_, isContainer := value.([]any)
 		if expectedStr == "array" && value != nil && !isContainer {
 			if s, ok := value.(string); ok {
-				coerced, changed := coerceValue(s, expected, propSchema)
+				coerced, changed := coerceValueWith(decode, s, expected, propSchema)
 				if changed {
 					args[key] = coerced
 					continue
@@ -227,9 +277,8 @@ func CoerceToolArgs(ctx context.Context, r *Registry, env *Env, toolName string,
 		}
 		s, isString := value.(string)
 		if !isString {
-			_, isObject := value.(map[string]any)
-			if (expectedStr == "array" && isContainer) || (expectedStr == "object" && isObject) {
-				if normalized, changed := coerceNormalizeJSONStrings(value, propSchema, parameters); changed {
+			if (expectedStr == "array" && isContainer) || (expectedStr == "object" && coerceIsDict(value)) {
+				if normalized, changed := coerceNormalizeJSONStringsWith(decode, value, propSchema, parameters); changed {
 					args[key] = normalized
 				}
 			}
@@ -238,12 +287,12 @@ func CoerceToolArgs(ctx context.Context, r *Registry, env *Env, toolName string,
 		if coerceTypeEmpty(expected) && !coerceSchemaAllowsNull(propSchema) {
 			continue
 		}
-		coerced, changed := coerceValue(s, expected, propSchema)
+		coerced, changed := coerceValueWith(decode, s, expected, propSchema)
 		if changed {
 			args[key] = coerced
 			switch coerced.(type) {
-			case []any, map[string]any:
-				if normalized, changed := coerceNormalizeJSONStrings(coerced, propSchema, parameters); changed {
+			case []any, map[string]any, *pyjson.Object:
+				if normalized, changed := coerceNormalizeJSONStringsWith(decode, coerced, propSchema, parameters); changed {
 					args[key] = normalized
 				}
 			}
@@ -314,6 +363,11 @@ func coerceSchemaAcceptsKind(schema any, kind string, rootSchema any, seen map[u
 
 // Recursively parses JSON encoded strings where the schema expects a container
 func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, bool) {
+	return coerceNormalizeJSONStringsWith(wtf8CoerceDecoder, value, schema, rootSchema)
+}
+
+// JSON string normalization reading nested strings with the given JSON reader
+func coerceNormalizeJSONStringsWith(decode coerceDecoder, value any, schema any, rootSchema any) (any, bool) {
 	m, ok := schema.(map[string]any)
 	if !ok {
 		return value, false
@@ -333,12 +387,12 @@ func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, boo
 		if !((expectsArray && strings.HasPrefix(trimmed, "[")) || (expectsObject && strings.HasPrefix(trimmed, "{"))) {
 			return value, false
 		}
-		parsed, err := pyjson.DecodeWTF8([]byte(trimmed))
+		parsed, err := decode(trimmed)
 		if err != nil {
 			return value, false
 		}
 		_, isList := parsed.([]any)
-		_, isObj := parsed.(map[string]any)
+		isObj := coerceIsDict(parsed)
 		if !((isList && expectsArray) || (isObj && expectsObject)) {
 			return value, false
 		}
@@ -354,7 +408,7 @@ func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, boo
 		out := make([]any, len(v))
 		anyChanged := false
 		for i, item := range v {
-			n, c := coerceNormalizeJSONStrings(item, items, rootSchema)
+			n, c := coerceNormalizeJSONStringsWith(decode, item, items, rootSchema)
 			out[i] = n
 			anyChanged = anyChanged || c
 		}
@@ -378,8 +432,29 @@ func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, boo
 			if !has || !ok {
 				continue
 			}
-			n, c := coerceNormalizeJSONStrings(val, ps, rootSchema)
+			n, c := coerceNormalizeJSONStringsWith(decode, val, ps, rootSchema)
 			out[k] = n
+			anyChanged = anyChanged || c
+		}
+		if anyChanged {
+			return out, true
+		}
+		return value, changed
+	case *pyjson.Object:
+		props, ok := resolved["properties"].(map[string]any)
+		if !ok {
+			return value, changed
+		}
+		out := v.Copy()
+		anyChanged := false
+		for k, propSchema := range props {
+			val, has := v.Vals[k]
+			ps, ok := propSchema.(map[string]any)
+			if !has || !ok {
+				continue
+			}
+			n, c := coerceNormalizeJSONStringsWith(decode, val, ps, rootSchema)
+			out.Vals[k] = n
 			anyChanged = anyChanged || c
 		}
 		if anyChanged {
@@ -392,13 +467,18 @@ func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, boo
 
 // Coerces a string to the expected type or type union and reports whether it changed
 func coerceValue(value string, expectedType any, schema map[string]any) (any, bool) {
+	return coerceValueWith(wtf8CoerceDecoder, value, expectedType, schema)
+}
+
+// String coercion parsing JSON containers with the given JSON reader
+func coerceValueWith(decode coerceDecoder, value string, expectedType any, schema map[string]any) (any, bool) {
 	if coerceSchemaAllowsNull(schema) && strings.ToLower(strings.TrimSpace(value)) == "null" {
 		return nil, true
 	}
 	switch t := expectedType.(type) {
 	case []any:
 		for _, candidate := range t {
-			if r, changed := coerceValue(value, candidate, schema); changed {
+			if r, changed := coerceValueWith(decode, value, candidate, schema); changed {
 				return r, true
 			}
 		}
@@ -412,9 +492,9 @@ func coerceValue(value string, expectedType any, schema map[string]any) (any, bo
 		case "boolean":
 			return coerceBoolean(value)
 		case "array":
-			return coerceJSON(value, "list")
+			return coerceJSONWith(decode, value, "list")
 		case "object":
-			return coerceJSON(value, "dict")
+			return coerceJSONWith(decode, value, "dict")
 		case "null":
 			if strings.ToLower(strings.TrimSpace(value)) == "null" {
 				return nil, true
@@ -460,7 +540,12 @@ func coerceSchemaAllowsNull(schema map[string]any) bool {
 
 // Parses the string as JSON when the parsed kind matches the expected container
 func coerceJSON(value string, expected string) (any, bool) {
-	parsed, err := pyjson.DecodeWTF8([]byte(value))
+	return coerceJSONWith(wtf8CoerceDecoder, value, expected)
+}
+
+// Container parse of a string through the given JSON reader
+func coerceJSONWith(decode coerceDecoder, value string, expected string) (any, bool) {
+	parsed, err := decode(value)
 	if err != nil {
 		slog.Warn("coerce_tool_args: failed to parse string as JSON for expected type", "type", expected, "error", err)
 		return value, false
@@ -471,7 +556,7 @@ func coerceJSON(value string, expected string) (any, bool) {
 			slog.Debug("coerce_tool_args: coerced string via json.loads", "type", expected)
 			return parsed, true
 		}
-	case map[string]any:
+	case map[string]any, *pyjson.Object:
 		if expected == "dict" {
 			slog.Debug("coerce_tool_args: coerced string via json.loads", "type", expected)
 			return parsed, true

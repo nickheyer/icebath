@@ -377,7 +377,7 @@ func WritePreferences(ctx context.Context, changes []UIPreferenceChange, seed bo
 		return UIPreferences{}, err
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	if err := atomicWriteMode(path, data, "."+stem+"_", 0o600, true); err != nil {
+	if err := atomicWriteMode(ctx, path, data, "."+stem+"_", 0o600, true); err != nil {
 		return UIPreferences{}, err
 	}
 	return UIPreferences{Exists: true, Revision: revision, Values: values, Generation: generation, HasGeneration: true}, nil

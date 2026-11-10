@@ -160,7 +160,7 @@ func TestVenvEntryRunsScriptsCodeAndModulesWithoutTheRedirector(t *testing.T) {
 	}
 }
 
-func TestVenvEntryKeepsIsolationAndPMOffTheImportPath(t *testing.T) {
+func TestEntryKeepsIsolationAndPMOffTheImportPath(t *testing.T) {
 	isolateHome(t)
 	root := t.TempDir()
 	_, site := peTrapVenv(t, root)

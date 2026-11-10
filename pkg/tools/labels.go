@@ -1109,6 +1109,7 @@ func BuildToolLabel(env *Env, toolName string, args map[string]any, maxLen *int)
 
 // VerboseToolArgsText renders compact JSON of the args capped at maxLen, in a code block with real line breaks
 func VerboseToolArgsText(args map[string]any, maxLen int, codeBlock bool) string {
+	pythonVerboseToolArgsDumps(args)
 	b, err := json.Marshal(args)
 	text := string(b)
 	if err != nil {

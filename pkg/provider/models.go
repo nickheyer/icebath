@@ -1450,7 +1450,7 @@ func loadProviderModelsCache(ctx context.Context) map[string]any {
 
 // Persists the cache document, silent on any error
 func saveProviderModelsCache(ctx context.Context, data map[string]any) {
-	if err := modelsWriteJSONCache(providerModelsCachePath(ctx), data); err != nil {
+	if err := modelsWriteJSONCache(ctx, providerModelsCachePath(ctx), data); err != nil {
 		modelsLog.Debug("provider models cache save failed", "error", err)
 	}
 }

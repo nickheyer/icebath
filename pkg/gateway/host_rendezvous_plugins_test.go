@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -13,11 +14,11 @@ func TestHostRendezvousServiceReadsTheLiveServeRecord(t *testing.T) {
 	if r, err := svc.ReadRecord(RoleServe); err != nil || r != nil {
 		t.Fatalf("absent record gave %v %v", r, err)
 	}
-	if outcome, err := ClaimHostLock(RoleServe); err != nil || outcome != HostLockAcquired {
+	if outcome, err := ClaimHostLock(context.Background(), RoleServe); err != nil || outcome != HostLockAcquired {
 		t.Fatalf("claim %v %v", outcome, err)
 	}
 	port := 9119
-	if PublishHostRecord(RoleServe, HostPublishOptions{Host: "0.0.0.0", Port: &port, Token: "live-session-token"}) == nil {
+	if PublishHostRecord(context.Background(), RoleServe, HostPublishOptions{Host: "0.0.0.0", Port: &port, Token: "live-session-token"}) == nil {
 		t.Fatal("publish failed")
 	}
 	record, err := svc.ReadRecord(RoleServe)

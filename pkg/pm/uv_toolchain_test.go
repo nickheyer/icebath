@@ -271,3 +271,12 @@ func TestUVToolchainEnvironmentProbeNeedsNoPMRuntime(t *testing.T) {
 		t.Fatalf("escape %v", err)
 	}
 }
+
+func TestExportedSwapToolchain(t *testing.T) {
+	previous := SwapToolchain(func(context.Context, bool, bool) (string, string, bool, error) { return "uv", "python", true, nil })
+	uv, python, found, err := uvToolchain(context.Background(), false, false)
+	SwapToolchain(previous)
+	if uv != "uv" || python != "python" || !found || err != nil {
+		t.Fatalf("swapped toolchain %q %q %v %v", uv, python, found, err)
+	}
+}

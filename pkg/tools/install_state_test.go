@@ -122,8 +122,8 @@ func TestInstallStateOnlyInstallTimeFilesIsFresh(t *testing.T) {
 	execSQLite(t, filepath.Join(other, "state.db"), "CREATE TABLE messages (id INTEGER)")
 	installWriteFile(t, filepath.Join(other, "installs", "k", "bootstrap", "default.json"), "{}")
 
-	if !InstallStateProbe().Fresh() {
-		t.Fatalf("install time files counted as use: %+v", InstallStateProbe().Findings)
+	if !InstallStateProbe(context.Background()).Fresh() {
+		t.Fatalf("install time files counted as use: %+v", InstallStateProbe(context.Background()).Findings)
 	}
 	if _, err := os.Stat(places.Markers[0]); err == nil {
 		t.Fatal("a fresh probe wrote the marker")
@@ -136,7 +136,7 @@ func TestInstallStateUseInAnotherRootMarksTheMachine(t *testing.T) {
 			other, places := installMachine(t)
 			use(t, other)
 
-			got := InstallStateProbe().Findings
+			got := InstallStateProbe(context.Background()).Findings
 			want := []InstallFinding{{Evidence: evidence, Where: realDir(t, other)}}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("findings %+v, want %+v", got, want)
@@ -148,7 +148,7 @@ func TestInstallStateUseInAnotherRootMarksTheMachine(t *testing.T) {
 				t.Fatal(err)
 			}
 			InstallStateProbeClear()
-			if f := InstallStateProbe().Findings; len(f) == 0 || f[0].Evidence != EvidenceMachineMarker {
+			if f := InstallStateProbe(context.Background()).Findings; len(f) == 0 || f[0].Evidence != EvidenceMachineMarker {
 				t.Fatalf("marker did not answer once the root was gone: %+v", f)
 			}
 		})
@@ -159,7 +159,7 @@ func TestInstallStateUnreadableRootCountsButNeverMarks(t *testing.T) {
 	other, places := installMachine(t)
 	installWriteFile(t, filepath.Join(other, "config.yaml"), "model: [unclosed\n")
 
-	st := InstallStateProbe()
+	st := InstallStateProbe(context.Background())
 	if !st.Existing() || st.Findings[0].Evidence != EvidenceUnreadable {
 		t.Fatalf("findings %+v, want unreadable", st.Findings)
 	}
@@ -175,7 +175,7 @@ func TestInstallStateRootInProtectedFolderIsExistingUnopened(t *testing.T) {
 		return InstallPlaces{Markers: places.Markers, Protected: []string{protected},
 			Sources: []InstallSource{func(yield func(string) bool) { yield(filepath.Join(protected, "hermes-home")) }}}
 	})
-	if f := InstallStateProbe().Findings; len(f) != 1 || f[0].Evidence != EvidenceUnreadable {
+	if f := InstallStateProbe(context.Background()).Findings; len(f) != 1 || f[0].Evidence != EvidenceUnreadable {
 		t.Fatalf("findings %+v, want unreadable", f)
 	}
 }
@@ -205,7 +205,7 @@ func TestInstallStateFileLinkedIntoProtectedFolderIsUnreadable(t *testing.T) {
 			swapForTest(t, &machinePlaces, func() InstallPlaces {
 				return InstallPlaces{Markers: places.Markers, Sources: places.Sources, Protected: []string{protected}}
 			})
-			got := InstallStateProbe().Findings
+			got := InstallStateProbe(context.Background()).Findings
 			want := []InstallFinding{{Evidence: EvidenceUnreadable, Where: realDir(t, other)}}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("findings %+v, want %+v", got, want)
@@ -237,13 +237,13 @@ func TestInstallStateLauncherInProtectedFolderNamesItsFolderUnopened(t *testing.
 
 func TestInstallStateClaimMarksTheMachine(t *testing.T) {
 	installMachine(t)
-	if !InstallStateProbe().Fresh() {
+	if !InstallStateProbe(context.Background()).Fresh() {
 		t.Fatal("empty machine was not fresh")
 	}
-	if err := MarkMachineUsed(); err != nil {
+	if err := MarkMachineUsed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !ExistingInstall() {
+	if !ExistingInstall(context.Background()) {
 		t.Fatal("the next probe did not see the claim")
 	}
 }
@@ -253,16 +253,16 @@ func TestInstallStateReservationIsReadAndConsumed(t *testing.T) {
 	if TrialReserved() {
 		t.Fatal("a missing marker reads as reserved")
 	}
-	if err := ReserveInstallTrial(); err != nil {
+	if err := ReserveInstallTrial(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if raw, _ := os.ReadFile(places.Markers[0]); string(raw) != "{\n  \"trial\": \"reserved\"\n}" {
 		t.Fatalf("reservation marker %q", raw)
 	}
-	if !TrialReserved() || !ExistingInstall() {
+	if !TrialReserved() || !ExistingInstall(context.Background()) {
 		t.Fatal("a reservation must be reserved and make the machine read used")
 	}
-	if err := MarkMachineUsed(); err != nil {
+	if err := MarkMachineUsed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if TrialReserved() {
@@ -403,7 +403,7 @@ func TestInstallStateLockedStateDBIsNotUse(t *testing.T) {
 		}
 	}
 	defer holder.Exec("ROLLBACK")
-	if st := InstallStateProbe(); !st.Fresh() {
+	if st := InstallStateProbe(context.Background()); !st.Fresh() {
 		t.Fatalf("a held lock read as use: %+v", st.Findings)
 	}
 }
@@ -725,7 +725,7 @@ func TestOnboardingRunsOnAFreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	if !OnboardingShouldRun(false) {
+	if !OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("a fresh install with an empty state.db did not run onboarding")
 	}
 }
@@ -740,7 +740,7 @@ func TestOnboardingEmptySessionRowIsNotUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	if !OnboardingShouldRun(false) {
+	if !OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("a session row without a message counted as use")
 	}
 }
@@ -748,7 +748,7 @@ func TestOnboardingEmptySessionRowIsNotUse(t *testing.T) {
 func TestOnboardingRootWithAChatDoesNotRun(t *testing.T) {
 	root := onboardingRoot(t)
 	addChat(t, root)
-	if OnboardingShouldRun(false) {
+	if OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("a root with a chat ran onboarding")
 	}
 }
@@ -756,7 +756,7 @@ func TestOnboardingRootWithAChatDoesNotRun(t *testing.T) {
 func TestOnboardingUserProfileIsHistory(t *testing.T) {
 	root := onboardingRoot(t)
 	createProfile(t, root, "work")
-	if OnboardingShouldRun(false) {
+	if OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("a created profile did not count as history")
 	}
 }
@@ -767,7 +767,7 @@ func TestOnboardingManagedRunFalseWinsOnAFreshInstall(t *testing.T) {
 	installWriteFile(t, filepath.Join(managed, "config.yaml"), "onboarding:\n  run: false\n")
 	t.Setenv(config.EnvManagedDir, managed)
 	config.InvalidateManagedCache()
-	if OnboardingShouldRun(false) {
+	if OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("the managed run false did not win")
 	}
 }
@@ -775,10 +775,10 @@ func TestOnboardingManagedRunFalseWinsOnAFreshInstall(t *testing.T) {
 func TestOnboardingExplicitTrueRunsDespiteHistory(t *testing.T) {
 	root := onboardingRoot(t)
 	addChat(t, root)
-	if err := SetOnboardingRun(true, false); err != nil {
+	if err := SetOnboardingRun(context.Background(), true, false); err != nil {
 		t.Fatal(err)
 	}
-	if !OnboardingShouldRun(false) {
+	if !OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("explicit run true did not win over history")
 	}
 }
@@ -786,7 +786,7 @@ func TestOnboardingExplicitTrueRunsDespiteHistory(t *testing.T) {
 func TestOnboardingSetRunFalsePersistsAndKeepsComments(t *testing.T) {
 	root := onboardingRoot(t)
 	installWriteFile(t, home.ConfigPath(root), "# my notes\nmodel:\n  default: some-model  # pinned\n")
-	if err := SetOnboardingRun(false, false); err != nil {
+	if err := SetOnboardingRun(context.Background(), false, false); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(home.ConfigPath(root))
@@ -803,7 +803,7 @@ func TestOnboardingSetRunFalsePersistsAndKeepsComments(t *testing.T) {
 	if !reflect.DeepEqual(doc["model"], map[string]any{"default": "some-model"}) {
 		t.Fatalf("model %v", doc["model"])
 	}
-	if OnboardingShouldRun(false) {
+	if OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("run false did not persist")
 	}
 }
@@ -815,7 +815,7 @@ func TestOnboardingNamedProfileLaunchUsesTheRootFile(t *testing.T) {
 	if home.Root() != root {
 		t.Fatalf("root %q, want %q", home.Root(), root)
 	}
-	if err := SetOnboardingRun(true, false); err != nil {
+	if err := SetOnboardingRun(context.Background(), true, false); err != nil {
 		t.Fatal(err)
 	}
 	rootDoc, _ := config.ReadUser(root)
@@ -828,28 +828,28 @@ func TestOnboardingNamedProfileLaunchUsesTheRootFile(t *testing.T) {
 			t.Fatal("the profile file got the root flag")
 		}
 	}
-	if !OnboardingShouldRun(false) {
+	if !OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("the root flag did not answer for the profile launch")
 	}
 	installWriteFile(t, home.ConfigPath(work), "onboarding:\n  run: true\n")
-	if err := SetOnboardingRun(false, false); err != nil {
+	if err := SetOnboardingRun(context.Background(), false, false); err != nil {
 		t.Fatal(err)
 	}
-	if OnboardingShouldRun(false) {
+	if OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("the profile file overrode the root flag")
 	}
 }
 
 func TestOnboardingLatchFirstInstallReservesTheTrialOnce(t *testing.T) {
 	onboardingRoot(t)
-	latched, err := OnboardingLatchFirstInstall()
+	latched, err := OnboardingLatchFirstInstall(context.Background())
 	if err != nil || !latched {
 		t.Fatalf("a fresh install did not latch: %v %v", latched, err)
 	}
-	if !TrialReserved() || !OnboardingShouldRun(false) {
+	if !TrialReserved() || !OnboardingShouldRun(context.Background(), false) {
 		t.Fatal("the latch did not reserve the trial and keep onboarding due")
 	}
-	if again, err := OnboardingLatchFirstInstall(); err != nil || again {
+	if again, err := OnboardingLatchFirstInstall(context.Background()); err != nil || again {
 		t.Fatalf("the latch fired twice: %v %v", again, err)
 	}
 }

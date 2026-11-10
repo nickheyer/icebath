@@ -1168,7 +1168,7 @@ func leftCoreTurnOffReplaced(cfg map[string]any, f *LeftCoreFeature) {
 }
 
 // Keeps the core era toolset scope once and marks the plugin installed once present, in one config write
-func leftCoreRecordMigration(h string, f *LeftCoreFeature) error {
+func leftCoreRecordMigration(ctx context.Context, h string, f *LeftCoreFeature) error {
 	path := home.ConfigPath(h)
 	_, statErr := os.Stat(path)
 	created := statErr != nil
@@ -1238,7 +1238,7 @@ func leftCoreRecordMigration(h string, f *LeftCoreFeature) error {
 	if created {
 		leftCoreStampCreated(h, cfg)
 	}
-	return config.SaveUser(h, cfg)
+	return config.SaveUser(ctx, h, cfg)
 }
 
 // Rows the home uses and never had installed that the catalog ships, converting each row's toolset scope once
@@ -1257,7 +1257,7 @@ func leftCorePending(ctx context.Context, h string, say func(string), processEnv
 			continue
 		}
 		present := PluginPresent(f.Plugin, h)
-		if err := leftCoreRecordMigration(h, f); err != nil {
+		if err := leftCoreRecordMigration(ctx, h, f); err != nil {
 			tail := "."
 			if !present {
 				tail = fmt.Sprintf(" and run `%s`.", PluginInstallCommand(f.Plugin, h))
@@ -1349,14 +1349,14 @@ func leftCoreFirstCause(errText string) string {
 }
 
 // Installs one row's plugin into a home and reports the outcome
-func leftCoreInstallOne(h string, f *LeftCoreFeature, install func(string) (map[string]any, error), say func(string), processEnv bool) bool {
+func leftCoreInstallOne(ctx context.Context, h string, f *LeftCoreFeature, install func(string) (map[string]any, error), say func(string), processEnv bool) bool {
 	result, err := install(f.Plugin)
 	if err != nil {
 		result = map[string]any{"ok": false, "error": err.Error()}
 	}
 	if pyTruthy(result["ok"]) {
 		RefreshBoundHome(home.WithOverride(context.Background(), h))
-		if err := leftCoreRecordMigration(h, f); err != nil {
+		if err := leftCoreRecordMigration(ctx, h, f); err != nil {
 			slog.Default().Debug("left-core install marker not written", "home", h, "error", err)
 		}
 		say(leftCoreNoticed(fmt.Sprintf("  \u2713 %s moved out of core \u2014 installed the '%s' plugin from the catalog (%s).",
@@ -1374,7 +1374,7 @@ func leftCoreInstallOne(h string, f *LeftCoreFeature, install func(string) (map[
 func MigrateLeftCoreHome(ctx context.Context, h string, install func(string) (map[string]any, error), say func(string), processEnv bool) []string {
 	var installed []string
 	for _, f := range leftCorePending(ctx, h, say, processEnv, false) {
-		if leftCoreInstallOne(h, f, install, say, processEnv) {
+		if leftCoreInstallOne(ctx, h, f, install, say, processEnv) {
 			installed = append(installed, f.Plugin)
 		}
 	}
@@ -1430,7 +1430,7 @@ func MigrateAllLeftCoreHomes(ctx context.Context, say func(string)) ([]string, e
 		}
 		gctx := plugins.WithSharedDependencyAnswers(ctx)
 		for i, h := range g.homes {
-			ok := leftCoreInstallOne(h, f, leftCoreInstallInto(gctx, h, nil), labelled(h), isLaunchHome(h))
+			ok := leftCoreInstallOne(gctx, h, f, leftCoreInstallInto(gctx, h, nil), labelled(h), isLaunchHome(h))
 			if ctx.Err() != nil {
 				cancelled = true
 				break
@@ -1528,7 +1528,7 @@ func RecoverLeftCoreAtStartup(ctx context.Context, say func(string), gatewayStar
 	var installed []string
 	consent := true
 	for _, f := range features {
-		if leftCoreInstallOne(h, f, leftCoreInstallInto(ctx, h, &consent), report, true) {
+		if leftCoreInstallOne(ctx, h, f, leftCoreInstallInto(ctx, h, &consent), report, true) {
 			installed = append(installed, f.Plugin)
 			if !gatewayStart && f.Platform != "" && leftCoreGatewayServes(h) {
 				report(fmt.Sprintf("Restart the gateway (`icebath gateway restart`) so it serves %s.", f.Label))

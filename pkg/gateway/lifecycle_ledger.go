@@ -139,11 +139,11 @@ func ledgerReadJSON(path string) *pyjson.Object {
 // Writes the lifecycle sentinel atomically as compact JSON, logging failures at debug
 func writeSentinel(ctx context.Context, payload *pyjson.Object, h string) {
 	path := GetLifecycleSentinelPath(ctx, h)
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		slog.Debug(fmt.Sprintf("Failed to write lifecycle sentinel: %v", err))
 		return
 	}
-	if err := config.AtomicJSONWriteWith(path, payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
 		slog.Debug(fmt.Sprintf("Failed to write lifecycle sentinel: %v", err))
 	}
 }
@@ -156,7 +156,7 @@ func appendExitDiag(ctx context.Context, record *pyjson.Object, h string) {
 		slog.Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
 		return
 	}
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		slog.Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
 		return
 	}

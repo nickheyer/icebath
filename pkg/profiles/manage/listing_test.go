@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/skills"
 )
 
 func names(t *testing.T, lazy bool) ([]string, []ProfileInfo) {
@@ -97,18 +98,23 @@ func TestLazySkillCountNeverWalksInThePolledRequest(t *testing.T) {
 	}
 }
 
-func TestSkillCountSurvivesSubtreeVanishing(t *testing.T) {
+func TestListProfilesSkillCountSurvivesSubtreeVanishingMidWalk(t *testing.T) {
 	tmp := manageEnv(t)
 	cat := filepath.Join(tmp, ".icebath", "skills", "cat")
-	for _, s := range []string{"s0", "s1", "s2"} {
-		writeFile(t, filepath.Join(cat, s, "SKILL.md"), "# s\n")
+	for _, s := range []string{"s0", "s1", "s2", "s3"} {
 		if err := os.MkdirAll(filepath.Join(cat, s, "references"), 0o755); err != nil {
 			t.Fatal(err)
 		}
+		writeFile(t, filepath.Join(cat, s, "SKILL.md"), "# s\n")
 	}
-	if err := os.Symlink(filepath.Join(tmp, "gone"), filepath.Join(cat, "s3")); err != nil {
-		t.Fatal(err)
-	}
+	resetSkillCountCache()
+	t.Cleanup(skills.SwapWalkReadDir(func(dir string) ([]os.DirEntry, error) {
+		entries, err := os.ReadDir(dir)
+		if dir == cat {
+			os.RemoveAll(filepath.Join(cat, "s3"))
+		}
+		return entries, err
+	}))
 	if n := countSkills(filepath.Join(tmp, ".icebath")); n != 3 {
 		t.Fatalf("count %d", n)
 	}

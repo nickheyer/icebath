@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"context"
 	"errors"
 	"math"
 	"os"
@@ -81,7 +82,7 @@ func run(t *testing.T, root string, r *Recipe, mutate func(*VerifyOptions)) *Ver
 	if mutate != nil {
 		mutate(&opts)
 	}
-	res, err := RunVerify(root, r, opts)
+	res, err := RunVerify(context.Background(), root, r, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

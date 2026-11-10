@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -166,7 +167,7 @@ func childMap(parent map[string]any, key string) map[string]any {
 }
 
 // Persists a consent decision, granting the union and mirroring every grant into its legacy gate
-func RecordConsent(h, pluginID string, granted, declared []string) error {
+func RecordConsent(ctx context.Context, h, pluginID string, granted, declared []string) error {
 	cfg, err := readUserConfig(h)
 	if err != nil {
 		return err
@@ -195,7 +196,7 @@ func RecordConsent(h, pluginID string, granted, declared []string) error {
 		}
 		node[spec.LegacyPath[len(spec.LegacyPath)-1]] = true
 	}
-	if err := saveUserConfig(h, cfg); err != nil {
+	if err := saveUserConfig(ctx, h, cfg); err != nil {
 		return err
 	}
 	slog.Info("capability_consent", "plugin", pluginID, "granted", strings.Join(known, ","), "declared_hash", CapabilitySetHash(knownCapabilities(declared))[:12])

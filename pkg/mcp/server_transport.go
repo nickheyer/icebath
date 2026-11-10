@@ -257,7 +257,7 @@ func (s *serverTask) reconnectOrReraise(ctx context.Context, drop *sessionDropEr
 }
 
 // Ledgers freshly spawned stdio children with their process groups and start times
-func (s *serverTask) trackSpawnedChildren(pids []int) {
+func (s *serverTask) trackSpawnedChildren(ctx context.Context, pids []int) {
 	pgids := map[int]int{}
 	starts := map[int]int64{}
 	for _, pid := range pids {
@@ -280,7 +280,7 @@ func (s *serverTask) trackSpawnedChildren(pids []int) {
 	}
 	mcpMu.Unlock()
 	for _, pid := range pids {
-		if !tools.RegisterChild(pid, "mcp-helper", "") {
+		if !tools.RegisterChild(ctx, pid, "mcp-helper", "") {
 			mcpLogger().Debug(fmt.Sprintf("spawn-ledger register_child failed for MCP helper pid %d", pid))
 		}
 	}
@@ -374,7 +374,7 @@ func (s *serverTask) runStdio(ctx context.Context, r *Rendered) (string, error) 
 	}
 	newPIDs := spawnedMCPChildren(t.PID())
 	if len(newPIDs) > 0 {
-		s.trackSpawnedChildren(newPIDs)
+		s.trackSpawnedChildren(ctx, newPIDs)
 		defer s.releaseSpawnedChildren(newPIDs)
 	}
 	s.mu.Lock()

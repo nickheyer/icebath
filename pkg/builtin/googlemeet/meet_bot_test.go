@@ -1,6 +1,7 @@
 package googlemeet
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -41,12 +42,12 @@ func TestMeetingIDExtraction(t *testing.T) {
 
 func TestBotStateDedupesCaptionsAndFlushesStatus(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "session")
-	state, err := newBotState(out, "abc-defg-hij", "https://meet.google.com/abc-defg-hij")
+	state, err := newBotState(context.Background(), out, "abc-defg-hij", "https://meet.google.com/abc-defg-hij")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range [][2]string{{"Alice", "Hey everyone"}, {"Alice", "Hey everyone"}, {"Bob", "Let's start"}} {
-		if err := state.recordCaption(c[0], c[1]); err != nil {
+		if err := state.recordCaption(context.Background(), c[0], c[1]); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -158,25 +159,25 @@ func TestJoinPollsForLateButtonAndAdmissionUnmutesMic(t *testing.T) {
 	admitted := func(micMuted bool) (*fakePage, *botState) {
 		stop := &atomic.Bool{}
 		page := &fakePage{micMuted: micMuted, stop: stop}
-		state, err := newBotState(filepath.Join(dir, map[bool]string{true: "True", false: "False"}[micMuted]), "abc-defg-hij", "https://meet.google.com/abc-defg-hij")
+		state, err := newBotState(context.Background(), filepath.Join(dir, map[bool]string{true: "True", false: "False"}[micMuted]), "abc-defg-hij", "https://meet.google.com/abc-defg-hij")
 		if err != nil {
 			t.Fatal(err)
 		}
 		restore := botSleep
 		botSleep = func(time.Duration) {}
-		drainLoop(page, botConfig{GuestName: "Bot", LobbyTimeout: 30}, state, &realtimeRes{}, stop)
+		drainLoop(context.Background(), page, botConfig{GuestName: "Bot", LobbyTimeout: 30}, state, &realtimeRes{}, stop)
 		botSleep = restore
 		if state.get("inCall") != true {
 			t.Fatal("not in call")
 		}
 		return page, state
 	}
-	state, err := newBotState(dir, "abc-defg-hij", "https://meet.google.com/abc-defg-hij")
+	state, err := newBotState(context.Background(), dir, "abc-defg-hij", "https://meet.google.com/abc-defg-hij")
 	if err != nil {
 		t.Fatal(err)
 	}
 	page := &fakePage{readyAt: time.Now().Add(600 * time.Millisecond), micMuted: true, stop: &atomic.Bool{}}
-	join(page, botConfig{GuestName: "Bot"}, state, 5*time.Second)
+	join(context.Background(), page, botConfig{GuestName: "Bot"}, state, 5*time.Second)
 	if len(page.clicked) != 1 || page.clicked[0] != "Join now" {
 		t.Fatal(page.clicked)
 	}
@@ -222,11 +223,11 @@ func TestPCMPumpReceivesAudioAppendedAfterStart(t *testing.T) {
 		return cmd
 	}
 	rt, stop := &realtimeRes{}, &atomic.Bool{}
-	state, err := newBotState(dir, "abc-defg-hij", "https://meet.google.com/abc-defg-hij")
+	state, err := newBotState(context.Background(), dir, "abc-defg-hij", "https://meet.google.com/abc-defg-hij")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := startPCMPump(rt, map[string]any{"platform": "linux", "write_target": "sink"}, pcm, state, stop); err != nil {
+	if err := startPCMPump(context.Background(), rt, map[string]any{"platform": "linux", "write_target": "sink"}, pcm, state, stop); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(200 * time.Millisecond)

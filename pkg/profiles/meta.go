@@ -1,6 +1,8 @@
 package profiles
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Presentation metadata of a profile read from profile.yaml
@@ -27,8 +30,11 @@ type MetaUpdate struct {
 	PreviousNames   *[]string
 }
 
+// Mapping reader the profile file readers call, the module attribute hermes tests count calls through
+var loadYAMLDict = readYAMLDictFile
+
 // Mapping in a YAML file, nil when the file is missing, unreadable or not a mapping
-func loadYAMLDict(path string) map[string]any {
+func readYAMLDictFile(path string) map[string]any {
 	if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
 		return nil
 	}
@@ -36,6 +42,7 @@ func loadYAMLDict(path string) map[string]any {
 	if err != nil || !utf8.Valid(data) {
 		return nil
 	}
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	doc, err := config.FastSafeLoad(data)
 	if err != nil {
 		return nil
@@ -119,7 +126,7 @@ func ReadProfileMeta(profileDir string) ProfileMeta {
 		botTitle := ""
 		if ui, ok := data["ui_meta"].(map[string]any); ok {
 			if bots, ok := ui["icebath-bots"].(map[string]any); ok {
-				botTitle = strings.TrimSpace(strOr(bots["title"]))
+				botTitle = pystr.Strip(strOr(bots["title"]))
 			}
 		}
 		descAuto := false
@@ -127,9 +134,9 @@ func ReadProfileMeta(profileDir string) ProfileMeta {
 			descAuto = pyTruthy(v)
 		}
 		return ProfileMeta{
-			Description:     strings.TrimSpace(strOr(data["description"])),
+			Description:     pystr.Strip(strOr(data["description"])),
 			DescriptionAuto: descAuto,
-			DisplayName:     strings.TrimSpace(strOr(data["display_name"])),
+			DisplayName:     pystr.Strip(strOr(data["display_name"])),
 			BotTitle:        botTitle,
 			PreviousNames:   cleanPreviousNames(data["previous_names"]),
 		}
@@ -155,7 +162,7 @@ func cleanPreviousNames(raw any) []string {
 	cleaned := []string{}
 	seen := map[string]bool{}
 	for _, item := range items {
-		name := strings.TrimSpace(strOr(item))
+		name := pystr.Strip(strOr(item))
 		if name != "" && !seen[name] {
 			seen[name] = true
 			cleaned = append(cleaned, name)
@@ -165,7 +172,7 @@ func cleanPreviousNames(raw any) []string {
 }
 
 // Updates profile.yaml in place overwriting only the given fields, the profile directory must exist
-func WriteProfileMeta(profileDir string, upd MetaUpdate) error {
+func WriteProfileMeta(ctx context.Context, profileDir string, upd MetaUpdate) error {
 	if st, err := os.Stat(profileDir); err != nil || !st.IsDir() {
 		return &NotFoundError{fmt.Sprintf("profile directory does not exist: %s", profileDir)}
 	}
@@ -175,13 +182,13 @@ func WriteProfileMeta(profileDir string, upd MetaUpdate) error {
 		existing = map[string]any{}
 	}
 	if upd.Description != nil {
-		setOrdered(existing, "description", strings.TrimSpace(*upd.Description))
+		setOrdered(existing, "description", pystr.Strip(*upd.Description))
 	}
 	if upd.DescriptionAuto != nil {
 		setOrdered(existing, "description_auto", *upd.DescriptionAuto)
 	}
 	if upd.DisplayName != nil {
-		if dn := strings.TrimSpace(*upd.DisplayName); dn != "" {
+		if dn := pystr.Strip(*upd.DisplayName); dn != "" {
 			setOrdered(existing, "display_name", dn)
 		} else {
 			delete(existing, "display_name")
@@ -198,12 +205,12 @@ func WriteProfileMeta(profileDir string, upd MetaUpdate) error {
 			delete(existing, "previous_names")
 		}
 	}
-	return config.AtomicYAMLWrite(path, existing, "")
+	return config.AtomicYAMLWrite(ctx, path, existing, "")
 }
 
 // Display name followed by the canonical id in parentheses, the bare id when they match or no name is set
 func FormatProfileLabel(name, displayName string) string {
-	dn := strings.TrimSpace(displayName)
+	dn := pystr.Strip(displayName)
 	if dn != "" && dn != name {
 		return fmt.Sprintf("%s (%s)", dn, name)
 	}
@@ -211,16 +218,16 @@ func FormatProfileLabel(name, displayName string) string {
 }
 
 // Stores or clears a presentation only display name, refusing names over 64 characters
-func SetProfileDisplayName(profileName, displayName string) (string, error) {
+func SetProfileDisplayName(ctx context.Context, profileName, displayName string) (string, error) {
 	_, dir, err := ExistingProfileDir(profileName)
 	if err != nil {
 		return "", err
 	}
-	cleaned := strings.TrimSpace(displayName)
+	cleaned := pystr.Strip(displayName)
 	if n := utf8.RuneCountInString(cleaned); n > 64 {
 		return "", &ValueError{fmt.Sprintf("Display name too long (%d chars, max 64).", n)}
 	}
-	if err := WriteProfileMeta(dir, MetaUpdate{DisplayName: &cleaned}); err != nil {
+	if err := WriteProfileMeta(ctx, dir, MetaUpdate{DisplayName: &cleaned}); err != nil {
 		return "", err
 	}
 	return cleaned, nil

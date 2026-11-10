@@ -1,8 +1,10 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -13,13 +15,18 @@ var secretSourceRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*:`)
 // Resolves an environment variable name to its value, false when unset
 type Lookup func(name string) (string, bool)
 
+// Reports whether a reference body names a non env secret source such as bitwarden or vault
+func isNonEnvSecretRef(ref string) bool {
+	return strings.Contains(ref, ":") && secretSourceRe.MatchString(ref)
+}
+
 // Variable name a reference body reads, empty for a non env source or a blank env source
 func envRefName(body string) string {
-	body = strings.TrimSpace(body)
+	body = strings.TrimFunc(body, isPySpace)
 	if strings.HasPrefix(body, "env:") {
-		return strings.TrimSpace(body[len("env:"):])
+		return strings.TrimFunc(body[len("env:"):], isPySpace)
 	}
-	if strings.Contains(body, ":") && secretSourceRe.MatchString(body) {
+	if isNonEnvSecretRef(body) {
 		return ""
 	}
 	return body
@@ -31,10 +38,10 @@ func ExpandString(s string, lookup Lookup) string {
 		return s
 	}
 	return envRefRe.ReplaceAllStringFunc(s, func(raw string) string {
-		inner := strings.TrimSpace(raw[2 : len(raw)-1])
+		inner := strings.TrimFunc(raw[2:len(raw)-1], isPySpace)
 		name := envRefName(inner)
 		if name == "" {
-			if !strings.HasPrefix(inner, "env:") && strings.Contains(inner, ":") && secretSourceRe.MatchString(inner) {
+			if !strings.HasPrefix(inner, "env:") && isNonEnvSecretRef(inner) {
 				slog.Warn(fmt.Sprintf("Config ref %s uses source %s which is not resolvable in config.yaml — external secret sources "+
 					"inject env vars at startup, so reference the variable as ${env:NAME} instead",
 					PyRepr(raw), PyRepr(strings.SplitN(inner, ":", 2)[0])))
@@ -125,4 +132,18 @@ func SnapshotCurrent(snap map[string]*string, lookup Lookup) bool {
 		}
 	}
 	return true
+}
+
+// Lookup a config reference expands through, the bound profile secret scope when one is installed and the process env otherwise
+func EnvRefLookupContext(ctx context.Context) Lookup {
+	return func(name string) (string, bool) {
+		if bound := hooks().SecretScopeBound; bound == nil || !bound(ctx) {
+			return os.LookupEnv(name)
+		}
+		v, ok, err := hooks().ScopedSecret(ctx, name)
+		if err != nil {
+			panic(err)
+		}
+		return v, ok
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
@@ -16,6 +17,7 @@ import (
 const testModeEnv = "ICEBATH_HOME_TEST_MODE"
 
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	DispatchScratchPruneEntry()
 	if mode := os.Getenv(testModeEnv); mode != "" {
 		os.Exit(runTestMode(mode, os.Args[1:]))
@@ -29,7 +31,7 @@ func runTestMode(mode string, args []string) int {
 	case "sleep":
 		time.Sleep(60 * time.Second)
 	case "launch":
-		if _, err := EnsureScratchDir(args[0]); err != nil {
+		if st, err := os.Stat(EnsureScratchDir(args[0])); err != nil || !st.IsDir() {
 			return 1
 		}
 	case "wrap", "shell":
@@ -144,20 +146,17 @@ func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() boo
 // Recorder in place of the detached prune launcher, the conftest scratch_prune_spawns fixture
 func scratchPruneSpawns(t *testing.T) *[]string {
 	t.Helper()
-	var spawned []string
-	prev := spawnPrune
-	spawnPrune = func(scratch string) { spawned = append(spawned, scratch) }
-	scratchPrunedOnce.Store(false)
-	t.Cleanup(func() { spawnPrune = prev; scratchPrunedOnce.Store(false) })
-	return &spawned
+	spawned, restore := CaptureScratchPruneSpawns()
+	t.Cleanup(restore)
+	return spawned
 }
 
 // Scratch dir of h created without starting a prune
 func testScratch(t *testing.T, h string) string {
 	t.Helper()
-	dir, err := scratchDir(h, false)
-	if err != nil {
-		t.Fatal(err)
+	dir := scratchDir(h, false)
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		t.Fatalf("scratch dir %s not created: %v", dir, err)
 	}
 	return dir
 }

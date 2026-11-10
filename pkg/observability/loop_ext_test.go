@@ -56,7 +56,7 @@ func writeEnabledProfile(t *testing.T, dir string) {
 func TestMemoryToolCountsEachOperationWithItsOutcomeAndOrigin(t *testing.T) {
 	ctx := observability.DirectRuntimeForTest(t)
 	env := loopEnv(ctx, true)
-	store, err := memory.LoadOnDiskStore(env)
+	store, err := memory.LoadOnDiskStore(ctx, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestMemoryFailureClassNamesEachStoreRefusalAndNeverItsText(t *testing.T) {
 	ctx := observability.DirectRuntimeForTest(t)
 	env := loopEnv(ctx, true)
 	store := memory.NewStore(home.MemoriesDir(home.Dir(ctx)), 60, memory.DefaultUserCharLimit, true, true)
-	if err := store.LoadFromDisk(); err != nil {
+	if err := store.LoadFromDisk(ctx); err != nil {
 		t.Fatal(err)
 	}
 	call := func(action, target, content, oldText any, ops any) {
@@ -135,7 +135,7 @@ func TestDisabledSharedMetricsRecordNoLoopRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := loopEnv(ctx, false)
-	store, err := memory.LoadOnDiskStore(env)
+	store, err := memory.LoadOnDiskStore(ctx, env)
 	if err != nil {
 		t.Fatal(err)
 	}

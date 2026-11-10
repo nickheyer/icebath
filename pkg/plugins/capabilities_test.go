@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -37,7 +38,7 @@ func capEntry(t *testing.T, h, plugin string) map[string]any {
 
 func capRecord(t *testing.T, h, plugin string, granted, declared []string) {
 	t.Helper()
-	if err := RecordConsent(h, plugin, granted, declared); err != nil {
+	if err := RecordConsent(context.Background(), h, plugin, granted, declared); err != nil {
 		t.Fatal(err)
 	}
 }

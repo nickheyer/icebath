@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -17,6 +18,7 @@ var realKanbanRoot string
 
 // Captures the real kanban root before sandboxing ICEBATH_HOME and installs the write guard on connect
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	realKanbanRoot = captureRealKanbanRoot()
 	installTestGatewayStatusProbes()
 	sandbox, err := os.MkdirTemp("", "kanban-home-")

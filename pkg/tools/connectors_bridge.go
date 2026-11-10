@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (
@@ -640,7 +641,7 @@ func downloadOutput(ctx context.Context, env *Env, client *ConnectorClient, file
 
 // Streams a URL into a temp file then links it under a fresh name in the connector downloads folder
 func fetchToDownloads(ctx context.Context, env *Env, client *ConnectorClient, u, name string) (string, error) {
-	folder, err := home.Mkdir(filepath.Join(env.Home, "downloads", "connectors"))
+	folder, err := home.Mkdir(WithEnvHome(ctx, env), filepath.Join(env.Home, "downloads", "connectors"))
 	if err != nil {
 		return "", err
 	}
@@ -780,12 +781,15 @@ func dispatchConnectorBatch(ctx context.Context, d *Dispatcher, call *Call, call
 	}
 	partition := PartitionCalls(calls)
 	if len(partition.Local) > 0 {
-		entries := make([]ToolCallEntry, 0, len(calls))
-		for _, raw := range calls {
-			m := asMap(raw)
-			entries = append(entries, ToolCallEntry{Name: asStr(m["name"]), Arguments: asMap(m["arguments"])})
+		first, _ := pyjson.AsObject(calls[0])
+		if first == nil {
+			first = pyjson.NewObject()
 		}
-		return toolErrorJSON(LocalBatchError(entries), nil)
+		arguments, has := first.Get("arguments")
+		if !has {
+			arguments = pyjson.NewObject()
+		}
+		return toolErrorJSON(localBatchError(first.Vals["name"], arguments, len(calls)), nil)
 	}
 	entries := append([]map[string]any{}, partition.Errors...)
 	for offset, plan := range partition.Remote {

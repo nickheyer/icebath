@@ -4,6 +4,7 @@ package tools
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -344,16 +345,28 @@ func TestReapsTheChildWhenTheRegisteringParentIsSigkilled(t *testing.T) {
 func TestReapsAGrandchildLeftInTheRegisteredGroup(t *testing.T) {
 	server := exec.Command("sh", "-c", "sleep 300 & echo $!")
 	server.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	out, err := server.Output()
+	stdout, err := server.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	grandchild, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	line, _ := bufio.NewReader(stdout).ReadString('\n')
+	grandchild, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil {
+		syscall.Kill(server.Process.Pid, syscall.SIGKILL)
+		<-cmdReaped(server)
+		t.Fatalf("server output %q", line)
+	}
 	t.Cleanup(func() { syscall.Kill(grandchild, syscall.SIGKILL) })
+	if !waitExited(server, 10*time.Second) {
+		t.Fatal("the direct child did not exit")
+	}
+	sup := startTestSupervisor(t, nil)
 	if !pidAlive(grandchild) {
 		t.Fatal("grandchild should outlive its parent")
 	}
-	sup := startTestSupervisor(t, nil)
 	fmt.Fprintf(sup.stdin, "register %d\n", server.Process.Pid)
 	sup.stdin.Close()
 	procWaitUntil(t, 15*time.Second, "the orphaned grandchild to be reaped", func() bool { return !pidAlive(grandchild) })
@@ -464,10 +477,13 @@ func TestSpawnOwnedStartsAGroupLeaderRegistersItAndRecordsTheLedger(t *testing.T
 	spawnSupervisorFn = func() supervisorHandle { return fake }
 	ledger := [][2]any{}
 	prevRegister := RegisterChildFn
-	RegisterChildFn = func(pid int, purpose, root string) bool { ledger = append(ledger, [2]any{pid, purpose}); return true }
+	RegisterChildFn = func(_ context.Context, pid int, purpose, root string) bool {
+		ledger = append(ledger, [2]any{pid, purpose})
+		return true
+	}
 	t.Cleanup(func() { RegisterChildFn = prevRegister })
 	cmd := exec.Command("sh", "-c", "exec sleep 300")
-	if err := SpawnOwned(cmd, "unit-test"); err != nil {
+	if err := SpawnOwned(context.Background(), cmd, "unit-test"); err != nil {
 		t.Fatal(err)
 	}
 	pid := cmd.Process.Pid
@@ -942,7 +958,7 @@ func TestRegisterSelfWritesLedgerWith0600(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
 	old := syscall.Umask(0o022)
 	defer syscall.Umask(old)
-	if !RegisterSelf("serve", "/x/install", nil) {
+	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
 		t.Fatal("register_self failed")
 	}
 	st, err := os.Stat(ledger)
@@ -970,7 +986,7 @@ func TestLedgerWriterHelper(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	for _, kid := range kids {
-		RegisterChild(kid.Process.Pid, "ledger-race", "")
+		RegisterChild(context.Background(), kid.Process.Pid, "ledger-race", "")
 	}
 	pids := []string{}
 	for _, kid := range kids {
@@ -1061,7 +1077,7 @@ func TestAStalledLedgerLockHolderNeverBlocksRegisterChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan bool, 1)
-	go func() { done <- RegisterChild(os.Getpid(), "stalled-lock", "") }()
+	go func() { done <- RegisterChild(context.Background(), os.Getpid(), "stalled-lock", "") }()
 	select {
 	case ok := <-done:
 		if !ok {
@@ -1070,7 +1086,7 @@ func TestAStalledLedgerLockHolderNeverBlocksRegisterChild(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("register_child waited on a stalled lock holder")
 	}
-	if !RegisterChild(os.Getpid(), "stalled-again", "") {
+	if !RegisterChild(context.Background(), os.Getpid(), "stalled-again", "") {
 		t.Fatal("a second write past the lock failed")
 	}
 	if n := rec.warnings("spawn ledger lock"); n != 1 {
@@ -1128,7 +1144,7 @@ func deadProcessIdentity(t *testing.T) (int, float64) {
 func TestRegisterChildEntryShape(t *testing.T) {
 	ledger := ledgerAt(t)
 	child := sleepChild(t)
-	if !RegisterChild(child.Process.Pid, "mcp-helper", "") {
+	if !RegisterChild(context.Background(), child.Process.Pid, "mcp-helper", "") {
 		t.Fatal("register_child failed")
 	}
 	entries := readLedgerFile(t, ledger)
@@ -1155,7 +1171,7 @@ func TestRegisterChildEntryShape(t *testing.T) {
 func TestRegisterChildRejectsDeadOrInvalidPids(t *testing.T) {
 	ledger := ledgerAt(t)
 	deadPid, _ := deadProcessIdentity(t)
-	if RegisterChild(deadPid, "mcp-helper", "") || RegisterChild(0, "mcp-helper", "") || RegisterChild(-5, "mcp-helper", "") {
+	if RegisterChild(context.Background(), deadPid, "mcp-helper", "") || RegisterChild(context.Background(), 0, "mcp-helper", "") || RegisterChild(context.Background(), -5, "mcp-helper", "") {
 		t.Fatal("a dead or invalid pid was registered")
 	}
 	if _, err := os.Stat(ledger); err == nil && len(readLedgerFile(t, ledger)) != 0 {
@@ -1166,7 +1182,7 @@ func TestRegisterChildRejectsDeadOrInvalidPids(t *testing.T) {
 func TestLiveSpawnerProtection(t *testing.T) {
 	ledgerAt(t)
 	child := sleepChild(t)
-	RegisterChild(child.Process.Pid, "mcp-helper", "")
+	RegisterChild(context.Background(), child.Process.Pid, "mcp-helper", "")
 	entries := LedgerEntries(LedgerOptions{})
 	if len(entries) != 1 {
 		t.Fatalf("entries %v", entries)
@@ -1199,7 +1215,7 @@ func orphanEntryFor(t *testing.T, childPid int) {
 func TestDeadSpawnerReapEligibility(t *testing.T) {
 	ledgerAt(t)
 	child := sleepChild(t)
-	RegisterChild(child.Process.Pid, "mcp-helper", "")
+	RegisterChild(context.Background(), child.Process.Pid, "mcp-helper", "")
 	orphanEntryFor(t, child.Process.Pid)
 	entries := LedgerEntries(LedgerOptions{})
 	if dead, known := SpawnerIsDead(entries[0]); !dead || !known {
@@ -1216,8 +1232,8 @@ func TestReapSelectionMixesLiveAndDeadSpawners(t *testing.T) {
 	ledgerAt(t)
 	live := sleepChild(t)
 	orphan := sleepChild(t)
-	RegisterChild(live.Process.Pid, "mcp-helper", "")
-	RegisterChild(orphan.Process.Pid, "mcp-helper", "")
+	RegisterChild(context.Background(), live.Process.Pid, "mcp-helper", "")
+	RegisterChild(context.Background(), orphan.Process.Pid, "mcp-helper", "")
 	orphanEntryFor(t, orphan.Process.Pid)
 	killed := []int{}
 	reaped := ReapOrphanedMCPHelpers("", func(pid int) error { killed = append(killed, pid); return nil })
@@ -1234,7 +1250,7 @@ func TestReapSelectionMixesLiveAndDeadSpawners(t *testing.T) {
 func TestReapActuallyKillsOrphan(t *testing.T) {
 	ledgerAt(t)
 	child := sleepChild(t)
-	RegisterChild(child.Process.Pid, "mcp-helper", "")
+	RegisterChild(context.Background(), child.Process.Pid, "mcp-helper", "")
 	orphanEntryFor(t, child.Process.Pid)
 	if reaped := ReapOrphanedMCPHelpers("", nil); len(reaped) != 1 || reaped[0] != child.Process.Pid {
 		t.Fatalf("reaped %v", reaped)
@@ -1247,7 +1263,7 @@ func TestReapActuallyKillsOrphan(t *testing.T) {
 func TestReapIgnoresNonMCPPurposes(t *testing.T) {
 	ledgerAt(t)
 	child := sleepChild(t)
-	RegisterChild(child.Process.Pid, "serve-child-not-helper", "")
+	RegisterChild(context.Background(), child.Process.Pid, "serve-child-not-helper", "")
 	orphanEntryFor(t, child.Process.Pid)
 	if reaped := ReapOrphanedMCPHelpers("", nil); len(reaped) != 0 {
 		t.Fatalf("reaped %v", reaped)
@@ -1263,12 +1279,12 @@ func TestLedgerPrunesExitedChildrenOnNextWrite(t *testing.T) {
 	if err := doomed.Start(); err != nil {
 		t.Fatal(err)
 	}
-	RegisterChild(doomed.Process.Pid, "mcp-helper", "")
+	RegisterChild(context.Background(), doomed.Process.Pid, "mcp-helper", "")
 	doomed.Process.Kill()
 	doomed.Wait()
 	procWaitUntil(t, 5*time.Second, "the doomed child to vanish", func() bool { return !identityProber.Running(doomed.Process.Pid) })
 	survivor := sleepChild(t)
-	RegisterChild(survivor.Process.Pid, "mcp-helper", "")
+	RegisterChild(context.Background(), survivor.Process.Pid, "mcp-helper", "")
 	pids := ledgerPids(readLedgerFile(t, ledger))
 	if !pids[survivor.Process.Pid] || pids[doomed.Process.Pid] {
 		t.Fatalf("pids %v", pids)

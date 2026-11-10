@@ -36,7 +36,7 @@ type providerCategorySpec struct {
 	Title, DefaultLabel, DefaultName string
 	Current                          func(h string) string
 	Discover                         func(ctx context.Context) ([][2]string, error)
-	Save                             func(h, value string) error
+	Save                             func(ctx context.Context, h, value string) error
 }
 
 var providerCategorySpecs = []providerCategorySpec{
@@ -147,7 +147,7 @@ func configureCategorySpec(ctx context.Context, ui *cliui.Console, spec provider
 	if newValue == current {
 		return false, nil
 	}
-	return true, spec.Save(h, newValue)
+	return true, spec.Save(ctx, h, newValue)
 }
 
 // Composite screen rows of every provider category with its current label

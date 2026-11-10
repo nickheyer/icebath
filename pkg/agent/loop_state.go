@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/goals"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -47,7 +49,7 @@ func loopsConfigInt(ctx context.Context, key string, def, floor int64) int64 {
 	if !ok {
 		raw = def
 	}
-	n, err := pyInt64(raw)
+	n, err := pyint.Int64(raw)
 	if err != nil {
 		return def
 	}
@@ -134,14 +136,14 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	}
 	get := func(k string) any { x, _ := d.Get(k); return x }
 	s := &SessionLoopState{
-		Prompt: getOr(d, "prompt", ""), Status: getOr(d, "status", "active"), Mode: getOr(d, "mode", "interval"),
+		Prompt: d.GetOr("prompt", ""), Status: d.GetOr("status", "active"), Mode: d.GetOr("mode", "interval"),
 		PausedReason: get("paused_reason"), LastStopReason: get("last_stop_reason"), Route: pyjson.NewObject(),
 	}
 	if r, ok := get("route").(*pyjson.Object); ok {
 		s.Route = r
 	}
-	float := func(key string) (float64, error) { return pyint.Float(pyOr(getOr(d, key, 0.0), 0.0)) }
-	integer := func(key string, def int64) (int64, error) { return pyInt64(pyOr(getOr(d, key, def), int64(0))) }
+	float := func(key string) (float64, error) { return pyint.Float(pyOr(d.GetOr(key, 0.0), 0.0)) }
+	integer := func(key string, def int64) (int64, error) { return pyint.Int64(pyOr(d.GetOr(key, def), int64(0))) }
 	if s.IntervalSeconds, err = float("interval_seconds"); err != nil {
 		return nil, err
 	}
@@ -151,7 +153,7 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	if s.Times, err = integer("times", 0); err != nil {
 		return nil, err
 	}
-	s.Until = pyrepr.Str(pyOr(getOr(d, "until", ""), ""))
+	s.Until = pyrepr.Str(pyOr(d.GetOr("until", ""), ""))
 	if s.MaxTicks, err = integer("max_ticks", DefaultLoopMaxTicks); err != nil {
 		return nil, err
 	}
@@ -167,13 +169,13 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	if s.NextDueAt, err = float("next_due_at"); err != nil {
 		return nil, err
 	}
-	s.AwaitingResponse = pyTruthy(getOr(d, "awaiting_response", false))
-	s.LastResponseDigest = pyrepr.Str(pyOr(getOr(d, "last_response_digest", ""), ""))
+	s.AwaitingResponse = pyTruthy(d.GetOr("awaiting_response", false))
+	s.LastResponseDigest = pyrepr.Str(pyOr(d.GetOr("last_response_digest", ""), ""))
 	return s, nil
 }
 
 // Shared goals session database the loop rows persist through
-func loopsSessionDB(ctx context.Context) *state.DB { return goalsSessionDB(ctx) }
+func loopsSessionDB(ctx context.Context) *state.DB { return goals.SessionDB(ctx) }
 
 // Parsed loop row, nil on corrupt data with a warning when the session is named
 func parseLoopState(raw any, sessionID string) *SessionLoopState {
@@ -214,7 +216,7 @@ func SaveLoop(ctx context.Context, sessionID string, st *SessionLoopState) {
 	}
 	db := loopsSessionDB(ctx)
 	if db == nil {
-		warnDroppedWrite("LoopManager", "loop", sessionID)
+		goals.WarnDroppedWrite("LoopManager", "loop", sessionID)
 		return
 	}
 	raw, err := st.ToJSON()

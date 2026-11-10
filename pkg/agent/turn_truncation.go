@@ -232,9 +232,9 @@ func (st *truncState) done(action string, result map[string]any) TruncationVerdi
 }
 
 // Persists and ends the turn as partial or failed with the failure verdict for the UI descriptor
-func (st *truncState) endTurn(finalResponse string, o endTurnOptions) (TruncationVerdict, error) {
+func (st *truncState) endTurn(ctx context.Context, finalResponse string, o endTurnOptions) (TruncationVerdict, error) {
 	if !o.skipCleanup {
-		st.a.cleanupTaskResources(st.effectiveTaskID)
+		st.a.cleanupTaskResources(ctx, st.effectiveTaskID)
 	}
 	if err := st.a.persistSession(&st.Messages, st.conversationHistory); err != nil {
 		return TruncationVerdict{}, err
@@ -379,13 +379,13 @@ func (st *truncState) continueText(ctx context.Context, retry *TurnRetryState, a
 		if partialResponse != "" {
 			final = partialResponse + "\n\n" + notice
 		}
-		return st.endTurn(final, endTurnOptions{errText: strPtr(fmt.Sprintf("Prompt used %d of %d context tokens; no room to answer", f[0], f[1]))})
+		return st.endTurn(tools.WithEnvHome(ctx, a.env), final, endTurnOptions{errText: strPtr(fmt.Sprintf("Prompt used %d of %d context tokens; no room to answer", f[0], f[1]))})
 	}
 	final := partialResponse
 	if final == "" {
 		final = ceilingNoText
 	}
-	return st.endTurn(final, endTurnOptions{errText: strPtr("Response remained truncated after 4 continuation attempts")})
+	return st.endTurn(tools.WithEnvHome(ctx, a.env), final, endTurnOptions{errText: strPtr("Response remained truncated after 4 continuation attempts")})
 }
 
 // The model's known max output tokens on Anthropic Messages, zero when unknown
@@ -470,9 +470,9 @@ func (st *truncState) retryTruncatedToolCall(ctx context.Context, apiKwargs map[
 	if err != nil {
 		return TruncationVerdict{}, err
 	}
-	a.cleanupTaskResources(st.effectiveTaskID)
+	a.cleanupTaskResources(tools.WithEnvHome(ctx, a.env), st.effectiveTaskID)
 	closeLiveToolSequence(&st.Messages, final)
-	return st.endTurn(final, endTurnOptions{skipCleanup: true, failureReason: failure})
+	return st.endTurn(tools.WithEnvHome(ctx, a.env), final, endTurnOptions{skipCleanup: true, failureReason: failure})
 }
 
 // Loop locals recover_from_truncation reads and may rebind
@@ -506,7 +506,7 @@ func (a *AIAgent) recoverFromTruncation(ctx context.Context, r TruncationRequest
 	}
 	if pyrepr.Truthy(state.ToolCallField(r.Response, "_runaway_repetition")) {
 		a.vprint(a.logPrefix+repetitionStreamCut[0], true, true)
-		return st.endTurn(repetitionStreamCut[1], endTurnOptions{errText: strPtr(repetitionStreamCut[2])})
+		return st.endTurn(tools.WithEnvHome(ctx, a.env), repetitionStreamCut[1], endTurnOptions{errText: strPtr(repetitionStreamCut[2])})
 	}
 	if prompt, ctxLen, ok := a.promptFilledWindow(r.Response); ok {
 		st.windowFilled = &[2]int{prompt, ctxLen}
@@ -532,7 +532,7 @@ func (a *AIAgent) recoverFromTruncation(ctx context.Context, r TruncationRequest
 			"partial delivery — not continuing (the request no longer fits the model's "+
 			"context window).", true, true)
 		closeLiveToolSequence(&st.Messages, contextOverflowPartialFinal)
-		return st.endTurn(contextOverflowPartialFinal, endTurnOptions{
+		return st.endTurn(tools.WithEnvHome(ctx, a.env), contextOverflowPartialFinal, endTurnOptions{
 			errText: strPtr(contextOverflowPartialFinal), failed: true, compressionExhausted: true,
 			failureReason: "context_overflow", notRetryable: true,
 		})
@@ -550,7 +550,7 @@ func (a *AIAgent) recoverFromTruncation(ctx context.Context, r TruncationRequest
 	}
 	if ok {
 		a.vprint(a.logPrefix+abort[0], true, true)
-		return st.endTurn(abort[1], endTurnOptions{errText: strPtr(abort[2])})
+		return st.endTurn(tools.WithEnvHome(ctx, a.env), abort[1], endTurnOptions{errText: strPtr(abort[2])})
 	}
 
 	if continuableModes[a.apiMode] {
@@ -571,11 +571,11 @@ func (a *AIAgent) recoverFromTruncation(ctx context.Context, r TruncationRequest
 	}
 	if len(r.Messages) > 1 {
 		a.vprint(a.logPrefix+"   ⏪ Rolling back to last complete assistant turn", false, true)
-		return st.endTurn(final, endTurnOptions{resultMessages: a.getMessagesUpToLastAssistant(r.Messages)})
+		return st.endTurn(tools.WithEnvHome(ctx, a.env), final, endTurnOptions{resultMessages: a.getMessagesUpToLastAssistant(r.Messages)})
 	}
 	a.flushStatusBuffer()
 	a.vprint(a.logPrefix+"❌ First response truncated - cannot recover", true, true)
-	return st.endTurn(final, endTurnOptions{skipCleanup: true, failed: true})
+	return st.endTurn(tools.WithEnvHome(ctx, a.env), final, endTurnOptions{skipCleanup: true, failed: true})
 }
 
 var codexReplayKeys = []string{"content", "reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items"}
@@ -840,7 +840,7 @@ func (a *AIAgent) handleContentPolicyRefusal(ctx context.Context, r RefusalReque
 		summary = "the model returned no explanation"
 	}
 	refusalResponse := "⚠️ " + ContentPolicyCopy(ProviderLabelFor(a.provider), summary)
-	a.cleanupTaskResources(r.EffectiveTaskID)
+	a.cleanupTaskResources(tools.WithEnvHome(ctx, a.env), r.EffectiveTaskID)
 	if err := a.persistSession(&r.Messages, r.ConversationHistory); err != nil {
 		return RefusalVerdict{}, err
 	}

@@ -76,7 +76,7 @@ func RootForEnvironment(environ map[string]string) string {
 		if profile == "" {
 			return ""
 		}
-		expanded = profile + expanded[1:]
+		expanded = pypath.PathStr(profile) + expanded[1:]
 	}
 	if !pypath.IsAbs(expanded) {
 		return ""
@@ -129,6 +129,17 @@ var (
 	fallbackWarnOut       io.Writer = os.Stderr
 )
 
+// Routes the profile fallback warning to w with its once latch rearmed, returning the function that restores both
+func CaptureProfileFallbackWarning(w io.Writer) func() {
+	prevOut, prevWarned := fallbackWarnOut, profileFallbackWarned.Load()
+	fallbackWarnOut = w
+	profileFallbackWarned.Store(false)
+	return func() {
+		fallbackWarnOut = prevOut
+		profileFallbackWarned.Store(prevWarned)
+	}
+}
+
 // Warns once on stderr when the home variable is unset while a non default profile is sticky active
 func warnProfileFallbackOnce() {
 	if profileFallbackWarned.Swap(true) {
@@ -136,7 +147,7 @@ func warnProfileFallbackOnce() {
 	}
 	fallback := PlatformDefault()
 	active := ""
-	if data, err := os.ReadFile(filepath.Join(fallback, "active_profile")); err == nil && utf8.Valid(data) {
+	if data, err := os.ReadFile(pypath.PathJoin(fallback, "active_profile")); err == nil && utf8.Valid(data) {
 		text := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
 		active = pystr.Strip(text)
 	}
@@ -186,7 +197,7 @@ func PackagedDir(ctx context.Context, envVar, def, subdir string) string {
 		return pypath.PathStr(override)
 	}
 	if def != "" {
-		return def
+		return pypath.PathStr(def)
 	}
 	return pypath.PathJoin(Dir(ctx), subdir)
 }
@@ -262,7 +273,11 @@ func InstallRoot() string {
 	if err != nil {
 		return ""
 	}
-	return pypath.PathParent(resolve(exe))
+	r, err := resolve(exe)
+	if err != nil {
+		return ""
+	}
+	return pypath.PathParent(r)
 }
 
 // Module roots whose import failure means the shipped tree is inconsistent

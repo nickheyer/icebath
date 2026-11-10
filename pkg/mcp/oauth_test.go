@@ -20,7 +20,7 @@ func TestOAuthStorageRoundtripTokens(t *testing.T) {
 	if tok, err := s.GetTokens(); err != nil || tok != nil {
 		t.Fatalf("empty storage returned %v %v", tok, err)
 	}
-	if err := s.SetTokens(bearer("abc123", "ref456")); err != nil {
+	if err := s.SetTokens(context.Background(), bearer("abc123", "ref456")); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "mcp-tokens", "test-server.json")
@@ -32,7 +32,7 @@ func TestOAuthStorageRoundtripTokens(t *testing.T) {
 func TestOAuthStorageTokenFileCreatedWith0600(t *testing.T) {
 	dir := oauthHome(t)
 	s := NewTokenStorage(context.Background(), "perm-test-server", "")
-	if err := s.SetTokens(bearer("secret-abc", "secret-ref")); err != nil {
+	if err := s.SetTokens(context.Background(), bearer("secret-abc", "secret-ref")); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "mcp-tokens", "perm-test-server.json")
@@ -57,10 +57,10 @@ func TestOAuthStorageClientInfoWithSecretUsesClientSecretPost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetClientInfo(info); err != nil {
+	if err := s.SetClientInfo(context.Background(), info); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := s.GetClientInfo()
+	loaded, err := s.GetClientInfo(context.Background())
 	if err != nil || loaded == nil || derefStr(loaded.TokenEndpointAuthMethod) != "client_secret_post" {
 		t.Fatalf("loaded %+v %v", loaded, err)
 	}
@@ -73,7 +73,7 @@ func TestOAuthStorageClientInfoWithSecretAndNoneMethodIsCoerced(t *testing.T) {
 	dir := oauthHome(t)
 	path := writeTokenFile(t, dir, "supabase.client.json", map[string]any{"client_id": "client-id", "client_secret": "secret",
 		"redirect_uris": []any{"http://127.0.0.1:12345/callback"}, "token_endpoint_auth_method": "none"})
-	loaded, err := NewTokenStorage(context.Background(), "supabase", "").GetClientInfo()
+	loaded, err := NewTokenStorage(context.Background(), "supabase", "").GetClientInfo(context.Background())
 	if err != nil || loaded == nil || derefStr(loaded.TokenEndpointAuthMethod) != "client_secret_post" {
 		t.Fatalf("loaded %+v %v", loaded, err)
 	}
@@ -149,7 +149,7 @@ func TestOAuthBuildTokenResponseAccepts201Created(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := []byte(`{"access_token": "access-token", "token_type": "Bearer", "refresh_token": "refresh-token"}`)
-	if err := p.handleTokenResponse(&flowResponse{StatusCode: 201, Body: body}); err != nil {
+	if err := p.handleTokenResponse(context.Background(), &flowResponse{StatusCode: 201, Body: body}); err != nil {
 		t.Fatal(err)
 	}
 	if tok := p.CurrentTokens(); tok == nil || tok.AccessToken != "access-token" {
@@ -169,7 +169,7 @@ func TestOAuthBuildFailedTokenExchangeCarriesBoundedRedactedExcerpt(t *testing.T
 	}
 	waf := "<HTML><HEAD><TITLE>ERROR</TITLE></HEAD><BODY><H1>403 ERROR</H1>\n  Request blocked.\n" +
 		"Bearer leaked-bearer-token <PRE>" + strings.Repeat("x", 400) + "</PRE></BODY></HTML>"
-	err = p.handleTokenResponse(&flowResponse{StatusCode: 403, Body: []byte(waf)})
+	err = p.handleTokenResponse(context.Background(), &flowResponse{StatusCode: 403, Body: []byte(waf)})
 	var te *OAuthTokenError
 	if !errors.As(err, &te) {
 		t.Fatalf("error %T %v", err, err)
@@ -355,7 +355,7 @@ func TestOAuthMalformedClientInfoFlowReservesFreshEphemeralPort(t *testing.T) {
 		if err != nil || port <= 0 || cfg["_resolved_port"] != port || !isReserved(port) {
 			t.Fatalf("%v port %d cfg %v err %v", payload, port, cfg, err)
 		}
-		if info, err := s.GetClientInfo(); info != nil || err != nil {
+		if info, err := s.GetClientInfo(context.Background()); info != nil || err != nil {
 			t.Fatalf("%v client info %+v %v", payload, info, err)
 		}
 	}
@@ -428,7 +428,7 @@ func TestOAuthClientChangePreregisterFlowInvalidatesEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := maybePreregisterClient(s, cfg, md); err != nil {
+	if err := maybePreregisterClient(context.Background(), s, cfg, md); err != nil {
 		t.Fatal(err)
 	}
 	if exists(filepath.Join(d, "chg-server.json")) {

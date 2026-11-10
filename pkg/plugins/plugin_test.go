@@ -110,3 +110,23 @@ func TestInstalledRemovalHonoursCachedLiveListAndAllowRemoved(t *testing.T) {
 		t.Fatal("directory name candidate not matched")
 	}
 }
+
+type swapProbePlugin struct{ name string }
+
+func (p swapProbePlugin) Manifest() Manifest          { return Manifest{Name: p.name, Kind: "standalone"} }
+func (p swapProbePlugin) Register(ctx *Context) error { return nil }
+
+func TestSwapBundledAddsUntilRestore(t *testing.T) {
+	before := BundledPluginKeys()
+	restore := SwapBundled(swapProbePlugin{name: "swap-probe"})
+	if _, ok := BundledPlugin("swap-probe"); !ok {
+		t.Fatal("swapped plugin missing")
+	}
+	restore()
+	if _, ok := BundledPlugin("swap-probe"); ok {
+		t.Fatal("swapped plugin kept after restore")
+	}
+	if after := BundledPluginKeys(); len(after) != len(before) {
+		t.Fatalf("bundled set changed %v -> %v", before, after)
+	}
+}

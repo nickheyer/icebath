@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -108,13 +109,13 @@ var (
 )
 
 // Runs the codex config migration and describes it, a failure becomes one warning line
-func codexRuntimeMigrationLines(cfg map[string]any) (lines []string) {
+func codexRuntimeMigrationLines(ctx context.Context, cfg map[string]any) (lines []string) {
 	defer func() {
 		if r := recover(); r != nil {
 			lines = append(lines, fmt.Sprintf("\u26a0 MCP migration skipped: %v", r))
 		}
 	}()
-	report, err := codexRuntimeMigrate(cfg, CodexMigrateOptions{})
+	report, err := codexRuntimeMigrate(ctx, cfg, CodexMigrateOptions{})
 	if err != nil {
 		return append(lines, "⚠ MCP migration skipped: "+err.Error())
 	}
@@ -146,7 +147,7 @@ func codexRuntimeMigrationLines(cfg map[string]any) (lines []string) {
 }
 
 // Shows or switches the codex runtime, persisting through the callback and migrating on enable, an invalid name errors
-func ApplyCodexRuntime(cfg map[string]any, newValue *string, persist func(map[string]any) error) (CodexRuntimeStatus, error) {
+func ApplyCodexRuntime(ctx context.Context, cfg map[string]any, newValue *string, persist func(map[string]any) error) (CodexRuntimeStatus, error) {
 	current := GetCurrentCodexRuntime(cfg)
 	codexBin := GetConfiguredCodexBinary(cfg)
 	type binaryCheck struct {
@@ -209,7 +210,7 @@ func ApplyCodexRuntime(cfg map[string]any, newValue *string, persist func(map[st
 		if ok, ver := checkBinary(codexBin); ok {
 			msg = append(msg, "codex CLI: "+ver)
 		}
-		msg = append(msg, codexRuntimeMigrationLines(cfg)...)
+		msg = append(msg, codexRuntimeMigrationLines(ctx, cfg)...)
 		msg = append(msg, "OpenAI/Codex turns now run through `codex app-server` (terminal/file ops/patching inside Codex; Icebath tools available via MCP callback).")
 		msg = append(msg, "Effective on next session — current cached agent keeps the prior runtime to preserve prompt cache.")
 	} else {

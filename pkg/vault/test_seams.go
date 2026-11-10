@@ -62,7 +62,7 @@ func (s *VaultStore) EncryptVaultBody(plaintext []byte) error {
 		return err
 	}
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(s.vaultPath, f.Encrypt(plaintext), "", &mode, true)
+	return pyfs.AtomicWriteBytes(s.ctx, s.vaultPath, f.Encrypt(plaintext), "", &mode, true)
 }
 
 // RequiredFields lists the fields a payment or address item must carry

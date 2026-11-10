@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
@@ -374,7 +375,7 @@ func (s *Store) loadPrefillMessages(ctx context.Context, cfg config.Tree, jobID 
 	if prefillFile == "" {
 		return nil
 	}
-	pfpath, _ := pathlibExpanduser(prefillFile)
+	pfpath, _ := pypath.PathExpanduser(prefillFile)
 	if !filepath.IsAbs(pfpath) {
 		pfpath = filepath.Join(s.home, pfpath)
 	}
@@ -859,7 +860,7 @@ func finalResponseFromResult(ctx context.Context, s *Store, result map[string]an
 				if withModel {
 					m = &model
 				}
-				if v := formatTurnCompletionExplanation(turnExitReason, cause, m); v != "" {
+				if v := formatTurnCompletionExplanation(ctx, turnExitReason, cause, m); v != "" {
 					variants[pystr.Strip(v)] = true
 				}
 			}
@@ -1256,6 +1257,9 @@ type runJobOptions struct {
 // Agent setup resolver run_job calls, the module attribute tests patch
 var resolveCronAgentSetupSeam = (*Store).resolveCronAgentSetup
 
+// Canonical owner run run_job hands a non owner fire to, the module attribute tests patch
+var runCanonicalJobSeam = (*Store).runCanonicalJob
+
 // Executes one job and returns the success flag, run document, final response and error text
 func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOutcome, error) {
 	owner, isOwner := currentOwnerExecution(ctx)
@@ -1263,7 +1267,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 		isOwner = false
 	}
 	if !job.NoAgent && !isOwner {
-		return s.runCanonicalJob(ctx, job, o.ExtraPrompt, o.Cancel, o.ExecutionID)
+		return runCanonicalJobSeam(s, ctx, job, o.ExtraPrompt, o.Cancel, o.ExecutionID)
 	}
 	jobID := job.ID
 	jobName := job.Name
@@ -1456,7 +1460,6 @@ func (s *Store) runWithFireClaimHeartbeat(ctx context.Context, job *Job, run fun
 		return true, nil
 	}
 	stop := make(chan struct{})
-	finished := make(chan struct{})
 	lost := &latchEvent{}
 	wait := func(seconds float64) bool {
 		select {
@@ -1466,8 +1469,7 @@ func (s *Store) runWithFireClaimHeartbeat(ctx context.Context, job *Job, run fun
 			return false
 		}
 	}
-	go func() {
-		defer close(finished)
+	finished := startHeartbeatThread(func() {
 		lastConfirmed := monoNow()
 		for !wait(runClaimHeartbeatSeconds) {
 			ok, herr := s.heartbeatFireClaim(jobID, owner)
@@ -1501,7 +1503,7 @@ func (s *Store) runWithFireClaimHeartbeat(ctx context.Context, job *Job, run fun
 			}
 			lastConfirmed = monoNow()
 		}
-	}()
+	})
 	defer func() {
 		close(stop)
 		select {

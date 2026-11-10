@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -385,7 +384,7 @@ func (c *CLI) tuiHandleEscapeModal(e *ptEvent) {
 // Platform and process hooks the suspend handler goes through
 var (
 	tuiGOOS         = runtime.GOOS
-	suspendSelf     = func() error { return syscall.Kill(0, syscall.SIGTSTP) }
+	suspendSelf     = suspendProcessGroup
 	suspendNotice   = func(msg string) { _, _ = os.Stdout.WriteString(msg) }
 	wallClockFormat = "15:04:05"
 )

@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // InstallProgress reports download, unpack and verify stages, an error aborting the install
@@ -147,10 +148,6 @@ func InstalledLocation(ctx context.Context, p Package, lockfile *Lockfile, targe
 			unique = append(unique, root)
 		}
 	}
-	current, err := CurrentTarget()
-	if err != nil {
-		return nil, err
-	}
 	name := p.Base().Name
 	version, pinned := lockfile.Version(name)
 	var expected *string
@@ -178,8 +175,14 @@ func InstalledLocation(ctx context.Context, p Package, lockfile *Lockfile, targe
 		if binary != "" && !isRegularFile(binary) {
 			continue
 		}
-		if binary != "" && target == current && !healExecBit(binary, !opts.NoHeal) {
-			continue
+		if binary != "" {
+			current, err := CurrentTarget()
+			if err != nil {
+				return nil, err
+			}
+			if target == current && !healExecBit(binary, !opts.NoHeal) {
+				continue
+			}
 		}
 		if opts.Verify && !entryVerified(p, fact, store, target) {
 			continue
@@ -289,7 +292,16 @@ func LazyInstallsAllowedFor(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	value, found := tree.Lookup("security.allow_lazy_installs")
+	var security map[string]any
+	switch section := tree["security"].(type) {
+	case map[string]any:
+		security = section
+	case config.Tree:
+		security = section
+	default:
+		return true
+	}
+	value, found := security["allow_lazy_installs"]
 	if !found {
 		return true
 	}
@@ -333,7 +345,10 @@ func IsInstalled(ctx context.Context, name string) (bool, error) {
 }
 
 // Reports the bundled layout, a store beside the bundle manifest that ships read only
-func Sealed(ctx context.Context) (bool, error) {
+func Sealed(ctx context.Context) (bool, error) { return sealedLayout(ctx) }
+
+// Store beside a bundle manifest probe, replaced by tests the way Python patches install.sealed
+var sealedLayout = func(ctx context.Context) (bool, error) {
 	root, err := StoreRoot(ctx)
 	if err != nil {
 		return false, err
@@ -426,8 +441,8 @@ func factDigest(fact map[string]any) *string {
 	return nil
 }
 
-// Reports realized bytes that still verify and match the recorded digest
-func entryVerified(p Package, fact map[string]any, store *Store, target string) bool {
+// Reports realized bytes that still verify and match the recorded digest, replaced by tests that count the checks
+var entryVerified = func(p Package, fact map[string]any, store *Store, target string) bool {
 	entry := store.Entry(pyrepr.Str(fact["entry"]))
 	if p.Verify(entry, target) != "" {
 		return false
@@ -643,7 +658,7 @@ func copyVerifiedSource(p Package, lockfile *Lockfile, copyFrom *Location, stage
 		!entryVerified(p, source, copyFrom.Store, target) {
 		return NewInstallError(name, "bundled copy source failed verification", "")
 	}
-	if err := copyTreeSymlinks(copyFrom.Store.Entry(pyrepr.Str(source["entry"])), staged); err != nil {
+	if err := copyTreeLike(copyFrom.Store.Entry(pyrepr.Str(source["entry"])), staged, true, nil); err != nil {
 		return err
 	}
 	recorded := factDigest(source)
@@ -655,59 +670,6 @@ func copyVerifiedSource(p Package, lockfile *Lockfile, copyFrom *Location, stage
 		return NewInstallError(name, "copied bytes do not match the bundled source", "")
 	}
 	return nil
-}
-
-// Copies a tree the way shutil copytree with symlinks does, links recreated and file modes and times kept
-func copyTreeSymlinks(src, dst string) error {
-	st, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o777); err != nil {
-		return err
-	}
-	if err := os.Mkdir(dst, st.Mode().Perm()); err != nil {
-		return err
-	}
-	items, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, item := range items {
-		from, to := filepath.Join(src, item.Name()), filepath.Join(dst, item.Name())
-		info, err := os.Lstat(from)
-		if err != nil {
-			return err
-		}
-		switch {
-		case info.Mode()&fs.ModeSymlink != 0:
-			link, err := os.Readlink(from)
-			if err != nil {
-				return err
-			}
-			if err := os.Symlink(link, to); err != nil {
-				return err
-			}
-		case info.IsDir():
-			if err := copyTreeSymlinks(from, to); err != nil {
-				return err
-			}
-		default:
-			if err := copyFile(from, to); err != nil {
-				return err
-			}
-			if err := os.Chmod(to, info.Mode().Perm()); err != nil {
-				return err
-			}
-			if err := os.Chtimes(to, info.ModTime(), info.ModTime()); err != nil {
-				return err
-			}
-		}
-	}
-	if err := os.Chmod(dst, st.Mode().Perm()); err != nil {
-		return err
-	}
-	return os.Chtimes(dst, st.ModTime(), st.ModTime())
 }
 
 // First n characters of a string, counted in code points
@@ -1019,9 +981,12 @@ func stageOnly(ctx context.Context, name, target string, opts StageOnlyOptions) 
 	if err != nil {
 		return "", err
 	}
-	return InstallPackage(ctx, p, currentLockfile(), nil, store, target,
+	return realizePin(ctx, p, currentLockfile(), nil, store, target,
 		InstallPackageOptions{Progress: opts.Progress, PauseEvent: opts.PauseEvent, DownloadProgress: opts.DownloadProgress})
 }
+
+// Realizes one pin for ensure and stage only, replaced by tests that prove an installed package is never reinstalled
+var realizePin = InstallPackage
 
 // One operation's hold on the writable store's install lock, observations valid only while it is held
 type installOperation struct {
@@ -1103,7 +1068,7 @@ func ensure(ctx context.Context, name string, opts EnsureOptions) (*Runner, erro
 		if op != nil {
 			op.Close()
 		}
-		if err := syncVenv(ctx, SyncVenvOptions{Explicit: opts.Explicit}); err != nil {
+		if err := installSyncVenv(ctx, SyncVenvOptions{Explicit: opts.Explicit}); err != nil {
 			return nil, err
 		}
 		return &Runner{Name: name, Env: ComposeEnv(nil, opts.BaseEnv)}, nil
@@ -1174,7 +1139,7 @@ func ensure(ctx context.Context, name string, opts EnsureOptions) (*Runner, erro
 		}
 		for _, pkg := range missing {
 			clear(checked)
-			if _, err := InstallPackage(ctx, pkg, lockfile, facts, store, target, InstallPackageOptions{
+			if _, err := realizePin(ctx, pkg, lockfile, facts, store, target, InstallPackageOptions{
 				Progress: opts.Progress, PauseEvent: opts.PauseEvent, DownloadProgress: opts.DownloadProgress, LockHeld: op != nil,
 			}); err != nil {
 				return nil, err
@@ -1280,8 +1245,19 @@ func (d *DriftReport) set(name, reason string) {
 	d.Reasons[name] = reason
 }
 
-// Exception classes a drift venv probe propagates instead of reporting as the venv's reason
-var driftPropagates = map[string]bool{"TypeError": true, "KeyError": true, "AttributeError": true}
+// Reports an error Python catches with except OSError, RuntimeError and ValueError, subclasses included
+func caughtAsOSRuntimeValue(err error) bool {
+	switch errorClass(err) {
+	case "OSError", "FileNotFoundError", "FileExistsError", "PermissionError", "IsADirectoryError", "NotADirectoryError",
+		"TimeoutError", "InterruptedError", "BlockingIOError", "ChildProcessError", "ProcessLookupError", "ConnectionError",
+		"BrokenPipeError", "ConnectionAbortedError", "ConnectionRefusedError", "ConnectionResetError",
+		"RuntimeError", "NotImplementedError", "RecursionError", "InstallError", "ResolutionConflict", "BuildFailure",
+		"DownloadError", "DownloadPaused", "HashError", "_RangeError", "DownloadTransportError", "StaleLockRow",
+		"ValueError", "UnicodeError", "UnicodeDecodeError", "UnicodeEncodeError", "JSONDecodeError", "TOMLDecodeError":
+		return true
+	}
+	return false
+}
 
 // Cheap stamp comparisons of installed state against the lockfile, never installing or fetching
 func Drift(ctx context.Context, includeVenv bool) (*DriftReport, error) {
@@ -1323,7 +1299,7 @@ func Drift(ctx context.Context, includeVenv bool) (*DriftReport, error) {
 	if includeVenv && venvErr == nil && (isRegularFile(RuntimeFactsPath(ctx)) || recordedVenv) {
 		current, err := venvIsCurrent(ctx, nil, nil, "")
 		switch {
-		case err != nil && driftPropagates[errorClass(err)]:
+		case err != nil && !caughtAsOSRuntimeValue(err):
 			return nil, err
 		case err != nil:
 			report.set("venv", err.Error())
@@ -1493,11 +1469,11 @@ func StoreFirstPath(ctx context.Context, path string) (string, error) {
 	}
 	store := map[string]bool{}
 	for _, d := range dirs {
-		store[strings.ToLower(d)] = true
+		store[pystr.Lower(d)] = true
 	}
 	parts := append([]string{}, dirs...)
 	for _, p := range strings.Split(path, string(os.PathListSeparator)) {
-		if p != "" && !store[strings.ToLower(p)] {
+		if p != "" && !store[pystr.Lower(p)] {
 			parts = append(parts, p)
 		}
 	}

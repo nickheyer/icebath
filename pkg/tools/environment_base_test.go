@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Tool env rooted in a fresh temp home with the adapter secret hooks installed
@@ -112,33 +113,33 @@ func requireBash(t *testing.T) string {
 
 func TestSnapshotStoreReadsDictAndToleratesMissingOrDamagedFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "snapshots.json")
-	if got := envLoadJSONStore(path); len(got) != 0 {
+	if got := envLoadJSONStore(path); got.Len() != 0 {
 		t.Fatalf("missing store should be empty, got %v", got)
 	}
 	os.WriteFile(path, []byte(`{"task": "snapshot"}`), 0o644)
-	if got := envLoadJSONStore(path); got["task"] != "snapshot" {
+	if got := envLoadJSONStore(path); got.Vals["task"] != "snapshot" {
 		t.Fatalf("got %v", got)
 	}
 	os.WriteFile(path, []byte(`["not a mapping"]`), 0o644)
-	if got := envLoadJSONStore(path); len(got) != 0 {
+	if got := envLoadJSONStore(path); got.Len() != 0 {
 		t.Fatalf("list store should read empty, got %v", got)
 	}
 	os.WriteFile(path, []byte(`{bad json`), 0o644)
-	if got := envLoadJSONStore(path); len(got) != 0 {
+	if got := envLoadJSONStore(path); got.Len() != 0 {
 		t.Fatalf("damaged store should read empty, got %v", got)
 	}
 }
 
 func TestUpdateJSONStoreIsLockedAndAtomic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store", "snapshots.json")
-	if err := envUpdateJSONStore(path, func(m map[string]any) { m["a"] = "1" }); err != nil {
+	if err := envUpdateJSONStore(context.Background(), path, func(m *pyjson.Object) { m.Set("a", "1") }); err != nil {
 		t.Fatal(err)
 	}
-	if err := envUpdateJSONStore(path, func(m map[string]any) { m["b"] = "2" }); err != nil {
+	if err := envUpdateJSONStore(context.Background(), path, func(m *pyjson.Object) { m.Set("b", "2") }); err != nil {
 		t.Fatal(err)
 	}
 	got := envLoadJSONStore(path)
-	if got["a"] != "1" || got["b"] != "2" {
+	if got.Vals["a"] != "1" || got.Vals["b"] != "2" {
 		t.Fatalf("got %v", got)
 	}
 	if _, err := os.Stat(path + ".lock"); err != nil {

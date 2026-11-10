@@ -42,3 +42,23 @@ func TestMCPToolsParallelWhenServerOptedIn(t *testing.T) {
 		t.Fatal("MCP tools without the server opt in stay sequential")
 	}
 }
+
+func TestServerKeysListsEveryLiveTaskKey(t *testing.T) {
+	bare, scoped := ServerKey{Name: "keys-probe"}, ServerKey{Scope: "profile-a", Name: "keys-probe"}
+	mcpMu.Lock()
+	mcpServers[bare], mcpServers[scoped] = &serverTask{}, &serverTask{}
+	mcpMu.Unlock()
+	t.Cleanup(func() {
+		mcpMu.Lock()
+		delete(mcpServers, bare)
+		delete(mcpServers, scoped)
+		mcpMu.Unlock()
+	})
+	found := map[ServerKey]bool{}
+	for _, k := range ServerKeys() {
+		found[k] = true
+	}
+	if !found[bare] || !found[scoped] {
+		t.Fatalf("keys %v", found)
+	}
+}

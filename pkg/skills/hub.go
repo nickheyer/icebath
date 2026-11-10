@@ -366,7 +366,7 @@ func (f *jsonStateFile) readObject() (*pyjson.Object, error) {
 }
 
 // Atomic indent two rewrite keeping the existing file mode
-func (f *jsonStateFile) write(data any, ensureASCII bool) error {
+func (f *jsonStateFile) write(ctx context.Context, data any, ensureASCII bool) error {
 	if err := os.MkdirAll(filepath.Dir(f.Path), 0o777); err != nil {
 		return err
 	}
@@ -375,13 +375,13 @@ func (f *jsonStateFile) write(data any, ensureASCII bool) error {
 		return err
 	}
 	if st, statErr := os.Stat(f.Path); statErr == nil {
-		return pyfs.AtomicWriteTextMode(f.Path, text+"\n", ".tmp_", st.Mode().Perm())
+		return pyfs.AtomicWriteTextMode(ctx, f.Path, text+"\n", ".tmp_", st.Mode().Perm())
 	}
-	return pyfs.AtomicWriteText(f.Path, text+"\n", ".tmp_")
+	return pyfs.AtomicWriteText(ctx, f.Path, text+"\n", ".tmp_")
 }
 
 // Re reads, mutates and saves under the ten second lock, unlocked with a warning when the lock is unusable
-func (f *jsonStateFile) update(mutate func(*pyjson.Object) (bool, error), ensureASCII bool) (bool, error) {
+func (f *jsonStateFile) update(ctx context.Context, mutate func(*pyjson.Object) (bool, error), ensureASCII bool) (bool, error) {
 	release, err := tools.AcquireFileLock(f.Path+".lock", f.holder, 10*time.Second,
 		fmt.Sprintf("Timed out waiting for the skills hub state lock (%s)", f.Path))
 	if err != nil {
@@ -397,7 +397,7 @@ func (f *jsonStateFile) update(mutate func(*pyjson.Object) (bool, error), ensure
 	if err != nil || !changed {
 		return changed, err
 	}
-	return true, f.write(data, ensureASCII)
+	return true, f.write(ctx, data, ensureASCII)
 }
 
 // Lock file of installed hub skill provenance
@@ -422,7 +422,9 @@ func (h *Hub) warnLog() interface{ Warn(string, ...any) } { return h.S.logger() 
 func (l *HubLockFile) Load() (*pyjson.Object, error) { return l.readObject() }
 
 // Rewrites the lock document keeping non ASCII text
-func (l *HubLockFile) Save(data *pyjson.Object) error { return l.write(data, false) }
+func (l *HubLockFile) Save(ctx context.Context, data *pyjson.Object) error {
+	return l.write(ctx, data, false)
+}
 
 func lockInstalled(data *pyjson.Object, create bool) (*pyjson.Object, error) {
 	v, ok := data.Get("installed")
@@ -442,7 +444,7 @@ func lockInstalled(data *pyjson.Object, create bool) (*pyjson.Object, error) {
 }
 
 // Records one install after validating the name and install path shape a later uninstall trusts
-func (l *HubLockFile) RecordInstall(name, source, identifier, trustLevel, scanVerdict, skillHash, installPath string,
+func (l *HubLockFile) RecordInstall(ctx context.Context, name, source, identifier, trustLevel, scanVerdict, skillHash, installPath string,
 	files []string, metadata, scanProvenance *pyjson.Object) error {
 	safeName, err := validateHubSkillName(name)
 	if err != nil {
@@ -452,7 +454,7 @@ func (l *HubLockFile) RecordInstall(name, source, identifier, trustLevel, scanVe
 	if err != nil {
 		return err
 	}
-	_, err = l.update(func(data *pyjson.Object) (bool, error) {
+	_, err = l.update(ctx, func(data *pyjson.Object) (bool, error) {
 		installed, err := lockInstalled(data, true)
 		if err != nil {
 			return false, err
@@ -481,8 +483,8 @@ func (l *HubLockFile) RecordInstall(name, source, identifier, trustLevel, scanVe
 }
 
 // Drops one installed entry
-func (l *HubLockFile) RecordUninstall(name string) error {
-	_, err := l.update(func(data *pyjson.Object) (bool, error) {
+func (l *HubLockFile) RecordUninstall(ctx context.Context, name string) error {
+	_, err := l.update(ctx, func(data *pyjson.Object) (bool, error) {
 		installed, err := lockInstalled(data, true)
 		if err != nil {
 			return false, err
@@ -638,15 +640,15 @@ func (m *TapsManager) Load() ([]any, error) {
 func (m *TapsManager) ListTaps() ([]any, error) { return m.Load() }
 
 // Rewrites the tap list
-func (m *TapsManager) Save(taps []any) error {
+func (m *TapsManager) Save(ctx context.Context, taps []any) error {
 	o := pyjson.NewObject()
 	o.Set("taps", taps)
-	return m.write(o, true)
+	return m.write(ctx, o, true)
 }
 
 // Appends a tap, false when the repo is already tapped
-func (m *TapsManager) Add(repo, path string) (bool, error) {
-	return m.update(func(data *pyjson.Object) (bool, error) {
+func (m *TapsManager) Add(ctx context.Context, repo, path string) (bool, error) {
+	return m.update(ctx, func(data *pyjson.Object) (bool, error) {
 		taps, err := tapsList(data, true)
 		if err != nil {
 			return false, err
@@ -669,8 +671,8 @@ func (m *TapsManager) Add(repo, path string) (bool, error) {
 }
 
 // Removes a tap by repo, false when it was not tapped
-func (m *TapsManager) Remove(repo string) (bool, error) {
-	return m.update(func(data *pyjson.Object) (bool, error) {
+func (m *TapsManager) Remove(ctx context.Context, repo string) (bool, error) {
+	return m.update(ctx, func(data *pyjson.Object) (bool, error) {
 		taps, err := tapsList(data, false)
 		if err != nil {
 			return false, err

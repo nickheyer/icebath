@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Sets one extra header on a copy of the extra headers map, which the transport defaults may share
@@ -162,7 +163,7 @@ func buildAPIRequest(ctx context.Context, a *AIAgent, s *LoopState) error {
 	}
 	firePreAPIRequestHook(ctx, a, s, s.APIKwargs, mapRows(s.APIMessages), s.LLMMiddlewareTrace)
 	if config.EnvVarEnabled("ICEBATH_DUMP_REQUESTS") {
-		a.dumpAPIRequestDebug(s.APIKwargs, "preflight", nil)
+		a.dumpAPIRequestDebug(tools.WithEnvHome(ctx, a.env), s.APIKwargs, "preflight", nil)
 	}
 	if s.MoaPreparedRequest != nil && a.provider == "moa" {
 		if moaClientConsumesPreparedRequest(a.client) {

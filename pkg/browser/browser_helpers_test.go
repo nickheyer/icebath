@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -13,6 +14,7 @@ import (
 var extraChildModes = map[string]func() int{}
 
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry()
 	if mode := os.Getenv(childModeEnv); mode != "" {
 		os.Unsetenv(childModeEnv)

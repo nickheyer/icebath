@@ -27,7 +27,7 @@ func bnLock(t *testing.T, pins map[string]string) {
 	t.Cleanup(func() { bundleLockfile = previous })
 }
 
-func TestBNBundleClosureUVStaysInternalNodeNPMShip(t *testing.T) {
+func TestBundleClosureUVStaysInternalNodeNPMShip(t *testing.T) {
 	bnLock(t, map[string]string{"uv": "1", "node": "1", "npm": "1"})
 	names, err := bundlePackageNames()
 	if err != nil {
@@ -50,7 +50,7 @@ func TestBNBundleClosureUVStaysInternalNodeNPMShip(t *testing.T) {
 	}
 }
 
-func TestBNArchGuardAllowsEmulatedX64OnWin32ARM64(t *testing.T) {
+func TestArchGuardAllowsEmulatedX64OnWin32ARM64(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "store")
 	entry := filepath.Join(store, "chromium-1234")
 	if err := os.MkdirAll(filepath.Join(entry, "chrome-win64"), 0o755); err != nil {

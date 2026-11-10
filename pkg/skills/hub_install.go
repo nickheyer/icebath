@@ -258,7 +258,7 @@ func (h *Hub) InstallFromQuarantine(ctx context.Context, quarantinePath, skillNa
 			scanProvenance = scanProvenanceObject(scan.ScanProvenance)
 		}
 	}
-	if err := h.LockFile("").RecordInstall(safeName, b.Source, b.Identifier, b.TrustLevel, scan.Verdict, installedHash,
+	if err := h.LockFile("").RecordInstall(ctx, safeName, b.Source, b.Identifier, b.TrustLevel, scan.Verdict, installedHash,
 		filepath.ToSlash(rel), files, b.Metadata, scanProvenance); err != nil {
 		return "", err
 	}
@@ -283,7 +283,7 @@ func groupThousands(n int64) string {
 }
 
 // Removes a hub installed skill inside the skills dir, refusing builtins and unsafe lock paths
-func (h *Hub) UninstallSkill(skillName string) (bool, string, error) {
+func (h *Hub) UninstallSkill(ctx context.Context, skillName string) (bool, string, error) {
 	lock := h.LockFile("")
 	raw, err := lock.GetInstalled(skillName)
 	if err != nil {
@@ -313,7 +313,7 @@ func (h *Hub) UninstallSkill(skillName string) (bool, string, error) {
 			return false, "", err
 		}
 	}
-	if err := lock.RecordUninstall(skillName); err != nil {
+	if err := lock.RecordUninstall(ctx, skillName); err != nil {
 		return false, "", err
 	}
 	source, ok1 := entry.Get("source")

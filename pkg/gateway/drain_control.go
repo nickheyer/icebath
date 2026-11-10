@@ -148,7 +148,7 @@ func WriteDrainRequest(ctx context.Context, principal string, suppressNotificati
 	payload.Set("principal", principal)
 	payload.Set("epoch", CurrentInstantiationEpoch())
 	payload.Set("suppress_notification", suppressNotification)
-	if err := config.AtomicJSONWrite(DrainRequestPath(ctx, h), payload); err != nil {
+	if err := config.AtomicJSONWrite(ctx, DrainRequestPath(ctx, h), payload); err != nil {
 		return nil, err
 	}
 	return payload, nil

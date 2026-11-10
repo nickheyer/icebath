@@ -310,7 +310,7 @@ func (h *managerHooks) afterInitialize(ctx context.Context, p *OAuthProvider) {
 		if err := h.prefetchOAuthMetadata(ctx, p); err != nil {
 			h.logNonfatal("pre-flight metadata discovery", err)
 		} else {
-			p.enforceRefreshTokenIssuer()
+			p.enforceRefreshTokenIssuer(ctx)
 		}
 	}
 }
@@ -359,7 +359,7 @@ func (h *managerHooks) prefetchOAuthMetadata(ctx context.Context, p *OAuthProvid
 		}
 		if asm != nil {
 			p.oauthMetadata = asm
-			if err := p.storage.SaveOAuthMetadata(asm); err != nil {
+			if err := p.storage.SaveOAuthMetadata(ctx, asm); err != nil {
 				return err
 			}
 			mcpLogger().Debug(fmt.Sprintf("MCP OAuth '%s': pre-flight ASM discovered token_endpoint=%s", h.name, asm.TokenEndpoint))
@@ -425,7 +425,7 @@ func invalidClientAtTokenEndpoint(p *OAuthProvider, r *flowResponse) bool {
 }
 
 // Deletes a dynamically registered client the token endpoint rejected, retiring a rejected CIMD document too
-func (h *managerHooks) inspectResponse(_ context.Context, p *OAuthProvider, r *flowResponse) {
+func (h *managerHooks) inspectResponse(ctx context.Context, p *OAuthProvider, r *flowResponse) {
 	if h.preregistered || (r.StatusCode != http.StatusBadRequest && r.StatusCode != http.StatusUnauthorized) || !invalidClientAtTokenEndpoint(p, r) {
 		return
 	}
@@ -433,7 +433,7 @@ func (h *managerHooks) inspectResponse(_ context.Context, p *OAuthProvider, r *f
 		mcpLogger().Warn(fmt.Sprintf("MCP OAuth '%s': authorization server rejected our Client ID Metadata Document (%s) "+
 			"with invalid_client — falling back to dynamic client registration.", h.name, p.clientMetadataURL))
 		p.clientMetadataURL = ""
-		p.storage.MarkCIMDRejected()
+		p.storage.MarkCIMDRejected(ctx)
 	}
 	p.storage.PoisonClientRegistration()
 	p.clientInfo = nil
@@ -441,13 +441,13 @@ func (h *managerHooks) inspectResponse(_ context.Context, p *OAuthProvider, r *f
 }
 
 // Saves metadata discovered during the flow when the stored copy is missing or names another token endpoint
-func (h *managerHooks) flowFinished(_ context.Context, p *OAuthProvider) {
+func (h *managerHooks) flowFinished(ctx context.Context, p *OAuthProvider) {
 	md := p.oauthMetadata
 	if md == nil {
 		return
 	}
 	if existing := p.storage.LoadOAuthMetadata(); existing == nil || existing.TokenEndpoint != md.TokenEndpoint {
-		if err := p.storage.SaveOAuthMetadata(md); err != nil {
+		if err := p.storage.SaveOAuthMetadata(ctx, md); err != nil {
 			mcpLogger().Error(fmt.Sprintf("MCP OAuth '%s': saving discovered metadata failed: %s", h.name, err))
 		}
 	}

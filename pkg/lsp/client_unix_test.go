@@ -69,7 +69,7 @@ func TestServerGroupIsOwnedOnSpawnAndReleasedOnShutdown(t *testing.T) {
 	l := testLoop(t)
 	offLoop := true
 	prevRegister := rt.RegisterChild
-	rt.RegisterChild = func(pid int, purpose string) bool {
+	rt.RegisterChild = func(ctx context.Context, pid int, purpose string) bool {
 		if !l.mu.TryLock() {
 			offLoop = false
 		} else {
@@ -78,7 +78,7 @@ func TestServerGroupIsOwnedOnSpawnAndReleasedOnShutdown(t *testing.T) {
 		if purpose != "lsp-server" {
 			t.Errorf("purpose %q", purpose)
 		}
-		return prevRegister(pid, purpose)
+		return prevRegister(ctx, pid, purpose)
 	}
 	c := mockClient(t, l, rt, t.TempDir(), "clean", nil)
 	var pid int

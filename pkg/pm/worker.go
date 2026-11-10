@@ -89,6 +89,9 @@ func errorClass(err error) string {
 	return "RuntimeError"
 }
 
+// ErrorClass exports errorClass
+func ErrorClass(err error) string { return errorClass(err) }
+
 // Wire form of a failure, install failures carrying their package, cause and remedy
 func errorPayload(err error) map[string]any {
 	payload := map[string]any{"type": errorClass(err), "message": err.Error()}
@@ -103,25 +106,58 @@ func errorPayload(err error) map[string]any {
 
 // Caller side failure a worker error names, its class kept where callers distinguish it
 func workerError(payload map[string]any) error {
-	kind := pyrepr.Str(payload["type"])
-	if _, ok := payload["package"]; ok {
-		pkg, cause, remedy := pyrepr.Str(payload["package"]), pyrepr.Str(payload["cause"]), pyrepr.Str(payload["remedy"])
-		if kind == "ResolutionConflict" {
-			return &ResolutionConflict{&InstallError{Package: pkg, Cause: cause, Remedy: remedy}}
+	field := func(key string) (any, error) {
+		v, ok := payload[key]
+		if !ok {
+			return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
 		}
-		return &InstallError{Package: pkg, Cause: cause, Remedy: remedy}
+		return v, nil
 	}
-	message := pyrepr.Str(payload["message"])
-	if kind == "DownloadPaused" {
-		return downloadError(DownloadWasPaused, "%s", message)
+	if _, ok := payload["package"]; ok {
+		values := make([]any, 4)
+		for i, key := range []string{"type", "package", "cause", "remedy"} {
+			v, err := field(key)
+			if err != nil {
+				return err
+			}
+			values[i] = v
+		}
+		failure := &InstallError{Package: pyrepr.Str(values[1]), Cause: pyrepr.Str(values[2]), Remedy: pyrepr.Str(values[3])}
+		if !pyrepr.Truthy(values[3]) {
+			failure = NewInstallError(failure.Package, failure.Cause, "")
+		}
+		if jsonEquals(values[0], "ResolutionConflict") {
+			return &ResolutionConflict{failure}
+		}
+		return failure
 	}
+	kindValue, err := field("type")
+	if err != nil {
+		return err
+	}
+	if jsonEquals(kindValue, "DownloadPaused") {
+		message, err := field("message")
+		if err != nil {
+			return err
+		}
+		return downloadError(DownloadWasPaused, "%s", pyrepr.Str(message))
+	}
+	switch kindValue.(type) {
+	case map[string]any, []any:
+		return &PyError{Class: "TypeError", Message: fmt.Sprintf("cannot use '%s' as a dict key (unhashable type: '%s')", pyrepr.TypeName(kindValue), pyrepr.TypeName(kindValue))}
+	}
+	raw, err := field("message")
+	if err != nil {
+		return err
+	}
+	kind, _ := kindValue.(string)
 	if !workerErrorClasses[kind] {
-		return &PyError{Class: "RuntimeError", Message: message}
+		return &PyError{Class: "RuntimeError", Message: pyrepr.Str(raw)}
 	}
 	if kind == "KeyError" {
-		return &PyError{Class: kind, Message: pyrepr.StrRepr(message)}
+		return &PyError{Class: kind, Message: pyrepr.Repr(raw)}
 	}
-	return &PyError{Class: kind, Message: message}
+	return &PyError{Class: kind, Message: pyrepr.Str(raw)}
 }
 
 // Unbounded control message queue between the reader and the worker, nil marking the client gone

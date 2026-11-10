@@ -90,7 +90,7 @@ func TestReservedRootNeverSuppressesAStandaloneProfileStart(t *testing.T) {
 		return nil, nil
 	})
 	owner := NewProfileOwnership()
-	if err := owner.Reserve([]string{root}, ""); err != nil {
+	if err := owner.Reserve(context.Background(), []string{root}, ""); err != nil {
 		t.Fatal(err)
 	}
 	EnsureGatewayRuntime(context.Background(), h, 0.5, false)

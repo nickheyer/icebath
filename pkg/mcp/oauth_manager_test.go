@@ -159,7 +159,7 @@ func TestOAuthManagerPoisonsOnlyAnInvalidClientAtTheTokenEndpoint(t *testing.T) 
 			p := managerProvider(t, ctx, "srv-"+tc.name, "https://mcp.example.com/mcp", tc.oauth)
 			p.oauthMetadata = &OAuthMetadata{Issuer: "https://auth.example/", TokenEndpoint: "https://auth.example/token"}
 			p.clientInfo, p.initialized = &OAuthClientInfo{ClientID: "dcr"}, true
-			if err := p.storage.SetClientInfo(p.clientInfo); err != nil {
+			if err := p.storage.SetClientInfo(ctx, p.clientInfo); err != nil {
 				t.Fatal(err)
 			}
 			p.hooks.inspectResponse(ctx, p, tokenEndpointReply(tc.status, tc.url, tc.body))

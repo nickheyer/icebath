@@ -260,7 +260,7 @@ func TestCronjobRunActionReturnsBackgroundNote(t *testing.T) {
 	}
 }
 
-func TestOneShotPathReapsDeadOwnerRowBeforeSyncReturn(t *testing.T) {
+func TestOneShotCliPathReapsDeadOwnerRowBeforeReturningSync(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()
 	l := openExecutionsLedger(s)

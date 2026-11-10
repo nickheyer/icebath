@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -97,7 +100,7 @@ func ieMaybeRead(path string) []byte {
 	return data
 }
 
-func TestAuthoritySameVersionDifferentShaIsNotInstalledAndRepaired(t *testing.T) {
+func TestSameVersionDifferentShaIsNotInstalledAndRepaired(t *testing.T) {
 	for _, route := range []string{"install", "stage"} {
 		t.Run(route, func(t *testing.T) {
 			e := newIEEnv(t)
@@ -110,6 +113,9 @@ func TestAuthoritySameVersionDifferentShaIsNotInstalledAndRepaired(t *testing.T)
 				t.Fatal("not installed")
 			}
 			if route == "stage" {
+				if entry, err = e.realize(t, route); err != nil {
+					t.Fatal(err)
+				}
 				writeFile(t, filepath.Join(entry, "sentinel"), []byte("published"), 0o644)
 				if again, _ := e.realize(t, route); again != entry || string(readFile(t, filepath.Join(entry, "sentinel"))) != "published" {
 					t.Fatal("a current stage was republished")
@@ -125,6 +131,9 @@ func TestAuthoritySameVersionDifferentShaIsNotInstalledAndRepaired(t *testing.T)
 				}
 				if string(readFile(t, filepath.Join(entry, "bin/faketool"))) != "#!B" || pathExists(filepath.Join(entry, "sentinel")) {
 					t.Fatal("restage kept the old bytes")
+				}
+				if again, err := e.realize(t, route); err != nil || again != entry {
+					t.Fatalf("a current restage moved %q %v", again, err)
 				}
 				factsPath, _ := FactsPath(context.Background())
 				if pathExists(factsPath) {
@@ -155,7 +164,7 @@ func TestAuthoritySameVersionDifferentShaIsNotInstalledAndRepaired(t *testing.T)
 	}
 }
 
-func TestAuthorityInstallRepairsCorruptEntryFromVerifiedArchive(t *testing.T) {
+func TestInstallRepairsCorruptEntryFromVerifiedArchive(t *testing.T) {
 	for _, matching := range []bool{false, true} {
 		for _, damage := range []string{"missing-binary", "changed-bytes", "entry-is-file", "missing-entry"} {
 			t.Run(fmt.Sprintf("%s-%v", damage, matching), func(t *testing.T) {
@@ -191,6 +200,9 @@ func TestAuthorityInstallRepairsCorruptEntryFromVerifiedArchive(t *testing.T) {
 				if !strings.Contains(logs.String(), "repair: faketool re-realized") || string(readFile(t, binary)) != "#!x" {
 					t.Fatalf("not repaired: %s", logs.String())
 				}
+				if code, out := ieDoctor(t); code != 0 {
+					t.Fatalf("doctor %d after the repair: %s", code, out)
+				}
 				fact, _ := e.facts(t).Get("faketool")
 				if digest, _ := TreeDigest(entry); fact["digest"] != digest {
 					t.Fatal("digest does not bind the repaired bytes")
@@ -200,10 +212,21 @@ func TestAuthorityInstallRepairsCorruptEntryFromVerifiedArchive(t *testing.T) {
 	}
 }
 
+// Runs pm doctor and returns its status with what it printed
+func ieDoctor(t *testing.T) (int, string) {
+	t.Helper()
+	var out bytes.Buffer
+	code, err := CmdDoctor(withSyncOutput(context.Background(), &out), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return code, out.String()
+}
+
 // Panic value of the injected interruption
 type ieInterrupt struct{}
 
-func TestAuthorityFailedReplacementPreservesEntryAndFacts(t *testing.T) {
+func TestFailedReplacementPreservesEntryAndFacts(t *testing.T) {
 	for _, route := range []string{"install", "stage"} {
 		for _, failure := range []string{"invalid", "fetch", "unpack", "verify", "publish", "published-verify", "interrupt", "facts"} {
 			if route == "stage" && failure == "facts" {
@@ -347,7 +370,7 @@ func ieFailedReplacement(t *testing.T, route, failure string, initial bool) {
 	}
 }
 
-func TestAuthorityKilledReplacementRecoversOnNextInstall(t *testing.T) {
+func TestKilledReplacementRecoversOnNextInstall(t *testing.T) {
 	for _, route := range []string{"install", "stage"} {
 		for _, interruption := range []string{"before-publish", "after-publish"} {
 			t.Run(route+"-"+interruption, func(t *testing.T) {
@@ -405,7 +428,7 @@ func TestAuthorityKilledReplacementRecoversOnNextInstall(t *testing.T) {
 	}
 }
 
-func TestAuthorityFailedRestorePreservesBothInterruptedVersions(t *testing.T) {
+func TestFailedRestorePreservesBothInterruptedVersions(t *testing.T) {
 	e := newIEEnv(t)
 	if _, err := e.ensure(t, "faketool", EnsureOptions{}); err != nil {
 		t.Fatal(err)
@@ -431,8 +454,45 @@ func TestAuthorityFailedRestorePreservesBothInterruptedVersions(t *testing.T) {
 	}
 }
 
-func TestAuthorityFetchCacheVerificationIsOwnedByDownloader(t *testing.T) {
+func TestFetchCacheVerificationIsOwnedByDownloader(t *testing.T) {
 	for _, poisoned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "warm", true: "corrupt"}[poisoned], func(t *testing.T) { ieFetchCacheCase(t, poisoned) })
+	}
+}
+
+// Top level helpers the store source declares, the counterpart of the store module namespace
+func ieStoreModuleNames(t *testing.T) []string {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "store.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil {
+				names = append(names, d.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					names = append(names, s.Name.Name)
+				case *ast.ValueSpec:
+					for _, n := range s.Names {
+						names = append(names, n.Name)
+					}
+				}
+			}
+		}
+	}
+	return names
+}
+
+// One fetch cache case, warm cached bytes or poisoned ones the downloader must replace
+func ieFetchCacheCase(t *testing.T, poisoned bool) {
+	{
 		e := newIEEnv(t)
 		store := NewStore(filepath.Join(e.runtime, "scratch-store"))
 		fetch := func() string {
@@ -454,13 +514,18 @@ func TestAuthorityFetchCacheVerificationIsOwnedByDownloader(t *testing.T) {
 		if poisoned {
 			os.WriteFile(first, []byte("poisoned"), 0o644)
 		}
+		for _, name := range ieStoreModuleNames(t) {
+			if strings.HasPrefix(strings.ToLower(name), "sha256") {
+				t.Fatalf("the store carries its own file hash helper %s", name)
+			}
+		}
 		if second := fetch(); second != first || hexSHA256(readFile(t, second)) != e.digest {
 			t.Fatal("the cache served unverified bytes")
 		}
 	}
 }
 
-func TestAuthorityLegacyFactWithoutIdentityIsNotInstalled(t *testing.T) {
+func TestLegacyFactWithoutIdentityIsNotInstalled(t *testing.T) {
 	e := newIEEnv(t)
 	if _, err := e.ensure(t, "faketool", EnsureOptions{}); err != nil {
 		t.Fatal(err)
@@ -475,6 +540,9 @@ func TestAuthorityLegacyFactWithoutIdentityIsNotInstalled(t *testing.T) {
 	if ieInstalled(t, "faketool") {
 		t.Fatal("a legacy fact is vouched for")
 	}
+	if code, out := ieDoctor(t); code != 1 || !strings.Contains(out, "legacy fact: no recorded identity") {
+		t.Fatalf("doctor %d: %s", code, out)
+	}
 	if _, err := e.ensure(t, "faketool", EnsureOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -483,7 +551,7 @@ func TestAuthorityLegacyFactWithoutIdentityIsNotInstalled(t *testing.T) {
 	}
 }
 
-func TestAuthorityUnprovenEntryWithoutFactsIsRebuilt(t *testing.T) {
+func TestUnprovenEntryWithoutFactsIsRebuilt(t *testing.T) {
 	e := newIEEnv(t)
 	target, _ := CurrentTarget()
 	entry := filepath.Join(e.runtime, e.fake.StoreEntry("1.0", target))
@@ -499,7 +567,7 @@ func TestAuthorityUnprovenEntryWithoutFactsIsRebuilt(t *testing.T) {
 	}
 }
 
-func TestAuthorityTreeDigestIsContentBound(t *testing.T) {
+func TestTreeDigestIsContentBound(t *testing.T) {
 	e := newIEEnv(t)
 	a, b := filepath.Join(e.tmp, "tree-a"), filepath.Join(e.tmp, "tree-b")
 	for _, root := range []string{a, b} {
@@ -531,7 +599,7 @@ func TestAuthorityTreeDigestIsContentBound(t *testing.T) {
 	}
 }
 
-func TestAuthorityTreeDigestIgnoresPycache(t *testing.T) {
+func TestTreeDigestIgnoresPycache(t *testing.T) {
 	e := newIEEnv(t)
 	tree := filepath.Join(e.tmp, "py-entry")
 	writeFile(t, filepath.Join(tree, "Lib", "os.py"), []byte("print('stdlib')"), 0o644)

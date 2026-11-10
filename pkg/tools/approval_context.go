@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime"
 	"strings"
 
@@ -239,7 +240,19 @@ func IsGatewayApprovalContext(env *Env) bool {
 
 // Reports a process or subprocess spawned by a delegated child
 func isDelegatedChildProcessContext(env *Env) bool {
-	return sessionFlag(env, "delegated_child", "ICEBATH_DELEGATED_CHILD_CONTEXT")
+	if env != nil {
+		if env.delegatedChild {
+			return true
+		}
+		if env.Values != nil {
+			if v, ok := env.Values.Load("session.delegated_child"); ok {
+				if b, _ := v.(bool); b {
+					return true
+				}
+			}
+		}
+	}
+	return os.Getenv(delegatedChildEnvMarker) != ""
 }
 
 // Explicit asker, else the session's own human in the loop

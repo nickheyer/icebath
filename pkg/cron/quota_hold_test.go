@@ -3,6 +3,7 @@ package cron
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,18 @@ func (e *causedError) Unwrap() error { return e.cause }
 
 func quotaError() *provider.AuthError {
 	return &provider.AuthError{Message: quotaMsg, Provider: "openai-codex", Code: provider.CodexRateLimitedCode}
+}
+
+// Stored jobs.json row of one job as decoded JSON
+func rawStoredRecord(t *testing.T, s *Store, id string) map[string]any {
+	t.Helper()
+	for _, row := range rawStoredRows(t, s) {
+		if row["id"] == id {
+			return row
+		}
+	}
+	t.Fatalf("job %s not stored", id)
+	return nil
 }
 
 func mutableClockStore(t *testing.T, cur *time.Time, zone *time.Location) *Store {
@@ -108,13 +121,38 @@ func TestRecoveryFireSkipsDenseSchedulesAndNeverReParks(t *testing.T) {
 }
 
 func TestQuotaHoldParksPastWindowSurvivesStaleRearmAndClearsOnModelReach(t *testing.T) {
-	now := time.Now().UTC()
+	t.Setenv("ICEBATH_MODEL", "test-cron-default-model")
 	s := newClockStore(t, nil, time.UTC)
-	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("portfolio triage"), Schedule: "every 30m"})
-	mustMark(t, s, job.ID, false, MarkOptions{Error: prompt(quotaMsg), QuotaHoldSeconds: 123518})
+	resetDeliver(t)
+	registerHomePlatforms(t, "slack")
+	writePinConfig(t, s, "platforms:\n  slack:\n    enabled: true\n    token: xoxb-test\n")
+	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("portfolio triage"), Schedule: "every 30m", Deliver: prompt("slack:alerts")})
+	now := time.Now().UTC()
+	raiseQuota := func(context.Context, string, string, string, string, string) (*provider.Runtime, error) {
+		return nil, quotaError()
+	}
+	prevRun, prevPreflight := resolveRuntimeProviderSeam, preflightResolveRuntime
+	resolveRuntimeProviderSeam, preflightResolveRuntime = raiseQuota, raiseQuota
+	t.Cleanup(func() { resolveRuntimeProviderSeam, preflightResolveRuntime = prevRun, prevPreflight })
+	installFakeAgent(t, func(context.Context, AgentOptions) (CronAgent, error) { return nil, errors.New("model said no") })
+	installCronOwner(t)
+	ran := mustGet(t, s, job.ID)
+	if _, err := runOneJob(context.Background(), s, ran, runOneJobOptions{}); err != nil {
+		t.Fatal(err)
+	}
 	j := mustGet(t, s, job.ID)
 	if deref(j.LastStatus) != "error" {
 		t.Fatalf("last_status = %v", deref(j.LastStatus))
+	}
+	if content := queuedContent(t, s, ran); !strings.Contains(content, "The provider's usage window is closed for about") {
+		t.Fatalf("delivered alert %q carries no hold notice", content)
+	}
+	q := openDeliveryQueue(s)
+	if first, err := q.ClaimNext(context.Background()); err != nil || first == nil {
+		t.Fatalf("queued alert %v %v", first, err)
+	}
+	if second, err := q.ClaimNext(context.Background()); err != nil || second != nil {
+		t.Fatalf("a second alert was queued %v %v", second, err)
 	}
 	parked, _ := ParseISO(*j.NextRunAt)
 	if parked.Time.Sub(now) < 123518*time.Second {
@@ -122,6 +160,9 @@ func TestQuotaHoldParksPastWindowSurvivesStaleRearmAndClearsOnModelReach(t *test
 	}
 	if deref(j.QuotaHoldUntil) != *j.NextRunAt {
 		t.Fatalf("quota_hold_until = %v", deref(j.QuotaHoldUntil))
+	}
+	if _, leaked := rawStoredRecord(t, s, job.ID)["_quota_hold_seconds"]; leaked {
+		t.Fatal("the transient hold seconds were persisted")
 	}
 	if _, err := s.updateJob(job.ID, map[string]any{"last_run_at": FormatISO(now.Add(-2 * time.Hour))}); err != nil {
 		t.Fatal(err)

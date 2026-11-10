@@ -15,7 +15,7 @@ func makeDiscoveryFlow(t *testing.T, fs *oauthFakeServer, registered bool) (*OAu
 	s := NewTokenStorage(context.Background(), "srv", "")
 	tok := bearer("old_access", "old_refresh")
 	tok.ExpiresIn = int64Ptr(3600)
-	if err := s.SetTokens(tok); err != nil {
+	if err := s.SetTokens(context.Background(), tok); err != nil {
 		t.Fatal(err)
 	}
 	if registered {
@@ -24,7 +24,7 @@ func makeDiscoveryFlow(t *testing.T, fs *oauthFakeServer, registered bool) (*OAu
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.SetClientInfo(info); err != nil {
+		if err := s.SetClientInfo(context.Background(), info); err != nil {
 			t.Fatal(err)
 		}
 	}

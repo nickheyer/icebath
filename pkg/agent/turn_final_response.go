@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var repetitionStopped = RepetitionCopy("before delivery", "so the repeated output was discarded.", "; refusing to return a")
@@ -175,7 +176,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	if final != "" && pyLen(final) >= provider.StopPathMinChars && provider.IsRunawayRepetition(final) {
 		line, userResponse, errText := repetitionStopped[0], repetitionStopped[1], repetitionStopped[2]
 		a.vprint(a.logPrefix+line, true, true)
-		a.cleanupTaskResources(s.EffectiveTaskID)
+		a.cleanupTaskResources(tools.WithEnvHome(ctx, a.env), s.EffectiveTaskID)
 		if err := a.persistSession(&s.Messages, s.ConversationHistory); err != nil {
 			return PhaseVerdict{}, err
 		}

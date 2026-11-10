@@ -1,12 +1,15 @@
 package googlemeet
 
 import (
+	"context"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"os"
 	"testing"
 )
 
 func TestMain(m *testing.M) {
-	DispatchMeetBotEntry()
+	hermetic.BlockExternalHTTP()
+	DispatchMeetBotEntry(context.Background())
 	os.Exit(m.Run())
 }
 

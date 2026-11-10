@@ -35,7 +35,7 @@ func TestOAuthIssuerMismatchStripsRefreshTokenInMemoryAndOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	s, tok := storedIssuerTokens(t, dir, "https://old.example.com")
 	p := issuerProvider(s, "https://evil.example.com", tok)
-	p.enforceRefreshTokenIssuer()
+	p.enforceRefreshTokenIssuer(context.Background())
 	if p.currentTokens.RefreshToken != nil || p.currentTokens.AccessToken != "a" {
 		t.Fatalf("tokens %+v", p.currentTokens)
 	}
@@ -49,7 +49,7 @@ func TestOAuthIssuerMatchingKeepsRefreshTokenEvenWithTrailingSlash(t *testing.T)
 	dir := t.TempDir()
 	s, tok := storedIssuerTokens(t, dir, "https://as.example.com/")
 	p := issuerProvider(s, "https://as.example.com", tok)
-	p.enforceRefreshTokenIssuer()
+	p.enforceRefreshTokenIssuer(context.Background())
 	if derefStr(p.currentTokens.RefreshToken) != "r" || readJSONFile(t, filepath.Join(dir, "mcp-tokens", "srv.json"))["refresh_token"] != "r" {
 		t.Fatal("matching issuer lost the refresh token")
 	}
@@ -58,7 +58,7 @@ func TestOAuthIssuerMatchingKeepsRefreshTokenEvenWithTrailingSlash(t *testing.T)
 func TestOAuthIssuerLegacyFileWithoutIssuerAdoptsCurrentIssuerOnce(t *testing.T) {
 	dir := t.TempDir()
 	s, tok := storedIssuerTokens(t, dir, "")
-	issuerProvider(s, "https://as.example.com", tok).enforceRefreshTokenIssuer()
+	issuerProvider(s, "https://as.example.com", tok).enforceRefreshTokenIssuer(context.Background())
 	if derefStr(tok.RefreshToken) != "r" || readJSONFile(t, filepath.Join(dir, "mcp-tokens", "srv.json"))["hermes_issuer"] != "https://as.example.com" {
 		t.Fatal("legacy file did not adopt the current issuer")
 	}
@@ -67,7 +67,7 @@ func TestOAuthIssuerLegacyFileWithoutIssuerAdoptsCurrentIssuerOnce(t *testing.T)
 	if err != nil || tok2 == nil {
 		t.Fatal(err)
 	}
-	issuerProvider(s2, "https://evil.example.com", tok2).enforceRefreshTokenIssuer()
+	issuerProvider(s2, "https://evil.example.com", tok2).enforceRefreshTokenIssuer(context.Background())
 	if tok2.RefreshToken != nil {
 		t.Fatal("adopted issuer did not guard the refresh token")
 	}
@@ -79,7 +79,7 @@ func TestOAuthIssuerSetTokensStampsBoundIssuerAndGetTokensKeepsItOutOfModel(t *t
 	issuerProvider(s, "https://as.example.com", nil).bindIssuerFromContext()
 	tok := bearer("a", "r")
 	tok.ExpiresIn = int64Ptr(3600)
-	if err := s.SetTokens(tok); err != nil {
+	if err := s.SetTokens(context.Background(), tok); err != nil {
 		t.Fatal(err)
 	}
 	if got := readJSONFile(t, filepath.Join(dir, "mcp-tokens", "srv.json"))["hermes_issuer"]; got != "https://as.example.com" {

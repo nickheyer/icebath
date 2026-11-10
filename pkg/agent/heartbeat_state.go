@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/nickheyer/icebath/pkg/goals"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -38,12 +40,13 @@ func (s *HeartbeatState) ToJSON() (string, error) {
 
 // Heartbeat of a stored row with each field coerced and a falsy value taking its default
 func HeartbeatStateFromJSON(raw string) (*HeartbeatState, error) {
-	_, get, err := loadStateObject(raw)
+	d, err := pyjson.LoadsDict(raw)
 	if err != nil {
 		return nil, err
 	}
+	get := func(k string) any { return d.GetOr(k, nil) }
 	s := &HeartbeatState{Prompt: pyrepr.Str(pyOr(get("prompt"), ""))}
-	if s.IntervalSeconds, err = pyInt64(pyOr(get("interval_seconds"), int64(0))); err != nil {
+	if s.IntervalSeconds, err = pyint.Int64(pyOr(get("interval_seconds"), int64(0))); err != nil {
 		return nil, err
 	}
 	s.Status = pyrepr.Str(pyOr(get("status"), "active"))
@@ -53,14 +56,14 @@ func HeartbeatStateFromJSON(raw string) (*HeartbeatState, error) {
 	if s.LastFiredAt, err = pyint.Float(pyOr(get("last_fired_at"), 0.0)); err != nil {
 		return nil, err
 	}
-	if s.FireCount, err = pyInt64(pyOr(get("fire_count"), int64(0))); err != nil {
+	if s.FireCount, err = pyint.Int64(pyOr(get("fire_count"), int64(0))); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
 // Shared goals session database the heartbeat rows persist through
-func heartbeatSessionDB(ctx context.Context) *state.DB { return goalsSessionDB(ctx) }
+func heartbeatSessionDB(ctx context.Context) *state.DB { return goals.SessionDB(ctx) }
 
 // Stored heartbeat of a session, nil when absent, cleared, unreadable or unparseable
 func LoadHeartbeat(ctx context.Context, sessionID string) *HeartbeatState {
@@ -97,7 +100,7 @@ func SaveHeartbeat(ctx context.Context, sessionID string, st *HeartbeatState) {
 	}
 	db := heartbeatSessionDB(ctx)
 	if db == nil {
-		warnDroppedWrite("HeartbeatManager", "heartbeat", sessionID)
+		goals.WarnDroppedWrite("HeartbeatManager", "heartbeat", sessionID)
 		return
 	}
 	raw, err := st.ToJSON()

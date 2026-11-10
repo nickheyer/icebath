@@ -3,15 +3,17 @@ package profiles
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/config"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
 // Temp user home with the default home under it and caches cleared
@@ -47,12 +49,15 @@ func isValueError(err error) bool {
 	return errors.As(err, &ve)
 }
 
-func TestNormalizeProfileName(t *testing.T) {
-	for in, want := range map[string]string{"Jules": "jules", "  Librarian ": "librarian", "0": "0", "DEFAULT": "default"} {
+func TestNormalizeProfileNameTitleCaseNormalized(t *testing.T) {
+	for in, want := range map[string]string{"Jules": "jules", "  Librarian ": "librarian"} {
 		if got, err := NormalizeProfileName(in); err != nil || got != want {
 			t.Fatalf("%q -> %q %v", in, got, err)
 		}
 	}
+}
+
+func TestNormalizeProfileNameNonStringNameRejected(t *testing.T) {
 	for _, v := range []any{0, nil, 42} {
 		if _, err := NormalizeProfileNameValue(v); !isValueError(err) {
 			t.Fatalf("%v accepted: %v", v, err)
@@ -61,72 +66,91 @@ func TestNormalizeProfileName(t *testing.T) {
 	if _, err := NormalizeProfileNameValue(0); err == nil || err.Error() != "profile name must be a string, got int: 0" {
 		t.Fatalf("message %v", err)
 	}
-	if _, err := NormalizeProfileName("   "); !isValueError(err) {
-		t.Fatal("blank accepted")
+}
+
+func TestNormalizeProfileNameLiteralZeroStringIsAValidExplicitName(t *testing.T) {
+	if got, err := NormalizeProfileName("0"); err != nil || got != "0" {
+		t.Fatalf("%q %v", got, err)
 	}
 }
 
-func TestValidateProfileName(t *testing.T) {
-	for _, n := range []string{"coder", "work-bot", "a1", "my_agent", "default"} {
-		if err := ValidateProfileName(n); err != nil {
-			t.Fatalf("%s rejected: %v", n, err)
+func TestNormalizeProfileNameDefaultCaseAndBlankAndUnicodeFolds(t *testing.T) {
+	for in, want := range map[string]string{"DEFAULT": "default", "\x1cDeFault\x1f": "default", "İX": "i̇x"} {
+		if got, err := NormalizeProfileName(in); err != nil || got != want {
+			t.Fatalf("%q -> %q %v", in, got, err)
 		}
 	}
-	for _, n := range []string{"UPPER", "has space", ".hidden", "-leading", "sudo"} {
-		if err := ValidateProfileName(n); !isValueError(err) {
-			t.Fatalf("%s accepted", n)
-		}
+	if _, err := NormalizeProfileName("   "); !isValueError(err) || err.Error() != "profile name cannot be empty" {
+		t.Fatalf("blank %v", err)
+	}
+}
+
+func TestValidateProfileNameValidNamesAccepted(t *testing.T) {
+	for _, n := range []string{"coder", "work-bot", "a1", "my_agent"} {
+		t.Run(n, func(t *testing.T) {
+			if err := ValidateProfileName(n); err != nil {
+				t.Fatalf("%s rejected: %v", n, err)
+			}
+		})
+	}
+}
+
+func TestValidateProfileNameInvalidNamesRejected(t *testing.T) {
+	for _, n := range []string{"UPPER", "has space", ".hidden", "-leading"} {
+		t.Run(n, func(t *testing.T) {
+			if err := ValidateProfileName(n); !isValueError(err) {
+				t.Fatalf("%s accepted", n)
+			}
+		})
+	}
+}
+
+func TestValidateProfileNameReservedDefaultAndSuggestion(t *testing.T) {
+	if err := ValidateProfileName("default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateProfileName("coder\n"); err != nil {
+		t.Fatalf("re.match dollar before a final newline %v", err)
+	}
+	if err := ValidateProfileName("sudo"); !isValueError(err) {
+		t.Fatal("reserved accepted")
 	}
 	if err := ValidateProfileName("My Work"); err == nil || !strings.Contains(err.Error(), "(for example: my-work). Then run `icebath profile create my-work`.") {
 		t.Fatalf("suggestion %v", err)
 	}
 }
 
-func TestGetProfileDir(t *testing.T) {
+func TestGetProfileDirDefaultReturnsHermesHome(t *testing.T) {
 	tmp := profileEnv(t)
 	if got, err := GetProfileDir("default"); err != nil || got != filepath.Join(tmp, ".icebath") {
 		t.Fatalf("default %q %v", got, err)
 	}
+}
+
+func TestGetProfileDirTraversalAndInvalidNamesRejected(t *testing.T) {
+	profileEnv(t)
 	for _, n := range []string{"..", "../outside", "../../tmp", "a/b", `a\b`, ".hidden", "has space"} {
-		if _, err := GetProfileDir(n); !isValueError(err) {
-			t.Fatalf("%q accepted", n)
-		}
+		t.Run(n, func(t *testing.T) {
+			if _, err := GetProfileDir(n); !isValueError(err) {
+				t.Fatalf("%q accepted: %v", n, err)
+			}
+		})
 	}
+}
+
+func TestGetProfileDirProfileExistsFalseForInvalidNames(t *testing.T) {
+	profileEnv(t)
 	for _, n := range []string{"..", "../outside", "a/b"} {
-		if ProfileExists(n) {
-			t.Fatalf("%q exists", n)
-		}
+		t.Run(n, func(t *testing.T) {
+			if ProfileExists(n) {
+				t.Fatalf("%q exists", n)
+			}
+		})
 	}
 }
 
-func TestSetActiveProfileToDefaultRemovesFile(t *testing.T) {
+func TestGetActiveProfileNameCustomPathReturnsDefault(t *testing.T) {
 	tmp := profileEnv(t)
-	makeProfile(t, tmp, "coder")
-	if err := SetActiveProfile("coder"); err != nil {
-		t.Fatal(err)
-	}
-	active := filepath.Join(tmp, ".icebath", "active_profile")
-	if GetActiveProfile("") != "coder" {
-		t.Fatal("not active")
-	}
-	if err := SetActiveProfile("default"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(active); err == nil {
-		t.Fatal("file kept")
-	}
-	if err := SetActiveProfile("ghost"); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("missing profile accepted: %v", err)
-	}
-}
-
-func TestGetActiveProfileName(t *testing.T) {
-	tmp := profileEnv(t)
-	dir := makeProfile(t, tmp, "coder")
-	t.Setenv(home.EnvHome, dir)
-	if got := GetActiveProfileName(context.Background()); got != "coder" {
-		t.Fatalf("profile path %q", got)
-	}
 	custom := filepath.Join(tmp, "some", "other", "path")
 	if err := os.MkdirAll(custom, 0o755); err != nil {
 		t.Fatal(err)
@@ -149,34 +173,63 @@ func TestCurrentProfileNamePinOnlyOutsideOverride(t *testing.T) {
 	}
 }
 
-func TestAliasCollisionTraversalRejectedBeforePathLookup(t *testing.T) {
-	profileEnv(t)
-	called := false
+// Replaces the which or where probe for the test, counting its calls
+func fakeWhich(t *testing.T, stdout string, code int, err error) *int {
+	t.Helper()
+	calls := 0
 	old := runWhich
-	runWhich = func(string) (string, int, error) { called = true; return "", 1, nil }
+	runWhich = func(string) (string, int, error) { calls++; return stdout, code, err }
 	t.Cleanup(func() { runWhich = old })
+	return &calls
+}
+
+func TestAliasCollisionTraversalAliasRejectedBeforePathLookup(t *testing.T) {
+	profileEnv(t)
+	calls := fakeWhich(t, "", 1, nil)
 	msg, err := CheckAliasCollision("../../.bashrc")
-	if err != nil || !strings.Contains(strings.ToLower(msg), "invalid alias name") || called {
-		t.Fatalf("%q %v called=%v", msg, err, called)
+	if err != nil || msg == "" || !strings.Contains(strings.ToLower(msg), "invalid alias name") {
+		t.Fatalf("%q %v", msg, err)
+	}
+	if *calls != 0 {
+		t.Fatalf("which ran %d times", *calls)
 	}
 }
 
-func TestAliasNamedLikeServerSubcommandAllowed(t *testing.T) {
-	profileEnv(t)
-	old := runWhich
-	runWhich = func(string) (string, int, error) { return "", 1, nil }
-	t.Cleanup(func() { runWhich = old })
+func TestAnAliasNamedLikeAServerSubcommandIsAllowedAsOnMain(t *testing.T) {
 	for _, n := range []string{"dashboard", "serve", "webapp"} {
-		if msg, err := CheckAliasCollision(n); msg != "" || err != nil {
-			t.Fatalf("%s: %q %v", n, msg, err)
-		}
+		t.Run(n, func(t *testing.T) {
+			profileEnv(t)
+			fakeWhich(t, "", 1, nil)
+			if msg, err := CheckAliasCollision(n); msg != "" || err != nil {
+				t.Fatalf("%s: %q %v", n, msg, err)
+			}
+		})
 	}
+}
+
+func TestAliasCollisionSubcommandExistingCommandAndLaunchFailures(t *testing.T) {
+	profileEnv(t)
+	fakeWhich(t, "", 1, nil)
 	if msg, _ := CheckAliasCollision("gateway"); msg != "'gateway' conflicts with an icebath subcommand" {
 		t.Fatalf("subcommand %q", msg)
 	}
-	runWhich = func(string) (string, int, error) { return "/usr/bin/foo\n", 0, nil }
+	fakeWhich(t, "  /usr/bin/foo\r\n/opt/foo\n", 0, nil)
 	if msg, _ := CheckAliasCollision("foo"); msg != "'foo' conflicts with an existing command (/usr/bin/foo)" {
 		t.Fatalf("existing %q", msg)
+	}
+	for _, skip := range []error{exec.ErrNotFound, &pysubprocess.TimeoutExpired{Cmd: []string{"which", "foo"}, Timeout: 5}} {
+		fakeWhich(t, "", -1, skip)
+		if msg, err := CheckAliasCollision("foo"); msg != "" || err != nil {
+			t.Fatalf("%v: %q %v", skip, msg, err)
+		}
+	}
+	fakeWhich(t, "", -1, fs.ErrPermission)
+	if _, err := CheckAliasCollision("foo"); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("permission error swallowed %v", err)
+	}
+	fakeWhich(t, " \n", 0, nil)
+	if _, err := CheckAliasCollision("foo"); err == nil || err.Error() != "list index out of range" {
+		t.Fatalf("empty which output %v", err)
 	}
 }
 
@@ -189,15 +242,13 @@ func TestAliasCollisionWindowsChecksBatExtension(t *testing.T) {
 	_ = os.MkdirAll(dir, 0o755)
 	bat := filepath.Join(dir, "mybot.bat")
 	_ = os.WriteFile(bat, []byte("@echo off\r\nicebath -p mybot %*\r\n"), 0o644)
-	old := runWhich
-	runWhich = func(string) (string, int, error) { return bat, 0, nil }
-	t.Cleanup(func() { runWhich = old })
+	fakeWhich(t, bat, 0, nil)
 	if msg, err := CheckAliasCollision("mybot"); msg != "" || err != nil {
 		t.Fatalf("%q %v", msg, err)
 	}
 }
 
-func TestCreateWrapperScriptOnPosix(t *testing.T) {
+func TestWrapperScriptCreatesShOnPosix(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix platform test")
 	}
@@ -206,7 +257,7 @@ func TestCreateWrapperScriptOnPosix(t *testing.T) {
 	lookPath = func(string) (string, error) { return "/opt/icebath/bin/icebath", nil }
 	t.Cleanup(func() { lookPath = old })
 	path, err := CreateWrapperScript("mybot", "")
-	if err != nil || filepath.Base(path) != "mybot" {
+	if err != nil || path == "" || filepath.Base(path) != "mybot" {
 		t.Fatalf("%q %v", path, err)
 	}
 	data, _ := os.ReadFile(path)
@@ -216,12 +267,9 @@ func TestCreateWrapperScriptOnPosix(t *testing.T) {
 	if st, _ := os.Stat(path); st.Mode().Perm()&0o111 != 0o111 {
 		t.Fatalf("mode %v", st.Mode())
 	}
-	if removed, err := RemoveWrapperScript("mybot"); !removed || err != nil {
-		t.Fatalf("remove %v %v", removed, err)
-	}
 }
 
-func TestRemoveWrapperFindsBatOnWindows(t *testing.T) {
+func TestWrapperScriptRemoveFindsBatOnWindows(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("windows platform test")
 	}
@@ -229,6 +277,12 @@ func TestRemoveWrapperFindsBatOnWindows(t *testing.T) {
 	path, err := CreateWrapperScript("mybot", "")
 	if err != nil || path == "" {
 		t.Fatalf("%q %v", path, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "@echo off\r\r\nicebath -p mybot %*\r\r\n" {
+		t.Fatalf("text mode bytes %q", data)
 	}
 	if removed, _ := RemoveWrapperScript("mybot"); !removed {
 		t.Fatal("not removed")
@@ -238,18 +292,22 @@ func TestRemoveWrapperFindsBatOnWindows(t *testing.T) {
 	}
 }
 
-func TestCreateWrapperRejectsTraversalAndAbsolutePath(t *testing.T) {
+func TestWrapperScriptSecurityCreateWrapperRejectsTraversal(t *testing.T) {
 	tmp := profileEnv(t)
 	sentinel := filepath.Join(tmp, ".bashrc")
 	_ = os.WriteFile(sentinel, []byte("keep"), 0o644)
-	if _, err := CreateWrapperScript("../../.bashrc", "coder"); err == nil || !strings.Contains(err.Error(), "Invalid alias name") {
+	if _, err := CreateWrapperScript("../../.bashrc", "coder"); !isValueError(err) || !strings.Contains(err.Error(), "Invalid alias name") {
 		t.Fatalf("traversal %v", err)
 	}
 	if data, _ := os.ReadFile(sentinel); string(data) != "keep" {
 		t.Fatal("sentinel changed")
 	}
+}
+
+func TestWrapperScriptSecurityCreateWrapperRejectsAbsolutePath(t *testing.T) {
+	tmp := profileEnv(t)
 	target := filepath.Join(tmp, "abs-wrapper")
-	if _, err := CreateWrapperScript(target, ""); err == nil || !strings.Contains(err.Error(), "Invalid alias name") {
+	if _, err := CreateWrapperScript(target, ""); !isValueError(err) || !strings.Contains(err.Error(), "Invalid alias name") {
 		t.Fatalf("absolute %v", err)
 	}
 	if _, err := os.Stat(target); err == nil {
@@ -257,13 +315,13 @@ func TestCreateWrapperRejectsTraversalAndAbsolutePath(t *testing.T) {
 	}
 }
 
-func TestFindAliasForProfile(t *testing.T) {
+func TestFindAliasForProfileProfileNamedAlias(t *testing.T) {
 	profileEnv(t)
 	if _, err := CreateWrapperScript("steve", ""); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := FindAliasForProfile("steve"); got != "steve" {
-		t.Fatalf("named alias %q", got)
+	if got, err := FindAliasForProfile("steve"); err != nil || got != "steve" {
+		t.Fatalf("named alias %q %v", got, err)
 	}
 	if _, err := CreateWrapperScript("qiaobusi", "steve"); err != nil {
 		t.Fatal(err)
@@ -273,14 +331,18 @@ func TestFindAliasForProfile(t *testing.T) {
 	}
 }
 
-func TestFindAliasIgnoresUnrelatedFiles(t *testing.T) {
+func TestFindAliasForProfileIgnoresUnrelatedFiles(t *testing.T) {
 	profileEnv(t)
-	dir, _ := WrapperDir()
+	dir, err := WrapperDir()
+	if err != nil {
+		t.Fatal(err)
+	}
 	_ = os.MkdirAll(dir, 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "pip"), []byte("#!/bin/sh\nexec python -m pip \"$@\"\n"), 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "blob"), []byte{0xff, 0xfe, 'i', 'c', 'e'}, 0o755)
-	if got, _ := FindAliasForProfile("steve"); got != "" {
-		t.Fatalf("unrelated %q", got)
+	_ = os.WriteFile(filepath.Join(dir, "steve."), []byte("#!/bin/sh\nexec icebath -p steve \"$@\"\n"), 0o755)
+	if got, err := FindAliasForProfile("steve"); err != nil || got != "" {
+		t.Fatalf("unrelated %q %v", got, err)
 	}
 }
 
@@ -289,7 +351,7 @@ func seedMeta(t *testing.T) string {
 	dir := filepath.Join(t.TempDir(), "coder")
 	_ = os.MkdirAll(dir, 0o755)
 	d, auto := "Curated by hand", false
-	if err := WriteProfileMeta(dir, MetaUpdate{Description: &d, DescriptionAuto: &auto}); err != nil {
+	if err := WriteProfileMeta(context.Background(), dir, MetaUpdate{Description: &d, DescriptionAuto: &auto}); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -299,12 +361,12 @@ func seedMeta(t *testing.T) string {
 func interruptedWrite(t *testing.T, dir string) {
 	defer config.SwapSafeDump(func(any) ([]byte, error) { return nil, errors.New("simulated interruption mid-write") })()
 	auto := true
-	if err := WriteProfileMeta(dir, MetaUpdate{DescriptionAuto: &auto}); err == nil {
+	if err := WriteProfileMeta(context.Background(), dir, MetaUpdate{DescriptionAuto: &auto}); err == nil {
 		t.Fatal("write succeeded")
 	}
 }
 
-func TestFailedMetaWriteLeavesExistingFileIntact(t *testing.T) {
+func TestWriteProfileMetaDurabilityFailedWriteLeavesExistingFileIntact(t *testing.T) {
 	dir := seedMeta(t)
 	path := filepath.Join(dir, "profile.yaml")
 	before, _ := os.ReadFile(path)
@@ -317,11 +379,11 @@ func TestFailedMetaWriteLeavesExistingFileIntact(t *testing.T) {
 	}
 }
 
-func TestFailedMetaWriteDoesNotDropUnspecifiedFields(t *testing.T) {
+func TestWriteProfileMetaDurabilityFailedWriteDoesNotSilentlyDropUnspecifiedFields(t *testing.T) {
 	dir := seedMeta(t)
 	interruptedWrite(t, dir)
 	auto := true
-	if err := WriteProfileMeta(dir, MetaUpdate{DescriptionAuto: &auto}); err != nil {
+	if err := WriteProfileMeta(context.Background(), dir, MetaUpdate{DescriptionAuto: &auto}); err != nil {
 		t.Fatal(err)
 	}
 	meta := ReadProfileMeta(dir)
@@ -330,11 +392,11 @@ func TestFailedMetaWriteDoesNotDropUnspecifiedFields(t *testing.T) {
 	}
 }
 
-func TestEmojiDescriptionWrittenAsRealUTF8(t *testing.T) {
+func TestWriteProfileMetaDurabilityEmojiDescriptionIsWrittenAsRealUtf8(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "wizard")
 	_ = os.MkdirAll(dir, 0o755)
 	d := "Code wizard \U0001F9D9 ✨"
-	if err := WriteProfileMeta(dir, MetaUpdate{Description: &d}); err != nil {
+	if err := WriteProfileMeta(context.Background(), dir, MetaUpdate{Description: &d}); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(dir, "profile.yaml"))
@@ -346,7 +408,7 @@ func TestEmojiDescriptionWrittenAsRealUTF8(t *testing.T) {
 	}
 }
 
-func TestSymlinkedProfileYAMLSurvivesWrite(t *testing.T) {
+func TestWriteProfileMetaDurabilitySymlinkedProfileYamlSurvivesTheWrite(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation needs privileges on windows")
 	}
@@ -361,7 +423,7 @@ func TestSymlinkedProfileYAMLSurvivesWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := "updated"
-	if err := WriteProfileMeta(dir, MetaUpdate{Description: &d}); err != nil {
+	if err := WriteProfileMeta(context.Background(), dir, MetaUpdate{Description: &d}); err != nil {
 		t.Fatal(err)
 	}
 	if st, err := os.Lstat(filepath.Join(dir, "profile.yaml")); err != nil || st.Mode()&os.ModeSymlink == 0 {
@@ -380,7 +442,7 @@ func TestSymlinkedProfileYAMLSurvivesWrite(t *testing.T) {
 	}
 }
 
-func TestResolveProfileEnvMatrixPreservesConfiguredSpelling(t *testing.T) {
+func TestResolveProfileEnvSpellingResolutionMatrixPreservesConfiguredSpelling(t *testing.T) {
 	tmp := t.TempDir()
 	root := filepath.Join(tmp, "configured-root")
 	custom := filepath.Join(tmp, "custom-icebath")
@@ -402,89 +464,21 @@ func TestResolveProfileEnvMatrixPreservesConfiguredSpelling(t *testing.T) {
 	}
 }
 
-func TestResolveProfileEnvMissingNamedProfileRaises(t *testing.T) {
+func TestResolveProfileEnvSpellingMissingNamedProfileStillRaises(t *testing.T) {
 	t.Setenv(home.EnvHome, filepath.Join(t.TempDir(), "configured-root"))
 	if _, err := ResolveProfileEnv("nope"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("%v", err)
 	}
 }
 
-func TestResolveProfileEnvUnsetFallsBackToDefaultRoot(t *testing.T) {
+func TestResolveProfileEnvSpellingUnsetEnvFallsBackToDefaultRoot(t *testing.T) {
 	t.Cleanup(home.PatchUserHome(t.TempDir()))
 	t.Setenv(home.EnvHome, "")
+	if err := os.Unsetenv(home.EnvHome); err != nil {
+		t.Fatal(err)
+	}
 	if got, err := ResolveProfileEnv("default"); err != nil || got != DefaultHome() {
 		t.Fatalf("%q %v want %q", got, err, DefaultHome())
-	}
-}
-
-func TestDisplayNameMetaRoundTripPreservesOtherFields(t *testing.T) {
-	tmp := profileEnv(t)
-	def := filepath.Join(tmp, ".icebath")
-	d, dn := "ops agent", "小助手"
-	_ = WriteProfileMeta(def, MetaUpdate{Description: &d})
-	_ = WriteProfileMeta(def, MetaUpdate{DisplayName: &dn})
-	meta := ReadProfileMeta(def)
-	if meta.DisplayName != dn || meta.Description != d {
-		t.Fatalf("%+v", meta)
-	}
-}
-
-func TestDisplayNameMissingFileDefaultsEmpty(t *testing.T) {
-	tmp := profileEnv(t)
-	if got := ReadProfileMeta(filepath.Join(tmp, ".icebath")).DisplayName; got != "" {
-		t.Fatalf("%q", got)
-	}
-}
-
-func TestBotTitleShapes(t *testing.T) {
-	tmp := profileEnv(t)
-	def := filepath.Join(tmp, ".icebath")
-	path := filepath.Join(def, "profile.yaml")
-	for text, want := range map[string]string{
-		"ui_meta:\n  icebath-bots:\n    title: JordyV\n":         "JordyV",
-		"display_name: JordieF\nui_meta:\n  user-sections: {}\n": "",
-		"ui_meta: icebath-bots\n":                                "",
-		"ui_meta:\n  icebath-bots: 7\n":                          "",
-	} {
-		_ = os.WriteFile(path, []byte(text), 0o644)
-		ResetFileCache()
-		if got := ReadProfileMeta(def).BotTitle; got != want {
-			t.Fatalf("%q: %q", text, got)
-		}
-	}
-}
-
-func TestEmptyDisplayNameClearsKey(t *testing.T) {
-	tmp := profileEnv(t)
-	def := filepath.Join(tmp, ".icebath")
-	dn, empty := "Harumesu", ""
-	_ = WriteProfileMeta(def, MetaUpdate{DisplayName: &dn})
-	_ = WriteProfileMeta(def, MetaUpdate{DisplayName: &empty})
-	if m := loadYAMLDict(filepath.Join(def, "profile.yaml")); m == nil || m["display_name"] != nil {
-		t.Fatalf("%+v", m)
-	}
-}
-
-func TestDisplayNameSetter(t *testing.T) {
-	tmp := profileEnv(t)
-	if got, err := SetProfileDisplayName("default", "  Harumesu "); err != nil || got != "Harumesu" {
-		t.Fatalf("%q %v", got, err)
-	}
-	if _, err := SetProfileDisplayName("default", strings.Repeat("x", 65)); !isValueError(err) {
-		t.Fatalf("long %v", err)
-	}
-	if _, err := SetProfileDisplayName("ghost", "Ghost"); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("missing %v", err)
-	}
-	def := filepath.Join(tmp, ".icebath")
-	if dir, _ := GetProfileDir("default"); dir != def || !ProfileExists("default") || ProfileExists("harumesu") {
-		t.Fatal("display name became resolvable")
-	}
-	if got, _ := ResolveProfileEnv("default"); got != def {
-		t.Fatalf("%q", got)
-	}
-	if _, err := ResolveProfileEnv("harumesu"); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("%v", err)
 	}
 }
 

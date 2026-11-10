@@ -3,6 +3,7 @@ package pm
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"io"
 	"os"
 	"testing"
@@ -16,6 +17,7 @@ const sleepChild = "ICEBATH_PM_SLEEP_CHILD"
 
 // Dispatches the child modes the launcher cases run the test binary in before the suite
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	if root := os.Getenv(republishChild); root != "" {
 		written, err := EnsureInstallLaunchers(context.Background(), root, root)
 		fmt.Printf("published %d %d\n", len(written), len(windowsBinLaunchers))
@@ -23,6 +25,15 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 		os.Exit(0)
+	}
+	if root := os.Getenv(publicationProbe); root != "" {
+		os.Exit(publicationProbeMain(root))
+	}
+	if project := os.Getenv(bootLeaseChild); project != "" {
+		os.Exit(bootLeaseChildMain(project))
+	}
+	if os.Getenv(launchSelectionChild) != "" {
+		os.Exit(launchSelectionChildMain())
 	}
 	if os.Getenv(sleepChild) != "" {
 		fmt.Println("ready")

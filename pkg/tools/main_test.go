@@ -1,12 +1,14 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -22,10 +24,11 @@ func testSecretEnvName(name string) bool {
 
 // Dispatches the child modes, installs the secret env doubles, then runs the suite
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry()
 	asyncDelegationChildEntry()
 	DispatchDDGSWorkerEntry()
-	DispatchCommitGraphRefreshEntry()
+	DispatchCommitGraphRefreshEntry(context.Background())
 	ptyTestHelperEntry()
 	state.SecretEnvSubstrings = testSecretEnvSubstrings
 	state.SecretEnvName = testSecretEnvName

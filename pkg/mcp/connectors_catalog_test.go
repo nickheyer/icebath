@@ -51,7 +51,7 @@ func TestCatalogClawHubInstallIsReadBackThroughItsCardID(t *testing.T) {
 	saved := catalogDoInstall
 	catalogDoInstall = func(_ context.Context, x *skills.HubCLI, identifier string, _ skills.HubInstallOptions) (skills.HubOutcome, error) {
 		installs = append(installs, identifier)
-		err := x.Hub.LockFile("").RecordInstall("agent-git-oracle", "clawhub", "@tmstudio667-commits/agent-git-oracle", "community",
+		err := x.Hub.LockFile("").RecordInstall(ctx, "agent-git-oracle", "clawhub", "@tmstudio667-commits/agent-git-oracle", "community",
 			"safe", strings.Repeat("0", 64), "agent-git-oracle", []string{"SKILL.md"}, nil, nil)
 		return skills.HubOK, err
 	}

@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,53 +12,66 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
-func TestStorePathsScopeToGivenHome(t *testing.T) {
+func TestLateEnvRepointScopesStoreLateEnvRepointScopesStore(t *testing.T) {
 	root := t.TempDir()
-	s := openCronStore(root, nil)
+	t.Setenv("ICEBATH_HOME", root)
+	s := cronStoreFrom(context.Background())
 	resolved, _ := pypath.Realpath(root, pypath.Lax)
 	want := filepath.Join(resolved, "cron")
 	if s.CronDir() != want || s.JobsFile() != filepath.Join(want, "jobs.json") || s.OutputDir() != filepath.Join(want, "output") {
 		t.Fatalf("paths %s %s %s", s.CronDir(), s.JobsFile(), s.OutputDir())
 	}
-	override := openCronStore(filepath.Join(root, "override-home"), nil)
-	if override.JobsFile() != filepath.Join(resolved, "override-home", "cron", "jobs.json") {
-		t.Fatalf("override %s", override.JobsFile())
+}
+
+func TestLateEnvRepointScopesStoreUseCronStoreOverrideStillWins(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ICEBATH_HOME", filepath.Join(root, "env-home"))
+	ctx := withCronStore(context.Background(), openCronStore(filepath.Join(root, "override-home"), nil))
+	resolved, _ := pypath.Realpath(filepath.Join(root, "override-home"), pypath.Lax)
+	if got := cronStoreFrom(ctx).JobsFile(); got != filepath.Join(resolved, "cron", "jobs.json") {
+		t.Fatalf("override %s", got)
 	}
 }
 
-func TestHeartbeatNeverRecreatesDeletedNamedProfile(t *testing.T) {
+func TestLateEnvRepointScopesStoreHeartbeatDoesNotRecreateDeletedNamedProfile(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "profiles"), 0o700)
 	deleted := filepath.Join(root, "profiles", "deleted")
-	openCronStore(deleted, nil).RecordTickerHeartbeat(false)
+	openCronStore(deleted, nil).RecordTickerHeartbeat(context.Background(), false)
 	if _, err := os.Stat(deleted); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("deleted profile recreated: %v", err)
 	}
+}
+
+func TestLateEnvRepointScopesStoreHeartbeatInitializesExistingNamedProfile(t *testing.T) {
+	root := t.TempDir()
 	active := filepath.Join(root, "profiles", "active")
 	os.MkdirAll(active, 0o700)
-	openCronStore(active, nil).RecordTickerHeartbeat(false)
+	openCronStore(active, nil).RecordTickerHeartbeat(context.Background(), false)
 	if st, err := os.Stat(filepath.Join(active, "cron", "ticker_heartbeat")); err != nil || !st.Mode().IsRegular() {
 		t.Fatalf("heartbeat missing in live profile: %v", err)
 	}
 }
 
-func TestSaveIntoNewHomeLeavesOldStoreUntouched(t *testing.T) {
+func TestLateEnvRepointScopesStorePublicIoAfterLateEnvRepointLeavesOldFileUntouched(t *testing.T) {
 	root := t.TempDir()
 	oldStore := openCronStore(filepath.Join(root, "import-time-home"), nil)
 	os.MkdirAll(oldStore.CronDir(), 0o700)
 	sentinel := `[{"id": "sentinel-do-not-touch"}]`
 	os.WriteFile(oldStore.JobsFile(), []byte(sentinel), 0o600)
-	late := openCronStore(filepath.Join(root, "late-home"), nil)
+	t.Setenv("ICEBATH_HOME", filepath.Join(root, "late-home"))
+	late := cronStoreFrom(context.Background())
 	job, _ := jobFromMap(map[string]any{"id": "lateenvjob01", "name": "late-env", "prompt": nil, "schedule_display": nil,
 		"schedule": map[string]any{"kind": "interval", "minutes": 60, "display": "every 60m"}, "enabled": true})
 	if err := late.SaveJobs([]*Job{job}, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	loaded, _ := late.LoadJobs()
+	loaded, _ := cronStoreFrom(context.Background()).LoadJobs()
 	if ids := jobIDs(loaded); len(ids) != 1 || ids[0] != "lateenvjob01" {
 		t.Fatalf("loaded %v", ids)
 	}
-	if st, err := os.Stat(late.JobsFile()); err != nil || !st.Mode().IsRegular() {
+	resolved, _ := pypath.Realpath(filepath.Join(root, "late-home"), pypath.Lax)
+	if st, err := os.Stat(filepath.Join(resolved, "cron", "jobs.json")); err != nil || !st.Mode().IsRegular() {
 		t.Fatal("late home store not written")
 	}
 	if raw, _ := os.ReadFile(oldStore.JobsFile()); string(raw) != sentinel {
@@ -74,34 +88,59 @@ func jobFromMap(m map[string]any) (*Job, error) {
 	return &j, j.UnmarshalJSON([]byte(text))
 }
 
-func TestEnsureCronDirFailsClosedUnderDeletedNamedProfile(t *testing.T) {
+// Profiles dir holding no deleted profile home, the home a deleted named profile had
+func deletedProfileHome(t *testing.T) string {
+	t.Helper()
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "profiles"), 0o700)
-	deleted := filepath.Join(root, "profiles", "deleted")
-	for _, dir := range []string{filepath.Join(deleted, "cron", "output", "job_123"), filepath.Join(deleted, "cron"), filepath.Join(deleted, "scripts")} {
-		if err := ensureCronDir(dir); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("%s: %v", dir, err)
-		}
-		if _, err := os.Stat(deleted); !errors.Is(err, os.ErrNotExist) {
-			t.Fatal("deleted profile home recreated")
-		}
+	return filepath.Join(root, "profiles", "deleted")
+}
+
+func mustFailClosed(t *testing.T, deleted, dir string) {
+	t.Helper()
+	if err := ensureCronDir(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("%s: %v", dir, err)
 	}
-	defaultHome := filepath.Join(root, "default_home")
+	if _, err := os.Stat(deleted); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("deleted profile home recreated")
+	}
+}
+
+func mustCreateDir(t *testing.T, dir string) {
+	t.Helper()
+	if err := ensureCronDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		t.Fatalf("%s not created", dir)
+	}
+}
+
+func TestEnsureCronDirWidenedEnsureCronDirNamedProfileSubdirFailsClosed(t *testing.T) {
+	deleted := deletedProfileHome(t)
+	mustFailClosed(t, deleted, filepath.Join(deleted, "cron", "output", "job_123"))
+}
+
+func TestEnsureCronDirWidenedEnsureCronDirDefaultHomeCreatesSubdir(t *testing.T) {
+	defaultHome := filepath.Join(t.TempDir(), "default_home")
 	os.MkdirAll(defaultHome, 0o700)
-	out := filepath.Join(defaultHome, "cron", "output", "job_123")
-	if err := ensureCronDir(out); err != nil {
-		t.Fatal(err)
-	}
-	active := filepath.Join(root, "profiles", "active")
+	mustCreateDir(t, filepath.Join(defaultHome, "cron", "output", "job_123"))
+}
+
+func TestEnsureCronDirWidenedEnsureCronDirNamedProfileCronDirFailsClosed(t *testing.T) {
+	deleted := deletedProfileHome(t)
+	mustFailClosed(t, deleted, filepath.Join(deleted, "cron"))
+}
+
+func TestEnsureCronDirWidenedEnsureCronDirExistingNamedProfileCronDirWorks(t *testing.T) {
+	active := filepath.Join(t.TempDir(), "profiles", "active")
 	os.MkdirAll(active, 0o700)
-	if err := ensureCronDir(filepath.Join(active, "cron")); err != nil {
-		t.Fatal(err)
-	}
-	for _, dir := range []string{out, filepath.Join(active, "cron")} {
-		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-			t.Fatalf("%s not created", dir)
-		}
-	}
+	mustCreateDir(t, filepath.Join(active, "cron"))
+}
+
+func TestEnsureCronDirWidenedEnsureCronDirScriptsDirUnderNamedProfileFailsClosed(t *testing.T) {
+	deleted := deletedProfileHome(t)
+	mustFailClosed(t, deleted, filepath.Join(deleted, "scripts"))
 }
 
 func TestCronFilePermissions(t *testing.T) {
@@ -121,7 +160,7 @@ func TestCronFilePermissions(t *testing.T) {
 	if st, _ := os.Stat(s.jobsFile); st.Mode().Perm() != 0o600 {
 		t.Fatalf("jobs.json mode %v", st.Mode().Perm())
 	}
-	path, err := s.SaveJobOutput("test-job", "test output content")
+	path, err := s.SaveJobOutput(context.Background(), "test-job", "test output content")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,29 +373,17 @@ var idKeyedJobs = map[string]any{"jobs": map[string]any{
 		"schedule": map[string]any{"kind": "interval", "minutes": 30, "display": "every 30m"}},
 }}
 
-func TestListJobsSurvivesIDKeyedMapAndJunk(t *testing.T) {
+func TestJobsJsonIdKeyedMapListJobsSurvivesIdKeyedMap(t *testing.T) {
 	s, _ := newTestStore(t)
 	writeJobsFile(t, s, idKeyedJobs)
 	jobs, err := s.listJobs(true)
 	if ids := sortedIDs(jobs); err != nil || len(ids) != 2 || ids[0] != "cron1234abcd" || ids[1] != "cron5678efgh" {
 		t.Fatalf("list %v, %v", ids, err)
 	}
-
-	junk, _ := newTestStore(t)
-	writeJobsFile(t, junk, map[string]any{"jobs": map[string]any{
-		"goodjob1":    map[string]any{"name": "survivor", "enabled": true, "prompt": "keep me", "schedule": map[string]any{"kind": "interval", "minutes": 60, "display": "every 60m"}},
-		"junk-string": "i am not a job", "junk-number": 42, "junk-null": nil}})
-	listed, _ := junk.listJobs(true)
-	if ids := jobIDs(listed); len(ids) != 1 || ids[0] != "goodjob1" {
-		t.Fatalf("listed %v", ids)
-	}
-	if ids := diskJobIDs(t, junk); len(ids) != 1 || ids[0] != "goodjob1" {
-		t.Fatalf("disk %v", ids)
-	}
 }
 
-func TestNonObjectListEntriesDoNotStopHealthyJobsFiring(t *testing.T) {
-	s, _ := newTestStore(t)
+func TestJobsJsonIdKeyedMapNonDictListEntriesDoNotStopHealthyJobsFiring(t *testing.T) {
+	s, logs := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("keep me"), Schedule: "every 1h", Name: prompt("survivor")})
 	addJunk := func() {
 		jobs, _ := s.LoadJobs()
@@ -395,4 +422,38 @@ func TestNonObjectListEntriesDoNotStopHealthyJobsFiring(t *testing.T) {
 	if ids := diskJobIDs(t, s); len(ids) != 1 || ids[0] != job.ID {
 		t.Fatalf("disk %v", ids)
 	}
+	for _, tc := range []struct {
+		bad    any
+		detail string
+	}{{[]any{nil, "***", 42}, "Skipping 3 non-object"}, {nil, "Replacing invalid"}, {"not-a-list", "Replacing invalid"}} {
+		writeJobsFile(t, s, map[string]any{"jobs": tc.bad})
+		logs.Reset()
+		if loaded, err := s.LoadJobs(); err != nil || len(loaded) != 0 {
+			t.Fatalf("%v loaded %v %v", tc.bad, jobIDs(loaded), err)
+		}
+		if ids := diskJobIDs(t, s); len(ids) != 0 {
+			t.Fatalf("%v disk %v", tc.bad, ids)
+		}
+		lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+		if n := countContaining(lines, tc.detail); n != 1 {
+			t.Fatalf("%v logged %q %d times: %s", tc.bad, tc.detail, n, logs)
+		}
+		if n := countContaining(lines, "Auto-repaired"); n != 1 {
+			t.Fatalf("%v logged the repair %d times: %s", tc.bad, n, logs)
+		}
+		if strings.Contains(logs.String(), "***") {
+			t.Fatalf("raw junk value logged: %s", logs)
+		}
+	}
+}
+
+// Lines holding the substring
+func countContaining(lines []string, sub string) int {
+	n := 0
+	for _, l := range lines {
+		if strings.Contains(l, sub) {
+			n++
+		}
+	}
+	return n
 }

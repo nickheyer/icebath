@@ -304,7 +304,7 @@ func (x *HubCLI) DoUninstall(ctx context.Context, name string, c *pyrich.Console
 	if !skipConfirm && !x.confirmOrCancel(c, cancelledLine, fmt.Sprintf("\n[bold]Uninstall '%s'?[/]", name)) {
 		return HubNoop, nil
 	}
-	ok, msg, err := x.uninstallSkill(name)
+	ok, msg, err := x.uninstallSkill(ctx, name)
 	if err != nil {
 		return HubNoop, err
 	}
@@ -445,7 +445,7 @@ func (x *HubCLI) DoOptOut(ctx context.Context, remove bool, c *pyrich.Console, s
 		c.Print("[dim]Existing skills on disk were left in place. Re-run with --remove to also delete unmodified bundled skills.[/]\n")
 		return nil
 	}
-	preview, err := x.S.RemovePristineBundledSkills(true)
+	preview, err := x.S.RemovePristineBundledSkills(ctx, true)
 	if err != nil {
 		return err
 	}
@@ -463,7 +463,7 @@ func (x *HubCLI) DoOptOut(ctx context.Context, remove bool, c *pyrich.Console, s
 		"[dim]This deletes the on-disk copies. User-edited and hub/local skills are NOT touched.[/]") {
 		return nil
 	}
-	result, err := x.S.RemovePristineBundledSkills(false)
+	result, err := x.S.RemovePristineBundledSkills(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -499,7 +499,7 @@ func (x *HubCLI) DoRepairOfficial(ctx context.Context, name string, restore bool
 		"[dim]Existing matching active copies will be moved to a restore backup before copying the official source.[/]") {
 		return nil
 	}
-	result, err := x.S.RestoreOfficialOptionalSkill(name, restore)
+	result, err := x.S.RestoreOfficialOptionalSkill(ctx, name, restore)
 	if err != nil {
 		return err
 	}
@@ -560,10 +560,10 @@ func (x *HubCLI) DoTap(ctx context.Context, action, repo string, c *pyrich.Conso
 		var err error
 		okLine, failLine := "[bold green]Added tap:[/] %s\n", "[yellow]Tap already exists:[/] %s\n"
 		if action == "add" {
-			ok, err = mgr.Add(repo, "skills/")
+			ok, err = mgr.Add(ctx, repo, "skills/")
 		} else {
 			okLine, failLine = "[bold green]Removed tap:[/] %s\n", "[bold red]Error:[/] Tap not found: %s\n"
-			ok, err = mgr.Remove(repo)
+			ok, err = mgr.Remove(ctx, repo)
 		}
 		if err != nil {
 			return err
@@ -889,7 +889,7 @@ func (x *HubCLI) DoSnapshotImport(ctx context.Context, inputPath string, force b
 				return HubNoop, err
 			}
 			if repo := entryStr(tap, "repo", ""); repo != "" {
-				if _, err := mgr.Add(repo, entryStr(tap, "path", "skills/")); err != nil {
+				if _, err := mgr.Add(ctx, repo, entryStr(tap, "path", "skills/")); err != nil {
 					return HubNoop, err
 				}
 			}

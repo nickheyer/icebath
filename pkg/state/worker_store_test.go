@@ -6,11 +6,13 @@ import (
 	"os"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Installs the wiring doubles the package tests reach before any test runs
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	if runStateTestHelper() {
 		return
 	}

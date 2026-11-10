@@ -17,3 +17,11 @@ func DecodeUTF8Sig(raw []byte) (string, error) {
 	}
 	return string(raw), nil
 }
+
+// Text of a whole utf-8-sig file read, a lone BOM start reading as empty
+func DecodeUTF8SigFile(raw []byte) (string, error) {
+	if len(raw) < 3 && bytes.HasPrefix([]byte{0xef, 0xbb, 0xbf}, raw) {
+		return "", nil
+	}
+	return DecodeUTF8Sig(raw)
+}

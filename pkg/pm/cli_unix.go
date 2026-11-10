@@ -4,12 +4,17 @@ package pm
 
 import (
 	"io"
+	"os"
 
+	"github.com/mattn/go-isatty"
 	"golang.org/x/sys/unix"
 )
 
 // Seam pointing stdout at stderr while a side environment builds, swapped by tests
 var redirectStdout = redirectStdoutToStderr
+
+// Reports a file the C library isatty answers true for, a terminal device
+func fileIsTTY(f *os.File) bool { return isatty.IsTerminal(f.Fd()) }
 
 // Terminals outside Windows render escape sequences without opting in
 func enableVTProcessing(w io.Writer) bool { return true }

@@ -109,17 +109,25 @@ var idKeyedPayload = map[string]any{
 	"updated_at": "2026-08-23T10:10:12+08:00",
 }
 
-func TestLoadJobsFlattensIDKeyedMapAndRepairsDisk(t *testing.T) {
+func TestJobsJsonIdKeyedMapLoadJobsFlattensIdKeyedMap(t *testing.T) {
 	s, _ := newTestStore(t)
 	writeJobsFile(t, s, idKeyedPayload)
 	loaded, err := s.LoadJobs()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"cron1234abcd", "cron5678efgh"}
-	if !reflect.DeepEqual(sortedIDs(loaded), want) {
+	if !reflect.DeepEqual(sortedIDs(loaded), []string{"cron1234abcd", "cron5678efgh"}) {
 		t.Fatalf("loaded %v", jobIDs(loaded))
 	}
+}
+
+func TestJobsJsonIdKeyedMapIdKeyedMapRepairedToListOnDisk(t *testing.T) {
+	s, _ := newTestStore(t)
+	writeJobsFile(t, s, idKeyedPayload)
+	if _, err := s.LoadJobs(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"cron1234abcd", "cron5678efgh"}
 	disk := diskJobIDs(t, s)
 	sort.Strings(disk)
 	if !reflect.DeepEqual(disk, want) {
@@ -181,6 +189,10 @@ func TestNonDictMapValuesSkippedWithWarning(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "non-dict") {
 		t.Fatalf("no non-dict warning in %s", logs)
+	}
+	listed, err := s.listJobs(true)
+	if err != nil || !reflect.DeepEqual(jobIDs(listed), []string{"goodjob1"}) {
+		t.Fatalf("listed %v %v", jobIDs(listed), err)
 	}
 	if disk := diskJobIDs(t, s); !reflect.DeepEqual(disk, []string{"goodjob1"}) {
 		t.Fatalf("disk %v", disk)
@@ -274,7 +286,7 @@ func TestSaveKeepsLoadedKeyOrderAndPythonFloats(t *testing.T) {
 
 func TestSaveJobOutputCreatesOutputFile(t *testing.T) {
 	s, _ := newTestStore(t)
-	out, err := s.SaveJobOutput("test123", "# Results\nEverything ok.")
+	out, err := s.SaveJobOutput(context.Background(), "test123", "# Results\nEverything ok.")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,13 +298,13 @@ func TestSaveJobOutputCreatesOutputFile(t *testing.T) {
 		t.Fatalf("mode %v", st.Mode())
 	}
 	for _, bad := range []string{"", ".", "..", "a/b", `a\b`, "/abs", "  "} {
-		if _, err := s.SaveJobOutput(bad, "x"); err == nil || !strings.Contains(err.Error(), "Invalid cron job id for output path: ") {
+		if _, err := s.SaveJobOutput(context.Background(), bad, "x"); err == nil || !strings.Contains(err.Error(), "Invalid cron job id for output path: ") {
 			t.Errorf("%q accepted: %v", bad, err)
 		}
 	}
 }
 
-func TestPruneJobOutputKeepsNewestN(t *testing.T) {
+func TestCronOutputRetentionPruneKeepsNewestN(t *testing.T) {
 	s, _ := newTestStore(t)
 	d := filepath.Join(t.TempDir(), "job")
 	os.MkdirAll(d, 0o700)
@@ -324,7 +336,7 @@ func TestOutputRetentionReadsConfig(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		ts := time.Date(2026, 6, 25, 10, 0, i, 0, time.UTC)
 		s.clk.nowFn = func() time.Time { return ts }
-		if _, err := s.SaveJobOutput("job1", "x"); err != nil {
+		if _, err := s.SaveJobOutput(context.Background(), "job1", "x"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -464,7 +476,7 @@ func TestTickerMarkersRoundTrip(t *testing.T) {
 	now := 1_800_000_000.25
 	epochNow = func() float64 { return now }
 	t.Cleanup(func() { epochNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 } })
-	s.RecordTickerHeartbeat(true)
+	s.RecordTickerHeartbeat(context.Background(), true)
 	raw, _ := os.ReadFile(filepath.Join(s.cronDir, "ticker_heartbeat"))
 	if string(raw) != fmt.Sprintf("1800000000.25 %d", os.Getpid()) {
 		t.Fatalf("heartbeat %q", raw)
@@ -487,7 +499,7 @@ func TestTickerMarkersRoundTrip(t *testing.T) {
 	if age, ok := s.TickerSuccessAge(); !ok || age != 0 {
 		t.Fatalf("future stamp age %v %v", age, ok)
 	}
-	s.RecordTickerError("  boom\nsecond line  ")
+	s.RecordTickerError(context.Background(), "  boom\nsecond line  ")
 	if msg, ok := s.TickerLastError(); !ok || msg != "boom\nsecond line" {
 		t.Fatalf("error %q %v", msg, ok)
 	}

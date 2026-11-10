@@ -243,7 +243,7 @@ func TestTrustUpdateURLMovesTheSavedTagToTheManifest(t *testing.T) {
 		t.Fatalf("no row %v %s", err, out.String())
 	}
 	row := map[string]any{"pinned": false, "revision": catHead(t, plugin), "source": "https://github.com/o/r"}
-	if err := writeInstallMetadata(h, map[string]any{"plug": row}); err != nil {
+	if err := writeInstallMetadata(ctx, h, map[string]any{"plug": row}); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()
@@ -251,7 +251,7 @@ func TestTrustUpdateURLMovesTheSavedTagToTheManifest(t *testing.T) {
 		t.Fatalf("no mismatch %v %s", err, out.String())
 	}
 	row["update_url"] = "https://a/f.yml"
-	if err := writeInstallMetadata(h, map[string]any{"plug": row}); err != nil {
+	if err := writeInstallMetadata(ctx, h, map[string]any{"plug": row}); err != nil {
 		t.Fatal(err)
 	}
 	c6Write(t, filepath.Join(plugin, "plugin.yaml"), "name: plug\nversion: 1.0.0\nupdate_url: http://b/f.yml\n")

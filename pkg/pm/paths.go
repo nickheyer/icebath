@@ -4,16 +4,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -258,11 +259,19 @@ func EnvironmentRuntimeFactsPath(ctx context.Context, projectRoot string) string
 
 // Describes an access failure inside this install's dependency state, empty when the failure lies elsewhere
 func InstallStatePermissionMessage(ctx context.Context, projectRoot string, err error) string {
+	filename := ""
 	var pathErr *fs.PathError
-	if !errors.As(err, &pathErr) || pathErr.Path == "" {
+	var linkErr *os.LinkError
+	switch {
+	case errors.As(err, &pathErr):
+		filename = pathErr.Path
+	case errors.As(err, &linkErr):
+		filename = linkErr.Old
+	}
+	if filename == "" {
 		return ""
 	}
-	denied := resolvePath(pathErr.Path)
+	denied := resolvePath(filename)
 	if !isRelativeTo(denied, resolvePath(InstallStateDir(ctx, projectRoot))) {
 		return ""
 	}
@@ -273,40 +282,74 @@ func InstallStatePermissionMessage(ctx context.Context, projectRoot string, err 
 func OwningHomeRoot(ctx context.Context, projectRoot string) string {
 	root := resolvePath(projectRoot)
 	key := InstallKey(root)
-	var candidates []string
+	var candidates, seen []string
 	for _, candidate := range []string{filepath.Dir(root), home.PlatformDefault()} {
-		dup := false
-		for _, seen := range candidates {
-			if seen == candidate {
-				dup = true
-			}
-		}
-		if dup {
+		if slices.ContainsFunc(seen, func(other string) bool { return samePath(other, candidate) }) {
 			continue
 		}
-		if st, err := os.Stat(filepath.Join(candidate, "installs", key, "facts.json")); err == nil && st.Mode().IsRegular() {
+		seen = append(seen, candidate)
+		if isRegularFile(filepath.Join(candidate, "installs", key, "facts.json")) {
 			candidates = append(candidates, candidate)
 		}
 	}
 	if len(candidates) == 0 {
 		return ""
 	}
-	owner := candidates[0]
+	owner := launcherBoundRoot(root, candidates)
+	if owner == "" {
+		owner = candidates[0]
+	}
 	if resolvePath(filepath.Join(owner, "installs", key)) == resolvePath(InstallStateDir(ctx, root)) {
 		return ""
 	}
 	return owner
 }
 
-// Sealed payload manifest whose tree is root, with the directory its entries resolve from
-func payloadManifest(root string) (map[string]any, string, bool) {
-	for _, path := range []string{filepath.Join(filepath.Dir(root), "manifest.json"), filepath.Join(root, "manifest.json")} {
-		data, err := os.ReadFile(path)
-		if err != nil {
+// Candidate whose tools directory is the live store the checkout's own launcher records, empty when none is
+func launcherBoundRoot(projectRoot string, candidates []string) string {
+	names := []string{"icebath"}
+	if runtime.GOOS == "windows" {
+		names = []string{"icebath.exe", "icebath.cmd"}
+	}
+	for _, name := range names {
+		target := filepath.Join(checkoutLauncherDir(projectRoot), name)
+		record := launcherStore(target)
+		if record == "" || !launcherRecordLive(target, record) {
 			continue
 		}
-		var manifest map[string]any
-		if err := json.Unmarshal(trimBOM(data), &manifest); err != nil {
+		for _, candidate := range candidates {
+			store, err := pathResolve(filepath.Join(candidate, "tools"))
+			if err != nil {
+				continue
+			}
+			for path := pypath.PurePathStr(record); ; {
+				resolved, err := pathResolve(path)
+				if err != nil {
+					break
+				}
+				if resolved == store {
+					return candidate
+				}
+				next := filepath.Dir(path)
+				if next == path {
+					break
+				}
+				path = next
+			}
+		}
+	}
+	return ""
+}
+
+// Sealed payload manifest whose tree is root, with the directory its entries resolve from
+func payloadManifest(root string) (map[string]any, string, bool, error) {
+	for _, path := range []string{filepath.Join(filepath.Dir(root), "manifest.json"), filepath.Join(root, "manifest.json")} {
+		decoded, ok := readJSONText(path)
+		if !ok {
+			continue
+		}
+		manifest, isMap := decoded.(map[string]any)
+		if !isMap {
 			continue
 		}
 		repo, ok := manifest["repo"].(string)
@@ -337,18 +380,50 @@ func payloadManifest(root string) (map[string]any, string, bool) {
 				}
 			}
 		}
-		if wellFormed && resolvePath(filepath.Join(filepath.Dir(path), repo)) == root {
-			return manifest, filepath.Dir(path), true
+		if !wellFormed {
+			continue
+		}
+		tree, err := pathResolve(pypath.Join(filepath.Dir(path), repo))
+		if err != nil {
+			return nil, "", false, err
+		}
+		if tree == root {
+			return manifest, filepath.Dir(path), true, nil
 		}
 	}
-	return nil, "", false
+	return nil, "", false, nil
+}
+
+// JSON document of a text file decoded as utf-8-sig and parsed as json loads, false on any failure
+func readJSONText(path string) (any, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	data = trimBOM(data)
+	if strictUTF8(data) != nil {
+		return nil, false
+	}
+	doc, err := loadJSON(data)
+	return doc, err == nil
+}
+
+// Path resolve raising the lstat ValueError CPython raises for an embedded NUL, Windows resolving the spelling as given
+func pathResolve(p string) (string, error) {
+	if runtime.GOOS != "windows" && strings.IndexByte(p, 0) >= 0 {
+		return "", &PyError{Class: "ValueError", Message: "lstat: embedded null character in path"}
+	}
+	return resolvePath(p), nil
 }
 
 // Payload relative path resolved from its manifest's root, refused when it escapes that root
 func payloadPath(payloadRoot, relative, what string) (string, error) {
-	path := resolvePath(filepath.Join(payloadRoot, relative))
+	path, err := pathResolve(pypath.Join(payloadRoot, relative))
+	if err != nil {
+		return "", err
+	}
 	if !isRelativeTo(path, payloadRoot) {
-		return "", fmt.Errorf("payload %s escapes its root", what)
+		return "", &PyError{Class: "RuntimeError", Message: fmt.Sprintf("payload %s escapes its root", what)}
 	}
 	return path, nil
 }
@@ -361,29 +436,29 @@ func EnvironmentStoreRoot(ctx context.Context, projectRoot string, honorRuntimeO
 		}
 	}
 	root := resolvePath(projectRoot)
-	if manifest, payloadRoot, ok := payloadManifest(root); ok {
+	manifest, payloadRoot, ok, err := payloadManifest(root)
+	if err != nil {
+		return "", err
+	}
+	if ok {
 		if store, _ := manifest["store"].(string); store != "" {
 			return payloadPath(payloadRoot, store, "store")
 		}
 	}
 	for directory := root; ; directory = filepath.Dir(directory) {
 		stamp := InstallStampPath(directory)
-		if st, err := os.Stat(stamp); err == nil && st.Mode().IsRegular() {
-			data, err := os.ReadFile(stamp)
-			if err != nil {
-				return unstampedStore(ctx, root), nil
-			}
-			var doc any
-			if json.Unmarshal(trimBOM(data), &doc) != nil {
+		if isRegularFile(stamp) {
+			doc, ok := readJSONText(stamp)
+			if !ok {
 				return unstampedStore(ctx, root), nil
 			}
 			if m, ok := doc.(map[string]any); ok {
 				if value, has := m["runtimeDir"]; has && pyrepr.Truthy(value) {
 					s, isStr := value.(string)
 					if !isStr {
-						return "", fmt.Errorf("install stamp %s runtimeDir is not a path: %v", stamp, value)
+						return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", pyrepr.TypeName(value))}
 					}
-					return resolvePath(s), nil
+					return pathResolve(s)
 				}
 			}
 			return unstampedStore(ctx, root), nil

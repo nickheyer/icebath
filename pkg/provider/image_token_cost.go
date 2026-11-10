@@ -191,7 +191,7 @@ func CalibrateImageTokenCost(ctx context.Context, model, baseURL string, anchor 
 	}
 	imageCostTables.mu.Unlock()
 	ctx = setImageCost(ctx, learned)
-	if err := config.AtomicJSONWriteWith(imageCostCachePath(ctx), snapshot, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, imageCostCachePath(ctx), snapshot, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
 		slog.Debug(fmt.Sprintf("image token cost persist failed: %v", err))
 	}
 	slog.Info(fmt.Sprintf("Image token cost calibrated from provider usage: %d images priced %s tokens each (learned %s for %s)",

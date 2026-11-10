@@ -16,7 +16,7 @@ func seedOpenRouterReasoningCaps(t *testing.T, items ...map[string]any) {
 	for i, it := range items {
 		list[i] = it
 	}
-	if !seedReasoningCaps(openRouterCatalogURL, list) {
+	if !seedReasoningCaps(context.Background(), openRouterCatalogURL, list) {
 		t.Fatal("seed rejected")
 	}
 }

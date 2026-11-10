@@ -1,6 +1,7 @@
 package pyfs
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,7 +18,7 @@ func TestAtomicWriteTextReplacesThroughSymlinkAndRejectsSurrogates(t *testing.T)
 	if err := os.Symlink(real, link); err != nil {
 		t.Skip("symlinks unavailable")
 	}
-	if err := AtomicWriteText(link, "new", ".tmp_"); err != nil {
+	if err := AtomicWriteText(context.Background(), link, "new", ".tmp_"); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(real); string(b) != "new" {
@@ -26,7 +27,7 @@ func TestAtomicWriteTextReplacesThroughSymlinkAndRejectsSurrogates(t *testing.T)
 	if st, _ := os.Lstat(link); st.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("symlink replaced")
 	}
-	err := AtomicWriteText(filepath.Join(dir, "x"), "a\xed\xa0\x80", ".tmp_")
+	err := AtomicWriteText(context.Background(), filepath.Join(dir, "x"), "a\xed\xa0\x80", ".tmp_")
 	if _, ok := err.(*EncodeError); !ok {
 		t.Fatalf("surrogate write %v", err)
 	}
@@ -67,7 +68,7 @@ func TestAtomicWriteTextModeForcesBits(t *testing.T) {
 		t.Skip("POSIX permission bits")
 	}
 	p := filepath.Join(t.TempDir(), "SKILL.md")
-	if err := AtomicWriteTextMode(p, "one", ".tmp_", 0o644); err != nil {
+	if err := AtomicWriteTextMode(context.Background(), p, "one", ".tmp_", 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := os.Stat(p); st.Mode().Perm() != 0o644 {
@@ -76,7 +77,7 @@ func TestAtomicWriteTextModeForcesBits(t *testing.T) {
 	if err := os.Chmod(p, 0o640); err != nil {
 		t.Fatal(err)
 	}
-	if err := AtomicWriteTextMode(p, "two", ".tmp_", 0o640); err != nil {
+	if err := AtomicWriteTextMode(context.Background(), p, "two", ".tmp_", 0o640); err != nil {
 		t.Fatal(err)
 	}
 	st, _ := os.Stat(p)

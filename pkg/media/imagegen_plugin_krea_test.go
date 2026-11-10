@@ -704,3 +704,17 @@ func TestKreaSubmitErrorMessage(t *testing.T) {
 		}
 	}
 }
+
+func TestKreaModelIDsExportCopiesTheCatalog(t *testing.T) {
+	ids := KreaModelIDs()
+	if len(ids) == 0 || len(ids) != len(kreaModelIDs) {
+		t.Fatalf("ids %v", ids)
+	}
+	for id := range ids {
+		delete(ids, id)
+		break
+	}
+	if len(KreaModelIDs()) != len(kreaModelIDs) {
+		t.Fatal("export shares the package set")
+	}
+}

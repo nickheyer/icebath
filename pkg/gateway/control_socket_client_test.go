@@ -179,3 +179,13 @@ func TestReadResponseLineStopsAtDeadline(t *testing.T) {
 		t.Fatalf("expired deadline %q %v %d", line, err, calls)
 	}
 }
+
+func TestResolveClientSocketPathTreatsAPointerTargetWithANulAsAbsent(t *testing.T) {
+	h := t.TempDir()
+	if err := os.WriteFile(filepath.Join(h, controlPointerFilename), []byte("/tmp/gate\x00way.sock\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := ResolveClientSocketPath(h); p != "" || err != nil {
+		t.Fatalf("a pointer naming a path with a NUL resolved to %q, %v", p, err)
+	}
+}

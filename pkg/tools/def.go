@@ -134,6 +134,8 @@ type Env struct {
 	unscopedChecks bool
 	// Profile home a routed scope bound this env to, the context home override of hermes
 	profileHome string
+	// Set on the copy availability checks read while the context runs a delegate_task child
+	delegatedChild bool
 }
 
 // Emit sends a progress event when the host registered a listener

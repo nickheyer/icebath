@@ -58,7 +58,7 @@ func finishProfileLayout(ctx context.Context, profileDir string, noSkills, clone
 	if description != nil && pystr.Strip(*description) != "" {
 		desc := pystr.Strip(*description)
 		auto := false
-		profiles.WriteProfileMeta(profileDir, profiles.MetaUpdate{Description: &desc, DescriptionAuto: &auto})
+		profiles.WriteProfileMeta(ctx, profileDir, profiles.MetaUpdate{Description: &desc, DescriptionAuto: &auto})
 	}
 	return nil
 }

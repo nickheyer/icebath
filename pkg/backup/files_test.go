@@ -49,21 +49,9 @@ func selectedRels(root, out string, skipped map[string]bool) map[string]bool {
 	return sel
 }
 
-func TestShouldExclude(t *testing.T) {
-	excluded := []string{
-		"icebath-agent/run_agent.py", "icebath-agent/.git/HEAD", "backups/pre-update-2026-04-27-063400.zip",
-		"state-snapshots/20260814-203829-2026-08-15/state.db", "state-snapshots/20260814-203829-2026-08-15/manifest.json",
-		"profiles/coder/state-snapshots/x/state.db", "state.db-wal", "state.db-shm", "state.db-journal", "memory_store.db-wal",
-		"models/Qwen3.6-27B-Q4_K_M.gguf", "models/assets/mmproj.gguf", "runtimes/llamacpp/b10362/cuda/ggml-cuda.dll",
-		"node/node.exe", "profiles/clean/models/big.gguf", "profiles/clean/runtimes/llamacpp/x.dll",
-		"cache/model_catalog.json", "cache/chrome-debug/Default/Cookies", "profiles/sage/cache/chrome-debug/cache.db",
-		"state.db.pre-update-emergency-2026-08-15T04-55-33-619Z.bak",
-		"profiles/coder/state.db.pre-update-emergency-2026-08-15T04-55-33-619Z.bak",
-	}
-	kept := []string{
-		"state.db", "cache/images/x.png", "profiles/sage/cache/citations/ledger.json", "skills/example/cache/notes.md",
-		"skills/mlops/models/notes.md", "scratch/node/index.js", "profiles/clean/skills/x/models/a.txt", "config.yaml.bak",
-	}
+// Fails for each excluded path a full backup keeps and each kept path it skips
+func checkExclude(t *testing.T, excluded, kept []string) {
+	t.Helper()
 	for _, rel := range excluded {
 		if !shouldExclude(filepath.FromSlash(rel)) {
 			t.Errorf("kept %s", rel)
@@ -74,6 +62,39 @@ func TestShouldExclude(t *testing.T) {
 			t.Errorf("excluded %s", rel)
 		}
 	}
+}
+
+func TestShouldExclude(t *testing.T) {
+	t.Run("test_excludes_hermes_agent", func(t *testing.T) {
+		checkExclude(t, []string{"icebath-agent/run_agent.py", "icebath-agent/.git/HEAD"}, nil)
+	})
+	t.Run("test_excludes_backups_dir", func(t *testing.T) {
+		checkExclude(t, []string{"backups/pre-update-2026-04-27-063400.zip"}, nil)
+	})
+	t.Run("test_excludes_state_snapshots_dir", func(t *testing.T) {
+		checkExclude(t, []string{quickSnapshotsDir + "/20260814-203829-2026-08-15/state.db",
+			quickSnapshotsDir + "/20260814-203829-2026-08-15/manifest.json", "profiles/coder/" + quickSnapshotsDir + "/x/state.db"},
+			[]string{"state.db"})
+	})
+	t.Run("test_excludes_sqlite_sidecars", func(t *testing.T) {
+		checkExclude(t, []string{"state.db-wal", "state.db-shm", "state.db-journal", "memory_store.db-wal"}, []string{"state.db"})
+	})
+	t.Run("test_excludes_managed_runtime_trees_at_root", func(t *testing.T) {
+		checkExclude(t, []string{"models/Qwen3.6-27B-Q4_K_M.gguf", "models/assets/mmproj.gguf",
+			"runtimes/llamacpp/b10362/cuda/ggml-cuda.dll", "node/node.exe", "profiles/clean/models/big.gguf",
+			"profiles/clean/runtimes/llamacpp/x.dll"}, nil)
+	})
+	t.Run("test_excludes_regenerable_cache_but_keeps_durable_artifacts", func(t *testing.T) {
+		checkExclude(t, []string{"cache/model_catalog.json", "cache/chrome-debug/Default/Cookies", "profiles/sage/cache/chrome-debug/cache.db"},
+			[]string{"cache/images/x.png", "profiles/sage/cache/citations/ledger.json", "skills/example/cache/notes.md"})
+	})
+	t.Run("test_keeps_nested_dirs_named_like_runtime_trees", func(t *testing.T) {
+		checkExclude(t, nil, []string{"skills/mlops/models/notes.md", "scratch/node/index.js", "profiles/clean/skills/x/models/a.txt"})
+	})
+	t.Run("test_excludes_desktop_emergency_state_db_baks", func(t *testing.T) {
+		checkExclude(t, []string{"state.db.pre-update-emergency-2026-08-15T04-55-33-619Z.bak",
+			"profiles/coder/state.db.pre-update-emergency-2026-08-15T04-55-33-619Z.bak"}, []string{"config.yaml.bak"})
+	})
 }
 
 func TestIterBackupFilesManualAndAutomaticPathsShareOneWalk(t *testing.T) {

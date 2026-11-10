@@ -1024,32 +1024,32 @@ type ConfigurableToolset struct {
 
 // ConfigurableToolsets are the toolsets the configurator checklist offers
 var ConfigurableToolsets = []ConfigurableToolset{
-	{"web", "Web Search & Scraping", "web_search, web_extract"},
-	{"browser", "Browser Automation", "navigate, click, type, scroll"},
-	{"terminal", "Terminal & Processes", "terminal, process"},
-	{"file", "File Operations", "read, write, patch, search"},
-	{"code_execution", "Code Execution", "execute_code"},
-	{"vision", "Vision / Image Analysis", "vision_analyze"},
-	{"video", "Video Analysis", "video_analyze (requires video-capable model)"},
-	{"image_gen", "Image Generation", "image_generate"},
-	{"video_gen", "Video Generation", "video_generate (text/image/reference)"},
-	{"x_search", "X (Twitter) Search", "x_search (requires xAI OAuth or XAI_API_KEY)"},
-	{"tts", "Text-to-Speech", "text_to_speech"},
-	{"stt", "Speech-to-Text", "voice transcription (gateway voice messages + voice mode)"},
-	{"skills", "Skills", "list, view, manage"},
-	{"todo", "Task Planning", "todo_list"},
-	{"kanban", "Kanban", "opt-in task board tools for this platform"},
-	{"memory", "Memory", "persistent memory across sessions"},
-	{"context_engine", "Context Engine", "runtime tools from the active context engine"},
-	{"session_search", "Session Search", "search past conversations"},
-	{"connections", "Connections", "remote connector tools and account authorization"},
-	{"clarify", "Clarifying Questions", "clarify"},
-	{"delegation", "Task Delegation", "delegate_task"},
-	{"cronjob", "Cron Jobs", "create/list/update/pause/resume/run, with optional attached skills"},
-	{"discord", "Discord (read/participate)", "fetch messages, search members, create thread"},
-	{"discord_admin", "Discord Server Admin", "list channels/roles, pin, assign roles"},
-	{"yuanbao", "Yuanbao", "group info, member queries, DM"},
-	{"computer_use", "Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"},
+	{"web", "🔍 Web Search & Scraping", "web_search, web_extract"},
+	{"browser", "🌐 Browser Automation", "navigate, click, type, scroll"},
+	{"terminal", "💻 Terminal & Processes", "terminal, process"},
+	{"file", "📁 File Operations", "read, write, patch, search"},
+	{"code_execution", "⚡ Code Execution", "execute_code"},
+	{"vision", "👁️  Vision / Image Analysis", "vision_analyze"},
+	{"video", "🎬 Video Analysis", "video_analyze (requires video-capable model)"},
+	{"image_gen", "🎨 Image Generation", "image_generate"},
+	{"video_gen", "🎬 Video Generation", "video_generate (text/image/reference)"},
+	{"x_search", "🐦 X (Twitter) Search", "x_search (requires xAI OAuth or XAI_API_KEY)"},
+	{"tts", "🔊 Text-to-Speech", "text_to_speech"},
+	{"stt", "🎙️ Speech-to-Text", "voice transcription (gateway voice messages + voice mode)"},
+	{"skills", "📚 Skills", "list, view, manage"},
+	{"todo", "📋 Task Planning", "todo_list"},
+	{"kanban", "📌 Kanban", "opt-in task board tools for this platform"},
+	{"memory", "💾 Memory", "persistent memory across sessions"},
+	{"context_engine", "🧩 Context Engine", "runtime tools from the active context engine"},
+	{"session_search", "🔎 Session Search", "search past conversations"},
+	{"connections", "🔌 Connections", "remote connector tools and account authorization"},
+	{"clarify", "❓ Clarifying Questions", "clarify"},
+	{"delegation", "👥 Task Delegation", "delegate_task"},
+	{"cronjob", "⏰ Cron Jobs", "create/list/update/pause/resume/run, with optional attached skills"},
+	{"discord", "💬 Discord (read/participate)", "fetch messages, search members, create thread"},
+	{"discord_admin", "🛡️  Discord Server Admin", "list channels/roles, pin, assign roles"},
+	{"yuanbao", "🤖 Yuanbao", "group info, member queries, DM"},
+	{"computer_use", "🖱️  Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"},
 }
 
 // DefaultOffToolsets are off for new installs until a user enables them
@@ -1314,8 +1314,15 @@ func defaultOffToolsets(platform string, explicit bool) map[string]bool {
 
 func (r *Registry) enableRecentlyShipped(ctx context.Context, scope string, enabled map[string]bool, cfg config.Tree, platform string) {
 	declined := map[string]bool{}
-	for _, n := range config.AsStrings(cfg.Sub("known_builtin_toolsets")[platform]) {
-		declined[n] = true
+	switch offered := cfg.Sub("known_builtin_toolsets")[platform].(type) {
+	case []any:
+		for _, n := range offered {
+			declined[pyrepr.Str(n)] = true
+		}
+	case []string:
+		for _, n := range offered {
+			declined[n] = true
+		}
 	}
 	var composite map[string]bool
 	for _, key := range sortedSet(RecentlyShippedToolsets) {

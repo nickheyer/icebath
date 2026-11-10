@@ -2,11 +2,8 @@ package commands
 
 import (
 	"errors"
-	"fmt"
 	"math"
-	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -48,15 +45,4 @@ func (v *nonNegativeKeep) Set(text string) error {
 	}
 	*v = nonNegativeKeep(n.Int64())
 	return nil
-}
-
-var pflagInvalidArgument = regexp.MustCompile(`^invalid argument ".*" for "(.*)" flag: (.*)$`)
-
-// Rewrites a flag parse error into the argparse form of argument -k/--keep followed by the message
-func argparseFlagError(_ *cobra.Command, err error) error {
-	m := pflagInvalidArgument.FindStringSubmatch(err.Error())
-	if m == nil {
-		return err
-	}
-	return fmt.Errorf("argument %s: %s", strings.ReplaceAll(m[1], ", ", "/"), m[2])
 }

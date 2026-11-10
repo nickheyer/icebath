@@ -265,7 +265,7 @@ func RunFreeTierBootstrap(env PoolEnv, announce bool) *SetupRecord {
 func setupSettleInstall(env PoolEnv) bool {
 	settled := true
 	if onLocalDesktopBackend(env) {
-		if _, err := tools.OnboardingLatchFirstInstall(); err != nil {
+		if _, err := tools.OnboardingLatchFirstInstall(env.Ctx); err != nil {
 			settled = false
 			env.log().Warn("onboarding: could not record the first-install decision", "error", err)
 		}

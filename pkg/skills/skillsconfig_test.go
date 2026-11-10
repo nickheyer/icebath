@@ -99,3 +99,12 @@ func TestFindAllSkillsExcludesDisabledAndCategories(t *testing.T) {
 		t.Fatalf("none category %v", got)
 	}
 }
+
+func TestSkillsConfigPlatformLabelExportSkipsTheAPIServer(t *testing.T) {
+	if label, ok := SkillsConfigPlatformLabel("telegram"); !ok || label != "Telegram" {
+		t.Fatalf("telegram %q %v", label, ok)
+	}
+	if _, ok := SkillsConfigPlatformLabel("api_server"); ok {
+		t.Fatal("api_server offered")
+	}
+}

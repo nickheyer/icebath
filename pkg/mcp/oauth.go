@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/home"
 	"math"
 	"os"
 	"path/filepath"
@@ -313,7 +314,7 @@ func jsonToPlain(v any) any {
 }
 
 // Persists a configured pre-registered client so no dynamic registration runs
-func maybePreregisterClient(storage *TokenStorage, cfg map[string]any, md *OAuthClientMetadata) error {
+func maybePreregisterClient(ctx context.Context, storage *TokenStorage, cfg map[string]any, md *OAuthClientMetadata) error {
 	clientID := cfg["client_id"]
 	if !pyTruthy(clientID) {
 		return nil
@@ -345,7 +346,7 @@ func maybePreregisterClient(storage *TokenStorage, cfg map[string]any, md *OAuth
 	if err != nil {
 		return err
 	}
-	if err := writeOAuthJSON(storage.ClientInfoPath(), validated.dump()); err != nil {
+	if err := writeOAuthJSON(home.WithOverride(ctx, storage.homeDir), storage.ClientInfoPath(), validated.dump()); err != nil {
 		return err
 	}
 	mcpLogger().Debug(fmt.Sprintf("Pre-registered client_id=%s for '%s'", pyStr(clientID), storage.serverName))
@@ -426,7 +427,7 @@ func buildProviderOptions(ctx context.Context, cfg map[string]any, storage *Toke
 	if err != nil {
 		return nil, err
 	}
-	if err := maybePreregisterClient(storage, cfg, md); err != nil {
+	if err := maybePreregisterClient(home.WithOverride(ctx, storage.homeDir), storage, cfg, md); err != nil {
 		return nil, err
 	}
 	redirectURI := ""

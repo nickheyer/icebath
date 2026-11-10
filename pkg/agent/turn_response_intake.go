@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var (
@@ -307,7 +308,7 @@ func normalizeModelResponse(ctx context.Context, a *AIAgent, s *LoopState) (Phas
 		a.vprint(a.logPrefix+"❌ Max retries (2) for incomplete scratchpad. Saving as partial.", true, true)
 		a.incompleteScratchpadRetries = 0
 		rolledBack := a.getMessagesUpToLastAssistant(s.Messages)
-		a.cleanupTaskResources(s.EffectiveTaskID)
+		a.cleanupTaskResources(tools.WithEnvHome(ctx, a.env), s.EffectiveTaskID)
 		if err := a.persistSession(&s.Messages, s.ConversationHistory); err != nil {
 			return PhaseVerdict{}, err
 		}

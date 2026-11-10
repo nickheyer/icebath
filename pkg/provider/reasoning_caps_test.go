@@ -202,7 +202,7 @@ func TestFetchedCatalogAnswersALaterProcessOffline(t *testing.T) {
 func TestStaleCopyIsStillServedAndRefreshed(t *testing.T) {
 	ctx := reasoningCapsColdProcess(t)
 	rawURL := NousCatalogURL(ctx)
-	catalogFor(rawURL).saveDisk(map[string]reasoningCaps{"deepseek/deepseek-v4-pro": {known: true, supports: true}})
+	catalogFor(rawURL).saveDisk(ctx, map[string]reasoningCaps{"deepseek/deepseek-v4-pro": {known: true, supports: true}})
 	path := reasoningCapsDiskPath()
 	raw, _ := os.ReadFile(path)
 	doc := map[string]any{}
@@ -237,7 +237,7 @@ func TestPricingFetchSeedsTheMirror(t *testing.T) {
 	ResetPricingCache()
 	pricingGetJSON = func(string, map[string]string, time.Duration) map[string]any { return reasoningCapsTestCatalog }
 	t.Cleanup(func() { pricingGetJSON = pricingGetJSONHTTP })
-	FetchModelsWithPricing(PricingFetchOptions{BaseURL: defaultNousInferenceURL, ForceRefresh: true})
+	FetchModelsWithPricing(ctx, PricingFetchOptions{BaseURL: defaultNousInferenceURL, ForceRefresh: true})
 	ResetReasoningCapsCatalogs()
 	reasoningCapsOffline(t)
 	if _, ok := NousModelReasoningCapabilities(ctx, "deepseek/deepseek-v4-pro", 0, false); !ok {

@@ -949,7 +949,7 @@ func LoadShellHookAllowlist(ctx context.Context) map[string]any {
 // Writes the allowlist atomically at mode 0600, an OS failure logged and the approval held in memory only
 func SaveShellHookAllowlist(ctx context.Context, data map[string]any) error {
 	p := ShellHookAllowlistPath(ctx)
-	err := shellHookAtomicWrite(p, data, 0o600, pyjson.Indent(2), pyjson.SortKeys(true))
+	err := shellHookAtomicWrite(ctx, p, data, 0o600, pyjson.Indent(2), pyjson.SortKeys(true))
 	if err != nil && isOSError(err) {
 		logWarn(fmt.Sprintf("Failed to persist shell hook allowlist to %s: %s. The approval holds for this process "+
 			"only (a gateway keeps a launch's --accept-hooks until it restarts); a gateway session "+

@@ -784,7 +784,7 @@ func ScopeBlockReason(ctx context.Context, env *Env, name string) string {
 	return fmt.Sprintf("'%s' is not available in this session. Use tool_search to find tools you can call.", name)
 }
 
-// ResolveUnderlyingCall parses a tool_call invocation into the underlying name, args, and error
+// ResolveUnderlyingCall parses tool_call args holding Python values into the underlying name, its handler args, and error
 func ResolveUnderlyingCall(ctx context.Context, env *Env, args map[string]any, sessionToolNames map[string]bool) (string, map[string]any, string) {
 	entries, errMsg := NormalizeToolCallEntries(args)
 	if errMsg != "" {
@@ -800,12 +800,12 @@ func ResolveUnderlyingCall(ctx context.Context, env *Env, args map[string]any, s
 	if IsConnectorName(entries[0].Name) {
 		calls := make([]any, 0, len(entries))
 		for _, e := range entries {
-			calls = append(calls, map[string]any{"name": e.Name, "arguments": e.Arguments})
+			calls = append(calls, map[string]any{"name": e.Name, "arguments": e.HandlerArgs()})
 		}
 		return ConnectorBatchSentinel, map[string]any{"calls": calls}, ""
 	}
 	name := entries[0].Name
-	rawArgs := entries[0].Arguments
+	rawArgs := entries[0].HandlerArgs()
 	if unavailable := SessionUnavailableError(ctx, env, name, sessionToolNames); unavailable != "" {
 		return "", map[string]any{}, unavailable
 	}

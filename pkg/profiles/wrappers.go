@@ -1,21 +1,23 @@
 package profiles
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
 // Characters of a candidate wrapper read when probing for the profile launch marker
@@ -27,29 +29,23 @@ const wrapperMarker = "icebath -p"
 // Locates an executable on PATH, replaced by tests
 var lookPath = exec.LookPath
 
-// Runs which or where for name and returns its stdout and exit code, replaced by tests
+// Runs which or where with a five second ceiling, returning decoded stdout and exit code
 var runWhich = func(name string) (string, int, error) {
 	tool := "which"
 	if runtime.GOOS == "windows" {
 		tool = "where"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, tool, name)
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if ctx.Err() != nil {
-		return "", -1, ctx.Err()
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return strings.ToValidUTF8(out.String(), "�"), exitErr.ExitCode(), nil
-	}
+	res, err := pysubprocess.RunWith(context.Background(), []string{tool, name}, pysubprocess.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		return "", -1, err
 	}
-	return strings.ToValidUTF8(out.String(), "�"), 0, nil
+	return pystr.DecodeUTF8Replace(res.Stdout), res.Returncode, nil
+}
+
+// Reports whether a which or where launch failed the way subprocess.run raises FileNotFoundError or TimeoutExpired
+func whichSkippable(err error) bool {
+	var timeout *pysubprocess.TimeoutExpired
+	return errors.As(err, &timeout) || errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist)
 }
 
 // Directory holding alias wrapper scripts
@@ -95,29 +91,8 @@ func FindOurWrapper(alias string) (string, error) {
 	return "", nil
 }
 
-// First n characters of a UTF-8 file with any byte order mark dropped, an error for undecodable text
-func readTextHead(path string, n int) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, int64(n*utf8.UTFMax+3)))
-	if err != nil {
-		return "", err
-	}
-	raw = bytes.TrimPrefix(raw, []byte("\ufeff"))
-	var b strings.Builder
-	for count := 0; count < n && len(raw) > 0; count++ {
-		r, size := utf8.DecodeRune(raw)
-		if r == utf8.RuneError && size <= 1 {
-			return "", errors.New("invalid UTF-8 in " + path)
-		}
-		b.WriteRune(r)
-		raw = raw[size:]
-	}
-	return b.String(), nil
-}
+// First n characters of a utf-8-sig text file read the way a text mode open reads them
+func readTextHead(path string, n int) (string, error) { return pyfs.ReadTextChars(path, n, true) }
 
 // Reports whether path reads as a generated wrapper
 func isOurWrapper(path string) bool {
@@ -141,10 +116,16 @@ func CheckAliasCollision(name string) (string, error) {
 		return fmt.Sprintf("'%s' conflicts with an icebath subcommand", canon), nil
 	}
 	stdout, code, err := runWhich(canon)
-	if err != nil || code != 0 {
+	if err != nil {
+		if whichSkippable(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if code != 0 {
 		return "", nil
 	}
-	lines := strings.FieldsFunc(strings.TrimSpace(stdout), func(r rune) bool { return r == '\n' || r == '\r' })
+	lines := pystr.Splitlines(pystr.Strip(stdout), false)
 	if len(lines) == 0 {
 		return "", errors.New("list index out of range")
 	}
@@ -216,7 +197,8 @@ func CreateWrapperScript(name, target string) (string, error) {
 	}
 	path, _ := wrapperPath(canon)
 	if runtime.GOOS == "windows" {
-		err = os.WriteFile(path, []byte(fmt.Sprintf("@echo off\r\nicebath -p %s %%*\r\n", profile)), 0o666)
+		text := fmt.Sprintf("@echo off\r\nicebath -p %s %%*\r\n", profile)
+		err = os.WriteFile(path, []byte(strings.ReplaceAll(text, "\n", "\r\n")), 0o666)
 	} else {
 		exe, lerr := lookPath("icebath")
 		if lerr != nil || exe == "" {
@@ -226,7 +208,7 @@ func CreateWrapperScript(name, target string) (string, error) {
 		if err == nil {
 			var st os.FileInfo
 			if st, err = os.Stat(path); err == nil {
-				err = os.Chmod(path, st.Mode().Perm()|0o111)
+				err = os.Chmod(path, st.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)|0o111)
 			}
 		}
 	}
@@ -285,10 +267,10 @@ func FindAliasForProfile(profileName string) (string, error) {
 	return aliases[canon], err
 }
 
-// Python PurePath suffix and stem of a file name
+// Python 3.14 PurePath suffix and stem of a file name, a trailing dot counting as a suffix
 func pySuffixStem(name string) (string, string) {
 	i := strings.LastIndex(name, ".")
-	if i > 0 && i < len(name)-1 {
+	if i > 0 {
 		return name[i:], name[:i]
 	}
 	return "", name
@@ -309,6 +291,9 @@ func BuildAliasMap() (map[string]string, error) {
 		return nil, err
 	}
 	isWindows := runtime.GOOS == "windows"
+	if isWindows {
+		sort.SliceStable(entries, func(i, j int) bool { return pystr.Lower(entries[i].Name()) < pystr.Lower(entries[j].Name()) })
+	}
 	prefix := wrapperMarker + " "
 	for _, e := range entries {
 		p := filepath.Join(dir, e.Name())
@@ -327,13 +312,17 @@ func BuildAliasMap() (map[string]string, error) {
 		if idx == -1 {
 			continue
 		}
-		fields := strings.Fields(content[idx+len(prefix):])
-		if len(fields) == 0 {
+		rest := content[idx+len(prefix):]
+		if pystr.Strip(rest) == "" {
 			continue
 		}
-		canon, err := NormalizeProfileName(fields[0])
-		if err != nil {
+		token := pystr.Strip(pystr.SplitWhitespace(rest, 1)[0])
+		if token == "" {
 			continue
+		}
+		canon, err := NormalizeProfileName(token)
+		if err != nil {
+			return nil, err
 		}
 		alias := e.Name()
 		if isWindows {

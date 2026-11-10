@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -27,7 +28,7 @@ func TestLightpandaRealSpawnServesAndStops(t *testing.T) {
 	pin(t, &lightpandaBrowserEnv, func(*tools.Env) map[string]string {
 		return map[string]string{"PATH": os.Getenv("PATH"), "LP_MARK": "composed", "ICEBATH_HOME": env.Home}
 	})
-	server, err := launchLightpanda(env, "lp_real", false)
+	server, err := launchLightpanda(context.Background(), env, "lp_real", false)
 	if err != "" {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestLightpandaRealSpawnFailureCarriesStderr(t *testing.T) {
 	exe := fakeExe(t, "lightpanda-serve")
 	pin(t, &lightpandaFindBinary, func(*tools.Env) string { return exe })
 	pin(t, &lightpandaBrowserEnv, func(*tools.Env) map[string]string { return map[string]string{"PATH": os.Getenv("PATH")} })
-	server, err := launchLightpanda(env, "lp_noenv", false)
+	server, err := launchLightpanda(context.Background(), env, "lp_noenv", false)
 	if server != nil || !strings.Contains(err, "exited with code 6") || !strings.Contains(err, "FATAL env not passed") {
 		t.Fatalf("err %q", err)
 	}

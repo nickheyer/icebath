@@ -151,7 +151,7 @@ func (s *SessionStore) StripRetiredMirrorRoutes(ctx context.Context, sessionIDs 
 		}
 	}
 	if kept.Len() < obj.Len() {
-		return config.AtomicJSONWriteMode(sessionsFile, kept, 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false))
+		return config.AtomicJSONWriteMode(ctx, sessionsFile, kept, 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false))
 	}
 	return nil
 }
@@ -183,7 +183,7 @@ func (s *SessionStore) openSessionDBForActiveScope(ctx context.Context, dbPath s
 	if path == "" {
 		path = state.ResolveDefaultDBPath(ctx)
 	}
-	handle, err := s.dbHandleCache.Get(path, func() (any, error) {
+	handle, err := s.dbHandleCache.Get(ctx, path, func() (any, error) {
 		db, err := acquireSessionDB(ctx, path)
 		if err != nil {
 			if !isLiveSystemGuard(err) {
@@ -802,7 +802,7 @@ func (s *SessionStore) saveSessionsJSON(data *pyjson.Object) error {
 	for _, k := range data.Keys {
 		out.Set(k, data.Vals[k])
 	}
-	return config.AtomicJSONWriteMode(filepath.Join(s.SessionsDir, "sessions.json"), out, 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	return config.AtomicJSONWriteMode(s.ctx, filepath.Join(s.SessionsDir, "sessions.json"), out, 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false))
 }
 
 // Snapshots under the lock and persists after releasing it

@@ -118,7 +118,7 @@ func brConsolidationStore(t *testing.T) (*memory.Store, *tools.Env) {
 	root := t.TempDir()
 	t.Setenv("ICEBATH_HOME", root+"/home")
 	store := memory.NewStore(root, 500, 300, true, true)
-	if err := store.LoadFromDisk(); err != nil {
+	if err := store.LoadFromDisk(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	env := &tools.Env{Home: root + "/home", Values: &sync.Map{}}
@@ -162,7 +162,7 @@ func brStagedSurfaced(actions []string) bool {
 
 func TestConsolidationProposalSurfacesStagedProposalSurfacesInSummary(t *testing.T) {
 	store, env := brConsolidationStore(t)
-	if r, err := store.Add("memory", "standing rule entry"); err != nil || !r.Success() {
+	if r, err := store.Add(context.Background(), "memory", "standing rule entry"); err != nil || !r.Success() {
 		t.Fatalf("add %v %v", r, err)
 	}
 	skills.SetCurrentWriteOrigin(env, backgroundReviewOrigin)
@@ -182,10 +182,10 @@ func TestConsolidationProposalSurfacesStagedProposalSurfacesInSummary(t *testing
 
 func TestConsolidationProposalSurfacesNearLimitDenialEndToEnd(t *testing.T) {
 	store, env := brConsolidationStore(t)
-	if r, err := store.Add("memory", "seed entry one"); err != nil || !r.Success() {
+	if r, err := store.Add(context.Background(), "memory", "seed entry one"); err != nil || !r.Success() {
 		t.Fatalf("seed %v %v", r, err)
 	}
-	if r, err := store.Add("memory", strings.Repeat("x", 600)); err != nil || r.Success() {
+	if r, err := store.Add(context.Background(), "memory", strings.Repeat("x", 600)); err != nil || r.Success() {
 		t.Fatalf("near limit add accepted %v %v", r, err)
 	}
 	skills.SetCurrentWriteOrigin(env, backgroundReviewOrigin)

@@ -1033,14 +1033,14 @@ func BuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string) (
 }
 
 // InvalidateSystemPrompt forces a rebuild, stashes the frozen plugin sections and reloads memory from disk
-func InvalidateSystemPrompt(a *AIAgent) error {
+func InvalidateSystemPrompt(ctx context.Context, a *AIAgent) error {
 	a.cachedSystemPrompt, a.cachedSystemPromptStatic = "", ""
 	if a.pluginSectionsFrozen {
 		a.pluginSectionsPrevious = a.pluginSectionsSnapshot
 		a.pluginSectionsSnapshot, a.pluginSectionsFrozen = nil, false
 	}
 	if a.memoryStore != nil {
-		return a.memoryStore.LoadFromDisk()
+		return a.memoryStore.LoadFromDisk(tools.WithEnvHome(ctx, a.env))
 	}
 	return nil
 }

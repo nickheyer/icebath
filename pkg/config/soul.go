@@ -1,9 +1,9 @@
 package config
 
 import (
-	"errors"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
@@ -37,18 +37,40 @@ func IsSeededSoul(text string) bool {
 	return false
 }
 
-// Writes the default SOUL.md when the home has none or only a seeded one
-func seedSoul(h string) error {
+// Seeds the default SOUL.md on first run and upgrades an auto seeded one in place, never a customized file
+func ensureDefaultSoulMD(h string) error {
 	path := home.SoulPath(h)
-	existing, err := os.ReadFile(path)
-	if err == nil && !IsSeededSoul(string(existing)) {
-		return nil
+	if _, err := os.Stat(path); err == nil {
+		existing, rerr := os.ReadFile(path)
+		if rerr != nil || !utf8.Valid(existing) {
+			return nil
+		}
+		if !IsSeededSoul(string(existing)) {
+			return nil
+		}
 	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	if err := os.WriteFile(path, []byte(DefaultIdentity), 0o666); err != nil {
+		if st, lerr := os.Lstat(path); lerr != nil || st.Mode()&os.ModeSymlink == 0 {
+			return err
+		}
+		tmp, terr := os.CreateTemp(h, ".SOUL.md.*.seed")
+		if terr != nil {
+			return terr
+		}
+		if _, werr := tmp.WriteString(DefaultIdentity); werr != nil {
+			tmp.Close()
+			os.Remove(tmp.Name())
+			return werr
+		}
+		if cerr := tmp.Close(); cerr != nil {
+			os.Remove(tmp.Name())
+			return cerr
+		}
+		if rerr := os.Rename(tmp.Name(), path); rerr != nil {
+			os.Remove(tmp.Name())
+			return rerr
+		}
 	}
-	if err == nil && normalizeSoul(string(existing)) == normalizeSoul(DefaultIdentity) {
-		return nil
-	}
-	return AtomicWrite(path, []byte(DefaultIdentity+"\n"), 0o600)
+	SecureFile(h, path)
+	return nil
 }

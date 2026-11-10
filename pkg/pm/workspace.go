@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
@@ -244,6 +245,9 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 			target, err := os.Readlink(from)
 			if err == nil {
 				err = os.Symlink(target, to)
+			}
+			if err == nil {
+				err = pyshutil.CopyLinkStat(from, to)
 			}
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(from), pyrepr.StrRepr(to), pyrepr.StrRepr(pypath.OSErrorText(err))))

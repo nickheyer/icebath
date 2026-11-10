@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -14,7 +15,7 @@ func TestOAuthTokenWriterCreatesItsFileAt0600(t *testing.T) {
 	old := syscall.Umask(0o022)
 	t.Cleanup(func() { syscall.Umask(old) })
 	target := filepath.Join(dir, "mcp", "probe.tokens.json")
-	if err := writeOAuthJSON(target, map[string]any{"access_token": "x"}); err != nil {
+	if err := writeOAuthJSON(context.Background(), target, map[string]any{"access_token": "x"}); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(target)

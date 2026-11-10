@@ -366,7 +366,7 @@ func cmdAuth(ctx context.Context) int {
 	}
 	fmt.Fprintf(cliOut, "opening Chromium — sign in to Google, then return here and press Enter.\n"+
 		"saving storage state to: %s\n", path)
-	if err := authSession(path); err != nil {
+	if err := authSession(ctx, path); err != nil {
 		fmt.Fprintf(cliOut, "auth failed: %v\n", err)
 		return 1
 	}
@@ -375,12 +375,12 @@ func cmdAuth(ctx context.Context) int {
 }
 
 // Launches the sign in browser and saves its storage state to path, closing it on every path
-var authSession = func(path string) error {
-	b, err := launchMeetBrowser(botEnv(), true, nil)
+var authSession = func(ctx context.Context, path string) error {
+	b, err := launchMeetBrowser(ctx, botEnv(), true, nil)
 	if err != nil {
 		return err
 	}
-	defer b.close()
+	defer b.close(ctx)
 	bctx, err := b.newContext(contextArgs{Width: 1280, Height: 720})
 	if err != nil {
 		return err

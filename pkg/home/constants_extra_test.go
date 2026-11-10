@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"os/user"
@@ -47,7 +48,7 @@ func hcWindowsOnly(t *testing.T) {
 	}
 }
 
-func TestRootWithoutHomeVariableIsNative(t *testing.T) {
+func TestNoHermesHomeReturnsNative(t *testing.T) {
 	hcPosixOnly(t)
 	tmp, _ := hcFresh(t)
 	if got := Root(); got != filepath.Join(tmp, ".icebath") {
@@ -55,7 +56,7 @@ func TestRootWithoutHomeVariableIsNative(t *testing.T) {
 	}
 }
 
-func TestRootOfDockerProfileIsDockerRoot(t *testing.T) {
+func TestDockerProfileActive(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	dockerRoot := filepath.Join(tmp, "opt", "data")
 	profile := filepath.Join(dockerRoot, "profiles", "coder")
@@ -66,8 +67,7 @@ func TestRootOfDockerProfileIsDockerRoot(t *testing.T) {
 	}
 }
 
-func TestRootOfExpandedCustomProfileIsCustomRoot(t *testing.T) {
-	hcPosixOnly(t)
+func TestExpandedCustomProfileReturnsCustomRoot(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	t.Setenv("HOME", tmp)
 	t.Cleanup(PatchUserHome(filepath.Join(tmp, "native-home")))
@@ -77,20 +77,29 @@ func TestRootOfExpandedCustomProfileIsCustomRoot(t *testing.T) {
 	}
 }
 
-func TestRootWithoutHomeVariableUsesLocalAppDataOnWindows(t *testing.T) {
+func TestNoHermesHomeReturnsLocalappdataRootOnWindows(t *testing.T) {
 	hcWindowsOnly(t)
 	tmp, _ := hcFresh(t)
+	t.Cleanup(PatchUserHome(filepath.Join(tmp, "Home")))
 	local := filepath.Join(tmp, "LocalAppData")
 	t.Setenv("LOCALAPPDATA", local)
 	if got := Root(); got != filepath.Join(local, "icebath") {
 		t.Fatalf("Root() = %q", got)
 	}
+}
+
+func TestWindowsFallbackUsesLocalappdata(t *testing.T) {
+	hcWindowsOnly(t)
+	tmp, _ := hcFresh(t)
+	t.Cleanup(PatchUserHome(filepath.Join(tmp, "Home")))
+	local := filepath.Join(tmp, "LocalAppData")
+	t.Setenv("LOCALAPPDATA", local)
 	if got := Dir(context.Background()); got != filepath.Join(local, "icebath") {
 		t.Fatalf("Dir() = %q", got)
 	}
 }
 
-func TestRootForEnvironmentIgnoresThisProcess(t *testing.T) {
+func TestRootForAnotherEnvironmentIgnoresThisProcess(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	t.Setenv("LOCALAPPDATA", filepath.Join(tmp, "sandbox-local"))
 	t.Setenv(EnvHome, filepath.Join(tmp, "sandbox-home"))
@@ -147,7 +156,7 @@ func TestWarnOnceLatchEngagesOnFirstCheckEvenWithoutWarning(t *testing.T) {
 	}
 }
 
-func TestProcessHomeFollowsTheVariable(t *testing.T) {
+func TestEnvSetReturnsThatPath(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	h := filepath.Join(tmp, "launch-home")
 	t.Setenv(EnvHome, h)
@@ -173,6 +182,27 @@ func TestProcessAndContextHomesExpandEnvironmentAndUserSyntax(t *testing.T) {
 		if got := Process(); got != processHome {
 			t.Fatalf("%s Process() under override = %q", syntax, got)
 		}
+	}
+}
+
+// Captured warning lands in the writer once the latch is rearmed and the restore puts both back
+func TestCaptureProfileFallbackWarningRearmsTheLatch(t *testing.T) {
+	hcPosixOnly(t)
+	tmp, outer := hcFresh(t)
+	h := filepath.Join(tmp, ".icebath")
+	os.MkdirAll(h, 0o755)
+	os.WriteFile(filepath.Join(h, "active_profile"), []byte("coder\n"), 0o644)
+	Dir(context.Background())
+	outer.Reset()
+	inner := &bytes.Buffer{}
+	restore := CaptureProfileFallbackWarning(inner)
+	Dir(context.Background())
+	restore()
+	if !strings.Contains(inner.String(), "ICEBATH_HOME fallback") || outer.Len() != 0 {
+		t.Fatalf("inner %q outer %q", inner.String(), outer.String())
+	}
+	if fallbackWarnOut != io.Writer(outer) || !profileFallbackWarned.Load() {
+		t.Fatal("restore left the capture in place")
 	}
 }
 
@@ -207,7 +237,7 @@ func TestNamedProfileUnsetHomeWarnsOnce(t *testing.T) {
 	}
 }
 
-func TestHomeVariableSetSuppressesWarning(t *testing.T) {
+func TestHermesHomeSetSuppressesWarning(t *testing.T) {
 	tmp, buf := hcFresh(t)
 	profile := filepath.Join(tmp, ".icebath", "profiles", "coder")
 	os.MkdirAll(profile, 0o755)
@@ -258,9 +288,9 @@ func TestExplicitHomeScratchDirNeverReadsTheEffectiveHome(t *testing.T) {
 	profile := filepath.Join(h, "profiles", "coder")
 	os.MkdirAll(profile, 0o755)
 	os.WriteFile(filepath.Join(h, "active_profile"), []byte("coder\n"), 0o644)
-	scratch, err := EnsureScratchDir(profile)
-	if err != nil || scratch != filepath.Join(profile, "cache", "scratch") {
-		t.Fatalf("scratch = %q, %v", scratch, err)
+	scratch := EnsureScratchDir(profile)
+	if scratch != filepath.Join(profile, "cache", "scratch") {
+		t.Fatalf("scratch = %q", scratch)
 	}
 	if st, err := os.Stat(scratch); err != nil || !st.IsDir() {
 		t.Fatal("scratch dir missing")
@@ -272,48 +302,86 @@ func TestExplicitHomeScratchDirNeverReadsTheEffectiveHome(t *testing.T) {
 
 // Key computed without the cache the way the Python tests compute it
 func hcUncached(path string) string {
-	return normcase(resolve(pypath.Expanduser(pypath.PathStr(path))))
+	expanded, err := pypath.PathExpanduser(path)
+	if err != nil {
+		panic(err)
+	}
+	resolved, err := resolve(expanded)
+	if err != nil {
+		panic(err)
+	}
+	return normcase(resolved)
 }
 
-func TestKeyMatchesTheUncachedCalculation(t *testing.T) {
+func TestMatchesTheUncachedCalculation(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	os.Mkdir(filepath.Join(tmp, "real"), 0o755)
-	for _, target := range []string{
-		filepath.Join(tmp, "real"),
-		filepath.Join(tmp, "not_there"),
-		filepath.Join(tmp, "real") + string(os.PathSeparator),
-		filepath.Join(tmp, "real") + string(os.PathSeparator) + ".." + string(os.PathSeparator) + "real",
-		"~",
+	sep := string(os.PathSeparator)
+	for _, c := range []struct{ name, target string }{
+		{"real", filepath.Join(tmp, "real")},
+		{"missing", filepath.Join(tmp, "not_there")},
+		{"trailing_sep", filepath.Join(tmp, "real") + sep},
+		{"dot_dot", filepath.Join(tmp, "real") + sep + ".." + sep + "real"},
 	} {
-		ResetKeyCache()
-		if got, want := Key(target), hcUncached(target); got != want {
-			t.Errorf("Key(%q) = %q, want %q", target, got, want)
-		}
-	}
-	if got, want := Key(Dir(context.Background())), hcUncached(Dir(context.Background())); got != want {
-		t.Errorf("default home key %q, want %q", got, want)
+		t.Run(c.name, func(t *testing.T) {
+			ResetKeyCache()
+			if got, want := Key(c.target), hcUncached(c.target); got != want {
+				t.Fatalf("Key(%q) = %q, want %q", c.target, got, want)
+			}
+		})
 	}
 }
 
-func TestKeyRemembersOnlyPathsThatExist(t *testing.T) {
+func TestMatchesForTheDefaultHome(t *testing.T) {
+	hcFresh(t)
+	h := Dir(context.Background())
+	if got, want := Key(h), hcUncached(h); got != want {
+		t.Fatalf("default home key %q, want %q", got, want)
+	}
+}
+
+func TestMatchesForATildePath(t *testing.T) {
+	hcFresh(t)
+	if got, want := Key("~"), hcUncached("~"); got != want {
+		t.Fatalf("Key(~) = %q, want %q", got, want)
+	}
+}
+
+func TestAcceptsAPathObject(t *testing.T) {
+	tmp, _ := hcFresh(t)
+	real := filepath.Join(tmp, "real")
+	os.Mkdir(real, 0o755)
+	if got, want := Key(real), hcUncached(real); got != want {
+		t.Fatalf("Key(%q) = %q, want %q", real, got, want)
+	}
+}
+
+func TestAMissingPathIsNotRemembered(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	Key(filepath.Join(tmp, "not_there"))
 	if len(keyCache) != 0 {
 		t.Fatalf("missing path remembered: %v", keyCache)
 	}
+}
+
+func TestAPathCreatedLaterPicksUpTheRealAnswer(t *testing.T) {
+	tmp, _ := hcFresh(t)
 	later := filepath.Join(tmp, "later")
 	before := Key(later)
 	os.Mkdir(later, 0o755)
 	after := Key(later)
-	if after != hcUncached(later) || before != after {
-		t.Fatalf("before %q after %q", before, after)
+	if after != hcUncached(later) {
+		t.Fatalf("after %q, want %q", after, hcUncached(later))
 	}
 	if len(keyCache) != 1 || keyCache[later] != after {
 		t.Fatalf("cache = %v", keyCache)
 	}
+	if before != after {
+		t.Fatalf("before %q after %q", before, after)
+	}
 }
 
-func TestKeyChangesWithTheHomeVariable(t *testing.T) {
+func TestPointingHermesHomeSomewhereElseGivesANewKey(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	first, second := filepath.Join(tmp, "home_one"), filepath.Join(tmp, "home_two")
 	os.Mkdir(first, 0o755)
@@ -327,7 +395,7 @@ func TestKeyChangesWithTheHomeVariable(t *testing.T) {
 	}
 }
 
-func TestKeyOfALinkResolvesToItsTarget(t *testing.T) {
+func TestALinkResolvesToItsTarget(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	target, link := filepath.Join(tmp, "target"), filepath.Join(tmp, "link")
 	os.Mkdir(target, 0o755)
@@ -339,7 +407,7 @@ func TestKeyOfALinkResolvesToItsTarget(t *testing.T) {
 	}
 }
 
-func TestKeyResolvesTheHomeOnce(t *testing.T) {
+func TestScopeKeyResolvesThePathOnce(t *testing.T) {
 	tmp, _ := hcFresh(t)
 	t.Setenv(EnvHome, tmp)
 	calls := 0
@@ -352,7 +420,7 @@ func TestKeyResolvesTheHomeOnce(t *testing.T) {
 		Key(Dir(context.Background()))
 	}
 	if calls != first {
-		t.Fatalf("resolved %d extra times across 50 lookups", calls-first)
+		t.Fatalf("current_scope_key resolved the path on the filesystem %d extra times across 50 calls", calls-first)
 	}
 }
 
@@ -536,4 +604,22 @@ func TestLongScratchTmpdirFallsBackToASocketSafeRoot(t *testing.T) {
 		t.Fatalf("singleton socket did not bind under %q: %v", root, err)
 	}
 	l.Close()
+}
+
+func TestSuffixDoesNotChangeExplicitOrContextHome(t *testing.T) {
+	tmp, _ := hcFresh(t)
+	t.Setenv("LOCALAPPDATA", filepath.Join(tmp, "AppData", "Local"))
+	explicit, scoped := filepath.Join(tmp, "explicit"), filepath.Join(tmp, "scoped")
+	t.Setenv(EnvHome, explicit)
+	t.Setenv(EnvSuffix, "magic-test")
+	if Dir(context.Background()) != explicit || Process() != explicit || Root() != explicit {
+		t.Fatalf("Dir %q Process %q Root %q, want %q", Dir(context.Background()), Process(), Root(), explicit)
+	}
+	ctx := WithOverride(context.Background(), scoped)
+	if got := Dir(ctx); got != scoped {
+		t.Fatalf("Dir(override) = %q", got)
+	}
+	if Process() != explicit || Root() != explicit {
+		t.Fatalf("Process %q Root %q under the override", Process(), Root())
+	}
 }

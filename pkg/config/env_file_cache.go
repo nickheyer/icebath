@@ -87,3 +87,8 @@ func LoadEnvFile(path string) map[string]string {
 	}
 	return values
 }
+
+// Drops every .env memo so the next load sees a write even on coarse mtime filesystems
+func InvalidateEnvCache() {
+	InvalidateEnvFileCache("")
+}

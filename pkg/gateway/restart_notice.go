@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"log/slog"
 	"path/filepath"
 	"time"
@@ -22,12 +23,12 @@ func PlannedRestartMarkerPath(h string) string {
 }
 
 // Records that the gateway is going down for a restart, never failing the restart itself
-func WritePlannedRestartMarker(viaService, detached bool) {
+func WritePlannedRestartMarker(ctx context.Context, viaService, detached bool) {
 	payload := pyjson.NewObject()
 	payload.Set("requested_at", float64(time.Now().UnixNano())/1e9)
 	payload.Set("via_service", viaService)
 	payload.Set("detached", detached)
-	if err := config.AtomicJSONWriteWith(PlannedRestartMarkerPath(""), payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, PlannedRestartMarkerPath(""), payload); err != nil {
 		slog.Debug("Could not record the planned restart; home channels get no online notice", "error", err)
 	}
 }

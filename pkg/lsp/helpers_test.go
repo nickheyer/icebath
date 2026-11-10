@@ -196,7 +196,7 @@ func testRuntime(t *testing.T) (*Runtime, *captureHandler, *ledger) {
 			led.owned = append(led.owned, pgids...)
 			led.mu.Unlock()
 		},
-		RegisterChild: func(pid int, purpose string) bool {
+		RegisterChild: func(_ context.Context, pid int, purpose string) bool {
 			led.mu.Lock()
 			led.children = append(led.children, pid)
 			led.mu.Unlock()

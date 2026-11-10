@@ -46,14 +46,14 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	tList := c.newCmd(tools, "list", "Show all tools and their enabled/disabled status", "")
 	sf(tList, "platform", "", "cli", "Platform to show (default: cli)")
 	tDisable := c.newCmd(tools, "disable", "Disable toolsets or MCP tools", "")
-	c.pos(tDisable, pMany("NAME"))
+	c.pos(tDisable, pMany("names").withMetavar("NAME").withHelp("Toolset name (e.g. web) or MCP tool in server:tool form"))
 	sf(tDisable, "platform", "", "cli", "Platform to apply to (default: cli)")
 	tEnable := c.newCmd(tools, "enable", "Enable toolsets or MCP tools", "")
-	c.pos(tEnable, pMany("NAME"))
+	c.pos(tEnable, pMany("names").withMetavar("NAME").withHelp("Toolset name or MCP tool in server:tool form"))
 	sf(tEnable, "platform", "", "cli", "Platform to apply to (default: cli)")
 	tPost := c.newCmd(tools, "post-setup", "Run a provider's post-setup install hook (npm/pip/binary)",
 		"Run the install/bootstrap hook a tool backend declares — the\nsame step `icebath tools` runs after you pick a provider that\nneeds extra dependencies (browser Chromium, Lightpanda, cua-driver,\nKittenTTS/Piper, ddgs, xAI, Codex). Stable,\nnon-interactive target the dashboard spawns to drive backend\nsetup. Keys: chromium, lightpanda, cua_driver, kittentts,\npiper, ddgs, xai_grok, openai_codex.")
-	c.pos(tPost, p("KEY"))
+	c.pos(tPost, p("post_setup_key").withMetavar("KEY").withHelp("Post-setup hook key (e.g. chromium, cua_driver, kittentts)"))
 
 	c.addComputerUse(root)
 
@@ -180,8 +180,8 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 
 	c.addProfile(root)
 
-	completion := c.newCmd(root, "completion", "Print shell completion script (bash, zsh, fish, or powershell)", "")
-	c.pos(completion, pOptChoice("shell", "bash", "bash", "zsh", "fish", "powershell"))
+	completion := c.newCmd(root, "completion", "Print shell completion script (bash, zsh, or fish)", "")
+	c.pos(completion, pOptChoice("shell", "bash", "bash", "zsh", "fish").withHelp("Shell type (default: bash)"))
 	completion.RunE = func(cmd *cobra.Command, args []string) error {
 		shell := "bash"
 		if len(args) > 0 {

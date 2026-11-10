@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -26,7 +27,7 @@ func TestUninstallPathTraversal(t *testing.T) {
 	}
 	t.Run("parent segments rejected", func(t *testing.T) {
 		h, _, victim := traversalHub(t, map[string]any{"evil": entry("../do-not-delete")})
-		if ok, _, _ := h.UninstallSkill("evil"); ok {
+		if ok, _, _ := h.UninstallSkill(context.Background(), "evil"); ok {
 			t.Fatal("traversal uninstall succeeded")
 		}
 		if _, err := os.Stat(filepath.Join(victim, "important.txt")); err != nil {
@@ -37,7 +38,7 @@ func TestUninstallPathTraversal(t *testing.T) {
 		h, _, victim := traversalHub(t, nil)
 		data, _ := json.Marshal(map[string]any{"version": 1, "installed": map[string]any{"evil": entry(victim)}})
 		writeTestFile(t, h.LockFilePath(), string(data))
-		if ok, _, _ := h.UninstallSkill("evil"); ok {
+		if ok, _, _ := h.UninstallSkill(context.Background(), "evil"); ok {
 			t.Fatal("absolute uninstall succeeded")
 		}
 		if _, err := os.Stat(victim); err != nil {
@@ -49,7 +50,7 @@ func TestUninstallPathTraversal(t *testing.T) {
 		if err := os.Symlink(victim, filepath.Join(skillsDir, "trapdoor")); err != nil {
 			t.Fatal(err)
 		}
-		if ok, _, _ := h.UninstallSkill("trap"); ok {
+		if ok, _, _ := h.UninstallSkill(context.Background(), "trap"); ok {
 			t.Fatal("symlink uninstall succeeded")
 		}
 		if _, err := os.Stat(filepath.Join(victim, "important.txt")); err != nil {
@@ -62,7 +63,7 @@ func TestUninstallPathTraversal(t *testing.T) {
 		h, skillsDir, _ := traversalHub(t, map[string]any{"my-skill": e})
 		legit := filepath.Join(skillsDir, "category", "my-skill")
 		writeTestFile(t, filepath.Join(legit, "SKILL.md"), "test")
-		if ok, msg, err := h.UninstallSkill("my-skill"); !ok || err != nil {
+		if ok, msg, err := h.UninstallSkill(context.Background(), "my-skill"); !ok || err != nil {
 			t.Fatal(ok, msg, err)
 		}
 		if _, err := os.Stat(legit); !errors.Is(err, os.ErrNotExist) {

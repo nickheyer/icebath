@@ -66,7 +66,7 @@ func TestExposeCliRepairOnlyPreservesMissingAndForeignCommands(t *testing.T) {
 			if lexists(wrapperDir) || lexists(extra) {
 				t.Fatal("repair created exposure")
 			}
-			if !isRegularFile(filepath.Join(root, "icebath-acp")) {
+			if !isRegularFile(filepath.Join(checkoutLauncherDir(root), "icebath-acp")) {
 				t.Fatal("own acp command missing")
 			}
 			if err := os.MkdirAll(extra, 0o777); err != nil {
@@ -220,13 +220,13 @@ func TestPublishLaunchersSealedDevAndBuildLaneBug(t *testing.T) {
 	if err := os.WriteFile(stampPath, []byte(`{"updateMechanism": "self"}`), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	if err := publishLaunchers(context.Background(), root, false); err != nil || lexists(filepath.Join(root, "icebath-acp")) {
+	if err := publishLaunchers(context.Background(), root, false); err != nil || lexists(filepath.Join(checkoutLauncherDir(root), "icebath-acp")) {
 		t.Fatalf("sealed tree published %v", err)
 	}
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o777); err != nil {
 		t.Fatal(err)
 	}
-	if err := publishLaunchers(context.Background(), root, false); err != nil || !isRegularFile(filepath.Join(root, "icebath-acp")) {
+	if err := publishLaunchers(context.Background(), root, false); err != nil || !isRegularFile(filepath.Join(checkoutLauncherDir(root), "icebath-acp")) {
 		t.Fatalf("dev tree did not publish %v", err)
 	}
 	os.Remove(filepath.Join(root, ".git"))
@@ -244,12 +244,13 @@ func TestLaunchersAcpWrapperExecsTheInstallBinary(t *testing.T) {
 	if err := publishLaunchers(context.Background(), root, false); err != nil {
 		t.Fatal(err)
 	}
-	acp := filepath.Join(root, "icebath-acp")
+	acp := filepath.Join(checkoutLauncherDir(root), "icebath-acp")
 	data, _ := os.ReadFile(acp)
-	if want := "#!/bin/sh\nexec " + filepath.Join(root, "icebath") + " acp \"$@\"\n"; string(data) != want {
+	store := filepath.Join(home.Root(), "tools")
+	if want := "#!/bin/sh\n# icebath-store " + store + "\nexec " + filepath.Join(root, "icebath") + " acp \"$@\"\n"; string(data) != want {
 		t.Fatalf("body %q", data)
 	}
-	if launcherBinary(acp) != filepath.Join(root, "icebath") || !ownsLauncher(acp, root) {
+	if launcherBinary(acp) != filepath.Join(root, "icebath") || launcherStore(acp) != store || !ownsLauncher(acp, root) {
 		t.Fatal("wrapper not recognized")
 	}
 }
@@ -312,7 +313,40 @@ func TestStageLauncherAndWindowsBinLaunchersExports(t *testing.T) {
 	if names := WindowsBinLaunchers(); len(names) != len(windowsBinLaunchers) || names[0] != windowsBinLaunchers[0] {
 		t.Fatalf("names %v", names)
 	}
-	if path := StageLauncher("icebath", t.TempDir(), t.TempDir()); path != "" {
-		t.Fatalf("a root without an install binary staged %q", path)
+	if path, err := StageLauncher(context.Background(), "icebath", t.TempDir(), t.TempDir()); err != nil || path != "" {
+		t.Fatalf("a root without an install binary staged %q %v", path, err)
+	}
+}
+
+func TestExportedLauncherWrappers(t *testing.T) {
+	root := t.TempDir()
+	if sealed, err := IsSealedTree(root); err != nil || sealed {
+		t.Fatalf("unstamped tree sealed %v %v", sealed, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "install-stamp.json"), []byte(`{"updateMechanism": "external"}`), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if sealed, err := IsSealedTree(root); err != nil || !sealed {
+		t.Fatalf("stamped tree sealed %v %v", sealed, err)
+	}
+	if err := PublishLaunchers(context.Background(), root, true); err != nil {
+		t.Fatalf("sealed publication %v", err)
+	}
+	calls := 0
+	previous := SwapPublishOwnLaunchers(func(context.Context, string, string) ([]string, error) { calls++; return nil, nil })
+	if restored := SwapPublishOwnLaunchers(previous); restored == nil || calls != 0 {
+		t.Fatal("swap did not return the replaced publication")
+	}
+	isolateHome(t)
+	live := resolvePath(t.TempDir())
+	writeFile(t, filepath.Join(live, installBinaryName()), []byte("fake install binary\n"), 0o755)
+	var exposed []string
+	previousExpose := SwapExposeCLI(func(_ context.Context, root string, create bool) (ExposeResult, error) {
+		exposed = append(exposed, root)
+		return ExposeResult{OK: true}, nil
+	})
+	defer SwapExposeCLI(previousExpose)
+	if err := PublishLaunchers(context.Background(), live, true); err != nil || !reflect.DeepEqual(exposed, []string{live}) {
+		t.Fatalf("publication exposed %v err %v", exposed, err)
 	}
 }

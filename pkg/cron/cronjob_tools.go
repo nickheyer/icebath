@@ -55,6 +55,9 @@ func currentGatewayRunner() GatewayRunner {
 	return gatewayRunnerRef()
 }
 
+// A null the model sent for an argument whose omitted default is not None
+type explicitNone struct{}
+
 // Model tool arguments of one cronjob call, nil standing for an omitted or null value
 type cronjobArgs struct {
 	Action, JobID, Prompt, Schedule, Name, Repeat, Deliver               any
@@ -801,8 +804,12 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 	spec.Set("pinned", pyrepr.Truthy(a.Pinned))
 	spec.Set("failure_deliver", ptrValue(resolveCronContextDeliver(a.env, normalizeDeliverParam(a.FailureDeliver))))
 	spec.Set("catch_up", a.CatchUp)
-	if (a.Paused != nil && a.Paused != false) || a.PausedReason != nil {
-		spec.Set("paused", a.Paused)
+	if a.Paused != false || a.PausedReason != nil {
+		var pausedValue any = a.Paused
+		if _, none := a.Paused.(explicitNone); none {
+			pausedValue = nil
+		}
+		spec.Set("paused", pausedValue)
 		spec.Set("paused_reason", a.PausedReason)
 	}
 	job, err := s.createJobWithSchedulerRegistration(spec)
@@ -1238,6 +1245,9 @@ func (s *Store) cronjob(ctx context.Context, a *cronjobArgs) (out string) {
 			out = cronToolError(fmt.Sprint(r), nil)
 		}
 	}()
+	if a.Paused == nil {
+		a.Paused = false
+	}
 	normalized := strings.ToLower(strings.TrimSpace(argText(a.Action)))
 	var text string
 	var err error
@@ -1336,6 +1346,9 @@ func cronjobHandler(ctx context.Context, call *tools.Call) string {
 	var paused any = false
 	if v, ok := args["paused"]; ok {
 		paused = v
+		if v == nil {
+			paused = explicitNone{}
+		}
 	}
 	var sessionID any
 	if call.SessionID != "" {

@@ -22,27 +22,27 @@ func TestProfileReservationsUnwindWithoutReleasingAnotherOwner(t *testing.T) {
 	os.Mkdir(a, 0o755)
 	os.Mkdir(b, 0o755)
 	blocker := NewProfileOwnership()
-	if err := blocker.Reserve([]string{b}, ""); err != nil {
+	if err := blocker.Reserve(context.Background(), []string{b}, ""); err != nil {
 		t.Fatal(err)
 	}
 	contender := NewProfileOwnership()
-	if err := contender.Reserve([]string{b, a}, ""); !ownershipConflict(err) {
+	if err := contender.Reserve(context.Background(), []string{b, a}, ""); !ownershipConflict(err) {
 		t.Fatalf("contender %v", err)
 	}
 	free := NewProfileOwnership()
-	if err := free.Reserve([]string{a}, ""); err != nil {
+	if err := free.Reserve(context.Background(), []string{a}, ""); err != nil {
 		t.Fatalf("unwound home still held %v", err)
 	}
 	contender.Close()
-	if err := contender.Reserve([]string{b}, ""); !ownershipConflict(err) {
+	if err := contender.Reserve(context.Background(), []string{b}, ""); !ownershipConflict(err) {
 		t.Fatal("contender took a held home")
 	}
 	blocker.Close()
-	if err := contender.Reserve([]string{b}, ""); err != nil {
+	if err := contender.Reserve(context.Background(), []string{b}, ""); err != nil {
 		t.Fatal(err)
 	}
 	blocker.Close()
-	if err := blocker.Reserve([]string{b}, ""); !ownershipConflict(err) {
+	if err := blocker.Reserve(context.Background(), []string{b}, ""); !ownershipConflict(err) {
 		t.Fatal("late cleanup released the replacement")
 	}
 	free.Close()
@@ -59,7 +59,7 @@ func TestStaleUnopenableGatewayLockIsReplacedOnBoot(t *testing.T) {
 	lock := filepath.Join(h, "gateway.lock")
 	os.WriteFile(lock, []byte(`{"pid": 1}`), 0o644)
 	os.Chmod(lock, 0o400)
-	if !AcquireGatewayRuntimeLock() {
+	if !AcquireGatewayRuntimeLock(context.Background()) {
 		t.Fatal("stale unwritable lock not replaced")
 	}
 	defer ReleaseGatewayRuntimeLock()
@@ -98,7 +98,7 @@ func TestUnusableGatewayLockHeldOrLinkedIsNeverUnlinked(t *testing.T) {
 	os.Symlink(filepath.Join(tmp, "target"), filepath.Join(homes["symlink"], "gateway.lock"))
 	for kind, h := range homes {
 		before, _ := os.Lstat(filepath.Join(h, "gateway.lock"))
-		err := NewProfileOwnership().Reserve([]string{h}, "")
+		err := NewProfileOwnership().Reserve(context.Background(), []string{h}, "")
 		if err == nil || !isOSError(err) {
 			t.Fatalf("%s reserve error %v", kind, err)
 		}

@@ -142,6 +142,9 @@ func ScheduleTask(ctx context.Context, conn state.SQLiteConn, taskID string, rea
                AND status IN ('todo', 'ready', 'running', 'blocked')
         `
 		if expectedRunID != nil {
+			if err := runIDBindable(expectedRunID); err != nil {
+				return err
+			}
 			sql += " AND current_run_id = ?"
 			params = append(params, *expectedRunID)
 		}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -12,6 +13,7 @@ import (
 
 // Dispatches the fake llama-server, scratch prune and tools MCP server entries so a child runs its mode instead
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	dispatchFakeLlamaServerEntry()
 	home.DispatchScratchPruneEntry()
 	installLocalStackProbeDoubles()

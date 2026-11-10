@@ -9,11 +9,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Host backend at dir running real bash, rg hidden from command lookup when noRg
@@ -54,6 +57,31 @@ func requireUnreadableDirs(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads chmod 000 dirs")
 	}
+}
+
+// Fresh dir under the first tempfile root lacking dot named and pruned components that rg globs and grep exclude
+func searchableTempDir(t *testing.T) string {
+	t.Helper()
+	for _, base := range pypath.TempdirCandidates() {
+		abs, err := filepath.Abs(base)
+		if err != nil {
+			continue
+		}
+		real, err := filepath.EvalSymlinks(abs)
+		if err != nil || slices.ContainsFunc(strings.Split(filepath.ToSlash(real), "/"), func(part string) bool {
+			return SearchPruneDirNames[part] || (strings.HasPrefix(part, ".") && part != "." && part != "..")
+		}) {
+			continue
+		}
+		dir, err := os.MkdirTemp(real, "icebath-search-")
+		if err != nil {
+			continue
+		}
+		t.Cleanup(func() { os.RemoveAll(dir) })
+		return dir
+	}
+	t.Fatalf("no temp root in %q is free of dot named and pruned directory components", pypath.TempdirCandidates())
+	return ""
 }
 
 // Makes a directory unreadable until the test ends
@@ -225,7 +253,7 @@ func TestSearchLocalSearchRunsThePinnedRipgrep(t *testing.T) {
 // Zero match fixture with a project and an extra root
 func zeroMatchProj(t *testing.T) string {
 	t.Helper()
-	tmp := t.TempDir()
+	tmp := searchableTempDir(t)
 	writeSearchFile(t, filepath.Join(tmp, "proj", "a.py"), "TOKEN_ALPHA = 'find_me_value'\nother = 1\n")
 	writeSearchFile(t, filepath.Join(tmp, "proj", "b.py"), "x = compute(TOKEN_ALPHA)\n")
 	writeSearchFile(t, filepath.Join(tmp, "extra", "c.txt"), "TOKEN_ALPHA appears here too\n")
@@ -877,7 +905,7 @@ func TestSearchAutoMultilineRouting(t *testing.T) {
 }
 
 func TestSearchErrorGuardOnEachEngine(t *testing.T) {
-	matchTree := t.TempDir()
+	matchTree := searchableTempDir(t)
 	for i := range 5 {
 		writeSearchFile(t, filepath.Join(matchTree, fmt.Sprintf("f%d.txt", i)), fmt.Sprintf("needle line %d\n", i))
 	}
@@ -901,7 +929,7 @@ func TestSearchErrorGuardOnEachEngine(t *testing.T) {
 				t.Fatalf("hard error swallowed %+v", r)
 			}
 			requireUnreadableDirs(t)
-			partial := t.TempDir()
+			partial := searchableTempDir(t)
 			for i := range 4 {
 				writeSearchFile(t, filepath.Join(partial, fmt.Sprintf("f%d.txt", i)), fmt.Sprintf("needle line %d\n", i))
 			}

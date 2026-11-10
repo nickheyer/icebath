@@ -141,7 +141,7 @@ func TestCompletedOccurrenceSkipNamesJobSlotAndRow(t *testing.T) {
 	if len(skips) != 1 {
 		t.Fatalf("skip lines %q", skips)
 	}
-	if !strings.Contains(skips[0], stored.ID) || !strings.Contains(skips[0], deref(scheduledInstant(s, &slot))) || !strings.Contains(skips[0], "level=WARN") {
+	if !strings.Contains(skips[0], stored.ID) || !strings.Contains(skips[0], deref(scheduledInstant(&slot))) || !strings.Contains(skips[0], "level=WARN") {
 		t.Fatalf("skip line %s", skips[0])
 	}
 }

@@ -79,7 +79,7 @@ func svAlwaysCurrent(t *testing.T) {
 	peSwap(t, &engineVenvIsCurrent, func(context.Context, []string, PluginInput, string) (bool, error) { return true, nil })
 }
 
-func TestSVBuildRecordsTheExtraListAsTheStoreSelection(t *testing.T) {
+func TestBuildRecordsTheExtraListAsTheStoreSelection(t *testing.T) {
 	root, store := svBaked(t)
 	ctx := context.Background()
 	peSwap(t, &clientBuildEnvironment, func(context.Context, BuildEnvironmentOptions) (string, error) {
@@ -106,7 +106,7 @@ func TestSVBuildRecordsTheExtraListAsTheStoreSelection(t *testing.T) {
 	}
 }
 
-func TestSVRecordSelectionRefusesBuildsWithoutAnExtraList(t *testing.T) {
+func TestRecordSelectionRefusesBuildsWithoutAnExtraList(t *testing.T) {
 	root, _ := svBaked(t)
 	peSwap(t, &clientBuildEnvironment, func(context.Context, BuildEnvironmentOptions) (string, error) {
 		t.Fatal("a refused selection record built an environment")
@@ -119,7 +119,7 @@ func TestSVRecordSelectionRefusesBuildsWithoutAnExtraList(t *testing.T) {
 	}
 }
 
-func TestSVFirstLazyExtraExtendsTheRecordedImageSelection(t *testing.T) {
+func TestFirstLazyExtraExtendsTheRecordedImageSelection(t *testing.T) {
 	for _, row := range []struct {
 		store    []string
 		expected []string
@@ -146,7 +146,7 @@ func TestSVFirstLazyExtraExtendsTheRecordedImageSelection(t *testing.T) {
 	}
 }
 
-func TestSVRefreshRestoresBakedExtrasAVolumeLost(t *testing.T) {
+func TestRefreshRestoresBakedExtrasAVolumeLost(t *testing.T) {
 	for _, recorded := range [][]string{{"fal"}, {}} {
 		t.Run(strings.Join(recorded, ","), func(t *testing.T) {
 			root, store := svBaked(t)
@@ -159,14 +159,15 @@ func TestSVRefreshRestoresBakedExtrasAVolumeLost(t *testing.T) {
 				t.Fatalf("refresh %q %v", got, err)
 			}
 			baseline := []string{"all", "messaging", "otlp"}
-			if len(*calls) != 1 || !reflect.DeepEqual((*calls)[0].Extras, baseline) || !(*calls)[0].Explicit || !reflect.DeepEqual((*calls)[0].Automatic, baseline) {
+			want := []SyncVenvOptions{{Extras: baseline, Explicit: true, Automatic: baseline, Stdout: os.Stderr}}
+			if !reflect.DeepEqual(*calls, want) {
 				t.Fatalf("calls %+v", *calls)
 			}
 		})
 	}
 }
 
-func TestSVRefreshLeavesACompleteSelectionAlone(t *testing.T) {
+func TestRefreshLeavesACompleteSelectionAlone(t *testing.T) {
 	root, store := svBaked(t)
 	ctx := context.Background()
 	svRecordState(t, filepath.Join(store, "facts.json"), "image", []string{"all", "messaging"})
@@ -178,7 +179,7 @@ func TestSVRefreshLeavesACompleteSelectionAlone(t *testing.T) {
 	}
 }
 
-func TestSVOfflineRefreshKeepsBakedExtrasForTheNextLazyInstall(t *testing.T) {
+func TestOfflineRefreshKeepsBakedExtrasForTheNextLazyInstall(t *testing.T) {
 	root, store := svBaked(t)
 	ctx := context.Background()
 	svRecordState(t, filepath.Join(store, "facts.json"), "image", []string{"all", "messaging", "otlp"})
@@ -201,7 +202,7 @@ func TestSVOfflineRefreshKeepsBakedExtrasForTheNextLazyInstall(t *testing.T) {
 	}
 }
 
-func TestSVRefreshRefusesAnInvalidRecordedSelection(t *testing.T) {
+func TestRefreshRefusesAnInvalidRecordedSelection(t *testing.T) {
 	for i, venv := range []map[string]any{{"stamp": "s", "extras": "fal"}, {"stamp": "s", "extras": nil},
 		{"stamp": "s", "extras": []any{1}}, {"stamp": "s"}, {"extras": []any{"fal"}}, {"stamp": "", "extras": []any{"fal"}},
 		{"stamp": 7, "extras": []any{"fal"}}} {
@@ -228,7 +229,7 @@ func TestSVRefreshRefusesAnInvalidRecordedSelection(t *testing.T) {
 	}
 }
 
-func TestSVRefreshMatchesRecordedExtrasByPep685Name(t *testing.T) {
+func TestRefreshMatchesRecordedExtrasByPep685Name(t *testing.T) {
 	root, store := svBaked(t)
 	ctx := context.Background()
 	svRecordState(t, filepath.Join(store, "facts.json"), "image", []string{"all", "azure-identity"})
@@ -240,7 +241,7 @@ func TestSVRefreshMatchesRecordedExtrasByPep685Name(t *testing.T) {
 	}
 }
 
-func TestSVRefreshIgnoresBakedExtrasTheSourceNoLongerDeclares(t *testing.T) {
+func TestRefreshIgnoresBakedExtrasTheSourceNoLongerDeclares(t *testing.T) {
 	root, store := svBaked(t)
 	ctx := context.Background()
 	svRecordState(t, filepath.Join(store, "facts.json"), "image", []string{"all", "hindsight"})

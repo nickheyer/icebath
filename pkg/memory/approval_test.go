@@ -25,7 +25,7 @@ func waEnv(t *testing.T) *tools.Env {
 
 func setGate(t *testing.T, env *tools.Env, subsystem string, enabled bool) {
 	t.Helper()
-	if err := config.SetKey(env.Home, subsystem+".write_approval", enabled); err != nil {
+	if err := config.SetKey(context.Background(), env.Home, subsystem+".write_approval", enabled); err != nil {
 		t.Fatal(err)
 	}
 	config.ResetCache()
@@ -35,7 +35,7 @@ func setGate(t *testing.T, env *tools.Env, subsystem string, enabled bool) {
 func homeStore(t *testing.T, env *tools.Env) *Store {
 	t.Helper()
 	s := NewStore(filepath.Join(env.Home, "memories"), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
-	if err := s.LoadFromDisk(); err != nil {
+	if err := s.LoadFromDisk(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	return s
@@ -57,7 +57,7 @@ func (a *choiceAsker) Ask(_ context.Context, qs []tools.Question) (tools.FormRes
 
 func pending(t *testing.T, env *tools.Env, args ...string) string {
 	t.Helper()
-	out, handled, err := HandlePendingSubcommand(env, tools.WriteApprovalMemory, args, PendingOptions{})
+	out, handled, err := HandlePendingSubcommand(context.Background(), env, tools.WriteApprovalMemory, args, PendingOptions{})
 	if err != nil || !handled {
 		t.Fatal(err, handled)
 	}
@@ -66,7 +66,7 @@ func pending(t *testing.T, env *tools.Env, args ...string) string {
 
 func approve(t *testing.T, env *tools.Env, store *Store, id string) string {
 	t.Helper()
-	out, handled, err := HandlePendingSubcommand(env, tools.WriteApprovalMemory, []string{"approve", id}, PendingOptions{MemoryStore: store})
+	out, handled, err := HandlePendingSubcommand(context.Background(), env, tools.WriteApprovalMemory, []string{"approve", id}, PendingOptions{MemoryStore: store})
 	if err != nil || !handled {
 		t.Fatal(err, handled)
 	}
@@ -75,7 +75,7 @@ func approve(t *testing.T, env *tools.Env, store *Store, id string) string {
 
 func onDisk(t *testing.T, env *tools.Env) *Store {
 	t.Helper()
-	s, err := LoadOnDiskStore(env)
+	s, err := LoadOnDiskStore(context.Background(), env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestCLIMemoryApproveWithoutLiveAgentUsesFreshStore(t *testing.T) {
 	if r["pending_id"] == nil || tools.PendingCount(env, "memory") != 1 {
 		t.Fatal(r)
 	}
-	out, err := MemoryCommand(env, []string{"approve", "all"}, nil)
+	out, err := MemoryCommand(context.Background(), env, []string{"approve", "all"}, nil)
 	if err != nil || strings.Contains(out, "memory store unavailable") || !strings.Contains(out, "Approved 1") {
 		t.Fatal(out, err)
 	}
@@ -114,7 +114,7 @@ func TestCLIMemoryApproveWithoutLiveAgentUsesFreshStore(t *testing.T) {
 func TestLoadOnDiskStoreHonorsConfiguredLimitsAndPermissions(t *testing.T) {
 	env := waEnv(t)
 	for k, v := range map[string]any{"memory.memory_char_limit": 999, "memory.user_char_limit": 444, "memory.memory_enabled": false, "memory.user_profile_enabled": true} {
-		if err := config.SetKey(env.Home, k, v); err != nil {
+		if err := config.SetKey(context.Background(), env.Home, k, v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -132,7 +132,7 @@ func TestLoadOnDiskStoreHonorsConfiguredLimitsAndPermissions(t *testing.T) {
 	os.WriteFile(filepath.Join(fresh.Home, "config.yaml"), []byte("memory: [unclosed"), 0o644)
 	config.ResetCache()
 	notInts := waEnv(t)
-	if err := config.SetKey(notInts.Home, "memory.memory_char_limit", "lots"); err != nil {
+	if err := config.SetKey(context.Background(), notInts.Home, "memory.memory_char_limit", "lots"); err != nil {
 		t.Fatal(err)
 	}
 	config.ResetCache()
@@ -147,8 +147,8 @@ func TestLoadOnDiskStoreHonorsConfiguredLimitsAndPermissions(t *testing.T) {
 func TestHandleApproveAll(t *testing.T) {
 	env := waEnv(t)
 	s := homeStore(t, env)
-	tools.StageWrite(env, "memory", map[string]any{"action": "add", "target": "user", "content": "a"}, "a", "foreground")
-	tools.StageWrite(env, "memory", map[string]any{"action": "add", "target": "user", "content": "b"}, "b", "foreground")
+	tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "user", "content": "a"}, "a", "foreground")
+	tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "user", "content": "b"}, "b", "foreground")
 	out := approve(t, env, s, "all")
 	if !strings.Contains(out, "Approved 2") || tools.PendingCount(env, "memory") != 0 || len(s.Entries("user")) != 2 {
 		t.Fatal(out)
@@ -159,8 +159,8 @@ func TestHandleApproveSurfacesOverwrittenEntry(t *testing.T) {
 	env := waEnv(t)
 	s := homeStore(t, env)
 	entry := "RULE A: gate merges. RULE B: ci per HEAD. RULE C: never squash."
-	must(t)(s.Add("memory", entry))
-	tools.StageWrite(env, "memory", map[string]any{"action": "batch", "target": "memory", "operations": []any{
+	must(t)(s.Add(context.Background(), "memory", entry))
+	tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "batch", "target": "memory", "operations": []any{
 		map[string]any{"action": "replace", "old_text": "RULE B: ci per HEAD.", "content": "RULE B: CI is per-head.", "matched_entry": entry}}},
 		"batch", backgroundReviewOrigin)
 	out := approve(t, env, s, "all")
@@ -173,8 +173,8 @@ func TestHandleApproveListsAPatchAsTheEntryBeforeTheEdit(t *testing.T) {
 	env := waEnv(t)
 	s := homeStore(t, env)
 	entry := "RULE A: gate merges. RULE B: ci per HEAD. RULE C: never squash."
-	must(t)(s.Add("memory", entry))
-	tools.StageWrite(env, "memory", map[string]any{"action": "batch", "target": "memory", "operations": []any{
+	must(t)(s.Add(context.Background(), "memory", entry))
+	tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "batch", "target": "memory", "operations": []any{
 		map[string]any{"action": "patch", "old_text": "ci per HEAD", "content": "CI is per-head", "matched_entry": entry}}},
 		"batch", backgroundReviewOrigin)
 	out := approve(t, env, s, "all")
@@ -196,7 +196,7 @@ func reviewStagesRemove(t *testing.T, env *tools.Env, shape string) (*Store, str
 	t.Helper()
 	s := homeStore(t, env)
 	for _, e := range []string{keptEntry, reviewedEntry} {
-		if r := must(t)(s.Add("memory", e)); !ok(r) {
+		if r := must(t)(s.Add(context.Background(), "memory", e)); !ok(r) {
 			t.Fatal(r)
 		}
 	}
@@ -276,11 +276,11 @@ func TestHandleApprovalOnAndOff(t *testing.T) {
 	env := waEnv(t)
 	var captured []bool
 	setMode := func(enabled bool) error { captured = append(captured, enabled); return nil }
-	out, _, _ := HandlePendingSubcommand(env, tools.WriteApprovalMemory, []string{"approval", "on"}, PendingOptions{SetMode: setMode})
+	out, _, _ := HandlePendingSubcommand(context.Background(), env, tools.WriteApprovalMemory, []string{"approval", "on"}, PendingOptions{SetMode: setMode})
 	if len(captured) != 1 || !captured[0] || !strings.Contains(out, "on") {
 		t.Fatal(out, captured)
 	}
-	out, _, _ = HandlePendingSubcommand(env, tools.WriteApprovalSkills, []string{"approval", "off"}, PendingOptions{SetMode: setMode})
+	out, _, _ = HandlePendingSubcommand(context.Background(), env, tools.WriteApprovalSkills, []string{"approval", "off"}, PendingOptions{SetMode: setMode})
 	if len(captured) != 2 || captured[1] || !strings.Contains(out, "off") {
 		t.Fatal(out, captured)
 	}
@@ -288,7 +288,7 @@ func TestHandleApprovalOnAndOff(t *testing.T) {
 
 func TestConfigModeSetterPersistsTheGate(t *testing.T) {
 	env := waEnv(t)
-	out, _, _ := HandlePendingSubcommand(env, tools.WriteApprovalMemory, []string{"approval", "on"}, PendingOptions{SetMode: ConfigModeSetter(env, "memory")})
+	out, _, _ := HandlePendingSubcommand(context.Background(), env, tools.WriteApprovalMemory, []string{"approval", "on"}, PendingOptions{SetMode: ConfigModeSetter(context.Background(), env, "memory")})
 	config.ResetCache()
 	if out != "memory.write_approval set to 'on'." || !tools.WriteApprovalEnabled(env, "memory") {
 		t.Fatal(out)
@@ -399,7 +399,7 @@ func TestEachReviewSubcommandTheCLIServesIsHandled(t *testing.T) {
 	for subsystem, list := range verbs {
 		for _, verb := range list {
 			env := waEnv(t)
-			if _, handled, err := HandlePendingSubcommand(env, subsystem, []string{verb, "x"}, PendingOptions{}); !handled || err != nil {
+			if _, handled, err := HandlePendingSubcommand(context.Background(), env, subsystem, []string{verb, "x"}, PendingOptions{}); !handled || err != nil {
 				t.Fatal(subsystem, verb, err)
 			}
 		}
@@ -407,10 +407,10 @@ func TestEachReviewSubcommandTheCLIServesIsHandled(t *testing.T) {
 }
 
 func TestMemoryHasNoDiffLikeTheCLI(t *testing.T) {
-	if _, handled, _ := HandlePendingSubcommand(waEnv(t), "memory", []string{"diff", "x"}, PendingOptions{}); handled {
+	if _, handled, _ := HandlePendingSubcommand(context.Background(), waEnv(t), "memory", []string{"diff", "x"}, PendingOptions{}); handled {
 		t.Fatal("memory diff handled")
 	}
-	out, err := MemoryCommand(waEnv(t), []string{"diff", "x"}, nil)
+	out, err := MemoryCommand(context.Background(), waEnv(t), []string{"diff", "x"}, nil)
 	if err != nil || out != memoryUnknownSubcommand {
 		t.Fatal(out, err)
 	}
@@ -432,11 +432,11 @@ func TestSkillsDiffSubcommandEndToEnd(t *testing.T) {
 		return ""
 	}
 	defer func() { tools.FindSkillDir = prev }()
-	rec := tools.StageWrite(env, "skills", map[string]any{"action": "batch", "operations": []any{
+	rec := tools.StageWrite(context.Background(), env, "skills", map[string]any{"action": "batch", "operations": []any{
 		map[string]any{"action": "create", "name": "newprobe", "content": strings.Replace(probeSkill, "%s", "newprobe", 1)},
 		map[string]any{"action": "patch", "name": "probe", "old_string": "Step 1.", "new_string": "Step ONE."},
 	}}, "batch(2 ops) on newprobe, probe", "foreground")
-	out, handled, err := HandlePendingSubcommand(env, "skills", []string{"diff", rec["id"].(string)}, PendingOptions{})
+	out, handled, err := HandlePendingSubcommand(context.Background(), env, "skills", []string{"diff", rec["id"].(string)}, PendingOptions{})
 	if err != nil || !handled || !strings.Contains(out, rec["id"].(string)) || strings.Contains(out, "(batch on") || !strings.Contains(out, "+Step ONE.") {
 		t.Fatal(out, err)
 	}
@@ -444,8 +444,8 @@ func TestSkillsDiffSubcommandEndToEnd(t *testing.T) {
 
 func TestSkillsApproveRunsTheBoundApplierAndReportsItsFailure(t *testing.T) {
 	env := waEnv(t)
-	good := tools.StageWrite(env, "skills", map[string]any{"action": "create", "name": "good"}, "good", "foreground")
-	bad := tools.StageWrite(env, "skills", map[string]any{"action": "create", "name": "bad"}, "bad", "foreground")
+	good := tools.StageWrite(context.Background(), env, "skills", map[string]any{"action": "create", "name": "good"}, "good", "foreground")
+	bad := tools.StageWrite(context.Background(), env, "skills", map[string]any{"action": "create", "name": "bad"}, "bad", "foreground")
 	var applied []string
 	opts := PendingOptions{ApplySkill: func(payload map[string]any) string {
 		applied = append(applied, payload["name"].(string))
@@ -454,7 +454,7 @@ func TestSkillsApproveRunsTheBoundApplierAndReportsItsFailure(t *testing.T) {
 		}
 		return `{"success": true}`
 	}}
-	out, _, err := HandlePendingSubcommand(env, "skills", []string{"approve", "all"}, opts)
+	out, _, err := HandlePendingSubcommand(context.Background(), env, "skills", []string{"approve", "all"}, opts)
 	if err != nil || !strings.Contains(out, "Approved 1 skills write(s).") || !strings.Contains(out, bad["id"].(string)+": skill exists") {
 		t.Fatal(out, err)
 	}
@@ -465,8 +465,8 @@ func TestSkillsApproveRunsTheBoundApplierAndReportsItsFailure(t *testing.T) {
 
 func TestPendingListTagsBackgroundReviewRecords(t *testing.T) {
 	env := waEnv(t)
-	auto := tools.StageWrite(env, "memory", map[string]any{"action": "add", "target": "memory", "content": "x"}, "auto one", backgroundReviewOrigin)
-	tools.StageWrite(env, "memory", map[string]any{"action": "add", "target": "memory", "content": "y"}, "manual one", "foreground")
+	auto := tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "memory", "content": "x"}, "auto one", backgroundReviewOrigin)
+	tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "memory", "content": "y"}, "manual one", "foreground")
 	out := pending(t, env)
 	if !strings.HasPrefix(out, "memory.write_approval = off\n\nPending memory writes (2):") {
 		t.Fatal(out)
@@ -484,9 +484,9 @@ func TestPendingListTagsBackgroundReviewRecords(t *testing.T) {
 
 func TestRejectSingleAllAndUnknown(t *testing.T) {
 	env := waEnv(t)
-	a := tools.StageWrite(env, "memory", map[string]any{"action": "add", "target": "memory", "content": "a"}, "a", "foreground")
-	tools.StageWrite(env, "memory", map[string]any{"action": "add", "target": "memory", "content": "b"}, "b", "foreground")
-	tools.StageWrite(env, "memory", map[string]any{"action": "add", "target": "memory", "content": "c"}, "c", "foreground")
+	a := tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "memory", "content": "a"}, "a", "foreground")
+	tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "memory", "content": "b"}, "b", "foreground")
+	tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "memory", "content": "c"}, "c", "foreground")
 	if out := pending(t, env, "reject", a["id"].(string)); out != "Rejected pending memory write '"+a["id"].(string)+"'." {
 		t.Fatal(out)
 	}
@@ -516,7 +516,7 @@ func TestApprovalSwitchValidatesAndExplainsWithoutASetter(t *testing.T) {
 
 func TestApproveWithoutAStoreFailsEachRecord(t *testing.T) {
 	env := waEnv(t)
-	rec := tools.StageWrite(env, "memory", map[string]any{"action": "add", "target": "memory", "content": "a"}, "a", "foreground")
+	rec := tools.StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "memory", "content": "a"}, "a", "foreground")
 	out := approve(t, env, nil, "all")
 	if out != "Approved 0 memory write(s).\nFailed:\n  "+rec["id"].(string)+": memory store unavailable" {
 		t.Fatal(out)

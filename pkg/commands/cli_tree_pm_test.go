@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -9,6 +10,35 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/spf13/cobra"
 )
+
+func TestHintNamesACommandTheCLIAccepts(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	t.Cleanup(pm.PatchRepoRoot(t.TempDir()))
+	var synced []pm.SyncVenvOptions
+	t.Cleanup(pm.SwapInstallCommandSteps(pm.InstallCommandSteps{
+		InstallNames: func(_ context.Context, names []string, _ *string, _ bool) (int, error) {
+			if len(names) != 0 {
+				t.Errorf("tools installed: %v", names)
+			}
+			return 0, nil
+		},
+		Activate: func(context.Context, bool) ([]string, error) { return []string{}, nil },
+		SyncVenv: func(_ context.Context, opts pm.SyncVenvOptions) error {
+			synced = append(synced, opts)
+			return nil
+		},
+	}))
+	hint := strings.Fields(pm.InstallHint("anthropic"))
+	if len(hint) < 2 || hint[0] != "icebath" || hint[1] != "pm" {
+		t.Fatalf("hint %q does not name the icebath pm command", hint)
+	}
+	if err := NewCLI().Execute(hint[1:]); err != nil {
+		t.Fatalf("%q refused: %v", hint, err)
+	}
+	if !reflect.DeepEqual(synced, []pm.SyncVenvOptions{{Extras: []string{"anthropic"}, Explicit: true}}) {
+		t.Fatalf("synced %+v", synced)
+	}
+}
 
 func TestPMEveryPathBound(t *testing.T) {
 	c := NewCLI()
@@ -26,7 +56,7 @@ func TestPMEveryPathBound(t *testing.T) {
 			t.Errorf("pm path %q unbound", path)
 		}
 	}
-	for _, path := range []string{"pm worker", "pm stage-native", "update-takeover"} {
+	for _, path := range []string{"pm worker", "pm stage-native", "update-takeover", "venv-sync", "source-completion"} {
 		if cmd := c.find(path); cmd == nil || !cmd.Hidden {
 			t.Errorf("%q is not a hidden command", path)
 		}
@@ -120,5 +150,20 @@ func TestPMUsageErrors(t *testing.T) {
 				t.Fatalf("error %#v is not a status 2 usage error", err)
 			}
 		})
+	}
+}
+
+func TestHiddenModuleEntriesTakeRawArguments(t *testing.T) {
+	for _, path := range []string{"venv-sync", "source-completion"} {
+		c := NewCLI()
+		var got []string
+		c.Bind(path, func(cmd *cobra.Command, args []string) error { got = args; return nil })
+		argv := []string{path, "--project-root", "--x=1", "-h", "--json"}
+		if err := c.Execute(argv); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if !reflect.DeepEqual(got, argv[1:]) {
+			t.Fatalf("%s received %v", path, got)
+		}
 	}
 }

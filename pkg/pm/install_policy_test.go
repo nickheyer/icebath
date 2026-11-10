@@ -55,16 +55,21 @@ func TestInstallPolicyInternalDisableOverridesEnabledConfig(t *testing.T) {
 	}
 }
 
-func TestInstallPolicyRegistryGapIsRefusedWithoutAWorker(t *testing.T) {
+func TestARegistryGapIsRefusedWithoutAWorker(t *testing.T) {
 	isolateHome(t)
-	target, err := CurrentTarget()
-	if err != nil || strings.HasPrefix(target, "win32") {
-		t.Skip("git is a registry gap on POSIX targets")
-	}
-	previous := workerArgv
-	workerArgv = func() ([]string, error) { t.Fatal("a PM worker was started"); return nil, nil }
-	defer func() { workerArgv = previous }()
-	_, err = Ensure(context.Background(), "git", EnsureOptions{BaseEnv: map[string]string{}})
+	t.Setenv(EnvDisableLazyInstalls, "")
+	peSwap(t, &clientIsInstalled, func(context.Context, string) (bool, error) { return false, nil })
+	peSwap(t, &clientCurrentTarget, func() (string, error) { return "linux-x64", nil })
+	peSwap(t, &clientWorkerCall, func(_ context.Context, operation string, _ policyArgs, _ func(context.Context) error) error {
+		t.Fatalf("a PM worker was asked to %s", operation)
+		return nil
+	})
+	peSwap(t, &clientRequest, func(_ context.Context, operation string, arguments map[string]any, _ workerHooks, _ string) (any, error) {
+		t.Fatalf("a PM worker was asked to %s %v", operation, arguments)
+		return nil, nil
+	})
+	peSwap(t, &workerArgv, func() ([]string, error) { t.Fatal("a PM worker was started"); return nil, nil })
+	_, err := Ensure(context.Background(), "git", EnsureOptions{BaseEnv: map[string]string{}})
 	ie := ieWantInstallError(t, err, "POSIX uses system git by choice")
 	if ie.Remedy != "none" || ie.Package != "git" {
 		t.Fatalf("refusal %+v", ie)

@@ -24,6 +24,7 @@ type FacadeHooks struct {
 	Migration                   func(h string) MigrationSources
 	MaskedSecretPrompt          func(prompt string) (string, error)
 	ScopedSecret                func(ctx context.Context, key string) (string, bool, error)
+	SecretScopeBound            func(ctx context.Context) bool
 	PublishScopedEnv            func(ctx context.Context, key string, value *string) bool
 	SaveProviderEnvCredential   func(ctx context.Context, h, key, value string) error
 	RemoveProviderEnvCredential func(ctx context.Context, h, key string) (bool, error)
@@ -139,7 +140,7 @@ var zeroManagedSig = []any{0, 0, 0, 0, ""}
 var loadNewestGoodBackupFn = LoadNewestGoodBackup
 
 // User signature and combined cache signature of a config path, both nil when neither file exists
-func loadCacheSig(ctx context.Context, path string) ([]any, []any, error) {
+func loadConfigCacheSig(ctx context.Context, path string) ([]any, []any, error) {
 	userSig, err := ConfigCacheVersion(ctx, path)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -164,7 +165,7 @@ func loadCacheSig(ctx context.Context, path string) ([]any, []any, error) {
 }
 
 // Cached config while its signature and every referenced env value still match, nil otherwise
-func loadCacheHit(ctx context.Context, path string, sig []any, lookup Lookup) (Tree, error) {
+func loadConfigCacheHit(ctx context.Context, path string, sig []any, lookup Lookup) (Tree, error) {
 	if sig == nil {
 		return nil, nil
 	}
@@ -376,6 +377,19 @@ func lastKnownGoodFallback(path string, sig []any, readErr error, lookup Lookup)
 
 // Effective config of a home without the defensive copy, the cached value must never be mutated
 func LoadReadonly(ctx context.Context, h string, lookup Lookup) (Tree, error) {
+	return loadConfigImpl(ctx, h, lookup, false)
+}
+
+// Copy of a cached config for a caller that may mutate it, the shared value otherwise
+func copyIfWanted(t Tree, wantDeepcopy bool) Tree {
+	if wantDeepcopy && t != nil {
+		return t.Clone()
+	}
+	return t
+}
+
+// Effective config through the signature cache, rebuilt under the config lock on a miss
+func loadConfigImpl(ctx context.Context, h string, lookup Lookup, wantDeepcopy bool) (Tree, error) {
 	NoteRuntimeImport("hermes_cli.config")
 	if snap := WorkerConfigSnapshot(); snap != nil {
 		return Tree(DeepMerge(Clone(map[string]any(Defaults())).(map[string]any), snap)), nil
@@ -385,9 +399,9 @@ func LoadReadonly(ctx context.Context, h string, lookup Lookup) (Tree, error) {
 	_, cached := loadCache[path]
 	loadCacheMu.Unlock()
 	if cached {
-		if _, fastSig, err := loadCacheSig(ctx, path); err == nil {
-			if hit, herr := loadCacheHit(ctx, path, fastSig, lookup); herr == nil && hit != nil {
-				return hit, nil
+		if _, fastSig, err := loadConfigCacheSig(ctx, path); err == nil {
+			if hit, herr := loadConfigCacheHit(ctx, path, fastSig, lookup); herr == nil && hit != nil {
+				return copyIfWanted(hit, wantDeepcopy), nil
 			}
 		}
 	}
@@ -396,12 +410,12 @@ func LoadReadonly(ctx context.Context, h string, lookup Lookup) (Tree, error) {
 	if err := EnsureIcebathHome(h); err != nil {
 		return nil, err
 	}
-	userSig, sig, err := loadCacheSig(ctx, path)
+	userSig, sig, err := loadConfigCacheSig(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	if hit, herr := loadCacheHit(ctx, path, sig, lookup); herr != nil || hit != nil {
-		return hit, herr
+	if hit, herr := loadConfigCacheHit(ctx, path, sig, lookup); herr != nil || hit != nil {
+		return copyIfWanted(hit, wantDeepcopy), herr
 	}
 	cfg := Clone(map[string]any(Defaults())).(map[string]any)
 	if userSig != nil {
@@ -413,7 +427,7 @@ func LoadReadonly(ctx context.Context, h string, lookup Lookup) (Tree, error) {
 			}
 			lkg, lerr := lastKnownGoodFallback(path, sig, rerr, lookup)
 			if lerr != nil || lkg != nil {
-				return lkg, lerr
+				return copyIfWanted(lkg, wantDeepcopy), lerr
 			}
 			base, cerr := Canonicalize(cfg)
 			if cerr != nil {
@@ -425,7 +439,7 @@ func LoadReadonly(ctx context.Context, h string, lookup Lookup) (Tree, error) {
 			if sig != nil {
 				storeLoadEntry(path, &loadEntry{sig: sig, data: fallback})
 			}
-			return fallback, nil
+			return copyIfWanted(fallback, wantDeepcopy), nil
 		}
 		cfg = merged
 	}
@@ -450,16 +464,15 @@ func LoadReadonly(ctx context.Context, h string, lookup Lookup) (Tree, error) {
 		entry.managedEnv = RefSnapshot(managed, processLookup)
 	}
 	storeLoadEntry(path, entry)
-	return entry.data, nil
+	if !wantDeepcopy {
+		return entry.data, nil
+	}
+	return Tree(expanded), nil
 }
 
 // Effective config of a home, defaults merged under the user file, references expanded and the managed overlay on top
 func LoadContext(ctx context.Context, h string, lookup Lookup) (Tree, error) {
-	t, err := LoadReadonly(ctx, h, lookup)
-	if err != nil {
-		return nil, err
-	}
-	return t.Clone(), nil
+	return loadConfigImpl(ctx, h, lookup, true)
 }
 
 // Effective config of a home through the process context
@@ -478,6 +491,24 @@ func ResetCache() {
 	loadCacheMu.Unlock()
 }
 
+// Cached raw config of a path when its signature equals sig, shared by the lock free and locked checks
+func rawConfigCacheHit(path string, sig []any) (map[string]any, bool) {
+	loadCacheMu.Lock()
+	hit, ok := rawCache[path]
+	loadCacheMu.Unlock()
+	if ok && reflect.DeepEqual(hit.sig, sig) {
+		return hit.data, true
+	}
+	return nil, false
+}
+
+// Publishes a caller owned copy as the raw config of a path at sig in one replace
+func rawConfigCacheStore(path string, sig []any, data map[string]any) {
+	loadCacheMu.Lock()
+	rawCache[path] = rawEntry{sig: sig, data: data}
+	loadCacheMu.Unlock()
+}
+
 // Raw user document of a home as written, a failed read marked so writers refuse it
 func readRawConfigImpl(ctx context.Context, h string) (map[string]any, error) {
 	if snap := WorkerConfigSnapshot(); snap != nil {
@@ -485,11 +516,8 @@ func readRawConfigImpl(ctx context.Context, h string) (map[string]any, error) {
 	}
 	path := home.ConfigPath(h)
 	if sig, err := ConfigCacheVersion(ctx, path); err == nil {
-		loadCacheMu.Lock()
-		hit, ok := rawCache[path]
-		loadCacheMu.Unlock()
-		if ok && reflect.DeepEqual(hit.sig, sig) {
-			return hit.data, nil
+		if hit, ok := rawConfigCacheHit(path, sig); ok {
+			return hit, nil
 		}
 	}
 	ctx, unlock := LockConfig(ctx)
@@ -506,11 +534,8 @@ func readRawConfigImpl(ctx context.Context, h string) (map[string]any, error) {
 		}
 		return nil, err
 	}
-	loadCacheMu.Lock()
-	hit, ok := rawCache[path]
-	loadCacheMu.Unlock()
-	if ok && reflect.DeepEqual(hit.sig, sig) {
-		return hit.data, nil
+	if hit, ok := rawConfigCacheHit(path, sig); ok {
+		return hit, nil
 	}
 	doc, err := ReadConfigDoc(ctx, path)
 	if err != nil {
@@ -536,9 +561,7 @@ func readRawConfigImpl(ctx context.Context, h string) (map[string]any, error) {
 	}
 	forgetParseFailure(path)
 	cached := Clone(data).(map[string]any)
-	loadCacheMu.Lock()
-	rawCache[path] = rawEntry{sig: sig, data: cached}
-	loadCacheMu.Unlock()
+	rawConfigCacheStore(path, sig, cached)
 	return cached, nil
 }
 

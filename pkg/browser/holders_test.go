@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -91,7 +92,7 @@ func TestLeasesNameOnlyOtherLiveHoldersOfTheSameLaunch(t *testing.T) {
 	pin(t, &launcherPidAlive, func(pid int) bool { return alive[pid] })
 	pin(t, &launcherStartTime, func(pid int) (int64, bool) { return int64(pid) * 10, true })
 	start := int64(77)
-	if err := writeLease(record, &LaunchedBrowser{PID: new(int64), StartTime: &start, UserDataDir: "/p"}); err != nil {
+	if err := writeLease(context.Background(), record, &LaunchedBrowser{PID: new(int64), StartTime: &start, UserDataDir: "/p"}); err != nil {
 		t.Fatal(err)
 	}
 	ns := nsValue()
@@ -143,7 +144,7 @@ func TestDeadLeasesAreDroppedAndAHandOverNamesTheNewOwner(t *testing.T) {
 	data.Set("pid", int64(9))
 	data.Set("owner_pid", int64(1))
 	data.Set("ns", nsValue())
-	if err := handOver(record, data, lease(111, int64(5), nil, nsValue())); err != nil {
+	if err := handOver(context.Background(), record, data, lease(111, int64(5), nil, nsValue())); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(record)

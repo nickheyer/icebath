@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -56,6 +57,7 @@ var (
 	statusProfileLabelForHome     = profileLabelForHomeLive
 	statusReplace                 = os.Rename
 	statusRecordArgv              = recordArgvLive
+	statusGetRunningPid           = GetRunningPid
 )
 
 // Python value of a record key, nil when the record or the key is missing
@@ -495,8 +497,8 @@ func readJSONFile(path string, barePidOK bool) *pyjson.Object {
 }
 
 // Writes a compact JSON record atomically
-func writeJSONFile(path string, payload any) error {
-	return config.AtomicJSONWriteWith(path, payload, pyjson.Separators(",", ":"))
+func writeJSONFile(ctx context.Context, path string, payload any) error {
+	return config.AtomicJSONWriteWith(ctx, path, payload, pyjson.Separators(",", ":"))
 }
 
 func unlinkQuietly(path string) { _ = os.Remove(path) }

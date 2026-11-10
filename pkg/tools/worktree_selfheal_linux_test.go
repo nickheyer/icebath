@@ -3,6 +3,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,7 +30,7 @@ func TestRepackStampedeTimeoutKillsTheWholeRepackTree(t *testing.T) {
 	prev := repackTimeout
 	t.Cleanup(func() { repackTimeout = prev })
 	repackTimeout = 1
-	runBoundedRepack(tmp)
+	runBoundedRepack(context.Background(), tmp)
 	raw, err := os.ReadFile(pidfile)
 	if err != nil {
 		t.Fatal(err)

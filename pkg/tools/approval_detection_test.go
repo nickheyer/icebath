@@ -73,7 +73,9 @@ func TestDetectDangerousRm(t *testing.T) {
 	}
 }
 
+// Fixture root lies outside the user home so its absolute rm paths stay unfolded like the pytest tmp_path
 func TestVerificationArtifactCleanup(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	real := t.TempDir()
 	t.Setenv("TMPDIR", real)
 	resolved, _ := filepath.EvalSymlinks(real)

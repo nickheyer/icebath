@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -123,7 +124,7 @@ func TestSpawnServerKeepsTheCallersEnvironment(t *testing.T) {
 	cmd.Env = []string{"GITHUB_TOKEN=g", "PATH=" + os.Getenv("PATH"), "SystemRoot=" + os.Getenv("SystemRoot")}
 	var out strings.Builder
 	cmd.Stdout = &out
-	job, err := SpawnServer(cmd, false)
+	job, err := SpawnServer(context.Background(), cmd, false)
 	if err != nil {
 		t.Fatal(err)
 	}

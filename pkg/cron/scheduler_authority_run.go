@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -112,7 +113,7 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 		if err := os.MkdirAll(root, 0o777); err != nil {
 			return err
 		}
-		return config.AtomicJSONWriteMode(journal, record, 0o600)
+		return config.AtomicJSONWriteMode(home.WithOverride(ctx, s.home), journal, record, 0o600)
 	}
 	paramMap := map[string]any{"job_id": job.ID, "request_id": requestID, "extra_prompt": extraVal}
 	observe := func(call func(op string, data map[string]any) (map[string]any, error)) (jobRunOutcome, error) {
@@ -343,7 +344,7 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 				return err
 			}
 			record.Set("pause_recorded", pauseIdentity(paused))
-			return config.AtomicJSONWriteMode(journal, record, 0o600)
+			return config.AtomicJSONWriteMode(home.WithOverride(ctx, s.home), journal, record, 0o600)
 		}
 		return nil
 	}

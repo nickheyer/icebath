@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -17,7 +18,7 @@ import (
 
 func TestWritePidFileRecordsGatewayMetadataAndIsExclusive(t *testing.T) {
 	dir := statusHome(t)
-	if err := WritePidFile(); err != nil {
+	if err := WritePidFile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	payload := readRecord(t, filepath.Join(dir, "gateway.pid"))
@@ -27,7 +28,7 @@ func TestWritePidFileRecordsGatewayMetadataAndIsExclusive(t *testing.T) {
 	if argv, ok := recGet(payload, "argv").([]any); !ok || len(argv) == 0 {
 		t.Fatalf("argv %v", recGet(payload, "argv"))
 	}
-	if err := WritePidFile(); !errors.Is(err, fs.ErrExist) {
+	if err := WritePidFile(context.Background()); !errors.Is(err, fs.ErrExist) {
 		t.Fatalf("second write error = %v", err)
 	}
 }
@@ -38,7 +39,7 @@ func TestGatewayIdentityFilesUseProcessHome(t *testing.T) {
 	os.MkdirAll(processHome, 0o755)
 	os.MkdirAll(profileHome, 0o755)
 	t.Setenv("ICEBATH_HOME", processHome)
-	if err := WritePidFile(); err != nil {
+	if err := WritePidFile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(processHome, "gateway.pid")); err != nil {
@@ -54,7 +55,7 @@ func TestRuntimeLockClaimsAndReleasesLiveness(t *testing.T) {
 	if active, _ := IsGatewayRuntimeLockActive(""); active {
 		t.Fatal("active before acquire")
 	}
-	if !AcquireGatewayRuntimeLock() {
+	if !AcquireGatewayRuntimeLock(context.Background()) {
 		t.Fatal("acquire failed")
 	}
 	if active, _ := IsGatewayRuntimeLockActive(""); !active {
@@ -106,7 +107,7 @@ func TestGetRunningPidFallsBackToLiveLockRecord(t *testing.T) {
 		return rec("pid", int64(os.Getpid()), "kind", "icebath-gateway", "argv", strs("python", "-m", "icebath_cli.main", "gateway"), "start_time", int64(123))
 	})
 	patch(t, &statusPidExists, func(pid int) bool { return pid != 99999 })
-	if !AcquireGatewayRuntimeLock() {
+	if !AcquireGatewayRuntimeLock(context.Background()) {
 		t.Fatal("acquire failed")
 	}
 	defer ReleaseGatewayRuntimeLock()
@@ -203,7 +204,7 @@ func TestScopedQueryStillCleansDeadPidRecord(t *testing.T) {
 
 func mustWrite(t *testing.T, u RuntimeStatusUpdate) {
 	t.Helper()
-	if ok, err := WriteRuntimeStatus(u, false, nil); err != nil || !ok {
+	if ok, err := WriteRuntimeStatus(context.Background(), u, false, nil); err != nil || !ok {
 		t.Fatalf("write %v %v", ok, err)
 	}
 }
@@ -366,17 +367,17 @@ func TestBlockedWriteDoesNotBlockPublishAndBurstCoalesces(t *testing.T) {
 	runtimeStatusStateMu.Unlock()
 	t.Cleanup(func() { runtimeStatusStateMu.Lock(); runtimeStatusWriter = old; runtimeStatusStateMu.Unlock() })
 	go func() {
-		PublishRuntimeStatus(RuntimeStatusUpdate{Fields: map[string]any{"platform": "reviewer:slack", "platform_state": "fatal"}})
+		PublishRuntimeStatus(context.Background(), RuntimeStatusUpdate{Fields: map[string]any{"platform": "reviewer:slack", "platform_state": "fatal"}})
 		close(publishReturned)
 	}()
 	<-writeStarted
 	<-publishReturned
-	PublishRuntimeStatus(RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running", "active_work": []string{"telegram:dm:1"}, "multiplex_standalone_reason": "single-profile"}})
-	PublishRuntimeStatus(RuntimeStatusUpdate{Fields: map[string]any{"platform": "telegram", "platform_state": "connected",
+	PublishRuntimeStatus(context.Background(), RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running", "active_work": []string{"telegram:dm:1"}, "multiplex_standalone_reason": "single-profile"}})
+	PublishRuntimeStatus(context.Background(), RuntimeStatusUpdate{Fields: map[string]any{"platform": "telegram", "platform_state": "connected",
 		"ingress_url": "https://example.test/p/default/telegram", "listener_base": "http://127.0.0.1:8080"}})
-	PublishRuntimeStatus(RuntimeStatusUpdate{DropProfilePlatforms: "reviewer"})
+	PublishRuntimeStatus(context.Background(), RuntimeStatusUpdate{DropProfilePlatforms: "reviewer"})
 	for i := range 50 {
-		PublishRuntimeStatus(RuntimeStatusUpdate{Fields: map[string]any{"active_agents": i}})
+		PublishRuntimeStatus(context.Background(), RuntimeStatusUpdate{Fields: map[string]any{"active_agents": i}})
 	}
 	close(releaseWrite)
 	if !writer.Flush(2 * time.Second) {
@@ -413,7 +414,7 @@ func TestSyncWriteCanBoundABlockedPersistenceWait(t *testing.T) {
 	runtimeStatusStateMu.Unlock()
 	t.Cleanup(func() { runtimeStatusStateMu.Lock(); runtimeStatusWriter = old; runtimeStatusStateMu.Unlock() })
 	timeout := 50 * time.Millisecond
-	persisted, err := WriteRuntimeStatus(RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "starting"}}, false, &timeout)
+	persisted, err := WriteRuntimeStatus(context.Background(), RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "starting"}}, false, &timeout)
 	<-started
 	close(release)
 	if err != nil || persisted {

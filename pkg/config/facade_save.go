@@ -150,10 +150,10 @@ func itemsByUniqueName(items any) map[string]map[string]any {
 }
 
 // Value with the raw env templates restored wherever the expanded value is otherwise unchanged
-func preserveEnvRefTemplates(current, raw, loaded any) any {
+func preserveEnvRefTemplates(current, raw, loaded any, lookup Lookup) any {
 	if cs, ok := current.(string); ok {
 		if rs, ok := raw.(string); ok && envRefRe.MatchString(rs) {
-			if ls, isStr := loaded.(string); cs == rs || (isStr && cs == ls) || ExpandString(rs, envRefLookup) == cs {
+			if ls, isStr := loaded.(string); cs == rs || (isStr && cs == ls) || ExpandString(rs, lookup) == cs {
 				return rs
 			}
 			return cs
@@ -168,7 +168,7 @@ func preserveEnvRefTemplates(current, raw, loaded any) any {
 				if lm != nil {
 					lv = lm[k]
 				}
-				out[k] = preserveEnvRefTemplates(v, rm[k], lv)
+				out[k] = preserveEnvRefTemplates(v, rm[k], lv, lookup)
 			}
 			SetMappingKeys(out, MappingKeys(cm))
 			return out
@@ -191,7 +191,7 @@ func preserveEnvRefTemplates(current, raw, loaded any) any {
 					if r, ok := rawByName[name]; ok {
 						rv = r
 					}
-					out[i] = preserveEnvRefTemplates(item, rv, lv)
+					out[i] = preserveEnvRefTemplates(item, rv, lv, lookup)
 				}
 				return out
 			}
@@ -204,7 +204,7 @@ func preserveEnvRefTemplates(current, raw, loaded any) any {
 				if i < len(ll) {
 					lv = ll[i]
 				}
-				out[i] = preserveEnvRefTemplates(item, rv, lv)
+				out[i] = preserveEnvRefTemplates(item, rv, lv, lookup)
 			}
 			return out
 		}
@@ -309,7 +309,7 @@ func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts Sa
 	}
 	var loadErr error
 	cfg = RebaseForSave(cfg, raw, opts.MergeExisting, func() map[string]any {
-		t, lerr := LoadContext(ctx, h, envRefLookup)
+		t, lerr := LoadContext(ctx, h, EnvRefLookupContext(ctx))
 		if lerr != nil && loadErr == nil {
 			loadErr = lerr
 		}
@@ -335,7 +335,7 @@ func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts Sa
 		if loaded != nil {
 			loadedAny = loaded
 		}
-		normalized = preserveEnvRefTemplates(normalized, rawCanon, loadedAny).(map[string]any)
+		normalized = preserveEnvRefTemplates(normalized, rawCanon, loadedAny, EnvRefLookupContext(ctx)).(map[string]any)
 	}
 	if !opts.KeepDefaults {
 		preserve := ExplicitPaths(raw)

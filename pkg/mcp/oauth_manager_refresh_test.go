@@ -84,7 +84,7 @@ func TestOAuthManagerBridgeForwardsRequestsAndPoisonsOnTokenEndpoint400(t *testi
 	dir := freshManager(t)
 	writeTokenFile(t, dir, "srv.client.json", `{"client_id": "dead"}`)
 	p := tokenEndpointProvider(t, nil, idpTokenEndpoint)
-	info, err := p.storage.GetClientInfo()
+	info, err := p.storage.GetClientInfo(context.Background())
 	if err != nil || info == nil || info.ClientID != "dead" {
 		t.Fatalf("client info %+v %v", info, err)
 	}
@@ -132,7 +132,7 @@ func TestOAuthManagerProviderTokenExchangeIncludesDCRSecret(t *testing.T) {
 func TestOAuthManagerMalformed201TokenResponseDoesNotExposeBody(t *testing.T) {
 	freshManager(t)
 	p := tokenEndpointProvider(t, nil, idpTokenEndpoint)
-	err := p.handleTokenResponse(tokenReply(201, `{"access_token": {"secret": "access-secret"}}`))
+	err := p.handleTokenResponse(context.Background(), tokenReply(201, `{"access_token": {"secret": "access-secret"}}`))
 	var te *OAuthTokenError
 	if !errors.As(err, &te) || err.Error() != "Invalid token response" || strings.Contains(err.Error(), "access-secret") {
 		t.Fatalf("err %v", err)
@@ -171,7 +171,7 @@ func TestOAuthManagerTokenReadErrorDoesNotExposeBody(t *testing.T) {
 	if sendErr == nil || resp == nil || resp.ReadErr == nil {
 		t.Fatalf("read failure not surfaced %v %+v", sendErr, resp)
 	}
-	err = p.handleTokenResponse(resp)
+	err = p.handleTokenResponse(context.Background(), resp)
 	var te *OAuthTokenError
 	if !errors.As(err, &te) || err.Error() != "Invalid token response" {
 		t.Fatalf("err %v", err)
@@ -186,7 +186,7 @@ func TestOAuthManagerMalformed201RefreshResponseClearsTokens(t *testing.T) {
 	p := tokenEndpointProvider(t, nil, idpTokenEndpoint)
 	p.currentTokens = bearer("A1", "R1")
 	logs := captureLogs(t)
-	ok, err := p.handleRefreshResponse(tokenReply(201, `{"refresh_token": "refresh-secret"}`))
+	ok, err := p.handleRefreshResponse(context.Background(), tokenReply(201, `{"refresh_token": "refresh-secret"}`))
 	if err != nil || ok || p.currentTokens != nil {
 		t.Fatalf("ok %v err %v tokens %+v", ok, err, p.currentTokens)
 	}
@@ -198,7 +198,7 @@ func TestOAuthManagerMalformed201RefreshResponseClearsTokens(t *testing.T) {
 func TestOAuthManagerRefreshReadErrorClearsTokens(t *testing.T) {
 	freshManager(t)
 	p := fencedProvider(t, idpTokenEndpoint)
-	if err := p.storage.SetTokens(p.currentTokens); err != nil {
+	if err := p.storage.SetTokens(context.Background(), p.currentTokens); err != nil {
 		t.Fatal(err)
 	}
 	p.client.Transport = readErrorTransport{"body read failed"}
@@ -214,7 +214,7 @@ func TestOAuthManagerRefreshReadErrorClearsTokens(t *testing.T) {
 	}
 	direct := tokenEndpointProvider(t, nil, idpTokenEndpoint)
 	direct.currentTokens = bearer("A1", "R1")
-	ok, err := direct.handleRefreshResponse(&flowResponse{StatusCode: 201, ReadErr: errors.New("body read failed")})
+	ok, err := direct.handleRefreshResponse(context.Background(), &flowResponse{StatusCode: 201, ReadErr: errors.New("body read failed")})
 	if err != nil || ok || direct.currentTokens != nil {
 		t.Fatalf("ok %v err %v tokens %+v", ok, err, direct.currentTokens)
 	}
@@ -226,7 +226,7 @@ func TestOAuthManagerRefreshResponseWithoutRefreshTokenKeepsStoredOne(t *testing
 	p.currentTokens = tokenPair("at-1", "rt-keep", int64Ptr(3600))
 	p.currentTokens.Scope = strPtr("read")
 	p.clientInfo = &OAuthClientInfo{ClientID: "cid"}
-	ok, err := p.handleRefreshResponse(tokenReply(200, `{"access_token": "at-2", "token_type": "Bearer", "expires_in": 3600}`))
+	ok, err := p.handleRefreshResponse(context.Background(), tokenReply(200, `{"access_token": "at-2", "token_type": "Bearer", "expires_in": 3600}`))
 	if err != nil || !ok {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
@@ -244,7 +244,7 @@ func TestOAuthManagerRefreshResponseWithNewRefreshTokenRotates(t *testing.T) {
 	dir := freshManager(t)
 	p := tokenEndpointProvider(t, nil, idpTokenEndpoint)
 	p.currentTokens = tokenPair("at-1", "rt-old", int64Ptr(3600))
-	ok, err := p.handleRefreshResponse(tokenReply(200, `{"access_token": "at-2", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "rt-new"}`))
+	ok, err := p.handleRefreshResponse(context.Background(), tokenReply(200, `{"access_token": "at-2", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "rt-new"}`))
 	if err != nil || !ok {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
@@ -270,10 +270,10 @@ func TestOAuthManagerRefresh400Recovery(t *testing.T) {
 			freshManager(t)
 			p := tokenEndpointProvider(t, nil, idpTokenEndpoint)
 			p.currentTokens = tokenPair("A1", "R1", int64Ptr(3600))
-			if err := p.storage.SetTokens(tc.disk); err != nil {
+			if err := p.storage.SetTokens(context.Background(), tc.disk); err != nil {
 				t.Fatal(err)
 			}
-			ok, err := p.handleRefreshResponse(tokenReply(400, `{"error":"invalid_grant"}`))
+			ok, err := p.handleRefreshResponse(context.Background(), tokenReply(400, `{"error":"invalid_grant"}`))
 			if err != nil || ok != tc.recovered {
 				t.Fatalf("recovered %v err %v", ok, err)
 			}
@@ -294,11 +294,11 @@ func TestOAuthManagerRefresh400RecoveryNeverLogsTokenMaterial(t *testing.T) {
 	freshManager(t)
 	p := tokenEndpointProvider(t, nil, idpTokenEndpoint)
 	p.currentTokens = tokenPair("access-secret", "refresh-secret", int64Ptr(3600))
-	if err := p.storage.SetTokens(tokenPair("rotated-access-secret", "rotated-refresh-secret", int64Ptr(3600))); err != nil {
+	if err := p.storage.SetTokens(context.Background(), tokenPair("rotated-access-secret", "rotated-refresh-secret", int64Ptr(3600))); err != nil {
 		t.Fatal(err)
 	}
 	logs := captureLogs(t)
-	ok, err := p.handleRefreshResponse(tokenReply(400, `{"error":"invalid_grant"}`))
+	ok, err := p.handleRefreshResponse(context.Background(), tokenReply(400, `{"error":"invalid_grant"}`))
 	if err != nil || !ok {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
@@ -311,10 +311,10 @@ func TestOAuthManagerRefresh400RecoveryRejectsDiskPairFromAnotherIssuer(t *testi
 	freshManager(t)
 	p := fencedProvider(t, idpTokenEndpoint)
 	p.storage.BindIssuer("https://other-idp.example")
-	if err := p.storage.SetTokens(tokenPair("A2", "R2", int64Ptr(3600))); err != nil {
+	if err := p.storage.SetTokens(context.Background(), tokenPair("A2", "R2", int64Ptr(3600))); err != nil {
 		t.Fatal(err)
 	}
-	ok, err := p.handleRefreshResponse(tokenReply(400, `{"error":"invalid_grant"}`))
+	ok, err := p.handleRefreshResponse(context.Background(), tokenReply(400, `{"error":"invalid_grant"}`))
 	if err != nil || ok || p.currentTokens != nil {
 		t.Fatalf("ok %v err %v tokens %+v", ok, err, p.currentTokens)
 	}
@@ -331,7 +331,7 @@ func TestOAuthManagerConcurrentRefreshPresentsSingleUseTokenExactlyOnce(t *testi
 	if a == b {
 		t.Fatal("same provider")
 	}
-	if err := a.storage.SetTokens(tokenPair("A1", "R1", int64Ptr(3600))); err != nil {
+	if err := a.storage.SetTokens(context.Background(), tokenPair("A1", "R1", int64Ptr(3600))); err != nil {
 		t.Fatal(err)
 	}
 	var mu sync.Mutex
@@ -371,7 +371,7 @@ func TestOAuthManagerConcurrentRefreshPresentsSingleUseTokenExactlyOnce(t *testi
 func TestOAuthManagerRefreshFailsClosedWhileAPeerHoldsTheFence(t *testing.T) {
 	freshManager(t)
 	p := fencedProvider(t, idpTokenEndpoint)
-	if err := p.storage.SetTokens(tokenPair("A1", "R1", int64Ptr(3600))); err != nil {
+	if err := p.storage.SetTokens(context.Background(), tokenPair("A1", "R1", int64Ptr(3600))); err != nil {
 		t.Fatal(err)
 	}
 	prev := refreshFenceTimeout
@@ -400,7 +400,7 @@ func TestOAuthManagerRefreshFailsClosedWhileAPeerHoldsTheFence(t *testing.T) {
 func TestOAuthManagerRefreshAdoptsExpiredPeerPairAndPostsItsRefreshToken(t *testing.T) {
 	freshManager(t)
 	p := fencedProvider(t, idpTokenEndpoint)
-	if err := p.storage.SetTokens(tokenPair("A2", "R2", int64Ptr(0))); err != nil {
+	if err := p.storage.SetTokens(context.Background(), tokenPair("A2", "R2", int64Ptr(0))); err != nil {
 		t.Fatal(err)
 	}
 	var presented []string
@@ -419,7 +419,7 @@ func TestOAuthManagerRefreshAdoptsExpiredPeerPairAndPostsItsRefreshToken(t *test
 func TestOAuthManagerRefreshAdoptsPeerPairWithoutExpiryAndSkipsThePost(t *testing.T) {
 	freshManager(t)
 	p := fencedProvider(t, idpTokenEndpoint)
-	if err := p.storage.SetTokens(tokenPair("A2", "R2", nil)); err != nil {
+	if err := p.storage.SetTokens(context.Background(), tokenPair("A2", "R2", nil)); err != nil {
 		t.Fatal(err)
 	}
 	posted := 0
@@ -436,7 +436,7 @@ func TestOAuthManagerRefreshRestartsFlowWhenDiskPairIsFromAnotherIssuer(t *testi
 	freshManager(t)
 	p := fencedProvider(t, idpTokenEndpoint)
 	p.storage.BindIssuer("https://other-idp.example.com")
-	if err := p.storage.SetTokens(tokenPair("A2", "R2", int64Ptr(3600))); err != nil {
+	if err := p.storage.SetTokens(context.Background(), tokenPair("A2", "R2", int64Ptr(3600))); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := p.refreshTokenRequest(context.Background()); !errors.Is(err, errRefreshCompletedByPeer) {

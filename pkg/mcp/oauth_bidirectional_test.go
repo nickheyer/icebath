@@ -22,7 +22,7 @@ func bidiProvider(t *testing.T, tokens *OAuthToken) *OAuthProvider {
 	freshManager(t)
 	s := NewTokenStorage(context.Background(), "srv", "")
 	if tokens != nil {
-		if err := s.SetTokens(tokens); err != nil {
+		if err := s.SetTokens(context.Background(), tokens); err != nil {
 			t.Fatal(err)
 		}
 		info, err := validateClientInfo(map[string]any{"client_id": "test-client", "redirect_uris": []any{"http://127.0.0.1:12345/callback"},
@@ -30,7 +30,7 @@ func bidiProvider(t *testing.T, tokens *OAuthToken) *OAuthProvider {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.SetClientInfo(info); err != nil {
+		if err := s.SetClientInfo(context.Background(), info); err != nil {
 			t.Fatal(err)
 		}
 	}

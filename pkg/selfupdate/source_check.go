@@ -376,10 +376,10 @@ func cachedStatus(cacheFile string, identity *pyjson.Object, now float64) *pyjso
 	return nil
 }
 
-func writeCheckCache(cacheFile string, identity *pyjson.Object, now float64, result *pyjson.Object) {
+func writeCheckCache(ctx context.Context, cacheFile string, identity *pyjson.Object, now float64, result *pyjson.Object) {
 	err := os.MkdirAll(filepath.Dir(cacheFile), 0o755)
 	if err == nil {
-		err = config.AtomicJSONWrite(cacheFile, pyjson.ObjectOf("identity", identity, "ts", now, "status", result))
+		err = config.AtomicJSONWrite(ctx, cacheFile, pyjson.ObjectOf("identity", identity, "ts", now, "status", result))
 	}
 	if err != nil {
 		slog.Debug(fmt.Sprintf("Could not cache source check: %v", err))
@@ -503,7 +503,7 @@ func githubPredatesRuntime(ctx context.Context, repository, sha, cacheFile strin
 	}
 	err := os.MkdirAll(filepath.Dir(cacheFile), 0o755)
 	if err == nil {
-		err = config.AtomicJSONWrite(cacheFile, updated)
+		err = config.AtomicJSONWrite(ctx, cacheFile, updated)
 	}
 	if err != nil {
 		slog.Debug(fmt.Sprintf("Could not cache the release schema verdict: %v", err))
@@ -587,7 +587,7 @@ func branchRemote(co sourceCheckout, selectedBranch string) string {
 }
 
 // Points the Desktop branch setting back at main unless it changed while the probe ran
-func healDeletedBranch(branchConfigPath string, desktopConfig any) error {
+func healDeletedBranch(ctx context.Context, branchConfigPath string, desktopConfig any) error {
 	if !pyjson.Equal(readJSONFile(branchConfigPath), desktopConfig) {
 		return nil
 	}
@@ -597,7 +597,7 @@ func healDeletedBranch(branchConfigPath string, desktopConfig any) error {
 		healed = obj.Copy()
 	}
 	healed.Set("branch", "main")
-	return config.AtomicJSONWrite(branchConfigPath, healed)
+	return config.AtomicJSONWrite(ctx, branchConfigPath, healed)
 }
 
 // Why a branch the remote does not advertise keeps its pin, empty when healing loses nothing
@@ -678,7 +678,7 @@ func checkBranch(ctx context.Context, result *pyjson.Object, co sourceCheckout, 
 	if missing && selectedBranch != "main" {
 		result.Set("branch", "main")
 		if heal != nil {
-			if err := healDeletedBranch(heal.path, heal.desktopConfig); err != nil {
+			if err := healDeletedBranch(ctx, heal.path, heal.desktopConfig); err != nil {
 				return err
 			}
 		}
@@ -827,7 +827,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 			return nil, err
 		}
 	}
-	writeCheckCache(cacheFile, identity, now, result)
+	writeCheckCache(ctx, cacheFile, identity, now, result)
 	if pyTruthy(stampGet(result, "channel")) {
 		holdRefusedRelease(ctx, result, co, h)
 	}

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"os"
 	"strings"
 
@@ -43,22 +44,22 @@ func resolveStopMarkTargetPid(argv []string) int {
 }
 
 // Writes the planned stop marker for the supervised pid, exiting zero whatever happens
-func SystemdStopMarkMain(argv []string) (code int) {
+func SystemdStopMarkMain(ctx context.Context, argv []string) (code int) {
 	defer func() {
 		if recover() != nil {
 			code = 0
 		}
 	}()
 	if pid := resolveStopMarkTargetPid(argv); pid > 0 {
-		stopMarkWrite(pid)
+		stopMarkWrite(ctx, pid)
 	}
 	return 0
 }
 
 // Runs the stop marker and exits when the process was started with the hidden entry argument
-func DispatchSystemdStopMarkEntry() {
+func DispatchSystemdStopMarkEntry(ctx context.Context) {
 	args := pinnedEntryArgs(os.Args[1:])
 	if len(args) > 0 && args[0] == SystemdStopMarkEntry {
-		os.Exit(SystemdStopMarkMain(args))
+		os.Exit(SystemdStopMarkMain(ctx, args))
 	}
 }

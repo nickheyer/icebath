@@ -206,7 +206,7 @@ func DescribeProfile(ctx context.Context, profileName string, overwrite bool, ti
 		description = headRunes(pystr.Strip(s), 280)
 	}
 	auto := true
-	if err := profiles.WriteProfileMeta(profileDir, profiles.MetaUpdate{Description: &description, DescriptionAuto: &auto}); err != nil {
+	if err := profiles.WriteProfileMeta(ctx, profileDir, profiles.MetaUpdate{Description: &description, DescriptionAuto: &auto}); err != nil {
 		return fail("failed to write profile.yaml: " + err.Error())
 	}
 	return DescribeOutcome{ProfileName: canon, OK: true, Reason: "described", Description: &description}, nil

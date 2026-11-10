@@ -1,7 +1,10 @@
 package tools
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestMaintainPackHealthOutsideARepositoryIsHarmless(t *testing.T) {
-	MaintainPackHealth(t.TempDir())
+	MaintainPackHealth(context.Background(), t.TempDir())
 }

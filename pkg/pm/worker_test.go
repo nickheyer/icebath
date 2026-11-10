@@ -673,3 +673,12 @@ func TestWorkerDefinitionTheBinaryDoesNotCarryIsAPackageError(t *testing.T) {
 		})
 	}
 }
+
+func TestExportedErrorClass(t *testing.T) {
+	if got := ErrorClass(NewInstallError("venv", "x", "")); got != "InstallError" {
+		t.Fatalf("class %q", got)
+	}
+	if got := ErrorClass(&PyError{Class: "ValueError", Message: "x"}); got != "ValueError" {
+		t.Fatalf("class %q", got)
+	}
+}

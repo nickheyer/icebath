@@ -1,8 +1,11 @@
 package cron
 
 import (
+	"context"
 	"fmt"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 const maxCountedSlots = 1000
@@ -83,7 +86,7 @@ func fastForwardMissedRecurring(d *dueJob, grace int) (bool, error) {
 	}
 	s.log.Info(fmt.Sprintf("Job '%s' missed its scheduled time (%s, grace=%ds). Running now; next run provisionally "+
 		"set to: %s (re-anchored on completion)", d.label(), d.nextRun, grace, next))
-	sc.onSaved = append(sc.onSaved, s.recordCatchUpOccurrence)
+	sc.onSaved = append(sc.onSaved, func() { s.recordCatchUpOccurrence(sc.ctx) })
 	if missed > 1 {
 		sc.onSaved = append(sc.onSaved, func() { s.bookMissed(job, missed-1, &first, "collapsed into one catch-up run", capped) })
 	}
@@ -91,36 +94,39 @@ func fastForwardMissedRecurring(d *dueJob, grace int) (bool, error) {
 }
 
 // Retires a one shot past its grace window, true when it must not fire this tick
-func retireExpiredOneshot(d *dueJob) bool {
+func retireExpiredOneshot(ctx context.Context, d *dueJob) (bool, error) {
 	sc, s, job := d.scan, d.scan.s, d.job
 	if elapsedSeconds(sc.now, d.nextDT) <= oneshotGraceSeconds {
-		return false
+		return false, nil
 	}
 	claimed := job.RunClaim != nil || job.FireClaim != nil
 	dueAt := epochSeconds(d.nextDT)
 	graceStart := dueAt
 	if !claimed {
-		graceStart = dispatchHoldGraceStartsAt(s.cronDir, dueAt, oneshotGraceSeconds)
+		var err error
+		if graceStart, err = dispatchHoldGraceStartsAt(s.cronDir, dueAt, oneshotGraceSeconds); err != nil {
+			return false, err
+		}
 	}
 	if epochSeconds(sc.now)-graceStart <= oneshotGraceSeconds {
-		return false
+		return false, nil
 	}
 	if s.jobCatchesUp(job) {
 		s.log.Info(fmt.Sprintf("Job '%s' missed its one-shot time %s; firing it once now (catch_up on).", d.label(), d.nextRun))
-		return false
+		return false, nil
 	}
 	if OutageCovers(s.cronDir, dueAt, oneshotGraceSeconds) {
-		return false
+		return false, nil
 	}
 	if job.RunClaim != nil && job.RunClaim.Outage && job.FireClaim == nil {
-		return false
+		return false, nil
 	}
 	if job.RunClaim == nil && job.FireClaim == nil {
 		first := d.nextRun
-		writeMissed(s, job, first)
+		writeMissed(home.WithOverride(ctx, s.home), s, job, first)
 		sc.retire(job.ID)
 		sc.onSaved = append(sc.onSaved, func() { recordCronMissed(sc.ctx, job) },
 			func() { s.bookMissed(job, 1, &first, "one-shot past its grace window; catch-up off", false) })
 	}
-	return true
+	return true, nil
 }

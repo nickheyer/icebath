@@ -109,7 +109,7 @@ type fakeSpawner struct {
 	nextPid  int
 }
 
-func (f *fakeSpawner) SpawnLocal(env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error) {
+func (f *fakeSpawner) SpawnLocal(ctx context.Context, env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.local = append(f.local, o)
@@ -153,7 +153,7 @@ type backgroundLaunchError struct{ text string }
 
 func (e *backgroundLaunchError) Error() string { return e.text }
 
-func (f *fakeSpawner) AdoptLocal(env *Env, proc *ExecProcess, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar string, notify bool) *ProcessSession {
+func (f *fakeSpawner) AdoptLocal(ctx context.Context, env *Env, proc *ExecProcess, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar string, notify bool) *ProcessSession {
 	s := NewProcessSession("proc_adopted", command)
 	s.Pid, s.NotifyOnComplete = proc.Pid(), notify
 	return s

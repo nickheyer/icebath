@@ -32,8 +32,8 @@ func (r *nodeRegistry) load() *pyjson.Object {
 	return pyjson.NewObject()
 }
 
-func (r *nodeRegistry) save(nodes *pyjson.Object) error {
-	return config.AtomicJSONWrite(r.path, pyjson.ObjectOf("nodes", nodes))
+func (r *nodeRegistry) save(ctx context.Context, nodes *pyjson.Object) error {
+	return config.AtomicJSONWrite(ctx, r.path, pyjson.ObjectOf("nodes", nodes))
 }
 
 // Entry with its name prepended, the TypeError of a non mapping entry returned
@@ -57,7 +57,7 @@ func (r *nodeRegistry) get(name string) (*pyjson.Object, error) {
 }
 
 // Registers or replaces a node, refusing empty fields
-func (r *nodeRegistry) add(name, url, token string) error {
+func (r *nodeRegistry) add(ctx context.Context, name, url, token string) error {
 	for _, f := range [][2]string{{"node name", name}, {"url", url}, {"token", token}} {
 		if f[1] == "" {
 			return fmt.Errorf("%s must be a non-empty string", f[0])
@@ -65,16 +65,16 @@ func (r *nodeRegistry) add(name, url, token string) error {
 	}
 	nodes := r.load()
 	nodes.Set(name, pyjson.ObjectOf("url", url, "token", token, "added_at", nowSeconds()))
-	return r.save(nodes)
+	return r.save(ctx, nodes)
 }
 
 // Forgets a node, false when it was not registered
-func (r *nodeRegistry) remove(name string) (bool, error) {
+func (r *nodeRegistry) remove(ctx context.Context, name string) (bool, error) {
 	nodes := r.load()
 	if !nodes.Delete(name) {
 		return false, nil
 	}
-	return true, r.save(nodes)
+	return true, r.save(ctx, nodes)
 }
 
 // Every node sorted by name

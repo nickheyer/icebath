@@ -190,7 +190,7 @@ func elementsPrefix(es []UIElement, n int) []UIElement {
 }
 
 // Facts of one capture computed once for every response branch, spilling and persisting as needed
-func newCaptureView(env *tools.Env, c *CaptureResult, maxElements int) *captureView {
+func newCaptureView(ctx context.Context, env *tools.Env, c *CaptureResult, maxElements int) *captureView {
 	visible := elementsPrefix(c.Elements, maxElements)
 	var dims *[2]int
 	if b64 := capturePNG(c); b64 != "" {
@@ -219,10 +219,10 @@ func newCaptureView(env *tools.Env, c *CaptureResult, maxElements int) *captureV
 		v.axCapped = c.AXMaxElements
 	}
 	if lostDetail {
-		v.elementsFile = spillElementsToFile(env, c)
+		v.elementsFile = spillElementsToFile(tools.WithEnvHome(ctx, env), env, c)
 	}
 	if v.hasImage {
-		v.screenshotPath = persistCaptureImage(env, c)
+		v.screenshotPath = persistCaptureImage(tools.WithEnvHome(ctx, env), env, c)
 	}
 	if tooSmall {
 		v.dimsOmitted = dims
@@ -351,7 +351,7 @@ func captureDigest(c *CaptureResult) string {
 
 // Tool result of a capture, the multimodal envelope or JSON text after dedup and vision routing
 func captureResponse(ctx context.Context, env *tools.Env, c *CaptureResult, maxElements int, sessionID *string) (any, error) {
-	v := newCaptureView(env, c, maxElements)
+	v := newCaptureView(tools.WithEnvHome(ctx, env), env, c, maxElements)
 	lines := captureSummaryLines(v)
 	summary := strings.Join(lines, "\n")
 	var extra *pyjson.Object
@@ -409,12 +409,12 @@ func multimodalCaptureEnvelope(v *captureView, summary string) *pyjson.Object {
 }
 
 // Creates a media cache dir owner only unless the install is managed, falling back to a plain mkdir
-func secureDirPolicy(env *tools.Env, cacheDir string) error {
+func secureDirPolicy(ctx context.Context, env *tools.Env, cacheDir string) error {
 	h := envHome(env)
 	if home.ManagedSystem(h) != "" {
 		return os.MkdirAll(cacheDir, 0o777)
 	}
-	if _, err := home.MakeUserDir(cacheDir, 0o700, true, true); err != nil {
+	if _, err := home.MakeUserDir(tools.WithEnvHome(ctx, env), cacheDir, 0o700, true, true); err != nil {
 		slog.Debug(fmt.Sprintf("computer_use: cache dir creation failed for %s: %v", cacheDir, err))
 		return os.MkdirAll(cacheDir, 0o777)
 	}
@@ -436,9 +436,9 @@ func writePrivateBytes(path string, data []byte) error {
 }
 
 // Path of a new home cache file after pruning the oldest pattern matches down to cap minus one
-func cacheFile(env *tools.Env, subdir, legacy, name, pattern string, limit int) (string, error) {
+func cacheFile(ctx context.Context, env *tools.Env, subdir, legacy, name, pattern string, limit int) (string, error) {
 	dir := home.HermesDir(envHome(env), subdir, legacy)
-	if err := secureDirPolicy(env, dir); err != nil {
+	if err := secureDirPolicy(tools.WithEnvHome(ctx, env), env, dir); err != nil {
 		return "", err
 	}
 	if pattern != "" {
@@ -478,8 +478,8 @@ func pruneCacheFiles(dir, pattern string, limit int) {
 }
 
 // Bounded cache write returning the path, nil on any failure so capture keeps working
-func writeCacheFile(env *tools.Env, what, subdir, legacy, name, pattern string, limit int, write func(string) error) *string {
-	path, err := cacheFile(env, subdir, legacy, name, pattern, limit)
+func writeCacheFile(ctx context.Context, env *tools.Env, what, subdir, legacy, name, pattern string, limit int, write func(string) error) *string {
+	path, err := cacheFile(tools.WithEnvHome(ctx, env), env, subdir, legacy, name, pattern, limit)
 	if err == nil {
 		err = write(path)
 	}
@@ -491,13 +491,13 @@ func writeCacheFile(env *tools.Env, what, subdir, legacy, name, pattern string, 
 }
 
 // Copy of the screenshot in the image cache for attachment surfaces, nil without an image
-var persistCaptureImage = func(env *tools.Env, c *CaptureResult) *string {
+var persistCaptureImage = func(ctx context.Context, env *tools.Env, c *CaptureResult) *string {
 	b64 := capturePNG(c)
 	if b64 == "" {
 		return nil
 	}
 	_, ext := captureImageFormat(c)
-	return writeCacheFile(env, "screenshot persistence", "cache/images", "image_cache", "computer_use_"+uuid4Hex()+ext,
+	return writeCacheFile(tools.WithEnvHome(ctx, env), env, "screenshot persistence", "cache/images", "image_cache", "computer_use_"+uuid4Hex()+ext,
 		"computer_use_*.*", cuMaxCaptureFiles, func(p string) error {
 			raw, err := pybase64.B64Decode(b64)
 			if err != nil {
@@ -508,7 +508,7 @@ var persistCaptureImage = func(env *tools.Env, c *CaptureResult) *string {
 }
 
 // Full element tree with untruncated labels in a cache file for read_file and search_files
-var spillElementsToFile = func(env *tools.Env, c *CaptureResult) *string {
+var spillElementsToFile = func(ctx context.Context, env *tools.Env, c *CaptureResult) *string {
 	payload := pyjson.NewObject()
 	payload.Set("app", c.App)
 	payload.Set("window_title", c.WindowTitle)
@@ -524,7 +524,7 @@ var spillElementsToFile = func(env *tools.Env, c *CaptureResult) *string {
 		elems = append(elems, o)
 	}
 	payload.Set("elements", elems)
-	return writeCacheFile(env, "element spill", "cache/computer_use", "computer_use_cache", "elements_"+uuid4Hex()+".json",
+	return writeCacheFile(tools.WithEnvHome(ctx, env), env, "element spill", "cache/computer_use", "computer_use_cache", "elements_"+uuid4Hex()+".json",
 		"elements_*.json", cuMaxSpillFiles, func(p string) error {
 			text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Indent(1))
 			if err != nil {
@@ -673,7 +673,7 @@ var routeCaptureThroughAuxVision = func(ctx context.Context, env *tools.Env, c *
 		return nil
 	}
 	_, ext := captureImageFormat(c)
-	tempPath, err := cacheFile(env, "cache/vision", "temp_vision_images", "computer_use_"+uuid4Hex()+ext, "", 0)
+	tempPath, err := cacheFile(tools.WithEnvHome(ctx, env), env, "cache/vision", "temp_vision_images", "computer_use_"+uuid4Hex()+ext, "", 0)
 	if err != nil {
 		slog.Warn(fmt.Sprintf("computer_use: auxiliary.vision pre-analysis failed (%v); returning to caller without aux analysis", err))
 		return nil

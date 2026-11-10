@@ -232,7 +232,7 @@ func ApplyTerminalConfigToEnv(ctx context.Context, h string, opts TerminalEnvOpt
 	}
 	cfg := opts.Config
 	if cfg == nil {
-		loaded, lerr := LoadReadonly(ctx, h, envRefLookup)
+		loaded, lerr := LoadReadonly(ctx, h, EnvRefLookupContext(ctx))
 		if lerr != nil {
 			return lerr
 		}

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -14,11 +15,11 @@ const OnboardingProfileBuildFlag = "profile_build_offered"
 func onboardingRootConfigPath() string { return home.ConfigPath(home.Root()) }
 
 // OnboardingShouldRun is the root config's explicit onboarding.run when boolean, else whether this machine never used icebath
-func OnboardingShouldRun(assumeFresh bool) bool {
+func OnboardingShouldRun(ctx context.Context, assumeFresh bool) bool {
 	if value, ok := onboardingExplicitRun(); ok {
 		return value
 	}
-	return assumeFresh || InstallStateProbe().Fresh()
+	return assumeFresh || InstallStateProbe(ctx).Fresh()
 }
 
 // The explicit boolean onboarding.run of the root config with the managed overlay, false when unset
@@ -33,21 +34,21 @@ func onboardingExplicitRun() (bool, bool) {
 }
 
 // OnboardingLatchFirstInstall records on a fresh install's first desktop boot that onboarding is due and the trial reserved
-func OnboardingLatchFirstInstall() (bool, error) {
-	if _, explicit := onboardingExplicitRun(); explicit || !InstallStateProbe().Fresh() {
+func OnboardingLatchFirstInstall(ctx context.Context) (bool, error) {
+	if _, explicit := onboardingExplicitRun(); explicit || !InstallStateProbe(ctx).Fresh() {
 		return false, nil
 	}
-	if err := SetOnboardingRun(true, false); err != nil {
+	if err := SetOnboardingRun(ctx, true, false); err != nil {
 		return false, err
 	}
-	if err := ReserveInstallTrial(); err != nil {
+	if err := ReserveInstallTrial(ctx); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
 // SetOnboardingRun persists onboarding.run, and with the mark the profile build offered flag, in the root config as one write
-func SetOnboardingRun(value bool, markProfileOffered bool) error {
+func SetOnboardingRun(ctx context.Context, value bool, markProfileOffered bool) error {
 	root := home.Root()
 	doc, err := config.ReadUser(root)
 	if err != nil {
@@ -67,7 +68,7 @@ func SetOnboardingRun(value bool, markProfileOffered bool) error {
 		}
 		seen[OnboardingProfileBuildFlag] = true
 	}
-	if err := config.SaveUser(root, doc); err != nil {
+	if err := config.SaveUser(ctx, root, doc); err != nil {
 		return err
 	}
 	OnboardingDueInvalidate()

@@ -607,21 +607,7 @@ func titleRuntimeAllows(validator func() bool) (allowed bool) {
 }
 
 // First choice message of an auxiliary response, an error where Python indexing would raise
-func titleResponseMessage(response any) (any, error) {
-	choices := reflect.ValueOf(provider.MessageField(response, "choices"))
-	if !choices.IsValid() || (choices.Kind() != reflect.Slice && choices.Kind() != reflect.Array) {
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(response) + "' object has no attribute 'choices'"}
-	}
-	if choices.Len() == 0 {
-		return nil, &pyint.Error{Kind: "IndexError", Msg: "list index out of range"}
-	}
-	choice := choices.Index(0).Interface()
-	message := provider.MessageField(choice, "message")
-	if message == nil {
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(choice) + "' object has no attribute 'message'"}
-	}
-	return message, nil
-}
+func titleResponseMessage(response any) (any, error) { return provider.FirstChoiceMessage(response) }
 
 // One title model call with the answer shaped and example echo guards, empty when rejected
 func requestTitle(ctx context.Context, prompt, snippet string, o generateTitleOptions) (string, error) {

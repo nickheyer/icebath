@@ -97,7 +97,7 @@ func (b *CuaDriverBackend) Start() error {
 		return fmt.Errorf("cua-driver is not ready: %s. %s", why, hint)
 	}
 	if b.embeddedDaemon != nil {
-		if err := b.embeddedDaemon.start(); err != nil {
+		if err := b.embeddedDaemon.start(tools.WithEnvHome(ctx, b.env)); err != nil {
 			if serr := b.embeddedDaemon.stop(); serr != nil {
 				return serr
 			}

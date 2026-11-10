@@ -20,7 +20,7 @@ func SocketSafeTmpdir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if st, serr := os.Stat("/tmp"); len(candidate) <= SocketTmpdirMaxLen || serr != nil || !st.IsDir() {
+	if st, serr := os.Stat("/tmp"); pystr.Len(candidate) <= SocketTmpdirMaxLen || serr != nil || !st.IsDir() {
 		return candidate, nil
 	}
 	return "/tmp", nil
@@ -34,17 +34,16 @@ func ApplyScratchTmpEnv(env map[string]string) bool {
 			return false
 		}
 	}
-	base := Process()
+	var base string
 	if h := pystr.Strip(env["ICEBATH_HOME"]); h != "" {
 		base = expand(h)
+	} else {
+		var err error
+		if base, err = processHome(); err != nil {
+			return false
+		}
 	}
-	if base == "" {
-		return false
-	}
-	scratch, err := EnsureScratchDir(base)
-	if err != nil {
-		return false
-	}
+	scratch := EnsureScratchDir(base)
 	for _, key := range ScratchTmpEnvVars {
 		env[key] = scratch
 	}

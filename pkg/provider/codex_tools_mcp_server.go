@@ -58,6 +58,9 @@ var codexToolsExposedTools = []string{
 	"kanban_create", "kanban_unblock", "kanban_link",
 }
 
+// CodexToolsExposedTools returns a copy of the curated tool names the codex tools server exposes
+func CodexToolsExposedTools() []string { return slices.Clone(codexToolsExposedTools) }
+
 // One keyword only parameter of a handler signature, an optional one defaults to None
 type codexToolsParam struct {
 	Name     string

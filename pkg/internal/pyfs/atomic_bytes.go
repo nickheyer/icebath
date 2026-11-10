@@ -1,6 +1,7 @@
 package pyfs
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,11 +10,11 @@ import (
 )
 
 // Writes bytes through a fsynced temp sibling and an atomic rename, mode nil keeping an existing file mode
-func AtomicWriteBytes(path string, content []byte, prefix string, mode *os.FileMode, fsyncDir bool) error {
+func AtomicWriteBytes(ctx context.Context, path string, content []byte, prefix string, mode *os.FileMode, fsyncDir bool) error {
 	if prefix == "" {
 		prefix = ".tmp_"
 	}
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
 	var perm os.FileMode

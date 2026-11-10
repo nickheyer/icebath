@@ -1,6 +1,7 @@
 package codeexec
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -196,7 +197,7 @@ func (t *stderrTail) joined() string {
 }
 
 // Starts the daemon argv, owned by this process off macOS, swapped by tests
-var spawnCuaDaemon = func(argv []string, env map[string]string, platform string, tail *stderrTail) (cuaDaemonProcess, error) {
+var spawnCuaDaemon = func(ctx context.Context, argv []string, env map[string]string, platform string, tail *stderrTail) (cuaDaemonProcess, error) {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env = envList(env)
 	cmd.Stderr = tail
@@ -205,7 +206,7 @@ var spawnCuaDaemon = func(argv []string, env map[string]string, platform string,
 	if platform == "darwin" {
 		err = cmd.Start()
 	} else {
-		err = tools.SpawnOwned(cmd, "cua-driver-embedded")
+		err = tools.SpawnOwned(ctx, cmd, "cua-driver-embedded")
 	}
 	if err != nil {
 		return nil, err
@@ -312,7 +313,7 @@ func (d *embeddedCuaDaemon) serveArgs() []string {
 }
 
 // Launches the private daemon and waits until its socket answers status
-func (d *embeddedCuaDaemon) start() error {
+func (d *embeddedCuaDaemon) start(ctx context.Context) error {
 	if d.running {
 		return nil
 	}
@@ -336,7 +337,7 @@ func (d *embeddedCuaDaemon) start() error {
 	if err != nil {
 		return err
 	}
-	if d.process, err = spawnCuaDaemon(command, env, cuPlatform, d.tail); err != nil {
+	if d.process, err = spawnCuaDaemon(tools.WithEnvHome(ctx, d.env), command, env, cuPlatform, d.tail); err != nil {
 		return err
 	}
 	d.ownsRuntime = true

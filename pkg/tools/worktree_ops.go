@@ -426,7 +426,7 @@ func loadWorktreeMergeCache() *mergeVerdicts {
 }
 
 // Atomically persists the newest verdicts up to the cache cap, never failing the caller
-func saveWorktreeMergeCache(verdicts *mergeVerdicts) {
+func saveWorktreeMergeCache(ctx context.Context, verdicts *mergeVerdicts) {
 	keys := verdicts.keys[max(0, len(verdicts.keys)-worktreeMergeCacheMax):]
 	inner := pyjson.NewObject()
 	for _, k := range keys {
@@ -438,7 +438,7 @@ func saveWorktreeMergeCache(verdicts *mergeVerdicts) {
 	path := worktreeMergeCachePath()
 	err := os.MkdirAll(filepath.Dir(path), 0o777)
 	if err == nil {
-		err = config.AtomicJSONWriteWith(path, payload)
+		err = config.AtomicJSONWriteWith(ctx, path, payload)
 	}
 	if err != nil {
 		toolsLogger(nil).Debug(fmt.Sprintf("Could not persist worktree merge cache: %s", err))
@@ -984,7 +984,7 @@ type pruneVerdict struct {
 }
 
 // Parallel read only classification into dirty, unpushed, locked live, reap or reap keep branch with memoized cherry verdicts
-func classifyPruneCandidates(repoRoot string, candidates []pruneCandidate) []pruneVerdict {
+func classifyPruneCandidates(ctx context.Context, repoRoot string, candidates []pruneCandidate) []pruneVerdict {
 	mergeCache := loadWorktreeMergeCache()
 	sizeBefore := len(mergeCache.keys)
 	var cacheMu sync.Mutex
@@ -1034,7 +1034,7 @@ func classifyPruneCandidates(repoRoot string, candidates []pruneCandidate) []pru
 	}
 	wg.Wait()
 	if len(mergeCache.keys) != sizeBefore {
-		saveWorktreeMergeCache(mergeCache)
+		saveWorktreeMergeCache(ctx, mergeCache)
 	}
 	return verdicts
 }
@@ -1101,7 +1101,7 @@ func reapPruneVerdicts(repoRoot string, verdicts []pruneVerdict, staleWorkCutoff
 // Removes stale worktrees and orphaned branches, then reclaims the dependency state of deleted checkouts
 func PruneStaleWorktrees(ctx context.Context, repoRoot string, maxAgeHours int) error {
 	defer reclaimOrphanInstallStates(ctx)
-	return pruneStaleWorktreeTrees(repoRoot, maxAgeHours)
+	return pruneStaleWorktreeTrees(ctx, repoRoot, maxAgeHours)
 }
 
 // Orphan install state reclaimer, swapped by tests
@@ -1126,7 +1126,7 @@ func reclaimOrphanInstallStates(ctx context.Context) {
 	}
 }
 
-func pruneStaleWorktreeTrees(repoRoot string, maxAgeHours int) error {
+func pruneStaleWorktreeTrees(ctx context.Context, repoRoot string, maxAgeHours int) error {
 	worktreesDir := filepath.Join(repoRoot, ".worktrees")
 	if _, err := os.Stat(worktreesDir); err != nil {
 		pruneOrphanedBranches(repoRoot, nil)
@@ -1137,7 +1137,7 @@ func pruneStaleWorktreeTrees(repoRoot string, maxAgeHours int) error {
 	}
 	settings := SweepSettings()
 	if !ClassicMode(settings) {
-		if err := RunSweep(repoRoot, maxAgeHours, settings); err != nil {
+		if err := RunSweep(ctx, repoRoot, maxAgeHours, settings); err != nil {
 			return err
 		}
 		warnWorktreeFootprint(repoRoot)
@@ -1149,7 +1149,7 @@ func pruneStaleWorktreeTrees(repoRoot string, maxAgeHours int) error {
 		pruneOrphanedBranches(repoRoot, nil)
 		return nil
 	}
-	verdicts := classifyPruneCandidates(repoRoot, candidates)
+	verdicts := classifyPruneCandidates(ctx, repoRoot, candidates)
 	preservedStale, keptBranches := reapPruneVerdicts(repoRoot, verdicts, now-7*24*3600)
 	if len(preservedStale) > 0 {
 		sorted := slices.Clone(preservedStale)

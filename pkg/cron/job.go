@@ -699,7 +699,7 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 			if json.Unmarshal(raw, &o) == nil {
 				j.Origin = o
 			} else {
-				j.Extra["origin"] = raw
+				j.putExtra("origin", raw)
 			}
 		}
 	case "enabled_toolsets":
@@ -741,7 +741,7 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 				v := int(n)
 				j.GraceMinutes = &v
 			} else {
-				j.Extra["grace_minutes"] = raw
+				j.putExtra("grace_minutes", raw)
 			}
 		}
 	case "catch_up":
@@ -750,7 +750,7 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 			if json.Unmarshal(raw, &b) == nil {
 				j.CatchUp = &b
 			} else {
-				j.Extra["catch_up"] = raw
+				j.putExtra("catch_up", raw)
 			}
 		}
 	case "fire_claim":
@@ -808,10 +808,27 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 				j.LastDeliveryQueued = v
 			}
 		}
+	case "_model_unreachable":
+		var v any
+		_ = json.Unmarshal(raw, &v)
+		j.run.modelUnreachable = pyTruthy(v)
+	case "_quota_hold_seconds":
+		j.run.quotaHoldSeconds = 0
+		if n, ok := decodeNumber(raw); ok {
+			j.run.quotaHoldSeconds = n
+		}
 	default:
-		j.Extra[k] = raw
+		j.putExtra(k, raw)
 	}
 	return nil
+}
+
+// Keeps an unmodelled key verbatim, allocating the map a record built without decoding lacks
+func (j *Job) putExtra(k string, raw json.RawMessage) {
+	if j.Extra == nil {
+		j.Extra = map[string]json.RawMessage{}
+	}
+	j.Extra[k] = raw
 }
 
 // Decodes a repeat object, normalizing a hand edited completed counter to a non negative int

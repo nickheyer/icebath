@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -13,12 +14,17 @@ import (
 
 // Mirrors the import time sequence of hermes_cli/main.py and then its main()
 func main() {
-	dispatchChildEntries()
+	dispatchChildEntries(context.Background())
 	installProcessWiring()
+	args, pinned := pm.LauncherStart(pm.RepoRoot(), os.Args)
 	if restoreInterruptedPull() {
 		relaunchAfterRestore()
 	}
+	os.Args = args
+	pm.PinLauncherHome()
+	printLauncherRuntimeCommand(pinned)
 	normalizeHomeEnv()
+	bootLaunch()
 	argv := os.Args[1:]
 	if argvIsGatewayRun(argv) {
 		armStartupWatchdog()

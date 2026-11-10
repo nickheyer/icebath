@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -82,7 +83,7 @@ func TestLaunchRecordLivesInTheProfilesPrivateStateDir(t *testing.T) {
 	if v, _ := jsonInt(objGet(data, "pid")); v != *b.PID {
 		t.Fatalf("record pid %v", objGet(data, "pid"))
 	}
-	stopBrowser("recorded")
+	stopBrowser(context.Background(), "recorded")
 	if left := globNames(filepath.Join(state, "chromium-records"), "*.json"); len(left) != 0 {
 		t.Fatalf("records left %v", left)
 	}
@@ -123,7 +124,7 @@ func TestStopSignalsTheBrowserBeforeItsHelpersAndRemovesTheEphemeralProfile(t *t
 		}
 		rmtree(path)
 	})
-	stopBrowser("stop-me")
+	stopBrowser(context.Background(), "stop-me")
 	raw, _ := os.ReadFile(snapshot)
 	if got := strings.Fields(string(raw)); !slices.Equal(got, []string{"parent", "child"}) {
 		t.Fatalf("order %q", got)
@@ -165,7 +166,7 @@ func TestAStopRacingARelaunchNeverForgetsTheReplacement(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { launcherTerminate = real })
-	stopBrowser("racy")
+	stopBrowser(context.Background(), "racy")
 	select {
 	case <-worker:
 	case <-time.After(60 * time.Second):
@@ -219,7 +220,7 @@ func TestOrphanReapRefusesAPidWhoseCmdlineLacksTheRecordedUserDataDir(t *testing
 	env := launcherTestEnv(t)
 	stranger := startProc(t, "sleep", "3001")
 	record := writeOrphanRecord(t, homeRecords(t, env), stranger.cmd.Process.Pid, filepath.Join(t.TempDir(), "some-profile"))
-	if n := reapOrphanedBrowsers(nil); n != 0 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 {
 		t.Fatalf("reaped %d", n)
 	}
 	if !stranger.running() || lexists(record) {
@@ -232,7 +233,7 @@ func TestOrphanReapStopsACrashedOwnersBrowser(t *testing.T) {
 	udd := filepath.Join(t.TempDir(), "orphan-profile")
 	fake := startFake(t, fakeExe(t, "order-chromium"), udd)
 	writeOrphanRecord(t, homeRecords(t, env), fake.cmd.Process.Pid, udd)
-	if n := reapOrphanedBrowsers(nil); n != 1 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 1 {
 		t.Fatalf("reaped %d", n)
 	}
 	select {
@@ -245,7 +246,7 @@ func TestOrphanReapStopsACrashedOwnersBrowser(t *testing.T) {
 func TestRecordsOfALiveOwnerAreLeftAlone(t *testing.T) {
 	homeDir, launch := orderLaunch(t)
 	launch("mine")
-	if n := reapOrphanedBrowsers(nil); n != 0 || getBrowser("mine") == nil {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || getBrowser("mine") == nil {
 		t.Fatalf("reaped %d", n)
 	}
 	if len(globNames(recordsDir(homeDir), "*.json")) == 0 {
@@ -266,7 +267,7 @@ func TestASharedProfileBrowserOutlivesItsLauncherWhileAnotherProcessHoldsIt(t *t
 	if owned {
 		t.Fatal("the holder claims to own the browser")
 	}
-	stopBrowser("profile:" + udd)
+	stopBrowser(context.Background(), "profile:"+udd)
 	if !launcherPidAlive(int(*mine.PID)) {
 		t.Fatal("the launcher let go of a browser another process still drives")
 	}
@@ -296,11 +297,11 @@ func TestACrashedLaunchersSharedBrowserIsReapedOnlyAfterItsLastHolderIsGone(t *t
 	defer killFake(pid)
 	holder, _, _ := profileUser(t, exe, udd, "CHILD_RUNNING="+strconv.FormatInt(pid, 10))
 	owner.kill()
-	if n := reapOrphanedBrowsers(nil); n != 0 || !launcherPidAlive(int(pid)) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || !launcherPidAlive(int(pid)) {
 		t.Fatalf("reaped %d while a live process still holds it", n)
 	}
 	holder.kill()
-	if n := reapOrphanedBrowsers(nil); n != 1 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 1 {
 		t.Fatalf("reaped %d", n)
 	}
 	gone(t, pid)
@@ -316,7 +317,7 @@ func TestAThrowawayProfileLeftByAProcessThatDiedMidLaunchIsReclaimed(t *testing.
 	if !isDir(diedDir) || !isDir(held) || filepath.Dir(diedDir) != filepath.Dir(held) {
 		t.Fatalf("dirs %s %s", diedDir, held)
 	}
-	reapOrphanedBrowsers(nil)
+	reapOrphanedBrowsers(context.Background(), nil)
 	if lexists(diedDir) || !isDir(held) {
 		t.Fatal("the dead owner's dir survived or the live one's was removed")
 	}
@@ -353,7 +354,7 @@ func TestALauncherKilledDuringTheReadinessWaitLeavesItsChromiumToTheReaper(t *te
 	if !launcherPidAlive(int(pid)) {
 		t.Fatal("the starting Chromium died with its launcher")
 	}
-	if n := reapOrphanedBrowsers(nil); n != 1 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 1 {
 		t.Fatalf("a Chromium whose launcher died mid-launch has no record, reaped %d", n)
 	}
 	gone(t, pid)
@@ -387,7 +388,7 @@ func TestAReapDuringThisProcesssOwnReadinessWaitLeavesTheStartingChromium(t *tes
 		pid, _ = strconv.Atoi(launching.keys[0])
 		return true
 	})
-	if n := reapOrphanedBrowsers(nil); n != 0 || !launcherPidAlive(pid) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || !launcherPidAlive(pid) {
 		t.Fatalf("the janitor killed this process's own starting browser, reaped %d", n)
 	}
 	r := <-out
@@ -441,7 +442,7 @@ func TestAnOlderRecordOnTheSamePidDoesNotTakeTheLiveBrowsersHolders(t *testing.T
 			udd := filepath.Join(t.TempDir(), "pinned-profile")
 			key := "profile:" + udd
 			theirs := startFake(t, script, udd)
-			defer stopBrowser(key)
+			defer stopBrowser(context.Background(), key)
 			pid := deadPid(t)
 			asContainerBrowser(udd, pid)
 			raw, _ := os.ReadFile(filepath.Join(udd, devtoolsFile))
@@ -462,7 +463,7 @@ func TestAnOlderRecordOnTheSamePidDoesNotTakeTheLiveBrowsersHolders(t *testing.T
 			if now, _ := os.ReadFile(old); string(now) != string(oldBytes) {
 				t.Fatal("the earlier launch's record was rewritten")
 			}
-			stopBrowser(key)
+			stopBrowser(context.Background(), key)
 			if len(globNames(filepath.Dir(live), "*.lease")) != 0 || !theirs.running() {
 				t.Fatal("a lease was left or the other environment's browser was stopped")
 			}
@@ -495,7 +496,7 @@ func TestStoppingOneOfTwoSamePidBrowsersDropsOnlyItsOwnLease(t *testing.T) {
 			t.Fatalf("no lease in %s", s)
 		}
 	}
-	stopBrowser("profile:" + profiles[0])
+	stopBrowser(context.Background(), "profile:"+profiles[0])
 	if len(globNames(states[0], "*.lease")) != 0 {
 		t.Fatal("the stopped session left its lease: its browser is held forever")
 	}
@@ -522,7 +523,7 @@ func TestALeaseOnAnEarlierLaunchDoesNotKeepTheCurrentBrowserUp(t *testing.T) {
 	stale := writeStateJSON(t, filepath.Join(filepath.Dir(record), fmt.Sprintf("%s@%d-nffffffffffff.lease", stem(record), goneHere)),
 		map[string]any{"holder_pid": goneHere, "holder_start_time": nil, "pid": *mine.PID, "start_time": *mine.StartTime - 1,
 			"user_data_dir": udd, "ns": liveNS})
-	stopBrowser("profile:" + udd)
+	stopBrowser(context.Background(), "profile:"+udd)
 	gone(t, *mine.PID)
 	if lexists(record) || lexists(stale) {
 		t.Fatal("the record or the stale lease survived")
@@ -555,7 +556,7 @@ func TestStateFromAnotherNamespaceIsNeverJudgedDead(t *testing.T) {
 					"user_data_dir": profile, "home_key": "x", "ephemeral": true}))
 			lease := writeStateJSON(t, filepath.Join(records, fmt.Sprintf("%s-%d%s@%d%s.lease", strings.Repeat("c", 16), browser, suffix, holder, suffix)),
 				withNS(map[string]any{"holder_pid": holder, "holder_start_time": nil, "pid": browser, "start_time": 1}))
-			if n := reapOrphanedBrowsers(nil); n != 0 {
+			if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 {
 				t.Fatalf("reaped %d", n)
 			}
 			if !lexists(record) || !isDir(filepath.Join(profile, "Default")) || !isDir(orphanDir) || !lexists(lease) {
@@ -578,11 +579,11 @@ func TestAHolderInAnotherNamespaceKeepsTheSharedBrowserUp(t *testing.T) {
 	foreign := writeStateJSON(t, filepath.Join(filepath.Dir(record), fmt.Sprintf("%s@%d-nffffffffffff.lease", stem(record), goneHere)),
 		map[string]any{"holder_pid": goneHere, "holder_start_time": nil, "pid": *mine.PID, "start_time": *mine.StartTime,
 			"user_data_dir": udd, "ns": foreignNS})
-	stopBrowser("profile:" + udd)
+	stopBrowser(context.Background(), "profile:"+udd)
 	if !launcherPidAlive(int(*mine.PID)) {
 		t.Fatal("stopped a browser a holder in another namespace may still drive")
 	}
-	if n := reapOrphanedBrowsers(nil); n != 0 || !launcherPidAlive(int(*mine.PID)) || !lexists(foreign) || !lexists(record) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || !launcherPidAlive(int(*mine.PID)) || !lexists(foreign) || !lexists(record) {
 		t.Fatalf("reaped %d", n)
 	}
 }
@@ -606,18 +607,18 @@ func TestAnAttacherFromAnotherNamespaceIsSeenByTheOwner(t *testing.T) {
 	if got := globNames(filepath.Dir(record), "*.lease"); !slices.Equal(got, []string{want}) {
 		t.Fatalf("leases %v want %s", got, want)
 	}
-	stopBrowser("profile:" + udd)
+	stopBrowser(context.Background(), "profile:"+udd)
 	if !launcherPidAlive(int(*mine.PID)) {
 		t.Fatal("the owner stopped a browser another namespace's holder still drives")
 	}
-	if n := reapOrphanedBrowsers(nil); n != 0 || !launcherPidAlive(int(*mine.PID)) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || !launcherPidAlive(int(*mine.PID)) {
 		t.Fatalf("reaped %d", n)
 	}
 	holder.finish(t)
 	if len(globNames(filepath.Dir(record), "*.lease")) != 0 {
 		t.Fatal("the attacher left its lease behind")
 	}
-	if n := reapOrphanedBrowsers(nil); n != 1 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 1 {
 		t.Fatalf("reaped %d", n)
 	}
 	gone(t, *mine.PID)
@@ -641,7 +642,7 @@ func TestADeadHolderInThisNamespaceIsStillDropped(t *testing.T) {
 		t.Fatal("the holder wrote no lease")
 	}
 	holder.kill()
-	stopBrowser("profile:" + udd)
+	stopBrowser(context.Background(), "profile:"+udd)
 	gone(t, *mine.PID)
 	if len(globNames(filepath.Dir(record), "*.lease")) != 0 || lexists(record) {
 		t.Fatal("the dead holder's lease or the record survived")
@@ -702,7 +703,7 @@ func TestSharedProfileStateLivesInAPrivatePerUserDirOutsideEveryHome(t *testing.
 		t.Fatal(err)
 	}
 	defer killFake(*b.PID)
-	defer stopBrowser("profile:" + udd)
+	defer stopBrowser(context.Background(), "profile:"+udd)
 	record := recordPath(b)
 	root := sharedProfilesRoot()
 	if !lexists(record) || filepath.Dir(filepath.Dir(record)) != root || strings.HasPrefix(record, env.Home+string(filepath.Separator)) {
@@ -728,7 +729,7 @@ func TestACrashedLaunchersSharedBrowserIsReapedFromAnotherHome(t *testing.T) {
 	if !launcherPidAlive(int(pid)) {
 		t.Fatal("the browser died with its launcher")
 	}
-	if n := reapOrphanedBrowsers(nil); n != 1 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 1 {
 		t.Fatalf("reaped %d", n)
 	}
 	gone(t, pid)
@@ -749,14 +750,14 @@ func TestOneProcessHoldingAProfileUnderTwoKeysKeepsItUntilBothLetGo(t *testing.T
 	if err != "" || *second.PID != *first.PID || second.Owned {
 		t.Fatalf("second %v %q", second, err)
 	}
-	stopBrowser("profile:" + udd)
+	stopBrowser(context.Background(), "profile:"+udd)
 	if !launcherPidAlive(int(*first.PID)) {
 		t.Fatal("dropping one key stopped the browser the other key still drives")
 	}
 	if getBrowser("profile:"+alias) != second {
 		t.Fatal("the alias key lost its browser")
 	}
-	stopBrowser("profile:" + alias)
+	stopBrowser(context.Background(), "profile:"+alias)
 	gone(t, *first.PID)
 	if left := launcherState(); len(left) != 0 {
 		t.Fatalf("launcher state left %v", left)
@@ -848,7 +849,7 @@ func TestAnOwnersStopCannotFallBetweenTheAttachProbeAndTheLease(t *testing.T) {
 	if !launcherPidAlive(int(pid)) {
 		t.Fatal("the owner stopped the browser this process had just attached to")
 	}
-	stopBrowser("profile:" + udd)
+	stopBrowser(context.Background(), "profile:"+udd)
 	gone(t, pid)
 }
 
@@ -867,7 +868,7 @@ func TestTheReaperSkipsAProfileWhoseFirstLaunchIsStillStarting(t *testing.T) {
 	waitUntil(t, 30*time.Second, "the first launch's Chromium to start", func() bool { return len(notedPids(udd, "launches")) == 1 })
 	pid := notedPids(udd, "launches")[0]
 	reaped := make(chan struct{})
-	go func() { reapOrphanedBrowsers(nil); close(reaped) }()
+	go func() { reapOrphanedBrowsers(context.Background(), nil); close(reaped) }()
 	select {
 	case <-reaped:
 	case <-time.After(20 * time.Second):
@@ -903,13 +904,13 @@ func TestAnUnrecordedLiveBrowsersThrowawayProfileSurvivesTheReclaim(t *testing.T
 	script := fakeExe(t, "serving-chromium")
 	udd := deadOwnersDir(t)
 	p := startBrowserOn(t, script, udd)
-	reapOrphanedBrowsers(nil)
+	reapOrphanedBrowsers(context.Background(), nil)
 	if !isDir(udd) || !p.running() {
 		t.Fatal("the reaper deleted the profile of a Chromium still running on it")
 	}
 	p.cmd.Process.Signal(syscall.SIGTERM)
 	<-p.done
-	reapOrphanedBrowsers(nil)
+	reapOrphanedBrowsers(context.Background(), nil)
 	if lexists(udd) {
 		t.Fatal("the dead owner's profile survived once its browser stopped")
 	}
@@ -921,9 +922,9 @@ func TestALiveBrowsersProfileSurvivesWhenItsRecordCannotProveThePid(t *testing.T
 	udd := deadOwnersDir(t)
 	p := startBrowserOn(t, script, udd)
 	one := int64(1)
-	writeRecord(&LaunchedBrowser{Key: "lost", PID: int64p(p.cmd.Process.Pid), StartTime: &one, UserDataDir: udd, Owned: true,
+	writeRecord(context.Background(), &LaunchedBrowser{Key: "lost", PID: int64p(p.cmd.Process.Pid), StartTime: &one, UserDataDir: udd, Owned: true,
 		Ephemeral: true, HomeKey: cfgOf(env).homeKey()})
-	if n := reapOrphanedBrowsers(nil); n != 0 || !p.running() {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || !p.running() {
 		t.Fatalf("signalled on an unproven pid, reaped %d", n)
 	}
 	if !isDir(udd) {
@@ -956,7 +957,7 @@ func TestABrowserAdoptedThroughASymlinkIsStillReapedAfterItsAdopterCrashes(t *te
 	if adopted, owned := crashingHolder(t, script, alias); adopted != pid || owned {
 		t.Fatalf("adopter saw %d %v", adopted, owned)
 	}
-	if n := reapOrphanedBrowsers(nil); n != 1 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 1 {
 		t.Fatalf("reaped %d", n)
 	}
 	gone(t, pid)
@@ -973,7 +974,7 @@ func TestAPausedSharedBrowserIsRefusedThenAttachedOnceItAnswersAgain(t *testing.
 	pid := b.cmd.Process.Pid
 	portFile, _ := os.ReadFile(filepath.Join(udd, devtoolsFile))
 	attach := func() (*LaunchedBrowser, string) {
-		return launchChromium(env, "profile:"+udd, LaunchOptions{Executable: script, UserDataDir: udd, Headed: boolp(false),
+		return launchChromium(context.Background(), env, "profile:"+udd, LaunchOptions{Executable: script, UserDataDir: udd, Headed: boolp(false),
 			ProcEnv: environ(), Timeout: durp(3 * time.Second), SandboxBypass: true})
 	}
 	syscall.Kill(pid, syscall.SIGSTOP)
@@ -992,7 +993,7 @@ func TestAPausedSharedBrowserIsRefusedThenAttachedOnceItAnswersAgain(t *testing.
 	if err != "" || *attached.PID != int64(pid) || attached.Owned {
 		t.Fatalf("attach %v %q", attached, err)
 	}
-	stopBrowser("profile:" + udd)
+	stopBrowser(context.Background(), "profile:"+udd)
 }
 
 func relock(udd, host string, pid int) {
@@ -1024,8 +1025,8 @@ func TestAReachableBrowserFromAnotherEnvironmentIsAttachedAndNeverStopped(t *tes
 	if len(globNames(state, "*.lease")) == 0 || getBrowser(key) != b {
 		t.Fatal("attached without a lease or registration")
 	}
-	stopBrowser(key)
-	if n := reapOrphanedBrowsers(nil); n != 0 || !theirs.running() {
+	stopBrowser(context.Background(), key)
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || !theirs.running() {
 		t.Fatalf("stopped a browser another environment holds, reaped %d", n)
 	}
 	if now, _ := os.ReadFile(filepath.Join(udd, devtoolsFile)); len(globNames(state, "*.lease")) != 0 || string(now) != string(portFile) {
@@ -1131,7 +1132,7 @@ func TestUnfingerprintableBrowserIsRefused(t *testing.T) {
 	aliveOnly(t, 12345)
 	startTimeIs(t, 0, false)
 	cmdlineNamesEveryDir(t, true)
-	reapOrphanedBrowsers(nil)
+	reapOrphanedBrowsers(context.Background(), nil)
 	if len(*f.terminated) != 0 {
 		t.Fatalf("terminated %v", *f.terminated)
 	}
@@ -1142,7 +1143,7 @@ func TestCorruptRecordIsCleaned(t *testing.T) {
 	bad, listed := filepath.Join(f.dir, "corrupt.json"), filepath.Join(f.dir, "list.json")
 	os.WriteFile(bad, []byte("not-json"), 0o600)
 	os.WriteFile(listed, []byte("[1, 2]"), 0o600)
-	if n := reapOrphanedBrowsers(nil); n != 0 || lexists(bad) || lexists(listed) || len(*f.terminated) != 0 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || lexists(bad) || lexists(listed) || len(*f.terminated) != 0 {
 		t.Fatalf("reaped %d", n)
 	}
 }
@@ -1153,7 +1154,7 @@ func TestAliveOwnerIsNotReapedEvenWhenUntracked(t *testing.T) {
 	aliveOnly(t, 12345, liveOtherOwner)
 	startTimeIs(t, 777, true)
 	cmdlineNamesEveryDir(t, true)
-	if n := reapOrphanedBrowsers(nil); n != 0 || len(*f.terminated) != 0 || !lexists(rec) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 || !lexists(rec) {
 		t.Fatalf("reaped %d", n)
 	}
 }
@@ -1187,7 +1188,7 @@ func TestUntrackedOwnBrowserIsReaped(t *testing.T) {
 	aliveOnly(t, 12345, os.Getpid())
 	startTimeIs(t, 777, true)
 	cmdlineNamesEveryDir(t, true)
-	if n := reapOrphanedBrowsers(nil); n != 1 || !slices.Equal(*f.terminated, []int64{12345}) || lexists(rec) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 1 || !slices.Equal(*f.terminated, []int64{12345}) || lexists(rec) {
 		t.Fatalf("reaped %d terminated %v", n, *f.terminated)
 	}
 }
@@ -1205,7 +1206,7 @@ func TestTrackedOwnBrowserIsSpared(t *testing.T) {
 	aliveOnly(t, 12345, os.Getpid())
 	startTimeIs(t, 777, true)
 	cmdlineNamesEveryDir(t, true)
-	if n := reapOrphanedBrowsers(nil); n != 0 || len(*f.terminated) != 0 || !lexists(rec) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 || !lexists(rec) {
 		t.Fatalf("reaped %d", n)
 	}
 }
@@ -1216,7 +1217,7 @@ func TestIdentityGuardStillGatesTheLeakPath(t *testing.T) {
 	aliveOnly(t, 12345, os.Getpid())
 	startTimeIs(t, 777, true)
 	cmdlineNamesEveryDir(t, false)
-	if n := reapOrphanedBrowsers(nil); n != 0 || len(*f.terminated) != 0 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 {
 		t.Fatalf("reaped %d", n)
 	}
 }
@@ -1227,7 +1228,7 @@ func TestThrowawayProfileOfACrashedOwnerIsRemovedEvenWhenItsBrowserDiedToo(t *te
 	os.MkdirAll(filepath.Join(udd, "Default"), 0o755)
 	rec := reaperRecord(t, f.dir, 4242, udd, deadOwner, 777, true)
 	aliveOnly(t)
-	if n := reapOrphanedBrowsers(nil); n != 0 || len(*f.terminated) != 0 || lexists(udd) || lexists(rec) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 || lexists(udd) || lexists(rec) {
 		t.Fatalf("reaped %d", n)
 	}
 }
@@ -1250,11 +1251,11 @@ func TestBrowserAttachedAfterItsOwnerCrashedIsNeverReapedWhileInUse(t *testing.T
 	record := recordPath(crashed)
 	writeStateJSON(t, record, map[string]any{"owner_pid": deadOwner, "owner_start_time": nil, "pid": 4242, "start_time": 777,
 		"user_data_dir": udd, "home_key": crashed.HomeKey, "ephemeral": false, "ns": nsValue()})
-	attached, err := launchChromium(f.env, "profile:"+udd, LaunchOptions{Executable: "/opt/chrome", UserDataDir: udd, SandboxBypass: true})
+	attached, err := launchChromium(context.Background(), f.env, "profile:"+udd, LaunchOptions{Executable: "/opt/chrome", UserDataDir: udd, SandboxBypass: true})
 	if err != "" || attached.Owned {
 		t.Fatalf("attach %v %q", attached, err)
 	}
-	if n := reapOrphanedBrowsers(nil); n != 0 || len(*f.terminated) != 0 {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 {
 		t.Fatalf("reaped %d", n)
 	}
 	if data := loadStateFile(record); !pyEqualInt(objGet(data, "owner_pid"), int64(os.Getpid())) {
@@ -1269,7 +1270,7 @@ func TestRecordsDirWritableByOthersIsNotRead(t *testing.T) {
 	startTimeIs(t, 777, true)
 	cmdlineNamesEveryDir(t, true)
 	os.Chmod(f.dir, 0o777)
-	if n := reapOrphanedBrowsers(nil); n != 0 || len(*f.terminated) != 0 || !lexists(rec) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 || !lexists(rec) {
 		t.Fatalf("reaped %d", n)
 	}
 }
@@ -1283,7 +1284,7 @@ func TestSymlinkedRecordsDirIsNotRead(t *testing.T) {
 	aliveOnly(t, 12345)
 	startTimeIs(t, 777, true)
 	cmdlineNamesEveryDir(t, true)
-	if n := reapOrphanedBrowsers(nil); n != 0 || len(*f.terminated) != 0 || !lexists(rec) {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 || !lexists(rec) {
 		t.Fatalf("reaped %d", n)
 	}
 }
@@ -1300,7 +1301,7 @@ func TestEphemeralRecordOutsideTheEphemeralRootIsNeitherSignalledNorDeleted(t *t
 		return ok
 	})
 	reaperRecord(t, f.dir, stand.cmd.Process.Pid, outside, deadOwner, st, true)
-	if n := reapOrphanedBrowsers(nil); n != 0 || len(*f.terminated) != 0 || !isDir(filepath.Join(outside, "Default")) || !stand.running() {
+	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 || !isDir(filepath.Join(outside, "Default")) || !stand.running() {
 		t.Fatalf("reaped %d", n)
 	}
 }

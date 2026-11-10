@@ -70,7 +70,7 @@ func probeWithRollback(ctx context.Context, env *tools.Env, serverName string, c
 				return
 			}
 		}
-		_ = storage.Restore(backup, false)
+		_ = storage.Restore(home.WithOverride(ctx, storage.homeDir), backup, false)
 		manager.restoreEntry(ctx, serverName, previous, homeDir)
 	}
 	err := func() error {

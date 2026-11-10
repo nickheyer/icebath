@@ -28,6 +28,25 @@ type CompleteTaskOptions struct {
 	ExpectedRunID     *int64
 	SkipLifecycleHook bool
 	Force             bool
+	// Falsy non string result or summary the worker tool passed, Python truthiness and binding read these
+	resultRaw, summaryRaw any
+}
+
+// Text a Python or chain or filter keeps of a completion field, nil for a falsy non string value
+func completionText(text *string, raw any) *string {
+	if raw != nil {
+		return nil
+	}
+	return text
+}
+
+// Text str() gives a completion field, the substantive evidence check reading it
+func completionStr(text *string, raw any) *string {
+	if raw == nil {
+		return text
+	}
+	s := pyrepr.Str(raw)
+	return &s
 }
 
 // Goal turn budget stored on the task, nil when unset
@@ -62,24 +81,24 @@ func CompleteTask(ctx context.Context, conn state.SQLiteConn, taskID string, o C
 	if err != nil || !ok {
 		return false, err
 	}
-	preview := o.Result
-	if truthyStr(o.Summary) {
+	preview := completionText(o.Result, o.resultRaw)
+	if truthyStr(completionText(o.Summary, o.summaryRaw)) {
 		preview = o.Summary
 	}
 	verifiedCards, err := gateCreatedCards(ctx, conn, taskID, o.CreatedCards, preview)
 	if err != nil {
 		return false, err
 	}
-	if err := gateEmptyCompletion(ctx, conn, taskID, o.Result, o.Summary); err != nil {
+	if err := gateEmptyCompletion(ctx, conn, taskID, completionStr(o.Result, o.resultRaw), completionStr(o.Summary, o.summaryRaw)); err != nil {
 		return false, err
 	}
-	metadata, err := mergeCompletionProseArtifacts(ctx, conn, taskID, o.Metadata, o.Summary, o.Result)
+	metadata, err := mergeCompletionProseArtifacts(ctx, conn, taskID, o.Metadata, completionText(o.Summary, o.summaryRaw), completionText(o.Result, o.resultRaw))
 	if err != nil {
 		return false, err
 	}
-	handoffSummary := o.Result
-	if o.Summary != nil {
-		handoffSummary = o.Summary
+	handoffSummary, handoffRaw := o.Result, o.resultRaw
+	if o.Summary != nil || o.summaryRaw != nil {
+		handoffSummary, handoffRaw = o.Summary, o.summaryRaw
 	}
 	acceptance, refused, err := prepareAcceptance(ctx, conn, taskID, o.ExpectedRunID, metaAny(metadata))
 	if err != nil || refused {
@@ -122,8 +141,16 @@ func CompleteTask(ctx context.Context, conn state.SQLiteConn, taskID string, o C
                  WHERE id = ?
                    AND status IN ('running', 'ready', 'blocked', 'review')
                 `
+		if o.resultRaw != nil {
+			if _, err := sqliteBind(o.resultRaw, 1); err != nil {
+				return err
+			}
+		}
 		params := []any{optStrValue(o.Result), now, taskID}
 		if o.ExpectedRunID != nil {
+			if err := runIDBindable(o.ExpectedRunID); err != nil {
+				return err
+			}
 			sql += " AND current_run_id = ?"
 			params = append(params, *o.ExpectedRunID)
 		}
@@ -139,16 +166,30 @@ func CompleteTask(ctx context.Context, conn state.SQLiteConn, taskID string, o C
 				return err
 			}
 		}
+		if handoffRaw != nil {
+			active, err := currentRunID(ctx, conn, taskID)
+			if err != nil {
+				return err
+			}
+			if _, err := sqliteBind(handoffRaw, 3); active != nil && err != nil {
+				return err
+			}
+		}
 		if runID, err = endRun(ctx, conn, taskID, "completed", handoffSummary, nil, metaAny(metadata), "done"); err != nil {
 			return err
 		}
 		fromReview := priorStatus == "review"
-		if runID == nil && (truthyStr(o.Summary) || truthyMeta(metadata) || truthyStr(o.Result) || fromReview) {
+		handoffTruthy := truthyStr(completionText(handoffSummary, handoffRaw))
+		if runID == nil && (truthyStr(completionText(o.Summary, o.summaryRaw)) || truthyMeta(metadata) || truthyStr(completionText(o.Result, o.resultRaw)) || fromReview) {
 			synthSummary, synthMetadata := handoffSummary, metaAny(metadata)
-			if fromReview && !truthyStr(synthSummary) && !truthyMeta(metadata) {
+			if fromReview && !handoffTruthy && !truthyMeta(metadata) {
 				note := reviewApprovedNote
 				synthSummary = &note
 				synthMetadata = payload("source_status", "review", "approval", "manual")
+			} else if handoffRaw != nil {
+				if _, err := sqliteBind(handoffRaw, 6); err != nil {
+					return err
+				}
 			}
 			id, err := synthesizeEndedRun(ctx, conn, taskID, "completed", synthSummary, nil, synthMetadata, runProfile{})
 			if err != nil {
@@ -156,18 +197,18 @@ func CompleteTask(ctx context.Context, conn state.SQLiteConn, taskID string, o C
 			}
 			runID = &id
 		}
-		eventSummary := handoffSummary
-		if fromReview && !truthyStr(eventSummary) {
+		eventSummary := completionText(handoffSummary, handoffRaw)
+		if fromReview && !handoffTruthy {
 			note := reviewApprovedNote
 			eventSummary = &note
 		}
 		completed = true
-		return appendEvent(ctx, conn, taskID, "completed", completedEventPayload(o.Result, eventSummary, verifiedCards, metaAny(metadata)), runID)
+		return appendEvent(ctx, conn, taskID, "completed", completedEventPayload(completionText(o.Result, o.resultRaw), eventSummary, verifiedCards, metaAny(metadata)), runID)
 	})
 	if err != nil || !completed {
 		return false, err
 	}
-	if err := flagPhantomProseRefs(ctx, conn, taskID, runID, o.Summary, o.Result, verifiedCards); err != nil {
+	if err := flagPhantomProseRefs(ctx, conn, taskID, runID, completionText(o.Summary, o.summaryRaw), completionText(o.Result, o.resultRaw), verifiedCards); err != nil {
 		return false, err
 	}
 	if err := clearFailureCounter(ctx, conn, taskID); err != nil {
@@ -182,7 +223,11 @@ func CompleteTask(ctx context.Context, conn state.SQLiteConn, taskID string, o C
 		return false, err
 	}
 	if !o.SkipLifecycleHook {
-		fireTaskHook(ctx, "kanban_task_completed", doneTask, taskID, runID, map[string]any{"summary": optStrValue(handoffSummary)})
+		hookSummary := optStrValue(handoffSummary)
+		if handoffRaw != nil {
+			hookSummary = handoffRaw
+		}
+		fireTaskHook(ctx, "kanban_task_completed", doneTask, taskID, runID, map[string]any{"summary": hookSummary})
 	}
 	return true, nil
 }

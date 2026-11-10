@@ -1,6 +1,9 @@
 package pycodecs
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 func TestDecodeMatchesCPythonStrictDecode(t *testing.T) {
 	ok := []struct{ data, codec, want string }{
@@ -35,6 +38,24 @@ func TestDecodeMatchesCPythonStrictDecode(t *testing.T) {
 	}
 	if mod, ok := Lookup("ISO-8859-15"); !ok || mod != "iso8859_15" {
 		t.Fatalf("Lookup = %q, %v", mod, ok)
+	}
+}
+
+func TestGetEncodingIgnoresTheUTF8Mode(t *testing.T) {
+	pinned, coerced := "ascii", "utf_8"
+	if runtime.GOOS == "windows" {
+		pinned, _ = Lookup(LocaleEncoding())
+		coerced = pinned
+	}
+	t.Setenv("LC_ALL", "C")
+	if got, _ := Lookup(GetEncoding()); got != pinned {
+		t.Fatalf("pinned C locale GetEncoding = %q", GetEncoding())
+	}
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_CTYPE", "")
+	t.Setenv("LANG", "C")
+	if got, _ := Lookup(GetEncoding()); got != coerced {
+		t.Fatalf("coerced C locale GetEncoding = %q", GetEncoding())
 	}
 }
 

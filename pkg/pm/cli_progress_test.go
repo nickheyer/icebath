@@ -30,7 +30,7 @@ func cpCapture(t *testing.T, tty bool) (context.Context, *bytes.Buffer) {
 
 const cpMiB = 1024 * 1024
 
-func TestCPProgressRedrawsInPlaceOnATTY(t *testing.T) {
+func TestProgressRedrawsInPlaceOnATTY(t *testing.T) {
 	ctx, stream := cpCapture(t, true)
 	progress := newLiveProgress(ctx, "node")
 	progress.report("download", 0, 100*cpMiB, "")
@@ -42,7 +42,7 @@ func TestCPProgressRedrawsInPlaceOnATTY(t *testing.T) {
 	}
 }
 
-func TestCPProgressOffATTYPrintsThrottledNewlineLines(t *testing.T) {
+func TestProgressOffATTYPrintsThrottledNewlineLines(t *testing.T) {
 	ctx, stream := cpCapture(t, false)
 	progress := newLiveProgress(ctx, "node")
 	progress.report("download", 0, 100*cpMiB, "")
@@ -65,7 +65,7 @@ func TestCPProgressOffATTYPrintsThrottledNewlineLines(t *testing.T) {
 	}
 }
 
-func TestCPUnpackPhaseIsAPhaseLineInBothModes(t *testing.T) {
+func TestUnpackPhaseIsAPhaseLineInBothModes(t *testing.T) {
 	ctx, stream := cpCapture(t, false)
 	newLiveProgress(ctx, "node").report("unpack", 0, 0, "1/2")
 	if !strings.Contains(stream.String(), "unpacking 1/2") {
@@ -84,7 +84,7 @@ func cpTerminals(t *testing.T) (context.Context, io.Writer, io.Writer, map[io.Wr
 	return withSyncOutput(context.Background(), stdout), stdout, stderr, ttys
 }
 
-func TestCPProgressStreamPrefersStdoutThenStderr(t *testing.T) {
+func TestProgressStreamPrefersStdoutThenStderr(t *testing.T) {
 	ctx, stdout, stderr, ttys := cpTerminals(t)
 	if got := progressStream(ctx); got != nil {
 		t.Fatalf("no terminal gave %v", got)
@@ -99,7 +99,7 @@ func TestCPProgressStreamPrefersStdoutThenStderr(t *testing.T) {
 	}
 }
 
-func TestCPInteractiveTracksAnyTerminal(t *testing.T) {
+func TestInteractiveTracksAnyTerminal(t *testing.T) {
 	ctx, _, stderr, ttys := cpTerminals(t)
 	if interactive(ctx) {
 		t.Fatal("interactive without a terminal")

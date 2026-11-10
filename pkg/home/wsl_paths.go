@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // WSL probe, swapped by tests that simulate a WSL host
@@ -17,7 +18,7 @@ var (
 
 // The /mnt drive form of a Windows drive path, false when path is not one
 func WindowsPathToWSL(path string) (string, bool) {
-	m := windowsDrivePath.FindStringSubmatch(strings.TrimSpace(path))
+	m := windowsDrivePath.FindStringSubmatch(pystr.Strip(path))
 	if m == nil {
 		return "", false
 	}
@@ -26,7 +27,7 @@ func WindowsPathToWSL(path string) (string, bool) {
 
 // The POSIX path inside a wsl.localhost or wsl$ UNC path, false when path is not one
 func WSLUNCPathToPosix(path string) (string, bool) {
-	normalized := strings.ReplaceAll(strings.TrimSpace(path), "/", `\`)
+	normalized := strings.ReplaceAll(pystr.Strip(path), "/", `\`)
 	m := wslUNCPath.FindStringSubmatch(normalized)
 	if m == nil {
 		return "", false

@@ -21,7 +21,7 @@ func makeTestMetadata(t *testing.T, tokenEndpoint string) *OAuthMetadata {
 func TestOAuthMetadataSaveAndLoadRoundtrip(t *testing.T) {
 	oauthHome(t)
 	s := NewTokenStorage(context.Background(), "example-server", "")
-	if err := s.SaveOAuthMetadata(makeTestMetadata(t, "https://auth.example.com/oauth/token")); err != nil {
+	if err := s.SaveOAuthMetadata(context.Background(), makeTestMetadata(t, "https://auth.example.com/oauth/token")); err != nil {
 		t.Fatal(err)
 	}
 	if !exists(s.MetaPath()) {
@@ -36,7 +36,7 @@ func TestOAuthMetadataSaveAndLoadRoundtrip(t *testing.T) {
 func TestOAuthMetadataRemoveDeletesMetaFile(t *testing.T) {
 	oauthHome(t)
 	s := NewTokenStorage(context.Background(), "cleanup-server", "")
-	if err := s.SaveOAuthMetadata(makeTestMetadata(t, "https://auth.example.com/oauth/token")); err != nil || !exists(s.MetaPath()) {
+	if err := s.SaveOAuthMetadata(context.Background(), makeTestMetadata(t, "https://auth.example.com/oauth/token")); err != nil || !exists(s.MetaPath()) {
 		t.Fatalf("save %v", err)
 	}
 	if err := s.Remove(false); err != nil || exists(s.MetaPath()) {
@@ -47,7 +47,7 @@ func TestOAuthMetadataRemoveDeletesMetaFile(t *testing.T) {
 func TestOAuthMetadataInitializeRestoresMetadataFromDisk(t *testing.T) {
 	oauthHome(t)
 	s := NewTokenStorage(context.Background(), "mgr-srv", "")
-	if err := s.SaveOAuthMetadata(makeTestMetadata(t, "https://mgr.example.com/token")); err != nil {
+	if err := s.SaveOAuthMetadata(context.Background(), makeTestMetadata(t, "https://mgr.example.com/token")); err != nil {
 		t.Fatal(err)
 	}
 	p := newTestProvider(t, s, "https://example.com", nil)

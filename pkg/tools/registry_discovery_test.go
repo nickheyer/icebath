@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func makeDiscoveryPkg(t *testing.T, init bool) (string, string) {
 
 func mustDiscover(t *testing.T, toolsDir string) []string {
 	t.Helper()
-	names, err := discoverToolModules(toolsDir)
+	names, err := discoverToolModules(context.Background(), toolsDir)
 	if err != nil {
 		t.Fatal(err)
 	}

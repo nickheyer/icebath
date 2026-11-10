@@ -213,7 +213,7 @@ func WritePlatformConfigField(ctx context.Context, h, platformKey, fieldKey stri
 		}
 		cfg = doc
 	} else {
-		tree, err := LoadContext(ctx, h, envRefLookup)
+		tree, err := LoadContext(ctx, h, EnvRefLookupContext(ctx))
 		if err != nil {
 			return err
 		}
@@ -229,7 +229,7 @@ func PrintConfigWarnings(ctx context.Context, h string, cfg map[string]any, remo
 	if cfg != nil {
 		issues = ValidateConfigStructure(cfg, removedNote)
 	} else {
-		issues = ValidateLoadedConfigStructure(ctx, h, envRefLookup, removedNote)
+		issues = ValidateLoadedConfigStructure(ctx, h, EnvRefLookupContext(ctx), removedNote)
 	}
 	w := FacadeNoticeOut
 	if len(issues) == 0 {

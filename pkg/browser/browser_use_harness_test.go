@@ -71,7 +71,7 @@ func TestBrowserExecChildEnvironment(t *testing.T) {
 	pin(t, &findCLI, func(*tools.Env) []string { return []string{probe} })
 	pin(t, &harnessSiteDir, func() string { return "/harness-site" })
 	pin(t, &execUsingLightpanda, func(*tools.Env) bool { return false })
-	pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		if key != "bu-named-research" {
 			t.Errorf("cache key = %q", key)
 		}

@@ -348,12 +348,11 @@ func (s *PluginSelection) Publish(ctx context.Context, project string) error {
 		return err
 	}
 	sum := sha256.Sum256(s.proposed)
-	row := map[string]any{
-		"config":       s.path,
-		"previous":     base64Value(s.previous),
-		"facts_before": factsBefore,
-		"config_after": hex.EncodeToString(sum[:]),
-	}
+	row := NewOrderedObject()
+	row.Set("config", s.path)
+	row.Set("previous", base64Value(s.previous))
+	row.Set("facts_before", factsBefore)
+	row.Set("config_after", hex.EncodeToString(sum[:]))
 	if err := writePublicationJournal(ctx, project, row); err != nil {
 		return err
 	}
@@ -369,7 +368,7 @@ func base64Value(b configBytes) any {
 }
 
 // Durably writes the publication journal row recovery reads after a crash
-func writePublicationJournal(ctx context.Context, project string, row map[string]any) error {
+func writePublicationJournal(ctx context.Context, project string, row *OrderedObject) error {
 	encoded, err := dumpsJSON(row, false)
 	if err != nil {
 		return err
@@ -565,12 +564,15 @@ func (s *StagedPlugin) Publish(ctx context.Context, project string) error {
 	if err != nil {
 		return err
 	}
-	row := map[string]any{
-		"kind": "plugin", "target": s.target, "backup": backup, "metadata": s.metadata,
-		"target_existed": existed, "facts_before": factsBefore,
-		"metadata_before": base64Value(configBytes{data: previous, present: present}),
-		"metadata_after":  base64.StdEncoding.EncodeToString(proposed),
-	}
+	row := NewOrderedObject()
+	row.Set("kind", "plugin")
+	row.Set("target", s.target)
+	row.Set("backup", backup)
+	row.Set("metadata", s.metadata)
+	row.Set("target_existed", existed)
+	row.Set("facts_before", factsBefore)
+	row.Set("metadata_before", base64Value(configBytes{data: previous, present: present}))
+	row.Set("metadata_after", base64.StdEncoding.EncodeToString(proposed))
 	if err := writePublicationJournal(ctx, project, row); err != nil {
 		return err
 	}

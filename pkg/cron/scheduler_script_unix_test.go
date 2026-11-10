@@ -4,94 +4,31 @@ package cron
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-type alwaysCancelled struct{}
+func killScriptProcess(pid int) { syscall.Kill(pid, syscall.SIGKILL) }
 
-func (alwaysCancelled) IsSet() bool    { return true }
-func (alwaysCancelled) Set()           {}
-func (alwaysCancelled) Reason() string { return "" }
-
-func scriptStore(t *testing.T) *Store {
-	t.Helper()
-	s, _ := newTestStore(t)
-	if err := os.MkdirAll(filepath.Join(s.Home(), "scripts"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("HOME", filepath.Dir(s.Home()))
-	return s
-}
-
-func writeScript(t *testing.T, s *Store, rel, body string) string {
-	t.Helper()
-	p := filepath.Join(s.Home(), "scripts", rel)
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
-func runScript(t *testing.T, s *Store, path string, interpreter *string) (bool, string) {
-	t.Helper()
-	ok, out, err := s.runJobScript(context.Background(), path, "", nil, interpreter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ok, out
-}
-
-func TestRunJobScriptOutputs(t *testing.T) {
-	s := scriptStore(t)
-	cases := []struct{ name, body, ref, want string }{
-		{"test.py", "print(\"hello from script\")\n", "", "hello from script"},
-		{"relative.py", "print(\"relative works\")\n", "relative.py", "relative works"},
-		{"emoji.py", "import sys\nsys.stdout.buffer.write(\"backup done \\N{PARTY POPPER} 日次\".encode(\"utf-8\"))\n", "emoji.py", "backup done \U0001F389 日次"},
-		{"good.py", "print(\"ok\")\n", "good.py", "ok"},
-		{"monitors/check.py", "print(\"sub ok\")\n", "monitors/check.py", "sub ok"},
-	}
-	for _, c := range cases {
-		p := writeScript(t, s, c.name, c.body)
-		ref := c.ref
-		if ref == "" {
-			ref = p
-		}
-		ok, out := runScript(t, s, ref, nil)
-		if !ok || out != c.want {
-			t.Fatalf("%s: %v %q", c.name, ok, out)
-		}
-	}
-	writeScript(t, s, "binary_stdout.py", "import sys\nsys.stdout.buffer.write(b\"alert before \\x80 after\\n\")\n")
-	ok, out := runScript(t, s, "binary_stdout.py", nil)
-	if !ok || !strings.Contains(out, "alert before") || !strings.Contains(out, "�") {
-		t.Fatalf("lossy decode %v %q", ok, out)
-	}
-	ok, out = runScript(t, s, "copied-from-other-profile.py", nil)
-	if ok || !strings.Contains(out, "Script not found") || !strings.Contains(out, filepath.Join(s.Home(), "scripts")) {
-		t.Fatalf("missing %v %q", ok, out)
-	}
-	writeScript(t, s, "fail.py", "import sys\nprint('partial')\nsys.stderr.write('boom')\nsys.exit(3)\n")
-	ok, out = runScript(t, s, "fail.py", nil)
-	if ok || out != "Script exited with code 3\nstderr:\nboom\nstdout:\npartial" {
-		t.Fatalf("failure %v %q", ok, out)
-	}
-}
-
-func TestConfiguredInterpreterIsRefusedUnlessAPythonPath(t *testing.T) {
-	s := scriptStore(t)
-	writeScript(t, s, "job.py", "print(\"ran\")\n")
-	py, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestRunJobScriptConfiguredInterpreterIsRefusedUnlessAPythonPath(t *testing.T) {
+	py := hostPython(t)
 	cases := []struct {
 		name     string
 		make     func(d string) string
@@ -101,123 +38,522 @@ func TestConfiguredInterpreterIsRefusedUnlessAPythonPath(t *testing.T) {
 		{"missing", func(d string) string { return filepath.Join(d, "missing", "python3") }, "not found"},
 		{"directory", func(d string) string { return d }, "not a file"},
 		{"not-executable", func(d string) string {
-			os.WriteFile(filepath.Join(d, "python3"), nil, 0o644)
+			if err := os.WriteFile(filepath.Join(d, "python3"), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
 			return filepath.Join(d, "python3")
 		}, "not executable"},
 		{"bash", func(d string) string { return "/bin/bash" }, "must be a Python executable"},
 		{"python-symlink-to-bash", func(d string) string {
-			os.Symlink("/bin/bash", filepath.Join(d, "python"))
+			if err := os.Symlink("/bin/bash", filepath.Join(d, "python")); err != nil {
+				t.Fatal(err)
+			}
 			return filepath.Join(d, "python")
 		}, "must be a Python executable"},
 		{"pythonw", func(d string) string {
-			os.Symlink(py, filepath.Join(d, "pythonw"))
+			if err := os.Symlink(py, filepath.Join(d, "pythonw")); err != nil {
+				t.Fatal(err)
+			}
 			return filepath.Join(d, "pythonw")
 		}, "must be a Python executable"},
 	}
 	for _, c := range cases {
-		interp := c.make(t.TempDir())
-		ok, out := runScript(t, s, "job.py", &interp)
-		if ok || !strings.Contains(out, c.expected) {
-			t.Fatalf("%s: %v %q", c.name, ok, out)
+		t.Run(c.name, func(t *testing.T) {
+			s := scriptStore(t)
+			script := writeScript(t, s, "job.py", "print(\"ran\")\n")
+			interp := c.make(t.TempDir())
+			ok, out := runScript(t, s, script, &interp)
+			if ok || !strings.Contains(out, c.expected) {
+				t.Fatalf("got %v %q", ok, out)
+			}
+		})
+	}
+}
+
+func TestConfiguredInterpreterKeepsDotDotAndReportsEveryRefusalAsPythonDoes(t *testing.T) {
+	s := scriptStore(t)
+	script := writeScript(t, s, "job.py", "print(\"ran\")\n")
+	d := t.TempDir()
+	for _, dir := range []string{filepath.Join(d, "x"), filepath.Join(d, "other", "deep")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
 		}
 	}
-	ok, out := runScript(t, s, "job.py", &py)
+	if err := os.WriteFile(filepath.Join(d, "python3"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("other", "deep"), filepath.Join(d, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(hostPython(t), filepath.Join(d, "other", "python3")); err != nil {
+		t.Fatal(err)
+	}
+	refusals := []struct{ interpreter, want string }{
+		{d + "//x/./../python3", "Interpreter is not executable: " + d + "/x/../python3"},
+		{" " + d + "/x/../python3  ", "Interpreter is not executable: " + d + "/x/../python3"},
+		{d + "/python3/python3", "Unable to resolve interpreter path " + pyrepr.StrRepr(d+"/python3/python3") + ": [Errno 20] Not a directory: " + pyrepr.StrRepr(d+"/python3/python3")},
+		{"~no_such_user_zz/python3", "Unable to resolve interpreter path '~no_such_user_zz/python3': Could not determine home directory."},
+		{d + "/nope/../python3", "Interpreter not found: " + d + "/nope/../python3"},
+		{"./~/x", "Interpreter not found: ./~/x"},
+		{"python3", "Interpreter must be an absolute or ~-prefixed path (got 'python3'). Bare names like 'python3' are not stable across PATH changes."},
+		{d, "Interpreter path is not a file: " + d},
+		{"/bin/bash", "Interpreter must be a Python executable (python, python3, python3.12, ...): /bin/bash"},
+		{"/x\x00y", "Script execution failed: stat: embedded null character in path"},
+	}
+	for _, c := range refusals {
+		interp := c.interpreter
+		ok, out := runScript(t, s, script, &interp)
+		if ok || out != c.want {
+			t.Fatalf("%q got %v %q want %q", c.interpreter, ok, out, c.want)
+		}
+	}
+	linked := d + "/link/../python3"
+	python, refusal, err := resolveCronInterpreter(linked)
+	if err != nil || refusal != "" || python != linked {
+		t.Fatalf("got %q %q %v", python, refusal, err)
+	}
+	ok, out := runScript(t, s, script, &linked)
 	if !ok || out != "ran" {
-		t.Fatalf("explicit python %v %q", ok, out)
+		t.Fatalf("link first interpreter %v %q", ok, out)
 	}
 }
 
-func TestScriptPathContainment(t *testing.T) {
+func TestScriptPathContainmentSymlinkEscapeBlocked(t *testing.T) {
 	s := scriptStore(t)
-	outside := filepath.Join(filepath.Dir(s.Home()), "outside.py")
-	os.WriteFile(outside, []byte("print(\"should not run\")\n"), 0o600)
-	evil := filepath.Join(t.TempDir(), "outside_evil.py")
-	os.WriteFile(evil, []byte("print(\"escaped\")\n"), 0o600)
-	os.Symlink(evil, filepath.Join(s.Home(), "scripts", "sneaky.py"))
-	for _, ref := range []string{outside, "~/evil.py", "~/../../../tmp/evil.py", "../../etc/passwd", "sneaky.py"} {
+	outside := filepath.Join(t.TempDir(), "outside_evil.py")
+	if err := os.WriteFile(outside, []byte("print(\"escaped\")\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(s.Home(), "scripts", "sneaky.py")); err != nil {
+		t.Fatal(err)
+	}
+	ok, out := runScript(t, s, "sneaky.py", nil)
+	if ok || !blockedOrOutside(out) {
+		t.Fatalf("got %v %q", ok, out)
+	}
+}
+
+func TestScriptPathFollowsLinksBeforeDotDot(t *testing.T) {
+	s := scriptStore(t)
+	scripts := filepath.Join(s.Home(), "scripts")
+	writeScript(t, s, "x.py", "print(\"top\")\n")
+	writeScript(t, s, filepath.Join("sub", "x.py"), "print(\"sub\")\n")
+	if err := os.MkdirAll(filepath.Join(scripts, "sub", "deeper"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("sub", "deeper"), filepath.Join(scripts, "link")); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"link/../x.py", scripts + "/link/../x.py", "./link//../x.py"} {
 		ok, out := runScript(t, s, ref, nil)
-		low := strings.ToLower(out)
-		if ok || !(strings.Contains(low, "blocked") || strings.Contains(low, "outside")) {
-			t.Fatalf("%s: %v %q", ref, ok, out)
+		if !ok || out != "sub" {
+			t.Fatalf("%q got %v %q", ref, ok, out)
 		}
 	}
-	ok, out := runScript(t, s, "bad\x00name.py", nil)
-	if ok || !strings.HasPrefix(out, "Blocked: script path contains a NUL byte: ") {
-		t.Fatalf("nul %v %q", ok, out)
+	away := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(away, "inner"), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Join(s.Home(), "scripts", "adir"), 0o700)
-	ok, out = runScript(t, s, "adir", nil)
-	if ok || !strings.HasPrefix(out, "Script path is not a file: ") {
-		t.Fatalf("dir %v %q", ok, out)
+	if err := os.WriteFile(filepath.Join(away, "evil.py"), []byte("print(\"escaped\")\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, s, "evil.py", "print(\"inside\")\n")
+	if err := os.Symlink(filepath.Join(away, "inner"), filepath.Join(scripts, "out")); err != nil {
+		t.Fatal(err)
+	}
+	ok, out := runScript(t, s, "out/../evil.py", nil)
+	resolvedAway, err := pypath.Resolve(away)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok || out != "Blocked: script path resolves outside the scripts directory ("+scripts+"): 'out/../evil.py'" || strings.Contains(out, resolvedAway) {
+		t.Fatalf("got %v %q", ok, out)
 	}
 }
 
-func swapKillPaths(t *testing.T, result bool) (*[]int, *[]*cronScriptProcess) {
-	prevKill, prevFallback := cronKillProcessTree, cronTerminateScriptProcess
-	t.Cleanup(func() { cronKillProcessTree, cronTerminateScriptProcess = prevKill, prevFallback })
-	var tree []int
-	var fallback []*cronScriptProcess
-	cronKillProcessTree = func(pid int, _ syscall.Signal) bool { tree = append(tree, pid); return result }
-	cronTerminateScriptProcess = func(_ *Store, p *cronScriptProcess) { fallback = append(fallback, p) }
-	return &tree, &fallback
+type managedStoreFixture struct {
+	repo, generation, python, version, basePrefix string
 }
 
-func fakeScriptProcess(pid int, exited bool) *cronScriptProcess {
-	p := &cronScriptProcess{cmd: &exec.Cmd{Process: &os.Process{Pid: pid}}, exited: make(chan struct{})}
-	if exited {
-		close(p.exited)
+func newManagedStoreFixture(t *testing.T) managedStoreFixture {
+	t.Helper()
+	python := hostPython(t)
+	raw, err := exec.Command(python, "-c", "import sys; print(sys.base_prefix); print('%d.%d' % sys.version_info[:2])").Output()
+	if err != nil {
+		t.Fatal(err)
 	}
-	return p
+	facts := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	runtimeDir := filepath.Join(root, "pm-runtime")
+	for _, dir := range []string{repo, filepath.Join(runtimeDir, "bin"), filepath.Join(runtimeDir, "site")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(pm.PatchRepoRoot(repo))
+	t.Setenv(pm.EnvInstallRoot, "")
+	if err := os.Symlink(python, filepath.Join(runtimeDir, "bin", "python")); err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureFile(t, filepath.Join(runtimeDir, "pm-runtime.json"), `{"python": "bin/python", "sitePackages": "site"}`)
+	writeFixtureFile(t, filepath.Join(repo, "install-stamp.json"), `{"distribution": "docker", "pmRuntime": `+jsonText(t, runtimeDir)+`}`)
+	resident, err := pm.FindResidentRuntime()
+	if err != nil || resident == nil {
+		t.Fatalf("fixture has no resident runtime %v %v", resident, err)
+	}
+	generation := filepath.Join(pm.InstallStateDir(context.Background(), repo), "environments", "gen1")
+	return managedStoreFixture{repo: repo, generation: generation, python: python, version: facts[1], basePrefix: facts[0]}
 }
 
-func TestScriptTimeoutTreeKillPaths(t *testing.T) {
+func jsonText(t *testing.T, s string) string {
+	t.Helper()
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func writeFixtureFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f managedStoreFixture) selectEnvironment(t *testing.T, environment string) {
+	t.Helper()
+	writeFixtureFile(t, pm.EnvironmentRuntimeFactsPath(context.Background(), f.repo), `{"packages": {"venv": {"environment": `+jsonText(t, environment)+`}}}`)
+}
+
+func TestRunJobScriptPosixManagedStoreScriptRunsOnVenvWithLiveCheckout(t *testing.T) {
 	s := scriptStore(t)
-	tree, fallback := swapKillPaths(t, false)
-	p := fakeScriptProcess(12345, false)
-	s.terminateCronScriptTree(p)
-	if len(*tree) != 1 || (*tree)[0] != 12345 || len(*fallback) != 1 || (*fallback)[0] != p {
-		t.Fatalf("failure fallback %v %v", *tree, *fallback)
+	f := newManagedStoreFixture(t)
+	venv := f.generation
+	if err := os.MkdirAll(filepath.Join(venv, "bin"), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	tree, fallback = swapKillPaths(t, true)
-	p = fakeScriptProcess(0, false)
-	s.terminateCronScriptTree(p)
-	if len(*tree) != 0 || len(*fallback) != 1 {
-		t.Fatalf("invalid pid %v %v", *tree, *fallback)
+	if err := os.Symlink(f.python, filepath.Join(venv, "bin", "python")); err != nil {
+		t.Fatal(err)
 	}
-	tree, fallback = swapKillPaths(t, true)
-	s.terminateCronScriptTree(fakeScriptProcess(12345, true))
-	if len(*tree) != 0 || len(*fallback) != 0 {
-		t.Fatalf("exited %v %v", *tree, *fallback)
+	writeFixtureFile(t, filepath.Join(venv, "pyvenv.cfg"), "home = "+filepath.Join(f.basePrefix, "bin")+"\ninclude-system-site-packages = false\n")
+	deps := filepath.Join(venv, "lib", "python"+f.version, "site-packages")
+	writeFixtureFile(t, filepath.Join(deps, "probe_pkg.py"), "VALUE = 42\n")
+	snapshot := filepath.Join(filepath.Dir(f.repo), "workspace-snapshot")
+	writeFixtureFile(t, filepath.Join(snapshot, "hermes_constants.py"), "STALE = True\n")
+	writeFixtureFile(t, filepath.Join(deps, "snapshot.pth"), snapshot+"\n")
+	writeFixtureFile(t, filepath.Join(f.repo, "hermes_constants.py"), "LIVE = True\n")
+	f.selectEnvironment(t, venv)
+	t.Setenv("PYTHONPATH", "")
+	os.Unsetenv("PYTHONPATH")
+	script := writeScript(t, s, "probe.py", "import atexit, os, pickle, sys, probe_pkg, hermes_constants\n"+
+		"class Probe: pass\n"+
+		"atexit.register(lambda: print('pickled', bool(pickle.dumps(Probe()))))\n"+
+		"print(probe_pkg.VALUE)\n"+
+		"print(hermes_constants.__file__)\n"+
+		"print(sys.path[0])\n"+
+		"print('PYTHONPATH=' + (os.environ.get('PYTHONPATH') or ''))\n")
+	ok, out := runScript(t, s, "probe.py", nil)
+	if !ok {
+		t.Fatal(out)
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) != 5 {
+		t.Fatalf("got %q", out)
+	}
+	resolve := func(p string) string {
+		t.Helper()
+		resolved, err := pypath.Resolve(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resolved
+	}
+	if lines[0] != "42" || resolve(lines[1]) != resolve(filepath.Join(f.repo, "hermes_constants.py")) || resolve(lines[2]) != resolve(filepath.Dir(script)) ||
+		lines[3] != "PYTHONPATH=" || lines[4] != "pickled True" {
+		t.Fatalf("got %q", lines)
 	}
 }
 
-func TestCancelPathAlsoTreeKills(t *testing.T) {
-	s := scriptStore(t)
-	prev := cronTerminateScriptTree
-	t.Cleanup(func() { cronTerminateScriptTree = prev })
-	var calls []int
-	cronTerminateScriptTree = func(_ *Store, p *cronScriptProcess) {
-		calls = append(calls, p.cmd.Process.Pid)
-		p.cmd.Process.Kill()
-	}
-	p := writeScript(t, s, "long.py", "import time; time.sleep(30)\n")
-	ok, out, err := s.runJobScript(context.Background(), p, filepath.Dir(s.Home()), alwaysCancelled{}, nil)
-	if err != nil || ok || len(calls) != 1 || out != "Script cancelled: "+lostOwnershipReason {
-		t.Fatalf("cancel %v %q %v %v", ok, out, calls, err)
+func TestRunJobScriptPosixUnusableStoreSelectionFailsTheRunNotTheTick(t *testing.T) {
+	for _, broken := range []string{"selection_raises", "interpreter_missing"} {
+		t.Run(broken, func(t *testing.T) {
+			s := scriptStore(t)
+			f := newManagedStoreFixture(t)
+			want := "Script execution failed: dependency environment interpreter is missing: " + filepath.Join(f.generation, "bin", "python")
+			if broken == "selection_raises" {
+				outsideInstall := filepath.Join(filepath.Dir(f.repo), "gone-venv")
+				f.selectEnvironment(t, outsideInstall)
+				want = "Script execution failed: dependency environment is missing or outside this install: " + outsideInstall
+			} else {
+				writeFixtureFile(t, filepath.Join(f.generation, "pyvenv.cfg"), "home = /usr/bin\n")
+				f.selectEnvironment(t, f.generation)
+			}
+			writeScript(t, s, "probe.py", "print(\"ok\")\n")
+			ok, out := runScript(t, s, "probe.py", nil)
+			if ok || !strings.Contains(out, "dependency environment") || out != want {
+				t.Fatalf("got %v %q want %q", ok, out, want)
+			}
+		})
 	}
 }
 
-func TestSessionDBTimeoutKeepsZero(t *testing.T) {
+func TestKilledScriptThatOutlivesBothReapWaitsRaisesTimeoutExpired(t *testing.T) {
+	s, _ := newTestStore(t)
+	cmd := exec.Command("sleep", "30")
+	cmd.SysProcAttr = cronScriptSysProcAttr()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	unreaped := &cronScriptProcess{cmd: cmd, exited: make(chan struct{})}
+	err := s.terminateCronScriptProcess(unreaped)
+	var expired *pysubprocess.TimeoutExpired
+	if !errors.As(err, &expired) || err.Error() != "Command '['sleep', '30']' timed out after 1.0 seconds" {
+		t.Fatalf("got %v", err)
+	}
+	if state, waitErr := cmd.Process.Wait(); waitErr != nil || state.Sys().(syscall.WaitStatus).Signal() != syscall.SIGTERM {
+		t.Fatalf("the group was not terminated %v %v", state, waitErr)
+	}
+	exited := &cronScriptProcess{cmd: cmd, exited: make(chan struct{})}
+	close(exited.exited)
+	if err := s.terminateCronScriptProcess(exited); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScriptTerminationReapsDescendants(t *testing.T) {
+	for _, trigger := range []string{"cancel", "timeout"} {
+		for _, topology := range []string{"detached", "stubborn-pipe"} {
+			t.Run(trigger+"-"+topology, func(t *testing.T) {
+				s := scriptStore(t)
+				prev := scriptTimeoutOverride
+				scriptTimeoutOverride = 60
+				if trigger == "timeout" {
+					scriptTimeoutOverride = 3
+				}
+				t.Cleanup(func() { scriptTimeoutOverride = prev })
+				ready := filepath.Join(s.Home(), "child.pid")
+				ignoreTerm, detached := "", "False"
+				if topology == "stubborn-pipe" {
+					ignoreTerm = "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+				} else {
+					detached = "True"
+				}
+				child := "import os, signal, time; from pathlib import Path; " + ignoreTerm +
+					"Path(" + pyrepr.StrRepr(ready+".tmp") + ").write_text(str(os.getpid())); " +
+					"os.replace(" + pyrepr.StrRepr(ready+".tmp") + ", " + pyrepr.StrRepr(ready) + "); time.sleep(60)"
+				script := writeScript(t, s, "blocking.py", "import subprocess, sys, time\n"+
+					"subprocess.Popen([sys.executable, '-c', "+pyrepr.StrRepr(child)+"], start_new_session="+detached+")\n"+
+					"time.sleep(60)\n")
+				cancel := &latchEvent{}
+				type result struct {
+					ok  bool
+					out string
+					err error
+				}
+				results := make(chan result, 1)
+				go func() {
+					ok, out, err := s.runJobScript(context.Background(), script, s.Home(), cancel, nil)
+					results <- result{ok, out, err}
+				}()
+				readPid := func() int {
+					raw, err := os.ReadFile(ready)
+					if err != nil {
+						return 0
+					}
+					pid, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+					return pid
+				}
+				pid := 0
+				var early *result
+				defer func() {
+					cancel.Set()
+					if pid == 0 {
+						pid = readPid()
+					}
+					if pid != 0 && scriptProcessLive(pid) {
+						killScriptProcess(pid)
+					}
+				}()
+				for deadline := time.Now().Add(10 * time.Second); pid == 0 && early == nil && time.Now().Before(deadline); {
+					select {
+					case got := <-results:
+						early = &got
+					case <-time.After(10 * time.Millisecond):
+						pid = readPid()
+					}
+				}
+				if pid == 0 || early != nil {
+					t.Fatalf("the child never reported ready, early result %+v", early)
+				}
+				if !scriptProcessLive(pid) {
+					t.Fatal("child must acknowledge readiness before termination")
+				}
+				if trigger == "cancel" {
+					cancel.Set()
+				}
+				var got result
+				select {
+				case got = <-results:
+				case <-time.After(15 * time.Second):
+					t.Fatal("the script run did not return")
+				}
+				want := "timed out"
+				if trigger == "cancel" {
+					want = "cancelled"
+				}
+				if got.err != nil || got.ok || !strings.Contains(got.out, want) {
+					t.Fatalf("result %+v", got)
+				}
+				for deadline := time.Now().Add(5 * time.Second); scriptProcessLive(pid) && time.Now().Before(deadline); {
+					time.Sleep(50 * time.Millisecond)
+				}
+				if scriptProcessLive(pid) {
+					t.Fatalf("descendant %d survived %s", pid, trigger)
+				}
+			})
+		}
+	}
+}
+
+func TestRunJobNoAgentUsesConfiguredInterpreter(t *testing.T) {
 	s := scriptStore(t)
-	if got := s.getSessionDBTimeout(context.Background()); got != 10.0 {
-		t.Fatalf("default %v", got)
+	resetDeliver(t)
+	python := hostPython(t)
+	wrapper := filepath.Join(s.Home(), "venv", "bin", "python3")
+	writeFixtureFile(t, wrapper, "#!"+python+"\n"+
+		"import os, sys\n"+
+		"env = os.environ.copy()\n"+
+		"env[\"CRON_WRAPPER_USED\"] = \"1\"\n"+
+		"os.execve(sys.executable, [sys.executable, *sys.argv[1:]], env)\n")
+	if err := os.Chmod(wrapper, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	t.Setenv("ICEBATH_CRON_SESSION_DB_TIMEOUT", "0")
-	if got := s.getSessionDBTimeout(context.Background()); got != 0 {
-		t.Fatalf("zero %v", got)
+	writeScript(t, s, "marker.py", "import os\nprint(os.environ.get(\"CRON_WRAPPER_USED\", \"0\"))\n")
+	job := mustCreate(t, s, CreateJobOptions{Schedule: "every 5m", Script: "marker.py", NoAgent: true, Deliver: strPtr("local"), Interpreter: wrapper})
+	out, err := s.runJob(context.Background(), job, runJobOptions{})
+	if err != nil || !out.Success || out.Error != nil || out.FinalResponse != "1" || !strings.Contains(out.Output, "1") {
+		t.Fatalf("outcome %+v %v", out, err)
 	}
-	t.Setenv("ICEBATH_CRON_SESSION_DB_TIMEOUT", "2.5")
-	if got := s.getSessionDBTimeout(context.Background()); got != 2.5 {
-		t.Fatalf("float %v", got)
+}
+
+const presenceProbe = "#!/usr/bin/env bash\n" +
+	"for n in JOB_SVC_TOKEN LAUNCH_ONLY_TOKEN; do [ -n \"${!n}\" ] && echo \"$n=set\" || echo \"$n=MISSING\"; done\n"
+
+func TestNoAgentScriptGetsOwningProfilesDeclaredSecretNeverLaunchResidue(t *testing.T) {
+	s := scriptStore(t)
+	writeFixtureFile(t, filepath.Join(s.Home(), ".env"), "LAUNCH_ONLY_TOKEN=launch-secret\n")
+	t.Setenv("LAUNCH_ONLY_TOKEN", "launch-secret")
+	t.Setenv("JOB_SVC_TOKEN", "")
+	os.Unsetenv("JOB_SVC_TOKEN")
+	routed := filepath.Join(t.TempDir(), "routed")
+	writeFixtureFile(t, filepath.Join(routed, ".env"), "JOB_SVC_TOKEN=routed-secret\n")
+	writeFixtureFile(t, filepath.Join(routed, "config.yaml"), "terminal:\n  env_passthrough: [JOB_SVC_TOKEN]\n")
+	writeFixtureFile(t, filepath.Join(routed, "scripts", "probe.sh"), presenceProbe)
+	provider.SetMultiplexActive(true)
+	t.Cleanup(func() { provider.SetMultiplexActive(false) })
+	routedStore := claimStoreAt(t, routed)
+	ctx := provider.WithSecretScope(context.Background(), provider.BuildProfileSecretScope(routed), routed)
+	ok, out, err := routedStore.runJobScript(ctx, "probe.sh", "", nil, nil)
+	if err != nil || !ok || out != "JOB_SVC_TOKEN=set\nLAUNCH_ONLY_TOKEN=MISSING" {
+		t.Fatalf("got %v %q %v", ok, out, err)
+	}
+}
+
+func TestNoAgentScriptOfLaunchProfileKeepsItsOwnEnvCredential(t *testing.T) {
+	s := scriptStore(t)
+	writeFixtureFile(t, filepath.Join(s.Home(), ".env"), "LAUNCH_ONLY_TOKEN=launch-secret\n")
+	t.Setenv("LAUNCH_ONLY_TOKEN", "launch-secret")
+	t.Setenv("JOB_SVC_TOKEN", "")
+	os.Unsetenv("JOB_SVC_TOKEN")
+	writeScript(t, s, "probe.sh", presenceProbe)
+	ok, out := runScript(t, s, "probe.sh", nil)
+	if !ok || out != "JOB_SVC_TOKEN=MISSING\nLAUNCH_ONLY_TOKEN=set" {
+		t.Fatalf("got %v %q", ok, out)
+	}
+}
+
+func routedScriptContext(scope map[string]string, routed string) context.Context {
+	return provider.WithSecretScope(provider.WithMultiplexContext(context.Background(), true), scope, routed)
+}
+
+func sortedEnviron() []string {
+	env := os.Environ()
+	sort.Strings(env)
+	return env
+}
+
+func TestARoutedProfileScriptNeverReceivesALaunchOnlyName(t *testing.T) {
+	s := scriptStore(t)
+	launch := s.Home()
+	writeFixtureFile(t, filepath.Join(launch, ".env"), "LAUNCH_ONLY_VALUE=launch-only\nCUSTOM_CRON_VALUE=launch\n")
+	launchHelper := filepath.Join(launch, "launch-helper.sh")
+	writeFixtureFile(t, launchHelper, "printf 'LAUNCH_SKIPPED_SECRET=source-value\\nLAUNCH_VAULT_ONLY=launch-vault-value\\n'\n")
+	writeFixtureFile(t, filepath.Join(launch, "config.yaml"), "secrets:\n  command:\n    enabled: true\n    command: sh "+launchHelper+"\n")
+	for name, value := range map[string]string{"LAUNCH_ONLY_VALUE": "launch-only", "CUSTOM_CRON_VALUE": "launch", "LAUNCH_SKIPPED_SECRET": "launch-value"} {
+		t.Setenv(name, value)
+	}
+	for _, name := range []string{"LAUNCH_VAULT_ONLY", "ROUTED_VAULT_ONLY"} {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
+	}
+	provider.ResetSecretSourceCache("")
+	t.Cleanup(func() { provider.ResetSecretSourceCache("") })
+	provider.ApplyExternalSecretSources(launch)
+	if os.Getenv("LAUNCH_VAULT_ONLY") != "launch-vault-value" || os.Getenv("LAUNCH_SKIPPED_SECRET") != "launch-value" {
+		t.Fatalf("the launch source must apply one name and lose the other to the env, got %q %q", os.Getenv("LAUNCH_VAULT_ONLY"), os.Getenv("LAUNCH_SKIPPED_SECRET"))
+	}
+	routed := filepath.Join(launch, "profiles", "ops")
+	routedHelper := filepath.Join(routed, "routed-helper.sh")
+	writeFixtureFile(t, routedHelper, "printf 'ROUTED_VAULT_ONLY=routed-vault-value\\n'\n")
+	writeFixtureFile(t, filepath.Join(routed, "config.yaml"), "secrets:\n  command:\n    enabled: true\n    command: sh "+routedHelper+"\n")
+	if hydrated := provider.HydrateProfileSecretSources(routed); hydrated["ROUTED_VAULT_ONLY"] != "routed-vault-value" {
+		t.Fatalf("routed sources hydrated %v", hydrated)
+	}
+	supplied := provider.SourceSuppliedNames()
+	for _, name := range []string{"LAUNCH_VAULT_ONLY", "LAUNCH_SKIPPED_SECRET", "ROUTED_VAULT_ONLY"} {
+		if !slices.Contains(supplied, name) {
+			t.Fatalf("%s is not recorded as source supplied in %v", name, supplied)
+		}
+	}
+	before := sortedEnviron()
+	writeFixtureFile(t, filepath.Join(routed, "scripts", "probe_launch_only.sh"), "#!/usr/bin/env bash\n"+
+		"echo \"${CUSTOM_CRON_VALUE}|${ROUTED_VAULT_ONLY}|${LAUNCH_ONLY_VALUE:-<unset>}|${LAUNCH_VAULT_ONLY:-<unset>}|${LAUNCH_SKIPPED_SECRET:-<unset>}\"\n")
+	ctx := routedScriptContext(map[string]string{"CUSTOM_CRON_VALUE": "routed", "ROUTED_VAULT_ONLY": "routed-vault-value"}, routed)
+	ok, out, err := claimStoreAt(t, routed).runJobScript(ctx, "probe_launch_only.sh", "", nil, nil)
+	if err != nil || !ok || out != "routed|routed-vault-value|<unset>|<unset>|<unset>" {
+		t.Fatalf("got %v %q %v", ok, out, err)
+	}
+	if after := sortedEnviron(); !slices.Equal(after, before) {
+		t.Fatalf("the parent environment moved\nbefore %v\nafter  %v", before, after)
+	}
+}
+
+func TestARoutedProfileScriptKeepsAdministratorManagedValuesOverItsOwn(t *testing.T) {
+	s := scriptStore(t)
+	launch := s.Home()
+	managed := filepath.Join(launch, "managed")
+	writeFixtureFile(t, filepath.Join(managed, ".env"), "ORG_POLICY_FLAG=managed-value\n")
+	t.Setenv(config.EnvManagedDir, managed)
+	t.Setenv("ORG_POLICY_FLAG", "placeholder")
+	if _, err := provider.LoadIcebathDotenv(context.Background(), provider.DotenvLoadOptions{Home: launch, SkipExternalSecrets: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("ORG_POLICY_FLAG"); got != "managed-value" {
+		t.Fatalf("the boot time managed load left %q", got)
+	}
+	routed := filepath.Join(launch, "profiles", "ops")
+	writeFixtureFile(t, filepath.Join(routed, "scripts", "probe_policy.sh"), "#!/usr/bin/env bash\necho \"${ORG_POLICY_FLAG:-<unset>}\"\n")
+	ctx := routedScriptContext(map[string]string{"ORG_POLICY_FLAG": "user-value"}, routed)
+	ok, out, err := claimStoreAt(t, routed).runJobScript(ctx, "probe_policy.sh", "", nil, nil)
+	if err != nil || !ok || out != "managed-value" {
+		t.Fatalf("got %v %q %v", ok, out, err)
+	}
+	if got := os.Getenv("ORG_POLICY_FLAG"); got != "managed-value" {
+		t.Fatalf("the parent value moved to %q", got)
 	}
 }

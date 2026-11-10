@@ -141,6 +141,9 @@ func markerOwnerIsLive(marker string) (bool, error) {
 	return false, nil
 }
 
+// MarkerOwnerIsLive exports markerOwnerIsLive
+func MarkerOwnerIsLive(marker string) (bool, error) { return markerOwnerIsLive(marker) }
+
 // Reports a recorded dependency environment whose site packages directory is gone
 func missingEnvironment(ctx context.Context, root string) (bool, error) {
 	if !isRegularFile(EnvironmentRuntimeFactsPath(ctx, root)) {
@@ -278,6 +281,11 @@ func recoverIfNeeded(ctx context.Context, projectRoot string, argv []string, exp
 	}
 	fmt.Fprintf(stderr, "icebath: dependency repair failed: %s; run `icebath pm repair`\n", reprError(err))
 	return false, nil
+}
+
+// RecoverIfNeeded exports recoverIfNeeded
+func RecoverIfNeeded(ctx context.Context, projectRoot string, argv []string, explicit bool) (bool, error) {
+	return recoverIfNeeded(ctx, projectRoot, argv, explicit)
 }
 
 // Claimed half of the recovery, its errors become counted attempts in the caller

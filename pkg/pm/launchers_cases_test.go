@@ -191,18 +191,16 @@ func TestEnvironmentBlockReaderCountsUtf16Units(t *testing.T) {
 	}
 }
 
-// Publishes the install's own commands into the root, returning each shared wrapper's bytes by name
+// Publishes the checkout's own commands, returning each shared launcher's bytes by name
 func publishOwn(t *testing.T, root string) map[string]string {
 	t.Helper()
-	written, err := EnsureInstallLaunchers(context.Background(), root, root)
+	written, err := EnsureInstallLaunchers(context.Background(), root, checkoutLauncherDir(root))
 	if err != nil || len(written) != len(windowsBinLaunchers) {
 		t.Fatalf("written %v err %v", written, err)
 	}
 	wrappers := map[string]string{}
 	for _, path := range written {
-		if filepath.Base(path) != installBinaryName() {
-			wrappers[filepath.Base(path)] = mustRead(t, path)
-		}
+		wrappers[filepath.Base(path)] = mustRead(t, path)
 	}
 	return wrappers
 }
@@ -211,29 +209,34 @@ func publishOwn(t *testing.T, root string) map[string]string {
 func TestMissingDeadAndSameStoreLaunchersStillPublish(t *testing.T) {
 	userHome, root := lnFakeInstall(t)
 	binary := filepath.Join(root, "icebath")
+	local := checkoutLauncherDir(root)
+	defaultStore := filepath.Join(home.Root(), "tools")
+	if err := os.MkdirAll(defaultStore, 0o777); err != nil {
+		t.Fatal(err)
+	}
 	before := publishOwn(t, root)
-	if len(before) == 0 {
-		t.Fatal("no shared command published")
+	if len(before) != len(windowsBinLaunchers) {
+		t.Fatalf("missing commands not published %v", before)
 	}
 	mustWrite(t, binary, "\x7fELF repinned\n", 0o755)
 	after := publishOwn(t, root)
 	if !reflect.DeepEqual(after, before) {
-		t.Fatalf("a same install repin rewrote the shared commands %v", after)
+		t.Fatalf("a same store repin rewrote the shared commands %v", after)
 	}
 	for name := range after {
-		if launcherBinary(filepath.Join(root, name)) != binary {
-			t.Fatalf("%s runs %s", name, launcherBinary(filepath.Join(root, name)))
+		if launcherBinary(filepath.Join(local, name)) != binary || launcherStore(filepath.Join(local, name)) != defaultStore {
+			t.Fatalf("%s runs %s for %s", name, launcherBinary(filepath.Join(local, name)), launcherStore(filepath.Join(local, name)))
 		}
 	}
-	gone := filepath.Join(userHome, "gone", "icebath")
-	if writeShell(filepath.Join(root, "icebath-acp"), []string{gone, "acp"}) == "" {
-		t.Fatal("dead wrapper not written")
+	if err := os.RemoveAll(defaultStore); err != nil {
+		t.Fatal(err)
 	}
-	t.Setenv(home.EnvHome, filepath.Join(userHome, "temp-home"))
+	tempHome := filepath.Join(userHome, "temp-home")
+	t.Setenv(home.EnvHome, tempHome)
 	healed := publishOwn(t, root)
 	for name := range healed {
-		if launcherBinary(filepath.Join(root, name)) != binary {
-			t.Fatalf("%s still runs %s after its binary died", name, launcherBinary(filepath.Join(root, name)))
+		if launcherStore(filepath.Join(local, name)) != filepath.Join(tempHome, "tools") {
+			t.Fatalf("%s still records %s after its store died", name, launcherStore(filepath.Join(local, name)))
 		}
 	}
 }
@@ -264,7 +267,7 @@ func TestPosixMaterializerPublishesOnlyExecutableShellLaunchers(t *testing.T) {
 			if !reflect.DeepEqual(names, []string{"icebath", "icebath-acp"}) || len(entries) != len(written) {
 				t.Fatalf("names %v entries %d", names, len(entries))
 			}
-			local, _ := os.ReadDir(root)
+			local, _ := os.ReadDir(checkoutLauncherDir(root))
 			var localNames []string
 			for _, e := range local {
 				localNames = append(localNames, e.Name())
@@ -273,7 +276,7 @@ func TestPosixMaterializerPublishesOnlyExecutableShellLaunchers(t *testing.T) {
 			if !reflect.DeepEqual(localNames, []string{"icebath", "icebath-acp"}) {
 				t.Fatalf("own commands %v", localNames)
 			}
-			launcher := filepath.Join(root, "icebath-acp")
+			launcher := filepath.Join(checkoutLauncherDir(root), "icebath-acp")
 			expected := mustRead(t, launcher)
 			corrupted := "\xef\xbb\xbf" + expected
 			if corruption == "crlf" {
@@ -376,16 +379,23 @@ func foreignRuntimeStore(t *testing.T, dir string) string {
 // test_source_launcher_publication.py test_stage_launcher_ignores_an_inherited_runtime_directory
 func TestStageLauncherIgnoresAnInheritedRuntimeDirectory(t *testing.T) {
 	userHome, root := lnFakeInstall(t)
+	own := filepath.Join(home.Root(), "tools")
+	recordStorePython(t, own, "python-A")
 	foreign := foreignRuntimeStore(t, filepath.Join(userHome, "foreign", "tools"))
-	published := stageLauncher("icebath-acp", root, root)
-	if published == "" {
-		t.Fatal("nothing published")
+	recordStorePython(t, foreign, "python-foreign")
+	out := checkoutLauncherDir(root)
+	if err := os.MkdirAll(out, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	published, err := stageLauncher(context.Background(), "icebath-acp", root, out)
+	if err != nil || published == "" {
+		t.Fatalf("nothing published %v", err)
 	}
 	wrapper := mustRead(t, published)
-	if !strings.Contains(wrapper, filepath.Join(root, "icebath")) || strings.Contains(wrapper, foreign) {
+	if !strings.Contains(wrapper, filepath.Join(root, "icebath")) || strings.Contains(wrapper, foreign) || launcherStore(published) != own {
 		t.Fatalf("wrapper %q", wrapper)
 	}
-	if stageLauncher("icebath", root, root) != filepath.Join(root, "icebath") {
+	if bare, err := stageLauncher(context.Background(), "icebath", root, root); err != nil || bare != filepath.Join(root, "icebath") {
 		t.Fatal("the bare command must be the install binary itself")
 	}
 }
@@ -393,19 +403,33 @@ func TestStageLauncherIgnoresAnInheritedRuntimeDirectory(t *testing.T) {
 // test_source_launcher_publication.py test_install_launchers_never_bind_a_fixture_store_under_scratch
 func TestInstallLaunchersNeverBindAFixtureStoreUnderScratch(t *testing.T) {
 	_, root := lnFakeInstall(t)
+	own := filepath.Join(home.Root(), "tools")
+	recordStorePython(t, own, "python-A")
 	fixture := foreignRuntimeStore(t, filepath.Join(home.Root(), "cache", "scratch", "icebath-e2e-media-overlap-run", "icebath-home", "tools"))
-	written, err := EnsureInstallLaunchers(context.Background(), root, root)
+	recordStorePython(t, fixture, "python-foreign")
+	written, err := EnsureInstallLaunchers(context.Background(), root, checkoutLauncherDir(root))
 	if err != nil || len(written) != len(windowsBinLaunchers) {
 		t.Fatalf("written %v err %v", written, err)
 	}
 	for _, path := range written {
-		if filepath.Base(path) == installBinaryName() {
-			continue
-		}
-		if wrapper := mustRead(t, path); strings.Contains(wrapper, "icebath-e2e-media-overlap-run") || strings.Contains(wrapper, fixture) || !strings.Contains(wrapper, pyshlex.Quote(filepath.Join(root, "icebath"))) {
+		if wrapper := mustRead(t, path); strings.Contains(wrapper, "icebath-e2e-media-overlap-run") || strings.Contains(wrapper, fixture) ||
+			!strings.Contains(wrapper, pyshlex.Quote(filepath.Join(root, "icebath"))) || launcherStore(path) != own {
 			t.Fatalf("wrapper %q", wrapper)
 		}
 	}
+}
+
+// Records an interpreter under entry in a store's facts, the way a committed python install leaves it
+func recordStorePython(t *testing.T, store, entry string) string {
+	t.Helper()
+	rel := filepath.Join("bin", "python3")
+	if isWindows() {
+		rel = "python.exe"
+	}
+	python := filepath.Join(store, entry, rel)
+	mustWrite(t, python, "", 0o755)
+	mustWrite(t, filepath.Join(store, "facts.json"), `{"packages": {"python": {"entry": "`+entry+`"}}}`, 0o644)
+	return python
 }
 
 // test_source_launcher_publication.py test_publication_uses_the_runtime_store_when_the_tree_records_none
@@ -416,12 +440,13 @@ func TestPublicationUsesTheRuntimeStoreWhenTheTreeRecordsNone(t *testing.T) {
 	if store, err := EnvironmentStoreRoot(ctx, root, true); err != nil || store != resolvePath(runtime) {
 		t.Fatalf("store %q err %v", store, err)
 	}
-	written, err := EnsureInstallLaunchers(ctx, root, root)
+	recordStorePython(t, runtime, "python-runtime")
+	written, err := EnsureInstallLaunchers(ctx, root, checkoutLauncherDir(root))
 	if err != nil || len(written) != len(windowsBinLaunchers) {
 		t.Fatalf("written %v err %v", written, err)
 	}
 	for _, path := range written {
-		if filepath.Base(path) != installBinaryName() && !strings.Contains(mustRead(t, path), pyshlex.Quote(filepath.Join(root, "icebath"))) {
+		if !strings.Contains(mustRead(t, path), pyshlex.Quote(filepath.Join(root, "icebath"))) || launcherStore(path) != resolvePath(runtime) {
 			t.Fatalf("wrapper %q", mustRead(t, path))
 		}
 	}

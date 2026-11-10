@@ -318,7 +318,7 @@ func TestBoardProjectMetadataAndCreateInheritance(t *testing.T) {
 	if meta, _ := ReadBoardMetadata(BoardArg("proj-board")); objGet(meta, "project_id") != "p_xyz" {
 		t.Fatal("project id not persisted")
 	}
-	pdb, err := tools.OpenProjectsDB(&tools.Env{Home: h})
+	pdb, err := tools.OpenProjectsDB(ctx, &tools.Env{Home: h})
 	if err != nil {
 		t.Fatal(err)
 	}

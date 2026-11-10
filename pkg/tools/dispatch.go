@@ -117,6 +117,8 @@ type RequestMiddlewareDirective struct {
 	Source string
 	Reason string
 	Name   string
+	// Trace entries of a chain that ran inside this middleware, recorded as given in place of the single entry
+	Trace []map[string]any
 }
 
 // ToolRequestMiddleware rewrites arguments before hooks, guardrails, approvals, and execution
@@ -387,22 +389,22 @@ func (d *Dispatcher) dispatchPreToolCallHooks(ctx context.Context, env *Env, nam
 			}()
 			return h(ctx, env, name, args, ids, append([]map[string]any(nil), trace...))
 		}()
-		switch directive.Action {
-		case "modify":
-			if len(directive.Args) > 0 {
-				base := modified
-				if base == nil {
-					base = args
-				}
-				merged := make(map[string]any, len(base)+len(directive.Args))
-				for k, v := range base {
-					merged[k] = v
-				}
-				for k, v := range directive.Args {
-					merged[k] = v
-				}
-				modified = merged
+		carriesArgs := directive.Action == "modify" || directive.Action == "approve" || (directive.Action == "block" && directive.Message != "")
+		if carriesArgs && len(directive.Args) > 0 {
+			base := modified
+			if base == nil {
+				base = args
 			}
+			merged := make(map[string]any, len(base)+len(directive.Args))
+			for k, v := range base {
+				merged[k] = v
+			}
+			for k, v := range directive.Args {
+				merged[k] = v
+			}
+			modified = merged
+		}
+		switch directive.Action {
 		case "block":
 			if directive.Message != "" && block == nil {
 				copyD := directive
@@ -471,6 +473,10 @@ func (d *Dispatcher) ApplyToolRequestMiddleware(ctx context.Context, env *Env, n
 			continue
 		}
 		current = schemaDeepCopy(directive.Args).(map[string]any)
+		if directive.Trace != nil {
+			trace = append(trace, directive.Trace...)
+			continue
+		}
 		entry := map[string]any{}
 		if directive.Source != "" {
 			entry["source"] = directive.Source
@@ -583,8 +589,13 @@ func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result s
 	return NormalizeHandlerResult(call.Env, call.Name, entry.Handler(ctx, call))
 }
 
-// Handles a bridge call returning the finished result or the underlying call to re dispatch
-func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, enabled, disabled []string) (string, string, map[string]any, bool) {
+// Python values of a call's args, each key read from the raw text when that text still reads back as its value
+func pythonCallArgs(call *Call) map[string]any {
+	return orderedArgsObject(call.RawArgs, call.Args).Vals
+}
+
+// Handles a bridge call returning the finished result or the underlying call to re dispatch, tool_call resolved from Python valued args
+func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, pyArgs map[string]any, enabled, disabled []string) (string, string, map[string]any, bool) {
 	if !IsBridgeTool(call.Name) {
 		return "", "", nil, false
 	}
@@ -600,7 +611,10 @@ func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, enabled
 	case ToolDescribeName:
 		return DispatchToolDescribe(ctx, env, args, currentDefs, nil, call), "", nil, true
 	}
-	underlying, underlyingArgs, errMsg := ResolveUnderlyingCall(ctx, env, args, SessionToolNames(currentDefs))
+	if pyArgs == nil {
+		pyArgs = map[string]any{}
+	}
+	underlying, underlyingArgs, errMsg := ResolveUnderlyingCall(ctx, env, pyArgs, SessionToolNames(currentDefs))
 	if errMsg != "" || underlying == "" {
 		if errMsg == "" {
 			errMsg = "tool_call could not be resolved"
@@ -659,7 +673,11 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 	elapsedMS := func() int { return int(time.Since(start).Milliseconds()) }
 	resolved := &Call{Name: name, Args: args, RawArgs: call.RawArgs, ToolCallID: call.ToolCallID, TaskID: call.TaskID, SessionID: call.SessionID,
 		TurnID: call.TurnID, APIRequestID: call.APIRequestID, UserTask: call.UserTask, Env: env}
-	if result, underlying, underlyingArgs, bridged := d.dispatchBridgeTool(ctx, resolved, enabled, disabled); bridged {
+	var pyArgs map[string]any
+	if name == ToolCallName {
+		pyArgs = coercePythonToolArgs(ctx, d.Registry, env, call.Name, pythonCallArgs(call))
+	}
+	if result, underlying, underlyingArgs, bridged := d.dispatchBridgeTool(ctx, resolved, pyArgs, enabled, disabled); bridged {
 		if underlying == "" {
 			return emit(result, "", "", "", elapsedMS())
 		}
@@ -672,7 +690,7 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 		return d.DispatchWith(ctx, &inner, opts)
 	}
 	if name == "manage_connections" || IsConnectorName(name) {
-		selected, _ := d.Registry.SelectToolNames(ctx, env, enabled, disabled, definitionSelectionContext(env))
+		selected, _ := d.Registry.SelectToolNames(ctx, env, enabled, disabled, definitionSelectionContext(ctx, env))
 		if !selected["manage_connections"] {
 			return emit(toolErrorJSON("Connectors are not available in this session.", nil), "", "", "", 0)
 		}

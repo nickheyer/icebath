@@ -217,20 +217,3 @@ func UnboundIn(r *Registry) []string {
 
 // ExecuteKeyOf returns the shared executor key of a command, empty when it has none
 func ExecuteKeyOf(name string) string { return MetaOf(name).Execute }
-
-// CommandReply is the surface independent result of a shared executor
-type CommandReply struct {
-	Text   string
-	Data   map[string]any
-	Format string
-}
-
-// CommandContext carries surface inputs to a shared executor
-type CommandContext struct {
-	Surface string
-	Args    string
-	Options map[string]any
-}
-
-// Executor formats one shared command reply from its context
-type Executor func(ctx CommandContext) (CommandReply, error)

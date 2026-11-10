@@ -423,3 +423,34 @@ func TestContextScopedSavePrefixesAndPins(t *testing.T) {
 		t.Fatal("pins")
 	}
 }
+
+func TestSwapConfigVersionAndFileReadUserDocReachTheFacadeReaders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ConfigFilename)
+	if err := os.WriteFile(path, []byte("model:\n  provider: openai\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	restoreVersion := SwapConfigVersion(func(context.Context, string) ([]any, error) { return []any{"v2"}, nil })
+	if v, err := ConfigVersion(ctx, path); err != nil || len(v) != 1 || v[0] != "v2" {
+		t.Fatalf("version %v %v", v, err)
+	}
+	if v, err := ConfigCacheVersion(ctx, path); err != nil || len(v) != 2 || v[0] != "v2" {
+		t.Fatalf("cache version %v %v", v, err)
+	}
+	restoreVersion()
+	if v, _ := ConfigVersion(ctx, path); len(v) > 0 && v[0] == "v2" {
+		t.Fatal("version seam not restored")
+	}
+	restoreRead := SwapFileReadUserDoc(func(FileBackend, context.Context, string) (any, error) {
+		return map[string]any{"model": map[string]any{"provider": "anthropic"}}, nil
+	})
+	raw, err := ReadUserConfigRaw(ctx, path)
+	restoreRead()
+	if err != nil || raw["model"].(map[string]any)["provider"] != "anthropic" {
+		t.Fatalf("%v %v", raw, err)
+	}
+	if raw, _ := ReadUserConfigRaw(ctx, path); raw["model"].(map[string]any)["provider"] != "openai" {
+		t.Fatal("read seam not restored")
+	}
+}

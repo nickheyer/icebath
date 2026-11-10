@@ -374,7 +374,7 @@ func auxFastModelFromCatalog(ctx context.Context, providerID string) string {
 	if isNous {
 		opts.IncludeSaleOriginal, opts.CacheTTL = true, NousCatalogTTL
 	}
-	catalog := auxFetchModelsWithPricingFn(opts)
+	catalog := auxFetchModelsWithPricingFn(ctx, opts)
 	ids := make([]string, 0, len(catalog))
 	for id := range catalog {
 		ids = append(ids, id)

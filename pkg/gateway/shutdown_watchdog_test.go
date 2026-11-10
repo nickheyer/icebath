@@ -45,7 +45,7 @@ func TestArmShutdownWatchdogFiresWithDumpAndExit(t *testing.T) {
 		fired.Set()
 	})
 	code := 9
-	ArmShutdownWatchdog(0.15, ShutdownWatchdogOptions{
+	ArmShutdownWatchdog(context.Background(), 0.15, ShutdownWatchdogOptions{
 		Done: &pythread.Event{},
 		SnapshotFn: func() (any, error) {
 			mu.Lock()
@@ -75,7 +75,7 @@ func TestArmShutdownWatchdogFiresWithDumpAndExit(t *testing.T) {
 
 func TestArmShutdownWatchdogDisarmedByDone(t *testing.T) {
 	patch(t, &watchdogOSExit, func(int) { t.Error("disarmed watchdog fired") })
-	done := ArmShutdownWatchdog(0.2, ShutdownWatchdogOptions{DumpPath: filepath.Join(t.TempDir(), "w.log")})
+	done := ArmShutdownWatchdog(context.Background(), 0.2, ShutdownWatchdogOptions{DumpPath: filepath.Join(t.TempDir(), "w.log")})
 	done.Set()
 	time.Sleep(400 * time.Millisecond)
 }
@@ -186,7 +186,7 @@ func TestLoopLivenessWatchdogFiresOnAFrozenLoopAndStaysQuietOnALiveOne(t *testin
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go live.Run(ctx)
-	quiet := StartLoopLivenessWatchdog(live, 0.05, 0.5, 2, GatewayServiceRestartExitCode)
+	quiet := StartLoopLivenessWatchdog(ctx, live, 0.05, 0.5, 2, GatewayServiceRestartExitCode)
 	time.Sleep(400 * time.Millisecond)
 	quiet.Stop()
 	quiet.Join(nil)
@@ -194,7 +194,7 @@ func TestLoopLivenessWatchdogFiresOnAFrozenLoopAndStaysQuietOnALiveOne(t *testin
 		t.Fatal("watchdog fired on a live loop")
 	}
 	frozen := NewCallbackLoop()
-	h := StartLoopLivenessWatchdog(frozen, 0.05, 0.05, 2, GatewayServiceRestartExitCode)
+	h := StartLoopLivenessWatchdog(ctx, frozen, 0.05, 0.05, 2, GatewayServiceRestartExitCode)
 	defer func() { h.Stop(); h.Join(nil) }()
 	if !fired.Wait(5.0) {
 		t.Fatal("watchdog never fired on a frozen loop")
@@ -204,7 +204,7 @@ func TestLoopLivenessWatchdogFiresOnAFrozenLoopAndStaysQuietOnALiveOne(t *testin
 func TestLoopLivenessWatchdogEndsWhenTheLoopCloses(t *testing.T) {
 	loop := NewCallbackLoop()
 	loop.Close()
-	h := StartLoopLivenessWatchdog(loop, 0.01, 0.05, 1, 1)
+	h := StartLoopLivenessWatchdog(context.Background(), loop, 0.01, 0.05, 1, 1)
 	timeout := 5.0
 	h.Join(&timeout)
 	if h.IsAlive() {

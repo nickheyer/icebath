@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"golang.org/x/sys/windows"
 )
 
 func TestLockReadOnlyLockFileIsRefusedOnWindows(t *testing.T) {
@@ -120,4 +121,17 @@ func TestLockWindowsAChildTheJobRefusedKeepsTheCheckoutBusyAfterItsOwnerDies(t *
 		t.Fatal("the lease outlived the child that held it")
 	}
 	fresh.Release(context.Background())
+}
+
+func TestSwapUpdateTreeJob(t *testing.T) {
+	event, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := SwapUpdateTreeJob(event)
+	job, err := UpdateTreeJob()
+	restore()
+	if err != nil || job != event {
+		t.Fatalf("swapped job %v %v", job, err)
+	}
 }

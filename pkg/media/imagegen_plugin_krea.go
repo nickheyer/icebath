@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -66,6 +67,9 @@ var kreaModelIDs = func() map[string]bool {
 	}
 	return ids
 }()
+
+// KreaModelIDs is a copy of the Krea catalog ids, the plugin's KREA_MODEL_IDS
+func KreaModelIDs() map[string]bool { return maps.Clone(kreaModelIDs) }
 
 var (
 	kreaAspectMap          = map[string]string{"landscape": "16:9", "square": "1:1", "portrait": "9:16"}

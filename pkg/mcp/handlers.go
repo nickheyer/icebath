@@ -874,7 +874,7 @@ func makeToolHandler(serverName, toolName string, toolTimeout float64, nativeIma
 			}
 			srv.markSessionProven()
 			paths := []string{}
-			text := RenderCallToolResult(env, result, serverName, &paths)
+			text := RenderCallToolResult(tools.WithEnvHome(c, env), env, result, serverName, &paths)
 			imgMu.Lock()
 			imagePaths = paths
 			imgMu.Unlock()
@@ -905,7 +905,7 @@ func makeToolHandler(serverName, toolName string, toolTimeout float64, nativeIma
 type utilityRPC func(ctx context.Context, sess *Session, args map[string]any, serverName string) (any, error)
 
 // utilityRender turns a utility result into the tool JSON payload
-type utilityRender func(env *tools.Env, result any, serverName string) (any, error)
+type utilityRender func(ctx context.Context, env *tools.Env, result any, serverName string) (any, error)
 
 // Factory of one utility handler that validates the required argument before any transport work
 func makeUtilityHandler(op, label string, rpc utilityRPC, render utilityRender, required string) func(serverName string, toolTimeout float64) tools.Handler {
@@ -937,7 +937,7 @@ func makeUtilityHandler(op, label string, rpc utilityRPC, render utilityRender, 
 				if err != nil {
 					return "", err
 				}
-				payload, err := render(call.Env, result, serverName)
+				payload, err := render(tools.WithEnvHome(c, call.Env), call.Env, result, serverName)
 				if err != nil {
 					return "", err
 				}
@@ -948,7 +948,7 @@ func makeUtilityHandler(op, label string, rpc utilityRPC, render utilityRender, 
 }
 
 // Resource list entries with uri, name, and description and mimeType when set
-func renderResourceList(env *tools.Env, result any, serverName string) (any, error) {
+func renderResourceList(ctx context.Context, env *tools.Env, result any, serverName string) (any, error) {
 	resources := []any{}
 	for _, r := range result.([]*Resource) {
 		entry := &orderedPayload{}
@@ -968,14 +968,14 @@ func renderResourceList(env *tools.Env, result any, serverName string) (any, err
 }
 
 // Resource contents joined by newline, binary blobs cached as documents
-func renderReadResource(env *tools.Env, result any, serverName string) (any, error) {
+func renderReadResource(ctx context.Context, env *tools.Env, result any, serverName string) (any, error) {
 	var parts []string
 	for _, block := range result.(*ReadResourceResult).Contents {
 		switch {
 		case block.Text != nil:
 			parts = append(parts, tools.StripUnicodeTags(*block.Text))
 		case block.Blob != nil:
-			rendered := renderResourceBlock(env, &ContentBlock{Type: "resource", Resource: block}, serverName)
+			rendered := renderResourceBlock(tools.WithEnvHome(ctx, env), env, &ContentBlock{Type: "resource", Resource: block}, serverName)
 			if rendered == "" {
 				rendered = fmt.Sprintf("[binary data, %d bytes]", utf8.RuneCountInString(*block.Blob))
 			}
@@ -988,7 +988,7 @@ func renderReadResource(env *tools.Env, result any, serverName string) (any, err
 }
 
 // Prompt list entries with name, description when set and the declared arguments
-func renderPromptList(env *tools.Env, result any, serverName string) (any, error) {
+func renderPromptList(ctx context.Context, env *tools.Env, result any, serverName string) (any, error) {
 	prompts := []any{}
 	for _, pr := range result.([]*Prompt) {
 		entry := &orderedPayload{}
@@ -1021,7 +1021,7 @@ func renderPromptList(env *tools.Env, result any, serverName string) (any, error
 }
 
 // Prompt messages with role and text content, plus the description when set
-func renderGetPrompt(env *tools.Env, result any, serverName string) (any, error) {
+func renderGetPrompt(ctx context.Context, env *tools.Env, result any, serverName string) (any, error) {
 	r := result.(*GetPromptResult)
 	messages := []any{}
 	for i, msg := range r.Messages {

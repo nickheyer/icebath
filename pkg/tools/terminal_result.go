@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -106,11 +107,11 @@ func interpretExitCode(command string, exitCode int) string {
 }
 
 // Sudo failure handling, output, auth failed and cache cleared
-func sudoAnnotations(env *Env, command, output, envType, sessionKey string) (string, bool, bool) {
-	output = handleSudoFailure(env, output, envType)
+func sudoAnnotations(ctx context.Context, env *Env, command, output, envType, sessionKey string) (string, bool, bool) {
+	output = handleSudoFailure(ctx, env, output, envType)
 	authFailed := sudoWrongPasswordFailure(output)
 	cacheCleared := invalidateCachedSudoOnAuthFailure(env, sudoCacheScope(env, sessionKey), command, output)
-	canReprompt := cacheCleared && ((env != nil && env.Ask != nil) || truthyEnvValue(os.Getenv("ICEBATH_INTERACTIVE"))) && !noSudoUser(env)
+	canReprompt := cacheCleared && ((env != nil && env.Ask != nil) || truthyEnvValue(os.Getenv("ICEBATH_INTERACTIVE"))) && !noSudoUser(ctx, env)
 	if canReprompt {
 		output += "\n\n\u26a0\ufe0f Sudo authentication failed \u2014 cached password " +
 			"cleared. You will be prompted again on the next sudo command."
@@ -191,7 +192,7 @@ func verificationEvidence(env *Env, command, cwd, sessionID string, returncode i
 }
 
 // Turns a raw execute result into the tool's JSON result string
-func finalizeForegroundResult(env *Env, command string, result *ExecResult, e Environment, envType, effectiveTaskID, taskID, sessionID, sessionKey, workdir, commandCwd, approvalNote string) string {
+func finalizeForegroundResult(ctx context.Context, env *Env, command string, result *ExecResult, e Environment, envType, effectiveTaskID, taskID, sessionID, sessionKey, workdir, commandCwd, approvalNote string) string {
 	observedCwd := ""
 	if result.CwdObserved {
 		observedCwd = result.Cwd
@@ -204,7 +205,7 @@ func finalizeForegroundResult(env *Env, command string, result *ExecResult, e En
 	}
 	output := result.Output
 	returncode := result.ReturnCode
-	output, sudoAuthFailed, sudoCacheCleared := sudoAnnotations(env, command, output, envType, sessionKey)
+	output, sudoAuthFailed, sudoCacheCleared := sudoAnnotations(ctx, env, command, output, envType, sessionKey)
 	output = applyOutputTransformHook(env, command, output, returncode, effectiveTaskID, envType)
 	output = TruncateHeadTail(output, ToolOutputLimits(env).MaxBytes, "")
 	output = StripANSI(output)

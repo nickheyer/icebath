@@ -50,6 +50,11 @@ type CreateTaskOptions struct {
 	ProjectSourceTaskID *string
 	CreatorTaskID       *string
 	CompletionContract  *string
+	// Raw value of a non string tenant or workspace path, recorded as given in the created event
+	tenantRaw        any
+	workspacePathRaw any
+	// Set for a falsy idempotency key that was not a string, stored on the row but never looked up
+	idempotencyKeyFalsy bool
 }
 
 // Ordered payload object from alternating key and value arguments
@@ -181,7 +186,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 	if err != nil {
 		return "", err
 	}
-	if o.IdempotencyKey != nil && *o.IdempotencyKey != "" {
+	if o.IdempotencyKey != nil && *o.IdempotencyKey != "" && !o.idempotencyKeyFalsy {
 		row, err := QueryOne(ctx, conn, "SELECT id FROM tasks WHERE idempotency_key = ? AND status != 'archived' ORDER BY created_at DESC LIMIT 1", *o.IdempotencyKey)
 		if err != nil {
 			return "", err
@@ -233,7 +238,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 				return err
 			}
 			if link.Project != nil && workspaceKind == "worktree" {
-				if link.ProjectRepo != nil && *link.ProjectRepo != "" && (workspacePath == nil || *workspacePath == "") {
+				if link.ProjectRepo != nil && *link.ProjectRepo != "" && (workspacePath == nil || *workspacePath == "" || (workspacePath == o.WorkspacePath && o.workspacePathRaw != nil && !pyrepr.Truthy(o.workspacePathRaw))) {
 					p := filepath.Join(*link.ProjectRepo, ".worktrees", taskID)
 					workspacePath = &p
 				}
@@ -268,9 +273,16 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 					return err
 				}
 			}
+			var tenantPayload, workspacePathPayload any = tenant, workspacePath
+			if o.tenantRaw != nil && tenant != nil && o.Tenant != nil && *tenant == *o.Tenant {
+				tenantPayload = o.tenantRaw
+			}
+			if o.workspacePathRaw != nil && workspacePath == o.WorkspacePath {
+				workspacePathPayload = o.workspacePathRaw
+			}
 			if err := appendEvent(ctx, conn, taskID, "created", payload(
 				"assignee", assignee, "status", taskStatus, "parents", parentList, "creator_task_id", o.CreatorTaskID,
-				"tenant", tenant, "workspace_kind", workspaceKind, "workspace_path", workspacePath,
+				"tenant", tenantPayload, "workspace_kind", workspaceKind, "workspace_path", workspacePathPayload,
 				"branch_name", branchName, "project_id", projectID, "skills", skillsPayload, "goal_mode", goalPayload,
 				"model_override", modelOverride, "provider_override", providerOverride), nil); err != nil {
 				return err
@@ -879,6 +891,8 @@ type StoreAttachmentOptions struct {
 	UploadedBy  *string
 	Board       *string
 	MaxBytes    *int64
+	// Binding failure of a content type that was no SQLite scalar, raised by the row insert
+	contentTypeBindErr error
 }
 
 // Writes an attachment blob under the task attachments directory and records its row, removing the blob when the row fails
@@ -912,7 +926,7 @@ func StoreAttachmentBytes(ctx context.Context, conn state.SQLiteConn, taskID, fi
 	resolved, err := pypath.Resolve(destPath)
 	if err == nil {
 		var id int64
-		id, err = AddAttachment(ctx, conn, taskID, filepath.Base(destPath), resolved, o.ContentType, int64(len(data)), o.UploadedBy)
+		id, err = addAttachment(ctx, conn, taskID, filepath.Base(destPath), resolved, o.ContentType, int64(len(data)), o.UploadedBy, o.contentTypeBindErr)
 		if err == nil {
 			return id, nil
 		}
@@ -923,6 +937,11 @@ func StoreAttachmentBytes(ctx context.Context, conn state.SQLiteConn, taskID, fi
 
 // Records the metadata row and attached event of a blob the caller already wrote
 func AddAttachment(ctx context.Context, conn state.SQLiteConn, taskID, filename, storedPath string, contentType *string, size int64, uploadedBy *string) (int64, error) {
+	return addAttachment(ctx, conn, taskID, filename, storedPath, contentType, size, uploadedBy, nil)
+}
+
+// Row insert of an attachment, a content type binding failure raised where the insert binds it
+func addAttachment(ctx context.Context, conn state.SQLiteConn, taskID, filename, storedPath string, contentType *string, size int64, uploadedBy *string, bindErr error) (int64, error) {
 	if filename == "" || pystr.Strip(filename) == "" {
 		return 0, &ValueError{"attachment filename is required"}
 	}
@@ -934,6 +953,9 @@ func AddAttachment(ctx context.Context, conn state.SQLiteConn, taskID, filename,
 	err := WriteTxn(ctx, conn, false, func() error {
 		if err := requireTask(ctx, conn, taskID); err != nil {
 			return err
+		}
+		if bindErr != nil {
+			return bindErr
 		}
 		res, err := conn.ExecContext(ctx, "INSERT INTO task_attachments (task_id, filename, stored_path, content_type, size, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			taskID, pystr.Strip(filename), storedPath, optStrValue(contentType), size, optStrValue(uploadedBy), now)

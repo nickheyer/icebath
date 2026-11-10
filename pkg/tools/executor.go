@@ -226,7 +226,7 @@ type ExecutorHost interface {
 	GuardrailBlockResult(d ToolGuardrailDecision) string
 	AppendGuardrailObservation(name string, args map[string]any, result string, failed bool, toolCallID string) string
 	RecordFileMutationResult(name string, args map[string]any, result string, isError bool, taskID string)
-	ObserveOnboardingResult(name string, args map[string]any, result string) string
+	ObserveOnboardingResult(ctx context.Context, name string, args map[string]any, result string) string
 	ObserveToolOutcome(name string, isError bool)
 	NoteToolResult(name, toolCallID, result, persisted string)
 	RecordToolBatch(batch []*state.Message, contentsBefore []any)
@@ -773,7 +773,7 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 	if blockBody == nil {
 		controller := e.Host.Guardrails()
 		guardrailCallMu.Lock()
-		d := controller.BeforeCall(ref.Name, ref.Args)
+		d := controller.BeforeCall(ref.Name, orderedArgsObject(ref.RawArgs, ref.Args).Vals)
 		guardrailCallMu.Unlock()
 		if !d.AllowsExecution() {
 			decision = &d
@@ -1103,11 +1103,11 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 	log := toolsLogger(host.Env())
 	host.ObserveToolOutcome(ref.Name, in.isError)
 	if !(in.blocked || in.isError) {
-		result = host.ObserveOnboardingResult(ref.Name, ref.Args, result)
+		result = host.ObserveOnboardingResult(ctx, ref.Name, ref.Args, result)
 	}
 	if in.observed {
 		if !in.blocked {
-			result = host.AppendGuardrailObservation(ref.Name, ref.Args, result, in.isError, ref.CallID)
+			result = host.AppendGuardrailObservation(ref.Name, orderedArgsObject(ref.RawArgs, ref.Args).Vals, result, in.isError, ref.CallID)
 		}
 		if in.isError {
 			preview := result
@@ -2368,7 +2368,7 @@ func orderedArgsObject(raw string, args map[string]any) *pyjson.Object {
 				if !present {
 					continue
 				}
-				if rv, _ := obj.Get(k); jsonCompact(pyjson.Plain(rv)) == jsonCompact(v) {
+				if rv, _ := obj.Get(k); reflect.DeepEqual(pyjson.WTF8Shape(rv), v) {
 					v = rv
 				}
 				o.Set(k, v)

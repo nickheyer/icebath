@@ -291,3 +291,126 @@ func tomlIter(v any) ([]any, error) {
 	}
 	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", tomlTypeName(v))}
 }
+
+// Python equality of two tomllib values, bools and ints and floats comparing as numbers
+func tomlEqual(a, b any) bool {
+	if equal, numeric := tomlNumbersEqual(a, b); numeric {
+		return equal
+	}
+	switch x := a.(type) {
+	case string:
+		y, ok := b.(string)
+		return ok && x == y
+	case []any:
+		y, ok := b.([]any)
+		if !ok || len(x) != len(y) {
+			return false
+		}
+		for i := range x {
+			if !tomlEqual(x[i], y[i]) {
+				return false
+			}
+		}
+		return true
+	case *OrderedObject:
+		y, ok := b.(*OrderedObject)
+		if !ok || len(x.Keys) != len(y.Keys) {
+			return false
+		}
+		for _, key := range x.Keys {
+			other, found := y.Values[key]
+			if !found || !tomlEqual(x.Values[key], other) {
+				return false
+			}
+		}
+		return true
+	case toml.LocalDate:
+		y, ok := b.(toml.LocalDate)
+		return ok && x == y
+	case toml.LocalTime:
+		y, ok := b.(toml.LocalTime)
+		return ok && tomlClockEqual(x, y)
+	case toml.LocalDateTime:
+		y, ok := b.(toml.LocalDateTime)
+		return ok && x.LocalDate == y.LocalDate && tomlClockEqual(x.LocalTime, y.LocalTime)
+	case time.Time:
+		y, ok := b.(time.Time)
+		return ok && x.Unix() == y.Unix() && x.Nanosecond()/1000 == y.Nanosecond()/1000
+	}
+	return false
+}
+
+// Equality of two clock times at the microsecond resolution tomllib keeps
+func tomlClockEqual(a, b toml.LocalTime) bool {
+	return a.Hour == b.Hour && a.Minute == b.Minute && a.Second == b.Second && a.Nanosecond/1000 == b.Nanosecond/1000
+}
+
+// Python numeric equality of two values, numeric false when either is not a bool, int or float
+func tomlNumbersEqual(a, b any) (equal, numeric bool) {
+	ai, af, aFloat, aOK := tomlNumber(a)
+	bi, bf, bFloat, bOK := tomlNumber(b)
+	if !aOK || !bOK {
+		return false, false
+	}
+	switch {
+	case !aFloat && !bFloat:
+		return ai == bi, true
+	case aFloat && bFloat:
+		return af == bf, true
+	case aFloat:
+		return tomlFloatIsInt(af, bi), true
+	}
+	return tomlFloatIsInt(bf, ai), true
+}
+
+// Integer or float view of a numeric tomllib value, a bool counting as the int it subclasses
+func tomlNumber(v any) (i int64, f float64, isFloat, ok bool) {
+	switch x := v.(type) {
+	case bool:
+		if x {
+			return 1, 0, false, true
+		}
+		return 0, 0, false, true
+	case int64:
+		return x, 0, false, true
+	case float64:
+		return 0, x, true, true
+	}
+	return 0, 0, false, false
+}
+
+// Exact comparison of a float with an int the way Python compares them without rounding the int
+func tomlFloatIsInt(f float64, i int64) bool {
+	if math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) || f < -9.223372036854775808e18 || f >= 9.223372036854775808e18 {
+		return false
+	}
+	return int64(f) == i
+}
+
+// Python in operator over a tomllib container, a TypeError for a value that is no container
+func tomlContains(container any, item string) (bool, error) {
+	switch c := container.(type) {
+	case *OrderedObject:
+		_, found := c.Values[item]
+		return found, nil
+	case []any:
+		for _, element := range c {
+			if tomlEqual(element, item) {
+				return true, nil
+			}
+		}
+		return false, nil
+	case string:
+		return strings.Contains(c, item), nil
+	}
+	return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("argument of type '%s' is not a container or iterable", tomlTypeName(container))}
+}
+
+// TypeError a set raises for an unhashable tomllib value, nil for a hashable one
+func tomlUnhashable(v any) error {
+	switch v.(type) {
+	case *OrderedObject, []any:
+		return &PyError{Class: "TypeError", Message: fmt.Sprintf("cannot use '%s' as a set element (unhashable type: '%s')", tomlTypeName(v), tomlTypeName(v))}
+	}
+	return nil
+}

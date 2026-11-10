@@ -18,7 +18,10 @@ var gatewayLifecyclePattern = regexp2.MustCompile(
 		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\b(?:icebath|hermes)\b[^\n]*\bgateway)` +
 		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bgateway\b[^\n]*\b(?:icebath|hermes))`)
 
-var interpreterImageRe = regexp.MustCompile(`^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?$`)
+var interpreterImageRe = regexp.MustCompile(`^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?\n?$`)
+
+// True when a lower cased image name is a Python interpreter name, one trailing newline allowed as re.match does
+func InterpreterImageMatch(name string) bool { return interpreterImageRe.MatchString(name) }
 
 // Lower cased image name of the running executable that hosts the gateway
 var hostInterpreterName = func() string {

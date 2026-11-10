@@ -78,7 +78,7 @@ func TestReadWriteManifestRoundtripV2(t *testing.T) {
 	s := NewScope(tmp, config0())
 	s.SkillsDirOverride = tmp
 	entries := map[string]string{"zebra": "hash1", "alpha": "hash2", "middle": "hash3"}
-	s.writeManifest(entries)
+	s.writeManifest(context.Background(), entries)
 	if got := mustManifest(t, s); !reflect.DeepEqual(got, entries) {
 		t.Fatal(got)
 	}
@@ -119,7 +119,7 @@ func TestReadWriteManifestPreservesExistingFileMode(t *testing.T) {
 	s.SkillsDirOverride = tmp
 	os.WriteFile(s.manifestFile(), []byte("old-skill:oldhash\n"), 0o644)
 	os.Chmod(s.manifestFile(), 0o660)
-	s.writeManifest(map[string]string{"new-skill": "newhash"})
+	s.writeManifest(context.Background(), map[string]string{"new-skill": "newhash"})
 	if got := mustRead(t, s.manifestFile()); got != "new-skill:newhash\n" {
 		t.Fatalf("%q", got)
 	}
@@ -667,11 +667,11 @@ func TestOptOutToggleAndRemoveKeepsUserModified(t *testing.T) {
 	mustSync(t, s)
 	writeRel(t, skillsDir, "beta/SKILL.md", "---\nname: beta\n---\nEDITED\n")
 	writeRel(t, skillsDir, "mine/SKILL.md", "---\nname: mine\n---\nlocal\n")
-	preview, err := s.RemovePristineBundledSkills(true)
+	preview, err := s.RemovePristineBundledSkills(context.Background(), true)
 	if err != nil || !slices.Contains(strs(preview, "removed"), "alpha") || slices.Contains(strs(preview, "removed"), "beta") {
 		t.Fatal(preview, err)
 	}
-	res, err := s.RemovePristineBundledSkills(false)
+	res, err := s.RemovePristineBundledSkills(context.Background(), false)
 	if err != nil || !slices.Contains(strs(res, "removed"), "alpha") || lexists(filepath.Join(skillsDir, "alpha")) {
 		t.Fatal(res, err)
 	}
@@ -692,7 +692,7 @@ func backupRecoverySetup(t *testing.T) (s *Scope, bundled, skillsDir, dest strin
 	s = patchedSync(t, bundled, skillsDir)
 	dest = filepath.Join(skillsDir, "old-skill")
 	writeRel(t, dest, "SKILL.md", "# Old v1")
-	s.writeManifest(map[string]string{"old-skill": DirHash(dest)})
+	s.writeManifest(context.Background(), map[string]string{"old-skill": DirHash(dest)})
 	return s, bundled, skillsDir, dest
 }
 
@@ -890,7 +890,7 @@ func TestRuntimeCacheSourceCacheIsNeitherSeededNorRecorded(t *testing.T) {
 	if err := s.rmtreeWritable(dest); err != nil {
 		t.Fatal(err)
 	}
-	s.writeManifest(map[string]string{})
+	s.writeManifest(context.Background(), map[string]string{})
 	if r := mustSync(t, s); !reflect.DeepEqual(strs(r, "copied"), []string{"demo"}) || lexists(filepath.Join(dest, "scripts", "__pycache__")) {
 		t.Fatal(r)
 	}
@@ -899,7 +899,7 @@ func TestRuntimeCacheSourceCacheIsNeitherSeededNorRecorded(t *testing.T) {
 func TestRuntimeCacheLegacyCacheHashMigratesOnlyWithMatchingOrigin(t *testing.T) {
 	s, src, dest := runtimeCacheTree(t)
 	writeRel(t, dest, "scripts/__pycache__/helper.cpython-311.pyc", "legacy generated")
-	s.writeManifest(map[string]string{"demo": legacyHash(t, dest)})
+	s.writeManifest(context.Background(), map[string]string{"demo": legacyHash(t, dest)})
 	if got := modifiedNames(t, s); len(got) != 0 {
 		t.Fatal(got)
 	}
@@ -913,7 +913,7 @@ func TestRuntimeCacheLegacyHashMismatchNeverRebaselinesUserEdits(t *testing.T) {
 	s, src, dest := runtimeCacheTree(t)
 	cache := writeRel(t, dest, "scripts/__pycache__/helper.cpython-311.pyc", "legacy generated")
 	origin := legacyHash(t, dest)
-	s.writeManifest(map[string]string{"demo": origin})
+	s.writeManifest(context.Background(), map[string]string{"demo": origin})
 	os.Remove(cache)
 	writeRel(t, dest, "scripts/helper.py", "user edit\n")
 	writeRel(t, src, "scripts/helper.py", "upstream edit\n")
@@ -948,7 +948,7 @@ func TestRuntimeCacheDoesNotHideDotfileEdit(t *testing.T) {
 func TestRuntimeCacheLegacyCacheOriginAllowsRenameWithoutFreezing(t *testing.T) {
 	s, src, dest := runtimeCacheTree(t)
 	writeRel(t, dest, "scripts/__pycache__/helper.cpython-311.pyc", "legacy generated")
-	s.writeManifest(map[string]string{"demo": legacyHash(t, dest)})
+	s.writeManifest(context.Background(), map[string]string{"demo": legacyHash(t, dest)})
 	newSrc := filepath.Join(filepath.Dir(filepath.Dir(src)), "recategorized", "demo")
 	os.MkdirAll(filepath.Dir(newSrc), 0o755)
 	if err := os.Rename(src, newSrc); err != nil {

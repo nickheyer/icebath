@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
@@ -22,13 +23,20 @@ var (
 	checkAliasCollision = profiles.CheckAliasCollision
 )
 
+// Replaces the alias probe a rename consults for callers outside the package until the returned restore runs
+func SwapCheckAliasCollision(f func(name string) (string, error)) (restore func()) {
+	old := checkAliasCollision
+	checkAliasCollision = f
+	return func() { checkAliasCollision = old }
+}
+
 // Appends the old slug to the renamed profile's previous names history, logging instead of failing
-func recordProfileRename(newDir, oldCanon string) {
+func recordProfileRename(ctx context.Context, newDir, oldCanon string) {
 	history := append([]string{}, profiles.ReadProfileMeta(newDir).PreviousNames...)
 	if !slices.Contains(history, oldCanon) {
 		history = append(history, oldCanon)
 	}
-	if err := writeProfileMeta(newDir, profiles.MetaUpdate{PreviousNames: &history}); err != nil {
+	if err := writeProfileMeta(ctx, newDir, profiles.MetaUpdate{PreviousNames: &history}); err != nil {
 		slog.Default().Debug(fmt.Sprintf("profile rename: could not record previous name %s in %s: %v", pyrepr.Repr(oldCanon), newDir, err))
 	}
 }
@@ -53,7 +61,10 @@ func RenameProfile(ctx context.Context, oldName, newName string) (string, error)
 		return "", err
 	}
 	if oldCanon == "default" {
-		cleaned, err := profiles.SetProfileDisplayName("default", newName)
+		if pystr.Strip(newName) == "" {
+			return "", &profiles.ValueError{Msg: "Display name cannot be empty."}
+		}
+		cleaned, err := profiles.SetProfileDisplayName(ctx, "default", newName)
 		if err != nil {
 			return "", err
 		}
@@ -117,8 +128,8 @@ func RenameProfile(ctx context.Context, oldName, newName string) (string, error)
 			return "", err
 		}
 	}
-	recordProfileRename(newDir, oldCanon)
-	if err := migrateHonchoProfileHost(oldCanon, newCanon, newDir); err != nil {
+	recordProfileRename(ctx, newDir, oldCanon)
+	if err := migrateHonchoProfileHost(ctx, oldCanon, newCanon, newDir); err != nil {
 		return "", err
 	}
 	if _, err := profiles.RemoveWrapperScript(oldCanon); err != nil {

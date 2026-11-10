@@ -1179,7 +1179,7 @@ func writeToolsFilter(ctx context.Context, name, mode string, values []string) e
 	}
 	servers[name] = entry
 	cfg["mcp_servers"] = servers
-	return config.SaveUser(h, cfg)
+	return config.SaveUser(ctx, h, cfg)
 }
 
 func indexSet(n int, keep func(int) bool) map[int]bool {

@@ -153,9 +153,9 @@ type PlatformAdapter interface {
 	FormatToolEvent(ctx context.Context, event StreamEvent, mode string, previewMaxLen int) (string, bool)
 	FormatToolPreview(preview tools.ToolPreview) string
 	SendPathDegraded() bool
-	MarkConnected(listenerBase string)
-	MarkDisconnected()
-	SetFatalError(code, message string, retryable bool)
+	MarkConnected(ctx context.Context, listenerBase string)
+	MarkDisconnected(ctx context.Context)
+	SetFatalError(ctx context.Context, code, message string, retryable bool)
 	WirePluginHandlers(ctx context.Context, native any)
 	RewirePluginHandlers(ctx context.Context)
 	TextBatchKey(ctx context.Context, event *MessageEvent) (string, error)
@@ -528,52 +528,52 @@ func (b *BasePlatformAdapter) SetFatalErrorHandler(handler FatalErrorHandler) {
 func (b *BasePlatformAdapter) SendPathDegraded() bool { return false }
 
 // Marks the adapter running, clears the fatal error and publishes connected or degraded status
-func (b *BasePlatformAdapter) MarkConnected(listenerBase string) {
+func (b *BasePlatformAdapter) MarkConnected(ctx context.Context, listenerBase string) {
 	b.mu.Lock()
 	b.running = true
 	b.fatalErrorCode, b.fatalErrorMessage = nil, nil
 	b.fatalErrorRetryable = true
 	b.mu.Unlock()
 	if b.Self().SendPathDegraded() {
-		b.markDegraded()
+		b.markDegraded(ctx)
 		return
 	}
 	fields := map[string]any{"platform_state": "connected", "error_code": nil, "error_message": nil}
 	if listenerBase != "" {
 		fields["listener_base"] = listenerBase
 	}
-	b.writeRuntimeStatusSafe("connected", fields)
+	b.writeRuntimeStatusSafe(ctx, "connected", fields)
 }
 
 // Publishes retrying for a running adapter whose delivery path is unproven
-func (b *BasePlatformAdapter) markDegraded() {
-	b.writeRuntimeStatusSafe("connected_degraded", map[string]any{"platform_state": "retrying", "error_code": nil,
+func (b *BasePlatformAdapter) markDegraded(ctx context.Context) {
+	b.writeRuntimeStatusSafe(ctx, "connected_degraded", map[string]any{"platform_state": "retrying", "error_code": nil,
 		"error_message": DegradedStatusMessage})
 }
 
 // Marks the adapter stopped and publishes disconnected unless a fatal error stands
-func (b *BasePlatformAdapter) MarkDisconnected() {
+func (b *BasePlatformAdapter) MarkDisconnected(ctx context.Context) {
 	b.mu.Lock()
 	b.running = false
 	b.mu.Unlock()
 	if !b.HasFatalError() {
-		b.writeRuntimeStatusSafe("disconnected", map[string]any{"platform_state": "disconnected", "error_code": nil,
+		b.writeRuntimeStatusSafe(ctx, "disconnected", map[string]any{"platform_state": "disconnected", "error_code": nil,
 			"error_message": nil})
 	}
 }
 
 // Stops the adapter, records the fatal error and publishes fatal status
-func (b *BasePlatformAdapter) SetFatalError(code, message string, retryable bool) {
+func (b *BasePlatformAdapter) SetFatalError(ctx context.Context, code, message string, retryable bool) {
 	b.mu.Lock()
 	b.running = false
 	b.fatalErrorCode, b.fatalErrorMessage = &code, &message
 	b.fatalErrorRetryable = retryable
 	b.mu.Unlock()
-	b.writeRuntimeStatusSafe("fatal", map[string]any{"platform_state": "fatal", "error_code": code, "error_message": message})
+	b.writeRuntimeStatusSafe(ctx, "fatal", map[string]any{"platform_state": "fatal", "error_code": code, "error_message": message})
 }
 
 // Publishes runtime status, logging a failure once at warning then at debug per context
-func (b *BasePlatformAdapter) writeRuntimeStatusSafe(statusContext string, fields map[string]any) {
+func (b *BasePlatformAdapter) writeRuntimeStatusSafe(ctx context.Context, statusContext string, fields map[string]any) {
 	key := b.Traits.RuntimeStatusPlatformKey
 	if key == "" {
 		key = string(b.Platform)
@@ -582,7 +582,7 @@ func (b *BasePlatformAdapter) writeRuntimeStatusSafe(statusContext string, field
 	for k, v := range fields {
 		payload[k] = v
 	}
-	_, err := publishRuntimeStatusFn(RuntimeStatusUpdate{Fields: payload})
+	_, err := publishRuntimeStatusFn(ctx, RuntimeStatusUpdate{Fields: payload})
 	if err == nil {
 		return
 	}
@@ -653,22 +653,24 @@ func (b *BasePlatformAdapter) SetPlatformLockTakeoverAllowed(allowed bool) {
 var acquireScopedLockFn = AcquireScopedLock
 
 // Scoped lock takeover hook, a package var the way hermes tests patch the status module
-var takeOverScopedLockHolderFn = func(record *pyjson.Object) (int, bool) { return TakeOverScopedLockHolder(record, 20, 20) }
+var takeOverScopedLockHolderFn = func(ctx context.Context, record *pyjson.Object) (int, bool) {
+	return TakeOverScopedLockHolder(ctx, record, 20, 20)
+}
 
 // Takes the adapter's scoped lock, an armed replace takes over a live holder once, a conflict is a retryable fatal error
-func (b *BasePlatformAdapter) AcquirePlatformLock(scope, identity, resourceDesc string) (bool, error) {
+func (b *BasePlatformAdapter) AcquirePlatformLock(ctx context.Context, scope, identity, resourceDesc string) (bool, error) {
 	b.mu.Lock()
 	b.platformLockScope, b.platformLockIdentity = scope, identity
 	b.mu.Unlock()
 	meta := pyjson.NewObject()
 	meta.Set("platform", string(b.Platform))
-	acquired, existing, err := acquireScopedLockFn(scope, identity, meta)
+	acquired, existing, err := acquireScopedLockFn(ctx, scope, identity, meta)
 	var unusable *ScopedLockDirUnusable
 	if errors.As(err, &unusable) {
 		b.mu.Lock()
 		b.platformLockIdentity = ""
 		b.mu.Unlock()
-		b.Self().SetFatalError("lock_dir_unusable", fmt.Sprintf("%s lock cannot be taken: the gateway lock directory %s is not "+
+		b.Self().SetFatalError(ctx, "lock_dir_unusable", fmt.Sprintf("%s lock cannot be taken: the gateway lock directory %s is not "+
 			"usable by this user (likely created by an elevated Icebath). To repair, %s; the gateway retries on its own.",
 			resourceDesc, unusable.Dir, home.UnusableDirRemedy(unusable.Dir)), true)
 		return false, nil
@@ -688,9 +690,9 @@ func (b *BasePlatformAdapter) AcquirePlatformLock(scope, identity, resourceDesc 
 	}
 	b.mu.Unlock()
 	if armed {
-		if ownerPID, ok := takeOverScopedLockHolderFn(existing); ok {
+		if ownerPID, ok := takeOverScopedLockHolderFn(ctx, existing); ok {
 			slog.Warn(fmt.Sprintf("[%s] %s was held by gateway PID %d — explicit --replace handoff completed", name, resourceDesc, ownerPID))
-			if acquired, existing, err = acquireScopedLockFn(scope, identity, meta); err != nil {
+			if acquired, existing, err = acquireScopedLockFn(ctx, scope, identity, meta); err != nil {
 				return false, err
 			}
 			if acquired {
@@ -720,7 +722,7 @@ func (b *BasePlatformAdapter) AcquirePlatformLock(scope, identity, resourceDesc 
 	}
 	message := fmt.Sprintf("%s already in use%s.%s", resourceDesc, holder, remedy)
 	slog.Error(fmt.Sprintf("[%s] %s", name, message))
-	b.Self().SetFatalError(scope+"_lock", message, true)
+	b.Self().SetFatalError(ctx, scope+"_lock", message, true)
 	return false, nil
 }
 

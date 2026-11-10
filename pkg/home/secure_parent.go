@@ -12,7 +12,10 @@ var chmodPath = os.Chmod
 
 // Restricts the resolved parent of path to 0700, never the root, a top level dir or the install tree
 func SecureParentDir(path string) {
-	parent := resolve(pypath.PathParent(path))
+	parent, err := resolve(pypath.PathParent(path))
+	if err != nil {
+		panic(err)
+	}
 	anchor, parts := pypath.PathParts(parent)
 	depth := len(parts)
 	if anchor != "" {

@@ -165,7 +165,7 @@ func init() {
 	winStart = WindowsStart
 	winWaitForGatewayAbsent = waitForWindowsGatewayAbsent
 	winWaitForAPIServerPortFree = waitForAPIServerPortFree
-	winMarkPlannedRestart = func(context.Context) { WritePlannedRestartMarker(false, false) }
+	winMarkPlannedRestart = func(ctx context.Context) { WritePlannedRestartMarker(ctx, false, false) }
 	winIsStartupEntryInstalled = windowsStartupEntryInstalled
 	winInstall = WindowsInstall
 	winGatewayArgv = windowsGatewayArgv
@@ -1751,11 +1751,11 @@ func WindowsStart(ctx context.Context) error {
 }
 
 // Writes the planned stop marker and waits for pid to exit, the only drain request Windows has
-func drainWindowsGatewayPid(pid int, drainTimeout float64) bool {
+func drainWindowsGatewayPid(ctx context.Context, pid int, drainTimeout float64) bool {
 	if pid <= 0 {
 		return false
 	}
-	WritePlannedStopMarker(pid)
+	WritePlannedStopMarker(ctx, pid)
 	return pydeadline.PollUntil(func() (bool, bool) {
 		gone := !statusPidExists(pid)
 		return gone, gone
@@ -1840,7 +1840,7 @@ func WindowsStop(ctx context.Context) error {
 		primary = pid
 	}
 	identities := gatewayPidIdentities(collectGatewayStopPids(ctx, primary))
-	drained := running && drainWindowsGatewayPid(pid, windowsStopDrainTimeout(ctx))
+	drained := running && drainWindowsGatewayPid(ctx, pid, windowsStopDrainTimeout(ctx))
 	stoppedAny := drained
 	registered, err := winIsTaskRegistered(ctx)
 	if err != nil {

@@ -57,7 +57,7 @@ func TestDirtySubmoduleWorkIsNeverArchivedAway(t *testing.T) {
 	}
 	settings := SweepSettings()
 	actions := map[string]bool{}
-	for _, d := range PlanSweep(repo, 24, &settings, 0, nil) {
+	for _, d := range PlanSweep(context.Background(), repo, 24, &settings, 0, nil) {
 		actions[d.Action] = true
 	}
 	if len(actions) != 1 || !actions["keep-submodule-work"] {

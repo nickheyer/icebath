@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -154,7 +155,7 @@ func TestMaintainPackHealthRepacksAtThreshold(t *testing.T) {
 	if made <= 2 {
 		t.Fatalf("fixture failed to produce sprawl (made=%d)", made)
 	}
-	maintainPackHealth(repo)
+	maintainPackHealth(context.Background(), repo)
 	after := shPackCount(t, repo)
 	if after >= made {
 		t.Fatalf("pack count must strictly decrease (made=%d, after=%d)", made, after)
@@ -168,7 +169,7 @@ func TestMaintainPackHealthNoopBelowThreshold(t *testing.T) {
 	repo := shRepo(t)
 	made := shMakePacks(t, repo, 2)
 	shSetThreshold(t, 50)
-	maintainPackHealth(repo)
+	maintainPackHealth(context.Background(), repo)
 	if got := shPackCount(t, repo); got != made {
 		t.Fatalf("below threshold must be a no-op: %d packs, made %d", got, made)
 	}
@@ -177,7 +178,7 @@ func TestMaintainPackHealthNoopBelowThreshold(t *testing.T) {
 func TestMaintainPackHealthFailSoftOnMissingPackDir(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(tmp, "home"))
-	maintainPackHealth(filepath.Join(tmp, "not-a-repo"))
+	maintainPackHealth(context.Background(), filepath.Join(tmp, "not-a-repo"))
 }
 
 func TestMaintainPackHealthPassRefreshesAStaleGraphInATreelessCloneWithoutFetching(t *testing.T) {
@@ -223,7 +224,7 @@ func TestMaintainPackHealthPassRefreshesAStaleGraphInATreelessCloneWithoutFetchi
 	linked := filepath.Join(tmp, "linked")
 	shGit(t, clone, "worktree", "add", "-q", "--no-checkout", "--detach", linked, "HEAD")
 	packsBefore, _ := filepath.Glob(filepath.Join(clone, ".git", "objects", "pack", "*.pack"))
-	maintainPackHealth(linked)
+	maintainPackHealth(context.Background(), linked)
 	chain, err := os.Stat(filepath.Join(info, "commit-graphs", "commit-graph-chain"))
 	if err != nil {
 		t.Fatal(err)
@@ -247,15 +248,15 @@ func TestRepackStampedeOneRepackPerClonePerInterval(t *testing.T) {
 	prevRun, prevInterval := runBoundedRepackFn, repackMinInterval
 	t.Cleanup(func() { runBoundedRepackFn, repackMinInterval = prevRun, prevInterval })
 	var runs []string
-	runBoundedRepackFn = func(root string) { runs = append(runs, root) }
+	runBoundedRepackFn = func(_ context.Context, root string) { runs = append(runs, root) }
 	for i := 0; i < 3; i++ {
-		maintainPackHealth(repo)
+		maintainPackHealth(context.Background(), repo)
 	}
 	if len(runs) != 1 || runs[0] != repo {
 		t.Fatalf("N launches inside the interval must produce exactly one repack: %v", runs)
 	}
 	repackMinInterval = 0
-	maintainPackHealth(repo)
+	maintainPackHealth(context.Background(), repo)
 	if len(runs) != 2 {
 		t.Fatalf("a stale stamp must hand the slot to the next launch: %v", runs)
 	}

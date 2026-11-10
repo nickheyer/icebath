@@ -239,7 +239,7 @@ func initMemory(ctx context.Context, a *AIAgent, agentCfg map[string]any, skipMe
 				if mok && uok {
 					store := memory.NewStore(home.MemoriesDir(home.Dir(ctx)), memLimit, userLimit, a.memoryEnabled, a.userProfileEnabled)
 					a.memoryStore = store
-					_ = store.LoadFromDisk()
+					_ = store.LoadFromDisk(tools.WithEnvHome(ctx, a.env))
 				}
 			}
 		}

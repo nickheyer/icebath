@@ -50,14 +50,14 @@ func captureLifecycleOut(t *testing.T) *bytes.Buffer {
 
 func TestStopMarkWritesPlannedStopForSupervisedPid(t *testing.T) {
 	var marked []int
-	swapSeam(t, &stopMarkWrite, func(pid int) bool { marked = append(marked, pid); return true })
+	swapSeam(t, &stopMarkWrite, func(_ context.Context, pid int) bool { marked = append(marked, pid); return true })
 	t.Setenv("MAINPID", "4242")
-	if SystemdStopMarkMain([]string{"systemd_stop_mark"}) != 0 || !slices.Equal(marked, []int{4242}) {
+	if SystemdStopMarkMain(context.Background(), []string{"systemd_stop_mark"}) != 0 || !slices.Equal(marked, []int{4242}) {
 		t.Fatal(marked)
 	}
 	marked = nil
 	os.Unsetenv("MAINPID")
-	if SystemdStopMarkMain([]string{"systemd_stop_mark", "7777"}) != 0 || !slices.Equal(marked, []int{7777}) {
+	if SystemdStopMarkMain(context.Background(), []string{"systemd_stop_mark", "7777"}) != 0 || !slices.Equal(marked, []int{7777}) {
 		t.Fatal(marked)
 	}
 }
@@ -65,20 +65,20 @@ func TestStopMarkWritesPlannedStopForSupervisedPid(t *testing.T) {
 func TestStopMarkNeverBlocksRestartAndUnitWiresExecStop(t *testing.T) {
 	sandboxServiceHomes(t)
 	var marked []int
-	swapSeam(t, &stopMarkWrite, func(pid int) bool { marked = append(marked, pid); return true })
+	swapSeam(t, &stopMarkWrite, func(_ context.Context, pid int) bool { marked = append(marked, pid); return true })
 	t.Setenv("MAINPID", "")
 	os.Unsetenv("MAINPID")
 	for _, argv := range [][]string{{"m"}, {"m", "0"}, {"m", "abc"}} {
-		if SystemdStopMarkMain(argv) != 0 {
+		if SystemdStopMarkMain(context.Background(), argv) != 0 {
 			t.Fatal(argv)
 		}
 	}
 	if len(marked) != 0 {
 		t.Fatal(marked)
 	}
-	swapSeam(t, &stopMarkWrite, func(int) bool { panic(errors.New("disk gone")) })
+	swapSeam(t, &stopMarkWrite, func(context.Context, int) bool { panic(errors.New("disk gone")) })
 	t.Setenv("MAINPID", "4242")
-	if SystemdStopMarkMain([]string{"m"}) != 0 {
+	if SystemdStopMarkMain(context.Background(), []string{"m"}) != 0 {
 		t.Fatal("marker failure blocked the stop")
 	}
 	unit, err := GenerateSystemdUnit(context.Background(), false, "")

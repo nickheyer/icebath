@@ -29,6 +29,8 @@ func processExited(pid int) bool {
 	return state == 'Z' || state == 'X'
 }
 
+func scriptProcessLive(pid int) bool { return !processExited(pid) }
+
 func TestTimeoutLeavesNoDetachedDescendant(t *testing.T) {
 	s := scriptStore(t)
 	t.Setenv("ICEBATH_CRON_SCRIPT_TIMEOUT", "2")

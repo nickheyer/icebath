@@ -41,6 +41,11 @@ func edSpellings(names ...string) map[string]bool {
 	return out
 }
 
+// Spelling lookup a rejoin consults only once the record proves it is due
+func edSpell(names ...string) func() (map[string]bool, error) {
+	return func() (map[string]bool, error) { return edSpellings(names...), nil }
+}
+
 func TestEditorDisableParksThePluginAndRecordsWhatToUndo(t *testing.T) {
 	config := "# operator note\nplugins:\n  enabled: [keep, group/slow, slow]  # chosen by hand\n  disabled: [other]\n"
 	reason := "  conflict\n\twith   " + strings.Repeat("x", 400)
@@ -81,7 +86,7 @@ func TestEditorRejoinUndoesOnlyARecordedDisable(t *testing.T) {
 	config := "plugins:\n  enabled: [keep]\n  disabled: [slow, group/slow, mine]\n  disabled_by_update:\n    slow: {enabled: true, reason: r}\n    parked: {enabled: false, reason: r}\n"
 	_, plugins := edEdit(t, config, func(p *yaml.Node) error {
 		for _, name := range []string{"slow", "mine"} {
-			if err := rejoinPlugin(p, name, edSpellings(name, "group/"+name)); err != nil {
+			if err := rejoinPlugin(p, name, edSpell(name, "group/"+name)); err != nil {
 				return err
 			}
 		}
@@ -91,7 +96,7 @@ func TestEditorRejoinUndoesOnlyARecordedDisable(t *testing.T) {
 		t.Fatalf("rejoined %v", plugins)
 	}
 	_, plugins = edEdit(t, "plugins:\n  disabled: [parked]\n  disabled_by_update:\n    parked: {enabled: false, reason: r}\n", func(p *yaml.Node) error {
-		return rejoinPlugin(p, "parked", edSpellings("parked"))
+		return rejoinPlugin(p, "parked", edSpell("parked"))
 	})
 	if _, has := plugins["enabled"]; has || len(svList(plugins["disabled"])) != 0 {
 		t.Fatalf("a plugin disabled before the update came back on %v", plugins)
@@ -191,17 +196,17 @@ func TestEditorDisabledValuesFollowPythonMembership(t *testing.T) {
 		t.Fatalf("int disabled %v", err)
 	}
 	_, plugins = edEdit(t, "plugins:\n  enabled: keep-slow\n  disabled: slow\n  disabled_by_update:\n    slow: {enabled: true}\n", func(p *yaml.Node) error {
-		return rejoinPlugin(p, "slow", edSpellings("slow"))
+		return rejoinPlugin(p, "slow", edSpell("slow"))
 	})
 	if plugins["disabled"] != "slow" || plugins["enabled"] != "keep-slow" {
 		t.Fatalf("string lists on rejoin %v", plugins)
 	}
 	doc, _ = loadRoundtrip([]byte("plugins:\n  disabled: s\n  disabled_by_update:\n    s: {enabled: true}\n"))
-	if err := rejoinPlugin(rtGet(rtRoot(doc), "plugins"), "s", edSpellings("s")); err == nil || !strings.Contains(err.Error(), "doesn't support item deletion") {
+	if err := rejoinPlugin(rtGet(rtRoot(doc), "plugins"), "s", edSpell("s")); err == nil || !strings.Contains(err.Error(), "doesn't support item deletion") {
 		t.Fatalf("single letter string disabled %v", err)
 	}
 	text, _ := edEdit(t, "plugins:\n  disabled: {0: slow, 1: keep}\n  disabled_by_update:\n    slow: {enabled: false}\n", func(p *yaml.Node) error {
-		return rejoinPlugin(p, "slow", edSpellings("slow"))
+		return rejoinPlugin(p, "slow", edSpell("slow"))
 	})
 	if !strings.Contains(text, "disabled: {1: keep}") {
 		t.Fatalf("index keyed mapping %s", text)
@@ -211,7 +216,7 @@ func TestEditorDisabledValuesFollowPythonMembership(t *testing.T) {
 		t.Fatalf("unhashable enabled item %v", err)
 	}
 	doc, _ = loadRoundtrip([]byte("plugins:\n  disabled: {a: slow}\n  disabled_by_update:\n    slow: {enabled: false}\n"))
-	if err := rejoinPlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpellings("slow")); !edPyError(err, "KeyError", "0") {
+	if err := rejoinPlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpell("slow")); !edPyError(err, "KeyError", "0") {
 		t.Fatalf("mapping without index keys %v", err)
 	}
 }

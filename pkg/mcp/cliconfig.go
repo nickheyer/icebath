@@ -258,7 +258,7 @@ func SaveServer(ctx context.Context, ui TerminalUI, name string, serverConfig ma
 	}
 	servers[name] = serverConfig
 	doc["mcp_servers"] = servers
-	return true, config.SaveUser(h, doc)
+	return true, config.SaveUser(ctx, h, doc)
 }
 
 // Named server entry, or the not found hint listing the available names
@@ -292,7 +292,7 @@ func RemoveServer(ctx context.Context, name string) (bool, error) {
 	if len(servers) == 0 {
 		delete(doc, "mcp_servers")
 	}
-	return true, config.SaveUser(h, doc)
+	return true, config.SaveUser(ctx, h, doc)
 }
 
 // Replaces the whole mcp_servers mapping after validating every entry, an empty map removes the key
@@ -323,7 +323,7 @@ func ReplaceServers(ctx context.Context, servers map[string]any) (bool, []string
 	} else {
 		delete(doc, "mcp_servers")
 	}
-	return true, nil, config.SaveUser(h, doc)
+	return true, nil, config.SaveUser(ctx, h, doc)
 }
 
 // Env key holding the API key of a server, MCP_<NAME>_API_KEY
@@ -423,6 +423,11 @@ func toAnyList(items []string) []any {
 // Connects one server, lists its tools and disconnects, with the default connect timeout and no details
 func probeSingleServer(ctx context.Context, env *tools.Env, name string, cfg map[string]any) ([]ToolSummary, error) {
 	return probeServer(ctx, env, name, cfg, nil, nil)
+}
+
+// One server probe for callers outside the package
+func ProbeSingleServer(ctx context.Context, env *tools.Env, name string, cfg map[string]any) ([]ToolSummary, error) {
+	return probeSingleServer(ctx, env, name, cfg)
 }
 
 // Connect and loop runners the probe uses, swapped by tests to observe the rendered config and both bounds
@@ -1285,7 +1290,7 @@ func cmdMCPConfigure(ctx context.Context, env *tools.Env, ui TerminalUI, name st
 	}
 	docServers[name] = entry
 	doc["mcp_servers"] = docServers
-	if err := config.SaveUser(h, doc); err != nil {
+	if err := config.SaveUser(tools.WithEnvHome(ctx, env), h, doc); err != nil {
 		cfgError(ui, err.Error())
 		return 1
 	}

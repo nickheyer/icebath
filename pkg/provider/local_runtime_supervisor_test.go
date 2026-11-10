@@ -457,7 +457,7 @@ func TestEnsureLocalRuntimeSerializesRacingCallers(t *testing.T) {
 	}
 	var mu sync.Mutex
 	spawns := 0
-	bootStartSupervisor = func(s *LlamaServerSupervisor) error {
+	bootStartSupervisor = func(_ context.Context, s *LlamaServerSupervisor) error {
 		mu.Lock()
 		spawns++
 		mu.Unlock()
@@ -528,7 +528,7 @@ func TestBootPricesTheEngineItServes(t *testing.T) {
 		capped = append(capped, engineTag)
 		return configured
 	}
-	bootStartSupervisor = func(*LlamaServerSupervisor) error { return errors.New("health timeout") }
+	bootStartSupervisor = func(context.Context, *LlamaServerSupervisor) error { return errors.New("health timeout") }
 	sup, err := EnsureLocalRuntime(context.Background(), map[string]any{"local_runtime": map[string]any{"enabled": true, "backend": "vulkan"}}, false)
 	if sup != nil || err != nil {
 		t.Fatal(sup, err)

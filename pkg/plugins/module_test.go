@@ -208,3 +208,14 @@ func TestPyTitle(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+func TestPreToolCallDirectiveDetailsIsTheExportedFormOfTheResolver(t *testing.T) {
+	ctx, m := directiveProfile(t, "")
+	addHook(m, "pre_tool_call", returns(map[string]any{"action": "modify", "args": map[string]any{"b": 2}}))
+	addHook(m, "pre_tool_call", returns(map[string]any{"action": "approve", "message": "ask", "rule_key": " grain "}))
+	got, err := PreToolCallDirectiveDetails(ctx, "t", map[string]any{"a": 1}, PreToolCallIDs{TaskID: "task"})
+	want, wantErr := preToolCallDirectiveDetails(ctx, "t", map[string]any{"a": 1}, PreToolCallIDs{TaskID: "task"})
+	if err != nil || wantErr != nil || !reflect.DeepEqual(got, want) || got.Action != "approve" || got.RuleKey != "grain" || !reflect.DeepEqual(got.ModifiedArgs, map[string]any{"a": 1, "b": 2}) {
+		t.Fatalf("got %+v %v want %+v %v", got, err, want, wantErr)
+	}
+}

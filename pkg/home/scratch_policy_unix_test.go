@@ -77,22 +77,26 @@ func TestScratchDirPermissionPolicy(t *testing.T) {
 			t.Fatalf("mode %o, want %o", got, expected)
 		}
 	})
-	for name, marker := range map[string]func(string){
-		"managed marker file":       func(p string) { _ = os.WriteFile(p, []byte("nixos"), 0o644) },
-		"empty managed marker":      func(p string) { _ = os.WriteFile(p, nil, 0o644) },
-		"unreadable managed marker": func(p string) { _ = os.Mkdir(p, 0o755) },
-	} {
-		t.Run(name+" leaves preexisting mode untouched", func(t *testing.T) {
-			tmp := t.TempDir()
-			h := mkdirs(t, filepath.Join(tmp, "home"), 0)
-			isolatePolicyEnv(t, tmp)
-			marker(filepath.Join(h, ".managed"))
-			expected := nativeModeAfterChmod(t, mkdirs(t, filepath.Join(h, "cache", "scratch"), 0))
-			if got := sMode(t, testScratch(t, h)); got != expected {
-				t.Fatalf("mode %o, want %o", got, expected)
-			}
-		})
+	// Home with a planted marker whose preexisting scratch mode must survive get_scratch_dir
+	markerKeepsMode := func(t *testing.T, marker func(string)) {
+		tmp := t.TempDir()
+		h := mkdirs(t, filepath.Join(tmp, "home"), 0)
+		isolatePolicyEnv(t, tmp)
+		marker(filepath.Join(h, ".managed"))
+		expected := nativeModeAfterChmod(t, mkdirs(t, filepath.Join(h, "cache", "scratch"), 0))
+		if got := sMode(t, testScratch(t, h)); got != expected {
+			t.Fatalf("mode %o, want %o", got, expected)
+		}
 	}
+	t.Run("managed marker file leaves preexisting mode untouched", func(t *testing.T) {
+		markerKeepsMode(t, func(p string) { _ = os.WriteFile(p, []byte("nixos"), 0o644) })
+	})
+	t.Run("empty managed marker counts as managed", func(t *testing.T) {
+		markerKeepsMode(t, func(p string) { _ = os.WriteFile(p, nil, 0o644) })
+	})
+	t.Run("unreadable managed marker counts as managed", func(t *testing.T) {
+		markerKeepsMode(t, func(p string) { _ = os.Mkdir(p, 0o755) })
+	})
 	t.Run("effective home marker does not govern another homes scratch", func(t *testing.T) {
 		tmp := t.TempDir()
 		selected := mkdirs(t, filepath.Join(tmp, "home"), 0)
@@ -137,7 +141,7 @@ func TestScratchDirPermissionPolicy(t *testing.T) {
 			t.Fatalf("mode %o, want %o", got, expected)
 		}
 	})
-	t.Run("icebath uid gid applied to scratch", func(t *testing.T) {
+	t.Run("hermes uid gid applied to scratch", func(t *testing.T) {
 		tmp := t.TempDir()
 		isolatePolicyEnv(t, tmp)
 		t.Setenv("ICEBATH_UID", "1000")

@@ -411,7 +411,7 @@ func spawnChromium(argv []string, procEnv map[string]string, userDataDir string)
 }
 
 // The live Chromium already on a shared profile, leased, caller holding the profile's lock
-func attachRunning(key, userDataDir, homeKey string) (*LaunchedBrowser, error) {
+func attachRunning(ctx context.Context, key, userDataDir, homeKey string) (*LaunchedBrowser, error) {
 	port, path, pid, ok := runningInstance(userDataDir)
 	if !ok {
 		return nil, nil
@@ -420,10 +420,10 @@ func attachRunning(key, userDataDir, homeKey string) (*LaunchedBrowser, error) {
 	b := makeBrowser(key, port, path, int64p(pid), startTimeOf(pid), userDataDir, false, false, homeKey)
 	if records := stateDir(b); records != "" {
 		bindLaunchRecord(records, b)
-		if err := adoptRecord(b); err != nil {
+		if err := adoptRecord(ctx, b); err != nil {
 			return nil, err
 		}
-		if err := writeLease(recordPath(b), b); err != nil {
+		if err := writeLease(ctx, recordPath(b), b); err != nil {
 			return nil, err
 		}
 	}
@@ -448,7 +448,7 @@ func bindLaunchRecord(records string, b *LaunchedBrowser) {
 }
 
 // The Chromium another environment holds on the dir, leased when its endpoint answers here, never adopted
-func attachForeign(key, userDataDir, homeKey string, pid int) (*LaunchedBrowser, error) {
+func attachForeign(ctx context.Context, key, userDataDir, homeKey string, pid int) (*LaunchedBrowser, error) {
 	port, path, found, _ := readDevtoolsFile(userDataDir)
 	if !found || !launcherEndpointLive(port, path) {
 		return nil, nil
@@ -459,7 +459,7 @@ func attachForeign(key, userDataDir, homeKey string, pid int) (*LaunchedBrowser,
 	b.Foreign = true
 	if records := stateDir(b); records != "" {
 		bindLaunchRecord(records, b)
-		if err := writeLease(recordPath(b), b); err != nil {
+		if err := writeLease(ctx, recordPath(b), b); err != nil {
 			return nil, err
 		}
 	}
@@ -476,8 +476,8 @@ func liveLocalHolder(userDataDir string) (int, bool) {
 }
 
 // Attaches to this environment's Chromium on the dir, waiting out then refusing one that stopped answering
-func attachLocal(env *tools.Env, key, userDataDir, homeKey string, timeout *time.Duration) (*LaunchedBrowser, string) {
-	attached, err := attachRunning(key, userDataDir, homeKey)
+func attachLocal(ctx context.Context, env *tools.Env, key, userDataDir, homeKey string, timeout *time.Duration) (*LaunchedBrowser, string) {
+	attached, err := attachRunning(tools.WithEnvHome(ctx, env), key, userDataDir, homeKey)
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -501,7 +501,7 @@ func attachLocal(env *tools.Env, key, userDataDir, homeKey string, timeout *time
 		}
 		time.Sleep(min(delay, max(0, time.Until(deadline))))
 		delay *= 2
-		if attached, err = attachRunning(key, userDataDir, homeKey); err != nil {
+		if attached, err = attachRunning(tools.WithEnvHome(ctx, env), key, userDataDir, homeKey); err != nil {
 			return nil, err.Error()
 		}
 	}
@@ -516,7 +516,7 @@ func foreignUnreachable(userDataDir string) string {
 }
 
 // Attaches to or launches a shared profile's one Chromium as one step under the profile's cross process lock
-func startShared(env *tools.Env, key, executable, udd, homeKey string, packaged bool, opts LaunchOptions) (*LaunchedBrowser, string) {
+func startShared(ctx context.Context, env *tools.Env, key, executable, udd, homeKey string, packaged bool, opts LaunchOptions) (*LaunchedBrowser, string) {
 	if state := sharedStateDir(udd); state != "" {
 		_, unlock, err := recordsLock(state, true)
 		if err != nil {
@@ -527,7 +527,7 @@ func startShared(env *tools.Env, key, executable, udd, homeKey string, packaged 
 	var attached *LaunchedBrowser
 	if pid, ok := foreignHolder(udd); ok {
 		var err error
-		if attached, err = attachForeign(key, udd, homeKey, pid); err != nil {
+		if attached, err = attachForeign(tools.WithEnvHome(ctx, env), key, udd, homeKey, pid); err != nil {
 			return nil, err.Error()
 		}
 		if attached == nil {
@@ -535,7 +535,7 @@ func startShared(env *tools.Env, key, executable, udd, homeKey string, packaged 
 		}
 	} else {
 		var refused string
-		if attached, refused = attachLocal(env, key, udd, homeKey, opts.Timeout); refused != "" {
+		if attached, refused = attachLocal(tools.WithEnvHome(ctx, env), env, key, udd, homeKey, opts.Timeout); refused != "" {
 			return nil, refused
 		}
 	}
@@ -545,7 +545,7 @@ func startShared(env *tools.Env, key, executable, udd, homeKey string, packaged 
 				return nil, failure
 			}
 		}
-		return launchOwned(env, key, executable, udd, false, packaged, homeKey, opts)
+		return launchOwned(tools.WithEnvHome(ctx, env), env, key, executable, udd, false, packaged, homeKey, opts)
 	}
 	launcherMu.Lock()
 	browsers.set(key, attached)
@@ -565,7 +565,7 @@ func keyLock(key string) *sync.Mutex {
 }
 
 // Starts or reuses the key's Chromium, a shared profile with a live browser attached and never killed
-func launchChromium(env *tools.Env, key string, opts LaunchOptions) (*LaunchedBrowser, string) {
+func launchChromium(ctx context.Context, env *tools.Env, key string, opts LaunchOptions) (*LaunchedBrowser, string) {
 	l := keyLock(key)
 	l.Lock()
 	defer l.Unlock()
@@ -589,13 +589,13 @@ func launchChromium(env *tools.Env, key string, opts LaunchOptions) (*LaunchedBr
 		udd = defaultUserDataDir(key, homeKey)
 	}
 	if opts.Ephemeral {
-		return launchOwned(env, key, executable, udd, true, packaged, homeKey, opts)
+		return launchOwned(tools.WithEnvHome(ctx, env), env, key, executable, udd, true, packaged, homeKey, opts)
 	}
-	return startShared(env, key, executable, udd, homeKey, packaged, opts)
+	return startShared(tools.WithEnvHome(ctx, env), env, key, executable, udd, homeKey, packaged, opts)
 }
 
 // Spawns a Chromium this process owns, recorded before its readiness wait so a crash leaves it reapable
-func launchOwned(env *tools.Env, key, executable, udd string, ephemeral, packaged bool, homeKey string, opts LaunchOptions) (b *LaunchedBrowser, failure string) {
+func launchOwned(ctx context.Context, env *tools.Env, key, executable, udd string, ephemeral, packaged bool, homeKey string, opts LaunchOptions) (b *LaunchedBrowser, failure string) {
 	procEnv := opts.ProcEnv
 	if procEnv == nil {
 		procEnv = buildBrowserEnv(env)
@@ -614,7 +614,7 @@ func launchOwned(env *tools.Env, key, executable, udd string, ephemeral, package
 	launcherMu.Lock()
 	launching.set(strconv.Itoa(pid), starting)
 	launcherMu.Unlock()
-	writeRecord(starting)
+	writeRecord(tools.WithEnvHome(ctx, env), starting)
 	settled := false
 	defer func() {
 		if !settled {
@@ -627,7 +627,7 @@ func launchOwned(env *tools.Env, key, executable, udd string, ephemeral, package
 	}
 	settled = true
 	b = makeBrowser(key, port, path, int64p(pid), startTime, udd, true, ephemeral, homeKey)
-	writeRecord(b)
+	writeRecord(tools.WithEnvHome(ctx, env), b)
 	launcherMu.Lock()
 	launching.del(strconv.Itoa(pid))
 	browsers.set(key, b)
@@ -757,14 +757,14 @@ func terminateBrowser(pid, startTime *int64, p *launchProc) {
 }
 
 // Lets go of the key's browser, a shared one stopped only by its last holder across processes
-func stopBrowser(key string) {
+func stopBrowser(ctx context.Context, key string) {
 	l := keyLock(key)
 	l.Lock()
 	defer l.Unlock()
-	stopLocked(key)
+	stopLocked(ctx, key)
 }
 
-func stopLocked(key string) {
+func stopLocked(ctx context.Context, key string) {
 	launcherMu.Lock()
 	b := browsers.get(key)
 	p := procs[key]
@@ -794,7 +794,7 @@ func stopLocked(key string) {
 	launcherMu.Lock()
 	_, hasHeir := heirKeyLocked(b)
 	launcherMu.Unlock()
-	if !hasHeir && lastHolderOut(record, b) {
+	if !hasHeir && lastHolderOut(ctx, record, b) {
 		launcherTerminate(b.PID, b.StartTime, p)
 		os.Remove(record)
 	}
@@ -804,7 +804,7 @@ func stopLocked(key string) {
 }
 
 // Drops this process's hold, true when no other live process holds it and a launch record names it
-func lastHolderOut(record string, b *LaunchedBrowser) bool {
+func lastHolderOut(ctx context.Context, record string, b *LaunchedBrowser) bool {
 	dropLease(record)
 	if b.Foreign {
 		return false
@@ -819,7 +819,7 @@ func lastHolderOut(record string, b *LaunchedBrowser) bool {
 	}
 	heldElsewhere := data != nil && !heldHere(data, "owner_pid") && ownerAlive(data)
 	if heir := successor(others); heir != nil && data != nil && !heldElsewhere {
-		if err := handOver(record, data, heir); err != nil {
+		if err := handOver(ctx, record, data, heir); err != nil {
 			launcherLogger().Debug(fmt.Sprintf("browser: could not hand over %s: %s", record, err))
 		}
 	}
@@ -830,12 +830,12 @@ func lastHolderOut(record string, b *LaunchedBrowser) bool {
 }
 
 // Stops every browser this process launched, idempotent
-func stopAllBrowsers() {
+func stopAllBrowsers(ctx context.Context) {
 	launcherMu.Lock()
 	keys := append([]string(nil), browsers.keys...)
 	launcherMu.Unlock()
 	for _, key := range keys {
-		stopBrowser(key)
+		stopBrowser(ctx, key)
 	}
 }
 
@@ -899,7 +899,7 @@ func recordName(b *LaunchedBrowser) string {
 	return fmt.Sprintf("%s-%s%s.json", profileDigest(b.UserDataDir)[:16], pidText(b.PID), nsTag())
 }
 
-func writeRecord(b *LaunchedBrowser) {
+func writeRecord(ctx context.Context, b *LaunchedBrowser) {
 	me := os.Getpid()
 	record := pyjson.NewObject()
 	record.Set("owner_pid", int64(me))
@@ -912,7 +912,7 @@ func writeRecord(b *LaunchedBrowser) {
 	record.Set("ns", nsValue())
 	record.Set("devtools", devtoolsIDValue(b))
 	if path := recordPath(b); path != "" {
-		if err := config.AtomicJSONWriteWith(path, record); err != nil {
+		if err := config.AtomicJSONWriteWith(ctx, path, record); err != nil {
 			launcherLogger().Debug(fmt.Sprintf("browser: could not write launch record for pid %s: %s", pidText(b.PID), err))
 		}
 	}
@@ -1005,7 +1005,7 @@ func trackedBrowser(record *pyjson.Object) *LaunchedBrowser {
 }
 
 // Takes over a crashed owner's record of a browser this process now uses, only the owner changing
-func adoptRecord(b *LaunchedBrowser) error {
+func adoptRecord(ctx context.Context, b *LaunchedBrowser) error {
 	path := recordPath(b)
 	if path == "" || !lexists(path) {
 		return nil
@@ -1018,17 +1018,17 @@ func adoptRecord(b *LaunchedBrowser) error {
 	adopted := record.Copy()
 	adopted.Set("owner_pid", int64(me))
 	adopted.Set("owner_start_time", optStartTime(launcherStartTime(me)))
-	return config.AtomicJSONWriteWith(path, adopted)
+	return config.AtomicJSONWriteWith(ctx, path, adopted)
 }
 
 // Reaps one record, caller holding the records lock
-func reapRecord(path, homeDir string) bool {
+func reapRecord(ctx context.Context, path, homeDir string) bool {
 	record := loadStateFile(path)
 	if record == nil || !sameNamespace(record) {
 		return false
 	}
 	if tracked := trackedBrowser(record); tracked != nil {
-		if err := adoptRecord(tracked); err != nil {
+		if err := adoptRecord(ctx, tracked); err != nil {
 			launcherLogger().Error(fmt.Sprintf("browser: could not adopt launch record %s: %s", path, err))
 		}
 		return false
@@ -1038,7 +1038,7 @@ func reapRecord(path, homeDir string) bool {
 	}
 	if others := otherLiveHolders(path, objGet(record, "start_time")); len(others) > 0 {
 		if heir := successor(others); heir != nil {
-			if err := handOver(path, record, heir); err != nil {
+			if err := handOver(ctx, path, record, heir); err != nil {
 				launcherLogger().Debug(fmt.Sprintf("browser: could not hand over %s: %s", path, err))
 			}
 		}
@@ -1058,10 +1058,12 @@ func reapRecord(path, homeDir string) bool {
 	return reaped
 }
 
-func reapHome(homeDir string) int { return reapStateDir(recordsDir(homeDir), homeDir) }
+func reapHome(ctx context.Context, homeDir string) int {
+	return reapStateDir(ctx, recordsDir(homeDir), homeDir)
+}
 
 // Every shared profile's records whichever home launched its browser
-func reapSharedProfiles() int {
+func reapSharedProfiles(ctx context.Context) int {
 	root := sharedProfilesRoot()
 	if !lexists(root) || !isPrivateDir(root) {
 		return 0
@@ -1073,13 +1075,13 @@ func reapSharedProfiles() int {
 	}
 	reaped := 0
 	for _, e := range entries {
-		reaped += reapStateDir(filepath.Join(root, e.Name()), "")
+		reaped += reapStateDir(ctx, filepath.Join(root, e.Name()), "")
 	}
 	return reaped
 }
 
 // Reaps one launcher state dir, a shared profile whose lock is taken left to the next pass
-func reapStateDir(records, homeDir string) int {
+func reapStateDir(ctx context.Context, records, homeDir string) int {
 	if !lexists(records) {
 		return 0
 	}
@@ -1105,7 +1107,7 @@ func reapStateDir(records, homeDir string) int {
 	sort.Strings(paths)
 	reaped := 0
 	for _, path := range paths {
-		if reapRecord(path, homeDir) {
+		if reapRecord(ctx, path, homeDir) {
 			reaped++
 		}
 	}
@@ -1181,10 +1183,10 @@ func servedHomeKeys(homes []string) []string {
 }
 
 // Stops Chromium of owners that are gone in every served profile and reclaims their throwaway profiles
-func reapOrphanedBrowsers(homes []string) int {
-	reaped := reapSharedProfiles()
+func reapOrphanedBrowsers(ctx context.Context, homes []string) int {
+	reaped := reapSharedProfiles(ctx)
 	for _, h := range servedHomeKeys(homes) {
-		reaped += reapHome(h)
+		reaped += reapHome(ctx, h)
 		reclaimThrowawayDirs(h)
 	}
 	return reaped

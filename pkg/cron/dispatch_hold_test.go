@@ -1,8 +1,10 @@
 package cron
 
 import (
+	"context"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -19,7 +21,7 @@ func heldOneshot(id string, runAt time.Time) map[string]any {
 
 func mustNoteHeld(t *testing.T, s *Store, at *float64) {
 	t.Helper()
-	if err := s.noteHeld(at); err != nil {
+	if err := s.noteHeld(context.Background(), at); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -41,7 +43,7 @@ func TestOneshotDueDuringADrainFiresOnceTheNextGatewayTicks(t *testing.T) {
 	if ids := diskJobIDs(t, s); !reflect.DeepEqual(ids, []string{"reminder"}) {
 		t.Fatalf("stored = %v", ids)
 	}
-	if held := readDispatchHeld(s.cronDir); held == nil || held.Since != began {
+	if held, err := readDispatchHeld(s.cronDir); err != nil || held == nil || held.Since != began {
 		t.Fatalf("hold stamp %+v", held)
 	}
 }
@@ -81,18 +83,39 @@ func TestStaleOneshotIsRetiredDespiteAHold(t *testing.T) {
 
 func TestDispatchHoldGraceStartsAt(t *testing.T) {
 	dir := t.TempDir()
-	if got := dispatchHoldGraceStartsAt(dir, 1000, 120); got != 1000 {
+	grace := func(dueAt float64) float64 {
+		t.Helper()
+		got, err := dispatchHoldGraceStartsAt(dir, dueAt, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := grace(1000); got != 1000 {
 		t.Fatalf("no hold = %v", got)
 	}
 	os.WriteFile(dir+"/"+dispatchHeldFile, []byte("\ufeff{\"since\": 900, \"last\": \"1100\"}"), 0o600)
-	if got := dispatchHoldGraceStartsAt(dir, 1000, 120); got != 1160 {
+	if got := grace(1000); got != 1160 {
 		t.Fatalf("held = %v", got)
 	}
-	if got := dispatchHoldGraceStartsAt(dir, 700, 120); got != 700 {
+	if got := grace(700); got != 700 {
 		t.Fatalf("expired before the hold = %v", got)
 	}
-	os.WriteFile(dir+"/"+dispatchHeldFile, []byte("[1, 2]"), 0o600)
-	if readDispatchHeld(dir) != nil {
-		t.Fatal("malformed stamp read")
+	for _, malformed := range []string{"[1, 2]", `{"since": 900}`, `{"since": null, "last": 1}`, `{"since": "soon", "last": 1}`,
+		"{\"since\": 900, \"last\": 1100, \"x\": \"\xff\"}"} {
+		os.WriteFile(dir+"/"+dispatchHeldFile, []byte(malformed), 0o600)
+		if held, err := readDispatchHeld(dir); held != nil || err != nil {
+			t.Fatalf("malformed stamp %q read as %+v (%v)", malformed, held, err)
+		}
+	}
+	os.WriteFile(dir+"/"+dispatchHeldFile, []byte(`{"since": 1`+strings.Repeat("0", 400)+`, "last": 1}`), 0o600)
+	if _, err := dispatchHoldGraceStartsAt(dir, 1000, 120); err == nil || err.Error() != "int too large to convert to float" {
+		t.Fatalf("overflowing stamp = %v", err)
+	}
+	s := newClockStore(t, nil, time.UTC)
+	s.cronDir = dir
+	t.Cleanup(s.noteDispatching)
+	if err := s.noteHeld(context.Background(), nil); err == nil {
+		t.Fatal("an overflowing stamp started a hold")
 	}
 }

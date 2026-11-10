@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, List, Optional
 from icebath_cli.plugin_host_wire import (
     Channel, Opaque, PROTOCOL_VERSION, PluginHostUnavailable, PluginHostUnsupported, bind_serving_request,
     declared_member, decode,
-    describe_signature, encode, is_async_callable, restore_arguments, serving_request,
+    describe_signature, encode, is_async_callable, restore, restore_arguments, serving_request,
 )
 
 logger = logging.getLogger("icebath_cli.plugin_host_child")
@@ -171,6 +171,13 @@ class RemotePluginContext:
         if name not in self._methods:
             raise AttributeError(f"'PluginContext' object has no attribute {name!r}")
         return functools.partial(self._runtime.ctx_call, self._plugin_key, name)
+
+    def current_cron_execution(self) -> Any:
+        """The ``CronExecution`` the calling code runs inside, ``None`` outside a fire."""
+        if "current_cron_execution" not in self._methods:
+            raise AttributeError("'PluginContext' object has no attribute 'current_cron_execution'")
+        from cron.execution_identity import CronExecution
+        return restore(self._runtime.ctx_call(self._plugin_key, "current_cron_execution"), CronExecution)
 
     def on_unload(self, callback: Callable[[], Any]) -> None:
         if not callable(callback):

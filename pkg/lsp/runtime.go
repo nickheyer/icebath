@@ -29,7 +29,7 @@ type Runtime struct {
 	SubprocessEnv                func() map[string]string
 	DelegatedChildEnv            func(child map[string]string) map[string]string
 	OwnProcessGroups             func(pgids []int)
-	RegisterChild                func(pid int, purpose string) bool
+	RegisterChild                func(ctx context.Context, pid int, purpose string) bool
 	ReleaseProcessGroupOnceEmpty func(pgid int, poll func(), timeout time.Duration) bool
 	Opcodes                      func(a, b []string) []Opcode
 	DecodeJSON                   func(text string) (any, error)

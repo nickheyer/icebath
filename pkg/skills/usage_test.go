@@ -79,7 +79,7 @@ func TestUsageSaveLoadRoundTripAndCorruptFile(t *testing.T) {
 	rec := pyjson.NewObject()
 	rec.Set("use_count", int64(3))
 	data.Set("a", rec)
-	if !s.SaveUsage(data) {
+	if !s.SaveUsage(context.Background(), data) {
 		t.Fatal("save failed")
 	}
 	if got := recGet(t, s, "a", "use_count"); got != int64(3) {
@@ -202,7 +202,7 @@ func TestCreatedSkillDoesNotInheritStaleIdentity(t *testing.T) {
 	}
 	data := pyjson.NewObject()
 	data.Set("recreated", rec)
-	s.SaveUsage(data)
+	s.SaveUsage(ctx, data)
 	s.RecordCreated(ctx, "recreated", false, "", "")
 	s.BumpUse(ctx, "recreated", "", "")
 	want := map[string]any{"created_by": "learn", "use_count": int64(1), "patch_count": int64(0), "patch_generation": int64(0),
@@ -233,7 +233,7 @@ func TestMalformedUsageCountersRecoverWithoutLosingPatchReuse(t *testing.T) {
 	rec.Set("last_reused_patch_generation", int64(999))
 	data := pyjson.NewObject()
 	data.Set("damaged", rec)
-	s.SaveUsage(data)
+	s.SaveUsage(ctx, data)
 	s.BumpView(ctx, "damaged")
 	s.BumpUse(ctx, "damaged", "", "")
 	s.BumpPatch(ctx, "damaged", "patch", "", "")

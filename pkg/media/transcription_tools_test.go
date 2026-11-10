@@ -330,8 +330,8 @@ func TestTranscribeLocalCommandCommandProviderUsesSanitizedChildEnv(t *testing.T
 	var env []string
 	saved := spawnCommandProvider
 	t.Cleanup(func() { spawnCommandProvider = saved })
-	spawnCommandProvider = func(cmd *exec.Cmd, purpose string) error { env = cmd.Env; return cmd.Start() }
-	result, err := runCommandSTT(nil, "echo hi", 1, nil)
+	spawnCommandProvider = func(_ context.Context, cmd *exec.Cmd, purpose string) error { env = cmd.Env; return cmd.Start() }
+	result, err := runCommandSTT(context.Background(), nil, "echo hi", 1, nil)
 	if err != nil || result.Returncode != 0 {
 		t.Fatalf("run = %v, %v", result, err)
 	}

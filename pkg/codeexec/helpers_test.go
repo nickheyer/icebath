@@ -11,12 +11,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Dispatches the scratch prune entry so a prune child never reruns this suite
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry()
 	kernelHostEntry()
 	kernelOwnerEntry()

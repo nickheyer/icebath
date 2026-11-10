@@ -33,7 +33,7 @@ func TestCuratorRecentViewActivityPreventsFalseStaleTransition(t *testing.T) {
 		t.Fatal(err)
 	}
 	scope, _, _ := curatorScope(ctx)
-	if !scope.SaveUsage(data.(*pyjson.Object)) {
+	if !scope.SaveUsage(ctx, data.(*pyjson.Object)) {
 		t.Fatal("save usage failed")
 	}
 	counts, err := ApplyCuratorTransitions(ctx, now)

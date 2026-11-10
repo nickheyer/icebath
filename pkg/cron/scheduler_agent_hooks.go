@@ -11,7 +11,7 @@ var agentHooks struct {
 	sync.RWMutex
 	factory       func(ctx context.Context, o AgentOptions) (CronAgent, error)
 	hardInterrupt func(a CronAgent, reason, toolReason string)
-	explain       func(reason string, cause, model *string) string
+	explain       func(ctx context.Context, reason string, cause, model *string) string
 	cleanup       func()
 	maxIteration  func(result any) bool
 }
@@ -40,7 +40,7 @@ func SetRequestHardInterrupt(f func(a CronAgent, reason, toolReason string)) {
 }
 
 // Installs AIAgent._format_turn_completion_explanation used to spot a boilerplate turn summary
-func SetFormatTurnCompletionExplanation(f func(reason string, cause, model *string) string) {
+func SetFormatTurnCompletionExplanation(f func(ctx context.Context, reason string, cause, model *string) string) {
 	agentHooks.Lock()
 	agentHooks.explain = f
 	agentHooks.Unlock()
@@ -94,11 +94,11 @@ func isMaxIterationHandoff(result map[string]any) bool {
 }
 
 // Renders the agent's own turn completion explanation through the required hook
-func formatTurnCompletionExplanation(reason string, cause, model *string) string {
+func formatTurnCompletionExplanation(ctx context.Context, reason string, cause, model *string) string {
 	agentHooks.RLock()
 	f := agentHooks.explain
 	agentHooks.RUnlock()
-	return f(reason, cause, model)
+	return f(ctx, reason, cause, model)
 }
 
 // Reaps cached async clients, an error when agent.auxiliary_client is not registered

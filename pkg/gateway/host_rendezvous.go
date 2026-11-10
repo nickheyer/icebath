@@ -198,9 +198,9 @@ func HostRecordFromJSON(payload any) *HostRecord {
 func HostStateDir() string { return GatewayLockDir() }
 
 // Rendezvous directory created owner only and tightened when a umask left it wider
-func EnsureHostStateDir() (string, error) {
+func EnsureHostStateDir(ctx context.Context) (string, error) {
 	directory := HostStateDir()
-	if _, err := home.MakeUserDir(directory, 0o700, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, directory, 0o700, true, true); err != nil {
 		return "", err
 	}
 	tightenHostStateDir(directory)
@@ -494,7 +494,7 @@ func hostLockKey(role string) [2]string {
 }
 
 // Takes the host wide lock for role idempotently per lock path, the open error accompanying could not open
-func ClaimHostLock(role string) (HostLockOutcome, error) {
+func ClaimHostLock(ctx context.Context, role string) (HostLockOutcome, error) {
 	role = validatedRole(role)
 	key := hostLockKey(role)
 	hostLockMu.Lock()
@@ -503,7 +503,7 @@ func ClaimHostLock(role string) (HostLockOutcome, error) {
 		return HostLockAcquired, nil
 	}
 	path := key[1]
-	if _, err := EnsureHostStateDir(); err != nil {
+	if _, err := EnsureHostStateDir(ctx); err != nil {
 		hostLog().Debug(fmt.Sprintf("host %s lock could not be opened at %s", role, path), "error", err)
 		return HostLockCouldNotOpen, err
 	}
@@ -584,7 +584,7 @@ type HostPublishOptions struct {
 }
 
 // Publishes this process as the role host owner, nil when the write failed
-func PublishHostRecord(role string, o HostPublishOptions) *HostRecord {
+func PublishHostRecord(ctx context.Context, role string, o HostPublishOptions) *HostRecord {
 	role = validatedRole(role)
 	pid := os.Getpid()
 	r := &HostRecord{
@@ -608,7 +608,7 @@ func PublishHostRecord(role string, o HostPublishOptions) *HostRecord {
 		r.Port = &p
 	}
 	err := func() error {
-		if _, err := EnsureHostStateDir(); err != nil {
+		if _, err := EnsureHostStateDir(ctx); err != nil {
 			return err
 		}
 		if o.Token != "" {
@@ -616,7 +616,7 @@ func PublishHostRecord(role string, o HostPublishOptions) *HostRecord {
 				return err
 			}
 		}
-		return config.AtomicJSONWriteMode(HostRecordPath(role), r.ToJSON(), 0o600)
+		return config.AtomicJSONWriteMode(ctx, HostRecordPath(role), r.ToJSON(), 0o600)
 	}()
 	if err != nil {
 		hostLog().Warn(fmt.Sprintf("host %s record could not be published; discovery will not find it", role), "error", err)

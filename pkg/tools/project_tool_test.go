@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,7 +17,7 @@ func projectsEnv(t *testing.T) *Env {
 
 func TestProjectsDBCreateListSwitch(t *testing.T) {
 	env := projectsEnv(t)
-	db, err := OpenProjectsDB(env)
+	db, err := OpenProjectsDB(context.Background(), env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,29 +104,29 @@ func TestProjectsDBCreateListSwitch(t *testing.T) {
 func TestProjectToolActions(t *testing.T) {
 	env := projectsEnv(t)
 	folder := t.TempDir()
-	out := mustJSON(t, projectCreate(env, "Work", folder, "task-1"))
+	out := mustJSON(t, projectCreate(context.Background(), env, "Work", folder, "task-1"))
 	if out["success"] != true || out["slug"] != "work" {
 		t.Fatal(out)
 	}
-	again := mustJSON(t, projectCreate(env, "Other", folder, ""))
+	again := mustJSON(t, projectCreate(context.Background(), env, "Other", folder, ""))
 	if again["slug"] != "work" {
 		t.Fatal("create on an owned folder must reuse the project")
 	}
-	if r := projectCreate(env, "", "", ""); !strings.Contains(r, "name is required") {
+	if r := projectCreate(context.Background(), env, "", "", ""); !strings.Contains(r, "name is required") {
 		t.Fatal(r)
 	}
-	list := mustJSON(t, projectList(env, ""))
+	list := mustJSON(t, projectList(context.Background(), env, ""))
 	rows := list["projects"].([]any)
 	if len(rows) != 1 || rows[0].(map[string]any)["active"] != true || list["active_id"] == nil {
 		t.Fatal(list)
 	}
-	if r := projectSwitch(env, "nope", ""); !strings.Contains(r, "no project matching 'nope'") {
+	if r := projectSwitch(context.Background(), env, "nope", ""); !strings.Contains(r, "no project matching 'nope'") {
 		t.Fatal(r)
 	}
 	moved := ""
 	SetProjectWorkspaceCallback(func(taskID, path, name string) { moved = taskID + ":" + name })
 	t.Cleanup(func() { SetProjectWorkspaceCallback(nil) })
-	sw := mustJSON(t, projectSwitch(env, "WORK", "task-2"))
+	sw := mustJSON(t, projectSwitch(context.Background(), env, "WORK", "task-2"))
 	if sw["success"] != true || moved != "task-2:Work" {
 		t.Fatal(sw, moved)
 	}

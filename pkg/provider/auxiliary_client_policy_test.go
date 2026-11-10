@@ -208,7 +208,7 @@ func fakeFastCatalog(t *testing.T, catalog PricingTable) *[]PricingFetchOptions 
 	t.Helper()
 	var calls []PricingFetchOptions
 	old := auxFetchModelsWithPricingFn
-	auxFetchModelsWithPricingFn = func(opts PricingFetchOptions) PricingTable {
+	auxFetchModelsWithPricingFn = func(_ context.Context, opts PricingFetchOptions) PricingTable {
 		calls = append(calls, opts)
 		return catalog
 	}

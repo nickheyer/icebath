@@ -15,3 +15,12 @@ func Quote(s string) string {
 	}
 	return s
 }
+
+// Shell command line like shlex.join, every argument quoted and the results joined by single spaces
+func Join(args []string) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = Quote(a)
+	}
+	return strings.Join(parts, " ")
+}

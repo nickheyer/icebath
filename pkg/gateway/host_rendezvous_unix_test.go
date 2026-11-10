@@ -3,6 +3,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -34,10 +35,10 @@ func TestTwoHomesTakeTheirOwnPerHomeLockButOnlyOneHostLock(t *testing.T) {
 	}
 	t.Setenv("ICEBATH_HOME", homeB)
 	defer ReleaseGatewayRuntimeLock()
-	if !AcquireGatewayRuntimeLock() {
+	if !AcquireGatewayRuntimeLock(context.Background()) {
 		t.Fatal("second home must get its OWN lock")
 	}
-	if o, _ := ClaimHostLock(RoleGateway); o != HostLockHeldByOther {
+	if o, _ := ClaimHostLock(context.Background(), RoleGateway); o != HostLockHeldByOther {
 		t.Fatal("host lock is not per-home")
 	}
 }
@@ -128,7 +129,7 @@ func TestSigtermRemovesTheRecordAndItsLiveSessionToken(t *testing.T) {
 	if exists(HostTokenPath(RoleServe)) {
 		t.Fatal("live session token outlived its process")
 	}
-	if o, _ := ClaimHostLock(RoleServe); o != HostLockAcquired {
+	if o, _ := ClaimHostLock(context.Background(), RoleServe); o != HostLockAcquired {
 		t.Fatal("host lock not released")
 	}
 }

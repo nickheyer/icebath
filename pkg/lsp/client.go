@@ -521,7 +521,7 @@ func (c *Client) spawn(ctx context.Context) error {
 	}
 	var ledgerErr error
 	c.l.unlocked(func() {
-		_, ledgerErr = guard(func() (bool, error) { return c.rt.RegisterChild(p.pid, "lsp-server"), nil })
+		_, ledgerErr = guard(func() (bool, error) { return c.rt.RegisterChild(ctx, p.pid, "lsp-server"), nil })
 	})
 	if ledgerErr != nil {
 		return ledgerErr

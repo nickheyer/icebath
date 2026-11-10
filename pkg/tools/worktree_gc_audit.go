@@ -313,7 +313,7 @@ func AuditWorktrees(ctx context.Context, repoRoot string, withSizes bool, olderT
 			Verdict: verdict, Reason: reason, Untracked: untracked})
 	}
 	if len(mergeCache.keys) != cacheSizeBefore {
-		saveWorktreeMergeCache(mergeCache)
+		saveWorktreeMergeCache(ctx, mergeCache)
 	}
 	return records, nil
 }

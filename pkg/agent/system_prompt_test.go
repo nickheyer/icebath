@@ -435,7 +435,7 @@ func TestInvalidateAndReconstructStaticPrefix(t *testing.T) {
 		t.Fatal("mismatched rebuild was kept or not memoized")
 	}
 	a.pluginSectionsFrozen = true
-	if err := InvalidateSystemPrompt(a); err != nil {
+	if err := InvalidateSystemPrompt(context.Background(), a); err != nil {
 		t.Fatal(err)
 	}
 	if a.cachedSystemPrompt != "" || a.pluginSectionsFrozen {

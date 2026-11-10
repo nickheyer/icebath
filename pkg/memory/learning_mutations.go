@@ -149,7 +149,7 @@ func mutateMemory(ctx context.Context, env *tools.Env, nodeID string, replacemen
 	if replacement != nil {
 		message = "updated memory in " + name
 	}
-	store, err := LoadOnDiskStore(homeBoundEnv(ctx, env))
+	store, err := LoadOnDiskStore(tools.WithEnvHome(ctx, env), homeBoundEnv(ctx, env))
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func mutateMemory(ctx context.Context, env *tools.Env, nodeID string, replacemen
 		}
 		return Mutation{Entries: next, Message: message}
 	}
-	result, err := store.Mutate(journeyStoreTargets[source], apply, false)
+	result, err := store.Mutate(tools.WithEnvHome(ctx, env), journeyStoreTargets[source], apply, false)
 	if err != nil {
 		return nil, err
 	}

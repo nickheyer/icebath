@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -23,8 +24,8 @@ var (
 )
 
 // Reserves the launch profile home, false when another owner holds it or the lock cannot be opened
-func AcquireGatewayRuntimeLock() bool {
-	if err := ProcessOwnership.Reserve([]string{processHermesHome()}, ""); err != nil {
+func AcquireGatewayRuntimeLock(ctx context.Context) bool {
+	if err := ProcessOwnership.Reserve(ctx, []string{processHermesHome()}, ""); err != nil {
 		return false
 	}
 	clearRunningPidCache()
@@ -99,9 +100,9 @@ func isGatewayRuntimeLockActiveStrictLive(lockPath string) (bool, error) {
 }
 
 // Writes this process pid record with O_EXCL so a racing gateway sees fs.ErrExist
-func WritePidFile() error {
+func WritePidFile(ctx context.Context) error {
 	path := pidPath()
-	if _, err := home.MakeUserDir(filepath.Dir(path), 0o777, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, filepath.Dir(path), 0o777, true, true); err != nil {
 		return err
 	}
 	if err := writeJSONExcl(path, statusBuildPidRecord()); err != nil {
@@ -203,9 +204,9 @@ func processIsStopped(pid int) bool {
 }
 
 // Machine local lock keyed by scope and identity, false plus the holder record when another owner has it
-func AcquireScopedLock(scope, identity string, metadata *pyjson.Object) (bool, *pyjson.Object, error) {
+func AcquireScopedLock(ctx context.Context, scope, identity string, metadata *pyjson.Object) (bool, *pyjson.Object, error) {
 	lockPath := scopeLockPath(scope, identity)
-	acquired, existing, err := acquireScopedLockAt(lockPath, scope, identity, metadata)
+	acquired, existing, err := acquireScopedLockAt(ctx, lockPath, scope, identity, metadata)
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) {
 			return false, nil, unusableLockDir(filepath.Dir(lockPath), err)
@@ -216,8 +217,8 @@ func AcquireScopedLock(scope, identity string, metadata *pyjson.Object) (bool, *
 	return acquired, existing, nil
 }
 
-func acquireScopedLockAt(lockPath, scope, identity string, metadata *pyjson.Object) (bool, *pyjson.Object, error) {
-	if _, err := home.MakeUserDir(filepath.Dir(lockPath), 0o777, true, true); err != nil {
+func acquireScopedLockAt(ctx context.Context, lockPath, scope, identity string, metadata *pyjson.Object) (bool, *pyjson.Object, error) {
+	if _, err := home.MakeUserDir(ctx, filepath.Dir(lockPath), 0o777, true, true); err != nil {
 		return false, nil, err
 	}
 	if f, err := os.Open(lockPath); err == nil {
@@ -249,7 +250,7 @@ func acquireScopedLockAt(lockPath, scope, identity string, metadata *pyjson.Obje
 	if existing != nil && existing.Len() > 0 {
 		existingPid, hasPid := pidFromRecord(existing, "pid")
 		if hasPid && existingPid == statusGetpid() {
-			if err := writeJSONFile(lockPath, record); err != nil {
+			if err := writeJSONFile(ctx, lockPath, record); err != nil {
 				return false, nil, err
 			}
 			return true, existing, nil

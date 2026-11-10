@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -29,9 +30,9 @@ func TestWorktreeRegistryRecordsDedupesAndDropsVanishedRepos(t *testing.T) {
 		t.Fatal("a read must never create the registry")
 	}
 	a, b := mkRepo(t, root, "a"), mkRepo(t, root, "b")
-	RecordWorktreeRepo(h, a)
-	RecordWorktreeRepo(h, b)
-	RecordWorktreeRepo(h, a)
+	RecordWorktreeRepo(context.Background(), h, a)
+	RecordWorktreeRepo(context.Background(), h, b)
+	RecordWorktreeRepo(context.Background(), h, a)
 	if got := worktreeRegisteredRepos(h); !reflect.DeepEqual(got, []string{a, b}) {
 		t.Fatalf("registered = %v", got)
 	}
@@ -42,11 +43,11 @@ func TestWorktreeRegistryRecordsDedupesAndDropsVanishedRepos(t *testing.T) {
 		t.Fatalf("vanished repo filtered on read = %v", got)
 	}
 	c := mkRepo(t, root, "c")
-	RecordWorktreeRepo(h, c)
+	RecordWorktreeRepo(context.Background(), h, c)
 	if got := readWorktreeRegistry(worktreeRegistryPath(h)); !reflect.DeepEqual(got, []string{b, c}) {
 		t.Fatalf("vanished repo dropped on write = %v", got)
 	}
-	RecordWorktreeRepo(h, "")
+	RecordWorktreeRepo(context.Background(), h, "")
 }
 
 func TestWorktreeRegistryToleratesMalformedFiles(t *testing.T) {

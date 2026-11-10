@@ -106,6 +106,9 @@ func isSealedTree(projectRoot string) (bool, error) {
 		filepath.Dir(InstallStampPath(projectRoot)), strings.Join(updateMechanisms, ", "))}
 }
 
+// IsSealedTree exports isSealedTree
+func IsSealedTree(projectRoot string) (bool, error) { return isSealedTree(projectRoot) }
+
 func lexistsFollow(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -149,13 +152,23 @@ func writeAtomic(target string, write func(staging string) error) string {
 	return ""
 }
 
-// Publishes an executable sh wrapper that execs command with the caller's arguments
-func writeShell(target string, command []string) string {
+// Directory of the checkout's own commands, the ones every home's conveniences forward to
+func checkoutLauncherDir(root string) string { return filepath.Join(root, ".icebath", "bin") }
+
+// Prefix of the line naming the tool store a checkout launcher was published for
+const storeRecordPrefix = "icebath-store "
+
+// Publishes an executable sh wrapper that execs command with the caller's arguments, recording store when set
+func writeShell(target string, command []string, store string) string {
 	quoted := make([]string, len(command))
 	for i, part := range command {
 		quoted[i] = pyshlex.Quote(part)
 	}
-	body := "#!/bin/sh\nexec " + strings.Join(quoted, " ") + " \"$@\"\n"
+	record := ""
+	if store != "" {
+		record = "# " + storeRecordPrefix + pyshlex.Quote(store) + "\n"
+	}
+	body := "#!/bin/sh\n" + record + "exec " + strings.Join(quoted, " ") + " \"$@\"\n"
 	if st, err := os.Lstat(target); err == nil && st.Mode()&os.ModeSymlink == 0 {
 		if data, err := os.ReadFile(target); err == nil && string(data) == body && executable(target) {
 			return target
@@ -169,50 +182,141 @@ func writeShell(target string, command []string) string {
 	})
 }
 
-// Publishes a cmd wrapper whose second line runs the install binary with the caller's arguments
-func writeCmd(target, binary string, subcommand []string) string {
+// Publishes a cmd wrapper running the install binary with the caller's arguments, recording store when set
+func writeCmd(target, binary string, subcommand []string, store string) string {
 	line := `"` + binary + `"`
 	for _, part := range subcommand {
 		line += " " + part
 	}
-	body := "@echo off\r\n" + line + " %*\r\n"
+	record := ""
+	if store != "" {
+		record = "@rem " + storeRecordPrefix + `"` + store + "\"\r\n"
+	}
+	body := "@echo off\r\n" + record + line + " %*\r\n"
 	if data, err := os.ReadFile(target); err == nil && string(data) == body {
 		return target
 	}
 	return writeAtomic(target, func(staging string) error { return os.WriteFile(staging, []byte(body), 0o666) })
 }
 
-// Writes the wrapper for one command, the install binary itself standing for the bare command in its own dir
-func mintLauncher(name, root, outDir, binary string) string {
+// Interpreter a tool store's facts record for its python entry, empty when none is recorded or present
+func storePython(runtime string) (string, error) {
+	rel := filepath.Join("bin", "python3")
+	if isWindows() {
+		rel = "python.exe"
+	}
+	facts := filepath.Join(runtime, "facts.json")
+	if !isRegularFile(facts) {
+		return "", nil
+	}
+	data, err := os.ReadFile(facts)
+	if err != nil {
+		return "", nil
+	}
+	text, err := pycodecs.Decode(data, "utf-8-sig")
+	if err != nil {
+		return "", nil
+	}
+	doc, err := pyjson.Loads(text)
+	if err != nil {
+		return "", nil
+	}
+	get := func(value any, key string, fallback any) (any, error) {
+		obj, ok := value.(*pyjson.Object)
+		if !ok {
+			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(value))}
+		}
+		if got, present := obj.Get(key); present {
+			return got, nil
+		}
+		return fallback, nil
+	}
+	packages, err := get(doc, "packages", &pyjson.Object{})
+	if err != nil {
+		return "", err
+	}
+	python, err := get(packages, "python", nil)
+	if err != nil {
+		return "", err
+	}
+	if !pyrepr.Truthy(python) {
+		python = &pyjson.Object{}
+	}
+	entry, err := get(python, "entry", nil)
+	if err != nil || !pyrepr.Truthy(entry) {
+		return "", err
+	}
+	name, ok := entry.(string)
+	if !ok {
+		flavour := "PosixPath"
+		if isWindows() {
+			flavour = "WindowsPath"
+		}
+		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("unsupported operand type(s) for /: '%s' and '%s'", flavour, pyrepr.TypeName(entry))}
+	}
+	candidate := pypath.Join(runtime, name, rel)
+	if isRegularFile(candidate) {
+		return candidate, nil
+	}
+	return "", nil
+}
+
+// Store a published launcher records, the tree's own unless only the runtime store records an interpreter
+func publicationStore(ctx context.Context, root string) (string, error) {
+	own, err := EnvironmentStoreRoot(ctx, root, false)
+	if err != nil {
+		return "", err
+	}
+	if python, err := storePython(own); err != nil || python != "" {
+		return own, err
+	}
+	runtime, err := EnvironmentStoreRoot(ctx, root, true)
+	if err != nil {
+		return "", err
+	}
+	if python, err := storePython(runtime); err != nil || python != "" {
+		return runtime, err
+	}
+	return own, nil
+}
+
+// Writes one command's wrapper recording its store, the bare command in its own dir being the binary itself
+func mintLauncher(name, root, outDir, binary, store string) string {
 	if len(entryPoints[name]) == 0 && resolvePath(outDir) == resolvePath(root) {
 		return binary
 	}
 	if isWindows() {
-		return writeCmd(filepath.Join(outDir, name+".cmd"), binary, entryPoints[name])
+		return writeCmd(filepath.Join(outDir, name+".cmd"), binary, entryPoints[name], store)
 	}
-	return writeShell(filepath.Join(outDir, name), append([]string{binary}, entryPoints[name]...))
+	return writeShell(filepath.Join(outDir, name), append([]string{binary}, entryPoints[name]...), store)
 }
 
-// Publishes one command bound to the install binary, empty when the binary is missing or the write failed
-func stageLauncher(name, root, outDir string) string {
+// Publishes one command bound to the binary and own store, empty when the binary is missing or writing failed
+func stageLauncher(ctx context.Context, name, root, outDir string) (string, error) {
 	binary := resolveInstallBinary(root)
 	if binary == "" {
-		return ""
+		return "", nil
 	}
-	path := mintLauncher(name, root, outDir, binary)
+	store, err := publicationStore(ctx, root)
+	if err != nil {
+		return "", err
+	}
+	path := mintLauncher(name, root, outDir, binary, store)
 	if path == "" || path == binary {
-		return path
+		return path, nil
 	}
 	exe := filepath.Join(outDir, name+".exe")
 	collectRetired(exe)
 	if strings.EqualFold(filepath.Ext(path), ".cmd") && !retireExe(exe) {
-		return ""
+		return "", nil
 	}
-	return path
+	return path, nil
 }
 
 // StageLauncher exports stageLauncher
-func StageLauncher(name, root, outDir string) string { return stageLauncher(name, root, outDir) }
+func StageLauncher(ctx context.Context, name, root, outDir string) (string, error) {
+	return stageLauncher(ctx, name, root, outDir)
+}
 
 // Removes copies an earlier publication renamed aside
 func collectRetired(exe string) {
@@ -270,7 +374,7 @@ func launcherBinary(target string) string {
 	lines := pystr.Splitlines(strings.TrimPrefix(text, "\ufeff"), false)
 	if strings.EqualFold(filepath.Ext(target), ".cmd") {
 		for _, entry := range lines[min(1, len(lines)):] {
-			if pystr.Strip(entry) != "" {
+			if pystr.Strip(entry) != "" && !strings.HasPrefix(entry, "@rem "+storeRecordPrefix) {
 				return firstToken(entry)
 			}
 		}
@@ -286,6 +390,61 @@ func launcherBinary(target string) string {
 		}
 	}
 	return ""
+}
+
+// Tool store a checkout launcher records, a legacy exe's interpreter path, empty when it records none
+func launcherStore(target string) string {
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return ""
+	}
+	if strings.EqualFold(filepath.Ext(target), ".exe") {
+		interpreter, _ := pylaunch.ExeInterpreter(data)
+		return interpreter
+	}
+	if strictUTF8(data) != nil {
+		return ""
+	}
+	cmd := strings.EqualFold(filepath.Ext(target), ".cmd")
+	for _, line := range pystr.Splitlines(strings.TrimPrefix(string(data), "\ufeff"), false) {
+		if cmd {
+			if rest, ok := strings.CutPrefix(line, "@rem "+storeRecordPrefix); ok {
+				return firstToken(rest)
+			}
+			continue
+		}
+		if rest, ok := strings.CutPrefix(line, "# "+storeRecordPrefix); ok {
+			tokens, err := pyshlex.SplitPOSIX(rest, false)
+			if err != nil || len(tokens) == 0 {
+				return ""
+			}
+			return tokens[0]
+		}
+	}
+	return ""
+}
+
+// Reports a record still naming what exists, a store directory or a legacy exe's interpreter file
+func launcherRecordLive(target, record string) bool {
+	if strings.EqualFold(filepath.Ext(target), ".exe") {
+		return isRegularFile(record)
+	}
+	return isDirectory(record)
+}
+
+// Reports a recorded path that is the store or lies under it, both resolved
+func recordUnder(record, store string) bool {
+	want := resolvePath(store)
+	for path := record; ; {
+		if resolvePath(path) == want {
+			return true
+		}
+		next := filepath.Dir(path)
+		if next == path {
+			return false
+		}
+		path = next
+	}
 }
 
 // Install directory of the binary a published command runs
@@ -318,14 +477,11 @@ func launcherOfAnotherInstall(directory, root string) string {
 	return ""
 }
 
-// Reports the install that sits directly in the default home and uses its tool store
-func isHomeInstall(ctx context.Context, root string) bool {
+// Reports the install the default home sits over, uses the tool store of and owns
+func isHomeInstall(ctx context.Context, root, store string) bool {
 	homeRoot := resolvePath(home.Root())
-	store, err := EnvironmentStoreRoot(ctx, root, true)
-	if err != nil {
-		return false
-	}
-	return filepath.Dir(resolvePath(root)) == homeRoot && resolvePath(store) == resolvePath(filepath.Join(homeRoot, "tools"))
+	return filepath.Dir(resolvePath(root)) == homeRoot && resolvePath(store) == resolvePath(filepath.Join(homeRoot, "tools")) &&
+		OwningHomeRoot(ctx, root) == ""
 }
 
 // Recognizes wrappers and links this install wrote, never a mere mention in a comment
@@ -346,7 +502,7 @@ func ownsLauncher(target, root string) bool {
 		return false
 	}
 	owned := map[string]bool{}
-	for _, name := range []string{"icebath", "icebath.exe", "icebath-acp"} {
+	for _, name := range []string{"icebath", "icebath.exe", "icebath-acp", filepath.Join(".icebath", "bin", "icebath"), filepath.Join(".icebath", "bin", "icebath-acp")} {
 		owned[filepath.Join(root, name)] = true
 	}
 	for _, token := range tokens {
@@ -390,11 +546,11 @@ func publishConveniences(root, outDir string, names []string, create bool) ([]pu
 				before, hadBefore = st.ModTime().UnixNano(), true
 			}
 		}
-		command := []string{filepath.Join(root, name)}
+		command := []string{filepath.Join(checkoutLauncherDir(root), name)}
 		if name == "icebath-agent" {
-			command = []string{filepath.Join(root, "icebath")}
+			command = []string{filepath.Join(checkoutLauncherDir(root), "icebath")}
 		}
-		if writeShell(target, command) == "" {
+		if writeShell(target, command, "") == "" {
 			return published, fmt.Errorf("could not publish launcher %s", target)
 		}
 		st, err := os.Lstat(target)
@@ -406,8 +562,8 @@ func publishConveniences(root, outDir string, names []string, create bool) ([]pu
 	return published, nil
 }
 
-// Own command already bound to a live binary of another install, kept so a foreign launch never rebinds it
-func keptSharedLauncher(name, local, own string) string {
+// Checkout launcher recording another live store than this home's, kept so a borrowing launch never rebinds it
+func keptSharedLauncher(name, local, store, own string) string {
 	if own == "" {
 		return ""
 	}
@@ -420,12 +576,15 @@ func keptSharedLauncher(name, local, own string) string {
 		if !isRegularFile(target) && !isSymlink(target) {
 			continue
 		}
-		binary := launcherBinary(target)
-		if binary == "" || resolvePath(binary) == resolvePath(own) {
+		bound := launcherStore(target)
+		if bound == "" || bound == store {
 			continue
 		}
-		if !isRegularFile(binary) {
+		if !launcherRecordLive(target, bound) {
 			dead = append(dead, target)
+			continue
+		}
+		if recordUnder(bound, store) {
 			continue
 		}
 		for _, stale := range dead {
@@ -439,21 +598,33 @@ func keptSharedLauncher(name, local, own string) string {
 // Publishes the install's own commands then conveniences in outDir, empty when any own command failed
 func EnsureInstallLaunchers(ctx context.Context, repoRoot, outDir string) ([]string, error) {
 	root := resolvePath(repoRoot)
+	local := checkoutLauncherDir(root)
+	if err := os.MkdirAll(local, 0o777); err != nil {
+		return nil, err
+	}
+	store, err := EnvironmentStoreRoot(ctx, root, true)
+	if err != nil {
+		return nil, err
+	}
 	own := resolveInstallBinary(root)
-	owner := isHomeInstall(ctx, root)
+	owner := isHomeInstall(ctx, root, store)
 	var written []string
 	for _, name := range windowsBinLaunchers {
 		if !owner {
-			if kept := keptSharedLauncher(name, root, own); kept != "" {
+			if kept := keptSharedLauncher(name, local, store, own); kept != "" {
 				written = append(written, kept)
 				continue
 			}
 		}
-		if path := stageLauncher(name, root, root); path != "" {
+		path, err := stageLauncher(ctx, name, root, local)
+		if err != nil {
+			return nil, err
+		}
+		if path != "" {
 			written = append(written, path)
 		}
 	}
-	if resolvePath(outDir) == root {
+	if resolvePath(outDir) == local {
 		return written, nil
 	}
 	if len(written) != len(windowsBinLaunchers) {
@@ -475,7 +646,11 @@ func EnsureInstallLaunchers(ctx context.Context, repoRoot, outDir string) ([]str
 	}
 	var staged []string
 	for _, name := range windowsBinLaunchers {
-		if path := stageLauncher(name, root, outDir); path != "" {
+		path, err := stageLauncher(ctx, name, root, outDir)
+		if err != nil {
+			return nil, err
+		}
+		if path != "" {
 			staged = append(staged, path)
 		}
 	}
@@ -522,7 +697,7 @@ func ExposeCLI(ctx context.Context, projectRoot string, create bool) (ExposeResu
 	if resolveInstallBinary(root) == "" {
 		return ExposeResult{OK: true, Skipped: "no-install-binary"}, nil
 	}
-	local, err := EnsureInstallLaunchers(ctx, root, root)
+	local, err := EnsureInstallLaunchers(ctx, root, checkoutLauncherDir(root))
 	if err != nil {
 		return ExposeResult{OK: false, Error: pypath.OSErrorText(err)}, nil
 	}
@@ -630,17 +805,17 @@ func publishLaunchers(ctx context.Context, projectRoot string, create bool) erro
 		return nil
 	}
 	if resolveInstallBinary(root) == "" {
-		slog.Warn(fmt.Sprintf("launchers: no install binary under %s; %s not published", root, filepath.Join(root, installBinaryName())))
+		slog.Warn(fmt.Sprintf("launchers: no install binary under %s; %s not published", root, checkoutLauncherDir(root)))
 		return nil
 	}
-	written, err := EnsureInstallLaunchers(ctx, root, root)
+	written, err := publishOwnLaunchers(ctx, root, checkoutLauncherDir(root))
 	if err != nil {
 		return err
 	}
 	if len(written) != len(entryPoints) {
 		return NewInstallError("launchers", "source launcher publication failed", "retry the source update")
 	}
-	result, err := ExposeCLI(ctx, root, create)
+	result, err := exposeCLI(ctx, root, create)
 	if err != nil {
 		return err
 	}
@@ -648,6 +823,31 @@ func publishLaunchers(ctx context.Context, projectRoot string, create bool) erro
 		slog.Warn(fmt.Sprintf("CLI exposure failed: %s", result.Error))
 	}
 	return nil
+}
+
+// Own command publication the source launcher refresh runs, the attribute hermes tests replace
+var publishOwnLaunchers = EnsureInstallLaunchers
+
+// Replaces the own command publication of the launcher refresh and returns the previous one
+func SwapPublishOwnLaunchers(fn func(ctx context.Context, repoRoot, outDir string) ([]string, error)) func(ctx context.Context, repoRoot, outDir string) ([]string, error) {
+	prev := publishOwnLaunchers
+	publishOwnLaunchers = fn
+	return prev
+}
+
+// PATH exposure the source launcher refresh runs, the attribute hermes tests replace
+var exposeCLI = ExposeCLI
+
+// Replaces the PATH exposure of the launcher refresh and returns the previous one
+func SwapExposeCLI(fn func(ctx context.Context, projectRoot string, create bool) (ExposeResult, error)) func(ctx context.Context, projectRoot string, create bool) (ExposeResult, error) {
+	prev := exposeCLI
+	exposeCLI = fn
+	return prev
+}
+
+// PublishLaunchers exports publishLaunchers
+func PublishLaunchers(ctx context.Context, projectRoot string, create bool) error {
+	return publishLaunchers(ctx, projectRoot, create)
 }
 
 // Stages the user facing commands into the default home bin and registers it on the User PATH
@@ -667,7 +867,11 @@ func exposeWindowsUserBin(ctx context.Context, root string, create bool) ExposeR
 		}
 		return ExposeResult{OK: true, Written: written}
 	}
-	if !isHomeInstall(ctx, root) {
+	store, err := EnvironmentStoreRoot(ctx, root, true)
+	if err != nil {
+		return fail(err)
+	}
+	if !isHomeInstall(ctx, root, store) {
 		if other := launcherOfAnotherInstall(directory, root); other != "" {
 			return ExposeResult{OK: true, Skipped: other + " starts another checkout"}
 		}

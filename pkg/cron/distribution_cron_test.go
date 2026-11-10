@@ -53,7 +53,7 @@ func makeStagingDir(t *testing.T, root, name string) string {
 	if _, err := cron.ExportOpenStore(staged).CreateJob("daily task", "0 9 * * *", "daily"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := profiles.WriteManifest(staged, profiles.NewDistributionManifest(name)); err != nil {
+	if _, err := profiles.WriteManifest(context.Background(), staged, profiles.NewDistributionManifest(name)); err != nil {
 		t.Fatal(err)
 	}
 	return staged

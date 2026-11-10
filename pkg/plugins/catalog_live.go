@@ -128,14 +128,14 @@ func downloadLiveCatalog(ctx context.Context, cache string) (map[string]any, err
 	if _, ok := data["entries"].([]any); !ok {
 		return nil, errors.New("unexpected live catalog payload")
 	}
-	if _, err := home.Mkdir(filepath.Dir(cache)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(cache)); err != nil {
 		return nil, err
 	}
 	dumped, err := pyjson.Dumps(doc)
 	if err != nil {
 		return nil, err
 	}
-	if err := writeLiveCatalog(cache, dumped, filepath.Base(cache)+".tmp-"); err != nil {
+	if err := writeLiveCatalog(ctx, cache, dumped, filepath.Base(cache)+".tmp-"); err != nil {
 		return nil, err
 	}
 	return data, nil

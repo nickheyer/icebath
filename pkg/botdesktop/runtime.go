@@ -77,16 +77,6 @@ var hostPlatform = func() string {
 	return goruntime.GOOS
 }()
 
-// Pending default image switch of the docker sandbox, assigned by the wiring from the sandbox image switch port
-var SandboxImageSwitchPending func(env *tools.Env) (*ImageSwitch, error)
-
-// A pending default image switch the pane can approve
-type ImageSwitch struct {
-	CurrentImage string
-	TargetImage  string
-	Containers   []string
-}
-
 // Per profile screen state directory under the env home
 func StateDir(env *tools.Env) string { return filepath.Join(envHome(env), "bot-desktop") }
 
@@ -919,7 +909,7 @@ func sandboxStatus(env *tools.Env, profile string, where Placement) (DesktopStat
 			strings.Join(missing, ", "), strings.ToUpper(string(r[0])), string(r[1:]))
 		blocker = &b
 		if where.Backend == "docker" {
-			sw, err := SandboxImageSwitchPending(env)
+			sw, err := tools.PendingSandboxImageSwitch(envCtx(env), env)
 			if err != nil {
 				return DesktopStatus{}, err
 			}

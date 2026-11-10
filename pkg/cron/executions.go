@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -134,17 +135,32 @@ func (s *Store) liveOwnerStaleAfterSeconds(ctx context.Context) (float64, bool) 
 	return math.Max(math.Max(inactivity*ClaimTTLInactivityHeadroom, float64(s.getScriptTimeout(ctx))), LiveOwnerStaleClaimFloorSeconds), true
 }
 
-// Seconds since the owner last proved progress, the claim age for rows without a stamp
-func (s *Store) staleAgeSeconds(claimedAt string, progressAt any) (float64, error) {
-	stamp := claimedAt
-	if p, ok := progressAt.(string); ok && p != "" {
-		stamp = p
-	}
-	at, err := ParseISO(stamp)
+// Seconds since an aware claim stamp, a naive stamp fails like the aware minus naive subtraction
+func (s *Store) claimAgeSeconds(claimedAt string) (float64, error) {
+	at, err := ParseISO(claimedAt)
 	if err != nil {
 		return 0, err
 	}
+	if !at.Aware {
+		return 0, &pyTypeError{"can't subtract offset-naive and offset-aware datetimes"}
+	}
 	return elapsedSeconds(s.clk.now(), at.Time), nil
+}
+
+// Seconds since the owner last proved progress, the claim age for rows without a stamp
+func (s *Store) staleAgeSeconds(claimedAt string, progressAt any) (float64, error) {
+	switch p := progressAt.(type) {
+	case nil:
+	case string:
+		if p != "" {
+			return s.claimAgeSeconds(p)
+		}
+	default:
+		if pyrepr.Truthy(p) {
+			return 0, &pyTypeError{"fromisoformat: argument must be str"}
+		}
+	}
+	return s.claimAgeSeconds(claimedAt)
 }
 
 // Opens the ledger database with the schema initialised and the cron dir secured
@@ -245,7 +261,7 @@ func widenStatusCheck(ctx context.Context, conn state.SQLiteConn) error {
 	currentSQL := func() (string, error) {
 		var text sql.NullString
 		err := conn.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type='table' AND name='executions'").Scan(&text)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && !text.Valid) {
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && (!text.Valid || text.String == "")) {
 			return "'missed'", nil
 		}
 		return text.String, err
@@ -421,7 +437,7 @@ func (l *Ledger) Create(ctx context.Context, jobID, source string, scheduled *st
 	if st, ok := ledgerStartTime(pid); ok {
 		startedAt = st
 	}
-	instant := nullable(scheduledInstant(l.s, scheduled))
+	instant := nullable(scheduledInstant(scheduled))
 	var record map[string]any
 	err := l.transaction(ctx, func(conn state.SQLiteConn) error {
 		if _, err := conn.ExecContext(ctx, `INSERT INTO executions
@@ -444,7 +460,7 @@ func (l *Ledger) Create(ctx context.Context, jobID, source string, scheduled *st
 
 // Binds the store claimed occurrence before a provider hands the attempt to a worker
 func (l *Ledger) SetOccurrence(ctx context.Context, executionID string, instant *string) error {
-	canonical := nullable(scheduledInstant(l.s, instant))
+	canonical := nullable(scheduledInstant(instant))
 	return l.transaction(ctx, func(conn state.SQLiteConn) error {
 		n, err := rowsChanged(conn.ExecContext(ctx, "UPDATE executions SET scheduled_instant=? WHERE id=? AND status='claimed' "+
 			"AND handoff_pending=0 AND process_id=? AND pid=?", canonical, executionID, executionProcessID, ledgerGetpid()))
@@ -570,7 +586,7 @@ func (l *Ledger) RecordMissed(ctx context.Context, jobID string, count int, firs
 	if st, ok := ledgerStartTime(pid); ok {
 		startedAt = st
 	}
-	instant := nullable(scheduledInstant(l.s, firstInstant))
+	instant := nullable(scheduledInstant(firstInstant))
 	var record map[string]any
 	err := l.transaction(ctx, func(conn state.SQLiteConn) error {
 		if _, err := conn.ExecContext(ctx, `INSERT INTO executions

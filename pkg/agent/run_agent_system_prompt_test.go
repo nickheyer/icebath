@@ -239,7 +239,7 @@ func TestProbeDisabledByConfig(t *testing.T) {
 func TestInvalidateSystemPromptClearsCache(t *testing.T) {
 	a := runAgentFixture(t)
 	a.cachedSystemPrompt = "cached value"
-	if err := InvalidateSystemPrompt(a); err != nil || a.cachedSystemPrompt != "" {
+	if err := InvalidateSystemPrompt(context.Background(), a); err != nil || a.cachedSystemPrompt != "" {
 		t.Fatalf("cache %q err %v", a.cachedSystemPrompt, err)
 	}
 }

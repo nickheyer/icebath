@@ -1008,7 +1008,7 @@ func (s *SharedMetricsStore) exportPendingPackages(ctx context.Context) ([]strin
 		if err != nil {
 			return nil, err
 		}
-		if err := writePackageFile(path, decoded); err != nil {
+		if err := writePackageFile(ctx, path, decoded); err != nil {
 			return nil, err
 		}
 		err = s.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
@@ -1025,13 +1025,13 @@ func (s *SharedMetricsStore) exportPendingPackages(ctx context.Context) ([]strin
 }
 
 // Atomic owner only compact sorted JSON write of one package file
-var writePackageFile = func(path string, payload any) error {
+var writePackageFile = func(ctx context.Context, path string, payload any) error {
 	text, err := pyjson.Dumps(payload, pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
 	if err != nil {
 		return err
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	return pyfs.AtomicWriteTextMode(path, text, "."+stem+"_", 0o600)
+	return pyfs.AtomicWriteTextMode(ctx, path, text, "."+stem+"_", 0o600)
 }
 
 // Removes exported local history past the retention window, a zero now meaning the current time

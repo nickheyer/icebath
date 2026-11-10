@@ -223,7 +223,7 @@ func TestDirMadeWhileElevatedStaysUsableByTheFilteredToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireFaithfulProbe(t, parent, plain)
-	granted, err := MakeUserDir(filepath.Join(parent, "gateway-locks"), 0o700, false, false)
+	granted, err := MakeUserDir(context.Background(), filepath.Join(parent, "gateway-locks"), 0o700, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestElevatedRerunRepairsADirAnEarlierElevatedRunLeft(t *testing.T) {
 	}
 	requireFaithfulProbe(t, parent, left)
 	for range 2 {
-		if _, err := MakeUserDir(left, 0o777, true, true); err != nil {
+		if _, err := MakeUserDir(context.Background(), left, 0o777, true, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -265,7 +265,7 @@ func TestElevatedRepairAlsoReachesAnOldLockAlreadyInsideTheDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireFaithfulProbe(t, parent, left)
-	if _, err := MakeUserDir(left, 0o777, true, true); err != nil {
+	if _, err := MakeUserDir(context.Background(), left, 0o777, true, true); err != nil {
 		t.Fatal(err)
 	}
 	after := aclChild(t, "writable", old)

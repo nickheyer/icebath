@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -63,16 +64,16 @@ func worktreeRegisteredRepos(h string) []string {
 }
 
 // Records a repo with icebath made worktrees, dropping vanished repos and logging any failure at debug
-func RecordWorktreeRepo(h, repoRoot string) {
+func RecordWorktreeRepo(ctx context.Context, h, repoRoot string) {
 	if repoRoot == "" {
 		return
 	}
-	if err := recordWorktreeRepo(h, repoRoot); err != nil {
+	if err := recordWorktreeRepo(ctx, h, repoRoot); err != nil {
 		slog.Default().Debug("worktree registry update failed for "+repoRoot, "error", err)
 	}
 }
 
-func recordWorktreeRepo(h, repoRoot string) error {
+func recordWorktreeRepo(ctx context.Context, h, repoRoot string) error {
 	repo, err := pypath.Realpath(repoRoot, pypath.Lax)
 	if err != nil {
 		return err
@@ -116,5 +117,5 @@ func recordWorktreeRepo(h, repoRoot string) error {
 	doc := pyjson.NewObject()
 	doc.Set("version", 1)
 	doc.Set("repos", repos)
-	return config.AtomicJSONWrite(path, doc)
+	return config.AtomicJSONWrite(ctx, path, doc)
 }

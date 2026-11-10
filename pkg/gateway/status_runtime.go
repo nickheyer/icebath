@@ -49,7 +49,7 @@ func (w *RuntimeStatusWriter) notifyLocked() {
 }
 
 // Queues a deep copy of payload for path and returns its generation
-func (w *RuntimeStatusWriter) Submit(path string, payload *pyjson.Object) int {
+func (w *RuntimeStatusWriter) Submit(ctx context.Context, path string, payload *pyjson.Object) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.submittedGeneration++
@@ -57,7 +57,7 @@ func (w *RuntimeStatusWriter) Submit(path string, payload *pyjson.Object) int {
 	w.pending = &statusSnapshot{generation, path, pycopy.DeepCopy(payload).(*pyjson.Object)}
 	if !w.started {
 		w.started = true
-		go w.run()
+		go w.run(ctx)
 	}
 	w.notifyLocked()
 	return generation
@@ -127,7 +127,7 @@ func (w *RuntimeStatusWriter) settledLocked(generation int) (bool, bool) {
 	return false, false
 }
 
-func (w *RuntimeStatusWriter) run() {
+func (w *RuntimeStatusWriter) run(ctx context.Context) {
 	for {
 		w.mu.Lock()
 		for w.pending == nil {
@@ -151,7 +151,7 @@ func (w *RuntimeStatusWriter) run() {
 			if w.writeFn != nil {
 				err = w.writeFn(snap.path, merged)
 			} else {
-				err = writeJSONFile(snap.path, merged)
+				err = writeJSONFile(ctx, snap.path, merged)
 			}
 		}()
 		w.mu.Lock()
@@ -450,7 +450,7 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 }
 
 // Durably persists one status update for CLI callers, waiting at most waitTimeout when it is set
-func WriteRuntimeStatus(u RuntimeStatusUpdate, reloadExisting bool, waitTimeout *time.Duration) (bool, error) {
+func WriteRuntimeStatus(ctx context.Context, u RuntimeStatusUpdate, reloadExisting bool, waitTimeout *time.Duration) (bool, error) {
 	runtimeStatusStateMu.Lock()
 	path, payload, previous, err := prepareRuntimeStatusUpdateLocked(u, true, reloadExisting)
 	if err != nil {
@@ -458,21 +458,21 @@ func WriteRuntimeStatus(u RuntimeStatusUpdate, reloadExisting bool, waitTimeout 
 		return false, err
 	}
 	writer := runtimeStatusWriterLocked()
-	generation := writer.Submit(path, payload)
+	generation := writer.Submit(ctx, path, payload)
 	runtimeStatusStateMu.Unlock()
 	emitRuntimeStatusTransition(previous, payload)
 	return writer.Wait(generation, waitTimeout)
 }
 
 // Merges and queues a status update without waiting for persistence
-func PublishRuntimeStatus(u RuntimeStatusUpdate) (int, error) {
+func PublishRuntimeStatus(ctx context.Context, u RuntimeStatusUpdate) (int, error) {
 	runtimeStatusStateMu.Lock()
 	path, payload, previous, err := prepareRuntimeStatusUpdateLocked(u, false, false)
 	if err != nil {
 		runtimeStatusStateMu.Unlock()
 		return 0, err
 	}
-	generation := runtimeStatusWriterLocked().Submit(path, payload)
+	generation := runtimeStatusWriterLocked().Submit(ctx, path, payload)
 	runtimeStatusStateMu.Unlock()
 	emitRuntimeStatusTransition(previous, payload)
 	return generation, nil

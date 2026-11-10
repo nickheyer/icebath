@@ -111,7 +111,7 @@ func unreachableRetryIsRetryRun(s *Store, job *Job) bool {
 	if job.UnreachableRetry != nil {
 		at = strPtr(job.UnreachableRetry.At)
 	}
-	parked := scheduledInstant(s, at)
+	parked := scheduledInstant(at)
 	return parked != nil && *parked == *job.ScheduledInstant
 }
 

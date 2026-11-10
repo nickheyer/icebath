@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -60,7 +61,7 @@ func TestFleetLiveNonGatewayStateWriterIsUnknown(t *testing.T) {
 	fvRestoreSeams(t)
 	fvHome(t, "fleet_home")
 	fleetCodeIdentity = fvIdentity(strings.Repeat("a", 40))
-	if _, err := gateway.WriteRuntimeStatus(gateway.RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running"}}, false, nil); err != nil {
+	if _, err := gateway.WriteRuntimeStatus(context.Background(), gateway.RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running"}}, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	fleet := CollectFleetVersions(nil, nil)

@@ -42,6 +42,13 @@ var (
 	shutdownRuntimes        func(ctx context.Context)
 )
 
+// SetRelayRecorder installs the enabled check and process mark recorder the recorders call, returning a restore
+func SetRelayRecorder(enabled func(ctx context.Context) bool, record func(ctx context.Context, mark string, data map[string]string)) (restore func()) {
+	prevEnabled, prevRecord := relayEnabled, recordProcessMark
+	relayEnabled, recordProcessMark = enabled, record
+	return func() { relayEnabled, recordProcessMark = prevEnabled, prevRecord }
+}
+
 func init() {
 	relayEnabled = Enabled
 	recordProcessMark = RecordProcessMark

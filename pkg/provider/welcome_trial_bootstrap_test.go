@@ -144,7 +144,7 @@ func TestWelcomeTrialTheFirstDesktopBootRecordsThatOnboardingIsDue(t *testing.T)
 		t.Run(name, func(t *testing.T) {
 			_, env := trialBootMachine(t)
 			if used {
-				if err := tools.MarkMachineUsed(); err != nil {
+				if err := tools.MarkMachineUsed(context.Background()); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -155,7 +155,7 @@ func TestWelcomeTrialTheFirstDesktopBootRecordsThatOnboardingIsDue(t *testing.T)
 			if used {
 				return
 			}
-			if err := tools.SetOnboardingRun(false, false); err != nil {
+			if err := tools.SetOnboardingRun(context.Background(), false, false); err != nil {
 				t.Fatal(err)
 			}
 			trialBootRelaunch(env)
@@ -171,8 +171,8 @@ func TestWelcomeTrialAMissedFirstLaunchStaysDueAndKeepsTheTrial(t *testing.T) {
 	trialBootRelaunch(env)
 	trialBootChat(t, env, "anthropic/claude")
 	tools.InstallStateProbeClear()
-	if !tools.InstallStateProbe().Existing() || !tools.OnboardingShouldRun(false) {
-		t.Fatal(tools.InstallStateProbe(), tools.OnboardingShouldRun(false))
+	if !tools.InstallStateProbe(context.Background()).Existing() || !tools.OnboardingShouldRun(context.Background(), false) {
+		t.Fatal(tools.InstallStateProbe(context.Background()), tools.OnboardingShouldRun(context.Background(), false))
 	}
 	if blocker, err := welcomeClaimBlocker(env, false, nil); blocker != "" || err != nil {
 		t.Fatalf("%q %v", blocker, err)

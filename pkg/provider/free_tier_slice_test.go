@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"slices"
@@ -196,7 +197,7 @@ func TestWelcomeTrialClaimsOnceThenSettles(t *testing.T) {
 		welcomeInstallProbe, welcomeProbeClear, welcomeTrialReserved, welcomeMarkUsed, welcomeClaimLock, welcomeResolveSkipped = probe, clear, reserved, mark, lock, resolve
 	})
 	used, marks, isReserved := false, 0, false
-	welcomeInstallProbe = func() tools.InstallState {
+	welcomeInstallProbe = func(_ context.Context) tools.InstallState {
 		if used {
 			return tools.InstallState{Findings: []tools.InstallFinding{{}}}
 		}
@@ -204,7 +205,7 @@ func TestWelcomeTrialClaimsOnceThenSettles(t *testing.T) {
 	}
 	welcomeProbeClear = func() {}
 	welcomeTrialReserved = func() bool { return isReserved }
-	welcomeMarkUsed = func() error { used, isReserved = true, false; marks++; return nil }
+	welcomeMarkUsed = func(_ context.Context) error { used, isReserved = true, false; marks++; return nil }
 	welcomeClaimLock = func() (func(), error) { return func() {}, nil }
 	welcomeResolveSkipped = func(PoolEnv, string) (string, error) { return "", &AuthError{Code: "no_provider_configured"} }
 	if reason, err := welcomeClaimBlocker(env, false, nil); err != nil || reason != "" {

@@ -102,7 +102,7 @@ func RecordTUIWorktree(ctx context.Context, wtInfo map[string]string) {
 	doc := pyjson.NewObject()
 	doc.Set("version", 1)
 	doc.Set("trees", kept)
-	if err := config.AtomicJSONWrite(path, doc); err != nil {
+	if err := config.AtomicJSONWrite(ctx, path, doc); err != nil {
 		log.Debug(fmt.Sprintf("TUI worktree record failed for %s: %s", wtInfo["path"], err))
 	}
 }

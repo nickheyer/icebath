@@ -233,7 +233,7 @@ func onbCard(env *Env, beat string, step OnboardingStep, args map[string]any) ma
 }
 
 // Shows a beat's card through the desktop and returns the user's answer with the next beat's reminder
-func setupBeatTool(env *Env, db *state.DB, sessionID, toolCallID string, args map[string]any) string {
+func setupBeatTool(ctx context.Context, env *Env, db *state.DB, sessionID, toolCallID string, args map[string]any) string {
 	beat, _ := args["beat"].(string)
 	if !containsString(SetupBeatIDs, beat) {
 		return toolErrorJSON(fmt.Sprintf("beat must be one of: %s.", strings.Join(SetupBeatIDs, ", ")), nil)
@@ -244,7 +244,7 @@ func setupBeatTool(env *Env, db *state.DB, sessionID, toolCallID string, args ma
 	}
 	if beat != "next" {
 		if event := onbDirectEvent(env, beat, args); event != nil {
-			step, err := AdvanceOnboarding(db, sessionID, event)
+			step, err := AdvanceOnboarding(WithEnvHome(ctx, env), db, sessionID, event)
 			if err != nil {
 				return toolErrorJSON(err.Error(), nil)
 			}
@@ -271,7 +271,7 @@ func setupBeatTool(env *Env, db *state.DB, sessionID, toolCallID string, args ma
 			return refused
 		}
 	}
-	shown, err := AdvanceOnboarding(db, sessionID, OnbShown{Beat: beat, ToolCallID: toolCallID, Options: args["options"], Suggest: args["suggest"]})
+	shown, err := AdvanceOnboarding(WithEnvHome(ctx, env), db, sessionID, OnbShown{Beat: beat, ToolCallID: toolCallID, Options: args["options"], Suggest: args["suggest"]})
 	if err != nil {
 		return toolErrorJSON(err.Error(), nil)
 	}
@@ -298,7 +298,7 @@ func setupBeatTool(env *Env, db *state.DB, sessionID, toolCallID string, args ma
 		return onbResult(env, OnboardingStep{Record: after, Result: map[string]any{"skipped_all": true}, Reminder: "skip_all"}, "", "")
 	}
 	event := onbReplyEvent(env, beat, reply)
-	step, err := AdvanceOnboarding(db, sessionID, event)
+	step, err := AdvanceOnboarding(WithEnvHome(ctx, env), db, sessionID, event)
 	if err != nil {
 		return toolErrorJSON(err.Error(), nil)
 	}
@@ -337,6 +337,6 @@ var setupBeatSchema = map[string]any{
 func registerSetupBeatTool() {
 	Register(Def{Name: "setup_beat", Toolset: "onboarding", Schema: setupBeatSchema, Emoji: "\U0001F39B", Timeout: OnboardingCardTimeout * time.Second,
 		Handler: func(ctx context.Context, call *Call) string {
-			return setupBeatTool(call.Env, call.Env.State, call.SessionID, call.ToolCallID, call.Args)
+			return setupBeatTool(WithEnvHome(ctx, call.Env), call.Env, call.Env.State, call.SessionID, call.ToolCallID, call.Args)
 		}})
 }

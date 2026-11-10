@@ -499,6 +499,11 @@ func preToolCallDirectiveDetails(ctx context.Context, toolName string, args map[
 	return PreToolCallDirective{ModifiedArgs: modified}, nil
 }
 
+// PreToolCallDirectiveDetails exports preToolCallDirectiveDetails for the tool dispatcher bridge
+func PreToolCallDirectiveDetails(ctx context.Context, toolName string, args map[string]any, ids PreToolCallIDs) (PreToolCallDirective, error) {
+	return preToolCallDirectiveDetails(ctx, toolName, args, ids)
+}
+
 // Back compatible directive and message pair of the pre_tool_call hooks
 func GetPreToolCallDirective(ctx context.Context, toolName string, args map[string]any, ids PreToolCallIDs) (string, string, error) {
 	d, err := preToolCallDirectiveDetails(ctx, toolName, args, ids)

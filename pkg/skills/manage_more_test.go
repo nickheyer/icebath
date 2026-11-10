@@ -53,17 +53,17 @@ func TestCreateOccupiedDirectoryPreservedWhenScanBlocks(t *testing.T) {
 	os.Mkdir(target, 0o755)
 	data := filepath.Join(target, "data.bin")
 	os.WriteFile(data, []byte("keep me"), 0o644)
-	result := mustObj(s.createSkill("new-skill", validSkillContent, nil))
+	result := mustObj(s.createSkill(context.Background(), "new-skill", validSkillContent, nil))
 	empty := filepath.Join(skills, "empty-skill")
 	os.Mkdir(empty, 0o755)
-	emptyResult := mustObj(s.createSkill("empty-skill", validSkillContent, nil))
-	freshResult := mustObj(s.createSkill("fresh-skill", validSkillContent, nil))
+	emptyResult := mustObj(s.createSkill(context.Background(), "empty-skill", validSkillContent, nil))
+	freshResult := mustObj(s.createSkill(context.Background(), "fresh-skill", validSkillContent, nil))
 	var unreadableResult *pyjson.Object
 	unreadable := filepath.Join(skills, "unreadable-skill")
 	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
 		os.Mkdir(unreadable, 0o755)
 		os.Chmod(unreadable, 0)
-		unreadableResult = mustObj(s.createSkill("unreadable-skill", validSkillContent, nil))
+		unreadableResult = mustObj(s.createSkill(context.Background(), "unreadable-skill", validSkillContent, nil))
 		os.Chmod(unreadable, 0o700)
 	}
 	if objSuccess(result) || !strings.Contains(objStr(result, "error"), "Choose another name") {
@@ -91,10 +91,10 @@ func TestCreateOccupiedDirectoryRefusedAndEmptyLeftoverReused(t *testing.T) {
 	os.Mkdir(category, 0o755)
 	nested := filepath.Join(category, "nested-skill.md")
 	os.WriteFile(nested, []byte("nested"), 0o644)
-	result := mustObj(s.createSkill("category", validSkillContent, nil))
+	result := mustObj(s.createSkill(context.Background(), "category", validSkillContent, nil))
 	empty := filepath.Join(skills, "empty-skill")
 	os.Mkdir(empty, 0o755)
-	emptyResult := mustObj(s.createSkill("empty-skill", validSkillContent, nil))
+	emptyResult := mustObj(s.createSkill(context.Background(), "empty-skill", validSkillContent, nil))
 	if objSuccess(result) || !strings.Contains(objStr(result, "error"), "Choose another name") {
 		t.Fatalf("occupied create %v", result)
 	}
@@ -108,7 +108,7 @@ func TestCreateOccupiedDirectoryRefusedAndEmptyLeftoverReused(t *testing.T) {
 
 func TestPatchRecoveryLoopReachesWorkingPatch(t *testing.T) {
 	s, skills := manageScope(t)
-	mustObj(s.createSkill("my-skill", recoveryContent, nil))
+	mustObj(s.createSkill(context.Background(), "my-skill", recoveryContent, nil))
 	bad := manageCall(t, s, map[string]any{"action": "patch", "name": "my-skill", "new_string": "Step 1: Do it better."})
 	if bad["success"] != false || !strings.Contains(strings.ToLower(bad["error"].(string)), "read") {
 		t.Fatalf("bad call %v", bad)
@@ -135,7 +135,7 @@ func TestRejectedPatchLeavesFileByteIdentical(t *testing.T) {
 		{"old_string": "Step 1: Do the thing.", "new_string": "Step 1: Do the thing."},
 	} {
 		s, skills := manageScope(t)
-		mustObj(s.createSkill("my-skill", recoveryContent, nil))
+		mustObj(s.createSkill(context.Background(), "my-skill", recoveryContent, nil))
 		skillMD := filepath.Join(skills, "my-skill", "SKILL.md")
 		before := readText(t, skillMD)
 		payload := map[string]any{"action": "patch", "name": "my-skill"}
@@ -151,7 +151,7 @@ func TestRejectedPatchLeavesFileByteIdentical(t *testing.T) {
 
 func TestPatchEmptyNewStringDeletesAndMissingNewStringRejected(t *testing.T) {
 	s, skills := manageScope(t)
-	mustObj(s.createSkill("my-skill", recoveryContent, nil))
+	mustObj(s.createSkill(context.Background(), "my-skill", recoveryContent, nil))
 	result := manageCall(t, s, map[string]any{"action": "patch", "name": "my-skill", "old_string": "Step 2: Do the other thing.\n", "new_string": ""})
 	if result["success"] != true || strings.Contains(readText(t, filepath.Join(skills, "my-skill", "SKILL.md")), "Step 2:") {
 		t.Fatalf("empty new_string wrongly rejected: %v", result)
@@ -171,7 +171,7 @@ func TestPatchExternalSkillWritesInPlace(t *testing.T) {
 	if err := s.Config.Set("skills.external_dirs", []any{external}); err != nil {
 		t.Fatal(err)
 	}
-	result := mustObj(s.patchSkill("ext-skill", strp("OLD_MARKER"), strp("NEW_MARKER"), nil, false))
+	result := mustObj(s.patchSkill(context.Background(), "ext-skill", strp("OLD_MARKER"), strp("NEW_MARKER"), nil, false))
 	if !objSuccess(result) || !strings.Contains(readText(t, filepath.Join(skillDir, "SKILL.md")), "NEW_MARKER") {
 		t.Fatalf("external patch %v", result.Vals)
 	}
@@ -183,7 +183,7 @@ func TestPatchExternalSkillWritesInPlace(t *testing.T) {
 func TestBackgroundReviewImprovesAnySkillButDeletesOnlyManagedOnes(t *testing.T) {
 	ctx := context.Background()
 	s, skills := manageScope(t)
-	mustObj(s.createSkill("my-skill", validSkillContent, nil))
+	mustObj(s.createSkill(ctx, "my-skill", validSkillContent, nil))
 	s.SetPinned(ctx, "my-skill", true)
 	os.WriteFile(filepath.Join(skills, ".bundled_manifest"), []byte("my-skill:abc\n"), 0o644)
 	writeHubLock(t, skills, `{"installed": {"my-skill": {"source": "github"}}}`)
@@ -208,7 +208,7 @@ func TestBackgroundReviewImprovesAnySkillButDeletesOnlyManagedOnes(t *testing.T)
 
 func TestBackgroundReviewDeleteFailsClosedWhenOwnershipLookupErrors(t *testing.T) {
 	s, skills := manageScope(t)
-	mustObj(s.createSkill("manual-skill", validSkillContent, nil))
+	mustObj(s.createSkill(context.Background(), "manual-skill", validSkillContent, nil))
 	os.WriteFile(filepath.Join(skills, ".bundled_manifest"), []byte{'x', 0x80, 0x81, '\n'}, 0o644)
 	SetCurrentWriteOrigin(s.Env, BackgroundReview)
 	result := manageCall(t, s, map[string]any{"action": "delete", "name": "manual-skill", "absorbed_into": "manual-skill"})
@@ -231,7 +231,7 @@ func backgroundDelete(t *testing.T, s *Scope, name string) map[string]any {
 
 func TestBackgroundOwnershipPolicyConsistency(t *testing.T) {
 	s, _ := manageScope(t)
-	mustObj(s.createSkill("flip-skill", validSkillContent, nil))
+	mustObj(s.createSkill(context.Background(), "flip-skill", validSkillContent, nil))
 	first := backgroundDelete(t, s, "flip-skill")
 	second := backgroundDelete(t, s, "flip-skill")
 	if first["success"] != false || second["success"] != false || !strings.Contains(first["error"].(string), "not curator-managed") || !strings.Contains(second["error"].(string), "not curator-managed") {
@@ -239,13 +239,13 @@ func TestBackgroundOwnershipPolicyConsistency(t *testing.T) {
 	}
 
 	fg, _ := manageScope(t)
-	mustObj(fg.createSkill("no-record", validSkillContent, nil))
+	mustObj(fg.createSkill(context.Background(), "no-record", validSkillContent, nil))
 	if res := manageCall(t, fg, map[string]any{"action": "patch", "name": "no-record", "old_string": "Do the thing.", "new_string": "Do the new thing."}); res["success"] != true {
 		t.Fatalf("foreground write refused %v", res)
 	}
 
 	ad, _ := manageScope(t)
-	mustObj(ad.createSkill("adopt-me", validSkillContent, nil))
+	mustObj(ad.createSkill(context.Background(), "adopt-me", validSkillContent, nil))
 	before := backgroundDelete(t, ad, "adopt-me")
 	ad.MarkAgentCreated(context.Background(), "adopt-me")
 	after := backgroundDelete(t, ad, "adopt-me")
@@ -263,7 +263,7 @@ func curatorPassScope(t *testing.T) (*Scope, string) {
 	s, skills := manageScope(t)
 	SetCurrentWriteOrigin(s.Env, BackgroundReview)
 	ResetBackgroundReviewReadMarks(s.Env)
-	if res := mustObj(s.createSkill("reviewed", namedSkillContent("reviewed"), nil)); !objSuccess(res) {
+	if res := mustObj(s.createSkill(context.Background(), "reviewed", namedSkillContent("reviewed"), nil)); !objSuccess(res) {
 		t.Fatalf("create %v", res.Vals)
 	}
 	s.MarkAgentCreated(context.Background(), "reviewed")

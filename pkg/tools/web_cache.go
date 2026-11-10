@@ -1,9 +1,9 @@
 package tools
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"net/netip"
 	"net/url"
 	"os"
@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var webLimitBuckets = []int{10, 20, 50, 100}
@@ -204,57 +206,71 @@ func extractCacheDir(env *Env) string {
 	return dir
 }
 
-// Index entries keyed by digest, empty when absent or damaged
-func loadExtractIndex(env *Env) map[string]map[string]any {
+// Index dict keyed by digest as json.loads reads it, empty when absent, damaged or not a dict
+func loadExtractIndex(env *Env) *pyjson.Object {
 	dir := extractCacheDir(env)
 	if dir == "" {
-		return map[string]map[string]any{}
+		return pyjson.NewObject()
 	}
 	data, err := os.ReadFile(filepath.Join(dir, extractIndexFilename))
 	if err != nil {
-		return map[string]map[string]any{}
+		return pyjson.NewObject()
 	}
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(string(data), "\xEF\xBB\xBF")), &raw); err != nil {
-		return map[string]map[string]any{}
+	text, err := pystr.DecodeUTF8Sig(data)
+	if err != nil {
+		return pyjson.NewObject()
 	}
-	out := map[string]map[string]any{}
-	for k, v := range raw {
-		if m, ok := v.(map[string]any); ok {
-			out[k] = m
-		}
+	parsed, err := pyjson.Loads(text)
+	index, ok := parsed.(*pyjson.Object)
+	if err != nil || !ok || index == nil {
+		return pyjson.NewObject()
 	}
-	return out
+	return index
 }
 
-// Writes the index atomically keeping the newest entries past the cap
-func saveExtractIndex(env *Env, index map[string]map[string]any) {
+// Index entry under the digest as a dict, nil when absent or not a dict
+func extractIndexEntry(index *pyjson.Object, digest string) *pyjson.Object {
+	entry, _ := pyjson.AsObject(index.Vals[digest])
+	return entry
+}
+
+// Writes the index atomically in json.dumps form keeping the newest entries past the cap
+func saveExtractIndex(ctx context.Context, env *Env, index *pyjson.Object) {
 	dir := extractCacheDir(env)
 	if dir == "" {
 		return
 	}
-	if len(index) > extractIndexMaxEntries {
+	if index.Len() > extractIndexMaxEntries {
 		type kv struct {
 			key     string
 			fetched float64
 		}
-		var rows []kv
-		for k, e := range index {
-			f, _ := pyFloatValue(e["fetched_at"])
+		rows := make([]kv, 0, index.Len())
+		for _, k := range index.Keys {
+			entry, ok := pyjson.AsObject(index.Vals[k])
+			if !ok {
+				envLog(env).Debug("Failed to save web extract cache index", "error", "index entry is not a dict")
+				return
+			}
+			f := 0.0
+			if v, has := entry.Get("fetched_at"); has {
+				parsed, ok := pyFloatValue(v)
+				if !ok {
+					envLog(env).Debug("Failed to save web extract cache index", "error", "fetched_at is not a number")
+					return
+				}
+				f = parsed
+			}
 			rows = append(rows, kv{k, f})
 		}
-		sort.Slice(rows, func(i, j int) bool { return rows[i].fetched > rows[j].fetched })
-		trimmed := map[string]map[string]any{}
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].fetched > rows[j].fetched })
+		trimmed := pyjson.NewObject()
 		for _, r := range rows[:extractIndexMaxEntries] {
-			trimmed[r.key] = index[r.key]
+			trimmed.Set(r.key, index.Vals[r.key])
 		}
 		index = trimmed
 	}
-	body, err := json.Marshal(index)
-	if err != nil {
-		return
-	}
-	if err := config.AtomicWrite(filepath.Join(dir, extractIndexFilename), body, 0o644); err != nil {
+	if err := config.AtomicJSONWriteWith(WithEnvHome(ctx, env), filepath.Join(dir, extractIndexFilename), index); err != nil {
 		envLog(env).Debug("Failed to save web extract cache index", "error", err)
 	}
 }
@@ -355,16 +371,16 @@ func ExtractCacheGet(env *Env, u, format, provider string) *WebPage {
 		return nil
 	}
 	extractIndexMu.Lock()
-	entry := loadExtractIndex(env)[urlDigest(u, format, provider)]
+	entry := extractIndexEntry(loadExtractIndex(env), urlDigest(u, format, provider))
 	extractIndexMu.Unlock()
-	if entry == nil {
+	if entry == nil || entry.Len() == 0 {
 		return nil
 	}
-	fetched, _ := pyFloatValue(entry["fetched_at"])
+	fetched, _ := pyFloatValue(entry.GetOr("fetched_at", int64(0)))
 	if time.Since(time.Unix(0, int64(fetched*1e9))) >= webCacheTTL(env) {
 		return nil
 	}
-	filePath := asStr(entry["file"])
+	filePath := asStr(entry.Vals["file"])
 	cacheRoot := extractCacheDir(env)
 	if filePath == "" || cacheRoot == "" {
 		return nil
@@ -382,34 +398,34 @@ func ExtractCacheGet(env *Env, u, format, provider string) *WebPage {
 		return nil
 	}
 	content := strings.ReplaceAll(strings.ReplaceAll(strings.TrimPrefix(string(data), "\xEF\xBB\xBF"), "\r\n", "\n"), "\r", "\n")
-	_, hasSHA := entry["content_sha256"]
-	_, hasFinal := entry["final_url"]
-	if (hasSHA || hasFinal) && asStr(entry["content_sha256"]) != contentSHA(content) {
+	_, hasSHA := entry.Get("content_sha256")
+	_, hasFinal := entry.Get("final_url")
+	if (hasSHA || hasFinal) && asStr(entry.Vals["content_sha256"]) != contentSHA(content) {
 		return nil
 	}
 	envLog(env).Info("web_extract cache hit", "url", u)
-	final := asStr(entry["final_url"])
+	final := asStr(entry.Vals["final_url"])
 	if final == "" {
 		final = u
 	}
-	return &WebPage{URL: u, Title: asStr(entry["title"]), Content: content, Cached: true, FinalURL: final}
+	return &WebPage{URL: u, Title: asStr(entry.Vals["title"]), Content: content, Cached: true, FinalURL: final}
 }
 
 // ExtractCacheRecordFinalURL remembers the post redirect URL behind a cached page, compare and set on the content
-func ExtractCacheRecordFinalURL(env *Env, u, finalURL, content, format, provider string) {
+func ExtractCacheRecordFinalURL(ctx context.Context, env *Env, u, finalURL, content, format, provider string) {
 	extractIndexMu.Lock()
 	defer extractIndexMu.Unlock()
 	index := loadExtractIndex(env)
-	entry := index[urlDigest(u, format, provider)]
-	if entry == nil || asStr(entry["content_sha256"]) != contentSHA(content) {
+	entry := extractIndexEntry(index, urlDigest(u, format, provider))
+	if entry == nil || asStr(entry.Vals["content_sha256"]) != contentSHA(content) {
 		return
 	}
-	entry["final_url"] = finalURL
-	saveExtractIndex(env, index)
+	entry.Set("final_url", finalURL)
+	saveExtractIndex(WithEnvHome(ctx, env), env, index)
 }
 
 // ExtractCachePut stores one successful extraction's clean text for TTL reuse, true when this call wrote it
-func ExtractCachePut(env *Env, u, content, title, format, provider string) bool {
+func ExtractCachePut(ctx context.Context, env *Env, u, content, title, format, provider string) bool {
 	if content == "" || !extractCacheable(env, u) {
 		return false
 	}
@@ -424,9 +440,9 @@ func ExtractCachePut(env *Env, u, content, title, format, provider string) bool 
 	extractIndexMu.Lock()
 	defer extractIndexMu.Unlock()
 	index := loadExtractIndex(env)
-	index[urlDigest(u, format, provider)] = map[string]any{"url": u, "file": filePath, "title": title,
-		"fetched_at": float64(time.Now().UnixNano()) / 1e9, "content_sha256": contentSHA(content)}
-	saveExtractIndex(env, index)
+	index.Set(urlDigest(u, format, provider), pyjson.ObjectOf("url", u, "file", filePath, "title", title,
+		"fetched_at", float64(time.Now().UnixNano())/1e9, "content_sha256", contentSHA(content)))
+	saveExtractIndex(WithEnvHome(ctx, env), env, index)
 	return true
 }
 

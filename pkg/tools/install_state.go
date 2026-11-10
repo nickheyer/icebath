@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -91,14 +92,14 @@ var (
 )
 
 // Answers once per process whether this OS user used icebath here, the first finding winning
-func InstallStateProbe() InstallState {
+func InstallStateProbe(ctx context.Context) InstallState {
 	installProbeMu.Lock()
 	if cached := installProbeCached; cached != nil {
 		installProbeMu.Unlock()
 		return *cached
 	}
 	installProbeMu.Unlock()
-	state, settled := installProbeCompute()
+	state, settled := installProbeCompute(ctx)
 	if settled {
 		installProbeMu.Lock()
 		installProbeCached = &state
@@ -115,7 +116,7 @@ func InstallStateProbeClear() {
 }
 
 // Looks at every marker then every candidate root, marking the machine on proven use, unsettled when marking failed
-func installProbeCompute() (InstallState, bool) {
+func installProbeCompute(ctx context.Context) (InstallState, bool) {
 	places := machinePlaces()
 	for _, marker := range places.Markers {
 		if installIsFile(marker) {
@@ -126,7 +127,7 @@ func installProbeCompute() (InstallState, bool) {
 		if finding, ok := installRootEvidence(root, places); ok {
 			state := InstallState{Findings: []InstallFinding{finding}}
 			if finding.Evidence != EvidenceUnreadable {
-				if err := installWriteMarker(nil, false); err != nil {
+				if err := installWriteMarker(ctx, nil, false); err != nil {
 					toolsLogger(nil).Warn("install probe could not write the machine marker, the next probe retries", "error", err)
 					return state, false
 				}
@@ -138,10 +139,10 @@ func installProbeCompute() (InstallState, bool) {
 }
 
 // Reports whether the probe found any use of icebath for this OS user
-func ExistingInstall() bool { return InstallStateProbe().Existing() }
+func ExistingInstall(ctx context.Context) bool { return InstallStateProbe(ctx).Existing() }
 
 // Records a used install or a claimed trial, replacing any reservation
-func MarkMachineUsed() error { return installWriteMarker(nil, true) }
+func MarkMachineUsed(ctx context.Context) error { return installWriteMarker(ctx, nil, true) }
 
 // Covers a claim's checks, its mint under its own auth lock and HTTP timeouts, and the marker write
 const ClaimLockTimeout = 30 * time.Second
@@ -166,8 +167,8 @@ func ClaimLock() (func(), error) {
 }
 
 // Keeps the trial for a fresh install found on its first desktop boot
-func ReserveInstallTrial() error {
-	return installWriteMarker(map[string]string{"trial": "reserved"}, true)
+func ReserveInstallTrial(ctx context.Context) error {
+	return installWriteMarker(ctx, map[string]string{"trial": "reserved"}, true)
 }
 
 // Reports whether any marker holds a trial reservation
@@ -183,7 +184,7 @@ func TrialReserved() bool {
 }
 
 // Writes the marker atomically under a unique temp name, then drops the cached probe and the onboarding answer
-func installWriteMarker(content map[string]string, answerMoved bool) error {
+func installWriteMarker(ctx context.Context, content map[string]string, answerMoved bool) error {
 	places := machinePlaces()
 	if len(places.Markers) > 0 {
 		marker := places.Markers[0]
@@ -193,7 +194,7 @@ func installWriteMarker(content map[string]string, answerMoved bool) error {
 		if content == nil {
 			content = map[string]string{}
 		}
-		if err := writeApprovalJSONAtomic(marker, content); err != nil {
+		if err := writeApprovalJSONAtomic(ctx, marker, content); err != nil {
 			return err
 		}
 	}

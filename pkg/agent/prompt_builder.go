@@ -229,10 +229,8 @@ func localHostHints(env *tools.Env) ([]string, error) {
 	} else if refusal := (*tools.TerminalPolicyUnavailable)(nil); errors.As(err, &refusal) {
 		return nil, err
 	}
-	if scratch, err := home.EnsureScratchDir(agentHome(env)); err == nil {
-		lines = append(lines, "Scratch directory: "+scratch+" (TMPDIR points here; write temporary files "+
-			"and probes there, never under the system temp dir; entries idle for 24h are pruned)")
-	}
+	lines = append(lines, "Scratch directory: "+home.EnsureScratchDir(agentHome(env))+" (TMPDIR points here; write temporary files "+
+		"and probes there, never under the system temp dir; entries idle for 24h are pruned)")
 	if !(runtime.GOOS == "windows" && !isWSL) {
 		return []string{strings.Join(lines, "\n")}, nil
 	}

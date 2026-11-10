@@ -3,6 +3,7 @@ package updaterecord
 import (
 	"bufio"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 const pcModeEnv = "ICEBATH_PAUSE_TEST_CHILD"
 
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	if mode := os.Getenv(pcModeEnv); mode != "" {
 		os.Exit(pcChild(mode, os.Args[1:]))
 	}

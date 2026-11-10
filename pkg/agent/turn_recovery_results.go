@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Base failed turn result shared by the two terminal paths
@@ -134,7 +135,7 @@ func nonretryableClientErrorResult(ctx context.Context, a *AIAgent, s *LoopState
 	classified, apiError := e.classified, e.apiError
 	prov, baseURL, model := e.providerName, e.baseURL, e.model
 	if s.APIKwargs != nil {
-		a.dumpAPIRequestDebug(s.APIKwargs, "non_retryable_client_error", apiError)
+		a.dumpAPIRequestDebug(tools.WithEnvHome(ctx, a.env), s.APIKwargs, "non_retryable_client_error", apiError)
 	}
 	a.flushStatusBuffer()
 	summary := a.summarizeAPIError(apiError)
@@ -317,7 +318,7 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 	conversationLoopLog().Error(fmt.Sprintf("%sAPI call failed after %d retries. %s | provider=%s model=%s msgs=%d tokens=~%s",
 		a.logPrefix, attempts, summary, prov, model, len(s.APIMessages), pystr.GroupThousands(int64(s.ApproxTokens))))
 	if s.APIKwargs != nil {
-		a.dumpAPIRequestDebug(s.APIKwargs, "max_retries_exhausted", apiError)
+		a.dumpAPIRequestDebug(tools.WithEnvHome(ctx, a.env), s.APIKwargs, "max_retries_exhausted", apiError)
 	}
 	if err := a.persistSession(&s.Messages, s.ConversationHistory); err != nil {
 		return nil, err

@@ -746,7 +746,7 @@ func profileDescribe(p *profileIO, a ProfileArgs) error {
 		dir, err := describeTargetDir(p.ctx, name)
 		if err == nil {
 			auto := false
-			err = profiles.WriteProfileMeta(dir, profiles.MetaUpdate{Description: &a.Text, DescriptionAuto: &auto})
+			err = profiles.WriteProfileMeta(p.ctx, dir, profiles.MetaUpdate{Description: &a.Text, DescriptionAuto: &auto})
 		}
 		if err != nil {
 			return p.die("Error: "+pyErrText(err), 1, true)

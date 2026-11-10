@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -343,7 +344,7 @@ func (s *Store) consolidationFailure(response Result) Result {
 }
 
 // Loads both files deduplicated and freezes the prompt snapshot with threat hits replaced by a placeholder
-func (s *Store) LoadFromDisk() error {
+func (s *Store) LoadFromDisk(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.snapshot == nil {
@@ -351,7 +352,7 @@ func (s *Store) LoadFromDisk() error {
 	}
 	for _, target := range []string{"memory", "user"} {
 		path := s.PathFor(target)
-		if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+		if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 			return err
 		}
 		entries := dedupe(ReadEntriesFile(path))
@@ -491,15 +492,15 @@ type MutateFunc func(entries []string, limit int) Mutation
 func passthrough(r Result) Mutation { return Mutation{Result: &r} }
 
 // Mutate locks, rereads, runs fn, applies the drift guard, persists and returns the success response
-func (s *Store) Mutate(target string, fn MutateFunc, skipDrift bool) (Result, error) {
+func (s *Store) Mutate(ctx context.Context, target string, fn MutateFunc, skipDrift bool) (Result, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.mutate(target, fn, skipDrift)
+	return s.mutate(ctx, target, fn, skipDrift)
 }
 
-func (s *Store) mutate(target string, fn MutateFunc, skipDrift bool) (Result, error) {
+func (s *Store) mutate(ctx context.Context, target string, fn MutateFunc, skipDrift bool) (Result, error) {
 	path := s.PathFor(target)
-	unlock, err := fileLock(path)
+	unlock, err := fileLock(ctx, path)
 	if err != nil {
 		return Result{}, err
 	}
@@ -551,17 +552,17 @@ func (s *Store) mutate(target string, fn MutateFunc, skipDrift bool) (Result, er
 		}
 	}
 	s.setEntries(target, result.Entries)
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return Result{}, err
 	}
-	if err := writeEntriesFile(path, result.Entries); err != nil {
+	if err := writeEntriesFile(ctx, path, result.Entries); err != nil {
 		return Result{}, err
 	}
 	return s.successResponse(target, result.Message, extra), nil
 }
 
 // Appends a new entry, refusing empty, poisoned or over budget content
-func (s *Store) Add(target, content string) (Result, error) {
+func (s *Store) Add(ctx context.Context, target, content string) (Result, error) {
 	content = pyStrip(content)
 	if content == "" {
 		return failure("Content cannot be empty.", "missing_content", nil), nil
@@ -569,7 +570,7 @@ func (s *Store) Add(target, content string) (Result, error) {
 	if scanErr := FirstThreatMessage(content, ScopeStrict); scanErr != "" {
 		return failure(scanErr, "scan_blocked", nil), nil
 	}
-	return s.Mutate(target, func(entries []string, limit int) Mutation {
+	return s.Mutate(ctx, target, func(entries []string, limit int) Mutation {
 		for _, e := range entries {
 			if e == content {
 				return passthrough(s.successResponse(target, "Entry already exists (no duplicate added).", nil))
@@ -583,7 +584,7 @@ func (s *Store) Add(target, content string) (Result, error) {
 }
 
 // Overwrites the whole entry old_text selects with new content
-func (s *Store) Replace(target, oldText, newContent string, matchedEntry any) (Result, error) {
+func (s *Store) Replace(ctx context.Context, target, oldText, newContent string, matchedEntry any) (Result, error) {
 	newContent = pyStrip(newContent)
 	if pyStrip(oldText) == "" {
 		return failure("old_text cannot be empty.", "missing_old_text", nil), nil
@@ -594,18 +595,18 @@ func (s *Store) Replace(target, oldText, newContent string, matchedEntry any) (R
 	if scanErr := FirstThreatMessage(newContent, ScopeStrict); scanErr != "" {
 		return failure(scanErr, "scan_blocked", nil), nil
 	}
-	return s.edit(target, pyStrip(oldText), &newContent, matchedEntry)
+	return s.edit(ctx, target, pyStrip(oldText), &newContent, matchedEntry)
 }
 
 // Replaces one span inside the matched entry and keeps the rest of the entry verbatim
-func (s *Store) Patch(target, oldText, newText string, matchedEntry any) (Result, error) {
+func (s *Store) Patch(ctx context.Context, target, oldText, newText string, matchedEntry any) (Result, error) {
 	if pyStrip(oldText) == "" {
 		return failure("old_text cannot be empty.", "missing_old_text", nil), nil
 	}
 	if pyStrip(newText) == "" {
 		return failure("new_text cannot be empty. "+PatchDropHint, "missing_content", nil), nil
 	}
-	return s.Mutate(target, func(entries []string, limit int) Mutation {
+	return s.Mutate(ctx, target, func(entries []string, limit int) Mutation {
 		idx, errRes := s.locate(entries, oldText, "patch", matchedEntry)
 		if errRes != nil {
 			return passthrough(*errRes)
@@ -628,11 +629,11 @@ func (s *Store) Patch(target, oldText, newText string, matchedEntry any) (Result
 }
 
 // Removes the entry old_text selects
-func (s *Store) Remove(target, oldText string, matchedEntry any) (Result, error) {
+func (s *Store) Remove(ctx context.Context, target, oldText string, matchedEntry any) (Result, error) {
 	if pyStrip(oldText) == "" {
 		return failure("old_text cannot be empty.", "missing_old_text", nil), nil
 	}
-	return s.edit(target, pyStrip(oldText), nil, matchedEntry)
+	return s.edit(ctx, target, pyStrip(oldText), nil, matchedEntry)
 }
 
 // Index old_text selects, or the error the edit returns, a pinned entry selecting only itself
@@ -665,8 +666,8 @@ func (s *Store) locate(entries []string, oldText, verb string, matchedEntry any)
 }
 
 // Full entry old_text selects now, read under the lock, or the error the direct edit would return
-func (s *Store) ResolveEntry(target, oldText, verb string) (Result, error) {
-	return s.Mutate(target, func(entries []string, limit int) Mutation {
+func (s *Store) ResolveEntry(ctx context.Context, target, oldText, verb string) (Result, error) {
+	return s.Mutate(ctx, target, func(entries []string, limit int) Mutation {
 		idx, errRes := s.locate(entries, pyStrip(oldText), verb, nil)
 		if errRes != nil {
 			return passthrough(*errRes)
@@ -676,12 +677,12 @@ func (s *Store) ResolveEntry(target, oldText, verb string) (Result, error) {
 }
 
 // Locked whole entry replace when newContent is set, remove otherwise
-func (s *Store) edit(target, oldText string, newContent *string, matchedEntry any) (Result, error) {
+func (s *Store) edit(ctx context.Context, target, oldText string, newContent *string, matchedEntry any) (Result, error) {
 	verb := "remove"
 	if newContent != nil && *newContent != "" {
 		verb = "replace"
 	}
-	return s.Mutate(target, func(entries []string, limit int) Mutation {
+	return s.Mutate(ctx, target, func(entries []string, limit int) Mutation {
 		idx, errRes := s.locate(entries, oldText, verb, matchedEntry)
 		if errRes != nil {
 			return passthrough(*errRes)
@@ -781,16 +782,16 @@ func applyBatchOp(working *[]string, act any, content, oldText, pos string, matc
 }
 
 // Applies add, patch and remove ops atomically against the final budget, all or nothing
-func (s *Store) ApplyBatch(target string, operations []map[string]any) (Result, error) {
-	return s.batch(target, operations, true)
+func (s *Store) ApplyBatch(ctx context.Context, target string, operations []map[string]any) (Result, error) {
+	return s.batch(ctx, target, operations, true)
 }
 
 // Dry run of ApplyBatch under the lock returning the full entry each op selects now
-func (s *Store) ResolveBatchEntries(target string, operations []map[string]any) (Result, error) {
-	return s.batch(target, operations, false)
+func (s *Store) ResolveBatchEntries(ctx context.Context, target string, operations []map[string]any) (Result, error) {
+	return s.batch(ctx, target, operations, false)
 }
 
-func (s *Store) batch(target string, operations []map[string]any, commit bool) (Result, error) {
+func (s *Store) batch(ctx context.Context, target string, operations []map[string]any, commit bool) (Result, error) {
 	var named any
 	if target != "" {
 		named = target
@@ -824,7 +825,7 @@ func (s *Store) batch(target string, operations []map[string]any, commit bool) (
 		}
 	}
 	var opErr error
-	res, err := s.Mutate(target, func(entries []string, limit int) Mutation {
+	res, err := s.Mutate(ctx, target, func(entries []string, limit int) Mutation {
 		working := append([]string(nil), entries...)
 		matched := make([]any, 0, len(ops))
 		produced := map[string]any{}
@@ -1021,8 +1022,8 @@ func ReadEntriesFile(path string) []string {
 }
 
 // Atomic temp file and rename of the joined entries, a write failure wrapped as the runtime error
-func writeEntriesFile(path string, entries []string) error {
-	err := atomicWriteText(path, strings.Join(entries, EntryDelimiter), ".mem_")
+func writeEntriesFile(ctx context.Context, path string, entries []string) error {
+	err := atomicWriteText(ctx, path, strings.Join(entries, EntryDelimiter), ".mem_")
 	if err == nil {
 		return nil
 	}
@@ -1068,11 +1069,11 @@ func (s *Store) driftBackup(target, raw string) string {
 }
 
 // Writes text through a temp file beside the published target, fsync, and an atomic rename
-func atomicWriteText(path, content, prefix string) error {
+func atomicWriteText(ctx context.Context, path, content, prefix string) error {
 	if !utf8.ValidString(content) {
 		return unicodeEncodeError(content)
 	}
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
 	var mode os.FileMode

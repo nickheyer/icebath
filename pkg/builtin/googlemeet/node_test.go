@@ -47,7 +47,7 @@ func TestProtocolEncodeDecodeRoundtrip(t *testing.T) {
 func TestRegistryAddGetRoundtripPersists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nodes.json")
 	reg := newNodeRegistry(context.Background(), path)
-	if err := reg.add("mac", "ws://mac.local:18789", "tok"); err != nil {
+	if err := reg.add(context.Background(), "mac", "ws://mac.local:18789", "tok"); err != nil {
 		t.Fatal(err)
 	}
 	entry, err := newNodeRegistry(context.Background(), path).get("mac")
@@ -57,7 +57,7 @@ func TestRegistryAddGetRoundtripPersists(t *testing.T) {
 	if r, _ := reg.resolve(""); r == nil || r.Vals["name"] != "mac" {
 		t.Fatal(r)
 	}
-	if err := reg.add("", "u", "t"); err == nil {
+	if err := reg.add(context.Background(), "", "u", "t"); err == nil {
 		t.Fatal("empty name accepted")
 	}
 }
@@ -66,7 +66,7 @@ func TestServerEnsureTokenGeneratesAndPersists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "meetings", "node_token.json")
 	old := umask(0o022)
 	defer umask(old)
-	tok, err := newNodeServer(context.Background(), "127.0.0.1", 0, path, "n").ensureToken()
+	tok, err := newNodeServer(context.Background(), "127.0.0.1", 0, path, "n").ensureToken(context.Background())
 	if err != nil || !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(tok) {
 		t.Fatal(tok, err)
 	}
@@ -74,7 +74,7 @@ func TestServerEnsureTokenGeneratesAndPersists(t *testing.T) {
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatal(info, err)
 	}
-	again, _ := newNodeServer(context.Background(), "127.0.0.1", 0, path, "n").ensureToken()
+	again, _ := newNodeServer(context.Background(), "127.0.0.1", 0, path, "n").ensureToken(context.Background())
 	if again != tok {
 		t.Fatal(again, tok)
 	}
@@ -121,7 +121,7 @@ func TestClientRPCSendsCorrectEnvelopeAndParsesResponse(t *testing.T) {
 func TestNodeServerAnswersARealWebsocketClient(t *testing.T) {
 	isolateHome(t)
 	server := newNodeServer(context.Background(), "127.0.0.1", 0, filepath.Join(t.TempDir(), "node_token.json"), "icebath-meet-node")
-	tok, _ := server.ensureToken()
+	tok, _ := server.ensureToken(context.Background())
 	ts := httptest.NewServer(server.handler(context.Background()))
 	defer ts.Close()
 	c, _ := newNodeClient("ws"+strings.TrimPrefix(ts.URL, "http"), tok, 10*time.Second)

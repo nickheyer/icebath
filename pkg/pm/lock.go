@@ -43,6 +43,13 @@ var lockfilePath = func() string {
 // Path of the lockfile pm lock writes and every install reads
 func LockfilePath() string { return lockfilePath() }
 
+// Replaces the lockfile path every install reads and returns the previous lookup
+func SwapLockfilePath(fn func() string) func() string {
+	prev := lockfilePath
+	lockfilePath = fn
+	return prev
+}
+
 // Empty document of either state file
 func emptyLockDocument() map[string]any {
 	return map[string]any{"schema": jsonInt(LockSchema), "packages": map[string]any{}}

@@ -33,6 +33,13 @@ var runQuiet = func(timeout time.Duration, args ...string) (int, error) {
 	return 0, nil
 }
 
+// Replaces the supervisor command runner for callers outside the package until the returned restore runs
+func SwapRunQuiet(f func(timeout time.Duration, args ...string) (int, error)) (restore func()) {
+	old := runQuiet
+	runQuiet = f
+	return func() { runQuiet = old }
+}
+
 // Gateway service manager facts the cleanup reads, the gateway contract functions unless a test swaps one
 var serviceFacts = struct {
 	ServiceName                   func(ctx context.Context) string

@@ -267,3 +267,14 @@ func TestCodexToolsPreParseDecodesOnlyContainerJSON(t *testing.T) {
 		t.Fatalf("pre parse %v", got.Vals)
 	}
 }
+
+func TestCodexToolsExposedToolsIsACopyOfTheCuratedList(t *testing.T) {
+	got := CodexToolsExposedTools()
+	if !slices.Equal(got, codexToolsExposedTools) {
+		t.Fatalf("exposed tools %v", got)
+	}
+	got[0] = "mutated"
+	if codexToolsExposedTools[0] == "mutated" {
+		t.Fatal("caller mutation reached the curated list")
+	}
+}

@@ -1,10 +1,10 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/nickheyer/icebath/pkg/profiles"
-	"io"
 	"os"
 	"regexp"
 	"sort"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
+	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // CLIHandler runs one bound CLI subcommand
@@ -49,10 +50,9 @@ type CLI struct {
 	Root        *cobra.Command
 	Profile     string
 	handlers    map[string]CLIHandler
-	InstallHint func(value string) string
-	MovedHint   func(prog, value string) string
 	positionals map[*cobra.Command][]posSpec
 	flagAliases map[*cobra.Command]map[string]string
+	argv        []string
 }
 
 type posSpec struct {
@@ -182,8 +182,10 @@ func NewCLI() *CLI {
 	c.Root = root
 	root.Args = c.groupArgs()
 	root.FParseErrWhitelist.UnknownFlags = true
+	root.SetFlagErrorFunc(argparseFlagError)
 	root.RunE = func(cmd *cobra.Command, args []string) error { return c.dispatch("chat", cmd, args) }
 	c.addRootFlags(root)
+	c.rootArgparseShape(root)
 	c.addChat(root)
 	c.addTreeA(root)
 	c.addTreeB(root)
@@ -323,6 +325,7 @@ func (c *CLI) addChat(root *cobra.Command) {
 	c.inherited(chat, "cli")
 	f.Bool("dev", false, "With --tui: run the TUI from sources (skip dist build)")
 	c.inherited(chat, "dev")
+	c.chatArgparseShape(chat)
 }
 
 // Creates a subcommand whose RunE dispatches to the handler bound at its path
@@ -423,6 +426,9 @@ func (c *CLI) aliasFlag(cmd *cobra.Command, alias, target string) {
 		})
 	}
 	m[alias] = target
+	if fl := cmd.Flags().Lookup(target); fl != nil {
+		_ = cmd.Flags().SetAnnotation(target, "aliases", append(fl.Annotations["aliases"], alias))
+	}
 }
 
 func (c *CLI) pos(cmd *cobra.Command, specs ...posSpec) {
@@ -475,13 +481,16 @@ func (c *CLI) finishAll(cmd *cobra.Command) {
 			cmd.Annotations["positionals"] = block
 		}
 	} else if cmd.Args == nil {
-		if cmd.HasSubCommands() {
+		if cmd.DisableFlagParsing {
+			cmd.Args = cobra.ArbitraryArgs
+		} else if cmd.HasSubCommands() {
 			cmd.Args = c.groupArgs()
 			cmd.FParseErrWhitelist.UnknownFlags = true
 		} else {
-			cmd.Args = cobra.NoArgs
+			cmd.Args = argparseNoArgs
 		}
 	}
+	cmd.Args = c.withArgparseGroups(cmd.Args)
 	if cmd.Annotations != nil && cmd.Annotations["epilog"] != "" && cmd != c.Root {
 		cmd.SetUsageTemplate(c.Root.UsageTemplate())
 	}
@@ -528,10 +537,10 @@ func (c *CLI) positionalArgs(specs []posSpec) cobra.PositionalArgs {
 					missing = append(missing, specs[i].display())
 				}
 			}
-			return fmt.Errorf("the following arguments are required: %s", strings.Join(missing, ", "))
+			return &ArgparseError{Cmd: cmd, Msg: "the following arguments are required: " + strings.Join(missing, ", ")}
 		}
 		if !unbounded && len(args) > max {
-			return fmt.Errorf("unrecognized arguments: %s", strings.Join(args[max:], " "))
+			return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + strings.Join(args[max:], " ")}
 		}
 		for i, a := range args {
 			if i >= len(specs) {
@@ -542,11 +551,11 @@ func (c *CLI) positionalArgs(specs []posSpec) cobra.PositionalArgs {
 				break
 			}
 			if len(s.Choices) > 0 && !contains(s.Choices, a) {
-				return fmt.Errorf("argument %s: invalid choice: '%s' (choose from %s)", s.display(), a, quotedList(s.Choices))
+				return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid choice: '%s' (choose from %s)", s.display(), a, quotedList(s.Choices))}
 			}
 			if s.Int {
 				if _, err := strconv.Atoi(a); err != nil {
-					return fmt.Errorf("argument %s: invalid int value: '%s'", s.display(), a)
+					return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid int value: '%s'", s.display(), a)}
 				}
 			}
 		}
@@ -589,20 +598,12 @@ func (c *CLI) hasChatIntent(root *cobra.Command) bool {
 func (c *CLI) unknownCommand(cmd *cobra.Command, value string) error {
 	prog := cmd.CommandPath()
 	lines := []string{fmt.Sprintf("%s: '%s' is not a `%s` command.", prog, value, prog)}
-	var names []string
-	for _, sub := range cmd.Commands() {
-		if !sub.Hidden {
-			names = append(names, sub.Name())
-		}
-	}
-	close := pydifflib.GetCloseMatches(value, names, 3, 0.6)
-	install := ""
-	if c.InstallHint != nil && prog == c.Root.Name() && regexp.MustCompile(`^[a-z0-9_-]{1,64}$`).MatchString(value) {
-		install = c.InstallHint(value)
-	}
+	close := pydifflib.GetCloseMatches(value, subcommandChoices(cmd), 3, 0.6)
+	ctx := context.Background()
+	install := pluginCommandInstallHint(ctx, prog, value)
 	moved := ""
-	if install == "" && c.MovedHint != nil {
-		moved = c.MovedHint(prog, value)
+	if install == "" {
+		moved = provider.MovedCommandHint(ctx, prog, value, "")
 	}
 	switch {
 	case install != "":
@@ -715,7 +716,7 @@ func (c *CLI) InheritedFlags() []string {
 func (c *CLI) TopLevelValueFlagSets() (map[string]bool, map[string]bool) {
 	required, optional := map[string]bool{}, map[string]bool{}
 	c.Root.Flags().VisitAll(func(fl *pflag.Flag) {
-		if t := fl.Value.Type(); t == "bool" || t == "count" {
+		if t := fl.Value.Type(); t == "bool" || t == "count" || c.Root.PersistentFlags().Lookup(fl.Name) != nil {
 			return
 		}
 		target := required
@@ -880,7 +881,7 @@ func (c *CLI) joinOptionalValues(argv []string) []string {
 	var out []string
 	for i := 0; i < len(argv); i++ {
 		tok := argv[i]
-		if fl := lookup(tok); fl != nil && fl.NoOptDefVal != "" && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "-") && !sessionNameSubcommands[argv[i+1]] {
+		if fl := lookup(tok); fl != nil && fl.NoOptDefVal != "" && fl.Value.Type() != "bool" && fl.Value.Type() != "count" && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "-") && !sessionNameSubcommands[argv[i+1]] {
 			out = append(out, "--"+fl.Name+"="+argv[i+1])
 			i++
 			continue
@@ -902,8 +903,9 @@ func (c *CLI) Execute(argv []string) error {
 	}
 	argv = c.joinOptionalValues(CoalesceSessionNameArgs(argv))
 	argv = rewriteMCPAddArgs(argv)
+	c.argv = argv
 	c.Root.SetArgs(argv)
-	return c.Root.Execute()
+	return argparseFlagError(c.Root, c.Root.Execute())
 }
 
 // Turns the mcp add passthrough marker into the plain argument separator
@@ -935,25 +937,14 @@ func (c *CLI) Positional(cmd *cobra.Command, args []string, name string) string 
 	return ""
 }
 
-// Completion writes the shell completion script for bash, zsh, fish, or powershell
-func (c *CLI) Completion(shell string, w io.Writer) error {
-	switch strings.ToLower(shell) {
-	case "bash":
-		return c.Root.GenBashCompletionV2(w, true)
-	case "zsh":
-		return c.Root.GenZshCompletion(w)
-	case "fish":
-		return c.Root.GenFishCompletion(w, true)
-	case "powershell", "pwsh":
-		return c.Root.GenPowerShellCompletionWithDesc(w)
-	}
-	return fmt.Errorf("argument shell: invalid choice: '%s' (choose from 'bash', 'zsh', 'fish', 'powershell')", shell)
-}
-
 // ExitCode maps an execution error to the process exit status and stderr text
 func ExitCode(err error) (int, string) {
 	if err == nil {
 		return 0, ""
+	}
+	var ae *ArgparseError
+	if errors.As(err, &ae) {
+		return 2, ae.Stderr()
 	}
 	var ee *ExitError
 	if errors.As(err, &ee) {

@@ -75,7 +75,7 @@ func loadUserEffective(ctx context.Context, configPath string, lookup Lookup, fa
 	}
 	ctx, unlock := LockConfig(ctx)
 	defer unlock()
-	userSig, cacheSig, err := loadCacheSig(ctx, configPath)
+	userSig, cacheSig, err := loadConfigCacheSig(ctx, configPath)
 	if err != nil {
 		return nil, err
 	}

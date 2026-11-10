@@ -1,0 +1,2237 @@
+{
+ "bzip2-badcrc-second.zip": {
+  "extractall": {
+   "class": "OSError",
+   "msg": "Invalid data stream"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "OSError",
+    "msg": "Invalid data stream"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "OSError",
+   "msg": "Invalid data stream"
+  }
+ },
+ "bzip2-bigcorrupt-first.zip": {
+  "extractall": {
+   "class": "OSError",
+   "msg": "Invalid data stream"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "41384a3c4b91f334b184e0594fb93f8d0297c4c3b3d60d4195e13fd4d7871190",
+    "size": 1310720
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "OSError",
+    "msg": "Invalid data stream"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "OSError",
+   "msg": "Invalid data stream"
+  }
+ },
+ "bzip2-bigrandom-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e00838a25e892a9717c7e694f7bdfdb32d04008d64e91cc92a187cbaf0c5884a",
+    "size": 400000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "e00838a25e892a9717c7e694f7bdfdb32d04008d64e91cc92a187cbaf0c5884a",
+    "size": 400000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-bigsecond-all.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "eab834f6bbe10953f07bb0117c2983e33f50d1a8f4e8e7bfa9bb5cfdbed2eae6",
+    "size": 1310720
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "bzip2-bigsecond-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "ea35cdfc5eb33fc911afe87d5ca454015af308bfe6e5d086aecefc38752a4c30",
+    "size": 1500000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "ea35cdfc5eb33fc911afe87d5ca454015af308bfe6e5d086aecefc38752a4c30",
+    "size": 1500000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-bigshortcorrupt-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "2094188dbe22610e1b594692dd657cfb17f9e481242020143a1b57b277f16b54",
+    "size": 1048576
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "OSError",
+    "msg": "Invalid data stream"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-blockcut-block.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "9b560e2f3e542a64b11d2e4b7ad48c4b0b06f7ea248cb9bbb6c0d62d8921af33",
+    "size": 32768
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "9b560e2f3e542a64b11d2e4b7ad48c4b0b06f7ea248cb9bbb6c0d62d8921af33",
+    "size": 32768
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-blockcut-whole.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "919983dbb3a629b6aecae46b78dce51c0ff59c685eef17cf73304f1be1dc1f40",
+    "size": 300000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "919983dbb3a629b6aecae46b78dce51c0ff59c685eef17cf73304f1be1dc1f40",
+    "size": 300000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-empty-all.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "bzip2-empty-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-emptyonly-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-end-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-garbage-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-randomised-second.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "8e226efe2f424b5f649a9b97dee1852fd73881bcfd669b82e181695724eb07f4",
+    "size": 2310
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "8e226efe2f424b5f649a9b97dee1852fd73881bcfd669b82e181695724eb07f4",
+    "size": 2310
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-second-all.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "bzip2-second-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-second-long.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "bzip2-second-short.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "fce6e06babb5e75f6a557380a266163a76b595ef2080028a92b2bbab933e4115",
+    "size": 1115
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "fce6e06babb5e75f6a557380a266163a76b595ef2080028a92b2bbab933e4115",
+    "size": 1115
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "bzip2-secondtrunc-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "names-default.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a/": {
+    "dir": true
+   },
+   "a/b.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "abs.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "c:colon?.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "dir/": {
+    "dir": true
+   },
+   "dir/sub/": {
+    "dir": true
+   },
+   "dot.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "q/": {
+    "dir": true
+   },
+   "q/r.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "trail. /": {
+    "dir": true
+   },
+   "trail. /f.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "two.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "up.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "x/": {
+    "dir": true
+   },
+   "x/y.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "../up.txt",
+   "/abs.txt",
+   "a/./b.txt",
+   "dir/",
+   "dir/sub/",
+   "x//y.txt",
+   "./dot.txt",
+   "q/../r.txt",
+   "//two.txt",
+   "c:colon?.txt",
+   "trail. /f.txt"
+  ],
+  "read": {
+   "../up.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "./dot.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "//two.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "/abs.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "a/./b.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "c:colon?.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "dir/": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "dir/sub/": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "q/../r.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "trail. /f.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "x//y.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "names-empty-ignore.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "z.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "ignore_invalid_names": true,
+  "namelist": [
+   "a.txt",
+   "..",
+   "z.txt"
+  ],
+  "read": {
+   "..": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "a.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "z.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "names-empty.zip": {
+  "extractall": {
+   "class": "ValueError",
+   "msg": "Empty filename."
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "./",
+   "../",
+   "..",
+   "z.txt"
+  ],
+  "read": {
+   "..": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "../": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "./": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "a.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "z.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "names-encrypted.zip": {
+  "extractall": {
+   "class": "RuntimeError",
+   "msg": "File <ZipInfo filename='e.txt' filemode='-rw-r--r--' file_size=5> is encrypted, password required for extraction"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "e.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "e.txt": {
+    "class": "RuntimeError",
+    "msg": "File 'e.txt' is encrypted, password required for extraction"
+   }
+  },
+  "testzip": {
+   "class": "RuntimeError",
+   "msg": "File 'e.txt' is encrypted, password required for extraction"
+  }
+ },
+ "names-ignore.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a/": {
+    "dir": true
+   },
+   "a/b.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "c:colon?.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "dir/": {
+    "dir": true
+   },
+   "dir/sub/": {
+    "dir": true
+   },
+   "dot.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "trail. /": {
+    "dir": true
+   },
+   "trail. /f.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "x/": {
+    "dir": true
+   },
+   "x/y.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "ignore_invalid_names": true,
+  "namelist": [
+   "../up.txt",
+   "/abs.txt",
+   "a/./b.txt",
+   "dir/",
+   "dir/sub/",
+   "x//y.txt",
+   "./dot.txt",
+   "q/../r.txt",
+   "//two.txt",
+   "c:colon?.txt",
+   "trail. /f.txt"
+  ],
+  "read": {
+   "../up.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "./dot.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "//two.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "/abs.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "a/./b.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "c:colon?.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "dir/": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "dir/sub/": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "q/../r.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "trail. /f.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   },
+   "x//y.txt": {
+    "sha": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+    "size": 2
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-badchecksum-second.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-bigcorrupt-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "069e059ef6a84674ae0f12fea23c474fac8864acab37717c82b603c4284b9bac",
+    "size": 1310720
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+  }
+ },
+ "zstd-bigrandom-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "574025a6676bc5c8a6983a3792f148dafb22902e0765e406b51e8ffbf0435ba4",
+    "size": 400000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "574025a6676bc5c8a6983a3792f148dafb22902e0765e406b51e8ffbf0435ba4",
+    "size": 400000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-bigsecond-all.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "069e059ef6a84674ae0f12fea23c474fac8864acab37717c82b603c4284b9bac",
+    "size": 1310720
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-bigsecond-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "a98c8f3972e6eb584d6b1733300141c4f21545a2708c8bddf669a82757ad7eb5",
+    "size": 1500000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "a98c8f3972e6eb584d6b1733300141c4f21545a2708c8bddf669a82757ad7eb5",
+    "size": 1500000
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-bigshortcorrupt-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "4c0c5238262772cbd14b1a8324c95c612f813cf467ab6a7260d4bbe097bc1194",
+    "size": 1048576
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-empty-all.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-empty-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-emptyonly-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-end-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-garbage-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-rawtrunc-partial.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "a8d455b119a7b088e3cb64405bccc73fce25ab99522b5c7c637f60795711efbc",
+    "size": 99988
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "a8d455b119a7b088e3cb64405bccc73fce25ab99522b5c7c637f60795711efbc",
+    "size": 99988
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-rawtrunc-whole.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-second-all.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-second-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-second-long.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-second-short.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "fce6e06babb5e75f6a557380a266163a76b595ef2080028a92b2bbab933e4115",
+    "size": 1115
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "fce6e06babb5e75f6a557380a266163a76b595ef2080028a92b2bbab933e4115",
+    "size": 1115
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-secondtrunc-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-skipafter-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "03a32db4800155ac021088ab2d4ad32b8f3d4ba2e945788ccfb1817bd268a92e",
+    "size": 1120
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-skipbefore-all.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ },
+ "zstd-skipbefore-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-skiponly-first.zip": {
+  "extractall": {
+   "result": null
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": null
+  }
+ },
+ "zstd-v04magic-first.zip": {
+  "extractall": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Unknown frame descriptor"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Unknown frame descriptor"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "class": "ZstdError",
+   "msg": "Unable to decompress Zstandard data: Unknown frame descriptor"
+  }
+ },
+ "zstd-v05magic-first.zip": {
+  "extractall": {
+   "class": "BadZipFile",
+   "msg": "Bad CRC-32 for file 'd/m.bin'"
+  },
+  "extracted": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/": {
+    "dir": true
+   },
+   "d/m.bin": {
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+   }
+  },
+  "ignore_invalid_names": false,
+  "namelist": [
+   "a.txt",
+   "d/m.bin",
+   "z.txt"
+  ],
+  "read": {
+   "a.txt": {
+    "sha": "a1c51c5faa31c3c529ac2cc027a660814d9e50904b56eb600f65d68f4dbb2905",
+    "size": 22
+   },
+   "d/m.bin": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'd/m.bin'"
+   },
+   "z.txt": {
+    "sha": "f09501e4d88a6add78fab2f9537331e578851cf5bdba2225adbcae9a59b11da7",
+    "size": 23
+   }
+  },
+  "testzip": {
+   "result": "d/m.bin"
+  }
+ }
+}

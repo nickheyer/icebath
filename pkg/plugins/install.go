@@ -893,7 +893,7 @@ func selectMemoryProvider(ctx context.Context, h, name string, console *Console,
 		}
 	}
 	previous := getCurrentMemoryProvider(h)
-	if err := saveMemoryProvider(h, name); err != nil {
+	if err := saveMemoryProvider(ctx, h, name); err != nil {
 		return err
 	}
 	replacing := ""

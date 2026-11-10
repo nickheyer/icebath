@@ -53,7 +53,7 @@ func newNodeServer(ctx context.Context, host string, port int, tokenPath, displa
 }
 
 // Persisted shared secret, a 32 hex char token minted and written owner only on first use
-func (s *nodeServer) ensureToken() (string, error) {
+func (s *nodeServer) ensureToken(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.token != "" {
@@ -69,7 +69,7 @@ func (s *nodeServer) ensureToken() (string, error) {
 			return "", err
 		}
 		tok = hex.EncodeToString(b)
-		if err := config.AtomicJSONWriteMode(s.tokenPath, pyjson.ObjectOf("token", tok, "generated_at", nowSeconds()), 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false)); err != nil {
+		if err := config.AtomicJSONWriteMode(ctx, s.tokenPath, pyjson.ObjectOf("token", tok, "generated_at", nowSeconds()), 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false)); err != nil {
 			return "", err
 		}
 	}
@@ -209,7 +209,7 @@ func pyExcName(err error) string {
 
 // Validates and dispatches one decoded request, always answering with an envelope
 func (s *nodeServer) handleRequest(ctx context.Context, msg *pyjson.Object) *pyjson.Object {
-	tok, err := s.ensureToken()
+	tok, err := s.ensureToken(ctx)
 	if err != nil {
 		return makeError("", fmt.Sprintf("%s: %v", pyExcName(err), err))
 	}
@@ -295,7 +295,7 @@ func (s *nodeServer) handler(ctx context.Context) http.Handler {
 
 // Runs the websocket server until ctx is cancelled
 func (s *nodeServer) serve(ctx context.Context) error {
-	if _, err := s.ensureToken(); err != nil {
+	if _, err := s.ensureToken(ctx); err != nil {
 		return err
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(s.host, strconv.Itoa(s.port)))

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -108,13 +109,13 @@ func loadDiscoveryCache() *pyjson.Object {
 }
 
 // Atomic write of the discovery cache that logs and swallows every failure
-func saveDiscoveryCache(cache *pyjson.Object) {
+func saveDiscoveryCache(ctx context.Context, cache *pyjson.Object) {
 	path := discoveryCachePath()
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		slog.Debug(fmt.Sprintf("Could not write tool discovery cache %s: %s", path, err))
 		return
 	}
-	if err := config.AtomicJSONWriteWith(path, cache, pyjson.Indent(0)); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, cache, pyjson.Indent(0)); err != nil {
 		slog.Debug(fmt.Sprintf("Could not write tool discovery cache %s: %s", path, err))
 	}
 }
@@ -137,7 +138,7 @@ func jsonNumberEquals(v any, n int64) bool {
 }
 
 // Dotted names of the self registering tool modules under a tools directory with the stat keyed verdict cache
-func discoverToolModules(toolsDir string) ([]string, error) {
+func discoverToolModules(ctx context.Context, toolsDir string) ([]string, error) {
 	toolsPath, err := filepath.Abs(toolsDir)
 	if err != nil {
 		return nil, err
@@ -193,7 +194,7 @@ func discoverToolModules(toolsDir string) ([]string, error) {
 		}
 	}
 	if dirty || !sameKeys {
-		saveDiscoveryCache(fresh)
+		saveDiscoveryCache(ctx, fresh)
 	}
 	return names, nil
 }

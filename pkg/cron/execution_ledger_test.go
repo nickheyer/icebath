@@ -3,7 +3,10 @@ package cron
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,8 +16,93 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 )
+
+// Environment naming the ledger operation a re-executed test binary runs instead of the tests
+const ledgerChildEnv = "ICEBATH_TEST_LEDGER_CHILD"
+
+// Runs the ledger operation a parent test asked of this re-executed binary and exits with its status
+func dispatchLedgerChild() {
+	mode := os.Getenv(ledgerChildEnv)
+	if mode == "" {
+		return
+	}
+	ctx := context.Background()
+	s := openCronStore(home.Dir(ctx), nil)
+	if p := os.Getenv(ledgerChildEnv + "_FILE"); p != "" {
+		s.executionsFile = p
+	}
+	if err := runLedgerChild(ctx, openExecutionsLedger(s), mode, os.Getenv(ledgerChildEnv+"_ARG")); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+// One ledger operation of a child process, printing what the parent reads back
+func runLedgerChild(ctx context.Context, l *Ledger, mode, arg string) error {
+	switch mode {
+	case "create-running":
+		r, err := l.Create(ctx, "restart-job", "builtin", nil)
+		if err != nil {
+			return err
+		}
+		if _, err := l.MarkRunning(ctx, recText(r, "id")); err != nil {
+			return err
+		}
+		fmt.Println(recText(r, "id"))
+	case "recover":
+		n, err := l.RecoverInterrupted(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Println(n)
+		rows, err := l.List(ctx, strPtr("restart-job"), 50, nil)
+		if err != nil {
+			return err
+		}
+		text, err := json.Marshal(rows)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(text))
+	case "adopt":
+		rec, err := l.AdoptClaimed(ctx, arg)
+		if err != nil {
+			return err
+		}
+		if rec == nil {
+			return errors.New("adoption refused")
+		}
+		fmt.Println("adopted")
+		time.Sleep(60 * time.Second)
+	default:
+		return runOccurrenceChild(ctx, l.s, mode, arg)
+	}
+	return nil
+}
+
+// Child process of this test binary running one ledger mode against a home
+func ledgerChildCommand(h, file, mode, arg string) *exec.Cmd {
+	cmd := exec.Command(os.Args[0])
+	cmd.Env = append(os.Environ(), home.EnvHome+"="+h, ledgerChildEnv+"="+mode, ledgerChildEnv+"_FILE="+file, ledgerChildEnv+"_ARG="+arg)
+	return cmd
+}
+
+// Stdout of a child ledger mode that must exit zero
+func runLedgerChildProcess(t *testing.T, h, file, mode string) string {
+	t.Helper()
+	cmd := ledgerChildCommand(h, file, mode, "")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("%s child: %v %s", mode, err, stderr.String())
+	}
+	return string(out)
+}
 
 func ledgerFixture(t *testing.T) (*Ledger, *Store) {
 	t.Helper()
@@ -69,34 +157,42 @@ func TestExecutionCanBeLoadedByExactAttemptID(t *testing.T) {
 	}
 }
 
-func TestExternalHandoffRecoveryRespectsAdoptionGrace(t *testing.T) {
+func TestFreshExternalHandoffIsNotRecoveredBeforeWorkerAdopts(t *testing.T) {
 	l, _ := ledgerFixture(t)
 	ctx := context.Background()
-	fresh := mustLedger(t)(l.Create(ctx, "handoff-job", "builtin", nil))
-	if mustLedger(t)(l.MarkHandoffPending(ctx, recText(fresh, "id"))) == nil {
+	record := mustLedger(t)(l.Create(ctx, "handoff-job", "builtin", nil))
+	if mustLedger(t)(l.MarkHandoffPending(ctx, recText(record, "id"))) == nil {
 		t.Fatal("handoff not marked")
 	}
-	stale := mustLedger(t)(l.Create(ctx, "handoff-stale", "builtin", nil))
-	pending := mustLedger(t)(l.MarkHandoffPending(ctx, recText(stale, "id")))
 	patchChronos(t, &executionProcessID, "replacement-gateway")
 	patchChronos(t, &ownerIsLive, func(int64, any) (bool, error) { return false, nil })
 	if n, err := l.RecoverInterrupted(ctx); err != nil || n != 0 {
 		t.Fatalf("fresh handoff recovered %d %v", n, err)
 	}
-	if got := mustLedger(t)(l.Get(ctx, recText(fresh, "id"))); got["status"] != "claimed" {
+	if got := mustLedger(t)(l.Get(ctx, recText(record, "id"))); got["status"] != "claimed" {
 		t.Fatalf("fresh %v", got)
 	}
-	adopted := mustLedger(t)(l.AdoptClaimed(ctx, recText(fresh, "id")))
-	if adopted["status"] != "running" || recInt(adopted, "handoff_pending") != 0 {
+	adopted := mustLedger(t)(l.AdoptClaimed(ctx, recText(record, "id")))
+	if adopted["status"] != "running" || adopted["handoff_pending"] != int64(0) {
 		t.Fatalf("adopted %v", adopted)
 	}
+}
+
+func TestStaleExternalHandoffIsRecoveredUnknown(t *testing.T) {
+	l, _ := ledgerFixture(t)
+	ctx := context.Background()
+	record := mustLedger(t)(l.Create(ctx, "handoff-job", "builtin", nil))
+	pending := mustLedger(t)(l.MarkHandoffPending(ctx, recText(record, "id")))
+	patchChronos(t, &executionProcessID, "replacement-gateway")
+	patchChronos(t, &ownerIsLive, func(int64, any) (bool, error) { return false, nil })
 	started, _ := pending["handoff_started_at"].(float64)
 	patchChronos(t, &ledgerWallTime, func() float64 { return started + HandoffAdoptionGraceSeconds + 1 })
 	if n, err := l.RecoverInterrupted(ctx); err != nil || n != 1 {
 		t.Fatalf("stale recovery %d %v", n, err)
 	}
-	if got := mustLedger(t)(l.Get(ctx, recText(stale, "id"))); got["status"] != "unknown" || recInt(got, "handoff_pending") != 0 {
-		t.Fatalf("stale %v", got)
+	recovered := mustLedger(t)(l.Get(ctx, recText(record, "id")))
+	if recovered["status"] != "unknown" || recovered["handoff_pending"] != int64(0) {
+		t.Fatalf("stale %v", recovered)
 	}
 }
 
@@ -105,9 +201,14 @@ func TestRecoveryDoesNotOverwriteConcurrentWorkerAdoption(t *testing.T) {
 	ctx := context.Background()
 	record := mustLedger(t)(l.Create(ctx, "adoption-race", "builtin", nil))
 	pending := mustLedger(t)(l.MarkHandoffPending(ctx, recText(record, "id")))
+	if pending == nil {
+		t.Fatal("handoff not marked")
+	}
 	started, _ := pending["handoff_started_at"].(float64)
 	patchChronos(t, &executionProcessID, "replacement-scheduler")
 	patchChronos(t, &ledgerWallTime, func() float64 { return started + HandoffAdoptionGraceSeconds + 1 })
+	patchChronos(t, &ledgerGetpid, ledgerGetpid)
+	patchChronos(t, &ledgerStartTime, ledgerStartTime)
 	patchChronos(t, &ownerIsLive, func(int64, any) (bool, error) {
 		executionProcessID = "external-worker"
 		ledgerGetpid = func() int { return 4242 }
@@ -117,13 +218,11 @@ func TestRecoveryDoesNotOverwriteConcurrentWorkerAdoption(t *testing.T) {
 		}
 		return false, nil
 	})
-	patchChronos(t, &ledgerGetpid, ledgerGetpid)
-	patchChronos(t, &ledgerStartTime, ledgerStartTime)
 	if n, err := l.RecoverInterrupted(ctx); err != nil || n != 0 {
 		t.Fatalf("recovered %d %v", n, err)
 	}
 	current := mustLedger(t)(l.Get(ctx, recText(record, "id")))
-	if current["status"] != "running" || current["process_id"] != "external-worker" || recInt(current, "pid") != 4242 {
+	if current == nil || current["status"] != "running" || current["process_id"] != "external-worker" || current["pid"] != int64(4242) {
 		t.Fatalf("current %v", current)
 	}
 }
@@ -136,36 +235,35 @@ func TestForeignProcessCannotStartOrFinishExecution(t *testing.T) {
 	original := executionProcessID
 	patchChronos(t, &executionProcessID, "foreign-process")
 	patchChronos(t, &ledgerGetpid, func() int { return pid + 1 })
-	if r, _ := l.MarkRunning(ctx, id); r != nil {
+	if r := mustLedger(t)(l.MarkRunning(ctx, id)); r != nil {
 		t.Fatal("foreign start")
 	}
-	if r, _ := l.Finish(ctx, id, true, nil, nil, false); r != nil {
+	if r := mustLedger(t)(l.Finish(ctx, id, true, nil, nil, false)); r != nil {
 		t.Fatal("foreign finish")
 	}
 	executionProcessID, ledgerGetpid = original, func() int { return pid }
-	if r, _ := l.MarkRunning(ctx, id); r == nil {
+	if r := mustLedger(t)(l.MarkRunning(ctx, id)); r == nil {
 		t.Fatal("owner start refused")
 	}
-	if r, _ := l.Finish(ctx, id, true, nil, nil, false); r == nil {
+	if r := mustLedger(t)(l.Finish(ctx, id, true, nil, nil, false)); r == nil {
 		t.Fatal("owner finish refused")
 	}
 }
 
-func TestExecutionLedgerFollowsTheStoreHome(t *testing.T) {
+func TestExecutionLedgerFollowsTheCurrentProfileHome(t *testing.T) {
 	root := t.TempDir()
-	defaultStore := openCronStore(filepath.Join(root, "default"), nil)
-	workerStore := openCronStore(filepath.Join(root, "worker"), nil)
 	ctx := context.Background()
-	defaultRow := mustLedger(t)(openExecutionsLedger(defaultStore).Create(ctx, "default-job", "builtin", nil))
-	workerRow := mustLedger(t)(openExecutionsLedger(workerStore).Create(ctx, "worker-job", "builtin", nil))
-	for _, tc := range []struct {
-		s    *Store
-		want map[string]any
-	}{{workerStore, workerRow}, {defaultStore, defaultRow}} {
-		rows, err := openExecutionsLedger(tc.s).List(ctx, nil, 50, nil)
-		if err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], tc.want) {
-			t.Fatalf("rows %v %v", rows, err)
-		}
+	current := filepath.Join(root, "default")
+	ledger := func() *Ledger { return openExecutionsLedger(cronStoreFrom(home.WithOverride(ctx, current))) }
+	defaultRow := mustLedger(t)(ledger().Create(ctx, "default-job", "builtin", nil))
+	current = filepath.Join(root, "worker")
+	workerRow := mustLedger(t)(ledger().Create(ctx, "worker-job", "builtin", nil))
+	if rows, err := ledger().List(ctx, nil, 50, nil); err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], workerRow) {
+		t.Fatalf("worker rows %v %v", rows, err)
+	}
+	current = filepath.Join(root, "default")
+	if rows, err := ledger().List(ctx, nil, 50, nil); err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], defaultRow) {
+		t.Fatalf("default rows %v %v", rows, err)
 	}
 	for _, name := range []string{"default", "worker"} {
 		if st, err := os.Stat(filepath.Join(root, name, "cron", "executions.db")); err != nil || !st.Mode().IsRegular() {
@@ -174,20 +272,25 @@ func TestExecutionLedgerFollowsTheStoreHome(t *testing.T) {
 	}
 }
 
-func TestTerminalExecutionCannotBeRewrittenAndFailureKeepsError(t *testing.T) {
+func TestTerminalExecutionCannotBeRewritten(t *testing.T) {
 	l, _ := ledgerFixture(t)
 	ctx := context.Background()
 	record := mustLedger(t)(l.Create(ctx, "immutable", "builtin", nil))
-	_, _ = l.MarkRunning(ctx, recText(record, "id"))
-	_, _ = l.Finish(ctx, recText(record, "id"), true, nil, nil, false)
-	if r, _ := l.Finish(ctx, recText(record, "id"), false, strPtr("late writer"), nil, false); r != nil {
+	mustLedger(t)(l.MarkRunning(ctx, recText(record, "id")))
+	mustLedger(t)(l.Finish(ctx, recText(record, "id"), true, nil, nil, false))
+	if r := mustLedger(t)(l.Finish(ctx, recText(record, "id"), false, strPtr("late writer"), nil, false)); r != nil {
 		t.Fatal("terminal row rewritten")
 	}
 	if latest := mustLedger(t)(l.Latest(ctx, "immutable")); latest["status"] != "completed" {
 		t.Fatalf("latest %v", latest)
 	}
-	other := mustLedger(t)(l.Create(ctx, "job-2", "external", nil))
-	failed := mustLedger(t)(l.Finish(ctx, recText(other, "id"), false, strPtr("provider exploded"), nil, false))
+}
+
+func TestFailedExecutionKeepsError(t *testing.T) {
+	l, _ := ledgerFixture(t)
+	ctx := context.Background()
+	record := mustLedger(t)(l.Create(ctx, "job-2", "external", nil))
+	failed := mustLedger(t)(l.Finish(ctx, recText(record, "id"), false, strPtr("provider exploded"), nil, false))
 	if failed["status"] != "failed" || failed["error"] != "provider exploded" {
 		t.Fatalf("failed %v", failed)
 	}
@@ -198,12 +301,15 @@ func TestRetentionBoundsTerminalHistoryButPreservesInflight(t *testing.T) {
 	ctx := context.Background()
 	patchChronos(t, &maxTerminalExecutions, 3)
 	inflight := mustLedger(t)(l.Create(ctx, "live", "builtin", nil))
-	_, _ = l.MarkRunning(ctx, recText(inflight, "id"))
+	mustLedger(t)(l.MarkRunning(ctx, recText(inflight, "id")))
 	for i := range 8 {
-		row := mustLedger(t)(l.Create(ctx, "done-"+string(rune('0'+i)), "builtin", nil))
-		_, _ = l.Finish(ctx, recText(row, "id"), true, nil, nil, false)
+		row := mustLedger(t)(l.Create(ctx, fmt.Sprintf("done-%d", i), "builtin", nil))
+		mustLedger(t)(l.Finish(ctx, recText(row, "id"), true, nil, nil, false))
 	}
-	records, _ := l.List(ctx, nil, 100, nil)
+	records, err := l.List(ctx, nil, 100, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	completed := 0
 	for _, r := range records {
 		if r["status"] == "completed" {
@@ -246,7 +352,7 @@ func TestRecentlyFinishedLongRunningExecutionSurvivesRetention(t *testing.T) {
 	}
 }
 
-func TestCorruptLedgerFailsClosedWithoutOverwrite(t *testing.T) {
+func TestCorruptStoreFailsClosedWithoutOverwrite(t *testing.T) {
 	l, _ := ledgerFixture(t)
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
 		t.Fatal(err)
@@ -254,19 +360,20 @@ func TestCorruptLedgerFailsClosedWithoutOverwrite(t *testing.T) {
 	if err := os.WriteFile(l.path, []byte("not a sqlite database"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.Create(context.Background(), "new", "builtin", nil); err == nil {
-		t.Fatal("corrupt ledger accepted a write")
+	_, err := l.Create(context.Background(), "new", "builtin", nil)
+	if class, ok := state.SQLiteClassOf(err); !ok || class == state.SQLiteInterfaceError {
+		t.Fatalf("corrupt ledger raised %T %v, want a sqlite3 DatabaseError", err, err)
 	}
 	if b, _ := os.ReadFile(l.path); !bytes.Equal(b, []byte("not a sqlite database")) {
 		t.Fatalf("corrupt ledger overwritten %q", b)
 	}
 }
 
-func TestRecoveryLeavesLiveProcessExecutionRunning(t *testing.T) {
+func TestRecoveryDoesNotMarkLiveProcessExecutionUnknown(t *testing.T) {
 	l, _ := ledgerFixture(t)
 	ctx := context.Background()
 	record := mustLedger(t)(l.Create(ctx, "still-live", "builtin", nil))
-	_, _ = l.MarkRunning(ctx, recText(record, "id"))
+	mustLedger(t)(l.MarkRunning(ctx, recText(record, "id")))
 	if n, err := l.RecoverInterrupted(ctx); err != nil || n != 0 {
 		t.Fatalf("recovered %d %v", n, err)
 	}
@@ -276,27 +383,61 @@ func TestRecoveryLeavesLiveProcessExecutionRunning(t *testing.T) {
 }
 
 func TestRestartMarksInterruptedExecutionUnknownWithoutRequeue(t *testing.T) {
-	l, _ := ledgerFixture(t)
-	ctx := context.Background()
-	child := exec.Command("true")
-	if err := child.Run(); err != nil {
+	h := filepath.Join(t.TempDir(), "home")
+	executionID := strings.TrimSpace(runLedgerChildProcess(t, h, "", "create-running"))
+	lines := strings.Split(strings.TrimSpace(runLedgerChildProcess(t, h, "", "recover")), "\n")
+	if len(lines) != 2 || lines[0] != "1" {
+		t.Fatalf("recover output %q", lines)
+	}
+	var records []map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &records); err != nil {
 		t.Fatal(err)
 	}
-	original := executionProcessID
-	executionProcessID = "exited-process"
-	patchChronos(t, &ledgerGetpid, func() int { return child.Process.Pid })
-	record := mustLedger(t)(l.Create(ctx, "restart-job", "builtin", nil))
-	_, err := l.MarkRunning(ctx, recText(record, "id"))
-	executionProcessID = original
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n, err := l.RecoverInterrupted(ctx); err != nil || n != 1 {
-		t.Fatalf("recovered %d %v", n, err)
-	}
-	records, _ := l.List(ctx, strPtr("restart-job"), 50, nil)
-	if len(records) != 1 || records[0]["id"] != record["id"] || records[0]["status"] != "unknown" || recText(records[0], "finished_at") == "" || !strings.Contains(strings.ToLower(recText(records[0], "error")), "restart") {
+	if len(records) != 1 || records[0]["id"] != executionID || records[0]["status"] != "unknown" || recText(records[0], "finished_at") == "" || !strings.Contains(strings.ToLower(recText(records[0], "error")), "restart") {
 		t.Fatalf("records %v", records)
+	}
+	var statuses []any
+	for _, r := range records {
+		statuses = append(statuses, r["status"])
+	}
+	if !reflect.DeepEqual(statuses, []any{"unknown"}) {
+		t.Fatalf("statuses %v", statuses)
+	}
+}
+
+func TestTerminalizerRefusesAnAttemptWhoseWorkerIsStillAlive(t *testing.T) {
+	l, s := ledgerFixture(t)
+	s.executionsFile = filepath.Join(t.TempDir(), "executions.db")
+	l = openExecutionsLedger(s)
+	ctx := context.Background()
+	record := mustLedger(t)(l.Create(ctx, "job-live", "direct", nil))
+	id := recText(record, "id")
+	if mustLedger(t)(l.MarkHandoffPending(ctx, id)) == nil {
+		t.Fatal("handoff not marked")
+	}
+	worker := ledgerChildCommand(s.Home(), s.executionsFile, "adopt", id)
+	worker.Stdout = io.Discard
+	if err := worker.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = worker.Process.Kill()
+		_ = worker.Wait()
+	}()
+	status := func() any { return mustLedger(t)(l.Get(ctx, id))["status"] }
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if status() == "running" {
+			break
+		}
+	}
+	if got := status(); got != "running" {
+		t.Fatalf("worker never adopted, status %v", got)
+	}
+	if ok, err := l.TerminalizeDeadOwner(ctx, id, "exit 9"); err != nil || ok {
+		t.Fatalf("live worker terminalised %v %v", ok, err)
+	}
+	if got := status(); got != "running" {
+		t.Fatalf("status after refusal %v", got)
 	}
 }
 
@@ -328,6 +469,7 @@ func (c trackingConn) Raw(f func(driverConn any) error) error {
 	}
 }
 
+// Wraps the database opener so each ledger connection records its open and close
 func countLedgerConnections(t *testing.T) (*[]int, *[]int) {
 	t.Helper()
 	var opened, closed []int
@@ -351,16 +493,26 @@ func TestLedgerOperationsCloseEveryConnection(t *testing.T) {
 	ctx := context.Background()
 	opened, closed := countLedgerConnections(t)
 	record := mustLedger(t)(l.Create(ctx, "leak-check", "builtin", nil))
-	_, _ = l.MarkRunning(ctx, recText(record, "id"))
-	_, _ = l.Finish(ctx, recText(record, "id"), true, nil, nil, false)
-	_, _ = l.List(ctx, strPtr("leak-check"), 50, nil)
-	_, _ = latestExecutions(s, []string{"leak-check"})
-	_, _ = l.RecoverInterrupted(ctx)
+	mustLedger(t)(l.MarkRunning(ctx, recText(record, "id")))
+	mustLedger(t)(l.Finish(ctx, recText(record, "id"), true, nil, nil, false))
+	if _, err := l.List(ctx, strPtr("leak-check"), 50, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := latestExecutions(s, []string{"leak-check"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.RecoverInterrupted(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if len(*opened) == 0 || !reflect.DeepEqual(*opened, *closed) {
 		t.Fatalf("opened %v closed %v", *opened, *closed)
 	}
-	*opened, *closed = nil, nil
-	if r, _ := l.MarkRunning(ctx, "does-not-exist"); r != nil {
+}
+
+func TestEarlyReturnStillClosesConnection(t *testing.T) {
+	l, _ := ledgerFixture(t)
+	opened, closed := countLedgerConnections(t)
+	if r := mustLedger(t)(l.MarkRunning(context.Background(), "does-not-exist")); r != nil {
 		t.Fatal("missing row started")
 	}
 	if len(*opened) != 1 || len(*closed) != 1 {
@@ -377,14 +529,14 @@ func TestJobListingExposesLatestExecution(t *testing.T) {
 	}
 	l := openExecutionsLedger(s)
 	record := mustLedger(t)(l.Create(ctx, job.ID, "builtin", nil))
-	_, _ = l.MarkRunning(ctx, recText(record, "id"))
+	mustLedger(t)(l.MarkRunning(ctx, recText(record, "id")))
 	listed, err := s.listJobs(true)
 	if err != nil || len(listed) != 1 || listed[0].LatestExecution["id"] != record["id"] || listed[0].LatestExecution["status"] != "running" {
 		t.Fatalf("listed %v %v", listed, err)
 	}
 }
 
-func TestExecutionHistoryOrdersByInstantAcrossDSTFallBack(t *testing.T) {
+func TestHistoryOrdersByInstantAcrossDstFallBack(t *testing.T) {
 	ny, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Fatal(err)
@@ -402,39 +554,32 @@ func TestExecutionHistoryOrdersByInstantAcrossDSTFallBack(t *testing.T) {
 	if latest := mustLedger(t)(l.Latest(ctx, "dst-job")); latest["id"] != later["id"] {
 		t.Fatalf("latest %v", latest)
 	}
-	if many, _ := latestExecutions(s, []string{"dst-job"}); many["dst-job"]["id"] != later["id"] {
-		t.Fatalf("latest many %v", many)
+	if many, err := latestExecutions(s, []string{"dst-job"}); err != nil || many["dst-job"]["id"] != later["id"] {
+		t.Fatalf("latest many %v %v", many, err)
 	}
-	rows, _ := l.List(ctx, strPtr("dst-job"), 50, nil)
-	if len(rows) != 2 || rows[0]["id"] != later["id"] || rows[1]["id"] != earlier["id"] {
-		t.Fatalf("history %v", rows)
+	rows, err := l.List(ctx, strPtr("dst-job"), 50, nil)
+	if err != nil || len(rows) != 2 || rows[0]["id"] != later["id"] || rows[1]["id"] != earlier["id"] {
+		t.Fatalf("history %v %v", rows, err)
 	}
-	page, _ := l.List(ctx, strPtr("dst-job"), 50, strPtr(recText(later, "claimed_at")))
-	if len(page) != 1 || page[0]["id"] != earlier["id"] {
-		t.Fatalf("page %v", page)
+	page, err := l.List(ctx, strPtr("dst-job"), 50, strPtr(recText(later, "claimed_at")))
+	if err != nil || len(page) != 1 || page[0]["id"] != earlier["id"] {
+		t.Fatalf("page %v %v", page, err)
 	}
 }
 
-func TestProviderStartRecoversInterruptedRecordsBeforeHeartbeat(t *testing.T) {
+func TestProviderStartRecoversInterruptedRecordsBeforeTick(t *testing.T) {
 	s, _ := newTestStore(t)
 	var events []string
-	real := state.OpenDB
-	patchChronos(t, &state.OpenDB, func(ctx context.Context, path, label string, opts ...state.OpenDBOption) (state.SQLiteConn, error) {
-		if s.readMarkerFields("ticker_heartbeat") == nil {
-			events = append(events, "recover")
-		} else {
-			events = append(events, "recover-after-heartbeat")
-		}
-		return real(ctx, path, label, opts...)
+	patchChronos(t, &recoverInterruptedExecutions, func(context.Context, *Store) (int, error) {
+		events = append(events, "recover")
+		return 0, nil
 	})
+	patchChronos(t, &recordTickerHeartbeat, func(*Store, context.Context, bool) { events = append(events, "heartbeat") })
 	stop := make(chan struct{})
 	close(stop)
 	interval := 1.0
 	(&InProcessCronScheduler{}).Start(withCronStore(context.Background(), s), stop, StartOptions{Interval: &interval})
-	if s.readMarkerFields("ticker_heartbeat") != nil {
-		events = append(events, "heartbeat")
-	}
-	if len(events) < 2 || events[0] != "recover" || events[len(events)-1] != "heartbeat" {
+	if len(events) < 2 || !reflect.DeepEqual(events[:2], []string{"recover", "heartbeat"}) {
 		t.Fatalf("events %v", events)
 	}
 }

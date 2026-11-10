@@ -1066,7 +1066,7 @@ func saveOllamaCloudCache(ctx context.Context, models []string) {
 	data := pyjson.NewObject()
 	data.Set("models", models)
 	data.Set("cached_at", now)
-	_ = modelsWriteJSONCache(ollamaCloudCachePath(ctx), data)
+	_ = modelsWriteJSONCache(ctx, ollamaCloudCachePath(ctx), data)
 }
 
 // OllamaCloudFetch selects the credentials and cache policy of an Ollama Cloud catalog read

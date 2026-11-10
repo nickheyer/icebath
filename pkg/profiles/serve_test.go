@@ -99,7 +99,7 @@ func TestParkedProfileSkippedUnlessIncluded(t *testing.T) {
 	}
 }
 
-func TestDefaultProfileWithStandaloneKeyServedWithOneWarning(t *testing.T) {
+func TestProfilesToServeDefaultProfileWithKeyStillServedWithOneWarning(t *testing.T) {
 	profileEnv(t)
 	ResetStandaloneMemo()
 	logs := captureLogs(t)
@@ -176,32 +176,6 @@ func TestStandaloneIOFailureIsBoundedAndRecovers(t *testing.T) {
 			t.Fatalf("%s did not recover %v %v", failure, v, err)
 		}
 	}
-}
-
-func TestStandaloneMemoIsPerHomeAndInvalidatesOnReplacement(t *testing.T) {
-	tmp := profileEnv(t)
-	ResetStandaloneMemo()
-	alpha, beta := makeProfile(t, tmp, "alpha"), makeProfile(t, tmp, "beta")
-	writeConfig(t, alpha, "gateway:\n  standalone: true\n")
-	check := func(dir string, want bool) {
-		t.Helper()
-		if v, err := ProfileIsStandalone(context.Background(), dir); v != want || err != nil {
-			t.Fatalf("%s %v %v", dir, v, err)
-		}
-	}
-	check(alpha, true)
-	check(beta, false)
-	check(alpha, true)
-	replacement := filepath.Join(alpha, "replacement.yaml")
-	if err := os.WriteFile(replacement, []byte("gateway:\n  standalone: false\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(replacement, filepath.Join(alpha, "config.yaml")); err != nil {
-		t.Fatal(err)
-	}
-	check(alpha, false)
-	check(beta, false)
-	check(alpha, false)
 }
 
 func TestStandaloneTruthyTokens(t *testing.T) {

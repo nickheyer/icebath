@@ -61,7 +61,7 @@ func fetchReasoningCapsCatalog(ctx context.Context, rawURL string, timeout time.
 		return false
 	}
 	doc, _ := asMap(payload)
-	return seedReasoningCaps(rawURL, doc["data"])
+	return seedReasoningCaps(ctx, rawURL, doc["data"])
 }
 
 // Once per process guards of one catalog source for one profile

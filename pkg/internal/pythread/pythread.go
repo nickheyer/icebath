@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
-var processStart = time.Now()
+var (
+	processStart = time.Now()
+	bootOffset   = systemMonotonic()
+)
 
-// Seconds on the process monotonic clock like time.monotonic, comparable only with other readings
-func Monotonic() float64 { return time.Since(processStart).Seconds() }
+// Seconds on the system monotonic clock like time.monotonic, counted from boot so a zero stamp reads as long ago
+func Monotonic() float64 { return bootOffset + time.Since(processStart).Seconds() }
 
 // Event is threading.Event, a flag goroutines set once and wait on
 type Event struct {

@@ -137,15 +137,15 @@ func TestBaseTraitsAndLengthDefaults(t *testing.T) {
 		t.Fatal("code point length expected")
 	}
 	quietRuntimeStatus(t)
-	a.MarkConnected("")
+	a.MarkConnected(context.Background(), "")
 	if !a.IsConnected() || a.HasFatalError() {
 		t.Fatal("connect not marked")
 	}
-	a.SetFatalError("x", "boom", false)
+	a.SetFatalError(context.Background(), "x", "boom", false)
 	if a.IsConnected() || !a.HasFatalError() || a.FatalErrorRetryable() {
 		t.Fatal("fatal not recorded")
 	}
-	a.MarkConnected("http://127.0.0.1:1")
+	a.MarkConnected(context.Background(), "http://127.0.0.1:1")
 	if a.HasFatalError() || !a.FatalErrorRetryable() {
 		t.Fatal("connect did not clear the fatal error")
 	}

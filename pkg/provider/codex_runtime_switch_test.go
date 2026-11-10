@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -48,16 +49,16 @@ func TestCodexRuntimeConfigReadsAndWrites(t *testing.T) {
 func TestApplyCodexRuntimeStatesAndRefusals(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-codex")
 	cfg := map[string]any{"model": map[string]any{"codex_bin": missing}}
-	status, err := ApplyCodexRuntime(cfg, nil, nil)
+	status, err := ApplyCodexRuntime(context.Background(), cfg, nil, nil)
 	if err != nil || !status.Success || *status.NewValue != "auto" || !strings.HasPrefix(status.Message, "openai_runtime: auto\ncodex CLI: not available — ") {
 		t.Fatalf("show %+v %v", status, err)
 	}
 	auto := "auto"
-	if status, _ := ApplyCodexRuntime(cfg, &auto, nil); !status.Success || status.Message != "openai_runtime already set to auto" || status.RequiresNewSession {
+	if status, _ := ApplyCodexRuntime(context.Background(), cfg, &auto, nil); !status.Success || status.Message != "openai_runtime already set to auto" || status.RequiresNewSession {
 		t.Fatalf("already %+v", status)
 	}
 	enable := "codex_app_server"
-	status, _ = ApplyCodexRuntime(cfg, &enable, func(map[string]any) error { t.Fatal("persisted a refused enable"); return nil })
+	status, _ = ApplyCodexRuntime(context.Background(), cfg, &enable, func(map[string]any) error { t.Fatal("persisted a refused enable"); return nil })
 	if status.Success || status.NewValue != nil || !strings.HasPrefix(status.Message, "Cannot enable codex_app_server runtime: ") || !strings.HasSuffix(status.Message, "\nInstall with: npm i -g @openai/codex") {
 		t.Fatalf("refused %+v", status)
 	}
@@ -66,30 +67,30 @@ func TestApplyCodexRuntimeStatesAndRefusals(t *testing.T) {
 	}
 	on := map[string]any{"model": map[string]any{"openai_runtime": "codex_app_server", "codex_bin": missing}}
 	var persisted int
-	status, _ = ApplyCodexRuntime(on, &auto, func(map[string]any) error { persisted++; return nil })
+	status, _ = ApplyCodexRuntime(context.Background(), on, &auto, func(map[string]any) error { persisted++; return nil })
 	if !status.Success || !status.RequiresNewSession || persisted != 1 || status.Message != "openai_runtime: codex_app_server → auto\nOpenAI/Codex turns will use the default Icebath runtime.\nEffective on next session." {
 		t.Fatalf("disable %+v %d", status, persisted)
 	}
 	on["model"].(map[string]any)["openai_runtime"] = "codex_app_server"
-	status, _ = ApplyCodexRuntime(on, &auto, func(map[string]any) error { return errors.New("disk full") })
+	status, _ = ApplyCodexRuntime(context.Background(), on, &auto, func(map[string]any) error { return errors.New("disk full") })
 	if status.Success || *status.NewValue != "auto" || status.Message != "updated config in memory but persist failed: disk full" {
 		t.Fatalf("persist failure %+v", status)
 	}
-	if _, err := ApplyCodexRuntime(map[string]any{}, new("bogus"), nil); err == nil {
+	if _, err := ApplyCodexRuntime(context.Background(), map[string]any{}, new("bogus"), nil); err == nil {
 		t.Fatal("invalid runtime accepted")
 	}
 }
 
 // Swaps the switch's binary probe and migration for one test
-func withCodexSwitchFakes(t *testing.T, check func(string) (bool, string), migrate func(map[string]any, CodexMigrateOptions) (*CodexMigrationReport, error)) {
+func withCodexSwitchFakes(t *testing.T, check func(string) (bool, string), migrate func(context.Context, map[string]any, CodexMigrateOptions) (*CodexMigrationReport, error)) {
 	t.Helper()
 	prevCheck, prevMigrate := codexRuntimeCheckBinary, codexRuntimeMigrate
 	codexRuntimeCheckBinary, codexRuntimeMigrate = check, migrate
 	t.Cleanup(func() { codexRuntimeCheckBinary, codexRuntimeMigrate = prevCheck, prevMigrate })
 }
 
-func fakeCodexMigration(calls *int) func(map[string]any, CodexMigrateOptions) (*CodexMigrationReport, error) {
-	return func(map[string]any, CodexMigrateOptions) (*CodexMigrationReport, error) {
+func fakeCodexMigration(calls *int) func(context.Context, map[string]any, CodexMigrateOptions) (*CodexMigrationReport, error) {
+	return func(context.Context, map[string]any, CodexMigrateOptions) (*CodexMigrationReport, error) {
 		*calls++
 		return &CodexMigrationReport{Migrated: []string{"filesystem", CodexToolsMCPServerName}, WrotePermissionsDefault: ":workspace", TargetPath: "/fake/.codex/config.toml"}, nil
 	}
@@ -99,7 +100,7 @@ func TestApplyCodexRuntimeBinaryCheckUsesConfiguredPath(t *testing.T) {
 	configured := "/Applications/Codex.app/Contents/Resources/codex"
 	var probed []string
 	withCodexSwitchFakes(t, func(bin string) (bool, string) { probed = append(probed, bin); return true, "0.130.0" }, nil)
-	status, err := ApplyCodexRuntime(map[string]any{"model": map[string]any{"openai_runtime": "codex_app_server", "codex_bin": configured}}, nil, nil)
+	status, err := ApplyCodexRuntime(context.Background(), map[string]any{"model": map[string]any{"openai_runtime": "codex_app_server", "codex_bin": configured}}, nil, nil)
 	if err != nil || !status.Success || len(probed) != 1 || probed[0] != configured {
 		t.Fatalf("%+v %v %v", status, err, probed)
 	}
@@ -113,7 +114,7 @@ func TestApplyCodexRuntimeReapplyAndEnableRunTheMigration(t *testing.T) {
 		reapply := GetCurrentCodexRuntime(cfg) == "codex_app_server"
 		calls, persisted := 0, 0
 		withCodexSwitchFakes(t, func(string) (bool, string) { return true, "0.130.0" }, fakeCodexMigration(&calls))
-		status, err := ApplyCodexRuntime(cfg, new("codex_app_server"), func(map[string]any) error { persisted++; return nil })
+		status, err := ApplyCodexRuntime(context.Background(), cfg, new("codex_app_server"), func(map[string]any) error { persisted++; return nil })
 		if err != nil || !status.Success || calls != 1 || !status.RequiresNewSession {
 			t.Fatalf("%+v %v calls %d", status, err, calls)
 		}
@@ -134,17 +135,17 @@ func TestApplyCodexRuntimeReapplyAndEnableRunTheMigration(t *testing.T) {
 func TestApplyCodexRuntimeDisableDoesNotTriggerMigration(t *testing.T) {
 	calls := 0
 	withCodexSwitchFakes(t, func(string) (bool, string) { return true, "0.130.0" }, fakeCodexMigration(&calls))
-	status, err := ApplyCodexRuntime(map[string]any{"model": map[string]any{"openai_runtime": "codex_app_server"}, "mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}}, new("auto"), nil)
+	status, err := ApplyCodexRuntime(context.Background(), map[string]any{"model": map[string]any{"openai_runtime": "codex_app_server"}, "mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}}, new("auto"), nil)
 	if err != nil || !status.Success || calls != 0 {
 		t.Fatalf("%+v %v calls %d", status, err, calls)
 	}
 }
 
 func TestApplyCodexRuntimeMigrationFailureDoesNotBlockEnable(t *testing.T) {
-	withCodexSwitchFakes(t, func(string) (bool, string) { return true, "0.130.0" }, func(map[string]any, CodexMigrateOptions) (*CodexMigrationReport, error) {
+	withCodexSwitchFakes(t, func(string) (bool, string) { return true, "0.130.0" }, func(context.Context, map[string]any, CodexMigrateOptions) (*CodexMigrationReport, error) {
 		return nil, errors.New("disk full")
 	})
-	status, err := ApplyCodexRuntime(map[string]any{"mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}}, new("codex_app_server"), nil)
+	status, err := ApplyCodexRuntime(context.Background(), map[string]any{"mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}}, new("codex_app_server"), nil)
 	if err != nil || !status.Success || *status.NewValue != "codex_app_server" || !strings.Contains(status.Message, "⚠ MCP migration skipped: disk full") {
 		t.Fatalf("%+v %v", status, err)
 	}

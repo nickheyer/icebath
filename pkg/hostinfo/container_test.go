@@ -52,3 +52,14 @@ func TestIsContainer(t *testing.T) {
 		}
 	})
 }
+
+func TestDetectContainerReadsTheMarkersOnEveryCall(t *testing.T) {
+	probes := 0
+	resetContainerCache(t, func(p string) bool { probes++; return p == "/.dockerenv" })
+	if !DetectContainer() || !DetectContainer() || probes != 2 {
+		t.Fatalf("uncached probe ran %d times", probes)
+	}
+	if !IsContainer() || !IsContainer() || probes != 3 {
+		t.Fatalf("cached fact probed %d times in total", probes)
+	}
+}

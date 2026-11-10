@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,13 +25,17 @@ var (
 	janitorStop    chan struct{}
 	janitorDone    chan struct{}
 	janitorTick    = time.Second
-	orphanReapRuns = func(env *tools.Env) int { return reapOrphanedBrowserSessions(env) }
-	janitorJoin    = 5 * time.Second
+	orphanReapRuns = func(ctx context.Context, env *tools.Env) int {
+		return reapOrphanedBrowserSessions(tools.WithEnvHome(ctx, env), env)
+	}
+	janitorJoin = 5 * time.Second
 	// Teardown collaborators the hermes lifecycle tests patch
-	sessionStopBrowser     = func(_ *tools.Env, key string) { stopBrowser(key) }
-	lifecycleCleanupAll    = func(env *tools.Env) { cleanupAllBrowsers(env) }
-	lifecycleCleanupSingle = func(env *tools.Env, key string) error { return cleanupSingleSession(env, key) }
-	processEnvOnce         = sync.OnceValue(func() *tools.Env {
+	sessionStopBrowser     = func(ctx context.Context, _ *tools.Env, key string) { stopBrowser(ctx, key) }
+	lifecycleCleanupAll    = func(ctx context.Context, env *tools.Env) { cleanupAllBrowsers(tools.WithEnvHome(ctx, env), env) }
+	lifecycleCleanupSingle = func(ctx context.Context, env *tools.Env, key string) error {
+		return cleanupSingleSession(tools.WithEnvHome(ctx, env), env, key)
+	}
+	processEnvOnce = sync.OnceValue(func() *tools.Env {
 		h := home.Process()
 		tree, err := config.Load(h, nil)
 		if err != nil {
@@ -169,7 +174,7 @@ func closeCloudSession(env *tools.Env, info map[string]any) error {
 }
 
 // Releases the record's browser by object, a shared launcher key another live session uses kept running
-func releaseSessionBackend(env *tools.Env, key string, info map[string]any) error {
+func releaseSessionBackend(ctx context.Context, env *tools.Env, key string, info map[string]any) error {
 	if err := closeCloudSession(env, info); err != nil {
 		return err
 	}
@@ -185,13 +190,13 @@ func releaseSessionBackend(env *tools.Env, key string, info map[string]any) erro
 	if pyrepr.Truthy(features["sandbox"]) {
 		stopSandboxBrowser(env, info)
 	} else if !pyrepr.Truthy(features["real_profile"]) {
-		sessionStopBrowser(env, launcherKey)
+		sessionStopBrowser(tools.WithEnvHome(ctx, env), env, launcherKey)
 	}
 	return nil
 }
 
 // Tears down one session by its exact key, its CDP supervisor first
-func cleanupSingleSession(env *tools.Env, key string) error {
+func cleanupSingleSession(ctx context.Context, env *tools.Env, key string) error {
 	sessionStopSupervisor(env, key)
 	sessionsMu.Lock()
 	info, ok := activeSessions.Get(key)
@@ -199,7 +204,7 @@ func cleanupSingleSession(env *tools.Env, key string) error {
 	sessionsMu.Unlock()
 	forgetSessionTracking(key, true, false)
 	if ok && len(info) > 0 {
-		if err := releaseSessionBackend(env, key, info); err != nil {
+		if err := releaseSessionBackend(tools.WithEnvHome(ctx, env), env, key, info); err != nil {
 			return err
 		}
 		cfgOf(env).logger().Debug("Closed browser session " + key)
@@ -214,7 +219,7 @@ func init() {
 }
 
 // Closes every session serving the task, its local sidecar and its served profile tagged keys
-func cleanupBrowser(env *tools.Env, taskID string) error {
+func cleanupBrowser(ctx context.Context, env *tools.Env, taskID string) error {
 	task := taskID
 	if task == "" {
 		task = "default"
@@ -234,7 +239,7 @@ func cleanupBrowser(env *tools.Env, taskID string) error {
 	}
 	sessionsMu.Unlock()
 	for _, key := range keys {
-		if err := cleanupSingleSession(env, key); err != nil {
+		if err := cleanupSingleSession(tools.WithEnvHome(ctx, env), env, key); err != nil {
 			return err
 		}
 	}
@@ -245,7 +250,7 @@ func cleanupBrowser(env *tools.Env, taskID string) error {
 }
 
 // Closes one profile's sessions, supervisors and harness daemons and drops its cached provider
-func cleanupProfileBrowsers(env *tools.Env, homeKey string) error {
+func cleanupProfileBrowsers(ctx context.Context, env *tools.Env, homeKey string) error {
 	var keys []string
 	sessionsMu.Lock()
 	for key, info := range activeSessions.All() {
@@ -255,7 +260,7 @@ func cleanupProfileBrowsers(env *tools.Env, homeKey string) error {
 	}
 	sessionsMu.Unlock()
 	for _, key := range keys {
-		if err := cleanupSingleSession(env, key); err != nil {
+		if err := cleanupSingleSession(tools.WithEnvHome(ctx, env), env, key); err != nil {
 			return err
 		}
 	}
@@ -267,23 +272,23 @@ func cleanupProfileBrowsers(env *tools.Env, homeKey string) error {
 }
 
 // Closes every session under its owning profile, stops everything this process launched and resets caches
-func cleanupAllBrowsers(env *tools.Env) {
+func cleanupAllBrowsers(ctx context.Context, env *tools.Env) {
 	sessionsMu.Lock()
 	keys := activeSessions.Keys()
 	sessionsMu.Unlock()
 	log := cfgOf(env).logger()
 	for _, key := range keys {
-		bestEffort(log, "browser cleanup for "+key, func() error { return cleanupSingleSession(sessionOwnerEnv(env, key), key) })
+		bestEffort(log, "browser cleanup for "+key, func() error { return cleanupSingleSession(tools.WithEnvHome(ctx, env), sessionOwnerEnv(env, key), key) })
 	}
 	bestEffort(log, "CDP supervisor stop", func() error { supervisorStopAll(); return nil })
 	bestEffort(log, "Browser Use harness daemon stop", func() error { stopHarnessDaemons(env, ""); return nil })
-	bestEffort(log, "Chromium stop", func() error { stopAllBrowsers(); return nil })
+	bestEffort(log, "Chromium stop", func() error { stopAllBrowsers(tools.WithEnvHome(ctx, env)); return nil })
 	bestEffort(log, "Lightpanda stop", func() error { stopAllLightpanda(env); return nil })
 	resetCaches("")
 }
 
 // Exit sweep closing this process's browsers then reaping orphans of crashed processes, run once
-func emergencyCleanupAllSessions() {
+func emergencyCleanupAllSessions(ctx context.Context) {
 	env := processBrowserEnv()
 	log := cfgOf(env).logger()
 	sessionsMu.Lock()
@@ -297,18 +302,18 @@ func emergencyCleanupAllSessions() {
 	if n > 0 {
 		log.Info(fmt.Sprintf("Emergency cleanup: closing %d active session(s)...", n))
 	}
-	bestEffort(log, "Browser cleanup on exit", func() error { lifecycleCleanupAll(env); return nil })
+	bestEffort(log, "Browser cleanup on exit", func() error { lifecycleCleanupAll(tools.WithEnvHome(ctx, env), env); return nil })
 	sessionsMu.Lock()
 	activeSessions.Clear()
 	sessionLastActivity.Clear()
 	sessionOwnerEnvs.Clear()
 	clear(cleanupFailures)
 	sessionsMu.Unlock()
-	bestEffort(log, "Orphan reap on exit", func() error { orphanReapRuns(env); return nil })
+	bestEffort(log, "Orphan reap on exit", func() error { orphanReapRuns(tools.WithEnvHome(ctx, env), env); return nil })
 }
 
 // Stops Chromium and lightpanda serve processes whose owner is gone, Chromium in every profile a session serves
-func reapOrphanedBrowserSessions(env *tools.Env) int {
+func reapOrphanedBrowserSessions(ctx context.Context, env *tools.Env) int {
 	sessionsMu.Lock()
 	var homes []string
 	for _, owner := range sessionOwnerEnvs.Values() {
@@ -326,7 +331,7 @@ func reapOrphanedBrowserSessions(env *tools.Env) int {
 	} else {
 		reaped += n
 	}
-	reaped += reapOrphanedBrowsers(homes)
+	reaped += reapOrphanedBrowsers(tools.WithEnvHome(ctx, env), homes)
 	if reaped > 0 {
 		log.Info(fmt.Sprintf("Reaped %d orphaned browser process(es) from previous run(s)", reaped))
 	}
@@ -341,14 +346,14 @@ func humanHoldsSharedBrowserKey(env *tools.Env, key string) bool {
 }
 
 // Janitor last resort, the record dropped first and its backend released
-func forceReap(env *tools.Env, key string) error {
+func forceReap(ctx context.Context, env *tools.Env, key string) error {
 	sessionStopSupervisor(env, key)
 	sessionsMu.Lock()
 	info, ok := activeSessions.Get(key)
 	sessionsMu.Unlock()
 	forgetSessionTracking(key, true, true)
 	if ok && len(info) > 0 {
-		return releaseSessionBackend(env, key, info)
+		return releaseSessionBackend(tools.WithEnvHome(ctx, env), env, key, info)
 	}
 	return nil
 }
@@ -368,12 +373,12 @@ func catchRaised(fn func() error) (err error) {
 }
 
 // Closes one idle session under its owner, counting failures and force reaping after the third
-func cleanupOneInactive(key string, elapsed int) {
+func cleanupOneInactive(ctx context.Context, key string, elapsed int) {
 	owner := sessionOwnerEnv(processBrowserEnv(), key)
 	log := cfgOf(owner).logger()
 	log.Info(fmt.Sprintf("Cleaning up inactive session %s (inactive for %ds)", key, elapsed))
 	err := catchRaised(func() error {
-		if err := lifecycleCleanupSingle(owner, key); err != nil {
+		if err := lifecycleCleanupSingle(tools.WithEnvHome(ctx, owner), owner, key); err != nil {
 			return err
 		}
 		forgetSessionTracking(key, true, false)
@@ -392,13 +397,13 @@ func cleanupOneInactive(key string, elapsed int) {
 	}
 	log.Error(fmt.Sprintf("Browser cleanup failed %d times for %s; force-reaping: %s", failures, key, err))
 	defer forgetSessionTracking(key, false, false)
-	if err := forceReap(owner, key); err != nil {
+	if err := forceReap(tools.WithEnvHome(ctx, owner), owner, key); err != nil {
 		panic(err)
 	}
 }
 
 // Closes sessions idle past the inactivity timeout, a human holding the shared screen counting as activity
-func cleanupInactiveSessions() {
+func cleanupInactiveSessions(ctx context.Context) {
 	now := sessionNow()
 	limit := float64(sessionInactivity())
 	type idleKey struct {
@@ -419,12 +424,12 @@ func cleanupInactiveSessions() {
 			updateSessionActivity(owner, it.key)
 			continue
 		}
-		cleanupOneInactive(it.key, it.elapsed)
+		cleanupOneInactive(tools.WithEnvHome(ctx, owner), it.key, it.elapsed)
 	}
 }
 
 // Every thirty ticks closes idle sessions, reaping orphans at start and every orphan reap interval
-func janitor(stop <-chan struct{}, done chan<- struct{}) {
+func janitor(ctx context.Context, stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	env := processBrowserEnv()
 	log := cfgOf(env).logger()
@@ -436,9 +441,9 @@ func janitor(stop <-chan struct{}, done chan<- struct{}) {
 		default:
 		}
 		if cycle%reapEvery == 0 {
-			bestEffort(log, "Orphan reap", func() error { orphanReapRuns(env); return nil })
+			bestEffort(log, "Orphan reap", func() error { orphanReapRuns(tools.WithEnvHome(ctx, env), env); return nil })
 		}
-		bestEffort(log, "Inactive browser cleanup", func() error { cleanupInactiveSessions(); return nil })
+		bestEffort(log, "Inactive browser cleanup", func() error { cleanupInactiveSessions(tools.WithEnvHome(ctx, env)); return nil })
 		for range 30 {
 			select {
 			case <-stop:
@@ -450,7 +455,7 @@ func janitor(stop <-chan struct{}, done chan<- struct{}) {
 }
 
 // Starts the process wide inactivity janitor unless one is running
-func startCleanupThread(env *tools.Env) {
+func startCleanupThread(ctx context.Context, env *tools.Env) {
 	janitorMu.Lock()
 	defer janitorMu.Unlock()
 	if janitorRunning {
@@ -458,7 +463,7 @@ func startCleanupThread(env *tools.Env) {
 	}
 	janitorRunning = true
 	janitorStop, janitorDone = make(chan struct{}), make(chan struct{})
-	go janitor(janitorStop, janitorDone)
+	go janitor(tools.WithEnvHome(ctx, env), janitorStop, janitorDone)
 	cfgOf(env).logger().Info(fmt.Sprintf("Started browser inactivity janitor (timeout: %ds)", sessionInactivity()))
 }
 

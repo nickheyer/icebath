@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -110,7 +111,7 @@ func (b *BundlesCLI) cmdShow(a BundlesArgs) (int, error) {
 }
 
 // Saves a bundle from the flag skills or skill names read one per line, status one on refusal
-func (b *BundlesCLI) cmdCreate(a BundlesArgs) (int, error) {
+func (b *BundlesCLI) cmdCreate(ctx context.Context, a BundlesArgs) (int, error) {
 	c := b.console()
 	skills := append([]string(nil), a.Skill...)
 	if len(skills) == 0 {
@@ -132,7 +133,7 @@ func (b *BundlesCLI) cmdCreate(a BundlesArgs) (int, error) {
 	if len(skills) == 0 {
 		return bundlesFail(c, "[bold red]A bundle must reference at least one skill.[/]"), nil
 	}
-	path, err := b.Scope.SaveBundle(a.Name, skills, a.Description, a.Instruction, a.Force)
+	path, err := b.Scope.SaveBundle(ctx, a.Name, skills, a.Description, a.Instruction, a.Force)
 	if err != nil {
 		switch class, msg := bundleErrorClass(err); class {
 		case "FileExistsError":
@@ -198,12 +199,12 @@ func (b *BundlesCLI) cmdReload() (int, error) {
 }
 
 // Dispatches one bundles command line, listing when no subcommand handler applies
-func (b *BundlesCLI) BundlesCommand(a BundlesArgs) (int, error) {
+func (b *BundlesCLI) BundlesCommand(ctx context.Context, a BundlesArgs) (int, error) {
 	switch a.Action {
 	case "show":
 		return b.cmdShow(a)
 	case "create":
-		return b.cmdCreate(a)
+		return b.cmdCreate(ctx, a)
 	case "delete":
 		return b.cmdDelete(a)
 	case "reload":

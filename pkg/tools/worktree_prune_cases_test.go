@@ -339,7 +339,7 @@ func TestMergeVerdictCacheCacheIsBounded(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		verdicts.set(fmt.Sprintf("sha%d..sha%d:20", i, i), true)
 	}
-	saveWorktreeMergeCache(verdicts)
+	saveWorktreeMergeCache(context.Background(), verdicts)
 	if got := len(loadWorktreeMergeCache().keys); got != 10 {
 		t.Fatalf("cache holds %d verdicts", got)
 	}

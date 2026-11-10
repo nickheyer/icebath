@@ -482,7 +482,7 @@ func TestSpawnLocalStampsOwnerTaskIDAndEventCarriesIt(t *testing.T) {
 	env := surfaceEnv(t, false)
 	reg := tools.NewProcessRegistry()
 	command, gate := notificationChild(t)
-	session, err := reg.SpawnLocal(env, command, tools.SpawnLocalOptions{TaskID: "default", OwnerTaskID: "sa-9-supp0006"})
+	session, err := reg.SpawnLocal(context.Background(), env, command, tools.SpawnLocalOptions{TaskID: "default", OwnerTaskID: "sa-9-supp0006"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +507,7 @@ func TestSpawnLocalWithoutOwnerDefaultsToTaskID(t *testing.T) {
 	env := surfaceEnv(t, false)
 	reg := tools.NewProcessRegistry()
 	command, gate := notificationChild(t)
-	session, err := reg.SpawnLocal(env, command, tools.SpawnLocalOptions{TaskID: "default"})
+	session, err := reg.SpawnLocal(context.Background(), env, command, tools.SpawnLocalOptions{TaskID: "default"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -680,7 +680,7 @@ func gateFinalURLs(env *Env, results []*WebPage, requested map[string]bool) []*W
 }
 
 // Fetches with rescue, re gates redirect targets, then caches the passes under their requested URL
-func dispatchExtract(call webCallContext, provider WebProvider, urls []string, format string) ([]*WebPage, error) {
+func dispatchExtract(ctx context.Context, call webCallContext, provider WebProvider, urls []string, format string) ([]*WebPage, error) {
 	env := call.env
 	results, rescued, err := fetchWithRescue(call, provider, urls, format)
 	if err != nil {
@@ -705,9 +705,9 @@ func dispatchExtract(call webCallContext, provider WebProvider, urls []string, f
 		}
 		content := fetched.body()
 		if u != "" && content != "" && fetched.Error == "" {
-			stored := ExtractCachePut(env, u, content, fetched.Title, format, provider.Name())
+			stored := ExtractCachePut(WithEnvHome(ctx, env), env, u, content, fetched.Title, format, provider.Name())
 			if stored && fetched.URL != "" && fetched.URL != u {
-				ExtractCacheRecordFinalURL(env, u, fetched.URL, content, format, provider.Name())
+				ExtractCacheRecordFinalURL(WithEnvHome(ctx, env), env, u, fetched.URL, content, format, provider.Name())
 			}
 		}
 	}
@@ -733,7 +733,7 @@ func cachedFinalURLAllowed(env *Env, hit *WebPage, requested string) bool {
 }
 
 // Serves cache hits, fetches the rest, and merges back in order
-func extractSafeURLs(call webCallContext, provider WebProvider, safeURLs []string, format string) ([]*WebPage, error) {
+func extractSafeURLs(ctx context.Context, call webCallContext, provider WebProvider, safeURLs []string, format string) ([]*WebPage, error) {
 	env := call.env
 	cached := map[int]*WebPage{}
 	var fetchURLs []string
@@ -762,7 +762,7 @@ func extractSafeURLs(call webCallContext, provider WebProvider, safeURLs []strin
 		return out, nil
 	}
 	envLog(env).Info("Web extract", "provider", provider.Name(), "urls", len(fetchURLs))
-	results, err := dispatchExtract(call, provider, fetchURLs, format)
+	results, err := dispatchExtract(WithEnvHome(ctx, env), call, provider, fetchURLs, format)
 	if err != nil {
 		return nil, err
 	}
@@ -803,7 +803,7 @@ func WebExtractTool(ctx context.Context, env *Env, items []any, format string, c
 			return errJSON
 		}
 		var err error
-		results, err = extractSafeURLs(call, provider, safeURLs, format)
+		results, err = extractSafeURLs(WithEnvHome(ctx, env), call, provider, safeURLs, format)
 		if err != nil {
 			return finishWebDebug(env, "web_extract_tool", debug, "Error extracting content: "+err.Error())
 		}

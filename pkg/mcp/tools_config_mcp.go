@@ -100,6 +100,13 @@ func applyMCPChecklist(ui TerminalUI, serverName string, toolsCfg map[string]any
 // Probe seam of the tools configurator, the real all server probe outside tests
 var toolsConfigProbe = Probe
 
+// SwapToolsConfigProbe replaces the configurator probe, returning the previous one
+func SwapToolsConfigProbe(fn func(context.Context, *tools.Env) map[string][]ToolSummary) func(context.Context, *tools.Env) map[string][]ToolSummary {
+	prev := toolsConfigProbe
+	toolsConfigProbe = fn
+	return prev
+}
+
 // Probes every enabled server and writes per server checklist choices back as tools include or exclude
 func configureMCPToolsInteractive(ctx context.Context, env *tools.Env, ui TerminalUI, cfg config.Tree) error {
 	servers, _ := cfg["mcp_servers"].(map[string]any)
@@ -208,6 +215,11 @@ func configureMCPToolsInteractive(ctx context.Context, env *tools.Env, ui Termin
 	return nil
 }
 
+// ConfigureMCPToolsInteractive is the tools command entry of the per server tool checklist
+func ConfigureMCPToolsInteractive(ctx context.Context, env *tools.Env, ui TerminalUI, cfg config.Tree) error {
+	return configureMCPToolsInteractive(ctx, env, ui, cfg)
+}
+
 // Adds or removes toolset keys from a platform's saved toolsets
 func applyToolsetChange(ctx context.Context, cfg config.Tree, platform string, names []string, action string) error {
 	pluginKeys := tools.PluginToolsetKeys(ctx)
@@ -220,6 +232,11 @@ func applyToolsetChange(ctx context.Context, cfg config.Tree, platform string, n
 		}
 	}
 	return tools.Default.SavePlatformTools(ctx, "", cfg, platform, enabled, pluginKeys)
+}
+
+// ApplyToolsetChange adds or removes toolset keys from a platform's saved toolsets for callers outside the package
+func ApplyToolsetChange(ctx context.Context, cfg config.Tree, platform string, names []string, action string) error {
+	return applyToolsetChange(ctx, cfg, platform, names, action)
 }
 
 // Toggles server and tool targets in each server exclude list, returning the servers not in config
@@ -331,17 +348,22 @@ func joinAny(items []any) string {
 	return strings.Join(parts, ", ")
 }
 
-// Built in platform keys plus every platform a discovered plugin registered
+// Built in platform keys plus every platform plugin discovery registered, a failing discovery keeping the built ins
 func knownToolPlatforms(ctx context.Context) map[string]bool {
 	known := map[string]bool{}
 	for _, p := range tools.Platforms {
 		known[p.Key] = true
 	}
-	if tools.RegisteredPlatformNames != nil {
+	func() {
+		defer func() { _ = recover() }()
+		if tools.PluginToolsetCatalog.Discover == nil || tools.RegisteredPlatformNames == nil {
+			return
+		}
+		tools.PluginToolsetCatalog.Discover(ctx)
 		for _, name := range tools.RegisteredPlatformNames() {
 			known[name] = true
 		}
-	}
+	}()
 	return known
 }
 

@@ -473,9 +473,9 @@ func markLocalBrowser(penv map[string]string, session map[string]any, key string
 }
 
 // Session info reader merging every answer into one record the caller inspects afterwards
-func mergingSessionInfo(env *tools.Env, session map[string]any) func(string) (map[string]any, error) {
+func mergingSessionInfo(ctx context.Context, env *tools.Env, session map[string]any) func(string) (map[string]any, error) {
 	return func(key string) (map[string]any, error) {
-		got, err := execSessionInfo(env, key)
+		got, err := execSessionInfo(tools.WithEnvHome(ctx, env), env, key)
 		if err != nil {
 			return nil, err
 		}
@@ -498,7 +498,7 @@ func resolveLocalCDP(ctx context.Context, env *tools.Env, penv map[string]string
 				"to use local Chrome, or switch backends via `icebath tools` → Browser Automation.", e)
 		}
 	}
-	err := exportSessionCDP(penv, mergingSessionInfo(env, session), key, fail, "The local browser session returned no CDP endpoint.")
+	err := exportSessionCDP(penv, mergingSessionInfo(tools.WithEnvHome(ctx, env), env, session), key, fail, "The local browser session returned no CDP endpoint.")
 	if err == "" {
 		markLocalBrowser(penv, session, key)
 	}
@@ -534,7 +534,7 @@ func resolveBackendCDP(ctx context.Context, env *tools.Env, penv map[string]stri
 	providerName := providerClassName(prov)
 	session := map[string]any{}
 	key := backendCacheKey(ctx, taskID, sessionName, false)
-	err := exportSessionCDP(penv, mergingSessionInfo(env, session), key,
+	err := exportSessionCDP(penv, mergingSessionInfo(tools.WithEnvHome(ctx, env), env, session), key,
 		func(e error) string {
 			return fmt.Sprintf("Cloud browser provider %s failed to provide a session: %s. "+
 				"Fix the provider configuration or switch backends via `icebath tools` → Browser Automation.", providerName, e)
@@ -859,14 +859,14 @@ const (
 )
 
 // Hands the daemon group to the owner death supervisor, releasing the group it replaced once empty
-func recordOwnedDaemon(daemon []string, pid int) {
+func recordOwnedDaemon(ctx context.Context, daemon []string, pid int) {
 	key := identityKey(daemon)
 	ownedDaemonGroupsMu.Lock()
 	replaced, had := ownedDaemonGroups[key]
 	ownedDaemonGroups[key] = pid
 	ownedDaemonGroupsMu.Unlock()
 	tools.OwnProcessGroups([]int{pid})
-	tools.RegisterChild(pid, harnessDaemonPurpose, "")
+	tools.RegisterChild(ctx, pid, harnessDaemonPurpose, "")
 	if had {
 		tools.ReleaseProcessGroupOnceEmpty(replaced, nil, 0)
 	}
@@ -1072,7 +1072,9 @@ func browserExec(ctx context.Context, env *tools.Env, code, session, timeoutS an
 		drivenDaemonsMu.Lock()
 		drivenDaemons[identityKey(daemon)] = drivenDaemon{identity: daemon, home: cfgOf(env).homeKey()}
 		drivenDaemonsMu.Unlock()
-		owning := cron.SchedulePeriodic(ctx, func(context.Context) bool { return ownHarnessDaemon(penv) == ownNothingYet }, ownDuringCall)
+		owning := cron.SchedulePeriodic(ctx, func(context.Context) bool {
+			return ownHarnessDaemon(tools.WithEnvHome(ctx, env), penv) == ownNothingYet
+		}, ownDuringCall)
 		defer owning.Cancel(5 * time.Second)
 		res, err := runCLIKillingProcessGroup(cmd, codeText, penv, time.Duration(timeout)*time.Second)
 		if errors.Is(err, errCLITimeout) {
@@ -1093,7 +1095,7 @@ func browserExec(ctx context.Context, env *tools.Env, code, session, timeoutS an
 		dispatched = dispatch()
 	}
 	reloadIfRepublished(env, penv, generation)
-	ownHarnessDaemon(penv)
+	ownHarnessDaemon(tools.WithEnvHome(ctx, env), penv)
 	proc, ok := dispatched["proc"].(*cliResult)
 	if !ok {
 		if er, ok := dispatched["error_result"]; ok {

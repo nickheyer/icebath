@@ -59,7 +59,7 @@ func checkpointEntry(t *testing.T, pid int) string {
 // Whether pid is gone or a zombie awaiting its parent
 func goneOrZombie(pid int) bool { return !proc.Exists(pid) || proc.Zombie(pid) }
 
-func TestPruneKeepsEntryARegisteredProcessWorksInButReapsOrphans(t *testing.T) {
+func TestPruneKeepsEntryARegisteredHermesProcessWorksInButReapsOrphans(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("orphan reparenting is a POSIX process model")
 	}

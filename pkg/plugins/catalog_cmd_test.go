@@ -54,7 +54,7 @@ func c6Home(t *testing.T, metadata map[string]any) string {
 		t.Fatal(err)
 	}
 	if metadata != nil {
-		if err := writeInstallMetadata(h, metadata); err != nil {
+		if err := writeInstallMetadata(context.Background(), h, metadata); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -94,7 +94,7 @@ func yamlLineValue(text string) (any, string, bool) {
 	if yaml.Unmarshal([]byte(text), &n) != nil || len(n.Content) == 0 {
 		return nil, "", false
 	}
-	resolveYAML11(&n, false)
+	resolveYAMLVersion(&n, false, false)
 	var v any
 	if n.Content[0].Decode(&v) != nil {
 		return nil, "", false

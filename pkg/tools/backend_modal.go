@@ -16,6 +16,7 @@ import (
 	"time"
 
 	modal "github.com/modal-labs/modal-client/go"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -32,7 +33,7 @@ func modalSnapshotRestoreCandidate(env *Env, taskID string) (string, bool) {
 		key    string
 		legacy bool
 	}{{"direct:" + taskID, false}, {taskID, true}} {
-		if id, ok := snapshots[entry.key].(string); ok && id != "" {
+		if id, ok := snapshots.Vals[entry.key].(string); ok && id != "" {
 			return id, entry.legacy
 		}
 	}
@@ -40,19 +41,19 @@ func modalSnapshotRestoreCandidate(env *Env, taskID string) (string, bool) {
 }
 
 // Records the namespaced snapshot id and drops the legacy key
-func modalStoreDirectSnapshot(env *Env, taskID, snapshotID string) error {
-	return envUpdateJSONStore(modalSnapshotStore(env), func(snapshots map[string]any) {
-		snapshots["direct:"+taskID] = snapshotID
-		delete(snapshots, taskID)
+func modalStoreDirectSnapshot(ctx context.Context, env *Env, taskID, snapshotID string) error {
+	return envUpdateJSONStore(WithEnvHome(ctx, env), modalSnapshotStore(env), func(snapshots *pyjson.Object) {
+		snapshots.Set("direct:"+taskID, snapshotID)
+		snapshots.Delete(taskID)
 	})
 }
 
 // Drops both keys of a task when they hold the snapshot id, or any id when none is given
-func modalDeleteDirectSnapshot(env *Env, taskID, snapshotID string) error {
-	return envUpdateJSONStore(modalSnapshotStore(env), func(snapshots map[string]any) {
+func modalDeleteDirectSnapshot(ctx context.Context, env *Env, taskID, snapshotID string) error {
+	return envUpdateJSONStore(WithEnvHome(ctx, env), modalSnapshotStore(env), func(snapshots *pyjson.Object) {
 		for _, key := range []string{"direct:" + taskID, taskID} {
-			if current, ok := snapshots[key]; ok && current != nil && (snapshotID == "" || current == snapshotID) {
-				delete(snapshots, key)
+			if current, ok := snapshots.Get(key); ok && current != nil && (snapshotID == "" || current == snapshotID) {
+				snapshots.Delete(key)
 			}
 		}
 	})
@@ -201,13 +202,13 @@ func NewModalEnvironment(ctx context.Context, env *Env, o ModalOptions) (*modalE
 			return nil, err
 		}
 		envLog(env).Warn("Modal: failed to restore snapshot, retrying with base image", "snapshot", restored[:min(20, len(restored))], "error", err)
-		modalDeleteDirectSnapshot(env, o.TaskID, restored)
+		modalDeleteDirectSnapshot(WithEnvHome(ctx, env), env, o.TaskID, restored)
 		if err := create(o.Image); err != nil {
 			mc.Close()
 			return nil, err
 		}
 	} else if restored != "" && legacy {
-		modalStoreDirectSnapshot(env, o.TaskID, restored)
+		modalStoreDirectSnapshot(WithEnvHome(ctx, env), env, o.TaskID, restored)
 	}
 	envLog(env).Info("Modal: sandbox created", "task", o.TaskID)
 	m.syncManager = NewFileSyncManager(env, func() []syncFile { return iterSyncFiles(env, "/root/.icebath") },
@@ -397,7 +398,7 @@ func (m *modalEnv) Cleanup(forceRemove bool) error {
 		image, err := m.sandbox.SnapshotFilesystem(snapCtx, &modal.SandboxSnapshotFilesystemParams{TTL: modal.NoExpiryTTL, Timeout: 60 * time.Second})
 		cancel()
 		if err == nil && image != nil && image.ImageID != "" {
-			if err := modalStoreDirectSnapshot(m.env, m.taskID, image.ImageID); err != nil {
+			if err := modalStoreDirectSnapshot(snapCtx, m.env, m.taskID, image.ImageID); err != nil {
 				envLog(m.env).Warn("Modal: filesystem snapshot failed", "error", err)
 			} else {
 				envLog(m.env).Info("Modal: saved filesystem snapshot", "snapshot", image.ImageID[:min(20, len(image.ImageID))], "task", m.taskID)

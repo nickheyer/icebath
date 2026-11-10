@@ -2,6 +2,7 @@ package browser
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -175,7 +176,7 @@ func nsValue() any {
 }
 
 // Records that this process holds the browser, caller holds the records lock
-func writeLease(record string, b *LaunchedBrowser) error {
+func writeLease(ctx context.Context, record string, b *LaunchedBrowser) error {
 	me := os.Getpid()
 	lease := pyjson.NewObject()
 	lease.Set("holder_pid", int64(me))
@@ -184,7 +185,7 @@ func writeLease(record string, b *LaunchedBrowser) error {
 	lease.Set("start_time", optInt(b.StartTime))
 	lease.Set("user_data_dir", b.UserDataDir)
 	lease.Set("ns", nsValue())
-	return config.AtomicJSONWriteWith(leasePath(record, me), lease)
+	return config.AtomicJSONWriteWith(ctx, leasePath(record, me), lease)
 }
 
 func dropLease(record string) { os.Remove(leasePath(record, os.Getpid())) }
@@ -247,14 +248,14 @@ func successor(holders []*pyjson.Object) *pyjson.Object {
 }
 
 // Makes the holder the record's owner so the last holder out stops the browser
-func handOver(record string, data, holder *pyjson.Object) error {
+func handOver(ctx context.Context, record string, data, holder *pyjson.Object) error {
 	out := pyjson.NewObject()
 	for _, k := range data.Keys {
 		out.Set(k, objGet(data, k))
 	}
 	out.Set("owner_pid", objGet(holder, "holder_pid"))
 	out.Set("owner_start_time", objGet(holder, "holder_start_time"))
-	if err := config.AtomicJSONWriteWith(record, out); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, record, out); err != nil {
 		return err
 	}
 	launcherLogger().Info(fmt.Sprintf("browser: Chromium pid %v is still used by Hermes pid %v; handed it over instead of stopping it",

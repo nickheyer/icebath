@@ -531,7 +531,7 @@ func lrWriteJSON(b *strings.Builder, v any) {
 }
 
 // Spawns the router on the stable port and records its endpoint state at spawn time
-func (s *LlamaServerSupervisor) spawn() error {
+func (s *LlamaServerSupervisor) spawn(ctx context.Context) error {
 	dio, err := supDirectIOArgs(s.Binary)
 	if err != nil {
 		return err
@@ -573,7 +573,7 @@ func (s *LlamaServerSupervisor) spawn() error {
 	cmd.Stdout, cmd.Stderr = logHandle, logHandle
 	cmd.Dir = filepath.Dir(s.Binary)
 	cmd.Env = lrEnvList(ServerChildEnv(lrEnvMap(os.Environ())))
-	job, err := supSpawnServer(cmd, true)
+	job, err := supSpawnServer(ctx, cmd, true)
 	if err != nil {
 		return err
 	}
@@ -690,11 +690,11 @@ func lrIndentedJSON(obj lrObject) string {
 }
 
 // Spawns the router, waits for health and starts the crash watchdog
-func (s *LlamaServerSupervisor) Start(timeout time.Duration) error {
+func (s *LlamaServerSupervisor) Start(ctx context.Context, timeout time.Duration) error {
 	s.lifecycle.Lock()
 	s.stopping.Store(false)
 	s.stopEvent.Clear()
-	err := s.spawn()
+	err := s.spawn(ctx)
 	s.lifecycle.Unlock()
 	if err != nil {
 		return err
@@ -702,7 +702,7 @@ func (s *LlamaServerSupervisor) Start(timeout time.Duration) error {
 	if err := s.waitHealth(timeout); err != nil {
 		return err
 	}
-	go s.watch()
+	go s.watch(ctx)
 	return nil
 }
 
@@ -732,7 +732,7 @@ func (s *LlamaServerSupervisor) waitHealth(timeout time.Duration) error {
 }
 
 // Restarts the router, never its children, with backoff after every crash
-func (s *LlamaServerSupervisor) watch() {
+func (s *LlamaServerSupervisor) watch(ctx context.Context) {
 	for !s.stopping.Load() {
 		proc := s.currentProc()
 		if proc == nil {
@@ -758,7 +758,7 @@ func (s *LlamaServerSupervisor) watch() {
 		s.mu.Lock()
 		s.restarts++
 		s.mu.Unlock()
-		stopped, err := s.restart(proc)
+		stopped, err := s.restart(ctx, proc)
 		if stopped {
 			return
 		}
@@ -777,7 +777,7 @@ func pyFloatOrInt(secs float64) string {
 }
 
 // Replaces a crashed router, true when a stop arrived first and the watchdog must end
-func (s *LlamaServerSupervisor) restart(crashed *lrServerProc) (bool, error) {
+func (s *LlamaServerSupervisor) restart(ctx context.Context, crashed *lrServerProc) (bool, error) {
 	s.lifecycle.Lock()
 	if s.stopping.Load() {
 		s.lifecycle.Unlock()
@@ -786,7 +786,7 @@ func (s *LlamaServerSupervisor) restart(crashed *lrServerProc) (bool, error) {
 	tools.StopOwnedGroupSurvivors(crashed.Pid(), nil, 3*time.Second)
 	err := supReapFn(s)
 	if err == nil {
-		err = supSpawnFn(s)
+		err = supSpawnFn(s, ctx)
 	}
 	s.lifecycle.Unlock()
 	if err != nil {

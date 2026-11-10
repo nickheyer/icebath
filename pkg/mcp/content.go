@@ -353,7 +353,7 @@ func renderDroppedBlockNotice(block *ContentBlock, blockType string) string {
 }
 
 // Resource link or embedded resource rendered as text, an embedded blob saved to the document cache
-func renderResourceBlock(env *tools.Env, block *ContentBlock, serverName string) string {
+func renderResourceBlock(ctx context.Context, env *tools.Env, block *ContentBlock, serverName string) string {
 	if block.Type == "resource_link" || (block.URI != "" && block.Resource == nil && block.Type != "text") {
 		if block.URI == "" {
 			return ""
@@ -395,7 +395,7 @@ func renderResourceBlock(env *tools.Env, block *ContentBlock, serverName string)
 		kind = "unknown type"
 	}
 	p, marker := writeBlockCache(func() (string, error) {
-		return cacheDocumentFromBytes(env, raw, resourceFilename(res.URI, res.MimeType))
+		return cacheDocumentFromBytes(tools.WithEnvHome(ctx, env), env, raw, resourceFilename(res.URI, res.MimeType))
 	}, "embedded resource", "[MCP embedded resource could not be cached: "+label+"]")
 	if p == "" {
 		return marker
@@ -420,7 +420,7 @@ func errorResultText(result *CallToolResult) string {
 }
 
 // Rendered block text, the count of real rendered blocks and the files this call's images were cached to
-func renderContentBlocks(env *tools.Env, result *CallToolResult, serverName string) (string, int, []string) {
+func renderContentBlocks(ctx context.Context, env *tools.Env, result *CallToolResult, serverName string) (string, int, []string) {
 	var parts []string
 	usable := 0
 	var images []string
@@ -444,7 +444,7 @@ func renderContentBlocks(env *tools.Env, result *CallToolResult, serverName stri
 			rendered = cacheAudioBlock(env, blk)
 		}
 		if rendered == "" {
-			rendered = renderResourceBlock(env, blk, serverName)
+			rendered = renderResourceBlock(tools.WithEnvHome(ctx, env), env, blk, serverName)
 		}
 		if rendered != "" {
 			parts = append(parts, rendered)
@@ -535,7 +535,7 @@ func isJSONEncodable(v any) bool {
 }
 
 // Handler JSON for a tool result, content and structured content both forwarded unless a text block dual emits it
-func RenderCallToolResult(env *tools.Env, result *CallToolResult, serverName string, imagePaths *[]string) string {
+func RenderCallToolResult(ctx context.Context, env *tools.Env, result *CallToolResult, serverName string, imagePaths *[]string) string {
 	if result.IsError {
 		text := errorResultText(result)
 		if text == "" {
@@ -543,7 +543,7 @@ func RenderCallToolResult(env *tools.Env, result *CallToolResult, serverName str
 		}
 		return tools.ErrorResult(fmt.Errorf("%s", sanitizeError(truncateTextResult(text))))
 	}
-	text, usable, cached := renderContentBlocks(env, result, serverName)
+	text, usable, cached := renderContentBlocks(tools.WithEnvHome(ctx, env), env, result, serverName)
 	if imagePaths != nil {
 		*imagePaths = append(*imagePaths, cached...)
 	}

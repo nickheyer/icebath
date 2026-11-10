@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/observability"
@@ -351,7 +352,7 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 		if allowed {
 			return nil
 		}
-		path, err := s.SaveJobOutput(job.ID, output)
+		path, err := s.SaveJobOutput(home.WithOverride(ctx, s.home), job.ID, output)
 		if err != nil {
 			return err
 		}
@@ -585,7 +586,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 	}()
 	processed, bodyErr := func() (bool, error) {
 		runCtx := s.installFireSecretScope(ctx)
-		claimed, err := s.claimDispatch(job.ID)
+		claimed, err := s.claimDispatch(home.WithOverride(runCtx, s.home), job.ID)
 		if err != nil {
 			return false, err
 		}

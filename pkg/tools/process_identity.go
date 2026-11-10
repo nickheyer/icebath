@@ -74,7 +74,9 @@ var lockOwnedServePidsFn = func() map[int]bool { return lockOwnedServePids("") }
 var processGroupGoneFn = func(pgid int) bool { return processGroupGone(pgid) }
 
 // RegisterChildFn records an owned child in the spawn ledger, swappable so a test observes the record
-var RegisterChildFn = func(pid int, purpose, projectRoot string) bool { return RegisterChild(pid, purpose, projectRoot) }
+var RegisterChildFn = func(ctx context.Context, pid int, purpose, projectRoot string) bool {
+	return RegisterChild(ctx, pid, purpose, projectRoot)
+}
 
 // OwnProcessGroupsFn makes process groups die with this process, swappable so a test observes the call
 var OwnProcessGroupsFn = func(pgids []int) { ownProcessGroups(pgids) }
@@ -438,7 +440,7 @@ func PidAliveMatches(pid int, createTime *float64, strict bool, boot *float64) (
 }
 
 // RegisterSelf records this process in the machine spawn ledger
-func RegisterSelf(purpose, projectRoot string, detail map[string]any) bool {
+func RegisterSelf(ctx context.Context, purpose, projectRoot string, detail map[string]any) bool {
 	tag := ParseSpawnTag(os.Getenv(SpawnEnvVar))
 	var spawnerPid *int
 	var spawnerCreate *float64
@@ -474,7 +476,7 @@ func RegisterSelf(purpose, projectRoot string, detail map[string]any) bool {
 		argv = argv[:10]
 	}
 	entry.Argv = strings.Join(argv, " ")
-	return appendLedgerEntry(entry)
+	return appendLedgerEntry(ctx, entry)
 }
 
 // IsDesktopOwnedBackend reports whether this process is the backend the Desktop spawned and owns
@@ -565,7 +567,7 @@ var (
 )
 
 // Prunes dead entries and appends entry, the only ledger write path
-func appendLedgerEntry(entry LedgerEntry) bool {
+func appendLedgerEntry(ctx context.Context, entry LedgerEntry) bool {
 	path := ledgerPathFn()
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
@@ -591,7 +593,7 @@ func appendLedgerEntry(entry LedgerEntry) bool {
 		pruned = append(pruned, e)
 	}
 	pruned = append(pruned, entry.asMap())
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		identityLogger().Debug("spawn ledger write failed", "error", err)
 		return false
 	}
@@ -767,7 +769,7 @@ func writeASCIIJSONString(b *strings.Builder, s string) {
 }
 
 // RegisterChild records a child this process just spawned with this process as its spawner
-func RegisterChild(pid int, purpose, projectRoot string) bool {
+func RegisterChild(ctx context.Context, pid int, purpose, projectRoot string) bool {
 	if pid <= 0 {
 		return false
 	}
@@ -784,7 +786,7 @@ func RegisterChild(pid int, purpose, projectRoot string) bool {
 		}
 		entry.Argv = strings.Join(argv, " ")
 	}
-	return appendLedgerEntry(entry)
+	return appendLedgerEntry(ctx, entry)
 }
 
 // LedgerOptions narrows a ledger read
@@ -1439,7 +1441,7 @@ func StopOwnedGroupSurvivors(pgid int, poll func(), grace time.Duration) bool {
 }
 
 // SpawnOwned starts a long lived child that dies with this process and records it in the ledger
-func SpawnOwned(cmd *exec.Cmd, purpose string) error {
+func SpawnOwned(ctx context.Context, cmd *exec.Cmd, purpose string) error {
 	if isWindowsHost {
 		return cmd.Start()
 	}
@@ -1448,7 +1450,7 @@ func SpawnOwned(cmd *exec.Cmd, purpose string) error {
 		return err
 	}
 	OwnProcessGroupsFn([]int{cmd.Process.Pid})
-	RegisterChildFn(cmd.Process.Pid, purpose, "")
+	RegisterChildFn(ctx, cmd.Process.Pid, purpose, "")
 	return nil
 }
 

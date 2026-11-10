@@ -1,12 +1,17 @@
 package commands
 
 import (
+	"context"
+	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // CommandArg returns everything after the slash command word, optionally lowercased
@@ -193,10 +198,8 @@ func SkillCommandCollisionNote(r *Registry, name string) string {
 
 // QuickCommand is one user defined slash shortcut from config
 type QuickCommand struct {
-	Name        string
 	Type        string
 	Target      string
-	Command     string
 	Description string
 }
 
@@ -208,26 +211,13 @@ func QuickCommands(cfg config.Tree) map[string]QuickCommand {
 		if entry == nil {
 			continue
 		}
-		q := QuickCommand{Name: name}
+		var q QuickCommand
 		q.Type, _ = entry["type"].(string)
 		q.Target, _ = entry["target"].(string)
-		q.Command, _ = entry["command"].(string)
 		q.Description, _ = entry["description"].(string)
 		out[name] = q
 	}
 	return out
-}
-
-// AliasTarget rewrites an alias quick command into its target line, false without a target
-func (q QuickCommand) AliasTarget(args string) (string, bool) {
-	target := strings.TrimSpace(q.Target)
-	if target == "" {
-		return "", false
-	}
-	if !strings.HasPrefix(target, "/") {
-		target = "/" + target
-	}
-	return strings.TrimSpace(target + " " + strings.TrimSpace(args)), true
 }
 
 // AliasChainError reports a quick command alias chain that cannot resolve
@@ -277,9 +267,9 @@ type RouteKind int
 const (
 	// RouteBuiltin runs a registered command
 	RouteBuiltin RouteKind = iota
-	// RouteQuickExec runs a type exec quick command shell snippet
+	// RouteQuickExec runs a type exec quick command through RunCLIExecQuickCommand with Exec
 	RouteQuickExec
-	// RouteQuickError reports a malformed quick command with its message
+	// RouteQuickError prints Message bold red for a malformed quick command
 	RouteQuickError
 	// RoutePlugin runs a plugin registered slash command
 	RoutePlugin
@@ -291,14 +281,17 @@ const (
 	RouteAmbiguous
 	// RouteUnknown reports a slash token nothing resolves
 	RouteUnknown
+	// RouteRaised is the exception hermes lets escape process_command for a malformed quick_commands value
+	RouteRaised
 )
 
 // Route is the resolved destination of one typed slash line
 type Route struct {
 	Kind        RouteKind
 	Inv         *Invocation
-	Quick       *QuickCommand
+	Exec        any
 	Message     string
+	Err         error
 	PluginName  string
 	Bundle      *BundleInfo
 	BundleKey   string
@@ -309,6 +302,14 @@ type Route struct {
 	Expanded    string
 }
 
+// RaisedError is a Python exception with its class and str
+type RaisedError struct {
+	Class string
+	Msg   string
+}
+
+func (e *RaisedError) Error() string { return e.Msg }
+
 // Router resolves slash lines that no builtin handles through quick commands, plugins, bundles and skills
 type Router struct {
 	Registry *Registry
@@ -316,7 +317,6 @@ type Router struct {
 	Skills   func() map[string]SkillInfo
 	Bundles  func() map[string]BundleInfo
 	Plugins  func() []string
-	Surface  string
 }
 
 func (rt *Router) registry() *Registry {
@@ -351,11 +351,11 @@ func (rt *Router) pluginNames() map[string]bool {
 }
 
 // Route resolves a slash line with the precedence builtin, quick, plugin, bundle, skill, prefix expansion
-func (rt *Router) Route(line string) Route {
-	return rt.route(line, map[string]bool{})
+func (rt *Router) Route(ctx context.Context, line string) Route {
+	return rt.route(ctx, line, map[string]bool{})
 }
 
-func (rt *Router) route(line string, seenQuick map[string]bool) Route {
+func (rt *Router) route(ctx context.Context, line string, seenQuick map[string]bool) Route {
 	inv, kind := ParseWith(rt.registry(), line)
 	if kind == KindSlash {
 		return Route{Kind: RouteBuiltin, Inv: inv}
@@ -363,14 +363,20 @@ func (rt *Router) route(line string, seenQuick map[string]bool) Route {
 	if kind != KindSkill {
 		return Route{Kind: RouteUnknown, Inv: inv}
 	}
-	original := strings.TrimSpace(line)
-	lowered := strings.ToLower(original)
-	baseCmd := strings.Fields(lowered)[0]
-	bare := strings.TrimLeft(baseCmd, "/")
-	userArgs := strings.TrimSpace(original[len(baseCmd):])
-	quick := QuickCommands(rt.Config)
-	if q, ok := quick[bare]; ok {
-		return rt.routeQuick(baseCmd, q, userArgs, seenQuick)
+	original := pystr.Strip(line)
+	lowered := pystr.Strip(pystr.Lower(line))
+	baseCmd := pystr.SplitWhitespace(lowered, -1)[0]
+	bare := pystr.LstripChars(baseCmd, "/")
+	userArgs := ""
+	if runes, n := []rune(original), len([]rune(baseCmd)); n < len(runes) {
+		userArgs = pystr.Strip(string(runes[n:]))
+	}
+	entry, found, err := quickCommandEntry(rt.Config, bare)
+	if err != nil {
+		return Route{Kind: RouteRaised, Inv: inv, Err: err}
+	}
+	if found {
+		return rt.routeQuick(ctx, baseCmd, bare, entry, userArgs, seenQuick)
 	}
 	skills := rt.skills()
 	bundles := rt.bundles()
@@ -384,35 +390,79 @@ func (rt *Router) route(line string, seenQuick map[string]bool) Route {
 		extra, instruction := SplitStackedSkillCommands(userArgs, skills)
 		return Route{Kind: RouteSkill, Inv: inv, SkillKeys: append([]string{baseCmd}, extra...), Instruction: instruction}
 	}
-	return rt.expandPrefix(original, lowered, skills, bundles, seenQuick)
+	return rt.expandPrefix(ctx, original, lowered, skills, bundles, seenQuick)
 }
 
-func (rt *Router) routeQuick(baseCmd string, q QuickCommand, userArgs string, seenQuick map[string]bool) Route {
-	msgs := quickMessages(rt.Surface)
-	switch q.Type {
-	case "alias":
-		target, ok := q.AliasTarget(userArgs)
-		if !ok {
-			return Route{Kind: RouteQuickError, Quick: &q, Message: msgs.noTarget(baseCmd)}
-		}
-		if seenQuick[q.Name] {
-			return Route{Kind: RouteQuickError, Quick: &q, Message: msgs.noTarget(baseCmd)}
-		}
-		seenQuick[q.Name] = true
-		r := rt.route(target, seenQuick)
-		r.Expanded = target
-		return r
-	case "exec":
-		if q.Command == "" {
-			return Route{Kind: RouteQuickError, Quick: &q, Message: msgs.noCommand(baseCmd)}
-		}
-		return Route{Kind: RouteQuickExec, Quick: &q}
+// Membership and lookup of bare in the raw quick_commands value with the TypeErrors in and indexing raise
+func quickCommandEntry(cfg config.Tree, bare string) (any, bool, error) {
+	raw, ok := cfg.Lookup("quick_commands")
+	if !ok {
+		return nil, false, nil
 	}
-	return Route{Kind: RouteQuickError, Quick: &q, Message: msgs.unsupported(baseCmd)}
+	if m := config.AsMap(raw); m != nil {
+		entry, found := m[bare]
+		return entry, found, nil
+	}
+	if s, ok := raw.(string); ok {
+		if strings.Contains(s, bare) {
+			return nil, false, &RaisedError{"TypeError", "string indices must be integers, not 'str'"}
+		}
+		return nil, false, nil
+	}
+	if rv := reflect.ValueOf(raw); rv.Kind() == reflect.Slice {
+		for i := 0; i < rv.Len(); i++ {
+			if s, ok := rv.Index(i).Interface().(string); ok && s == bare {
+				return nil, false, &RaisedError{"TypeError", "list indices must be integers or slices, not str"}
+			}
+		}
+		return nil, false, nil
+	}
+	return nil, false, &RaisedError{"TypeError", fmt.Sprintf("argument of type '%s' is not a container or iterable", config.PyTypeName(raw))}
 }
 
-func (rt *Router) expandPrefix(original, lowered string, skills map[string]SkillInfo, bundles map[string]BundleInfo, seenQuick map[string]bool) Route {
-	typed := strings.Fields(lowered)[0]
+// Alias re-dispatch, type check and command check of one quick command entry as the classic CLI runs them
+func (rt *Router) routeQuick(ctx context.Context, baseCmd, bare string, entry any, userArgs string, seenQuick map[string]bool) Route {
+	qcmd := config.AsMap(entry)
+	if qcmd == nil {
+		return Route{Kind: RouteRaised, Err: &RaisedError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", config.PyTypeName(entry))}}
+	}
+	qtype, _ := qcmd["type"].(string)
+	if qtype == "alias" {
+		target := ""
+		if raw, ok := qcmd["target"]; ok {
+			s, isStr := raw.(string)
+			if !isStr {
+				return Route{Kind: RouteRaised, Err: &RaisedError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'strip'", config.PyTypeName(raw))}}
+			}
+			target = pystr.Strip(s)
+		}
+		if target == "" {
+			return Route{Kind: RouteQuickError, Message: i18n.T(ctx, "cli.quick.no_target", "", map[string]any{"command": baseCmd})}
+		}
+		if !strings.HasPrefix(target, "/") {
+			target = "/" + target
+		}
+		if seenQuick[bare] {
+			return Route{Kind: RouteRaised, Err: &RaisedError{"RecursionError", "maximum recursion depth exceeded"}}
+		}
+		seenQuick[bare] = true
+		line := pystr.Strip(target + " " + userArgs)
+		r := rt.route(ctx, line, seenQuick)
+		r.Expanded = line
+		return r
+	}
+	if qtype != "exec" {
+		return Route{Kind: RouteQuickError, Message: i18n.T(ctx, "cli.quick.unsupported_type", "", map[string]any{"command": baseCmd})}
+	}
+	command, ok := qcmd["command"]
+	if !ok || !config.PyTruthy(command) {
+		return Route{Kind: RouteQuickError, Message: i18n.T(ctx, "cli.quick.no_command", "", map[string]any{"command": baseCmd})}
+	}
+	return Route{Kind: RouteQuickExec, Exec: command}
+}
+
+func (rt *Router) expandPrefix(ctx context.Context, original, lowered string, skills map[string]SkillInfo, bundles map[string]BundleInfo, seenQuick map[string]bool) Route {
+	typed := pystr.SplitWhitespace(lowered, -1)[0]
 	known := map[string]bool{}
 	for k := range Commands(rt.registry()) {
 		known[k] = true
@@ -434,15 +484,13 @@ func (rt *Router) expandPrefix(original, lowered string, skills map[string]Skill
 		if known[typed] {
 			matches = []string{typed}
 		} else {
-			minLen := len(matches[0])
+			minLen := pystr.Len(matches[0])
 			for _, m := range matches {
-				if len(m) < minLen {
-					minLen = len(m)
-				}
+				minLen = min(minLen, pystr.Len(m))
 			}
 			var shortest []string
 			for _, m := range matches {
-				if len(m) == minLen {
+				if pystr.Len(m) == minLen {
 					shortest = append(shortest, m)
 				}
 			}
@@ -452,14 +500,18 @@ func (rt *Router) expandPrefix(original, lowered string, skills map[string]Skill
 		}
 	}
 	if len(matches) == 1 && matches[0] != typed {
-		expanded := matches[0] + strings.TrimSpace(original)[len(typed):]
-		r := rt.route(expanded, seenQuick)
+		expanded := matches[0]
+		if runes, n := []rune(original), len([]rune(typed)); n < len(runes) {
+			expanded += string(runes[n:])
+		}
+		r := rt.route(ctx, expanded, seenQuick)
 		r.Expanded = expanded
 		return r
 	}
 	if len(matches) > 1 {
 		return Route{Kind: RouteAmbiguous, Candidates: matches,
-			Lines: [2]string{"Ambiguous command: " + lowered, "Did you mean: " + strings.Join(matches, ", ") + "?"}}
+			Lines: [2]string{i18n.T(ctx, "cli.command.ambiguous", "", map[string]any{"command": lowered}),
+				i18n.T(ctx, "cli.command.did_you_mean_many", "", map[string]any{"candidates": strings.Join(matches, ", ")})}}
 	}
 	names := make([]string, 0, len(known))
 	for k := range known {
@@ -468,41 +520,6 @@ func (rt *Router) expandPrefix(original, lowered string, skills map[string]Skill
 	sort.Strings(names)
 	lead, pointer := UnknownCommandLines(lowered, names)
 	return Route{Kind: RouteUnknown, Lines: [2]string{lead, pointer}}
-}
-
-type quickText struct {
-	noTarget, unsupported, noCommand func(string) string
-	NoOutput, TimedOut               string
-	Error                            func(string) string
-}
-
-func quickMessages(surface string) quickText {
-	if surface == "gateway" {
-		return quickText{
-			noTarget: func(c string) string {
-				return "Quick command '/" + strings.TrimLeft(c, "/") + "' has no target defined."
-			},
-			unsupported: func(c string) string {
-				return "Quick command '/" + strings.TrimLeft(c, "/") + "' has unsupported type (supported: 'exec', 'alias')."
-			},
-			noCommand: func(c string) string {
-				return "Quick command '/" + strings.TrimLeft(c, "/") + "' has no command defined."
-			},
-			NoOutput: "Command returned no output.",
-			TimedOut: "Quick command timed out (30s).",
-			Error:    func(e string) string { return "Quick command error: " + e },
-		}
-	}
-	return quickText{
-		noTarget: func(c string) string { return "Quick command '" + c + "' has no target defined" },
-		unsupported: func(c string) string {
-			return "Quick command '" + c + "' has unsupported type (supported: 'exec', 'alias')"
-		},
-		noCommand: func(c string) string { return "Quick command '" + c + "' has no command defined" },
-		NoOutput:  "Command returned no output",
-		TimedOut:  "Quick command timed out (30s)",
-		Error:     func(e string) string { return "Quick command error: " + e },
-	}
 }
 
 // UnknownCommandLines returns the lead and pointer lines for a slash token with no handler

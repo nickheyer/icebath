@@ -187,3 +187,21 @@ func TestPathURLAndSeconds(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+func TestRaiseForStatusMatchesRequests(t *testing.T) {
+	for status, want := range map[int]string{
+		404: "404 Client Error: Not Found for url: https://h/x",
+		503: "503 Server Error: Service Unavailable for url: https://h/x",
+	} {
+		err := (&Response{Status: status}).RaiseForStatus("https://h/x")
+		e, ok := err.(*Error)
+		if !ok || e.Class != "HTTPError" || e.Text != want {
+			t.Fatalf("%d: %#v", status, err)
+		}
+	}
+	for _, status := range []int{200, 302, 399, 600} {
+		if err := (&Response{Status: status}).RaiseForStatus("https://h/x"); err != nil {
+			t.Fatalf("%d: %v", status, err)
+		}
+	}
+}

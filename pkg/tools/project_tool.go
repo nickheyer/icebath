@@ -110,8 +110,8 @@ func projectFail(msg string) string {
 }
 
 // Lists projects and which one the calling chat is in
-func projectList(env *Env, taskID string) string {
-	db, err := OpenProjectsDB(env)
+func projectList(ctx context.Context, env *Env, taskID string) string {
+	db, err := OpenProjectsDB(WithEnvHome(ctx, env), env)
 	if err != nil {
 		return projectFail(err.Error())
 	}
@@ -137,7 +137,7 @@ func projectList(env *Env, taskID string) string {
 }
 
 // Creates a project, reusing one that already owns the folder, and switches the chat into it
-func projectCreate(env *Env, name, path, taskID string) string {
+func projectCreate(ctx context.Context, env *Env, name, path, taskID string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return projectFail("name is required")
@@ -146,7 +146,7 @@ func projectCreate(env *Env, name, path, taskID string) string {
 	if folder != "" {
 		folder = projectNormalizePath(folder)
 	}
-	db, err := OpenProjectsDB(env)
+	db, err := OpenProjectsDB(WithEnvHome(ctx, env), env)
 	if err != nil {
 		return projectFail(err.Error())
 	}
@@ -183,8 +183,8 @@ func projectCreate(env *Env, name, path, taskID string) string {
 }
 
 // Moves the chat into an existing project by name, slug or id
-func projectSwitch(env *Env, project, taskID string) string {
-	db, err := OpenProjectsDB(env)
+func projectSwitch(ctx context.Context, env *Env, project, taskID string) string {
+	db, err := OpenProjectsDB(WithEnvHome(ctx, env), env)
 	if err != nil {
 		return projectFail(err.Error())
 	}
@@ -209,11 +209,11 @@ func projectSwitch(env *Env, project, taskID string) string {
 func handleProject(ctx context.Context, call *Call) string {
 	switch strings.TrimSpace(argS(call.Args, "action")) {
 	case "list":
-		return projectList(call.Env, call.TaskID)
+		return projectList(WithEnvHome(ctx, call.Env), call.Env, call.TaskID)
 	case "create":
-		return projectCreate(call.Env, argS(call.Args, "name"), argS(call.Args, "path"), call.TaskID)
+		return projectCreate(WithEnvHome(ctx, call.Env), call.Env, argS(call.Args, "name"), argS(call.Args, "path"), call.TaskID)
 	case "switch":
-		return projectSwitch(call.Env, argS(call.Args, "name"), call.TaskID)
+		return projectSwitch(WithEnvHome(ctx, call.Env), call.Env, argS(call.Args, "name"), call.TaskID)
 	}
 	return projectFail("action must be one of: create, switch, list.")
 }

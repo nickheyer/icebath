@@ -33,6 +33,9 @@ func tempdirCandidates() []string {
 	return dirs
 }
 
+// Candidate temp roots in tempfile order for callers choosing among them
+func TempdirCandidates() []string { return tempdirCandidates() }
+
 // tempfile.gettempdir, the first candidate where a probe file can be created, written and removed
 func Gettempdir() (string, error) {
 	dirs := tempdirCandidates()

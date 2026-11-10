@@ -7,18 +7,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Configuration document as nested maps the way YAML decodes it
 type Tree map[string]any
 
-// Error of a path that cannot be navigated
+// Python exception class and message of a dotted path write that cannot be navigated
 type PathError struct {
-	Path   string
-	Reason string
+	Kind string
+	Msg  string
 }
 
-func (e *PathError) Error() string { return "config path " + e.Path + ": " + e.Reason }
+func (e *PathError) Error() string { return e.Msg }
 
 // Refusal to create a nested key beside a literal dotted sibling it would shadow
 type PhantomKeyError struct {
@@ -63,15 +65,34 @@ func greedyLiteral(container map[string]any, parts []string) (string, int, bool)
 	return "", 0, false
 }
 
-// Existing literal dotted key that creating the mapping part would shadow
+// First key in mapping order that creating the mapping part would shadow
 func phantomSibling(container map[string]any, part string) string {
 	prefix := part + "."
-	for k := range container {
+	for _, k := range MappingKeys(container) {
 		if strings.HasPrefix(k, prefix) {
 			return k
 		}
 	}
 	return ""
+}
+
+// Position a Python list subscript of the segment addresses, negative counting from the end
+func listIndex(segment string, length int) (int, *PathError) {
+	n, ok := pyint.Parse(segment)
+	if !ok {
+		return 0, &PathError{"ValueError", "invalid literal for int() with base 10: " + PyRepr(segment)}
+	}
+	if !n.IsInt64() {
+		return 0, &PathError{"IndexError", "cannot fit 'int' into an index-sized integer"}
+	}
+	idx := n.Int64()
+	if idx < 0 {
+		idx += int64(length)
+	}
+	if idx < 0 || idx >= int64(length) {
+		return 0, &PathError{"IndexError", "list index out of range"}
+	}
+	return int(idx), nil
 }
 
 type hop struct {
@@ -90,8 +111,8 @@ func locate(root any, parts []string) ([]hop, any, any, bool) {
 		consumed := 1
 		switch c := cur.(type) {
 		case []any:
-			idx, err := strconv.Atoi(remaining[0])
-			if err != nil || idx < 0 || idx >= len(c) {
+			idx, err := listIndex(remaining[0], len(c))
+			if err != nil {
 				return nil, nil, nil, false
 			}
 			key = idx
@@ -133,9 +154,6 @@ func index(container any, key any) any {
 
 // Value at a dotted path and whether it exists
 func (t Tree) Lookup(path string) (any, bool) {
-	if path == "" {
-		return map[string]any(t), true
-	}
 	_, container, key, ok := locate(map[string]any(t), SplitPath(path))
 	if !ok {
 		return nil, false
@@ -149,6 +167,15 @@ func (t Tree) Get(path string) any {
 	return v
 }
 
+// Stores value under key, a new key going to the end of the mapping order
+func setOrderedKey(m map[string]any, key string, value any) {
+	_, had := m[key]
+	m[key] = value
+	if !had {
+		AppendMappingKey(m, key)
+	}
+}
+
 // Sets the value at a dotted path, creating intermediate maps and refusing to shadow a dotted sibling
 func (t Tree) Set(path string, value any) error {
 	parts := SplitPath(path)
@@ -159,16 +186,23 @@ func (t Tree) Set(path string, value any) error {
 		atLeaf := len(remaining) == 1
 		switch c := cur.(type) {
 		case []any:
-			idx, err := strconv.Atoi(remaining[0])
-			if err != nil {
-				return &PathError{path, "segment " + remaining[0] + " is not a list index"}
-			}
-			if idx < 0 || idx >= len(c) {
-				return &PathError{path, "list index " + remaining[0] + " out of range"}
-			}
+			part := remaining[0]
+			idx, err := listIndex(part, len(c))
 			if atLeaf {
+				if err != nil && err.Kind == "IndexError" && err.Msg == "list index out of range" {
+					err.Msg = "list assignment index out of range"
+				}
+				if err != nil {
+					return err
+				}
 				c[idx] = value
 				return nil
+			}
+			if err != nil && err.Kind == "ValueError" {
+				return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into list at key %s: segment %s is not a numeric index", PyRepr(path), PyRepr(part))}
+			}
+			if err != nil {
+				return err
 			}
 			cur = c[idx]
 			i++
@@ -189,7 +223,7 @@ func (t Tree) Set(path string, value any) error {
 			}
 			part := remaining[0]
 			if atLeaf {
-				c[part] = value
+				setOrderedKey(c, part, value)
 				return nil
 			}
 			if shadowed := phantomSibling(c, part); shadowed != "" {
@@ -197,14 +231,28 @@ func (t Tree) Set(path string, value any) error {
 				return &PhantomKeyError{Part: part, Path: path, Shadowed: shadowed, Escaped: escaped}
 			}
 			next := map[string]any{}
-			c[part] = next
+			setOrderedKey(c, part, next)
 			cur = next
 			i++
 		default:
-			return &PathError{path, fmt.Sprintf("cannot navigate into %T", cur)}
+			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %s", PyTypeName(cur), PyRepr(path))}
 		}
 	}
 	return nil
+}
+
+// Deletes the hop key from its container, storing a shortened list back into the hop above
+func deleteChild(hops []hop, j int) {
+	switch c := hops[j].container.(type) {
+	case map[string]any:
+		delete(c, hops[j].key.(string))
+	case []any:
+		idx := hops[j].key.(int)
+		shorter := append(c[:idx:idx], c[idx+1:]...)
+		if j > 0 {
+			setChild(hops[j-1], shorter)
+		}
+	}
 }
 
 // Removes the value at a dotted path and every map it leaves empty, reporting whether it existed
@@ -213,26 +261,14 @@ func (t Tree) Unset(path string) bool {
 	if !ok {
 		return false
 	}
-	switch c := container.(type) {
-	case []any:
-		idx := key.(int)
-		copy(c[idx:], c[idx+1:])
-		if len(parents) > 0 {
-			setChild(parents[len(parents)-1], c[:len(c)-1])
-		}
-		return true
-	case map[string]any:
-		delete(c, key.(string))
-	}
+	hops := append(parents, hop{container, key})
+	deleteChild(hops, len(hops)-1)
 	cur := container
 	for j := len(parents) - 1; j >= 0; j-- {
-		m, isMap := cur.(map[string]any)
-		if !isMap || len(m) != 0 {
+		if m, isMap := cur.(map[string]any); !isMap || len(m) != 0 {
 			break
 		}
-		if pm, ok := parents[j].container.(map[string]any); ok {
-			delete(pm, parents[j].key.(string))
-		}
+		deleteChild(hops, j)
 		cur = parents[j].container
 	}
 	return true
@@ -536,15 +572,18 @@ func stripValue(value, def any, path []string, keep map[string]bool) (any, bool)
 	if m, ok := value.(map[string]any); ok && len(m) > 0 {
 		defMap, _ := def.(map[string]any)
 		out := map[string]any{}
-		for k, v := range m {
-			child, dropped := stripValue(v, defMap[k], append(append([]string(nil), path...), k), keep)
+		var order []string
+		for _, k := range MappingKeys(m) {
+			child, dropped := stripValue(m[k], defMap[k], append(append([]string(nil), path...), k), keep)
 			if !dropped {
 				out[k] = child
+				order = append(order, k)
 			}
 		}
 		if len(out) == 0 {
 			return nil, true
 		}
+		SetMappingKeys(out, order)
 		return out, false
 	}
 	if pyEq(value, def) {

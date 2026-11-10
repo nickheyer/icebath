@@ -550,6 +550,9 @@ func (a *AIAgent) APIMode() string                   { return a.apiMode }
 func (a *AIAgent) Platform() string                  { return a.platform }
 func (a *AIAgent) SessionID() string                 { return a.sessionID }
 func (a *AIAgent) SessionAPICalls() int              { return a.sessionAPICalls }
+func (a *AIAgent) SessionReasoningTokens() int       { return a.sessionReasoningTokens }
+func (a *AIAgent) ConfigContextLength() int          { return a.configContextLength }
+func (a *AIAgent) ContextCompressor() ContextEngine  { return a.contextCompressor }
 func (a *AIAgent) SetEndSessionOnClose(v bool)       { a.endSessionOnClose = v }
 func (a *AIAgent) DelegateDepth() int                { return a.delegateDepth }
 func (a *AIAgent) SubagentID() string                { return a.subagentID }

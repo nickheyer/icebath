@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Directories bootstrapped inside every new profile
@@ -114,14 +115,19 @@ func ProfileExistsError(canon string) error {
 
 // Valid profile id derived from a typed name, my-work when nothing usable remains
 func SuggestProfileName(name string) string {
-	candidate := strings.Trim(suggestRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-"), "-_")
+	candidate := strings.Trim(suggestRe.ReplaceAllString(pystr.Lower(pystr.Strip(name)), "-"), "-_")
 	if r := []rune(candidate); len(r) > 64 {
 		candidate = string(r[:64])
 	}
-	if home.ProfileIDRe.MatchString(candidate) {
+	if matchesProfileID(candidate) {
 		return candidate
 	}
 	return "my-work"
+}
+
+// Reports whether s matches the profile id grammar the way Python re.match honours a dollar before a final newline
+func matchesProfileID(s string) bool {
+	return home.ProfileIDRe.MatchString(strings.TrimSuffix(s, "\n"))
 }
 
 // Error for a name that fails the profile id grammar, with a suggested valid name
@@ -133,14 +139,14 @@ func InvalidProfileNameError(name string) error {
 
 // Canonical profile id, lowercase with default matched case insensitively
 func NormalizeProfileName(name string) (string, error) {
-	stripped := strings.TrimSpace(name)
+	stripped := pystr.Strip(name)
 	if stripped == "" {
 		return "", &ValueError{"profile name cannot be empty"}
 	}
 	if casefold(stripped) == "default" {
 		return "default", nil
 	}
-	return strings.ToLower(stripped), nil
+	return pystr.Lower(stripped), nil
 }
 
 // Canonical profile id of an untyped value, refusing anything but a string so numeric ids never become directories
@@ -157,7 +163,7 @@ func ValidateProfileName(name string) error {
 	if name == "default" {
 		return nil
 	}
-	if !home.ProfileIDRe.MatchString(name) {
+	if !matchesProfileID(name) {
 		return InvalidProfileNameError(name)
 	}
 	if ReservedNames[name] {
@@ -169,7 +175,7 @@ func ValidateProfileName(name string) error {
 
 // Error unless name is safe as a wrapper file name under the wrapper directory
 func ValidateAliasName(name string) error {
-	if !home.ProfileIDRe.MatchString(name) {
+	if !matchesProfileID(name) {
 		return &ValueError{fmt.Sprintf("Invalid alias name %s. %s.", config.PyRepr(name), profileNameRule)}
 	}
 	return nil
@@ -212,7 +218,7 @@ func GetProfileDir(name string) (string, error) {
 	if canon == "default" {
 		return DefaultHome(), nil
 	}
-	if !home.ProfileIDRe.MatchString(canon) {
+	if !matchesProfileID(canon) {
 		return "", InvalidProfileNameError(canon)
 	}
 	return filepath.Join(ProfilesRoot(), canon), nil
@@ -270,7 +276,7 @@ func IterNamedProfileDirs(liveOnly bool) ([]string, error) {
 		if st, err := os.Stat(p); err != nil || !st.IsDir() {
 			continue
 		}
-		if e.Name() == "default" || !home.ProfileIDRe.MatchString(e.Name()) || !home.ProfileHasIdentity(p) {
+		if e.Name() == "default" || !matchesProfileID(e.Name()) || !home.ProfileHasIdentity(p) {
 			continue
 		}
 		if liveOnly && home.ProfileDeleted(p) {

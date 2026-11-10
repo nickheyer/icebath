@@ -63,6 +63,9 @@ func detectContainer() bool {
 	return rootMountHasMarker("/proc/self/mountinfo", []string{"kubepods", "containerd", "crio"})
 }
 
+// Container markers read again on every call, the uncached probe the chmod skip policy consults
+func DetectContainer() bool { return detectContainer() }
+
 // Reports whether any of the paths exists
 func fileExistsAny(paths ...string) bool {
 	for _, p := range paths {

@@ -33,16 +33,24 @@ func ieTreeListing(t *testing.T, root string) []string {
 	return out
 }
 
-func TestInstallMissingBundleToolIsInstalledInWritableStore(t *testing.T) {
+func TestMissingBundleToolIsInstalledInWritableStore(t *testing.T) {
+	for _, sealedInstall := range []bool{true, false} {
+		t.Run(fmt.Sprint(sealedInstall), func(t *testing.T) { ieMissingBundleTool(t, sealedInstall) })
+	}
+}
+
+// One bundle tool install with the sealed layout answer pinned the way Python patches install.sealed
+func ieMissingBundleTool(t *testing.T, sealedInstall bool) {
 	e := newIEEnv(t)
 	ctx := context.Background()
 	shipped := filepath.Join(e.tmp, "payload", "tools")
 	writeFile(t, filepath.Join(e.tmp, "payload", "manifest.json"), []byte(`{"repo":"core","store":"tools","venv":"venv"}`), 0o644)
 	os.MkdirAll(shipped, 0o777)
 	t.Setenv(EnvRuntimeDir, shipped)
-	if sealed, _ := Sealed(ctx); !sealed {
-		t.Fatal("the payload layout is not sealed")
-	}
+	t.Setenv("ICEBATH_HOME", filepath.Join(e.tmp, "home"))
+	previous := sealedLayout
+	sealedLayout = func(context.Context) (bool, error) { return sealedInstall, nil }
+	t.Cleanup(func() { sealedLayout = previous })
 	before := ieTreeListing(t, shipped)
 	runner, err := ensure(ctx, "faketool", EnsureOptions{Explicit: true, BaseEnv: map[string]string{}})
 	if err != nil {

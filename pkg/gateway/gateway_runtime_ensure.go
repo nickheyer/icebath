@@ -124,7 +124,7 @@ func observeReplacingStale(ctx context.Context, h string, deadline float64, repl
 		return ObservedEndpoint{State: "incompatible", ReasonCode: "runtime_protocol", Detail: replaceFailedDetail}, nil
 	}
 	replaced[h] = true
-	if refusal := replaceIncompatibleOwner(h, deadline); refusal != "" {
+	if refusal := replaceIncompatibleOwner(ctx, h, deadline); refusal != "" {
 		detail, ok := ReplaceRefusalDetail[refusal]
 		if !ok {
 			detail = replaceFailedDetail

@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 const cuChildEntry = "__selfupdate_test_child__"
 
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	if os.Getenv("ICEBATH_CUSTODY_TEST_NO_SUBREAPER") == "1" {
 		custodySubreaper = func() bool { return false }
 	}
@@ -20,8 +22,15 @@ func TestMain(m *testing.M) {
 	if os.Getenv("ICEBATH_SELFUPDATE_TEST_HOST") == "1" {
 		os.Exit(cuChild("claim-host", nil))
 	}
+	if os.Getenv("VS_BOOT_PROBE") != "" || len(os.Args) > 2 && os.Args[1] == "pm" && os.Args[2] == "worker" ||
+		len(os.Args) > 1 && (os.Args[1] == vsChildEntry || os.Args[1] == RelaunchedFlag || os.Args[1] == SourceCompletionEntry) {
+		os.Exit(vsChild(os.Args))
+	}
 	if len(os.Args) > 2 && os.Args[1] == cuChildEntry {
 		os.Exit(cuChild(os.Args[2], os.Args[3:]))
+	}
+	if len(os.Args) > 2 && os.Args[1] == scChildEntry {
+		os.Exit(scChild(os.Args[2], os.Args[3:]))
 	}
 	LoadCronJobsHook = testCronJobs
 	tools.GitlockRunGit = GitlockRunGit

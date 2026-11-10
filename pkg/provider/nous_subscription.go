@@ -160,6 +160,13 @@ var (
 	nousSubSaveConfigFn  = func(env PoolEnv, cfg map[string]any) error { return config.Save(envHome(env), config.Tree(cfg)) }
 )
 
+// SwapNousSubAccountInfo replaces the account lookup the subscription features read, returning the previous lookup
+func SwapNousSubAccountInfo(fn func(PoolEnv, bool) *NousPortalAccountInfo) func(PoolEnv, bool) *NousPortalAccountInfo {
+	prev := nousSubAccountInfoFn
+	nousSubAccountInfoFn = fn
+	return prev
+}
+
 // Tool env over the profile home, config and secrets for the tool backend readers
 func nousSubToolsEnv(env PoolEnv) *tools.Env {
 	return &tools.Env{Home: envHome(env), Config: config.Tree(env.config()), Secrets: env.Secrets, Log: env.log()}

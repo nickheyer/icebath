@@ -361,7 +361,7 @@ var destructiveActions = []string{"remove", "remove-keep-branch", "archive-remov
 var kanbanTreeFullRe = regexp.MustCompile(`^t_[0-9a-f]+\n?$`)
 
 // Read only decision for every tree under the worktrees dir, olderThanDays when positive only restricts removal
-func PlanSweep(repoRoot string, maxAgeHours int, s *SweepConfig, now float64, olderThanDays *float64) []*Decision {
+func PlanSweep(ctx context.Context, repoRoot string, maxAgeHours int, s *SweepConfig, now float64, olderThanDays *float64) []*Decision {
 	settings := SweepSettings
 	cfg := SweepConfig{}
 	if s != nil {
@@ -403,7 +403,7 @@ func PlanSweep(repoRoot string, maxAgeHours int, s *SweepConfig, now float64, ol
 	}
 	var verdicts []pruneVerdict
 	if len(candidates) > 0 {
-		verdicts = classifyPruneCandidates(repoRoot, candidates)
+		verdicts = classifyPruneCandidates(ctx, repoRoot, candidates)
 	}
 	live := map[string][]int{}
 	if !ClassicMode(cfg) {
@@ -683,8 +683,8 @@ func ExecutePlan(repoRoot string, plan []*Decision, s SweepConfig) ([]string, ma
 }
 
 // Plans, executes and applies archive retention for one repository in archive mode
-func RunSweep(repoRoot string, maxAgeHours int, s SweepConfig) error {
-	plan := PlanSweep(repoRoot, maxAgeHours, &s, 0, nil)
+func RunSweep(ctx context.Context, repoRoot string, maxAgeHours int, s SweepConfig) error {
+	plan := PlanSweep(ctx, repoRoot, maxAgeHours, &s, 0, nil)
 	preserved, kept, archived := ExecutePlan(repoRoot, plan, s)
 	removed := 0
 	for _, a := range archived {

@@ -3,6 +3,7 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,9 +19,9 @@ const errnoLabel = "Errno"
 const canFchmod = true
 
 // Exclusive flock on the owner only lock sibling, refusing a symlinked lock path
-func fileLock(path string) (func(), error) {
+func fileLock(ctx context.Context, path string) (func(), error) {
 	lockPath := path + ".lock"
-	if _, err := home.Mkdir(filepath.Dir(lockPath)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(lockPath)); err != nil {
 		return nil, err
 	}
 	fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)

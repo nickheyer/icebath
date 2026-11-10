@@ -307,7 +307,7 @@ func worktreeSweepLines(plan []*Decision) []string {
 // Plan of the automatic sweep for a repo, applied unless dry run, with the action lines it produced
 func worktreeSweep(ctx context.Context, repoRoot string, dryRun bool, olderThan *float64) ([]*Decision, []string, error) {
 	settings := SweepSettings()
-	plan := PlanSweep(repoRoot, 24, &settings, 0, olderThan)
+	plan := PlanSweep(ctx, repoRoot, 24, &settings, 0, olderThan)
 	if dryRun || ClassicMode(settings) {
 		return plan, []string{}, nil
 	}
@@ -455,13 +455,13 @@ func worktreeCmdPrune(ctx context.Context, repoRoot string, ns map[string]any, w
 }
 
 // Recreates an archived worktree and prints where it landed, 1 on a missing name or an archive error
-func worktreeCmdRestore(repoRoot string, ns map[string]any, w io.Writer) (int, error) {
+func worktreeCmdRestore(ctx context.Context, repoRoot string, ns map[string]any, w io.Writer) (int, error) {
 	name := worktreeNsString(ns, "name")
 	if name == "" {
 		fmt.Fprintln(w, "Usage: icebath worktree restore <name> [--path DIR]")
 		return 1, nil
 	}
-	result, err := RestoreArchive(repoRoot, name, worktreeNsString(ns, "path"))
+	result, err := RestoreArchive(ctx, repoRoot, name, worktreeNsString(ns, "path"))
 	if err != nil {
 		var archiveErr *ArchiveError
 		if errors.As(err, &archiveErr) {
@@ -519,7 +519,7 @@ func cmdWorktree(ctx context.Context, ns map[string]any, w io.Writer) (int, erro
 	case "prune":
 		return worktreeCmdPrune(ctx, repoRoot, ns, w)
 	case "restore":
-		return worktreeCmdRestore(repoRoot, ns, w)
+		return worktreeCmdRestore(ctx, repoRoot, ns, w)
 	}
 	fmt.Fprintf(w, "Unknown worktree action: %s\n", action)
 	return 1, nil

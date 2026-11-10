@@ -128,7 +128,7 @@ func lookupProject(ctx context.Context, id string) (project *tools.Project) {
 	if env == nil {
 		env = &tools.Env{Home: home.Dir(ctx)}
 	}
-	db, err := tools.OpenProjectsDB(env)
+	db, err := tools.OpenProjectsDB(tools.WithEnvHome(ctx, env), env)
 	if err != nil {
 		return nil
 	}

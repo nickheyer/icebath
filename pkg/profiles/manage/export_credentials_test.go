@@ -158,7 +158,7 @@ func TestDistributionCanNeitherPlantNorReplaceAStore(t *testing.T) {
 				writeFile(t, filepath.Join(staged, "SOUL.md"), soul)
 				m := profiles.NewDistributionManifest("dist")
 				m.Version, m.DistributionOwned = "0.1.0", owned
-				if _, err := profiles.WriteManifest(staged, m); err != nil {
+				if _, err := profiles.WriteManifest(context.Background(), staged, m); err != nil {
 					t.Fatal(err)
 				}
 				return staged

@@ -3,6 +3,7 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,9 +22,9 @@ const errnoLabel = "WinError"
 const canFchmod = false
 
 // Byte range lock on the lock sibling retried ten times a second apart like msvcrt LK_LOCK
-func fileLock(path string) (func(), error) {
+func fileLock(ctx context.Context, path string) (func(), error) {
 	lockPath := path + ".lock"
-	if _, err := home.Mkdir(filepath.Dir(lockPath)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(lockPath)); err != nil {
 		return nil, err
 	}
 	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0o600)

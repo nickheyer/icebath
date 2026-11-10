@@ -172,7 +172,7 @@ func PersistPersonality(ctx context.Context, value any) bool {
 	name := NormalizePersonalityName(value)
 	h := home.Dir(ctx)
 	configPath := home.ConfigPath(h)
-	if _, err := home.Mkdir(h); err != nil {
+	if _, err := home.Mkdir(ctx, h); err != nil {
 		return false
 	}
 	if err := config.WriteConfigKey(ctx, configPath, "display.personality", name); err != nil {

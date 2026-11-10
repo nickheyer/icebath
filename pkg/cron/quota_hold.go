@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -18,7 +18,7 @@ const (
 	QuotaHoldSlackSeconds = 60
 )
 
-var quotaRetryAfterRe = regexp.MustCompile(`(?i)retry after (\d+)s`)
+var quotaRetryAfterRe = regexp.MustCompile(`(?i)retry after (\p{Nd}+)s`)
 
 // Longest cause chain walked before giving up, the bound a cyclic Unwrap cannot exceed
 const maxErrorChain = 1000
@@ -35,7 +35,7 @@ func scheduleExpr(sched *Schedule) *string {
 func quotaHoldSecondsFromFailure(err error) (float64, bool) {
 	for cur, depth := err, 0; cur != nil && depth < maxErrorChain; cur, depth = errors.Unwrap(cur), depth+1 {
 		authErr, ok := cur.(*provider.AuthError)
-		if !ok || authErr.ReloginRequired || authErr.Code != provider.CodexRateLimitedCode {
+		if !ok || !provider.IsRateLimitedAuthError(authErr) {
 			continue
 		}
 		var hint float64
@@ -47,7 +47,7 @@ func quotaHoldSecondsFromFailure(err error) (float64, bool) {
 			if m == nil {
 				return 0, false
 			}
-			v, perr := strconv.ParseFloat(m[1], 64)
+			v, perr := pyint.ParseFloat(m[1])
 			if perr != nil {
 				return 0, false
 			}
@@ -140,7 +140,7 @@ func quotaHoldPlanHold(s *Store, job *Job, holdSeconds float64, recoverConsumedF
 	extraFireReschedule(job, parked)
 	job.QuotaHoldUntil = strPtr(parked)
 	s.log.Warn(fmt.Sprintf("Job '%s': provider usage window closed for %.0fs — holding fires until %s instead of "+
-		"failing on every cadence tick", job.Label(), holdSeconds, parked))
+		"failing on every cadence tick", oneshotLabel(job), holdSeconds, parked))
 	return true, nil
 }
 
@@ -154,5 +154,5 @@ func quotaHoldNotice(s *Store, job *Job, holdSeconds float64) string {
 	return fmt.Sprintf("\nThe provider's usage window is closed for about %.1fh. This job is held "+
 		"through %s and resumes at the first safe "+
 		"opportunity afterwards; no further alerts are sent while the provider is unavailable.",
-		hours, pydatetime.Strftime(windowEnd, "%Y-%m-%d %H:%M %Z"))
+		hours, config.SafeStrftime(windowEnd, "%Y-%m-%d %H:%M %Z"))
 }

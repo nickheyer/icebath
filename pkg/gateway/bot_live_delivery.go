@@ -253,13 +253,13 @@ func deliveryStrerror(errno syscall.Errno) string {
 func deliveryPermission(err error) bool { return errors.Is(err, fs.ErrPermission) }
 
 // Creates and hardens the mailbox dir and its lock file, answering the lock path
-func prepareMailbox(root string) (string, error) {
+func prepareMailbox(ctx context.Context, root string) (string, error) {
 	st, statErr := os.Stat(root)
 	created := statErr != nil || !st.IsDir()
-	if _, err := home.MakeUserDir(filepath.Dir(root), 0o700, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, filepath.Dir(root), 0o700, true, true); err != nil {
 		return "", err
 	}
-	if _, err := home.MakeUserDir(root, 0o700, false, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, root, 0o700, false, true); err != nil {
 		return "", err
 	}
 	if err := os.Chmod(root, 0o700); err != nil {
@@ -282,9 +282,9 @@ func prepareMailbox(root string) (string, error) {
 }
 
 // Runs body holding the mailbox dir lock, an unusable dir refused as MailboxUnusable
-func lockedMailbox(profileHome string, body func(root string) error) error {
+func lockedMailbox(ctx context.Context, profileHome string, body func(root string) error) error {
 	root := deliveryRoot(profileHome)
-	lock, err := prepareMailbox(root)
+	lock, err := prepareMailbox(ctx, root)
 	var release func()
 	if err == nil {
 		release, err = acquireFileLock(lock)
@@ -407,7 +407,7 @@ func deliveryInt(v any) *big.Int {
 }
 
 // Next admission sequence under the dir lock, persisted in a counter file beside the tickets
-func nextDeliverySequence(root string) (*big.Int, error) {
+func nextDeliverySequence(ctx context.Context, root string) (*big.Int, error) {
 	counter := filepath.Join(root, deliverySequenceFile)
 	persisted := big.NewInt(0)
 	if data, err := os.ReadFile(counter); err == nil {
@@ -435,14 +435,14 @@ func nextDeliverySequence(root string) (*big.Int, error) {
 		sequence = scanned
 	}
 	sequence = new(big.Int).Add(sequence, big.NewInt(1))
-	if err := pyfs.AtomicWriteTextMode(counter, sequence.String(), ".tmp_", 0o600); err != nil {
+	if err := pyfs.AtomicWriteTextMode(ctx, counter, sequence.String(), ".tmp_", 0o600); err != nil {
 		return nil, err
 	}
 	return sequence, nil
 }
 
-func writeTicket(path string, record map[string]any) error {
-	return config.AtomicJSONWriteMode(path, record, 0o600, pyjson.SortKeys(true))
+func writeTicket(ctx context.Context, path string, record map[string]any) error {
+	return config.AtomicJSONWriteMode(ctx, path, record, 0o600, pyjson.SortKeys(true))
 }
 
 // Durable admission answered at once without waiting for the owner
@@ -553,7 +553,7 @@ func deliveryTruthy(v any) bool {
 func ClaimPendingDelivery(profileHome string, owner map[string]any) map[string]any { return nil }
 
 // Persists an immutable terminal receipt where an identical duplicate completion is safe
-func CompleteDelivery(profileHome, deliveryID, status, reply, errText, reason string) (map[string]any, error) {
+func CompleteDelivery(ctx context.Context, profileHome, deliveryID, status, reply, errText, reason string) (map[string]any, error) {
 	key, err := checkDeliveryID(deliveryID)
 	if err != nil {
 		return nil, err
@@ -563,7 +563,7 @@ func CompleteDelivery(profileHome, deliveryID, status, reply, errText, reason st
 	}
 	outcome := map[string]any{"status": status, "reply": reply, "error": errText, "reason": reason}
 	var out map[string]any
-	err = lockedMailbox(profileHome, func(root string) error {
+	err = lockedMailbox(ctx, profileHome, func(root string) error {
 		path := filepath.Join(root, key+".json")
 		record, err := readTicket(path)
 		if err != nil {
@@ -592,7 +592,7 @@ func CompleteDelivery(profileHome, deliveryID, status, reply, errText, reason st
 			record[k] = v
 		}
 		record["completed_at"] = time.Now().UnixNano()
-		if err := writeTicket(path, record); err != nil {
+		if err := writeTicket(ctx, path, record); err != nil {
 			return err
 		}
 		out = record
@@ -602,13 +602,13 @@ func CompleteDelivery(profileHome, deliveryID, status, reply, errText, reason st
 }
 
 // Cancels an ownerless queued receipt, a claim or result that won the lock answered unchanged
-func CancelQueuedDelivery(profileHome, deliveryID, errText, reason string) (map[string]any, error) {
+func CancelQueuedDelivery(ctx context.Context, profileHome, deliveryID, errText, reason string) (map[string]any, error) {
 	key, err := checkDeliveryID(deliveryID)
 	if err != nil {
 		return nil, err
 	}
 	var out map[string]any
-	err = lockedMailbox(profileHome, func(root string) error {
+	err = lockedMailbox(ctx, profileHome, func(root string) error {
 		path := filepath.Join(root, key+".json")
 		record, err := readTicket(path)
 		if err != nil {
@@ -627,7 +627,7 @@ func CancelQueuedDelivery(profileHome, deliveryID, errText, reason string) (map[
 		}
 		record["status"], record["reply"], record["error"], record["reason"] = "cancelled", "", errText, reason
 		record["completed_at"] = time.Now().UnixNano()
-		if err := writeTicket(path, record); err != nil {
+		if err := writeTicket(ctx, path, record); err != nil {
 			return err
 		}
 		out = record
@@ -646,7 +646,7 @@ func ReadDeliveryResult(ctx context.Context, profileHome, deliveryID string) (ma
 		return nil, nil
 	}
 	var record map[string]any
-	err = lockedMailbox(profileHome, func(root string) error {
+	err = lockedMailbox(ctx, profileHome, func(root string) error {
 		var err error
 		record, err = readTicket(filepath.Join(root, key+".json"))
 		return err

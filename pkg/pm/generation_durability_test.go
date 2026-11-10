@@ -19,7 +19,7 @@ func svFlushProbe(t *testing.T, observe func() bool) *[]bool {
 	return seen
 }
 
-func TestSVInstallSelectionIsCommittedOnlyAfterItsTreeIsFlushed(t *testing.T) {
+func TestInstallSelectionIsCommittedOnlyAfterItsTreeIsFlushed(t *testing.T) {
 	tmp := svRooted(t)
 	ctx := context.Background()
 	repo := sttMkdir(t, filepath.Join(tmp, "repo"))
@@ -50,7 +50,7 @@ func TestSVInstallSelectionIsCommittedOnlyAfterItsTreeIsFlushed(t *testing.T) {
 	}
 }
 
-func TestSVSideEnvironmentSelectionIsCommittedOnlyAfterItsTreeIsFlushed(t *testing.T) {
+func TestSideEnvironmentSelectionIsCommittedOnlyAfterItsTreeIsFlushed(t *testing.T) {
 	tmp := isolateHome(t)
 	base := sttTouch(t, filepath.Join(sttMkdir(t, filepath.Join(tmp, "base")), "python"))
 	peSwap(t, &uvToolchain, func(context.Context, bool, bool) (string, string, bool, error) { return "", base, true, nil })

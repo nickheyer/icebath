@@ -175,7 +175,7 @@ func TestRoutingDecisionWiring(t *testing.T) {
 
 func TestScreenshotDedupOmitsUnchangedFrames(t *testing.T) {
 	cuRoute(t, false)
-	cuSwap(t, &persistCaptureImage, func(*tools.Env, *CaptureResult) *string { return nil })
+	cuSwap(t, &persistCaptureImage, func(context.Context, *tools.Env, *CaptureResult) *string { return nil })
 	env := cuCaptureEnv(t)
 	fresh := func() { resetScreenshotDedupState("", true); t.Cleanup(func() { resetScreenshotDedupState("", true) }) }
 	fresh()
@@ -225,7 +225,7 @@ func TestScreenshotDedupOmitsUnchangedFrames(t *testing.T) {
 
 func TestScreenshotDedupStreakCapRedeliversPixels(t *testing.T) {
 	cuRoute(t, false)
-	cuSwap(t, &persistCaptureImage, func(*tools.Env, *CaptureResult) *string { return nil })
+	cuSwap(t, &persistCaptureImage, func(context.Context, *tools.Env, *CaptureResult) *string { return nil })
 	resetScreenshotDedupState("", true)
 	t.Cleanup(func() { resetScreenshotDedupState("", true) })
 	env := cuCaptureEnv(t)
@@ -263,7 +263,7 @@ func (b *cuFrameBackend) Capture(string, *string, *int, *int) (*CaptureResult, e
 
 func TestExplicitCaptureAfterInputIsSubjectToDedup(t *testing.T) {
 	cuRoute(t, false)
-	cuSwap(t, &persistCaptureImage, func(*tools.Env, *CaptureResult) *string { return nil })
+	cuSwap(t, &persistCaptureImage, func(context.Context, *tools.Env, *CaptureResult) *string { return nil })
 	resetScreenshotDedupState("", true)
 	t.Cleanup(func() { resetScreenshotDedupState("", true) })
 	env := cuCaptureEnv(t)
@@ -304,7 +304,7 @@ func TestElementBoundsNulledOnlyForZeroRect(t *testing.T) {
 }
 
 func TestCappedWalkHintNamesTheCapOnlyWhenHit(t *testing.T) {
-	cuSwap(t, &spillElementsToFile, func(*tools.Env, *CaptureResult) *string { p := "/tmp/elements.json"; return &p })
+	cuSwap(t, &spillElementsToFile, func(context.Context, *tools.Env, *CaptureResult) *string { p := "/tmp/elements.json"; return &p })
 	for _, c := range []struct {
 		n, bound int
 		capped   bool
@@ -314,7 +314,7 @@ func TestCappedWalkHintNamesTheCapOnlyWhenHit(t *testing.T) {
 			els = append(els, UIElement{Index: i + 1, Role: "AXButton", Label: fmt.Sprintf("b%d", i)})
 		}
 		capture := &CaptureResult{Mode: "ax", Width: 800, Height: 600, AXMaxElements: c.bound, Elements: els}
-		text := strings.Join(captureSummaryLines(newCaptureView(cuCaptureEnv(t), capture, 5)), "\n")
+		text := strings.Join(captureSummaryLines(newCaptureView(context.Background(), cuCaptureEnv(t), capture, 5)), "\n")
 		if strings.Contains(text, "accessibility walk capped") != c.capped ||
 			strings.Contains(text, "full element tree with untruncated labels saved to") == c.capped ||
 			!strings.Contains(text, "element tree with untruncated labels saved to") {
@@ -347,8 +347,14 @@ func TestFrameCapturedAcrossATakeoverIsDroppedBeforeAnySink(t *testing.T) {
 		cuInjectedBackend = b
 		cuBackendMu.Unlock()
 		var leaked []string
-		cuSwap(t, &persistCaptureImage, func(*tools.Env, *CaptureResult) *string { leaked = append(leaked, "persist"); return nil })
-		cuSwap(t, &spillElementsToFile, func(*tools.Env, *CaptureResult) *string { leaked = append(leaked, "spill"); return nil })
+		cuSwap(t, &persistCaptureImage, func(context.Context, *tools.Env, *CaptureResult) *string {
+			leaked = append(leaked, "persist")
+			return nil
+		})
+		cuSwap(t, &spillElementsToFile, func(context.Context, *tools.Env, *CaptureResult) *string {
+			leaked = append(leaked, "spill")
+			return nil
+		})
 		cuSwap(t, &shouldRouteThroughAuxVision, func(context.Context, *tools.Env) bool { leaked = append(leaked, "aux-decide"); return true })
 		cuSwap(t, &routeCaptureThroughAuxVision, func(context.Context, *tools.Env, *CaptureResult, string, []UIElement, int, *string, *string) *string {
 			leaked = append(leaked, "aux")
@@ -430,7 +436,7 @@ func TestComputerUseCacheFilesOwnerOnly(t *testing.T) {
 	}
 	t.Setenv("ICEBATH_MANAGED", "")
 	env := &tools.Env{Home: filepath.Join(t.TempDir(), "hh")}
-	path, err := cacheFile(env, "cache/vision", "temp_vision_images", "capture.png", "", 0)
+	path, err := cacheFile(context.Background(), env, "cache/vision", "temp_vision_images", "capture.png", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +468,7 @@ func TestCacheFilePrunesOldestDownToTheCap(t *testing.T) {
 		}
 	}
 	capture := &CaptureResult{Mode: "ax", App: "kate", Elements: []UIElement{{Index: 1, Role: "AXButton", Label: "é"}}}
-	spilled := spillElementsToFile(env, capture)
+	spilled := spillElementsToFile(context.Background(), env, capture)
 	if spilled == nil {
 		t.Fatal("spill failed")
 	}

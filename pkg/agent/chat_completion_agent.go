@@ -169,7 +169,9 @@ func (a *AIAgent) CredentialPoolEnv() provider.PoolEnv { return agentPoolEnv(a.h
 
 func (a *AIAgent) IsHeadedMode() (bool, error) { return tools.IsHeadedMode(a.env), nil }
 
-func (a *AIAgent) CleanupBrowser(taskID string) error { return tools.CleanupBrowser(a.env, taskID) }
+func (a *AIAgent) CleanupBrowser(ctx context.Context, taskID string) error {
+	return tools.CleanupBrowser(tools.WithEnvHome(ctx, a.env), a.env, taskID)
+}
 
 func (a *AIAgent) ActiveCodexStreamRequestToken() any {
 	a.requestStateMu.Lock()
@@ -304,7 +306,9 @@ func (a *AIAgent) interruptibleStreamingAPICall(ctx context.Context, kwargs map[
 }
 
 // Per turn VM and browser cleanup leaving persistent terminals and headed browsers to the idle reapers
-func (a *AIAgent) cleanupTaskResources(taskID string) { provider.CleanupTaskResources(a, taskID) }
+func (a *AIAgent) cleanupTaskResources(ctx context.Context, taskID string) {
+	provider.CleanupTaskResources(tools.WithEnvHome(ctx, a.env), a, taskID)
+}
 
 func (a *AIAgent) Transport() provider.Transport { return a.getTransport("") }
 
@@ -374,7 +378,7 @@ func (a *AIAgent) closeTaskResources(taskID string) {
 	ctx := a.homeContext()
 	killProcesses := func() error {
 		reg := tools.DefaultProcessRegistry()
-		for _, process := range reg.ListSessions(a.env, "", "", false) {
+		for _, process := range reg.ListSessions(tools.WithEnvHome(ctx, a.env), a.env, "", "", false) {
 			owner, _ := process["owner_task_id"].(string)
 			if !a.processOwnerTaskIDs[owner] || process["status"] != "running" {
 				continue
@@ -383,7 +387,7 @@ func (a *AIAgent) closeTaskResources(taskID string) {
 				continue
 			}
 			sessionID, _ := process["session_id"].(string)
-			reg.KillProcess(a.env, sessionID, "agent_close", true)
+			reg.KillProcess(tools.WithEnvHome(ctx, a.env), a.env, sessionID, "agent_close", true)
 		}
 		return nil
 	}
@@ -398,7 +402,7 @@ func (a *AIAgent) closeTaskResources(taskID string) {
 	steps := []func() error{
 		killProcesses,
 		func() error { tools.CleanupVM(a.env, taskID, false); return nil },
-		func() error { return tools.CleanupBrowser(a.env, taskID) },
+		func() error { return tools.CleanupBrowser(tools.WithEnvHome(ctx, a.env), a.env, taskID) },
 		func() error { tools.ReleaseComputerUseSession(ctx, taskID); return nil },
 		forgetFileState,
 	}

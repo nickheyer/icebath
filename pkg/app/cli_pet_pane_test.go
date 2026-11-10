@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/goals"
+
 	"github.com/nickheyer/icebath/pkg/pet"
 )
 
@@ -201,9 +202,9 @@ func goalCLI(t *testing.T, status string, turnsUsed, maxTurns int64) *CLI {
 	t.Helper()
 	c := statusBarCLI(t, nil)
 	c.sessionID = "sess-goal-test"
-	st := agent.NewGoalState("ship it")
+	st := goals.NewGoalState("ship it")
 	st.Status, st.TurnsUsed, st.MaxTurns = status, turnsUsed, maxTurns
-	agent.SaveGoal(c.ctx, c.sessionID, st)
+	goals.SaveGoal(c.ctx, c.sessionID, st)
 	return c
 }
 

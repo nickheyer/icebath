@@ -1,12 +1,14 @@
 package cron
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -20,7 +22,7 @@ type executionStamp struct {
 }
 
 // Canonical UTC isoformat of an aware timestamp, nil for naive or unparsable text
-func scheduledInstant(s *Store, value *string) *string {
+func scheduledInstant(value *string) *string {
 	if value == nil {
 		return nil
 	}
@@ -34,7 +36,7 @@ func scheduledInstant(s *Store, value *string) *string {
 
 // Ledger already holds a completed run of this occurrence that finished no earlier than the slot minus skew
 func completedOccurrence(s *Store, job *Job, instant string) bool {
-	canonical := scheduledInstant(s, &instant)
+	canonical := scheduledInstant(&instant)
 	if canonical == nil {
 		return false
 	}
@@ -50,7 +52,7 @@ func completedOccurrence(s *Store, job *Job, instant string) bool {
 		if deref(stamp) == "" {
 			stamp = row.ClaimedAt
 		}
-		completedAt := scheduledInstant(s, stamp)
+		completedAt := scheduledInstant(stamp)
 		if completedAt != nil {
 			at, _, _ := pydatetime.ParseISOFormat(*completedAt)
 			if at.Before(earliestReal) {
@@ -113,6 +115,6 @@ func (s *Store) CatchUpOccurrenceCount() int {
 }
 
 // Counts one catch up run in the store marker
-func (s *Store) recordCatchUpOccurrence() {
-	s.writeMarker("catch_up_occurrences", fmt.Sprint(s.CatchUpOccurrenceCount()+1), ".count_")
+func (s *Store) recordCatchUpOccurrence(ctx context.Context) {
+	s.writeMarker(home.WithOverride(ctx, s.home), "catch_up_occurrences", fmt.Sprint(s.CatchUpOccurrenceCount()+1), ".count_")
 }

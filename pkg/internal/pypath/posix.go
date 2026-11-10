@@ -57,6 +57,17 @@ func posixHead(p string) string {
 	return head
 }
 
+// posixpath.splitroot, exactly two leading slashes kept as the root and any other count cut to one
+func PosixSplitRoot(p string) (string, string, string) {
+	switch {
+	case !strings.HasPrefix(p, "/"):
+		return "", "", p
+	case !strings.HasPrefix(p[1:], "/") || strings.HasPrefix(p[2:], "/"):
+		return "", "/", p[1:]
+	}
+	return "", p[:2], p[2:]
+}
+
 // posixpath.split into head and tail
 func PosixSplit(p string) (string, string) {
 	return posixHead(p), p[strings.LastIndex(p, "/")+1:]

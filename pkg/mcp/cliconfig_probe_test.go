@@ -285,7 +285,7 @@ func seedDeviceServer(t *testing.T, mode string) (string, string, func() []devic
 	fakeDeviceClock(t)
 	testStderr.Reset()
 	base, wire := deviceFixture(t, mode)
-	if err := config.SaveUser(dir, map[string]any{"mcp_servers": map[string]any{"fixture": map[string]any{"url": base + "/mcp", "auth": "oauth",
+	if err := config.SaveUser(context.Background(), dir, map[string]any{"mcp_servers": map[string]any{"fixture": map[string]any{"url": base + "/mcp", "auth": "oauth",
 		"oauth": deviceOAuthConfig(mode)}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ func TestMCPCmdDeviceLoginFailureCLIOutput(t *testing.T) {
 				for name, v := range previous {
 					writeTokenFile(t, dir, name, v)
 				}
-				deviceSetTokens = func(*TokenStorage, *OAuthToken) error { return errors.New("fixture disk failure") }
+				deviceSetTokens = func(*TokenStorage, context.Context, *OAuthToken) error { return errors.New("fixture disk failure") }
 				t.Cleanup(func() { deviceSetTokens = (*TokenStorage).SetTokens })
 			}
 			out := runDeviceLogin(mode)

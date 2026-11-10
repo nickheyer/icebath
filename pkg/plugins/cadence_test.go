@@ -188,7 +188,7 @@ func TestCachedGitUpdatesFollowTheCheckedInstall(t *testing.T) {
 		return out
 	}
 	writeMeta := func(rows map[string]any) {
-		if err := config.AtomicJSONWriteMode(filepath.Join(dir, ".install-metadata.json"), rows, 0o644); err != nil {
+		if err := config.AtomicJSONWriteMode(ctx, filepath.Join(dir, ".install-metadata.json"), rows, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -144,6 +144,12 @@ func (c *CLI) addPM(root *cobra.Command) {
 	takeover := c.newCmd(root, "update-takeover", "finish an update a historical updater handed off", "")
 	takeover.Hidden = true
 	c.pos(takeover, p("context"), p("result"))
+	venvSync := c.newCmd(root, "venv-sync", "report or sync a checkout's Python dependencies", "")
+	venvSync.Hidden, venvSync.DisableFlagParsing = true, true
+	c.pos(venvSync, pRem("args"))
+	completion := c.newCmd(root, "source-completion", "finish a source update's launchers, products and maintenance", "")
+	completion.Hidden, completion.DisableFlagParsing = true, true
+	c.pos(completion, pRem("args"))
 }
 
 // Runs one pm command through pm Main, a nonzero status becoming an ExitError

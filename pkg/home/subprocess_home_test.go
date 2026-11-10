@@ -10,7 +10,7 @@ import (
 // Host or container mode with TERMINAL_HOME_MODE and ICEBATH_REAL_HOME unset
 func homeMode(t *testing.T, container bool) {
 	t.Helper()
-	swap(t, &detectContainer, func() bool { return container })
+	swap(t, &isContainer, func() bool { return container })
 	for _, key := range []string{"TERMINAL_HOME_MODE", "ICEBATH_REAL_HOME"} {
 		dropEnv(t, key)
 	}

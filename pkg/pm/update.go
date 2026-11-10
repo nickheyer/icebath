@@ -1198,16 +1198,17 @@ type UpdateArgs struct {
 
 // Seams the update driver calls, replaceable by tests the way Python patches the cli module
 var (
-	updateLockfile      = currentLockfile
-	updateHashURL       = HashURL
-	updatePinArtifacts  = pinArtifacts
-	updateInstallNames  = func(ctx context.Context, names []string) int { return installNames(ctx, names, "", true) }
-	updateSyncVenvStep  = syncVenvStep
-	updateRegenerate    = regenerateBootstrapPins
-	updateLockProject   = lockProject
-	updateRunLive       = runLive
-	updateTermuxPass    = termuxPass
-	bootstrapPinsPython = func(ctx context.Context) (string, error) {
+	updateLockfile       = currentLockfile
+	updateHashURL        = HashURL
+	updateResolvePackage = ResolvePackage
+	updatePinArtifacts   = pinArtifacts
+	updateInstallNames   = func(ctx context.Context, names []string) int { return installNames(ctx, names, "", true) }
+	updateSyncVenvStep   = syncVenvStep
+	updateRegenerate     = regenerateBootstrapPins
+	updateLockProject    = lockProject
+	updateRunLive        = runLive
+	updateTermuxPass     = termuxPass
+	bootstrapPinsPython  = func(ctx context.Context) (string, error) {
 		if _, python, found, err := Toolchain(ctx, false, false); err != nil || found {
 			return python, err
 		}
@@ -1257,7 +1258,7 @@ func resolveUpdates(names []string, lockfile *Lockfile, onlyTarget string, skip 
 		if len(targets) == 0 {
 			continue
 		}
-		decision, err := ResolvePackage(p, targets, lockedVersion(lockfile, name), lockfile.PinnedArtifacts(name))
+		decision, err := updateResolvePackage(p, targets, lockedVersion(lockfile, name), lockfile.PinnedArtifacts(name))
 		if err != nil {
 			decision = &Resolved{Name: name, Locked: lockedVersion(lockfile, name), Style: p.Base().Style(),
 				Reason: "resolve failed: " + err.Error(), ArtifactUpdates: map[string][]string{}}
@@ -1311,7 +1312,7 @@ func pyNoneText(v *string) string {
 
 // Syncs the dependency environment after a re-pin, reporting the outcome
 func syncVenvStep(ctx context.Context, out io.Writer) (bool, error) {
-	err := syncVenv(ctx, SyncVenvOptions{Explicit: true})
+	err := installSyncVenv(ctx, SyncVenvOptions{Explicit: true})
 	var ie *InstallError
 	if errors.As(err, &ie) {
 		fmt.Fprintf(out, "✗ %s\n", err)
@@ -1482,6 +1483,14 @@ func refreshNPMLock(ctx context.Context, out io.Writer) (int, error) {
 }
 
 // Runs pm update, re-pinning changed packages unless checking, the termux pool pass running on its own
+// Replaces the release resolver and the artifact pinner of the update driver until the returned restore runs
+func SwapUpdateResolution(resolve func(Package, []string, *string, map[string]any) (*Resolved, error),
+	pin func(Package, *Resolved, map[string]any) (map[string]any, error)) func() {
+	resolvePrev, pinPrev := updateResolvePackage, updatePinArtifacts
+	updateResolvePackage, updatePinArtifacts = resolve, pin
+	return func() { updateResolvePackage, updatePinArtifacts = resolvePrev, pinPrev }
+}
+
 func CmdUpdate(ctx context.Context, args UpdateArgs, out io.Writer) (int, error) {
 	if args.Termux {
 		var ignored []string
@@ -1658,6 +1667,7 @@ func pinArtifacts(p Package, d *Resolved, current map[string]any) (map[string]an
 			}
 			rows := artifactRowList(old)
 			known := map[string]any{}
+			var existing []any
 			for _, row := range rows {
 				u, err := rowField(row, "url")
 				if err != nil {
@@ -1667,7 +1677,10 @@ func pinArtifacts(p Package, d *Resolved, current map[string]any) (map[string]an
 				if err != nil {
 					return nil, err
 				}
-				known[pyrepr.Str(u)] = sha
+				if text, ok := u.(string); ok {
+					known[text] = sha
+				}
+				existing = append(existing, u)
 			}
 			urls, updated := d.ArtifactUpdates[tv.Target]
 			if !updated {
@@ -1676,11 +1689,11 @@ func pinArtifacts(p Package, d *Resolved, current map[string]any) (map[string]an
 					return nil, err
 				}
 			}
-			existing, err := rowURLs(rows)
-			if err != nil {
-				return nil, err
+			unchanged := len(urls) == len(existing)
+			for i := 0; unchanged && i < len(urls); i++ {
+				unchanged = jsonEquals(existing[i], urls[i])
 			}
-			if sameStrings(urls, existing) {
+			if unchanged {
 				continue
 			}
 			var pinned []any

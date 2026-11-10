@@ -25,6 +25,7 @@ func sliceF(cmd *cobra.Command, name, help string)    { cmd.Flags().StringSlice(
 
 func acceptHooks(cmd *cobra.Command) {
 	bf(cmd, "accept-hooks", "", "Auto-approve unseen shell hooks without a TTY prompt (equivalent to ICEBATH_ACCEPT_HOOKS=1 / hooks_auto_accept: true).")
+	suppress(cmd, "accept-hooks")
 }
 func yesFlag(cmd *cobra.Command, help string) {
 	if help == "" {

@@ -119,7 +119,7 @@ func createJobOptionsFromSpec(spec *pyjson.Object) (CreateJobOptions, error) {
 		return o, fmt.Errorf("TypeError: create_job() argument 'schedule' must be str, not %s", pyrepr.TypeName(spec.Vals["schedule"]))
 	}
 	o.Schedule = sched
-	for key, dst := range map[string]**string{"name": &o.Name, "deliver": &o.Deliver, "skill": &o.Skill, "paused_reason": &o.PausedReason} {
+	for key, dst := range map[string]**string{"name": &o.Name, "deliver": &o.Deliver, "skill": &o.Skill} {
 		if *dst, err = optStr(key); err != nil {
 			return o, err
 		}
@@ -141,7 +141,21 @@ func createJobOptionsFromSpec(spec *pyjson.Object) (CreateJobOptions, error) {
 	o.Workdir, o.AttachToSession, o.MonitorScript, o.MonitorURL = spec.Vals["workdir"], spec.Vals["attach_to_session"], spec.Vals["monitor_script"], spec.Vals["monitor_url"]
 	o.ReasoningEffort, o.FailureDeliver, o.CatchUp = spec.Vals["reasoning_effort"], spec.Vals["failure_deliver"], spec.Vals["catch_up"]
 	o.Interpreter, o.Timezone, o.GraceMinutes = spec.Vals["interpreter"], spec.Vals["timezone"], spec.Vals["grace_minutes"]
-	o.NoAgent, o.Paused, o.Pinned = pyrepr.Truthy(spec.Vals["no_agent"]), pyrepr.Truthy(spec.Vals["paused"]), pyrepr.Truthy(spec.Vals["pinned"])
+	o.NoAgent, o.Pinned = pyrepr.Truthy(spec.Vals["no_agent"]), pyrepr.Truthy(spec.Vals["pinned"])
+	if v, ok := spec.Get("paused"); ok {
+		paused, isBool := v.(bool)
+		if !isBool {
+			return o, errors.New("paused must be a boolean.")
+		}
+		o.Paused = paused
+	}
+	if v := spec.Vals["paused_reason"]; v != nil {
+		reason, isStr := v.(string)
+		if !isStr {
+			return o, errors.New("paused_reason must be a string.")
+		}
+		o.PausedReason = &reason
+	}
 	return o, nil
 }
 

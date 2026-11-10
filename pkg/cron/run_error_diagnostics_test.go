@@ -46,7 +46,7 @@ func TestRunErrorPersistsRedactedCauseButReturnsSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := s.SaveJobOutput(job.ID, out.Output)
+	path, err := s.SaveJobOutput(ctx, job.ID, out.Output)
 	if err != nil {
 		t.Fatal(err)
 	}

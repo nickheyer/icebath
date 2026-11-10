@@ -22,7 +22,7 @@ func svFacts(t *testing.T, state string, venv map[string]any) {
 	writeFile(t, filepath.Join(state, "facts.json"), data, 0o666)
 }
 
-func TestSVInstallRuntimeSelectionIsScopedAndReadOnly(t *testing.T) {
+func TestInstallRuntimeSelectionIsScopedAndReadOnly(t *testing.T) {
 	tmp := isolateHome(t)
 	homeDir := filepath.Join(tmp, "home")
 	t.Setenv(home.EnvHome, homeDir)
@@ -66,7 +66,7 @@ func svSite(t *testing.T, venv string) string {
 	return sttMkdir(t, site)
 }
 
-func TestSVBootUsesOneSelectedDependencyTreeInFreshProcess(t *testing.T) {
+func TestBootUsesOneSelectedDependencyTreeInFreshProcess(t *testing.T) {
 	tmp := isolateHome(t)
 	svKeepProcess(t)
 	ctx := context.Background()
@@ -95,7 +95,7 @@ func TestSVBootUsesOneSelectedDependencyTreeInFreshProcess(t *testing.T) {
 	}
 }
 
-func TestSVBootPutsTheCheckoutLauncherAheadOfTheVenvsOwnConsoleScript(t *testing.T) {
+func TestBootPutsTheCheckoutLauncherAheadOfTheVenvsOwnConsoleScript(t *testing.T) {
 	tmp := isolateHome(t)
 	svKeepProcess(t)
 	ctx := context.Background()
@@ -116,7 +116,7 @@ func TestSVBootPutsTheCheckoutLauncherAheadOfTheVenvsOwnConsoleScript(t *testing
 	}
 }
 
-func TestSVBootNeverActivatesThePrePMVenv(t *testing.T) {
+func TestBootNeverActivatesThePrePMVenv(t *testing.T) {
 	for _, interpreter := range []string{"store", "venv"} {
 		for _, withState := range []bool{true, false} {
 			t.Run(interpreter+map[bool]string{true: "+state", false: ""}[withState], func(t *testing.T) {
@@ -156,7 +156,7 @@ func TestSVBootNeverActivatesThePrePMVenv(t *testing.T) {
 	}
 }
 
-func TestSVMalformedSelectionHasActionableError(t *testing.T) {
+func TestMalformedSelectionHasActionableError(t *testing.T) {
 	for _, data := range []string{`[]`, `{"packages": []}`, `{"packages": {"venv": []}}`} {
 		t.Run(data, func(t *testing.T) {
 			tmp := isolateHome(t)
@@ -174,7 +174,7 @@ func TestSVMalformedSelectionHasActionableError(t *testing.T) {
 	}
 }
 
-func TestSVInvalidSelectedEnvironmentNeverSilentlyFallsBack(t *testing.T) {
+func TestInvalidSelectedEnvironmentNeverSilentlyFallsBack(t *testing.T) {
 	for _, bad := range []string{"outside", "missing"} {
 		t.Run(bad, func(t *testing.T) {
 			tmp := isolateHome(t)

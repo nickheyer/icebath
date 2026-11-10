@@ -208,11 +208,11 @@ func (h *LoopLivenessWatchdogHandle) IsAlive() bool {
 }
 
 // Out of loop watchdog that dumps stacks and hard exits after maxStrikes consecutive missed loop probes
-func StartLoopLivenessWatchdog(loop EventLoop, probeInterval, probeTimeout float64, maxStrikes, exitCode int) *LoopLivenessWatchdogHandle {
+func StartLoopLivenessWatchdog(ctx context.Context, loop EventLoop, probeInterval, probeTimeout float64, maxStrikes, exitCode int) *LoopLivenessWatchdogHandle {
 	h := &LoopLivenessWatchdogHandle{stopEvent: &pythread.Event{}, finished: make(chan struct{})}
 	go pprof.Do(context.Background(), pprof.Labels("name", "gateway-loop-liveness-watchdog"), func(context.Context) {
 		defer close(h.finished)
-		if err := loopLivenessWatch(loop, h.stopEvent, probeInterval, probeTimeout, maxStrikes, exitCode); err != nil {
+		if err := loopLivenessWatch(ctx, loop, h.stopEvent, probeInterval, probeTimeout, maxStrikes, exitCode); err != nil {
 			slog.Error(fmt.Sprintf("Exception in thread gateway-loop-liveness-watchdog: %v", err))
 		}
 	})
@@ -220,7 +220,7 @@ func StartLoopLivenessWatchdog(loop EventLoop, probeInterval, probeTimeout float
 }
 
 // Probe cycle of the loop liveness watchdog, an error only for a wait the thread runtime refuses
-func loopLivenessWatch(loop EventLoop, stop *pythread.Event, probeInterval, probeTimeout float64, maxStrikes, exitCode int) error {
+func loopLivenessWatch(ctx context.Context, loop EventLoop, stop *pythread.Event, probeInterval, probeTimeout float64, maxStrikes, exitCode int) error {
 	strikes := 0
 	for {
 		stopped, err := pyEventWait(stop, probeInterval)
@@ -269,7 +269,7 @@ func loopLivenessWatch(loop EventLoop, stop *pythread.Event, probeInterval, prob
 		if stop.IsSet() {
 			return nil
 		}
-		markExitedQuietly(exitCode, "loop_liveness_watchdog")
+		markExitedQuietly(ctx, exitCode, "loop_liveness_watchdog")
 		hardExit(exitCode)
 	}
 }
@@ -293,7 +293,7 @@ func hardExit(exitCode int) {
 }
 
 // Stamps the lifecycle ledger, exit marker and runtime status as degraded before a hard exit skips teardown
-func markExitedQuietly(exitCode int, reason string) {
+func markExitedQuietly(ctx context.Context, exitCode int, reason string) {
 	quietly := func(fn func()) {
 		defer func() { recover() }()
 		fn()
@@ -306,7 +306,7 @@ func markExitedQuietly(exitCode int, reason string) {
 			fields["restart_requested"] = true
 		}
 		wait := 250 * time.Millisecond
-		WriteRuntimeStatus(RuntimeStatusUpdate{Fields: fields}, false, &wait)
+		WriteRuntimeStatus(ctx, RuntimeStatusUpdate{Fields: fields}, false, &wait)
 	})
 }
 
@@ -332,7 +332,7 @@ func WriteLoopHeartbeat(ctx context.Context, pid *int, startTime *float64, h str
 			payload.Set(k, extra.Vals[k])
 		}
 	}
-	if err := config.AtomicJSONWriteWith(path, payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
 		slog.Debug(fmt.Sprintf("Failed to write gateway loop heartbeat: %v", err))
 	}
 	return path
@@ -386,7 +386,7 @@ type ShutdownWatchdogOptions struct {
 }
 
 // Hard exit backstop for a wedged shutdown that fires unless the returned event is set within delayS seconds
-func ArmShutdownWatchdog(delayS any, opts ShutdownWatchdogOptions) *pythread.Event {
+func ArmShutdownWatchdog(ctx context.Context, delayS any, opts ShutdownWatchdogOptions) *pythread.Event {
 	done := opts.Done
 	if done == nil {
 		done = &pythread.Event{}
@@ -432,7 +432,7 @@ func ArmShutdownWatchdog(delayS any, opts ShutdownWatchdogOptions) *pythread.Eve
 			defer func() { recover() }()
 			drainLogQueue(1.0)
 		}()
-		markExitedQuietly(exitCode, "shutdown_watchdog")
+		markExitedQuietly(ctx, exitCode, "shutdown_watchdog")
 		hardExit(exitCode)
 	})
 	return done

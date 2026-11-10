@@ -251,14 +251,14 @@ func anonBootstrapEnv(t *testing.T, env PoolEnv) PoolEnv {
 	resetFreeTierBootstrapForTests()
 	prev, probe, clear, mark := setupInventoryFn, welcomeInstallProbe, welcomeProbeClear, welcomeMarkUsed
 	used := false
-	welcomeInstallProbe = func() tools.InstallState {
+	welcomeInstallProbe = func(_ context.Context) tools.InstallState {
 		if used {
 			return tools.InstallState{Findings: []tools.InstallFinding{{}}}
 		}
 		return tools.InstallState{}
 	}
 	welcomeProbeClear = func() {}
-	welcomeMarkUsed = func() error {
+	welcomeMarkUsed = func(_ context.Context) error {
 		used = true
 		return nil
 	}

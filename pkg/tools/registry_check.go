@@ -205,6 +205,7 @@ func runCheckUncached(env *Env, fn func(*Env) bool) (value bool, panicked any) {
 
 // checkCached returns a tool's availability through the TTL cache with transient failure grace
 func (r *Registry) checkCached(ctx context.Context, env *Env, fn func(*Env) bool) bool {
+	env = checkEnvFor(ctx, env)
 	ptr := fnPointer(fn)
 	checkMu.Lock()
 	uncached := noCacheChecks[ptr] != nil

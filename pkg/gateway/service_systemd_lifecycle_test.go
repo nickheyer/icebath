@@ -320,7 +320,7 @@ func TestSystemdStopTimeoutPrintsGuidanceAndMarksPlannedStop(t *testing.T) {
 	oldW, oldR := lifecycleWritePlannedStop, lifecycleRunningPidNoCleanup
 	t.Cleanup(func() { lifecycleWritePlannedStop, lifecycleRunningPidNoCleanup = oldW, oldR })
 	lifecycleRunningPidNoCleanup = func() (int, bool) { return 99, true }
-	lifecycleWritePlannedStop = func(pid int) bool { marked = pid; return true }
+	lifecycleWritePlannedStop = func(_ context.Context, pid int) bool { marked = pid; return true }
 	lifecycleRunSystemctl = func(context.Context, []string, bool, time.Duration) (CommandResult, error) {
 		return CommandResult{}, ErrCommandTimeout
 	}

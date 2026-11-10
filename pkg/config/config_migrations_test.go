@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -32,7 +33,7 @@ func testPersistMigration(h string, cfg map[string]any) error {
 		return err
 	}
 	stripped := StripDefaults(canon, map[string]any(Defaults()), ExplicitPaths(raw))
-	return SaveUser(h, stripped)
+	return SaveUser(context.Background(), h, stripped)
 }
 
 func testDotenv(h string) map[string]string {

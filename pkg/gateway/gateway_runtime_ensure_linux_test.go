@@ -238,7 +238,7 @@ func TestReservedProfileWithoutPidOrControlIsNeverAbsent(t *testing.T) {
 	h := filepath.Join(t.TempDir(), "reserved")
 	os.Mkdir(h, 0o700)
 	owner := NewProfileOwnership()
-	if err := owner.Reserve([]string{h}, ""); err != nil {
+	if err := owner.Reserve(context.Background(), []string{h}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(h, "gateway.pid")); err == nil {

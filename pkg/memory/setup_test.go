@@ -89,7 +89,7 @@ func TestCmdStatusMemoryToolGate(t *testing.T) {
 	}{{false, false, "disabled", "disabled"}, {true, false, "enabled", "enabled"}} {
 		m, out := setupFor(t)
 		for k, v := range map[string]any{"memory.memory_enabled": c.memory, "memory.user_profile_enabled": c.user} {
-			if err := config.SetKey(m.Env.Home, k, v); err != nil {
+			if err := config.SetKey(context.Background(), m.Env.Home, k, v); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -121,7 +121,7 @@ func skinSet(ctx context.Context, key, value, skin string, src ConfigCommandSour
 		AppendMappingKey(data, "name")
 		data["name"] = target
 	}
-	if err := AtomicYAMLWrite(path, data, ""); err != nil {
+	if err := AtomicYAMLWrite(ctx, path, data, ""); err != nil {
 		return 0, err
 	}
 	if target != name {

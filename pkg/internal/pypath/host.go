@@ -29,6 +29,14 @@ func Join(a string, p ...string) string {
 	return PosixJoin(a, p...)
 }
 
+// os.path.splitroot of the host
+func SplitRoot(p string) (string, string, string) {
+	if windows {
+		return NtSplitRoot(p)
+	}
+	return PosixSplitRoot(p)
+}
+
 // os.path.split of the host
 func Split(p string) (string, string) {
 	if windows {

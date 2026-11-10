@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,7 +24,7 @@ var (
 
 // Records registry writes in memory so worktree tests can assert the repos a restore registered
 func installWorktreeDoubles() {
-	WorktreeRecordRepo = func(repoRoot string) {
+	WorktreeRecordRepo = func(_ context.Context, repoRoot string) {
 		worktreeRecordedMu.Lock()
 		defer worktreeRecordedMu.Unlock()
 		worktreeRecorded = append(worktreeRecorded, repoRoot)
@@ -194,7 +195,7 @@ func TestRemovedDirtyTreeRestoresByteForByteAndArchivingNeverTouchesTheTree(t *t
 	}
 	waGit(t, repo, "worktree", "remove", "--force", wt)
 	waGit(t, repo, "branch", "-D", "wt/lane-roundtrip")
-	restored, err := RestoreArchive(repo, "lane-roundtrip", "")
+	restored, err := RestoreArchive(context.Background(), repo, "lane-roundtrip", "")
 	if err != nil {
 		t.Fatal(err)
 	}

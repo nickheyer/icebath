@@ -72,7 +72,7 @@ func TestCopiesProfilePayloadWithoutInstallArtifacts(t *testing.T) {
 			case "distribution":
 				m := profiles.NewDistributionManifest("copy")
 				m.Version = "1.0.0"
-				if _, err := profiles.WriteManifest(h, m); err != nil {
+				if _, err := profiles.WriteManifest(ctx, h, m); err != nil {
 					t.Fatal(err)
 				}
 				if _, err := InstallDistribution(ctx, h, "copy", false, false); err != nil {

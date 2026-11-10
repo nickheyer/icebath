@@ -490,3 +490,46 @@ func TestBrowserExecPointsAtVisionAnalyzeOnlyWhenTheSessionHasIt(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockAndApproveDirectivesCarryTheirModifiedArgs(t *testing.T) {
+	d, log, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string {
+		t.Fatal("dispatch should not run when blocked")
+		return ""
+	}, "web_search")
+	d.PreToolCall = append(d.PreToolCall, func(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, trace []map[string]any) PreToolDirective {
+		return PreToolDirective{Action: "block", Message: "Blocked by policy", Args: map[string]any{"q": "test", "limit": 3}}
+	})
+	out := decodeModelToolsResult(t, d.Dispatch(context.Background(), &Call{Name: "web_search", Args: map[string]any{"q": "test"}, Env: env}))
+	if !reflect.DeepEqual(out, map[string]any{"error": "Blocked by policy"}) {
+		t.Fatalf("result %v", out)
+	}
+	if ev := log.post[0]; ev.ErrorType != "plugin_block" || !reflect.DeepEqual(ev.Args, map[string]any{"q": "test", "limit": 3}) {
+		t.Fatalf("post %+v", ev)
+	}
+	block, modified := d.dispatchPreToolCallHooks(context.Background(), env, "web_search", map[string]any{"q": "test"}, ToolHookIDs{}, nil, DispatchOptions{})
+	if block != "Blocked by policy" || !reflect.DeepEqual(modified, map[string]any{"q": "test", "limit": 3}) {
+		t.Fatalf("block %q modified %v", block, modified)
+	}
+	silent := NewDispatcher(NewRegistry())
+	silent.PreToolCall = append(silent.PreToolCall, func(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, trace []map[string]any) PreToolDirective {
+		return PreToolDirective{Action: "block", Args: map[string]any{"ignored": true}}
+	})
+	if block, modified := silent.dispatchPreToolCallHooks(context.Background(), env, "web_search", map[string]any{"q": "test"}, ToolHookIDs{}, nil, DispatchOptions{}); block != "" || modified != nil {
+		t.Fatalf("a block without a message applied %q %v", block, modified)
+	}
+}
+
+func TestRequestMiddlewareTraceEntriesAreRecordedAsGiven(t *testing.T) {
+	d, log, env := modelToolsDispatcher(t, func(ctx context.Context, call *Call) string { return `{"ok":true}` }, "web_search")
+	chain := []map[string]any{{"source": "nemo_relay"}, {"source": "plugin", "name": "second"}}
+	d.ToolRequestMiddleware = append(d.ToolRequestMiddleware, func(ctx context.Context, env *Env, name string, args, originalArgs map[string]any, ids ToolHookIDs) RequestMiddlewareDirective {
+		return RequestMiddlewareDirective{Args: map[string]any{"q": "rewritten"}, Source: "outer", Trace: chain}
+	})
+	d.ToolRequestMiddleware = append(d.ToolRequestMiddleware, func(ctx context.Context, env *Env, name string, args, originalArgs map[string]any, ids ToolHookIDs) RequestMiddlewareDirective {
+		return RequestMiddlewareDirective{Args: args, Trace: []map[string]any{}}
+	})
+	d.Dispatch(context.Background(), &Call{Name: "web_search", Args: map[string]any{"q": "test"}, Env: env})
+	if !reflect.DeepEqual(log.pre[0], chain) || !reflect.DeepEqual(log.preArgs[0], map[string]any{"q": "rewritten"}) {
+		t.Fatalf("trace %v args %v", log.pre[0], log.preArgs[0])
+	}
+}

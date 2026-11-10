@@ -34,6 +34,9 @@ func contextDisplaySource(engine ContextEngine) string {
 	return "provider_usage"
 }
 
+// ContextDisplaySource tells a local preflight estimate from a provider reading of the context occupancy
+func ContextDisplaySource(engine ContextEngine) string { return contextDisplaySource(engine) }
+
 // StatusBarUsage snapshots the session counters, context occupancy and latency history for the status bar
 func (a *AIAgent) StatusBarUsage(ctx context.Context) StatusBarUsage {
 	usage := StatusBarUsage{Counters: map[string]int{

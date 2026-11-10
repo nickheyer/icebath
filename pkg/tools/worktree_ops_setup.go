@@ -50,22 +50,22 @@ func claimRepackSlot(gitDir string) (bool, error) {
 var runBoundedRepackFn = runBoundedRepack
 
 // Incremental geometric repack whose whole process tree dies with the timeout or with this process
-func runBoundedRepack(repoRoot string) {
-	runBoundedGit(repoRoot, []string{"repack", "-d", "--geometric=2", "--write-midx", "--quiet"}, repackTimeout, nil)
+func runBoundedRepack(ctx context.Context, repoRoot string) {
+	runBoundedGit(ctx, repoRoot, []string{"repack", "-d", "--geometric=2", "--write-midx", "--quiet"}, repackTimeout, nil)
 }
 
 // Repacks on pack sprawl and keeps the commit graph fresh, every failure logged at debug
-func maintainPackHealth(repoRoot string) {
-	if err := maintainPackHealthErr(repoRoot); err != nil {
+func maintainPackHealth(ctx context.Context, repoRoot string) {
+	if err := maintainPackHealthErr(ctx, repoRoot); err != nil {
 		toolsLogger(nil).Debug(fmt.Sprintf("pack maintenance skipped: %s", err))
 	}
 }
 
 // MaintainPackHealth repacks a repository once its refs are final
-func MaintainPackHealth(repoRoot string) { maintainPackHealth(repoRoot) }
+func MaintainPackHealth(ctx context.Context, repoRoot string) { maintainPackHealth(ctx, repoRoot) }
 
 // Pack health pass returning the first failure instead of logging it
-func maintainPackHealthErr(repoRoot string) error {
+func maintainPackHealthErr(ctx context.Context, repoRoot string) error {
 	gitDir, err := commonGitDir(repoRoot)
 	if err != nil {
 		return err
@@ -89,7 +89,7 @@ func maintainPackHealthErr(repoRoot string) error {
 		if claimed {
 			ClearStaleTmpPacks(gitDir, nil)
 			toolsLogger(nil).Info(fmt.Sprintf("git pack sprawl (%d packs) — repacking in background", len(packs)))
-			runBoundedRepackFn(repoRoot)
+			runBoundedRepackFn(ctx, repoRoot)
 			if _, err := worktreeGit([]string{"worktree", "prune"}, repoRoot, 60*time.Second, NoninteractiveGitEnv(nil)); err != nil {
 				return err
 			}
@@ -100,7 +100,7 @@ func maintainPackHealthErr(repoRoot string) error {
 		return err
 	}
 	if claimed {
-		return refreshCommitGraph(repoRoot, gitDir)
+		return refreshCommitGraph(ctx, repoRoot, gitDir)
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func SetupWorktree(ctx context.Context, repoRoot string, syncBase bool, name str
 	} else {
 		toolsLogger(nil).Debug(fmt.Sprintf("Worktree locked: %s (pid=%d)", wtPath, os.Getpid()))
 	}
-	WorktreeRecordRepo(repoRoot)
+	WorktreeRecordRepo(ctx, repoRoot)
 	if retainDB != nil {
 		RecordTUIWorktree(ctx, map[string]string{"path": wtPath, "branch": branchName, "repo_root": repoRoot})
 	}

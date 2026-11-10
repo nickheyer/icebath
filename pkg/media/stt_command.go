@@ -155,7 +155,7 @@ func transcribeCommandSTT(ctx context.Context, filePath, providerName string, cf
 		command := renderCommandTemplate(template, map[string]string{"input_path": inputPath, "output_path": outputPath,
 			"output_dir": filepath.Dir(outputPath), "format": outputFormat, "language": pyrepr.Str(language), "model": model})
 		sttLog().Info(fmt.Sprintf("Transcribing %s via command STT provider '%s'...", filepath.Base(audio), providerName))
-		result, err := runCommandSTT(nil, command, timeout, commandEnvPassthrough(cfg))
+		result, err := runCommandSTT(ctx, nil, command, timeout, commandEnvPassthrough(cfg))
 		if err != nil {
 			return "", err
 		}

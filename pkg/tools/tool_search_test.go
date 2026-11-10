@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func decodeMap(raw string) map[string]any {
@@ -389,17 +391,46 @@ func TestResolveUnderlyingCall(t *testing.T) {
 	if !strings.Contains(errMsg, "Did you mean 'mcp__res__probe'") {
 		t.Fatalf("suffix hint: %s", errMsg)
 	}
-	entries, errMsg := NormalizeToolCallEntries(map[string]any{"calls": `[{"name":"mcp__res__probe","arguments":"{\"a\":1}"}]`})
-	if errMsg != "" || len(entries) != 1 || entries[0].Arguments["a"] != 1.0 {
+	entries, errMsg := NormalizeToolCallEntries(map[string]any{"calls": `[{"name":"mcp__res__probe","arguments":"{\"a\":1,\"b\":1.0}"}]`})
+	if errMsg != "" || len(entries) != 1 || entries[0].Arguments.Vals["a"] != int64(1) || entries[0].Arguments.Vals["b"] != 1.0 || !slices.Equal(entries[0].Arguments.Keys, []string{"a", "b"}) {
 		t.Fatalf("json envelope: %v %s", entries, errMsg)
 	}
+	if handler := entries[0].HandlerArgs(); handler["a"] != 1.0 || handler["b"] != 1.0 {
+		t.Fatalf("handler args: %v", handler)
+	}
 	_, errMsg = NormalizeToolCallEntries(map[string]any{"calls": []any{map[string]any{"name": "a", "arguments": "not json"}}})
-	if !strings.Contains(errMsg, "not valid JSON") {
+	if errMsg != "tool_call calls[0].arguments is not valid JSON: Expecting value: line 1 column 1 (char 0)" {
 		t.Fatalf("invalid json: %s", errMsg)
 	}
-	batchErr := LocalBatchError([]ToolCallEntry{{Name: "a", Arguments: map[string]any{"x": 1.0}}, {Name: "b", Arguments: map[string]any{}}})
-	if !strings.Contains(batchErr, `{"calls":[{"name":"a","arguments":{"x":1}}]}`) || !strings.Contains(batchErr, "remaining 1 call(s)") {
+	batchErr := LocalBatchError([]ToolCallEntry{{Name: "a", Arguments: pyjson.ObjectOf("y", 1.0, "x", int64(1))}, {Name: "b", Arguments: pyjson.NewObject()}})
+	if batchErr != `tool_call takes exactly one entry for local tools; you sent 2. Retry with only: {"calls":[{"name":"a","arguments":{"y":1.0,"x":1}}]} then issue the remaining 1 call(s) as separate tool_call invocations. Only connectors__ names may be batched together.` {
 		t.Fatalf("batch error: %s", batchErr)
+	}
+}
+
+func TestToolCallBatchErrorEchoesModelNumbersAsPythonDoes(t *testing.T) {
+	env := searchEnv(t)
+	registerSearchTool(t, "mcp__res__probe", "mcp-res", nil)
+	registerSearchTool(t, "mcp__res__other", "mcp-res", nil)
+	want := `Retry with only: {"calls":[{"name":"mcp__res__probe","arguments":{"y":1.0,"x":1,"big":12345678901234567890}}]} then issue`
+	for _, raw := range []string{
+		`{"calls": [{"name": "mcp__res__probe", "arguments": {"y": 1.0, "x": 1, "big": 12345678901234567890}}, {"name": "mcp__res__other", "arguments": {}}]}`,
+		`{"calls": "[{\"name\": \"mcp__res__probe\", \"arguments\": {\"y\": 1.0, \"x\": 1, \"big\": 12345678901234567890}}, {\"name\": \"mcp__res__other\"}]"}`,
+		`{"calls": [{"name": "mcp__res__probe", "arguments": "{\"y\": 1.0, \"x\": 1, \"big\": 12345678901234567890}"}, {"name": "mcp__res__other"}]}`,
+	} {
+		args, parseErr := ParseToolArguments(raw)
+		if parseErr != "" {
+			t.Fatalf("parse %s: %s", raw, parseErr)
+		}
+		out := NewDispatcher(Default).Dispatch(context.Background(), &Call{Name: ToolCallName, Args: args, RawArgs: raw, Env: env})
+		decoded, err := pyjson.Loads(out)
+		if err != nil {
+			t.Fatalf("result %s: %v", out, err)
+		}
+		msg, _ := decoded.(*pyjson.Object).Vals["error"].(string)
+		if !strings.Contains(msg, want) {
+			t.Fatalf("echo for %s: %s", raw, msg)
+		}
 	}
 }
 

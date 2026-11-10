@@ -111,16 +111,16 @@ func HostObligationPresent() bool {
 }
 
 // Merges fields into the armed record, never failing
-func AmendHostObligation(fields *pyjson.Object) {
-	updateObligationRecord(func(record *pyjson.Object) { record.Update(fields) }, "amend")
+func AmendHostObligation(ctx context.Context, fields *pyjson.Object) {
+	updateObligationRecord(ctx, func(record *pyjson.Object) { record.Update(fields) }, "amend")
 }
 
 // Arms the host obligation, true when written, runtimes nil standing for no inventory
-func WriteHostObligation(expectedSHA string, runtimes []any, profile, owner string) bool {
+func WriteHostObligation(ctx context.Context, expectedSHA string, runtimes []any, profile, owner string) bool {
 	path := HostObligationPath()
 	written := false
-	err := withObligationMutex(path, func() error {
-		written = writeObligationLocked(path, expectedSHA, runtimes, profile, owner)
+	err := withObligationMutex(ctx, path, func() error {
+		written = writeObligationLocked(ctx, path, expectedSHA, runtimes, profile, owner)
 		return nil
 	})
 	if err != nil {
@@ -131,8 +131,8 @@ func WriteHostObligation(expectedSHA string, runtimes []any, profile, owner stri
 }
 
 // Arms the host record else the per home marker, false when the debt is hidden, an error for an unserializable inventory
-func ArmHostObligation(marker, expectedSHA string, runtimes []any, profile, owner string) (bool, error) {
-	if WriteHostObligation(expectedSHA, runtimes, profile, owner) {
+func ArmHostObligation(ctx context.Context, marker, expectedSHA string, runtimes []any, profile, owner string) (bool, error) {
+	if WriteHostObligation(ctx, expectedSHA, runtimes, profile, owner) {
 		return true, nil
 	}
 	lines := []string{"started=" + pyrepr.Float(obligationNow()), fmt.Sprintf("pid=%d", os.Getpid())}
@@ -231,7 +231,7 @@ func obligationMode(path string, probe func(string) (os.FileInfo, error)) (fs.Fi
 	return st.Mode(), nil
 }
 
-func writeObligationLocked(path, expectedSHA string, runtimes []any, profile, owner string) bool {
+func writeObligationLocked(ctx context.Context, path, expectedSHA string, runtimes []any, profile, owner string) bool {
 	existing := readObligationRecord(path)
 	var found any
 	if owner != "" {
@@ -274,7 +274,7 @@ func writeObligationLocked(path, expectedSHA string, runtimes []any, profile, ow
 	if runtimes != nil {
 		payload.Set("inventory", pyjson.ObjectOf("version", 1, "runtimes", runtimes))
 	}
-	if _, err := home.MakeUserDir(filepath.Dir(path), 0o777, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, filepath.Dir(path), 0o777, true, true); err != nil {
 		obligationLog().Debug(fmt.Sprintf("Could not write host update-restart obligation: %s", pypath.OSErrorText(err)))
 		return false
 	}
@@ -286,9 +286,9 @@ func writeObligationLocked(path, expectedSHA string, runtimes []any, profile, ow
 }
 
 // Runs fn under the shared record guard every install's arm, release and stamp takes
-func withObligationMutex(path string, fn func() error) error {
+func withObligationMutex(ctx context.Context, path string, fn func() error) error {
 	guard := filepath.Join(filepath.Dir(path), "."+hostObligationNameStem+".mutex")
-	if _, err := home.MakeUserDir(guard, 0o777, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, guard, 0o777, true, true); err != nil {
 		return err
 	}
 	_, release, err := MarkerMutex(context.Background(), filepath.Join(guard, "record"), obligationMutexWait)
@@ -360,12 +360,12 @@ func foundField(path string) (any, error) {
 }
 
 // Hands back owner's stake, restoring what the first owner found once no other run owes through it
-func ReleaseHostObligation(owner string) error {
+func ReleaseHostObligation(ctx context.Context, owner string) error {
 	path := HostObligationPath()
 	if owner == "" || !containsString(obligationOwners(readObligationRecord(path)), owner) {
 		return nil
 	}
-	return withObligationMutex(path, func() error { return releaseObligationLocked(path, owner) })
+	return withObligationMutex(ctx, path, func() error { return releaseObligationLocked(path, owner) })
 }
 
 func releaseObligationLocked(path, owner string) error {
@@ -469,19 +469,19 @@ func ObligationFields() map[string]string {
 }
 
 // Records that the host process restarted onto sha, never failing
-func MarkHostRestartCompleted(sha string) {
-	updateObligationRecord(func(record *pyjson.Object) {
+func MarkHostRestartCompleted(ctx context.Context, sha string) {
+	updateObligationRecord(ctx, func(record *pyjson.Object) {
 		record.Set("restarted", pyjson.ObjectOf("sha", sha, "pid", os.Getpid(), "at", obligationNow()))
 	}, "stamp restart completion on")
 }
 
 // Reads, changes and rewrites an armed record under the guard, no record meaning no write
-func updateObligationRecord(change func(*pyjson.Object), what string) {
+func updateObligationRecord(ctx context.Context, change func(*pyjson.Object), what string) {
 	path := owedPath()
 	if readObligationRecord(path) == nil {
 		return
 	}
-	err := withObligationMutex(path, func() error {
+	err := withObligationMutex(ctx, path, func() error {
 		record := readObligationRecord(path)
 		if record == nil {
 			return nil

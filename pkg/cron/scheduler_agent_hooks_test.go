@@ -12,7 +12,7 @@ func init() {
 			f.HardInterrupt(reason, toolReason)
 		}
 	})
-	SetFormatTurnCompletionExplanation(func(reason string, cause, model *string) string { return "" })
+	SetFormatTurnCompletionExplanation(func(_ context.Context, reason string, cause, model *string) string { return "" })
 	SetCleanupStaleAsyncClients(func() {})
 	SetMaxIterationHandoffCheck(func(result any) bool {
 		m, _ := result.(map[string]any)

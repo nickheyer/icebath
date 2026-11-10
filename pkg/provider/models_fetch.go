@@ -132,11 +132,11 @@ func modelsReadJSONCache(path string) map[string]any {
 }
 
 // Atomically persists a cache file with the dump options, creating parents unless they lie in a dead profile
-func modelsWriteJSONCache(path string, data any, opts ...pyjson.Option) error {
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+func modelsWriteJSONCache(ctx context.Context, path string, data any, opts ...pyjson.Option) error {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
-	return config.AtomicJSONWriteWith(path, data, opts...)
+	return config.AtomicJSONWriteWith(ctx, path, data, opts...)
 }
 
 // Primary verbatim then the secondary entries whose key is new
@@ -205,7 +205,7 @@ func writeOpenrouterCatalogDisk(ctx context.Context, curated []CatalogModel) {
 	for _, c := range curated {
 		rows = append(rows, []string{c.ID, c.Description})
 	}
-	if err := modelsWriteJSONCache(openrouterCatalogDiskPath(ctx), map[string]any{"fetched_at": modelsClock().Unix(), "curated": rows}, pyjson.Indent(2)); err != nil {
+	if err := modelsWriteJSONCache(ctx, openrouterCatalogDiskPath(ctx), map[string]any{"fetched_at": modelsClock().Unix(), "curated": rows}, pyjson.Indent(2)); err != nil {
 		modelsLog.Debug("openrouter curated catalog disk write failed", "error", err)
 	}
 }
@@ -419,7 +419,7 @@ func writeNousRecommendedDisk(ctx context.Context, base string, data map[string]
 		blob = map[string]any{}
 	}
 	blob[base] = map[string]any{"data": data, "ts": float64(modelsClock().UnixNano()) / 1e9}
-	if err := modelsWriteJSONCache(path, blob, pyjson.Indent(2)); err != nil {
+	if err := modelsWriteJSONCache(ctx, path, blob, pyjson.Indent(2)); err != nil {
 		modelsLog.Debug("nous recommended-models disk cache write failed", "error", err)
 	}
 }
@@ -652,7 +652,7 @@ func FetchOpenRouterModels(ctx context.Context, opts FetchModelsOptions) []Catal
 		}
 		return cloneCatalogModels(fallback)
 	}
-	seedReasoningCaps(openRouterCatalogURL, liveItems)
+	seedReasoningCaps(ctx, openRouterCatalogURL, liveItems)
 	var curated []CatalogModel
 	silentDefault := preferredSilentDefaultFn(ctx, "openrouter")
 	for _, row := range fallback {

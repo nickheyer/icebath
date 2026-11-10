@@ -169,7 +169,7 @@ func createSubagentWorktree(ctx context.Context, parentCwd, subagentID string) m
 		return nil
 	}
 	subagentWorktreeLog().Info(fmt.Sprintf("subagent worktree created: %s (branch %s)", wtPath, branch))
-	cron.RecordWorktreeRepo(home.Dir(ctx), repoRoot)
+	cron.RecordWorktreeRepo(ctx, home.Dir(ctx), repoRoot)
 	return map[string]string{"path": wtPath, "branch": branch, "repo_root": repoRoot, "base_commit": baseCommit}
 }
 

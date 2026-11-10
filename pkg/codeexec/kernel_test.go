@@ -469,8 +469,8 @@ func TestParallelCellsShareOneKernelProcess(t *testing.T) {
 	var mu sync.Mutex
 	var runners []*exec.Cmd
 	prev := spawnOwned
-	spawnOwned = func(cmd *exec.Cmd, purpose string) error {
-		err := prev(cmd, purpose)
+	spawnOwned = func(ctx context.Context, cmd *exec.Cmd, purpose string) error {
+		err := prev(ctx, cmd, purpose)
 		if len(cmd.Args) == 2 && filepath.Base(cmd.Args[1]) == "icebath_kernel_runner.py" {
 			mu.Lock()
 			runners = append(runners, cmd)

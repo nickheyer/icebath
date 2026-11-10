@@ -57,7 +57,7 @@ func TestDoListClassifiesHubBuiltinAndLocal(t *testing.T) {
 		writeTestFile(t, filepath.Join(dir, "x", n, "SKILL.md"), "---\nname: "+n+"\ndescription: d\n---\n")
 	}
 	writeTestFile(t, filepath.Join(dir, ".bundled_manifest"), "builtin-skill:abc123\n")
-	if err := x.Hub.LockFile("").RecordInstall("hub-skill", "github", "o/r/hub-skill", "community", "safe", "h", "x/hub-skill", []string{"SKILL.md"}, nil, nil); err != nil {
+	if err := x.Hub.LockFile("").RecordInstall(context.Background(), "hub-skill", "github", "o/r/hub-skill", "community", "safe", "h", "x/hub-skill", []string{"SKILL.md"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := x.DoList(context.Background(), "all", false, nil); err != nil {
@@ -80,7 +80,7 @@ func TestCheckForSkillUpdatesDoesNotFallBackAcrossRegistries(t *testing.T) {
 	h, _ := newTestHub(t)
 	os.MkdirAll(filepath.Join(h.S.SkillsDir(), "reddit"), 0o755)
 	lock := h.LockFile("")
-	lock.RecordInstall("reddit", "clawhub", "reddit", "community", "safe", "hash-of-the-clawhub-copy", "reddit", []string{"SKILL.md"}, nil, nil)
+	lock.RecordInstall(context.Background(), "reddit", "clawhub", "reddit", "community", "safe", "hash-of-the-clawhub-copy", "reddit", []string{"SKILL.md"}, nil, nil)
 	foreign := &fakeHubSource{SourceBase: SourceBase{ID: "skills-sh"}, bundle: &SkillBundle{Name: "reddit", Source: "skills.sh",
 		Identifier: "skills-sh/someone-else/reddit", TrustLevel: "community", Files: []BundleFile{{Path: "SKILL.md", Data: []byte("# other")}}}}
 	results, err := h.CheckForSkillUpdates(context.Background(), "", lock, []SkillSource{foreign}, nil)
@@ -158,7 +158,7 @@ func updateEnv(t *testing.T, edit bool) (*HubCLI, *bytes.Buffer, *[]string) {
 	if edit {
 		writeTestFile(t, filepath.Join(dir, "SKILL.md"), "# hub-skill\nuser edited\n")
 	}
-	x.Hub.LockFile("").RecordInstall("hub-skill", "github", "someone/hub-skill", "community", "safe", recorded, "category/hub-skill", []string{"SKILL.md"}, nil, nil)
+	x.Hub.LockFile("").RecordInstall(context.Background(), "hub-skill", "github", "someone/hub-skill", "community", "safe", recorded, "category/hub-skill", []string{"SKILL.md"}, nil, nil)
 	x.seams.checkUpdates = func(context.Context, string) ([]SkillUpdateCheck, error) {
 		return []SkillUpdateCheck{{Name: "hub-skill", Identifier: "someone/hub-skill", Source: "github", Status: "update_available"}}, nil
 	}
@@ -263,7 +263,7 @@ func TestUninstallAndSnapshotExitCodes(t *testing.T) {
 		t.Fatal(code, out.String())
 	}
 	writeTestFile(t, filepath.Join(x.S.SkillsDir(), "x", "SKILL.md"), "---\nname: x\n---\n")
-	x.Hub.LockFile("").RecordInstall("x", "github", "o/r/x", "community", "safe", "h", "x", []string{"SKILL.md"}, nil, nil)
+	x.Hub.LockFile("").RecordInstall(context.Background(), "x", "github", "o/r/x", "community", "safe", "h", "x", []string{"SKILL.md"}, nil, nil)
 	if code, err := x.SkillsCommand(context.Background(), SkillsArgs{Action: "uninstall", Name: "x", Yes: true}); code != 0 || err != nil {
 		t.Fatal(code, err, out.String())
 	}
@@ -307,7 +307,7 @@ func TestSlashInstallAndUninstallSkipConfirm(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	writeTestFile(t, filepath.Join(x.S.SkillsDir(), "test-skill", "SKILL.md"), "---\nname: test-skill\n---\n")
-	x.Hub.LockFile("").RecordInstall("test-skill", "github", "o/r/test-skill", "community", "safe", "h", "test-skill", []string{"SKILL.md"}, nil, nil)
+	x.Hub.LockFile("").RecordInstall(context.Background(), "test-skill", "github", "o/r/test-skill", "community", "safe", "h", "test-skill", []string{"SKILL.md"}, nil, nil)
 	if err := x.HandleSkillsSlash(context.Background(), "/skills uninstall test-skill", nil); err != nil {
 		t.Fatal(err)
 	}

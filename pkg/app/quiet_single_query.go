@@ -46,12 +46,12 @@ func takeTurnReportPath() string {
 }
 
 // Atomically records pid, exit code, error and reply at the path, nothing without a path, never failing
-func writeTurnReport(path string, exitCode int, errText, reply string) {
+func writeTurnReport(ctx context.Context, path string, exitCode int, errText, reply string) {
 	if path == "" {
 		return
 	}
 	record := map[string]any{"pid": os.Getpid(), "exit_code": exitCode, "error": errText, "reply": reply}
-	if err := config.AtomicJSONWrite(path, record); err != nil {
+	if err := config.AtomicJSONWrite(ctx, path, record); err != nil {
 		return
 	}
 	_ = os.Chmod(path, 0o600)

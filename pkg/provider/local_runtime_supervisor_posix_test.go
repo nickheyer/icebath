@@ -165,8 +165,8 @@ func lr5ResetSupervisorSeams(t *testing.T) {
 }
 
 // Spawn double recording argv and env, then starting a disposable sleeper in place of the engine
-func lr5RecordingSpawn(root string, argv *[][]string, envs *[][]string) func(*exec.Cmd, bool) (*WindowsJob, error) {
-	return func(cmd *exec.Cmd, owned bool) (*WindowsJob, error) {
+func lr5RecordingSpawn(root string, argv *[][]string, envs *[][]string) func(context.Context, *exec.Cmd, bool) (*WindowsJob, error) {
+	return func(_ context.Context, cmd *exec.Cmd, owned bool) (*WindowsJob, error) {
 		*argv = append(*argv, append([]string{}, cmd.Args...))
 		*envs = append(*envs, append([]string{}, cmd.Env...))
 		helper := lr3HelperCmd(root, "sleeper")
@@ -211,7 +211,7 @@ func TestLocalRuntimeSpawnSelectsSupportedDirectIOOption(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := sup.spawn(); err != nil {
+		if err := sup.spawn(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 		_ = sup.Stop()
@@ -283,7 +283,7 @@ func TestLocalRuntimeSupervisorSpawnsLlamaServerWithoutCredentialsButKeepsRuntim
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sup.spawn(); err != nil {
+	if err := sup.spawn(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	_ = sup.Stop()
@@ -350,11 +350,11 @@ func TestLocalRuntimeShutdownDuringBackoffCannotRestartOrRemoveAnotherServer(t *
 	other := `{"pid": 202, "base_url": "http://127.0.0.1:59997/v1", "api_key": "test-only"}`
 	lr5Touch(t, localRuntimeStatePath(), other)
 	spawned := false
-	supSpawnFn = func(*LlamaServerSupervisor) error { spawned = true; return nil }
+	supSpawnFn = func(*LlamaServerSupervisor, context.Context) error { spawned = true; return nil }
 	supWaitHealthFn = func(*LlamaServerSupervisor, time.Duration) error { return nil }
 	supReapFn = func(*LlamaServerSupervisor) error { return nil }
 	supBackoffWait = func(s *LlamaServerSupervisor, _ time.Duration) bool { _ = s.Stop(); return true }
-	sup.watch()
+	sup.watch(context.Background())
 	if spawned {
 		t.Fatal("stop during restart backoff resurrected the runtime")
 	}
@@ -505,10 +505,15 @@ func TestLocalRuntimeACrashRestartStopsTheOldRoutersSurvivors(t *testing.T) {
 	}
 	supReapFn = func(*LlamaServerSupervisor) error { return nil }
 	supWaitHealthFn = func(*LlamaServerSupervisor, time.Duration) error { return nil }
-	supSpawnFn = func(s *LlamaServerSupervisor) error { s.mu.Lock(); s.proc = nil; s.mu.Unlock(); return nil }
+	supSpawnFn = func(s *LlamaServerSupervisor, _ context.Context) error {
+		s.mu.Lock()
+		s.proc = nil
+		s.mu.Unlock()
+		return nil
+	}
 	proc, model := lr5CrashedRouter(t, root)
 	sup.proc = proc
-	sup.watch()
+	sup.watch(context.Background())
 	if !lr3Wait(func() bool { return !lr3Alive(model) }, 10*time.Second) {
 		t.Fatal("the restart left the crashed router's surviving model child running")
 	}
@@ -542,7 +547,7 @@ func TestLocalRuntimeACrashedRoutersEmptyGroupIsReleasedBeforeTheRestartBackoff(
 		return true
 	}
 	sup.proc = proc
-	sup.watch()
+	sup.watch(context.Background())
 	if len(registeredDuringBackoff) != 1 || registeredDuringBackoff[0] {
 		t.Fatalf("the empty group stayed registered through the backoff: %v", registeredDuringBackoff)
 	}

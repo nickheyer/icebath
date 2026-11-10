@@ -266,14 +266,14 @@ func (s *UpdateAdmission) recordReceipt(ctx context.Context, key string) {
 	}
 	if s.receiptFlush == nil || s.receiptFlush.Done() {
 		s.receiptFlush = gateway.SpawnAdapterTask(ctx, func(context.Context) error {
-			s.flushReceipts()
+			s.flushReceipts(ctx)
 			return nil
 		})
 	}
 }
 
 // Writes each dirty bot's fresh receipts to its file until no bot is dirty
-func (s *UpdateAdmission) flushReceipts() {
+func (s *UpdateAdmission) flushReceipts(ctx context.Context) {
 	for {
 		s.mu.Lock()
 		if len(s.receiptsDirty) == 0 {
@@ -293,9 +293,9 @@ func (s *UpdateAdmission) flushReceipts() {
 		path := filepath.Join(s.ReceiptDir, "telegram_update_receipts_"+bot+".json")
 		payload := pyjson.NewObject()
 		payload.Set("update_ids", ids)
-		_, err := home.Mkdir(filepath.Dir(path))
+		_, err := home.Mkdir(ctx, filepath.Dir(path))
 		if err == nil {
-			err = config.AtomicJSONWriteWith(path, payload)
+			err = config.AtomicJSONWriteWith(ctx, path, payload)
 		}
 		if err != nil {
 			slog.Warn(fmt.Sprintf("[Telegram] Failed to persist update receipts to %s", path), "error", err)

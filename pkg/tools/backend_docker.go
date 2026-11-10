@@ -81,6 +81,13 @@ var dockerExecutable struct {
 	path string
 }
 
+// Forgets the located docker CLI so the next lookup searches the PATH again
+func ResetDockerExecutable() {
+	dockerExecutable.Lock()
+	dockerExecutable.path = ""
+	dockerExecutable.Unlock()
+}
+
 func isExecutableFile(p string) bool {
 	st, err := os.Stat(p)
 	if err != nil || !st.Mode().IsRegular() {

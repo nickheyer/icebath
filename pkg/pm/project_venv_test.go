@@ -143,7 +143,7 @@ func TestVenvInstallsCheckoutReadsDirectURL(t *testing.T) {
 		cases = append(cases, struct {
 			name, directURL, wantErr string
 			want                     bool
-		}{name: "nul raises", directURL: `{"url": "file:///a%00b"}`, wantErr: "embedded null byte"}, struct {
+		}{name: "nul raises", directURL: `{"url": "file:///a%00b"}`, wantErr: "lstat: embedded null character in path"}, struct {
 			name, directURL, wantErr string
 			want                     bool
 		}{name: "remote host raises", directURL: `{"url": "file:////server/x"}`, wantErr: "<urlopen error file:// scheme is supported only on localhost>"})

@@ -55,7 +55,7 @@ func TestBackendScanOnlyMatchesThisProfile(t *testing.T) {
 	}
 }
 
-func TestBackendScanMatchesShebangExecOfIcebathShim(t *testing.T) {
+func TestDeleteProfileBackendScanMatchesShebangExecOfHermesShim(t *testing.T) {
 	dir := coderProfileDir(t)
 	fakeProcTable(t, []int{201, 202, 203}, map[int][]string{
 		201: {"/usr/bin/python3", "/Users/x/.local/bin/icebath", "--profile", "coder", "serve", "--host", "127.0.0.1", "--port", "0"},
@@ -67,7 +67,7 @@ func TestBackendScanMatchesShebangExecOfIcebathShim(t *testing.T) {
 	}
 }
 
-func TestBackendScanRejectsUnrelatedIcebathPrefixedScript(t *testing.T) {
+func TestDeleteProfileBackendScanRejectsUnrelatedHermesPrefixedScript(t *testing.T) {
 	dir := coderProfileDir(t)
 	fakeProcTable(t, []int{301, 302}, map[int][]string{
 		301: {"/usr/bin/python3", "/Users/x/scripts/icebath-notes.py", "--profile", "coder", "serve"},
@@ -172,7 +172,7 @@ func TestRenameSucceedsWhenPreviousNameWriteFails(t *testing.T) {
 	skipAliasCollision(t)
 	old := writeProfileMeta
 	t.Cleanup(func() { writeProfileMeta = old })
-	writeProfileMeta = func(string, profiles.MetaUpdate) error { return errors.New("disk full") }
+	writeProfileMeta = func(context.Context, string, profiles.MetaUpdate) error { return errors.New("disk full") }
 	newDir, err := RenameProfile(ctx, "oldname", "newname")
 	if err != nil {
 		t.Fatal(err)

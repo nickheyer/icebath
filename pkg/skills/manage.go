@@ -414,19 +414,19 @@ func readTextUniversal(path string) (string, error) {
 }
 
 // Atomic write keeping an existing file's mode and owner, the create mode for a new file
-func writePreservingMode(target, content string, createMode os.FileMode) error {
+func writePreservingMode(ctx context.Context, target, content string, createMode os.FileMode) error {
 	mode := createMode
 	if st, err := os.Stat(target); err == nil {
 		mode = st.Mode().Perm()
 	}
 	if mode == 0 {
-		return pyfs.AtomicWriteText(target, content, ".tmp_")
+		return pyfs.AtomicWriteText(ctx, target, content, ".tmp_")
 	}
-	return pyfs.AtomicWriteTextMode(target, content, ".tmp_", mode)
+	return pyfs.AtomicWriteTextMode(ctx, target, content, ".tmp_", mode)
 }
 
 // Read guard, description budget, atomic write and security scan, restoring the original when blocked
-func (s *Scope) guardedWrite(name, skillDir, target, action, label, content string) (*pyjson.Object, error) {
+func (s *Scope) guardedWrite(ctx context.Context, name, skillDir, target, action, label, content string) (*pyjson.Object, error) {
 	var original *string
 	if _, err := os.Stat(target); err == nil {
 		if guard := s.backgroundReviewReadBeforeWriteGuard(name, target, action, label); guard != nil {
@@ -443,10 +443,10 @@ func (s *Scope) guardedWrite(name, skillDir, target, action, label, content stri
 			return refusal(msg), nil
 		}
 	}
-	if _, err := home.Mkdir(filepath.Dir(target)); err != nil {
+	if _, err := home.Mkdir(home.WithOverride(ctx, s.Home), filepath.Dir(target)); err != nil {
 		return nil, err
 	}
-	if err := writePreservingMode(target, content, 0o644); err != nil {
+	if err := writePreservingMode(home.WithOverride(ctx, s.Home), target, content, 0o644); err != nil {
 		return nil, err
 	}
 	scanErr := manageSteps.securityScan(s, skillDir)
@@ -454,7 +454,7 @@ func (s *Scope) guardedWrite(name, skillDir, target, action, label, content stri
 		return nil, nil
 	}
 	if original != nil {
-		if err := writePreservingMode(target, *original, 0); err != nil {
+		if err := writePreservingMode(home.WithOverride(ctx, s.Home), target, *original, 0); err != nil {
 			return nil, err
 		}
 	} else if err := os.Remove(target); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -553,7 +553,7 @@ func clipText(text string, n int, ellipsis string) string {
 }
 
 // Creates a new skill directory with its SKILL.md
-func (s *Scope) createSkill(name, content string, category any) (*pyjson.Object, error) {
+func (s *Scope) createSkill(ctx context.Context, name, content string, category any) (*pyjson.Object, error) {
 	if msg := firstNonEmpty(validateSkillName(name), validateSkillCategory(category), validateSkillFrontmatter(content), validateContentSize(content, "SKILL.md")); msg != "" {
 		return refusal(msg), nil
 	}
@@ -562,7 +562,7 @@ func (s *Scope) createSkill(name, content string, category any) (*pyjson.Object,
 	}
 	cat, _ := category.(string)
 	skillDir := s.ResolveSkillDir(name, cat)
-	if _, err := home.Mkdir(filepath.Dir(skillDir)); err != nil {
+	if _, err := home.Mkdir(home.WithOverride(ctx, s.Home), filepath.Dir(skillDir)); err != nil {
 		return nil, err
 	}
 	if err := os.Mkdir(skillDir, 0o777); err != nil {
@@ -580,7 +580,7 @@ func (s *Scope) createSkill(name, content string, category any) (*pyjson.Object,
 		}
 	}
 	skillMD := filepath.Join(skillDir, "SKILL.md")
-	guard, err := s.guardedWrite(name, skillDir, skillMD, "create", "SKILL.md", content)
+	guard, err := s.guardedWrite(home.WithOverride(ctx, s.Home), name, skillDir, skillMD, "create", "SKILL.md", content)
 	if err != nil {
 		return nil, err
 	}
@@ -616,7 +616,7 @@ func firstNonEmpty(msgs ...string) string {
 }
 
 // Replaces the SKILL.md of an existing skill
-func (s *Scope) editSkill(name, content string) (*pyjson.Object, error) {
+func (s *Scope) editSkill(ctx context.Context, name, content string) (*pyjson.Object, error) {
 	if msg := firstNonEmpty(validateSkillFrontmatter(content), validateContentSize(content, "SKILL.md")); msg != "" {
 		return refusal(msg), nil
 	}
@@ -624,7 +624,7 @@ func (s *Scope) editSkill(name, content string) (*pyjson.Object, error) {
 	if guard != nil {
 		return guard, nil
 	}
-	guard, err := s.guardedWrite(name, skillDir, filepath.Join(skillDir, "SKILL.md"), "edit", "SKILL.md", content)
+	guard, err := s.guardedWrite(home.WithOverride(ctx, s.Home), name, skillDir, filepath.Join(skillDir, "SKILL.md"), "edit", "SKILL.md", content)
 	if err != nil || guard != nil {
 		return guard, err
 	}
@@ -635,7 +635,7 @@ func (s *Scope) editSkill(name, content string) (*pyjson.Object, error) {
 
 // Full SKILL.md rewrite of an existing skill as a plain result map
 func EditSkill(ctx context.Context, env *tools.Env, name, content string) map[string]any {
-	result, err := ScopeFromEnv(env).editSkill(name, content)
+	result, err := ScopeFromEnv(env).editSkill(tools.WithEnvHome(ctx, env), name, content)
 	if err != nil {
 		result = raisedObj(err)
 	}
@@ -656,7 +656,7 @@ func objToMap(o *pyjson.Object) map[string]any {
 }
 
 // Targeted find and replace in SKILL.md or a supporting file
-func (s *Scope) patchSkill(name string, oldString, newString, filePath *string, replaceAll bool) (*pyjson.Object, error) {
+func (s *Scope) patchSkill(ctx context.Context, name string, oldString, newString, filePath *string, replaceAll bool) (*pyjson.Object, error) {
 	if oldString == nil || *oldString == "" {
 		return refusal(patchNeedsOldString), nil
 	}
@@ -713,7 +713,7 @@ func (s *Scope) patchSkill(name string, oldString, newString, filePath *string, 
 			return refusal("Patch would break SKILL.md structure: " + msg), nil
 		}
 	}
-	guard, err = s.guardedWrite(name, skillDir, target, "patch", label, newContent)
+	guard, err = s.guardedWrite(home.WithOverride(ctx, s.Home), name, skillDir, target, "patch", label, newContent)
 	if err != nil || guard != nil {
 		return guard, err
 	}
@@ -797,7 +797,7 @@ func rmdirIfEmpty(parent, stop string) error {
 }
 
 // Adds or overwrites a supporting file of a skill
-func (s *Scope) writeFile(name string, filePath string, fileContent *string) (*pyjson.Object, error) {
+func (s *Scope) writeFile(ctx context.Context, name string, filePath string, fileContent *string) (*pyjson.Object, error) {
 	if msg := validateSkillFilePath(filePath); msg != "" {
 		return refusal(msg), nil
 	}
@@ -818,7 +818,7 @@ func (s *Scope) writeFile(name string, filePath string, fileContent *string) (*p
 	if ref != nil {
 		return ref, nil
 	}
-	guard, err := s.guardedWrite(name, skillDir, target, "write_file", filePath, *fileContent)
+	guard, err := s.guardedWrite(home.WithOverride(ctx, s.Home), name, skillDir, target, "write_file", filePath, *fileContent)
 	if err != nil || guard != nil {
 		return guard, err
 	}
@@ -881,7 +881,7 @@ func (s *Scope) runWriteGate(ctx context.Context, staging func() (map[string]any
 		return toolErrorObj(decision.Message)
 	}
 	payload, gist := staging()
-	record := tools.StageWrite(s.Env, tools.WriteApprovalSkills, payload, gist, tools.CurrentOrigin(s.Env))
+	record := tools.StageWrite(home.WithOverride(ctx, s.Home), s.Env, tools.WriteApprovalSkills, payload, gist, tools.CurrentOrigin(s.Env))
 	return resultObj("success", true, "staged", true, "pending_id", record["id"], "gist", gist, "message", decision.Message)
 }
 
@@ -985,21 +985,21 @@ func truthyStr(p *string) bool { return p != nil && *p != "" }
 func (s *Scope) dispatchAction(ctx context.Context, a manageArgs) (*pyjson.Object, error) {
 	switch a.action {
 	case "create":
-		return s.createSkill(a.name, deref(a.content), a.category)
+		return s.createSkill(home.WithOverride(ctx, s.Home), a.name, deref(a.content), a.category)
 	case "edit":
-		return s.editSkill(a.name, deref(a.content))
+		return s.editSkill(home.WithOverride(ctx, s.Home), a.name, deref(a.content))
 	case "patch":
 		if truthyStr(a.content) && (truthyStr(a.oldString) || a.newString != nil) {
 			return toolErrorObj(patchEitherOr), nil
 		}
 		if truthyStr(a.content) {
-			return s.editSkill(a.name, *a.content)
+			return s.editSkill(home.WithOverride(ctx, s.Home), a.name, *a.content)
 		}
-		return s.patchSkill(a.name, a.oldString, a.newString, a.filePath, a.replaceAll)
+		return s.patchSkill(home.WithOverride(ctx, s.Home), a.name, a.oldString, a.newString, a.filePath, a.replaceAll)
 	case "delete":
 		return s.deleteSkill(ctx, a.name, a.absorbedInto)
 	case "write_file":
-		return s.writeFile(a.name, deref(a.filePath), a.fileContent)
+		return s.writeFile(home.WithOverride(ctx, s.Home), a.name, deref(a.filePath), a.fileContent)
 	case "remove_file":
 		return s.removeFile(a.name, deref(a.filePath))
 	}

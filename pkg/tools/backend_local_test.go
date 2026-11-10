@@ -642,6 +642,9 @@ func TestIcebathSubprocessEnvStripsByDefault(t *testing.T) {
 }
 
 func TestDelegatedChildContextScrubsKanbanKeysAndSetsMarker(t *testing.T) {
+	prev := KanbanHomeResolver
+	KanbanHomeResolver = nil
+	defer func() { KanbanHomeResolver = prev }()
 	env := newTestToolEnv(t)
 	env.Values.Store("session.delegated_child", true)
 	base := map[string]string{"ICEBATH_KANBAN_TASK": "42", "ICEBATH_KANBAN_RUN_ID": "r", "ICEBATH_SESSION_SOURCE": "kanban", "PATH": "/bin"}
@@ -654,9 +657,7 @@ func TestDelegatedChildContextScrubsKanbanKeysAndSetsMarker(t *testing.T) {
 	if out[delegatedChildEnvMarker] != "1" {
 		t.Fatalf("marker %q", out[delegatedChildEnvMarker])
 	}
-	prev := KanbanHomeResolver
 	KanbanHomeResolver = func(env *Env) string { return "/boards/root" }
-	defer func() { KanbanHomeResolver = prev }()
 	if got := IcebathSubprocessEnv(env, false, base)[delegatedChildEnvMarker]; got != "/boards/root" {
 		t.Fatalf("marker %q", got)
 	}

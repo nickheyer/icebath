@@ -2,6 +2,7 @@ package skills
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +29,7 @@ func bundlesCLIEnv(t *testing.T) (*BundlesCLI, *bytes.Buffer, string) {
 func runBundles(t *testing.T, b *BundlesCLI, out *bytes.Buffer, a BundlesArgs) (int, string) {
 	t.Helper()
 	out.Reset()
-	code, err := b.BundlesCommand(a)
+	code, err := b.BundlesCommand(context.Background(), a)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -946,11 +946,25 @@ func TestTarReaderMatchesCPython(t *testing.T) {
 			if !ok {
 				t.Fatalf("no CPython summary recorded for %s", c.name)
 			}
+			if c.name == "sparse_old_huge_header_size" && !trdSeeksTo(t, 1<<62) {
+				want = "'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'hello'\nerror OSError[22]"
+			}
 			if got := trdExtract(t, c.archive(t)); got != want {
 				t.Errorf("extracting %s\ngot:\n%s\nwant:\n%s", c.name, got, want)
 			}
 		})
 	}
+}
+
+// Whether the temp filesystem lets a file seek to the offset, CPython raising OSError 22 from the same seek where it does not
+func trdSeeksTo(t testing.TB, offset int64) bool {
+	f, err := os.Create(filepath.Join(t.TempDir(), "probe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	_, err = f.Seek(offset, io.SeekStart)
+	return err == nil
 }
 
 // Every archive extracts from memory, the deb payload path, to what CPython produced reading a BytesIO

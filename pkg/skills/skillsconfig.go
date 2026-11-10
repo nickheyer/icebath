@@ -67,6 +67,9 @@ func skillsConfigPlatformLabel(key string) (string, bool) {
 	return "", false
 }
 
+// SkillsConfigPlatformLabel is the label of a platform the skills configurator offers, false when it offers none
+func SkillsConfigPlatformLabel(key string) (string, bool) { return skillsConfigPlatformLabel(key) }
+
 // Skill names of a config value, null empty and a bare scalar one item
 func normalizeSkillNames(v any) map[string]bool {
 	out := map[string]bool{}

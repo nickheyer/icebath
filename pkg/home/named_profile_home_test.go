@@ -1,6 +1,7 @@
 package home
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +28,7 @@ func TestLogsUnderNamedProfileResolveToProfileHome(t *testing.T) {
 	}
 }
 
-func TestDotIcebathLayoutResolvesWithoutMarkers(t *testing.T) {
+func TestNamedProfileHomeDotHermesLayoutResolvesWithoutMarkers(t *testing.T) {
 	worker := filepath.Join(isolatedRoot(t), ".icebath", "profiles", "worker")
 	if got := NamedProfileHome(filepath.Join(worker, "logs")); got != worker {
 		t.Fatalf("logs resolve to %q", got)
@@ -59,7 +60,7 @@ func TestUnrelatedProfilesDirIsNotNamed(t *testing.T) {
 
 func TestUnrelatedProfilesDirStillMkdirs(t *testing.T) {
 	logDir := filepath.Join(isolatedRoot(t), "srv", "profiles", "buildcache", "logs")
-	if _, err := Mkdir(logDir); err != nil {
+	if _, err := Mkdir(context.Background(), logDir); err != nil {
 		t.Fatal(err)
 	}
 	if st, err := os.Stat(logDir); err != nil || !st.IsDir() {

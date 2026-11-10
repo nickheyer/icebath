@@ -36,7 +36,7 @@ func newBaseFake(platform Platform) *baseFakeAdapter {
 // Replaces the runtime status publisher for one test
 func quietRuntimeStatus(t *testing.T) {
 	prev := publishRuntimeStatusFn
-	publishRuntimeStatusFn = func(RuntimeStatusUpdate) (int, error) { return 0, nil }
+	publishRuntimeStatusFn = func(context.Context, RuntimeStatusUpdate) (int, error) { return 0, nil }
 	t.Cleanup(func() { publishRuntimeStatusFn = prev })
 }
 
@@ -123,7 +123,7 @@ func lockRecord(pairs ...any) *pyjson.Object {
 func patchAcquire(t *testing.T, results ...[2]any) *int {
 	calls := 0
 	prev := acquireScopedLockFn
-	acquireScopedLockFn = func(scope, identity string, meta *pyjson.Object) (bool, *pyjson.Object, error) {
+	acquireScopedLockFn = func(_ context.Context, scope, identity string, meta *pyjson.Object) (bool, *pyjson.Object, error) {
 		r := results[calls]
 		calls++
 		existing, _ := r[1].(*pyjson.Object)
@@ -137,7 +137,7 @@ func TestStaleLockFailureIsRetryable(t *testing.T) {
 	quietRuntimeStatus(t)
 	a := newBaseFake(PlatformTelegram)
 	patchAcquire(t, [2]any{false, lockRecord("pid", 99999, "start_time", "2026-01-01T00:00:00Z")})
-	ok, err := a.AcquirePlatformLock("telegram-bot-token", "test-token", "Telegram bot token")
+	ok, err := a.AcquirePlatformLock(context.Background(), "telegram-bot-token", "test-token", "Telegram bot token")
 	if err != nil || ok {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
@@ -153,10 +153,13 @@ func TestExplicitReplaceTakeoverReacquiresLockOnce(t *testing.T) {
 	calls := patchAcquire(t, [2]any{false, existing}, [2]any{true, nil})
 	var taken []*pyjson.Object
 	prev := takeOverScopedLockHolderFn
-	takeOverScopedLockHolderFn = func(record *pyjson.Object) (int, bool) { taken = append(taken, record); return 4242, true }
+	takeOverScopedLockHolderFn = func(_ context.Context, record *pyjson.Object) (int, bool) {
+		taken = append(taken, record)
+		return 4242, true
+	}
 	t.Cleanup(func() { takeOverScopedLockHolderFn = prev })
 	a.SetPlatformLockTakeoverAllowed(true)
-	ok, err := a.AcquirePlatformLock("telegram-bot-token", "test-token", "Telegram bot token")
+	ok, err := a.AcquirePlatformLock(context.Background(), "telegram-bot-token", "test-token", "Telegram bot token")
 	if err != nil || !ok {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
@@ -173,7 +176,7 @@ func TestLockConflictNamesOwningProfile(t *testing.T) {
 	a := newBaseFake(PlatformTelegram)
 	patchAcquire(t, [2]any{false, lockRecord("pid", 559, "start_time", 123, "profile", "lead-gen-outreach",
 		"hermes_home", "/opt/data/profiles/lead-gen-outreach")})
-	ok, _ := a.AcquirePlatformLock("telegram-bot-token", "test-token", "Telegram bot token")
+	ok, _ := a.AcquirePlatformLock(context.Background(), "telegram-bot-token", "test-token", "Telegram bot token")
 	msg := *a.FatalErrorMessage()
 	if ok || !strings.Contains(msg, "lead-gen-outreach") || !strings.Contains(msg, "559") || !a.FatalErrorRetryable() ||
 		*a.FatalErrorCode() != "telegram-bot-token_lock" {
@@ -185,7 +188,7 @@ func TestLockConflictInfersProfileFromLegacyHermesHome(t *testing.T) {
 	quietRuntimeStatus(t)
 	a := newBaseFake(PlatformTelegram)
 	patchAcquire(t, [2]any{false, lockRecord("pid", 559, "start_time", 123, "hermes_home", "/opt/data/profiles/lead-gen-outreach")})
-	ok, _ := a.AcquirePlatformLock("telegram-bot-token", "test-token", "Telegram bot token")
+	ok, _ := a.AcquirePlatformLock(context.Background(), "telegram-bot-token", "test-token", "Telegram bot token")
 	if msg := *a.FatalErrorMessage(); ok || !strings.Contains(msg, "lead-gen-outreach") {
 		t.Fatalf("ok %v message %q", ok, msg)
 	}

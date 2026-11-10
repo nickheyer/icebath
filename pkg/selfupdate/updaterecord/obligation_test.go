@@ -1,6 +1,7 @@
 package updaterecord
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -50,14 +51,14 @@ func TestObligationOneInstallsCompletedRestartNeverErasesAnotherInstallsDebt(t *
 	installA, installB := filepath.Join(t.TempDir(), "install-a"), filepath.Join(t.TempDir(), "install-b")
 	bSHA := strings.Repeat("b", 40)
 	obInstall(t, installA)
-	if !WriteHostObligation(obSHA, nil, "", "run-a") {
+	if !WriteHostObligation(context.Background(), obSHA, nil, "", "run-a") {
 		t.Fatal("install a could not arm")
 	}
 	obligationInstall = func() string { return installB }
-	if !WriteHostObligation(bSHA, nil, "", "run-b") {
+	if !WriteHostObligation(context.Background(), bSHA, nil, "", "run-b") {
 		t.Fatal("install b could not arm")
 	}
-	MarkHostRestartCompleted(bSHA)
+	MarkHostRestartCompleted(context.Background(), bSHA)
 	ClearHostObligation()
 	obligationInstall = func() string { return installA }
 	if got := mapGet(ReadHostObligation(), "expected_sha"); got != obSHA {
@@ -74,14 +75,14 @@ func TestObligationCompletionNeverErasesTheUnkeyedDebtAnOlderInstallArmed(t *tes
 		t.Run(aSHA[:1], func(t *testing.T) {
 			lockDir := obLockDir(t)
 			legacy := filepath.Join(lockDir, HostObligationName)
-			if !WriteHostObligation(strings.Repeat("b", 40), nil, "", "run-b") {
+			if !WriteHostObligation(context.Background(), strings.Repeat("b", 40), nil, "", "run-b") {
 				t.Fatal("arm failed")
 			}
 			body := `{"version": 1, "pid": 1, "expected_sha": "` + aSHA + `"}`
 			if err := os.WriteFile(legacy, []byte(body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			MarkHostRestartCompleted(strings.Repeat("b", 40))
+			MarkHostRestartCompleted(context.Background(), strings.Repeat("b", 40))
 			ClearHostObligation()
 			raw, err := os.ReadFile(legacy)
 			if err != nil || !strings.Contains(string(raw), aSHA) {
@@ -119,7 +120,7 @@ func TestObligationEveryHostRecordWriteMakesItsRenameDurable(t *testing.T) {
 		events = append(events, "rename")
 		return os.Rename(src, dst)
 	}
-	if !WriteHostObligation(obSHA, nil, "", "") {
+	if !WriteHostObligation(context.Background(), obSHA, nil, "", "") {
 		t.Fatal("arm failed")
 	}
 	if err := ReplaceBytes(HostObligationPath(), []byte("{}")); err != nil {
@@ -150,7 +151,7 @@ func TestObligationUnreadableProfileRosterNeverAdmitsAPrivateRestartMarker(t *te
 			_ = os.Chmod(lockDir, 0o500)
 			_ = os.Chmod(blind, mode)
 			marker := filepath.Join(tmp, ProfileMarkerName)
-			armed, err := ArmHostObligation(marker, obSHA, nil, "", "")
+			armed, err := ArmHostObligation(context.Background(), marker, obSHA, nil, "", "")
 			_ = os.Chmod(blind, 0o700)
 			_ = os.Chmod(lockDir, 0o700)
 			if err != nil || armed {
@@ -179,7 +180,7 @@ func TestObligationUnwritableHostStateDirNeverHidesTheDebtFromAnotherProfile(t *
 	_ = os.Chmod(lockDir, 0o500)
 	defer os.Chmod(lockDir, 0o700)
 	runtimes := []any{pyjson.ObjectOf("kind", "gateway", "profile", "coder")}
-	armed, err := ArmHostObligation(filepath.Join(homes["coder"], ProfileMarkerName), obSHA, runtimes, "coder", "")
+	armed, err := ArmHostObligation(context.Background(), filepath.Join(homes["coder"], ProfileMarkerName), obSHA, runtimes, "coder", "")
 	if err != nil || armed {
 		t.Fatalf("a debt the writer profile cannot see was reported armed: %v %v", armed, err)
 	}

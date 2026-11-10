@@ -101,9 +101,9 @@ type pendingRecordJSON struct {
 }
 
 // Writes indented JSON through a sibling temp file and an atomic replace, new files take the umask mode
-func writeApprovalJSONAtomic(path string, data any) error {
+func writeApprovalJSONAtomic(ctx context.Context, path string, data any) error {
 	dir := filepath.Dir(path)
-	if _, err := home.Mkdir(dir); err != nil {
+	if _, err := home.Mkdir(ctx, dir); err != nil {
 		return err
 	}
 	var buf bytes.Buffer
@@ -163,7 +163,7 @@ func writeApprovalJSONAtomic(path string, data any) error {
 }
 
 // Persists a pending write and returns its record, a disk failure is logged and the write is lost
-func StageWrite(env *Env, subsystem string, payload map[string]any, summary, origin string) map[string]any {
+func StageWrite(ctx context.Context, env *Env, subsystem string, payload map[string]any, summary, origin string) map[string]any {
 	var raw [16]byte
 	rand.Read(raw[:])
 	pid := hex.EncodeToString(raw[:])[:8]
@@ -176,7 +176,7 @@ func StageWrite(env *Env, subsystem string, payload map[string]any, summary, ori
 	}
 	created := float64(time.Now().UnixNano()) / 1e9
 	rec := pendingRecordJSON{ID: pid, Subsystem: subsystem, Action: action, Summary: pyStrip(summary), Origin: origin, CreatedAt: created, Payload: payload}
-	if err := writeApprovalJSONAtomic(pendingWritePath(env, subsystem, pid), rec); err != nil {
+	if err := writeApprovalJSONAtomic(WithEnvHome(ctx, env), pendingWritePath(env, subsystem, pid), rec); err != nil {
 		envLog(env).Error(fmt.Sprintf("Failed to stage pending %s write: %v", subsystem, err))
 	}
 	return map[string]any{"id": pid, "subsystem": subsystem, "action": action, "summary": rec.Summary, "origin": origin, "created_at": created, "payload": payload}

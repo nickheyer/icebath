@@ -179,7 +179,7 @@ func serverBlock(t *testing.T, h, name string) map[string]any {
 
 func writeServers(t *testing.T, h string, servers map[string]any) {
 	t.Helper()
-	if err := config.SaveUser(h, map[string]any{"mcp_servers": servers}); err != nil {
+	if err := config.SaveUser(context.Background(), h, map[string]any{"mcp_servers": servers}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -671,7 +671,7 @@ func TestCatalogReinstallPreservesPriorUserSelection(t *testing.T) {
 	}
 	raw, _ := config.ReadUser(h)
 	config.AsMap(config.AsMap(config.AsMap(raw["mcp_servers"])["demo"])["tools"])["include"] = []any{"beta", "gamma"}
-	if err := config.SaveUser(h, raw); err != nil {
+	if err := config.SaveUser(context.Background(), h, raw); err != nil {
 		t.Fatal(err)
 	}
 	if err := installDemo(t, &fakeUI{}, "demo"); err != nil {

@@ -75,7 +75,7 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 		h = home.Dir(ctx)
 	}
 	logDir := filepath.Join(h, "logs")
-	if _, err := home.Mkdir(logDir); err != nil {
+	if _, err := home.Mkdir(ctx, logDir); err != nil {
 		return "", err
 	}
 	lineBufferPipedStdout()
@@ -250,7 +250,7 @@ func adoptSecondaryHome(h string) (bool, error) {
 
 // Creates the logs directory and a configured rotating handler for path
 func newFileHandler(ctx context.Context, path string, level int, maxBytes float64, backupCount int, formatter *Formatter) (*managedRotatingFileHandler, error) {
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	clhMu.Lock()

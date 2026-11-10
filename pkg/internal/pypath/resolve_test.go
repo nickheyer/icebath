@@ -25,7 +25,7 @@ func TestResolveMatchesPathlib(t *testing.T) {
 	cases := []struct{ in, want, wantErr string }{
 		{in: dir + "/link//x/./", want: dir + "/real/x"},
 		{in: dir + "/link/\xed\xb3\xbf", want: dir + "/real/\xff"},
-		{in: dir + "/link/a\x00b/c", wantErr: "embedded null byte"},
+		{in: dir + "/link/a\x00b/c", wantErr: "lstat: embedded null character in path"},
 		{in: "/x\xed\xa0\x80", wantErr: "'utf-8' codec can't encode character '\\ud800' in position 2: surrogates not allowed"},
 		{in: dir + "/link/\xed\xa0\x80/y", wantErr: "'utf-8' codec can't encode character '\\ud800' in position " + strconv.Itoa(len(dir)+6) + ": surrogates not allowed"},
 	}

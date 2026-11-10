@@ -751,7 +751,7 @@ func TestStoreRetentionAndExportFailures(t *testing.T) {
 		s := openStore(t, dir)
 		s.RecordModelCall(ctx, modelDims(), testResource())
 		saved := writePackageFile
-		writePackageFile = func(string, any) error { return errors.New("simulated atomic export failure") }
+		writePackageFile = func(context.Context, string, any) error { return errors.New("simulated atomic export failure") }
 		_, err := s.CreateAndExportPackage(ctx)
 		writePackageFile = saved
 		storeErr(t, err, "simulated atomic export failure")

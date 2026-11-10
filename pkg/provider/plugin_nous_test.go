@@ -20,7 +20,7 @@ func seedNousPortalCatalog(t *testing.T) Profile {
 			"reasoning": map[string]any{"supported_efforts": nil, "mandatory": true}},
 		map[string]any{"id": "moonshotai/kimi-k3-instruct", "supported_parameters": []any{}},
 	}
-	if !seedReasoningCaps(NousCatalogURL(context.Background()), items) {
+	if !seedReasoningCaps(context.Background(), NousCatalogURL(context.Background()), items) {
 		t.Fatal("seed rejected")
 	}
 	return p

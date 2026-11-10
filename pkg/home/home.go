@@ -3,7 +3,6 @@ package home
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -109,19 +108,38 @@ func PatchUserHome(dir string) (restore func()) {
 	return func() { userHomeLookup.Store(prev) }
 }
 
-// Platform default home of the running process
+// Platform default home of the process, the Path.home RuntimeError when no user home is known
+func platformDefaultHome() (string, error) { return platformDefault(os.Getenv, UserHome) }
+
+// Platform default home of the running process, panicking with the RuntimeError Python raises without a user home
 func PlatformDefault() string {
-	p, err := platformDefault(os.Getenv, UserHome)
+	p, err := platformDefaultHome()
 	if err != nil {
-		return filepath.Join(".", dirName)
+		panic(err)
 	}
 	return p
 }
 
-// Home directory of the process from the environment variable or the platform default
-func Process() string {
+// Expanded home variable of the process, empty when it is blank
+func envHomePath() string {
 	if v := pystr.Strip(os.Getenv(EnvHome)); v != "" {
 		return expand(v)
+	}
+	return ""
+}
+
+// Home directory of the process, the Path.home RuntimeError when it falls back to an unknown user home
+func processHome() (string, error) {
+	if p := envHomePath(); p != "" {
+		return p, nil
+	}
+	return platformDefaultHome()
+}
+
+// Home directory of the process from the environment variable or the platform default
+func Process() string {
+	if p := envHomePath(); p != "" {
+		return p
 	}
 	return PlatformDefault()
 }
@@ -153,11 +171,17 @@ func AccountDefault() string {
 	if sameResolvedPath(UserHome, account) {
 		return PlatformDefault()
 	}
-	p, err := platformDefault(os.Getenv, func() (string, error) { return account, nil })
-	if err != nil {
-		return filepath.Join(".", dirName)
-	}
+	p, _ := platformDefault(os.Getenv, func() (string, error) { return account, nil })
 	return p
+}
+
+// pathlib equality of two host paths, case insensitive on Windows
+func pathEqual(a, b string) bool {
+	a, b = pypath.PathStr(a), pypath.PathStr(b)
+	if runtime.GOOS == "windows" {
+		return pystr.Lower(a) == pystr.Lower(b)
+	}
+	return a == b
 }
 
 // Reports whether the looked up home and path resolve to equal pathlib paths, false when either fails
@@ -166,15 +190,9 @@ func sameResolvedPath(lookup func() (string, error), path string) bool {
 	if err != nil {
 		return false
 	}
-	a, errA := pypath.Resolve(h)
-	b, errB := pypath.Resolve(path)
-	if errA != nil || errB != nil {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		return pystr.Lower(a) == pystr.Lower(b)
-	}
-	return a == b
+	a, errA := resolve(h)
+	b, errB := resolve(path)
+	return errA == nil && errB == nil && pathEqual(a, b)
 }
 
 // Root that holds home, the platform default when home lives under it, the parent of a profiles directory, or home itself
@@ -182,8 +200,12 @@ func rootOf(native, home string) string {
 	if home == "" {
 		return native
 	}
-	if _, under := pypath.PathRelativeTo(resolve(home), resolve(native)); under {
-		return native
+	rh, errH := resolve(home)
+	rn, errN := resolve(native)
+	if errH == nil && errN == nil {
+		if _, under := pypath.PathRelativeTo(rh, rn); under {
+			return native
+		}
 	}
 	if parent := pypath.PathParent(home); pypath.PathName(parent) == ProfilesDir {
 		return pypath.PathParent(parent)
@@ -191,82 +213,111 @@ func rootOf(native, home string) string {
 	return home
 }
 
+// Root home of the process, the Path.home RuntimeError when the platform default has no user home
+func rootHome() (string, error) {
+	native, err := platformDefaultHome()
+	if err != nil {
+		return "", err
+	}
+	return rootOf(native, envHomePath()), nil
+}
+
 // Root home that owns the profile tree, derived from the process home
 func Root() string {
-	return rootOf(PlatformDefault(), Process())
+	r, err := rootHome()
+	if err != nil {
+		panic(err)
+	}
+	return r
 }
 
 // Root home that owns the given home
 func RootOf(home string) string {
+	native := PlatformDefault()
 	if h := pystr.Strip(home); h != "" {
-		return rootOf(PlatformDefault(), expand(h))
+		return rootOf(native, expand(h))
 	}
-	return PlatformDefault()
+	return native
+}
+
+// Reports whether a pathlib is_dir check passes
+func pathIsDir(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
 }
 
 // Reports whether dir is provably the profiles directory of a home
 func isProfilesRoot(dir string) bool {
-	root := filepath.Dir(dir)
-	if filepath.Base(root) == dirName {
+	root := pypath.PathParent(dir)
+	if pypath.PathName(root) == dirName {
 		return true
 	}
-	if st, err := os.Stat(filepath.Join(dir, deletedDir)); err == nil && st.IsDir() {
+	if pathIsDir(pypath.PathJoin(dir, deletedDir)) {
 		return true
 	}
 	for _, m := range homeMarkers {
-		if _, err := os.Stat(filepath.Join(root, m)); err == nil {
+		if pathExists(pypath.PathJoin(root, m)) {
 			return true
 		}
 	}
-	a, err1 := filepath.Abs(root)
-	b, err2 := filepath.Abs(Root())
-	return err1 == nil && err2 == nil && a == b
+	a, errA := resolve(root)
+	b, errB := resolve(Root())
+	return errA == nil && errB == nil && pathEqual(a, b)
 }
 
 // Profile home that path is or lies under, empty when path is not a named profile
 func NamedProfileHome(path string) string {
-	cur := filepath.Clean(path)
-	for {
-		parent := filepath.Dir(cur)
-		if filepath.Base(parent) == ProfilesDir && !strings.HasPrefix(filepath.Base(cur), ".") && isProfilesRoot(parent) {
-			return cur
+	current := pypath.PathStr(path)
+	for _, c := range append([]string{current}, pypath.PathParents(current)...) {
+		parent, name := pypath.PathParent(c), pypath.PathName(c)
+		if pypath.PathName(parent) == ProfilesDir && !strings.HasPrefix(name, ".") && isProfilesRoot(parent) {
+			return c
 		}
-		if filepath.Base(cur) == dirName {
+		if name == dirName {
 			return ""
-		}
-		if parent == cur {
-			return ""
-		}
-		cur = parent
-	}
-}
-
-// Profile id owning path, default for the root home, empty when path is no home
-func ProfileNameFor(path string) string {
-	if strings.TrimSpace(path) == "" {
-		return ""
-	}
-	cur := expand(path)
-	root := Root()
-	for _, c := range []string{cur, resolve(cur)} {
-		if c == root || c == resolve(root) {
-			return "default"
-		}
-		if named := NamedProfileHome(c); named != "" {
-			return filepath.Base(named)
-		}
-		if filepath.Base(filepath.Dir(c)) == ProfilesDir && !strings.HasPrefix(filepath.Base(c), ".") {
-			return filepath.Base(c)
 		}
 	}
 	return ""
 }
 
-// Path with every symlink resolved, the cleaned path when resolution fails
-func resolve(path string) string {
-	r, _ := pypath.Realpath(path, pypath.Lax)
-	return r
+// Profile id owning path, default for the root home, empty when path is no home
+func ProfileNameFor(path string) string {
+	if pystr.Strip(path) == "" {
+		return ""
+	}
+	current, err := pypath.PathExpanduser(path)
+	if err != nil {
+		panic(err)
+	}
+	root, err := rootHome()
+	if err != nil {
+		return ""
+	}
+	resolved, err := resolve(current)
+	if err != nil {
+		return ""
+	}
+	for _, c := range []string{current, resolved} {
+		if pathEqual(c, root) {
+			return "default"
+		}
+		if rr, err := resolve(root); err != nil {
+			return ""
+		} else if pathEqual(c, rr) {
+			return "default"
+		}
+		if named := NamedProfileHome(c); named != "" {
+			return pypath.PathName(named)
+		}
+		if name := pypath.PathName(c); pypath.PathName(pypath.PathParent(c)) == ProfilesDir && !strings.HasPrefix(name, ".") {
+			return name
+		}
+	}
+	return ""
 }
+
+// pathlib Path.resolve of path, the ValueError of a null byte or an unencodable component returned
+func resolve(path string) (string, error) { return pypath.Resolve(path) }
 
 // Home directory of the named profile under the root, the root for default
 func ProfileHome(root, name string) string {
@@ -278,19 +329,18 @@ func ProfileHome(root, name string) string {
 
 // Tombstone file marking a profile as deleted
 func TombstonePath(profileHome string) string {
-	return filepath.Join(filepath.Dir(profileHome), deletedDir, filepath.Base(profileHome))
+	return pypath.PathJoin(pypath.PathParent(profileHome), deletedDir, pypath.PathName(profileHome))
 }
 
 // Reports whether the profile was deleted
 func ProfileDeleted(profileHome string) bool {
-	_, err := os.Stat(TombstonePath(profileHome))
-	return err == nil
+	return pathExists(TombstonePath(profileHome))
 }
 
 // Reports whether a profile directory carries a file that identifies it as a profile
 func ProfileHasIdentity(profileHome string) bool {
 	for _, m := range identityMarkers {
-		p := filepath.Join(profileHome, m)
+		p := pypath.PathJoin(profileHome, m)
 		if st, err := os.Lstat(p); err == nil && (st.Mode().IsRegular() || st.Mode()&os.ModeSymlink != 0) {
 			return true
 		}
@@ -301,7 +351,7 @@ func ProfileHasIdentity(profileHome string) bool {
 // Reports identity a host changes posture for, where an empty regular .env alone does not count
 func ProfileHasServableIdentity(profileHome string) bool {
 	for _, m := range identityMarkers {
-		p := filepath.Join(profileHome, m)
+		p := pypath.PathJoin(profileHome, m)
 		if lst, err := os.Lstat(p); err == nil && lst.Mode()&os.ModeSymlink != 0 {
 			return true
 		}
@@ -318,23 +368,26 @@ func ProfileHasServableIdentity(profileHome string) bool {
 
 // Reports whether the profile exists, has identity and is not deleted
 func ProfileLive(profileHome string) bool {
-	st, err := os.Stat(profileHome)
-	return err == nil && st.IsDir() && ProfileHasIdentity(profileHome) && !ProfileDeleted(profileHome)
+	return pathIsDir(profileHome) && ProfileHasIdentity(profileHome) && !ProfileDeleted(profileHome)
 }
 
-// Writes the tombstone of a profile
+// Writes the tombstone of a profile, its directory made like pathlib mkdir with parents
 func MarkProfileDeleted(profileHome string) error {
 	t := TombstonePath(profileHome)
-	if err := os.MkdirAll(filepath.Dir(t), 0o700); err != nil {
+	if err := pathMkdir(pypath.PathParent(t), 0o777, true, true); err != nil {
 		return err
 	}
-	return os.WriteFile(t, []byte("deleted\n"), 0o600)
+	text := "deleted\n"
+	if runtime.GOOS == "windows" {
+		text = "deleted\r\n"
+	}
+	return os.WriteFile(t, []byte(text), 0o666)
 }
 
-// Removes the tombstone of a profile
+// Unlinks the tombstone of a profile, a missing one ignored
 func ClearProfileDeleted(profileHome string) error {
-	err := os.Remove(TombstonePath(profileHome))
-	if errors.Is(err, os.ErrNotExist) {
+	err := pypath.Unlink(TombstonePath(profileHome))
+	if err != nil && pypath.OSErrorClass(err) == "FileNotFoundError" {
 		return nil
 	}
 	return err
@@ -355,24 +408,18 @@ func (e *ErrProfileMissing) Is(target error) bool { return target == fs.ErrNotEx
 // Fails when path lies under a deleted or missing named profile
 func AssertProfileLive(path string) error {
 	h := NamedProfileHome(path)
-	if h == "" {
-		return nil
-	}
-	if ProfileDeleted(h) {
-		return &ErrProfileMissing{Home: h}
-	}
-	if _, err := os.Stat(h); err != nil {
+	if h != "" && (ProfileDeleted(h) || !pathExists(h)) {
 		return &ErrProfileMissing{Home: h}
 	}
 	return nil
 }
 
 // Creates path and its parents through MakeUserDir, refusing to materialize a dead profile
-func Mkdir(path string) (string, error) {
+func Mkdir(ctx context.Context, path string) (string, error) {
 	if err := AssertProfileLive(path); err != nil {
 		return "", err
 	}
-	return MakeUserDir(path, 0o777, true, true)
+	return MakeUserDir(ctx, path, 0o777, true, true)
 }
 
 // Names of every live named profile under root, sorted
@@ -398,7 +445,7 @@ func Display(path string) string {
 	p := pypath.PathStr(path)
 	h, err := UserHome()
 	if err != nil {
-		return p
+		panic(err)
 	}
 	rel, ok := pypath.PathRelativeTo(p, h)
 	if !ok {
@@ -428,10 +475,17 @@ func Key(path string) string {
 	if k, ok := keyCache[raw]; ok {
 		return k
 	}
-	expanded := pypath.Expanduser(raw)
+	expanded, err := pypath.PathExpanduser(raw)
+	if err != nil {
+		panic(err)
+	}
 	resolved, err := strictResolve(expanded)
 	if err != nil {
-		return normcase(resolve(expanded))
+		lenient, rerr := resolve(expanded)
+		if rerr != nil {
+			panic(rerr)
+		}
+		return normcase(lenient)
 	}
 	k := normcase(resolved)
 	keyCache[raw] = k

@@ -106,17 +106,17 @@ var (
 )
 
 // Resolves and creates the kind's directory under the home, owner only unless the install is managed
-func (k cacheKind) dir(h string) (string, error) {
+func (k cacheKind) dir(ctx context.Context, h string) (string, error) {
 	d := home.HermesDir(h, k.newSubpath, k.oldName)
-	if err := secureMediaCacheDir(h, d); err != nil {
+	if err := secureMediaCacheDir(ctx, h, d); err != nil {
 		return "", err
 	}
 	return d, nil
 }
 
 // Deletes the kind's files older than the age and returns the count
-func (k cacheKind) cleanup(h string, maxAgeHours float64) (int, error) {
-	d, err := k.dir(h)
+func (k cacheKind) cleanup(ctx context.Context, h string, maxAgeHours float64) (int, error) {
+	d, err := k.dir(ctx, h)
 	if err != nil {
 		return 0, err
 	}
@@ -124,43 +124,47 @@ func (k cacheKind) cleanup(h string, maxAgeHours float64) (int, error) {
 }
 
 // Image cache directory of the home, created on demand
-func ImageCacheDir(h string) (string, error) { return imageCache.dir(h) }
+func ImageCacheDir(ctx context.Context, h string) (string, error) { return imageCache.dir(ctx, h) }
 
 // Audio cache directory of the home, created on demand
-func AudioCacheDir(h string) (string, error) { return audioCache.dir(h) }
+func AudioCacheDir(ctx context.Context, h string) (string, error) { return audioCache.dir(ctx, h) }
 
 // Video cache directory of the home, created on demand
-func VideoCacheDir(h string) (string, error) { return videoCache.dir(h) }
+func VideoCacheDir(ctx context.Context, h string) (string, error) { return videoCache.dir(ctx, h) }
 
 // Document cache directory of the home, created on demand
-func DocumentCacheDir(h string) (string, error) { return documentCache.dir(h) }
+func DocumentCacheDir(ctx context.Context, h string) (string, error) {
+	return documentCache.dir(ctx, h)
+}
 
 // Browser screenshot cache directory of the home, created on demand
-func ScreenshotCacheDir(h string) (string, error) { return screenshotCache.dir(h) }
+func ScreenshotCacheDir(ctx context.Context, h string) (string, error) {
+	return screenshotCache.dir(ctx, h)
+}
 
 // Deletes cached images older than the age in hours and returns the count
-func CleanupImageCache(h string, maxAgeHours float64) (int, error) {
-	return imageCache.cleanup(h, maxAgeHours)
+func CleanupImageCache(ctx context.Context, h string, maxAgeHours float64) (int, error) {
+	return imageCache.cleanup(ctx, h, maxAgeHours)
 }
 
 // Deletes cached audio older than the age in hours and returns the count
-func CleanupAudioCache(h string, maxAgeHours float64) (int, error) {
-	return audioCache.cleanup(h, maxAgeHours)
+func CleanupAudioCache(ctx context.Context, h string, maxAgeHours float64) (int, error) {
+	return audioCache.cleanup(ctx, h, maxAgeHours)
 }
 
 // Deletes cached videos older than the age in hours and returns the count
-func CleanupVideoCache(h string, maxAgeHours float64) (int, error) {
-	return videoCache.cleanup(h, maxAgeHours)
+func CleanupVideoCache(ctx context.Context, h string, maxAgeHours float64) (int, error) {
+	return videoCache.cleanup(ctx, h, maxAgeHours)
 }
 
 // Deletes cached documents older than the age in hours and returns the count
-func CleanupDocumentCache(h string, maxAgeHours float64) (int, error) {
-	return documentCache.cleanup(h, maxAgeHours)
+func CleanupDocumentCache(ctx context.Context, h string, maxAgeHours float64) (int, error) {
+	return documentCache.cleanup(ctx, h, maxAgeHours)
 }
 
 // Deletes cached screenshots older than the age in hours and returns the count
-func CleanupScreenshotCache(h string, maxAgeHours float64) (int, error) {
-	return screenshotCache.cleanup(h, maxAgeHours)
+func CleanupScreenshotCache(ctx context.Context, h string, maxAgeHours float64) (int, error) {
+	return screenshotCache.cleanup(ctx, h, maxAgeHours)
 }
 
 // Whether the bytes start with a PNG, JPEG, GIF, BMP or WEBP signature
@@ -175,11 +179,11 @@ func looksLikeImage(data []byte) bool {
 }
 
 // Creates a media cache directory 0700 under the secure dir policy, plain mkdir for managed installs
-func secureMediaCacheDir(h, dir string) error {
+func secureMediaCacheDir(ctx context.Context, h, dir string) error {
 	if home.ManagedSystem(h) != "" {
 		return os.MkdirAll(dir, 0o777)
 	}
-	if _, err := home.MakeUserDir(dir, 0o700, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, dir, 0o700, true, true); err != nil {
 		slog.Debug(fmt.Sprintf("media cache dir creation failed for %s: %v", dir, err))
 		return os.MkdirAll(dir, 0o777)
 	}
@@ -227,7 +231,7 @@ func CacheImageFromBytes(ctx context.Context, h string, data []byte, ext string)
 		snippet := pystr.DecodeUTF8Replace(head)
 		return "", &ValueError{Msg: fmt.Sprintf("Refusing to cache non-image data as %s (starts with: %s)", ext, pyrepr.Repr(snippet))}
 	}
-	dir, err := ImageCacheDir(h)
+	dir, err := ImageCacheDir(ctx, h)
 	if err != nil {
 		return "", err
 	}
@@ -239,7 +243,7 @@ func CacheAudioFromBytes(ctx context.Context, h string, data []byte, ext string)
 	if err := ValidateInboundMediaSize(ctx, h, int64(len(data)), "audio", nil); err != nil {
 		return "", err
 	}
-	dir, err := AudioCacheDir(h)
+	dir, err := AudioCacheDir(ctx, h)
 	if err != nil {
 		return "", err
 	}
@@ -251,7 +255,7 @@ func CacheVideoFromBytes(ctx context.Context, h string, data []byte, ext string)
 	if err := ValidateInboundMediaSize(ctx, h, int64(len(data)), "video", nil); err != nil {
 		return "", err
 	}
-	dir, err := VideoCacheDir(h)
+	dir, err := VideoCacheDir(ctx, h)
 	if err != nil {
 		return "", err
 	}
@@ -259,8 +263,8 @@ func CacheVideoFromBytes(ctx context.Context, h string, data []byte, ext string)
 }
 
 // Caches document bytes as doc_uuid12_name with the name sanitized, refusing a path that leaves the cache
-func CacheDocumentFromBytes(h string, data []byte, filename string) (string, error) {
-	dir, err := DocumentCacheDir(h)
+func CacheDocumentFromBytes(ctx context.Context, h string, data []byte, filename string) (string, error) {
+	dir, err := DocumentCacheDir(ctx, h)
 	if err != nil {
 		return "", err
 	}

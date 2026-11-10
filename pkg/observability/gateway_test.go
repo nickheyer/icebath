@@ -482,3 +482,28 @@ func TestCronDeliveryKindAndRunFields(t *testing.T) {
 		t.Fatal("unparseable or mixed timestamps must read as zero seconds")
 	}
 }
+
+func TestSetRelayRecorderSwapsAndRestoresTheRelayHooks(t *testing.T) {
+	t.Setenv(home.EnvHome, filepath.Join(t.TempDir(), "home"))
+	prevEnabled, prevRecord := reflect.ValueOf(relayEnabled).Pointer(), reflect.ValueOf(recordProcessMark).Pointer()
+	var mu sync.Mutex
+	var got []string
+	restore := SetRelayRecorder(func(context.Context) bool { return true }, func(_ context.Context, mark string, data map[string]string) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, mark+":"+data["outcome"])
+	})
+	RecordCronMissed(context.Background(), map[string]any{"deliver": "local"})
+	if err := Drain(5 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	restore()
+	mu.Lock()
+	defer mu.Unlock()
+	if !reflect.DeepEqual(got, []string{CronRunMark + ":missed"}) {
+		t.Fatalf("captured %v", got)
+	}
+	if reflect.ValueOf(relayEnabled).Pointer() != prevEnabled || reflect.ValueOf(recordProcessMark).Pointer() != prevRecord {
+		t.Fatal("restore left the swapped hooks installed")
+	}
+}

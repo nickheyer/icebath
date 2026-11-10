@@ -3,6 +3,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -101,7 +102,7 @@ func (j *WindowsJob) Close() error {
 }
 
 // Starts cmd suspended inside a fresh job then resumes it, a failed setup kills the child and frees every handle
-func SpawnServer(cmd *exec.Cmd, owned bool) (*WindowsJob, error) {
+func SpawnServer(ctx context.Context, cmd *exec.Cmd, owned bool) (*WindowsJob, error) {
 	job, err := newWindowsJob()
 	if err != nil {
 		return nil, err

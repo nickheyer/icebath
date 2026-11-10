@@ -40,7 +40,7 @@ var hostedDocumentRe = regexp.MustCompile(regexp.QuoteMeta(HostedDocumentLine) +
 
 // Unresolved retained native input store of the bound profile under its document cache
 func nativeInputsStore(ctx context.Context) (string, error) {
-	docs, err := mediacache.DocumentCacheDir(home.Dir(ctx))
+	docs, err := mediacache.DocumentCacheDir(ctx, home.Dir(ctx))
 	if err != nil {
 		return "", err
 	}

@@ -68,13 +68,13 @@ func TestPromptGuidanceNeedsTheMemoryToolAndRoutesToSkills(t *testing.T) {
 
 func TestPromptMemoryPartsStoreBlocksFollowFlags(t *testing.T) {
 	store := NewStore(t.TempDir(), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
-	if _, err := store.Add("memory", "Project uses Go"); err != nil {
+	if _, err := store.Add(context.Background(), "memory", "Project uses Go"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Add("user", "User prefers terse answers"); err != nil {
+	if _, err := store.Add(context.Background(), "user", "User prefers terse answers"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.LoadFromDisk(); err != nil {
+	if err := store.LoadFromDisk(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	parts := MemoryParts(context.Background(), nil, store, true, true, nil, nil)

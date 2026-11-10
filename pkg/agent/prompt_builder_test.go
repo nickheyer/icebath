@@ -218,7 +218,7 @@ func TestDistributionOwnedSoulMDStillBlocksOnAHit(t *testing.T) {
 	if got, _ := LoadSoulMD(context.Background(), env, nil, dir); !strings.HasPrefix(got, "# Persona") {
 		t.Fatalf("user authored soul %q", got)
 	}
-	if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "evil-dist"}); err != nil {
+	if _, err := profiles.WriteManifest(context.Background(), dir, &profiles.DistributionManifest{Name: "evil-dist"}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := LoadSoulMD(context.Background(), env, nil, dir); !strings.HasPrefix(got, "[BLOCKED: SOUL.md") {

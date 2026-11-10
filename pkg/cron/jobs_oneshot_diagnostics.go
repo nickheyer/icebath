@@ -1,13 +1,15 @@
 package cron
 
 import (
+	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/home"
 	"strconv"
 )
 
 // Writes a diagnostic into the job output directory, false when the write failed
-func writeOneshotDiagnostic(s *Store, job *Job, text, what string) bool {
-	if _, err := s.SaveJobOutput(job.ID, text); err != nil {
+func writeOneshotDiagnostic(ctx context.Context, s *Store, job *Job, text, what string) bool {
+	if _, err := s.SaveJobOutput(home.WithOverride(ctx, s.home), job.ID, text); err != nil {
 		s.log.Debug(fmt.Sprintf("Failed to write %s diagnostic for job '%s'", what, job.ID), "error", err)
 		return false
 	}
@@ -23,7 +25,7 @@ func diagnosticName(job *Job) string {
 }
 
 // Leaves an output note for a claimed one shot removed before any run was recorded
-func writeWedged(s *Store, job *Job) {
+func writeWedged(ctx context.Context, s *Store, job *Job) {
 	if job.LastRunAt != nil {
 		return
 	}
@@ -54,13 +56,13 @@ func writeWedged(s *Store, job *Job) {
 		"process was most likely killed or restarted mid-execution. The " +
 		"job has been removed to stop it re-firing; recreate it to run " +
 		"again.\n"
-	if writeOneshotDiagnostic(s, job, text, "wedged-oneshot") {
+	if writeOneshotDiagnostic(home.WithOverride(ctx, s.home), s, job, text, "wedged-oneshot") {
 		s.log.Warn(fmt.Sprintf("Job '%s': removed without a completed run — diagnostic written to its output directory", oneshotLabel(job)))
 	}
 }
 
 // Leaves an output note for a one shot retired because its run time fell outside the grace window
-func writeMissed(s *Store, job *Job, nextRun string) {
+func writeMissed(ctx context.Context, s *Store, job *Job, nextRun string) {
 	text := "# Cron job removed before firing (run time outside grace window)\n\n" +
 		fmt.Sprintf("- job id: %s\n", job.ID) +
 		fmt.Sprintf("- name: %s\n", diagnosticName(job)) +
@@ -73,7 +75,7 @@ func writeMissed(s *Store, job *Job, nextRun string) {
 		"enforced at create/update/resume time. The job was removed " +
 		"without running; recreate it (or use the Run button) to " +
 		"schedule it again.\n"
-	writeOneshotDiagnostic(s, job, text, "missed-oneshot")
+	writeOneshotDiagnostic(home.WithOverride(ctx, s.home), s, job, text, "missed-oneshot")
 }
 
 // Name when the record has one, else the id, else a question mark

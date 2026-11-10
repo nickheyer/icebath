@@ -53,7 +53,7 @@ func init() { interpreterVersion = pinnedInterpreterVersion }
 
 // Python version the generation is built for, judged against each plugin's requires-python
 func pinnedInterpreterVersion(ctx context.Context) (string, error) {
-	_, python, found, err := Toolchain(ctx, true, true)
+	_, python, found, err := uvToolchain(ctx, true, true)
 	if err != nil {
 		return "", err
 	}
@@ -290,7 +290,7 @@ func disablePlugin(plugins *yaml.Node, name string, spellings map[string]bool, r
 }
 
 // Undoes an earlier update's disable now the plugin fits, unless the user settled it since
-func rejoinPlugin(plugins *yaml.Node, name string, spellings map[string]bool) error {
+func rejoinPlugin(plugins *yaml.Node, name string, spell func() (map[string]bool, error)) error {
 	record := rtGet(plugins, DisabledByUpdateRecord)
 	if record == nil || record.Kind != yaml.MappingNode {
 		return nil
@@ -299,7 +299,12 @@ func rejoinPlugin(plugins *yaml.Node, name string, spellings map[string]bool) er
 	if earlier == nil || earlier.Kind != yaml.MappingNode {
 		return nil
 	}
-	if err := discardIn(listNode(plugins, "disabled"), spellings); err != nil {
+	disabled := listNode(plugins, "disabled")
+	spellings, err := spell()
+	if err != nil {
+		return err
+	}
+	if err := discardIn(disabled, spellings); err != nil {
 		return err
 	}
 	if !rtTruthy(rtGet(earlier, "enabled")) {
@@ -369,6 +374,9 @@ func pruneRecord(plugins *yaml.Node) error {
 	if list := rtGet(plugins, "disabled"); rtTruthy(list) {
 		if list.Kind == yaml.SequenceNode {
 			for _, item := range list.Content {
+				if inner := rtDeref(item); inner.Kind == yaml.SequenceNode || inner.Kind == yaml.MappingNode {
+					return &PyError{Class: "TypeError", Message: fmt.Sprintf("unhashable type: '%s'", rtTag(inner))}
+				}
 				disabled[rtKey(item)] = true
 			}
 		} else if list.Kind == yaml.MappingNode {
@@ -588,12 +596,12 @@ func newPluginEviction(ctx context.Context, entries []PluginEntry, reasons map[s
 			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", rtTag(plugins))}
 		}
 		for _, change := range byHome[home] {
-			spellings, err := pluginSpellings(change.pluginDir, change.name)
-			if err != nil {
-				return nil, err
-			}
+			spell := func() (map[string]bool, error) { return pluginSpellings(change.pluginDir, change.name) }
+			var err error
 			if change.rejoin {
-				err = rejoinPlugin(plugins, change.name, spellings)
+				err = rejoinPlugin(plugins, change.name, spell)
+			} else if spellings, serr := spell(); serr != nil {
+				err = serr
 			} else {
 				err = disablePlugin(plugins, change.name, spellings, change.reason, tried[resolvePath(change.pluginDir)])
 			}
@@ -625,13 +633,20 @@ func (e *PluginEviction) Publish(ctx context.Context, project string) error {
 	configs := []any{}
 	for _, edit := range e.edits {
 		sum := sha256.Sum256(edit.proposed)
-		configs = append(configs, map[string]any{"config": edit.path, "previous": base64Value(edit.previous), "config_after": hex.EncodeToString(sum[:])})
+		item := NewOrderedObject()
+		item.Set("config", edit.path)
+		item.Set("previous", base64Value(edit.previous))
+		item.Set("config_after", hex.EncodeToString(sum[:]))
+		configs = append(configs, item)
 	}
 	factsBefore, err := digestValue(EnvironmentRuntimeFactsPath(ctx, project))
 	if err != nil {
 		return err
 	}
-	if err := writePublicationJournal(ctx, project, map[string]any{"configs": configs, "facts_before": factsBefore}); err != nil {
+	row := NewOrderedObject()
+	row.Set("configs", configs)
+	row.Set("facts_before", factsBefore)
+	if err := writePublicationJournal(ctx, project, row); err != nil {
 		return err
 	}
 	for _, edit := range e.edits {
@@ -726,7 +741,7 @@ func syncEvicting(ctx context.Context, p VenvState, facts *Facts, fact map[strin
 	}
 	notices = append(notices, outcomeNotices(entries, recorded, reasons, waiting, update.joined)...)
 	for _, message := range notices {
-		fmt.Fprintf(os.Stderr, "\u26a0 %s\n", message)
+		fmt.Fprintf(cliStderr(ctx), "\u26a0 %s\n", message)
 		RecordWarning(ctx, message)
 	}
 	return nil
@@ -836,8 +851,12 @@ func (u *evictingUpdate) commit(ctx context.Context, members []string) error {
 		}
 		edit = eviction
 	}
+	current, err := runtimeStateMatches(ctx, u.fact, stamp, "")
+	if err != nil {
+		return err
+	}
 	return commitSelection(ctx, u.pkg, u.facts, edit, SelectionCommit{
-		Enabled: enabled, Stamp: stamp, Inputs: inputs, Current: runtimeStateMatches(ctx, u.fact, stamp, ""),
+		Enabled: enabled, Stamp: stamp, Inputs: inputs, Current: current,
 		Explicit: u.opts.Explicit, SkipInvalidSecondary: true,
 	})
 }

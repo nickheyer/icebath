@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -62,11 +63,11 @@ func TestActiveAgentsAndBusyDerivation(t *testing.T) {
 func TestRespawnStormBreaker(t *testing.T) {
 	dir := t.TempDir()
 	for range 5 {
-		if info := RecordStartAndCheckStorm(dir, 5, 120, 300); info != nil {
+		if info := RecordStartAndCheckStorm(context.Background(), dir, 5, 120, 300); info != nil {
 			t.Fatal("storm under threshold")
 		}
 	}
-	info := RecordStartAndCheckStorm(dir, 5, 120, 300)
+	info := RecordStartAndCheckStorm(context.Background(), dir, 5, 120, 300)
 	if info == nil || info.Count != 6 || info.BackoffS != 10 {
 		t.Fatalf("storm %+v", info)
 	}
@@ -85,7 +86,7 @@ func TestInaccessibleLockIsNotDeletedOrTreatedAsAbsence(t *testing.T) {
 	if active, _ := IsGatewayRuntimeLockActive(lock); !active {
 		t.Fatal("inaccessible lock read as absent")
 	}
-	if AcquireGatewayRuntimeLock() {
+	if AcquireGatewayRuntimeLock(context.Background()) {
 		t.Fatal("acquired an inaccessible lock")
 	}
 	os.Chmod(lock, 0o600)
@@ -95,7 +96,7 @@ func TestInaccessibleLockIsNotDeletedOrTreatedAsAbsence(t *testing.T) {
 	if data, _ := os.ReadFile(lock); string(data) != "existing owner" {
 		t.Fatal("content changed")
 	}
-	if !AcquireGatewayRuntimeLock() {
+	if !AcquireGatewayRuntimeLock(context.Background()) {
 		t.Fatal("acquire after repair")
 	}
 	ReleaseGatewayRuntimeLock()
@@ -109,7 +110,7 @@ func TestRuntimeLockDoesNotFollowSymlink(t *testing.T) {
 	target := filepath.Join(dir, "unrelated")
 	os.WriteFile(target, []byte("unchanged"), 0o644)
 	os.Symlink(target, filepath.Join(dir, "gateway.lock"))
-	if AcquireGatewayRuntimeLock() {
+	if AcquireGatewayRuntimeLock(context.Background()) {
 		ReleaseGatewayRuntimeLock()
 		t.Fatal("symlink followed")
 	}

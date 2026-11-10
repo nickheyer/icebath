@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -25,7 +26,7 @@ func TestAcquireScopedLockRejectsLiveOtherProcess(t *testing.T) {
 	writeRecord(t, lock, rec("pid", int64(99999), "start_time", int64(123), "kind", "icebath-gateway"))
 	patch(t, &statusPidExists, func(int) bool { return true })
 	patch(t, &statusProcessStartTime, fixedInt(int64(123)))
-	acquired, existing, err := AcquireScopedLock("telegram-bot-token", "secret", rec("platform", "telegram"))
+	acquired, existing, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
 	if err != nil || acquired || !pyEq(recGet(existing, "pid"), 99999) {
 		t.Fatalf("%v %v", acquired, err)
 	}
@@ -40,7 +41,7 @@ func TestAcquireScopedLockReplacesPidReusedByUnrelatedProcess(t *testing.T) {
 	patch(t, &statusProcessStartTime, fixedInt(nil))
 	patch(t, &statusLooksLikeGatewayProcess, func(int) bool { return false })
 	patch(t, &statusReadProcessCmdline, cmdline("/usr/libexec/bluetoothuserd"))
-	acquired, _, err := AcquireScopedLock("telegram-bot-token", "secret", rec("platform", "telegram"))
+	acquired, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
 	payload := readRecord(t, lock)
 	if err != nil || !acquired || !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || recGet(recGet(payload, "metadata").(*pyjson.Object), "platform") != "telegram" {
 		t.Fatalf("%v %v", acquired, err)
@@ -56,7 +57,7 @@ func TestAcquireScopedLockSelfReacquiresWhateverDiskStartTime(t *testing.T) {
 		patch(t, &statusProcessStartTime, fixedInt(int64(987654321)))
 		patch(t, &statusPidExists, func(int) bool { return true })
 		patch(t, &statusLooksLikeGatewayProcess, func(int) bool { return true })
-		acquired, existing, err := AcquireScopedLock("discord-bot-token", "secret", rec("platform", "discord"))
+		acquired, existing, err := AcquireScopedLock(context.Background(), "discord-bot-token", "secret", rec("platform", "discord"))
 		payload := readRecord(t, lock)
 		if err != nil || !acquired || !pyEq(recGet(existing, "pid"), int64(os.Getpid())) || !pyEq(recGet(payload, "start_time"), 987654321) {
 			t.Fatalf("disk %v: %v %v", disk, acquired, err)
@@ -88,7 +89,7 @@ func TestAcquireScopedLockRaceSecondAcquirerLoses(t *testing.T) {
 		}
 		return os.Rename(src, dst)
 	})
-	acquired, existing, err := AcquireScopedLock("telegram-bot-token", "secret", rec("platform", "telegram"))
+	acquired, existing, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
 	if err != nil || acquired || !pyEq(recGet(existing, "pid"), 424242) || !pyEq(recGet(readRecord(t, lock), "pid"), 424242) {
 		t.Fatalf("%v %v", acquired, err)
 	}
@@ -100,7 +101,7 @@ func TestAcquireScopedLockReplacesStaleRecordAndStampsLabel(t *testing.T) {
 	writeRecord(t, lock, rec("pid", int64(99999), "start_time", int64(123), "kind", "icebath-gateway"))
 	patch(t, &statusPidExists, func(int) bool { return false })
 	t.Setenv("ICEBATH_HOME", filepath.Join(t.TempDir(), "profiles", "lead-gen-outreach"))
-	acquired, _, err := AcquireScopedLock("telegram-bot-token", "secret", rec("platform", "telegram"))
+	acquired, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
 	payload := readRecord(t, lock)
 	if err != nil || !acquired || !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || recGet(payload, "profile") != "lead-gen-outreach" {
 		t.Fatalf("%v %v %v", acquired, err, recGet(payload, "profile"))
@@ -114,7 +115,7 @@ func TestAcquireScopedLockOmitsProfileWhenNotInferable(t *testing.T) {
 	dir := lockDir(t)
 	t.Setenv("ICEBATH_HOME", filepath.Join(t.TempDir(), "some-custom-dir"))
 	patch(t, &statusProfileLabelForHome, func(string) string { return "" })
-	acquired, _, err := AcquireScopedLock("telegram-bot-token", "secret", nil)
+	acquired, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", nil)
 	payload := readRecord(t, filepath.Join(dir, "telegram-bot-token-"+scopeHash("secret")+".lock"))
 	if _, has := payload.Get("profile"); err != nil || !acquired || has {
 		t.Fatal("profile stamped")
@@ -143,13 +144,13 @@ func TestScopedLockAcquireReportsUnusableLockDir(t *testing.T) {
 	os.Chmod(dir, 0o500)
 	defer os.Chmod(dir, 0o755)
 	ResetUnusableLockDirReports()
-	_, _, err := AcquireScopedLock("telegram-bot-token", "secret", nil)
+	_, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", nil)
 	var unusable *ScopedLockDirUnusable
 	if !errors.As(err, &unusable) || !UnusableLockDirReported(dir) || !strings.Contains(err.Error(), "gateway lock directory is not usable") {
 		t.Fatalf("error %v", err)
 	}
 	os.Chmod(dir, 0o755)
-	if acquired, _, err := AcquireScopedLock("telegram-bot-token", "secret", nil); err != nil || !acquired || UnusableLockDirReported(dir) {
+	if acquired, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", nil); err != nil || !acquired || UnusableLockDirReported(dir) {
 		t.Fatalf("recovery %v %v", acquired, err)
 	}
 }
@@ -198,7 +199,7 @@ func TestTakeoverMarker(t *testing.T) {
 	dir := statusHome(t)
 	marker := filepath.Join(dir, ".gateway-takeover.json")
 	patch(t, &statusProcessStartTime, fixedInt(int64(42)))
-	if !WriteTakeoverMarker(12345, "", nil, false) {
+	if !WriteTakeoverMarker(context.Background(), 12345, "", nil, false) {
 		t.Fatal("write")
 	}
 	p := readRecord(t, marker)
@@ -207,7 +208,7 @@ func TestTakeoverMarker(t *testing.T) {
 		t.Fatal("marker fields")
 	}
 	patch(t, &statusProcessStartTime, fixedInt(nil))
-	if !WriteTakeoverMarker(os.Getpid(), "", nil, false) || recGet(readRecord(t, marker), "target_start_time") != nil {
+	if !WriteTakeoverMarker(context.Background(), os.Getpid(), "", nil, false) || recGet(readRecord(t, marker), "target_start_time") != nil {
 		t.Fatal("write without start time")
 	}
 	if ok, err := ConsumeTakeoverMarkerForSelf(); err != nil || !ok {
@@ -263,7 +264,7 @@ func TestVerifiedDistinctHomeHandoffMarksTargetBeforeSigterm(t *testing.T) {
 		calls = append(calls, [2]any{pid, force})
 		return nil
 	})
-	if pid, ok := TakeOverScopedLockHolder(record, 1, 20); !ok || pid != 4242 {
+	if pid, ok := TakeOverScopedLockHolder(context.Background(), record, 1, 20); !ok || pid != 4242 {
 		t.Fatalf("owner %d %v", pid, ok)
 	}
 	if len(calls) != 1 || calls[0] != [2]any{4242, false} {
@@ -286,7 +287,7 @@ func TestHandoffRejectsUncorroboratedTargetHome(t *testing.T) {
 	patch(t, &statusReadProcessCmdline, cmdline("python -m icebath_cli.main gateway run"))
 	called := false
 	patch(t, &statusTerminatePid, func(int, bool, any) error { called = true; return nil })
-	if _, ok := TakeOverScopedLockHolder(record, 20, 20); ok || called {
+	if _, ok := TakeOverScopedLockHolder(context.Background(), record, 20, 20); ok || called {
 		t.Fatal("uncorroborated owner signalled")
 	}
 	if _, err := os.Stat(filepath.Join(target, ".gateway-takeover.json")); err == nil {
@@ -298,7 +299,7 @@ func TestPlannedStopMarker(t *testing.T) {
 	dir := statusHome(t)
 	marker := filepath.Join(dir, ".gateway-planned-stop.json")
 	patch(t, &statusProcessStartTime, fixedInt(int64(42)))
-	if !WritePlannedStopMarker(12345) {
+	if !WritePlannedStopMarker(context.Background(), 12345) {
 		t.Fatal("write")
 	}
 	p := readRecord(t, marker)
@@ -306,7 +307,7 @@ func TestPlannedStopMarker(t *testing.T) {
 		t.Fatal("fields")
 	}
 	patch(t, &statusProcessStartTime, fixedInt(nil))
-	WritePlannedStopMarker(os.Getpid())
+	WritePlannedStopMarker(context.Background(), os.Getpid())
 	if targets, err := PlannedStopMarkerTargetsSelf(); err != nil || !targets {
 		t.Fatal("probe")
 	}
@@ -317,7 +318,7 @@ func TestPlannedStopMarker(t *testing.T) {
 		t.Fatal("marker kept")
 	}
 	patch(t, &statusProcessStartTime, fixedInt(int64(100)))
-	WritePlannedStopMarker(os.Getpid())
+	WritePlannedStopMarker(context.Background(), os.Getpid())
 	patch(t, &statusProcessStartTime, fixedInt(int64(9999)))
 	if ok, _ := ConsumePlannedStopMarkerForSelf(); ok {
 		t.Fatal("mismatched start time consumed")

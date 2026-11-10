@@ -10,6 +10,13 @@ import (
 // Toolchain lookup the Python environment engine calls, replaceable by tests the way Python patches _toolchain
 var uvToolchain = Toolchain
 
+// Replaces the toolchain lookup the Python environment engine calls and returns the previous one
+func SwapToolchain(fn func(context.Context, bool, bool) (string, string, bool, error)) func(context.Context, bool, bool) (string, string, bool, error) {
+	prev := uvToolchain
+	uvToolchain = fn
+	return prev
+}
+
 // Pinned uv and Python binaries without host discovery, a read only probe reporting found false instead of installing
 func Toolchain(ctx context.Context, realize, explicit bool) (uv, python string, found bool, err error) {
 	if realize {

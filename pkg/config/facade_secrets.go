@@ -97,7 +97,7 @@ func RemoveHomeEnvValue(ctx context.Context, h, key string) (bool, error) {
 	if envWriteBlocked(h, key, "remove") {
 		return false, nil
 	}
-	if !envNameRe.MatchString(key) {
+	if !envVarNameRe.MatchString(key) {
 		return false, fmt.Errorf("Invalid environment variable name: %s", pyStringRepr(key))
 	}
 	path := home.EnvPath(h)
@@ -107,7 +107,7 @@ func RemoveHomeEnvValue(ctx context.Context, h, key string) (bool, error) {
 	}
 	found := false
 	err := withEnvWriteLock(path, func() error {
-		lines, err := readSanitizedEnvLines(path)
+		lines, err := readEnvLinesFile(path)
 		if err != nil {
 			return err
 		}
@@ -127,6 +127,7 @@ func RemoveHomeEnvValue(ctx context.Context, h, key string) (bool, error) {
 		return false, err
 	}
 	publishEnvValue(ctx, key, nil)
+	InvalidateEnvCache()
 	return found, nil
 }
 

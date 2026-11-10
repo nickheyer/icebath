@@ -2,6 +2,7 @@ package pyfs
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,7 +14,7 @@ func TestAtomicWriteBytesForcesModeAndKeepsExistingMode(t *testing.T) {
 	path := filepath.Join(dir, "sub", "vault.key")
 	mode := os.FileMode(0o600)
 	payload := []byte("key\r\nbytes\x00\xff")
-	if err := AtomicWriteBytes(path, payload, "", &mode, true); err != nil {
+	if err := AtomicWriteBytes(context.Background(), path, payload, "", &mode, true); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(path)
@@ -25,7 +26,7 @@ func TestAtomicWriteBytesForcesModeAndKeepsExistingMode(t *testing.T) {
 			t.Fatalf("mode %v", st.Mode().Perm())
 		}
 		os.Chmod(path, 0o640)
-		if err := AtomicWriteBytes(path, []byte("next"), ".x_", nil, false); err != nil {
+		if err := AtomicWriteBytes(context.Background(), path, []byte("next"), ".x_", nil, false); err != nil {
 			t.Fatal(err)
 		}
 		if st, _ := os.Stat(path); st.Mode().Perm() != 0o640 {

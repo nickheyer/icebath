@@ -26,7 +26,7 @@ func claimFire(t *testing.T, s *Store, id string, o FireClaimOptions) *Job {
 
 func mustClaimDispatch(t *testing.T, s *Store, id string) {
 	t.Helper()
-	if ok, err := s.claimDispatch(id); err != nil || !ok {
+	if ok, err := s.claimDispatch(context.Background(), id); err != nil || !ok {
 		t.Fatalf("claimDispatch = %v %v", ok, err)
 	}
 }

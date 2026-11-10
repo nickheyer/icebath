@@ -23,16 +23,6 @@ import (
 // Builds the cobra tree, binds every host handler and attaches plugin provided commands
 func newCLI() *commands.CLI {
 	cli := commands.NewCLI()
-	cli.InstallHint = func(value string) string {
-		ctx := context.Background()
-		if memory.FindProviderDir(ctx, processToolsEnv(ctx), value) != "" {
-			return ""
-		}
-		return memory.CatalogInstallHint(ctx, value, "memory")
-	}
-	cli.MovedHint = func(prog, value string) string {
-		return provider.MovedCommandHint(context.Background(), prog, value, "")
-	}
 	bindChat(cli)
 	bindCron(cli)
 	bindLSP(cli)

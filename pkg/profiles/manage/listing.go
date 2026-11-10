@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
@@ -191,6 +192,28 @@ func profileInfo(ctx context.Context, name, path string, isDefault bool, aliasNa
 		Description: meta.Description, DescriptionAuto: meta.DescriptionAuto, DisplayName: meta.DisplayName,
 		BotTitle: meta.BotTitle, PreviousNames: meta.PreviousNames,
 	}, nil
+}
+
+// Dashboard row of one profile in the key order the profiles router serves it
+func ProfileToDict(info ProfileInfo) *pyjson.Object {
+	o := pyjson.NewObject()
+	o.Set("name", info.Name)
+	o.Set("path", info.Path)
+	o.Set("is_default", info.IsDefault)
+	o.Set("model", info.Model)
+	o.Set("provider", info.Provider)
+	o.Set("has_env", info.HasEnv)
+	o.Set("skill_count", info.SkillCount)
+	o.Set("gateway_running", info.GatewayRunning)
+	o.Set("description", info.Description)
+	o.Set("description_auto", info.DescriptionAuto)
+	o.Set("display_name", info.DisplayName)
+	o.Set("bot_title", info.BotTitle)
+	o.Set("distribution_name", info.DistributionName)
+	o.Set("distribution_version", info.DistributionVersion)
+	o.Set("distribution_source", info.DistributionSource)
+	o.Set("has_alias", info.AliasPath != "")
+	return o
 }
 
 // Every profile including the default, lazy skill counts serve the last known value for polled callers

@@ -3,7 +3,8 @@ package profiles
 import (
 	"regexp"
 	"strings"
-	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Home relative credential directories of an OS account plus direnv files
@@ -51,26 +52,10 @@ var credentialPathParts = func() [][]string {
 }()
 
 var storeCopyRe = regexp.MustCompile(`^(?:auth\.json\..+|\.env\.bak.*` +
-	`|config\.yaml\.(?:bak-\d{8}t\d{6}z(?:\.\d+)?|bak\.\d+|corrupt\..*|bak-pre-migrate-.*))$`)
+	`|config\.yaml\.(?:bak-\p{Nd}{8}t\p{Nd}{6}z(?:\.\p{Nd}+)?|bak\.\p{Nd}+|corrupt\..*|bak-pre-migrate-.*))$`)
 
-// Full case folding of characters whose Python casefold differs from Go lowercasing
-var fullFolds = map[rune]string{
-	'ß': "ss", 'ẞ': "ss", 'İ': "i̇", 'ﬀ': "ff", 'ﬁ': "fi", 'ﬂ': "fl", 'ﬃ': "ffi", 'ﬄ': "ffl", 'ﬅ': "st", 'ﬆ': "st",
-	'ſ': "s", 'µ': "μ", 'ς': "σ", 'ϐ': "β", 'ϑ': "θ", 'ϕ': "φ", 'ϖ': "π", 'ϰ': "κ", 'ϱ': "ρ", 'ϵ': "ε", 'ẛ': "ṡ", 'ι': "ι",
-}
-
-// Python str.casefold of s for every fold that can reach an ASCII store name
-func casefold(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if f, ok := fullFolds[r]; ok {
-			b.WriteString(f)
-			continue
-		}
-		b.WriteRune(unicode.ToLower(r))
-	}
-	return b.String()
-}
+// Python str.casefold of s with full Unicode case folding
+func casefold(s string) string { return pystr.Casefold(s) }
 
 // Casefold is Python str.casefold for profile name comparisons outside the package
 func Casefold(s string) string { return casefold(s) }

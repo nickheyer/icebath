@@ -47,7 +47,7 @@ func runBundles(cmd *cobra.Command, sub string, args []string) error {
 	if _, err := x.Scope.ScanBundles(); err != nil {
 		return err
 	}
-	code, err := x.BundlesCommand(a)
+	code, err := x.BundlesCommand(ctx, a)
 	if err != nil {
 		return err
 	}

@@ -1604,7 +1604,7 @@ type capsDiskRow struct {
 	Mandatory bool     `json:"mandatory"`
 }
 
-func (c *capsCatalog) saveDisk(caps map[string]reasoningCaps) {
+func (c *capsCatalog) saveDisk(ctx context.Context, caps map[string]reasoningCaps) {
 	path := reasoningCapsDiskPath()
 	data := pyjson.NewObject()
 	if raw, err := os.ReadFile(path); err == nil {
@@ -1639,7 +1639,7 @@ func (c *capsCatalog) saveDisk(caps map[string]reasoningCaps) {
 	entry.Set("ts", float64(time.Now().UnixNano())/1e9)
 	entry.Set("caps", rows)
 	data.Set(c.url, entry)
-	if err := modelsWriteJSONCache(path, data, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
+	if err := modelsWriteJSONCache(ctx, path, data, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
 		catalogLog.Debug(fmt.Sprintf("Failed to save reasoning-caps disk cache: %v", err))
 	}
 }
@@ -1701,7 +1701,7 @@ func (c *capsCatalog) fetch() {
 		return
 	}
 	c.cache = caps
-	c.saveDisk(caps)
+	c.saveDisk(req.Context(), caps)
 }
 
 // Cache only lookup, hydrating from disk once and warming in the background when cold

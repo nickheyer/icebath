@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,12 +16,12 @@ import (
 )
 
 // Atomic rewrite of a third party JSON config, false when the filesystem refused it
-func atomicWriteJSON(path string, data any) bool {
-	return config.AtomicJSONWrite(path, data) == nil
+func atomicWriteJSON(ctx context.Context, path string, data any) bool {
+	return config.AtomicJSONWrite(ctx, path, data) == nil
 }
 
 // Renames the Honcho host blocks of a renamed profile in every Honcho config, keeping the AI peer identity
-func migrateHonchoProfileHost(oldName, newName, newDir string) error {
+func migrateHonchoProfileHost(ctx context.Context, oldName, newName, newDir string) error {
 	oldHost := "icebath_" + oldName
 	legacyOldHost := "icebath." + oldName
 	newHost := "icebath_" + newName
@@ -77,7 +78,7 @@ func migrateHonchoProfileHost(oldName, newName, newDir string) error {
 		}
 		hosts.Delete(source)
 		hosts.Set(newHost, block)
-		if atomicWriteJSON(path, root) {
+		if atomicWriteJSON(ctx, path, root) {
 			fmt.Fprintf(stdout, "✓ Honcho host updated: %s → %s\n", source, newHost)
 		}
 	}

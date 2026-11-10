@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -248,7 +249,7 @@ func (d *dueJob) reanchorStaleCron() (bool, error) {
 }
 
 // Retires a finite one shot whose budget is spent unless this process is still running it
-func (sc *dueScan) oneshotDispatchLimitReached(job *Job) bool {
+func (sc *dueScan) oneshotDispatchLimitReached(ctx context.Context, job *Job) bool {
 	s := sc.s
 	if job.Repeat == nil || job.Repeat.Times == nil || *job.Repeat.Times <= 0 || job.Repeat.Completed < *job.Repeat.Times {
 		return false
@@ -269,7 +270,7 @@ func (sc *dueScan) oneshotDispatchLimitReached(job *Job) bool {
 			name, completed, times))
 	}
 	sc.retire(job.ID)
-	writeWedged(s, job)
+	writeWedged(home.WithOverride(ctx, s.home), s, job)
 	return true
 }
 
@@ -301,11 +302,11 @@ func (sc *dueScan) evaluateContained(job *Job, runClaimTTL float64) (fires bool,
 			fires, err = false, fmt.Errorf("%v", r)
 		}
 	}()
-	return sc.evaluateDueJob(job, runClaimTTL)
+	return sc.evaluateDueJob(sc.ctx, job, runClaimTTL)
 }
 
 // Decides whether one enabled non terminal job fires this tick, persisting any repairs
-func (sc *dueScan) evaluateDueJob(job *Job, runClaimTTL float64) (bool, error) {
+func (sc *dueScan) evaluateDueJob(ctx context.Context, job *Job, runClaimTTL float64) (bool, error) {
 	s, now := sc.s, sc.now
 	if job.Kind() == "once" && claimIsLive(s, job.RunClaim, now, runClaimTTL) {
 		return false, nil
@@ -359,7 +360,7 @@ func (sc *dueScan) evaluateDueJob(job *Job, runClaimTTL float64) (bool, error) {
 	}
 	job.ScheduledInstant = nil
 	if !manualRun {
-		job.ScheduledInstant = scheduledInstant(s, job.NextRunAt)
+		job.ScheduledInstant = scheduledInstant(job.NextRunAt)
 	}
 	if !manualRun && kind == "cron" {
 		reanchored, err := d.reanchorStaleCron()
@@ -375,8 +376,9 @@ func (sc *dueScan) evaluateDueJob(job *Job, runClaimTTL float64) (bool, error) {
 		}
 	}
 	if kind == "once" {
-		if retireExpiredOneshot(d) || sc.oneshotDispatchLimitReached(job) {
-			return false, nil
+		retired, err := retireExpiredOneshot(home.WithOverride(ctx, s.home), d)
+		if err != nil || retired || sc.oneshotDispatchLimitReached(home.WithOverride(ctx, s.home), job) {
+			return false, err
 		}
 		claim := &Claim{At: FormatISO(now), By: machineID()}
 		if elapsedSeconds(now, d.nextDT) > oneshotGraceSeconds {

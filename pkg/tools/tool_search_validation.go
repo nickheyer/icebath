@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
@@ -294,34 +296,43 @@ func validationCompile(schema any) (*jsonschema.Schema, error) {
 	return compiler.Compile(url)
 }
 
-// ToolCallEntry is one normalized tool_call batch entry
+// ToolCallEntry is one normalized tool_call batch entry, its arguments the dict Python holds
 type ToolCallEntry struct {
 	Name      string
-	Arguments map[string]any
+	Arguments *pyjson.Object
 }
 
-// NormalizeToolCallEntries turns tool_call arguments into a calls list accepting the legacy single shape
+// Arguments of an entry in the DecodeWTF8 shapes tool handlers read
+func (e ToolCallEntry) HandlerArgs() map[string]any {
+	return pyjson.WTF8Shape(e.Arguments).(map[string]any)
+}
+
+// Python str of a value with its falsy forms read as empty and surrounding whitespace stripped
+func toolCallEntryName(v any) string {
+	if v == nil || !pyrepr.Truthy(v) {
+		return ""
+	}
+	return pystr.Strip(pyrepr.Str(v))
+}
+
+// NormalizeToolCallEntries turns tool_call arguments holding Python values into entries, accepting the legacy single shape
 func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
-	rawCalls, has := args["calls"]
-	if !has || rawCalls == nil {
-		name := ""
-		if n, ok := args["name"]; ok && n != nil {
-			name = strings.TrimSpace(fmt.Sprint(n))
-		}
-		if name == "" {
+	rawCalls := args["calls"]
+	if rawCalls == nil {
+		if toolCallEntryName(args["name"]) == "" {
 			return nil, "tool_call requires 'calls' (an array of {name, arguments})"
 		}
-		rawCalls = []any{map[string]any{"name": args["name"], "arguments": args["arguments"]}}
+		rawCalls = []any{pyjson.ObjectOf("name", args["name"], "arguments", args["arguments"])}
 	}
 	if s, ok := rawCalls.(string); ok {
-		parsed, err := pyjson.DecodeWTF8([]byte(s))
+		parsed, err := pyjson.Loads(s)
 		if err != nil {
 			return nil, fmt.Sprintf("tool_call 'calls' is not valid JSON: %s", err.Error())
 		}
 		rawCalls = parsed
 	}
-	if m, ok := rawCalls.(map[string]any); ok {
-		rawCalls = []any{m}
+	if _, isDict := pyjson.AsObject(rawCalls); isDict {
+		rawCalls = []any{rawCalls}
 	}
 	list, ok := rawCalls.([]any)
 	if !ok || len(list) == 0 {
@@ -329,36 +340,33 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 	}
 	entries := make([]ToolCallEntry, 0, len(list))
 	for position, raw := range list {
-		m, ok := raw.(map[string]any)
+		m, ok := pyjson.AsObject(raw)
 		if !ok {
 			return nil, fmt.Sprintf("tool_call calls[%d] must be an object with 'name' and 'arguments'", position)
 		}
-		name := ""
-		if n, ok := m["name"]; ok && n != nil {
-			name = strings.TrimSpace(fmt.Sprint(n))
-		}
+		name := toolCallEntryName(m.Vals["name"])
 		if name == "" {
 			return nil, fmt.Sprintf("tool_call calls[%d] requires a 'name'", position)
 		}
 		if BridgeToolNames[name] {
 			return nil, fmt.Sprintf("tool_call cannot invoke '%s' (it is itself a bridge tool)", name)
 		}
-		rawArgs := m["arguments"]
-		if s, isStr := rawArgs.(string); rawArgs == nil || (isStr && strings.TrimSpace(s) == "") {
-			rawArgs = map[string]any{}
+		rawArgs := m.Vals["arguments"]
+		if s, isStr := rawArgs.(string); rawArgs == nil || (isStr && pystr.Strip(s) == "") {
+			rawArgs = pyjson.NewObject()
 		}
 		if s, isStr := rawArgs.(string); isStr {
-			parsed, err := pyjson.DecodeWTF8([]byte(s))
+			parsed, err := pyjson.Loads(s)
 			if err != nil {
 				return nil, fmt.Sprintf("tool_call calls[%d].arguments is not valid JSON: %s", position, err.Error())
 			}
 			rawArgs = parsed
 		}
-		argMap, ok := rawArgs.(map[string]any)
+		argObj, ok := pyjson.AsObject(rawArgs)
 		if !ok {
 			return nil, fmt.Sprintf("tool_call calls[%d].arguments must be an object", position)
 		}
-		entries = append(entries, ToolCallEntry{Name: name, Arguments: argMap})
+		entries = append(entries, ToolCallEntry{Name: name, Arguments: argObj})
 	}
 	return entries, ""
 }
@@ -367,21 +375,22 @@ const toolSearchEchoArgsMaxChars = 1500
 
 // LocalBatchError rejects a multi entry batch naming a local tool while echoing the first entry
 func LocalBatchError(entries []ToolCallEntry) string {
-	first := entries[0]
-	args := jsonCompact(first.Arguments)
-	if first.Arguments == nil {
-		args = "{}"
-	}
-	if len(args) > toolSearchEchoArgsMaxChars {
+	return localBatchError(entries[0].Name, entries[0].Arguments, len(entries))
+}
+
+// Batch rejection restating the retry shape with the first entry's own name and arguments in json.dumps form
+func localBatchError(name, arguments any, count int) string {
+	args := pyDumps(arguments, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	if pystr.Len(args) > toolSearchEchoArgsMaxChars {
 		args = "{...}"
 	}
-	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, jsonCompact(first.Name), args)
+	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, pyDumps(name, pyjson.EnsureASCII(false)), args)
 	remaining := ""
-	if len(entries) > 1 {
-		remaining = fmt.Sprintf(" then issue the remaining %d call(s) as separate tool_call invocations", len(entries)-1)
+	if count > 1 {
+		remaining = fmt.Sprintf(" then issue the remaining %d call(s) as separate tool_call invocations", count-1)
 	}
 	return fmt.Sprintf("tool_call takes exactly one entry for local tools; you sent %d. Retry with only: %s%s. Only connectors__ names may be batched together.",
-		len(entries), retry, remaining)
+		count, retry, remaining)
 }
 
 // UnavailableInSessionReason explains why a registered tool absent from this session cannot be reached

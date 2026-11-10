@@ -377,7 +377,7 @@ func TestCatalogSkillRowInstallsWithTheSourceThatResolvedIt(t *testing.T) {
 func TestCatalogSearchRowsMarkAnInstalledClawHubHitButNotAnotherSourcesBareID(t *testing.T) {
 	ctx, root := catalogInstallFixture(t)
 	lock := skills.NewHub(skills.NewScope(root, nil)).LockFile("")
-	if err := lock.Save(pyjson.ObjectOf("version", int64(1), "installed", pyjson.ObjectOf("agent-git-oracle", pyjson.ObjectOf(
+	if err := lock.Save(ctx, pyjson.ObjectOf("version", int64(1), "installed", pyjson.ObjectOf("agent-git-oracle", pyjson.ObjectOf(
 		"source", "clawhub", "identifier", "@tmstudio667-commits/agent-git-oracle", "install_path", "agent-git-oracle")))); err != nil {
 		t.Fatal(err)
 	}

@@ -21,7 +21,7 @@ func coldStorage(t *testing.T) (*TokenStorage, string) {
 func TestOAuthColdLoadSetTokensPersistsAbsoluteExpiresAt(t *testing.T) {
 	s, path := coldStorage(t)
 	before := oauthNow()
-	if err := s.SetTokens(tokenPair("a", "r", int64Ptr(3600))); err != nil {
+	if err := s.SetTokens(context.Background(), tokenPair("a", "r", int64Ptr(3600))); err != nil {
 		t.Fatal(err)
 	}
 	after := oauthNow()
@@ -33,7 +33,7 @@ func TestOAuthColdLoadSetTokensPersistsAbsoluteExpiresAt(t *testing.T) {
 
 func TestOAuthColdLoadSetTokensWithoutExpiresInOmitsExpiresAt(t *testing.T) {
 	s, path := coldStorage(t)
-	if err := s.SetTokens(tokenPair("a", "r", nil)); err != nil {
+	if err := s.SetTokens(context.Background(), tokenPair("a", "r", nil)); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := readJSONFile(t, path)["expires_at"]; ok {
@@ -43,7 +43,7 @@ func TestOAuthColdLoadSetTokensWithoutExpiresInOmitsExpiresAt(t *testing.T) {
 
 func TestOAuthColdLoadGetTokensUsesExpiresAtForRemainingTTL(t *testing.T) {
 	s, _ := coldStorage(t)
-	if err := s.SetTokens(tokenPair("a", "r", int64Ptr(3600))); err != nil {
+	if err := s.SetTokens(context.Background(), tokenPair("a", "r", int64Ptr(3600))); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -86,7 +86,7 @@ func coldProvider(t *testing.T, serverURL string, tokens *OAuthToken, route func
 	t.Helper()
 	s := NewTokenStorage(context.Background(), "srv", "")
 	if tokens != nil {
-		if err := s.SetTokens(tokens); err != nil {
+		if err := s.SetTokens(context.Background(), tokens); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -95,7 +95,7 @@ func coldProvider(t *testing.T, serverURL string, tokens *OAuthToken, route func
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetClientInfo(info); err != nil {
+	if err := s.SetClientInfo(context.Background(), info); err != nil {
 		t.Fatal(err)
 	}
 	p := managerProvider(t, context.Background(), "srv", serverURL, nil)

@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -602,7 +603,7 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 			list[i] = c.entry
 		}
 		snap.Set("skills", list)
-		if err := config.AtomicJSONWrite(filepath.Join(s.Home, skillsSnapshotFilename), snap); err != nil {
+		if err := config.AtomicJSONWrite(home.WithOverride(ctx, s.Home), filepath.Join(s.Home, skillsSnapshotFilename), snap); err != nil {
 			s.logger().Debug(fmt.Sprintf("Could not write skills prompt snapshot: %v", err))
 		}
 	}

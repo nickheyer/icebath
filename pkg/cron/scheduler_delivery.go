@@ -445,7 +445,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 		owner, err := findCanonicalLiveOwner(ctx, home)
 		var pyErr *gateway.PyError
 		if errors.As(err, &pyErr) && pyErr.Kind == "ValueError" {
-			if err := s.botChatLegacyDefer(key, job, content, home, forFailure); err != nil {
+			if err := s.botChatLegacyDefer(ctx, key, job, content, home, forFailure); err != nil {
 				return nil, err
 			}
 			job.botChatReceipts().Set(target, newReceipt("queued", key))

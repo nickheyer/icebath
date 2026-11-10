@@ -369,7 +369,7 @@ func (b catalogBackend) Enable(ctx context.Context, name string) error {
 		return fmt.Errorf("'%s' is not a configured MCP server", name)
 	}
 	entry["enabled"] = true
-	return config.SaveUser(h, doc)
+	return config.SaveUser(tools.WithEnvHome(ctx, b.env), h, doc)
 }
 
 var configMutationMu sync.Mutex

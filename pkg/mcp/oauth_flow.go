@@ -729,7 +729,7 @@ func (p *OAuthProvider) bindIssuerFromContext() {
 }
 
 // Strips a refresh token minted by a different issuer, adopting the current issuer for unstamped files
-func (p *OAuthProvider) enforceRefreshTokenIssuer() {
+func (p *OAuthProvider) enforceRefreshTokenIssuer(ctx context.Context) {
 	tokens := p.currentTokens
 	if tokens == nil || derefStr(tokens.RefreshToken) == "" {
 		return
@@ -740,13 +740,13 @@ func (p *OAuthProvider) enforceRefreshTokenIssuer() {
 	}
 	stored := strings.TrimRight(p.storage.LoadedIssuer(), "/")
 	if stored == "" {
-		p.storage.StampIssuer(current)
+		p.storage.StampIssuer(ctx, current)
 		return
 	}
 	if stored != current {
 		mcpLogger().Warn(fmt.Sprintf("MCP OAuth: authorization server issuer changed (%s -> %s); dropping the stored "+
 			"refresh token rather than sending it to a different issuer", stored, current))
-		p.storage.StripRefreshToken()
+		p.storage.StripRefreshToken(ctx)
 		tokens.RefreshToken = nil
 	}
 }
@@ -946,7 +946,7 @@ func (p *OAuthProvider) initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	info, err := p.storage.GetClientInfo()
+	info, err := p.storage.GetClientInfo(ctx)
 	if err != nil {
 		return err
 	}
@@ -956,7 +956,7 @@ func (p *OAuthProvider) initialize(ctx context.Context) error {
 			p.oauthMetadata = md
 		}
 	}
-	p.enforceRefreshTokenIssuer()
+	p.enforceRefreshTokenIssuer(ctx)
 	if p.hooks != nil {
 		p.hooks.afterInitialize(ctx, p)
 	}
@@ -964,11 +964,11 @@ func (p *OAuthProvider) initialize(ctx context.Context) error {
 }
 
 // Holds the tokens, binds the issuer and persists them
-func (p *OAuthProvider) storeTokens(t *OAuthToken) error {
+func (p *OAuthProvider) storeTokens(ctx context.Context, t *OAuthToken) error {
 	p.currentTokens = t
 	p.updateTokenExpiry(t)
 	p.bindIssuerFromContext()
-	return p.storage.SetTokens(t)
+	return p.storage.SetTokens(ctx, t)
 }
 
 // Takes the refresh fence on the token file, replacing any fence this provider still holds
@@ -1005,10 +1005,10 @@ func (p *OAuthProvider) rotatedCandidate() (*OAuthToken, error) {
 }
 
 // Publishes a disk pair and reruns issuer binding, false when binding stripped its refresh token
-func (p *OAuthProvider) installDiskPair(t *OAuthToken) bool {
+func (p *OAuthProvider) installDiskPair(ctx context.Context, t *OAuthToken) bool {
 	p.currentTokens = t
 	p.updateTokenExpiry(t)
-	p.enforceRefreshTokenIssuer()
+	p.enforceRefreshTokenIssuer(ctx)
 	return derefStr(p.currentTokens.RefreshToken) != ""
 }
 
@@ -1037,7 +1037,7 @@ func (p *OAuthProvider) refreshTokenRequest(ctx context.Context) (*http.Request,
 		return nil, nil, err
 	}
 	if candidate != nil {
-		if !p.installDiskPair(candidate) {
+		if !p.installDiskPair(ctx, candidate) {
 			return nil, nil, errRefreshCompletedByPeer
 		}
 		if p.liveTTL() && p.isTokenValid() {
@@ -1068,13 +1068,13 @@ func (p *OAuthProvider) refreshTokenRequest(ctx context.Context) (*http.Request,
 }
 
 // Rereads disk after a rejected refresh, true only when it holds a different still live pair
-func (p *OAuthProvider) reloadTokensAfterRefreshFailure() (bool, error) {
+func (p *OAuthProvider) reloadTokensAfterRefreshFailure(ctx context.Context) (bool, error) {
 	candidate, err := p.rotatedCandidate()
 	if err != nil || candidate == nil {
 		return false, err
 	}
 	previous := p.currentTokens
-	if p.installDiskPair(candidate) && p.liveTTL() && p.isTokenValid() {
+	if p.installDiskPair(ctx, candidate) && p.liveTTL() && p.isTokenValid() {
 		return true, nil
 	}
 	p.currentTokens = previous
@@ -1083,11 +1083,11 @@ func (p *OAuthProvider) reloadTokensAfterRefreshFailure() (bool, error) {
 }
 
 // Accepts any 2xx refresh answer carrying forward an omitted refresh token and scope, always releasing the fence
-func (p *OAuthProvider) handleRefreshResponse(r *flowResponse) (bool, error) {
+func (p *OAuthProvider) handleRefreshResponse(ctx context.Context, r *flowResponse) (bool, error) {
 	defer p.releaseRefreshFence()
 	if r.StatusCode < 200 || r.StatusCode >= 300 {
 		mcpLogger().Warn(fmt.Sprintf("Token refresh failed: %d", r.StatusCode))
-		recovered, err := p.reloadTokensAfterRefreshFailure()
+		recovered, err := p.reloadTokensAfterRefreshFailure(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -1112,7 +1112,7 @@ func (p *OAuthProvider) handleRefreshResponse(r *flowResponse) (bool, error) {
 			t.Scope = prior.Scope
 		}
 	}
-	if err := p.storeTokens(t); err != nil {
+	if err := p.storeTokens(ctx, t); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -1121,7 +1121,7 @@ func (p *OAuthProvider) handleRefreshResponse(r *flowResponse) (bool, error) {
 var htmlTagPattern = regexp.MustCompile(`<[^>]+>`)
 
 // Accepts any 2xx token answer, a failure carrying a short tag stripped redacted excerpt and never a token body
-func (p *OAuthProvider) handleTokenResponse(r *flowResponse) error {
+func (p *OAuthProvider) handleTokenResponse(ctx context.Context, r *flowResponse) error {
 	if r.StatusCode < 200 || r.StatusCode >= 300 {
 		if r.ReadErr != nil {
 			return r.ReadErr
@@ -1134,7 +1134,7 @@ func (p *OAuthProvider) handleTokenResponse(r *flowResponse) error {
 	if r.ReadErr != nil || err != nil {
 		return &OAuthTokenError{"Invalid token response"}
 	}
-	return p.storeTokens(t)
+	return p.storeTokens(ctx, t)
 }
 
 // Wraps the callback so a known iss omitting issuer gets the discovered issuer filled in
@@ -1343,7 +1343,7 @@ func (p *OAuthProvider) prepareOnce(ctx context.Context, req *http.Request) erro
 		if err != nil && (resp == nil || resp.ReadErr == nil) {
 			return err
 		}
-		ok, err := p.handleRefreshResponse(resp)
+		ok, err := p.handleRefreshResponse(ctx, resp)
 		if err != nil {
 			return err
 		}
@@ -1437,7 +1437,7 @@ func (p *OAuthProvider) authorizeAfterChallenge(ctx context.Context, req *http.R
 	if err != nil && (tokenResp == nil || tokenResp.ReadErr == nil) {
 		return err
 	}
-	return p.handleTokenResponse(tokenResp)
+	return p.handleTokenResponse(ctx, tokenResp)
 }
 
 // Walks the protected resource then authorization server metadata ladders, dropping credentials bound elsewhere
@@ -1534,7 +1534,7 @@ func (p *OAuthProvider) identifyClient(ctx context.Context, failures *[]string) 
 			info.Issuer = strPtr(discovered)
 		}
 		p.clientInfo = info
-		return p.storage.SetClientInfo(info)
+		return p.storage.SetClientInfo(ctx, info)
 	}
 	fallbackBase := authorizationBaseURL(p.serverURL)
 	registrationURL := pyURLJoinAbsPath(fallbackBase, "/register")
@@ -1566,5 +1566,5 @@ func (p *OAuthProvider) identifyClient(ctx context.Context, failures *[]string) 
 		info.Issuer = strPtr(discovered)
 	}
 	p.clientInfo = info
-	return p.storage.SetClientInfo(info)
+	return p.storage.SetClientInfo(ctx, info)
 }

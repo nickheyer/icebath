@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"net/netip"
 	"strings"
 	"testing"
@@ -34,5 +35,29 @@ func TestBrowserSafetyExportsMatchTheURLSafetyFloor(t *testing.T) {
 func TestIsBlockedHostnameExportReadsTheMetadataBlocklist(t *testing.T) {
 	if !IsBlockedHostname("metadata.google.internal") || IsBlockedHostname("example.com") {
 		t.Fatal("blocked hostname classification")
+	}
+}
+
+func TestSwapLookupHostIPsRoutesTheSafetyCheckAndRestores(t *testing.T) {
+	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "")
+	var asked []string
+	resolver := func(name, answer string) func(context.Context, string) ([]netip.Addr, error) {
+		return func(_ context.Context, host string) ([]netip.Addr, error) {
+			asked = append(asked, name+":"+host)
+			return []netip.Addr{netip.MustParseAddr(answer)}, nil
+		}
+	}
+	restoreOuter := SwapLookupHostIPs(resolver("outer", "10.0.0.5"))
+	defer restoreOuter()
+	restoreInner := SwapLookupHostIPs(resolver("inner", "93.184.216.34"))
+	if !IsSafeURL(nil, "http://files.example.com/a") {
+		t.Fatal("public answer blocked")
+	}
+	restoreInner()
+	if IsSafeURL(nil, "http://files.example.com/a") {
+		t.Fatal("private answer allowed after restoring the outer resolver")
+	}
+	if strings.Join(asked, ",") != "inner:files.example.com,outer:files.example.com" {
+		t.Fatalf("resolver calls %v", asked)
 	}
 }

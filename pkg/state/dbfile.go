@@ -556,7 +556,7 @@ func isOSError(err error) bool {
 }
 
 // Durably captures the lost wal generation this process still holds open and returns the artifact directory
-func CaptureRetiredWALGeneration(dbPath string, sidecarIdentity map[string]FileIdentity, trigger string) (string, error) {
+func CaptureRetiredWALGeneration(ctx context.Context, dbPath string, sidecarIdentity map[string]FileIdentity, trigger string) (string, error) {
 	walIdentity, ok := sidecarIdentity["-wal"]
 	if !ok {
 		return "", &RetiredGenerationCaptureError{Msg: fmt.Sprintf("no recorded WAL generation identity for %s; refusing to guess it by pathname", dbPath)}
@@ -658,7 +658,7 @@ func CaptureRetiredWALGeneration(dbPath string, sidecarIdentity map[string]FileI
 			main["mode"], main["file"], main["bytes"] = "header_only", filepath.Base(headerFile), len(header)
 		}
 		manifest["main"] = main
-		if err := config.AtomicJSONWrite(filepath.Join(staging, RetiredGenerationManifest), manifest); err != nil {
+		if err := config.AtomicJSONWrite(ctx, filepath.Join(staging, RetiredGenerationManifest), manifest); err != nil {
 			return err
 		}
 		if err := fsyncPath(staging); err != nil {

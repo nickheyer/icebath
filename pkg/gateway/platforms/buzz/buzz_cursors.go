@@ -157,12 +157,12 @@ func (s *CursorStore) cursorPayload() *pyjson.Object {
 
 // Persists every watched channel cursor, logging instead of failing
 func (s *CursorStore) SaveCursors(ctx context.Context) {
-	writeCursors(CursorPath(ctx), s.cursorPayload())
+	writeCursors(ctx, CursorPath(ctx), s.cursorPayload())
 }
 
 // Atomic compact JSON write of the payload, a failure only logged
-func writeCursors(path string, payload *pyjson.Object) {
-	if err := config.AtomicJSONWriteWith(path, payload); err != nil {
+func writeCursors(ctx context.Context, path string, payload *pyjson.Object) {
+	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
 		slog.Debug("Buzz: could not persist channel cursors", "error", err)
 	}
 }
@@ -189,7 +189,7 @@ func (s *CursorStore) CursorWriter(ctx context.Context) func() {
 		defer s.writeMu.Unlock()
 		if generation > s.written {
 			s.written = generation
-			writeCursors(path, payload)
+			writeCursors(ctx, path, payload)
 		}
 	}
 }

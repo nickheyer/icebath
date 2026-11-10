@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -9,26 +10,25 @@ import (
 )
 
 // One passive PM verdict on startup, the problem text or empty when the install is current or a developer checkout
-func CheckRuntime(ctx context.Context, projectRoot string) string {
-	if pathPresent(filepath.Join(projectRoot, ".git")) {
-		mechanism := ""
-		if stamp := pm.ReadInstallStamp(projectRoot); stamp != nil {
-			mechanism, _ = stamp.Vals["updateMechanism"].(string)
-		}
-		if mechanism != "self" {
-			return ""
+func CheckRuntime(ctx context.Context, projectRoot string) (string, error) {
+	if _, err := os.Stat(filepath.Join(projectRoot, ".git")); err == nil {
+		if mechanism, _ := pm.ReadInstallStamp(projectRoot).Get("updateMechanism"); mechanism != "self" {
+			return "", nil
 		}
 	}
-	problems, err := pm.Activate(ctx, false)
+	problems, err := checkRuntimeActivate(ctx, false)
 	if err != nil {
-		problems = append(problems, err.Error())
+		return "", err
 	}
 	if len(problems) == 0 {
-		return ""
+		return "", nil
 	}
 	remedy := "run `icebath pm install`"
 	if steward := SealedSteward(projectRoot); steward != nil {
 		remedy = "this " + *steward + "-managed install must rebuild the artifact to fix"
 	}
-	return "install out of sync (" + strings.Join(problems, "; ") + ") — " + remedy
+	return "install out of sync (" + strings.Join(problems, "; ") + ") — " + remedy, nil
 }
+
+// Store activation the startup verdict runs, the pm.activate attribute hermes tests replace
+var checkRuntimeActivate = pm.Activate

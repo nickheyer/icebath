@@ -297,7 +297,7 @@ func pathlibExists(path string) bool {
 
 // Writable open with preflight, zero byte quarantine, connect, schema, one malformed schema repair and generation stamp
 func (d *SessionDB) openWriter(ctx context.Context) error {
-	if _, err := home.Mkdir(filepath.Dir(d.path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(d.path)); err != nil {
 		return err
 	}
 	err := d.openWriterGuarded(ctx)
@@ -1184,7 +1184,7 @@ func (c *sessionCore) captureRetiredGeneration(trigger string) (string, error) {
 		identity[k] = v
 	}
 	c.identityMu.Unlock()
-	artifact, err := CaptureRetiredWALGeneration(c.path, identity, trigger)
+	artifact, err := CaptureRetiredWALGeneration(c.openCtx, c.path, identity, trigger)
 	if err != nil {
 		c.retiredCaptureMu.Unlock()
 		return "", err

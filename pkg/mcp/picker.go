@@ -117,7 +117,7 @@ func pickerEnableDisable(ctx context.Context, ui TerminalUI, name string, enable
 	block["enabled"] = enable
 	servers[name] = block
 	cfg["mcp_servers"] = servers
-	if err := config.SaveUser(h, cfg); err != nil {
+	if err := config.SaveUser(ctx, h, cfg); err != nil {
 		return err
 	}
 	state := "disabled"

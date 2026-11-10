@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -277,7 +278,7 @@ func (s *Scope) ReadSuppressedNames() (map[string]bool, error) {
 }
 
 // Adds or drops a name in the suppression list, unchanged lists untouched
-func (s *Scope) toggleSuppressedName(name string, add bool) error {
+func (s *Scope) toggleSuppressedName(ctx context.Context, name string, add bool) error {
 	if name == "" {
 		return nil
 	}
@@ -298,7 +299,7 @@ func (s *Scope) toggleSuppressedName(name string, add bool) error {
 	if len(sorted) > 0 {
 		content += "\n"
 	}
-	if err := pyfs.AtomicWriteText(filepath.Join(s.SkillsDir(), ".curator_suppressed"), content, ".curator_suppressed_"); err != nil {
+	if err := pyfs.AtomicWriteText(home.WithOverride(ctx, s.Home), filepath.Join(s.SkillsDir(), ".curator_suppressed"), content, ".curator_suppressed_"); err != nil {
 		s.logger().Debug("Failed to write curator suppression list: " + err.Error())
 	}
 	return nil
@@ -611,11 +612,11 @@ func (s *Scope) LoadUsage() (*pyjson.Object, error) {
 }
 
 // Writes the usage map atomically with sorted keys, true when it committed
-func (s *Scope) SaveUsage(data *pyjson.Object) bool {
+func (s *Scope) SaveUsage(ctx context.Context, data *pyjson.Object) bool {
 	path := s.usageFile()
 	text, err := pyjson.Dumps(data, pyjson.Indent(2), pyjson.SortKeys(true), pyjson.EnsureASCII(false))
 	if err == nil {
-		err = pyfs.AtomicWriteText(path, text, ".usage_")
+		err = pyfs.AtomicWriteText(home.WithOverride(ctx, s.Home), path, text, ".usage_")
 	}
 	if err != nil {
 		s.logger().Debug(fmt.Sprintf("Failed to write %s: %s", path, err.Error()))
@@ -663,7 +664,7 @@ func (s *Scope) lockedUpdate(ctx context.Context, name string, op usageOp, failL
 	if err != nil {
 		return fail(err)
 	}
-	if dirty && !s.SaveUsage(data) {
+	if dirty && !s.SaveUsage(home.WithOverride(ctx, s.Home), data) {
 		return nil, false
 	}
 	return result, true
@@ -1034,7 +1035,7 @@ func (s *Scope) relocate(ctx context.Context, src, dest, name, action string, co
 		}
 	}
 	if !archiving || bundled {
-		if err := s.toggleSuppressedName(name, archiving); err != nil {
+		if err := s.toggleSuppressedName(home.WithOverride(ctx, s.Home), name, archiving); err != nil {
 			return false, "", err
 		}
 	}

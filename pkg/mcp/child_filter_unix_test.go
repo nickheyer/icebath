@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"context"
 	"os/exec"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestChildFilterOwnedSpawnRacingDiscoveryDoesNotHandMCPTheSupervisor(t *test
 	restore := tools.IsolateOwnerDeathSupervisor()
 	defer restore()
 	before := snapshotChildPIDs()
-	worker, stopWorker := startStdinReader(t, func(c *exec.Cmd) error { return tools.SpawnOwned(c, "test") })
+	worker, stopWorker := startStdinReader(t, func(c *exec.Cmd) error { return tools.SpawnOwned(context.Background(), c, "test") })
 	server, stopServer := startStdinReader(t, nil)
 	func() {
 		defer func() {

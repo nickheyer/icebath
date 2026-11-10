@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -62,7 +63,7 @@ func onbRecordString(record map[string]any, key string) string {
 func onbNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Applies the event and writes the result at the compression tip in one transaction, closing the install flag when the run ended
-func onbTransition(db *state.DB, sessionID string, event OnboardingEvent) (*OnboardingStep, error) {
+func onbTransition(ctx context.Context, db *state.DB, sessionID string, event OnboardingEvent) (*OnboardingStep, error) {
 	var step *OnboardingStep
 	wasActive := false
 	_, err := db.UpdateConversationModelConfigValue(sessionID, OnboardingRecordKey, func(current any) any {
@@ -83,7 +84,7 @@ func onbTransition(db *state.DB, sessionID string, event OnboardingEvent) (*Onbo
 		onbAnnounce(onbRecordString(step.Record, "run_id"), sessionID, onbRecordString(step.Record, "ended_by"))
 	}
 	if step != nil && !OnboardingActive(step.Record) && ActiveOnboardingSessionID(db) == "" {
-		if err := onbCloseInstallFlag(); err != nil {
+		if err := onbCloseInstallFlag(ctx); err != nil {
 			return step, err
 		}
 	}
@@ -91,7 +92,7 @@ func onbTransition(db *state.DB, sessionID string, event OnboardingEvent) (*Onbo
 }
 
 // Writes the install level flag closed unless the root config already says so
-func onbCloseInstallFlag() error {
+func onbCloseInstallFlag(ctx context.Context) error {
 	doc, err := config.ReadDocument(home.ConfigPath(home.Root()))
 	if err != nil {
 		doc = map[string]any{}
@@ -100,29 +101,29 @@ func onbCloseInstallFlag() error {
 	seen, _ := section["seen"].(map[string]any)
 	run, isBool := section["run"].(bool)
 	if !isBool || run || !truthy(seen[OnboardingProfileBuildFlag]) {
-		return SetOnboardingRun(false, true)
+		return SetOnboardingRun(ctx, false, true)
 	}
 	return nil
 }
 
 // StartOnboarding writes a fresh run record and marks the install as mid onboarding
-func StartOnboarding(db *state.DB, sessionID string, facts OnboardingFacts) (map[string]any, error) {
+func StartOnboarding(ctx context.Context, db *state.DB, sessionID string, facts OnboardingFacts) (map[string]any, error) {
 	record := NewOnboardingRecord(facts, onbNow(), state.NewUID())
 	if err := db.PatchModelConfig(sessionID, map[string]any{OnboardingRecordKey: record}); err != nil {
 		return nil, err
 	}
-	if err := SetOnboardingRun(true, false); err != nil {
+	if err := SetOnboardingRun(ctx, true, false); err != nil {
 		return nil, err
 	}
 	return record, nil
 }
 
 // AdvanceOnboarding applies one event to the stored run, an error when the session has no run
-func AdvanceOnboarding(db *state.DB, sessionID string, event OnboardingEvent) (OnboardingStep, error) {
+func AdvanceOnboarding(ctx context.Context, db *state.DB, sessionID string, event OnboardingEvent) (OnboardingStep, error) {
 	if db == nil || sessionID == "" {
 		return OnboardingStep{}, fmt.Errorf("session %s has no onboarding run", sessionID)
 	}
-	step, err := onbTransition(db, sessionID, event)
+	step, err := onbTransition(ctx, db, sessionID, event)
 	if err != nil {
 		return OnboardingStep{}, err
 	}
@@ -169,7 +170,7 @@ func ActiveOnboardingSessionID(db *state.DB) string {
 }
 
 // DeleteOnboardingChat runs the delete and, when it removed the chat holding the live run, ends that run on every copy
-func DeleteOnboardingChat(db *state.DB, sessionID string, deleteChat func() bool) (bool, error) {
+func DeleteOnboardingChat(ctx context.Context, db *state.DB, sessionID string, deleteChat func() bool) (bool, error) {
 	record := LoadOnboardingRecord(db, sessionID)
 	tip, err := db.ResolveResumeSessionID(sessionID)
 	if err != nil {
@@ -188,7 +189,7 @@ func DeleteOnboardingChat(db *state.DB, sessionID string, deleteChat func() bool
 		}
 	}
 	if last {
-		if err := onbCloseInstallFlag(); err != nil {
+		if err := onbCloseInstallFlag(ctx); err != nil {
 			return false, err
 		}
 	}
@@ -196,7 +197,7 @@ func DeleteOnboardingChat(db *state.DB, sessionID string, deleteChat func() bool
 	func() {
 		defer func() {
 			if last && !deleted {
-				SetOnboardingRun(true, false)
+				SetOnboardingRun(ctx, true, false)
 			}
 		}()
 		deleted = deleteChat()
@@ -229,7 +230,7 @@ func onbEndDeleted(current map[string]any) map[string]any {
 }
 
 // ObserveOnboardingToolResult settles a beat from a general tool's result and adds the next step reminder when it did
-func ObserveOnboardingToolResult(db *state.DB, sessionID string, hasSetupBeat bool, name string, args map[string]any, result string) string {
+func ObserveOnboardingToolResult(ctx context.Context, db *state.DB, sessionID string, hasSetupBeat bool, name string, args map[string]any, result string) string {
 	if !OnboardingAppliesTo(name) || !hasSetupBeat {
 		return result
 	}
@@ -244,7 +245,7 @@ func ObserveOnboardingToolResult(db *state.DB, sessionID string, hasSetupBeat bo
 	if args == nil {
 		args = map[string]any{}
 	}
-	step, err := AdvanceOnboarding(db, sessionID, OnbApplied{Tool: name, Args: copyMap(args), Result: parsed})
+	step, err := AdvanceOnboarding(ctx, db, sessionID, OnbApplied{Tool: name, Args: copyMap(args), Result: parsed})
 	if err != nil {
 		toolsLogger(nil).Warn(fmt.Sprintf("onboarding: %s result did not update the run record", name), "error", err)
 		return result
@@ -253,7 +254,7 @@ func ObserveOnboardingToolResult(db *state.DB, sessionID string, hasSetupBeat bo
 	if text == "" {
 		return result
 	}
-	ordered, err := pyjson.DecodeWTF8Ordered([]byte(result))
+	ordered, err := pyjson.Loads(result)
 	out, _ := ordered.(*pyjson.Object)
 	if err != nil || out == nil {
 		return result

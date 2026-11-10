@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -270,23 +271,23 @@ func TestModalParamsAndSnapshotStore(t *testing.T) {
 	if id, _ := modalSnapshotRestoreCandidate(env, "t1"); id != "" {
 		t.Fatal("empty store")
 	}
-	envUpdateJSONStore(modalSnapshotStore(env), func(s map[string]any) { s["t1"] = "im-legacy" })
+	envUpdateJSONStore(context.Background(), modalSnapshotStore(env), func(s *pyjson.Object) { s.Set("t1", "im-legacy") })
 	if id, legacy := modalSnapshotRestoreCandidate(env, "t1"); id != "im-legacy" || !legacy {
 		t.Fatal(id)
 	}
-	modalStoreDirectSnapshot(env, "t1", "im-new")
+	modalStoreDirectSnapshot(context.Background(), env, "t1", "im-new")
 	store := envLoadJSONStore(modalSnapshotStore(env))
-	if store["direct:t1"] != "im-new" || store["t1"] != nil {
+	if store.Vals["direct:t1"] != "im-new" || store.Vals["t1"] != nil {
 		t.Fatal(store)
 	}
 	if id, legacy := modalSnapshotRestoreCandidate(env, "t1"); id != "im-new" || legacy {
 		t.Fatal(id)
 	}
-	modalDeleteDirectSnapshot(env, "t1", "im-other")
+	modalDeleteDirectSnapshot(context.Background(), env, "t1", "im-other")
 	if id, _ := modalSnapshotRestoreCandidate(env, "t1"); id != "im-new" {
 		t.Fatal("mismatched id must not delete")
 	}
-	modalDeleteDirectSnapshot(env, "t1", "")
+	modalDeleteDirectSnapshot(context.Background(), env, "t1", "")
 	if id, _ := modalSnapshotRestoreCandidate(env, "t1"); id != "" {
 		t.Fatal("empty id deletes any")
 	}

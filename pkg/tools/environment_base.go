@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -25,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -255,37 +255,37 @@ func SandboxDir(env *Env) (string, error) {
 	return p, nil
 }
 
-// Snapshot store read as an object, missing or damaged files count as empty
-func envLoadJSONStore(path string) map[string]any {
+// Snapshot store read as the dict json.loads gives, missing or damaged files count as empty
+func envLoadJSONStore(path string) *pyjson.Object {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return map[string]any{}
+		return pyjson.NewObject()
 	}
-	data = []byte(strings.TrimPrefix(string(data), "\xEF\xBB\xBF"))
-	var out map[string]any
-	if err := json.Unmarshal(data, &out); err != nil || out == nil {
-		return map[string]any{}
+	text, err := pystr.DecodeUTF8Sig(data)
+	if err != nil {
+		return pyjson.NewObject()
+	}
+	parsed, err := pyjson.Loads(text)
+	out, ok := parsed.(*pyjson.Object)
+	if err != nil || !ok || out == nil {
+		return pyjson.NewObject()
 	}
 	return out
 }
 
-// Writes the store as indented JSON through an atomic rename
-func envSaveJSONStore(path string, data map[string]any) error {
+// Writes the store as two space indented json.dumps text through an atomic rename
+func envSaveJSONStore(ctx context.Context, path string, data *pyjson.Object) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	body, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return err
-	}
-	return config.AtomicWrite(path, body, 0o644)
+	return config.AtomicJSONWriteWith(ctx, path, data, pyjson.Indent(2))
 }
 
 // Seconds to wait for the snapshot store lock
 const jsonStoreLockTimeout = 10 * time.Second
 
 // Read modify write of a JSON store under its cross process lock, unlocked when the lock is unusable
-func envUpdateJSONStore(path string, update func(map[string]any)) error {
+func envUpdateJSONStore(ctx context.Context, path string, update func(*pyjson.Object)) error {
 	lockPath := path + ".lock"
 	os.MkdirAll(filepath.Dir(lockPath), 0o755)
 	unlock, err := lockStoreFile(lockPath, jsonStoreLockTimeout)
@@ -295,13 +295,12 @@ func envUpdateJSONStore(path string, update func(map[string]any)) error {
 		defer unlock()
 	}
 	data := envLoadJSONStore(path)
-	before, _ := json.Marshal(data)
+	before := data.Copy()
 	update(data)
-	after, _ := json.Marshal(data)
-	if string(before) == string(after) {
+	if pyjson.Equal(data, before) {
 		return nil
 	}
-	return envSaveJSONStore(path, data)
+	return envSaveJSONStore(ctx, path, data)
 }
 
 // Change key of a host file from mtime, size, inode and ctime, false when unreadable

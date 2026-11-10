@@ -2,10 +2,12 @@ package manage
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/backup"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
@@ -27,6 +31,9 @@ func transferHome(t *testing.T) string {
 		t.Fatal(err)
 	}
 	switchHome(t, src)
+	t.Cleanup(backup.SwapMemoryProviderExternalPaths(func(context.Context, string) []string { return nil }))
+	t.Cleanup(backup.SwapGatewayService(func(context.Context) (bool, error) { return false, nil },
+		func(context.Context, io.Writer, gateway.ServiceSetupOptions) (bool, error) { return false, nil }))
 	return src
 }
 
@@ -61,13 +68,13 @@ func writeDistManifest(t *testing.T, dir, name string, owned []string) {
 	t.Helper()
 	m := profiles.NewDistributionManifest(name)
 	m.DistributionOwned = owned
-	if _, err := profiles.WriteManifest(dir, m); err != nil {
+	if _, err := profiles.WriteManifest(context.Background(), dir, m); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestTransfersPreserveUserFilesWithoutPortingPMState(t *testing.T) {
-	for _, route := range []string{"default", "named", "distribution", "explicit"} {
+	for _, route := range []string{"backup", "default", "named", "distribution", "explicit"} {
 		t.Run(route, func(t *testing.T) {
 			src := transferHome(t)
 			tmp := filepath.Dir(src)
@@ -97,7 +104,31 @@ func TestTransfersPreserveUserFilesWithoutPortingPMState(t *testing.T) {
 			writeFiles(t, source, portable)
 			writeFiles(t, source, runtime)
 			var archive string
-			if route == "default" || route == "named" {
+			if route == "backup" {
+				for _, set := range []map[string]string{portable, runtime} {
+					for rel, text := range maps.Clone(set) {
+						set["profiles/coder/"+rel] = text
+					}
+				}
+				writeFiles(t, source, portable)
+				writeFiles(t, source, runtime)
+				archive = filepath.Join(tmp, "portable.zip")
+				owedBackupStep(t, func() error {
+					_, err := backup.RunBackup(ctx, home.Dir(ctx), map[string]any{"output": archive}, io.Discard)
+					return err
+				})
+				names := zipNames(t, archive)
+				for rel := range portable {
+					if !names[rel] {
+						t.Fatalf("%s missing from the archive", rel)
+					}
+				}
+				for rel := range runtime {
+					if names[rel] {
+						t.Fatalf("%s shipped in the archive", rel)
+					}
+				}
+			} else if route == "default" || route == "named" {
 				name := map[bool]string{true: "porter", false: "default"}[route == "named"]
 				out, err := ExportProfile(name, filepath.Join(tmp, "portable.tar.gz"), nil)
 				if err != nil {
@@ -132,7 +163,13 @@ func TestTransfersPreserveUserFilesWithoutPortingPMState(t *testing.T) {
 			}
 			switchHome(t, target)
 			var restored string
-			if archive != "" {
+			if route == "backup" {
+				owedBackupStep(t, func() error {
+					_, err := backup.RunImport(ctx, home.Dir(ctx), map[string]any{"zipfile": archive, "force": true}, io.Discard)
+					return err
+				})
+				restored = target
+			} else if archive != "" {
 				out, err := ImportProfile(archive, "restored")
 				if err != nil {
 					t.Fatal(err)
@@ -160,6 +197,58 @@ func TestTransfersPreserveUserFilesWithoutPortingPMState(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Runs a backup route step whose hermes code is still owed, failing the subtest with the owed name
+func owedBackupStep(t *testing.T, step func() error) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("%v", r)
+		}
+	}()
+	if err := step(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Writes a zip holding each member text under its name
+func writeZip(t *testing.T, archive string, members map[string]string) {
+	t.Helper()
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := zip.NewWriter(f)
+	for _, name := range slices.Sorted(maps.Keys(members)) {
+		fw, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(fw, members[name]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []interface{ Close() error }{w, f} {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Member names of a zip archive
+func zipNames(t *testing.T, archive string) map[string]bool {
+	t.Helper()
+	r, err := zip.OpenReader(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	names := map[string]bool{}
+	for _, f := range r.File {
+		names[f.Name] = true
+	}
+	return names
 }
 
 // Writes a tar.gz of dir with every member under arcname like tarfile.add
@@ -212,7 +301,7 @@ func tarDirectory(t *testing.T, dir, arcname, out string) {
 }
 
 func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
-	for _, route := range []string{"profile", "profile-denied", "distribution", "explicit"} {
+	for _, route := range []string{"backup", "profile", "profile-denied", "distribution", "explicit"} {
 		t.Run(route, func(t *testing.T) {
 			src := transferHome(t)
 			tmp := filepath.Dir(src)
@@ -229,6 +318,13 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 				"tools/uv/bin/uv":         "foreign executable\n",
 				"cache":                   "foreign cache file\n",
 			}
+			if route == "backup" {
+				for _, set := range []map[string]string{incoming, machine} {
+					for rel, text := range maps.Clone(set) {
+						set["profiles/coder/"+rel] = text
+					}
+				}
+			}
 			staged := filepath.Join(tmp, "archive-source")
 			writeFiles(t, staged, incoming)
 			writeFiles(t, staged, machine)
@@ -236,13 +332,29 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if route == "backup" {
+				target = src
+			}
 			profileRoute := strings.HasPrefix(route, "profile")
 			if !profileRoute {
 				for rel := range machine {
 					writeFile(t, filepath.Join(target, filepath.FromSlash(rel)), "target-owned runtime\n")
 				}
 			}
-			if profileRoute {
+			backupArchive := filepath.Join(tmp, "legacy.zip")
+			if route == "backup" {
+				members := map[string]string{}
+				for _, set := range []map[string]string{incoming, machine} {
+					for rel, text := range set {
+						members[".icebath/"+rel] = text
+					}
+				}
+				writeZip(t, backupArchive, members)
+				owedBackupStep(t, func() error {
+					_, err := backup.RunImport(ctx, home.Dir(ctx), map[string]any{"zipfile": backupArchive, "force": true}, io.Discard)
+					return err
+				})
+			} else if profileRoute {
 				archive := filepath.Join(tmp, "legacy.tar.gz")
 				tarDirectory(t, staged, "legacy", archive)
 				if route == "profile-denied" {
@@ -294,6 +406,17 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 				}
 				if readText(t, filepath.Join(staged, filepath.FromSlash(rel))) != content {
 					t.Fatalf("staged %s changed", rel)
+				}
+			}
+			if route == "backup" {
+				writeZip(t, backupArchive, map[string]string{".icebath/config.yaml": incoming["config.yaml"],
+					".icebath/skills/../installs/key/facts.json": "foreign generation\n"})
+				owedBackupStep(t, func() error {
+					_, err := backup.RunImport(ctx, home.Dir(ctx), map[string]any{"zipfile": backupArchive, "force": true}, io.Discard)
+					return err
+				})
+				if readText(t, filepath.Join(target, "installs", "key", "facts.json")) != "target-owned runtime\n" {
+					t.Fatal("an in-home traversal bypassed the runtime root classification")
 				}
 			}
 			if route == "explicit" {

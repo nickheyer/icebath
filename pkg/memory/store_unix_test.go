@@ -3,6 +3,7 @@
 package memory
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -12,7 +13,7 @@ import (
 func TestMemoryFileLockNewLockFileIsOwnerOnly(t *testing.T) {
 	dir := t.TempDir()
 	old := syscall.Umask(0o002)
-	unlock, err := fileLock(filepath.Join(dir, "MEMORY.md"))
+	unlock, err := fileLock(context.Background(), filepath.Join(dir, "MEMORY.md"))
 	syscall.Umask(old)
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +30,7 @@ func TestMemoryFileLockExistingLooseLockIsTightened(t *testing.T) {
 	lockPath := filepath.Join(dir, "MEMORY.md.lock")
 	os.WriteFile(lockPath, nil, 0o664)
 	os.Chmod(lockPath, 0o664)
-	unlock, err := fileLock(filepath.Join(dir, "MEMORY.md"))
+	unlock, err := fileLock(context.Background(), filepath.Join(dir, "MEMORY.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestMemoryFileLockSymlinkIsRefused(t *testing.T) {
 	outside := filepath.Join(dir, "outside")
 	os.WriteFile(outside, []byte("do not touch"), 0o644)
 	os.Symlink(outside, filepath.Join(dir, "MEMORY.md.lock"))
-	if _, err := fileLock(filepath.Join(dir, "MEMORY.md")); err == nil {
+	if _, err := fileLock(context.Background(), filepath.Join(dir, "MEMORY.md")); err == nil {
 		t.Fatal("symlinked lock accepted")
 	}
 	if b, _ := os.ReadFile(outside); string(b) != "do not touch" {

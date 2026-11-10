@@ -65,7 +65,7 @@ func SpoolDroppedTranscriptMessage(ctx context.Context, sessionID string, messag
 		payload.Set("seq", transcriptSpoolSeq.Add(1)-1)
 		payload.Set("data", data)
 		var path string
-		if path, err = writeFlushPayload(flushDir, payload); err == nil {
+		if path, err = writeFlushPayload(ctx, flushDir, payload); err == nil {
 			return path
 		}
 	}
@@ -580,7 +580,7 @@ func FlushAgentHistoryToFile(ctx context.Context, sessionID *string, history []a
 		payload.Set("session_id", sid)
 		payload.Set("count", len(snapshot))
 		payload.Set("messages", snapshot)
-		if _, err = writeFlushPayload(flushDir, payload); err == nil {
+		if _, err = writeFlushPayload(ctx, flushDir, payload); err == nil {
 			slog.Warn(fmt.Sprintf("Preserved %d in-memory message(s) for session %s (possible FTS corruption — recover after repairing state.db)", len(snapshot), pyrepr.Str(sid)))
 			return
 		}

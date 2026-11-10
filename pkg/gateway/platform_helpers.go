@@ -340,7 +340,9 @@ var threadTrackerStatePath = func(ctx context.Context, platform string) string {
 	return filepath.Join(home.Dir(ctx), platform+"_threads.json")
 }
 
-var helpersAtomicJSONWrite = func(path string, data any) error { return config.AtomicJSONWriteWith(path, data) }
+var helpersAtomicJSONWrite = func(ctx context.Context, path string, data any) error {
+	return config.AtomicJSONWriteWith(ctx, path, data)
+}
 
 // Tracker loaded from its state file, maxTracked zero meaning the default of 500
 func NewThreadParticipationTracker(ctx context.Context, platform string, maxTracked int) *ThreadParticipationTracker {
@@ -390,7 +392,7 @@ func (t *ThreadParticipationTracker) save(ctx context.Context) error {
 	for i, id := range list {
 		payload[i] = id
 	}
-	return helpersAtomicJSONWrite(threadTrackerStatePath(ctx, t.platform), payload)
+	return helpersAtomicJSONWrite(ctx, threadTrackerStatePath(ctx, t.platform), payload)
 }
 
 // Records the id in memory, true when a persist is still owed

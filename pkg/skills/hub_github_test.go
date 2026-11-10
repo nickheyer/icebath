@@ -267,7 +267,7 @@ func TestUnchangedUpstreamRevisionSkipsBundleDownload(t *testing.T) {
 		lock := h.LockFile("")
 		md := pyjson.NewObject()
 		md.Set("source_revision", c.recorded)
-		if err := lock.RecordInstall("demo-skill", "github", "owner/repo/demo-skill", "community", "safe", "installed-hash", "demo-skill", nil, md, nil); err != nil {
+		if err := lock.RecordInstall(context.Background(), "demo-skill", "github", "owner/repo/demo-skill", "community", "safe", "installed-hash", "demo-skill", nil, md, nil); err != nil {
 			t.Fatal(err)
 		}
 		results, err := h.CheckForSkillUpdates(context.Background(), "", lock, []SkillSource{src}, nil)

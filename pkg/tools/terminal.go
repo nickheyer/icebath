@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Force redacts text before serializing a terminal error envelope
@@ -378,21 +379,21 @@ func pyTypeName(v any) string {
 
 // Attaches the foreground to background promotion note to a spawn result, unchanged on error
 func withPromotedNote(resultJSON string, requestedTimeout int) string {
-	decoded, err := pyjson.DecodeWTF8([]byte(resultJSON))
-	data, _ := decoded.(map[string]any)
+	decoded, err := pyjson.Loads(resultJSON)
+	data, _ := decoded.(*pyjson.Object)
 	if err != nil || data == nil {
 		return resultJSON
 	}
-	if e, ok := data["error"]; ok && e != nil && e != "" {
+	if e, ok := data.Get("error"); ok && pyrepr.Truthy(e) {
 		return resultJSON
 	}
 	template := promotedNotePollOnly
-	if truthy(data["notify_on_complete"]) {
+	if notify, _ := data.Get("notify_on_complete"); pyrepr.Truthy(notify) {
 		template = promotedNote
 	}
 	note := strings.ReplaceAll(strings.ReplaceAll(template, "{requested}", strconv.Itoa(requestedTimeout)), "{cap}", strconv.Itoa(foregroundMaxTimeout()))
-	data["promoted_from_foreground"] = note
-	return JSON(data)
+	data.Set("promoted_from_foreground", note)
+	return dumpsUnicode(data)
 }
 
 // Cached env for the task, else created under the per task creation lock
@@ -522,7 +523,7 @@ func runForeground(ctx context.Context, env *Env, command string, e Environment,
 	if metered {
 		recordTerminalMetric(env, "icebath.terminal.outcome", map[string]any{"command": command, "backend": envType, "outcome": terminalOutcome(result)})
 	}
-	return finalizeForegroundResult(env, command, result, e, envType, eff, taskID, sessionID, sessionKey, workdir, commandCwd, approvalNote), nil
+	return finalizeForegroundResult(ctx, env, command, result, e, envType, eff, taskID, sessionID, sessionKey, workdir, commandCwd, approvalNote), nil
 }
 
 // Floor for the pre exec guard's share of the command deadline in seconds

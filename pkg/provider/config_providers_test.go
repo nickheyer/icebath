@@ -266,7 +266,7 @@ func TestEnvSettingRoundTripDropsConfigYAMLCopies(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model:\n  default: test/model\nDISCORD_ALLOWED_USERS: '111'\nWHATSAPP_MODE: web\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveEnvSetting(h, "DISCORD_ALLOWED_USERS", "222"); err != nil {
+	if err := SaveEnvSetting(context.Background(), h, "DISCORD_ALLOWED_USERS", "222"); err != nil {
 		t.Fatal(err)
 	}
 	env, _ := os.ReadFile(filepath.Join(h, ".env"))
@@ -289,18 +289,18 @@ func TestEnvSettingRoundTripDropsConfigYAMLCopies(t *testing.T) {
 	if v, ok := ReadEnvSetting(h, "WHATSAPP_MODE"); !ok || v != "web" {
 		t.Fatalf("stale yaml copy read: %q %v", v, ok)
 	}
-	removed, err := RemoveEnvSetting(h, "WHATSAPP_MODE")
+	removed, err := RemoveEnvSetting(context.Background(), h, "WHATSAPP_MODE")
 	if err != nil || !removed {
 		t.Fatalf("remove stale copy: %v %v", removed, err)
 	}
 	if _, ok := ReadEnvSetting(h, "WHATSAPP_MODE"); ok {
 		t.Fatal("still readable")
 	}
-	removed, err = RemoveEnvSetting(h, "DISCORD_ALLOWED_USERS")
+	removed, err = RemoveEnvSetting(context.Background(), h, "DISCORD_ALLOWED_USERS")
 	if err != nil || !removed {
 		t.Fatalf("remove env: %v %v", removed, err)
 	}
-	removed, _ = RemoveEnvSetting(h, "NEVER_SET")
+	removed, _ = RemoveEnvSetting(context.Background(), h, "NEVER_SET")
 	if removed {
 		t.Fatal("nothing existed")
 	}

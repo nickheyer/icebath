@@ -41,7 +41,7 @@ type tuiRunState struct {
 	extraWidgets           func() []*ptWindow
 	extraKeybindings       func(kb *ptKeyBindings, app *ptApplication)
 	configSig              []any
-	configMCPServers       map[string]any
+	configMCPServers       any
 	lastConfigCheck        float64
 	lastFocusRedraw        *float64
 	chromePaints           [][]chromePaint

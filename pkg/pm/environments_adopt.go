@@ -233,7 +233,11 @@ func Adopt(ctx context.Context, previous, selected, running string) (bool, error
 			importPath.entries[i] = updated
 		}
 	}
+	importPath.entries, err = addAdoptedSitePackages(importPath.entries, old, updated)
 	importPath.Unlock()
+	if err != nil {
+		return false, err
+	}
 	if value := os.Getenv("PYTHONPATH"); value != "" {
 		os.Setenv("PYTHONPATH", replacePathEntry(value, old, updated))
 	}

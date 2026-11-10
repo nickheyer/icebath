@@ -60,7 +60,7 @@ func TestPublicationRecoveryRefusesToReplaceNewerConfig(t *testing.T) {
 	}
 }
 
-func TestPublicationContextHomePublicationRecoversFromItsOwnProcess(t *testing.T) {
+func TestContextHomePublicationRecoversFromItsOwnProcess(t *testing.T) {
 	tmp := isolateHome(t)
 	processHome := filepath.Join(tmp, "process-home")
 	contextHome := filepath.Join(tmp, "context-home")

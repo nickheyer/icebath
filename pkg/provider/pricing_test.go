@@ -529,8 +529,8 @@ func TestOneTokenDoesNotReceiveAnotherTokensCatalog(t *testing.T) {
 		}
 		return []string{"org-b/only"}
 	})
-	a := FetchModelsWithPricing(PricingFetchOptions{APIKey: "tok-a", BaseURL: pricingBase})
-	b := FetchModelsWithPricing(PricingFetchOptions{APIKey: "tok-b", BaseURL: pricingBase})
+	a := FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "tok-a", BaseURL: pricingBase})
+	b := FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "tok-b", BaseURL: pricingBase})
 	if !reflect.DeepEqual(pricingIDs(a), []string{"org-a/only"}) || !reflect.DeepEqual(pricingIDs(b), []string{"org-b/only"}) || len(*requests) != 2 {
 		t.Fatalf("%v %v %v", a, b, *requests)
 	}
@@ -547,24 +547,24 @@ func TestAnonymousAndAuthenticatedReadsAreSeparate(t *testing.T) {
 		}
 		return []string{"vendor/allowed", "vendor/blocked"}
 	})
-	anon := FetchModelsWithPricing(PricingFetchOptions{BaseURL: pricingBase})
-	authed := FetchModelsWithPricing(PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
+	anon := FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: pricingBase})
+	authed := FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
 	if len(anon) != 2 || len(authed) != 1 || !reflect.DeepEqual(*requests, []string{"", "Bearer sk-test"}) {
 		t.Fatalf("%v %v %v", anon, authed, *requests)
 	}
 	for _, key := range []string{"sk-test", ""} {
 		before := len(*requests)
-		first := FetchModelsWithPricing(PricingFetchOptions{APIKey: key, BaseURL: pricingBase})
-		second := FetchModelsWithPricing(PricingFetchOptions{APIKey: key, BaseURL: pricingBase})
+		first := FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: key, BaseURL: pricingBase})
+		second := FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: key, BaseURL: pricingBase})
 		if !reflect.DeepEqual(first, second) || len(*requests) != before {
 			t.Fatal("repeated read missed the cache")
 		}
 	}
-	FetchModelsWithPricing(PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase, ForceRefresh: true})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase, ForceRefresh: true})
 	if len(*requests) != 3 {
 		t.Fatalf("force refresh requests %d", len(*requests))
 	}
-	if got := FetchModelsWithPricing(PricingFetchOptions{BaseURL: pricingBase}); len(got) != 2 || len(*requests) != 3 {
+	if got := FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: pricingBase}); len(got) != 2 || len(*requests) != 3 {
 		t.Fatal("anonymous entry did not survive the forced authenticated read")
 	}
 }
@@ -584,11 +584,11 @@ func TestPeekCachedPricing(t *testing.T) {
 	if len(*requests) != 0 {
 		t.Fatal("peek fetched")
 	}
-	FetchModelsWithPricing(PricingFetchOptions{BaseURL: pricingBase})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: pricingBase})
 	if got := pricingIDs(PeekCachedPricing(pricingBase)); !reflect.DeepEqual(got, []string{"vendor/allowed", "vendor/blocked"}) {
 		t.Fatalf("anonymous fallback %v", got)
 	}
-	FetchModelsWithPricing(PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
 	if got := pricingIDs(PeekCachedPricing(pricingBase + "/v1")); !reflect.DeepEqual(got, []string{"vendor/allowed"}) {
 		t.Fatalf("authenticated preferred through /v1 %v", got)
 	}
@@ -604,27 +604,27 @@ func TestNousCatalogExpiry(t *testing.T) {
 	})
 	now := time.Now()
 	pricingClock = func() time.Time { return now }
-	FetchModelsWithPricing(PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase, CacheTTL: NousCatalogTTL})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase, CacheTTL: NousCatalogTTL})
 	pricingClock = func() time.Time { return now.Add(NousCatalogTTL + time.Second) }
 	if len(PeekCachedPricing(pricingBase)) != 0 {
 		t.Fatal("peek walked past the ttl")
 	}
-	FetchModelsWithPricing(PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase, CacheTTL: NousCatalogTTL})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase, CacheTTL: NousCatalogTTL})
 	if len(*requests) != 2 {
 		t.Fatalf("expired entry not re read: %d", len(*requests))
 	}
 	ResetPricingCache()
 	*requests = nil
 	pricingClock = func() time.Time { return now }
-	FetchModelsWithPricing(PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
 	pricingClock = func() time.Time { return now.Add(24 * time.Hour) }
-	FetchModelsWithPricing(PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
 	if len(*requests) != 1 {
 		t.Fatal("no ttl entry re fetched")
 	}
 	ResetPricingCache()
-	FetchModelsWithPricing(PricingFetchOptions{APIKey: "tok-a", BaseURL: pricingBase, CacheTTL: 300 * time.Second})
-	FetchModelsWithPricing(PricingFetchOptions{APIKey: "tok-b", BaseURL: pricingBase, CacheTTL: 300 * time.Second})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "tok-a", BaseURL: pricingBase, CacheTTL: 300 * time.Second})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "tok-b", BaseURL: pricingBase, CacheTTL: 300 * time.Second})
 	if got := pricingIDs(PeekCachedPricing(pricingBase)); !reflect.DeepEqual(got, []string{"org-b/only"}) {
 		t.Fatalf("newest credential %v", got)
 	}
@@ -692,7 +692,7 @@ func TestFetchModelsWithPricingCopiesNousOnlyFields(t *testing.T) {
 		 {"id": "gen/image", "output_modalities": ["image"], "pricing": {"prompt": "1", "completion": "1"}}]}`)
 	}
 	fetch := func(sale bool) PricingTable {
-		return FetchModelsWithPricing(PricingFetchOptions{APIKey: "sk-test", BaseURL: "https://example.test", ForceRefresh: true, IncludeSaleOriginal: sale})
+		return FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: "https://example.test", ForceRefresh: true, IncludeSaleOriginal: sale})
 	}
 	nous := fetch(true)
 	paid := nous["anthropic/claude-sonnet-5"]
@@ -742,10 +742,10 @@ func TestFailedCatalogFetchIsNotCachedForever(t *testing.T) {
 	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any { calls++; return nil }
 	now := time.Now()
 	pricingClock = func() time.Time { return now }
-	if got := FetchModelsWithPricing(PricingFetchOptions{BaseURL: "https://example.test"}); len(got) != 0 {
+	if got := FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"}); len(got) != 0 {
 		t.Fatal("expected empty")
 	}
-	FetchModelsWithPricing(PricingFetchOptions{BaseURL: "https://example.test"})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"})
 	if calls != 1 || !PricingFetchSuppressed("https://example.test/v1") {
 		t.Fatalf("calls %d suppressed %v", calls, PricingFetchSuppressed("https://example.test"))
 	}
@@ -753,7 +753,7 @@ func TestFailedCatalogFetchIsNotCachedForever(t *testing.T) {
 	if PricingFetchSuppressed("https://example.test") {
 		t.Fatal("still suppressed after the window")
 	}
-	FetchModelsWithPricing(PricingFetchOptions{BaseURL: "https://example.test"})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"})
 	if calls != 2 {
 		t.Fatalf("calls %d", calls)
 	}
@@ -764,9 +764,9 @@ func TestFailedCatalogFetchIsNotCachedForever(t *testing.T) {
 		calls++
 		return jsonMap(`{"data": [{"id": "a/b", "pricing": {"prompt": "1", "completion": "2"}}]}`)
 	}
-	FetchModelsWithPricing(PricingFetchOptions{BaseURL: "https://example.test"})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"})
 	pricingClock = func() time.Time { return now.Add(failedCatalogTTL + time.Second) }
-	if _, ok := FetchModelsWithPricing(PricingFetchOptions{BaseURL: "https://example.test"})["a/b"]; !ok || calls != 1 {
+	if _, ok := FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"})["a/b"]; !ok || calls != 1 {
 		t.Fatalf("successful catalog re fetched: %d", calls)
 	}
 }
@@ -923,7 +923,7 @@ func TestIsFreeTierModelAndCachedPricing(t *testing.T) {
 	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any {
 		return jsonMap(`{"data": [{"id": "vendor/paid", "pricing": {"prompt": "1", "completion": "2"}}, {"id": "vendor/zero", "pricing": {"prompt": "0", "completion": "0"}}]}`)
 	}
-	FetchModelsWithPricing(PricingFetchOptions{BaseURL: pricingBase})
+	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: pricingBase})
 	if !IsFreeTierModel("vendor/zero", pricingBase+"/v1") || IsFreeTierModel("vendor/paid", pricingBase+"/v1") || IsFreeTierModel("vendor/zero", "https://other.example") {
 		t.Fatal("peeked pricing")
 	}

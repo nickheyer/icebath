@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const sessionEpochKey = "prompt_refresh_epoch"
@@ -88,7 +89,7 @@ func persistPromptEpoch(ctx context.Context, a *AIAgent, epoch int) bool {
 func rebuildForRefresh(ctx context.Context, a *AIAgent, systemMessage *string, conversationHistory []map[string]any, epoch int) error {
 	promptRefreshLog().Info(fmt.Sprintf("Operator requested a system prompt refresh (epoch %d) for session %s; rebuilding it "+
 		"from current SOUL.md, skills and context files (one-time prefix-cache break).", epoch, a.sessionID))
-	if err := InvalidateSystemPrompt(a); err != nil {
+	if err := InvalidateSystemPrompt(tools.WithEnvHome(ctx, a.env), a); err != nil {
 		return err
 	}
 	a.autoLoadSkillsResolved = false

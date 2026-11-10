@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -143,6 +144,7 @@ func TestAnUnreadableOrCorruptStoreIsNeverMergedOver(t *testing.T) {
 
 // Runs a child preferences writer when the concurrent writers test spawns this binary
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	if spec := os.Getenv(uiPrefsChildEnv); spec != "" {
 		dir, key := filepath.Dir(spec), filepath.Base(spec)
 		if _, err := WritePreferences(context.Background(), []UIPreferenceChange{{key, "1"}}, false, filepath.Join(dir, UIPreferencesStoreName)); err != nil {

@@ -229,7 +229,7 @@ func RefuseFailedRead(h, configPath string, data any) error {
 	}
 	var exit SystemExitError
 	if errors.As(err, &exit) {
-		return fmt.Errorf("The config could not be read, so this change was not saved: %s", exit.SystemExitCode())
+		return &RuntimeError{Msg: "The config could not be read, so this change was not saved: " + exit.SystemExitCode()}
 	}
 	return RefuseOverwrite(configPath, "has a formatting error", err, fmt.Sprintf(fixYAML, BackupsDirDisplay(h)))
 }
@@ -240,11 +240,25 @@ func RefuseOverwrite(configPath, reason string, err error, fix string) error {
 	if where := YAMLErrorLocation(err); where != "" {
 		at = " (" + where + ")"
 	}
-	return fmt.Errorf("Your settings file (%s) %s%s, so this change was not saved. %s Details: %s",
-		configPath, reason, at, fix, YAMLErrorDetails(err))
+	return &RuntimeError{Msg: fmt.Sprintf("Your settings file (%s) %s%s, so this change was not saved. %s Details: %s",
+		configPath, reason, at, fix, YAMLErrorDetails(err))}
 }
 
 // Display form of the config backups dir of a home
 func BackupsDirDisplay(h string) string {
 	return home.Display(h) + "/backups/config/"
+}
+
+// Python RuntimeError a config writer raises, the class the config command turns into a clean refusal
+type RuntimeError struct{ Msg string }
+
+func (e *RuntimeError) Error() string { return e.Msg }
+
+// Reports whether an error is one of the RuntimeError classes a config write raises
+func isRuntimeError(err error) bool {
+	var rt *RuntimeError
+	var write *ConfigWriteError
+	var homeInit *HomeInitializationError
+	var invalid *InvalidUserConfigError
+	return errors.As(err, &rt) || errors.As(err, &write) || errors.As(err, &homeInit) || errors.As(err, &invalid)
 }

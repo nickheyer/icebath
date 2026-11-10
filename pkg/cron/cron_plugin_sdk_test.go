@@ -94,7 +94,7 @@ func TestPluginSDKFireClaimedRunsSnapshotWithStartTransport(t *testing.T) {
 	if ran == nil || ran.ID != job.ID || ran.ExecutionID == nil || *ran.ExecutionID != claimed["execution_id"] || ran.ScheduledInstant != nil {
 		t.Fatalf("ran %+v", ran)
 	}
-	if opts.Adapters != live || opts.Loop != nil || !opts.Verbose {
+	if opts.Adapters != live || opts.Loop != nil || opts.Verbose {
 		t.Fatalf("opts %+v", opts)
 	}
 	_, _, err = ServePluginSDK(ctx, s.home, "cron.fire_claimed", []any{claimed}, map[string]any{"cancel_event": &plugins.Opaque{TypeName: "Event"}})

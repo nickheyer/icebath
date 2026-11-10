@@ -266,7 +266,7 @@ func fetchRemoteMediaCopy(ctx context.Context, env tools.Environment, candidate,
 	if basename == "" {
 		basename = "file"
 	}
-	cacheDir, err := mediacache.DocumentCacheDir(home.Dir(ctx))
+	cacheDir, err := mediacache.DocumentCacheDir(ctx, home.Dir(ctx))
 	if err != nil {
 		return "", err
 	}

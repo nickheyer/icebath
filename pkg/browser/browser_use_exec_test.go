@@ -46,7 +46,7 @@ func newExecFix(t *testing.T, section map[string]any) *execFix {
 	resetCaches("")
 	t.Cleanup(func() { resetCaches("") })
 	f := &execFix{env: env, dir: t.TempDir()}
-	pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		f.keys = append(f.keys, key)
 		return map[string]any{"cdp_url": "ws://127.0.0.1:47000/devtools/browser/" + key, "features": map[string]any{"local": true}}, nil
 	})
@@ -114,8 +114,8 @@ func cdpOverrideOf(url string) func(context.Context, *tools.Env) string {
 	return func(context.Context, *tools.Env) string { return url }
 }
 
-func sessionInfoOf(info map[string]any, err error, seen *[]string) func(*tools.Env, string) (map[string]any, error) {
-	return func(_ *tools.Env, key string) (map[string]any, error) {
+func sessionInfoOf(info map[string]any, err error, seen *[]string) func(context.Context, *tools.Env, string) (map[string]any, error) {
+	return func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		if seen != nil {
 			*seen = append(*seen, key)
 		}
@@ -202,7 +202,7 @@ cat "$latch"
 	if a, b := drive(""), drive("research"); a != "http://127.0.0.1:9400" || b != a {
 		t.Fatalf("before swap %q %q", a, b)
 	}
-	cleanupAllBrowsers(f.env)
+	cleanupAllBrowsers(context.Background(), f.env)
 	t.Setenv("BROWSER_CDP_URL", "http://127.0.0.1:9401")
 	if a, b := drive(""), drive("research"); a != "http://127.0.0.1:9401" || b != a {
 		t.Fatalf("after swap %q %q", a, b)
@@ -355,7 +355,7 @@ func TestBackendCdpResolutionProviderFailureReturnsError(t *testing.T) {
 func TestBackendCdpResolutionProviderFallbackToLocalDrivesPackagedChromium(t *testing.T) {
 	f := newExecFix(t, nil)
 	pin(t, &execCloudProvider, providerOf("scripted"))
-	pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		f.keys = append(f.keys, key)
 		return map[string]any{"cdp_url": "ws://127.0.0.1:47000/devtools/browser/" + key, "features": map[string]any{"local": true},
 			"fallback_from_cloud": true, "fallback_reason": "429"}, nil
@@ -380,7 +380,7 @@ func TestBackendCdpResolutionNamedSessionComposesWithProviderBackend(t *testing.
 	f := newExecFix(t, nil)
 	pin(t, &execCloudProvider, providerOf("scripted"))
 	seen := []string{}
-	pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		seen = append(seen, key)
 		return map[string]any{"cdp_url": "wss://browser.example/cdp/" + key}, nil
 	})
@@ -409,7 +409,7 @@ func TestBackendCdpResolutionNamedSessionKeyStableAcrossTasks(t *testing.T) {
 func TestBackendCdpResolutionNamedSessionDirectAPIBUCloudStillSkipsProvider(t *testing.T) {
 	f := newExecFix(t, map[string]any{"cloud_provider": "browser-use"})
 	pin(t, &execCloudProvider, providerOf("browser-use"))
-	pin(t, &execSessionInfo, func(*tools.Env, string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(context.Context, *tools.Env, string) (map[string]any, error) {
 		t.Fatal("must skip provider")
 		return nil, nil
 	})
@@ -423,7 +423,7 @@ func TestBackendCdpResolutionNamedSessionDirectAPIBUCloudStillSkipsProvider(t *t
 func TestBackendCdpResolutionDirectAPIWithoutKeyUsesSessionPathNotChromeHunt(t *testing.T) {
 	f := newExecFix(t, map[string]any{"cloud_provider": "browser-use"})
 	pin(t, &execCloudProvider, providerOf("browser-use"))
-	pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		f.keys = append(f.keys, key)
 		return map[string]any{"cdp_url": "ws://127.0.0.1:47000/devtools/browser/" + key, "features": map[string]any{"local": true},
 			"fallback_from_cloud": true, "fallback_reason": "BROWSER_USE_API_KEY is not set"}, nil
@@ -463,7 +463,7 @@ func ownTabRun(t *testing.T, session string, provider bool, sharedCDP string) ma
 	pin(t, &execCDPOverride, cdpOverrideOf(sharedCDP))
 	if provider {
 		pin(t, &execCloudProvider, providerOf("scripted"))
-		pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+		pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 			return map[string]any{"cdp_url": "wss://browser.example/cdp/" + key}, nil
 		})
 	}
@@ -504,7 +504,7 @@ func TestOwnTabPreambleNamedProviderBrowserSkipsPreamble(t *testing.T) {
 func TestOwnTabPreambleSentinelNeverReachesSubprocessEnv(t *testing.T) {
 	f := newExecFix(t, nil)
 	pin(t, &execCloudProvider, providerOf("scripted"))
-	pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		return map[string]any{"cdp_url": "wss://browser.example/cdp/" + key}, nil
 	})
 	f.cli(t, "cat > /dev/null\necho \"sentinel:${"+privateBrowserSentinel+":-unset}\"\n")
@@ -649,7 +649,7 @@ func lightpandaSetup(t *testing.T, engine bool, info map[string]any, boom error)
 		info = map[string]any{"cdp_url": "http://127.0.0.1:43111"}
 	}
 	pin(t, &execUsingLightpanda, func(*tools.Env) bool { return engine })
-	pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		*seen = append(*seen, key)
 		if boom != nil {
 			return nil, boom
@@ -815,7 +815,7 @@ func newHybridFix(t *testing.T, autoLocal bool) *hybridFix {
 	f := &hybridFix{execFix: newExecFix(t, map[string]any{"cloud_provider": "hybrid-cloud", "auto_local_for_private_urls": autoLocal})}
 	registerClouds(t, newFakeCloud("hybrid-cloud", true))
 	pin(t, &execCloudProvider, providerOf("hybrid-cloud"))
-	pin(t, &execSessionInfo, func(_ *tools.Env, key string) (map[string]any, error) {
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
 		if isLocalSidecarKey(key) {
 			f.localKeys = append(f.localKeys, key)
 			return map[string]any{"cdp_url": "ws://127.0.0.1:47000/devtools/browser/" + key, "features": map[string]any{"local": true}}, nil

@@ -1,8 +1,6 @@
-//go:build !linux && !windows
+//go:build !linux && !windows && !darwin
 
 package main
 
-// Names the main thread through pthread_setname_np the way hermes does on macOS
-func setProcessTitleOS(title string) {
-	setMainThreadNameDarwin(title)
-}
+// Leaves the title alone because hermes names the process only on Linux and macOS
+func setProcessTitleOS(title string) {}

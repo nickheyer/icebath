@@ -36,9 +36,10 @@ func selectProviderAndModel(ctx context.Context) error { return SelectProviderAn
 
 // Main is the interactive chat entry, running a single query when one is given, returning the exit code
 func Main(ctx context.Context, o MainOptions) (code int) {
+	defer runAtExit()
 	ConfigureWindowsStdio()
 	_ = os.Setenv("ICEBATH_INTERACTIVE", "1")
-	tools.RegisterSelf("cli", "", nil)
+	tools.RegisterSelf(ctx, "cli", "", nil)
 	if warning := profiles.SharedProfileWarning(ctx, home.Dir(ctx), ""); warning != "" {
 		fmt.Fprintln(stderrWriter(), i18n.T(ctx, "cli.startup.warning", "", map[string]any{"warning": warning}))
 	}
@@ -369,7 +370,7 @@ func startWorktreeSetup(ctx context.Context, worktree bool) func() map[string]st
 		if repo := tools.GitRepoRoot(); repo != "" {
 			go func() {
 				_ = tools.PruneStaleWorktrees(ctx, repo, 24)
-				tools.MaintainPackHealth(repo)
+				tools.MaintainPackHealth(tools.WithEnvHome(ctx, env), repo)
 			}()
 		}
 		return info

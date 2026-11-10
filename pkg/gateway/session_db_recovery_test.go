@@ -43,7 +43,7 @@ func TestFailedOpenObeysBackoffThenRecovers(t *testing.T) {
 	}
 	expect := func(want any) {
 		t.Helper()
-		got, err := cache.Get("profile/state.db", opener, nil)
+		got, err := cache.Get(context.Background(), "profile/state.db", opener, nil)
 		if err != nil || got != want {
 			t.Fatalf("got %v %v want %v", got, err, want)
 		}
@@ -81,14 +81,14 @@ func TestRetryIsSingleFlightForConcurrentCallers(t *testing.T) {
 		}
 		return handle, nil
 	}
-	if got, _ := cache.Get("profile/state.db", opener, nil); got != nil {
+	if got, _ := cache.Get(context.Background(), "profile/state.db", opener, nil); got != nil {
 		t.Fatalf("first get %v", got)
 	}
 	clock.set(1.0)
 	result := make(chan any, 1)
-	go func() { got, _ := cache.Get("profile/state.db", opener, nil); result <- got }()
+	go func() { got, _ := cache.Get(context.Background(), "profile/state.db", opener, nil); result <- got }()
 	<-entered
-	if got, _ := cache.Get("profile/state.db", opener, nil); got != nil || calls.Load() != 2 {
+	if got, _ := cache.Get(context.Background(), "profile/state.db", opener, nil); got != nil || calls.Load() != 2 {
 		t.Fatalf("concurrent get %v calls %d", got, calls.Load())
 	}
 	close(release)
@@ -100,7 +100,7 @@ func TestRetryIsSingleFlightForConcurrentCallers(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("thread did not finish")
 	}
-	if got, _ := cache.Get("profile/state.db", opener, nil); got != handle || calls.Load() != 2 {
+	if got, _ := cache.Get(context.Background(), "profile/state.db", opener, nil); got != handle || calls.Load() != 2 {
 		t.Fatalf("after %v calls %d", got, calls.Load())
 	}
 }
@@ -109,7 +109,7 @@ func TestRetryIsSingleFlightForConcurrentCallers(t *testing.T) {
 func TestRuntimeHealthIsSanitizedAndRecovers(t *testing.T) {
 	var writes []RuntimeStatusUpdate
 	prev := handleCachePublishRuntimeStatus
-	handleCachePublishRuntimeStatus = func(u RuntimeStatusUpdate) (int, error) { writes = append(writes, u); return 0, nil }
+	handleCachePublishRuntimeStatus = func(_ context.Context, u RuntimeStatusUpdate) (int, error) { writes = append(writes, u); return 0, nil }
 	t.Cleanup(func() { handleCachePublishRuntimeStatus = prev })
 	clock := &testClock{}
 	cache := NewRecoverableHandleCacheWith(RecoverableHandleCacheOptions{Clock: clock.get, InitialRetryDelay: floatPtr(1)})
@@ -121,11 +121,11 @@ func TestRuntimeHealthIsSanitizedAndRecovers(t *testing.T) {
 		}
 		return &handleToken{2}, nil
 	}
-	if got, _ := cache.Get("secret/profile/state.db", opener, nil); got != nil {
+	if got, _ := cache.Get(context.Background(), "secret/profile/state.db", opener, nil); got != nil {
 		t.Fatalf("first get %v", got)
 	}
 	clock.set(1.0)
-	if got, _ := cache.Get("secret/profile/state.db", opener, nil); got == nil {
+	if got, _ := cache.Get(context.Background(), "secret/profile/state.db", opener, nil); got == nil {
 		t.Fatal("recovered get returned nil")
 	}
 	last := fmt.Sprint(writes[len(writes)-1].Fields)
@@ -144,7 +144,7 @@ func TestNonCacheableGuardIsRetriedImmediately(t *testing.T) {
 	calls := 0
 	opener := func() (any, error) { calls++; return nil, errors.New("live-system guard") }
 	for range 2 {
-		_, err := cache.Get("state.db", opener, func(err error) bool { return strings.Contains(err.Error(), "live-system guard") })
+		_, err := cache.Get(context.Background(), "state.db", opener, func(err error) bool { return strings.Contains(err.Error(), "live-system guard") })
 		if err == nil {
 			t.Fatal("guard error swallowed")
 		}
@@ -163,12 +163,12 @@ func TestCloseAllRejectsAndClosesInflightSuccess(t *testing.T) {
 	var closed []any
 	result := make(chan any, 1)
 	go func() {
-		got, _ := cache.Get("state.db", func() (any, error) { close(entered); <-release; return handle, nil }, nil)
+		got, _ := cache.Get(context.Background(), "state.db", func() (any, error) { close(entered); <-release; return handle, nil }, nil)
 		result <- got
 	}()
 	<-entered
 	cache.CloseAll(func(h any) { mu.Lock(); closed = append(closed, h); mu.Unlock() })
-	if got, _ := cache.Get("state.db", func() (any, error) { return replacement, nil }, nil); got != replacement {
+	if got, _ := cache.Get(context.Background(), "state.db", func() (any, error) { return replacement, nil }, nil); got != replacement {
 		t.Fatalf("replacement get %v", got)
 	}
 	close(release)
@@ -180,7 +180,7 @@ func TestCloseAllRejectsAndClosesInflightSuccess(t *testing.T) {
 		t.Fatalf("closed %v", closed)
 	}
 	mu.Unlock()
-	if got, _ := cache.Get("state.db", func() (any, error) { return &handleToken{3}, nil }, nil); got != replacement {
+	if got, _ := cache.Get(context.Background(), "state.db", func() (any, error) { return &handleToken{3}, nil }, nil); got != replacement {
 		t.Fatalf("cached %v", got)
 	}
 }
@@ -193,19 +193,19 @@ func TestCloseAllPreservesInflightFailure(t *testing.T) {
 	replacement := &handleToken{2}
 	errs := make(chan error, 1)
 	go func() {
-		_, err := cache.GetWith("state.db", func() (any, error) { close(entered); <-release; return nil, failure }, HandleCacheGetOptions{RaiseOnError: true})
+		_, err := cache.GetWith(context.Background(), "state.db", func() (any, error) { close(entered); <-release; return nil, failure }, HandleCacheGetOptions{RaiseOnError: true})
 		errs <- err
 	}()
 	<-entered
 	cache.CloseAll(func(any) {})
-	if got, _ := cache.Get("state.db", func() (any, error) { return replacement, nil }, nil); got != replacement {
+	if got, _ := cache.Get(context.Background(), "state.db", func() (any, error) { return replacement, nil }, nil); got != replacement {
 		t.Fatalf("replacement get %v", got)
 	}
 	close(release)
 	if err := <-errs; err != failure {
 		t.Fatalf("errors %v", err)
 	}
-	if got, _ := cache.Get("state.db", func() (any, error) { return &handleToken{3}, nil }, nil); got != replacement {
+	if got, _ := cache.Get(context.Background(), "state.db", func() (any, error) { return &handleToken{3}, nil }, nil); got != replacement {
 		t.Fatalf("cached %v", got)
 	}
 }
@@ -218,14 +218,14 @@ func TestHandleCacheLastErrorRecoveredAndRegistryReopen(t *testing.T) {
 	cache := NewRecoverableHandleCacheWith(RecoverableHandleCacheOptions{Clock: clock.get, InitialRetryDelay: floatPtr(1)})
 	recovered := 0
 	opts := HandleCacheGetOptions{OnRecovered: func() { recovered++ }}
-	if got, _ := cache.GetWith(path, func() (any, error) { return nil, errors.New("locked") }, opts); got != nil {
+	if got, _ := cache.GetWith(context.Background(), path, func() (any, error) { return nil, errors.New("locked") }, opts); got != nil {
 		t.Fatalf("failed open %v", got)
 	}
 	if got := cache.LastError(filepath.Join(dir, ".", "state.db")); got != "Exception: locked" {
 		t.Fatalf("last error %q", got)
 	}
 	clock.set(1)
-	first, err := cache.GetWith(path, func() (any, error) { return state.Acquire(context.Background(), path) }, opts)
+	first, err := cache.GetWith(context.Background(), path, func() (any, error) { return state.Acquire(context.Background(), path) }, opts)
 	if err != nil || first == nil || recovered != 1 || cache.LastError(path) != "" {
 		t.Fatalf("recover %v %v %d", first, err, recovered)
 	}
@@ -234,7 +234,7 @@ func TestHandleCacheLastErrorRecoveredAndRegistryReopen(t *testing.T) {
 		t.Fatal("acquired handle not registry owned")
 	}
 	state.ReleaseOrClose(db)
-	second, err := cache.Get(path, func() (any, error) { return state.Acquire(context.Background(), path) }, nil)
+	second, err := cache.Get(context.Background(), path, func() (any, error) { return state.Acquire(context.Background(), path) }, nil)
 	if err != nil || second == nil || second == first {
 		t.Fatalf("torn down handle served again %v %v", second, err)
 	}
@@ -252,15 +252,15 @@ func TestHandleCacheJudgesAsyncWrapperByItsSessionDB(t *testing.T) {
 		}
 		return state.NewAsyncSessionDB(db), nil
 	}
-	first, err := cache.Get(path, open, nil)
+	first, err := cache.Get(context.Background(), path, open, nil)
 	if err != nil || first == nil {
 		t.Fatalf("open %v %v", first, err)
 	}
-	if again, _ := cache.Get(path, open, nil); again != first {
+	if again, _ := cache.Get(context.Background(), path, open, nil); again != first {
 		t.Fatal("a registry owned async wrapper was not served from the cache")
 	}
 	state.ReleaseOrClose(first.(*state.AsyncSessionDB).DB())
-	second, err := cache.Get(path, open, nil)
+	second, err := cache.Get(context.Background(), path, open, nil)
 	if err != nil || second == nil || second == first {
 		t.Fatalf("torn down async wrapper served again %v %v", second, err)
 	}

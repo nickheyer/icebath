@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -197,7 +198,7 @@ func savedPlatformToolsets(t *testing.T, h, platform string) []any {
 func TestToolsConfigDisableBuiltinAndMixedTargets(t *testing.T) {
 	for _, names := range [][]string{{"web"}, {"web", "bad_toolset"}} {
 		h := isolateHome(t)
-		if err := config.SaveUser(h, map[string]any{"platform_toolsets": map[string]any{"cli": []any{"web", "memory", "terminal"}}}); err != nil {
+		if err := config.SaveUser(context.Background(), h, map[string]any{"platform_toolsets": map[string]any{"cli": []any{"web", "memory", "terminal"}}}); err != nil {
 			t.Fatal(err)
 		}
 		ui := &fakeUI{}
@@ -238,5 +239,42 @@ func TestToolsConfigDisableUnknownMCPServerAndListExcluded(t *testing.T) {
 	}
 	if out := ui.out.String(); !strings.Contains(out, "github") || !strings.Contains(out, "create_issue") {
 		t.Fatal(out)
+	}
+}
+
+func TestToolsConfigExportedWrappersReachTheConfigurator(t *testing.T) {
+	isolateHome(t)
+	found := map[string][]ToolSummary{"github": {{"create_issue", "Create an issue"}}}
+	prev := SwapToolsConfigProbe(func(context.Context, *tools.Env) map[string][]ToolSummary { return found })
+	defer SwapToolsConfigProbe(prev)
+	if got := toolsConfigProbe(context.Background(), &tools.Env{}); !reflect.DeepEqual(got, found) {
+		t.Fatalf("probe %v", got)
+	}
+	cfg := config.Tree{"mcp_servers": map[string]any{"github": map[string]any{"command": "npx"}}}
+	ui := &fakeUI{checklist: func(_ string, _ []string, pre map[int]bool) map[int]bool { return pre }}
+	if err := ConfigureMCPToolsInteractive(context.Background(), &tools.Env{}, ui, cfg); err != nil || !strings.Contains(ui.out.String(), "github: no changes") {
+		t.Fatalf("%v %s", err, ui.out.String())
+	}
+	cfg = config.Tree{"platform_toolsets": map[string]any{"cli": []any{"web", "memory"}}}
+	if err := ApplyToolsetChange(context.Background(), cfg, "cli", []string{"web"}, "disable"); err != nil {
+		t.Fatal(err)
+	}
+	if saved := config.AsStrings(cfg["platform_toolsets"].(map[string]any)["cli"]); slices.Contains(saved, "web") || !slices.Contains(saved, "memory") {
+		t.Fatalf("saved %v", saved)
+	}
+}
+
+func TestKnownToolPlatformsDiscoversPluginsFirst(t *testing.T) {
+	prevDiscover, prevNames := tools.PluginToolsetCatalog.Discover, tools.RegisteredPlatformNames
+	defer func() { tools.PluginToolsetCatalog.Discover, tools.RegisteredPlatformNames = prevDiscover, prevNames }()
+	var order []string
+	tools.PluginToolsetCatalog.Discover = func(context.Context) { order = append(order, "discover") }
+	tools.RegisteredPlatformNames = func() []string { order = append(order, "names"); return []string{"plugplat"} }
+	if known := knownToolPlatforms(context.Background()); !known["plugplat"] || !known["cli"] || !reflect.DeepEqual(order, []string{"discover", "names"}) {
+		t.Fatalf("known %v order %v", known, order)
+	}
+	tools.PluginToolsetCatalog.Discover = func(context.Context) { panic("malformed plugin") }
+	if known := knownToolPlatforms(context.Background()); known["plugplat"] || !known["telegram"] {
+		t.Fatalf("failing discovery %v", known)
 	}
 }

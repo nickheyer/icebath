@@ -106,3 +106,14 @@ func TestRedactTerminalOutput(t *testing.T) {
 		t.Fatal("identity must separate pattern keys")
 	}
 }
+
+func TestInterpreterImageMatchFollowsThePythonPattern(t *testing.T) {
+	for name, want := range map[string]bool{
+		"python": true, "python3": true, "python3.12": true, "python3.12.exe": true, "pythonw": true, "pythonw3.exe": true,
+		"python3\n": true, "python3\n\n": false, "python3.": false, "bash": false, "xpython": false, "python3-config": false, "": false,
+	} {
+		if got := InterpreterImageMatch(name); got != want {
+			t.Errorf("%q got %v want %v", name, got, want)
+		}
+	}
+}

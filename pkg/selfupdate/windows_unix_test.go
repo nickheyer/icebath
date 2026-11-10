@@ -4,6 +4,7 @@ package selfupdate
 
 import (
 	"bufio"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,7 +126,7 @@ func TestPauseARequestOnDiskIsOwedEvenBeforeItIsRecordedSent(t *testing.T) {
 
 func TestPausePlannedStopMarkerRecordsTheRequestAndRefusesAnUnwritableHome(t *testing.T) {
 	home := t.TempDir()
-	ok, err := writeUpdatePlannedStopMarker(home, os.Getpid())
+	ok, err := writeUpdatePlannedStopMarker(context.Background(), home, os.Getpid())
 	if !ok || err != nil {
 		t.Fatal(ok, err)
 	}
@@ -146,7 +147,7 @@ func TestPausePlannedStopMarkerRecordsTheRequestAndRefusesAnUnwritableHome(t *te
 	if err := os.Mkdir(locked, 0o555); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := writeUpdatePlannedStopMarker(locked, os.Getpid()); ok || err != nil {
+	if ok, err := writeUpdatePlannedStopMarker(context.Background(), locked, os.Getpid()); ok || err != nil {
 		t.Fatal(ok, err)
 	}
 }

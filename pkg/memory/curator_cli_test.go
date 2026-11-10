@@ -306,7 +306,7 @@ func TestCuratorPurgeAgesArchiveFromWhenItWasArchived(t *testing.T) {
 	}
 	rec, _ := curGet(usage, "old-helper").(*pyjson.Object)
 	rec.Set("archived_at", "2000-01-01T00:00:00+00:00")
-	if !scope.SaveUsage(usage) {
+	if !scope.SaveUsage(ctx, usage) {
 		t.Fatal("save usage failed")
 	}
 	days := 30
@@ -345,7 +345,7 @@ func TestCuratorPurgePrefersRecordedArchivedAtOverStaleDirMtime(t *testing.T) {
 	acc.Set("state", "archived")
 	acc.Set("archived_at", curGet(legacy, "archived_at"))
 	usage.Set("huggingface-accelerate", acc)
-	if !scope.SaveUsage(usage) {
+	if !scope.SaveUsage(ctx, usage) {
 		t.Fatal("save usage failed")
 	}
 	days := 30

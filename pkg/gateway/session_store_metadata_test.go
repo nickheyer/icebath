@@ -82,7 +82,7 @@ func TestUpdateSessionWithoutTokensDoesNotChangeThem(t *testing.T) {
 // Keeps the handle cache health publish out of the temp home the test removes at cleanup
 func quietHandleHealth(t *testing.T) {
 	prev := handleCachePublishRuntimeStatus
-	handleCachePublishRuntimeStatus = func(RuntimeStatusUpdate) (int, error) { return 0, nil }
+	handleCachePublishRuntimeStatus = func(context.Context, RuntimeStatusUpdate) (int, error) { return 0, nil }
 	t.Cleanup(func() { handleCachePublishRuntimeStatus = prev })
 }
 

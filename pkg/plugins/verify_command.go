@@ -74,7 +74,7 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 	if port != 0 {
 		opts.PortOverride = &port
 	}
-	result, err := verify.RunVerify(root, recipe, opts)
+	result, err := verify.RunVerify(ctx, root, recipe, opts)
 	if err != nil {
 		fmt.Fprintln(errw, pyrepr.ExceptionRepr(err))
 		return 1

@@ -88,11 +88,11 @@ func (x *HubCLI) doUninstall(ctx context.Context, name string, c *pyrich.Console
 }
 
 // Removal of a hub installed skill through the hub, the real UninstallSkill unless a test replaced it
-func (x *HubCLI) uninstallSkill(name string) (bool, string, error) {
+func (x *HubCLI) uninstallSkill(ctx context.Context, name string) (bool, string, error) {
 	if x.seams.uninstallSkill != nil {
 		return x.seams.uninstallSkill(name)
 	}
-	return x.Hub.UninstallSkill(name)
+	return x.Hub.UninstallSkill(ctx, name)
 }
 
 // Disabled skill names of the scope config for the platform, an empty platform resolving from the environment

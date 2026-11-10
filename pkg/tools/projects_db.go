@@ -194,13 +194,13 @@ func projectsJournalMode(env *Env) string {
 }
 
 // OpenProjectsDB opens and initializes the projects database of the env home
-func OpenProjectsDB(env *Env) (*ProjectsDB, error) {
-	return OpenProjectsDBAt(ProjectsDBPath(env.Home), projectsJournalMode(env))
+func OpenProjectsDB(ctx context.Context, env *Env) (*ProjectsDB, error) {
+	return OpenProjectsDBAt(WithEnvHome(ctx, env), ProjectsDBPath(env.Home), projectsJournalMode(env))
 }
 
 // OpenProjectsDBAt opens the database at a path with WAL or DELETE journaling, creating the parent and the schema
-func OpenProjectsDBAt(path, journalMode string) (*ProjectsDB, error) {
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+func OpenProjectsDBAt(ctx context.Context, path, journalMode string) (*ProjectsDB, error) {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	resolved := path

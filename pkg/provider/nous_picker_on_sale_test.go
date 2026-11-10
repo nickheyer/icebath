@@ -52,7 +52,7 @@ func serveOnSaleCatalog(t *testing.T, data []any) {
 }
 
 func fetchOnSalePricing(apiKey string, includeSaleOriginal bool) PricingTable {
-	return FetchModelsWithPricing(PricingFetchOptions{APIKey: apiKey, BaseURL: "https://example.test", ForceRefresh: true,
+	return FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: apiKey, BaseURL: "https://example.test", ForceRefresh: true,
 		IncludeSaleOriginal: includeSaleOriginal})
 }
 

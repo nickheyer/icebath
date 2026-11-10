@@ -89,7 +89,7 @@ func TestWorktreeRecordRepoHookRecordsIntoTheProcessHome(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tools.WorktreeRecordRepo(repo)
+	tools.WorktreeRecordRepo(context.Background(), repo)
 	want, err := pypath.Realpath(repo, pypath.Lax)
 	if err != nil {
 		t.Fatal(err)

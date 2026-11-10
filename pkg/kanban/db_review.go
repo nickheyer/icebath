@@ -232,6 +232,9 @@ func BlockTaskWithKind(ctx context.Context, conn state.SQLiteConn, taskID string
                 `, route.NewStatus, route.SetSQL)
 		params := append(append([]any{}, route.Params...), taskID)
 		if expectedRunID != nil {
+			if err := runIDBindable(expectedRunID); err != nil {
+				return err
+			}
 			sql += " AND current_run_id = ?"
 			params = append(params, *expectedRunID)
 		}
@@ -423,6 +426,9 @@ func RequestReview(ctx context.Context, conn state.SQLiteConn, taskID string, o 
 		}
 		params = append(params, taskID)
 		if o.ExpectedRunID != nil {
+			if err := runIDBindable(o.ExpectedRunID); err != nil {
+				return err
+			}
 			runGuard = " AND current_run_id = ?"
 			params = append(params, *o.ExpectedRunID)
 		}

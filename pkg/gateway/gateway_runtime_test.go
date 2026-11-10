@@ -479,7 +479,7 @@ func TestUpgradedSameOwner0644LockIsNarrowedNotInaccessible(t *testing.T) {
 	}
 	os.Chmod(lock, 0o644)
 	owner := NewProfileOwnership()
-	if err := owner.Reserve([]string{h}, ""); err != nil {
+	if err := owner.Reserve(context.Background(), []string{h}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if mode() != 0o600 || MissingOwnerState(h) != "starting" {

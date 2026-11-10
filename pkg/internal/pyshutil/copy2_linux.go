@@ -39,7 +39,7 @@ func copyXattr(src, dst string) error {
 				err = unix.Setxattr(dst, name, value[:vn], 0)
 			}
 		}
-		if err != nil && !errors.Is(err, unix.EPERM) && !ignored(err) {
+		if err != nil && !xattrCopyIgnored(err) {
 			return err
 		}
 	}

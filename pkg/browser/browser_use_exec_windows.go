@@ -20,4 +20,4 @@ func killCLIProcessGroup(pid int) {
 }
 
 // The harness daemon runs outside this process's job on Windows, so it is never owned here
-func ownHarnessDaemon(map[string]string) daemonOwnership { return ownNever }
+func ownHarnessDaemon(context.Context, map[string]string) daemonOwnership { return ownNever }

@@ -490,7 +490,7 @@ func redirectingKeenable(t *testing.T, target string) (*Env, *int) {
 }
 
 func gateExtract(t *testing.T, env *Env) *WebPage {
-	pages, err := extractSafeURLs(webCallContext{context.Background(), env}, keenableP(), []string{gateRedirector}, "")
+	pages, err := extractSafeURLs(context.Background(), webCallContext{context.Background(), env}, keenableP(), []string{gateRedirector}, "")
 	if err != nil || len(pages) != 1 {
 		t.Fatalf("%v %v", pages, err)
 	}

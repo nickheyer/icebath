@@ -187,7 +187,7 @@ func floatp(v float64) *float64 { return &v }
 func TestRegisterSelfWritesAndPrunesDead(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{400: 2.0, 999: 50.0}, 999)
 	writeLedgerFile(t, ledger, []map[string]any{ledgerEntry(300, 1.0, "serve", "", nil, nil), ledgerEntry(400, 2.0, "serve", "", nil, nil)})
-	if !RegisterSelf("serve", "/x/install", nil) {
+	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
 		t.Fatal("register_self failed")
 	}
 	entries := readLedgerFile(t, ledger)
@@ -209,7 +209,7 @@ func TestRegisterSelfSurvivesNonUTF8Argv(t *testing.T) {
 	prev := os.Args
 	os.Args = []string{"icebath", "serve", "/tmp/project-\xff"}
 	t.Cleanup(func() { os.Args = prev })
-	if !RegisterSelf("serve", "/x/install", nil) {
+	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
 		t.Fatal("register_self failed")
 	}
 	raw, _ := os.ReadFile(ledger)
@@ -224,7 +224,7 @@ func TestRegisterSelfSurvivesNonUTF8Argv(t *testing.T) {
 func TestRegisterSelfInheritsSpawnTagLineage(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
 	t.Setenv(SpawnEnvVar, "v1:-:serve:777:123.000")
-	RegisterSelf("serve", "/x/install", nil)
+	RegisterSelf(context.Background(), "serve", "/x/install", nil)
 	me := readLedgerFile(t, ledger)[0]
 	if me["spawner_pid"].(float64) != 777 || !approx(me["spawner_create"].(float64), 123.0, 0.01) {
 		t.Fatalf("entry %v", me)
@@ -237,7 +237,7 @@ func TestRegisterSelfFallsBackToDesktopParentEnv(t *testing.T) {
 	os.Unsetenv(SpawnEnvVar)
 	t.Setenv("ICEBATH_PARENT_PID", "888")
 	t.Setenv("ICEBATH_PARENT_START_MARKER", "winms:1755689000123")
-	RegisterSelf("serve", "/x/install", nil)
+	RegisterSelf(context.Background(), "serve", "/x/install", nil)
 	me := readLedgerFile(t, ledger)[0]
 	if me["spawner_pid"].(float64) != 888 || !approx(me["spawner_create"].(float64), 1755689000.123, 0.01) {
 		t.Fatalf("entry %v", me)
@@ -246,12 +246,12 @@ func TestRegisterSelfFallsBackToDesktopParentEnv(t *testing.T) {
 
 func TestRegisterSelfRecordsIsolatedServeMarker(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
-	RegisterSelf("serve", "/x/install", map[string]any{"host": "127.0.0.1", "port": 4321, "isolated": true})
+	RegisterSelf(context.Background(), "serve", "/x/install", map[string]any{"host": "127.0.0.1", "port": 4321, "isolated": true})
 	rows := readLedgerFile(t, ledger)
 	if rows[0]["isolated"] != true || rows[0]["port"].(float64) != 4321 || rows[0]["host"] != "127.0.0.1" {
 		t.Fatalf("isolated row %v", rows[0])
 	}
-	RegisterSelf("serve", "/x/install", map[string]any{"host": "127.0.0.1", "port": 4322})
+	RegisterSelf(context.Background(), "serve", "/x/install", map[string]any{"host": "127.0.0.1", "port": 4322})
 	rows = readLedgerFile(t, ledger)
 	if rows[len(rows)-1]["isolated"] != false {
 		t.Fatalf("ordinary row %v", rows[len(rows)-1])
@@ -261,7 +261,7 @@ func TestRegisterSelfRecordsIsolatedServeMarker(t *testing.T) {
 func TestCorruptLedgerQuarantinedNotRewrittenBlind(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
 	os.WriteFile(ledger, []byte("{ not json"), 0o600)
-	if !RegisterSelf("serve", "/x/install", nil) {
+	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
 		t.Fatal("register_self failed")
 	}
 	parked, err := os.ReadFile(ledger + ".corrupt")

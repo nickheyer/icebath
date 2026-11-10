@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -751,6 +752,9 @@ func (s *Store) stageJobsPayload(jobs []*Job) (string, error) {
 	return tmp, nil
 }
 
+// Writes the rows each save hands over into a temp file beside jobs.json, the save_jobs attribute tests observe
+var jobsPayloadStager = (*Store).stageJobsPayload
+
 // Saves every job with the shrink merge guard unless replace, caller holding the jobs lock
 func (s *Store) saveJobsLocked(tx *jobsTx, jobs []*Job, removedIDs []string, replace bool) error {
 	if err := s.ensureDirs(); err != nil {
@@ -771,7 +775,7 @@ func (s *Store) saveJobsLocked(tx *jobsTx, jobs []*Job, removedIDs []string, rep
 			}
 			jobs = merged
 		}
-		tmp, err := s.stageJobsPayload(jobs)
+		tmp, err := jobsPayloadStager(s, jobs)
 		if err != nil {
 			return err
 		}
@@ -810,18 +814,18 @@ func (s *Store) SaveJobs(jobs []*Job, removedIDs []string, replace bool) error {
 }
 
 // Atomic owner only marker write whose failures are swallowed so markers never break a tick
-func (s *Store) writeMarker(name, text, prefix string) {
+func (s *Store) writeMarker(ctx context.Context, name, text, prefix string) {
 	if s.ensureDirs() != nil {
 		return
 	}
-	pyfs.AtomicWriteTextMode(filepath.Join(s.cronDir, name), text, prefix, 0o600)
+	pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.home), filepath.Join(s.cronDir, name), text, prefix, 0o600)
 }
 
 // RecordTickerHeartbeat stamps loop liveness with the writer pid, plus the last success marker when success
-func (s *Store) RecordTickerHeartbeat(success bool) {
-	s.writeMarker("ticker_heartbeat", fmt.Sprintf("%s %d", pyrepr.Float(epochNow()), os.Getpid()), ".hb_")
+func (s *Store) RecordTickerHeartbeat(ctx context.Context, success bool) {
+	s.writeMarker(home.WithOverride(ctx, s.home), "ticker_heartbeat", fmt.Sprintf("%s %d", pyrepr.Float(epochNow()), os.Getpid()), ".hb_")
 	if success {
-		s.writeMarker("ticker_last_success", pyrepr.Float(epochNow()), ".hb_")
+		s.writeMarker(home.WithOverride(ctx, s.home), "ticker_last_success", pyrepr.Float(epochNow()), ".hb_")
 	}
 }
 
@@ -881,8 +885,8 @@ func (s *Store) TickerHeartbeatAge() (float64, bool) { return s.epochFileAge("ti
 func (s *Store) TickerSuccessAge() (float64, bool) { return s.epochFileAge("ticker_last_success") }
 
 // RecordTickerError persists the latest tick failure for status readers in other processes
-func (s *Store) RecordTickerError(message string) {
-	s.writeMarker("ticker_last_error", fmt.Sprintf("%s\n%s\n", pyrepr.Float(epochNow()), pystr.Strip(message)), ".terr_")
+func (s *Store) RecordTickerError(ctx context.Context, message string) {
+	s.writeMarker(home.WithOverride(ctx, s.home), "ticker_last_error", fmt.Sprintf("%s\n%s\n", pyrepr.Float(epochNow()), pystr.Strip(message)), ".terr_")
 }
 
 // ClearTickerError removes the last tick error marker, ignoring failures
@@ -981,7 +985,7 @@ func (s *Store) pruneJobOutput(dir string, keep int64) int {
 }
 
 // SaveJobOutput writes one run's output as a timestamped markdown file and prunes older ones
-func (s *Store) SaveJobOutput(jobID, output string) (string, error) {
+func (s *Store) SaveJobOutput(ctx context.Context, jobID, output string) (string, error) {
 	if err := s.ensureDirs(); err != nil {
 		return "", err
 	}
@@ -994,7 +998,7 @@ func (s *Store) SaveJobOutput(jobID, output string) (string, error) {
 	}
 	config.SecureDir(s.home, dir)
 	file := filepath.Join(dir, s.clk.now().Format("2006-01-02_15-04-05")+".md")
-	if err := pyfs.AtomicWriteTextMode(file, output, ".output_", 0o600); err != nil {
+	if err := pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.home), file, output, ".output_", 0o600); err != nil {
 		return "", err
 	}
 	s.secureFile(file)

@@ -469,7 +469,7 @@ func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr strin
 	result, err := func() (string, error) {
 		if o.CommandProviderConfig != nil {
 			ttsLog().Info(fmt.Sprintf("Generating speech with command TTS provider '%s'...", provider))
-			p, err := ttsGenerateCommand(env, text, fileStr, provider, o.CommandProviderConfig, o.TTSConfig)
+			p, err := ttsGenerateCommand(tools.WithEnvHome(ctx, env), env, text, fileStr, provider, o.CommandProviderConfig, o.TTSConfig)
 			if err != nil {
 				return "", err
 			}

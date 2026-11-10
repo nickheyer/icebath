@@ -35,6 +35,8 @@ type Response struct {
 	Header     http.Header
 	URL        string
 	Content    []byte
+	// Status line text after the protocol, empty when the response was not read from the wire
+	Status string
 }
 
 // Body decoded with the declared charset or utf-8, invalid bytes replaced
@@ -267,7 +269,7 @@ func streamWith(client *http.Client, req *http.Request, watch func(cancel func()
 	}
 	w.reset("read")
 	return &StreamResponse{
-		Response: Response{StatusCode: resp.StatusCode, Header: resp.Header, URL: resp.Request.URL.String()},
+		Response: Response{StatusCode: resp.StatusCode, Header: resp.Header, URL: resp.Request.URL.String(), Status: resp.Status},
 		Body:     &watchedBody{rc: resp.Body, w: w, cancel: cancel},
 	}, nil
 }

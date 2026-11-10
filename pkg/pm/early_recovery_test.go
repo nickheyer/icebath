@@ -212,3 +212,19 @@ func TestERAFailedRepairCountsItsAttemptEvenOnAnUndecodableMarker(t *testing.T) 
 		t.Fatalf("attempts %s", got)
 	}
 }
+
+func TestExportedRecoveryWrappers(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), ".update-incomplete")
+	if err := os.WriteFile(marker, []byte(fmt.Sprintf("pid=%d\n", os.Getpid())), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if live, err := MarkerOwnerIsLive(marker); err != nil || !live {
+		t.Fatalf("own pid marker live %v %v", live, err)
+	}
+	prevHook := commandArgvHook
+	SetCommandArgv(func(argv []string) []string { return argv })
+	defer SetCommandArgv(prevHook)
+	if recovered, err := RecoverIfNeeded(context.Background(), t.TempDir(), []string{}, false); err != nil || recovered {
+		t.Fatalf("tree without a project recovered %v %v", recovered, err)
+	}
+}

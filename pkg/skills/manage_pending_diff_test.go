@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ func TestStagedBatchDiffResolvesSkillsThroughTheInstalledLookup(t *testing.T) {
 	s, skills := manageScope(t)
 	os.MkdirAll(filepath.Join(skills, "probe"), 0o755)
 	os.WriteFile(filepath.Join(skills, "probe", "SKILL.md"), []byte(probeSkillText("probe")), 0o644)
-	rec := tools.StageWrite(s.Env, "skills", map[string]any{"action": "batch", "operations": []any{
+	rec := tools.StageWrite(context.Background(), s.Env, "skills", map[string]any{"action": "batch", "operations": []any{
 		map[string]any{"action": "create", "name": "newprobe", "content": probeSkillText("newprobe")},
 		map[string]any{"action": "patch", "name": "probe", "old_string": "Step 1.", "new_string": "Step ONE."},
 		map[string]any{"action": "write_file", "name": "newprobe", "file_path": "ref.md", "file_content": "x\n"},

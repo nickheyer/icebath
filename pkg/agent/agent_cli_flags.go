@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/goals"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -132,13 +134,13 @@ func (a *AIAgent) controlSnapshotRevision() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var goalState *GoalState
+	var goalState *goals.GoalState
 	var loopState *SessionLoopState
 	var heartbeatState *HeartbeatState
-	if raw, err := a.controlMeta(ctx, goalMetaKey(target)); err != nil {
+	if raw, err := a.controlMeta(ctx, goals.GoalMetaKey(target)); err != nil {
 		return "", err
 	} else if raw != "" {
-		if goalState, err = GoalStateFromJSON(raw); err != nil {
+		if goalState, err = goals.GoalStateFromJSON(raw); err != nil {
 			return "", err
 		}
 	}
@@ -178,7 +180,7 @@ func (a *AIAgent) controlMeta(ctx context.Context, key string) (string, error) {
 }
 
 // The stable viewer facing goal fields, nil for no goal or a cleared one
-func safeGoalSnapshot(s *GoalState) *pyjson.Object {
+func safeGoalSnapshot(s *goals.GoalState) *pyjson.Object {
 	if s == nil || pyStr(s.Status) == "cleared" {
 		return nil
 	}
@@ -219,7 +221,7 @@ func safeGoalSnapshot(s *GoalState) *pyjson.Object {
 }
 
 // The absolute barrier a goal waits on, nil when it waits on nothing the viewer can show
-func goalWaitBarrier(s *GoalState) *pyjson.Object {
+func goalWaitBarrier(s *goals.GoalState) *pyjson.Object {
 	reason := pyStr(s.WaitingReason)
 	if s.WaitingUntil != 0 && float64(time.Now().UnixNano())/1e9 < s.WaitingUntil {
 		return pyjson.ObjectOf("type", "until", "until_at", s.WaitingUntil, "reason", reason)

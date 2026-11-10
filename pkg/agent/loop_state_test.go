@@ -2,7 +2,13 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/goals"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/state"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -128,5 +134,49 @@ func TestPersistenceMigrateDoesNotClobberChild(t *testing.T) {
 	}
 	if got := LoadLoop(ctx, "c2"); got == nil || got.Prompt != "child loop" {
 		t.Fatalf("child %#v", got)
+	}
+}
+
+// Isolated home with a fresh goals session database cache, every registry handle under it closed afterwards
+func goalsTestHome(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	h := filepath.Join(tmp, ".icebath")
+	if err := os.Mkdir(h, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(home.PatchUserHome(tmp))
+	t.Setenv(home.EnvHome, h)
+	goals.ClearSessionDBCache()
+	t.Cleanup(func() {
+		goals.ClearSessionDBCache()
+		state.CloseAllUnder(h)
+	})
+	return h
+}
+
+func TestStateRowsMatchPythonJSONLayout(t *testing.T) {
+	cases := []struct {
+		dump func() (string, error)
+		want string
+	}{
+		{NewHeartbeatState("p", 60).ToJSON, `{"prompt": "p", "interval_seconds": 60, "status": "active", "created_at": 0.0, "last_fired_at": 0.0, "fire_count": 0}`},
+		{NewSessionLoopState("p").ToJSON, `{"prompt": "p", "status": "active", "mode": "interval", "interval_seconds": 0.0, "current_delay": 0.0, "times": 0, "until": "", "max_ticks": 100, "ticks_fired": 0, "created_at": 0.0, "last_fired_at": 0.0, "next_due_at": 0.0, "awaiting_response": false, "last_response_digest": "", "paused_reason": null, "last_stop_reason": null, "route": {}}`},
+	}
+	for _, c := range cases {
+		got, err := c.dump()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != c.want {
+			t.Fatalf("got  %s\nwant %s", got, c.want)
+		}
+	}
+	loop, err := SessionLoopStateFromJSON(`{"prompt": "p", "max_ticks": null, "times": "7", "awaiting_response": 1}`)
+	if err != nil || loop.MaxTicks != 0 || loop.Times != 7 || !loop.AwaitingResponse {
+		t.Fatalf("loop coercion %#v %v", loop, err)
+	}
+	if _, err := HeartbeatStateFromJSON(`[]`); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+		t.Fatalf("list row error %v", err)
 	}
 }

@@ -145,6 +145,9 @@ func visionCtx(ctx context.Context, env *Env) context.Context {
 	return ctx
 }
 
+// Context whose home override is the profile home the env is bound to, ctx itself for an env naming none
+func WithEnvHome(ctx context.Context, env *Env) context.Context { return visionCtx(ctx, env) }
+
 // Capability boolean from real bools, 0 or 1, and YAML boolean tokens only
 func coerceCapabilityBool(raw any) (bool, bool) {
 	switch v := raw.(type) {

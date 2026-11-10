@@ -42,6 +42,8 @@ func TestCaseMappings(t *testing.T) {
 		{Lower("ΑΣ İ"), "ας i̇"},
 		{Upper("straße"), "STRASSE"},
 		{Casefold("Straße"), "strasse"},
+		{Casefold("ᎠꭰᏸᏰ"), "ᎠᎠᏰᏰ"},
+		{Casefold("İﬓᾀ\u212a"), "i̇մնἀιk"},
 		{Title("hello wORLD's ǆx ßa"), "Hello World'S ǅx Ssa"},
 		{Title("ΑΣ"), "Ας"},
 		{Capitalize("hELLO"), "Hello"},

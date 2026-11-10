@@ -746,7 +746,7 @@ func copyDistPayload(ctx context.Context, staged, target string, m *profiles.Dis
 			return err
 		}
 	}
-	_, err = profiles.WriteManifest(target, m)
+	_, err = profiles.WriteManifest(ctx, target, m)
 	return err
 }
 

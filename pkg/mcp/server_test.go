@@ -592,7 +592,7 @@ func TestServerOrphanSweepKillsTrackedChild(t *testing.T) {
 	}
 	defer tr.Close()
 	pid := tr.PID()
-	s.trackSpawnedChildren([]int{pid})
+	s.trackSpawnedChildren(context.Background(), []int{pid})
 	mcpMu.Lock()
 	delete(stdioPIDs, pid)
 	orphanStdioPIDs[pid] = true

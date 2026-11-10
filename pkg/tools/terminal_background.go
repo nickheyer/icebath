@@ -55,9 +55,9 @@ const yieldedNote = "The user sent a message while this command was running, so 
 
 // processSpawner is the process registry surface the terminal tool uses
 type processSpawner interface {
-	SpawnLocal(env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error)
+	SpawnLocal(ctx context.Context, env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error)
 	SpawnViaEnv(ctx context.Context, env *Env, e Environment, command, cwd, taskID, sessionKey string, timeout int, ownerTaskID string, persistOnRelease bool) (*ProcessSession, error)
-	AdoptLocal(env *Env, proc *ExecProcess, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar string, notifyOnComplete bool) *ProcessSession
+	AdoptLocal(ctx context.Context, env *Env, proc *ExecProcess, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar string, notifyOnComplete bool) *ProcessSession
 	HasActiveProcesses(taskID string) bool
 	AnyRunning(pred func(*ProcessSession) bool) bool
 	ArmHeartbeat(s *ProcessSession, seconds int) int
@@ -68,16 +68,16 @@ type processSpawner interface {
 // registryAdapter exposes the process wide registry through the spawner surface
 type registryAdapter struct{ r *ProcessRegistry }
 
-func (a registryAdapter) SpawnLocal(env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error) {
-	return a.r.SpawnLocal(env, command, o)
+func (a registryAdapter) SpawnLocal(ctx context.Context, env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error) {
+	return a.r.SpawnLocal(WithEnvHome(ctx, env), env, command, o)
 }
 
 func (a registryAdapter) SpawnViaEnv(ctx context.Context, env *Env, e Environment, command, cwd, taskID, sessionKey string, timeout int, ownerTaskID string, persistOnRelease bool) (*ProcessSession, error) {
 	return a.r.SpawnViaEnv(ctx, env, e, command, cwd, taskID, sessionKey, timeout, ownerTaskID, persistOnRelease)
 }
 
-func (a registryAdapter) AdoptLocal(env *Env, proc *ExecProcess, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar string, notifyOnComplete bool) *ProcessSession {
-	return a.r.AdoptLocal(env, proc, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar, notifyOnComplete)
+func (a registryAdapter) AdoptLocal(ctx context.Context, env *Env, proc *ExecProcess, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar string, notifyOnComplete bool) *ProcessSession {
+	return a.r.AdoptLocal(WithEnvHome(ctx, env), env, proc, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar, notifyOnComplete)
 }
 
 func (a registryAdapter) HasActiveProcesses(taskID string) bool {
@@ -172,7 +172,7 @@ func spawnTracked(ctx context.Context, env *Env, e Environment, envType, command
 		if c, ok := e.(interface{ ChildEnv() map[string]string }); ok {
 			opts.EnvVars = c.ChildEnv()
 		}
-		return terminalRegistry().SpawnLocal(env, command, opts)
+		return terminalRegistry().SpawnLocal(WithEnvHome(ctx, env), env, command, opts)
 	}
 	return terminalRegistry().SpawnViaEnv(ctx, env, e, command, cwd, effectiveTaskID, sessionKey, 0, owner, persistOnRelease)
 }
@@ -298,7 +298,7 @@ func yieldToBackgroundHandler(ctx context.Context, env *Env, command, envType, c
 			envLog(env).Warn("foreground command could not be handed to the background", "handle", fmt.Sprintf("%T", proc))
 			return nil
 		}
-		s := terminalRegistry().AdoptLocal(env, ep, command, cwd, effectiveTaskID, sessionKey, owner, outputSoFar, true)
+		s := terminalRegistry().AdoptLocal(WithEnvHome(ctx, env), env, ep, command, cwd, effectiveTaskID, sessionKey, owner, outputSoFar, true)
 		stampRoutingIfGateway(env, s, sessionKey)
 		envLog(env).Info("foreground command yielded to background", "session_id", s.ID, "pid", s.Pid)
 		return &ExecResult{Output: outputSoFar, YieldedSessionID: s.ID, Pid: s.Pid}

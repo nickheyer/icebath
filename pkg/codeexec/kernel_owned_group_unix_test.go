@@ -3,6 +3,7 @@
 package codeexec
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -161,7 +162,7 @@ func kernelWithCellChild(t *testing.T, childArgv []string) (*sessionKernel, proc
 		calls = append(calls, groupCall{"unregister", slices.Clone(pgids)})
 		mu.Unlock()
 	}
-	tools.RegisterChildFn = func(int, string, string) bool { return true }
+	tools.RegisterChildFn = func(context.Context, int, string, string) bool { return true }
 	t.Cleanup(func() {
 		tools.OwnProcessGroupsFn, tools.ReleaseProcessGroupsFn, tools.RegisterChildFn = own, release, register
 	})

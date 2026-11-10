@@ -914,7 +914,7 @@ func LaunchdStop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	markPlannedStop(0, false)
+	markPlannedStop(ctx, 0, false)
 	if err := launchctlChecked(ctx, launchdLongTimeout, true, "launchctl", "bootout", domain+"/"+label); err != nil {
 		var cpe *CalledProcessError
 		if !errors.As(err, &cpe) || !(launchdErrorIndicatesUnloaded(cpe) || launchctlDomainUnsupported(cpe.ReturnCode)) {

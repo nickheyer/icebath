@@ -62,7 +62,7 @@ func seAcceptedThenOrphaned(t *testing.T, homeWritable, consume, markSent bool) 
 	if err := updaterecord.MarkStopRequested(ctx, token, []int{pid}, map[int]string{pid: marker}); err != nil {
 		t.Fatal(err)
 	}
-	if !gateway.WritePlannedStopMarker(pid) {
+	if !gateway.WritePlannedStopMarker(ctx, pid) {
 		t.Fatal("premise: the request was written")
 	}
 	_ = os.Chmod(root, 0o555)

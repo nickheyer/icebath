@@ -363,7 +363,7 @@ func (s *Scope) readManifest() (map[string]string, error) {
 }
 
 // Writes the manifest atomically in v2 form keeping an existing file mode, failures only logged
-func (s *Scope) writeManifest(entries map[string]string) {
+func (s *Scope) writeManifest(ctx context.Context, entries map[string]string) {
 	mf := s.manifestFile()
 	if err := os.MkdirAll(filepath.Dir(mf), 0o755); err != nil {
 		slog.Default().Debug("Failed to write skills manifest", "path", mf, "err", err)
@@ -382,7 +382,7 @@ func (s *Scope) writeManifest(entries map[string]string) {
 	if st, err := os.Stat(mf); err == nil {
 		mode = st.Mode().Perm()
 	}
-	if err := pyfs.AtomicWriteTextMode(mf, b.String(), ".bundled_manifest_", mode); err != nil {
+	if err := pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.Home), mf, b.String(), ".bundled_manifest_", mode); err != nil {
 		slog.Default().Debug("Failed to write skills manifest", "path", mf, "err", err)
 	}
 }
@@ -807,8 +807,8 @@ func (s *Scope) SyncSkills(ctx context.Context, quiet bool) (map[string]any, err
 		}
 	}
 	s.seedCategoryDescriptions(t, only)
-	s.writeManifest(st.manifest)
-	backfilled, err := s.backfillOptionalProvenance(quiet)
+	s.writeManifest(home.WithOverride(ctx, s.Home), st.manifest)
+	backfilled, err := s.backfillOptionalProvenance(home.WithOverride(ctx, s.Home), quiet)
 	if err != nil {
 		return nil, err
 	}
@@ -1021,7 +1021,7 @@ func (s *Scope) moveToRestoreBackup(p, backupRoot string) (string, error) {
 }
 
 // Restores one or all official optional skills from source, backing up conflicting active copies when restoring
-func (s *Scope) RestoreOfficialOptionalSkill(name string, restore bool) (map[string]any, error) {
+func (s *Scope) RestoreOfficialOptionalSkill(ctx context.Context, name string, restore bool) (map[string]any, error) {
 	t := optionalTree()
 	index := optionalSkillIndex(t)
 	var targets []optionalEntry
@@ -1078,7 +1078,7 @@ func (s *Scope) RestoreOfficialOptionalSkill(name string, restore bool) (map[str
 			}
 		}
 	}
-	backfilled, err := s.backfillOptionalProvenance(true)
+	backfilled, err := s.backfillOptionalProvenance(home.WithOverride(ctx, s.Home), true)
 	if err != nil {
 		return nil, err
 	}
@@ -1118,7 +1118,7 @@ func (s *Scope) relocatedDest(srcName string, index map[string][]string) (string
 }
 
 // Marks byte identical present official optional skills as hub installed in the lock
-func (s *Scope) backfillOptionalProvenance(quiet bool) ([]string, error) {
+func (s *Scope) backfillOptionalProvenance(ctx context.Context, quiet bool) ([]string, error) {
 	t := optionalTree()
 	if !t.exists() {
 		return []string{}, nil
@@ -1208,7 +1208,7 @@ func (s *Scope) backfillOptionalProvenance(quiet bool) ([]string, error) {
 		if err := os.MkdirAll(filepath.Dir(lock), 0o777); err != nil {
 			return nil, err
 		}
-		if err := pyfs.AtomicWriteText(lock, text+"\n", ".lock_"); err != nil {
+		if err := pyfs.AtomicWriteText(home.WithOverride(ctx, s.Home), lock, text+"\n", ".lock_"); err != nil {
 			return nil, err
 		}
 	}
@@ -1260,7 +1260,7 @@ func (s *Scope) ResetBundledSkill(ctx context.Context, name string, restore bool
 	}
 	if inManifest {
 		delete(manifest, name)
-		s.writeManifest(manifest)
+		s.writeManifest(home.WithOverride(ctx, s.Home), manifest)
 	}
 	synced, err := s.SyncSkills(ctx, true)
 	if err != nil {
@@ -1349,8 +1349,8 @@ func (s *Scope) EnsureBundledSkill(ctx context.Context, name string) (map[string
 		return notRestored(err)
 	}
 	manifest[name] = dirHashFS(t.fsys, src, false)
-	s.writeManifest(manifest)
-	if err := s.toggleSuppressedName(name, false); err != nil {
+	s.writeManifest(home.WithOverride(ctx, s.Home), manifest)
+	if err := s.toggleSuppressedName(home.WithOverride(ctx, s.Home), name, false); err != nil {
 		return nil, err
 	}
 	s.SetState(ctx, name, StateActive)
@@ -1482,7 +1482,7 @@ func (s *Scope) SetBundledSkillsOptOut(enabled bool) map[string]any {
 }
 
 // Deletes manifest tracked bundled skills still byte identical to their origin hash
-func (s *Scope) RemovePristineBundledSkills(dryRun bool) (map[string]any, error) {
+func (s *Scope) RemovePristineBundledSkills(ctx context.Context, dryRun bool) (map[string]any, error) {
 	manifest, _, byName, err := s.bundledState()
 	if err != nil {
 		return nil, err
@@ -1523,7 +1523,7 @@ func (s *Scope) RemovePristineBundledSkills(dryRun bool) (map[string]any, error)
 		removed = append(removed, name)
 	}
 	if !dryRun && len(removed) > 0 {
-		s.writeManifest(manifest)
+		s.writeManifest(home.WithOverride(ctx, s.Home), manifest)
 	}
 	verb := "Removed"
 	if dryRun {

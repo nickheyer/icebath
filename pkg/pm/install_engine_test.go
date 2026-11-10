@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -14,14 +15,14 @@ import (
 	"time"
 )
 
-func TestInstallBadHashRejected(t *testing.T) {
+func TestBadHashRejected(t *testing.T) {
 	e := newIEEnv(t)
 	e.pin(t, "faketool", "1.0", strings.Repeat("0", 64))
 	_, err := e.ensure(t, "faketool", EnsureOptions{})
 	ieWantInstallError(t, err, "install failed")
 }
 
-func TestInstallDepsComposeDependentsWin(t *testing.T) {
+func TestDepsComposeDependentsWin(t *testing.T) {
 	e := newIEEnv(t)
 	e.pin(t, "deptool", "1.0", e.tar(t, "deptool-1.0.tar.gz", map[string]string{"bin/faketool": "y"}))
 	e.pin(t, "toptool", "1.0", e.tar(t, "toptool-1.0.tar.gz", map[string]string{"bin/faketool": "z"}))
@@ -33,14 +34,15 @@ func TestInstallDepsComposeDependentsWin(t *testing.T) {
 		t.Fatalf("env %v", runner.Env)
 	}
 	path := runner.Env["PATH"]
-	if strings.Index(path, "toptool-1.0") > strings.Index(path, "deptool-1.0") {
-		t.Fatalf("dependency won PATH: %s", path)
+	top, dep := strings.Index(path, "toptool-1.0"), strings.Index(path, "deptool-1.0")
+	if top < 0 || dep < 0 || top >= dep {
+		t.Fatalf("dependent does not win PATH: %s", path)
 	}
 }
 
-func TestInstallStandaloneWarmEnsureDoesNotWaitForUnrelatedWriter(t *testing.T) {
+func TestStandaloneWarmEnsureDoesNotWaitForUnrelatedWriter(t *testing.T) {
 	e := newIEEnv(t)
-	if _, err := e.ensure(t, "faketool", EnsureOptions{Explicit: true}); err != nil {
+	if _, err := ensure(context.Background(), "faketool", EnsureOptions{Explicit: true}); err != nil {
 		t.Fatal(err)
 	}
 	release, err := NewStore(e.runtime).InstallLock()
@@ -66,7 +68,7 @@ func TestInstallStandaloneWarmEnsureDoesNotWaitForUnrelatedWriter(t *testing.T) 
 	}
 }
 
-func TestInstallVersionBumpSelectsTheNewTool(t *testing.T) {
+func TestVersionBumpSelectsTheNewTool(t *testing.T) {
 	e := newIEEnv(t)
 	if _, err := e.ensure(t, "faketool", EnsureOptions{}); err != nil {
 		t.Fatal(err)
@@ -78,7 +80,7 @@ func TestInstallVersionBumpSelectsTheNewTool(t *testing.T) {
 	}
 }
 
-func TestInstallLazyInstallsDisabled(t *testing.T) {
+func TestLazyInstallsDisabled(t *testing.T) {
 	newIEEnv(t)
 	_, err := ensure(withLazyInstallsDisabled(context.Background()), "faketool", EnsureOptions{BaseEnv: map[string]string{}})
 	ieWantInstallError(t, err, "lazy installs are disabled")
@@ -87,7 +89,7 @@ func TestInstallLazyInstallsDisabled(t *testing.T) {
 	ieWantInstallError(t, err, "lazy installs are disabled")
 }
 
-func TestInstallMissingPlatformIsDeclared(t *testing.T) {
+func TestMissingPlatformIsDeclared(t *testing.T) {
 	e := newIEEnv(t)
 	target, err := CurrentTarget()
 	if err != nil {
@@ -99,7 +101,7 @@ func TestInstallMissingPlatformIsDeclared(t *testing.T) {
 	ieWantInstallError(t, err, "no artifact")
 }
 
-func TestInstallCorruptFactsDegradesToEmpty(t *testing.T) {
+func TestCorruptFactsDegradesToEmpty(t *testing.T) {
 	e := newIEEnv(t)
 	if _, err := e.ensure(t, "faketool", EnsureOptions{}); err != nil {
 		t.Fatal(err)
@@ -113,7 +115,7 @@ func TestInstallCorruptFactsDegradesToEmpty(t *testing.T) {
 	}
 }
 
-func TestInstallConcurrentInstallsDoNotClobber(t *testing.T) {
+func TestConcurrentInstallsDoNotClobber(t *testing.T) {
 	e := newIEEnv(t)
 	e.pin(t, "deptool", "1.0", e.tar(t, "deptool-1.0.tar.gz", map[string]string{"bin/faketool": "y"}))
 	var wg sync.WaitGroup
@@ -156,7 +158,7 @@ func (w *ieWaitCounter) count() int {
 	return w.lines
 }
 
-func TestInstallSingleFlightOneStoreEntry(t *testing.T) {
+func TestSingleFlightOneStoreEntry(t *testing.T) {
 	e := newIEEnv(t)
 	waiting := &ieWaitCounter{}
 	previous := installLockWaitOutput
@@ -209,7 +211,7 @@ func TestInstallSingleFlightOneStoreEntry(t *testing.T) {
 		t.Fatalf("staged %d times", got)
 	}
 	for _, runner := range runners {
-		if runner == nil || runner.Env["PATH"] != runners[0].Env["PATH"] {
+		if runner == nil || !reflect.DeepEqual(runner.Env, runners[0].Env) {
 			t.Fatalf("runners disagree %v", runners)
 		}
 	}
@@ -219,7 +221,7 @@ func TestInstallSingleFlightOneStoreEntry(t *testing.T) {
 	}
 }
 
-func TestInstallUnremovableReplacedEntryOnPosixIsSetAsideWithoutTouchingOutside(t *testing.T) {
+func TestUnremovableReplacedEntryOnPosixIsSetAsideWithoutTouchingOutside(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("POSIX directory modes as a non root user")
 	}
@@ -267,7 +269,7 @@ func TestInstallUnremovableReplacedEntryOnPosixIsSetAsideWithoutTouchingOutside(
 	}
 }
 
-func TestInstallEnvForNeverInstalls(t *testing.T) {
+func TestEnvForNeverInstalls(t *testing.T) {
 	e := newIEEnv(t)
 	env := EnvFor([]string{"faketool"}, map[string]string{})
 	if strings.Contains(env["PATH"], "faketool-1.0") {
@@ -288,7 +290,7 @@ func TestInstallVerifyFailureReportsReason(t *testing.T) {
 	}
 }
 
-func TestInstallStorePathDirsIncludeNodeNpmWhenInstalled(t *testing.T) {
+func TestStorePathDirsIncludeNodeNpmWhenInstalled(t *testing.T) {
 	tmp := isolateHome(t)
 	runtimeDir := filepath.Join(tmp, "runtime")
 	t.Setenv(EnvRuntimeDir, runtimeDir)

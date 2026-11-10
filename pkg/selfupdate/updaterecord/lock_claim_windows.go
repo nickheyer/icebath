@@ -130,6 +130,19 @@ func UpdateTreeJob() (windows.Handle, error) {
 	return job, nil
 }
 
+// Makes handle the update tree job of this process until the returned restore runs
+func SwapUpdateTreeJob(handle windows.Handle) func() {
+	treeJob.Lock()
+	defer treeJob.Unlock()
+	previous := treeJob.handle
+	treeJob.handle = handle
+	return func() {
+		treeJob.Lock()
+		defer treeJob.Unlock()
+		treeJob.handle = previous
+	}
+}
+
 // Puts an update tree child in the kill on close job, the refusal logged and returned when it cannot
 func BindChildToUpdateTree(pid int) error {
 	err := bindToKillOnCloseJob(pid)

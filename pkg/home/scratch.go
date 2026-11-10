@@ -1,12 +1,13 @@
 package home
 
 import (
-	"io/fs"
+	"context"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sync/atomic"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const (
@@ -27,24 +28,35 @@ var (
 	spawnPrune        = spawnPruneChild
 )
 
-// Creates and secures the scratch dir of h or the process home and starts its hourly detached prune
-func EnsureScratchDir(h string) (string, error) { return scratchDir(h, true) }
+// Records detached prune launches instead of starting them with the once latch rearmed, returning the record and its restore
+func CaptureScratchPruneSpawns() (*[]string, func()) {
+	var spawned []string
+	prev := spawnPrune
+	spawnPrune = func(scratch string) { spawned = append(spawned, scratch) }
+	scratchPrunedOnce.Store(false)
+	return &spawned, func() { spawnPrune = prev; scratchPrunedOnce.Store(false) }
+}
 
-// Scratch dir of h created and permissioned, the mkdir error returned beside the path
-func scratchDir(h string, prune bool) (string, error) {
+// Rearms the once per process prune latch the way a fresh process starts
+func ResetScratchPruneLatch() { scratchPrunedOnce.Store(false) }
+
+// Creates and secures the scratch dir of h or the active home and starts its hourly detached prune
+func EnsureScratchDir(h string) string { return scratchDir(h, true) }
+
+// Scratch dir of h, created and permissioned where the filesystem allows, a creation failure ignored
+func scratchDir(h string, prune bool) string {
 	base := h
 	if base == "" {
-		base = Process()
+		base = Dir(context.Background())
 	}
 	scratch := ScratchDir(base)
-	err := os.MkdirAll(scratch, 0o777)
-	if err == nil && runtime.GOOS != "windows" {
+	if pathMkdir(scratch, 0o777, true, true) == nil && runtime.GOOS != "windows" {
 		ApplySecureDirPolicy(scratch, base)
 	}
 	if prune {
 		pruneScratchDirOnce(scratch)
 	}
-	return scratch, err
+	return scratch
 }
 
 // Starts at most one detached prune per process and per hour across processes through the stamp file
@@ -52,7 +64,7 @@ func pruneScratchDirOnce(scratch string) {
 	if scratchPrunedOnce.Swap(true) {
 		return
 	}
-	stamp := filepath.Join(scratch, scratchPruneStamp)
+	stamp := pypath.PathJoin(scratch, scratchPruneStamp)
 	if fi, err := os.Stat(stamp); err == nil && time.Since(fi.ModTime()) < scratchPruneEvery {
 		return
 	}
@@ -79,35 +91,54 @@ func touchFile(path string) error {
 func PruneScratchDir(scratch string, maxIdleHours float64) (int, error) {
 	root := scratch
 	if root == "" {
-		root, _ = scratchDir("", false)
+		root = scratchDir("", false)
 	}
-	logFile := filepath.Join(filepath.Dir(filepath.Dir(root)), "logs", "scratch-prune.log")
+	logFile := pypath.PathJoin(pypath.PathParent(pypath.PathParent(root)), "logs", "scratch-prune.log")
 	return PruneIdleEntries(root, maxIdleHours, map[string]bool{scratchPruneStamp: true}, logFile)
 }
 
-// Total apparent bytes of every non directory under the scratch dir, zero when unreadable
+// Total lstat bytes of every non directory os.walk lists under the scratch dir, zero when unreadable
 func ScratchDirUsageBytes(scratch string) int64 {
 	root := scratch
 	if root == "" {
-		root, _ = scratchDir("", false)
+		root = scratchDir("", false)
 	}
 	var total int64
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	stack := []string{root}
+	for len(stack) > 0 {
+		top := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		f, err := os.Open(top)
 		if err != nil {
-			return nil
+			continue
 		}
-		if d.IsDir() {
-			return nil
+		entries, err := f.ReadDir(-1)
+		f.Close()
+		if err != nil {
+			continue
 		}
-		if d.Type()&fs.ModeSymlink != 0 {
-			if target, err := os.Stat(path); err == nil && target.IsDir() {
-				return nil
+		var dirs []string
+		for _, e := range entries {
+			p := pypath.Join(top, e.Name())
+			isDir := e.IsDir()
+			if e.Type()&os.ModeSymlink != 0 {
+				st, serr := os.Stat(p)
+				isDir = serr == nil && st.IsDir()
+			}
+			if isDir {
+				dirs = append(dirs, p)
+				continue
+			}
+			if fi, err := os.Lstat(p); err == nil {
+				total += fi.Size()
 			}
 		}
-		if fi, err := os.Lstat(path); err == nil {
-			total += fi.Size()
+		for i := len(dirs) - 1; i >= 0; i-- {
+			if st, err := os.Lstat(dirs[i]); err == nil && st.Mode()&os.ModeSymlink != 0 {
+				continue
+			}
+			stack = append(stack, dirs[i])
 		}
-		return nil
-	})
+	}
 	return total
 }

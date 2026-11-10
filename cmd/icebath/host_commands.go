@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/browser"
@@ -33,59 +35,61 @@ type groupHandler func(ctx context.Context, cli *commands.CLI, cmd *cobra.Comman
 // Binds every host owned command path to the handler of its top level group
 func bindHostCommands(cli *commands.CLI) {
 	groups := map[string]groupHandler{
-		"acp":             acpGroup,
-		"approvals":       approvalsGroup,
-		"auth":            authGroup,
-		"backup":          backupGroup,
-		"browser":         browserGroup,
-		"checkpoints":     checkpointsGroup,
-		"codex-runtime":   codexRuntimeGroup,
-		"completion":      completionGroup,
-		"connectors":      connectorsGroup,
-		"console":         consoleGroup,
-		"curator":         curatorGroup,
-		"dashboard":       dashboardGroup,
-		"debug":           debugGroup,
-		"desktop":         desktopGroup,
-		"doctor":          doctorGroup,
-		"dump":            dumpGroup,
-		"egress":          egressGroup,
-		"fallback":        fallbackGroup,
-		"gateway":         gatewayGroup,
-		"import":          importGroup,
-		"journey":         journeyGroup,
-		"kanban":          kanbanGroup,
-		"logs":            logsGroup,
-		"migrate":         migrateGroup,
-		"model":           modelGroup,
-		"monitoring":      monitoringGroup,
-		"pairing":         pairingGroup,
-		"pause":           pauseGroup,
-		"peer":            peerGroup,
-		"pets":            petsGroup,
-		"portal":          portalGroup,
-		"project":         projectGroup,
-		"prompt-size":     promptSizeGroup,
-		"proxy":           proxyGroup,
-		"secrets":         secretsGroup,
-		"security":        securityGroup,
-		"send":            sendGroup,
-		"serve":           dashboardGroup,
-		"sessions":        sessionsGroup,
-		"setup":           setupGroup,
-		"slack":           slackGroup,
-		"status":          statusGroup,
-		"tools":           toolsGroup,
-		"uninstall":       uninstallGroup,
-		"update":          updateGroup,
-		"update-takeover": updateTakeoverGroup,
-		"usage":           usageGroup,
-		"vault":           vaultGroup,
-		"verify":          verifyGroup,
-		"webapp":          webappGroup,
-		"whatsapp":        whatsappGroup,
-		"whatsapp-cloud":  whatsappCloudGroup,
-		"worktree":        worktreeGroup,
+		"acp":               acpGroup,
+		"approvals":         approvalsGroup,
+		"auth":              authGroup,
+		"backup":            backupGroup,
+		"browser":           browserGroup,
+		"checkpoints":       checkpointsGroup,
+		"codex-runtime":     codexRuntimeGroup,
+		"completion":        completionGroup,
+		"connectors":        connectorsGroup,
+		"console":           consoleGroup,
+		"curator":           curatorGroup,
+		"dashboard":         dashboardGroup,
+		"debug":             debugGroup,
+		"desktop":           desktopGroup,
+		"doctor":            doctorGroup,
+		"dump":              dumpGroup,
+		"egress":            egressGroup,
+		"fallback":          fallbackGroup,
+		"gateway":           gatewayGroup,
+		"import":            importGroup,
+		"journey":           journeyGroup,
+		"kanban":            kanbanGroup,
+		"logs":              logsGroup,
+		"migrate":           migrateGroup,
+		"model":             modelGroup,
+		"monitoring":        monitoringGroup,
+		"pairing":           pairingGroup,
+		"pause":             pauseGroup,
+		"peer":              peerGroup,
+		"pets":              petsGroup,
+		"portal":            portalGroup,
+		"project":           projectGroup,
+		"prompt-size":       promptSizeGroup,
+		"proxy":             proxyGroup,
+		"secrets":           secretsGroup,
+		"security":          securityGroup,
+		"send":              sendGroup,
+		"serve":             dashboardGroup,
+		"sessions":          sessionsGroup,
+		"setup":             setupGroup,
+		"slack":             slackGroup,
+		"status":            statusGroup,
+		"tools":             toolsGroup,
+		"uninstall":         uninstallGroup,
+		"update":            updateGroup,
+		"update-takeover":   updateTakeoverGroup,
+		"venv-sync":         venvSyncGroup,
+		"source-completion": sourceCompletionGroup,
+		"usage":             usageGroup,
+		"vault":             vaultGroup,
+		"verify":            verifyGroup,
+		"webapp":            webappGroup,
+		"whatsapp":          whatsappGroup,
+		"whatsapp-cloud":    whatsappCloudGroup,
+		"worktree":          worktreeGroup,
 	}
 	for _, path := range cli.Unbound() {
 		group := firstWord(path)
@@ -142,6 +146,10 @@ func backupGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 		return backup.RunQuickBackup(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 	}
 	ok, err := backup.RunBackup(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
+	var exit *backup.SystemExit
+	if errors.As(err, &exit) {
+		return exit.Code, nil
+	}
 	if err != nil {
 		return 1, err
 	}
@@ -330,8 +338,17 @@ func pauseGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path
 	return gateway.EstopCommand(ctx, home.Dir(ctx), path == "pause", namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
+// Runs icebath peer with the subcommand name or alias typed under its argparse dest
 func peerGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.PeerCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["peer_action"] = nil
+	if words := strings.Fields(path); len(words) > 1 {
+		ns["peer_action"] = words[1]
+		if called := cmd.CalledAs(); called != "" {
+			ns["peer_action"] = called
+		}
+	}
+	return gateway.PeerCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 }
 
 func petsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -349,7 +366,7 @@ func projectGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pa
 }
 
 func promptSizeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return provider.CmdPromptSize(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	return agent.CmdPromptSize(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
 // Runs icebath proxy with the subcommand recorded under the argparse dest key
@@ -461,6 +478,16 @@ func updateGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 
 func updateTakeoverGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return selfupdate.CmdUpdateTakeover(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
+}
+
+// Reports or syncs a checkout's dependencies over the entry's raw arguments
+func venvSyncGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.VenvSyncMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Runs the completion tail a source update launch starts in its custody
+func sourceCompletionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.SourceCompletionMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
 }
 
 func usageGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

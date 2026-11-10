@@ -3,6 +3,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -22,7 +23,7 @@ func lr3EnvEchoCmd(name string) *exec.Cmd {
 // Contains the router in a job, closes it twice on the stop file, and idles until the exit file
 func lr3OwnerRole(root string) {
 	router := lr3HelperCmd(root, "router")
-	job, err := SpawnServer(router, false)
+	job, err := SpawnServer(context.Background(), router, false)
 	if err != nil {
 		os.Exit(3)
 	}
@@ -79,7 +80,7 @@ func lr3OwnerExitCase(t *testing.T, stopMode string, nested bool) {
 		cmd := lr3HelperCmd(root, role)
 		cmd.Stdout, cmd.Stderr = log, log
 		if nested && role == "owner" {
-			outerJob, err = SpawnServer(cmd, false)
+			outerJob, err = SpawnServer(context.Background(), cmd, false)
 		} else {
 			err = cmd.Start()
 		}
@@ -202,7 +203,7 @@ func lr3FailedSetupCase(t *testing.T, failure string) {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env = append(os.Environ(), "ICEBATH_LRT_MARKER="+marker)
 	stdin, _ := cmd.StdinPipe()
-	if _, err := SpawnServer(cmd, false); err == nil {
+	if _, err := SpawnServer(context.Background(), cmd, false); err == nil {
 		t.Fatal("SpawnServer succeeded despite injected failure")
 	}
 	if lr3Exists(marker)() {

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -34,7 +35,7 @@ func readText(t *testing.T, p string) string {
 	return string(b)
 }
 
-func TestCreateProfileSeedsPlaceholderEnvAndSoul(t *testing.T) {
+func TestCreateProfileSeedsPlaceholderEnvFile(t *testing.T) {
 	manageEnv(t)
 	captureOut(t)
 	dir, err := CreateProfile(context.Background(), "coder", CreateOptions{})
@@ -42,7 +43,10 @@ func TestCreateProfileSeedsPlaceholderEnvAndSoul(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := filepath.Join(dir, ".env")
-	for _, line := range strings.Split(readText(t, env), "\n") {
+	if !pathExists(env) {
+		t.Fatal("no .env seeded")
+	}
+	for _, line := range pystr.Splitlines(strings.TrimPrefix(readText(t, env), "\ufeff"), false) {
 		if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
 			t.Fatalf("non comment line %q", line)
 		}
@@ -116,15 +120,23 @@ func TestCreateProfileRefusesConflictingOptionsAndExisting(t *testing.T) {
 	}
 }
 
-func TestCreateProfileNoSkillsWritesMarker(t *testing.T) {
+func TestNoSkillsOptOutNoSkillsWritesMarkerAndSkipsSeeding(t *testing.T) {
 	manageEnv(t)
 	captureOut(t)
-	dir, err := CreateProfile(context.Background(), "bare", CreateOptions{NoSkills: true})
+	dir, err := CreateProfile(context.Background(), "orchestrator", CreateOptions{NoSkills: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(readText(t, filepath.Join(dir, profiles.NoBundledSkillsMarker)), "opted out of bundled-skill seeding") {
-		t.Fatal("marker missing")
+	marker := filepath.Join(dir, profiles.NoBundledSkillsMarker)
+	if st, err := os.Stat(marker); err != nil || !st.Mode().IsRegular() {
+		t.Fatalf("expected .no-bundled-skills marker in profile root: %v", err)
+	}
+	if !strings.Contains(strings.TrimPrefix(readText(t, marker), "\ufeff"), "--no-skills") {
+		t.Fatal("marker does not name --no-skills")
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "skills"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("skills dir %v %v", entries, err)
 	}
 }
 
@@ -301,7 +313,7 @@ func TestHonchoHostBlockMigrates(t *testing.T) {
 	out := captureOut(t)
 	dir := namedProfile(t, tmp, "writer")
 	writeFile(t, filepath.Join(dir, "honcho.json"), `{"hosts": {"icebath_coder": {"workspace": "w"}, "other": {}}}`)
-	if err := migrateHonchoProfileHost("coder", "writer", dir); err != nil {
+	if err := migrateHonchoProfileHost(context.Background(), "coder", "writer", dir); err != nil {
 		t.Fatal(err)
 	}
 	got := readText(t, filepath.Join(dir, "honcho.json"))

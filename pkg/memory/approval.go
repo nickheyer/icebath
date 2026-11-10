@@ -52,7 +52,7 @@ func DestructiveOps(payload map[string]any) ([]map[string]any, error) {
 }
 
 // Pins each staged edit to the full entry it selects now, returning the direct write's error when the search fails
-func pinMatchedEntries(store *Store, payload map[string]any) (string, string, error) {
+func pinMatchedEntries(ctx context.Context, store *Store, payload map[string]any) (string, string, error) {
 	target, _ := payload["target"].(string)
 	action := payload["action"]
 	var res Result
@@ -63,7 +63,7 @@ func pinMatchedEntries(store *Store, payload map[string]any) (string, string, er
 		if err != nil {
 			return "", "", err
 		}
-		res, err = store.ResolveBatchEntries(target, ops)
+		res, err = store.ResolveBatchEntries(ctx, target, ops)
 		if err != nil {
 			return "", "", err
 		}
@@ -92,7 +92,7 @@ func pinMatchedEntries(store *Store, payload map[string]any) (string, string, er
 		if err != nil {
 			return "", "", err
 		}
-		res, err = store.ResolveEntry(target, oldText, verb)
+		res, err = store.ResolveEntry(ctx, target, oldText, verb)
 		if err != nil {
 			return "", "", err
 		}
@@ -115,14 +115,14 @@ func gateOrStage(ctx context.Context, env *tools.Env, store *Store, summary, det
 	if decision.Blocked {
 		return toolError(decision.Message, map[string]any{"success": false}), "gate_refused", nil
 	}
-	unmatched, class, err := pinMatchedEntries(store, payload)
+	unmatched, class, err := pinMatchedEntries(tools.WithEnvHome(ctx, env), store, payload)
 	if err != nil {
 		return "", "", err
 	}
 	if unmatched != "" {
 		return unmatched, class, nil
 	}
-	record := tools.StageWrite(env, tools.WriteApprovalMemory, payload, summary+": "+runePrefix(detail, 120), tools.CurrentOrigin(env))
+	record := tools.StageWrite(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory, payload, summary+": "+runePrefix(detail, 120), tools.CurrentOrigin(env))
 	return tools.JSON(map[string]any{"success": true, "staged": true, "pending_id": record["id"], "message": decision.Message}), "staged", nil
 }
 
@@ -145,7 +145,7 @@ func applyWriteGate(ctx context.Context, env *tools.Env, store *Store, action, t
 }
 
 // Stages patch and remove ops of an unattended background review instead of applying them, add stays open
-func backgroundDeleteGate(env *tools.Env, store *Store, action any, operations []any, target string, content, oldText any) (string, string, error) {
+func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, action any, operations []any, target string, content, oldText any) (string, string, error) {
 	if !IsUnattendedReview(env) {
 		return "", "", nil
 	}
@@ -174,7 +174,7 @@ func backgroundDeleteGate(env *tools.Env, store *Store, action any, operations [
 		kind = pyStr(action)
 		detail = batchOpLine(map[string]any{"action": action, "content": content, "old_text": oldText})
 	}
-	unmatched, class, err := pinMatchedEntries(store, payload)
+	unmatched, class, err := pinMatchedEntries(tools.WithEnvHome(ctx, env), store, payload)
 	if err != nil {
 		envLog(env).Warn("Failed to stage background-review consolidation; denying", "error", err)
 		return toolError("Background review may not delete memory entries ('patch'/'remove', including in a "+
@@ -184,7 +184,7 @@ func backgroundDeleteGate(env *tools.Env, store *Store, action any, operations [
 		return unmatched, class, nil
 	}
 	summary := runePrefix(fmt.Sprintf("background review consolidation (%s on %s): %s", kind, target, detail), 200)
-	record := tools.StageWrite(env, tools.WriteApprovalMemory, payload, summary, tools.CurrentOrigin(env))
+	record := tools.StageWrite(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory, payload, summary, tools.CurrentOrigin(env))
 	return tools.JSON(map[string]any{
 		"success": true, "staged": true, "proposal_staged": true, "pending_id": record["id"],
 		"message": "Background review may not delete memory entries unattended. The proposed " +
@@ -194,7 +194,7 @@ func backgroundDeleteGate(env *tools.Env, store *Store, action any, operations [
 }
 
 // Replays a staged write bypassing the gate, destructive ops applying only to their pinned entry
-func ApplyMemoryPending(payload map[string]any, store *Store) (Result, error) {
+func ApplyMemoryPending(ctx context.Context, payload map[string]any, store *Store) (Result, error) {
 	action, target := payload["action"], payload["target"]
 	if targetErr := memoryTargetError(store, target, payload["operations"]); targetErr != nil {
 		return *targetErr, nil
@@ -215,7 +215,7 @@ func ApplyMemoryPending(payload map[string]any, store *Store) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		return store.ApplyBatch(name, ops)
+		return store.ApplyBatch(ctx, name, ops)
 	}
 	if err := hashable(action); err != nil {
 		return Result{}, err
@@ -231,7 +231,7 @@ func ApplyMemoryPending(payload map[string]any, store *Store) (Result, error) {
 	if !pyTruthy(oldText) {
 		oldText = ""
 	}
-	return storeCall(store, verb, name, content, oldText, payload["matched_entry"])
+	return storeCall(ctx, store, verb, name, content, oldText, payload["matched_entry"])
 }
 
 // PendingOptions binds the store memory approvals apply to, the staged skill replayer and the gate setter
@@ -242,9 +242,9 @@ type PendingOptions struct {
 }
 
 // Setter persisting subsystem write_approval in the home config
-func ConfigModeSetter(env *tools.Env, subsystem string) func(enabled bool) error {
+func ConfigModeSetter(ctx context.Context, env *tools.Env, subsystem string) func(enabled bool) error {
 	return func(enabled bool) error {
-		return config.SetKey(envHome(env), subsystem+".write_approval", enabled)
+		return config.SetKey(tools.WithEnvHome(ctx, env), envHome(env), subsystem+".write_approval", enabled)
 	}
 }
 
@@ -332,7 +332,7 @@ func matchedEntryLines(payload any) ([]string, error) {
 }
 
 // Dispatches a memory or skills write approval subcommand, false when the args are not one so the caller falls through
-func HandlePendingSubcommand(env *tools.Env, subsystem string, args []string, opts PendingOptions) (string, bool, error) {
+func HandlePendingSubcommand(ctx context.Context, env *tools.Env, subsystem string, args []string, opts PendingOptions) (string, bool, error) {
 	if len(args) == 0 {
 		list, err := fmtPendingList(env, subsystem)
 		if err != nil {
@@ -346,7 +346,7 @@ func HandlePendingSubcommand(env *tools.Env, subsystem string, args []string, op
 		list, err := fmtPendingList(env, subsystem)
 		return list, true, err
 	case sub == "approve" || sub == "apply":
-		out, err := approvePending(env, subsystem, rest, opts)
+		out, err := approvePending(tools.WithEnvHome(ctx, env), env, subsystem, rest, opts)
 		return out, true, err
 	case sub == "reject" || sub == "deny" || sub == "drop":
 		out, err := rejectPending(env, subsystem, rest)
@@ -364,7 +364,7 @@ func approvalUsage(subsystem string) string {
 	return fmt.Sprintf("Usage: /%s approve|reject <id>  (or 'all')", subsystem)
 }
 
-func approvePending(env *tools.Env, subsystem string, rest []string, opts PendingOptions) (string, error) {
+func approvePending(ctx context.Context, env *tools.Env, subsystem string, rest []string, opts PendingOptions) (string, error) {
 	if len(rest) == 0 {
 		return approvalUsage(subsystem), nil
 	}
@@ -386,7 +386,7 @@ func approvePending(env *tools.Env, subsystem string, rest []string, opts Pendin
 	applied := 0
 	var failed, overwritten, patched, removed []string
 	for _, rec := range targets {
-		ok, msg, result := applyOnePending(subsystem, rec, opts)
+		ok, msg, result := applyOnePending(tools.WithEnvHome(ctx, env), subsystem, rec, opts)
 		id, err := recordKey(rec, "id")
 		if err != nil {
 			return "", err
@@ -457,7 +457,7 @@ func changedEntries(result map[string]any, kind string) []string {
 }
 
 // Applies one staged record, a crash in the applier reported as its message with an empty result
-func applyOnePending(subsystem string, rec map[string]any, opts PendingOptions) (ok bool, msg string, result map[string]any) {
+func applyOnePending(ctx context.Context, subsystem string, rec map[string]any, opts PendingOptions) (ok bool, msg string, result map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
 			ok, msg, result = false, fmt.Sprint(r), map[string]any{}
@@ -471,7 +471,7 @@ func applyOnePending(subsystem string, rec map[string]any, opts PendingOptions) 
 		return false, fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(rec["payload"])), map[string]any{}
 	}
 	if subsystem == tools.WriteApprovalMemory {
-		res, err := ApplyMemoryPending(payload, opts.MemoryStore)
+		res, err := ApplyMemoryPending(ctx, payload, opts.MemoryStore)
 		if err != nil {
 			return false, osErrorText(err), map[string]any{}
 		}
@@ -571,16 +571,16 @@ func setApproval(env *tools.Env, subsystem string, rest []string, setMode func(b
 const memoryUnknownSubcommand = "Unknown /memory subcommand. Use: pending, approve <id>, reject <id>, approval <on|off>."
 
 // Handles the memory slash command against the live store or a freshly loaded on disk one
-func MemoryCommand(env *tools.Env, args []string, store *Store) (string, error) {
+func MemoryCommand(ctx context.Context, env *tools.Env, args []string, store *Store) (string, error) {
 	if store == nil {
-		loaded, err := LoadOnDiskStore(env)
+		loaded, err := LoadOnDiskStore(tools.WithEnvHome(ctx, env), env)
 		if err != nil {
 			return "", err
 		}
 		store = loaded
 	}
-	out, handled, err := HandlePendingSubcommand(env, tools.WriteApprovalMemory, args, PendingOptions{
-		MemoryStore: store, SetMode: ConfigModeSetter(env, tools.WriteApprovalMemory)})
+	out, handled, err := HandlePendingSubcommand(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory, args, PendingOptions{
+		MemoryStore: store, SetMode: ConfigModeSetter(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory)})
 	if err != nil {
 		return "", err
 	}

@@ -250,7 +250,7 @@ func TestDeviceLoginFailureDoesNotPersistOrDiscloseCredentials(t *testing.T) {
 				for name, v := range previous {
 					writeTokenFile(t, dir, name, v)
 				}
-				deviceSetTokens = func(*TokenStorage, *OAuthToken) error { return errors.New("fixture disk failure") }
+				deviceSetTokens = func(*TokenStorage, context.Context, *OAuthToken) error { return errors.New("fixture disk failure") }
 				t.Cleanup(func() { deviceSetTokens = (*TokenStorage).SetTokens })
 			}
 			err := LoginDevice(context.Background(), "fixture", base+"/mcp", deviceOAuthConfig(mode), HTTPOptions{})

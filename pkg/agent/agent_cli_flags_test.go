@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/goals"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -116,11 +118,11 @@ func TestControlUpdateCallbackFiresWhenAutomationStateMoves(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("published %d times with no automation state", calls)
 	}
-	goal, err := NewGoalState("ship it").ToJSON()
+	goal, err := goals.NewGoalState("ship it").ToJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetMeta(t.Context(), goalMetaKey("sess-flags"), goal); err != nil {
+	if err := db.SetMeta(t.Context(), goals.GoalMetaKey("sess-flags"), goal); err != nil {
 		t.Fatal(err)
 	}
 	a.NoteToolResult("goal_tool", "c2", "ok", "ok")
@@ -128,20 +130,20 @@ func TestControlUpdateCallbackFiresWhenAutomationStateMoves(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("published %d times for one goal change", calls)
 	}
-	state := NewGoalState("ship it")
+	state := goals.NewGoalState("ship it")
 	state.TurnsUsed = 2
 	moved, _ := state.ToJSON()
-	if err := db.SetMeta(t.Context(), goalMetaKey("sess-flags"), moved); err != nil {
+	if err := db.SetMeta(t.Context(), goals.GoalMetaKey("sess-flags"), moved); err != nil {
 		t.Fatal(err)
 	}
 	a.NoteToolResult("goal_tool", "c4", "ok", "ok")
 	if calls != 2 {
 		t.Fatalf("published %d times after the goal advanced", calls)
 	}
-	cleared := NewGoalState("ship it")
+	cleared := goals.NewGoalState("ship it")
 	cleared.Status = "cleared"
 	gone, _ := cleared.ToJSON()
-	if err := db.SetMeta(t.Context(), goalMetaKey("sess-flags"), gone); err != nil {
+	if err := db.SetMeta(t.Context(), goals.GoalMetaKey("sess-flags"), gone); err != nil {
 		t.Fatal(err)
 	}
 	a.NoteToolResult("goal_tool", "c5", "ok", "ok")

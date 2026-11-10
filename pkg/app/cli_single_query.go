@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/goals"
+
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -40,7 +42,7 @@ func signalNumber(sig os.Signal) string {
 }
 
 // Drives a kanban goal mode worker through the goal loop after its first turn
-func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) map[string]any, log func(string)) error {
+func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) (any, error), log func(string)) error {
 	taskID := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK"))
 	if taskID == "" {
 		return nil
@@ -77,29 +79,29 @@ func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) map[s
 	if goalText == "" {
 		return nil
 	}
-	quietTurn := func(prompt string) map[string]any {
+	quietTurn := func(prompt string) (any, error) {
 		result, rerr := c.agent.RunConversation(c.turnCtx, prompt, agent.RunConversationOptions{ConversationHistory: c.conversationHistory})
-		syncCLISessionIDFromAgent(c)
 		if rerr != nil {
-			return map[string]any{"response": "", "failed": true, "failure_reason": rerr.Error()}
+			return nil, rerr
 		}
+		syncCLISessionIDFromAgent(c)
 		resp := cliStr(result["final_response"], "")
 		if resp != "" {
 			fmt.Fprintln(c.console.Out, resp)
 		}
-		return map[string]any{"response": resp, "failed": cliTruthy(result["failed"]), "failure_reason": result["failure_reason"]}
+		return map[string]any{"response": resp, "failed": cliTruthy(result["failed"]), "failure_reason": result["failure_reason"]}, nil
 	}
-	taskStatus := func() *string {
+	taskStatus := func() (*string, error) {
 		var status *string
-		_ = kanban.ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
+		err := kanban.ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 			s, serr := kanban.GoalRunStatus(c.ctx, conn, taskID, workerRunID)
 			status = s
 			return serr
 		})
-		return status
+		return status, err
 	}
-	block := func(reason string) {
-		_ = kanban.ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
+	block := func(reason string) error {
+		return kanban.ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 			return kanban.BlockTask(c.ctx, conn, taskID, reason, workerRunID)
 		})
 	}
@@ -109,13 +111,13 @@ func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) map[s
 	if log == nil {
 		log = func(m string) { cliLogger.Info(m) }
 	}
-	maxTurns := kanban.GoalLoopDefaultMaxTurns()
+	maxTurns := goals.DefaultGoalMaxTurns
 	if goalMax := kanban.TaskGoalMaxTurns(task); goalMax != nil && *goalMax > 0 {
 		maxTurns = int(*goalMax)
 	}
-	kanban.RunKanbanGoalLoop(c.ctx, kanban.GoalLoopOptions{TaskID: taskID, GoalText: goalText, RunTurn: runTurn,
+	_, err = goals.RunKanbanGoalLoop(c.ctx, goals.GoalLoopOptions{TaskID: taskID, GoalText: goalText, RunTurn: runTurn,
 		TaskStatus: taskStatus, Block: block, MaxTurns: maxTurns, FirstResponse: firstResponse, Log: log})
-	return nil
+	return err
 }
 
 // Runs the -q worker goal loop with follow up turns through chat so the worker log keeps its tool feed
@@ -124,11 +126,11 @@ func runKanbanGoalLoopChat(c *CLI, firstResponse string) error {
 		cliLogger.Info(msg)
 		fmt.Fprintln(c.console.Out, msg)
 	}
-	return runKanbanGoalLoopQ(c, firstResponse, func(p string) map[string]any {
-		if response, ok := c.chat(p, nil, false); ok {
-			return map[string]any{"response": response}
+	return runKanbanGoalLoopQ(c, firstResponse, func(p string) (any, error) {
+		if response, ok := c.chat(p, nil, false); ok && response != "" {
+			return response, nil
 		}
-		return map[string]any{"response": nil}
+		return "", nil
 	}, log)
 }
 
@@ -219,7 +221,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 				errText = cliStr(res["error"], "")
 				reply = cliStr(res["final_response"], "")
 			}
-			writeTurnReport(turnReportPath, singleQueryExitCode(res, false, false), errText, reply)
+			writeTurnReport(c.ctx, turnReportPath, singleQueryExitCode(res, false, false), errText, reply)
 		}
 		reportTurn(result)
 		if result != nil && !cliTruthy(result["failed"]) {

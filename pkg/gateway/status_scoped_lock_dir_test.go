@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -26,13 +27,13 @@ func lockedOutDir(t *testing.T) string {
 
 func TestLockDirRepairIsPickedUpWithoutRestart(t *testing.T) {
 	dir := lockedOutDir(t)
-	_, _, err := AcquireScopedLock("telegram-bot-token", "tok", nil)
+	_, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "tok", nil)
 	var unusable *ScopedLockDirUnusable
 	if !errors.As(err, &unusable) {
 		t.Fatalf("want ScopedLockDirUnusable, got %v", err)
 	}
 	os.Chmod(dir, 0o700)
-	acquired, existing, err := AcquireScopedLock("telegram-bot-token", "tok", nil)
+	acquired, existing, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "tok", nil)
 	if err != nil || !acquired || existing != nil {
 		t.Fatalf("after repair %v %v %v", acquired, existing, err)
 	}
@@ -59,7 +60,7 @@ func TestUnreadableStaleTokenLockIsNamedNotReportedAsAHolderlessConflict(t *test
 		os.Chmod(dir, 0o700)
 		os.Chmod(stale, 0o600)
 	}()
-	_, _, err := AcquireScopedLock("telegram-bot-token", "tok", nil)
+	_, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "tok", nil)
 	var unusable *ScopedLockDirUnusable
 	if !errors.As(err, &unusable) {
 		t.Fatalf("want ScopedLockDirUnusable, got %v", err)

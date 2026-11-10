@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Provider profile flags of the fake capability source
@@ -294,5 +295,25 @@ func TestRequestedProviderBorrowedOnExactRuntimeMatch(t *testing.T) {
 	}
 	if _, ok := lookupSupportsVision(context.Background(), env, "custom", "other", cfg, ""); ok {
 		t.Fatal("identity borrowed for a different model")
+	}
+}
+
+func TestWithEnvHomeBindsTheEnvHomeAndKeepsAnUnboundContext(t *testing.T) {
+	type key struct{}
+	base := home.WithOverride(context.WithValue(context.Background(), key{}, "kept"), "/caller/home")
+	bound := WithEnvHome(base, &Env{Home: "/env/home"})
+	if got := home.Override(bound); got != "/env/home" {
+		t.Fatalf("override %q, want the env home", got)
+	}
+	if bound.Value(key{}) != "kept" {
+		t.Fatal("the caller context values must survive the binding")
+	}
+	for _, env := range []*Env{nil, {}} {
+		if got := WithEnvHome(base, env); got != base {
+			t.Fatalf("an env naming no home must hand back the caller context, got %v", got)
+		}
+	}
+	if got := home.Override(WithEnvHome(nil, &Env{Home: "/env/home"})); got != "/env/home" {
+		t.Fatalf("a nil context must still carry the env home, got %q", got)
 	}
 }

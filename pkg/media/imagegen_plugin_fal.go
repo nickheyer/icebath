@@ -137,6 +137,15 @@ func (b imageGenBackendPlugin) Register(ctx *plugins.Context) error {
 	return err
 }
 
+// BundledImageGenProvider is the provider a bundled image generation plugin registers, false for any other plugin
+func BundledImageGenProvider(p plugins.Plugin) (ImageGenProvider, bool) {
+	b, ok := p.(imageGenBackendPlugin)
+	if !ok {
+		return nil, false
+	}
+	return b.provider(), true
+}
+
 func init() {
 	plugins.RegisterBundled(imageGenBackendPlugin{name: "fal", requiresEnv: []string{"FAL_KEY"},
 		description: "FAL.ai image generation backend (flux-2-klein, flux-2-pro, nano-banana-2, nano-banana-pro, gpt-image-1.5, recraft-v3, etc.).",

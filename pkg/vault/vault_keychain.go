@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -119,18 +120,18 @@ func vaultReadRef(path string) (*pyjson.Object, error) {
 }
 
 // Saves a pointer atomically with a durable directory entry, swapped by tests for a failing writer
-var vaultWriteRef = func(path string, ref *pyjson.Object) error {
+var vaultWriteRef = func(ctx context.Context, path string, ref *pyjson.Object) error {
 	text, err := pyjson.Dumps(ref, pyjson.Indent(2))
 	if err != nil {
 		return err
 	}
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(path, []byte(text), "", &mode, true)
+	return pyfs.AtomicWriteBytes(ctx, path, []byte(text), "", &mode, true)
 }
 
 // Saves the pointer to a fresh entry, deleting the entry unless the pointer landed before the failure
-func vaultSaveNewRef(path string, ref *pyjson.Object) error {
-	err := vaultWriteRef(path, ref)
+func vaultSaveNewRef(ctx context.Context, path string, ref *pyjson.Object) error {
+	err := vaultWriteRef(ctx, path, ref)
 	if err == nil {
 		return nil
 	}

@@ -23,6 +23,7 @@ func init() {
 		Migration:                   configFacadeMigrationSources,
 		MaskedSecretPrompt:          maskedSecretPrompt,
 		ScopedSecret:                GetSecret,
+		SecretScopeBound:            func(ctx context.Context) bool { return CurrentSecretScope(ctx) != nil },
 		PublishScopedEnv:            publishScopedEnv,
 		SaveProviderEnvCredential:   saveProviderEnvCredential,
 		RemoveProviderEnvCredential: removeProviderEnvCredential,

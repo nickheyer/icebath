@@ -114,8 +114,8 @@ func TestWedgedDiagnosticOnlyWithoutARecordedRun(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
 	times := 1
-	writeWedged(s, &Job{ID: "w1", Name: "wedge", Repeat: &Repeat{Times: &times, Completed: 1}, RunClaim: &Claim{At: "t0"}})
-	writeWedged(s, &Job{ID: "w2", LastRunAt: strPtr("t")})
+	writeWedged(context.Background(), s, &Job{ID: "w1", Name: "wedge", Repeat: &Repeat{Times: &times, Completed: 1}, RunClaim: &Claim{At: "t0"}})
+	writeWedged(context.Background(), s, &Job{ID: "w2", LastRunAt: strPtr("t")})
 	out, _ := filepath.Glob(filepath.Join(s.outputDir, "*", "*.md"))
 	if len(out) != 1 || filepath.Base(filepath.Dir(out[0])) != "w1" {
 		t.Fatalf("diagnostics %v", out)
@@ -129,10 +129,10 @@ func TestWedgedDiagnosticOnlyWithoutARecordedRun(t *testing.T) {
 func TestOccurrenceIdentityAndPendingSlots(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
-	if got := scheduledInstant(s, strPtr("2026-05-01T05:00:00-07:00")); deref(got) != "2026-05-01T12:00:00+00:00" {
+	if got := scheduledInstant(strPtr("2026-05-01T05:00:00-07:00")); deref(got) != "2026-05-01T12:00:00+00:00" {
 		t.Fatalf("instant %v", deref(got))
 	}
-	if scheduledInstant(s, strPtr("2026-05-01T05:00:00")) != nil || scheduledInstant(s, strPtr("junk")) != nil || scheduledInstant(s, nil) != nil {
+	if scheduledInstant(strPtr("2026-05-01T05:00:00")) != nil || scheduledInstant(strPtr("junk")) != nil || scheduledInstant(nil) != nil {
 		t.Fatal("naive or junk instant accepted")
 	}
 	occRun, err := openExecutionsLedger(s).Create(context.Background(), "occ", "cron", strPtr("2026-05-01T05:00:00-07:00"))
@@ -165,7 +165,7 @@ func TestOccurrenceIdentityAndPendingSlots(t *testing.T) {
 		t.Fatal("one shot pending slot")
 	}
 	os.WriteFile(filepath.Join(s.cronDir, "catch_up_occurrences"), []byte("\xef\xbb\xbf 41\n"), 0o600)
-	s.recordCatchUpOccurrence()
+	s.recordCatchUpOccurrence(context.Background())
 	if s.CatchUpOccurrenceCount() != 42 {
 		t.Fatalf("count %d", s.CatchUpOccurrenceCount())
 	}

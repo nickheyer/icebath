@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/builtin/delegationdefault"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -18,6 +19,7 @@ var testSecretEnvSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CR
 
 // Dispatches the child modes, installs the secret env doubles, then runs the suite
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry()
 	dispatchTrajectoryChild()
 	dispatchLifecycleChild()

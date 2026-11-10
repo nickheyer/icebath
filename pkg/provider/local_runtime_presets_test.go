@@ -451,7 +451,7 @@ func TestLocalRuntimeBootHandsTheRouterTheDerivedCap(t *testing.T) {
 			}
 			bootStateEndpoint = func(context.Context) (bool, error) { return false, nil }
 			captured := -1
-			bootStartSupervisor = func(s *LlamaServerSupervisor) error { captured = s.ModelsMax; return nil }
+			bootStartSupervisor = func(_ context.Context, s *LlamaServerSupervisor) error { captured = s.ModelsMax; return nil }
 			cfg := map[string]any{"local_runtime": map[string]any{"enabled": true, "models_max": c.configured}}
 			sup, err := EnsureLocalRuntime(context.Background(), cfg, false)
 			if sup == nil || err != nil {

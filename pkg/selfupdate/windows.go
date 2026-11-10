@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -19,13 +20,13 @@ func plannedStopMarkerPath(profilePath string) string {
 }
 
 // Writes the planned stop request naming pid into a profile home, false when the home refuses the write
-func writeUpdatePlannedStopMarker(profilePath string, pid int) (bool, error) {
+func writeUpdatePlannedStopMarker(ctx context.Context, profilePath string, pid int) (bool, error) {
 	body := pyjson.NewObject()
 	body.Set("target_pid", pid)
 	body.Set("target_start_time", gateway.GetProcessStartTime(pid))
 	body.Set("stopper_pid", os.Getpid())
 	body.Set("written_at", pydatetime.ISOFormatUTC(time.Now()))
-	err := config.AtomicJSONWriteWith(plannedStopMarkerPath(profilePath), body, pyjson.Separators(",", ":"))
+	err := config.AtomicJSONWriteWith(ctx, plannedStopMarkerPath(profilePath), body, pyjson.Separators(",", ":"))
 	if err == nil {
 		return true, nil
 	}

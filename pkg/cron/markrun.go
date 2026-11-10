@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -164,7 +165,7 @@ func (s *Store) markJobRun(ctx context.Context, jobID string, success bool, o Ma
 }
 
 // Claims a finite one shot dispatch before execution so a dying tick cannot lose or repeat it
-func (s *Store) claimDispatch(jobID string) (bool, error) {
+func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 	claimed, found, err := withJob(s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
 		repeat := job.Repeat
 		if repeat == nil {
@@ -190,7 +191,7 @@ func (s *Store) claimDispatch(jobID string) (bool, error) {
 			if err := s.saveJobsLocked(tx, kept, []string{jobID}, false); err != nil {
 				return false, err
 			}
-			writeWedged(s, job)
+			writeWedged(home.WithOverride(ctx, s.home), s, job)
 			s.log.Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) — removing", label, completed, times))
 			return false, nil
 		}
@@ -328,7 +329,7 @@ func (s *Store) claimJobForFire(ctx context.Context, jobID string, o FireClaimOp
 			manualFire := o.Force || o.Manual || ptrEqual(job.ManualRunAt, job.NextRunAt)
 			var instant *string
 			if !manualFire {
-				instant = scheduledInstant(s, job.NextRunAt)
+				instant = scheduledInstant(job.NextRunAt)
 			}
 			if instant != nil {
 				if at, ok := s.clk.parseAware(*instant, nil); ok && at.Sub(now) >= FireClaimSkewSeconds*time.Second {

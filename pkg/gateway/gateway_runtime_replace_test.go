@@ -51,7 +51,7 @@ func scriptVerdicts(t *testing.T, verdicts ...ObservedEndpoint) {
 func recordReplacements(t *testing.T, refusal string) *[]string {
 	t.Helper()
 	calls := &[]string{}
-	swapSeam(t, &replaceIncompatibleOwner, func(h string, _ float64) string { *calls = append(*calls, h); return refusal })
+	swapSeam(t, &replaceIncompatibleOwner, func(_ context.Context, h string, _ float64) string { *calls = append(*calls, h); return refusal })
 	return calls
 }
 
@@ -117,7 +117,7 @@ func TestReplacementNeverTargetsItself(t *testing.T) {
 	swapSeam(t, &replaceIdentifyOf, func(string, time.Duration) (string, *pyjson.Object, error) {
 		return h, ownerPayload(t, h, os.Getpid(), 1), nil
 	})
-	if refusal := ReplaceIncompatibleOwner(h, pythread.Monotonic()+5); refusal != "owner_unverified" {
+	if refusal := ReplaceIncompatibleOwner(context.Background(), h, pythread.Monotonic()+5); refusal != "owner_unverified" {
 		t.Fatal(refusal)
 	}
 }

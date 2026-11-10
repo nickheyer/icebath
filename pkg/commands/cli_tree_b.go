@@ -25,34 +25,7 @@ const (
 )
 
 func (c *CLI) addTreeB(root *cobra.Command) {
-	peer := c.newCmd(root, "peer", "Bot-to-bot DMs across machines (peer Icebath gateways)",
-		"Register other Icebath gateways as peers and message their agents. 'icebath peer dm <peer>[/<agent>] \"...\"' delivers into the remote agent's canonical Bot Chat over the peer's API server and prints the reply — the cross-machine twin of 'icebath -p <bot> chat'. The peer must run the api_server platform; its API_SERVER_KEY is stored locally as a credential in ~/.icebath/.env.")
-	c.epilog(peer, "Examples:\n  icebath peer add spark --url http://spark.lan:8377 --key <API_SERVER_KEY>\n  icebath peer list\n  icebath peer dm spark \"Message from 🤖 dixie (@dixie): disk status?\"\n  icebath peer dm spark/researcher \"...\"   # named profile on a multiplexed peer\n  icebath peer run spark --idempotency-key ticket-123 < long-task.txt\n  icebath peer status spark run_abc123\n  icebath peer stop spark run_abc123\n  icebath peer remove spark\n\nExit codes: 0 ok, 1 delivery/peer error, 2 usage error.")
-	pAdd := c.newCmd(peer, "add", "Register (or update) a peer gateway", "", "set")
-	c.pos(pAdd, p("name"))
-	sf(pAdd, "url", "", "", "Peer gateway base URL, e.g. http://spark.lan:8377")
-	_ = pAdd.MarkFlagRequired("url")
-	sf(pAdd, "key", "", "", "The peer's API_SERVER_KEY (stored in ~/.icebath/.env)")
-	sf(pAdd, "note", "", "", "Optional description")
-	c.newCmd(peer, "list", "List registered peers", "", "ls")
-	pRm := c.newCmd(peer, "remove", "Remove a peer", "", "rm")
-	c.pos(pRm, p("name"))
-	remote := func(name, help string, runID bool) {
-		sp := c.newCmd(peer, name, help, "")
-		if runID {
-			c.pos(sp, p("target"), p("run_id"))
-		} else {
-			c.pos(sp, p("target"), pOpt("message"))
-			if name == "run" {
-				sf(sp, "idempotency-key", "", "", "Stable retry key (generated when omitted)")
-			}
-		}
-		bf(sp, "json", "", "Emit a JSON result")
-	}
-	remote("dm", "Message an agent on a peer gateway and print its reply", false)
-	remote("run", "Start a long peer turn asynchronously and return its run ID", false)
-	remote("status", "Read the status and final output of an asynchronous peer run", true)
-	remote("stop", "Stop one asynchronous peer run without affecting another turn", true)
+	c.buildPeerParser(root)
 
 	portal := c.newCmd(root, "portal", "Set up Nous Portal (login, model pick, Tool Gateway); see also `portal info`",
 		"Run `icebath portal` with no subcommand to log in to Nous Portal and set it up — pick a model, set Nous as your provider, and offer the Tool Gateway (the human-readable alias for `icebath auth add nous --type oauth`, identical to `icebath setup --portal`). Subcommands: login (default), info, open, tools.")
@@ -691,4 +664,37 @@ func (c *CLI) addPlugins(root *cobra.Command) {
 	c.pos(packShow, p("source").withHelp("Path to a icebath-pack.yaml file, or an https:// URL"))
 	show := c.newCmd(plugins, "show", "Show details for a single plugin (including emits/listens)", "", "info")
 	c.pos(show, p("name").withHelp("Plugin name or key to show"))
+}
+
+// Attaches the peer subcommand with its registry and remote turn actions
+func (c *CLI) buildPeerParser(root *cobra.Command) {
+	peer := c.newCmd(root, "peer", "Bot-to-bot DMs across machines (peer Icebath gateways)",
+		"Register other Icebath gateways as peers and message their agents. 'icebath peer dm <peer>[/<agent>] \"...\"' delivers into the remote agent's canonical Bot Chat over the peer's API server and prints the reply — the cross-machine twin of 'icebath -p <bot> chat'. The peer must run the api_server platform; its API_SERVER_KEY is stored locally as a credential in ~/.icebath/.env.")
+	c.epilog(peer, "Examples:\n  icebath peer add spark --url http://spark.lan:8377 --key <API_SERVER_KEY>\n  icebath peer list\n  icebath peer dm spark \"Message from 🤖 dixie (@dixie): disk status?\"\n  icebath peer dm spark/researcher \"...\"   # named profile on a multiplexed peer\n  icebath peer run spark --idempotency-key ticket-123 < long-task.txt\n  icebath peer status spark run_abc123\n  icebath peer stop spark run_abc123\n  icebath peer remove spark\n\nExit codes: 0 ok, 1 delivery/peer error, 2 usage error.")
+	pAdd := c.newCmd(peer, "add", "Register (or update) a peer gateway", "", "set")
+	c.pos(pAdd, p("name").withHelp("Peer name (lowercase slug, e.g. spark, homelab)"))
+	sf(pAdd, "url", "", "", "Peer gateway base URL, e.g. http://spark.lan:8377")
+	_ = pAdd.MarkFlagRequired("url")
+	sf(pAdd, "key", "", "", "The peer's API_SERVER_KEY (stored in ~/.icebath/.env)")
+	sf(pAdd, "note", "", "", "Optional description")
+	c.newCmd(peer, "list", "List registered peers", "", "ls")
+	pRm := c.newCmd(peer, "remove", "Remove a peer", "", "rm")
+	c.pos(pRm, p("name").withHelp("Peer name"))
+	target := p("target").withHelp("<peer> or <peer>/<agent> (named profile on a multiplexed peer)")
+	remote := func(name, help string, runID bool) {
+		sp := c.newCmd(peer, name, help, "")
+		if runID {
+			c.pos(sp, target, p("run_id").withHelp("Run ID returned by 'icebath peer run'"))
+		} else {
+			c.pos(sp, target, pOpt("message").withHelp("Message text (or stdin)"))
+			if name == "run" {
+				sf(sp, "idempotency-key", "", "", "Stable retry key (generated when omitted)")
+			}
+		}
+		bf(sp, "json", "", "Emit a JSON result")
+	}
+	remote("dm", "Message an agent on a peer gateway and print its reply", false)
+	remote("run", "Start a long peer turn asynchronously and return its run ID", false)
+	remote("status", "Read the status and final output of an asynchronous peer run", true)
+	remote("stop", "Stop one asynchronous peer run without affecting another turn", true)
 }

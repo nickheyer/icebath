@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,7 @@ import (
 // Claims the host lock and writes the owner record as raw JSON with no served set proof
 func publishRaw(t *testing.T, pid int, home string, served []string) {
 	t.Helper()
-	if o, _ := ClaimHostLock(RoleGateway); o != HostLockAcquired {
+	if o, _ := ClaimHostLock(context.Background(), RoleGateway); o != HostLockAcquired {
 		t.Fatal(o)
 	}
 	payload := pyjson.NewObject()

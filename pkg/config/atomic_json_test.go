@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,7 +17,7 @@ func TestAtomicJSONWriteKeepsOrderModeAndRawUnicode(t *testing.T) {
 	obj := pyjson.NewObject()
 	obj.Set("z", "café")
 	obj.Set("a", []any{1, true})
-	if err := AtomicJSONWrite(path, obj); err != nil {
+	if err := AtomicJSONWrite(context.Background(), path, obj); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)
@@ -35,7 +36,7 @@ func TestAtomicJSONWriteModeForcesThePrivateMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := map[string]any{"b": 1, "a": "é"}
-	if err := AtomicJSONWriteMode(path, data, 0o600, pyjson.Indent(2), pyjson.SortKeys(true)); err != nil {
+	if err := AtomicJSONWriteMode(context.Background(), path, data, 0o600, pyjson.Indent(2), pyjson.SortKeys(true)); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)

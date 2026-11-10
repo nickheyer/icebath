@@ -34,12 +34,22 @@ func isContextPinned(contextLength, configContextLength any) bool {
 	return ok && shown == pin
 }
 
+// IsContextPinned reports a displayed window equal to the positive model.context_length pin
+func IsContextPinned(contextLength, configContextLength any) bool {
+	return isContextPinned(contextLength, configContextLength)
+}
+
 // Pinned label when the shown window comes from model.context_length, empty otherwise
 func contextPinSuffix(contextLength, configContextLength any) string {
 	if isContextPinned(contextLength, configContextLength) {
 		return " (pinned)"
 	}
 	return ""
+}
+
+// ContextPinSuffix is the pinned label of a window equal to the model.context_length pin, empty otherwise
+func ContextPinSuffix(contextLength, configContextLength any) string {
+	return contextPinSuffix(contextLength, configContextLength)
 }
 
 // Provider advertised window from the endpoint cache, the models.dev disk cache or the family table, never a probe

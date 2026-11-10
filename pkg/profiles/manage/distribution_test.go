@@ -68,7 +68,7 @@ func makeStagingDir(t *testing.T, root, name string, m *profiles.DistributionMan
 	if m == nil {
 		m = profiles.NewDistributionManifest(name)
 	}
-	if _, err := profiles.WriteManifest(staged, m); err != nil {
+	if _, err := profiles.WriteManifest(context.Background(), staged, m); err != nil {
 		t.Fatal(err)
 	}
 	return staged
@@ -120,7 +120,7 @@ func TestManifestParsingRoundtripWriteRead(t *testing.T) {
 	dir := t.TempDir()
 	m := &profiles.DistributionManifest{Name: "rt", Version: "1.0.0", Description: "roundtrip",
 		EnvRequires: []profiles.EnvRequirement{profiles.NewEnvRequirement("FOO", "foo")}}
-	if _, err := profiles.WriteManifest(dir, m); err != nil {
+	if _, err := profiles.WriteManifest(context.Background(), dir, m); err != nil {
 		t.Fatal(err)
 	}
 	parsed, err := profiles.ReadManifest(dir)
@@ -283,14 +283,14 @@ func TestUpdateRespectsDistributionOwnedAllowlist(t *testing.T) {
 	if !exists(filepath.Join(plan.TargetDir, "mcp.json")) {
 		t.Fatal("baseline mcp.json missing")
 	}
-	if _, err := profiles.WriteManifest(staged, &profiles.DistributionManifest{Name: "up_restricted", Version: "0.2.0",
+	if _, err := profiles.WriteManifest(context.Background(), staged, &profiles.DistributionManifest{Name: "up_restricted", Version: "0.2.0",
 		DistributionOwned: []string{"SOUL.md", "skills"}}); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(staged, "new_config.toml"), "[extra]\n")
 	onDisk, _ := profiles.ReadManifest(plan.TargetDir)
 	onDisk.Source = staged
-	if _, err := profiles.WriteManifest(plan.TargetDir, onDisk); err != nil {
+	if _, err := profiles.WriteManifest(context.Background(), plan.TargetDir, onDisk); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := UpdateDistribution(context.Background(), "up_restricted", true); err != nil {
@@ -526,7 +526,7 @@ func TestUpdateMissingManifestErrors(t *testing.T) {
 	_, err := UpdateDistribution(context.Background(), "plain", false)
 	wantDistError(t, err, "not a distribution")
 	dir, _ := profiles.GetProfileDir("plain")
-	if _, err := profiles.WriteManifest(dir, profiles.NewDistributionManifest("plain")); err != nil {
+	if _, err := profiles.WriteManifest(context.Background(), dir, profiles.NewDistributionManifest("plain")); err != nil {
 		t.Fatal(err)
 	}
 	_, err = UpdateDistribution(context.Background(), "plain", false)
@@ -714,12 +714,12 @@ func TestPreviousManifestSurvivesAnInterruptedWrite(t *testing.T) {
 	dir := t.TempDir()
 	original := &profiles.DistributionManifest{Name: "keepme", Version: "1.0.0", Description: "the manifest already on disk",
 		EnvRequires: []profiles.EnvRequirement{profiles.NewEnvRequirement("FOO", "foo")}}
-	if _, err := profiles.WriteManifest(dir, original); err != nil {
+	if _, err := profiles.WriteManifest(context.Background(), dir, original); err != nil {
 		t.Fatal(err)
 	}
 	onDisk := readText(t, filepath.Join(dir, "distribution.yaml"))
 	restore := config.SwapSafeDump(func(any) ([]byte, error) { return nil, errors.New("simulated crash mid-write") })
-	_, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "replacement", Version: "2.0.0"})
+	_, err := profiles.WriteManifest(context.Background(), dir, &profiles.DistributionManifest{Name: "replacement", Version: "2.0.0"})
 	restore()
 	if err == nil {
 		t.Fatal("interrupted write reported success")
@@ -743,13 +743,13 @@ func TestManifestFileModes(t *testing.T) {
 	t.Run("test_existing_file_mode_is_preserved", func(t *testing.T) {
 		dir := t.TempDir()
 		mf := filepath.Join(dir, "distribution.yaml")
-		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "modes", Version: "1.0.0"}); err != nil {
+		if _, err := profiles.WriteManifest(context.Background(), dir, &profiles.DistributionManifest{Name: "modes", Version: "1.0.0"}); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Chmod(mf, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "modes", Version: "2.0.0"}); err != nil {
+		if _, err := profiles.WriteManifest(context.Background(), dir, &profiles.DistributionManifest{Name: "modes", Version: "2.0.0"}); err != nil {
 			t.Fatal(err)
 		}
 		if st, _ := os.Stat(mf); st.Mode().Perm() != 0o644 {
@@ -762,7 +762,7 @@ func TestManifestFileModes(t *testing.T) {
 		if exists(mf) {
 			t.Fatal("manifest present before the write")
 		}
-		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "fresh", Version: "1.0.0"}); err != nil {
+		if _, err := profiles.WriteManifest(context.Background(), dir, &profiles.DistributionManifest{Name: "fresh", Version: "1.0.0"}); err != nil {
 			t.Fatal(err)
 		}
 		if st, _ := os.Stat(mf); st.Mode().Perm() != 0o644 {
@@ -772,13 +772,13 @@ func TestManifestFileModes(t *testing.T) {
 	t.Run("a tightened existing mode is kept", func(t *testing.T) {
 		dir := t.TempDir()
 		mf := filepath.Join(dir, "distribution.yaml")
-		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "fresh", Version: "1.0.0"}); err != nil {
+		if _, err := profiles.WriteManifest(context.Background(), dir, &profiles.DistributionManifest{Name: "fresh", Version: "1.0.0"}); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Chmod(mf, 0o640); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := profiles.WriteManifest(dir, &profiles.DistributionManifest{Name: "modes", Version: "2.0.0"}); err != nil {
+		if _, err := profiles.WriteManifest(context.Background(), dir, &profiles.DistributionManifest{Name: "modes", Version: "2.0.0"}); err != nil {
 			t.Fatal(err)
 		}
 		if st, _ := os.Stat(mf); st.Mode().Perm() != 0o640 {

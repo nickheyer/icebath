@@ -207,7 +207,7 @@ func cuChild(mode string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		if ok, err := writeUpdatePlannedStopMarker(filepath.Dir(args[1]), pid); !ok || err != nil {
+		if ok, err := writeUpdatePlannedStopMarker(ctx, filepath.Dir(args[1]), pid); !ok || err != nil {
 			fmt.Fprintln(os.Stderr, "the planned stop request was not written", err)
 			return 1
 		}

@@ -10,8 +10,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // One shot signal waiters block on until it is set
@@ -136,7 +134,7 @@ func finishOpening(path string, opening *event) {
 // Shared database of dbPath with one more reference, retiring a generation whose file was replaced
 func Acquire(ctx context.Context, dbPath string) (*DB, error) {
 	if dbPath == "" {
-		dbPath = home.StatePath(home.Dir(ctx))
+		dbPath = defaultDBPath(ctx)
 	}
 	path := realpathLax(dbPath)
 	for {

@@ -123,7 +123,7 @@ func purePathParent(p string) string {
 
 // Resolved content addressed store of this profile's retained native inputs
 func NativeInputsRoot(ctx context.Context) (string, error) {
-	docs, err := mediacache.DocumentCacheDir(home.Dir(ctx))
+	docs, err := mediacache.DocumentCacheDir(ctx, home.Dir(ctx))
 	if err != nil {
 		return "", err
 	}

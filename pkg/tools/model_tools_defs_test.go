@@ -300,7 +300,7 @@ func TestRestrictedToolsetNeverGainsTheRecoveredTool(t *testing.T) {
 	InvalidateCheckCache()
 	wantNames(t, bridgeDefNames(r, env, restricted), memoAnchor)
 	call := &Call{Name: ToolCallName, Args: map[string]any{"calls": []any{map[string]any{"name": memoMail, "arguments": map[string]any{}}}}, Env: env}
-	result, underlying, _, bridged := NewDispatcher(r).dispatchBridgeTool(context.Background(), call, restricted, nil)
+	result, underlying, _, bridged := NewDispatcher(r).dispatchBridgeTool(context.Background(), call, call.Args, restricted, nil)
 	if !bridged || underlying != "" || decodeModelToolsResult(t, result)["error"] == nil {
 		t.Fatalf("bridged %v underlying %q result %s", bridged, underlying, result)
 	}
@@ -473,7 +473,7 @@ func TestToolsetForceAddSuppressed(t *testing.T) {
 		t.Fatal("non dispatcher owned execution still reads as the worker")
 	}
 	env.Values.Delete("session.non_dispatcher_owned")
-	if !isDispatcherOwnedWorkerContext(env) || !definitionSelectionContext(env).DispatcherOwnedWorker {
+	if !isDispatcherOwnedWorkerContext(env) || !definitionSelectionContext(t.Context(), env).DispatcherOwnedWorker {
 		t.Fatal("ownership not restored after the marker cleared")
 	}
 }

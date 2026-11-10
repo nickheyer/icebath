@@ -61,9 +61,9 @@ type cdpPage struct {
 var meetBrowserSeq atomic.Int64
 
 // Starts Chromium like Playwright chromium.launch with the executable, headless flag and extra args
-func launchMeetBrowser(env *tools.Env, headed bool, args []string) (*cdpBrowser, error) {
+func launchMeetBrowser(ctx context.Context, env *tools.Env, headed bool, args []string) (*cdpBrowser, error) {
 	key := fmt.Sprintf("google-meet-%d-%d", os.Getpid(), meetBrowserSeq.Add(1))
-	launched, failure := browser.LaunchChromium(env, key, browser.LaunchOptions{
+	launched, failure := browser.LaunchChromium(tools.WithEnvHome(ctx, env), env, key, browser.LaunchOptions{
 		Executable: browser.ChromiumExecutable(env, true), Ephemeral: true, Headed: &headed, ExtraArgs: args,
 	})
 	if launched == nil {
@@ -76,7 +76,7 @@ func launchMeetBrowser(env *tools.Env, headed bool, args []string) (*cdpBrowser,
 	defer cancel()
 	conn, err := browser.DialCDP(ctx, launched.CDPURL, 0)
 	if err != nil {
-		browser.StopBrowser(key)
+		browser.StopBrowser(tools.WithEnvHome(ctx, env), key)
 		return nil, err
 	}
 	return &cdpBrowser{key: key, conn: conn}, nil
@@ -119,9 +119,9 @@ func (b *cdpBrowser) newContext(args contextArgs) (*cdpContext, error) {
 }
 
 // Closes the CDP connection and stops the launched Chromium
-func (b *cdpBrowser) close() {
+func (b *cdpBrowser) close(ctx context.Context) {
 	_ = b.conn.Close()
-	browser.StopBrowser(b.key)
+	browser.StopBrowser(ctx, b.key)
 }
 
 // Records an origin a page of the context navigated to, for storage state collection

@@ -57,13 +57,13 @@ func TestInstallByNameRestoresTheBundledSkillItNames(t *testing.T) {
 			ctx := context.Background()
 			writeTestFile(t, filepath.Join(x.S.Home, "config.yaml"), "curator:\n  prune_builtins: true\n")
 			name := path.Base(identifier)
-			if err := x.S.toggleSuppressedName(name, true); err != nil {
+			if err := x.S.toggleSuppressedName(ctx, name, true); err != nil {
 				t.Fatal(err)
 			}
 			usage, entry := pyjson.NewObject(), pyjson.NewObject()
 			entry.Set("state", StateArchived)
 			usage.Set(name, entry)
-			if !x.S.SaveUsage(usage) {
+			if !x.S.SaveUsage(ctx, usage) {
 				t.Fatal("usage not saved")
 			}
 			category := filepath.Join(x.S.SkillsDir(), path.Base(path.Dir(bundledSkillDir(t, name))))
@@ -111,7 +111,7 @@ func TestInstallByNameRestoresTheBundledSkillItNames(t *testing.T) {
 			}
 			stranger := filepath.Join(x.S.SkillsDir(), "hub-installs", name)
 			writeTestFile(t, filepath.Join(stranger, "SKILL.md"), "---\nname: "+name+"\n---\nstranger\n")
-			if err := x.Hub.LockFile("").RecordInstall(name, "skills-sh", "skills-sh/x/y/"+name, "community", "safe", "h",
+			if err := x.Hub.LockFile("").RecordInstall(ctx, name, "skills-sh", "skills-sh/x/y/"+name, "community", "safe", "h",
 				"hub-installs/"+name, []string{"SKILL.md"}, nil, nil); err != nil {
 				t.Fatal(err)
 			}

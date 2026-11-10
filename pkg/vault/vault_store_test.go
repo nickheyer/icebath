@@ -300,7 +300,7 @@ func TestMigrationWhosePointerCannotBeSavedLeavesNoUntrackedEntry(t *testing.T) 
 	h := vaultHome(t, t.TempDir(), "default", "")
 	item := addLogin(t, cur())
 	prev := vaultWriteRef
-	vaultWriteRef = func(path string, ref *pyjson.Object) error {
+	vaultWriteRef = func(_ context.Context, path string, ref *pyjson.Object) error {
 		return &os.PathError{Op: "write", Path: path, Err: syscall.ENOSPC}
 	}
 	t.Cleanup(func() { vaultWriteRef = prev })
@@ -327,9 +327,9 @@ func TestCopiedVaultKeepsOpeningWhenSavingItsOwnPointerFails(t *testing.T) {
 				t.Fatal(err)
 			}
 			real := vaultWriteRef
-			vaultWriteRef = func(path string, ref *pyjson.Object) error {
+			vaultWriteRef = func(ctx context.Context, path string, ref *pyjson.Object) error {
 				if landed {
-					real(path, ref)
+					real(ctx, path, ref)
 				}
 				return &os.PathError{Op: "write", Path: path, Err: syscall.ENOSPC}
 			}

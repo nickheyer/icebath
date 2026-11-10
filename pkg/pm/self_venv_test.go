@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -124,49 +125,48 @@ func TestSVVenvPythonVersionReadsTheTree(t *testing.T) {
 	}
 }
 
-func TestSVUnsealedTreesRunTheVenvInterpreter(t *testing.T) {
+func TestUnsealedTreesRunTheVenvInterpreter(t *testing.T) {
 	tmp := isolateHome(t)
-	venv := filepath.Join(tmp, "venv")
+	venv, _ := peTrapVenv(t, tmp)
 	got, err := VenvCommand(context.Background(), sttMkdir(t, filepath.Join(tmp, "checkout")), venv, []string{"-I", "-u"})
-	if err != nil || strings.Join(got, " ") != VenvPython(venv)+" -I -u" {
+	if err != nil || !reflect.DeepEqual(got, []string{VenvPython(venv), "-I", "-u"}) {
 		t.Fatalf("argv %v %v", got, err)
 	}
 }
 
-func TestSVSealedPayloadRunsCodeWithoutTheRedirector(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		return
-	}
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatal("the sealed payload case runs a real interpreter: python3 is not on PATH")
+func TestSealedPayloadRunsScriptsCodeAndModulesWithoutTheRedirector(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("platforms linux, macos")
 	}
 	tmp := isolateHome(t)
-	ctx := context.Background()
-	venv := filepath.Join(tmp, "venv")
-	out, _ := exec.Command(python, "-c", "import sys; print('%d.%d' % sys.version_info[:2])").Output()
-	writeFile(t, filepath.Join(venv, "pyvenv.cfg"), []byte("home = /nonexistent\nversion = "+strings.TrimSpace(string(out))+".0\n"), 0o666)
-	writeFile(t, VenvPython(venv), []byte("#!/bin/sh\nexit 99\n"), 0o755)
-	site, _ := SitePackages(venv)
-	writeFile(t, filepath.Join(site, "venv_only_dep.py"), []byte("VALUE = 'from the venv'\n"), 0o666)
+	venv, _ := peTrapVenv(t, tmp)
 	payload := filepath.Join(tmp, "payload")
 	repo := sttMkdir(t, filepath.Join(payload, "icebath-agent"))
-	writeFile(t, filepath.Join(payload, "tools", "python", "python"), []byte("#!/bin/sh\nexec "+python+" \"$@\"\n"), 0o755)
+	writeFile(t, filepath.Join(payload, "tools", "python", "python"), []byte("#!/bin/sh\nexec "+peHostPython(t)+" \"$@\"\n"), 0o755)
 	manifest, _ := json.Marshal(map[string]any{"schema": 1, "target": "test", "repo": "icebath-agent", "venv": "venv", "store": "tools",
-		"runtime": map[string]any{"storePython": "tools/python/python", "commands": map[string]any{}}})
+		"runtime": map[string]any{"repoDir": "icebath-agent", "toolsDir": "tools", "storePython": "tools/python/python",
+			"sitePackages": "venv/site", "commands": map[string]any{}}})
 	writeFile(t, filepath.Join(payload, "manifest.json"), manifest, 0o666)
-	prefix, err := VenvCommand(ctx, repo, venv, []string{"-I", "-u"})
+	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I", "-u"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prefix[0] != resolvePath(filepath.Join(payload, "tools", "python", "python")) || !containsString(prefix, "-S") || containsString(prefix, VenvPython(venv)) {
+	if containsString(prefix, VenvPython(venv)) || prefix[0] != resolvePath(filepath.Join(payload, "tools", "python", "python")) || !containsString(prefix, "-S") {
 		t.Fatalf("prefix %v", prefix)
 	}
-	cmd := exec.Command(prefix[0], append(prefix[1:], "-c", "import venv_only_dep; print(venv_only_dep.VALUE)")...)
-	cmd.Env = append(os.Environ(), "PYTHONPATH=", "PYTHONHOME=")
-	got, err := cmd.CombinedOutput()
-	if err != nil || strings.TrimSpace(string(got)) != "from the venv" {
-		t.Fatalf("payload run %q %v", got, err)
+	script := filepath.Join(tmp, "work", "script.py")
+	peWrite(t, script, "import json, sys, venv_only_dep, pth_only_dep\nprint(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.argv]))\n")
+	if got := peRunJSON(t, append(append([]string{}, prefix...), script, "a", "--flag"), tmp); !reflect.DeepEqual(got, []any{"from the venv", "from a .pth", []any{script, "a", "--flag"}}) {
+		t.Fatalf("script %v", got)
+	}
+	code := "import json, sys, venv_only_dep, pth_only_dep; print(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.argv, __name__]))"
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code, "x"), tmp); !reflect.DeepEqual(got, []any{"from the venv", "from a .pth", []any{"-c", "x"}, "__main__"}) {
+		t.Fatalf("code %v", got)
+	}
+	got := peRunJSON(t, append(append([]string{}, prefix...), "-m", "venv_only_cli", "y"), tmp).([]any)
+	argv := got[1].([]any)
+	if got[0] != "from the venv" || !reflect.DeepEqual(argv[1:], []any{"y"}) || !strings.HasSuffix(argv[0].(string), "venv_only_cli.py") {
+		t.Fatalf("module %v", got)
 	}
 }
 

@@ -120,9 +120,6 @@ func ResolveClientSocketPath(home string) (string, error) {
 	if target == "" {
 		return "", nil
 	}
-	if strings.ContainsRune(target, 0) {
-		return "", errors.New("embedded null byte")
-	}
 	if _, err := os.Stat(target); err == nil {
 		return target, nil
 	}

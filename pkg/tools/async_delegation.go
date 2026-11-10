@@ -140,7 +140,7 @@ func asyncConnect(ctx context.Context, env *Env) (state.SQLiteConn, error) {
 		return nil, NewWorkerPersistenceError("worker_delegation_ledger_unavailable")
 	}
 	path := asyncDBPath(env)
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(WithEnvHome(ctx, env), filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	if err := state.SecureStateDBFiles(path, true); err != nil {
@@ -1433,6 +1433,22 @@ func asyncRecordList() []*asyncRecord {
 		}
 	}
 	return out
+}
+
+// SwapAsyncRecords installs plain delegation records in id order the way hermes cases patch the records table, returning the restore
+func SwapAsyncRecords(ids []string, records map[string]map[string]any) (restore func()) {
+	asyncRecordsMu.Lock()
+	defer asyncRecordsMu.Unlock()
+	savedRecords, savedOrder := asyncRecords, asyncRecordOrder
+	asyncRecords, asyncRecordOrder = map[string]*asyncRecord{}, append([]string(nil), ids...)
+	for _, id := range ids {
+		asyncRecords[id] = &asyncRecord{m: records[id]}
+	}
+	return func() {
+		asyncRecordsMu.Lock()
+		defer asyncRecordsMu.Unlock()
+		asyncRecords, asyncRecordOrder = savedRecords, savedOrder
+	}
 }
 
 func asyncDeleteRecordLocked(id string) {

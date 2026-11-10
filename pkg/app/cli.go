@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/goals"
+
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -275,6 +277,8 @@ type CLI struct {
 	lastTurnFailed               bool
 	pendingModelSwitchNote       string
 	pendingSkillsReloadNote      string
+	deferToolWarnings            bool
+	reloadMCPHook                func()
 	pendingMoaConfig             map[string]any
 	pendingMoaDisableAfterTurn   bool
 	pendingMoaRestoreModel       map[string]string
@@ -418,7 +422,7 @@ type CLI struct {
 	statusBarFieldSet               map[string]bool
 	statusBarFieldSetLoaded         bool
 	voiceRecordKeyDisplayCache      string
-	goalManager                     *agent.GoalManager
+	goalManager                     *goals.GoalManager
 	automationStale                 bool
 	petKittyImageID                 int
 	petFrameIdx                     int
@@ -778,7 +782,7 @@ func parseSkillsArgument(skillsArg []string) []string {
 // SaveConfigValue persists a dot separated key into ICEBATH_HOME config.yaml, true on success
 func SaveConfigValue(ctx context.Context, keyPath string, value any) bool {
 	configPath := filepath.Join(home.Dir(ctx), "config.yaml")
-	if _, err := home.Mkdir(filepath.Dir(configPath)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(configPath)); err != nil {
 		cliLogger.Error(fmt.Sprintf("Failed to save config: %v", err))
 		return false
 	}

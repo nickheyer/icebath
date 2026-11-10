@@ -223,7 +223,7 @@ func removeEnvSource(env PoolEnv, provider string, removed PooledCredential) Rem
 			}
 		}
 	}
-	if removedFromFile, _ := RemoveEnvSetting(env.Store.Home(), envVar); removedFromFile {
+	if removedFromFile, _ := RemoveEnvSetting(env.Ctx, env.Store.Home(), envVar); removedFromFile {
 		result.Cleaned = append(result.Cleaned, fmt.Sprintf("Cleared %s from .env", envVar))
 	}
 	if inProcess && !inDotenv {

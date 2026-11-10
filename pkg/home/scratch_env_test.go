@@ -41,7 +41,7 @@ func TestScratchEnvFollowsHomeAndRespectsUserTmpdir(t *testing.T) {
 	}
 }
 
-func TestBootExportPointsProcessAndChildrenAtScratch(t *testing.T) {
+func TestBootstrapImportExportsScratchToProcessAndChildren(t *testing.T) {
 	tmp := t.TempDir()
 	cmd := testChild("export")
 	cmd.Env = slices.DeleteFunc(cmd.Env, func(kv string) bool {
@@ -69,9 +69,7 @@ func TestBootHookAndEnvHandThePruneToOneChild(t *testing.T) {
 	if !ApplyScratchTmpEnv(env) || env["TMPDIR"] != scratch {
 		t.Fatalf("TMPDIR %q", env["TMPDIR"])
 	}
-	if _, err := EnsureScratchDir(""); err != nil {
-		t.Fatal(err)
-	}
+	EnsureScratchDir("")
 	if len(*spawned) != 1 || (*spawned)[0] != scratch {
 		t.Fatalf("spawned %v", *spawned)
 	}

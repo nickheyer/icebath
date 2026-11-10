@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 )
 
 // Streams the facade prompts read from and its plain output is printed to
@@ -257,7 +258,7 @@ func MigrateConfig(ctx context.Context, h string, interactive, quiet bool) (*Mig
 			return nil, err
 		}
 	}
-	fields, err := GetMissingConfigFields(ctx, h, envRefLookup)
+	fields, err := GetMissingConfigFields(ctx, h, EnvRefLookupContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -533,7 +534,7 @@ func GetMissingSkillConfigVars(ctx context.Context, h string) ([]SkillConfigVar,
 	if len(all) == 0 {
 		return nil, nil
 	}
-	cfg, err := LoadContext(ctx, h, envRefLookup)
+	cfg, err := LoadContext(ctx, h, EnvRefLookupContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -606,11 +607,32 @@ func pyInvalidUTF8Len(raw []byte) int {
 	return n
 }
 
-// Holds the process and cross process .env write locks for the duration of fn
+var (
+	envWriteLockHoldersGuard sync.Mutex
+	envWriteLockHolders      = map[string]*pyfs.LockHolder{}
+)
+
+// Reentrancy tracker of one .env path so multiplexed profiles each get their own
+func envWriteLockHolder(envPath string) *pyfs.LockHolder {
+	envWriteLockHoldersGuard.Lock()
+	defer envWriteLockHoldersGuard.Unlock()
+	holder, ok := envWriteLockHolders[envPath]
+	if !ok {
+		holder = &pyfs.LockHolder{}
+		envWriteLockHolders[envPath] = holder
+	}
+	return holder
+}
+
+// Serializes a whole .env read modify write cycle across goroutines and processes, reentrant per goroutine
+func envWriteLock(envPath string) (func(), error) {
+	return pyfs.HolderFileLock(envPath+".lock", envWriteLockHolder(envPath), 15*time.Second,
+		fmt.Sprintf("Timed out waiting for the environment file lock (%s)", envPath))
+}
+
+// Holds the .env write lock for the duration of fn
 func withEnvWriteLock(path string, fn func() error) error {
-	envWriteMu.Lock()
-	defer envWriteMu.Unlock()
-	unlock, err := lockEnvFile(path+".lock", 15*time.Second)
+	unlock, err := envWriteLock(path)
 	if err != nil {
 		return err
 	}
@@ -649,5 +671,8 @@ func SanitizeEnvFile(h string) (int, error) {
 		}
 		return writeEnvLinesMode(h, path, sanitized, false)
 	})
+	if err == nil && fixes > 0 {
+		InvalidateEnvCache()
+	}
 	return fixes, err
 }

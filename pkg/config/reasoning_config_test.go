@@ -7,10 +7,30 @@ import (
 
 func effortOf(level string) map[string]any { return map[string]any{"enabled": true, "effort": level} }
 
-func TestParseReasoningEffortRejectsEmptyAndUnknown(t *testing.T) {
-	for _, v := range []any{"", "   ", "\t", "\n", "bogus", "very-high", "0", "off", "true", "default", nil, true} {
+func TestEmptyOrWhitespaceReturnsNone(t *testing.T) {
+	for _, v := range []string{"", "   ", "\t", "\n"} {
+		t.Run(v, func(t *testing.T) {
+			if got := ParseReasoningEffort(v); got != nil {
+				t.Fatalf("ParseReasoningEffort(%q) = %v", v, got)
+			}
+		})
+	}
+}
+
+func TestUnknownLevelsReturnNone(t *testing.T) {
+	for _, v := range []string{"bogus", "very-high", "0", "off", "true", "default"} {
+		t.Run(v, func(t *testing.T) {
+			if got := ParseReasoningEffort(v); got != nil {
+				t.Fatalf("ParseReasoningEffort(%q) = %v", v, got)
+			}
+		})
+	}
+}
+
+func TestParseReasoningEffortSpellings(t *testing.T) {
+	for _, v := range []any{nil, true} {
 		if got := ParseReasoningEffort(v); got != nil {
-			t.Errorf("ParseReasoningEffort(%q) = %v", v, got)
+			t.Errorf("ParseReasoningEffort(%v) = %v", v, got)
 		}
 	}
 	for v, want := range map[any]map[string]any{
@@ -22,35 +42,49 @@ func TestParseReasoningEffortRejectsEmptyAndUnknown(t *testing.T) {
 	}
 }
 
-func TestParseReasoningEffortDictForm(t *testing.T) {
-	if got := ParseReasoningEffort(map[string]any{"enabled": false, "effort": "low"}); !reflect.DeepEqual(got, map[string]any{"enabled": false}) {
+func TestResolvePerModelReasoningEffortExactMatch(t *testing.T) {
+	overrides := map[string]any{"claude-opus-4.5": "xhigh"}
+	if got := ResolvePerModelReasoningEffort("claude-opus-4.5", overrides); !reflect.DeepEqual(got, effortOf("xhigh")) {
 		t.Fatal(got)
-	}
-	if ParseReasoningEffort(map[string]any{"enabled": true}) != nil || ParseReasoningEffort(map[string]any{"effort": 0}) != nil {
-		t.Fatal("empty dict effort parsed")
-	}
-	if got := ParseReasoningEffort(map[string]any{"enabled": true, "effort": " thinking "}); !reflect.DeepEqual(got, effortOf("thinking")) {
-		t.Fatal(got)
-	}
-	if ParseReasoningEffort("thinking") != nil {
-		t.Fatal("bare bespoke tier accepted")
 	}
 }
 
-func TestResolvePerModelReasoningEffort(t *testing.T) {
+func TestResolvePerModelReasoningEffortEmptyModelReturnsNone(t *testing.T) {
+	if got := ResolvePerModelReasoningEffort("", map[string]any{"gpt-5": "low"}); got != nil {
+		t.Fatal(got)
+	}
+}
+
+func TestExactMatchWinsOverVariant(t *testing.T) {
+	overrides := map[string]any{"claude-opus-4.5": "high", "claude-opus-4-5": "xhigh"}
+	if got := ResolvePerModelReasoningEffort("claude-opus-4.5", overrides); !reflect.DeepEqual(got, effortOf("high")) {
+		t.Fatal(got)
+	}
+}
+
+func TestPrefixedKeyMatchesBareModel(t *testing.T) {
+	overrides := map[string]any{"ollama-local/qwen3.6:27b-q4_k_m": "low"}
+	if got := ResolvePerModelReasoningEffort("qwen3.6:27b-q4_k_m", overrides); !reflect.DeepEqual(got, effortOf("low")) {
+		t.Fatal(got)
+	}
+	if got := ResolvePerModelReasoningEffort("llama3.2:3b", overrides); got != nil {
+		t.Fatal(got)
+	}
+}
+
+func TestDirectMatchWinsOverReverseLookup(t *testing.T) {
+	overrides := map[string]any{"qwen3.6:27b": "medium", "ollama-local/qwen3.6:27b": "low"}
+	if got := ResolvePerModelReasoningEffort("qwen3.6:27b", overrides); !reflect.DeepEqual(got, effortOf("medium")) {
+		t.Fatal(got)
+	}
+}
+
+func TestResolvePerModelReasoningEffortSpellingVariants(t *testing.T) {
 	cases := []struct {
 		model     string
 		overrides map[string]any
 		want      map[string]any
 	}{
-		{"claude-opus-4.5", map[string]any{"claude-opus-4.5": "xhigh"}, effortOf("xhigh")},
-		{"", map[string]any{"gpt-5": "low"}, nil},
-		{"claude-opus-4.5", map[string]any{"claude-opus-4.5": "high", "claude-opus-4-5": "xhigh"}, effortOf("high")},
-		{"qwen3.6:27b-q4_k_m", map[string]any{"ollama-local/qwen3.6:27b-q4_k_m": "low"}, effortOf("low")},
-		{"llama3.2:3b", map[string]any{"ollama-local/qwen3.6:27b-q4_k_m": "low"}, nil},
-		{"qwen3.6:27b", map[string]any{"qwen3.6:27b": "medium", "ollama-local/qwen3.6:27b": "low"}, effortOf("medium")},
-		{"claude-opus-4-5", map[string]any{"anthropic/claude-opus-4.5": "xhigh"}, effortOf("xhigh")},
-		{"openai/gpt-5", map[string]any{"gpt-5": "low"}, effortOf("low")},
 		{"x-4.5", map[string]any{"x.4.5": "low"}, effortOf("low")},
 		{"openrouter/anthropic/x-4", map[string]any{"anthropic/x-4": "max"}, effortOf("max")},
 	}
@@ -77,6 +111,7 @@ func TestReverseLookupFollowsFileOrder(t *testing.T) {
 	}
 }
 
+// Config of the TestResolveReasoningConfig cases, overrides nil standing for the Python or {} default
 func reasoningCfg(effort any, overrides map[string]any, defaultModel string) map[string]any {
 	if overrides == nil {
 		overrides = map[string]any{}
@@ -87,37 +122,81 @@ func reasoningCfg(effort any, overrides map[string]any, defaultModel string) map
 	}
 }
 
-func TestResolveReasoningConfig(t *testing.T) {
-	if got := ResolveReasoningConfig(reasoningCfg("medium", map[string]any{"claude-opus-4.5": "xhigh"}, "gpt-5"), "claude-opus-4.5"); !reflect.DeepEqual(got, effortOf("xhigh")) {
+func TestPerModelOverrideWins(t *testing.T) {
+	cfg := reasoningCfg("medium", map[string]any{"claude-opus-4.5": "xhigh"}, "gpt-5")
+	if got := ResolveReasoningConfig(cfg, "claude-opus-4.5"); !reflect.DeepEqual(got, effortOf("xhigh")) {
 		t.Fatal(got)
 	}
-	if got := ResolveReasoningConfig(reasoningCfg("medium", map[string]any{"gpt-5": "high"}, "gpt-5"), ""); !reflect.DeepEqual(got, effortOf("high")) {
+}
+
+func TestEmptyModelDerivesFromConfigDefault(t *testing.T) {
+	cfg := reasoningCfg("medium", map[string]any{"gpt-5": "high"}, "gpt-5")
+	if got := ResolveReasoningConfig(cfg, ""); !reflect.DeepEqual(got, effortOf("high")) {
 		t.Fatal(got)
 	}
+}
+
+func TestMalformedSectionsTolerated(t *testing.T) {
 	for _, cfg := range []any{
 		map[string]any{"agent": "oops", "model": 42},
 		map[string]any{"agent": nil, "model": nil},
 		map[string]any{"agent": map[string]any{"reasoning_overrides": "bad"}},
-		nil,
 	} {
 		if got := ResolveReasoningConfig(cfg, ""); got != nil {
 			t.Fatalf("malformed %v gave %v", cfg, got)
 		}
 	}
-	if got := ResolveReasoningConfig(reasoningCfg("medium", map[string]any{"gpt-5": "turbo-max"}, "gpt-5"), "gpt-5"); !reflect.DeepEqual(got, effortOf("medium")) {
+}
+
+func TestInvalidOverrideValueFallsBackToGlobal(t *testing.T) {
+	cfg := reasoningCfg("medium", map[string]any{"gpt-5": "turbo-max"}, "gpt-5")
+	if got := ResolveReasoningConfig(cfg, "gpt-5"); !reflect.DeepEqual(got, effortOf("medium")) {
 		t.Fatal(got)
 	}
-	bespoke := reasoningCfg(map[string]any{"enabled": true, "effort": "thinking"}, map[string]any{"lumo-max": map[string]any{"enabled": true, "effort": "fast"}}, "gpt-5")
-	if got := ResolveReasoningConfig(bespoke, "gpt-5"); !reflect.DeepEqual(got, effortOf("thinking")) {
+}
+
+func TestDictFormPassesBespokeTierVerbatimGloballyAndPerModel(t *testing.T) {
+	cfg := reasoningCfg(map[string]any{"enabled": true, "effort": "thinking"}, map[string]any{"lumo-max": map[string]any{"enabled": true, "effort": "fast"}}, "gpt-5")
+	if got := ResolveReasoningConfig(cfg, "gpt-5"); !reflect.DeepEqual(got, effortOf("thinking")) {
 		t.Fatal(got)
 	}
-	if got := ResolveReasoningConfig(bespoke, "my-relay/lumo-max"); !reflect.DeepEqual(got, effortOf("fast")) {
+	if got := ResolveReasoningConfig(cfg, "my-relay/lumo-max"); !reflect.DeepEqual(got, effortOf("fast")) {
+		t.Fatal(got)
+	}
+	if ParseReasoningEffort("thinking") != nil {
+		t.Fatal("bare bespoke tier accepted")
+	}
+}
+
+func TestDictFormDisabledOrEmptyEffort(t *testing.T) {
+	if got := ParseReasoningEffort(map[string]any{"enabled": false, "effort": "low"}); !reflect.DeepEqual(got, map[string]any{"enabled": false}) {
+		t.Fatal(got)
+	}
+	if ParseReasoningEffort(map[string]any{"enabled": true}) != nil {
+		t.Fatal("dict without a level parsed")
+	}
+	if ParseReasoningEffort(map[string]any{"effort": 0}) != nil {
+		t.Fatal("falsy dict level parsed")
+	}
+}
+
+func TestResolveReasoningConfigKeepsYAMLFalseAndModelKey(t *testing.T) {
+	if got := ResolveReasoningConfig(nil, ""); got != nil {
 		t.Fatal(got)
 	}
 	if got := ResolveReasoningConfig(reasoningCfg(false, nil, "gpt-5"), ""); !reflect.DeepEqual(got, map[string]any{"enabled": false}) {
 		t.Fatalf("YAML false re-enabled thinking: %v", got)
 	}
 	if got := ResolveReasoningConfig(Tree{"model": map[string]any{"model": " gpt-5 "}, "agent": map[string]any{"reasoning_overrides": map[string]any{"gpt-5": "low"}}}, ""); !reflect.DeepEqual(got, effortOf("low")) {
+		t.Fatal(got)
+	}
+}
+
+func TestSpellingTolerantLookupWorksWithUserConfig(t *testing.T) {
+	if got := ResolvePerModelReasoningEffort("claude-opus-4-5", map[string]any{"anthropic/claude-opus-4.5": "xhigh"}); !reflect.DeepEqual(got, effortOf("xhigh")) {
+		t.Fatal(got)
+	}
+	if got := ResolvePerModelReasoningEffort("openai/gpt-5", map[string]any{"gpt-5": "low"}); !reflect.DeepEqual(got, effortOf("low")) {
 		t.Fatal(got)
 	}
 }
@@ -134,5 +213,38 @@ func TestResolvePerModelProviderRouting(t *testing.T) {
 		if got := ResolvePerModelProviderRouting(c.model, c.models); got == nil || len(got) != 0 {
 			t.Fatalf("%v gave %v", c, got)
 		}
+	}
+}
+
+func TestFallbackReResolvesReasoningConfig(t *testing.T) {
+	overrides := map[string]any{"claude-opus-4.5": "xhigh", "gemini-flash": "medium"}
+	fb := ResolvePerModelReasoningEffort("claude-opus-4.5", overrides)
+	if fb == nil || fb["effort"] != "xhigh" {
+		t.Fatalf("fallback = %v", fb)
+	}
+	primary := ResolvePerModelReasoningEffort("gemini-flash", overrides)
+	if primary == nil || primary["effort"] != "medium" {
+		t.Fatalf("primary = %v", primary)
+	}
+	if fb["effort"] == primary["effort"] {
+		t.Fatal("fallback and primary share an effort")
+	}
+}
+
+func TestFallbackToModelWithoutOverrideUsesGlobal(t *testing.T) {
+	if got := ResolvePerModelReasoningEffort("gpt-5", map[string]any{"claude-opus-4.5": "xhigh"}); got != nil {
+		t.Fatal(got)
+	}
+}
+
+func TestFallbackGlobalFallbackWithYamlFalse(t *testing.T) {
+	fbAgentCfg := map[string]any{"reasoning_effort": false}
+	effort, ok := fbAgentCfg["reasoning_effort"]
+	if !ok {
+		effort = ""
+	}
+	result := ParseReasoningEffort(effort)
+	if result == nil || result["enabled"] != false {
+		t.Fatalf("YAML false = %v", result)
 	}
 }

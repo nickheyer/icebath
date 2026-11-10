@@ -181,7 +181,7 @@ func TestDashboardFailedReauthRollbackPreservesNewerOAuthState(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeRaw("FRESH")
-	if err := storage.Restore(backup, true); err != nil {
+	if err := storage.Restore(context.Background(), backup, true); err != nil {
 		t.Fatal(err)
 	}
 	if raw, _ := os.ReadFile(storage.TokensPath()); string(raw) != "FRESH" {

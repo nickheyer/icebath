@@ -471,7 +471,7 @@ func TestShellHookAllowlistReadsUTF8SigAndRejectsBrokenFiles(t *testing.T) {
 			t.Fatalf("%q readable = %v", body, readable)
 		}
 	}
-	shellHookAtomicWrite = func(string, any, os.FileMode, ...pyjson.Option) error {
+	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...pyjson.Option) error {
 		return &os.PathError{Op: "open", Path: p, Err: errors.New("ro")}
 	}
 	logs := captureLogs(t)

@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -207,7 +208,7 @@ func TestWriterReaderPreserveResponseWithNestedFrames(t *testing.T) {
 	s := promptStore(t)
 	answer := "\u6458\u8981 before heading\r\n\r\n## Response\nsubsection\n**Response Characters:** 4\n## Response\n\nbody\n\n  "
 	job, _ := s.createJob(CreateJobOptions{Prompt: prompt("Original prompt noise\r\n**Response Characters:** 4\n## Response\n\nbody"), Schedule: "0 8 * * *", ContextFrom: "self"})
-	if _, err := s.SaveJobOutput(job.ID, framedArchive(job.Prompt, answer)); err != nil {
+	if _, err := s.SaveJobOutput(context.Background(), job.ID, framedArchive(job.Prompt, answer)); err != nil {
 		t.Fatal(err)
 	}
 	out, injected, err := s.injectContextFrom(job, "Next task")

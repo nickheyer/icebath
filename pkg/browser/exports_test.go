@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -25,14 +26,14 @@ func TestChromiumExecutableExport(t *testing.T) {
 func TestLaunchChromiumAndStopBrowserExports(t *testing.T) {
 	env := launcherTestEnv(t)
 	exe := fakeExe(t, "serving-chromium")
-	b, err := LaunchChromium(env, "meet", LaunchOptions{Executable: exe, Ephemeral: true, Headed: boolp(false), ProcEnv: environ()})
+	b, err := LaunchChromium(context.Background(), env, "meet", LaunchOptions{Executable: exe, Ephemeral: true, Headed: boolp(false), ProcEnv: environ()})
 	if err != "" || b == nil || b.PID == nil {
 		t.Fatalf("launch %q", err)
 	}
 	if getBrowser("meet") != b || !launcherPidAlive(int(*b.PID)) {
 		t.Fatal("launched browser not live and registered")
 	}
-	StopBrowser("meet")
+	StopBrowser(context.Background(), "meet")
 	gone(t, *b.PID)
 	if getBrowser("meet") != nil {
 		t.Fatal("stopped browser still registered")

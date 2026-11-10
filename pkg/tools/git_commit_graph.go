@@ -113,7 +113,7 @@ func releaseMaintenanceSlot(gitDir, lockName string) error {
 }
 
 // Runs a niced git whose whole process tree dies with the timeout or with this process, killed true on timeout
-func runBoundedGit(repoRoot string, args []string, timeout float64, env map[string]string) (int, bool, error) {
+func runBoundedGit(ctx context.Context, repoRoot string, args []string, timeout float64, env map[string]string) (int, bool, error) {
 	cmd := boundedGitCommand(args)
 	cmd.Dir = repoRoot
 	if env != nil {
@@ -126,7 +126,7 @@ func runBoundedGit(repoRoot string, args []string, timeout float64, env map[stri
 	defer os.Remove(stderr.Name())
 	defer stderr.Close()
 	cmd.Stderr = stderr
-	if err := SpawnOwned(cmd, "git "+args[0]); err != nil {
+	if err := SpawnOwned(ctx, cmd, "git "+args[0]); err != nil {
 		return 0, false, err
 	}
 	done := make(chan struct{})
@@ -237,7 +237,7 @@ func commonGitDir(repoRoot string) (string, error) {
 }
 
 // Clears what a killed writer stranded, then writes the graph bounded, niced and never lazy fetching
-func refreshCommitGraph(repoRoot, gitDir string) error {
+func refreshCommitGraph(ctx context.Context, repoRoot, gitDir string) error {
 	if commitGraphDisabled(repoRoot) {
 		toolsLogger(nil).Info(fmt.Sprintf("core.commitGraph=false in %s; not writing a commit-graph", repoRoot))
 		return nil
@@ -247,7 +247,7 @@ func refreshCommitGraph(repoRoot, gitDir string) error {
 	toolsLogger(nil).Info("git commit-graph missing or stale — writing it in background")
 	env := NoninteractiveGitEnv(nil)
 	env["GIT_NO_LAZY_FETCH"] = "1"
-	rc, killed, err := runBoundedGit(repoRoot, commitGraphWrite, commitGraphTimeout, env)
+	rc, killed, err := runBoundedGit(ctx, repoRoot, commitGraphWrite, commitGraphTimeout, env)
 	if err != nil {
 		return err
 	}
@@ -331,7 +331,7 @@ func (h *logDirOnFailureHandler) Enabled(_ context.Context, level slog.Level) bo
 }
 
 // Appends the record as an asctime, level, logger name and message line, creating the log dir on first use
-func (h *logDirOnFailureHandler) Handle(_ context.Context, r slog.Record) error {
+func (h *logDirOnFailureHandler) Handle(ctx context.Context, r slog.Record) error {
 	name := "root"
 	for _, a := range h.attrs {
 		if a.Key == "logger" {
@@ -349,7 +349,7 @@ func (h *logDirOnFailureHandler) Handle(_ context.Context, r slog.Record) error 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.file == nil {
-		if _, err := home.Mkdir(filepath.Dir(h.path)); err != nil {
+		if _, err := home.Mkdir(ctx, filepath.Dir(h.path)); err != nil {
 			return nil
 		}
 		f, err := os.OpenFile(h.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
@@ -371,19 +371,19 @@ func (h *logDirOnFailureHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (h *logDirOnFailureHandler) WithGroup(string) slog.Handler { return h }
 
 // Body of the detached child, a failure is appended to the home's agent.log and nothing is raised
-func refreshInChild(repoRoot, gitDir, logFile string) {
+func refreshInChild(ctx context.Context, repoRoot, gitDir, logFile string) {
 	logger := slog.New(&logDirOnFailureHandler{path: logFile}).With("logger", commitGraphLoggerName)
 	slog.SetDefault(logger)
-	if err := refreshCommitGraph(repoRoot, gitDir); err != nil {
+	if err := refreshCommitGraph(ctx, repoRoot, gitDir); err != nil {
 		logger.Warn(fmt.Sprintf("Background commit-graph refresh of %s failed\n%s", repoRoot, err))
 	}
 }
 
 // Runs the refresh and exits when argv carries the entry, otherwise records that this binary handles it
-func DispatchCommitGraphRefreshEntry() {
+func DispatchCommitGraphRefreshEntry(ctx context.Context) {
 	commitGraphEntryDispatched.Store(true)
 	if len(os.Args) > 4 && os.Args[1] == CommitGraphRefreshEntry {
-		refreshInChild(os.Args[2], os.Args[3], os.Args[4])
+		refreshInChild(ctx, os.Args[2], os.Args[3], os.Args[4])
 		os.Exit(0)
 	}
 }

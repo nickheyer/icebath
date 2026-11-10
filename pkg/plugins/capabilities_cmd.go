@@ -14,13 +14,13 @@ import (
 type discoveredPlugin = PluginEntry
 
 // Writes plugins.entries.<plugin>.<key> as a boolean into config.yaml
-func setPluginEntryFlag(h, pluginID, key string, value bool) error {
+func setPluginEntryFlag(ctx context.Context, h, pluginID, key string, value bool) error {
 	cfg, err := readUserConfig(h)
 	if err != nil {
 		return err
 	}
 	childMap(childMap(childMap(cfg, "plugins"), "entries"), pluginID)[key] = value
-	return saveUserConfig(h, cfg)
+	return saveUserConfig(ctx, h, cfg)
 }
 
 // Normalized capabilities a manifest declares
@@ -65,7 +65,7 @@ func capabilityConsent(ctx context.Context, console *Console, pluginID string, d
 	pending := PendingCapabilities(cfg, pluginID, declared)
 	if len(pending) == 0 {
 		if len(declared) > 0 {
-			if err := RecordConsent(h, pluginID, nil, declared); err != nil {
+			if err := RecordConsent(ctx, h, pluginID, nil, declared); err != nil {
 				return false, err
 			}
 		}
@@ -87,7 +87,7 @@ func capabilityConsent(ctx context.Context, console *Console, pluginID string, d
 		return false, nil
 	}
 	if askYes("  Grant these capabilities? [y/N] ", nil) {
-		if err := RecordConsent(h, pluginID, pending, declared); err != nil {
+		if err := RecordConsent(ctx, h, pluginID, pending, declared); err != nil {
 			return false, err
 		}
 		console.Print(fmt.Sprintf("  [green]✓[/green] Granted: %s ([dim]plugins.entries.%s.granted_capabilities[/dim])", strings.Join(pending, ", "), pluginID))
@@ -212,7 +212,7 @@ func resolveToolOverrideGrant(ctx context.Context, console *Console, key string,
 	} else {
 		granted = *allow
 	}
-	if err := setPluginEntryFlag(home.Dir(ctx), key, "allow_tool_override", granted); err != nil {
+	if err := setPluginEntryFlag(ctx, home.Dir(ctx), key, "allow_tool_override", granted); err != nil {
 		return err
 	}
 	if granted {

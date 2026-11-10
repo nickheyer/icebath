@@ -8,6 +8,9 @@ func TestWindowsDriveToWSLMount(t *testing.T) {
 			t.Fatalf("WindowsPathToWSL(%q) = %q, %v", in, got, ok)
 		}
 	}
+}
+
+func TestWindowsDriveIgnoresNonDrivePaths(t *testing.T) {
 	for _, in := range []string{"/home/alex", `relative\dir`} {
 		if got, ok := WindowsPathToWSL(in); ok {
 			t.Fatalf("WindowsPathToWSL(%q) = %q, want none", in, got)

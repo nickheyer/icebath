@@ -8,19 +8,24 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Argparse style vars of a parsed invocation with flag dests, named positionals and the top level command
+// Argparse style vars of a parsed invocation, every parser level from the root down with named positionals
 func (c *CLI) Namespace(cmd *cobra.Command, args []string) map[string]any {
 	ns := map[string]any{}
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Name == "help" {
-			return
-		}
-		key := strings.ReplaceAll(f.Name, "-", "_")
-		if d := f.Annotations["dest"]; len(d) > 0 {
-			key = d[0]
-		}
-		ns[key] = flagValue(f)
-	})
+	var chain []*cobra.Command
+	for level := cmd; level != nil; level = level.Parent() {
+		chain = append([]*cobra.Command{level}, chain...)
+	}
+	for _, level := range chain {
+		level.LocalFlags().VisitAll(func(f *pflag.Flag) {
+			if f.Name == "help" || (level == c.Root && c.Root.PersistentFlags().Lookup(f.Name) != nil) {
+				return
+			}
+			if f.Annotations["suppress"] != nil && !f.Changed {
+				return
+			}
+			ns[flagDest(f)] = flagValue(f)
+		})
+	}
 	specs := c.positionals[cmd]
 	for i, s := range specs {
 		switch {
@@ -49,8 +54,42 @@ func (c *CLI) Namespace(cmd *cobra.Command, args []string) map[string]any {
 	return ns
 }
 
-// Typed value of one flag, None for an unset flag whose default is empty
+// Namespace key of a flag, its argparse dest
+func flagDest(f *pflag.Flag) string {
+	if d := f.Annotations["dest"]; len(d) > 0 {
+		return d[0]
+	}
+	return strings.ReplaceAll(f.Name, "-", "_")
+}
+
+// Leaves each flag out of the namespace until it is given, the argparse SUPPRESS default
+func suppress(cmd *cobra.Command, names ...string) {
+	for _, n := range names {
+		_ = cmd.Flags().SetAnnotation(n, "suppress", []string{"true"})
+	}
+}
+
+// Reads each typed flag as None until it is given, the argparse None default of an int or float option
+func noneDefault(cmd *cobra.Command, names ...string) {
+	for _, n := range names {
+		_ = cmd.Flags().SetAnnotation(n, "default_none", []string{"true"})
+	}
+}
+
+// Optional value flag reading True when given without a value, the argparse nargs question mark with const True
+func constTrue(cmd *cobra.Command, name string) {
+	noOpt(cmd, name, FlagPresent)
+	_ = cmd.Flags().SetAnnotation(name, "const", []string{"true"})
+}
+
+// Typed value of one flag, None for an unset flag whose default is empty or None
 func flagValue(f *pflag.Flag) any {
+	if f.Annotations["default_none"] != nil && !f.Changed {
+		return nil
+	}
+	if f.Annotations["const"] != nil && f.Changed && f.Value.String() == FlagPresent {
+		return true
+	}
 	switch f.Value.Type() {
 	case "bool":
 		v, _ := strconv.ParseBool(f.Value.String())

@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -54,9 +55,9 @@ func isolateSessions(t *testing.T) *tools.Env {
 	pin(t, &sessionLastActivity, pydict.New[string, float64]())
 	pin(t, &sessionOwnerEnvs, pydict.New[string, *tools.Env]())
 	pin(t, &cleanupFailures, map[string]int{})
-	pin(t, &sessionStartCleanup, func(*tools.Env) {})
+	pin(t, &sessionStartCleanup, func(context.Context, *tools.Env) {})
 	pin(t, &sessionEnsureSupervisor, func(*tools.Env, string) {})
-	pin(t, &sessionLaunchChromium, func(_ *tools.Env, key string, _ LaunchOptions) (*LaunchedBrowser, string) {
+	pin(t, &sessionLaunchChromium, func(_ context.Context, _ *tools.Env, key string, _ LaunchOptions) (*LaunchedBrowser, string) {
 		pid := int64(4242)
 		return &LaunchedBrowser{Key: key, CDPURL: localTestCDP, PID: &pid}, ""
 	})
@@ -74,7 +75,7 @@ func TestCloudFailureFallsBackToLocal(t *testing.T) {
 	p := newScriptedCloud()
 	p.create = func(string) (map[string]any, error) { return nil, runtimeError("401 Unauthorized") }
 	withProvider(t, p)
-	session, err := getSessionInfo(env, "task-1")
+	session, err := getSessionInfo(context.Background(), env, "task-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestCloudFailureFallsBackToLocal(t *testing.T) {
 func TestNoProviderUsesLocalDirectly(t *testing.T) {
 	env := isolateSessions(t)
 	withProvider(t, nil)
-	session, err := getSessionInfo(env, "task-4")
+	session, err := getSessionInfo(context.Background(), env, "task-4")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +110,7 @@ func TestNoProviderUsesLocalDirectly(t *testing.T) {
 func TestCloudInvalidSessionTriggersFallback(t *testing.T) {
 	env := isolateSessions(t)
 	withProvider(t, newScriptedCloud())
-	session, err := getSessionInfo(env, "task-7")
+	session, err := getSessionInfo(context.Background(), env, "task-7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,8 +124,8 @@ func TestCloudAndLocalFailureReportsBoth(t *testing.T) {
 	p := newScriptedCloud()
 	p.create = func(string) (map[string]any, error) { return nil, runtimeError("quota") }
 	withProvider(t, p)
-	pin(t, &sessionLaunchChromium, func(*tools.Env, string, LaunchOptions) (*LaunchedBrowser, string) { return nil, "" })
-	_, err := getSessionInfo(env, "task-9")
+	pin(t, &sessionLaunchChromium, func(context.Context, *tools.Env, string, LaunchOptions) (*LaunchedBrowser, string) { return nil, "" })
+	_, err := getSessionInfo(context.Background(), env, "task-9")
 	want := "Cloud provider scriptedCloud failed (quota) and local fallback also failed (the local browser could not be started)"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err %v", err)
@@ -156,7 +157,7 @@ func TestLiveCloudSessionIsReused(t *testing.T) {
 	activeSessions.Set("task-1", existing)
 	p := newScriptedCloud()
 	withProvider(t, p)
-	session, err := getSessionInfo(env, "task-1")
+	session, err := getSessionInfo(context.Background(), env, "task-1")
 	if err != nil || !sameSession(session, existing) || p.calls != 0 {
 		t.Fatalf("session %v err %v creates %d", session, err, p.calls)
 	}
@@ -178,7 +179,7 @@ func TestExpiredCloudSessionIsReplaced(t *testing.T) {
 	}
 	withProvider(t, p)
 	pin(t, &sessionStopSupervisor, func(_ *tools.Env, key string) { events = append(events, [2]string{"stop", key}) })
-	session, err := getSessionInfo(env, "task-1")
+	session, err := getSessionInfo(context.Background(), env, "task-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,14 +202,14 @@ func TestStaleEndpointSessionIsRebuilt(t *testing.T) {
 	env := isolateSessions(t)
 	withProvider(t, nil)
 	builds := 0
-	pin(t, &sessionLaunchChromium, func(e *tools.Env, key string, _ LaunchOptions) (*LaunchedBrowser, string) {
+	pin(t, &sessionLaunchChromium, func(_ context.Context, e *tools.Env, key string, _ LaunchOptions) (*LaunchedBrowser, string) {
 		builds++
 		if builds == 1 {
 			SetLiveCDPOverride(cfgOf(e).homeKey(), "")
 		}
 		return &LaunchedBrowser{Key: key, CDPURL: localTestCDP}, ""
 	})
-	if _, err := getSessionInfo(env, "task-2"); err != nil {
+	if _, err := getSessionInfo(context.Background(), env, "task-2"); err != nil {
 		t.Fatal(err)
 	}
 	if builds != 2 {
@@ -284,9 +285,9 @@ func TestCleanupBrowserClearsTrackingState(t *testing.T) {
 		"features": map[string]any{"local": true}})
 	sessionLastActivity.Set("task-1", 123.0)
 	var stopped []string
-	pin(t, &sessionStopBrowser, func(_ *tools.Env, key string) { stopped = append(stopped, key) })
+	pin(t, &sessionStopBrowser, func(_ context.Context, _ *tools.Env, key string) { stopped = append(stopped, key) })
 	pin(t, &sessionStopSupervisor, func(*tools.Env, string) {})
-	if err := cleanupBrowser(env, "task-1"); err != nil {
+	if err := cleanupBrowser(context.Background(), env, "task-1"); err != nil {
 		t.Fatal(err)
 	}
 	if activeSessions.Has("task-1") || sessionLastActivity.Has("task-1") || !reflect.DeepEqual(stopped, []string{"task-1"}) {
@@ -303,10 +304,10 @@ func TestEmergencyCleanupClearsAllTrackingState(t *testing.T) {
 	sessionLastActivity.Set("task-1", 1.0)
 	sessionLastActivity.Set("task-2", 2.0)
 	cleaned, reaped := 0, 0
-	pin(t, &lifecycleCleanupAll, func(*tools.Env) { cleaned++ })
-	pin(t, &orphanReapRuns, func(*tools.Env) int { reaped++; return 0 })
-	emergencyCleanupAllSessions()
-	emergencyCleanupAllSessions()
+	pin(t, &lifecycleCleanupAll, func(context.Context, *tools.Env) { cleaned++ })
+	pin(t, &orphanReapRuns, func(context.Context, *tools.Env) int { reaped++; return 0 })
+	emergencyCleanupAllSessions(context.Background())
+	emergencyCleanupAllSessions(context.Background())
 	if cleaned != 1 || reaped != 1 || activeSessions.Len() != 0 || sessionLastActivity.Len() != 0 || !cleanupDone {
 		t.Fatalf("cleaned %d reaped %d sessions %d", cleaned, reaped, activeSessions.Len())
 	}
@@ -329,10 +330,10 @@ func TestJanitorTearsDownUnderOwnerProfile(t *testing.T) {
 	last, _ := sessionLastActivity.Get("t1")
 	sessionLastActivity.Set("t1", last-10)
 	seen := map[string]string{}
-	pin(t, &sessionStopBrowser, func(env *tools.Env, _ string) {
+	pin(t, &sessionStopBrowser, func(_ context.Context, env *tools.Env, _ string) {
 		seen["home"], seen["key"] = env.Home, cfgOf(env).secret("BROWSER_USE_API_KEY")
 	})
-	cleanupInactiveSessions()
+	cleanupInactiveSessions(context.Background())
 	if !reflect.DeepEqual(seen, map[string]string{"home": p1, "key": "p1-key"}) {
 		t.Fatalf("teardown ran under %v", seen)
 	}
@@ -352,16 +353,16 @@ func TestRepeatedFailuresForceReapAndCloseCloudSession(t *testing.T) {
 	p := newScriptedCloud()
 	p.close = func(id string) bool { closed = append(closed, id); return true }
 	withProvider(t, p)
-	pin(t, &lifecycleCleanupSingle, func(*tools.Env, string) error { return runtimeError("boom") })
+	pin(t, &lifecycleCleanupSingle, func(context.Context, *tools.Env, string) error { return runtimeError("boom") })
 	for range maxInactivityCleanupFailures - 1 {
-		cleanupInactiveSessions()
+		cleanupInactiveSessions(context.Background())
 	}
 	updateSessionActivity(env, "t1")
 	sessionLastActivity.Set("t1", 1.0)
 	if cleanupFailures["t1"] != maxInactivityCleanupFailures-1 || !activeSessions.Has("t1") || len(closed) != 0 {
 		t.Fatalf("failures %d closed %v", cleanupFailures["t1"], closed)
 	}
-	cleanupInactiveSessions()
+	cleanupInactiveSessions(context.Background())
 	if !reflect.DeepEqual(closed, []string{"bb-1"}) || activeSessions.Has("t1") || sessionLastActivity.Has("t1") {
 		t.Fatalf("force reap closed %v", closed)
 	}
@@ -387,9 +388,9 @@ func TestJanitorStartsOnceAndStops(t *testing.T) {
 	isolateSessions(t)
 	pin(t, &janitorTick, time.Millisecond)
 	reaps := make(chan struct{}, 4)
-	pin(t, &orphanReapRuns, func(*tools.Env) int { reaps <- struct{}{}; return 0 })
-	startCleanupThread(nil)
-	startCleanupThread(nil)
+	pin(t, &orphanReapRuns, func(context.Context, *tools.Env) int { reaps <- struct{}{}; return 0 })
+	startCleanupThread(context.Background(), nil)
+	startCleanupThread(context.Background(), nil)
 	select {
 	case <-reaps:
 	case <-time.After(5 * time.Second):

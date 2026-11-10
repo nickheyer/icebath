@@ -15,6 +15,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/builtin/googlemeet"
+	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -33,15 +34,15 @@ import (
 var version string
 
 // Hidden child modes a re-executed binary dispatches before anything else, the Python child entry scripts
-func dispatchChildEntries() {
+func dispatchChildEntries(ctx context.Context) {
 	home.DispatchScratchPruneEntry()
-	googlemeet.DispatchMeetBotEntry()
+	googlemeet.DispatchMeetBotEntry(ctx)
 	botdesktop.DispatchIdleWatchEntry()
 	gateway.DispatchStderrTimestampEntry()
-	gateway.DispatchSystemdStopMarkEntry()
+	gateway.DispatchSystemdStopMarkEntry(ctx)
 	gateway.DispatchCgroupCleanupEntry()
 	tools.DispatchDDGSWorkerEntry()
-	tools.DispatchCommitGraphRefreshEntry()
+	tools.DispatchCommitGraphRefreshEntry(ctx)
 	provider.DispatchCodexToolsMCPServerEntry()
 	cron.DispatchExternalWorkerEntry()
 }
@@ -49,6 +50,7 @@ func dispatchChildEntries() {
 // Shows icebath instead of the binary path in ps and top, never fatal
 func setProcessTitle() {
 	setProcessTitleOS("icebath")
+	releaseTitleThread()
 }
 
 // Warns when this process is PID 1 with nothing above it to reap orphans
@@ -380,9 +382,31 @@ func maybeRunBootBootstrap(projectRoot string) {
 	selfupdate.MaybeRunBootBootstrap(context.Background(), projectRoot)
 }
 
+// Prints the install's runtime command for a launch asked for it and exits with its status
+func printLauncherRuntimeCommand(pinned bool) {
+	if pinned || len(os.Args) < 2 || os.Args[1] != "--print-runtime-command" {
+		return
+	}
+	exit(pm.LaunchersMain(context.Background(), pm.RepoRoot(), os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// Finishes an owed source update and activates committed dependencies before the command is parsed
+func bootLaunch() {
+	os.Args = selfupdate.TakeRelaunchMarker(os.Args)
+	pm.SetCommandArgv(commands.NewCLI().CommandArgv)
+	if code, stop := selfupdate.BootLaunch(context.Background(), pm.RepoRoot(), os.Args); stop {
+		exit(code)
+	}
+}
+
 // One passive PM verdict on every dispatch, the problem text or empty
 func checkRuntime(installRoot string) string {
-	return selfupdate.CheckRuntime(context.Background(), installRoot)
+	problem, err := selfupdate.CheckRuntime(context.Background(), installRoot)
+	if err != nil {
+		slog.Debug("pm startup check failed", "error", err)
+		return ""
+	}
+	return problem
 }
 
 func containsArg(argv []string, want string) bool {

@@ -5,6 +5,8 @@ import (
 	"context"
 	"sort"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/i18n"
 )
 
 // Behaviour of a command typed while the agent is mid turn
@@ -33,6 +35,15 @@ type Def struct {
 	ArgumentMode string
 	Plugin       string
 	Handler      Handler
+}
+
+// Localized slash description from the catalog, the English field when no catalog carries the key
+func (d *Def) Describe(ctx context.Context) string {
+	key := "slash." + d.Name + ".description"
+	if value := i18n.T(ctx, key, "", nil); value != key {
+		return value
+	}
+	return d.Description
 }
 
 // Invocation is one typed slash command with its parsed arguments

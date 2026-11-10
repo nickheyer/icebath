@@ -70,7 +70,7 @@ func TestMultiplexedRenameUnroutesOldThenHotServesNew(t *testing.T) {
 		calls = append(calls, signal{name, pathExists(oldDir), pathExists(newDir), home.ProfileDeleted(oldDir)})
 		if name == "oldname" && pathExists(oldDir) {
 			var missing *home.ErrProfileMissing
-			if _, err := home.Mkdir(filepath.Join(oldDir, "logs")); !errors.As(err, &missing) {
+			if _, err := home.Mkdir(ctx, filepath.Join(oldDir, "logs")); !errors.As(err, &missing) {
 				t.Errorf("mkdir under the unrouted home: %v", err)
 			}
 		}

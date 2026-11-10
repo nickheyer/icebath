@@ -265,12 +265,15 @@ func (p *hostedProvider) OnMemoryWrite(ctx context.Context, action, target, cont
 	return err
 }
 
-func (p *hostedProvider) BackupPaths() []string {
-	v, _ := p.obj.Call(context.Background(), "backup_paths", nil, nil)
+func (p *hostedProvider) BackupPaths() ([]string, error) {
+	v, err := p.obj.Call(context.Background(), "backup_paths", nil, nil)
+	if err != nil {
+		return nil, err
+	}
 	items, _ := v.([]any)
 	out := make([]string, 0, len(items))
 	for _, item := range items {
 		out = append(out, hostedStr(item))
 	}
-	return out
+	return out, nil
 }

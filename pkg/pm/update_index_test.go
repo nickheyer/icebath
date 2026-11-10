@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -632,7 +633,7 @@ func peSharedPrefix(root string) string {
 	return reason
 }
 
-func TestUpdateUVRefreshUsesRealInstalledToolAndOnlyTheOwnedProject(t *testing.T) {
+func TestUVRefreshUsesRealInstalledToolAndOnlyTheOwnedProject(t *testing.T) {
 	root := t.TempDir()
 	repo, caller, lock := peDependencyProject(t, root)
 	uv := peUV(t)
@@ -661,46 +662,46 @@ func TestUpdateUVRefreshUsesRealInstalledToolAndOnlyTheOwnedProject(t *testing.T
 	lock.Save()
 	beforeLock := peRead(t, lock.Path)
 	parentEnv := os.Environ()
-	var syncs int
-	peSwap(t, &updateSyncVenvStep, func(ctx context.Context, out io.Writer) (bool, error) {
-		syncs++
-		fmt.Fprintln(out, "✓ venv")
-		return true, nil
+	var syncs []SyncVenvOptions
+	peSwap(t, &installSyncVenv, func(_ context.Context, opts SyncVenvOptions) error {
+		syncs = append(syncs, opts)
+		return nil
 	})
 	ctx := context.Background()
 	args := UpdateArgs{Names: []string{"manual-fixture"}, Check: true, UV: true}
 	var out bytes.Buffer
-	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 0 || existsOrLink(filepath.Join(repo, "uv.lock")) || syncs != 0 {
+	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 0 || existsOrLink(filepath.Join(repo, "uv.lock")) || len(syncs) != 0 {
 		t.Fatalf("check %d %v", rc, err)
-	}
-	if !strings.Contains(out.String(), "uv lock --upgrade") {
-		t.Fatalf("check output %q", out.String())
 	}
 	args.Check = false
 	if rc, err := CmdUpdate(ctx, args, io.Discard); err != nil || rc != 0 {
 		t.Fatalf("apply %d %v", rc, err)
 	}
-	if !isRegularFile(filepath.Join(repo, "uv.lock")) || existsOrLink(filepath.Join(caller, "uv.lock")) || syncs != 1 ||
+	if !strings.Contains(out.String(), "uv lock --upgrade") {
+		t.Fatalf("check output %q", out.String())
+	}
+	if !isRegularFile(filepath.Join(repo, "uv.lock")) || existsOrLink(filepath.Join(caller, "uv.lock")) ||
+		!reflect.DeepEqual(syncs, []SyncVenvOptions{{Explicit: true}}) ||
 		peRead(t, lock.Path) != beforeLock || !reflect.DeepEqual(os.Environ(), parentEnv) {
-		t.Fatal("uv refresh touched the wrong project or state")
+		t.Fatalf("uv refresh touched the wrong project or state, syncs %+v", syncs)
 	}
 	original := peRead(t, filepath.Join(repo, "uv.lock"))
-	syncs = 0
+	syncs = nil
 	peWrite(t, filepath.Join(repo, "pyproject.toml"), "invalid project [")
 	out.Reset()
-	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || peRead(t, filepath.Join(repo, "uv.lock")) != original || syncs != 0 ||
+	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || peRead(t, filepath.Join(repo, "uv.lock")) != original || len(syncs) != 0 ||
 		!strings.Contains(out.String(), "Python lock refresh failed") {
 		t.Fatalf("invalid project %d %v %q", rc, err, out.String())
 	}
 	os.Remove(managed)
 	out.Reset()
-	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || peRead(t, filepath.Join(repo, "uv.lock")) != original || syncs != 0 ||
+	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || peRead(t, filepath.Join(repo, "uv.lock")) != original || len(syncs) != 0 ||
 		!strings.Contains(out.String(), "Python lock refresh failed") {
 		t.Fatalf("missing uv %d %v %q", rc, err, out.String())
 	}
 }
 
-func TestUpdateNpmRefreshUsesItsInstalledEntryAndOwnedProject(t *testing.T) {
+func TestNpmRefreshUsesItsInstalledEntryAndOwnedProject(t *testing.T) {
 	root := t.TempDir()
 	repo, caller, lock := peDependencyProject(t, root)
 	user := filepath.Join(root, "user")
@@ -714,7 +715,11 @@ func TestUpdateNpmRefreshUsesItsInstalledEntryAndOwnedProject(t *testing.T) {
 	npm, _ := GetPackage("npm")
 	nodeEntry := filepath.Join(store, "node-fixture")
 	nodeBinary := node.Binary(nodeEntry, target)
-	writeFile(t, nodeBinary, []byte("#!/bin/sh\nexit 99\n"), 0o755)
+	if runtime.GOOS == "windows" {
+		writeFile(t, nodeBinary, []byte("MZ"), 0o666)
+	} else {
+		writeFile(t, nodeBinary, []byte("#!/bin/sh\nexit 99\n"), 0o755)
+	}
 	facts, _ := NewFacts(filepath.Join(store, "facts.json"), false)
 	lock.SetPin("node", "fixture", map[string]any{target: map[string]any{"url": "https://example.invalid/node", "sha256": strings.Repeat("1", 64)}})
 	if err := facts.Record("node", "fixture", "node-fixture", node.Env(nodeEntry, target), store, FactRecord{Target: &target, Artifacts: []string{strings.Repeat("1", 64)}}); err != nil {
@@ -726,7 +731,11 @@ func TestUpdateNpmRefreshUsesItsInstalledEntryAndOwnedProject(t *testing.T) {
 		"    Path('package-lock.json').write_text(json.dumps({\n        'name': package['name'], 'lockfileVersion': 3,\n    }), encoding='utf-8')\n"+
 		"except Exception as error:\n    raise SystemExit(str(error))\n")
 	npmBinary := npm.Binary(npmEntry, target)
-	writeFile(t, npmBinary, []byte("#!/bin/sh\nexec \""+peHostPython(t)+"\" \""+cliScript+"\" \"$@\"\n"), 0o755)
+	if runtime.GOOS == "windows" {
+		writeFile(t, filepath.Join(npmEntry, "npm.cmd"), []byte("@echo off\r\n\""+peHostPython(t)+"\" \"%~dp0lib\\npm_cli.py\" %*\r\n"), 0o666)
+	} else {
+		writeFile(t, filepath.Join(npmEntry, "bin", "npm"), []byte("#!/bin/sh\nexec \""+peHostPython(t)+"\" \""+cliScript+"\" \"$@\"\n"), 0o755)
+	}
 	lock.SetPin("npm", "fixture", map[string]any{target: map[string]any{"url": "https://example.invalid/npm", "sha256": strings.Repeat("2", 64)}})
 	if err := facts.Record("npm", "fixture", "npm-fixture", npm.Env(npmEntry, target), store, FactRecord{Target: &target, Artifacts: []string{strings.Repeat("2", 64)}}); err != nil {
 		t.Fatal(err)
@@ -734,7 +743,15 @@ func TestUpdateNpmRefreshUsesItsInstalledEntryAndOwnedProject(t *testing.T) {
 	lock.Save()
 	peWrite(t, filepath.Join(repo, "package.json"), `{"name": "pm-leg-proof", "version": "1.0.0", "private": true}`)
 	peWrite(t, filepath.Join(repo, ".npmrc"), "offline=true\naudit=false\nfund=false\nignore-scripts=true\n")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	if runtime.GOOS == "windows" {
+		systemRoot := os.Getenv("SYSTEMROOT")
+		if systemRoot == "" {
+			systemRoot = `\`
+		}
+		t.Setenv("PATH", filepath.Join(systemRoot, "System32"))
+	} else {
+		t.Setenv("PATH", "/usr/bin:/bin")
+	}
 	t.Setenv("NODE_OPTIONS", "--invalid-option-to-be-scrubbed")
 	t.Setenv("npm_config_cache", filepath.Join(root, "ambient-cache"))
 	before := os.Environ()
@@ -761,15 +778,16 @@ func TestUpdateNpmRefreshUsesItsInstalledEntryAndOwnedProject(t *testing.T) {
 	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || peRead(t, filepath.Join(repo, "package-lock.json")) != lockBytes || !strings.Contains(out.String(), "npm update failed") {
 		t.Fatalf("broken package.json %d %v %q", rc, err, out.String())
 	}
-	os.Rename(nodeBinary, nodeBinary+".held")
+	held := strings.TrimSuffix(nodeBinary, filepath.Ext(nodeBinary)) + ".held"
+	os.Rename(nodeBinary, held)
 	out.Reset()
-	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || !strings.Contains(out.String(), "not installed") {
+	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || peRead(t, filepath.Join(repo, "package-lock.json")) != lockBytes || !strings.Contains(out.String(), "not installed") {
 		t.Fatalf("missing node %d %v %q", rc, err, out.String())
 	}
-	os.Rename(nodeBinary+".held", nodeBinary)
+	os.Rename(held, nodeBinary)
 	os.Remove(npmBinary)
 	out.Reset()
-	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || !strings.Contains(out.String(), "not installed") {
+	if rc, err := CmdUpdate(ctx, args, &out); err != nil || rc != 1 || peRead(t, filepath.Join(repo, "package-lock.json")) != lockBytes || !strings.Contains(out.String(), "not installed") {
 		t.Fatalf("missing npm %d %v %q", rc, err, out.String())
 	}
 	if peRead(t, filepath.Join(repo, "package-lock.json")) != lockBytes || !reflect.DeepEqual(os.Environ(), before) || peRead(t, lock.Path) != beforeLock {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -60,7 +61,11 @@ func (s *Store) requestCancel(executionID string, reason *string) (string, error
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return "", err
 	}
-	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+	exists, err := cancelMarkerExists(path)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
 		text := defaultCancelReason
 		if reason != nil && *reason != "" {
 			text = *reason
@@ -69,24 +74,34 @@ func (s *Store) requestCancel(executionID string, reason *string) (string, error
 			return "", err
 		}
 	}
-	s.pruneStaleCancelMarkers(nil)
+	pruneCancelMarkers(s, nil)
 	return path, nil
 }
 
+// Marker presence, os.link and the stale sweep, the Path.exists, os.link and _prune_stale_markers attributes tests patch
+var (
+	cancelMarkerExists = func(path string) (bool, error) {
+		info, err := pypath.PathlibStat(path)
+		return info != nil, err
+	}
+	cancelLink         = os.Link
+	pruneCancelMarkers = (*Store).pruneStaleCancelMarkers
+)
+
 // Creates path holding body unless it exists, through a hard linked private temp or an exclusive create
 func publishFirst(path string, body []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
 	linked := func() bool {
-		tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-		if err != nil {
-			return false
-		}
 		defer os.Remove(tmp.Name())
 		_, werr := tmp.Write(body)
 		cerr := tmp.Close()
 		if werr != nil || cerr != nil {
 			return false
 		}
-		if err := os.Link(tmp.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
+		if err := cancelLink(tmp.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
 			return false
 		}
 		return true
@@ -114,8 +129,8 @@ func (s *Store) cancelRequested(executionID string) bool {
 	if err != nil {
 		return false
 	}
-	_, err = os.Stat(path)
-	return err == nil
+	exists, err := cancelMarkerExists(path)
+	return err == nil && exists
 }
 
 // Removes the execution's marker once its run has wound down
@@ -198,8 +213,8 @@ func (r *CancelRequest) Reason() string {
 	if r.reason == nil {
 		reason := defaultCancelReason
 		if path, err := r.s.cancelMarkerPath(r.executionID); err == nil {
-			if data, err := os.ReadFile(path); err == nil {
-				if recorded := pystr.Strip(strings.TrimPrefix(string(data), "\ufeff")); recorded != "" {
+			if text, ok := readUTF8Sig(path); ok {
+				if recorded := pystr.Strip(text); recorded != "" {
 					reason = recorded
 				}
 			}

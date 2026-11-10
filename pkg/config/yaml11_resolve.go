@@ -16,21 +16,28 @@ var (
 	yaml11Bool  = regexp.MustCompile(`^(?:y|Y|yes|Yes|YES|n|N|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$`)
 	yaml11Int   = regexp.MustCompile(`^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$`)
 	yaml11Float = regexp.MustCompile(`^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+]?[0-9]+)?|[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)|\.[0-9_]+(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$`)
+	yaml12Bool  = regexp.MustCompile(`^(?:true|True|TRUE|false|False|FALSE)$`)
+	yaml12Int   = regexp.MustCompile(`^(?:[-+]?0b[0-1_]+|[-+]?0o?[0-7_]+|[-+]?[0-9_]+|[-+]?0x[0-9a-fA-F_]+)$`)
+	yaml12Float = regexp.MustCompile(`^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+]?[0-9]+)?|[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)|[-+]?\.[0-9_]+(?:[eE][-+][0-9]+)?|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$`)
 )
 
-// Retags plain value scalars the way a YAML 1.1 safe loader resolves them, mapping keys keep their text
-func resolveYAML11(n *yaml.Node, isKey bool) {
+// Retags plain value scalars the way the safe loader resolves them under YAML 1.1 or 1.2, mapping keys keep their text
+func resolveYAMLVersion(n *yaml.Node, isKey, v12 bool) {
 	switch n.Kind {
 	case yaml.DocumentNode, yaml.SequenceNode:
 		for _, c := range n.Content {
-			resolveYAML11(c, false)
+			resolveYAMLVersion(c, false, v12)
 		}
 	case yaml.MappingNode:
 		for i, c := range n.Content {
-			resolveYAML11(c, i%2 == 0)
+			resolveYAMLVersion(c, i%2 == 0, v12)
 		}
 	case yaml.ScalarNode:
 		if isKey || n.Style != 0 {
+			return
+		}
+		if v12 {
+			resolveYAML12Scalar(n)
 			return
 		}
 		switch v := n.Value; {
@@ -48,6 +55,53 @@ func resolveYAML11(n *yaml.Node, isKey bool) {
 			n.Tag = "!!str"
 		}
 	}
+}
+
+// Retags one plain scalar by the YAML 1.2 resolvers, where leading zero ints stay decimal and 0o marks octal
+func resolveYAML12Scalar(n *yaml.Node) {
+	switch v := n.Value; {
+	case yaml12Bool.MatchString(v):
+		n.Tag, n.Value = "!!bool", strconv.FormatBool(strings.EqualFold(v, "true"))
+	case yaml12Int.MatchString(v):
+		if text, ok := yaml12IntText(v); ok {
+			n.Tag, n.Value = "!!int", text
+		}
+	case yaml12Float.MatchString(v):
+		f, err := strconv.ParseFloat(strings.ToLower(strings.ReplaceAll(v, "_", "")), 64)
+		if err == nil {
+			n.Tag, n.Value = "!!float", strconv.FormatFloat(f, 'g', -1, 64)
+		}
+	case n.Tag == "!!int" || n.Tag == "!!float":
+		n.Tag = "!!str"
+	}
+}
+
+// Decimal text of a YAML 1.2 int with underscores and 0b, 0o and 0x prefixes
+func yaml12IntText(v string) (string, bool) {
+	s := strings.ReplaceAll(v, "_", "")
+	sign := ""
+	if s != "" && (s[0] == '-' || s[0] == '+') {
+		if s[0] == '-' {
+			sign = "-"
+		}
+		s = s[1:]
+	}
+	n := new(big.Int)
+	var ok bool
+	switch {
+	case strings.HasPrefix(s, "0b"):
+		_, ok = n.SetString(s[2:], 2)
+	case strings.HasPrefix(s, "0x"):
+		_, ok = n.SetString(s[2:], 16)
+	case strings.HasPrefix(s, "0o"):
+		_, ok = n.SetString(s[2:], 8)
+	default:
+		_, ok = n.SetString(s, 10)
+	}
+	if !ok {
+		return "", false
+	}
+	return sign + n.String(), true
 }
 
 // Decimal text of a YAML 1.1 int with underscores, base prefixes, leading zero octal and base 60 parts

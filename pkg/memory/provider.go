@@ -157,8 +157,8 @@ type Provider interface {
 	SaveConfig(values map[string]any, icebathHome string) error
 	// Mirrors a built in memory tool write, previous_content in metadata for replace and remove
 	OnMemoryWrite(ctx context.Context, action, target, content string, metadata map[string]any) error
-	// Absolute paths of provider state outside the home for backup and import
-	BackupPaths() []string
+	// Absolute paths of provider state outside the home for backup and import, the error a failing provider raised
+	BackupPaths() ([]string, error)
 }
 
 // Default tool call refusal of a provider that exposes no such tool
@@ -227,7 +227,7 @@ func (BaseProvider) OnMemoryWrite(ctx context.Context, action, target, content s
 	return nil
 }
 
-func (BaseProvider) BackupPaths() []string { return []string{} }
+func (BaseProvider) BackupPaths() ([]string, error) { return []string{}, nil }
 
 // Spawner context values without its cancellation, so a background job keeps the profile scope
 func CtxBound(ctx context.Context) context.Context {

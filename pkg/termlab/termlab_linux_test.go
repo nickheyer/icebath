@@ -14,6 +14,7 @@ import (
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // Environment variable naming the directory failing tests save screenshots and streams into
@@ -30,6 +31,7 @@ var (
 
 // Runs the helper modes of the binary, builds icebath once when the lab tools exist, then the tests
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	RunHelper()
 	if Missing("Xvfb", "import") == nil {
 		Icebath()

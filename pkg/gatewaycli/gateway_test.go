@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 )
@@ -23,12 +23,13 @@ import (
 const lockHolderEnv = "ICEBATH_GATEWAYCLI_TEST_LOCK_HOLDER"
 
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	if os.Getenv(lockHolderEnv) == "1" {
-		if !gateway.AcquireGatewayRuntimeLock() {
+		if !gateway.AcquireGatewayRuntimeLock(context.Background()) {
 			fmt.Fprintln(os.Stderr, "could not acquire gateway.lock")
 			os.Exit(1)
 		}
-		if err := gateway.WritePidFile(); err != nil {
+		if err := gateway.WritePidFile(context.Background()); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -93,7 +94,7 @@ func exitedPid(t *testing.T) int {
 		t.Fatal(err)
 	}
 	pid := child.ProcessState.Pid()
-	for deadline := time.Now().Add(10 * time.Second); syscall.Kill(pid, 0) == nil; time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(10 * time.Second); processListed(pid); time.Sleep(20 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("exited child %d never left the process table", pid)
 		}

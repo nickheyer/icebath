@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"math/big"
 	"os"
@@ -61,8 +62,10 @@ func LSPRuntime(env *Env) *lsp.Runtime {
 		DelegatedChildEnv: func(child map[string]string) map[string]string {
 			return delegatedChildSubprocessEnv(profile, child)
 		},
-		OwnProcessGroups:             OwnProcessGroups,
-		RegisterChild:                func(pid int, purpose string) bool { return RegisterChild(pid, purpose, "") },
+		OwnProcessGroups: OwnProcessGroups,
+		RegisterChild: func(ctx context.Context, pid int, purpose string) bool {
+			return RegisterChild(WithEnvHome(ctx, env), pid, purpose, "")
+		},
 		ReleaseProcessGroupOnceEmpty: ReleaseProcessGroupOnceEmpty,
 		Opcodes:                      lspOpcodes,
 		DecodeJSON:                   lspDecodeJSON,

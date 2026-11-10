@@ -104,11 +104,11 @@ func TestOptOutSeedsEssentialSkillsOnlyAndRemovesPristine(t *testing.T) {
 	}
 	mustSync(t, s)
 	os.WriteFile(filepath.Join(s.SkillsDir(), "old-skill", "SKILL.md"), []byte("# mine"), 0o644)
-	dry, _ := s.RemovePristineBundledSkills(true)
+	dry, _ := s.RemovePristineBundledSkills(context.Background(), true)
 	if !reflect.DeepEqual(dry["removed"], []string{"icebath-agent", "new-skill"}) || !isDir(filepath.Join(s.SkillsDir(), "category", "new-skill")) {
 		t.Fatal(dry)
 	}
-	res, _ := s.RemovePristineBundledSkills(false)
+	res, _ := s.RemovePristineBundledSkills(context.Background(), false)
 	skipped := res["skipped"].([]map[string]any)
 	if !reflect.DeepEqual(res["removed"], []string{"icebath-agent", "new-skill"}) || len(skipped) != 1 || skipped[0]["reason"] != "user-modified (kept)" {
 		t.Fatal(res)

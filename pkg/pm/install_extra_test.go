@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestInstallExtraSyncsOnlyTheNamedExtras(t *testing.T) {
+func TestExtraSyncsOnlyTheNamedExtras(t *testing.T) {
 	_, calls := declSynced(t)
 	code, err := CmdInstall(context.Background(), InstallArgs{Names: []string{}, Extra: []string{"otlp", "mcp", "otlp"}})
 	if code != 0 || err != nil || !reflect.DeepEqual(*calls, [][]string{{"otlp", "mcp"}}) {
@@ -16,7 +16,7 @@ func TestInstallExtraSyncsOnlyTheNamedExtras(t *testing.T) {
 	}
 }
 
-func TestInstallExtraColdRuntimeRefusalNamesTheExtra(t *testing.T) {
+func TestColdRuntimeRefusalNamesTheExtra(t *testing.T) {
 	tmp := ieClientEnv(t)
 	t.Setenv(EnvDisableLazyInstalls, "1")
 	_, err := request(context.Background(), "sync_venv", map[string]any{"extras": []any{"bedrock"}, "explicit": false, "repair": false}, workerHooks{}, tmp)

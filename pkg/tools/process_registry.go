@@ -622,6 +622,13 @@ func (r *ProcessRegistry) insertRunning(s *ProcessSession) {
 	r.running[s.ID] = s
 }
 
+// InsertRunning records a session in the running table under the registry lock
+func (r *ProcessRegistry) InsertRunning(s *ProcessSession) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.insertRunning(s)
+}
+
 // Records the first insertion order of a session into the finished table, caller holds the lock
 func (r *ProcessRegistry) insertFinished(s *ProcessSession) {
 	if s.finSeq == 0 {
@@ -629,6 +636,13 @@ func (r *ProcessRegistry) insertFinished(s *ProcessSession) {
 		s.finSeq = r.seq
 	}
 	r.finished[s.ID] = s
+}
+
+// InsertFinished records a session in the finished table under the registry lock
+func (r *ProcessRegistry) InsertFinished(s *ProcessSession) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.insertFinished(s)
 }
 
 // Sessions of a table in first insertion order
@@ -850,6 +864,11 @@ func (r *ProcessRegistry) checkWatchPatterns(s *ProcessSession, newText string) 
 	if lifetimeExhausted {
 		r.emitWatchDisabled(s, 0, fmt.Sprintf("reached the lifetime cap of %d delivered matches. ", WatchLifetimeMaxHits))
 	}
+}
+
+// CheckWatchPatterns scans a freshly read chunk for watch patterns and queues rate limited notifications
+func (r *ProcessRegistry) CheckWatchPatterns(s *ProcessSession, newText string) {
+	r.checkWatchPatterns(s, newText)
 }
 
 // Queues the one shot watch_disabled summary
@@ -1141,7 +1160,7 @@ func (r *ProcessRegistry) trackStarted(s *ProcessSession, reader func()) {
 }
 
 // PTY spawn for interactive CLI tools
-func (r *ProcessRegistry) spawnLocalPty(s *ProcessSession, safeCommand string, envVars map[string]string) (*ProcessSession, error) {
+func (r *ProcessRegistry) spawnLocalPty(ctx context.Context, s *ProcessSession, safeCommand string, envVars map[string]string) (*ProcessSession, error) {
 	if !ptyAvailable() {
 		return nil, errPtyUnavailable
 	}
@@ -1170,7 +1189,7 @@ func (r *ProcessRegistry) spawnLocalPty(s *ProcessSession, safeCommand string, e
 	s.Pid = pty.Pid()
 	s.HostStartTime = safeHostStartTime(s.Pid)
 	s.pty = pty
-	r.trackStarted(s, func() { r.ptyReaderLoop(s) })
+	r.trackStarted(s, func() { r.ptyReaderLoop(WithEnvHome(ctx, s.env), s) })
 	return s, nil
 }
 
@@ -1189,7 +1208,7 @@ type SpawnLocalOptions struct {
 }
 
 // SpawnLocal starts a background process on the host, pipe mode or a PTY with pipe fallback
-func (r *ProcessRegistry) SpawnLocal(env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error) {
+func (r *ProcessRegistry) SpawnLocal(ctx context.Context, env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error) {
 	parentPath := ""
 	if o.RestoreLoginPath {
 		spawnEnv, err := r.spawnEnv(env, o.EnvVars)
@@ -1208,7 +1227,7 @@ func (r *ProcessRegistry) SpawnLocal(env *Env, command string, o SpawnLocalOptio
 	ptyScopeAttempted := false
 	log := workerOutputLog(env, s.ID)
 	if o.UsePty && log == "" {
-		spawned, err := r.spawnLocalPty(s, safeCommand, o.EnvVars)
+		spawned, err := r.spawnLocalPty(WithEnvHome(ctx, env), s, safeCommand, o.EnvVars)
 		if err == nil {
 			return spawned, nil
 		}
@@ -1253,7 +1272,7 @@ func (r *ProcessRegistry) SpawnLocal(env *Env, command string, o SpawnLocalOptio
 			return nil, err
 		}
 	}
-	proc, err := r.spawnJob(s, spawnArgv, o.PersistOnRelease, s.Cwd, spawnEnv, logFile)
+	proc, err := r.spawnJob(WithEnvHome(ctx, env), s, spawnArgv, o.PersistOnRelease, s.Cwd, spawnEnv, logFile)
 	if logFile != nil {
 		logFile.Close()
 	}
@@ -1264,15 +1283,15 @@ func (r *ProcessRegistry) SpawnLocal(env *Env, command string, o SpawnLocalOptio
 	s.Pid = proc.Pid()
 	s.HostStartTime = safeHostStartTime(s.Pid)
 	if log != "" {
-		r.trackStarted(s, func() { r.logReaderLoop(s) })
+		r.trackStarted(s, func() { r.logReaderLoop(WithEnvHome(ctx, env), s) })
 	} else {
-		r.trackStarted(s, func() { r.readerLoop(s) })
+		r.trackStarted(s, func() { r.readerLoop(WithEnvHome(ctx, env), s) })
 	}
 	return s, nil
 }
 
 // AdoptLocal takes over a still running foreground process as a tracked background session
-func (r *ProcessRegistry) AdoptLocal(env *Env, proc *ExecProcess, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar string, notifyOnComplete bool) *ProcessSession {
+func (r *ProcessRegistry) AdoptLocal(ctx context.Context, env *Env, proc *ExecProcess, command, cwd, taskID, sessionKey, ownerTaskID, outputSoFar string, notifyOnComplete bool) *ProcessSession {
 	s := r.newSession(env, command, taskID, ownerTaskID, sessionKey, cwd)
 	s.Process = proc
 	s.Pid = proc.Pid()
@@ -1282,7 +1301,7 @@ func (r *ProcessRegistry) AdoptLocal(env *Env, proc *ExecProcess, command, cwd, 
 	if outputSoFar != "" {
 		s.AppendOutput(outputSoFar)
 	}
-	r.trackStarted(s, func() { r.readerLoop(s) })
+	r.trackStarted(s, func() { r.readerLoop(WithEnvHome(ctx, env), s) })
 	return s
 }
 
@@ -1322,7 +1341,7 @@ func (r *ProcessRegistry) SpawnViaEnv(ctx context.Context, env *Env, e Environme
 }
 
 // Reads stdout of a local process, stopping shortly after the direct child exits on an orphaned pipe
-func (r *ProcessRegistry) readerLoop(s *ProcessSession) {
+func (r *ProcessRegistry) readerLoop(ctx context.Context, s *ProcessSession) {
 	headNoise := true
 	decoder := &utf8Decoder{}
 	appendChunk := func(chunk string) {
@@ -1380,7 +1399,7 @@ func (r *ProcessRegistry) readerLoop(s *ProcessSession) {
 		}
 		idleAfterExit = 0
 	}
-	r.finishReader(s, decoder, appendChunk, "Process",
+	r.finishReader(WithEnvHome(ctx, s.env), s, decoder, appendChunk, "Process",
 		func() error { _, err := proc.Wait(0); return err },
 		func() *int {
 			code, done := proc.Poll()
@@ -1392,7 +1411,7 @@ func (r *ProcessRegistry) readerLoop(s *ProcessSession) {
 }
 
 // Reader teardown, flushes the decoder, reaps the child and records the exit
-func (r *ProcessRegistry) finishReader(s *ProcessSession, decoder *utf8Decoder, appendFn func(string), label string, wait func() error, exitCode func() *int) {
+func (r *ProcessRegistry) finishReader(ctx context.Context, s *ProcessSession, decoder *utf8Decoder, appendFn func(string), label string, wait func() error, exitCode func() *int) {
 	if tail := decoder.finish(); tail != "" {
 		appendFn(tail)
 	}
@@ -1403,14 +1422,14 @@ func (r *ProcessRegistry) finishReader(s *ProcessSession, decoder *utf8Decoder, 
 		}
 		toolsLogger(s.env).Warn(fmt.Sprintf("%s wait failed; recording known exit status: %v", label, err))
 	}
-	r.finishExited(s, exitCode(), "exited", "", true)
+	r.finishExited(WithEnvHome(ctx, s.env), s, exitCode(), "exited", "", true)
 }
 
 // Polls a sandbox log file for non local backends
 func (r *ProcessRegistry) envPollerLoop(s *ProcessSession, e Environment, logPath, pidPath, exitPath string) {
 	prevOutputBytes := 0
 	ctx := context.Background()
-	lost := func() { r.finishExited(s, procIntPtr(-1), "lost", "backend_lost", true) }
+	lost := func() { r.finishExited(WithEnvHome(ctx, s.env), s, procIntPtr(-1), "lost", "backend_lost", true) }
 	for !s.isExited() {
 		time.Sleep(2 * time.Second)
 		res, err := e.Execute(ctx, logDeltaCommand(shQuote(logPath), prevOutputBytes), ExecOptions{Timeout: 10})
@@ -1478,7 +1497,7 @@ func (r *ProcessRegistry) envPollerLoop(s *ProcessSession, e Environment, logPat
 						code = n
 					}
 				}
-				r.finishExited(s, &code, "exited", "", true)
+				r.finishExited(WithEnvHome(ctx, s.env), s, &code, "exited", "", true)
 				return
 			}
 		}
@@ -1488,7 +1507,7 @@ func (r *ProcessRegistry) envPollerLoop(s *ProcessSession, e Environment, logPat
 func procIntPtr(n int) *int { return &n }
 
 // Reads output from a PTY process, answering terminal queries on POSIX
-func (r *ProcessRegistry) ptyReaderLoop(s *ProcessSession) {
+func (r *ProcessRegistry) ptyReaderLoop(ctx context.Context, s *ProcessSession) {
 	pty := s.pty
 	decoder := &utf8Decoder{}
 	var responder *PtyQueryResponder
@@ -1524,7 +1543,7 @@ func (r *ProcessRegistry) ptyReaderLoop(s *ProcessSession) {
 			ingest(tail)
 		}
 	}
-	r.finishReader(s, decoder, ingest, "PTY", func() error { pty.Wait(); return nil }, pty.ExitStatus)
+	r.finishReader(WithEnvHome(ctx, s.env), s, decoder, ingest, "PTY", func() error { pty.Wait(); return nil }, pty.ExitStatus)
 }
 
 // Buffers a freshly read chunk, then scans watch patterns and streams it live
@@ -1539,15 +1558,15 @@ func (r *ProcessRegistry) ingestOutput(s *ProcessSession, text string, unlessExi
 }
 
 // Marks a reader observed exit under the session lock and finishes
-func (r *ProcessRegistry) finishExited(s *ProcessSession, exitCode *int, reason, source string, fromReader bool) {
+func (r *ProcessRegistry) finishExited(ctx context.Context, s *ProcessSession, exitCode *int, reason, source string, fromReader bool) {
 	s.mu.Lock()
 	s.markExited(exitCode, reason, source)
 	s.mu.Unlock()
-	r.moveToFinished(s, fromReader)
+	r.moveToFinished(WithEnvHome(ctx, s.env), s, fromReader)
 }
 
 // Moves a session from running to finished, only the first move queues the completion
-func (r *ProcessRegistry) moveToFinished(s *ProcessSession, fromReader bool) bool {
+func (r *ProcessRegistry) moveToFinished(ctx context.Context, s *ProcessSession, fromReader bool) bool {
 	r.mu.Lock()
 	_, wasRunning := r.running[s.ID]
 	if wasRunning {
@@ -1555,7 +1574,7 @@ func (r *ProcessRegistry) moveToFinished(s *ProcessSession, fromReader bool) boo
 		s.mu.Lock()
 		s.ExitedAt = nowSeconds()
 		s.mu.Unlock()
-		saveCompletedResult(s.env, s)
+		saveCompletedResult(WithEnvHome(ctx, s.env), s.env, s)
 		delete(r.running, s.ID)
 	}
 	claimed := s.finishClaimed
@@ -1706,7 +1725,7 @@ func (r *ProcessRegistry) WaitForPendingCompletions(ctx context.Context, env *En
 			if remaining <= 0 {
 				break
 			}
-			r.reconcileLocalExit(s)
+			r.reconcileLocalExit(WithEnvHome(ctx, env), s)
 			if r.refreshDetachedSession(s) == nil {
 				break
 			}
@@ -1900,7 +1919,7 @@ func (r *ProcessRegistry) resolvePrefix(env *Env, sessionID string) *ProcessSess
 }
 
 // Reconciles exited against the real child state when a descendant holds the pipe open
-func (r *ProcessRegistry) reconcileLocalExit(s *ProcessSession) {
+func (r *ProcessRegistry) reconcileLocalExit(ctx context.Context, s *ProcessSession) {
 	if s == nil || s.isExited() {
 		return
 	}
@@ -1943,7 +1962,7 @@ func (r *ProcessRegistry) reconcileLocalExit(s *ProcessSession) {
 	s.markExited(&rc, "exited", "")
 	s.mu.Unlock()
 	toolsLogger(s.env).Info(fmt.Sprintf("Reconciled session %s: direct child exited with code %d but reader was still blocked (orphaned pipe). Flipped to exited.", s.ID, rc))
-	r.moveToFinished(s, false)
+	r.moveToFinished(WithEnvHome(ctx, s.env), s, false)
 }
 
 // Session id, command and running or exited status, read under the session lock
@@ -1956,12 +1975,12 @@ func statusHead(s *ProcessSession) map[string]any {
 }
 
 // Poll checks status and returns the new output preview of a background process
-func (r *ProcessRegistry) Poll(env *Env, sessionID string) map[string]any {
+func (r *ProcessRegistry) Poll(ctx context.Context, env *Env, sessionID string) map[string]any {
 	s := r.Get(env, sessionID)
 	if s == nil || r.uncollectedGone(s) {
 		return notFoundResult(sessionID)
 	}
-	r.reconcileLocalExit(s)
+	r.reconcileLocalExit(WithEnvHome(ctx, env), s)
 	s.mu.Lock()
 	preview := outputTail(s, 1000)
 	exited, finalizing := s.Exited, readerFinalizing(s)
@@ -2086,7 +2105,7 @@ func (r *ProcessRegistry) Wait(ctx context.Context, env *Env, sessionID string, 
 		if s == nil {
 			return notFoundResult(sessionID)
 		}
-		r.reconcileLocalExit(s)
+		r.reconcileLocalExit(WithEnvHome(ctx, env), s)
 		var result map[string]any
 		s.mu.Lock()
 		exited := s.Exited && !readerFinalizing(s)
@@ -2151,7 +2170,7 @@ func exitSnapshot(s *ProcessSession, status string) map[string]any {
 }
 
 // KillProcess kills a background process and returns its output snapshot
-func (r *ProcessRegistry) KillProcess(env *Env, sessionID, source string, consumeOutput bool) map[string]any {
+func (r *ProcessRegistry) KillProcess(ctx context.Context, env *Env, sessionID, source string, consumeOutput bool) map[string]any {
 	if source == "" {
 		source = "process.kill"
 	}
@@ -2218,8 +2237,8 @@ func (r *ProcessRegistry) KillProcess(env *Env, sessionID, source string, consum
 	s.TerminationSource = source
 	result := map[string]any{"status": "killed", "session_id": s.ID, "completion_reason": s.CompletionReason, "termination_source": s.TerminationSource}
 	s.mu.Unlock()
-	if !r.moveToFinished(s, false) {
-		saveCompletedResult(env, s)
+	if !r.moveToFinished(WithEnvHome(ctx, env), s, false) {
+		saveCompletedResult(WithEnvHome(ctx, env), env, s)
 	}
 	r.writeCheckpoint(env, nil)
 	for k, v := range output {
@@ -2372,7 +2391,7 @@ func (r *ProcessRegistry) CountRunning() int {
 }
 
 // ListSessions lists running and recently finished processes for a task and or session key
-func (r *ProcessRegistry) ListSessions(env *Env, taskID, sessionKey string, includeRetained bool) []map[string]any {
+func (r *ProcessRegistry) ListSessions(ctx context.Context, env *Env, taskID, sessionKey string, includeRetained bool) []map[string]any {
 	order := []string{}
 	sessions := map[string]*ProcessSession{}
 	add := func(s *ProcessSession) {
@@ -2412,7 +2431,7 @@ func (r *ProcessRegistry) ListSessions(env *Env, taskID, sessionKey string, incl
 	}
 	result := []map[string]any{}
 	for _, s := range all {
-		r.reconcileLocalExit(s)
+		r.reconcileLocalExit(WithEnvHome(ctx, env), s)
 		s.mu.Lock()
 		status := "running"
 		if s.Exited {
@@ -2555,12 +2574,12 @@ func (r *ProcessRegistry) SnapshotRunningIDs(taskID string) map[string]bool {
 var lifecycleKillSources = setOf("kill_all", "gateway_turn_timeout", "agent_close")
 
 // KillStartedSince kills the task's processes created after the baseline, consuming their output
-func (r *ProcessRegistry) KillStartedSince(env *Env, taskID string, baselineIDs map[string]bool, source string) int {
-	return r.KillAll(env, taskID, baselineIDs, source, true)
+func (r *ProcessRegistry) KillStartedSince(ctx context.Context, env *Env, taskID string, baselineIDs map[string]bool, source string) int {
+	return r.KillAll(WithEnvHome(ctx, env), env, taskID, baselineIDs, source, true)
 }
 
 // KillAll kills every running process, or only those the task spawned, returning how many it stopped
-func (r *ProcessRegistry) KillAll(env *Env, taskID string, excludeIDs map[string]bool, source string, consumeOutput bool) int {
+func (r *ProcessRegistry) KillAll(ctx context.Context, env *Env, taskID string, excludeIDs map[string]bool, source string, consumeOutput bool) int {
 	if source == "" {
 		source = "kill_all"
 	}
@@ -2577,7 +2596,7 @@ func (r *ProcessRegistry) KillAll(env *Env, taskID string, excludeIDs map[string
 	r.mu.Unlock()
 	count := 0
 	for _, s := range targets {
-		res := r.KillProcess(env, s.ID, source, consumeOutput)
+		res := r.KillProcess(WithEnvHome(ctx, env), env, s.ID, source, consumeOutput)
 		status := asStr(res["status"])
 		if _, failed := res["scope_stop_failed"]; (status == "killed" || status == "already_exited") && !failed {
 			count++
@@ -2641,7 +2660,7 @@ func (r *ProcessRegistry) pruneIfNeeded() {
 }
 
 // Pipe job in its own session, owned by the supervisor unless the job must outlive this process
-func (r *ProcessRegistry) spawnJob(s *ProcessSession, argv []string, persistOnRelease bool, cwd string, env map[string]string, logFile *os.File) (*ExecProcess, error) {
+func (r *ProcessRegistry) spawnJob(ctx context.Context, s *ProcessSession, argv []string, persistOnRelease bool, cwd string, env map[string]string, logFile *os.File) (*ExecProcess, error) {
 	configure := func(c *exec.Cmd) {
 		c.Dir = cwd
 		c.Env = envSlice(env)
@@ -2659,7 +2678,7 @@ func (r *ProcessRegistry) spawnJob(s *ProcessSession, argv []string, persistOnRe
 	}
 	if r.ownsJob(persistOnRelease) {
 		ownProcessGroups([]int{proc.Pid()})
-		RegisterChild(proc.Pid(), "terminal-background", "")
+		RegisterChild(WithEnvHome(ctx, s.env), proc.Pid(), "terminal-background", "")
 		s.ownedPgid = proc.Pid()
 	}
 	return proc, nil

@@ -9,182 +9,201 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
+	"sync/atomic"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // BangUsageHint explains bare exclamation mark input
 const BangUsageHint = "Usage: !<command> — run a shell command without spending a model turn (e.g. !git status)"
 
-// BangDefaultTimeout caps one bang command well under the terminal tool foreground limit
-const BangDefaultTimeout = 120 * time.Second
+// BangDefaultTimeout caps one bang command in seconds well under the terminal tool foreground limit
+const BangDefaultTimeout = 120
 
-// IsBangCommand reports whether text is a shell mode submission with a leading exclamation mark
-func IsBangCommand(text string) bool {
-	return strings.HasPrefix(strings.TrimSpace(text), "!")
+// Child environment a bang command runs with, swapped by tests
+var bangEnv = func(ctx context.Context, env *tools.Env) (map[string]string, error) {
+	return tools.BuildSubprocessEnv(ctx, env, tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
 }
 
-// ParseBangCommand returns the shell command inside a bang submission, empty when bare
+// Shell process a bang command launches, swapped by tests
+var bangShellCommand = pysubprocess.ShellCommand
+
+// Reports a shell mode submission, a string whose stripped text starts with an exclamation mark
+func IsBangCommand(text any) bool {
+	s, ok := text.(string)
+	return ok && strings.HasPrefix(pystr.Strip(s), "!")
+}
+
+// Shell command inside a bang submission with exactly one leading mark removed, empty when bare
 func ParseBangCommand(text string) string {
 	if !IsBangCommand(text) {
 		return ""
 	}
-	return strings.TrimSpace(strings.TrimSpace(text)[1:])
+	return pystr.Strip(pystr.Strip(text)[1:])
 }
 
-func envEnabled(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+// Reports whether an environment variable holds a truthy string
+func envVarEnabled(name string) bool {
+	switch pystr.Lower(pystr.Strip(os.Getenv(name))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
 	return false
 }
 
-// BangShellEnabled is true only for interactive local sessions, never gateway, cron or platform runs
+// Reports an interactive local session, false for gateway, cron or platform runs
 func BangShellEnabled() bool {
-	return !(envEnabled("ICEBATH_GATEWAY_SESSION") || envEnabled("ICEBATH_CRON_SESSION") ||
-		strings.TrimSpace(os.Getenv("ICEBATH_SESSION_PLATFORM")) != "")
+	return !(envVarEnabled("ICEBATH_GATEWAY_SESSION") || envVarEnabled("ICEBATH_CRON_SESSION") ||
+		pystr.Strip(os.Getenv("ICEBATH_SESSION_PLATFORM")) != "")
 }
 
-// Approval is the terminal guard verdict for a user typed command
-type Approval struct {
-	Approved    bool
-	Message     string
-	Description string
-}
-
-// BangRunner executes bang commands with the sanitized environment and approval gate of the terminal tool
-type BangRunner struct {
-	Env     func() []string
-	Approve func(command string) Approval
-	CWD     func(sessionKey string) string
-	Timeout time.Duration
-	Shell   []string
-}
-
-// ErrBangNoEnv means no sanitized environment builder was wired so the launch is refused
-var ErrBangNoEnv = errors.New("bang shell: no sanitized environment builder bound")
-
-// ErrBangNoGuard means no approval guard was wired so the command is refused
-var ErrBangNoGuard = errors.New("bang shell: no approval guard bound")
-
-// CommandDeniedText formats the refusal shown for a guarded command
-func CommandDeniedText(a Approval) string {
-	if a.Message != "" {
-		return a.Message
+// Directory a bang command runs in, the session cd record then the configured terminal cwd, empty for none
+func ResolveBangCwd(env *tools.Env, sessionKey string) string {
+	if cwd, ok := tools.GetSessionCwd(env, sessionKey); ok && cwd != "" {
+		return cwd
 	}
-	reason := a.Description
-	if reason == "" {
-		reason = "flagged as dangerous"
-	}
-	return "Command denied: " + reason
-}
-
-// BangExitedText formats the trailing exit status line
-func BangExitedText(code int) string { return fmt.Sprintf("! exited %d", code) }
-
-// Handle runs a bang submission end to end and reports whether it was handled
-func (b *BangRunner) Handle(ctx context.Context, text, sessionKey string, emit func(string)) (bool, error) {
-	if !IsBangCommand(text) || !BangShellEnabled() {
-		return false, nil
-	}
-	command := ParseBangCommand(text)
-	if command == "" {
-		emit(BangUsageHint)
-		return true, nil
-	}
-	if b.Approve == nil {
-		return true, ErrBangNoGuard
-	}
-	if verdict := b.Approve(command); !verdict.Approved {
-		emit(CommandDeniedText(verdict))
-		return true, nil
-	}
-	cwd := ""
-	if b.CWD != nil {
-		cwd = b.CWD(sessionKey)
-	}
-	code, err := b.Run(ctx, command, cwd, emit)
+	cfg, err := tools.GetEnvConfig(env)
 	if err != nil {
-		return true, err
+		return ""
 	}
-	if code != 0 {
-		emit(BangExitedText(code))
-	}
-	return true, nil
+	cwd, _ := cfg["cwd"].(string)
+	return cwd
 }
 
-// Run executes a command through the shell streaming merged output and returns the exit code
-func (b *BangRunner) Run(ctx context.Context, command, cwd string, emit func(string)) (int, error) {
-	if b.Env == nil {
-		return 127, ErrBangNoEnv
+// Terminal tool approval verdict for a user typed command run locally without host access
+func CheckBangApproval(ctx context.Context, env *tools.Env, command string) tools.GuardResult {
+	return tools.CheckAllCommandGuards(ctx, env, command, "local", false)
+}
+
+// Reads universal newline lines decoded as utf-8 with replacement, the terminator dropped
+func readBangLine(r *bufio.Reader) (string, bool) {
+	var buf []byte
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			return pystr.DecodeUTF8Replace(buf), len(buf) > 0
+		}
+		switch b {
+		case '\n':
+			return pystr.DecodeUTF8Replace(buf), true
+		case '\r':
+			if next, err := r.Peek(1); err == nil && next[0] == '\n' {
+				_, _ = r.ReadByte()
+			}
+			return pystr.DecodeUTF8Replace(buf), true
+		}
+		buf = append(buf, b)
 	}
-	timeout := b.Timeout
-	if timeout <= 0 {
-		timeout = BangDefaultTimeout
-	}
-	shell := b.Shell
-	if len(shell) == 0 {
-		shell = []string{"/bin/sh", "-c"}
-	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(runCtx, shell[0], append(shell[1:], command)...)
-	if cwd != "" {
-		if expanded := expandHome(cwd); isDir(expanded) {
-			cmd.Dir = expanded
+}
+
+// Runs a command through the shell streaming merged output lines to writer and returns the exit code
+func RunBangCommand(ctx context.Context, env *tools.Env, command, cwd string, timeout int, writer func(string)) int {
+	emit := writer
+	if emit == nil {
+		emit = func(line string) {
+			end := "\n"
+			if strings.HasSuffix(line, "\n") {
+				end = ""
+			}
+			fmt.Fprint(os.Stdout, line+end)
 		}
 	}
-	cmd.Env = b.Env()
-	pr, pw := io.Pipe()
+	runCwd := ""
+	if cwd != "" {
+		runCwd = pypath.Expanduser(cwd)
+	}
+	if runCwd != "" {
+		if st, err := os.Stat(runCwd); err != nil || !st.IsDir() {
+			runCwd = ""
+		}
+	}
+	cmd, stdout, err := startBangProcess(ctx, env, command, runCwd)
+	if err != nil {
+		emit(fmt.Sprintf("!: failed to run command: %v", err))
+		return 127
+	}
+	defer stdout.Close()
+	var interrupted atomic.Bool
+	stopWatch := make(chan struct{})
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		select {
+		case <-ctx.Done():
+			interrupted.Store(true)
+			_ = cmd.Process.Kill()
+		case <-stopWatch:
+		}
+	}()
+	reader := bufio.NewReader(stdout)
+	for {
+		line, ok := readBangLine(reader)
+		if !ok {
+			break
+		}
+		emit(line)
+	}
+	close(stopWatch)
+	<-watchDone
+	if interrupted.Load() {
+		_ = cmd.Wait()
+		emit("!: interrupted")
+		return 130
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	timer := time.NewTimer(time.Duration(timeout) * time.Second)
+	defer timer.Stop()
+	var waitErr error
+	select {
+	case waitErr = <-waited:
+	case <-timer.C:
+		_ = cmd.Process.Kill()
+		<-waited
+		emit(fmt.Sprintf("!: command timed out after %ds", timeout))
+		return 124
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		<-waited
+		emit("!: interrupted")
+		return 130
+	}
+	var exitErr *exec.ExitError
+	if errors.As(waitErr, &exitErr) {
+		return pysubprocess.Returncode(exitErr)
+	}
+	return 0
+}
+
+// Starts the shell with merged output in the run directory and the sanitized environment
+func startBangProcess(ctx context.Context, env *tools.Env, command, cwd string) (*exec.Cmd, io.ReadCloser, error) {
+	childEnv, err := bangEnv(ctx, env)
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd, err := bangShellCommand(command)
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd.Dir = cwd
+	cmd.Env = make([]string, 0, len(childEnv))
+	for k, v := range childEnv {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
 	cmd.Stdout, cmd.Stderr = pw, pw
 	if err := cmd.Start(); err != nil {
-		emit(fmt.Sprintf("!: failed to run command: %v", err))
-		return 127, nil
+		pr.Close()
+		pw.Close()
+		return nil, nil, err
 	}
-	done := make(chan struct{})
-	go func() {
-		scanner := bufio.NewScanner(pr)
-		scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-		for scanner.Scan() {
-			emit(scanner.Text())
-		}
-		close(done)
-	}()
-	waitErr := cmd.Wait()
 	pw.Close()
-	<-done
-	if runCtx.Err() == context.DeadlineExceeded {
-		emit(fmt.Sprintf("!: command timed out after %ds", int(timeout/time.Second)))
-		return 124, nil
-	}
-	if ctx.Err() != nil {
-		emit("!: interrupted")
-		return 130, nil
-	}
-	if waitErr != nil {
-		var exit *exec.ExitError
-		if errors.As(waitErr, &exit) {
-			if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-				return 128 + int(status.Signal()), nil
-			}
-			return exit.ExitCode(), nil
-		}
-		return 1, waitErr
-	}
-	return 0, nil
-}
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if h, err := os.UserHomeDir(); err == nil {
-			return h + p[1:]
-		}
-	}
-	return p
-}
-
-func isDir(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && st.IsDir()
+	return cmd, pr, nil
 }

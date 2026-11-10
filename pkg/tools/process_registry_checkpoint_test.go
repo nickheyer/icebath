@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -93,7 +94,7 @@ func TestProcessCheckpointLiveMatchingPidStaysRunningWhenLaterStartProbeFails(t 
 	}
 	s := cpDetach(r, proc.Process.Pid, "proc_live_probe", start, true)
 	cpFailStartProbe(t)
-	polled := r.Poll(env, s.ID)
+	polled := r.Poll(context.Background(), env, s.ID)
 	if !cpStillRunning(proc) || polled["status"] != "running" || s.Exited || len(cpCompletions(r)) != 0 {
 		t.Fatalf("live child reported exited: %v", polled)
 	}
@@ -118,7 +119,7 @@ func TestProcessCheckpointReusedPidIsClosedWithoutKillOrCompletion(t *testing.T)
 	}
 	wrong := *real + 1
 	s := cpDetach(r, proc.Process.Pid, "proc_reused", &wrong, true)
-	polled := r.Poll(env, s.ID)
+	polled := r.Poll(context.Background(), env, s.ID)
 	if !cpStillRunning(proc) {
 		t.Fatal("reused pid was killed")
 	}
@@ -144,7 +145,7 @@ func TestProcessCheckpointKillTerminatesReadoptedPidWhenStartProbeFails(t *testi
 	}
 	s := cpDetach(r, proc.Process.Pid, "proc_kill_probe", start, true)
 	cpFailStartProbe(t)
-	result := r.KillProcess(env, s.ID, "", false)
+	result := r.KillProcess(context.Background(), env, s.ID, "", false)
 	if result["status"] != "killed" {
 		t.Fatalf("kill did not reach the child: %v", result)
 	}
@@ -166,8 +167,8 @@ func TestProcessCheckpointGonePidIsPrunedWithoutAFalseCompletion(t *testing.T) {
 	start := int64(1)
 	s := cpDetach(r, 1<<31-1, "proc_gone", &start, true)
 	s.Command = "already-dead"
-	listed := r.ListSessions(env, "", "", false)
-	polled := r.Poll(env, s.ID)
+	listed := r.ListSessions(context.Background(), env, "", "", false)
+	polled := r.Poll(context.Background(), env, s.ID)
 	r.mu.Lock()
 	_, running := r.running[s.ID]
 	r.mu.Unlock()
@@ -197,8 +198,8 @@ func TestProcessCheckpointRecoverReattachesLivePidWhenStartProbeFails(t *testing
 		"pid_scope": "host", "host_start_time": *start, "task_id": "t1", "notify_on_complete": true,
 	}})
 	cpFailStartProbe(t)
-	recovered := r.RecoverFromCheckpoint(env)
-	polled := r.Poll(env, "proc_recover_live")
+	recovered := r.RecoverFromCheckpoint(context.Background(), env)
+	polled := r.Poll(context.Background(), env, "proc_recover_live")
 	if recovered != 1 || !cpStillRunning(proc) || polled["status"] != "running" || len(cpCompletions(r)) != 0 {
 		t.Fatalf("live recovery wrong: recovered=%d poll=%v", recovered, polled)
 	}
@@ -225,7 +226,7 @@ func TestProcessCheckpointRecoverDoesNotKillAReusedPid(t *testing.T) {
 		stopped = append(stopped, unit)
 		return true
 	})
-	if recovered := r.RecoverFromCheckpoint(env); recovered != 0 {
+	if recovered := r.RecoverFromCheckpoint(context.Background(), env); recovered != 0 {
 		t.Fatalf("reused pid adopted: %d", recovered)
 	}
 	if !cpStillRunning(proc) || r.Get(env, "proc_recover_reused") != nil || len(stopped) != 0 || len(cpCompletions(r)) != 0 {
@@ -300,7 +301,7 @@ func TestProcessCheckpointOwnerWriteKeepsALiveWorkerHandoff(t *testing.T) {
 	successor.mu.Lock()
 	successor.insertRunning(s)
 	successor.mu.Unlock()
-	if recovered := successor.RecoverFromCheckpoint(env); recovered != 1 {
+	if recovered := successor.RecoverFromCheckpoint(context.Background(), env); recovered != 1 {
 		t.Fatalf("worker handoff not adopted: %d", recovered)
 	}
 	adopted := successor.Get(env, "proc_worker")

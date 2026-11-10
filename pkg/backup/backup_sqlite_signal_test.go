@@ -75,14 +75,21 @@ func TestSIGTERMInterruptsAOneStepWALCopy(t *testing.T) {
 	h := filepath.Join(t.TempDir(), "home")
 	os.MkdirAll(h, 0o755)
 	messagesDB(t, filepath.Join(h, "state.db"), "WAL", 200)
-	started, release := make(chan struct{}), make(chan struct{})
+	started, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	real := connBackup
 	connBackup = func(src, dst pysqlite.RawConn, pages int, progress func(int, int, int) error, sleep time.Duration) error {
 		close(started)
 		<-release
+		defer close(finished)
 		return real(src, dst, pages, progress, sleep)
 	}
-	t.Cleanup(func() { connBackup = real })
+	t.Cleanup(func() {
+		connBackup = real
+		<-finished
+		for deadline := time.Now().Add(5 * time.Second); os.RemoveAll(h) != nil && time.Now().Before(deadline); {
+			time.Sleep(10 * time.Millisecond)
+		}
+	})
 	defer close(release)
 	type outcome struct {
 		code   int

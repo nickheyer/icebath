@@ -370,7 +370,7 @@ func TestPackReviewSeedAndDispatch(t *testing.T) {
 		}
 	}
 	out.Reset()
-	if err := seedPluginConfig(h, "tts", map[string]any{"voice": "nova", "speed": 2}, NewConsole(&out)); err != nil {
+	if err := seedPluginConfig(ctx, h, "tts", map[string]any{"voice": "nova", "speed": 2}, NewConsole(&out)); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(h, "config.yaml"))

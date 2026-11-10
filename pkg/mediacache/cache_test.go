@@ -124,17 +124,17 @@ func agedWrite(t *testing.T, p string, ageHours float64) {
 func TestCleanupCachesRemoveOldFilesAndKeepRecent(t *testing.T) {
 	h := tempHome(t)
 	type pair struct {
-		dir     func(string) (string, error)
-		cleanup func(string, float64) (int, error)
+		dir     func(context.Context, string) (string, error)
+		cleanup func(context.Context, string, float64) (int, error)
 	}
 	for _, p := range []pair{{AudioCacheDir, CleanupAudioCache}, {ScreenshotCacheDir, CleanupScreenshotCache}, {DocumentCacheDir, CleanupDocumentCache}, {ImageCacheDir, CleanupImageCache}, {VideoCacheDir, CleanupVideoCache}} {
-		d, err := p.dir(h)
+		d, err := p.dir(context.Background(), h)
 		if err != nil {
 			t.Fatal(err)
 		}
 		agedWrite(t, filepath.Join(d, "old.bin"), 48)
 		agedWrite(t, filepath.Join(d, "fresh.bin"), 0)
-		n, err := p.cleanup(h, MediaCacheMaxAgeHours)
+		n, err := p.cleanup(context.Background(), h, MediaCacheMaxAgeHours)
 		if err != nil || n != 1 {
 			t.Fatalf("%s removed %d %v", d, n, err)
 		}
@@ -142,7 +142,7 @@ func TestCleanupCachesRemoveOldFilesAndKeepRecent(t *testing.T) {
 			t.Fatalf("recent file removed in %s", d)
 		}
 	}
-	if d, _ := ScreenshotCacheDir(h); d != filepath.Join(h, "cache", "screenshots") {
+	if d, _ := ScreenshotCacheDir(context.Background(), h); d != filepath.Join(h, "cache", "screenshots") {
 		t.Fatalf("screenshot dir %s", d)
 	}
 }
@@ -152,38 +152,38 @@ func TestCacheDirPrefersPopulatedLegacyDir(t *testing.T) {
 	legacy := filepath.Join(h, "document_cache")
 	os.MkdirAll(legacy, 0o755)
 	os.WriteFile(filepath.Join(legacy, "keep.txt"), []byte("x"), 0o644)
-	d, err := DocumentCacheDir(h)
+	d, err := DocumentCacheDir(context.Background(), h)
 	if err != nil || d != legacy {
 		t.Fatalf("dir %s %v", d, err)
 	}
 	os.MkdirAll(filepath.Join(h, "image_cache"), 0o755)
-	if d, _ := ImageCacheDir(h); d != filepath.Join(h, "cache", "images") {
+	if d, _ := ImageCacheDir(context.Background(), h); d != filepath.Join(h, "cache", "images") {
 		t.Fatalf("empty legacy dir shadowed the new path: %s", d)
 	}
 }
 
 func TestCacheDocumentFromBytes(t *testing.T) {
 	h := tempHome(t)
-	d, err := DocumentCacheDir(h)
+	d, err := DocumentCacheDir(context.Background(), h)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if st, err := os.Stat(d); err != nil || !st.IsDir() {
 		t.Fatal("document cache dir not created")
 	}
-	p, err := CacheDocumentFromBytes(h, []byte("hello world"), "test.txt")
+	p, err := CacheDocumentFromBytes(context.Background(), h, []byte("hello world"), "test.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(p); string(got) != "hello world" {
 		t.Fatal("content mismatch")
 	}
-	p, _ = CacheDocumentFromBytes(h, []byte("data"), "report.pdf")
+	p, _ = CacheDocumentFromBytes(context.Background(), h, []byte("data"), "report.pdf")
 	if !strings.Contains(filepath.Base(p), "report.pdf") || !strings.HasPrefix(filepath.Base(p), "doc_") {
 		t.Fatalf("name %s", p)
 	}
 	for _, name := range []string{"", "..", "../../etc/passwd", " \x00 ", "dir/"} {
-		p, err := CacheDocumentFromBytes(h, []byte("data"), name)
+		p, err := CacheDocumentFromBytes(context.Background(), h, []byte("data"), name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,10 +194,10 @@ func TestCacheDocumentFromBytes(t *testing.T) {
 			t.Fatal("content mismatch")
 		}
 	}
-	if p, _ := CacheDocumentFromBytes(h, []byte("x"), "../../etc/passwd"); !strings.HasSuffix(p, "_passwd") {
+	if p, _ := CacheDocumentFromBytes(context.Background(), h, []byte("x"), "../../etc/passwd"); !strings.HasSuffix(p, "_passwd") {
 		t.Fatalf("directory components kept: %s", p)
 	}
-	if p, _ := CacheDocumentFromBytes(h, []byte("x"), ""); !strings.HasSuffix(p, "_document") {
+	if p, _ := CacheDocumentFromBytes(context.Background(), h, []byte("x"), ""); !strings.HasSuffix(p, "_document") {
 		t.Fatalf("empty name fallback: %s", p)
 	}
 }

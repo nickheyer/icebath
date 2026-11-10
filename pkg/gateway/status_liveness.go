@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -29,8 +30,8 @@ type StormInfo struct {
 }
 
 // Records this start in gateway-starts.log, a storm reported past maxStarts in the window, bookkeeping failures swallowed
-func RecordStartAndCheckStorm(h string, maxStarts int, windowS, backoffCapS float64) *StormInfo {
-	info, err := recordStartAndCheckStorm(h, maxStarts, windowS, backoffCapS)
+func RecordStartAndCheckStorm(ctx context.Context, h string, maxStarts int, windowS, backoffCapS float64) *StormInfo {
+	info, err := recordStartAndCheckStorm(ctx, h, maxStarts, windowS, backoffCapS)
 	if err != nil {
 		slog.Debug(fmt.Sprintf("respawn-storm breaker bookkeeping failed (non-fatal): %v", err))
 		return nil
@@ -38,9 +39,9 @@ func RecordStartAndCheckStorm(h string, maxStarts int, windowS, backoffCapS floa
 	return info
 }
 
-func recordStartAndCheckStorm(h string, maxStarts int, windowS, backoffCapS float64) (*StormInfo, error) {
+func recordStartAndCheckStorm(ctx context.Context, h string, maxStarts int, windowS, backoffCapS float64) (*StormInfo, error) {
 	path := filepath.Join(h, "gateway-starts.log")
-	if _, err := home.MakeUserDir(filepath.Dir(path), 0o777, true, true); err != nil {
+	if _, err := home.MakeUserDir(ctx, filepath.Dir(path), 0o777, true, true); err != nil {
 		return nil, err
 	}
 	now := float64(time.Now().UnixMicro()) / 1e6

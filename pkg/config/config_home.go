@@ -144,7 +144,7 @@ func InitializeHome(h string, subdirs []string, ensured map[string]bool) error {
 				return err
 			}
 		}
-		if err := seedSoul(h); err != nil {
+		if err := ensureDefaultSoulMD(h); err != nil {
 			return &HomeInitializationError{Message: fmt.Sprintf("Cannot initialize Icebath home %s: %s. "+
 				"Check storage availability and access permissions.", h, pyOSErrorText(err)), Err: err}
 		}

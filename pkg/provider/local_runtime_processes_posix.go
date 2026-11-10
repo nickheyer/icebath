@@ -3,6 +3,7 @@
 package provider
 
 import (
+	"context"
 	"os/exec"
 
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -17,9 +18,9 @@ func (*WindowsJob) Close() error { return nil }
 var spawnOwnedFn = tools.SpawnOwned
 
 // Starts cmd, an owned router leads its own group handed to the owner death supervisor
-func SpawnServer(cmd *exec.Cmd, owned bool) (*WindowsJob, error) {
+func SpawnServer(ctx context.Context, cmd *exec.Cmd, owned bool) (*WindowsJob, error) {
 	if !owned {
 		return nil, cmd.Start()
 	}
-	return nil, spawnOwnedFn(cmd, "llama-server")
+	return nil, spawnOwnedFn(ctx, cmd, "llama-server")
 }

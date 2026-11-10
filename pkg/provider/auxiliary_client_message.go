@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -37,6 +38,23 @@ func CoerceLLMMessage(response any) any {
 		return nil
 	}
 	return MessageField(v.Index(0).Interface(), "message")
+}
+
+// FirstChoiceMessage is response.choices[0].message, the AttributeError or IndexError Python indexing raises otherwise
+func FirstChoiceMessage(response any) (any, error) {
+	choices := reflect.ValueOf(MessageField(response, "choices"))
+	if !choices.IsValid() || (choices.Kind() != reflect.Slice && choices.Kind() != reflect.Array) {
+		return nil, &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(response) + "' object has no attribute 'choices'"}
+	}
+	if choices.Len() == 0 {
+		return nil, &pyint.Error{Kind: "IndexError", Msg: "list index out of range"}
+	}
+	choice := choices.Index(0).Interface()
+	message := MessageField(choice, "message")
+	if message == nil {
+		return nil, &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(choice) + "' object has no attribute 'message'"}
+	}
+	return message, nil
 }
 
 // MessageField reads a field from a dict shaped message or the matching attribute of a struct, nil when absent

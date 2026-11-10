@@ -33,10 +33,10 @@ const MeetBotEntry = "__icebath_google_meet_bot__"
 var meetBotDispatched atomic.Bool
 
 // DispatchMeetBotEntry runs the bot and exits when argv carries the entry, otherwise records that this binary handles it
-func DispatchMeetBotEntry() {
+func DispatchMeetBotEntry(ctx context.Context) {
 	meetBotDispatched.Store(true)
 	if len(os.Args) > 1 && os.Args[1] == MeetBotEntry {
-		os.Exit(runBot())
+		os.Exit(runBot(ctx))
 	}
 }
 
@@ -84,7 +84,7 @@ type botState struct {
 }
 
 // Creates the output directory and writes the initial status file
-func newBotState(outDir, meetingID, url string) (*botState, error) {
+func newBotState(ctx context.Context, outDir, meetingID, url string) (*botState, error) {
 	s := &botState{vals: map[string]any{}, seen: map[string]bool{}, outDir: outDir,
 		transcriptPath: filepath.Join(outDir, "transcript.txt"), statusPath: filepath.Join(outDir, "status.json")}
 	for _, f := range statusFields {
@@ -94,7 +94,7 @@ func newBotState(outDir, meetingID, url string) (*botState, error) {
 	if err := os.MkdirAll(outDir, 0o777); err != nil {
 		return nil, err
 	}
-	return s, s.flushLocked()
+	return s, s.flushLocked(ctx)
 }
 
 // Value of one status key
@@ -105,7 +105,7 @@ func (s *botState) get(key string) any {
 }
 
 // Appends a caption line unless this exact speaker and text pair was already seen
-func (s *botState) recordCaption(speaker, text string) error {
+func (s *botState) recordCaption(ctx context.Context, speaker, text string) error {
 	speaker, text = pystr.Strip(speaker), pystr.Strip(text)
 	if speaker == "" {
 		speaker = "Unknown"
@@ -131,28 +131,28 @@ func (s *botState) recordCaption(speaker, text string) error {
 	if werr != nil {
 		return werr
 	}
-	return s.flushLocked()
+	return s.flushLocked(ctx)
 }
 
 // Writes status.json in table key order with the transcript path and this process id
-func (s *botState) flushLocked() error {
+func (s *botState) flushLocked(ctx context.Context) error {
 	data := pyjson.NewObject()
 	for _, f := range statusFields {
 		data.Set(f.key, s.vals[f.key])
 	}
 	data.Set("transcriptPath", s.transcriptPath)
 	data.Set("pid", os.Getpid())
-	return config.AtomicJSONWrite(s.statusPath, data)
+	return config.AtomicJSONWrite(ctx, s.statusPath, data)
 }
 
 // Updates status keys from alternating key and value arguments and flushes
-func (s *botState) set(kv ...any) {
+func (s *botState) set(ctx context.Context, kv ...any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := 0; i+1 < len(kv); i += 2 {
 		s.vals[kv[i].(string)] = kv[i+1]
 	}
-	if err := s.flushLocked(); err != nil {
+	if err := s.flushLocked(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "google_meet bot: status write failed: %v\n", err)
 	}
 }
@@ -387,7 +387,7 @@ type realtimeRes struct {
 }
 
 // Streams the growing speaker.pcm into the device Chrome's fake mic reads through paplay or ffmpeg
-func startPCMPump(rt *realtimeRes, bridgeInfo map[string]any, pcmPath string, state *botState, stop *atomic.Bool) error {
+func startPCMPump(ctx context.Context, rt *realtimeRes, bridgeInfo map[string]any, pcmPath string, state *botState, stop *atomic.Bool) error {
 	platformTag, _ := bridgeInfo["platform"].(string)
 	target, _ := bridgeInfo["write_target"].(string)
 	var argv []string
@@ -401,7 +401,7 @@ func startPCMPump(rt *realtimeRes, bridgeInfo map[string]any, pcmPath string, st
 		missing = "paplay not found — install pulseaudio-utils for realtime on Linux"
 	case "darwin":
 		if _, ok := pyshutil.Which("ffmpeg", nil); !ok {
-			state.set("error", ffmpegMissing)
+			state.set(ctx, "error", ffmpegMissing)
 			return nil
 		}
 		if target == "" {
@@ -416,13 +416,13 @@ func startPCMPump(rt *realtimeRes, bridgeInfo map[string]any, pcmPath string, st
 	pump, err := startPump(argv)
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
-			state.set("error", missing)
+			state.set(ctx, "error", missing)
 			return nil
 		}
 		if platformTag != "darwin" {
 			return err
 		}
-		state.set("error", fmt.Sprintf("macOS pcm pump failed to start: %v", err))
+		state.set(ctx, "error", fmt.Sprintf("macOS pcm pump failed to start: %v", err))
 		return nil
 	}
 	rt.pcmPump = pump
@@ -437,7 +437,7 @@ func startPCMPump(rt *realtimeRes, bridgeInfo map[string]any, pcmPath string, st
 }
 
 // Wires the realtime session, the say queue speaker goroutine and the pcm pump
-func startRealtimeSpeaker(rt *realtimeRes, cfg botConfig, stop *atomic.Bool, state *botState) error {
+func startRealtimeSpeaker(ctx context.Context, rt *realtimeRes, cfg botConfig, stop *atomic.Bool, state *botState) error {
 	pcmPath, queuePath := filepath.Join(cfg.OutDir, "speaker.pcm"), filepath.Join(cfg.OutDir, "say_queue.jsonl")
 	if err := os.WriteFile(pcmPath, nil, 0o666); err != nil {
 		return err
@@ -451,7 +451,7 @@ func startRealtimeSpeaker(rt *realtimeRes, cfg botConfig, stop *atomic.Bool, sta
 	_ = os.Chtimes(queuePath, now, now)
 	session := newRealtimeSession(cfg.RealtimeAPIKey, cfg.RealtimeModel, cfg.RealtimeVoice, cfg.RealtimeInstructions, pcmPath, 24000)
 	if err := session.connect(); err != nil {
-		state.set("error", fmt.Sprintf("realtime connect failed: %v", err))
+		state.set(ctx, "error", fmt.Sprintf("realtime connect failed: %v", err))
 		return nil
 	}
 	rt.session = session
@@ -460,13 +460,13 @@ func startRealtimeSpeaker(rt *realtimeRes, cfg botConfig, stop *atomic.Bool, sta
 	go func() {
 		defer close(rt.speakerDone)
 		if err := speaker.runUntilStopped(stop.Load, 500*time.Millisecond); err != nil {
-			state.set("error", fmt.Sprintf("realtime speaker crashed: %v", err))
+			state.set(ctx, "error", fmt.Sprintf("realtime speaker crashed: %v", err))
 		}
 	}()
-	if err := startPCMPump(rt, rt.bridgeInfo, pcmPath, state, stop); err != nil {
+	if err := startPCMPump(ctx, rt, rt.bridgeInfo, pcmPath, state, stop); err != nil {
 		return err
 	}
-	state.set("realtimeReady", true)
+	state.set(ctx, "realtimeReady", true)
 	return nil
 }
 
@@ -494,21 +494,21 @@ func macAudioDeviceIndex(deviceName string) string {
 }
 
 // Provisions the virtual audio bridge, falling back to transcribe mode on any failure
-func setupRealtime(rt *realtimeRes, apiKey string, state *botState) {
+func setupRealtime(ctx context.Context, rt *realtimeRes, apiKey string, state *botState) {
 	if apiKey == "" {
-		state.set("error", "realtime mode requested but no API key in ICEBATH_MEET_REALTIME_KEY/OPENAI_API_KEY — falling back to transcribe")
+		state.set(ctx, "error", "realtime mode requested but no API key in ICEBATH_MEET_REALTIME_KEY/OPENAI_API_KEY — falling back to transcribe")
 		rt.enabled = false
 		return
 	}
 	rt.bridge = newAudioBridge("icebath_meet")
 	info, err := rt.bridge.setup()
 	if err != nil {
-		state.set("error", fmt.Sprintf("audio bridge setup failed: %v — falling back to transcribe", err))
+		state.set(ctx, "error", fmt.Sprintf("audio bridge setup failed: %v — falling back to transcribe", err))
 		rt.enabled = false
 		return
 	}
 	rt.bridgeInfo = info
-	state.set("realtime", true, "realtimeDevice", info["device_name"])
+	state.set(ctx, "realtime", true, "realtimeDevice", info["device_name"])
 }
 
 // Waits on a done channel up to timeout
@@ -598,7 +598,7 @@ var botSleep = time.Sleep
 func nowSeconds() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Fills the guest name and clicks Join now or Ask to join, polling up to timeout for the late buttons
-func join(page meetPage, cfg botConfig, state *botState, timeout time.Duration) {
+func join(ctx context.Context, page meetPage, cfg botConfig, state *botState, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for {
 		if nameBox := visible(page.Locator(`input[aria-label*="name" i]`)); nameBox != nil {
@@ -608,7 +608,7 @@ func join(page meetPage, cfg botConfig, state *botState, timeout time.Duration) 
 			btn := visible(page.GetByRole("button", label, false))
 			if btn != nil && btn.Click(3*time.Second) == nil {
 				if label == "Ask to join" {
-					state.set("lobbyWaiting", true)
+					state.set(ctx, "lobbyWaiting", true)
 				}
 				return
 			}
@@ -632,7 +632,7 @@ func ensureMicOn(page meetPage) string {
 }
 
 // Admission and caption drain loop until stop, duration expiry, lobby timeout or denial, or page loss
-func drainLoop(page meetPage, cfg botConfig, state *botState, rt *realtimeRes, stop *atomic.Bool) {
+func drainLoop(ctx context.Context, page meetPage, cfg botConfig, state *botState, rt *realtimeRes, stop *atomic.Bool) {
 	start := nowSeconds()
 	deadline := 0.0
 	if cfg.DurationS != 0 {
@@ -643,40 +643,40 @@ func drainLoop(page meetPage, cfg botConfig, state *botState, rt *realtimeRes, s
 	for !stop.Load() {
 		now := nowSeconds()
 		if deadline != 0 && now > deadline {
-			state.set("leaveReason", "duration_expired")
+			state.set(ctx, "leaveReason", "duration_expired")
 			return
 		}
 		if inCall, _ := state.get("inCall").(bool); !inCall && now-lastAdmissionCheck > 3.0 {
 			lastAdmissionCheck = now
 			if probe(page, admissionProbeJS) {
 				mic := ensureMicOn(page)
-				state.set("inCall", true, "lobbyWaiting", false, "joinedAt", now, "micState", mic)
+				state.set(ctx, "inCall", true, "lobbyWaiting", false, "joinedAt", now, "micState", mic)
 			} else if now > lobbyDeadline {
 				waited := 0
 				if at, ok := state.get("joinAttemptedAt").(float64); ok && at != 0 {
 					waited = int(lobbyDeadline - at)
 				}
-				state.set("error", fmt.Sprintf("lobby timeout — host never admitted the bot within %ds", waited), "leaveReason", "lobby_timeout")
+				state.set(ctx, "error", fmt.Sprintf("lobby timeout — host never admitted the bot within %ds", waited), "leaveReason", "lobby_timeout")
 				return
 			} else if probe(page, deniedProbeJS) {
-				state.set("error", "host denied admission", "leaveReason", "denied")
+				state.set(ctx, "error", "host denied admission", "leaveReason", "denied")
 				return
 			}
 		}
-		if err := drainCaptions(page, cfg, state, rt, now); err != nil && page.IsClosed() {
-			state.set("leaveReason", "page_closed")
+		if err := drainCaptions(ctx, page, cfg, state, rt, now); err != nil && page.IsClosed() {
+			state.set(ctx, "leaveReason", "page_closed")
 			return
 		}
 		if rt.session != nil {
 			out, at := rt.session.counters()
-			state.set("audioBytesOut", out, "lastAudioOutAt", at)
+			state.set(ctx, "audioBytesOut", out, "lastAudioOutAt", at)
 		}
 		botSleep(time.Second)
 	}
 }
 
 // Pulls queued captions into the transcript and barges in when a human spoke over realtime audio
-func drainCaptions(page meetPage, cfg botConfig, state *botState, rt *realtimeRes, now float64) error {
+func drainCaptions(ctx context.Context, page meetPage, cfg botConfig, state *botState, rt *realtimeRes, now float64) error {
 	queued, err := page.Evaluate(drainJS)
 	if err != nil {
 		return err
@@ -694,11 +694,11 @@ func drainCaptions(page meetPage, cfg botConfig, state *botState, rt *realtimeRe
 		if v, ok := entry["text"]; ok {
 			text = pyrepr.Str(v)
 		}
-		if err := state.recordCaption(speaker, text); err != nil {
+		if err := state.recordCaption(ctx, speaker, text); err != nil {
 			return err
 		}
 		if rt.session != nil && looksLikeHumanSpeaker(speaker, cfg.GuestName) && rt.session.cancelResponse() {
-			state.set("lastBargeInAt", now)
+			state.set(ctx, "lastBargeInAt", now)
 		}
 	}
 	return nil
@@ -718,7 +718,7 @@ func botEnv() *tools.Env {
 }
 
 // Runs the bot from its environment, returning the process exit code
-func runBot() int {
+func runBot(ctx context.Context) int {
 	cfg, err := configFromEnv()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -732,7 +732,7 @@ func runBot() int {
 		fmt.Fprint(os.Stderr, "google_meet bot: ICEBATH_MEET_OUT_DIR is required\n")
 		return 2
 	}
-	state, err := newBotState(cfg.OutDir, meetingIDFromURL(cfg.URL), cfg.URL)
+	state, err := newBotState(ctx, cfg.OutDir, meetingIDFromURL(cfg.URL), cfg.URL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 1
@@ -747,21 +747,21 @@ func runBot() int {
 	}()
 	rt := &realtimeRes{enabled: cfg.Realtime}
 	if rt.enabled {
-		setupRealtime(rt, cfg.RealtimeAPIKey, state)
+		setupRealtime(ctx, rt, cfg.RealtimeAPIKey, state)
 	}
-	return runBotBrowser(cfg, state, rt, stop, botEnv())
+	return runBotBrowser(ctx, cfg, state, rt, stop, botEnv())
 }
 
 // Browser half of the bot, any failure recorded as unhandled with exit code 1
-func runBotBrowser(cfg botConfig, state *botState, rt *realtimeRes, stop *atomic.Bool, env *tools.Env) (code int) {
+func runBotBrowser(ctx context.Context, cfg botConfig, state *botState, rt *realtimeRes, stop *atomic.Bool, env *tools.Env) (code int) {
 	defer func() {
 		if r := recover(); r != nil {
-			state.set("error", fmt.Sprintf("unhandled: %v", r), "exited", true)
+			state.set(tools.WithEnvHome(ctx, env), "error", fmt.Sprintf("unhandled: %v", r), "exited", true)
 			code = 1
 		}
 	}()
 	unhandled := func(err error) int {
-		state.set("error", fmt.Sprintf("unhandled: %v", err), "exited", true)
+		state.set(tools.WithEnvHome(ctx, env), "error", fmt.Sprintf("unhandled: %v", err), "exited", true)
 		return 1
 	}
 	chromeArgs := []string{"--use-fake-ui-for-media-stream", "--disable-blink-features=AutomationControlled"}
@@ -777,11 +777,11 @@ func runBotBrowser(cfg botConfig, state *botState, rt *realtimeRes, stop *atomic
 			args.StorageState = cfg.AuthState
 		}
 	}
-	b, err := launchMeetBrowser(env, cfg.Headed, chromeArgs)
+	b, err := launchMeetBrowser(tools.WithEnvHome(ctx, env), env, cfg.Headed, chromeArgs)
 	if err != nil {
 		return unhandled(err)
 	}
-	defer b.close()
+	defer b.close(tools.WithEnvHome(ctx, env))
 	bctx, err := b.newContext(args)
 	if err != nil {
 		return unhandled(err)
@@ -791,27 +791,27 @@ func runBotBrowser(cfg botConfig, state *botState, rt *realtimeRes, stop *atomic
 		return unhandled(err)
 	}
 	if err := page.gotoURL(cfg.URL, 30*time.Second); err != nil {
-		state.set("error", fmt.Sprintf("navigate failed: %v", err), "exited", true)
+		state.set(tools.WithEnvHome(ctx, env), "error", fmt.Sprintf("navigate failed: %v", err), "exited", true)
 		return 4
 	}
-	join(page, cfg, state, 30*time.Second)
+	join(tools.WithEnvHome(ctx, env), page, cfg, state, 30*time.Second)
 	if v, err := page.Evaluate(enableCaptionsJS); err == nil && truthy(v) {
-		state.set("captionsEnabledAttempted", true)
+		state.set(tools.WithEnvHome(ctx, env), "captionsEnabledAttempted", true)
 	}
 	if _, err := page.Evaluate(captionObserverJS); err != nil {
-		state.set("error", fmt.Sprintf("caption observer install failed: %v", err))
+		state.set(tools.WithEnvHome(ctx, env), "error", fmt.Sprintf("caption observer install failed: %v", err))
 	}
-	state.set("captioning", true, "joinAttemptedAt", nowSeconds())
+	state.set(tools.WithEnvHome(ctx, env), "captioning", true, "joinAttemptedAt", nowSeconds())
 	if rt.enabled {
-		if err := startRealtimeSpeaker(rt, cfg, stop, state); err != nil {
+		if err := startRealtimeSpeaker(tools.WithEnvHome(ctx, env), rt, cfg, stop, state); err != nil {
 			return unhandled(err)
 		}
 	}
-	drainLoop(page, cfg, state, rt, stop)
+	drainLoop(tools.WithEnvHome(ctx, env), page, cfg, state, rt, stop)
 	_, _ = page.Evaluate(leaveCallJS)
 	bctx.close()
 	teardownRealtime(rt)
-	state.set("inCall", false, "captioning", false, "exited", true)
+	state.set(tools.WithEnvHome(ctx, env), "inCall", false, "captioning", false, "exited", true)
 	return 0
 }
 

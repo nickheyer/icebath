@@ -279,7 +279,7 @@ func cacheServerMetadata(t *testing.T, s *TokenStorage, supports bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveOAuthMetadata(md); err != nil {
+	if err := s.SaveOAuthMetadata(context.Background(), md); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -371,7 +371,7 @@ func TestCIMDSDKChoosesCIMDOnlyWhenTheServerAdvertisesIt(t *testing.T) {
 
 func TestCIMDRejectionMarkerOnDiskStopsTheDocumentAfterARestart(t *testing.T) {
 	privateCIMDPorts(t)
-	NewTokenStorage(context.Background(), "srv", "").MarkCIMDRejected()
+	NewTokenStorage(context.Background(), "srv", "").MarkCIMDRejected(context.Background())
 	s := NewTokenStorage(context.Background(), "srv", "")
 	if !s.CIMDRejected() {
 		t.Fatal("marker not visible to a fresh storage")
@@ -384,7 +384,7 @@ func TestCIMDRejectionMarkerOnDiskStopsTheDocumentAfterARestart(t *testing.T) {
 func TestCIMDReauthorizingClearsTheRejection(t *testing.T) {
 	privateCIMDPorts(t)
 	s := NewTokenStorage(context.Background(), "srv", "")
-	s.MarkCIMDRejected()
+	s.MarkCIMDRejected(context.Background())
 	if !s.CIMDRejected() {
 		t.Fatal("rejection not recorded")
 	}

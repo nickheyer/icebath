@@ -68,7 +68,7 @@ func activeRecord(ctx context.Context) (*pyjson.Object, error) {
 
 // Writes the active pointer atomically
 func writeActive(ctx context.Context, data *pyjson.Object) error {
-	return config.AtomicJSONWrite(activeFile(ctx), data)
+	return config.AtomicJSONWrite(ctx, activeFile(ctx), data)
 }
 
 // Whether pid names a live process, swapped by tests

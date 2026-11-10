@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/home"
 	"math"
 	"net"
 	"net/http"
@@ -420,16 +421,16 @@ func LoginDevice(ctx context.Context, name, serverURL string, oauthConfig map[st
 	}
 	previous := storage.Snapshot()
 	commit := func() error {
-		if err := storage.SetClientInfo(p.clientInfo); err != nil {
+		if err := storage.SetClientInfo(home.WithOverride(ctx, storage.homeDir), p.clientInfo); err != nil {
 			return err
 		}
-		if err := storage.SaveOAuthMetadata(p.oauthMetadata); err != nil {
+		if err := storage.SaveOAuthMetadata(home.WithOverride(ctx, storage.homeDir), p.oauthMetadata); err != nil {
 			return err
 		}
-		return deviceSetTokens(storage, tokens)
+		return deviceSetTokens(storage, home.WithOverride(ctx, storage.homeDir), tokens)
 	}
 	if err := commit(); err != nil {
-		if rerr := storage.Restore(previous, false); rerr != nil {
+		if rerr := storage.Restore(home.WithOverride(ctx, storage.homeDir), previous, false); rerr != nil {
 			return errors.Join(err, rerr)
 		}
 		return err

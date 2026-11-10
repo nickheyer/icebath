@@ -58,7 +58,7 @@ var (
 		return mediacache.CacheVideoFromBytes(ctx, home.Dir(ctx), data, ext)
 	}
 	cacheDocumentFromBytes = func(ctx context.Context, data []byte, filename string) (string, error) {
-		return mediacache.CacheDocumentFromBytes(home.Dir(ctx), data, filename)
+		return mediacache.CacheDocumentFromBytes(ctx, home.Dir(ctx), data, filename)
 	}
 	cacheMediaBytesFn = CacheMediaBytes
 )

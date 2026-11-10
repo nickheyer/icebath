@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -25,7 +26,7 @@ func captureCommandSpawn(t *testing.T) *struct {
 		purpose string
 	}{}
 	saved := spawnCommandProvider
-	spawnCommandProvider = func(cmd *exec.Cmd, purpose string) error {
+	spawnCommandProvider = func(_ context.Context, cmd *exec.Cmd, purpose string) error {
 		got.cmd, got.purpose = cmd, purpose
 		return cmd.Start()
 	}
@@ -80,7 +81,7 @@ func TestTTSCommandEnv(t *testing.T) {
 		t.Setenv("OPENAI_API_KEY", "sk-openai")
 		t.Setenv("MY_SAFE_TTS_VAR", "keep")
 		got := captureCommandSpawn(t)
-		res, err := runCommandProvider(nil, "echo hi", 5, nil)
+		res, err := runCommandProvider(context.Background(), nil, "echo hi", 5, nil)
 		if err != nil || res.Returncode != 0 {
 			t.Fatalf("run = %v, %v", res, err)
 		}
@@ -103,7 +104,7 @@ func TestTTSCommandEnv(t *testing.T) {
 		env := &tools.Env{Home: dir, Config: config.Tree{}, Secrets: config.NewSecrets(dir)}
 		tools.SetMultiplexActive(true)
 		t.Cleanup(func() { tools.SetMultiplexActive(false) })
-		res, err := runCommandProvider(env, `printf '%s\n' "$MY_TTS_TOKEN"`, 30, []string{"MY_TTS_TOKEN"})
+		res, err := runCommandProvider(context.Background(), env, `printf '%s\n' "$MY_TTS_TOKEN"`, 30, []string{"MY_TTS_TOKEN"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -229,7 +230,7 @@ func TestTTSRenderCommandTemplate(t *testing.T) {
 
 func TestTTSRunCommand(t *testing.T) {
 	t.Run("test_silent_after_progress_still_times_out_with_stderr", func(t *testing.T) {
-		_, err := runCommandProvider(nil, "echo 'starting tier 1' >&2; sleep 1", 0.2, nil)
+		_, err := runCommandProvider(context.Background(), nil, "echo 'starting tier 1' >&2; sleep 1", 0.2, nil)
 		var te *commandTimeoutError
 		if !errors.As(err, &te) {
 			t.Fatalf("err = %v", err)
@@ -247,7 +248,7 @@ func TestTTSRunCommand(t *testing.T) {
 func TestTTSGenerateCommand(t *testing.T) {
 	t.Run("test_writes_output_file", func(t *testing.T) {
 		out := filepath.Join(t.TempDir(), "clip.mp3")
-		got, err := generateCommandTTS(nil, "hello world", out, "py-copy", map[string]any{"command": "cp {input_path} {output_path}"}, map[string]any{})
+		got, err := generateCommandTTS(context.Background(), nil, "hello world", out, "py-copy", map[string]any{"command": "cp {input_path} {output_path}"}, map[string]any{})
 		if err != nil || got != out {
 			t.Fatalf("generate = %q, %v", got, err)
 		}
@@ -260,7 +261,7 @@ func TestTTSGenerateCommand(t *testing.T) {
 		if hostOSName() == "nt" {
 			return
 		}
-		_, err := generateCommandTTS(nil, "hello", filepath.Join(t.TempDir(), "x.mp3"), "slow", map[string]any{"command": "sleep 10", "timeout": 1}, map[string]any{})
+		_, err := generateCommandTTS(context.Background(), nil, "hello", filepath.Join(t.TempDir(), "x.mp3"), "slow", map[string]any{"command": "sleep 10", "timeout": 1}, map[string]any{})
 		var re *ttsRuntimeError
 		if !errors.As(err, &re) || !strings.Contains(re.Error(), "timed out") {
 			t.Fatalf("err = %v", err)
@@ -273,7 +274,7 @@ func TestTTSCommandEnvPassthrough(t *testing.T) {
 		t.Setenv("MY_TTS_API_KEY", "sk-provider")
 		t.Setenv("OPENAI_API_KEY", "sk-openai")
 		got := captureCommandSpawn(t)
-		res, err := runCommandProvider(nil, "echo hi", 5, []string{"MY_TTS_API_KEY"})
+		res, err := runCommandProvider(context.Background(), nil, "echo hi", 5, []string{"MY_TTS_API_KEY"})
 		if err != nil || res.Returncode != 0 {
 			t.Fatalf("run = %v, %v", res, err)
 		}
@@ -323,7 +324,7 @@ func TestTTSCommandProviderSpawnGroupKwargs(t *testing.T) {
 			return
 		}
 		got := captureCommandSpawn(t)
-		if _, err := runCommandProvider(nil, "echo hi", 5, nil); err != nil {
+		if _, err := runCommandProvider(context.Background(), nil, "echo hi", 5, nil); err != nil {
 			t.Fatal(err)
 		}
 		if got.purpose != "tts-command" {

@@ -43,12 +43,12 @@ func (s *Store) botChatPendingRoot() (string, error) {
 }
 
 // Parks a Bot Chat output whose target owner is not running, once per delivery key
-func (s *Store) botChatLegacyDefer(key string, job *Job, content, target string, forFailure bool) error {
+func (s *Store) botChatLegacyDefer(ctx context.Context, key string, job *Job, content, target string, forFailure bool) error {
 	root, err := s.botChatPendingRoot()
 	if err != nil {
 		return err
 	}
-	if _, err := home.MakeUserDir(root, 0o700, true, true); err != nil {
+	if _, err := home.MakeUserDir(home.WithOverride(ctx, s.home), root, 0o700, true, true); err != nil {
 		return err
 	}
 	path := filepath.Join(root, key+".json")
@@ -70,7 +70,7 @@ func (s *Store) botChatLegacyDefer(key string, job *Job, content, target string,
 	record.Set("home", target)
 	record.Set("for_failure", forFailure)
 	record.Set("sequence", time.Now().UnixNano())
-	return config.AtomicJSONWriteMode(path, record, 0o600)
+	return config.AtomicJSONWriteMode(home.WithOverride(ctx, s.home), path, record, 0o600)
 }
 
 type legacyRecord struct {
@@ -261,7 +261,7 @@ func (s *Store) drainLegacyPendingRecords(ctx context.Context) error {
 				}
 				return err
 			}
-			return config.AtomicJSONWriteMode(item.path, item.record, 0o600)
+			return config.AtomicJSONWriteMode(home.WithOverride(ctx, s.home), item.path, item.record, 0o600)
 		}()
 		if errors.Is(err, errNotQueued) {
 			continue

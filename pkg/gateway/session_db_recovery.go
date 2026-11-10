@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"math"
 	"runtime"
 	"sync"
@@ -34,7 +35,7 @@ var (
 var handleCachePublishRuntimeStatus = PublishRuntimeStatus
 
 // Publishes one aggregate store health across every live cache with no path or error text
-func publishHandleHealth(source *handleHealthSource, path, stateName string) {
+func publishHandleHealth(ctx context.Context, source *handleHealthSource, path, stateName string) {
 	handleHealthMu.Lock()
 	states := handleHealthStates[source]
 	if states == nil {
@@ -58,7 +59,7 @@ func publishHandleHealth(source *handleHealthSource, path, stateName string) {
 	handleHealthMu.Unlock()
 	func() {
 		defer func() { _ = recover() }()
-		_, _ = handleCachePublishRuntimeStatus(RuntimeStatusUpdate{Fields: map[string]any{"session_store": map[string]any{"status": aggregate}}})
+		_, _ = handleCachePublishRuntimeStatus(ctx, RuntimeStatusUpdate{Fields: map[string]any{"session_store": map[string]any{"status": aggregate}}})
 	}()
 }
 
@@ -151,12 +152,12 @@ func (c *RecoverableHandleCache) isStale(path string, unavailable *handleUnavail
 }
 
 // Cached handle or one single flight open, nil without error while a retry is in flight or backing off
-func (c *RecoverableHandleCache) Get(path string, opener func() (any, error), nonCacheable func(error) bool) (any, error) {
-	return c.GetWith(path, opener, HandleCacheGetOptions{NonCacheable: nonCacheable})
+func (c *RecoverableHandleCache) Get(ctx context.Context, path string, opener func() (any, error), nonCacheable func(error) bool) (any, error) {
+	return c.GetWith(ctx, path, opener, HandleCacheGetOptions{NonCacheable: nonCacheable})
 }
 
 // Cached handle or one bounded open, raising non cacheable errors and every error under RaiseOnError
-func (c *RecoverableHandleCache) GetWith(path string, opener func() (any, error), opts HandleCacheGetOptions) (any, error) {
+func (c *RecoverableHandleCache) GetWith(ctx context.Context, path string, opener func() (any, error), opts HandleCacheGetOptions) (any, error) {
 	path = pypath.PathStr(path)
 	c.Lock.Lock()
 	if handle, ok := c.Handles[path]; ok {
@@ -181,7 +182,7 @@ func (c *RecoverableHandleCache) GetWith(path string, opener func() (any, error)
 	generation := c.generation
 	c.Lock.Unlock()
 	if wasUnavailable {
-		publishHandleHealth(c.healthSource, path, "retrying")
+		publishHandleHealth(ctx, c.healthSource, path, "retrying")
 	}
 	handle, err := opener()
 	if err != nil {
@@ -204,7 +205,7 @@ func (c *RecoverableHandleCache) GetWith(path string, opener func() (any, error)
 		}
 		c.Lock.Unlock()
 		if !stale {
-			publishHandleHealth(c.healthSource, path, "unavailable")
+			publishHandleHealth(ctx, c.healthSource, path, "unavailable")
 		}
 		if opts.RaiseOnError {
 			return nil, err
@@ -235,7 +236,7 @@ func (c *RecoverableHandleCache) GetWith(path string, opener func() (any, error)
 		}
 		return nil, nil
 	}
-	publishHandleHealth(c.healthSource, path, "ok")
+	publishHandleHealth(ctx, c.healthSource, path, "ok")
 	if wasUnavailable && opts.OnRecovered != nil {
 		opts.OnRecovered()
 	}

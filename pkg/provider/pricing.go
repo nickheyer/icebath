@@ -1295,7 +1295,7 @@ func openRouterModelSupportsTools(item map[string]any) bool {
 }
 
 // Mirrors a fetched /v1/models document into the reasoning capability cache for its URL
-func seedReasoningCaps(url string, items any) bool {
+func seedReasoningCaps(ctx context.Context, url string, items any) bool {
 	list, ok := asList(items)
 	if !ok {
 		return false
@@ -1308,7 +1308,7 @@ func seedReasoningCaps(url string, items any) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cache = caps
-	c.saveDisk(caps)
+	c.saveDisk(ctx, caps)
 	return true
 }
 
@@ -1323,7 +1323,7 @@ type PricingFetchOptions struct {
 }
 
 // FetchModelsWithPricing reads /v1/models pricing cached per base URL and per credential
-func FetchModelsWithPricing(opts PricingFetchOptions) PricingTable {
+func FetchModelsWithPricing(ctx context.Context, opts PricingFetchOptions) PricingTable {
 	if opts.BaseURL == "" {
 		opts.BaseURL = openRouterPricingBase
 	}
@@ -1346,7 +1346,7 @@ func FetchModelsWithPricing(opts PricingFetchOptions) PricingTable {
 	if payload == nil {
 		return cacheCatalog(cacheKey, PricingTable{}, 0)
 	}
-	seedReasoningCaps(url, payload["data"])
+	seedReasoningCaps(ctx, url, payload["data"])
 	result := PricingTable{}
 	for _, item := range pricingCatalogItems(payload) {
 		mid := stringOf(item["id"])
@@ -1442,8 +1442,8 @@ func resolveNousPricingCredentials(ctx context.Context) (apiKey, baseURL string)
 }
 
 // Shared Nous fetch so pricing and policy lookups read one cache entry
-func fetchNousPricing(apiKey, baseURL string, forceRefresh bool) PricingTable {
-	return FetchModelsWithPricing(PricingFetchOptions{APIKey: apiKey, BaseURL: baseURL, ForceRefresh: forceRefresh, IncludeSaleOriginal: true, CacheTTL: NousCatalogTTL})
+func fetchNousPricing(ctx context.Context, apiKey, baseURL string, forceRefresh bool) PricingTable {
+	return FetchModelsWithPricing(ctx, PricingFetchOptions{APIKey: apiKey, BaseURL: baseURL, ForceRefresh: forceRefresh, IncludeSaleOriginal: true, CacheTTL: NousCatalogTTL})
 }
 
 // NousPolicyAllowedIDs returns the model ids the caller's org may reach, or false to not filter
@@ -1456,7 +1456,7 @@ func NousPolicyAllowedIDs(ctx context.Context, forceRefresh bool) (map[string]bo
 	if apiKey == "" || baseURL == "" {
 		return nil, false
 	}
-	table := fetchNousPricing(apiKey, baseURL, forceRefresh)
+	table := fetchNousPricing(ctx, apiKey, baseURL, forceRefresh)
 	if len(table) == 0 {
 		return nil, false
 	}
@@ -1506,7 +1506,7 @@ func providerCacheKeyFor(ctx context.Context, provider string) (string, bool) {
 
 func fetchOpenRouterPricing(ctx context.Context, forceRefresh bool) PricingTable {
 	rememberProviderCacheKey(ctx, "openrouter", openRouterPricingBase)
-	return FetchModelsWithPricing(PricingFetchOptions{APIKey: resolveOpenRouterPricingAPIKey(), BaseURL: openRouterPricingBase, ForceRefresh: forceRefresh})
+	return FetchModelsWithPricing(ctx, PricingFetchOptions{APIKey: resolveOpenRouterPricingAPIKey(), BaseURL: openRouterPricingBase, ForceRefresh: forceRefresh})
 }
 
 func fetchAIGatewayPricingForProvider(ctx context.Context, forceRefresh bool) PricingTable {
@@ -1592,7 +1592,7 @@ func fetchNousPricingForProvider(ctx context.Context, forceRefresh bool) Pricing
 		return PricingTable{}
 	}
 	rememberProviderCacheKey(ctx, "nous", strings.TrimRight(baseURL, "/")+pricingAuthFingerprint(apiKey))
-	return fetchNousPricing(apiKey, baseURL, forceRefresh)
+	return fetchNousPricing(ctx, apiKey, baseURL, forceRefresh)
 }
 
 func aiGatewayPricingScope() string { return strings.TrimRight(AIGatewayBaseURL, "/") }

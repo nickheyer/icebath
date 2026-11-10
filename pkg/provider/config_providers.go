@@ -945,7 +945,7 @@ func IsEnvSettingKey(key string) bool {
 }
 
 // Removes same named top level config.yaml copies so the .env value is the only one
-func dropConfigYAMLCopies(h, key string) (bool, error) {
+func dropConfigYAMLCopies(ctx context.Context, h, key string) (bool, error) {
 	doc, err := config.ReadUser(h)
 	if err != nil {
 		return false, err
@@ -962,11 +962,11 @@ func dropConfigYAMLCopies(h, key string) (bool, error) {
 	if len(stale) == 0 {
 		return false, nil
 	}
-	return true, config.SaveUser(h, doc)
+	return true, config.SaveUser(ctx, h, doc)
 }
 
 // SaveEnvSetting writes an environment setting to .env and drops stale config.yaml copies
-func SaveEnvSetting(h, key, value string) error {
+func SaveEnvSetting(ctx context.Context, h, key, value string) error {
 	upper := strings.ToUpper(key)
 	if refusal := envWriteRefusal(h, upper, "set"); refusal != "" {
 		return fmt.Errorf("%s", refusal)
@@ -974,12 +974,12 @@ func SaveEnvSetting(h, key, value string) error {
 	if err := config.SaveEnvValue(h, upper, value); err != nil {
 		return err
 	}
-	_, err := dropConfigYAMLCopies(h, key)
+	_, err := dropConfigYAMLCopies(ctx, h, key)
 	return err
 }
 
 // RemoveEnvSetting removes the .env entry and any stale config.yaml copy and reports whether either existed
-func RemoveEnvSetting(h, key string) (bool, error) {
+func RemoveEnvSetting(ctx context.Context, h, key string) (bool, error) {
 	upper := strings.ToUpper(key)
 	if refusal := envWriteRefusal(h, upper, "remove"); refusal != "" {
 		return false, fmt.Errorf("%s", refusal)
@@ -988,7 +988,7 @@ func RemoveEnvSetting(h, key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	dropped, err := dropConfigYAMLCopies(h, key)
+	dropped, err := dropConfigYAMLCopies(ctx, h, key)
 	if err != nil {
 		return false, err
 	}

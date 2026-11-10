@@ -263,6 +263,11 @@ func (s *Store) fileLock(authPath string, timeout time.Duration) (func(), error)
 	}, nil
 }
 
+// LockPath takes the cross process lock of an explicit auth path like _auth_store_lock with target_path
+func (s *Store) LockPath(authPath string, timeout time.Duration) (func(), error) {
+	return s.fileLock(authPath, timeout)
+}
+
 // Lock takes the active store lock for one read modify write transaction
 func (s *Store) Lock(timeout time.Duration) (func(), error) {
 	return s.fileLock(s.path, timeout)

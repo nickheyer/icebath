@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/codeexec"
@@ -36,6 +37,7 @@ import (
 // Assigns every package level hook the lower packages leave to the binary, before any entry dispatches
 func installProcessWiring() {
 	registerCommandArgv()
+	commands.BannerVersionLabel = app.FormatBannerVersionLabel
 	gateway.S6Running, gateway.S6Scandir = gatewaycli.S6Running, func() string { return gatewaycli.S6DynamicScandir }
 	gateway.S6IsRunning = func(name string) (bool, error) {
 		return gatewaycli.NewS6ServiceManager(gatewaycli.S6DynamicScandir).IsRunning(name)
@@ -303,7 +305,7 @@ func runAtExit() {
 	run(state.RunTokenExitHooks)
 	run(func() { tools.CleanupAllEnvironments(processToolsEnv(context.Background())) })
 	run(func() { tools.CleanupSafeSkillsCopy() })
-	run(browser.AtexitCleanup)
+	run(func() { browser.AtexitCleanup(context.Background()) })
 	run(codeexec.ShutdownAllKernels)
 	run(codeexec.ShutdownAllRemoteKernels)
 	run(codeexec.ShutdownComputerUseBackends)

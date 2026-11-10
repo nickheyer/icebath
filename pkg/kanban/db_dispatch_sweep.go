@@ -287,12 +287,20 @@ func reapTerminalWorkerRow(ctx context.Context, conn state.SQLiteConn, row *Row,
 
 // Records a heartbeat event and touches last_heartbeat_at, false when the task is not running under that run
 func HeartbeatWorker(ctx context.Context, conn state.SQLiteConn, taskID string, note *string, expectedRunID *int64) (bool, error) {
+	return HeartbeatWorkerNote(ctx, conn, taskID, optStrValue(note), expectedRunID)
+}
+
+// Heartbeat whose note is any JSON value, stored on the event only when truthy
+func HeartbeatWorkerNote(ctx context.Context, conn state.SQLiteConn, taskID string, note any, expectedRunID *int64) (bool, error) {
 	now := time.Now().Unix()
 	beat := false
 	err := WriteTxn(ctx, conn, false, func() error {
 		sql := "UPDATE tasks SET last_heartbeat_at = ? WHERE id = ? AND status = 'running'"
 		params := []any{now, taskID}
 		if expectedRunID != nil {
+			if err := runIDBindable(expectedRunID); err != nil {
+				return err
+			}
 			sql += " AND current_run_id = ?"
 			params = append(params, *expectedRunID)
 		}
@@ -315,8 +323,8 @@ func HeartbeatWorker(ctx context.Context, conn state.SQLiteConn, taskID string, 
 			}
 		}
 		var body any
-		if truthyStr(note) {
-			body = payload("note", *note)
+		if pyrepr.Truthy(note) {
+			body = payload("note", note)
 		}
 		beat = true
 		return appendEvent(ctx, conn, taskID, "heartbeat", body, runID)

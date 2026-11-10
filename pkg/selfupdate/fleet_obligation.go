@@ -64,7 +64,7 @@ func writeFleetRestartPendingMarker(ctx context.Context, expectedSHA string, run
 		fleetObligationLog.Debug("Skipping fleet-restart-pending obligation under pytest (live checkout)")
 		return true, nil
 	}
-	return updaterecord.ArmHostObligation(marker, expectedSHA, runtimes, currentProfileName(ctx), owner)
+	return updaterecord.ArmHostObligation(ctx, marker, expectedSHA, runtimes, currentProfileName(ctx), owner)
 }
 
 // Profile whose CLI armed the obligation, default when unnamed and empty when the lookup fails

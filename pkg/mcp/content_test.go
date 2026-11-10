@@ -26,7 +26,7 @@ func textBlock(s string) *ContentBlock { return &ContentBlock{Type: "text", Text
 func render(t *testing.T, env *tools.Env, r *CallToolResult) map[string]any {
 	t.Helper()
 	var out map[string]any
-	raw := RenderCallToolResult(env, r, "test-server", nil)
+	raw := RenderCallToolResult(context.Background(), env, r, "test-server", nil)
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		t.Fatalf("render %q: %v", raw, err)
 	}
@@ -76,7 +76,7 @@ func TestStructuredContentArbitration(t *testing.T) {
 	if got["result"] != "Retrieved 1 chats (offset 0, limit 1)" || !reflect.DeepEqual(got["structuredContent"], structured) {
 		t.Fatalf("summary plus data %v", got)
 	}
-	if raw := RenderCallToolResult(nil, &CallToolResult{Content: []*ContentBlock{textBlock("just text")}}, "s", nil); raw != `{"result":"just text"}` {
+	if raw := RenderCallToolResult(context.Background(), nil, &CallToolResult{Content: []*ContentBlock{textBlock("just text")}}, "s", nil); raw != `{"result":"just text"}` {
 		t.Fatalf("text only wire %s", raw)
 	}
 	status := map[string]any{"status": "ok"}
@@ -104,11 +104,11 @@ func TestMetaSurfacing(t *testing.T) {
 			t.Fatalf("meta %v got %v", c.meta, got)
 		}
 	}
-	raw := RenderCallToolResult(nil, &CallToolResult{Content: []*ContentBlock{textBlock("done")}, StructuredContent: map[string]any{"ok": true}, Meta: map[string]any{"com.example/k": "v"}}, "s", nil)
+	raw := RenderCallToolResult(context.Background(), nil, &CallToolResult{Content: []*ContentBlock{textBlock("done")}, StructuredContent: map[string]any{"ok": true}, Meta: map[string]any{"com.example/k": "v"}}, "s", nil)
 	if raw != `{"result":"done","structuredContent":{"ok":true},"_meta":{"com.example/k":"v"}}` {
 		t.Fatalf("key order %s", raw)
 	}
-	if raw := RenderCallToolResult(nil, &CallToolResult{Meta: map[string]any{"com.example/k": "v"}}, "s", nil); raw != `{"_meta":{"com.example/k":"v"},"result":""}` {
+	if raw := RenderCallToolResult(context.Background(), nil, &CallToolResult{Meta: map[string]any{"com.example/k": "v"}}, "s", nil); raw != `{"_meta":{"com.example/k":"v"},"result":""}` {
 		t.Fatalf("empty text order %s", raw)
 	}
 	for key, want := range map[string]bool{"modelcontextprotocol.io/x": true, "mcp.dev/x": true, "tools.mcp.com/x": true,
@@ -194,7 +194,7 @@ func TestImageBlocksCachedAsMedia(t *testing.T) {
 		}
 	}
 	var paths []string
-	raw := RenderCallToolResult(env, &CallToolResult{Content: []*ContentBlock{{Type: "image", Data: base64.StdEncoding.EncodeToString(data), MimeType: "image/png"}, textBlock("caption")}}, "srv", &paths)
+	raw := RenderCallToolResult(context.Background(), env, &CallToolResult{Content: []*ContentBlock{{Type: "image", Data: base64.StdEncoding.EncodeToString(data), MimeType: "image/png"}, textBlock("caption")}}, "srv", &paths)
 	if len(paths) != 1 || !strings.Contains(raw, "MEDIA:"+paths[0]) {
 		t.Fatalf("render paths %v %s", paths, raw)
 	}
@@ -229,15 +229,15 @@ func TestResourceBlocks(t *testing.T) {
 	env := &tools.Env{Home: h}
 	pdf := []byte("%PDF-1.4 tiny")
 	blob := base64.StdEncoding.EncodeToString(pdf)
-	out := renderResourceBlock(env, &ContentBlock{Type: "resource", Resource: &ResourceContents{URI: "file:///docs/report.pdf", MimeType: "application/pdf", Blob: &blob}}, "srv")
+	out := renderResourceBlock(context.Background(), env, &ContentBlock{Type: "resource", Resource: &ResourceContents{URI: "file:///docs/report.pdf", MimeType: "application/pdf", Blob: &blob}}, "srv")
 	if !strings.HasPrefix(out, "[MCP resource saved to ") || !strings.Contains(out, "(application/pdf, 13 bytes)") || !strings.Contains(out, "report.pdf") {
 		t.Fatalf("pdf %q", out)
 	}
 	bad := "!!!not-base64!!!"
-	if out := renderResourceBlock(env, &ContentBlock{Type: "resource", Resource: &ResourceContents{URI: "u", MimeType: "application/pdf", Blob: &bad}}, "srv"); out != "[MCP embedded resource could not be decoded: application/pdf]" {
+	if out := renderResourceBlock(context.Background(), env, &ContentBlock{Type: "resource", Resource: &ResourceContents{URI: "u", MimeType: "application/pdf", Blob: &bad}}, "srv"); out != "[MCP embedded resource could not be decoded: application/pdf]" {
 		t.Fatalf("malformed %q", out)
 	}
-	if renderResourceBlock(env, textBlock("x"), "srv") != "" || renderResourceBlock(env, &ContentBlock{Type: "image"}, "srv") != "" {
+	if renderResourceBlock(context.Background(), env, textBlock("x"), "srv") != "" || renderResourceBlock(context.Background(), env, &ContentBlock{Type: "image"}, "srv") != "" {
 		t.Fatal("non resource blocks must render empty")
 	}
 	if got := resourceFilename("file:///a/b/..%2F..%2Fetc%2Fpasswd", ""); strings.Contains(got, "/") {
@@ -251,15 +251,15 @@ func TestResourceBlocks(t *testing.T) {
 		t.Fatalf("long %d %q", len(long), long[len(long)-8:])
 	}
 	huge := strings.Repeat("A", resourceMaxB64Chars+4)
-	if out := renderResourceBlock(env, &ContentBlock{Type: "resource", Resource: &ResourceContents{URI: "u", Blob: &huge}}, "srv"); !strings.HasPrefix(out, "[MCP embedded resource too large to cache: ~") || !strings.HasSuffix(out, ", uri=u]") {
+	if out := renderResourceBlock(context.Background(), env, &ContentBlock{Type: "resource", Resource: &ResourceContents{URI: "u", Blob: &huge}}, "srv"); !strings.HasPrefix(out, "[MCP embedded resource too large to cache: ~") || !strings.HasSuffix(out, ", uri=u]") {
 		t.Fatalf("oversized %q", out)
 	}
-	link := renderResourceBlock(env, &ContentBlock{Type: "resource_link", URI: "res://a", Name: "a", MimeType: "text/plain"}, "srv")
+	link := renderResourceBlock(context.Background(), env, &ContentBlock{Type: "resource_link", URI: "res://a", Name: "a", MimeType: "text/plain"}, "srv")
 	if link != "[MCP resource link: uri=res://a, name=a, mimeType=text/plain \u2014 fetch it with mcp__srv__read_resource]" {
 		t.Fatalf("link %q", link)
 	}
 	text := "\U000e0041embedded"
-	if out := renderResourceBlock(env, &ContentBlock{Type: "resource", Resource: &ResourceContents{URI: "u", Text: &text}}, "srv"); out != "embedded" {
+	if out := renderResourceBlock(context.Background(), env, &ContentBlock{Type: "resource", Resource: &ResourceContents{URI: "u", Text: &text}}, "srv"); out != "embedded" {
 		t.Fatalf("embedded text %q", out)
 	}
 	audio := cacheAudioBlock(env, &ContentBlock{Type: "audio", Data: base64.StdEncoding.EncodeToString([]byte("RIFFxxxxWAVE")), MimeType: "audio/x-wav"})

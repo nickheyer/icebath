@@ -28,9 +28,13 @@ func testCommandSources() ConfigCommandSources {
 		IsEnvSettingKey: func(key string) bool {
 			return !strings.Contains(key, ".") && key == strings.ToUpper(key) && !IsEnvConfigKey(key)
 		},
-		SaveEnvSetting:      func(h, key, value string) error { return SaveEnvValue(h, strings.ToUpper(key), value) },
-		ReadEnvSetting:      func(h, key string) (string, bool) { v, ok := LoadEnv(h)[strings.ToUpper(key)]; return v, ok },
-		RemoveEnvSetting:    func(h, key string) (bool, error) { return RemoveHomeEnvValue(context.Background(), h, key) },
+		SaveEnvSetting: func(_ context.Context, h, key, value string) error {
+			return SaveEnvValue(h, strings.ToUpper(key), value)
+		},
+		ReadEnvSetting: func(h, key string) (string, bool) { v, ok := LoadEnv(h)[strings.ToUpper(key)]; return v, ok },
+		RemoveEnvSetting: func(_ context.Context, h, key string) (bool, error) {
+			return RemoveHomeEnvValue(context.Background(), h, key)
+		},
 		DropStaleModelRoute: func(map[string]any, string, map[string]any) (map[string]any, bool) { return nil, false },
 	}
 }
@@ -52,47 +56,62 @@ func exitCode(err error) int {
 	return -1
 }
 
-func TestConfigSetCoercion(t *testing.T) {
-	ctx := context.Background()
-	cases := []struct {
-		key, value string
-		path       []string
-		want       any
-	}{
-		{"agent.max_turns", "-5", []string{"agent", "max_turns"}, -5},
-		{"agent.max_turns", " 42 ", []string{"agent", "max_turns"}, 42},
-		{"agent.max_turns", "-2.5", []string{"agent", "max_turns"}, -2.5},
-		{"mcp_servers.example.oauth.client_id", "123456789012.98765432109876", []string{"mcp_servers", "example", "oauth", "client_id"}, "123456789012.98765432109876"},
-		{"approvals.mode", "off", []string{"approvals", "mode"}, "off"},
+// Sets one value in a fresh facade home and returns the saved leaf
+func setAndRead(t *testing.T, key, value string, path ...string) (any, bool) {
+	t.Helper()
+	h, cfgPath := facadeHome(t, "")
+	captureFacade(t)
+	if err := SetConfigValue(context.Background(), h, key, value, false, testCommandSources()); err != nil {
+		t.Fatalf("%s=%q: %v", key, value, err)
 	}
-	for _, tc := range cases {
-		h, path := facadeHome(t, "")
-		captureFacade(t)
-		if err := SetConfigValue(ctx, h, tc.key, tc.value, false, testCommandSources()); err != nil {
-			t.Fatalf("%s=%q: %v", tc.key, tc.value, err)
-		}
-		got, ok := readSaved(t, path, tc.path...)
-		if !ok || !pyEq(got, tc.want) || PyTypeName(got) != PyTypeName(tc.want) {
-			t.Fatalf("%s=%q saved %#v want %#v", tc.key, tc.value, got, tc.want)
+	return readSaved(t, cfgPath, path...)
+}
+
+func TestNumericCoercion(t *testing.T) {
+	check := func(t *testing.T, key, value string, want any, path ...string) {
+		t.Helper()
+		got, ok := setAndRead(t, key, value, path...)
+		if !ok || !pyEq(got, want) || PyTypeName(got) != PyTypeName(want) {
+			t.Fatalf("%s=%q saved %#v want %#v", key, value, got, want)
 		}
 	}
-	for _, token := range []string{"null", "none", "None", "~"} {
-		h, path := facadeHome(t, "")
-		captureFacade(t)
-		if err := SetConfigValue(ctx, h, "agent.run_budget_seconds", token, false, testCommandSources()); err != nil {
-			t.Fatal(err)
+	t.Run("test_negative_int", func(t *testing.T) { check(t, "agent.max_turns", "-5", -5, "agent", "max_turns") })
+	t.Run("test_whitespace_padded_int", func(t *testing.T) { check(t, "agent.max_turns", " 42 ", 42, "agent", "max_turns") })
+	t.Run("test_negative_float", func(t *testing.T) { check(t, "agent.max_turns", "-2.5", -2.5, "agent", "max_turns") })
+	t.Run("test_lossy_decimal_identifier_stays_string", func(t *testing.T) {
+		check(t, "mcp_servers.example.oauth.client_id", "123456789012.98765432109876", "123456789012.98765432109876",
+			"mcp_servers", "example", "oauth", "client_id")
+	})
+}
+
+func TestNullCoercion(t *testing.T) {
+	t.Run("test_null_tokens_coerce_to_none", func(t *testing.T) {
+		for _, token := range []string{"null", "none", "None", "~"} {
+			if got, ok := setAndRead(t, "agent.run_budget_seconds", token, "agent", "run_budget_seconds"); !ok || got != nil {
+				t.Fatalf("%q saved %#v", token, got)
+			}
 		}
-		if got, ok := readSaved(t, path, "agent", "run_budget_seconds"); !ok || got != nil {
-			t.Fatalf("%q saved %#v", token, got)
+	})
+}
+
+func TestMalformedKey(t *testing.T) {
+	t.Run("test_empty_segment_rejected", func(t *testing.T) {
+		for _, bad := range []string{"agent.", ".agent", "agent..max_turns", "  "} {
+			h, _ := facadeHome(t, "")
+			captureFacade(t)
+			if code := exitCode(SetConfigValue(context.Background(), h, bad, "5", false, testCommandSources())); code != 1 {
+				t.Fatalf("%q exit %d", bad, code)
+			}
 		}
-	}
-	for _, bad := range []string{"agent.", ".agent", "agent..max_turns", "  "} {
-		h, _ := facadeHome(t, "")
-		captureFacade(t)
-		if code := exitCode(SetConfigValue(ctx, h, bad, "5", false, testCommandSources())); code != 1 {
-			t.Fatalf("%q exit %d", bad, code)
+	})
+}
+
+func TestStringTypedGuardPreserved(t *testing.T) {
+	t.Run("test_enum_off_stays_string", func(t *testing.T) {
+		if got, ok := setAndRead(t, "approvals.mode", "off", "approvals", "mode"); !ok || got != "off" {
+			t.Fatalf("saved %#v", got)
 		}
-	}
+	})
 }
 
 func TestConfigSetRefusesWrongContainerShapeAndKeepsModelShorthand(t *testing.T) {

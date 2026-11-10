@@ -40,8 +40,8 @@ func configStr(h, def string, keys ...string) string {
 }
 
 // Persists config section key to config.yaml, creating the section
-func writeConfigValue(h, section, key string, value any) error {
-	return updateUserConfig(h, func(doc map[string]any) error {
+func writeConfigValue(ctx context.Context, h, section, key string, value any) error {
+	return updateUserConfig(ctx, h, func(doc map[string]any) error {
 		existing, present := doc[section]
 		if !present {
 			existing = map[string]any{}
@@ -60,13 +60,17 @@ func writeConfigValue(h, section, key string, value any) error {
 func getCurrentMemoryProvider(h string) string { return configStr(h, "", "memory", "provider") }
 
 // Selects a memory provider in config.yaml
-func saveMemoryProvider(h, name string) error { return writeConfigValue(h, "memory", "provider", name) }
+func saveMemoryProvider(ctx context.Context, h, name string) error {
+	return writeConfigValue(ctx, h, "memory", "provider", name)
+}
 
 // Configured context engine, compressor when unset
 func getCurrentContextEngine(h string) string { return configStr(h, "compressor", "context", "engine") }
 
 // Selects a context engine in config.yaml
-func saveContextEngine(h, name string) error { return writeConfigValue(h, "context", "engine", name) }
+func saveContextEngine(ctx context.Context, h, name string) error {
+	return writeConfigValue(ctx, h, "context", "engine", name)
+}
 
 // Installed plugin path for a name, else exit 1 with the invalid name or the unknown plugin message
 func requireInstalledPlugin(ctx context.Context, name, pluginsDir string, console *Console) (string, error) {
@@ -211,9 +215,9 @@ func disabledByUpdate(h, key string, aliases map[string]bool) (bool, error) {
 }
 
 // Drops every trace of a removed plugin from config.yaml, reporting a cleared memory provider selection
-func forgetPluginConfig(h string, aliases map[string]bool) (map[string]any, error) {
+func forgetPluginConfig(ctx context.Context, h string, aliases map[string]bool) (map[string]any, error) {
 	result := map[string]any{}
-	err := updateUserConfig(h, func(cfg map[string]any) error {
+	err := updateUserConfig(ctx, h, func(cfg map[string]any) error {
 		if pluginsCfg, ok := cfg["plugins"].(map[string]any); ok {
 			for _, listKey := range []string{"enabled", "disabled"} {
 				names, ok := pluginsCfg[listKey].([]any)
@@ -628,7 +632,7 @@ func togglePluginToolset(ctx context.Context, h, name string, enable bool, tools
 	if toolsetKey == "" {
 		return nil
 	}
-	return updateUserConfig(h, func(cfg map[string]any) error {
+	return updateUserConfig(ctx, h, func(cfg map[string]any) error {
 		platformToolsets := childMap(cfg, "platform_toolsets")
 		for _, platform := range sortedKeys(platformToolsets) {
 			list, ok := tools.ParsePlatformToolsetsValue(platformToolsets[platform])

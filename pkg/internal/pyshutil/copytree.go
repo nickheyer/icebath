@@ -27,18 +27,14 @@ func IgnorePatterns(patterns ...string) func(dir string, names []string) []strin
 
 // Copies like CopyTree, skipping in each directory the names ignore returns for it
 func CopyTreeIgnore(src, dst string, symlinks, dirsExistOK bool, ignore func(dir string, names []string) []string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
 	if _, err := os.Lstat(dst); err == nil && !dirsExistOK {
 		return fmt.Errorf("[Errno 17] File exists: '%s'", dst)
 	}
-	st, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dst, st.Mode().Perm()|0o700); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(src)
-	if err != nil {
+	if err := os.MkdirAll(dst, 0o777); err != nil {
 		return err
 	}
 	ignored := map[string]bool{}
@@ -68,6 +64,9 @@ func CopyTreeIgnore(src, dst string, symlinks, dirsExistOK bool, ignore func(dir
 			if err == nil {
 				err = os.Symlink(target, to)
 			}
+			if err == nil {
+				err = CopyLinkStat(from, to)
+			}
 			if err != nil {
 				failures = append(failures, err)
 			}
@@ -95,7 +94,7 @@ func CopyTreeIgnore(src, dst string, symlinks, dirsExistOK bool, ignore func(dir
 			}
 		}
 	}
-	if err := os.Chtimes(dst, st.ModTime(), st.ModTime()); err != nil {
+	if err := copyStat(src, dst); err != nil {
 		failures = append(failures, err)
 	}
 	return errors.Join(failures...)

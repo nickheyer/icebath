@@ -21,17 +21,32 @@ func ownTaskEnv(taskID, name string) (string, bool) {
 	return os.LookupEnv(name)
 }
 
-// Dispatcher run id of this worker when it is scoped to the task, not ok when unset or not an integer
-func workerRunID(taskID string) (int64, bool) {
+// Run id standing for a Python int SQLite cannot hold, unequal to every real run and refused when bound
+var runIDBeyondSQLite = func() *int64 { v := int64(-1); return &v }()
+
+// Failure sqlite3 raises binding a run id past its integer range, nil for every other id
+func runIDBindable(id *int64) error {
+	if id == runIDBeyondSQLite {
+		return &RuntimeError{"Python int too large to convert to SQLite INTEGER"}
+	}
+	return nil
+}
+
+// Run id of this worker for the task as the board calls take it, nil when unset or not an integer
+func workerRunIDArg(taskID string) *int64 {
 	raw, _ := ownTaskEnv(taskID, "ICEBATH_KANBAN_RUN_ID")
 	if raw == "" {
-		return 0, false
+		return nil
 	}
 	parsed, ok := pyint.Parse(raw)
-	if !ok || !parsed.IsInt64() {
-		return 0, false
+	if !ok {
+		return nil
 	}
-	return parsed.Int64(), true
+	if !parsed.IsInt64() {
+		return runIDBeyondSQLite
+	}
+	id := parsed.Int64()
+	return &id
 }
 
 // Records this worker's pid on its run, false only when the board says the run was already reclaimed
@@ -40,8 +55,8 @@ func RegisterCurrentWorkerFromEnv(ctx context.Context) (registered bool) {
 	if taskID == "" {
 		return true
 	}
-	runID, ok := workerRunID(taskID)
-	if !ok || tools.IsDelegatedChildContext(ctx) {
+	run := workerRunIDArg(taskID)
+	if run == nil || isDelegatedChildContext(ctx, tools.ToolEnvFrom(ctx)) {
 		return true
 	}
 	fail := func(cause any) bool {
@@ -57,7 +72,11 @@ func RegisterCurrentWorkerFromEnv(ctx context.Context) (registered bool) {
 	if err != nil {
 		return fail(err)
 	}
-	live, err := adoptOnBoard(ctx, conn, taskID, runID)
+	if err := runIDBindable(run); err != nil {
+		_ = conn.Close()
+		return fail(err)
+	}
+	live, err := adoptOnBoard(ctx, conn, taskID, *run)
 	if err != nil {
 		return fail(err)
 	}

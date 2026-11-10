@@ -148,7 +148,7 @@ func consumePidMarkerForSelf(path string, ttl int, onConsume func(string, *pyjso
 }
 
 // Records that targetPid is being replaced by this process, the target start time captured unless given
-func WriteTakeoverMarker(targetPid int, targetHome string, targetStartTime any, startTimeGiven bool) bool {
+func WriteTakeoverMarker(ctx context.Context, targetPid int, targetHome string, targetStartTime any, startTimeGiven bool) bool {
 	markerHome := targetHome
 	if markerHome == "" {
 		markerHome = processHermesHome()
@@ -175,12 +175,12 @@ func WriteTakeoverMarker(targetPid int, targetHome string, targetStartTime any, 
 	record.Set("replacer_pid", int64(statusGetpid()))
 	record.Set("replacer_hermes_home", replacerHome)
 	record.Set("written_at", utcNowISO())
-	return writeMarker(path, record)
+	return writeMarker(ctx, path, record)
 }
 
 // Atomically writes a marker record, false on any OS failure
-func writeMarker(path string, record *pyjson.Object) bool {
-	return writeJSONFile(path, record) == nil
+func writeMarker(ctx context.Context, path string, record *pyjson.Object) bool {
+	return writeJSONFile(ctx, path, record) == nil
 }
 
 // Consumes the takeover marker, true for a planned takeover of this process
@@ -351,13 +351,13 @@ func ReapGatewayChildren(children []gatewayChild, parentPid int, timeout time.Du
 }
 
 // Terminates one verified scoped lock holder for replace, the owner pid once that exact identity exited
-func TakeOverScopedLockHolder(record *pyjson.Object, gracefulAttempts, forceAttempts int) (int, bool) {
+func TakeOverScopedLockHolder(ctx context.Context, record *pyjson.Object, gracefulAttempts, forceAttempts int) (int, bool) {
 	ownerPid, ownerStart, targetHome, ok := validatedScopedLockGatewayOwner(record)
 	if !ok {
 		return 0, false
 	}
 	children := statusSnapshotGatewayChildren(ownerPid)
-	if !WriteTakeoverMarker(ownerPid, targetHome, ownerStart, true) {
+	if !WriteTakeoverMarker(ctx, ownerPid, targetHome, ownerStart, true) {
 		return 0, false
 	}
 	replaced, ok := terminateVerifiedOwner(ownerPid, ownerStart, gracefulAttempts, forceAttempts)
@@ -405,13 +405,13 @@ func terminateVerifiedOwner(ownerPid int, ownerStart any, gracefulAttempts, forc
 }
 
 // Records that targetPid is being stopped intentionally so its exit is clean
-func WritePlannedStopMarker(targetPid int) bool {
+func WritePlannedStopMarker(ctx context.Context, targetPid int) bool {
 	record := pyjson.NewObject()
 	record.Set("target_pid", int64(targetPid))
 	record.Set("target_start_time", statusProcessStartTime(targetPid))
 	record.Set("stopper_pid", int64(statusGetpid()))
 	record.Set("written_at", utcNowISO())
-	return writeMarker(plannedStopMarkerPath(), record)
+	return writeMarker(ctx, plannedStopMarkerPath(), record)
 }
 
 // Whether an update pause record or a recovery claim is on disk, true when the directory cannot be listed

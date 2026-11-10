@@ -68,6 +68,7 @@ func TestInterruptQueueDrain(t *testing.T) {
 }
 
 func TestRestoreSessionCwdMovesIntoTheRecordedDirectory(t *testing.T) {
+	t.Setenv("COLUMNS", "500")
 	rec := recordPrints(t)
 	c := bareCLI()
 	c.console = console()

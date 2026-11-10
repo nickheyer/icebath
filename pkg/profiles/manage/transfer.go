@@ -256,9 +256,19 @@ func walkNoFollow(root string, out *[]string) error {
 // Text file an export adds to the staged tree at an archive relative path, applied in order
 type ExportExtraFile struct{ Rel, Content string }
 
+// Profile lookup the export resolves its source through, the get_profile_dir attribute hermes tests replace
+var existingProfileDir = profiles.ExistingProfileDir
+
+// Replaces the export profile lookup for callers outside the package until the returned restore runs
+func SwapExistingProfileDir(f func(name string) (string, string, error)) (restore func()) {
+	old := existingProfileDir
+	existingProfileDir = f
+	return func() { existingProfileDir = old }
+}
+
 // Exports a profile to a tar.gz without credentials and with staged text force redacted, returning the archive path
 func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (_ string, err error) {
-	canon, profileDir, err := profiles.ExistingProfileDir(name)
+	canon, profileDir, err := existingProfileDir(name)
 	if err != nil {
 		return "", err
 	}

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,7 +43,7 @@ func TestReplacementStopsTheVerifiedOldOwnerWithAPlannedStop(t *testing.T) {
 	h := replaceHome(t)
 	_, done := oldOwner(t, h)
 	swapSeam(t, &replaceInstallRootOf, func() string { return h })
-	if refusal := ReplaceIncompatibleOwner(h, pythread.Monotonic()+15); refusal != "" {
+	if refusal := ReplaceIncompatibleOwner(context.Background(), h, pythread.Monotonic()+15); refusal != "" {
 		t.Fatal(refusal)
 	}
 	select {
@@ -59,7 +60,7 @@ func TestReplacementRefusesARecycledPid(t *testing.T) {
 	swapSeam(t, &replaceIdentifyOf, func(string, time.Duration) (string, *pyjson.Object, error) {
 		return h, ownerPayload(t, h, proc.Process.Pid, 1), nil
 	})
-	if refusal := ReplaceIncompatibleOwner(h, pythread.Monotonic()+5); refusal != "owner_unverified" || !ownerAlive(done) {
+	if refusal := ReplaceIncompatibleOwner(context.Background(), h, pythread.Monotonic()+5); refusal != "owner_unverified" || !ownerAlive(done) {
 		t.Fatal(refusal)
 	}
 }
@@ -70,7 +71,7 @@ func TestReplacementRefusesAnotherInstallsOwner(t *testing.T) {
 	otherRoot, _ := pypath.Resolve(filepath.Join(t.TempDir(), "other"))
 	os.Mkdir(otherRoot, 0o700)
 	swapSeam(t, &replaceInstallRootOf, func() string { return otherRoot })
-	if refusal := ReplaceIncompatibleOwner(h, pythread.Monotonic()+5); refusal != "foreign_install" || !ownerAlive(done) {
+	if refusal := ReplaceIncompatibleOwner(context.Background(), h, pythread.Monotonic()+5); refusal != "foreign_install" || !ownerAlive(done) {
 		t.Fatal(refusal)
 	}
 }
@@ -83,7 +84,7 @@ func TestReplacementRefusesAnOwnerServingAnotherHome(t *testing.T) {
 	swapSeam(t, &replaceIdentifyOf, func(string, time.Duration) (string, *pyjson.Object, error) {
 		return h, ownerPayload(t, elsewhere, proc.Process.Pid, GetProcessStartTime(proc.Process.Pid)), nil
 	})
-	if refusal := ReplaceIncompatibleOwner(h, pythread.Monotonic()+5); refusal != "foreign_install" || !ownerAlive(done) {
+	if refusal := ReplaceIncompatibleOwner(context.Background(), h, pythread.Monotonic()+5); refusal != "foreign_install" || !ownerAlive(done) {
 		t.Fatal(refusal)
 	}
 }

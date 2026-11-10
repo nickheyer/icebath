@@ -351,6 +351,9 @@ func GoalRunStatus(ctx context.Context, conn state.SQLiteConn, taskID string, ex
 	}
 	str := func(s string) (*string, error) { return &s, nil }
 	if expectedRunID != nil {
+		if err := runIDBindable(expectedRunID); err != nil {
+			return nil, err
+		}
 		row, err := QueryOne(ctx, conn, "SELECT outcome FROM task_runs WHERE id = ? AND task_id = ?", *expectedRunID, taskID)
 		if err != nil {
 			return nil, err

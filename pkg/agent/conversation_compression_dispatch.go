@@ -7,6 +7,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/goals"
+	"github.com/nickheyer/icebath/pkg/tools"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -228,7 +231,7 @@ func rebuildSystemPromptAtBoundary(ctx context.Context, a *AIAgent, systemMessag
 		return a.cachedSystemPrompt, nil
 	}
 	cached := a.cachedSystemPrompt
-	if err := InvalidateSystemPrompt(a); err != nil {
+	if err := InvalidateSystemPrompt(tools.WithEnvHome(ctx, a.env), a); err != nil {
 		return "", err
 	}
 	func() {
@@ -342,7 +345,7 @@ func parentDeliberatelyEnded(ctx context.Context, sessionDB any, sessionID strin
 // Migrates goal, heartbeat and loop automation from the parent to the compression child
 func carryCompressionAutomation(ctx context.Context, a *AIAgent, oldSessionID string) {
 	swallowCompression("Could not migrate goal on compression", false, func() error {
-		migrateGoalToSession(ctx, oldSessionID, a.sessionID, "compression")
+		goals.MigrateGoalToSession(ctx, oldSessionID, a.sessionID, "compression")
 		return nil
 	})
 	swallowCompression("Could not migrate heartbeat on compression", false, func() error {

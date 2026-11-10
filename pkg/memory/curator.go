@@ -143,7 +143,7 @@ func LoadCuratorState(ctx context.Context) (*pyjson.Object, error) {
 
 // Writes the curator state sorted and indented, logging instead of failing
 func SaveCuratorState(ctx context.Context, data *pyjson.Object) {
-	if err := config.AtomicJSONWriteWith(curatorStateFile(ctx), data, pyjson.Indent(2), pyjson.SortKeys(true)); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, curatorStateFile(ctx), data, pyjson.Indent(2), pyjson.SortKeys(true)); err != nil {
 		curatorLog().Debug(fmt.Sprintf("Failed to save curator state: %v", err))
 	}
 }

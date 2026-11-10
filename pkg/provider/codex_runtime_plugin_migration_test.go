@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -52,7 +53,7 @@ func codexMigrationPatchQuery(t *testing.T, fn func(codexHome string, timeout fl
 
 func codexMigrateNoExtras(t *testing.T, cfg map[string]any, home string) *CodexMigrationReport {
 	t.Helper()
-	report, err := MigrateCodexRuntimePlugins(cfg, CodexMigrateOptions{CodexHome: home, SkipPluginDiscovery: true, SkipToolsMCPServer: true})
+	report, err := MigrateCodexRuntimePlugins(context.Background(), cfg, CodexMigrateOptions{CodexHome: home, SkipPluginDiscovery: true, SkipToolsMCPServer: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 func TestCodexMigrationTOMLValueFormatter(t *testing.T) {
 	t.Run("test_atomic_write_no_temp_leak_on_success", func(t *testing.T) {
 		home := t.TempDir()
-		report, err := MigrateCodexRuntimePlugins(map[string]any{"mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}},
+		report, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{"mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}},
 			CodexMigrateOptions{CodexHome: home, SkipPluginDiscovery: true, SkipToolsMCPServer: true, NoDefaultPermissionProfile: true})
 		if err != nil || !report.Written {
 			t.Fatalf("report %+v err %v", report, err)
@@ -151,7 +152,7 @@ func TestCodexMigrationTOMLValueFormatter(t *testing.T) {
 		if err := os.Symlink(filepath.Join(locked, "config.toml"), filepath.Join(home, "config.toml")); err != nil {
 			t.Fatal(err)
 		}
-		report, err := MigrateCodexRuntimePlugins(map[string]any{"mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}},
+		report, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{"mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}},
 			CodexMigrateOptions{CodexHome: home, SkipPluginDiscovery: true, SkipToolsMCPServer: true, NoDefaultPermissionProfile: true})
 		if err != nil {
 			t.Fatal(err)
@@ -269,7 +270,7 @@ func TestCodexMigrationMigrate(t *testing.T) {
 			}, "", nil
 		})
 		home := t.TempDir()
-		report, err := MigrateCodexRuntimePlugins(map[string]any{"model": map[string]any{"codex_bin": "/opt/codex-app/codex"}}, CodexMigrateOptions{CodexHome: home})
+		report, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{"model": map[string]any{"codex_bin": "/opt/codex-app/codex"}}, CodexMigrateOptions{CodexHome: home})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -290,7 +291,7 @@ func TestCodexMigrationMigrate(t *testing.T) {
 		codexMigrationPatchQuery(t, func(string, float64, string) ([]map[string]any, string, error) {
 			return []map[string]any{}, "codex CLI not available", nil
 		})
-		report, err := MigrateCodexRuntimePlugins(map[string]any{"mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}},
+		report, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{"mcp_servers": map[string]any{"x": map[string]any{"command": "y"}}},
 			CodexMigrateOptions{CodexHome: t.TempDir(), SkipToolsMCPServer: true})
 		if err != nil || !report.Written || !slices.Equal(report.Migrated, []string{"x"}) || report.PluginQueryError != "codex CLI not available" || len(report.MigratedPlugins) != 0 {
 			t.Fatalf("report %+v err %v", report, err)
@@ -299,7 +300,7 @@ func TestCodexMigrationMigrate(t *testing.T) {
 	t.Run("test_full_migration_round_trip", func(t *testing.T) {
 		installCodexEnvSources(t)
 		home := t.TempDir()
-		report, err := MigrateCodexRuntimePlugins(map[string]any{"mcp_servers": map[string]any{
+		report, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{"mcp_servers": map[string]any{
 			"filesystem": map[string]any{"command": "npx", "args": []any{"-y", "@modelcontextprotocol/server-filesystem"}},
 			"github":     map[string]any{"url": "https://api.github.com/mcp", "headers": map[string]any{"Authorization": "Bearer x"}},
 		}}, CodexMigrateOptions{CodexHome: home, SkipToolsMCPServer: true})
@@ -351,7 +352,7 @@ func TestCodexMigrationMigrate(t *testing.T) {
 		codexMigrationPatchQuery(t, func(string, float64, string) ([]map[string]any, string, error) {
 			return []map[string]any{}, "boom", nil
 		})
-		report, _ = MigrateCodexRuntimePlugins(nil, CodexMigrateOptions{CodexHome: home, SkipToolsMCPServer: true})
+		report, _ = MigrateCodexRuntimePlugins(context.Background(), nil, CodexMigrateOptions{CodexHome: home, SkipToolsMCPServer: true})
 		if report.PluginQueryError != "boom; existing config.toml was unloadable — re-run `icebath codex-runtime migrate` to migrate plugins" {
 			t.Fatalf("plugin error %q", report.PluginQueryError)
 		}
@@ -399,7 +400,7 @@ func TestCodexMigrationStripUnmanagedPluginTables(t *testing.T) {
 		codexMigrationPatchQuery(t, func(string, float64, string) ([]map[string]any, string, error) {
 			return []map[string]any{{"name": "tasks", "marketplace": "openai-curated", "enabled": true}}, "", nil
 		})
-		if _, err := MigrateCodexRuntimePlugins(map[string]any{}, CodexMigrateOptions{CodexHome: home, SkipToolsMCPServer: true}); err != nil {
+		if _, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{}, CodexMigrateOptions{CodexHome: home, SkipToolsMCPServer: true}); err != nil {
 			t.Fatal(err)
 		}
 		text := codexMigrationRead(t, target)
@@ -521,7 +522,7 @@ func TestCodexMigrationSameNameUserMCPTable(t *testing.T) {
 		home := t.TempDir()
 		target := filepath.Join(home, "config.toml")
 		os.WriteFile(target, []byte("[mcp_servers.gbrain]\ncommand = \"existing-gbrain\"\n"), 0o644)
-		report, err := MigrateCodexRuntimePlugins(cfg, opts(home))
+		report, err := MigrateCodexRuntimePlugins(context.Background(), cfg, opts(home))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -542,7 +543,7 @@ func TestCodexMigrationSameNameUserMCPTable(t *testing.T) {
 		home := t.TempDir()
 		target := filepath.Join(home, "config.toml")
 		os.WriteFile(target, []byte("[mcp_servers]\ngbrain = { command = \"existing-gbrain\" }\n"), 0o644)
-		report, err := MigrateCodexRuntimePlugins(cfg, opts(home))
+		report, err := MigrateCodexRuntimePlugins(context.Background(), cfg, opts(home))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -565,7 +566,7 @@ func TestCodexMigrationSameNameUserMCPTable(t *testing.T) {
 		os.WriteFile(target, []byte(original), 0o644)
 		t.Setenv("CODEX_HOME", codexHome)
 		t.Setenv("HOME", tmp)
-		report, err := MigrateCodexRuntimePlugins(map[string]any{"mcp_servers": map[string]any{"gbrain": map[string]any{"command": "projected"}, "other": map[string]any{"command": "o"}}}, CodexMigrateOptions{DryRun: true})
+		report, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{"mcp_servers": map[string]any{"gbrain": map[string]any{"command": "projected"}, "other": map[string]any{"command": "o"}}}, CodexMigrateOptions{DryRun: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -601,7 +602,7 @@ func TestCodexMigrationWorkerOverridesTargetTheMigratedServer(t *testing.T) {
 		targeted[strings.TrimPrefix(strings.SplitN(arg, ".env.", 2)[0], "mcp_servers.")] = true
 	}
 	codexHome := filepath.Join(tmp, "codex")
-	report, err := MigrateCodexRuntimePlugins(map[string]any{"mcp_servers": map[string]any{}}, CodexMigrateOptions{CodexHome: codexHome, SkipPluginDiscovery: true})
+	report, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{"mcp_servers": map[string]any{}}, CodexMigrateOptions{CodexHome: codexHome, SkipPluginDiscovery: true})
 	if err != nil || len(report.Errors) != 0 {
 		t.Fatalf("report %+v err %v", report, err)
 	}

@@ -187,7 +187,7 @@ func TestAPreinstalledPluginGetsTheScopeConversionOnce(t *testing.T) {
 	if err := tools.Default.SavePlatformTools(ctx, "", config.Tree(cfg), "telegram", map[string]bool{"web": true, "homeassistant": true}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.SaveUser(h, cfg); err != nil {
+	if err := config.SaveUser(ctx, h, cfg); err != nil {
 		t.Fatal(err)
 	}
 	MigrateLeftCoreHome(ctx, h, reinstalled, func(string) {}, false)

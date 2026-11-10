@@ -1,6 +1,7 @@
 package pyfs
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -19,20 +20,20 @@ type EncodeError struct{ Msg string }
 func (e *EncodeError) Error() string { return e.Msg }
 
 // Writes text through a temp file beside the published target, fsync, and an atomic rename
-func AtomicWriteText(path, content, prefix string) error {
-	return atomicWriteText(path, content, prefix, nil, false)
+func AtomicWriteText(ctx context.Context, path, content, prefix string) error {
+	return atomicWriteText(ctx, path, content, prefix, nil, false)
 }
 
 // Writes like AtomicWriteText with the permission bits forced and the existing owner carried across
-func AtomicWriteTextMode(path, content, prefix string, mode os.FileMode) error {
-	return atomicWriteText(path, content, prefix, &mode, true)
+func AtomicWriteTextMode(ctx context.Context, path, content, prefix string, mode os.FileMode) error {
+	return atomicWriteText(ctx, path, content, prefix, &mode, true)
 }
 
-func atomicWriteText(path, content, prefix string, forced *os.FileMode, preserveOwner bool) error {
+func atomicWriteText(ctx context.Context, path, content, prefix string, forced *os.FileMode, preserveOwner bool) error {
 	if !utf8.ValidString(content) {
 		return unicodeEncodeError(content)
 	}
-	if _, err := home.Mkdir(filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
 	var mode os.FileMode

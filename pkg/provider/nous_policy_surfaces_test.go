@@ -115,7 +115,7 @@ func nousPolicyCatalog(t *testing.T, catalog []string) {
 	auxResolveAPIKeyProviderCredentialsFn = func(_ context.Context, provider string) (apiKeyCreds, error) {
 		return apiKeyCreds{}, errors.New("not an api key provider: " + provider)
 	}
-	auxFetchModelsWithPricingFn = func(PricingFetchOptions) PricingTable {
+	auxFetchModelsWithPricingFn = func(context.Context, PricingFetchOptions) PricingTable {
 		out := PricingTable{}
 		for _, id := range catalog {
 			out[id] = map[string]any{}

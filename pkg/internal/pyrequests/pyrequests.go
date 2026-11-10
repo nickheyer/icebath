@@ -65,6 +65,20 @@ type Response struct {
 	Body   []byte
 }
 
+// HTTPError requests raise_for_status raises for a client or server error status, nil for any other
+func (r *Response) RaiseForStatus(rawURL string) error {
+	kind := ""
+	switch {
+	case 400 <= r.Status && r.Status < 500:
+		kind = "Client"
+	case 500 <= r.Status && r.Status < 600:
+		kind = "Server"
+	default:
+		return nil
+	}
+	return &Error{Class: "HTTPError", Text: fmt.Sprintf("%d %s Error: %s for url: %s", r.Status, kind, http.StatusText(r.Status), rawURL)}
+}
+
 type pool struct {
 	https bool
 	host  string

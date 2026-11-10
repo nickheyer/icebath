@@ -258,6 +258,15 @@ func (e *ProfileIdentitySettlementPending) Error() string {
 	return fmt.Sprintf("Profile '%s' was deleted, but its session/routing identity settlement is still pending — run: %s", e.Profile, e.RetryCommand)
 }
 
+// Matches a RuntimeError target too, the subclass relation the Python type declares
+func (e *ProfileIdentitySettlementPending) As(target any) bool {
+	if rt, ok := target.(**RuntimeError); ok {
+		*rt = &RuntimeError{Msg: e.Error(), Cause: e}
+		return true
+	}
+	return false
+}
+
 func newSettlementPending(profile, path string) *ProfileIdentitySettlementPending {
 	return &ProfileIdentitySettlementPending{Profile: profile, Path: path, RetryCommand: "icebath profile purge-identity " + profile}
 }
@@ -441,7 +450,7 @@ var hostSystem = func() string {
 }
 
 // Disables and removes the profile's user service registration, true when one was removed
-var cleanupGatewayService = func(ctx context.Context, name, profileDir string) bool {
+var cleanupGatewayService = func(ctx context.Context, name, profileDir string) (removed bool) {
 	oldHome, hadHome := os.LookupEnv(home.EnvHome)
 	pctx := home.WithOverride(ctx, profileDir)
 	os.Setenv(home.EnvHome, profileDir)
@@ -451,12 +460,31 @@ var cleanupGatewayService = func(ctx context.Context, name, profileDir string) b
 			os.Setenv(home.EnvHome, oldHome)
 		}
 	}()
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(stdout, "⚠ Service cleanup: %s\n", panicText(r))
+			removed = false
+		}
+	}()
 	removed, err := cleanupGatewayServiceIn(pctx, profileDir)
 	if err != nil {
 		fmt.Fprintf(stdout, "⚠ Service cleanup: %s\n", errText(err))
 		return false
 	}
 	return removed
+}
+
+// Service cleanup of a profile for callers outside the package
+func CleanupGatewayService(ctx context.Context, name, profileDir string) bool {
+	return cleanupGatewayService(ctx, name, profileDir)
+}
+
+// Text of a recovered panic the way Python prints the caught exception
+func panicText(r any) string {
+	if err, ok := r.(error); ok {
+		return errText(err)
+	}
+	return fmt.Sprint(r)
 }
 
 // Platform arms of the service cleanup under the profile home

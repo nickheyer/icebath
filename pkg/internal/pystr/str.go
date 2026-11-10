@@ -142,8 +142,18 @@ func Lower(s string) string { return cases.Lower(language.Und).String(s) }
 // str.upper with full case mapping
 func Upper(s string) string { return cases.Upper(language.Und).String(s) }
 
-// str.casefold with full case folding
-func Casefold(s string) string { return cases.Fold().String(s) }
+// str.casefold with full case folding, Cherokee folding to its uppercase letters as CaseFolding.txt maps it
+func Casefold(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 0xAB70 && r <= 0xABBF:
+			return r - 0xAB70 + 0x13A0
+		case r >= 0x13F8 && r <= 0x13FD:
+			return r - 8
+		}
+		return r
+	}, cases.Fold().String(s))
+}
 
 // str.title, titlecasing a code point after an uncased one and lowercasing it after a cased one
 func Title(s string) string {

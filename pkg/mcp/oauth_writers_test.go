@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -35,7 +36,7 @@ func TestOAuthTokenWriteAfterProfileDeleteDoesNotRecreateHome(t *testing.T) {
 	if home.NamedProfileHome(profile) == "" || exists(profile) {
 		t.Fatal("profile not tombstoned")
 	}
-	err := writeOAuthJSON(filepath.Join(profile, "mcp-oauth", "tokens.json"), map[string]any{"access_token": "x"})
+	err := writeOAuthJSON(context.Background(), filepath.Join(profile, "mcp-oauth", "tokens.json"), map[string]any{"access_token": "x"})
 	var missing *home.ErrProfileMissing
 	if !errors.As(err, &missing) || !strings.Contains(err.Error(), "Named profile home does not exist") {
 		t.Fatalf("err %v", err)

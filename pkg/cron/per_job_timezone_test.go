@@ -212,7 +212,7 @@ func TestFallBackSecondOccurrenceIsStrictlyLater(t *testing.T) {
 	}
 }
 
-func TestNullAndAbsentTimezoneAreTheSameJob(t *testing.T) {
+func TestNullAndAbsentAreTheSameJob(t *testing.T) {
 	s, _, _ := laStore(t)
 	explicit := mustCreate(t, s, CreateJobOptions{Prompt: prompt("null"), Schedule: weekday9AM, Model: "fixture", Deliver: prompt("local"), Timezone: nil})
 	absent := mustCreate(t, s, CreateJobOptions{Prompt: prompt("absent"), Schedule: weekday9AM, Model: "fixture", Deliver: prompt("local")})
@@ -286,7 +286,7 @@ func TestComputedWindowClassifiesA45MinLateHourlyRunAsCatchUp(t *testing.T) {
 	}
 }
 
-func TestGraceOverrideWidensTheWindowSoTheSameRunIsOnlyLate(t *testing.T) {
+func TestOverrideWidensTheWindowSoTheSameRunIsOnlyLate(t *testing.T) {
 	if kind := lateHourlyStamp(t, 120); kind != "late" {
 		t.Fatalf("kind %s", kind)
 	}
@@ -341,7 +341,7 @@ func TestStoredGraceRoundTrips(t *testing.T) {
 	}
 }
 
-func TestOnTimeTickFiresAsScheduledWithZeroGrace(t *testing.T) {
+func TestOnTimeTickFiresAsScheduled(t *testing.T) {
 	for _, catchUpDisabled := range []bool{false, true} {
 		s, fc, _ := laStore(t)
 		if catchUpDisabled {
@@ -370,5 +370,22 @@ func TestExplicitGraceSkipsARealMissEvenWithDefaultCatchUp(t *testing.T) {
 	next := parseInstant(t, storedJob(t, s, id).NextRunAt)
 	if !next.Equal(time.Date(2026, 10, 23, 9, 0, 0, 0, ny)) {
 		t.Fatalf("next %v", next)
+	}
+}
+
+func TestManualRunSettleRecomputesInTheJobZone(t *testing.T) {
+	s, fc, _ := laStore(t)
+	ny, hk := mustZone(t, "America/New_York"), mustZone(t, "Asia/Hong_Kong")
+	fc.Set(time.Date(2026, 10, 22, 12, 0, 0, 0, ny))
+	schedule, err := s.parseSchedule(daily9AM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := &Job{Schedule: schedule, Timezone: strPtr("Asia/Hong_Kong"), NextRunAt: strPtr(FormatISO(time.Date(2026, 10, 22, 9, 0, 0, 0, hk)))}
+	if err := extraFireSettle(s, job, FormatISO(s.clk.now())); err != nil {
+		t.Fatal(err)
+	}
+	if next := parseInstant(t, job.NextRunAt); !next.Equal(time.Date(2026, 10, 23, 9, 0, 0, 0, hk)) {
+		t.Fatalf("settled to %s", deref(job.NextRunAt))
 	}
 }

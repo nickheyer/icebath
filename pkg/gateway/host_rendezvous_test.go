@@ -36,22 +36,22 @@ func runHostRendezvousChild(mode string) int {
 	case "sleep":
 		hold()
 	case "runtime-lock":
-		perHome := AcquireGatewayRuntimeLock()
-		outcome, _ := ClaimHostLock(RoleGateway)
+		perHome := AcquireGatewayRuntimeLock(context.Background())
+		outcome, _ := ClaimHostLock(context.Background(), RoleGateway)
 		line, _ := json.Marshal(map[string]bool{"per_home": perHome, "host": outcome == HostLockAcquired})
 		fmt.Println(string(line))
 		hold()
 	case "sigterm-serve":
-		if outcome, _ := ClaimHostLock(RoleServe); outcome != HostLockAcquired {
+		if outcome, _ := ClaimHostLock(context.Background(), RoleServe); outcome != HostLockAcquired {
 			return 1
 		}
 		port := 9119
-		PublishHostRecord(RoleServe, HostPublishOptions{Host: "127.0.0.1", Port: &port, Token: "live-session-token"})
+		PublishHostRecord(context.Background(), RoleServe, HostPublishOptions{Host: "127.0.0.1", Port: &port, Token: "live-session-token"})
 		HostCleanupOnExit(RoleServe)
 		fmt.Println("published")
 		hold()
 	case "holder":
-		if outcome, _ := ClaimHostLock(RoleGateway); outcome != HostLockAcquired {
+		if outcome, _ := ClaimHostLock(context.Background(), RoleGateway); outcome != HostLockAcquired {
 			return 1
 		}
 		fmt.Println("held")
@@ -60,10 +60,10 @@ func runHostRendezvousChild(mode string) int {
 		fmt.Println("ready")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
-			outcome, _ := ClaimHostLock(RoleGateway)
+			outcome, _ := ClaimHostLock(context.Background(), RoleGateway)
 			won := outcome == HostLockAcquired
 			if won {
-				PublishHostRecord(RoleGateway, HostPublishOptions{Profiles: []string{"default"}, Token: "new-owner-token"})
+				PublishHostRecord(context.Background(), RoleGateway, HostPublishOptions{Profiles: []string{"default"}, Token: "new-owner-token"})
 			}
 			fmt.Println(won)
 		}
@@ -145,7 +145,7 @@ func gatewayRecord(pid int, createTime *float64, startTime any, home string) *Ho
 
 func writeHostRecord(t *testing.T, r *HostRecord) {
 	t.Helper()
-	if _, err := EnsureHostStateDir(); err != nil {
+	if _, err := EnsureHostStateDir(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	data, err := json.Marshal(r.ToJSON())
@@ -159,7 +159,7 @@ func writeHostRecord(t *testing.T, r *HostRecord) {
 
 func publishGateway(t *testing.T, home string) *HostRecord {
 	t.Helper()
-	r := PublishHostRecord(RoleGateway, HostPublishOptions{Profiles: []string{"default"}, Home: home})
+	r := PublishHostRecord(context.Background(), RoleGateway, HostPublishOptions{Profiles: []string{"default"}, Home: home})
 	if r == nil {
 		t.Fatal("publish failed")
 	}
@@ -194,7 +194,7 @@ func TestUnopenableLockDirIsNotReportedAsAnotherOwner(t *testing.T) {
 	blocked := filepath.Join(dir, "blocked")
 	os.WriteFile(blocked, []byte("not a directory"), 0o600)
 	t.Setenv("ICEBATH_GATEWAY_LOCK_DIR", filepath.Join(blocked, "locks"))
-	outcome, err := ClaimHostLock(RoleServe)
+	outcome, err := ClaimHostLock(context.Background(), RoleServe)
 	var errno syscall.Errno
 	if outcome != HostLockCouldNotOpen || !errors.As(err, &errno) {
 		t.Fatalf("outcome %v err %v", outcome, err)
@@ -203,7 +203,7 @@ func TestUnopenableLockDirIsNotReportedAsAnotherOwner(t *testing.T) {
 
 func TestLockCacheFollowsTheLockDirectory(t *testing.T) {
 	hostDir(t)
-	if o, _ := ClaimHostLock(RoleServe); o != HostLockAcquired {
+	if o, _ := ClaimHostLock(context.Background(), RoleServe); o != HostLockAcquired {
 		t.Fatal(o)
 	}
 	moved := filepath.Join(t.TempDir(), "other-locks")
@@ -211,7 +211,7 @@ func TestLockCacheFollowsTheLockDirectory(t *testing.T) {
 	if OwnsHostLock(RoleServe) {
 		t.Fatal("ownership followed the role, not the lock path")
 	}
-	if o, _ := ClaimHostLock(RoleServe); o != HostLockAcquired || !exists(filepath.Join(moved, "host-serve.lock")) {
+	if o, _ := ClaimHostLock(context.Background(), RoleServe); o != HostLockAcquired || !exists(filepath.Join(moved, "host-serve.lock")) {
 		t.Fatal("claim in the moved directory")
 	}
 	ReleaseHostLock(RoleServe)
@@ -280,7 +280,7 @@ func TestFreeHostLockMeansAttachDoesNotTreatARecycledPidAsOwner(t *testing.T) {
 
 func TestHoldingTheHostLockKeepsAMatchingIncarnationLive(t *testing.T) {
 	dir := hostDir(t)
-	if o, _ := ClaimHostLock(RoleGateway); o != HostLockAcquired {
+	if o, _ := ClaimHostLock(context.Background(), RoleGateway); o != HostLockAcquired {
 		t.Fatal(o)
 	}
 	r := publishGateway(t, dir)
@@ -310,7 +310,7 @@ func TestDiscardDeadRecordRetractsALiveLookingPidOnlyOnceTheHostLockIsFree(t *te
 	dir := hostDir(t)
 	child := startHostChild(t, "sleep")
 	writeHostRecord(t, gatewayRecord(child.pid(), HostProcessCreateTime(child.pid()), GetProcessStartTime(child.pid()), dir))
-	if o, _ := ClaimHostLock(RoleGateway); o != HostLockAcquired {
+	if o, _ := ClaimHostLock(context.Background(), RoleGateway); o != HostLockAcquired {
 		t.Fatal(o)
 	}
 	if DiscardDeadHostRecord(RoleGateway) || !exists(HostRecordPath(RoleGateway)) {

@@ -194,7 +194,7 @@ func launchTarget(env *tools.Env, cacheKey string) (string, LaunchOptions, bool)
 }
 
 // Local Chromium session placed by the Bot Desktop policy, a terminal placement building a sandbox session
-func createChromiumSession(env *tools.Env, cacheKey string) (map[string]any, error) {
+func createChromiumSession(ctx context.Context, env *tools.Env, cacheKey string) (map[string]any, error) {
 	where, err := botDesktopToolPlacement(env)
 	if err != nil {
 		return nil, runtimeError("The browser cannot run here: " + err.Error())
@@ -204,7 +204,7 @@ func createChromiumSession(env *tools.Env, cacheKey string) (map[string]any, err
 	}
 	ensureScreenForHeadedChromium(env)
 	launcherKey, opts, shared := launchTarget(env, cacheKey)
-	b, msg := sessionLaunchChromium(env, launcherKey, opts)
+	b, msg := sessionLaunchChromium(tools.WithEnvHome(ctx, env), env, launcherKey, opts)
 	if b == nil {
 		if msg == "" {
 			msg = "the local browser could not be started"
@@ -222,9 +222,9 @@ func createChromiumSession(env *tools.Env, cacheKey string) (map[string]any, err
 }
 
 // Lightpanda serve session, private networks blocked unless browser and terminal are both local
-func createLightpandaSession(env *tools.Env, cacheKey string) (map[string]any, error) {
+func createLightpandaSession(ctx context.Context, env *tools.Env, cacheKey string) (map[string]any, error) {
 	info := sessionRecord("lp", nil, map[string]any{"local": true, "lightpanda": true})
-	server, msg := launchLightpanda(env, info["session_name"].(string), !isLocalBackend(env))
+	server, msg := launchLightpanda(tools.WithEnvHome(ctx, env), env, info["session_name"].(string), !isLocalBackend(env))
 	if msg != "" {
 		return nil, runtimeError(msg)
 	}
@@ -234,7 +234,7 @@ func createLightpandaSession(env *tools.Env, cacheKey string) (map[string]any, e
 }
 
 // Local session deciding real profile versus a fresh browser, the fresh one carrying the fallback note
-func createLocalSession(env *tools.Env, cacheKey string, allowRealProfile bool) (map[string]any, error) {
+func createLocalSession(ctx context.Context, env *tools.Env, cacheKey string, allowRealProfile bool) (map[string]any, error) {
 	var fallbackNote any
 	if allowRealProfile {
 		cdpURL, msg := realProfileCDP(env)
@@ -251,9 +251,9 @@ func createLocalSession(env *tools.Env, cacheKey string, allowRealProfile bool) 
 	var info map[string]any
 	var err error
 	if usingLightpandaEngine(env) {
-		info, err = createLightpandaSession(env, cacheKey)
+		info, err = createLightpandaSession(tools.WithEnvHome(ctx, env), env, cacheKey)
 	} else {
-		info, err = createChromiumSession(env, cacheKey)
+		info, err = createChromiumSession(tools.WithEnvHome(ctx, env), env, cacheKey)
 	}
 	if err != nil {
 		return nil, err
@@ -287,12 +287,12 @@ func providerCreate(env *tools.Env, p BrowserProvider, cacheKey string) (info ma
 }
 
 // Cloud session, a provider failure falling back to a local session marked fallback_from_cloud
-func createCloudSessionOrFallback(env *tools.Env, cacheKey string, p BrowserProvider) (map[string]any, error) {
+func createCloudSessionOrFallback(ctx context.Context, env *tools.Env, cacheKey string, p BrowserProvider) (map[string]any, error) {
 	info, err := providerCreate(env, p, cacheKey)
 	if err != nil {
 		name := providerClassName(p)
 		cfgOf(env).logger().Warn(fmt.Sprintf("Cloud provider %s failed (%s); falling back to local Chromium for %s", name, err, cacheKey))
-		local, localErr := createLocalSession(env, cacheKey, true)
+		local, localErr := createLocalSession(tools.WithEnvHome(ctx, env), env, cacheKey, true)
 		if localErr != nil {
 			return nil, runtimeError(fmt.Sprintf("Cloud provider %s failed (%s) and local fallback also failed (%s)", name, err, localErr))
 		}
@@ -314,23 +314,23 @@ func createCloudSessionOrFallback(env *tools.Env, cacheKey string, p BrowserProv
 }
 
 // Fresh session for the key in precedence CDP override, forced local sidecar, cloud provider, local
-func createSessionForKey(env *tools.Env, cacheKey string, forceLocal bool) (map[string]any, error) {
+func createSessionForKey(ctx context.Context, env *tools.Env, cacheKey string, forceLocal bool) (map[string]any, error) {
 	override := sessionCDPOverride(env)
 	if override != "" && !forceLocal {
 		cfgOf(env).logger().Info("Created CDP browser session for " + cacheKey)
 		return sessionRecord("cdp", override, map[string]any{"cdp_override": true}), nil
 	}
 	if forceLocal {
-		return createLocalSession(env, cacheKey, false)
+		return createLocalSession(tools.WithEnvHome(ctx, env), env, cacheKey, false)
 	}
 	p, err := sessionCloudProvider(env)
 	if err != nil {
 		return nil, err
 	}
 	if p == nil {
-		return createLocalSession(env, cacheKey, true)
+		return createLocalSession(tools.WithEnvHome(ctx, env), env, cacheKey, true)
 	}
-	return createCloudSessionOrFallback(env, cacheKey, p)
+	return createCloudSessionOrFallback(tools.WithEnvHome(ctx, env), env, cacheKey, p)
 }
 
 // Local session whose process is gone or whose shared launcher key now names another endpoint
@@ -352,7 +352,7 @@ func backendDead(env *tools.Env, info map[string]any) bool {
 }
 
 // Live unexpired session for the key, else tears the old one down and returns a concurrent replacement
-func reuseOrEvict(env *tools.Env, cacheKey string) map[string]any {
+func reuseOrEvict(ctx context.Context, env *tools.Env, cacheKey string) map[string]any {
 	sessionsMu.Lock()
 	existing, ok := activeSessions.Get(cacheKey)
 	sessionsMu.Unlock()
@@ -363,7 +363,7 @@ func reuseOrEvict(env *tools.Env, cacheKey string) map[string]any {
 		return existing
 	}
 	cfgOf(env).logger().Info("Replacing expired or dead browser session for " + cacheKey)
-	cleanupSingleSession(env, cacheKey)
+	cleanupSingleSession(tools.WithEnvHome(ctx, env), env, cacheKey)
 	updateSessionActivity(env, cacheKey)
 	sessionsMu.Lock()
 	replacement, ok := activeSessions.Get(cacheKey)
@@ -390,14 +390,14 @@ func publishSession(cacheKey string, info map[string]any, homeKey string) map[st
 }
 
 // Gets or creates the key's session, a live endpoint publish mid build discarding the stale session and rebuilding
-func getSessionInfo(env *tools.Env, cacheKey string) (map[string]any, error) {
+func getSessionInfo(ctx context.Context, env *tools.Env, cacheKey string) (map[string]any, error) {
 	key := cacheKey
 	if key == "" {
 		key = "default"
 	}
-	sessionStartCleanup(env)
+	sessionStartCleanup(tools.WithEnvHome(ctx, env), env)
 	updateSessionActivity(env, key)
-	if reused := reuseOrEvict(env, key); reused != nil {
+	if reused := reuseOrEvict(tools.WithEnvHome(ctx, env), env, key); reused != nil {
 		return reused, nil
 	}
 	forceLocal := isLocalSidecarKey(key)
@@ -405,7 +405,7 @@ func getSessionInfo(env *tools.Env, cacheKey string) (map[string]any, error) {
 	var info map[string]any
 	for attempt := 0; attempt <= staleEndpointRetries; attempt++ {
 		generation := LiveCDPGeneration(homeKey)
-		built, err := createSessionForKey(env, key, forceLocal)
+		built, err := createSessionForKey(tools.WithEnvHome(ctx, env), env, key, forceLocal)
 		if err != nil {
 			return nil, err
 		}
@@ -418,14 +418,14 @@ func getSessionInfo(env *tools.Env, cacheKey string) (map[string]any, error) {
 		}
 		sessionsMu.Unlock()
 		if raced {
-			releaseSessionBackend(env, key, built)
+			releaseSessionBackend(tools.WithEnvHome(ctx, env), env, key, built)
 			return winner, nil
 		}
 		if published {
 			break
 		}
 		cfgOf(env).logger().Info(fmt.Sprintf("Browser endpoint changed during session creation for %s; recreating", key))
-		releaseSessionBackend(env, key, built)
+		releaseSessionBackend(tools.WithEnvHome(ctx, env), env, key, built)
 	}
 	if !pyrepr.Truthy(featuresOf(info)["local"]) {
 		sessionEnsureSupervisor(env, key)
@@ -434,7 +434,7 @@ func getSessionInfo(env *tools.Env, cacheKey string) (map[string]any, error) {
 }
 
 // Process exit sweep, every session closed and the janitor stopped, which the binary's shutdown path calls
-func AtexitCleanup() {
-	emergencyCleanupAllSessions()
+func AtexitCleanup(ctx context.Context) {
+	emergencyCleanupAllSessions(ctx)
 	stopCleanupThread()
 }

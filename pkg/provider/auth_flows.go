@@ -652,8 +652,8 @@ func requireReadableConfigBeforeWrite(h string) (map[string]any, error) {
 }
 
 // Persists the complete desired config state, omitted mapping keys being deliberately deleted
-func atomicConfigReplace(h string, data map[string]any) error {
-	return config.SaveUser(h, data)
+func atomicConfigReplace(ctx context.Context, h string, data map[string]any) error {
+	return config.SaveUser(ctx, h, data)
 }
 
 func envHome(env PoolEnv) string {
@@ -711,7 +711,7 @@ func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultM
 		delete(modelCfg, "default")
 	}
 	cfg["model"] = modelCfg
-	if err := atomicConfigReplace(h, cfg); err != nil {
+	if err := atomicConfigReplace(env.Ctx, h, cfg); err != nil {
 		return "", err
 	}
 	return configPath, nil
@@ -770,7 +770,7 @@ func resetConfigProvider(env PoolEnv) (string, error) {
 			model["base_url"] = OpenRouterBaseURL
 		}
 	}
-	if err := atomicConfigReplace(h, cfg); err != nil {
+	if err := atomicConfigReplace(env.Ctx, h, cfg); err != nil {
 		return "", err
 	}
 	return configPath, nil

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // VenvState is the dependency environment state package a venv sync drives, the catalogue Venv or a test double
@@ -100,9 +101,9 @@ func recordedVenvFact(ctx context.Context, runtimeFacts *Facts) (map[string]any,
 }
 
 // Reports a recorded selection whose stamp and selected environment match what the sync must reach
-func runtimeStateMatches(ctx context.Context, fact map[string]any, stamp, projectRoot string) bool {
+func runtimeStateMatches(ctx context.Context, fact map[string]any, stamp, projectRoot string) (bool, error) {
 	if fact == nil || !jsonEquals(fact["stamp"], stamp) {
-		return false
+		return false, nil
 	}
 	root := projectRoot
 	if root == "" {
@@ -110,15 +111,18 @@ func runtimeStateMatches(ctx context.Context, fact map[string]any, stamp, projec
 	}
 	environment, err := SelectedVenv(ctx, root)
 	if err != nil {
-		return false
+		if caughtAsOSRuntimeValue(err) {
+			return false, nil
+		}
+		return false, err
 	}
 	if recorded, present := fact["environment"]; present && recorded != nil {
 		text, ok := recorded.(string)
 		if !ok || resolvePath(text) != environment {
-			return false
+			return false, nil
 		}
 	}
-	return isRegularFile(filepath.Join(environment, "pyvenv.cfg"))
+	return isRegularFile(filepath.Join(environment, "pyvenv.cfg")), nil
 }
 
 // Plugin dirs argument of the venv package for a member input, nil meaning config discovery
@@ -148,7 +152,7 @@ var extraSeparators = regexp.MustCompile(`[-_.]+`)
 
 // PEP 685 name uv matches an extra by, separator runs folded to one dash and lowercased
 func ExtraKey(name string) string {
-	return strings.ToLower(extraSeparators.ReplaceAllString(name, "-"))
+	return pystr.Lower(extraSeparators.ReplaceAllString(name, "-"))
 }
 
 // Recorded extras the project still declares, the recorded spelling kept for uv
@@ -287,7 +291,7 @@ func venvIsCurrent(ctx context.Context, extras []string, plugins PluginInput, pr
 	if err != nil {
 		return false, err
 	}
-	return runtimeStateMatches(ctx, fact, stamp, root), nil
+	return runtimeStateMatches(ctx, fact, stamp, root)
 }
 
 // Refuses extras the platform or a frozen bundle cannot carry and returns the shipped and frozen lists
@@ -679,7 +683,12 @@ func (s *venvSync) locked(ctx context.Context, extras []string) error {
 	if err != nil {
 		return err
 	}
-	current := !s.repair && runtimeStateMatches(ctx, fact, stamp, "")
+	current := false
+	if !s.repair {
+		if current, err = runtimeStateMatches(ctx, fact, stamp, ""); err != nil {
+			return err
+		}
+	}
 	if !current && !s.repair && !s.explicit && !LazyInstallsAllowedFor(ctx) {
 		what := "venv out of sync"
 		if len(extras) > 0 {
@@ -753,7 +762,7 @@ func syncVenvBody(ctx context.Context, opts SyncVenvOptions) error {
 	if len(opts.Carried) > 0 && (opts.Repair || opts.Plugins != nil || !subsetOf(opts.Carried, opts.Extras)) {
 		return &PyError{Class: "ValueError", Message: "carried extras belong to a feature sync of the discovered selection"}
 	}
-	shipped, frozen, err := featurePolicy(ctx, opts.Extras, opts.Repair)
+	shipped, frozen, err := syncFeaturePolicy(ctx, opts.Extras, opts.Repair)
 	if err != nil {
 		return err
 	}
@@ -838,9 +847,10 @@ var recordVenvState = (*Facts).RecordState
 // Takes the per install dependency lock for a venv sync, replaced by tests that observe the wait
 var venvRuntimeLock = RuntimeLock
 
-// Dependency lock, sync selection and decline record steps, replaced by tests that interleave concurrent syncs
+// Dependency lock, sync selection, decline record and feature policy steps, replaced by tests that interleave syncs
 var (
-	dependencyLock = venvInstallLock
-	selectTarget   = targetSelection
-	recordDeclines = recordDeclinedExtras
+	dependencyLock    = venvInstallLock
+	selectTarget      = targetSelection
+	recordDeclines    = recordDeclinedExtras
+	syncFeaturePolicy = featurePolicy
 )

@@ -11,3 +11,17 @@ func TestPosixPathMatchesPurePosixPath(t *testing.T) {
 		}
 	}
 }
+
+// Root splits match posixpath.splitroot of CPython 3.14.8
+func TestPosixSplitRootMatchesCPython(t *testing.T) {
+	cases := []struct{ in, root, rest string }{
+		{"", "", ""}, {"a", "", "a"}, {"/a", "/", "a"}, {"//a", "//", "a"}, {"///a", "/", "//a"}, {"////a", "/", "///a"},
+		{"a/b", "", "a/b"}, {"/", "/", ""}, {"//", "//", ""}, {"///", "/", "//"},
+	}
+	for _, c := range cases {
+		drive, root, rest := PosixSplitRoot(c.in)
+		if drive != "" || root != c.root || rest != c.rest {
+			t.Fatalf("PosixSplitRoot(%q) = %q %q %q", c.in, drive, root, rest)
+		}
+	}
+}

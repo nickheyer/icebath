@@ -362,7 +362,7 @@ func TestCaptureRetiredWALGenerationCopiesTheHeldInode(t *testing.T) {
 	os.Remove(db + "-wal")
 	os.WriteFile(db+"-wal", []byte("newer"), 0o600)
 	newer, _ := StatDBFileIdentity(db + "-wal")
-	final, err := CaptureRetiredWALGeneration(db, map[string]FileIdentity{"-wal": walID, "-shm": {Dev: 1, Ino: 1}}, "test")
+	final, err := CaptureRetiredWALGeneration(context.Background(), db, map[string]FileIdentity{"-wal": walID, "-shm": {Dev: 1, Ino: 1}}, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,12 +388,12 @@ func TestCaptureRetiredWALGenerationCopiesTheHeldInode(t *testing.T) {
 	if _, err := os.Stat(final + ".partial"); !os.IsNotExist(err) {
 		t.Fatal("staging dir left behind")
 	}
-	second, err := CaptureRetiredWALGeneration(db, map[string]FileIdentity{"-wal": walID}, "again")
+	second, err := CaptureRetiredWALGeneration(context.Background(), db, map[string]FileIdentity{"-wal": walID}, "again")
 	if err != nil || second == final {
 		t.Fatalf("second capture = %s %v", second, err)
 	}
 	pinVar(t, &RetiredGenerationMainImageMaxBytes, 10)
-	third, err := CaptureRetiredWALGeneration(db, map[string]FileIdentity{"-wal": walID}, "big")
+	third, err := CaptureRetiredWALGeneration(context.Background(), db, map[string]FileIdentity{"-wal": walID}, "big")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,11 +407,11 @@ func TestCaptureRetiredWALGenerationRefusesWithoutTheExactGeneration(t *testing.
 	dir := t.TempDir()
 	db := filepath.Join(dir, "state.db")
 	var capture *RetiredGenerationCaptureError
-	_, err := CaptureRetiredWALGeneration(db, map[string]FileIdentity{}, "t")
+	_, err := CaptureRetiredWALGeneration(context.Background(), db, map[string]FileIdentity{}, "t")
 	if !errors.As(err, &capture) || !strings.Contains(err.Error(), "refusing to guess it by pathname") {
 		t.Fatalf("no identity = %v", err)
 	}
-	_, err = CaptureRetiredWALGeneration(db, map[string]FileIdentity{"-wal": {Dev: 1, Ino: 2}}, "t")
+	_, err = CaptureRetiredWALGeneration(context.Background(), db, map[string]FileIdentity{"-wal": {Dev: 1, Ino: 2}}, "t")
 	if !errors.As(err, &capture) || !strings.Contains(err.Error(), "no longer holds the retired WAL inode (1, 2) of") {
 		t.Fatalf("not held = %v", err)
 	}
@@ -422,7 +422,7 @@ func TestCaptureRetiredWALGenerationRefusesWithoutTheExactGeneration(t *testing.
 	held, _ := os.Open(db + "-wal")
 	defer held.Close()
 	walID, _ := StatDBFileIdentity(db + "-wal")
-	_, err = CaptureRetiredWALGeneration(db, map[string]FileIdentity{"-wal": walID}, "t")
+	_, err = CaptureRetiredWALGeneration(context.Background(), db, map[string]FileIdentity{"-wal": walID}, "t")
 	if !errors.As(err, &capture) || !strings.Contains(err.Error(), "cannot read the main image header of") {
 		t.Fatalf("missing main = %v", err)
 	}

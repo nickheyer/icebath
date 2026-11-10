@@ -46,7 +46,7 @@ func mustNode(t *testing.T) func(map[string]any, error) map[string]any {
 func freshStore(t *testing.T, h string) *Store {
 	t.Helper()
 	s := NewStore(home.MemoriesDir(h), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
-	if err := s.LoadFromDisk(); err != nil {
+	if err := s.LoadFromDisk(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	return s
@@ -80,7 +80,7 @@ func TestEditMemoryRefusesAnEntryOverTheMemoryToolsLimit(t *testing.T) {
 	if readText(t, userPath) != "user profile note" {
 		t.Fatal("USER.md changed")
 	}
-	r, err := freshStore(t, h).Remove("user", "user profile note", nil)
+	r, err := freshStore(t, h).Remove(ctx, "user", "user profile note", nil)
 	if err != nil || !r.Success() {
 		t.Fatalf("remove = %v, %v", r, err)
 	}
@@ -208,8 +208,8 @@ func raceMemoryToolAdd(t *testing.T, h, content string) *sync.WaitGroup {
 		case <-time.After(5 * time.Second):
 		}
 		s := NewStore(home.MemoriesDir(h), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
-		if err := s.LoadFromDisk(); err == nil {
-			_, _ = s.Add("memory", content)
+		if err := s.LoadFromDisk(context.Background()); err == nil {
+			_, _ = s.Add(context.Background(), "memory", content)
 		}
 		close(landed)
 	}()

@@ -8,9 +8,25 @@ import (
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/spf13/cobra"
 )
+
+// Installs the terminal surface behind the tools command MCP configurator and its list, enable and disable actions
+func init() {
+	tools.ToolsCommandHooks.ConfigureMCPTools = func(ctx context.Context, con *cliui.Console, cfg config.Tree) error {
+		env, err := mcpCLIEnv(ctx)
+		if err != nil {
+			return err
+		}
+		return mcp.ConfigureMCPToolsInteractive(ctx, env, &terminalUI{ctx: ctx, c: con}, cfg)
+	}
+	tools.ToolsCommandHooks.ToolsAction = func(ctx context.Context, con *cliui.Console, action, platform string, names []string) error {
+		return mcp.ToolsDisableEnableCommand(ctx, &terminalUI{ctx: ctx, c: con}, action, platform, names)
+	}
+}
 
 // Catalog, picker and mcp config terminal surface over the cli_output and curses_ui port
 type terminalUI struct {
@@ -43,9 +59,14 @@ func (u *terminalUI) YesNo(question string, def bool) bool {
 	return u.c.PromptYesNo(u.ctx, question, def)
 }
 
+// Seam over the curses checklist the terminal surface draws, the patch target of the MCP tool picker tests
+var terminalChecklist = func(u *terminalUI, title string, items []string, selected, cancelReturns map[int]bool) (map[int]bool, error) {
+	return u.c.CursesChecklist(u.ctx, title, items, selected, cancelReturns, nil)
+}
+
 // Checklist returning the chosen set, cancelReturns on cancel and the selection when it is nil
 func (u *terminalUI) Checklist(title string, items []string, selected, cancelReturns map[int]bool) map[int]bool {
-	chosen, err := u.c.CursesChecklist(u.ctx, title, items, selected, cancelReturns, nil)
+	chosen, err := terminalChecklist(u, title, items, selected, cancelReturns)
 	if err != nil {
 		panic(err)
 	}

@@ -43,8 +43,8 @@ func projectErr(errw io.Writer, message string) (int, error) {
 }
 
 // Opens the profile projects database and runs fn, a text result printed with exit 0 and a value error exit 2
-func projectDBCommand(env *Env, w, errw io.Writer, fn func(db *ProjectsDB) (string, int, error)) (int, error) {
-	db, err := OpenProjectsDB(env)
+func projectDBCommand(ctx context.Context, env *Env, w, errw io.Writer, fn func(db *ProjectsDB) (string, int, error)) (int, error) {
+	db, err := OpenProjectsDB(WithEnvHome(ctx, env), env)
 	if err != nil {
 		return 0, err
 	}
@@ -62,8 +62,8 @@ func projectDBCommand(env *Env, w, errw io.Writer, fn func(db *ProjectsDB) (stri
 }
 
 // Like projectDBCommand with the project of the namespace resolved first, exit 1 when it does not exist
-func projectWithProject(env *Env, ns map[string]any, w, errw io.Writer, fn func(db *ProjectsDB, proj *Project) (string, int, error)) (int, error) {
-	return projectDBCommand(env, w, errw, func(db *ProjectsDB) (string, int, error) {
+func projectWithProject(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer, fn func(db *ProjectsDB, proj *Project) (string, int, error)) (int, error) {
+	return projectDBCommand(WithEnvHome(ctx, env), env, w, errw, func(db *ProjectsDB) (string, int, error) {
 		ident := nsString(ns, "project")
 		proj, err := db.GetProject(ident)
 		if err != nil {
@@ -124,7 +124,7 @@ func nsOptString(ns map[string]any, key string) *string {
 }
 
 func projectCmdCreate(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectDBCommand(env, w, errw, func(db *ProjectsDB) (string, int, error) {
+	return projectDBCommand(WithEnvHome(ctx, env), env, w, errw, func(db *ProjectsDB) (string, int, error) {
 		pid, err := db.CreateProject(nsString(ns, "name"), CreateProjectOptions{Slug: nsString(ns, "slug"), Folders: nsStringList(ns, "folders"),
 			PrimaryPath: nsString(ns, "primary"), Description: nsOptString(ns, "description"), Icon: nsOptString(ns, "icon"),
 			Color: nsOptString(ns, "color"), BoardSlug: nsString(ns, "board")})
@@ -151,7 +151,7 @@ func projectCmdCreate(ctx context.Context, env *Env, ns map[string]any, w, errw 
 }
 
 func projectCmdList(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectDBCommand(env, w, errw, func(db *ProjectsDB) (string, int, error) {
+	return projectDBCommand(WithEnvHome(ctx, env), env, w, errw, func(db *ProjectsDB) (string, int, error) {
 		active, err := db.GetActiveID()
 		if err != nil {
 			return "", 0, err
@@ -179,14 +179,14 @@ func projectCmdList(ctx context.Context, env *Env, ns map[string]any, w, errw io
 }
 
 func projectCmdShow(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectWithProject(env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
+	return projectWithProject(WithEnvHome(ctx, env), env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
 		printProject(w, proj)
 		return "", 0, nil
 	})
 }
 
 func projectCmdAddFolder(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectWithProject(env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
+	return projectWithProject(WithEnvHome(ctx, env), env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
 		path, err := db.AddFolder(proj.ID, nsString(ns, "path"), nsOptString(ns, "label"), config.PyTruthy(ns["primary"]))
 		if err != nil {
 			return "", 0, err
@@ -196,7 +196,7 @@ func projectCmdAddFolder(ctx context.Context, env *Env, ns map[string]any, w, er
 }
 
 func projectCmdRemoveFolder(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectWithProject(env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
+	return projectWithProject(WithEnvHome(ctx, env), env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
 		path := nsString(ns, "path")
 		removed, err := db.RemoveFolder(proj.ID, path)
 		if err != nil {
@@ -211,7 +211,7 @@ func projectCmdRemoveFolder(ctx context.Context, env *Env, ns map[string]any, w,
 }
 
 func projectCmdRename(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectWithProject(env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
+	return projectWithProject(WithEnvHome(ctx, env), env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
 		name := nsString(ns, "name")
 		if _, err := db.UpdateProject(proj.ID, UpdateProjectFields{Name: &name}); err != nil {
 			return "", 0, err
@@ -221,7 +221,7 @@ func projectCmdRename(ctx context.Context, env *Env, ns map[string]any, w, errw 
 }
 
 func projectCmdSetPrimary(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectWithProject(env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
+	return projectWithProject(WithEnvHome(ctx, env), env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
 		path := nsString(ns, "path")
 		ok, err := db.SetPrimary(proj.ID, path)
 		if err != nil {
@@ -236,7 +236,7 @@ func projectCmdSetPrimary(ctx context.Context, env *Env, ns map[string]any, w, e
 }
 
 func projectCmdUse(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectDBCommand(env, w, errw, func(db *ProjectsDB) (string, int, error) {
+	return projectDBCommand(WithEnvHome(ctx, env), env, w, errw, func(db *ProjectsDB) (string, int, error) {
 		ident := nsString(ns, "project")
 		if ident == "" {
 			if err := db.SetActive(nil); err != nil {
@@ -262,7 +262,7 @@ func projectCmdUse(ctx context.Context, env *Env, ns map[string]any, w, errw io.
 // Archive or restore handler reporting verb and slug
 func projectCmdFlagCommand(op func(db *ProjectsDB, id string) (bool, error), verb string) projectHandler {
 	return func(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-		return projectWithProject(env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
+		return projectWithProject(WithEnvHome(ctx, env), env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
 			if _, err := op(db, proj.ID); err != nil {
 				return "", 0, err
 			}
@@ -276,7 +276,7 @@ var projectCmdArchive = projectCmdFlagCommand(func(db *ProjectsDB, id string) (b
 var projectCmdRestore = projectCmdFlagCommand(func(db *ProjectsDB, id string) (bool, error) { return db.RestoreProject(id) }, "Restored")
 
 func projectCmdBindBoard(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
-	return projectWithProject(env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
+	return projectWithProject(WithEnvHome(ctx, env), env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
 		board := nsString(ns, "board")
 		if _, err := db.UpdateProject(proj.ID, UpdateProjectFields{BoardSlug: &board}); err != nil {
 			return "", 0, err

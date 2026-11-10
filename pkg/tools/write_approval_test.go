@@ -54,7 +54,7 @@ func waSetApproval(t *testing.T, env *Env, subsystem string, enabled bool) {
 
 func TestListPendingSkipsNonDictRecord(t *testing.T) {
 	env := waEnv(t)
-	StageWrite(env, "memory", map[string]any{"action": "add", "target": "user", "content": "ok"}, "ok", "foreground")
+	StageWrite(context.Background(), env, "memory", map[string]any{"action": "add", "target": "user", "content": "ok"}, "ok", "foreground")
 	if err := os.WriteFile(filepath.Join(PendingWriteDir(env, "memory"), "bad.json"), []byte(`"not a record"`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestStagedHintKeepsCommandForChatGatewayPlatform(t *testing.T) {
 
 func TestPendingStoreRoundTrip(t *testing.T) {
 	env := waEnv(t)
-	rec := StageWrite(env, "skills", map[string]any{"action": "create", "name": "x"}, "  gist  ", "")
+	rec := StageWrite(context.Background(), env, "skills", map[string]any{"action": "create", "name": "x"}, "  gist  ", "")
 	id := rec["id"].(string)
 	if len(id) != 8 || rec["summary"] != "gist" || rec["origin"] != "foreground" {
 		t.Fatalf("got %v", rec)

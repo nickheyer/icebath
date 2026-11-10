@@ -249,7 +249,7 @@ func TestK3LiveDiscoveryScopedToCodingEndpoint(t *testing.T) {
 
 func modelsWriteConfig(t *testing.T, ctx context.Context, doc map[string]any) {
 	t.Helper()
-	if err := config.SaveUser(home.Dir(ctx), doc); err != nil {
+	if err := config.SaveUser(ctx, home.Dir(ctx), doc); err != nil {
 		t.Fatal(err)
 	}
 	config.ResetCache()

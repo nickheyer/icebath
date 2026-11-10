@@ -58,7 +58,7 @@ func TestConsentFlow(t *testing.T) {
 	})
 	t.Run("already_granted_skips_prompt", func(t *testing.T) {
 		h := c6Home(t, nil)
-		if err := RecordConsent(h, "capplug", []string{"tools.override"}, []string{"tools.override"}); err != nil {
+		if err := RecordConsent(context.Background(), h, "capplug", []string{"tools.override"}, []string{"tools.override"}); err != nil {
 			t.Fatal(err)
 		}
 		if granted, out, asked := capConsentRun(t, true); !granted || asked != 0 || out != "" {

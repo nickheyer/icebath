@@ -192,3 +192,14 @@ func TestEnsureFeasibilityProbeWaitsForTheMinimumWindow(t *testing.T) {
 		t.Fatalf("checked=%v threshold=%d", a.compressionFeasibilityChecked, c.ThresholdTokens())
 	}
 }
+
+func TestEngineContextLengthResolvesTheBuiltinWindow(t *testing.T) {
+	pin := 100_000
+	cc := NewContextCompressor(context.Background(), ContextCompressorOptions{Model: "fixture", ConfigContextLength: &pin, QuietMode: true})
+	if cc.ContextEngineBase.ContextLength != 0 {
+		t.Fatal("window resolved before first access")
+	}
+	if got := EngineContextLength(cc); got != 100_000 || cc.ContextEngineBase.ContextLength != 100_000 {
+		t.Fatalf("built in window %d", got)
+	}
+}

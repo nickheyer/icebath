@@ -34,7 +34,7 @@ func missingOrRefuse(ctx context.Context, name string) ([]string, error) {
 	}
 	var missing []string
 	for _, p := range chain {
-		installed, err := IsInstalled(ctx, p.Base().Name)
+		installed, err := clientIsInstalled(ctx, p.Base().Name)
 		if err != nil {
 			return nil, err
 		}
@@ -45,7 +45,7 @@ func missingOrRefuse(ctx context.Context, name string) ([]string, error) {
 	if len(missing) == 0 {
 		return nil, nil
 	}
-	target, err := CurrentTarget()
+	target, err := clientCurrentTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +66,21 @@ func missingOrRefuse(ctx context.Context, name string) ([]string, error) {
 
 // Receives a worker's completed receipt, replaced by tests that publish a competing latest receipt
 var acceptWorkerReceipt = AcceptWorkerReceipt
+
+// Install module names the client reads at call time, replaced by tests the way Python patches pm.install
+var (
+	clientIsInstalled   = IsInstalled
+	clientCurrentTarget = CurrentTarget
+)
+
+// Worker exchanges the facades start, replaced by tests the way Python patches the client _request
+var (
+	clientWorkerCall func(ctx context.Context, operation string, args policyArgs, run func(ctx context.Context) error) error
+	clientRequest    func(ctx context.Context, operation string, arguments map[string]any, hooks workerHooks, projectRoot string) (any, error)
+)
+
+// Binds the worker exchange seams at init because the operations they run reach the facades again
+func init() { clientWorkerCall, clientRequest = workerCall, request }
 
 // Records a lazy sync refused because PM's engine is not ready and returns the error to raise
 func refuseColdRuntime(ctx context.Context, cold *InstallError, extras []string) error {
@@ -404,27 +419,46 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 		}
 		parsed, ok := value.(map[string]any)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(value))}
+			return nil, wireSubscriptError(value, "id")
 		}
-		if !jsonEquals(parsed["id"], s.id) {
+		id, ok := parsed["id"]
+		if !ok {
+			return nil, wireKeyError("id")
+		}
+		if !jsonEquals(id, s.id) {
 			return nil, NewInstallError("pm", "worker returned a different request id", "")
 		}
-		if jsonEquals(parsed["type"], "result") {
+		kind, ok := parsed["type"]
+		if !ok {
+			return nil, wireKeyError("type")
+		}
+		if jsonEquals(kind, "result") {
 			response, resultLine = parsed, line
 			break
 		}
-		args, _ := parsed["args"].([]any)
-		if jsonEquals(parsed["callback"], "download_progress") {
-			if ordered, err := loadOrderedJSON(line); err == nil {
-				args = orderedCallbackArgs(ordered, args)
-			}
+		name, ok := parsed["callback"]
+		if !ok {
+			return nil, wireKeyError("callback")
 		}
-		handler, known := callbacks[pyrepr.Str(parsed["callback"])]
+		handler, known := callbacks[pyrepr.Str(name)]
+		if _, isText := name.(string); !isText {
+			known = false
+		}
 		var runErr error
 		if !known {
-			runErr = &PyError{Class: "KeyError", Message: pyrepr.StrRepr(pyrepr.Str(parsed["callback"]))}
+			runErr = &PyError{Class: "KeyError", Message: pyrepr.Repr(name)}
+		} else if args, err := wireCallbackArgs(pyrepr.Str(name), parsed, line); err != nil {
+			runErr = err
 		} else {
+			if jsonEquals(name, "download_progress") {
+				if ordered, err := loadOrderedJSON(line); err == nil {
+					args = orderedCallbackArgs(ordered, args)
+				}
+			}
 			runErr = handler(args)
+		}
+		if _, hasCall := parsed["call"]; !hasCall {
+			return nil, wireKeyError("call")
 		}
 		if runErr != nil {
 			if callbackErr == nil {
@@ -456,10 +490,83 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 	if callbackErr != nil {
 		return nil, callbackErr
 	}
-	if payload, failed := response["error"].(map[string]any); failed {
+	if raw, failed := response["error"]; failed {
+		payload, ok := raw.(map[string]any)
+		if !ok {
+			return nil, wireErrorShape(raw)
+		}
 		return nil, workerError(payload)
 	}
-	return response["result"], nil
+	result, ok := response["result"]
+	if !ok {
+		return nil, wireKeyError("result")
+	}
+	return result, nil
+}
+
+// KeyError subscripting a worker message raises for a missing key
+func wireKeyError(key string) error {
+	return &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
+}
+
+// Error subscripting a decoded worker value raises when it is no object
+func wireSubscriptError(v any, key string) error {
+	switch v.(type) {
+	case map[string]any:
+		return wireKeyError(key)
+	case string:
+		return &PyError{Class: "TypeError", Message: "string indices must be integers, not 'str'"}
+	case []any:
+		return &PyError{Class: "TypeError", Message: "list indices must be integers or slices, not str"}
+	}
+	return &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v))}
+}
+
+// Error re-raising a worker error value that is no object raises, its package test then its type lookup failing
+func wireErrorShape(v any) error {
+	switch v.(type) {
+	case string, []any:
+		return wireSubscriptError(v, "type")
+	}
+	return &PyError{Class: "TypeError", Message: fmt.Sprintf("argument of type '%s' is not a container or iterable", pyrepr.TypeName(v))}
+}
+
+// Positional arguments of a relayed callback the way star unpacking reads the message args, an empty list when absent
+func wireCallbackArgs(name string, message map[string]any, line []byte) ([]any, error) {
+	raw, ok := message["args"]
+	if !ok {
+		return []any{}, nil
+	}
+	switch v := raw.(type) {
+	case []any:
+		return v, nil
+	case string:
+		out := []any{}
+		for _, r := range v {
+			out = append(out, string(r))
+		}
+		return out, nil
+	case map[string]any:
+		ordered, err := loadOrderedJSON(line)
+		if err != nil {
+			return nil, &PyError{Class: "ValueError", Message: err.Error()}
+		}
+		doc, _ := ordered.(*OrderedObject)
+		var inner any
+		if doc != nil {
+			inner, _ = doc.Get("args")
+		}
+		obj, isObject := inner.(*OrderedObject)
+		if !isObject || len(obj.Keys) != len(v) {
+			return nil, &PyError{Class: "ValueError", Message: "worker message args decoded differently in key order"}
+		}
+		out := make([]any, len(obj.Keys))
+		for i, key := range obj.Keys {
+			out[i] = key
+		}
+		return out, nil
+	}
+	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("%s() argument after * must be an iterable, not %s", name, pyrepr.TypeName(raw))}
 }
 
 // Callback arguments with the coverage object rebuilt in the order the worker reported it
@@ -578,7 +685,7 @@ func Ensure(ctx context.Context, name string, opts EnsureOptions) (*Runner, erro
 		return nil, downloadError(DownloadWasPaused, "install paused")
 	}
 	observed := &observedHooks{}
-	if err := observed.result(workerCall(ctx, "ensure", policyArgs{Name: name, Explicit: opts.Explicit}, func(workerCtx context.Context) error {
+	if err := observed.result(clientWorkerCall(ctx, "ensure", policyArgs{Name: name, Explicit: opts.Explicit}, func(workerCtx context.Context) error {
 		_, err := ensure(workerCtx, name, EnsureOptions{Explicit: opts.Explicit, SkipVerify: opts.SkipVerify,
 			Progress: observed.progress(opts.Progress), PauseEvent: opts.PauseEvent, DownloadProgress: observed.download(opts.DownloadProgress)})
 		return err
@@ -611,7 +718,15 @@ func SyncVenv(ctx context.Context, opts SyncVenvOptions) error {
 	plugins := opts.Plugins
 	if selection, ok := plugins.(*Selection); ok {
 		if _, has := selection.Data["expected_config"]; !has {
-			digest, found, err := FileDigest(filepath.Join(pyrepr.Str(selection.Data["home"]), "config.yaml"))
+			homeValue, ok := selection.Data["home"]
+			if !ok {
+				return wireKeyError("home")
+			}
+			homeDir, ok := homeValue.(string)
+			if !ok {
+				return &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", pyrepr.TypeName(homeValue))}
+			}
+			digest, found, err := FileDigest(filepath.Join(homeDir, "config.yaml"))
 			if err != nil {
 				return err
 			}
@@ -629,10 +744,10 @@ func SyncVenv(ctx context.Context, opts SyncVenvOptions) error {
 			"plugins": EncodePluginInput(plugins), "evict_incompatible_plugins": opts.EvictIncompatiblePlugins,
 			"automatic": optionalList(opts.Automatic), "carried": optionalList(opts.Carried),
 		}
-		_, err := request(ctx, "sync_venv", arguments, workerHooks{}, opts.ProjectRoot)
+		_, err := clientRequest(ctx, "sync_venv", arguments, workerHooks{}, opts.ProjectRoot)
 		return err
 	}
-	return workerCall(ctx, "sync_venv", policyArgs{Explicit: opts.Explicit, Repair: opts.Repair, Extras: opts.Extras}, func(workerCtx context.Context) error {
+	return clientWorkerCall(ctx, "sync_venv", policyArgs{Explicit: opts.Explicit, Repair: opts.Repair, Extras: opts.Extras}, func(workerCtx context.Context) error {
 		return syncVenv(workerCtx, SyncVenvOptions{
 			Extras: opts.Extras, Explicit: opts.Explicit, Repair: opts.Repair, Automatic: opts.Automatic, Carried: opts.Carried,
 			EvictIncompatiblePlugins: opts.EvictIncompatiblePlugins, Plugins: plugins, Stdout: opts.Stdout,
@@ -678,7 +793,7 @@ func EnsureToolsForSync(ctx context.Context) error {
 func StageOnly(ctx context.Context, name, target string, opts StageOnlyOptions) (string, error) {
 	var entry string
 	observed := &observedHooks{}
-	err := observed.result(workerCall(ctx, "stage_only", policyArgs{Name: name}, func(workerCtx context.Context) error {
+	err := observed.result(clientWorkerCall(ctx, "stage_only", policyArgs{Name: name}, func(workerCtx context.Context) error {
 		var err error
 		entry, err = stageOnly(workerCtx, name, target, StageOnlyOptions{Progress: observed.progress(opts.Progress),
 			PauseEvent: opts.PauseEvent, DownloadProgress: observed.download(opts.DownloadProgress)})
@@ -690,7 +805,7 @@ func StageOnly(ctx context.Context, name, target string, opts StageOnlyOptions) 
 // Runs a path returning Python environment operation through the worker boundary
 func pathCall(ctx context.Context, operation string, args policyArgs, run func(context.Context) (string, error)) (string, error) {
 	var path string
-	err := workerCall(ctx, operation, args, func(workerCtx context.Context) error {
+	err := clientWorkerCall(ctx, operation, args, func(workerCtx context.Context) error {
 		var err error
 		path, err = run(workerCtx)
 		return err
@@ -706,7 +821,7 @@ func BuildEnvironment(ctx context.Context, opts BuildEnvironmentOptions) (string
 
 // Resolves a project's lock without creating or selecting an environment
 func LockProject(ctx context.Context, opts LockProjectOptions) error {
-	return workerCall(ctx, "lock_project", policyArgs{Explicit: opts.Explicit},
+	return clientWorkerCall(ctx, "lock_project", policyArgs{Explicit: opts.Explicit},
 		func(c context.Context) error { return lockProject(c, opts) })
 }
 
@@ -745,7 +860,7 @@ func VenvIsCurrent(ctx context.Context, opts VenvIsCurrentOptions) (bool, error)
 	if opts.ProjectRoot == "" || resolvePath(opts.ProjectRoot) == resolvePath(RepoRoot()) {
 		return venvIsCurrent(ctx, opts.Extras, opts.Plugins, opts.ProjectRoot)
 	}
-	result, err := request(ctx, "venv_is_current", map[string]any{"extras": optionalList(opts.Extras), "plugins": EncodePluginInput(opts.Plugins)},
+	result, err := clientRequest(ctx, "venv_is_current", map[string]any{"extras": optionalList(opts.Extras), "plugins": EncodePluginInput(opts.Plugins)},
 		workerHooks{}, opts.ProjectRoot)
 	var install *InstallError
 	if errors.As(err, &install) && install.Package == "pm-runtime" {
@@ -759,13 +874,13 @@ func VenvIsCurrent(ctx context.Context, opts VenvIsCurrentOptions) (bool, error)
 
 // Checks a project lock is current
 func CheckProjectLock(ctx context.Context, opts CheckProjectLockOptions) error {
-	return workerCall(ctx, "check_project_lock", policyArgs{Explicit: opts.Explicit},
+	return clientWorkerCall(ctx, "check_project_lock", policyArgs{Explicit: opts.Explicit},
 		func(c context.Context) error { return checkProjectLock(c, opts) })
 }
 
 // Exports a project's locked requirements
 func ExportRequirements(ctx context.Context, opts ExportRequirementsOptions) error {
-	return workerCall(ctx, "export_requirements", policyArgs{Explicit: opts.Explicit, Extras: opts.Extras},
+	return clientWorkerCall(ctx, "export_requirements", policyArgs{Explicit: opts.Explicit, Extras: opts.Extras},
 		func(c context.Context) error {
 			_, err := exportRequirements(c, opts)
 			return err
@@ -792,7 +907,7 @@ func StageTools(ctx context.Context, opts StageToolsOptions) (string, error) {
 
 // Prunes a uv cache to what the lock needs
 func PruneCache(ctx context.Context, opts PruneCacheOptions) error {
-	return workerCall(ctx, "prune_cache", policyArgs{},
+	return clientWorkerCall(ctx, "prune_cache", policyArgs{},
 		func(c context.Context) error { return pruneCache(c, opts) })
 }
 

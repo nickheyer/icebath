@@ -54,13 +54,13 @@ func installMetadataPath(h string) string {
 }
 
 // Replaces the profile local plugin install metadata atomically with sorted two space JSON
-func writeInstallMetadata(h string, metadata map[string]any) error {
+func writeInstallMetadata(ctx context.Context, h string, metadata map[string]any) error {
 	text, err := pyjson.Dumps(metadata, pyjson.Indent(2), pyjson.SortKeys(true))
 	if err != nil {
 		return err
 	}
 	path := installMetadataPath(h)
-	return pyfs.AtomicWriteText(path, text+"\n", filepath.Base(path)+".tmp-")
+	return pyfs.AtomicWriteText(ctx, path, text+"\n", filepath.Base(path)+".tmp-")
 }
 
 type metadataLockKey struct{ path string }
@@ -140,7 +140,7 @@ func updateInstallRecord(ctx context.Context, h, name string, update func(map[st
 		} else {
 			metadata[name] = record
 		}
-		return writeInstallMetadata(h, metadata)
+		return writeInstallMetadata(ctx, h, metadata)
 	})
 }
 

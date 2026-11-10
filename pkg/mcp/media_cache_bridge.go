@@ -27,6 +27,6 @@ func cacheAudioFromBytes(env *tools.Env, data []byte, ext string) (string, error
 }
 
 // Caches MCP embedded resource bytes in the gateway document cache and returns the path
-func cacheDocumentFromBytes(env *tools.Env, data []byte, filename string) (string, error) {
-	return mediacache.CacheDocumentFromBytes(mediaCacheHome(env), data, filename)
+func cacheDocumentFromBytes(ctx context.Context, env *tools.Env, data []byte, filename string) (string, error) {
+	return mediacache.CacheDocumentFromBytes(tools.WithEnvHome(ctx, env), mediaCacheHome(env), data, filename)
 }

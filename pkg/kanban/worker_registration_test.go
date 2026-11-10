@@ -129,12 +129,41 @@ func TestRegisterCurrentWorkerLetsUnreadableContextsRun(t *testing.T) {
 	if !RegisterCurrentWorkerFromEnv(ctx) {
 		t.Fatal("a worker with an unreadable run id refused")
 	}
-	if id, ok := workerRunID("other"); ok || id != 0 {
+	if id := workerRunIDArg("other"); id != nil {
 		t.Fatal("run id read for a task this worker is not scoped to")
 	}
 	t.Setenv("ICEBATH_KANBAN_RUN_ID", "7")
 	t.Setenv("ICEBATH_KANBAN_DB", "/nonexistent-dir/for/kanban/board.db")
 	if !RegisterCurrentWorkerFromEnv(ctx) {
 		t.Fatal("a board error refused the worker")
+	}
+}
+
+func TestRunIDPastTheSQLiteRangePassesTheGuardAndFailsWhereItIsBound(t *testing.T) {
+	t.Setenv("ICEBATH_KANBAN_TASK", "t_big")
+	t.Setenv("ICEBATH_KANBAN_RUN_ID", "9223372036854775808")
+	run := workerRunIDArg("t_big")
+	if run != runIDBeyondSQLite || expectedRunID("t_big") != runIDBeyondSQLite {
+		t.Fatalf("a run id past int64 read as %v", run)
+	}
+	if err := runIDBindable(run); err == nil || err.Error() != "Python int too large to convert to SQLite INTEGER" {
+		t.Fatalf("bind failure %v", err)
+	}
+	for _, id := range []string{"7", "-3", " 42 ", "4_2", "9223372036854775807"} {
+		t.Setenv("ICEBATH_KANBAN_RUN_ID", id)
+		got := workerRunIDArg("t_big")
+		if got == nil || got == runIDBeyondSQLite || runIDBindable(got) != nil {
+			t.Fatalf("run id %q read as %v", id, got)
+		}
+	}
+	t.Setenv("ICEBATH_KANBAN_RUN_ID", "-9223372036854775809")
+	if workerRunIDArg("t_big") != runIDBeyondSQLite {
+		t.Fatal("a run id below int64 was not flagged")
+	}
+	for _, id := range []string{"", "x", "1.5"} {
+		t.Setenv("ICEBATH_KANBAN_RUN_ID", id)
+		if workerRunIDArg("t_big") != nil {
+			t.Fatalf("run id %q was read as bound", id)
+		}
 	}
 }

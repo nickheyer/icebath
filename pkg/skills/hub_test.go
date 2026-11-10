@@ -68,7 +68,7 @@ func TestHubLockFileListInstalled(t *testing.T) {
 	h, tmp := newTestHub(t)
 	lock := h.LockFile(filepath.Join(tmp, "lock.json"))
 	for _, n := range []string{"s1", "s2"} {
-		if err := lock.RecordInstall(n, "github", "x", "trusted", "pass", "h1", n, []string{"SKILL.md"}, nil, nil); err != nil {
+		if err := lock.RecordInstall(context.Background(), n, "github", "x", "trusted", "pass", "h1", n, []string{"SKILL.md"}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -90,13 +90,13 @@ func TestTapsManagerLoadCorruptJSONAndRemoveExistingTap(t *testing.T) {
 		t.Fatalf("corrupt load gave %v %v", taps, err)
 	}
 	mgr := h.Taps(filepath.Join(tmp, "taps.json"))
-	if added, err := mgr.Add("owner/repo", "skills/"); !added || err != nil {
+	if added, err := mgr.Add(context.Background(), "owner/repo", "skills/"); !added || err != nil {
 		t.Fatalf("add gave %v %v", added, err)
 	}
-	if added, _ := mgr.Add("owner/repo", "skills/"); added {
+	if added, _ := mgr.Add(context.Background(), "owner/repo", "skills/"); added {
 		t.Fatal("second add of the same repo reported added")
 	}
-	if removed, err := mgr.Remove("owner/repo"); !removed || err != nil {
+	if removed, err := mgr.Remove(context.Background(), "owner/repo"); !removed || err != nil {
 		t.Fatalf("remove gave %v %v", removed, err)
 	}
 	if taps, _ := mgr.Load(); len(taps) != 0 {
@@ -225,7 +225,7 @@ func TestRecordInstallRejectsUnsafePaths(t *testing.T) {
 	h, tmp := newTestHub(t)
 	lock := h.LockFile(filepath.Join(tmp, "lock.json"))
 	for _, bad := range []string{"", ".", "..", "../../etc/passwd", "/etc/passwd", "skills/../../tmp", "C:/Windows/System32"} {
-		err := lock.RecordInstall("evil", "github", "x", "trusted", "pass", "h1", bad, []string{"SKILL.md"}, nil, nil)
+		err := lock.RecordInstall(context.Background(), "evil", "github", "x", "trusted", "pass", "h1", bad, []string{"SKILL.md"}, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "Unsafe") {
 			t.Fatalf("%q gave %v", bad, err)
 		}
@@ -244,7 +244,7 @@ func TestUninstallRejectsPoisonedTraversalAndEmptyInstallPaths(t *testing.T) {
 			ip := map[string]string{"absolute": victim, "traversal": "../sibling", "empty": ""}[kind]
 			h.LockFileOverride = filepath.Join(tmp, "lock.json")
 			writeDemoLock(t, h.LockFileOverride, ip, nil)
-			ok, msg, err := h.UninstallSkill("demo-skill")
+			ok, msg, err := h.UninstallSkill(context.Background(), "demo-skill")
 			if err != nil || ok || !(strings.Contains(msg, "Unsafe") || strings.Contains(msg, "Refusing")) {
 				t.Fatalf("uninstall gave %v %q %v", ok, msg, err)
 			}

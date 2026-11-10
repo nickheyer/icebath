@@ -78,7 +78,7 @@ func WriteBreadcrumb(ctx context.Context, sessionID, cwd string) {
 		return
 	}
 	dir := breadcrumbsDir(ctx)
-	if _, err := home.Mkdir(dir); err != nil {
+	if _, err := home.Mkdir(ctx, dir); err != nil {
 		return
 	}
 	if cwd == "" {
@@ -86,7 +86,7 @@ func WriteBreadcrumb(ctx context.Context, sessionID, cwd string) {
 	}
 	now := breadcrumbNow()
 	payload := map[string]any{"session_id": sessionID, "cwd": cwd, "ts": now}
-	if err := config.AtomicJSONWrite(filepath.Join(dir, terminalID), payload); err != nil {
+	if err := config.AtomicJSONWrite(ctx, filepath.Join(dir, terminalID), payload); err != nil {
 		return
 	}
 	pyfs.UnlinkFilesOlderThan(dir, "*", staleBreadcrumbAfter, &now)

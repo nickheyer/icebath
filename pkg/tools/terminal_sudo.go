@@ -55,9 +55,9 @@ func ResetCachedSudoPasswords() {
 var sudoHeadlessFailures = []string{"sudo: a password is required", "sudo: no tty present", "sudo: a terminal is required"}
 
 // Appends the SUDO_PASSWORD tip when sudo failed in a headless context
-func handleSudoFailure(env *Env, output string, envType string) string {
+func handleSudoFailure(ctx context.Context, env *Env, output string, envType string) string {
 	isGateway := sessionFlag(env, "gateway_session", "ICEBATH_GATEWAY_SESSION")
-	noUser := noSudoUser(env)
+	noUser := noSudoUser(ctx, env)
 	if !(isGateway || noUser) {
 		return output
 	}
@@ -400,8 +400,18 @@ func RewriteCompoundBackground(command string) string {
 }
 
 // Reports whether nobody can answer a sudo prompt in this session
-func noSudoUser(env *Env) bool {
-	return sessionFlag(env, "delegated_child", "ICEBATH_DELEGATED_CHILD_CONTEXT") || sessionFlag(env, "single_query", "ICEBATH_SINGLE_QUERY_SESSION")
+func noSudoUser(ctx context.Context, env *Env) bool {
+	if DelegatedChildActive(ctx, env) {
+		return true
+	}
+	if env != nil && env.Values != nil {
+		if v, ok := env.Values.Load("session.delegated_child"); ok {
+			if b, _ := v.(bool); b {
+				return true
+			}
+		}
+	}
+	return sessionFlag(env, "single_query", "ICEBATH_SINGLE_QUERY_SESSION")
 }
 
 // Rewrites command position sudo to read a piped password and returns the stdin lines to prepend
@@ -416,7 +426,7 @@ func transformSudoCommand(ctx context.Context, env *Env, sessionKey, command str
 	if !hasConfigured {
 		password = cachedSudoPassword(scope)
 	}
-	shouldPrompt := (sessionFlag(env, "interactive", "ICEBATH_INTERACTIVE") || env.Ask != nil) && !noSudoUser(env)
+	shouldPrompt := (sessionFlag(env, "interactive", "ICEBATH_INTERACTIVE") || env.Ask != nil) && !noSudoUser(ctx, env)
 	if !hasConfigured && password == "" && shouldPrompt {
 		if nopasswd != nil && nopasswd() {
 			return command, nil

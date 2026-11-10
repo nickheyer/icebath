@@ -62,6 +62,9 @@ func (s *Store) logTickYieldOnce(reason string) {
 	lastYieldLog.reason, lastYieldLog.at, lastYieldLog.set = reason, now, true
 }
 
+// Ledger receipt creation of a tick dispatch, the scheduler create_execution attribute tests patch
+var tickCreateExecution = (*Ledger).Create
+
 // Runs one tick inside retirement admission, zero when the profile is retiring
 func schedulerTick(ctx context.Context, s *Store, o tickOptions) (int, error) {
 	admitted, release := provider.Retirement.Work()
@@ -448,7 +451,7 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 	}
 	claimHome := s.Home()
 	ledger := openExecutionsLedger(s)
-	execution, err := ledger.Create(ctx, jobID, "builtin", job.ScheduledInstant)
+	execution, err := tickCreateExecution(ledger, ctx, jobID, "builtin", job.ScheduledInstant)
 	if err != nil {
 		s.releaseRunningJob(jobID, claimHome, owner)
 		clearRunClaim()

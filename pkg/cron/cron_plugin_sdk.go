@@ -107,7 +107,7 @@ func sdkFireClaimed(ctx context.Context, home string, args []any, kwargs map[str
 		cancel = hostEventChannel(watch, hostEvent)
 	}
 	adapters, loop := hostedFireTransport(home, kw["adapters"], kw["loop"])
-	_, err = runOneJobSeam(ctx, cronStoreFrom(ctx), job, runOneJobOptions{Adapters: adapters, Loop: loop, Cancel: cancel, Verbose: true})
+	_, err = runOneJobSeam(ctx, cronStoreFrom(ctx), job, runOneJobOptions{Adapters: adapters, Loop: loop, Cancel: cancel})
 	return nil, err
 }
 

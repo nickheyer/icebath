@@ -94,7 +94,7 @@ func TestProviderBaseDefaultsAreInertAndRefuseTools(t *testing.T) {
 	if sig := p.IdentitySignature(ctx); len(sig) != 0 || sig == nil {
 		t.Fatal(sig)
 	}
-	if len(p.ConfigSchema()) != 0 || len(p.BackupPaths()) != 0 {
+	if paths, err := p.BackupPaths(); len(p.ConfigSchema()) != 0 || len(paths) != 0 || err != nil {
 		t.Fatal("non empty defaults")
 	}
 	_, err := p.HandleToolCall(ctx, "x_tool", nil, ToolCallOptions{})

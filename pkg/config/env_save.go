@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -56,6 +57,9 @@ func quoteSavedEnvValue(value string) string {
 // Families whose every member steers execution or config injection, matched by prefix
 var envVarNameDenyPrefixes = []string{"LD_", "DYLD_", "GIT_CONFIG_"}
 
+// Env name pattern whose end anchor also accepts one trailing newline, as a Python dollar does
+var envVarNameRe = regexp.MustCompile("^[A-Za-z_][A-Za-z0-9_]*\n?$")
+
 // Names the generic env writer refuses because they steer subprocess execution or icebath runtime and security policy
 var envVarNameDenylist = map[string]bool{
 	"LD_PRELOAD": true, "LD_LIBRARY_PATH": true, "LD_AUDIT": true, "LD_DEBUG": true,
@@ -98,8 +102,8 @@ func envVarPolicyName(key string) string {
 
 // Rejects an invalid name or one on the writer denylist before a generic persistence write
 func ValidateEnvNameForWrite(key string) error {
-	if !envNameRe.MatchString(key) {
-		return fmt.Errorf("Invalid environment variable name: '%s'", key)
+	if !envVarNameRe.MatchString(key) {
+		return fmt.Errorf("Invalid environment variable name: %s", PyRepr(key))
 	}
 	policy := envVarPolicyName(key)
 	denied := envVarNameDenylist[policy]
@@ -110,10 +114,10 @@ func ValidateEnvNameForWrite(key string) error {
 		denied = denied || strings.HasPrefix(policy, prefix)
 	}
 	if denied {
-		return fmt.Errorf("Environment variable '%s' is on the writer denylist. "+
+		return fmt.Errorf("Environment variable %s is on the writer denylist. "+
 			"Names that influence subprocess execution (LD_PRELOAD, PYTHONPATH, PATH, EDITOR, ...) "+
 			"or Icebath runtime location and security policy (ICEBATH_HOME, ICEBATH_YOLO_MODE, ...) "+
-			"cannot be persisted via the env writer. If you really need this, edit the profile .env directly.", key)
+			"cannot be persisted via the env writer. If you really need this, edit ~/.icebath/.env directly.", PyRepr(key))
 	}
 	return nil
 }
@@ -132,9 +136,7 @@ func SaveEnvValueContext(ctx context.Context, h, key, value string) error {
 		return err
 	}
 	value = strings.ReplaceAll(strings.ReplaceAll(value, "\n", ""), "\r", "")
-	if err := checkASCIICredential(key, value); err != nil {
-		return err
-	}
+	value = CheckNonASCIICredential(key, value)
 	if err := EnsureIcebathHome(h); err != nil {
 		return err
 	}
@@ -144,7 +146,7 @@ func SaveEnvValueContext(ctx context.Context, h, key, value string) error {
 		exists := statErr == nil
 		var lines []string
 		if exists {
-			read, err := readSanitizedEnvLines(path)
+			read, err := readEnvLinesFile(path)
 			if err != nil {
 				return err
 			}
@@ -166,8 +168,12 @@ func SaveEnvValueContext(ctx context.Context, h, key, value string) error {
 		return err
 	}
 	publishEnvValue(ctx, key, &value)
+	InvalidateEnvCache()
 	return nil
 }
+
+// Reader save and remove take .env lines through, swapped by the writer race tests
+var readEnvLinesFile = readSanitizedEnvLines
 
 // Home .env lines decoded as utf-8-sig with replacement and normalized like the upstream reader
 func readSanitizedEnvLines(path string) ([]string, error) {

@@ -1,6 +1,7 @@
 package verify_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	_ "github.com/nickheyer/icebath/pkg/plugins"
@@ -29,6 +31,7 @@ const (
 
 // Dispatches the prune entry and the server, owner and tree child modes before the suite runs
 func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry()
 	if out := os.Getenv(envGrandchild); out != "" {
 		recordAndIdle(out, "grandchild")
@@ -50,7 +53,7 @@ func TestMain(m *testing.M) {
 		opts := verify.NewVerifyOptions()
 		opts.Phases, opts.ReadyTimeout = []string{"start"}, 120
 		go func() {
-			_, _ = verify.RunVerify(out, &verify.Recipe{Name: "x", Start: &start, Port: intp(1), ReadinessPath: "/"}, opts)
+			_, _ = verify.RunVerify(context.Background(), out, &verify.Recipe{Name: "x", Start: &start, Port: intp(1), ReadinessPath: "/"}, opts)
 		}()
 		time.Sleep(300 * time.Second)
 		os.Exit(0)
@@ -85,7 +88,7 @@ func runStart(t *testing.T, r *verify.Recipe, readyTimeout float64, portOverride
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	opts := verify.NewVerifyOptions()
 	opts.Phases, opts.ReadyTimeout, opts.PortOverride = []string{"start"}, readyTimeout, portOverride
-	res, err := verify.RunVerify(t.TempDir(), r, opts)
+	res, err := verify.RunVerify(context.Background(), t.TempDir(), r, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,8 +134,8 @@ func TestVerifyStartPhaseOwnsThenReleasesTheAppGroup(t *testing.T) {
 	var owned, released []int
 	prevSpawn, prevRelease := verify.SpawnOwned, verify.ReleaseProcessGroupOnceEmpty
 	t.Cleanup(func() { verify.SpawnOwned, verify.ReleaseProcessGroupOnceEmpty = prevSpawn, prevRelease })
-	verify.SpawnOwned = func(cmd *exec.Cmd, purpose string) error {
-		err := prevSpawn(cmd, purpose)
+	verify.SpawnOwned = func(ctx context.Context, cmd *exec.Cmd, purpose string) error {
+		err := prevSpawn(ctx, cmd, purpose)
 		if err == nil && purpose == "verify-app" {
 			owned = append(owned, cmd.Process.Pid)
 		}

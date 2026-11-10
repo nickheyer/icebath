@@ -124,7 +124,7 @@ func TestStaleNextRunSkipsEvenInsideCatchupWindow(t *testing.T) {
 	}
 }
 
-func TestCronNextRunMatchesExprReportsMatchForNonCronAndUnvalidatable(t *testing.T) {
+func TestHelperReportsMatchForNonCronAndUnvalidatable(t *testing.T) {
 	cases := []struct {
 		sched *Schedule
 		want  bool

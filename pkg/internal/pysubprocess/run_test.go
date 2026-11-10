@@ -32,3 +32,13 @@ func TestRunFailsLikeCheckTrue(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestTimeoutExpiredPrintsAFloatTimeoutAsPythonDoes(t *testing.T) {
+	one, half := 1.0, 0.5
+	if got := (&TimeoutExpired{Cmd: []string{"sleep", "5"}, TimeoutFloat: &one}).Error(); got != "Command '['sleep', '5']' timed out after 1.0 seconds" {
+		t.Fatal(got)
+	}
+	if got := (&TimeoutExpired{Cmd: []string{"sleep", "5"}, TimeoutFloat: &half}).Error(); got != "Command '['sleep', '5']' timed out after 0.5 seconds" {
+		t.Fatal(got)
+	}
+}

@@ -146,10 +146,7 @@ func pruneQuickSnapshotsIn(root string, keep int) (int, error) {
 		}
 	}
 	deleted := 0
-	for i, name := range dirs {
-		if i < keep {
-			continue
-		}
+	for _, name := range dirs[sliceFrom(len(dirs), keep):] {
 		if err := pyfs.RmTree(filepath.Join(root, name), nil); err != nil {
 			slog.Warn(fmt.Sprintf("Failed to prune snapshot %s: %s", name, excText(err)))
 			continue

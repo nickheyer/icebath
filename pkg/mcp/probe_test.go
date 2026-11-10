@@ -17,7 +17,7 @@ func probeHome(t *testing.T, servers map[string]any) *tools.Env {
 	t.Helper()
 	h := isolateHome(t)
 	resetLedgers(t)
-	if err := config.SaveUser(h, map[string]any{"mcp_servers": servers}); err != nil {
+	if err := config.SaveUser(context.Background(), h, map[string]any{"mcp_servers": servers}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ShutdownMCPServers(context.Background(), nil, nil, 10*time.Second) })

@@ -278,7 +278,7 @@ func TestLiveCacheWriteNeverTruncatesThePreviousCopy(t *testing.T) {
 		return &http.Response{StatusCode: 200, Status: "200 OK", Body: ioNopCloser(string(fresh)), Request: r, Header: http.Header{}}, nil
 	})}
 	oldWrite := writeLiveCatalog
-	writeLiveCatalog = func(path, content, prefix string) error { return errors.New("disk full") }
+	writeLiveCatalog = func(_ context.Context, path, content, prefix string) error { return errors.New("disk full") }
 	t.Cleanup(func() { writeLiveCatalog = oldWrite })
 	got := FetchLiveCatalog(ctx, true)
 	if now, _ := os.ReadFile(cache); string(now) != string(previous) {

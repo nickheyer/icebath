@@ -71,7 +71,7 @@ func TestCronSweepVisitsOnlyTheActiveProfilesRegisteredRepos(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(gone, ".worktrees"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	RecordWorktreeRepo(homeA, gone)
+	RecordWorktreeRepo(ctx, homeA, gone)
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}

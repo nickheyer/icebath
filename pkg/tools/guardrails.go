@@ -462,11 +462,8 @@ func (d ToolGuardrailDecision) ToMetadata() map[string]any {
 
 // Sorted compact JSON of any value with unencodable values rendered as strings
 func canonicalJSON(value any) string {
-	b, err := pyjson.EncodeWTF8(canonicalizable(value))
-	if err != nil {
-		return fmt.Sprint(value)
-	}
-	return string(b)
+	return pyDumps(value, pyjson.EnsureASCII(false), pyjson.SortKeys(true), pyjson.Separators(",", ":"),
+		pyjson.Default(func(o any) (any, error) { return pyrepr.Str(o), nil }))
 }
 
 func canonicalizable(v any) any {
@@ -970,24 +967,16 @@ func guardCoerceArgs(args map[string]any) map[string]any {
 
 // Drops the per call kernel bookkeeping execute_code reports so identical probes hash alike
 func withoutExecuteCodeMetadata(parsed any) any {
-	m, ok := parsed.(map[string]any)
+	m, ok := pyjson.AsObject(parsed)
 	if !ok {
 		return parsed
 	}
-	cleaned := make(map[string]any, len(m))
-	for k, v := range m {
-		if k != "duration_seconds" {
-			cleaned[k] = v
-		}
-	}
-	if kernel, ok := cleaned["kernel"].(map[string]any); ok {
-		kc := make(map[string]any, len(kernel))
-		for k, v := range kernel {
-			if k != "execution_count" {
-				kc[k] = v
-			}
-		}
-		cleaned["kernel"] = kc
+	cleaned := m.Copy()
+	cleaned.Delete("duration_seconds")
+	if kernel, ok := pyjson.AsObject(cleaned.Vals["kernel"]); ok {
+		kc := kernel.Copy()
+		kc.Delete("execution_count")
+		cleaned.Set("kernel", kc)
 	}
 	return cleaned
 }
@@ -997,8 +986,8 @@ func guardResultHash(result *string, toolName string) string {
 	if result != nil {
 		text = *result
 	}
-	parsed := safeJSONLoads(text)
-	if parsed == nil {
+	parsed, err := pyjson.Loads(text)
+	if err != nil || parsed == nil {
 		return guardSHA256(text)
 	}
 	if toolName == "execute_code" {
@@ -1137,14 +1126,14 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 			expanded = append(expanded, call)
 			continue
 		}
-		decoded, parseErr := pyjson.DecodeWTF8([]byte(call.Function.Arguments))
-		args, _ := decoded.(map[string]any)
+		decoded, parseErr := pyjson.Loads(call.Function.Arguments)
+		args, _ := decoded.(*pyjson.Object)
 		var entries []ToolCallEntry
 		errText := ""
 		if parseErr != nil || args == nil {
 			errText = "unparseable"
 		} else {
-			entries, errText = NormalizeToolCallEntries(args)
+			entries, errText = NormalizeToolCallEntries(args.Vals)
 		}
 		allConnector := true
 		for _, e := range entries {
@@ -1160,7 +1149,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 		parentID := state.CoalesceToolCallID(call)
 		var children []state.ToolCall
 		for index, entry := range entries {
-			arguments := jsonCompact(map[string]any{"calls": []any{map[string]any{"name": entry.Name, "arguments": entry.Arguments}}})
+			arguments := pyDumps(pyjson.ObjectOf("calls", []any{pyjson.ObjectOf("name", entry.Name, "arguments", entry.Arguments)}), pyjson.EnsureASCII(false))
 			var child state.ToolCall
 			if index == 0 {
 				child = call
@@ -1195,6 +1184,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 }
 
 func decodedArguments(call state.ToolCall) any {
+	pythonTypedBatchChildInput(call)
 	v, err := pyjson.DecodeWTF8([]byte(call.Function.Arguments))
 	if err != nil {
 		return map[string]any{}

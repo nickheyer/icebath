@@ -169,7 +169,7 @@ func removeUserPlugin(ctx context.Context, dir, name, target string) (map[string
 		if err := os.Remove(link); err != nil {
 			return nil, err
 		}
-		forgotten, err := forgetPluginConfig(h, map[string]bool{filepath.Base(link): true})
+		forgotten, err := forgetPluginConfig(ctx, h, map[string]bool{filepath.Base(link): true})
 		if err != nil {
 			return nil, err
 		}
@@ -205,7 +205,7 @@ func removeUserPlugin(ctx context.Context, dir, name, target string) (map[string
 	if err := svc.ForgetPluginGrants(grantKey); err != nil {
 		return nil, err
 	}
-	forgotten, err := forgetPluginConfig(h, aliases)
+	forgotten, err := forgetPluginConfig(ctx, h, aliases)
 	if err != nil {
 		return nil, err
 	}

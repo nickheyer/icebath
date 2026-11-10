@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -340,7 +341,9 @@ func providerPopenGroupKwargs(osName string) map[string]any {
 }
 
 // Starts the command provider child as a process group that dies with this process
-var spawnCommandProvider = func(cmd *exec.Cmd, purpose string) error { return tools.SpawnOwned(cmd, purpose) }
+var spawnCommandProvider = func(ctx context.Context, cmd *exec.Cmd, purpose string) error {
+	return tools.SpawnOwned(ctx, cmd, purpose)
+}
 
 type commandChunk struct {
 	stream string
@@ -348,7 +351,7 @@ type commandChunk struct {
 }
 
 // Runs a command provider under an idle timeout reset by output, killing the tree when it stalls
-func runCommandProvider(env *tools.Env, command string, timeout float64, envPassthrough []string) (*commandCompleted, error) {
+func runCommandProvider(ctx context.Context, env *tools.Env, command string, timeout float64, envPassthrough []string) (*commandCompleted, error) {
 	scrubbed := tools.IcebathSubprocessEnv(env, false, nil)
 	for _, key := range envPassthrough {
 		var fallback *string
@@ -391,7 +394,7 @@ func runCommandProvider(env *tools.Env, command string, timeout float64, envPass
 		return nil, err
 	}
 	cmd.Stdout, cmd.Stderr, cmd.Stdin = outW, errW, nil
-	err = spawnCommandProvider(cmd, "tts-command")
+	err = spawnCommandProvider(tools.WithEnvHome(ctx, env), cmd, "tts-command")
 	outW.Close()
 	errW.Close()
 	if err != nil {
@@ -657,7 +660,7 @@ func configuredCommandTTSOutputPath(path string, cfg map[string]any) (string, er
 }
 
 // Speech written by a user configured shell command, the audio path it produced
-func generateCommandTTS(env *tools.Env, text, outputPath, providerName string, cfg, ttsConfig map[string]any) (string, error) {
+func generateCommandTTS(ctx context.Context, env *tools.Env, text, outputPath, providerName string, cfg, ttsConfig map[string]any) (string, error) {
 	commandTemplate := ""
 	if pyTruthy(cfg["command"]) {
 		commandTemplate = pystr.Strip(pyrepr.Str(cfg["command"]))
@@ -700,7 +703,7 @@ func generateCommandTTS(env *tools.Env, text, outputPath, providerName string, c
 		"voice":  str(cfg, "voice", ""), "model": str(cfg, "model", ""), "speed": str(cfg, "speed", speedDefault),
 	}
 	command := renderCommandTemplate(commandTemplate, placeholders)
-	if _, err := runCommandProvider(env, command, timeout, commandEnvPassthrough(cfg)); err != nil {
+	if _, err := runCommandProvider(tools.WithEnvHome(ctx, env), env, command, timeout, commandEnvPassthrough(cfg)); err != nil {
 		var te *commandTimeoutError
 		var ee *commandExitError
 		switch {

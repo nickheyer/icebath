@@ -74,11 +74,11 @@ func TestFinalizerWarnsWhenBackendFlaggedRecreation(t *testing.T) {
 	env := finalizeTestEnv(t)
 	e := newFakeTermEnv("/root", nil)
 	e.envType = "docker"
-	flagged := finalizeForegroundResult(env, "echo hi", &ExecResult{Output: "hi", EnvironmentRecreated: true}, e, "docker", "t", "t", "s", "k", "", "", "")
+	flagged := finalizeForegroundResult(t.Context(), env, "echo hi", &ExecResult{Output: "hi", EnvironmentRecreated: true}, e, "docker", "t", "t", "s", "k", "", "", "")
 	var r map[string]any
 	json.Unmarshal([]byte(flagged), &r)
 	mustContain(t, resultString(r, "environment_recreated"), "recreated")
-	clean := finalizeForegroundResult(env, "echo hi", &ExecResult{Output: "hi"}, e, "docker", "t", "t", "s", "k", "", "", "")
+	clean := finalizeForegroundResult(t.Context(), env, "echo hi", &ExecResult{Output: "hi"}, e, "docker", "t", "t", "s", "k", "", "", "")
 	if strings.Contains(clean, "environment_recreated") {
 		t.Fatal("clean result carries the recreated note")
 	}

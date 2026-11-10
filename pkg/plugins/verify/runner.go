@@ -2,6 +2,7 @@ package verify
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -29,7 +30,7 @@ var PhaseOrder = []string{"bootstrap", "build", "test"}
 
 // Process ownership of pkg/tools process_identity, installed by the pkg/plugins init
 var (
-	SpawnOwned                   func(cmd *exec.Cmd, purpose string) error
+	SpawnOwned                   func(ctx context.Context, cmd *exec.Cmd, purpose string) error
 	ReleaseProcessGroupOnceEmpty func(pgid int, poll func(), timeout time.Duration) bool
 )
 
@@ -315,7 +316,7 @@ func terminateProcessGroup(p process) error {
 }
 
 // Boots the start command as an owned group, polls readiness, then tears the group down and collects its output
-func runStartPhase(recipe *Recipe, root string, readyTimeout float64, portOverride *int) (*ReadinessResult, error) {
+func runStartPhase(ctx context.Context, recipe *Recipe, root string, readyTimeout float64, portOverride *int) (*ReadinessResult, error) {
 	if recipe.Start == nil {
 		return nil, errors.New("AssertionError")
 	}
@@ -332,7 +333,7 @@ func runStartPhase(recipe *Recipe, root string, readyTimeout float64, portOverri
 	if err != nil {
 		return nil, err
 	}
-	if err := SpawnOwned(cmd, "verify-app"); err != nil {
+	if err := SpawnOwned(ctx, cmd, "verify-app"); err != nil {
 		r.Close()
 		w.Close()
 		return nil, &OSError{Err: err}
@@ -483,7 +484,7 @@ func (r *Recipe) phaseCommands(phase string) []string {
 }
 
 // Runs the selected phases in order then boots, polls and tears down the app, refusing a compose project with live containers
-func RunVerify(root string, recipe *Recipe, opts VerifyOptions) (*VerifyResult, error) {
+func RunVerify(ctx context.Context, root string, recipe *Recipe, opts VerifyOptions) (*VerifyResult, error) {
 	selected := opts.Phases
 	if len(selected) == 0 {
 		selected = append(slices.Clone(PhaseOrder), "start")
@@ -525,7 +526,7 @@ func RunVerify(root string, recipe *Recipe, opts VerifyOptions) (*VerifyResult, 
 		}
 	}
 	if !opts.SkipStart && slices.Contains(selected, "start") && recipe.Start != nil && *recipe.Start != "" && allOK(result.Phases) {
-		readiness, err := runStartPhase(recipe, root, opts.ReadyTimeout, opts.PortOverride)
+		readiness, err := runStartPhase(ctx, recipe, root, opts.ReadyTimeout, opts.PortOverride)
 		if err != nil {
 			return nil, err
 		}

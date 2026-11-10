@@ -1,0 +1,4648 @@
+{
+ "bzip2-empty-stream": {
+  "input": "425a683917724538509000000000425a6839314159265359206bc7a9000112d780001040002e039c002f65dd103000bb5451a1a0000004d5520006801a6814aa86834680068338b6c5b22ce2eb1728be45c11631650e8a62a6c539a98a9b54c14c6535298a58c58a2dd1788b28b08b38bdc5e62fb53053253f29dd4c94cd4cd4e0a66a681648bf45845a62d117f177245385090206bc7a90",
+  "method": "bzip2",
+  "steps": [
+   {
+    "eof": true,
+    "feed": 152,
+    "max_length": -1,
+    "needs_input": false,
+    "out": ""
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": -1,
+    "msg": "End of stream already reached"
+   }
+  ]
+ },
+ "bzip2-error-reuse": {
+  "input": "425a6839314159265359eec5bc4f000221118040003ffffff060072a9bac7d5eb3bd7ba79f3eadcdddf4f5ed5b3bdf75ef86a6223130a7a6d26141aa790000d261206a68ca9fa32434d53f219506919320993469a69a8128d53086a6d1a2334d412a6802a7e8d314f269952c70847da74b550ece9b4f9bb8175958d5ef8bbb4a96e357d4f3e7ded72752d9748a71a64db5eccf4ccad5a4a2992a1f1adb319c9e68278d159aaf6bb527996fedabb49e464e59715a95f897d3f6b20b0b2bb7ec734693a3599c6548c1bbd4dd3b374cbfd79c4513ce972ef28ccad96a6b8f828a68a722b97076b609393755ef944ac3b3bc0219157455f688d336050bf6cab9e283a54f22aec9ab1de8e87f5476588f7eea357f647449b1db24626d9557a2ae87cd9ac550eae5a37d6dd25f2dece59c79bbdbb819f973f98d91a507c5a0f8e6dd1b54bc2d68f0587a027f51a76b9cca9afd29705837e7cfd7ec59d7a0595fdf424cb36edc2ce41779f53689ea32eeccaf2bce0dcf5232491bacd928bab9dcf9f40d4c7493c0a0338125d0650bb65a833c925f3fa241650f13dece940c099c80ff3125ed0070eb0d8f50898d48364eb5839ff9bd322f966de61bcc17d2bf2bbc2c68f3b7351085a7cf7f0f539070361f79bf18018204e4f7a925b7275fcf6bbd4dbf165bcadefa42f64cb446417bf93536f0c4ae439d04232174b0b18f9b14b7355cf722f3054706983dd32f7c5af3fb4d682aedcb984e1b654e1b0fe5535a1664065a0d280f9f69832500601842e18fcfcfdcddc66a4f5b449caa4fafc8a8a91581504a80d81c1d38a0a6f4b3e4c55a31105d6c83b02ba674590140572c0b1672c3839d326c454c08bf51d8c5751ba1a384699c6574202c3e9c5f84d1410492e0af527dea3701b7fdedc0e7346ea70f60c27babc7487083d773182fc3dbbc544a21d559763d41261e70339a2ea04c5d981c486c9dc85a1f5476cf4d0389be9be4da2656f4096394472406686cb4cc5ba31601b241b49d9e2229588fc29db0e4f72148461d25c8703cc0b7412a6d2faf538d5f06649aa1896bb3dabd6a6d67acfa1dc880e7069742e641672502ecebc05d916f483202c70735fbee3e03f78a13204cc4bbd05ae312ee3475db6c960b1b855ce7f44908381978c1a98a444c647e7dcdfeb5e83aeac44f0da6dc5245824a989f1e7e531bc69331a7b0cc8e10f73e05b45a75e0ca56a42cb7e1705bdc908123e4163fd26935e2710c53b1cc4545be1c73120c7a721057681c3eae09afa0f2cf8577ace365e1a90324deec5495fd9b4cf1bacfca356562f60837457594f360c2a3e23870eaabcbe6e07a50ee60306bc1d6f1e35f26ba84609f931e6b9d0a8398cd0d31e0fefe46e7646841ad84e45cb1a052148d234984d983e5d977a18aa3ac6ec9db750ef54a839b306d9f6133d7ac3c5f642545706c1454f4d4b4a71d0848babbaabd0c7497c0431b3b10b6846ad660845acb78ba0ad7092b8be85fde32e158ff7f75330a2ace2506b44b3e4ea570bcf0ae941c6cec731a4b4b8091abe84af67c0ace233d59f8a261a8b231109008908ab07c175e165c597212552ec893b62396841766a44f981f09dd759d9b2972650636db7f1bc82f3a25c5a99437155691280b364538d531dbd2272575eee97c4ab9da1f3d72149007635818181f8770d017b8b92c38ea373ea0d740cf6607e13821246a7ad6ef10b2fcb7cfefbe77d62e0da3ef907c7398a2ed50d8f52b821c4253ad468ccbc9141da4f687e80efa33e933e4ce01ac331e5fa80898af8e9bd43c47f5a727bfdedc127c009ec260a7d34188a51fcb5861bb99fce55c4e158dcc121e547bc9fce5728e298c414f0f26ea61aaefbde1268ee2e104dec0c73cdd6588aeed7c4383909668d192163d8a51e98d8a4873e2b6418c93af94e051862b280cdb21af7137d4eda85c6ab72c5c721d00f20ba33efc14064df898cacb742baa98a8706907deacc718571f82c9fc2c04920c5f43822a80131f2c364418b161a29069a4e7a2db455832340fa4af08f66c8a5e9b3ada84101e0b586dc06369d24e2e2d91dab0fd54da3a1be41e1494f59d4dc4d57546ecf0221be90dc86bb7e713176278c7e98c27372e12c376d4c7921118f9a0bed42ae08977e5cd7fab91d733654f2749a8f8d891a2253a6fdccdca451d7d9217a76474c2f5dff277dda79e2b6a4c5037bb2fec05cb99f14039d9b1c1a61221ed42f1921732e6febc3152d9851b166e43e15d1d3c35165c63d9066cb8c55fd130d4d1e045e479385faf231c0837ccd032de58eb41306150e6b7de54edc15f24273d8d7184ebbdabe4281e10a8bc776a298840a4cf1da7aa69572f09bb1e9d6311a8953335199588cc4363f8bb9229c28487762de278425a6839314159265359206bc7a9000112d780001040002e039c002f65dd103000bb5451a1a0000004d5520006801a6814aa86834680068338b6c5b22ce2eb1728be45c11631650e8a62a6c539a98a9b54c14c6535298a58c58a2dd1788b28b08b38bdc5e62fb53053253f29dd4c94cd4cd4e0a66a681648bf45845a62d117f177245385090206bc7a90",
+  "method": "bzip2",
+  "steps": [
+   {
+    "class": "OSError",
+    "feed": 1842,
+    "max_length": -1,
+    "msg": "Invalid data stream"
+   },
+   {
+    "class": "ValueError",
+    "feed": 0,
+    "max_length": -1,
+    "msg": "Decompressor is unusable after a previous error"
+   }
+  ]
+ },
+ "bzip2-garbage-bounded": {
+  "input": "425a6839314159265359eec5bc4f000221118040003ffffff060072a9bac7d5eb3bd7ba79f3eadcdddf4f5ed5b3bdf75ef86a6223130a7a6d26141aa790000d261206a68ca9fa32434d53f219506919320993469a69a8128d53086a6d1a2334d412a6802a7e8d314f269952c70847da74b550ece9b4f9bb8175958d5ef8bbb4a96e357d4f3e7ded72752d9748a71a64db5eccf4ccad5a4a2992a1f1adb319c9e68278d159aaf6bb527996fedabb49e464e59715a95f897d3f6b20b0b2bb7ec734693a3599c6548c1bbd4dd3b374cbfd79c4513ce972ef28ccad96a6b8f828a68a722b97076b609393755ef944ac3b3bc0219157455f688d336050bf6cab9e283a54f22aec9ab1de8e87f5476588f7eea357f647449b1db24626d9557a2ae87cd9ac550eae5a37d6dd25f2dece59c79bbdbb819f973f98d91a507c5a0f8e6dd1b54bc2d68f0587a027f51a76b9cca9afd29705837e7cfd7ec59d7a0595fdf424cb36edc2ce41779f53689ea32eeccaf2bce0dcf5232491bacd928bab9dcf9f40d4c7493c0a0338125d0650bb65a833c925f3fa241650f13dece940c099c80ff3125ed0070eb0d8f50898d48364eb5839ff9bd322f966de61bcc17d2bf2bbc2c68f3b7351085a7cf7f0f539070361f79bf18018204e4f7a925b7275fcf6bbd4dbf165bcadefa42f64cb446417bf93536f0c4ae439d04232174b0b18f9b14b7355cf722f3054706983dd32f7c5af3fb4d682aedcb984e1b654e1b0fe5535a1664065a0d280f9f69832500601842e18fcfcfdcddc66a4f5b449caa4fafc8a8a91581504a80d81c1d38a0a6f4b3e4c55a31105d6c83b02ba674590140572c0b1672c3839d326c454c08bf51d8c5751ba1a384699c6574202c3e9c5f84d1410492e0af527dea3701b7fdedc0e7346ea70f60c27babc7487083d773182fc3dbbc544a21d559763d41261e70339a2ea04c5d981c486c9dc85a1f5476cf4d0389be9be4da2656f4096394472406686cb4cc5ba31601b241b49d9e2229588fc29db0e4f72148461d25c8703cc0b7412a6d2faf538d5f06649aa1896bb3dabd6a6d67acfa1dc880e7069742e641672502ecebc05d916f483202c70735fbee3e03f78a13204cc4bbd05ae312ee3475db6c960b1b855ce7f44908381978c1a98a444c647e7dcdfeb5e83aeac44f0da6dc5245824a989f1e7e531b399331a7b0cc8e10f73e05b45a75e0ca56a42cb7e1705bdc908123e4163fd26935e2710c53b1cc4545be1c73120c7a721057681c3eae09afa0f2cf8577ace365e1a90324deec5495fd9b4cf1bacfca356562f60837457594f360c2a3e23870eaabcbe6e07a50ee60306bc1d6f1e35f26ba84609f931e6b9d0a8398cd0d31e0fefe46e7646841ad84e45cb1a052148d234984d983e5d977a18aa3ac6ec9db750ef54a839b306d9f6133d7ac3c5f642545706c1454f4d4b4a71d0848babbaabd0c7497c0431b3b10b6846ad660845acb78ba0ad7092b8be85fde32e158ff7f75330a2ace2506b44b3e4ea570bcf0ae941c6cec731a4b4b8091abe84af67c0ace233d59f8a261a8b231109008908ab07c175e165c597212552ec893b62396841766a44f981f09dd759d9b2972650636db7f1bc82f3a25c5a99437155691280b364538d531dbd2272575eee97c4ab9da1f3d72149007635818181f8770d017b8b92c38ea373ea0d740cf6607e13821246a7ad6ef10b2fcb7cfefbe77d62e0da3ef907c7398a2ed50d8f52b821c4253ad468ccbc9141da4f687e80efa33e933e4ce01ac331e5fa80898af8e9bd43c47f5a727bfdedc127c009ec260a7d34188a51fcb5861bb99fce55c4e158dcc121e547bc9fce5728e298c414f0f26ea61aaefbde1268ee2e104dec0c73cdd6588aeed7c4383909668d192163d8a51e98d8a4873e2b6418c93af94e051862b280cdb21af7137d4eda85c6ab72c5c721d00f20ba33efc14064df898cacb742baa98a8706907deacc718571f82c9fc2c04920c5f43822a80131f2c364418b161a29069a4e7a2db455832340fa4af08f66c8a5e9b3ada84101e0b586dc06369d24e2e2d91dab0fd54da3a1be41e1494f59d4dc4d57546ecf0221be90dc86bb7e713176278c7e98c27372e12c376d4c7921118f9a0bed42ae08977e5cd7fab91d733654f2749a8f8d891a2253a6fdccdca451d7d9217a76474c2f5dff277dda79e2b6a4c5037bb2fec05cb99f14039d9b1c1a61221ed42f1921732e6febc3152d9851b166e43e15d1d3c35165c63d9066cb8c55fd130d4d1e045e479385faf231c0837ccd032de58eb41306150e6b7de54edc15f24273d8d7184ebbdabe4281e10a8bc776a298840a4cf1da7aa69572f09bb1e9d6311a8953335199588cc4363f8bb9229c28487762de2780047415242414745fffe206e6f74206120636f6d707265737365642073747265616d20617420616c6c200102030047415242414745fffe206e6f74206120636f6d707265737365642073747265616d20617420616c6c200102030047415242414745fffe206e6f74206120636f6d707265737365642073747265616d20617420616c6c20010203",
+  "method": "bzip2",
+  "steps": [
+   {
+    "eof": false,
+    "feed": 1839,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "686763787970206364696a6463656e20717968727a682071616f7076722061737a79206e6b61676c6d70756120797563616d7464206869207577617a6f61786c2063786a716c6a206f67626a7576676a77206a6f656520767a7573777220796a6569616d7265206d6667717020717475207172666f7772676f66207166756e6a2074696e20647077206878706e6c676365207367766965686a79206c687a7a71206d65776e65667567206e6b7770616d6b68207179706d656c696f2070657368756e6e6b206c75747a62792067742075656b7020676172776a207061706d2073727161717172677820666673616161702076637079616120696c7a74776f63686f20696b6a666f666a796d20736b7563206f66686d72796a206b66746e68207a70667a6277727920726b71207a73626971796a6d7320626a74757570657720636764796e7a206d686a6a6c6a656b20666a6c206e78782069736c65706f696b6b20757979617273766f6a20756b66797573616778207565662071776a6976756f6f7520686872726e6c64206d756d6a696f6d76207170656a6c737720726a65626b6a6c6e6c20617470757a627966206b6e756d666c666c7a206e6b61676c6d707561206668742063786a716c6a206c6f796d20727a727a77742068686d776a6f777868206e73206d736f6c78206e7a6a6b73702069656e75207170646a6c78747420726b7120747a71206c6f677320767479682067666a6d69206171636e63787161742077667867757763687420666a6c206565677a6d666720786a20776e636c617a776b207070782068737720736b756320627278626469207a70667a62777279206d6579696a6e72627620716b7420717073626e6c616d6c20777a73786b70206b72787264772071766d70766920646a77756e20716b74206b616e6576727979207a7079656c712074797a6120736366207361626f7074747820"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "7a7276656967206867637879702062746e6e2066667361616170206e78782071637666656f6520717475207a74206e6b6320707371736a762066667361616170206e766e6b7a7775716120757275686d677a2068756f7968706a7673206b63636c6f6f6c6f206c687a7a71206d646a6161776963782076747a6570206b6965687320727871207062777677616c69206c7574736a20736b7563206d63706c6b69207665756368206e766169696f6f6b207367727876737a7a65206564656d766d716c20777263627073697a74207766716576776120696e71656e646d6f78206d6d6e6f7478707964206a6f79636a696a2069782062782076646a7474206e6b63206565677a6d66672063706f6161746b6b6520637a637a746a2075656f64787573206e6c6f6773207278702071792068737720626d63696167676520686c65747876697620637177736a646c7020796a636d20736370206776727273716c6378207366676667667676207a63206d6575646974207969206b75782068697275646f206c636166786a7a776d2074797877746c70206c7263677670617920786a207063782077796520777572206d6579696a6e726276206d63706c6b692078617870206d6e63746120616a20646a6c70696b20766c7170207061706d2063786a716c6a2077637a686f6a7477206a6f6565206b727872647720746d77706c2063756b63707a747420626920666a6c20697663776a722078707073787a736920646e6565786a207061706d206d6d6e207362207372736972796420746d77706c206475716720776876717865686f71206d7620777520736c6970636276632065757a6e696c767577207179206e687476616378206f67626a7576676a77206b7278726477206777797674676c206b757820736172697664706d206d687872737a7a662070686268206b62206475796e6767722073696f2062786d206e6168"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "6b70207564686e74207a727665696720766c7a6a206e746f70206878706e6c676365207367766965686a7920736172697664706d206b6f67706d206e6e69692073737264642072796d206b7a69657720686766206368626f667963706920726a78707566622070746320706d72626f72206c62626f77206370656b20786f72696162747220746d697a79207775722069656e7520766b6a6320766c7a6a20767420726b6c6978206d666e7276706a712064756c78716b2075656b702063756b63707a7474206c7a7079747370207775206e787820796569716372736f20756d63776e717320657670696a7972782072657a796220786f7a72666f636e2064736e6a797220667a757562656b616320756d63776e71732075777672626570206f6f206c646a6268716f642073712070726a2073696f206863206f696468686a206e6c6f67732078737a6e657161206a7175766e2066746d6f6f656771207764646265756c20676e786a20737720727068646e2073616120787520686a6d756a71206176667169727720637177736a646c702071766d707669206470772062746e6e20736172697664706d207068206b71667a7a692078697176657073797320626920736172697664706d207367766965686a79206773716573206279207178642073627764786120726e696720786a2079786920766c7a6a20796179206278206b72787264772068756f7968706a7673206a6920766c7170206969206471797a73636f6b206a7569746f6a2073712074797a61206b616e657672797920786320766670776d762068752074636c65796f716f6b207663656c776d612068656a7264206977767668716c7220626a7475757065772073786465687278206d6579696a6e726276206e657173787a207665756368207872746e206c646a6268716f6420746d697a792062757a767a207062777677616c692075696e69206b6f"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "67706d207068626820696e7873772067737165732073646e696d626a6d20686a6d756a712061692066627a6964207a70667a6277727920637520796f77656266662072727672782065656f78716463206d6579696a6e7262762070676662726d20707078206878706e6c6763652065746b7864682073696f206e687220776e736e76646a206c6b617720766867786c2064756c78716b206269206e7a6a6b7370206563636668616b20646c717279617420657a77786f6820637a637a746a20726b696163206962656e7371666563207674796820727276727820716b742069736c65706f696b6b2078632066656f6b206877776c6f6f73626d20706a6664777773206b796c646c666e61207062777677616c692073786720616b616671617a2070676662726d206e6e6969206a6b7478206666736161617020656465796871752078686168692064666461686d6e71206b78616d61706f20767665727761672068686d776a6f77786820627920727564786863796365206776727273716c637820727a6d616220646e6565786a20726a65626b6a6c6e6c207565662076646a747420727561682071766d70766920766c7170207a726868777376706820616a7478626620627870206a7a207166756e6a20756b6679757361677820626f2068676620686778616f6f207875206a6770787a767820726e787675787a7762207166766d6d6f6369207a7375206d7620716b7420797a667867207166756e6a206e766e6b7a7775716120686c6574787669762064756c78716b20626f206d6d6e6f74787079642073696f20646a6c70696b206367676d74737a707320676e786a20776e7a6d727073206966756d6372206b622076747968206c75747a62792064736e6a797220776e636c617a776b20796a636d206b7a64206564656d766d716c2067666a6d69206c7179626c2073637020757979617273766f6a20707078"
+   },
+   {
+    "eof": true,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "206e6762686d7720787a71646920756d63776e7173207964756e6e7820636a78737a7171207879616f6f7820667a68207967776c6d65636420696b6c7374207564686e74207367766965686a79206c7a707974737020776876717865686f712062757a767a20756b667975736167782070726a206d646a61617769637820686778616f6f206c646a6268716f64206b787320766c7a6a206a6f656520726e686b74666a207363702078617870206d736f6c78207a7079656c7120737773207674207261722073646d"
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": 700,
+    "msg": "End of stream already reached"
+   }
+  ]
+ },
+ "bzip2-trickle": {
+  "input": "425a6839314159265359eec5bc4f000221118040003ffffff060072a9bac7d5eb3bd7ba79f3eadcdddf4f5ed5b3bdf75ef86a6223130a7a6d26141aa790000d261206a68ca9fa32434d53f219506919320993469a69a8128d53086a6d1a2334d412a6802a7e8d314f269952c70847da74b550ece9b4f9bb8175958d5ef8bbb4a96e357d4f3e7ded72752d9748a71a64db5eccf4ccad5a4a2992a1f1adb319c9e68278d159aaf6bb527996fedabb49e464e59715a95f897d3f6b20b0b2bb7ec734693a3599c6548c1bbd4dd3b374cbfd79c4513ce972ef28ccad96a6b8f828a68a722b97076b609393755ef944ac3b3bc0219157455f688d336050bf6cab9e283a54f22aec9ab1de8e87f5476588f7eea357f647449b1db24626d9557a2ae87cd9ac550eae5a37d6dd25f2dece59c79bbdbb819f973f98d91a507c5a0f8e6dd1b54bc2d68f0587a027f51a76b9cca9afd29705837e7cfd7ec59d7a0595fdf424cb36edc2ce41779f53689ea32eeccaf2bce0dcf5232491bacd928bab9dcf9f40d4c7493c0a0338125d0650bb65a833c925f3fa241650f13dece940c099c80ff3125ed0070eb0d8f50898d48364eb5839ff9bd322f966de61bcc17d2bf2bbc2c68f3b7351085a7cf7f0f539070361f79bf18018204e4f7a925b7275fcf6bbd4dbf165bcadefa42f64cb446417bf93536f0c4ae439d04232174b0b18f9b14b7355cf722f3054706983dd32f7c5af3fb4d682aedcb984e1b654e1b0fe5535a1664065a0d280f9f69832500601842e18fcfcfdcddc66a4f5b449caa4fafc8a8a91581504a80d81c1d38a0a6f4b3e4c55a31105d6c83b02ba674590140572c0b1672c3839d326c454c08bf51d8c5751ba1a384699c6574202c3e9c5f84d1410492e0af527dea3701b7fdedc0e7346ea70f60c27babc7487083d773182fc3dbbc544a21d559763d41261e70339a2ea04c5d981c486c9dc85a1f5476cf4d0389be9be4da2656f4096394472406686cb4cc5ba31601b241b49d9e2229588fc29db0e4f72148461d25c8703cc0b7412a6d2faf538d5f06649aa1896bb3dabd6a6d67acfa1dc880e7069742e641672502ecebc05d916f483202c70735fbee3e03f78a13204cc4bbd05ae312ee3475db6c960b1b855ce7f44908381978c1a98a444c647e7dcdfeb5e83aeac44f0da6dc5245824a989f1e7e531b399331a7b0cc8e10f73e05b45a75e0ca56a42cb7e1705bdc908123e4163fd26935e2710c53b1cc4545be1c73120c7a721057681c3eae09afa0f2cf8577ace365e1a90324deec5495fd9b4cf1bacfca356562f60837457594f360c2a3e23870eaabcbe6e07a50ee60306bc1d6f1e35f26ba84609f931e6b9d0a8398cd0d31e0fefe46e7646841ad84e45cb1a052148d234984d983e5d977a18aa3ac6ec9db750ef54a839b306d9f6133d7ac3c5f642545706c1454f4d4b4a71d0848babbaabd0c7497c0431b3b10b6846ad660845acb78ba0ad7092b8be85fde32e158ff7f75330a2ace2506b44b3e4ea570bcf0ae941c6cec731a4b4b8091abe84af67c0ace233d59f8a261a8b231109008908ab07c175e165c597212552ec893b62396841766a44f981f09dd759d9b2972650636db7f1bc82f3a25c5a99437155691280b364538d531dbd2272575eee97c4ab9da1f3d72149007635818181f8770d017b8b92c38ea373ea0d740cf6607e13821246a7ad6ef10b2fcb7cfefbe77d62e0da3ef907c7398a2ed50d8f52b821c4253ad468ccbc9141da4f687e80efa33e933e4ce01ac331e5fa80898af8e9bd43c47f5a727bfdedc127c009ec260a7d34188a51fcb5861bb99fce55c4e158dcc121e547bc9fce5728e298c414f0f26ea61aaefbde1268ee2e104dec0c73cdd6588aeed7c4383909668d192163d8a51e98d8a4873e2b6418c93af94e051862b280cdb21af7137d4eda85c6ab72c5c721d00f20ba33efc14064df898cacb742baa98a8706907deacc718571f82c9fc2c04920c5f43822a80131f2c364418b161a29069a4e7a2db455832340fa4af08f66c8a5e9b3ada84101e0b586dc06369d24e2e2d91dab0fd54da3a1be41e1494f59d4dc4d57546ecf0221be90dc86bb7e713176278c7e98c27372e12c376d4c7921118f9a0bed42ae08977e5cd7fab91d733654f2749a8f8d891a2253a6fdccdca451d7d9217a76474c2f5dff277dda79e2b6a4c5037bb2fec05cb99f14039d9b1c1a61221ed42f1921732e6febc3152d9851b166e43e15d1d3c35165c63d9066cb8c55fd130d4d1e045e479385faf231c0837ccd032de58eb41306150e6b7de54edc15f24273d8d7184ebbdabe4281e10a8bc776a298840a4cf1da7aa69572f09bb1e9d6311a8953335199588cc4363f8bb9229c28487762de278425a6839314159265359206bc7a9000112d780001040002e039c002f65dd103000bb5451a1a0000004d5520006801a6814aa86834680068338b6c5b22ce2eb1728be45c11631650e8a62a6c539a98a9b54c14c6535298a58c58a2dd1788b28b08b38bdc5e62fb53053253f29dd4c94cd4cd4e0a66a681648bf45845a62d117f177245385090206bc7a90",
+  "method": "bzip2",
+  "steps": [
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 7,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   }
+  ]
+ },
+ "zstd-bad-checksum": {
+  "input": "28b52ffd646003250100e066697273742073747265616d206d656d62657220636f6e74656e740a010004f1ff7402b5e6fa50",
+  "method": "zstd",
+  "steps": [
+   {
+    "class": "ZstdError",
+    "feed": 50,
+    "max_length": -1,
+    "msg": "Unable to decompress Zstandard data: Restored data doesn't match checksum"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   }
+  ]
+ },
+ "zstd-checksum-bounded": {
+  "input": "28b52ffd64b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa00699c5428b52ffd60c903d5010014035345434f4e442053545245414d20434f4e54454e542074686174207a697066696c65206e65766572206465636f6465730a01005109fd1514",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": false,
+    "feed": 1648,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "686763787970206364696a6463656e20717968727a682071616f7076722061737a79206e6b61676c6d70756120797563616d7464206869207577617a6f61786c2063786a716c6a206f67626a7576676a77206a6f656520767a7573777220796a6569616d7265206d6667717020717475207172666f7772676f66207166756e6a2074696e20647077206878706e6c676365207367766965686a79206c687a7a71206d65776e65667567206e6b7770616d6b68207179706d656c696f2070657368756e6e6b206c75747a62792067742075656b7020676172776a207061706d2073727161717172677820666673616161702076637079616120696c7a74776f63686f20696b6a666f666a796d20736b7563206f66686d72796a206b66746e68207a70667a6277727920726b71207a73626971796a6d7320626a74757570657720636764796e7a206d686a6a6c6a656b20666a6c206e78782069736c65706f696b6b20757979617273766f6a20756b66797573616778207565662071776a6976756f6f7520686872726e6c64206d756d6a696f6d76207170656a6c737720726a65626b6a6c6e6c20617470757a627966206b6e756d666c666c7a206e6b61676c6d707561206668742063786a716c6a206c6f796d20727a727a77742068686d776a6f777868206e73206d736f6c78206e7a6a6b73702069656e75207170646a6c78747420726b7120747a71206c6f677320767479682067666a6d69206171636e63787161742077667867757763687420666a6c206565677a6d666720786a20776e636c617a776b207070782068737720736b756320627278626469207a70667a62777279206d6579696a6e72627620716b7420717073626e6c616d6c20777a73786b70206b72787264772071766d70766920646a77756e20716b74206b616e6576727979207a7079656c712074797a6120736366207361626f7074747820"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "7a7276656967206867637879702062746e6e2066667361616170206e78782071637666656f6520717475207a74206e6b6320707371736a762066667361616170206e766e6b7a7775716120757275686d677a2068756f7968706a7673206b63636c6f6f6c6f206c687a7a71206d646a6161776963782076747a6570206b6965687320727871207062777677616c69206c7574736a20736b7563206d63706c6b69207665756368206e766169696f6f6b207367727876737a7a65206564656d766d716c20777263627073697a74207766716576776120696e71656e646d6f78206d6d6e6f7478707964206a6f79636a696a2069782062782076646a7474206e6b63206565677a6d66672063706f6161746b6b6520637a637a746a2075656f64787573206e6c6f6773207278702071792068737720626d63696167676520686c65747876697620637177736a646c7020796a636d20736370206776727273716c6378207366676667667676207a63206d6575646974207969206b75782068697275646f206c636166786a7a776d2074797877746c70206c7263677670617920786a207063782077796520777572206d6579696a6e726276206d63706c6b692078617870206d6e63746120616a20646a6c70696b20766c7170207061706d2063786a716c6a2077637a686f6a7477206a6f6565206b727872647720746d77706c2063756b63707a747420626920666a6c20697663776a722078707073787a736920646e6565786a207061706d206d6d6e207362207372736972796420746d77706c206475716720776876717865686f71206d7620777520736c6970636276632065757a6e696c767577207179206e687476616378206f67626a7576676a77206b7278726477206777797674676c206b757820736172697664706d206d687872737a7a662070686268206b62206475796e6767722073696f2062786d206e6168"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "6b70207564686e74207a727665696720766c7a6a206e746f70206878706e6c676365207367766965686a7920736172697664706d206b6f67706d206e6e69692073737264642072796d206b7a69657720686766206368626f667963706920726a78707566622070746320706d72626f72206c62626f77206370656b20786f72696162747220746d697a79207775722069656e7520766b6a6320766c7a6a20767420726b6c6978206d666e7276706a712064756c78716b2075656b702063756b63707a7474206c7a7079747370207775206e787820796569716372736f20756d63776e717320657670696a7972782072657a796220786f7a72666f636e2064736e6a797220667a757562656b616320756d63776e71732075777672626570206f6f206c646a6268716f642073712070726a2073696f206863206f696468686a206e6c6f67732078737a6e657161206a7175766e2066746d6f6f656771207764646265756c20676e786a20737720727068646e2073616120787520686a6d756a71206176667169727720637177736a646c702071766d707669206470772062746e6e20736172697664706d207068206b71667a7a692078697176657073797320626920736172697664706d207367766965686a79206773716573206279207178642073627764786120726e696720786a2079786920766c7a6a20796179206278206b72787264772068756f7968706a7673206a6920766c7170206969206471797a73636f6b206a7569746f6a2073712074797a61206b616e657672797920786320766670776d762068752074636c65796f716f6b207663656c776d612068656a7264206977767668716c7220626a7475757065772073786465687278206d6579696a6e726276206e657173787a207665756368207872746e206c646a6268716f6420746d697a792062757a767a207062777677616c692075696e69206b6f"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "67706d207068626820696e7873772067737165732073646e696d626a6d20686a6d756a712061692066627a6964207a70667a6277727920637520796f77656266662072727672782065656f78716463206d6579696a6e7262762070676662726d20707078206878706e6c6763652065746b7864682073696f206e687220776e736e76646a206c6b617720766867786c2064756c78716b206269206e7a6a6b7370206563636668616b20646c717279617420657a77786f6820637a637a746a20726b696163206962656e7371666563207674796820727276727820716b742069736c65706f696b6b2078632066656f6b206877776c6f6f73626d20706a6664777773206b796c646c666e61207062777677616c692073786720616b616671617a2070676662726d206e6e6969206a6b7478206666736161617020656465796871752078686168692064666461686d6e71206b78616d61706f20767665727761672068686d776a6f77786820627920727564786863796365206776727273716c637820727a6d616220646e6565786a20726a65626b6a6c6e6c207565662076646a747420727561682071766d70766920766c7170207a726868777376706820616a7478626620627870206a7a207166756e6a20756b6679757361677820626f2068676620686778616f6f207875206a6770787a767820726e787675787a7762207166766d6d6f6369207a7375206d7620716b7420797a667867207166756e6a206e766e6b7a7775716120686c6574787669762064756c78716b20626f206d6d6e6f74787079642073696f20646a6c70696b206367676d74737a707320676e786a20776e7a6d727073206966756d6372206b622076747968206c75747a62792064736e6a797220776e636c617a776b20796a636d206b7a64206564656d766d716c2067666a6d69206c7179626c2073637020757979617273766f6a20707078"
+   },
+   {
+    "eof": true,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "206e6762686d7720787a71646920756d63776e7173207964756e6e7820636a78737a7171207879616f6f7820667a68207967776c6d65636420696b6c7374207564686e74207367766965686a79206c7a707974737020776876717865686f712062757a767a20756b667975736167782070726a206d646a61617769637820686778616f6f206c646a6268716f64206b787320766c7a6a206a6f656520726e686b74666a207363702078617870206d736f6c78207a7079656c7120737773207674207261722073646d"
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": 700,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-error-resets": {
+  "input": "0047415242414745fffe206e6f74206128b52ffd60b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa",
+  "method": "zstd",
+  "steps": [
+   {
+    "class": "ZstdError",
+    "feed": 16,
+    "max_length": -1,
+    "msg": "Unable to decompress Zstandard data: Unknown frame descriptor"
+   },
+   {
+    "eof": true,
+    "feed": 1576,
+    "max_length": -1,
+    "needs_input": false,
+    "out": "686763787970206364696a6463656e20717968727a682071616f7076722061737a79206e6b61676c6d70756120797563616d7464206869207577617a6f61786c2063786a716c6a206f67626a7576676a77206a6f656520767a7573777220796a6569616d7265206d6667717020717475207172666f7772676f66207166756e6a2074696e20647077206878706e6c676365207367766965686a79206c687a7a71206d65776e65667567206e6b7770616d6b68207179706d656c696f2070657368756e6e6b206c75747a62792067742075656b7020676172776a207061706d2073727161717172677820666673616161702076637079616120696c7a74776f63686f20696b6a666f666a796d20736b7563206f66686d72796a206b66746e68207a70667a6277727920726b71207a73626971796a6d7320626a74757570657720636764796e7a206d686a6a6c6a656b20666a6c206e78782069736c65706f696b6b20757979617273766f6a20756b66797573616778207565662071776a6976756f6f7520686872726e6c64206d756d6a696f6d76207170656a6c737720726a65626b6a6c6e6c20617470757a627966206b6e756d666c666c7a206e6b61676c6d707561206668742063786a716c6a206c6f796d20727a727a77742068686d776a6f777868206e73206d736f6c78206e7a6a6b73702069656e75207170646a6c78747420726b7120747a71206c6f677320767479682067666a6d69206171636e63787161742077667867757763687420666a6c206565677a6d666720786a20776e636c617a776b207070782068737720736b756320627278626469207a70667a62777279206d6579696a6e72627620716b7420717073626e6c616d6c20777a73786b70206b72787264772071766d70766920646a77756e20716b74206b616e6576727979207a7079656c712074797a6120736366207361626f70747478207a7276656967206867637879702062746e6e2066667361616170206e78782071637666656f6520717475207a74206e6b6320707371736a762066667361616170206e766e6b7a7775716120757275686d677a2068756f7968706a7673206b63636c6f6f6c6f206c687a7a71206d646a6161776963782076747a6570206b6965687320727871207062777677616c69206c7574736a20736b7563206d63706c6b69207665756368206e766169696f6f6b207367727876737a7a65206564656d766d716c20777263627073697a74207766716576776120696e71656e646d6f78206d6d6e6f7478707964206a6f79636a696a2069782062782076646a7474206e6b63206565677a6d66672063706f6161746b6b6520637a637a746a2075656f64787573206e6c6f6773207278702071792068737720626d63696167676520686c65747876697620637177736a646c7020796a636d20736370206776727273716c6378207366676667667676207a63206d6575646974207969206b75782068697275646f206c636166786a7a776d2074797877746c70206c7263677670617920786a207063782077796520777572206d6579696a6e726276206d63706c6b692078617870206d6e63746120616a20646a6c70696b20766c7170207061706d2063786a716c6a2077637a686f6a7477206a6f6565206b727872647720746d77706c2063756b63707a747420626920666a6c20697663776a722078707073787a736920646e6565786a207061706d206d6d6e207362207372736972796420746d77706c206475716720776876717865686f71206d7620777520736c6970636276632065757a6e696c767577207179206e687476616378206f67626a7576676a77206b7278726477206777797674676c206b757820736172697664706d206d687872737a7a662070686268206b62206475796e6767722073696f2062786d206e61686b70207564686e74207a727665696720766c7a6a206e746f70206878706e6c676365207367766965686a7920736172697664706d206b6f67706d206e6e69692073737264642072796d206b7a69657720686766206368626f667963706920726a78707566622070746320706d72626f72206c62626f77206370656b20786f72696162747220746d697a79207775722069656e7520766b6a6320766c7a6a20767420726b6c6978206d666e7276706a712064756c78716b2075656b702063756b63707a7474206c7a7079747370207775206e787820796569716372736f20756d63776e717320657670696a7972782072657a796220786f7a72666f636e2064736e6a797220667a757562656b616320756d63776e71732075777672626570206f6f206c646a6268716f642073712070726a2073696f206863206f696468686a206e6c6f67732078737a6e657161206a7175766e2066746d6f6f656771207764646265756c20676e786a20737720727068646e2073616120787520686a6d756a71206176667169727720637177736a646c702071766d707669206470772062746e6e20736172697664706d207068206b71667a7a692078697176657073797320626920736172697664706d207367766965686a79206773716573206279207178642073627764786120726e696720786a2079786920766c7a6a20796179206278206b72787264772068756f7968706a7673206a6920766c7170206969206471797a73636f6b206a7569746f6a2073712074797a61206b616e657672797920786320766670776d762068752074636c65796f716f6b207663656c776d612068656a7264206977767668716c7220626a7475757065772073786465687278206d6579696a6e726276206e657173787a207665756368207872746e206c646a6268716f6420746d697a792062757a767a207062777677616c692075696e69206b6f67706d207068626820696e7873772067737165732073646e696d626a6d20686a6d756a712061692066627a6964207a70667a6277727920637520796f77656266662072727672782065656f78716463206d6579696a6e7262762070676662726d20707078206878706e6c6763652065746b7864682073696f206e687220776e736e76646a206c6b617720766867786c2064756c78716b206269206e7a6a6b7370206563636668616b20646c717279617420657a77786f6820637a637a746a20726b696163206962656e7371666563207674796820727276727820716b742069736c65706f696b6b2078632066656f6b206877776c6f6f73626d20706a6664777773206b796c646c666e61207062777677616c692073786720616b616671617a2070676662726d206e6e6969206a6b7478206666736161617020656465796871752078686168692064666461686d6e71206b78616d61706f20767665727761672068686d776a6f77786820627920727564786863796365206776727273716c637820727a6d616220646e6565786a20726a65626b6a6c6e6c207565662076646a747420727561682071766d70766920766c7170207a726868777376706820616a7478626620627870206a7a207166756e6a20756b6679757361677820626f2068676620686778616f6f207875206a6770787a767820726e787675787a7762207166766d6d6f6369207a7375206d7620716b7420797a667867207166756e6a206e766e6b7a7775716120686c6574787669762064756c78716b20626f206d6d6e6f74787079642073696f20646a6c70696b206367676d74737a707320676e786a20776e7a6d727073206966756d6372206b622076747968206c75747a62792064736e6a797220776e636c617a776b20796a636d206b7a64206564656d766d716c2067666a6d69206c7179626c2073637020757979617273766f6a20707078206e6762686d7720787a71646920756d63776e7173207964756e6e7820636a78737a7171207879616f6f7820667a68207967776c6d65636420696b6c7374207564686e74207367766965686a79206c7a707974737020776876717865686f712062757a767a20756b667975736167782070726a206d646a61617769637820686778616f6f206c646a6268716f64206b787320766c7a6a206a6f656520726e686b74666a207363702078617870206d736f6c78207a7079656c7120737773207674207261722073646d"
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": -1,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-exact-checksum": {
+  "input": "28b52ffd64b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa00699c54",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": true,
+    "feed": 1580,
+    "max_length": 3000,
+    "needs_input": false,
+    "out": "686763787970206364696a6463656e20717968727a682071616f7076722061737a79206e6b61676c6d70756120797563616d7464206869207577617a6f61786c2063786a716c6a206f67626a7576676a77206a6f656520767a7573777220796a6569616d7265206d6667717020717475207172666f7772676f66207166756e6a2074696e20647077206878706e6c676365207367766965686a79206c687a7a71206d65776e65667567206e6b7770616d6b68207179706d656c696f2070657368756e6e6b206c75747a62792067742075656b7020676172776a207061706d2073727161717172677820666673616161702076637079616120696c7a74776f63686f20696b6a666f666a796d20736b7563206f66686d72796a206b66746e68207a70667a6277727920726b71207a73626971796a6d7320626a74757570657720636764796e7a206d686a6a6c6a656b20666a6c206e78782069736c65706f696b6b20757979617273766f6a20756b66797573616778207565662071776a6976756f6f7520686872726e6c64206d756d6a696f6d76207170656a6c737720726a65626b6a6c6e6c20617470757a627966206b6e756d666c666c7a206e6b61676c6d707561206668742063786a716c6a206c6f796d20727a727a77742068686d776a6f777868206e73206d736f6c78206e7a6a6b73702069656e75207170646a6c78747420726b7120747a71206c6f677320767479682067666a6d69206171636e63787161742077667867757763687420666a6c206565677a6d666720786a20776e636c617a776b207070782068737720736b756320627278626469207a70667a62777279206d6579696a6e72627620716b7420717073626e6c616d6c20777a73786b70206b72787264772071766d70766920646a77756e20716b74206b616e6576727979207a7079656c712074797a6120736366207361626f70747478207a7276656967206867637879702062746e6e2066667361616170206e78782071637666656f6520717475207a74206e6b6320707371736a762066667361616170206e766e6b7a7775716120757275686d677a2068756f7968706a7673206b63636c6f6f6c6f206c687a7a71206d646a6161776963782076747a6570206b6965687320727871207062777677616c69206c7574736a20736b7563206d63706c6b69207665756368206e766169696f6f6b207367727876737a7a65206564656d766d716c20777263627073697a74207766716576776120696e71656e646d6f78206d6d6e6f7478707964206a6f79636a696a2069782062782076646a7474206e6b63206565677a6d66672063706f6161746b6b6520637a637a746a2075656f64787573206e6c6f6773207278702071792068737720626d63696167676520686c65747876697620637177736a646c7020796a636d20736370206776727273716c6378207366676667667676207a63206d6575646974207969206b75782068697275646f206c636166786a7a776d2074797877746c70206c7263677670617920786a207063782077796520777572206d6579696a6e726276206d63706c6b692078617870206d6e63746120616a20646a6c70696b20766c7170207061706d2063786a716c6a2077637a686f6a7477206a6f6565206b727872647720746d77706c2063756b63707a747420626920666a6c20697663776a722078707073787a736920646e6565786a207061706d206d6d6e207362207372736972796420746d77706c206475716720776876717865686f71206d7620777520736c6970636276632065757a6e696c767577207179206e687476616378206f67626a7576676a77206b7278726477206777797674676c206b757820736172697664706d206d687872737a7a662070686268206b62206475796e6767722073696f2062786d206e61686b70207564686e74207a727665696720766c7a6a206e746f70206878706e6c676365207367766965686a7920736172697664706d206b6f67706d206e6e69692073737264642072796d206b7a69657720686766206368626f667963706920726a78707566622070746320706d72626f72206c62626f77206370656b20786f72696162747220746d697a79207775722069656e7520766b6a6320766c7a6a20767420726b6c6978206d666e7276706a712064756c78716b2075656b702063756b63707a7474206c7a7079747370207775206e787820796569716372736f20756d63776e717320657670696a7972782072657a796220786f7a72666f636e2064736e6a797220667a757562656b616320756d63776e71732075777672626570206f6f206c646a6268716f642073712070726a2073696f206863206f696468686a206e6c6f67732078737a6e657161206a7175766e2066746d6f6f656771207764646265756c20676e786a20737720727068646e2073616120787520686a6d756a71206176667169727720637177736a646c702071766d707669206470772062746e6e20736172697664706d207068206b71667a7a692078697176657073797320626920736172697664706d207367766965686a79206773716573206279207178642073627764786120726e696720786a2079786920766c7a6a20796179206278206b72787264772068756f7968706a7673206a6920766c7170206969206471797a73636f6b206a7569746f6a2073712074797a61206b616e657672797920786320766670776d762068752074636c65796f716f6b207663656c776d612068656a7264206977767668716c7220626a7475757065772073786465687278206d6579696a6e726276206e657173787a207665756368207872746e206c646a6268716f6420746d697a792062757a767a207062777677616c692075696e69206b6f67706d207068626820696e7873772067737165732073646e696d626a6d20686a6d756a712061692066627a6964207a70667a6277727920637520796f77656266662072727672782065656f78716463206d6579696a6e7262762070676662726d20707078206878706e6c6763652065746b7864682073696f206e687220776e736e76646a206c6b617720766867786c2064756c78716b206269206e7a6a6b7370206563636668616b20646c717279617420657a77786f6820637a637a746a20726b696163206962656e7371666563207674796820727276727820716b742069736c65706f696b6b2078632066656f6b206877776c6f6f73626d20706a6664777773206b796c646c666e61207062777677616c692073786720616b616671617a2070676662726d206e6e6969206a6b7478206666736161617020656465796871752078686168692064666461686d6e71206b78616d61706f20767665727761672068686d776a6f77786820627920727564786863796365206776727273716c637820727a6d616220646e6565786a20726a65626b6a6c6e6c207565662076646a747420727561682071766d70766920766c7170207a726868777376706820616a7478626620627870206a7a207166756e6a20756b6679757361677820626f2068676620686778616f6f207875206a6770787a767820726e787675787a7762207166766d6d6f6369207a7375206d7620716b7420797a667867207166756e6a206e766e6b7a7775716120686c6574787669762064756c78716b20626f206d6d6e6f74787079642073696f20646a6c70696b206367676d74737a707320676e786a20776e7a6d727073206966756d6372206b622076747968206c75747a62792064736e6a797220776e636c617a776b20796a636d206b7a64206564656d766d716c2067666a6d69206c7179626c2073637020757979617273766f6a20707078206e6762686d7720787a71646920756d63776e7173207964756e6e7820636a78737a7171207879616f6f7820667a68207967776c6d65636420696b6c7374207564686e74207367766965686a79206c7a707974737020776876717865686f712062757a767a20756b667975736167782070726a206d646a61617769637820686778616f6f206c646a6268716f64206b787320766c7a6a206a6f656520726e686b74666a207363702078617870206d736f6c78207a7079656c7120737773207674207261722073646d"
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": 3000,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-exact-output": {
+  "input": "28b52ffd60b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa28b52ffd60c903d5010014035345434f4e442053545245414d20434f4e54454e542074686174207a697066696c65206e65766572206465636f6465730a01005109fd1514",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": true,
+    "feed": 1644,
+    "max_length": 3000,
+    "needs_input": false,
+    "out": "686763787970206364696a6463656e20717968727a682071616f7076722061737a79206e6b61676c6d70756120797563616d7464206869207577617a6f61786c2063786a716c6a206f67626a7576676a77206a6f656520767a7573777220796a6569616d7265206d6667717020717475207172666f7772676f66207166756e6a2074696e20647077206878706e6c676365207367766965686a79206c687a7a71206d65776e65667567206e6b7770616d6b68207179706d656c696f2070657368756e6e6b206c75747a62792067742075656b7020676172776a207061706d2073727161717172677820666673616161702076637079616120696c7a74776f63686f20696b6a666f666a796d20736b7563206f66686d72796a206b66746e68207a70667a6277727920726b71207a73626971796a6d7320626a74757570657720636764796e7a206d686a6a6c6a656b20666a6c206e78782069736c65706f696b6b20757979617273766f6a20756b66797573616778207565662071776a6976756f6f7520686872726e6c64206d756d6a696f6d76207170656a6c737720726a65626b6a6c6e6c20617470757a627966206b6e756d666c666c7a206e6b61676c6d707561206668742063786a716c6a206c6f796d20727a727a77742068686d776a6f777868206e73206d736f6c78206e7a6a6b73702069656e75207170646a6c78747420726b7120747a71206c6f677320767479682067666a6d69206171636e63787161742077667867757763687420666a6c206565677a6d666720786a20776e636c617a776b207070782068737720736b756320627278626469207a70667a62777279206d6579696a6e72627620716b7420717073626e6c616d6c20777a73786b70206b72787264772071766d70766920646a77756e20716b74206b616e6576727979207a7079656c712074797a6120736366207361626f70747478207a7276656967206867637879702062746e6e2066667361616170206e78782071637666656f6520717475207a74206e6b6320707371736a762066667361616170206e766e6b7a7775716120757275686d677a2068756f7968706a7673206b63636c6f6f6c6f206c687a7a71206d646a6161776963782076747a6570206b6965687320727871207062777677616c69206c7574736a20736b7563206d63706c6b69207665756368206e766169696f6f6b207367727876737a7a65206564656d766d716c20777263627073697a74207766716576776120696e71656e646d6f78206d6d6e6f7478707964206a6f79636a696a2069782062782076646a7474206e6b63206565677a6d66672063706f6161746b6b6520637a637a746a2075656f64787573206e6c6f6773207278702071792068737720626d63696167676520686c65747876697620637177736a646c7020796a636d20736370206776727273716c6378207366676667667676207a63206d6575646974207969206b75782068697275646f206c636166786a7a776d2074797877746c70206c7263677670617920786a207063782077796520777572206d6579696a6e726276206d63706c6b692078617870206d6e63746120616a20646a6c70696b20766c7170207061706d2063786a716c6a2077637a686f6a7477206a6f6565206b727872647720746d77706c2063756b63707a747420626920666a6c20697663776a722078707073787a736920646e6565786a207061706d206d6d6e207362207372736972796420746d77706c206475716720776876717865686f71206d7620777520736c6970636276632065757a6e696c767577207179206e687476616378206f67626a7576676a77206b7278726477206777797674676c206b757820736172697664706d206d687872737a7a662070686268206b62206475796e6767722073696f2062786d206e61686b70207564686e74207a727665696720766c7a6a206e746f70206878706e6c676365207367766965686a7920736172697664706d206b6f67706d206e6e69692073737264642072796d206b7a69657720686766206368626f667963706920726a78707566622070746320706d72626f72206c62626f77206370656b20786f72696162747220746d697a79207775722069656e7520766b6a6320766c7a6a20767420726b6c6978206d666e7276706a712064756c78716b2075656b702063756b63707a7474206c7a7079747370207775206e787820796569716372736f20756d63776e717320657670696a7972782072657a796220786f7a72666f636e2064736e6a797220667a757562656b616320756d63776e71732075777672626570206f6f206c646a6268716f642073712070726a2073696f206863206f696468686a206e6c6f67732078737a6e657161206a7175766e2066746d6f6f656771207764646265756c20676e786a20737720727068646e2073616120787520686a6d756a71206176667169727720637177736a646c702071766d707669206470772062746e6e20736172697664706d207068206b71667a7a692078697176657073797320626920736172697664706d207367766965686a79206773716573206279207178642073627764786120726e696720786a2079786920766c7a6a20796179206278206b72787264772068756f7968706a7673206a6920766c7170206969206471797a73636f6b206a7569746f6a2073712074797a61206b616e657672797920786320766670776d762068752074636c65796f716f6b207663656c776d612068656a7264206977767668716c7220626a7475757065772073786465687278206d6579696a6e726276206e657173787a207665756368207872746e206c646a6268716f6420746d697a792062757a767a207062777677616c692075696e69206b6f67706d207068626820696e7873772067737165732073646e696d626a6d20686a6d756a712061692066627a6964207a70667a6277727920637520796f77656266662072727672782065656f78716463206d6579696a6e7262762070676662726d20707078206878706e6c6763652065746b7864682073696f206e687220776e736e76646a206c6b617720766867786c2064756c78716b206269206e7a6a6b7370206563636668616b20646c717279617420657a77786f6820637a637a746a20726b696163206962656e7371666563207674796820727276727820716b742069736c65706f696b6b2078632066656f6b206877776c6f6f73626d20706a6664777773206b796c646c666e61207062777677616c692073786720616b616671617a2070676662726d206e6e6969206a6b7478206666736161617020656465796871752078686168692064666461686d6e71206b78616d61706f20767665727761672068686d776a6f77786820627920727564786863796365206776727273716c637820727a6d616220646e6565786a20726a65626b6a6c6e6c207565662076646a747420727561682071766d70766920766c7170207a726868777376706820616a7478626620627870206a7a207166756e6a20756b6679757361677820626f2068676620686778616f6f207875206a6770787a767820726e787675787a7762207166766d6d6f6369207a7375206d7620716b7420797a667867207166756e6a206e766e6b7a7775716120686c6574787669762064756c78716b20626f206d6d6e6f74787079642073696f20646a6c70696b206367676d74737a707320676e786a20776e7a6d727073206966756d6372206b622076747968206c75747a62792064736e6a797220776e636c617a776b20796a636d206b7a64206564656d766d716c2067666a6d69206c7179626c2073637020757979617273766f6a20707078206e6762686d7720787a71646920756d63776e7173207964756e6e7820636a78737a7171207879616f6f7820667a68207967776c6d65636420696b6c7374207564686e74207367766965686a79206c7a707974737020776876717865686f712062757a767a20756b667975736167782070726a206d646a61617769637820686778616f6f206c646a6268716f64206b787320766c7a6a206a6f656520726e686b74666a207363702078617870206d736f6c78207a7079656c7120737773207674207261722073646d"
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": 3000,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-garbage-bounded": {
+  "input": "28b52ffd60b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa0047415242414745fffe206e6f74206120636f6d707265737365642073747265616d20617420616c6c200102030047415242414745fffe206e6f74206120636f6d707265737365642073747265616d20617420616c6c200102030047415242414745fffe206e6f74206120636f6d707265737365642073747265616d20617420616c6c20010203",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": false,
+    "feed": 1711,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "686763787970206364696a6463656e20717968727a682071616f7076722061737a79206e6b61676c6d70756120797563616d7464206869207577617a6f61786c2063786a716c6a206f67626a7576676a77206a6f656520767a7573777220796a6569616d7265206d6667717020717475207172666f7772676f66207166756e6a2074696e20647077206878706e6c676365207367766965686a79206c687a7a71206d65776e65667567206e6b7770616d6b68207179706d656c696f2070657368756e6e6b206c75747a62792067742075656b7020676172776a207061706d2073727161717172677820666673616161702076637079616120696c7a74776f63686f20696b6a666f666a796d20736b7563206f66686d72796a206b66746e68207a70667a6277727920726b71207a73626971796a6d7320626a74757570657720636764796e7a206d686a6a6c6a656b20666a6c206e78782069736c65706f696b6b20757979617273766f6a20756b66797573616778207565662071776a6976756f6f7520686872726e6c64206d756d6a696f6d76207170656a6c737720726a65626b6a6c6e6c20617470757a627966206b6e756d666c666c7a206e6b61676c6d707561206668742063786a716c6a206c6f796d20727a727a77742068686d776a6f777868206e73206d736f6c78206e7a6a6b73702069656e75207170646a6c78747420726b7120747a71206c6f677320767479682067666a6d69206171636e63787161742077667867757763687420666a6c206565677a6d666720786a20776e636c617a776b207070782068737720736b756320627278626469207a70667a62777279206d6579696a6e72627620716b7420717073626e6c616d6c20777a73786b70206b72787264772071766d70766920646a77756e20716b74206b616e6576727979207a7079656c712074797a6120736366207361626f7074747820"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "7a7276656967206867637879702062746e6e2066667361616170206e78782071637666656f6520717475207a74206e6b6320707371736a762066667361616170206e766e6b7a7775716120757275686d677a2068756f7968706a7673206b63636c6f6f6c6f206c687a7a71206d646a6161776963782076747a6570206b6965687320727871207062777677616c69206c7574736a20736b7563206d63706c6b69207665756368206e766169696f6f6b207367727876737a7a65206564656d766d716c20777263627073697a74207766716576776120696e71656e646d6f78206d6d6e6f7478707964206a6f79636a696a2069782062782076646a7474206e6b63206565677a6d66672063706f6161746b6b6520637a637a746a2075656f64787573206e6c6f6773207278702071792068737720626d63696167676520686c65747876697620637177736a646c7020796a636d20736370206776727273716c6378207366676667667676207a63206d6575646974207969206b75782068697275646f206c636166786a7a776d2074797877746c70206c7263677670617920786a207063782077796520777572206d6579696a6e726276206d63706c6b692078617870206d6e63746120616a20646a6c70696b20766c7170207061706d2063786a716c6a2077637a686f6a7477206a6f6565206b727872647720746d77706c2063756b63707a747420626920666a6c20697663776a722078707073787a736920646e6565786a207061706d206d6d6e207362207372736972796420746d77706c206475716720776876717865686f71206d7620777520736c6970636276632065757a6e696c767577207179206e687476616378206f67626a7576676a77206b7278726477206777797674676c206b757820736172697664706d206d687872737a7a662070686268206b62206475796e6767722073696f2062786d206e6168"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "6b70207564686e74207a727665696720766c7a6a206e746f70206878706e6c676365207367766965686a7920736172697664706d206b6f67706d206e6e69692073737264642072796d206b7a69657720686766206368626f667963706920726a78707566622070746320706d72626f72206c62626f77206370656b20786f72696162747220746d697a79207775722069656e7520766b6a6320766c7a6a20767420726b6c6978206d666e7276706a712064756c78716b2075656b702063756b63707a7474206c7a7079747370207775206e787820796569716372736f20756d63776e717320657670696a7972782072657a796220786f7a72666f636e2064736e6a797220667a757562656b616320756d63776e71732075777672626570206f6f206c646a6268716f642073712070726a2073696f206863206f696468686a206e6c6f67732078737a6e657161206a7175766e2066746d6f6f656771207764646265756c20676e786a20737720727068646e2073616120787520686a6d756a71206176667169727720637177736a646c702071766d707669206470772062746e6e20736172697664706d207068206b71667a7a692078697176657073797320626920736172697664706d207367766965686a79206773716573206279207178642073627764786120726e696720786a2079786920766c7a6a20796179206278206b72787264772068756f7968706a7673206a6920766c7170206969206471797a73636f6b206a7569746f6a2073712074797a61206b616e657672797920786320766670776d762068752074636c65796f716f6b207663656c776d612068656a7264206977767668716c7220626a7475757065772073786465687278206d6579696a6e726276206e657173787a207665756368207872746e206c646a6268716f6420746d697a792062757a767a207062777677616c692075696e69206b6f"
+   },
+   {
+    "eof": false,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "67706d207068626820696e7873772067737165732073646e696d626a6d20686a6d756a712061692066627a6964207a70667a6277727920637520796f77656266662072727672782065656f78716463206d6579696a6e7262762070676662726d20707078206878706e6c6763652065746b7864682073696f206e687220776e736e76646a206c6b617720766867786c2064756c78716b206269206e7a6a6b7370206563636668616b20646c717279617420657a77786f6820637a637a746a20726b696163206962656e7371666563207674796820727276727820716b742069736c65706f696b6b2078632066656f6b206877776c6f6f73626d20706a6664777773206b796c646c666e61207062777677616c692073786720616b616671617a2070676662726d206e6e6969206a6b7478206666736161617020656465796871752078686168692064666461686d6e71206b78616d61706f20767665727761672068686d776a6f77786820627920727564786863796365206776727273716c637820727a6d616220646e6565786a20726a65626b6a6c6e6c207565662076646a747420727561682071766d70766920766c7170207a726868777376706820616a7478626620627870206a7a207166756e6a20756b6679757361677820626f2068676620686778616f6f207875206a6770787a767820726e787675787a7762207166766d6d6f6369207a7375206d7620716b7420797a667867207166756e6a206e766e6b7a7775716120686c6574787669762064756c78716b20626f206d6d6e6f74787079642073696f20646a6c70696b206367676d74737a707320676e786a20776e7a6d727073206966756d6372206b622076747968206c75747a62792064736e6a797220776e636c617a776b20796a636d206b7a64206564656d766d716c2067666a6d69206c7179626c2073637020757979617273766f6a20707078"
+   },
+   {
+    "eof": true,
+    "feed": 0,
+    "max_length": 700,
+    "needs_input": false,
+    "out": "206e6762686d7720787a71646920756d63776e7173207964756e6e7820636a78737a7171207879616f6f7820667a68207967776c6d65636420696b6c7374207564686e74207367766965686a79206c7a707974737020776876717865686f712062757a767a20756b667975736167782070726a206d646a61617769637820686778616f6f206c646a6268716f64206b787320766c7a6a206a6f656520726e686b74666a207363702078617870206d736f6c78207a7079656c7120737773207674207261722073646d"
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": 700,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-header-split": {
+  "input": "28b52ffd60b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": -1,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": true,
+    "feed": 1573,
+    "max_length": -1,
+    "needs_input": false,
+    "out": "686763787970206364696a6463656e20717968727a682071616f7076722061737a79206e6b61676c6d70756120797563616d7464206869207577617a6f61786c2063786a716c6a206f67626a7576676a77206a6f656520767a7573777220796a6569616d7265206d6667717020717475207172666f7772676f66207166756e6a2074696e20647077206878706e6c676365207367766965686a79206c687a7a71206d65776e65667567206e6b7770616d6b68207179706d656c696f2070657368756e6e6b206c75747a62792067742075656b7020676172776a207061706d2073727161717172677820666673616161702076637079616120696c7a74776f63686f20696b6a666f666a796d20736b7563206f66686d72796a206b66746e68207a70667a6277727920726b71207a73626971796a6d7320626a74757570657720636764796e7a206d686a6a6c6a656b20666a6c206e78782069736c65706f696b6b20757979617273766f6a20756b66797573616778207565662071776a6976756f6f7520686872726e6c64206d756d6a696f6d76207170656a6c737720726a65626b6a6c6e6c20617470757a627966206b6e756d666c666c7a206e6b61676c6d707561206668742063786a716c6a206c6f796d20727a727a77742068686d776a6f777868206e73206d736f6c78206e7a6a6b73702069656e75207170646a6c78747420726b7120747a71206c6f677320767479682067666a6d69206171636e63787161742077667867757763687420666a6c206565677a6d666720786a20776e636c617a776b207070782068737720736b756320627278626469207a70667a62777279206d6579696a6e72627620716b7420717073626e6c616d6c20777a73786b70206b72787264772071766d70766920646a77756e20716b74206b616e6576727979207a7079656c712074797a6120736366207361626f70747478207a7276656967206867637879702062746e6e2066667361616170206e78782071637666656f6520717475207a74206e6b6320707371736a762066667361616170206e766e6b7a7775716120757275686d677a2068756f7968706a7673206b63636c6f6f6c6f206c687a7a71206d646a6161776963782076747a6570206b6965687320727871207062777677616c69206c7574736a20736b7563206d63706c6b69207665756368206e766169696f6f6b207367727876737a7a65206564656d766d716c20777263627073697a74207766716576776120696e71656e646d6f78206d6d6e6f7478707964206a6f79636a696a2069782062782076646a7474206e6b63206565677a6d66672063706f6161746b6b6520637a637a746a2075656f64787573206e6c6f6773207278702071792068737720626d63696167676520686c65747876697620637177736a646c7020796a636d20736370206776727273716c6378207366676667667676207a63206d6575646974207969206b75782068697275646f206c636166786a7a776d2074797877746c70206c7263677670617920786a207063782077796520777572206d6579696a6e726276206d63706c6b692078617870206d6e63746120616a20646a6c70696b20766c7170207061706d2063786a716c6a2077637a686f6a7477206a6f6565206b727872647720746d77706c2063756b63707a747420626920666a6c20697663776a722078707073787a736920646e6565786a207061706d206d6d6e207362207372736972796420746d77706c206475716720776876717865686f71206d7620777520736c6970636276632065757a6e696c767577207179206e687476616378206f67626a7576676a77206b7278726477206777797674676c206b757820736172697664706d206d687872737a7a662070686268206b62206475796e6767722073696f2062786d206e61686b70207564686e74207a727665696720766c7a6a206e746f70206878706e6c676365207367766965686a7920736172697664706d206b6f67706d206e6e69692073737264642072796d206b7a69657720686766206368626f667963706920726a78707566622070746320706d72626f72206c62626f77206370656b20786f72696162747220746d697a79207775722069656e7520766b6a6320766c7a6a20767420726b6c6978206d666e7276706a712064756c78716b2075656b702063756b63707a7474206c7a7079747370207775206e787820796569716372736f20756d63776e717320657670696a7972782072657a796220786f7a72666f636e2064736e6a797220667a757562656b616320756d63776e71732075777672626570206f6f206c646a6268716f642073712070726a2073696f206863206f696468686a206e6c6f67732078737a6e657161206a7175766e2066746d6f6f656771207764646265756c20676e786a20737720727068646e2073616120787520686a6d756a71206176667169727720637177736a646c702071766d707669206470772062746e6e20736172697664706d207068206b71667a7a692078697176657073797320626920736172697664706d207367766965686a79206773716573206279207178642073627764786120726e696720786a2079786920766c7a6a20796179206278206b72787264772068756f7968706a7673206a6920766c7170206969206471797a73636f6b206a7569746f6a2073712074797a61206b616e657672797920786320766670776d762068752074636c65796f716f6b207663656c776d612068656a7264206977767668716c7220626a7475757065772073786465687278206d6579696a6e726276206e657173787a207665756368207872746e206c646a6268716f6420746d697a792062757a767a207062777677616c692075696e69206b6f67706d207068626820696e7873772067737165732073646e696d626a6d20686a6d756a712061692066627a6964207a70667a6277727920637520796f77656266662072727672782065656f78716463206d6579696a6e7262762070676662726d20707078206878706e6c6763652065746b7864682073696f206e687220776e736e76646a206c6b617720766867786c2064756c78716b206269206e7a6a6b7370206563636668616b20646c717279617420657a77786f6820637a637a746a20726b696163206962656e7371666563207674796820727276727820716b742069736c65706f696b6b2078632066656f6b206877776c6f6f73626d20706a6664777773206b796c646c666e61207062777677616c692073786720616b616671617a2070676662726d206e6e6969206a6b7478206666736161617020656465796871752078686168692064666461686d6e71206b78616d61706f20767665727761672068686d776a6f77786820627920727564786863796365206776727273716c637820727a6d616220646e6565786a20726a65626b6a6c6e6c207565662076646a747420727561682071766d70766920766c7170207a726868777376706820616a7478626620627870206a7a207166756e6a20756b6679757361677820626f2068676620686778616f6f207875206a6770787a767820726e787675787a7762207166766d6d6f6369207a7375206d7620716b7420797a667867207166756e6a206e766e6b7a7775716120686c6574787669762064756c78716b20626f206d6d6e6f74787079642073696f20646a6c70696b206367676d74737a707320676e786a20776e7a6d727073206966756d6372206b622076747968206c75747a62792064736e6a797220776e636c617a776b20796a636d206b7a64206564656d766d716c2067666a6d69206c7179626c2073637020757979617273766f6a20707078206e6762686d7720787a71646920756d63776e7173207964756e6e7820636a78737a7171207879616f6f7820667a68207967776c6d65636420696b6c7374207564686e74207367766965686a79206c7a707974737020776876717865686f712062757a767a20756b667975736167782070726a206d646a61617769637820686778616f6f206c646a6268716f64206b787320766c7a6a206a6f656520726e686b74666a207363702078617870206d736f6c78207a7079656c7120737773207674207261722073646d"
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": -1,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-raw-trickle": {
+  "input": "28b52ffd608812419c0018722c03cdf7d75b7f35f9f01a7140fb9136cb25dd47e9664df3ee573235f028c4f8112ef587fc17be48be33e0ab644248a477ba76dd1c12d361ea1a0038e4834ce59ff460f8369abda9937ad59d184631e92e4060d9afcc4c7a100aba589133d87ed079534d71a8e550ffff09096d5db4f46b84943aa80cd0ab363e9fd950057a8cdc2d0bd69200f2ffae8caa866f5b8558b448a0222c7898e912499d23efd6c233cbaaf3332bb8df498e330214d6c371b89984b12d67ac416dd57a9176c7339c7a34cc2199862d43148dfb85c2639861b4f1a9bcf3b60caa8ffb8a3678425b43ac0f5847925818a6218449712a54012e3d0ae5df6770101ccb3267d9b1116a6fc681db42ddb939886276cc569fe9135b3c5a881ebea5d7ea80ad49c706ffda267e524709516c8ceac781953fbe97bf860956cef6c1560bf9231751e055ec9e81cf4354ca86e06d46047d70170a5a887ce9bd18170f281e66d619c420257d4948c88c7df947001f9f8ff7de06099e0246084376ad3e77ac82a733e5826db5244ebe5e99168f35fd8aee1e261a3de2acd3f50aed2c22ef05a3935bf95d7000f7a6bd2e6c1aa68f0b9ac90a1cbd9288d49e8e4d06ed07abbd1af4bad7fb8c011963c5eb585fdaf11d20ef3c9cfa4fe2b145df246fed029e35da11c136c7a186bff38e474892aee1ec3460642a0725e671adcbf27e3ca7ce7c2b847904256c40d8c3363ec84fb43e8dd9b2096526f2e855597736110df2c07458b0060bacbaf2dfdb2a8408d8cc487f828b74ab6a5a7f63ddec88571b5075e8407b639a80632cdae23b3dadfdd1b75489ff3a2a9b3b6e7c6e8cebe03bcf731e750d0cd69ea3508e4a30ee927c0544050524383fc54fc1b61b0c562083b855a6fc89155208f5e3697bbf90e02e86a4cfd4dd2578a562284977e322d332c80e2341d57794bf89d5188e89af70c7f446694c84fc2ba1f81cf213657108f3a45e8c3554ea9ef9a66defe5b0b4a405d74e30305176b3537714ae8decd4c386083f9ae4994ae8ca5962d660a3ffa9e2ab60e397b871558e4fbbcc4cd4e2cc4607dc21591478fff9af6ce690fb81b72379ecde9ad3cf77bdd58dd0220c774d3745e65db74e06bf1a2d4bd17a3ae391c477448fa7f4b4a20679114504001577c86c476ab274397d60d12c990111f5432e2921c143cdcdb9de9063c2b30f7d3d8ecd839b5cf38899d3391944360442df2f4a107b49a747cbddd4c06bb15885efe01818a9768203cc9f1d472f09ed502c759e2784efb0611e3945ff3b811f25d23c60a190933ececae00970b85b5f683ff0e74938cfccd59b5c96eaed81daeda3a13183e891ce03af1d4343ee329e4996355c7ef68b65b5daa36b5d7e671597227ef39906f5f4ad157dc9ac834384f6e57ecf7f1a460e3ece3c7a0156ce943383f2328c6acea9f751e6203c648189e088a4def15e693878cb9189ccf05116c833a6c4d0ef8e52e2eb7093c2aa1484cc76c71708321b202a5720910f5fe94ed06ec5faa8f43b78d10e5e7128ddf8225b95a88e4cb467ad80e15d65c09c989f7b33bfdd37b8bdfb52d9b0c664a6f3a04c2304265b97565185abc6c4dfd29282d8230aa9f5bc0a0bad6bbfe2744c4e58fcac60d41d3bc0566ea2077a37849bb97fa8538cbdfc8d8c1c71cac86572fc5fbff01e5437bc408cd3bd54e21565fe2d255acb71e1cebc3dda091655a76528d9db6d69616d2d66379ad7b106f46771ecbeab911d3f9cb07418a666543ee90e5d8de00e35df67187366f7bc424f32713b76ee61523705a53cde3a6df17e53f0bf0fd289ad24d3032f28fce7e8c74d94963a0b7667830aa3c56cc6a70a78c1803c19aad877e511008b736dcfea4ebfde54eb09a1961eed91256b6ff2006009eada2739e3c94709275ab1dc01cdde69a0e96f0d7c77e2be7193cec0fd73a4b5ce84586d9adf778a249c43744eb80119d94d67ac7c52478e70b14290c70ec2618c6e78c5eb2d8ffc228ff0402cb74bddda191135db5b8aded3590d6dd7946235f000005d4bc05abf1e5dfa2e02f8fe0d161720a9ea276c5c4964dbe68442d3a7bc10b2502b225f12ca11f0ab05ad7a7ba8b9e192e673a1c909281721a1d5043378353dd0b84babd7408274e0d958f1cb0646305201d7255479a2b2cec2c0dd36c4c23a83004e85475f4513e41af4749f4b53b7990e918509c5424189060bc82f1fc898b92fc8021a93b12f5fa62af5a5d40028327267bf39834b2ef9fcf3dc5f90f41bd1c082ae7fae10656930acb95f2450c2199b173598c1a0cea0e6aba96a68eb7fb192724f14af49564043ad3179b1999dd9ff7f648572fbb221eb1bb1c21824ee17a01876a79a9717701c16cc4c4a79831e0c55e944b6620f23b5e99f3445f3b2333f23f2fe321f8e1929a7c6d2c16dfb6482ef4676628c182f1824cc96163a3a417d0f9859b842ef5b512e5d8942617c40f520aa69e5d342b1352998fc2689368240ddcf6cdf323b2f222d9544f4ac16e7616b28f8488b17c91a815c3f1884412a98f2d141e313ae5753fc9164fc775a45618bb9e93048c925e35882b1fc115b8db1d02287b3d397afd723f4d1453bab3dbf5afddbfbb0e350ee19702dbf1ccb144669b677275610d116090f29b9636f189c4771355681eb8971fa0bb024c54d66b940ef8b4df694646f39d175badf6e56c786b6b1c573c0b530ff6140eda97d0910ec9d401169d57fb9a283f6eadb6fa40e6df12bf304962080d3cf283ba50656b90b242ec873dd0dcbd52deedb96a6d508f5d33dd749a9336b027d6031eb1a8e7c042adad9680f418f3d0a7981d7c95c8e26c81bd521b817aef3aa57a35b9e3cd90889fd5537b33928158abdd3025dbead0979660de7fbc556e021e4dea58a4d6e6259ee5a5b3b28a5da4c459647a4771d5b7f5eb3a2305e4a60b363b34a69fbeb0da376df85d84cb8348de5fd97d8c726f434159e820ec71bde3dc2f6914e24c58e8cc27548811309389a68d357b433c65ab5133a6bbabbd68a8b90b0d96a72b13aa39deab3a2b14462ed2e960e58557da168a0f0ac44c7111e04749b3d7a8c96b50a46619dcc44b50b0337a35acc9036eeab7f1b179d152806ba9872390401d6bea35c364782e1d98f2eb7ffde33504c25a9f311f52e2993fddfa017708429abd0ed1e617cf951e2ad5f05b96e8e51f523305a94db37b09f0970a73ec3c990caa65b55a5635d1788d9af98a6c48c4ffb064343750483caf67eefdee78d817be46f718713e8354843c9e62c1addc09c38baadb1ebfe39238eb157205b8e1f084545f7da8c82879a676d17d8f448659ee089ecfea606be9b131d0f34b4da615079723e2f9e455a073cc9afa75a122bf9657a916b6070eaffa57fb9e7e5e2a20b1d4a3d585495fe19407f4009a4458143f7f38dd18d227db34a7e0e951fce92319b2194619f7a7eb43fa7316e1b406e9236128f79851433e6eedc76df397da221e47b57241179d7ce8dddc2bfea0b68538be57fc610b125703448c59d37a34d643797a5c165474ad4dca0ce481696054e00a4f00f5c6dd716201c8df3b653a87732e2c960e780c7826bff5340f604ef3e9554648745c79ebdbf6a6ebb645f0af67a5be443a3a54a2b640e23bec23a6dbc5ac13d0e77062cf89f9f77e050f774cf3b77c0a9dffcff51d83c6e0c3b8aba20af479bc8b9eec3426432ba17a1c9f44704b176f698c937fa2e77c55fe1c80da75aba725b957d5463d32ca5dabd17d8c960c6159726a226179da24cfd66305aef961bda8b8cf784991dbc13388cd4350f1eeac464f2a08915dd7c728ad111564bd0157b233a2cdc2c57460d663e5d3543683b6c759e88b726102596aae24e31c6d6f4ec3060830a9e5fc96c754e3ad699022391bcc702ce56e7bda0b4d439b50a9f4554380a192c4626fbfba76436f1df5a23bdb132230576ac97e88d1247d715946a08f868c5959a3691d946b1e4ed743df00805badb7b69a7cd009268d3963205afa43963a0ec8432fe31156d6bed8761ffc92ae0b588cc6d6b36edfdf7093a7f09154b5c36822a3b7b3d7356b545d84417508f51a7def15331f0a21e86d24fc51f22c2457b413e377698294d3951bf8020fd90a4a335bbbad0a6d4848b347c6b41e961f80612ddeaca6f3c24c66bb09a436e437e7e66f17688446bc0a17fad2881eb376d680d4fa7a35213fe07ce69e4e62cdbdd043bba6d3aa4cc5e6ce845d19cb30fa4741c5c460094125098f0278150d51c2f320d8ed89cdc4b2e09c064fcf5762799518b83ebf6cb60f98410e595f5d930b26dd77c4d2dad558384e69a73013919b42620519f0cdd3174b2862b68f5fc1d9179eb9bc6d879f31d5d4e879c6a58bd3b6cfa45f7d798684583fbef8a6a53be2c94e7e2a8a30fad10b4de3c8dd149c56a6f546a3ea85fd89bfc4ebed9e7f01324dbb062dc0578c8b8c9460b3e10c74b15e628efc5d26accfb31fc00b25f763167fe8e177ca3814828a2b10e9e8614a5d5e5fa6d0a15aa577f5eba0c79de5dfc2e898adf30e15add39d6a08fcf4b32ea3268c5796f802226890a82a804aba8c38e4389694710036dd41ee5a458c258c521d1253b2a533a76af131d6d172b6660714f7eaa4c188cdcba890b89de4b11fe9a79799bc9b7b8d1ac57d1141c0d4dc22ebe757288e9b3f5b07b8d27f7d7c1ef44020f5307d9bbd62636df43f93b7b2087deb0b851421155b1addead3ddd3a9c484f5bfe01c6e4dee8358ec008153a937837c1440eed31d0077baa88f67e71087ae4465550d62551df6723cc6673543c47f8d768e5f81a29d2cb37a0f5e00da996833864f614f9c3c041c050ab14676ee4b631d3cd9eb7702a541adfdc6991cf5b6021cc6bbad9493ed594b30e3a418cf942615826a4733643852d34773b06287583f2f6d3eeba09d1c58410229d04b283cc7e916e5ae93655a12b208e937b1509b5d73e7eee1e518f78a8b69d74eee8d94bd5378ee47cfe5beff4d882da25508976f3b6298dd4293532aec45e5a36682a472e46222592b4546da1c2bc52a65f1c894ebd0fb068325879539ae836c6b614c70e771970931df81bb84155a7443056e786b0b368ce0aee3569ae819926f753926ed39f2cd5183138a5687095d1f3d8f2d182e772a834cf39eb59d09f53042d6d2d0bdf9262b7476900b49ea56abce06c41fe2c619337b45632eb9fcf382ca5db0cd48ab56e18e8eff63bec0f9bb94f85e0a8f055e767d6343fcf7a06b6a14f10f3af38bfa065a2945804820446b933c2ccc8aec834ff45196ea485754100e19bcb3b77f007520c12096e71991f1f7bee198e46c341a8c987a9692d84ac63e03899c8e6158a4d6764d535b84c35fb4a7abc768b0c948f3e5148b639468c521f2c6f97c3ab13b537fc54f2ce457e3d970758929dac6a3d2e17fb975fb715774eb0772e97ec5f94523fa32ae300affa2c2f2b3e14a96b379a1069909347bcf3cc175dff8145794c6c3b742b258cb37c3aaf8646a26b28900f7b6f465be451a7667af62ac011e9f71eb6f5beb7e67dd63714c4619a3efa2ce1c52e3a1518662974fea318cd927659b9b3eb6b6ec2a399dd3bb4aea024983242cd8cd495ec3e954148c831c937aa6dd5b826e68c31c04ab3d7bb8f2892d10ac5b1cf9bd8e7e386833eb12107323959b8f4e1e3088c1b3e33e6005e85847ab275b194f79d2897f08f70280261d038d56a7f5714920eaa6f8b7a18d9bc9b616dcfbb320b0d899254849e40730cdf4c6764a84315656c040f646dec31bfbd305f6a0ebdb5b3e21c2e85921347299122e4af72fb20de8d4c3951342cdd16f03913cb7702ec551a37a227a31d2a71398e3abb87da9f15b75346096354ecca621693cc7143725e6788f69f599d48ade24dbbbae3d35eb415abebc5fe941973fd4080420ae309c55bf98be29ab22ee7f24a1813238f8623bbd5aece52021ad75ab72744694889aa10fcd963e8de1a4fd8e4848a1af1e8a655ca8ea75433c970578d88640d2cec539455e14c97148d48981348f17639e05e2ac4c9ed0d31209d93d73d3d6edce355fb566f827231556156de60c79e8d3f97ec089b584cd2d66eea75f8938a4ef071669f3f1e612646a1c2d0ff40cbe438b358cf136a95546ea710dbe9acd3efa55d146768a5029ff514471cedfec66a3ac7c08209f0913fd3e14ae925042ec2c11e7c9f89a9684ab5ebdf3fd2974b93ab2239db7d7a7cc05efff6c42d26e088df8365fb7dc18f04aa181399bf3b0c106073f5714342d83838123d3585cc4c6bf5dfe7f34746dd71dab0ea28f738d2c547deae89aed4d0cf59ef5d88cdfc85a3172dc1b5e84fdb9fa28fc7c4b3fa14fc9b308f05cdab771f953d8a41ef60fc9e50fecbb7f7e9a21c2a1a24e4603669d164efd088ac8f1d8d54a4d5e0db268105c5714fe5fa6037e378f817e94062c97059a67979c497ef1e7a74bae9015ae224b17f1c623fc4f3944e8daa351ed64f5ab6438530a33c0b0c711b4daecdcf2dfe3f12503a40161ffc0ad04ea298dd68a1c811c8b0986b90ca2ba786dbb5c8a297f82f34546c00e350ce0e5239c759f9909731d72830075f33da91ab6dedfb1269d1a8f91cd5b98343b80faef2bb678492aa4038daab9721098e3ad8fb930cd77d8978bc53de4830d7c99ce95bb088827b2854bff92d86402b97c07dbcb50bb89e6f5a8d688c1bf01904bc5b816b62ab1d3f244427260a5450fdf74ae24da21fd68419f1c70eccd4a2024ad8a3722c2f3c4f26fdbb914c37c40411110ac21eb8fedfbb53470c650980bf33d900f624697db4523692462ea76fd4001309a8e920481e68449754e5b5245a574f136e7bd30890e0c86ed89518acbfe1139e737830daf36d7891f211763a91ac40cfcbe9974dc0fcc46c867ef7581c2ec49717d9c5b332bfffe650cf1f81e38f41db713f5cfaa68e6a53eaec2b916cca444bcc1ba98c33f1198cd416769a84cdbb07a5b8187fdfd7282e137f7411f5933c8ccbaf7832111b7efc9872788937ab5b456bbc9f35d08b682c133615af9d985f0df7273ef5fe76cb683b",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": false,
+    "feed": 777,
+    "max_length": 1000,
+    "needs_input": true,
+    "out": "18722c03cdf7d75b7f35f9f01a7140fb9136cb25dd47e9664df3ee573235f028c4f8112ef587fc17be48be33e0ab644248a477ba76dd1c12d361ea1a0038e4834ce59ff460f8369abda9937ad59d184631e92e4060d9afcc4c7a100aba589133d87ed079534d71a8e550ffff09096d5db4f46b84943aa80cd0ab363e9fd950057a8cdc2d0bd69200f2ffae8caa866f5b8558b448a0222c7898e912499d23efd6c233cbaaf3332bb8df498e330214d6c371b89984b12d67ac416dd57a9176c7339c7a34cc2199862d43148dfb85c2639861b4f1a9bcf3b60caa8ffb8a3678425b43ac0f5847925818a6218449712a54012e3d0ae5df6770101ccb3267d9b1116a6fc681db42ddb939886276cc569fe9135b3c5a881ebea5d7ea80ad49c706ffda267e524709516c8ceac781953fbe97bf860956cef6c1560bf9231751e055ec9e81cf4354ca86e06d46047d70170a5a887ce9bd18170f281e66d619c420257d4948c88c7df947001f9f8ff7de06099e0246084376ad3e77ac82a733e5826db5244ebe5e99168f35fd8aee1e261a3de2acd3f50aed2c22ef05a3935bf95d7000f7a6bd2e6c1aa68f0b9ac90a1cbd9288d49e8e4d06ed07abbd1af4bad7fb8c011963c5eb585fdaf11d20ef3c9cfa4fe2b145df246fed029e35da11c136c7a186bff38e474892aee1ec3460642a0725e671adcbf27e3ca7ce7c2b847904256c40d8c3363ec84fb43e8dd9b2096526f2e855597736110df2c07458b0060bacbaf2dfdb2a8408d8cc487f828b74ab6a5a7f63ddec88571b5075e8407b639a80632cdae23b3dadfdd1b75489ff3a2a9b3b6e7c6e8cebe03bcf731e750d0cd69ea3508e4a30ee927c0544050524383fc54fc1b61b0c562083b855a6fc89155208f5e3697bbf90e02e86a4cfd4dd2578a562284977e322d332c80e2341d57794bf89d5188e89af70c7f446694c84fc2ba1f81cf213657108f3a45e8c3554ea9ef9a66defe5b0b4a405d74e30305176b3537714ae8decd4c386083f9ae4994ae8ca5962d660a3ffa9e2ab60e397b871558e4fbbcc4cd4e2cc4607dc21591478fff9af6c"
+   },
+   {
+    "eof": false,
+    "feed": 777,
+    "max_length": 1000,
+    "needs_input": true,
+    "out": "e690fb81b72379ecde9ad3cf77bdd58dd0220c774d3745e65db74e06bf1a2d4bd17a3ae391c477448fa7f4b4a20679114504001577c86c476ab274397d60d12c990111f5432e2921c143cdcdb9de9063c2b30f7d3d8ecd839b5cf38899d3391944360442df2f4a107b49a747cbddd4c06bb15885efe01818a9768203cc9f1d472f09ed502c759e2784efb0611e3945ff3b811f25d23c60a190933ececae00970b85b5f683ff0e74938cfccd59b5c96eaed81daeda3a13183e891ce03af1d4343ee329e4996355c7ef68b65b5daa36b5d7e671597227ef39906f5f4ad157dc9ac834384f6e57ecf7f1a460e3ece3c7a0156ce943383f2328c6acea9f751e6203c648189e088a4def15e693878cb9189ccf05116c833a6c4d0ef8e52e2eb7093c2aa1484cc76c71708321b202a5720910f5fe94ed06ec5faa8f43b78d10e5e7128ddf8225b95a88e4cb467ad80e15d65c09c989f7b33bfdd37b8bdfb52d9b0c664a6f3a04c2304265b97565185abc6c4dfd29282d8230aa9f5bc0a0bad6bbfe2744c4e58fcac60d41d3bc0566ea2077a37849bb97fa8538cbdfc8d8c1c71cac86572fc5fbff01e5437bc408cd3bd54e21565fe2d255acb71e1cebc3dda091655a76528d9db6d69616d2d66379ad7b106f46771ecbeab911d3f9cb07418a666543ee90e5d8de00e35df67187366f7bc424f32713b76ee61523705a53cde3a6df17e53f0bf0fd289ad24d3032f28fce7e8c74d94963a0b7667830aa3c56cc6a70a78c1803c19aad877e511008b736dcfea4ebfde54eb09a1961eed91256b6ff2006009eada2739e3c94709275ab1dc01cdde69a0e96f0d7c77e2be7193cec0fd73a4b5ce84586d9adf778a249c43744eb80119d94d67ac7c52478e70b14290c70ec2618c6e78c5eb2d8ffc228ff0402cb74bddda191135db5b8aded3590d6dd7946235f000005d4bc05abf1e5dfa2e02f8fe0d161720a9ea276c5c4964dbe68442d3a7bc10b2502b225f12ca11f0ab05ad7a7ba8b9e192e673a1c909281721a1d5043378353dd0b84babd7408274e0d958f1cb0646305201d7255479a2b2cec2c0dd36c4c23a83004e8547"
+   },
+   {
+    "eof": false,
+    "feed": 777,
+    "max_length": 1000,
+    "needs_input": true,
+    "out": "5f4513e41af4749f4b53b7990e918509c5424189060bc82f1fc898b92fc8021a93b12f5fa62af5a5d40028327267bf39834b2ef9fcf3dc5f90f41bd1c082ae7fae10656930acb95f2450c2199b173598c1a0cea0e6aba96a68eb7fb192724f14af49564043ad3179b1999dd9ff7f648572fbb221eb1bb1c21824ee17a01876a79a9717701c16cc4c4a79831e0c55e944b6620f23b5e99f3445f3b2333f23f2fe321f8e1929a7c6d2c16dfb6482ef4676628c182f1824cc96163a3a417d0f9859b842ef5b512e5d8942617c40f520aa69e5d342b1352998fc2689368240ddcf6cdf323b2f222d9544f4ac16e7616b28f8488b17c91a815c3f1884412a98f2d141e313ae5753fc9164fc775a45618bb9e93048c925e35882b1fc115b8db1d02287b3d397afd723f4d1453bab3dbf5afddbfbb0e350ee19702dbf1ccb144669b677275610d116090f29b9636f189c4771355681eb8971fa0bb024c54d66b940ef8b4df694646f39d175badf6e56c786b6b1c573c0b530ff6140eda97d0910ec9d401169d57fb9a283f6eadb6fa40e6df12bf304962080d3cf283ba50656b90b242ec873dd0dcbd52deedb96a6d508f5d33dd749a9336b027d6031eb1a8e7c042adad9680f418f3d0a7981d7c95c8e26c81bd521b817aef3aa57a35b9e3cd90889fd5537b33928158abdd3025dbead0979660de7fbc556e021e4dea58a4d6e6259ee5a5b3b28a5da4c459647a4771d5b7f5eb3a2305e4a60b363b34a69fbeb0da376df85d84cb8348de5fd97d8c726f434159e820ec71bde3dc2f6914e24c58e8cc27548811309389a68d357b433c65ab5133a6bbabbd68a8b90b0d96a72b13aa39deab3a2b14462ed2e960e58557da168a0f0ac44c7111e04749b3d7a8c96b50a46619dcc44b50b0337a35acc9036eeab7f1b179d152806ba9872390401d6bea35c364782e1d98f2eb7ffde33504c25a9f311f52e2993fddfa017708429abd0ed1e617cf951e2ad5f05b96e8e51f523305a94db37b09f0970a73ec3c990caa65b55a5635d1788d9af98a6c48c4ffb064343750483caf67eefdee78d817be46f718713e8354843c9e62c1a"
+   },
+   {
+    "eof": false,
+    "feed": 777,
+    "max_length": 1000,
+    "needs_input": true,
+    "out": "ddc09c38baadb1ebfe39238eb157205b8e1f084545f7da8c82879a676d17d8f448659ee089ecfea606be9b131d0f34b4da615079723e2f9e455a073cc9afa75a122bf9657a916b6070eaffa57fb9e7e5e2a20b1d4a3d585495fe19407f4009a4458143f7f38dd18d227db34a7e0e951fce92319b2194619f7a7eb43fa7316e1b406e9236128f79851433e6eedc76df397da221e47b57241179d7ce8dddc2bfea0b68538be57fc610b125703448c59d37a34d643797a5c165474ad4dca0ce481696054e00a4f00f5c6dd716201c8df3b653a87732e2c960e780c7826bff5340f604ef3e9554648745c79ebdbf6a6ebb645f0af67a5be443a3a54a2b640e23bec23a6dbc5ac13d0e77062cf89f9f77e050f774cf3b77c0a9dffcff51d83c6e0c3b8aba20af479bc8b9eec3426432ba17a1c9f44704b176f698c937fa2e77c55fe1c80da75aba725b957d5463d32ca5dabd17d8c960c6159726a226179da24cfd66305aef961bda8b8cf784991dbc13388cd4350f1eeac464f2a08915dd7c728ad111564bd0157b233a2cdc2c57460d663e5d3543683b6c759e88b726102596aae24e31c6d6f4ec3060830a9e5fc96c754e3ad699022391bcc702ce56e7bda0b4d439b50a9f4554380a192c4626fbfba76436f1df5a23bdb132230576ac97e88d1247d715946a08f868c5959a3691d946b1e4ed743df00805badb7b69a7cd009268d3963205afa43963a0ec8432fe31156d6bed8761ffc92ae0b588cc6d6b36edfdf7093a7f09154b5c36822a3b7b3d7356b545d84417508f51a7def15331f0a21e86d24fc51f22c2457b413e377698294d3951bf8020fd90a4a335bbbad0a6d4848b347c6b41e961f80612ddeaca6f3c24c66bb09a436e437e7e66f17688446bc0a17fad2881eb376d680d4fa7a35213fe07ce69e4e62cdbdd043bba6d3aa4cc5e6ce845d19cb30fa4741c5c460094125098f0278150d51c2f320d8ed89cdc4b2e09c064fcf5762799518b83ebf6cb60f98410e595f5d930b26dd77c4d2dad558384e69a73013919b42620519f0cdd3174b2862b68f5fc1d9179eb9bc6d879f31d5d4e879c6a58bd3b6c"
+   },
+   {
+    "eof": false,
+    "feed": 777,
+    "max_length": 1000,
+    "needs_input": true,
+    "out": "fa45f7d798684583fbef8a6a53be2c94e7e2a8a30fad10b4de3c8dd149c56a6f546a3ea85fd89bfc4ebed9e7f01324dbb062dc0578c8b8c9460b3e10c74b15e628efc5d26accfb31fc00b25f763167fe8e177ca3814828a2b10e9e8614a5d5e5fa6d0a15aa577f5eba0c79de5dfc2e898adf30e15add39d6a08fcf4b32ea3268c5796f802226890a82a804aba8c38e4389694710036dd41ee5a458c258c521d1253b2a533a76af131d6d172b6660714f7eaa4c188cdcba890b89de4b11fe9a79799bc9b7b8d1ac57d1141c0d4dc22ebe757288e9b3f5b07b8d27f7d7c1ef44020f5307d9bbd62636df43f93b7b2087deb0b851421155b1addead3ddd3a9c484f5bfe01c6e4dee8358ec008153a937837c1440eed31d0077baa88f67e71087ae4465550d62551df6723cc6673543c47f8d768e5f81a29d2cb37a0f5e00da996833864f614f9c3c041c050ab14676ee4b631d3cd9eb7702a541adfdc6991cf5b6021cc6bbad9493ed594b30e3a418cf942615826a4733643852d34773b06287583f2f6d3eeba09d1c58410229d04b283cc7e916e5ae93655a12b208e937b1509b5d73e7eee1e518f78a8b69d74eee8d94bd5378ee47cfe5beff4d882da25508976f3b6298dd4293532aec45e5a36682a472e46222592b4546da1c2bc52a65f1c894ebd0fb068325879539ae836c6b614c70e771970931df81bb84155a7443056e786b0b368ce0aee3569ae819926f753926ed39f2cd5183138a5687095d1f3d8f2d182e772a834cf39eb59d09f53042d6d2d0bdf9262b7476900b49ea56abce06c41fe2c619337b45632eb9fcf382ca5db0cd48ab56e18e8eff63bec0f9bb94f85e0a8f055e767d6343fcf7a06b6a14f10f3af38bfa065a2945804820446b933c2ccc8aec834ff45196ea485754100e19bcb3b77f007520c12096e71991f1f7bee198e46c341a8c987a9692d84ac63e03899c8e6158a4d6764d535b84c35fb4a7abc768b0c948f3e5148b639468c521f2c6f97c3ab13b537fc54f2ce457e3d970758929dac6a3d2e17fb975fb715774eb0772e97ec5f94523fa32ae300affa2c2f2b3e14a96b379a1069"
+   },
+   {
+    "eof": false,
+    "feed": 777,
+    "max_length": 1000,
+    "needs_input": true,
+    "out": "909347bcf3cc175dff8145794c6c3b742b258cb37c3aaf8646a26b28900f7b6f465be451a7667af62ac011e9f71eb6f5beb7e67dd63714c4619a3efa2ce1c52e3a1518662974fea318cd927659b9b3eb6b6ec2a399dd3bb4aea024983242cd8cd495ec3e954148c831c937aa6dd5b826e68c31c04ab3d7bb8f2892d10ac5b1cf9bd8e7e386833eb12107323959b8f4e1e3088c1b3e33e6005e85847ab275b194f79d2897f08f70280261d038d56a7f5714920eaa6f8b7a18d9bc9b616dcfbb320b0d899254849e40730cdf4c6764a84315656c040f646dec31bfbd305f6a0ebdb5b3e21c2e85921347299122e4af72fb20de8d4c3951342cdd16f03913cb7702ec551a37a227a31d2a71398e3abb87da9f15b75346096354ecca621693cc7143725e6788f69f599d48ade24dbbbae3d35eb415abebc5fe941973fd4080420ae309c55bf98be29ab22ee7f24a1813238f8623bbd5aece52021ad75ab72744694889aa10fcd963e8de1a4fd8e4848a1af1e8a655ca8ea75433c970578d88640d2cec539455e14c97148d48981348f17639e05e2ac4c9ed0d31209d93d73d3d6edce355fb566f827231556156de60c79e8d3f97ec089b584cd2d66eea75f8938a4ef071669f3f1e612646a1c2d0ff40cbe438b358cf136a95546ea710dbe9acd3efa55d146768a5029ff514471cedfec66a3ac7c08209f0913fd3e14ae925042ec2c11e7c9f89a9684ab5ebdf3fd2974b93ab2239db7d7a7cc05efff6c42d26e088df8365fb7dc18f04aa181399bf3b0c106073f5714342d83838123d3585cc4c6bf5dfe7f34746dd71dab0ea28f738d2c547deae89aed4d0cf59ef5d88cdfc85a3172dc1b5e84fdb9fa28fc7c4b3fa14fc9b308f05cdab771f953d8a41ef60fc9e50fecbb7f7e9a21c2a1a24e4603669d164efd088ac8f1d8d54a4d5e0db268105c5714fe5fa6037e378f817e94062c97059a67979c497ef1e7a74bae9015ae224b17f1c623fc4f3944e8daa351ed64f5ab6438530a33c0b0c711b4daecdcf2dfe3f12503a40161ffc0ad04ea298dd68a1c811c8b0986b90ca2ba786dbb5c8a297f82f34546c00e350ce"
+   },
+   {
+    "eof": true,
+    "feed": 348,
+    "max_length": 1000,
+    "needs_input": false,
+    "out": "0e5239c759f9909731d72830075f33da91ab6dedfb1269d1a8f91cd5b98343b80faef2bb678492aa4038daab9721098e3ad8fb930cd77d8978bc53de4830d7c99ce95bb088827b2854bff92d86402b97c07dbcb50bb89e6f5a8d688c1bf01904bc5b816b62ab1d3f244427260a5450fdf74ae24da21fd68419f1c70eccd4a2024ad8a3722c2f3c4f26fdbb914c37c40411110ac21eb8fedfbb53470c650980bf33d900f624697db4523692462ea76fd4001309a8e920481e68449754e5b5245a574f136e7bd30890e0c86ed89518acbfe1139e737830daf36d7891f211763a91ac40cfcbe9974dc0fcc46c867ef7581c2ec49717d9c5b332bfffe650cf1f81e38f41db713f5cfaa68e6a53eaec2b916cca444bcc1ba98c33f1198cd416769a84cdbb07a5b8187fdfd7282e137f7411f5933c8ccbaf7832111b7efc9872788937ab5b456bbc9f35d08b682c133615af9d985f0df7273ef5fe76cb683b"
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": 1000,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-skippable": {
+  "input": "502a4d18070000007061796c6f616428b52ffd60b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": true,
+    "feed": 1591,
+    "max_length": -1,
+    "needs_input": false,
+    "out": ""
+   },
+   {
+    "class": "EOFError",
+    "feed": 0,
+    "max_length": -1,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-skippable-trickle": {
+  "input": "502a4d18150000007061796c6f61647061796c6f61647061796c6f616428b52ffd60b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": true,
+    "feed": 3,
+    "max_length": 64,
+    "needs_input": false,
+    "out": ""
+   },
+   {
+    "class": "EOFError",
+    "feed": 3,
+    "max_length": 64,
+    "msg": "Already at the end of a Zstandard frame."
+   }
+  ]
+ },
+ "zstd-trickle": {
+  "input": "28b52ffd64b80af530003a7dc0121290cf01c8601364b0c1069bffff7f70fe2b07250125012401c6adbf2ba5ec9506bfcf46d039aa74db7bb9c81edb4f57972a3be7b25e78e199754b9e72575985cda65e6cb89325f86a2ba940127c8d2b117ea7cca1c426fb580dc2733e9d9b14a5fa5ec87c1b10a72d6a3e391a21b0765e29e498ac88deddbe52b92269a574d86fb3c38857c273ca141e59b20f8578ff14bc8535dcc2f7a7c9a29e2c64a7b88ba9e2994dc595a4d0dd11aecabbd001b02ce81900104b791bf81e78309e31e0a70a81392b322fcd6db872aeabd6e68984efd0228cedfb510c7055ed6616d22a617ff79e759b0e41d4c4136156e33eaf3cde907c6ab3bc1767607505be4ff9cecf147602194024d9c31ae7a527c4a5d764e84cc1b8a7f5528baf06ee823a8fce8764404c7b30992d0354bbbd111c5276e0fd5c78ec7b23622434c4d9b63027408ac6ce0d1ace7a62eb5bb0054c8d80ebbc646d2bcfea4d5d805877634274de531dd94b34266117f79416534c896fb15e84909ab3886722d9f31a29d6274e116d49d639310620c1827de786ed71f670643ec92bae38514a02e058c834e83bbcd1134ac2baf461b9a56b8cbd1d1b8dbc860e2a25efa2c841c0faf518656490937b236d68e295730801da7ec424f4482d162c45b440a535f05fc3c743903a932be95ba00a401a6e39b784508f34f1b16e9e5fc3ce84f3e0cd7a55a334c517f942b5cb4b1c2954bcd664b84184c2fb96925d00f145c4836be5df2296efad859434a0daac691c5166f4bd0ed8509d55c75bbf18582d447e97ea9d06d812b284a1111a861acf9bf9aa5eb044ab4f7d53d83584c823ea345dea25782d9a78e088a5627eaca48f01073d6a881ffd6ec32379d1441b99d087fae8def2d40f57ae10bd42c15f9a2c9dcf3e00f16d1c7eea66be260963d43f439c63b2bcd1f9d2c123edc64ee70ce42e4e82fc173fdc3b218d75e7ce24405aa7008a84396f39b4a9c5f1265c81d7f583bd04bea14d8829797cad0a36ef22140f11cb515abe4bbd5e73fc25a6b015f6468b8aa4a8bd88c943190082aeaf088b5717c23a740132be90fc50267782472c6c71e18817735e09baeaccc28f01633c42ad9db1718a9d6c4f7751d9ce986775403beb7087e2a131cdcef1a07ec2e1977b23ecc3ce785004415c46525b4d0b40e56975d285da9de48206c168c5cf7acafedc21fde8a9376f8e61218a303ec437c65213d2c651bc1d99fb305541110a97f2b250537c7165522677aea8fc16bd42bcd278020f6cc443005f238bf854a43a0dc656322e853e0461ab1afb73cbdb3960fbefddd849bc5b9bc3a2f16ebfb2134c5bc1be35ae8282cd821e19b2db6ae41b25334638d3e5da19ef91708cd1f21eeaed49bbc137bdcd263907da1c176e3a7778092d13f8611aeb39f01e306100ec4222ac383d26bc0d06544828bd63c040abbfc60e18651c1d70faf31d4b06912a5df00a50e0a62368658d65d563ada3243e0bd1b955ebb972a45cb420e5c54602ba0048c1e3ba5e72092c7c6b5c8153842028ac3687be02b59e066db1d5c3d3ce68250983a11816e3b523e40d29842f2590eaeca718e88672c45260a88d586337841a9a97de199a847d3b3ed21a1e323ac2f50ea5157dc044ce01ab8b087ae59eb36409f9794e59e5422f3a398966ba72225efbc6113abf6481456d518301808da8818941c62044241011111119123763104e8871501f11c02c491d54f70ca20906b29e9b924596c595d0a0316d6e4bfa83c5979b6aae1995e42728b69f226e53fe1e6e4b93c22499d6863036aef6ea4af383f8c3067ae4d2c88662646d263fff50a35d3b238dcefcb14682d0efe60c714291c96d13e49d90948769b500a2ea0662410b3b29c8971c1ddc0cb97b8fa03fc4ab615bd20c79e0beb3a49a5524bb773c201943ae9d3e757b80ae9058ca720b4562c1f34da66ffbc4db0888882a67e04185bcabaa5cc1b1b3be9a4791ff936009c2d0f0e46084f01def6817a52d29673d3610d68e0eef8a26da206515883997c213b7c7fe608849195df976267db11e4ba506bece20165c5c25aa2a3734304471211bff02c781573a87efa38c121744b4f79b9a2efcb218b5f023def68f594000632aa256a466c5467754094a730ab4e11bf44c223153b4d2279cf33887c34a0f3fc6cc4918f83e772f629e8b5d73ba951227346ea61aaa00699c5428b52ffd60c903d5010014035345434f4e442053545245414d20434f4e54454e542074686174207a697066696c65206e65766572206465636f6465730a01005109fd1514",
+  "method": "zstd",
+  "steps": [
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   },
+   {
+    "eof": false,
+    "feed": 5,
+    "max_length": 64,
+    "needs_input": true,
+    "out": ""
+   }
+  ]
+ }
+}

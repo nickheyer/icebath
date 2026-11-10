@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"os"
@@ -105,13 +106,13 @@ func replaceVerifiedOwner(control string, payload *pyjson.Object) (int, any, str
 }
 
 // Planned stop marker in the owner's own home so it exits as a planned stop
-func replaceWritePlannedStop(control string, pid int, startTime any) {
+func replaceWritePlannedStop(ctx context.Context, control string, pid int, startTime any) {
 	record := pyjson.NewObject()
 	record.Set("target_pid", int64(pid))
 	record.Set("target_start_time", startTime)
 	record.Set("stopper_pid", int64(os.Getpid()))
 	record.Set("written_at", utcNowISO())
-	writeMarker(filepath.Join(control, plannedStopMarkerFilename), record)
+	writeMarker(ctx, filepath.Join(control, plannedStopMarkerFilename), record)
 }
 
 // Whether pid is gone within seconds, polling every tenth of a second
@@ -134,7 +135,7 @@ var (
 )
 
 // Stops the older gateway answering for home like gateway stop, empty once gone, else a refusal code
-func ReplaceIncompatibleOwner(h string, deadline float64) string {
+func ReplaceIncompatibleOwner(ctx context.Context, h string, deadline float64) string {
 	budget := deadline - pythread.Monotonic()
 	if budget <= 0 {
 		return "owner_unreachable"
@@ -150,7 +151,7 @@ func ReplaceIncompatibleOwner(h string, deadline float64) string {
 	if refusal != "" {
 		return refusal
 	}
-	replaceWritePlannedStop(control, pid, startTime)
+	replaceWritePlannedStop(ctx, control, pid, startTime)
 	graceful := min(replaceGracefulStopSeconds, max(deadline-pythread.Monotonic()-replaceForcedStopSeconds, 1.0))
 	err = nil
 	if !nativeWindows {

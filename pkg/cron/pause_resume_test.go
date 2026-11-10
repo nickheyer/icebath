@@ -30,7 +30,7 @@ func TestPauseSetsState(t *testing.T) {
 	}
 }
 
-func TestPauseIsAuthoritativeForDueAndFire(t *testing.T) {
+func TestPauseResumeJobPauseIsAuthoritativeDueJobsDoNotFire(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("Must not fire while paused"), Schedule: "every 1h"})
@@ -49,6 +49,9 @@ func TestPauseIsAuthoritativeForDueAndFire(t *testing.T) {
 		t.Fatal("paused job is due")
 	}
 	before, _ := s.getJob(job.ID)
+	if before.LastRunAt != nil && !ptrEqual(before.LastRunAt, job.LastRunAt) {
+		t.Fatalf("pause ran the job %v", deref(before.LastRunAt))
+	}
 	if _, won, _ := s.claimJobForFire(ctx, job.ID, FireClaimOptions{}); won {
 		t.Fatal("paused job was claimed for fire")
 	}
@@ -58,7 +61,7 @@ func TestPauseIsAuthoritativeForDueAndFire(t *testing.T) {
 	}
 }
 
-func TestHalfPausedRecordSelfDisables(t *testing.T) {
+func TestPauseResumeJobContradictoryHalfPauseSelfDisablesAndDoesNotFire(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()
 	now := s.clk.now()
@@ -75,8 +78,14 @@ func TestHalfPausedRecordSelfDisables(t *testing.T) {
 		t.Fatal("enabled half pause must read scheduled")
 	}
 	listed, _ := s.listJobs(true)
-	if !listed[0].Enabled || listed[0].State == "paused" {
-		t.Fatalf("listed = %+v", listed[0])
+	var half *Job
+	for _, j := range listed {
+		if j.ID == "half-paused-1" {
+			half = j
+		}
+	}
+	if half == nil || !half.Enabled || half.State == "paused" {
+		t.Fatalf("listed = %+v", half)
 	}
 	if _, won, _ := s.claimJobForFire(ctx, "half-paused-1", FireClaimOptions{}); won {
 		t.Fatal("half paused job claimed")
@@ -108,7 +117,7 @@ func TestResumeRejectsPastOneshot(t *testing.T) {
 	}
 }
 
-func TestResumeKeepsSlotThatElapsedWhilePaused(t *testing.T) {
+func TestPauseResumeJobResumeKeepsSlotThatElapsedWhilePausedDue(t *testing.T) {
 	now := time.Date(2026, 9, 16, 17, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("daily pipeline"), Schedule: "30 1 * * *", Deliver: prompt("local")})
@@ -134,7 +143,7 @@ func TestResumeKeepsSlotThatElapsedWhilePaused(t *testing.T) {
 	}
 }
 
-func TestResumeRecomputesFutureOrMissingSlot(t *testing.T) {
+func TestPauseResumeJobResumeRecomputesFutureOrMissingSlotFromNow(t *testing.T) {
 	now := time.Date(2026, 9, 16, 17, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
 	ahead := mustCreate(t, s, CreateJobOptions{Prompt: prompt("daily"), Schedule: "30 1 * * *", Deliver: prompt("local")})
@@ -155,13 +164,17 @@ func TestResumeRecomputesFutureOrMissingSlot(t *testing.T) {
 	}
 }
 
-func TestResolveJobRefAndAmbiguousNames(t *testing.T) {
+func TestResolveJobRefResolveByExactId(t *testing.T) {
+	s, _ := newTestStore(t)
+	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("A"), Schedule: "1h", Name: prompt("alpha")})
+	if got, err := s.resolveJobRef(job.ID); err != nil || got == nil || got.ID != job.ID {
+		t.Fatalf("exact id did not resolve %v", err)
+	}
+}
+
+func TestResolveJobRefMutationsRefuseAmbiguousName(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()
-	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("A"), Schedule: "1h", Name: prompt("alpha")})
-	if got, _ := s.resolveJobRef(job.ID); got == nil || got.ID != job.ID {
-		t.Fatal("exact id did not resolve")
-	}
 	mustCreate(t, s, CreateJobOptions{Prompt: prompt("A"), Schedule: "1h", Name: prompt("dup")})
 	mustCreate(t, s, CreateJobOptions{Prompt: prompt("B"), Schedule: "1h", Name: prompt("dup")})
 	var amb *AmbiguousJobReferenceError

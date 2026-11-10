@@ -393,3 +393,15 @@ func TestNousSubscriptionAuthPresentReadsTheToolEnvHome(t *testing.T) {
 		t.Fatal("no account info reported Nous auth")
 	}
 }
+
+func TestSwapNousSubAccountInfoReturnsThePreviousLookup(t *testing.T) {
+	account := &NousPortalAccountInfo{LoggedIn: true, Source: "jwt"}
+	prev := SwapNousSubAccountInfo(func(PoolEnv, bool) *NousPortalAccountInfo { return account })
+	if got := nousSubAccountInfoFn(PoolEnv{}, false); got != account {
+		SwapNousSubAccountInfo(prev)
+		t.Fatalf("lookup %v", got)
+	}
+	if installed := SwapNousSubAccountInfo(prev); installed(PoolEnv{}, true) != account {
+		t.Fatal("swap did not return the installed lookup")
+	}
+}

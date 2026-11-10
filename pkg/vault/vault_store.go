@@ -268,7 +268,7 @@ func NewVaultStore(ctx context.Context, baseDir string) *VaultStore {
 }
 
 func (s *VaultStore) ensureDir() error {
-	if _, err := home.MakeUserDir(s.base, 0o700, true, true); err != nil {
+	if _, err := home.MakeUserDir(s.ctx, s.base, 0o700, true, true); err != nil {
 		return err
 	}
 	config.SecureDir(s.home, s.base)
@@ -386,7 +386,7 @@ func (s *VaultStore) createKey() ([]byte, error) {
 		if err := vaultStoreKey(ref, key); err != nil {
 			slog.Warn(fmt.Sprintf("vault.key_storage is keychain, but %s; using %s instead", err, s.keyPath))
 		} else {
-			if err := vaultSaveNewRef(s.keyrefPath, ref); err != nil {
+			if err := vaultSaveNewRef(s.ctx, s.keyrefPath, ref); err != nil {
 				return nil, err
 			}
 			return key, nil
@@ -403,7 +403,7 @@ func (s *VaultStore) createKey() ([]byte, error) {
 
 func (s *VaultStore) writeKeyFile(key []byte) error {
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(s.keyPath, key, "", &mode, true)
+	return pyfs.AtomicWriteBytes(s.ctx, s.keyPath, key, "", &mode, true)
 }
 
 // Gives a cloned vault its own keychain entry before publication at publishedBase, nil when nothing is shared
@@ -432,7 +432,7 @@ func (s *VaultStore) OwnCopiedKey(publishedBase string) (*pyjson.Object, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := vaultWriteRef(s.keyrefPath, mine); err != nil {
+	if err := vaultWriteRef(s.ctx, s.keyrefPath, mine); err != nil {
 		vaultDeleteKey(mine)
 		return nil, err
 	}
@@ -454,7 +454,7 @@ func (s *VaultStore) adopt(ref *pyjson.Object) (*pyjson.Object, error) {
 	mine := vaultNewRef(s.base)
 	err = vaultStoreKey(mine, key)
 	if err == nil {
-		err = vaultWriteRef(s.keyrefPath, mine)
+		err = vaultWriteRef(s.ctx, s.keyrefPath, mine)
 	}
 	if err == nil {
 		return mine, nil
@@ -584,7 +584,7 @@ func (s *VaultStore) migrateToKeychain() (string, error) {
 		return "", &VaultError{fmt.Sprintf("could not move the vault key to the OS keychain (%s); it stays in %s", err, s.keyPath)}
 	}
 	if fresh {
-		if err := vaultSaveNewRef(s.keyrefPath, ref); err != nil {
+		if err := vaultSaveNewRef(s.ctx, s.keyrefPath, ref); err != nil {
 			return "", &VaultError{fmt.Sprintf("could not save %s (%s); the key stays in %s", filepath.Base(s.keyrefPath), pyOSErrorStr(err), s.keyPath)}
 		}
 	}
@@ -718,7 +718,7 @@ func (s *VaultStore) writeAll(items []any) error {
 		return err
 	}
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(s.vaultPath, f.Encrypt([]byte(payload)), "", &mode, true)
+	return pyfs.AtomicWriteBytes(s.ctx, s.vaultPath, f.Encrypt([]byte(payload)), "", &mode, true)
 }
 
 func contains(list []string, v any) bool {
