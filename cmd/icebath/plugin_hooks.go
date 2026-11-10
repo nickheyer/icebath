@@ -18,6 +18,5 @@ func pluginManagerHooks() provider.PluginManagerHooks {
 		},
 		LoadError:       func(plugin string) string { return provider.PluginLoadError(context.Background(), plugin) },
 		DependencyHomes: func() ([]string, error) { return pm.DependencyHomes(context.Background()) },
-		AuxiliaryTasks:  func() []map[string]any { return plugins.GetPluginAuxiliaryTasks(context.Background()) },
 	}
 }

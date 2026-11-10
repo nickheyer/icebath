@@ -34,3 +34,6 @@ func runXAIOAuthLoginFromSetup(env PoolEnv) bool {
 	}
 	return true
 }
+
+// Exported runXAIOAuthLoginFromSetup for the text to speech setup in pkg/media
+func RunXAIOAuthLoginFromSetup(env PoolEnv) bool { return runXAIOAuthLoginFromSetup(env) }

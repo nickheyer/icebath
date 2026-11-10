@@ -32,6 +32,11 @@ var (
 	listInstallProfiles = installProfileNames
 	servicePIDsHook     = getServicePIDs
 	homeForPIDHook      = HermesHomeForPID
+	scanGatewayPIDsHook = scanGatewayPIDs
+	pidEnvironHook      = proc.Environ
+	pidCmdlineHook      = dashboardCmdlineForPID
+	hostReadRecord      = readHostRecord
+	hostRecordLive      = recordNamesLiveOwner
 )
 
 // Python int of trimmed text when it parses
@@ -566,11 +571,11 @@ func argvProfileFlagValue(argv []string) (string, bool) {
 
 // Home a process runs under from its exec time environment and argv, requiring pinned launch identity when asked
 func HermesHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool) (string, bool, error) {
-	env, err := proc.Environ(pid)
+	env, err := pidEnvironHook(pid)
 	if err != nil {
 		return "", false, nil
 	}
-	argv, ok := dashboardCmdlineForPID(ctx, pid)
+	argv, ok := pidCmdlineHook(ctx, pid)
 	if requireLaunchIdentity && !ok {
 		if argv, err = proc.Cmdline(pid); err != nil {
 			return "", false, err
@@ -653,7 +658,7 @@ func NormalizedHomeForCompare(h string) string {
 
 // This home's own gateway pid, only on fresh ownership evidence
 func ownedGatewayPID(ctx context.Context, pidFile, ownHome string) (int, bool) {
-	pid, found, err := GetRunningPid(pidFile, true)
+	pid, found, err := statusGetRunningPid(pidFile, true)
 	if err != nil || !found {
 		return 0, false
 	}
@@ -661,7 +666,7 @@ func ownedGatewayPID(ctx context.Context, pidFile, ownHome string) (int, bool) {
 	if err != nil || !owned {
 		return 0, false
 	}
-	again, found, err := GetRunningPid(pidFile, true)
+	again, found, err := statusGetRunningPid(pidFile, true)
 	if err != nil || !found || again != pid {
 		return 0, false
 	}
@@ -670,8 +675,8 @@ func ownedGatewayPID(ctx context.Context, pidFile, ownHome string) (int, bool) {
 
 // Ownership ladder cheapest proof first, dialling the control socket only for the host pid
 func pidOwnedByHome(ctx context.Context, pidFile string, pid int, ownHome string) (bool, error) {
-	record := readHostRecord(roleGateway, false)
-	isHost := record != nil && record.PID == pid && recordNamesLiveOwner(record)
+	record := hostReadRecord(roleGateway, false)
+	isHost := record != nil && record.PID == pid && hostRecordLive(record)
 	if isHost {
 		same, err := sameHermesHome(hostRecordHome(record), ownHome)
 		if err != nil {
@@ -835,7 +840,7 @@ func scanGatewayPIDs(ctx context.Context, exclude map[int]bool, allProfiles, inc
 
 // Running gateway pids of the profile in effect, or of every profile with allProfiles
 func FindGatewayPIDsFor(ctx context.Context, exclude map[int]bool, allProfiles bool) ([]int, error) {
-	return findGatewayPIDs(ctx, filepath.Join(processHermesHome(), "gateway.pid"), processHermesHome(), exclude, allProfiles)
+	return findGatewayPIDs(ctx, "", processHermesHome(), exclude, allProfiles)
 }
 
 // Running gateway pids of the profile whose home is h
@@ -862,7 +867,7 @@ func findGatewayPIDs(ctx context.Context, pidFile, ownHome string, exclude map[i
 	for _, pid := range service {
 		pids = appendUniquePID(pids, pid, excl)
 	}
-	scanned, err := scanGatewayPIDs(ctx, excl, allProfiles, !SupportsSystemdServices(ctx))
+	scanned, err := scanGatewayPIDsHook(ctx, excl, allProfiles, !SupportsSystemdServices(ctx))
 	if err != nil {
 		return nil, err
 	}

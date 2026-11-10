@@ -261,18 +261,25 @@ func ApplyModelSelection(modelCfg any, result ModelSwitchResult, maskCleared boo
 // Copy of the model section with updates applied, a nil update removing the key unless masking a held key
 func mergeSelectionUpdates(modelCfg any, updates []config.KeyValue, maskCleared bool) map[string]any {
 	out := map[string]any{}
+	var order []string
 	if m, ok := modelCfg.(map[string]any); ok {
+		order = config.MappingKeys(m)
 		for k, v := range m {
 			out[k] = v
 		}
 	}
 	for _, u := range updates {
-		if _, held := out[u.Key]; u.Value == nil && !(maskCleared && held) {
+		_, held := out[u.Key]
+		if u.Value == nil && !(maskCleared && held) {
 			delete(out, u.Key)
-		} else {
-			out[u.Key] = u.Value
+			continue
 		}
+		if !held {
+			order = append(order, u.Key)
+		}
+		out[u.Key] = u.Value
 	}
+	config.SetMappingKeys(out, order)
 	return out
 }
 

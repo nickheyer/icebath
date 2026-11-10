@@ -1,15 +1,25 @@
 package pyzip
 
-import "testing"
+import (
+	"path/filepath"
+	"sort"
+	"testing"
+)
 
-// Members with a legacy Zstandard v0.5 magic go through the libzstd legacy stream decoder as CPython 3.14.8 recorded
+// Members holding real and damaged legacy Zstandard v0.5 to v0.7 frames read, test and extract as CPython 3.14.8 recorded
 func TestZstdLegacyFrameMatchesCPython(t *testing.T) {
 	expect := loadStreamExpect(t)
-	for name := range legacyZstdCases {
-		want, ok := expect[name]
-		if !ok {
-			t.Fatalf("%s has no recorded result", name)
+	var names []string
+	for name := range expect {
+		if isLegacyZstdCase(name) {
+			names = append(names, name)
 		}
-		t.Run(name, func(t *testing.T) { checkStreamArchive(t, name, want) })
+	}
+	sort.Strings(names)
+	if len(names) != 288 {
+		t.Fatalf("%d legacy archives recorded", len(names))
+	}
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) { checkStreamArchive(t, filepath.Join("testdata", "stream", name), expect[name]) })
 	}
 }

@@ -15,8 +15,8 @@ import (
 )
 
 // The voice section of the effective config, empty when missing, malformed or unreadable
-var voiceConfig = func() map[string]any {
-	tree, err := config.LoadContext(context.Background(), home.Dir(context.Background()), config.Lookup(os.LookupEnv))
+var voiceConfig = func(ctx context.Context) map[string]any {
+	tree, err := config.LoadContext(ctx, home.Dir(ctx), config.Lookup(os.LookupEnv))
 	if err != nil {
 		return map[string]any{}
 	}
@@ -69,7 +69,7 @@ func stopPhraseText(v any) (string, bool) {
 
 // Configured voice stop phrases lowercased, the default stop when malformed, empty when disabled
 var loadVoiceStopPhrases = func() []string {
-	raw, ok := voiceConfig()["stop_phrases"]
+	raw, ok := voiceConfig(context.Background())["stop_phrases"]
 	if !ok {
 		return defaultVoiceStopPhrases
 	}

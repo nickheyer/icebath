@@ -108,6 +108,9 @@ func psutilParent(pid int) (int, bool, error) {
 	return 0, false, nil
 }
 
+// PsutilParent exposes the psutil parent of pid to the gateway orphan reaper
+func PsutilParent(pid int) (int, bool, error) { return psutilParent(pid) }
+
 // Reports whether pid is a live ancestor of this process, walking one link at a time
 func isAncestorPID(pid int) bool {
 	if pid <= 0 {

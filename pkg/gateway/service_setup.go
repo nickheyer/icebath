@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,23 +48,25 @@ func serviceConsole(w io.Writer) *cliui.Console {
 
 // Host and service manager probes of the setup flow, seams tests replace like the patched gateway module
 var (
-	setupIsContainer       = hostinfo.IsContainer
-	setupSupportsSystemd   = SupportsSystemdServices
-	setupIsMacOS           = IsMacOS
-	setupIsWindows         = IsWindows
-	setupServiceRunning    = IsServiceRunning
-	setupServiceInstalled  = isServiceInstalled
-	setupNeedsNoService    = servedProfileNeedsNoService
-	setupConflictingUnits  = hasConflictingSystemdUnits
-	setupConflictWarning   = printSystemdScopeConflictWarning
-	setupSystemdInstall    = systemdInstall
-	setupLaunchdInstall    = launchdInstall
-	setupWindowsInstall    = WindowsInstall
-	setupSystemdStart      = SystemdStart
-	setupLaunchdStart      = LaunchdStart
-	setupWindowsStart      = WindowsStart
-	setupStdinIsTTY        = func() bool { return cliui.Default().StdinIsTTY() }
-	setupPromptConsent     = func(ctx context.Context, question string, def bool) bool { return setupPromptYesNo(ctx, question, def) }
+	setupIsContainer      = hostinfo.IsContainer
+	setupSupportsSystemd  = SupportsSystemdServices
+	setupIsMacOS          = IsMacOS
+	setupIsWindows        = IsWindows
+	setupServiceRunning   = IsServiceRunning
+	setupServiceInstalled = isServiceInstalled
+	setupNeedsNoService   = servedProfileNeedsNoService
+	setupConflictingUnits = hasConflictingSystemdUnits
+	setupConflictWarning  = printSystemdScopeConflictWarning
+	setupSystemdInstall   = systemdInstall
+	setupLaunchdInstall   = launchdInstall
+	setupWindowsInstall   = WindowsInstall
+	setupSystemdStart     = SystemdStart
+	setupLaunchdStart     = LaunchdStart
+	setupWindowsStart     = WindowsStart
+	setupStdinIsTTY       = func() bool { return cliui.Default().StdinIsTTY() }
+	setupPromptConsent    = func(_ context.Context, question string, def bool) bool {
+		return gatewayFacade.promptYesNo(question, def)
+	}
 	setupLoadConfig        = loadSetupConfig
 	setupSaveConfig        = saveSetupConfig
 	setupEnsureRuntime     = EnsureGatewayRuntime
@@ -207,7 +210,7 @@ func EnsureGatewayService(ctx context.Context, w io.Writer, o ServiceSetupOption
 			case supportsSystemd:
 				err = setupSystemdInstall(ctx, w, false, false, "", true, true, false)
 			case setupIsMacOS():
-				err = setupLaunchdInstall(ctx, w, false)
+				err = setupLaunchdInstall(ctx, w, false, true, false)
 			default:
 				err = setupWindowsInstall(ctx, WindowsInstallOptions{Force: false, StartNow: optBool(true), StartOnLogin: optBool(true)})
 			}
@@ -323,7 +326,7 @@ func wizardInstallService(ctx context.Context, w io.Writer, backend string) erro
 		case "systemd":
 			scope, didInstall, err = setupInstallLinuxScope(ctx, w, false, true)
 		case "launchd":
-			err = setupLaunchdInstall(ctx, w, false)
+			err = setupLaunchdInstall(ctx, w, false, true, false)
 		default:
 			err = setupWindowsInstall(ctx, WindowsInstallOptions{Force: false, StartNow: optBool(startNow), StartOnLogin: optBool(true)})
 		}
@@ -344,14 +347,18 @@ func wizardInstallService(ctx context.Context, w io.Writer, backend string) erro
 			return err
 		}
 		if startNow && backend != "windows" {
-			return setupServiceActionFn(ctx, w, "start", "Start failed", scope == "system")
+			return setupServiceActionFn(ctx, w, "start", "Start failed", true, scope == "system")
 		}
 		return nil
 	}()
 	var exit *SystemExitError
 	var called *CalledProcessError
 	if errors.As(err, &exit) || errors.As(err, &called) {
-		con.PrintError("Install failed: " + err.Error())
+		text := err.Error()
+		if exit != nil {
+			text = strconv.Itoa(exit.Code)
+		}
+		con.PrintError("Install failed: " + text)
 		con.PrintInfo("You can try manually: icebath gateway install")
 		return nil
 	}

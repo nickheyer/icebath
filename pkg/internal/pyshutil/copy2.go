@@ -49,6 +49,9 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
+// CopyFile is shutil.copyfile, the content alone copied and a copy onto itself refused
+func CopyFile(src, dst string) error { return copyFile(src, dst) }
+
 // shutil.copystat of mode bits, atime and mtime with nanoseconds and extended attributes
 func copyStat(src, dst string) error {
 	fi, err := os.Stat(src)

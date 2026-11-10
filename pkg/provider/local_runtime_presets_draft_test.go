@@ -78,7 +78,7 @@ func lr6LaunchFootprint(t *testing.T, gguf string, budget HardwareBudget, tag st
 	return n
 }
 
-func TestLocalRuntimeTheDraftReplacesMTPOnOneSlotWhenItFits(t *testing.T) {
+func TestTheDraftReplacesMTPOnOneSlotWhenItFits(t *testing.T) {
 	m := lr6Model(t)
 	p := lr6Preset(t, m.gguf, lr6Roomy(), 0, nil, "b11671")
 	if p.Window != lr6Native || p.Spilled || p.Keys["spec-type"] != "draft-dflash" || p.Keys["spec-draft-n-max"] != "7" ||
@@ -87,7 +87,7 @@ func TestLocalRuntimeTheDraftReplacesMTPOnOneSlotWhenItFits(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeAMissingDraftOrAnOlderEngineKeepsMTP(t *testing.T) {
+func TestAMissingDraftOrAnOlderEngineKeepsMTP(t *testing.T) {
 	m := lr6Model(t)
 	for _, tag := range []string{"", "b11000"} {
 		p := lr6Preset(t, m.gguf, lr6Roomy(), 0, nil, tag)
@@ -102,7 +102,7 @@ func TestLocalRuntimeAMissingDraftOrAnOlderEngineKeepsMTP(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeTheDraftMayShrinkTheWindowToHalfNativeAndNoFurther(t *testing.T) {
+func TestTheDraftMayShrinkTheWindowToHalfNativeAndNoFurther(t *testing.T) {
 	m := lr6Model(t)
 	shrank, declinedWithRoom := 0, 0
 	for tenths := 160; tenths < 400; tenths += 2 {
@@ -133,7 +133,7 @@ func TestLocalRuntimeTheDraftMayShrinkTheWindowToHalfNativeAndNoFurther(t *testi
 	}
 }
 
-func TestLocalRuntimeTheDraftRunsOnlyWhereItFitsBesideOtherPrograms(t *testing.T) {
+func TestTheDraftRunsOnlyWhereItFitsBesideOtherPrograms(t *testing.T) {
 	m := lr6Model(t)
 	capacity := lr6Discrete(32)
 	busy, drafted := 0, 0
@@ -157,7 +157,7 @@ func TestLocalRuntimeTheDraftRunsOnlyWhereItFitsBesideOtherPrograms(t *testing.T
 	}
 }
 
-func TestLocalRuntimeOnWindowsUnifiedMemoryTheDraftKeepsTheSmallestPromptCache(t *testing.T) {
+func TestOnWindowsUnifiedMemoryTheDraftKeepsTheSmallestPromptCache(t *testing.T) {
 	m := lr6Model(t)
 	capacity := NewHardwareBudget(48*lr6GiB, 48*lr6GiB, 64*lr6GiB)
 	capacity.UMA = true
@@ -181,7 +181,7 @@ func TestLocalRuntimeOnWindowsUnifiedMemoryTheDraftKeepsTheSmallestPromptCache(t
 	}
 }
 
-func TestLocalRuntimeAGrownWindowWinsOverTheDraft(t *testing.T) {
+func TestAGrownWindowWinsOverTheDraft(t *testing.T) {
 	m := lr6Model(t)
 	var live *HardwareBudget
 	for tenths := 160; tenths < 400 && live == nil; tenths += 2 {
@@ -200,7 +200,7 @@ func TestLocalRuntimeAGrownWindowWinsOverTheDraft(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeEachDraftPositionPricesACopyOfTheRecurrentState(t *testing.T) {
+func TestEachDraftPositionPricesACopyOfTheRecurrentState(t *testing.T) {
 	m := lr6Model(t)
 	budget := lr6Discrete(32)
 	if !lr6Drafts(lr6Preset(t, m.gguf, budget, 0, nil, "b11671")) {
@@ -212,7 +212,7 @@ func TestLocalRuntimeEachDraftPositionPricesACopyOfTheRecurrentState(t *testing.
 	}
 }
 
-func TestLocalRuntimeGrowthCountsTheOutgoingDraftAsFreedMemory(t *testing.T) {
+func TestGrowthCountsTheOutgoingDraftAsFreedMemory(t *testing.T) {
 	m := lr6Model(t)
 	budget := lr6Discrete(28)
 	running := lr6Preset(t, m.gguf, budget, 0, nil, "b11671")
@@ -241,14 +241,14 @@ func TestLocalRuntimeGrowthCountsTheOutgoingDraftAsFreedMemory(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeASpilledModelNeverTakesTheDraft(t *testing.T) {
+func TestASpilledModelNeverTakesTheDraft(t *testing.T) {
 	m := lr6Model(t)
 	if p := lr6Preset(t, m.gguf, lr6Discrete(12), 0, nil, "b11671"); !p.Spilled || lr6Drafts(p) {
 		t.Fatalf("%+v", p)
 	}
 }
 
-func TestLocalRuntimeAModelWithoutMTPDraftsWithoutBackendSampling(t *testing.T) {
+func TestAModelWithoutMTPDraftsWithoutBackendSampling(t *testing.T) {
 	m := lr6Model(t)
 	m.entry.MTP, m.entry.DraftMinEngine = false, "b11671"
 	p := lr6Preset(t, m.gguf, lr6Roomy(), 0, nil, "b11671")
@@ -257,7 +257,7 @@ func TestLocalRuntimeAModelWithoutMTPDraftsWithoutBackendSampling(t *testing.T) 
 	}
 }
 
-func TestLocalRuntimeTheResidencyPriceIsTheLaunchTheModelRuns(t *testing.T) {
+func TestTheResidencyPriceIsTheLaunchTheModelRuns(t *testing.T) {
 	m := lr6Model(t)
 	larger := map[string]bool{}
 	for _, state := range []int64{150 * lr6MiB, 600 * lr6MiB} {
@@ -281,7 +281,7 @@ func TestLocalRuntimeTheResidencyPriceIsTheLaunchTheModelRuns(t *testing.T) {
 	}
 }
 
-func TestLocalRuntimeTwoModelsStayResidentWhereTwoDraftedLaunchesFit(t *testing.T) {
+func TestTwoModelsStayResidentWhereTwoDraftedLaunchesFit(t *testing.T) {
 	m := lr6Model(t)
 	lr6Touch(t, m.gguf)
 	held := max(lr6Footprint(t, m.gguf, lr6Roomy(), lr6Native, false), lr6Footprint(t, m.gguf, lr6Roomy(), lr6Native, true))

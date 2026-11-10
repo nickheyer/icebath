@@ -23,6 +23,12 @@ var promptAPIKeyFn = PromptAPIKey
 // Post login model picker, swappable so tests script the pick
 var flowPromptModelSelectionFn = promptModelSelection
 
+// Provider activation write of the OAuth flows, swappable so tests observe it
+var flowUpdateConfigForProviderFn = updateConfigForProvider
+
+// Model choice save of every flow, the auth module attribute the hermes tests patch
+var flowSaveModelChoiceFn = saveModelChoice
+
 // Terminal seams the flows read answers through, swappable so tests script the prompts
 var (
 	flowLineInputFn    = lineInput
@@ -105,21 +111,21 @@ func loadConfigModelSection(h string) (config.Tree, map[string]any, error) {
 		if raw := cfg["model"]; truthy(raw) {
 			model["default"] = raw
 		}
-		cfg["model"] = model
+		pyDictSet(cfg, "model", model)
 	}
 	return cfg, model, nil
 }
 
 // Records the model choice and opens the config model section with provider set
 func beginModelConfig(env PoolEnv, selected, providerID string) (config.Tree, map[string]any, error) {
-	if err := saveModelChoice(env, selected); err != nil {
+	if err := flowSaveModelChoiceFn(env, selected); err != nil {
 		return nil, nil, err
 	}
 	cfg, model, err := loadConfigModelSection(envHome(env))
 	if err != nil {
 		return nil, nil, err
 	}
-	model["provider"] = providerID
+	pyDictSet(model, "provider", providerID)
 	return cfg, model, nil
 }
 
@@ -155,10 +161,10 @@ func persistModel(env PoolEnv, selected, providerID string, o persistModelOption
 		return nil, err
 	}
 	if o.BaseURL != nil {
-		model["base_url"] = *o.BaseURL
+		pyDictSet(model, "base_url", *o.BaseURL)
 	}
 	if o.APIMode != nil {
-		model["api_mode"] = *o.APIMode
+		pyDictSet(model, "api_mode", *o.APIMode)
 	}
 	if o.DropBaseURL {
 		delete(model, "base_url")
@@ -199,10 +205,10 @@ func activateProviderModel(env PoolEnv, out io.Writer, selected, providerID, bas
 		}
 		return nil
 	}
-	if err := saveModelChoice(env, selected); err != nil {
+	if err := flowSaveModelChoiceFn(env, selected); err != nil {
 		return err
 	}
-	if _, err := updateConfigForProvider(env, providerID, baseURL, "", false); err != nil {
+	if _, err := flowUpdateConfigForProviderFn(env, providerID, baseURL, "", false); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, done)
@@ -215,7 +221,7 @@ func ensureDictSection(cfg map[string]any, key string) map[string]any {
 	if !ok {
 		section = map[string]any{}
 	}
-	cfg[key] = section
+	pyDictSet(cfg, key, section)
 	return section
 }
 

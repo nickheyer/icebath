@@ -448,9 +448,6 @@ func (r *Renderer) Frame(state string, index int) string {
 		return ""
 	}
 	frame := frames[pyMod(index, len(frames))]
-	if r.Mode == "sixel" {
-		return encodeSixel(frame)
-	}
 	return func() (out string) {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -463,6 +460,8 @@ func (r *Renderer) Frame(state string, index int) string {
 			return encodeKitty(frame)
 		case "iterm":
 			return encodeIterm(frame)
+		case "sixel":
+			return encodeSixel(frame)
 		}
 		return encodeUnicode(frame, r.UnicodeCols)
 	}()

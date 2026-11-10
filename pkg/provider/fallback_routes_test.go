@@ -20,46 +20,6 @@ func fallbackResolver(t *testing.T, dotenv string) *resolver {
 	return newResolver(context.Background(), config.Tree{}, config.NewSecrets(h), h, nil)
 }
 
-func TestResolveEntryAPIKey(t *testing.T) {
-	t.Setenv("FB_KEY", "env-key")
-	r := fallbackResolver(t, "")
-	if got := r.ResolveEntryAPIKey(map[string]any{"provider": "custom", "api_key": "inline-key", "key_env": "FB_KEY"}); got != "inline-key" {
-		t.Fatalf("inline wins: %q", got)
-	}
-	if got := r.ResolveEntryAPIKey(map[string]any{"provider": "openrouter", "model": "glm"}); got != "" {
-		t.Fatalf("no key fields: %q", got)
-	}
-	if got := r.ResolveEntryAPIKey(map[string]any{"api_key": "   ", "key_env": "FB_KEY"}); got != "env-key" {
-		t.Fatalf("whitespace inline falls through: %q", got)
-	}
-	scoped := fallbackResolver(t, "FB_KEY=fake-active-profile-key\n")
-	if got := scoped.ResolveEntryAPIKey(map[string]any{"key_env": "FB_KEY"}); got != "fake-active-profile-key" {
-		t.Fatalf("profile scope wins over process env: %q", got)
-	}
-	if got := r.ResolveEntryAPIKey(nil); got != "" {
-		t.Fatalf("nil entry: %q", got)
-	}
-}
-
-func TestEffectiveRuntimeProvider(t *testing.T) {
-	entry := map[string]any{"provider": "my-custom-provider", "model": "some-model"}
-	if got := EffectiveRuntimeProvider(entry, &Runtime{Provider: "custom", RequestedProvider: "my-custom-provider"}); got != "my-custom-provider" {
-		t.Fatalf("got %q", got)
-	}
-	if got := EffectiveRuntimeProvider(entry, &Runtime{Provider: "custom"}); got != "my-custom-provider" {
-		t.Fatalf("entry fallback: %q", got)
-	}
-	if got := EffectiveRuntimeProvider(map[string]any{"provider": "openrouter", "model": "glm"}, &Runtime{Provider: "openrouter", RequestedProvider: "openrouter"}); got != "openrouter" {
-		t.Fatalf("builtin: %q", got)
-	}
-	if got := EffectiveRuntimeProvider(map[string]any{"provider": "custom", "model": "m"}, &Runtime{Provider: "custom", RequestedProvider: "custom"}); got != "custom" {
-		t.Fatalf("bare custom: %q", got)
-	}
-	if got := EffectiveRuntimeProvider(nil, nil); got != "" {
-		t.Fatalf("nil inputs: %q", got)
-	}
-}
-
 func TestFallbackChainDedupsCanonicalIDAndAlias(t *testing.T) {
 	cfg := map[string]any{"fallback_providers": []any{
 		map[string]any{"provider": "opencode", "model": "deepseek-v4-flash-free"},

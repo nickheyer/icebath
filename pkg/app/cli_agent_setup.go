@@ -58,9 +58,31 @@ func cooldownCause(c *CLI, entry provider.PooledCredential) string {
 	return i18n.T(c.ctx, "cli.startup.cooldown_cause_http", "", map[string]any{"code": entry.LastErrorCode})
 }
 
+// Credential pool surface the startup gate reads, the agent.credential_pool.CredentialPool methods it calls
+type startupCredentialPool interface {
+	HasCredentials() bool
+	HasAvailable(model string) bool
+	NextAvailableAt(model string) (time.Time, bool)
+	Entries() []provider.PooledCredential
+}
+
+// Seams over the pool loader and the runtime resolver, the agent.credential_pool and runtime_provider names the first run tests patch
+var (
+	startupLoadPool = func(c *CLI, providerName string) startupCredentialPool {
+		env := provider.HomePoolEnv(home.Dir(c.ctx))
+		env.Ctx = c.ctx
+		env.Config = func() map[string]any { return c.config }
+		if pool := provider.LoadPool(env, providerName); pool != nil {
+			return pool
+		}
+		return nil
+	}
+	resolveRuntimeProviderFn = provider.ResolveRuntimeProvider
+)
+
 // Explains why a provider's credential pool has nothing selectable, cooling first when a cooldown is live
 func credentialPoolNotice(c *CLI, providerName string) (bool, []string) {
-	pool := provider.LoadPool(provider.PoolEnv{Config: func() map[string]any { return c.config }}, providerName)
+	pool := startupLoadPool(c, providerName)
 	if pool == nil || !pool.HasCredentials() || pool.HasAvailable("") {
 		return false, nil
 	}
@@ -289,7 +311,7 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 	modelAtEntry := c.model
 	c.credentialsRateLimited = false
 	c.credentialsTerminal = false
-	runtime, primaryErr := provider.ResolveRuntimeProvider(c.ctx, home.Dir(c.ctx), c.requestedProvider, c.model, c.explicitBaseURL, c.explicitAPIKey)
+	runtime, primaryErr := resolveRuntimeProviderFn(c.ctx, home.Dir(c.ctx), c.requestedProvider, c.model, c.explicitBaseURL, c.explicitAPIKey)
 	if primaryErr != nil {
 		runtime = nil
 		if fb := c.resolveFallbackRuntime(primaryErr); fb != nil {
@@ -486,7 +508,7 @@ func (c *CLI) runtimeCredentialsReady() bool {
 
 // Reports readiness and the error that stopped resolution, never printing or mutating CLI state
 func (c *CLI) probeRuntimeCredentials() (bool, error) {
-	runtime, err := provider.ResolveRuntimeProvider(c.ctx, home.Dir(c.ctx), c.requestedProvider, "", c.explicitBaseURL, c.explicitAPIKey)
+	runtime, err := resolveRuntimeProviderFn(c.ctx, home.Dir(c.ctx), c.requestedProvider, "", c.explicitBaseURL, c.explicitAPIKey)
 	if err != nil {
 		return false, err
 	}

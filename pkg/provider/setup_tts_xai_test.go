@@ -47,7 +47,7 @@ func TestRunXAIOAuthLoginFromSetupDoesNotHijackActiveProvider(t *testing.T) {
 	}
 	restore := WithSetupOutput(io.Discard)
 	defer restore()
-	if !runXAIOAuthLoginFromSetup(env) {
+	if !RunXAIOAuthLoginFromSetup(env) {
 		t.Fatal("login from setup reported failure")
 	}
 	if env.Store.IsSourceSuppressed("xai-oauth", "device_code") {

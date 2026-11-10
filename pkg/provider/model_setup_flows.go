@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ModelFlowRun is one provider wizard invocation, the loaded config, the current model and the CLI namespace
@@ -45,6 +47,16 @@ var (
 	flowStdinIsTTYFn          = func() bool { return streamIsTTY(os.Stdin) }
 	flowLoadPoolFn            = LoadPool
 	flowGetEnvValueFn         = config.GetEnvValue
+	flowLoginNousFn           = LoginNous
+	flowRunLoginFn            = runLogin
+	flowNousAuthStateFn       = func(r *ModelFlowRun) (map[string]any, error) { return r.store().GetProviderAuthState("nous") }
+	flowResolveNousCredsFn    = resolveNousRuntimeCredentials
+	flowCuratedNousIDsFn      = GetCuratedNousModelIDs
+	flowEnableToolGatewayFn   = PromptEnableToolGateway
+	flowCodexStatusFn         = GetCodexAuthStatus
+	flowLoginCodexFn          = LoginOpenAICodex
+	flowResolveCodexFn        = resolveCodexRuntimeCredentials
+	flowCodexModelIDsFn       = GetCodexModelIDs
 )
 
 // Free tier refusal copy printed before the Gemini provider is left unsaved
@@ -203,7 +215,7 @@ func modelFlowMoA(r *ModelFlowRun) error {
 		fmt.Fprintln(r.Out, "No MoA presets configured. Run `icebath moa configure <name>` first.")
 		return nil
 	}
-	names := sortedMapKeys(presets)
+	names := config.MappingKeys(presets)
 	defaultName := anyString(moa["default_preset"])
 	if defaultName == "" {
 		defaultName = names[0]
@@ -215,7 +227,7 @@ func modelFlowMoA(r *ModelFlowRun) error {
 		agg, _ := preset["aggregator"].(map[string]any)
 		aggLabel := ""
 		if len(agg) > 0 {
-			aggLabel = fmt.Sprintf("%s:%s", anyString(agg["provider"]), anyString(agg["model"]))
+			aggLabel = fmt.Sprintf("%s:%s", pyStr(agg["provider"]), pyStr(agg["model"]))
 		}
 		refs, _ := preset["reference_models"].([]any)
 		suffix := ""
@@ -253,14 +265,14 @@ func modelFlowMoA(r *ModelFlowRun) error {
 	if err != nil {
 		return err
 	}
-	model["default"] = selectedName
-	model["provider"] = "moa"
+	pyDictSet(model, "default", selectedName)
+	pyDictSet(model, "provider", "moa")
 	clearModelEndpointCredentials(model, true, true, false)
 	delete(model, "base_url")
 	if err := commitModelConfig(r.Env, cfg); err != nil {
 		return err
 	}
-	if err := saveModelChoice(r.Env, selectedName); err != nil {
+	if err := flowSaveModelChoiceFn(r.Env, selectedName); err != nil {
 		return err
 	}
 	preset, _ := presets[selectedName].(map[string]any)
@@ -269,18 +281,26 @@ func modelFlowMoA(r *ModelFlowRun) error {
 	refs, _ := preset["reference_models"].([]any)
 	for i, slot := range refs {
 		m, _ := slot.(map[string]any)
-		fmt.Fprintf(r.Out, "    %d. %s:%s\n", i+1, anyString(m["provider"]), anyString(m["model"]))
+		fmt.Fprintf(r.Out, "    %d. %s:%s\n", i+1, pyStr(m["provider"]), pyStr(m["model"]))
 	}
 	agg, _ := preset["aggregator"].(map[string]any)
-	fmt.Fprintf(r.Out, "  Aggregator:  %s:%s  (acting model — runs every step and carries almost all of the cost)\n", anyString(agg["provider"]), anyString(agg["model"]))
+	fmt.Fprintf(r.Out, "  Aggregator:  %s:%s  (acting model — runs every step and carries almost all of the cost)\n", pyStr(agg["provider"]), pyStr(agg["model"]))
 	return nil
 }
 
-// Python int parsing of a menu answer, surrounding space, a sign and underscores allowed
+// Python int of a menu answer, a ValueError for anything int rejects and huge values saturated
 func parsePyInt(s string) (int, error) {
-	var n int
-	_, err := fmt.Sscanf(strings.ReplaceAll(strings.TrimSpace(s), "_", ""), "%d", &n)
-	return n, err
+	n, ok := pystr.IntText(s)
+	if !ok {
+		return 0, fmt.Errorf("ValueError: invalid literal for int() with base 10: %s", config.PyRepr(s))
+	}
+	if n.IsInt64() {
+		return int(n.Int64()), nil
+	}
+	if n.Sign() < 0 {
+		return math.MinInt64 + 1, nil
+	}
+	return math.MaxInt64, nil
 }
 
 // Nous login arguments from the CLI namespace with the 15 second default timeout
@@ -307,7 +327,7 @@ func nousModelCatalog(r *ModelFlowRun, freeTier bool, portalURL string, modelIDs
 	ctx := r.ctx()
 	unavailableModels := []string{}
 	unavailableMessage := ""
-	policyAllowed, _ := NousPolicyAllowedIDs(ctx, false)
+	policyAllowed, _ := nousPolicyAllowedIDsFn(ctx, false)
 	if freeTier {
 		func() {
 			defer func() {
@@ -318,9 +338,9 @@ func nousModelCatalog(r *ModelFlowRun, freeTier bool, portalURL string, modelIDs
 			info := GetNousPortalAccountInfo(ctx, true)
 			unavailableMessage = FormatNousPortalEntitlementMessage(info, "paid Nous models", false)
 		}()
-		modelIDs, pricing = UnionWithPortalFreeRecommendations(ctx, modelIDs, pricing, portalURL, false)
+		modelIDs, pricing = unionPortalFreeFn(ctx, modelIDs, pricing, portalURL, false)
 	} else {
-		modelIDs, pricing = UnionWithPortalPaidRecommendations(ctx, modelIDs, pricing, portalURL, false)
+		modelIDs, pricing = unionPortalPaidFn(ctx, modelIDs, pricing, portalURL, false)
 		modelIDs = UnionWithNousOnSaleModels(modelIDs, pricing)
 	}
 	before := modelIDs
@@ -366,7 +386,7 @@ func equalStrings(a, b []string) bool {
 
 // Nous runtime credentials, nil after printing the diagnosis and re-logging in when the session expired
 func nousVerifiedCredentials(r *ModelFlowRun) map[string]any {
-	creds, err := resolveNousRuntimeCredentials(r.Env, false, "")
+	creds, err := flowResolveNousCredsFn(r.Env, false, "")
 	if err == nil {
 		return creds
 	}
@@ -378,7 +398,7 @@ func nousVerifiedCredentials(r *ModelFlowRun) map[string]any {
 	}
 	if relogin {
 		flowSay(r.Out, fmt.Sprintf("Session expired: %s", msg), "Re-authenticating with Nous Portal...\n")
-		if lerr := LoginNous(r.Env, r.Out, nousLoginArgs(nil)); lerr != nil {
+		if lerr := flowLoginNousFn(r.Env, r.Out, nousLoginArgs(nil)); lerr != nil {
 			fmt.Fprintf(r.Out, "Re-login failed: %v\n", lerr)
 		}
 		noteSetupFailure("auth")
@@ -391,7 +411,7 @@ func nousVerifiedCredentials(r *ModelFlowRun) map[string]any {
 
 // Nous persist step, model choice and provider state, the model section rewritten on a fresh config
 func nousPersistSelection(r *ModelFlowRun, selected string, creds map[string]any) (config.Tree, error) {
-	if err := saveModelChoice(r.Env, selected); err != nil {
+	if err := flowSaveModelChoiceFn(r.Env, selected); err != nil {
 		return nil, err
 	}
 	inferenceURL := anyString(creds["base_url"])
@@ -408,20 +428,21 @@ func nousPersistSelection(r *ModelFlowRun, selected string, creds map[string]any
 		for k, v := range current {
 			modelCfg[k] = v
 		}
+		config.SetMappingKeys(modelCfg, config.MappingKeys(current))
 	case string:
-		if strings.TrimSpace(current) != "" {
-			modelCfg["default"] = strings.TrimSpace(current)
+		if pystr.Strip(current) != "" {
+			pyDictSet(modelCfg, "default", pystr.Strip(current))
 		}
 	}
-	modelCfg["provider"] = "nous"
-	modelCfg["default"] = selected
-	if strings.TrimSpace(inferenceURL) != "" {
-		modelCfg["base_url"] = strings.TrimRight(inferenceURL, "/")
+	pyDictSet(modelCfg, "provider", "nous")
+	pyDictSet(modelCfg, "default", selected)
+	if pystr.Strip(inferenceURL) != "" {
+		pyDictSet(modelCfg, "base_url", strings.TrimRight(inferenceURL, "/"))
 	} else {
 		delete(modelCfg, "base_url")
 	}
 	clearModelEndpointCredentials(modelCfg, true, true, false)
-	cfg["model"] = modelCfg
+	pyDictSet(cfg, "model", modelCfg)
 	if r.envValue("OPENAI_BASE_URL") != "" {
 		if err := r.saveEnv("OPENAI_BASE_URL", ""); err != nil {
 			return nil, err
@@ -438,15 +459,15 @@ func nousPersistSelection(r *ModelFlowRun, selected string, creds map[string]any
 
 // Nous Portal provider, log in when signed out, else the curated picker over verified credentials
 func modelFlowNous(r *ModelFlowRun) error {
-	state, _ := r.store().GetProviderAuthState("nous")
+	state, _ := flowNousAuthStateFn(r)
 	if len(state) == 0 || !truthy(state["access_token"]) || guestWithoutFreeTierIn(r.Env, state) {
 		flowSay(r.Out, "Not logged into Nous Portal. Starting login...", "")
 		pconfig, err := r.registryProfile("nous")
 		if err != nil {
 			return err
 		}
-		runLogin(r.Out, &pconfig, func() error {
-			if err := LoginNous(r.Env, r.Out, nousLoginArgs(r.Args)); err != nil {
+		flowRunLoginFn(r.Out, &pconfig, func() error {
+			if err := flowLoginNousFn(r.Env, r.Out, nousLoginArgs(r.Args)); err != nil {
 				return err
 			}
 			func() {
@@ -455,13 +476,13 @@ func modelFlowNous(r *ModelFlowRun) error {
 				if cerr != nil {
 					return
 				}
-				_, _ = PromptEnableToolGateway(r.Env, r.Out, cfg, true)
+				_, _ = flowEnableToolGatewayFn(r.Env, r.Out, cfg, true)
 			}()
 			return nil
 		})
 		return nil
 	}
-	modelIDs := GetCuratedNousModelIDs(r.ctx())
+	modelIDs := flowCuratedNousIDsFn(r.ctx())
 	if len(modelIDs) == 0 {
 		fmt.Fprintln(r.Out, "No curated models available for Nous Portal.")
 		return nil
@@ -471,14 +492,14 @@ func modelFlowNous(r *ModelFlowRun) error {
 		return nil
 	}
 	pricing := flowPricingFn(r.ctx(), "nous", "", false, false)
-	freeTier := CheckNousFreeTier(r.ctx(), true, false)
+	freeTier := checkNousFreeTierFn(r.ctx(), true, false)
 	if !freeTier {
-		if fresh, err := resolveNousRuntimeCredentials(r.Env, true, ""); err == nil && len(fresh) > 0 {
+		if fresh, err := flowResolveNousCredsFn(r.Env, true, ""); err == nil && len(fresh) > 0 {
 			creds = fresh
 		}
 	}
 	portalURL := ""
-	if st, err := r.store().GetProviderAuthState("nous"); err == nil {
+	if st, err := flowNousAuthStateFn(r); err == nil {
 		portalURL = anyString(st["portal_base_url"])
 	}
 	catalog := nousModelCatalog(r, freeTier, portalURL, modelIDs, pricing)
@@ -515,8 +536,15 @@ func modelFlowNous(r *ModelFlowRun) error {
 			fmt.Fprintf(r.Out, "⚠ %s\n", notice)
 		}
 	}
-	_, err = PromptEnableToolGateway(r.Env, r.Out, cfg, true)
+	_, err = flowEnableToolGatewayFn(r.Env, r.Out, cfg, true)
 	return err
+}
+
+// ModelFlowNous runs the Nous Portal login and model pick for a config on the setup console of the context home
+func ModelFlowNous(ctx context.Context, cfg map[string]any) error {
+	env := homePoolEnv(home.Dir(ctx))
+	env.Ctx = ctx
+	return modelFlowNous(&ModelFlowRun{Ctx: ctx, Env: env, Out: SetupOutput(), Config: cfg})
 }
 
 // OpenAI Codex provider, ensure logged in then pick a model over the pooled or legacy token
@@ -525,26 +553,26 @@ func modelFlowOpenAICodex(r *ModelFlowRun) error {
 	if err != nil {
 		return err
 	}
-	loggedIn := truthy(GetCodexAuthStatus(r.Env)["logged_in"])
-	login := func(force bool) error { return LoginOpenAICodex(r.Env, r.Out, CodexLoginArgs{}, force) }
-	recheck := func() bool { return truthy(GetCodexAuthStatus(r.Env)["logged_in"]) }
+	loggedIn := truthy(flowCodexStatusFn(r.Env)["logged_in"])
+	login := func(force bool) error { return flowLoginCodexFn(r.Env, r.Out, CodexLoginArgs{}, force) }
+	recheck := func() bool { return truthy(flowCodexStatusFn(r.Env)["logged_in"]) }
 	if !oauthGate(r.Out, loggedIn, "OpenAI Codex", &pconfig, login, "", recheck) {
 		return nil
 	}
 	var token, base string
 	func() {
 		defer func() { _ = recover() }()
-		status := GetCodexAuthStatus(r.Env)
+		status := flowCodexStatusFn(r.Env)
 		if truthy(status["logged_in"]) {
 			token, base = anyString(status["api_key"]), anyString(status["base_url"])
 		}
 	}()
 	if token == "" {
-		if creds, cerr := resolveCodexRuntimeCredentials(r.Env, CodexResolveOptions{}); cerr == nil {
+		if creds, cerr := flowResolveCodexFn(r.Env, CodexResolveOptions{}); cerr == nil {
 			token, base = anyString(creds["api_key"]), anyString(creds["base_url"])
 		}
 	}
-	codexModels, _ := GetCodexModelIDs(r.ctx(), token, base)
+	codexModels, _ := flowCodexModelIDsFn(r.ctx(), token, base)
 	confirmBase := base
 	if confirmBase == "" {
 		confirmBase = DefaultCodexBaseURL
@@ -640,7 +668,7 @@ func modelFlowMinimaxOAuth(r *ModelFlowRun) error {
 		if err != nil {
 			return err
 		}
-		if !runLogin(r.Out, &pconfig, func() error { return LoginMinimaxOAuth(r.Env, r.Out, mockArgs) }) {
+		if !flowRunLoginFn(r.Out, &pconfig, func() error { return LoginMinimaxOAuth(r.Env, r.Out, mockArgs) }) {
 			return nil
 		}
 	}
@@ -712,7 +740,7 @@ func modelFlowStepfun(r *ModelFlowRun) error {
 	currentBase := envBaseURLFn(r, baseURLEnv)
 	if currentBase == "" {
 		if modelCfg, ok := r.Config["model"].(map[string]any); ok {
-			currentBase = strings.TrimSpace(anyString(modelCfg["base_url"]))
+			currentBase = pystr.Strip(pyOrStr(modelCfg["base_url"]))
 		}
 	}
 	regionBase := currentBase
@@ -739,7 +767,7 @@ func modelFlowStepfun(r *ModelFlowRun) error {
 	for i, rr := range ordered {
 		labels[i] = rr.label
 	}
-	regionIdx, ok := promptProviderChoice(r.Out, labels, 0, "Select provider:")
+	regionIdx, ok := setupPromptProviderChoiceFn(r.Out, labels, 0, "Select provider:")
 	if !ok || ordered[regionIdx].key == "cancel" {
 		fmt.Fprintln(r.Out, flowNoChange)
 		return nil
@@ -775,17 +803,19 @@ func modelFlowStepfun(r *ModelFlowRun) error {
 		for k, v := range model {
 			copied[k] = v
 		}
-		r.Config["model"] = copied
+		config.SetMappingKeys(copied, config.MappingKeys(model))
+		pyDictSet(r.Config, "model", copied)
 	}
 	return nil
 }
 
 // Google Vertex AI provider, credential source, project and region prompts, then the curated picker
 func modelFlowVertex(r *ModelFlowRun) error {
-	saPath := strings.TrimSpace(r.envValue("VERTEX_CREDENTIALS_PATH"))
+	saPath := r.envValue("VERTEX_CREDENTIALS_PATH")
 	if saPath == "" {
-		saPath = strings.TrimSpace(r.envValue("GOOGLE_APPLICATION_CREDENTIALS"))
+		saPath = r.envValue("GOOGLE_APPLICATION_CREDENTIALS")
 	}
+	saPath = pystr.Strip(saPath)
 	if saPath != "" {
 		fmt.Fprintf(r.Out, "  Vertex credentials: service account JSON (%s) ✓\n", saPath)
 	} else {
@@ -800,7 +830,7 @@ func modelFlowVertex(r *ModelFlowRun) error {
 		return err
 	}
 	vertexCfg, _ := cfg["vertex"].(map[string]any)
-	currentProject := strings.TrimSpace(anyString(vertexCfg["project_id"]))
+	currentProject := pystr.Strip(pyOrStr(vertexCfg["project_id"]))
 	shown := currentProject
 	if shown == "" {
 		shown = "from credentials"
@@ -813,8 +843,11 @@ func modelFlowVertex(r *ModelFlowRun) error {
 	if projectID == "" {
 		projectID = currentProject
 	}
-	currentRegion := strings.TrimSpace(anyString(vertexCfg["region"]))
-	if currentRegion == "" {
+	currentRegion := "global"
+	if pyTruthy(vertexCfg["region"]) {
+		currentRegion = pyStr(vertexCfg["region"])
+	}
+	if currentRegion = pystr.Strip(currentRegion); currentRegion == "" {
 		currentRegion = "global"
 	}
 	regionInput, ok := flowAskFn(r.Out, fmt.Sprintf("  Vertex region [%s]: ", currentRegion), flowAskOptions{CancelMsg: optStr("")})
@@ -837,8 +870,8 @@ func modelFlowVertex(r *ModelFlowRun) error {
 	selected, _ := flowPromptModelSelectionFn(r.Env, r.Out, ModelSelectionPrompt{ModelIDs: modelList, CurrentModel: r.CurrentModel, ConfirmProvider: "vertex", ConfirmBaseURL: baseURLPreview})
 	finish := func(cfg config.Tree, _ map[string]any) {
 		vcfg := ensureDictSection(cfg, "vertex")
-		vcfg["project_id"] = projectID
-		vcfg["region"] = region
+		pyDictSet(vcfg, "project_id", projectID)
+		pyDictSet(vcfg, "region", region)
 	}
 	_, err = finishModelFn(r.Env, r.Out, selected, "vertex", fmt.Sprintf("  Default model set to: %s (via Google Vertex AI, %s)", selected, region), "  No change.",
 		persistModelOptions{DropBaseURL: true, DropAPIMode: true, Finish: finish})
@@ -860,7 +893,7 @@ func selectZaiEndpoint(r *ModelFlowRun, currentBase string) string {
 		choices = append(choices, fmt.Sprintf("%s (%s)", ep.Label, ep.BaseURL))
 	}
 	choices = append(choices, "Custom proxy URL")
-	selected, ok := promptProviderChoice(r.Out, choices, defaultIdx, "Select Z.AI / GLM endpoint:")
+	selected, ok := setupPromptProviderChoiceFn(r.Out, choices, defaultIdx, "Select Z.AI / GLM endpoint:")
 	if !ok {
 		return currentBase
 	}
@@ -906,7 +939,7 @@ func lmstudioModels(r *ModelFlowRun, _ Profile, _ []string, apiKey, baseURL stri
 		if !errors.As(err, &authErr) {
 			return nil, err
 		}
-		flowSay(r.Out, fmt.Sprintf("  LM Studio rejected the request: %s", formatAuthError(authErr)), "  Set LM_API_KEY (or update it) to match the server's bearer token.")
+		flowSay(r.Out, fmt.Sprintf("  LM Studio rejected the request: %s", authErr.Error()), "  Set LM_API_KEY (or update it) to match the server's bearer token.")
 		modelList = []string{}
 	}
 	reportLiveModels(r.Out, modelList, "LM Studio")
@@ -1002,8 +1035,8 @@ func modelFlowAPIKeyProvider(r *ModelFlowRun, providerID string) error {
 	currentBase := envBaseURLFn(r, baseURLEnv)
 	if currentBase == "" {
 		if cfg, cerr := r.loadConfig(); cerr == nil {
-			if m, ok := cfg["model"].(map[string]any); ok && strings.ToLower(strings.TrimSpace(anyString(m["provider"]))) == providerID {
-				currentBase = strings.TrimSpace(anyString(m["base_url"]))
+			if m, ok := cfg["model"].(map[string]any); ok && pystr.Lower(pystr.Strip(pyOrStr(m["provider"]))) == providerID {
+				currentBase = pystr.Strip(pyOrStr(m["base_url"]))
 			}
 		}
 	}
@@ -1012,8 +1045,8 @@ func modelFlowAPIKeyProvider(r *ModelFlowRun, providerID string) error {
 		effectiveBase = pconfig.BaseURL
 	}
 	if providerID == "actual" {
-		if modelCfg, ok := r.Config["model"].(map[string]any); ok && NormalizeProvider(anyString(modelCfg["provider"])) == providerID {
-			if configured := strings.TrimSpace(anyString(modelCfg["base_url"])); configured != "" {
+		if modelCfg, ok := r.Config["model"].(map[string]any); ok && NormalizeProvider(pyOrStr(modelCfg["provider"])) == providerID {
+			if configured := pystr.Strip(pyOrStr(modelCfg["base_url"])); configured != "" {
 				effectiveBase = configured
 			}
 		}
@@ -1114,8 +1147,8 @@ func modelFlowAnthropic(r *ModelFlowRun) error {
 	ccAvailable := false
 	func() {
 		defer func() { _ = recover() }()
-		ccCreds := ReadClaudeCodeCredentials(r.Env)
-		if len(ccCreds) > 0 && IsClaudeCodeTokenValid(ccCreds) {
+		ccCreds := anthReadClaudeCodeCredentialsFn(r.Env)
+		if len(ccCreds) > 0 && anthIsClaudeCodeTokenValidFn(ccCreds) {
 			ccAvailable = true
 		}
 	}()
@@ -1178,7 +1211,7 @@ func shlexJoin(words []string) string {
 	return strings.Join(quoted, " ")
 }
 
-// Logged in says so with the plan, logged out runs the CLI's own login on a TTY else prints the instruction
+// Logged in shows the plan, logged out runs the CLI login on a TTY or prints the instruction
 func externalProcessLoginGate(r *ModelFlowRun, profile Profile, status map[string]any) (bool, error) {
 	if truthy(status["logged_in"]) {
 		plan := ""

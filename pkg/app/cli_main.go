@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -28,11 +29,25 @@ type MainOptions struct {
 // ErrSetupCancelled reports a provider picker the user left with Ctrl+C, EOF or an exit
 var ErrSetupCancelled = errors.New("provider setup cancelled")
 
-// SelectProviderAndModel is the interactive provider picker cmd/icebath wires from the model command
-var SelectProviderAndModel func(ctx context.Context) error
+// Seam over the shared provider picker, the hermes_cli.main.select_provider_and_model the first run tests patch
+var firstRunProviderPicker = provider.SelectProviderAndModel
 
-// Runs the provider picker the model command shares with first run onboarding
-func selectProviderAndModel(ctx context.Context) error { return SelectProviderAndModel(ctx) }
+// Runs the provider picker with no namespace, a Ctrl-C, EOF or setup exit reported as ErrSetupCancelled
+func selectProviderAndModel(ctx context.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(provider.SetupExit); !ok {
+				panic(r)
+			}
+			err = ErrSetupCancelled
+		}
+	}()
+	err = firstRunProviderPicker(ctx, nil)
+	if provider.IsPromptInterrupt(err) {
+		return ErrSetupCancelled
+	}
+	return err
+}
 
 // Main is the interactive chat entry, running a single query when one is given, returning the exit code
 func Main(ctx context.Context, o MainOptions) (code int) {

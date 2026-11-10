@@ -63,7 +63,7 @@ func TestCompressContextEmptyTranscriptRefusesTheSplit(t *testing.T) {
 }
 
 func TestCompressContextFenceCancelledAfterSummaryLeavesTheSessionAlone(t *testing.T) {
-	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{AuxiliaryTasks: func() []map[string]any { return nil }})
+	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{})
 	fence := NewCompressionCommitFence()
 	a, _, _ := newCompressContextAgent(t, func(m []map[string]any) []map[string]any {
 		fence.CancelBeforeCommit(nil)

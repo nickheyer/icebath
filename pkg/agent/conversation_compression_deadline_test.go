@@ -23,7 +23,7 @@ func (f *deadlineFence) ExtendDeadline(seconds float64) {
 }
 
 func TestResolveContextCompressionTimeoutsClampsToTheAuxBudget(t *testing.T) {
-	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{AuxiliaryTasks: func() []map[string]any { return nil }})
+	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{})
 	ctx := context.Background()
 	aux := provider.EffectiveAuxTimeout(ctx, "compression", nil)
 	idle, ceiling := ResolveContextCompressionTimeouts(ctx, map[string]any{"context_timeout_seconds": "0", "context_total_ceiling_seconds": -5})

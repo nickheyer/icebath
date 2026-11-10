@@ -552,8 +552,10 @@ func auxProfileDefaultHeaders(ctx context.Context, provider string) map[string]s
 	}
 	var headers map[string]string
 	_ = auxRecoverRaise(func() {
-		if profile := getProviderProfile(ctx, provider); profile != nil && len(profile.Headers) > 0 {
-			headers = copyStringMap(profile.Headers)
+		if profile := getProviderProfile(ctx, provider); profile != nil {
+			if resolved := profile.DefaultHeaders(); len(resolved) > 0 {
+				headers = resolved
+			}
 		}
 	})
 	return headers

@@ -77,7 +77,7 @@ func (r *resolver) auxiliaryTaskConfig(task any, seen map[string]bool) map[strin
 }
 
 // The session section or the loaded config block of a task resolved over its plugin defaults and inherit_from base
-func (r *resolver) auxTaskConfig(task string, seen map[string]bool) map[string]any {
+func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved map[string]any) {
 	aux, scoped := auxSessionAuxiliary(r.ctx)
 	if !scoped {
 		aux, _ = r.cfg["auxiliary"].(map[string]any)
@@ -86,7 +86,13 @@ func (r *resolver) auxTaskConfig(task string, seen map[string]bool) map[string]a
 	if !ok {
 		taskConfig = map[string]any{}
 	}
-	for _, entry := range pluginAuxiliaryTasks() {
+	defer func() {
+		if failure := recover(); failure != nil {
+			slog.Debug(fmt.Sprintf("plugin auxiliary task lookup failed for %s", pyrepr.Repr(task)), "error", failure)
+			resolved = taskConfig
+		}
+	}()
+	for _, entry := range pluginAuxiliaryTasksFn(r.ctx) {
 		if key, isStr := entry["key"].(string); !isStr || key != task {
 			continue
 		}

@@ -172,6 +172,34 @@ func ExtraSupported(ctx context.Context, extra string) (bool, error) {
 	return extraSupported(ctx, extra, nil, nil)
 }
 
+// ExtraSupportedIn reports an extra installable under an explicit marker environment and importability probe
+func ExtraSupportedIn(ctx context.Context, extra string, environment map[string]string, importable func(string) bool) (bool, error) {
+	return extraSupported(ctx, extra, environment, importable)
+}
+
+// SwapPlatformGates installs the extra to marker table the gates read, returning the table it replaced
+func SwapPlatformGates(gates map[string]string) map[string]string {
+	platformGatesCache.Lock()
+	defer platformGatesCache.Unlock()
+	saved := platformGatesCache.gates
+	platformGatesCache.gates = gates
+	return saved
+}
+
+// SwapGateEvaluator installs the gate marker evaluator, returning the one it replaced
+func SwapGateEvaluator(fn func(ctx context.Context, marker string, environment map[string]string) bool) func(ctx context.Context, marker string, environment map[string]string) bool {
+	saved := evaluateGate
+	evaluateGate = fn
+	return saved
+}
+
+// SwapAnchorImportable installs the anchor importability probe, returning the one it replaced
+func SwapAnchorImportable(fn func(ctx context.Context, anchor string) bool) func(ctx context.Context, anchor string) bool {
+	saved := anchorImportable
+	anchorImportable = fn
+	return saved
+}
+
 // The one command users run for a missing extra
 func InstallHint(extra string) string { return "icebath pm install --extra " + extra }
 

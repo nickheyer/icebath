@@ -513,3 +513,35 @@ func TestExtraSupportedExport(t *testing.T) {
 		t.Fatalf("ExtraSupported = %v, %v; want %v, %v", got, err, want, werr)
 	}
 }
+
+func TestExtraSupportedInAndGateSwaps(t *testing.T) {
+	ctx := context.Background()
+	savedGates := SwapPlatformGates(map[string]string{"gated-export-extra": "sys_platform == 'win32'"})
+	var seen []map[string]string
+	savedEval := SwapGateEvaluator(func(_ context.Context, marker string, environment map[string]string) bool {
+		seen = append(seen, environment)
+		ok, err := EvaluateMarker(marker, nil, environment)
+		return err != nil || ok
+	})
+	savedImportable := SwapAnchorImportable(func(context.Context, string) bool { return false })
+	t.Cleanup(func() {
+		SwapPlatformGates(savedGates)
+		SwapGateEvaluator(savedEval)
+		SwapAnchorImportable(savedImportable)
+	})
+	for platform, want := range map[string]bool{"win32": true, "linux": false} {
+		got, err := ExtraSupportedIn(ctx, "gated-export-extra", map[string]string{"sys_platform": platform}, func(string) bool { return false })
+		if err != nil || got != want {
+			t.Fatalf("%s: ExtraSupportedIn = %v, %v; want %v", platform, got, err, want)
+		}
+	}
+	if got, err := ExtraSupportedIn(ctx, "gated-export-extra", map[string]string{"sys_platform": "linux"}, func(string) bool { return true }); err != nil || !got {
+		t.Fatalf("an installed anchor set must beat the gate, got %v, %v", got, err)
+	}
+	if len(seen) != 2 || seen[0]["sys_platform"] == seen[1]["sys_platform"] {
+		t.Fatalf("evaluator saw %v", seen)
+	}
+	if anchorImportable(ctx, "anything") {
+		t.Fatal("swapped importability probe not installed")
+	}
+}

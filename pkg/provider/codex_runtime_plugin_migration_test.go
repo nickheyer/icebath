@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -566,17 +567,87 @@ func TestCodexMigrationSameNameUserMCPTable(t *testing.T) {
 		os.WriteFile(target, []byte(original), 0o644)
 		t.Setenv("CODEX_HOME", codexHome)
 		t.Setenv("HOME", tmp)
-		report, err := MigrateCodexRuntimePlugins(context.Background(), map[string]any{"mcp_servers": map[string]any{"gbrain": map[string]any{"command": "projected"}, "other": map[string]any{"command": "o"}}}, CodexMigrateOptions{DryRun: true})
+		icebathHome := filepath.Join(tmp, "icebath-home")
+		os.Mkdir(icebathHome, 0o755)
+		os.WriteFile(filepath.Join(icebathHome, "config.yaml"), []byte("mcp_servers:\n  gbrain:\n    command: projected\n  other:\n    command: o\n"), 0o644)
+		var out strings.Builder
+		rc, err := CodexRuntimeCommand(t.Context(), icebathHome, map[string]any{"dry_run": true, "json": true}, &out)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !report.DryRun || report.Written || !slices.Equal(report.PreservedUserServers, []string{"gbrain"}) || report.TargetPath != target || len(report.Errors) != 0 {
-			t.Fatalf("report %+v", report)
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(out.String()), &payload); err != nil {
+			t.Fatalf("output is not JSON: %v\n%s", err, out.String())
+		}
+		if rc != 0 {
+			t.Fatalf("rc = %d, want 0", rc)
+		}
+		if payload["dry_run"] != true || payload["written"] != false {
+			t.Fatalf("dry_run %v written %v", payload["dry_run"], payload["written"])
+		}
+		if kept, _ := payload["preserved_user_servers"].([]any); len(kept) != 1 || kept[0] != "gbrain" {
+			t.Fatalf("preserved_user_servers %v", payload["preserved_user_servers"])
+		}
+		if payload["target_path"] != target {
+			t.Fatalf("target_path %v, want %s", payload["target_path"], target)
 		}
 		if codexMigrationRead(t, target) != original {
 			t.Fatal("dry run wrote config.toml")
 		}
+		want := "{\n  \"dry_run\": true,\n  \"errors\": [],\n  \"migrated\": [\n    \"other\",\n    \"" + CodexToolsMCPServerName + "\"\n  ],\n  \"migrated_plugins\": [],\n  \"plugin_query_error\": null,\n  \"preserved_user_servers\": [\n    \"gbrain\"\n  ],\n  \"skipped_keys_per_server\": {},\n  \"target_path\": \"" + target + "\",\n  \"written\": false,\n  \"wrote_permissions_default\": \":workspace\"\n}\n"
+		if out.String() != want {
+			t.Fatalf("output\n%s\nwant\n%s", out.String(), want)
+		}
 	})
+}
+
+func TestCodexRuntimeCommandPrintsTheSummaryAndExitsOneOnErrors(t *testing.T) {
+	tmp := t.TempDir()
+	codexHome := filepath.Join(tmp, "alt-codex")
+	os.Mkdir(codexHome, 0o755)
+	target := filepath.Join(codexHome, "config.toml")
+	original := "[mcp_servers.gbrain]\ncommand = \"existing-gbrain\"\n"
+	os.WriteFile(target, []byte(original), 0o644)
+	t.Setenv("CODEX_HOME", codexHome)
+	t.Setenv("HOME", tmp)
+	good := filepath.Join(tmp, "good")
+	bad := filepath.Join(tmp, "bad")
+	os.Mkdir(good, 0o755)
+	os.Mkdir(bad, 0o755)
+	os.WriteFile(filepath.Join(good, "config.yaml"), []byte("mcp_servers:\n  gbrain:\n    command: projected\n  other:\n    command: o\n"), 0o644)
+	os.WriteFile(filepath.Join(bad, "config.yaml"), []byte("mcp_servers:\n- x\n"), 0o644)
+	cases := []struct {
+		name string
+		home string
+		ns   map[string]any
+		rc   int
+		want string
+	}{
+		{"summary", good, map[string]any{"dry_run": true, "json": false}, 0,
+			"(dry run) Would write " + target + "\nMigrated 2 MCP server(s):\n  - other\n  - " + CodexToolsMCPServerName + "\nWrote default_permissions = ':workspace'\nKept 1 user-owned MCP server(s) already in config.toml (Icebath projection skipped): gbrain\n"},
+		{"errors as json", bad, map[string]any{"dry_run": true, "json": true}, 1,
+			"{\n  \"dry_run\": true,\n  \"errors\": [\n    \"mcp_servers in Icebath config is not a dict; cannot migrate.\"\n  ],\n  \"migrated\": [],\n  \"migrated_plugins\": [],\n  \"plugin_query_error\": null,\n  \"preserved_user_servers\": [],\n  \"skipped_keys_per_server\": {},\n  \"target_path\": \"" + target + "\",\n  \"written\": false,\n  \"wrote_permissions_default\": null\n}\n"},
+		{"errors as summary", bad, map[string]any{"dry_run": true, "json": false}, 1,
+			"(dry run) Would write " + target + "\nNo MCP servers found in Icebath config.\n⚠ mcp_servers in Icebath config is not a dict; cannot migrate.\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var out strings.Builder
+			rc, err := CodexRuntimeCommand(t.Context(), c.home, c.ns, &out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rc != c.rc {
+				t.Fatalf("rc = %d, want %d", rc, c.rc)
+			}
+			if out.String() != c.want {
+				t.Fatalf("output\n%q\nwant\n%q", out.String(), c.want)
+			}
+		})
+	}
+	if codexMigrationRead(t, target) != original {
+		t.Fatal("dry run wrote config.toml")
+	}
 }
 
 func TestCodexMigrationWorkerOverridesTargetTheMigratedServer(t *testing.T) {

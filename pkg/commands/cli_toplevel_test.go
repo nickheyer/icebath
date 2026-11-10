@@ -276,3 +276,10 @@ func TestRawArgumentEntriesReceiveTheirArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestGmiMainFlowChatParserAcceptsGmiProvider(t *testing.T) {
+	ns, err := chatNamespace(t, []string{"chat", "--provider", "gmi"})
+	if err != nil || ns["provider"] != "gmi" {
+		t.Fatalf("namespace %v err %v", ns, err)
+	}
+}

@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/monitoring"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -266,8 +265,17 @@ func egressGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 	return provider.EgressCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 }
 
+// Runs icebath fallback with the subcommand name or alias typed under its argparse dest
 func fallbackGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return provider.FallbackCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["fallback_command"] = nil
+	if words := strings.Fields(path); len(words) > 1 {
+		ns["fallback_command"] = words[1]
+		if called := cmd.CalledAs(); called != "" {
+			ns["fallback_command"] = called
+		}
+	}
+	return provider.FallbackCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func gatewayGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -313,17 +321,7 @@ func migrateGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pa
 
 func modelGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	requireTTY("model")
-	ns := namespace(cli, cmd, path, args)
-	if nsBool(ns, "refresh") {
-		provider.ClearAllProviderModelsCache(ctx)
-		cmd.Println("  Cleared model picker cache.")
-	}
-	err := observability.ProviderSetupSurface(ctx, "cli_model", func(ctx context.Context) error {
-		return provider.RunSetupActionWithNavigation(ctx, "Model & Provider", func(ctx context.Context) error {
-			return provider.SelectProviderAndModel(ctx, ns)
-		}, "No change.")
-	})
-	return 0, err
+	return provider.CmdModel(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
 func monitoringGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -415,17 +413,25 @@ func sessionsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, p
 }
 
 func setupGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return cmdSetupNamespace(ctx, namespace(cli, cmd, path, args)), nil
+	return cmdSetupNamespace(ctx, namespace(cli, cmd, path, args))
 }
+
+// Seam over the wizard entry, the hermes_cli.setup.run_setup_wizard the argparse test patches
+var runSetupWizard = app.RunSetupWizard
 
 // Runs the interactive setup wizard, hermes_cli/setup.py run_setup_wizard
-func cmdSetupNamespace(ctx context.Context, ns map[string]any) int {
-	return provider.RunSetupWizard(ctx, ns)
+func cmdSetupNamespace(ctx context.Context, ns map[string]any) (int, error) {
+	return runSetupWizard(ctx, ns)
 }
 
-// Setup entered from the chat first run guard with the chat namespace
+// Setup entered from the chat first run guard, whose namespace carries none of the setup flags
 func cmdSetup(a *chatArgs) int {
-	return provider.RunSetupWizard(context.Background(), map[string]any{})
+	code, err := cmdSetupNamespace(context.Background(), map[string]any{})
+	if err != nil {
+		printErr(err.Error())
+		return 1
+	}
+	return code
 }
 
 // Lifts the emergency stop, hermes_cli/subcommands/pause.py cmd_resume

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -32,8 +33,10 @@ type streamExpect struct {
 	Extracted          map[string]pyOutcome `json:"extracted"`
 }
 
-// Archives recorded with a legacy Zstandard v0.5 magic, checked by their own test
-var legacyZstdCases = map[string]bool{"zstd-v05magic-first.zip": true, "zstd-v05corpus-first.zip": true}
+// Archives recorded with a legacy Zstandard v0.5, v0.6 or v0.7 frame, checked by their own test
+func isLegacyZstdCase(name string) bool {
+	return strings.HasPrefix(name, "zstd-v05") || strings.HasPrefix(name, "zstd-v06") || strings.HasPrefix(name, "zstd-v07")
+}
 
 func loadStreamExpect(t *testing.T) map[string]streamExpect {
 	t.Helper()
@@ -83,8 +86,8 @@ func extractedTree(t *testing.T, root string) map[string]pyOutcome {
 }
 
 // Checks read, testzip and extractall of one archive against its CPython record
-func checkStreamArchive(t *testing.T, name string, want streamExpect) {
-	path := filepath.Join("testdata", "stream", name)
+func checkStreamArchive(t *testing.T, path string, want streamExpect) {
+	name := filepath.Base(path)
 	zr, err := OpenReader(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -140,13 +143,13 @@ func TestStreamMembersMatchCPython(t *testing.T) {
 	expect := loadStreamExpect(t)
 	names := make([]string, 0, len(expect))
 	for name := range expect {
-		if !legacyZstdCases[name] {
+		if !isLegacyZstdCase(name) {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		t.Run(name, func(t *testing.T) { checkStreamArchive(t, name, expect[name]) })
+		t.Run(name, func(t *testing.T) { checkStreamArchive(t, filepath.Join("testdata", "stream", name), expect[name]) })
 	}
 }
 

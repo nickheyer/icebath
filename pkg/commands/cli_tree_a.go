@@ -200,7 +200,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	c.addLSP(root)
 
 	setup := c.newCmd(root, "setup", "Interactive setup wizard", "Configure Icebath Agent with an interactive wizard. Run a specific section: icebath setup model|tts|terminal|gateway|tools|telemetry|agent")
-	c.pos(setup, pOptChoice("section", "", "model", "tts", "terminal", "gateway", "tools", "telemetry", "agent"))
+	c.pos(setup, pOptChoice("section", "", "model", "tts", "terminal", "gateway", "tools", "telemetry", "agent").withHelp("Run a specific setup section instead of the full wizard"))
 	bf(setup, "non-interactive", "", "Non-interactive mode (use defaults/env vars)")
 	bf(setup, "reset", "", "Reset configuration to defaults")
 	bf(setup, "reconfigure", "", "(Default on existing installs.) Re-run the full wizard, showing current values as defaults. Kept for backwards compatibility — a bare 'icebath setup' now does this.")

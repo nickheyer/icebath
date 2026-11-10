@@ -699,3 +699,34 @@ func TestSharedPlatformBoilerplate(t *testing.T) {
 		}
 	})
 }
+
+func TestEnvIsConnectedReadsTheGatewayFacadeAtCallTime(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	t.Setenv("FACADE_A", "")
+	check := EnvIsConnected("FACADE_A", "FACADE_B")
+	saved := gatewayFacade
+	t.Cleanup(func() { gatewayFacade = saved })
+	var asked []string
+	gatewayFacade.getEnvValue = func(_ context.Context, name string) (string, error) {
+		asked = append(asked, name)
+		return map[string]string{"FACADE_A": " a ", "FACADE_B": "b"}[name], nil
+	}
+	if ok, err := check(ctx, nil); err != nil || !ok {
+		t.Fatalf("facade values read unconnected: %v %v", ok, err)
+	}
+	if strings.Join(asked, ",") != "FACADE_A,FACADE_B" {
+		t.Fatalf("asked %v", asked)
+	}
+	gatewayFacade.getEnvValue = func(_ context.Context, name string) (string, error) {
+		asked = append(asked, name)
+		return map[string]string{"FACADE_A": "  "}[name], nil
+	}
+	asked = nil
+	if ok, err := check(ctx, nil); err != nil || ok {
+		t.Fatalf("blank facade value read connected: %v %v", ok, err)
+	}
+	if strings.Join(asked, ",") != "FACADE_A" {
+		t.Fatalf("all() did not stop at the first blank value, asked %v", asked)
+	}
+}

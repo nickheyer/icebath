@@ -50,6 +50,36 @@ func TestCopy2CopiesContentModeAndTimes(t *testing.T) {
 	}
 }
 
+func TestCopyFileCopiesContentOnlyAndRefusesItself(t *testing.T) {
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "model.gguf"), filepath.Join(dir, "copy.gguf")
+	if err := os.WriteFile(src, []byte("GGUF"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := os.Chtimes(src, when, when); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("older and longer"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyFile(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(dst)
+	fi, _ := os.Stat(dst)
+	if string(data) != "GGUF" || fi.ModTime().Equal(when) {
+		t.Fatalf("content %q mtime %v", data, fi.ModTime())
+	}
+	var same *SameFileError
+	if err := CopyFile(src, src); !errors.As(err, &same) {
+		t.Fatalf("same file %v", err)
+	}
+	if err := CopyFile(filepath.Join(dir, "missing"), dst); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing source %v", err)
+	}
+}
+
 func TestRmtreeRemovesTreesAndRefusesSymlinks(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "root")

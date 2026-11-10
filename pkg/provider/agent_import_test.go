@@ -171,7 +171,7 @@ func TestSetupMenuShowsWhatWasFoundWithTheQuestion(t *testing.T) {
 	}
 	agentImportAsk = PromptYesNo
 	var menus []string
-	restore := StubSetupRadiolist(func(question string, choices []string, def int, description string) int {
+	restore := SwapSetupRadiolist(func(question string, choices []string, def int, description string) int {
 		menus = append(menus, question+"|"+strings.Join(choices, ",")+"|"+strings.Join(strings.Fields(description), " "))
 		return 1
 	})

@@ -409,6 +409,12 @@ func isGoBack(err error) bool {
 	return ok
 }
 
+// Reports whether a recovered panic value is the setup wizard's Back navigation
+func isGoBackPanic(r any) bool {
+	err, ok := r.(error)
+	return ok && isGoBack(err)
+}
+
 // Ends a flow the user backed out of and never resumed as abandoned
 func closeBackedOut(ctx context.Context) {
 	cliSetup.mu.Lock()
@@ -434,7 +440,11 @@ func ProviderSetupSurface(ctx context.Context, surface string, body func(ctx con
 	panicked := true
 	defer func() {
 		if panicked {
-			closeBackedOut(ctx)
+			r := recover()
+			if !isGoBackPanic(r) {
+				closeBackedOut(ctx)
+			}
+			panic(r)
 		}
 	}()
 	err = body(ctx)
@@ -493,7 +503,13 @@ func CLIProviderSetup(ctx context.Context, provider any, body func(ctx context.C
 		if panicked {
 			r := recover()
 			clearHints()
-			FinishProviderSetup(ctx, flow, "failed", panicSetupClass(r))
+			if isGoBackPanic(r) {
+				cliSetup.mu.Lock()
+				cliSetup.backedOut = &backedOutFlow{flow: flow, before: before}
+				cliSetup.mu.Unlock()
+			} else {
+				FinishProviderSetup(ctx, flow, "failed", panicSetupClass(r))
+			}
 			panic(r)
 		}
 	}()

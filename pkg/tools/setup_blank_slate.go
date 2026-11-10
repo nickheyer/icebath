@@ -88,3 +88,46 @@ func subsetOfAnyToolSet(tools []string, sets []map[string]bool) bool {
 	}
 	return false
 }
+
+// cfg.setdefault(key, {}) followed by an item assignment, the TypeError of a value that is not a mapping
+func blankSlateSection(cfg config.Tree, key string) (map[string]any, error) {
+	v, present := cfg[key]
+	if !present {
+		section := map[string]any{}
+		cfg[key] = section
+		return section, nil
+	}
+	section, ok := pyDictOf(v)
+	if !ok {
+		return nil, fmt.Errorf("TypeError: '%s' object does not support item assignment", pyrepr.TypeName(v))
+	}
+	return section, nil
+}
+
+// BlankSlateMinimizeConfig turns every optional config feature off, each one opting back in through icebath setup agent
+func BlankSlateMinimizeConfig(cfg config.Tree) error {
+	agent, err := blankSlateSection(cfg, "agent")
+	if err != nil {
+		return err
+	}
+	agent["max_turns"] = 90
+	compression, err := blankSlateSection(cfg, "compression")
+	if err != nil {
+		return err
+	}
+	compression["enabled"] = false
+	mem, err := blankSlateSection(cfg, "memory")
+	if err != nil {
+		return err
+	}
+	mem["memory_enabled"] = false
+	mem["user_profile_enabled"] = false
+	for _, key := range []string{"checkpoints", "smart_model_routing"} {
+		section, err := blankSlateSection(cfg, key)
+		if err != nil {
+			return err
+		}
+		section["enabled"] = false
+	}
+	return nil
+}

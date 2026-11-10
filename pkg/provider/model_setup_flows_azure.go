@@ -3,10 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -39,10 +39,13 @@ type azureCurrent struct {
 func azureCurrentSettings(r *ModelFlowRun) azureCurrent {
 	cur := azureCurrent{authMode: "api_key", entra: map[string]any{}, apiKey: r.envValue("AZURE_FOUNDRY_API_KEY")}
 	if modelCfg, ok := r.Config["model"].(map[string]any); ok && modelCfg["provider"] == "azure-foundry" {
-		cur.baseURL = anyString(modelCfg["base_url"])
-		cur.apiMode = anyString(modelCfg["api_mode"])
-		cur.authMode = strings.ToLower(strings.TrimSpace(anyString(modelCfg["auth_mode"])))
-		if cur.authMode == "" {
+		cur.baseURL = pyOrStr(modelCfg["base_url"])
+		cur.apiMode = pyOrStr(modelCfg["api_mode"])
+		cur.authMode = "api_key"
+		if pyTruthy(modelCfg["auth_mode"]) {
+			cur.authMode = pyStr(modelCfg["auth_mode"])
+		}
+		if cur.authMode = pystr.Lower(pystr.Strip(cur.authMode)); cur.authMode == "" {
 			cur.authMode = "api_key"
 		}
 		if entra, ok := modelCfg["entra"].(map[string]any); ok {
@@ -70,7 +73,7 @@ func azureEntraPreflightStep(r *ModelFlowRun, currentEntra map[string]any) azure
 			"  Then restart Hermes.")
 	}
 	entraOverrides := map[string]any{}
-	persistedScopeOverride := strings.TrimSpace(anyString(currentEntra["scope"]))
+	persistedScopeOverride := pystr.Strip(pyOrStr(currentEntra["scope"]))
 	entraScope := persistedScopeOverride
 	if entraScope == "" {
 		entraScope = ScopeAIAzureDefault
@@ -102,7 +105,7 @@ func azureEntraPreflightStep(r *ModelFlowRun, currentEntra map[string]any) azure
 		if !ok {
 			return azureEntraPreflight{cancelled: true}
 		}
-		switch strings.ToLower(ans) {
+		switch pystr.Lower(ans) {
 		case "", "y", "yes":
 		default:
 			fmt.Fprintln(r.Out, "Cancelled.")
@@ -122,8 +125,8 @@ func azureEntraPreflightStep(r *ModelFlowRun, currentEntra map[string]any) azure
 	return azureEntraPreflight{tokenProvider: tokenProvider, entraOverrides: entraOverrides}
 }
 
-// Model or deployment step of the Azure flow, false when cancelled
-func azurePickModel(r *ModelFlowRun, discoveredModels []string, currentModel string) (string, bool) {
+// Model or deployment step of the Azure flow, false when cancelled, the ValueError of a digit int rejects
+func azurePickModel(r *ModelFlowRun, discoveredModels []string, currentModel string) (string, bool, error) {
 	if len(discoveredModels) == 0 {
 		shown := currentModel
 		if shown == "" {
@@ -131,12 +134,12 @@ func azurePickModel(r *ModelFlowRun, discoveredModels []string, currentModel str
 		}
 		modelName, ok := flowAskFn(r.Out, fmt.Sprintf("Model / deployment name [%s]: ", shown), flowAskOptions{})
 		if !ok {
-			return "", false
+			return "", false, nil
 		}
 		if modelName == "" {
-			return currentModel, true
+			return currentModel, true, nil
 		}
-		return modelName, true
+		return modelName, true, nil
 	}
 	fmt.Fprintln(r.Out, "Available models on this endpoint:")
 	shownCount := min(len(discoveredModels), 30)
@@ -153,28 +156,21 @@ func azurePickModel(r *ModelFlowRun, discoveredModels []string, currentModel str
 	}
 	pick, ok := flowAskFn(r.Out, fmt.Sprintf("Pick by number, or type a deployment name [%s]: ", def), flowAskOptions{Raw: true})
 	if !ok {
-		return "", false
+		return "", false, nil
 	}
 	if pick == "" {
-		return def, true
+		return def, true, nil
 	}
-	if n, err := strconv.Atoi(pick); err == nil && isASCIIDigits(pick) && n >= 1 && n <= shownCount {
-		return discoveredModels[n-1], true
-	}
-	return pick, true
-}
-
-// True when every byte is an ASCII digit and the string is non empty
-func isASCIIDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
+	if pystr.StrIsDigit(pick) {
+		n, err := parsePyInt(pick)
+		if err != nil {
+			return "", false, err
+		}
+		if n >= 1 && n <= shownCount {
+			return discoveredModels[n-1], true, nil
 		}
 	}
-	return true
+	return pick, true, nil
 }
 
 // Probes the endpoint for the transport and models, a manual api format pick when detection is incomplete
@@ -306,9 +302,9 @@ func modelFlowAzureFoundry(r *ModelFlowRun) error {
 		return nil
 	}
 	fmt.Fprintln(r.Out)
-	effectiveModel, ok := azurePickModel(r, discovered, r.CurrentModel)
-	if !ok {
-		return nil
+	effectiveModel, ok, err := azurePickModel(r, discovered, r.CurrentModel)
+	if err != nil || !ok {
+		return err
 	}
 	if effectiveModel == "" {
 		fmt.Fprintln(r.Out, "No model name provided. Cancelled.")
@@ -324,27 +320,27 @@ func modelFlowAzureFoundry(r *ModelFlowRun) error {
 	if err != nil {
 		return err
 	}
-	model["provider"] = "azure-foundry"
-	model["base_url"] = effectiveURL
-	model["api_mode"] = apiMode
-	model["default"] = effectiveModel
+	pyDictSet(model, "provider", "azure-foundry")
+	pyDictSet(model, "base_url", effectiveURL)
+	pyDictSet(model, "api_mode", apiMode)
+	pyDictSet(model, "default", effectiveModel)
 	authMode := "api_key"
 	if useEntra {
 		authMode = "entra_id"
 	}
-	model["auth_mode"] = authMode
+	pyDictSet(model, "auth_mode", authMode)
 	clearModelEndpointCredentials(model, true, false, false)
 	cleanEntra := map[string]any{}
 	if scope := anyString(entraOverrides["scope"]); scope != "" {
 		cleanEntra["scope"] = scope
 	}
 	if useEntra && len(cleanEntra) > 0 {
-		model["entra"] = cleanEntra
+		pyDictSet(model, "entra", cleanEntra)
 	} else {
 		delete(model, "entra")
 	}
-	if ctxLen > 0 {
-		model["context_length"] = ctxLen
+	if ctxLen != 0 {
+		pyDictSet(model, "context_length", ctxLen)
 	}
 	if err := commitModelConfig(r.Env, cfg); err != nil {
 		return err
@@ -354,7 +350,8 @@ func modelFlowAzureFoundry(r *ModelFlowRun) error {
 		for k, v := range model {
 			copied[k] = v
 		}
-		r.Config["model"] = copied
+		config.SetMappingKeys(copied, config.MappingKeys(model))
+		pyDictSet(r.Config, "model", copied)
 	}
 	for _, v := range []string{"OPENAI_BASE_URL", "OPENAI_API_KEY"} {
 		if r.envValue(v) != "" {
@@ -368,7 +365,7 @@ func modelFlowAzureFoundry(r *ModelFlowRun) error {
 		authLabel = "Microsoft Entra ID (keyless)"
 	}
 	ctxLine := "    Context length: not auto-detected (will fall back at runtime)"
-	if ctxLen > 0 {
+	if ctxLen != 0 {
 		ctxLine = fmt.Sprintf("    Context length: %s tokens", pystr.GroupThousands(int64(ctxLen)))
 	}
 	flowSay(r.Out, "", "✓ Azure Foundry configured:", fmt.Sprintf("    Endpoint:       %s", effectiveURL),

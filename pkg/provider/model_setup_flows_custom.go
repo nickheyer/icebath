@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -19,8 +18,11 @@ var errFlowCancelled = errors.New("KeyboardInterrupt")
 
 // Custom flow seams, swappable so tests script the endpoint probe and the context length resolver
 var (
-	customProbeAPIModelsFn = ProbeAPIModels
-	customContextLengthFn  = func(ctx context.Context, req ContextLengthRequest) (int, error) {
+	customProbeAPIModelsFn         = ProbeAPIModels
+	promptCustomAPIModeSelectionFn = promptCustomAPIModeSelection
+	saveCustomProviderFn           = saveCustomProvider
+	pickNamedCustomModelFn         = pickNamedCustomModel
+	customContextLengthFn          = func(ctx context.Context, req ContextLengthRequest) (int, error) {
 		return GetModelContextLength(ctx, req), nil
 	}
 )
@@ -38,7 +40,7 @@ var customAPIModes = []customAPIMode{
 	{"anthropic_messages", "Anthropic Messages", "Use /v1/messages for Anthropic-compatible endpoints.", []string{"4", "anthropic", "anthropic_messages", "messages"}},
 }
 
-var trailingV1 = regexp.MustCompile(`/v1/?$`)
+var trailingV1 = regexp.MustCompile(`/v1/?(\n?)\z`)
 
 // Host and path of a URL without the scheme or trailing slash for menu labels
 func shortURL(u string) string {
@@ -47,7 +49,7 @@ func shortURL(u string) string {
 
 // Display name from a custom endpoint URL, Local or RunPod labelled by host
 func autoProviderName(baseURL string) string {
-	name := strings.SplitN(trailingV1.ReplaceAllString(shortURL(baseURL), ""), "/", 2)[0]
+	name := strings.SplitN(trailingV1.ReplaceAllString(shortURL(baseURL), "${1}"), "/", 2)[0]
 	if strings.Contains(name, "localhost") || strings.Contains(name, "127.0.0.1") {
 		return fmt.Sprintf("Local (%s)", name)
 	}
@@ -60,14 +62,14 @@ func autoProviderName(baseURL string) string {
 // Custom provider api mode from the menu, empty for auto detect, an error on Ctrl-C or EOF
 func promptCustomAPIModeSelection(r *ModelFlowRun, baseURL, currentAPIMode string) (string, error) {
 	detectedMode := string(detectAPIModeForURL(baseURL))
-	defaultMode := strings.ToLower(strings.TrimSpace(currentAPIMode))
+	defaultMode := pystr.Lower(pystr.Strip(currentAPIMode))
 	if defaultMode == "" {
 		defaultMode = detectedMode
 	}
 	flowSay(r.Out, "", "Select API compatibility mode:")
 	for idx, mode := range customAPIModes {
 		markers := []string{}
-		if mode.value == detectedMode {
+		if detectedMode != "" && mode.value == detectedMode {
 			markers = append(markers, "detected")
 		}
 		if mode.value == defaultMode {
@@ -84,7 +86,7 @@ func promptCustomAPIModeSelection(r *ModelFlowRun, baseURL, currentAPIMode strin
 		fmt.Fprintln(r.Out, "\nCancelled.")
 		return "", errFlowCancelled
 	}
-	raw = strings.ToLower(strings.TrimSpace(raw))
+	raw = pystr.Lower(pystr.Strip(raw))
 	if raw == "" {
 		return defaultMode, nil
 	}
@@ -99,24 +101,24 @@ func promptCustomAPIModeSelection(r *ModelFlowRun, baseURL, currentAPIMode strin
 	return "", nil
 }
 
-// The value persisted for a custom provider key, the reference, the key env placeholder or the resolved key
+// The value persisted for a custom provider key, the reference, the key env template or the resolved key
 func customProviderAPIKeyConfigValue(providerInfo map[string]any, resolvedAPIKey string) string {
-	if ref := strings.TrimSpace(anyString(providerInfo["api_key_ref"])); ref != "" {
+	if ref := pystr.Strip(pyOrStr(providerInfo["api_key_ref"])); ref != "" {
 		return ref
 	}
-	keyEnv := strings.TrimSpace(anyString(providerInfo["key_env"]))
-	if keyEnv != "" && strings.TrimSpace(anyString(providerInfo["api_key"])) == "" {
+	keyEnv := pystr.Strip(pyOrStr(providerInfo["key_env"]))
+	if keyEnv != "" && pystr.Strip(pyOrStr(providerInfo["api_key"])) == "" {
 		return "${" + keyEnv + "}"
 	}
-	return strings.TrimSpace(resolvedAPIKey)
+	return pystr.Strip(resolvedAPIKey)
 }
 
 // The value persisted for a custom provider URL, the reference when one exists
 func customProviderBaseURLConfigValue(providerInfo map[string]any, resolvedBaseURL string) string {
-	if ref := strings.TrimSpace(anyString(providerInfo["base_url_ref"])); ref != "" {
+	if ref := pystr.Strip(pyOrStr(providerInfo["base_url_ref"])); ref != "" {
 		return ref
 	}
-	return strings.TrimSpace(resolvedBaseURL)
+	return pystr.Strip(resolvedBaseURL)
 }
 
 // Saves a custom endpoint to custom_providers deduplicated by base URL, updating an existing entry
@@ -126,26 +128,33 @@ func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextL
 		return err
 	}
 	providers, _ := cfg["custom_providers"].([]any)
-	if providers == nil {
+	if !truthy(cfg["custom_providers"]) || providers == nil {
 		providers = []any{}
 	}
 	for _, raw := range providers {
 		entry, ok := raw.(map[string]any)
-		if !ok || strings.TrimRight(anyString(entry["base_url"]), "/") != strings.TrimRight(baseURL, "/") {
+		if !ok {
+			continue
+		}
+		entryBase, err := pyStrReceiver(dictGet(entry, "base_url", ""), "rstrip")
+		if err != nil {
+			return err
+		}
+		if strings.TrimRight(entryBase, "/") != strings.TrimRight(baseURL, "/") {
 			continue
 		}
 		changed := false
 		if model != "" && entry["model"] != model {
-			entry["model"] = model
+			pyDictSet(entry, "model", model)
 			changed = true
 		}
-		if model != "" && contextLength > 0 {
-			ensureDictSection(entry, "models")[model] = map[string]any{"context_length": contextLength}
+		if model != "" && contextLength != 0 {
+			pyDictSet(ensureDictSection(entry, "models"), model, contextLengthEntry(contextLength))
 			changed = true
 		}
 		if apiMode != "" {
 			if entry["api_mode"] != apiMode {
-				entry["api_mode"] = apiMode
+				pyDictSet(entry, "api_mode", apiMode)
 				changed = true
 			}
 		} else if _, held := entry["api_mode"]; held {
@@ -153,12 +162,12 @@ func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextL
 			changed = true
 		}
 		if keyEnv != "" && (entry["key_env"] != keyEnv || truthy(entry["api_key"])) {
-			entry["key_env"] = keyEnv
+			pyDictSet(entry, "key_env", keyEnv)
 			delete(entry, "api_key")
 			changed = true
 		}
 		if changed {
-			cfg["custom_providers"] = providers
+			pyDictSet(cfg, "custom_providers", providers)
 			return config.Save(r.home(), cfg)
 		}
 		return nil
@@ -167,27 +176,43 @@ func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextL
 		name = autoProviderName(baseURL)
 	}
 	entry := map[string]any{"name": name, "base_url": baseURL}
+	config.SetMappingKeys(entry, []string{"name", "base_url"})
 	if keyEnv != "" {
-		entry["key_env"] = keyEnv
+		pyDictSet(entry, "key_env", keyEnv)
 	} else if apiKey != "" {
-		entry["api_key"] = apiKey
+		pyDictSet(entry, "api_key", apiKey)
 	}
 	if model != "" {
-		entry["model"] = model
+		pyDictSet(entry, "model", model)
 	}
 	if apiMode != "" {
-		entry["api_mode"] = apiMode
+		pyDictSet(entry, "api_mode", apiMode)
 	}
-	if model != "" && contextLength > 0 {
-		entry["models"] = map[string]any{model: map[string]any{"context_length": contextLength}}
+	if model != "" && contextLength != 0 {
+		models := map[string]any{}
+		pyDictSet(models, model, contextLengthEntry(contextLength))
+		pyDictSet(entry, "models", models)
 	}
 	providers = append(providers, entry)
-	cfg["custom_providers"] = providers
+	pyDictSet(cfg, "custom_providers", providers)
 	if err := config.Save(r.home(), cfg); err != nil {
 		return err
 	}
 	fmt.Fprintf(r.Out, "  💾 Saved to custom providers as \"%s\" (edit in config.yaml)\n", name)
 	return nil
+}
+
+// Python str receiver of a method call, an AttributeError for a value that is no str
+func pyStrReceiver(v any, method string) (string, error) {
+	if s, ok := v.(string); ok {
+		return s, nil
+	}
+	return "", fmt.Errorf("AttributeError: '%s' object has no attribute '%s'", config.PyTypeName(v), method)
+}
+
+// The models entry of one context length
+func contextLengthEntry(contextLength int) map[string]any {
+	return map[string]any{"context_length": contextLength}
 }
 
 // Token count for display, 128000 as 128K and 1048576 as 1M
@@ -225,7 +250,7 @@ func parseContextLength(r *ModelFlowRun, text string) (int, bool) {
 	return 0, false
 }
 
-// Tells the user what the auto detect resolver found for the model at the base URL, silent when the probe fails
+// Tells what the auto detect resolver found for the model at the base URL, silent when the probe fails
 func reportContextLengthDetection(r *ModelFlowRun, modelName, baseURL, apiKey string) {
 	var detected int
 	var err error
@@ -279,7 +304,7 @@ func pickDetectedModel(r *ModelFlowRun, detected []string) (string, error) {
 		if err != nil {
 			return "", errFlowCancelled
 		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
+		switch pystr.Lower(pystr.Strip(answer)) {
 		case "", "y", "yes":
 			return detected[0], nil
 		}
@@ -287,7 +312,7 @@ func pickDetectedModel(r *ModelFlowRun, detected []string) (string, error) {
 		if err != nil {
 			return "", errFlowCancelled
 		}
-		return strings.TrimSpace(typed), nil
+		return pystr.Strip(typed), nil
 	}
 	if len(detected) > 1 {
 		fmt.Fprintln(r.Out, "  Available models:")
@@ -298,9 +323,13 @@ func pickDetectedModel(r *ModelFlowRun, detected []string) (string, error) {
 		if err != nil {
 			return "", errFlowCancelled
 		}
-		pick = strings.TrimSpace(pick)
-		if isASCIIDigits(pick) {
-			if n, perr := parsePyInt(pick); perr == nil && n >= 1 && n <= len(detected) {
+		pick = pystr.Strip(pick)
+		if pystr.StrIsDigit(pick) {
+			n, perr := parsePyInt(pick)
+			if perr != nil {
+				return "", perr
+			}
+			if n >= 1 && n <= len(detected) {
 				return detected[n-1], nil
 			}
 		}
@@ -310,7 +339,7 @@ func pickDetectedModel(r *ModelFlowRun, detected []string) (string, error) {
 	if err != nil {
 		return "", errFlowCancelled
 	}
-	return strings.TrimSpace(typed), nil
+	return pystr.Strip(typed), nil
 }
 
 // Custom endpoint wizard, URL, key, probe, api mode and model, saved to custom_providers for the menu
@@ -334,7 +363,7 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		fmt.Fprintln(r.Out, "\nCancelled.")
 		return nil
 	}
-	baseURL = strings.TrimSpace(baseURL)
+	baseURL = pystr.Strip(baseURL)
 	keyShown := "optional"
 	if currentKey != "" {
 		keyShown = prefixRunes(currentKey, 8) + "..."
@@ -344,7 +373,7 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		fmt.Fprintln(r.Out, "\nCancelled.")
 		return nil
 	}
-	apiKey = strings.TrimSpace(apiKey)
+	apiKey = pystr.Strip(apiKey)
 	if baseURL == "" && currentURL == "" {
 		fmt.Fprintln(r.Out, "No URL provided. Cancelled.")
 		return nil
@@ -386,9 +415,9 @@ func modelFlowCustom(r *ModelFlowRun) error {
 	probe, effectiveURL := probeCustomEndpoint(r, effectiveKey, effectiveURL)
 	currentAPIMode := ""
 	if modelCfg, ok := r.Config["model"].(map[string]any); ok {
-		currentAPIMode = strings.TrimSpace(anyString(modelCfg["api_mode"]))
+		currentAPIMode = pystr.Strip(pyOrStr(modelCfg["api_mode"]))
 	}
-	apiMode, err := promptCustomAPIModeSelection(r, effectiveURL, currentAPIMode)
+	apiMode, err := promptCustomAPIModeSelectionFn(r, effectiveURL, currentAPIMode)
 	if err != nil {
 		return err
 	}
@@ -399,6 +428,9 @@ func modelFlowCustom(r *ModelFlowRun) error {
 	}
 	modelName, err := pickDetectedModel(r, probe.Models)
 	if err != nil {
+		if !errors.Is(err, errFlowCancelled) {
+			return err
+		}
 		fmt.Fprintln(r.Out, "\nCancelled.")
 		return nil
 	}
@@ -413,22 +445,26 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		fmt.Fprintln(r.Out, "\nCancelled.")
 		return nil
 	}
-	displayName = strings.TrimSpace(displayName)
+	displayName = pystr.Strip(displayName)
 	if displayName == "" {
 		displayName = defaultName
 	}
-	contextLength, hasContext := parseContextLength(r, strings.TrimSpace(contextLengthStr))
+	contextLength, hasContext := parseContextLength(r, pystr.Strip(contextLengthStr))
 	if !hasContext && modelName != "" {
 		reportContextLengthDetection(r, modelName, effectiveURL, effectiveKey)
 	}
 	customKeyEnv := ""
 	if effectiveKey != "" {
 		identity := ""
-		if parsed, perr := url.Parse(effectiveURL); perr == nil {
-			identity = strings.ToLower(parsed.Hostname())
-			if port := parsed.Port(); port != "" {
-				identity = fmt.Sprintf("%s_%s", identity, port)
-			}
+		if parts, perr := pyURLParse(effectiveURL, ""); perr == nil {
+			identity, _, _ = pyNetlocHostPort(parts.netloc)
+		}
+		port, hasPort, perr := pyURLPort(effectiveURL)
+		if perr != nil {
+			return perr
+		}
+		if hasPort && port != 0 {
+			identity = fmt.Sprintf("%s_%d", identity, port)
 		}
 		customKeyEnv = config.CustomEndpointKeyEnv(identity)
 		if err := r.saveEnv(customKeyEnv, effectiveKey); err != nil {
@@ -437,21 +473,21 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		fmt.Fprintf(r.Out, "  API key saved to .env as %s\n", customKeyEnv)
 	}
 	applyEndpoint := func(model map[string]any) {
-		model["provider"] = "custom"
-		model["base_url"] = effectiveURL
+		pyDictSet(model, "provider", "custom")
+		pyDictSet(model, "base_url", effectiveURL)
 		delete(model, "key_env")
 		delete(model, "api_key_env")
 		if customKeyEnv != "" {
-			model["api_key"] = "${" + customKeyEnv + "}"
+			pyDictSet(model, "api_key", "${"+customKeyEnv+"}")
 		}
 		if apiMode != "" {
-			model["api_mode"] = apiMode
+			pyDictSet(model, "api_mode", apiMode)
 		} else {
 			delete(model, "api_mode")
 		}
 	}
 	if modelName != "" {
-		if err := saveModelChoice(r.Env, modelName); err != nil {
+		if err := flowSaveModelChoiceFn(r.Env, modelName); err != nil {
 			return err
 		}
 		cfg, model, err := loadConfigModelSection(r.home())
@@ -466,7 +502,8 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		for k, v := range model {
 			copied[k] = v
 		}
-		r.Config["model"] = copied
+		config.SetMappingKeys(copied, config.MappingKeys(model))
+		pyDictSet(r.Config, "model", copied)
 		fmt.Fprintf(r.Out, "Default model set to: %s (via %s)\n", modelName, effectiveURL)
 	} else {
 		if baseURL != "" || apiKey != "" {
@@ -482,10 +519,10 @@ func modelFlowCustom(r *ModelFlowRun) error {
 			}
 		}
 		applyEndpoint(callerModel)
-		r.Config["model"] = callerModel
+		pyDictSet(r.Config, "model", callerModel)
 		fmt.Fprintln(r.Out, "Endpoint saved. Use `/model` in chat or `icebath model` to set a model.")
 	}
-	if err := saveCustomProvider(r, effectiveURL, effectiveKey, modelName, contextLength, displayName, apiMode, customKeyEnv); err != nil {
+	if err := saveCustomProviderFn(r, effectiveURL, effectiveKey, modelName, contextLength, displayName, apiMode, customKeyEnv); err != nil {
 		return err
 	}
 	pruneReplacedCustomModelConfigCredentials(r.Env, effectiveURL, displayName)
@@ -497,8 +534,8 @@ func configuredModelIDs(cfgModels any) []string {
 	out := []string{}
 	switch models := cfgModels.(type) {
 	case map[string]any:
-		for _, m := range sortedMapKeys(models) {
-			if m == "__explicit_model_allowlist__" || m == "__discovered_model_catalog__" || strings.TrimSpace(m) == "" {
+		for _, m := range config.MappingKeys(models) {
+			if m == "__explicit_model_allowlist__" || m == "__discovered_model_catalog__" || pystr.Strip(m) == "" {
 				continue
 			}
 			out = append(out, m)
@@ -508,12 +545,13 @@ func configuredModelIDs(cfgModels any) []string {
 			modelID := ""
 			switch e := entry.(type) {
 			case map[string]any:
-				modelID = strings.TrimSpace(anyString(e["id"]))
-				if modelID == "" {
-					modelID = strings.TrimSpace(anyString(e["model"]))
+				raw := e["id"]
+				if !pyTruthy(raw) {
+					raw = e["model"]
 				}
+				modelID = pystr.Strip(pyOrStr(raw))
 			case string:
-				modelID = strings.TrimSpace(e)
+				modelID = pystr.Strip(e)
 			}
 			if modelID != "" {
 				out = append(out, modelID)
@@ -550,7 +588,7 @@ func discoverNamedCustomModels(r *ModelFlowRun, providerInfo map[string]any, api
 		extraHeaders = map[string]string{}
 	}
 	candidate := map[string]string{}
-	for k, v := range getOllamaNativeHeaders(ctx, baseURL, apiKey) {
+	for k, v := range getOllamaNativeHeadersFn(ctx, baseURL, apiKey) {
 		candidate[k] = v
 	}
 	for key := range candidate {
@@ -584,7 +622,7 @@ func discoverNamedCustomModels(r *ModelFlowRun, providerInfo map[string]any, api
 		}
 		return h
 	}
-	useNative := ShouldUseOllamaNativeCatalog(ctx, nativeCatalogProvider, baseURL, orNil(candidate))
+	useNative := shouldUseOllamaNativeCatalogFn(ctx, nativeCatalogProvider, baseURL, orNil(candidate))
 	nativeHeadersArg := orNil(extraHeaders)
 	if useNative {
 		nativeHeadersArg = orNil(candidate)
@@ -595,7 +633,7 @@ func discoverNamedCustomModels(r *ModelFlowRun, providerInfo map[string]any, api
 		if explicitCatalog && len(configured) > 0 {
 			live = configured
 		} else {
-			fetched, ok := FetchOllamaLocalModels(ctx, baseURL, 8*time.Second, nativeHeadersArg)
+			fetched, ok := fetchOllamaLocalModelsFn(ctx, baseURL, 8*time.Second, nativeHeadersArg)
 			live = fetched
 			nativeCatalogEmpty = ok && len(fetched) == 0
 			if !ok {
@@ -700,10 +738,9 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 	}
 	configAPIKey := customProviderAPIKeyConfigValue(providerInfo, apiKey)
 	discover := true
-	switch d := providerInfo["discover_models"].(type) {
-	case nil:
+	switch d := dictGet(providerInfo, "discover_models", true).(type) {
 	case string:
-		switch strings.ToLower(d) {
+		switch pystr.Lower(d) {
 		case "false", "no", "0":
 			discover = false
 		}
@@ -732,7 +769,7 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 	var modelName string
 	switch {
 	case len(models) > 0:
-		picked, ok := pickNamedCustomModel(r, name, models, savedModel)
+		picked, ok := pickNamedCustomModelFn(r, name, models, savedModel)
 		if !ok {
 			return nil
 		}
@@ -759,7 +796,7 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 		}
 		modelName = typed
 	}
-	if err := saveModelChoice(r.Env, modelName); err != nil {
+	if err := flowSaveModelChoiceFn(r.Env, modelName); err != nil {
 		return err
 	}
 	cfg, model, err := loadConfigModelSection(r.home())
@@ -769,18 +806,18 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 	delete(model, "key_env")
 	delete(model, "api_key_env")
 	if providerKey != "" {
-		model["provider"] = CustomProviderSlug(name, providerKey)
+		pyDictSet(model, "provider", CustomProviderSlug(name, providerKey))
 		delete(model, "base_url")
 		delete(model, "api_key")
 	} else {
-		model["provider"] = "custom"
-		model["base_url"] = customProviderBaseURLConfigValue(providerInfo, baseURL)
+		pyDictSet(model, "provider", "custom")
+		pyDictSet(model, "base_url", customProviderBaseURLConfigValue(providerInfo, baseURL))
 		if configAPIKey != "" {
-			model["api_key"] = configAPIKey
+			pyDictSet(model, "api_key", configAPIKey)
 		}
 	}
 	if apiMode != "" {
-		model["api_mode"] = apiMode
+		pyDictSet(model, "api_mode", apiMode)
 	} else {
 		delete(model, "api_mode")
 	}
@@ -794,20 +831,20 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 		}
 		providersCfg, _ := cfg["providers"].(map[string]any)
 		if providerEntry, ok := providersCfg[providerKey].(map[string]any); ok {
-			providerEntry["default_model"] = modelName
-			hadInlineAPIKey := strings.TrimSpace(anyString(providerInfo["api_key_ref"])) != "" || strings.TrimSpace(anyString(providerInfo["api_key"])) != ""
-			if hadInlineAPIKey && configAPIKey != "" && strings.TrimSpace(anyString(providerEntry["api_key"])) == "" {
-				providerEntry["api_key"] = configAPIKey
+			pyDictSet(providerEntry, "default_model", modelName)
+			hadInlineAPIKey := pystr.Strip(pyOrStr(providerInfo["api_key_ref"])) != "" || pystr.Strip(pyOrStr(providerInfo["api_key"])) != ""
+			if hadInlineAPIKey && configAPIKey != "" && pystr.Strip(pyOrStr(providerEntry["api_key"])) == "" {
+				pyDictSet(providerEntry, "api_key", configAPIKey)
 			}
-			if keyEnv != "" && strings.TrimSpace(anyString(providerEntry["key_env"])) == "" {
-				providerEntry["key_env"] = keyEnv
+			if keyEnv != "" && pystr.Strip(pyOrStr(providerEntry["key_env"])) == "" {
+				pyDictSet(providerEntry, "key_env", keyEnv)
 			}
-			cfg["providers"] = providersCfg
+			pyDictSet(cfg, "providers", providersCfg)
 			if err := config.Save(r.home(), cfg); err != nil {
 				return err
 			}
 		}
-	} else if err := saveCustomProvider(r, baseURL, configAPIKey, modelName, 0, "", apiMode, ""); err != nil {
+	} else if err := saveCustomProviderFn(r, baseURL, configAPIKey, modelName, 0, "", apiMode, ""); err != nil {
 		return err
 	}
 	flowSay(r.Out, fmt.Sprintf("\n✅ Model set to: %s", modelName), fmt.Sprintf("   Provider: %s (%s)", name, baseURL))

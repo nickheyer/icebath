@@ -413,6 +413,58 @@ func TestCliSetupNavigationEscCancelsAndBackResumesOneFlow(t *testing.T) {
 	}
 }
 
+// The setup wizard raises Esc and Back as panics, which must end and resume flows exactly like returned errors
+func TestCliSetupNavigationRaisedAsPanicsResumesOneFlow(t *testing.T) {
+	m := captureMarks(t)
+	ctx := context.Background()
+	writeModelRoute(t, m.home, "openrouter", "a")
+	raising := func(ctx context.Context, provider string, raise error) error {
+		return CLIProviderSetup(ctx, provider, func(context.Context) error {
+			if raise != nil {
+				panic(raise)
+			}
+			NoteProviderSetupSaved()
+			return nil
+		})
+	}
+	attempt := func(ctx context.Context, provider string, raise error) (recovered any) {
+		defer func() { recovered = recover() }()
+		_ = raising(ctx, provider, raise)
+		return nil
+	}
+	err := ProviderSetupSurface(ctx, "cli_model", func(ctx context.Context) error {
+		if r := attempt(ctx, "xai", setupCancelled{}); r != (setupCancelled{}) {
+			t.Fatalf("esc %v", r)
+		}
+		if r := attempt(ctx, "anthropic", setupGoBack{1}); r != (setupGoBack{1}) {
+			t.Fatalf("back %v", r)
+		}
+		attempt(ctx, "anthropic", nil)
+		attempt(ctx, "nous", setupGoBack{1})
+		return raising(ctx, "gemini", nil)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() {
+			if r := recover(); r != (setupGoBack{0}) {
+				t.Fatalf("replay %v", r)
+			}
+		}()
+		_ = ProviderSetupSurface(ctx, "cli_setup", func(ctx context.Context) error { return raising(ctx, "xai", setupGoBack{0}) })
+	}()
+	_ = ProviderSetupSurface(ctx, "cli_setup", func(context.Context) error { return nil })
+	want := [][4]string{{"cli_model", "xai", "started", "none"}, {"cli_model", "xai", "abandoned", "none"},
+		{"cli_model", "anthropic", "started", "none"}, {"cli_model", "anthropic", "completed", "none"},
+		{"cli_model", "nous", "started", "none"}, {"cli_model", "nous", "abandoned", "none"},
+		{"cli_model", "gemini", "started", "none"}, {"cli_model", "gemini", "completed", "none"},
+		{"cli_setup", "xai", "started", "none"}, {"cli_setup", "xai", "abandoned", "none"}}
+	if got := setupEnds(t, m.snapshot()); !slices.Equal(got, want) {
+		t.Fatalf("rows %v", got)
+	}
+}
+
 func TestStoreCountsFeatureDisabledOncePerDay(t *testing.T) {
 	ctx := context.Background()
 	store := openStore(t, t.TempDir())

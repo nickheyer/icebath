@@ -391,6 +391,13 @@ func sha256File(path string) (string, error) {
 // Rename used to publish downloads, replaceable by tests that simulate a held file
 var renameFile = os.Rename
 
+// SwapRenameFile replaces the rename that publishes downloads and returns the one it replaced
+func SwapRenameFile(fn func(oldpath, newpath string) error) func(oldpath, newpath string) error {
+	prev := renameFile
+	renameFile = fn
+	return prev
+}
+
 // Renames a finished download into place, riding out a transient hold until the timeout
 var ReplaceWhenReleased = func(tmp, dest string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
@@ -784,6 +791,13 @@ func isDownloadError(err error) bool {
 
 // Backoff wait of a download, replaceable by tests that observe or skip retry delays
 var downloadWaitRetry = (*Download).waitRetry
+
+// SwapDownloadWaitRetry replaces the retry backoff wait every download takes and returns the one it replaced
+func SwapDownloadWaitRetry(fn func(d *Download, delay time.Duration) error) func(d *Download, delay time.Duration) error {
+	prev := downloadWaitRetry
+	downloadWaitRetry = fn
+	return prev
+}
 
 // Single range reader of a download, replaceable by tests that drive the coordinator directly
 var downloadReadRange = (*Download).readRange

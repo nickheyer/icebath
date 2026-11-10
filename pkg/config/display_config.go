@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"sort"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -84,6 +85,21 @@ func platformDisplayDefaults(ctx context.Context, platformKey string) map[string
 		return mergeDisplay(tier, overrides)
 	}
 	return tier
+}
+
+// PlatformDisplayDefaults is the built in display defaults of a platform, the core table else its registered tier
+func PlatformDisplayDefaults(ctx context.Context, platformKey string) map[string]any {
+	return platformDisplayDefaults(ctx, platformKey)
+}
+
+// CoreDisplayPlatforms is the platforms whose display defaults the core table declares
+func CoreDisplayPlatforms() []string {
+	out := make([]string, 0, len(displayCoreDefaults))
+	for k := range displayCoreDefaults {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Per platform overrideable display keys, the keys of the global display defaults

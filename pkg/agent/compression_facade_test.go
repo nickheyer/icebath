@@ -343,7 +343,7 @@ func TestOrphanReapConvergesTerminatedCompressionRow(t *testing.T) {
 
 func TestCompressContextPreservesAmbientContext(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{AuxiliaryTasks: func() []map[string]any { return nil }})
+	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{})
 	t.Setenv("ICEBATH_SESSION_ID", "")
 	var seen []string
 	orig := facadeCompressContext
@@ -371,7 +371,7 @@ func TestCompressContextPreservesAmbientContext(t *testing.T) {
 
 func TestCompressContextWorkerNeverTouchesTheLiveTranscript(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{AuxiliaryTasks: func() []map[string]any { return nil }})
+	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{})
 	t.Setenv("ICEBATH_SESSION_ID", "")
 	orig := facadeCompressContext
 	facadeCompressContext = func(ctx context.Context, a *AIAgent, messages []map[string]any, systemMessage *string, o compressContextOptions) ([]map[string]any, string, error) {
@@ -438,7 +438,7 @@ func ownedTimeoutAgent(t *testing.T, idle, ceiling float64, worker func(messages
 	compressor := newCompressorWith(t, 128_000, nil)
 	s.agent.contextCompressor = compressor
 	pinCompressionAuxTimeout(t, 0)
-	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{AuxiliaryTasks: func() []map[string]any { return nil }})
+	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{})
 	prevCfg, prevCompress := loadCompressionConfig, facadeCompressContext
 	loadCompressionConfig = func(context.Context) any {
 		return map[string]any{"context_timeout_seconds": idle, "context_total_ceiling_seconds": ceiling}

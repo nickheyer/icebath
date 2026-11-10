@@ -57,6 +57,9 @@ func formatRadioItemANSI(segs []PickerSegment) string {
 	return cliui.Default().FormatRadioItemANSI(pickerRadioItem(segs))
 }
 
+// Console the full screen menus draw on, the process console unless a test swapped it
+var pickerConsoleFn = cliui.Default
+
 // Runs the full screen radio list on the process console and returns the chosen original index
 func cursesRadiolist(title string, choices [][]PickerSegment, opts PickerRadiolistOptions) (int, error) {
 	items := make([]cliui.RadioItem, len(choices))
@@ -64,7 +67,7 @@ func cursesRadiolist(title string, choices [][]PickerSegment, opts PickerRadioli
 		items[i] = pickerRadioItem(c)
 	}
 	cancel := opts.CancelReturns
-	return cliui.Default().CursesRadiolist(context.Background(), title, items, opts.Selected, cliui.RadiolistOptions{
+	return pickerConsoleFn().CursesRadiolist(context.Background(), title, items, opts.Selected, cliui.RadiolistOptions{
 		CancelReturns: &cancel, Description: opts.Description, Searchable: opts.Searchable,
 		SearchLabels: opts.SearchLabels, Headings: opts.Headings,
 	})

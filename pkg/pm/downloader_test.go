@@ -826,3 +826,60 @@ func TestDownloadReportsAHoldThatNeverReleases(t *testing.T) {
 		t.Fatal("destination published")
 	}
 }
+
+func TestSwapRenameFilePublishesThroughTheReplacementAndRestores(t *testing.T) {
+	tmp := t.TempDir()
+	srv := newRangeServer(t)
+	payload := dltPayload(64, "y")
+	srv.set("/f", payload)
+	var renames []string
+	prev := SwapRenameFile(func(oldpath, newpath string) error {
+		renames = append(renames, filepath.Base(newpath))
+		return os.Rename(oldpath, newpath)
+	})
+	dest := filepath.Join(tmp, "f.bin")
+	_, err := NewDownload([]Source{{URL: srv.url("/f"), Dest: dest}}, DownloadOptions{PartialsDir: filepath.Join(tmp, "partials")}).Run(nil)
+	restored := SwapRenameFile(prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(renames, "f.bin") || renames[len(renames)-1] != "f.bin" || !bytes.Equal(readFile(t, dest), payload) {
+		t.Fatalf("renames %v", renames)
+	}
+	if restored == nil || fmt.Sprintf("%p", renameFile) != fmt.Sprintf("%p", prev) {
+		t.Fatal("previous rename not restored")
+	}
+}
+
+func TestSwapDownloadWaitRetryTakesEveryBackoffAndRestores(t *testing.T) {
+	tmp := t.TempDir()
+	srv := newRangeServer(t)
+	srv.set("/f", []byte("payload"))
+	var failuresMu sync.Mutex
+	failures := 0
+	dltConfigure(srv, func(s *rangeServer) {
+		s.intercept = func(w http.ResponseWriter, r *http.Request) bool {
+			failuresMu.Lock()
+			defer failuresMu.Unlock()
+			if failures < 2 {
+				failures++
+				dltSendError(w, 503)
+				return true
+			}
+			return false
+		}
+	})
+	var waits []time.Duration
+	prev := SwapDownloadWaitRetry(func(_ *Download, delay time.Duration) error {
+		waits = append(waits, delay)
+		return nil
+	})
+	_, err := NewDownload([]Source{{URL: srv.url("/f"), Dest: filepath.Join(tmp, "f")}}, DownloadOptions{PartialsDir: filepath.Join(tmp, "partials"), Connections: 1}).Run(nil)
+	SwapDownloadWaitRetry(prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(waits, []time.Duration{time.Second, 2 * time.Second}) {
+		t.Fatalf("waits %v", waits)
+	}
+}

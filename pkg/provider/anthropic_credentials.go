@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -820,16 +821,31 @@ func ResolveAnthropicToken(env PoolEnv, model string) string {
 	return availableAnthropicToken(env, token, model)
 }
 
+// FileNotFoundError of a missing claude CLI so the setup flow guides a manual install
+type claudeCLIMissingError struct{}
+
+func (claudeCLIMissingError) Error() string {
+	return "The 'claude' CLI is not installed. Install it with: npm install -g @anthropic-ai/claude-code"
+}
+
+func (claudeCLIMissingError) Is(target error) bool { return target == fs.ErrNotExist }
+
 // RunOAuthSetupToken runs claude setup-token interactively and returns the resulting token
 func RunOAuthSetupToken(env PoolEnv) (string, error) {
 	claudePath := findClaudeCodeCLI("claude")
 	if claudePath == "" {
-		return "", errors.New("The 'claude' CLI is not installed. Install it with: npm install -g @anthropic-ai/claude-code")
+		return "", claudeCLIMissingError{}
 	}
 	cmd := exec.CommandContext(env.ctx(), claudePath, "setup-token")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil && errors.Is(err, context.Canceled) {
-		return "", nil
+	if err := cmd.Run(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return "", nil
+		}
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return "", err
+		}
 	}
 	if creds := ReadClaudeCodeCredentials(env); creds != nil && IsClaudeCodeTokenValid(creds) {
 		return anyString(creds["accessToken"]), nil

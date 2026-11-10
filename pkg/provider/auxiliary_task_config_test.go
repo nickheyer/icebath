@@ -51,9 +51,9 @@ func (a *auxTaskHome) resolve(ctx context.Context, task any) map[string]any {
 
 // Installs plugin task registrations shaped as the plugins registrar stores them
 func withPluginAuxTasks(t *testing.T, entries ...map[string]any) {
-	withPluginHooks(t, func(h *PluginManagerHooks) {
-		h.AuxiliaryTasks = func() []map[string]any { return entries }
-	})
+	saved := pluginAuxiliaryTasksFn
+	t.Cleanup(func() { pluginAuxiliaryTasksFn = saved })
+	pluginAuxiliaryTasksFn = func(context.Context) []map[string]any { return entries }
 }
 
 func auxNonInheritingDefaults(extra map[string]any) map[string]any {

@@ -83,3 +83,20 @@ b'`: "ab", `'\8'`: `\8`, `'\ud800'`: "\xed\xa0\x80",
 		}
 	}
 }
+
+func TestEvaluateMarkerEnvironmentOverridesDefaults(t *testing.T) {
+	defaults := map[string]string{"python_version": "3.12", "sys_platform": "linux"}
+	for marker, want := range map[string]bool{
+		"python_version < '0'":     false,
+		"python_version >= '3.12'": true,
+		"sys_platform == 'win32'":  true,
+	} {
+		got, err := EvaluateMarker(marker, defaults, map[string]string{"sys_platform": "win32"})
+		if err != nil || got != want {
+			t.Errorf("%s: got %v, %v; want %v", marker, got, err, want)
+		}
+	}
+	if _, err := EvaluateMarker("python_version <", defaults, nil); err == nil {
+		t.Error("a malformed marker must fail to parse")
+	}
+}

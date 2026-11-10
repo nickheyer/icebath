@@ -422,3 +422,12 @@ func evaluateMarker(markers markerList, defaults, environment map[string]string)
 	}
 	return evaluateMarkerList(markers, env)
 }
+
+// EvaluateMarker evaluates a PEP 508 marker string in process, the environment over defaults like Marker.evaluate
+func EvaluateMarker(marker string, defaults, environment map[string]string) (bool, error) {
+	req, err := ParseRequirement("gate ; " + marker)
+	if err != nil {
+		return false, err
+	}
+	return evaluateMarker(req.Marker, defaults, environment)
+}

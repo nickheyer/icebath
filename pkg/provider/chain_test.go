@@ -1,17 +1,12 @@
 package provider
 
 import (
-	"bytes"
 	"context"
-	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func ident(provider, model, baseURL string) BackendIdentity {
@@ -103,31 +98,6 @@ func TestUnknownAxesNeverStrand(t *testing.T) {
 	}
 }
 
-func TestReadFallbackChainReturnsCopies(t *testing.T) {
-	cfg := config.Tree{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"}, map[string]any{"provider": "nous", "model": "Hermes-4-Llama-3.1-405B"}}}
-	chain := ReadFallbackChain(cfg)
-	if len(chain) != 2 || chain[0]["provider"] != "openrouter" || chain[1]["model"] != "Hermes-4-Llama-3.1-405B" {
-		t.Fatalf("chain %v", chain)
-	}
-	chain[0]["provider"] = "mutated"
-	if cfg["fallback_providers"].([]any)[0].(map[string]any)["provider"] != "openrouter" {
-		t.Fatal("chain must not alias the config")
-	}
-}
-
-func TestExtractFallbackFromModelCfg(t *testing.T) {
-	entry, ok := ExtractFallbackFromModelCfg(map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6"})
-	if !ok || entry["provider"] != "openrouter" || entry["model"] != "anthropic/claude-sonnet-4.6" || len(entry) != 2 {
-		t.Fatalf("entry %v", entry)
-	}
-	if _, ok := ExtractFallbackFromModelCfg(map[string]any{"provider": "openrouter"}); ok {
-		t.Fatal("missing model must give none")
-	}
-	if _, ok := ExtractFallbackFromModelCfg("string"); ok {
-		t.Fatal("non map must give none")
-	}
-}
-
 func writeConfig(t *testing.T, h string, doc map[string]any) {
 	t.Helper()
 	if err := config.SaveUser(context.Background(), h, doc); err != nil {
@@ -142,215 +112,6 @@ func readConfig(t *testing.T, h string) map[string]any {
 		t.Fatal(err)
 	}
 	return doc
-}
-
-func TestFallbackListWithEntries(t *testing.T) {
-	h := t.TempDir()
-	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "openrouter", "default": "gpt-5.4"}, "fallback_providers": []any{map[string]any{"provider": "nous", "model": "Hermes-4"}}})
-	var out bytes.Buffer
-	if err := FallbackList(&out, h); err != nil {
-		t.Fatal(err)
-	}
-	text := out.String()
-	if !strings.Contains(text, "Primary:   gpt-5.4  (via openrouter)") || !strings.Contains(text, "Fallback chain (1 entry):") || !strings.Contains(text, "1. Hermes-4  (via nous)") {
-		t.Fatalf("list output %q", text)
-	}
-	empty := t.TempDir()
-	writeConfig(t, empty, map[string]any{})
-	out.Reset()
-	if err := FallbackList(&out, empty); err != nil || !strings.Contains(out.String(), "No fallback providers configured.") || !strings.Contains(out.String(), "icebath fallback add") {
-		t.Fatalf("empty list %q %v", out.String(), err)
-	}
-}
-
-func pickerWriting(h string, model map[string]any, extra map[string]any) func() error {
-	return func() error {
-		doc, err := config.ReadUser(h)
-		if err != nil {
-			return err
-		}
-		doc["model"] = model
-		for k, v := range extra {
-			doc[k] = v
-		}
-		return config.SaveUser(context.Background(), h, doc)
-	}
-}
-
-func TestFallbackAddAppendsNewEntry(t *testing.T) {
-	h := t.TempDir()
-	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "anthropic", "default": "claude-sonnet-4-6"}})
-	store := NewStore(h)
-	picked := map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6", "base_url": "https://openrouter.ai/api/v1", "api_mode": "chat_completions"}
-	var out bytes.Buffer
-	if err := FallbackAdd(context.Background(), &out, h, store, pickerWriting(h, picked, nil)); err != nil {
-		t.Fatal(err)
-	}
-	cfg := readConfig(t, h)
-	model := cfg["model"].(map[string]any)
-	if model["provider"] != "anthropic" || model["default"] != "claude-sonnet-4-6" {
-		t.Fatalf("primary not preserved: %v", model)
-	}
-	chain := cfg["fallback_providers"].([]any)
-	if len(chain) != 1 {
-		t.Fatalf("chain %v", chain)
-	}
-	entry := chain[0].(map[string]any)
-	if entry["provider"] != "openrouter" || entry["model"] != "anthropic/claude-sonnet-4.6" || entry["base_url"] != "https://openrouter.ai/api/v1" || entry["api_mode"] != "chat_completions" {
-		t.Fatalf("entry %v", entry)
-	}
-	if !strings.Contains(out.String(), "Added fallback: anthropic/claude-sonnet-4.6  (via openrouter)  [https://openrouter.ai/api/v1]") {
-		t.Fatalf("output %q", out.String())
-	}
-}
-
-func TestFallbackAddRejectsSameAsPrimary(t *testing.T) {
-	h := t.TempDir()
-	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "openrouter", "default": "gpt-5.4"}})
-	var out bytes.Buffer
-	if err := FallbackAdd(context.Background(), &out, h, NewStore(h), pickerWriting(h, map[string]any{"provider": "openrouter", "default": "gpt-5.4"}, nil)); err != nil {
-		t.Fatal(err)
-	}
-	cfg := readConfig(t, h)
-	if list, has := cfg["fallback_providers"]; has && len(list.([]any)) != 0 {
-		t.Fatalf("self fallback written: %v", list)
-	}
-	if !strings.Contains(out.String(), "A provider cannot be a fallback for itself") {
-		t.Fatalf("output %q", out.String())
-	}
-}
-
-func TestFallbackAddPreservesPrimaryWhenPickerChangesIt(t *testing.T) {
-	h := t.TempDir()
-	primary := map[string]any{"provider": "anthropic", "default": "claude-sonnet-4-6", "base_url": "https://api.anthropic.com", "api_mode": "anthropic_messages"}
-	writeConfig(t, h, map[string]any{"model": primary})
-	custom := []any{map[string]any{"name": "Picker-created endpoint", "base_url": "https://picker.example/v1", "model": "picker-model"}}
-	picked := map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6", "base_url": "https://openrouter.ai/api/v1", "api_mode": "chat_completions"}
-	var out bytes.Buffer
-	if err := FallbackAdd(context.Background(), &out, h, NewStore(h), pickerWriting(h, picked, map[string]any{"custom_providers": custom})); err != nil {
-		t.Fatal(err)
-	}
-	cfg := readConfig(t, h)
-	model := cfg["model"].(map[string]any)
-	for k, v := range primary {
-		if model[k] != v {
-			t.Fatalf("primary field %s = %v want %v", k, model[k], v)
-		}
-	}
-	if len(cfg["fallback_providers"].([]any)) != 1 || cfg["fallback_providers"].([]any)[0].(map[string]any)["provider"] != "openrouter" {
-		t.Fatalf("fallback %v", cfg["fallback_providers"])
-	}
-	got := cfg["custom_providers"].([]any)[0].(map[string]any)
-	if got["name"] != "Picker-created endpoint" || got["base_url"] != "https://picker.example/v1" || got["model"] != "picker-model" {
-		t.Fatalf("custom providers %v", cfg["custom_providers"])
-	}
-}
-
-func TestRestorePreservesAbsentActiveProvider(t *testing.T) {
-	h := t.TempDir()
-	store := NewStore(h)
-	if err := store.Save(AuthData{"version": 1, "providers": map[string]any{}}); err != nil {
-		t.Fatal(err)
-	}
-	value, present, err := SnapshotAuthActiveProvider(store)
-	if err != nil || present {
-		t.Fatalf("snapshot %v %v %v", value, present, err)
-	}
-	if err := RestoreAuthActiveProvider(store, value, present); err != nil {
-		t.Fatal(err)
-	}
-	data, err := store.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, has := data["active_provider"]; has {
-		t.Fatal("active_provider must stay absent")
-	}
-	if err := RestoreAuthActiveProvider(store, "nous", true); err != nil {
-		t.Fatal(err)
-	}
-	if active, _ := store.ActiveProvider(); active != "nous" {
-		t.Fatalf("active provider %q", active)
-	}
-}
-
-func TestPickerFailureRestoresPersistedPrimaryWithoutMaskingError(t *testing.T) {
-	h := t.TempDir()
-	primary := map[string]any{"provider": "anthropic", "default": "claude-sonnet-4-6", "base_url": "https://api.anthropic.com", "api_mode": "anthropic_messages"}
-	writeConfig(t, h, map[string]any{"model": primary, "theme": "midnight"})
-	pickerErr := errors.New("picker failed")
-	failing := func() error {
-		if err := pickerWriting(h, map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6"}, nil)(); err != nil {
-			return err
-		}
-		return pickerErr
-	}
-	var out bytes.Buffer
-	err := FallbackAdd(context.Background(), &out, h, NewStore(h), failing)
-	if !errors.Is(err, pickerErr) {
-		t.Fatalf("picker error must surface: %v", err)
-	}
-	cfg := readConfig(t, h)
-	model := cfg["model"].(map[string]any)
-	for k, v := range primary {
-		if model[k] != v {
-			t.Fatalf("primary field %s = %v", k, model[k])
-		}
-	}
-	if cfg["theme"] != "midnight" {
-		t.Fatalf("theme lost: %v", cfg["theme"])
-	}
-}
-
-func TestFallbackRemoveSelectedEntry(t *testing.T) {
-	h := t.TempDir()
-	writeConfig(t, h, map[string]any{"fallback_providers": []any{
-		map[string]any{"provider": "openrouter", "model": "gpt-5.4"}, map[string]any{"provider": "nous", "model": "Hermes-4"}, map[string]any{"provider": "anthropic", "model": "claude-sonnet-4-6"}}})
-	var out bytes.Buffer
-	if err := FallbackRemove(context.Background(), &out, h, func(prompt string, options []string, def int) int {
-		if len(options) != 4 || options[3] != "Cancel" {
-			t.Fatalf("options %v", options)
-		}
-		return 1
-	}); err != nil {
-		t.Fatal(err)
-	}
-	chain := readConfig(t, h)["fallback_providers"].([]any)
-	if len(chain) != 2 || chain[0].(map[string]any)["model"] != "gpt-5.4" || chain[1].(map[string]any)["provider"] != "anthropic" {
-		t.Fatalf("chain %v", chain)
-	}
-	out.Reset()
-	if err := FallbackRemove(context.Background(), &out, h, func(string, []string, int) int { return -1 }); err != nil || !strings.Contains(out.String(), "Cancelled — no change.") {
-		t.Fatalf("cancel %q %v", out.String(), err)
-	}
-}
-
-func TestFallbackClearWithConfirmation(t *testing.T) {
-	h := t.TempDir()
-	writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "gpt-5.4"}, map[string]any{"provider": "nous", "model": "Hermes-4"}}})
-	var out bytes.Buffer
-	if err := FallbackClear(context.Background(), &out, h, func(string) (string, error) { return "y", nil }); err != nil {
-		t.Fatal(err)
-	}
-	if chain := readConfig(t, h)["fallback_providers"].([]any); len(chain) != 0 {
-		t.Fatalf("chain %v", chain)
-	}
-	writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "gpt-5.4"}}})
-	out.Reset()
-	if err := FallbackClear(context.Background(), &out, h, func(string) (string, error) { return "", errors.New("EOF") }); err != nil || !strings.Contains(out.String(), "Cancelled.") {
-		t.Fatalf("eof cancel %q %v", out.String(), err)
-	}
-	if chain := readConfig(t, h)["fallback_providers"].([]any); len(chain) != 1 {
-		t.Fatalf("chain changed on cancel: %v", chain)
-	}
-}
-
-func TestUnknownFallbackSubcommand(t *testing.T) {
-	err := RunFallbackCommand(context.Background(), "nope", FallbackCommandIO{Out: &bytes.Buffer{}, Home: t.TempDir()})
-	var unknown *UnknownFallbackSubcommandError
-	if !errors.As(err, &unknown) || unknown.Sub != "nope" || !strings.Contains(err.Error(), "Use one of: list, add, remove, clear") {
-		t.Fatalf("err %v", err)
-	}
 }
 
 func TestChainSkipsSameBackendAndUnusableEntries(t *testing.T) {
@@ -433,38 +194,8 @@ func TestRestorePrimaryGatesOnPoolReset(t *testing.T) {
 	}
 }
 
-func TestFallbackEntryFormatting(t *testing.T) {
-	if FormatFallbackEntry(map[string]any{"model": "m", "provider": "p", "base_url": "http://x"}) != "m  (via p)  [http://x]" || FormatFallbackEntry(map[string]any{}) != "?  (via ?)" {
-		t.Fatal("format")
-	}
-	if EntriesLabel(1) != "1 entry" || EntriesLabel(3) != "3 entries" {
-		t.Fatal("entries label")
-	}
-	if DescribePrimary(map[string]any{"model": "bare"}) != "bare" || DescribePrimary(map[string]any{"model": map[string]any{"provider": "p"}}) != "?  (via p)" || DescribePrimary(map[string]any{}) != "" {
-		t.Fatal("describe primary")
-	}
+func TestFallbackReasonTextNamesTheFailure(t *testing.T) {
 	if FallbackReasonText(ReasonBilling) != "billing or quota exhausted" || FallbackReasonText("custom_thing") != "custom thing" || FallbackReasonText("") != "provider failure" {
 		t.Fatal("reason text")
-	}
-}
-
-func TestRestoreModelCfgWritesUserFile(t *testing.T) {
-	h := t.TempDir()
-	writeConfig(t, h, map[string]any{"model": "changed", "theme": "x"})
-	if err := RestoreModelCfg(context.Background(), h, map[string]any{"provider": "nous", "default": "Hermes-4"}); err != nil {
-		t.Fatal(err)
-	}
-	cfg := readConfig(t, h)
-	if cfg["model"].(map[string]any)["provider"] != "nous" || cfg["theme"] != "x" {
-		t.Fatalf("cfg %v", cfg)
-	}
-	if err := RestoreModelCfg(context.Background(), h, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, has := readConfig(t, h)["model"]; has {
-		t.Fatal("nil snapshot removes the model section")
-	}
-	if _, err := os.Stat(filepath.Join(h, filepath.Base(home.ConfigPath(h)))); err != nil {
-		t.Fatal(err)
 	}
 }

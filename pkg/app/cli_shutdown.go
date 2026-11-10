@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -85,7 +86,7 @@ func shutdownAgentMemoryProvider(ctx context.Context, a *agent.AIAgent) {
 // Stops the CLI's wake word listener when this process owns one
 func stopCLIWakeWord(ctx context.Context, env *tools.Env) {
 	if cliWakeOwner != nil {
-		StopWakeWordListening(cliWakeOwner)
+		media.StopListening(cliWakeOwner)
 	}
 }
 

@@ -115,10 +115,10 @@ func modelFlowBedrockAPIKey(r *ModelFlowRun, region string) error {
 		if !ok {
 			mantleEntry = map[string]any{}
 		}
-		mantleEntry["base_url"] = mantleBaseURL
-		mantleEntry["key_env"] = "AWS_BEARER_TOKEN_BEDROCK"
-		providers["bedrock-mantle"] = mantleEntry
-		ensureDictSection(cfg, "bedrock")["region"] = region
+		pyDictSet(mantleEntry, "base_url", mantleBaseURL)
+		pyDictSet(mantleEntry, "key_env", "AWS_BEARER_TOKEN_BEDROCK")
+		pyDictSet(providers, "bedrock-mantle", mantleEntry)
+		pyDictSet(ensureDictSection(cfg, "bedrock"), "region", region)
 	}
 	model, err := finishModelFn(r.Env, r.Out, selected, "custom:bedrock-mantle", fmt.Sprintf("  Default model set to: %s (via Bedrock API Key, %s)", selected, region),
 		"  No change.", persistModelOptions{DropBaseURL: true, DropAPIMode: true, Finish: finish})
@@ -257,7 +257,9 @@ func modelFlowBedrock(r *ModelFlowRun) error {
 	runtimeURL := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com", region)
 	selected, _ := pickModelOrPromptFn(r.Env, r.Out, modelList, "  Model ID: ",
 		ModelSelectionPrompt{CurrentModel: r.CurrentModel, ConfirmProvider: "bedrock", ConfirmBaseURL: runtimeURL})
-	finish := func(cfg config.Tree, _ map[string]any) { ensureDictSection(cfg, "bedrock")["region"] = region }
+	finish := func(cfg config.Tree, _ map[string]any) {
+		pyDictSet(ensureDictSection(cfg, "bedrock"), "region", region)
+	}
 	_, err := finishModelFn(r.Env, r.Out, selected, "bedrock", fmt.Sprintf("  Default model set to: %s (via AWS Bedrock, %s)", selected, region),
 		"  No change.", persistModelOptions{BaseURL: optStr(runtimeURL), DropAPIMode: true, Finish: finish})
 	return err

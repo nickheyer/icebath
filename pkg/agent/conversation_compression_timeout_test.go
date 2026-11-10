@@ -347,7 +347,7 @@ func TestTimeoutStateFirstUseIsAtomic(t *testing.T) {
 
 func TestSilentWorkerTimesOutAndPreservesMessages(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{AuxiliaryTasks: func() []map[string]any { return nil }})
+	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{})
 	original := runnerRows("keep-me")
 	started, release := make(chan struct{}), make(chan struct{})
 	var commitAttempted atomic.Bool

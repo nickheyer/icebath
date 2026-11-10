@@ -47,6 +47,9 @@ var offerDescription = strings.Join([]string{
 	"Change it any time: icebath setup telemetry",
 }, "\n")
 
+// OfferDescription is the explainer the consent offer shows under its question
+func OfferDescription() string { return offerDescription }
+
 // ConsentAnswer is the consent state read from a raw config mapping
 type ConsentAnswer struct {
 	Enabled bool

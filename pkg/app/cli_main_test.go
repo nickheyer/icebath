@@ -29,9 +29,7 @@ func TestMain(m *testing.M) {
 	}
 	FormatRefusalStderr = func(message string) string { return message }
 	EmergencyCleanupAllBrowserSessions = func() {}
-	StopWakeWordListening = func(owner any) {}
 	SecurityAdvisoriesStartupBanner = func(ctx context.Context) string { return "" }
-	SelectProviderAndModel = func(ctx context.Context) error { return nil }
 	installAgentWiring()
 	os.Exit(m.Run())
 }

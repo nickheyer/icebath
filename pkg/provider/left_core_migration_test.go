@@ -22,7 +22,6 @@ func testPluginManagerHooks() PluginManagerHooks {
 		},
 		LoadError:       func(string) string { return "" },
 		DependencyHomes: func() ([]string, error) { return nil, nil },
-		AuxiliaryTasks:  func() []map[string]any { return nil },
 	}
 }
 

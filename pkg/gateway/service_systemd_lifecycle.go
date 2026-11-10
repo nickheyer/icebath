@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
 // Raised when systemctl --user cannot reach the user D-Bus session, the message is the remediation
@@ -45,7 +46,7 @@ type CalledProcessError struct {
 }
 
 func (e *CalledProcessError) Error() string {
-	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", strings.Join(e.Cmd, " "), e.ReturnCode)
+	return (&pysubprocess.CalledProcessError{Cmd: e.Cmd, Returncode: e.ReturnCode}).Error()
 }
 
 const (

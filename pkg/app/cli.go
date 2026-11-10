@@ -532,7 +532,6 @@ var (
 	activeTUIApp                             tuiApplication
 	activeTUIAppMu                           sync.Mutex
 	osExit                                   = os.Exit
-	StopWakeWordListening                    func(owner any)
 	EmergencyCleanupAllBrowserSessions       func()
 	TryAcquireActiveSession                  func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, string, error)
 	FormatRefusalStderr                      func(message string) string

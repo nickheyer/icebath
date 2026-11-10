@@ -272,9 +272,11 @@ func stopStateServer() error {
 }
 
 // Restarts the managed server so the router rescans the models directory, false when nothing restarted
-func refreshLocalRuntime() bool {
+func refreshLocalRuntime() bool { return refreshLocalRuntimeCtx(context.Background()) }
+
+// Restart of the managed server whose boot reads the config of the home ctx resolves, false when nothing restarted
+func refreshLocalRuntimeCtx(ctx context.Context) bool {
 	ok, err := func() (bool, error) {
-		ctx := context.Background()
 		if getLocalSupervisor() == nil {
 			live, err := bootStateEndpoint(ctx)
 			if err != nil {
@@ -289,7 +291,11 @@ func refreshLocalRuntime() bool {
 		} else if err := ShutdownLocalRuntime(); err != nil {
 			return false, err
 		}
-		sup, err := bootEnsureLocalRuntime(ctx, loadConfigTree(home.Process()), true)
+		cfg, err := config.LoadContext(ctx, home.Dir(ctx), config.EnvRefLookupContext(ctx))
+		if err != nil {
+			return false, err
+		}
+		sup, err := bootEnsureLocalRuntime(ctx, map[string]any(cfg), true)
 		return sup != nil, err
 	}()
 	if err != nil {

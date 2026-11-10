@@ -425,6 +425,9 @@ func runShellCommand(ctx context.Context, command string, env []string) ([]byte,
 // CacheIdentity is the stable catalog identity so token rotation never mints on cache reads
 func (s *CommandTokenSource) CacheIdentity() string { return "cmd:" + s.Command }
 
+// Mint of one key_cmd run, the command_token_source module attribute the hermes tests patch
+var commandTokenMintFn = func(ctx context.Context, s *CommandTokenSource) (string, time.Duration, error) { return s.mint(ctx) }
+
 // Token returns the cached bearer or mints a fresh one when the cache is stale
 func (s *CommandTokenSource) Token(ctx context.Context) (string, error) {
 	s.mu.Lock()
@@ -432,7 +435,7 @@ func (s *CommandTokenSource) Token(ctx context.Context) (string, error) {
 	if s.token != "" && s.now().Before(s.expiresAt) {
 		return s.token, nil
 	}
-	token, ttl, err := s.mint(ctx)
+	token, ttl, err := commandTokenMintFn(ctx, s)
 	if err != nil {
 		return "", err
 	}

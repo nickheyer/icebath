@@ -508,9 +508,9 @@ func saveModelChoice(env PoolEnv, modelID string) error {
 		return err
 	}
 	if model, ok := tree["model"].(map[string]any); ok {
-		model["default"] = modelID
+		pyDictSet(model, "default", modelID)
 	} else {
-		tree["model"] = map[string]any{"default": modelID}
+		pyDictSet(tree, "model", map[string]any{"default": modelID})
 	}
 	if err := config.Save(h, tree); err != nil {
 		return err

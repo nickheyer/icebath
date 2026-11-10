@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
-	"syscall"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -228,14 +228,14 @@ func captureMarks(t *testing.T) *markCapture {
 	return m
 }
 
-// Liveness of a status record's pid by signal zero, the gateway check's process probe
+// Liveness of a status record's pid through the portable process probe the gateway check uses
 func pidAlive(record *pyjson.Object) bool {
 	v, _ := record.Get("pid")
 	n, ok := pyInt(v)
 	if !ok || !n.IsInt64() || n.Int64() <= 0 {
 		return false
 	}
-	return syscall.Kill(int(n.Int64()), 0) == nil
+	return proc.Exists(int(n.Int64()))
 }
 
 // Clears this process's marker state for a fresh BeginProcess

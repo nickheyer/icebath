@@ -54,7 +54,6 @@ func TestMain(m *testing.M) {
 		Install:         func(context.Context, string, bool) (map[string]any, error) { return nil, nil },
 		LoadError:       func(string) string { return "" },
 		DependencyHomes: func() ([]string, error) { return nil, nil },
-		AuxiliaryTasks:  func() []map[string]any { return nil },
 	})
 	if tools.DelegationRegistryHooks.GetProvider == nil {
 		installDefaultDelegationRegistry()

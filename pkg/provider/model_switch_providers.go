@@ -277,7 +277,7 @@ func fetchPickerLiveModels(ctx context.Context, apiKey any, apiURL, nativeProvid
 		generic, ok = CachedFetchAPIModels(ctx, CachedFetchOptions{APIKey: key, BaseURL: apiURL, Timeout: timeout, Headers: resolved, APIMode: apiMode})
 	} else {
 		var ids []string
-		ids, ok = FetchAPIModels(ctx, key, apiURL, timeout, apiMode, resolved)
+		ids, ok = fetchAPIModelsFn(ctx, key, apiURL, timeout, apiMode, resolved)
 		generic = CatalogRows{IDs: nonNilStrings(ids)}
 	}
 	if ok && (len(generic.IDs) > 0 || useNative) {

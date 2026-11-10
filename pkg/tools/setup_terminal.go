@@ -306,6 +306,9 @@ func setupSyncFailureHandled(err error) bool {
 	return errors.As(err, &pyErr) && slices.Contains(setupHandledPyClasses, pyErr.Class)
 }
 
+// Exported setupSyncFailureHandled for the text to speech engine installs in pkg/media
+func SetupSyncFailureHandled(err error) bool { return setupSyncFailureHandled(err) }
+
 var setupHandledPyClasses = []string{"OSError", "IOError", "EnvironmentError", "FileNotFoundError", "FileExistsError", "PermissionError",
 	"IsADirectoryError", "NotADirectoryError", "TimeoutError", "InterruptedError", "BlockingIOError", "ChildProcessError",
 	"ProcessLookupError", "ConnectionError", "BrokenPipeError", "ConnectionAbortedError", "ConnectionRefusedError",

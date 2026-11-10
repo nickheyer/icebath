@@ -72,9 +72,6 @@ type WindowsInstallOptions struct {
 	ElevatedHandoff bool
 }
 
-// Yes or no question of the setup wizard, wired by cmd/icebath to the setup prompt
-var SetupPromptYesNo func(ctx context.Context, question string, def bool) bool
-
 // Swappable seams of the Windows backend, the functions its tests replace
 var (
 	winHome                         func(ctx context.Context) string
@@ -111,6 +108,7 @@ var (
 	winWaitForAPIServerPortFree     func(ctx context.Context, timeout float64) (bool, error)
 	winMarkPlannedRestart           func(ctx context.Context)
 	winSleep                        = time.Sleep
+	winMonotonic                    = pythread.Monotonic
 	winRename                       = os.Rename
 	winRemove                       = os.Remove
 	winIsStartupEntryInstalled      func(ctx context.Context) (bool, error)
@@ -1009,12 +1007,9 @@ func setupIsNoninteractive() bool {
 	return false
 }
 
-// Asks the wired setup prompt, panicking like any unassigned wiring hook
-func setupPromptYesNo(ctx context.Context, question string, def bool) bool {
-	if SetupPromptYesNo == nil {
-		panic("gateway.SetupPromptYesNo is not wired")
-	}
-	return SetupPromptYesNo(ctx, question, def)
+// Asks the hermes_cli.setup yes or no question the Windows backend imports
+func setupPromptYesNo(_ context.Context, question string, def bool) bool {
+	return WizardSetup.PromptYesNo(question, def)
 }
 
 // Install choice from a yes or no environment value, nil when unset or unrecognized
@@ -1755,11 +1750,18 @@ func drainWindowsGatewayPid(ctx context.Context, pid int, drainTimeout float64) 
 	if pid <= 0 {
 		return false
 	}
-	WritePlannedStopMarker(ctx, pid)
-	return pydeadline.PollUntil(func() (bool, bool) {
-		gone := !statusPidExists(pid)
-		return gone, gone
-	}, time.Duration(max(drainTimeout, 1.0)*float64(time.Second)), 500*time.Millisecond)
+	lifecycleWritePlannedStop(ctx, pid)
+	deadline := winMonotonic() + max(drainTimeout, 1.0)
+	for {
+		if !statusPidExists(pid) {
+			return true
+		}
+		remaining := deadline - winMonotonic()
+		if remaining <= 0 {
+			return false
+		}
+		winSleep(time.Duration(min(0.5, remaining) * float64(time.Second)))
+	}
 }
 
 // Restart drain timeout clamped to between one and thirty seconds so stop never wedges
@@ -1793,7 +1795,7 @@ func forceTerminateKnownGatewayPids(identities []gatewayPidIdentity) int {
 		if id.pid <= 0 || id.pid == own || !statusPidExists(id.pid) {
 			continue
 		}
-		err := TerminatePid(id.pid, true, id.start)
+		err := statusTerminatePid(id.pid, true, id.start)
 		switch {
 		case err == nil:
 			killed++

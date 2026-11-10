@@ -10,12 +10,12 @@
 - [x] hermes_constants_scratch_stuck.py
 - [x] hermes_dir_acl.py
 
-### 2. pkg/config: 100% (40 of 40 files completed)
+### 2. pkg/config: 70% (28 of 40 files completed)
 #### Config defaults, YAML load and merge, env expansion, managed overlay, migrations, skins
-- [x] hermes_cli/config.py
-- [x] hermes_cli/config_backend.py
-- [x] hermes_cli/config_backups.py
-- [x] hermes_cli/config_check_diagnostics.py
+- [ ] hermes_cli/config.py
+- [ ] hermes_cli/config_backend.py
+- [ ] hermes_cli/config_backups.py
+- [ ] hermes_cli/config_check_diagnostics.py
 - [x] hermes_cli/config_defaults.py
 - [x] hermes_cli/config_defaults_auxiliary.py
 - [x] hermes_cli/config_defaults_env.py
@@ -24,12 +24,12 @@
 - [x] hermes_cli/config_issues.py
 - [x] hermes_cli/config_key_notices.py
 - [x] hermes_cli/config_language.py
-- [x] hermes_cli/config_migrations.py
-- [x] hermes_cli/config_migrations_browser.py
+- [ ] hermes_cli/config_migrations.py
+- [ ] hermes_cli/config_migrations_browser.py
 - [x] hermes_cli/config_provider_env.py
 - [x] hermes_cli/config_providers.py
 - [x] hermes_cli/config_read_errors.py
-- [x] hermes_cli/config_runtime_keys.py
+- [ ] hermes_cli/config_runtime_keys.py
 - [x] hermes_cli/config_section_guard.py
 - [x] hermes_cli/config_show.py
 - [x] hermes_cli/config_value_checks.py
@@ -38,15 +38,15 @@
 - [x] hermes_cli/default_soul.py
 - [x] hermes_cli/managed_scope.py
 - [x] hermes_cli/prompt_stash.py
-- [x] hermes_cli/setup_hidden_env.py
+- [ ] hermes_cli/setup_hidden_env.py
 - [x] hermes_cli/skin_cmd.py
-- [x] hermes_cli/skin_engine.py
+- [ ] hermes_cli/skin_engine.py
 - [x] hermes_cli/ui_preferences.py
 - [x] hermes_yaml.py
-- [x] plugins/config_backends/__init__.py
+- [ ] plugins/config_backends/__init__.py
 - [x] plugins/config_backends/remote/__init__.py
-- [x] plugins/config_backends/remote/backend.py
-- [x] plugins/config_backends/remote/client.py
+- [ ] plugins/config_backends/remote/backend.py
+- [ ] plugins/config_backends/remote/client.py
 - [x] plugins/config_backends/remote/credentials.py
 - [x] plugins/config_backends/remote/destination.py
 - [x] plugins/config_backends/remote/diff.py
@@ -1211,7 +1211,7 @@
 - [ ] tools/browser_vault_context.py
 - [ ] tools/browser_vault_tool.py
 
-### 16. pkg/media: 32% (20 of 61 files completed)
+### 16. pkg/media: 39% (24 of 61 files completed)
 #### Image and video generation, TTS, transcription, voice mode, wake word
 - [x] agent/image_gen_provider.py
 - [x] agent/image_gen_registry.py
@@ -1223,7 +1223,7 @@
 - [ ] agent/video_gen_provider.py
 - [ ] agent/video_gen_registry.py
 - [ ] agent/voice_turn_route.py
-- [ ] hermes_cli/setup_tts.py
+- [x] hermes_cli/setup_tts.py
 - [ ] hermes_cli/voice.py
 - [x] plugins/image_gen/_common.py
 - [x] plugins/image_gen/deepinfra/__init__.py
@@ -1251,7 +1251,7 @@
 - [ ] tools/transcription_command.py
 - [ ] tools/transcription_common.py
 - [ ] tools/transcription_local.py
-- [ ] tools/transcription_streaming.py
+- [x] tools/transcription_streaming.py
 - [ ] tools/transcription_tools.py
 - [ ] tools/transcription_whisper_cpp.py
 - [x] tools/tts_command_provider.py
@@ -1267,9 +1267,9 @@
 - [ ] tools/tts_tool_providers.py
 - [ ] tools/tts_tool_speaker.py
 - [ ] tools/video_generation_tool.py
-- [ ] tools/voice_client_config.py
+- [x] tools/voice_client_config.py
 - [ ] tools/voice_live.py
-- [ ] tools/voice_mode.py
+- [x] tools/voice_mode.py
 - [ ] tools/voice_mode_transcript.py
 - [ ] tools/wake_word.py
 - [ ] tools/wake_word_engines.py
@@ -1972,7 +1972,7 @@
 - [x] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 13% (21 of 161 files completed)
+### 22. cmd/icebath: 16% (26 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -2016,7 +2016,7 @@
 - [ ] hermes_cli/main_install_repair.py
 - [ ] hermes_cli/main_platform_setup.py
 - [ ] hermes_cli/main_profile_recovery.py
-- [ ] hermes_cli/main_provider_setup.py
+- [x] hermes_cli/main_provider_setup.py
 - [ ] hermes_cli/main_query_file.py
 - [ ] hermes_cli/main_resume_args.py
 - [ ] hermes_cli/main_tui_launch.py
@@ -2046,11 +2046,11 @@
 - [ ] hermes_cli/sessions_discard.py
 - [ ] hermes_cli/sessions_owner.py
 - [ ] hermes_cli/sessions_repair_profiles.py
-- [ ] hermes_cli/setup.py
+- [x] hermes_cli/setup.py
 - [ ] hermes_cli/setup_agent_import.py
-- [ ] hermes_cli/setup_migration.py
-- [ ] hermes_cli/setup_quick.py
-- [ ] hermes_cli/setup_summary.py
+- [x] hermes_cli/setup_migration.py
+- [x] hermes_cli/setup_quick.py
+- [x] hermes_cli/setup_summary.py
 - [ ] hermes_cli/source_build.py
 - [ ] hermes_cli/source_check.py
 - [ ] hermes_cli/source_releases.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 21% (161 of 760 files completed)
+### 24. gateway: 21% (163 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2727,7 +2727,7 @@
 - [x] hermes_cli/resource_limits.py
 - [ ] hermes_cli/send_cmd.py
 - [ ] hermes_cli/service_manager.py
-- [ ] hermes_cli/setup_platforms.py
+- [x] hermes_cli/setup_platforms.py
 - [ ] hermes_cli/shared_session_attach.py
 - [ ] hermes_cli/slack_cli.py
 - [ ] hermes_cli/ssh_workspace_fs.py
@@ -2772,7 +2772,7 @@
 - [ ] hermes_cli/web_routers/display.py
 - [ ] hermes_cli/web_routers/files.py
 - [ ] hermes_cli/web_routers/git.py
-- [ ] hermes_cli/web_routers/local_models.py
+- [x] hermes_cli/web_routers/local_models.py
 - [ ] hermes_cli/web_routers/mcp.py
 - [ ] hermes_cli/web_routers/memory_providers.py
 - [ ] hermes_cli/web_routers/messaging.py

@@ -180,3 +180,9 @@ func TestConsentStateReadsRawConfigOnly(t *testing.T) {
 		t.Fatal(target)
 	}
 }
+
+func TestOfferDescriptionIsTheOfferExplainer(t *testing.T) {
+	if OfferDescription() != offerDescription || !strings.Contains(OfferDescription(), "Change it any time: icebath setup telemetry") {
+		t.Fatalf("description %q", OfferDescription())
+	}
+}

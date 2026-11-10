@@ -593,7 +593,7 @@ func arrangeUninstalledStart(t *testing.T) (*bytes.Buffer, *[]WindowsInstallOpti
 
 // Prompt double failing the test when asked
 func promptMustNotRun(t *testing.T, why string) {
-	schtasksSwap(t, &SetupPromptYesNo, func(context.Context, string, bool) bool { t.Fatal(why); return false })
+	schtasksSwap(t, &WizardSetup.PromptYesNo, func(string, bool) bool { t.Fatal(why); return false })
 }
 
 func TestStartWithNulStdinStartsTheGatewayButNeverInstallsLoginPersistence(t *testing.T) {
@@ -638,7 +638,7 @@ func TestStartWithoutTtyStartsTheGatewayButNeverInstallsLoginPersistence(t *test
 func TestStartOnTtyHandsBothAnswersToInstallAndHonoursTheEnvOptOut(t *testing.T) {
 	_, installs, spawns := arrangeUninstalledStart(t)
 	schtasksSwap(t, &winStdinIsatty, func() bool { return true })
-	schtasksSwap(t, &SetupPromptYesNo, func(context.Context, string, bool) bool { return true })
+	schtasksSwap(t, &WizardSetup.PromptYesNo, func(string, bool) bool { return true })
 	if err := WindowsStart(context.Background()); err != nil {
 		t.Fatal(err)
 	}

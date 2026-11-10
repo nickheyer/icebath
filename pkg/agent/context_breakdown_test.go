@@ -149,7 +149,9 @@ func TestContextProvenanceFollowsTheSelectedNumber(t *testing.T) {
 	ctx := context.Background()
 	comp := NewContextCompressor(ctx, ContextCompressorOptions{Model: "fixture", ConfigContextLength: &pin, QuietMode: true})
 	prev := breakdownPromptParts
-	breakdownPromptParts = func(context.Context, *AIAgent) (SystemPromptParts, error) { return SystemPromptParts{Stable: "fixture"}, nil }
+	breakdownPromptParts = func(context.Context, *AIAgent) (SystemPromptParts, error) {
+		return SystemPromptParts{Stable: "fixture"}, nil
+	}
 	t.Cleanup(func() { breakdownPromptParts = prev })
 	a := &AIAgent{contextCompressor: comp, model: "fixture", memoryEnabled: true, userProfileEnabled: true}
 	messages := []map[string]any{{"role": "user", "content": "fixture question"}}

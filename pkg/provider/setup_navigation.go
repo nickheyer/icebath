@@ -8,11 +8,15 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // SetupExit is the sys.exit a setup prompt raises on Ctrl-C, recovered at the command boundary
@@ -46,13 +50,18 @@ func setupUI() *cliui.Console {
 	return cliui.Default()
 }
 
-// WithSetupOutput routes setup prints to w for a command's duration, the returned func restores the process console
+// WithSetupOutput routes setup prints to w for a command's duration, the returned func restores the previous console
 func WithSetupOutput(w io.Writer) func() {
+	base := setupUI()
+	return WithSetupConsole(&cliui.Console{In: base.In, Out: w, Getenv: base.Getenv, StdinTTY: base.StdinTTY, StdoutTTY: base.StdoutTTY,
+		TermSize: base.TermSize, MaskedSecretPrompt: base.MaskedSecretPrompt, OpenScreen: base.OpenScreen})
+}
+
+// WithSetupConsole makes c the console setup prompts read and print on, the returned func restores the previous one
+func WithSetupConsole(c *cliui.Console) func() {
 	setupConsoleMu.Lock()
 	prev := setupConsole
-	base := cliui.Default()
-	setupConsole = &cliui.Console{In: base.In, Out: w, Getenv: base.Getenv, StdinTTY: base.StdinTTY, StdoutTTY: base.StdoutTTY,
-		TermSize: base.TermSize, MaskedSecretPrompt: base.MaskedSecretPrompt, OpenScreen: base.OpenScreen}
+	setupConsole = c
 	setupConsoleMu.Unlock()
 	return func() {
 		setupConsoleMu.Lock()
@@ -60,6 +69,9 @@ func WithSetupOutput(w io.Writer) func() {
 		setupConsoleMu.Unlock()
 	}
 }
+
+// SetupConsole is the console setup prompts read and print on
+func SetupConsole() *cliui.Console { return setupUI() }
 
 func setupPrintln(text string) { fmt.Fprintln(setupUI().Out, text) }
 
@@ -80,7 +92,7 @@ func SetupInfo(lines ...any) {
 			setupPrintln("")
 			continue
 		}
-		setupUI().PrintInfo(fmt.Sprint(line))
+		setupUI().PrintInfo(pyrepr.Str(line))
 	}
 }
 
@@ -103,10 +115,15 @@ func sanitizePastedInput(value string) string {
 
 // SetupPrompt reads a line with an optional default, a password through the masked prompt, Ctrl-C or EOF exiting 1
 func SetupPrompt(question, def string, password bool) string {
+	return setupPromptValue(question, def, password).(string)
+}
+
+// Reads a line with a default of any type, the stripped answer, else a truthy default, else empty
+func setupPromptValue(question string, def any, password bool) any {
 	c := setupUI()
 	display := question + ": "
-	if def != "" {
-		display = question + " [" + def + "]: "
+	if pyrepr.Truthy(def) {
+		display = question + " [" + pyrepr.Str(def) + "]: "
 	}
 	display = c.Color(display, cliui.Yellow)
 	var value string
@@ -123,10 +140,13 @@ func SetupPrompt(question, def string, password bool) string {
 		}
 		panic(err)
 	}
-	if trimmed := strings.TrimSpace(sanitizePastedInput(value)); trimmed != "" {
+	if trimmed := pystr.Strip(sanitizePastedInput(value)); trimmed != "" {
 		return trimmed
 	}
-	return def
+	if pyrepr.Truthy(def) {
+		return def
+	}
+	return ""
 }
 
 // Per invocation navigation state of the synchronous setup wizard
@@ -161,11 +181,31 @@ func currentSetupNavigation() *setupNavigationState {
 	return setupNavigation
 }
 
-// Control flow of a cancelled setup wizard, a panic so provider error handlers never swallow it
+// Setup navigation raised as a panic so provider error handlers never swallow it, marked for the metrics classifiers
+type setupControlFlow interface {
+	error
+	setupControlFlow()
+}
+
+// Control flow of a cancelled setup wizard
 type setupCancelled struct{}
+
+func (setupCancelled) Error() string     { return "" }
+func (setupCancelled) SetupCancelled()   {}
+func (setupCancelled) setupControlFlow() {}
 
 // Control flow returning to an earlier setup choice
 type setupGoBack struct{ promptIndex int }
+
+func (e setupGoBack) Error() string   { return strconv.Itoa(e.promptIndex) }
+func (setupGoBack) SetupGoBack()      {}
+func (setupGoBack) setupControlFlow() {}
+
+// Reports whether a recovered panic value is setup navigation that must keep unwinding
+func isSetupControlFlow(r any) bool {
+	_, ok := r.(setupControlFlow)
+	return ok
+}
 
 // Translates the shared menu events into setup control flow
 func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*cliui.MenuNavigationStart, error) {
@@ -207,6 +247,11 @@ func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 	return nil, nil
 }
 
+// HandleSetupMenuNavigation is the menu event handler a setup scope installs, cancel and back raised as setup control flow
+func HandleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*cliui.MenuNavigationStart, error) {
+	return handleSetupMenuNavigation(event, value...)
+}
+
 // Installs the setup navigation state and menu handler around fn and restores both after
 func setupNavigationScope(fn func()) {
 	setupNavMu.Lock()
@@ -244,7 +289,7 @@ func runSetupSection(action func() error) (nav *setupGoBack, err error) {
 	return nil, action()
 }
 
-// Runs sections with left arrow navigation, a first choice returning to the previous section and a later one replaying earlier picks
+// Runs sections with left arrow navigation, back from a first choice reopening the previous section
 func runSetupSteps(steps []SetupStep) error {
 	state := currentSetupNavigation()
 	sectionIndex := 0
@@ -296,8 +341,8 @@ func runSetupSteps(steps []SetupStep) error {
 	return nil
 }
 
-// Runs steps under a navigation scope, a cancel printing the message instead of unwinding
-func runSetupStepsWithNavigation(steps []SetupStep, cancelledMessage string) (err error) {
+// RunWithSetupNavigation runs fn under a navigation scope, a cancel printing the message instead of unwinding
+func RunWithSetupNavigation(fn func() error, cancelledMessage string) (err error) {
 	setupNavigationScope(func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -308,9 +353,26 @@ func runSetupStepsWithNavigation(steps []SetupStep, cancelledMessage string) (er
 				panic(r)
 			}
 		}()
-		err = runSetupSteps(steps)
+		err = fn()
 	})
 	return err
+}
+
+// Runs steps under a navigation scope, a cancel printing the message instead of unwinding
+func runSetupStepsWithNavigation(steps []SetupStep, cancelledMessage string) error {
+	return RunWithSetupNavigation(func() error { return runSetupSteps(steps) }, cancelledMessage)
+}
+
+// RunSetupSteps runs labelled sections with left arrow navigation between and inside them
+func RunSetupSteps(steps []SetupStep) error { return runSetupSteps(steps) }
+
+// SetupNavigationSectionIndex is the section index of the running setup navigation, false outside a setup scope
+func SetupNavigationSectionIndex() (int, bool) {
+	state := currentSetupNavigation()
+	if state == nil {
+		return 0, false
+	}
+	return state.sectionIndex, true
 }
 
 // RunSetupActionWithNavigation runs a setup style menu flow with Escape and nested Left navigation outside the wizard
@@ -384,7 +446,7 @@ func PromptYesNo(question string, def bool, description string) bool {
 			}
 			panic(err)
 		}
-		switch strings.ToLower(strings.TrimSpace(value)) {
+		switch pystr.Lower(pystr.Strip(value)) {
 		case "":
 			return def
 		case "y", "yes":
@@ -396,13 +458,25 @@ func PromptYesNo(question string, def bool, description string) bool {
 	}
 }
 
+// Multi select menu through the shared checklist on the setup console, a seam the tests replace
+var setupChecklist = func(title string, items []string, pre map[int]bool) (map[int]bool, error) {
+	return setupUI().CursesChecklist(context.Background(), title, items, pre, pre, nil)
+}
+
+// SwapSetupChecklist replaces the setup checklist, the returned func restoring the previous one
+func SwapSetupChecklist(fn func(title string, items []string, pre map[int]bool) (map[int]bool, error)) func() {
+	prev := setupChecklist
+	setupChecklist = fn
+	return func() { setupChecklist = prev }
+}
+
 // PromptChecklist asks for several items, returning sorted picked indices, cancel keeping the preselection
 func PromptChecklist(title string, items []string, preSelected []int) []int {
 	pre := map[int]bool{}
 	for _, i := range preSelected {
 		pre[i] = true
 	}
-	chosen, err := setupUI().CursesChecklist(context.Background(), title, items, pre, pre, nil)
+	chosen, err := setupChecklist(title, items, pre)
 	if err != nil {
 		if errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, cliui.ErrEOF) {
 			setupPrintln("")
@@ -420,14 +494,33 @@ func PromptChecklist(title string, items []string, preSelected []int) []int {
 	return out
 }
 
-// SetupWarning prints a yellow warning line on the setup console
-func SetupWarning(text string) { setupUI().PrintWarning(text) }
+// SetupPrintInfo prints a dim indented line on the setup console
+func SetupPrintInfo(text string) { setupUI().PrintInfo(text) }
+
+// SetupPrintSuccess prints a green check line on the setup console
+func SetupPrintSuccess(text string) { setupUI().PrintSuccess(text) }
+
+// SetupPrintWarning prints a yellow warning line on the setup console
+func SetupPrintWarning(text string) { setupUI().PrintWarning(text) }
+
+// SetupPrintError prints a red cross line on the setup console
+func SetupPrintError(text string) { setupUI().PrintError(text) }
+
+// SetupModuleInstalled reports whether the dependency environment finds a Python module, false when the probe fails
+func SetupModuleInstalled(ctx context.Context, name string) (found bool) {
+	defer func() {
+		if recover() != nil {
+			found = false
+		}
+	}()
+	return pm.AnchorImportable(ctx, name)
+}
 
 // SetupNavigationScope runs fn with the setup navigation state and menu handler installed
 func SetupNavigationScope(fn func()) { setupNavigationScope(fn) }
 
-// StubSetupRadiolist replaces the setup menu for tests, the returned func restores it
-func StubSetupRadiolist(fn func(question string, choices []string, def int, description string) int) func() {
+// SwapSetupRadiolist replaces the setup menu, the returned func restoring the previous one
+func SwapSetupRadiolist(fn func(question string, choices []string, def int, description string) int) func() {
 	prev := setupRadiolist
 	setupRadiolist = fn
 	return func() { setupRadiolist = prev }

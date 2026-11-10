@@ -260,7 +260,7 @@ func ensureAgentImportersPlugin(ctx context.Context, icebathHome string) (bool, 
 	if present {
 		verb, action = "enabled", "enable"
 	}
-	SetupWarning(fmt.Sprintf("The '%s' plugin could not be %s, so nothing was imported. Try again later with: icebath plugins %s %s",
+	SetupPrintWarning(fmt.Sprintf("The '%s' plugin could not be %s, so nothing was imported. Try again later with: icebath plugins %s %s",
 		AgentImportersPlugin, verb, action, AgentImportersPlugin))
 	return false, nil
 }
@@ -289,7 +289,7 @@ func runAgentImport(ctx context.Context, source ImportSource, icebathHome string
 	return !snapshotsEqual(homeSnapshot(icebathHome), before), nil
 }
 
-// Runs icebath import-agent for the source in a child process and returns its exit code, an argparse refusal retried after a plugin update
+// Runs icebath import-agent for the source in a child process, an argparse refusal retried after a plugin update
 func agentImportChild(ctx context.Context, source ImportSource, icebathHome string, extraArgs []string, fromSetup bool) (int, error) {
 	PrintSetupHeader("Importing from "+source.Label, true)
 	resolved, err := pypath.Resolve(icebathHome)
@@ -327,9 +327,9 @@ func agentImportChild(ctx context.Context, source ImportSource, icebathHome stri
 		}
 	}
 	if returncode == 2 {
-		SetupWarning(fmt.Sprintf("The %s import did not run. If the error names an invalid choice or unrecognized arguments, update the plugin first: icebath plugins update %s", source.Label, AgentImportersPlugin))
+		SetupPrintWarning(fmt.Sprintf("The %s import did not run. If the error names an invalid choice or unrecognized arguments, update the plugin first: icebath plugins update %s", source.Label, AgentImportersPlugin))
 	} else if returncode != 0 {
-		SetupWarning(fmt.Sprintf("The %s import stopped with errors; see the report above.", source.Label))
+		SetupPrintWarning(fmt.Sprintf("The %s import stopped with errors; see the report above.", source.Label))
 	}
 	return returncode, nil
 }

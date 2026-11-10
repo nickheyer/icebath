@@ -6,6 +6,4 @@ func init() {
 	registerVideoGenerateTools()
 	registerTextToSpeechTool()
 	registerTranscriptionAPI()
-	registerVoiceModeAPI()
-	registerWakeWordAPI()
 }

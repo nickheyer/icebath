@@ -14,6 +14,7 @@ import (
 // Dispatches the scratch prune child, then installs the secret source doubles the child env scrubber reads
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	dispatchWakeLockHolder()
 	home.DispatchScratchPruneEntry(context.Background())
 	tools.BundledPlatformSecretEnvs = func() []string { return nil }
 	tools.ConfigEnvTableKeys = func() []string { return nil }

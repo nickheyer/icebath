@@ -24,6 +24,9 @@ var qwenHTTPClientFn = func(timeout time.Duration) *http.Client {
 // Token endpoint the Qwen refresh posts to, swappable so tests aim it at a local server
 var qwenOAuthTokenURL = QwenOAuthTokenURL
 
+// Token refresh of the Qwen CLI credentials, the auth module attribute the hermes tests patch
+var refreshQwenCLITokensFn = refreshQwenCLITokens
+
 // Path of the Qwen CLI OAuth credentials file in the user home
 func qwenCLIAuthPath() string {
 	userHome, err := os.UserHomeDir()
@@ -182,7 +185,7 @@ func resolveQwenRuntimeCredentialsWith(env PoolEnv, forceRefresh, refreshIfExpir
 		shouldRefresh = qwenAccessTokenIsExpiring(tokens["expiry_date"], skew)
 	}
 	if shouldRefresh {
-		if tokens, err = refreshQwenCLITokens(env.ctx(), tokens, 20*time.Second); err != nil {
+		if tokens, err = refreshQwenCLITokensFn(env.ctx(), tokens, 20*time.Second); err != nil {
 			return nil, err
 		}
 	}

@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,7 +20,7 @@ func withStopPhrases(t *testing.T, phrases []string) {
 func withVoiceConfig(t *testing.T, cfg map[string]any) {
 	t.Helper()
 	orig := voiceConfig
-	voiceConfig = func() map[string]any { return cfg }
+	voiceConfig = func(context.Context) map[string]any { return cfg }
 	t.Cleanup(func() { voiceConfig = orig })
 }
 

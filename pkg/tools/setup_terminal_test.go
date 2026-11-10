@@ -269,6 +269,18 @@ func TestReadNearestVercelProjectBranches(t *testing.T) {
 }
 
 // A missing SDK installs the declared extra explicitly and reports a restart or the failure
+func TestSetupSyncFailureHandledMatchesTheWizardClasses(t *testing.T) {
+	handled := []error{pm.NewInstallError("venv", "resolution refused", ""), &pm.PyError{Class: "ValueError", Message: "bad"}, &pm.PyError{Class: "PermissionError", Message: "denied"}}
+	for _, err := range handled {
+		if !SetupSyncFailureHandled(err) {
+			t.Fatalf("%v not handled", err)
+		}
+	}
+	if SetupSyncFailureHandled(&pm.PyError{Class: "RuntimeError", Message: "boom"}) || SetupSyncFailureHandled(fmt.Errorf("boom")) {
+		t.Fatal("an unhandled class was reported handled")
+	}
+}
+
 func TestEnsureSDKUsesDeclaredExtrasAndReportsRestart(t *testing.T) {
 	for _, extra := range []string{"modal", "daytona", "vercel"} {
 		for _, succeeds := range []bool{true, false} {

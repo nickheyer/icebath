@@ -1,0 +1,3543 @@
+[
+ {
+  "name": "gateway_nothing_selected_no_service_manager",
+  "call": "setup_gateway",
+  "registry": [
+   {
+    "name": "irc",
+    "label": "IRC",
+    "emoji": "💬",
+    "required_env": [
+     "IRC_SERVER",
+     "IRC_CHANNEL",
+     "IRC_NICKNAME"
+    ],
+    "install_hint": "No extra packages needed (stdlib only)",
+    "setup_fn": true
+   }
+  ],
+  "answers": {
+   "checklist": [
+    []
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\n  No platforms selected. Run 'hermes setup gateway' later to configure.\n\n  No supported service manager found. Run: hermes gateway run\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)",
+      "💬 IRC  (not configured)"
+     ],
+     []
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.is_container"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_macos"
+    ],
+    [
+     "service.is_windows"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "gateway_irc_selected_counts_as_messaging",
+  "call": "setup_gateway",
+  "registry": [
+   {
+    "name": "irc",
+    "label": "IRC",
+    "emoji": "💬",
+    "required_env": [
+     "IRC_SERVER",
+     "IRC_CHANNEL",
+     "IRC_NICKNAME"
+    ],
+    "install_hint": "No extra packages needed (stdlib only)",
+    "setup_fn": true
+   }
+  ],
+  "configured": {
+   "irc": true
+  },
+  "answers": {
+   "checklist": [
+    [
+     1
+    ]
+   ]
+  },
+  "env": {
+   "TELEGRAM_BOT_TOKEN": "t",
+   "SLACK_BOT_TOKEN": "s",
+   "SLACK_HOME_CHANNEL": "C1",
+   "QQ_APP_ID": "q"
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\nirc setup complete!\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✓ Messaging platforms configured!\n\n⚠ No home channel set for: Telegram, QQBot\n     Without a home channel, cron jobs and cross-platform\n     messages can't be delivered to those platforms.\n     Set one later with /set-home in your chat, or:\n       hermes config set TELEGRAM_HOME_CHANNEL <channel_id>\n       hermes config set QQBOT_HOME_CHANNEL <channel_id>\n\n  No supported service manager found. Run: hermes gateway run\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)",
+      "💬 IRC  (configured)"
+     ],
+     [
+      1
+     ]
+    ],
+    [
+     "irc.setup_fn"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_HOME_CHANNEL"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_HOME_CHANNEL"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_SERVER_URL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_APP_ID"
+    ],
+    [
+     "setup.get_env_value",
+     "QQBOT_HOME_CHANNEL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_HOME_CHANNEL"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.is_container"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_macos"
+    ],
+    [
+     "service.is_windows"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "t",
+    "SLACK_BOT_TOKEN": "s",
+    "SLACK_HOME_CHANNEL": "C1",
+    "QQ_APP_ID": "q"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "gateway_mattermost_form_then_systemd_not_installed",
+  "call": "setup_gateway",
+  "registry": [
+   {
+    "name": "ntfy",
+    "label": "ntfy",
+    "emoji": "🔔",
+    "required_env": [],
+    "install_hint": "",
+    "setup_fn": false
+   }
+  ],
+  "service": {
+   "systemd": true
+  },
+  "answers": {
+   "checklist": [
+    [
+     0
+    ]
+   ],
+   "prompt": [
+    "https://mm.example.com",
+    "tok",
+    "uid26"
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\n\n  ─── 💬 Mattermost Setup ───\n\n    1. In Mattermost: Integrations → Bot Accounts → Add Bot Account\n       (System Console → Integrations → Bot Accounts must be enabled)\n    2. Give it a username (e.g. hermes) and copy the bot token\n    3. Works with any self-hosted Mattermost instance — enter your server URL\n    4. Find your user ID (the profile dialog does not show it):\n       Admins: System Console → User Management → Users → open your user.\n       Anyone: while logged in, open <server>/api/v4/users/me in a browser tab.\n       With the bot token: GET <server>/api/v4/users/username/<your-username>.\n       Copy the \"id\" field. /users/me with the bot token returns the bot's ID.\n       ⚠ This is NOT your username — it's a 26-character alphanumeric ID.\n    5. To get a channel ID: click the channel name → View Info → copy the ID\n\n    Your Mattermost server URL. Works with any self-hosted instance.\n✓   Saved MATTERMOST_URL\n\n    Paste the bot token from step 2 above.\n✓   Saved MATTERMOST_TOKEN\n\n    Your user ID from step 4 above (26 characters, not your @username).\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n✓   Saved — only these users can interact with the bot.\n\n✓ 💬 Mattermost configured!\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✓ Messaging platforms configured!\n\n  No service installed. Run: hermes gateway run\n  Without a service, scheduled jobs and messaging stop at logout/reboot; jobs cannot run while the host is off.\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "ntfy.check_fn"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)",
+      "🔔 ntfy  (not configured)"
+     ],
+     []
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_URL"
+    ],
+    [
+     "gateway.prompt",
+     "  Server URL (e.g. https://mm.example.com)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_URL",
+     "https://mm.example.com"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_TOKEN",
+     "tok"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_ALLOWED_USERS",
+     "uid26"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_HOME_CHANNEL"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_SERVER_URL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_APP_ID"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.is_container"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.served_profile_needs_no_service"
+    ],
+    [
+     "service.is_service_installed"
+    ]
+   ],
+   "env": {
+    "MATTERMOST_URL": "https://mm.example.com",
+    "MATTERMOST_TOKEN": "tok",
+    "MATTERMOST_ALLOWED_USERS": "uid26"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "gateway_installed_service_starts",
+  "call": "setup_gateway",
+  "registry": [
+   {
+    "name": "irc",
+    "label": "IRC",
+    "emoji": "💬",
+    "required_env": [
+     "IRC_SERVER",
+     "IRC_CHANNEL",
+     "IRC_NICKNAME"
+    ],
+    "install_hint": "No extra packages needed (stdlib only)",
+    "setup_fn": true
+   }
+  ],
+  "configured": {
+   "irc": true
+  },
+  "service": {
+   "systemd": true,
+   "installed": true
+  },
+  "answers": {
+   "checklist": [
+    []
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\n  No platforms selected. Run 'hermes setup gateway' later to configure.\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✓ Messaging platforms configured!\n\n✓ Gateway service running (cron jobs + messaging platforms).\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)",
+      "💬 IRC  (configured)"
+     ],
+     [
+      1
+     ]
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_SERVER_URL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_APP_ID"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.is_container"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.served_profile_needs_no_service"
+    ],
+    [
+     "service.is_service_installed"
+    ],
+    [
+     "service.systemd_start"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "gateway_running_restart_accepted",
+  "call": "setup_gateway",
+  "registry": [
+   {
+    "name": "irc",
+    "label": "IRC",
+    "emoji": "💬",
+    "required_env": [
+     "IRC_SERVER",
+     "IRC_CHANNEL",
+     "IRC_NICKNAME"
+    ],
+    "install_hint": "No extra packages needed (stdlib only)",
+    "setup_fn": true
+   }
+  ],
+  "configured": {
+   "irc": true
+  },
+  "service": {
+   "systemd": true,
+   "running": true
+  },
+  "answers": {
+   "checklist": [
+    []
+   ],
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\n  No platforms selected. Run 'hermes setup gateway' later to configure.\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✓ Messaging platforms configured!\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)",
+      "💬 IRC  (configured)"
+     ],
+     [
+      1
+     ]
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_SERVER_URL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_APP_ID"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.system_scope_would_need_root"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "  Restart the gateway to pick up changes?",
+     true
+    ],
+    [
+     "service.systemd_restart"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "gateway_running_restart_declined",
+  "call": "setup_gateway",
+  "registry": [
+   {
+    "name": "irc",
+    "label": "IRC",
+    "emoji": "💬",
+    "required_env": [
+     "IRC_SERVER",
+     "IRC_CHANNEL",
+     "IRC_NICKNAME"
+    ],
+    "install_hint": "No extra packages needed (stdlib only)",
+    "setup_fn": true
+   }
+  ],
+  "configured": {
+   "irc": true
+  },
+  "service": {
+   "systemd": true,
+   "running": true
+  },
+  "answers": {
+   "checklist": [
+    []
+   ],
+   "yes_no": [
+    false
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\n  No platforms selected. Run 'hermes setup gateway' later to configure.\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✓ Messaging platforms configured!\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)",
+      "💬 IRC  (configured)"
+     ],
+     [
+      1
+     ]
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_SERVER_URL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_APP_ID"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.system_scope_would_need_root"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "  Restart the gateway to pick up changes?",
+     true
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "gateway_running_needs_root",
+  "call": "setup_gateway",
+  "registry": [
+   {
+    "name": "irc",
+    "label": "IRC",
+    "emoji": "💬",
+    "required_env": [
+     "IRC_SERVER",
+     "IRC_CHANNEL",
+     "IRC_NICKNAME"
+    ],
+    "install_hint": "No extra packages needed (stdlib only)",
+    "setup_fn": true
+   }
+  ],
+  "configured": {
+   "irc": true
+  },
+  "service": {
+   "systemd": true,
+   "running": true,
+   "needs_root": true
+  },
+  "answers": {
+   "checklist": [
+    []
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\n  No platforms selected. Run 'hermes setup gateway' later to configure.\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✓ Messaging platforms configured!\n\n⚠ Gateway is installed as a system-wide service — restart requires root.\n    Options:\n      1. Restart it this time:\n           sudo systemctl restart hermes-gateway-f9d8df3f\n      2. Switch to a per-user service (recommended for personal use):\n           sudo hermes gateway uninstall --system\n           hermes gateway install\n           hermes gateway start\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)",
+      "💬 IRC  (configured)"
+     ],
+     [
+      1
+     ]
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_SERVER_URL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_APP_ID"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.system_scope_would_need_root"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "gateway_running_not_messaging_no_prompt",
+  "call": "setup_gateway",
+  "registry": [
+   {
+    "name": "irc",
+    "label": "IRC",
+    "emoji": "💬",
+    "required_env": [
+     "IRC_SERVER",
+     "IRC_CHANNEL",
+     "IRC_NICKNAME"
+    ],
+    "install_hint": "No extra packages needed (stdlib only)",
+    "setup_fn": true
+   }
+  ],
+  "service": {
+   "systemd": true,
+   "running": true
+  },
+  "answers": {
+   "checklist": [
+    []
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\n  No platforms selected. Run 'hermes setup gateway' later to configure.\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)",
+      "💬 IRC  (not configured)"
+     ],
+     []
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "irc.check_fn"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.system_scope_would_need_root"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "gateway_container",
+  "call": "setup_gateway",
+  "registry": [],
+  "service": {
+   "container": true
+  },
+  "answers": {
+   "checklist": [
+    []
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Messaging Platforms\n  Connect to messaging platforms to chat with Hermes from anywhere.\n  Toggle with Space, confirm with Enter.\n\n  No platforms selected. Run 'hermes setup gateway' later to configure.\n\n  Run hermes gateway run as the container main process; use a Docker restart policy for persistence.\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "setup.prompt_checklist",
+     "Select platforms to configure:",
+     [
+      "💬 Mattermost  (not configured)"
+     ],
+     []
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "service.supports_systemd_services"
+    ],
+    [
+     "service.is_service_running"
+    ],
+    [
+     "service.is_container"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "restart_user_systemd_unavailable",
+  "call": "restart",
+  "args": [
+   true,
+   true
+  ],
+  "service": {
+   "restart_error": "user_systemd"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "✗   Restart failed — user systemd not reachable:\n  user bus missing\n    run: loginctl enable-linger me\n",
+   "calls": [
+    [
+     "service.system_scope_would_need_root"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "  Restart the gateway to pick up changes?",
+     true
+    ],
+    [
+     "service.systemd_restart"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "restart_scope_requires_root",
+  "call": "restart",
+  "args": [
+   true,
+   true
+  ],
+  "service": {
+   "restart_error": "needs_root"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "✗   Restart failed: System gateway restart requires root. Re-run with sudo.\n⚠ Gateway is installed as a system-wide service — restart requires root.\n    Options:\n      1. Restart it this time:\n           sudo systemctl restart hermes-gateway-f9d8df3f\n      2. Switch to a per-user service (recommended for personal use):\n           sudo hermes gateway uninstall --system\n           hermes gateway install\n           hermes gateway start\n",
+   "calls": [
+    [
+     "service.system_scope_would_need_root"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "  Restart the gateway to pick up changes?",
+     true
+    ],
+    [
+     "service.systemd_restart"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "restart_generic_failure",
+  "call": "restart",
+  "args": [
+   true,
+   true
+  ],
+  "service": {
+   "restart_error": "boom"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "✗   Restart failed: boom\n",
+   "calls": [
+    [
+     "service.system_scope_would_need_root"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "  Restart the gateway to pick up changes?",
+     true
+    ],
+    [
+     "service.systemd_restart"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "restart_darwin",
+  "call": "restart",
+  "args": [
+   true,
+   false
+  ],
+  "service": {
+   "platform": "Darwin"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "",
+   "calls": [
+    [
+     "setup.prompt_yes_no",
+     "  Restart the gateway to pick up changes?",
+     true
+    ],
+    [
+     "service.launchd_restart"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "restart_windows",
+  "call": "restart",
+  "args": [
+   true,
+   false
+  ],
+  "service": {
+   "platform": "Windows"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "",
+   "calls": [
+    [
+     "setup.prompt_yes_no",
+     "  Restart the gateway to pick up changes?",
+     true
+    ],
+    [
+     "service.windows_restart"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "restart_linux_without_systemd",
+  "call": "restart",
+  "args": [
+   true,
+   false
+  ],
+  "service": {
+   "platform": "Linux"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "",
+   "calls": [
+    [
+     "setup.prompt_yes_no",
+     "  Restart the gateway to pick up changes?",
+     true
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_declined_nudge_adds_users",
+  "call": "setup_telegram",
+  "env": {
+   "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+  },
+  "answers": {
+   "yes_no": [
+    false,
+    true
+   ],
+   "prompt": [
+    "1, 2"
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  Telegram: already configured\n  ⚠️  Telegram has no user allowlist - anyone can use your bot!\n     To find your Telegram user ID: message @userinfobot\n✓ Telegram allowlist configured\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Reconfigure Telegram?",
+     false
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_ALLOWED_USERS"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Add allowed users now?",
+     true
+    ],
+    [
+     "setup.prompt",
+     "Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_ALLOWED_USERS",
+     "1,2"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "TELEGRAM_ALLOWED_USERS": "1,2"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_declined_nudge_skipped",
+  "call": "setup_telegram",
+  "env": {
+   "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+  },
+  "answers": {
+   "yes_no": [
+    false,
+    false
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  Telegram: already configured\n  ⚠️  Telegram has no user allowlist - anyone can use your bot!\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Reconfigure Telegram?",
+     false
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_ALLOWED_USERS"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Add allowed users now?",
+     true
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_declined_allowlist_present",
+  "call": "setup_telegram",
+  "env": {
+   "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+   "TELEGRAM_ALLOWED_USERS": "9"
+  },
+  "answers": {
+   "yes_no": [
+    false
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  Telegram: already configured\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Reconfigure Telegram?",
+     false
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_ALLOWED_USERS"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "TELEGRAM_ALLOWED_USERS": "9"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_manual_invalid_then_valid",
+  "call": "setup_telegram",
+  "answers": {
+   "prompt": [
+    "2",
+    "bad",
+    "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "",
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  How would you like to create your Telegram bot?\n\n    [1] Automatic (recommended)\n        Scan a QR code → confirm in Telegram → done.\n        No token copy-paste needed.\n\n    [2] Manual\n        Create a bot via @BotFather yourself and paste the token.\n\n  Create a bot via @BotFather on Telegram\n✗ Invalid token format. Expected: <numeric_id>:<alphanumeric_hash> (e.g., 123456789:ABCdefGHI-jklMNOpqrSTUvwxYZ)\n✓ Telegram token saved\n\n  🔒 Security: Restrict who can use your bot\n     To find your Telegram user ID:\n     1. Message @userinfobot on Telegram\n     2. It will reply with your numeric ID (e.g., 123456789)\n\n  ⚠️  No allowlist set - anyone who finds your bot can use it!\n\n  📬 Home Channel: where Hermes delivers cron job results,\n     cross-platform messages, and notifications.\n     For Telegram DMs, this is your user ID (same as above).\n     You can also set this later by typing /set-home in your Telegram chat.\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt",
+     "Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "setup.prompt",
+     "Telegram bot token",
+     null,
+     true
+    ],
+    [
+     "setup.prompt",
+     "Telegram bot token",
+     null,
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "setup.prompt",
+     "Allowed user IDs (comma-separated, leave empty for open access)",
+     null,
+     false
+    ],
+    [
+     "setup.prompt",
+     "Home channel ID (leave empty to set later)",
+     null,
+     false
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_manual_empty_token",
+  "call": "setup_telegram",
+  "answers": {
+   "prompt": [
+    "2",
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  How would you like to create your Telegram bot?\n\n    [1] Automatic (recommended)\n        Scan a QR code → confirm in Telegram → done.\n        No token copy-paste needed.\n\n    [2] Manual\n        Create a bot via @BotFather yourself and paste the token.\n\n  Create a bot via @BotFather on Telegram\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt",
+     "Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "setup.prompt",
+     "Telegram bot token",
+     null,
+     true
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_manual_allowlist_home_yes",
+  "call": "setup_telegram",
+  "answers": {
+   "prompt": [
+    "2",
+    "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "11, 22"
+   ],
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  How would you like to create your Telegram bot?\n\n    [1] Automatic (recommended)\n        Scan a QR code → confirm in Telegram → done.\n        No token copy-paste needed.\n\n    [2] Manual\n        Create a bot via @BotFather yourself and paste the token.\n\n  Create a bot via @BotFather on Telegram\n✓ Telegram token saved\n\n  🔒 Security: Restrict who can use your bot\n     To find your Telegram user ID:\n     1. Message @userinfobot on Telegram\n     2. It will reply with your numeric ID (e.g., 123456789)\n\n✓ Telegram allowlist configured - only listed users can use the bot\n\n  📬 Home Channel: where Hermes delivers cron job results,\n     cross-platform messages, and notifications.\n     For Telegram DMs, this is your user ID (same as above).\n✓ Telegram home channel set to 11\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt",
+     "Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "setup.prompt",
+     "Telegram bot token",
+     null,
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "setup.prompt",
+     "Allowed user IDs (comma-separated, leave empty for open access)",
+     null,
+     false
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_ALLOWED_USERS",
+     "11,22"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Use your user ID (11) as the home channel?",
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_HOME_CHANNEL",
+     "11"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "TELEGRAM_ALLOWED_USERS": "11,22",
+    "TELEGRAM_HOME_CHANNEL": "11"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_manual_allowlist_home_no",
+  "call": "setup_telegram",
+  "answers": {
+   "prompt": [
+    "2",
+    "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "11",
+    "C9"
+   ],
+   "yes_no": [
+    false
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  How would you like to create your Telegram bot?\n\n    [1] Automatic (recommended)\n        Scan a QR code → confirm in Telegram → done.\n        No token copy-paste needed.\n\n    [2] Manual\n        Create a bot via @BotFather yourself and paste the token.\n\n  Create a bot via @BotFather on Telegram\n✓ Telegram token saved\n\n  🔒 Security: Restrict who can use your bot\n     To find your Telegram user ID:\n     1. Message @userinfobot on Telegram\n     2. It will reply with your numeric ID (e.g., 123456789)\n\n✓ Telegram allowlist configured - only listed users can use the bot\n\n  📬 Home Channel: where Hermes delivers cron job results,\n     cross-platform messages, and notifications.\n     For Telegram DMs, this is your user ID (same as above).\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt",
+     "Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "setup.prompt",
+     "Telegram bot token",
+     null,
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "setup.prompt",
+     "Allowed user IDs (comma-separated, leave empty for open access)",
+     null,
+     false
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_ALLOWED_USERS",
+     "11"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Use your user ID (11) as the home channel?",
+     true
+    ],
+    [
+     "setup.prompt",
+     "Home channel ID (or leave empty to set later with /set-home in Telegram)",
+     null,
+     false
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_HOME_CHANNEL",
+     "C9"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "TELEGRAM_ALLOWED_USERS": "11",
+    "TELEGRAM_HOME_CHANNEL": "C9"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_auto_with_owner",
+  "call": "setup_telegram",
+  "hermes_home": "profiles/oracle",
+  "auto": {
+   "token": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+   "owner_user_id": 42
+  },
+  "answers": {
+   "prompt": [
+    "1",
+    "7, 42 ,8"
+   ],
+   "yes_no": [
+    true,
+    true
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  How would you like to create your Telegram bot?\n\n    [1] Automatic (recommended)\n        Scan a QR code → confirm in Telegram → done.\n        No token copy-paste needed.\n\n    [2] Manual\n        Create a bot via @BotFather yourself and paste the token.\n\n✓ Telegram token saved\n\n  🔒 Security: Restrict who can use your bot\n     To find your Telegram user ID:\n     1. Message @userinfobot on Telegram\n     2. It will reply with your numeric ID (e.g., 123456789)\n\n✓ Detected your Telegram user ID: 42\n✓ Telegram allowlist configured - only listed users can use the bot\n\n  📬 Home Channel: where Hermes delivers cron job results,\n     cross-platform messages, and notifications.\n     For Telegram DMs, this is your user ID (same as above).\n✓ Telegram home channel set to 42\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt",
+     "Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "auto_setup_telegram_bot_result",
+     "oracle"
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Allow this Telegram account to use the bot?",
+     true
+    ],
+    [
+     "setup.prompt",
+     "Additional allowed user IDs (comma-separated, optional)",
+     null,
+     false
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_ALLOWED_USERS",
+     "42,7,8"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Use your user ID (42) as the home channel?",
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_HOME_CHANNEL",
+     "42"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "TELEGRAM_ALLOWED_USERS": "42,7,8",
+    "TELEGRAM_HOME_CHANNEL": "42"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_auto_owner_declined",
+  "call": "setup_telegram",
+  "auto": {
+   "token": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+   "owner_user_id": 42
+  },
+  "answers": {
+   "prompt": [
+    "1",
+    "",
+    ""
+   ],
+   "yes_no": [
+    false
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  How would you like to create your Telegram bot?\n\n    [1] Automatic (recommended)\n        Scan a QR code → confirm in Telegram → done.\n        No token copy-paste needed.\n\n    [2] Manual\n        Create a bot via @BotFather yourself and paste the token.\n\n✓ Telegram token saved\n\n  🔒 Security: Restrict who can use your bot\n     To find your Telegram user ID:\n     1. Message @userinfobot on Telegram\n     2. It will reply with your numeric ID (e.g., 123456789)\n\n✓ Detected your Telegram user ID: 42\n  ⚠️  No allowlist set - anyone who finds your bot can use it!\n\n  📬 Home Channel: where Hermes delivers cron job results,\n     cross-platform messages, and notifications.\n     For Telegram DMs, this is your user ID (same as above).\n     You can also set this later by typing /set-home in your Telegram chat.\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt",
+     "Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "auto_setup_telegram_bot_result",
+     null
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Allow this Telegram account to use the bot?",
+     true
+    ],
+    [
+     "setup.prompt",
+     "Allowed user IDs (comma-separated, leave empty for open access)",
+     null,
+     false
+    ],
+    [
+     "setup.prompt",
+     "Home channel ID (leave empty to set later)",
+     null,
+     false
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_auto_invalid_token_falls_back",
+  "call": "setup_telegram",
+  "auto": {
+   "token": "nope",
+   "owner_user_id": 42
+  },
+  "answers": {
+   "prompt": [
+    "1",
+    "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "",
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  How would you like to create your Telegram bot?\n\n    [1] Automatic (recommended)\n        Scan a QR code → confirm in Telegram → done.\n        No token copy-paste needed.\n\n    [2] Manual\n        Create a bot via @BotFather yourself and paste the token.\n\n✗ Automatic setup returned an invalid Telegram bot token.\n\n  Falling back to manual setup...\n\n  Create a bot via @BotFather on Telegram\n✓ Telegram token saved\n\n  🔒 Security: Restrict who can use your bot\n     To find your Telegram user ID:\n     1. Message @userinfobot on Telegram\n     2. It will reply with your numeric ID (e.g., 123456789)\n\n  ⚠️  No allowlist set - anyone who finds your bot can use it!\n\n  📬 Home Channel: where Hermes delivers cron job results,\n     cross-platform messages, and notifications.\n     For Telegram DMs, this is your user ID (same as above).\n     You can also set this later by typing /set-home in your Telegram chat.\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt",
+     "Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "auto_setup_telegram_bot_result",
+     null
+    ],
+    [
+     "setup.prompt",
+     "Telegram bot token",
+     null,
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "setup.prompt",
+     "Allowed user IDs (comma-separated, leave empty for open access)",
+     null,
+     false
+    ],
+    [
+     "setup.prompt",
+     "Home channel ID (leave empty to set later)",
+     null,
+     false
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_auto_none_falls_back",
+  "call": "setup_telegram",
+  "auto": null,
+  "answers": {
+   "prompt": [
+    "1",
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Telegram\n  How would you like to create your Telegram bot?\n\n    [1] Automatic (recommended)\n        Scan a QR code → confirm in Telegram → done.\n        No token copy-paste needed.\n\n    [2] Manual\n        Create a bot via @BotFather yourself and paste the token.\n\n\n  Falling back to manual setup...\n\n  Create a bot via @BotFather on Telegram\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.prompt",
+     "Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "auto_setup_telegram_bot_result",
+     null
+    ],
+    [
+     "setup.prompt",
+     "Telegram bot token",
+     null,
+     true
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "webhooks_declined",
+  "call": "setup_webhooks",
+  "env": {
+   "WEBHOOK_ENABLED": "true"
+  },
+  "answers": {
+   "yes_no": [
+    false
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Webhooks\n  Webhooks: already configured\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "WEBHOOK_ENABLED"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Reconfigure webhooks?",
+     false
+    ]
+   ],
+   "env": {
+    "WEBHOOK_ENABLED": "true"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "webhooks_full",
+  "call": "setup_webhooks",
+  "answers": {
+   "prompt": [
+    " 9000 ",
+    "hmac"
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Webhooks\n\n⚠ ⚠  Webhook and SMS platforms require exposing gateway ports to the\n⚠    internet. For security, run the gateway in a sandboxed environment\n⚠    (Docker, VM, etc.) to limit blast radius from prompt injection.\n\n     Full guide: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/\n\n✓ Webhook port set to  9000 \n✓ Webhook secret saved\n\n✓ Webhooks enabled! Next steps:\n     1. Define webhook routes in ~/.hermes/config.yaml\n     2. Point your service (GitHub, GitLab, etc.) at:\n        http://your-server:8644/webhooks/<route-name>\n\n     Route configuration guide:\n     https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/#configuring-routes\n\n     Open config in your editor:  hermes config edit\n     Open config in your editor:  hermes config edit\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "WEBHOOK_ENABLED"
+    ],
+    [
+     "setup.prompt",
+     "Webhook port (default 8644)",
+     null,
+     false
+    ],
+    [
+     "setup.save_env_value",
+     "WEBHOOK_PORT",
+     "9000"
+    ],
+    [
+     "setup.prompt",
+     "Global HMAC secret (shared across all routes)",
+     null,
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "WEBHOOK_SECRET",
+     "hmac"
+    ],
+    [
+     "setup.save_env_value",
+     "WEBHOOK_ENABLED",
+     "true"
+    ]
+   ],
+   "env": {
+    "WEBHOOK_PORT": "9000",
+    "WEBHOOK_SECRET": "hmac",
+    "WEBHOOK_ENABLED": "true"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "webhooks_invalid_port_no_secret",
+  "call": "setup_webhooks",
+  "answers": {
+   "prompt": [
+    "80x",
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Webhooks\n\n⚠ ⚠  Webhook and SMS platforms require exposing gateway ports to the\n⚠    internet. For security, run the gateway in a sandboxed environment\n⚠    (Docker, VM, etc.) to limit blast radius from prompt injection.\n\n     Full guide: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/\n\n⚠ Invalid port number, using default 8644\n⚠ No secret set — you must configure per-route secrets in config.yaml\n\n✓ Webhooks enabled! Next steps:\n     1. Define webhook routes in ~/.hermes/config.yaml\n     2. Point your service (GitHub, GitLab, etc.) at:\n        http://your-server:8644/webhooks/<route-name>\n\n     Route configuration guide:\n     https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/#configuring-routes\n\n     Open config in your editor:  hermes config edit\n     Open config in your editor:  hermes config edit\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "WEBHOOK_ENABLED"
+    ],
+    [
+     "setup.prompt",
+     "Webhook port (default 8644)",
+     null,
+     false
+    ],
+    [
+     "setup.prompt",
+     "Global HMAC secret (shared across all routes)",
+     null,
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "WEBHOOK_ENABLED",
+     "true"
+    ]
+   ],
+   "env": {
+    "WEBHOOK_ENABLED": "true"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "webhooks_reconfigure_default_port",
+  "call": "setup_webhooks",
+  "env": {
+   "WEBHOOK_ENABLED": "true"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ],
+   "prompt": [
+    "",
+    "s"
+   ]
+  },
+  "want": {
+   "stdout": "\n◆ Webhooks\n  Webhooks: already configured\n\n⚠ ⚠  Webhook and SMS platforms require exposing gateway ports to the\n⚠    internet. For security, run the gateway in a sandboxed environment\n⚠    (Docker, VM, etc.) to limit blast radius from prompt injection.\n\n     Full guide: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/\n\n✓ Webhook secret saved\n\n✓ Webhooks enabled! Next steps:\n     1. Define webhook routes in ~/.hermes/config.yaml\n     2. Point your service (GitHub, GitLab, etc.) at:\n        http://your-server:8644/webhooks/<route-name>\n\n     Route configuration guide:\n     https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/#configuring-routes\n\n     Open config in your editor:  hermes config edit\n     Open config in your editor:  hermes config edit\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "WEBHOOK_ENABLED"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Reconfigure webhooks?",
+     false
+    ],
+    [
+     "setup.prompt",
+     "Webhook port (default 8644)",
+     null,
+     false
+    ],
+    [
+     "setup.prompt",
+     "Global HMAC secret (shared across all routes)",
+     null,
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "WEBHOOK_SECRET",
+     "s"
+    ],
+    [
+     "setup.save_env_value",
+     "WEBHOOK_ENABLED",
+     "true"
+    ]
+   ],
+   "env": {
+    "WEBHOOK_ENABLED": "true",
+    "WEBHOOK_SECRET": "s"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "missing_home_channels_none",
+  "call": "warn_missing",
+  "env": {
+   "TELEGRAM_BOT_TOKEN": "t",
+   "TELEGRAM_HOME_CHANNEL": "1"
+  },
+  "want": {
+   "stdout": "",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_HOME_CHANNEL"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_SERVER_URL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_APP_ID"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "t",
+    "TELEGRAM_HOME_CHANNEL": "1"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "missing_home_channels_three",
+  "call": "warn_missing",
+  "env": {
+   "TELEGRAM_BOT_TOKEN": "t",
+   "DISCORD_BOT_TOKEN": "d",
+   "BLUEBUBBLES_SERVER_URL": "u",
+   "QQ_APP_ID": "q",
+   "QQ_HOME_CHANNEL": "x"
+  },
+  "want": {
+   "stdout": "\n⚠ No home channel set for: Telegram, Discord, BlueBubbles\n     Without a home channel, cron jobs and cross-platform\n     messages can't be delivered to those platforms.\n     Set one later with /set-home in your chat, or:\n       hermes config set TELEGRAM_HOME_CHANNEL <channel_id>\n       hermes config set DISCORD_HOME_CHANNEL <channel_id>\n       hermes config set BLUEBUBBLES_HOME_CHANNEL <channel_id>\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "TELEGRAM_HOME_CHANNEL"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "DISCORD_HOME_CHANNEL"
+    ],
+    [
+     "setup.get_env_value",
+     "SLACK_BOT_TOKEN"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_SERVER_URL"
+    ],
+    [
+     "setup.get_env_value",
+     "BLUEBUBBLES_HOME_CHANNEL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_APP_ID"
+    ],
+    [
+     "setup.get_env_value",
+     "QQBOT_HOME_CHANNEL"
+    ],
+    [
+     "setup.get_env_value",
+     "QQ_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "t",
+    "DISCORD_BOT_TOKEN": "d",
+    "BLUEBUBBLES_SERVER_URL": "u",
+    "QQ_APP_ID": "q",
+    "QQ_HOME_CHANNEL": "x"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "configure_registry_setup_fn",
+  "call": "configure",
+  "platform": {
+   "registry": "irc"
+  },
+  "registry": [
+   {
+    "name": "irc",
+    "label": "IRC",
+    "emoji": "💬",
+    "required_env": [
+     "IRC_SERVER",
+     "IRC_CHANNEL",
+     "IRC_NICKNAME"
+    ],
+    "install_hint": "No extra packages needed (stdlib only)",
+    "setup_fn": true
+   }
+  ],
+  "want": {
+   "stdout": "irc setup complete!\n",
+   "calls": [
+    [
+     "irc.setup_fn"
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "configure_registry_required_env_hint",
+  "call": "configure",
+  "platform": {
+   "registry": "matrix"
+  },
+  "registry": [
+   {
+    "name": "matrix",
+    "label": "Matrix",
+    "emoji": "🧩",
+    "required_env": [
+     "MATRIX_HOMESERVER"
+    ],
+    "install_hint": "pip extra",
+    "setup_fn": false
+   }
+  ],
+  "want": {
+   "stdout": "\n  ─── 🧩 Matrix Setup ───\n    Set these env vars in ~/.hermes/.env: MATRIX_HOMESERVER\n    pip extra\n",
+   "calls": [],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "configure_registry_no_required_env",
+  "call": "configure",
+  "platform": {
+   "registry": "ntfy"
+  },
+  "registry": [
+   {
+    "name": "ntfy",
+    "label": "ntfy",
+    "emoji": "🔔",
+    "required_env": [],
+    "install_hint": "",
+    "setup_fn": false
+   }
+  ],
+  "want": {
+   "stdout": "\n  ─── 🔔 ntfy Setup ───\n    Configure ntfy in config.yaml under gateway.platforms.ntfy\n",
+   "calls": [],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "configure_builtin_form",
+  "call": "configure",
+  "platform": {
+   "form": "mattermost"
+  },
+  "answers": {
+   "prompt": [
+    "https://mm",
+    "tok",
+    ""
+   ],
+   "choice": [
+    3
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 💬 Mattermost Setup ───\n\n    1. In Mattermost: Integrations → Bot Accounts → Add Bot Account\n       (System Console → Integrations → Bot Accounts must be enabled)\n    2. Give it a username (e.g. hermes) and copy the bot token\n    3. Works with any self-hosted Mattermost instance — enter your server URL\n    4. Find your user ID (the profile dialog does not show it):\n       Admins: System Console → User Management → Users → open your user.\n       Anyone: while logged in, open <server>/api/v4/users/me in a browser tab.\n       With the bot token: GET <server>/api/v4/users/username/<your-username>.\n       Copy the \"id\" field. /users/me with the bot token returns the bot's ID.\n       ⚠ This is NOT your username — it's a 26-character alphanumeric ID.\n    5. To get a channel ID: click the channel name → View Info → copy the ID\n\n    Your Mattermost server URL. Works with any self-hosted instance.\n✓   Saved MATTERMOST_URL\n\n    Paste the bot token from step 2 above.\n✓   Saved MATTERMOST_TOKEN\n\n    Your user ID from step 4 above (26 characters, not your @username).\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n    Skipped — configure later with 'hermes gateway setup'\n\n✓ 💬 Mattermost configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_URL"
+    ],
+    [
+     "gateway.prompt",
+     "  Server URL (e.g. https://mm.example.com)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_URL",
+     "https://mm"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_TOKEN",
+     "tok"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (anyone can message the bot)",
+      "Use DM pairing (unknown users request access, you approve with 'hermes pairing approve')",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Skip for now (bot will deny all users until configured)"
+     ],
+     1
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "MATTERMOST_URL": "https://mm",
+    "MATTERMOST_TOKEN": "tok"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "standard_reconfigure_declined",
+  "call": "standard",
+  "platform": {
+   "form": "mattermost"
+  },
+  "env": {
+   "MATTERMOST_TOKEN": "x"
+  },
+  "answers": {
+   "yes_no": [
+    false
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 💬 Mattermost Setup ───\n\n    1. In Mattermost: Integrations → Bot Accounts → Add Bot Account\n       (System Console → Integrations → Bot Accounts must be enabled)\n    2. Give it a username (e.g. hermes) and copy the bot token\n    3. Works with any self-hosted Mattermost instance — enter your server URL\n    4. Find your user ID (the profile dialog does not show it):\n       Admins: System Console → User Management → Users → open your user.\n       Anyone: while logged in, open <server>/api/v4/users/me in a browser tab.\n       With the bot token: GET <server>/api/v4/users/username/<your-username>.\n       Copy the \"id\" field. /users/me with the bot token returns the bot's ID.\n       ⚠ This is NOT your username — it's a 26-character alphanumeric ID.\n    5. To get a channel ID: click the channel name → View Info → copy the ID\n\n✓ Mattermost is already configured.\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt_yes_no",
+     "  Reconfigure Mattermost?",
+     false
+    ]
+   ],
+   "env": {
+    "MATTERMOST_TOKEN": "x"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "standard_reconfigure_accepted_current_values",
+  "call": "standard",
+  "platform": {
+   "form": "mattermost"
+  },
+  "env": {
+   "MATTERMOST_TOKEN": "x",
+   "MATTERMOST_URL": "https://old",
+   "MATTERMOST_ALLOWED_USERS": "u1"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ],
+   "prompt": [
+    "",
+    "new-token",
+    "a b,c"
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 💬 Mattermost Setup ───\n\n    1. In Mattermost: Integrations → Bot Accounts → Add Bot Account\n       (System Console → Integrations → Bot Accounts must be enabled)\n    2. Give it a username (e.g. hermes) and copy the bot token\n    3. Works with any self-hosted Mattermost instance — enter your server URL\n    4. Find your user ID (the profile dialog does not show it):\n       Admins: System Console → User Management → Users → open your user.\n       Anyone: while logged in, open <server>/api/v4/users/me in a browser tab.\n       With the bot token: GET <server>/api/v4/users/username/<your-username>.\n       Copy the \"id\" field. /users/me with the bot token returns the bot's ID.\n       ⚠ This is NOT your username — it's a 26-character alphanumeric ID.\n    5. To get a channel ID: click the channel name → View Info → copy the ID\n\n✓ Mattermost is already configured.\n\n    Your Mattermost server URL. Works with any self-hosted instance.\n    Current: https://old\n    Skipped (can configure later)\n\n    Paste the bot token from step 2 above.\n✓   Saved MATTERMOST_TOKEN\n\n    Your user ID from step 4 above (26 characters, not your @username).\n    Current: u1\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n✓   Saved — only these users can interact with the bot.\n\n✓ 💬 Mattermost configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt_yes_no",
+     "  Reconfigure Mattermost?",
+     false
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_URL"
+    ],
+    [
+     "gateway.prompt",
+     "  Server URL (e.g. https://mm.example.com)",
+     null,
+     false
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_TOKEN",
+     "new-token"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_ALLOWED_USERS",
+     "ab,c"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "MATTERMOST_TOKEN": "new-token",
+    "MATTERMOST_URL": "https://old",
+    "MATTERMOST_ALLOWED_USERS": "ab,c"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "standard_token_skipped",
+  "call": "standard",
+  "platform": {
+   "form": "mattermost"
+  },
+  "answers": {
+   "prompt": [
+    "https://mm",
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 💬 Mattermost Setup ───\n\n    1. In Mattermost: Integrations → Bot Accounts → Add Bot Account\n       (System Console → Integrations → Bot Accounts must be enabled)\n    2. Give it a username (e.g. hermes) and copy the bot token\n    3. Works with any self-hosted Mattermost instance — enter your server URL\n    4. Find your user ID (the profile dialog does not show it):\n       Admins: System Console → User Management → Users → open your user.\n       Anyone: while logged in, open <server>/api/v4/users/me in a browser tab.\n       With the bot token: GET <server>/api/v4/users/username/<your-username>.\n       Copy the \"id\" field. /users/me with the bot token returns the bot's ID.\n       ⚠ This is NOT your username — it's a 26-character alphanumeric ID.\n    5. To get a channel ID: click the channel name → View Info → copy the ID\n\n    Your Mattermost server URL. Works with any self-hosted instance.\n✓   Saved MATTERMOST_URL\n\n    Paste the bot token from step 2 above.\n⚠   Skipped — Mattermost won't work without this.\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_URL"
+    ],
+    [
+     "gateway.prompt",
+     "  Server URL (e.g. https://mm.example.com)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_URL",
+     "https://mm"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ]
+   ],
+   "env": {
+    "MATTERMOST_URL": "https://mm"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "standard_open_access",
+  "call": "standard",
+  "platform": {
+   "form": "mattermost"
+  },
+  "answers": {
+   "prompt": [
+    "u",
+    "t",
+    ""
+   ],
+   "choice": [
+    0
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 💬 Mattermost Setup ───\n\n    1. In Mattermost: Integrations → Bot Accounts → Add Bot Account\n       (System Console → Integrations → Bot Accounts must be enabled)\n    2. Give it a username (e.g. hermes) and copy the bot token\n    3. Works with any self-hosted Mattermost instance — enter your server URL\n    4. Find your user ID (the profile dialog does not show it):\n       Admins: System Console → User Management → Users → open your user.\n       Anyone: while logged in, open <server>/api/v4/users/me in a browser tab.\n       With the bot token: GET <server>/api/v4/users/username/<your-username>.\n       Copy the \"id\" field. /users/me with the bot token returns the bot's ID.\n       ⚠ This is NOT your username — it's a 26-character alphanumeric ID.\n    5. To get a channel ID: click the channel name → View Info → copy the ID\n\n    Your Mattermost server URL. Works with any self-hosted instance.\n✓   Saved MATTERMOST_URL\n\n    Paste the bot token from step 2 above.\n✓   Saved MATTERMOST_TOKEN\n\n    Your user ID from step 4 above (26 characters, not your @username).\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n⚠   Open access enabled — anyone can use your bot!\n\n✓ 💬 Mattermost configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_URL"
+    ],
+    [
+     "gateway.prompt",
+     "  Server URL (e.g. https://mm.example.com)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_URL",
+     "u"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_TOKEN",
+     "t"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (anyone can message the bot)",
+      "Use DM pairing (unknown users request access, you approve with 'hermes pairing approve')",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Skip for now (bot will deny all users until configured)"
+     ],
+     1
+    ],
+    [
+     "gateway.save_env_value",
+     "GATEWAY_ALLOW_ALL_USERS",
+     "true"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "MATTERMOST_URL": "u",
+    "MATTERMOST_TOKEN": "t",
+    "GATEWAY_ALLOW_ALL_USERS": "true"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "standard_pairing",
+  "call": "standard",
+  "platform": {
+   "form": "mattermost"
+  },
+  "answers": {
+   "prompt": [
+    "u",
+    "t",
+    ""
+   ],
+   "choice": [
+    1
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 💬 Mattermost Setup ───\n\n    1. In Mattermost: Integrations → Bot Accounts → Add Bot Account\n       (System Console → Integrations → Bot Accounts must be enabled)\n    2. Give it a username (e.g. hermes) and copy the bot token\n    3. Works with any self-hosted Mattermost instance — enter your server URL\n    4. Find your user ID (the profile dialog does not show it):\n       Admins: System Console → User Management → Users → open your user.\n       Anyone: while logged in, open <server>/api/v4/users/me in a browser tab.\n       With the bot token: GET <server>/api/v4/users/username/<your-username>.\n       Copy the \"id\" field. /users/me with the bot token returns the bot's ID.\n       ⚠ This is NOT your username — it's a 26-character alphanumeric ID.\n    5. To get a channel ID: click the channel name → View Info → copy the ID\n\n    Your Mattermost server URL. Works with any self-hosted instance.\n✓   Saved MATTERMOST_URL\n\n    Paste the bot token from step 2 above.\n✓   Saved MATTERMOST_TOKEN\n\n    Your user ID from step 4 above (26 characters, not your @username).\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n✓   DM pairing mode — users will receive a code to request access.\n    Approve with: hermes pairing approve <platform> <code>\n\n✓ 💬 Mattermost configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_URL"
+    ],
+    [
+     "gateway.prompt",
+     "  Server URL (e.g. https://mm.example.com)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_URL",
+     "u"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_TOKEN",
+     "t"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (anyone can message the bot)",
+      "Use DM pairing (unknown users request access, you approve with 'hermes pairing approve')",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Skip for now (bot will deny all users until configured)"
+     ],
+     1
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "MATTERMOST_URL": "u",
+    "MATTERMOST_TOKEN": "t"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "standard_decline_unknown",
+  "call": "standard",
+  "platform": {
+   "form": "mattermost"
+  },
+  "answers": {
+   "prompt": [
+    "u",
+    "t",
+    ""
+   ],
+   "choice": [
+    2
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 💬 Mattermost Setup ───\n\n    1. In Mattermost: Integrations → Bot Accounts → Add Bot Account\n       (System Console → Integrations → Bot Accounts must be enabled)\n    2. Give it a username (e.g. hermes) and copy the bot token\n    3. Works with any self-hosted Mattermost instance — enter your server URL\n    4. Find your user ID (the profile dialog does not show it):\n       Admins: System Console → User Management → Users → open your user.\n       Anyone: while logged in, open <server>/api/v4/users/me in a browser tab.\n       With the bot token: GET <server>/api/v4/users/username/<your-username>.\n       Copy the \"id\" field. /users/me with the bot token returns the bot's ID.\n       ⚠ This is NOT your username — it's a 26-character alphanumeric ID.\n    5. To get a channel ID: click the channel name → View Info → copy the ID\n\n    Your Mattermost server URL. Works with any self-hosted instance.\n✓   Saved MATTERMOST_URL\n\n    Paste the bot token from step 2 above.\n✓   Saved MATTERMOST_TOKEN\n\n    Your user ID from step 4 above (26 characters, not your @username).\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n✓   Unknown senders get one polite decline, then silence (unauthorized_dm_behavior: decline).\n\n✓ 💬 Mattermost configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_URL"
+    ],
+    [
+     "gateway.prompt",
+     "  Server URL (e.g. https://mm.example.com)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_URL",
+     "u"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "MATTERMOST_TOKEN",
+     "t"
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (anyone can message the bot)",
+      "Use DM pairing (unknown users request access, you approve with 'hermes pairing approve')",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Skip for now (bot will deny all users until configured)"
+     ],
+     1
+    ],
+    [
+     "gateway.write_platform_config_field",
+     "mattermost",
+     "unauthorized_dm_behavior",
+     "decline",
+     true
+    ],
+    [
+     "gateway.get_env_value",
+     "MATTERMOST_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "MATTERMOST_URL": "u",
+    "MATTERMOST_TOKEN": "t"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "email_open_access",
+  "call": "standard",
+  "platform": {
+   "form": "email_form"
+  },
+  "answers": {
+   "prompt": [
+    "me@x",
+    ""
+   ],
+   "choice": [
+    0
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📧 Email Setup ───\n\n    Mailbox address.\n✓   Saved EMAIL_ADDRESS\n\n    Sender addresses.\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n⚠   Open access enabled — anyone can use your bot!\n\n✓ 📧 Email configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "EMAIL_ADDRESS"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_ADDRESS"
+    ],
+    [
+     "gateway.prompt",
+     "  Address",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "EMAIL_ADDRESS",
+     "me@x"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed senders",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (any email sender can message the bot)",
+      "Use DM pairing (unknown email senders receive a pairing code)",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Keep unknown senders silent"
+     ],
+     3
+    ],
+    [
+     "gateway.save_env_value",
+     "EMAIL_ALLOW_ALL_USERS",
+     "true"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "EMAIL_ADDRESS": "me@x",
+    "EMAIL_ALLOW_ALL_USERS": "true"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "email_pairing",
+  "call": "standard",
+  "platform": {
+   "form": "email_form"
+  },
+  "answers": {
+   "prompt": [
+    "me@x",
+    ""
+   ],
+   "choice": [
+    1
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📧 Email Setup ───\n\n    Mailbox address.\n✓   Saved EMAIL_ADDRESS\n\n    Sender addresses.\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n✓   DM pairing mode — users will receive a code to request access.\n    Approve with: hermes pairing approve <platform> <code>\n\n✓ 📧 Email configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "EMAIL_ADDRESS"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_ADDRESS"
+    ],
+    [
+     "gateway.prompt",
+     "  Address",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "EMAIL_ADDRESS",
+     "me@x"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed senders",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (any email sender can message the bot)",
+      "Use DM pairing (unknown email senders receive a pairing code)",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Keep unknown senders silent"
+     ],
+     3
+    ],
+    [
+     "gateway.write_platform_config_field",
+     "email",
+     "unauthorized_dm_behavior",
+     "pair",
+     true
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "EMAIL_ADDRESS": "me@x"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "email_decline",
+  "call": "standard",
+  "platform": {
+   "form": "email_form"
+  },
+  "answers": {
+   "prompt": [
+    "me@x",
+    ""
+   ],
+   "choice": [
+    2
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📧 Email Setup ───\n\n    Mailbox address.\n✓   Saved EMAIL_ADDRESS\n\n    Sender addresses.\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n✓   Unknown senders get one polite decline, then silence (unauthorized_dm_behavior: decline).\n\n✓ 📧 Email configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "EMAIL_ADDRESS"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_ADDRESS"
+    ],
+    [
+     "gateway.prompt",
+     "  Address",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "EMAIL_ADDRESS",
+     "me@x"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed senders",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (any email sender can message the bot)",
+      "Use DM pairing (unknown email senders receive a pairing code)",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Keep unknown senders silent"
+     ],
+     3
+    ],
+    [
+     "gateway.write_platform_config_field",
+     "email",
+     "unauthorized_dm_behavior",
+     "decline",
+     true
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "EMAIL_ADDRESS": "me@x"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "email_silent",
+  "call": "standard",
+  "platform": {
+   "form": "email_form"
+  },
+  "answers": {
+   "prompt": [
+    "me@x",
+    ""
+   ],
+   "choice": [
+    3
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📧 Email Setup ───\n\n    Mailbox address.\n✓   Saved EMAIL_ADDRESS\n\n    Sender addresses.\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n✓   Unknown email senders will be ignored.\n\n✓ 📧 Email configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "EMAIL_ADDRESS"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_ADDRESS"
+    ],
+    [
+     "gateway.prompt",
+     "  Address",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "EMAIL_ADDRESS",
+     "me@x"
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed senders",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (any email sender can message the bot)",
+      "Use DM pairing (unknown email senders receive a pairing code)",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Keep unknown senders silent"
+     ],
+     3
+    ],
+    [
+     "gateway.get_env_value",
+     "EMAIL_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "EMAIL_ADDRESS": "me@x"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "discord_ids_cleaned",
+  "call": "standard",
+  "platform": {
+   "form": "discord_form"
+  },
+  "answers": {
+   "prompt": [
+    "tok",
+    "<@!123>, user:456 , <@789>,USER:000,,<@>"
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 🎮 Discord Setup ───\n\n    Discord bot token.\n✓   Saved DISCORD_BOT_TOKEN\n\n    Discord user IDs.\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n✓   Saved — only these users can interact with the bot.\n\n✓ 🎮 Discord configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "DISCORD_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "DISCORD_BOT_TOKEN",
+     "tok"
+    ],
+    [
+     "gateway.get_env_value",
+     "DISCORD_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "DISCORD_ALLOWED_USERS",
+     "123,456,789,000"
+    ],
+    [
+     "gateway.get_env_value",
+     "DISCORD_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "DISCORD_BOT_TOKEN": "tok",
+    "DISCORD_ALLOWED_USERS": "123,456,789,000"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_form_auto_saved_owner_allowed",
+  "call": "standard",
+  "platform": {
+   "form": "telegram_form"
+  },
+  "auto": {
+   "token": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+   "owner_user_id": 42
+  },
+  "answers": {
+   "prompt": [
+    "1",
+    "5, 42"
+   ],
+   "yes_no": [
+    true,
+    true
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📱 Telegram Setup ───\n\n    Telegram can be configured automatically with a managed bot:\n    [1] Automatic (scan QR → confirm in Telegram → done)\n    [2] Manual BotFather token\n✓   Saved TELEGRAM_BOT_TOKEN\n\n    Paste the bot token.\n    Token saved by automatic setup.\n\n    Numeric user IDs.\n✓   Detected your Telegram user ID: 42\n✓   Saved — only these users can interact with the bot.\n✓   Home channel set to 42\n\n✓ 📱 Telegram configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "auto_setup_telegram_bot_result",
+     null
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt_yes_no",
+     "  Allow this Telegram account to use the bot?",
+     true
+    ],
+    [
+     "gateway.prompt",
+     "  Additional allowed user IDs (comma-separated, optional)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_ALLOWED_USERS",
+     "42,5"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_HOME_CHANNEL"
+    ],
+    [
+     "gateway.prompt_yes_no",
+     "  Use your user ID (42) as the home channel?",
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_HOME_CHANNEL",
+     "42"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "TELEGRAM_ALLOWED_USERS": "42,5",
+    "TELEGRAM_HOME_CHANNEL": "42"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_form_auto_owner_declined_manual_list",
+  "call": "standard",
+  "platform": {
+   "form": "telegram_form"
+  },
+  "auto": {
+   "token": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+   "owner_user_id": 42
+  },
+  "answers": {
+   "prompt": [
+    "1",
+    "77,88"
+   ],
+   "yes_no": [
+    false,
+    false
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📱 Telegram Setup ───\n\n    Telegram can be configured automatically with a managed bot:\n    [1] Automatic (scan QR → confirm in Telegram → done)\n    [2] Manual BotFather token\n✓   Saved TELEGRAM_BOT_TOKEN\n\n    Paste the bot token.\n    Token saved by automatic setup.\n\n    Numeric user IDs.\n✓   Detected your Telegram user ID: 42\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n✓   Saved — only these users can interact with the bot.\n\n✓ 📱 Telegram configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "auto_setup_telegram_bot_result",
+     null
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt_yes_no",
+     "  Allow this Telegram account to use the bot?",
+     true
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_ALLOWED_USERS",
+     "77,88"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_HOME_CHANNEL"
+    ],
+    [
+     "gateway.prompt_yes_no",
+     "  Use your user ID (77) as the home channel?",
+     true
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "TELEGRAM_ALLOWED_USERS": "77,88"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_form_manual_choice",
+  "call": "standard",
+  "platform": {
+   "form": "telegram_form"
+  },
+  "answers": {
+   "prompt": [
+    "2",
+    "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "31"
+   ],
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📱 Telegram Setup ───\n\n    Telegram can be configured automatically with a managed bot:\n    [1] Automatic (scan QR → confirm in Telegram → done)\n    [2] Manual BotFather token\n\n    Paste the bot token.\n✓   Saved TELEGRAM_BOT_TOKEN\n\n    Numeric user IDs.\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n✓   Saved — only these users can interact with the bot.\n✓   Home channel set to 31\n\n✓ 📱 Telegram configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_ALLOWED_USERS",
+     "31"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_HOME_CHANNEL"
+    ],
+    [
+     "gateway.prompt_yes_no",
+     "  Use your user ID (31) as the home channel?",
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_HOME_CHANNEL",
+     "31"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "TELEGRAM_ALLOWED_USERS": "31",
+    "TELEGRAM_HOME_CHANNEL": "31"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_form_auto_invalid",
+  "call": "standard",
+  "platform": {
+   "form": "telegram_form"
+  },
+  "auto": {
+   "token": "short",
+   "owner_user_id": null
+  },
+  "answers": {
+   "prompt": [
+    "1",
+    "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    ""
+   ],
+   "choice": [
+    3
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📱 Telegram Setup ───\n\n    Telegram can be configured automatically with a managed bot:\n    [1] Automatic (scan QR → confirm in Telegram → done)\n    [2] Manual BotFather token\n⚠   Automatic setup returned an invalid Telegram token.\n\n    Falling back to manual setup...\n\n    Paste the bot token.\n✓   Saved TELEGRAM_BOT_TOKEN\n\n    Numeric user IDs.\n    The gateway DENIES all users by default for security.\n    Enter user IDs to create an allowlist, or leave empty\n    and you'll be asked about open access next.\n\n    Skipped — configure later with 'hermes gateway setup'\n\n✓ 📱 Telegram configured!\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "auto_setup_telegram_bot_result",
+     null
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ],
+    [
+     "gateway.save_env_value",
+     "TELEGRAM_BOT_TOKEN",
+     "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_ALLOWED_USERS"
+    ],
+    [
+     "gateway.prompt",
+     "  Allowed user IDs (comma-separated)",
+     null,
+     false
+    ],
+    [
+     "gateway.prompt_choice",
+     "  How should unauthorized users be handled?",
+     [
+      "Enable open access (anyone can message the bot)",
+      "Use DM pairing (unknown users request access, you approve with 'hermes pairing approve')",
+      "Politely decline unknown senders (one-time message, then silence)",
+      "Skip for now (bot will deny all users until configured)"
+     ],
+     1
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_HOME_CHANNEL"
+    ]
+   ],
+   "env": {
+    "TELEGRAM_BOT_TOKEN": "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+   },
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "telegram_form_auto_none",
+  "call": "standard",
+  "platform": {
+   "form": "telegram_form"
+  },
+  "auto": null,
+  "answers": {
+   "prompt": [
+    "1",
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "\n  ─── 📱 Telegram Setup ───\n\n    Telegram can be configured automatically with a managed bot:\n    [1] Automatic (scan QR → confirm in Telegram → done)\n    [2] Manual BotFather token\n\n    Falling back to manual setup...\n\n    Paste the bot token.\n⚠   Skipped — Telegram won't work without this.\n",
+   "calls": [
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Choice [1/2]",
+     "1",
+     false
+    ],
+    [
+     "auto_setup_telegram_bot_result",
+     null
+    ],
+    [
+     "gateway.get_env_value",
+     "TELEGRAM_BOT_TOKEN"
+    ],
+    [
+     "gateway.prompt",
+     "  Bot token",
+     null,
+     true
+    ]
+   ],
+   "env": {},
+   "result": null,
+   "error": null
+  }
+ },
+ {
+  "name": "declines_unset",
+  "call": "declines",
+  "args": [
+   "Signal",
+   "Reconfigure Signal?",
+   "SIGNAL_A",
+   "SIGNAL_B"
+  ],
+  "want": {
+   "stdout": "",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "SIGNAL_A"
+    ],
+    [
+     "setup.get_env_value",
+     "SIGNAL_B"
+    ]
+   ],
+   "env": {},
+   "result": false,
+   "error": null
+  }
+ },
+ {
+  "name": "declines_second_set_kept",
+  "call": "declines",
+  "args": [
+   "Signal",
+   "Reconfigure Signal?",
+   "SIGNAL_A",
+   "SIGNAL_B"
+  ],
+  "env": {
+   "SIGNAL_B": "x"
+  },
+  "answers": {
+   "yes_no": [
+    true
+   ]
+  },
+  "want": {
+   "stdout": "  Signal: already configured\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "SIGNAL_A"
+    ],
+    [
+     "setup.get_env_value",
+     "SIGNAL_B"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Reconfigure Signal?",
+     false
+    ]
+   ],
+   "env": {
+    "SIGNAL_B": "x"
+   },
+   "result": false,
+   "error": null
+  }
+ },
+ {
+  "name": "declines_set_declined",
+  "call": "declines",
+  "args": [
+   "Signal",
+   "Reconfigure Signal?",
+   "SIGNAL_A"
+  ],
+  "env": {
+   "SIGNAL_A": "x"
+  },
+  "answers": {
+   "yes_no": [
+    false
+   ]
+  },
+  "want": {
+   "stdout": "  Signal: already configured\n",
+   "calls": [
+    [
+     "setup.get_env_value",
+     "SIGNAL_A"
+    ],
+    [
+     "setup.prompt_yes_no",
+     "Reconfigure Signal?",
+     false
+    ]
+   ],
+   "env": {
+    "SIGNAL_A": "x"
+   },
+   "result": true,
+   "error": null
+  }
+ },
+ {
+  "name": "save_prompted_success_value",
+  "call": "save_prompted",
+  "args": [
+   "K",
+   "Question",
+   {
+    "password": true,
+    "success_msg": "Saved {value} {{ok}}"
+   }
+  ],
+  "answers": {
+   "prompt": [
+    "v1"
+   ]
+  },
+  "want": {
+   "stdout": "✓ Saved v1 {ok}\n",
+   "calls": [
+    [
+     "setup.prompt",
+     "Question",
+     null,
+     true
+    ],
+    [
+     "setup.save_env_value",
+     "K",
+     "v1"
+    ]
+   ],
+   "env": {
+    "K": "v1"
+   },
+   "result": "v1",
+   "error": null
+  }
+ },
+ {
+  "name": "save_prompted_skip",
+  "call": "save_prompted",
+  "args": [
+   "K",
+   "Question",
+   {
+    "skip_msg": "Skipped it"
+   }
+  ],
+  "answers": {
+   "prompt": [
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "⚠ Skipped it\n",
+   "calls": [
+    [
+     "setup.prompt",
+     "Question",
+     null,
+     false
+    ]
+   ],
+   "env": {},
+   "result": "",
+   "error": null
+  }
+ },
+ {
+  "name": "save_prompted_silent_skip",
+  "call": "save_prompted",
+  "args": [
+   "K",
+   "Question",
+   {}
+  ],
+  "answers": {
+   "prompt": [
+    ""
+   ]
+  },
+  "want": {
+   "stdout": "",
+   "calls": [
+    [
+     "setup.prompt",
+     "Question",
+     null,
+     false
+    ]
+   ],
+   "env": {},
+   "result": "",
+   "error": null
+  }
+ }
+]

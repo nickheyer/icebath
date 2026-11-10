@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os/exec"
-	"strconv"
+	"math/big"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Portal models offered when the live Qwen catalog is unavailable
@@ -49,20 +49,29 @@ func askIndex(out io.Writer, prompt string, count int, echoCancel bool) (int, bo
 			}
 			return 0, false, true
 		}
-		val = strings.TrimSpace(val)
+		val = pystr.Strip(val)
 		if val == "" {
 			return 0, true, false
 		}
-		n, perr := strconv.Atoi(strings.ReplaceAll(strings.TrimPrefix(val, "+"), "_", ""))
-		if perr != nil {
+		idx, ok := numberedIndex(val)
+		if !ok {
 			fmt.Fprintln(out, "Please enter a number")
 			continue
 		}
-		if n-1 >= 0 && n-1 < count {
-			return n - 1, false, false
+		if idx.Sign() >= 0 && idx.Cmp(big.NewInt(int64(count))) < 0 {
+			return int(idx.Int64()), false, false
 		}
 		fmt.Fprintf(out, "Please enter 1-%d\n", count)
 	}
+}
+
+// Numbered answer as int(val) minus one, false for a ValueError
+func numberedIndex(val string) (*big.Int, bool) {
+	n, ok := pystr.IntText(val)
+	if !ok {
+		return nil, false
+	}
+	return new(big.Int).Sub(n, big.NewInt(1)), true
 }
 
 // Provider menu index with arrow keys, a numbered fallback without curses, false when the user cancels
@@ -96,10 +105,10 @@ func stepfunBaseURLForRegion(region string) string {
 	if region == "china" {
 		return StepfunStepPlanCNBaseURL
 	}
-	return StepFunIntlBaseURL
+	return StepfunStepPlanIntlBaseURL
 }
 
-// PromptAPIKey is the api key entry with keep, replace and clear when a key exists, abort true when the caller must return
+// PromptAPIKey asks for an api key, keep replace or clear when one exists, abort true when the caller must return
 func PromptAPIKey(env PoolEnv, out io.Writer, pconfig Profile, existingKey, providerID, existingSource string) (string, bool, error) {
 	h := envHome(env)
 	name := profileDisplayName(pconfig)
@@ -180,6 +189,13 @@ func PromptAPIKey(env PoolEnv, out io.Writer, pconfig Profile, existingKey, prov
 	return existingKey, false, nil
 }
 
+// Claude Code credential seams, swappable so tests script the setup token run like the hermes monkeypatches
+var (
+	anthRunOAuthSetupTokenFn        = RunOAuthSetupToken
+	anthReadClaudeCodeCredentialsFn = ReadClaudeCodeCredentials
+	anthIsClaudeCodeTokenValidFn    = IsClaudeCodeTokenValid
+)
+
 // Runs the Claude OAuth setup token flow, true when credentials were saved
 func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save func(name, value string) error) (bool, error) {
 	h := envHome(env)
@@ -187,9 +203,9 @@ func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save
 		var creds map[string]any
 		func() {
 			defer func() { _ = recover() }()
-			creds = ReadClaudeCodeCredentials(env)
+			creds = anthReadClaudeCodeCredentialsFn(env)
 		}()
-		if len(creds) > 0 && (IsClaudeCodeTokenValid(creds) || truthy(creds["refreshToken"])) {
+		if len(creds) > 0 && (anthIsClaudeCodeTokenValidFn(creds) || truthy(creds["refreshToken"])) {
 			if err := config.UseAnthropicClaudeCodeCredentials(ctx, h, save); err != nil {
 				return false, err
 			}
@@ -215,14 +231,8 @@ func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save
 	}
 	flowSay(out, "", "  Running 'claude setup-token' — follow the prompts below.",
 		"  A browser window will open for you to authorize access.", "")
-	var token string
-	var err error
-	if findClaudeCodeCLI("claude") == "" {
-		err = exec.ErrNotFound
-	} else {
-		token, err = RunOAuthSetupToken(env)
-	}
-	if err != nil && (errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist)) {
+	token, err := anthRunOAuthSetupTokenFn(env)
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		flowSay(out, "", "  The 'claude' CLI is required for OAuth login.", "", "  To install and authenticate:", "",
 			"    1. Install Claude Code:  npm install -g @anthropic-ai/claude-code",
 			"    2. Run:                  claude setup-token",

@@ -239,3 +239,27 @@ func TestGatewayRuntimeLockPathSitsBesideThePidFile(t *testing.T) {
 		t.Fatalf("lock path %q", got)
 	}
 }
+
+func TestFindGatewayPIDsForReadsTheDefaultPidPathWhenTheLockDirIsOverridden(t *testing.T) {
+	root, _ := stopRefusalHomes(t)
+	locks := filepath.Join(t.TempDir(), "elsewhere", "gateway-locks")
+	t.Setenv("ICEBATH_GATEWAY_LOCK_DIR", locks)
+	var asked []string
+	swapSetup(t, &statusGetRunningPid, func(p string, cleanup bool) (int, bool, error) {
+		if !cleanup {
+			t.Fatal("ownership read asked for a pid without stale cleanup")
+		}
+		asked = append(asked, p)
+		return 5151, true, nil
+	})
+	processHomes(t, func(int) (string, bool, error) { return root, true, nil })
+	if got := gatewayPids(t); !slices.Equal(got, []int{5151}) {
+		t.Fatalf("find_gateway_pids = %v", got)
+	}
+	if !slices.Equal(asked, []string{"", ""}) {
+		t.Fatalf("get_running_pid asked with pid paths %q, want the unscoped default twice", asked)
+	}
+	if got := HostRecordPath(roleGateway); filepath.Dir(got) != locks {
+		t.Fatalf("host record %q not under the overridden lock dir %q", got, locks)
+	}
+}

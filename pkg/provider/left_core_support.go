@@ -27,7 +27,6 @@ type PluginManagerHooks struct {
 	Install         func(ctx context.Context, name string, consent bool) (map[string]any, error)
 	LoadError       func(plugin string) string
 	DependencyHomes func() ([]string, error)
-	AuxiliaryTasks  func() []map[string]any
 }
 
 var pluginManagerHooks atomic.Pointer[PluginManagerHooks]
@@ -45,9 +44,6 @@ func leftCoreHooks() *PluginManagerHooks {
 
 // Installed plugin manager hooks, panicking when the plugins package never installed them
 func PluginHooks() *PluginManagerHooks { return leftCoreHooks() }
-
-// Plugin auxiliary task registrations sorted by key after idempotent discovery
-func pluginAuxiliaryTasks() []map[string]any { return leftCoreHooks().AuxiliaryTasks() }
 
 const (
 	leftCoreRetrySeconds    = 3600.0

@@ -160,6 +160,8 @@ func identityMatches(identity *pyjson.Object, pid int, h string) bool {
 	return same
 }
 
+var hostProbe = probeHostGateway
+
 var hostProbeCache struct {
 	mu     sync.Mutex
 	set    bool
@@ -180,8 +182,8 @@ func InvalidateHostGatewayCache() { invalidateHostGatewayCache() }
 
 // Live owner from the record proven first, its served set only from a matching identify answer
 func probeHostGateway(wait time.Duration) *HostGateway {
-	record := readHostRecord(roleGateway, false)
-	if record == nil || !recordNamesLiveOwner(record) {
+	record := hostReadRecord(roleGateway, false)
+	if record == nil || !hostRecordLive(record) {
 		return nil
 	}
 	h := hostRecordHome(record)
@@ -207,7 +209,7 @@ func hostGatewayWait(wait time.Duration) *HostGateway {
 		return result
 	}
 	hostProbeCache.mu.Unlock()
-	result := probeHostGateway(wait)
+	result := hostProbe(wait)
 	hostProbeCache.mu.Lock()
 	hostProbeCache.set, hostProbeCache.at, hostProbeCache.result = true, time.Now(), result
 	hostProbeCache.mu.Unlock()

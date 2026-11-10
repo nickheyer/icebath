@@ -5,8 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -189,11 +187,11 @@ func SeedExtraFromEnv(ctx context.Context, spec []EnvSeedRow, homeEnv, homeDefau
 	return seed, nil
 }
 
-// Connected check for env only platforms, every named var non blank through the scope aware env reader
+// Connected check for env only platforms, every named var non blank through the gateway facade env reader at call time
 func EnvIsConnected(names ...string) func(ctx context.Context, cfg *PlatformConfig) (bool, error) {
 	return func(ctx context.Context, cfg *PlatformConfig) (bool, error) {
 		for _, name := range names {
-			val, _, err := config.GetEnvValue(ctx, home.Dir(ctx), name)
+			val, err := gatewayFacade.getEnvValue(ctx, name)
 			if err != nil {
 				return false, err
 			}

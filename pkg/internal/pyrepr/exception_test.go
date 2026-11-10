@@ -42,9 +42,16 @@ func TestExceptionReprMatchesPython(t *testing.T) {
 		{errors.New("ValueError: it's bad"), `ValueError("it's bad")`},
 		{errors.New(""), "Exception()"},
 		{fmt.Errorf("wrapped: %w", errors.New("x")), "Exception('wrapped: x')"},
+		{testReprError{}, "<HTTPError 404: 'Not Found'>"},
 	} {
 		if got := ExceptionRepr(c.err); got != c.want {
 			t.Errorf("ExceptionRepr(%v) = %q, want %q", c.err, got, c.want)
 		}
 	}
 }
+
+// Error carrying its own Python repr
+type testReprError struct{}
+
+func (testReprError) Error() string  { return "HTTP Error 404: Not Found" }
+func (testReprError) PyRepr() string { return "<HTTPError 404: 'Not Found'>" }

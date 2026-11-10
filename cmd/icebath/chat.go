@@ -603,6 +603,15 @@ func readLine() string {
 	return strings.TrimRight(line, "\r\n")
 }
 
+// One line of stdin like input, false at EOF before any text or on a read error
+func readLineBeforeEOF() (string, bool) {
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && (err != io.EOF || line == "") {
+		return "", false
+	}
+	return strings.TrimRight(line, "\r\n"), true
+}
+
 // No provider configured, offers icebath setup on a TTY or exits 1 with guidance
 func firstRunSetupGuard(a *chatArgs) {
 	fmt.Println()
@@ -615,7 +624,11 @@ func firstRunSetupGuard(a *chatArgs) {
 		exit(1)
 	}
 	fmt.Print("Run setup now? [Y/n] ")
-	reply := strings.ToLower(strings.TrimSpace(readLine()))
+	reply, ok := readLineBeforeEOF()
+	if !ok {
+		reply = "n"
+	}
+	reply = strings.ToLower(strings.TrimSpace(reply))
 	if reply == "" || reply == "y" || reply == "yes" {
 		exit(cmdSetup(a))
 	}

@@ -188,6 +188,9 @@ func SelectVariant(entry CatalogEntry, budget HardwareBudget) *VariantChoice {
 	return &VariantChoice{Variant: variant, ZeroSpill: true, ReasonKey: reason}
 }
 
+// Variant fit the recommendation and the local models routes read, the module attribute hermes tests patch
+var catalogSelectVariantFn = SelectVariant
+
 // Memory bandwidth classes in GB per second for discrete cards, unified memory and spilled host DRAM
 const (
 	catalogDiscreteBandwidthGBs = 1000.0
@@ -263,7 +266,7 @@ func RecommendedEntry(budget HardwareBudget, entries []CatalogEntry, backend str
 		if !e.Recommend {
 			continue
 		}
-		if c := SelectVariant(e, budget); c != nil {
+		if c := catalogSelectVariantFn(e, budget); c != nil {
 			anyFit = true
 			if c.ZeroSpill {
 				resident = append(resident, fit{e, c})

@@ -10,6 +10,9 @@ import (
 // Error declaring the Python exception class it stands for
 type PyTypeNamed interface{ PyTypeName() string }
 
+// Error whose Python class defines its own repr, like urllib's HTTPError
+type PyReprer interface{ PyRepr() string }
+
 var exceptionPrefixRE = regexp.MustCompile(`^([A-Z][A-Za-z0-9_]*(?:Error|Exception|Exit|Interrupt|Warning)): `)
 
 // Python class name of err, a leading class prefix in the text naming it and plain errors standing for Exception
@@ -60,6 +63,9 @@ func ExceptionMessage(err error) string {
 func ExceptionRepr(err error) string {
 	if err == nil {
 		return "None"
+	}
+	if r, ok := err.(PyReprer); ok {
+		return r.PyRepr()
 	}
 	if msg := ExceptionMessage(err); msg != "" {
 		return ExceptionName(err) + "(" + Repr(msg) + ")"

@@ -442,7 +442,7 @@ func (c *CLI) tuiShutdown() {
 		quietly(rec.Shutdown)
 		c.voiceRecorder = nil
 	}
-	quietly(media.CleanupTempRecordings)
+	quietly(func() { media.CleanupTempRecordings(3600) })
 	c.env.Ask = nil
 	skills.SetSecretCaptureCallback(nil)
 	browser.SetUnlockPromptCallback(c.ctx, nil)

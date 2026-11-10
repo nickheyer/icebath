@@ -690,14 +690,15 @@ func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultM
 		for k, v := range current {
 			modelCfg[k] = v
 		}
+		config.SetMappingKeys(modelCfg, config.MappingKeys(current))
 	case string:
 		if strings.TrimSpace(current) != "" {
 			modelCfg["default"] = strings.TrimSpace(current)
 		}
 	}
-	modelCfg["provider"] = providerID
+	pyDictSet(modelCfg, "provider", providerID)
 	if strings.TrimSpace(inferenceBaseURL) != "" {
-		modelCfg["base_url"] = strings.TrimRight(inferenceBaseURL, "/")
+		pyDictSet(modelCfg, "base_url", strings.TrimRight(inferenceBaseURL, "/"))
 	} else {
 		delete(modelCfg, "base_url")
 	}
@@ -705,12 +706,12 @@ func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultM
 	if defaultModel != "" {
 		curDefault := cfgString(modelCfg["default"])
 		if curDefault == "" || strings.Contains(curDefault, "/") {
-			modelCfg["default"] = defaultModel
+			pyDictSet(modelCfg, "default", defaultModel)
 		}
 	} else if clearDefault {
 		delete(modelCfg, "default")
 	}
-	cfg["model"] = modelCfg
+	pyDictSet(cfg, "model", modelCfg)
 	if err := atomicConfigReplace(env.Ctx, h, cfg); err != nil {
 		return "", err
 	}

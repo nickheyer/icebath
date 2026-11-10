@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -383,5 +384,81 @@ func TestManagedNousGatewayExportsMatchTheBackendGate(t *testing.T) {
 	}
 	if NousToolGatewayUnavailableMessage(env, "image generation", false) != nousToolGatewayUnavailableMessage(env, "image generation", false) {
 		t.Fatal("gateway message diverges")
+	}
+}
+
+func TestPoolFallbackPoolEntryResolvesWhenEnvEmpty(t *testing.T) {
+	for _, p := range [][2]string{{"GROQ_API_KEY", "groq"}, {"MISTRAL_API_KEY", "mistral"}, {"ELEVENLABS_API_KEY", "elevenlabs"},
+		{"DEEPINFRA_API_KEY", "deepinfra"}, {"MINIMAX_API_KEY", "minimax"}, {"GEMINI_API_KEY", "gemini"}, {"XAI_API_KEY", "xai"},
+		{"OPENAI_API_KEY", "openai-api"}} {
+		tbhClearVoiceEnv(t)
+		acct := &tbhAccount{pool: map[string]string{p[1]: "pool-key-" + p[1]}}
+		tbhInstall(t, acct)
+		if got := ResolveProviderSecret(tbhEnv(t, "", nil), p[0], p[1], "", nil); got != "pool-key-"+p[1] || !slices.Contains(acct.seen, p[1]) {
+			t.Fatalf("%s got %q seen %v", p[0], got, acct.seen)
+		}
+	}
+}
+
+func TestPoolFallbackPoolReadFailureNeverRaises(t *testing.T) {
+	tbhClearVoiceEnv(t)
+	tbhInstall(t, &tbhAccount{})
+	if got := ResolveProviderSecret(tbhEnv(t, "", nil), "MISTRAL_API_KEY", "mistral", "", nil); got != "" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestEnvPrecedenceEnvWinsOverPool(t *testing.T) {
+	tbhClearVoiceEnv(t)
+	acct := &tbhAccount{pool: map[string]string{"elevenlabs": "pool-key"}}
+	tbhInstall(t, acct)
+	t.Setenv("ELEVENLABS_API_KEY", "env-key")
+	if got := ResolveProviderSecret(tbhEnv(t, "", nil), "ELEVENLABS_API_KEY", "elevenlabs", "", nil); got != "env-key" || len(acct.seen) != 0 {
+		t.Fatalf("env %q pool %v", got, acct.seen)
+	}
+}
+
+func TestEnvPrecedenceEnvGetterIsConsulted(t *testing.T) {
+	tbhClearVoiceEnv(t)
+	tbhInstall(t, &tbhAccount{})
+	if got := ResolveProviderSecret(tbhEnv(t, "", nil), "GROQ_API_KEY", "groq", "", func(string) string { return "dotenv-key" }); got != "dotenv-key" {
+		t.Fatalf("getter %q", got)
+	}
+}
+
+func TestConfigPrecedenceConfigValueWinsOverEnvAndPool(t *testing.T) {
+	tbhClearVoiceEnv(t)
+	tbhInstall(t, &tbhAccount{pool: map[string]string{"mistral": "pool-key"}})
+	t.Setenv("MISTRAL_API_KEY", "env-key")
+	if got := ResolveProviderSecret(tbhEnv(t, "", nil), "MISTRAL_API_KEY", "mistral", "cfg-key", nil); got != "cfg-key" {
+		t.Fatalf("config %q", got)
+	}
+}
+
+func TestMultiplexScopeScopeValueWins(t *testing.T) {
+	tbhClearVoiceEnv(t)
+	tbhInstall(t, &tbhAccount{pool: map[string]string{"mistral": "pool-key"}})
+	t.Setenv("MISTRAL_API_KEY", "sk-other-profile")
+	tbhMultiplex(t)
+	if got := ResolveProviderSecret(tbhEnv(t, "MISTRAL_API_KEY=sk-this-profile\n", nil), "MISTRAL_API_KEY", "mistral", "", nil); got != "sk-this-profile" {
+		t.Fatalf("scope %q", got)
+	}
+}
+
+func TestMultiplexScopeScopeMissDoesNotFallThroughToPool(t *testing.T) {
+	tbhClearVoiceEnv(t)
+	acct := &tbhAccount{pool: map[string]string{"mistral": "pool-key"}}
+	tbhInstall(t, acct)
+	tbhMultiplex(t)
+	if got := ResolveProviderSecret(tbhEnv(t, "UNRELATED=x\n", nil), "MISTRAL_API_KEY", "mistral", "", nil); got != "" || len(acct.seen) != 0 {
+		t.Fatalf("scope miss %q pool %v", got, acct.seen)
+	}
+}
+
+func TestToolWiringOpenaiAudioKeyFallsBackToPool(t *testing.T) {
+	tbhClearVoiceEnv(t)
+	tbhInstall(t, &tbhAccount{pool: map[string]string{"openai-api": "oai-pool-key"}})
+	if got := ResolveOpenAIAudioAPIKey(tbhEnv(t, "", nil)); got != "oai-pool-key" {
+		t.Fatalf("got %q", got)
 	}
 }

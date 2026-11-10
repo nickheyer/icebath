@@ -391,6 +391,9 @@ func copyIfWanted(t Tree, wantDeepcopy bool) Tree {
 // Effective config through the signature cache, rebuilt under the config lock on a miss
 func loadConfigImpl(ctx context.Context, h string, lookup Lookup, wantDeepcopy bool) (Tree, error) {
 	NoteRuntimeImport("hermes_cli.config")
+	if lookup == nil {
+		lookup = processLookup
+	}
 	if snap := WorkerConfigSnapshot(); snap != nil {
 		return Tree(DeepMerge(Clone(map[string]any(Defaults())).(map[string]any), snap)), nil
 	}

@@ -580,7 +580,7 @@ func FetchEndpointModelMetadata(ctx context.Context, baseURL, apiKey string, for
 
 // Context length from an endpoint's live models metadata
 func resolveEndpointContextLength(ctx context.Context, model, baseURL, apiKey string) (int, bool) {
-	metadata := FetchEndpointModelMetadata(ctx, baseURL, apiKey, false)
+	metadata := fetchEndpointModelMetadataFn(ctx, baseURL, apiKey, false)
 	matched, ok := metadata[model]
 	if !ok && len(metadata) == 1 {
 		for _, entry := range metadata {

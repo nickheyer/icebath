@@ -626,3 +626,10 @@ func TestAcquireAndReleaseCheckoutExports(t *testing.T) {
 		t.Fatal("lock still held after release")
 	}
 }
+
+func TestPsutilParentNamesTheParentOfThisProcess(t *testing.T) {
+	parent, ok, err := PsutilParent(os.Getpid())
+	if err != nil || !ok || parent != os.Getppid() {
+		t.Fatalf("parent %d %v %v want %d", parent, ok, err, os.Getppid())
+	}
+}
